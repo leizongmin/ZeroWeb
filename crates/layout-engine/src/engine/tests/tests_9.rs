@@ -742,6 +742,11 @@ fn test_r1578_measure_uses_img_intrinsic_for_auto_width_img() {
 /// 返回 **18.624 = 16×1.164 = chromium 真值**，全 font-size 线性 ratio=1.164，**无过冲**。
 /// R1311e 19.0 为 stale（此后 line-height ratio 已固化为 DejaVu hhea 1.164）。本测试锁定该
 /// 事实，防未来 ratio 改动重新引入过冲被误判为 leaf-measure blocker。
+/// R5147 起常数比率行高整数化（`ZW_INT_FONT_METRICS` 默认 on）：leaf-measure =
+/// floor(fs×1.164)——chromium 行盒恒整数（fill-001 页 p 高实测 18，floor 恰对齐；
+/// round 变体错相 +1px/行 corpus/welcome 双劣已 refute）。welcome 基线数值
+/// 15.35%（R5122 记录）→ 18.17%（本轮 flag-off 复测）台阶 = welcome.html +42 行
+/// × 陈旧 oracle（ZRG-2026-10-16-01 定谳非渲染回归），与本门禁无关。
 #[test]
 fn test_leaf_measure_nonahem_lineheight_no_overshoot() {
     let none_size = taffy::geometry::Size::<Option<f32>> {
@@ -752,7 +757,8 @@ fn test_leaf_measure_nonahem_lineheight_no_overshoot() {
         width: taffy::style::AvailableSpace::Definite(800.0),
         height: taffy::style::AvailableSpace::Definite(600.0),
     };
-    // 非注释 instruction `<p>`（text + inline <strong>）leaf-measure：必须 = 16×1.164 = 18.624。
+    // 非注释 instruction `<p>`（text + inline <strong>）leaf-measure：常数比率 = 16×1.164
+    // = 18.624；R5147 整数化门禁（默认 on）下行高 floor 为 18。
     let (doc, styles, p, _strong) = build_instruction_p(16.0);
     let h = measure_text_content(
         &doc,
@@ -766,10 +772,10 @@ fn test_leaf_measure_nonahem_lineheight_no_overshoot() {
     )
     .height;
     assert!(
-        (h - 18.624).abs() < 0.001,
-        "非-Ahem 16px leaf-measure 应为 18.624(=16×1.164, chromium 真值)，实际 {h}；若 >18.9 说明重新引入 R1311e 过冲"
+        (h - (16.0_f32 * 1.164).floor()).abs() < 0.001,
+        "非-Ahem 16px leaf-measure 应为 18(=16×1.164 整数化 floor, chromium 实测 p 高 18)，实际 {h}；若 >18.9 说明重新引入 R1311e 过冲"
     );
-    // 纯文本块扫描：ratio 必须恒为 1.164（线性，无 fs 相关过冲）。
+    // 纯文本块扫描：R5147 门禁 on 时行高 = round(fs×1.164)（整数，仍线性无过冲）。
     for fs in [10.0_f32, 12.0, 14.0, 16.0, 20.0, 24.0, 32.0] {
         let (d, s, n) = build_nonahem_text_block("Test passes", fs);
         let m = measure_text_content(
@@ -783,10 +789,10 @@ fn test_leaf_measure_nonahem_lineheight_no_overshoot() {
             None,
         )
         .height;
-        let expected = fs * 1.164;
+        let expected = (fs * 1.164).floor();
         assert!(
             (m - expected).abs() < 0.001,
-            "fs={fs}: leaf-measure {m} 应 = {expected}(×1.164)，ratio={:.5}",
+            "fs={fs}: leaf-measure {m} 应 = {expected}(×1.164 整数化 floor)，ratio={:.5}",
             m / fs
         );
     }

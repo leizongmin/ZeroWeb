@@ -2921,6 +2921,8 @@ pub(crate) fn line_clamp_auto_max_lines(style: &ComputedStyle) -> Option<usize> 
 /// 容器自身的 used line-height（px）。`line-height` 计算值解析：Length 直接解析
 ///（Px 精确；Lh 单位自引用 → 按近似 font_size×1.2）、Number 系数 × font-size、
 /// Normal 按非 Ahem 常数比（与 text_metrics NORMAL_LINE_HEIGHT_RATIO 同源近似）。
+/// 注意 R5147 A/B 判例：此处**不**整数化——clamp 行数估记走分数 18.624 与 ref
+/// 自洽（line-clamp-auto-039/040/043/044 实证，整数化 +4 红），与行盒整数化分域。
 pub(crate) fn container_used_line_height_px(style: &ComputedStyle, font_size: f64) -> Option<f64> {
     use zero_style_system::property::types::LineHeightValue;
     let px = match &style.line_height {

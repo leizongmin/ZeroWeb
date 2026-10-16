@@ -36,9 +36,9 @@
     },
     {
       "id": "mb/zero-browser-shell/download_manager_100",
-      "p95": 13157.981012658227,
+      "p95": 12945.886242100145,
       "tier": "budget",
-      "tightened_at": "2026-10-08T13:28:43Z"
+      "tightened_at": "2026-10-15T19:35:44Z"
     },
     {
       "id": "mb/zero-browser-shell/history_search_1k",
@@ -78,9 +78,9 @@
     },
     {
       "id": "mb/zero-canvas/transform_chain_100",
-      "p95": 20970.197786131997,
+      "p95": 20829.35468219311,
       "tier": "budget",
-      "tightened_at": "2026-10-10T13:28:14Z"
+      "tightened_at": "2026-10-15T19:35:44Z"
     },
     {
       "id": "mb/zero-css-parser/complex_selector_parse_100",
@@ -118,8 +118,9 @@
     },
     {
       "id": "mb/zero-css-parser/tokenizer_1000_rules",
-      "p95": 1278780.4444444445,
-      "tier": "budget"
+      "p95": 1273548.696969697,
+      "tier": "budget",
+      "tightened_at": "2026-10-15T19:35:44Z"
     },
     {
       "id": "mb/zero-dom/dom/batch_append_child_1000",
@@ -152,15 +153,15 @@
     },
     {
       "id": "mb/zero-dom/dom/query_selector_1000_elements_by_class",
-      "p95": 313.03086242445227,
+      "p95": 309.8535743560982,
       "tier": "budget",
-      "tightened_at": "2026-10-09T13:24:29Z"
+      "tightened_at": "2026-10-15T19:35:44Z"
     },
     {
       "id": "mb/zero-dom/dom/query_selector_1000_elements_by_id",
-      "p95": 12765.018375880281,
+      "p95": 12674.890304628003,
       "tier": "budget",
-      "tightened_at": "2026-10-09T13:24:29Z"
+      "tightened_at": "2026-10-15T19:35:44Z"
     },
     {
       "id": "mb/zero-dom/dom/query_selector_1000_elements_by_tag",
@@ -203,9 +204,9 @@
     },
     {
       "id": "mb/zero-engine/paint_complex_page_500_elements",
-      "p95": 800024.9912280702,
+      "p95": 799300.665634675,
       "tier": "budget",
-      "tightened_at": "2026-10-14T19:58:43Z"
+      "tightened_at": "2026-10-15T19:35:44Z"
     },
     {
       "id": "mb/zero-engine/paint_simple_page_100_elements",
@@ -221,8 +222,9 @@
     },
     {
       "id": "mb/zero-host-runtime/host_runtime_new",
-      "p95": 14.766962194825206,
-      "tier": "budget"
+      "p95": 14.755521176080974,
+      "tier": "budget",
+      "tightened_at": "2026-10-15T19:35:44Z"
     },
     {
       "id": "mb/zero-host-runtime/window_config_builder_chain",
@@ -298,9 +300,9 @@
     },
     {
       "id": "mb/zero-protocol/ipc_roundtrip_10000",
-      "p95": 868295.6944444445,
+      "p95": 866979.4938271604,
       "tier": "budget",
-      "tightened_at": "2026-09-28T13:24:06Z"
+      "tightened_at": "2026-10-15T19:35:44Z"
     },
     {
       "id": "mb/zero-protocol/ipc_serialize_10000",
@@ -321,9 +323,9 @@
     },
     {
       "id": "mb/zero-render-foundation/damage_tracker/add_damage/500",
-      "p95": 7382.716580534023,
+      "p95": 7379.973900074571,
       "tier": "budget",
-      "tightened_at": "2026-10-09T13:24:29Z"
+      "tightened_at": "2026-10-15T19:35:44Z"
     },
     {
       "id": "mb/zero-render-foundation/damage_tracker/damage_all",
@@ -351,9 +353,9 @@
     },
     {
       "id": "mb/zero-render-foundation/primitives/build_1000_fills",
-      "p95": 4458.619586096916,
+      "p95": 4454.071420722998,
       "tier": "budget",
-      "tightened_at": "2026-10-14T19:58:43Z"
+      "tightened_at": "2026-10-15T19:35:44Z"
     },
     {
       "id": "mb/zero-script-sandbox/es_module_simple_export",
@@ -369,8 +371,9 @@
     },
     {
       "id": "mb/zero-script-sandbox/execute_json_object",
-      "p95": 206310.36352657006,
-      "tier": "budget"
+      "p95": 204582.88647342994,
+      "tier": "budget",
+      "tightened_at": "2026-10-15T19:35:44Z"
     },
     {
       "id": "mb/zero-script-sandbox/execute_loop_1k",
@@ -432,9 +435,9 @@
     },
     {
       "id": "mb/zero-security/same_origin_check_1000",
-      "p95": 2460.2902041752695,
+      "p95": 2188.9821150855364,
       "tier": "budget",
-      "tightened_at": "2026-10-09T13:24:29Z"
+      "tightened_at": "2026-10-15T19:35:44Z"
     },
     {
       "id": "mb/zero-storage/indexeddb_write_100",
@@ -444,9 +447,9 @@
     },
     {
       "id": "mb/zero-storage/local_storage_read_1000",
-      "p95": 54585.19508057676,
+      "p95": 54291.200253485425,
       "tier": "budget",
-      "tightened_at": "2026-10-09T13:24:29Z"
+      "tightened_at": "2026-10-15T19:35:44Z"
     },
     {
       "id": "mb/zero-storage/local_storage_write_1000",
@@ -497,9 +500,9 @@
     },
     {
       "id": "mb/zero-style-system/selector_matching_100_elements",
-      "p95": 8086.100896860987,
+      "p95": 8034.543001686341,
       "tier": "budget",
-      "tightened_at": "2026-10-14T19:58:43Z"
+      "tightened_at": "2026-10-15T19:35:44Z"
     },
     {
       "id": "mb/zero-wasm-sandbox/wasm_call_add_i32_1000",

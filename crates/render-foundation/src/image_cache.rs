@@ -782,6 +782,31 @@ fn resolve_origin_components(value: &str, origin: (f32, f32), extent: (f32, f32)
     Some(format!("{x}px {y}px"))
 }
 
+/// R5145（compositing-1 §premultiplied-alpha）：resvg/tiny-skia `Pixmap` 输出为
+/// **premultiplied RGBA**，本仓 ImageData 及 CPU/GPU 合成（blend_pixel、图像采样混合）
+/// 统一按 **straight alpha** 消费（PNG 解码路径即 straight）。premult 缓冲直入
+/// straight 管线时半覆盖像素二次变暗——svg 形状 AA 边缘叠在彩色底上出现暗色发丝缝
+/// （svg-skewy-001 实证：45° 对角边缘 premult (0,80,0,159) 按 straight 混合得
+/// (0,98,0)，demultiply 后 (0,128,0) 与 ref 逐像素一致）。resvg pixmap → ImageData
+/// 边界统一 demultiply；不透明/全透明像素 identity 跳过（实心区零成本）。
+/// https://www.w3.org/TR/compositing-1/#premultiplied-alpha
+/// kill-switch ZW_SVG_DEMULTIPLY=0 恢复 premult 原始透传。
+fn demultiply_resvg_rgba(pixels: Vec<u8>) -> Vec<u8> {
+    if std::env::var("ZW_SVG_DEMULTIPLY").as_deref() == Ok("0") {
+        return pixels;
+    }
+    let mut px = pixels;
+    for p in px.as_chunks_mut::<4>().0 {
+        let a = p[3] as u32;
+        if a != 0 && a != 255 {
+            for c in p.iter_mut().take(3) {
+                *c = ((*c as u32 * 255 + a / 2) / a) as u8;
+            }
+        }
+    }
+    px
+}
+
 /// R3933（inline `<svg>` paint）：按目标尺寸矢量栅格化 SVG 源字节——
 /// inline `<svg>` 元素无外部 URL，painter 序列化其 DOM 子树后直接调用本函数产像素
 /// （canvas/video 同款两段式：painter 产 rgba + ImagePrimitive，调用方注入 ImageCache）。
@@ -825,7 +850,7 @@ pub fn rasterize_svg_with_overflow(
     }
     // 1:1 渲染（视口 == 注入树尺寸），溢出内容按画布尺寸裁剪。
     resvg::render(&tree, resvg::tiny_skia::Transform::identity(), &mut pixmap.as_mut());
-    ImageData::from_rgba(pixmap.take(), canvas_w, canvas_h)
+    ImageData::from_rgba(demultiply_resvg_rgba(pixmap.take()), canvas_w, canvas_h)
 }
 
 /// R4174：SVG 内容包围盒右/下边（canvas 坐标，视口 = 注入 `viewport_w/h`）。
@@ -929,7 +954,7 @@ pub fn rasterize_svg_at(source: &[u8], target_w: u32, target_h: u32) -> Result<I
         resvg::tiny_skia::Transform::from_scale(target_w as f32 / iw, target_h as f32 / ih),
         &mut pixmap.as_mut(),
     );
-    ImageData::from_rgba(pixmap.take(), target_w, target_h)
+    ImageData::from_rgba(demultiply_resvg_rgba(pixmap.take()), target_w, target_h)
 }
 
 /// R3996：把 `<svg>` 根元素的 `background-color`（presentation attr 或 style 声明）从源中
@@ -1904,7 +1929,7 @@ pub fn decode_svg_bytes(bytes: &[u8]) -> Result<ImageData, String> {
         ));
     }
     resvg::render(&tree, resvg::tiny_skia::Transform::default(), &mut pixmap.as_mut());
-    let rgba = pixmap.take();
+    let rgba = demultiply_resvg_rgba(pixmap.take());
     let mut data = ImageData::from_rgba(rgba, w, h)?;
     // R3761：携带 SVG 源字节——放大绘制（背景 cover/contain、大尺寸替换元素）时
     // 渲染层可按目标尺寸矢量重栅格化（`ImageCache::get_rasterized`），替代位图插值
@@ -2628,6 +2653,14 @@ mod tests {
     fn make_image(w: u32, h: u32, fill: u8) -> ImageData {
         let pixels = vec![fill; (w as usize) * (h as usize) * 4];
         ImageData::from_rgba(pixels, w, h).unwrap()
+    }
+
+    /// R5145：premult 半覆盖像素转 straight（svg-skewy-001 实测值：tiny-skia 4×4 SS
+    /// coverage 10/16 → premult (0,80,0,159)），不透明/全透明像素 identity。
+    #[test]
+    fn r5145_demultiply_resvg_rgba() {
+        let out = demultiply_resvg_rgba(vec![0, 80, 0, 159, 0, 128, 0, 255, 0, 0, 0, 0]);
+        assert_eq!(out, vec![0, 128, 0, 159, 0, 128, 0, 255, 0, 0, 0, 0]);
     }
 
     /// R3762：无 width/height 属性的 SVG 注入目标 viewport——属性插入且原字节保留。

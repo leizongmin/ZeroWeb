@@ -423,15 +423,19 @@ impl InlineFormattingContext {
                                         .line_height_overrides
                                         .get(&pid)
                                         .copied()
-                                        .unwrap_or(fs * NORMAL_LINE_HEIGHT_RATIO);
+                                        .unwrap_or(constant_normal_line_height(fs, NORMAL_LINE_HEIGHT_RATIO));
                                     (fs, lh)
                                 } else {
-                                    self.default_font_metrics
-                                        .unwrap_or((DEFAULT_FONT_SIZE, DEFAULT_FONT_SIZE * NORMAL_LINE_HEIGHT_RATIO))
+                                    self.default_font_metrics.unwrap_or((
+                                        DEFAULT_FONT_SIZE,
+                                        constant_normal_line_height(DEFAULT_FONT_SIZE, NORMAL_LINE_HEIGHT_RATIO),
+                                    ))
                                 }
                             } else {
-                                self.default_font_metrics
-                                    .unwrap_or((DEFAULT_FONT_SIZE, DEFAULT_FONT_SIZE * NORMAL_LINE_HEIGHT_RATIO))
+                                self.default_font_metrics.unwrap_or((
+                                    DEFAULT_FONT_SIZE,
+                                    constant_normal_line_height(DEFAULT_FONT_SIZE, NORMAL_LINE_HEIGHT_RATIO),
+                                ))
                             };
                             let vertical_align = style
                                 .map(|s| s.vertical_align.clone())
@@ -1353,7 +1357,7 @@ impl InlineFormattingContext {
             (fs, lh)
         } else {
             self.default_font_metrics
-                .unwrap_or((DEFAULT_FONT_SIZE, DEFAULT_FONT_SIZE * NORMAL_LINE_HEIGHT_RATIO))
+                .unwrap_or((DEFAULT_FONT_SIZE, constant_normal_line_height(DEFAULT_FONT_SIZE, NORMAL_LINE_HEIGHT_RATIO)))
         };
         let vertical_align = style
             .map(|s| s.vertical_align.clone())
@@ -1612,7 +1616,7 @@ impl InlineFormattingContext {
             (fs, lh)
         } else {
             self.default_font_metrics
-                .unwrap_or((DEFAULT_FONT_SIZE, DEFAULT_FONT_SIZE * NORMAL_LINE_HEIGHT_RATIO))
+                .unwrap_or((DEFAULT_FONT_SIZE, constant_normal_line_height(DEFAULT_FONT_SIZE, NORMAL_LINE_HEIGHT_RATIO)))
         };
         let letter_spacing = style
             .map(|s| Self::resolve_letter_spacing(&s.letter_spacing, font_size))

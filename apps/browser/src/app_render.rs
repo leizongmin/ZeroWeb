@@ -223,6 +223,14 @@ impl BrowserApp {
         if self.should_show_download_panel() {
             self.render_download_panel(&mut overlay_fills, &mut overlay_glyphs, width, height, font_size, s);
         }
+        // 18c. 下载完成 toast（3 秒自动消失，渐入渐出）
+        if self.download_toast.is_some() {
+            self.render_download_toast(&mut overlay_fills, &mut overlay_glyphs, width, height, s);
+        }
+        // 18d. 压缩标签悬停 tooltip（hover 500ms 后显示标题+URL，移开消失）
+        if self.tab_tooltip.is_some() {
+            self.render_tab_tooltip(&mut overlay_fills, &mut overlay_glyphs, width, height, font_size, s);
+        }
         if self.context_menu.visible {
             self.render_context_menu(&mut overlay_fills, &mut overlay_glyphs, s);
         }
@@ -2621,5 +2629,135 @@ impl BrowserApp {
                 glyphs,
             );
         }
+    }
+
+    /// 渲染下载完成 toast（页面内容区底部居中，3 秒自动消失）。
+    ///
+    /// 复用 T8 菜单渐入的 alpha 曲线：150ms 渐入、末尾 250ms 渐出；显示期间持续
+    /// 请求重绘驱动动画与到期消失（zoom_indicator 同机制）。几何与 smoke 断言面
+    /// 同源（`download_toast_rect_for`）；下载面板持续显示于右下角，toast 居中不冲突。
+    fn render_download_toast(
+        &mut self,
+        fills: &mut Vec<FillPrimitive>,
+        glyphs: &mut Vec<GlyphDraw>,
+        width: u32,
+        height: u32,
+        s: f32,
+    ) {
+        // 文件名/起始时刻先拷出：显示期间要写 needs_redraw，不能持有 self 借用。
+        let Some((filename, start)) = self.download_toast.clone() else {
+            return;
+        };
+        let elapsed = start.elapsed().as_secs_f32();
+        if elapsed > layout::DOWNLOAD_TOAST_DURATION_SECS {
+            // 到期清除（清除本身也需要一帧把 toast 移出画面）。
+            self.download_toast = None;
+            self.needs_redraw = true;
+            return;
+        }
+        // 显示期间持续重绘：驱动渐入渐出动画与到期消失帧。
+        self.needs_redraw = true;
+        let Some((box_x, box_y, box_w, box_h)) = self.download_toast_rect_for(width, height) else {
+            return;
+        };
+        let fade_in = (elapsed / layout::DOWNLOAD_TOAST_FADE_IN_SECS).min(1.0);
+        let fade_out = ((layout::DOWNLOAD_TOAST_DURATION_SECS - elapsed) / layout::DOWNLOAD_TOAST_FADE_OUT_SECS).min(1.0);
+        let opacity = fade_in.min(fade_out).max(0.0);
+        let fade = |color: Color| fade_color(color, opacity);
+
+        let radius = layout::FIND_BAR_FLOAT_RADIUS * s;
+        let border = s.max(1.0);
+        push_rounded_rect_fill(fills, box_x, box_y, box_w, box_h, radius, fade(self.chrome_palette.separator));
+        push_rounded_rect_fill(
+            fills,
+            box_x + border,
+            box_y + border,
+            box_w - 2.0 * border,
+            box_h - 2.0 * border,
+            (radius - border).max(0.0),
+            fade(self.chrome_palette.autocomplete_bg),
+        );
+
+        let font_size = layout::CHROME_FONT_SIZE * s;
+        let pad_h = 14.0 * s;
+        let text_max_w = (box_w - pad_h * 2.0).max(0.0);
+        let name = self.truncate_ui_text(&filename, text_max_w, font_size);
+        self.draw_ui_text(
+            &name,
+            box_x + pad_h,
+            box_y + 6.0 * s,
+            font_size,
+            fade(self.chrome_palette.tab_text),
+            glyphs,
+        );
+        let status = Self::download_toast_status_label();
+        self.draw_ui_text(
+            &status,
+            box_x + pad_h,
+            box_y + 6.0 * s + font_size + 4.0 * s,
+            font_size,
+            fade(self.chrome_palette.page_hint),
+            glyphs,
+        );
+    }
+
+    /// 渲染压缩标签悬停 tooltip（overlay 层，覆盖页面内容顶部）。
+    ///
+    /// T20 崩溃恢复气泡同款浮层：hover 压缩标签（宽度 < 100 逻辑像素）500ms 后
+    /// 显示完整标题 + URL，移开/点击/标签关闭即消失（`update_tab_tooltip_hover`）。
+    /// 延迟等待期间持续请求重绘，保证到期帧能绘出 tooltip。
+    fn render_tab_tooltip(
+        &mut self,
+        fills: &mut Vec<FillPrimitive>,
+        glyphs: &mut Vec<GlyphDraw>,
+        width: u32,
+        height: u32,
+        font_size: f32,
+        s: f32,
+    ) {
+        if let Some((_, since)) = self.tab_tooltip
+            && since.elapsed().as_millis() < u128::from(layout::TAB_TOOLTIP_DELAY_MS)
+        {
+            self.needs_redraw = true;
+            return;
+        }
+        let Some((title, url)) = self.tab_tooltip_content() else {
+            return;
+        };
+        let Some((bx, by, bw, bh)) = self.tab_tooltip_rect_for(width, height) else {
+            return;
+        };
+        let border = s.max(1.0);
+        let radius = layout::FIND_BAR_FLOAT_RADIUS * s;
+        let pad_h = 12.0 * s;
+        let text_max_w = (bw - pad_h * 2.0).max(0.0);
+        push_rounded_rect_fill(fills, bx, by, bw, bh, radius, self.chrome_palette.separator);
+        push_rounded_rect_fill(
+            fills,
+            bx + border,
+            by + border,
+            bw - 2.0 * border,
+            bh - 2.0 * border,
+            (radius - border).max(0.0),
+            self.chrome_palette.autocomplete_bg,
+        );
+        let title = self.truncate_ui_text(&title, text_max_w, font_size);
+        self.draw_ui_text(
+            &title,
+            bx + pad_h,
+            by + 6.0 * s,
+            font_size,
+            self.chrome_palette.tab_text,
+            glyphs,
+        );
+        let url = self.truncate_ui_text(&url, text_max_w, font_size);
+        self.draw_ui_text(
+            &url,
+            bx + pad_h,
+            by + 6.0 * s + font_size + 4.0 * s,
+            font_size,
+            self.chrome_palette.address_bar_placeholder,
+            glyphs,
+        );
     }
 }

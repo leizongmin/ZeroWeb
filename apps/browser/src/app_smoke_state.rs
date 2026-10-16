@@ -83,6 +83,29 @@ impl BrowserApp {
         self.should_show_download_panel()
     }
 
+    /// 演示流用：下载完成 toast 当前文件名（3 秒显示窗口内；None = 未显示）。
+    pub fn smoke_download_toast(&self) -> Option<String> {
+        self.download_toast_rect_for(self.physical_size.0, self.physical_size.1)?;
+        Some(self.download_toast.as_ref()?.0.clone())
+    }
+
+    /// 演示流用：压缩标签悬停 tooltip 内容 `(标题, URL)`（延迟到期后；None = 未显示）。
+    pub fn smoke_tab_tooltip(&self) -> Option<(String, String)> {
+        self.tab_tooltip_content()
+    }
+
+    /// 演示流用：已真实呈现的帧计数（滚动帧率基准的帧源）。
+    pub fn smoke_presented_frames(&self) -> u64 {
+        self.presented_frames
+    }
+
+    /// 演示流用：第 `index` 个标签槽位中心坐标（tooltip 悬停定位；None = 越界）。
+    pub fn smoke_tab_center(&self, index: usize) -> Option<(f64, f64)> {
+        let &(_, tx, tw) = self.tab_layout.get(index)?;
+        let y = (layout::TAB_BAR_TOP_INSET + layout::TAB_BAR_HEIGHT * 0.5) * self.scale_factor;
+        Some(((tx + tw * 0.5) as f64, y as f64))
+    }
+
     /// 演示流用：上下文菜单是否可见。
     pub fn smoke_context_menu_visible(&self) -> bool {
         self.context_menu.visible

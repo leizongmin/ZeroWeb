@@ -162,11 +162,11 @@ impl FontMetricProvider for FontLoader {
             })
         })?;
         let (ascent, descent, line_gap) = self.line_metrics_full(font_id, size)?;
-        Some(LineMetrics {
+        Some(rounded_line_metrics(LineMetrics {
             ascent,
             descent,
             line_gap,
-        })
+        }))
     }
 
     /// C3 advance（R223 font_id gap）：解析 family → font_id，复用 `line_metrics` 的
@@ -265,11 +265,11 @@ impl FontMetricProvider for FontMetricMap {
             return self.downloaded_line_metrics(font_family, size);
         }
         let metrics = Self::resolve_family_metrics(font_family, &self.map)?;
-        Some(LineMetrics {
+        Some(rounded_line_metrics(LineMetrics {
             ascent: metrics.ascent * size,
             descent: metrics.descent * size,
             line_gap: metrics.line_gap * size,
-        })
+        }))
     }
 
     fn downloaded_line_metrics(&self, font_family: &[String], size: f32) -> Option<LineMetrics> {
@@ -372,9 +372,29 @@ pub fn set_fallback_line_metrics_fn(f: FallbackLineMetricsFn) {
     let _ = FALLBACK_LINE_METRICS_FN.set(f);
 }
 
+/// R5147：行度量整数化门禁开启时逐项取整（Blink `SimpleFontData` 语义——
+/// ascent/descent/line_gap 各自 round 为整数 px，`line-height:normal` 与回退链行盒
+/// 贡献恒整数；chromium 实测 quotes-025 CJK 行 46.336→46）。关闭时原样返回。
+fn rounded_line_metrics(m: LineMetrics) -> LineMetrics {
+    rounded_line_metrics_with(m, super::runtime_flags::int_font_metrics())
+}
+
+fn rounded_line_metrics_with(mut m: LineMetrics, enabled: bool) -> LineMetrics {
+    if enabled {
+        m.ascent = m.ascent.round();
+        m.descent = m.descent.round();
+        m.line_gap = m.line_gap.round();
+    }
+    m
+}
+
 /// IFC 消费入口：宿主已注册时按 run 有序 face 列表取实际使用字体的行度量 max。
 pub(crate) fn fallback_line_metrics_for_layout(font_ids: &[u32], text: &str, font_size: f32) -> Option<(f32, f32)> {
-    FALLBACK_LINE_METRICS_FN.get()?(font_ids, text, font_size)
+    let (ascent, descent) = FALLBACK_LINE_METRICS_FN.get()?(font_ids, text, font_size)?;
+    if super::runtime_flags::int_font_metrics() {
+        return Some((ascent.round(), descent.round()));
+    }
+    Some((ascent, descent))
 }
 
 /// R4375：paint 侧消费入口（含旗标门禁）——list marker 等行外装饰文本与行内文本
@@ -440,6 +460,26 @@ mod tests {
     /// 本文件在 `crates/layout-engine/src/inline/`，故 4 级 `..` 回到 workspace 根。
     /// 编译期 `include_bytes!` 烘焙进测试二进制，避免运行期文件依赖。
     const AHEM_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Ahem.ttf");
+
+    /// R5147：行度量整数化（Blink `SimpleFontData` 逐项 round；quotes-025 CJK 行
+    /// Noto CJK 32px 46.336 = 37.12+9.216 → 37+9=46 与 chromium 逐像素一致）。
+    /// 门禁关闭时恒等（原始分数度量逐字节保留）。
+    #[test]
+    fn r5147_rounded_line_metrics_integer_transform() {
+        let m = LineMetrics {
+            ascent: 37.12,
+            descent: -9.216,
+            line_gap: 0.04,
+        };
+        let on = rounded_line_metrics_with(m, true);
+        assert_eq!(on.ascent, 37.0);
+        assert_eq!(on.descent, -9.0);
+        assert_eq!(on.line_gap, 0.0);
+        let off = rounded_line_metrics_with(m, false);
+        assert_eq!(off.ascent, 37.12);
+        assert_eq!(off.descent, -9.216);
+        assert_eq!(off.line_gap, 0.04);
+    }
 
     /// 构造一个加载了 Ahem 的 `FontLoader`。失败则跳过测试（与 render-foundation
     /// 既有 `load_system_font_data` 测试同的宽松降级风格）。
@@ -694,8 +734,9 @@ mod tests {
         let handle = FontMetricProviderHandle(Rc::new(provider));
         let (font_size, line_height) = super::super::resolve_font_metrics_with_provider(Some(&style), Some(&handle));
         assert_eq!(font_size, 20.0, "shaping must receive the specified size");
+        // R5147：常数比率 normal 行高整数化（floor）——40×1.164=46.56 → 46。
         assert!(
-            (line_height - 40.0 * super::super::NORMAL_LINE_HEIGHT_RATIO).abs() < 1e-3,
+            (line_height - (40.0 * super::super::NORMAL_LINE_HEIGHT_RATIO).floor()).abs() < 1e-3,
             "normal line-height must use the adjusted 40px primary size, got {line_height}"
         );
     }
@@ -752,8 +793,9 @@ mod tests {
         };
 
         let (_, line_height) = super::super::resolve_font_metrics_with_provider(Some(&style), Some(&provider));
+        // R5147：常数比率整数化（floor）——20×1.164=23.28 → 23。
         assert!(
-            (line_height - 20.0 * super::super::NORMAL_LINE_HEIGHT_RATIO).abs() < 1e-3,
+            (line_height - (20.0 * super::super::NORMAL_LINE_HEIGHT_RATIO).floor()).abs() < 1e-3,
             "property must preempt the descriptor scale, got {line_height}"
         );
     }
@@ -804,9 +846,9 @@ mod tests {
         let without = super::super::resolve_font_metrics(Some(&style));
         let with_none = super::super::resolve_font_metrics_with_provider(Some(&style), None);
         assert_eq!(without, with_none, "provider=None must equal resolve_font_metrics");
-        // 非-Ahem Normal 回退 1.164
+        // 非-Ahem Normal 回退 1.164（R5147 整数化 floor：20×1.164=23.28 → 23）
         assert!(
-            (with_none.1 - 20.0 * super::super::NORMAL_LINE_HEIGHT_RATIO).abs() < 1e-3,
+            (with_none.1 - (20.0 * super::super::NORMAL_LINE_HEIGHT_RATIO).floor()).abs() < 1e-3,
             "fallback ratio = NORMAL_LINE_HEIGHT_RATIO, got {}",
             with_none.1
         );
@@ -826,9 +868,9 @@ mod tests {
         let handle = FontMetricProviderHandle(Rc::new(provider));
         let (fs, lh) = super::super::resolve_font_metrics_with_provider(Some(&style), Some(&handle));
         assert!((fs - 16.0).abs() < 1e-6);
-        // 回退常数 1.164，非 per-font 0.9
+        // 回退常数 1.164，非 per-font 0.9（R5147 整数化 floor：16×1.164=18.624 → 18）
         assert!(
-            (lh - 16.0 * super::super::NORMAL_LINE_HEIGHT_RATIO).abs() < 1e-3,
+            (lh - (16.0 * super::super::NORMAL_LINE_HEIGHT_RATIO).floor()).abs() < 1e-3,
             "unresolved provider must fall back to constant, got {lh}"
         );
     }

@@ -483,8 +483,9 @@ mod r5061_tests {
             <input type="radio" id="item3" name="item"><label for="item3">item 3</label>
         </fieldset></form></body>"#;
         let b = layout_target(html, "t");
+        // R5147 行高整数化：legend + 3 行 radio 从 18.624/行（≈81.9）变 18/行（=80 恰达界）。
         assert!(
-            b.height > 80.0,
+            b.height >= 79.0,
             "fieldset 内容高语义应保持（不被 max-height 钳），实际 {}",
             b.height
         );

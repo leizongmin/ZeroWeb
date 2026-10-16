@@ -304,6 +304,7 @@ impl BrowserApp {
             return;
         }
         if !self.sync_page_fonts() { return; }
+        self.presented_frames = self.presented_frames.saturating_add(1);
         // R3254-M4：标签切换时清 GPU 图片纹理缓存（旧标签纹理滞留会累积显存）。
         let active_tab = self.shell.active_tab_id();
         if active_tab != self.last_rendered_tab
@@ -417,6 +418,7 @@ impl BrowserApp {
             return None;
         }
         if !self.sync_page_fonts() { return None; }
+        self.presented_frames = self.presented_frames.saturating_add(1);
 
         if let Some(fb) = self.try_blit_compositor_present(width, height, cpu_surface) {
             self.forward_compositor_chrome_ui(width, height);
@@ -435,29 +437,36 @@ impl BrowserApp {
             return None;
         }
 
-        let (fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows, overlay_rounded_rects) = self.build_scene(width, height);
+        let scene = self.build_scene(width, height);
+        let (ref fills, ref glyphs, ref overlay_fills, ref overlay_glyphs, ref chrome_shadows, ref overlay_rounded_rects) = scene;
 
         // 获取 WebView 的额外图元类型（渐变、阴影、线段等）
-        let webview_extras = self.get_webview_extra_primitives();
+        let mut webview_extras = self.get_webview_extra_primitives();
 
         // 合并：chrome fills + chrome shadows + webview fills (已在 fills 中) + webview 额外图元
-        let mut scene_primitives = webview_extras;
-        // fills 和 glyphs 已通过 append_webview_primitives 混入 chrome 的 fills/glyphs
-        // 所以只需把 chrome fills 放入 scene_primitives.fills 的前面
-        scene_primitives.fills = [fills, scene_primitives.fills].concat();
-        scene_primitives.shadows = [chrome_shadows, scene_primitives.shadows].concat();
+        // fills/glyphs 借用原场景（不 move），场景随后整体交给 chrome UI 转发复用，
+        // 避免滚动帧二次 build_scene（T36）。
+        webview_extras.fills = [fills.clone(), webview_extras.fills].concat();
+        webview_extras.shadows = [chrome_shadows.clone(), webview_extras.shadows].concat();
 
         // ImageCache 在 render_scene_cpu 内部获取（避免 &mut self 调用前的借用冲突）
         let fb = self.render_scene_cpu(
             width,
             height,
-            &scene_primitives,
-            &glyphs,
-            &overlay_fills,
-            &overlay_glyphs,
-            &overlay_rounded_rects,
+            &webview_extras,
+            glyphs,
+            overlay_fills,
+            overlay_glyphs,
+            overlay_rounded_rects,
         );
-        self.forward_compositor_chrome_ui(width, height);
+        if crate::compositor_client::present_enabled() {
+            // T36：复用刚合成的整窗位图提交 UI surface（同场景同光栅器，仅页面区
+            // 清零差异），省去第二次 build_scene + 全窗重光栅。
+            self.forward_compositor_chrome_ui_from_window(width, height, &fb.data);
+        } else {
+            // 非默认配置（present 关闭）UI surface 需携带页面内容，走全量光栅旧路径。
+            self.forward_compositor_chrome_ui(width, height);
+        }
         self.maybe_request_compositor_present(width, height);
         if present_rgba_to_softbuffer(cpu_surface, fb.width, fb.height, &fb.data) {
             Some(fb)
@@ -531,6 +540,36 @@ impl BrowserApp {
         if crate::compositor_client::present_enabled() {
             let (cx, cy, cw, ch) = self.page_content_rect_for(width, height);
             Self::clear_rect_alpha_zero(&mut ui, width, height, cx, cy, cw, ch);
+        }
+        self.forward_ui_frame_if_changed(width, height, ui);
+    }
+
+    /// 用浏览器刚本地合成的整窗位图提交 Chrome UI 位图（T36 滚动帧优化）。
+    ///
+    /// 本地合成帧（`render_scene_cpu` 输出）与 UI 转发的全量光栅同场景、同光栅器、
+    /// 同白底，仅「页面区 alpha 清零」一处差异——直接复用该位图，省去滚动帧的
+    /// 第二次 `build_scene` + 全窗重光栅（长页面单帧 ~40ms）。页面区清零语义与
+    /// [`Self::forward_compositor_chrome_ui`] 完全一致；位图与上一帧逐字节一致时
+    /// 跳过 IPC（纯滚动帧 UI 静态：滚动条位于页面区内，本就被清零）。
+    fn forward_compositor_chrome_ui_from_window(&mut self, width: u32, height: u32, window_rgba: &[u8]) {
+        let mut ui = window_rgba.to_vec();
+        let (cx, cy, cw, ch) = self.page_content_rect_for(width, height);
+        Self::clear_rect_alpha_zero(&mut ui, width, height, cx, cy, cw, ch);
+        self.forward_ui_frame_if_changed(width, height, ui);
+    }
+
+    /// UI 位图与上一帧一致时跳过 IPC；否则刷新缓存并提交。
+    fn forward_ui_frame_if_changed(&mut self, width: u32, height: u32, ui: Vec<u8>) {
+        let cache = self.ui_forward_cache.get_or_insert_with(UiForwardCache::new);
+        if cache.width != width || cache.height != height {
+            cache.width = width;
+            cache.height = height;
+            cache.rgba = ui.clone();
+        } else if cache.rgba == ui {
+            // UI surface 与上一帧逐字节一致，compositor 侧已有同内容位图。
+            return;
+        } else {
+            cache.rgba = ui.clone();
         }
         crate::compositor_client::forward_ui_frame(
             crate::compositor_client::CHROME_UI_SURFACE_ID,

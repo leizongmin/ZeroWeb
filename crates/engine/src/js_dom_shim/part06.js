@@ -412,6 +412,12 @@
   // document.activeElement 焦点追踪。null = 无焦点（activeElement 回落 body）；非空 = 焦点元素 key
   //（_elKey(sel,handle)）。focus()/blur() 经 Proxy get trap 操作。纯状态追踪，无真输入焦点/无事件派发。
   var _activeElKey = null;
+  // R3902（html-semantics M2）：`:focus-visible` 模态近似（CSS Selectors L4 §14
+  // https://www.w3.org/TR/selectors-4/#focus-visible-pseudo——脚本 focus() 落键盘
+  // 式可见焦点（无先验指针交互即匹配，WPT focus-dynamic-type-change 断言面）；
+  // 指针 mousedown 焦点不匹配）。宿主驱动焦点（__zw_host_focus——mousedown 与 Tab
+  // 导航共用钩子，无模态信号）保持旗标原值（保守：沿用最近一次脚本模态）。
+  var _zwFocusVisibleMod = false;
 
   // R2938 Fullscreen + R2939 Pointer Lock 状态追踪。headless 无真 OS 全屏 / 指针锁（host 无窗口全屏 / 鼠标
   // 捕获信号源），但 spec 语义需可观察：fullscreenElement / pointerLockElement = 当前锁定元素（_elKey(sel,handle)
@@ -14848,7 +14854,7 @@
       // 幂等守卫（同上反向面）：失焦非当前焦点元素 = no-op（shim blur() 同款语义）。
       if (_activeElKey !== _elKey(sel, null)) return;
     } catch (_eHB0) {}
-    try { _activeElKey = null; } catch (_eHB) {}
+    try { _activeElKey = null; _zwFocusVisibleMod = false; } catch (_eHB) {}
     try {
       // uievents-compat M3 尾簇 6b：失焦序 **blur 先于 focusout**（WPT
       // focus-events expected「blur@a → focusout@a」逐条断言面；此钩子此前

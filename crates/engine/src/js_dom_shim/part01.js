@@ -1836,7 +1836,13 @@
   // requestAnimationFrame / takeScreenshot 预算：单次脚本执行内同步派发上限，
   // 防止动画循环（rAF(loop)）无限链式触发；reftest 的「double-rAF 后 setup」
   // 模式只需 2-3 帧即可收敛。
-  var _rafBudget = 64;
+  // R3902（html-semantics M2 切片 2）：64 → 512。testharness 串行 promise_test
+  // 链若逐案 `await tick()`（double-rAF），整链都在首个脚本轮的 microtask 内——
+  // 64 预算恰在 32 subtest 处静默丢回调（promise 永不 resolve → 文件级 Timeout，
+  // focus-dynamic-type-change 双文件 33 号案起全挂）。512 仍有限（防 rAF(loop)
+  // 死循环的守卫语义不变），覆盖 256 个 double-rAF 案；R3254 收敛循环 64 帧需求
+  // 不受影响。
+  var _rafBudget = 512;
 
   // P1a 事件循环 slice 1（R2713a）：帧驱动 rAF kill-switch + 注册队列。
   // `__ZW_RAF_FRAME_DRIVEN` 由 host（worker init 读 env `ZW_RAF_FRAME_DRIVEN`）在 execute 前注入：
@@ -1855,7 +1861,7 @@
 
   globalThis.__zw_begin_script = function() {
     _deferBudget = 256;
-    _rafBudget = 64;
+    _rafBudget = 512;
     // R2946：每页首次脚本执行前反射 <body on*> → window.on*（幂等，按 page URL 去重）。
     if (typeof _zw_reflect_body_window_handlers === 'function') _zw_reflect_body_window_handlers();
     if (typeof globalThis.__zwPollServiceWorkerRegistrations === 'function') {

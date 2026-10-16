@@ -3606,6 +3606,9 @@
               try { oldEl.dispatchEvent(_zwFO); } catch (_eFOd) {}
             }
             _activeElKey = key; // 获焦相位落新（focus handler 内 activeElement 已是新元素）
+            // R3902：脚本 focus() → :focus-visible 匹配（Selectors L4 §14——脚本聚焦
+            // 无先验指针交互即可见焦点；headless 近似恒匹配，见 part06 旗标注释）。
+            _zwFocusVisibleMod = true;
             try {
               // R148：focus/focusin 携带 relatedTarget（FocusEvent 语义——retargeting 后
               // 的旧焦点；proxy 旧焦点同样携带——focus-automated relatedTargets 断言面）。
@@ -3625,6 +3628,7 @@
           return function() {
             if (_activeElKey !== key) return; // 非当前焦点元素 → no-op
             _activeElKey = null;
+            _zwFocusVisibleMod = false; // R3902：失焦即不可见焦点
             // M2-S4E：导航期间焦点变更标记（同 focus 面——WPT change-focus-again-in-blur）。
             if (typeof _navMarkFocusChanged === 'function') { try { _navMarkFocusChanged(); } catch (_eNfcB) {} }
             try {
@@ -4092,6 +4096,19 @@
             var q = String(selector);
             if (q === ':invalid') return !_validityState(key, sel, handle).valid;
             if (q === ':valid') return _validityState(key, sel, handle).valid;
+            // R3902（html-semantics M2）：`:focus`/`:focus-visible` 独立伪类——JS 侧焦点
+            // 状态判定（Selectors L4 §13/§14 https://www.w3.org/TR/selectors-4/#focus-pseudo）。
+            // host 选择器匹配对快照新 parse 恒 `focus_element: None`（焦点只存 JS
+            // `_activeElKey`/渲染管线 retained `focused_selector` 两处，都不进 host
+            // matcher）——`matches(':focus')` 恒 false（WPT focus-dynamic-type-change
+            // 双文件 72F 主簇）。连接性以 isConnected 为准（createElement 产物闭包 sel
+            // 恒 null，不能用 sel 判 attached——spec `:focus` 须在文档树内）；失连焦点
+            // 回落 body 同 activeElement getter 的惰性校验。复合选择器（`input:focus`）
+            // 与 closest/query 路径仍走 host（不命中，既有缺口不变）。
+            if (q === ':focus') return _activeElKey === key && proxy.isConnected !== false;
+            if (q === ':focus-visible') {
+              return _activeElKey === key && _zwFocusVisibleMod === true && proxy.isConnected !== false;
+            }
             // R134（js-dom M4）：handle-only 元素（createElement/createElementNS 的
             // detached 节点，ns 元数据在 JS 侧——`urn:ns|h` 的 ns|type 匹配由
             // _r134MatchTypeSelector 承担）**先于** R156 语法校验：`ns|type` 形态
