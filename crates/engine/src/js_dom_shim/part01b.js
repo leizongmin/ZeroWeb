@@ -2400,22 +2400,27 @@
     return arr;
   }
 
-  // AES-GCM 调用（encrypt/decrypt 共用）：校验 iv(12B)/tagLength(128)/host 后调 `__zw_crypto_subtle_aes_gcm`，
-  // 返 Uint8Array；失败调 reject 返 null。AAD 经 algorithm.additionalData（可选）。
+  // AES-GCM 调用（encrypt/decrypt 共用，webcrypto M3a 矩阵）：iv 12/32 字节；tagLength ∈
+  // {32,64,96,104,112,120,128}（spec 合法集，缺省 128；非法 → OperationError）；host 后调
+  // `__zw_crypto_subtle_aes_gcm`，返 Uint8Array；失败调 reject 返 null。AAD 经
+  // algorithm.additionalData（可选）。
+  // https://w3c.github.io/webcrypto/#aes-gcm-operations
   function _zw_aesGcmCall(op, algorithm, key, dataBytes, reject) {
     var iv = _zw_bufToBytes(algorithm.iv);
-    if (iv.length !== 12) {
-      reject(_zw_subtleDE('AES-GCM iv must be 12 bytes (96 bits)', 'OperationError')); return null;
+    if (iv.length !== 12 && iv.length !== 32) {
+      reject(_zw_subtleDE('AES-GCM iv must be 12 or 32 bytes (96/256 bits)', 'OperationError')); return null;
     }
-    if (algorithm.tagLength != null && (algorithm.tagLength | 0) !== 128) {
-      reject(_zw_subtleDE('Only AES-GCM tagLength=128 supported', 'NotSupportedError')); return null;
+    var tagBits = (algorithm.tagLength != null) ? Number(algorithm.tagLength) : 128;
+    if (tagBits !== 32 && tagBits !== 64 && tagBits !== 96 && tagBits !== 104 &&
+        tagBits !== 112 && tagBits !== 120 && tagBits !== 128) {
+      reject(_zw_subtleDE('Invalid AES-GCM tagLength: ' + algorithm.tagLength, 'OperationError')); return null;
     }
     var aadBytes = algorithm.additionalData != null ? _zw_bufToBytes(algorithm.additionalData) : [];
     if (typeof __zw_crypto_subtle_aes_gcm !== 'function') {
       reject(_zw_subtleDE('crypto.subtle AES-GCM requires host callback', 'NotSupportedError')); return null;
     }
     var keyCsv = (key._raw || []).map(String).join(',');
-    var out = __zw_crypto_subtle_aes_gcm(op, keyCsv, iv.join(','), dataBytes.join(','), aadBytes.join(','));
+    var out = __zw_crypto_subtle_aes_gcm(op, keyCsv, iv.join(','), dataBytes.join(','), aadBytes.join(','), String(tagBits));
     if (!out) {
       reject(_zw_subtleDE('AES-GCM ' + op + ' failed (bad key/iv/tag)', 'OperationError')); return null;
     }

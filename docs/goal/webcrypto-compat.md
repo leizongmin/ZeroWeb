@@ -2,10 +2,19 @@
 
 **版本**: v1.1
 **日期**: 2026-10-17
-**状态**: Active——M2b 收口（AES-CBC/CTR 补面 +2,617P，2026-10-17）；
-下一步 M3（AES-GCM tagLength/IV 矩阵评估、wrapKey/unwrapKey、spki/pkcs8/jwk 格式）
+**状态**: Active——M3a 收口（AES-GCM tagLength/IV 矩阵 +900P，2026-10-17）；
+下一步 M3b（wrapKey/unwrapKey AES-KW、spki/pkcs8/jwk 格式）
 **执行模式**: WPT 驱动（上游 WebCryptoAPI corpus 为验收标尺）+ 实现与语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——加密面）
+
+> **▶ M3a AES-GCM tagLength/IV 矩阵（2026-10-17）**：tagLength ∈
+> {32,64,96,104,112,120,128}、IV 12/32 字节、密钥 128/192/256 位全矩阵——
+> 32/64 位 tag 走 detached encrypt 截断语义（SP 800-38D §5.2.1.2，decrypt 两次
+> detached 调用重算全 tag 常时前缀比对）。aes_gcm 125→577、aes_gcm_256_iv
+> 133→577 **双双全绿**（原 896F 簇全翻）；192 位密钥解锁级联
+> symmetric_importKey +4。全量 **32,717 = Pass 10,321（31.5%）+ Fail 22,395 +
+> Timeout 1**（M2b 9,421 → +900，零回归）；全绿案 11→13。明细见
+> [M3a evidence](webcrypto-compat/evidence/2026-10-17-m3a-gcm-matrix.md)。
 
 > **▶ M2b AES-CBC/CTR 补面（2026-10-17）**：RustCrypto cbc/ctr/aes（与 aes-gcm 同
 > cipher 0.4 族）接入 encrypt/decrypt/generateKey/importKey/deriveKey；aes_cbc

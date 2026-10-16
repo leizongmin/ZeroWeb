@@ -871,11 +871,12 @@ fn test_crypto_subtle_aes_gcm_r2957() {
             .value,
         "true"
     );
-    // importKey AES-GCM 非 16/32 字节 key（24 字节）→ reject DataError。
+    // importKey AES-GCM 非法 key 长度（20 字节/160 位；M3a 起 128/192/256 位均支持，
+    // 原 24 字节反例失效）→ reject DataError。
     sandbox
         .execute(
             "globalThis.__e1='(pending)';\
-             crypto.subtle.importKey('raw', new Uint8Array(24), {name:'AES-GCM'}, false, ['encrypt'])\
+             crypto.subtle.importKey('raw', new Uint8Array(20), {name:'AES-GCM'}, false, ['encrypt'])\
                .catch(function(e){ globalThis.__e1 = e.name; });",
         )
         .unwrap();
@@ -911,13 +912,14 @@ fn test_crypto_subtle_aes_gcm_r2957() {
         .execute(
             "globalThis.__e4='(pending)';\
              crypto.subtle.importKey('raw', new Uint8Array(16), {name:'AES-GCM'}, false, ['encrypt'])\
-               .then(function(k){ return crypto.subtle.encrypt({name:'AES-GCM', iv:new Uint8Array(12), tagLength:96}, k, 'x'); })\
+               .then(function(k){ return crypto.subtle.encrypt({name:'AES-GCM', iv:new Uint8Array(12), tagLength:80}, k, 'x'); })\
                .catch(function(e){ globalThis.__e4 = e.name; });",
         )
         .unwrap();
     assert_eq!(
         sandbox.execute("String(globalThis.__e4)").unwrap().value,
-        "NotSupportedError"
+        "OperationError",
+        "tagLength 80 不在 spec 合法集 → OperationError（M3a 起 96/104/112/120 均合法，原 96 反例失效）"
     );
 }
 
@@ -2338,4 +2340,53 @@ fn test_crypto_subtle_aes_cbc_ctr_m2b() {
     assert_eq!(sandbox.execute("String(globalThis.__gk128)").unwrap().value, "16");
     assert_eq!(sandbox.execute("String(globalThis.__gkdef)").unwrap().value, "32");
     assert_eq!(sandbox.execute("String(globalThis.__gkbad)").unwrap().value, "OperationError");
+
+    // M3a GCM 矩阵：192 位密钥 + 256 位 iv + 96 位 tag round-trip；非法 tagLength 95 →
+    // OperationError（spec 合法集 {32,64,96,104,112,120,128}）。
+    sandbox
+        .execute(
+            "globalThis.__gcmrt='(pending)'; globalThis.__gcm4='(pending)'; globalThis.__gcmrt4='(pending)';\
+             var iv256=hex2b('00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff');\
+             var p1=crypto.subtle.importKey('raw', hex2b('8e73b0f7da0e6452c810f32b809079e562f8ead2522c6b7b'), {name:'AES-GCM'}, false, ['encrypt','decrypt'])\
+               .then(function(k){ globalThis.__gcm192k=k;\
+                 return crypto.subtle.encrypt({name:'AES-GCM', iv:iv256, tagLength:96}, k, new TextEncoder().encode('gcm-matrix')); })\
+               .then(function(ct){ globalThis.__gcmct=new Uint8Array(ct);\
+                 return crypto.subtle.decrypt({name:'AES-GCM', iv:iv256, tagLength:96}, globalThis.__gcm192k, globalThis.__gcmct); })\
+               .then(function(pt){ globalThis.__gcmrt=String(new TextDecoder().decode(pt)); });\
+             var p2=crypto.subtle.importKey('raw', hex2b('2b7e151628aed2a6abf7158809cf4f3c'), {name:'AES-GCM'}, false, ['encrypt'])\
+               .then(function(gk){ return errname(crypto.subtle.encrypt({name:'AES-GCM', iv:new Uint8Array(12), tagLength:95}, gk, new Uint8Array(4))); })\
+               .then(function(n){ globalThis.__gcm4=n; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__gcmrt)").unwrap().value,
+        "gcm-matrix",
+        "GCM 192 位密钥 + 256 位 iv + 96 位 tag round-trip"
+    );
+    assert_eq!(sandbox.execute("String(globalThis.__gcmct.length)").unwrap().value, "22", "96 位 tag → 密文 = 明文 10 字节 + tag 12 字节");
+    assert_eq!(sandbox.execute("String(globalThis.__gcm4)").unwrap().value, "OperationError");
+
+    // M3a 截断 tag 路径（tagLength < 96 走 detached 手做）：32/64 位 tag + 12 字节 iv
+    // round-trip（回归：nonce 泛型按 iv 长度分派，急切构造曾致 panic）。
+    sandbox
+        .execute(
+            "globalThis.__t32rt='(pending)'; globalThis.__t64rt='(pending)';\
+             var iv12=hex2b('caf26ab0401cb60690fc4e6d');\
+             var k32=null, k64=null;\
+             var q1=crypto.subtle.importKey('raw', hex2b('000102030405060708090a0b0c0d0e0f'), {name:'AES-GCM'}, false, ['encrypt','decrypt'])\
+               .then(function(k){ k32=k;\
+                 return crypto.subtle.encrypt({name:'AES-GCM', iv:iv12, tagLength:32}, k32, new TextEncoder().encode('trunc32')); })\
+               .then(function(ct){ globalThis.__t32ct=new Uint8Array(ct);\
+                 return crypto.subtle.decrypt({name:'AES-GCM', iv:iv12, tagLength:32}, k32, globalThis.__t32ct); })\
+               .then(function(pt){ globalThis.__t32rt=String(new TextDecoder().decode(pt)); });\
+             var q2=crypto.subtle.importKey('raw', hex2b('101112131415161718191a1b1c1d1e1f'), {name:'AES-GCM'}, false, ['encrypt','decrypt'])\
+               .then(function(k){ k64=k;\
+                 return crypto.subtle.encrypt({name:'AES-GCM', iv:iv12, tagLength:64}, k64, new TextEncoder().encode('trunc64')); })\
+               .then(function(ct){ return crypto.subtle.decrypt({name:'AES-GCM', iv:iv12, tagLength:64}, k64, ct); })\
+               .then(function(pt){ globalThis.__t64rt=String(new TextDecoder().decode(pt)); });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__t32rt)").unwrap().value, "trunc32", "GCM 32 位 tag + 12 字节 iv 截断路径 round-trip");
+    assert_eq!(sandbox.execute("String(globalThis.__t32ct.length)").unwrap().value, "11", "32 位 tag → 密文 = 明文 7 字节 + tag 4 字节");
+    assert_eq!(sandbox.execute("String(globalThis.__t64rt)").unwrap().value, "trunc64", "GCM 64 位 tag + 12 字节 iv 截断路径 round-trip");
 }

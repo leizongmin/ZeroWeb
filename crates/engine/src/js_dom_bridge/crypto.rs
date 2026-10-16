@@ -164,33 +164,164 @@ fn aes_gcm_run<C: aes_gcm::aead::Aead>(
     }
 }
 
-/// `crypto.subtle.encrypt/decrypt` 的 AES-GCM 实现（R2957）——AES-128/256-GCM 认证对称加密。
-/// **PBKDF2 派生密钥的典型消费者**，端到端「用密码加密」流程（TLS 级对称加密 + 完整性 + AAD）。
-/// mode "encrypt"（返 ct||tag）/ "decrypt"（输入 ct||tag，返 plaintext）；key 16/32 字节（128/256 位，
-/// AES-192 因 aes-gcm crate 默认未导出 `Aes192Gcm` 暂不支持——罕见）；iv 12 字节（GCM 标准 nonce）；
-/// aad 附加认证数据；tag 固定 128 位（spec 默认，最常见）。返 csv，error（bad key/iv 长度、tag 校验失败）→ 空串。
+/// `crypto.subtle.encrypt/decrypt` 的 AES-GCM 实现（R2957；webcrypto M3a 矩阵扩展）——
+/// AES-128/192/256-GCM 认证对称加密。**PBKDF2 派生密钥的典型消费者**，端到端「用密码加密」
+/// 流程（TLS 级对称加密 + 完整性 + AAD）。mode "encrypt"（返 ct||tag）/ "decrypt"（输入
+/// ct||tag，返 plaintext）；key 16/24/32 字节；iv 12/32 字节（nonce 为 aes-gcm crate 编译期
+/// 泛型，按字节长二分派）；tag_len_bits ∈ {32,64,96,104,112,120,128}（合法集由 shim 校验，
+/// 缺省 128）：96-128 位走 crate Aead（TagSize 密封于 U12..U16）；32/64 位 crate 不密封，
+/// 按 NIST SP 800-38D §5.2.1.2 截断语义手做——encrypt 取 128 位 tag 前 tag_len_bits/8 字节，
+/// decrypt 重算全 tag 常时比对前缀。aad 附加认证数据。返 csv，error（bad key/iv/tag 长度、
+/// tag 校验失败）→ 空串。
 /// https://datatracker.ietf.org/doc/html/rfc5116  https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38d.pdf
-pub fn crypto_subtle_aes_gcm(mode: &str, key_csv: &str, iv_csv: &str, data_csv: &str, aad_csv: &str) -> String {
+pub fn crypto_subtle_aes_gcm(
+    mode: &str,
+    key_csv: &str,
+    iv_csv: &str,
+    data_csv: &str,
+    aad_csv: &str,
+    tag_len_bits: u32,
+) -> String {
+    use aes::cipher::consts::{U12, U13, U14, U15, U16, U32};
+    use aes_gcm::AesGcm;
     use aes_gcm::aead::{KeyInit, Payload, generic_array::GenericArray};
-    use aes_gcm::{Aes128Gcm, Aes256Gcm};
     let key = bytes_from_csv(key_csv);
     let iv = bytes_from_csv(iv_csv);
     let data = bytes_from_csv(data_csv);
     let aad = bytes_from_csv(aad_csv);
-    if iv.len() != 12 {
+    if iv.len() != 12 && iv.len() != 32 {
         return String::new();
     }
-    let nonce = GenericArray::from_slice(&iv);
+    let tag_bytes = (tag_len_bits / 8) as usize;
+    // 32/64 位 tag：全 128 位认证后截断（crate 只密封 U12..U16，见函数注释）。
+    let truncated = matches!(tag_len_bits, 32 | 64);
+    let effective_tag_bits = if truncated { 128 } else { tag_len_bits };
     let payload = Payload { msg: &data, aad: &aad };
-    let result: Option<Vec<u8>> = match key.len() {
-        16 => aes_gcm_run(&Aes128Gcm::new(GenericArray::from_slice(&key)), mode, nonce, payload),
-        32 => aes_gcm_run(&Aes256Gcm::new(GenericArray::from_slice(&key)), mode, nonce, payload),
-        _ => None,
-    };
+    macro_rules! gcm {
+        ($nonce:ty, $tag:ty, $aes:ty) => {
+            aes_gcm_run(
+                &AesGcm::<$aes, $nonce, $tag>::new(GenericArray::from_slice(&key)),
+                mode,
+                GenericArray::from_slice(&iv),
+                payload,
+            )
+        };
+    }
+    macro_rules! by_aes {
+        ($nonce:ty, $tag:ty) => {
+            match key.len() {
+                16 => gcm!($nonce, $tag, aes::Aes128),
+                24 => gcm!($nonce, $tag, aes::Aes192),
+                32 => gcm!($nonce, $tag, aes::Aes256),
+                _ => None,
+            }
+        };
+    }
+    macro_rules! by_tag {
+        ($nonce:ty) => {
+            match effective_tag_bits {
+                96 => by_aes!($nonce, U12),
+                104 => by_aes!($nonce, U13),
+                112 => by_aes!($nonce, U14),
+                120 => by_aes!($nonce, U15),
+                128 => by_aes!($nonce, U16),
+                _ => None,
+            }
+        };
+    }
+    if truncated {
+        // 截断路径：detached API 手做。encrypt：明文 in-place 加密 → ct || tag 前 tag_bytes；
+        // decrypt：重算期望全 tag，常时比对前缀（SP 800-38D §5.2.1.2）。
+        // nonce 泛型按 iv 实际字节长分派（from_slice 断言长度，须在分支内构造）。
+        return match (iv.len(), key.len()) {
+            (12, 16) => {
+                truncated_gcm::<aes::Aes128, U12>(mode, &key, GenericArray::from_slice(&iv), &data, &aad, tag_bytes)
+            }
+            (12, 24) => {
+                truncated_gcm::<aes::Aes192, U12>(mode, &key, GenericArray::from_slice(&iv), &data, &aad, tag_bytes)
+            }
+            (12, 32) => {
+                truncated_gcm::<aes::Aes256, U12>(mode, &key, GenericArray::from_slice(&iv), &data, &aad, tag_bytes)
+            }
+            (32, 16) => {
+                truncated_gcm::<aes::Aes128, U32>(mode, &key, GenericArray::from_slice(&iv), &data, &aad, tag_bytes)
+            }
+            (32, 24) => {
+                truncated_gcm::<aes::Aes192, U32>(mode, &key, GenericArray::from_slice(&iv), &data, &aad, tag_bytes)
+            }
+            (32, 32) => {
+                truncated_gcm::<aes::Aes256, U32>(mode, &key, GenericArray::from_slice(&iv), &data, &aad, tag_bytes)
+            }
+            _ => String::new(),
+        };
+    }
+    let result: Option<Vec<u8>> = if iv.len() == 12 { by_tag!(U12) } else { by_tag!(U32) };
     match result {
         Some(v) => v.iter().map(u8::to_string).collect::<Vec<_>>().join(","),
         None => String::new(),
     }
+}
+
+/// GCM 截断 tag（32/64 位）encrypt/decrypt——crate `AeadInPlace` detached API 之上的
+/// SP 800-38D §5.2.1.2 截断语义：tag 取全 128 位前缀；decrypt 重算全 tag 后**定长无早退**
+/// 比对前缀（不引 `subtle` 依赖，与 shim HMAC 比对先例一致）。decrypt 输入为 ct||tag。
+fn truncated_gcm<A, N>(
+    mode: &str,
+    key: &[u8],
+    nonce: &aes_gcm::aead::generic_array::GenericArray<u8, N>,
+    data: &[u8],
+    aad: &[u8],
+    tag_bytes: usize,
+) -> String
+where
+    A: aes::cipher::BlockSizeUser<BlockSize = aes::cipher::consts::U16>
+        + aes::cipher::BlockEncrypt
+        + aes::cipher::KeyInit,
+    N: aes_gcm::aead::generic_array::ArrayLength<u8>,
+    aes_gcm::AesGcm<A, N, aes::cipher::consts::U16>:
+        aes_gcm::aead::AeadCore<NonceSize = N> + aes_gcm::aead::AeadInPlace,
+{
+    use aes_gcm::aead::{AeadInPlace, KeyInit, generic_array::GenericArray as GA};
+    let cipher = aes_gcm::AesGcm::<A, N, aes::cipher::consts::U16>::new(GA::from_slice(key));
+    if mode == "encrypt" {
+        let mut buf = data.to_vec();
+        let full_tag = match cipher.encrypt_in_place_detached(nonce, aad, &mut buf) {
+            Ok(t) => t,
+            Err(_) => return String::new(),
+        };
+        buf.extend_from_slice(&full_tag[..tag_bytes]);
+        return buf.iter().map(u8::to_string).collect::<Vec<_>>().join(",");
+    }
+    if mode == "decrypt" {
+        if data.len() < tag_bytes {
+            return String::new();
+        }
+        let ct_len = data.len() - tag_bytes;
+        let provided = &data[ct_len..];
+        // crate 的 detached encrypt 先做 CTR 变换、后对**变换后**缓冲（=ct）算 GHASH tag
+        //（见 aes-gcm 0.10.3 src/lib.rs encrypt_in_place_detached）。故：第一次调用输入 ct
+        // 得明文（tag 对 pt，弃）；第二次调用输入 pt 变换回 ct，其 tag 恰为期望全 128 位
+        // tag（同 mask 同 GHASH 输入，确定性）——以此做截断前缀比对，明文在 pt 中不受影响。
+        // CTR 为对合变换（SP 800-38D §6.5），两次变换还原。
+        let mut pt = data[..ct_len].to_vec();
+        if cipher.encrypt_in_place_detached(nonce, aad, &mut pt).is_err() {
+            return String::new();
+        }
+        let mut scratch = pt.clone();
+        let expected = match cipher.encrypt_in_place_detached(nonce, aad, &mut scratch) {
+            Ok(t) => t,
+            Err(_) => return String::new(),
+        };
+        // 常时近似：全前缀逐字节异或累积，无早退。
+        let mut diff = 0u8;
+        for i in 0..tag_bytes {
+            diff |= expected[i] ^ provided[i];
+        }
+        if diff == 0 {
+            return pt.iter().map(u8::to_string).collect::<Vec<_>>().join(",");
+        }
+    }
+    String::new()
 }
 
 /// `crypto.subtle.encrypt/decrypt` 的 AES-CBC/CTR 实现（webcrypto M2b）——AES-128/192/256

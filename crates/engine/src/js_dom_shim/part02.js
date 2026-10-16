@@ -10,7 +10,7 @@
     // importKey(format, keyData, algorithm, extractable, usages) → Promise<CryptoKey>。HMAC：format 须 "raw"
     //（jwk/pkcs8/spki defer）；algorithm {name:"HMAC",hash:"SHA-XXX"}，usages ⊆ {sign,verify}。PBKDF2：
     // {name:"PBKDF2"}，usages ⊆ {deriveBits,deriveKey}。AES-GCM/CBC/CTR：usages ⊆ {encrypt,decrypt}，
-    // key 须 128/256 位（16/32 字节；CBC/CTR 另支持 192 位/24 字节）。含非法 usage → SyntaxError，bad key 长度 → DataError。
+    // key 须 128/192/256 位（16/24/32 字节）。含非法 usage → SyntaxError，bad key 长度 → DataError。
     // https://w3c.github.io/webcrypto/#SubtleCrypto-method-importKey
     importKey: function (format, keyData, algorithm, extractable, usages) {
       return new Promise(function (resolve, reject) {
@@ -23,11 +23,11 @@
           reject(new _zw_subtleDE("Unsupported importKey format: '" + fmt + "' (only 'raw' supported)", 'NotSupportedError')); return;
         }
         var raw = _zw_bufToBytes(keyData);
-        // AES 密钥长度校验（spec：AES-CBC/CTR 128/192/256 位；AES-GCM 192 位因 aes-gcm crate
-        // 未导出 Aes192Gcm 不支持，同 R2957 限制）。
+        // AES 密钥长度校验（spec：AES-GCM/CBC/CTR 均 128/192/256 位；M3a 起 GCM 经
+        // AesGcm 泛型支持 192 位）。
         if (algo.name === 'AES-GCM' || algo.name === 'AES-CBC' || algo.name === 'AES-CTR') {
           var klen = raw.length;
-          if (klen !== 16 && klen !== 32 && !(algo.name !== 'AES-GCM' && klen === 24)) {
+          if (klen !== 16 && klen !== 24 && klen !== 32) {
             reject(new _zw_subtleDE('AES key must be 128, 192 or 256 bits (16/24/32 bytes)', 'DataError')); return;
           }
         }
