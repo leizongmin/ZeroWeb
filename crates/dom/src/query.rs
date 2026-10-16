@@ -199,6 +199,16 @@ pub enum PseudoClass {
     /// DOM 静态解析不可知 → 恒不匹配（镜像 [`PseudoClass::Focus`]；CSS 渲染路径经 focus 子模块
     /// `has_focus_within` 真实匹配）。
     FocusWithin,
+    /// `:active`——用户按下（mousedown/触摸开始到释放间）的元素（CSS Selectors L4 §15）。
+    /// 按压为运行时交互状态，DOM 静态解析不可知 → 静态永不匹配（镜像
+    /// [`PseudoClass::Focus`]；headless 无指针事件信号源）。识别目的：使 `input:active`
+    /// 等不被当无效选择器抛 SyntaxError（WPT checkable-active-space：浏览器 accept
+    /// + 零匹配），与 CSS matcher（`SUPPORTED_SIMPLE_PSEUDO_CLASSES` 含 active）一致。
+    Active,
+    /// `:hover`——指针悬停下的元素（CSS Selectors L4 §15）。悬停为运行时交互状态，
+    /// DOM 静态解析不可知 → 静态永不匹配（镜像 [`PseudoClass::Active`]）。识别理由同上：
+    /// selector validity 接受面与 style-system `SUPPORTED_SIMPLE_PSEUDO_CLASSES` 对齐。
+    Hover,
 }
 
 /// `:nth-*` 的 `an+b` 表达式（a=系数，b=常量；匹配条件：存在 k≥0 使 position = a*k+b）。
@@ -501,6 +511,9 @@ impl SimpleSelector {
             // CSS 渲染路径（style-system matcher）不受此限：matcher 持 Document，直接读焦点
             // 状态（`Document::is_focus_element`/`has_focus_within`，focus 子模块权威判定）。
             PseudoClass::Focus | PseudoClass::FocusVisible | PseudoClass::FocusWithin => false,
+            // `:active`/`:hover`——运行时指针交互状态（按下/悬停），静态解析的 DOM 不可知 →
+            // 永不匹配（镜像 :focus 家族；headless 无指针信号源）。
+            PseudoClass::Active | PseudoClass::Hover => false,
             // `:defined`——纯元素 tag 名求值（静态近似，无需 Document）：合法 custom element 名
             // → parse 时视为未升级 → 不匹配；其余 tag（原生/含大写/无连字符）→ 已定义 → 匹配。
             PseudoClass::Defined => !is_valid_custom_element_name(elem.local_name()),
@@ -1435,7 +1448,13 @@ fn parse_pseudo(name: &str, args: Option<&str>) -> Option<PseudoClass> {
         "focus" => Some(PseudoClass::Focus),
         "focus-visible" => Some(PseudoClass::FocusVisible),
         "focus-within" => Some(PseudoClass::FocusWithin),
-        _ => None, // 未识别伪类（:hover/:focus 等）→ 视为不匹配该 compound（保守）
+        // `:active`/`:hover`——运行时指针交互状态（按下/悬停），静态解析不可知 → 识别为合法
+        // 伪类但静态永不匹配（matches_full 内 false，镜像 :focus 家族）。识别目的：querySelector
+        // validity 与 style-system `SUPPORTED_SIMPLE_PSEUDO_CLASSES` 对齐（WPT
+        // checkable-active-space：`input:active` 期望合法 + 零匹配，不抛 SyntaxError）。
+        "active" => Some(PseudoClass::Active),
+        "hover" => Some(PseudoClass::Hover),
+        _ => None, // 未识别伪类 → 视为不匹配该 compound（保守）
     }
 }
 /// R3254-L7：扫描到第一个**未转义**分隔符的位置（反斜杠后的字符跳过——CSS 转义序列，与生成端 `stable_selector_for_node` 成对）。
@@ -1838,8 +1857,15 @@ mod tests {
         assert_eq!(sel.classes, vec!["x"]);
         assert_eq!(sel.pseudos, vec![PseudoClass::FirstChild, PseudoClass::LastChild]);
 
-        // 未识别伪类（:hover）→ 解析失败（保守，避免静默误匹配）。
-        assert!(parse_simple_selector("a:hover").is_none());
+        // `:hover`/`:active`（R3902b）——识别为合法伪类，静态永不匹配（运行时指针
+        // 交互状态，headless 无信号源；querySelector validity 与 style-system 白名单对齐）。
+        let sel = parse_simple_selector("a:hover").unwrap();
+        assert_eq!(sel.pseudos, vec![PseudoClass::Hover]);
+        let sel = parse_simple_selector("input:active").unwrap();
+        assert_eq!(sel.pseudos, vec![PseudoClass::Active]);
+
+        // 未识别伪类 → 解析失败（保守，避免静默误匹配）。
+        assert!(parse_simple_selector("a:unknown-pseudo").is_none());
 
         // 空伪类名 → None。
         assert!(parse_simple_selector("div:").is_none());

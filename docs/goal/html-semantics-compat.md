@@ -1,27 +1,28 @@
 # HTML Semantics 兼容 — html/semantics 语义面（主攻大域）
 
-**版本**: v1.3
+**版本**: v1.4
 **日期**: 2026-10-16（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 2a 收口（focus/focus-visible + rAF 预算 +121P），切片 2b 进行中
+**状态**: Active——M2 切片 2b 收口（dirty checkedness/value + files IDL + compound pending +125P），切片 2c 候选 stepUp/stepDown + showPicker
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-16 M2 切片 2a）**：focus-dynamic-type-change 73F 主簇
-> 清零——`:focus`/`:focus-visible` 伪类 JS 侧 matches 判定（R3902，Selectors
-> L4 §13/§14）+ rAF 单脚本预算 64→512（promise_test 串行链 double-rAF 断链
-> 根因）。forms 2320→**2441P**；九域全量 3248→**3369P**（3369/6656 =
-> 50.62%），对切片 1 账本逐 subtest diff **九域零回归**。账本见
-> [evidence/2026-10-16-m2s2-focus-visible.md](html-semantics-compat/evidence/2026-10-16-m2s2-focus-visible.md)。
+> **▶ 当前状态（2026-10-16 M2 切片 2b）**：切片 2a 挂账四簇清零——dirty
+> checkedness/value 面接入（R3902b，HTML §4.10.5.4）+ files IDL setter（null-
+> for-non-file + FileList 引用 identity）+ `:active`/`:hover` 选择器识别（恒
+> 不匹配）+ compound（`input[type=X]`）pending 回落（含 `[` 轻量预门防
+> named-lookup 超线性）。cloning-steps 0→46P、untrusted-key-event 0→42P、
+> files 1→24P、checkable-active-space 0→8P。forms 2441→**2565P**；九域全量
+> 3369→**3494P**（3494/6656 = 52.51%），对切片 2a 账本逐 subtest diff **九域
+> 零回归**。账本见
+> [evidence/2026-10-16-m2s2b-r3902b.md](html-semantics-compat/evidence/2026-10-16-m2s2b-r3902b.md)。
 > 两处 runner 挂死仍挂账（tabular span-limits、links downloading-resources）。
-> **卡点**：无阻塞。**下一步**：切片 2b 按簇杠杆序（根因已静态归因，探针
-> 已备 /tmp 探针树待跑）——cloning-steps 45F（`_isTag` sel-only 门致
-> detached 元素 indeterminate/files IDL undefined + clone 不传播 dirty
-> checkedness/indeterminate + setAttribute('value') 覆写 dirty 缓存）→
-> untrusted-key-event 42F（createElement→IDL type=→append 产物对
-> `input[type=X]` 选择器不可见）→ checkable-active-space 8F（JS 侧选择器
-> 白名单缺 `:active`）→ stepUp/stepDown 43F（现仅 number/range 桩，spec 全
-> 类型 InvalidStateError + 步进算法）→ showPicker ~130F → files
-> null-for-non-file 23F。
+> R2996 unit test「.value 跟随 setAttribute」断言随 dirty 面接入修正为 spec
+> dirty 保持（WPT cloning-steps 锚定）。
+> **卡点**：无阻塞。**下一步**：切片 2c 按簇杠杆序——showPicker 族 ~136F
+> （user-gesture 63F / disabled-readonly 44F / does-not-focus 22F）→
+> stepUp/stepDown 族 64F（stepup 43F / stepdown 12F / valueas*-stepping 9F /
+> weekmonth 2F；现仅 number/range 桩，spec 全类型 InvalidStateError + 步进
+> 算法）。
 
 
 > **▶ 拆分动机（2026-10-08 预留编号立项，用户「候选 goal 也立项吧」）**：继
@@ -102,6 +103,16 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-16 M2 切片 2b**：dirty checkedness/value + files IDL +
+  `:active`/`:hover` + compound pending 回落（R3902b）——query.rs
+  Active/Hover 识别臂，part01 dirty/files 两 map，part03 files/indeterminate
+  `_realTag` 门 + 非 file 恒 null + checked 脏态优先，part04 setAttribute/
+  removeAttribute('value') 已脏不覆写 + clone 传播 dirty value/checkedness/
+  indeterminate + files setter（FileList 存引用/null no-op/否则 TypeError），
+  part05 `.checked=` 置脏 + DataTransfer.files FileList 视图，part06 compound
+  pending 回落（`[` 预门）。cloning-steps/untrusted-key-event/files/
+  checkable-active-space 四簇 +125P，九域 3369→3494P（零回归）。
+  `make test` 全绿、guarded-clippy/fmt 过、零新增依赖。
 - **2026-10-16 M2 切片 2a**：focus/focus-visible 面（R3902）——part06
   focus-visible 模态旗标，part04 焦点派发接线 + matches() `:focus`/
   `:focus-visible` 分支（isConnected 连接性判定），part01 rAF 预算

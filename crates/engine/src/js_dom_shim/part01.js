@@ -121,6 +121,19 @@
   // 内容属性，纯 JS 状态）。checkbox「全选」tri-state UI 高频（父 checkbox 半选态）。per-element-key，
   // 默认 false。同 _inputValues/_classCache 经 `__zw_reset_form_state` 清空。
   var _indeterminate = {};
+  // HTMLInputElement dirty checkedness（R3902b，HTML §4.10.5.4
+  // https://html.spec.whatwg.org/multipage/input.html#concept-input-checked-dirty-flag）：
+  // `.checked=` IDL set 置位（dirty + 目标 checkedness）；getter 脏态优先于内容属性；
+  // 克隆步骤随克隆传播（cloning-steps「setAttribute doesn't affect cloned input's
+  // checkedness」断言面）。**不随属性变更清除**（spec：checked 内容属性增删仅在未脏
+  // 时改 checkedness）；渲染/radio 组激活仍走内容属性面不变。经 `__zw_reset_form_state` 清空。
+  var _checkedDirtyState = {};
+  // HTMLInputElement.files 引用面（R3902b，HTML §4.10.5.4
+  // https://html.spec.whatwg.org/multipage/input.html#dom-input-files）：`.files=` setter
+  // 存 FileList 引用（identity 保真——WPT files.html「FileList should not be copied / can
+  // be shared across input / DataTransfer」断言面）；getter 未设时回落 _emptyFileList。
+  // 经 `__zw_reset_form_state` 清空。
+  var _inputFiles = {};
   // text-control 选区（selectionStart/End/Direction + setSelectionRange/select，R2844）：per-element-key 选区
   // 状态 { start, end, direction }。仅 text control（textarea + input text/search/url/tel/password）有真实选区；
   // 默认（未设）= {0, 0, 'forward'}（Chromium 150 oracle 锚定——未聚焦/未设的 text control 选区折叠在 0，非值末）。
@@ -5646,7 +5659,7 @@
       if (_proxyCache[key] === el) { delete _userEdited[key]; return; }
     }
   };
-  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputValuesSet = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _classCache = {}; _customValidity = {}; _userEdited = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _resourceStates = {}; _textareaDefault = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; if (typeof globalThis.__zw_pointer_reset === 'function') globalThis.__zw_pointer_reset(); };
+  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputValuesSet = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _checkedDirtyState = {}; _inputFiles = {}; _classCache = {}; _customValidity = {}; _userEdited = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _resourceStates = {}; _textareaDefault = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; if (typeof globalThis.__zw_pointer_reset === 'function') globalThis.__zw_pointer_reset(); };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF

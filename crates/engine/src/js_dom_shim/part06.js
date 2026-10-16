@@ -2496,6 +2496,37 @@
           } catch (_e145p) {}
         }
       }
+      // R3902b：compound 形态（tag/attr 组合，如 `input[type=text]`）的 pending 回落——
+      // host 查询视图对属性级 mutation 不应用（`with_query_view_doc` 结构级 only 的既有
+      // 设计，attr 读走 latest-wins getter），pending 元素回落此前仅 #id/纯 tag 两形态
+      // → 同 turn createElement→setAttribute/type=→append 产物对属性复合选择器恒 null
+      // （WPT input-untrusted-key-event 42F 主簇：querySelector(`input[type=${t}]`)
+      // 全空致逐案 TypeError）。复用 R322 元素面同款解析/匹配器（part05
+      // _parseCompoundOf/_matchCompoundOf）；伪类与 unsupported 形态不接（维持旧行为）。
+      if (typeof _parseCompoundOf === 'function' && typeof _matchCompoundOf === 'function'
+          && typeof _zwPendingAdded !== 'undefined' && _zwPendingAdded.length
+          && String(sel || '').indexOf('[') >= 0) {
+        // 轻量预门：仅属性复合形态（含 '['——目标面 `input[type=X]`）才走解析 + pending
+        // 扫描。全局命名查找/常规 miss（`#ch`、裸 tag）高频复用本回落路径，逐 miss 解析
+        // + 全 pending 扫描是超线性成本（WPT t8g NPO 扫描钉：600 对 append/remove 内嵌
+        // 命名查找，无门实测 2s+ vs 门内毫秒级）；无 '[' 直接跳过（维持既有 #id/纯 tag
+        // 两形态回落行为不变）。
+        var _r3902bC = null;
+        try { _r3902bC = _parseCompoundOf(String(sel || '')); } catch (_e3902bp) { _r3902bC = null; }
+        if (_r3902bC && !_r3902bC.unsupported && _r3902bC.attrs.length && !_r3902bC.pseudos.length) {
+          for (var _r3902bi = 0; _r3902bi < _zwPendingAdded.length; _r3902bi++) {
+            var _r3902bn = _zwPendingAdded[_r3902bi];
+            if (!_r3902bn || _r3902bn.nodeType !== 1) continue;
+            try {
+              if (typeof _zwMutationInDoc === 'function'
+                  && !_zwMutationInDoc(_r3902bn.__zwSelector, _r3902bn.__zwHandle)) continue;
+            } catch (_e3902bd) {}
+            try {
+              if (_matchCompoundOf(_r3902bn, _r3902bC)) return _r3902bn;
+            } catch (_e3902bm) {}
+          }
+        }
+      }
       return null;
     },
     // R34xx：id 含特殊字符（点号等——canvas WPT 的 id="green.png"）时 '#'+id 选择器
@@ -2894,6 +2925,39 @@
             if (k161 && seen161[k161]) continue;
             out161.push(pn161);
           } catch (_e161p) {}
+        }
+      }
+      // R3902b：compound（attr 组合）形态的 pending 归并——同 querySelector 的回落面，
+      // QSA 镜像（host 已命中与 pending 命中按 key 去重合并；WPT input-untrusted-key-event
+      // 逐 type `querySelector` 用单查面，QSA 面为对称完备）。
+      if (typeof _parseCompoundOf === 'function' && typeof _matchCompoundOf === 'function'
+          && typeof _zwPendingAdded !== 'undefined' && _zwPendingAdded.length
+          && String(q || '').indexOf('[') >= 0) {
+        // 轻量预门：同 querySelector 面（含 '[' 的属性复合形态才解析 + pending 扫描——
+        // 常规 miss 高频走本路径，逐次解析/扫描是超线性成本，见上 R3902b 预门注记）。
+        var _r3902bCq = null;
+        try { _r3902bCq = _parseCompoundOf(String(q)); } catch (_e3902bpq) { _r3902bCq = null; }
+        if (_r3902bCq && !_r3902bCq.unsupported && _r3902bCq.attrs.length && !_r3902bCq.pseudos.length) {
+          var seen3902b = {};
+          for (var si3902b = 0; si3902b < out161.length; si3902b++) {
+            try { seen3902b[_elKeyOf(out161[si3902b]) || ('s' + si3902b)] = 1; } catch (_e3902bs) {}
+          }
+          for (var pj3902b = 0; pj3902b < _zwPendingAdded.length; pj3902b++) {
+            var pn3902b = _zwPendingAdded[pj3902b];
+            if (!pn3902b || pn3902b.nodeType !== 1) continue;
+            try {
+              if (typeof _zwMutationInDoc === 'function'
+                  && !_zwMutationInDoc(pn3902b.__zwSelector, pn3902b.__zwHandle)) continue;
+            } catch (_e3902bdq) {}
+            try {
+              if (!_matchCompoundOf(pn3902b, _r3902bCq)) continue;
+              var k3902b = null;
+              try { k3902b = pn3902b.__zwHandle ? ('@' + pn3902b.__zwHandle) : (pn3902b.id ? ('id:' + pn3902b.id) : null); } catch (_e3902bk) {}
+              if (k3902b && seen3902b[k3902b]) continue;
+              seen3902b[k3902b || ('p' + pj3902b)] = 1;
+              out161.push(pn3902b);
+            } catch (_e3902bmq) {}
+          }
         }
       }
       var r159 = _zwMakeCollection(out161, false);
