@@ -3101,7 +3101,12 @@ impl Painter {
                     // article3：container h:0 唯一子 → 全区域零预算）——子树不可见。
                     // 仅容器整体零空间时跳过；有空间的 fragmentainer 里 0 高盒（如 012 的
                     // h:0 div + 绿块）的 overflow 子树照常绘（chromium overflow:visible）。
-                    if !is_breaking && col_h < 0.5 && box_node.content_height < 0.5 {
+                    // R5150（CSS Containment 1 §3.1）：contain:size 子豁免——其内容仍照常
+                    // 排版与绘制（monolithic 整体溢出零高 fragmentainer 可见），仅尺寸按
+                    // 无内容计（contain-size-monolithic-001：chromium test 页 0 高容器下方
+                    // overflow 绘 4 行文本；ref 页同位同形）。普通子（无内容溢出语义）维持
+                    // R4515 跳过。
+                    if !is_breaking && col_h < 0.5 && box_node.content_height < 0.5 && !child.has_size_containment {
                         continue;
                     }
                     let (clip_y, clip_h) = if is_breaking {

@@ -3,9 +3,9 @@
   "mode": "upstream",
   "wpt_data_ref": "v1.10",
   "total": 16590,
-  "passed": 15448,
+  "passed": 15449,
   "rate_pct": 93.1,
-  "extra": "failed=1142;skipped=0",
-  "git_sha": "fda0e92c9",
-  "note": "R5149 无词间空格复杂文字 fallback 断行（UAX #14 SA 全集+东南亚婆罗米系）——line-breaking-023 != 翻绿 2.88% 两侧分化，零新增红"
+  "extra": "failed=1141;skipped=0",
+  "git_sha": "6c497312a",
+  "note": "R5150 contain:size 列子豁免 R4515 零空间 fragmentainer skip——contain-size-monolithic-001 0.00% 翻绿，corpus 1142→1141 零新增红，组合态 df94f6082 复核 failure 集逐位一致"
 }
