@@ -410,11 +410,11 @@ fn test_convert_grid_auto_flow_row() {
 
 // ── convert_grid_line 边界条件 ──
 
-/// 测试 convert_grid_line：Name 变体回退到 Auto。
+/// 测试 convert_grid_line：Name 变体作为 Taffy NamedLine 传递。
 #[test]
-fn test_convert_grid_line_name_fallback() {
+fn test_convert_grid_line_name_preserved() {
     let result = convert_grid_line(&GridLineValue::Name("my-area".to_string()));
-    assert_eq!(result, taffy::style::GridPlacement::Auto);
+    assert_eq!(result, taffy::style::GridPlacement::NamedLine("my-area".to_string(), 0));
 }
 
 /// 测试 convert_grid_line：Span 值。
@@ -917,14 +917,14 @@ fn test_resolve_named_area_all_which_values() {
     );
 }
 
-/// 测试 resolve_named_area：Name 变体，不存在 parent_areas，应返回 Auto。
+/// 测试 resolve_named_area：没有 area map 时保留 Name 供显式 named-line 解析。
 #[test]
 fn test_resolve_named_area_no_parent_areas() {
     let result = resolve_named_area(&GridLineValue::Name("nonexistent".to_string()), None, "row-start");
-    assert_eq!(result, GridLineValue::Auto);
+    assert_eq!(result, GridLineValue::Name("nonexistent".to_string()));
 }
 
-/// 测试 resolve_named_area：Name 变体，存在 parent_areas 但名称不存在。
+/// 测试 resolve_named_area：未匹配 area 名保留给显式 named-line 解析。
 #[test]
 fn test_resolve_named_area_name_not_found() {
     let mut areas = std::collections::HashMap::new();
@@ -935,5 +935,5 @@ fn test_resolve_named_area_name_not_found() {
         Some(&areas),
         "row-start",
     );
-    assert_eq!(result, GridLineValue::Auto);
+    assert_eq!(result, GridLineValue::Name("nonexistent".to_string()));
 }

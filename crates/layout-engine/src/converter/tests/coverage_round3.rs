@@ -135,7 +135,7 @@ fn test_resolve_named_area_all_directions() {
 fn test_resolve_named_area_no_map() {
     assert_eq!(
         resolve_named_area(&GridLineValue::Name("test".to_string()), None, "row-start"),
-        GridLineValue::Auto
+        GridLineValue::Name("test".to_string())
     );
 }
 

@@ -73,8 +73,9 @@ pub fn parse_grid_line(value: &str) -> Option<GridLineValue> {
         }
         return Some(GridLineValue::Line(line));
     }
-    // 非数字值视为命名区域（如 "header"、"sidebar"）
-    // 合法的命名区域标识符：非空，不含 / 和数字开头
+    // Non-numeric custom identifiers are named areas or explicit named lines.
+    // https://drafts.csswg.org/css-grid-2/#typedef-grid-line
+    // A named area is resolved first; otherwise the identifier names a grid line.
     if !value.is_empty() && !value.starts_with(|c: char| c.is_ascii_digit()) && !value.contains('/') {
         return Some(GridLineValue::Name(value.to_string()));
     }

@@ -1527,7 +1527,7 @@ pub enum GridLineValue {
     Line(i16),
     /// span N（跨越 N 条轨道）。
     Span(u16),
-    /// 命名区域（grid-area: header / grid-row-start: sidebar）。
+    /// 命名区域或命名网格线（grid-area: header / grid-column-start: content-start）。
     Name(String),
 }
 
