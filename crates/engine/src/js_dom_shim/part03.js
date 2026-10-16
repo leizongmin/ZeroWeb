@@ -10821,6 +10821,18 @@
           get: function (_t, p) {
             if (p === 'length') return attrs.length;
             if (p === 'item') return function (i) { var k = i | 0; return k >= 0 && k < attrs.length ? _zwMAttrNS(attrs[k], node) : null; };
+            // https://dom.spec.whatwg.org/#interface-namednodemap
+            if (typeof Symbol !== 'undefined' && p === Symbol.iterator) {
+              return function () {
+                var i = 0;
+                return { next: function () {
+                  return i < attrs.length
+                    ? { value: _zwMAttrNS(attrs[i++], node), done: false }
+                    : { value: undefined, done: true };
+                } };
+              };
+            }
+            if (typeof p !== 'string') return undefined;
             if (p === 'getNamedItem') return function (n) { n = String(n); for (var i = 0; i < attrs.length; i++) if (attrs[i].name === n) return _zwMAttrNS(attrs[i], node); return null; };
             // R3022/R3023 mutable tree：set/removeNamedItem 经 node.setAttribute/removeAttribute
             //（attrs 数组真变 + IDL 反射），返旧 Attr（_zwMakeAttr 真实例）。
@@ -10864,10 +10876,13 @@
           // 与 _attributesProxy 的 has trap 同语义（length + 有效索引）。
           has: function (_t, p) {
             if (p === 'length') return true;
+            if (typeof Symbol !== 'undefined' && p === Symbol.iterator) return true;
+            if (typeof p !== 'string') return false;
             var idx = parseInt(p, 10);
             return !isNaN(idx) && String(idx) === String(p) && idx >= 0 && idx < attrs.length;
           },
           getOwnPropertyDescriptor: function (_t, p) {
+            if (typeof p !== 'string') return undefined;
             var idx = parseInt(p, 10);
             if (!isNaN(idx) && String(idx) === String(p) && idx >= 0 && idx < attrs.length) {
               return { value: _zwMakeAttr(attrs[idx].name, attrs[idx].value, node), writable: false, enumerable: true, configurable: true };
@@ -15151,8 +15166,24 @@ return e;
       }
       return list;
     }
+    var iteratorMethod = typeof Symbol !== 'undefined' && Symbol.iterator
+      ? function () {
+        var index = 0;
+        return {
+          next: function () {
+            var list = snapshot();
+            return index < list.length
+              ? { value: list[index++], done: false }
+              : { value: undefined, done: true };
+          },
+        };
+      }
+      : null;
     return new Proxy({ length: 0 }, {
       get: function(_t, prop) {
+        // https://dom.spec.whatwg.org/#interface-htmlcollection
+        if (iteratorMethod && prop === Symbol.iterator) return iteratorMethod;
+        if (typeof prop !== 'string') return undefined;
         var list = snapshot();
         if (prop === 'length') return list.length;
         if (prop === 'item') return function(i) { return list[i] || null; };
@@ -15179,6 +15210,8 @@ return e;
         return list[prop];
       },
       has: function(_t, prop) {
+        if (iteratorMethod && prop === Symbol.iterator) return true;
+        if (typeof prop !== 'string') return false;
         var idx = parseInt(prop, 10);
         if (!isNaN(idx) && String(idx) === String(prop)) {
           var list = snapshot();
@@ -15219,6 +15252,19 @@ return e;
     return new Proxy({}, {
       get: function(_t, prop) {
         var list = globalThis.document.querySelectorAll(sel + ' option');
+        // https://html.spec.whatwg.org/multipage/common-dom-interfaces.html#the-htmloptionscollection-interface
+        if (typeof Symbol !== 'undefined' && prop === Symbol.iterator) {
+          return function () {
+            var index = 0;
+            return { next: function () {
+              var current = globalThis.document.querySelectorAll(sel + ' option');
+              return index < current.length
+                ? { value: current[index++], done: false }
+                : { value: undefined, done: true };
+            } };
+          };
+        }
+        if (typeof prop !== 'string') return undefined;
         if (prop === 'length') return list.length;
         if (prop === 'item') return function(i) { return list[i] || null; };
         // t8f：namedItem——HTMLOptionsCollection 同 HTMLCollection.namedItem 语义
@@ -15637,6 +15683,7 @@ return e;
             };
           };
         }
+        if (typeof p !== 'string') return undefined;
         var names = readNames();
         var idx = parseInt(p, 10);
         if (!isNaN(idx) && String(idx) === String(p) && idx >= 0 && idx < names.length) {
@@ -15664,6 +15711,8 @@ return e;
         // Array.prototype.map/forEach 经 `k in O`（HasProperty）判定——须对有效数值索引返 true，
         // 否则索引被当 hole 跳过（map 出空槽）。匹配 real NamedNodeMap 的 array-like 语义。
         if (p === 'length') return true;
+        if (typeof Symbol !== 'undefined' && p === Symbol.iterator) return true;
+        if (typeof p !== 'string') return false;
         var names = readNames();
         var idx = parseInt(p, 10);
         return !isNaN(idx) && String(idx) === String(p) && idx >= 0 && idx < names.length;
@@ -15692,6 +15741,7 @@ return e;
         if (p === 'length') {
           return { value: names.length, writable: false, enumerable: false, configurable: true };
         }
+        if (typeof p !== 'string') return undefined;
         var idx = parseInt(p, 10);
         if (!isNaN(idx) && String(idx) === String(p) && idx >= 0 && idx < names.length) {
           return { value: attrObj(names[idx]), writable: false, enumerable: true, configurable: true };

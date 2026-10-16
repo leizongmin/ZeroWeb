@@ -1757,7 +1757,10 @@ fn expand_grid_axis(
 ///
 /// https://drafts.csswg.org/css-grid-2/#placement-shorthands
 ///
+/// 单个命名区域会同时设置四个 line longhand；单个数字/auto 只设置 row-start。
+///
 /// `grid-area: 1` → row-start: 1
+/// `grid-area: header` → row-start/end and column-start/end: header
 /// `grid-area: 1 / 2` → row-start: 1, col-start: 2
 /// `grid-area: 1 / 2 / 3` → row-start: 1, col-start: 2, row-end: 3
 /// `grid-area: 1 / 2 / 3 / 4` → row-start: 1, col-start: 2, row-end: 3, col-end: 4
@@ -1777,6 +1780,18 @@ fn expand_grid_area(value: &str, important: bool, specificity: (u32, u32, u32)) 
     // 用 `/` 分割，但 span 内部可能有空格
     let parts: Vec<&str> = value.split('/').map(|s| s.trim()).collect();
     match parts.len() {
+        1 if matches!(
+            crate::property::parse::parse_grid_line(parts[0]),
+            Some(crate::property::GridLineValue::Name(_))
+        ) =>
+        {
+            vec![
+                mk("grid-row-start", parts[0]),
+                mk("grid-row-end", parts[0]),
+                mk("grid-column-start", parts[0]),
+                mk("grid-column-end", parts[0]),
+            ]
+        }
         1 => vec![
             mk("grid-row-start", parts[0]),
             mk("grid-row-end", "auto"),

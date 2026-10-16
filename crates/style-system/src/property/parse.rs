@@ -73,8 +73,9 @@ pub fn parse_grid_line(value: &str) -> Option<GridLineValue> {
         }
         return Some(GridLineValue::Line(line));
     }
-    // 非数字值视为命名区域（如 "header"、"sidebar"）
-    // 合法的命名区域标识符：非空，不含 / 和数字开头
+    // Non-numeric custom identifiers are named areas or explicit named lines.
+    // https://drafts.csswg.org/css-grid-2/#typedef-grid-line
+    // A named area is resolved first; otherwise the identifier names a grid line.
     if !value.is_empty() && !value.starts_with(|c: char| c.is_ascii_digit()) && !value.contains('/') {
         return Some(GridLineValue::Name(value.to_string()));
     }
@@ -177,7 +178,9 @@ fn parse_grid_track_list(value: &str, allow_repeat: bool) -> Option<String> {
 
     let mut explicit_track_count = 0usize;
     for token in &tokens {
-        let count = if allow_repeat && grid_track_function_inner(token, "repeat").is_some() {
+        let count = if allow_repeat && grid_line_names_supported(token) {
+            0
+        } else if allow_repeat && grid_track_function_inner(token, "repeat").is_some() {
             parse_grid_repeat_track_count(token)?
         } else if grid_single_track_supported(token, allow_repeat) {
             1
@@ -189,7 +192,7 @@ fn parse_grid_track_list(value: &str, allow_repeat: bool) -> Option<String> {
             return None;
         }
     }
-    Some(tokens.join(" "))
+    (explicit_track_count > 0).then(|| tokens.join(" "))
 }
 
 fn parse_grid_repeat_track_count(token: &str) -> Option<usize> {
@@ -198,18 +201,26 @@ fn parse_grid_repeat_track_count(token: &str) -> Option<usize> {
     let count = inner[..comma].trim();
     let track_list = inner[comma + 1..].trim();
     let tracks = tokenize_grid_track_list(track_list)?;
-    if tracks.is_empty() || tracks.iter().any(|track| !grid_single_track_supported(track, true)) {
+    if tracks.is_empty()
+        || tracks
+            .iter()
+            .any(|track| !grid_line_names_supported(track) && !grid_single_track_supported(track, true))
+    {
+        return None;
+    }
+    let track_count = tracks.iter().filter(|track| !grid_line_names_supported(track)).count();
+    if track_count == 0 {
         return None;
     }
     if count.eq_ignore_ascii_case("auto-fill") || count.eq_ignore_ascii_case("auto-fit") {
-        return Some(tracks.len());
+        return Some(track_count);
     }
     let count = count.parse::<usize>().ok()?;
     if count == 0 {
         return None;
     }
     count
-        .checked_mul(tracks.len())
+        .checked_mul(track_count)
         .filter(|total| *total <= i16::MAX as usize)
 }
 
@@ -218,11 +229,7 @@ fn grid_single_track_supported(token: &str, allow_fit_content: bool) -> bool {
     if token.eq_ignore_ascii_case("auto") || grid_content_track_keyword(token) {
         return true;
     }
-    if grid_non_negative_number_with_suffix(token, "fr").is_some()
-        || grid_non_negative_number_with_suffix(token, "px").is_some()
-        || grid_non_negative_number_with_suffix(token, "%").is_some()
-        || grid_zero_number(token)
-    {
+    if grid_non_negative_number_with_suffix(token, "fr").is_some() || grid_length_percentage_supported(token) {
         return true;
     }
 
@@ -242,6 +249,31 @@ fn grid_single_track_supported(token: &str, allow_fit_content: bool) -> bool {
     false
 }
 
+/// CSS Grid named-line groups annotate track boundaries; they do not add tracks.
+/// https://drafts.csswg.org/css-grid-2/#typedef-line-names
+fn grid_line_names_supported(value: &str) -> bool {
+    let Some(names) = value.strip_prefix('[').and_then(|value| value.strip_suffix(']')) else {
+        return false;
+    };
+    let mut count = 0;
+    for token in Tokenizer::new(names).collect_tokens() {
+        match token {
+            Token::Whitespace | Token::Comment(_) => {}
+            Token::Ident(name)
+                if !matches!(
+                    name.to_ascii_lowercase().as_str(),
+                    "auto" | "span" | "default" | "inherit" | "initial" | "unset" | "revert" | "revert-layer"
+                ) =>
+            {
+                count += 1;
+            }
+            Token::Eof => break,
+            _ => return false,
+        }
+    }
+    count > 0
+}
+
 fn grid_min_track_supported(value: &str) -> bool {
     value.eq_ignore_ascii_case("auto") || grid_content_track_keyword(value) || grid_length_percentage_supported(value)
 }
@@ -249,8 +281,8 @@ fn grid_min_track_supported(value: &str) -> bool {
 fn grid_max_track_supported(value: &str) -> bool {
     value.eq_ignore_ascii_case("auto")
         || grid_content_track_keyword(value)
-        || grid_length_percentage_supported(value)
         || grid_non_negative_number_with_suffix(value, "fr").is_some()
+        || grid_length_percentage_supported(value)
 }
 
 /// R5038（css-grid-2 §7.2 `<track-breadth>` / `<inflexible-breadth>`）：min-content /
@@ -261,10 +293,24 @@ fn grid_content_track_keyword(value: &str) -> bool {
     value.eq_ignore_ascii_case("min-content") || value.eq_ignore_ascii_case("max-content")
 }
 
+/// CSS Grid track breadths accept non-negative length-percentage values.
+/// https://drafts.csswg.org/css-grid-2/#typedef-track-breadth
+/// https://drafts.csswg.org/css-values-4/#lengths
 fn grid_length_percentage_supported(value: &str) -> bool {
-    grid_non_negative_number_with_suffix(value, "px").is_some()
-        || grid_non_negative_number_with_suffix(value, "%").is_some()
-        || grid_zero_number(value)
+    let Some(length) = values::parse_length(value) else {
+        return false;
+    };
+    match length {
+        LengthValue::Px(number)
+        | LengthValue::Em(number)
+        | LengthValue::Rem(number)
+        | LengthValue::Vh(number)
+        | LengthValue::Vw(number)
+        | LengthValue::Vmin(number)
+        | LengthValue::Vmax(number)
+        | LengthValue::Percentage(number) => number.is_finite() && number >= 0.0,
+        _ => false,
+    }
 }
 
 fn grid_non_negative_number_with_suffix<'a>(value: &'a str, suffix: &str) -> Option<&'a str> {
@@ -282,12 +328,6 @@ fn strip_ascii_case_suffix<'a>(value: &'a str, suffix: &str) -> Option<&'a str> 
         return None;
     }
     value.get(..suffix_start).map(str::trim)
-}
-
-fn grid_zero_number(value: &str) -> bool {
-    value
-        .parse::<f32>()
-        .is_ok_and(|number| number.is_finite() && number == 0.0)
 }
 
 fn grid_track_function_inner<'a>(token: &'a str, name: &str) -> Option<&'a str> {
@@ -308,9 +348,20 @@ fn tokenize_grid_track_list(value: &str) -> Option<Vec<String>> {
     let mut tokens = Vec::new();
     let mut current = String::new();
     let mut depth = 0u32;
+    let mut line_names = false;
 
     for ch in value.chars() {
         match ch {
+            '[' if !line_names => {
+                line_names = true;
+                current.push(ch);
+            }
+            '[' => return None,
+            ']' if line_names => {
+                line_names = false;
+                current.push(ch);
+            }
+            ']' => return None,
             '(' => {
                 depth += 1;
                 current.push(ch);
@@ -322,7 +373,7 @@ fn tokenize_grid_track_list(value: &str) -> Option<Vec<String>> {
                 depth -= 1;
                 current.push(ch);
             }
-            c if c.is_whitespace() && depth == 0 => {
+            c if c.is_whitespace() && depth == 0 && !line_names => {
                 if !current.is_empty() {
                     tokens.push(std::mem::take(&mut current));
                 }
@@ -331,7 +382,7 @@ fn tokenize_grid_track_list(value: &str) -> Option<Vec<String>> {
         }
     }
 
-    if depth != 0 {
+    if depth != 0 || line_names {
         return None;
     }
     if !current.is_empty() {
@@ -1366,5 +1417,16 @@ mod tests {
         // 近似拼写仍拒绝
         assert!(parse_grid_template_track_list("min-contentt").is_none());
         assert!(parse_grid_template_track_list("max-contentt").is_none());
+    }
+
+    #[test]
+    fn parse_grid_track_list_accepts_none_as_line_name() {
+        // CSS Grid 2 line names use <custom-ident>, which excludes auto and span but allows none.
+        assert_eq!(
+            parse_grid_template_track_list("[none] 1fr"),
+            Some(Some("[none] 1fr".to_string()))
+        );
+        assert!(parse_grid_template_track_list("[auto] 1fr").is_none());
+        assert!(parse_grid_template_track_list("[span] 1fr").is_none());
     }
 }

@@ -1,6 +1,78 @@
 // Auto-generated test file — split from layout-engine/converter.rs
 use super::super::*;
 
+#[test]
+fn test_convert_grid_tracks_ignores_named_line_blocks_for_track_sizing() {
+    let mut style = ComputedStyle::default();
+    style.grid_template_columns = Some(
+        "[full-start left-sidebar-start] minmax(15rem, 1fr) [left-sidebar-end] 2rem [content-start] minmax(0, 48rem) [content-end] 2rem [right-sidebar-start] minmax(15rem, 1fr) [full-end right-sidebar-end]".to_string(),
+    );
+    let taffy_style = computed_style_to_taffy(&style, None, 1366.0, 768.0);
+    assert_eq!(
+        taffy_style.grid_template_columns.len(),
+        5,
+        "named-line blocks describe track boundaries and do not create tracks"
+    );
+    assert_eq!(taffy_style.grid_template_column_names.len(), 6);
+    assert_eq!(
+        taffy_style.grid_template_column_names[0],
+        ["full-start", "left-sidebar-start"]
+    );
+    assert_eq!(taffy_style.grid_template_column_names[1], ["left-sidebar-end"]);
+    assert_eq!(taffy_style.grid_template_column_names[2], ["content-start"]);
+    assert_eq!(taffy_style.grid_template_column_names[3], ["content-end"]);
+    assert_eq!(taffy_style.grid_template_column_names[4], ["right-sidebar-start"]);
+    assert_eq!(
+        taffy_style.grid_template_column_names[5],
+        ["full-end", "right-sidebar-end"]
+    );
+    match &taffy_style.grid_template_columns[0] {
+        taffy::style::GridTemplateComponent::Single(track) => {
+            assert_eq!(track.min.into_raw().value(), 240.0);
+            assert!(track.max.is_fr());
+            assert_eq!(track.max.into_raw().value(), 1.0);
+        }
+        other => panic!("expected minmax(15rem, 1fr), got {other:?}"),
+    }
+    match &taffy_style.grid_template_columns[1] {
+        taffy::style::GridTemplateComponent::Single(track) => {
+            assert_eq!(track.min.into_raw().value(), 32.0);
+            assert_eq!(track.max.into_raw().value(), 32.0);
+        }
+        other => panic!("expected 2rem track, got {other:?}"),
+    }
+    match &taffy_style.grid_template_columns[2] {
+        taffy::style::GridTemplateComponent::Single(track) => {
+            assert_eq!(track.min.into_raw().value(), 0.0);
+            assert_eq!(track.max.into_raw().value(), 768.0);
+        }
+        other => panic!("expected minmax(0, 48rem), got {other:?}"),
+    }
+    match &taffy_style.grid_template_columns[3] {
+        taffy::style::GridTemplateComponent::Single(track) => {
+            assert_eq!(track.min.into_raw().value(), 32.0);
+            assert_eq!(track.max.into_raw().value(), 32.0);
+        }
+        other => panic!("expected 2rem track, got {other:?}"),
+    }
+    match &taffy_style.grid_template_columns[4] {
+        taffy::style::GridTemplateComponent::Single(track) => {
+            assert_eq!(track.min.into_raw().value(), 240.0);
+            assert!(track.max.is_fr());
+            assert_eq!(track.max.into_raw().value(), 1.0);
+        }
+        other => panic!("expected minmax(15rem, 1fr), got {other:?}"),
+    }
+    assert_eq!(
+        parse_length_percentage("15rem", 16.0, 1366.0, 768.0),
+        Some((240.0, false))
+    );
+    assert_eq!(
+        parse_length_percentage("2rem", 16.0, 1366.0, 768.0),
+        Some((32.0, false))
+    );
+}
+
 /// 测试 InlineFlex display 映射为 taffy::Display::Flex。
 #[test]
 fn test_convert_inline_flex_display() {
@@ -538,7 +610,7 @@ fn test_grid_track_units_are_case_insensitive_in_converter() {
 /// 当子元素引用 grid-area 名称但父级容器没有定义 grid-template-areas 时，
 /// 所有命名引用应安全降级为 Auto，不会 panic。
 #[test]
-fn test_resolve_grid_placement_no_parent_areas() {
+fn test_resolve_grid_placement_preserves_explicit_names_without_parent_areas() {
     use zero_style_system::GridLineValue;
 
     let mut style = ComputedStyle::default();
@@ -550,10 +622,112 @@ fn test_resolve_grid_placement_no_parent_areas() {
     // parent_areas = None
     let (rs, re, cs, ce) = resolve_grid_placement(&style, None);
 
-    assert_eq!(rs, GridLineValue::Auto, "row-start 无 area map 时应为 Auto");
-    assert_eq!(re, GridLineValue::Auto, "row-end 无 area map 时应为 Auto");
-    assert_eq!(cs, GridLineValue::Auto, "col-start 无 area map 时应为 Auto");
-    assert_eq!(ce, GridLineValue::Auto, "col-end 无 area map 时应为 Auto");
+    assert_eq!(rs, GridLineValue::Name("missing".to_string()));
+    assert_eq!(re, GridLineValue::Name("missing".to_string()));
+    assert_eq!(cs, GridLineValue::Name("missing".to_string()));
+    assert_eq!(ce, GridLineValue::Name("missing".to_string()));
+}
+
+#[test]
+fn test_converter_preserves_named_grid_line_placements() {
+    use zero_style_system::GridLineValue;
+    let mut style = ComputedStyle::default();
+    style.grid_template_columns = Some("[content-start] 1fr [content-end]".to_string());
+    style.grid_column_start = GridLineValue::Name("content-start".to_string());
+    style.grid_column_end = GridLineValue::Name("content-end".to_string());
+
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
+    assert_eq!(
+        taffy_style.grid_column.start,
+        taffy::style::GridPlacement::NamedLine("content-start".to_string(), 0)
+    );
+    assert_eq!(
+        taffy_style.grid_column.end,
+        taffy::style::GridPlacement::NamedLine("content-end".to_string(), 0)
+    );
+    assert_eq!(
+        taffy_style.grid_template_column_names,
+        [vec!["content-start".to_string()], vec!["content-end".to_string()]]
+    );
+}
+
+#[test]
+fn test_taffy_places_grid_child_at_explicit_named_lines() {
+    use zero_style_system::GridLineValue;
+
+    let mut container = ComputedStyle::default();
+    container.display = DisplayValue::Grid;
+    container.width = LengthValue::Px(300.0);
+    container.height = LengthValue::Px(40.0);
+    container.grid_template_columns = Some("[start] 100px [middle] 100px [end]".to_string());
+
+    let mut child = ComputedStyle::default();
+    child.width = LengthValue::Px(20.0);
+    child.height = LengthValue::Px(20.0);
+    child.grid_column_start = GridLineValue::Name("middle".to_string());
+    child.grid_column_end = GridLineValue::Name("end".to_string());
+
+    let mut taffy: taffy::TaffyTree<()> = taffy::TaffyTree::new();
+    let taffy_child_style = computed_style_to_taffy(&child, None, 300.0, 40.0);
+    let taffy_container_style = computed_style_to_taffy(&container, None, 300.0, 40.0);
+    let child_node = taffy.new_leaf(taffy_child_style.clone()).unwrap();
+    let root = taffy
+        .new_with_children(taffy_container_style.clone(), &[child_node])
+        .unwrap();
+    taffy
+        .compute_layout(
+            root,
+            taffy::geometry::Size {
+                width: taffy::style::AvailableSpace::Definite(300.0),
+                height: taffy::style::AvailableSpace::Definite(40.0),
+            },
+        )
+        .unwrap();
+
+    let layout = taffy.layout(child_node).unwrap();
+    assert_eq!(
+        layout.location.x,
+        100.0,
+        "container={taffy_container_style:?}; child={taffy_child_style:?}; root={:?}; child_layout={layout:?}",
+        taffy.layout(root).unwrap()
+    );
+    assert_eq!(layout.size.width, 20.0);
+}
+
+#[test]
+fn test_converter_preserves_named_lines_in_fixed_repeat() {
+    let mut style = ComputedStyle::default();
+    style.grid_template_columns = Some("[outer-start] repeat(2, [item-start] 1fr [item-end]) [outer-end]".to_string());
+
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
+    assert_eq!(taffy_style.grid_template_columns.len(), 2);
+    assert_eq!(taffy_style.grid_template_column_names.len(), 3);
+    assert_eq!(taffy_style.grid_template_column_names[0], ["outer-start", "item-start"]);
+    assert_eq!(taffy_style.grid_template_column_names[1], ["item-end", "item-start"]);
+    assert_eq!(taffy_style.grid_template_column_names[2], ["item-end", "outer-end"]);
+}
+
+#[test]
+fn test_converter_preserves_named_lines_in_auto_repeat() {
+    let mut style = ComputedStyle::default();
+    style.grid_template_columns =
+        Some("[outer-start] repeat(auto-fill, [item-start] minmax(100px, 1fr) [item-end]) [outer-end]".to_string());
+
+    let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
+    assert_eq!(taffy_style.grid_template_columns.len(), 1);
+    assert_eq!(taffy_style.grid_template_column_names.len(), 2);
+    assert_eq!(taffy_style.grid_template_column_names[0], ["outer-start"]);
+    assert_eq!(taffy_style.grid_template_column_names[1], ["outer-end"]);
+    match &taffy_style.grid_template_columns[0] {
+        taffy::style::GridTemplateComponent::Repeat(repeat) => {
+            assert_eq!(repeat.tracks.len(), 1);
+            assert_eq!(
+                repeat.line_names,
+                [vec!["item-start".to_string()], vec!["item-end".to_string()]]
+            );
+        }
+        other => panic!("expected auto-repeat component, got {other:?}"),
+    }
 }
 
 // ── 转换路径覆盖测试 ──

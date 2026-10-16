@@ -519,17 +519,17 @@ fn test_resolve_named_area_with_map() {
     let val = resolve_named_area(&GridLineValue::Name("header".to_string()), Some(&areas), "col-end");
     assert_eq!(val, GridLineValue::Line(3));
 
-    // 不存在的名称 → Auto
+    // 未匹配的名称保留为显式 named line，由 Taffy 按 line-name 列表解析。
     let val = resolve_named_area(
         &GridLineValue::Name("nonexistent".to_string()),
         Some(&areas),
         "row-start",
     );
-    assert_eq!(val, GridLineValue::Auto);
+    assert_eq!(val, GridLineValue::Name("nonexistent".to_string()));
 
-    // 没有 area map → Auto
+    // 没有 area map 时保留命名线，不能假设它是自动放置。
     let val = resolve_named_area(&GridLineValue::Name("header".to_string()), None, "row-start");
-    assert_eq!(val, GridLineValue::Auto);
+    assert_eq!(val, GridLineValue::Name("header".to_string()));
 
     // 非 Name 值不变
     let val = resolve_named_area(&GridLineValue::Line(2), Some(&areas), "row-start");
