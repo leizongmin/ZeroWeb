@@ -1,10 +1,18 @@
 # Web Crypto 兼容 — crypto.getRandomValues / randomUUID / subtle
 
-**版本**: v1.0
-**日期**: 2026-10-08
-**状态**: Active（已立项——无用户门控项；subtle 实现轮按切片自主推进）
+**版本**: v1.1
+**日期**: 2026-10-17
+**状态**: Active——M1 收口（corpus + runner 通道 + 基线 + csv 回填，2026-10-17）；
+下一步 M2 随机源/normalize/digest 语义修齐
 **执行模式**: WPT 驱动（上游 WebCryptoAPI corpus 为验收标尺）+ 实现与语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——加密面）
+
+> **▶ M1 基线（2026-10-17）**：subtests 32,717 = Pass 6,728（20.6%）+ Fail 25,988 +
+> Timeout 1；123 案执行（idlharness ×2 + secure-context sub.html 记账排除），5 案全绿。
+> 分域与失败簇见 [M1 基线 evidence](webcrypto-compat/evidence/2026-10-17-m1-baseline.md)。
+> M2 可执行清单：getRandomValues 大长度/Float/DataView 拒绝 ×12（DC-2 守护面）、
+> normalize-algorithm-name U+212A ASCII 折叠 ×4、digest 空 algorithm/转移 buffer ×16；
+> tentative XOF（cSHAKE/SHA3/K12）419F 挂账不修。
 
 > **▶ 拆分动机（2026-10-08 html5test 缺口立项，用户「立项」）**：html5test 加密
 > 节最大缺口；randomUUID/getRandomValues 已实现（js_dom_shim/part01b.js——含

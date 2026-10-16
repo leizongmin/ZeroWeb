@@ -2923,6 +2923,112 @@ pub fn run_compression_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(Stri
     cases
 }
 
+/// webcrypto-compat goal（26 / DC-1）corpus 目录——fetch 脚本
+/// `scripts/goals/26-webcrypto-compat.sh`（同 WPT_REV pin，git trees 深挖
+/// `lib.sh fetch_dir_deep`）拉取 `.any.js`/`.window.js` 用例与 vectors/support
+/// 到 `wpt-data/WebCryptoAPI/`（gitignored）。
+const WEBCRYPTO_TEST_DIR: &str = "WebCryptoAPI";
+
+/// [`WEBCRYPTO_TEST_DIR`] 用例名排除规则（runner 侧记账排除，fetch 侧全量拉取）。
+/// - `idlharness.*`：依赖 /resources/WebIDLParser.js 与 idlharness.js build 期生成
+///   资产，repo 内不存在，window 不可执行（compression idlharness 先例）。
+/// - `secure_context/` 的 `.sub.html` 为 include 资产非用例（扫描只取 .js 形态，
+///   天然排除）。
+fn webcrypto_case_skipped(relative: &str) -> bool {
+    let name = relative.rsplit('/').next().unwrap_or(relative);
+    name.starts_with("idlharness.")
+}
+
+/// Run the pinned upstream WebCryptoAPI window subset
+/// （webcrypto-compat goal M1 / DC-1——getRandomValues/randomUUID/subtle 分域基线）。
+/// 目录**递归**扫描 `.any.js` / `.window.js`（用例入口形态；语料埋二三层子目录），
+/// META script 自动解析（compression 先例；vectors/support 与用例同树，
+/// `/common/subset-tests.js`、`/common/gc.js` 由 fetch 脚本补拉），[`any_js_window_wrapper`]
+/// window 变体执行。排序收集保证基线顺序可复现。filter 按路径子串过滤。
+pub fn run_webcrypto_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+        Ok(source) => source,
+        Err(error) => {
+            return vec![(
+                format!("{WEBCRYPTO_TEST_DIR}/"),
+                vec![HarnessSubtestResult {
+                    name: "load testharness.js".into(),
+                    status: HarnessStatus::Fail,
+                    message: Some(error.to_string()),
+                }],
+            )];
+        }
+    };
+    // 递归收集用例路径（含子目录；排序保证跨轮基线可复现）。
+    let mut case_paths = Vec::new();
+    let mut stack = vec![wpt_root.join(WEBCRYPTO_TEST_DIR)];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.ends_with(".any.js") || name.ends_with(".window.js") {
+                case_paths.push(path);
+            }
+        }
+    }
+    case_paths.sort();
+    let mut cases = Vec::new();
+    for path in case_paths {
+        let relative = match path.strip_prefix(wpt_root) {
+            Ok(relative) => relative.to_string_lossy().to_string(),
+            Err(_) => continue,
+        };
+        if filter.is_some_and(|filter| !relative.contains(filter)) || webcrypto_case_skipped(&relative) {
+            continue;
+        }
+        let Ok(case_source) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let case_dir = Path::new(&relative).parent().unwrap_or_else(|| Path::new(""));
+        let mut support_sources = Vec::new();
+        let mut support_failed = false;
+        for script in wpt_meta_scripts(&relative, &case_source) {
+            let support_path = match script.strip_prefix('/') {
+                Some(root_relative) => wpt_root.join(root_relative),
+                None => wpt_root.join(case_dir).join(&script),
+            };
+            match std::fs::read_to_string(support_path) {
+                Ok(source) => support_sources.push((script, source)),
+                Err(error) => {
+                    cases.push((
+                        relative.clone(),
+                        vec![HarnessSubtestResult {
+                            name: format!("load WebCryptoAPI support {script}"),
+                            status: HarnessStatus::Fail,
+                            message: Some(error.to_string()),
+                        }],
+                    ));
+                    support_failed = true;
+                    break;
+                }
+            }
+        }
+        if support_failed {
+            continue;
+        }
+        let support_refs = support_sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        let html = any_js_window_wrapper(&relative, &support_refs, &case_source);
+        let results = run_testharness_html(wpt_root, &relative, &html, &harness_source, CASE_TIMEOUT);
+        cases.push((relative, results));
+    }
+    cases
+}
+
 /// Web Components goal（web-components M1 / DC-1）pinned upstream subset——三个目录的
 /// 递归 .html 用例清单。Cases are fetched by `fetch-web-components-subset.sh`（WPT
 /// 315976933870b34d6ea30e3f6643403edae678ba）into `wpt-data/`（gitignored）.

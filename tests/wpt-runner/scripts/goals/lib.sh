@@ -19,6 +19,7 @@ REPO_ROOT="$(cd "${LIB_DIR}/../../../.." && pwd)"
 WPT_DATA="${REPO_ROOT}/tests/wpt-runner/wpt-data"
 RAW_ROOT="https://raw.githubusercontent.com/web-platform-tests/wpt/${WPT_REV}"
 API_ROOT="https://api.github.com/repos/web-platform-tests/wpt/contents"
+GIT_TREES_ROOT="https://api.github.com/repos/web-platform-tests/wpt/git/trees"
 # GitHub API 认证（可选）：设 GITHUB_TOKEN 时列目录带 Bearer 头——未认证 60 req/h
 # 对大域多目录 goal（net-api 六 corpus）一轮拉不完；认证 5000 req/h。raw 拉取
 # （raw.githubusercontent.com）不走该配额，不受影响。
@@ -115,11 +116,89 @@ for entry in json.load(sys.stdin):
 
 FAILED_FETCHES=0
 
+# 深挖拉取（goal 脚本设 GOAL_FETCH_DEEP=1 时 goals_fetch_all 改走本函数）。
+# fetch_dir_html 只递归一层且逐目录打 Contents API（未认证 60 req/h）——语料埋在
+# 二三层子目录的域（WebCryptoAPI/sign_verify/*.any.js 等）够不着也列不完。
+# 本函数改用 git trees API：根树定位首段 + 子树 `recursive=1` 一次拿全量文件清单
+#（目录 1 段 = 2 次 API 调用，与文件数无关），文件本体仍走 fetch_raw（jsdelivr
+# CDN，不吃 API 配额）。扩展名分流与 fetch_dir_html 同规则。
+fetch_dir_deep() {
+  local dir="$1"
+  local local_dir="${WPT_DATA}/${dir}"
+  # 幂等快路径：目录已含 .any.js/.html 用例即视为已拉过（FORCE=1 重拉）。
+  if [[ "${FORCE:-0}" != "1" && -d "${local_dir}" ]]; then
+    if compgen -G "${local_dir}/*.any.js" > /dev/null || compgen -G "${local_dir}/*.html" > /dev/null; then
+      echo "  ${dir}: 已含用例，跳过深挖（FORCE=1 可强制重拉）"
+      return 0
+    fi
+  fi
+  # 首段 SHA 从根树（commit sha 可直接作 tree-ish）拿；多段目录逐层下钻。
+  local tree_sha segments seg query_sha
+  IFS='/' read -r -a segments <<< "${dir}"
+  query_sha="${WPT_REV}"
+  tree_sha=""
+  for seg in "${segments[@]}"; do
+    if ! tree_sha=$(curl --fail --location --silent --show-error --retry 3 \
+      --connect-timeout 8 --max-time 30 \
+      "${GH_API_AUTH[@]}" \
+      "${GIT_TREES_ROOT}/${query_sha}" \
+      | python3 -c 'import json,sys
+want = sys.argv[1]
+for entry in json.load(sys.stdin)["tree"]:
+    if entry["path"] == want:
+        print(entry["sha"])
+        break' "${seg}"); then
+      echo "  ${dir}: git trees 列「${seg}」失败（限流/网络）——跳过，稍后重跑续拉" >&2
+      return 0
+    fi
+    if [[ -z "${tree_sha}" ]]; then
+      echo "  ${dir}: 上游无「${seg}」目录——跳过" >&2
+      return 0
+    fi
+    query_sha="${tree_sha}"
+  done
+  # 子树递归清单：逐行 "type path"，只拉 blob 且按扩展名分流（同 fetch_dir_html）。
+  local listing
+  if ! listing=$(curl --fail --location --silent --show-error --retry 3 \
+    --connect-timeout 8 --max-time 60 \
+    "${GH_API_AUTH[@]}" \
+    "${GIT_TREES_ROOT}/${query_sha}?recursive=1" \
+    | python3 -c 'import json,sys
+d = json.load(sys.stdin)
+if d.get("truncated"):
+    print("TRUNCATED", file=sys.stderr)
+for entry in d["tree"]:
+    print(entry["type"], entry["path"])'); then
+    echo "  ${dir}: git trees 递归清单失败（限流/网络）——跳过，稍后重跑续拉" >&2
+    return 0
+  fi
+  local type name
+  while read -r type name; do
+    [[ -z "${name}" ]] && continue
+    [[ "${type}" != "blob" ]] && continue
+    case "${name}" in
+      *.worker.js) ;;
+      *.any.js)
+        if [[ "${GOAL_PULL_ANY_JS:-0}" == "1" ]]; then
+          fetch_raw "${dir}/${name}" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+        fi
+        ;;
+      *.html | *.js | *.json | *.xml | *.xhtml | *.svg)
+        fetch_raw "${dir}/${name}" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+        ;;
+    esac
+  done <<< "${listing}"
+}
+
 goals_fetch_all() {
   echo "== fetch 语料（pin ${WPT_REV:0:9}，FORCE=${FORCE:-0}）=="
   local dir
   for dir in "${DIRS[@]}"; do
-    fetch_dir_html "${dir}"
+    if [[ "${GOAL_FETCH_DEEP:-0}" == "1" ]]; then
+      fetch_dir_deep "${dir}"
+    else
+      fetch_dir_html "${dir}"
+    fi
   done
   if [[ "${FAILED_FETCHES}" -gt 0 ]]; then
     echo "  ⚠ ${FAILED_FETCHES} 个文件拉取失败（瞬时错误不计入中止；重跑脚本幂等续拉）" >&2

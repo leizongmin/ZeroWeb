@@ -50,6 +50,8 @@ Commands:
   testharness-dom  Run imported dom/ testharness cases (js-dom goal M4 / DC-3)
   testharness-selection  Run imported selection/ testharness cases (editing goal M1 / DC-1)
   testharness-compression  Run imported compression/ testharness cases (compression-compat goal M1 / DC-1)
+  testharness-webcrypto  Run imported WebCryptoAPI window testharness corpus
+                       (webcrypto-compat goal M1 / DC-1)
   testharness-html-semantics  Run imported html/semantics nine-domain testharness corpus
                        (html-semantics-compat goal M1 / DC-1)
   testharness-keyboard  Run imported keyboard testharness cases (keyboard-default-actions goal M1 / DC-1)
@@ -319,6 +321,7 @@ fn main() {
         "testharness-wasm" => cmd_testharness_wasm(&options, filter.as_deref()),
         "testharness-webstorage" => cmd_testharness_webstorage(&options, filter.as_deref()),
         "testharness-compression" => cmd_testharness_compression(&options, filter.as_deref()),
+        "testharness-webcrypto" => cmd_testharness_webcrypto(&options, filter.as_deref()),
         "testharness-html-semantics" => cmd_testharness_html_semantics(&options, filter.as_deref()),
         "testharness-fileapi" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
             testharness_fileapi::run_fileapi_cases(wpt_root, filter)
@@ -1131,6 +1134,52 @@ fn cmd_testharness_compression(options: &CliOptions, filter: Option<&str>) {
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| std::path::PathBuf::from("tests/wpt-runner/wpt-data"));
     let cases = testharness::run_compression_cases(&wpt_root, filter);
+    let failed = cases.iter().any(|(_, results)| {
+        results
+            .iter()
+            .any(|result| result.status != testharness::HarnessStatus::Pass)
+    });
+
+    match options.format {
+        OutputFormat::Json => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&cases).unwrap_or_else(|_| "[]".into())
+            );
+        }
+        OutputFormat::Text | OutputFormat::Tap => {
+            for (case, results) in &cases {
+                for result in results {
+                    println!("{:?} {case} :: {}", result.status, result.name);
+                    if let Some(message) = &result.message {
+                        println!("  {message}");
+                    }
+                }
+            }
+        }
+    }
+    if failed || cases.is_empty() {
+        std::process::exit(1);
+    }
+}
+
+/// `testharness-webcrypto` 子命令 — 递归跑导入的上游 `WebCryptoAPI/` window
+/// testharness 用例（webcrypto-compat goal M1 / DC-1——getRandomValues/randomUUID/
+/// subtle 分域基线）。
+///
+/// 用例由 `scripts/goals/26-webcrypto-compat.sh` 按需拉到 `wpt-data/WebCryptoAPI/`
+/// （gitignored；git trees 深挖 + /common 依赖补拉）；扫描根与 skip 规则见
+/// `testharness::run_webcrypto_cases`（idlharness 记账排除）。退出码：有用例
+/// 非 Pass 或用例集为空 → 1（与 testharness-compression 一致）。基线首跑即便大量
+/// Fail 也只用于记录通过率（`--format json` 捕获后写 evidence/），不作为 land 门禁。
+/// filter 按路径子串透传：`make testharness-webcrypto FILTER=digest`。
+fn cmd_testharness_webcrypto(options: &CliOptions, filter: Option<&str>) {
+    let wpt_root = options
+        .wpt_data
+        .as_deref()
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("tests/wpt-runner/wpt-data"));
+    let cases = testharness::run_webcrypto_cases(&wpt_root, filter);
     let failed = cases.iter().any(|(_, results)| {
         results
             .iter()
