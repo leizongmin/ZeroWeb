@@ -5386,3 +5386,160 @@ fn address_bar_focus_and_editing_reset_cursor_blink_phase() {
     let edited_phase = app.address_bar_cursor_phase_for_test();
     assert!(edited_phase > focused_phase, "地址栏按键应重置光标闪烁相位");
 }
+
+/// t47：关闭标签撤销 toast——关闭标签弹出底部 toast（5 秒窗口内可见），
+/// 点击「撤销」动作经真实点击路径恢复标签（shell recently_closed 栈弹出 +
+/// renderer 装载派发 + 地址栏同步），toast 随之清除。
+#[test]
+fn closed_tab_undo_toast_reopens_closed_tab() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+
+    let first = app.shell.active_tab_id().unwrap();
+    app.new_tab(Some("http://127.0.0.1:18080/page2.html"));
+    let second = app.shell.active_tab_id().unwrap();
+    assert_eq!(app.smoke_tab_ids().len(), 2);
+    assert!(app.smoke_closed_tab_toast().is_none(), "未关标签前无撤销 toast");
+
+    // 关闭活跃标签（第 2 个）→ 撤销 toast 可见。
+    app.close_active_tab();
+    assert_eq!(app.smoke_tab_ids().len(), 1);
+    let label = app.smoke_closed_tab_toast().expect("关闭标签后应显示撤销 toast");
+    assert!(!label.is_empty(), "toast 文案不应为空");
+    let (ux, uy, uw, uh) = app
+        .closed_tab_toast_undo_rect_for(1280, 900)
+        .expect("toast 可见时撤销命中区应存在");
+    assert!(uw > 0.0 && uh > 0.0, "撤销命中区应有面积");
+
+    // 经真实点击路径点击「撤销」→ 标签恢复（新标签承接原 URL）为活跃。
+    let (cx, cy) = ((ux + uw / 2.0) as f64, (uy + uh / 2.0) as f64);
+    app.handle_mouse_click(cx, cy, true, "Left");
+    app.handle_mouse_click(cx, cy, false, "Left");
+    assert_eq!(app.smoke_tab_ids().len(), 2, "撤销后应恢复为 2 个标签");
+    let restored = app.shell.active_tab_id().unwrap();
+    assert_ne!(restored, second, "恢复标签是新标签，不复用原 id");
+    assert_ne!(restored, first, "恢复标签应切换为活跃");
+    assert_eq!(
+        app.shell.tab(restored).and_then(|t| t.url()),
+        Some("http://127.0.0.1:18080/page2.html"),
+        "恢复的标签应保留原 URL"
+    );
+    assert_eq!(
+        app.smoke_address_bar_text(),
+        "http://127.0.0.1:18080/page2.html",
+        "撤销后地址栏应同步到恢复的标签"
+    );
+    assert!(app.smoke_closed_tab_toast().is_none(), "撤销动作后 toast 应清除");
+}
+
+/// t47：Ctrl+Shift+T 路径（app 级 reopen）与撤销 toast 共用 shell
+/// recently_closed 栈，恢复后 toast 清除、栈空后返回 false。
+#[test]
+fn reopen_last_closed_tab_consumes_shell_stack_and_clears_toast() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+
+    let first = app.shell.active_tab_id().unwrap();
+    app.close_active_tab();
+    assert!(app.smoke_closed_tab_toast().is_some());
+    assert!(app.reopen_last_closed_tab(), "栈非空时恢复应成功");
+    assert!(app.smoke_closed_tab_toast().is_none(), "恢复后 toast 应清除");
+    assert_ne!(app.shell.active_tab_id(), Some(first), "恢复标签是新标签并切为活跃");
+    assert!(!app.reopen_last_closed_tab(), "栈空后恢复应返回 false");
+    assert!(app.smoke_closed_tab_toast().is_none(), "栈空恢复失败时不应误弹 toast");
+}
+
+/// t48 测试辅助：注入足够高的文档快照（stub 无渲染，apply 落地时按文档钳制）。
+fn inject_scrollable_doc(app: &mut BrowserApp, tab: TabId) {
+    use crate::tab_snapshot::PageRenderResult;
+    let mut primitives = RenderPrimitives::new();
+    // 有高度的内容图元：painted 高度取图元扫描与布局高度的最小值，空图元会钳到 0。
+    primitives.add_fill(Rect::new(0.0, 0.0, 800.0, 5000.0), Color::rgb(240, 240, 240));
+    app.inject_tab_render_for_test(
+        tab,
+        PageRenderResult {
+            primitives,
+            dirty_rects: Vec::new(),
+        },
+        5000.0,
+    );
+}
+
+/// t48：back/forward 滚动位置保持——离开历史条目前保存偏移，返回时在页面
+/// 装载完成后恢复，前进回到新导航条目时从顶部开始（Chrome 同款会话内滚动保持）。
+/// 恢复经 page_loaded 落地（poll_tab_fetch 驱动），避免空白文档期被 clamp 压回 0。
+#[test]
+fn back_forward_restores_per_entry_scroll_offset() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    let tab = app.shell.active_tab_id().unwrap();
+
+    app.navigate_to("http://127.0.0.1:18080/index.html");
+    app.set_tab_scroll_for_test(tab, page_scroll::TabScrollState { x: 0.0, y: 500.0 });
+
+    // 前往第二页：滚动复位到顶部。
+    app.navigate_to("http://127.0.0.1:18080/page2.html");
+    assert_eq!(app.smoke_scroll_offset_y(), 0.0, "新导航应从页面顶部开始");
+
+    // 返回第一页：恢复挂起到页面装载完成（stub 无 page_loaded，手动落地；
+    // 真实事件驱动时机由 ui_driver e2e 覆盖）。
+    app.go_back();
+    assert_eq!(
+        app.pending_scroll_restore_for_test(),
+        Some((tab, 500.0)),
+        "返回后应挂起 500 的滚动恢复"
+    );
+    assert_eq!(
+        app.smoke_scroll_offset_y(),
+        0.0,
+        "装载完成前滚动应停在顶部（防空白文档期 clamp）"
+    );
+    inject_scrollable_doc(&mut app, tab);
+    app.apply_pending_scroll_restore_for_test(tab);
+    assert_eq!(app.smoke_scroll_offset_y(), 500.0, "落地后应恢复原滚动位置");
+
+    // 前进回第二页：恢复离开时的 0（顶部，不挂起）。
+    app.go_forward();
+    assert_eq!(app.pending_scroll_restore_for_test(), None);
+    assert_eq!(app.smoke_scroll_offset_y(), 0.0, "前进应恢复离开时的偏移");
+
+    // 二次往返且滚动变化后再次返回：取最新保存值。
+    app.set_tab_scroll_for_test(tab, page_scroll::TabScrollState { x: 0.0, y: 260.0 });
+    app.go_back();
+    assert_eq!(app.pending_scroll_restore_for_test(), Some((tab, 500.0)));
+    inject_scrollable_doc(&mut app, tab);
+    app.apply_pending_scroll_restore_for_test(tab);
+    assert_eq!(app.smoke_scroll_offset_y(), 500.0, "再次返回仍应恢复第一页的 500");
+    app.set_tab_scroll_for_test(tab, page_scroll::TabScrollState { x: 0.0, y: 260.0 });
+    app.go_forward();
+    assert_eq!(app.pending_scroll_restore_for_test(), Some((tab, 260.0)));
+    inject_scrollable_doc(&mut app, tab);
+    app.apply_pending_scroll_restore_for_test(tab);
+    assert_eq!(app.smoke_scroll_offset_y(), 260.0, "前进应恢复第二页最新保存的 260");
+}
+
+/// t48：无保存记录的条目（首次访问）返回时从顶部开始，不残留其他条目偏移。
+#[test]
+fn back_to_never_visited_entry_starts_at_top() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    let tab = app.shell.active_tab_id().unwrap();
+
+    app.navigate_to("http://127.0.0.1:18080/index.html");
+    app.set_tab_scroll_for_test(tab, page_scroll::TabScrollState { x: 0.0, y: 500.0 });
+    app.navigate_to("http://127.0.0.1:18080/page2.html");
+    app.set_tab_scroll_for_test(tab, page_scroll::TabScrollState { x: 0.0, y: 300.0 });
+
+    app.go_back();
+    assert_eq!(app.pending_scroll_restore_for_test(), Some((tab, 500.0)));
+    inject_scrollable_doc(&mut app, tab);
+    app.apply_pending_scroll_restore_for_test(tab);
+    assert_eq!(app.smoke_scroll_offset_y(), 500.0);
+    app.go_forward();
+    assert_eq!(app.pending_scroll_restore_for_test(), Some((tab, 300.0)));
+    inject_scrollable_doc(&mut app, tab);
+    app.apply_pending_scroll_restore_for_test(tab);
+    assert_eq!(app.smoke_scroll_offset_y(), 300.0, "第二页离开前的 300 应被保存");
+}

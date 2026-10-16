@@ -1275,6 +1275,30 @@ impl BrowserApp {
             }
         }
 
+        // 5c. 关闭标签撤销 toast 命中（浮层先于页面派发）。「撤销」动作恢复标签；
+        //     toast 其余区域点击仅关闭提示（不落入下方页面）。
+        if let Some((bx, by, bw, bh)) = self.closed_tab_toast_rect_for(self.physical_size.0, self.physical_size.1)
+            && x_f >= bx
+            && x_f < bx + bw
+            && y_f >= by
+            && y_f < by + bh
+        {
+            if button == "Left" && pressed {
+                if let Some((ux, uy, uw, uh)) = self.closed_tab_toast_undo_rect_for(self.physical_size.0, self.physical_size.1)
+                    && x_f >= ux
+                    && x_f < ux + uw
+                    && y_f >= uy
+                    && y_f < uy + uh
+                {
+                    self.reopen_last_closed_tab();
+                } else {
+                    self.closed_tab_toast = None;
+                    self.needs_redraw = true;
+                }
+            }
+            return;
+        }
+
         if y_f >= content_y
             && y_f < content_y + content_h
             && x_f >= content_x

@@ -538,8 +538,8 @@ impl BrowserApp {
                     self.needs_redraw = true;
                 }
                 "t" | "T" if self.shift_pressed => {
-                    // Ctrl+Shift+T：恢复最近关闭的标签。
-                    self.needs_redraw |= self.shell.reopen_last_closed_tab().is_some();
+                    // Ctrl+Shift+T：恢复最近关闭的标签（app 侧补齐 renderer 装载）。
+                    self.reopen_last_closed_tab();
                 }
                 "n" | "N" if self.shift_pressed => {
                     // Ctrl+Shift+N：新建无痕标签页，聚焦地址栏。

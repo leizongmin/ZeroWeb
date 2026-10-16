@@ -236,6 +236,13 @@ enum Step {
         visible: bool,
         contains: Option<String>,
     },
+    /// 关闭标签撤销 toast 断言（t47）：`visible` 为期望可见性；`contains` 可选校验文案。
+    AssertClosedTabToast {
+        visible: bool,
+        contains: Option<String>,
+    },
+    /// 点击关闭标签撤销 toast 的「撤销」动作（t47；toast 未显示时报错）。
+    ClickClosedTabToast,
     /// 压缩标签悬停 tooltip 断言（T35）：`visible` 为期望可见性；`contains` 可选
     /// 校验标题/URL。
     AssertTabTooltip {
@@ -244,6 +251,11 @@ enum Step {
     },
     /// 悬停第 `index` 个标签槽位中心（几何取自渲染缓存 tab_layout；只移动不点击）。
     HoverTab {
+        index: usize,
+    },
+    /// 点击第 `index` 个标签槽位的 close 按钮（t47；几何取自渲染缓存 tab_layout，
+    /// 与 app_input 关闭按钮命中同源：`tab_x + tab_w - 24s` 起 TAB_CLOSE_SIZE 方块）。
+    ClickTabClose {
         index: usize,
     },
     /// 滚轮滚动帧率基准（T36）：`steps` 次滚轮按 `interval_ms` 间隔派发，统计区间
@@ -443,6 +455,14 @@ impl Step {
                     .ok_or_else(|| bad("assert_download_toast requires boolean field \"visible\""))?,
                 contains: value.get("contains").and_then(Value::as_str).map(str::to_string),
             }),
+            "assert_closed_tab_toast" => Ok(Self::AssertClosedTabToast {
+                visible: value
+                    .get("visible")
+                    .and_then(Value::as_bool)
+                    .ok_or_else(|| bad("assert_closed_tab_toast requires boolean field \"visible\""))?,
+                contains: value.get("contains").and_then(Value::as_str).map(str::to_string),
+            }),
+            "click_closed_tab_toast" => Ok(Self::ClickClosedTabToast),
             "assert_tab_tooltip" => Ok(Self::AssertTabTooltip {
                 visible: value
                     .get("visible")
@@ -451,6 +471,9 @@ impl Step {
                 contains: value.get("contains").and_then(Value::as_str).map(str::to_string),
             }),
             "hover_tab" => Ok(Self::HoverTab {
+                index: num("index")? as usize,
+            }),
+            "click_tab_close" => Ok(Self::ClickTabClose {
                 index: num("index")? as usize,
             }),
             "bench_scroll" => Ok(Self::BenchScroll {
@@ -1225,6 +1248,50 @@ impl UiDriver {
                 );
                 Ok(())
             }
+            Step::AssertClosedTabToast { visible, contains } => {
+                let actual = app.smoke_closed_tab_toast();
+                match (visible, actual.as_ref()) {
+                    (true, None) => {
+                        return Err("assert_closed_tab_toast failed: toast not visible".to_string());
+                    }
+                    (false, Some(label)) => {
+                        return Err(format!(
+                            "assert_closed_tab_toast failed: toast still visible with {label:?}"
+                        ));
+                    }
+                    (true, Some(label)) => {
+                        if let Some(pattern) = contains
+                            && !label.contains(pattern.as_str())
+                        {
+                            return Err(format!(
+                                "assert_closed_tab_toast failed: label {label:?} does not contain {pattern:?}"
+                            ));
+                        }
+                    }
+                    (false, None) => {}
+                }
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} assert_closed_tab_toast visible={visible} label={actual:?} status=passed",
+                    self.next + 1
+                );
+                Ok(())
+            }
+            Step::ClickClosedTabToast => {
+                let Some((bx, by, bw, bh)) =
+                    app.closed_tab_toast_undo_rect_for(app.physical_size.0, app.physical_size.1)
+                else {
+                    return Err("click_closed_tab_toast: undo toast is not visible".to_string());
+                };
+                let (cx, cy) = ((bx + bw / 2.0) as f64, (by + bh / 2.0) as f64);
+                app.handle_mouse_move(cx, cy);
+                app.handle_mouse_click(cx, cy, true, "Left");
+                app.handle_mouse_click(cx, cy, false, "Left");
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} click_closed_tab_toast cx={cx} cy={cy}",
+                    self.next + 1
+                );
+                Ok(())
+            }
             Step::HoverTab { index } => {
                 let Some((cx, cy)) = app.smoke_tab_center(*index) else {
                     return Err(format!(
@@ -1235,6 +1302,29 @@ impl UiDriver {
                 app.handle_mouse_move(cx, cy);
                 tracing::info!(
                     "UI_DRIVER_STEP step={} hover_tab index={index} cx={cx} cy={cy}",
+                    self.next + 1
+                );
+                Ok(())
+            }
+            Step::ClickTabClose { index } => {
+                let id = app
+                    .smoke_tab_ids()
+                    .get(*index)
+                    .copied()
+                    .ok_or_else(|| format!("click_tab_close: no tab at index {index}"))?;
+                let Some((tx, tw)) = app.smoke_tab_rect(id) else {
+                    return Err(format!("click_tab_close: no rendered rect for tab at index {index}"));
+                };
+                let s = app.scale_factor;
+                // 命中区与 app_input 标签 close 按钮同源：close_x = tx + tw - 24s，
+                // y 以标签条中线为准（±TAB_CLOSE_SIZE/2 内）。
+                let cx = tx + tw - 24.0 * s + crate::layout::TAB_CLOSE_SIZE * s * 0.5;
+                let cy = (crate::layout::TAB_BAR_TOP_INSET + crate::layout::TAB_BAR_HEIGHT * 0.5) * s;
+                app.handle_mouse_move(cx as f64, cy as f64);
+                app.handle_mouse_click(cx as f64, cy as f64, true, "Left");
+                app.handle_mouse_click(cx as f64, cy as f64, false, "Left");
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} click_tab_close index={index} cx={cx} cy={cy}",
                     self.next + 1
                 );
                 Ok(())
