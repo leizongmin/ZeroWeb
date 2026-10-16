@@ -885,6 +885,23 @@ impl BrowserApp {
                     return;
                 }
             }
+            // 页面区域中键 → 命中链接则后台新标签打开（Chrome/Firefox 标配交互）。
+            // page_doc_point 已含内容区边界/查找栏排除/滚动与 zoom 坐标换算；
+            // 命中缓存 miss（首帧未绘制）返回 None，静默落到后续通用处理。
+            // href 是文档相对路径，与 Ctrl+点击路径同款先按当前文档 URL 解析。
+            if let Some((tab_id, doc_x, doc_y)) = self.page_doc_point(x_f, y_f)
+                && let Some(href) = self.tabs.hit_test_link(tab_id, doc_x, doc_y)
+            {
+                let url = resolve_clicked_link_url(
+                    &href,
+                    self.shell
+                        .tabs()
+                        .find(|tab| tab.id() == tab_id)
+                        .and_then(|tab| tab.url()),
+                );
+                self.new_tab_background(&url);
+                return;
+            }
         }
 
         // 左键点击时处理上下文菜单

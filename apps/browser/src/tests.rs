@@ -922,6 +922,104 @@ fn ctrl_tab_updates_address_bar_to_active_tab() {
     assert_eq!(app.address_bar_text(), "http://two.test/b.html");
 }
 
+/// Ctrl+Shift+Tab 应向反方向循环标签（正向由 ctrl_tab_cycles_to_next_tab 覆盖）。
+#[test]
+fn ctrl_shift_tab_cycles_to_previous_tab() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    let first = app.shell.active_tab_id().unwrap();
+    app.new_tab(None);
+    let second = app.shell.active_tab_id().unwrap();
+
+    // Ctrl+Shift+Tab 从第二个标签回绕到第一个。
+    app.handle_key("Control", true, None);
+    app.handle_key("Shift", true, None);
+    app.handle_key("Tab", true, None);
+    assert_eq!(app.shell.active_tab_id().unwrap(), first);
+
+    // 再按回到第二个（循环）。
+    app.handle_key("Tab", true, None);
+    assert_eq!(app.shell.active_tab_id().unwrap(), second);
+
+    app.handle_key("Shift", false, None);
+    app.handle_key("Control", false, None);
+}
+
+/// 页面内容区中键点击链接 → 后台新标签打开，活跃标签不变（Chrome/Firefox 标配交互）。
+/// href 为文档相对路径时按当前文档 URL 解析（与 Ctrl+点击路径同源）。
+#[test]
+fn middle_click_page_link_opens_background_tab() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (800, 600);
+    app.scale_factor = 1.0;
+    let first = app.shell.active_tab_id().unwrap();
+    app.ensure_webview(first);
+    // shell.navigate 设置 shell 侧文档 URL（相对 href 解析的 base），再注入页面内容。
+    app.shell.navigate("https://example.com/docs/index.html");
+    app.load_webview_html(
+        first,
+        r#"<html><body style="margin:0"><a href="target.html" style="display:block;padding:10px">Example</a></body></html>"#,
+        None,
+    );
+
+    // 链接 display:block 铺满首行，内容区左上角即命中
+    // （与 floating_link_status_shows_on_link_hover 同坐标基准）。
+    let (cx, cy, _, _) = app.page_content_rect();
+    app.handle_mouse_click((cx + 50.0) as f64, (cy + 25.0) as f64, true, "Middle");
+    app.handle_mouse_click((cx + 50.0) as f64, (cy + 25.0) as f64, false, "Middle");
+
+    assert_eq!(app.smoke_tab_ids().len(), 2, "middle click on link must open a new tab");
+    assert_eq!(
+        app.smoke_active_tab_id(),
+        Some(first),
+        "middle click must open the link in a background tab"
+    );
+    let opened = app
+        .smoke_tab_ids()
+        .into_iter()
+        .find(|&id| id != first)
+        .and_then(|id| app.smoke_tab_url(id));
+    assert_eq!(
+        opened.as_deref(),
+        Some("https://example.com/docs/target.html"),
+        "relative href must resolve against the document URL"
+    );
+}
+
+/// 地址栏 Alt+Enter：在后台新标签打开输入 URL，当前标签不变、地址栏恢复当前标签 URL。
+#[test]
+fn alt_enter_in_address_bar_opens_background_tab() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    let first = app.shell.active_tab_id().unwrap();
+    app.shell.navigate("http://one.test/a.html");
+
+    // Ctrl+L 聚焦地址栏，逐字键入 URL（真实键路径）。
+    app.handle_key("Control", true, None);
+    app.handle_key("l", true, None);
+    app.handle_key("Control", false, None);
+    assert!(app.address_bar_focused, "Ctrl+L must focus the address bar");
+    for ch in "http://two.test/b.html".chars() {
+        app.handle_key(&ch.to_string(), true, None);
+    }
+
+    // Alt+Enter → 后台新标签。
+    app.handle_key("Alt", true, None);
+    app.handle_key("Enter", true, None);
+    app.handle_key("Alt", false, None);
+
+    assert_eq!(app.smoke_tab_ids().len(), 2, "Alt+Enter must open a new tab");
+    assert_eq!(
+        app.smoke_active_tab_id(),
+        Some(first),
+        "Alt+Enter must not switch the active tab"
+    );
+    assert!(!app.address_bar_focused, "address bar must unfocus after Alt+Enter");
+    assert_eq!(
+        app.address_bar_text(),
+        "http://one.test/a.html",
+        "address bar must show the unchanged active tab URL after Alt+Enter"
+    );
+}
+
 /// Ctrl+H 应打开历史页。
 #[test]
 fn ctrl_h_opens_history_page() {
