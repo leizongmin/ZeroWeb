@@ -397,7 +397,16 @@ impl BrowserApp {
                     } else {
                         url
                     };
-                    self.navigate_to(&nav_url);
+                    if self.alt_pressed {
+                        // Alt+Enter：在后台新标签打开，当前标签不变（任务包 T46；
+                        // 活跃标签未切走，地址栏恢复显示当前标签 URL）。入口归一化
+                        // 与 navigate_to 同源（无 scheme 补全、相对路径解析）。
+                        let nav_url = normalize_url(&resolve_path_relative_url(&nav_url, &self.shell), &self.shell);
+                        self.new_tab_background(&nav_url);
+                        self.update_address_bar_from_active_tab();
+                    } else {
+                        self.navigate_to(&nav_url);
+                    }
                 }
                 self.address_bar_focused = false;
                 self.address_bar_ime_preedit.clear();
