@@ -728,3 +728,6 @@ mod r5156_multicol_empty_unbreakable_tests;
 /// R5157 contain:size 的 grid track 几何尺寸化 + grid-gap legacy 别名
 ///（css-contain-1 §3.1 × css-align-3；contain-size-grid-002 驱动）。
 mod r5157_contain_size_grid_tests;
+/// R5158 body→viewport overflow 传播的 taffy 半边——body{overflow:hidden} 父子
+/// margin 塌缩归位（css-overflow-3 §3.3；contain-size-grid-002 残差驱动）。
+mod r5158_body_overflow_prop_taffy_tests;

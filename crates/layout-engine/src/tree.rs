@@ -2785,6 +2785,13 @@ fn grid_last_baseline_end_enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var("ZW_GRID_LAST_BASELINE_END").as_deref() != Ok("0"))
 }
 
+/// R5158 kill-switch 读取：`ZW_BODY_OVERFLOW_VISIBLE=0` 回退 body→viewport overflow
+/// 传播的 taffy 半边（css-overflow-3 §3.3）。
+fn body_overflow_visible_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_BODY_OVERFLOW_VISIBLE").as_deref() != Ok("0"))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build_subtree(
     ctx: &mut BuildContext,
@@ -3469,6 +3476,44 @@ fn build_subtree(
             taffy_style.overflow.x = taffy::style::Overflow::Hidden;
             taffy_style.overflow.y = taffy::style::Overflow::Hidden;
         }
+    }
+
+    // R5158（CSS Overflow 3 §3.3 body→viewport 传播的 taffy 半边）：html 两轴 visible
+    // 且 body 非 visible 时，body 的 used overflow = visible（R3923 已在 engine.rs 落实
+    // LayoutBox 层——裁剪与 postprocess BFC 判定归位），但 taffy 样式仍按 computed
+    // Hidden 建 is_scroll_container → taffy 父子 margin 折叠被抑制：body{overflow:hidden}
+    // 的首子 `<p>` margin 不与 body 塌缩，内容整体 +8px（contain-size-grid-002 残差
+    // 0.62% 实证，chromium 侧塌缩照常）。此处把传播同步到 taffy 样式，使 taffy 折叠
+    // 行为与 used value 一致。传播条件与 engine.rs R3923 同源（body 亲父 html + html
+    // 两轴 visible + body 任一轴非 visible + 双方无 containment）；视口消费半边仍为
+    // no-op（ZW 无视口滚动，R3923 注记）。仅影响 taffy 折叠，不影响视觉裁剪。
+    // kill-switch `ZW_BODY_OVERFLOW_VISIBLE=0`。
+    // driving: css/css-contain/contain-size-grid-002（残差）。
+    if body_overflow_visible_enabled()
+        && (computed.overflow_x != OverflowValue::Visible || computed.overflow_y != OverflowValue::Visible)
+        && matches!(
+            computed.contain,
+            zero_style_system::property::types::ContainComputedValue::None
+        )
+        && doc
+            .get(dom_id)
+            .is_some_and(|n| matches!(&n.kind, zero_dom::NodeKind::Element(e) if e.local_name() == "body"))
+        && doc.parent_node(dom_id).is_some_and(|pid| {
+            matches!(
+                doc.get(pid).map(|n| &n.kind),
+                Some(zero_dom::NodeKind::Element(pe)) if pe.local_name() == "html"
+            ) && styles.get(&pid).is_some_and(|ps| {
+                ps.overflow_x == OverflowValue::Visible
+                    && ps.overflow_y == OverflowValue::Visible
+                    && matches!(
+                        ps.contain,
+                        zero_style_system::property::types::ContainComputedValue::None
+                    )
+            })
+        })
+    {
+        taffy_style.overflow.x = taffy::style::Overflow::Visible;
+        taffy_style.overflow.y = taffy::style::Overflow::Visible;
     }
 
     // R3755（CSS 2.1 §9.4.1 + CSS Containment §3/§4）：建立 BFC 的元素——display:flow-root、
