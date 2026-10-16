@@ -19,6 +19,20 @@ fn test_r645_sea_word_script_classification() {
     assert!(is_sea_word_script('\u{0E81}')); // Lao ກ
     assert!(is_sea_word_script('\u{1000}')); // Myanmar ႀ
     assert!(is_sea_word_script('\u{1780}')); // Khmer ក
+    // R5149 扩展：UAX #14 LB=SA 全集 + 无词间空格东南亚婆罗米系文字
+    assert!(is_sea_word_script('\u{1950}')); // Tai Le ᥐ
+    assert!(is_sea_word_script('\u{1A20}')); // Tai Tham ᨠ
+    assert!(is_sea_word_script('\u{1A00}')); // Buginese ᨀ
+    assert!(is_sea_word_script('\u{1B05}')); // Balinese ᬅ
+    assert!(is_sea_word_script('\u{1B85}')); // Sundanese ᮅ
+    assert!(is_sea_word_script('\u{1BC0}')); // Batak ᭀ
+    assert!(is_sea_word_script('\u{A984}')); // Javanese ꦄ
+    assert!(is_sea_word_script('\u{A9E0}')); // Javanese 扩展
+    assert!(is_sea_word_script('\u{AA80}')); // Cham ꪀ
+    assert!(is_sea_word_script('\u{11700}')); // Ahom 𑜀
+    assert!(is_sea_word_script('\u{AA60}')); // Myanmar 扩展 A
+    // 有词间空格的印度婆罗米系文字不按字符断行（Devanagari 词间有空格）
+    assert!(!is_sea_word_script('\u{0905}')); // Devanagari अ
     // 非 SEA：ASCII / CJK / 其他文字
     assert!(!is_sea_word_script('a'));
     assert!(!is_sea_word_script(' '));
@@ -43,6 +57,16 @@ fn test_r645_sea_text_per_char_break() {
         let non_ws: Vec<char> = w.chars().filter(|c| !c.is_whitespace()).collect();
         assert_eq!(non_ws.len(), 1, "每个 SEA 单词为单字符：{w:?}");
     }
+}
+
+/// R5149：Javanese 等 LB=SA 外无空格文字同样获得 fallback 断行点。
+/// WPT css-text line-breaking-023：lang="jv-Java" 无空格文本必须换行（不允许溢出）。
+#[test]
+fn test_r5149_javanese_text_per_char_break() {
+    let ctx = InlineFormattingContext::new(96.0); // 6em 容器
+    // Javanese 基字 ꦱ + 组合符 ꦼ + 基字 ꦧ：3 个 Javanese 字符拆 3 个断行点
+    let words = ctx.split_into_words("\u{A9B1}\u{A9BC}\u{A9A7}", false);
+    assert_eq!(words.len(), 3, "Javanese 文本应按字符拆为独立断行点");
 }
 
 /// R1214：is_ahem（cjk_contiguous）时 CJK per-char 拆分不加词间空格（连续）。

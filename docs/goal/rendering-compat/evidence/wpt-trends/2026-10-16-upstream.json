@@ -3,9 +3,9 @@
   "mode": "upstream",
   "wpt_data_ref": "v1.10",
   "total": 16590,
-  "passed": 15431,
-  "rate_pct": 93.0,
-  "extra": "failed=1159;skipped=0",
-  "git_sha": "25b878175",
-  "note": "R5145 svg premult demultiply——缝隙族(skewy/rotate45/skewxy/nested-008)10案0.00%翻绿"
+  "passed": 15448,
+  "rate_pct": 93.1,
+  "extra": "failed=1142;skipped=0",
+  "git_sha": "fda0e92c9",
+  "note": "R5149 无词间空格复杂文字 fallback 断行（UAX #14 SA 全集+东南亚婆罗米系）——line-breaking-023 != 翻绿 2.88% 两侧分化，零新增红"
 }

@@ -228,11 +228,19 @@ pub(crate) fn is_cjk_character(c: char) -> bool {
     )
 }
 
-/// R645：判断字符是否属于「需要字典分词」的东南亚复杂文字（Thai/Lao/Myanmar/Khmer）。
+/// R645：判断字符是否属于「需要字典/正词法分析」的无词间空格复杂文字。
 ///
 /// 这些文字不在单词间使用空格，词边界须字典查找（如 libthai/ICU）。CSS Text 3
 /// §line-break-details 要求：UA 若无此类字典分词能力，**必须**做某种 fallback 断行
 /// （不允许溢出）。ZeroWeb 无 SEA 词典，按字符断行作为 fallback。
+///
+/// R5149 覆盖从 R645 四文字扩到 UAX #14 LB=SA 全集（LineBreak-18.0.0）+ SA 外的
+/// 无词间空格东南亚婆罗米系文字（Javanese/Balinese/Sundanese/Batak/Buginese——
+/// LB 类多为 AL 但正词法同样需音节/词典分析；chromium 对 Javanese 文本给出
+/// fallback 断行点，line-breaking-023 实证）。区块级粗粒度：保留码位/数字/标点
+/// 一并划入（R645 既有策略，不做字级精化）。
+/// FIXME: 现按字符断行可拆散「基字+组合符」字簇（Thai 组合元音已如此）；按
+/// grapheme cluster 分词更稳，涉及 R645 全部文字，另行立案。
 ///
 /// 仅用于 [`split_into_words`](super::InlineFormattingContext::split_into_words) 的
 /// 断行点判定（与 CJK 同样按字符单独成词）；**不**影响 advance 宽度估计——SEA 字符
@@ -240,10 +248,21 @@ pub(crate) fn is_cjk_character(c: char) -> bool {
 pub(crate) fn is_sea_word_script(c: char) -> bool {
     matches!(
         c,
-        '\u{0E00}'..='\u{0E7F}'   // Thai（泰文）
-        | '\u{0E80}'..='\u{0EFF}' // Lao（老挝文）
-        | '\u{1000}'..='\u{109F}' // Myanmar（缅甸文）
-        | '\u{1780}'..='\u{17FF}' // Khmer（高棉文）
+        '\u{0E00}'..='\u{0E7F}'    // Thai（泰文）
+        | '\u{0E80}'..='\u{0EFF}'  // Lao（老挝文）
+        | '\u{1000}'..='\u{109F}'  // Myanmar（缅甸文）
+        | '\u{1780}'..='\u{17FF}'  // Khmer（高棉文）
+        | '\u{1950}'..='\u{1974}'  // Tai Le（傣担文）
+        | '\u{1980}'..='\u{19DF}'  // New Tai Lue（新傣仂文）
+        | '\u{1A00}'..='\u{1A1F}'  // Buginese（布吉文，Lontara）
+        | '\u{1A20}'..='\u{1A7F}'  // Tai Tham（傣坦文）
+        | '\u{1AA0}'..='\u{1AAF}'  // Tai Tham 补充
+        | '\u{1B00}'..='\u{1B7F}'  // Balinese（巴厘文）
+        | '\u{1B80}'..='\u{1BBF}'  // Sundanese（巽他文）
+        | '\u{1BC0}'..='\u{1BFF}'  // Batak（巴塔克文）
+        | '\u{A980}'..='\u{A9FF}'  // Javanese + 扩展（爪哇文）
+        | '\u{AA60}'..='\u{AADF}'  // Myanmar 扩展 A + Cham（占文）
+        | '\u{11700}'..='\u{1174F}' // Ahom（阿洪姆文）
     )
 }
 

@@ -711,3 +711,6 @@ mod r5109_clearance_extent_propagation_tests;
 /// R5110 替换元素 max 侧 min-content/max-content 关键字钳制测试。
 mod r5110_replaced_mincontent_tests;
 mod r5117_calc_cb_base_tests;
+/// R5148 fieldset 自身 multicol 容器时渲染 legend 不入列流（chromium fieldset/legend
+/// 特殊布局 × css-multicol；multicol-span-all-fieldset-001/002/003 驱动）。
+mod r5148_fieldset_legend_multicol_tests;

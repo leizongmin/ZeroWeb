@@ -372,6 +372,13 @@ impl BrowserApp {
                     self.navigate_to(url);
                 }
             }
+            "bookmark_open_new_tab" => {
+                if let Some(url) = &bookmark_url {
+                    // Chrome 菜单「在新标签页打开」：前台新标签（与链接菜单 open_link
+                    // 的后台新标签不同，书签菜单无修饰键语义）。
+                    self.new_tab(Some(url));
+                }
+            }
             "bookmark_copy_link" => {
                 if let Some(url) = &bookmark_url {
                     crate::clipboard::write_text(url);

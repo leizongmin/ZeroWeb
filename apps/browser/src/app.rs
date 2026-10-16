@@ -2454,6 +2454,10 @@ impl BrowserApp {
 
         if let Some(url) = url {
             self.address_bar.set_text(url.to_string());
+            // `Tab::new` 只把 URL 记进 shell 模型，不向 renderer 派发导航命令，
+            // 标签会停在"Loading…"。走地址栏同款标签级装载路径（normalize 已在
+            // 入口完成，避免 shell.navigate 重复入账历史）。
+            self.start_tab_request(tab_id, url.to_string(), "GET".to_string(), None);
         } else {
             self.address_bar.clear();
             self.load_welcome_page(tab_id);
@@ -2470,6 +2474,8 @@ impl BrowserApp {
     pub fn new_tab_background(&mut self, url: &str) {
         let tab_id = self.shell.new_tab_background(Some(url));
         self.tabs.ensure_tab(tab_id);
+        // 同 [`Self::new_tab`]：shell 记 URL 不等于 renderer 开始装载，须显式派发。
+        self.start_tab_request(tab_id, url.to_string(), "GET".to_string(), None);
         self.scroll.insert(tab_id, TabScrollState::default());
         self.needs_redraw = true;
     }
