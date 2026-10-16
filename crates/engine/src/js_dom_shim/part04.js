@@ -2935,7 +2935,19 @@
             // 同步客户端缓存：class→_classCache、value→_inputValues，使 setAttribute 与
             // classList/className、.value getter 协作一致（否则后续 classList.add 读 stale 缓存丢值）。
             if (n === 'class') _classCache[key] = v;
-            else if (n === 'value') { _inputValues[key] = v; _inputValuesSet[key] = true; _clearInputDefault(key); } // R2996：setAttribute('value') 重同步 defaultValue
+            else if (n === 'value') {
+              // R2996：setAttribute('value') 重同步 defaultValue。R3902b：INPUT/TEXTAREA 已脏
+              // （value IDL set / 克隆传播的 dirty value flag）时**不覆写** `_inputValues`
+              // 缓存（spec：属性变更只改 default value，getter 脏态优先——cloning-steps
+              // 「setAttribute doesn't affect the cloned input's/textarea's value」断言面；
+              // textarea 无 value 内容属性，setAttribute('value') 惰性——HTML §4.10.6.4）。
+              if (_inputValuesSet[key] !== true
+                  || (_realTag(sel, handle) !== 'INPUT' && _realTag(sel, handle) !== 'TEXTAREA')) {
+                _inputValues[key] = v;
+                _inputValuesSet[key] = true;
+              }
+              _clearInputDefault(key);
+            }
             else if (n === 'checked' || n === 'selected') _clearBoolDefault(key, n); // R2998：setAttribute('checked'/'selected') 重同步 defaultChecked/defaultSelected
             // R5009 片 e（M4 片 e）：setAttribute 到 ARIA element 反射 attr → 清显式
             // 关联（内容属性直接设值覆盖 IDL 引用——WPT aria-errormessage
@@ -3171,7 +3183,17 @@
             // sel-based 经 `__zw_remove_attr`（RemoveAttr，R2657）；无回调 → fallback set-empty。
             // 同步客户端缓存（class/value），使后续 classList/.value 反映移除。
             if (n === 'class') _classCache[key] = '';
-            else if (n === 'value') { _inputValues[key] = ''; _inputValuesSet[key] = true; _clearInputDefault(key); } // R2996：removeAttribute('value') 重同步 defaultValue
+            else if (n === 'value') {
+              // R2996：removeAttribute('value') 重同步 defaultValue。R3902b：INPUT/TEXTAREA 已脏时
+              // 不覆写 `_inputValues`（spec：属性增删只改 default value，脏值优先——同
+              // setAttribute 面）。
+              if (_inputValuesSet[key] !== true
+                  || (_realTag(sel, handle) !== 'INPUT' && _realTag(sel, handle) !== 'TEXTAREA')) {
+                _inputValues[key] = '';
+                _inputValuesSet[key] = true;
+              }
+              _clearInputDefault(key);
+            }
             else if (n === 'checked' || n === 'selected') _clearBoolDefault(key, n); // R2998：removeAttribute('checked'/'selected') 重同步 defaultChecked/defaultSelected
             // R5009 片 e（M4 片 e）：ARIA Element 反射——removeAttribute(attr) 解除
             // 显式关联（WPT disconnected 'el.removeAttribute(contentAttr)' 后 getter
@@ -4915,14 +4937,28 @@
             // value IDL 值与 dirty 旗标随克隆复制。value 模式 IDL set 不写内容属性（R3901），
             // 脏值只在 `_inputValues` 缓存——上面的属性复制循环读不到，克隆 value 丢
             //（WPT cloning-steps 'input element's value should be cloned' 回归面）。
-            // textarea 的 value 走 child text/innerHTML 复制面，不在此列。
+            // R3902b：textarea 一并入列——分离态（handle 形态）`.value=` 经
+            // `__zw_set_attr_handle('value')` 载体 + `_inputValues` 脏缓存，克隆 getter
+            // 回落 attr 会读到 setAttribute 的干扰值（WPT cloning-steps「textarea dirty
+            // value flag cloned」断言面）。
             try {
-              if (_realTag(sel, handle) === 'INPUT' && _inputValues[key] != null) {
+              if ((_realTag(sel, handle) === 'INPUT' || _realTag(sel, handle) === 'TEXTAREA')
+                  && _inputValues[key] != null) {
                 var _r3901DstKey = _elKey(null, nh);
                 _inputValues[_r3901DstKey] = _inputValues[key];
                 _inputValuesSet[_r3901DstKey] = _inputValuesSet[key] === true;
               }
             } catch (_e3901cl) {}
+            // R3902b（HTML §4.10.5.4 cloning steps）：dirty checkedness 与 indeterminateness
+            // 随克隆传播（WPT cloning-steps「dirty checkedness/indeterminateness should be
+            // cloned」双文件 21F×2 主簇——克隆产物 key 新建，JS 侧状态 map 不复制即丢）。
+            try {
+              if (_realTag(sel, handle) === 'INPUT') {
+                var _r3902bDstKey = _elKey(null, nh);
+                if (_checkedDirtyState[key] !== undefined) _checkedDirtyState[_r3902bDstKey] = _checkedDirtyState[key];
+                if (_indeterminate[key] === true) _indeterminate[_r3902bDstKey] = true;
+              }
+            } catch (_e3902bcl) {}
             // deep：复制后代（innerHTML）。
             if (deep) {
               var _cnd = false;
@@ -10803,6 +10839,25 @@
         } else if (p === 'indeterminate') {
           // JS-only IDL 布尔（非 reflected attr）—— per-element state map（默认 false）。无属性 mutation。
           _indeterminate[key] = !!value;
+        } else if (p === 'files') {
+          // `input.files` setter（R3902b，HTML §4.10.5.4
+          // https://html.spec.whatwg.org/multipage/input.html#dom-input-files）——per-element
+          // FileList 引用（identity 保真：WPT files.html「FileList should not be copied /
+          // can be shared across input / DataTransfer」断言面）。type=file：FileList 实例 →
+          // 存引用；null → no-op（「files cannot be set to null」）；非 FileList → TypeError
+          //（WebIDL interface 转换失败，「files cannot be set to an array」断言面）。
+          // 其余 type：no-op（「files should remain null as it cannot be set when it does
+          // not apply」——不抛）。getter 见 part03。
+          if (_realTag(sel, handle) === 'INPUT') {
+            var _r3902bFst = String((handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type')) || '').toLowerCase();
+            if (_r3902bFst === 'file' && value != null) {
+              if (typeof FileList === 'function' && value instanceof FileList) {
+                _inputFiles[key] = value;
+              } else {
+                throw new TypeError("Failed to set the 'files' property on 'HTMLInputElement': The provided value is not of type 'FileList'.");
+              }
+            }
+          }
         } else if (p === 'selectionStart' || p === 'selectionEnd' || p === 'selectionDirection') {
           // text-control 选区 setter（R2844）。Chromium 150 oracle 锚定：保持 0≤start≤end≤len 不变式——
           // 设 start 超 end → end 跟到 start（{start:99}→ end 升到 start）；设 end 低于 start → end 升回 start

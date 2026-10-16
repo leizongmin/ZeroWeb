@@ -2506,7 +2506,11 @@ fn test_input_value_defaultvalue_independence_r2996() {
         "二次 .value= 后 .value='second'"
     );
 
-    // setAttribute('value') 重同步 defaultValue（spec：setAttribute 改默认值）+ .value 跟随。
+    // setAttribute('value') 重同步 defaultValue（spec：setAttribute 改默认值）。.value 不跟随——
+    // R3902b：.value= 已置 dirty value flag，属性增删只改 default value（HTML §4.10.5.4
+    // https://html.spec.whatwg.org/multipage/input.html#concept-input-dirty；WPT cloning-steps
+    // 「setAttribute doesn't affect the input's value」断言面，R2996 旧「.value 跟随」系实现
+    // 松弛，随 dirty 面接入同步修正）。
     sandbox
         .execute(
             "i.setAttribute('value', 'reset');\
@@ -2521,8 +2525,8 @@ fn test_input_value_defaultvalue_independence_r2996() {
     );
     assert_eq!(
         sandbox.execute("globalThis.__val3").unwrap().value,
-        "reset",
-        "setAttribute('value') 后 .value 跟随='reset'"
+        "second",
+        "setAttribute('value') 后 dirty .value 保持='second'（不跟随属性）"
     );
 
     // setAttribute 后再 .value=：defaultValue 锚定新默认值 'reset'（捕获 setAttribute 后的属性）。

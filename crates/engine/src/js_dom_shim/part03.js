@@ -16365,16 +16365,31 @@ return e;
           };
         }
         // `input.files`（HTMLInputElement，R2830）——FileList（上传表单读 length/迭代）。headless
-        // 无真文件 → 共享空 FileList（length 0）；仅 INPUT（_isTag gate），非 input → undefined。
-        if (prop === 'files' && _isTag(sel, 'INPUT')) {
-          return _emptyFileList;
+        // 无真文件 → 共享空 FileList（length 0）。spec：files 只在 type=file 有值（空 FileList），
+        // **其余 type 恒 null**（HTML §4.10.5.4 https://html.spec.whatwg.org/multipage/input.html#dom-input-files
+        // ——files null-for-non-file 断言面）。仅 INPUT（_realTag gate——R3902b：_isTag sel-only 对
+        // detached createElement 产物恒 false → undefined，cloning-steps/files 45F+23F 主簇）。
+        if (prop === 'files' && _realTag(sel, handle) === 'INPUT') {
+          var _r3902bFt = String((handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type')) || '').toLowerCase();
+          if (_r3902bFt !== 'file') return null;
+          // type=file：`.files=` setter 存入的引用优先（identity 保真），未设 → 共享空单例
+          return _inputFiles[key] !== undefined ? _inputFiles[key] : _emptyFileList;
         }
         // `input.indeterminate`（HTMLInputElement，R2831）——JS-only IDL 布尔（非 reflected attr），
-        // per-element `_indeterminate` map（默认 false）。checkbox「全选」tri-state UI 高频。仅 INPUT。
-        if (prop === 'indeterminate' && _isTag(sel, 'INPUT')) {
+        // per-element `_indeterminate` map（默认 false）。checkbox「全选」tri-state UI 高频。仅 INPUT
+        //（_realTag gate，同 files——detached 面见上）。
+        if (prop === 'indeterminate' && _realTag(sel, handle) === 'INPUT') {
           return _indeterminate[key] === true;
         }
         if (prop === 'checked' || prop === 'hidden' || prop === 'disabled') {
+          // R3902b：INPUT checked 的脏态优先（HTML §4.10.5.4 dirty checkedness flag——
+          // `.checked=` IDL set 后 getter 读脏值，内容属性增删不再改写 checkedness；
+          // cloning-steps「setAttribute doesn't affect the cloned input's checkedness」
+          // 断言面）。hidden/disabled 及非 INPUT 不受影响。
+          if (prop === 'checked' && _realTag(sel, handle) === 'INPUT'
+              && _checkedDirtyState[key] !== undefined) {
+            return _checkedDirtyState[key] === true;
+          }
           // boolean reflected property（checked/hidden/disabled）——属性存在性。R2997：sel-based 改 latest-wins
           // （`__zw_has_attr_lw`）反映同批 SetAttr/RemoveAttr / `.checked=` setter 推的 mutation（旧读纯快照
           // `__zw_has_attr` → removeAttribute / .checked=false / .hidden=true 后 stale）。typeof guard 回落纯快照。

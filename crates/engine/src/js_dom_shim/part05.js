@@ -441,7 +441,12 @@
           // （has_attr=false）。修正旧 fallthrough 写空串致 falsy 仍 present 的 bug。
           // R2998：`.checked=`(INPUT)/`.selected=`(OPTION) 写属性前捕获 defaultChecked/defaultSelected 真默认态
           // （spec .checked=/.selected= 不改 default*；shim 写属性供 render 故污染，缓存保护 default* getter）。
-          if (p === 'checked' && _realTag(sel, handle) === 'INPUT') _captureBoolDefault(key, 'checked', sel, handle);
+          if (p === 'checked' && _realTag(sel, handle) === 'INPUT') {
+            _captureBoolDefault(key, 'checked', sel, handle);
+            // R3902b：IDL set 置 dirty checkedness（HTML §4.10.5.4）——getter 读脏值优先
+            // 于内容属性（part03 checked getter）；克隆步骤随克隆传播（part04 clone 块）。
+            _checkedDirtyState[key] = !!value;
+          }
           else if (p === 'selected' && _realTag(sel, handle) === 'OPTION') _captureBoolDefault(key, 'selected', sel, handle);
           if (value) {
             if (handle) __zw_set_attr_handle(handle, p, '');
@@ -13493,7 +13498,19 @@
     },
   });
   Object.defineProperty(DataTransfer.prototype, 'files', {
-    get: function () { return this._dt_files; },
+    get: function () {
+      // R3902b：dt.files 须为 FileList 实例（HTML §4.10.5.4 input.files setter 接收
+      // FileList——WPT files.html「setting <input type=file>.files from DataTransfer」
+      // 断言面：dt.files 为裸数组时 setter TypeError）。_dt_files 保持裸数组（items
+      // push/clear 面零改动），FileList 视图惰性建+缓存；_dt_files 整体被换（clearData
+      // 复位 13580 面）时经 _zwFiles 同一性重绑。
+      if (!this._dt_filesView || this._dt_filesView._zwFiles !== this._dt_files) {
+        var fl = new FileList();
+        fl._zwFiles = this._dt_files;
+        this._dt_filesView = fl;
+      }
+      return this._dt_filesView;
+    },
   });
   // R2948 DataTransferItemList——dataTransfer.items 的真实视图（替代 R2937 的空数组占位）。
   // 每次 access 按当前 _dt_data（string items）+ _dt_files（file items）重建（live 语义）；item/add/remove/clear
