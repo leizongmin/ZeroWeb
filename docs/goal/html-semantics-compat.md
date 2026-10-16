@@ -1,28 +1,30 @@
 # HTML Semantics 兼容 — html/semantics 语义面（主攻大域）
 
-**版本**: v1.4
+**版本**: v1.5
 **日期**: 2026-10-16（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 2b 收口（dirty checkedness/value + files IDL + compound pending +125P），切片 2c 候选 stepUp/stepDown + showPicker
+**状态**: Active——M2 切片 2c 收口（stepUp/stepDown 全七类型 spec 步进 + valueAsNumber/Date IDL 面 +132P），下一切片候选 showPicker 族 + setter 抛错面
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-16 M2 切片 2b）**：切片 2a 挂账四簇清零——dirty
-> checkedness/value 面接入（R3902b，HTML §4.10.5.4）+ files IDL setter（null-
-> for-non-file + FileList 引用 identity）+ `:active`/`:hover` 选择器识别（恒
-> 不匹配）+ compound（`input[type=X]`）pending 回落（含 `[` 轻量预门防
-> named-lookup 超线性）。cloning-steps 0→46P、untrusted-key-event 0→42P、
-> files 1→24P、checkable-active-space 0→8P。forms 2441→**2565P**；九域全量
-> 3369→**3494P**（3494/6656 = 52.51%），对切片 2a 账本逐 subtest diff **九域
-> 零回归**。账本见
-> [evidence/2026-10-16-m2s2b-r3902b.md](html-semantics-compat/evidence/2026-10-16-m2s2b-r3902b.md)。
+> **▶ 当前状态（2026-10-16 M2 切片 2c）**：stepping 簇清零——stepUp/stepDown
+> 从 number/range 桩升级为 HTML §4.10.5.4 全七类型步进算法（date/
+> datetime-local/month/number/range/time/week；R3902c）——非步进类型与
+> `step='any'` 抛 InvalidStateError、缺省步长表×比例因子、步进基 min→value
+> 内容属性→类型缺省基、离格向步进方向 snap、越界对齐界内格点（非 clamp 界
+> 值）、反向回退（当前值解析失败例外，Chromium `ApplyStep` 源码实证）；
+> valueAsNumber getter/setter 全类型（数值 parseFloat / date 族 ms / month
+> 月数）、valueAsDate date/month/week/time 门；date/week/datetime-local 解析
+> 补真实日历与 ISO 周回读校验，week/datetime-local 格式化新支。stepup +43P、
+> stepdown 系 +12P、valueas*-stepping +9P、weekmonth/datetime +8P、联带 IDL
+> 面 +64P。forms 2565→**2697P**；九域全量 3494→**3626P**（3626/6656 =
+> 54.48%），对切片 2b 账本逐 subtest diff **九域零回归**。账本见
+> [evidence/2026-10-16-m2s2c-r3902c.md](html-semantics-compat/evidence/2026-10-16-m2s2c-r3902c.md)。
 > 两处 runner 挂死仍挂账（tabular span-limits、links downloading-resources）。
-> R2996 unit test「.value 跟随 setAttribute」断言随 dirty 面接入修正为 spec
-> dirty 保持（WPT cloning-steps 锚定）。
-> **卡点**：无阻塞。**下一步**：切片 2c 按簇杠杆序——showPicker 族 ~136F
-> （user-gesture 63F / disabled-readonly 44F / does-not-focus 22F）→
-> stepUp/stepDown 族 64F（stepup 43F / stepdown 12F / valueas*-stepping 9F /
-> weekmonth 2F；现仅 number/range 桩，spec 全类型 InvalidStateError + 步进
-> 算法）。
+> R3317 unit test「text 无 stepUp」「range 前值+2n」契约随 spec 算法接入修正
+> （WPT input-stepup 锚定）。
+> **卡点**：无阻塞。**下一步**：showPicker 族 ~136F（show-picker-user-gesture
+> 63F / disabled-readonly 44F / does-not-focus 22F）→ valueAsDate/Number
+> setter 抛错面 9F（typeerror 两文件 8F + datetime-local-valueasdate 1F）。
 
 
 > **▶ 拆分动机（2026-10-08 预留编号立项，用户「候选 goal 也立项吧」）**：继
@@ -103,6 +105,17 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-16 M2 切片 2c**：stepUp/stepDown 全七类型 spec 步进算法 +
+  valueAsNumber/valueAsDate IDL 全类型面（R3902c）——part03 `_parseHtmlDateValue`
+  date/week/datetime-local 回读校验 + `_formatHtmlDateValue` week/
+  datetime-local 新支 + stepUp/stepDown 分支重写（`_reflectedTypeEnum` 类型门、
+  `_suDefaultStep`/`_suScale` 缺省表、`_suParseBound` 类型域解析、`_suKInt`
+  相对容差近整判定、步进基与 spec 步 3/4/5/7/8/9/10；sel 路径 min/step 走
+  `__zw_get_attr_lw` latest-wins 读）+ valueAsNumber getter 全类型，part04
+  valueAsNumber setter date 族/month 扩面，part16 R3317 契约修正（方法恒
+  暴露 + InvalidStateError + 离格 snap→6）。stepping 簇 +68P、联带 IDL 面
+  +64P，九域 3494→3626P（零回归）。`make test` 全绿、guarded-clippy/fmt 过、
+  零新增依赖。
 - **2026-10-16 M2 切片 2b**：dirty checkedness/value + files IDL +
   `:active`/`:hover` + compound pending 回落（R3902b）——query.rs
   Active/Hover 识别臂，part01 dirty/files 两 map，part03 files/indeterminate

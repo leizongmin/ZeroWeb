@@ -8883,18 +8883,21 @@
   function _parseHtmlDateValue(v, type) {
     v = String(v).trim();
     if (type === 'date') {
-      // spec 严格 YYYY-MM-DD（月/日补零，范围校验：月 1-12、日 1-31）。
+      // spec 严格 YYYY-MM-DD（月/日补零，范围校验：月 1-12、日 1-31；R3902c：年 > 0 + 真实日历
+      // 回读校验——2019-02-29/0000-12-10 类无效串 NaN，valueAsNumber/valueAsDate 同源）。
       var m = v.match(/^(\d{4,})-(\d{2})-(\d{2})$/);
       if (!m) return null;
       var y = +m[1], mo = +m[2], d = +m[3];
-      if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
-      return new Date(Date.UTC(y, mo - 1, d));
+      if (y < 1 || mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+      var dt = new Date(Date.UTC(y, mo - 1, d));
+      if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return null;
+      return dt;
     }
     if (type === 'month') {
       var mm = v.match(/^(\d{4,})-(\d{2})$/);
       if (!mm) return null;
       var my = +mm[1], mmo = +mm[2];
-      if (mmo < 1 || mmo > 12) return null;
+      if (my < 1 || mmo < 1 || mmo > 12) return null;
       return new Date(Date.UTC(my, mmo - 1, 1));
     }
     if (type === 'time') {
@@ -8915,15 +8918,38 @@
     }
     if (type === 'week') {
       // YYYY-Www：该年第 ww 个 ISO 周（周一为首日）的周一 00:00:00 UTC。ISO 8601 周日期。
+      // R3902c：年 > 0 + ISO 周回读校验（2019-W53 类不存在周 → null——52 周年多算滚入次年）。
       var wm = v.match(/^(\d{4,})-W(\d{2})$/);
       if (!wm) return null;
       var wy = +wm[1], w = +wm[2];
-      if (w < 1 || w > 53) return null;
+      if (wy < 1 || w < 1 || w > 53) return null;
       // ISO 周：该年 1 月 4 日必在第 1 周内；第 1 周一 = 1 月 4 日 - ((day-1) 天)，day: 周日=0..周六=6。
       var jan4 = Date.UTC(wy, 0, 4);
       var jan4Day = new Date(jan4).getUTCDay(); // 0=Sun..6=Sat
       var week1Mon = jan4 - (jan4Day === 0 ? 6 : jan4Day - 1) * 86400000;
-      return new Date(week1Mon + (w - 1) * 7 * 86400000);
+      var wkDt = new Date(week1Mon + (w - 1) * 7 * 86400000);
+      var wkRt = wkDt.getUTCDay();
+      var wkRtMon = wkDt.getTime() - (wkRt === 0 ? 6 : wkRt - 1) * 86400000;
+      var wkRtThu = wkRtMon + 3 * 86400000;
+      var wkRtY = new Date(wkRtThu).getUTCFullYear();
+      var wkRtJ4 = Date.UTC(wkRtY, 0, 4);
+      var wkRtJ4d = new Date(wkRtJ4).getUTCDay();
+      var wkRt1Mon = wkRtJ4 - (wkRtJ4d === 0 ? 6 : wkRtJ4d - 1) * 86400000;
+      if (wkRtY !== wy || 1 + Math.round((wkRtThu - wkRt1Mon) / (7 * 86400000)) !== w) return null;
+      return wkDt;
+    }
+    if (type === 'datetime-local') {
+      // R3902c：本地日期时间串（HTML §4.10.5.18 local date and time string）——无时区后缀，
+      // 按 UTC 基准解析（与 valueAsNumber ms 面一致；valueAsDate 对 datetime-local 恒 null，
+      // 调用方 gate 不触及本分支）。可选秒/毫秒（'T' 分隔；WPT 历史兼容接受空格）。
+      var dlm = v.match(/^(\d{4,})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$/);
+      if (!dlm) return null;
+      var dly = +dlm[1], dlmo = +dlm[2], dld = +dlm[3], dlH = +dlm[4], dlM = +dlm[5];
+      var dlS = dlm[6] ? +dlm[6] : 0, dlms = dlm[7] ? +dlm[7].padEnd(3, '0') : 0;
+      if (dly < 1 || dlmo < 1 || dlmo > 12 || dld < 1 || dld > 31 || dlH > 23 || dlM > 59 || dlS > 59) return null;
+      var dldt = new Date(Date.UTC(dly, dlmo - 1, dld, dlH, dlM, dlS, dlms));
+      if (dldt.getUTCFullYear() !== dly || dldt.getUTCMonth() !== dlmo - 1 || dldt.getUTCDate() !== dld) return null;
+      return dldt;
     }
     return null;
   }
@@ -8941,6 +8967,27 @@
       var t = p2(H) + ':' + p2(Mi);
       if (S > 0 || d.getUTCMilliseconds() > 0) t += ':' + p2(S);
       return t;
+    }
+    if (type === 'week') {
+      // R3902c：ISO 周串（HTML §4.10.5.18 week string）——该周周四定 ISO 年（周四必在本年），
+      // 周数 = 1 + (周四 − 第 1 周周一)/7 天。stepUp/valueAsDate 写回共用。
+      var wk0 = d.getUTCDay();
+      var wkMon = d.getTime() - (wk0 === 0 ? 6 : wk0 - 1) * 86400000;
+      var wkThu = wkMon + 3 * 86400000;
+      var wkIsoY = new Date(wkThu).getUTCFullYear();
+      var wkJ4 = Date.UTC(wkIsoY, 0, 4);
+      var wkJ4d = new Date(wkJ4).getUTCDay();
+      var wk1Mon = wkJ4 - (wkJ4d === 0 ? 6 : wkJ4d - 1) * 86400000;
+      var wkN = 1 + Math.round((wkThu - wk1Mon) / (7 * 86400000));
+      return p4(wkIsoY) + '-W' + p2(wkN);
+    }
+    if (type === 'datetime-local') {
+      // R3902c：本地日期时间串——秒/毫秒非零才追加（缺省分钟精度，HTML value sanitization）。
+      var dlS2 = d.getUTCSeconds(), dlMs2 = d.getUTCMilliseconds();
+      var dlOut = p4(d.getUTCFullYear()) + '-' + p2(d.getUTCMonth() + 1) + '-' + p2(d.getUTCDate())
+        + 'T' + p2(d.getUTCHours()) + ':' + p2(d.getUTCMinutes());
+      if (dlS2 > 0 || dlMs2 > 0) dlOut += ':' + p2(dlS2);
+      return dlOut;
     }
     return '';
   }
@@ -16251,18 +16298,30 @@ return e;
           return (vaF == null) ? '' : vaF;
           } // R5009 片 d：!_rvSkip3——LI/METER 跳过 dirty 缓存，落 part04 数值分支
         }
-        // `input.valueAsNumber`（HTMLInputElement，R2836）——number/range 输入值↔数值转换（计算器/数量输入/
-        // 校验库读 NaN 判非法）。type=number/range：parseFloat(value)（空/无效→NaN，parseFloat 对 '12px'
-        // 等宽容近似 number 解析）；其他 type→NaN（date/month/week/time/datetime-local defer）。仅 INPUT。
+        // `input.valueAsNumber`（HTMLInputElement，R2836）——输入值↔数值转换（计算器/数量输入/
+        // 校验库读 NaN 判非法；stepping 算法共用基值读取，R3902c）。number/range：parseFloat(value)
+        //（空/无效→NaN）；date/time/week/datetime-local：ms（valueAsDate 同解析面，HTML
+        // §4.10.5.18）；month：1970-01 起月数。其余 type→NaN。仅 INPUT。
+        // https://html.spec.whatwg.org/multipage/input.html#dom-input-valueasnumber
         if (prop === 'valueAsNumber' && _realTag(sel, handle) === 'INPUT') {
           try {
             var vasT = (handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type')) || '';
-            if (vasT.toLowerCase() !== 'number' && vasT.toLowerCase() !== 'range') return NaN;
+            vasT = vasT.toLowerCase();
+            var vasNumeric = vasT === 'number' || vasT === 'range';
+            var vasDated = vasT === 'date' || vasT === 'month' || vasT === 'week'
+              || vasT === 'time' || vasT === 'datetime-local';
+            if (!vasNumeric && !vasDated) return NaN;
             var vasV = _inputValues[key];
             if (vasV == null) vasV = (handle ? __zw_get_attr_handle(handle, 'value') : __zw_get_attr(sel, 'value')) || '';
             if (vasV === '') return NaN;
-            var vasN = parseFloat(vasV);
-            return isNaN(vasN) ? NaN : vasN;
+            if (vasNumeric) {
+              var vasN = parseFloat(vasV);
+              return isNaN(vasN) ? NaN : vasN;
+            }
+            var vasD = _parseHtmlDateValue(vasV, vasT);
+            if (!vasD) return NaN;
+            if (vasT === 'month') return (vasD.getUTCFullYear() - 1970) * 12 + vasD.getUTCMonth();
+            return vasD.getTime();
           } catch (_e) { return NaN; }
         }
         // `input.valueAsDate`（HTMLInputElement，R3317）——date/month/week/time 输入值↔Date 转换（日期选择器
@@ -16386,31 +16445,117 @@ return e;
             };
           }
         }
-        // `input.stepUp(n)` / `input.stepDown(n)`（HTMLInputElement，R3317）——number/range 按步进增减
-        // （数量调节器、范围滑块步进 UI 高频）。n 缺省 1。按 step 属性（缺省 1）×n 改 value，clamp [min,max]
-        //（spec：超界抛 InvalidStateError；headless 近似 clamp 不抛——保守合法化）。空/无效 value→按 min（缺 0）起算。
-        // 仅 type=number/range 暴露（与 valueAsNumber 同域）；非 number/range 的 INPUT 该方法 typeof=undefined（调用抛
-        // TypeError，real-browser 亦不暴露）。复用 value setter 持久化路径。
+        // `input.stepUp(n)` / `input.stepDown(n)`（HTMLInputElement，R3317/R3902c）——spec 步进算法
+        // 全七类型（date/datetime-local/month/number/range/time/week）。方法对全部 INPUT 暴露：非步进
+        // 类型调用抛 InvalidStateError（WPT input-stepup INPUT_TYPES_THAT_CANT_STEP 断言面）；step 属性
+        // 'any' → 无 allowed value step → InvalidStateError；缺省/无效（0/-2/bogus）→ 缺省步长×比例因子。
+        // 算法（HTML §4.10.5.4）：①min>max → 不动；②[min,max] 内无步进格点 → 不动；③value=当前值数值
+        // 解析（错误 → 0，spec step 5）；④步进基（min → value 内容属性 → 类型缺省基 week=1970-W01 周一
+        // −259200000 ms → 0，HTML §4.10.5.3.8），离格先向步进方向 snap 最近格点，在格则 + allowedStep×n；
+        // ⑤越界对齐界内最近格点（非 clamp 到界值——step=3/max=7/stepUp(3) → 6 断言面）；⑥步进反向回退
+        // （value=1/max=0 stepUp 后不动，spec step 10；当前值解析失败时例外——Chromium
+        // current_was_invalid 同面，见函数体内注）。
         // https://html.spec.whatwg.org/multipage/input.html#dom-input-stepup
         if ((prop === 'stepUp' || prop === 'stepDown') && _realTag(sel, handle) === 'INPUT') {
-          var suT = (handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type')) || '';
-          if (suT.toLowerCase() !== 'number' && suT.toLowerCase() !== 'range') return undefined;
+          // 类型走枚举反射（缺省 Text 状态 / 非法回退 / ASCII 小写 / latest-wins——裸读
+          // 缺 type 属性时 suT 为空串、IDL type= 写后读漏 pending，均已实证）。
+          var suT = String(_reflectedTypeEnum(sel, handle) || '');
+          var _suSteppable = suT === 'date' || suT === 'datetime-local' || suT === 'month'
+            || suT === 'number' || suT === 'range' || suT === 'time' || suT === 'week';
+          // 缺省步长（spec step attribute 缺省表）/比例因子（秒→ms、天→ms、周→ms；month 恒 1）。
+          var _suDefaultStep = { date: 1, 'datetime-local': 60, month: 1, number: 1, range: 1, time: 60, week: 1 }[suT];
+          var _suScale = { date: 86400000, 'datetime-local': 1000, month: 1, number: 1, range: 1, time: 1000, week: 604800000 }[suT];
           return function(n) {
-            n = (n === undefined) ? 1 : Number(n);
-            if (isNaN(n)) n = 1;
-            var step = parseFloat(handle ? __zw_get_attr_handle(handle, 'step') : __zw_get_attr(sel, 'step'));
-            if (isNaN(step) || step <= 0) step = 1; // 'any'/缺省/无效 → 1（spec 'any' 抛，近似 1）
-            var min = parseFloat(handle ? __zw_get_attr_handle(handle, 'min') : __zw_get_attr(sel, 'min'));
-            if (isNaN(min)) min = 0;
-            var max = parseFloat(handle ? __zw_get_attr_handle(handle, 'max') : __zw_get_attr(sel, 'max'));
+            if (!_suSteppable) {
+              throw new (globalThis.DOMException || Error)("Failed to execute '" + prop + "' on 'HTMLInputElement': The input element's type ('" + suT + "') does not support stepUp/stepDown.", 'InvalidStateError');
+            }
+            var _suAttr = function(name) {
+              // sel 路径用 latest-wins 读（同 turn IDL min/step= 写后 stepUp/stepDown 立即调用——
+              // 裸 __zw_get_attr 读快照漏 pending 写，WPT stepdown-02 IDL set 面实证）。
+              try {
+                return handle ? __zw_get_attr_handle(handle, name)
+                  : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, name) : __zw_get_attr(sel, name));
+              } catch (_eSu) { return null; }
+            };
+            var stepRaw = _suAttr('step');
+            if (stepRaw != null && String(stepRaw).trim().toLowerCase() === 'any') {
+              throw new (globalThis.DOMException || Error)("Failed to execute '" + prop + "' on 'HTMLInputElement': This input element does not allow a value step.", 'InvalidStateError');
+            }
+            var step = parseFloat(stepRaw);
+            if (isNaN(step) || step <= 0) step = _suDefaultStep;
+            var allowedStep = step * _suScale;
+            // min/max 按类型域解析（date 族 ms/月数、number/range 数值）——与 valueAsNumber getter 同面。
+            var _suParseBound = function(raw) {
+              if (raw == null || raw === '') return NaN;
+              if (suT === 'number' || suT === 'range') return parseFloat(raw);
+              var bd = _parseHtmlDateValue(String(raw), suT);
+              if (!bd) return NaN;
+              if (suT === 'month') return (bd.getUTCFullYear() - 1970) * 12 + bd.getUTCMonth();
+              return bd.getTime();
+            };
+            var min = _suParseBound(_suAttr('min'));
+            var max = _suParseBound(_suAttr('max'));
+            var hasMin = !isNaN(min);
             var hasMax = !isNaN(max);
-            var cur = parseFloat(_controlValue(sel, handle, key));
-            if (isNaN(cur)) cur = min; // 空/无效 → 从 min 起
-            var delta = (prop === 'stepUp' ? 1 : -1) * step * n;
-            var next = cur + delta;
-            if (hasMax && next > max) next = max;
-            if (next < min) next = min;
-            this.value = String(next);
+            // 步进基：min（有效）→ value 内容属性（可转换时）→ 类型缺省基（week = 1970-W01 周一
+            // −259200000 ms）→ 0（spec step base 算法，HTML §4.10.5.3.8）。
+            var base = hasMin ? min : _suParseBound(_suAttr('value'));
+            if (isNaN(base)) {
+              if (suT === 'week') {
+                var w1d = new Date(Date.UTC(1970, 0, 4)).getUTCDay();
+                base = Date.UTC(1970, 0, 4) - (w1d === 0 ? 6 : w1d - 1) * 86400000;
+              } else base = 0;
+            }
+            // 商近整判定（相对 1e-9 容差）——日期 ms 面 1e12 量级浮点噪声防误判离格；null = 非近整。
+            var _suKInt = function(x) {
+              var r = Math.round(x);
+              return Math.abs(x - r) <= 1e-9 * Math.max(1, Math.abs(x)) ? r : null;
+            };
+            // spec step 3/4：min>max → 不动；[min,max] 内无格点（>min 的最小格点仍 >max）→ 不动。
+            if (hasMin && hasMax && min > max) return undefined;
+            if (hasMin && hasMax) {
+              var klo = _suKInt((min - base) / allowedStep);
+              klo = klo !== null ? klo : Math.ceil((min - base) / allowedStep);
+              if (base + klo * allowedStep > max) return undefined;
+            }
+            // value：当前值解析（valueAsNumber 同面），错误 → 0（spec step 5）。
+            var rawCur = _suParseBound(_controlValue(sel, handle, key));
+            var curWasInvalid = isNaN(rawCur);
+            var before = curWasInvalid ? 0 : rawCur;
+            var cur = before;
+            var off = (cur - base) / allowedStep;
+            if (_suKInt(off) !== null) {
+              // 在格：+ allowedStep×n（stepDown 取负）。n 为 WebIDL long（缺省 1、NaN → 0）。
+              var nn = (n === undefined) ? 1 : Math.trunc(Number(n));
+              if (isNaN(nn)) nn = 0;
+              if (prop === 'stepDown') nn = -nn;
+              cur = base + (_suKInt(off) + nn) * allowedStep;
+            } else {
+              // 离格：向步进方向 snap 最近格点（stepUp 取上、stepDown 取下，spec step 7）。
+              cur = base + ((prop === 'stepDown') ? Math.ceil(off) - 1 : Math.floor(off) + 1) * allowedStep;
+            }
+            // 越界 → 对齐界内最近格点（≥min 最小 / ≤max 最大；非 clamp 到界值——WPT stepup
+            // 「step=3、max=7、stepUp(3) → 6」断言面）。
+            if (hasMin && cur < min) {
+              var km = _suKInt((min - base) / allowedStep);
+              cur = base + (km !== null ? km : Math.ceil((min - base) / allowedStep)) * allowedStep;
+            }
+            if (hasMax && cur > max) {
+              var kx = _suKInt((max - base) / allowedStep);
+              cur = base + (kx !== null ? kx : Math.floor((max - base) / allowedStep)) * allowedStep;
+            }
+            // 反向回退（spec step 10）：步进后越过原值反向（value=1/max=0 stepUp → 收 0）→ 不动。
+            // 当前值解析失败（→0）不参与回退判定（spec 文本无此例外；Chromium ApplyStep
+            // `!current_was_invalid` 同面——WPT stepdown-02「value=''/min=7 → 7」与
+            // 「value=3/min=7 → 3」双断言只有带例外才同时成立）。
+            if (!curWasInvalid && ((prop === 'stepDown' && cur > before) || (prop === 'stepUp' && cur < before))) return undefined;
+            if (suT === 'number' || suT === 'range') {
+              this.value = String(cur);
+            } else if (suT === 'month') {
+              this.value = _formatHtmlDateValue(new Date(Date.UTC(1970, 0 + cur, 1)), 'month');
+            } else {
+              this.value = _formatHtmlDateValue(new Date(cur), suT);
+            }
             return undefined;
           };
         }

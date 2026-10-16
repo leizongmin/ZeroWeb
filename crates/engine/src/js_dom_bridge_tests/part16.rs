@@ -391,7 +391,13 @@ fn test_input_value_as_date_r3317() {
 
 #[test]
 fn test_input_step_up_down_r3317() {
-    // stepUp(n)/stepDown(n)——number/range 按 step 增减并 clamp [min,max]；非 number/range→undefined no-op。
+    // stepUp(n)/stepDown(n)——R3902c 起 spec 全七类型步进算法（HTML §4.10.5.4）：方法对全部 INPUT
+    // 暴露，非步进类型调用抛 InvalidStateError；步进基 min→value→类型缺省基；离格向步进方向
+    // snap；越界对齐界内格点（非 clamp 界值）。行为契约修正（unit test 随改）：R3317 旧断言
+    // 「text 无 stepUp（typeof undefined）」「range value=5 step=2 stepUp(2)=9（前值+2n）」系
+    // 实现松弛，与 spec（方法恒暴露+InvalidStateError / 步进基 min 离格 snap→6）及 WPT
+    // input-stepup（INPUT_TYPES_THAT_CANT_STEP 抛 InvalidStateError、clamp-to-grid=6 断言）冲突，
+    // 随本切片 spec 算法接入同步修正。
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
     let config = zero_script_sandbox::SandboxConfig {
@@ -407,6 +413,8 @@ fn test_input_step_up_down_r3317() {
          <input id='b' type='number' value='10' step='5'>\
          <input id='c' type='range' value='5' min='0' max='10' step='2'>\
          <input id='d' type='text' value='10'>\
+         <input id='e' type='date'>\
+         <input id='f' type='number' step='any'>\
          </body></html>"
             .to_string(),
     ));
@@ -415,7 +423,7 @@ fn test_input_step_up_down_r3317() {
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
     register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
-    // stepUp 默认 n=1（step 缺省 1）；stepUp(3) step=5；stepDown(2) step=2 clamp max。
+    // stepUp 默认 n=1（step 缺省 1）；stepUp(3) step=5；c 离格 snap；e date 步进 1 天；f step='any' 抛。
     sandbox
         .execute(
             "var a = document.querySelector('#a');\
@@ -429,11 +437,18 @@ fn test_input_step_up_down_r3317() {
              globalThis.__c = c.value;\
              c.stepDown(10);\
              globalThis.__c2 = c.value;\
-             /* 非 number/range：stepUp 为 undefined（type gate 提前 return），调用抛 TypeError（real-browser 亦不暴露该方法）*/\
+             /* 方法对全部 INPUT 暴露（spec）；text 调用抛 InvalidStateError，value 不变 */\
              var d = document.querySelector('#d');\
              globalThis.__dRet = String(typeof d.stepUp);\
-             try { d.stepUp(); globalThis.__dThrow = 'no'; } catch (e) { globalThis.__dThrow = 'yes'; }\
-             globalThis.__dVal = d.value;",
+             try { d.stepUp(); globalThis.__dThrow = 'no'; } catch (e) { globalThis.__dThrow = 'yes'; globalThis.__dErr = String(e.name); }\
+             globalThis.__dVal = d.value;\
+             /* date 空 value：步进基 epoch，stepUp() → +86400000ms = 1970-01-02 */\
+             var eEl = document.querySelector('#e');\
+             eEl.stepUp();\
+             globalThis.__e = eEl.value;\
+             /* step='any'：无 allowed value step → InvalidStateError */\
+             var fEl = document.querySelector('#f');\
+             try { fEl.stepUp(); globalThis.__fThrow = 'no'; } catch (e) { globalThis.__fThrow = 'yes'; globalThis.__fErr = String(e.name); }",
         )
         .unwrap();
     assert_eq!(
@@ -448,28 +463,48 @@ fn test_input_step_up_down_r3317() {
     );
     assert_eq!(
         sandbox.execute("globalThis.__c").unwrap().value,
-        "9",
-        "range value=5 min=0 max=10 step=2 stepUp(2) → 5 + 2*2 = 9"
+        "6",
+        "range value=5 min=0 max=10 step=2 stepUp(2)：基=min=0，5 离格 → spec step 7 向上 snap 最近格点 6（旧值 9 系前值+2n 松弛）"
     );
     assert_eq!(
         sandbox.execute("globalThis.__c2").unwrap().value,
         "0",
-        "range stepDown(10) 从 9 超 max 退到 min=0（clamp）"
+        "range stepDown(10) 从 6 在格 −20 越下界 → spec step 8 对齐 ≥min 最小格点 0"
     );
     assert_eq!(
         sandbox.execute("globalThis.__dRet").unwrap().value,
-        "undefined",
-        "text input 无 stepUp（非 number/range）→ typeof undefined"
+        "function",
+        "stepUp 方法对全部 INPUT 暴露（spec；旧值 undefined 系非步进类型 no-op 松弛）"
     );
     assert_eq!(
         sandbox.execute("globalThis.__dThrow").unwrap().value,
         "yes",
-        "text input 调 stepUp() 抛 TypeError（undefined 非 callable，real-browser 同行为）"
+        "text input 调 stepUp() 抛 InvalidStateError（WPT input-stepup INPUT_TYPES_THAT_CANT_STEP 断言面）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__dErr").unwrap().value,
+        "InvalidStateError",
+        "text input 抛出异常 name = InvalidStateError"
     );
     assert_eq!(
         sandbox.execute("globalThis.__dVal").unwrap().value,
         "10",
-        "text input 未调成功，value 保持 10"
+        "text input 抛异常后 value 保持 10"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__e").unwrap().value,
+        "1970-01-02",
+        "date 空 value 步进基 epoch → stepUp() 缺省步长 1 天 → 1970-01-02"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__fThrow").unwrap().value,
+        "yes",
+        "step='any' 无 allowed value step → 抛 InvalidStateError"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__fErr").unwrap().value,
+        "InvalidStateError",
+        "step='any' 抛出异常 name = InvalidStateError"
     );
 }
 
@@ -1196,3 +1231,4 @@ fn test_opfs_stream_after_close_and_unique_id_m3() {
         "close 后 write 拒绝 TypeError"
     );
 }
+

@@ -10807,13 +10807,26 @@
             }
           }
         } else if (p === 'valueAsNumber') {
-          // `input.valueAsNumber = n`（HTMLInputElement，R2836）——number/range：NaN→''，否则 String(n)→设
-          // value 属性 + 缓存（复用 value 同步路径）。其他 type / 非 INPUT：no-op（date/time defer；分支
-          // 终止不 fallthrough 致误设 'valueAsNumber' 内容属性）。仅 INPUT（_realTag gate）。
+          // `input.valueAsNumber = n`（HTMLInputElement，R2836/R3902c）——number/range：NaN→''，
+          // 否则 String(n)→设 value 属性 + 缓存（复用 value 同步路径）。date/time/week/
+          // datetime-local：ms→格式化串；month：1970-01 起月数→YYYY-MM（与 valueAsNumber getter
+          // 互逆，WPT valueasnumber-stepping 断言面）。其他 type / 非 INPUT：no-op（分支终止不
+          // fallthrough 致误设 'valueAsNumber' 内容属性）。仅 INPUT（_realTag gate）。
           if (_realTag(sel, handle) === 'INPUT') {
             var vsT = (handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type')) || '';
-            if (vsT.toLowerCase() === 'number' || vsT.toLowerCase() === 'range') {
-              var vsS = (typeof value === 'number' && isNaN(value)) ? '' : String(value);
+            vsT = vsT.toLowerCase();
+            var vsS = null;
+            if (vsT === 'number' || vsT === 'range') {
+              vsS = (typeof value === 'number' && isNaN(value)) ? '' : String(value);
+            } else if (vsT === 'date' || vsT === 'time' || vsT === 'week' || vsT === 'datetime-local') {
+              var vsN = Number(value);
+              vsS = (typeof value === 'number' && isNaN(value)) ? '' : _formatHtmlDateValue(new Date(vsN), vsT);
+            } else if (vsT === 'month') {
+              var vsMn = Number(value);
+              vsS = (typeof value === 'number' && isNaN(value)) ? ''
+                : _formatHtmlDateValue(new Date(Date.UTC(1970, 0 + vsMn, 1)), 'month');
+            }
+            if (vsS !== null) {
               _inputValues[key] = vsS; _inputValuesSet[key] = true;
               _captureInputDefault(key, sel, handle); // R2996：valueAsNumber= 等同 .value=，捕获 defaultValue
               if (handle) __zw_set_attr_handle(handle, 'value', vsS);
