@@ -569,6 +569,8 @@ pub fn generate_history_html(history: &zero_browser_shell::History, query: Optio
     // 时间分组（Chrome 行为：按日期分组展示）。条目时间倒序输入，逐条映射到
     // 本地日期组；同组合并、异组按首次出现顺序排列（新的组在前）。
     let today = local_today_days();
+    // 条目级相对时间统一取同一 `now`，同屏时间轴一致。
+    let now = unix_seconds_now();
     let mut groups: Vec<(HistoryGroup, Vec<&zero_browser_shell::HistoryEntry>)> = Vec::new();
     for entry in entries {
         let group = HistoryGroup::of(entry.visited_at());
@@ -594,8 +596,11 @@ pub fn generate_history_html(history: &zero_browser_shell::History, query: Optio
         for (group, items) in groups {
             let mut rows = String::new();
             for entry in items {
+                // 条目级相对时间（Chrome 行为）：灰色小字缀在 URL 右侧；
+                // 旧版档案条目（无时间戳）不显示。
+                let visited = history_relative_time(entry.visited_at(), now, lang).unwrap_or_default();
                 rows.push_str(&format!(
-                    r#"<li style="margin:8px 0;"><a href="{href}" style="color:#1a73e8;text-decoration:none;">{label}</a><br><span style="font-size:12px;color:#80868b;">{url}</span> <a href="zero://history/remove?url={encoded}{remove_suffix}" style="font-size:12px;color:#d93025;text-decoration:none;margin-left:8px;">{delete_label}</a></li>"#,
+                    r#"<li style="margin:8px 0;"><a href="{href}" style="color:#1a73e8;text-decoration:none;">{label}</a><br><span style="font-size:12px;color:#80868b;">{url}</span><span style="font-size:12px;color:#9aa0a6;margin-left:8px;">{visited}</span> <a href="zero://history/remove?url={encoded}{remove_suffix}" style="font-size:12px;color:#d93025;text-decoration:none;margin-left:8px;">{delete_label}</a></li>"#,
                     href = html_escape(entry.url()),
                     label = html_escape(entry.title()),
                     url = html_escape(entry.url()),
@@ -684,6 +689,44 @@ fn history_group_header(group: HistoryGroup, today: i64, lang: zero_browser_shel
     match lang {
         UiLanguage::ZhCn => zh.to_string(),
         UiLanguage::EnUs => en.to_string(),
+    }
+}
+
+/// 历史条目相对时间文本（Chrome 行为：每条记录旁显示相对时间）。
+///
+/// `now` 与 `visited_at` 均为 Unix 秒。`visited_at == 0`（旧版档案条目）或
+/// 系统时钟早于 epoch 时不显示时间，返回 `None`；未来时间戳（时钟偏差）按
+/// 刚刚处理。
+fn history_relative_time(visited_at: u64, now: u64, lang: zero_browser_shell::UiLanguage) -> Option<String> {
+    use zero_browser_shell::UiLanguage;
+    if visited_at == 0 {
+        return None;
+    }
+    let elapsed = now.saturating_sub(visited_at);
+    let (zh, en) = if elapsed < 60 {
+        ("刚刚".to_string(), "just now".to_string())
+    } else if elapsed < 3_600 {
+        let mins = elapsed / 60;
+        (format!("{mins} 分钟前"), plural_ago(mins, "minute"))
+    } else if elapsed < 86_400 {
+        let hours = elapsed / 3_600;
+        (format!("{hours} 小时前"), plural_ago(hours, "hour"))
+    } else {
+        let days = elapsed / 86_400;
+        (format!("{days} 天前"), plural_ago(days, "day"))
+    };
+    Some(match lang {
+        UiLanguage::ZhCn => zh,
+        UiLanguage::EnUs => en,
+    })
+}
+
+/// 英文相对时间 "N <unit>(s) ago"，1 不用复数。
+fn plural_ago(count: u64, unit: &str) -> String {
+    if count == 1 {
+        format!("1 {unit} ago")
+    } else {
+        format!("{count} {unit}s ago")
     }
 }
 
@@ -1192,6 +1235,67 @@ mod tests {
         let html = generate_history_html(&history, None);
         assert!(html.contains("old.example"));
         assert!(html.contains(">更早<") || html.contains(">Earlier<"));
+    }
+
+    #[test]
+    fn history_relative_time_buckets_by_elapsed() {
+        use zero_browser_shell::UiLanguage;
+        let now = 1_800_000_000u64;
+        let cases = [
+            (now, ("刚刚", "just now")),
+            (now - 59, ("刚刚", "just now")),
+            (now - 60, ("1 分钟前", "1 minute ago")),
+            (now - 600, ("10 分钟前", "10 minutes ago")),
+            (now - 3_599, ("59 分钟前", "59 minutes ago")),
+            (now - 3_600, ("1 小时前", "1 hour ago")),
+            (now - 7_200, ("2 小时前", "2 hours ago")),
+            (now - 86_399, ("23 小时前", "23 hours ago")),
+            (now - 86_400, ("1 天前", "1 day ago")),
+            (now - 3 * 86_400, ("3 天前", "3 days ago")),
+        ];
+        for (visited_at, (zh, en)) in cases {
+            assert_eq!(
+                history_relative_time(visited_at, now, UiLanguage::ZhCn).as_deref(),
+                Some(zh)
+            );
+            assert_eq!(
+                history_relative_time(visited_at, now, UiLanguage::EnUs).as_deref(),
+                Some(en)
+            );
+        }
+    }
+
+    #[test]
+    fn history_relative_time_hides_unknown_timestamp_and_future() {
+        use zero_browser_shell::UiLanguage;
+        // 旧版档案条目（visited_at == 0）不显示时间。
+        assert_eq!(history_relative_time(0, 1_000, UiLanguage::EnUs), None);
+        // 未来时间戳（时钟偏差）按刚刚处理，不出现负数。
+        assert_eq!(
+            history_relative_time(2_000, 1_000, UiLanguage::EnUs).as_deref(),
+            Some("just now")
+        );
+    }
+
+    #[test]
+    fn generate_history_html_shows_relative_time_per_entry() {
+        use zero_browser_shell::UiLanguage;
+        let mut history = zero_browser_shell::History::default();
+        history.record("https://example.com/recent", "Recent");
+        let lang = UiLanguage::detect_from_env();
+        let now = unix_seconds_now();
+        let html = generate_history_html(&history, None);
+        // 刚记录的条目 elapsed < 60s，两种 locale 下分别显示刚刚/just now。
+        let expected = history_relative_time(history.iter().next().expect("entry recorded").visited_at(), now, lang)
+            .expect("fresh entry has relative time");
+        assert!(html.contains(&expected), "html must contain relative time {expected}");
+        // 旧版档案条目（无时间戳）不显示相对时间。
+        let legacy: zero_browser_shell::History =
+            serde_json::from_str(r#"{"entries":[{"url":"https://old.example/","title":"Old"}]}"#)
+                .expect("legacy history JSON must deserialize");
+        let legacy_html = generate_history_html(&legacy, None);
+        assert!(!legacy_html.contains("just now"));
+        assert!(!legacy_html.contains("刚刚<"));
     }
 
     #[test]

@@ -444,18 +444,26 @@ impl BrowserApp {
                         .map(|i| (i + 1).min(self.autocomplete.suggestions.len() - 1))
                         .unwrap_or(0);
                     self.autocomplete.selected_index = Some(next);
+                    self.sync_address_bar_to_selection();
                     self.needs_redraw = true;
                 }
             }
             k if key_matches(k, "Up") => {
                 if !self.autocomplete.suggestions.is_empty() {
                     self.autocomplete.hovered_index = None;
-                    if let Some(i) = self.autocomplete.selected_index {
-                        if i > 0 {
+                    match self.autocomplete.selected_index {
+                        Some(i) if i > 0 => {
                             self.autocomplete.selected_index = Some(i - 1);
-                        } else {
-                            self.autocomplete.selected_index = None;
+                            self.sync_address_bar_to_selection();
                         }
+                        // 回到原始输入：取消高亮并恢复导航前文本（Chrome 行为 b）。
+                        Some(_) => {
+                            self.autocomplete.selected_index = None;
+                            if let Some(text) = self.autocomplete.pre_nav_text.take() {
+                                self.address_bar.set_text(text);
+                            }
+                        }
+                        None => {}
                     }
                     self.needs_redraw = true;
                 }

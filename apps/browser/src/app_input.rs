@@ -514,6 +514,27 @@ impl BrowserApp {
         self.autocomplete.suggestions = self.shell.suggest(query);
         self.autocomplete.hovered_index = None;
         self.autocomplete.selected_index = None;
+        self.autocomplete.pre_nav_text = None;
+    }
+
+    /// 键盘高亮项文字同步替换地址栏显示（Chrome omnibox 行为 d）。
+    ///
+    /// 首次进入键盘导航时保存原始输入，供 Arrow Up 退回原输入时恢复；
+    /// Search 建议的 `url()` 即查询词，显示与 Enter 导航同源。`set_text`
+    /// 将光标置尾，继续输入在建议文本后追加并重算建议列表。
+    fn sync_address_bar_to_selection(&mut self) {
+        let Some(sug) = self
+            .autocomplete
+            .selected_index
+            .and_then(|idx| self.autocomplete.suggestions.get(idx))
+        else {
+            return;
+        };
+        if self.autocomplete.pre_nav_text.is_none() {
+            self.autocomplete.pre_nav_text = Some(self.address_bar.text().to_string());
+        }
+        let url = sug.url().to_string();
+        self.address_bar.set_text(url);
     }
 
     /// 处理鼠标移动
@@ -1316,6 +1337,10 @@ impl BrowserApp {
             UiLanguage::ZhCn => "打开",
             UiLanguage::EnUs => "Open",
         };
+        let open_new_tab_label = match language {
+            UiLanguage::ZhCn => "在新标签页打开",
+            UiLanguage::EnUs => "Open in new tab",
+        };
         let copy_label = match language {
             UiLanguage::ZhCn => "复制链接",
             UiLanguage::EnUs => "Copy link",
@@ -1326,6 +1351,7 @@ impl BrowserApp {
         };
         let items = vec![
             MenuItem::action("bookmark_open", open_label),
+            MenuItem::action("bookmark_open_new_tab", open_new_tab_label),
             MenuItem::action("bookmark_copy_link", copy_label),
             MenuItem::separator(),
             MenuItem::action("bookmark_delete", delete_label),
