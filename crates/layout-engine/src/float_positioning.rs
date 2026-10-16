@@ -1983,11 +1983,21 @@ pub(crate) fn adjust_float_positions_with_context(
 
     // 收集本容器自身的 float 子元素几何（border-box 帧），用于 BFC 排斥 + 嵌套透传。
     // 注意：c.y 已含 margin_top（Phase 1 定位），故 float_h 只需 height + margin_bottom。
+    // R5160：同步记录各 float 的子索引——BFC 排斥须只消费**文档顺序在前**的 float
+    //（CSS 2.1 §9.5：float 顶边不得高于其假设流位，后序 float 的正确位恒在前序块
+    // 之下，对更早的块级 BFC 不构成避让约束；Phase 1 的临时 y 可早于真实流位，
+    // 据它对前序块做排斥会把后序 float 误当现役约束——contain-size-block-002
+    // block2 被后置 float 群缩进 x=68/w=716 实证）。kill-switch
+    // `ZW_BFC_FLOAT_ORDER_GATE=0` 回退无序消费。
+    let float_order_gate = std::env::var("ZW_BFC_FLOAT_ORDER_GATE").as_deref() != Ok("0");
+    let mut float_child_indices: Vec<usize> = Vec::new();
     let float_geometries: Vec<FloatGeom> = box_node
         .children
         .iter()
-        .filter(|c| !matches!(c.float, FloatValue::None))
-        .map(|c| {
+        .enumerate()
+        .filter(|(_, c)| !matches!(c.float, FloatValue::None))
+        .map(|(i, c)| {
+            float_child_indices.push(i);
             (
                 c.float.clone(),
                 c.x,
@@ -2457,11 +2467,17 @@ pub(crate) fn adjust_float_positions_with_context(
                 {
                     let overlapping: Vec<&FloatGeom> = float_geometries
                         .iter()
-                        .filter(|g| {
+                        .enumerate()
+                        .filter(|(j, g)| {
+                            // R5160：仅文档顺序在前的 float 参与排斥（见 float_geometries 注）。
+                            if float_order_gate && float_child_indices[*j] >= idx {
+                                return false;
+                            }
                             let (_, _, fy, _, fh, _) = g;
                             let fbottom = *fy + *fh;
                             child_top < fbottom && child_bottom > *fy
                         })
+                        .map(|(_, g)| g)
                         .collect();
                     if overlapping.len() >= 2 {
                         let w = child.declared_width_px.unwrap_or(child.width);
@@ -2539,7 +2555,13 @@ pub(crate) fn adjust_float_positions_with_context(
                 }
 
                 if !coord_handled {
-                    for (float_dir, float_x, float_y, float_border_w, float_h, float_margin_r) in &float_geometries {
+                    for (gi, (float_dir, float_x, float_y, float_border_w, float_h, float_margin_r)) in
+                        float_geometries.iter().enumerate()
+                    {
+                        // R5160：仅文档顺序在前的 float 参与排斥（见 float_geometries 注）。
+                        if float_order_gate && float_child_indices[gi] >= idx {
+                            continue;
+                        }
                         let float_top = *float_y;
                         let float_bottom = *float_y + *float_h;
 

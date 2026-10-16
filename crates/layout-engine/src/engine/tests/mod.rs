@@ -731,3 +731,4 @@ mod r5157_contain_size_grid_tests;
 /// R5158 body→viewport overflow 传播的 taffy 半边——body{overflow:hidden} 父子
 /// margin 塌缩归位（css-overflow-3 §3.3；contain-size-grid-002 残差驱动）。
 mod r5158_body_overflow_prop_taffy_tests;
+mod r5160_bfc_float_order_tests;
