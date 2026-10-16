@@ -1343,6 +1343,58 @@ fn tab_context_menu_pin_tab() {
     assert!(app.shell.tab(tab_id).unwrap().is_pinned());
 }
 
+/// 书签栏右键菜单「在新标签页打开」：前台新标签并立即派发装载
+/// （`Tab::new` 只把 URL 记进 shell 模型，缺 start_tab_request 派发时新标签停在 Loading）。
+#[test]
+fn bookmark_context_menu_open_in_new_tab_loads_url() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    // 测试共享真实 XDG bookmarks.json：先隔离同 URL 书签再定点添加。
+    app.shell.bookmarks_mut().remove_by_url("https://zw-menu-tab.test/");
+    app.shell
+        .bookmarks_mut()
+        .add("MenuTab", "https://zw-menu-tab.test/", None);
+    // 真实 settings.json 可能关闭书签栏（show_bookmarks_bar=false 时栏高为 0，
+    // 右键区域不存在）：临时开启，收尾恢复，避免污染共享档案。
+    let bar_visible_before = app.shell.settings().show_bookmarks_bar;
+    app.shell.apply_settings(|s| s.show_bookmarks_bar = true);
+
+    // 与 bookmark_bar_item_at 同款宽度模型，定位所加条目的中心 x
+    // （真实档案可能有其它书签排在前面，不能假定它是第一项）。
+    let s = app.scale_factor;
+    let mut target_x = None;
+    let mut bx = 8.0 * s;
+    for bm in app.shell.bookmarks().list_root() {
+        let w = bm.title().len() as f32 * 12.0 * s * 0.6 + 24.0 * s;
+        if bm.url() == "https://zw-menu-tab.test/" {
+            target_x = Some(bx + w * 0.5);
+            break;
+        }
+        bx += w + 8.0 * s;
+    }
+    let x = target_x.expect("added bookmark must be listed in root") as f64;
+    let y = ((layout::TOOLBAR_HEIGHT + app.chrome_top_y_for(s)) * 0.5) as f64;
+
+    let tabs_before = app.shell.tab_count();
+    app.handle_mouse_click(x, y, true, "Right");
+    // 菜单原点即右键点（窗口内不触发贴缘翻转），第 2 行是「在新标签页打开」。
+    let row_h = (layout::CONTEXT_MENU_ROW_HEIGHT * s) as f64;
+    app.handle_mouse_click(x + 4.0, y + 4.0 + row_h * 1.5, true, "Left");
+
+    let tab_count_after = app.shell.tab_count();
+    let tab_id = app.shell.active_tab_id().unwrap();
+    let loading = app.shell.tab(tab_id).unwrap().is_loading();
+    let address = app.address_bar_text().to_string();
+    // 先恢复共享档案再断言，断言失败不残留测试状态。
+    app.shell.apply_settings(|s| s.show_bookmarks_bar = bar_visible_before);
+    app.shell.bookmarks_mut().remove_by_url("https://zw-menu-tab.test/");
+
+    assert_eq!(tab_count_after, tabs_before + 1, "应新建一个前台标签页");
+    assert!(loading, "新标签应经 start_tab_request 立即进入装载");
+    assert_eq!(address, "https://zw-menu-tab.test/");
+}
+
 /// 键盘 ↓ 选中自动补全首项时应使用 selected 背景色。
 #[test]
 fn autocomplete_keyboard_selection_uses_selected_bg() {
@@ -1357,13 +1409,45 @@ fn autocomplete_keyboard_selection_uses_selected_bg() {
     }
 
     app.handle_key("ArrowDown", true, None);
-    let (fills, _, _, _, _, _) = app.build_scene_for_test(1280, 900);
+    // 自动补全下拉画在 overlay 层（页面浮层，与查找栏/标签溢出下拉同类），
+    // fills 层会被追加其后的页面图元盖住。
+    let (_, _, overlay_fills, _, _, _) = app.build_scene_for_test(1280, 900);
     assert!(
-        fills
+        overlay_fills
             .iter()
             .any(|f| f.color == app.chrome_palette().autocomplete_selected_bg),
         "keyboard-selected autocomplete row should use selected background"
     );
+}
+
+/// 键盘 ↓ 选中补全项后地址栏文字同步为该项 URL，↑ 退回原始输入（Chrome 行为 b/d）。
+#[test]
+fn autocomplete_keyboard_nav_syncs_address_bar_text() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    // 唯一标记 URL：查询含 ".tld" 判定为 URL 形态（不插搜索建议），首条
+    // 建议即该历史条目，与真实 XDG 档案中其它条目无子串碰撞。
+    app.shell.navigate("https://zw-key-nav.test/page");
+    app.shell.on_page_loaded("Key Nav");
+    app.address_bar_focused = true;
+    for ch in "zw-key-nav.test".chars() {
+        app.handle_key(&ch.to_string(), true, None);
+    }
+    let typed = app.address_bar_text().to_string();
+    let first_url = app
+        .shell
+        .suggest(&typed)
+        .first()
+        .map(|s| s.url().to_string())
+        .expect("URL 形态查询应命中刚记录的历史条目");
+    assert_ne!(first_url, typed);
+
+    app.handle_key("ArrowDown", true, None);
+    assert_eq!(app.address_bar_text(), first_url, "↓ 选中后地址栏应同步显示补全项文字");
+
+    app.handle_key("ArrowUp", true, None);
+    assert_eq!(app.address_bar_text(), typed, "↑ 退回应恢复导航前原始输入");
 }
 
 /// 验证 Ctrl+D 添加书签（当前页面）。
@@ -4869,11 +4953,15 @@ fn autocomplete_url_match_segment_uses_text_color() {
         app.handle_key(ch, true, None);
     }
 
-    let (_, glyphs, _, _, _, _) = app.build_scene_for_test(1280, 900);
+    // 自动补全下拉画在 overlay 层（页面浮层），字形取 overlay_glyphs。
+    let (_, _, _, overlay_glyphs, _, _) = app.build_scene_for_test(1280, 900);
     let palette = app.chrome_palette();
     // URL 行 = 灰色（autocomplete_url）字形所在的基线带；同带内的深色字形
     // 应恰为匹配段 "127"（搜索建议行的 "127" 标题在另一基线带，被过滤）。
-    let gray_url: Vec<_> = glyphs.iter().filter(|g| g.color == palette.autocomplete_url).collect();
+    let gray_url: Vec<_> = overlay_glyphs
+        .iter()
+        .filter(|g| g.color == palette.autocomplete_url)
+        .collect();
     assert!(
         gray_url.iter().any(|g| g.ch == 'h') && gray_url.iter().any(|g| g.ch == '/'),
         "下拉应绘制 URL 灰色字形"
@@ -4882,7 +4970,7 @@ fn autocomplete_url_match_segment_uses_text_color() {
     let url_band: Vec<f32> = gray_url.iter().filter(|g| g.ch == ':').map(|g| g.baseline_y).collect();
     let y_min = url_band.iter().cloned().fold(f32::MAX, f32::min);
     let y_max = url_band.iter().cloned().fold(f32::MIN, f32::max);
-    let mut dark_in_url_line: String = glyphs
+    let mut dark_in_url_line: String = overlay_glyphs
         .iter()
         .filter(|g| g.color == palette.autocomplete_text)
         .filter(|g| g.baseline_y >= y_min - 0.5 && g.baseline_y <= y_max + 0.5)

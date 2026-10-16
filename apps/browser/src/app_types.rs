@@ -137,6 +137,8 @@ struct AutocompleteState {
     hovered_index: Option<usize>,
     /// 键盘选中的索引
     selected_index: Option<usize>,
+    /// 键盘导航前的原始输入（Chrome 行为：Arrow Up 退回原输入时恢复地址栏文本）。
+    pre_nav_text: Option<String>,
 }
 
 impl AutocompleteState {
@@ -145,6 +147,7 @@ impl AutocompleteState {
             suggestions: Vec::new(),
             hovered_index: None,
             selected_index: None,
+            pre_nav_text: None,
         }
     }
 
@@ -152,6 +155,7 @@ impl AutocompleteState {
         self.suggestions.clear();
         self.hovered_index = None;
         self.selected_index = None;
+        self.pre_nav_text = None;
     }
 
     fn highlight_index(&self) -> Option<usize> {

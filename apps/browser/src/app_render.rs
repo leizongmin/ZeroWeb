@@ -196,9 +196,11 @@ impl BrowserApp {
 
         // 12. 查找栏与下载面板在 overlay 层绘制（浮动，不占布局高度）
 
-        // 13. 自动补全下拉
+        // 13. 自动补全下拉（overlay 层：与查找栏/标签溢出下拉同类的页面浮层。
+        // 此前画进 fills 层会被追加在其后的页面图元盖住——面板边框与键盘选中
+        // 行高亮在真实窗口与截图中均不可见，只剩文字浮在页面背景上）。
         if self.address_bar_focused && !self.autocomplete.suggestions.is_empty() {
-            self.render_autocomplete(&mut fills, &mut glyphs, width, font_size, s);
+            self.render_autocomplete(&mut overlay_fills, &mut overlay_glyphs, width, font_size, s);
         }
 
         // 14. 链接悬停浮动状态栏（覆盖在页面内容上方，不占布局高度）
@@ -2013,6 +2015,9 @@ impl BrowserApp {
         let pad_v = layout::AUTOCOMPLETE_ROW_PAD_V * s;
         let title_size = font_size * 0.92;
         let url_size = font_size * 0.78;
+        // 匹配高亮以用户原始输入为查询；键盘导航同步后地址栏已是建议文本，
+        // 用它自身匹配会把整条 URL 加深（保持与 Chrome 一致的键入段高亮）。
+        let match_query = self.autocomplete.pre_nav_text.as_deref().unwrap_or(self.address_bar.text());
 
         push_rounded_rect_fill(
             fills,
@@ -2120,7 +2125,7 @@ impl BrowserApp {
                     let url = sug.url();
                     self.draw_url_with_match_highlight(
                         url,
-                        self.address_bar.text(),
+                        match_query,
                         text_x,
                         row_y + pad_v + title_size + 2.0 * s,
                         url_size,
@@ -2151,7 +2156,7 @@ impl BrowserApp {
                     let url = sug.url();
                     self.draw_url_with_match_highlight(
                         url,
-                        self.address_bar.text(),
+                        match_query,
                         text_x,
                         row_y + pad_v + title_size + 2.0 * s,
                         url_size,
