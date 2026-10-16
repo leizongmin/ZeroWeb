@@ -116,6 +116,25 @@ pub(super) fn fallback_line_metrics() -> bool {
     residual_selected(*VALUE, || default_on("ZW_FALLBACK_LINE_METRICS"))
 }
 
+/// R5147：per-font 行度量整数化（Blink `SimpleFontData` 对 ascent/descent 逐项取整，
+/// `line-height:normal` 与回退链行盒贡献恒整数——chromium 实测 quotes-025 CJK 行
+/// 46.336→46、p3 y 179.336→179 逐像素一致）。**R5147 默认 on**：corpus 1,159→1,156
+/// 翻绿 3（quotes-025/026/027 全 0.00%）+ strict 口径 +29 案、零新增红零 churn；
+/// `ZW_INT_FONT_METRICS=0` 回退原始分数度量。
+///
+/// R5147 同轮扩展（同旗标）：常数比率 `line-height:normal` 路径（`fs × 1.164`，
+/// provider 未命中臂）floor 整数化纳入——16px serif 18.624→18 = chromium 实测 p 高
+/// （fill-001 div top 分数相位消除，0.00% 翻绿）。corpus 1,156→1,146（+14/−4）、
+/// strict 口径 9,222→9,760、product-smoke welcome 17.43→17.07%（vs 关闭 18.17%；
+/// 15.35→18.17 台阶 = welcome.html +42 行 × 陈旧 oracle，ZRG-2026-10-16-01 定谳
+/// 非渲染回归，oracle 重录待用户放行）。round 变体 corpus/welcome
+/// 双劣已 refute（1,148 / 17.63%）。clamp 行数估记 `container_used_line_height_px`
+/// **不**整数化——分数 18.624 与 ref 自洽（auto-039/040/043/044 实证，整数化 +4 红）。
+pub(super) fn int_font_metrics() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_INT_FONT_METRICS"));
+    selected(*VALUE, || default_on("ZW_INT_FONT_METRICS"))
+}
+
 fn default_on(name: &str) -> bool {
     std::env::var(name).as_deref() != Ok("0")
 }

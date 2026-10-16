@@ -1213,8 +1213,8 @@ fn test_resolve_font_metrics_no_style() {
         "默认 font_size 应为 16.0，实际 {font_size}"
     );
     assert!(
-        (line_height - 18.624).abs() < 0.01,
-        "默认 line_height 应为 16.0 * 1.164 = 18.624，实际 {line_height}"
+        (line_height - 18.0).abs() < 0.01,
+        "默认 line_height 应为 16.0 * 1.164 = 18.624（R5147 整数化 floor → 18 = chromium 实测），实际 {line_height}"
     );
 }
 
@@ -1226,10 +1226,10 @@ fn test_resolve_font_metrics_with_font_size() {
 
     let (font_size, line_height) = resolve_font_metrics(Some(&style));
     assert!((font_size - 24.0).abs() < 0.01, "font_size 应为 24.0，实际 {font_size}");
-    // line-height: Normal → 24.0 * 1.164 = 27.936
+    // line-height: Normal → 24.0 * 1.164 = 27.936（R5147 整数化 floor → 27）
     assert!(
-        (line_height - 27.936).abs() < 0.01,
-        "line_height 应为 28.8，实际 {line_height}"
+        (line_height - 27.0).abs() < 0.01,
+        "line_height 应为 27，实际 {line_height}"
     );
 }
 
@@ -1246,8 +1246,8 @@ fn r3622_resolve_font_metrics_resolves_relative_font_size() {
         "font_size 应解析 2em@16px 为 32，实际 {font_size}"
     );
     assert!(
-        (line_height - 37.248).abs() < 0.01,
-        "line_height 应使用 resolved font_size 32 * 1.164 = 37.248，实际 {line_height}"
+        (line_height - 37.0).abs() < 0.01,
+        "line_height 应使用 resolved font_size 32 * 1.164 = 37.248（R5147 整数化 floor → 37），实际 {line_height}"
     );
 }
 
@@ -1291,8 +1291,8 @@ fn test_resolve_font_metrics_line_height_normal() {
     let (font_size, line_height) = resolve_font_metrics(Some(&style));
     assert!((font_size - 32.0).abs() < 0.01);
     assert!(
-        (line_height - 37.248).abs() < 0.01,
-        "line_height 应为 32.0 * 1.164 = 37.248，实际 {line_height}"
+        (line_height - 37.0).abs() < 0.01,
+        "line_height 应为 32.0 * 1.164 = 37.248（R5147 整数化 floor → 37），实际 {line_height}"
     );
 }
 
@@ -1462,11 +1462,11 @@ fn test_layout_no_style_fallback() {
         );
     }
 
-    // 行盒高度应为 16.0 * 1.164 = 18.624
+    // 行盒高度应为 16.0 * 1.164 = 18.624（R5147 整数化 floor → 18）
     for line in &ctx.lines {
         assert!(
-            (line.height - 18.624).abs() < 0.01,
-            "无样式时行盒高度应为 18.624，实际 {}",
+            (line.height - 18.0).abs() < 0.01,
+            "无样式时行盒高度应为 18，实际 {}",
             line.height
         );
     }

@@ -380,6 +380,22 @@ pub(crate) const AHEM_LINE_HEIGHT_RATIO: f32 = 1.0;
 /// font 接入 layout（同 Phase A 字体度量架构 gap），留 Slice 3+。
 pub(crate) const AHEM_FONT_SIZE_ADJUST_ASPECT: f32 = 0.8;
 
+/// R5147：常数比率 `line-height:normal` 整数化（floor）。provider 未命中/缺省时行高走
+/// `fs × ratio` 近似，分数行盒（16px serif = 18.624）让 border-image 分片等逐像素绘制
+/// 落在分数矩形上、边缘行采样跨源图边界（fill-001 实测：div top 50.624，白片边缘行
+/// 混入红带 (255,159,159)）。chromium 实测 p 高恒整数 18——Blink `SimpleFontData`
+/// 度量恒整数；**floor 对齐 chromium 实值**（round 变体错相 +1px/行，A/B 实测
+/// corpus 1,146→1,148 且 welcome 17.07→17.63% 双劣，已 refute）。开启时 floor 使
+/// 16px serif 18.624→18 = chromium 实测 p 高；product-smoke welcome 较关闭再降
+/// 0.36pp（17.43→17.07%）。关闭时原样返回。
+pub(crate) fn constant_normal_line_height(font_size: f32, ratio: f32) -> f32 {
+    if super::runtime_flags::int_font_metrics() {
+        (font_size * ratio).floor()
+    } else {
+        font_size * ratio
+    }
+}
+
 /// 从 ComputedStyle 中解析 font-size 和 line-height。
 ///
 /// - `font_size` 从 `ComputedStyle::font_size` 中提取（已解析为 Px）。
@@ -498,7 +514,7 @@ pub fn resolve_font_metrics_with_provider(
             LineHeightValue::Number(n) => font_size * (*n as f32),
             LineHeightValue::Length(length) => resolve_line_height_length(length, font_size, normal_ratio),
         },
-        None => DEFAULT_FONT_SIZE * normal_ratio,
+        None => constant_normal_line_height(DEFAULT_FONT_SIZE, normal_ratio),
     };
 
     (font_size, line_height)
@@ -533,7 +549,7 @@ fn resolve_normal_line_height(
         // line-height:normal = ascent − descent + line_gap（见 font_metrics.rs 注释）。
         return m.ascent - m.descent + m.line_gap;
     }
-    font_size * fallback_ratio
+    constant_normal_line_height(font_size, fallback_ratio)
 }
 
 /// 从 CSS LengthValue 解析 inline-block 元素的尺寸（宽度或高度）。

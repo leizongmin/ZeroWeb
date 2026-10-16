@@ -348,8 +348,8 @@ fn test_resolve_font_metrics_non_px_font_size() {
         "font-size:2em 应解析为 32.0，实际 {font_size}"
     );
     assert!(
-        (line_height - 37.248).abs() < 0.01,
-        "line_height 应为 37.248，实际 {line_height}"
+        (line_height - 37.0).abs() < 0.01,
+        "line_height 应为 37.248（R5147 整数化 floor → 37），实际 {line_height}"
     );
 }
 
