@@ -835,6 +835,19 @@ impl RendererRuntime {
                 // 诊断可观测性：动态脚本以 URL 命名执行（见 page_scripts::append_source_url）。
                 Ok(source) => {
                     let named = page_scripts::append_source_url(&source, &url);
+                    // t10/P-D7：动态脚本执行前设 document.currentScript 指向该脚本元素——
+                    // Turbopack/webpack chunk 加载器从 currentScript.src 派生 public path，
+                    // null 导致 "chunk path empty"（DDG SPA 迁移中止）。取 getElementsByTagName
+                    // 最后一个匹配 src 的脚本元素索引（动态 appendChild 后必为最后一个）。
+                    let url_js = url.replace('\\', "\\\\").replace('\'', "\\'");
+                    let setup = format!(
+                        "(function(){{var __s=document.getElementsByTagName('script');\
+                         for(var i=__s.length-1;i>=0;i--){{if(__s[i].src==='{}'){{\
+                         if(typeof __zw_set_current_script==='function')__zw_set_current_script(i);break;}}}}}})();",
+                        url_js
+                    );
+                    let cleanup = "\n;if(typeof __zw_clear_current_script==='function')__zw_clear_current_script();";
+                    let named = format!("{}{}{}", setup, named, cleanup);
                     match self.js_worker.execute_script_direct_priority(&named) {
                         Ok(_) => page_scripts::dispatch_script_event(&self.js_worker, &url, "load"),
                         // spec：脚本执行/解析错误走 window 错误报告，不派元素 error 事件。
