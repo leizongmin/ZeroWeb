@@ -734,7 +734,15 @@ impl LayoutEngine {
             // 不得把内容贡献拉回（contain-animation-001：contain:strict abspos div 的
             // nbsp 内容被补测拉宽 → 红底露出 4%）。R4018 svg % attr 臂不受影响（其已
             // continue 在前——attr 是存在的声明，非内容测量）。
-            if s.contain.has_size() {
+            // R5152：multicol 例外——containment 只抑制内容贡献，列几何（count×col-width
+            // +gap）仍参与 shrink-to-fit（css-multicol-1 + css-contain-1 §3.1：columns and
+            // column-gap do affect the size of a multicol, even with size containment；
+            // contain-size-multicol-001：contained abs multicol 旧塌 0 宽 → 红块全露）。
+            // 测量走 block_max_content_width 的 R1431 分支：col-width definite 时内容本就
+            // 不参与，col-width auto 时 R5152 臂归零内容。
+            // https://drafts.csswg.org/css-contain-1/#containment-size
+            let mc_contain_size_fix = crate::intrinsic_sizing::mc_contain_size_fix_enabled();
+            if s.contain.has_size() && (!mc_contain_size_fix || !b.is_multicol) {
                 continue;
             }
             // 内含 float 后代时跳过：float 子的 max-width/约束宽度参与 shrink-to-fit
@@ -760,6 +768,12 @@ impl LayoutEngine {
             let mut width_fix =
                 (matches!(s.width, LengthValue::Auto) || width_stretch) && !(left_def.is_some() && right_def.is_some());
             let mut height_fix = matches!(s.height, LengthValue::Auto) && !(top_def.is_some() && bottom_def.is_some());
+            // R5152：multicol 例外只放开宽侧（列几何参与 shrink-to-fit）——高侧维持
+            // R4034b containment 语义（auto 高已由 converter 解析 0/CIS），行高近似
+            // 不得把内容拉回。
+            if s.contain.has_size() {
+                height_fix = false;
+            }
             // taffy 已解出非 0 宽/高（如 width-019 的 float 内容、margin-applies-to 族）时不
             // 覆写——本 pass 只救 taffy 恒 0 的场景（全/半 auto inset 无内容测量）。
             if !width_fix && !height_fix {

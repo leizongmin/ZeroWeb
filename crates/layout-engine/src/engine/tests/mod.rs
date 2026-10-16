@@ -714,3 +714,6 @@ mod r5117_calc_cb_base_tests;
 /// R5148 fieldset 自身 multicol 容器时渲染 legend 不入列流（chromium fieldset/legend
 /// 特殊布局 × css-multicol；multicol-span-all-fieldset-001/002/003 驱动）。
 mod r5148_fieldset_legend_multicol_tests;
+/// R5152 contain:size 的 multicol 按「无内容」尺寸化、列几何仍参与（css-contain-1 §3.1
+/// × css-multicol-1；contain-size-multicol-001/002/003 驱动）。
+mod r5152_contain_size_multicol_sizing_tests;

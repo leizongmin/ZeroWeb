@@ -255,12 +255,59 @@ fn resolve_kw_real_length(value: &LengthValue, style: &zero_style_system::Comput
     }
 }
 
+/// R5152（CSS Containment 1 §3.1 + css-multicol-1：columns and column-gap do affect
+/// the size of a multicol, even with size containment）：contain:size multicol 的内在宽
+/// = 纯列几何（n×col-width + (n-1)×gap + frame）——内容贡献（非 spanner 子、spanner、
+/// inline 文本）按 containment 归零，与 empty multicol 同几何。col-width auto → 0（列可
+/// 塌至零宽）。非 multicol 或无 size containment → None（回落调用方原路径）。
+/// `block_intrinsic_width_ex` 的 R1431 主分支已有同款 containment 臂；本 helper 覆盖
+/// `box_content_max_width_inner` 入口（flex item 主尺寸 flex_item_base_size 第 3 步、
+/// 通用递归——contain-size-multicol-003 flex 基线案：item 旧被内容撑到 132，ref 32）。
+/// kill-switch `ZW_MC_CONTAIN_SIZE_SIZE=0` 回退。
+/// https://drafts.csswg.org/css-contain-1/#containment-size
+fn contained_multicol_intrinsic_width(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> Option<f32> {
+    if !mc_contain_size_fix_enabled() {
+        return None;
+    }
+    let s = box_node.node_id.and_then(|id| styles.get(&id))?;
+    // 仅 multicol 容器（列几何贡献是 multicol 专属语义；CIS 域其它 contained 盒归
+    // R4008 CIS 替代口径——contain-intrinsic-size-026 的 contained inline-grid 旧被
+    // 误劫持为 frame 宽 → 新红，此门即回归守卫）。
+    if !s.contain.has_size() || !box_node.is_multicol {
+        return None;
+    }
+    let n = match s.column_count {
+        zero_style_system::ColumnCountComputedValue::Number(n) => (n as f32).max(1.0),
+        _ => 1.0,
+    };
+    let colw = match &s.column_width {
+        zero_style_system::ColumnWidthComputedValue::Length(w) => resolve_intrinsic_real_length(w, s).unwrap_or(0.0),
+        _ => 0.0,
+    };
+    let gap = resolve_intrinsic_real_length(&s.column_gap, s).unwrap_or(0.0);
+    let frame = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
+    Some((n * colw + (n - 1.0) * gap).max(0.0) + frame)
+}
+
+/// R5152 kill-switch 读取（进程级缓存）：`ZW_MC_CONTAIN_SIZE_SIZE=0` 回退 containment
+/// multicol 尺寸化三臂。热路径（box_content_max_width_inner 每 box 一次）不耐受
+/// `std::env::var` 线性扫描（block_layout_1000 微基准实测 +60%）——OnceLock 首读后
+/// 原子加载；env 需在进程启动前设置（A/B 与单测均满足）。
+pub(crate) fn mc_contain_size_fix_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_MC_CONTAIN_SIZE_SIZE").as_deref() != Ok("0"))
+}
+
 fn box_content_max_width_inner(
     box_node: &LayoutBox,
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
     include_own_width: bool,
 ) -> f32 {
+    // R5152：contain:size multicol → 纯列几何内在宽（见 helper 文档）。
+    if let Some(w) = contained_multicol_intrinsic_width(box_node, styles) {
+        return w;
+    }
     // R4946（css-flexbox §9.9 intrinsic main size）：被通用递归测到的 flex/grid 容器
     //（典型：flex item 自身是 flex 行容器 → `flex_item_base_size` 第 3 步落到本函数；
     // R4032 inline-block 族递归遇 inline-flex 同理）须用专用 intrinsic 测量——flex 行
@@ -1222,12 +1269,19 @@ fn block_intrinsic_width_ex(
             let gap_px = mc_style
                 .and_then(|s| resolve_intrinsic_real_length(&s.column_gap, s))
                 .unwrap_or(0.0);
+            // R5152（CSS Containment 1 §3.1 + css-multicol-1：columns and column-gap do
+            // affect the size of a multicol, even with size containment）：自身 contain:size
+            // → 按无内容测量——内容贡献（非 spanner 子与 spanner 子）归零，内在宽 = 纯列几何，
+            // 与 empty multicol ref 同几何（contain-size-multicol-003 min/max-content 案）。
+            // https://drafts.csswg.org/css-contain-1/#containment-size
+            let contain_size = mc_contain_size_fix_enabled() && mc_style.is_some_and(|s| s.contain.has_size());
             // col_content：col-width 设定则用之（子溢出，不撑宽 multicol），否则取最宽非 spanner 子 intrinsic。
-            let col_content = col_width_set.unwrap_or(nonspanner_block_max);
+            let col_content = col_width_set.unwrap_or(if contain_size { 0.0 } else { nonspanner_block_max });
             let column_driven = n as f32 * col_content + (n as f32 - 1.0) * gap_px;
             // multicol intrinsic = max(column-driven, spanner-driven)。非 spanner 子是列内容（fit 或溢出），
             // 不额外撑宽（不加 .max(inner)——否则 col-width 案中宽于列的 block 会错误撑宽，如 width-005 case 1）。
-            let mc_inner = column_driven.max(spanner_max);
+            let spanner_driven = if contain_size { 0.0 } else { spanner_max };
+            let mc_inner = column_driven.max(spanner_driven);
             return mc_inner + frame;
         }
     }

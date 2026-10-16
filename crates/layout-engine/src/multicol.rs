@@ -1491,11 +1491,18 @@ fn layout_multicol(
             legend_outer + rows as f32 * col_h + (rows as f32 - 1.0) * (pitch - col_h)
         }
     });
+    // R5152（CSS Containment 1 §3.1）：contain:size 容器 auto 高按「无内容」尺寸化——
+    // 平衡列高不写回（R4060 converter 已写 CIS-or-0 definite 高，multicol 平衡路径旧绕过
+    // 该语义 → 内容高随列平衡涨回，contain-size-multicol-002：红底随 50px 内容多绘）。
+    // min/max-height 钳制在 box-sizing 已消费（explicit 臂不入本路径，行为不变）。
+    // https://drafts.csswg.org/css-contain-1/#containment-size
+    let mc_contain_size_fix = crate::intrinsic_sizing::mc_contain_size_fix_enabled();
     if wrap_total_height.is_none()
         && !container_explicit
         && !info.sequential_fill
         && effective_region > 0.5
         && (effective_region - container.content_height).abs() > 0.5
+        && !(mc_contain_size_fix && container.has_size_containment)
     {
         let delta = effective_region - container.content_height;
         container.content_height = effective_region;
