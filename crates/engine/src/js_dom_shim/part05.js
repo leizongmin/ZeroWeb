@@ -452,6 +452,14 @@
               __zw_remove_attr(sel, 'selected'); moAttr = 'selected';
             }
           }
+        } else if (p === 'selected' && _realTag(sel, handle) === 'OPTION') {
+          // `option.selected = x`（R3908b，HTML §4.10.9
+          // https://html.spec.whatwg.org/multipage/form-elements.html#dom-option-selected）——
+          // IDL setter 只置 selectedness + dirtiness（`_optSelectedDirty`），**不反射**
+          // selected 内容属性（defaultSelected 才反射该属性；attribute 变更/MO 面不触发
+          // 与 spec 一致——option-selectedness-script-mutation「IDL selected does not
+          // reflect」两案断言面）。读侧 getter 脏态优先（part03 selected getter）。
+          _optSelectedDirty[key] = !!value;
         } else if (p === 'defaultChecked') {
           // `input.defaultChecked = x`（R2840）——boolean 反射 `checked` 属性（truthy→设存在，falsy→移除）。
           // R2998：显式设 defaultChecked 重同步（清 dirty，getter 回落新属性值 latest-wins）。

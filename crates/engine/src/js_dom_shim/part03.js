@@ -15374,87 +15374,456 @@ return e;
     });
   }
 
+  // R3907（html-semantics M2 切片 7）：option 文本/反射语义助手（HTML §4.10.9
+  // the-option-element）。child text content = collect text value：Text/CDATA →
+  // data；local=script 且 ns ∈ {HTML, SVG} → ''（不递归；MathML/null ns script
+  // 递归——option-text-recurse 断言面）；元素 → 递归（子经自身 textContent getter，
+  // 复用 R81 融合视图，pending 子自然可见）；comment/PI 不计。顶层子列表与 part04
+  // textContent getter 同源（_zwLocalChildNodes + _handleChildren + _childNodeList
+  // 融合）；64 层深度帽（R181 同款防环）。
+  // https://html.spec.whatwg.org/multipage/form-elements.html#dom-option-text
+  function _zwOptStripCollapse(s) {
+    // strip and collapse ASCII whitespace（infra：去首尾 + 内侧折叠单空格；NBSP 不动）
+    return String(s == null ? '' : s)
+      .replace(/^[ \t\n\f\r]+/, '')
+      .replace(/[ \t\n\f\r]+$/, '')
+      .replace(/[ \t\n\f\r]+/g, ' ');
+  }
+  function _zwOptCollectWalk(kids, out, depth) {
+    if (depth > 64 || !kids || !kids.length) return;
+    for (var _oci = 0; _oci < kids.length; _oci++) {
+      var _ocn = kids[_oci];
+      if (!_ocn) continue;
+      var _ocT = _ocn.nodeType;
+      if (_ocT === 3 || _ocT === 4) {
+        var _ocD = _ocn.nodeValue != null ? _ocn.nodeValue : (_ocn.data != null ? _ocn.data : '');
+        if (_ocD != null) out.push(String(_ocD));
+      } else if (_ocT === 1) {
+        var _ocLn = String(_ocn.localName || _ocn.nodeName || '').toLowerCase();
+        var _ocSkip = false;
+        if (_ocLn === 'script') {
+          var _ocNs = null, _ocHasNs = false;
+          if (_ocn.__zwHandle && _nsHandles[_ocn.__zwHandle]) {
+            _ocNs = _nsHandles[_ocn.__zwHandle].namespace;
+            _ocHasNs = true;
+          } else {
+            try { _ocNs = _ocn.namespaceURI; if (_ocNs != null) _ocHasNs = true; } catch (_ocNsE) {}
+          }
+          // 无 ns 信息 → 缺省 HTML 文档面跳过；显式 null ns（createElementNS(null)）
+          // 按 spec 递归（option-text-recurse 'null script elements' 断言面）
+          if (!_ocHasNs) _ocSkip = true;
+          else if (_ocNs === 'http://www.w3.org/1999/xhtml'
+              || _ocNs === 'http://www.w3.org/2000/svg') _ocSkip = true;
+        }
+        // 非 script 元素沿**子列表**递归（不推 textContent——嵌套层可能含 script，
+        // 须逐层排除；option-text-recurse 'child ends with a script' 断言面）
+        if (!_ocSkip) {
+          var _ocSub = null;
+          if (_ocn.__zwHandle && _handleChildren[_ocn.__zwHandle]) {
+            var _ocSubL = (typeof _zwLocalChildNodes === 'function') ? _zwLocalChildNodes(null, _ocn.__zwHandle) : null;
+            var _ocSubK = _handleChildren[_ocn.__zwHandle];
+            _ocSub = (_ocSubL && _ocSubL.length) ? _ocSubL.concat(_ocSubK) : _ocSubK;
+          } else {
+            try { _ocSub = _ocn.childNodes; } catch (_ocSubE) { _ocSub = null; }
+          }
+          if (_ocSub && _ocSub.length) _zwOptCollectWalk(_ocSub, out, depth + 1);
+        }
+      }
+      // comment(8)/PI(7)/其余节点形态 → 不计（spec collect text value）
+    }
+  }
+  function _zwOptChildText(sel, handle) {
+    var _ocKids;
+    if (handle) {
+      if (typeof _isContainerHandle === 'function' && _isContainerHandle(handle)) {
+        _ocKids = _handleChildNodes(handle);
+      } else {
+        var _ocL = (typeof _zwLocalChildNodes === 'function') ? _zwLocalChildNodes(sel, handle) : null;
+        var _ocK = (_handleChildren[handle] || []).slice();
+        if (_ocL && _ocL.length) _ocKids = _ocL.concat(_ocK);
+        else if (_ocK.length) _ocKids = _ocK;
+        else if (_ocL) _ocKids = _ocL;
+        else _ocKids = _childNodeList(sel, handle);
+      }
+    } else {
+      // R3028：sel 形先探 latest-wins——textContent= 的 SetText 覆盖（快照子列表
+      // 无此面，R3028 契约 'option.text sel-based latest-wins' 断言）命中即直取
+      //（children 已被替换为单文本子，script 排除无意义）。lw==快照（无 pending
+      // SetText）→ 走子列表 walk（script 排除在稳态生效）。
+      var _ocLw = (typeof __zw_get_text_lw === 'function') ? __zw_get_text_lw(sel) : __zw_get_text(sel);
+      var _ocSnap = (typeof __zw_get_text === 'function') ? __zw_get_text(sel) : _ocLw;
+      if (String(_ocLw) !== String(_ocSnap)) {
+        return _zwOptStripCollapse(_ocLw == null ? '' : String(_ocLw));
+      }
+      _ocKids = _childNodeList(sel, null);
+    }
+    var _ocOut = [];
+    _zwOptCollectWalk(_ocKids, _ocOut, 0);
+    return _zwOptStripCollapse(_ocOut.join(''));
+  }
+  // option value/label 反射的无 ns 内容属性读（HTML §4.10.9 dom-option-value/label——
+  // 「has a value/label content attribute」按**无命名空间**属性判定；R122 实例层为
+  // 动态权威面，解析快照属性天然无 ns）。返回 null = 无此属性（含同 local 仅 NS 实例
+  // 的影子面——setAttributeNS(example,'label') 后 .label 不可见，WPT namespaced 断言）。
+  function _zwOptAttrNoNs(elKey, selX, handleX, name) {
+    var _oaLower = String(name).toLowerCase();
+    var _oaList = (typeof _zwAttrInstances === 'object' && _zwAttrInstances
+      && typeof _zwAttrInstances.get === 'function') ? _zwAttrInstances.get(elKey) : null;
+    if (_oaList && _oaList.length) {
+      for (var _oai = 0; _oai < _oaList.length; _oai++) {
+        var _oait = _oaList[_oai];
+        if (String(_oait.local).toLowerCase() === _oaLower && _oait.ns == null) {
+          return String(_oait.value != null ? _oait.value : '');
+        }
+      }
+      for (var _oaj = 0; _oaj < _oaList.length; _oaj++) {
+        if (String(_oaList[_oaj].local).toLowerCase() === _oaLower) return null;
+      }
+      // 实例层无此 local → 落解析面（解析属性全部无 ns）
+    }
+    var _oaHas = handleX
+      ? (typeof __zw_has_attr_handle === 'function' ? __zw_has_attr_handle(handleX, name) === '1' : false)
+      : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(selX, name) === '1'
+        : (typeof __zw_has_attr === 'function' ? __zw_has_attr(selX, name) === '1' : false));
+    if (!_oaHas) return null;
+    var _oaV = handleX ? __zw_get_attr_handle(handleX, name)
+      : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(selX, name) : __zw_get_attr(selX, name));
+    return (_oaV == null) ? '' : String(_oaV);
+  }
+
+  // R3908：SELECT 元素判定（含前缀形态）。`createElementNS(xhtml,'foo:select')` 产
+  // localName 'select' + prefix 'foo' 的 **HTMLSelectElement**（接口按命名空间 +
+  // localName 定，HTML §4.10.8；tagName 为 'foo:select' → `_realTag` 返
+  // 'FOO:SELECT'——common-HTMLOptionsCollection「new nodes will not copy select's
+  // prefix」断言面）。已知近似：SVG ns 'foo:select'（非 select 元素）亦命中——
+  // corpus 无此形态，select 非合法 SVG 元素名，风险可忽略。
+  function _zwIsSelectTag(sel, handle) {
+    var _st = _realTag(sel, handle);
+    if (_st === 'SELECT') return true;
+    return typeof _st === 'string' && _st.length > 7 && _st.slice(-7) === ':SELECT';
+  }
+
   // P1a select：`select.options` 集合（live）——`length`/索引访问/`item(i)` + `selectedIndex`/`value`
   // （与 select 同）。每次访问经 `querySelectorAll(sel + ' option')`（live，反映 dom_html）。
   // 各 option 经 R2664 唯一选择器，`.value`/`.selected` 读对。
-  // fileapi-compat 残余（2026-10-11）：select 的 option 元素列表——sel 经 host 查询
-  //（_selectOptions 同源）；handle（createElement detached select——dom.window select
-  // 案形态）经 JS 侧 handle 子树递归收集 OPTION。返回统一按索引访问的数组形态。
-  function _selectOptionEls(sel, handle) {
-    if (sel) {
-      try { return globalThis.document.querySelectorAll(sel + ' option'); } catch (_eSeq) { return []; }
-    }
+  // R3908（html-semantics M2 切片 8）：select option list 基建。spec「list of
+  // options」（HTML §4.10.7
+  // https://html.spec.whatwg.org/multipage/form-elements.html#concept-select-option-list ）
+  // 统一构造：select 子树 DFS——OPTION 收录且不递归（子孙 option 排除）；select/hr/
+  // datalist 子树整枝排除；optgroup 照常下钻（div 包裹 option 仍在 list），唯
+  // select 与其之间存在 optgroup 祖先的嵌套 optgroup 整枝排除（nesting 断言面）。
+  // sel 形走 `_childNodeList`（R100 锚回 +
+  // pending overlay，R3907 `_zwOptChildText` 同源）；handle 形走 `_zwLocalChildNodes` +
+  // `_handleChildren` 融合。64 层深度帽（R181 同款防环）。
+  function _zwListOfOptions(sel, handle) {
     var out = [];
-    (function walk(h) {
-      var kids = _handleChildren[h] || [];
-      for (var i = 0; i < kids.length; i++) {
-        var k = kids[i];
-        if (!k) continue;
-        var tag = '';
-        try { tag = String(k.tagName || '').toUpperCase(); } catch (_eTag) {}
-        if (tag === 'OPTION') { out.push(k); continue; }
-        var kh = null;
-        try { kh = k.__zwHandle; } catch (_eH) {}
-        if (kh) walk(kh);
+    var _loRoot = null;
+    if (handle) {
+      var _loL = (typeof _zwLocalChildNodes === 'function') ? _zwLocalChildNodes(sel, handle) : null;
+      var _loK = (_handleChildren[handle] || []).slice();
+      _loRoot = (_loL && _loL.length) ? _loL.concat(_loK) : (_loK.length ? _loK : (_loL || []));
+    } else if (sel) {
+      _loRoot = _childNodeList(sel, null) || [];
+    } else {
+      return out;
+    }
+    var _loWalk = function (kids, depth, inOg) {
+      if (depth > 64 || !kids || !kids.length) return;
+      for (var _loi = 0; _loi < kids.length; _loi++) {
+        var _lon = kids[_loi];
+        if (!_lon) continue;
+        var _loT = null;
+        try { _loT = _lon.nodeType; } catch (_loE) { _loT = null; }
+        if (_loT !== 1) continue;
+        var _loTag = _realTag(_lon.__zwSelector, _lon.__zwHandle);
+        if (_loTag === 'OPTION') { out.push(_lon); continue; }
+        // 排除子树（同一条 spec 子句）：select/hr/option/datalist + 「optgroup 且
+        // select 与其之间存在 optgroup 祖先」整枝排除（嵌套 optgroup 的 option 不进
+        // list——select-selectedOptions-nesting optgroup 变体断言面）。顶层 optgroup
+        // （含 div 间套）照常下钻，其直接 option 子经 OPTION 分支收录。
+        if (_loTag === 'HR' || _loTag === 'SELECT' || _loTag === 'DATALIST') continue;
+        if (_loTag === 'OPTGROUP' && inOg) continue;
+        var _loSub = null;
+        if (_lon.__zwHandle && _handleChildren[_lon.__zwHandle]) {
+          var _loSl = (typeof _zwLocalChildNodes === 'function') ? _zwLocalChildNodes(_lon.__zwSelector, _lon.__zwHandle) : null;
+          var _loSk = _handleChildren[_lon.__zwHandle];
+          _loSub = (_loSl && _loSl.length) ? _loSl.concat(_loSk) : _loSk;
+        } else {
+          try { _loSub = _lon.childNodes; } catch (_loE2) { _loSub = null; }
+        }
+        _loWalk(_loSub, depth + 1, inOg || _loTag === 'OPTGROUP');
       }
-    })(handle);
+    };
+    _loWalk(_loRoot, 0, false);
     return out;
   }
-  function _selectOptions(sel) {
-    return new Proxy({}, {
-      get: function(_t, prop) {
-        var list = globalThis.document.querySelectorAll(sel + ' option');
-        // https://html.spec.whatwg.org/multipage/common-dom-interfaces.html#the-htmloptionscollection-interface
+
+  // multiple 属性存在性（latest-wins 三级回落，R2997 同款链）。
+  function _zwSelectIsMultiple(sel, handle) {
+    if (handle && typeof __zw_has_attr_handle === 'function') {
+      try { return __zw_has_attr_handle(handle, 'multiple') === '1'; } catch (_e) {}
+    }
+    if (!handle && sel && typeof __zw_has_attr_lw === 'function') {
+      try { return __zw_has_attr_lw(sel, 'multiple') === '1'; } catch (_e) {}
+    }
+    if (!handle && sel && typeof __zw_has_attr === 'function') {
+      try { return __zw_has_attr(sel, 'multiple') === '1'; } catch (_e) {}
+    }
+    return false;
+  }
+
+  // selectedness 读取侧归一视图（HTML §4.10.7 selectedness——非 multiple：多选中
+  // **最后者胜**（WPT invalid-select 断言面）；无选中回落 list 首项——解析归一
+  // （placeholder/first-option）的读取侧镜像，host `__zw_select_value` 同语义）。
+  function _zwSelectSelectedView(sel, handle) {
+    var _svList = _zwListOfOptions(sel, handle);
+    var _svHits = [];
+    for (var _svi = 0; _svi < _svList.length; _svi++) {
+      var _svHit = false;
+      try { _svHit = _svList[_svi].selected === true; } catch (_svE) { _svHit = false; }
+      if (_svHit) _svHits.push(_svList[_svi]);
+    }
+    if (_zwSelectIsMultiple(sel, handle)) return _svHits;
+    if (_svHits.length > 1) return [_svHits[_svHits.length - 1]];
+    if (_svHits.length === 0 && _svList.length) return [_svList[0]];
+    return _svHits;
+  }
+
+  // option value 读（R3907 `_zwOptAttrNoNs`/`_zwOptChildText` 同口径——无 ns value
+  // 属性存在即采纳，缺省回落 collapse 后 child text content）。
+  function _zwOptionValue(el) {
+    var _ovSel = null, _ovHandle = null;
+    try { _ovSel = el.__zwSelector || null; } catch (_ovE) { _ovSel = null; }
+    try { _ovHandle = el.__zwHandle || null; } catch (_ovE2) { _ovHandle = null; }
+    var _ovV = _zwOptAttrNoNs(_ovSel || _ovHandle, _ovSel, _ovHandle, 'value');
+    if (_ovV != null) return _ovV;
+    return _zwOptChildText(_ovSel, _ovHandle);
+  }
+
+  // R3908：HTMLOptionsCollection（
+  // https://html.spec.whatwg.org/multipage/common-dom-interfaces.html#htmloptionscollection ）——
+  // get（length/item/namedItem/add/remove/selectedIndex/value/索引/Symbol.iterator）+
+  // set（length grow 补空 option / shrink 末端裁剪；[i]=null 移除；[i]=element n>length
+  // 先补空 option 再追加、其余 replaceChild——common-HTMLOptionsCollection 断言面）。
+  // 同元素缓存（[SameObject]，WeakMap per proxy，t8e `_zwChildrenCollCache` 同机制）。
+  var _zwOptionsCollCache = new WeakMap();
+  var _zwSelOptsCollCache = new WeakMap();
+  function _zwOptionsCollection(sel, handle, key) {
+    var _px = _makeProxy(sel, handle);
+    var _ocCached = _zwOptionsCollCache.get(_px);
+    if (_ocCached) return _ocCached;
+    var _ocList = function () { return _zwListOfOptions(sel, handle); };
+    var _ocColl = new Proxy({}, {
+      get: function (_t, prop) {
         if (typeof Symbol !== 'undefined' && prop === Symbol.iterator) {
           return function () {
-            var index = 0;
+            var _oi = 0;
             return { next: function () {
-              var current = globalThis.document.querySelectorAll(sel + ' option');
-              return index < current.length
-                ? { value: current[index++], done: false }
-                : { value: undefined, done: true };
+              var _ol = _ocList();
+              return _oi < _ol.length ? { value: _ol[_oi++], done: false } : { value: undefined, done: true };
             } };
           };
         }
         if (typeof prop !== 'string') return undefined;
-        if (prop === 'length') return list.length;
-        if (prop === 'item') return function(i) { return list[i] || null; };
-        // t8f：namedItem——HTMLOptionsCollection 同 HTMLCollection.namedItem 语义
-        //（id 或 name 首匹配，miss → null；option 的 value 属性不参与匹配——Chrome 对照）。
+        var _ol = _ocList();
+        if (prop === 'length') return _ol.length;
+        if (prop === 'item') return function (i) { var _n = _zwToUint32(i); return _n < _ol.length ? _ol[_n] : null; };
+        // t8f：namedItem——id 或 name 首匹配，miss → null（option 的 value 属性不参与）。
         if (prop === 'namedItem') {
-          return function(name) {
-            var n = String(name);
-            if (n === '') return null;
-            for (var i = 0; i < list.length; i++) {
-              var el = list[i];
-              if (!el) continue;
-              try { if (el.getAttribute && el.getAttribute('id') === n) return el; } catch (_eId) {}
-              try { if (el.getAttribute && el.getAttribute('name') === n) return el; } catch (_eNm) {}
+          return function (name) {
+            var _n2 = String(name);
+            if (_n2 === '') return null;
+            for (var _ni = 0; _ni < _ol.length; _ni++) {
+              var _nel = _ol[_ni];
+              if (!_nel) continue;
+              try { if (_nel.getAttribute && _nel.getAttribute('id') === _n2) return _nel; } catch (_eId) {}
+              try { if (_nel.getAttribute && _nel.getAttribute('name') === _n2) return _nel; } catch (_eNm) {}
             }
             return null;
           };
         }
+        // add(element, before)：before 与 element 同元素 → no-op（WPT add 断言面 1）；
+        // before number → list[before]（越界 null）；null/undefined → append；元素 →
+        // pre-insert 到 **before 的父**（option 在 optgroup 内时进该组，spec insert 步）。
+        if (prop === 'add') {
+          return function (element, before) {
+            if (before === element) return;
+            var _pxA = _makeProxy(sel, handle);
+            var _lA = _ocList();
+            var _refEl = null;
+            if (typeof before === 'number' || (typeof before === 'string' && _zwIsCanonicalIndex(String(before)))) {
+              var _bi = _zwToUint32(before);
+              _refEl = _bi < _lA.length ? _lA[_bi] : null;
+            } else if (before && (before.__zwSelector || before.__zwHandle)) {
+              _refEl = before;
+            }
+            if (_refEl == null) {
+              try { _pxA.appendChild(element); } catch (_eA1) {}
+              return;
+            }
+            try {
+              var _refP = _refEl.parentNode;
+              if (_refP && typeof _refP.insertBefore === 'function') _refP.insertBefore(element, _refEl);
+              else _pxA.insertBefore(element, _refEl);
+            } catch (_eA2) { try { _pxA.appendChild(element); } catch (_eA3) {} }
+          };
+        }
+        // remove(index)：list[index] 从其父移除（嵌套 option 亦然）；越界 no-op。
+        if (prop === 'remove') {
+          return function (i) {
+            var _ri = _zwToUint32(i);
+            var _rl = _ocList();
+            if (_ri >= _rl.length) return;
+            try { _rl[_ri].remove(); } catch (_eRm) {}
+          };
+        }
         if (prop === 'selectedIndex') {
-          try { return parseInt(__zw_select_index(sel), 10); } catch (_e) { return -1; }
+          if (!handle && sel && typeof __zw_select_index === 'function') {
+            try { return parseInt(__zw_select_index(sel), 10); } catch (_e) {}
+          }
+          var _svIdx = _zwSelectSelectedView(sel, handle);
+          if (_svIdx.length) {
+            for (var _oi2 = 0; _oi2 < _ol.length; _oi2++) { if (_ol[_oi2] === _svIdx[0]) return _oi2; }
+          }
+          return -1;
         }
         if (prop === 'value') {
-          try { return __zw_select_value(sel); } catch (_e) { return ''; }
+          if (!handle && sel && typeof __zw_select_value === 'function') {
+            try { return __zw_select_value(sel); } catch (_e) { return ''; }
+          }
+          var _svVal = _zwSelectSelectedView(sel, handle);
+          return _svVal.length ? _zwOptionValue(_svVal[0]) : '';
         }
-        var idx = parseInt(prop, 10);
-        if (!isNaN(idx) && String(idx) === String(prop)) return list[idx];
+        if (_zwIsCanonicalIndex(prop)) {
+          var _n3 = Number(prop);
+          return _n3 < _ol.length ? _ol[_n3] : undefined;
+        }
         return undefined;
+      },
+      set: function (_t, prop, value) {
+        if (typeof prop !== 'string') return true;
+        var _px2 = _makeProxy(sel, handle);
+        var _sl = _ocList();
+        if (prop === 'length') {
+          var _nl = _zwToUint32(value);
+          if (_nl < _sl.length) {
+            for (var _si = _sl.length - 1; _si >= _nl; _si--) {
+              try { _sl[_si].remove(); } catch (_eS) {}
+            }
+          } else {
+            for (var _sj = _sl.length; _sj < _nl; _sj++) {
+              try { _px2.appendChild(globalThis.document.createElement('option')); } catch (_eS2) {}
+            }
+          }
+          return true;
+        }
+        if (_zwIsCanonicalIndex(prop)) {
+          var _sn = Number(prop);
+          if (value === null || value === undefined) {
+            if (_sn < _sl.length) { try { _sl[_sn].remove(); } catch (_eS3) {} }
+            return true;
+          }
+          if (value && (value.__zwSelector || value.__zwHandle)) {
+            if (_sn >= _sl.length) {
+              // spec index setter：n > length 先逐位补空 option 再追加（WPT
+              // 「opts[5] = new_option」→ 两个空位补齐面）。
+              for (var _sk = _sl.length; _sk < _sn; _sk++) {
+                try { _px2.appendChild(globalThis.document.createElement('option')); } catch (_eS4) {}
+              }
+              try { _px2.appendChild(value); } catch (_eS5) {}
+            } else {
+              // spec replace = value 占据旧项位。实现取「先移除旧项 + 前插到旧项
+              // 后继」序（结果树与 spec 的 insert-then-remove 等价）：R51 overlay
+              // 按 nextSibling **节点 identity** 定插入位（part05
+              // `_zwOverlayPendingChildNodes`）——先插后删时 ref 已出 merge 视图，
+              // identity 必 miss → 保守落尾（common-HTMLOptionsCollection
+              // 「opts[0] = replace」案 zz-probe5/6 实证）；先删后插以后继为锚，
+              // 后继与 merge 视图同源（同 base cache wrapper）identity 稳定，末项
+              // 替换（后继 null）落尾恰为 append 语义。
+              var _rpNext = _sl[_sn + 1] || null;
+              var _rpOK = false;
+              try { _sl[_sn].remove(); _rpOK = true; } catch (_eS6) {}
+              if (_rpOK) {
+                try { _px2.insertBefore(value, _rpNext); } catch (_eS7) {
+                  try { _px2.appendChild(value); } catch (_eS8) {}
+                }
+              }
+            }
+          }
+          return true;
+        }
+        return true;
       }
     });
+    _zwOptionsCollCache.set(_px, _ocColl);
+    return _ocColl;
   }
 
-  // P1a select：`select.selectedOptions`——选中 option 数组（各 `.selected`=true）。
-  function _selectSelectedOptions(sel) {
-    var list = globalThis.document.querySelectorAll(sel + ' option');
-    var out = [];
-    for (var i = 0; i < list.length; i++) {
-      if (list[i].selected) out.push(list[i]);
-    }
-    return out;
+  // R3908：selectedOptions——HTMLCollection 形（item/namedItem/length/索引/迭代器/
+  // `constructor === HTMLCollection`）+ [SameObject]（WeakMap 缓存外层代理）+ live
+  //（每次读重建内层集合——selectedness 变更非结构写、liveSpec 钩子不触发，外层身份
+  // 恒定）+ 非 multiple selectedness 视图归一（`_zwSelectSelectedView`）。
+  function _zwSelectedOptionsCollection(sel, handle, key) {
+    var _px = _makeProxy(sel, handle);
+    var _soCached = _zwSelOptsCollCache.get(_px);
+    if (_soCached) return _soCached;
+    var _inner = null;
+    var _soColl = new Proxy({}, {
+      get: function (_t, prop) {
+        // 每次读重建（live：selectedness 变更可见）；赋外层共享槽，has/
+        // getOwnPropertyDescriptor trap 读最近一次视图。
+        _inner = _zwMakeCollection(_zwSelectSelectedView(sel, handle), true, null);
+        if (typeof Symbol !== 'undefined' && prop === Symbol.iterator) {
+          return function () {
+            var _soi = 0;
+            return { next: function () {
+              return _soi < _inner.length ? { value: _inner.item(_soi++), done: false } : { value: undefined, done: true };
+            } };
+          };
+        }
+        if (prop === 'constructor') return globalThis.HTMLCollection;
+        if (typeof prop !== 'string') return undefined;
+        if (prop === 'length') return _inner.length;
+        if (prop === 'item') return function (i) { return _inner.item(i); };
+        if (prop === 'namedItem') return function (n) { return _inner.namedItem(n); };
+        if (_zwIsCanonicalIndex(prop)) {
+          var _n4 = Number(prop);
+          return _n4 < _inner.length ? _inner.item(_n4) : undefined;
+        }
+        if (typeof Symbol !== 'undefined' && prop === Symbol.toStringTag) return 'HTMLCollection';
+        // 未匹配字符串属性回落 target 原型链（Object.prototype 的 hasOwnProperty/
+        // toString/valueOf 可达——WPT assert_array_equals 调 `actual.hasOwnProperty(i)`
+        // 且 stringify 兜底；裸 return undefined 会影子化原型方法 → TypeError）。
+        return Reflect.get(_t, prop);
+      },
+      // `in` 判定（assert_array_equals 的 `"length" in actual` 数组型检查；索引属性
+      // 在界内即存在——HTMLCollection indexed getter 语义）。
+      has: function (_t, prop) {
+        if (prop === 'length') return true;
+        if (typeof prop === 'string' && _zwIsCanonicalIndex(prop)) {
+          return Number(prop) < _inner.length;
+        }
+        return Reflect.has(_t, prop);
+      },
+      // own 属性探测（`hasOwnProperty(i)` 走 [[GetOwnProperty]]，不查 has trap）；
+      // 报 configurable:true（target 上无对应 own 属性，报 non-configurable 触发
+      // proxy invariant TypeError）。
+      getOwnPropertyDescriptor: function (_t, prop) {
+        if (prop === 'length') {
+          return { value: _inner.length, enumerable: true, configurable: true, writable: true };
+        }
+        if (typeof prop === 'string' && _zwIsCanonicalIndex(prop)) {
+          var _n5 = Number(prop);
+          if (_n5 < _inner.length) {
+            return { value: _inner.item(_n5), enumerable: true, configurable: true, writable: true };
+          }
+          return undefined;
+        }
+        return Reflect.getOwnPropertyDescriptor(_t, prop);
+      }
+    });
+    _zwSelOptsCollCache.set(_px, _soColl);
+    return _soColl;
   }
 
   // `el.style` CSSStyleDeclaration 代理：per-property get/set（`style.color`/`style.color='red'`）
@@ -16340,6 +16709,12 @@ return e;
           if (!handle && sel && typeof __zw_select_value === 'function' && _isTag(sel, 'SELECT')) {
             try { return __zw_select_value(sel); } catch (_e) { return ''; }
           }
+          // R3908：handle 形 select.value——归一选中视图首项的 option value
+          //（R3907 `_zwOptionValue` 同口径；无选中回落 list 首项镜像 host 语义）。
+          if (_zwIsSelectTag(sel, handle)) {
+            var _hvSel = _zwSelectSelectedView(sel, handle);
+            return _hvSel.length ? _zwOptionValue(_hvSel[0]) : '';
+          }
           // HTMLOutputElement.value（R2846）：spec 独立于 textContent——<output> 按 children 渲染非 value，
           // 设 .value 不触碰 DOM text。dirty（_outputValue 存在）→ 当前值；否则 → defaultValue（lazy textContent）。
           if (_realTag(sel, handle) === 'OUTPUT') {
@@ -16805,6 +17180,15 @@ return e;
           if (!handle && sel && typeof __zw_select_index === 'function' && _isTag(sel, 'SELECT')) {
             try { return parseInt(__zw_select_index(sel), 10); } catch (_e) {}
           }
+          // R3908：handle 形（createElement select）——归一选中视图首项在 list 的索引。
+          if (_zwIsSelectTag(sel, handle)) {
+            var _siList = _zwListOfOptions(sel, handle);
+            var _siSel = _zwSelectSelectedView(sel, handle);
+            if (_siSel.length && _siSel[0]) {
+              for (var _sii = 0; _sii < _siList.length; _sii++) { if (_siList[_sii] === _siSel[0]) return _sii; }
+            }
+            return -1;
+          }
           return -1;
         }
         if (prop === 'selected') {
@@ -16814,6 +17198,12 @@ return e;
           // `__zw_option_selected`（额外感知 SelectOption——`select.value=` 编程选中后 option.selected 反映），
           // 它内部已 consult SetAttr/RemoveAttr latest-wins + SelectOption + 快照；无该回调回落 `_lw`/快照链。
           // handle 经 `__zw_has_attr_handle`（latest-wins from mutations；`new Option()` 不在 select DOM，无 SelectOption）。
+          // R3908b：dirty selectedness 最优先（HTML §4.10.9 dom-option-selected——`.selected=`
+          // 只置 selectedness+dirty 不写属性；`_optSelectedDirty` 声明见 part01）。
+          if (typeof _optSelectedDirty === 'object' && _optSelectedDirty
+              && Object.prototype.hasOwnProperty.call(_optSelectedDirty, key)) {
+            return _optSelectedDirty[key] === true;
+          }
           if (handle && typeof __zw_has_attr_handle === 'function') {
             try { return __zw_has_attr_handle(handle, 'selected') === '1'; } catch (_e) {}
           }
@@ -16828,26 +17218,28 @@ return e;
           }
           return false;
         }
-        if (prop === 'options' && !handle && sel && _isTag(sel, 'SELECT')) {
-          // P1a select：`select.options` live 集合（length/索引/item + selectedIndex/value）。
-          return _selectOptions(sel);
+        if (_zwIsSelectTag(sel, handle)) {
+          // R3908：options/selectedOptions/namedItem 双形态（sel 解析快照 + handle
+          // createElement detached select——此前仅 sel 形，handle 形 `selly.options.add`
+          // /`selly.namedItem`/`selectedOptions.length` 全 TypeError 面）。
+          if (prop === 'options') return _zwOptionsCollection(sel, handle, key);
+          if (prop === 'selectedOptions') return _zwSelectedOptionsCollection(sel, handle, key);
+          if (prop === 'namedItem') {
+            return function (name) { return _zwOptionsCollection(sel, handle, key).namedItem(name); };
+          }
         }
         // fileapi-compat 残余（2026-10-11）：HTMLSelectElement.length = options 数
         //（spec https://html.spec.whatwg.org/multipage/form-elements.html#dom-select-length）
         // + select[i] 索引项——dom.window「platform object as blobParts (select)」的
         // indexed-properties sequence 面（length + 索引 getter 经 options）。sel/handle
-        // 双形态（detached createElement select 走 handle 子树收集）。
-        if (prop === 'length' && _realTag(sel, handle) === 'SELECT') {
-          return _selectOptionEls(sel, handle).length;
+        // 双形态；R3908 起经 `_zwListOfOptions`（嵌套排除语义统一）。
+        if (prop === 'length' && _zwIsSelectTag(sel, handle)) {
+          return _zwListOfOptions(sel, handle).length;
         }
         // 索引分支：数字开头快检先于 _realTag（trap 热路径——每属性 get 都过）。
         if (typeof prop === 'string' && prop.charCodeAt(0) >= 48 && prop.charCodeAt(0) <= 57
-            && /^(0|[1-9][0-9]*)$/.test(prop) && _realTag(sel, handle) === 'SELECT') {
-          return _selectOptionEls(sel, handle)[Number(prop)];
-        }
-        if (prop === 'selectedOptions' && !handle && sel && _isTag(sel, 'SELECT')) {
-          // P1a select：`select.selectedOptions` 选中 option 数组。
-          return _selectSelectedOptions(sel);
+            && /^(0|[1-9][0-9]*)$/.test(prop) && _zwIsSelectTag(sel, handle)) {
+          return _zwListOfOptions(sel, handle)[Number(prop)];
         }
         // `select.add(element, before?)`（HTMLOptionsCollection，R2832）——追加 option（或插 before 前）。
         // 仅 SELECT（_realTag gate）；与 `new Option()` 配对做动态下拉填充。appendChild / insertBefore 复用。
@@ -17838,122 +18230,6 @@ return e;
             var victim = (index === -1) ? cellsArr[cellsArr.length - 1] : cellsArr[index];
             if (victim && typeof victim.remove === 'function') victim.remove();
           };
-        }
-        // R3907（html-semantics M2 切片 7）：option 文本/反射语义助手（HTML §4.10.9
-        // the-option-element）。child text content = collect text value：Text/CDATA →
-        // data；local=script 且 ns ∈ {HTML, SVG} → ''（不递归；MathML/null ns script
-        // 递归——option-text-recurse 断言面）；元素 → 递归（子经自身 textContent getter，
-        // 复用 R81 融合视图，pending 子自然可见）；comment/PI 不计。顶层子列表与 part04
-        // textContent getter 同源（_zwLocalChildNodes + _handleChildren + _childNodeList
-        // 融合）；64 层深度帽（R181 同款防环）。
-        // https://html.spec.whatwg.org/multipage/form-elements.html#dom-option-text
-        function _zwOptStripCollapse(s) {
-          // strip and collapse ASCII whitespace（infra：去首尾 + 内侧折叠单空格；NBSP 不动）
-          return String(s == null ? '' : s)
-            .replace(/^[ \t\n\f\r]+/, '')
-            .replace(/[ \t\n\f\r]+$/, '')
-            .replace(/[ \t\n\f\r]+/g, ' ');
-        }
-        function _zwOptCollectWalk(kids, out, depth) {
-          if (depth > 64 || !kids || !kids.length) return;
-          for (var _oci = 0; _oci < kids.length; _oci++) {
-            var _ocn = kids[_oci];
-            if (!_ocn) continue;
-            var _ocT = _ocn.nodeType;
-            if (_ocT === 3 || _ocT === 4) {
-              var _ocD = _ocn.nodeValue != null ? _ocn.nodeValue : (_ocn.data != null ? _ocn.data : '');
-              if (_ocD != null) out.push(String(_ocD));
-            } else if (_ocT === 1) {
-              var _ocLn = String(_ocn.localName || _ocn.nodeName || '').toLowerCase();
-              var _ocSkip = false;
-              if (_ocLn === 'script') {
-                var _ocNs = null, _ocHasNs = false;
-                if (_ocn.__zwHandle && _nsHandles[_ocn.__zwHandle]) {
-                  _ocNs = _nsHandles[_ocn.__zwHandle].namespace;
-                  _ocHasNs = true;
-                } else {
-                  try { _ocNs = _ocn.namespaceURI; if (_ocNs != null) _ocHasNs = true; } catch (_ocNsE) {}
-                }
-                // 无 ns 信息 → 缺省 HTML 文档面跳过；显式 null ns（createElementNS(null)）
-                // 按 spec 递归（option-text-recurse 'null script elements' 断言面）
-                if (!_ocHasNs) _ocSkip = true;
-                else if (_ocNs === 'http://www.w3.org/1999/xhtml'
-                    || _ocNs === 'http://www.w3.org/2000/svg') _ocSkip = true;
-              }
-              // 非 script 元素沿**子列表**递归（不推 textContent——嵌套层可能含 script，
-              // 须逐层排除；option-text-recurse 'child ends with a script' 断言面）
-              if (!_ocSkip) {
-                var _ocSub = null;
-                if (_ocn.__zwHandle && _handleChildren[_ocn.__zwHandle]) {
-                  var _ocSubL = (typeof _zwLocalChildNodes === 'function') ? _zwLocalChildNodes(null, _ocn.__zwHandle) : null;
-                  var _ocSubK = _handleChildren[_ocn.__zwHandle];
-                  _ocSub = (_ocSubL && _ocSubL.length) ? _ocSubL.concat(_ocSubK) : _ocSubK;
-                } else {
-                  try { _ocSub = _ocn.childNodes; } catch (_ocSubE) { _ocSub = null; }
-                }
-                if (_ocSub && _ocSub.length) _zwOptCollectWalk(_ocSub, out, depth + 1);
-              }
-            }
-            // comment(8)/PI(7)/其余节点形态 → 不计（spec collect text value）
-          }
-        }
-        function _zwOptChildText(sel, handle) {
-          var _ocKids;
-          if (handle) {
-            if (typeof _isContainerHandle === 'function' && _isContainerHandle(handle)) {
-              _ocKids = _handleChildNodes(handle);
-            } else {
-              var _ocL = (typeof _zwLocalChildNodes === 'function') ? _zwLocalChildNodes(sel, handle) : null;
-              var _ocK = (_handleChildren[handle] || []).slice();
-              if (_ocL && _ocL.length) _ocKids = _ocL.concat(_ocK);
-              else if (_ocK.length) _ocKids = _ocK;
-              else if (_ocL) _ocKids = _ocL;
-              else _ocKids = _childNodeList(sel, handle);
-            }
-          } else {
-            // R3028：sel 形先探 latest-wins——textContent= 的 SetText 覆盖（快照子列表
-            // 无此面，R3028 契约 'option.text sel-based latest-wins' 断言）命中即直取
-            //（children 已被替换为单文本子，script 排除无意义）。lw==快照（无 pending
-            // SetText）→ 走子列表 walk（script 排除在稳态生效）。
-            var _ocLw = (typeof __zw_get_text_lw === 'function') ? __zw_get_text_lw(sel) : __zw_get_text(sel);
-            var _ocSnap = (typeof __zw_get_text === 'function') ? __zw_get_text(sel) : _ocLw;
-            if (String(_ocLw) !== String(_ocSnap)) {
-              return _zwOptStripCollapse(_ocLw == null ? '' : String(_ocLw));
-            }
-            _ocKids = _childNodeList(sel, null);
-          }
-          var _ocOut = [];
-          _zwOptCollectWalk(_ocKids, _ocOut, 0);
-          return _zwOptStripCollapse(_ocOut.join(''));
-        }
-        // option value/label 反射的无 ns 内容属性读（HTML §4.10.9 dom-option-value/label——
-        // 「has a value/label content attribute」按**无命名空间**属性判定；R122 实例层为
-        // 动态权威面，解析快照属性天然无 ns）。返回 null = 无此属性（含同 local 仅 NS 实例
-        // 的影子面——setAttributeNS(example,'label') 后 .label 不可见，WPT namespaced 断言）。
-        function _zwOptAttrNoNs(elKey, selX, handleX, name) {
-          var _oaLower = String(name).toLowerCase();
-          var _oaList = (typeof _zwAttrInstances === 'object' && _zwAttrInstances
-            && typeof _zwAttrInstances.get === 'function') ? _zwAttrInstances.get(elKey) : null;
-          if (_oaList && _oaList.length) {
-            for (var _oai = 0; _oai < _oaList.length; _oai++) {
-              var _oait = _oaList[_oai];
-              if (String(_oait.local).toLowerCase() === _oaLower && _oait.ns == null) {
-                return String(_oait.value != null ? _oait.value : '');
-              }
-            }
-            for (var _oaj = 0; _oaj < _oaList.length; _oaj++) {
-              if (String(_oaList[_oaj].local).toLowerCase() === _oaLower) return null;
-            }
-            // 实例层无此 local → 落解析面（解析属性全部无 ns）
-          }
-          var _oaHas = handleX
-            ? (typeof __zw_has_attr_handle === 'function' ? __zw_has_attr_handle(handleX, name) === '1' : false)
-            : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(selX, name) === '1'
-              : (typeof __zw_has_attr === 'function' ? __zw_has_attr(selX, name) === '1' : false));
-          if (!_oaHas) return null;
-          var _oaV = handleX ? __zw_get_attr_handle(handleX, name)
-            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(selX, name) : __zw_get_attr(selX, name));
-          return (_oaV == null) ? '' : String(_oaV);
         }
         // HTMLOptionElement 读属性（option.text/label/defaultSelected，R2832），仅 OPTION（_realTag gate，
         // 支持 sel + handle 两种身份——new Option 创建的 handle-based 亦可读）。

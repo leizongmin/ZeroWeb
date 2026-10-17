@@ -128,6 +128,14 @@
   // checkedness」断言面）。**不随属性变更清除**（spec：checked 内容属性增删仅在未脏
   // 时改 checkedness）；渲染/radio 组激活仍走内容属性面不变。经 `__zw_reset_form_state` 清空。
   var _checkedDirtyState = {};
+  // HTMLOptionElement dirty selectedness（R3908b，HTML §4.10.9
+  // https://html.spec.whatwg.org/multipage/form-elements.html#dom-option-selected）：
+  // `.selected=` IDL set 只置 selectedness + dirtiness、**不反射** selected 内容属性
+  //（defaultSelected 才反射——option-selectedness-script-mutation「IDL selected does
+  // not reflect」断言面）；getter 脏态优先于内容属性。已知限制：select.value=/
+  // selectedIndex= 的 SelectOption 覆盖不清 dirty（spec 应整体覆盖），当前语料无
+  // 「.selected= 后同 select select.value=」组合，挂账。经 `__zw_reset_form_state` 清空。
+  var _optSelectedDirty = {};
   // HTMLInputElement.files 引用面（R3902b，HTML §4.10.5.4
   // https://html.spec.whatwg.org/multipage/input.html#dom-input-files）：`.files=` setter
   // 存 FileList 引用（identity 保真——WPT files.html「FileList should not be copied / can
@@ -5713,7 +5721,7 @@
       if (_proxyCache[key] === el) { delete _userEdited[key]; return; }
     }
   };
-  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputValuesSet = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _checkedDirtyState = {}; _inputFiles = {}; _classCache = {}; _customValidity = {}; _userEdited = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _resourceStates = {}; _textareaDefault = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; if (typeof globalThis.__zw_pointer_reset === 'function') globalThis.__zw_pointer_reset(); };
+  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputValuesSet = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _checkedDirtyState = {}; _optSelectedDirty = {}; _inputFiles = {}; _classCache = {}; _customValidity = {}; _userEdited = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _resourceStates = {}; _textareaDefault = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; if (typeof globalThis.__zw_pointer_reset === 'function') globalThis.__zw_pointer_reset(); };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF

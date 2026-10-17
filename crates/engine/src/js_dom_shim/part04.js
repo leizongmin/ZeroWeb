@@ -9906,6 +9906,16 @@
           }
           return true;
         }
+        // R3908（html-semantics M2 切片 8）：HTMLOptionsCollection 长度/索引 setter。
+        // `select.length =` 与 `select[i] =` 经 options 集合 set trap 同一实现
+        //（spec：grow 逐位补空 option、shrink 末端裁剪、[i]=null 移除、[i]=element
+        // n>length 先补空再追加、其余 replace——common-HTMLOptionsCollection 断言面）。
+        // canonical 索引判定走 `_zwIsCanonicalIndex`（'01'/'-2' 非 canonical → 落 expando）。
+        if (_zwIsSelectTag(sel, handle)
+            && (p === 'length' || (typeof p === 'string' && _zwIsCanonicalIndex(p)))) {
+          try { _zwOptionsCollection(sel, handle, key)[p] = value; } catch (_eSelLen) {}
+          return true;
+        }
         // R2933 element 级 IDL on-event handler（onclick/oninput/onkeydown/onchange/...）。须先于末尾 fallthrough
         //（否则 fn 被当字符串属性写入 onclick="function..."）。`on`+小写字母 = handler（generic，覆盖 onclick/
         // oninput/onload/onsubmit/onpointer* 等所有当前/未来事件，无白名单）。setter 路由到 per-element listener

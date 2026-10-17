@@ -55,3 +55,4 @@ include!("js_dom_bridge_tests/part52.rs");
 include!("js_dom_bridge_tests/part56.rs");
 include!("js_dom_bridge_tests/part53.rs");
 include!("js_dom_bridge_tests/part57.rs");
+include!("js_dom_bridge_tests/part58.rs");

@@ -2,39 +2,42 @@
 
 **版本**: v2.0
 **日期**: 2026-10-18（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 7 收口（option 元素文本/反射语义 R3907 +65P），下一步 option list 基建（HTMLOptionsCollection）切片
+**状态**: Active——M2 切片 8 收口（HTMLOptionsCollection/option list 基建 R3908 +54P），下一步 selectedness/selectedIndex 语义切片
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-18 M2 切片 7）**：option 元素文本/反射语义
-> （R3907，HTML §4.10.9）——`.text` getter =「collect text value +
-> strip and collapse ASCII whitespace」（Text/CDATA 计 data；HTML/SVG
-> script 整棵排除、MathML/null ns script 递归、comment/PI 不计、元素沿
-> 子列表递归使嵌套层 script 逐层排除；首尾剥离 + 内侧折叠、NBSP 保留）；
-> `.label`/`.value` getter = 无 ns 内容属性**存在即采纳**（空串不回落、
-> NS 影子不可见，R122 `_zwAttrInstances` 实例层判定）+ 缺省回落 collapse
-> 后文本；`.text` setter = textContent 委托（同「string replace all」
-> 步骤，旧文本子 node identity 更替）。part03 新助手 4 个
-> （`_zwOptStripCollapse`/`_zwOptCollectWalk` 64 层防环/`_zwOptChildText`
-> R3028 latest-wins 先探/`_zwOptAttrNoNs`）+ part04 text setter 支。
-> part57 新增 `test_option_semantics_r3907` 契约（W1–W7，part16 近
-> 2000 行上限故新切片文件）。option 族 36→**101P**（+65P：option-label
-> 7→12、option-text-recurse 0→11、option-text-spaces 6→50、
-> option-value 7→12）；forms 3450→**3515P**；九域全量 4409→**4477P**
-> （4477/7412 = **60.40%**），对切片 6 账本逐 subtest diff **九域零回归**
-> （新增/消失/形态翻转均 0）。interactive-elements +3P（dialog showModal
-> InvalidStateError 三案）经 **stash 对照实验**证实非本切片因果——两棵
-> 树定点行为一致、全量跑下 runner 案级 V8 上下文 realm 身份非确定
-> （s6 九连 `wrong global`、本轮干净形态），不计贡献，归 wpt-runner
-> 通道挂账。账本见
-> [evidence/2026-10-18-m2s7-r3907.md](html-semantics-compat/evidence/2026-10-18-m2s7-r3907.md)。
-> **卡点**：无阻塞。**下一步**：option list 基建切片——HTMLOptionsCollection
-> （add/namedItem/length/`[index]`）+ selectedOptions + option list 嵌套
-> 排除（hr/嵌套 option/optgroup 包裹），同根簇 ~45F+
-> （common-HTMLOptionsCollection 8F、namedItem 6F、add 3F、
-> selectedOptions 2+11F、script-mutation 5F、nesting 簇）；forms 域大块
-> 余簇依归因排后（form-submission encoding ~255F、label clicks ~80F、
-> form-autocomplete ~66F、meter ~48F）。
+> **▶ 当前状态（2026-10-18 M2 切片 8）**：HTMLOptionsCollection/option
+> list 基建（R3908/R3908b）——spec「list of options」统一构造
+> `_zwListOfOptions`（OPTION 收录不递归；select/hr/datalist 整枝排除；
+> 嵌套 optgroup 整枝排除、顶层 optgroup 照常下钻，HTML §4.10.7）；
+> HTMLOptionsCollection 代理（length grow/shrink、`[i]=null` 移除、
+> `[i]=element` 先补空再追加/replace——replace 取「先删旧项+前插旧项
+> 后继」序规避 R51 overlay nextSibling identity miss；namedItem/add/
+> selectedIndex/value）；`_zwIsSelectTag` 前缀 select 判定
+> （createElementNS 'foo:select' 六处换用）；selectedOptions HTMLCollection
+> 形代理（三 trap 齐：get 原型回落/has/getOwnPropertyDescriptor）+
+> 非 multiple selectedness 视图归一（最后者胜/首项回落）；
+> option.selected IDL setter = dirty selectedness（不反射属性，
+> `_optSelectedDirty`，R3908b）——宿主激活链（script_gen.rs）分流为
+> 显式属性写保渲染/序列化面。part58 `test_html_options_collection_r3908`
+> 契约（W1–W9）。forms 3515→**3569P**；九域 4477→**4531P**
+> （4531/7412 = **61.13%**），对 s7 账本逐 subtest diff **净 +54P**
+> （HTMLOptionsCollection 三文件 15P、selectedOptions 簇 18P、
+> script-mutation 5P、inserted-or-removed 4P、select-named-getter 4P、
+> option-selected 2P、option-list/optgroup 溢出 6P），**回归 0**、
+> 新增/消失 0；对 s6 基线同为零回归。zero-engine --lib 3111 全过、
+> make test 全腿绿（browser 腿 DISPLAY=:102 环境归因复跑 650P/0F，
+> s6 同款）、clippy/fmt 过、零新增依赖。账本见
+> [evidence/2026-10-18-m2s8-r3908.md](html-semantics-compat/evidence/2026-10-18-m2s8-r3908.md)。
+> **卡点**：无阻塞。**下一步**：selectedness/selectedIndex 语义切片——
+> select-ask-for-reset 3F（node remove/insert 触发重置）、
+> selected-index 7F（selectedIndex setter/reset-algorithm）、
+> select-add 2F + select-remove 2F（add(n)/remove(n) 语义）、
+> option-element-constructor 3F（构造器 dirtiness——R3908b 已铺底）、
+> select-validity 7F；forms 域大块余簇依归因排后（form-submission
+> encoding ~255F、label clicks ~80F、form-autocomplete ~66F、
+> meter ~48F）。**独立挂账**：通用 replaceChild sel 形 oldChild 落尾
+> 缺口（remove+append 序，zz-probe2/3 三源实证，本轮已清诊断页）。
 
 
 
@@ -116,6 +119,19 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-18 M2 切片 8**：HTMLOptionsCollection/option list 基建
+  （R3908/R3908b）——`_zwListOfOptions` 统一构造（嵌套 optgroup 排除、
+  select/hr/datalist 整枝）、HTMLOptionsCollection 代理（length/索引
+  setter、replace 取先删后插序规避 overlay identity miss）、
+  `_zwIsSelectTag` 前缀判定六处、selectedOptions 代理三 trap + 视图归一、
+  option.selected dirty selectedness（不反射；宿主激活脚本
+  script_gen.rs 分流属性写）。part58 契约（W1–W9）。common 三文件
+  15P、selectedOptions 簇 18P、script-mutation 5P 等**净 +54P**；forms
+  3515→3569P、九域 4477→4531P（61.13%），对 s7/s6 账本 diff 均零回归。
+  zero-engine --lib 3111 全过、make test 全腿绿（browser 腿 :102 复跑，
+  s6 同款环境归因）、clippy/fmt 过、零新增依赖。挂账：ask-for-reset 3F、
+  selected-index 7F、add/remove 4F、constructor dirtiness 3F、validity 7F、
+  通用 replaceChild sel 形 oldChild 落尾缺口（独立排查）。
 - **2026-10-18 M2 切片 7**：option 元素文本/反射语义（R3907）——
   `.text` getter「collect text value + strip and collapse」（script
   命名空间排除模型、子列表递归、NBSP 保留）、`.label`/`.value` 无 ns

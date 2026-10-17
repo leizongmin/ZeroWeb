@@ -381,6 +381,9 @@ pub fn script_set_control_checked(selector: &str, checked: bool) -> String {
 /// 构造 option selectedness 更新脚本，不派发事件。
 ///
 /// `clear_others` 用于 select-one，按节点身份清除兄弟，避免重复 value 选错 option。
+/// 写**内容属性**而非 IDL `.selected=`：R3908b 起 IDL setter 按 spec 只置
+/// selectedness+dirty 不反射属性（option-selectedness-script-mutation 断言面），
+/// 而宿主激活态以内容属性承载（渲染/序列化/option_activation_snapshot 读取面）。
 /// https://html.spec.whatwg.org/multipage/form-elements.html#concept-option-selectedness
 pub fn script_set_option_selected(
     option_selector: &str,
@@ -395,8 +398,8 @@ pub fn script_set_option_selected(
     format!(
         "(function(){{\
 var o=document.querySelector('{option}'),s=document.querySelector('{select}');if(!o||!s)return;\
-if({clear_others}){{var os=s.options;for(var i=0;i<os.length;i++)os[i].selected={selected}&&os[i]===o;}}\
-else o.selected={selected};\
+if({clear_others}){{var os=s.options;for(var i=0;i<os.length;i++){{if(os[i]===o)os[i].setAttribute('selected','');else os[i].removeAttribute('selected');}}}}\
+else if({selected})o.setAttribute('selected','');else o.removeAttribute('selected');\
 }})()"
     )
 }
