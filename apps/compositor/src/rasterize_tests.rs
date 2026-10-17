@@ -152,4 +152,38 @@ mod tests {
             std::env::remove_var("ZW_RENDER_THREAD");
         }
     }
+
+    // ── T60：脏区共享归一（normalize_dirty_rects）─────────────────────────
+
+    #[test]
+    fn normalize_dirty_rects_expands_and_aligns_to_integer_pixels() {
+        let out = rasterize::normalize_dirty_rects(&[(10.0, 10.0, 20.0, 20.0)], 800.0, 600.0);
+        assert_eq!(out, vec![(9.0, 9.0, 22.0, 22.0)], "四边外扩 1px 墨迹余量");
+    }
+
+    #[test]
+    fn normalize_dirty_rects_floor_ceil_aligns_fractional_rects() {
+        // x0=floor(8.4-1)=7, x1=ceil(8.4+20.6+1)=30；y0=floor(7.4)=7, y1=ceil(25.8)=26。
+        let out = rasterize::normalize_dirty_rects(&[(8.4, 8.4, 20.6, 16.4)], 800.0, 600.0);
+        assert_eq!(out, vec![(7.0, 7.0, 23.0, 19.0)], "小数坐标对齐整数像素");
+    }
+
+    #[test]
+    fn normalize_dirty_rects_clamps_to_viewport() {
+        let out = rasterize::normalize_dirty_rects(&[(-5.0, -5.0, 10.0, 10.0)], 100.0, 100.0);
+        assert_eq!(out, vec![(0.0, 0.0, 6.0, 6.0)], "负坐标钳位到视口原点");
+
+        let out = rasterize::normalize_dirty_rects(&[(95.0, 95.0, 20.0, 20.0)], 100.0, 100.0);
+        assert_eq!(out, vec![(94.0, 94.0, 6.0, 6.0)], "越界部分钳位到视口边界");
+    }
+
+    #[test]
+    fn normalize_dirty_rects_filters_degenerate_and_outside() {
+        assert!(rasterize::normalize_dirty_rects(&[(0.0, 0.0, 0.0, 10.0)], 100.0, 100.0).is_empty());
+        assert!(rasterize::normalize_dirty_rects(&[(0.0, 0.0, 10.0, -1.0)], 100.0, 100.0).is_empty());
+        // 完全在视口外的矩形过滤掉（钳位后退化）。
+        assert!(rasterize::normalize_dirty_rects(&[(200.0, 200.0, 10.0, 10.0)], 100.0, 100.0).is_empty());
+        let out = rasterize::normalize_dirty_rects(&[(10.0, 10.0, 20.0, 20.0), (0.0, 0.0, 5.0, 5.0)], 100.0, 100.0);
+        assert_eq!(out.len(), 2, "有效矩形逐个保留");
+    }
 }

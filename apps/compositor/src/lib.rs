@@ -242,11 +242,19 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                 let (w, h) = rasterize::physical_viewport_size(&paint);
 
                 // IPC 图元 → 渲染图元 → 光栅化到 back buffer → swap
-                let dirty_rects: Vec<(f32, f32, f32, f32)> = paint
-                    .dirty_rects
-                    .iter()
-                    .map(|r| (r.x, r.y, r.width, r.height))
-                    .collect();
+                // T60：脏区在此归一（整数对齐 + 1px 墨迹外扩，见
+                // rasterize::normalize_dirty_rects）——is_full_viewport 门控、GPU
+                // scissor 路径与 CPU 回退消费同一像素集合；CPU 路径在
+                // rasterize_into_back 内对 paint.dirty_rects 做同一归一。
+                let dirty_rects: Vec<(f32, f32, f32, f32)> = rasterize::normalize_dirty_rects(
+                    &paint
+                        .dirty_rects
+                        .iter()
+                        .map(|r| (r.x, r.y, r.width, r.height))
+                        .collect::<Vec<_>>(),
+                    paint.viewport_width.max(1) as f32,
+                    paint.viewport_height.max(1) as f32,
+                );
                 let surface = surfaces.entry(surface_id).or_insert_with(|| SurfaceState {
                     navigation_epoch,
                     frame_id,

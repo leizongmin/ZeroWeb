@@ -2784,13 +2784,17 @@ impl GpuRenderer {
             multiview_mask: None,
         });
 
-        // 设置裁剪/剪刀区域
+        // 设置裁剪/剪刀区域。
+        // T60：左右/上下边缘与消费方 blit（gpu_raster.rs `blit_region_from_rgba`、
+        // CPU `fill_rect`）同取 floor(left)/ceil(right) 像素集——此前右侧/下侧用
+        // trunc，小数坐标脏区（真实页面百分比宽度常态）最后一列/行画不到，blit
+        // 却把 Clear(WHITE) 的未绘制像素整列拷回 back（脏区右/底边 1px 白条残影）。
         if let Some(clip) = clip_rect {
             let (surface_w, surface_h) = self.surface_size;
-            let x = clip.left().max(0.0) as u32;
-            let y = clip.top().max(0.0) as u32;
-            let right = clip.right().max(0.0).min(surface_w as f32) as u32;
-            let bottom = clip.bottom().max(0.0).min(surface_h as f32) as u32;
+            let x = clip.left().floor().max(0.0) as u32;
+            let y = clip.top().floor().max(0.0) as u32;
+            let right = clip.right().ceil().min(surface_w as f32) as u32;
+            let bottom = clip.bottom().ceil().min(surface_h as f32) as u32;
             let w = right.saturating_sub(x);
             let h = bottom.saturating_sub(y);
             if w > 0 && h > 0 {

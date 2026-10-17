@@ -1505,7 +1505,6 @@ fn test_detached_focus_blur_pairing_t55() {
 /// T55/TV-3：detached focus 迁移的失焦事件**锁序**——旧焦点（连接元素）的
 /// blur 先于 focusout（uievents-compat M3 尾簇 6b 序），且旧元素 blur 监听内
 /// activeElement 走 body 回落（T55-2 赋值移到失焦派发后的语义面）。
-/// part03 MEl 臂（解析节点 focus）派发序相反为先存差异，本轮只记录不改动。
 #[test]
 fn test_detached_focus_migration_event_order_t55() {
     use std::sync::{Arc, Mutex};
@@ -1546,6 +1545,60 @@ fn test_detached_focus_migration_event_order_t55() {
     assert_eq!(
         out, "blur,ae:body,focusout|dynFocused:true",
         "T55 detached 迁移失焦序锁 blur→focusout + 旧 blur 监听内 activeElement=body"
+    );
+}
+
+/// T57/I5 修齐：part03 MEl 臂（解析节点 focus）的失焦事件**锁序**与 part04
+/// proxy/detached 臂同源——失焦相位先于获焦相位且 blur 先于 focusout
+///（uievents-compat M3 尾簇 6b：WPT focus-events expected「blur@a → focusout@a
+/// → focus@b」逐条断言序；384e00ecb 修齐 proxy 臂时本臂为先存差异）。
+/// 新焦点取 createHTMLDocument 工厂产物 `_zwMEl` plain 节点（探针实证唯一未
+/// 物化的构造面——main document createElement/attachShadow/innerHTML 解析树
+/// firstChild 均已物化为 handle 代理，走 part04 臂不命中本臂）；旧焦点为连接
+/// proxy——仅本臂覆盖的迁移面；旧 blur 监听内 activeElement 走 body 回落（失焦
+/// 相位 `_activeElKey` 已清、`_zwMElFocused` 未接管，spec focusing steps 相位语义）。
+#[test]
+fn test_mel_focus_migration_event_order_t57() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body><div id=\"a\">x</div></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let out = sandbox
+        .execute(
+            "var parts = [];\
+             var a = document.getElementById('a');\
+             a.focus();\
+             var dyn = document.implementation.createHTMLDocument('t').createElement('input');\
+             var seq = [];\
+             a.addEventListener('blur', function () {\
+               seq.push('blur');\
+               seq.push(document.activeElement === document.body ? 'ae:body' : 'ae:other');\
+             });\
+             a.addEventListener('focusout', function () { seq.push('focusout'); });\
+             a.addEventListener('focus', function () { seq.push('focus'); });\
+             dyn.focus();\
+             parts.push('isMEl:' + (dyn.__zwIsMEl === true));\
+             parts.push(seq.join(','));\
+             parts.push('dynFocused:' + (document.activeElement === dyn));\
+             parts.join('|')",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out, "isMEl:true|blur,ae:body,focusout|dynFocused:true",
+        "T57 MEl 迁移失焦序锁 blur→focusout + 旧 blur 监听内 activeElement=body（与 part04 两臂同源）"
     );
 }
 
@@ -3917,3 +3970,4 @@ globalThis.__r224out = [
         "R224 insertNode 对 Document 型 node 抛 HRE、Element 型不受影响"
     );
 }
+

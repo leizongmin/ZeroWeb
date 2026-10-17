@@ -196,16 +196,25 @@ QUICKJS_TEST_CRATES_WITHOUT_BROWSER_OR_RENDERER = $(filter-out zero-browser zero
 ifeq ($(OS),Windows_NT)
 # Windows GUI 测试共享进程级 compositor；并行执行会让测试互相关闭其子进程。
 test: target-disk-guard target/test-guard
+	# T58（2026-10-17）：fmt 门禁前置快速失败（格式漂移不等全量测试尾部才暴露）。
+	cargo fmt --all -- --check
 	cargo build -p zero-renderer -p zero-compositor -p zero-image-decoder
 	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test --workspace --exclude zero-browser --exclude zero-renderer
 	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test -p zero-renderer --bin zero-renderer -- --test-threads=1
 	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test -p zero-browser --bin zero-browser -- --test-threads=1
+	# T58（2026-10-17）：v8 浏览器腿补跑集成套件（apps/browser/tests/ cdp_* 三件）——
+	# 此前只跑 --bin zero-browser，集成套件失败不可见（T55 预存失败借此隐藏两个月）。
+	# cdp 钉为 headless 真进程面（自带本地 HTTP 测试页，无需 display），串行避免
+	# 浏览器进程互相挤占；test-guard 运行段内存/墙钟与 bin 腿同口径。
+	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test -p zero-browser --tests -- --test-threads=1
 	cargo clippy --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_CLIPPY_CRATES)) --all-targets -- -D warnings
 	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_TEST_CRATES_WITHOUT_BROWSER_OR_RENDERER))
 	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test --no-default-features --features quickjs -p zero-renderer --bin zero-renderer -- --test-threads=1
 	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test --no-default-features --features quickjs -p zero-browser -- --test-threads=1
 else
 test: target-disk-guard target/test-guard
+	# T58（2026-10-17）：fmt 门禁前置快速失败（格式漂移不等全量测试尾部才暴露）。
+	cargo fmt --all -- --check
 	# Browser 多进程单测直接 spawn target/debug/{zero-renderer,zero-compositor}；先刷新
 	# standalone binaries，避免协议结构变更后复用旧 wire schema，导致断管或 stale 帧。
 	cargo build -p zero-renderer -p zero-compositor -p zero-image-decoder
@@ -243,6 +252,11 @@ test: target-disk-guard target/test-guard
 	#（2026-10-04 时点本腿 202P = 3bc44bf62 基线 201P + slice28 新钉 1P；随钉数自然增长）。
 	ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test -p zero-renderer --lib -- --test-threads=1
 	ZERO_NOPROXY=1 ZW_GUARD_RUNNER_PREFIX="xvfb-run -a" ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test -p zero-browser --bin zero-browser -- --test-threads=1
+	# T58（2026-10-17）：v8 浏览器腿补跑集成套件（apps/browser/tests/ cdp_* 三件）——
+	# 此前只跑 --bin zero-browser，集成套件失败不可见（T55 预存失败借此隐藏两个月）。
+	# cdp 钉为 headless 真进程面（自带本地 HTTP 测试页，无需 display），串行避免
+	# 浏览器进程互相挤占；test-guard 运行段内存/墙钟与 bin 腿同口径。
+	ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test -p zero-browser --tests -- --test-threads=1
 	@if ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 120 -- cargo test -p zero-render-foundation gpu::renderer::tests::test_gpu_renderer_headless_creation -- --exact --test-threads=1 >/dev/null 2>&1; then \
 		echo "wgpu adapter available; running adapter-only GPU tests"; \
 		ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test -p zero-render-foundation gpu::renderer:: -- --test-threads=1; \

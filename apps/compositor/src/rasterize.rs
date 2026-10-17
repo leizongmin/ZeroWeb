@@ -30,6 +30,39 @@ fn ipc_dirty_rects(rects: &[IpcRect]) -> Vec<(f32, f32, f32, f32)> {
     rects.iter().map(|r| (r.x, r.y, r.width, r.height)).collect()
 }
 
+/// T60：脏区共享归一——整数像素对齐 + 四边外扩 1px 墨迹余量（GPU scissor 路径与
+/// CPU 区域渲染两个入口都经此函数，保证两臂消费同一像素集合）。
+///
+/// - 外扩 1px：字形 AA/子像素边缘的光栅外溢保守界（抗锯齿覆盖 ≤1 物理像素）；
+/// - floor/ceil 对齐：消除小数坐标脏区（真实页面百分比宽度常态）下 GPU scissor
+///   与 blit 区域边界错位的触发面；
+/// - 视口钳位：脏区越界（节点部分在视口外）不产生越界 blit。
+///
+/// 视口外或退化矩形被过滤；返回逻辑 CSS 像素坐标（与 IPC 脏区同坐标系）。
+pub fn normalize_dirty_rects(
+    rects: &[(f32, f32, f32, f32)],
+    viewport_w: f32,
+    viewport_h: f32,
+) -> Vec<(f32, f32, f32, f32)> {
+    const INK_MARGIN: f32 = 1.0;
+    rects
+        .iter()
+        .filter_map(|&(x, y, w, h)| {
+            if w <= 0.0 || h <= 0.0 {
+                return None;
+            }
+            let x0 = (x - INK_MARGIN).floor().max(0.0);
+            let y0 = (y - INK_MARGIN).floor().max(0.0);
+            let x1 = (x + w + INK_MARGIN).ceil().min(viewport_w);
+            let y1 = (y + h + INK_MARGIN).ceil().min(viewport_h);
+            if x1 <= x0 || y1 <= y0 {
+                return None;
+            }
+            Some((x0, y0, x1 - x0, y1 - y0))
+        })
+        .collect()
+}
+
 /// 光栅化一帧到 `back` 缓冲（S3：部分 dirty 时 `copy_front_to_back` 后只重绘脏区）。
 #[allow(clippy::too_many_arguments)]
 pub fn rasterize_into_back(
@@ -46,7 +79,7 @@ pub fn rasterize_into_back(
     let (w, h) = physical_viewport_size(paint);
     let logical_w = paint.viewport_width.max(1);
     let logical_h = paint.viewport_height.max(1);
-    let dirty = ipc_dirty_rects(&paint.dirty_rects);
+    let dirty = normalize_dirty_rects(&ipc_dirty_rects(&paint.dirty_rects), logical_w as f32, logical_h as f32);
     let display_list = DisplayList::new(primitives.clone(), dirty);
     let vw = paint.viewport_width.max(1) as f32;
     let vh = paint.viewport_height.max(1) as f32;

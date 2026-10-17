@@ -660,24 +660,47 @@ impl BrowserApp {
             }
         }
         let has_overflow = visible_end < tabs.len();
-        // 溢出隐藏集合（标签序）：放不下的全部标签。活动标签在集合中时与可见区
-        // 最后一个非拖拽普通槽位互换——活动标签沿用让出槽位的 x 保持可见
-        //（Chrome 语义），被让出的标签按标签序排在隐藏列表最前。
+        // 溢出隐藏集合（标签序）：放不下的全部标签。活动标签在集合中时与可视区
+        // 槽位互换保持可见（Chrome 语义）：优先借最后一个普通槽位（T56/RV-1，
+        // rposition 过滤 pinned——pinned 窄槽与普通宽槽 slot_w 语义不同）；无可借
+        // 普通槽时回退借最后一个可视槽位。被让出的标签按标签序排在隐藏列表最前。
         let mut hidden_ids: Vec<TabId> = tabs[visible_end..].iter().map(|t| t.id).collect();
         if has_overflow
             && let Some(pos) = hidden_ids.iter().position(|&id| Some(id) == active_id)
-            && let Some(evict_idx) = tabs[..visible_end].iter().rposition(|t| !t.is_active && !t.is_dragging)
+            && let Some(evict_idx) = tabs[..visible_end]
+                .iter()
+                .rposition(|t| !t.is_active && !t.is_dragging && !t.is_pinned)
+                .or_else(|| {
+                    tabs[..visible_end]
+                        .iter()
+                        .rposition(|t| !t.is_active && !t.is_dragging)
+                })
         {
             // T54-1：换位后活动标签整体接管借出槽位——绘制 x 与稳定槽位 slot_x
             // 同步还原。只还原 x 时 slot_x 仍是活动标签自己的隐藏区槽位，▾/「+」
             // 按钮 x（visible_end_x = slot_x + slot_w，与 tab_layout/命中测试同一
             // 坐标源）会右偏到隐藏槽位右缘，命中区随之错位。
+            // T56/RV-1：回退借 pinned 槽时全宽接管——slot_x/slot_w/绘制宽度三者
+            // 一体同步为借出槽位几何；只还原 x 会残留「窄槽位 + 自身窄绘制」的
+            // 混合语义，▾ 右缘与命中区随之错位（借普通槽时宽度本就相同，不受影响）。
             let evicted_id = tabs[evict_idx].id;
             let evict_x = tabs[evict_idx].x;
             let evict_slot_x = tabs[evict_idx].slot_x;
+            let evict_slot = if tabs[evict_idx].is_pinned {
+                let e = &tabs[evict_idx];
+                Some((e.slot_w, e.tab_w, e.tab_body_w))
+            } else {
+                None
+            };
             tabs.swap(evict_idx, visible_end + pos);
             tabs[evict_idx].x = evict_x;
             tabs[evict_idx].slot_x = evict_slot_x;
+            if let Some((slot_w, tab_w, tab_body_w)) = evict_slot {
+                let borrowed = &mut tabs[evict_idx];
+                borrowed.slot_w = slot_w;
+                borrowed.tab_w = tab_w;
+                borrowed.tab_body_w = tab_body_w;
+            }
             hidden_ids.remove(pos);
             hidden_ids.insert(0, evicted_id);
         }
