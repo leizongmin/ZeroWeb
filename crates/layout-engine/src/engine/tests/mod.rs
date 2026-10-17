@@ -735,3 +735,6 @@ mod r5160_bfc_float_order_tests;
 /// R5161 跨 run 词中拼接边界无软换行机会（css-text-3 §5.2 / UAX#14；
 /// contain-paint-047 驱动）。
 mod r5161_cross_run_glue_tests;
+/// R5162 table-layout:fixed 列宽分布 §17.5.2.1（specified 列保持 + auto 列均分；
+/// 真 col CSS 宽 DOM 拾取；contain-paint-cell-001/002 驱动）。
+mod r5162_table_fixed_dist_tests;
