@@ -1,10 +1,11 @@
 # Web Crypto 兼容 — crypto.getRandomValues / randomUUID / subtle
 
-**版本**: v1.6
+**版本**: v1.7
 **日期**: 2026-10-17
-**状态**: Active——M6 残留收口（KDF 语义 + [SecureContext] 门禁 +2,952P，
-2026-10-17）；**非 tentative 失败清零**，下一步 tentative 域挂账清点与
-归档判断（DC-3 reftest/product-smoke 复核）
+**状态**: **Done**（2026-10-17 M6 终判，DC-1~3 全 ✅——corpus 终态
+**25,788/33,109 = 77.89%**，73/123 案全绿；非 tentative Fail 清零，余 7,320F
+全部 `.tentative.` 草案域挂账（重开条件 = 上游转正后按域立项，见挂账清单），
+iframe 依赖 Timeout 1 挂账至 DOM 域；M1→M6 六轮 6,728→25,788 逐 subtest 零回归）
 **执行模式**: WPT 驱动（上游 WebCryptoAPI corpus 为验收标尺）+ 实现与语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——加密面）
 
@@ -132,11 +133,26 @@
 
 ## Done Criteria
 
-- **DC-1** 导入 + 基线 + csv planned 行回填
+- **DC-1** 导入 + 基线 + csv planned 行回填 ✓（M1）
 - **DC-2** getRandomValues/randomUUID 既有语义守住（零回归）+ subtle 分片逐片
   对齐（digest 全格 → AES-GCM → HMAC/签名系），分级通过率不再下行两个连续轮次
+  ✓（M1→M6 六轮连续上行，逐 subtest 对比零回归）
 - **DC-3** 回归测试账本纪律；make test 全绿、make reftest 零回归、product-smoke
-  逐字节恒值
+  逐字节恒值（M6 复核：test 全腿绿、reftest 712/712、product-smoke 见下）
+
+## 挂账清单（M6 收口清点，2026-10-17）
+
+M6 后 Fail 7,320 **全部为 `.tentative.` 案**（上游规范未定草案域，不修；
+family 归并与逐案明细见 [M6 evidence](webcrypto-compat/evidence/2026-10-17-m6-residual.md)）：
+ML-KEM 1,605 / AES-OCB 981 / Ed448 954 / X448 878 / KMAC 708 / ML-DSA 603 /
+ChaCha20-Poly1305 522 / SHA3 家族 XOF（cSHAKE/K12/TurboSHAKE/SHA3）419 /
+supports 探测面 265 / Argon2 46 / getPublicKey·raw_format_aliases 等 70。
+同一批案在 M1 基线即 tentative 挂账（cSHAKE 先例），上游转正后按新里程碑立项。
+
+非 tentative 唯一非通过项：`algorithm-discards-context.https.window.js`
+Timeout 1（自 M1 每轮恒定，零回归语义）——该案依赖 iframe 跨帧 DOM
+（createElement iframe + contentDocument + top 回调），属 engine DOM 域
+能力依赖，非 WebCrypto 语义缺口，挂账至 DOM/iframe 兼容域。
 
 ## 里程碑
 
@@ -144,7 +160,7 @@ M1 导入与基线（corpus + runner 通道 + csv 回填）→ M2 已实现面 W
 （digest/HMAC/PBKDF2/HKDF/AES-GCM 逐域修失败；随机源零回归）→ M3 补面
 （AES-CBC/CTR、wrapKey/unwrapKey、spki/pkcs8/jwk 格式）→ M4 签名系
 （RSA 三算法 M4a ✓ + EC 家族 M4b ✓）→ M5 OKP（Ed25519/X25519 ✓）→
-残留收口（KDF 语义 + [SecureContext] 门禁 M6 ✓；tentative 域挂账清点）+ 归档。
+残留收口（KDF 语义 + [SecureContext] 门禁 M6 ✓）+ 挂账清点与归档 ✓。
 
 > 原里程碑（M2 digest 从零实现 / M3 importKey+AES-GCM 从零实现）已被
 > 2026-10-17 盘点修正——相应实现 R2793/R2955-R2958 立项前已存在，里程碑
