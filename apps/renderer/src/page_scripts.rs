@@ -1002,16 +1002,31 @@ pub fn drain_pending_dom_mutations(ctx: &mut PageScriptContext<'_>) -> bool {
     // `setTimeout` / fetch 等宿主完成会先投递到 worker 的命令队列；只有进入一次
     // worker 执行边界时，回调才会在页面全局运行并记录 DOM mutation。
     // https://html.spec.whatwg.org/multipage/webappapis.html#event-loop-processing-model
-    if !ctx.js_worker.take_pending_async_callbacks() {
+    let has_async = ctx.js_worker.take_pending_async_callbacks();
+    // 直接执行路径（宿主节拍的动态外链脚本 `tick_dynamic_scripts`、`__zw_observers_tick`
+    // 之外的直接 execute）不产生异步回调 token，但脚本体记录的 DOM mutation 同样滞留
+    // worker 队列——仅以异步旗标作门会把这些写入无限期滞留（页面无后续异步任务时永久
+    // 丢失；qq.com 动态 chunk 执行成功而 DOM 写入不落实测，run qq-20261016-r1 t3）。
+    // mutation 队列非空同样须 drain；两者皆空时早退，保住「空闲 drain 不进 JS worker」
+    // 的节流语义（下方 idle 断言 / V8 堆增长关注面不变）。
+    let has_mutations = !ctx
+        .js_worker
+        .mutations()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .is_empty();
+    if !has_async && !has_mutations {
         return false;
     }
-    // t2-pb1 fix#8：checkpoint 有界等待——页面回调积压（bilibili timer 臂级联 ~16s）时
-    // 不阻塞 renderer 主循环 15s+（导航 IPC 饿死 → 二跳 ERR_FAILED）。超时放弃本轮：
-    // 滞留空脚本为 worker 侧无害 no-op，ready 旗标由积压回调继续处理重新置位，下一轮
-    // 重试；回调产生的 mutation 在队列中累积，至下一次成功 checkpoint 一并应用。
-    let _ = ctx
-        .js_worker
-        .execute_script_direct_bounded("", std::time::Duration::from_millis(200));
+    if has_async {
+        // t2-pb1 fix#8：checkpoint 有界等待——页面回调积压（bilibili timer 臂级联 ~16s）时
+        // 不阻塞 renderer 主循环 15s+（导航 IPC 饿死 → 二跳 ERR_FAILED）。超时放弃本轮：
+        // 滞留空脚本为 worker 侧无害 no-op，ready 旗标由积压回调继续处理重新置位，下一轮
+        // 重试；回调产生的 mutation 在队列中累积，至下一次成功 checkpoint 一并应用。
+        let _ = ctx
+            .js_worker
+            .execute_script_direct_bounded("", std::time::Duration::from_millis(200));
+    }
     let html_snapshot = ctx.html.clone();
     apply_recorded_mutations(ctx, &html_snapshot).is_some()
 }
@@ -1523,6 +1538,50 @@ mod tests {
                 .any(|glyph| glyph.glyph_id == '2' as u32),
             "asynchronously inserted score must reach the renderer frame"
         );
+        worker.shutdown();
+    }
+
+    /// t3（qq-20261016-r1）：**无异步回调 token 的直接 execute** 产出的 mutation 也须被
+    /// drain 提交——动态外链脚本（`tick_dynamic_scripts` 的 `execute_script_direct_priority`）
+    /// 执行成功后，其 DOM 写入曾因 `drain_pending_dom_mutations` 仅认异步旗标而无限期滞留
+    /// worker 队列（页面无后续异步任务时永久丢失；qq.com 动态 chunk DOM 写入不落实测）。
+    /// 修复后：mutation 队列非空即 drain（空闲早退节流语义由上方 idle 断言守护）。
+    #[test]
+    fn direct_execute_mutation_is_committed_without_async_token() {
+        let html = r#"<html><body><div id="score">pending</div></body></html>"#;
+        let page_url = "https://zero.test/direct-dynamic-chunk";
+        let mut worker = RendererJsWorker::spawn(165);
+        worker.set_dom_snapshot(html, page_url);
+        let mut rendered_html = html.to_string();
+        let mut ctx = PageScriptContext {
+            html: &mut rendered_html,
+            url: page_url,
+            js_worker: &worker,
+            webview: None,
+        };
+
+        // 稳态基线：空闲 drain 无事可做（节流契约不变）。
+        for _ in 0..4 {
+            assert!(!drain_pending_dom_mutations(&mut ctx));
+        }
+
+        // 动态 chunk 形态：直接 execute 记录 mutation，不产生任何异步回调 token。
+        worker
+            .execute_script_direct("document.querySelector('#score').textContent = 'chunk-dom-write';")
+            .expect("direct execute records mutation");
+        assert!(
+            !worker.take_pending_async_callbacks(),
+            "前置：直接 execute 不置异步旗标（回归时说明门语义已变，测试须重审）"
+        );
+
+        // 修复前：门只认异步旗标 → 恒 false，mutation 永滞；修复后：队列非空即提交。
+        assert!(
+            drain_pending_dom_mutations(&mut ctx),
+            "direct-execute mutation must commit without async token"
+        );
+        assert!(ctx.html.contains("chunk-dom-write"), "mutated HTML: {}", ctx.html);
+        // 消费一次后回到稳态。
+        assert!(!drain_pending_dom_mutations(&mut ctx));
         worker.shutdown();
     }
 
