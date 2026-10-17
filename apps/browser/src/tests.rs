@@ -6211,6 +6211,107 @@ fn page_click_blur_clears_address_bar_preedit() {
     assert_eq!(app.address_bar_ime_preedit_for_test(), "", "失焦后 preedit 不应残留");
 }
 
+/// T53-1-EVID：补全下拉项点击使地址栏失焦时同步清 IME 合成态（与页面点击
+/// 失焦同款；漏补时 preedit 残留叠加在导航后 URL 上绘制）。
+#[test]
+fn autocomplete_dropdown_click_blurs_and_clears_preedit() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    // 唯一历史条目作为补全建议源（含 ".test" 判定为 URL 形态查询）。
+    app.shell.navigate("https://zw-t53e1.test/page");
+    app.shell.on_page_loaded("T53 E1");
+
+    app.address_bar_focused = true;
+    for ch in "zw-t53e1.test".chars() {
+        app.handle_key(&ch.to_string(), true, None);
+    }
+    assert!(!app.smoke_autocomplete_urls().is_empty(), "前置：键入应产生补全建议");
+    app.handle_ime(zero_host_runtime::event::ImeEvent::Preedit {
+        text: "zhong".to_string(),
+        cursor: Some((5, 5)),
+    });
+    assert!(
+        !app.address_bar_ime_preedit_for_test().is_empty(),
+        "前置：preedit 已挂载"
+    );
+
+    // 点击补全下拉第一行（行中心几何与 autocomplete_hit_test 同源）。
+    let (bar_x, _, bar_w, _) = app.address_bar_layout_for_test();
+    let row_y = (layout::TOOLBAR_HEIGHT + layout::AUTOCOMPLETE_ROW_HEIGHT * 0.5) as f64;
+    let cx = (bar_x + bar_w * 0.5) as f64;
+    app.handle_mouse_click(cx, row_y, true, "Left");
+    app.handle_mouse_click(cx, row_y, false, "Left");
+
+    assert!(!app.address_bar_focused, "点击补全项应使地址栏失焦");
+    assert!(
+        app.smoke_autocomplete_urls().is_empty(),
+        "点击补全项后建议列表应清空（证明命中下拉分支）"
+    );
+    assert_eq!(
+        app.address_bar_ime_preedit_for_test(),
+        "",
+        "补全项失焦路径 preedit 不应残留"
+    );
+}
+
+/// T53-1-EVID：右键菜单「粘贴并前往」使地址栏失焦时同步清 IME 合成态
+///（与页面点击失焦同款）。前置依赖系统剪贴板可写（X11/Xvfb 均成立）。
+#[test]
+fn paste_and_go_blurs_and_clears_preedit() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    assert!(
+        crate::clipboard::write_text("http://127.0.0.1:18080/paste-go.html"),
+        "前置：测试环境应可写系统剪贴板"
+    );
+
+    app.address_bar_focused = true;
+    app.handle_ime(zero_host_runtime::event::ImeEvent::Preedit {
+        text: "zhong".to_string(),
+        cursor: Some((5, 5)),
+    });
+    assert!(
+        !app.address_bar_ime_preedit_for_test().is_empty(),
+        "前置：preedit 已挂载"
+    );
+
+    // 右键地址栏 → Editable 菜单含「粘贴并前往」（剪贴板非空时插入）。
+    let (bar_x, bar_y, bar_w, bar_h) = app.address_bar_layout_for_test();
+    let ax = (bar_x + bar_w * 0.5) as f64;
+    let ay = (bar_y + bar_h * 0.5) as f64;
+    app.handle_mouse_click(ax, ay, true, "Right");
+    assert!(app.is_context_menu_visible_for_test(), "右键地址栏应打开菜单");
+    let ids = app.smoke_context_menu_item_ids();
+    let idx = ids
+        .iter()
+        .position(|id| id == "paste_and_go")
+        .expect("Editable 菜单应含「粘贴并前往」项（剪贴板非空）");
+
+    // 点击该行：行中心按分隔行紧凑高度累加（与 context_menu_hit_test 同源）。
+    let s = app.scale_factor;
+    let row_h = layout::CONTEXT_MENU_ROW_HEIGHT * s;
+    let sep_h = layout::CONTEXT_MENU_SEPARATOR_HEIGHT * s;
+    let (mx, my) = app.smoke_context_menu_origin().expect("菜单已开应有原点");
+    let offset: f32 = ids[..idx].iter().map(|id| if id == "-" { sep_h } else { row_h }).sum();
+    let cx = (mx + layout::CONTEXT_MENU_WIDTH * s * 0.5) as f64;
+    let cy = (my + offset + row_h * 0.5) as f64;
+    app.handle_mouse_click(cx, cy, true, "Left");
+    app.handle_mouse_click(cx, cy, false, "Left");
+
+    assert!(!app.address_bar_focused, "粘贴并前往应使地址栏失焦（不保留聚焦态）");
+    assert!(
+        app.smoke_address_bar_text().contains("paste-go.html"),
+        "剪贴板 URL 应已粘贴进地址栏（证明命中 paste_and_go 分支）"
+    );
+    assert_eq!(
+        app.address_bar_ime_preedit_for_test(),
+        "",
+        "粘贴并前往失焦路径 preedit 不应残留"
+    );
+}
+
 /// T54 回归：溢出态（▾ 按钮出现）拖拽标签——拖拽越界/让位时可视槽位布局与
 /// ▾ 按钮位置必须稳定（指示绘制与命中测试同一坐标源：稳定槽位），
 /// 释放落点与拖拽中指示一致。
