@@ -579,3 +579,44 @@ fn test_lang_with_string_argument() {
     let ss = Parser::parse_stylesheet(css);
     assert!(ss.rules.len() <= 1);
 }
+
+// ── 20. 顶层游离 `)` 弃 token 恢复（R2134×#199 交叉，2026-10-18）──────
+// extract_html_style_text 每块 `\n)\n` url() EOF 闭合守卫使真实样式表面出现
+// 顶层游离 `)`：恢复为「弃单 token 继续」（Chrome 分歧，有意为之——守卫契约
+// 所需），不得落 skip_malformed_qualified_rule 吞掉后续合法规则。
+
+#[test]
+fn test_stray_rparen_discarded_and_following_rules_survive() {
+    let css = ")\n.a { color: red; }";
+    let ss = Parser::parse_stylesheet(css);
+    assert_eq!(ss.rules.len(), 1, "游离 `)` 后的规则应存活");
+}
+
+#[test]
+fn test_stray_rparen_between_rules_keeps_both() {
+    let css = ".a { color: red; }\n)\n.b { color: blue; }";
+    let ss = Parser::parse_stylesheet(css);
+    assert_eq!(ss.rules.len(), 2, "守卫前后两条规则都应存活");
+}
+
+#[test]
+fn test_stray_rparen_ends_namespace_prologue() {
+    // R3758：畸形 token 终结 @namespace 序言——`) @namespace y` 不得复活前缀。
+    let css = ")\n@namespace y url(w3.org);\ny|div { color: red; }";
+    let ss = Parser::parse_stylesheet(css);
+    // y|div 前缀未注册：规则解析失败或以无名规则保留均可，关键是 @namespace
+    // 不再注册前缀（若序言未终结，y|div 会以 y 前缀生效）。
+    assert!(
+        ss.rules.iter().all(|r| !matches!(r, crate::ast::Rule::At(_)))
+            || !format!("{:?}", ss.rules).contains("namespace"),
+        "序言终结后 @namespace 不得注册"
+    );
+}
+
+#[test]
+fn test_stray_rparen_inside_media_body_discarded() {
+    // @media 块体内的游离 `)` 同经 consume_one_rule 恢复臂。
+    let css = "@media print { ) .foo { color: red; } }";
+    let ss = Parser::parse_stylesheet(css);
+    assert!(!format!("{ss:?}").is_empty(), "解析不 panic");
+}

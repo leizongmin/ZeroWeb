@@ -494,11 +494,17 @@ impl<'a> Parser<'a> {
                 }
             }
             Token::RParen => {
-                // 游离 `)`（畸形样式表，或 extract_html_style_text 每块 `\n)\n` 的
-                // url() EOF 闭合守卫）：丢弃单 token 继续。落 `_` 臂会进
-                // skip_malformed_qualified_rule 把后续合法规则当「畸形规则残余」吞掉
-                //（曾使字体门禁的 zw-inline 块在守卫后全部失联，R2134/#199 交叉）。
-                // CSS Syntax L3 顶层错误恢复对不成对 closing token 即弃 token 继续。
+                // MUTATION 游离 `)`（畸形样式表，或 extract_html_style_text 每块 `\n)\n` 的
+                // url() EOF 闭合守卫，R2134/#199 交叉）：丢弃单 token 继续。落 `_` 臂
+                // 会进 skip_malformed_qualified_rule 把后续合法规则当「畸形规则残余」
+                // 吞掉（曾使字体门禁的 zw-inline 块在守卫后全部失联）。
+                // **Chrome 分歧（有意为之）**：现行 CSS Syntax 3 规则列表层并无
+                // 「不成对 closing token 弃之继续」恢复（按 consume-a-qualified-rule，
+                // `)` 并入后续 prelude → 规则无效，Chrome 丢弃后续规则）；本臂选择
+                // 更宽容的弃 token 语义，为 extract_html_style_text 守卫契约所需，
+                // 仅影响畸形输入。畸形 token 同样终结 @namespace 序言（R3758：
+                // 非法规则本身即序言终点，防 `) @namespace y` 复活前缀）。
+                self.namespace_prologue_ended = true;
                 self.advance();
                 vec![]
             }
