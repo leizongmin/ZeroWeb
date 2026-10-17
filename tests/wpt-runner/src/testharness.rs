@@ -5492,7 +5492,9 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                 // stash（wptserve server.stash.put/take——读后即删）；beacon POST 打 put/store，
                 // 断言侧 fetch 轮询打 get/stat。
                 let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
-                let cmd = wpt_query_value(query, "cmd").map(|v| v.to_lowercase()).unwrap_or_default();
+                let cmd = wpt_query_value(query, "cmd")
+                    .map(|v| v.to_lowercase())
+                    .unwrap_or_default();
                 let id = wpt_query_value(query, "id").unwrap_or_default();
                 let mut headers: Vec<(String, String)> = Vec::new();
                 let mut status: u16 = 200;
@@ -5533,7 +5535,11 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                             .find(|(n, _)| n.eq_ignore_ascii_case("content-type"))
                             .map(|(_, v)| v.clone())
                             .unwrap_or_default();
-                        let body_bytes = req.body_bytes.clone().or_else(|| req.body.clone().map(String::into_bytes)).unwrap_or_default();
+                        let body_bytes = req
+                            .body_bytes
+                            .clone()
+                            .or_else(|| req.body.clone().map(String::into_bytes))
+                            .unwrap_or_default();
                         let value = format!("{}: {}", ct, String::from_utf8_lossy(&body_bytes));
                         if let Ok(mut stash) = beacon_stash.lock() {
                             stash.insert(id, value);
@@ -5563,7 +5569,11 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                         headers.push(("content-type".into(), "text/plain".into()));
                     } else if cmd == "stat" {
                         headers.push(("content-type".into(), "text/plain".into()));
-                        body = beacon_stash.lock().ok().and_then(|mut s| s.remove(&id)).unwrap_or_default();
+                        body = beacon_stash
+                            .lock()
+                            .ok()
+                            .and_then(|mut s| s.remove(&id))
+                            .unwrap_or_default();
                     } else {
                         status = 400;
                     }
