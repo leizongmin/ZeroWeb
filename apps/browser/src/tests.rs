@@ -6054,3 +6054,410 @@ fn page_context_menu_save_as_records_failed_download_on_http_error() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// T53 回归：地址栏聚焦时 Ctrl 组合键矩阵——未识别组合键不泄字符、
+/// 文本/选区状态不被无关组合键破坏（键位：Ctrl+Z / Ctrl+Backspace / Ctrl+Q，
+/// 三者当前均无全局绑定，落在透传兜底分支）。
+#[test]
+fn ctrl_combo_matrix_keeps_address_bar_state() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    let mk = BrowserApp::test_modifier_key_name();
+
+    app.handle_key(mk, true, None);
+    app.handle_key("l", true, None);
+    app.handle_key("l", false, None);
+    app.handle_key(mk, false, None);
+    for ch in "hello".chars() {
+        app.handle_key(&ch.to_string(), true, None);
+        app.handle_key(&ch.to_string(), false, None);
+    }
+    assert!(app.address_bar_focused, "前置：Ctrl+L 后地址栏应聚焦");
+    assert_eq!(app.smoke_address_bar_text(), "hello");
+
+    // Ctrl+A 全选（组合键语义正常），再 Ctrl+C 复制后选区保持。
+    app.handle_key(mk, true, None);
+    app.handle_key("a", true, None);
+    app.handle_key("a", false, None);
+    app.handle_key(mk, false, None);
+    assert_eq!(app.address_bar_selection_for_test(), Some((0, 5)), "Ctrl+A 应全选");
+
+    // 未绑定组合键矩阵：文本、光标、选区三态均不应被破坏（字符不泄入输入）。
+    for key in ["z", "Backspace", "q", "Enter"] {
+        // Ctrl+Enter 亦无地址栏组合绑定（Chrome 为补全 .com，未实现走透传兜底）。
+        app.handle_key(mk, true, None);
+        app.handle_key(key, true, Some("x"));
+        app.handle_key(key, false, None);
+        app.handle_key(mk, false, None);
+        assert_eq!(app.smoke_address_bar_text(), "hello", "Ctrl+{key} 不应改变文本");
+        assert_eq!(
+            app.address_bar_selection_for_test(),
+            Some((0, 5)),
+            "Ctrl+{key} 不应破坏选区"
+        );
+    }
+
+    // 修饰键释放后组合态完全复位，恢复普通键入；键入替换仍存续的全选
+    // （标准文本编辑语义），说明选区状态自洽而非残留错乱。
+    for ch in "xyz".chars() {
+        app.handle_key(&ch.to_string(), true, None);
+        app.handle_key(&ch.to_string(), false, None);
+    }
+    assert_eq!(
+        app.smoke_address_bar_text(),
+        "xyz",
+        "释放 Ctrl 后键入应替换全选内容正常进入地址栏"
+    );
+    assert_eq!(app.address_bar_selection_for_test(), None, "键入后选区应折叠");
+}
+
+/// T53 回归：IME 合成态下按 Ctrl 组合键应终结 preedit（组合键/选区状态不残留）。
+#[test]
+fn ctrl_combo_during_preedit_ends_composition_display() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    let mk = BrowserApp::test_modifier_key_name();
+
+    app.address_bar_focused = true;
+    app.handle_ime(zero_host_runtime::event::ImeEvent::Preedit {
+        text: "zhong".to_string(),
+        cursor: Some((5, 5)),
+    });
+    assert_eq!(app.address_bar_ime_preedit_for_test(), "zhong", "前置：preedit 已挂载");
+
+    // Ctrl+A：全选生效，preedit 必须清空（Chrome：硬件 keydown 终结合成显示）。
+    app.handle_key(mk, true, None);
+    app.handle_key("a", true, None);
+    app.handle_key("a", false, None);
+    app.handle_key(mk, false, None);
+    assert_eq!(app.smoke_address_bar_text(), "", "Ctrl+A 作用于空文本不应改变内容");
+    assert_eq!(app.address_bar_ime_preedit_for_test(), "", "组合键后 preedit 不应残留");
+}
+
+/// T53 回归：窗口失焦复位修饰键与 IME 合成态——失焦打断 Ctrl 释放后，
+/// 切回窗口普通按键不得再被误当组合键（释放态残留）。
+#[test]
+fn window_unfocus_resets_modifier_and_preedit_state() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    let mk = BrowserApp::test_modifier_key_name();
+    app.new_tab(Some("https://zw-t53.test/first.html"));
+    app.new_tab(Some("https://zw-t53.test/second.html"));
+
+    app.handle_key(mk, true, None);
+    app.handle_key("l", true, None);
+    app.handle_key("l", false, None);
+    app.handle_key(mk, false, None);
+    for ch in "abc".chars() {
+        app.handle_key(&ch.to_string(), true, None);
+        app.handle_key(&ch.to_string(), false, None);
+    }
+    assert!(app.address_bar_focused, "前置：地址栏聚焦");
+    app.handle_ime(zero_host_runtime::event::ImeEvent::Preedit {
+        text: "zhong".to_string(),
+        cursor: Some((5, 5)),
+    });
+
+    // 用户按住全部修饰键时切走窗口：KeyRelease 永远不会到达本窗口。
+    app.handle_key(mk, true, None);
+    app.handle_key("Shift", true, None);
+    app.handle_key("Alt", true, None);
+    app.handle_key("Meta", true, None);
+    app.on_window_unfocused();
+    app.window_focused = false;
+    app.address_bar_focused = false;
+    assert_eq!(
+        app.modifier_states_for_test(),
+        (false, false, false, false),
+        "失焦后全部修饰键（ctrl/cmd/shift/alt）状态必须复位"
+    );
+    assert_eq!(app.address_bar_ime_preedit_for_test(), "", "失焦后 preedit 不应残留");
+
+    // 切回窗口后点击地址栏重新聚焦，普通 "w" 按键必须按无修饰处理（不关标签）。
+    app.window_focused = true;
+    let (bar_x, bar_y, bar_w, bar_h) = app.address_bar_layout_for_test();
+    let cx = (bar_x + bar_w / 2.0) as f64;
+    let cy = (bar_y + bar_h / 2.0) as f64;
+    app.handle_mouse_click(cx, cy, true, "Left");
+    app.handle_mouse_click(cx, cy, false, "Left");
+    assert!(app.address_bar_focused, "点击地址栏应重新聚焦");
+    let before = app.shell.tab_count();
+    app.handle_key("w", true, None);
+    app.handle_key("w", false, None);
+    assert_eq!(app.shell.tab_count(), before, "失焦复位后普通 w 不应触发 Ctrl+W 关标签");
+    // 点击聚焦对未聚焦地址栏执行全选（Chrome 行为），键入 "w" 替换全选内容。
+    assert_eq!(app.smoke_address_bar_text(), "w", "普通 w 应按无修饰键入进入地址栏");
+}
+
+/// T53 回归：点击页面区域使地址栏失焦时同步清 IME 合成态（渲染层不按焦点
+/// 裁剪 preedit，状态残留会持续绘制在地址栏上）。
+#[test]
+fn page_click_blur_clears_address_bar_preedit() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+
+    app.address_bar_focused = true;
+    app.handle_ime(zero_host_runtime::event::ImeEvent::Preedit {
+        text: "zhong2".to_string(),
+        cursor: Some((6, 6)),
+    });
+    app.handle_mouse_click(640.0, 500.0, true, "Left");
+    app.handle_mouse_click(640.0, 500.0, false, "Left");
+    assert!(!app.address_bar_focused, "点击页面内容应使地址栏失焦");
+    assert_eq!(app.address_bar_ime_preedit_for_test(), "", "失焦后 preedit 不应残留");
+}
+
+/// T53-1-EVID：补全下拉项点击使地址栏失焦时同步清 IME 合成态（与页面点击
+/// 失焦同款；漏补时 preedit 残留叠加在导航后 URL 上绘制）。
+#[test]
+fn autocomplete_dropdown_click_blurs_and_clears_preedit() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    // 唯一历史条目作为补全建议源（含 ".test" 判定为 URL 形态查询）。
+    app.shell.navigate("https://zw-t53e1.test/page");
+    app.shell.on_page_loaded("T53 E1");
+
+    app.address_bar_focused = true;
+    for ch in "zw-t53e1.test".chars() {
+        app.handle_key(&ch.to_string(), true, None);
+    }
+    assert!(!app.smoke_autocomplete_urls().is_empty(), "前置：键入应产生补全建议");
+    app.handle_ime(zero_host_runtime::event::ImeEvent::Preedit {
+        text: "zhong".to_string(),
+        cursor: Some((5, 5)),
+    });
+    assert!(
+        !app.address_bar_ime_preedit_for_test().is_empty(),
+        "前置：preedit 已挂载"
+    );
+
+    // 点击补全下拉第一行（行中心几何与 autocomplete_hit_test 同源）。
+    let (bar_x, _, bar_w, _) = app.address_bar_layout_for_test();
+    let row_y = (layout::TOOLBAR_HEIGHT + layout::AUTOCOMPLETE_ROW_HEIGHT * 0.5) as f64;
+    let cx = (bar_x + bar_w * 0.5) as f64;
+    app.handle_mouse_click(cx, row_y, true, "Left");
+    app.handle_mouse_click(cx, row_y, false, "Left");
+
+    assert!(!app.address_bar_focused, "点击补全项应使地址栏失焦");
+    assert!(
+        app.smoke_autocomplete_urls().is_empty(),
+        "点击补全项后建议列表应清空（证明命中下拉分支）"
+    );
+    assert_eq!(
+        app.address_bar_ime_preedit_for_test(),
+        "",
+        "补全项失焦路径 preedit 不应残留"
+    );
+}
+
+/// T53-1-EVID：右键菜单「粘贴并前往」使地址栏失焦时同步清 IME 合成态
+///（与页面点击失焦同款）。前置依赖系统剪贴板可写（X11/Xvfb 均成立）。
+#[test]
+fn paste_and_go_blurs_and_clears_preedit() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    assert!(
+        crate::clipboard::write_text("http://127.0.0.1:18080/paste-go.html"),
+        "前置：测试环境应可写系统剪贴板"
+    );
+
+    app.address_bar_focused = true;
+    app.handle_ime(zero_host_runtime::event::ImeEvent::Preedit {
+        text: "zhong".to_string(),
+        cursor: Some((5, 5)),
+    });
+    assert!(
+        !app.address_bar_ime_preedit_for_test().is_empty(),
+        "前置：preedit 已挂载"
+    );
+
+    // 右键地址栏 → Editable 菜单含「粘贴并前往」（剪贴板非空时插入）。
+    let (bar_x, bar_y, bar_w, bar_h) = app.address_bar_layout_for_test();
+    let ax = (bar_x + bar_w * 0.5) as f64;
+    let ay = (bar_y + bar_h * 0.5) as f64;
+    app.handle_mouse_click(ax, ay, true, "Right");
+    assert!(app.is_context_menu_visible_for_test(), "右键地址栏应打开菜单");
+    let ids = app.smoke_context_menu_item_ids();
+    let idx = ids
+        .iter()
+        .position(|id| id == "paste_and_go")
+        .expect("Editable 菜单应含「粘贴并前往」项（剪贴板非空）");
+
+    // 点击该行：行中心按分隔行紧凑高度累加（与 context_menu_hit_test 同源）。
+    let s = app.scale_factor;
+    let row_h = layout::CONTEXT_MENU_ROW_HEIGHT * s;
+    let sep_h = layout::CONTEXT_MENU_SEPARATOR_HEIGHT * s;
+    let (mx, my) = app.smoke_context_menu_origin().expect("菜单已开应有原点");
+    let offset: f32 = ids[..idx].iter().map(|id| if id == "-" { sep_h } else { row_h }).sum();
+    let cx = (mx + layout::CONTEXT_MENU_WIDTH * s * 0.5) as f64;
+    let cy = (my + offset + row_h * 0.5) as f64;
+    app.handle_mouse_click(cx, cy, true, "Left");
+    app.handle_mouse_click(cx, cy, false, "Left");
+
+    assert!(!app.address_bar_focused, "粘贴并前往应使地址栏失焦（不保留聚焦态）");
+    assert!(
+        app.smoke_address_bar_text().contains("paste-go.html"),
+        "剪贴板 URL 应已粘贴进地址栏（证明命中 paste_and_go 分支）"
+    );
+    assert_eq!(
+        app.address_bar_ime_preedit_for_test(),
+        "",
+        "粘贴并前往失焦路径 preedit 不应残留"
+    );
+}
+
+/// T54 回归：溢出态（▾ 按钮出现）拖拽标签——拖拽越界/让位时可视槽位布局与
+/// ▾ 按钮位置必须稳定（指示绘制与命中测试同一坐标源：稳定槽位），
+/// 释放落点与拖拽中指示一致。
+#[test]
+fn overflow_drag_keeps_layout_stable_and_drops_as_indicated() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+
+    // 逐个开标签直至出现溢出（▾ 按钮），记录稳定可视布局。
+    let mut overflow = false;
+    for _ in 0..40 {
+        app.new_tab(None);
+        let _ = app.build_scene_for_test(1280, 900);
+        if app.smoke_tab_overflow().1 > 0 {
+            overflow = true;
+            break;
+        }
+    }
+    assert!(overflow, "前置：1280px 宽下开标签应能触发溢出");
+
+    // 固定活动标签为首个可视标签（免按下切换/溢出让位换位搅动布局，
+    // 单测只针对 T54 的拖拽越界塌缩缺陷）。
+    let pinned_active = app.tab_layout_ids_for_test()[0];
+    app.shell.switch_tab(pinned_active);
+    let _ = app.build_scene_for_test(1280, 900);
+    assert_eq!(app.smoke_active_tab_id(), Some(pinned_active));
+
+    let layout_before = app.tab_layout_ids_for_test();
+    let hidden_before = app.smoke_tab_overflow().1;
+    let btn_before = app.tab_overflow_btn_x_for_test();
+    assert!(btn_before.is_some(), "前置：溢出 ▾ 按钮已渲染");
+
+    // 按住第一个可视标签，一路拖到标签条右缘之外（越过 ▾/+ 按钮区域）。
+    let first_id = layout_before[0];
+    let (tx, tw) = app.tab_layout_rect_for_test(first_id).expect("首标签应有槽位");
+    let drag_y = (layout::TAB_BAR_TOP_INSET + layout::TAB_BAR_HEIGHT * 0.5) as f64;
+    app.handle_mouse_click((tx + tw * 0.5) as f64, drag_y, true, "Left");
+    app.handle_mouse_move(2000.0, drag_y);
+    assert!(app.tab_drag_active_for_test(), "前置：拖拽已激活");
+
+    // 拖拽中渲染：可视槽位集、▾ 按钮位置、隐藏集合都不得塌缩/跳动。
+    let _ = app.build_scene_for_test(1280, 900);
+    assert_eq!(
+        app.tab_layout_ids_for_test(),
+        layout_before,
+        "拖拽越界时可视槽位布局不得塌缩重排"
+    );
+    assert_eq!(
+        app.smoke_tab_overflow().1,
+        hidden_before,
+        "拖拽越界时隐藏标签集合不得变化"
+    );
+    assert_eq!(
+        app.tab_overflow_btn_x_for_test(),
+        btn_before,
+        "拖拽越界时 ▾ 按钮位置不得跳动"
+    );
+
+    // 释放：落点应为最后一个可视槽位（与拖拽中让位指示一致）。
+    app.handle_mouse_click(2000.0, drag_y, false, "Left");
+    let _ = app.build_scene_for_test(1280, 900);
+    let layout_after = app.tab_layout_ids_for_test();
+    assert_eq!(layout_after.len(), layout_before.len(), "释放后可视槽位数不变");
+    let mut expected = layout_before.clone();
+    expected.remove(0);
+    expected.push(first_id);
+    assert_eq!(
+        layout_after[..layout_after.len() - 1],
+        expected[..expected.len() - 1],
+        "释放后其余标签相对次序保持让位指示的排列"
+    );
+    assert_eq!(
+        *layout_after.last().expect("非空"),
+        first_id,
+        "拖到尾部的标签应落在最后一个可视槽位"
+    );
+    assert_eq!(app.smoke_tab_overflow().1, hidden_before, "释放不改变溢出集合");
+}
+
+/// T54-1 回归：活动标签在溢出隐藏集时的借槽换位——swap 须同步还原稳定槽位
+/// （slot_x），使 ▾/「+」按钮 x、tab_layout（命中/释放重排）与绘制同处借出槽位。
+/// 借出槽位 = 可视区最后一个普通槽位，与活动标签可见（无换位）时 ▾ 的位置一致。
+#[test]
+fn overflow_active_tab_eviction_keeps_button_at_borrowed_slot() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+
+    // 逐个开标签直至溢出，且不切换活动标签——最后开的标签即活动标签，
+    // 必然落在隐藏集（swap 生效前提；现有拖拽测试用 pinned_active 绕开了该态）。
+    let mut overflow = false;
+    for _ in 0..40 {
+        app.new_tab(None);
+        let _ = app.build_scene_for_test(1280, 900);
+        if app.smoke_tab_overflow().1 > 0 {
+            overflow = true;
+            break;
+        }
+    }
+    assert!(overflow, "前置：开标签应触发溢出");
+    let active = app.smoke_active_tab_id().expect("应有活动标签");
+    let swap_layout = app.tab_layout_ids_for_test();
+    // 逐个开标签时新建标签即活动标签，溢出后必然源出隐藏区——swap 把它借槽
+    // 拉回可视区末位（rposition 取最后一个普通槽位）。
+    assert_eq!(
+        swap_layout.last(),
+        Some(&active),
+        "前置：swap 应把隐藏区活动标签借槽拉到可视区末位"
+    );
+    let shell_ids = app.smoke_tab_ids();
+    let active_shell_idx = shell_ids
+        .iter()
+        .position(|&id| id == active)
+        .expect("活动标签应在 shell 序中");
+    assert!(
+        active_shell_idx >= swap_layout.len(),
+        "前置：活动标签应源出溢出隐藏区（swap 生效）"
+    );
+    let btn_x_swap = app.tab_overflow_btn_x_for_test().expect("前置：▾ 按钮已渲染");
+    let active_rect_swap = app
+        .tab_layout_rect_for_test(active)
+        .expect("换位态活动标签应有布局槽位");
+
+    // 对照态：活动标签切到首个可视标签（换位解除），布局为纯稳定槽位序。
+    let first_visible = swap_layout[0];
+    app.shell.switch_tab(first_visible);
+    let _ = app.build_scene_for_test(1280, 900);
+    let btn_x_plain = app.tab_overflow_btn_x_for_test().expect("▾ 应持续渲染");
+    let plain_layout = app.tab_layout_ids_for_test();
+    assert_eq!(
+        plain_layout.len(),
+        swap_layout.len(),
+        "两种状态可视槽位数应一致（几何同源）"
+    );
+
+    // 借槽换位不得移动 ▾：按钮 x 两种状态一致（右偏一个槽宽即回归——修复前
+    // 换位态取活动标签自身隐藏区槽位右缘，比对照态右偏一个槽宽）。
+    assert_eq!(
+        btn_x_swap, btn_x_plain,
+        "▾ 按钮在换位态应落在借出槽位右缘（与无换位态同位）"
+    );
+    let last_plain = plain_layout
+        .last()
+        .copied()
+        .and_then(|id| app.tab_layout_rect_for_test(id))
+        .expect("对照态末槽位应存在");
+    assert_eq!(active_rect_swap, last_plain, "活动标签借用的应正是最后一个可视槽位");
+}
