@@ -15,8 +15,9 @@ use zero_protocol::message::{
 };
 use zero_protocol::message::{
     AutomationValue, ImeEventParams, ImeEventType, IndexedDbResponseParams, IpcColorScheme, IpcMediaType, IpcMessage,
-    IpcMessageKind, KeyboardEventParams, KeyboardEventType, MouseEventParams, MouseEventType, PreDocumentScriptsParams,
-    ScrollEventParams, SetColorSchemeParams, SetMediaTypeParams, SetViewportParams,
+    IpcMessageKind, KeyboardEventParams, KeyboardEventType, MouseEventParams, MouseEventType,
+    NavigationCommittedParams, PreDocumentScriptsParams, ScrollEventParams, SetColorSchemeParams, SetMediaTypeParams,
+    SetViewportParams,
 };
 use zero_protocol::paint_snapshot::IpcImagePayload;
 #[cfg(not(test))]
@@ -45,6 +46,22 @@ pub(super) struct InjectedScript {
     pub(super) world_name: Option<String>,
 }
 
+/// 在途导航登记——renderer `NavigationStarted`/`NavigationCommitted` 校验与 commit
+/// 回声判定的会话侧依据（对齐 GUI process_backend 的 pending_indexed_db_navigations）。
+pub(super) struct PendingNavigation {
+    /// 登记导航的目标 URL。
+    pub(super) url: String,
+    /// 登记导航世代（会话命令分配，或 renderer 侧导航自增后采纳）。
+    pub(super) epoch: u64,
+    /// true = 会话命令发起（Page.navigate/LoadHtml——cmd_navigate 已先行写 shell
+    /// URL，其 commit 与 shell 同 URL 时为回声）；false = renderer 侧发起
+    ///（anchor/表单/location.href，FIXME(tab-ipc)：同 tab 提交面）。
+    pub(super) client_initiated: bool,
+    /// 该世代已有 URL 对齐的 `NavigationStarted` 到达。commit 凭此甄别「世代数值
+    /// 碰撞的被取代导航 commit」（未确认 → 丢弃）与重定向最终 URL commit（放行）。
+    pub(super) started_confirmed: bool,
+}
+
 /// 浏览器会话。发布构建只持有 renderer IPC；进程内 WebView 仅用于单元测试。
 pub(super) struct HeadlessSession {
     /// 浏览器 shell（数据模型）。
@@ -61,8 +78,14 @@ pub(super) struct HeadlessSession {
     /// 最新 renderer 绘制快照，供截图与 DOM 统计使用。
     #[cfg(not(test))]
     pub(super) snapshot: crate::tab_snapshot::TabSnapshot,
-    #[cfg(not(test))]
+    /// 当前导航世代：会话命令发起时自增；renderer 侧导航自增后经
+    /// [`Self::note_navigation_started`] 采纳。commit 校验与 wait_for_load 武装
+    /// 门控的世代基准（测试构建无 renderer 消息面，字段仍随 commit 校验纯函数
+    /// 参与单测）。
     pub(super) navigation_epoch: u64,
+    /// 在途导航登记（命令时点建立、NavigationStarted 确认、commit 消费），见
+    /// [`PendingNavigation`]。
+    pub(super) pending_navigation: Option<PendingNavigation>,
     #[cfg(not(test))]
     pub(super) next_request_id: u64,
     /// addScriptToEvaluateOnNewDocument 注册的脚本（新文档加载后重放）。
@@ -74,6 +97,9 @@ pub(super) struct HeadlessSession {
     /// Network.enable 门控（Network 域事件源开关）。
     pub(super) network_enabled: bool,
     /// Network 域事件队列（proxy_fetch 生命周期观测，transport 逐命令排空盖章）。
+    /// 边界（t4 返修 D5）：条目不带归属 target 标签——排空时盖章为当前命令会话
+    ///（空闲 drain 盖首个附接会话），多 target 并发下事件可能盖章到非归属会话；
+    /// 条目级归属需扩队列/IPC 契约，挂账遗留（trial/t4-repair 遗留清单）。
     pub(super) pending_network_events: Vec<(String, serde_json::Value)>,
     /// Console 事件队列（S11：renderer `ConsoleLog` → `Runtime.consoleAPICalled`，
     /// transport 逐命令排空盖章；`(level, text, args_json)`）。
@@ -196,6 +222,8 @@ impl HeadlessSession {
             pending_script_errors: Vec::new(),
             active_child_frames: std::collections::HashMap::new(),
             next_frame_seq: 1,
+            navigation_epoch: 0,
+            pending_navigation: None,
             gpu_renderer: None,
             paint_fonts: new_session_paint_fonts(),
         }
@@ -239,6 +267,7 @@ impl HeadlessSession {
             fetch_scheduler: zero_net::PerOriginFetchScheduler::new_shared(),
             snapshot: crate::tab_snapshot::TabSnapshot::default(),
             navigation_epoch: 0,
+            pending_navigation: None,
             next_request_id: 1,
             injected_scripts: Vec::new(),
             cookie_store: zero_net::shared_cookie_store(),
@@ -381,10 +410,16 @@ impl HeadlessSession {
             // 阶段实测：页内 location.href 已是 news.qq.com，target url() 仍 about:blank）。
             // spec：target 的 url 为当前文档 URL，Chrome 在 commit 时更新 targetInfo。
             // https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate
-            // 客户端发起的 Page.navigate 已在 cmd_navigate 写入同一 URL——相同则跳过
-            //（避免重复历史条目与多余事件，见 apply_navigation_commit）。
+            // 世代校验/回声去重/重定向替换见 apply_renderer_navigation_commit。
             IpcMessageKind::NavigationCommitted(params) => {
-                self.apply_navigation_commit(&params.url);
+                self.apply_renderer_navigation_commit(&params);
+                Ok(None)
+            }
+            // 导航开始登记（commit 校验、回声判定与 wait_for_load 武装门控的依据）：
+            // 会话命令导航确认既有登记，renderer 侧导航采纳其自增世代，其余丢弃。
+            // 见 note_navigation_started。
+            IpcMessageKind::NavigationStarted(params) => {
+                self.note_navigation_started(&params.url, params.navigation_epoch);
                 Ok(None)
             }
             // S11：page console 输出 → 会话事件队列（transport 逐命令排空盖章为
@@ -844,13 +879,27 @@ impl HeadlessSession {
                     if !armed {
                         match message.kind {
                             IpcMessageKind::NavigationStarted(ref params) if params.navigation_epoch == epoch => {
-                                armed = true;
+                                // 世代数值可能碰撞（renderer 侧导航自增 vs 会话命令自增同值）：
+                                // URL 须对齐在途登记才武装——否则被取代导航的 started 误武装后，
+                                // 旧文档终结信号会冒充本次导航的完成依据（t4 返修 D1 同族）。
+                                // 登记缺失时保守武装（原语义）。
+                                if self
+                                    .pending_navigation
+                                    .as_ref()
+                                    .is_none_or(|pending| pending.url == params.url && pending.epoch == epoch)
+                                {
+                                    armed = true;
+                                }
                             }
                             // 陈旧终结信号：丢弃（其唯一起作用的就是终结等待者）。
+                            // NavigationCommitted 同列（t4 返修 D1：迟到的上一文档 commit
+                            // 不得冒充本次导航——模型面兜底在 apply_renderer_navigation_commit
+                            // 的世代校验，此处仅免其无效分派）。
                             IpcMessageKind::DomContentLoaded
                             | IpcMessageKind::LoadComplete
                             | IpcMessageKind::LoadFailed(_)
-                            | IpcMessageKind::CrashNotification(_) => continue,
+                            | IpcMessageKind::CrashNotification(_)
+                            | IpcMessageKind::NavigationCommitted(_) => continue,
                             _ => {}
                         }
                     }
@@ -866,6 +915,14 @@ impl HeadlessSession {
 
     pub(super) fn navigate_renderer(&mut self, url: &str) -> Result<(), String> {
         self.navigation_epoch = self.navigation_epoch.wrapping_add(1).max(1);
+        // 在途导航登记（commit 校验/回声判定依据）：会话命令导航，started_confirmed
+        // 待 renderer NavigationStarted 确认。
+        self.pending_navigation = Some(PendingNavigation {
+            url: url.to_string(),
+            epoch: self.navigation_epoch,
+            client_initiated: true,
+            started_confirmed: false,
+        });
         // 上一文档未交付的延迟 load 族作废（文档换代，LoadComplete 不再属于新导航）。
         self.load_event_pending = false;
         // 导航终止旧文档的 fetch group（https://fetch.spec.whatwg.org/#fetch-groups）：
@@ -881,6 +938,13 @@ impl HeadlessSession {
 
     pub(super) fn load_html_renderer(&mut self, html: &str, css: Option<&str>) -> Result<(), String> {
         self.navigation_epoch = self.navigation_epoch.wrapping_add(1).max(1);
+        // 同 navigate_renderer：会话命令导航的在途登记。
+        self.pending_navigation = Some(PendingNavigation {
+            url: "about:blank".to_string(),
+            epoch: self.navigation_epoch,
+            client_initiated: true,
+            started_confirmed: false,
+        });
         self.load_event_pending = false;
         self.snapshot.begin_navigation("about:blank".to_string());
         self.renderer
@@ -1166,24 +1230,120 @@ impl HeadlessSession {
         self.shell.active_tab().map(|tab| format!("zeroweb-tab-{}", tab.id().0))
     }
 
-    /// renderer 导航提交 → shell 模型回写 + 导航事件族入队。
+    /// renderer `NavigationStarted` → 在途导航登记。
     ///
-    /// URL 与当前标签页相同（客户端 Page.navigate 的 commit 回声）时跳过——
-    /// 返回 `false` 且不产生任何模型/事件变化；不同则 `shell.navigate` 记历史条目、
-    /// 更新 URL，并把事件族压入 pending 事件队列。事件族对齐
-    /// `emit_navigation_event_family` 的上下文换代子集（frameStartedLoading →
-    /// frameNavigated → executionContextsCleared → 新 main world context）：
-    /// 缺 context 重置时客户端（PW）对新文档的 evaluate 全数失败
-    ///（"object handle is unknown or has been released"，t4 minrepro 实测）。
-    /// 不含 DCL/load 生命周期与 iframe 探测——那两族由 renderer 的
-    /// DomContentLoaded/LoadComplete 消息自身管线补发（headless 消息面既有路径）。
-    /// 纯函数以便单测钉形状（进程内测试无 renderer 消息面）。
-    pub(super) fn apply_navigation_commit(&mut self, url: &str) -> bool {
-        let changed = self.shell.active_tab().is_none_or(|tab| tab.url() != Some(url));
-        if !changed {
+    /// 世代语义（对齐 GUI process_backend handle_navigation_started 的 ==/==+1 门控）：
+    /// 会话命令导航（Page.navigate/LoadHtml）世代由会话分配、登记已在命令时点建立
+    ///（navigate_renderer/load_html_renderer），URL 对齐的 started 仅做确认——确认前
+    /// 其 commit 不得放行（甄别世代碰撞）；renderer 侧导航（anchor/表单/location.href，
+    /// FIXME(tab-ipc) 同 tab 提交面）世代由 renderer 自增，恰为当前世代 +1 时采纳并
+    /// 重登记（client_initiated=false：其同 URL commit 不得按回声跳过，t4 返修 D2）；
+    /// 其余为陈旧信号或世代数值碰撞——丢弃，不得覆盖在途登记或回退世代。
+    pub(super) fn note_navigation_started(&mut self, url: &str, epoch: u64) {
+        if let Some(pending) = self.pending_navigation.as_mut()
+            && pending.epoch == epoch
+            && pending.url == url
+        {
+            pending.started_confirmed = true;
+            return;
+        }
+        if epoch == self.navigation_epoch.wrapping_add(1) {
+            self.navigation_epoch = epoch;
+            self.pending_navigation = Some(PendingNavigation {
+                url: url.to_string(),
+                epoch,
+                client_initiated: false,
+                started_confirmed: true,
+            });
+            return;
+        }
+        tracing::warn!(
+            epoch,
+            current_epoch = self.navigation_epoch,
+            url,
+            "headless: dropped stale navigation start"
+        );
+    }
+
+    /// renderer `NavigationCommitted` → 世代校验 + 回声去重 + 重定向替换后应用
+    ///（世代/回声判定通过后走 [`Self::apply_navigation_commit`]）。
+    ///
+    /// 1. 世代校验（t4 返修 D1，对齐 GUI process_backend handle_navigation_committed）：
+    ///    commit 世代 ≠ 当前导航世代 → 陈旧提交（渲染器缓冲中上一文档的迟到 commit，
+    ///    或已被新导航取代）→ 丢弃：不回写 shell、不入队事件族（防 shell URL 暂时
+    ///    回退、历史污染 [A,B,A,B] 与向客户端发假 frameNavigated 族）。
+    /// 2. 在途登记：世代对齐且 started 已确认 → 消费放行（登记 URL 不强校验——
+    ///    重定向 commit 携带最终 URL）；世代对齐但未确认 → 同世代碰撞的被取代导航
+    ///    commit → 丢弃（登记保留，后续真 commit 仍可校验，GUI 同语义）；登记缺失
+    ///    （同世代重复 commit 等异常时序；epoch 恒在场无需缺省分支）→ 保守放行：
+    ///    世代已对齐当前导航，回声判定退化为「shell 同 URL 即跳过」。
+    /// 3. 回声（t4 返修 D2 收窄）：仅会话命令导航（或登记缺失退化）且 shell 已提交
+    ///    同一 URL 时跳过；renderer 侧同 URL 真导航（锚点/表单）照常发展事件族。
+    ///
+    /// 返回是否对 shell 模型产生了变化（单测钉形状）。
+    pub(super) fn apply_renderer_navigation_commit(&mut self, params: &NavigationCommittedParams) -> bool {
+        if params.navigation_epoch != self.navigation_epoch {
+            tracing::warn!(
+                commit_epoch = params.navigation_epoch,
+                current_epoch = self.navigation_epoch,
+                url = %params.url,
+                "headless: dropped stale navigation commit (epoch mismatch)"
+            );
             return false;
         }
-        self.shell.navigate(url);
+        let client_initiated = match self.pending_navigation.take() {
+            Some(pending) if pending.epoch == params.navigation_epoch && pending.started_confirmed => {
+                Some(pending.client_initiated)
+            }
+            Some(pending) => {
+                tracing::warn!(
+                    commit_epoch = params.navigation_epoch,
+                    url = %params.url,
+                    "headless: dropped navigation commit without confirmed start"
+                );
+                self.pending_navigation = Some(pending);
+                return false;
+            }
+            None => None,
+        };
+        let same_url = self
+            .shell
+            .active_tab()
+            .is_some_and(|tab| tab.url() == Some(params.url.as_str()));
+        // 回声：commit 世代属会话命令导航（cmd_navigate 已先行 shell.navigate 写入
+        // 同一 URL）——跳过防重复历史条目与多余事件族；renderer 侧发起的同 URL 真
+        // 导航（锚点/表单，client_initiated=false）不属回声，照常发展事件族（D2）。
+        if same_url && client_initiated.is_none_or(|client| client) {
+            return false;
+        }
+        // 重定向替换（t4 返修 D3）：会话命令导航的 commit URL ≠ 命令时写入的 URL
+        //（HTTP 重定向最终 URL）——取代初始历史条目而非追加（Chrome 客户端重定向
+        // 单条目语义）；renderer 侧导航的登记 URL 从未写入 shell，常规追加。
+        self.apply_navigation_commit(&params.url, client_initiated == Some(true));
+        true
+    }
+
+    /// 导航提交应用：shell 模型回写 + 导航事件族入队（世代校验/回声判定见
+    /// [`Self::apply_renderer_navigation_commit`]）。
+    ///
+    /// `replace_current_entry`：重定向提交以最终 URL 取代当前历史条目（不追加）；
+    /// false = 常规 `shell.navigate` 追加。事件族对齐 `emit_navigation_event_family`
+    /// 的上下文换代子集（frameStartedLoading → frameNavigated →
+    /// executionContextsCleared → 新 main world context）：缺 context 重置时客户端
+    ///（PW）对新文档的 evaluate 全数失败（"object handle is unknown or has been
+    /// released"，t4 minrepro 实测）。
+    /// 子集边界（t4 返修 D4）：不含子框架分离宣告——ZeroWeb 无子帧文档加载，frame
+    /// 为纯元数据面；不含 out-of-world 重宣告——单引擎无 world 隔离，main world 恒
+    /// id=1（S4 契约）。DCL/load 生命周期与 iframe 探测由 renderer 自身消息管线补发。
+    /// on_page_loaded 复位 loading 并以 URL 作标题回退（headless 不消费
+    /// TitleChanged，与 cmd_navigate 的标题回退一致）。
+    pub(super) fn apply_navigation_commit(&mut self, url: &str, replace_current_entry: bool) {
+        if replace_current_entry {
+            self.shell.replace_current_entry_url(url);
+        } else {
+            self.shell.navigate(url);
+        }
+        self.shell.on_page_loaded(url);
         let frame_id = self.active_frame_id().unwrap_or_default();
         let mut push = |method: &str, params: serde_json::Value| {
             self.pending_network_events.push((method.into(), params));
@@ -1217,7 +1377,6 @@ impl HeadlessSession {
                 }
             }),
         );
-        true
     }
 
     /// CDP Runtime 域脚本执行入口：类型化结果（测试进程内路径为扁平字符串语义）。

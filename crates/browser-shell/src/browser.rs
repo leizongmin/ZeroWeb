@@ -446,6 +446,14 @@ impl BrowserShell {
         }
     }
 
+    /// 以新 URL 取代活跃标签当前历史条目（不新增条目，见
+    /// [`crate::tab::Tab::replace_current_entry_url`]——headless 重定向提交单条目语义）。
+    pub fn replace_current_entry_url(&mut self, url: &str) {
+        if let Some(tab) = self.tabs.active_tab_mut() {
+            tab.replace_current_entry_url(url);
+        }
+    }
+
     /// 为指定标签补记首次导航（欢迎页/新标签页）。
     ///
     /// 空标签的欢迎页此前只进页面运行时，shell 历史无条目——首次导航后

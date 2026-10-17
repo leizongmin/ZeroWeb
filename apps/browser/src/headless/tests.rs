@@ -3,7 +3,9 @@
 use super::*;
 
 use serde_json::Value;
-use zero_protocol::message::{IndexedDbResponseParams, IpcMessage, IpcMessageKind};
+use zero_protocol::message::{IndexedDbResponseParams, IpcMessageKind, NavigationCommittedParams};
+
+use super::session::PendingNavigation;
 
 #[test]
 fn test_server_new() {
@@ -1202,8 +1204,18 @@ fn test_navigation_commit_updates_target_url() {
     let mut session = HeadlessSession::new(800.0, 600.0);
     let url = "https://news.qq.com/rain/a/20261016A0CZ0100";
 
-    assert!(session.apply_navigation_commit(url), "changed URL must apply");
+    // 登记缺失（commit 先于任何命令的保守放行分支）：世代 0 对齐当前 → 应用。
+    assert!(
+        session.apply_renderer_navigation_commit(&NavigationCommittedParams {
+            url: url.to_string(),
+            navigation_epoch: session.navigation_epoch,
+        }),
+        "changed URL must apply"
+    );
     assert_eq!(session.shell.active_tab().and_then(|t| t.url()), Some(url));
+    // t4 返修（D4）：on_page_loaded 复位 loading + URL 标题回退（与 cmd_navigate 一致）。
+    assert_eq!(session.shell.active_tab().map(|t| t.is_loading()), Some(false));
+    assert_eq!(session.shell.active_tab().and_then(|t| t.title()), Some(url));
     // 事件面：frameNavigated 与 emit_navigation_event_family 同形状
     let event = session
         .pending_network_events
@@ -1243,23 +1255,237 @@ fn test_navigation_commit_updates_target_url() {
     assert_eq!(result.unwrap()["targetInfos"][0]["url"], url);
 }
 
-/// t4（qq-20261016-r1）：commit 回声去重——客户端 Page.navigate 已在 cmd_navigate
-/// 写入同一 URL，renderer 的 NavigationCommitted 回声不得重复记历史条目或补发事件。
+/// t4 返修（D1，qq-20261016-r1 双首轮）：快速连续 navigate 下陈旧 commit 不回写
+/// 不污染——navigate A → navigate B → 迟到的 A commit（渲染器缓冲）→ URL 仍 B、
+/// 历史无 A 重入、无假 frameNavigated 族；B 的 commit 回声照常跳过。
 #[test]
-fn test_navigation_commit_same_url_is_noop() {
+fn test_stale_commit_does_not_revert_url_or_history() {
     let mut session = HeadlessSession::new(800.0, 600.0);
-    let url = "https://www.qq.com/";
-    session.shell.navigate(url);
-    let history_before = session.shell.active_tab().map(|t| t.history_len()).unwrap_or(0);
+    let a = "https://example.com/a";
+    let b = "https://example.com/b";
+    // cmd_navigate(A)：epoch 1、登记 (A,1)、shell 写 A、NavigationStarted 确认。
+    session.navigation_epoch = 1;
+    session.shell.navigate(a);
+    session.pending_navigation = Some(PendingNavigation {
+        url: a.to_string(),
+        epoch: 1,
+        client_initiated: true,
+        started_confirmed: false,
+    });
+    session.note_navigation_started(a, 1);
+    // cmd_navigate(B)：epoch 2、登记替换 (B,2)、shell 写 B。
+    session.navigation_epoch = 2;
+    session.shell.navigate(b);
+    session.pending_navigation = Some(PendingNavigation {
+        url: b.to_string(),
+        epoch: 2,
+        client_initiated: true,
+        started_confirmed: false,
+    });
+    session.note_navigation_started(b, 2);
+    let history_len = session.shell.active_tab().map(|t| t.history_len()).unwrap_or(0);
     let events_before = session.pending_network_events.len();
 
-    assert!(!session.apply_navigation_commit(url), "same URL must be skipped");
+    // 迟到的 A commit：世代 1 ≠ 当前 2 → 丢弃。
+    assert!(
+        !session.apply_renderer_navigation_commit(&NavigationCommittedParams {
+            url: a.to_string(),
+            navigation_epoch: 1,
+        }),
+        "stale commit must be dropped"
+    );
+    assert_eq!(session.shell.active_tab().and_then(|t| t.url()), Some(b), "URL 仍 B");
     assert_eq!(
         session.shell.active_tab().map(|t| t.history_len()),
-        Some(history_before),
-        "no duplicate history entry"
+        Some(history_len),
+        "历史无 A 重入"
     );
-    assert_eq!(session.pending_network_events.len(), events_before, "no extra event");
+    assert_eq!(session.pending_network_events.len(), events_before, "无假事件族");
+
+    // B 的 commit：世代对齐且属会话命令导航 → 回声跳过（cmd_navigate 已写）。
+    assert!(
+        !session.apply_renderer_navigation_commit(&NavigationCommittedParams {
+            url: b.to_string(),
+            navigation_epoch: 2,
+        }),
+        "echo commit must be skipped"
+    );
+    assert_eq!(
+        session.shell.active_tab().map(|t| t.history_len()),
+        Some(history_len),
+        "回声不记历史条目"
+    );
+    assert_eq!(session.pending_network_events.len(), events_before, "回声不补事件族");
+    assert!(session.pending_navigation.is_none(), "回声消费登记");
+}
+
+/// t4 返修（D2）：renderer 侧同 URL 真导航（锚点/表单）不按回声吞并——同 URL
+/// commit 照常发展事件族（含新 context）并记历史条目。
+#[test]
+fn test_renderer_initiated_same_url_commit_develops_event_family() {
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    let b = "https://example.com/b";
+    // 页面 B 已由 Page.navigate 加载（echo commit 已消费登记）。
+    session.navigation_epoch = 1;
+    session.shell.navigate(b);
+    session.pending_navigation = Some(PendingNavigation {
+        url: b.to_string(),
+        epoch: 1,
+        client_initiated: true,
+        started_confirmed: true,
+    });
+    assert!(
+        !session.apply_renderer_navigation_commit(&NavigationCommittedParams {
+            url: b.to_string(),
+            navigation_epoch: 1,
+        }),
+        "client echo must be skipped"
+    );
+    let history_len = session.shell.active_tab().map(|t| t.history_len()).unwrap_or(0);
+    let events_before = session.pending_network_events.len();
+
+    // 锚点式同 URL 导航：renderer 自增世代 → NavigationStarted 采纳。
+    session.note_navigation_started(b, 2);
+    assert_eq!(session.navigation_epoch, 2, "renderer 自增世代被采纳");
+    let pending = session.pending_navigation.as_ref().expect("renderer nav staged");
+    assert!(!pending.client_initiated, "登记为 renderer 侧发起");
+
+    // 同 URL commit：非回声 → 发展事件族 + 新历史条目。
+    assert!(
+        session.apply_renderer_navigation_commit(&NavigationCommittedParams {
+            url: b.to_string(),
+            navigation_epoch: 2,
+        }),
+        "renderer-initiated same-URL nav must apply"
+    );
+    assert_eq!(
+        session.shell.active_tab().map(|t| t.history_len()),
+        Some(history_len + 1),
+        "真实导航记新条目"
+    );
+    let methods: Vec<&str> = session.pending_network_events[events_before..]
+        .iter()
+        .map(|(m, _)| m.as_str())
+        .collect();
+    assert!(methods.contains(&"Page.frameNavigated"), "frameNavigated 发展");
+    assert!(
+        methods.contains(&"Runtime.executionContextsCleared") && methods.contains(&"Runtime.executionContextCreated"),
+        "新 context 事件族发展"
+    );
+    assert!(session.pending_navigation.is_none(), "renderer commit 消费登记");
+}
+
+/// t4 返修（D1 世代碰撞甄别）：世代数值对齐但 started 未确认的 commit
+///（renderer 侧被取代导航与会话命令导航世代同值）丢弃且登记保留；其后的真
+/// commit 照常校验。
+#[test]
+fn test_unconfirmed_epoch_commit_is_dropped() {
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    let b = "https://example.com/b";
+    let c = "https://example.com/c";
+    // cmd_navigate(B)：epoch 2、登记 (B,2) 未确认（NavigationStarted 尚未到达）。
+    session.navigation_epoch = 2;
+    session.shell.navigate(b);
+    session.pending_navigation = Some(PendingNavigation {
+        url: b.to_string(),
+        epoch: 2,
+        client_initiated: true,
+        started_confirmed: false,
+    });
+
+    // 被取代导航 C 的 commit（世代碰撞同值 2、URL 不同、无确认 started）→ 丢弃。
+    assert!(
+        !session.apply_renderer_navigation_commit(&NavigationCommittedParams {
+            url: c.to_string(),
+            navigation_epoch: 2,
+        }),
+        "unconfirmed commit must be dropped"
+    );
+    assert_eq!(session.shell.active_tab().and_then(|t| t.url()), Some(b), "URL 仍 B");
+    assert!(session.pending_navigation.is_some(), "登记保留（真 commit 仍可校验）");
+
+    // B 自身 NavigationStarted 确认后，其 commit 回声照常跳过并消费登记。
+    session.note_navigation_started(b, 2);
+    assert!(
+        !session.apply_renderer_navigation_commit(&NavigationCommittedParams {
+            url: b.to_string(),
+            navigation_epoch: 2,
+        }),
+        "echo commit must be skipped"
+    );
+    assert!(session.pending_navigation.is_none(), "登记被真 commit 消费");
+}
+
+/// t4 返修（D3）：会话命令导航的重定向 commit（最终 URL ≠ 命令 URL）取代命令时
+/// 写入的历史条目——单条目语义，不追加。
+#[test]
+fn test_redirect_commit_replaces_client_history_entry() {
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    let x = "https://example.com/redirect";
+    let y = "https://example.com/final";
+    session.navigation_epoch = 1;
+    session.shell.navigate(x);
+    session.pending_navigation = Some(PendingNavigation {
+        url: x.to_string(),
+        epoch: 1,
+        client_initiated: true,
+        started_confirmed: true,
+    });
+
+    assert!(
+        session.apply_renderer_navigation_commit(&NavigationCommittedParams {
+            url: y.to_string(),
+            navigation_epoch: 1,
+        }),
+        "redirect commit must apply"
+    );
+    assert_eq!(session.shell.active_tab().and_then(|t| t.url()), Some(y));
+    // 初始标签无历史条目：shell.navigate(x) 后 len=1；重定向 commit 取代该条目
+    // 仍为 len=1——追加语义会得到 2（首轮 D3 缺陷形态）。
+    assert_eq!(
+        session.shell.active_tab().map(|t| t.history_len()),
+        Some(1),
+        "重定向取代命令条目，不追加"
+    );
+}
+
+/// t4 返修（D1）：NavigationStarted 登记语义——会话命令导航确认既有登记、
+/// renderer 侧导航采纳自增世代、陈旧信号丢弃不覆盖登记不回退世代。
+#[test]
+fn test_navigation_started_staging_semantics() {
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    let a = "https://example.com/a";
+    // cmd_navigate(A) 命令时点登记（未确认）。
+    session.navigation_epoch = 1;
+    session.pending_navigation = Some(PendingNavigation {
+        url: a.to_string(),
+        epoch: 1,
+        client_initiated: true,
+        started_confirmed: false,
+    });
+    // 会话命令导航自身的 started：仅确认，世代不动。
+    session.note_navigation_started(a, 1);
+    let pending = session.pending_navigation.as_ref().expect("登记在");
+    assert!(pending.started_confirmed, "started 确认");
+    assert_eq!(session.navigation_epoch, 1, "世代不被 started 回声改动");
+
+    // 陈旧 started（旧世代）：丢弃，登记与世代不受影响。
+    session.note_navigation_started("https://example.com/stale", 0);
+    assert_eq!(session.navigation_epoch, 1);
+    assert_eq!(
+        session.pending_navigation.as_ref().map(|p| p.url.as_str()),
+        Some(a),
+        "陈旧 started 不覆盖登记"
+    );
+
+    // renderer 侧导航：世代 +1 被采纳，登记替换为 renderer 发起。
+    session.note_navigation_started("https://example.com/c", 2);
+    assert_eq!(session.navigation_epoch, 2, "renderer 自增世代被采纳");
+    let pending = session.pending_navigation.as_ref().expect("renderer nav staged");
+    assert_eq!(pending.url, "https://example.com/c");
+    assert_eq!(pending.epoch, 2);
+    assert!(!pending.client_initiated, "renderer 侧发起");
+    assert!(pending.started_confirmed, "started 即登记源头");
 }
 
 #[test]

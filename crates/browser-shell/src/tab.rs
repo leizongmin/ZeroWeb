@@ -226,6 +226,21 @@ impl Tab {
         self.title = None;
     }
 
+    /// 以新 URL 取代当前历史条目（不新增条目）。
+    ///
+    /// 重定向提交专用：会话命令导航（Page.navigate）在命令时点已写入初始 URL
+    /// 条目，HTTP 重定向后 commit 携带最终 URL——Chrome 客户端重定向为单历史
+    /// 条目，取代而非追加。仅改当前条目 URL 与 tab.url；loading/title 语义同
+    /// [`Self::navigate`]。
+    pub fn replace_current_entry_url(&mut self, url: &str) {
+        if let Some(entry) = self.history.get_mut(self.history_index) {
+            entry.url = url.to_string();
+        }
+        self.url = Some(url.to_string());
+        self.loading = true;
+        self.title = None;
+    }
+
     /// 设置 URL（不记录到历史）。
     pub fn set_url(&mut self, url: &str) {
         self.url = Some(url.to_string());
