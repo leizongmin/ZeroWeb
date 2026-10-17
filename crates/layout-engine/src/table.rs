@@ -60,6 +60,12 @@ pub(crate) fn adjust_table_layout_with_fonts(
     styles: &HashMap<NodeId, ComputedStyle>,
     inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
 ) {
+    // R5168（CSS2 §17.2.1）：行内连续 inline 子合并包裹为匿名 cell——须先于一切
+    // layout_table/build_grid（build_row 无 display 过滤，未包裹的 inline 子会被
+    // 误当独立 cell 各占一列，088/091/092）。见 table_anon_cell 模块文档。
+    if crate::table_anon_cell::anon_cell_wrap_enabled() {
+        crate::table_anon_cell::synthesize_anon_table_cells(root, doc, styles);
+    }
     adjust_table_layout_inner(root, doc, styles, false, inline_fonts);
 }
 
@@ -1141,6 +1147,15 @@ fn compute_column_widths_inner(
             if cell.colspan != 1 {
                 continue;
             }
+            // R5168：匿名 cell 占位 entry（无盒）——列宽取 run 文本 max-content 宽
+            //（build_row 经 fragment_inline_max_width 预量，§17.2.1 匿名 cell 内容
+            // 参与列尺寸）。
+            if cell.child_index == usize::MAX {
+                if cell.col_start < col_count && !grid.collapsed_cols.get(cell.col_start).copied().unwrap_or(false) {
+                    col_max_widths[cell.col_start] = col_max_widths[cell.col_start].max(cell.anon_max_width);
+                }
+                continue;
+            }
             let Some(cell_box) = get_cell_box(row_box, cell) else {
                 continue;
             };
@@ -1905,6 +1920,18 @@ fn position_cells(
         // 起始 x 含左侧周界 spacing。
         let mut cell_x = if is_direct_cell_row { perimeter_x } else { 0.0 };
         for cell in &row.cells {
+            // R5168：匿名 cell 占位 entry 无盒（child_index = usize::MAX）——仅按其
+            // 列宽推进 cell_x（列宽已含 run 文本 max-content），后续显式 cell 从匿名
+            // 列右缘起排（088：显式 cell 落 col1 而非叠在 col0）。
+            if cell.child_index == usize::MAX {
+                let marker_w = col_widths.get(cell.col_start).copied().unwrap_or(0.0);
+                let marker_collapsed =
+                    cell.col_start < grid.collapsed_cols.len() && grid.collapsed_cols[cell.col_start];
+                if !marker_collapsed {
+                    cell_x += marker_w + spacing_x;
+                }
+                continue;
+            }
             // 根据 parent_rg_idx 查找单元格盒
             // 孤立模式下 row_box = table_box，嵌套行组的单元格通过
             // row_box.children[parent_rg_idx].children[child_index] 访问

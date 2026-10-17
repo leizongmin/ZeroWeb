@@ -40,6 +40,7 @@ pub mod print_pagination;
 pub mod r109;
 pub(crate) mod svg_default_size;
 pub mod table;
+pub mod table_anon_cell;
 pub mod table_borders;
 pub mod table_cell_content;
 pub mod table_float_fix;
