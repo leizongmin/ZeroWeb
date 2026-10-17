@@ -571,6 +571,7 @@ mod tests {
             image_key: ImageKey::new(1),
             clip: Some(Rect::new(0.0, 0.0, 100.0, 100.0)),
             source: None,
+            clip_radius: None,
         });
 
         assert_eq!(primitives_content_width(&primitives), 100.0);

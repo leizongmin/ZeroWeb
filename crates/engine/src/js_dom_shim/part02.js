@@ -1,4 +1,4 @@
-          reject(new DOMException("Unsupported hash algorithm: '" + a + "'", 'NotSupportedError'));
+          reject(new _zw_subtleDE("Unsupported hash algorithm: '" + a + "'", 'NotSupportedError'));
           return;
         }
         var parts = out.split(',');
@@ -7,63 +7,221 @@
         resolve(arr);
       });
     },
-    // importKey(format, keyData, algorithm, extractable, usages) → Promise<CryptoKey>。HMAC：format 须 "raw"
-    //（jwk/pkcs8/spki defer）；algorithm {name:"HMAC",hash:"SHA-XXX"}，usages ⊆ {sign,verify}。PBKDF2：
-    // {name:"PBKDF2"}，usages ⊆ {deriveBits,deriveKey}。AES-GCM：{name:"AES-GCM"}，usages ⊆ {encrypt,decrypt}，
-    // key 须 128/256 位（16/32 字节）。含非法 usage → SyntaxError，bad key 长度 → DataError。
+    // importKey(format, keyData, algorithm, extractable, usages) → Promise<CryptoKey>。M3b：
+    // format raw/jwk（AES 家族 + HMAC）；spki/pkcs8 对称密钥 → NotSupportedError（spec 各算
+    // 法 "Otherwise" 步）。usages：AES-CBC/CTR/GCM ⊆ {encrypt,decrypt,wrapKey,unwrapKey}、
+    // AES-KW ⊆ {wrapKey,unwrapKey}、HMAC ⊆ {sign,verify}、PBKDF2/HKDF ⊆ {deriveBits,deriveKey}；
+    // 非法项 → SyntaxError，空 usages → SyntaxError（spec 公共步骤 10，secret 密钥恒适用）。
+    // key.algorithm.length = 数据位长（AES AesKeyAlgorithm / HMAC HmacKeyAlgorithm）；HMAC
+    // 显式 length 须 ∈ (dataBits-8, dataBits] 且字节对齐（截取前 N 位作密钥材料），0 → DataError。
+    // HKDF/PBKDF2 extractable=true → SyntaxError（spec：派生输入密钥不可导出）。
     // https://w3c.github.io/webcrypto/#SubtleCrypto-method-importKey
     importKey: function (format, keyData, algorithm, extractable, usages) {
       return new Promise(function (resolve, reject) {
         var algo = _zw_normalizeImportAlgorithm(algorithm);
         if (!algo) {
-          reject(new DOMException('Unsupported or missing algorithm', 'NotSupportedError')); return;
+          reject(new _zw_subtleDE('Unsupported or missing algorithm', 'NotSupportedError')); return;
         }
-        var fmt = String(format == null ? '' : format).toUpperCase();
-        if (fmt !== 'RAW') {
-          reject(new DOMException("Unsupported importKey format: '" + fmt + "' (only 'raw' supported)", 'NotSupportedError')); return;
+        var fmt = _zw_upperAscii(String(format == null ? '' : format));
+        // RSA 家族（M4a）：usages 家族/类型子集校验与格式解析整体转入 helper（spki/pkcs8/jwk）。
+        if (_zw_rsaIsFamily(algo.name)) {
+          _zw_rsaImportKey(format, keyData, algo, extractable, usages, resolve, reject);
+          return;
         }
-        var raw = _zw_bufToBytes(keyData);
-        // AES-GCM 密钥长度校验（spec：128/256 位；192 位本实现不支持）。
-        if (algo.name === 'AES-GCM' && raw.length !== 16 && raw.length !== 32) {
-          reject(new DOMException('AES-GCM key must be 128 or 256 bits (16/32 bytes)', 'DataError')); return;
+        var isAes = (algo.name === 'AES-GCM' || algo.name === 'AES-CBC' || algo.name === 'AES-CTR' || algo.name === 'AES-KW');
+        var isHmac = algo.name === 'HMAC';
+        // HMAC：显式 length 0 → DataError（spec 步骤 1，先于 usages SyntaxError）。
+        if (isHmac && algo.length != null && Number(algo.length) === 0) {
+          reject(new _zw_subtleDE('HMAC length cannot be 0', 'DataError')); return;
         }
         var allowedUsages = (algo.name === 'PBKDF2' || algo.name === 'HKDF') ? ['deriveBits', 'deriveKey']
-          : algo.name === 'AES-GCM' ? ['encrypt', 'decrypt']
+          : algo.name === 'AES-KW' ? ['wrapKey', 'unwrapKey']
+          : isAes ? ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey']
           : ['sign', 'verify'];
         var u = _zw_normalizeUsages(usages, allowedUsages);
         if (!u) {
-          reject(new DOMException("Invalid key usages for " + algo.name, 'SyntaxError')); return;
+          reject(new _zw_subtleDE("Invalid key usages for " + algo.name, 'SyntaxError')); return;
         }
-        resolve(new CryptoKey('secret', extractable, algo, u, raw));
+        var raw;
+        if (fmt === 'RAW') {
+          raw = _zw_bufToBytes(keyData);
+        } else if (fmt === 'JWK') {
+          if (!isAes && !isHmac) {
+            reject(new _zw_subtleDE("Unsupported importKey format for " + algo.name + ": 'jwk'", 'NotSupportedError')); return;
+          }
+          // jwk → JsonWebKey 字典（spec：非字典 → TypeError）。kty "oct"（对称），k base64url。
+          if (!keyData || typeof keyData !== 'object') {
+            reject(new TypeError('jwk key data must be an object')); return;
+          }
+          if (keyData.kty !== 'oct') {
+            reject(new _zw_subtleDE("jwk kty must be 'oct'", 'DataError')); return;
+          }
+          raw = _zw_bytesFromB64u(keyData.k == null ? '' : keyData.k);
+          if (!raw) {
+            reject(new _zw_subtleDE('jwk k is not valid base64url', 'DataError')); return;
+          }
+          // use 成员：usages 非空时 AES 强制 "enc"、HMAC 强制 "sig"（JWK RFC 7515 §4.3）。
+          if (u.length > 0 && keyData.use != null && keyData.use !== (isHmac ? 'sig' : 'enc')) {
+            reject(new _zw_subtleDE("jwk use must be '" + (isHmac ? 'sig' : 'enc') + "'", 'DataError')); return;
+          }
+          // key_ops：成员须为合法 KeyUsage 且无重复，且 ⊇ usages（spec 公共 jwk 步骤 +
+          // RFC 7515 §4.3；key_ops 对算法的适用性不在此校验——调用方 usages 已约束）。
+          if (keyData.key_ops != null) {
+            if (!keyData.key_ops || typeof keyData.key_ops.length !== 'number') {
+              reject(new _zw_subtleDE('jwk key_ops must be an array', 'DataError')); return;
+            }
+            var seenOps = {};
+            for (var oi = 0; oi < keyData.key_ops.length; oi++) {
+              var opName = String(keyData.key_ops[oi]);
+              var legal = ['encrypt', 'decrypt', 'sign', 'verify', 'deriveKey', 'deriveBits', 'wrapKey', 'unwrapKey'];
+              if (legal.indexOf(opName) < 0 || seenOps[opName]) {
+                reject(new _zw_subtleDE("invalid or duplicate jwk key_ops entry: '" + opName + "'", 'DataError')); return;
+              }
+              seenOps[opName] = 1;
+            }
+            for (var ui = 0; ui < u.length; ui++) {
+              if (seenOps[u[ui]] !== 1) {
+                reject(new _zw_subtleDE("jwk key_ops must contain usage '" + u[ui] + "'", 'DataError')); return;
+              }
+            }
+          }
+          // ext：false + extractable=true → DataError（非对称也然，spec 公共步骤）。
+          if (keyData.ext === false && extractable) {
+            reject(new _zw_subtleDE('jwk ext is false but extractable is true', 'DataError')); return;
+          }
+          // alg ↔ 算法/长度一致性（A{128|192|256}{CTR|CBC|GCM|KW} / HS{1|256|384|512}）。
+          var bits = raw.length * 8;
+          var expectAlg = null;
+          if (isAes) {
+            var suffix = algo.name === 'AES-CTR' ? 'CTR' : algo.name === 'AES-CBC' ? 'CBC'
+              : algo.name === 'AES-GCM' ? 'GCM' : 'KW';
+            expectAlg = 'A' + bits + suffix;
+          } else {
+            expectAlg = algo.hash === 'SHA-1' ? 'HS1' : algo.hash === 'SHA-256' ? 'HS256'
+              : algo.hash === 'SHA-384' ? 'HS384' : algo.hash === 'SHA-512' ? 'HS512' : null;
+          }
+          if (keyData.alg != null && String(keyData.alg) !== expectAlg) {
+            reject(new _zw_subtleDE("jwk alg '" + keyData.alg + "' does not match algorithm (expected '" + expectAlg + "')", 'DataError')); return;
+          }
+        } else if (fmt === 'SPKI' || fmt === 'PKCS8') {
+          // 对称密钥无 spki/pkcs8 语义（spec AES/HMAC/PBKDF2/HKDF importKey "Otherwise"）。
+          reject(new _zw_subtleDE("Unsupported importKey format for " + algo.name + ": '" + fmt + "'", 'NotSupportedError')); return;
+        } else {
+          reject(new _zw_subtleDE("Unsupported importKey format: '" + fmt + "' (only 'raw'/'jwk' supported)", 'NotSupportedError')); return;
+        }
+        // HKDF/PBKDF2：派生输入密钥不可导出（spec raw 分支首步）。
+        if (algo.name === 'HKDF' || algo.name === 'PBKDF2') {
+          if (extractable) {
+            reject(new _zw_subtleDE('HKDF/PBKDF2 keys cannot be extractable', 'SyntaxError')); return;
+          }
+        }
+        var keyAlg = algo;
+        // AES 密钥长度校验（spec：AES 家族均 128/192/256 位；M3a 起 GCM 经 AesGcm 泛型
+        // 支持 192 位）；key.algorithm.length = 数据位长（AesKeyAlgorithm）。
+        if (isAes) {
+          var klen = raw.length;
+          if (klen !== 16 && klen !== 24 && klen !== 32) {
+            reject(new _zw_subtleDE('AES key must be 128, 192 or 256 bits (16/24/32 bytes)', 'DataError')); return;
+          }
+          keyAlg = { name: algo.name, length: klen * 8 };
+        }
+        // HMAC key.algorithm.length：显式 length 截取语义（member ∈ (dataBits-8, dataBits]，
+        // 取数据前 N 位为密钥材料）；FIXME(spec)：非字节对齐 member spec 合法，此处 DataError
+        //（corpus 向量均为字节对齐）。缺省 = dataBits。key.algorithm = HmacKeyAlgorithm。
+        if (isHmac) {
+          var dataBits = raw.length * 8;
+          if (dataBits === 0) {
+            reject(new _zw_subtleDE('HMAC key data cannot be empty', 'DataError')); return;
+          }
+          var lenBits = dataBits;
+          if (algo.length != null) {
+            var m = Number(algo.length);
+            if (m > dataBits || m <= dataBits - 8 || m % 8 !== 0) {
+              reject(new _zw_subtleDE('HMAC length ' + m + ' invalid for ' + dataBits + '-bit key data', 'DataError')); return;
+            }
+            lenBits = m;
+            raw = raw.slice(0, lenBits / 8);
+          }
+          // spec HmacKeyAlgorithm：hash 为 KeyAlgorithm 字典对象 {name:"SHA-XXX"}（WPT
+          // helpers assert_goodCryptoKey 以 key.algorithm.hash.name 取值）。
+          keyAlg = { name: 'HMAC', hash: { name: algo.hash }, length: lenBits };
+        }
+        // spec 公共步骤 10：secret 密钥空 usages → SyntaxError（密钥数据校验之后）。
+        if (u.length === 0) {
+          reject(new _zw_subtleDE('Key usages cannot be empty for secret keys', 'SyntaxError')); return;
+        }
+        resolve(new CryptoKey('secret', extractable, keyAlg, u, raw));
       });
     },
     // sign(algorithm, key, data) → Promise<ArrayBuffer>。HMAC：algorithm "HMAC"/{name:"HMAC"}，hash 取自 key.algorithm.hash。
+    // RSA（M4a）：RSA-PSS（algorithm.saltLength 必填，缺失 → TypeError）/RSASSA-PKCS1-v1_5，
+    // hash 与 padding 均取自 key（algorithm 参数仅 name[+saltLength]）；key.algorithm.name
+    // 不匹配 / 无 "sign" usage → InvalidAccessError。
     // key.usages 须含 "sign" → 否则 InvalidAccessError。https://w3c.github.io/webcrypto/#SubtleCrypto-method-sign
     sign: function (algorithm, key, data) {
       return new Promise(function (resolve, reject) {
         var name = (typeof algorithm === 'object' && algorithm) ? algorithm.name : algorithm;
-        name = String(name == null ? '' : name).toUpperCase();
+        name = _zw_upperAscii(String(name == null ? '' : name));
+        if (name === 'RSA-PSS' || name === 'RSASSA-PKCS1-V1_5') {
+          if (!key || _zw_upperAscii(String(key.algorithm && key.algorithm.name)) !== name) {
+            reject(new _zw_subtleDE('Algorithm does not match key', 'InvalidAccessError')); return;
+          }
+          if (!key.usages || key.usages.indexOf('sign') < 0) {
+            reject(new _zw_subtleDE('Key usages do not include "sign"', 'InvalidAccessError')); return;
+          }
+          var pad = name === 'RSA-PSS' ? 'pss' : 'pkcs1v15';
+          var salt = 0;
+          if (name === 'RSA-PSS') {
+            // RsaPssParams 必填成员 saltLength（WebIDL required → TypeError）。
+            if (typeof algorithm !== 'object' || algorithm.saltLength == null) {
+              reject(new TypeError('RSA-PSS requires a saltLength member')); return;
+            }
+            salt = Number(algorithm.saltLength);
+          }
+          var sig = _zw_rsaSignCall(key, pad, salt, _zw_rsaKeyHash(key), _zw_bufToBytes(data), reject);
+          if (sig) resolve(sig);
+          return;
+        }
         if (name !== 'HMAC' || !key || key.algorithm.name !== 'HMAC') {
-          reject(new DOMException('Unsupported sign algorithm or key', 'NotSupportedError')); return;
+          reject(new _zw_subtleDE('Unsupported sign algorithm or key', 'NotSupportedError')); return;
         }
         if (!key.usages || key.usages.indexOf('sign') < 0) {
-          reject(new DOMException('Key usages do not include "sign"', 'InvalidAccessError')); return;
+          reject(new _zw_subtleDE('Key usages do not include "sign"', 'InvalidAccessError')); return;
         }
         var mac = _zw_hmacMac(key.algorithm, key, _zw_bufToBytes(data), reject);
         if (mac) resolve(mac);
       });
     },
     // verify(algorithm, key, signature, data) → Promise<boolean>。计算 MAC 后定长比较（无早退，常时近似）。
+    // RSA（M4a）：坏签名/错 saltLength resolve false 不 reject（spec verify 无对应 reject 路径）。
     // https://w3c.github.io/webcrypto/#SubtleCrypto-method-verify
     verify: function (algorithm, key, signature, data) {
       return new Promise(function (resolve, reject) {
         var name = (typeof algorithm === 'object' && algorithm) ? algorithm.name : algorithm;
-        name = String(name == null ? '' : name).toUpperCase();
+        name = _zw_upperAscii(String(name == null ? '' : name));
+        if (name === 'RSA-PSS' || name === 'RSASSA-PKCS1-V1_5') {
+          if (!key || _zw_upperAscii(String(key.algorithm && key.algorithm.name)) !== name) {
+            reject(new _zw_subtleDE('Algorithm does not match key', 'InvalidAccessError')); return;
+          }
+          if (!key.usages || key.usages.indexOf('verify') < 0) {
+            reject(new _zw_subtleDE('Key usages do not include "verify"', 'InvalidAccessError')); return;
+          }
+          var pad = name === 'RSA-PSS' ? 'pss' : 'pkcs1v15';
+          var salt = 0;
+          if (name === 'RSA-PSS') {
+            if (typeof algorithm !== 'object' || algorithm.saltLength == null) {
+              reject(new TypeError('RSA-PSS requires a saltLength member')); return;
+            }
+            salt = Number(algorithm.saltLength);
+          }
+          resolve(_zw_rsaVerifyCall(key, pad, salt, _zw_rsaKeyHash(key), _zw_bufToBytes(signature), _zw_bufToBytes(data), reject));
+          return;
+        }
         if (name !== 'HMAC' || !key || key.algorithm.name !== 'HMAC') {
-          reject(new DOMException('Unsupported verify algorithm or key', 'NotSupportedError')); return;
+          reject(new _zw_subtleDE('Unsupported verify algorithm or key', 'NotSupportedError')); return;
         }
         if (!key.usages || key.usages.indexOf('verify') < 0) {
-          reject(new DOMException('Key usages do not include "verify"', 'InvalidAccessError')); return;
+          reject(new _zw_subtleDE('Key usages do not include "verify"', 'InvalidAccessError')); return;
         }
         var mac = _zw_hmacMac(key.algorithm, key, _zw_bufToBytes(data), reject);
         if (!mac) return;
@@ -85,15 +243,15 @@
     deriveBits: function (algorithm, key, length) {
       return new Promise(function (resolve, reject) {
         var name = (typeof algorithm === 'object' && algorithm) ? algorithm.name : algorithm;
-        name = String(name == null ? '' : name).toUpperCase();
+        name = _zw_upperAscii(String(name == null ? '' : name));
         if ((name !== 'PBKDF2' && name !== 'HKDF') || !key || key.algorithm.name !== name) {
-          reject(new DOMException('Unsupported deriveBits algorithm or key', 'NotSupportedError')); return;
+          reject(new _zw_subtleDE('Unsupported deriveBits algorithm or key', 'NotSupportedError')); return;
         }
         if (!key.usages || key.usages.indexOf('deriveBits') < 0) {
-          reject(new DOMException('Key usages do not include "deriveBits"', 'InvalidAccessError')); return;
+          reject(new _zw_subtleDE('Key usages do not include "deriveBits"', 'InvalidAccessError')); return;
         }
         if (typeof length !== 'number' || length <= 0 || length % 8 !== 0) {
-          reject(new DOMException('deriveBits length must be a positive multiple of 8', 'OperationError')); return;
+          reject(new _zw_subtleDE('deriveBits length must be a positive multiple of 8', 'OperationError')); return;
         }
         _zw_performDerive(algorithm, key, length).then(resolve, reject);
       });
@@ -105,14 +263,14 @@
       return new Promise(function (resolve, reject) {
         var dka = _zw_normalizeImportAlgorithm(derivedKeyAlgo);
         if (!dka) {
-          reject(new DOMException('Unsupported derived key algorithm', 'NotSupportedError')); return;
+          reject(new _zw_subtleDE('Unsupported derived key algorithm', 'NotSupportedError')); return;
         }
         var lenBits = _zw_keyLengthBits(dka);
         if (!lenBits) {
-          reject(new DOMException('Cannot determine derived key length', 'NotSupportedError')); return;
+          reject(new _zw_subtleDE('Cannot determine derived key length', 'NotSupportedError')); return;
         }
         if (!baseKey || !baseKey.usages || baseKey.usages.indexOf('deriveKey') < 0) {
-          reject(new DOMException('Key usages do not include "deriveKey"', 'InvalidAccessError')); return;
+          reject(new _zw_subtleDE('Key usages do not include "deriveKey"', 'InvalidAccessError')); return;
         }
         _zw_performDerive(algorithm, baseKey, lenBits).then(function (bits) {
           return crypto.subtle.importKey('raw', bits, dka, extractable, usages);
@@ -120,72 +278,276 @@
       });
     },
     // encrypt(algorithm, key, data) → Promise<ArrayBuffer>。AES-GCM：algorithm {name:"AES-GCM", iv, additionalData?, tagLength?}，
-    // 返 ct||tag（tag 固定 128 位）。key.usages 须含 "encrypt"。https://w3c.github.io/webcrypto/#SubtleCrypto-method-encrypt
+    // 返 ct||tag（tag 固定 128 位）。AES-CBC/CTR（M2b）：{name, iv|counter(16B)}，CBC 返 PKCS#7 填充密文。
+    // key.usages 须含 "encrypt"。https://w3c.github.io/webcrypto/#SubtleCrypto-method-encrypt
     encrypt: function (algorithm, key, data) {
       return new Promise(function (resolve, reject) {
         var name = (typeof algorithm === 'object' && algorithm) ? algorithm.name : algorithm;
-        name = String(name == null ? '' : name).toUpperCase();
-        if (name !== 'AES-GCM' || !key || key.algorithm.name !== 'AES-GCM') {
-          reject(new DOMException('Unsupported encrypt algorithm or key', 'NotSupportedError')); return;
+        name = _zw_upperAscii(String(name == null ? '' : name));
+        var isBlock = (name === 'AES-CBC' || name === 'AES-CTR');
+        var isRsa = (name === 'RSA-OAEP');
+        if (name !== 'AES-GCM' && !isBlock && !isRsa) {
+          reject(new _zw_subtleDE('Unsupported encrypt algorithm: ' + name, 'NotSupportedError')); return;
+        }
+        if (!key || _zw_upperAscii(String(key.algorithm.name)) !== name) {
+          // spec：key.algorithm.name 与算法名不匹配 → InvalidAccessError（WPT「mismatched
+          // key and algorithm」组断言 InvalidAccessError，非 NotSupportedError）。
+          reject(new _zw_subtleDE('Algorithm does not match key', 'InvalidAccessError')); return;
         }
         if (!key.usages || key.usages.indexOf('encrypt') < 0) {
-          reject(new DOMException('Key usages do not include "encrypt"', 'InvalidAccessError')); return;
+          reject(new _zw_subtleDE('Key usages do not include "encrypt"', 'InvalidAccessError')); return;
         }
-        var arr = _zw_aesGcmCall('encrypt', algorithm, key, _zw_bufToBytes(data), reject);
+        var bytes = _zw_bufToBytes(data);
+        // RSA-OAEP（M4a）：hash/label 语义——hash 取自 key.algorithm.hash（algorithm 参数仅
+        // name；WPT rsa_vectors 的 encrypt 算法即 {name:"RSA-OAEP"}），label 可选（空 ≡ 无，
+        // RFC 8017 §7.1.1）；明文超长（k − 2·hLen − 2）→ OperationError。
+        var arr = isRsa
+          ? _zw_rsaOaepCall('encrypt', key, _zw_rsaKeyHash(key), (algorithm.label != null) ? _zw_bufToBytes(algorithm.label) : [], bytes, reject)
+          : isBlock
+          ? _zw_aesBlockCall(name === 'AES-CTR' ? 'ctr' : 'cbc', 'encrypt', algorithm, key, bytes, reject)
+          : _zw_aesGcmCall('encrypt', algorithm, key, bytes, reject);
         if (arr) resolve(arr);
       });
     },
-    // decrypt(algorithm, key, data) → Promise<ArrayBuffer>。data 为 ct||tag（tag 校验失败 → reject OperationError）。
+    // decrypt(algorithm, key, data) → Promise<ArrayBuffer>。AES-GCM data 为 ct||tag（tag 校验失败 →
+    // reject OperationError）；AES-CBC data 末块 padding 非法 → OperationError。RSA-OAEP（M4a）：
+    // 密文长度 ≠ 模长字节 → OperationError（helper 内预检），解封成功空明文 → 空 ArrayBuffer。
     // https://w3c.github.io/webcrypto/#SubtleCrypto-method-decrypt
     decrypt: function (algorithm, key, data) {
       return new Promise(function (resolve, reject) {
         var name = (typeof algorithm === 'object' && algorithm) ? algorithm.name : algorithm;
-        name = String(name == null ? '' : name).toUpperCase();
-        if (name !== 'AES-GCM' || !key || key.algorithm.name !== 'AES-GCM') {
-          reject(new DOMException('Unsupported decrypt algorithm or key', 'NotSupportedError')); return;
+        name = _zw_upperAscii(String(name == null ? '' : name));
+        var isBlock = (name === 'AES-CBC' || name === 'AES-CTR');
+        var isRsa = (name === 'RSA-OAEP');
+        if (name !== 'AES-GCM' && !isBlock && !isRsa) {
+          reject(new _zw_subtleDE('Unsupported decrypt algorithm: ' + name, 'NotSupportedError')); return;
+        }
+        if (!key || _zw_upperAscii(String(key.algorithm.name)) !== name) {
+          reject(new _zw_subtleDE('Algorithm does not match key', 'InvalidAccessError')); return;
         }
         if (!key.usages || key.usages.indexOf('decrypt') < 0) {
-          reject(new DOMException('Key usages do not include "decrypt"', 'InvalidAccessError')); return;
+          reject(new _zw_subtleDE('Key usages do not include "decrypt"', 'InvalidAccessError')); return;
         }
-        var arr = _zw_aesGcmCall('decrypt', algorithm, key, _zw_bufToBytes(data), reject);
+        var bytes = _zw_bufToBytes(data);
+        var arr = isRsa
+          ? _zw_rsaOaepCall('decrypt', key, _zw_rsaKeyHash(key), (algorithm.label != null) ? _zw_bufToBytes(algorithm.label) : [], bytes, reject)
+          : isBlock
+          ? _zw_aesBlockCall(name === 'AES-CTR' ? 'ctr' : 'cbc', 'decrypt', algorithm, key, bytes, reject)
+          : _zw_aesGcmCall('decrypt', algorithm, key, bytes, reject);
         if (arr) resolve(arr);
       });
     },
-    // generateKey(algorithm, extractable, usages) → Promise<CryptoKey>。AES-GCM → 256 位随机密钥；
-    // HMAC → hash 块大小随机密钥。**随机源 = crypto.getRandomValues（Math.random 非 CSPRNG，已知限制）**。
+    // generateKey(algorithm, extractable, usages) → Promise<CryptoKey>。AES 家族（M3b 起
+    // 含 AES-KW）→ 随机密钥（length ∈ {128,192,256}，缺省 256；越界 → OperationError）；
+    // usages：AES-CBC/CTR/GCM ⊆ {encrypt,decrypt,wrapKey,unwrapKey}、AES-KW ⊆
+    // {wrapKey,unwrapKey}；校验顺序 spec——非法 usage SyntaxError → length OperationError →
+    // 空 usages SyntaxError（公共步骤 10，密钥创建后）。key.algorithm = AesKeyAlgorithm
+    //（length 成员必须存在）。HMAC → 显式 length >0 或 hash 块大小随机密钥，0 →
+    // OperationError；key.algorithm = HmacKeyAlgorithm（hash + length 成员）。
+    // **随机源 = crypto.getRandomValues（Math.random 非 CSPRNG，已知限制）**。
     // https://w3c.github.io/webcrypto/#SubtleCrypto-method-generateKey
     generateKey: function (algorithm, extractable, usages) {
       return new Promise(function (resolve, reject) {
         var algo = _zw_normalizeImportAlgorithm(algorithm);
         if (!algo) {
-          reject(new DOMException('Unsupported or missing algorithm', 'NotSupportedError')); return;
+          reject(new _zw_subtleDE('Unsupported or missing algorithm', 'NotSupportedError')); return;
         }
-        if (algo.name === 'AES-GCM') {
-          var u = _zw_normalizeUsages(usages, ['encrypt', 'decrypt']);
-          if (!u) { reject(new DOMException('Invalid key usages for AES-GCM', 'SyntaxError')); return; }
-          resolve(new CryptoKey('secret', extractable, algo, u, Array.from(_zw_randomBytes(32))));
+        var isAes = (algo.name === 'AES-GCM' || algo.name === 'AES-CBC' || algo.name === 'AES-CTR' || algo.name === 'AES-KW');
+        if (isAes) {
+          var allowed = algo.name === 'AES-KW' ? ['wrapKey', 'unwrapKey'] : ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey'];
+          var u = _zw_normalizeUsages(usages, allowed);
+          if (!u) { reject(new _zw_subtleDE('Invalid key usages for ' + algo.name, 'SyntaxError')); return; }
+          var bits = (typeof algorithm === 'object' && algorithm && algorithm.length != null)
+            ? Number(algorithm.length) : 256;
+          if (bits !== 128 && bits !== 192 && bits !== 256) {
+            reject(new _zw_subtleDE('Invalid AES key length: ' + algorithm.length, 'OperationError')); return;
+          }
+          if (u.length === 0) {
+            reject(new _zw_subtleDE('Key usages cannot be empty for secret keys', 'SyntaxError')); return;
+          }
+          resolve(new CryptoKey('secret', extractable, { name: algo.name, length: bits }, u, Array.from(_zw_randomBytes(bits / 8))));
         } else if (algo.name === 'HMAC') {
           var hu = _zw_normalizeUsages(usages, ['sign', 'verify']);
-          if (!hu) { reject(new DOMException('Invalid key usages for HMAC', 'SyntaxError')); return; }
-          resolve(new CryptoKey('secret', extractable, algo, hu, Array.from(_zw_randomBytes(_zw_keyLengthBits(algo) / 8))));
+          if (!hu) { reject(new _zw_subtleDE('Invalid key usages for HMAC', 'SyntaxError')); return; }
+          var lenBits = _zw_keyLengthBits(algo);
+          if (!lenBits) {
+            // spec HmacKeyGenParams：显式 length 0（或负）→ OperationError。
+            reject(new _zw_subtleDE('Invalid HMAC length: ' + algo.length, 'OperationError')); return;
+          }
+          if (hu.length === 0) {
+            reject(new _zw_subtleDE('Key usages cannot be empty for secret keys', 'SyntaxError')); return;
+          }
+          resolve(new CryptoKey('secret', extractable, { name: 'HMAC', hash: { name: algo.hash }, length: lenBits }, hu, Array.from(_zw_randomBytes(lenBits / 8))));
+        } else if (_zw_rsaIsFamily(algo.name)) {
+          // RSA（M4a）→ CryptoKeyPair{publicKey, privateKey}（publicKey 恒 extractable）；
+          // 错误序：非法 usage SyntaxError → 生成 OperationError（e<3/偶数，failures
+          // "Bad algorithm property"）→ 私钥空 usages SyntaxError。
+          _zw_rsaGenerateKey(algorithm, extractable, usages, algo, resolve, reject);
         } else {
-          reject(new DOMException('Unsupported generateKey algorithm', 'NotSupportedError'));
+          reject(new _zw_subtleDE('Unsupported generateKey algorithm', 'NotSupportedError'));
         }
       });
     },
-    // exportKey(format, key) → Promise<ArrayBuffer>。仅 "raw"（jwk defer）；非 extractable key → reject。
+    // exportKey(format, key) → Promise<ArrayBuffer|JsonWebKey>。raw + jwk（AES 家族/HMAC，
+    // M3b）：jwk 输出 {kty:"oct", k:base64url, alg, key_ops, ext}（spec 各对称算法 exportKey
+    // 步骤；无 use 成员——spec 未定义导出 use）。非 extractable key → InvalidAccessError；
+    // spki/pkcs8 对称密钥 → NotSupportedError（spec "Otherwise" 步）。
     // https://w3c.github.io/webcrypto/#SubtleCrypto-method-exportKey
     exportKey: function (format, key) {
       return new Promise(function (resolve, reject) {
-        var fmt = String(format == null ? '' : format).toUpperCase();
-        if (fmt !== 'RAW') {
-          reject(new DOMException("Unsupported exportKey format: '" + fmt + "' (only 'raw' supported)", 'NotSupportedError')); return;
+        // RSA 家族（M4a）：spki/pkcs8/jwk 分派整体转入 helper（公/私类型与格式匹配校验在内）。
+        if (key && key.algorithm && _zw_rsaIsFamily(key.algorithm.name)) {
+          _zw_rsaExportKey(format, key, resolve, reject);
+          return;
+        }
+        var fmt = _zw_upperAscii(String(format == null ? '' : format));
+        if (fmt !== 'RAW' && fmt !== 'JWK') {
+          reject(new _zw_subtleDE("Unsupported exportKey format: '" + fmt + "' (only 'raw'/'jwk' supported for symmetric keys)", 'NotSupportedError')); return;
         }
         if (!key || !key.extractable) {
-          reject(new DOMException('Key is not extractable', 'InvalidAccessError')); return;
+          reject(new _zw_subtleDE('Key is not extractable', 'InvalidAccessError')); return;
         }
         var raw = key._raw || [];
-        resolve(new Uint8Array(raw));
+        if (fmt === 'RAW') {
+          resolve(new Uint8Array(raw));
+          return;
+        }
+        var algName = key.algorithm && key.algorithm.name;
+        var bits = raw.length * 8;
+        var alg = null;
+        if (algName === 'AES-CTR') alg = 'A' + bits + 'CTR';
+        else if (algName === 'AES-CBC') alg = 'A' + bits + 'CBC';
+        else if (algName === 'AES-GCM') alg = 'A' + bits + 'GCM';
+        else if (algName === 'AES-KW') alg = 'A' + bits + 'KW';
+        else if (algName === 'HMAC') {
+          var h = key.algorithm.hash;
+          h = (h && typeof h === 'object') ? h.name : h;
+          alg = h === 'SHA-1' ? 'HS1' : h === 'SHA-256' ? 'HS256' : h === 'SHA-384' ? 'HS384' : h === 'SHA-512' ? 'HS512' : null;
+        }
+        if (!alg) {
+          reject(new _zw_subtleDE("Unsupported exportKey format for " + algName + ": 'jwk'", 'NotSupportedError')); return;
+        }
+        resolve({
+          kty: 'oct',
+          k: _zw_b64uFromBytes(raw),
+          alg: alg,
+          key_ops: (key.usages || []).slice(),
+          ext: !!key.extractable
+        });
+      });
+    },
+    // wrapKey(format, key, wrappingKey, wrapAlgorithm) → Promise<ArrayBuffer|JsonWebKey>（M3b）。
+    // 先导出 key（format 原样；jwk → JSON 串 UTF-8 字节），再按 wrapAlgorithm 封装：AES-KW →
+    // RFC 3394 host（`__zw_crypto_subtle_aes_kw`），AES-GCM/CBC/CTR → 对应 encrypt 运算（spec
+    // 归一 fallback op encrypt；**不经 encrypt() 的 usage 校验**——wrappingKey 仅有 "wrapKey"
+    // usage，spec 只查 wrapKey）。wrappingKey algorithm.name 不匹配 / 无 "wrapKey" usage →
+    // InvalidAccessError；key 非 extractable → InvalidAccessError（不可导出即不可封装）。
+    // https://w3c.github.io/webcrypto/#SubtleCrypto-method-wrapKey
+    wrapKey: function (format, key, wrappingKey, wrapAlgorithm) {
+      return new Promise(function (resolve, reject) {
+        var wa = (wrapAlgorithm && typeof wrapAlgorithm === 'object') ? wrapAlgorithm : { name: wrapAlgorithm };
+        var name = _zw_upperAscii(String(wa && wa.name ? wa.name : ''));
+        var isKw = name === 'AES-KW';
+        var isEnc = (name === 'AES-GCM' || name === 'AES-CBC' || name === 'AES-CTR');
+        var isOaep = name === 'RSA-OAEP';
+        if (!isKw && !isEnc && !isOaep) {
+          reject(new _zw_subtleDE('Unsupported wrap algorithm: ' + name, 'NotSupportedError')); return;
+        }
+        if (!wrappingKey || !wrappingKey.algorithm || wrappingKey.algorithm.name !== name) {
+          reject(new _zw_subtleDE('Algorithm does not match wrapping key', 'InvalidAccessError')); return;
+        }
+        if (!wrappingKey.usages || wrappingKey.usages.indexOf('wrapKey') < 0) {
+          reject(new _zw_subtleDE('Key usages do not include "wrapKey"', 'InvalidAccessError')); return;
+        }
+        if (!key || !key.extractable) {
+          reject(new _zw_subtleDE('Key is not extractable', 'InvalidAccessError')); return;
+        }
+        var fmt = _zw_upperAscii(String(format == null ? '' : format));
+        crypto.subtle.exportKey(fmt, key).then(function (exported) {
+          var bytes;
+          if (fmt === 'JWK') {
+            bytes = _zw_bufToBytes(new TextEncoder().encode(JSON.stringify(exported)));
+          } else {
+            bytes = _zw_bufToBytes(exported);
+          }
+          if (isKw) {
+            var wrapped = _zw_aesKwCall('wrap', wrappingKey, bytes, reject);
+            if (wrapped) resolve(wrapped);
+            return;
+          }
+          // RSA-OAEP（M4a）：label 取自 wrapParameters.label（可空 ≡ 无）；hash 取自
+          // wrappingKey.algorithm.hash（wrapParameters 无 hash 成员）。
+          if (isOaep) {
+            var wrappedOaep = _zw_rsaOaepCall('encrypt', wrappingKey, _zw_rsaKeyHash(wrappingKey), (wa.label != null) ? _zw_bufToBytes(wa.label) : [], bytes, reject);
+            if (wrappedOaep) resolve(wrappedOaep);
+            return;
+          }
+          var arr = (name === 'AES-CTR' || name === 'AES-CBC')
+            ? _zw_aesBlockCall(name === 'AES-CTR' ? 'ctr' : 'cbc', 'encrypt', wa, wrappingKey, bytes, reject)
+            : _zw_aesGcmCall('encrypt', wa, wrappingKey, bytes, reject);
+          if (arr) resolve(arr);
+        }, reject);
+      });
+    },
+    // unwrapKey(format, wrappedKey, unwrappingKey, unwrapAlgorithm, unwrappedKeyAlgorithm,
+    // extractable, keyUsages) → Promise<CryptoKey>（M3b）。解封（AES-KW → RFC 3394 host，
+    // 失败 → OperationError；AES-GCM/CBC/CTR → 对应 decrypt 运算，不经 decrypt() usage 校验）
+    // 后按 format 导入：jwk → JSON.parse + kty "oct" 校验，raw → 字节原样；importKey 完成全部
+    // usages/长度校验。unwrappingKey algorithm.name 不匹配 / 无 "unwrapKey" usage →
+    // InvalidAccessError。
+    // https://w3c.github.io/webcrypto/#SubtleCrypto-method-unwrapKey
+    unwrapKey: function (format, wrappedKey, unwrappingKey, unwrapAlgorithm, unwrappedKeyAlgorithm, extractable, keyUsages) {
+      return new Promise(function (resolve, reject) {
+        var ua = (unwrapAlgorithm && typeof unwrapAlgorithm === 'object') ? unwrapAlgorithm : { name: unwrapAlgorithm };
+        var name = _zw_upperAscii(String(ua && ua.name ? ua.name : ''));
+        var isKw = name === 'AES-KW';
+        var isDec = (name === 'AES-GCM' || name === 'AES-CBC' || name === 'AES-CTR');
+        var isOaep = name === 'RSA-OAEP';
+        if (!isKw && !isDec && !isOaep) {
+          reject(new _zw_subtleDE('Unsupported unwrap algorithm: ' + name, 'NotSupportedError')); return;
+        }
+        if (!unwrappingKey || !unwrappingKey.algorithm || unwrappingKey.algorithm.name !== name) {
+          reject(new _zw_subtleDE('Algorithm does not match unwrapping key', 'InvalidAccessError')); return;
+        }
+        if (!unwrappingKey.usages || unwrappingKey.usages.indexOf('unwrapKey') < 0) {
+          reject(new _zw_subtleDE('Key usages do not include "unwrapKey"', 'InvalidAccessError')); return;
+        }
+        var fmt = _zw_upperAscii(String(format == null ? '' : format));
+        // M4a 起支持 spki/pkcs8（RSA-OAEP 封装的非对称密钥回导，importKey 完成格式校验）。
+        if (fmt !== 'RAW' && fmt !== 'JWK' && fmt !== 'SPKI' && fmt !== 'PKCS8') {
+          reject(new _zw_subtleDE("Unsupported unwrapKey format: '" + fmt + "' (only 'raw'/'jwk'/'spki'/'pkcs8' supported)", 'NotSupportedError')); return;
+        }
+        var bytes = _zw_bufToBytes(wrappedKey);
+        var plain;
+        if (isOaep) {
+          plain = _zw_rsaOaepCall('decrypt', unwrappingKey, _zw_rsaKeyHash(unwrappingKey), (ua.label != null) ? _zw_bufToBytes(ua.label) : [], bytes, reject);
+          if (!plain) return;
+        } else if (isKw) {
+          plain = _zw_aesKwCall('unwrap', unwrappingKey, bytes, reject);
+          if (!plain) return;
+        } else {
+          plain = (name === 'AES-CTR' || name === 'AES-CBC')
+            ? _zw_aesBlockCall(name === 'AES-CTR' ? 'ctr' : 'cbc', 'decrypt', ua, unwrappingKey, bytes, reject)
+            : _zw_aesGcmCall('decrypt', ua, unwrappingKey, bytes, reject);
+          if (!plain) return;
+        }
+        var keyData;
+        if (fmt === 'JWK') {
+          var jwkStr = '';
+          for (var i = 0; i < plain.length; i++) jwkStr += String.fromCharCode(plain[i] & 0xff);
+          var parsed;
+          try { parsed = JSON.parse(jwkStr); } catch (_e) {
+            reject(new _zw_subtleDE('unwrapped jwk is not valid JSON', 'DataError')); return;
+          }
+          if (!parsed || typeof parsed !== 'object') {
+            reject(new _zw_subtleDE('unwrapped jwk is not a JsonWebKey', 'DataError')); return;
+          }
+          // kty 校验归 importKey（M4a：jwk 不再限 'oct'——RSA-OAEP 可封装非对称密钥）。
+          keyData = parsed;
+        } else {
+          keyData = new Uint8Array(plain);
+        }
+        crypto.subtle.importKey(fmt, keyData, unwrappedKeyAlgorithm, extractable, keyUsages).then(resolve, reject);
       });
     }
   };

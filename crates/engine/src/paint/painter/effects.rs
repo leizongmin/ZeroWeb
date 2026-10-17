@@ -888,6 +888,7 @@ impl super::Painter {
                                                 image_key: ImageKey::new(key),
                                                 clip: Some(rc),
                                                 source: None,
+                                                clip_radius: None,
                                             });
                                             // R5022/R5023：filter() 图像函数 url 源——滤镜
                                             // 紧随图像图元（draw_order 插入序只作用于已绘
@@ -908,6 +909,7 @@ impl super::Painter {
                                         image_key: ImageKey::new(key),
                                         clip: clip_rect,
                                         source: None,
+                                        clip_radius: None,
                                     });
                                     // R5022/R5023：filter() 图像函数 url 源（同上）。
                                     if let Some(filters) = layer_filters {

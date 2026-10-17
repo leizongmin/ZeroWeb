@@ -210,6 +210,15 @@ pub struct BrowserApp {
     zoom_indicator_start: Option<Instant>,
     /// 下载完成 toast：`(文件名, 显示起始时刻)`。下载完成时记录，3 秒后由渲染层清除。
     download_toast: Option<(String, Instant)>,
+    /// 关闭标签撤销 toast 显示起始时刻。关闭标签时记录，5 秒后由渲染层清除；
+    /// 撤销动作走 [`BrowserApp::reopen_last_closed_tab`]（弹出 shell 的 recently_closed 栈）。
+    closed_tab_toast: Option<Instant>,
+    /// 每标签导航历史条目的滚动偏移（物理像素），键为 `(标签 id, 历史索引)`。
+    /// 离开条目前保存、back/forward 回到时恢复（Chrome 同款会话内滚动位置保持）。
+    history_scroll: HashMap<(TabId, usize), f32>,
+    /// back/forward 待应用的滚动恢复 `(标签 id, 目标偏移)`。目标文档装载完成
+    /// （page_loaded）后才落地——立即写入会在空白文档期被 clamp_tab_scroll 压回 0。
+    pending_scroll_restore: Option<(TabId, f32)>,
     /// 最近提交给 compositor 的 UI surface 位图（T36 滚动帧 IPC 跳过用）。
     ui_forward_cache: Option<UiForwardCache>,
     /// 上次设置的窗口标题缓存，用于检测变化避免重复 set_title。
@@ -261,6 +270,9 @@ pub struct BrowserApp {
     view_source_fetch: ViewSourceFetchState,
     /// 进行中的图片另存为异步抓取（后台线程 + 主循环 poll，走下载管线落盘）。
     image_save_fetch: ImageSaveFetchState,
+    /// 进行中的页面另存为异步抓取（T51；与图片另存为同一抓取基础设施的独立
+    /// 队列，完成项按页面命名规则走下载管线）。
+    page_save_fetch: ImageSaveFetchState,
     /// 是否显示下载浮动面板（也可因活动下载自动展开）。
     download_panel_open: bool,
     /// 最近一次「在文件夹中显示」动作打开的目录（演示流断言面）。
@@ -399,6 +411,9 @@ impl BrowserApp {
             menu_anim_start: None,
             zoom_indicator_start: None,
             download_toast: None,
+            closed_tab_toast: None,
+            history_scroll: HashMap::new(),
+            pending_scroll_restore: None,
             ui_forward_cache: None,
             last_window_title: String::new(),
             last_tab_click_time: None,
@@ -423,6 +438,7 @@ impl BrowserApp {
             favicon_fetch: FaviconFetchState::new(),
             view_source_fetch: ViewSourceFetchState::new(),
             image_save_fetch: ImageSaveFetchState::new(),
+            page_save_fetch: ImageSaveFetchState::new(),
             download_panel_open: false,
             last_opened_download_dir: None,
             find_match_ranges: Vec::new(),
@@ -560,6 +576,8 @@ impl BrowserApp {
             }
             self.refresh_tab_favicon(tab_id, &url);
             self.shell.set_tab_crashed(tab_id, false);
+            // back/forward 滚动恢复：目标文档就绪后落地（Chrome 同款时机）。
+            self.apply_pending_scroll_restore(tab_id);
             if self.shell.active_tab_id() == Some(tab_id) {
                 if let Some(tab) = self.shell.active_tab_mut() {
                     tab.set_loading(false);
@@ -587,6 +605,10 @@ impl BrowserApp {
         }
         for (tab_id, url, result) in self.image_save_fetch.take_completed() {
             self.save_image_fetch_result(tab_id, url, result);
+        }
+        // T51：页面另存为抓取完成（与图片另存为同一抓取基础设施，独立队列）。
+        for (tab_id, url, result) in self.page_save_fetch.take_completed() {
+            self.save_page_fetch_result(tab_id, url, result);
         }
 
         // 检测后台标签 title 变化（如聊天应用收到消息改 title 加 "(3)"），
@@ -1957,6 +1979,57 @@ impl BrowserApp {
         }
     }
 
+    /// 关闭标签撤销 toast 外框 `(x, y, w, h)`（物理像素）。未显示（无 toast、已超
+    /// 5 秒或字体未就绪）返回 None。几何与 render_closed_tab_toast / smoke 断言面同源。
+    pub(crate) fn closed_tab_toast_rect_for(&self, width: u32, height: u32) -> Option<(f32, f32, f32, f32)> {
+        let start = self.closed_tab_toast?;
+        if start.elapsed().as_secs_f32() > layout::CLOSED_TAB_TOAST_DURATION_SECS || self.font_id.is_none() {
+            return None;
+        }
+        let s = self.scale_factor;
+        let font_size = layout::CHROME_FONT_SIZE * s;
+        let pad_h = 14.0 * s;
+        let gap = 18.0 * s;
+        let text_w = self.measure_ui_text_width(&Self::closed_tab_toast_label(), font_size)
+            + gap
+            + self.measure_ui_text_width(&Self::closed_tab_toast_undo_label(), font_size);
+        let box_w = text_w + pad_h * 2.0;
+        let box_h = font_size + 12.0 * s;
+        let (cx, cy, cw, ch) = self.page_content_rect_for(width, height);
+        // 页面内容区底部居中（下载完成 toast 同位；两者同时出现的概率低，
+        // 且撤销 toast 只持续 5 秒）。
+        let box_x = cx + (cw - box_w) * 0.5;
+        let box_y = cy + ch - box_h - 16.0 * s;
+        Some((box_x, box_y, box_w, box_h))
+    }
+
+    /// 撤销 toast 的「撤销」动作命中区（toast 右段，物理像素；渲染与点击、
+    /// ui_driver 点击定位同源）。未显示返回 None。
+    pub(crate) fn closed_tab_toast_undo_rect_for(&self, width: u32, height: u32) -> Option<(f32, f32, f32, f32)> {
+        let (box_x, box_y, box_w, box_h) = self.closed_tab_toast_rect_for(width, height)?;
+        let s = self.scale_factor;
+        let font_size = layout::CHROME_FONT_SIZE * s;
+        let undo_w = self.measure_ui_text_width(&Self::closed_tab_toast_undo_label(), font_size);
+        let pad_h = 14.0 * s;
+        Some((box_x + box_w - pad_h - undo_w, box_y, undo_w + pad_h * 0.5, box_h))
+    }
+
+    /// 关闭标签撤销 toast 的主文案（渲染与几何同源）。
+    fn closed_tab_toast_label() -> String {
+        match UiLanguage::detect_from_env() {
+            UiLanguage::ZhCn => "标签已关闭".to_string(),
+            UiLanguage::EnUs => "Tab closed".to_string(),
+        }
+    }
+
+    /// 关闭标签撤销 toast 的动作文案（渲染与几何同源）。
+    fn closed_tab_toast_undo_label() -> String {
+        match UiLanguage::detect_from_env() {
+            UiLanguage::ZhCn => "撤销".to_string(),
+            UiLanguage::EnUs => "Undo".to_string(),
+        }
+    }
+
     /// 浮动下载面板外框（物理像素）。有活动下载时高度随行数增长（T8），
     /// 完成视图保持固定高度。
     pub(crate) fn download_panel_rect_for(&self, width: u32, height: u32) -> (f32, f32, f32, f32) {
@@ -2084,6 +2157,9 @@ impl BrowserApp {
             }
             "zero://downloads" => self.open_downloads_page(),
             "zero://bookmarks" => self.open_bookmarks_page(),
+            // 导入页（设置页「导入书签」入口；F5 刷新走这里而非 try_apply_internal_url，
+            // 同历史页模式）。apply 为一次性动作 URL，不进刷新分派。
+            "zero://bookmarks/import" => self.open_bookmarks_import_page(None),
             // 书签页过滤/编辑/删除/保存路由与地址栏入口共用同一分派（F5 刷新与
             // 渲染端表单 GET 提交走这里而非 try_apply_internal_url，同历史页模式）。
             u if u.starts_with("zero://bookmarks?")
@@ -2176,6 +2252,12 @@ impl BrowserApp {
 
         tracing::info!("Navigating to: {method} {url}");
 
+        // 离开当前历史条目前保存滚动位置（back/forward 回到时恢复，Chrome 同款）。
+        // 新导航使任何挂起的 back/forward 恢复失效（该条目将按新访问从顶部开始）。
+        self.pending_scroll_restore = None;
+        if let Some(tab_id) = self.shell.active_tab_id() {
+            self.save_history_scroll(tab_id);
+        }
         self.shell.navigate(&url);
         self.address_bar.set_text(url.clone());
         self.autocomplete.clear();
@@ -2189,8 +2271,12 @@ impl BrowserApp {
         };
         self.ensure_webview(tab_id);
 
-        // 重置滚动偏移与页面选区
+        // 重置滚动偏移与页面选区。新条目从顶部开始：清除该索引位可能残留的
+        // 旧偏移（前进历史被截断后索引会被新条目复用）。
         self.scroll.insert(tab_id, TabScrollState::default());
+        if let Some(index) = self.shell.tab(tab_id).map(|t| t.history_index()) {
+            self.history_scroll.remove(&(tab_id, index));
+        }
         self.scroll_anim.remove(&tab_id);
         self.page_selection.remove(&tab_id);
         self.clear_tab_favicon(tab_id);
@@ -2515,6 +2601,12 @@ impl BrowserApp {
             self.scroll.remove(&tab_id);
             self.scroll_anim.remove(&tab_id);
             self.shell.close_tab(tab_id);
+            self.on_tab_closed_show_undo_toast(tab_id);
+            // Chrome 行为：关闭标签后焦点落到相邻标签的页面内容，地址栏失焦——
+            // 否则编辑中的地址栏文本残留，键入继续进地址栏而非新活跃标签。
+            self.address_bar_focused = false;
+            self.address_bar_ime_preedit.clear();
+            self.autocomplete.clear();
 
             if self.shell.is_empty() {
                 self.new_tab(None);
@@ -2534,11 +2626,65 @@ impl BrowserApp {
         self.scroll_anim.remove(&id);
         self.background_tab_titles.remove(&id);
         self.shell.close_tab(id);
+        self.on_tab_closed_show_undo_toast(id);
+        // 与 close_active_tab 同款地址栏失焦（Chrome 行为，见该处注释）。
+        self.address_bar_focused = false;
+        self.address_bar_ime_preedit.clear();
+        self.autocomplete.clear();
 
         if self.shell.is_empty() {
             self.new_tab(None);
         }
 
+        self.update_address_bar_from_active_tab();
+        self.needs_redraw = true;
+    }
+
+    /// 关闭标签后的收尾：启动撤销 toast、清理该标签的按历史条目滚动缓存。
+    /// 多标签批量关闭（关闭其他/右侧）不弹 toast——撤销一次只恢复一个，
+    /// 提示会误导（栈里已入账，Ctrl+Shift+T 仍可逐个恢复）。
+    fn on_tab_closed_show_undo_toast(&mut self, id: TabId) {
+        self.history_scroll.retain(|(tab_id, _), _| *tab_id != id);
+        if matches!(self.pending_scroll_restore, Some((closed, _)) if closed == id) {
+            self.pending_scroll_restore = None;
+        }
+        self.closed_tab_toast = Some(Instant::now());
+    }
+
+    /// 恢复最近关闭的标签（Ctrl+Shift+T / 撤销 toast 共用）。返回是否恢复成功。
+    ///
+    /// shell 侧建标签并入账导航；app 侧须补齐 renderer 装载与 UI 同步——
+    /// 与 [`Self::new_tab`] 同理：shell 记 URL 不等于 renderer 开始装载。
+    pub fn reopen_last_closed_tab(&mut self) -> bool {
+        let Some(new_id) = self.shell.reopen_last_closed_tab() else {
+            return false;
+        };
+        self.finish_reopen_closed_tab(new_id);
+        true
+    }
+
+    /// 恢复菜单「最近关闭的标签」点选的指定 URL 标签。返回是否恢复成功。
+    pub fn reopen_closed_tab_by_url(&mut self, url: &str) -> bool {
+        let Some(new_id) = self.shell.reopen_closed_by_url(url) else {
+            return false;
+        };
+        self.finish_reopen_closed_tab(new_id);
+        true
+    }
+
+    /// 补齐恢复标签的 app 侧装载与 UI 同步（两类恢复入口的共享路径）。
+    fn finish_reopen_closed_tab(&mut self, new_id: TabId) {
+        self.closed_tab_toast = None;
+        self.tabs.ensure_tab(new_id);
+        self.scroll.insert(new_id, TabScrollState::default());
+        if let Some(url) = self.shell.tab(new_id).and_then(|t| t.url().map(str::to_string)) {
+            // 地址栏同款标签级装载路径（zero:// 内部页由 load_local_tab_url 分派）。
+            self.start_tab_request(new_id, url, "GET".to_string(), None);
+        } else {
+            self.load_welcome_page(new_id);
+        }
+        self.tabs.on_active_tab_changed(self.shell.active_tab_id());
+        self.sync_webview_viewport();
         self.update_address_bar_from_active_tab();
         self.needs_redraw = true;
     }
@@ -2570,6 +2716,11 @@ impl BrowserApp {
             self.scroll_anim.remove(&tid);
         }
         self.shell.close_other_tabs(id);
+        self.history_scroll
+            .retain(|(tab_id, _), _| self.shell.tab(*tab_id).is_some());
+        if matches!(self.pending_scroll_restore, Some((closed, _)) if self.shell.tab(closed).is_none()) {
+            self.pending_scroll_restore = None;
+        }
 
         if self.shell.is_empty() {
             self.new_tab(None);
@@ -2604,6 +2755,11 @@ impl BrowserApp {
             self.scroll_anim.remove(&tid);
         }
         self.shell.close_tabs_to_right(id);
+        self.history_scroll
+            .retain(|(tab_id, _), _| self.shell.tab(*tab_id).is_some());
+        if matches!(self.pending_scroll_restore, Some((closed, _)) if self.shell.tab(closed).is_none()) {
+            self.pending_scroll_restore = None;
+        }
 
         if self.shell.is_empty() {
             self.new_tab(None);
@@ -2707,20 +2863,9 @@ impl BrowserApp {
         self.needs_redraw = true;
     }
 
-    /// 查看当前标签页 HTML 源代码。
-    pub fn view_page_source(&mut self, tab_id: TabId) {
-        let Some(html) = self.tabs.page_html(tab_id) else {
-            return;
-        };
-        let source_url = self.tabs.page_url(tab_id).unwrap_or_else(|| "about:blank".to_string());
-        let view_url = format!("view-source:{source_url}");
-        let page = pages::generate_view_source_page(&source_url, &html);
-        self.open_internal_document_tab(page, &view_url, "查看源代码");
-    }
-
     /// 地址栏 `view-source:<url>` 入口：后台线程抓取目标内容，主循环 poll 到结果后
     /// 以内页展示源码（参照 favicon_fetch 异步模式；抓取线程自带 30s 超时，事件
-    /// 循环不再被慢/黑洞目标阻塞）。
+    /// 循环不再被慢/黑洞目标阻塞）。右键菜单「查看源代码」经同一入口。
     ///
     /// 内层 URL 与地址栏普通输入走同一 normalize 路径，因此
     /// `view-source:127.0.0.1:8080/x` 等无 scheme 简写同样生效。
@@ -2789,6 +2934,9 @@ impl BrowserApp {
     }
 
     pub fn go_back(&mut self) {
+        if let Some(tab_id) = self.shell.active_tab_id() {
+            self.save_history_scroll(tab_id);
+        }
         if !self.shell.go_back() {
             return;
         }
@@ -2800,12 +2948,16 @@ impl BrowserApp {
 
         self.address_bar.set_text(url.clone());
         let tab_id = self.shell.active_tab_id().unwrap();
+        self.restore_history_scroll(tab_id);
 
         self.start_tab_load(tab_id, url);
     }
 
     /// 执行前进导航
     pub fn go_forward(&mut self) {
+        if let Some(tab_id) = self.shell.active_tab_id() {
+            self.save_history_scroll(tab_id);
+        }
         if !self.shell.go_forward() {
             return;
         }
@@ -2817,8 +2969,76 @@ impl BrowserApp {
 
         self.address_bar.set_text(url.clone());
         let tab_id = self.shell.active_tab_id().unwrap();
+        self.restore_history_scroll(tab_id);
 
         self.start_tab_load(tab_id, url);
+    }
+
+    /// 离开历史条目前保存当前滚动偏移（按 `(标签 id, 历史索引)` 记账）。
+    fn save_history_scroll(&mut self, tab_id: TabId) {
+        let Some(index) = self.shell.tab(tab_id).map(|t| t.history_index()) else {
+            return;
+        };
+        if let Some(state) = self.scroll.get(&tab_id) {
+            self.history_scroll.insert((tab_id, index), state.y);
+        }
+    }
+
+    /// 回到历史条目（back/forward）时恢复该条目的滚动偏移；
+    /// 无记录（首次访问）则从顶部开始。有记录时挂起待页面装载完成后落地——
+    /// 立即写入会在新文档布局就绪前被每帧的 clamp_tab_scroll 压回 0。
+    fn restore_history_scroll(&mut self, tab_id: TabId) {
+        let y = self
+            .shell
+            .tab(tab_id)
+            .map(|t| t.history_index())
+            .and_then(|index| self.history_scroll.get(&(tab_id, index)).copied());
+        self.scroll_anim.remove(&tab_id);
+        match y {
+            Some(y) if y > 0.0 => {
+                self.pending_scroll_restore = Some((tab_id, y));
+                self.scroll.insert(tab_id, TabScrollState::default());
+            }
+            _ => {
+                self.pending_scroll_restore = None;
+                self.scroll.insert(tab_id, TabScrollState::default());
+            }
+        }
+        self.needs_redraw = true;
+    }
+
+    /// 落地待应用的滚动恢复（页面装载完成时调用）：按当前文档布局钳制后写入。
+    fn apply_pending_scroll_restore(&mut self, tab_id: TabId) {
+        let Some((pending_tab, y)) = self.pending_scroll_restore else {
+            return;
+        };
+        if pending_tab != tab_id {
+            return;
+        }
+        self.pending_scroll_restore = None;
+        let max_scroll_y = self.page_scroll_layout(tab_id).max_scroll_y;
+        let state = self.tab_scroll_state(tab_id);
+        self.scroll.insert(
+            tab_id,
+            TabScrollState {
+                x: state.x,
+                y: y.min(max_scroll_y),
+            },
+        );
+        self.needs_redraw = true;
+    }
+
+    /// 单元测试面：back/forward 后的待应用滚动恢复（None = 无挂起恢复）。
+    #[cfg(test)]
+    pub fn pending_scroll_restore_for_test(&self) -> Option<(TabId, f32)> {
+        self.pending_scroll_restore
+    }
+
+    /// 单元测试面：手动落地待应用恢复（stub worker 无 page_loaded 事件，
+    /// 真实事件驱动路径由 ui_driver e2e 覆盖）。
+    #[cfg(test)]
+    pub fn apply_pending_scroll_restore_for_test(&mut self, tab_id: TabId) {
+        self.apply_pending_scroll_restore(tab_id);
     }
 
     /// 打开设置页面（about:preferences）
@@ -2854,24 +3074,26 @@ impl BrowserApp {
     /// 下载落盘 + 下载管理器记账（backend 拦截 Content-Disposition: attachment 或
     /// 顶层文档导航的不可内联 Content-Type 后经 TabManager 转交）。整包到达 →
     /// 进度两跳（0/N → N/N），状态链 Pending → Downloading → Completed。
-    fn save_attachment_download(&mut self, download: crate::process_backend::PendingAttachmentDownload) {
+    /// 附件拦截 / 图片另存为 / 页面另存为共用此路径（app_image_save.rs 等）。
+    pub(crate) fn save_attachment_download(&mut self, download: crate::process_backend::PendingAttachmentDownload) {
         let total = download.body.len() as u64;
-        let id = self
-            .shell
-            .downloads_mut()
-            .start_download(&download.url, &download.filename);
+        // D1：同名文件不静默覆盖——落盘前在扩展名前追加 " (n)"（Chrome 惯例），
+        // 下载管理器与完成提示都记实际落盘名。
+        let filename =
+            crate::process_backend::dedupe_download_filename(&self.download_target_dir(), &download.filename);
+        let id = self.shell.downloads_mut().start_download(&download.url, &filename);
         self.shell.downloads_mut().update_progress(id, 0, Some(total));
-        let path = self.download_target_dir().join(&download.filename);
+        let path = self.download_target_dir().join(&filename);
         let write_result = std::fs::write(&path, &download.body);
         match write_result {
             Ok(()) => {
                 self.shell.downloads_mut().mark_completed(id);
                 // 下载完成 toast（3 秒自动消失；渲染层清除）。
-                self.download_toast = Some((download.filename.clone(), Instant::now()));
+                self.download_toast = Some((filename.clone(), Instant::now()));
                 tracing::info!(
                     "SMOKE_EVENT component=browser event=download_completed tab={} file={} bytes={} path={}",
                     download.tab_id.0,
-                    download.filename,
+                    filename,
                     total,
                     path.display()
                 );
@@ -3017,10 +3239,51 @@ impl BrowserApp {
         self.open_internal_list_page(&url, html, "Bookmarks");
     }
 
-    /// 处理书签管理页内部动作 URL（过滤 / 编辑表单 / 删除 / 保存提交）。
+    /// 打开书签导入页（`zero://bookmarks/import`；设置页「导入书签」入口）。
+    /// `outcome` 非空时展示上一次导入结果。
+    fn open_bookmarks_import_page(&mut self, outcome: Option<pages::BookmarkImportOutcome>) {
+        let html = pages::generate_bookmarks_import_html(outcome.as_ref());
+        self.open_internal_list_page("zero://bookmarks/import", html, "Bookmarks");
+    }
+
+    /// 从剪贴板导入书签（`zero://bookmarks/import/apply`）。
+    ///
+    /// 剪贴板文本按 Netscape bookmark 格式解析（[`pages::parse_bookmarks_import_html`]），
+    /// 解析出的条目经 shell 合并（URL 去重、文件夹同名复用、快照上限内截断），
+    /// 完成后回导入页展示结果；书签栏随 shell 状态刷新。
+    fn apply_bookmarks_import(&mut self) {
+        let outcome = match crate::clipboard::read_text() {
+            Some(text) => {
+                let entries = pages::parse_bookmarks_import_html(&text);
+                if entries.is_empty() {
+                    tracing::info!("bookmarks import: no entries parsed from clipboard");
+                    pages::BookmarkImportOutcome::NoEntries
+                } else {
+                    let (added, skipped) = self.shell.import_bookmarks(&entries);
+                    tracing::info!("bookmarks import: added={added} skipped={skipped}");
+                    pages::BookmarkImportOutcome::Imported { added, skipped }
+                }
+            }
+            None => {
+                tracing::warn!("bookmarks import: clipboard unavailable");
+                pages::BookmarkImportOutcome::ClipboardUnavailable
+            }
+        };
+        self.open_bookmarks_import_page(Some(outcome));
+    }
+
+    /// 处理书签管理页内部动作 URL（过滤 / 编辑表单 / 删除 / 保存提交 / 导入）。
     ///
     /// `zero://bookmarks` 精确路径不在此处理（列表页经 [`Self::load_local_tab_url`] 装载）。
     fn try_apply_bookmarks_url(&mut self, url: &str) -> bool {
+        if url == "zero://bookmarks/import" {
+            self.open_bookmarks_import_page(None);
+            return true;
+        }
+        if url == "zero://bookmarks/import/apply" {
+            self.apply_bookmarks_import();
+            return true;
+        }
         if let Some(rest) = url.strip_prefix("zero://bookmarks?q=") {
             // 搜索框 GET 提交 / 地址栏直输：按过滤词重开书签页。
             let query = pages::percent_decode_form_value(rest);

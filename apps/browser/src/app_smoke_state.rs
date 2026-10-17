@@ -24,6 +24,23 @@ impl BrowserApp {
         self.address_bar.text()
     }
 
+    /// 演示流用：地址栏是否处于编辑聚焦态（T50 关闭标签失焦断言面）。
+    pub fn smoke_address_bar_focused(&self) -> bool {
+        self.address_bar_focused
+    }
+
+    /// 演示流用：标签栏「+」新标签按钮矩形 `(x, y, w, h)`（物理像素；T52 右键
+    /// 菜单验证的点击定位源，与 new_tab_button_x 布局同源）。
+    pub fn smoke_new_tab_button_rect(&self) -> (f32, f32, f32, f32) {
+        let s = self.scale_factor;
+        (
+            self.new_tab_button_x(),
+            layout::TAB_BAR_TOP_INSET * s,
+            layout::NEW_TAB_BTN_WIDTH * s,
+            layout::TAB_BAR_HEIGHT * s,
+        )
+    }
+
     /// 演示流用：标签在标签条中的 `(x, width)` 布局（帧渲染时随 build_scene 刷新）。
     pub fn smoke_tab_rect(&self, tab_id: zero_browser_shell::TabId) -> Option<(f32, f32)> {
         self.tab_layout
@@ -87,6 +104,12 @@ impl BrowserApp {
     pub fn smoke_download_toast(&self) -> Option<String> {
         self.download_toast_rect_for(self.physical_size.0, self.physical_size.1)?;
         Some(self.download_toast.as_ref()?.0.clone())
+    }
+
+    /// 演示流用：关闭标签撤销 toast 当前文案（5 秒显示窗口内；None = 未显示）。
+    pub fn smoke_closed_tab_toast(&self) -> Option<String> {
+        self.closed_tab_toast_rect_for(self.physical_size.0, self.physical_size.1)?;
+        Some(Self::closed_tab_toast_label())
     }
 
     /// 演示流用：压缩标签悬停 tooltip 内容 `(标题, URL)`（延迟到期后；None = 未显示）。
@@ -241,6 +264,15 @@ impl BrowserApp {
             .collect()
     }
 
+    /// 演示流用：全库书签列表 `(title, url)`（含文件夹内条目；书签导入断言）。
+    pub fn smoke_bookmarks_all(&self) -> Vec<(String, String)> {
+        self.shell
+            .bookmarks()
+            .iter()
+            .map(|bm| (bm.title().to_string(), bm.url().to_string()))
+            .collect()
+    }
+
     /// 演示流用：历史条目数。
     pub fn smoke_history_len(&self) -> usize {
         self.shell.history().len()
@@ -284,6 +316,12 @@ impl BrowserApp {
             .active_tab_id()
             .and_then(|id| self.tabs.focused_event_target(id))
             .map(str::to_string)
+    }
+
+    /// 演示流用：标签页面 HTML 快照（TV-2 view-source 内页内容断言面）。注意
+    /// 多进程管线 IPC 不携带 HTML，该快照仅进程内 worker（测试/stub）可达。
+    pub fn smoke_tab_html(&self, tab_id: zero_browser_shell::TabId) -> Option<String> {
+        self.tabs.page_html(tab_id)
     }
 
     /// 演示流用：地址栏前导 shield/lock slot 矩形（站点信息图标点击定位）。

@@ -922,6 +922,104 @@ fn ctrl_tab_updates_address_bar_to_active_tab() {
     assert_eq!(app.address_bar_text(), "http://two.test/b.html");
 }
 
+/// Ctrl+Shift+Tab 应向反方向循环标签（正向由 ctrl_tab_cycles_to_next_tab 覆盖）。
+#[test]
+fn ctrl_shift_tab_cycles_to_previous_tab() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    let first = app.shell.active_tab_id().unwrap();
+    app.new_tab(None);
+    let second = app.shell.active_tab_id().unwrap();
+
+    // Ctrl+Shift+Tab 从第二个标签回绕到第一个。
+    app.handle_key("Control", true, None);
+    app.handle_key("Shift", true, None);
+    app.handle_key("Tab", true, None);
+    assert_eq!(app.shell.active_tab_id().unwrap(), first);
+
+    // 再按回到第二个（循环）。
+    app.handle_key("Tab", true, None);
+    assert_eq!(app.shell.active_tab_id().unwrap(), second);
+
+    app.handle_key("Shift", false, None);
+    app.handle_key("Control", false, None);
+}
+
+/// 页面内容区中键点击链接 → 后台新标签打开，活跃标签不变（Chrome/Firefox 标配交互）。
+/// href 为文档相对路径时按当前文档 URL 解析（与 Ctrl+点击路径同源）。
+#[test]
+fn middle_click_page_link_opens_background_tab() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (800, 600);
+    app.scale_factor = 1.0;
+    let first = app.shell.active_tab_id().unwrap();
+    app.ensure_webview(first);
+    // shell.navigate 设置 shell 侧文档 URL（相对 href 解析的 base），再注入页面内容。
+    app.shell.navigate("https://example.com/docs/index.html");
+    app.load_webview_html(
+        first,
+        r#"<html><body style="margin:0"><a href="target.html" style="display:block;padding:10px">Example</a></body></html>"#,
+        None,
+    );
+
+    // 链接 display:block 铺满首行，内容区左上角即命中
+    // （与 floating_link_status_shows_on_link_hover 同坐标基准）。
+    let (cx, cy, _, _) = app.page_content_rect();
+    app.handle_mouse_click((cx + 50.0) as f64, (cy + 25.0) as f64, true, "Middle");
+    app.handle_mouse_click((cx + 50.0) as f64, (cy + 25.0) as f64, false, "Middle");
+
+    assert_eq!(app.smoke_tab_ids().len(), 2, "middle click on link must open a new tab");
+    assert_eq!(
+        app.smoke_active_tab_id(),
+        Some(first),
+        "middle click must open the link in a background tab"
+    );
+    let opened = app
+        .smoke_tab_ids()
+        .into_iter()
+        .find(|&id| id != first)
+        .and_then(|id| app.smoke_tab_url(id));
+    assert_eq!(
+        opened.as_deref(),
+        Some("https://example.com/docs/target.html"),
+        "relative href must resolve against the document URL"
+    );
+}
+
+/// 地址栏 Alt+Enter：在后台新标签打开输入 URL，当前标签不变、地址栏恢复当前标签 URL。
+#[test]
+fn alt_enter_in_address_bar_opens_background_tab() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    let first = app.shell.active_tab_id().unwrap();
+    app.shell.navigate("http://one.test/a.html");
+
+    // Ctrl+L 聚焦地址栏，逐字键入 URL（真实键路径）。
+    app.handle_key("Control", true, None);
+    app.handle_key("l", true, None);
+    app.handle_key("Control", false, None);
+    assert!(app.address_bar_focused, "Ctrl+L must focus the address bar");
+    for ch in "http://two.test/b.html".chars() {
+        app.handle_key(&ch.to_string(), true, None);
+    }
+
+    // Alt+Enter → 后台新标签。
+    app.handle_key("Alt", true, None);
+    app.handle_key("Enter", true, None);
+    app.handle_key("Alt", false, None);
+
+    assert_eq!(app.smoke_tab_ids().len(), 2, "Alt+Enter must open a new tab");
+    assert_eq!(
+        app.smoke_active_tab_id(),
+        Some(first),
+        "Alt+Enter must not switch the active tab"
+    );
+    assert!(!app.address_bar_focused, "address bar must unfocus after Alt+Enter");
+    assert_eq!(
+        app.address_bar_text(),
+        "http://one.test/a.html",
+        "address bar must show the unchanged active tab URL after Alt+Enter"
+    );
+}
+
 /// Ctrl+H 应打开历史页。
 #[test]
 fn ctrl_h_opens_history_page() {
@@ -5287,4 +5385,672 @@ fn address_bar_focus_and_editing_reset_cursor_blink_phase() {
     app.handle_key("a", false, None);
     let edited_phase = app.address_bar_cursor_phase_for_test();
     assert!(edited_phase > focused_phase, "地址栏按键应重置光标闪烁相位");
+}
+
+/// t47：关闭标签撤销 toast——关闭标签弹出底部 toast（5 秒窗口内可见），
+/// 点击「撤销」动作经真实点击路径恢复标签（shell recently_closed 栈弹出 +
+/// renderer 装载派发 + 地址栏同步），toast 随之清除。
+#[test]
+fn closed_tab_undo_toast_reopens_closed_tab() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+
+    let first = app.shell.active_tab_id().unwrap();
+    app.new_tab(Some("http://127.0.0.1:18080/page2.html"));
+    let second = app.shell.active_tab_id().unwrap();
+    assert_eq!(app.smoke_tab_ids().len(), 2);
+    assert!(app.smoke_closed_tab_toast().is_none(), "未关标签前无撤销 toast");
+
+    // 关闭活跃标签（第 2 个）→ 撤销 toast 可见。
+    app.close_active_tab();
+    assert_eq!(app.smoke_tab_ids().len(), 1);
+    let label = app.smoke_closed_tab_toast().expect("关闭标签后应显示撤销 toast");
+    assert!(!label.is_empty(), "toast 文案不应为空");
+    let (ux, uy, uw, uh) = app
+        .closed_tab_toast_undo_rect_for(1280, 900)
+        .expect("toast 可见时撤销命中区应存在");
+    assert!(uw > 0.0 && uh > 0.0, "撤销命中区应有面积");
+
+    // 经真实点击路径点击「撤销」→ 标签恢复（新标签承接原 URL）为活跃。
+    let (cx, cy) = ((ux + uw / 2.0) as f64, (uy + uh / 2.0) as f64);
+    app.handle_mouse_click(cx, cy, true, "Left");
+    app.handle_mouse_click(cx, cy, false, "Left");
+    assert_eq!(app.smoke_tab_ids().len(), 2, "撤销后应恢复为 2 个标签");
+    let restored = app.shell.active_tab_id().unwrap();
+    assert_ne!(restored, second, "恢复标签是新标签，不复用原 id");
+    assert_ne!(restored, first, "恢复标签应切换为活跃");
+    assert_eq!(
+        app.shell.tab(restored).and_then(|t| t.url()),
+        Some("http://127.0.0.1:18080/page2.html"),
+        "恢复的标签应保留原 URL"
+    );
+    assert_eq!(
+        app.smoke_address_bar_text(),
+        "http://127.0.0.1:18080/page2.html",
+        "撤销后地址栏应同步到恢复的标签"
+    );
+    assert!(app.smoke_closed_tab_toast().is_none(), "撤销动作后 toast 应清除");
+}
+
+/// t47：Ctrl+Shift+T 路径（app 级 reopen）与撤销 toast 共用 shell
+/// recently_closed 栈，恢复后 toast 清除、栈空后返回 false。
+#[test]
+fn reopen_last_closed_tab_consumes_shell_stack_and_clears_toast() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+
+    let first = app.shell.active_tab_id().unwrap();
+    app.close_active_tab();
+    assert!(app.smoke_closed_tab_toast().is_some());
+    assert!(app.reopen_last_closed_tab(), "栈非空时恢复应成功");
+    assert!(app.smoke_closed_tab_toast().is_none(), "恢复后 toast 应清除");
+    assert_ne!(app.shell.active_tab_id(), Some(first), "恢复标签是新标签并切为活跃");
+    assert!(!app.reopen_last_closed_tab(), "栈空后恢复应返回 false");
+    assert!(app.smoke_closed_tab_toast().is_none(), "栈空恢复失败时不应误弹 toast");
+}
+
+/// t48 测试辅助：注入足够高的文档快照（stub 无渲染，apply 落地时按文档钳制）。
+fn inject_scrollable_doc(app: &mut BrowserApp, tab: TabId) {
+    use crate::tab_snapshot::PageRenderResult;
+    let mut primitives = RenderPrimitives::new();
+    // 有高度的内容图元：painted 高度取图元扫描与布局高度的最小值，空图元会钳到 0。
+    primitives.add_fill(Rect::new(0.0, 0.0, 800.0, 5000.0), Color::rgb(240, 240, 240));
+    app.inject_tab_render_for_test(
+        tab,
+        PageRenderResult {
+            primitives,
+            dirty_rects: Vec::new(),
+        },
+        5000.0,
+    );
+}
+
+/// t48：back/forward 滚动位置保持——离开历史条目前保存偏移，返回时在页面
+/// 装载完成后恢复，前进回到新导航条目时从顶部开始（Chrome 同款会话内滚动保持）。
+/// 恢复经 page_loaded 落地（poll_tab_fetch 驱动），避免空白文档期被 clamp 压回 0。
+#[test]
+fn back_forward_restores_per_entry_scroll_offset() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    let tab = app.shell.active_tab_id().unwrap();
+
+    app.navigate_to("http://127.0.0.1:18080/index.html");
+    app.set_tab_scroll_for_test(tab, page_scroll::TabScrollState { x: 0.0, y: 500.0 });
+
+    // 前往第二页：滚动复位到顶部。
+    app.navigate_to("http://127.0.0.1:18080/page2.html");
+    assert_eq!(app.smoke_scroll_offset_y(), 0.0, "新导航应从页面顶部开始");
+
+    // 返回第一页：恢复挂起到页面装载完成（stub 无 page_loaded，手动落地；
+    // 真实事件驱动时机由 ui_driver e2e 覆盖）。
+    app.go_back();
+    assert_eq!(
+        app.pending_scroll_restore_for_test(),
+        Some((tab, 500.0)),
+        "返回后应挂起 500 的滚动恢复"
+    );
+    assert_eq!(
+        app.smoke_scroll_offset_y(),
+        0.0,
+        "装载完成前滚动应停在顶部（防空白文档期 clamp）"
+    );
+    inject_scrollable_doc(&mut app, tab);
+    app.apply_pending_scroll_restore_for_test(tab);
+    assert_eq!(app.smoke_scroll_offset_y(), 500.0, "落地后应恢复原滚动位置");
+
+    // 前进回第二页：恢复离开时的 0（顶部，不挂起）。
+    app.go_forward();
+    assert_eq!(app.pending_scroll_restore_for_test(), None);
+    assert_eq!(app.smoke_scroll_offset_y(), 0.0, "前进应恢复离开时的偏移");
+
+    // 二次往返且滚动变化后再次返回：取最新保存值。
+    app.set_tab_scroll_for_test(tab, page_scroll::TabScrollState { x: 0.0, y: 260.0 });
+    app.go_back();
+    assert_eq!(app.pending_scroll_restore_for_test(), Some((tab, 500.0)));
+    inject_scrollable_doc(&mut app, tab);
+    app.apply_pending_scroll_restore_for_test(tab);
+    assert_eq!(app.smoke_scroll_offset_y(), 500.0, "再次返回仍应恢复第一页的 500");
+    app.set_tab_scroll_for_test(tab, page_scroll::TabScrollState { x: 0.0, y: 260.0 });
+    app.go_forward();
+    assert_eq!(app.pending_scroll_restore_for_test(), Some((tab, 260.0)));
+    inject_scrollable_doc(&mut app, tab);
+    app.apply_pending_scroll_restore_for_test(tab);
+    assert_eq!(app.smoke_scroll_offset_y(), 260.0, "前进应恢复第二页最新保存的 260");
+}
+
+/// t48：无保存记录的条目（首次访问）返回时从顶部开始，不残留其他条目偏移。
+#[test]
+fn back_to_never_visited_entry_starts_at_top() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    let tab = app.shell.active_tab_id().unwrap();
+
+    app.navigate_to("http://127.0.0.1:18080/index.html");
+    app.set_tab_scroll_for_test(tab, page_scroll::TabScrollState { x: 0.0, y: 500.0 });
+    app.navigate_to("http://127.0.0.1:18080/page2.html");
+    app.set_tab_scroll_for_test(tab, page_scroll::TabScrollState { x: 0.0, y: 300.0 });
+
+    app.go_back();
+    assert_eq!(app.pending_scroll_restore_for_test(), Some((tab, 500.0)));
+    inject_scrollable_doc(&mut app, tab);
+    app.apply_pending_scroll_restore_for_test(tab);
+    assert_eq!(app.smoke_scroll_offset_y(), 500.0);
+    app.go_forward();
+    assert_eq!(app.pending_scroll_restore_for_test(), Some((tab, 300.0)));
+    inject_scrollable_doc(&mut app, tab);
+    app.apply_pending_scroll_restore_for_test(tab);
+    assert_eq!(app.smoke_scroll_offset_y(), 300.0, "第二页离开前的 300 应被保存");
+}
+
+/// T50：Ctrl+W 关闭标签后地址栏失焦——关闭前 Ctrl+L 聚焦输入的编辑态不残留，
+/// 键入直达新活跃标签页面而非继续进地址栏（Chrome 行为：焦点落到相邻标签）。
+#[test]
+fn close_active_tab_blurs_address_bar_editing_state() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    app.new_tab(Some("https://zw-focus.test/first.html"));
+    app.new_tab(Some("https://zw-focus.test/second.html"));
+
+    // Ctrl+L 聚焦地址栏并输入文字（不回车）——编辑态悬挂在地址栏。
+    let mod_key = BrowserApp::test_modifier_key_name();
+    app.handle_key(mod_key, true, None);
+    app.handle_key("l", true, None);
+    app.handle_key("l", false, None);
+    app.handle_key(mod_key, false, None);
+    for ch in "hello".chars() {
+        app.handle_key(&ch.to_string(), true, None);
+        app.handle_key(&ch.to_string(), false, None);
+    }
+    assert!(app.address_bar_focused, "前置：Ctrl+L 后地址栏应聚焦");
+
+    // Ctrl+W 关闭活跃标签 → 地址栏失焦并回填相邻标签 URL。
+    app.handle_key(mod_key, true, None);
+    app.handle_key("w", true, None);
+    app.handle_key("w", false, None);
+    app.handle_key(mod_key, false, None);
+
+    // 默认标签 + 2 个新标签 = 3，关闭活跃后余 2。
+    assert_eq!(app.shell.tab_count(), 2, "Ctrl+W 应关闭活跃标签");
+    assert!(!app.address_bar_focused, "关闭标签后地址栏应失焦");
+    assert_eq!(
+        app.smoke_address_bar_text(),
+        "https://zw-focus.test/first.html",
+        "地址栏应回填相邻标签（左侧优先）URL"
+    );
+
+    // 关闭后键入直达页面，不再进地址栏（可直接键入导航的前置条件）。
+    app.handle_key("x", true, None);
+    app.handle_key("x", false, None);
+    assert_eq!(
+        app.smoke_address_bar_text(),
+        "https://zw-focus.test/first.html",
+        "关闭标签后键入不应再进地址栏"
+    );
+}
+
+/// T51：页面「另存为」文件名推导——URL 末段（query/fragment 剥离），目录型
+/// URL 回退 index，无 .html/.htm 扩展名补 .html（清洗规则同附件命名）。
+#[test]
+fn save_page_filename_derives_from_url_path() {
+    use crate::pages::save_page_filename;
+    assert_eq!(save_page_filename("http://127.0.0.1:18080/index.html"), "index.html");
+    assert_eq!(save_page_filename("https://example.com/docs/page2"), "page2.html");
+    assert_eq!(save_page_filename("https://example.com/a/b.htm?q=1#frag"), "b.htm");
+    // 路径末段为空（目录型 URL）回退 index；裸 authority（无路径）末段即主机名。
+    assert_eq!(save_page_filename("https://example.com/"), "index.html");
+    assert_eq!(save_page_filename("https://example.com/dir/"), "index.html");
+    assert_eq!(save_page_filename("https://example.com"), "example.com.html");
+}
+
+/// T51：页面右键菜单「另存为」——Page 菜单项点击后经后台抓取（与图片另存为
+/// 同一基础设施）取当前页面内容，按页面命名规则走 T5 附件下载管线落盘
+/// （下载目录/记账/完成提示与附件下载同源）。抓取走真实网络路径（回环一次性
+/// HTTP 响应线程），无需外部 fixture。
+#[test]
+fn page_context_menu_save_as_writes_page_html_to_download_dir() {
+    // 本地一次性 HTTP 响应线程：读到请求头即回一段固定 HTML。
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+    let port = listener.local_addr().unwrap().port();
+    let page_body = b"<html><head><title>SaveTarget</title></head><body><h1>hello</h1></body></html>".to_vec();
+    let server = std::thread::spawn(move || {
+        let (stream, _) = listener.accept().expect("accept");
+        let mut stream = stream;
+        use std::io::{Read, Write};
+        let mut buf = [0u8; 1024];
+        let _ = stream.read(&mut buf);
+        let _ = stream.write_all(
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                page_body.len()
+            )
+            .into_bytes()
+            .as_slice(),
+        );
+        let _ = stream.write_all(&page_body);
+    });
+    let url = format!("http://127.0.0.1:{port}/page2.html");
+
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    let dir = std::env::temp_dir().join(format!("zw-save-as-test-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    app.shell
+        .apply_settings(|s| s.download_directory = dir.display().to_string());
+
+    // navigate_to 置 shell 标签 URL（另存为可用性与抓取目标都按 shell URL）。
+    app.navigate_to(&url);
+
+    // 右键页面空白区 → Page 菜单含 save_as 且启用。
+    let (cx, cy, _, _) = app.page_content_rect();
+    app.handle_mouse_click((cx + 40.0) as f64, (cy + 40.0) as f64, true, "Right");
+    assert!(app.is_context_menu_visible_for_test(), "右键页面应打开菜单");
+    let ids = app.smoke_context_menu_item_ids();
+    assert!(
+        ids.iter().any(|id| id == "save_as"),
+        "Page 菜单应含「另存为」项，got {ids:?}"
+    );
+    assert_eq!(app.smoke_context_menu_item_enabled("save_as"), Some(true));
+
+    // 菜单原点即右键点（窗口内不翻转），save_as 位于第 5 行（3 个动作行 +
+    // 1 个分隔行之后）——行高累加与 context_menu_hit_test 同源。
+    let s = app.scale_factor;
+    let (mx, my) = app.smoke_context_menu_origin().expect("菜单已开应有原点");
+    let row_h = layout::CONTEXT_MENU_ROW_HEIGHT * s;
+    let sep_h = layout::CONTEXT_MENU_SEPARATOR_HEIGHT * s;
+    let save_cx = (mx + layout::CONTEXT_MENU_WIDTH * s * 0.5) as f64;
+    let save_cy = (my + row_h * 3.0 + sep_h + row_h * 0.5) as f64;
+    app.handle_mouse_click(save_cx, save_cy, true, "Left");
+
+    // 轮询直至后台抓取完成并经下载管线落盘（上限 10s）。
+    let mut saved = false;
+    for _ in 0..1000 {
+        app.poll_tab_fetch();
+        if app
+            .smoke_downloads()
+            .iter()
+            .any(|(_, name, state, _, _)| name == "page2.html" && state == "Completed")
+        {
+            saved = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    server.join().expect("一次性 HTTP 线程应正常结束");
+    assert!(saved, "「另存为」应把页面 HTML 经下载管线落盘");
+
+    // 落盘内容 + 下载记账完成 + 完成提示（与附件下载同口径）。
+    let written = std::fs::read_to_string(dir.join("page2.html")).expect("page2.html 应存在");
+    assert!(written.contains("SaveTarget"), "落盘内容应为抓取到的页面 HTML");
+    assert_eq!(
+        app.smoke_download_toast().as_deref(),
+        Some("page2.html"),
+        "落盘成功应弹下载完成提示"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// T52：右键标签栏「+」按钮弹新标签菜单（新标签 / 无痕标签），点选后按对应
+/// 类型开标签（与「+」左键/中键同一动作路径，地址栏聚焦）。
+#[test]
+fn new_tab_button_right_click_opens_menu_and_creates_tab_types() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    let _ = app.build_scene_for_test(1280, 900);
+    let (btn_x, btn_y, btn_w, btn_h) = app.smoke_new_tab_button_rect();
+    let x = (btn_x + btn_w * 0.5) as f64;
+    let y = (btn_y + btn_h * 0.5) as f64;
+    let count_before = app.shell.tab_count();
+
+    // 右键「+」→ 菜单含两项。
+    app.handle_mouse_click(x, y, true, "Right");
+    assert!(app.is_context_menu_visible_for_test(), "右键「+」应弹菜单");
+    let ids = app.smoke_context_menu_item_ids();
+    assert!(
+        ids.iter().any(|id| id == "plus_new_tab"),
+        "菜单应含「新标签」项，got {ids:?}"
+    );
+    assert!(
+        ids.iter().any(|id| id == "plus_new_incognito_tab"),
+        "菜单应含「无痕标签」项"
+    );
+
+    // 点第一项「新标签」→ 普通标签 + 地址栏聚焦（与左键「+」一致）。
+    let s = app.scale_factor;
+    let row_h = layout::CONTEXT_MENU_ROW_HEIGHT * s;
+    let (mx, my) = app.smoke_context_menu_origin().expect("菜单已开应有原点");
+    app.handle_mouse_click(
+        (mx + layout::CONTEXT_MENU_WIDTH * s * 0.5) as f64,
+        (my + row_h * 0.5) as f64,
+        true,
+        "Left",
+    );
+    assert_eq!(app.shell.tab_count(), count_before + 1, "点「新标签」应开普通标签");
+    assert!(app.address_bar_focused, "新标签应聚焦地址栏（与左键「+」一致）");
+
+    // 再右键「+」点第二项「无痕标签」→ 无痕标签。
+    app.handle_mouse_click(x, y, true, "Right");
+    let (mx, my) = app.smoke_context_menu_origin().expect("菜单已开应有原点");
+    app.handle_mouse_click(
+        (mx + layout::CONTEXT_MENU_WIDTH * s * 0.5) as f64,
+        (my + row_h * 1.5) as f64,
+        true,
+        "Left",
+    );
+    assert_eq!(app.shell.tab_count(), count_before + 2, "点「无痕标签」应再开一个标签");
+    let new_tab_id = app.shell.active_tab_id().unwrap();
+    assert!(app.shell.tab(new_tab_id).unwrap().is_private(), "第二项应开无痕标签");
+}
+
+/// 右键菜单「查看源代码」：经地址栏 view-source: 同一后台抓取入口
+/// （open_view_source_page）开 view-source 内页。多进程管线 IPC 不携带 HTML，
+/// 旧的 page_html 快照路径在真实运行恒无动作；此测试走真实抓取（回环一次性
+/// HTTP 响应线程）验证派发入口到内页的完整链路。
+#[test]
+fn page_context_menu_view_source_opens_view_source_tab_via_fetch() {
+    // 本地一次性 HTTP 响应线程：读到请求头即回一段固定 HTML。
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+    let port = listener.local_addr().unwrap().port();
+    let page_body = b"<html><head><title>SrcTarget</title></head><body><p>body</p></body></html>".to_vec();
+    let server = std::thread::spawn(move || {
+        let (stream, _) = listener.accept().expect("accept");
+        let mut stream = stream;
+        use std::io::{Read, Write};
+        let mut buf = [0u8; 1024];
+        let _ = stream.read(&mut buf);
+        let _ = stream.write_all(
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                page_body.len()
+            )
+            .into_bytes()
+            .as_slice(),
+        );
+        let _ = stream.write_all(&page_body);
+    });
+    let url = format!("http://127.0.0.1:{port}/page2.html");
+
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    app.navigate_to(&url);
+
+    // 右键页面空白区 → Page 菜单含「查看源代码」且启用。
+    let (cx, cy, _, _) = app.page_content_rect();
+    app.handle_mouse_click((cx + 40.0) as f64, (cy + 40.0) as f64, true, "Right");
+    assert!(app.is_context_menu_visible_for_test(), "右键页面应打开菜单");
+    assert_eq!(app.smoke_context_menu_item_enabled("view_source"), Some(true));
+
+    // 点击「查看源代码」行：行中心按分隔行紧凑高度累加（与 context_menu_hit_test
+    // 同源），行序取 smoke_context_menu_item_ids（分隔符以 "-" 占位）。
+    let ids = app.smoke_context_menu_item_ids();
+    let idx = ids
+        .iter()
+        .position(|id| id == "view_source")
+        .expect("Page 菜单应含「查看源代码」项");
+    let s = app.scale_factor;
+    let row_h = layout::CONTEXT_MENU_ROW_HEIGHT * s;
+    let sep_h = layout::CONTEXT_MENU_SEPARATOR_HEIGHT * s;
+    let (mx, my) = app.smoke_context_menu_origin().expect("菜单已开应有原点");
+    let offset: f32 = ids[..idx].iter().map(|id| if id == "-" { sep_h } else { row_h }).sum();
+    app.handle_mouse_click(
+        (mx + layout::CONTEXT_MENU_WIDTH * s * 0.5) as f64,
+        (my + offset + row_h * 0.5) as f64,
+        true,
+        "Left",
+    );
+
+    // 轮询直至后台抓取完成并开出 view-source 内页（上限 10s）。
+    let view_prefix = format!("view-source:{url}");
+    let mut opened = false;
+    for _ in 0..1000 {
+        app.poll_tab_fetch();
+        if app
+            .smoke_tab_url(app.shell.active_tab_id().unwrap())
+            .is_some_and(|tab_url| tab_url.starts_with(&view_prefix))
+        {
+            opened = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    server.join().expect("一次性 HTTP 线程应正常结束");
+    assert!(opened, "「查看源代码」应经后台抓取开出 view-source 内页");
+
+    // TV-2：oracle 强化——URL 前缀无法判别成功/失败（抓取失败也开同 URL 错误页），
+    // 断言成功页含抓取到的源码正文（错误页只有错误文案，二者可判别）。URL 由
+    // begin_navigation 先置，内容快照晚一拍到达，单独轮询等待。
+    let active = app.shell.active_tab_id().unwrap();
+    let mut html: Option<String> = None;
+    for _ in 0..1000 {
+        app.poll_tab_fetch();
+        html = app.smoke_tab_html(active);
+        if html.as_deref().is_some_and(|h| h.contains("SrcTarget")) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(
+        html.as_deref().is_some_and(|h| h.contains("SrcTarget")),
+        "成功页应含源码正文而非错误页，got: {html:?}"
+    );
+}
+
+/// D1：附件管线同名文件不静默覆盖——同目录连存两次同名，第二个实际落盘为
+/// "name (1).ext"，首个内容保持不变（Chrome 惯例）；下载管理器记实际落盘名。
+/// 附件拦截 / 图片另存为 / 页面另存为共用 save_attachment_download 同一路径。
+#[test]
+fn save_attachment_download_dedupes_duplicate_filenames() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    let dir = std::env::temp_dir().join(format!("zw-dedupe-test-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    app.shell
+        .apply_settings(|s| s.download_directory = dir.display().to_string());
+    let tab = app.shell.active_tab_id().unwrap();
+
+    let save = |app: &mut BrowserApp, filename: &str, body: &[u8]| {
+        app.save_attachment_download(crate::process_backend::PendingAttachmentDownload {
+            tab_id: tab,
+            url: format!("https://zw-dedupe.test/{filename}"),
+            filename: filename.to_string(),
+            body: body.to_vec(),
+        });
+    };
+    save(&mut app, "report.pdf", b"first");
+    save(&mut app, "report.pdf", b"second");
+
+    assert_eq!(
+        std::fs::read(dir.join("report.pdf")).unwrap(),
+        b"first",
+        "首个同名文件内容不被覆盖"
+    );
+    assert_eq!(
+        std::fs::read(dir.join("report (1).pdf")).unwrap(),
+        b"second",
+        "第二次落盘应写去重名 report (1).pdf"
+    );
+    assert!(
+        app.smoke_downloads()
+            .iter()
+            .any(|(_, name, state, _, _)| name == "report (1).pdf" && state == "Completed"),
+        "下载管理器应记实际落盘名"
+    );
+
+    // 无扩展名文件名：末尾直接追加 " (n)"。
+    save(&mut app, "NOTES", b"v1");
+    save(&mut app, "NOTES", b"v2");
+    assert_eq!(std::fs::read(dir.join("NOTES")).unwrap(), b"v1");
+    assert_eq!(std::fs::read(dir.join("NOTES (1)")).unwrap(), b"v2");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// D2/D3：view-source: 页与不可保存 scheme 的菜单可用性——view-source: 页上
+/// 查看源代码/检查元素灰显（再点会透传成 view-source:view-source:… 错误内页），
+/// 另存为对非 http(s) 页（view-source:/data: 等）一并灰显（request() 对该类
+/// scheme 静默丢弃，不再留无反馈 no-op）。
+#[test]
+fn context_menu_disables_source_and_save_actions_on_unsaveable_pages() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    let (cx, cy, _, _) = app.page_content_rect();
+    let right_click = |app: &mut BrowserApp| {
+        app.handle_mouse_click((cx + 40.0) as f64, (cy + 40.0) as f64, true, "Right");
+        assert!(app.is_context_menu_visible_for_test(), "右键页面应打开菜单");
+    };
+
+    // view-source: 内页：源码/检查/另存为全部灰显（走既有 disabled 路径）。
+    app.open_internal_document_tab(
+        "<html><body>view-source body</body></html>".to_string(),
+        "view-source:https://zw-d2.test/page.html",
+        "查看源代码",
+    );
+    right_click(&mut app);
+    assert_eq!(
+        app.smoke_context_menu_item_enabled("view_source"),
+        Some(false),
+        "view-source 页上「查看源代码」应灰显"
+    );
+    assert_eq!(
+        app.smoke_context_menu_item_enabled("inspect"),
+        Some(false),
+        "view-source 页上「检查元素」应灰显"
+    );
+    assert_eq!(
+        app.smoke_context_menu_item_enabled("save_as"),
+        Some(false),
+        "view-source 页上「另存为」应灰显"
+    );
+    app.handle_key("Escape", true, None);
+
+    // data: 页：查看源代码仍可用（抓取失败有错误内页反馈），另存为灰显（D3）。
+    app.open_internal_document_tab(
+        "<html><body>data body</body></html>".to_string(),
+        "data:text/html,<b>d</b>",
+        "data",
+    );
+    right_click(&mut app);
+    assert_eq!(
+        app.smoke_context_menu_item_enabled("save_as"),
+        Some(false),
+        "data: 页上「另存为」应灰显"
+    );
+}
+
+/// TV-1：close_tab_by_id 关闭路径（中键关标签）同样使地址栏失焦并回填相邻标签
+/// URL——审查变异证实该路径此前零覆盖（删掉失焦三行无测试失败）。
+#[test]
+fn close_tab_by_id_middle_click_blurs_address_bar() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    app.new_tab(Some("https://zw-tv1.test/first.html"));
+    app.new_tab(Some("https://zw-tv1.test/second.html"));
+    let _ = app.build_scene_for_test(1280, 900);
+    let count_before = app.shell.tab_count();
+    let active = app.shell.active_tab_id().unwrap();
+
+    // Ctrl+L 聚焦地址栏并输入文字（编辑态悬挂）。
+    let mod_key = BrowserApp::test_modifier_key_name();
+    app.handle_key(mod_key, true, None);
+    app.handle_key("l", true, None);
+    app.handle_key("l", false, None);
+    app.handle_key(mod_key, false, None);
+    for ch in "hello".chars() {
+        app.handle_key(&ch.to_string(), true, None);
+        app.handle_key(&ch.to_string(), false, None);
+    }
+    assert!(app.address_bar_focused, "前置：Ctrl+L 后地址栏应聚焦");
+
+    // 中键点击活跃标签 → close_tab_by_id（与 close 按钮同一函数）→ 失焦。
+    let (tx, tw) = app.tab_layout_rect_for_test(active).expect("活跃标签应有布局");
+    let mx = (tx + tw * 0.5) as f64;
+    let my = ((layout::TAB_BAR_TOP_INSET + layout::TAB_BAR_HEIGHT * 0.5) * app.scale_factor) as f64;
+    app.handle_mouse_click(mx, my, true, "Middle");
+    app.handle_mouse_click(mx, my, false, "Middle");
+
+    assert_eq!(app.shell.tab_count(), count_before - 1, "中键应关闭被点的标签");
+    assert!(!app.address_bar_focused, "close_tab_by_id 关闭标签后地址栏应失焦");
+    assert_eq!(
+        app.smoke_address_bar_text(),
+        "https://zw-tv1.test/first.html",
+        "地址栏应回填相邻标签 URL"
+    );
+}
+
+/// TV-3：另存为失败分支——目标返回 404 时记失败下载项并展开下载面板（与图片
+/// 另存为失败同口径），不弹完成提示、不落盘，不静默吞掉。
+#[test]
+fn page_context_menu_save_as_records_failed_download_on_http_error() {
+    // 本地一次性 HTTP 响应线程：返回 404。
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+    let port = listener.local_addr().unwrap().port();
+    let server = std::thread::spawn(move || {
+        let (stream, _) = listener.accept().expect("accept");
+        let mut stream = stream;
+        use std::io::{Read, Write};
+        let mut buf = [0u8; 1024];
+        let _ = stream.read(&mut buf);
+        let _ = stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+    });
+    let url = format!("http://127.0.0.1:{port}/missing.html");
+
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    let dir = std::env::temp_dir().join(format!("zw-save-fail-test-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    app.shell
+        .apply_settings(|s| s.download_directory = dir.display().to_string());
+    app.navigate_to(&url);
+
+    // 右键页面 → 点「另存为」。
+    let (cx, cy, _, _) = app.page_content_rect();
+    app.handle_mouse_click((cx + 40.0) as f64, (cy + 40.0) as f64, true, "Right");
+    let ids = app.smoke_context_menu_item_ids();
+    let idx = ids
+        .iter()
+        .position(|id| id == "save_as")
+        .expect("Page 菜单应含「另存为」项");
+    let s = app.scale_factor;
+    let row_h = layout::CONTEXT_MENU_ROW_HEIGHT * s;
+    let sep_h = layout::CONTEXT_MENU_SEPARATOR_HEIGHT * s;
+    let (mx, my) = app.smoke_context_menu_origin().expect("菜单已开应有原点");
+    let offset: f32 = ids[..idx].iter().map(|id| if id == "-" { sep_h } else { row_h }).sum();
+    app.handle_mouse_click(
+        (mx + layout::CONTEXT_MENU_WIDTH * s * 0.5) as f64,
+        (my + offset + row_h * 0.5) as f64,
+        true,
+        "Left",
+    );
+
+    // 轮询直至抓取失败记账落地（上限 10s）。
+    let mut failed = false;
+    for _ in 0..1000 {
+        app.poll_tab_fetch();
+        if app
+            .smoke_downloads()
+            .iter()
+            .any(|(_, name, state, _, _)| name == "missing.html" && state == "Failed")
+        {
+            failed = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    server.join().expect("一次性 HTTP 线程应正常结束");
+    assert!(failed, "404 应记失败下载项（不静默吞掉）");
+    assert!(app.smoke_download_panel_visible(), "失败时应展开下载面板供用户感知");
+    assert!(app.smoke_download_toast().is_none(), "失败不弹完成提示");
+    assert!(!dir.join("missing.html").exists(), "失败不应落盘");
+
+    let _ = std::fs::remove_dir_all(&dir);
 }

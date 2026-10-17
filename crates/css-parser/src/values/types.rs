@@ -540,6 +540,10 @@ pub enum AlignmentValue {
     End,
     /// baseline。
     Baseline,
+    /// last baseline（css-align-3 §4.2）。基线共享不可行时按 fallback alignment
+    /// 定位（last baseline → safe self-end）；grid item 由 layout-engine 在父
+    /// 上下文处消费，flex/block 维持 Auto 语义（未实现基线共享）。
+    LastBaseline,
 }
 
 /// CSS box-sizing 值。

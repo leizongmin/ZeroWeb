@@ -2778,6 +2778,20 @@ fn rt_float_descendants(doc: &Document, styles: &HashMap<NodeId, ComputedStyle>,
     out
 }
 
+/// R5154 kill-switch 读取：`ZW_GRID_LAST_BASELINE_END=0` 回退 grid item
+/// `align-self: last baseline` 的 fallback-end 接入（css-align-3 §4.2）。
+fn grid_last_baseline_end_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_GRID_LAST_BASELINE_END").as_deref() != Ok("0"))
+}
+
+/// R5158 kill-switch 读取：`ZW_BODY_OVERFLOW_VISIBLE=0` 回退 body→viewport overflow
+/// 传播的 taffy 半边（css-overflow-3 §3.3）。
+fn body_overflow_visible_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_BODY_OVERFLOW_VISIBLE").as_deref() != Ok("0"))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build_subtree(
     ctx: &mut BuildContext,
@@ -2813,6 +2827,28 @@ fn build_subtree(
 
     // 转换为 taffy 样式（传入父级区域映射）
     let mut taffy_style = computed_style_to_taffy(&computed, parent_grid_areas, viewport_w, viewport_h);
+
+    // R5154（css-align-3 §4.2 baseline fall-back）：grid item 的 align-self: last
+    // baseline 在基线共享不可行时按 fallback alignment 定位——last baseline →
+    // safe self-end（first baseline → safe self-start 恰为 taffy grid 对 Baseline
+    // 的现行为，无需改写）。taffy-local 未实现 grid 基线共享（compute/grid/
+    // alignment.rs TODO），sole participant 全靠回退值定位，不改写则贴行首与
+    // Chromium 不符（contain-size-grid-indefinite-height-min-height-flex-row）。
+    // 仅父为 grid 容器时生效；converter 无父 display 可判。kill-switch
+    // `ZW_GRID_LAST_BASELINE_END=0`（default-on）。
+    if grid_last_baseline_end_enabled()
+        && matches!(
+            computed.align_self,
+            zero_css_parser::values::AlignmentValue::LastBaseline
+        )
+        && doc.parent_node(dom_id).is_some_and(|pid| {
+            styles
+                .get(&pid)
+                .is_some_and(|ps| matches!(ps.display, DisplayValue::Grid | DisplayValue::InlineGrid))
+        })
+    {
+        taffy_style.align_self = Some(taffy::style::AlignSelf::END);
+    }
 
     // R4073（css-position-3 §abspos-auto-size）：abspos 元素按 content-based 尺寸
     //（width/height 为 fit-content/max-content/min-content 或 auto shrink-to-fit）度量时，
@@ -3440,6 +3476,44 @@ fn build_subtree(
             taffy_style.overflow.x = taffy::style::Overflow::Hidden;
             taffy_style.overflow.y = taffy::style::Overflow::Hidden;
         }
+    }
+
+    // R5158（CSS Overflow 3 §3.3 body→viewport 传播的 taffy 半边）：html 两轴 visible
+    // 且 body 非 visible 时，body 的 used overflow = visible（R3923 已在 engine.rs 落实
+    // LayoutBox 层——裁剪与 postprocess BFC 判定归位），但 taffy 样式仍按 computed
+    // Hidden 建 is_scroll_container → taffy 父子 margin 折叠被抑制：body{overflow:hidden}
+    // 的首子 `<p>` margin 不与 body 塌缩，内容整体 +8px（contain-size-grid-002 残差
+    // 0.62% 实证，chromium 侧塌缩照常）。此处把传播同步到 taffy 样式，使 taffy 折叠
+    // 行为与 used value 一致。传播条件与 engine.rs R3923 同源（body 亲父 html + html
+    // 两轴 visible + body 任一轴非 visible + 双方无 containment）；视口消费半边仍为
+    // no-op（ZW 无视口滚动，R3923 注记）。仅影响 taffy 折叠，不影响视觉裁剪。
+    // kill-switch `ZW_BODY_OVERFLOW_VISIBLE=0`。
+    // driving: css/css-contain/contain-size-grid-002（残差）。
+    if body_overflow_visible_enabled()
+        && (computed.overflow_x != OverflowValue::Visible || computed.overflow_y != OverflowValue::Visible)
+        && matches!(
+            computed.contain,
+            zero_style_system::property::types::ContainComputedValue::None
+        )
+        && doc
+            .get(dom_id)
+            .is_some_and(|n| matches!(&n.kind, zero_dom::NodeKind::Element(e) if e.local_name() == "body"))
+        && doc.parent_node(dom_id).is_some_and(|pid| {
+            matches!(
+                doc.get(pid).map(|n| &n.kind),
+                Some(zero_dom::NodeKind::Element(pe)) if pe.local_name() == "html"
+            ) && styles.get(&pid).is_some_and(|ps| {
+                ps.overflow_x == OverflowValue::Visible
+                    && ps.overflow_y == OverflowValue::Visible
+                    && matches!(
+                        ps.contain,
+                        zero_style_system::property::types::ContainComputedValue::None
+                    )
+            })
+        })
+    {
+        taffy_style.overflow.x = taffy::style::Overflow::Visible;
+        taffy_style.overflow.y = taffy::style::Overflow::Visible;
     }
 
     // R3755（CSS 2.1 §9.4.1 + CSS Containment §3/§4）：建立 BFC 的元素——display:flow-root、

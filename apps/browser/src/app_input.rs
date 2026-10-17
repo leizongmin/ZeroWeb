@@ -885,6 +885,23 @@ impl BrowserApp {
                     return;
                 }
             }
+            // 页面区域中键 → 命中链接则后台新标签打开（Chrome/Firefox 标配交互）。
+            // page_doc_point 已含内容区边界/查找栏排除/滚动与 zoom 坐标换算；
+            // 命中缓存 miss（首帧未绘制）返回 None，静默落到后续通用处理。
+            // href 是文档相对路径，与 Ctrl+点击路径同款先按当前文档 URL 解析。
+            if let Some((tab_id, doc_x, doc_y)) = self.page_doc_point(x_f, y_f)
+                && let Some(href) = self.tabs.hit_test_link(tab_id, doc_x, doc_y)
+            {
+                let url = resolve_clicked_link_url(
+                    &href,
+                    self.shell
+                        .tabs()
+                        .find(|tab| tab.id() == tab_id)
+                        .and_then(|tab| tab.url()),
+                );
+                self.new_tab_background(&url);
+                return;
+            }
         }
 
         // 左键点击时处理上下文菜单
@@ -1256,6 +1273,30 @@ impl BrowserApp {
             if button == "Left" && pressed {
                 self.dismiss_session_restore();
             }
+        }
+
+        // 5c. 关闭标签撤销 toast 命中（浮层先于页面派发）。「撤销」动作恢复标签；
+        //     toast 其余区域点击仅关闭提示（不落入下方页面）。
+        if let Some((bx, by, bw, bh)) = self.closed_tab_toast_rect_for(self.physical_size.0, self.physical_size.1)
+            && x_f >= bx
+            && x_f < bx + bw
+            && y_f >= by
+            && y_f < by + bh
+        {
+            if button == "Left" && pressed {
+                if let Some((ux, uy, uw, uh)) = self.closed_tab_toast_undo_rect_for(self.physical_size.0, self.physical_size.1)
+                    && x_f >= ux
+                    && x_f < ux + uw
+                    && y_f >= uy
+                    && y_f < uy + uh
+                {
+                    self.reopen_last_closed_tab();
+                } else {
+                    self.closed_tab_toast = None;
+                    self.needs_redraw = true;
+                }
+            }
+            return;
         }
 
         if y_f >= content_y

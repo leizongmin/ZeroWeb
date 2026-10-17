@@ -390,6 +390,107 @@ fn test_input_value_as_date_r3317() {
 }
 
 #[test]
+fn test_input_value_as_setter_throw_r3904() {
+    // valueAsNumber/valueAsDate setter 抛错面——R3904 spec setter 步（HTML §4.10.5.4）：
+    // valueAsNumber：±Infinity→TypeError（先于适用性——checkbox+Infinity 亦 TypeError）；
+    // 不适用 type（text/checkbox）→InvalidStateError；number+5 正常设值、number+NaN→''。
+    // valueAsDate：非 Date 非 null→TypeError；不适用 type（datetime-local/checkbox）→
+    // InvalidStateError；null 与 Invalid Date→清空 value。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <input id='n' type='number'>\
+         <input id='cb' type='checkbox'>\
+         <input id='tx' type='text'>\
+         <input id='d' type='date'>\
+         <input id='dl' type='datetime-local'>\
+         <input id='tm' type='time'>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 辅助：try/catch 记录异常 name（不抛记 'no'）。
+    sandbox
+        .execute(
+            "globalThis.__set = function(expr) { try { eval(expr); return 'no'; } catch (e) { return String(e.name); } };",
+        )
+        .unwrap();
+
+    // valueAsNumber：±Infinity → TypeError（number 与 checkbox 均然——无限检查先于适用性）；
+    // 不适用 type → InvalidStateError；正常值与 NaN 行为不变。
+    for (id, stmt) in [
+        ("vN1", "document.querySelector('#n').valueAsNumber = Infinity"),
+        ("vN2", "document.querySelector('#n').valueAsNumber = -Infinity"),
+        ("vN3", "document.querySelector('#cb').valueAsNumber = Infinity"),
+        ("vN4", "document.querySelector('#cb').valueAsNumber = 5"),
+        ("vN5", "document.querySelector('#tx').valueAsNumber = 5"),
+    ] {
+        sandbox
+            .execute(&format!("globalThis.{id} = __set(\"{stmt}\");"))
+            .unwrap();
+    }
+    assert_eq!(sandbox.execute("globalThis.vN1").unwrap().value, "TypeError", "number + Infinity → TypeError");
+    assert_eq!(sandbox.execute("globalThis.vN2").unwrap().value, "TypeError", "number + -Infinity → TypeError");
+    assert_eq!(sandbox.execute("globalThis.vN3").unwrap().value, "TypeError", "checkbox + Infinity → TypeError（无限检查先于适用性）");
+    assert_eq!(sandbox.execute("globalThis.vN4").unwrap().value, "InvalidStateError", "checkbox + 有限值 → InvalidStateError（不适用）");
+    assert_eq!(sandbox.execute("globalThis.vN5").unwrap().value, "InvalidStateError", "text + 有限值 → InvalidStateError（不适用）");
+
+    sandbox
+        .execute(
+            "var n = document.querySelector('#n');\
+             n.valueAsNumber = 5; globalThis.__vN6 = n.value;\
+             n.valueAsNumber = NaN; globalThis.__vN7 = n.value;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__vN6").unwrap().value, "5", "number + 5 正常设值 value='5'");
+    assert_eq!(sandbox.execute("globalThis.__vN7").unwrap().value, "", "number + NaN → 清空（spec 步 3 不变）");
+
+    // valueAsDate：非 Date 非 null/undefined → TypeError（WebIDL Date? 转换先于
+    // setter steps——不适用 type + 非 Date 亦 TypeError）；不适用 type（含
+    // datetime-local）→ InvalidStateError；null/undefined 与 Invalid Date → 清空。
+    for (id, stmt) in [
+        ("vD1", "document.querySelector('#d').valueAsDate = {}"),
+        ("vD2", "document.querySelector('#tm').valueAsDate = 'x'"),
+        ("vD3", "document.querySelector('#dl').valueAsDate = new Date(Date.UTC(2026, 0, 1))"),
+        ("vD4", "document.querySelector('#cb').valueAsDate = new Date(Date.UTC(2026, 0, 1))"),
+        ("vD7", "document.querySelector('#cb').valueAsDate = {}"),
+    ] {
+        sandbox
+            .execute(&format!("globalThis.{id} = __set(\"{stmt}\");"))
+            .unwrap();
+    }
+    assert_eq!(sandbox.execute("globalThis.vD1").unwrap().value, "TypeError", "date + 非对象 Date → TypeError");
+    assert_eq!(sandbox.execute("globalThis.vD2").unwrap().value, "TypeError", "time + 非日期非空字符串 → TypeError");
+    assert_eq!(sandbox.execute("globalThis.vD3").unwrap().value, "InvalidStateError", "datetime-local + Date → InvalidStateError（不适用）");
+    assert_eq!(sandbox.execute("globalThis.vD4").unwrap().value, "InvalidStateError", "checkbox + Date → InvalidStateError（不适用）");
+    assert_eq!(sandbox.execute("globalThis.vD7").unwrap().value, "TypeError", "checkbox + 非对象 Date → TypeError（转换先于适用性）");
+
+    sandbox
+        .execute(
+            "var d = document.querySelector('#d');\
+             d.valueAsDate = null; globalThis.__vD5 = d.value;\
+             d.valueAsDate = new Date(NaN); globalThis.__vD6 = d.value;\
+             d.valueAsDate = undefined; globalThis.__vD8 = d.value;",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("globalThis.__vD5").unwrap().value, "", "date + null → 清空（spec 步 3）");
+    assert_eq!(sandbox.execute("globalThis.__vD6").unwrap().value, "", "date + Invalid Date → 清空（NaN time value）");
+    assert_eq!(sandbox.execute("globalThis.__vD8").unwrap().value, "", "date + undefined → 清空（WebIDL undefined→null）");
+}
+
+#[test]
 fn test_input_step_up_down_r3317() {
     // stepUp(n)/stepDown(n)——R3902c 起 spec 全七类型步进算法（HTML §4.10.5.4）：方法对全部 INPUT
     // 暴露，非步进类型调用抛 InvalidStateError；步进基 min→value→类型缺省基；离格向步进方向
@@ -505,6 +606,140 @@ fn test_input_step_up_down_r3317() {
         sandbox.execute("globalThis.__fErr").unwrap().value,
         "InvalidStateError",
         "step='any' 抛出异常 name = InvalidStateError"
+    );
+}
+
+#[test]
+fn test_input_show_picker_r3903() {
+    // showPicker()——R3903 spec method steps（HTML §4.10.5.4）：无激活 NotAllowedError；有激活
+    // 不抛并消费（navigator.userActivation.isActive 翻 false）；disabled（含同 turn setAttribute
+    // latest-wins 路径）与 readonly 适用类型抛 InvalidStateError 且**不消费**激活；readonly 非适用
+    // 类型（range）不抛照常消费；方法恒暴露（typeof function）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <input id='a' type='number'>\
+         <input id='b' type='text'>\
+         <input id='c' type='range'>\
+         <input id='d' type='number' disabled>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "var a = document.querySelector('#a');\
+             globalThis.__ret = String(typeof a.showPicker);\
+             try { a.showPicker(); globalThis.__t1 = 'no'; } catch (e) { globalThis.__t1 = 'yes'; globalThis.__t1n = String(e.name); }\
+             globalThis.__zwUserActivate();\
+             try { a.showPicker(); globalThis.__t2 = 'no'; } catch (e) { globalThis.__t2 = 'yes'; globalThis.__t2n = String(e.name); }\
+             globalThis.__act1 = String(navigator.userActivation.isActive);\
+             a.setAttribute('disabled', '');\
+             globalThis.__zwUserActivate();\
+             try { a.showPicker(); globalThis.__t3 = 'no'; } catch (e) { globalThis.__t3 = 'yes'; globalThis.__t3n = String(e.name); }\
+             globalThis.__act2 = String(navigator.userActivation.isActive);\
+             var dEl = document.querySelector('#d');\
+             globalThis.__zwUserActivate();\
+             try { dEl.showPicker(); globalThis.__t4 = 'no'; } catch (e) { globalThis.__t4 = 'yes'; globalThis.__t4n = String(e.name); }\
+             globalThis.__act3 = String(navigator.userActivation.isActive);\
+             var bEl = document.querySelector('#b');\
+             bEl.setAttribute('readonly', '');\
+             globalThis.__zwUserActivate();\
+             try { bEl.showPicker(); globalThis.__t5 = 'no'; } catch (e) { globalThis.__t5 = 'yes'; globalThis.__t5n = String(e.name); }\
+             globalThis.__act4 = String(navigator.userActivation.isActive);\
+             var cEl = document.querySelector('#c');\
+             cEl.setAttribute('readonly', '');\
+             globalThis.__zwUserActivate();\
+             try { cEl.showPicker(); globalThis.__t6 = 'no'; } catch (e) { globalThis.__t6 = 'yes'; globalThis.__t6n = String(e.name); }\
+             globalThis.__act5 = String(navigator.userActivation.isActive);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__ret").unwrap().value,
+        "function",
+        "showPicker 方法对 INPUT 恒暴露（spec；无类型门前置）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__t1").unwrap().value,
+        "yes",
+        "无瞬态激活调 showPicker() 抛错"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__t1n").unwrap().value,
+        "NotAllowedError",
+        "无激活抛出异常 name = NotAllowedError"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__t2").unwrap().value,
+        "no",
+        "有瞬态激活 showPicker() 不抛（headless 无 picker UI 静默返回）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__act1").unwrap().value,
+        "false",
+        "成功调用消费瞬态激活（isActive 翻 false）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__t3").unwrap().value,
+        "yes",
+        "disabled（同 turn setAttribute latest-wins 路径）调 showPicker() 抛错"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__t3n").unwrap().value,
+        "InvalidStateError",
+        "disabled 抛出异常 name = InvalidStateError"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__act2").unwrap().value,
+        "true",
+        "disabled 抛错不消费激活（不可变检查先于激活消费）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__t4").unwrap().value,
+        "yes",
+        "标记 disabled 的初始解析路径同样抛 InvalidStateError"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__t4n").unwrap().value,
+        "InvalidStateError",
+        "初始 disabled 抛出异常 name = InvalidStateError"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__t5").unwrap().value,
+        "yes",
+        "readonly 适用类型（text）调 showPicker() 抛 InvalidStateError"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__t5n").unwrap().value,
+        "InvalidStateError",
+        "readonly 适用类型抛出异常 name = InvalidStateError"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__act4").unwrap().value,
+        "true",
+        "readonly 抛错不消费激活（WPT show-picker-disabled-readonly 断言面）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__t6").unwrap().value,
+        "no",
+        "readonly 非适用类型（range）showPicker() 不抛"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__act5").unwrap().value,
+        "false",
+        "readonly 非适用类型照常消费激活"
     );
 }
 

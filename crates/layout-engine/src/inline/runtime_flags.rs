@@ -65,6 +65,15 @@ pub(super) fn cjk_contiguous() -> bool {
     selected(*VALUE, || default_on("ZW_CJK_CONTIGUOUS"))
 }
 
+/// R5161（css-text-3 §5.2 / UAX#14）：跨 run 词中拼接边界无软换行机会——
+/// `PASS<span>FAIL</span>` 的 S|F 边界（无空白相邻的字母对）不构成断点，FAIL 随前词
+/// 横向溢出而非折行（旧实现逐 run 独立断行，4ch 容器内 FAIL 误折第 2 行红底外露，
+/// contain-paint-047 族）。default-on，`ZW_CROSS_RUN_GLUE=0` 回退逐 run 独立断行。
+pub(super) fn cross_run_glue() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_CROSS_RUN_GLUE"));
+    selected(*VALUE, || default_on("ZW_CROSS_RUN_GLUE"))
+}
+
 pub(super) fn bidi_fragment_source() -> bool {
     static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_BIDI_FRAGMENT_SOURCE"));
     selected(*VALUE, || default_on("ZW_BIDI_FRAGMENT_SOURCE"))

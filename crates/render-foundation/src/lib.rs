@@ -435,6 +435,7 @@ mod tests {
             image_key: ImageKey::new(1),
             clip: None,
             source: None,
+            clip_radius: None,
         });
 
         let bb = p.bounding_box().expect("应有包围盒");

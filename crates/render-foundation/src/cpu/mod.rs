@@ -1237,6 +1237,23 @@ fn render_image(fb: &mut FrameBuffer, image: &ImagePrimitive, scale: f32, image_
         return;
     }
 
+    // R5155（css-contain-1 §3.1 paint containment 圆角裁剪）：clip 窗口四角圆角
+    // 测试参数（None = 矩形窗口，零额外开销）。窗口坐标 = clip 窗口物理 px（非
+    // framebuffer 交集后），与 helpers 裁剪端语义一致。
+    let rounding = image.clip_radius.as_ref().and_then(|radii| {
+        let Some(clip) = &image.clip else { return None };
+        let (tl, tr, br, bl) = (radii[0] * scale, radii[1] * scale, radii[2] * scale, radii[3] * scale);
+        (tl > 0.0 || tr > 0.0 || br > 0.0 || bl > 0.0).then(|| {
+            (
+                clip.left() * scale,
+                clip.top() * scale,
+                clip.right() * scale,
+                clip.bottom() * scale,
+                (tl, tr, br, bl),
+            )
+        })
+    });
+
     // 纯色图片优化：跳过双线性插值，直接填充目标矩形
     // 消除小尺寸 swatch 图片（如 1x1-green.png）缩放到大尺寸时的边缘伪影
     if let Some(color) = data.solid_color() {
@@ -1248,6 +1265,11 @@ fn render_image(fb: &mut FrameBuffer, image: &ImagePrimitive, scale: f32, image_
         for y in top..bottom {
             for x in left..right {
                 if x >= fb.width || y >= fb.height {
+                    continue;
+                }
+                if let Some((x0, y0, x1, y1, (tl, tr, br, bl))) = rounding
+                    && !is_inside_rounded_rect(x as f32 + 0.5, y as f32 + 0.5, x0, y0, x1, y1, tl, tr, br, bl)
+                {
                     continue;
                 }
                 if sa == 255 {
@@ -1305,6 +1327,12 @@ fn render_image(fb: &mut FrameBuffer, image: &ImagePrimitive, scale: f32, image_
             let src_a = (a00 as f32 * w00 + a10 as f32 * w10 + a01 as f32 * w01 + a11 as f32 * w11 + 0.5) as u8;
 
             if px >= fb.width || py >= fb.height {
+                continue;
+            }
+
+            if let Some((x0, y0, x1, y1, (tl, tr, br, bl))) = rounding
+                && !is_inside_rounded_rect(px as f32 + 0.5, py as f32 + 0.5, x0, y0, x1, y1, tl, tr, br, bl)
+            {
                 continue;
             }
 

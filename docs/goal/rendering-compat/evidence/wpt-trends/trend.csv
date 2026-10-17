@@ -67,3 +67,7 @@
 2026-10-16,upstream,v1.10,16590,15450,93.1,failed=1140;skipped=0,25cae3f9b,R5151 零空间 fragmentainer 跳过仅豁免 in-flow——R4515 skip 分支 flush positioned 后代 contain-size-monolithic-002 0.00% 翻绿 corpus 1141→1140 零新增红
 2026-10-16,upstream,v1.10,16590,15453,93.1,failed=1137;skipped=0,7aeeea4c6,R5152 contain:size multicol 按「无内容」尺寸化、列几何仍参与——contain-size-multicol-001/002/003 翻绿（001 2.08%→0.00%、002 9.38%→0.00%、003 16.05%→0.75% 近似带），corpus 1140→1137 零新增红
 2026-10-16,upstream,v1.10,16590,15455,93.2,failed=1135;skipped=0,6144ddb03,R5153 container-type 蕴含 containment 布局接入 + containment 下 aspect-ratio 高转移——contain-size-014 / canvas-contain-size 翻绿（均 0.00% 真通过-可信），corpus 1137→1135 零新增红
+2026-10-16,upstream,v1.10,16590,15456,93.2,failed=1134;skipped=0,cedc3a5c3,R5154 grid last baseline fallback-end——corpus 1，135→1，134
+2026-10-17,upstream,v1.10,16590,15458,93.2,failed=1132;skipped=0,8efbff678,R5155 contain:paint 圆角裁剪——corpus 1，134→1，132
+2026-10-17,upstream,v1.10,16590,15459,93.2,failed=1131;skipped=0,001da9814,
+2026-10-17,upstream,v1.10,16590,15460,93.2,failed=1130;skipped=0,211d87ff9,

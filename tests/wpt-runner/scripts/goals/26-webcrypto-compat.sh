@@ -16,6 +16,14 @@ GOAL="webcrypto-compat"
 DIRS=( "WebCryptoAPI" )
 
 GOAL_PULL_ANY_JS=1
+# 语料埋在二三层子目录（sign_verify/ import_export/ encrypt_decrypt/…），且
+# 未认证 Contents API 逐目录列不完——走 git trees 深挖（lib.sh fetch_dir_deep）。
+GOAL_FETCH_DEEP=1
 goals_fetch_all
+# 跨域 /common 依赖（用例 META 引用，不在 DIRS 内，单独补拉）；
+# /resources/idlharness.js + WebIDLParser.js 不拉——idlharness 用例 runner 侧记账排除
+#（compression 先例，WebIDLParser build 期资产 repo 内不可执行）。
+fetch_raw "common/subset-tests.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "common/gc.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
 goals_inventory
 goals_next_steps "${GOAL}"

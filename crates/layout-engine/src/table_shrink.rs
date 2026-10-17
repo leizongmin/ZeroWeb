@@ -11,6 +11,14 @@ use zero_style_system::ComputedStyle;
 use crate::table::is_table_internal;
 use crate::types::LayoutBox;
 
+/// R5159 kill-switch：`ZW_TABLE_CAPTION_SHRINK=0` 回退空 grid 表收缩的 caption
+/// 参与臂与 block_max_content_width 的 size containment 门（css-tables-3 §caption
+/// × css-contain-1 §3.1）。
+fn caption_shrink_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_TABLE_CAPTION_SHRINK").as_deref() != Ok("0"))
+}
+
 fn resolve_table_shrink_length(value: &LengthValue, style: &ComputedStyle) -> Option<f32> {
     match value {
         LengthValue::Auto
@@ -57,6 +65,16 @@ pub(crate) fn shrink_table_to_block_content(table_box: &mut LayoutBox, styles: &
             let Some(s) = styles.get(&id) else {
                 return false;
             };
+            // R5159（css-tables-3 §caption + CSS 2.1 §17.4.1）：caption 虽是 table-internal
+            // 盒，但不被 build_grid 消费（layout_table 之外、taffy 直排）——caption-only 表
+            //（无 row/cell → 空 grid 落本函数）的 caption 就是全部内容，wrapper 收缩宽 =
+            // max(表内容, caption 收缩适应宽)（chromium 空表空 caption 收缩到 0+边框
+            // 32×32 实证）。旧实现按 table-internal 排除 → 收缩 no-op → 表盒留 taffy
+            // 拉伸满宽、caption 跟随满宽。kill-switch `ZW_TABLE_CAPTION_SHRINK=0`。
+            // driving: css/css-contain/contain-size-table-caption-001（ref 页 5.01%）。
+            if caption_shrink_enabled() && matches!(s.display, DisplayValue::TableCaption) {
+                return true;
+            }
             // 排除 display:none / contents / table-internal（这些不该走此路径）
             if matches!(s.display, DisplayValue::None | DisplayValue::Contents) || is_table_internal(&s.display) {
                 return false;
@@ -144,14 +162,36 @@ pub(crate) fn shrink_table_to_block_content(table_box: &mut LayoutBox, styles: &
     // 不超过当前可用宽度（taffy 分配的容器宽度）
     final_content_width = final_content_width.min(table_box.content_width).max(0.0);
 
-    // 计算 table 内容高度：最低 block 子元素底缘相对内容盒的高度
+    // 计算 table 内容高度：最低 block 子元素底缘相对内容盒的高度。
+    // R5159：caption 只参与宽度臂——css-tables-3 §caption 堆叠在 table 盒之外，
+    // 高度由表布局/taffy 既有路径记账；计入会双计并扩大 principal 盒（taffy 高
+    // 116 → 116+116=232），contain:paint 剪裁区随之覆盖 caption 行、本应裁掉的
+    // 溢出内容外露（contain-paint-table-002 4.83% 新红实证）。故高度循环仅取
+    // 非 caption 的 block 子元素；纯 caption 表无 block 内容 → 保持 taffy 高度。
     let content_box_top = table_box.border_top + table_box.padding_top;
-    let content_height: f32 = block_indices
+    let block_only_indices: Vec<usize> = block_indices
         .iter()
-        .filter_map(|&i| table_box.children.get(i))
-        .map(|ch| (ch.y - content_box_top + ch.height + ch.margin_bottom).max(0.0))
-        .fold(0.0f32, f32::max)
-        .max(0.0);
+        .copied()
+        .filter(|&i| {
+            table_box
+                .children
+                .get(i)
+                .and_then(|ch| ch.node_id)
+                .and_then(|id| styles.get(&id))
+                .is_none_or(|s| !matches!(s.display, DisplayValue::TableCaption))
+        })
+        .collect();
+    let content_height: f32 = if block_only_indices.is_empty() {
+        // 纯 caption 表：高度不重算（保持 taffy/表布局值），仅收缩宽度。
+        table_box.content_height
+    } else {
+        block_only_indices
+            .iter()
+            .filter_map(|&i| table_box.children.get(i))
+            .map(|ch| (ch.y - content_box_top + ch.height + ch.margin_bottom).max(0.0))
+            .fold(0.0f32, f32::max)
+            .max(0.0)
+    };
 
     // 收缩 block 子元素宽度，使其盒匹配新的 table 内容宽度（block 填满 table 内容盒）
     for &i in &block_indices {
@@ -281,32 +321,39 @@ fn shrink_empty_table_to_padding_border(table_box: &mut LayoutBox, styles: &Hash
 ///
 /// 返回值含容器自身的水平 padding+border。
 fn block_max_content_width(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> f32 {
+    // R5159（css-contain-1 §3.1）：size containment 元素按无内容尺寸化——children
+    // 不贡献 max-content，保留显式宽下界与自身 padding+border（contained caption
+    // 的 100px 子不参与，收缩宽 = 纯边框壳；contain-size-table-caption-001 test 页
+    // 同判）。kill-switch `ZW_TABLE_CAPTION_SHRINK=0`。
+    let containment_gate = caption_shrink_enabled() && box_node.has_size_containment;
     let mut inline_sum = 0.0f32;
     let mut block_max = 0.0f32;
 
-    for child in &box_node.children {
-        let is_inline_level = child
-            .node_id
-            .and_then(|id| styles.get(&id))
-            .map(|s| {
-                matches!(
-                    s.display,
-                    DisplayValue::Inline
-                        | DisplayValue::InlineBlock
-                        | DisplayValue::InlineFlex
-                        | DisplayValue::InlineGrid
-                        | DisplayValue::InlineTable
-                )
-            })
-            .unwrap_or(false);
+    if !containment_gate {
+        for child in &box_node.children {
+            let is_inline_level = child
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .map(|s| {
+                    matches!(
+                        s.display,
+                        DisplayValue::Inline
+                            | DisplayValue::InlineBlock
+                            | DisplayValue::InlineFlex
+                            | DisplayValue::InlineGrid
+                            | DisplayValue::InlineTable
+                    )
+                })
+                .unwrap_or(false);
 
-        let outer_w = child.width + child.margin_left + child.margin_right;
-        if is_inline_level {
-            // 行内级子元素水平求和（max-content 假设不换行）
-            inline_sum += outer_w.max(0.0);
-        } else {
-            // block 级子元素递归取最大
-            block_max = block_max.max(block_max_content_width(child, styles));
+            let outer_w = child.width + child.margin_left + child.margin_right;
+            if is_inline_level {
+                // 行内级子元素水平求和（max-content 假设不换行）
+                inline_sum += outer_w.max(0.0);
+            } else {
+                // block 级子元素递归取最大
+                block_max = block_max.max(block_max_content_width(child, styles));
+            }
         }
     }
 
@@ -419,6 +466,92 @@ mod tests {
         // body 宽度收缩到 280（填满 table 内容盒）
         assert_eq!(table.children[0].width, 280.0);
         assert_eq!(table.children[0].content_width, 280.0);
+    }
+
+    /// R5159（css-tables-3 §caption）：caption-only 表（无 row/cell → 空 grid）的
+    /// caption 是全部内容，table 应收缩到 caption 的边框壳（0 内容 + 2×16 border
+    /// = 32），而非 taffy 拉伸满宽。chromium 空表空 caption 32×32 实证。
+    #[test]
+    fn test_caption_only_table_shrinks_to_caption_shell() {
+        let mut styles = HashMap::new();
+        let ids = make_node_ids(2);
+        let [table_id, caption_id] = [ids[0], ids[1]];
+
+        // table: width:auto，taffy 拉伸到 800（content 780）；taffy 高 40（语义上
+        // 已含表布局路径的 caption 记账）
+        let mut table = make_box(800.0, 40.0);
+        table.content_width = 780.0;
+        table.node_id = Some(table_id);
+        let mut ts = ComputedStyle::default();
+        ts.display = DisplayValue::Table;
+        styles.insert(table_id, ts);
+
+        // caption: display:TableCaption，空内容，border 16×2，taffy 拉伸到 784
+        let mut caption = make_styled_child(caption_id, DisplayValue::TableCaption, 784.0, 32.0, &mut styles);
+        caption.border_left = 16.0;
+        caption.border_right = 16.0;
+        caption.border_top = 16.0;
+        caption.border_bottom = 16.0;
+        caption.y = 0.0;
+        table.children.push(caption);
+
+        shrink_table_to_block_content(&mut table, &styles);
+
+        // caption max-content = 0 内容 + 2×16 border = 32 → table content 32
+        assert_eq!(table.content_width, 32.0, "table should shrink to caption shell (32)");
+        assert_eq!(table.width, 32.0);
+        // caption 收缩为 32 边框壳（content 0）
+        assert_eq!(table.children[0].width, 32.0);
+        assert_eq!(table.children[0].content_width, 0.0);
+        // 高度保持 taffy 值（css-tables-3 §caption：caption 堆叠在 table 盒外，
+        // 高度不重算——contain-paint-table-002 剪裁区回归判例）
+        assert_eq!(table.content_height, 40.0);
+        assert_eq!(table.height, 40.0);
+    }
+
+    /// R5159（css-contain-1 §3.1）：caption 有 size containment 时按无内容尺寸化
+    /// ——100px 显式宽子 div 不贡献 max-content，table 收缩到 caption 纯边框壳
+    ///（contain-size-table-caption-001 test 页语义）。
+    #[test]
+    fn test_contained_caption_excludes_children_from_max_content() {
+        let mut styles = HashMap::new();
+        let ids = make_node_ids(3);
+        let [table_id, caption_id, div_id] = [ids[0], ids[1], ids[2]];
+
+        let mut table = make_box(800.0, 40.0);
+        table.content_width = 780.0;
+        table.node_id = Some(table_id);
+        let mut ts = ComputedStyle::default();
+        ts.display = DisplayValue::Table;
+        styles.insert(table_id, ts);
+
+        // caption: contain:size（has_size_containment），border 16×2，内含 100px div
+        let mut caption = make_styled_child(caption_id, DisplayValue::TableCaption, 784.0, 32.0, &mut styles);
+        caption.has_size_containment = true;
+        caption.border_left = 16.0;
+        caption.border_right = 16.0;
+        caption.y = 0.0;
+        caption.children.push(make_styled_child(
+            div_id,
+            DisplayValue::Block,
+            100.0,
+            100.0,
+            &mut styles,
+        ));
+        table.children.push(caption);
+
+        shrink_table_to_block_content(&mut table, &styles);
+
+        // containment 门下子 div 的显式 100px 不参与 → caption max-content = 32
+        assert_eq!(
+            table.content_width, 32.0,
+            "contained caption children must not feed max-content"
+        );
+        assert_eq!(table.children[0].width, 32.0);
+        assert_eq!(table.children[0].content_width, 0.0);
+        // 高度保持 taffy 值
+        assert_eq!(table.content_height, 40.0);
+        assert_eq!(table.height, 40.0);
     }
 
     /// 显式 width 的 table 应尊重显式宽度（不被 max-content 撑大或缩小）。

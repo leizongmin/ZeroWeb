@@ -164,32 +164,345 @@ fn aes_gcm_run<C: aes_gcm::aead::Aead>(
     }
 }
 
-/// `crypto.subtle.encrypt/decrypt` 的 AES-GCM 实现（R2957）——AES-128/256-GCM 认证对称加密。
-/// **PBKDF2 派生密钥的典型消费者**，端到端「用密码加密」流程（TLS 级对称加密 + 完整性 + AAD）。
-/// mode "encrypt"（返 ct||tag）/ "decrypt"（输入 ct||tag，返 plaintext）；key 16/32 字节（128/256 位，
-/// AES-192 因 aes-gcm crate 默认未导出 `Aes192Gcm` 暂不支持——罕见）；iv 12 字节（GCM 标准 nonce）；
-/// aad 附加认证数据；tag 固定 128 位（spec 默认，最常见）。返 csv，error（bad key/iv 长度、tag 校验失败）→ 空串。
+/// `crypto.subtle.encrypt/decrypt` 的 AES-GCM 实现（R2957；webcrypto M3a 矩阵扩展）——
+/// AES-128/192/256-GCM 认证对称加密。**PBKDF2 派生密钥的典型消费者**，端到端「用密码加密」
+/// 流程（TLS 级对称加密 + 完整性 + AAD）。mode "encrypt"（返 ct||tag）/ "decrypt"（输入
+/// ct||tag，返 plaintext）；key 16/24/32 字节；iv 12/16/32 字节（nonce 为 aes-gcm crate 编译期
+/// 泛型，按字节长分派；16 字节 M3b 起供 wrapKey AES-GCM 封装路径）；tag_len_bits ∈ {32,64,96,104,112,120,128}（合法集由 shim 校验，
+/// 缺省 128）：96-128 位走 crate Aead（TagSize 密封于 U12..U16）；32/64 位 crate 不密封，
+/// 按 NIST SP 800-38D §5.2.1.2 截断语义手做——encrypt 取 128 位 tag 前 tag_len_bits/8 字节，
+/// decrypt 重算全 tag 常时比对前缀。aad 附加认证数据。返 csv，error（bad key/iv/tag 长度、
+/// tag 校验失败）→ 空串。
 /// https://datatracker.ietf.org/doc/html/rfc5116  https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38d.pdf
-pub fn crypto_subtle_aes_gcm(mode: &str, key_csv: &str, iv_csv: &str, data_csv: &str, aad_csv: &str) -> String {
+pub fn crypto_subtle_aes_gcm(
+    mode: &str,
+    key_csv: &str,
+    iv_csv: &str,
+    data_csv: &str,
+    aad_csv: &str,
+    tag_len_bits: u32,
+) -> String {
+    use aes::cipher::consts::{U12, U13, U14, U15, U16, U32};
+    use aes_gcm::AesGcm;
     use aes_gcm::aead::{KeyInit, Payload, generic_array::GenericArray};
-    use aes_gcm::{Aes128Gcm, Aes256Gcm};
     let key = bytes_from_csv(key_csv);
     let iv = bytes_from_csv(iv_csv);
     let data = bytes_from_csv(data_csv);
     let aad = bytes_from_csv(aad_csv);
-    if iv.len() != 12 {
+    // 96/128/256 位 IV（M3a 收敛 12/32，M3b 增 16 供 wrapKey AES-GCM 封装路径——spec 允许
+    // 任意 IV 长度，crate NonceSize 开放泛型按字节长分派）。
+    if iv.len() != 12 && iv.len() != 16 && iv.len() != 32 {
         return String::new();
     }
-    let nonce = GenericArray::from_slice(&iv);
+    let tag_bytes = (tag_len_bits / 8) as usize;
+    // 32/64 位 tag：全 128 位认证后截断（crate 只密封 U12..U16，见函数注释）。
+    let truncated = matches!(tag_len_bits, 32 | 64);
+    let effective_tag_bits = if truncated { 128 } else { tag_len_bits };
     let payload = Payload { msg: &data, aad: &aad };
-    let result: Option<Vec<u8>> = match key.len() {
-        16 => aes_gcm_run(&Aes128Gcm::new(GenericArray::from_slice(&key)), mode, nonce, payload),
-        32 => aes_gcm_run(&Aes256Gcm::new(GenericArray::from_slice(&key)), mode, nonce, payload),
+    macro_rules! gcm {
+        ($nonce:ty, $tag:ty, $aes:ty) => {
+            aes_gcm_run(
+                &AesGcm::<$aes, $nonce, $tag>::new(GenericArray::from_slice(&key)),
+                mode,
+                GenericArray::from_slice(&iv),
+                payload,
+            )
+        };
+    }
+    macro_rules! by_aes {
+        ($nonce:ty, $tag:ty) => {
+            match key.len() {
+                16 => gcm!($nonce, $tag, aes::Aes128),
+                24 => gcm!($nonce, $tag, aes::Aes192),
+                32 => gcm!($nonce, $tag, aes::Aes256),
+                _ => None,
+            }
+        };
+    }
+    macro_rules! by_tag {
+        ($nonce:ty) => {
+            match effective_tag_bits {
+                96 => by_aes!($nonce, U12),
+                104 => by_aes!($nonce, U13),
+                112 => by_aes!($nonce, U14),
+                120 => by_aes!($nonce, U15),
+                128 => by_aes!($nonce, U16),
+                _ => None,
+            }
+        };
+    }
+    if truncated {
+        // 截断路径：detached API 手做。encrypt：明文 in-place 加密 → ct || tag 前 tag_bytes；
+        // decrypt：重算期望全 tag，常时比对前缀（SP 800-38D §5.2.1.2）。
+        // nonce 泛型按 iv 实际字节长分派（from_slice 断言长度，须在分支内构造）。
+        return match (iv.len(), key.len()) {
+            (12, 16) => {
+                truncated_gcm::<aes::Aes128, U12>(mode, &key, GenericArray::from_slice(&iv), &data, &aad, tag_bytes)
+            }
+            (12, 24) => {
+                truncated_gcm::<aes::Aes192, U12>(mode, &key, GenericArray::from_slice(&iv), &data, &aad, tag_bytes)
+            }
+            (12, 32) => {
+                truncated_gcm::<aes::Aes256, U12>(mode, &key, GenericArray::from_slice(&iv), &data, &aad, tag_bytes)
+            }
+            (32, 16) => {
+                truncated_gcm::<aes::Aes128, U32>(mode, &key, GenericArray::from_slice(&iv), &data, &aad, tag_bytes)
+            }
+            (32, 24) => {
+                truncated_gcm::<aes::Aes192, U32>(mode, &key, GenericArray::from_slice(&iv), &data, &aad, tag_bytes)
+            }
+            (32, 32) => {
+                truncated_gcm::<aes::Aes256, U32>(mode, &key, GenericArray::from_slice(&iv), &data, &aad, tag_bytes)
+            }
+            (16, 16) => {
+                truncated_gcm::<aes::Aes128, U16>(mode, &key, GenericArray::from_slice(&iv), &data, &aad, tag_bytes)
+            }
+            (16, 24) => {
+                truncated_gcm::<aes::Aes192, U16>(mode, &key, GenericArray::from_slice(&iv), &data, &aad, tag_bytes)
+            }
+            (16, 32) => {
+                truncated_gcm::<aes::Aes256, U16>(mode, &key, GenericArray::from_slice(&iv), &data, &aad, tag_bytes)
+            }
+            _ => String::new(),
+        };
+    }
+    let result: Option<Vec<u8>> = match iv.len() {
+        12 => by_tag!(U12),
+        // 96/128/256 位 IV——crate NonceSize 为开放泛型（仅 TagSize 密封），M3b 起
+        // 16 字节 IV 供 wrapKey AES-GCM 封装路径（spec 允许任意 IV 长度）。
+        16 => by_tag!(U16),
+        32 => by_tag!(U32),
         _ => None,
     };
     match result {
         Some(v) => v.iter().map(u8::to_string).collect::<Vec<_>>().join(","),
         None => String::new(),
+    }
+}
+
+/// GCM 截断 tag（32/64 位）encrypt/decrypt——crate `AeadInPlace` detached API 之上的
+/// SP 800-38D §5.2.1.2 截断语义：tag 取全 128 位前缀；decrypt 重算全 tag 后**定长无早退**
+/// 比对前缀（不引 `subtle` 依赖，与 shim HMAC 比对先例一致）。decrypt 输入为 ct||tag。
+fn truncated_gcm<A, N>(
+    mode: &str,
+    key: &[u8],
+    nonce: &aes_gcm::aead::generic_array::GenericArray<u8, N>,
+    data: &[u8],
+    aad: &[u8],
+    tag_bytes: usize,
+) -> String
+where
+    A: aes::cipher::BlockSizeUser<BlockSize = aes::cipher::consts::U16>
+        + aes::cipher::BlockEncrypt
+        + aes::cipher::KeyInit,
+    N: aes_gcm::aead::generic_array::ArrayLength<u8>,
+    aes_gcm::AesGcm<A, N, aes::cipher::consts::U16>:
+        aes_gcm::aead::AeadCore<NonceSize = N> + aes_gcm::aead::AeadInPlace,
+{
+    use aes_gcm::aead::{AeadInPlace, KeyInit, generic_array::GenericArray as GA};
+    let cipher = aes_gcm::AesGcm::<A, N, aes::cipher::consts::U16>::new(GA::from_slice(key));
+    if mode == "encrypt" {
+        let mut buf = data.to_vec();
+        let full_tag = match cipher.encrypt_in_place_detached(nonce, aad, &mut buf) {
+            Ok(t) => t,
+            Err(_) => return String::new(),
+        };
+        buf.extend_from_slice(&full_tag[..tag_bytes]);
+        return buf.iter().map(u8::to_string).collect::<Vec<_>>().join(",");
+    }
+    if mode == "decrypt" {
+        if data.len() < tag_bytes {
+            return String::new();
+        }
+        let ct_len = data.len() - tag_bytes;
+        let provided = &data[ct_len..];
+        // crate 的 detached encrypt 先做 CTR 变换、后对**变换后**缓冲（=ct）算 GHASH tag
+        //（见 aes-gcm 0.10.3 src/lib.rs encrypt_in_place_detached）。故：第一次调用输入 ct
+        // 得明文（tag 对 pt，弃）；第二次调用输入 pt 变换回 ct，其 tag 恰为期望全 128 位
+        // tag（同 mask 同 GHASH 输入，确定性）——以此做截断前缀比对，明文在 pt 中不受影响。
+        // CTR 为对合变换（SP 800-38D §6.5），两次变换还原。
+        let mut pt = data[..ct_len].to_vec();
+        if cipher.encrypt_in_place_detached(nonce, aad, &mut pt).is_err() {
+            return String::new();
+        }
+        let mut scratch = pt.clone();
+        let expected = match cipher.encrypt_in_place_detached(nonce, aad, &mut scratch) {
+            Ok(t) => t,
+            Err(_) => return String::new(),
+        };
+        // 常时近似：全前缀逐字节异或累积，无早退。
+        let mut diff = 0u8;
+        for i in 0..tag_bytes {
+            diff |= expected[i] ^ provided[i];
+        }
+        if diff == 0 {
+            return pt.iter().map(u8::to_string).collect::<Vec<_>>().join(",");
+        }
+    }
+    String::new()
+}
+
+/// `crypto.subtle.encrypt/decrypt` 的 AES-CBC/CTR 实现（webcrypto M2b）——AES-128/192/256
+/// CBC（PKCS#7 填充）与 CTR（16 字节大端计数器，NIST SP 800-38A）。RustCrypto
+/// `cbc`/`ctr` crate（选型见 docs/goal/webcrypto-compat/evidence/2026-10-17-m2b-deps.md）。
+/// kind "cbc"/"ctr"，mode "encrypt"/"decrypt"（CTR 加解密同路径）；key 16/24/32 字节；
+/// iv/counter 16 字节（长度由 shim 校验）；CBC 解密 padding 非法（含密文非块对齐/空串）→
+/// 空串（shim reject OperationError，填充校验在 crate 内不经手写 unpad）。CTR 无认证，
+/// 空输入返空输出（合法）。返 csv。
+/// https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38a.pdf
+pub fn crypto_subtle_aes_block(kind: &str, mode: &str, key_csv: &str, iv_csv: &str, data_csv: &str) -> String {
+    use cbc::cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit, block_padding::Pkcs7};
+    use ctr::cipher::StreamCipher;
+    let key = bytes_from_csv(key_csv);
+    let iv = bytes_from_csv(iv_csv);
+    let mut data = bytes_from_csv(data_csv);
+    if iv.len() != 16 {
+        return String::new();
+    }
+    if kind == "ctr" {
+        let applied = match key.len() {
+            16 => ctr::Ctr128BE::<aes::Aes128>::new_from_slices(&key, &iv).map(|mut c| c.apply_keystream(&mut data)),
+            24 => ctr::Ctr128BE::<aes::Aes192>::new_from_slices(&key, &iv).map(|mut c| c.apply_keystream(&mut data)),
+            32 => ctr::Ctr128BE::<aes::Aes256>::new_from_slices(&key, &iv).map(|mut c| c.apply_keystream(&mut data)),
+            _ => Err(cbc::cipher::InvalidLength),
+        };
+        if applied.is_err() {
+            return String::new();
+        }
+        return bytes_to_csv(&data);
+    }
+    if mode == "encrypt" {
+        let out = match key.len() {
+            16 => cbc::Encryptor::<aes::Aes128>::new_from_slices(&key, &iv)
+                .ok()
+                .map(|e| e.encrypt_padded_vec_mut::<Pkcs7>(&data)),
+            24 => cbc::Encryptor::<aes::Aes192>::new_from_slices(&key, &iv)
+                .ok()
+                .map(|e| e.encrypt_padded_vec_mut::<Pkcs7>(&data)),
+            32 => cbc::Encryptor::<aes::Aes256>::new_from_slices(&key, &iv)
+                .ok()
+                .map(|e| e.encrypt_padded_vec_mut::<Pkcs7>(&data)),
+            _ => None,
+        };
+        match out {
+            Some(v) => bytes_to_csv(&v),
+            None => String::new(),
+        }
+    } else if mode == "decrypt" {
+        let out = match key.len() {
+            16 => cbc::Decryptor::<aes::Aes128>::new_from_slices(&key, &iv)
+                .ok()
+                .and_then(|d| d.decrypt_padded_vec_mut::<Pkcs7>(&data).ok()),
+            24 => cbc::Decryptor::<aes::Aes192>::new_from_slices(&key, &iv)
+                .ok()
+                .and_then(|d| d.decrypt_padded_vec_mut::<Pkcs7>(&data).ok()),
+            32 => cbc::Decryptor::<aes::Aes256>::new_from_slices(&key, &iv)
+                .ok()
+                .and_then(|d| d.decrypt_padded_vec_mut::<Pkcs7>(&data).ok()),
+            _ => None,
+        };
+        match out {
+            Some(v) => bytes_to_csv(&v),
+            None => String::new(),
+        }
+    } else {
+        String::new()
+    }
+}
+
+/// AES-KW（RFC 3394）wrap/unwrap——`crypto.subtle.wrapKey/unwrapKey` 的 AES-KW 封装路径
+/// （webcrypto M3b）。mode "wrap"（8 字节对齐明文 → +8 字节封装输出）/ "unwrap"（校验
+/// 回绕寄存器 A 恒等于初始 IV A6A6×8 后剥去 8 字节；不匹配 → 空串，shim reject
+/// OperationError）。key 16/24/32 字节；wrap 输入 ≥16 字节且 8 字节对齐、unwrap 输入
+/// ≥24 字节且 8 字节对齐。纯块密码运算（aes crate BlockEncrypt/BlockDecrypt），无认证
+/// 依赖、无时间秘密分支（IV 比对为长度固定的公开常量比较）。
+/// https://datatracker.ietf.org/doc/html/rfc3394#section-2.2.1
+pub fn crypto_subtle_aes_kw(mode: &str, key_csv: &str, data_csv: &str) -> String {
+    use aes::cipher::{BlockDecrypt, BlockEncrypt, KeyInit, generic_array::GenericArray};
+    let key = bytes_from_csv(key_csv);
+    let data = bytes_from_csv(data_csv);
+    if !data.len().is_multiple_of(8) {
+        return String::new();
+    }
+    macro_rules! kw {
+        ($aes:ty) => {{
+            let cipher = <$aes>::new(GenericArray::from_slice(&key));
+            const IV: u64 = 0xA6A6A6A6A6A6A6A6;
+            if mode == "wrap" {
+                if data.len() < 16 {
+                    return String::new();
+                }
+                let n = data.len() / 8;
+                let mut a = IV;
+                let mut blocks: Vec<[u8; 8]> = (0..n)
+                    .map(|i| {
+                        let mut b = [0u8; 8];
+                        b.copy_from_slice(&data[i * 8..i * 8 + 8]);
+                        b
+                    })
+                    .collect();
+                let mut buf = [0u8; 16];
+                for j in 0..=5u64 {
+                    for i in 0..n {
+                        buf[..8].copy_from_slice(&a.to_be_bytes());
+                        buf[8..].copy_from_slice(&blocks[i]);
+                        let mut ga = GenericArray::clone_from_slice(&buf);
+                        cipher.encrypt_block(&mut ga);
+                        let mut hi = [0u8; 8];
+                        hi.copy_from_slice(&ga[..8]);
+                        a = u64::from_be_bytes(hi) ^ (n as u64 * j + i as u64 + 1);
+                        blocks[i].copy_from_slice(&ga[8..]);
+                    }
+                }
+                let mut out = Vec::with_capacity(data.len() + 8);
+                out.extend_from_slice(&a.to_be_bytes());
+                for b in blocks {
+                    out.extend_from_slice(&b);
+                }
+                return bytes_to_csv(&out);
+            }
+            if mode == "unwrap" {
+                if data.len() < 24 {
+                    return String::new();
+                }
+                let n = data.len() / 8 - 1;
+                let mut a = u64::from_be_bytes(data[..8].try_into().unwrap_or([0; 8]));
+                let mut blocks: Vec<[u8; 8]> = (0..n)
+                    .map(|i| {
+                        let mut b = [0u8; 8];
+                        b.copy_from_slice(&data[(i + 1) * 8..(i + 1) * 8 + 8]);
+                        b
+                    })
+                    .collect();
+                let mut buf = [0u8; 16];
+                for j in (0..=5u64).rev() {
+                    for i in (0..n).rev() {
+                        let t = (n as u64 * j + i as u64 + 1).to_be_bytes();
+                        buf[..8].copy_from_slice(&(a ^ u64::from_be_bytes(t)).to_be_bytes());
+                        buf[8..].copy_from_slice(&blocks[i]);
+                        let mut ga = GenericArray::clone_from_slice(&buf);
+                        cipher.decrypt_block(&mut ga);
+                        a = u64::from_be_bytes(ga[..8].try_into().unwrap_or([0; 8]));
+                        blocks[i].copy_from_slice(&ga[8..]);
+                    }
+                }
+                if a != IV {
+                    return String::new();
+                }
+                let mut out = Vec::with_capacity(data.len() - 8);
+                for b in blocks {
+                    out.extend_from_slice(&b);
+                }
+                return bytes_to_csv(&out);
+            }
+            String::new()
+        }};
+    }
+    match key.len() {
+        16 => kw!(aes::Aes128),
+        24 => kw!(aes::Aes192),
+        32 => kw!(aes::Aes256),
+        _ => String::new(),
     }
 }
 
@@ -240,4 +553,397 @@ pub fn crypto_subtle_hkdf(hash_algo: &str, ikm_csv: &str, salt_csv: &str, info_c
     }
     okm.truncate(dklen);
     okm.iter().map(u8::to_string).collect::<Vec<_>>().join(",")
+}
+
+// ---------------------------------------------------------------------------
+// RSA 家族（webcrypto M4a）——RSA-OAEP encrypt/decrypt、RSASSA-PKCS1-v1_5 / RSA-PSS
+// sign/verify、spki/pkcs8/jwk 密钥导入导出与 generateKey。委托 `rsa` 0.9（RustCrypto，
+// 选型见 docs/goal/webcrypto-compat/evidence/2026-10-17-m4a-deps.md）。**密钥材料零落
+// 日志**：分量与 DER 仅经 CSV 桥进出，无 tracing 输出。所有失败返空串（shim 按操作
+// 映射 NotSupportedError/InvalidAccessError/DataError/OperationError）。
+// https://w3c.github.io/webcrypto/#rsa-oaep  https://w3c.github.io/webcrypto/#rsassa-pkcs1
+// https://w3c.github.io/webcrypto/#rsa-pss  https://datatracker.ietf.org/doc/html/rfc8017
+// ---------------------------------------------------------------------------
+
+/// hash 名 → 分发臂（sign/verify/OAEP 共用；接受 `SHA-256`/`SHA256` 两种写法）。
+enum RsaHash {
+    S1,
+    S256,
+    S384,
+    S512,
+}
+
+fn parse_rsa_hash(name: &str) -> Option<RsaHash> {
+    match name.to_ascii_uppercase().as_str() {
+        "SHA-1" | "SHA1" => Some(RsaHash::S1),
+        "SHA-256" | "SHA256" => Some(RsaHash::S256),
+        "SHA-384" | "SHA384" => Some(RsaHash::S384),
+        "SHA-512" | "SHA512" => Some(RsaHash::S512),
+        _ => None,
+    }
+}
+
+/// 大端字节 csv → 大整数（jwk n/e/d 分量与 generateKey publicExponent 共用）。
+fn rsa_uint(bytes_csv: &str) -> rsa::BigUint {
+    rsa::BigUint::from_bytes_be(&bytes_from_csv(bytes_csv))
+}
+
+/// RSA 生成：`bits` 位模长 + `e_csv` 公钥指数（大端字节 csv，通常 1,0,1）→ pkcs8 DER
+/// csv（私钥；公钥经 `crypto_subtle_rsa_export_der` 派生）。e 非法（1/偶数）或生成
+/// 失败 → 空串（shim 映射 OperationError，WPT failures "Bad algorithm property"）。
+/// https://datatracker.ietf.org/doc/html/rfc8017#section-3.1
+pub fn crypto_subtle_rsa_generate(bits: u32, e_csv: &str) -> String {
+    use rsa::pkcs8::EncodePrivateKey;
+    use rsa::rand_core::OsRng;
+    let e = rsa_uint(e_csv);
+    // e 须 ≥3 且为奇数（RFC 8017 §3.1）；奇偶用最低位与 1 位与判定。
+    let one = rsa::BigUint::from(1u8);
+    if e < rsa::BigUint::from(3u8) || (&e & &one) != one {
+        return String::new();
+    }
+    match rsa::RsaPrivateKey::new_with_exp(&mut OsRng, bits as usize, &e) {
+        Ok(key) => match key.to_pkcs8_der() {
+            Ok(doc) => bytes_to_csv(doc.as_bytes()),
+            Err(_) => String::new(),
+        },
+        Err(_) => String::new(),
+    }
+}
+
+/// RSA DER 导入（spki 公钥 / pkcs8 私钥）→ 规范化再编码 DER csv（WPT exportKey
+/// round-trip 逐字节比对，canonical DER 必须稳定）。格式与内容不符（公钥喂 pkcs8、
+/// 私钥喂 spki、损坏 DER）→ 空串。fmt "spki"|"pkcs8"。
+pub fn crypto_subtle_rsa_import(fmt: &str, der_csv: &str) -> String {
+    use rsa::pkcs8::{DecodePrivateKey, DecodePublicKey, EncodePrivateKey, EncodePublicKey};
+    let der = bytes_from_csv(der_csv);
+    match fmt {
+        "spki" => rsa::RsaPublicKey::from_public_key_der(&der)
+            .ok()
+            .and_then(|k| k.to_public_key_der().ok())
+            .map(|doc| bytes_to_csv(doc.as_bytes()))
+            .unwrap_or_default(),
+        "pkcs8" => rsa::RsaPrivateKey::from_pkcs8_der(&der)
+            .ok()
+            .and_then(|k| k.to_pkcs8_der().ok())
+            .map(|doc| bytes_to_csv(doc.as_bytes()))
+            .unwrap_or_default(),
+        _ => String::new(),
+    }
+}
+
+/// RSA jwk 分量导入：n/e 必填；d 非空 → 私钥（p/q 为 CRT 素数；二者同缺走 crate 的
+/// d 反推素数恢复，SP 800-56B App C.2；dp/dq/qi 由 crate 校验重算，不信任入参）。
+/// 一致性校验（p·q=n、d·e≡1 mod λ(n)）失败 → 空串。输出规范化 pkcs8（私）/
+/// spki（公）DER csv。
+/// https://w3c.github.io/webcrypto/#importJwkRSA
+pub fn crypto_subtle_rsa_jwk_import(n_csv: &str, e_csv: &str, d_csv: &str, p_csv: &str, q_csv: &str) -> String {
+    use rsa::pkcs8::{EncodePrivateKey, EncodePublicKey};
+    let n = rsa_uint(n_csv);
+    let e = rsa_uint(e_csv);
+    // 0 的位长为 0——以此判零（BigUint 的 is_zero 来自 num-traits，不引依赖）。
+    if n.bits() == 0 || e.bits() == 0 {
+        return String::new();
+    }
+    if bytes_from_csv(d_csv).is_empty() {
+        return match rsa::RsaPublicKey::new(n, e) {
+            Ok(k) => match k.to_public_key_der() {
+                Ok(doc) => bytes_to_csv(doc.as_bytes()),
+                Err(_) => String::new(),
+            },
+            Err(_) => String::new(),
+        };
+    }
+    let d = rsa_uint(d_csv);
+    let p_bytes = bytes_from_csv(p_csv);
+    let q_bytes = bytes_from_csv(q_csv);
+    // 素数要么全缺（d 反推），要么成对出现——单侧出现按 spec 数据不一致 → 空串。
+    let primes: Vec<rsa::BigUint> = match (p_bytes.is_empty(), q_bytes.is_empty()) {
+        (true, true) => Vec::new(),
+        (false, false) => vec![rsa_uint(p_csv), rsa_uint(q_csv)],
+        _ => return String::new(),
+    };
+    match rsa::RsaPrivateKey::from_components(n, e, d, primes) {
+        Ok(key) => match key.to_pkcs8_der() {
+            Ok(doc) => bytes_to_csv(doc.as_bytes()),
+            Err(_) => String::new(),
+        },
+        Err(_) => String::new(),
+    }
+}
+
+/// RSA 密钥属性：DER（spki 公钥或 pkcs8 私钥，自动识别）→ `"<bits>,<e 字节 csv>"`。
+/// 供 shim 构造 RsaHashedKeyAlgorithm（modulusLength = n 位长、publicExponent =
+/// e 大端字节）。非法 DER → 空串。
+pub fn crypto_subtle_rsa_key_attrs(der_csv: &str) -> String {
+    use rsa::pkcs8::{DecodePrivateKey, DecodePublicKey};
+    use rsa::traits::PublicKeyParts;
+    let der = bytes_from_csv(der_csv);
+    let parse = |der: &[u8]| -> Option<(rsa::BigUint, rsa::BigUint)> {
+        if let Ok(k) = rsa::RsaPrivateKey::from_pkcs8_der(der) {
+            return Some((k.n().clone(), k.e().clone()));
+        }
+        if let Ok(k) = rsa::RsaPublicKey::from_public_key_der(der) {
+            return Some((k.n().clone(), k.e().clone()));
+        }
+        None
+    };
+    match parse(&der) {
+        Some((n, e)) => format!("{},{}", n.bits(), bytes_to_csv(&e.to_bytes_be())),
+        None => String::new(),
+    }
+}
+
+/// RSA DER 转换：pkcs8 私钥 → spki 公钥（fmt "spki"）；fmt "pkcs8" 透传（导入时已
+/// 规范化）。私钥导 spki 失败 / 其他 fmt → 空串。
+pub fn crypto_subtle_rsa_export_der(der_csv: &str, fmt: &str) -> String {
+    use rsa::pkcs8::{DecodePrivateKey, EncodePublicKey};
+    let der = bytes_from_csv(der_csv);
+    match fmt {
+        "spki" => rsa::RsaPrivateKey::from_pkcs8_der(&der)
+            .ok()
+            .and_then(|k| k.to_public_key().to_public_key_der().ok())
+            .map(|doc| bytes_to_csv(doc.as_bytes()))
+            .unwrap_or_default(),
+        "pkcs8" => bytes_to_csv(&der),
+        _ => String::new(),
+    }
+}
+
+/// RSA jwk 导出：DER（spki 公钥 / pkcs8 私钥）→ `;` 分隔的大端分量字段（公钥 2 字段
+/// `n;e`，私钥 8 字段 `n;e;d;p;q;dp;dq;qi`，各字段自身为字节 csv；缺失素数为空字段）。
+/// dp = d mod (p−1)、dq = d mod (q−1)、qi = q^(p−2) mod p（素数 p，Fermat 小定理，
+/// RFC 8017 §3.2）。want_private=true 但 DER 是公钥 → 空串。
+pub fn crypto_subtle_rsa_export_jwk(der_csv: &str, want_private: bool) -> String {
+    use rsa::pkcs8::{DecodePrivateKey, DecodePublicKey};
+    use rsa::traits::{PrivateKeyParts, PublicKeyParts};
+    let der = bytes_from_csv(der_csv);
+    if want_private {
+        let key = match rsa::RsaPrivateKey::from_pkcs8_der(&der) {
+            Ok(k) => k,
+            Err(_) => return String::new(),
+        };
+        let primes = key.primes();
+        let empty = rsa::BigUint::default();
+        let p = primes.first().unwrap_or(&empty);
+        let q = primes.get(1).unwrap_or(&empty);
+        let one = rsa::BigUint::from(1u8);
+        let two = rsa::BigUint::from(2u8);
+        let dp = key.d() % (p - &one);
+        let dq = key.d() % (q - &one);
+        let qi = q.modpow(&(p - &two), p);
+        return [
+            key.n().to_bytes_be(),
+            key.e().to_bytes_be(),
+            key.d().to_bytes_be(),
+            p.to_bytes_be(),
+            q.to_bytes_be(),
+            dp.to_bytes_be(),
+            dq.to_bytes_be(),
+            qi.to_bytes_be(),
+        ]
+        .iter()
+        .map(|b| bytes_to_csv(b))
+        .collect::<Vec<_>>()
+        .join(";");
+    }
+    match rsa::RsaPublicKey::from_public_key_der(&der) {
+        Ok(k) => [k.n().to_bytes_be(), k.e().to_bytes_be()]
+            .iter()
+            .map(|b| bytes_to_csv(b))
+            .collect::<Vec<_>>()
+            .join(";"),
+        Err(_) => String::new(),
+    }
+}
+
+/// RSA-OAEP encrypt/decrypt（RFC 8017 §7.1）。hash 为 normalize 后的摘要名；
+/// mode "encrypt"（spki 公钥）/"decrypt"（pkcs8 私钥）；label_csv 可空（空 = RFC
+/// 缺省空标签）。明文超长（k − 2·hLen − 2）、密文长度 ≠ k、解封校验失败 → 空串
+///（shim 映射 OperationError）。
+/// FIXME: `rsa` 0.9 的 Oaep.label 为 Option<String>（UTF-8），非 UTF-8 标签字节串
+/// 不支持——corpus 标签均 ASCII；标准侧标签为任意 octet string。
+pub fn crypto_subtle_rsa_oaep(hash: &str, mode: &str, key_csv: &str, label_csv: &str, data_csv: &str) -> String {
+    use rsa::Oaep;
+    use rsa::pkcs8::{DecodePrivateKey, DecodePublicKey};
+    use rsa::rand_core::OsRng;
+    use sha2::Digest;
+    let key = bytes_from_csv(key_csv);
+    let data = bytes_from_csv(data_csv);
+    let label_bytes = bytes_from_csv(label_csv);
+    let label = if label_bytes.is_empty() {
+        None
+    } else {
+        match String::from_utf8(label_bytes) {
+            Ok(s) => Some(s),
+            Err(_) => return String::new(),
+        }
+    };
+    macro_rules! oaep {
+        ($h:ty) => {
+            Oaep {
+                digest: Box::new(<$h>::new()),
+                mgf_digest: Box::new(<$h>::new()),
+                label: label.clone(),
+            }
+        };
+    }
+    let out = match (mode, parse_rsa_hash(hash)) {
+        ("encrypt", Some(h)) => {
+            let k = match rsa::RsaPublicKey::from_public_key_der(&key) {
+                Ok(k) => k,
+                Err(_) => return String::new(),
+            };
+            match h {
+                RsaHash::S1 => k.encrypt(&mut OsRng, oaep!(sha1::Sha1), &data),
+                RsaHash::S256 => k.encrypt(&mut OsRng, oaep!(sha2::Sha256), &data),
+                RsaHash::S384 => k.encrypt(&mut OsRng, oaep!(sha2::Sha384), &data),
+                RsaHash::S512 => k.encrypt(&mut OsRng, oaep!(sha2::Sha512), &data),
+            }
+        }
+        ("decrypt", Some(h)) => {
+            let k = match rsa::RsaPrivateKey::from_pkcs8_der(&key) {
+                Ok(k) => k,
+                Err(_) => return String::new(),
+            };
+            match h {
+                RsaHash::S1 => k.decrypt(oaep!(sha1::Sha1), &data),
+                RsaHash::S256 => k.decrypt(oaep!(sha2::Sha256), &data),
+                RsaHash::S384 => k.decrypt(oaep!(sha2::Sha384), &data),
+                RsaHash::S512 => k.decrypt(oaep!(sha2::Sha512), &data),
+            }
+        }
+        _ => return String::new(),
+    };
+    out.map(|v| bytes_to_csv(&v)).unwrap_or_default()
+}
+
+/// RSASSA-PKCS1-v1_5 / RSA-PSS 签名（RFC 8017 §8.2/§8.1）。pad "pkcs1v15"|"pss"，
+/// salt 仅 PSS 有效（spec：PSS saltLength 必填；0 = 确定性无盐）。pkcs8 私钥；先对
+/// data 摘要（`sign` 的 digest_in 为 prehash，DigestInfo 前缀由 padding 添加），
+/// 签名 → 字节 csv；key/参数非法 → 空串。
+pub fn crypto_subtle_rsa_sign(hash: &str, pad: &str, salt: u32, key_csv: &str, data_csv: &str) -> String {
+    use rsa::pkcs8::DecodePrivateKey;
+    use rsa::rand_core::OsRng;
+    let key = match rsa::RsaPrivateKey::from_pkcs8_der(&bytes_from_csv(key_csv)) {
+        Ok(k) => k,
+        Err(_) => return String::new(),
+    };
+    let data = bytes_from_csv(data_csv);
+    let h = match parse_rsa_hash(hash) {
+        Some(h) => h,
+        None => return String::new(),
+    };
+    // prehash：Pkcs1v15Sign / Pss 的 digest_in 均为消息摘要而非原文（RFC 8017 §8.1/§8.2 步骤 2）。
+    macro_rules! prehash {
+        ($h:ty) => {
+            <$h as sha2::Digest>::digest(&data).to_vec()
+        };
+    }
+    if pad == "pss" {
+        let sig = match h {
+            RsaHash::S1 => {
+                let ph = prehash!(sha1::Sha1);
+                key.sign_with_rng(
+                    &mut OsRng,
+                    rsa::pss::Pss::new_with_salt::<sha1::Sha1>(salt as usize),
+                    &ph,
+                )
+            }
+            RsaHash::S256 => {
+                let ph = prehash!(sha2::Sha256);
+                key.sign_with_rng(
+                    &mut OsRng,
+                    rsa::pss::Pss::new_with_salt::<sha2::Sha256>(salt as usize),
+                    &ph,
+                )
+            }
+            RsaHash::S384 => {
+                let ph = prehash!(sha2::Sha384);
+                key.sign_with_rng(
+                    &mut OsRng,
+                    rsa::pss::Pss::new_with_salt::<sha2::Sha384>(salt as usize),
+                    &ph,
+                )
+            }
+            RsaHash::S512 => {
+                let ph = prehash!(sha2::Sha512);
+                key.sign_with_rng(
+                    &mut OsRng,
+                    rsa::pss::Pss::new_with_salt::<sha2::Sha512>(salt as usize),
+                    &ph,
+                )
+            }
+        };
+        return sig.map(|v| bytes_to_csv(&v)).unwrap_or_default();
+    }
+    if pad == "pkcs1v15" {
+        let sig = match h {
+            RsaHash::S1 => key.sign(rsa::Pkcs1v15Sign::new::<sha1::Sha1>(), &prehash!(sha1::Sha1)),
+            RsaHash::S256 => key.sign(rsa::Pkcs1v15Sign::new::<sha2::Sha256>(), &prehash!(sha2::Sha256)),
+            RsaHash::S384 => key.sign(rsa::Pkcs1v15Sign::new::<sha2::Sha384>(), &prehash!(sha2::Sha384)),
+            RsaHash::S512 => key.sign(rsa::Pkcs1v15Sign::new::<sha2::Sha512>(), &prehash!(sha2::Sha512)),
+        };
+        return sig.map(|v| bytes_to_csv(&v)).unwrap_or_default();
+    }
+    String::new()
+}
+
+/// RSASSA-PKCS1-v1_5 / RSA-PSS 验签（spki 公钥）。签名非法或验证失败 → "0"
+///（spec：verify 对非法签名 resolve false 而非 reject）；key/参数非法 → 空串（shim
+/// reject）。
+pub fn crypto_subtle_rsa_verify(
+    hash: &str,
+    pad: &str,
+    salt: u32,
+    key_csv: &str,
+    sig_csv: &str,
+    data_csv: &str,
+) -> String {
+    use rsa::pkcs8::DecodePublicKey;
+    let key = match rsa::RsaPublicKey::from_public_key_der(&bytes_from_csv(key_csv)) {
+        Ok(k) => k,
+        Err(_) => return String::new(),
+    };
+    let sig = bytes_from_csv(sig_csv);
+    let data = bytes_from_csv(data_csv);
+    let h = match parse_rsa_hash(hash) {
+        Some(h) => h,
+        None => return String::new(),
+    };
+    macro_rules! prehash {
+        ($h:ty) => {
+            <$h as sha2::Digest>::digest(&data).to_vec()
+        };
+    }
+    if pad == "pss" {
+        let ok = match h {
+            RsaHash::S1 => {
+                let ph = prehash!(sha1::Sha1);
+                key.verify(rsa::pss::Pss::new_with_salt::<sha1::Sha1>(salt as usize), &ph, &sig)
+            }
+            RsaHash::S256 => {
+                let ph = prehash!(sha2::Sha256);
+                key.verify(rsa::pss::Pss::new_with_salt::<sha2::Sha256>(salt as usize), &ph, &sig)
+            }
+            RsaHash::S384 => {
+                let ph = prehash!(sha2::Sha384);
+                key.verify(rsa::pss::Pss::new_with_salt::<sha2::Sha384>(salt as usize), &ph, &sig)
+            }
+            RsaHash::S512 => {
+                let ph = prehash!(sha2::Sha512);
+                key.verify(rsa::pss::Pss::new_with_salt::<sha2::Sha512>(salt as usize), &ph, &sig)
+            }
+        };
+        return if ok.is_ok() { "1".into() } else { "0".into() };
+    }
+    if pad == "pkcs1v15" {
+        let ok = match h {
+            RsaHash::S1 => key.verify(rsa::Pkcs1v15Sign::new::<sha1::Sha1>(), &prehash!(sha1::Sha1), &sig),
+            RsaHash::S256 => key.verify(rsa::Pkcs1v15Sign::new::<sha2::Sha256>(), &prehash!(sha2::Sha256), &sig),
+            RsaHash::S384 => key.verify(rsa::Pkcs1v15Sign::new::<sha2::Sha384>(), &prehash!(sha2::Sha384), &sig),
+            RsaHash::S512 => key.verify(rsa::Pkcs1v15Sign::new::<sha2::Sha512>(), &prehash!(sha2::Sha512), &sig),
+        };
+        return if ok.is_ok() { "1".into() } else { "0".into() };
+    }
+    String::new()
 }

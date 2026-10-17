@@ -369,6 +369,7 @@ fn render_image_releases_cache_reference_after_draw() {
         image_key: key.clone(),
         clip: None,
         source: None,
+        clip_radius: None,
     };
 
     render_image(&mut fb, &primitive, 1.0, &mut cache);
@@ -1463,6 +1464,7 @@ fn image_renders_rgba_data() {
         image_key: key,
         clip: None,
         source: None,
+        clip_radius: None,
     });
 
     let font_loader = FontLoader::new();
@@ -1542,6 +1544,7 @@ fn image_clip_crops_not_rescales() {
         image_key: key,
         clip: Some(Rect::new(0.0, 0.0, 20.0, 20.0)),
         source: None,
+        clip_radius: None,
     });
 
     let font_loader = FontLoader::new();
@@ -2057,6 +2060,7 @@ fn cpu_full_scene_image_solid_red() {
         image_key: key,
         clip: None,
         source: None,
+        clip_radius: None,
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
@@ -2095,6 +2099,7 @@ fn cpu_scaled_image_at_viewport_edge_does_not_panic() {
         image_key: key,
         clip: None,
         source: None,
+        clip_radius: None,
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
@@ -3033,4 +3038,77 @@ fn cpu_transform_post_center_bilinear_resampling() {
 
     // ③ 采样点出界：设备列 7 中心 7.5 → 源 −0.5 < 区域左界 → 保持清白。
     assert_eq!(fb2.get_pixel(7, 2), white, "采样点出界列保持清白（区域闭合语义不变）");
+}
+
+// ─── R5155（css-contain-1 §3.1 paint containment 圆角裁剪）───
+
+/// clip 窗口带四角半径：角外像素不绘制（保留背景白），圆内照常（纯色优化路径）。
+#[test]
+fn render_image_clip_radius_rounds_window_solid() {
+    let mut fb = FrameBuffer::new(20, 20);
+    let mut cache = ImageCache::new(8, 1024 * 1024);
+    let image = ImageData::from_rgba([255u8, 0, 0, 255].repeat(16), 4, 4).unwrap();
+    let key = ImageKey::new(11);
+    cache.insert_with_key(key.clone(), image);
+
+    let primitive = ImagePrimitive {
+        rect: Rect::new(0.0, 0.0, 20.0, 20.0),
+        image_key: key,
+        clip: Some(Rect::new(0.0, 0.0, 20.0, 20.0)),
+        source: None,
+        clip_radius: Some([10.0, 10.0, 10.0, 10.0]),
+    };
+    render_image(&mut fb, &primitive, 1.0, &mut cache);
+
+    assert_eq!(fb.get_pixel(2, 2), [0, 0, 0, 0], "圆角外角点不应绘制（new 全透明底）");
+    assert_eq!(fb.get_pixel(10, 10), [255, 0, 0, 255], "圆心应绘制");
+    assert_eq!(fb.get_pixel(5, 10), [255, 0, 0, 255], "内切圆内应绘制");
+}
+
+/// 对照：clip_radius None（矩形窗口）角点照常绘制（既有行为不变）。
+#[test]
+fn render_image_rect_window_draws_corners() {
+    let mut fb = FrameBuffer::new(20, 20);
+    let mut cache = ImageCache::new(8, 1024 * 1024);
+    let image = ImageData::from_rgba([255u8, 0, 0, 255].repeat(16), 4, 4).unwrap();
+    let key = ImageKey::new(12);
+    cache.insert_with_key(key.clone(), image);
+
+    let primitive = ImagePrimitive {
+        rect: Rect::new(0.0, 0.0, 20.0, 20.0),
+        image_key: key,
+        clip: Some(Rect::new(0.0, 0.0, 20.0, 20.0)),
+        source: None,
+        clip_radius: None,
+    };
+    render_image(&mut fb, &primitive, 1.0, &mut cache);
+
+    assert_eq!(fb.get_pixel(2, 2), [255, 0, 0, 255], "矩形窗口角点照常绘制");
+}
+
+/// 双线性路径同样按圆角窗口剔除（非纯色源不走 solid 优化）。
+#[test]
+fn render_image_clip_radius_rounds_window_bilinear() {
+    let mut fb = FrameBuffer::new(20, 20);
+    let mut cache = ImageCache::new(8, 1024 * 1024);
+    let src: Vec<u8> = vec![255, 0, 0, 255, 0, 0, 255, 255, 0, 255, 0, 255, 255, 255, 0, 255];
+    let image = ImageData::from_rgba(src, 2, 2).unwrap();
+    let key = ImageKey::new(13);
+    cache.insert_with_key(key.clone(), image);
+
+    let primitive = ImagePrimitive {
+        rect: Rect::new(0.0, 0.0, 20.0, 20.0),
+        image_key: key,
+        clip: Some(Rect::new(0.0, 0.0, 20.0, 20.0)),
+        source: None,
+        clip_radius: Some([10.0, 10.0, 10.0, 10.0]),
+    };
+    render_image(&mut fb, &primitive, 1.0, &mut cache);
+
+    assert_eq!(
+        fb.get_pixel(1, 1),
+        [0, 0, 0, 0],
+        "双线路径圆角外角点不应绘制（new 全黑底）"
+    );
+    assert_ne!(fb.get_pixel(10, 10), [255, 255, 255, 255], "圆心应绘制");
 }

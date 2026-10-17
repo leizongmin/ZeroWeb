@@ -1816,13 +1816,37 @@ fn test_crypto_get_random_values_r2775() {
             .value,
         "true"
     );
-    // >65536 字节抛 RangeError（spec）。
+    // >65536 字节抛 QuotaExceededError（spec；WPT getRandomValues.any.js「Large length」组，
+    // assert_throws_quotaexceedederror 校验 requested/quota 属性与全局构造器身份）。
     assert_eq!(
         sandbox
             .execute("try { crypto.getRandomValues(new Uint8Array(65537)); 'no-throw' } catch (e) { 'threw' }")
             .unwrap()
             .value,
         "threw"
+    );
+    assert_eq!(
+        sandbox
+            .execute("try { crypto.getRandomValues(new Uint8Array(65537)); '' } catch (e) { e.name + '|' + e.code + '|' + (e.requested === null) }")
+            .unwrap()
+            .value,
+        "QuotaExceededError|22|true"
+    );
+    // webcrypto M2：Float* 与 DataView 抛 TypeMismatchError（spec 仅整数 TypedArray；
+    // WPT getRandomValues.any.js「Float arrays」/「DataView」组）。
+    assert_eq!(
+        sandbox
+            .execute("try { crypto.getRandomValues(new Float32Array(6)); 'no-throw' } catch (e) { e.name }")
+            .unwrap()
+            .value,
+        "TypeMismatchError"
+    );
+    assert_eq!(
+        sandbox
+            .execute("try { crypto.getRandomValues(new DataView(new ArrayBuffer(6))); 'no-throw' } catch (e) { e.name }")
+            .unwrap()
+            .value,
+        "TypeMismatchError"
     );
 }
 

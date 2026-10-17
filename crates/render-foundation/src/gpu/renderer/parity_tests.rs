@@ -121,6 +121,7 @@ fn build_basic_scene() -> (RenderPrimitives, ImageCache) {
         image_key: key,
         clip: None,
         source: None,
+        clip_radius: None,
     });
     (p, image_cache)
 }
@@ -238,6 +239,7 @@ fn parity_oversize_image_gpu_returns_false() {
         image_key: key,
         clip: None,
         source: None,
+        clip_radius: None,
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
@@ -262,6 +264,7 @@ fn parity_oversize_image_gpu_returns_false() {
         image_key: key2,
         clip: None,
         source: None,
+        clip_radius: None,
     });
     let rendered_ok = renderer.render_full_scene_gpu(
         &small,
@@ -423,6 +426,7 @@ fn parity_draw_order_controls_z_order() {
         image_key: key,
         clip: None,
         source: None,
+        clip_radius: None,
     });
     // 子元素背景色（后插入，应盖住父背景图）
     p.fills.push(FillPrimitive {
@@ -905,6 +909,7 @@ fn parity_image_matches_cpu() {
         image_key: crate::image_cache::ImageKey::new(42),
         clip: None,
         source: None,
+        clip_radius: None,
     });
     let mut image_cache = crate::image_cache::ImageCache::new(8, 1 << 20);
     image_cache.insert_with_key(

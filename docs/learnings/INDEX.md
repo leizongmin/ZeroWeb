@@ -5,10 +5,12 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（163）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（165）
 
+- 2026-10-16 [自源 reftest diff 幅度跳变：先补 oracle-shot 对照再立根因域](bugs/2026-10/2026-10-16-self-source-reftest-jump-needs-oracle-shot-first.md) — layout-engine, wpt-runner
 - 2026-10-16 [命名 Grid 轨道与单命名区域简写不可丢弃](bugs/2026-10/2026-10-16-mdn-named-grid-track-list-and-area-shorthand.md) — crates/style-system, crates/layout-engine
 - 2026-10-16 [HTMLCollection 的 Proxy 必须接受 Symbol 键并实现迭代](bugs/2026-10/2026-10-16-htmlcollection-proxy-symbol-iterator.md) — crates/engine, apps/renderer
+- 2026-10-16 [corpus 失败集提取必须校验总数——html-only 提取会丢 .xht 造幻影新红](bugs/2026-10/2026-10-16-corpus-fails-extraction-must-cover-all-extensions.md) — wpt-runner, rally
 - 2026-10-15 [WPT runner 单案超时网对同步循环/状态污染无效——守卫墙钟是最后防线](bugs/2026-10/2026-10-15-wpt-runner-sync-loop-hang-defeats-case-timeout.md) — tests/wpt-runner
 - 2026-10-15 [内联 SVG（替换元素）在 shrink-to-fit/auto 尺寸链里 used width 被算成 0——google 首页 logo 不绘制的根因方向](bugs/2026-10/2026-10-15-svg-replaced-used-width-collapse-google-logo.md) — crates/layout-engine,crates/engine
 - 2026-10-15 [切出 setter 子分支时误删兄弟路径首行副作用——textarea value 缓存写](bugs/2026-10/2026-10-15-shim-branch-carve-sibling-side-effects.md) — engine/js-dom-shim
@@ -195,8 +197,9 @@
 - 2026-08-05 [回调闭包 Send+Sync 约束：不能缓存 Document](patterns/2026-08/2026-08-05-callback-closure-send-sync-no-document.md) — zero-engine（js_dom_bridge.rs）, zero-script-sandbox（register_callback）, zero-dom（Document）
 - 2026-07-20 [经验：reftest 布局诊断必须用 empirical ZW-output 验证，不能只靠 code-trace](patterns/2026-07/2026-07-20-reftest-layout-diagnosis-empirical-verification.md) — tests/wpt-runner（reftest harness）, crates/layout-engine（multicol 等）
 
-## Performance — 性能优化经验（42）
+## Performance — 性能优化经验（43）
 
+- 2026-10-16 [bench-gate 必须静机跑——与其他重负载并行 = 测量污染假 FAIL](performance/2026-10/2026-10-16-bench-gate-needs-quiet-machine.md) — bench-gate, rally
 - 2026-10-07 [DOM shim 每次访问打宿主/重扫树的模式在批量循环下退化为 O(n²)](performance/2026-10/2026-10-07-dom-shim-per-access-host-requery-quadratic.md) — engine,js-dom-shim
 - 2026-09-14 [热路径遗留 env 探针——R4332_FOLD_OFF 逐 item `std::env::var` 致 wide_tree 微基准 +67%](performance/2026-09/2026-09-14-env-var-kill-switch-hot-path-regression.md) — zero-layout-engine
 - 2026-09-14 [CPU 频率窗效应——bench-gate 微基准跨窗漂移可达 2-3×（compositing_layer_analysis 误判归因）](performance/2026-09/2026-09-14-cpu-freq-window-bench-drift.md) — zero-engine,perf-gate

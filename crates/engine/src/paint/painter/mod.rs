@@ -371,6 +371,41 @@ fn paint_containment_clips(contain: ContainComputedValue, display: DisplayValue)
         )
 }
 
+/// R5155（css-contain-1 §3.1 paint containment 圆角裁剪）：contain:paint 的裁剪
+/// 区域 = padding box 的圆角形状——四角半径取 border-box 百分比解析 + 相邻收缩
+/// （css-backgrounds-3 §5.5）后扣减对应边 border 宽 clamp 0（与 border.rs 背景内
+/// 圈公式一致）。返回 None = 无圆角（矩形裁剪，既有行为）。
+/// FIXME: overflow:hidden/clip + border-radius 的通用裁剪未接（案驱动）；
+/// FIXME: 椭圆双轴（border-radius 斜杠垂直半径）未消费，单 r 模型与绘制端
+/// fill_rounded_rect 一致。
+fn paint_containment_clip_radii(box_node: &LayoutBox, style: &ComputedStyle) -> Option<[f32; 4]> {
+    if !paint_containment_clips(style.contain.clone(), style.display.clone()) {
+        return None;
+    }
+    let border_box_w = box_node.border_left
+        + box_node.padding_left
+        + box_node.content_width
+        + box_node.padding_right
+        + box_node.border_right;
+    let border_box_h = box_node.border_top
+        + box_node.padding_top
+        + box_node.content_height
+        + box_node.padding_bottom
+        + box_node.border_bottom;
+    if border_box_w <= 0.0 || border_box_h <= 0.0 {
+        return None;
+    }
+    let spec = super::helpers::BorderRadiusSpec::from_style_with_box(style, border_box_w, border_box_h);
+    let clamp0 = |v: f32| v.max(0.0);
+    let radii = [
+        clamp0(spec.top_left - box_node.border_left.max(box_node.border_top)),
+        clamp0(spec.top_right - box_node.border_top.max(box_node.border_right)),
+        clamp0(spec.bottom_right - box_node.border_right.max(box_node.border_bottom)),
+        clamp0(spec.bottom_left - box_node.border_bottom.max(box_node.border_left)),
+    ];
+    (radii[0] > 0.0 || radii[1] > 0.0 || radii[2] > 0.0 || radii[3] > 0.0).then_some(radii)
+}
+
 fn resolve_paint_font_size(font_size: &LengthValue) -> f32 {
     zero_style_system::computed::resolve_length(font_size, 16.0, None, None) as f32
 }
@@ -801,6 +836,7 @@ impl Painter {
                     container_h,
                 )),
                 source: None,
+                clip_radius: None,
             });
         self.canvas_images.push((ctx_id, cw, ch, rgba));
     }
@@ -1004,6 +1040,7 @@ impl Painter {
                 image_key: zero_render_foundation::image_cache::ImageKey::new(key_hash),
                 clip: None,
                 source: None,
+                clip_radius: None,
             });
         self.canvas_images
             .push((key_hash, data.width, data.height, data.pixels));
@@ -1702,6 +1739,7 @@ impl Painter {
                 image_key: zero_render_foundation::image_cache::ImageKey::new(key),
                 clip: None,
                 source: None,
+                clip_radius: None,
             });
     }
 
@@ -2248,6 +2286,19 @@ impl Painter {
             // R2500：overflow:clip 轴额外按 overflow-clip-margin 扩展（CSS Overflow 3 §3）。
             let clip_rect = overflow_clip_rect(box_node, abs_x, abs_y);
             super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_children, &clip_rect);
+            // R5155：contain:paint 圆角裁剪——图片内容窗口追加四角圆角剔除
+            //（矩形交集后逐像素测试角部）。
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+                && let Some(radii) = paint_containment_clip_radii(box_node, style)
+            {
+                super::helpers::clip_images_to_rounded_rect(
+                    &mut self.primitives,
+                    &counts_before_children,
+                    &clip_rect,
+                    radii,
+                );
+            }
         }
 
         let _ = is_hidden;
@@ -3365,6 +3416,19 @@ impl Painter {
             });
             if let Some(polygon) = shaped_overflow {
                 super::helpers::clip_with_polygon_rewrite(&mut self.primitives, &counts_before_children, &polygon);
+            }
+            // R5155：contain:paint 圆角裁剪——图片内容窗口追加四角圆角剔除
+            //（矩形交集后逐像素测试角部）。
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+                && let Some(radii) = paint_containment_clip_radii(box_node, style)
+            {
+                super::helpers::clip_images_to_rounded_rect(
+                    &mut self.primitives,
+                    &counts_before_children,
+                    &clip_rect,
+                    radii,
+                );
             }
         }
 

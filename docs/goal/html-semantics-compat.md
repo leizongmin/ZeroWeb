@@ -1,30 +1,31 @@
 # HTML Semantics 兼容 — html/semantics 语义面（主攻大域）
 
-**版本**: v1.5
-**日期**: 2026-10-16（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 2c 收口（stepUp/stepDown 全七类型 spec 步进 + valueAsNumber/Date IDL 面 +132P），下一切片候选 showPicker 族 + setter 抛错面
+**版本**: v1.7
+**日期**: 2026-10-17（v1.0 立项 2026-10-08）
+**状态**: Active——M2 切片 4 收口（valueAsNumber/valueAsDate setter 抛错面 +11P），下一切片候选 select/textarea showPicker
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-16 M2 切片 2c）**：stepping 簇清零——stepUp/stepDown
-> 从 number/range 桩升级为 HTML §4.10.5.4 全七类型步进算法（date/
-> datetime-local/month/number/range/time/week；R3902c）——非步进类型与
-> `step='any'` 抛 InvalidStateError、缺省步长表×比例因子、步进基 min→value
-> 内容属性→类型缺省基、离格向步进方向 snap、越界对齐界内格点（非 clamp 界
-> 值）、反向回退（当前值解析失败例外，Chromium `ApplyStep` 源码实证）；
-> valueAsNumber getter/setter 全类型（数值 parseFloat / date 族 ms / month
-> 月数）、valueAsDate date/month/week/time 门；date/week/datetime-local 解析
-> 补真实日历与 ISO 周回读校验，week/datetime-local 格式化新支。stepup +43P、
-> stepdown 系 +12P、valueas*-stepping +9P、weekmonth/datetime +8P、联带 IDL
-> 面 +64P。forms 2565→**2697P**；九域全量 3494→**3626P**（3626/6656 =
-> 54.48%），对切片 2b 账本逐 subtest diff **九域零回归**。账本见
-> [evidence/2026-10-16-m2s2c-r3902c.md](html-semantics-compat/evidence/2026-10-16-m2s2c-r3902c.md)。
-> 两处 runner 挂死仍挂账（tabular span-limits、links downloading-resources）。
-> R3317 unit test「text 无 stepUp」「range 前值+2n」契约随 spec 算法接入修正
-> （WPT input-stepup 锚定）。
-> **卡点**：无阻塞。**下一步**：showPicker 族 ~136F（show-picker-user-gesture
-> 63F / disabled-readonly 44F / does-not-focus 22F）→ valueAsDate/Number
-> setter 抛错面 9F（typeerror 两文件 8F + datetime-local-valueasdate 1F）。
+> **▶ 当前状态（2026-10-17 M2 切片 4）**：setter 抛错面清零——part04
+> valueAsNumber/valueAsDate setter 按 spec setter steps 重排（R3904，HTML
+> §4.10.5.4）：valueAsNumber ±Infinity→TypeError **先于适用性**（checkbox
+> + Infinity 亦 TypeError）→ 不适用 type→InvalidStateError → NaN→''；
+> valueAsDate WebIDL `Date?` 转换先行（非 null/undefined 非 Date→TypeError，
+> 不适用 type + 非 Date 亦 TypeError；undefined→null 同 null 面）→ 不适用
+> type（含 datetime-local，§4.10.5.1.11 do-not-apply 表）→
+> InvalidStateError → null/undefined/Invalid Date→清空。part16 补
+> `test_input_value_as_setter_throw_r3904` 契约单测（步序钉针 + 三清空
+> 面）。typeerror 两文件 8F + datetime-local-valueasdate 1F 全翻绿，
+> 同族 invalidstateerr 两文件联带 +2P。forms 2829→**2840P**；九域全量
+> 3788→**3799P**（3799/6913 = 54.95%；分母与上轮完全一致，diff 无机时
+> 噪声），对切片 3 账本逐 subtest diff **九域零回归**。账本见
+> [evidence/2026-10-16-m2s4-r3904.md](html-semantics-compat/evidence/2026-10-16-m2s4-r3904.md)。
+> 两处 runner 挂死仍挂账（tabular span-limits 间歇、links
+> downloading-resources skip 排除）。仓库既有 `paint/tests/r5151_*.rs`
+> fmt 违规系并行会话 commit 25cae3f9b 遗留，非本切片引入。
+> **卡点**：无阻塞。**下一步**：select/textarea showPicker（spec 同族
+> NotSupportedError「not being rendered」步）→ forms 域余簇归因选片。
+
 
 
 > **▶ 拆分动机（2026-10-08 预留编号立项，用户「候选 goal 也立项吧」）**：继
@@ -105,6 +106,23 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-17 M2 切片 4**：valueAsNumber/valueAsDate setter 抛错面
+  （R3904）——part04 两 setter 按 spec setter steps 重排（valueAsNumber
+  ±Infinity→TypeError 先于适用性、不适用→InvalidStateError、NaN→''；
+  valueAsDate WebIDL `Date?` 转换先行（undefined→null）、不适用
+  （含 datetime-local）→InvalidStateError、null/undefined/Invalid Date
+  →清空），part16 R3904 契约单测（步序钉针 + 三清空面）。typeerror
+  两文件 8F + datetime-local-valueasdate 1F 翻绿、同族 invalidstateerr
+  两文件联带 +2P，九域 3788→3799P（零回归；分母 6913 不变）。
+  `make test` 全绿、guarded-clippy/fmt 过、零新增依赖。
+- **2026-10-16 M2 切片 3**：input.showPicker() spec 检查序 + 瞬态激活消费
+  （R3903）——part03 方法分发区新支（不可变检查先于激活门/消费、readonly
+  适用 12 类型表、NotAllowedError 门、`_zwTransientActive` 同步消费、无
+  focus），latest-wins 属性读三级回落，part16 契约单测。show-picker 三文件
+  0→129P（user-gesture 63 / disabled-readonly 44 / does-not-focus 22），
+  forms 2697→2829P、九域 3626→3788P（零回归；分母 6656→6913 系 img
+  naturalWidth 文件完整上报）。`make test` 全绿、guarded-clippy/fmt 过
+  （fmt 既有违规系并行会话遗留，见切片账本）、零新增依赖。
 - **2026-10-16 M2 切片 2c**：stepUp/stepDown 全七类型 spec 步进算法 +
   valueAsNumber/valueAsDate IDL 全类型面（R3902c）——part03 `_parseHtmlDateValue`
   date/week/datetime-local 回读校验 + `_formatHtmlDateValue` week/

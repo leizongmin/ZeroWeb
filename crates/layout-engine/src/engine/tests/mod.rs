@@ -721,3 +721,20 @@ mod r5152_contain_size_multicol_sizing_tests;
 /// 高转移（css-contain-5 §3.1 × css-sizing-4 §4.1；contain-size-014 /
 /// canvas-contain-size 驱动）。
 mod r5153_container_type_containment_tests;
+mod r5154_last_baseline_fallback_tests;
+/// R5156 multicol 空盒（无流内内容 → 无断点机会）不可断——超高单片段原地溢出
+///（css-break-3 §5.1 × css-multicol-1；contain-size-breaks-001-ref 驱动）。
+mod r5156_multicol_empty_unbreakable_tests;
+/// R5157 contain:size 的 grid track 几何尺寸化 + grid-gap legacy 别名
+///（css-contain-1 §3.1 × css-align-3；contain-size-grid-002 驱动）。
+mod r5157_contain_size_grid_tests;
+/// R5158 body→viewport overflow 传播的 taffy 半边——body{overflow:hidden} 父子
+/// margin 塌缩归位（css-overflow-3 §3.3；contain-size-grid-002 残差驱动）。
+mod r5158_body_overflow_prop_taffy_tests;
+mod r5160_bfc_float_order_tests;
+/// R5161 跨 run 词中拼接边界无软换行机会（css-text-3 §5.2 / UAX#14；
+/// contain-paint-047 驱动）。
+mod r5161_cross_run_glue_tests;
+/// R5162 table-layout:fixed 列宽分布 §17.5.2.1（specified 列保持 + auto 列均分；
+/// 真 col CSS 宽 DOM 拾取；contain-paint-cell-001/002 驱动）。
+mod r5162_table_fixed_dist_tests;

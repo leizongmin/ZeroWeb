@@ -229,6 +229,10 @@ impl BrowserApp {
         if self.download_toast.is_some() {
             self.render_download_toast(&mut overlay_fills, &mut overlay_glyphs, width, height, s);
         }
+        // 18c-bis. 关闭标签撤销 toast（5 秒自动消失，同款渐入渐出）
+        if self.closed_tab_toast.is_some() {
+            self.render_closed_tab_toast(&mut overlay_fills, &mut overlay_glyphs, width, height, s);
+        }
         // 18d. 压缩标签悬停 tooltip（hover 500ms 后显示标题+URL，移开消失）
         if self.tab_tooltip.is_some() {
             self.render_tab_tooltip(&mut overlay_fills, &mut overlay_glyphs, width, height, font_size, s);
@@ -2702,6 +2706,72 @@ impl BrowserApp {
             box_y + 6.0 * s + font_size + 4.0 * s,
             font_size,
             fade(self.chrome_palette.page_hint),
+            glyphs,
+        );
+    }
+
+    /// 渲染关闭标签撤销 toast（页面内容区底部居中，5 秒自动消失）。
+    ///
+    /// 复用下载完成 toast 的 snackbar 模式与渐入渐出曲线；单行「标签已关闭 — 撤销」，
+    /// 「撤销」为动作文案（点击恢复标签，见 `closed_tab_toast_undo_rect_for`）。
+    /// 几何与点击命中 / smoke 断言面同源。
+    fn render_closed_tab_toast(
+        &mut self,
+        fills: &mut Vec<FillPrimitive>,
+        glyphs: &mut Vec<GlyphDraw>,
+        width: u32,
+        height: u32,
+        s: f32,
+    ) {
+        let Some(start) = self.closed_tab_toast else {
+            return;
+        };
+        let elapsed = start.elapsed().as_secs_f32();
+        if elapsed > layout::CLOSED_TAB_TOAST_DURATION_SECS {
+            // 到期清除（清除本身也需要一帧把 toast 移出画面）。
+            self.closed_tab_toast = None;
+            self.needs_redraw = true;
+            return;
+        }
+        // 显示期间持续重绘：驱动渐入渐出动画与到期消失帧。
+        self.needs_redraw = true;
+        let Some((box_x, box_y, box_w, box_h)) = self.closed_tab_toast_rect_for(width, height) else {
+            return;
+        };
+        let fade_in = (elapsed / layout::DOWNLOAD_TOAST_FADE_IN_SECS).min(1.0);
+        let fade_out = ((layout::CLOSED_TAB_TOAST_DURATION_SECS - elapsed) / layout::DOWNLOAD_TOAST_FADE_OUT_SECS).min(1.0);
+        let opacity = fade_in.min(fade_out).max(0.0);
+        let fade = |color: Color| fade_color(color, opacity);
+
+        let radius = layout::FIND_BAR_FLOAT_RADIUS * s;
+        let border = s.max(1.0);
+        push_rounded_rect_fill(fills, box_x, box_y, box_w, box_h, radius, fade(self.chrome_palette.separator));
+        push_rounded_rect_fill(
+            fills,
+            box_x + border,
+            box_y + border,
+            box_w - 2.0 * border,
+            box_h - 2.0 * border,
+            (radius - border).max(0.0),
+            fade(self.chrome_palette.autocomplete_bg),
+        );
+
+        let font_size = layout::CHROME_FONT_SIZE * s;
+        let pad_h = 14.0 * s;
+        self.draw_ui_text(
+            &Self::closed_tab_toast_label(),
+            box_x + pad_h,
+            box_y + 6.0 * s,
+            font_size,
+            fade(self.chrome_palette.tab_text),
+            glyphs,
+        );
+        self.draw_ui_text(
+            &Self::closed_tab_toast_undo_label(),
+            box_x + box_w - pad_h - self.measure_ui_text_width(&Self::closed_tab_toast_undo_label(), font_size),
+            box_y + 6.0 * s,
+            font_size,
+            fade(self.chrome_palette.loading_indicator),
             glyphs,
         );
     }

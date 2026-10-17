@@ -183,6 +183,7 @@ pub(super) fn assign_children_to_columns_with_breaking(
     forced_breaks: &[bool],
     forced_breaks_after: &[bool],
     // R5135/R5136：嵌套 mc 子的首不可断单元高（0 = 可断，照常切片/整放）。
+    // R5156 扩展：空盒（无流内子，无 Class A/B 断点机会）整体不可断，值 = 盒自身高。
     nested_unbreakable: &[f32],
     // R5140：嵌套 mc 子 + break-before:avoid（avoid-stay 候选；其余路径传空）。
     nested_avoid: &[bool],

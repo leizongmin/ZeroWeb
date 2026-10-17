@@ -939,7 +939,7 @@ fn compute_column_widths_inner(
     }
 
     // 辅助闭包：计算单元格对其所在列的宽度贡献
-    let cell_used_width = |cell_box: &LayoutBox| -> (f32, bool) {
+    let cell_used_width = |cell_box: &LayoutBox| -> (f32, bool, Option<f32>) {
         let cell_style = cell_box.node_id.and_then(|id| styles.get(&id));
         let cell_style_width = cell_style.map(|s| s.width.clone());
         let cell_width_px = cell_style.and_then(|s| resolve_table_used_length(&s.width, s));
@@ -950,6 +950,9 @@ fn compute_column_widths_inner(
             (Some(_), None) => false,
         };
         let intrinsic = compute_cell_intrinsic_width(cell_box, styles, doc, inline_fonts, viv_slot_depth);
+        // R5162：原始 specified px（无 R364b floor、无 collapse 半宽加成）——fixed 分支
+        // 步骤 2 消费（内容不参与 fixed 列宽）。
+        let spec_px = cell_width_px;
         // auto 宽度的单元格：列宽只取内容固有宽度（intrinsic）。
         // taffy 把单元格当 block，cell_box.width = 行/表全宽，不能作为列宽下限
         //（否则每列都撑到全宽，列总和溢出表宽）。无论 table 本身 width 是否 auto，
@@ -970,7 +973,7 @@ fn compute_column_widths_inner(
             // （CSS2 §17.6.2：列宽从左 border 中心到右 border 中心）。
             // 这样 `<col width:50px>` 与 `<td style="width:40px>`（border 10px）产生
             // 相同的列宽 50，使 colspan 类用例 test/ref 一致。
-            let explicit = cell_width_px.unwrap_or(cell_box.width);
+            let explicit = spec_px.unwrap_or(cell_box.width);
             let base = if is_collapsed_border {
                 explicit + (cell_box.border_left + cell_box.border_right) / 2.0
             } else {
@@ -998,7 +1001,7 @@ fn compute_column_widths_inner(
             None => w,
         };
         let w = w.max(cell_min.unwrap_or(0.0));
-        (w, css_width_auto)
+        (w, css_width_auto, spec_px)
     };
 
     // Pass 0：`<col>`/`<colgroup>` 的显式 width 设置列宽（CSS Tables §17.5.2.1/§17.5.2.2）。
@@ -1116,6 +1119,20 @@ fn compute_column_widths_inner(
     }
 
     // Pass 1：非跨列单元格设置列宽
+    let is_fixed_layout = table_style
+        .as_ref()
+        .is_some_and(|s| matches!(s.table_layout, zero_style_system::TableLayoutValue::Fixed));
+    // R5162：fixed 布局 specified 宽快照——下方 Pass 1/2 会把内容固有宽 `.max()` 进
+    // col_max_widths，fixed 分支（CSS 2.2 §17.5.2.1 内容不参与列宽）需要未污染的
+    // col 元素/colgroup specified 宽。快照含 R3810 col 边框半宽（collapse 语义保留）。
+    let fixed_spec_cols: Vec<f32> = if is_fixed_layout {
+        col_max_widths.clone()
+    } else {
+        Vec::new()
+    };
+    // R5162：显式 width 单元格的原始 specified px（无 R364b 内容 floor）——fixed 分支
+    // 步骤 2 用（fixed 布局内容不 dilate 列宽，floor 的 min-content 属内容域）。
+    let mut col_cell_spec = vec![None; col_count];
     for row in &grid.rows {
         let Some(row_box) = get_row_box(table_box, row) else {
             continue;
@@ -1130,8 +1147,11 @@ fn compute_column_widths_inner(
             if cell.col_start >= col_count || grid.collapsed_cols.get(cell.col_start).copied().unwrap_or(false) {
                 continue;
             }
-            let (w, _) = cell_used_width(cell_box);
+            let (w, _, cell_spec_px) = cell_used_width(cell_box);
             col_max_widths[cell.col_start] = col_max_widths[cell.col_start].max(w);
+            if let Some(px) = cell_spec_px {
+                col_cell_spec[cell.col_start] = Some(px);
+            }
             // R364：记录该列是否有显式 width 属性（用于扩展填满时冻结）。
             if cell_box
                 .node_id
@@ -1155,7 +1175,7 @@ fn compute_column_widths_inner(
             let Some(cell_box) = get_cell_box(row_box, cell) else {
                 continue;
             };
-            let (w, _) = cell_used_width(cell_box);
+            let (w, _, _) = cell_used_width(cell_box);
             // span 内被 Pass 1 约束的列数（这些列已有显式/固有宽度，不被撑开）
             let constrained_in_span = (cell.col_start..cell.col_end.min(col_count))
                 .filter(|&c| grid.collapsed_cols.get(c).copied().unwrap_or(false) || col_max_widths[c] > 0.0)
@@ -1183,9 +1203,6 @@ fn compute_column_widths_inner(
         use zero_css_parser::values::LengthValue;
         !matches!(s.width, LengthValue::Auto)
     });
-    let is_fixed_layout = table_style
-        .as_ref()
-        .is_some_and(|s| matches!(s.table_layout, zero_style_system::TableLayoutValue::Fixed));
     // CSS Tables §17.5.2.1：table-layout:fixed 时表格宽度由 width 属性决定，列宽来自
     // <col>/首行而非内容。若内容列宽和 > 显式 width，应收缩列到 width（内容溢出 cell，
     // 由 cell 的 overflow 裁剪），而非让内容撑宽表格（当前 bug：fixed 表渲染成内容宽）。
@@ -1227,6 +1244,73 @@ fn compute_column_widths_inner(
                 *w = 0.0;
             }
         }
+    }
+
+    // R5162（CSS 2.2 §17.5.2.1）：table-layout:fixed + 显式表宽——列宽只来自 col 元素/
+    // 显式宽单元格的 specified width（步骤 1-2），剩余表宽由 auto 列**均分**（步骤 3
+    // 「equally divide」），单元格内容不参与列宽（内容溢出由 cell overflow 呈现）。
+    // 旧路径把内容固有宽混进列宽后再按 fixed_capped 比例收缩：空 cell 的 strut 残留
+    // min-content 与内容宽一起把 specified 列摊薄（contain-paint-cell-001：col 4ch=200
+    // 的三列表 [0,200,0] 变 [21.43,157.14,21.43]——[60,440,60] 按比例压到 200）。
+    // specified 列和超表宽时保持 specified（css-tables-3 §3.4.3 CAP：表用宽 = max(W, 列和)，
+    // 表盒随后按列和加宽）。仅覆盖显式表宽；auto 宽 fixed 表维持旧路径（css-tables-3
+    // 的 CAP/MIN 交互未案驱动）。
+    // col_available > 0 门：converter 把 CSS display:table 的 specified width 按
+    // border-edge 语义扣 pb（R4243 口径，对 HTML `<table>` 正确），而 CSS 表盒
+    // width 为 content-edge（padding-applies-to-013a：width:50 + padding:25 chromium
+    // content=50）→ ZW 侧 col_available 退化为 0，均分无意义且 0 宽列比旧 strut 路径
+    // 更差（013a 0.625%→1.04% 实证）——该角回落 legacy，根因在 converter 表宽语义
+    // （FIXME：display:table 与 `<table>` 双语义分叉，案驱动另案）。
+    // kill-switch `ZW_TABLE_FIXED_DIST=0`。
+    static FIXED_DIST_ON: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| std::env::var("ZW_TABLE_FIXED_DIST").as_deref() != Ok("0"));
+    if is_fixed_layout && fixed_explicit_px.is_some() && col_available > 0.0 && *FIXED_DIST_ON {
+        // ① specified 列取未污染宽（col 元素快照优先，显式宽单元格取原始 specified）；
+        // auto 列内容贡献清零（fixed 不看内容）
+        for (i, w) in col_max_widths.iter_mut().enumerate() {
+            if !col_explicit[i] {
+                *w = 0.0;
+                continue;
+            }
+            *w = if fixed_spec_cols.get(i).is_some_and(|&v| v > 0.0) {
+                fixed_spec_cols[i]
+            } else {
+                col_cell_spec[i].unwrap_or(*w)
+            };
+        }
+        let is_live = |i: usize| !grid.collapsed_cols.get(i).copied().unwrap_or(false);
+        let sum_specified: f32 = (0..col_count)
+            .filter(|&i| col_explicit[i] && is_live(i))
+            .map(|i| col_max_widths[i])
+            .sum();
+        let auto_cols: Vec<usize> = (0..col_count).filter(|&i| !col_explicit[i] && is_live(i)).collect();
+        let remaining = col_available - sum_specified;
+        if !auto_cols.is_empty() {
+            if remaining > 0.0 {
+                let per = remaining / auto_cols.len() as f32;
+                for &i in &auto_cols {
+                    col_max_widths[i] = per;
+                }
+            }
+        } else if remaining > 0.0 {
+            // 无 auto 列：剩余表宽均分给 specified 列（CSS 2.2 §17.5.2.1「the extra
+            // width should be distributed over the columns」——separated-border-model-003b：
+            // 单 td 100 的 500 表 spacing 50 → td 300，chromium 实证；旧路径经
+            // expansion 比例放大偶然达标）。
+            let per = remaining / (0..col_count).filter(|&i| col_explicit[i] && is_live(i)).count() as f32;
+            for i in 0..col_count {
+                if col_explicit[i] && is_live(i) {
+                    col_max_widths[i] += per;
+                }
+            }
+        }
+        // ② 折叠列宽度为 0（与下方 auto 路径 §4.1 同口径）
+        for (i, w) in col_max_widths.iter_mut().enumerate() {
+            if !is_live(i) {
+                *w = 0.0;
+            }
+        }
+        return (col_max_widths, false);
     }
 
     // 计算总宽度

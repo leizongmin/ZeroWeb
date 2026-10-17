@@ -298,6 +298,12 @@ pub struct ImagePrimitive {
     ///（CSS border-image 9-slice：每片把 slice 切出的源区域拉伸到对应目标片）。
     /// None = 整张源映射到 rect（既有行为，全部既有构造点零变更）。
     pub source: Option<Rect>,
+    /// R5155：`clip` 窗口的四角圆角半径 `[tl, tr, br, bl]`（物理 px，相对窗口）。
+    /// css-contain-1 §3.1 paint containment 圆角裁剪（contain:paint 裁剪区域 =
+    /// padding box 圆角形状）。None = 矩形窗口（既有行为，零开销）。
+    /// FIXME: GPU 路径未消费（scissor 仅矩形）；FIXME: 椭圆双轴（border-radius
+    /// 斜杠垂直半径）未消费，单 r 模型与绘制端 fill_rounded_rect 一致。
+    pub clip_radius: Option<[f32; 4]>,
 }
 
 /// Glyph 对应的源文本 cluster。

@@ -2245,14 +2245,28 @@
       }
       return s;
     },
-    // getRandomValues(typedArray)：spec 限定 TypedArray（Int8..Uint32 / BigInt64/BigUint64），≤65536
-    // 字节。填**底层字节 buffer**（Uint8Array 视图）→ 任意 typed 视图得随机值（含多字节 / 共享 buffer 偏移）。
+    // getRandomValues(typedArray)：spec 限定**整数** TypedArray（Int8..Uint32 / BigInt64/BigUint64，
+    // 含子类），≤65536 字节。Float16/32/64 与 DataView 抛 TypeMismatchError；>65536 抛
+    // QuotaExceededError（webstorage 同名接口，带 requested/quota 属性——WPT
+    // assert_throws_quotaexceedederror 校验 e.constructor === self.QuotaExceededError）。
+    // 填**底层字节 buffer**（Uint8Array 视图）→ 任意 typed 视图得随机值（含多字节 / 共享 buffer 偏移）。
+    // https://w3c.github.io/webcrypto/#CryptoOperation-getRandomValues  https://webidl.spec.whatwg.org/#quotaexceedederror
     getRandomValues: function (arr) {
       if (typeof ArrayBuffer === 'undefined' || !ArrayBuffer.isView(arr)) {
         throw new TypeError('getRandomValues: argument must be a TypedArray');
       }
+      // 整数 TypedArray 白名单（instanceof 放行子类——WPT「Subclass of X」组）。
+      var isIntegerView = (arr instanceof Int8Array) || (arr instanceof Int16Array) ||
+        (arr instanceof Int32Array) || (arr instanceof Uint8Array) || (arr instanceof Uint8ClampedArray) ||
+        (arr instanceof Uint16Array) || (arr instanceof Uint32Array);
+      if (typeof BigInt64Array === 'function') {
+        isIntegerView = isIntegerView || (arr instanceof BigInt64Array) || (arr instanceof BigUint64Array);
+      }
+      if (!isIntegerView) {
+        throw new (globalThis.DOMException || DOMException)('Unsupported TypedArray type for getRandomValues', 'TypeMismatchError');
+      }
       if (arr.byteLength > 65536)
-        throw new DOMException("The ArrayBufferView byte length (" + arr.byteLength + ") exceeds 65536.", 'QuotaExceededError');
+        throw new (globalThis.QuotaExceededError || globalThis.DOMException || DOMException)("The ArrayBufferView byte length (" + arr.byteLength + ") exceeds 65536.");
       _zw_randomFill(new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength));
       return arr;
     }
@@ -2260,14 +2274,21 @@
 
   // BufferSource → number[]（字节值，0-255）：ArrayBuffer / TypedArray / DataView / array-like / string（经
   // TextEncoder）。供 crypto.subtle.digest 把 data 传 host（逗号分隔十进制串，避免 UTF-8 编码歧义）。
+  // **detached buffer → 空字节**（spec：digest 取 buffer source 字节副本，已转移 buffer 为零字节——
+  // WPT digest.js「transferred buffer during call」组；V8 对 detached buffer Construct 抛 TypeError，
+  // 须捕获转空，不得让操作 reject）。
   function _zw_bufToBytes(data) {
     if (typeof data === 'string') data = new TextEncoder().encode(data);
     if (data == null) return [];
     var view;
-    if (data instanceof ArrayBuffer) view = new Uint8Array(data);
-    else if (data && data.buffer) view = new Uint8Array(data.buffer, data.byteOffset || 0, data.byteLength != null ? data.byteLength : data.length);
-    else if (typeof data.length === 'number') view = data; // array-like（含 TypedArray 已覆盖上一支）
-    else return [];
+    try {
+      if (data instanceof ArrayBuffer) view = new Uint8Array(data);
+      else if (data && data.buffer) view = new Uint8Array(data.buffer, data.byteOffset || 0, data.byteLength != null ? data.byteLength : data.length);
+      else if (typeof data.length === 'number') view = data; // array-like（含 TypedArray 已覆盖上一支）
+      else return [];
+    } catch (_detached) {
+      return []; // detached ArrayBuffer（buffer transfer 后）→ 零字节副本
+    }
     var out = [];
     for (var i = 0; i < view.length; i++) out.push(view[i] & 0xff);
     return out;
@@ -2290,34 +2311,89 @@
     this.usages = usages;
     this._raw = raw || null;
   }
+  // spec：接口原型身份标签（WPT assert_goodCryptoKey 断言 key[Symbol.toStringTag] ===
+  // "CryptoKey"——polyfill 构造器无接口对象，须显式挂原型，Performance* 同款先例）。
+  try { CryptoKey.prototype[Symbol.toStringTag] = 'CryptoKey'; } catch (_e) {}
 
   // hash 名归一化：接受串或 {name:...} → 大写 "SHA-XXX"，或 null。
   function _zw_hashName(h) {
     var n = (typeof h === 'object' && h) ? h.name : h;
     if (n == null) return null;
-    return String(n).toUpperCase();
+    return _zw_upperAscii(String(n));
+  }
+
+  // ASCII-only 大写折叠（WebCrypto 算法名归一，spec：ASCII 大小写不敏感匹配——仅 a-z
+  // 映射 A-Z，不做 Unicode 全大写折叠，非 ASCII 字符原样保留）。`toUpperCase()` 会把
+  // U+212A KELVIN SIGN 等 Unicode 字符语义混入（如土耳其 ı→I），WPT
+  // normalize-algorithm-name 断言 "PB<U+212A>DF2" 不得匹配 "PBKDF2"。
+  // https://w3c.github.io/webcrypto/#algorithm-normalization
+  function _zw_upperAscii(s) {
+    var out = '';
+    for (var i = 0; i < s.length; i++) {
+      var c = s.charCodeAt(i);
+      out += (c >= 97 && c <= 122) ? String.fromCharCode(c - 32) : s.charAt(i);
+    }
+    return out;
+  }
+
+  // R384 同族（webcrypto M2）：subtle 各操作 reject 的 DOMException 须为**全局**构造器
+  // 实例——词法 `new DOMException` 落 shim 闭包 polyfill，WPT promise_rejects_dom 断言
+  // `e.constructor === win.DOMException`（flip 后 = 原生构造器）恒 false（AbortSignal
+  // throwIfAborted 同款修正先例）。调用时求值（flip 时点不假设早于 shim init）。
+  function _zw_subtleDE(message, name) {
+    var DE = globalThis.DOMException || DOMException;
+    return new DE(message, name);
   }
 
   // importKey 的 algorithm 归一化：{name:"HMAC", hash:"SHA-XXX"} / {name:"PBKDF2"} / null（unsupported）。
-  // HMAC 需 hash；PBKDF2 不需（hash 在 deriveBits 参数里）。
+  // HMAC 需 hash；PBKDF2 不需（hash 在 deriveBits 参数里）。name 匹配 ASCII 折叠（_zw_upperAscii）。
+  // HMAC 透传显式 length 成员（generateKey/importKey 语义：缺省 = hash 块大小，显式 = 调用值）。
+  // M3b 起 AES 家族含 AES-KW。M4a 起 RSA 家族（RsaHashedImportParams：hash 必填成员缺失
+  // → TypeError，WebIDL required dictionary member；name 不在注册表 / hash 非注册摘要名
+  // → null 调用方转 NotSupportedError——WPT generateKey/failures.js 裸名 "RSA"、hash "SHA" 组）。
   function _zw_normalizeImportAlgorithm(algo) {
     if (!algo) return null;
     var name = (typeof algo === 'object' && algo) ? algo.name : algo;
-    if (!name) return null;
-    name = String(name).toUpperCase();
+    if (name == null) {
+      // spec normalizeAlgorithm：Algorithm 字典 required name 成员缺失（含 {}）→ TypeError
+      //（WPT digest.js「empty algorithm object」组同语义，generateKey failures 空算法组）。
+      throw new TypeError('Algorithm name is required');
+    }
+    name = _zw_upperAscii(String(name));
     if (name === 'HMAC') {
       var hash = _zw_hashName(typeof algo === 'object' ? algo.hash : null);
       if (!hash) return null;
-      return { name: 'HMAC', hash: hash };
+      var out = { name: 'HMAC', hash: hash };
+      if (typeof algo === 'object' && algo && algo.length != null) out.length = Number(algo.length);
+      return out;
     }
     if (name === 'PBKDF2') {
       return { name: 'PBKDF2' };
     }
-    if (name === 'AES-GCM') {
-      return { name: 'AES-GCM' };
+    if (name === 'AES-GCM' || name === 'AES-CBC' || name === 'AES-CTR' || name === 'AES-KW') {
+      // length 成员透传（deriveKey 目标按成员取派生长度；importKey/generateKey 不消费
+      // 该成员——前者按数据位长，后者直接读原始 algorithm 对象）。
+      var aesOut = { name: name };
+      if (typeof algo === 'object' && algo && algo.length != null) aesOut.length = Number(algo.length);
+      return aesOut;
     }
     if (name === 'HKDF') {
       return { name: 'HKDF' };
+    }
+    if (name === 'RSA-OAEP' || name === 'RSASSA-PKCS1-V1_5' || name === 'RSA-PSS') {
+      if (typeof algo !== 'object' || algo.hash == null) {
+        throw new TypeError('RSA algorithm requires a hash member');
+      }
+      var rsaHash = _zw_hashName(algo.hash);
+      if (!rsaHash || ['SHA-1', 'SHA-256', 'SHA-384', 'SHA-512'].indexOf(rsaHash) < 0) {
+        return null;
+      }
+      // 注：name 已被上方 ASCII 折叠为全大写，本族规范名含小写 "v1_5"，此处回写
+      // 注册表规范拼写（spec normalizeAlgorithm 命中注册表后用注册名）。
+      return {
+        name: (name === 'RSASSA-PKCS1-V1_5') ? 'RSASSA-PKCS1-v1_5' : name,
+        hash: rsaHash
+      };
     }
     return null;
   }
@@ -2339,15 +2415,18 @@
   }
 
   // HMAC MAC 计算（sign/verify 复用）：返 Uint8Array；host 未注册 / unsupported hash → 调 reject 返 null。
+  // hash 兼容串与 KeyAlgorithm 字典（M3b 起 key.algorithm.hash 为 {name:"SHA-XXX"} 对象，spec
+  // HmacKeyAlgorithm）。
   function _zw_hmacMac(algo, key, dataBytes, reject) {
     if (typeof __zw_crypto_subtle_hmac !== 'function') {
-      reject(new DOMException('crypto.subtle HMAC requires host callback', 'NotSupportedError'));
+      reject(_zw_subtleDE('crypto.subtle HMAC requires host callback', 'NotSupportedError'));
       return null;
     }
+    var hashName = (algo.hash && typeof algo.hash === 'object') ? algo.hash.name : algo.hash;
     var keyCsv = (key._raw || []).map(String).join(',');
-    var macCsv = __zw_crypto_subtle_hmac(algo.hash, keyCsv, dataBytes.join(','));
+    var macCsv = __zw_crypto_subtle_hmac(hashName, keyCsv, dataBytes.join(','));
     if (!macCsv) {
-      reject(new DOMException("Unsupported HMAC hash: '" + algo.hash + "'", 'NotSupportedError'));
+      reject(_zw_subtleDE("Unsupported HMAC hash: '" + hashName + "'", 'NotSupportedError'));
       return null;
     }
     var parts = macCsv.split(',');
@@ -2356,24 +2435,68 @@
     return arr;
   }
 
-  // AES-GCM 调用（encrypt/decrypt 共用）：校验 iv(12B)/tagLength(128)/host 后调 `__zw_crypto_subtle_aes_gcm`，
-  // 返 Uint8Array；失败调 reject 返 null。AAD 经 algorithm.additionalData（可选）。
+  // AES-GCM 调用（encrypt/decrypt 共用，webcrypto M3a 矩阵）：iv 12/16/32 字节（spec 允许任意
+  // 长度，shim 收敛到 corpus fixtures 的 96/256 位 + wrapKey AES-GCM 封装路径固定 128 位——
+  // M3b）；tagLength ∈ {32,64,96,104,112,120,128}（spec 合法集，缺省 128；非法 →
+  // OperationError）；host 后调 `__zw_crypto_subtle_aes_gcm`，返 Uint8Array；失败调 reject 返
+  // null。AAD 经 algorithm.additionalData（可选）。
+  // https://w3c.github.io/webcrypto/#aes-gcm-operations
   function _zw_aesGcmCall(op, algorithm, key, dataBytes, reject) {
     var iv = _zw_bufToBytes(algorithm.iv);
-    if (iv.length !== 12) {
-      reject(new DOMException('AES-GCM iv must be 12 bytes (96 bits)', 'OperationError')); return null;
+    if (iv.length !== 12 && iv.length !== 16 && iv.length !== 32) {
+      reject(_zw_subtleDE('AES-GCM iv must be 12, 16 or 32 bytes (96/128/256 bits)', 'OperationError')); return null;
     }
-    if (algorithm.tagLength != null && (algorithm.tagLength | 0) !== 128) {
-      reject(new DOMException('Only AES-GCM tagLength=128 supported', 'NotSupportedError')); return null;
+    var tagBits = (algorithm.tagLength != null) ? Number(algorithm.tagLength) : 128;
+    if (tagBits !== 32 && tagBits !== 64 && tagBits !== 96 && tagBits !== 104 &&
+        tagBits !== 112 && tagBits !== 120 && tagBits !== 128) {
+      reject(_zw_subtleDE('Invalid AES-GCM tagLength: ' + algorithm.tagLength, 'OperationError')); return null;
     }
     var aadBytes = algorithm.additionalData != null ? _zw_bufToBytes(algorithm.additionalData) : [];
     if (typeof __zw_crypto_subtle_aes_gcm !== 'function') {
-      reject(new DOMException('crypto.subtle AES-GCM requires host callback', 'NotSupportedError')); return null;
+      reject(_zw_subtleDE('crypto.subtle AES-GCM requires host callback', 'NotSupportedError')); return null;
     }
     var keyCsv = (key._raw || []).map(String).join(',');
-    var out = __zw_crypto_subtle_aes_gcm(op, keyCsv, iv.join(','), dataBytes.join(','), aadBytes.join(','));
+    var out = __zw_crypto_subtle_aes_gcm(op, keyCsv, iv.join(','), dataBytes.join(','), aadBytes.join(','), String(tagBits));
     if (!out) {
-      reject(new DOMException('AES-GCM ' + op + ' failed (bad key/iv/tag)', 'OperationError')); return null;
+      reject(_zw_subtleDE('AES-GCM ' + op + ' failed (bad key/iv/tag)', 'OperationError')); return null;
+    }
+    var parts = out.split(',');
+    var res = new Uint8Array(parts.length);
+    for (var i = 0; i < parts.length; i++) res[i] = +parts[i];
+    return res;
+  }
+
+  // AES-CBC/CTR 调用（encrypt/decrypt 共用，webcrypto M2b）：iv/counter 须 16 字节（spec：≠16 →
+  // OperationError）；CTR length 成员（计数器递增位宽）缺省 128，0 或 >128 → OperationError
+  //（位宽 <128 的回绕递增未实现，恒按 128 位全块递增——WPT fixtures 未覆盖）；CBC 解密
+  // padding 非法 host 返空串 → OperationError（填充校验在 host 侧 RustCrypto cbc crate，
+  // 不经手写 unpad）；CTR 无 padding、加解密同路径。
+  // https://w3c.github.io/webcrypto/#aes-cbc-operations  https://w3c.github.io/webcrypto/#aes-ctr-operations
+  function _zw_aesBlockCall(kind, op, algorithm, key, dataBytes, reject) {
+    var iv = _zw_bufToBytes(kind === 'ctr' ? algorithm.counter : algorithm.iv);
+    if (iv.length !== 16) {
+      reject(_zw_subtleDE('AES-' + (kind === 'ctr' ? 'CTR counter' : 'CBC iv') + ' must be 16 bytes (128 bits)', 'OperationError')); return null;
+    }
+    if (kind === 'ctr') {
+      var ctrBits = (algorithm.length != null) ? Number(algorithm.length) : 128;
+      // FIXME(spec)：length ∈ (0,128) 时计数器仅右 length 位回绕递增；现恒 128 位全块递增。
+      if (!(ctrBits > 0 && ctrBits <= 128)) {
+        reject(_zw_subtleDE('AES-CTR counter length must be 1-128 bits', 'OperationError')); return null;
+      }
+      // spec：CTR 空明文/密文 → 空输出（无 padding，合法）——host 以空串兼作错误信号，
+      // 空输入在此短路（WPT「transferred plaintext during call」组断言空结果）。
+      if (dataBytes.length === 0) {
+        return new Uint8Array(0);
+      }
+    }
+    var cb = (kind === 'ctr') ? __zw_crypto_subtle_aes_ctr : __zw_crypto_subtle_aes_cbc;
+    if (typeof cb !== 'function') {
+      reject(_zw_subtleDE('crypto.subtle AES-' + (kind === 'ctr' ? 'CTR' : 'CBC') + ' requires host callback', 'NotSupportedError')); return null;
+    }
+    var keyCsv = (key._raw || []).map(String).join(',');
+    var out = cb(op, keyCsv, iv.join(','), dataBytes.join(','));
+    if (!out) {
+      reject(_zw_subtleDE('AES-' + (kind === 'ctr' ? 'CTR' : 'CBC') + ' ' + op + ' failed (bad key/iv/padding)', 'OperationError')); return null;
     }
     var parts = out.split(',');
     var res = new Uint8Array(parts.length);
@@ -2383,10 +2506,15 @@
 
   // 派生核心（deriveBits/deriveKey 共用）：PBKDF2/HKDF 分派 + host 调用 + csv→arr，**不做 usage 校验**
   //（usage 校验由调用方负责——deriveBits 检 "deriveBits"，deriveKey 检 "deriveKey"）。
+  // name 匹配 ASCII 折叠；**未知派生算法 reject NotSupportedError**（不得落入 HKDF 分支——
+  // WPT normalize-algorithm-name "PB<U+212A>DF2" 组断言 NotSupportedError）。
   function _zw_performDerive(algorithm, key, length) {
     return new Promise(function (resolve, reject) {
       var name = (typeof algorithm === 'object' && algorithm) ? algorithm.name : algorithm;
-      name = String(name == null ? '' : name).toUpperCase();
+      name = _zw_upperAscii(String(name == null ? '' : name));
+      if (name !== 'PBKDF2' && name !== 'HKDF') {
+        reject(_zw_subtleDE('Unsupported derive algorithm: ' + name, 'NotSupportedError')); return;
+      }
       var dkLen = length / 8;
       var keyCsv = (key._raw || []).map(String).join(',');
       var hash = _zw_hashName(typeof algorithm === 'object' ? algorithm.hash : null);
@@ -2395,21 +2523,21 @@
       if (name === 'PBKDF2') {
         var iters = Math.floor(Number(algorithm.iterations));
         if (!hash || !(iters > 0)) {
-          reject(new DOMException('PBKDF2 requires salt/iterations/hash', 'OperationError')); return;
+          reject(_zw_subtleDE('PBKDF2 requires salt/iterations/hash', 'OperationError')); return;
         }
         if (typeof __zw_crypto_subtle_pbkdf2 !== 'function') {
-          reject(new DOMException('crypto.subtle deriveBits requires host callback', 'NotSupportedError')); return;
+          reject(_zw_subtleDE('crypto.subtle deriveBits requires host callback', 'NotSupportedError')); return;
         }
         out = __zw_crypto_subtle_pbkdf2(hash, keyCsv, saltBytes.join(','), String(iters), String(dkLen));
       } else { // HKDF
         if (!hash || typeof __zw_crypto_subtle_hkdf !== 'function') {
-          reject(new DOMException('HKDF requires hash + host callback', 'NotSupportedError')); return;
+          reject(_zw_subtleDE('HKDF requires hash + host callback', 'NotSupportedError')); return;
         }
         var infoBytes = _zw_bufToBytes(algorithm.info);
         out = __zw_crypto_subtle_hkdf(hash, keyCsv, saltBytes.join(','), infoBytes.join(','), String(dkLen));
       }
       if (!out) {
-        reject(new DOMException("Unsupported deriveBits hash: '" + hash + "'", 'NotSupportedError')); return;
+        reject(_zw_subtleDE("Unsupported deriveBits hash: '" + hash + "'", 'NotSupportedError')); return;
       }
       var parts = out.split(',');
       var arr = new Uint8Array(parts.length);
@@ -2418,11 +2546,20 @@
     });
   }
 
-  // 派生/生成的目标密钥长度（位）。AES → 256（spec 默认）；HMAC → hash 块大小（SHA-1/256=512，SHA-384/512=1024）。
+  // 派生/生成的目标密钥长度（位）。AES → 显式 length ∈ {128,192,256} 优先（spec deriveKey
+  // AES 目标按 length 成员取长），缺省 256；HMAC → 显式 length >0 优先（M3b：generateKey
+  // 生成对应长度，0/负 → 0 由调用方 reject），缺省 = hash 块大小（SHA-1/256=512，
+  // SHA-384/512=1024）（spec HmacKeyGenParams：length 缺省 = hash 块大小）。
   function _zw_keyLengthBits(algo) {
-    var n = String((typeof algo === 'object' && algo) ? algo.name : algo).toUpperCase();
-    if (n === 'AES-GCM' || n === 'AES-CBC' || n === 'AES-CTR' || n === 'AES-KW') return 256;
+    var n = _zw_upperAscii(String((typeof algo === 'object' && algo) ? algo.name : algo));
+    if (n === 'AES-GCM' || n === 'AES-CBC' || n === 'AES-CTR' || n === 'AES-KW') {
+      var len = (typeof algo === 'object' && algo) ? Number(algo.length) : NaN;
+      return (len === 128 || len === 192 || len === 256) ? len : 256;
+    }
     if (n === 'HMAC') {
+      var mlen = (typeof algo === 'object' && algo && algo.length != null) ? Number(algo.length) : 0;
+      if (mlen > 0) return mlen;
+      if (mlen < 0) return 0;
       var h = _zw_hashName(typeof algo === 'object' ? algo.hash : null);
       return (h === 'SHA-384' || h === 'SHA-512') ? 1024 : 512;
     }
@@ -2437,14 +2574,413 @@
     return a;
   }
 
+  // 字节 ↔ base64url（RFC 4648 §5 无 padding）——jwk 格式 k 成员编解码（webcrypto M3b）。
+  // 复用 btoa/atob（标准字母表 + padding），+/ 与 -_ 替换；atob 非法输入 → null（调用方
+  // 转 DataError，不抛）。
+  function _zw_b64uFromBytes(bytes) {
+    var bin = '';
+    for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i] & 0xff);
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  function _zw_bytesFromB64u(s) {
+    var std = String(s).replace(/-/g, '+').replace(/_/g, '/');
+    while (std.length % 4 !== 0) std += '=';
+    var bin;
+    try { bin = atob(std); } catch (_e) { return null; }
+    var out = [];
+    for (var i = 0; i < bin.length; i++) out.push(bin.charCodeAt(i) & 0xff);
+    return out;
+  }
+
+  // AES-KW（RFC 3394）host 调用（wrapKey/unwrapKey AES-KW 封装路径，webcrypto M3b）：
+  // op "wrap"/"unwrap"；输入 8 字节对齐（host 校验含最小 2 块），失败返 null 已调 reject
+  // OperationError（spec：wrap/unwrap 失败 → OperationError）。
+  // https://w3c.github.io/webcrypto/#aes-kw-operations  https://datatracker.ietf.org/doc/html/rfc3394
+  function _zw_aesKwCall(op, key, dataBytes, reject) {
+    if (dataBytes.length % 8 !== 0) {
+      reject(_zw_subtleDE('AES-KW data must be a multiple of 64 bits', 'OperationError')); return null;
+    }
+    if (typeof __zw_crypto_subtle_aes_kw !== 'function') {
+      reject(_zw_subtleDE('crypto.subtle AES-KW requires host callback', 'NotSupportedError')); return null;
+    }
+    var keyCsv = (key._raw || []).map(String).join(',');
+    var out = __zw_crypto_subtle_aes_kw(op, keyCsv, dataBytes.join(','));
+    if (!out) {
+      reject(_zw_subtleDE('AES-KW ' + op + ' failed (bad key/data)', 'OperationError')); return null;
+    }
+    var parts = out.split(',');
+    var res = new Uint8Array(parts.length);
+    for (var i = 0; i < parts.length; i++) res[i] = +parts[i];
+    return res;
+  }
+
+  // ===== RSA 家族（RSA-OAEP / RSASSA-PKCS1-v1_5 / RSA-PSS）shim 支撑（webcrypto M4a）=====
+  // host 原语见 js_dom_bridge/crypto.rs（rsa 0.9）；字节桥统一 csv（DER/密文/签名/分量），
+  // jwk 分量经 `;` 分隔多字段。密钥材料（DER/分量）不落 tracing（零日志纪律）。
+  // https://w3c.github.io/webcrypto/#rsa-oaep-operations  https://w3c.github.io/webcrypto/#rsassa-pkcs1-operations  https://w3c.github.io/webcrypto/#rsa-pss-operations
+
+  // RSA 家族判定：接受规范拼写 RSASSA-PKCS1-v1_5 与 ASCII 折叠后 RSASSA-PKCS1-V1_5
+  // 两种（key.algorithm.name 存规范拼写，normalize 后参数名为折叠拼写）。
+  function _zw_rsaIsFamily(name) {
+    var u = _zw_upperAscii(String(name));
+    return u === 'RSA-OAEP' || u === 'RSASSA-PKCS1-V1_5' || u === 'RSA-PSS';
+  }
+
+  // 家族全 usages（importKey/generateKey 步骤 2：非法项 → SyntaxError）。
+  function _zw_rsaAllowedUsages(name) {
+    return (_zw_upperAscii(String(name)) === 'RSA-OAEP')
+      ? ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey'] : ['sign', 'verify'];
+  }
+
+  // 按密钥类型的 usages 子集（spec importKey 各格式分支 + generateKey 密钥对拆分：
+  // public ⊆ 加密半/verify，private ⊆ 解密半/sign）。
+  function _zw_rsaTypeUsages(name, isPublic) {
+    if (_zw_upperAscii(String(name)) === 'RSA-OAEP') {
+      return isPublic ? ['encrypt', 'wrapKey'] : ['decrypt', 'unwrapKey'];
+    }
+    return isPublic ? ['verify'] : ['sign'];
+  }
+
+  // jwk alg ↔ 算法映射（RFC 7518 §A.2：RSA-OAEP[-256|384|512] / RS1|RS256|RS384|RS512 /
+  // PS1|PS256|PS384|PS512）。hash 不识别 → null。
+  function _zw_rsaJwkAlg(name, hash) {
+    var u = _zw_upperAscii(String(name));
+    if (hash === 'SHA-1') {
+      return u === 'RSA-OAEP' ? 'RSA-OAEP' : u === 'RSASSA-PKCS1-V1_5' ? 'RS1' : u === 'RSA-PSS' ? 'PS1' : null;
+    }
+    var sfx = hash === 'SHA-256' ? '256' : hash === 'SHA-384' ? '384' : hash === 'SHA-512' ? '512' : null;
+    if (!sfx) return null;
+    if (u === 'RSA-OAEP') return 'RSA-OAEP-' + sfx;
+    if (u === 'RSASSA-PKCS1-V1_5') return 'RS' + sfx;
+    if (u === 'RSA-PSS') return 'PS' + sfx;
+    return null;
+  }
+
+  // host csv → Uint8Array（空串 → null；调用方按操作映射 DataError/OperationError——
+  // decrypt 空 = 空明文，见 _zw_rsaOaepCall）。
+  function _zw_rsaCsvBytes(csv) {
+    if (!csv) return null;
+    var parts = String(csv).split(',');
+    var arr = new Uint8Array(parts.length);
+    for (var i = 0; i < parts.length; i++) arr[i] = +parts[i];
+    return arr;
+  }
+
+  // csv 字节 → base64url（jwk 导出 n/e/d/p/q/dp/dq/qi 分量）。
+  function _zw_b64uFromCsv(csv) {
+    var arr = _zw_rsaCsvBytes(csv);
+    return arr ? _zw_b64uFromBytes(arr) : '';
+  }
+
+  // key.algorithm.hash 兼容串/KeyAlgorithm 字典两种形态（同 _zw_hmacMac）。
+  function _zw_rsaKeyHash(key) {
+    var h = key.algorithm ? key.algorithm.hash : null;
+    return (h && typeof h === 'object') ? h.name : h;
+  }
+
+  // RsaHashedKeyAlgorithm 构造（host key_attrs 返 "<modulusLength 位>,<e 大端 csv>"）。
+  // spec：hash 为 KeyAlgorithm 字典 {name}（WPT assert_goodCryptoKey 取 .hash.name）、
+  // publicExponent 为 BufferSource（mismatchedCryptoKeyAlgorithmMembers 走 equalBuffers）。
+  function _zw_rsaKeyAlgFromDer(derCsv, name, hash) {
+    if (typeof __zw_crypto_subtle_rsa_key_attrs !== 'function') return null;
+    var attrs = __zw_crypto_subtle_rsa_key_attrs(derCsv);
+    if (!attrs) return null;
+    var ci = attrs.indexOf(',');
+    return {
+      name: name,
+      modulusLength: +(attrs.substring(0, ci)),
+      publicExponent: _zw_rsaCsvBytes(attrs.substring(ci + 1)),
+      hash: { name: hash }
+    };
+  }
+
+  // DER（spki 公 / pkcs8 私）→ CryptoKey。spec 公共步骤 10：private 空 usages →
+  // SyntaxError（public 合法，rsa_importKey "Empty Usages" 仅 pkcs8/jwk-private 组）。
+  // _raw 存规范化 DER（plain number[]，structuredClone 逐属性克隆后 export 仍逐字节一致）。
+  function _zw_rsaKeyFromDer(resolve, reject, name, hash, derCsv, type, extractable, usages) {
+    var keyAlg = _zw_rsaKeyAlgFromDer(derCsv, name, hash);
+    if (!keyAlg) {
+      reject(new _zw_subtleDE('RSA key data invalid', 'DataError')); return;
+    }
+    if (type === 'private' && usages.length === 0) {
+      reject(new _zw_subtleDE('Key usages cannot be empty for private keys', 'SyntaxError')); return;
+    }
+    resolve(new CryptoKey(type, extractable, keyAlg, usages, Array.from(_zw_rsaCsvBytes(derCsv))));
+  }
+
+  // RSA-OAEP 运算（encrypt/decrypt/wrapKey/unwrapKey 封装路径共用）：失败 → null 已调
+  // reject OperationError。decrypt 特例：先按 spec 步骤做密文长度 = 模长字节预检（长/短密
+  // 文 → OperationError），随后 host 空串 = 空明文（加密空明文 → 解密 0 字节，WPT
+  // "transferred plaintext during call" 组断言 decrypt 返空而非报错）。
+  function _zw_rsaOaepCall(mode, key, hash, labelBytes, dataBytes, reject) {
+    if (typeof __zw_crypto_subtle_rsa_oaep !== 'function') {
+      reject(_zw_subtleDE('crypto.subtle RSA-OAEP requires host callback', 'NotSupportedError')); return null;
+    }
+    if (mode === 'decrypt') {
+      var k = Math.ceil((Number(key.algorithm && key.algorithm.modulusLength) || 0) / 8);
+      if (dataBytes.length !== k) {
+        reject(_zw_subtleDE('RSA-OAEP decrypt failed (ciphertext length)', 'OperationError')); return null;
+      }
+    }
+    var out = __zw_crypto_subtle_rsa_oaep(hash, mode, (key._raw || []).map(String).join(','), labelBytes.join(','), dataBytes.join(','));
+    if (!out) {
+      if (mode === 'decrypt') return new Uint8Array(0);
+      reject(_zw_subtleDE('RSA-OAEP ' + mode + ' failed', 'OperationError')); return null;
+    }
+    return _zw_rsaCsvBytes(out);
+  }
+
+  // RSASSA-PKCS1-v1_5 / RSA-PSS 签名调用：失败 → null 已调 reject OperationError
+  //（salt 仅 PSS 消费；hash 为 key.algorithm.hash 名）。
+  function _zw_rsaSignCall(key, pad, salt, hash, dataBytes, reject) {
+    if (typeof __zw_crypto_subtle_rsa_sign !== 'function') {
+      reject(_zw_subtleDE('crypto.subtle RSA sign requires host callback', 'NotSupportedError')); return null;
+    }
+    var out = __zw_crypto_subtle_rsa_sign(hash, pad, String(salt), (key._raw || []).map(String).join(','), dataBytes.join(','));
+    if (!out) {
+      reject(_zw_subtleDE('RSA sign failed', 'OperationError')); return null;
+    }
+    return _zw_rsaCsvBytes(out);
+  }
+
+  // 验签：spec 对坏签名 resolve false 而非 reject；host 空串（key 解析失败，常规不可达）
+  // 同 false。
+  function _zw_rsaVerifyCall(key, pad, salt, hash, sigBytes, dataBytes, reject) {
+    if (typeof __zw_crypto_subtle_rsa_verify !== 'function') {
+      reject(_zw_subtleDE('crypto.subtle RSA verify requires host callback', 'NotSupportedError')); return null;
+    }
+    var out = __zw_crypto_subtle_rsa_verify(hash, pad, String(salt), (key._raw || []).map(String).join(','), sigBytes.join(','), dataBytes.join(','));
+    return out === '1';
+  }
+
+  // importKey RSA 分派（part02 importKey 家族判定后整体转入）。顺序（spec 各算法
+  // importKey + 公共步骤）：usages 家族 SyntaxError → 格式分派 → spki/pkcs8 DER 解析
+  // DataError → 类型 usages 子集 SyntaxError → jwk：kty/use/key_ops DataError → d 有无
+  // 定型 + 类型子集 SyntaxError → ext/alg DataError → n/e(/d/p/q) base64url DataError →
+  // host 合成 DER → private 空 usages SyntaxError。
+  // https://w3c.github.io/webcrypto/#SubtleCrypto-method-importKey
+  function _zw_rsaImportKey(format, keyData, algo, extractable, usages, resolve, reject) {
+    var name = algo.name;
+    var u = _zw_normalizeUsages(usages, _zw_rsaAllowedUsages(name));
+    if (!u) {
+      reject(new _zw_subtleDE('Invalid key usages for ' + name, 'SyntaxError')); return;
+    }
+    var fmt = _zw_upperAscii(String(format == null ? '' : format));
+    if (fmt === 'SPKI' || fmt === 'PKCS8') {
+      if (typeof __zw_crypto_subtle_rsa_import !== 'function') {
+        reject(_zw_subtleDE('crypto.subtle RSA import requires host callback', 'NotSupportedError')); return;
+      }
+      var bytes = _zw_bufToBytes(keyData);
+      var derCsv = bytes.length ? __zw_crypto_subtle_rsa_import(fmt.toLowerCase(), bytes.join(',')) : '';
+      if (!derCsv) {
+        reject(new _zw_subtleDE('Invalid RSA ' + fmt.toLowerCase() + ' key data', 'DataError')); return;
+      }
+      var isPublic = (fmt === 'SPKI');
+      if (!_zw_rsaUsagesFitType(name, isPublic, u)) {
+        reject(new _zw_subtleDE('Invalid key usages for ' + name + ' ' + (isPublic ? 'public' : 'private') + ' key', 'SyntaxError')); return;
+      }
+      _zw_rsaKeyFromDer(resolve, reject, name, algo.hash, derCsv, isPublic ? 'public' : 'private', extractable, u);
+      return;
+    }
+    if (fmt === 'JWK') {
+      if (!keyData || typeof keyData !== 'object') {
+        reject(new TypeError('jwk key data must be an object')); return;
+      }
+      if (keyData.kty !== 'RSA') {
+        reject(new _zw_subtleDE("jwk kty must be 'RSA'", 'DataError')); return;
+      }
+      if (u.length > 0 && keyData.use != null && keyData.use !== (name === 'RSA-OAEP' ? 'enc' : 'sig')) {
+        reject(new _zw_subtleDE("jwk use must be '" + (name === 'RSA-OAEP' ? 'enc' : 'sig') + "'", 'DataError')); return;
+      }
+      if (keyData.key_ops != null) {
+        if (!keyData.key_ops || typeof keyData.key_ops.length !== 'number') {
+          reject(new _zw_subtleDE('jwk key_ops must be an array', 'DataError')); return;
+        }
+        var seenOps = {};
+        for (var oi = 0; oi < keyData.key_ops.length; oi++) {
+          var opName = String(keyData.key_ops[oi]);
+          var legalAll = _zw_rsaAllowedUsages(name);
+          if (legalAll.indexOf(opName) < 0 || seenOps[opName]) {
+            reject(new _zw_subtleDE("invalid or duplicate jwk key_ops entry: '" + opName + "'", 'DataError')); return;
+          }
+          seenOps[opName] = 1;
+        }
+        for (var ui = 0; ui < u.length; ui++) {
+          if (seenOps[u[ui]] !== 1) {
+            reject(new _zw_subtleDE("jwk key_ops must contain usage '" + u[ui] + "'", 'DataError')); return;
+          }
+        }
+      }
+      var isPubJwk = (keyData.d == null);
+      if (!_zw_rsaUsagesFitType(name, isPubJwk, u)) {
+        reject(new _zw_subtleDE('Invalid key usages for ' + name + ' ' + (isPubJwk ? 'public' : 'private') + ' key', 'SyntaxError')); return;
+      }
+      if (keyData.ext === false && extractable) {
+        reject(new _zw_subtleDE('jwk ext is false but extractable is true', 'DataError')); return;
+      }
+      if (keyData.alg != null && String(keyData.alg) !== _zw_rsaJwkAlg(name, algo.hash)) {
+        reject(new _zw_subtleDE("jwk alg '" + keyData.alg + "' does not match algorithm", 'DataError')); return;
+      }
+      var n = _zw_bytesFromB64u(keyData.n == null ? '' : keyData.n);
+      var e = _zw_bytesFromB64u(keyData.e == null ? '' : keyData.e);
+      if (!n || !n.length || !e || !e.length) {
+        reject(new _zw_subtleDE('jwk n/e missing or not valid base64url', 'DataError')); return;
+      }
+      var d = [], p = [], q = [];
+      if (!isPubJwk) {
+        d = _zw_bytesFromB64u(keyData.d);
+        if (!d || !d.length) {
+          reject(new _zw_subtleDE('jwk d is not valid base64url', 'DataError')); return;
+        }
+        p = keyData.p != null ? (_zw_bytesFromB64u(keyData.p) || []) : [];
+        q = keyData.q != null ? (_zw_bytesFromB64u(keyData.q) || []) : [];
+      }
+      if (typeof __zw_crypto_subtle_rsa_jwk_import !== 'function') {
+        reject(_zw_subtleDE('crypto.subtle RSA jwk import requires host callback', 'NotSupportedError')); return;
+      }
+      var jwkDer = __zw_crypto_subtle_rsa_jwk_import(n.join(','), e.join(','), d.join(','), p.join(','), q.join(','));
+      if (!jwkDer) {
+        reject(new _zw_subtleDE('RSA jwk components invalid or inconsistent', 'DataError')); return;
+      }
+      _zw_rsaKeyFromDer(resolve, reject, name, algo.hash, jwkDer, isPubJwk ? 'public' : 'private', extractable, u);
+      return;
+    }
+    reject(new _zw_subtleDE("Unsupported importKey format: '" + fmt + "' (only 'spki'/'pkcs8'/'jwk' supported for RSA keys)", 'NotSupportedError'));
+  }
+
+  // 类型 usages 子集判定（spki/pkcs8 分支与 jwk d 分支共用）。
+  function _zw_rsaUsagesFitType(name, isPublic, usages) {
+    var legal = _zw_rsaTypeUsages(name, isPublic);
+    for (var i = 0; i < usages.length; i++) {
+      if (legal.indexOf(usages[i]) < 0) return false;
+    }
+    return true;
+  }
+
+  // generateKey RSA（RSA-OAEP/RSASSA-PKCS1-v1_5/RSA-PSS → CryptoKeyPair）。顺序（spec
+  // generateKey + failures.js 断言序）：usages 非法 SyntaxError → 生成（e<3/偶数等）
+  // OperationError → 私钥空 usages SyntaxError（公共步骤 10，生成成功后）。
+  // publicKey 恒 extractable=true（spec 公共生成步骤）；usages 按类型拆分到两端。
+  function _zw_rsaGenerateKey(algorithm, extractable, usages, algo, resolve, reject) {
+    var name = algo.name;
+    var u = _zw_normalizeUsages(usages, _zw_rsaAllowedUsages(name));
+    if (!u) {
+      reject(new _zw_subtleDE('Invalid key usages for ' + name, 'SyntaxError')); return;
+    }
+    // RsaHashedKeyGenParams 必填成员 modulusLength/publicExponent（WebIDL required；
+    // corpus failures 未覆盖缺成员，缺省按 0/空 → host 拒绝 OperationError，与 e 非法同径）。
+    var gen = (typeof algorithm === 'object' && algorithm) ? algorithm : {};
+    var bits = (gen.modulusLength != null) ? Number(gen.modulusLength) : 0;
+    var eBytes = (gen.publicExponent != null) ? _zw_bufToBytes(gen.publicExponent) : [];
+    if (typeof __zw_crypto_subtle_rsa_generate !== 'function') {
+      reject(_zw_subtleDE('crypto.subtle RSA generateKey requires host callback', 'NotSupportedError')); return;
+    }
+    var pkcs8Csv = __zw_crypto_subtle_rsa_generate(String(bits), eBytes.join(','));
+    if (!pkcs8Csv) {
+      reject(new _zw_subtleDE('RSA key generation failed (invalid modulus/exponent)', 'OperationError')); return;
+    }
+    if (typeof __zw_crypto_subtle_rsa_export_der !== 'function') {
+      reject(_zw_subtleDE('crypto.subtle RSA generateKey requires host callback', 'NotSupportedError')); return;
+    }
+    var spkiCsv = __zw_crypto_subtle_rsa_export_der(pkcs8Csv, 'spki');
+    if (!spkiCsv) {
+      reject(new _zw_subtleDE('RSA public key derivation failed', 'OperationError')); return;
+    }
+    var pubU = [], privU = [];
+    for (var i = 0; i < u.length; i++) {
+      if (_zw_rsaTypeUsages(name, true).indexOf(u[i]) >= 0) pubU.push(u[i]);
+      if (_zw_rsaTypeUsages(name, false).indexOf(u[i]) >= 0) privU.push(u[i]);
+    }
+    if (privU.length === 0) {
+      reject(new _zw_subtleDE('Key usages cannot be empty for private keys', 'SyntaxError')); return;
+    }
+    var keyAlg = _zw_rsaKeyAlgFromDer(pkcs8Csv, name, algo.hash);
+    if (!keyAlg) {
+      reject(new _zw_subtleDE('RSA key generation failed', 'OperationError')); return;
+    }
+    resolve({
+      publicKey: new CryptoKey('public', true, keyAlg, pubU, Array.from(_zw_rsaCsvBytes(spkiCsv))),
+      privateKey: new CryptoKey('private', extractable, keyAlg, privU, Array.from(_zw_rsaCsvBytes(pkcs8Csv)))
+    });
+  }
+
+  // exportKey RSA 分派：spki（公透传/私派生公）、pkcs8（仅私）、jwk（kty/n/e[/d/p/q/dp/
+  // dq/qi] + alg/key_ops/ext）。非 extractable → InvalidAccessError（spec 公共步骤）。
+  function _zw_rsaExportKey(format, key, resolve, reject) {
+    var fmt = _zw_upperAscii(String(format == null ? '' : format));
+    if (!key || !key.extractable) {
+      reject(new _zw_subtleDE('Key is not extractable', 'InvalidAccessError')); return;
+    }
+    var raw = key._raw || [];
+    if (fmt === 'SPKI') {
+      var spkiCsv;
+      if (key.type === 'public') {
+        spkiCsv = raw.join(',');
+      } else {
+        if (typeof __zw_crypto_subtle_rsa_export_der !== 'function') {
+          reject(_zw_subtleDE('crypto.subtle RSA exportKey requires host callback', 'NotSupportedError')); return;
+        }
+        spkiCsv = __zw_crypto_subtle_rsa_export_der(raw.join(','), 'spki');
+      }
+      if (!spkiCsv) {
+        reject(new _zw_subtleDE('Key type does not match exportKey format', 'InvalidAccessError')); return;
+      }
+      resolve(_zw_rsaCsvBytes(spkiCsv));
+      return;
+    }
+    if (fmt === 'PKCS8') {
+      // spec：pkcs8 仅 private（public → InvalidAccessError，与"wrong key type"语义一致）。
+      if (key.type !== 'private') {
+        reject(new _zw_subtleDE('Key is not a private key', 'InvalidAccessError')); return;
+      }
+      resolve(new Uint8Array(raw)); // 导入/生成时已规范化，透传即逐字节稳定
+      return;
+    }
+    if (fmt === 'JWK') {
+      var isPriv = (key.type === 'private');
+      if (typeof __zw_crypto_subtle_rsa_export_jwk !== 'function') {
+        reject(_zw_subtleDE('crypto.subtle RSA exportKey requires host callback', 'NotSupportedError')); return;
+      }
+      var out = __zw_crypto_subtle_rsa_export_jwk(raw.join(','), isPriv ? '1' : '0');
+      if (!out) {
+        reject(new _zw_subtleDE('RSA jwk export failed', 'InvalidAccessError')); return;
+      }
+      var f = out.split(';');
+      var jwk = { kty: 'RSA', n: _zw_b64uFromCsv(f[0]), e: _zw_b64uFromCsv(f[1]) };
+      if (isPriv) {
+        jwk.d = _zw_b64uFromCsv(f[2]);
+        jwk.p = _zw_b64uFromCsv(f[3]);
+        jwk.q = _zw_b64uFromCsv(f[4]);
+        jwk.dp = _zw_b64uFromCsv(f[5]);
+        jwk.dq = _zw_b64uFromCsv(f[6]);
+        jwk.qi = _zw_b64uFromCsv(f[7]);
+      }
+      // spec：alg 按算法+hash 映射（RFC 7518 §A.2）；key_ops/ext 恒输出（无 use 成员）。
+      var alg = _zw_rsaJwkAlg(key.algorithm.name, _zw_rsaKeyHash(key));
+      if (alg) jwk.alg = alg;
+      jwk.key_ops = (key.usages || []).slice();
+      jwk.ext = !!key.extractable;
+      resolve(jwk);
+      return;
+    }
+    reject(new _zw_subtleDE("Unsupported exportKey format: '" + fmt + "' (only 'spki'/'pkcs8'/'jwk' supported for RSA keys)", 'NotSupportedError'));
+  }
+
   globalThis.crypto.subtle = globalThis.crypto.subtle || {
     digest: function (algo, data) {
-      var a = (typeof algo === 'object' && algo) ? algo.name : algo;
-      a = (a == null ? '' : String(a)).toUpperCase();
+      // spec normalizeAlgorithm：AlgorithmIdentifier 串合法；对象缺 name 成员（含 {}）→
+      // TypeError（WPT digest.js「empty algorithm object」组）；null/undefined/非串非对象 → TypeError。
+      if (typeof algo === 'string') {
+        algo = { name: algo };
+      }
+      if (algo == null || typeof algo !== 'object' || algo.name == null) {
+        return Promise.reject(new TypeError('Algorithm name is required'));
+      }
+      var a = _zw_upperAscii(String(algo.name));
       return new Promise(function (resolve, reject) {
         var bytes = _zw_bufToBytes(data);
         if (typeof __zw_crypto_subtle_digest !== 'function') {
-          reject(new DOMException('crypto.subtle.digest requires host callback', 'NotSupportedError'));
+          reject(_zw_subtleDE('crypto.subtle.digest requires host callback', 'NotSupportedError'));
           return;
         }
         var out = __zw_crypto_subtle_digest(a, bytes.join(','));
