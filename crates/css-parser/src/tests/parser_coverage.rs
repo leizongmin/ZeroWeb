@@ -604,13 +604,10 @@ fn test_stray_rparen_ends_namespace_prologue() {
     // R3758：畸形 token 终结 @namespace 序言——`) @namespace y` 不得复活前缀。
     let css = ")\n@namespace y url(w3.org);\ny|div { color: red; }";
     let ss = Parser::parse_stylesheet(css);
-    // y|div 前缀未注册：规则解析失败或以无名规则保留均可，关键是 @namespace
-    // 不再注册前缀（若序言未终结，y|div 会以 y 前缀生效）。
-    assert!(
-        ss.rules.iter().all(|r| !matches!(r, crate::ast::Rule::At(_)))
-            || !format!("{:?}", ss.rules).contains("namespace"),
-        "序言终结后 @namespace 不得注册"
-    );
+    // 序言终结 → 前缀 y 未注册 → y|div 选择器非法，规则整条丢弃：0 规则。
+    // （RV-1 精确断言：无 namespace_prologue_ended 终结时 y|div 以 y 前缀生效，
+    // rules.len()==1——变异实证本钉红绿可区分。）
+    assert_eq!(ss.rules.len(), 0, "前缀未注册时 y|div 规则应整条丢弃: {ss:?}");
 }
 
 #[test]

@@ -494,7 +494,7 @@ impl<'a> Parser<'a> {
                 }
             }
             Token::RParen => {
-                // MUTATION 游离 `)`（畸形样式表，或 extract_html_style_text 每块 `\n)\n` 的
+                // 游离 `)`（畸形样式表，或 extract_html_style_text 每块 `\n)\n` 的
                 // url() EOF 闭合守卫，R2134/#199 交叉）：丢弃单 token 继续。落 `_` 臂
                 // 会进 skip_malformed_qualified_rule 把后续合法规则当「畸形规则残余」
                 // 吞掉（曾使字体门禁的 zw-inline 块在守卫后全部失联）。
