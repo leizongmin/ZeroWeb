@@ -732,3 +732,6 @@ mod r5157_contain_size_grid_tests;
 /// margin 塌缩归位（css-overflow-3 §3.3；contain-size-grid-002 残差驱动）。
 mod r5158_body_overflow_prop_taffy_tests;
 mod r5160_bfc_float_order_tests;
+/// R5161 跨 run 词中拼接边界无软换行机会（css-text-3 §5.2 / UAX#14；
+/// contain-paint-047 驱动）。
+mod r5161_cross_run_glue_tests;

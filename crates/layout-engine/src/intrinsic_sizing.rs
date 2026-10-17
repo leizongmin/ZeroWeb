@@ -4767,15 +4767,36 @@ mod r5068_tests {
     }
 
     /// 带水平 padding 的补偿形态（012 同构）：padding 与负 margin 并存 → 旧口径
-    /// 保持（kill-switch 双态实测同值 45——本断言锁定「新旧行为逐位一致」）。
+    /// 保持。R5161 glue 后 `ab<span>cd</span>ef`（无空白跨 run）为单一不可拆单元
+    /// 恒单行，高度不再鉴别 margin 净 advance——断言改锚宽容器（200px，无折行
+    /// 耦合）下 span 盒 x = 40（"ab" 30 + 补偿形态净 +10；`ZW_INLINE_NEG_MARGIN`
+    /// 双态实测同值——本断言锁定「新旧行为逐位一致」，margin 臂被改坏时 x 偏移）。
+    /// compensation 形态的 corpus 锁 = word-space-transform-012。
     #[test]
     fn r5068_padding_margin_compensation_keeps_legacy_net() {
-        let h = div_height(
-            r#"<body><div style="font: 15px/1 Ahem; width: 60px;">ab<span style="padding: 0 5px; margin: 0 -10px;">cd</span>ef</div></body>"#,
+        let doc = zero_dom::parse_html(
+            r#"<body><div style="font: 15px/1 Ahem; width: 200px;">ab<span id="t" style="padding: 0 5px; margin: 0 -10px;">cd</span>ef</div></body>"#,
         );
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find<'a>(doc: &zero_dom::Document, b: &'a crate::types::LayoutBox) -> Option<&'a crate::types::LayoutBox> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let zero_dom::NodeKind::Element(e) = &n.kind
+                && e.get_attribute("id").as_deref() == Some("t")
+            {
+                return Some(b);
+            }
+            b.children.iter().find_map(|c| find(doc, c))
+        }
+        let span = find(&doc, &result.root).expect("span found");
         assert!(
-            (h - 45.0).abs() < 0.5,
-            "padding+负 margin 抵消形态应保持旧净值（3 行高 45，新旧行为一致），实际 {h}"
+            (span.x - 40.0).abs() < 0.5,
+            "padding+负 margin 抵消形态应保持旧净值（span 盒 x = 40，kill-switch 双态同值），实际 {}",
+            span.x
         );
     }
 }

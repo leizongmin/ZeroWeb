@@ -89,6 +89,13 @@ impl InlineFormattingContext {
         let mut last_content_owner: Option<zero_dom::NodeId> = None;
         let mut last_ended_collapsible_ws = false;
         let mut last_ws_no_wrap = false;
+        // R5161：上一内容词末字符（跨 run 词中拼接边界判定）。None = 同行无前词或
+        // 邻接被原子盒（inline-block）打断——两者均不构成词中拼接。
+        let mut last_word_last_char: Option<char> = None;
+        // R5161：上一内容词是否在当前行（逐词 O(1) 维护，替代逐词扫
+        // current_line.runs——block_layout_1000_elements bench 热路径）。换行后
+        // false；原子盒/空白词不 touching（其边界由 last_word_last_char 豁免）。
+        let mut last_word_on_line = false;
         // R3784：连续 float 锚继承——上一个被推行盒是否由 FloatAnchor 推行（连续 float
         // 的后继与前者同源序行槽，锚继承前 float 的锚 y）。
         let mut last_push_was_float_anchor = false;
@@ -321,6 +328,8 @@ impl InlineFormattingContext {
                             });
                             current_x += tab_advance;
                             last_was_collapsible_ws = false;
+                            // R5161：tab 是空白——其后断行合法，不构成词中拼接。
+                            last_word_last_char = Some('\t');
                             continue;
                         }
 
@@ -411,6 +420,7 @@ impl InlineFormattingContext {
                             };
             current_line.y = current_y;
             self.lines.push(current_line);
+            last_word_on_line = false;
                             current_y += est_height;
                             current_line = LineBox {
                                 y: f32::NAN,
@@ -555,10 +565,36 @@ impl InlineFormattingContext {
                         let boundary_ws_break = !word_is_ws
                             && last_ended_collapsible_ws
                             && last_content_owner != Some(run.node_id);
+                        // R5161（css-text-3 §5.2 / UAX#14）：跨 run 词中拼接边界无软
+                        // 换行机会。旧实现逐 run 独立断行——`PASS<span>FAIL</span>` 的
+                        // S|F 边界（无空白相邻的字母对）被当断点，FAIL 误折第 2 行
+                        // （contain-paint-047 族：4ch 容器内红底外露 4.83%；chromium
+                        // 单行横向溢出被 contain:paint 裁净）。判据镜像 run 内分词
+                        // （collapse_split_words）：断点仅存在于空白与 CJK/SEA per-char
+                        // 字符侧（is_per_char_break_script），相邻字母对（AL×AL 禁断）
+                        // 拼接为同一不可拆单元，随前词横向溢出。空白词、行尾可折叠空白
+                        // 之后（boundary_ws_break 已治理）、同行无前词（原子盒后/换行后）
+                        // 均不适用；CJK 跨 run 断行保持。FIXME: UAX#14 全类别——连字符
+                        // （HY，其后可断）等标点边界暂按 run 内分词同口径（不断），与
+                        // run 内行为一致；RTL 逐字符 parity 视觉序近似逻辑序邻接。
+                        let cross_run_glue = runtime_flags::cross_run_glue()
+                            && !word_is_ws
+                            && !last_ended_collapsible_ws
+                            // run 首可折叠空白（白空格在文档序位于边界处，只是归属新
+                            // run 开头）：断点在该空白之后，等同空白边界，不 glue
+                            //（white-space-mixed-001：pre 容器 `…x` + normal span
+                            // ` xxxxx` 的行满折行被误禁，19em 溢出搅乱图案）。
+                            && !has_leading_collapsible_space
+                            && last_word_last_char.is_some_and(|c| !c.is_whitespace())
+                            && last_content_owner.is_some()
+                            && last_content_owner != Some(run.node_id)
+                            && last_word_on_line
+                            && !last_word_last_char.is_some_and(is_per_char_break_script)
+                            && !content_word.chars().next().is_some_and(is_per_char_break_script);
                         let wrap_allowed = if boundary_ws_break {
                             !last_ws_no_wrap
                         } else {
-                            !run_no_wrap
+                            !run_no_wrap && !cross_run_glue
                         };
                         if !hang_trailing_space
                             && wrap_allowed
@@ -668,6 +704,9 @@ impl InlineFormattingContext {
                             // 必须加回作词间 advance，否则断词词与后继词相贴
                             //（break-word 长词后丢空格，test_e3 实证）。
                             current_x = partial_x + trailing_space_width;
+                            // R5161：断词产物同真实词——末字符参与跨 run 邻接判定。
+                            last_word_last_char = content_word.chars().last();
+                            last_word_on_line = true;
                         } else {
                             let fragment_height = run.line_height;
                             // word_width 已不含尾部空格（在上方剥离），直接用作可视宽度
@@ -703,6 +742,9 @@ impl InlineFormattingContext {
                         if trailing_space_width > 0.0 {
                             last_ws_no_wrap = run_no_wrap;
                         }
+                        // R5161：末字符供跨 run 词中拼接判定（空白词尾即空白，自然豁免）。
+                        last_word_last_char = content_word.chars().last();
+                        last_word_on_line = true;
                             current_x += word_width + trailing_space_width;
                             // 行盒高度需容纳 inline 元素的完整盒体（含 padding+border）
                             // R4359（css-ruby-1）：ruby 注音行高（rt 0.5em 行盒）参与行盒高度
@@ -738,6 +780,8 @@ impl InlineFormattingContext {
                     let box_height = box_info.height;
                     // 行内级盒打破了可折叠空白的连续性
                     last_was_collapsible_ws = false;
+                    // R5161：原子盒断开词中拼接邻接——盒前词与盒后词不直接相邻。
+                    last_word_last_char = None;
                     // R3786：本行将有真实内容——块断行「不重复断行」豁免结束。
                     last_push_was_block_break = false;
 
@@ -793,6 +837,7 @@ impl InlineFormattingContext {
                         // 当前行放不下，开始新行
             current_line.y = current_y;
             self.lines.push(current_line);
+            last_word_on_line = false;
                         current_y += est_height;
                         current_line = LineBox {
                             y: f32::NAN,
@@ -914,6 +959,7 @@ impl InlineFormattingContext {
                     }
             current_line.y = current_y;
             self.lines.push(current_line);
+            last_word_on_line = false;
                     current_y += est_height;
                     current_line = LineBox {
                         y: f32::NAN,
