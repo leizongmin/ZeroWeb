@@ -1333,11 +1333,15 @@ pub(crate) fn compute_final_inline_layouts(
     // 列表无 TableCell，且彼时 WM 传播未达 cell），本早退跳过 cell 内容 IFC → 无 stored
     // 行盒 → paint Path B（空 styles 重跑）的 vertical wrap 分裂与 layout IFC 不一致
     //（row-progression 全族 4.3-5.0% 残差、vrl-006 5.02% 超阈实证；stored 后 9 案 0.00%）。
-    // gate 于 LayoutBox.writing_mode（此处已传播为 vertical）——horizontal cell 存储 臂有
-    // table-anonymous-objects 族翻红（Path A/B 分歧域，后续轮 A/B），WM 收窄零损失。
-    let is_vertical_table_cell =
-        matches!(style.display, DisplayValue::TableCell) && root.writing_mode.is_vertical_block_flow();
-    if !root.is_block_level && !is_table_internal_with_text && !is_flex_grid_item && !is_vertical_table_cell {
+    // R5167：horizontal cell 存储臂（R4481 ungated 实验 4 增益/9 翻红后回退，本轮带
+    // 匿名表 cell 宽度对齐再开）——horizontal cell 同样无 stored 度量，paint Path B 直系
+    // 文本落 16px 默认（table-anonymous-objects-062 td 16px 字形 vs span cell 32px 实证）。
+    // kill-switch `ZW_CELL_IFC_STORE=0` 回退 vertical-only。
+    let is_table_cell = matches!(style.display, DisplayValue::TableCell);
+    let is_vertical_table_cell = is_table_cell && root.writing_mode.is_vertical_block_flow();
+    let cell_ifc_store_enabled =
+        is_vertical_table_cell || (is_table_cell && std::env::var("ZW_CELL_IFC_STORE").as_deref() != Ok("0"));
+    if !root.is_block_level && !is_table_internal_with_text && !is_flex_grid_item && !cell_ifc_store_enabled {
         return;
     }
 

@@ -1764,6 +1764,9 @@ fn position_cells(
     // 避免 paint 链中行组位置 + 行位置导致的双重计数
     // 使用 (row_group_index, start_y) 元组
     let mut rg_start_y: Option<(usize, f32)> = None;
+    // R5167 行为集总开关（存储臂 + 匿名行 cell y，0 = 完整回退 pre-R5167），
+    // 与 inline_finalization 同名 env 对齐，供 corpus ON/OFF 归因。
+    let r5167_enabled = std::env::var("ZW_CELL_IFC_STORE").as_deref() != Ok("0");
 
     for (row_idx, row) in grid.rows.iter().enumerate() {
         // 检测行组切换，记录新行组的起始 row_y
@@ -1871,7 +1874,12 @@ fn position_cells(
         // apply_table_size_constraints 设置）。孤立行组的匿名行（table_box 是行组）
         // 仍需设置行组几何。
         let is_direct_cell_row = row.is_anonymous && row.row_group_index.is_none() && table_is_display_table;
-        if !is_direct_cell_row {
+        // R5167：行组内直接 cell 匿名行（133：table-row-group > 裸 table-cell span）。
+        // 行组盒几何由 update_row_group_positions 统一接管（本循环写入的 rg y/height
+        // 会被其 first_row_y/total_h 覆盖），此处跳过写避免多匿名行时 last-write-wins
+        // 的瞬态垃圾；行 y 由 cell 自携（下方案件 y 赋值处）。
+        let is_anon_rg_row = row.is_anonymous && row.row_group_index.is_some();
+        if !is_direct_cell_row && !is_anon_rg_row {
             // R2050：行背景应覆盖 cell grid（单元格 + 列间 border-spacing），不含左右
             // 周界 border-spacing（§17.5.2.1 separated 模型：周界 spacing 在 table content
             // 边缘与首/末单元格之间，属 table 而非 row）。旧行盒宽 = table_content_width
@@ -1947,7 +1955,16 @@ fn position_cells(
                 (0.0, 0.0)
             };
             cell_box.x = cell_x + cell_rel_dx;
-            cell_box.y = cell_rel_dy;
+            // R5167（CSS2.1 §17.2.1 匿名行盒）：匿名行的 cell 无行盒帧承载行 y——
+            // 直接 table-cell 匿名行的容器是 table 本身（行几何不落盘），行组内直接
+            // cell 匿名行的容器是行组（定位在首行，update_row_group_positions 接管），
+            // 行 y 须由 cell 自携 local_y，否则非首行裸 cell 与首行同 y 重叠
+            //（table-anonymous-objects-063/133 "Row 22" 与 "Row 1" 同 y 实证；
+            // 16px 字号下差异亚阈潜伏，32px 下外露 >1%）。正常行 cell 相对行帧
+            // 定位，y 保持 0；孤立行组匿名行（table_box = 行组即行帧）维持 0。
+            let cell_carries_row_y =
+                r5167_enabled && row.is_anonymous && (is_direct_cell_row || row.row_group_index.is_some());
+            cell_box.y = (if cell_carries_row_y { local_y } else { 0.0 }) + cell_rel_dy;
             cell_box.width = cell_width;
 
             // CSS Tables §visibility-collapse-cell-rendering：
