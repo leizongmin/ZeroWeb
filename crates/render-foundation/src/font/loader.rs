@@ -188,7 +188,17 @@ impl FontLoader {
         // OPTIMIZATION: fontdue 会在 `from_bytes` 中展开 face 的全部 glyph 轮廓；大型
         // CJK/Emoji 字体单 face 可占数百 MB。这里只登记空槽，纯 Rust 回退真正需要时再解析。
         self.fonts.insert(id, Arc::new(OnceLock::new()));
-        self.font_data.insert(id, Arc::new(bytes.to_vec()));
+        // R4377：同一 collection（如 NotoSansCJK-Regular.ttc face 0+7，font/system.rs
+        // 回退+monospace 双载）复用既有 Arc 缓冲——旧实现每 face `to_vec()` 一份全量
+        // 拷贝（19.5 MB ×2/进程）。字体数据注册后只读，共享即正确语义；len 相等才逐
+        // 字节比对，线性扫描仅发生在注册期，成本可忽略。
+        let shared = self
+            .font_data
+            .values()
+            .find(|existing| existing.len() == bytes.len() && existing.as_slice() == bytes)
+            .cloned()
+            .unwrap_or_else(|| Arc::new(bytes.to_vec()));
+        self.font_data.insert(id, shared);
         self.face_indices.insert(id, face_index);
         Ok(id)
     }
@@ -1696,6 +1706,33 @@ mod tests {
 
         // 空文本 → None
         assert!(loader.fallback_text_line_metrics(Some(primary), "", size).is_none());
+    }
+
+    /// R4377 落地守卫（ZRG-2026-09-16-01）：同一 collection 多 face 加载必须共享
+    /// 同一份底层字节缓冲，不得每 face 各持一份全量拷贝——NotoSansCJK-Regular.ttc
+    /// （~19.5 MB）face 0+7 双载（font/system.rs 回退 + monospace）旧实现每进程
+    /// 多占 ~19.5 MiB。字体数据注册后只读，`Arc` 共享即正确语义。
+    #[test]
+    fn r4377_collection_faces_share_one_data_buffer() {
+        let Ok(ttc) = std::fs::read("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc") else {
+            eprintln!("r4377: NotoSansCJK-Regular.ttc not found, skip");
+            return;
+        };
+        let mut loader = FontLoader::new();
+        let face0 = loader.load_font_at_index(&ttc, 0).expect("load collection face 0");
+        let face7 = loader.load_font_at_index(&ttc, 7).expect("load collection face 7");
+        assert_ne!(face0, face7, "each face gets a distinct font id");
+
+        let (Some(d0), Some(d7)) = (loader.font_data.get(&face0), loader.font_data.get(&face7)) else {
+            panic!("both faces must have registered data");
+        };
+        assert!(
+            Arc::ptr_eq(d0, d7),
+            "faces of the same collection must share one Arc buffer, not per-face copies"
+        );
+        // 共享缓冲下 face 元数据保持独立：face index 各自记录。
+        assert_eq!(loader.face_index(face0), 0);
+        assert_eq!(loader.face_index(face7), 7);
     }
 
     /// 测试不同大小的光栅化产生不同尺寸的 glyph
