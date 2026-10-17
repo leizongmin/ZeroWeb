@@ -22,39 +22,39 @@
 - [x] Reftest 运行可通过单一命令执行——`make reftest`（Makefile:74，test-guard 包裹 `cargo run --release --bin zero-wpt-runner -- reftest`）
 - [x] CI 管线中集成 reftest 运行（至少 CPU 模式）——`.github/workflows/ci.yml` `reftest` job（workflow_dispatch：fetch-wpt-data + reftest-smoke 快门禁 + 全量 CPU reftest --format json + 报告 artifact 上传）+ `.github/workflows/weekly.yml` `reftest-trend` job（schedule + dispatch，周记录趋势）
 
-## DC-2: CSS 2.1 核心通过率 ≥ 95%（基于上游真实 WPT reftest）
+## DC-2: CSS 2.1 核心通过率 100%（基于上游真实 WPT reftest）
 
 - [ ] 从上游 WPT 仓库 `css/css2/` 和 `css/CSS2/` 目录导入**全部**范围内 reftest（排除 skip list 中的范围外 case）
-- [ ] 上游 WPT 真实 reftest 通过率 ≥ 95%
+- [ ] 上游 WPT 真实 reftest 通过率 100%（范围内零失败）
 - [ ] 覆盖：盒模型、margin 折叠、BFC、inline formatting、颜色、背景、边框、基础定位
 - [ ] CPU 软件渲染模式 + GPU 渲染模式均达标
 - [ ] **不允许**用 inline 手写 reftest 替代或充数
 
-## DC-3: Flexbox + Grid 通过率 ≥ 95%（基于上游真实 WPT reftest）
+## DC-3: Flexbox + Grid 通过率 100%（基于上游真实 WPT reftest）
 
 - [ ] 从上游 WPT 仓库 `css/css-flexbox/` 导入**全部**范围内 reftest
 - [ ] 从上游 WPT 仓库 `css/css-grid/` 导入**全部**范围内 reftest
-- [ ] 上游 WPT 真实 reftest 通过率 ≥ 95%
+- [ ] 上游 WPT 真实 reftest 通过率 100%（范围内零失败）
 - [ ] CPU 软件渲染模式 + GPU 渲染模式均达标
 - [ ] **不允许**用 inline 手写 reftest 替代或充数
 
-## DC-4: Positioning + Float + Table + Multicol 通过率 ≥ 95%（基于上游真实 WPT reftest）
+## DC-4: Positioning + Float + Table + Multicol 通过率 100%（基于上游真实 WPT reftest）
 
 - [ ] 从上游 WPT 仓库 `css/css-position/` 导入**全部**范围内 reftest
 - [ ] 从上游 WPT 仓库 `css/css-float/` 导入**全部**范围内 reftest
 - [ ] 从上游 WPT 仓库 `css/css-tables/` 导入**全部**范围内 reftest
 - [ ] 从上游 WPT 仓库 `css/css-multicol/` 导入**全部**范围内 reftest
-- [ ] 上游 WPT 真实 reftest 通过率 ≥ 95%
+- [ ] 上游 WPT 真实 reftest 通过率 100%（范围内零失败）
 - [ ] CPU 软件渲染模式 + GPU 渲染模式均达标
 - [ ] **不允许**用 inline 手写 reftest 替代或充数
 
-## DC-5: 文字排版通过率 ≥ 95%（基于上游真实 WPT reftest）
+## DC-5: 文字排版通过率 100%（基于上游真实 WPT reftest）
 
 - [ ] 从上游 WPT 仓库 `css/css-text/` 导入**全部**范围内 reftest
 - [ ] 从上游 WPT 仓库 `css/css-writing-modes/` 导入**全部**范围内 reftest
 - [ ] 从上游 WPT 仓库 `css/css-fonts/` 导入**全部**范围内 reftest
 - [ ] 从上游 WPT 仓库 `css/css-text-decor/` 导入**全部**范围内 reftest
-- [ ] 上游 WPT 真实 reftest 通过率 ≥ 95%
+- [ ] 上游 WPT 真实 reftest 通过率 100%（范围内零失败）
 - [ ] CPU 软件渲染模式 + GPU 渲染模式均达标
 - [ ] **不允许**用 inline 手写 reftest 替代或充数
 
@@ -189,7 +189,7 @@
 - **分子**：运行后判定为 PASS 的 case 数量
 - **通过率** = 分子 / 分母 × 100%
 - **可信度前提（DC-14）**：上述通过率只有在 reference 独立于被验证者（Chromium 渲染，非 ZeroWeb 自渲染）、严格容差、全量分母时才可信。不满足 DC-14 的通过率（含当前 436/490，reference 为 ZeroWeb 自渲染）只能作「自一致性」参考，**不构成达标证据**
-- **失败 case 约束**：通过率 ≥ 95% 的情况下，仍需对所有失败 case 进行根因分析并记录到 evidence。不允许有「未分析的失败」。失败的根因分类为：CSS parser 错误、样式计算错误、布局算法错误、渲染器错误、JS 执行错误、范围外误入、已知 fontdue/Skia 字体差异（仅文字类）。根因为渲染错误的必须有修复计划
+- **失败 case 约束**：存在失败 case 的情况下（2026-10-17 目标修订为 100% 后即任何失败），仍需对所有失败 case 进行根因分析并记录到 evidence。不允许有「未分析的失败」。失败的根因分类为：CSS parser 错误、样式计算错误、布局算法错误、渲染器错误、JS 执行错误、范围外误入、已知 fontdue/Skia 字体差异（仅文字类）。根因为渲染错误的必须有修复计划
 - **要求**：每个 WPT 目录的分母 = 上游该目录全部 reftest − skip list 中范围外 reftest。分母不允许人为缩减——不允许跳过已知会失败的 case，不允许只挑选简单 case
 - **最低分母要求**：每个目录范围内 reftest 必须 ≥ 50 个（如果上游该目录范围内 reftest 不足 50 个，则导入全部）
 - **禁止**：

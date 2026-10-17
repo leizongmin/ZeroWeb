@@ -2315,6 +2315,8 @@
 
 以下条件**全部满足**时，方可判定本目标完成。
 
+> **目标修订（2026-10-17，用户对话渠道直接拍板）**：DC-2~5 四领域通过率目标由 ≥95% 上调至 **100%（范围内零失败）**，上游全量分母、严格容差真通过、Chromium oracle 口径不变。
+
 **详细进度**：DC-1~14 完整进度详见 [dc-progress.md](rendering-compat/dc-progress.md)。
 
 ### DC-1: WPT Reftest 基础设施就位
@@ -2334,39 +2336,39 @@
 
 **状态**：✅ **全部就位**——fetch/parse test list（manifest.rs）、MANIFEST.json fuzzy 元数据、CPU+GPU 截图、headless Chromium oracle 抓取、viewport 对齐（800×600）、V8 JS 执行、分类容差锁定（DC-14）、范围外 skip list、文本+JSON 报告、单一命令（`make reftest`）、CI 集成（ci.yml `reftest` + weekly.yml `reftest-trend`）全实现；详见 dc-progress.md
 
-### DC-2: CSS 2.1 核心通过率 ≥ 95%（基于上游真实 WPT reftest）
+### DC-2: CSS 2.1 核心通过率 100%（基于上游真实 WPT reftest）
 
 - [ ] 从上游 WPT 仓库 `css/css2/` 和 `css/CSS2/` 目录导入**全部**范围内 reftest（排除 skip list 中的范围外 case）
-- [ ] 上游 WPT 真实 reftest 通过率 ≥ 95%
+- [ ] 上游 WPT 真实 reftest 通过率 100%（范围内零失败）
 - [ ] 覆盖：盒模型、margin 折叠、BFC、inline formatting、颜色、背景、边框、基础定位
 - [ ] CPU 软件渲染模式 + GPU 渲染模式均达标
 - [ ] **不允许**用 inline 手写 reftest 替代或充数
 
 **状态**：详见 dc-progress.md
 
-### DC-3: Flexbox + Grid 通过率 ≥ 95%（基于上游真实 WPT reftest）
+### DC-3: Flexbox + Grid 通过率 100%（基于上游真实 WPT reftest）
 
 - [ ] 从上游 WPT 仓库 `css/css-flexbox/` 导入**全部**范围内 reftest
 - [ ] 从上游 WPT 仓库 `css/css-grid/` 导入**全部**范围内 reftest
-- [ ] 上游 WPT 真实 reftest 通过率 ≥ 95%
+- [ ] 上游 WPT 真实 reftest 通过率 100%（范围内零失败）
 - [ ] CPU 软件渲染模式 + GPU 渲染模式均达标
 - [ ] **不允许**用 inline 手写 reftest 替代或充数
 
 **状态**：详见 dc-progress.md
 
-### DC-4: Positioning + Float + Table + Multicol 通过率 ≥ 95%（基于上游真实 WPT reftest）
+### DC-4: Positioning + Float + Table + Multicol 通过率 100%（基于上游真实 WPT reftest）
 
 - [ ] 从上游 WPT 仓库 `css/css-position/`、`css/css-float/`、`css/css-tables/`、`css/css-multicol/` 导入**全部**范围内 reftest
-- [ ] 上游 WPT 真实 reftest 通过率 ≥ 95%
+- [ ] 上游 WPT 真实 reftest 通过率 100%（范围内零失败）
 - [ ] CPU 软件渲染模式 + GPU 渲染模式均达标
 - [ ] **不允许**用 inline 手写 reftest 替代或充数
 
 **状态**：详见 dc-progress.md
 
-### DC-5: 文字排版通过率 ≥ 95%（基于上游真实 WPT reftest）
+### DC-5: 文字排版通过率 100%（基于上游真实 WPT reftest）
 
 - [ ] 从上游 WPT 仓库 `css/css-text/`、`css/css-writing-modes/`、`css/css-fonts/`、`css/css-text-decor/` 导入**全部**范围内 reftest
-- [ ] 上游 WPT 真实 reftest 通过率 ≥ 95%
+- [ ] 上游 WPT 真实 reftest 通过率 100%（范围内零失败）
 - [ ] CPU 软件渲染模式 + GPU 渲染模式均达标
 - [ ] **不允许**用 inline 手写 reftest 替代或充数
 
@@ -2456,7 +2458,7 @@
 
 ### M11 — 全量冲刺 + 上游真实 WPT Reftest 通过率达标（⚠️ 进行中）
 
-**目标**：修复所有剩余渲染缺口，达到上游真实 WPT reftest 各领域通过率 ≥ 95%。
+**目标**：修复所有剩余渲染缺口，达到上游真实 WPT reftest 各领域通过率 100%（2026-10-17 目标修订后口径）。
 
 **状态**：⚠️ **自主 clean-lever surface 经 6 vein definitively 穷尽**——R2572 订正旧「8 angle 穷尽」框架（过早），续经 4 法 land 六连 lever R2572-R2577（counters() / ::marker / list-style-type:string / border-image-outset / border-image-width / word-break:break-word；directed probe + Explore-agent fan-out + exhaustive field 审计 + exhaustive variant 审计）；R2578 exhaustive value-variant 审计（全值枚举变体→消费核验）= clean lever 零产出（残余全 false-positive / deep / host-layer / 0-test）；R2581 missing-property 批量核验（60 常见 CSS 属性→51 未应用全 deep/niche/host-layer）+ R2582 伪元素 parse-vs-apply 审计（19 伪元素→16 未 apply 全 Phase A IFC-deep/host-layer/niche/OOS）亦 = clean lever 零产出。**6 vein（directed probe + agent fan-out + exhaustive field + exhaustive variant + missing-property 批量 + 伪元素 parse-vs-apply）rigorous 证 clean-lever surface definitively 穷尽**。活跃自主面仅 ① 低频周期 plateau-guard（R2577 `make test` 13190/0/74 绿）+ ② 文档纠偏；**唯一推向 95% = 用户点名授权深结构专项**（最高 value = Phase A IFC line-box-metric 统一，first-letter/first-line 亦属此 territory；次 = R1043 vertical-mode / R2174 taffy border-box / font-stack C-dep / Phase 2 multicol fragmentation / individual+3D transforms；受字体度量 / 布局结构性 plateau 限制）。详见 `rendering-compat/master.md` R2572-R2582。
 
@@ -2480,7 +2482,7 @@
 1. ✅ Done Criteria DC-1 到 DC-14 全部满足（**DC-14 真通过标准是 DC-2~13 通过率数字的可信度前提**）
 2. ✅ CPU 渲染器 + GPU 渲染器均支持全部 13 种 `RenderPrimitives` 图元类型
 3. ✅ 浏览器 `append_webview_primitives()` 正确消费并渲染所有图元类型
-4. ✅ 所有四个 WPT 领域（CSS 2.1、Flexbox+Grid、布局模式、文字排版）通过率均 ≥ 95%（基于真实上游 WPT reftest，且为**严格容差真通过率**、reference 为 **Chromium 独立 Oracle**、分母为上游全量——即满足 DC-14）
+4. ✅ 所有四个 WPT 领域（CSS 2.1、Flexbox+Grid、布局模式、文字排版）通过率均 100%——范围内零失败（基于真实上游 WPT reftest，且为**严格容差真通过率**、reference 为 **Chromium 独立 Oracle**、分母为上游全量——即满足 DC-14）
 5. ✅ Margin 折叠、BFC、Float 布局、滚动容器等核心布局行为与 Chromium 一致
 6. ✅ CPU 软件渲染 + GPU 渲染双模式均达标
 7. ✅ `cargo build` + `cargo test` + `cargo clippy` 全通过
