@@ -912,3 +912,170 @@ fn test_crypto_subtle_okp_m5() {
     assert_eq!(sandbox.execute("String(globalThis.__f1)").unwrap().value, "DataError,DataError,DataError,DataError,DataError,SyntaxError", "错误矩阵：31 字节 raw / kty='EC' / crv 失配 / alg 错拼 / d-x 失配（DataError）+ 非法 usages（SyntaxError）");
     assert_eq!(sandbox.execute("String(globalThis.__f2)").unwrap().value, r#"{"alg":false,"d":true,"n":6}"#, "X25519 私钥 jwk 导出无 alg + d 定宽（共 6 成员）");
 }
+
+// webcrypto 残留收口（M6）：KDF hash 注册语义 + deriveBits length 矩阵细分 + HMAC
+// 归一化注册集 + sign/verify 跨家族 key 错误身份 + [SecureContext] 暴露门禁。
+// 向量锚定 RFC 5869 §A.1（HKDF-SHA256 IKM 0b×22 → OKM 3cb25f25..865）与
+// PBKDF2-HMAC-SHA256 公开向量（P="password", S="salt", c=1 → 120fb6cf..17b）；
+// 错误矩阵镜像 WPT hkdf/pbkdf2（去连字符 "SHA256"/非摘要 "PBKDF2" 作 hash →
+// NotSupportedError；0 length → resolve 空；44/null/省略/负数 → OperationError）、
+// generateKey/failures_bad_algorithm（HMAC hash MD5 → NotSupportedError）、
+// sign_verify/hmac（HMAC 算法名 + ECDSA key → InvalidAccessError，spec sign/verify
+// 公共步骤）。[SecureContext]（spec idl，subtle/CryptoKey 仅安全上下文暴露）：
+// about:blank secure 面 exposed；http://wpt.test 非 secure 面 undefined（corpus
+// historical.any.js 同语义，runner 无 `.https.` 中缀案走 http 页锚）。
+// https://w3c.github.io/webcrypto/#SubtleCrypto-method-deriveBits
+// https://w3c.github.io/webcrypto/#secure-context  https://datatracker.ietf.org/doc/html/rfc5869
+#[test]
+fn test_crypto_subtle_residual_m6() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // hex/str 辅助 + errname（part05/M3b 同款）。
+    sandbox
+        .execute(
+            "function hex2b(h){var a=[];for(var i=0;i<h.length;i+=2)a.push(parseInt(h.substr(i,2),16));return new Uint8Array(a);}\
+             function b2hex(u){var s='';for(var i=0;i<u.length;i++){s+=('0'+u[i].toString(16)).slice(-2);}return s;}\
+             function str2b(s){var a=[];for(var i=0;i<s.length;i++)a.push(s.charCodeAt(i));return new Uint8Array(a);}\
+             function errname(p){return p.then(function(){return 'no-throw';}, function(e){return e.name;});}",
+        )
+        .unwrap();
+
+    // A1：HKDF 绿路（RFC 5869 §A.1，L=336 位）+ hash 注册语义（去连字符 "SHA256"/
+    // 非摘要 "PBKDF2" → NotSupportedError；deriveKey 同径）+ length 矩阵（0 → 空、
+    // 44 非 8 倍数 / null / 负数 / 省略 → OperationError）。
+    sandbox
+        .execute(
+            "globalThis.__a=[];function noteA(s){globalThis.__a.push(s);}\
+             var ikm=hex2b('0b'.repeat(22));\
+             var slt=hex2b('000102030405060708090a0b0c');\
+             var inf=hex2b('f0f1f2f3f4f5f6f7f8f9');\
+             crypto.subtle.importKey('raw', ikm, {name:'HKDF'}, false, ['deriveBits','deriveKey'])\
+               .then(function(k){\
+                 var ps=[\
+                   crypto.subtle.deriveBits({name:'HKDF', salt:slt, info:inf, hash:'SHA-256'}, k, 336)\
+                     .then(function(b){ noteA('okm:'+(b2hex(new Uint8Array(b))==='3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865')); }),\
+                   crypto.subtle.deriveBits({name:'HKDF', salt:slt, info:inf, hash:'SHA256'}, k, 256).then(noteA, function(e){ noteA('hyph:'+e.name); }),\
+                   crypto.subtle.deriveBits({name:'HKDF', salt:slt, info:inf, hash:'PBKDF2'}, k, 256).then(noteA, function(e){ noteA('nd:'+e.name); }),\
+                   crypto.subtle.deriveBits({name:'HKDF', salt:slt, info:inf, hash:'SHA-256'}, k, 0)\
+                     .then(function(b){ noteA('zero:'+new Uint8Array(b).length); }, function(e){ noteA('zero-err:'+e.name); }),\
+                   crypto.subtle.deriveBits({name:'HKDF', salt:slt, info:inf, hash:'SHA-256'}, k, 44).then(noteA, function(e){ noteA('frac:'+e.name); }),\
+                   crypto.subtle.deriveBits({name:'HKDF', salt:slt, info:inf, hash:'SHA-256'}, k, null).then(noteA, function(e){ noteA('null:'+e.name); }),\
+                   crypto.subtle.deriveBits({name:'HKDF', salt:slt, info:inf, hash:'SHA-256'}, k, -8).then(noteA, function(e){ noteA('neg:'+e.name); }),\
+                   crypto.subtle.deriveBits({name:'HKDF', salt:slt, info:inf, hash:'SHA-256'}, k).then(noteA, function(e){ noteA('omit:'+e.name); }),\
+                   crypto.subtle.deriveKey({name:'HKDF', salt:slt, info:inf, hash:'SHA384'}, k, {name:'AES-GCM', length:128}, true, ['encrypt']).then(noteA, function(e){ noteA('dkbad:'+e.name); })\
+                 ];\
+                 return Promise.all(ps); })\
+               .catch(function(e){ noteA('fatal:'+e.name); });",
+        )
+        .unwrap();
+
+    // A2：PBKDF2 绿路（公开向量 c=1）+ 去连字符 hash 拒绝。
+    sandbox
+        .execute(
+            "globalThis.__b=[];function noteB(s){globalThis.__b.push(s);}\
+             crypto.subtle.importKey('raw', str2b('password'), {name:'PBKDF2'}, false, ['deriveBits'])\
+               .then(function(k){\
+                 return Promise.all([\
+                   crypto.subtle.deriveBits({name:'PBKDF2', salt:str2b('salt'), iterations:1, hash:'SHA-256'}, k, 256)\
+                     .then(function(b){ noteB('pbk:'+(b2hex(new Uint8Array(b))==='120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b')); }),\
+                   crypto.subtle.deriveBits({name:'PBKDF2', salt:str2b('salt'), iterations:1, hash:'SHA512'}, k, 256).then(noteB, function(e){ noteB('bad:'+e.name); })\
+                 ]); })\
+               .catch(function(e){ noteB('fatal:'+e.name); });",
+        )
+        .unwrap();
+
+    // A3：HMAC hash 注册集（MD5 → NotSupportedError，归一化先于 usages）+ sign/verify
+    // 跨家族 key（ECDSA P-256 私钥 + HMAC 算法名 → InvalidAccessError）。
+    sandbox
+        .execute(
+            "globalThis.__c=[];function noteC(s){globalThis.__c.push(s);}\
+             var md5=errname(crypto.subtle.generateKey({name:'HMAC', hash:'MD5'}, true, ['sign','verify']))\
+               .then(function(n){ noteC('md5:'+n); });\
+             var ec=crypto.subtle.generateKey({name:'ECDSA', namedCurve:'P-256', hash:'SHA-256'}, false, ['sign','verify']);\
+             var sgn=ec.then(function(kp){\
+                 return errname(crypto.subtle.sign({name:'HMAC', hash:'SHA-256'}, kp.privateKey, new Uint8Array(4)))\
+                   .then(function(n){ noteC('sign:'+n); }); });\
+             var vfy=ec.then(function(kp){\
+                 return errname(crypto.subtle.verify({name:'HMAC', hash:'SHA-256'}, kp.privateKey, new Uint8Array(64), new Uint8Array(4)))\
+                   .then(function(n){ noteC('verify:'+n); }); });\
+             Promise.all([md5, sgn, vfy]).catch(function(e){ noteC('fatal:'+e.name); });",
+        )
+        .unwrap();
+
+    // A4：secure 面（about:blank）[SecureContext] 暴露——subtle/CryptoKey 可用。
+    sandbox
+        .execute(
+            "globalThis.__d=[globalThis.isSecureContext, typeof crypto.subtle, typeof CryptoKey].join('|');",
+        )
+        .unwrap();
+
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    assert_eq!(
+        sandbox.execute("String(globalThis.__a.slice().sort())").unwrap().value,
+        "dkbad:NotSupportedError,frac:OperationError,hyph:NotSupportedError,nd:NotSupportedError,neg:OperationError,null:OperationError,okm:true,omit:OperationError,zero:0",
+        "HKDF 绿路 + hash 注册语义 + length 矩阵（RFC 5869 §A.1 锚定）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__b.slice().sort())").unwrap().value,
+        "bad:NotSupportedError,pbk:true",
+        "PBKDF2 绿路（公开向量）+ 去连字符 hash NotSupportedError"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__c.slice().sort())").unwrap().value,
+        "md5:NotSupportedError,sign:InvalidAccessError,verify:InvalidAccessError",
+        "HMAC MD5 归一化拒绝 + 跨家族 key sign/verify InvalidAccessError"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__d)").unwrap().value,
+        "true|object|function",
+        "secure 面 subtle/CryptoKey 暴露（about:blank）"
+    );
+    drop(sandbox);
+
+    // B：非安全面（http 页锚）[SecureContext] 门禁——subtle/CryptoKey 不暴露
+    //（historical.any.js 同语义：subtle undefined + 不在 crypto 上 + CryptoKey/
+    // SubtleCrypto 不在 self；getRandomValues 不受门禁影响）。
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    // **注册先于 shim**（runner with_dom 同序）：shim init 时 _makeLocation 读
+    // __zw_get_page_url 取真页锚，[SecureContext] 门禁随之判非 secure；shim 先装
+    // 则 location 回退 about:blank 误判 secure（webview.rs execute_script 早期
+    // ensure_js_shim 的教训，runner 侧经 execute_script_with_dom 修复）。
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("http://wpt.test/WebCryptoAPI/historical.any.js".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    sandbox
+        .execute(
+            "globalThis.__e=[location.protocol, globalThis.isSecureContext, typeof crypto.subtle,\
+              ('subtle' in crypto), typeof CryptoKey, ('SubtleCrypto' in self),\
+              typeof crypto.getRandomValues].join('|');",
+        )
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    assert_eq!(
+        sandbox.execute("String(globalThis.__e)").unwrap().value,
+        "http:|false|undefined|false|undefined|false|function",
+        "非安全面 [SecureContext] 门禁：subtle/CryptoKey/SubtleCrypto 不暴露、getRandomValues 不受影响"
+    );
+}

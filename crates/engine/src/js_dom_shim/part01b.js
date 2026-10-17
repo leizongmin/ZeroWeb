@@ -2361,8 +2361,11 @@
     }
     name = _zw_upperAscii(String(name));
     if (name === 'HMAC') {
+      // hash 须为注册摘要名（注册集显式校验——digest host 兼容无连字符别名，不能作
+      // 注册语义；WPT generateKey/failures_bad_algorithm HMAC hash MD5 →
+      // NotSupportedError 先于 usages SyntaxError，spec generateKey 归一化在前）。
       var hash = _zw_hashName(typeof algo === 'object' ? algo.hash : null);
-      if (!hash) return null;
+      if (!hash || ['SHA-1', 'SHA-256', 'SHA-384', 'SHA-512'].indexOf(hash) < 0) return null;
       var out = { name: 'HMAC', hash: hash };
       if (typeof algo === 'object' && algo && algo.length != null) out.length = Number(algo.length);
       return out;
@@ -2582,6 +2585,12 @@
         reject(new _zw_subtleDE('Algorithm does not match key', 'InvalidAccessError')); return;
       }
       var hash = _zw_hashName(typeof algorithm === 'object' ? algorithm.hash : null);
+      // hash 须为注册摘要名（deriveKey 路径——deriveBits 入口已校验同面；WPT
+      // hkdf/pbkdf2 "with bad hash name"（无连字符 "SHA384"）与 "with non-digest
+      // algorithm"（HKDF hash "PBKDF2"）deriveKey 组 → NotSupportedError）。
+      if (!hash || ['SHA-1', 'SHA-256', 'SHA-384', 'SHA-512'].indexOf(hash) < 0) {
+        reject(_zw_subtleDE("Unsupported deriveBits hash: '" + hash + "'", 'NotSupportedError')); return;
+      }
       var saltBytes = _zw_bufToBytes(algorithm.salt);
       // length null（spec deriveKey get key length 对 HKDF/PBKDF2 → null）→ 摘要输出
       // 字节数（RFC 2104/5869：SHA-1/256/384/512 → 20/32/48/64）；未知 hash → 0 走
@@ -3703,7 +3712,10 @@
     return shared.split(',');
   }
 
-  globalThis.crypto.subtle = globalThis.crypto.subtle || {
+  // SubtleCrypto 构造后按 [SecureContext] 暴露（spec idl：subtle 仅安全上下文暴露；
+  // WPT historical.any.js 断言非安全上下文 self.crypto.subtle undefined）。对象字面量
+  // 跨 part01b/part02 文件边界，先入闭包局部，part02 尾按 isSecureContext 挂载。
+  var _zwSubtle = globalThis.crypto.subtle || {
     digest: function (algo, data) {
       // spec normalizeAlgorithm：AlgorithmIdentifier 串合法；对象缺 name 成员（含 {}）→
       // TypeError（WPT digest.js「empty algorithm object」组）；null/undefined/非串非对象 → TypeError。

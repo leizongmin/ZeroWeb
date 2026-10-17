@@ -233,8 +233,14 @@
           resolve(_zw_rsaCsvBytes(edSig));
           return;
         }
-        if (name !== 'HMAC' || !key || key.algorithm.name !== 'HMAC') {
-          reject(new _zw_subtleDE('Unsupported sign algorithm or key', 'NotSupportedError')); return;
+        if (name !== 'HMAC') {
+          reject(new _zw_subtleDE('Unsupported sign algorithm: ' + name, 'NotSupportedError')); return;
+        }
+        // spec sign 公共步骤：algorithm.name 与 key.algorithm.name 不匹配 →
+        // InvalidAccessError（WPT mac.js「wrong algorithm name」组——HMAC 算法 +
+        // ECDSA 生成 key，此前误归 NotSupportedError）。
+        if (!key || key.algorithm.name !== 'HMAC') {
+          reject(new _zw_subtleDE('Algorithm does not match key', 'InvalidAccessError')); return;
         }
         if (!key.usages || key.usages.indexOf('sign') < 0) {
           reject(new _zw_subtleDE('Key usages do not include "sign"', 'InvalidAccessError')); return;
@@ -304,8 +310,12 @@
           resolve(edOk === '1');
           return;
         }
-        if (name !== 'HMAC' || !key || key.algorithm.name !== 'HMAC') {
-          reject(new _zw_subtleDE('Unsupported verify algorithm or key', 'NotSupportedError')); return;
+        if (name !== 'HMAC') {
+          reject(new _zw_subtleDE('Unsupported verify algorithm: ' + name, 'NotSupportedError')); return;
+        }
+        // spec verify 公共步骤同 sign：算法名不匹配 → InvalidAccessError（mac.js 同组）。
+        if (!key || key.algorithm.name !== 'HMAC') {
+          reject(new _zw_subtleDE('Algorithm does not match key', 'InvalidAccessError')); return;
         }
         if (!key.usages || key.usages.indexOf('verify') < 0) {
           reject(new _zw_subtleDE('Key usages do not include "verify"', 'InvalidAccessError')); return;
@@ -409,9 +419,21 @@
         if (!key.usages || key.usages.indexOf('deriveBits') < 0) {
           reject(new _zw_subtleDE('Key usages do not include "deriveBits"', 'InvalidAccessError')); return;
         }
-        if (typeof length !== 'number' || length <= 0 || length % 8 !== 0) {
+        // hash 须为注册摘要名（WPT hkdf/pbkdf2 "with bad hash name"——无连字符
+        // "SHA384"——与 "with non-digest algorithm"——HKDF hash "PBKDF2"——组 →
+        // NotSupportedError；digest host 兼容无连字符别名，不能作注册语义，与
+        // RSA/EC 家族 hash 校验同径）。
+        var kdfHash = _zw_hashName(typeof algorithm === 'object' ? algorithm.hash : null);
+        if (!kdfHash || ['SHA-1', 'SHA-256', 'SHA-384', 'SHA-512'].indexOf(kdfHash) < 0) {
+          reject(new _zw_subtleDE("Unsupported deriveBits hash: '" + kdfHash + "'", 'NotSupportedError')); return;
+        }
+        // length：负数/非 8 倍数/null/undefined/omitted → OperationError
+        //（derived_bits_length KDF 组 "should throw an exception"）；0 → 空
+        // ArrayBuffer（kdf.js/derived_bits_length "with 0 length" 组断言 resolve 空）。
+        if (typeof length !== 'number' || length < 0 || length % 8 !== 0) {
           reject(new _zw_subtleDE('deriveBits length must be a positive multiple of 8', 'OperationError')); return;
         }
+        if (length === 0) { resolve(new Uint8Array(0)); return; }
         _zw_performDerive(algorithm, key, length).then(resolve, reject);
       });
     },
@@ -736,7 +758,12 @@
       });
     }
   };
-  globalThis.CryptoKey = globalThis.CryptoKey || CryptoKey;
+  // [SecureContext] 暴露门禁（part01b _zwSubtle 注释）：secure 除非 http:/ws:
+  //（isSecureContext getter，part01 R2987——feature-detect 注释即点名 crypto.subtle）。
+  if (globalThis.isSecureContext === true) {
+    globalThis.crypto.subtle = globalThis.crypto.subtle || _zwSubtle;
+    globalThis.CryptoKey = globalThis.CryptoKey || CryptoKey;
+  }
 
   // AbortController/AbortSignal——fetch 中止 / 异步流程控制（cancel token 模式，现代 JS 库 / fetch
   // 高频）。V8 embed 不提供，polyfill 之（本地 Chromium 150 oracle 锚定 R2777）。signal.aborted/

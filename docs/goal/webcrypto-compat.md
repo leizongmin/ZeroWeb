@@ -1,12 +1,27 @@
 # Web Crypto 兼容 — crypto.getRandomValues / randomUUID / subtle
 
-**版本**: v1.5
+**版本**: v1.6
 **日期**: 2026-10-17
-**状态**: Active——M5 收口（OKP 家族 Ed25519/X25519 +1,936P，2026-10-17）；
-下一步残留收口（pbkdf2/hkdf deriveBits 0 length TypeError 细分 + badHashName
-分类，2,953F）与 tentative 域挂账清点
+**状态**: Active——M6 残留收口（KDF 语义 + [SecureContext] 门禁 +2,952P，
+2026-10-17）；**非 tentative 失败清零**，下一步 tentative 域挂账清点与
+归档判断（DC-3 reftest/product-smoke 复核）
 **执行模式**: WPT 驱动（上游 WebCryptoAPI corpus 为验收标尺）+ 实现与语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——加密面）
+
+> **▶ M6 残留收口（2026-10-17）**：四组语义修齐——KDF（PBKDF2/HKDF）hash
+> 注册校验（去连字符名/非摘要名 → NotSupportedError）+ deriveBits length
+> 矩阵（0 → resolve 空 ArrayBuffer、非 8 倍数/null/负 → OperationError）；
+> HMAC 归一化注册集（MD5 → NotSupportedError 先于 usages 校验）；sign/verify
+> 跨家族算法不匹配 → InvalidAccessError（原误归 NotSupportedError）；
+> `crypto.subtle`/`CryptoKey` [SecureContext] 暴露门禁三件套（part02 尾按
+> isSecureContext 挂载 + isSecureContext getter 直读 `__zw_get_page_url`
+> scheme 根修 init 期 TypeError 被 catch 吞成 secure + runner 页锚按
+> `.https.` 中缀双态与预热行 with_dom 化）。全量 **33,109 = Pass 25,788
+> （77.89%）+ Fail 7,320 + Timeout 1**（+2,952，逐 subtest 对比零回归）；
+> 全绿案 67→**73**（derived_bits_length/hkdf/pbkdf2/failures_bad_algorithm/
+> historical/hmac 六案全翻）。Fail 7,320 全部为 .tentative. 挂账域
+> （ML-KEM/ML-DSA/X448/Ed448/AES-OCB/kmac/chacha20_poly1305/argon2/cSHAKE 等）。
+> 明细见 [M6 evidence](webcrypto-compat/evidence/2026-10-17-m6-residual.md)。
 
 > **▶ M5 OKP 家族（2026-10-17）**：Ed25519/X25519 全链——importKey
 > （raw/spki/pkcs8/jwk）、generateKey（privateKey.extractable=请求值）、
@@ -129,7 +144,7 @@ M1 导入与基线（corpus + runner 通道 + csv 回填）→ M2 已实现面 W
 （digest/HMAC/PBKDF2/HKDF/AES-GCM 逐域修失败；随机源零回归）→ M3 补面
 （AES-CBC/CTR、wrapKey/unwrapKey、spki/pkcs8/jwk 格式）→ M4 签名系
 （RSA 三算法 M4a ✓ + EC 家族 M4b ✓）→ M5 OKP（Ed25519/X25519 ✓）→
-残留收口（pbkdf2/hkdf 0 length 细分、tentative 域挂账清点）+ 归档。
+残留收口（KDF 语义 + [SecureContext] 门禁 M6 ✓；tentative 域挂账清点）+ 归档。
 
 > 原里程碑（M2 digest 从零实现 / M3 importKey+AES-GCM 从零实现）已被
 > 2026-10-17 盘点修正——相应实现 R2793/R2955-R2958 立项前已存在，里程碑
