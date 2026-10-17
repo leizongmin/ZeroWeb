@@ -1457,6 +1457,98 @@ fn test_focus_ownership_and_related_target_r148() {
     );
 }
 
+/// T55/TV-1：detached 元素 focus 所有权（`_zwMElFocused`）的 `blur()` 配对——
+/// activeElement 回落 body、blur 事件恰 1 次、focusout（bubbles）同派（修复前
+/// MEl 臂只派 blur，变异 M3 证实静默）。
+#[test]
+fn test_detached_focus_blur_pairing_t55() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body><div id=\"d\">x</div></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let out = sandbox
+        .execute(
+            "var parts = [];\
+             var el = document.createElement('input');\
+             el.focus();\
+             parts.push('focused:' + (document.activeElement === el));\
+             var blurCount = 0, focusoutCount = 0, focusoutBubbles = 'unset';\
+             el.addEventListener('blur', function () { blurCount++; });\
+             el.addEventListener('focusout', function (ev) { focusoutCount++; focusoutBubbles = String(ev.bubbles); });\
+             el.blur();\
+             parts.push('afterBlurBody:' + (document.activeElement === document.body));\
+             parts.push('blur:' + blurCount);\
+             parts.push('focusout:' + focusoutCount);\
+             parts.push('foBubbles:' + focusoutBubbles);\
+             parts.join('|')",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out, "focused:true|afterBlurBody:true|blur:1|focusout:1|foBubbles:true",
+        "T55 detached focus 所有权 blur() 配对：activeElement 回 body + blur 恰 1 次 + focusout 派发"
+    );
+}
+
+/// T55/TV-3：detached focus 迁移的失焦事件**锁序**——旧焦点（连接元素）的
+/// blur 先于 focusout（uievents-compat M3 尾簇 6b 序），且旧元素 blur 监听内
+/// activeElement 走 body 回落（T55-2 赋值移到失焦派发后的语义面）。
+/// part03 MEl 臂（解析节点 focus）派发序相反为先存差异，本轮只记录不改动。
+#[test]
+fn test_detached_focus_migration_event_order_t55() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body><div id=\"a\">x</div></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let out = sandbox
+        .execute(
+            "var parts = [];\
+             var a = document.getElementById('a');\
+             var seq = [];\
+             a.addEventListener('blur', function () {\
+               seq.push('blur');\
+               seq.push(document.activeElement === document.body ? 'ae:body' : 'ae:other');\
+             });\
+             a.addEventListener('focusout', function () { seq.push('focusout'); });\
+             a.focus();\
+             var dyn = document.createElement('input');\
+             dyn.focus();\
+             parts.push(seq.join(','));\
+             parts.push('dynFocused:' + (document.activeElement === dyn));\
+             parts.join('|')",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out, "blur,ae:body,focusout|dynFocused:true",
+        "T55 detached 迁移失焦序锁 blur→focusout + 旧 blur 监听内 activeElement=body"
+    );
+}
+
 /// R149：`customElements.define` 的既有元素自动升级（spec `custom-element-registration`
 /// define 末步——文档中已存在的同名元素升级：ctor 体 + connectedCallback 立即触发；
 /// WPT EventTarget-add-listener-platform-object：parser 先建 `<my-custom-click>` 后

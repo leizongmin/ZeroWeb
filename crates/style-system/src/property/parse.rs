@@ -297,6 +297,13 @@ fn grid_content_track_keyword(value: &str) -> bool {
 /// https://drafts.csswg.org/css-grid-2/#typedef-track-breadth
 /// https://drafts.csswg.org/css-values-4/#lengths
 fn grid_length_percentage_supported(value: &str) -> bool {
+    // css-grid-2 §7.2 `<track-breadth>` 只接受 <length-percentage>/<flex>/内容关键字/auto；
+    // 共享 parse_length 会把 border-width 关键字 thin/medium/thick 映射为 Px(1/3/5)
+    // （CSS 2.1 §8.5.1），按消费方 grammar 在此显式排除（同 flex-basis / scroll-padding
+    // 的 `*_length_is_valid` 模式），避免 `grid-template-columns: medium 1fr` 被误接受。
+    if matches!(value.trim().to_ascii_lowercase().as_str(), "thin" | "medium" | "thick") {
+        return false;
+    }
     let Some(length) = values::parse_length(value) else {
         return false;
     };
@@ -1417,6 +1424,24 @@ mod tests {
         // 近似拼写仍拒绝
         assert!(parse_grid_template_track_list("min-contentt").is_none());
         assert!(parse_grid_template_track_list("max-contentt").is_none());
+    }
+
+    /// border-width 关键字不是 <track-breadth>（css-grid-2 §7.2）：共享 parse_length 把
+    /// thin/medium/thick 映射为 Px(1/3/5)，轨道上下文必须按消费方 grammar 整体拒绝声明
+    /// （Chrome 同行为，CSS 错误声明丢弃）；合法 length-percentage 不受影响。
+    #[test]
+    fn parse_grid_track_list_rejects_border_width_keywords() {
+        assert!(parse_grid_template_track_list("medium 1fr").is_none());
+        assert!(parse_grid_template_track_list("thin").is_none());
+        assert!(parse_grid_template_track_list("minmax(thick, 1fr)").is_none());
+        assert!(parse_grid_template_track_list("fit-content(thin)").is_none());
+        assert!(parse_grid_auto_track_list("medium").is_none());
+        // 合法值不受影响
+        assert_eq!(
+            parse_grid_template_track_list("10px 1fr"),
+            Some(Some("10px 1fr".to_string()))
+        );
+        assert!(parse_grid_template_track_list("50% 10em").is_some());
     }
 
     #[test]

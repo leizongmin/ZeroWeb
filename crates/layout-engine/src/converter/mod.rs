@@ -309,7 +309,14 @@ pub fn computed_style_to_taffy(
                     _ => taffy::style::Dimension::length(0.0),
                 },
             };
-            let block_fills_width = matches!(
+            // R5163：table-caption 的 auto 宽按 block box 语义解析（CSS 2.2 §17.4.1
+            // 「determined as if the caption were a block box child of the table
+            // wrapper」）——caption 填满表宽，size containment 只折叠 content 贡献、
+            // 不改 fill 行为（contain-paint-size-001/contain-strict-001：caption 应
+            // 206×40 纯边框绿条，旧把 auto 宽塌 CIS-or-0 → 40px 碎条）。
+            // kill-switch `ZW_CAPTION_CONTAIN_FILL=0`。
+            let caption_contain_fill = std::env::var("ZW_CAPTION_CONTAIN_FILL").as_deref() != Ok("0");
+            let block_fills_width = (matches!(
                 style.display,
                 DisplayValue::Block
                     | DisplayValue::Flow
@@ -317,7 +324,8 @@ pub fn computed_style_to_taffy(
                     | DisplayValue::ListItem
                     | DisplayValue::Flex
                     | DisplayValue::Grid
-            ) // R4034b：abspos 的 auto 宽是 content-based（§10.3.7 shrink-to-fit），非
+            ) || (caption_contain_fill && matches!(style.display, DisplayValue::TableCaption)))
+            // R4034b：abspos 的 auto 宽是 content-based（§10.3.7 shrink-to-fit），非
             // fill-CB——containment 下须折叠到 CIS-or-0（contain-animation-001：
             // contain:strict abspos div 宽 128 应 100 = 纯边框）。
                 && !matches!(style.position, PositionValue::Absolute | PositionValue::Fixed);

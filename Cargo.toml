@@ -153,6 +153,20 @@ ctr = "0.9"
 # RSA 实现，OAEP/PSS/PKCS1v15 + pkcs8/spki 编解码齐备，与既有 sha2/aes 家族同源）
 rsa = "0.9"
 
+# EC 曲线（crypto.subtle ECDSA/ECDH P-256/P-384/P-521，webcrypto M4b；选型见
+# docs/goal/webcrypto-compat/evidence/2026-10-17-m4b-deps.md——与 rsa 同 RustCrypto
+# 生态，ecdsa 签名/验签 + ecdh + pkcs8/spki 编解码，三曲线同一 PrimeCurve 泛型栈）
+p256 = { version = "0.13", features = ["arithmetic", "ecdsa", "ecdh", "pkcs8"] }
+p384 = { version = "0.13", features = ["arithmetic", "ecdsa", "ecdh", "pkcs8"] }
+p521 = { version = "0.13", features = ["arithmetic", "ecdsa", "ecdh", "pkcs8"] }
+
+# Curve25519（crypto.subtle Ed25519/X25519 OKP 家族，webcrypto M5；选型见
+# docs/goal/webcrypto-compat/evidence/2026-10-17-m5-okp-deps.md——dalek 纯 Rust
+# 审计系，MSRV 1.85 与 workspace 一致；DER 编解码按 RFC 8410 定长结构手写，
+# 无需 pkcs8 feature）
+ed25519-dalek = "3.0"
+x25519-dalek = { version = "3.0", features = ["static_secrets"] }
+
 # CSPRNG（crypto.getRandomValues/randomUUID OS 随机源，R2960）
 getrandom = "0.3"
 

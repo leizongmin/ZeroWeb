@@ -6096,14 +6096,18 @@
   }
   // R2987 window context / security 全局——库 feature-detect 后再使用 secure-only API（crypto.subtle /
   // SharedArrayBuffer / Service Worker）或错误上报。
-  // `isSecureContext`（getter，随 location.protocol）：secure 除非 http:/ws:（about:blank/https/wss/file → secure）。
+  // `isSecureContext`（getter，随页面协议）：secure 除非 http:/ws:（about:blank/https/wss/file → secure）。
   // spec secure context 判定含 localhost / 非安全白名单，headless 取协议近似（http/ws 不安全，余皆安全）。
+  // 直读 host 页 URL scheme，不走 location facade——location.protocol getter 经
+  // _hist_current（history 状态，part02 后段 5896 才赋值），shim init 期访问抛
+  // TypeError，被下方 catch 兜底吞成 secure（webcrypto M6 [SecureContext] 门禁在
+  // init 期误判 secure 实证）。pushState/history 不换源，scheme 语义等价。
   Object.defineProperty(globalThis, 'isSecureContext', {
     configurable: true,
     get: function () {
       try {
-        var p = globalThis.location && globalThis.location.protocol;
-        return p !== 'http:' && p !== 'ws:';
+        var u = (typeof __zw_get_page_url === 'function') ? String(__zw_get_page_url() || '') : '';
+        return u.indexOf('http:') !== 0 && u.indexOf('ws:') !== 0;
       } catch (_e) { return true; }
     }
   });

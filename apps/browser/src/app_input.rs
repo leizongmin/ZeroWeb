@@ -994,6 +994,9 @@ impl BrowserApp {
                     self.navigate_to(&url);
                     self.address_bar_focused = false;
                     self.autocomplete.clear();
+                    // T53-1：与页面点击失焦同款——失焦清 IME 合成态，防 preedit
+                    // 残留叠加在导航后 URL 上绘制。
+                    self.address_bar_ime_preedit.clear();
                     return;
                 }
             }
@@ -1339,6 +1342,9 @@ impl BrowserApp {
             if self.address_bar_focused {
                 self.address_bar_focused = false;
                 self.autocomplete.clear();
+                // T53：失焦同时清 IME 合成态——渲染层不按焦点裁剪 preedit，
+                // 残留文本会继续叠加在 URL 上绘制。
+                self.address_bar_ime_preedit.clear();
                 self.needs_redraw = true;
             }
         }

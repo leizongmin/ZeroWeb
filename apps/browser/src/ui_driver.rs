@@ -249,6 +249,11 @@ enum Step {
         visible: bool,
         contains: Option<String>,
     },
+    /// 可视标签条顺序断言（T54 溢出拖拽落点）：`contains[i]` 与第 i 个可视槽位
+    /// 标签的 URL 子串一一对应，长度精确相等（tab_layout 与渲染同源，帧后有效）。
+    AssertTabOrder {
+        patterns: Vec<String>,
+    },
     /// 悬停第 `index` 个标签槽位中心（几何取自渲染缓存 tab_layout；只移动不点击）。
     HoverTab {
         index: usize,
@@ -477,6 +482,22 @@ impl Step {
                 contains: value.get("contains").and_then(Value::as_str).map(str::to_string),
             }),
             "click_closed_tab_toast" => Ok(Self::ClickClosedTabToast),
+            "assert_tab_order" => {
+                // TV-4：非字符串项报错拒绝——静默降级空串会让 contains 恒假
+                //（断言假绿），脚本笔误必须在解析期暴露。
+                let items = value
+                    .get("contains")
+                    .and_then(Value::as_array)
+                    .ok_or_else(|| bad("assert_tab_order requires string array field \"contains\""))?;
+                let mut patterns = Vec::with_capacity(items.len());
+                for (index, item) in items.iter().enumerate() {
+                    let text = item.as_str().ok_or_else(|| {
+                        bad(format!("assert_tab_order contains[{index}] must be a string, got {item}").as_str())
+                    })?;
+                    patterns.push(text.to_string());
+                }
+                Ok(Self::AssertTabOrder { patterns })
+            }
             "assert_tab_tooltip" => Ok(Self::AssertTabTooltip {
                 visible: value
                     .get("visible")
@@ -1247,6 +1268,33 @@ impl UiDriver {
                 );
                 Ok(())
             }
+            Step::AssertTabOrder { patterns } => {
+                let ids = app.smoke_tab_layout_ids();
+                if ids.len() != patterns.len() {
+                    return Err(format!(
+                        "assert_tab_order failed: {} visible tabs, expected {} (urls: {:?})",
+                        ids.len(),
+                        patterns.len(),
+                        ids.iter()
+                            .map(|id| app.smoke_tab_url(*id).unwrap_or_default())
+                            .collect::<Vec<_>>()
+                    ));
+                }
+                for (index, pattern) in patterns.iter().enumerate() {
+                    let url = app.smoke_tab_url(ids[index]).unwrap_or_default();
+                    if !url.contains(pattern.as_str()) {
+                        return Err(format!(
+                            "assert_tab_order failed: visible slot {index} is {url}, expected to contain {pattern}"
+                        ));
+                    }
+                }
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} assert_tab_order slots={} status=passed",
+                    self.next + 1,
+                    patterns.len()
+                );
+                Ok(())
+            }
             Step::AssertTabTooltip { visible, contains } => {
                 let actual = app.smoke_tab_tooltip();
                 match (visible, actual.as_ref()) {
@@ -1614,6 +1662,20 @@ mod tests {
         );
         assert!(Step::parse(r#"{"op":"nonsense"}"#, 1).is_err());
         assert!(Step::parse(r#"{"op":"click","x":10}"#, 1).is_err());
+    }
+
+    /// TV-4：assert_tab_order 非字符串项解析期报错（不静默降级空串）。
+    #[test]
+    fn parse_assert_tab_order_rejects_non_string_items() {
+        assert_eq!(
+            Step::parse(r#"{"op":"assert_tab_order","contains":["a.html","b.html"]}"#, 1),
+            Ok(Step::AssertTabOrder {
+                patterns: vec!["a.html".into(), "b.html".into()]
+            })
+        );
+        assert!(Step::parse(r#"{"op":"assert_tab_order","contains":["a.html",42]}"#, 1).is_err());
+        assert!(Step::parse(r#"{"op":"assert_tab_order","contains":["a.html",null]}"#, 1).is_err());
+        assert!(Step::parse(r#"{"op":"assert_tab_order"}"#, 1).is_err());
     }
 
     /// assert_url 缺省 contains；`mode:"prefix"` 按前缀匹配；未知 mode 拒绝。

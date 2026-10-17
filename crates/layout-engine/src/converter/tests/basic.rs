@@ -896,3 +896,32 @@ fn test_parse_grid_tracks_content_keywords() {
     let tracks = parse_grid_tracks(&Some("minmax(min-content, auto)".to_string()));
     assert_eq!(tracks.len(), 1);
 }
+
+/// border-width 关键字不是 <track-breadth>（css-grid-2 §7.2）：共享 parse_length 把
+/// thin/medium/thick 映射为 Px(1/3/5)，converter 的 length-percentage 入口须按消费方
+/// grammar 拒绝，非法值与其它非法轨道值一致回退 auto（不得静默变成 1/3/5px 长度轨道）；
+/// 声明级整体拒绝由 style-system 校验层负责（style 内轨道字符串的唯一生产者）。
+#[test]
+fn test_parse_grid_tracks_rejects_border_width_keywords() {
+    use taffy::style::MinTrackSizingFunction;
+
+    // length-percentage 入口直接拒绝三个 border-width 关键字
+    assert_eq!(parse_length_percentage("medium", 16.0, 0.0, 0.0), None);
+    assert_eq!(parse_length_percentage("thin", 16.0, 0.0, 0.0), None);
+    assert_eq!(parse_length_percentage("thick", 16.0, 0.0, 0.0), None);
+    // 合法值不受影响
+    assert_eq!(parse_length_percentage("10px", 16.0, 0.0, 0.0), Some((10.0, false)));
+
+    // minmax(thick, 1fr)：min 侧回退 auto，而非 5px 长度
+    let track = parse_minmax("thick, 1fr");
+    assert_eq!(track.min, MinTrackSizingFunction::auto());
+
+    // 轨道列表：medium 回退 auto 轨道，不产出 3px 长度轨道
+    let tracks = parse_grid_tracks(&Some("medium 1fr".to_string()));
+    assert_eq!(tracks.len(), 2);
+    if let taffy::style::GridTemplateComponent::Single(f) = &tracks[0] {
+        assert_eq!(f.min_sizing_function(), MinTrackSizingFunction::auto());
+    } else {
+        panic!("medium 应回退为单条 auto 轨道");
+    }
+}

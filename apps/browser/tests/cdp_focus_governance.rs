@@ -248,35 +248,46 @@ fn spawn_browser_with_env(vars: &[(&str, &str)]) -> (u16, BrowserProcess) {
 
 /// T-S3（缺陷轮 S3 收尾钉）：renderer bin spawn 前存在性 + 陈旧断言。`cargo test -p
 /// zero-browser` 不重编 renderer——陈旧 peer-bin 会产出稳定假结果。缺失即 panic（不静默
-/// 回退）；bin mtime 早于 `apps/renderer/src` 最新源码即 panic（陈旧面，构建顺序保证新鲜
-/// bin 恒新于源码）。
+/// 回退）；bin mtime 早于源码最新 mtime 即 panic（陈旧面，构建顺序保证新鲜 bin 恒新于
+/// 源码）。TV-5：源码面含 `apps/renderer/src` 与 `crates/engine/src/js_dom_shim`（shim
+/// 经 include_str! 烘进 renderer bin——engine 侧焦点语义改动不重编 renderer 时钉子假绿，
+/// 本守卫同源拦截）。
 fn assert_renderer_bin_current(renderer: &std::path::Path) {
     assert!(
         renderer.exists(),
         "renderer binary missing at {} — build it explicitly (cargo build -p zero-renderer) before running this suite",
         renderer.display()
     );
-    let src_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../renderer/src");
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let src_dirs = [
+        manifest.join("../renderer/src"),
+        manifest.join("../../crates/engine/src/js_dom_shim"),
+    ];
     let bin_mtime = std::fs::metadata(renderer)
         .and_then(|m| m.modified())
         .expect("renderer bin mtime readable");
-    if let Some(newest) = newest_source_mtime(&src_dir) {
-        assert!(
-            bin_mtime >= newest,
-            "renderer binary at {} is stale (bin mtime {bin_mtime:?} < newest renderer source mtime {newest:?}) — rebuild zero-renderer",
-            renderer.display()
-        );
+    for src_dir in src_dirs {
+        if let Some(newest) = newest_source_mtime(&src_dir) {
+            assert!(
+                bin_mtime >= newest,
+                "renderer binary at {} is stale (bin mtime {bin_mtime:?} < newest source mtime {newest:?} under {}) — rebuild zero-renderer",
+                renderer.display(),
+                src_dir.display()
+            );
+        }
     }
 }
 
-/// `dir` 下递归最新 `.rs` 源码 mtime（无目录/无源码 → None——跳过陈旧判定）。
+/// `dir` 下递归最新源码 mtime（`.rs`/`.js`——shim 脚本经 include_str! 烘入 bin；
+/// 无目录/无源码 → None——跳过陈旧判定）。
 fn newest_source_mtime(dir: &std::path::Path) -> Option<std::time::SystemTime> {
     let mut newest: Option<std::time::SystemTime> = None;
     for entry in std::fs::read_dir(dir).ok()?.flatten() {
         let path = entry.path();
+        let ext = path.extension().and_then(|e| e.to_str());
         let candidate = if path.is_dir() {
             newest_source_mtime(&path)
-        } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+        } else if ext == Some("rs") || ext == Some("js") {
             entry.metadata().and_then(|m| m.modified()).ok()
         } else {
             None

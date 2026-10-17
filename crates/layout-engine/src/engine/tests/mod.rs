@@ -738,3 +738,9 @@ mod r5161_cross_run_glue_tests;
 /// R5162 table-layout:fixed 列宽分布 §17.5.2.1（specified 列保持 + auto 列均分；
 /// 真 col CSS 宽 DOM 拾取；contain-paint-cell-001/002 驱动）。
 mod r5162_table_fixed_dist_tests;
+/// R5163 caption auto 宽在 size containment 下维持 fill 表宽（§17.4.1；
+/// contain-paint-size-001/contain-strict-001 驱动）。
+mod r5163_caption_contain_fill_tests;
+/// R5164 auto 高 inline-block strut 估计 + table 行位 claim 门（csswg#8358；
+/// css-tables/whitespace-001 驱动）。
+mod r5164_inline_block_auto_height_tests;

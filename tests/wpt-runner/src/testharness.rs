@@ -4002,6 +4002,19 @@ fn net_api_case_uses_http_page(case_name: &str) -> bool {
     NET_API_CORPUS_SUBDIRS.iter().any(|dir| case_name.starts_with(dir))
 }
 
+/// WebCryptoAPI corpus 页面 scheme 判定（webcrypto-compat 残留收口）：上游按文件名
+/// `.https.` 中缀双态——带中缀的案（digest/derive/sign_verify 等全部语义案）跑
+/// https 安全上下文，无中缀的案（historical.any.js 断言非安全上下文无
+/// crypto.subtle/CryptoKey、getRandomValues.any.js 与 scheme 无关）跑 http。runner
+/// 页锚同口径翻转，shim 侧 [SecureContext] 门禁（part01b `_zwSubtle`）随之生效。
+fn webcrypto_case_uses_http_page(case_name: &str) -> bool {
+    let Some(name) = case_name.strip_prefix("WebCryptoAPI/") else {
+        return false;
+    };
+    let file = name.rsplit('/').next().unwrap_or(name);
+    !file.contains(".https.")
+}
+
 /// net-api 六 corpus 共用运行面筛减规则（fetch 脚本头注释同域，双保险）：
 /// - `*/resources/`（helper 资产——fetch/api/resources、xhr/resources、url/resources、
 ///   eventsource/resources、streams/resources 等，META script / inline 消费不按案跑）
@@ -7658,7 +7671,9 @@ pub(crate) fn run_testharness_html_inner(
     // 变体语义——access-control/cors-origin/integrity/response-url/url a-element 的
     // http: 形态期望面解锁）；其余通道维持 https（service-workers 等 secure-context
     // 面 scheme 门不动）。websockets 先行特例被本判定覆盖（同 http）。
-    let page_scheme = if net_api_case_uses_http_page(case_name) {
+    // webcrypto-compat 残留收口：WebCryptoAPI 无 `.https.` 中缀案同 http（上游
+    // 文件名双态语义，historical.any.js 断言非安全上下文面；webcrypto_case_uses_http_page）。
+    let page_scheme = if net_api_case_uses_http_page(case_name) || webcrypto_case_uses_http_page(case_name) {
         "http"
     } else {
         "https"
@@ -7681,7 +7696,12 @@ pub(crate) fn run_testharness_html_inner(
     //（install_playback_bridge 的回调注册前提）。
     // R5000 片 d：runner 生命周期尾接管 pageshow（shim 首监听自派发钩子按此门让位
     // ——the-end 的 DCL→load→pageshow 序断言依赖）。
-    let _ = webview.execute_script("0;globalThis.__zwPageShowRunnerOwned = true;");
+    // webcrypto 残留收口：须走 with_dom 变体——裸 execute_script 会先触发
+    // ensure_js_shim（无 __zw_get_page_url → location 回退 about:blank →
+    // isSecureContext 误 true），shim 的 [SecureContext] 门禁（part02 尾）在 init
+    // 时把 http 页锚误判 secure，historical.any.js 断言面失效。with_dom 先注册
+    // DOM 回调（含 page URL）再装 shim，location 初值即真页锚。
+    let _ = webview.execute_script_with_dom("0;globalThis.__zwPageShowRunnerOwned = true;");
     // M3 扩批 XVIII（2026-09-03，注册竞态消除）：媒体源按需供给方——宿主桥 play
     // 未命中（源未登记）时**同步**读 wpt-data 字节补登记，消除「重试等下一 probe
     // tick」的时序依赖（全套件并行负载下 tick 延迟放大，track-cues-enter-exit 的
