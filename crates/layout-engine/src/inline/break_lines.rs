@@ -103,6 +103,10 @@ impl InlineFormattingContext {
         // R3786：上一个被推行盒是否由块断行（FloatAnchor/BlockBreak）产生——刚开启的
         // 新行上紧随的 `\n` 不再推空行盒（断行机会不重复）。
         let mut last_push_was_block_break = false;
+        // R5165（css-text-3 §5.5 line-break-details）：刚落位的原子盒**后邻**原始文本
+        // 是否 GL/WJ/ZWJ 贴端（InlineBlockBox::next_char_gl 旁带）——其后首词与原子间
+        // 无软换行机会，fit 门不折行（横向溢出）。Br/BlockBreak/FloatAnchor 清除。
+        let mut last_atomic_next_gl = false;
 
         for (item_idx, item) in items.into_iter().enumerate() {
             match item {
@@ -261,6 +265,9 @@ impl InlineFormattingContext {
                     }
 
                     for (word_idx, word) in words.iter().enumerate() {
+                        // R5165：首词消费原子盒后邻 GL 旗标（仅 run 首词与原子直邻；
+                        // 后续词的邻接对象是本 run 前词，旗标失效）。
+                        let atomic_next_gl = std::mem::take(&mut last_atomic_next_gl);
                         // CSS 2.1 §16.6.1：normal/nowrap 模式下行尾空格不渲染，不计入行宽。
                         // 将尾部空格从内容宽度中分离，仅作为词间距离使用。
                         // pre/pre-wrap 模式（preserve_whitespace）空格不可折叠，不剥离。
@@ -596,8 +603,16 @@ impl InlineFormattingContext {
                         } else {
                             !run_no_wrap && !cross_run_glue
                         };
+                        // R5165（css-text-3 §5.5 line-break-details + UAX #14）：原子盒后
+                        // 直邻 GL/WJ/ZWJ 类字符（U+00A0 例外）——原子与该字符间无软换行
+                        // 机会，后随首词不因 fit 门折入新行（随原子横向溢出，chromium 同；
+                        // line-breaking-atomic-004/019：NNBSP/FIGURE SPACE 后词误折第 2
+                        // 行露红底）。word_idx==0 = 仅首词与原子直邻。
+                        let atomic_gl_first_word =
+                            runtime_flags::atomic_gl_no_break() && atomic_next_gl && word_idx == 0;
                         if !hang_trailing_space
                             && wrap_allowed
+                            && !atomic_gl_first_word
                             && current_x + lead_gap + word_width > left_offset + avail_width
                             && !current_line.runs.is_empty()
                         {
@@ -782,6 +797,8 @@ impl InlineFormattingContext {
                     last_was_collapsible_ws = false;
                     // R5161：原子盒断开词中拼接邻接——盒前词与盒后词不直接相邻。
                     last_word_last_char = None;
+                    // R5165：后邻 GL 旁带供下一 run 首词的折行抑制（§5.5 原子-GL 禁断）。
+                    last_atomic_next_gl = box_info.next_char_gl;
                     // R3786：本行将有真实内容——块断行「不重复断行」豁免结束。
                     last_push_was_block_break = false;
 
@@ -830,7 +847,13 @@ impl InlineFormattingContext {
                     }
 
                     // 检查当前行是否放得下（当行非空时）
+                    // R5165（css-text-3 §5.5 line-break-details + UAX #14）：前邻原始字符
+                    // 属 GL/WJ/ZWJ 类（U+00A0 例外，InlineBlockBox::prev_char_gl 旁带）——
+                    // 原子与该字符间无软换行机会，fit 门不折行，随前词横向溢出（chromium
+                    // 同；line-breaking-atomic-003/018：NNBSP/FIGURE SPACE 后原子被误挤
+                    // 第 2 行、透明 span 露红底 2.0833%）。
                     if !self.no_wrap
+                        && !(runtime_flags::atomic_gl_no_break() && box_info.prev_char_gl)
                         && current_x + box_width > left_offset + avail_width
                         && !current_line.runs.is_empty()
                     {
@@ -889,10 +912,24 @@ impl InlineFormattingContext {
                     current_x += box_width + m_right;
                     current_line.height = current_line.height.max(box_height + m_top + m_bot);
                 }
+                InlineItem::OofAnchor(oid) => {
+                    // R5166：记录行内流静态位（css-position-3 §static-position）——消费点
+                    // 行内光标 x（假想 inline 盒 margin-box 左缘）+ 当前行盒顶 y（行构建期
+                    // current_y = 行顶，push 时 line.y 同值）。零宽不断行：OOF 不参与行内
+                    // 布局（css-position-3 §4.1），不触空白折叠/断行状态（对照 FloatAnchor
+                    // 的断行语义）。abspos 后处理 fix_abspos_inline_static_position 消费。
+                    // FIXME(line-breaking-019)：行尾空白邻接的锚未随软断行迁移到新行行首
+                    //（test20 组 ref 形态），先行落位为本行行尾位。
+                    if let Some(container) = self.container_node_id {
+                        self.oof_static_positions.insert(oid, (container, current_x, current_y));
+                    }
+                }
                 InlineItem::Br | InlineItem::BlockBreak | InlineItem::FloatAnchor(_) => {
                     // 强制换行：将当前行推入结果，开始新行
                     // Br 总是产生一个换行，即使当前行为空
                     last_was_collapsible_ws = false;
+                    // R5165：断行/浮动锚打断原子-GL 直邻（下一行行首无 fit 门）。
+                    last_atomic_next_gl = false;
                     // R3784：FloatAnchor 记录 float 锚 y = **最后一个含前文内容的行盒顶**
                     //（CSS §9.5.1 规则 5：float outer top 不得高于源序前文内容所在行盒的
                     // 顶）。行首空行（FloatAnchor/BlockBreak 刚断行、current_line 空）时

@@ -426,3 +426,656 @@ fn test_crypto_subtle_rsa_m4a() {
         "RSA-OAEP wrapKey/unwrapKey raw round-trip"
     );
 }
+
+// webcrypto M4b：crypto.subtle EC 家族（ECDSA/ECDH，namedCurve P-256/P-384/P-521）全链——
+// generateKey CryptoKeyPair（publicKey 恒 extractable + usages 类型拆分：ECDSA
+// public ⊆ [verify] / private ⊆ [sign]，ECDH public 恒 []）、importKey（spki/pkcs8/jwk/
+// raw 含 SEC1 压缩点）、exportKey 四格式（spki / raw = SEC1 未压缩点 / pkcs8 / jwk
+// x/y/d 定宽零填充）、ECDSA sign/verify（RFC 6979 确定性 nonce，IEEE P1363 r||s 定宽
+// 拼接）、ECDH deriveBits/deriveKey（共享点 x 坐标，length 位截断语义）。向量锚定
+// RFC 6979 §A.2.5（P-256 + SHA-256，msg "sample"，签名 r||s 全 64 字节）；WPT
+// ec_importKey / generateKey EC 四文件 / sign_verify ecdsa / derive_bits_keys ecdh /
+// serialization ecdsa+ecdh 断言语义（corpus 验收标尺）。
+// https://w3c.github.io/webcrypto/#ecdsa-operations  https://w3c.github.io/webcrypto/#ecdh-operations
+// https://datatracker.ietf.org/doc/html/rfc6979
+#[test]
+fn test_crypto_subtle_ec_m4b() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox
+        .execute(
+            "function hex2b(h){var a=[];for(var i=0;i<h.length;i+=2)a.push(parseInt(h.substr(i,2),16));return new Uint8Array(a);}\
+             function b2hex(u){var s='';for(var i=0;i<u.length;i++){s+=('0'+u[i].toString(16)).slice(-2);}return s;}\
+             function errname(p){return p.then(function(){return 'no-throw';}, function(e){return e.name;});}\
+             function b64u2b(s){s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';var bin=atob(s);var a=[];for(var i=0;i<bin.length;i++)a.push(bin.charCodeAt(i));return a;}",
+        )
+        .unwrap();
+
+    // generateKey ECDSA P-256：密钥对结构（publicKey 恒 extractable、EcKeyAlgorithm
+    // 成员无 hash、usages 按类型拆分 sign/verify）+ RFC 6979 §A.2.5 向量（jwk 导入
+    // 固定私钥，msg "sample" + SHA-256 → 签名 r||s 全 64 字节逐字节锚定）+ 导出 spki
+    // 验签 true / 篡改 false。
+    sandbox
+        .execute(
+            "globalThis.__pair='(pending)'; globalThis.__sigv='(pending)'; globalThis.__vv='(pending)';\
+             globalThis.__vvt='(pending)'; globalThis.__det1='(pending)'; globalThis.__det2='(pending)';\
+             globalThis.__ecErr='(none)'; globalThis.__vspki='(none)';\
+             crypto.subtle.generateKey({name:'ECDSA', namedCurve:'P-256'}, true, ['sign','verify'])\
+               .then(function(kp){ globalThis.__pair=JSON.stringify({\
+                   pubEx:kp.publicKey.extractable, privEx:kp.privateKey.extractable,\
+                   alg:kp.privateKey.algorithm.name, curve:kp.privateKey.algorithm.namedCurve,\
+                   pubU:kp.publicKey.usages.join(','), privU:kp.privateKey.usages.join(','),\
+                   pubType:kp.publicKey.type, privType:kp.privateKey.type});\
+                 var s1=crypto.subtle.sign({name:'ECDSA', hash:'SHA-256'}, kp.privateKey, hex2b('deadbeef'));\
+                 var s2=crypto.subtle.sign({name:'ECDSA', hash:'SHA-256'}, kp.privateKey, hex2b('deadbeef'));\
+                 return Promise.all([s1,s2]).then(function(ss){\
+                   globalThis.__det1=b2hex(new Uint8Array(ss[0]));\
+                   globalThis.__det2=b2hex(new Uint8Array(ss[1])); }); });\
+             var vkey=null;\
+             crypto.subtle.importKey('jwk',\
+               {kty:'EC', crv:'P-256',\
+                x:'YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y',\
+                y:'eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk',\
+                d:'ya-p2EW6dRZrXCFXZ7HWk05Qw9s26JsSe4piKxIPZyE'},\
+               {name:'ECDSA', namedCurve:'P-256'}, true, ['sign'])\
+               .then(function(vk){ globalThis.__vkey=vk; vkey=vk;\
+                 return crypto.subtle.sign({name:'ECDSA', hash:'SHA-256'}, vk, hex2b('73616d706c65')); })\
+               .then(function(sig){ globalThis.__sigv=b2hex(new Uint8Array(sig));\
+                 return crypto.subtle.exportKey('spki', vkey); })\
+               .then(function(spki){ globalThis.__vspki=b2hex(new Uint8Array(spki)).substring(0,24);\
+                 return crypto.subtle.importKey('spki', spki, {name:'ECDSA', namedCurve:'P-256'}, true, ['verify']); })\
+               .then(function(pk){\
+                 var pv=crypto.subtle.verify({name:'ECDSA', hash:'SHA-256'}, pk, hex2b('efd48b2aacb6a8fd1140dd9cd45e81d69d2c877b56aaf991c34d0ea84eaf3716f7cb1c942d657c41d436c7a1b6e29f65f3e900dbb9aff4064dc4ab2f843acda8').buffer, hex2b('73616d706c65'))\
+                   .then(function(ok){ globalThis.__vv=String(ok); });\
+                 var bad=hex2b('efd48b2aacb6a8fd1140dd9cd45e81d69d2c877b56aaf991c34d0ea84eaf3716f7cb1c942d657c41d436c7a1b6e29f65f3e900dbb9aff4064dc4ab2f843acda8'); bad[3]^=0xff;\
+                 var pt=crypto.subtle.verify({name:'ECDSA', hash:'SHA-256'}, pk, bad.buffer, hex2b('73616d706c65'))\
+                   .then(function(ok){ globalThis.__vvt=String(ok); });\
+                 return Promise.all([pv,pt]); }, function(e){ globalThis.__ecErr=e.name+': '+e.message; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__pair)").unwrap().value,
+        r#"{"pubEx":true,"privEx":true,"alg":"ECDSA","curve":"P-256","pubU":"verify","privU":"sign","pubType":"public","privType":"private"}"#,
+        "generateKey ECDSA：密钥对结构 + usages 类型拆分 + publicKey 恒 extractable"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__sigv)").unwrap().value,
+        "efd48b2aacb6a8fd1140dd9cd45e81d69d2c877b56aaf991c34d0ea84eaf3716f7cb1c942d657c41d436c7a1b6e29f65f3e900dbb9aff4064dc4ab2f843acda8",
+        "ECDSA P-256/SHA-256 msg 'sample' == RFC 6979 §A.2.5 签名向量"
+    );
+    assert_eq!(sandbox.execute("String(globalThis.__ecErr)").unwrap().value, "(none)", "RFC 6979 链无 reject（断言失败时 left 即链上 reject 的错误）");
+    assert_eq!(sandbox.execute("String(globalThis.__vv)").unwrap().value, "true", "RFC 6979 向量验签（spki 导入公钥）→ true");
+    assert_eq!(sandbox.execute("String(globalThis.__vvt)").unwrap().value, "false", "篡改签名验签 → false");
+    assert_eq!(
+        sandbox.execute("String(globalThis.__det1)").unwrap().value,
+        sandbox.execute("String(globalThis.__det2)").unwrap().value,
+        "ECDSA 签名确定性（RFC 6979 nonce）：两次同签"
+    );
+
+    // sign/verify 错误序矩阵：public sign → InvalidAccessError、private verify →
+    // InvalidAccessError、ECDH 密钥跨算法 sign → InvalidAccessError、hash 缺失 →
+    // TypeError、未注册 hash（"SHA256" 无连字符）→ NotSupportedError 先于 key 校验。
+    sandbox
+        .execute(
+            "globalThis.__e1='(pending)'; globalThis.__e2='(pending)'; globalThis.__e3='(pending)';\
+             globalThis.__e4='(pending)'; globalThis.__e5='(pending)';\
+             crypto.subtle.generateKey({name:'ECDSA', namedCurve:'P-256'}, true, ['sign','verify'])\
+               .then(function(kp){\
+                 var m=hex2b('aa');\
+                 var e1=errname(crypto.subtle.sign({name:'ECDSA', hash:'SHA-256'}, kp.publicKey, m))\
+                   .then(function(n){ globalThis.__e1=n; });\
+                 var e2=errname(crypto.subtle.verify({name:'ECDSA', hash:'SHA-256'}, kp.privateKey, m, m))\
+                   .then(function(n){ globalThis.__e2=n; });\
+                 var e4=errname(crypto.subtle.sign({name:'ECDSA'}, kp.privateKey, m))\
+                   .then(function(n){ globalThis.__e4=n; });\
+                 var e5=errname(crypto.subtle.sign({name:'ECDSA', hash:'SHA256'}, kp.privateKey, m))\
+                   .then(function(n){ globalThis.__e5=n; });\
+                 return Promise.all([e1,e2,e4,e5]); })\
+               .then(function(){ return crypto.subtle.generateKey({name:'ECDH', namedCurve:'P-256'}, true, ['deriveKey','deriveBits']); })\
+               .then(function(ep){\
+                 return errname(crypto.subtle.sign({name:'ECDSA', hash:'SHA-256'}, ep.privateKey, hex2b('aa')))\
+                   .then(function(n){ globalThis.__e3=n; }); });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__e1)").unwrap().value, "InvalidAccessError", "publicKey sign → InvalidAccessError");
+    assert_eq!(sandbox.execute("String(globalThis.__e2)").unwrap().value, "InvalidAccessError", "privateKey verify → InvalidAccessError");
+    assert_eq!(sandbox.execute("String(globalThis.__e3)").unwrap().value, "InvalidAccessError", "ECDH 密钥跨算法 sign → InvalidAccessError");
+    assert_eq!(sandbox.execute("String(globalThis.__e4)").unwrap().value, "TypeError", "hash 成员缺失 → TypeError");
+    assert_eq!(sandbox.execute("String(globalThis.__e5)").unwrap().value, "NotSupportedError", "未注册 hash 名（SHA256）→ NotSupportedError");
+
+    // ECDH deriveBits 代数锚定（双向共享秘密一致）+ length 语义（缺省域全宽 / 截断
+    // 左起 N 位 / 0 → 空 / 超域宽 → OperationError / 非 8 倍数尾字节高位掩码）+
+    // public base key → InvalidAccessError + 曲线不匹配 → InvalidAccessError +
+    // public 缺失 → TypeError；deriveKey → AES-GCM 派生密钥 encrypt/decrypt round-trip。
+    sandbox
+        .execute(
+            "globalThis.__dh='(pending)'; globalThis.__dhr='(pending)'; globalThis.__dh16='(pending)';\
+             globalThis.__dh0='(pending)'; globalThis.__dh7='(pending)'; globalThis.__dho='(pending)';\
+             globalThis.__dhe1='(pending)'; globalThis.__dhe2='(pending)'; globalThis.__dhe3='(pending)';\
+             globalThis.__dk='(pending)';\
+             var pA=crypto.subtle.generateKey({name:'ECDH', namedCurve:'P-256'}, false, ['deriveKey','deriveBits']);\
+             var pB=crypto.subtle.generateKey({name:'ECDH', namedCurve:'P-256'}, false, ['deriveKey','deriveBits']);\
+             var pC=crypto.subtle.generateKey({name:'ECDH', namedCurve:'P-384'}, false, ['deriveKey','deriveBits']);\
+             Promise.all([pA,pB,pC]).then(function(ps){\
+               var A=ps[0], B=ps[1], C=ps[2];\
+               var d1=crypto.subtle.deriveBits({name:'ECDH', public:A.publicKey}, B.privateKey, 256)\
+                 .then(function(b){ globalThis.__dh=b2hex(new Uint8Array(b)); });\
+               var d2=crypto.subtle.deriveBits({name:'ECDH', public:B.publicKey}, A.privateKey, 256)\
+                 .then(function(b){ globalThis.__dhr=b2hex(new Uint8Array(b)); });\
+               var d3=crypto.subtle.deriveBits({name:'ECDH', public:A.publicKey}, B.privateKey, 128)\
+                 .then(function(b){ globalThis.__dh16=b2hex(new Uint8Array(b)); });\
+               var d4=crypto.subtle.deriveBits({name:'ECDH', public:A.publicKey}, B.privateKey, 0)\
+                 .then(function(b){ globalThis.__dh0=String(new Uint8Array(b).length); });\
+               var d5=crypto.subtle.deriveBits({name:'ECDH', public:A.publicKey}, B.privateKey, 255)\
+                 .then(function(b){ globalThis.__dh7=b2hex(new Uint8Array(b)); });\
+               var d6=errname(crypto.subtle.deriveBits({name:'ECDH', public:A.publicKey}, B.privateKey, 257))\
+                 .then(function(n){ globalThis.__dho=n; });\
+               var d7=errname(crypto.subtle.deriveBits({name:'ECDH', public:A.publicKey}, A.publicKey, 256))\
+                 .then(function(n){ globalThis.__dhe1=n; });\
+               var d8=errname(crypto.subtle.deriveBits({name:'ECDH', public:C.publicKey}, A.privateKey, 256))\
+                 .then(function(n){ globalThis.__dhe2=n; });\
+               var d9=errname(crypto.subtle.deriveBits({name:'ECDH'}, A.privateKey, 256))\
+                 .then(function(n){ globalThis.__dhe3=n; });\
+               var dkk=crypto.subtle.deriveKey({name:'ECDH', public:A.publicKey}, B.privateKey,\
+                   {name:'AES-GCM', length:128}, true, ['encrypt','decrypt'])\
+                 .then(function(k){ return crypto.subtle.encrypt({name:'AES-GCM', iv:hex2b('00112233445566778899aabbccddeeff')}, k, hex2b('cafebabe'))\
+                   .then(function(ct){ return crypto.subtle.decrypt({name:'AES-GCM', iv:hex2b('00112233445566778899aabbccddeeff')}, k, ct); })\
+                   .then(function(pt){ globalThis.__dk=b2hex(new Uint8Array(pt)); }); });\
+               return Promise.all([d1,d2,d3,d4,d5,d6,d7,d8,d9,dkk]); });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__dh)").unwrap().value,
+        sandbox.execute("String(globalThis.__dhr)").unwrap().value,
+        "ECDH 双向共享秘密一致"
+    );
+    let dh_full = sandbox.execute("String(globalThis.__dh)").unwrap().value.clone();
+    assert_eq!(dh_full.len(), 64, "ECDH P-256 缺省（256 位）→ 32 字节共享秘密");
+    assert_eq!(
+        sandbox.execute("String(globalThis.__dh16)").unwrap().value,
+        dh_full[..32].to_string(),
+        "deriveBits length 128 → 共享秘密左起 16 字节"
+    );
+    assert_eq!(sandbox.execute("String(globalThis.__dh0)").unwrap().value, "0", "deriveBits length 0 → 空");
+    let dh7 = sandbox.execute("String(globalThis.__dh7)").unwrap().value;
+    assert_eq!(dh7.len(), 64, "deriveBits length 255 → 32 字节（尾字节部分位）");
+    assert_eq!(&dh7[..62], &dh_full[..62], "255 位截断前 31 字节与全宽一致");
+    assert_eq!(dh7[62..], format!("{:02x}", u8::from_str_radix(&dh_full[62..64], 16).unwrap() & 0xfe), "255 位尾字节 = 全宽尾字节高位掩码（&0xfe）");
+    assert_eq!(sandbox.execute("String(globalThis.__dho)").unwrap().value, "OperationError", "deriveBits length 超域宽 → OperationError");
+    assert_eq!(sandbox.execute("String(globalThis.__dhe1)").unwrap().value, "InvalidAccessError", "public base key deriveBits → InvalidAccessError");
+    assert_eq!(sandbox.execute("String(globalThis.__dhe2)").unwrap().value, "InvalidAccessError", "曲线不匹配 → InvalidAccessError");
+    assert_eq!(sandbox.execute("String(globalThis.__dhe3)").unwrap().value, "TypeError", "public 成员缺失 → TypeError");
+    assert_eq!(sandbox.execute("String(globalThis.__dk)").unwrap().value, "cafebabe", "ECDH deriveKey → AES-GCM round-trip");
+
+    // P-384/P-521 曲线覆盖：ECDSA P-521 sign/verify round-trip（确定性）、ECDH P-384
+    // deriveBits 缺省 48 字节、jwk x/y/d base64url 定宽（P-521 66 字节 → 88 字符，
+    // generateKey successes 一致性断言语义）。
+    sandbox
+        .execute(
+            "globalThis.__s521='(pending)'; globalThis.__v521='(pending)'; globalThis.__dh384='(pending)';\
+             globalThis.__j521='(pending)';\
+             crypto.subtle.generateKey({name:'ECDSA', namedCurve:'P-521'}, true, ['sign','verify'])\
+               .then(function(kp){\
+                 var m=hex2b('beef');\
+                 var s=crypto.subtle.sign({name:'ECDSA', hash:'SHA-384'}, kp.privateKey, m);\
+                 var v=s.then(function(sig){ globalThis.__s521=b2hex(new Uint8Array(sig)).length;\
+                   return crypto.subtle.verify({name:'ECDSA', hash:'SHA-384'}, kp.publicKey, sig, m); })\
+                   .then(function(ok){ globalThis.__v521=String(ok); });\
+                 return v; })\
+               .then(function(){\
+                 var pA=crypto.subtle.generateKey({name:'ECDH', namedCurve:'P-384'}, false, ['deriveBits']);\
+                 var pB=crypto.subtle.generateKey({name:'ECDH', namedCurve:'P-384'}, false, ['deriveBits']);\
+                 return Promise.all([pA,pB]).then(function(ps){\
+                   return Promise.all([\
+                     crypto.subtle.deriveBits({name:'ECDH', public:ps[0].publicKey}, ps[1].privateKey),\
+                     crypto.subtle.deriveBits({name:'ECDH', public:ps[1].publicKey}, ps[0].privateKey)]); }); })\
+               .then(function(bs){ globalThis.__dh384=b2hex(new Uint8Array(bs[0]))===b2hex(new Uint8Array(bs[1])) ? String(bs[0].byteLength) : 'mismatch'; })\
+               .then(function(){ return crypto.subtle.generateKey({name:'ECDSA', namedCurve:'P-521'}, true, ['sign']); })\
+               .then(function(kp){ return crypto.subtle.exportKey('jwk', kp.privateKey); })\
+               .then(function(j){ globalThis.__j521=JSON.stringify({kty:j.kty, crv:j.crv, alg:j.alg,\
+                   xLen:b64u2b(j.x).length, yLen:b64u2b(j.y).length, dLen:b64u2b(j.d).length, ext:j.ext}); });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__s521)").unwrap().value, "264", "P-521 签名 r||s 定宽 66+66 字节（264 hex）");
+    assert_eq!(sandbox.execute("String(globalThis.__v521)").unwrap().value, "true", "P-521 sign/verify round-trip");
+    assert_eq!(sandbox.execute("String(globalThis.__dh384)").unwrap().value, "48", "ECDH P-384 缺省 48 字节且双向一致");
+    assert_eq!(
+        sandbox.execute("String(globalThis.__j521)").unwrap().value,
+        r#"{"kty":"EC","crv":"P-521","alg":"ES512","xLen":66,"yLen":66,"dLen":66,"ext":true}"#,
+        "P-521 jwk x/y/d 定宽 66 字节 + alg ES512"
+    );
+
+    // 导入导出全格式 round-trip：spki/raw/pkcs8 逐字节稳定、SEC1 压缩点导入（raw →
+    // 导出 spki 与未压缩导入一致）、jwk 重导入 pkcs8 一致；错误矩阵：spki+sign usage
+    // SyntaxError、pkcs8 空 usages SyntaxError、jwk kty/crv DataError、非 extractable
+    // 导出 InvalidAccessError、generateKey 缺 namedCurve TypeError、未注册曲线
+    // NotSupportedError、非法 usage SyntaxError。
+    sandbox
+        .execute(
+            "globalThis.__rt='(pending)'; globalThis.__crt='(pending)'; globalThis.__jrt='(pending)';\
+             globalThis.__spkihex='(pending)'; globalThis.__rawspki='(pending)';\
+             globalThis.__f1='(pending)'; globalThis.__f2='(pending)'; globalThis.__f3='(pending)';\
+             globalThis.__f4='(pending)'; globalThis.__f5='(pending)'; globalThis.__f6='(pending)';\
+             globalThis.__f7='(pending)'; globalThis.__f8='(pending)';\
+             crypto.subtle.generateKey({name:'ECDSA', namedCurve:'P-256'}, true, ['sign','verify'])\
+               .then(function(kp){\
+                 var pk8hex=null;\
+                 var r1=crypto.subtle.exportKey('pkcs8', kp.privateKey).then(function(d){ pk8hex=b2hex(new Uint8Array(d));\
+                   return crypto.subtle.importKey('pkcs8', d, {name:'ECDSA', namedCurve:'P-256'}, true, ['sign']); })\
+                   .then(function(k){ return crypto.subtle.exportKey('pkcs8', k); })\
+                   .then(function(d){ globalThis.__rt=b2hex(new Uint8Array(d))===pk8hex ? 'stable' : 'drift'; });\
+                 var r2=crypto.subtle.exportKey('spki', kp.publicKey).then(function(d){ globalThis.__spkihex=b2hex(new Uint8Array(d)); });\
+                 var r2b=crypto.subtle.exportKey('raw', kp.publicKey)\
+                   .then(function(rd){ var u=new Uint8Array(rd);\
+                     var c=new Uint8Array(33);\
+                     c[0]=(u[64]&1)?3:2; for(var i=0;i<32;i++) c[1+i]=u[1+i];\
+                     return crypto.subtle.importKey('raw', rd, {name:'ECDSA', namedCurve:'P-256'}, true, ['verify'])\
+                       .then(function(k){ return crypto.subtle.exportKey('spki', k); })\
+                       .then(function(d){ globalThis.__rawspki=b2hex(new Uint8Array(d));\
+                         return crypto.subtle.importKey('raw', c.buffer, {name:'ECDSA', namedCurve:'P-256'}, true, ['verify']); }); })\
+                   .then(function(k){ return crypto.subtle.exportKey('spki', k); })\
+                   .then(function(d){ globalThis.__crt=b2hex(new Uint8Array(d))===globalThis.__rawspki ? 'stable' : 'drift'; });\
+                 var r3=crypto.subtle.exportKey('jwk', kp.privateKey).then(function(j){\
+                   var j2={kty:j.kty, crv:j.crv, x:j.x, y:j.y, d:j.d};\
+                   return crypto.subtle.importKey('jwk', j2, {name:'ECDSA', namedCurve:'P-256'}, true, ['sign']); })\
+                   .then(function(k){ return crypto.subtle.exportKey('pkcs8', k); })\
+                   .then(function(d){ globalThis.__jrt=b2hex(new Uint8Array(d))===pk8hex ? 'stable' : 'drift'; });\
+                 var r4=crypto.subtle.exportKey('spki', kp.publicKey).then(function(d){\
+                   var f1=errname(crypto.subtle.importKey('spki', d, {name:'ECDSA', namedCurve:'P-256'}, true, ['sign']))\
+                     .then(function(n){ globalThis.__f1=n; });\
+                   var f2=errname(crypto.subtle.importKey('jwk', {kty:'oct', k:'AA'}, {name:'ECDSA', namedCurve:'P-256'}, true, ['sign']))\
+                     .then(function(n){ globalThis.__f3=n; });\
+                   var f3=errname(crypto.subtle.importKey('jwk', {kty:'EC', crv:'P-384', x:'AA', y:'BB', d:'CC'}, {name:'ECDSA', namedCurve:'P-256'}, true, ['sign']))\
+                     .then(function(n){ globalThis.__f4=n; });\
+                   return Promise.all([f1,f2,f3]); });\
+                 var r5=crypto.subtle.generateKey({name:'ECDSA', namedCurve:'P-256'}, false, ['sign'])\
+                   .then(function(np){ return errname(crypto.subtle.exportKey('pkcs8', np.privateKey)); })\
+                   .then(function(n){ globalThis.__f5=n; });\
+                 var f5=errname(crypto.subtle.generateKey({name:'ECDSA'}, true, ['sign']))\
+                   .then(function(n){ globalThis.__f6=n; });\
+                 var f6=errname(crypto.subtle.generateKey({name:'ECDSA', namedCurve:'P-192'}, true, ['sign']))\
+                   .then(function(n){ globalThis.__f7=n; });\
+                 var f7=errname(crypto.subtle.importKey('pkcs8', hex2b('00').buffer, {name:'ECDSA', namedCurve:'P-256'}, true, ['sign']))\
+                   .then(function(n){ globalThis.__f2=n; });\
+                 var f8=errname(crypto.subtle.generateKey({name:'ECDSA', namedCurve:'P-256'}, true, ['encrypt']))\
+                   .then(function(n){ globalThis.__f8=n; });\
+                 return Promise.all([r1,r2b,r3,r4,r5,f5,f6,f7,f8]); });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__rt)").unwrap().value, "stable", "pkcs8 导入导出 round-trip 逐字节稳定");
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rawspki)").unwrap().value,
+        sandbox.execute("String(globalThis.__spkihex)").unwrap().value,
+        "raw（SEC1）导入 → 导出 spki 与原公钥导出一致"
+    );
+    assert_eq!(sandbox.execute("String(globalThis.__crt)").unwrap().value, "stable", "SEC1 压缩点导入 → 导出 spki 与未压缩一致");
+    assert_eq!(sandbox.execute("String(globalThis.__jrt)").unwrap().value, "stable", "jwk 重导入 → pkcs8 与原导出逐字节一致");
+    assert_eq!(sandbox.execute("String(globalThis.__f1)").unwrap().value, "SyntaxError", "spki 公钥 + sign usage → SyntaxError");
+    assert_eq!(sandbox.execute("String(globalThis.__f2)").unwrap().value, "DataError", "非法 pkcs8 DER → DataError");
+    assert_eq!(sandbox.execute("String(globalThis.__f3)").unwrap().value, "DataError", "jwk kty 'oct' → DataError");
+    assert_eq!(sandbox.execute("String(globalThis.__f4)").unwrap().value, "DataError", "jwk crv 与 namedCurve 不匹配 → DataError");
+    assert_eq!(sandbox.execute("String(globalThis.__f5)").unwrap().value, "InvalidAccessError", "非 extractable 私钥导出 → InvalidAccessError");
+    assert_eq!(sandbox.execute("String(globalThis.__f6)").unwrap().value, "TypeError", "generateKey 缺 namedCurve → TypeError");
+    assert_eq!(sandbox.execute("String(globalThis.__f7)").unwrap().value, "NotSupportedError", "generateKey 未注册曲线 → NotSupportedError");
+    assert_eq!(sandbox.execute("String(globalThis.__f8)").unwrap().value, "SyntaxError", "generateKey 非法 usage → SyntaxError");
+}
+
+// webcrypto M5：crypto.subtle OKP 家族（Ed25519 RFC 8032 纯 EdDSA + X25519 RFC 7748）。
+// 向量锚定：WPT eddsa_vectors fixture（pkcs8 seed / spki / 64 字节消息 / 64 字节签名
+// 逐字节）、RFC 7748 §6.1（Alice/Bob X25519 KAT，shared K 4a5d9d5b..1742）、小阶点
+// 全零拒绝（spec deriveBits all-zero → OperationError）。语义面：generateKey 结构
+//（publicKey 恒 extractable / privateKey 按请求值 + usages 类型拆分）、deriveBits
+// length 矩阵（256/230/0/null/384）、四格式 round-trip（raw/spki/pkcs8/jwk 含
+// alg=Ed25519 与 X25519 无 alg）、jwk d/x 配对校验、错误矩阵。
+// https://w3c.github.io/webcrypto/#ed25519  https://w3c.github.io/webcrypto/#x25519
+#[test]
+fn test_crypto_subtle_okp_m5() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox
+        .execute(
+            "function hex2b(h){var a=[];for(var i=0;i<h.length;i+=2)a.push(parseInt(h.substr(i,2),16));return new Uint8Array(a);}\
+             function b2hex(u){var s='';for(var i=0;i<u.length;i++){s+=('0'+u[i].toString(16)).slice(-2);}return s;}\
+             function errname(p){return p.then(function(){return 'no-throw';}, function(e){return e.name;});}\
+             function b2b64u(u){var s='';for(var i=0;i<u.length;i++)s+=String.fromCharCode(u[i]);return btoa(s).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=/g,'');}",
+        )
+        .unwrap();
+
+    // Ed25519 KAT（WPT eddsa_vectors fixture）：pkcs8 导入 → sign 64 字节消息 →
+    // 签名逐字节锚定（RFC 8032 纯 EdDSA 确定性）→ spki 导入验签 true / 篡改 false /
+    // 小阶 A 验签 false（verify_strict 拒小阶，eprint 2020/1244 面）。
+    sandbox
+        .execute(
+            "globalThis.__okpErr='(none)'; globalThis.__k1='(pending)'; globalThis.__k2='(pending)';\
+             globalThis.__k3='(pending)'; globalThis.__k4='(pending)'; globalThis.__gk='(pending)';\
+             var MSG=hex2b('2b7ed0bc7795694ab4acd35903fe8cd7d80f6a1c8688a6c3414409457514a1457855bbb219e30a1beea8fe869082d99fc8282f9050d024e59eaf0730ba9db70a');\
+             var SIG='3d90de5e5743dfc28225bfadb341b116cbf8a3f1ceedbf4adc350ef5d3471843a418614dcb6e61486261 4cf7af1496f9340b3c844ea4dceab1d3d155eb7ecc00'.replace(/ /g,'');\
+             var PKCS8='302e020100300506032b657004220420f3c8f4c48df878146e8cd3bf6df4e50e389ba7074e15c2352dcd5d308d4ca81f';\
+             var SPKI='302a300506032b6570032100d8e18963d809d487d9549accaec6742e7eeba24d8a0d3b14b7e3caea06893dcc';\
+             var SMALL_A=hex2b('302a300506032b6570032100c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a');\
+             crypto.subtle.importKey('pkcs8', hex2b(PKCS8), {name:'Ed25519'}, true, ['sign'])\
+               .then(function(sk){ globalThis.__sk=sk;\
+                 return crypto.subtle.sign({name:'Ed25519'}, sk, MSG); })\
+               .then(function(sig){ globalThis.__k1=b2hex(new Uint8Array(sig))===SIG;\
+                 return crypto.subtle.exportKey('jwk', globalThis.__sk); })\
+               .then(function(j){ globalThis.__k1j=JSON.stringify({crv:j.crv,kty:j.kty,alg:j.alg,hasD:!!j.d,nKeys:Object.keys(j).length});\
+                 return crypto.subtle.importKey('spki', hex2b(SPKI), {name:'Ed25519'}, true, ['verify']); })\
+               .then(function(pk){ globalThis.__pk=pk;\
+                 var v1=crypto.subtle.verify({name:'Ed25519'}, pk, hex2b(SIG).buffer, MSG).then(function(ok){ return 'v'+ok; });\
+                 var v2=crypto.subtle.verify({name:'Ed25519'}, pk, hex2b(SIG).buffer, hex2b('deadbeef')).then(function(ok){ return 't'+ok; });\
+                 return Promise.all([v1, v2]); })\
+               .then(function(rs){ globalThis.__k2=rs.join(',');\
+                 return crypto.subtle.importKey('spki', SMALL_A, {name:'Ed25519'}, true, ['verify']); })\
+               .then(function(spk){\
+                 return crypto.subtle.verify({name:'Ed25519'}, spk, hex2b(SIG).buffer, MSG).then(function(ok){ globalThis.__k3='small'+ok; }); })\
+               .catch(function(e){ globalThis.__okpErr=e.name+': '+e.message; });\
+             crypto.subtle.generateKey({name:'Ed25519'}, true, ['sign','verify'])\
+               .then(function(kp){ globalThis.__gk=JSON.stringify({\
+                   pubEx:kp.publicKey.extractable, privEx:kp.privateKey.extractable,\
+                   alg:kp.privateKey.algorithm.name,\
+                   pubU:kp.publicKey.usages.join(','), privU:kp.privateKey.usages.join(',')});\
+                 var s1=crypto.subtle.sign({name:'Ed25519'}, kp.privateKey, hex2b('deadbeef'));\
+                 var s2=crypto.subtle.sign({name:'Ed25519'}, kp.privateKey, hex2b('deadbeef'));\
+                 return Promise.all([s1,s2]).then(function(ss){\
+                   globalThis.__gdet=(b2hex(new Uint8Array(ss[0]))===b2hex(new Uint8Array(ss[1])))+'|'+(b2hex(new Uint8Array(ss[0])).length===128);\
+                   return crypto.subtle.verify({name:'Ed25519'}, kp.publicKey, ss[0], hex2b('deadbeef')); }); })\
+               .then(function(ok){ globalThis.__gk += '|v'+ok; })\
+               .catch(function(e){ globalThis.__okpErr += ';g='+e.name; });",
+        )
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    assert_eq!(sandbox.execute("String(globalThis.__okpErr)").unwrap().value, "(none)", "Ed25519 KAT 链无异常");
+    assert_eq!(sandbox.execute("String(globalThis.__k1)").unwrap().value, "true", "RFC 8032 签名逐字节锚定（WPT eddsa_vectors）");
+    assert_eq!(sandbox.execute("String(globalThis.__k1j)").unwrap().value, r#"{"crv":"Ed25519","kty":"OKP","alg":"Ed25519","hasD":true,"nKeys":7}"#, "私钥 jwk 导出（kty/crv/alg/d + key_ops/ext 共 7 成员）");
+    assert_eq!(sandbox.execute("String(globalThis.__k2)").unwrap().value, "vtrue,tfalse", "KAT 验签 true / 篡改 false");
+    assert_eq!(sandbox.execute("String(globalThis.__k3)").unwrap().value, "smallfalse", "小阶 A 验签 false（verify_strict，WPT eddsa_small_order_points）");
+    assert_eq!(sandbox.execute("String(globalThis.__gk)").unwrap().value, r#"{"pubEx":true,"privEx":true,"alg":"Ed25519","pubU":"verify","privU":"sign"}|vtrue"#, "generateKey Ed25519 结构 + 生成对 sign/verify round-trip");
+    assert_eq!(sandbox.execute("String(globalThis.__gdet)").unwrap().value, "true|true", "生成对签名确定性 + 64 字节定宽");
+
+    // X25519 RFC 7748 §6.1 KAT：Alice/Bob 双向 deriveBits（256 位全量锚定）+
+    // length 矩阵（230 位截断尾字节高位保留、0 空、null 全量、384 OperationError）+
+    // 小阶公钥全零 → OperationError + deriveKey→AES-GCM round-trip。
+    sandbox
+        .execute(
+            "globalThis.__xErr='(none)'; globalThis.__x1='(pending)'; globalThis.__x2='(pending)';\
+             globalThis.__x3='(pending)'; globalThis.__x4='(pending)'; globalThis.__x5='(pending)'; globalThis.__xk='(pending)';\
+             var A_PR='302e020100300506032b656e0422042077076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a';\
+             var A_PU='302a300506032b656e0321008520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a';\
+             var B_PR='302e020100300506032b656e042204205dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb';\
+             var B_PU='302a300506032b656e032100de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f';\
+             var K='4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742';\
+             var SMALL0=hex2b('302a300506032b656e032100'+'00'.repeat(32));\
+             var ap, bp;\
+             Promise.all([\
+               crypto.subtle.importKey('pkcs8', hex2b(A_PR), {name:'X25519'}, true, ['deriveKey','deriveBits']),\
+               crypto.subtle.importKey('pkcs8', hex2b(B_PR), {name:'X25519'}, true, ['deriveKey','deriveBits']),\
+               crypto.subtle.importKey('spki', hex2b(A_PU), {name:'X25519'}, true, []),\
+               crypto.subtle.importKey('spki', hex2b(B_PU), {name:'X25519'}, true, []),\
+               crypto.subtle.importKey('spki', SMALL0, {name:'X25519'}, true, [])\
+             ]).then(function(keys){\
+               ap=keys[0]; bp=keys[1];\
+               var ab=crypto.subtle.deriveBits({name:'X25519', public:keys[3]}, ap, 256).then(function(b){ return b2hex(new Uint8Array(b)); });\
+               var ba=crypto.subtle.deriveBits({name:'X25519', public:keys[2]}, bp, null).then(function(b){ return b2hex(new Uint8Array(b)); });\
+               var l230=crypto.subtle.deriveBits({name:'X25519', public:keys[3]}, ap, 230).then(function(b){ return '230:'+b2hex(new Uint8Array(b)); });\
+               var l0=crypto.subtle.deriveBits({name:'X25519', public:keys[3]}, ap, 0).then(function(b){ return '0:'+new Uint8Array(b).length; });\
+               var l384=crypto.subtle.deriveBits({name:'X25519', public:keys[3]}, ap, 384).then(function(){ return '384:no-throw'; }, function(e){ return '384:'+e.name; });\
+               var small=crypto.subtle.deriveBits({name:'X25519', public:keys[4]}, ap, 256).then(function(){ return 'small:no-throw'; }, function(e){ return 'small:'+e.name; });\
+               var dk=crypto.subtle.deriveKey({name:'X25519', public:keys[3]}, ap, {name:'AES-GCM', length:256}, false, ['encrypt','decrypt'])\
+                 .then(function(aes){\
+                   return crypto.subtle.encrypt({name:'AES-GCM', iv:hex2b('000102030405060708090a0b')}, aes, hex2b('cafebabe'))\
+                     .then(function(ct){ return crypto.subtle.decrypt({name:'AES-GCM', iv:hex2b('000102030405060708090a0b')}, aes, ct); })\
+                     .then(function(pt){ return 'dk:'+b2hex(new Uint8Array(pt)); });\
+                 }, function(e){ return 'dk:'+e.name; });\
+               return Promise.all([ab, ba, l230, l0, l384, small, dk]); })\
+             .then(function(rs){ globalThis.__x1=(rs[0]===K)+'|'+(rs[1]===K);\
+               globalThis.__x2=rs[2]; globalThis.__x3=rs[3]; globalThis.__x4=rs[4]+'|'+rs[5]; globalThis.__xk=rs[6]; })\
+             .catch(function(e){ globalThis.__xErr=e.name+': '+e.message; });",
+        )
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    assert_eq!(sandbox.execute("String(globalThis.__xErr)").unwrap().value, "(none)", "X25519 KAT 链无异常");
+    assert_eq!(sandbox.execute("String(globalThis.__x1)").unwrap().value, "true|true", "RFC 7748 §6.1 双向 KAT（shared K 逐字节）");
+    assert_eq!(sandbox.execute("String(globalThis.__x2)").unwrap().value, "230:4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1c", "230 位截断（28 整字节 + 尾字节 0x1e&0xFC=0x1C，同 WPT cfrg 截断语义）");
+    assert_eq!(sandbox.execute("String(globalThis.__x3)").unwrap().value, "0:0", "length 0 → 空 ArrayBuffer");
+    assert_eq!(sandbox.execute("String(globalThis.__x4)").unwrap().value, "384:OperationError|small:OperationError", "384 超输出宽 → OperationError；小阶公钥全零 → OperationError");
+    assert_eq!(sandbox.execute("String(globalThis.__xk)").unwrap().value, "dk:cafebabe", "deriveKey→AES-GCM round-trip（WebKit bug 282096 同径）");
+
+    // 四格式 round-trip + jwk 语义（Ed25519 alg ∈ {"Ed25519","EdDSA"}、X25519 忽略
+    // alg 且导出无成员）+ 错误矩阵（bad length/kty/crv/alg 错拼/d/x 失配/usages 家族）。
+    sandbox
+        .execute(
+            "globalThis.__tErr='(none)'; globalThis.__t1='(pending)'; globalThis.__t2='(pending)';\
+             globalThis.__t3='(pending)'; globalThis.__f1='(pending)'; globalThis.__f2='(pending)';\
+             globalThis.__f3='(pending)'; globalThis.__f4='(pending)'; globalThis.__f5='(pending)';\
+             var XJ='302a300506032b656e0321001cf2b1e6022ec537371ed7f53e54fa1154d83e98eb64ea51fae5b3307cfe9706';\
+             var xraw=null; var xjpk=null;\
+             var xpubB=b2b64u(hex2b('1cf2b1e6022ec537371ed7f53e54fa1154d83e98eb64ea51fae5b3307cfe9706'));\
+             var xdB=b2b64u(hex2b('c8838e76d057dfb7d8c95a69e138160add6373fd71a4d276bb56e3a81b64ff61'));\
+             crypto.subtle.importKey('spki', hex2b(XJ), {name:'X25519'}, true, [])\
+               .then(function(k){ xraw=k;\
+                 return crypto.subtle.exportKey('raw', k).then(function(r){ return 'raw:'+(b2hex(new Uint8Array(r))==='1cf2b1e6022ec537371ed7f53e54fa1154d83e98eb64ea51fae5b3307cfe9706'); }); })\
+               .then(function(r1){ globalThis.__t1=r1;\
+                 return crypto.subtle.exportKey('spki', xraw).then(function(d){ return 'spki:'+(b2hex(new Uint8Array(d))===XJ); }); })\
+               .then(function(r2){ globalThis.__t1 += '|'+r2;\
+                 return crypto.subtle.importKey('jwk', {kty:'OKP', crv:'X25519', x:xpubB, alg:'this is ignored'}, {name:'X25519'}, true, []); })\
+               .then(function(jk){ return crypto.subtle.exportKey('jwk', jk).then(function(j){ return 'alg:'+('alg' in j)+'|x:'+(j.x===xpubB)+'|n:'+Object.keys(j).length; }); })\
+               .then(function(r3){ globalThis.__t2=r3;\
+                 return crypto.subtle.importKey('jwk', {kty:'OKP', crv:'X25519', x:xpubB, d:xdB}, {name:'X25519'}, true, ['deriveBits']); })\
+               .then(function(jpk){ xjpk=jpk;\
+                 return crypto.subtle.exportKey('pkcs8', jpk).then(function(d){ return 'pk8:'+(b2hex(new Uint8Array(d)).substring(0,32)==='302e020100300506032b656e04220420'); }); })\
+               .then(function(r4){ globalThis.__t3=r4;\
+                 var ed=hex2b('302e020100300506032b657004220420f3c8f4c48df878146e8cd3bf6df4e50e389ba7074e15c2352dcd5d308d4ca81f');\
+                 var bads=[\
+                   crypto.subtle.importKey('raw', hex2b('00'.repeat(31)), {name:'Ed25519'}, true, ['verify']),\
+                   crypto.subtle.importKey('jwk', {kty:'EC', crv:'X25519', x:xpubB}, {name:'X25519'}, true, []),\
+                   crypto.subtle.importKey('jwk', {kty:'OKP', crv:'Ed448', x:xpubB}, {name:'X25519'}, true, []),\
+                   crypto.subtle.importKey('jwk', {kty:'OKP', crv:'Ed25519', x:'2OGJY9gJ1IfZVJrMrsZ0Ln7rok2KDTsUt-PK6gaJPcw', alg:'ed25519'}, {name:'Ed25519'}, true, ['verify']),\
+                   crypto.subtle.importKey('jwk', {kty:'OKP', crv:'Ed25519', x:'11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo', d:'88j0xI34eBRujNO_bfTlDjibpwdOFcI1Lc1dMI1MqB8'}, {name:'Ed25519'}, true, ['sign']),\
+                   crypto.subtle.importKey('raw', hex2b('00'.repeat(32)), {name:'Ed25519'}, true, ['deriveBits'])\
+                 ];\
+                 return Promise.all(bads.map(function(p){ return errname(p); })); })\
+               .then(function(names){ globalThis.__f1=names.join(',');\
+                 return crypto.subtle.exportKey('jwk', xjpk); })\
+               .then(function(j){ globalThis.__f2=JSON.stringify({alg:('alg' in j), d:(j.d===xdB), n:Object.keys(j).length}); })\
+               .catch(function(e){ globalThis.__tErr=e.name+': '+e.message; });",
+        )
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    assert_eq!(sandbox.execute("String(globalThis.__tErr)").unwrap().value, "(none)", "round-trip/错误矩阵链无异常");
+    assert_eq!(sandbox.execute("String(globalThis.__t1)").unwrap().value, "raw:true|spki:true", "X25519 raw/spki round-trip 逐字节稳定");
+    assert_eq!(sandbox.execute("String(globalThis.__t2)").unwrap().value, "alg:false|x:true|n:5", "X25519 jwk 导入忽略 alg、导出无 alg 成员（kty/crv/x/key_ops/ext 共 5）");
+    assert_eq!(sandbox.execute("String(globalThis.__t3)").unwrap().value, "pk8:true", "X25519 私钥 jwk→pkcs8 导出（RFC 8410 前缀）");
+    assert_eq!(sandbox.execute("String(globalThis.__f1)").unwrap().value, "DataError,DataError,DataError,DataError,DataError,SyntaxError", "错误矩阵：31 字节 raw / kty='EC' / crv 失配 / alg 错拼 / d-x 失配（DataError）+ 非法 usages（SyntaxError）");
+    assert_eq!(sandbox.execute("String(globalThis.__f2)").unwrap().value, r#"{"alg":false,"d":true,"n":6}"#, "X25519 私钥 jwk 导出无 alg + d 定宽（共 6 成员）");
+}
+
+// webcrypto 残留收口（M6）：KDF hash 注册语义 + deriveBits length 矩阵细分 + HMAC
+// 归一化注册集 + sign/verify 跨家族 key 错误身份 + [SecureContext] 暴露门禁。
+// 向量锚定 RFC 5869 §A.1（HKDF-SHA256 IKM 0b×22 → OKM 3cb25f25..865）与
+// PBKDF2-HMAC-SHA256 公开向量（P="password", S="salt", c=1 → 120fb6cf..17b）；
+// 错误矩阵镜像 WPT hkdf/pbkdf2（去连字符 "SHA256"/非摘要 "PBKDF2" 作 hash →
+// NotSupportedError；0 length → resolve 空；44/null/省略/负数 → OperationError）、
+// generateKey/failures_bad_algorithm（HMAC hash MD5 → NotSupportedError）、
+// sign_verify/hmac（HMAC 算法名 + ECDSA key → InvalidAccessError，spec sign/verify
+// 公共步骤）。[SecureContext]（spec idl，subtle/CryptoKey 仅安全上下文暴露）：
+// about:blank secure 面 exposed；http://wpt.test 非 secure 面 undefined（corpus
+// historical.any.js 同语义，runner 无 `.https.` 中缀案走 http 页锚）。
+// https://w3c.github.io/webcrypto/#SubtleCrypto-method-deriveBits
+// https://w3c.github.io/webcrypto/#secure-context  https://datatracker.ietf.org/doc/html/rfc5869
+#[test]
+fn test_crypto_subtle_residual_m6() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // hex/str 辅助 + errname（part05/M3b 同款）。
+    sandbox
+        .execute(
+            "function hex2b(h){var a=[];for(var i=0;i<h.length;i+=2)a.push(parseInt(h.substr(i,2),16));return new Uint8Array(a);}\
+             function b2hex(u){var s='';for(var i=0;i<u.length;i++){s+=('0'+u[i].toString(16)).slice(-2);}return s;}\
+             function str2b(s){var a=[];for(var i=0;i<s.length;i++)a.push(s.charCodeAt(i));return new Uint8Array(a);}\
+             function errname(p){return p.then(function(){return 'no-throw';}, function(e){return e.name;});}",
+        )
+        .unwrap();
+
+    // A1：HKDF 绿路（RFC 5869 §A.1，L=336 位）+ hash 注册语义（去连字符 "SHA256"/
+    // 非摘要 "PBKDF2" → NotSupportedError；deriveKey 同径）+ length 矩阵（0 → 空、
+    // 44 非 8 倍数 / null / 负数 / 省略 → OperationError）。
+    sandbox
+        .execute(
+            "globalThis.__a=[];function noteA(s){globalThis.__a.push(s);}\
+             var ikm=hex2b('0b'.repeat(22));\
+             var slt=hex2b('000102030405060708090a0b0c');\
+             var inf=hex2b('f0f1f2f3f4f5f6f7f8f9');\
+             crypto.subtle.importKey('raw', ikm, {name:'HKDF'}, false, ['deriveBits','deriveKey'])\
+               .then(function(k){\
+                 var ps=[\
+                   crypto.subtle.deriveBits({name:'HKDF', salt:slt, info:inf, hash:'SHA-256'}, k, 336)\
+                     .then(function(b){ noteA('okm:'+(b2hex(new Uint8Array(b))==='3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865')); }),\
+                   crypto.subtle.deriveBits({name:'HKDF', salt:slt, info:inf, hash:'SHA256'}, k, 256).then(noteA, function(e){ noteA('hyph:'+e.name); }),\
+                   crypto.subtle.deriveBits({name:'HKDF', salt:slt, info:inf, hash:'PBKDF2'}, k, 256).then(noteA, function(e){ noteA('nd:'+e.name); }),\
+                   crypto.subtle.deriveBits({name:'HKDF', salt:slt, info:inf, hash:'SHA-256'}, k, 0)\
+                     .then(function(b){ noteA('zero:'+new Uint8Array(b).length); }, function(e){ noteA('zero-err:'+e.name); }),\
+                   crypto.subtle.deriveBits({name:'HKDF', salt:slt, info:inf, hash:'SHA-256'}, k, 44).then(noteA, function(e){ noteA('frac:'+e.name); }),\
+                   crypto.subtle.deriveBits({name:'HKDF', salt:slt, info:inf, hash:'SHA-256'}, k, null).then(noteA, function(e){ noteA('null:'+e.name); }),\
+                   crypto.subtle.deriveBits({name:'HKDF', salt:slt, info:inf, hash:'SHA-256'}, k, -8).then(noteA, function(e){ noteA('neg:'+e.name); }),\
+                   crypto.subtle.deriveBits({name:'HKDF', salt:slt, info:inf, hash:'SHA-256'}, k).then(noteA, function(e){ noteA('omit:'+e.name); }),\
+                   crypto.subtle.deriveKey({name:'HKDF', salt:slt, info:inf, hash:'SHA384'}, k, {name:'AES-GCM', length:128}, true, ['encrypt']).then(noteA, function(e){ noteA('dkbad:'+e.name); })\
+                 ];\
+                 return Promise.all(ps); })\
+               .catch(function(e){ noteA('fatal:'+e.name); });",
+        )
+        .unwrap();
+
+    // A2：PBKDF2 绿路（公开向量 c=1）+ 去连字符 hash 拒绝。
+    sandbox
+        .execute(
+            "globalThis.__b=[];function noteB(s){globalThis.__b.push(s);}\
+             crypto.subtle.importKey('raw', str2b('password'), {name:'PBKDF2'}, false, ['deriveBits'])\
+               .then(function(k){\
+                 return Promise.all([\
+                   crypto.subtle.deriveBits({name:'PBKDF2', salt:str2b('salt'), iterations:1, hash:'SHA-256'}, k, 256)\
+                     .then(function(b){ noteB('pbk:'+(b2hex(new Uint8Array(b))==='120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b')); }),\
+                   crypto.subtle.deriveBits({name:'PBKDF2', salt:str2b('salt'), iterations:1, hash:'SHA512'}, k, 256).then(noteB, function(e){ noteB('bad:'+e.name); })\
+                 ]); })\
+               .catch(function(e){ noteB('fatal:'+e.name); });",
+        )
+        .unwrap();
+
+    // A3：HMAC hash 注册集（MD5 → NotSupportedError，归一化先于 usages）+ sign/verify
+    // 跨家族 key（ECDSA P-256 私钥 + HMAC 算法名 → InvalidAccessError）。
+    sandbox
+        .execute(
+            "globalThis.__c=[];function noteC(s){globalThis.__c.push(s);}\
+             var md5=errname(crypto.subtle.generateKey({name:'HMAC', hash:'MD5'}, true, ['sign','verify']))\
+               .then(function(n){ noteC('md5:'+n); });\
+             var ec=crypto.subtle.generateKey({name:'ECDSA', namedCurve:'P-256', hash:'SHA-256'}, false, ['sign','verify']);\
+             var sgn=ec.then(function(kp){\
+                 return errname(crypto.subtle.sign({name:'HMAC', hash:'SHA-256'}, kp.privateKey, new Uint8Array(4)))\
+                   .then(function(n){ noteC('sign:'+n); }); });\
+             var vfy=ec.then(function(kp){\
+                 return errname(crypto.subtle.verify({name:'HMAC', hash:'SHA-256'}, kp.privateKey, new Uint8Array(64), new Uint8Array(4)))\
+                   .then(function(n){ noteC('verify:'+n); }); });\
+             Promise.all([md5, sgn, vfy]).catch(function(e){ noteC('fatal:'+e.name); });",
+        )
+        .unwrap();
+
+    // A4：secure 面（about:blank）[SecureContext] 暴露——subtle/CryptoKey 可用。
+    sandbox
+        .execute(
+            "globalThis.__d=[globalThis.isSecureContext, typeof crypto.subtle, typeof CryptoKey].join('|');",
+        )
+        .unwrap();
+
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    assert_eq!(
+        sandbox.execute("String(globalThis.__a.slice().sort())").unwrap().value,
+        "dkbad:NotSupportedError,frac:OperationError,hyph:NotSupportedError,nd:NotSupportedError,neg:OperationError,null:OperationError,okm:true,omit:OperationError,zero:0",
+        "HKDF 绿路 + hash 注册语义 + length 矩阵（RFC 5869 §A.1 锚定）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__b.slice().sort())").unwrap().value,
+        "bad:NotSupportedError,pbk:true",
+        "PBKDF2 绿路（公开向量）+ 去连字符 hash NotSupportedError"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__c.slice().sort())").unwrap().value,
+        "md5:NotSupportedError,sign:InvalidAccessError,verify:InvalidAccessError",
+        "HMAC MD5 归一化拒绝 + 跨家族 key sign/verify InvalidAccessError"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__d)").unwrap().value,
+        "true|object|function",
+        "secure 面 subtle/CryptoKey 暴露（about:blank）"
+    );
+    drop(sandbox);
+
+    // B：非安全面（http 页锚）[SecureContext] 门禁——subtle/CryptoKey 不暴露
+    //（historical.any.js 同语义：subtle undefined + 不在 crypto 上 + CryptoKey/
+    // SubtleCrypto 不在 self；getRandomValues 不受门禁影响）。
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    // **注册先于 shim**（runner with_dom 同序）：shim init 时 _makeLocation 读
+    // __zw_get_page_url 取真页锚，[SecureContext] 门禁随之判非 secure；shim 先装
+    // 则 location 回退 about:blank 误判 secure（webview.rs execute_script 早期
+    // ensure_js_shim 的教训，runner 侧经 execute_script_with_dom 修复）。
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("http://wpt.test/WebCryptoAPI/historical.any.js".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    sandbox
+        .execute(
+            "globalThis.__e=[location.protocol, globalThis.isSecureContext, typeof crypto.subtle,\
+              ('subtle' in crypto), typeof CryptoKey, ('SubtleCrypto' in self),\
+              typeof crypto.getRandomValues].join('|');",
+        )
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    assert_eq!(
+        sandbox.execute("String(globalThis.__e)").unwrap().value,
+        "http:|false|undefined|false|undefined|false|function",
+        "非安全面 [SecureContext] 门禁：subtle/CryptoKey/SubtleCrypto 不暴露、getRandomValues 不受影响"
+    );
+}

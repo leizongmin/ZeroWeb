@@ -741,3 +741,8 @@ mod r5162_table_fixed_dist_tests;
 /// R5163 caption auto 宽在 size containment 下维持 fill 表宽（§17.4.1；
 /// contain-paint-size-001/contain-strict-001 驱动）。
 mod r5163_caption_contain_fill_tests;
+/// R5164 auto 高 inline-block strut 估计 + table 行位 claim 门（csswg#8358；
+/// css-tables/whitespace-001 驱动）。
+mod r5164_inline_block_auto_height_tests;
+/// R5166 域核探针：inline 流 abs-pos 静态位（css-position-3 §static-position）。
+mod r5166_oof_inline_static_pos_probe;

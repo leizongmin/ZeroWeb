@@ -609,6 +609,17 @@ impl InlineFormattingContext {
                                     .as_ref()
                                     .is_some_and(|ids| ids.contains(&child_id)));
                         if !self.vertical && runtime_flags::skip_oof() && is_oof_child {
+                            // R5166：**inline-level** OOF 发 OofAnchor（零宽/不断行）供断行层
+                            // 记录行内流静态位（css-position-3 §static-position）。block-level
+                            // OOF（块流静态位域：R3930 rtl 镜像 / R4017 前驱兄弟高 / R5139 列流
+                            // 映射）不发——它们的静态位不是行内流位，本锚会打掉既有后处理。
+                            // kill-switch `ZW_OOF_INLINE_ANCHOR=0` 回退静默跳过（旧行为）。
+                            let is_inline_level_oof = style.is_some_and(|s| {
+                                matches!(s.display, DisplayValue::Inline)
+                            });
+                            if is_inline_level_oof && runtime_flags::oof_inline_anchor() {
+                                items.push(InlineItem::OofAnchor(child_id));
+                            }
                             continue;
                         }
 
@@ -996,6 +1007,9 @@ impl InlineFormattingContext {
                                         .map(|s| Self::resolve_inline_margin(&s.margin_left, s))
                                         .or_else(|| self.margin_overrides.get(&child_id).map(|(left, _)| *left))
                                         .unwrap_or(0.0),
+                                    // R5165：GL/WJ/ZWJ 贴端旁带（原始文本判定，css-text-3 §5.5）。
+                                    prev_char_gl: atomic_boundary_char_gl(doc, styles, child_id, false),
+                                    next_char_gl: atomic_boundary_char_gl(doc, styles, child_id, true),
                                 }));
                                 continue;
                             }
@@ -1117,6 +1131,9 @@ impl InlineFormattingContext {
                                     margin_left: img_style
                                         .map(|s| Self::resolve_inline_margin(&s.margin_left, s))
                                         .unwrap_or(0.0),
+                                    // R5165：GL/WJ/ZWJ 贴端旁带（原始文本判定，css-text-3 §5.5）。
+                                    prev_char_gl: atomic_boundary_char_gl(doc, styles, child_id, false),
+                                    next_char_gl: atomic_boundary_char_gl(doc, styles, child_id, true),
                                 }));
                                 continue;
                             }
@@ -1786,6 +1803,10 @@ impl InlineFormattingContext {
                     // R5102（CSS2 §9.7）：out-of-flow 子树同款剪枝——abspos/fixed 后代的
                     // 文本不得经 walk 折回吸收推进行宽（contains-inline-006：run-in 前缀
                     // 隐藏 span 内孙代 abspos 的 "header" 幽灵推进 47px）。双通道同上。
+                    // R5166：剪枝点发 OofAnchor（行内流静态位锚，css-position-3
+                    // §static-position）——inline wrapper（如 019 的 b>span.abs）内的 OOF
+                    // 元素只经此路径；与主路径 OOF 跳过臂同门（horizontal + kill-switch），
+                    // 容器 id 随锚记录（消费侧核对盒树父）。
                     if styles
                         .get(&gc)
                         .is_some_and(|s| {
@@ -1793,6 +1814,17 @@ impl InlineFormattingContext {
                         })
                         || self.oof_walk_nodes.contains(&gc)
                     {
+                        // 先 flush 前导 pending 文本——walk 的文本缓冲是惰性 emit，
+                        // 锚位 = 消费点行内光标，前导文本不入 items 会记到文本前。
+                        flush_pending(&mut text_pending, items, !emitted_text_run, false);
+                        // R5166：同主路径门——仅 inline-level OOF 发锚（block-level 的
+                        // 块流静态位有专属后处理域，行内锚会打掉）。
+                        if !self.vertical
+                            && runtime_flags::oof_inline_anchor()
+                            && styles.get(&gc).is_some_and(|s| matches!(s.display, DisplayValue::Inline))
+                        {
+                            items.push(InlineItem::OofAnchor(gc));
+                        }
                         continue;
                     }
                     // R4331（CSS2 §9.2.1 / HTML br 元素）：`<br>` 强制换行条目与主
@@ -2199,6 +2231,57 @@ pub(crate) fn ruby_overhang_pads(
 /// 跨元素兄弟递归取端字符（折叠后空白跳过）。
 /// ruby 紧邻方向的贴端字符（prev=false 取前兄弟末字符、true 取后兄弟首字符）；
 /// 跨元素兄弟递归取端字符（折叠后空白跳过）。
+/// R5165（css-text-3 §5.5 line-break-details + UAX #14）：原子盒贴端方向的**原始**
+/// （未折叠）边界字符是否属 GL/WJ/ZWJ 禁断类（U+00A0 例外不计）。§3 折叠把
+/// U+202F/U+2007 吸收为空格后断行层身份消失，故在 collect 期直接读原始 DOM 文本
+/// 旁带到 `InlineBlockBox`。跨 **display:inline** 元素边界（字符邻接对 inline 包裹
+/// 层透明）；br / 原子级（inline-block/flex/grid/table）与块级兄弟停止（非字符邻接
+/// ——GL 字符封在原子盒内部不外露）。空 inline 元素跳过续走兄弟链。
+/// FIXME: 原子盒经 inline 包裹层嵌套（`<span><span class=ib>`）时不向父链回溯，
+/// 该形旁带为 false（与旧行为等价，corpus 家族无此形）。
+fn atomic_boundary_char_gl(
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    atomic_id: NodeId,
+    forward: bool,
+) -> bool {
+    // GL 贴端字符判定：forward 取首字符、back 取末字符（原始文本，不折叠）。
+    let boundary_gl = |text: &str| -> bool {
+        if forward {
+            text.chars().next()
+        } else {
+            text.chars().last()
+        }
+        .is_some_and(crate::inline::is_atomic_gl_suppressing)
+    };
+    // display:inline（或 Path B 空 styles 的缺省）才可跨越；其余原子级/块级停止。
+    let inline_crossable = |id: NodeId| -> bool {
+        match styles.get(&id).map(|s| &s.display) {
+            Some(DisplayValue::Inline) | None => true,
+            Some(_) => false,
+        }
+    };
+    let mut cur = if forward { doc.next_sibling(atomic_id) } else { doc.previous_sibling(atomic_id) };
+    while let Some(sid) = cur {
+        match doc.get(sid).map(|n| &n.kind) {
+            Some(zero_dom::NodeKind::Text(t)) => return boundary_gl(&t.content),
+            Some(zero_dom::NodeKind::Element(e)) => {
+                if e.local_name().eq_ignore_ascii_case("br") || !inline_crossable(sid) {
+                    return false;
+                }
+                // 空 inline 元素（无文本）跳过，继续兄弟链。
+                let text = doc.text_content(sid).unwrap_or_default();
+                if !text.is_empty() {
+                    return boundary_gl(&text);
+                }
+            }
+            _ => return false,
+        }
+        cur = if forward { doc.next_sibling(sid) } else { doc.previous_sibling(sid) };
+    }
+    false
+}
+
 fn adjacent_text_char(doc: &Document, ruby_id: NodeId, forward: bool) -> Option<char> {
     let mut cur = if forward { doc.next_sibling(ruby_id) } else { doc.previous_sibling(ruby_id) };
     while let Some(sid) = cur {

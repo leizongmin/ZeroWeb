@@ -1,0 +1,13 @@
+{
+ "date": "2026-10-17",
+ "slice": "M6 残留收口（KDF hash 注册语义 + deriveBits length 矩阵 + HMAC MD5/wrong-key + [SecureContext] 暴露门禁）",
+ "pin": "315976933870b34d6ea30e3f6643403edae678ba",
+ "totals": {
+  "cases": 123,
+  "subtests": 33109,
+  "pass": 25788,
+  "fail": 7320,
+  "timeout": 1,
+  "all_green_cases": 73
+ }
+}

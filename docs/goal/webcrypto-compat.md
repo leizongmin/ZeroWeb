@@ -1,11 +1,51 @@
 # Web Crypto 兼容 — crypto.getRandomValues / randomUUID / subtle
 
-**版本**: v1.3
+**版本**: v1.7
 **日期**: 2026-10-17
-**状态**: Active——M4a 收口（RSA 家族 OAEP/PSS/RSASSA-PKCS1-v1_5 +2,351P，
-2026-10-17）；下一步 M4b（EC 签名系：ECDSA/ECDH，随后 Ed25519/X25519 OKP）
+**状态**: **Done**（2026-10-17 M6 终判，DC-1~3 全 ✅——corpus 终态
+**25,788/33,109 = 77.89%**，73/123 案全绿；非 tentative Fail 清零，余 7,320F
+全部 `.tentative.` 草案域挂账（重开条件 = 上游转正后按域立项，见挂账清单），
+iframe 依赖 Timeout 1 挂账至 DOM 域；M1→M6 六轮 6,728→25,788 逐 subtest 零回归）
 **执行模式**: WPT 驱动（上游 WebCryptoAPI corpus 为验收标尺）+ 实现与语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——加密面）
+
+> **▶ M6 残留收口（2026-10-17）**：四组语义修齐——KDF（PBKDF2/HKDF）hash
+> 注册校验（去连字符名/非摘要名 → NotSupportedError）+ deriveBits length
+> 矩阵（0 → resolve 空 ArrayBuffer、非 8 倍数/null/负 → OperationError）；
+> HMAC 归一化注册集（MD5 → NotSupportedError 先于 usages 校验）；sign/verify
+> 跨家族算法不匹配 → InvalidAccessError（原误归 NotSupportedError）；
+> `crypto.subtle`/`CryptoKey` [SecureContext] 暴露门禁三件套（part02 尾按
+> isSecureContext 挂载 + isSecureContext getter 直读 `__zw_get_page_url`
+> scheme 根修 init 期 TypeError 被 catch 吞成 secure + runner 页锚按
+> `.https.` 中缀双态与预热行 with_dom 化）。全量 **33,109 = Pass 25,788
+> （77.89%）+ Fail 7,320 + Timeout 1**（+2,952，逐 subtest 对比零回归）；
+> 全绿案 67→**73**（derived_bits_length/hkdf/pbkdf2/failures_bad_algorithm/
+> historical/hmac 六案全翻）。Fail 7,320 全部为 .tentative. 挂账域
+> （ML-KEM/ML-DSA/X448/Ed448/AES-OCB/kmac/chacha20_poly1305/argon2/cSHAKE 等）。
+> 明细见 [M6 evidence](webcrypto-compat/evidence/2026-10-17-m6-residual.md)。
+
+> **▶ M5 OKP 家族（2026-10-17）**：Ed25519/X25519 全链——importKey
+> （raw/spki/pkcs8/jwk）、generateKey（privateKey.extractable=请求值）、
+> exportKey 四格式（RFC 8410 定长 DER）、Ed25519 sign/verify（RFC 8032 确定性
+> + verify_strict 拒小阶伪造）、X25519 deriveBits/deriveKey（RFC 7748 钳位 +
+> 全零拒绝 + length 矩阵）。依赖 ed25519-dalek/x25519-dalek 3.0（选型见 deps
+> evidence）。OKP 14 案全翻绿（eddsa/small_order/cfrg bits+keys/okp_importKey
+> 四文件/generateKey 四文件/serialization ×2）；wrapKey_unwrapKey 239→299 全绿。
+> 全量 **33,109 = Pass 22,836（68.97%）+ Fail 10,272 + Timeout 1**（+1,936，
+> 零回归）；全绿案 53→67。明细见
+> [M5 evidence](webcrypto-compat/evidence/2026-10-17-m5-okp.md)。
+
+> **▶ M4b EC 家族（2026-10-17）**：ECDSA/ECDH P-256/P-384/P-521 全链——
+> importKey（spki/pkcs8/jwk/raw 含 SEC1 压缩点）、generateKey CryptoKeyPair
+> （publicKey 恒 extractable + usages 类型拆分）、exportKey 四格式（raw=SEC1
+> 未压缩点、jwk x/y/d 定宽零填充）、ECDSA sign/verify（RFC 6979 确定性 +
+> IEEE P1363 r||s）、ECDH deriveBits/deriveKey（x 坐标 + length 位截断）。
+> 依赖 p256/p384/p521 0.13（选型见 deps evidence）。ec_importKey/ecdh_bits/
+> ecdh_keys/sign_verify ecdsa/generateKey EC 四文件/serialization ×2/
+> derive_key_and_encrypt 全绿；derive 共享路径修齐（wrong-key
+> InvalidAccessError、HKDF/PBKDF2 目标 deriveKey length null）。全量
+> **33,028 = Pass 20,900（63.3%）+ Fail 12,127 + Timeout 1**（+3,159，零
+> 回归）；全绿案 41→53。明细见 [M4b evidence](webcrypto-compat/evidence/2026-10-17-m4b-ec.md)。
 
 > **▶ M4a RSA 家族（2026-10-17）**：RSA-OAEP/RSASSA-PKCS1-v1_5/RSA-PSS 全链——
 > importKey spki/pkcs8/jwk、generateKey CryptoKeyPair（publicKey 恒 extractable +
@@ -93,18 +133,34 @@
 
 ## Done Criteria
 
-- **DC-1** 导入 + 基线 + csv planned 行回填
+- **DC-1** 导入 + 基线 + csv planned 行回填 ✓（M1）
 - **DC-2** getRandomValues/randomUUID 既有语义守住（零回归）+ subtle 分片逐片
   对齐（digest 全格 → AES-GCM → HMAC/签名系），分级通过率不再下行两个连续轮次
+  ✓（M1→M6 六轮连续上行，逐 subtest 对比零回归）
 - **DC-3** 回归测试账本纪律；make test 全绿、make reftest 零回归、product-smoke
-  逐字节恒值
+  逐字节恒值（M6 复核：test 全腿绿、reftest 712/712、product-smoke 见下）
+
+## 挂账清单（M6 收口清点，2026-10-17）
+
+M6 后 Fail 7,320 **全部为 `.tentative.` 案**（上游规范未定草案域，不修；
+family 归并与逐案明细见 [M6 evidence](webcrypto-compat/evidence/2026-10-17-m6-residual.md)）：
+ML-KEM 1,605 / AES-OCB 981 / Ed448 954 / X448 878 / KMAC 708 / ML-DSA 603 /
+ChaCha20-Poly1305 522 / SHA3 家族 XOF（cSHAKE/K12/TurboSHAKE/SHA3）419 /
+supports 探测面 265 / Argon2 46 / getPublicKey·raw_format_aliases 等 70。
+同一批案在 M1 基线即 tentative 挂账（cSHAKE 先例），上游转正后按新里程碑立项。
+
+非 tentative 唯一非通过项：`algorithm-discards-context.https.window.js`
+Timeout 1（自 M1 每轮恒定，零回归语义）——该案依赖 iframe 跨帧 DOM
+（createElement iframe + contentDocument + top 回调），属 engine DOM 域
+能力依赖，非 WebCrypto 语义缺口，挂账至 DOM/iframe 兼容域。
 
 ## 里程碑
 
 M1 导入与基线（corpus + runner 通道 + csv 回填）→ M2 已实现面 WPT 对齐
 （digest/HMAC/PBKDF2/HKDF/AES-GCM 逐域修失败；随机源零回归）→ M3 补面
 （AES-CBC/CTR、wrapKey/unwrapKey、spki/pkcs8/jwk 格式）→ M4 签名系
-（ECDSA/RSASSA-PKCS1-v1_5/RSA-PSS…）+ 收口归档。
+（RSA 三算法 M4a ✓ + EC 家族 M4b ✓）→ M5 OKP（Ed25519/X25519 ✓）→
+残留收口（KDF 语义 + [SecureContext] 门禁 M6 ✓）+ 挂账清点与归档 ✓。
 
 > 原里程碑（M2 digest 从零实现 / M3 importKey+AES-GCM 从零实现）已被
 > 2026-10-17 盘点修正——相应实现 R2793/R2955-R2958 立项前已存在，里程碑

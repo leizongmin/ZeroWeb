@@ -1278,6 +1278,13 @@ impl LayoutEngine {
             &mut final_inline_context,
         );
 
+        // R5166（css-position-3 §static-position）：行内流 OOF 静态位锚定——须在
+        // compute_final 之后（锚位由 stored IFC 断行记录）、其余 abspos 后处理链之外
+        // 覆盖 taffy block-flow cursor 静态位（11.7b 的块级公式只管 block-level 前驱
+        // 兄弟域，行内域由本 pass 收口）。kill-switch `ZW_OOF_INLINE_ANCHOR=0` 时锚表
+        // 为空（collect 期未发条目），本 pass 空转。
+        abspos::fix_abspos_inline_static_position(&mut root_box, styles, &final_inline_context.oof_static_positions);
+
         // 最终 IFC 会确定多列内文本的实际行数；在它之前回写高度会被覆盖，令父块背景
         // 过早结束。故在最终行盒确定后重测并重分列，随后由下方的祖先回填/兄弟位移统一传播。
         // https://drafts.csswg.org/css-multicol/#column-height

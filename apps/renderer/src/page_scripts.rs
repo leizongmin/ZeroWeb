@@ -1002,16 +1002,45 @@ pub fn drain_pending_dom_mutations(ctx: &mut PageScriptContext<'_>) -> bool {
     // `setTimeout` / fetch 等宿主完成会先投递到 worker 的命令队列；只有进入一次
     // worker 执行边界时，回调才会在页面全局运行并记录 DOM mutation。
     // https://html.spec.whatwg.org/multipage/webappapis.html#event-loop-processing-model
-    if !ctx.js_worker.take_pending_async_callbacks() {
+    let has_async = ctx.js_worker.take_pending_async_callbacks();
+    // 直接执行路径（宿主节拍的动态外链脚本 `tick_dynamic_scripts`、`__zw_observers_tick`
+    // 之外的直接 execute）不产生异步回调 token，但脚本体记录的 DOM mutation 同样滞留
+    // worker 队列——仅以异步旗标作门会把这些写入无限期滞留（页面无后续异步任务时永久
+    // 丢失；qq.com 动态 chunk 执行成功而 DOM 写入不落实测，run qq-20261016-r1 t3）。
+    // mutation 队列非空同样须 drain；两者皆空时早退，保住「空闲 drain 不进 JS worker」
+    // 的节流语义（下方 idle 断言 / V8 堆增长关注面不变）。
+    let has_mutations = !ctx
+        .js_worker
+        .mutations()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .is_empty();
+    if !has_async && !has_mutations {
         return false;
     }
-    // t2-pb1 fix#8：checkpoint 有界等待——页面回调积压（bilibili timer 臂级联 ~16s）时
-    // 不阻塞 renderer 主循环 15s+（导航 IPC 饿死 → 二跳 ERR_FAILED）。超时放弃本轮：
-    // 滞留空脚本为 worker 侧无害 no-op，ready 旗标由积压回调继续处理重新置位，下一轮
-    // 重试；回调产生的 mutation 在队列中累积，至下一次成功 checkpoint 一并应用。
-    let _ = ctx
-        .js_worker
-        .execute_script_direct_bounded("", std::time::Duration::from_millis(200));
+    // t3 返修 D1（qq-20261016-r1）：跨文档代际安全门。mutation 非空臂重开了跨导航污染
+    // 窗：worker 长臂（bilibili timer 级联 16-30s 级）跨越导航时，`reset_document_state`
+    // 只清一次主线程侧队列、复位命令滞留优先队列等当前臂跑完——臂的后续推入全属旧文档，
+    // 旧门靠复位同步清 `async_callbacks_ready` 在该窗恒 false（事实上无此问题），新臂的
+    // 「队列非空即 apply」会把旧文档 mutation apply 进新 `cached_html`（`DomMutation` 只
+    // 带 selector 无文档代际；goBack 同 URL selector 重合即错误注入）。同一 drain 调用内
+    // 捕获/比对代际不可行——导航与 drain 同在 renderer 主线程，代际只在两次 tick 之间
+    // 变化；正确代际源是「worker 是否已消费导航复位」：未落定 ⇒ 当前臂早于导航 ⇒ 本轮
+    // 不进 worker、不 apply。旧文档 mutation 的丢弃由 worker 侧复位臂清队完成（t8 返修
+    // defect-r1 D1 语义），此处只需不消费，故保留队列原样返回。
+    // https://html.spec.whatwg.org/multipage/browsers.html#navigate
+    if !ctx.js_worker.document_reset_settled() {
+        return false;
+    }
+    if has_async {
+        // t2-pb1 fix#8：checkpoint 有界等待——页面回调积压（bilibili timer 臂级联 ~16s）时
+        // 不阻塞 renderer 主循环 15s+（导航 IPC 饿死 → 二跳 ERR_FAILED）。超时放弃本轮：
+        // 滞留空脚本为 worker 侧无害 no-op，ready 旗标由积压回调继续处理重新置位，下一轮
+        // 重试；回调产生的 mutation 在队列中累积，至下一次成功 checkpoint 一并应用。
+        let _ = ctx
+            .js_worker
+            .execute_script_direct_bounded("", std::time::Duration::from_millis(200));
+    }
     let html_snapshot = ctx.html.clone();
     apply_recorded_mutations(ctx, &html_snapshot).is_some()
 }
@@ -1509,7 +1538,17 @@ mod tests {
         // slice33：apply 代际换代通知（notify_shim_apply_generation）在 commit 时多一次
         // worker 执行（+1）——apply 边界的有意工作；空闲 drain 路径不触发（上方两条
         // 基线断言已证），V8 堆增长关注面不变。
-        assert_eq!(worker.execution_count_for_test(), execution_baseline + 3);
+        // t3 返修 F1/D3（qq-20261016-r1）benign race 放宽 +2..=+3：ResolveAsyncCallback
+        // 臂先跑 microtask checkpoint（mutation 先入队）后置旗标，drain 轮询读落入
+        // 「已入队、未置旗标」间隙时按 (has_async=false, has_mutations=true) 走 mutation
+        // 非空臂直接 apply，比 checkpoint 臂少一次空脚本 execute（+2 而非 +3）。提交
+        // 完整（apply + notify 均已发生）、无泄漏，生产行为无损失——断言放宽为区间
+        // 只不钉旧执行形状；落 +1 以下仍说明提交/notify 丢失，照常咬合。
+        let executions = worker.execution_count_for_test();
+        assert!(
+            (execution_baseline + 2..=execution_baseline + 3).contains(&executions),
+            "timer mutation commit executions {executions} must be baseline+2..=+3 (checkpoint skipped by mutation-arm race is benign)"
+        );
         assert!(ctx.html.contains("265"), "mutated HTML: {}", ctx.html);
         assert!(
             ctx.webview
@@ -1522,6 +1561,126 @@ mod tests {
                 .iter()
                 .any(|glyph| glyph.glyph_id == '2' as u32),
             "asynchronously inserted score must reach the renderer frame"
+        );
+        worker.shutdown();
+    }
+
+    /// t3（qq-20261016-r1）：**无异步回调 token 的直接 execute** 产出的 mutation 也须被
+    /// drain 提交——动态外链脚本（`tick_dynamic_scripts` 的 `execute_script_direct_priority`）
+    /// 执行成功后，其 DOM 写入曾因 `drain_pending_dom_mutations` 仅认异步旗标而无限期滞留
+    /// worker 队列（页面无后续异步任务时永久丢失；qq.com 动态 chunk DOM 写入不落实测）。
+    /// 修复后：mutation 队列非空即 drain（空闲早退节流语义由上方 idle 断言守护）。
+    #[test]
+    fn direct_execute_mutation_is_committed_without_async_token() {
+        let html = r#"<html><body><div id="score">pending</div></body></html>"#;
+        let page_url = "https://zero.test/direct-dynamic-chunk";
+        let mut worker = RendererJsWorker::spawn(165);
+        worker.set_dom_snapshot(html, page_url);
+        let mut rendered_html = html.to_string();
+        let mut ctx = PageScriptContext {
+            html: &mut rendered_html,
+            url: page_url,
+            js_worker: &worker,
+            webview: None,
+        };
+
+        // 稳态基线：空闲 drain 无事可做（节流契约不变）。
+        for _ in 0..4 {
+            assert!(!drain_pending_dom_mutations(&mut ctx));
+        }
+
+        // 动态 chunk 形态：直接 execute 记录 mutation，不产生任何异步回调 token。
+        worker
+            .execute_script_direct("document.querySelector('#score').textContent = 'chunk-dom-write';")
+            .expect("direct execute records mutation");
+        assert!(
+            !worker.take_pending_async_callbacks(),
+            "前置：直接 execute 不置异步旗标（回归时说明门语义已变，测试须重审）"
+        );
+
+        // 修复前：门只认异步旗标 → 恒 false，mutation 永滞；修复后：队列非空即提交。
+        assert!(
+            drain_pending_dom_mutations(&mut ctx),
+            "direct-execute mutation must commit without async token"
+        );
+        assert!(ctx.html.contains("chunk-dom-write"), "mutated HTML: {}", ctx.html);
+        // 消费一次后回到稳态。
+        assert!(!drain_pending_dom_mutations(&mut ctx));
+        worker.shutdown();
+    }
+
+    /// t3 返修 D1（qq-20261016-r1）：worker 长臂跨越导航（文档代际翻转）时，mutation
+    /// 非空臂不得把旧文档 mutation apply 进新文档。确定性复现（r2946 忙臂惯用法）：
+    /// 忙臂 400ms 后写 mutation、再忙 1100ms 占住 worker；主线程在其间 `reset_document_state`
+    /// ——主线程侧清队后臂才写入（真实滞留），复位命令滞留优先队列 250ms 有界等待超时
+    /// （臂至 t≈1500ms），「未落定」窗 ~1.2s 足够轮询观察。落定前 drain 必须恒 false 且
+    /// 新文档 HTML 不变；落定即 worker 侧复位臂清队（t8 返修 defect-r1 D1 丢弃语义），
+    /// 旧 mutation 不得迟到新文档。
+    #[test]
+    fn mutation_arm_does_not_apply_across_document_reset_window() {
+        let old_doc_html = r#"<html><body><div id="m">old-doc</div></body></html>"#;
+        // 模拟导航后的新文档 cached_html：同 id 元素（goBack 同 URL selector 重合形态）。
+        let new_doc_html = r#"<html><body><div id="m">new-doc</div></body></html>"#;
+        let mut worker = RendererJsWorker::spawn(166);
+        worker.set_dom_snapshot(old_doc_html, "https://zero.test/list");
+
+        // ① 忙臂占住 worker（50ms 有界放行，臂实跑 1500ms）：t≈400ms 写旧文档 mutation。
+        let _ = worker.execute_script_direct_bounded(
+            "const __t_w1 = Date.now(); while (Date.now() - __t_w1 < 400) {} \
+             document.querySelector('#m').textContent = 'cross-doc-write'; \
+             const __t_w2 = Date.now(); while (Date.now() - __t_w2 < 1100) {}",
+            std::time::Duration::from_millis(50),
+        );
+        // ② t≈250ms 臂已确然在跑（50ms 放行 + 200ms 裕量）：导航——主线程侧清队（此刻
+        //    队列仍空，臂 t≈400ms 才写入）→ 复位命令滞留优先队列 → 250ms 等待必超时 stash。
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        worker.reset_document_state();
+        assert!(
+            !worker.document_reset_settled(),
+            "前置：忙臂下复位命令滞留，未落定（若已落定说明臂提前结束，时序假设失效）"
+        );
+
+        let mut rendered_html = new_doc_html.to_string();
+        let mut ctx = PageScriptContext {
+            html: &mut rendered_html,
+            url: "https://zero.test/list",
+            js_worker: &worker,
+            webview: None,
+        };
+
+        // ③ 落定前（含臂 t≈400ms 写入后的非空队列窗）：drain 恒 false，新文档不被污染。
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        let mut exercised_stale_window = false;
+        while !worker.document_reset_settled() && std::time::Instant::now() < deadline {
+            exercised_stale_window |= !worker.mutations().lock().unwrap_or_else(|e| e.into_inner()).is_empty();
+            assert!(
+                !drain_pending_dom_mutations(&mut ctx),
+                "复位未落定期间 mutation 臂必须封臂（旧文档 mutation 不得 apply）"
+            );
+            assert!(
+                !ctx.html.contains("cross-doc-write"),
+                "旧文档 mutation 泄漏进新文档: {}",
+                ctx.html
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        // ④ 代际翻转确实被观测（否则本测试未覆盖目标窗）。
+        assert!(
+            exercised_stale_window,
+            "未观测到「队列非空 + 复位未落定」滞留窗，时序假设失效须重审"
+        );
+        assert!(worker.document_reset_settled(), "30s 内复位未落定（臂悬挂）");
+        // ⑤ 落定 = worker 侧复位臂清队：旧文档 mutation 被丢弃（t8 返修 D1 语义），不迟到
+        //    新文档；drain 回到稳态 false。
+        assert!(
+            worker.mutations().lock().unwrap_or_else(|e| e.into_inner()).is_empty(),
+            "复位落定后旧文档 mutation 应已由 worker 侧清队丢弃"
+        );
+        assert!(!drain_pending_dom_mutations(&mut ctx));
+        assert!(
+            !ctx.html.contains("cross-doc-write"),
+            "旧文档 mutation 不得迟到新文档: {}",
+            ctx.html
         );
         worker.shutdown();
     }

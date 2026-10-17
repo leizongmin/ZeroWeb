@@ -16735,6 +16735,61 @@ return e;
             return undefined;
           };
         }
+        // `select.showPicker()`（HTMLSelectElement，R3905）——spec method steps（HTML §4.10.8）：
+        // ①disabled → InvalidStateError（先于 being-rendered 与激活检查，抛错不消费激活）；
+        // ②not being rendered → NotSupportedError——display:none（自身或任一祖先）或
+        // content-visibility:hidden 祖先（skipped contents 子树无 CSS 布局盒；cv:hidden 元素
+        // 自身有盒仍 being rendered，HTML §渲染「being rendered」定义）；③无瞬态激活 →
+        // NotAllowedError（WPT show-picker-user-gesture）；④show the picker：同步消费瞬态激活
+        // 后返回（headless 无 picker UI；multiple/size>1 内联列表箱无弹层不抛——WPT
+        // show-picker-multiple / show-picker-size 断言面）。跨源 SecurityError 面归
+        // navigation-compat M3 iframe 门控域不实现。属性读 latest-wins 三级回落
+        //（R3903 input.showPicker 同款）。
+        // https://html.spec.whatwg.org/multipage/form-elements.html#dom-select-showpicker
+        if (prop === 'showPicker' && _realTag(sel, handle) === 'SELECT') {
+          var spSelHasAttr = function(name) {
+            if (handle && typeof __zw_has_attr_handle === 'function') {
+              try { return __zw_has_attr_handle(handle, name) === '1'; } catch (_e) {}
+            }
+            if (!handle && sel && typeof __zw_has_attr_lw === 'function') {
+              try { return __zw_has_attr_lw(sel, name) === '1'; } catch (_e) {}
+            }
+            if (!handle && sel && typeof __zw_has_attr === 'function') {
+              try { return __zw_has_attr(sel, name) === '1'; } catch (_e) {}
+            }
+            return false;
+          };
+          return function() {
+            if (spSelHasAttr('disabled')) {
+              throw new (globalThis.DOMException || Error)("Failed to execute 'showPicker' on 'HTMLSelectElement': The select element is disabled.", 'InvalidStateError');
+            }
+            // being rendered：computed style 不可用时 lenient 视为 rendered（R3074
+            // _zwCheckVisibility 同口径，防破脚本）。
+            if (typeof __zw_get_computed_style === 'function') {
+              var spCur = sel;
+              while (spCur) {
+                var spDisp = '';
+                try { spDisp = __zw_get_computed_style(spCur, 'display'); } catch (_e) {}
+                if (spDisp === 'none') {
+                  throw new (globalThis.DOMException || Error)("Failed to execute 'showPicker' on 'HTMLSelectElement': The select element is not being rendered.", 'NotSupportedError');
+                }
+                if (spCur !== sel) {
+                  var spCv = '';
+                  try { spCv = __zw_get_computed_style(spCur, 'content-visibility'); } catch (_e) {}
+                  if (spCv === 'hidden') {
+                    throw new (globalThis.DOMException || Error)("Failed to execute 'showPicker' on 'HTMLSelectElement': The select element is not being rendered.", 'NotSupportedError');
+                  }
+                }
+                try { spCur = __zw_parent(spCur); } catch (_e) { spCur = ''; }
+              }
+            }
+            if (!_zwTransientActive) {
+              throw new (globalThis.DOMException || Error)("Failed to execute 'showPicker' on 'HTMLSelectElement': A user gesture is required.", 'NotAllowedError');
+            }
+            _zwTransientActive = false; // transient activation 消费（spec show the picker 步）
+            return undefined;
+          };
+        }
         // HTMLMediaElement 方法（play/pause/load/canPlayType，R2835）——仅 AUDIO/VIDEO（_realTag gate，
         // 支持 sel + handle 两种身份——new Audio 创建的 handle-based 亦可调）。headless 无音视频设备：
         // play 返 resolved Promise（spec：HTMLMediaElement.play() 返 Promise），pause/load no-op，

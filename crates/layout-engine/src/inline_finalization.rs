@@ -50,6 +50,10 @@ pub(crate) struct FinalInlineContext<'a> {
     paint_skip: &'a mut std::collections::HashSet<NodeId>,
     inline_fonts: InlineFontContext<'a>,
     finalized_inline_blocks: &'a NodeIdSet,
+    /// R5166：行内流 OOF 静态位汇聚（css-position-3 §static-position）——各容器的
+    /// stored IFC 跑完后把 `InlineFormattingContext::oof_static_positions` 并入此表，
+    /// engine 据此跑 `fix_abspos_inline_static_position`。
+    pub(crate) oof_static_positions: NodeIdMap<(NodeId, f32, f32)>,
 }
 
 impl<'a> FinalInlineContext<'a> {
@@ -62,6 +66,7 @@ impl<'a> FinalInlineContext<'a> {
             paint_skip,
             inline_fonts,
             finalized_inline_blocks,
+            oof_static_positions: NodeIdMap::default(),
         }
     }
 }
@@ -1598,6 +1603,13 @@ pub(crate) fn compute_final_inline_layouts(
     // （其 test 用真 multicol 已在上方 line 242 排除存储），浮动容器多行存储打破 test/ref 对称致
     // self-source 发散；该 case chromium-Oracle 9.15% 不变 = 非真回归，guard 仅维持 self-source 一致。
     inline_ctx.layout(doc, node_id, styles);
+    // R5166：汇聚本容器 IFC 记录的行内流 OOF 静态位（css-position-3 §static-position）。
+    // 须在 store-gate return 之前——非 stored 容器（非 pure-Ahem 等）的锚位同样有效。
+    if !inline_ctx.oof_static_positions.is_empty() {
+        context
+            .oof_static_positions
+            .extend(inline_ctx.oof_static_positions.iter().map(|(k, v)| (*k, *v)));
+    }
     // R2467 line-clamp slice 2：镜像 IFC `clamped` 到 LayoutBox，让 paint stored 路径
     //（pure-Ahem，inline_layout 已被 cap 到 n 行）能据此补 ellipsis——stored 路径下
     // paint 看到的行数 ≤ n，旧 `line_ys.len() > max` 判定无法独立触发 ellipsis。
@@ -3353,6 +3365,83 @@ pub(crate) fn remeasure_inline_only_containers(
                 Some((node_id, (c.width, c.height)))
             })
             .collect();
+        // R5164：高度旁路尺寸表。auto 高 inline-block 子在父 remeasure 时点 LayoutBox
+        // 高未落（0）→ 主 IFC（上方，降级口径）对「无有效尺寸」原子盒降级为零宽
+        // TextRun（collect_items `w>0 && h>0` 门）→ 换行机会丢失（`A空格B` 两个 50%
+        // inline-block 被收成单行）→ shrink 臂把已正确的父高砍掉真实第二行
+        //（css-tables/whitespace-001 ref 侧 38→20；最小形 151w 双 100px span 36→18）。
+        // 修复采用**双 IFC**：主 IFC 保持降级口径（行形状/片段/字符级断行语义与 HEAD
+        // 逐字节同源），strut 估计只喂一个同配置旁路 IFC 取 total_height() 作容器高。
+        // strut 不得喂主 IFC：原子盒「真实化」后 break_lines 的原子前无条件断行会替换
+        // 文本路径的字符级禁断（css-text-3 §line-break-details；line-breaking-atomic
+        // 族 MVS+原子无断点 22 案 0.0000→2.0833% 实证回归）。旁路条目再收紧到
+        // **前邻可折叠空白或容器首个 inline 内容**（跳过注释回溯兄弟；行首无先行
+        // run 的原子永不吃原子断行门）——真实断行机会在先时旁路换行才与主路径语义
+        // 一致；无空白的纯溢出域（MVS/wbr/ZWSP 邻接）维持降级。
+        // 再加容器级门：兄弟间**存在**可折叠空白文本节点才启用旁路——首子资格域中
+        // 「相邻原子 + 后随无断点文本」形（flexbox-items-as-stacking-contexts-002
+        // ref 侧 `><div` 相邻、line-breaking-atomic-005/010/012/015/027）会在原子
+        // 真实化后把后随文本挤到 ZW 无断点词换行第二行（spec 应溢出不换行），旁路
+        // 高度翻倍 0.025→2.70% 实证；有空白域不受此形影响。
+        // 空 spacer（无 inline 内容）与 contain:size（内容高 0 是语义）不旁路。
+        // kill-switch `ZW_IB_AUTO_H_ATOMIC=0`。
+        static AUTO_H_ATOMIC: std::sync::LazyLock<bool> =
+            std::sync::LazyLock::new(|| std::env::var("ZW_IB_AUTO_H_ATOMIC").as_deref() != Ok("0"));
+        let strut_ib_sizes: HashMap<NodeId, (f32, f32)> = if !*AUTO_H_ATOMIC || ib_sizes.is_empty() {
+            HashMap::new()
+        } else {
+            let siblings: Vec<NodeId> = box_node
+                .node_id
+                .map(|pid| doc.child_nodes(pid).into_iter().collect())
+                .unwrap_or_default();
+            let has_ws_text = siblings.iter().any(|&s| {
+                matches!(
+                    doc.get(s).map(|n| &n.kind),
+                    Some(zero_dom::NodeKind::Text(text)) if text.content.chars().any(char::is_whitespace)
+                )
+            });
+            if !has_ws_text {
+                HashMap::new()
+            } else {
+                ib_sizes
+                    .iter()
+                    .filter_map(|(&id, &(w, h))| {
+                        if h > 0.0 || w <= 0.0 {
+                            return None;
+                        }
+                        if !crate::inline_content::has_inline_content(doc, styles, id) {
+                            return None;
+                        }
+                        if styles.get(&id).is_some_and(|s| s.contain.has_size()) {
+                            return None;
+                        }
+                        // 资格 = 前邻可折叠空白 **或容器首个 inline 内容**：前者旁路换行
+                        // 落在真实断行机会上；后者行首无先行 run，break_lines 的原子断行门
+                        //（行非空才断）对其永不触发——两域旁路换行才与主路径语义一致。
+                        // 向前回溯兄弟跳过注释；命中非空白文本/元素即否决。
+                        let idx = siblings.iter().position(|&s| s == id)?;
+                        let ws_before = siblings[..idx]
+                            .iter()
+                            .rev()
+                            .find_map(|&s| match doc.get(s).map(|n| &n.kind) {
+                                Some(zero_dom::NodeKind::Text(text)) => {
+                                    Some(text.content.chars().any(char::is_whitespace))
+                                }
+                                Some(zero_dom::NodeKind::Comment(_)) => None,
+                                _ => Some(false),
+                            });
+                        if !ws_before.unwrap_or(true) {
+                            return None;
+                        }
+                        let (_, strut) = crate::inline::resolve_font_metrics_with_provider(
+                            styles.get(&id),
+                            inline_fonts.metric_provider,
+                        );
+                        Some((id, (w, strut.max(0.5))))
+                    })
+                    .collect()
+            }
+        };
         let has_inline_blocks = !ib_sizes.is_empty();
         let ib_sizes_for_mc = ib_sizes.clone();
         let mut inline_ctx = InlineFormattingContext::new(container_width)
@@ -3393,6 +3482,26 @@ pub(crate) fn remeasure_inline_only_containers(
                 .iter()
                 .map(|f| f.y + f.height)
                 .fold(0.0_f32, f32::max)
+        } else if !strut_ib_sizes.is_empty() {
+            // R5164 高度旁路 IFC：同配置 + strut 尺寸表，仅取总高（见上方双 IFC 注释）。
+            // 主 IFC 的行形状/片段/定位（sync/store_font_sizes/claim 链）不受影响。
+            let mut h_ctx = InlineFormattingContext::new(container_width)
+                .with_vertical(is_vertical)
+                .with_vertical_rtl(is_vertical_rtl)
+                .with_text_align(text_align)
+                .with_text_group_align(resolve_text_group_align(styles.get(&dom_id)))
+                .with_text_align_last(text_align_last)
+                .with_no_wrap(no_wrap)
+                .with_preserve_whitespace(preserve)
+                .with_break_at_newline(break_at_newline)
+                .with_inline_block_sizes(strut_ib_sizes)
+                .with_img_intrinsic_sizes(img_intrinsic_sizes.clone());
+            h_ctx = configure_inline_fonts(h_ctx, inline_fonts, false);
+            if let Some(run_in_id) = box_node.run_in_prepended {
+                h_ctx.set_run_in_prepended(run_in_id);
+            }
+            h_ctx.layout(doc, dom_id, styles);
+            h_ctx.total_height()
         } else {
             inline_ctx.total_height()
         };
@@ -3477,7 +3586,24 @@ pub(crate) fn remeasure_inline_only_containers(
                 box_node.content_width = block_extent.max(0.0);
             }
         }
-        if *REUSE_INLINE_BLOCK_POSITIONS && has_inline_blocks && balance_geometry.is_none() {
+        // R5164：Table/InlineTable 容器**不得**在此 claim inline-block 定位——step 8
+        // `adjust_table_layout_with_fonts` 在本 pass 之后会重排表内子盒（cell 内容/
+        // valign），把本处 sync 写入的行位打回 taffy 位；而 step 10
+        // `adjust_inline_block_positions` 消费 claim 集**跳过**已 claim 容器（且其
+        // 跳过名单只含 Flex/Grid/TableCell、不含 Table），无第二道纠正 → 子盒永久
+        // 滞留 step 8 打回位（显式高 inline-block 子的 table 容器：预存于 HEAD，
+        // 单测 test_table_explicit_height_inline_blocks_survive_table_pass 复现）。
+        // table 的 inline-block 行位交回 step 10 既有路径（ib_sizes 取自子盒
+        // remeasure 后真实高）。注：auto 高（strut 旁路）容器的主 IFC 为降级口径，
+        // refresh 宽校验天然 bail、本就不 claim——本门只须覆盖显式高域。
+        // kill-switch `ZW_TABLE_POS_CLAIM=0` 回退（default-on）。
+        static TABLE_POS_CLAIM: std::sync::LazyLock<bool> =
+            std::sync::LazyLock::new(|| std::env::var("ZW_TABLE_POS_CLAIM").as_deref() != Ok("0"));
+        if *REUSE_INLINE_BLOCK_POSITIONS
+            && has_inline_blocks
+            && balance_geometry.is_none()
+            && (!*TABLE_POS_CLAIM || !matches!(style.display, DisplayValue::Table | DisplayValue::InlineTable))
+        {
             position_reuse = Some((dom_id, inline_ctx));
         }
     }

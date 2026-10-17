@@ -1,30 +1,31 @@
 # HTML Semantics 兼容 — html/semantics 语义面（主攻大域）
 
-**版本**: v1.7
+**版本**: v1.8
 **日期**: 2026-10-17（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 4 收口（valueAsNumber/valueAsDate setter 抛错面 +11P），下一切片候选 select/textarea showPicker
+**状态**: Active——M2 切片 5 收口（select.showPicker() spec 检查序 +8P），下一步 forms 域余簇归因选片
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-17 M2 切片 4）**：setter 抛错面清零——part04
-> valueAsNumber/valueAsDate setter 按 spec setter steps 重排（R3904，HTML
-> §4.10.5.4）：valueAsNumber ±Infinity→TypeError **先于适用性**（checkbox
-> + Infinity 亦 TypeError）→ 不适用 type→InvalidStateError → NaN→''；
-> valueAsDate WebIDL `Date?` 转换先行（非 null/undefined 非 Date→TypeError，
-> 不适用 type + 非 Date 亦 TypeError；undefined→null 同 null 面）→ 不适用
-> type（含 datetime-local，§4.10.5.1.11 do-not-apply 表）→
-> InvalidStateError → null/undefined/Invalid Date→清空。part16 补
-> `test_input_value_as_setter_throw_r3904` 契约单测（步序钉针 + 三清空
-> 面）。typeerror 两文件 8F + datetime-local-valueasdate 1F 全翻绿，
-> 同族 invalidstateerr 两文件联带 +2P。forms 2829→**2840P**；九域全量
-> 3788→**3799P**（3799/6913 = 54.95%；分母与上轮完全一致，diff 无机时
-> 噪声），对切片 3 账本逐 subtest diff **九域零回归**。账本见
-> [evidence/2026-10-16-m2s4-r3904.md](html-semantics-compat/evidence/2026-10-16-m2s4-r3904.md)。
-> 两处 runner 挂死仍挂账（tabular span-limits 间歇、links
-> downloading-resources skip 排除）。仓库既有 `paint/tests/r5151_*.rs`
-> fmt 违规系并行会话 commit 25cae3f9b 遗留，非本切片引入。
-> **卡点**：无阻塞。**下一步**：select/textarea showPicker（spec 同族
-> NotSupportedError「not being rendered」步）→ forms 域余簇归因选片。
+> **▶ 当前状态（2026-10-17 M2 切片 5）**：select.showPicker() spec 检查序
+> ——part03 方法分发区新支（R3905，HTML §4.10.8）：①disabled →
+> InvalidStateError（先于 being-rendered 与激活检查，抛错不消费激活）；
+> ②not being rendered → NotSupportedError（display:none 自身或任一祖先，
+> 或 content-visibility:hidden 祖先——cv:hidden 元素自身仍算 rendered）；
+> ③无瞬态激活 → NotAllowedError；④同步消费激活后静默返回（headless 无
+> picker UI；multiple/size>1 内联列表箱不抛）。属性读 latest-wins 三级
+> 回落（R3903 同款），part16 补 `test_select_show_picker_r3905` 契约单测
+> （9 场景 + 每抛错面激活不消费钉针）。show-picker 六文件 0→7P 全翻绿，
+> customizable-select/nested-options「popup 不 crash」同方法联带 +1P
+> （textarea 无 showPicker——HTMLTextAreaElement IDL 无该成员，切片 4
+> 「select/textarea」候选表述系笔误）。forms 2840→**2848P**；九域全量
+> 3799→**3807P**（3807/6913 = 55.08%；分母与上轮完全一致，diff 无机时
+> 噪声），对切片 4 账本逐 subtest diff **九域零回归**。账本见
+> [evidence/2026-10-17-m2s5-r3905.md](html-semantics-compat/evidence/2026-10-17-m2s5-r3905.md)。
+> 运行教训入账：corpus 全量轮不得与 make test/clippy 并行（首轮负载噪声
+> 190 Timeout 作废，独占重跑取账）。两处 runner 挂死仍挂账（tabular
+> span-limits 间歇、links downloading-resources skip 排除）。
+> **卡点**：无阻塞。**下一步**：forms 域余簇归因选片（M1 基线失败簇
+> 归因账为起点：selected-index set 语义 / validity 约束面等余簇）。
 
 
 
@@ -106,6 +107,15 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-17 M2 切片 5**：select.showPicker() spec 检查序（R3905）——
+  part03 方法分发区新支（disabled→InvalidStateError 先于
+  being-rendered→NotSupportedError（display:none + cv:hidden 祖先）先于
+  NotAllowedError 门、`_zwTransientActive` 同步消费、multiple/size 不抛），
+  part16 R3905 契约单测（9 场景 + 抛错面激活不消费钉针）。show-picker
+  六文件 0→7P、customizable-select/nested-options 联带 +1P，forms
+  2840→2848P、九域 3799→3807P（零回归；分母 6913 不变）。
+  `make test` 全绿、clippy/fmt 过、零新增依赖。教训：corpus 全量轮
+  禁与 make test/clippy 并行（首轮负载噪声作废）。
 - **2026-10-17 M2 切片 4**：valueAsNumber/valueAsDate setter 抛错面
   （R3904）——part04 两 setter 按 spec setter steps 重排（valueAsNumber
   ±Infinity→TypeError 先于适用性、不适用→InvalidStateError、NaN→''；

@@ -198,6 +198,11 @@ pub struct RendererJsWorker {
     focus_changes: Arc<std::sync::Mutex<Vec<Option<String>>>>,
     /// 已由 JS worker resolve、等待 renderer 执行 microtask checkpoint 的异步回调。
     async_callbacks_ready: Arc<AtomicBool>,
+    /// t3 返修 D1（qq-20261016-r1）：最近一次 `reset_document_state` 的 reply 接收端——
+    /// worker 忙臂（bilibili timer 级联 16-30s 级）时 250ms 有界等待超时，复位命令滞留
+    /// 优先队列尚未被 worker 消费。receiver 就绪（worker 侧 Reset 臂清队后回信）即「复位
+    /// 落定」，见 [`Self::document_reset_settled`]。
+    pending_document_reset: Arc<std::sync::Mutex<Option<mpsc::Receiver<()>>>>,
     #[cfg(test)]
     execution_count: Arc<AtomicU64>,
 }
@@ -385,6 +390,7 @@ impl RendererJsWorker {
             navigations,
             focus_changes,
             async_callbacks_ready,
+            pending_document_reset: Arc::default(),
             #[cfg(test)]
             execution_count,
         }
@@ -644,7 +650,40 @@ impl RendererJsWorker {
             })
             .is_ok()
         {
-            let _ = reply_rx.recv_timeout(Duration::from_millis(250));
+            if reply_rx.recv_timeout(Duration::from_millis(250)).is_ok() {
+                // worker 空闲/短臂：复位已在本等待窗内消费——落定，清掉更早滞留的
+                // pending（若有；其 reply 发送端已随 stash 替换丢弃，worker 端
+                // `let _ = reply.send` 静默失败，无碍）。
+                *self.pending_document_reset.lock().unwrap_or_else(|e| e.into_inner()) = None;
+            } else {
+                // t2-pb1 fix#11 惯用法：worker 忙长臂时超时放行，复位命令滞留优先队列
+                // 照常执行。t3 返修 D1（qq-20261016-r1）：滞留窗内「复位尚未落定」——
+                // 当前臂早于导航，其后续 mutation 推入全属旧文档；receiver 留槽，
+                // `document_reset_settled` 据此让 drain 门封臂（worker 侧 Reset 臂清队
+                // 后回信，槽内 receiver 就绪即自动落定）。
+                *self.pending_document_reset.lock().unwrap_or_else(|e| e.into_inner()) = Some(reply_rx);
+            }
+        }
+    }
+
+    /// t3 返修 D1（qq-20261016-r1）：最近一次导航复位是否已被 worker 消费（落定）。
+    ///
+    /// 排队中的 `ResetDocumentState` 未消费 ⇒ worker 正跑导航前的旧臂 ⇒ mutation 队列
+    /// 现有内容与其后直到复位臂为止的一切推入全属**旧文档**（`DomMutation` 只带 selector
+    /// 无文档代际，apply 进新 `cached_html` 即跨文档污染）。落定信号 = worker 侧复位臂
+    /// 执行（先清队列再回信，t8 返修 defect-r1 D1 清队语义）后 reply 可读；此刻起队列
+    /// 只可能再收到新文档 mutation。
+    pub(crate) fn document_reset_settled(&self) -> bool {
+        let mut pending = self.pending_document_reset.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(rx) = pending.as_ref() else {
+            return true;
+        };
+        match rx.try_recv() {
+            Ok(_) | Err(mpsc::TryRecvError::Disconnected) => {
+                *pending = None;
+                true
+            }
+            Err(mpsc::TryRecvError::Empty) => false,
         }
     }
 
