@@ -3567,6 +3567,30 @@
           return function() {
             var oldKey = _activeElKey;
             if (oldKey === key) return; // 已聚焦 → no-op（spec：不重派 focus）
+            // T55（R114/R148 失连面）：未连接元素（createElement 未挂载等）的 focus()
+            // 归解析节点所有权（_zwMElFocused，activeElement getter 直读）——M2-S4E
+            //（b5e0b5874，2026-10-08）给 getter 加的惰性 isConnected 校验会把
+            //「detached 时聚焦」误回落 body，吞掉 R114「最近 focus 的解析节点可读」
+            // 语义（cdp_focus_governance host_migration 钉前提自此翻红）。「连接后
+            // 聚焦再 remove」的 M2-S4E 回落不受影响——该面走 _activeElKey 惰性校验。
+            // 后续迁移由既有消费点接管：连接元素 focus() 的 r148OldMEl 臂与宿主
+            // __zw_host_focus 都会清 _zwMElFocused（所有权互斥）。
+            var _r114Detached = false;
+            try { _r114Detached = proxy.isConnected === false; } catch (_e114ic) {}
+            if (_r114Detached) {
+              if (globalThis._zwMElFocused === proxy) return; // 已聚焦 → no-op（spec 不重派）
+              var _r114OldProxy = (oldKey && _proxyCache[oldKey]) ? _proxyCache[oldKey] : null;
+              if (!_r114OldProxy && globalThis._zwMElFocused) _r114OldProxy = globalThis._zwMElFocused;
+              if (oldKey) _activeElKey = null; // proxy 焦点让位（所有权互斥，同 R148）
+              globalThis._zwMElFocused = proxy;
+              if (_r114OldProxy) {
+                // 迁移失焦序同 proxy 臂（uievents-compat M3 尾簇 6b：blur 先于 focusout）。
+                try { _r114OldProxy.dispatchEvent(_makeEvent('blur', { bubbles: false, cancelable: false })); } catch (_e114b) {}
+                try { _r114OldProxy.dispatchEvent(_makeEvent('focusout', { bubbles: true, cancelable: false })); } catch (_e114fo) {}
+              }
+              try { proxy.dispatchEvent(_makeEvent('focus', { bubbles: false, cancelable: false })); } catch (_e114f) {}
+              return;
+            }
             // M2-S4E：导航期间焦点变更标记（focus changed during ongoing navigation——WPT
             // focus-reset 族「focus() during intercept → 不重置」判定面）。
             if (typeof _navMarkFocusChanged === 'function') { try { _navMarkFocusChanged(); } catch (_eNfc) {} }
@@ -3648,6 +3672,15 @@
         }
         if (prop === 'blur') {
           return function() {
+            // T55：解析节点所有权的失焦（与 focus 的 detached 臂配对；MEl blur 同款
+            // part03「_zwMElFocused === node 清空」）——须先于 _activeElKey 守卫，
+            // detached 臂聚焦时 _activeElKey 已让位为 null。
+            if (globalThis._zwMElFocused === proxy) {
+              globalThis._zwMElFocused = null;
+              _zwFocusVisibleMod = false; // R3902：失焦即不可见焦点
+              try { proxy.dispatchEvent(_makeEvent('blur', { bubbles: false, cancelable: false })); } catch (_e114bl) {}
+              return;
+            }
             if (_activeElKey !== key) return; // 非当前焦点元素 → no-op
             _activeElKey = null;
             _zwFocusVisibleMod = false; // R3902：失焦即不可见焦点

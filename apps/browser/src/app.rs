@@ -1228,6 +1228,25 @@ impl BrowserApp {
             .map(|&(_, x, w)| (x, w))
     }
 
+    /// 测试用：标签条可视槽位 id 序（tab_layout 原序；溢出时不含隐藏标签，
+    /// 需先 `build_scene_for_test` 刷新）。
+    #[cfg(test)]
+    pub fn tab_layout_ids_for_test(&self) -> Vec<TabId> {
+        self.tab_layout.iter().map(|&(id, _, _)| id).collect()
+    }
+
+    /// 测试用：溢出 ▾ 按钮 x（物理像素；与渲染同源，None = 无溢出）。
+    #[cfg(test)]
+    pub fn tab_overflow_btn_x_for_test(&self) -> Option<f32> {
+        self.tab_overflow_btn_x
+    }
+
+    /// 测试用：标签拖拽是否已激活（越过拖拽阈值）。
+    #[cfg(test)]
+    pub fn tab_drag_active_for_test(&self) -> bool {
+        self.tab_drag.is_some_and(|drag| drag.active)
+    }
+
     /// 测试用：注入标签页渲染快照（不经过 worker，避免异步覆盖）。
     #[cfg(test)]
     pub fn inject_tab_render_for_test(
@@ -1499,6 +1518,20 @@ impl BrowserApp {
     #[cfg(test)]
     pub fn address_bar_cursor_phase_for_test(&self) -> std::time::Instant {
         self.address_bar_cursor_phase
+    }
+
+    /// 测试用：地址栏 IME 预编辑文本
+    #[cfg(test)]
+    pub fn address_bar_ime_preedit_for_test(&self) -> &str {
+        &self.address_bar_ime_preedit
+    }
+
+    /// 测试用：地址栏选区字符范围（None = 无选区）
+    #[cfg(test)]
+    pub fn address_bar_selection_for_test(&self) -> Option<(usize, usize)> {
+        self.address_bar
+            .has_selection()
+            .then(|| self.address_bar.selection_char_range())
     }
 
     /// 测试用：获取标签页垂直滚动偏移（物理像素）

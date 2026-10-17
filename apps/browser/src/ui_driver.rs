@@ -249,6 +249,11 @@ enum Step {
         visible: bool,
         contains: Option<String>,
     },
+    /// 可视标签条顺序断言（T54 溢出拖拽落点）：`contains[i]` 与第 i 个可视槽位
+    /// 标签的 URL 子串一一对应，长度精确相等（tab_layout 与渲染同源，帧后有效）。
+    AssertTabOrder {
+        patterns: Vec<String>,
+    },
     /// 悬停第 `index` 个标签槽位中心（几何取自渲染缓存 tab_layout；只移动不点击）。
     HoverTab {
         index: usize,
@@ -477,6 +482,19 @@ impl Step {
                 contains: value.get("contains").and_then(Value::as_str).map(str::to_string),
             }),
             "click_closed_tab_toast" => Ok(Self::ClickClosedTabToast),
+            "assert_tab_order" => {
+                let patterns = value
+                    .get("contains")
+                    .and_then(Value::as_array)
+                    .map(|items| {
+                        items
+                            .iter()
+                            .map(|v| v.as_str().unwrap_or_default().to_string())
+                            .collect::<Vec<_>>()
+                    })
+                    .ok_or_else(|| bad("assert_tab_order requires string array field \"contains\""))?;
+                Ok(Self::AssertTabOrder { patterns })
+            }
             "assert_tab_tooltip" => Ok(Self::AssertTabTooltip {
                 visible: value
                     .get("visible")
@@ -1244,6 +1262,33 @@ impl UiDriver {
                 tracing::info!(
                     "UI_DRIVER_STEP step={} assert_download_toast visible={visible} name={actual:?} status=passed",
                     self.next + 1
+                );
+                Ok(())
+            }
+            Step::AssertTabOrder { patterns } => {
+                let ids = app.smoke_tab_layout_ids();
+                if ids.len() != patterns.len() {
+                    return Err(format!(
+                        "assert_tab_order failed: {} visible tabs, expected {} (urls: {:?})",
+                        ids.len(),
+                        patterns.len(),
+                        ids.iter()
+                            .map(|id| app.smoke_tab_url(*id).unwrap_or_default())
+                            .collect::<Vec<_>>()
+                    ));
+                }
+                for (index, pattern) in patterns.iter().enumerate() {
+                    let url = app.smoke_tab_url(ids[index]).unwrap_or_default();
+                    if !url.contains(pattern.as_str()) {
+                        return Err(format!(
+                            "assert_tab_order failed: visible slot {index} is {url}, expected to contain {pattern}"
+                        ));
+                    }
+                }
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} assert_tab_order slots={} status=passed",
+                    self.next + 1,
+                    patterns.len()
                 );
                 Ok(())
             }

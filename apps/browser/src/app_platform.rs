@@ -64,8 +64,16 @@ impl BrowserApp {
         }
     }
 
-    /// 窗口失焦：Wayland 上销毁 GPU 渲染器，避免 swapchain 在失焦后 commit
+    /// 窗口失焦：Wayland 上销毁 GPU 渲染器，避免 swapchain 在失焦后 commit；
+    /// 同时复位输入瞬态——失焦期间按住的修饰键其 KeyRelease 会派发给其他窗口，
+    /// 永远不会到达本窗口，不复位则切回后普通按键被误当组合键（T53 释放态残留）；
+    /// IME 合成态同理清空，防止 preedit 跨失焦残留绘制。
     pub fn on_window_unfocused(&mut self) {
+        self.ctrl_pressed = false;
+        self.cmd_pressed = false;
+        self.shift_pressed = false;
+        self.alt_pressed = false;
+        self.address_bar_ime_preedit.clear();
         if is_wayland() {
             if self.gpu_renderer.is_some() {
                 tracing::debug!("Wayland unfocus: releasing GPU renderer");

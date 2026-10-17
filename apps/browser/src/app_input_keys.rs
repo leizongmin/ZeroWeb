@@ -337,6 +337,10 @@ impl BrowserApp {
         // T37：地址栏按键重置光标闪烁相位——编辑/移动光标后短暂常显再闪烁
         // （Chrome 同款；此前复用全局动画相位，输入后光标可能立即隐没）。
         self.address_bar_cursor_phase = Instant::now();
+        // T53：地址栏键分发的共享路径——任一到达编辑处理的 keydown（含 Ctrl 组合键）
+        // 都终结当前 IME 合成显示（Chrome 行为：硬件 keydown 结束 preedit），否则
+        // preedit 文本叠加在全选/粘贴结果上持续残留。
+        self.address_bar_ime_preedit.clear();
         let extend = self.shift_pressed;
         if self.is_modifier_pressed() {
             match key {

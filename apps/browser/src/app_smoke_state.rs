@@ -41,6 +41,12 @@ impl BrowserApp {
         )
     }
 
+    /// 演示流用：标签条可视槽位 id 序（tab_layout 原序；溢出时不含隐藏标签，
+    /// 帧渲染时随 build_scene 刷新——T54 溢出拖拽 e2e 的顺序断言源）。
+    pub fn smoke_tab_layout_ids(&self) -> Vec<zero_browser_shell::TabId> {
+        self.tab_layout.iter().map(|&(id, _, _)| id).collect()
+    }
+
     /// 演示流用：标签在标签条中的 `(x, width)` 布局（帧渲染时随 build_scene 刷新）。
     pub fn smoke_tab_rect(&self, tab_id: zero_browser_shell::TabId) -> Option<(f32, f32)> {
         self.tab_layout

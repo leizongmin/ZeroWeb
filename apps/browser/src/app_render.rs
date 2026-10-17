@@ -647,11 +647,14 @@ impl BrowserApp {
         // 标签溢出（T18）：压缩到极限最小宽度仍放不下时，放不下的标签（含其后全部）
         // 溢出到 ▾ 下拉列表，不再画出标签条。strip_limit 为 ▾ 按钮的右缘——
         // 可见标签 + ▾ + 「+」按钮恰好填满标签条可用宽度。
+        // T54：溢出边界按稳定槽位（slot_x/slot_w，与 tab_layout/命中测试/释放重排
+        // 同一坐标源）判定，不用含拖拽跟随/让位位移的绘制 x——否则拖拽中标签或
+        // 让位兄弟越过 strip_limit 会让可视集合塌缩重排，位置指示与落点错位。
         let overflow_btn_w = layout::NEW_TAB_BTN_WIDTH * s;
         let strip_limit = tabs_max_width - overflow_btn_w;
         let mut visible_end = tabs.len();
         for (i, tab) in tabs.iter().enumerate() {
-            if tab.x + tab.tab_w > strip_limit {
+            if tab.slot_x + tab.slot_w > strip_limit {
                 visible_end = i;
                 break;
             }
@@ -673,7 +676,9 @@ impl BrowserApp {
             hidden_ids.insert(0, evicted_id);
         }
         let visible = &tabs[..visible_end];
-        let visible_end_x = visible.last().map(|t| t.x + t.tab_w).unwrap_or(leading);
+        // T54：▾/「+」按钮 x 取最后一个可视槽位的稳定右缘（与溢出边界同源），
+        // 不随被拖拽标签/让位兄弟的绘制位移跳动，命中测试与绘制保持一致。
+        let visible_end_x = visible.last().map(|t| t.slot_x + t.slot_w).unwrap_or(leading);
 
         for tab in visible.iter().filter(|t| !t.is_active && !t.is_dragging) {
             crate::tab_chrome::push_inactive_tab_fill(fills, tab.x, tab_y, tab.tab_body_w, tab_bar_h, s, tab.bg);
