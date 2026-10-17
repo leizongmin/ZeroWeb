@@ -9944,6 +9944,15 @@
           }
           return true;
         }
+        // R3907（html-semantics M2 切片 7）：option.text setter = set child text content
+        //（HTML §4.10.9 dom-option-text setter——「string replace all」步骤与 textContent
+        // 完全一致；option-text-setter.html 断言旧文本子 node identity 更替、isConnected
+        // false、`.text = ''` 后无子）。直接委托 textContent setter——同 spec 步骤，零平行
+        // 记账面（清 _handleChildren/注册本地文本子/_zwTextWritten/MO childList 全继承）。
+        if (p === 'text' && _realTag(sel, handle) === 'OPTION') {
+          _makeProxy(sel, handle).textContent = value;
+          return true;
+        }
         if (p === 'textContent' || p === 'innerText' || p === 'innerHTML') {
           // R81：PI 节点的 textContent= 直接写 data（spec CharacterData——不建文本子视图、不发
           // childList；WPT "For a ProcessingInstruction, textContent should set the data"）。

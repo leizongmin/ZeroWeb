@@ -1,39 +1,40 @@
 # HTML Semantics 兼容 — html/semantics 语义面（主攻大域）
 
-**版本**: v1.9
-**日期**: 2026-10-17（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 6 收口（文本控件选区语义 R3906 +602P），下一步 forms 域余簇归因选片
+**版本**: v2.0
+**日期**: 2026-10-18（v1.0 立项 2026-10-08）
+**状态**: Active——M2 切片 7 收口（option 元素文本/反射语义 R3907 +65P），下一步 option list 基建（HTMLOptionsCollection）切片
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-17 M2 切片 6）**：文本控件选区语义（R3906，
-> HTML §4.10.20）——selectionStart/End/Direction setter 经「set the
-> selection range」算法（end 低于 start 时 start 降到 end、ToUint32 回绕
-> clamp、direction 仅恒等 'backward' 采纳）；value setter 折叠选区到
-> 末尾；选区实际变更排异步 select 事件（part06）；`_zwSelNormValue`
-> textarea 换行归一修正（detached 长度面）；attr 回落 latest-wins 化；
-> defaultValue= 真脏态守卫（`_inputDefaultDirty` 与解析镜像区分）；
-> type 变态选区复位 direction 经「set the selection direction」归一存
-> 'forward'（初版存裸 'none' 致 type-change-state 80F 同名回归，满账本
-> 比对暴露后修正作废首轮）；runner 补 variant meta 展开（uievents R329
-> 机制复用，corpus 仅 selection-not-application.html 一文件声明）。
-> part16 补 `test_textfieldselection_r3906` 契约（W1–W9）。textfieldselection
-> 子树 784P/0F；select-event.html 0→270P 完整上报、selection-not-application
-> variant 化 183+79P、setRangeText 57→88P、selection-start-end 3→45P。
-> forms 2848→**3450P**；九域全量 3807→**4409P**（4409/7412 = 59.48%；
-> 分母 +499：select-event 完整上报 +269、variant 化净 +191、
-> setRangeText +22、selection-start-end +17），对切片 5 账本逐 subtest
-> diff **九域零回归**（066.html Timeout→Fail 为同根预存 hang 两形态，
-> 零 Pass 数变化）。账本见
-> [evidence/2026-10-17-m2s6-r3906.md](html-semantics-compat/evidence/2026-10-17-m2s6-r3906.md)。
-> 环境注记：make test 三个 browser shell 测试间歇失败已归因——X display
-> :100（root 属主 catlink 桥）会话中途死亡 + view_source fetch 负载抖动
-> （隔离 3/3 过、main CI b441d2fc7 build-and-test 绿），非本切片回归。
-> 两处 runner 挂死仍挂账（tabular span-limits 间歇、links
-> downloading-resources skip 排除）。
-> **卡点**：无阻塞。**下一步**：forms 域余簇归因选片（M1 基线失败簇
-> 归因账为起点：selected-index set 语义 / validity 约束面 /
-> value-defaultValue-textContent textarea 簇 2/12）。
+> **▶ 当前状态（2026-10-18 M2 切片 7）**：option 元素文本/反射语义
+> （R3907，HTML §4.10.9）——`.text` getter =「collect text value +
+> strip and collapse ASCII whitespace」（Text/CDATA 计 data；HTML/SVG
+> script 整棵排除、MathML/null ns script 递归、comment/PI 不计、元素沿
+> 子列表递归使嵌套层 script 逐层排除；首尾剥离 + 内侧折叠、NBSP 保留）；
+> `.label`/`.value` getter = 无 ns 内容属性**存在即采纳**（空串不回落、
+> NS 影子不可见，R122 `_zwAttrInstances` 实例层判定）+ 缺省回落 collapse
+> 后文本；`.text` setter = textContent 委托（同「string replace all」
+> 步骤，旧文本子 node identity 更替）。part03 新助手 4 个
+> （`_zwOptStripCollapse`/`_zwOptCollectWalk` 64 层防环/`_zwOptChildText`
+> R3028 latest-wins 先探/`_zwOptAttrNoNs`）+ part04 text setter 支。
+> part57 新增 `test_option_semantics_r3907` 契约（W1–W7，part16 近
+> 2000 行上限故新切片文件）。option 族 36→**101P**（+65P：option-label
+> 7→12、option-text-recurse 0→11、option-text-spaces 6→50、
+> option-value 7→12）；forms 3450→**3515P**；九域全量 4409→**4477P**
+> （4477/7412 = **60.40%**），对切片 6 账本逐 subtest diff **九域零回归**
+> （新增/消失/形态翻转均 0）。interactive-elements +3P（dialog showModal
+> InvalidStateError 三案）经 **stash 对照实验**证实非本切片因果——两棵
+> 树定点行为一致、全量跑下 runner 案级 V8 上下文 realm 身份非确定
+> （s6 九连 `wrong global`、本轮干净形态），不计贡献，归 wpt-runner
+> 通道挂账。账本见
+> [evidence/2026-10-18-m2s7-r3907.md](html-semantics-compat/evidence/2026-10-18-m2s7-r3907.md)。
+> **卡点**：无阻塞。**下一步**：option list 基建切片——HTMLOptionsCollection
+> （add/namedItem/length/`[index]`）+ selectedOptions + option list 嵌套
+> 排除（hr/嵌套 option/optgroup 包裹），同根簇 ~45F+
+> （common-HTMLOptionsCollection 8F、namedItem 6F、add 3F、
+> selectedOptions 2+11F、script-mutation 5F、nesting 簇）；forms 域大块
+> 余簇依归因排后（form-submission encoding ~255F、label clicks ~80F、
+> form-autocomplete ~66F、meter ~48F）。
 
 
 
@@ -115,6 +116,20 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-18 M2 切片 7**：option 元素文本/反射语义（R3907）——
+  `.text` getter「collect text value + strip and collapse」（script
+  命名空间排除模型、子列表递归、NBSP 保留）、`.label`/`.value` 无 ns
+  存在即采纳 + collapse 回落（R122 实例层判定）、`.text` setter
+  textContent 委托；part03 助手 4 个（R3028 latest-wins 先探、64 层
+  防环）+ part04 setter 支，part57 `test_option_semantics_r3907` 契约
+  （W1–W7；part16 近 2000 行上限新切片文件）。option 族 36→101P
+  （+65P），forms 3450→3515P、九域 4409→4477P（60.40%），对 s6 账本
+  逐 subtest diff 零回归。zero-engine --lib 3107 全过、clippy/fmt 过、
+  零新增依赖。**stash 对照实验**排除 dialog +3P 因果（runner 案级
+  realm 身份非确定性，归 wpt-runner 通道挂账；d11 detached-document
+  showModal 不抛为 `_zwIsConnected` 预存缺口）。挂账：option 余簇 7F
+  异根（selectedness dirtiness 5F、form owner 1F、isConnected 面 1F）、
+  HTMLOptionsCollection/option list 基建簇 ~45F+。
 - **2026-10-17 M2 切片 6**：文本控件选区语义（R3906）——selection
   setter「set the selection range」算法 + value setter 选区折叠 +
   异步 select 事件（part06 `_zwScheduleSelectEvent`）+ textarea 换行

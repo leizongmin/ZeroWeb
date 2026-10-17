@@ -16359,15 +16359,17 @@ return e;
           var _rvSkip3 = (_rvTag3 === 'BUTTON' || _rvTag3 === 'LI' || _rvTag3 === 'METER'
               || _rvTag3 === 'PROGRESS' || _rvTag3 === 'PARAM' || _rvTag3 === 'OPTION');
           if (_rvSkip3 && _rvTag3 !== 'LI' && _rvTag3 !== 'METER') {
+            // R3907：OPTION value = 无 ns value 内容属性（**存在即采纳**——空串采纳）；
+            // 缺省回落 child text content（strip-and-collapse，与 .text 同源；此前裸 attr
+            // 读 NS 影子可见、裸文本回落无 collapse，option-value 5F）。
+            if (_rvTag3 === 'OPTION') {
+              var _rvOptV = _zwOptAttrNoNs(key, sel, handle, 'value');
+              if (_rvOptV != null) return _rvOptV;
+              return _zwOptChildText(sel, handle);
+            }
             var _rvAttr3 = handle ? __zw_get_attr_handle(handle, 'value') : (sel ? __zw_get_attr(sel, 'value') : null);
             if (_rvAttr3 != null) return String(_rvAttr3);
-            // OPTION：attr 缺省回落 option 文本（spec option.value）；余缺省 ''。
-            if (_rvTag3 === 'OPTION') {
-              try {
-                var _rvText3 = handle ? __zw_get_text_handle(handle) : __zw_get_text(sel);
-                return (_rvText3 == null) ? '' : String(_rvText3);
-              } catch (_eRvT3) { return ''; }
-            }
+            // BUTTON/PARAM/PROGRESS：attr 缺省 ''。
             return '';
           }
           if (!_rvSkip3) {
@@ -17837,18 +17839,137 @@ return e;
             if (victim && typeof victim.remove === 'function') victim.remove();
           };
         }
+        // R3907（html-semantics M2 切片 7）：option 文本/反射语义助手（HTML §4.10.9
+        // the-option-element）。child text content = collect text value：Text/CDATA →
+        // data；local=script 且 ns ∈ {HTML, SVG} → ''（不递归；MathML/null ns script
+        // 递归——option-text-recurse 断言面）；元素 → 递归（子经自身 textContent getter，
+        // 复用 R81 融合视图，pending 子自然可见）；comment/PI 不计。顶层子列表与 part04
+        // textContent getter 同源（_zwLocalChildNodes + _handleChildren + _childNodeList
+        // 融合）；64 层深度帽（R181 同款防环）。
+        // https://html.spec.whatwg.org/multipage/form-elements.html#dom-option-text
+        function _zwOptStripCollapse(s) {
+          // strip and collapse ASCII whitespace（infra：去首尾 + 内侧折叠单空格；NBSP 不动）
+          return String(s == null ? '' : s)
+            .replace(/^[ \t\n\f\r]+/, '')
+            .replace(/[ \t\n\f\r]+$/, '')
+            .replace(/[ \t\n\f\r]+/g, ' ');
+        }
+        function _zwOptCollectWalk(kids, out, depth) {
+          if (depth > 64 || !kids || !kids.length) return;
+          for (var _oci = 0; _oci < kids.length; _oci++) {
+            var _ocn = kids[_oci];
+            if (!_ocn) continue;
+            var _ocT = _ocn.nodeType;
+            if (_ocT === 3 || _ocT === 4) {
+              var _ocD = _ocn.nodeValue != null ? _ocn.nodeValue : (_ocn.data != null ? _ocn.data : '');
+              if (_ocD != null) out.push(String(_ocD));
+            } else if (_ocT === 1) {
+              var _ocLn = String(_ocn.localName || _ocn.nodeName || '').toLowerCase();
+              var _ocSkip = false;
+              if (_ocLn === 'script') {
+                var _ocNs = null, _ocHasNs = false;
+                if (_ocn.__zwHandle && _nsHandles[_ocn.__zwHandle]) {
+                  _ocNs = _nsHandles[_ocn.__zwHandle].namespace;
+                  _ocHasNs = true;
+                } else {
+                  try { _ocNs = _ocn.namespaceURI; if (_ocNs != null) _ocHasNs = true; } catch (_ocNsE) {}
+                }
+                // 无 ns 信息 → 缺省 HTML 文档面跳过；显式 null ns（createElementNS(null)）
+                // 按 spec 递归（option-text-recurse 'null script elements' 断言面）
+                if (!_ocHasNs) _ocSkip = true;
+                else if (_ocNs === 'http://www.w3.org/1999/xhtml'
+                    || _ocNs === 'http://www.w3.org/2000/svg') _ocSkip = true;
+              }
+              // 非 script 元素沿**子列表**递归（不推 textContent——嵌套层可能含 script，
+              // 须逐层排除；option-text-recurse 'child ends with a script' 断言面）
+              if (!_ocSkip) {
+                var _ocSub = null;
+                if (_ocn.__zwHandle && _handleChildren[_ocn.__zwHandle]) {
+                  var _ocSubL = (typeof _zwLocalChildNodes === 'function') ? _zwLocalChildNodes(null, _ocn.__zwHandle) : null;
+                  var _ocSubK = _handleChildren[_ocn.__zwHandle];
+                  _ocSub = (_ocSubL && _ocSubL.length) ? _ocSubL.concat(_ocSubK) : _ocSubK;
+                } else {
+                  try { _ocSub = _ocn.childNodes; } catch (_ocSubE) { _ocSub = null; }
+                }
+                if (_ocSub && _ocSub.length) _zwOptCollectWalk(_ocSub, out, depth + 1);
+              }
+            }
+            // comment(8)/PI(7)/其余节点形态 → 不计（spec collect text value）
+          }
+        }
+        function _zwOptChildText(sel, handle) {
+          var _ocKids;
+          if (handle) {
+            if (typeof _isContainerHandle === 'function' && _isContainerHandle(handle)) {
+              _ocKids = _handleChildNodes(handle);
+            } else {
+              var _ocL = (typeof _zwLocalChildNodes === 'function') ? _zwLocalChildNodes(sel, handle) : null;
+              var _ocK = (_handleChildren[handle] || []).slice();
+              if (_ocL && _ocL.length) _ocKids = _ocL.concat(_ocK);
+              else if (_ocK.length) _ocKids = _ocK;
+              else if (_ocL) _ocKids = _ocL;
+              else _ocKids = _childNodeList(sel, handle);
+            }
+          } else {
+            // R3028：sel 形先探 latest-wins——textContent= 的 SetText 覆盖（快照子列表
+            // 无此面，R3028 契约 'option.text sel-based latest-wins' 断言）命中即直取
+            //（children 已被替换为单文本子，script 排除无意义）。lw==快照（无 pending
+            // SetText）→ 走子列表 walk（script 排除在稳态生效）。
+            var _ocLw = (typeof __zw_get_text_lw === 'function') ? __zw_get_text_lw(sel) : __zw_get_text(sel);
+            var _ocSnap = (typeof __zw_get_text === 'function') ? __zw_get_text(sel) : _ocLw;
+            if (String(_ocLw) !== String(_ocSnap)) {
+              return _zwOptStripCollapse(_ocLw == null ? '' : String(_ocLw));
+            }
+            _ocKids = _childNodeList(sel, null);
+          }
+          var _ocOut = [];
+          _zwOptCollectWalk(_ocKids, _ocOut, 0);
+          return _zwOptStripCollapse(_ocOut.join(''));
+        }
+        // option value/label 反射的无 ns 内容属性读（HTML §4.10.9 dom-option-value/label——
+        // 「has a value/label content attribute」按**无命名空间**属性判定；R122 实例层为
+        // 动态权威面，解析快照属性天然无 ns）。返回 null = 无此属性（含同 local 仅 NS 实例
+        // 的影子面——setAttributeNS(example,'label') 后 .label 不可见，WPT namespaced 断言）。
+        function _zwOptAttrNoNs(elKey, selX, handleX, name) {
+          var _oaLower = String(name).toLowerCase();
+          var _oaList = (typeof _zwAttrInstances === 'object' && _zwAttrInstances
+            && typeof _zwAttrInstances.get === 'function') ? _zwAttrInstances.get(elKey) : null;
+          if (_oaList && _oaList.length) {
+            for (var _oai = 0; _oai < _oaList.length; _oai++) {
+              var _oait = _oaList[_oai];
+              if (String(_oait.local).toLowerCase() === _oaLower && _oait.ns == null) {
+                return String(_oait.value != null ? _oait.value : '');
+              }
+            }
+            for (var _oaj = 0; _oaj < _oaList.length; _oaj++) {
+              if (String(_oaList[_oaj].local).toLowerCase() === _oaLower) return null;
+            }
+            // 实例层无此 local → 落解析面（解析属性全部无 ns）
+          }
+          var _oaHas = handleX
+            ? (typeof __zw_has_attr_handle === 'function' ? __zw_has_attr_handle(handleX, name) === '1' : false)
+            : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(selX, name) === '1'
+              : (typeof __zw_has_attr === 'function' ? __zw_has_attr(selX, name) === '1' : false));
+          if (!_oaHas) return null;
+          var _oaV = handleX ? __zw_get_attr_handle(handleX, name)
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(selX, name) : __zw_get_attr(selX, name));
+          return (_oaV == null) ? '' : String(_oaV);
+        }
         // HTMLOptionElement 读属性（option.text/label/defaultSelected，R2832），仅 OPTION（_realTag gate，
         // 支持 sel + handle 两种身份——new Option 创建的 handle-based 亦可读）。
         if (prop === 'text' && _realTag(sel, handle) === 'OPTION') {
-          // text = 显示文本（= textContent）。R3028：sel-based latest-wins，闭合 textContent= 后 stale。
-          if (handle) return __zw_get_text_handle(handle);
-          return typeof __zw_get_text_lw === 'function' ? __zw_get_text_lw(sel) : __zw_get_text(sel);
+          // R3907：.text = strip-and-collapse(child text content)（dom-option-text getter——
+          // collect text value 含 script/comment 排除；此前裸 textContent 读使
+          // option-text-spaces/recurse 两文件 55F）。latest-wins 语义由子列表融合视图继承。
+          return _zwOptChildText(sel, handle);
         }
         if (prop === 'label' && _realTag(sel, handle) === 'OPTION') {
-          // label 属性；缺省回落 text。R3028：sel-based latest-wins 回落（同 text）。
-          var lab = handle ? __zw_get_attr_handle(handle, 'label') : __zw_get_attr(sel, 'label');
-          var _lt = handle ? __zw_get_text_handle(handle) : (typeof __zw_get_text_lw === 'function' ? __zw_get_text_lw(sel) : __zw_get_text(sel));
-          return lab || _lt || '';
+          // R3907：.label = 无 ns label 内容属性（**存在即采纳**——空串不回落文本）；
+          // 缺省回落 child text content（同 .text 口径；旧 `lab || text` 空串回落 +
+          // NS 影子可见两面均偏，option-label 5F）。
+          var _labV = _zwOptAttrNoNs(key, sel, handle, 'label');
+          if (_labV != null) return _labV;
+          return _zwOptChildText(sel, handle);
         }
         if (prop === 'defaultSelected' && _realTag(sel, handle) === 'OPTION') {
           // defaultSelected = 'selected' 属性存在性（boolean reflected，初始选中态）。R2998：spec `.selected=`
