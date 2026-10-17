@@ -477,6 +477,12 @@ pub(super) fn parse_single_track_with_context(
 /// https://drafts.csswg.org/css-values-4/#lengths
 /// fit-content 轨道使用同一转换（Taffy 0.12.1 接受 px/percent 的 f32）。
 pub(super) fn parse_length_percentage(s: &str, font_size: f32, vw: f32, vh: f32) -> Option<(f32, bool)> {
+    // css-grid-2 §7.2 `<track-breadth>` 不含 border-width 关键字；共享 parse_length 会把
+    // thin/medium/thick 映射为 Px(1/3/5)（CSS 2.1 §8.5.1），按消费方 grammar 排除，
+    // 与其它非法轨道值一致由上层回退 auto。
+    if matches!(s.trim().to_ascii_lowercase().as_str(), "thin" | "medium" | "thick") {
+        return None;
+    }
     let Some(value) = zero_css_parser::values::parse_length(s.trim()) else {
         return Some((parse_non_negative_number(s)?, false));
     };
