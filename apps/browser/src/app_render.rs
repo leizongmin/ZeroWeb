@@ -668,10 +668,16 @@ impl BrowserApp {
             && let Some(pos) = hidden_ids.iter().position(|&id| Some(id) == active_id)
             && let Some(evict_idx) = tabs[..visible_end].iter().rposition(|t| !t.is_active && !t.is_dragging)
         {
+            // T54-1：换位后活动标签整体接管借出槽位——绘制 x 与稳定槽位 slot_x
+            // 同步还原。只还原 x 时 slot_x 仍是活动标签自己的隐藏区槽位，▾/「+」
+            // 按钮 x（visible_end_x = slot_x + slot_w，与 tab_layout/命中测试同一
+            // 坐标源）会右偏到隐藏槽位右缘，命中区随之错位。
             let evicted_id = tabs[evict_idx].id;
             let evict_x = tabs[evict_idx].x;
+            let evict_slot_x = tabs[evict_idx].slot_x;
             tabs.swap(evict_idx, visible_end + pos);
             tabs[evict_idx].x = evict_x;
+            tabs[evict_idx].slot_x = evict_slot_x;
             hidden_ids.remove(pos);
             hidden_ids.insert(0, evicted_id);
         }

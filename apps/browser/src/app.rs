@@ -1484,6 +1484,17 @@ impl BrowserApp {
         self.is_modifier_pressed()
     }
 
+    /// 测试用：全部修饰键按下态 `(ctrl, cmd, shift, alt)`——T53 失焦复位断言面。
+    #[cfg(test)]
+    pub fn modifier_states_for_test(&self) -> (bool, bool, bool, bool) {
+        (
+            self.ctrl_pressed,
+            self.cmd_pressed,
+            self.shift_pressed,
+            self.alt_pressed,
+        )
+    }
+
     /// 测试用：设置平台修饰键（macOS 用 Meta，其他用 Control）
     #[cfg(test)]
     pub fn test_modifier_key_name() -> &'static str {

@@ -483,16 +483,19 @@ impl Step {
             }),
             "click_closed_tab_toast" => Ok(Self::ClickClosedTabToast),
             "assert_tab_order" => {
-                let patterns = value
+                // TV-4：非字符串项报错拒绝——静默降级空串会让 contains 恒假
+                //（断言假绿），脚本笔误必须在解析期暴露。
+                let items = value
                     .get("contains")
                     .and_then(Value::as_array)
-                    .map(|items| {
-                        items
-                            .iter()
-                            .map(|v| v.as_str().unwrap_or_default().to_string())
-                            .collect::<Vec<_>>()
-                    })
                     .ok_or_else(|| bad("assert_tab_order requires string array field \"contains\""))?;
+                let mut patterns = Vec::with_capacity(items.len());
+                for (index, item) in items.iter().enumerate() {
+                    let text = item.as_str().ok_or_else(|| {
+                        bad(format!("assert_tab_order contains[{index}] must be a string, got {item}").as_str())
+                    })?;
+                    patterns.push(text.to_string());
+                }
                 Ok(Self::AssertTabOrder { patterns })
             }
             "assert_tab_tooltip" => Ok(Self::AssertTabTooltip {
@@ -1659,6 +1662,20 @@ mod tests {
         );
         assert!(Step::parse(r#"{"op":"nonsense"}"#, 1).is_err());
         assert!(Step::parse(r#"{"op":"click","x":10}"#, 1).is_err());
+    }
+
+    /// TV-4：assert_tab_order 非字符串项解析期报错（不静默降级空串）。
+    #[test]
+    fn parse_assert_tab_order_rejects_non_string_items() {
+        assert_eq!(
+            Step::parse(r#"{"op":"assert_tab_order","contains":["a.html","b.html"]}"#, 1),
+            Ok(Step::AssertTabOrder {
+                patterns: vec!["a.html".into(), "b.html".into()]
+            })
+        );
+        assert!(Step::parse(r#"{"op":"assert_tab_order","contains":["a.html",42]}"#, 1).is_err());
+        assert!(Step::parse(r#"{"op":"assert_tab_order","contains":["a.html",null]}"#, 1).is_err());
+        assert!(Step::parse(r#"{"op":"assert_tab_order"}"#, 1).is_err());
     }
 
     /// assert_url 缺省 contains；`mode:"prefix"` 按前缀匹配；未知 mode 拒绝。

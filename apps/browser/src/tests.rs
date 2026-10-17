@@ -6161,12 +6161,19 @@ fn window_unfocus_resets_modifier_and_preedit_state() {
         cursor: Some((5, 5)),
     });
 
-    // 用户按住 Ctrl 时切走窗口：KeyRelease 永远不会到达本窗口。
+    // 用户按住全部修饰键时切走窗口：KeyRelease 永远不会到达本窗口。
     app.handle_key(mk, true, None);
+    app.handle_key("Shift", true, None);
+    app.handle_key("Alt", true, None);
+    app.handle_key("Meta", true, None);
     app.on_window_unfocused();
     app.window_focused = false;
     app.address_bar_focused = false;
-    assert!(!app.is_ctrl_pressed(), "失焦后修饰键状态必须复位");
+    assert_eq!(
+        app.modifier_states_for_test(),
+        (false, false, false, false),
+        "失焦后全部修饰键（ctrl/cmd/shift/alt）状态必须复位"
+    );
     assert_eq!(app.address_bar_ime_preedit_for_test(), "", "失焦后 preedit 不应残留");
 
     // 切回窗口后点击地址栏重新聚焦，普通 "w" 按键必须按无修饰处理（不关标签）。
@@ -6282,4 +6289,74 @@ fn overflow_drag_keeps_layout_stable_and_drops_as_indicated() {
         "拖到尾部的标签应落在最后一个可视槽位"
     );
     assert_eq!(app.smoke_tab_overflow().1, hidden_before, "释放不改变溢出集合");
+}
+
+/// T54-1 回归：活动标签在溢出隐藏集时的借槽换位——swap 须同步还原稳定槽位
+/// （slot_x），使 ▾/「+」按钮 x、tab_layout（命中/释放重排）与绘制同处借出槽位。
+/// 借出槽位 = 可视区最后一个普通槽位，与活动标签可见（无换位）时 ▾ 的位置一致。
+#[test]
+fn overflow_active_tab_eviction_keeps_button_at_borrowed_slot() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+
+    // 逐个开标签直至溢出，且不切换活动标签——最后开的标签即活动标签，
+    // 必然落在隐藏集（swap 生效前提；现有拖拽测试用 pinned_active 绕开了该态）。
+    let mut overflow = false;
+    for _ in 0..40 {
+        app.new_tab(None);
+        let _ = app.build_scene_for_test(1280, 900);
+        if app.smoke_tab_overflow().1 > 0 {
+            overflow = true;
+            break;
+        }
+    }
+    assert!(overflow, "前置：开标签应触发溢出");
+    let active = app.smoke_active_tab_id().expect("应有活动标签");
+    let swap_layout = app.tab_layout_ids_for_test();
+    // 逐个开标签时新建标签即活动标签，溢出后必然源出隐藏区——swap 把它借槽
+    // 拉回可视区末位（rposition 取最后一个普通槽位）。
+    assert_eq!(
+        swap_layout.last(),
+        Some(&active),
+        "前置：swap 应把隐藏区活动标签借槽拉到可视区末位"
+    );
+    let shell_ids = app.smoke_tab_ids();
+    let active_shell_idx = shell_ids
+        .iter()
+        .position(|&id| id == active)
+        .expect("活动标签应在 shell 序中");
+    assert!(
+        active_shell_idx >= swap_layout.len(),
+        "前置：活动标签应源出溢出隐藏区（swap 生效）"
+    );
+    let btn_x_swap = app.tab_overflow_btn_x_for_test().expect("前置：▾ 按钮已渲染");
+    let active_rect_swap = app
+        .tab_layout_rect_for_test(active)
+        .expect("换位态活动标签应有布局槽位");
+
+    // 对照态：活动标签切到首个可视标签（换位解除），布局为纯稳定槽位序。
+    let first_visible = swap_layout[0];
+    app.shell.switch_tab(first_visible);
+    let _ = app.build_scene_for_test(1280, 900);
+    let btn_x_plain = app.tab_overflow_btn_x_for_test().expect("▾ 应持续渲染");
+    let plain_layout = app.tab_layout_ids_for_test();
+    assert_eq!(
+        plain_layout.len(),
+        swap_layout.len(),
+        "两种状态可视槽位数应一致（几何同源）"
+    );
+
+    // 借槽换位不得移动 ▾：按钮 x 两种状态一致（右偏一个槽宽即回归——修复前
+    // 换位态取活动标签自身隐藏区槽位右缘，比对照态右偏一个槽宽）。
+    assert_eq!(
+        btn_x_swap, btn_x_plain,
+        "▾ 按钮在换位态应落在借出槽位右缘（与无换位态同位）"
+    );
+    let last_plain = plain_layout
+        .last()
+        .copied()
+        .and_then(|id| app.tab_layout_rect_for_test(id))
+        .expect("对照态末槽位应存在");
+    assert_eq!(active_rect_swap, last_plain, "活动标签借用的应正是最后一个可视槽位");
 }

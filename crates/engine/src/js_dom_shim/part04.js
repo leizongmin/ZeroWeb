@@ -3581,13 +3581,17 @@
               if (globalThis._zwMElFocused === proxy) return; // 已聚焦 → no-op（spec 不重派）
               var _r114OldProxy = (oldKey && _proxyCache[oldKey]) ? _proxyCache[oldKey] : null;
               if (!_r114OldProxy && globalThis._zwMElFocused) _r114OldProxy = globalThis._zwMElFocused;
-              if (oldKey) _activeElKey = null; // proxy 焦点让位（所有权互斥，同 R148）
-              globalThis._zwMElFocused = proxy;
+              if (oldKey) _activeElKey = null; // 失焦相位聚焦区先清（所有权互斥，同 R148）
               if (_r114OldProxy) {
-                // 迁移失焦序同 proxy 臂（uievents-compat M3 尾簇 6b：blur 先于 focusout）。
+                // 迁移失焦序同 proxy 臂（uievents-compat M3 尾簇 6b：blur 先于 focusout）；
+                // T55-2：此刻新元素尚未接管 _zwMElFocused、_activeElKey 已清——旧元素
+                // blur 监听内读 activeElement 走 body 回落（失焦相位聚焦区空，spec 序）。
                 try { _r114OldProxy.dispatchEvent(_makeEvent('blur', { bubbles: false, cancelable: false })); } catch (_e114b) {}
                 try { _r114OldProxy.dispatchEvent(_makeEvent('focusout', { bubbles: true, cancelable: false })); } catch (_e114fo) {}
               }
+              // T55-2：获焦相位落新——赋值在旧焦点失焦派发之后，旧 blur 监听内
+              // activeElement 不得已是新元素。
+              globalThis._zwMElFocused = proxy;
               try { proxy.dispatchEvent(_makeEvent('focus', { bubbles: false, cancelable: false })); } catch (_e114f) {}
               return;
             }
@@ -3678,7 +3682,14 @@
             if (globalThis._zwMElFocused === proxy) {
               globalThis._zwMElFocused = null;
               _zwFocusVisibleMod = false; // R3902：失焦即不可见焦点
-              try { proxy.dispatchEvent(_makeEvent('blur', { bubbles: false, cancelable: false })); } catch (_e114bl) {}
+              // T55-1：契约面与 connected 臂对齐——导航期焦点变更标记、
+              // blur 先于 focusout（尾簇 6b）、宿主失焦同步（空串不采纳）。
+              if (typeof _navMarkFocusChanged === 'function') { try { _navMarkFocusChanged(); } catch (_eNfcM) {} }
+              try {
+                proxy.dispatchEvent(_makeEvent('blur', { bubbles: false, cancelable: false }));
+                proxy.dispatchEvent(_makeEvent('focusout', { bubbles: true, cancelable: false }));
+              } catch (_e114bl) {}
+              if (typeof __zw_focus_changed === 'function') __zw_focus_changed('');
               return;
             }
             if (_activeElKey !== key) return; // 非当前焦点元素 → no-op
