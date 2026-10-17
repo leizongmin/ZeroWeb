@@ -536,6 +536,32 @@ pub fn extract_font_faces_in_context(
     extract_font_faces_from_rules(&flatten_conditional_rules(std::slice::from_ref(&stylesheet), media_ctx))
 }
 
+/// [`extract_used_font_families`] 的结果：静态可解析的「使用侧」族名集合，外加
+/// var() 污染标记。
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct UsedFontFamilies {
+    families: HashSet<String>,
+    /// 存在含 `var()` 的 `font-family`/`font` 声明——该声明在 computed value 阶段
+    /// 替换、静态提取解析不到最终族名，视为「可能引用任何已声明族」。
+    unresolvable_reference: bool,
+}
+
+impl UsedFontFamilies {
+    /// face 族名（ASCII 小写归一）是否可能被页面引用；`true` 时使用即取门禁不得按
+    /// 族名跳过该 face 的抓取。
+    pub fn may_reference(&self, family_lowercase: &str) -> bool {
+        self.unresolvable_reference || self.families.contains(family_lowercase)
+    }
+}
+
+/// 声明值是否含 `var()` 函数 token（自定义属性引用——tokenizer 解码转义后按函数名
+/// ASCII 大小写不敏感匹配，非裸字符串 `starts_with`）。
+fn value_references_var(value: &str) -> bool {
+    use zero_css_parser::tokenizer::{Token, Tokenizer};
+    Tokenizer::new(value)
+        .any(|spanned| matches!(&spanned.token, Token::Function(name) if name.eq_ignore_ascii_case("var")))
+}
+
 /// 收集 CSS 中 `font-family` 声明引用的全部族名（去引号、ASCII 小写去重）。
 ///
 /// 使用即取字体抓取门禁的「使用」侧输入：CSS Fonts Level 4 §5.2 字体匹配算法
@@ -549,7 +575,11 @@ pub fn extract_font_faces_in_context(
 /// [`flatten_conditional_rules`] 的按条件过滤——那是声明提取的正确性要求，本函数
 /// 只服务于「有没有可能被用到」的存在性判断）；`@font-face` 规则自身的 font-family
 /// 是声明名而非使用，跳过；@keyframes 块内声明纳入（font-family 为 discrete 动画属性）。
-pub fn extract_used_font_families(css: &str) -> HashSet<String> {
+///
+/// 含 `var()` 的声明（含 `font` 简写）标记 [`UsedFontFamilies::may_reference`] 恒真：
+/// var() 在 computed value 阶段替换、静态提取解析不到最终族名，且 `parse_font_family`
+/// 对含 `(` 的值整声明拒绝——连逗号列表中的合法兄弟族名也会丢，必须在解析前检测。
+pub fn extract_used_font_families(css: &str) -> UsedFontFamilies {
     use zero_css_parser::ast::{AtRuleBody, Rule};
 
     fn push_family_value(value: &str, out: &mut HashSet<String>) {
@@ -563,12 +593,22 @@ pub fn extract_used_font_families(css: &str) -> HashSet<String> {
         }
     }
 
-    fn collect_declarations(declarations: &[zero_css_parser::ast::Declaration], out: &mut HashSet<String>) {
+    fn collect_declarations(declarations: &[zero_css_parser::ast::Declaration], out: &mut UsedFontFamilies) {
         for decl in declarations {
             let prop = decl.property.trim();
-            if prop.eq_ignore_ascii_case("font-family") {
-                push_family_value(&decl.value, out);
-            } else if prop.eq_ignore_ascii_case("font") {
+            let is_family = prop.eq_ignore_ascii_case("font-family");
+            let is_shorthand = prop.eq_ignore_ascii_case("font");
+            if !is_family && !is_shorthand {
+                continue;
+            }
+            // var() 间接引用静态不可解析——该声明视为「可能引用任何已声明族」。
+            if value_references_var(&decl.value) {
+                out.unresolvable_reference = true;
+                continue;
+            }
+            if is_family {
+                push_family_value(&decl.value, &mut out.families);
+            } else {
                 // `font` 简写第五位即 font-family；展开复用 style-system 单源实现。
                 for (expanded_prop, expanded_value, _, _) in zero_style_system::expand_shorthands(&[(
                     prop.to_string(),
@@ -577,14 +617,14 @@ pub fn extract_used_font_families(css: &str) -> HashSet<String> {
                     (0, 0, 0),
                 )]) {
                     if expanded_prop == "font-family" {
-                        push_family_value(&expanded_value, out);
+                        push_family_value(&expanded_value, &mut out.families);
                     }
                 }
             }
         }
     }
 
-    fn walk(rules: &[Rule], out: &mut HashSet<String>) {
+    fn walk(rules: &[Rule], out: &mut UsedFontFamilies) {
         for rule in rules {
             match rule {
                 Rule::Style(style) => collect_declarations(&style.declarations, out),
@@ -609,9 +649,25 @@ pub fn extract_used_font_families(css: &str) -> HashSet<String> {
     }
 
     let stylesheet = zero_css_parser::Parser::parse_stylesheet(css);
-    let mut out = HashSet::new();
+    let mut out = UsedFontFamilies::default();
     walk(&stylesheet.rules, &mut out);
     out
+}
+
+/// 文档是否含加载后出现字体使用的动态来源（`<script>` 元素或任一元素的 `style` 属性）。
+///
+/// 使用即取门禁族维度的启用前提：两者皆无时，「CSS 文本静态提取的族名集合」才可信。
+/// 有脚本或内联样式属性时，页面可在加载后经 `el.style.fontFamily`、canvas `ctx.font`、
+/// 动态注入节点等途径引用任何已声明 face，静态提取不可见——族维度跳过整体停用；
+/// unicode-range 维度不受影响（其文本侧 [`extract_html_text`] 已含脚本字面量近似）。
+pub fn html_has_dynamic_font_sources(html: &str) -> bool {
+    let doc = zero_dom::parse_html(html);
+    if !doc.get_elements_by_tag_name("script").is_empty() {
+        return true;
+    }
+    doc.get_elements_by_tag_name_ns(None, "*")
+        .iter()
+        .any(|&elem| doc.get_attribute(elem, "style").is_some())
 }
 
 /// 提取 HTML 文档全部文本（`Node::textContent` 递归语义：含 `<script>`/`<style>`/注释文本）。

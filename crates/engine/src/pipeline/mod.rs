@@ -4310,9 +4310,12 @@ mod font_face_extract_tests {
         "#;
         let used = extract_used_font_families(css);
         for family in ["inter", "jetbrains mono", "monosc", "zillaslab", "mediafont"] {
-            assert!(used.contains(family), "应含 {family}: {used:?}");
+            assert!(used.may_reference(family), "应含 {family}: {used:?}");
         }
-        assert!(!used.contains("declarednotused"), "@font-face 声明名不是使用: {used:?}");
+        assert!(
+            !used.may_reference("declarednotused"),
+            "@font-face 声明名不是使用: {used:?}"
+        );
     }
 
     /// extract_used_font_families：条件块（@media/@supports/@layer/@container）不求值全部
@@ -4327,7 +4330,63 @@ mod font_face_extract_tests {
         "#;
         let used = extract_used_font_families(css);
         for family in ["legacyfont", "layerfont", "containerfont", "keyframefont"] {
-            assert!(used.contains(family), "条件块内声明应计入: {used:?}");
+            assert!(used.may_reference(family), "条件块内声明应计入: {used:?}");
+        }
+    }
+
+    /// D1/TV-01：含 var() 的声明（font-family 与 font 简写）静态不可解析——
+    /// parse_font_family 对含 `(` 的值整声明拒绝，连逗号列表中合法兄弟族名也会丢，
+    /// 故必须在解析前检测并标记「可能引用任何已声明族」：var() 间接引用的 face 与
+    /// 同页其他已声明 face 均不得按族名跳过；无 var() 时集合保持精确（不污染）。
+    #[test]
+    fn extract_used_font_families_var_reference_marks_unresolvable() {
+        let css = r#"
+            @font-face { font-family: VarFace; src: url(v.woff); }
+            @font-face { font-family: SiblingFace; src: url(s.woff); }
+            :root { --sans: VarFace; }
+            p { font-family: var(--sans); }
+            q { font-family: SiblingFace, var(--mixed); }
+            h1 { font: 16px var(--shorthand-face); }
+        "#;
+        let used = extract_used_font_families(css);
+        for family in ["varface", "siblingface", "shorthand-face"] {
+            assert!(
+                used.may_reference(family),
+                "var() 污染下已声明族应视为可能使用: {used:?}"
+            );
+        }
+        // 精确性对照：无 var() 的声明不触发保守标记。
+        let precise =
+            extract_used_font_families("@font-face { font-family: Other; src: url(o.woff); } p { font-family: Only; }");
+        assert!(precise.may_reference("only"));
+        assert!(!precise.may_reference("other"), "无 var() 时保持精确: {precise:?}");
+    }
+
+    /// TV-02：unicode-range 描述符边界语义（CSS Fonts 4 §4.5，
+    /// https://drafts.csswg.org/css-fonts-4/#unicode-range-desc）——端点为闭区间
+    /// （inclusive start and end codepoints）、`?` 通配展开为 0/F 端点、单个非法值
+    /// 使**整条声明被忽略**（face 视为无范围限制）。
+    #[test]
+    fn extract_font_faces_unicode_range_boundary_semantics() {
+        let ranges_of = |value: &str| {
+            extract_font_faces(&format!(
+                "@font-face {{ font-family: F; src: url(f.woff); unicode-range: {value}; }}"
+            ))
+            .first()
+            .and_then(|(_, _, _, _, _, _, _, _, ranges)| (!ranges.is_empty()).then(|| ranges.clone()))
+            .unwrap_or_default()
+        };
+        // 闭区间端点：单码点与 start-end 均含端点。
+        assert_eq!(ranges_of("U+416"), vec![(0x416, 0x416)]);
+        assert_eq!(ranges_of("U+40-41"), vec![(0x40, 0x41)]);
+        // `?` 通配：尾缀与首缀均合法（U+??? = U+0000-0FFF），展开 0/F。
+        assert_eq!(ranges_of("U+4??"), vec![(0x400, 0x4FF)]);
+        assert_eq!(ranges_of("U+???"), vec![(0x0, 0xFFF)]);
+        // 十六进制数字大小写不敏感。
+        assert_eq!(ranges_of("U+4fF"), vec![(0x4FF, 0x4FF)]);
+        // 非法值整条声明被忽略 → 空列表（face 无范围限制）：
+        for invalid in ["U+GG", "U+500-400", "U+110000", "U+??????", "U+400-4FF, U+GG"] {
+            assert!(ranges_of(invalid).is_empty(), "非法 range 应整条忽略: {invalid}");
         }
     }
 

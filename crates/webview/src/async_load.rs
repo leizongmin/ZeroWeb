@@ -189,13 +189,36 @@ pub fn live_fontface_enabled() -> bool {
 /// 使用即取字体抓取门禁是否启用（env `ZW_FONT_USE_GATE`；默认启用，`0`/`false` 关闭）。
 ///
 /// kill-switch：关闭后 `begin_font_fetch` 回退「声明即取」（抓取全部 `@font-face` source），
-/// 供真实站点回退定位。读取方式与 [`live_fontface_enabled`] 一致；调用点为每页一次的
-/// 加载路径，非逐节点热路径。
+/// 供真实站点回退定位。开启时门禁做两个维度的跳过，且各自有保守停用条件——族维度
+/// 仅在静态提取可信时启用（文档无 `<script>`/`style` 属性动态来源，且无 var() 污染
+/// 声明）；unicode-range 维度与渲染侧 `ZW_FONT_UNICODE_RANGE` 开关配对（见
+/// [`font_unicode_range_gate_enabled`]）。读取方式与 [`live_fontface_enabled`] 一致；
+/// 调用点为每页一次的加载路径，非逐节点热路径。
 pub fn font_use_gate_enabled() -> bool {
     match std::env::var("ZW_FONT_USE_GATE") {
         Ok(v) => v != "0" && !v.eq_ignore_ascii_case("false"),
         Err(_) => true,
     }
+}
+
+/// unicode-range 维度门禁是否启用（env `ZW_FONT_UNICODE_RANGE`；仅 `0` 关闭）。
+///
+/// 与渲染侧配对：`0` 时 [`FontLoader::register_unicode_ranges`](zero_render_foundation::font::loader::FontLoader::register_unicode_ranges)
+/// 不登记范围、face 匹配不受 unicode-range 限制——门禁若仍按 range 跳过抓取，会出现
+/// 「渲染侧本可用而资源未抓取」的缺口。判定与 FontLoader 完全一致（仅认 `0`，不认
+/// `false`）；每页读取一次，非热路径。
+fn font_unicode_range_gate_enabled() -> bool {
+    std::env::var("ZW_FONT_UNICODE_RANGE").as_deref() != Ok("0")
+}
+
+/// 使用即取门禁的每页输入快照（`begin_font_fetch` 边界构造一次，不进逐 face 循环——
+/// 环境变量与文档解析均只读一次）。
+struct FontUseGate {
+    /// 族维度是否启用：文档无 `<script>`/`style` 属性动态来源时 `true`（否则 JS 可在
+    /// 加载后引用任何已声明族，静态提取不可信）。
+    family_dimension: bool,
+    used: zero_engine::UsedFontFamilies,
+    page_text: String,
 }
 
 /// 分阶段异步加载协调器。
@@ -748,20 +771,26 @@ impl AsyncPageLoad {
         // （https://drafts.csswg.org/css-fonts-4/#font-style-matching）字体匹配只在元素
         // computed font-family 引用该族且文本码点命中 unicode-range（§4）时选中 face——
         // 声明而从未被引用 / 范围与全文零交集的 face 不再抓取（MDN 等现代页按语言子集
-        // 声明 5-10 个 face，旧「声明即取」全部下载）。语义保留：data: face 豁免（无网络
-        // 成本且 canvas `ctx.font` 按族名直取已注册 face，使用点可能不经 CSS 声明）；
-        // FontFace.load() 显式加载走 runtime `__zw_load_font` 独立路径不经此处；
-        // unicode-range 子集选择在抓取后的 FontLoader 匹配层不变。
-        let used_families = if font_use_gate_enabled() {
-            Some(zero_engine::extract_used_font_families(&css))
+        // 声明 5-10 个 face，旧「声明即取」全部下载）。
+        //
+        // 族维度仅在静态提取可信时启用：文档含 `<script>` 或 `style` 属性（JS 可在加载后
+        // 经 el.style.fontFamily / canvas ctx.font / 动态注入引用任何已声明族，静态提取
+        // 不可见）或存在 var() 污染声明（computed value 阶段替换，静态解析不到最终族名）
+        // 时停用——宁多抓勿漏抓。语义保留：data: face 豁免（无网络成本且 canvas
+        // `ctx.font` 按族名直取已注册 face，使用点可能不经 CSS 声明）；FontFace.load()
+        // 显式加载走 runtime `__zw_load_font` 独立路径不经此处；unicode-range 子集选择在
+        // 抓取后的 FontLoader 匹配层不变。
+        let gate = if font_use_gate_enabled() {
+            self.html.as_ref().map(|html| FontUseGate {
+                family_dimension: !zero_engine::html_has_dynamic_font_sources(html),
+                used: zero_engine::extract_used_font_families(&css),
+                page_text: zero_engine::extract_html_text(html),
+            })
         } else {
             None
         };
-        let page_text = if used_families.is_some() {
-            self.html.as_ref().map(|html| zero_engine::extract_html_text(html))
-        } else {
-            None
-        };
+        // unicode-range 维度与渲染侧开关配对（ZW_FONT_UNICODE_RANGE=0 时渲染侧不限制）。
+        let range_dimension = font_unicode_range_gate_enabled();
         for (
             family,
             sources,
@@ -798,25 +827,27 @@ impl AsyncPageLoad {
             else {
                 continue;
             };
-            if let (Some(used), Some(text)) = (&used_families, &page_text)
+            if let Some(gate) = &gate
                 && !src.get(..5).is_some_and(|prefix| prefix.eq_ignore_ascii_case("data:"))
             {
                 // 族名比较与 resolver 一致取 ASCII 小写；@font-face 声明名与使用处引号差异
                 // 由 extract_used_font_families 的去引号归一吸收。
-                if !used.contains(&family.to_ascii_lowercase()) {
+                if gate.family_dimension && !gate.used.may_reference(&family.to_ascii_lowercase()) {
                     tracing::debug!(family = %family, "page load: font face family never referenced, skip fetch");
                     continue;
                 }
-                let range_hit = unicode_ranges.is_empty()
-                    || text.chars().any(|c| {
-                        let code_point = c as u32;
-                        unicode_ranges
-                            .iter()
-                            .any(|&(start, end)| (start..=end).contains(&code_point))
-                    });
-                if !range_hit {
-                    tracing::debug!(family = %family, "page load: font face unicode-range unmatched, skip fetch");
-                    continue;
+                if range_dimension {
+                    let range_hit = unicode_ranges.is_empty()
+                        || gate.page_text.chars().any(|c| {
+                            let code_point = c as u32;
+                            unicode_ranges
+                                .iter()
+                                .any(|&(start, end)| (start..=end).contains(&code_point))
+                        });
+                    if !range_hit {
+                        tracing::debug!(family = %family, "page load: font face unicode-range unmatched, skip fetch");
+                        continue;
+                    }
                 }
             }
             if src.get(..5).is_some_and(|prefix| prefix.eq_ignore_ascii_case("data:")) {
@@ -1441,6 +1472,27 @@ mod tests {
     use zero_render_foundation::font::loader::FontLoader;
     use zero_render_foundation::primitive::FontId;
 
+    /// 读写进程级环境变量（`ZW_FONT_UNICODE_RANGE`）的测试互斥锁——Rust test harness
+    /// 同进程并行跑用例，env 是全局资源，须跨测试串行（guidelines #19）。
+    static ENV_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// 进程级 env 的 RAII 还原——测试 panic 时也能恢复默认（变量未设）状态。
+    struct EnvVarGuard(&'static str);
+
+    impl EnvVarGuard {
+        fn set(name: &'static str, value: &str) -> Self {
+            // edition 2024：env 修改为 unsafe；调用方持 ENV_TEST_LOCK 期间无并发读者。
+            unsafe { std::env::set_var(name, value) };
+            Self(name)
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            unsafe { std::env::remove_var(self.0) };
+        }
+    }
+
     /// 记录 fetch 调用并立即返回结果的 mock 宿主。
     struct MockFetchHost {
         calls: Vec<String>,
@@ -1540,8 +1592,10 @@ mod tests {
     /// 使用即取门禁的 unicode-range 侧——页面文本无码点命中的范围子集不抓取，命中子集照常。
     /// CSS Fonts 4 §4（https://drafts.csswg.org/css-fonts-4/#unicode-range-desc）：unicode-range
     /// 把 face 限制到码点区间，文本不出现在区间内的子集永不参与匹配。
+    /// 依赖 `ZW_FONT_UNICODE_RANGE` 默认值，与改写该变量的测试经 ENV_TEST_LOCK 串行。
     #[test]
     fn font_fetch_skips_unicode_range_subsets_without_matching_text() {
+        let _env_lock = ENV_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let html = r#"<html><head><style>
             @font-face { font-family: Subset; src: url(latin.woff); unicode-range: U+0-7F; }
             @font-face { font-family: Subset; src: url(cyrillic.woff); unicode-range: U+400-4FF; }
@@ -1561,6 +1615,141 @@ mod tests {
         assert!(
             !host.calls.iter().any(|u| u.ends_with("cyrillic.woff")),
             "文本未命中范围子集不应抓取: {:?}",
+            host.calls
+        );
+    }
+
+    /// D1/TV-01：font-family 声明含 var()（直接或与合法兄弟族名混列）时保守处理——
+    /// var() 在 computed value 阶段替换、静态提取解析不到最终族名，该声明视为「可能
+    /// 引用任何已声明族」：var() 间接引用的 face 与同列表兄弟族 face 均不跳过抓取。
+    #[test]
+    fn font_fetch_fetches_faces_referenced_via_var() {
+        let html = r#"<html><head><style>
+            @font-face { font-family: VarFace; src: url(varface.woff); }
+            @font-face { font-family: SiblingFace; src: url(sibling.woff); }
+            :root { --sans: VarFace; }
+            p { font-family: var(--sans); }
+            q { font-family: SiblingFace, var(--mixed); }
+            </style></head><body><p>hello</p></body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+        let mut host = MockFetchHost::new().with_bytes(vec![1, 2, 3]);
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+        }
+        assert!(
+            host.calls.iter().any(|u| u.ends_with("varface.woff")),
+            "var() 间接引用的 face 应抓取: {:?}",
+            host.calls
+        );
+        assert!(
+            host.calls.iter().any(|u| u.ends_with("sibling.woff")),
+            "var() 污染声明中的合法兄弟族 face 应抓取: {:?}",
+            host.calls
+        );
+    }
+
+    /// D2 保守收紧：文档含 `<script>` 时族维度停用——JS 可在加载后引用任何已声明族
+    /// （el.style.fontFamily / canvas ctx.font / 动态注入），静态提取不可见，未被引用的
+    /// face 照常抓取（渲染触发懒抓取路径本切片未实现，见提交说明）。
+    #[test]
+    fn font_fetch_keeps_unreferenced_family_when_document_has_scripts() {
+        let html = r#"<html><head><style>
+            @font-face { font-family: UnusedFont; src: url(unused.woff); }
+            </style></head><body><p>hello</p><script>var injected = 1;</script></body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+        let mut host = MockFetchHost::new().with_bytes(vec![1, 2, 3]);
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+        }
+        assert!(
+            host.calls.iter().any(|u| u.ends_with("unused.woff")),
+            "含 <script> 时族维度停用，未被静态引用的 face 照常抓取: {:?}",
+            host.calls
+        );
+    }
+
+    /// D2 保守收紧（style 属性变体）：任一元素带 `style` 属性时族维度停用——JS 可经
+    /// `el.style.fontFamily` 写入引用，静态提取不可见。
+    #[test]
+    fn font_fetch_keeps_unreferenced_family_when_style_attribute_present() {
+        let html = r#"<html><head><style>
+            @font-face { font-family: UnusedFont; src: url(unused.woff); }
+            </style></head><body><p style="color: red">hello</p></body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+        let mut host = MockFetchHost::new().with_bytes(vec![1, 2, 3]);
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+        }
+        assert!(
+            host.calls.iter().any(|u| u.ends_with("unused.woff")),
+            "含 style 属性时族维度停用，未被静态引用的 face 照常抓取: {:?}",
+            host.calls
+        );
+    }
+
+    /// D3：`ZW_FONT_UNICODE_RANGE=0`（渲染侧 FontLoader 不登记 unicode-range、face 不受限）
+    /// 时门禁不再按 range 维度跳过——两开关配对，否则「渲染侧本可用而资源未抓取」。
+    #[test]
+    fn font_fetch_unicode_range_dimension_follows_renderer_switch() {
+        // 进程级 env 与读同一变量的测试互斥（跨模块串行，guidelines #19）。
+        let _env_lock = ENV_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _env = EnvVarGuard::set("ZW_FONT_UNICODE_RANGE", "0");
+        let html = r#"<html><head><style>
+            @font-face { font-family: Subset; src: url(latin.woff); unicode-range: U+0-7F; }
+            @font-face { font-family: Subset; src: url(cyrillic.woff); unicode-range: U+400-4FF; }
+            p { font-family: Subset; }
+            </style></head><body><p>latin only</p></body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+        let mut host = MockFetchHost::new().with_bytes(vec![1, 2, 3]);
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+        }
+        assert!(
+            host.calls.iter().any(|u| u.ends_with("cyrillic.woff")),
+            "渲染侧解除 range 限制后门禁不得按 range 跳过: {:?}",
+            host.calls
+        );
+    }
+
+    /// TV-02：unicode-range 端点为闭区间（CSS Fonts 4 §4.5 "inclusive start and end
+    /// codepoints"）——文本命中区间端点的 face 抓取；文本在区间外的不抓取；非法 range
+    /// 使整条声明被忽略 → face 视为无范围限制照常抓取。区间取 U+26xx 避开文档全部
+    /// ASCII 字符（extract_html_text 含 `<style>` 文本，族名/描述符字母不得落入区间）。
+    /// 依赖 `ZW_FONT_UNICODE_RANGE` 默认值，经 ENV_TEST_LOCK 串行。
+    #[test]
+    fn font_fetch_unicode_range_endpoints_inclusive_and_invalid_range_unrestricted() {
+        let _env_lock = ENV_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let html = r#"<html><head><style>
+            @font-face { font-family: Incl; src: url(incl.woff); unicode-range: U+2605-2606; }
+            @font-face { font-family: Excl; src: url(excl.woff); unicode-range: U+2607-2608; }
+            @font-face { font-family: BadRange; src: url(bad.woff); unicode-range: U+GG; }
+            p { font-family: Incl; }
+            q { font-family: Excl; }
+            r { font-family: BadRange; }
+            </style></head><body><p>★</p><q>★</q><r>★</r></body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+        let mut host = MockFetchHost::new().with_bytes(vec![1, 2, 3]);
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+        }
+        assert!(
+            host.calls.iter().any(|u| u.ends_with("incl.woff")),
+            "文本命中区间端点（★ U+2605 ∈ U+2605-2606）应抓取: {:?}",
+            host.calls
+        );
+        assert!(
+            !host.calls.iter().any(|u| u.ends_with("excl.woff")),
+            "文本在区间外（U+2605 ∉ U+2607-2608）不应抓取: {:?}",
+            host.calls
+        );
+        assert!(
+            host.calls.iter().any(|u| u.ends_with("bad.woff")),
+            "非法 range 整条声明被忽略，face 无范围限制应照常抓取: {:?}",
             host.calls
         );
     }
