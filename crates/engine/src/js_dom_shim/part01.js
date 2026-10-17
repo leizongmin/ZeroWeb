@@ -3076,9 +3076,19 @@
         // cross-origin）/origin/origin-when-cross-origin/strict-origin → origin-only
         // （scheme 宽化——runner https 页锚 vs WPT http 宇宙，HTTP_ORIGIN 期望面）；
         // no-referrer-when-downgrade / unsafe-url → 全 URL；no-referrer → 不发送。
+        // page-state-compat M2：sendBeacon 内部通道（init.__zwBeaconReferrerPolicy）——
+        // no-cors POST（safelisted CT）同样注入（spec determine request's referrer 不分
+        // 模式）；beacon 通道额外收紧两处 spec 面（仅旗标生效，net-api fetch 通道维持
+        // M4-S25 行为零回归）：① https→http 降级不外发（n-r-w-d / strict-origin /
+        // s-o-w-c-o 降级条款）；② same-origin 策略跨源不外发（header-referrer-
+        // same-origin.html 跨源 "" 期望面）。
+        var _zwBeaconPolicy = (init && typeof init.__zwBeaconReferrerPolicy === 'string' && init.__zwBeaconReferrerPolicy)
+          ? init.__zwBeaconReferrerPolicy : null;
+        var _zwRefIsDowngrade = String(_zwCurrentHref()).indexOf('https:') === 0 && String(url).indexOf('https:') !== 0;
         var _zwRefOut = null;
-        if (mode === 'cors') {
-          var _refPolicy = String(init.referrerPolicy != null ? init.referrerPolicy
+        if (mode === 'cors' || _zwBeaconPolicy != null) {
+          var _refPolicy = _zwBeaconPolicy != null ? _zwBeaconPolicy
+            : String(init.referrerPolicy != null ? init.referrerPolicy
             : (isRequestLike && input.referrerPolicy != null ? input.referrerPolicy : '') || '');
           var _refInit = init.referrer != null ? init.referrer
             : (isRequestLike && input.referrer != null ? input.referrer : null);
@@ -3088,14 +3098,31 @@
               try { _refUrl = new URL(_refInit, _zwCurrentHref()).href; } catch (_eRefUrl) {}
             }
             var _tgtCross = _zwUrlOrigin(url) !== _zwUrlOrigin(_zwCurrentHref());
-            var _originOnly = _zwUrlOriginLenient(_zwCurrentHref()) + '/';
-            if (_refPolicy === 'origin' || _refPolicy === 'strict-origin') {
+            // page-state-compat M2：beacon 通道 origin-only 用真实 scheme origin（spec
+            // 序列化 referrerOrigin = location.origin + '/'，header-referrer-origin.html
+            // 等 https 断言面）；M4-S25 lenient http 宽化仅服务 net-api fetch 期望面。
+            var _originOnly = (_zwBeaconPolicy != null
+              ? _zwUrlOrigin(_zwCurrentHref())
+              : _zwUrlOriginLenient(_zwCurrentHref())) + '/';
+            if (_refPolicy === 'origin') {
               _zwRefOut = _originOnly;
-            } else if (_refPolicy === 'no-referrer-when-downgrade' || _refPolicy === 'unsafe-url') {
+            } else if (_refPolicy === 'strict-origin') {
+              _zwRefOut = (_zwBeaconPolicy != null && _zwRefIsDowngrade) ? null : _originOnly;
+            } else if (_refPolicy === 'no-referrer-when-downgrade') {
+              _zwRefOut = (_zwBeaconPolicy != null && _zwRefIsDowngrade) ? null : _refUrl;
+            } else if (_refPolicy === 'unsafe-url') {
               _zwRefOut = _refUrl;
             } else if (_refPolicy === '' || _refPolicy === 'strict-origin-when-cross-origin' ||
                        _refPolicy === 'origin-when-cross-origin') {
-              _zwRefOut = _tgtCross ? _originOnly : _refUrl;
+              // s-o-w-c-o 有降级条款（spec）；origin-when-cross-origin 无（只按 cross 分
+              // 全 URL/origin——不随 scheme 降级）。
+              if (_zwBeaconPolicy != null && _zwRefIsDowngrade && _refPolicy !== 'origin-when-cross-origin') {
+                _zwRefOut = null;
+              } else {
+                _zwRefOut = _tgtCross ? _originOnly : _refUrl;
+              }
+            } else if (_refPolicy === 'same-origin') {
+              _zwRefOut = _tgtCross ? null : _refUrl;
             }
             if (_zwRefOut && !_zwHasHeader(headersWire, 'referer')) {
               headersWire = _zwAddHeader(headersWire, 'referer', _zwRefOut);
@@ -3193,12 +3220,29 @@
         // 页面跨域 fetch 全部 `Failed to fetch`，Chrome 同请求成功）。页面 JS 不可自设 Origin
         //（forbidden request-header，_headersToWire 的 request guard 已过滤），此追加为实现侧行为。
         // same-origin cors fetch response tainting 为 basic → 不追加（spec/Chrome 一致）。
-        // FIXME(#append-a-request-origin-header)：非 GET/HEAD 的非 cors 分支（按 referrer
-        // policy 序列化，可能为 "null"）尚未实现。
+        // page-state-compat M2：非 GET/HEAD 的非 cors 分支落位——beacon 通道
+        //（__zwBeaconReferrerPolicy 旗标）按 request referrer policy 序列化 origin-or-null：
+        // no-referrer → null；no-referrer-when-downgrade / strict-origin / strict-origin-
+        // when-cross-origin → https→非https 降级 → null；same-origin → 跨源 → null
+        //（header-origin-same-origin.html 跨源 "null" 期望面）；origin / origin-when-
+        // cross-origin / unsafe-url → 文档 origin。普通 fetch no-cors 非幂等方法仍缺
+        // Origin——FIXME(#append-a-request-origin-header)。
         var _zwReqOrigin = _zwUrlOrigin(url);
         var _zwDocOrigin = _zwUrlOrigin(_zwCurrentHref());
         if (mode === 'cors' && _zwReqOrigin && _zwDocOrigin && _zwReqOrigin !== _zwDocOrigin && !_zwHasHeader(headersWire, 'origin')) {
           headersWire = _zwAddHeader(headersWire, 'origin', _zwDocOrigin);
+        } else if (_zwBeaconPolicy != null && mode !== 'cors' && method !== 'GET' && method !== 'HEAD' &&
+                   _zwReqOrigin && _zwDocOrigin && !_zwHasHeader(headersWire, 'origin')) {
+          var _zwBeaconOrigin = _zwDocOrigin;
+          if (_zwBeaconPolicy === 'no-referrer') {
+            _zwBeaconOrigin = 'null';
+          } else if (_zwBeaconPolicy === 'no-referrer-when-downgrade' || _zwBeaconPolicy === 'strict-origin' ||
+                     _zwBeaconPolicy === 'strict-origin-when-cross-origin') {
+            if (_zwRefIsDowngrade) _zwBeaconOrigin = 'null';
+          } else if (_zwBeaconPolicy === 'same-origin') {
+            if (_zwReqOrigin !== _zwDocOrigin) _zwBeaconOrigin = 'null';
+          }
+          headersWire = _zwAddHeader(headersWire, 'origin', _zwBeaconOrigin);
         }
 
         globalThis.__zw_fetch_counter = (globalThis.__zw_fetch_counter | 0) + 1;

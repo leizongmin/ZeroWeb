@@ -2564,6 +2564,7 @@ impl LayoutEngine {
             clearance_active: false,
             clearance_extent_reduction: 0.0,
             is_anon_table_root: false,
+            is_anon_table_cell: false,
             column_gap: 0.0,
             is_block_level,
             is_relative,

@@ -32,7 +32,7 @@ goal 入口文档 `docs/goal/<goal>.md` DC-1。
 | 24 | [compression-compat](../../../../docs/goal/compression-compat.md) | compression | 无（实现型小套件，M2 实现轮） |
 | 25 | [html-semantics-compat](../../../../docs/goal/html-semantics-compat.md) | html/semantics 十子域 | **主攻大域**（分域切片收口制） |
 | 26 | [webcrypto-compat](../../../../docs/goal/webcrypto-compat.md) | WebCryptoAPI | 无（2026-10-08 立项；随机源面已有，subtle 实现轮分片自主） |
-| 27 | [page-state-compat](../../../../docs/goal/page-state-compat.md) | beacon; page-visibility; online | 无（三小套件打包；sendBeacon 走 net POST 底座薄封装） |
+| 27 | [page-state-compat](../../../../docs/goal/archive/page-state-compat.md) | beacon; page-visibility; online | **已收口**（2026-10-18）；偏差记账 beacon 混合内容阻断与 keepalive in-flight 配额池（FIXME） |
 | 28 | [dnd-compat](../../../../docs/goal/dnd-compat.md) | dnd | **门控 goal**（M1 盘点 + M2 构造器面自主；拖放交互管线须用户点名） |
 | 29 | [pointerlock-compat](../../../../docs/goal/pointerlock-compat.md) | pointerlock | **门控 goal**（M1 盘点自主；指针捕获管线须用户点名） |
 | 30 | [encoding-compat](../../../../docs/goal/encoding-compat.md) | encoding | **已收口**（2026-10-04） |

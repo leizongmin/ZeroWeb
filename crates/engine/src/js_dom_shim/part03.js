@@ -13720,6 +13720,12 @@
       // defaultview——无 browsing context 的 Document 返 null 而非 undefined；
       // selection/getSelection.html "defaultView of created HTML document must be null"）。
       defaultView: null,
+      // page-state-compat M2：windowless 文档可见性面——hidden=true / visibilityState=
+      // 'hidden'（Page Visibility spec：Document 无 browsing context / 非 fully active →
+      // 可见性状态恒 hidden，https://www.w3.org/TR/page-visibility/#dom-document-hidden；
+      // WPT test_default_view.html windowless subdocument 双断言面）。
+      get hidden() { return true; },
+      get visibilityState() { return 'hidden'; },
       // R5001 M3 片 a 收口（html-syntax-compat）：detached 文档 scripting disabled
       //（spec：无 browsing context → scripting disabled——createHTMLDocument/new
       // Document 同）——`Range.createContextualFragment` / detached `document.write`

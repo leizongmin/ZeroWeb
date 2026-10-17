@@ -1,17 +1,23 @@
 # 页面状态兼容 — sendBeacon / Page Visibility / online-offline
 
-**版本**: v1.1
-**日期**: 2026-10-17（v1.0 立项 2026-10-08）
-**状态**: Active（M1 完成——M2 实现轮）
+**版本**: v1.2
+**日期**: 2026-10-18（v1.0 立项 2026-10-08）
+**状态**: ✅ Completed（2026-10-18——DC-1~3 满足收口；归档
+`docs/goal/archive/page-state-compat.md` + `docs/goal/archive/page-state-compat/`）
 
-> **▶ 当前状态（2026-10-17 M1）**：DC-1 达成——三 corpus 导入 13/27 案执行
->（14 案 skip 排除，账见
-> [M1 基线](page-state-compat/evidence/2026-10-17-m1-baseline.md)），基线
-> 27 子测试 P14/F3/T10 = 51.9%，csv 数据行已回填。上游无顶层 `online/`
-> 目录（立项叙述过时）——onLine 用例在 `html/browsers/offline/browser-state/`。
-> **卡点**：无。**下一步**：M2——sendBeacon spec 化 + beacon 通道
-> Referer/Origin 注入 + 三 fixture 端点 + windowless document 可见性面 +
-> R2931 断言更新（evidence 文档 M2 输入节为设计输入）。
+> **▶ 当前状态（2026-10-18 M3 收口）**：DC-1~3 全部达成——三 corpus 导入 + 基线
+>（[M1](page-state-compat/evidence/2026-10-17-m1-baseline.md)，27 子测试
+> P14/F3/T10 = 51.9%）→ sendBeacon spec 化 / beacon 通道 Referer/Origin 注入 /
+> 三 fixture 端点 / windowless 文档可见性面 / R2931 断言更新
+>（[M2](page-state-compat/evidence/2026-10-17-m2-semantics.md)），全量
+> **41 子测试 41P = 100%**（分母 27→41，Timeout 案真实完成）→ 收口门禁全绿：
+> `make test` 全绿（含修复预存 reftest 资源提取红，独立修复提交）、
+> `make reftest` 712/712 零回归、product-smoke welcome 17.07% ≤ 20% 门双跑
+> 逐字节恒值、csv M1/M2 两行回填。
+> **卡点**：无。**偏差记账（非阻塞）**：beacon 混合内容阻断未实现
+>（FIXME(beacon-mixed-content)）、keepalive in-flight 配额池未实现
+>（FIXME(keepalive-quota-inflight)）——见 M2 evidence；重入条件 = 上游 corpus
+> 引入对应可执行断言或真实站点上报面受害。
 **执行模式**: WPT 驱动（上游三小 corpus 为验收标尺）+ 实现与语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——页面生命周期与上报面）
 

@@ -1,0 +1,282 @@
+[
+  [
+    "beacon/beacon-url-encoding-euc-kr.https.html",
+    [
+      {
+        "name": "beacon-url-encoding-euc-kr",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "beacon/headers/header-content-type-and-body.html",
+    [
+      {
+        "name": "Test content-type header for a body string",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Test content-type header for a body ArrayBufferView",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Test content-type header for a body ArrayBuffer",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Test content-type header for a body Blob",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Test content-type header for a body FormData",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Test content-type header for a body URLSearchParams",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "beacon/headers/header-origin-same-origin.html",
+    [
+      {
+        "name": "Test origin header /beacon/resources/ - without body",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Test origin header /beacon/resources/ - with body",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Test origin header http://www1.wpt.test/beacon/resources/ - without body",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Test origin header http://www1.wpt.test/beacon/resources/ - with body",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "beacon/headers/header-referrer-no-referrer-when-downgrade.https.html",
+    [
+      {
+        "name": "Test referer header https://wpt.test/beacon/resources/",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Test referer header http://wpt.test/beacon/resources/",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "beacon/headers/header-referrer-no-referrer.html",
+    [
+      {
+        "name": "Test referer header /beacon/resources/",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "beacon/headers/header-referrer-origin-when-cross-origin.html",
+    [
+      {
+        "name": "Test referer header http://wpt.test/beacon/resources/",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Test referer header http://www1.wpt.test/beacon/resources/",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "beacon/headers/header-referrer-origin.html",
+    [
+      {
+        "name": "Test referer header http://www1.wpt.test/beacon/resources/",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "beacon/headers/header-referrer-same-origin.html",
+    [
+      {
+        "name": "Test referer header /beacon/resources/",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Test referer header http://www1.wpt.test/beacon/resources/",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "beacon/headers/header-referrer-strict-origin-when-cross-origin.https.html",
+    [
+      {
+        "name": "Test referer header https://www1.wpt.test/beacon/resources/",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Test referer header http://www1.wpt.test/beacon/resources/",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "beacon/headers/header-referrer-strict-origin.https.html",
+    [
+      {
+        "name": "Test referer header https://wpt.test/beacon/resources/",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Test referer header http://wpt.test/beacon/resources/",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "beacon/headers/header-referrer-unsafe-url.https.html",
+    [
+      {
+        "name": "Test referer header https://wpt.test/beacon/resources/",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Test referer header http://wpt.test/beacon/resources/",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/browsers/offline/browser-state/navigator_online_online.https.html",
+    [
+      {
+        "name": "Offline Application Cache - navigator_online_online",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "page-visibility/test_attributes_exist.html",
+    [
+      {
+        "name": "document.hidden is defined and not null.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "document.visibilityState is defined and not null.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "document.hidden is defined.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "document.visibilityState is defined.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "page-visibility/test_default_view.html",
+    [
+      {
+        "name": "document.hidden is defined and not null.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "document.visibilityState is defined and not null.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "windowless subdocument generated for test has a null default view",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "document.hidden is definedwindowless subdocument.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "document.visibilityState is definedwindowless subdocument.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "hidden == true for windowless subdocuments with a null default view",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "visibilityState == hidden for windowless subdocuments with a null default view",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "page-visibility/test_read_only.html",
+    [
+      {
+        "name": "document.hidden is defined and not null.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "document.visibilityState is defined and not null.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "document.hidden is read only.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "document.visibilityState is read only.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ]
+]

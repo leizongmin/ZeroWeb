@@ -181,6 +181,7 @@ pub(crate) fn build_grid(
                         col_end,
                         parent_rg_idx: None,
                         row_self_cell: false,
+                        anon_max_width: 0.0,
                     });
                     orphan_col_cursor = col_end;
                     if orphan_anonymous_cells.len() == 1 {
@@ -207,6 +208,7 @@ pub(crate) fn build_grid(
                                 col_end,
                                 parent_rg_idx: Some(*child_idx),
                                 row_self_cell: false,
+                                anon_max_width: 0.0,
                             });
                             orphan_col_cursor = col_end;
                             if orphan_anonymous_cells.len() == 1 {
@@ -228,6 +230,7 @@ pub(crate) fn build_grid(
                                     col_end,
                                     parent_rg_idx: Some(*child_idx),
                                     row_self_cell: false,
+                                    anon_max_width: 0.0,
                                 });
                                 orphan_col_cursor = col_end;
                                 if orphan_anonymous_cells.len() == 1 {
@@ -280,7 +283,7 @@ pub(crate) fn build_grid(
             Some(d) if is_table_row(d) => {
                 // 直接子元素是 table-row
                 let blocked = blocked_cols_of(&rowspan_occupied, rowspan_vertical);
-                let row = build_row(*child_idx, child, doc, &blocked);
+                let row = build_row(*child_idx, child, doc, styles, &blocked);
                 max_cols = max_cols.max(row.cells.last().map(|c| c.col_end).unwrap_or(0));
                 update_rowspan_occupancy(&mut rowspan_occupied, &row, rowspan_vertical);
                 if !row.cells.is_empty() {
@@ -310,6 +313,7 @@ pub(crate) fn build_grid(
                             col_end: 1,
                             parent_rg_idx: None,
                             row_self_cell: true,
+                            anon_max_width: 0.0,
                         }],
                         is_anonymous: false,
                     });
@@ -345,7 +349,7 @@ pub(crate) fn build_grid(
                             col_cursor = 0;
                         }
                         let blocked = blocked_cols_of(&rowspan_occupied, rowspan_vertical);
-                        let row = build_row(rg_child_idx, rg_child, doc, &blocked);
+                        let row = build_row(rg_child_idx, rg_child, doc, styles, &blocked);
                         max_cols = max_cols.max(row.cells.last().map(|c| c.col_end).unwrap_or(0));
                         update_rowspan_occupancy(&mut rowspan_occupied, &row, rowspan_vertical);
                         if !row.cells.is_empty() {
@@ -378,7 +382,7 @@ pub(crate) fn build_grid(
                             let nested_display = get_display(nested_child, styles);
                             if nested_display.as_ref().is_some_and(is_table_row) {
                                 let blocked = blocked_cols_of(&rowspan_occupied, rowspan_vertical);
-                                let row = build_row(nested_idx, nested_child, doc, &blocked);
+                                let row = build_row(nested_idx, nested_child, doc, styles, &blocked);
                                 max_cols = max_cols.max(row.cells.last().map(|c| c.col_end).unwrap_or(0));
                                 update_rowspan_occupancy(&mut rowspan_occupied, &row, rowspan_vertical);
                                 if !row.cells.is_empty() {
@@ -404,6 +408,7 @@ pub(crate) fn build_grid(
                                     col_end,
                                     parent_rg_idx: parent_rg,
                                     row_self_cell: false,
+                                    anon_max_width: 0.0,
                                 });
                                 col_cursor = col_end;
                                 if anonymous_row_group_idx.is_none() {
@@ -428,6 +433,7 @@ pub(crate) fn build_grid(
                             col_end,
                             parent_rg_idx: None,
                             row_self_cell: false,
+                            anon_max_width: 0.0,
                         });
                         col_cursor = col_end;
                         if anonymous_row_group_idx.is_none() {
@@ -471,6 +477,7 @@ pub(crate) fn build_grid(
                     col_end,
                     parent_rg_idx: None,
                     row_self_cell: false,
+                    anon_max_width: 0.0,
                 });
                 direct_col_cursor = col_end;
                 max_cols = max_cols.max(col_end);
@@ -530,6 +537,7 @@ pub(crate) fn build_grid(
                         col_end,
                         parent_rg_idx: None,
                         row_self_cell: false,
+                        anon_max_width: 0.0,
                     }],
                     is_anonymous: true,
                 });

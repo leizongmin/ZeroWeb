@@ -8,8 +8,8 @@ use zero_engine::image_resource_key;
 use zero_engine::preload::{ResourceHintType, ResourceType, scan_html_resource_hints};
 use zero_engine::{
     BudgetAdvance, BudgetedRenderSession, MediaResourceElementKind, extract_css_image_urls, extract_font_faces,
-    extract_html_style_text, extract_img_resources, extract_import_urls, extract_media_resources,
-    extract_stylesheet_hrefs,
+    extract_html_css_image_urls, extract_html_style_text, extract_img_resources, extract_import_urls,
+    extract_media_resources, extract_stylesheet_hrefs,
 };
 use zero_page_runtime::{AsyncFetchHost, ResourceFetchMeta};
 use zero_render_foundation::font::{OpenTypeFeature, OpenTypeVariation};
@@ -1026,13 +1026,16 @@ impl AsyncPageLoad {
         }
         // R1795：CSS `url()` 图片引用（background-image / list-style-image /
         // border-image-source）一并异步抓取——与 sync 路径（webview.rs fetch_image_subresources）
-        // 对齐。合并 self.css（外链 CSS）+ inline `<style>` 文本，extract_css_image_urls 已排除
-        // @font-face 与 data:。CSS url 非 lazy，直接入 img_pending；fetch+decode+key 复用
-        // poll_images 现有路径（painter 查找经 R1794 Part A 已按 image_resource_key 对齐）。
-        let mut combined_css = self.css.clone();
-        combined_css.push('\n');
-        combined_css.push_str(&extract_html_style_text(html));
-        for src in extract_css_image_urls(&combined_css) {
+        // 对齐。外链 CSS 与文档内 CSS 分开扫：文档内侧走 extract_html_css_image_urls
+        // 逐块 EOF 边界（块尾未终止 url() 恢复——拼接扫描靠分隔符终止，注释分隔符对
+        // tokenizer 不可见即丢块尾 url），extract_css_image_urls 已排除 @font-face 与
+        // data:。CSS url 非 lazy，直接入 img_pending；fetch+decode+key 复用 poll_images
+        // 现有路径（painter 查找经 R1794 Part A 已按 image_resource_key 对齐）。
+        let css_urls: Vec<String> = extract_css_image_urls(&self.css)
+            .into_iter()
+            .chain(extract_html_css_image_urls(html))
+            .collect();
+        for src in css_urls {
             if src.starts_with("data:") {
                 // R1987：CSS url(data:) 同 <img src=data:>，直接解码入缓存（无 fetch）。
                 if let Ok(data) = decode_data_uri(&src) {

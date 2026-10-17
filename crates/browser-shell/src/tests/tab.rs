@@ -278,6 +278,34 @@ fn test_tab_navigate_resets_title() {
     assert!(tab.title().is_none(), "Title should be reset on navigate");
 }
 
+/// replace_current_entry_url（t4 返修 D3 重定向提交）：改写当前条目 URL 而非追加
+/// 条目；title/loading 语义与 navigate 一致。
+#[test]
+fn test_tab_replace_current_entry_url_no_append() {
+    let mut tab = Tab::new("https://a.com");
+    tab.navigate("https://b.com");
+    tab.set_title("Page B");
+    tab.replace_current_entry_url("https://final.com");
+    assert_eq!(tab.history_len(), 2, "取代当前条目，不追加");
+    assert_eq!(tab.url(), Some("https://final.com"));
+    assert!(tab.title().is_none(), "标题随取代复位");
+    assert!(tab.is_loading());
+    // 当前条目确被改写：后退读旧条目原值，前进读回取代值。
+    assert!(tab.go_back());
+    assert_eq!(tab.url(), Some("https://a.com"));
+    assert!(tab.go_forward());
+    assert_eq!(tab.url(), Some("https://final.com"));
+}
+
+/// replace_current_entry_url 空历史（无当前条目）不 panic，URL 仍上报。
+#[test]
+fn test_tab_replace_current_entry_url_empty_history_no_panic() {
+    let mut tab = Tab::new_empty();
+    tab.replace_current_entry_url("https://a.com");
+    assert_eq!(tab.url(), Some("https://a.com"));
+    assert_eq!(tab.history_len(), 0);
+}
+
 #[test]
 fn test_tab_empty_url() {
     let tab = Tab::new_empty();

@@ -4529,15 +4529,17 @@ mod tests {
 
     #[test]
     fn renderer_js_worker_page_lifecycle_r2931() {
-        // R2931 页面生命周期/分析簇：navigator.sendBeacon（卸载 beacon，accept-and-return-true）+
+        // R2931 页面生命周期/分析簇：navigator.sendBeacon（卸载 beacon，fire-and-forget
+        // accept-and-return-true；page-state-compat M2 spec 化——缺参 TypeError，URL 校验面
+        // 须绝对 http(s) 地址因 snapshot 页锚为 about:blank）+
         // PageTransitionEvent 构造器 + pageshow 首次注册 _defer 派发（window + document 路径）。
         // PageTransitionEvent 是 modern non-createable interface，须通过构造器创建。
         let mut worker = RendererJsWorker::spawn(38);
         worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
         worker
             .execute_script_direct(
-                "globalThis.__beacon1 = navigator.sendBeacon('/analytics', { x: 1 });\
-                 globalThis.__beacon2 = navigator.sendBeacon();\
+                "globalThis.__beacon1 = navigator.sendBeacon('https://example.com/analytics', { x: 1 });\
+                 try { navigator.sendBeacon(); globalThis.__beacon2 = 'no-throw'; } catch (e) { globalThis.__beacon2 = String(e instanceof TypeError); }\
                  globalThis.__pt1 = new PageTransitionEvent('pageshow', { persisted: true }).persisted;\
                  globalThis.__pt2 = new PageTransitionEvent('pageshow').persisted;\
                  globalThis.__ev = (new PageTransitionEvent('').constructor === globalThis.PageTransitionEvent);\
@@ -4557,8 +4559,8 @@ mod tests {
         );
         assert_eq!(
             worker.execute_script_direct("String(globalThis.__beacon2)").unwrap(),
-            "false",
-            "sendBeacon() 缺 url → false"
+            "true",
+            "sendBeacon() 缺 url → TypeError（spec 化：WebIDL 必选参）"
         );
         assert_eq!(
             worker.execute_script_direct("String(globalThis.__pt1)").unwrap(),

@@ -1341,6 +1341,12 @@ pub(crate) fn compute_final_inline_layouts(
     let is_vertical_table_cell = is_table_cell && root.writing_mode.is_vertical_block_flow();
     let cell_ifc_store_enabled =
         is_vertical_table_cell || (is_table_cell && std::env::var("ZW_CELL_IFC_STORE").as_deref() != Ok("0"));
+    // R5168（CSS2 §17.2.1 匿名 cell 合成）：合成 cell（node_id 借宿主行）的行内内容
+    // 已被吞并，行盒自身的 is_table_internal_with_text（DOM 直系文本判据，DOM 未变）
+    // 仍为 true——若放行会以整行 DOM 跑 IFC（含真实 cell 文本，Path B 双绘）。
+    // 行子含合成 cell ⇒ 行的 inline 内容已全部迁入 cell，行级 IFC 跳过。
+    let is_table_internal_with_text =
+        is_table_internal_with_text && !root.children.iter().any(|c| c.is_anon_table_cell);
     if !root.is_block_level && !is_table_internal_with_text && !is_flex_grid_item && !cell_ifc_store_enabled {
         return;
     }
@@ -1355,6 +1361,9 @@ pub(crate) fn compute_final_inline_layouts(
     // 无文本/inline 子（run-in-block-between-001：run-in 并入**空块**，无此放行则 IFC 不跑，
     // run-in 前置内容无几何且空块高度保持 0，后继行上移重叠）。
     has_text_children |= root.run_in_prepended.is_some();
+    // R5168：合成匿名 cell 的内容是被吞并的 inline 元素/文本项盒（box children），
+    // DOM 直系文本判据（node_id=宿主行，行直系全是元素）测不到——按盒子非 OOF 放行。
+    has_text_children |= root.is_anon_table_cell && root.children.iter().any(|c| !c.is_absolute && !c.is_fixed);
     // PHASEA stored-line-boxes 路径（默认启用；env PHASEA_STORE_EXT=0 关闭）：也覆盖含 **inline-level** 元素子节点且**无 block-level
     // 元素子节点**的容器（纯 inline 内容，如 div>span 间接文本）。compute_final 传真实 styles 给
     // IFC（line 1851），存储行盒度量正确，paint use_stored 渲染解 Phase A font_size（font-051 实证）。

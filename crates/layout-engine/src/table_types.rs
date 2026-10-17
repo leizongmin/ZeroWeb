@@ -47,6 +47,10 @@ pub(crate) struct TableCell {
     /// 生成匿名 cell）时以**行盒自身**充当 cell（几何 = 行盒，get_cell_box 直通行盒）。
     /// 仅 vertical 表 build_grid 生成（水平域维持 R978 现状零回归）。
     pub(crate) row_self_cell: bool,
+    /// R5168：匿名 cell 占位 entry（child_index == usize::MAX，无盒）的 run 文本
+    /// max-content 宽（fragment_inline_max_width，行样式度量）——列宽 Pass 1 的列宽
+    /// 来源；普通 cell 恒 0.0。
+    pub(crate) anon_max_width: f32,
 }
 
 /// 一个表格行的信息。
@@ -187,7 +191,168 @@ pub(crate) fn get_span(box_node: &LayoutBox, doc: &zero_dom::Document) -> usize 
 /// `blocked_cols`（R4480）：被上游行 rowspan cell 占用的列集——本行 cell 分配
 /// col_start 时越过（CSS Tables §17.5.1 网格模型：spanning cell 在其覆盖的
 /// 后继行占位）。horizontal 域传 `&[]`（占位臂 vertical-gated，零回归面）。
+///
+/// R5168：**DOM 序**遍历（CSS2 §17.2.1 匿名 cell）——行内连续 inline 级子（inline
+/// 元素 + 非空白文本节点）为一个匿名 cell 预留 1 列。行盒在 step 8 常只有 boxed
+/// cell 子（裸 inline 走 R2160 multi-inline 跳过、无 taffy 盒，step 12 才由
+/// backfill 回填代理盒），盒序遍历看不见 inline run → boxed cell 挤到 col0
+///（table-anonymous-objects-088：c1 在 col1，ref 也在 col1——旧盒序给 col0，
+/// 列数 2 vs ref 3）。占位 entry 无盒时 `child_index = usize::MAX`（get_cell_box
+/// 落 None，全部消费方 let-else/if-let 跳过，仅占列数）；若 R5168 合成盒存在
+///（`is_anon_table_cell` 且 fragment 相交）接其真盒。
 pub(crate) fn build_row(
+    child_idx: usize,
+    row_box: &LayoutBox,
+    doc: &zero_dom::Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    blocked_cols: &[usize],
+) -> TableRow {
+    let Some(row_node_id) = row_box.node_id else {
+        return build_row_box_order(child_idx, row_box, doc, blocked_cols);
+    };
+    // R5168 kill-switch：`ZW_ANON_CELL_WRAP=0` 整组回退（合成 pass + 网格列预留一并
+    // 关闭），与存储臂 `ZW_CELL_IFC_STORE` 分立，供 ON/OFF 归因。
+    if !crate::table_anon_cell::anon_cell_wrap_enabled() {
+        return build_row_box_order(child_idx, row_box, doc, blocked_cols);
+    }
+    // R5168 水平域门（同 table_anon_cell 合成 pass）：vertical 行保持盒序旧路径
+    //（R4470 bare-row 臂 tuned 语义，不混入网格预留）。
+    if row_box.writing_mode.is_vertical_block_flow() {
+        return build_row_box_order(child_idx, row_box, doc, blocked_cols);
+    }
+    // DOM/盒树不一致防御：DOM 无子而盒有子（盒树未镜像 DOM 的场景）——退回盒序
+    // 旧路径（pre-R5168 行为），不因 DOM 遍历走空而丢行。
+    if doc.child_nodes(row_node_id).is_empty() && !row_box.children.is_empty() {
+        return build_row_box_order(child_idx, row_box, doc, blocked_cols);
+    }
+
+    let mut cells: Vec<TableCell> = Vec::new();
+    let mut col_cursor = 0usize;
+    // 当前 inline run：成员 DOM id + 是否含非空白内容。
+    let mut run_ids: Vec<NodeId> = Vec::new();
+    let mut run_has_content = false;
+    // 匿名列宽度量基准：行样式（合成 cell 借行 node_id，继承属性同源）。
+    let row_style = styles.get(&row_node_id).cloned().unwrap_or_default();
+
+    let flush_run = |cells: &mut Vec<TableCell>, col_cursor: &mut usize, run_ids: &[NodeId], has_content: bool| {
+        if run_ids.is_empty() {
+            return;
+        }
+        if has_content {
+            while blocked_cols.contains(col_cursor) {
+                *col_cursor += 1;
+            }
+            // run 的合成盒接线：R5168 包裹出的匿名 cell（node_id 借行），按 fragment
+            // 成员相交匹配；无合成盒 → usize::MAX 占位（get_cell_box 落 None，消费方
+            // 全部 let-else/if-let 跳过，仅占列数）。
+            let synth_idx = row_box.children.iter().position(|b| {
+                b.is_anon_table_cell
+                    && b.fragment_node_ids
+                        .as_ref()
+                        .is_some_and(|frags| run_ids.iter().any(|id| frags.contains(id)))
+            });
+            // 占位列宽：run 文本 max-content 宽（estimate 口径，与 paint IFC 同源，
+            // r109 shrink 同款自洽度量）。合成盒存在时列宽照走此值（盒 width=0，
+            // cell_used_width 不可用）。
+            let run_width = crate::intrinsic_sizing::fragment_inline_max_width(&row_style, run_ids, doc);
+            let col_start = *col_cursor;
+            let col_end = col_start + 1;
+            cells.push(TableCell {
+                child_index: synth_idx.unwrap_or(usize::MAX),
+                colspan: 1,
+                rowspan: 1,
+                col_start,
+                col_end,
+                parent_rg_idx: None,
+                row_self_cell: false,
+                anon_max_width: run_width,
+            });
+            *col_cursor = col_end;
+        }
+    };
+
+    for dom_child in doc.child_nodes(row_node_id) {
+        let Some(node) = doc.get(dom_child) else {
+            continue;
+        };
+        match &node.kind {
+            zero_dom::NodeKind::Text(t) => {
+                run_ids.push(dom_child);
+                run_has_content |= !t.content.trim().is_empty();
+            }
+            zero_dom::NodeKind::Element(_) => {
+                let style = styles.get(&dom_child);
+                let display = style.map(|s| s.display.clone());
+                // OOF（§9.7/§9.5）脱离正常流，不占列（build_row_box_order 同语义）。
+                let oof = style.is_some_and(|s| {
+                    !matches!(s.float, FloatValue::None)
+                        || matches!(
+                            s.position,
+                            zero_style_system::property::types::PositionValue::Absolute
+                                | zero_style_system::property::types::PositionValue::Fixed
+                        )
+                });
+                if oof {
+                    flush_run(&mut cells, &mut col_cursor, &run_ids, run_has_content);
+                    run_ids.clear();
+                    run_has_content = false;
+                    continue;
+                }
+                let is_inline = matches!(display, Some(DisplayValue::Inline));
+                if is_inline {
+                    run_ids.push(dom_child);
+                    run_has_content = true; // inline 元素（即使空）也构成匿名 cell 内容
+                    continue;
+                }
+                // 非 inline 元素：run 终结；自身按盒序语义收集（旧路径全量当 cell，
+                // 含 table-internal/块化子——保持不变，仅 inline/text 改走预留）。
+                flush_run(&mut cells, &mut col_cursor, &run_ids, run_has_content);
+                run_ids.clear();
+                run_has_content = false;
+                let box_idx = row_box.children.iter().position(|b| b.node_id == Some(dom_child));
+                let Some(box_idx) = box_idx else {
+                    continue; // 无盒（如 display:none / 未盒化）→ 旧路径同款跳过
+                };
+                let cell_box = &row_box.children[box_idx];
+                // 合成匿名 cell 的 node_id 借宿主行——其 DOM 身份与本 DOM 子不对应，
+                // 已由上面的 run 接线处理，这里按 node_id 匹配不会命中（防御跳过）。
+                if cell_box.is_anon_table_cell {
+                    continue;
+                }
+                let colspan = get_colspan(cell_box, doc);
+                let rowspan = get_rowspan(cell_box, doc);
+                while blocked_cols.contains(&col_cursor) {
+                    col_cursor += 1;
+                }
+                let col_start = col_cursor;
+                let col_end = col_start + colspan;
+                cells.push(TableCell {
+                    child_index: box_idx,
+                    colspan,
+                    rowspan,
+                    col_start,
+                    col_end,
+                    parent_rg_idx: None,
+                    row_self_cell: false,
+                    anon_max_width: 0.0,
+                });
+                col_cursor = col_end;
+            }
+            _ => {}
+        }
+    }
+    flush_run(&mut cells, &mut col_cursor, &run_ids, run_has_content);
+
+    TableRow {
+        child_index: child_idx,
+        row_group_index: None, // 由调用方设置
+        cells,
+        is_anonymous: false,
+    }
+}
+
+/// 盒序旧路径（无 DOM 身份的行盒 fallback；R5168 前的唯一实现）。
+fn build_row_box_order(
     child_idx: usize,
     row_box: &LayoutBox,
     doc: &zero_dom::Document,
@@ -220,6 +385,7 @@ pub(crate) fn build_row(
             col_end,
             parent_rg_idx: None,
             row_self_cell: false,
+            anon_max_width: 0.0,
         });
         col_cursor = col_end;
     }
@@ -945,7 +1111,7 @@ mod tests {
             ],
             ..LayoutBox::default()
         };
-        let row = build_row(0, &row_box, &doc, &[]);
+        let row = build_row(0, &row_box, &doc, &HashMap::new(), &[]);
         // 仅第 1 个（in-flow）子被收集为 cell；floated 与 abspos 被跳过
         assert_eq!(row.cells.len(), 1);
         assert_eq!(row.cells[0].child_index, 0);
@@ -964,7 +1130,7 @@ mod tests {
             ],
             ..LayoutBox::default()
         };
-        let row = build_row(0, &row_box, &doc, &[]);
+        let row = build_row(0, &row_box, &doc, &HashMap::new(), &[]);
         assert_eq!(row.cells.len(), 3);
         // col_end 累计：每个 colspan=1 → 1,2,3
         assert_eq!(row.cells[2].col_end, 3);
@@ -984,7 +1150,7 @@ mod tests {
             ..LayoutBox::default()
         };
         // col1 被 rowspan=2 cell 占用（还剩 1 行）
-        let row = build_row(0, &row_box, &doc, &[1]);
+        let row = build_row(0, &row_box, &doc, &HashMap::new(), &[1]);
         assert_eq!(row.cells.len(), 2);
         assert_eq!(row.cells[0].col_start, 0);
         // 第 2 个 cell 越过被占的 col1 → col2

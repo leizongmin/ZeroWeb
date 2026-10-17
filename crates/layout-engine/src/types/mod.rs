@@ -362,6 +362,11 @@ pub struct LayoutBox {
     /// 此标记让该元素在 establishes_bfc 中被视为匿名 table（建立 BFC，隔离 margin 折叠
     /// + 包含浮动），由 mark_anonymous_table_roots 预处理在 adjust_float_positions 之前设置。
     pub is_anon_table_root: bool,
+    /// R5168（CSS2 §17.2.1 匿名 table-cell）：本盒是 table-row 内连续 inline 子合并
+    /// 包裹出的匿名 cell。盒无独立 DOM 身份——`node_id` 借宿主行的（R109 block-mixed
+    /// 片段盒同款先例），实际内容范围由 `fragment_node_ids`（被吞并子的 DOM id）圈定，
+    /// IFC 收集/paint Path B 均按 fragments 走。语义只认盒旗标，不信 node_id 的样式。
+    pub is_anon_table_cell: bool,
     /// R3814：table-caption 盒（CSS2 §17.4.1：caption 建立独立格式化上下文——子元素
     /// margin 不与 caption 自身 margin 折叠，内部 margin 链 contained）。
     pub is_table_caption: bool,
@@ -728,6 +733,7 @@ impl Default for LayoutBox {
             clearance_active: false,
             clearance_extent_reduction: 0.0,
             is_anon_table_root: false,
+            is_anon_table_cell: false,
             column_gap: 0.0,
             is_block_level: false,
             is_relative: false,
