@@ -171,9 +171,17 @@ fn r5165_predicate_membership() {
     for ch in [
         '\u{202F}', '\u{2007}', '\u{2011}', '\u{180E}', '\u{2060}', '\u{FEFF}', '\u{200D}', '\u{0F08}',
     ] {
-        assert!(crate::inline::is_atomic_gl_suppressing(ch), "U+{:04X} 应属禁断类", ch as u32);
+        assert!(
+            crate::inline::is_atomic_gl_suppressing(ch),
+            "U+{:04X} 应属禁断类",
+            ch as u32
+        );
     }
     for ch in ['\u{A0}', ' ', '\u{3000}', 'A', '\u{200B}'] {
-        assert!(!crate::inline::is_atomic_gl_suppressing(ch), "U+{:04X} 不应属禁断类", ch as u32);
+        assert!(
+            !crate::inline::is_atomic_gl_suppressing(ch),
+            "U+{:04X} 不应属禁断类",
+            ch as u32
+        );
     }
 }
