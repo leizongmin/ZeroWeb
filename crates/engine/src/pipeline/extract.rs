@@ -802,11 +802,14 @@ pub fn extract_html_style_text(html: &str) -> String {
             // Resource extraction treats each <style> block as an independent EOF boundary.
             // Close a possible unterminated url(...) so malformed CSS in one block cannot
             // consume URLs from the next block after we concatenate the snippets.
-            // 括在注释内：tokenizer（extract_css_image_urls）在未闭合 url( 原始内容里仍
-            // 扫到 `)` 使 URL token 终止；parser（extract_used_font_families）视整段为
-            // 单个 comment token，不触发错误恢复吞噬后续规则（裸 `)` 会让解析器丢弃
-            // 之后全部规则——inline style 属性块因此在门禁侧全部失联）。
-            out.push_str("\n/* ) */\n");
+            // 裸 `)` 是 tokenizer（extract_css_image_urls）quoted-url 分支的闭合字符：
+            // 未终止 `url("...` 的字符串在行尾停止后，tokenizer 要求后续首个非空白为
+            // `)` 才产出 Url token（R2134「块末 EOF 自动闭合」）。曾改为 `/* ) */`
+            //（字体门禁 parser 视整段为 comment 不触发吞规则）——该形态让 tokenizer 走
+            // 「trailing input 非法」错误路径丢 URL（集成 R2134 钉测红）。parser 侧的
+            // 游离 `)` 吞规则由 css-parser 顶层错误恢复修复（丢弃单 token 继续），
+            // 门禁的 zw-inline 块不再依赖注释形态。
+            out.push_str("\n)\n");
         }
     }
     // R1796：inline `style=` 属性值（如 `style="background-image: url(x)"`）亦是 CSS 文本，

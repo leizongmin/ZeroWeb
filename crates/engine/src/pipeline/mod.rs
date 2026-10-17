@@ -4093,6 +4093,31 @@ mod css_image_url_tests {
         assert_eq!(urls, vec!["bg.png"]);
     }
 
+    /// R2134×#199 交叉回归钉（2026-10-18 集成）：`\n)\n` EOF 闭合守卫的两面契约。
+    /// tokenizer 侧（R2134）：未终止 `url("...` 块的字符串在行尾停止后，quoted 分支
+    /// 要求首个非空白为 `)` 才产出 Url——`/* ) */` 形态（#199 曾用）走 trailing-input
+    /// 错误路径丢 URL（集成 R2134 钉测红）。parser 侧（#199 DC）：守卫的游离 `)` 在
+    /// 正常块后曾落入 skip_malformed_qualified_rule 把后续门禁规则当残余吞掉——
+    /// css-parser 顶层错误恢复改为丢弃单 token 继续后，zw-inline 块存活。
+    #[test]
+    fn style_guard_rparen_serves_tokenizer_and_font_gate_simultaneously() {
+        // 正常闭合块 + 守卫：门禁规则必须在游离 `)` 后存活（#199 DC 面）。
+        let normal =
+            extract_html_style_text(r#"<style>.a { color: red }</style><p style="font-family: InlineGuard">x</p>"#);
+        assert!(
+            extract_used_font_families(&normal).may_reference("inlineguard"),
+            "守卫游离 `)` 不得吞掉后续门禁规则: {normal:?}"
+        );
+        // 未终止 quoted url 块 + 守卫：tokenizer 产出干净 URL（R2134 面）。
+        let unterminated =
+            extract_html_style_text(r#"<style>.one { background: url("support/swatch-green.png</style>"#);
+        assert_eq!(
+            extract_css_image_urls(&unterminated),
+            vec!["support/swatch-green.png"],
+            "守卫应闭合未终止 quoted url（R2134）: {unterminated:?}"
+        );
+    }
+
     /// R2419：srcset 首 URL 提取（逗号分隔候选，每候选首 token = URL）。
     #[test]
     fn srcset_first_url_parses_first_candidate() {
