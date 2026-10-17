@@ -80,3 +80,15 @@ https 地址（snapshot 页锚 about:blank 下相对地址解析失败为 spec �
   残余面仅 .https. 案的 http 腿，期望值仍成立）——FIXME(beacon-mixed-content)
 - keepalive in-flight 配额池未实现（静态 64KB 体大小判定）——
   FIXME(keepalive-quota-inflight)
+
+## 归档后复核（2026-10-18）
+
+复核轮在 main 实跑发现：T58 fmt 门禁（`cargo fmt --all -- --check` 前置快速失败）
+在本提交（fd0a5c415）引入的 beacon fixture 三处方法链上失败——上文「make test 全绿」
+结论在 fmt 门禁该点未复现；以纯格式化 style 提交修复（c745b81f4），零语义变化。
+
+修复后全门禁重跑均绿：`make test` 21814P/0F、`make reftest` 712/712、
+product-smoke welcome 17.07%（81944/480000 px）双跑逐字节恒值；welcome-800 单独
+渲染 PNG sha256 `c483bd9c95f82793` 与本 evidence 收口记录恒值；
+`make testharness-page-state` 41/41 Pass 复跑成立。csv 增补 2026-10-18
+status=completed 收口行。
