@@ -500,6 +500,11 @@ fn js_worker_main(
                 let _ = reply.send(result);
             }
             JsWorkerCommand::SetDomSnapshot { html, url } => {
+                // R-t2qq 返修 D2（镜像 renderer js_worker.rs SetDomSnapshot 臂）：
+                // adopted 规则文本同点无条件清空（进程级共享槽，跨代残留清理——新文档
+                // shim 尚未重设前合成源无 adopted 表，页面重设 adoptedStyleSheets 后经
+                // __zw_set_adopted_css 再装填）。本页脚本若已装填，快照换代即失效。
+                zero_engine::js_dom_bridge::set_active_adopted_css("");
                 // P6 import map：快照换代即从页面 HTML 重取 `<script type="importmap">`；
                 // 每代无条件清空重设（无 map/解析失败 → None，保留上一代会跨页污染）。
                 if let Ok(mut slot) = import_map.lock() {

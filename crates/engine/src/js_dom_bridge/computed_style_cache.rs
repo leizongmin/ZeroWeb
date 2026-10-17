@@ -46,7 +46,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex, RwLock};
 
 use zero_css_parser::Stylesheet;
 use zero_dom::{Document, NodeId};
@@ -92,25 +92,57 @@ pub fn set_active_external_css(css: &str) {
 }
 
 thread_local! {
-    /// 本代 adopted 样式表规则文本（constructable stylesheets）：页面
-    /// `document.adoptedStyleSheets` / `ShadowRoot.adoptedStyleSheets` 内全部规则
-    /// cssText 由 shim 汇总，经 `__zw_set_adopted_css` 回调下发。getComputedStyle
-    /// 合成源在 document `<style>` 表**之后**级联（CSSOM author 源顺序，
-    /// https://drafts.csswg.org/cssom/#dom-documentorshadowroot-adoptedstylesheets）。
-    /// 空串 = 无 adopted 表；跨代残留清空与 [`ACTIVE_EXTERNAL_CSS`] 同点同法
-    ///（SetDomSnapshot 无条件覆盖）。镜像外部 CSS 形态：host 回调仅 js worker 单线程。
-    static ACTIVE_ADOPTED_CSS: RefCell<Arc<str>> = RefCell::new(Arc::from(""));
+    /// reftest harness（wpt-runner）case 级 adopted 覆盖（R-t2qq 返修 F2）：rayon 并行下
+    /// 每案在**单 worker 线程**内完成「页面脚本 + 渲染」（`render_with_layout_inner` /
+    /// webview `load_html` 均同步执行），adopted 文本经本覆盖直达同线程 gCS 与 collect，
+    /// **不写**进程级 [`ACTIVE_ADOPTED_CSS`]——并行 case 互不可见、跨案零残留
+    ///（adopted reftest 案用裸 `div` 选择器，若经进程级槽，脚本窗口内会污染并行案的
+    /// 渲染级联、本案值也会被并行案的首清截断）。生产路径恒 `None`（仅 wpt-runner
+    /// 调用 [`set_active_adopted_css_render_override`]），读进程级槽（D1 共享语义）。
+    static ADOPTED_CSS_RENDER_OVERRIDE: RefCell<Option<Arc<str>>> = const { RefCell::new(None) };
 }
+
+/// reftest harness（wpt-runner）case 级装填：`Some(text)` = 本线程后续 gCS 合成与
+/// collect 级联的 adopted 源；`None` = 清除（case 首尾清空），回落进程级
+/// [`ACTIVE_ADOPTED_CSS`]。线程局部 ⇒ 并行 reftest case 天然隔离。
+pub fn set_active_adopted_css_render_override(css: Option<&str>) {
+    ADOPTED_CSS_RENDER_OVERRIDE.with(|cell| *cell.borrow_mut() = css.map(Arc::from));
+}
+
+/// 本代 adopted 样式表规则文本（constructable stylesheets）的**进程级共享槽**
+///（R-t2qq 返修 D1：原 thread_local 形态下写入方 `__zw_set_adopted_css` 宿主回调在
+/// js worker 线程执行，而生产级联 [`crate::pipeline::collect_stylesheets`] 在
+/// renderer 渲染线程执行——thread_local 令渲染级联永不含 adopted 规则，gCS 与
+/// paint 系统性分歧，reftest 全绿只是 harness 同线程执行的假象）。`RwLock<Arc<str>>`
+/// 换取跨线程可见；值仍 `Arc<str>`（generation/cs_cache 缓存键 Arc 比对逻辑不变）。
+/// 页面 `document.adoptedStyleSheets` / `ShadowRoot.adoptedStyleSheets` 内全部规则
+/// cssText 由 shim 汇总，经 `__zw_set_adopted_css` 回调下发。getComputedStyle 合成源
+/// 在 document `<style>` 表**之后**级联（CSSOM author 源顺序，
+/// https://drafts.csswg.org/cssom/#dom-documentorshadowroot-adoptedstylesheets）。
+/// 空串 = 无 adopted 表；跨代残留清空与 [`ACTIVE_EXTERNAL_CSS`] 同点同法
+///（js worker `SetDomSnapshot` 无条件覆盖，tab worker 同点镜像）。
+static ACTIVE_ADOPTED_CSS: LazyLock<RwLock<Arc<str>>> = LazyLock::new(|| RwLock::new(Arc::from("")));
 
 /// js worker `__zw_set_adopted_css` 回调：装本代 adopted 规则文本。无条件覆盖
-///（shim 每次数组/规则变更全量重推，非增量）。
+///（shim 每次数组/规则变更全量重推，非增量）。进程级槽——js worker 线程写、
+/// 渲染线程读（含清空，[`ACTIVE_ADOPTED_CSS`] 文档注）。
 pub fn set_active_adopted_css(css: &str) {
-    ACTIVE_ADOPTED_CSS.with(|cell| *cell.borrow_mut() = Arc::from(css));
+    if let Ok(mut slot) = ACTIVE_ADOPTED_CSS.write() {
+        *slot = Arc::from(css);
+    }
 }
 
-/// gCS 合成源消费点读取当前代 adopted 规则文本。空串 = 无 adopted 表。
+/// gCS 合成源 / collect 级联消费点读取当前代 adopted 规则文本：case 级线程局部覆盖
+/// 优先（reftest harness，见 [`ADOPTED_CSS_RENDER_OVERRIDE`]），否则进程级槽。
+/// 空串 = 无 adopted 表。
 pub(crate) fn active_adopted_css() -> Arc<str> {
-    ACTIVE_ADOPTED_CSS.with(|cell| cell.borrow().clone())
+    if let Some(v) = ADOPTED_CSS_RENDER_OVERRIDE.with(|cell| cell.borrow().clone()) {
+        return v;
+    }
+    ACTIVE_ADOPTED_CSS
+        .read()
+        .map(|slot| Arc::clone(&slot))
+        .unwrap_or_else(|_| Arc::from(""))
 }
 
 /// gCS 合成源消费点读取当前代外部 CSS。`Arc` 克隆——持有跨 collect 过程，避免

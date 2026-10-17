@@ -836,8 +836,9 @@ pub fn register_dom_callbacks(
 
     // Constructable stylesheets（CSSOM）：shim `document.adoptedStyleSheets` /
     // `ShadowRoot.adoptedStyleSheets` 汇总规则文本下发——装 [`crate::js_dom_bridge::
-    // ACTIVE_ADOPTED_CSS`] 线程局部，collect_stylesheets 在 document `<style>` 表之后
-    // 级联。shim 全量重推（非增量），无条件覆盖。
+    // ACTIVE_ADOPTED_CSS`] 进程级共享槽（js worker 线程写、渲染线程 collect 读，
+    // R-t2qq 返修 D1），collect_stylesheets 在 document `<style>` 表之后级联。
+    // shim 全量重推（非增量），无条件覆盖。
     sandbox.register_callback(
         "__zw_set_adopted_css",
         Box::new(|args: &[String]| {
