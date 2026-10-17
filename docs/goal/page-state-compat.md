@@ -1,8 +1,17 @@
 # 页面状态兼容 — sendBeacon / Page Visibility / online-offline
 
-**版本**: v1.0
-**日期**: 2026-10-08
-**状态**: Active（已立项——无用户门控项）
+**版本**: v1.1
+**日期**: 2026-10-17（v1.0 立项 2026-10-08）
+**状态**: Active（M1 完成——M2 实现轮）
+
+> **▶ 当前状态（2026-10-17 M1）**：DC-1 达成——三 corpus 导入 13/27 案执行
+>（14 案 skip 排除，账见
+> [M1 基线](page-state-compat/evidence/2026-10-17-m1-baseline.md)），基线
+> 27 子测试 P14/F3/T10 = 51.9%，csv 数据行已回填。上游无顶层 `online/`
+> 目录（立项叙述过时）——onLine 用例在 `html/browsers/offline/browser-state/`。
+> **卡点**：无。**下一步**：M2——sendBeacon spec 化 + beacon 通道
+> Referer/Origin 注入 + 三 fixture 端点 + windowless document 可见性面 +
+> R2931 断言更新（evidence 文档 M2 输入节为设计输入）。
 **执行模式**: WPT 驱动（上游三小 corpus 为验收标尺）+ 实现与语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——页面生命周期与上报面）
 

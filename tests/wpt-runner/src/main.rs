@@ -20,6 +20,7 @@ mod testharness_console;
 mod testharness_cookies;
 mod testharness_fileapi;
 mod testharness_html_semantics;
+mod testharness_page_state;
 mod testharness_webmessaging;
 mod wpt_file_loader;
 mod ws_fixture;
@@ -118,6 +119,9 @@ Commands:
                        html/browsers/history + browsing-the-web traversal +
                        the-iframe-element) window testharness cases
                        (navigation-compat goal M1 / DC-1)
+  testharness-page-state  Run pinned page-state corpus (beacon + page-visibility +
+                       html/browsers/offline/browser-state) window testharness cases
+                       (page-state-compat goal M1 / DC-1)
   testharness-service-workers  Run pinned Service Worker M1 core testharness cases
   testharness-service-workers-fetch  Run pinned Service Worker M2 fetch testharness cases
   testharness-service-workers-cache-storage  Run pinned Service Worker CacheStorage testharness cases
@@ -323,6 +327,9 @@ fn main() {
         "testharness-compression" => cmd_testharness_compression(&options, filter.as_deref()),
         "testharness-webcrypto" => cmd_testharness_webcrypto(&options, filter.as_deref()),
         "testharness-html-semantics" => cmd_testharness_html_semantics(&options, filter.as_deref()),
+        "testharness-page-state" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
+            testharness_page_state::run_page_state_cases(wpt_root, filter)
+        }),
         "testharness-fileapi" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
             testharness_fileapi::run_fileapi_cases(wpt_root, filter)
         }),
