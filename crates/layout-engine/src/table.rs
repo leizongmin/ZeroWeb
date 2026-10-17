@@ -42,6 +42,16 @@ mod table_vertical;
 
 use table_vertical::position_cells_vertical;
 
+/// rtl 表列序镜像开关（default-on；`ZW_TABLE_RTL_COL_ORDER=0` 回退 ltr 列序）。
+/// LazyLock 构造期单读（R3858 教训：进程级快照，进程内 set_var 不可靠，kill-switch
+/// 判别经外部 env corpus OFF 轮验证）。
+static TABLE_RTL_COL_ORDER_ON: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_TABLE_RTL_COL_ORDER").as_deref() != Ok("0"));
+
+fn table_rtl_col_order_enabled() -> bool {
+    *TABLE_RTL_COL_ORDER_ON
+}
+
 /// 对 LayoutBox 树执行 table 布局后处理。
 ///
 /// 遍历所有 `display: table` 或 `display: inline-table` 的容器，
@@ -1610,6 +1620,34 @@ fn position_cells(
         .and_then(|id| styles.get(&id))
         .is_some_and(|s| matches!(s.border_collapse, zero_style_system::BorderCollapseValue::Separate));
     let (perimeter_x, perimeter_y) = if separated { (spacing_x, spacing_y) } else { (0.0, 0.0) };
+    // R5170（css-writing-modes-3 §7.1：direction 决定表列序，rtl 首列在右）：
+    // direction:rtl 的表把首列排到网格右侧（direction-applies-to-013/014）。仅水平
+    // 表（vertical 域 rtl 列序 FIXME 挂账）；cell_x 仍按 ltr 推进（占位/折叠/跨列
+    // 逻辑不变），仅 cell 落位处在网格内镜像。kill-switch
+    // `ZW_TABLE_RTL_COL_ORDER=0` 回退 ltr 列序（OnceLock 进程级快照，R3858 教训）。
+    let table_rtl = table_rtl_col_order_enabled()
+        && !table_box.writing_mode.is_vertical_block_flow()
+        && table_box
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(|s| matches!(s.direction, zero_style_system::DirectionValue::Rtl));
+    // 网格总宽（非折叠列宽和 + 列间 spacing，不含周界）——rtl 镜像基准，与 cell_x
+    // 的逐 cell 推进口径（宽 + 一个 spacing）一致。
+    let grid_width = {
+        let mut w = 0.0f32;
+        let mut non_collapsed = 0usize;
+        for (i, cw) in col_widths.iter().enumerate() {
+            if !grid.collapsed_cols.get(i).copied().unwrap_or(false) {
+                w += cw;
+                non_collapsed += 1;
+            }
+        }
+        if non_collapsed > 1 {
+            w + (non_collapsed - 1) as f32 * spacing_x
+        } else {
+            w
+        }
+    };
     let table_content_width = table_box
         .content_width
         .min(col_sum + spacing_total_x + 2.0 * perimeter_x);
@@ -1927,6 +1965,8 @@ fn position_cells(
         // 直接 table-cell 匿名行（row_box = table 本身，table-content 帧、无行偏移）
         // 起始 x 含左侧周界 spacing。
         let mut cell_x = if is_direct_cell_row { perimeter_x } else { 0.0 };
+        // R5170：rtl 镜像基准（本行 cell_x 起点，随 is_direct_cell_row 变）。
+        let cell_x_start = cell_x;
         for cell in &row.cells {
             // R5168：匿名 cell 占位 entry 无盒（child_index = usize::MAX）——仅按其
             // 列宽推进 cell_x（列宽已含 run 文本 max-content），后续显式 cell 从匿名
@@ -1989,7 +2029,16 @@ fn position_cells(
             } else {
                 (0.0, 0.0)
             };
-            cell_box.x = cell_x + cell_rel_dx;
+            // R5170（css-writing-modes-3 §7.1）：rtl 表列序镜像——cell_x 仍按 ltr
+            // 推进，落位处把 [cell_x, cell_x+cell_width] 在 [cell_x_start,
+            // cell_x_start+grid_width] 内左右翻转（首列落右；013/014 实证：cell "X"
+            // 应在 100px 网格右半）。ltr 路径恒等，非 rtl 零开销。
+            let x_final = if table_rtl {
+                cell_x_start + grid_width - (cell_x + cell_width)
+            } else {
+                cell_x
+            };
+            cell_box.x = x_final + cell_rel_dx;
             // R5167（CSS2.1 §17.2.1 匿名行盒）：匿名行的 cell 无行盒帧承载行 y——
             // 直接 table-cell 匿名行的容器是 table 本身（行几何不落盘），行组内直接
             // cell 匿名行的容器是行组（定位在首行，update_row_group_positions 接管），
