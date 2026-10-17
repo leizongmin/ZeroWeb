@@ -4297,6 +4297,51 @@ mod font_face_extract_tests {
         assert_eq!(extract_font_faces(css), direct);
     }
 
+    /// extract_used_font_families：font-family 声明 + `font` 简写展开 + 引号/大小写归一；
+    /// `@font-face` 自身的 font-family 是声明名，不计入使用。
+    #[test]
+    fn extract_used_font_families_collects_longhand_and_shorthand() {
+        let css = r#"
+            @font-face { font-family: DeclaredNotUsed; src: url(d.woff); }
+            body { font-family: Inter, "JetBrains Mono", sans-serif; }
+            code { FONT-FAMILY: 'MonoSC'; }
+            h1 { font: italic 700 16px/1.5 Zillaslab, serif; }
+            @media (min-width: 600px) { .r { font-family: MediaFont; } }
+        "#;
+        let used = extract_used_font_families(css);
+        for family in ["inter", "jetbrains mono", "monosc", "zillaslab", "mediafont"] {
+            assert!(used.contains(family), "应含 {family}: {used:?}");
+        }
+        assert!(!used.contains("declarednotused"), "@font-face 声明名不是使用: {used:?}");
+    }
+
+    /// extract_used_font_families：条件块（@media/@supports/@layer/@container）不求值全部
+    /// 展开——门禁侧输入取保守过近似，条件不成立的声明也计入「可能被使用」。
+    #[test]
+    fn extract_used_font_families_walks_conditional_blocks_unconditionally() {
+        let css = r#"
+            @supports not (display: grid) { .a { font-family: LegacyFont; } }
+            @layer ui { .b { font-family: LayerFont; } }
+            @container (width > 100px) { .c { font-family: ContainerFont; } }
+            @keyframes spin { from { font-family: KeyframeFont; } }
+        "#;
+        let used = extract_used_font_families(css);
+        for family in ["legacyfont", "layerfont", "containerfont", "keyframefont"] {
+            assert!(used.contains(family), "条件块内声明应计入: {used:?}");
+        }
+    }
+
+    /// extract_html_text：取文档全部文本（含 `<script>`/`<style>` 内容）。
+    #[test]
+    fn extract_html_text_collects_full_document_text() {
+        let html = r#"<html><head><style>.x{color:red}</style></head>
+            <body><p>latin only</p><script>var s="Привет";</script></body></html>"#;
+        let text = extract_html_text(html);
+        assert!(text.contains("latin only"), "{text:?}");
+        // 脚本字符串字面量纳入（动态注入内容的静态命中来源，见函数文档保守过近似）。
+        assert!(text.contains("Привет"), "{text:?}");
+    }
+
     /// @import URL 提取（`url()` 与 bare string 两种形式，按序，媒体查询忽略）。
     #[test]
     fn extract_import_urls_collects_urls() {

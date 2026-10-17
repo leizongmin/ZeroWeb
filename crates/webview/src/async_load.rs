@@ -178,9 +178,21 @@ impl AsyncFetchHost for InProcessFetchHost {
 /// 生产 @font-face 异步加载是否启用（env `ZW_LIVE_FONTFACE`；默认启用，`0`/`false` 关闭）。
 ///
 /// kill-switch：关闭后宿主跳过 drain→load→register→resolver 刷新，行为退回 R2406 前
-///（字节抓取后丢弃）。读取方式与其他运行时配置保持一致。
+/// （字节抓取后丢弃）。读取方式与其他运行时配置保持一致。
 pub fn live_fontface_enabled() -> bool {
     match std::env::var("ZW_LIVE_FONTFACE") {
+        Ok(v) => v != "0" && !v.eq_ignore_ascii_case("false"),
+        Err(_) => true,
+    }
+}
+
+/// 使用即取字体抓取门禁是否启用（env `ZW_FONT_USE_GATE`；默认启用，`0`/`false` 关闭）。
+///
+/// kill-switch：关闭后 `begin_font_fetch` 回退「声明即取」（抓取全部 `@font-face` source），
+/// 供真实站点回退定位。读取方式与 [`live_fontface_enabled`] 一致；调用点为每页一次的
+/// 加载路径，非逐节点热路径。
+pub fn font_use_gate_enabled() -> bool {
+    match std::env::var("ZW_FONT_USE_GATE") {
         Ok(v) => v != "0" && !v.eq_ignore_ascii_case("false"),
         Err(_) => true,
     }
@@ -732,6 +744,24 @@ impl AsyncPageLoad {
         }
         let faces = extract_font_faces(&css);
         let base = url::Url::parse(&self.url).ok();
+        // 使用即取门禁（modern-page-unneeded-font-face-fetches）：CSS Fonts Level 4 §5.2
+        // （https://drafts.csswg.org/css-fonts-4/#font-style-matching）字体匹配只在元素
+        // computed font-family 引用该族且文本码点命中 unicode-range（§4）时选中 face——
+        // 声明而从未被引用 / 范围与全文零交集的 face 不再抓取（MDN 等现代页按语言子集
+        // 声明 5-10 个 face，旧「声明即取」全部下载）。语义保留：data: face 豁免（无网络
+        // 成本且 canvas `ctx.font` 按族名直取已注册 face，使用点可能不经 CSS 声明）；
+        // FontFace.load() 显式加载走 runtime `__zw_load_font` 独立路径不经此处；
+        // unicode-range 子集选择在抓取后的 FontLoader 匹配层不变。
+        let used_families = if font_use_gate_enabled() {
+            Some(zero_engine::extract_used_font_families(&css))
+        } else {
+            None
+        };
+        let page_text = if used_families.is_some() {
+            self.html.as_ref().map(|html| zero_engine::extract_html_text(html))
+        } else {
+            None
+        };
         for (
             family,
             sources,
@@ -768,6 +798,27 @@ impl AsyncPageLoad {
             else {
                 continue;
             };
+            if let (Some(used), Some(text)) = (&used_families, &page_text)
+                && !src.get(..5).is_some_and(|prefix| prefix.eq_ignore_ascii_case("data:"))
+            {
+                // 族名比较与 resolver 一致取 ASCII 小写；@font-face 声明名与使用处引号差异
+                // 由 extract_used_font_families 的去引号归一吸收。
+                if !used.contains(&family.to_ascii_lowercase()) {
+                    tracing::debug!(family = %family, "page load: font face family never referenced, skip fetch");
+                    continue;
+                }
+                let range_hit = unicode_ranges.is_empty()
+                    || text.chars().any(|c| {
+                        let code_point = c as u32;
+                        unicode_ranges
+                            .iter()
+                            .any(|&(start, end)| (start..=end).contains(&code_point))
+                    });
+                if !range_hit {
+                    tracing::debug!(family = %family, "page load: font face unicode-range unmatched, skip fetch");
+                    continue;
+                }
+            }
             if src.get(..5).is_some_and(|prefix| prefix.eq_ignore_ascii_case("data:")) {
                 if std::env::var("ZW_DATA_FONT").as_deref() != Ok("0") {
                     match decode_data_uri_bytes(src) {
@@ -1447,7 +1498,8 @@ mod tests {
 
     #[test]
     fn font_fetch_uses_one_decodable_source_per_face() {
-        let html = r#"<style>@font-face { font-family: Test; src: url(test.eot), url(test.woff), url(test.ttf), url(test.svg); }</style>"#;
+        // p 引用 Test 族（使用即取门禁下 source 选择只在被引用 face 上验证）。
+        let html = r#"<style>@font-face { font-family: Test; src: url(test.eot), url(test.woff), url(test.ttf), url(test.svg); } p { font-family: Test; }</style>"#;
         let mut load = AsyncPageLoad::from_html("https://example.com/page", html.to_string());
         let mut host = MockFetchHost::new();
 
@@ -1455,6 +1507,62 @@ mod tests {
 
         assert_eq!(host.calls, ["https://example.com/test.ttf"]);
         assert_eq!(load.font_pending.len(), 1);
+    }
+
+    /// 使用即取门禁——family 从未被任何 font-family 声明引用的 @font-face 不抓取。
+    /// CSS Fonts 4 §5.2（https://drafts.csswg.org/css-fonts-4/#font-descendant-match-era）：
+    /// face 只有被元素 computed font-family 引用才可能被选中，从未引用的 face 永不加载。
+    #[test]
+    fn font_fetch_skips_family_never_referenced_by_css() {
+        let html = r#"<html><head><style>
+            @font-face { font-family: UnusedFont; src: url(unused.woff); }
+            @font-face { font-family: UsedFont; src: url(used.woff); }
+            p { font-family: UsedFont; }
+            </style></head><body><p>hello</p></body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+        let mut host = MockFetchHost::new().with_bytes(vec![1, 2, 3]);
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+        }
+        assert!(
+            host.calls.iter().any(|u| u.ends_with("used.woff")),
+            "被引用 family 应抓取: {:?}",
+            host.calls
+        );
+        assert!(
+            !host.calls.iter().any(|u| u.ends_with("unused.woff")),
+            "未被引用 family 不应抓取: {:?}",
+            host.calls
+        );
+    }
+
+    /// 使用即取门禁的 unicode-range 侧——页面文本无码点命中的范围子集不抓取，命中子集照常。
+    /// CSS Fonts 4 §4（https://drafts.csswg.org/css-fonts-4/#unicode-range-desc）：unicode-range
+    /// 把 face 限制到码点区间，文本不出现在区间内的子集永不参与匹配。
+    #[test]
+    fn font_fetch_skips_unicode_range_subsets_without_matching_text() {
+        let html = r#"<html><head><style>
+            @font-face { font-family: Subset; src: url(latin.woff); unicode-range: U+0-7F; }
+            @font-face { font-family: Subset; src: url(cyrillic.woff); unicode-range: U+400-4FF; }
+            p { font-family: Subset; }
+            </style></head><body><p>latin only</p></body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+        let mut host = MockFetchHost::new().with_bytes(vec![1, 2, 3]);
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+        }
+        assert!(
+            host.calls.iter().any(|u| u.ends_with("latin.woff")),
+            "文本命中范围子集应抓取: {:?}",
+            host.calls
+        );
+        assert!(
+            !host.calls.iter().any(|u| u.ends_with("cyrillic.woff")),
+            "文本未命中范围子集不应抓取: {:?}",
+            host.calls
+        );
     }
 
     #[test]
@@ -1755,8 +1863,8 @@ mod tests {
                 font-feature-settings: "liga" off;
                 font-variation-settings: "wdth" 125;
                 unicode-range: U+41-5A;
-            }</style>
-            </head><body></body></html>"#;
+            } p { font-family: "TestFont"; }</style>
+            </head><body><p>ABC</p></body></html>"#;
         let mut load = AsyncPageLoad::from_html("https://example.com/", html.to_string());
         let mut wv = WebView::new(WebViewConfig::default());
         let font_bytes = vec![0xDE, 0xAD, 0xBE, 0xEF];
@@ -1795,7 +1903,7 @@ mod tests {
     fn begin_font_fetch_inline_style_without_external_css() {
         let html = r#"<html><head>
             <style>@font-face { font-family: InlineFont; src: url(i.woff); }</style>
-            </head><body><p>hi</p></body></html>"#;
+            </head><body><p style="font-family: InlineFont">hi</p></body></html>"#;
         let mut load = AsyncPageLoad::from_html("https://example.com/", html.to_string());
         let mut wv = WebView::new(WebViewConfig::default());
         let mut host = MockFetchHost::new().with_bytes(vec![1, 2, 3]);
@@ -1861,8 +1969,8 @@ mod tests {
     #[test]
     fn drain_loaded_fonts_empty_on_font_fetch_failure() {
         let html = r#"<html><head>
-            <style>@font-face { font-family: BadFont; src: url(bad.woff); }</style>
-            </head><body></body></html>"#;
+            <style>@font-face { font-family: BadFont; src: url(bad.woff); } p { font-family: BadFont; }</style>
+            </head><body><p>x</p></body></html>"#;
         let mut load = AsyncPageLoad::from_html("https://example.com/", html.to_string());
         let mut wv = WebView::new(WebViewConfig::default());
         let mut host = ErrFetchHost;
