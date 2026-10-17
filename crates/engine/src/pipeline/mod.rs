@@ -3144,6 +3144,18 @@ pub(crate) fn collect_stylesheets_with_parsed_external(
             stylesheets.push(zero_css_parser::Parser::parse_stylesheet(&css_text));
         }
     }
+    // Constructable stylesheets（CSSOM）：`document.adoptedStyleSheets` /
+    // `ShadowRoot.adoptedStyleSheets` 的汇总规则文本（进程级共享槽：js worker 经
+    // `__zw_set_adopted_css` 写、本渲染线程读——R-t2qq 返修 D1；reftest harness 走
+    // 线程局部 case 覆盖优先，见 computed_style_cache `ADOPTED_CSS_RENDER_OVERRIDE`）。
+    // 级联序 = document sheets **之后**（CSSOM author
+    // 源顺序，https://drafts.csswg.org/cssom/#dom-documentorshadowroot-adoptedstylesheets
+    // ——document 表、adopted 表同属 author origin，adopted 按文档序尾接）。空串不产表
+    //（无 adopted 语义逐位不变）。
+    let adopted_css = crate::js_dom_bridge::active_adopted_css();
+    if !adopted_css.is_empty() {
+        stylesheets.push(zero_css_parser::Parser::parse_stylesheet(&adopted_css));
+    }
     stylesheets
 }
 

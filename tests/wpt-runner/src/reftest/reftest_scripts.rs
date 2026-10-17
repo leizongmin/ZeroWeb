@@ -47,6 +47,13 @@ pub(super) fn apply_scripted_dom_mutations(
     Vec<ScrollOffsetRecord>,
     Vec<TextSelectionRecord>,
 ) {
+    // R-t2qq 返修 F2：adopted 槽 case 首清（置于最前——含下方无脚本早退路径）。进程级
+    // 槽清空是防御位（本 harness 经下方换装回调正常路径不写它）；线程局部 case 覆盖
+    // 清除防同 rayon worker 线程上一案的渲染期覆盖残留进本案脚本期。渲染期覆盖的
+    // 「尾清」在渲染入口（reftest.rs 两处 render 后）——渲染消费本案值，不能在脚本
+    // 阶段末尾清。
+    zero_engine::js_dom_bridge::set_active_adopted_css("");
+    zero_engine::js_dom_bridge::set_active_adopted_css_render_override(None);
     let scripts = extract_page_scripts(html);
     let onload_handlers = extract_onload_handlers(html);
     if scripts.is_empty() && onload_handlers.is_empty() {
@@ -82,6 +89,19 @@ pub(super) fn apply_scripted_dom_mutations(
     // R4344：清除潜在跨 case 泄漏的 live 查询文档（本函数末尾同样清）——live 文档
     // 生命周期严格限于本 case 的脚本阶段。
     zero_engine::publish_live_query_doc(None);
+    // R-t2qq 返修 F2：`__zw_set_adopted_css` 换装（同名重注册 = 替换，最后注册者胜）
+    // ——adopted 推送写**线程局部 case 覆盖**而非进程级 [`ACTIVE_ADOPTED_CSS`]。rayon
+    // 并行下 adopted 案（裸 `div` 选择器）若经进程级槽：脚本窗口内并行案渲染会读到
+    // 外案规则、本案值也会被并行案的首清截断。线程局部覆盖与本案渲染同线程（reftest
+    // 两渲染入口均同步执行），本案 gCS/collect 读到、他案零可见；覆盖清除点见函数首
+    // （case 首清）与 reftest.rs 渲染后（case 尾清）。
+    sandbox.register_callback(
+        "__zw_set_adopted_css",
+        Box::new(|args: &[String]| {
+            zero_engine::js_dom_bridge::set_active_adopted_css_render_override(args.first().map(String::as_str));
+            String::new()
+        }),
+    );
 
     if let Err(e) = sandbox.execute(generate_js_dom_shim()) {
         eprintln!("  [reftest JS] DOM shim init warning: {e}");

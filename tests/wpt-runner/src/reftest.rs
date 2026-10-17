@@ -782,6 +782,9 @@ fn render_with_layout_inner(
 
     let _zw_t5 = std::time::Instant::now();
     let result = runner_text_metrics::with_measure_ctx(font_loader, 0u32, || pipeline.render_html(html, &combined_css));
+    // R-t2qq 返修 F2：adopted 线程局部 case 覆盖尾清（渲染已消费本案值；防同 rayon
+    // worker 线程残留进下一案）。装填点与 case 首清见 reftest_scripts.rs。
+    zero_engine::js_dom_bridge::set_active_adopted_css_render_override(None);
     // R3268：canvas 像素注入 ImageCache（图元 image_key = ctx_id）
     for (ctx_id, cw, ch, rgba) in &result.canvas_images {
         if let Ok(data) = ImageData::from_rgba(rgba.clone(), *cw, *ch) {
@@ -1048,6 +1051,9 @@ pub fn render_via_webview_to_framebuffer_with_base(
             Some(&combined_css)
         },
     );
+    // R-t2qq 返修 F2：adopted 线程局部 case 覆盖尾清（webview 路径与 engine-direct 同
+    // 口径——load_html 在调用线程同步渲染，本案值已消费）。
+    zero_engine::js_dom_bridge::set_active_adopted_css_render_override(None);
 
     let mut glyph_cache = GlyphCache::new(1024);
     render_full_scene(

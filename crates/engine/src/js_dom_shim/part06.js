@@ -1814,6 +1814,194 @@
     return ss;
   }
 
+  // ── Constructable CSSStyleSheet + adoptedStyleSheets（CSSOM）──
+  // spec：https://drafts.csswg.org/cssom/#dom-cssstylesheet-cssstylesheet（constructable
+  // sheet 构造器）、https://drafts.csswg.org/cssom/#dom-documentorshadowroot-adoptedstylesheets
+  //（document/ShadowRoot 的 adopted 表读写）。规则对象复用 `_ruleFromText`/`_makeRuleStyle`
+  //（与 R2808/R2809 的 `<style>` 表同语义——同款 StyleRule 形态、insertRule/deleteRule 记账）。
+  // adopted 数组整体规则 cssText 经 host 回调 `__zw_set_adopted_css(text)` 下发引擎线程局部
+  //（collect_stylesheets 在 document sheets **之后**级联——CSSOM author 源顺序）。
+  // **已知限制**（对齐 R2809 写回既有语义）：① 视觉生效于下次 render（写源装填异步）；
+  // ② 跨代残留由 renderer `ResetDocumentState`（reset_context 重建）清空；同文档重复
+  // 快照走 `__zw_adopted_restore` 恢复钩子重推不清空（R-t2qq 二轮返修 D2——清空曾误挂
+  // 每帧 SetDomSnapshot 致 adopted 最多存活一帧，防回归注释见 renderer js_worker.rs
+  // SetDomSnapshot/ResetDocumentState 两臂）；③ ShadowRoot adopted 与 document
+  // adopted 合并为单一文档级级联源（shim shadow 树本就不参与渲染，per-shadow 作用域为
+  // fidelity defer）；④ `replace()`/`replaceSync()` 按 `\x1f/\x1e` wire 之外的 plain 文本整表
+  // 重解析（best-effort：仅 StyleRule，@-rule 块并入忽略）。
+  var _zwAdoptedMarker = '__zwConstructableSheet';
+  // document 的 adopted 列表 + 各 shadow root 的 adopted 列表（shadow 以 root handle
+  // 串键记账——`this.__zwHandle` 经 proxy get trap 短路稳定；条目数 = 页面 shadow 数，
+  // 快照换代 sandbox 重建即清，无跨代滞留）。
+  var _zwDocAdoptedSheets = [];
+  var _zwShadowAdoptedByKey = {};
+  // setter 校验（spec：任一元素非 constructable CSSStyleSheet → TypeError）。接受数组
+  //（含 length 的 array-like 回落 to-array——spec IDL sequence<FrozenArray> 转换宽容近似）。
+  function _zwAdoptedValidate(v) {
+    if (v == null || (typeof v !== 'object' && typeof v !== 'function')) {
+      throw new globalThis.TypeError(
+        "Failed to set the 'adoptedStyleSheets' property: The provided value is not of type 'sequence<CSSStyleSheet>'.");
+    }
+    var list = (Object.prototype.toString.call(v) === '[object Array]') ? v
+      : (typeof v.length === 'number' ? (function () { var a = []; for (var i = 0; i < v.length; i++) a.push(v[i]); return a; })() : null);
+    if (!list) {
+      throw new globalThis.TypeError(
+        "Failed to set the 'adoptedStyleSheets' property: The provided value is not of type 'sequence<CSSStyleSheet>'.");
+    }
+    for (var i = 0; i < list.length; i++) {
+      if (!list[i] || !list[i][_zwAdoptedMarker]) {
+        throw new globalThis.TypeError(
+          'Failed to set the \'adoptedStyleSheets\' property on \'DocumentOrShadowRoot\'' +
+            ': Failed to convert value to \'CSSStyleSheet\'.');
+      }
+    }
+    return list.slice();
+  }
+  // 汇总全部 adopted 规则 cssText（document 表在前、shadow 表随后；表内按数组序）。
+  function _zwAdoptedCombinedText() {
+    var parts = [];
+    function pushSheet(s) {
+      var rules;
+      try { rules = s.cssRules; } catch (_eR) { rules = null; }
+      if (!rules) return;
+      for (var j = 0; j < rules.length; j++) {
+        if (rules[j] && rules[j].cssText) parts.push(String(rules[j].cssText));
+      }
+    }
+    for (var i = 0; i < _zwDocAdoptedSheets.length; i++) pushSheet(_zwDocAdoptedSheets[i]);
+    for (var sk in _zwShadowAdoptedByKey) {
+      if (!Object.prototype.hasOwnProperty.call(_zwShadowAdoptedByKey, sk)) continue;
+      var _shList = _zwShadowAdoptedByKey[sk];
+      for (var sj = 0; sj < _shList.length; sj++) pushSheet(_shList[sj]);
+    }
+    return parts.join('\n');
+  }
+  function _zwAdoptedPush() {
+    if (typeof __zw_set_adopted_css !== 'function') return;
+    try { __zw_set_adopted_css(_zwAdoptedCombinedText()); } catch (_ePush) {}
+  }
+  // 恢复文本钩子（R-t2qq 二轮返修 D2）：worker SetDomSnapshot 臂取本返回值调 host 回调
+  // `__zw_adopted_restore(text)` 装槽——同文档快照刷新（sandbox 不重建）后把闭包持的
+  // 本代 adopted 列表汇总重推进程槽（「从页面真值恢复」而非清空；生产 renderer 每帧
+  // tick_observers_with 都发快照，清空语义挂 ResetDocumentState/url_changed，见
+  // js_worker.rs 两臂防回归注释）。无 adopted → 空串。
+  globalThis.__zw_adopted_restore_text = function () {
+    return _zwAdoptedCombinedText();
+  };
+  // 代际清空钩子：真跨文档切换清 shim 闭包列表并重推空串（进程槽经 __zw_set_adopted_css
+  // 同步清空）。renderer 路径 ResetDocumentState 的 reset_context 销毁重建后重新 eval
+  // shim，闭包列表自然全新，无须调用；browser tab 路径无 Reset 变体，由 SetDomSnapshot
+  // 的 url_changed 守卫调用（tab_js_worker.rs 同臂注释）。
+  globalThis.__zw_adopted_reset = function () {
+    _zwDocAdoptedSheets = [];
+    _zwShadowAdoptedByKey = {};
+    _zwAdoptedPush();
+  };
+  globalThis.CSSStyleSheet = function CSSStyleSheet(options) {
+    if (options != null && typeof options !== 'object') {
+      throw new globalThis.TypeError(
+        "Failed to construct 'CSSStyleSheet': The provided value is not of type 'CSSStyleSheetInit'.");
+    }
+    // constructable sheet：空起始 rules（无 owner 元素，规则只存 JS 侧）；adopted 后经
+    // _zwAdoptedPush 下发（含 insertRule/deleteRule/replace* 后的重推送）。
+    var rulesCache = [];
+    var sheet = {
+      type: 'text/css',
+      href: null,
+      ownerNode: null,
+      owningElement: null,
+      disabled: false,
+      title: '',
+      parentStyleSheet: null
+    };
+    Object.defineProperty(sheet, _zwAdoptedMarker, { value: true });
+    Object.defineProperty(sheet, 'cssRules', {
+      get: function () { return rulesCache; }, enumerable: true, configurable: true });
+    Object.defineProperty(sheet, 'rules', {
+      get: function () { return rulesCache; }, enumerable: true, configurable: true });
+    sheet.insertRule = function (ruleText, index) {
+      var rule = _ruleFromText(ruleText, sheet, _zwAdoptedPush);
+      var idx = (index == null) ? rulesCache.length : (index | 0);
+      if (idx < 0) idx = 0;
+      if (idx > rulesCache.length) idx = rulesCache.length;
+      rulesCache.splice(idx, 0, rule);
+      _zwAdoptedPush();
+      return idx;
+    };
+    sheet.deleteRule = function (index) {
+      var idx = (index | 0);
+      if (idx >= 0 && idx < rulesCache.length) {
+        rulesCache.splice(idx, 1);
+        _zwAdoptedPush();
+      }
+    };
+    // replaceSync(text)：整表重替换（spec：parse text → 替换规则）。best-effort 逐条
+    // _ruleFromText（@-rule 块被切分器丢弃——同 insertRule 既有粒度）。
+    sheet.replaceSync = function (text) {
+      var t = String(text == null ? '' : text);
+      rulesCache.length = 0;
+      var segs = t.split('}');
+      for (var i = 0; i < segs.length; i++) {
+        var seg = segs[i];
+        var brace = seg.indexOf('{');
+        if (brace < 0) continue;
+        var body = seg.slice(brace + 1).trim();
+        if (!body) continue;
+        rulesCache.push(_ruleFromText(seg.slice(0, brace).trim() + ' { ' + body + ' }', sheet, _zwAdoptedPush));
+      }
+      _zwAdoptedPush();
+    };
+    // replace(text)：异步形态（返 Promise<this>；shim 无真实 sheet 加载阻塞面 →
+    // resolve 已就绪）。无 Promise 环境（极老 polyfill 面）回落同步返 this。
+    sheet.replace = function (text) {
+      var self = this;
+      if (typeof globalThis.Promise !== 'function') { this.replaceSync(text); return self; }
+      return new globalThis.Promise(function (resolve) {
+        try { self.replaceSync(text); } catch (_eRep) {}
+        resolve(self);
+      });
+    };
+    sheet.addRule = function (selector, styleBlock, index) {
+      var s = String(selector == null ? '' : selector);
+      var b = String(styleBlock == null ? '' : styleBlock);
+      try { this.insertRule(s + '{' + b + '}', index); } catch (_eAr) {}
+      return -1;
+    };
+    sheet.removeRule = function (index) {
+      try { this.deleteRule(index); } catch (_eRr) {}
+    };
+    // media：constructable init.media（字符串近似——Chrome 返 MediaList，写面为主）。
+    try { Object.defineProperty(sheet, 'media', { value: (options && options.media != null) ? String(options.media) : '', writable: true, configurable: true, enumerable: true }); } catch (_eMed) {}
+    Object.setPrototypeOf(sheet, globalThis.CSSStyleSheet.prototype);
+    return sheet;
+  };
+  // spec：CSSStyleSheet 不可函数调用（必须 new）。
+  try { Object.defineProperty(globalThis.CSSStyleSheet, 'prototype', { value: globalThis.CSSStyleSheet.prototype, writable: false, enumerable: false, configurable: false }); } catch (_eProto) {}
+
+  // DocumentOrShadowRoot.adoptedStyleSheets：ShadowRoot.prototype 版（document 版在
+  // 下方 document 字面量 R2808 styleSheets 相邻处，同闭包变量）。
+  if (globalThis.ShadowRoot && globalThis.ShadowRoot.prototype) {
+    Object.defineProperty(globalThis.ShadowRoot.prototype, 'adoptedStyleSheets', {
+      get: function () {
+        var k = null;
+        try { k = this.__zwHandle; } catch (_eKg) {}
+        var m = (k != null) ? _zwShadowAdoptedByKey[k] : null;
+        return m ? m : [];
+      },
+      set: function (v) {
+        var k = null;
+        try { k = this.__zwHandle; } catch (_eKs) {}
+        if (k == null) {
+          throw new globalThis.TypeError(
+            "Failed to set the 'adoptedStyleSheets' property on 'ShadowRoot': Illegal invocation.");
+        }
+        _zwShadowAdoptedByKey[k] = _zwAdoptedValidate(v);
+        _zwAdoptedPush();
+      },
+      enumerable: true, configurable: true
+    });
+  }
+
   // XPathResult 常量（spec，R2981）——document.evaluate 的 resultType 取值。
   globalThis.XPathResult = globalThis.XPathResult || {
     ANY_TYPE: 0,
@@ -4731,6 +4919,19 @@
         ? String(__zw_query_all('style')).split('|').filter(Boolean) : [];
       for (var i = 0; i < sels.length; i++) out.push(_makeStyleSheet(_wrapSelector(sels[i])));
       return out;
+    },
+    // DocumentOrShadowRoot.adoptedStyleSheets（CSSOM）：constructable CSSStyleSheet 数组。
+    // setter 校验元素为本构造器产物（非则 TypeError，spec 语义）；列表变更即经
+    // `__zw_set_adopted_css` 汇总下发（含表内规则后续 insertRule/replace 的重推送——
+    // 推送面在 CSSStyleSheet 构造器内闭包 `_zwAdoptedPush`）。styleSheets **不含**
+    // adopted 表（Chrome 一致，cssom document-stylesheets 顺序语义）。
+    // https://drafts.csswg.org/cssom/#dom-documentorshadowroot-adoptedstylesheets
+    get adoptedStyleSheets() {
+      return _zwDocAdoptedSheets;
+    },
+    set adoptedStyleSheets(v) {
+      _zwDocAdoptedSheets = _zwAdoptedValidate(v);
+      _zwAdoptedPush();
     },
     forms: _liveQueryCollection('form'),
     images: _liveQueryCollection('img'),

@@ -982,6 +982,33 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // Constructable stylesheets（CSSOM）：shim `document.adoptedStyleSheets` /
+    // `ShadowRoot.adoptedStyleSheets` 汇总规则文本下发——装 [`crate::js_dom_bridge::
+    // ACTIVE_ADOPTED_CSS`] 进程级共享槽（js worker 线程写、渲染线程 collect 读，
+    // R-t2qq 返修 D1），collect_stylesheets 在 document `<style>` 表之后级联。
+    // shim 全量重推（非增量），无条件覆盖。
+    sandbox.register_callback(
+        "__zw_set_adopted_css",
+        Box::new(|args: &[String]| {
+            crate::js_dom_bridge::set_active_adopted_css(args.first().map(String::as_str).unwrap_or_default());
+            String::new()
+        }),
+    );
+
+    // R-t2qq 二轮返修 D2：恢复钩子 host 侧——worker SetDomSnapshot 臂以 shim
+    // `__zw_adopted_restore_text()` 的返回文本调用，把**当前页面真值**装回
+    // [`crate::js_dom_bridge::ACTIVE_ADOPTED_CSS`]（SetDomSnapshot = 恢复而非清空，
+    // 防回归注释见 apps/renderer/src/js_worker.rs SetDomSnapshot 臂——生产每帧发快照，
+    // 清空挂本回调会令 adopted 最多存活一帧）。空参数（shim 缺恢复文本钩子：旧 shim /
+    // eval 失败）→ 空串保守清空。
+    sandbox.register_callback(
+        "__zw_adopted_restore",
+        Box::new(|args: &[String]| {
+            crate::js_dom_bridge::set_active_adopted_css(args.first().map(String::as_str).unwrap_or_default());
+            String::new()
+        }),
+    );
+
     // `element.querySelector(selector)` / `element.querySelectorAll(selector)`——元素**子树**作用域
     // （spec：仅后代，不含元素自身）。elem_sel = 元素唯一选择器，区别于文档作用域的 query_match/all。
     let html = Arc::clone(dom_html);
@@ -1351,7 +1378,9 @@ pub fn register_dom_callbacks(
     let m = Arc::clone(mutations);
     // P9-9/R5107：键并入外部 CSS（Arc<str>）——同 html 同代但 css 换代（快照臂重装）
     // 时 per-selector 短路不得返旧代样式。
-    let cs_cache: Arc<Mutex<Option<(String, usize, usize, Arc<str>, HashMap<String, ComputedStyle>)>>> =
+    // R-t2qq：键并入 adopted CSS（constructable stylesheets，页面 setter 全量重推）——
+    // 同理，短路线不含 adopted 键会返 stale 旧代样式。
+    let cs_cache: Arc<Mutex<Option<(String, usize, usize, Arc<str>, Arc<str>, HashMap<String, ComputedStyle>)>>> =
         Arc::new(Mutex::new(None));
     sandbox.register_callback(
         "__zw_get_computed_style",
@@ -1371,17 +1400,27 @@ pub fn register_dom_callbacks(
             let doc_drain_gen = MUT_DRAIN_GEN.load(std::sync::atomic::Ordering::Relaxed);
             // P9-9：当前代外部 CSS（快照臂装填，同代内稳定）。
             let css = crate::js_dom_bridge::active_external_css();
+            // R-t2qq：当前代 adopted 规则文本（shim `__zw_set_adopted_css` 重推）。
+            let adopted = crate::js_dom_bridge::active_adopted_css();
             let mut cache = cs_cache.lock().unwrap_or_else(|e| e.into_inner());
-            // html 变 / drain 前进 / style_version 变 / 外部 CSS 变 → 清空 per-selector 缓存，
-            // 重置 key。drain_gen 并键（PR #83 复核遗留收口）：drain 后队列重长回同 len 但内容
-            // 可不同，已缓存 selector 走本 map 短路先于 doc 级代际缓存，键不含 drain_gen 则返 stale。
-            let need_reset = cache
-                .as_ref()
-                .is_none_or(|(h, g, v, c, _)| h != &*snap || *g != doc_drain_gen || *v != style_version || *c != css);
+            // html 变 / drain 前进 / style_version 变 / 外部 CSS 变 / adopted 变 → 清空
+            // per-selector 缓存，重置 key。drain_gen 并键（PR #83 复核遗留收口）：drain 后
+            // 队列重长回同 len 但内容可不同，已缓存 selector 走本 map 短路先于 doc 级代际
+            // 缓存，键不含 drain_gen 则返 stale。
+            let need_reset = cache.as_ref().is_none_or(|(h, g, v, c, a, _)| {
+                h != &*snap || *g != doc_drain_gen || *v != style_version || *c != css || *a != adopted
+            });
             if need_reset {
-                *cache = Some(((*snap).clone(), doc_drain_gen, style_version, css, HashMap::new()));
+                *cache = Some((
+                    (*snap).clone(),
+                    doc_drain_gen,
+                    style_version,
+                    css,
+                    adopted,
+                    HashMap::new(),
+                ));
             }
-            let (_, _, _, _, map) = cache.as_mut().expect("cs cache populated");
+            let (_, _, _, _, _, map) = cache.as_mut().expect("cs cache populated");
             // 同 selector 命中 → 直接 serialize（O(1)）。
             if let Some(style) = map.get(sel) {
                 return serialize_computed_property(style, prop);

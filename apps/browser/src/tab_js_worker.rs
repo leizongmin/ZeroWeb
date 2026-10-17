@@ -507,6 +507,26 @@ fn js_worker_main(
                 }
                 // 导航（URL 变化）→ 旧页 handle 在新页无效，清 handle→selector map（path A）。
                 let url_changed = page_url.lock().map(|u| *u != url).unwrap_or(true);
+                // R-t2qq 二轮返修 D2（镜像 renderer js_worker.rs SetDomSnapshot /
+                // ResetDocumentState 两臂）：adopted 槽同文档快照刷新「恢复」、真跨文档
+                // 切换「清空」。防回归（为什么清空不能无条件挂本臂）：本路径快照同点被
+                // 重复发送（每个脚本 chunk / 事件派发前 set_dom_snapshot，见 tab_scripts.rs
+                // execute_script_chunk 等），无条件清空会把页面刚设的 adoptedStyleSheets
+                // 清掉（renderer 每帧 tick_observers_with 同根因）。本路径**无
+                // ResetDocumentState 变体**（tab worker 持久 context 全生命周期，见 spawn
+                // 处注释），跨文档清空挂 url_changed 守卫：导航 → `__zw_adopted_reset()`
+                // 清 shim 闭包列表并重推空串（宿主清槽兜底——旧 shim 全局不随换代重建）；
+                // 同代刷新 → `__zw_adopted_restore` 从 shim 真值恢复。已知限制：同 URL
+                // 换代（reload）无 url 信号，shim 列表不失效——页面重设前槽持旧值
+                //（renderer 路径 Reset 每导航必发，无此窗口）。
+                if url_changed {
+                    let _ = sandbox.execute("__zw_adopted_reset && __zw_adopted_reset();");
+                    zero_engine::js_dom_bridge::set_active_adopted_css("");
+                } else {
+                    let _ = sandbox.execute(
+                        "__zw_adopted_restore(typeof __zw_adopted_restore_text === 'function' ? __zw_adopted_restore_text() : '');",
+                    );
+                }
                 if let Ok(mut snap) = dom_html.lock() {
                     // js-dom R386：快照换代同步刷新原生绑定 DOM 源（native 路径与 polyfill
                     // 桥同源读到新快照；首代 bootstrap 已 install → 走 refresh 快路径）。
