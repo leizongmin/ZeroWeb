@@ -258,6 +258,20 @@ enum Step {
     ClickTabClose {
         index: usize,
     },
+    /// 地址栏编辑聚焦态断言（T50 关闭标签失焦）：`focused` 为期望状态。
+    AssertAddressBarFocus {
+        focused: bool,
+    },
+    /// 点击上下文菜单中 id 匹配的项（行中心，几何与 context_menu_hit_test 同源：
+    /// 分隔行按紧凑高度累加）。菜单未开或无此项时报错。
+    ClickMenuItem {
+        id: String,
+    },
+    /// 点击标签栏「+」新标签按钮（T52 右键菜单验证；`button` 为 "Right"/"Left"，
+    /// 几何与 app_input 命中同源：new_tab_button_x 起 NEW_TAB_BTN_WIDTH 方块）。
+    ClickNewTabButton {
+        button: String,
+    },
     /// 滚轮滚动帧率基准（T36）：`steps` 次滚轮按 `interval_ms` 间隔派发，统计区间
     /// 呈现帧数与墙钟得平均 fps；`min_fps` > 0 时低于下限报错。结果写入 bench-scroll.json。
     BenchScroll {
@@ -475,6 +489,20 @@ impl Step {
             }),
             "click_tab_close" => Ok(Self::ClickTabClose {
                 index: num("index")? as usize,
+            }),
+            "assert_addressbar_focus" => Ok(Self::AssertAddressBarFocus {
+                focused: value
+                    .get("focused")
+                    .and_then(Value::as_bool)
+                    .ok_or_else(|| bad("assert_addressbar_focus requires boolean field \"focused\""))?,
+            }),
+            "click_menu_item" => Ok(Self::ClickMenuItem { id: text("id")? }),
+            "click_new_tab_button" => Ok(Self::ClickNewTabButton {
+                button: value
+                    .get("button")
+                    .and_then(Value::as_str)
+                    .unwrap_or("Left")
+                    .to_string(),
             }),
             "bench_scroll" => Ok(Self::BenchScroll {
                 x: num("x")?,
@@ -1325,6 +1353,60 @@ impl UiDriver {
                 app.handle_mouse_click(cx as f64, cy as f64, false, "Left");
                 tracing::info!(
                     "UI_DRIVER_STEP step={} click_tab_close index={index} cx={cx} cy={cy}",
+                    self.next + 1
+                );
+                Ok(())
+            }
+            Step::AssertAddressBarFocus { focused } => {
+                let actual = app.smoke_address_bar_focused();
+                if actual != *focused {
+                    return Err(format!(
+                        "assert_addressbar_focus failed: focused={actual}, expected {focused}"
+                    ));
+                }
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} assert_addressbar_focus focused={actual} status=passed",
+                    self.next + 1
+                );
+                Ok(())
+            }
+            Step::ClickMenuItem { id } => {
+                if !app.smoke_context_menu_visible() {
+                    return Err(format!("click_menu_item: context menu is not open (id {id:?})"));
+                }
+                let ids = app.smoke_context_menu_item_ids();
+                let Some(idx) = ids.iter().position(|item| item == id) else {
+                    return Err(format!("click_menu_item: no item {id:?} in menu {ids:?}"));
+                };
+                // 行中心与 context_menu_hit_test 同源：分隔行按紧凑高度累加。
+                let s = app.scale_factor;
+                let row_h = crate::layout::CONTEXT_MENU_ROW_HEIGHT * s;
+                let sep_h = crate::layout::CONTEXT_MENU_SEPARATOR_HEIGHT * s;
+                let Some((mx, my)) = app.smoke_context_menu_origin() else {
+                    return Err("click_menu_item: menu has no origin".to_string());
+                };
+                let offset: f32 = ids[..idx]
+                    .iter()
+                    .map(|item| if item == "-" { sep_h } else { row_h })
+                    .sum();
+                let cx = (mx + crate::layout::CONTEXT_MENU_WIDTH * s * 0.5) as f64;
+                let cy = (my + offset + row_h * 0.5) as f64;
+                app.handle_mouse_click(cx, cy, true, "Left");
+                app.handle_mouse_click(cx, cy, false, "Left");
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} click_menu_item={id} cx={cx} cy={cy}",
+                    self.next + 1
+                );
+                Ok(())
+            }
+            Step::ClickNewTabButton { button } => {
+                let (bx, by, bw, bh) = app.smoke_new_tab_button_rect();
+                let (cx, cy) = ((bx + bw / 2.0) as f64, (by + bh / 2.0) as f64);
+                app.handle_mouse_move(cx, cy);
+                app.handle_mouse_click(cx, cy, true, button);
+                app.handle_mouse_click(cx, cy, false, button);
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} click_new_tab_button button={button} cx={cx} cy={cy}",
                     self.next + 1
                 );
                 Ok(())

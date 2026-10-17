@@ -270,6 +270,9 @@ pub struct BrowserApp {
     view_source_fetch: ViewSourceFetchState,
     /// 进行中的图片另存为异步抓取（后台线程 + 主循环 poll，走下载管线落盘）。
     image_save_fetch: ImageSaveFetchState,
+    /// 进行中的页面另存为异步抓取（T51；与图片另存为同一抓取基础设施的独立
+    /// 队列，完成项按页面命名规则走下载管线）。
+    page_save_fetch: ImageSaveFetchState,
     /// 是否显示下载浮动面板（也可因活动下载自动展开）。
     download_panel_open: bool,
     /// 最近一次「在文件夹中显示」动作打开的目录（演示流断言面）。
@@ -435,6 +438,7 @@ impl BrowserApp {
             favicon_fetch: FaviconFetchState::new(),
             view_source_fetch: ViewSourceFetchState::new(),
             image_save_fetch: ImageSaveFetchState::new(),
+            page_save_fetch: ImageSaveFetchState::new(),
             download_panel_open: false,
             last_opened_download_dir: None,
             find_match_ranges: Vec::new(),
@@ -601,6 +605,10 @@ impl BrowserApp {
         }
         for (tab_id, url, result) in self.image_save_fetch.take_completed() {
             self.save_image_fetch_result(tab_id, url, result);
+        }
+        // T51：页面另存为抓取完成（与图片另存为同一抓取基础设施，独立队列）。
+        for (tab_id, url, result) in self.page_save_fetch.take_completed() {
+            self.save_page_fetch_result(tab_id, url, result);
         }
 
         // 检测后台标签 title 变化（如聊天应用收到消息改 title 加 "(3)"），
@@ -2594,6 +2602,11 @@ impl BrowserApp {
             self.scroll_anim.remove(&tab_id);
             self.shell.close_tab(tab_id);
             self.on_tab_closed_show_undo_toast(tab_id);
+            // Chrome 行为：关闭标签后焦点落到相邻标签的页面内容，地址栏失焦——
+            // 否则编辑中的地址栏文本残留，键入继续进地址栏而非新活跃标签。
+            self.address_bar_focused = false;
+            self.address_bar_ime_preedit.clear();
+            self.autocomplete.clear();
 
             if self.shell.is_empty() {
                 self.new_tab(None);
@@ -2614,6 +2627,10 @@ impl BrowserApp {
         self.background_tab_titles.remove(&id);
         self.shell.close_tab(id);
         self.on_tab_closed_show_undo_toast(id);
+        // 与 close_active_tab 同款地址栏失焦（Chrome 行为，见该处注释）。
+        self.address_bar_focused = false;
+        self.address_bar_ime_preedit.clear();
+        self.autocomplete.clear();
 
         if self.shell.is_empty() {
             self.new_tab(None);
@@ -2846,20 +2863,9 @@ impl BrowserApp {
         self.needs_redraw = true;
     }
 
-    /// 查看当前标签页 HTML 源代码。
-    pub fn view_page_source(&mut self, tab_id: TabId) {
-        let Some(html) = self.tabs.page_html(tab_id) else {
-            return;
-        };
-        let source_url = self.tabs.page_url(tab_id).unwrap_or_else(|| "about:blank".to_string());
-        let view_url = format!("view-source:{source_url}");
-        let page = pages::generate_view_source_page(&source_url, &html);
-        self.open_internal_document_tab(page, &view_url, "查看源代码");
-    }
-
     /// 地址栏 `view-source:<url>` 入口：后台线程抓取目标内容，主循环 poll 到结果后
     /// 以内页展示源码（参照 favicon_fetch 异步模式；抓取线程自带 30s 超时，事件
-    /// 循环不再被慢/黑洞目标阻塞）。
+    /// 循环不再被慢/黑洞目标阻塞）。右键菜单「查看源代码」经同一入口。
     ///
     /// 内层 URL 与地址栏普通输入走同一 normalize 路径，因此
     /// `view-source:127.0.0.1:8080/x` 等无 scheme 简写同样生效。

@@ -24,6 +24,23 @@ impl BrowserApp {
         self.address_bar.text()
     }
 
+    /// 演示流用：地址栏是否处于编辑聚焦态（T50 关闭标签失焦断言面）。
+    pub fn smoke_address_bar_focused(&self) -> bool {
+        self.address_bar_focused
+    }
+
+    /// 演示流用：标签栏「+」新标签按钮矩形 `(x, y, w, h)`（物理像素；T52 右键
+    /// 菜单验证的点击定位源，与 new_tab_button_x 布局同源）。
+    pub fn smoke_new_tab_button_rect(&self) -> (f32, f32, f32, f32) {
+        let s = self.scale_factor;
+        (
+            self.new_tab_button_x(),
+            layout::TAB_BAR_TOP_INSET * s,
+            layout::NEW_TAB_BTN_WIDTH * s,
+            layout::TAB_BAR_HEIGHT * s,
+        )
+    }
+
     /// 演示流用：标签在标签条中的 `(x, width)` 布局（帧渲染时随 build_scene 刷新）。
     pub fn smoke_tab_rect(&self, tab_id: zero_browser_shell::TabId) -> Option<(f32, f32)> {
         self.tab_layout

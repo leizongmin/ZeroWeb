@@ -15,6 +15,13 @@ impl BrowserApp {
         let tab_strip_h = layout::TAB_STRIP_HEIGHT * s;
 
         if y_f >= tab_y && y_f < tab_strip_h {
+            // T52：右键「+」按钮 → 新标签菜单（Chrome 行为）；先于标签命中——
+            // 按钮在标签条尾部，二者命中区不相交。
+            let new_tab_x = self.new_tab_button_x();
+            if x_f >= new_tab_x && x_f < new_tab_x + layout::NEW_TAB_BTN_WIDTH * s {
+                self.show_new_tab_button_menu(x, y);
+                return;
+            }
             if let Some(tab_id) = self.tab_hit_test(x_f, y_f) {
                 self.show_tab_context_menu(tab_id, x, y);
             }
@@ -331,12 +338,27 @@ impl BrowserApp {
             }
             "view_source" => {
                 if let Some(tab_id) = source_tab_id {
-                    self.view_page_source(tab_id);
+                    // 与地址栏 view-source: 入口同一抓取路径（open_view_source_page：
+                    // normalize + 后台线程 + poll 出页）。此前读 page_html 快照，而
+                    // 多进程管线 IPC 不携带 HTML（快照 html_source 恒 None），真实
+                    // 运行点击无动作；URL 沿用文档快照（与原实现同源）。
+                    let url = self
+                        .tabs
+                        .page_url(tab_id)
+                        .unwrap_or_else(|| "about:blank".to_string());
+                    self.open_view_source_page(&url);
                 }
             }
             "inspect" => {
                 if let Some(tab_id) = source_tab_id {
                     self.inspect_element_at(tab_id, page_doc_x, page_doc_y);
+                }
+            }
+            "save_as" => {
+                // T51：页面「另存为」——此前 Page 菜单项启用但点击无动作；现在复用
+                // T5 下载管线把当前页面落盘（图片另存为 save_image 同款抓取路径）。
+                if let Some(tab_id) = source_tab_id {
+                    self.save_page_as(tab_id);
                 }
             }
             "copy" => {
@@ -365,6 +387,9 @@ impl BrowserApp {
             "select_all" => {
                 self.address_bar.select_all();
             }
+            // ── 标签栏「+」按钮右键菜单（T52）：与「+」左键/中键同一动作路径 ──
+            "plus_new_tab" => self.new_blank_tab_focused(false),
+            "plus_new_incognito_tab" => self.new_blank_tab_focused(true),
             // ── 链接右键菜单 ──
             "open_link" => {
                 if let Some(href) = &link_url {
@@ -436,6 +461,42 @@ impl BrowserApp {
             }
             _ => {}
         }
+        self.needs_redraw = true;
+    }
+
+    /// 标签栏「+」按钮右键菜单（T52）：新标签 / 无痕标签（Chrome 行为）。
+    /// 两项与「+」按钮左键/中键同一动作路径（new_blank_tab_focused），项 id
+    /// 独立命名以便单元测试与 ui_driver 精准断言。
+    fn show_new_tab_button_menu(&mut self, x: f64, y: f64) {
+        let language = UiLanguage::detect_from_env();
+        let items = vec![
+            MenuItem::action("plus_new_tab", browser_menu_label(BrowserMenuLabel::NewTab, language)),
+            MenuItem::action(
+                "plus_new_incognito_tab",
+                browser_menu_label(BrowserMenuLabel::NewPrivateTab, language),
+            ),
+        ];
+        // 贴右/下缘翻转（T6-I2），几何与渲染/命中测试同源。
+        let (menu_x, menu_y) = self.flipped_menu_origin(x, y, &items);
+        self.context_menu = ContextMenuState {
+            visible: true,
+            context_type: ContextType::Page,
+            items,
+            hovered_index: None,
+            hovered_segment: None,
+            open_sub_menu: None,
+            sub_menu_hovered: None,
+            x: menu_x,
+            y: menu_y,
+            source_tab_id: self.shell.active_tab_id(),
+            page_doc_x: 0.0,
+            page_doc_y: 0.0,
+            bookmark_url: None,
+            bookmark_title: None,
+            image_url: None,
+            link_url: None,
+            link_text: None,
+        };
         self.needs_redraw = true;
     }
 

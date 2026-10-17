@@ -5543,3 +5543,282 @@ fn back_to_never_visited_entry_starts_at_top() {
     app.apply_pending_scroll_restore_for_test(tab);
     assert_eq!(app.smoke_scroll_offset_y(), 300.0, "第二页离开前的 300 应被保存");
 }
+
+/// T50：Ctrl+W 关闭标签后地址栏失焦——关闭前 Ctrl+L 聚焦输入的编辑态不残留，
+/// 键入直达新活跃标签页面而非继续进地址栏（Chrome 行为：焦点落到相邻标签）。
+#[test]
+fn close_active_tab_blurs_address_bar_editing_state() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    app.new_tab(Some("https://zw-focus.test/first.html"));
+    app.new_tab(Some("https://zw-focus.test/second.html"));
+
+    // Ctrl+L 聚焦地址栏并输入文字（不回车）——编辑态悬挂在地址栏。
+    let mod_key = BrowserApp::test_modifier_key_name();
+    app.handle_key(mod_key, true, None);
+    app.handle_key("l", true, None);
+    app.handle_key("l", false, None);
+    app.handle_key(mod_key, false, None);
+    for ch in "hello".chars() {
+        app.handle_key(&ch.to_string(), true, None);
+        app.handle_key(&ch.to_string(), false, None);
+    }
+    assert!(app.address_bar_focused, "前置：Ctrl+L 后地址栏应聚焦");
+
+    // Ctrl+W 关闭活跃标签 → 地址栏失焦并回填相邻标签 URL。
+    app.handle_key(mod_key, true, None);
+    app.handle_key("w", true, None);
+    app.handle_key("w", false, None);
+    app.handle_key(mod_key, false, None);
+
+    // 默认标签 + 2 个新标签 = 3，关闭活跃后余 2。
+    assert_eq!(app.shell.tab_count(), 2, "Ctrl+W 应关闭活跃标签");
+    assert!(!app.address_bar_focused, "关闭标签后地址栏应失焦");
+    assert_eq!(
+        app.smoke_address_bar_text(),
+        "https://zw-focus.test/first.html",
+        "地址栏应回填相邻标签（左侧优先）URL"
+    );
+
+    // 关闭后键入直达页面，不再进地址栏（可直接键入导航的前置条件）。
+    app.handle_key("x", true, None);
+    app.handle_key("x", false, None);
+    assert_eq!(
+        app.smoke_address_bar_text(),
+        "https://zw-focus.test/first.html",
+        "关闭标签后键入不应再进地址栏"
+    );
+}
+
+/// T51：页面「另存为」文件名推导——URL 末段（query/fragment 剥离），目录型
+/// URL 回退 index，无 .html/.htm 扩展名补 .html（清洗规则同附件命名）。
+#[test]
+fn save_page_filename_derives_from_url_path() {
+    use crate::pages::save_page_filename;
+    assert_eq!(save_page_filename("http://127.0.0.1:18080/index.html"), "index.html");
+    assert_eq!(save_page_filename("https://example.com/docs/page2"), "page2.html");
+    assert_eq!(save_page_filename("https://example.com/a/b.htm?q=1#frag"), "b.htm");
+    // 路径末段为空（目录型 URL）回退 index；裸 authority（无路径）末段即主机名。
+    assert_eq!(save_page_filename("https://example.com/"), "index.html");
+    assert_eq!(save_page_filename("https://example.com/dir/"), "index.html");
+    assert_eq!(save_page_filename("https://example.com"), "example.com.html");
+}
+
+/// T51：页面右键菜单「另存为」——Page 菜单项点击后经后台抓取（与图片另存为
+/// 同一基础设施）取当前页面内容，按页面命名规则走 T5 附件下载管线落盘
+/// （下载目录/记账/完成提示与附件下载同源）。抓取走真实网络路径（回环一次性
+/// HTTP 响应线程），无需外部 fixture。
+#[test]
+fn page_context_menu_save_as_writes_page_html_to_download_dir() {
+    // 本地一次性 HTTP 响应线程：读到请求头即回一段固定 HTML。
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+    let port = listener.local_addr().unwrap().port();
+    let page_body = b"<html><head><title>SaveTarget</title></head><body><h1>hello</h1></body></html>".to_vec();
+    let server = std::thread::spawn(move || {
+        let (stream, _) = listener.accept().expect("accept");
+        let mut stream = stream;
+        use std::io::{Read, Write};
+        let mut buf = [0u8; 1024];
+        let _ = stream.read(&mut buf);
+        let _ = stream.write_all(
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                page_body.len()
+            )
+            .into_bytes()
+            .as_slice(),
+        );
+        let _ = stream.write_all(&page_body);
+    });
+    let url = format!("http://127.0.0.1:{port}/page2.html");
+
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    let dir = std::env::temp_dir().join(format!("zw-save-as-test-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    app.shell
+        .apply_settings(|s| s.download_directory = dir.display().to_string());
+
+    // navigate_to 置 shell 标签 URL（另存为可用性与抓取目标都按 shell URL）。
+    app.navigate_to(&url);
+
+    // 右键页面空白区 → Page 菜单含 save_as 且启用。
+    let (cx, cy, _, _) = app.page_content_rect();
+    app.handle_mouse_click((cx + 40.0) as f64, (cy + 40.0) as f64, true, "Right");
+    assert!(app.is_context_menu_visible_for_test(), "右键页面应打开菜单");
+    let ids = app.smoke_context_menu_item_ids();
+    assert!(
+        ids.iter().any(|id| id == "save_as"),
+        "Page 菜单应含「另存为」项，got {ids:?}"
+    );
+    assert_eq!(app.smoke_context_menu_item_enabled("save_as"), Some(true));
+
+    // 菜单原点即右键点（窗口内不翻转），save_as 位于第 5 行（3 个动作行 +
+    // 1 个分隔行之后）——行高累加与 context_menu_hit_test 同源。
+    let s = app.scale_factor;
+    let (mx, my) = app.smoke_context_menu_origin().expect("菜单已开应有原点");
+    let row_h = layout::CONTEXT_MENU_ROW_HEIGHT * s;
+    let sep_h = layout::CONTEXT_MENU_SEPARATOR_HEIGHT * s;
+    let save_cx = (mx + layout::CONTEXT_MENU_WIDTH * s * 0.5) as f64;
+    let save_cy = (my + row_h * 3.0 + sep_h + row_h * 0.5) as f64;
+    app.handle_mouse_click(save_cx, save_cy, true, "Left");
+
+    // 轮询直至后台抓取完成并经下载管线落盘（上限 10s）。
+    let mut saved = false;
+    for _ in 0..1000 {
+        app.poll_tab_fetch();
+        if app
+            .smoke_downloads()
+            .iter()
+            .any(|(_, name, state, _, _)| name == "page2.html" && state == "Completed")
+        {
+            saved = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    server.join().expect("一次性 HTTP 线程应正常结束");
+    assert!(saved, "「另存为」应把页面 HTML 经下载管线落盘");
+
+    // 落盘内容 + 下载记账完成 + 完成提示（与附件下载同口径）。
+    let written = std::fs::read_to_string(dir.join("page2.html")).expect("page2.html 应存在");
+    assert!(written.contains("SaveTarget"), "落盘内容应为抓取到的页面 HTML");
+    assert_eq!(
+        app.smoke_download_toast().as_deref(),
+        Some("page2.html"),
+        "落盘成功应弹下载完成提示"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// T52：右键标签栏「+」按钮弹新标签菜单（新标签 / 无痕标签），点选后按对应
+/// 类型开标签（与「+」左键/中键同一动作路径，地址栏聚焦）。
+#[test]
+fn new_tab_button_right_click_opens_menu_and_creates_tab_types() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    let _ = app.build_scene_for_test(1280, 900);
+    let (btn_x, btn_y, btn_w, btn_h) = app.smoke_new_tab_button_rect();
+    let x = (btn_x + btn_w * 0.5) as f64;
+    let y = (btn_y + btn_h * 0.5) as f64;
+    let count_before = app.shell.tab_count();
+
+    // 右键「+」→ 菜单含两项。
+    app.handle_mouse_click(x, y, true, "Right");
+    assert!(app.is_context_menu_visible_for_test(), "右键「+」应弹菜单");
+    let ids = app.smoke_context_menu_item_ids();
+    assert!(
+        ids.iter().any(|id| id == "plus_new_tab"),
+        "菜单应含「新标签」项，got {ids:?}"
+    );
+    assert!(
+        ids.iter().any(|id| id == "plus_new_incognito_tab"),
+        "菜单应含「无痕标签」项"
+    );
+
+    // 点第一项「新标签」→ 普通标签 + 地址栏聚焦（与左键「+」一致）。
+    let s = app.scale_factor;
+    let row_h = layout::CONTEXT_MENU_ROW_HEIGHT * s;
+    let (mx, my) = app.smoke_context_menu_origin().expect("菜单已开应有原点");
+    app.handle_mouse_click(
+        (mx + layout::CONTEXT_MENU_WIDTH * s * 0.5) as f64,
+        (my + row_h * 0.5) as f64,
+        true,
+        "Left",
+    );
+    assert_eq!(app.shell.tab_count(), count_before + 1, "点「新标签」应开普通标签");
+    assert!(app.address_bar_focused, "新标签应聚焦地址栏（与左键「+」一致）");
+
+    // 再右键「+」点第二项「无痕标签」→ 无痕标签。
+    app.handle_mouse_click(x, y, true, "Right");
+    let (mx, my) = app.smoke_context_menu_origin().expect("菜单已开应有原点");
+    app.handle_mouse_click(
+        (mx + layout::CONTEXT_MENU_WIDTH * s * 0.5) as f64,
+        (my + row_h * 1.5) as f64,
+        true,
+        "Left",
+    );
+    assert_eq!(app.shell.tab_count(), count_before + 2, "点「无痕标签」应再开一个标签");
+    let new_tab_id = app.shell.active_tab_id().unwrap();
+    assert!(app.shell.tab(new_tab_id).unwrap().is_private(), "第二项应开无痕标签");
+}
+
+/// 右键菜单「查看源代码」：经地址栏 view-source: 同一后台抓取入口
+/// （open_view_source_page）开 view-source 内页。多进程管线 IPC 不携带 HTML，
+/// 旧的 page_html 快照路径在真实运行恒无动作；此测试走真实抓取（回环一次性
+/// HTTP 响应线程）验证派发入口到内页的完整链路。
+#[test]
+fn page_context_menu_view_source_opens_view_source_tab_via_fetch() {
+    // 本地一次性 HTTP 响应线程：读到请求头即回一段固定 HTML。
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+    let port = listener.local_addr().unwrap().port();
+    let page_body = b"<html><head><title>SrcTarget</title></head><body><p>body</p></body></html>".to_vec();
+    let server = std::thread::spawn(move || {
+        let (stream, _) = listener.accept().expect("accept");
+        let mut stream = stream;
+        use std::io::{Read, Write};
+        let mut buf = [0u8; 1024];
+        let _ = stream.read(&mut buf);
+        let _ = stream.write_all(
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                page_body.len()
+            )
+            .into_bytes()
+            .as_slice(),
+        );
+        let _ = stream.write_all(&page_body);
+    });
+    let url = format!("http://127.0.0.1:{port}/page2.html");
+
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    app.navigate_to(&url);
+
+    // 右键页面空白区 → Page 菜单含「查看源代码」且启用。
+    let (cx, cy, _, _) = app.page_content_rect();
+    app.handle_mouse_click((cx + 40.0) as f64, (cy + 40.0) as f64, true, "Right");
+    assert!(app.is_context_menu_visible_for_test(), "右键页面应打开菜单");
+    assert_eq!(app.smoke_context_menu_item_enabled("view_source"), Some(true));
+
+    // 点击「查看源代码」行：行中心按分隔行紧凑高度累加（与 context_menu_hit_test
+    // 同源），行序取 smoke_context_menu_item_ids（分隔符以 "-" 占位）。
+    let ids = app.smoke_context_menu_item_ids();
+    let idx = ids
+        .iter()
+        .position(|id| id == "view_source")
+        .expect("Page 菜单应含「查看源代码」项");
+    let s = app.scale_factor;
+    let row_h = layout::CONTEXT_MENU_ROW_HEIGHT * s;
+    let sep_h = layout::CONTEXT_MENU_SEPARATOR_HEIGHT * s;
+    let (mx, my) = app.smoke_context_menu_origin().expect("菜单已开应有原点");
+    let offset: f32 = ids[..idx].iter().map(|id| if id == "-" { sep_h } else { row_h }).sum();
+    app.handle_mouse_click(
+        (mx + layout::CONTEXT_MENU_WIDTH * s * 0.5) as f64,
+        (my + offset + row_h * 0.5) as f64,
+        true,
+        "Left",
+    );
+
+    // 轮询直至后台抓取完成并开出 view-source 内页（上限 10s）。
+    let view_prefix = format!("view-source:{url}");
+    let mut opened = false;
+    for _ in 0..1000 {
+        app.poll_tab_fetch();
+        if app
+            .smoke_tab_url(app.shell.active_tab_id().unwrap())
+            .is_some_and(|tab_url| tab_url.starts_with(&view_prefix))
+        {
+            opened = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    server.join().expect("一次性 HTTP 线程应正常结束");
+    assert!(opened, "「查看源代码」应经后台抓取开出 view-source 内页");
+}
