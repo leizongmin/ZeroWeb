@@ -1134,16 +1134,26 @@
     if (newM === 'value' && !handle && sel) {
       __zw_set_form_value(sel, next);
     }
-    // 选区复位：非可选 → 可选状态迁移，选区归零且 direction 'none'（type-change-state
-    // 'hidden→text' 族断言面——selectionStart/End 0 + selectionDirection 'none'；可选→可选
-    // 保持不变，不可选态选区 getter 本就返 null）。文本可选型判定复用 R2844 `_TEXT_SEL_TYPES`
+    // 选区复位：非可选 → 可选状态迁移，选区归零且 direction 复位初始方向（type-change-state
+    // 'hidden→text' 族断言面——selectionStart/End 0 + selectionDirection noneDirectionResult；
+    // 可选→可选保持不变，不可选态选区 getter 本就返 null）。direction 经 spec「set the
+    // selection direction」归一（form-control-infrastructure.html#set-the-selection-direction：
+    // 非 'backward' 一律 hint 'forward'）——引擎方向模型不存裸 'none'（selectionDirection
+    // setter / setSelectionRange 同口径），存 'none' 会经 getter 漏出平台 none-result
+    // 'forward' 之外的伪形态（R3906 实测 type-change-state 70F + weekmonth 10F）。
+    // 文本可选型判定复用 R2844 `_TEXT_SEL_TYPES`
     //（text/search/url/tel/password；email/temporal/number/range/color 不可选）。
     if (typeof _TEXT_SEL_TYPES === 'object' && typeof _selObj === 'function' && typeof _textSelKey === 'function'
         && !_TEXT_SEL_TYPES.hasOwnProperty(oldTy) && _TEXT_SEL_TYPES.hasOwnProperty(newTy)) {
       var soR = _selObj(_textSelKey(sel, handle));
       soR.start = 0;
       soR.end = 0;
-      soR.direction = 'none';
+      soR.direction = 'forward';
+      // R3906：同步校准基线（本函数上方刚净化了 value——不更新会让下次选区 API
+      // 入口的 _zwReconcileSel 误判 relevant value 变化再钳制一次）。
+      if (typeof _zwSelNormValue === 'function') {
+        try { soR.val = _zwSelNormValue(sel, handle, key); } catch (_eSelNorm) {}
+      }
     }
   }
   // R3038/R3041：reflected unsigned-long（numeric）+ boolean 属性读（R3037 follow-up——string 已在 R3037 覆盖）。

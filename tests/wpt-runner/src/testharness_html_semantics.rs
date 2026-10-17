@@ -23,7 +23,8 @@
 //! 渲染差异面（table 布局等）归 rendering-compat，本通道只做语义面。
 
 use crate::testharness::{
-    HarnessStatus, HarnessSubtestResult, corpus_case_timeout, run_any_js_window_case, run_testharness_html,
+    HarnessStatus, HarnessSubtestResult, case_variants, corpus_case_timeout, run_any_js_window_case,
+    run_testharness_html,
 };
 use std::path::Path;
 
@@ -178,11 +179,29 @@ fn collect_html_semantics_cases(
         if html_semantics_case_skipped(&relative, &source) {
             continue;
         }
-        let results = if is_html {
-            run_testharness_html(wpt_root, &relative, &source, harness_source, corpus_case_timeout())
-        } else {
-            run_any_js_window_case(wpt_root, &relative, &source, harness_source)
-        };
-        cases.push((relative, results));
+        // R3906（html-semantics M2）：variant meta 展开（uievents R329 既有机制复用，
+        // `case_variants` 同源）——声明 variant 的用例只按 variant 矩阵跑、不再跑基础
+        // URL（上游语义：无 query 的裸跑对 `location.search` 消费方是伪形态；
+        // textfieldselection/selection-not-application.html `?default`/`?week,month`
+        // 两 variant 裸跑时 nonApplicableTypes 落 [''] 伪清单断言面）。
+        let variants = case_variants(&source);
+        if variants.is_empty() {
+            let results = if is_html {
+                run_testharness_html(wpt_root, &relative, &source, harness_source, corpus_case_timeout())
+            } else {
+                run_any_js_window_case(wpt_root, &relative, &source, harness_source)
+            };
+            cases.push((relative, results));
+            continue;
+        }
+        for variant in variants {
+            let case_name = format!("{relative}{variant}");
+            let results = if is_html {
+                run_testharness_html(wpt_root, &case_name, &source, harness_source, corpus_case_timeout())
+            } else {
+                run_any_js_window_case(wpt_root, &case_name, &source, harness_source)
+            };
+            cases.push((case_name, results));
+        }
     }
 }

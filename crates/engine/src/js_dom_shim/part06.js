@@ -8652,6 +8652,39 @@
   //（WPT textcontrols/selectionchange-bubble 断言 ev.bubbles === true）。
   // https://w3c.github.io/selection-api/#selectionchange-event
   var _zwSelectionChangePending = null; // Array：本任务待派发条目 { node, bubble }
+  // R3906（html-semantics M2）：text control select 事件排程——spec（HTML §4.10.20）：
+  // 「set the selection range / select() / setRangeText 末步：若 extent 或 direction
+  // 实际变更，queue an element task Given a target to fire an event named select」。
+  // 属性与 selectionchange 分口径：bubbles=true、cancelable=false、isTrusted=true
+  //（R312 `__zwTrusted` 内部口——select-event.html 'is trusted'/'bubbles' 断言面），
+  // **异步**（事件循环排队——'fires asynchronously' 断言面），**无 has-scheduled
+  // 去重**（「fire once」由触发侧 changed 检测保证，同任务多次实际变更多事件各派）。
+  // 触发点：setSelectionRange / selectionStart/End/Direction setter / setRangeText /
+  // select()（part03/part04）。
+  globalThis._zwScheduleSelectEvent = function (target) {
+    if (!target) return;
+    var fire = function () {
+      try {
+        if (typeof target.dispatchEvent === 'function') {
+          // R312 UA 派发出口：isTrusted=true + `_zwUaDispatch` 印记（首过 dispatch
+          // 不翻 false——页面脚本再 dispatch 同对象才翻，redispatch 断言语义不变）。
+          var ev = (typeof globalThis.__zwMakeTrustedEvent === 'function')
+            ? globalThis.__zwMakeTrustedEvent('select', { bubbles: true })
+            : new Event('select', { bubbles: true });
+          target.dispatchEvent(ev);
+        }
+      } catch (_eSelEv) {}
+    };
+    if (typeof globalThis.setTimeout === 'function') {
+      globalThis.setTimeout(fire, 0);
+    } else if (typeof queueMicrotask === 'function') {
+      queueMicrotask(fire);
+    } else if (typeof Promise === 'function') {
+      Promise.resolve().then(fire);
+    } else {
+      fire();
+    }
+  };
   globalThis._zwScheduleSelectionChange = function (target, bubble) {
     if (!_zwSelectionChangePending) _zwSelectionChangePending = [];
     for (var i = 0; i < _zwSelectionChangePending.length; i++) {

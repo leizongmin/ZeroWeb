@@ -1720,7 +1720,7 @@ fn collect_uievents_dir_cases(
 /// `?mode=closed`）以同一文件 + 不同 query string 组成参数矩阵；runner 此前只跑基础
 /// URL（无 query），依赖 variant 参数的用例全簇误败（`mode=null` 落 TypeError）。
 /// content 支持无引号/单双引号形式；与上游 wpt struct 一致，query 含前导 `?`。
-fn case_variants(source: &str) -> Vec<String> {
+pub(crate) fn case_variants(source: &str) -> Vec<String> {
     // uievents-compat 尾簇 7：variant 值大小写保真——上游 `<meta name="variant"
     // content="?Shift">` 的查询串大小写敏感（页面 `location.search` 消费方按字面
     // switch 分派——modifier_no_mouse_movement 族旧被整体小写成 `?shift`，键miss

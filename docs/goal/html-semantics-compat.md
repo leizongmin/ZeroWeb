@@ -1,31 +1,39 @@
 # HTML Semantics 兼容 — html/semantics 语义面（主攻大域）
 
-**版本**: v1.8
+**版本**: v1.9
 **日期**: 2026-10-17（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 5 收口（select.showPicker() spec 检查序 +8P），下一步 forms 域余簇归因选片
+**状态**: Active——M2 切片 6 收口（文本控件选区语义 R3906 +602P），下一步 forms 域余簇归因选片
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-17 M2 切片 5）**：select.showPicker() spec 检查序
-> ——part03 方法分发区新支（R3905，HTML §4.10.8）：①disabled →
-> InvalidStateError（先于 being-rendered 与激活检查，抛错不消费激活）；
-> ②not being rendered → NotSupportedError（display:none 自身或任一祖先，
-> 或 content-visibility:hidden 祖先——cv:hidden 元素自身仍算 rendered）；
-> ③无瞬态激活 → NotAllowedError；④同步消费激活后静默返回（headless 无
-> picker UI；multiple/size>1 内联列表箱不抛）。属性读 latest-wins 三级
-> 回落（R3903 同款），part16 补 `test_select_show_picker_r3905` 契约单测
-> （9 场景 + 每抛错面激活不消费钉针）。show-picker 六文件 0→7P 全翻绿，
-> customizable-select/nested-options「popup 不 crash」同方法联带 +1P
-> （textarea 无 showPicker——HTMLTextAreaElement IDL 无该成员，切片 4
-> 「select/textarea」候选表述系笔误）。forms 2840→**2848P**；九域全量
-> 3799→**3807P**（3807/6913 = 55.08%；分母与上轮完全一致，diff 无机时
-> 噪声），对切片 4 账本逐 subtest diff **九域零回归**。账本见
-> [evidence/2026-10-17-m2s5-r3905.md](html-semantics-compat/evidence/2026-10-17-m2s5-r3905.md)。
-> 运行教训入账：corpus 全量轮不得与 make test/clippy 并行（首轮负载噪声
-> 190 Timeout 作废，独占重跑取账）。两处 runner 挂死仍挂账（tabular
-> span-limits 间歇、links downloading-resources skip 排除）。
+> **▶ 当前状态（2026-10-17 M2 切片 6）**：文本控件选区语义（R3906，
+> HTML §4.10.20）——selectionStart/End/Direction setter 经「set the
+> selection range」算法（end 低于 start 时 start 降到 end、ToUint32 回绕
+> clamp、direction 仅恒等 'backward' 采纳）；value setter 折叠选区到
+> 末尾；选区实际变更排异步 select 事件（part06）；`_zwSelNormValue`
+> textarea 换行归一修正（detached 长度面）；attr 回落 latest-wins 化；
+> defaultValue= 真脏态守卫（`_inputDefaultDirty` 与解析镜像区分）；
+> type 变态选区复位 direction 经「set the selection direction」归一存
+> 'forward'（初版存裸 'none' 致 type-change-state 80F 同名回归，满账本
+> 比对暴露后修正作废首轮）；runner 补 variant meta 展开（uievents R329
+> 机制复用，corpus 仅 selection-not-application.html 一文件声明）。
+> part16 补 `test_textfieldselection_r3906` 契约（W1–W9）。textfieldselection
+> 子树 784P/0F；select-event.html 0→270P 完整上报、selection-not-application
+> variant 化 183+79P、setRangeText 57→88P、selection-start-end 3→45P。
+> forms 2848→**3450P**；九域全量 3807→**4409P**（4409/7412 = 59.48%；
+> 分母 +499：select-event 完整上报 +269、variant 化净 +191、
+> setRangeText +22、selection-start-end +17），对切片 5 账本逐 subtest
+> diff **九域零回归**（066.html Timeout→Fail 为同根预存 hang 两形态，
+> 零 Pass 数变化）。账本见
+> [evidence/2026-10-17-m2s6-r3906.md](html-semantics-compat/evidence/2026-10-17-m2s6-r3906.md)。
+> 环境注记：make test 三个 browser shell 测试间歇失败已归因——X display
+> :100（root 属主 catlink 桥）会话中途死亡 + view_source fetch 负载抖动
+> （隔离 3/3 过、main CI b441d2fc7 build-and-test 绿），非本切片回归。
+> 两处 runner 挂死仍挂账（tabular span-limits 间歇、links
+> downloading-resources skip 排除）。
 > **卡点**：无阻塞。**下一步**：forms 域余簇归因选片（M1 基线失败簇
-> 归因账为起点：selected-index set 语义 / validity 约束面等余簇）。
+> 归因账为起点：selected-index set 语义 / validity 约束面 /
+> value-defaultValue-textContent textarea 簇 2/12）。
 
 
 
@@ -107,6 +115,21 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-17 M2 切片 6**：文本控件选区语义（R3906）——selection
+  setter「set the selection range」算法 + value setter 选区折叠 +
+  异步 select 事件（part06 `_zwScheduleSelectEvent`）+ textarea 换行
+  归一修正 + attr 回落 latest-wins + defaultValue= 真脏态守卫 +
+  type 变态复位 direction 归一（初版裸 'none' 满账本暴露 80F 同名
+  回归后修正，作废首轮取账重跑）+ runner variant meta 展开（R329
+  机制复用）。part16 `test_textfieldselection_r3906` 契约（W1–W9）。
+  textfieldselection 784P/0F、type-change-state 462P/0F；select-event
+  0→270P、selection-not-application variant 化 183+79P；forms
+  2848→3450P、九域 3807→4409P（4409/7412 = 59.48%，+602P，分母
+  +499），对 s5 账本逐 subtest diff 零回归。zero-engine --lib 3100
+  全过、clippy/fmt 过、零新增依赖；make test 三个 browser shell
+  间歇失败归因为环境面（X :100 catlink 桥死亡 + load 抖动，隔离与
+  main CI 双证）。挂账：editing 管线 `_textSelection` 裸 'none'
+  观察账；066.html 预存 hang。
 - **2026-10-17 M2 切片 5**：select.showPicker() spec 检查序（R3905）——
   part03 方法分发区新支（disabled→InvalidStateError 先于
   being-rendered→NotSupportedError（display:none + cv:hidden 祖先）先于

@@ -374,22 +374,58 @@
           // 仅设 value 属性，不联动 .value 当前态（spec 仅当当前值等于旧 defaultValue 时联动——罕见 defer）。
           // R2996：显式设 defaultValue 重同步（清 dirty，getter 回落新属性值）。
           if (_realTag(sel, handle) === 'INPUT') {
+            // R3906：真实用户编辑脏态须在 `_clearInputDefault` 前捕（后者重同步默认态）。
+            var _dvGenuinelyDirty = _inputValuesSet[key] === true && _inputDefaultDirty[key] === true;
             _clearInputDefault(key);
             if (handle) __zw_set_attr_handle(handle, 'value', String(value));
             else { __zw_set_attr(sel, 'value', String(value)); moAttr = 'value'; }
+            // R3906：非**真实用户编辑**时同步 `_inputValues` 缓存（=setAttribute('value')
+            // 同口径）——defaultValue 改的是内容属性，dirty flag 为 false 的元素当前值
+            // 随属性联动（HTML §4.10.5.4）。脏判定用 `_inputDefaultDirty`（真实
+            // `.value=`/valueAsNumber= 首写捕获标记，part03 R2996）而非 `_inputValuesSet`
+            // ——innerHTML 解析/setAttribute 镜像也置 Set=true（part04 R3902b 同步），
+            // 但 spec dirty flag 仍 false（selection-value-interactions parsed-default
+            // 变体 'expected somexyzing but got abcdxyzghij' 断言面）。真脏态不覆写
+            //（spec：defaultValue 不影响当前值——W5 setRangeText 后 defaultValue 面）。
+            if (!_dvGenuinelyDirty) _inputValues[key] = String(value);
           } else if (_realTag(sel, handle) === 'TEXTAREA') {
             // R57（FV M1）：textarea.defaultValue 设置——默认值 + value 联动
             //（当前值未编辑时——**不算用户编辑**（_userEdited 不置——validity
             // 自动 valid——"Programmatically setting defaultValue is not a user
             // edit"）
             try {
-              if (handle) __zw_set_text_handle(handle, String(value));
-              else __zw_set_text(sel, String(value));
+              if (handle) {
+                __zw_set_text_handle(handle, String(value));
+                // R3906：本地文本视图跟随（textContent= 同链——清 registry 子 + 重注册/
+                // 注销文本 el + `_zwTextWritten` 同步）。此前仅写 host 缓存，JS 侧活视图
+                //（_zwLocalChildNodes/_handleChildren，`_zwTaLiveText` 与 textContent
+                // getter 消费）stale——非脏 textarea defaultValue= 后选区重置判定与
+                // value 读取失真（extra.html 'defaultValue setter' 阶段断言面）。
+                if (_handleChildren[handle]) {
+                  for (var _dvC = 0; _dvC < _handleChildren[handle].length; _dvC++) {
+                    var _dvN = _handleChildren[handle][_dvC];
+                    if (_dvN && _dvN.__zwHandle && _zwNodeParent) delete _zwNodeParent[_dvN.__zwHandle];
+                  }
+                  _handleChildren[handle] = [];
+                }
+                if (typeof _zwTextWritten === 'undefined') { globalThis._zwTextWritten = {}; }
+                _zwTextWritten[handle] = String(value);
+                var _dvTxt = String(value);
+                if (_dvTxt !== '' && typeof _zwRegisterTextEl === 'function') {
+                  _zwRegisterTextEl(_makeProxy(sel, handle), handle, sel, _dvTxt);
+                } else if (typeof _zwUnregisterTextEl === 'function') {
+                  _zwUnregisterTextEl(_makeProxy(sel, handle));
+                }
+              } else __zw_set_text(sel, String(value));
             } catch (_e) {}
             try { _textareaDefault[key] = String(value); } catch (_e) {}
             // R57（FV M1）：本地 value 状态同步（_controlValue 优先读
-            // _inputValues——mutation 未应用时 value 读取不 stale）
-            try { _inputValues[key] = String(value); } catch (_e) {}
+            // _inputValues——mutation 未应用时 value 读取不 stale）。
+            // R3906：脏态（value IDL set / setRangeText 置 `_inputValuesSet`）**不覆写**
+            // ——defaultValue 只改默认值不影响当前值（selection-value-interactions
+            // 'value dirty flag behavior after setRangeText' 6 案断言面：setRangeText
+            // 后 defaultValue 写入曾把 dirty 值冲成 'set range text'）。
+            if (_inputValuesSet[key] !== true) _inputValues[key] = String(value);
           } else if (_realTag(sel, handle) === 'OUTPUT') {
             // https://html.spec.whatwg.org/multipage/form-elements.html#dom-output-defaultvalue
             var _odv = String(value);

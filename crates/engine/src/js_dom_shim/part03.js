@@ -8873,8 +8873,16 @@
     if (tag === 'TEXTAREA') return true;
     if (tag !== 'INPUT') return false;
     var ty;
-    try { ty = handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type'); } catch (_e) { ty = ''; }
-    return Object.prototype.hasOwnProperty.call(_TEXT_SEL_TYPES, (ty || '').toLowerCase());
+    // R3906：type 读走 latest-wins（detached 元素 pending SetAttr 只在 lw 变体可见，
+    // 同 value setter/`_reflectedTypeEnum` 的理由）+ 枚举规范化——非法 type 值按
+    // 「invalid value default → Text 状态」回落为可选文本控件（WPT
+    // selection-not-application 'input[type=aninvalidtype]' 断言族：getters 返值、
+    // setters/methods 不抛）。
+    try {
+      ty = handle ? __zw_get_attr_handle(handle, 'type')
+        : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'type') : __zw_get_attr(sel, 'type'));
+    } catch (_e) { ty = ''; }
+    return Object.prototype.hasOwnProperty.call(_TEXT_SEL_TYPES, _zwNormalizeInputType(ty));
   }
   // R3317 HTML 日期/时间 value 串解析 → UTC Date 对象（valueAsDate getter 用）。
   // 按 HTML §4.10.5.18：date(YYYY-MM-DD)→当日 00:00:00 UTC；time(HH:MM[:SS[.fff]][,秒小数] 可带 'Z'/±HH:MM)
@@ -8999,15 +9007,51 @@
   function _stableValueKey(key) {
     return key.charAt(0) === '#' || key.charAt(0) === '@';
   }
+  // R3906：textarea API 值的 JS 侧活文本读（handle 形 detached）。`__zw_get_text_handle`
+  // /_zwTextWritten 是 host 写缓存（textContent=/defaultValue= 写入面），子节点增删
+  //（firstChild.remove/appendChild）不可见——非脏 textarea 的 API value = 子文本
+  //（HTML §4.10.6），沿 textContent getter R81 同源融合视图拼接（本地注册文本
+  // _zwLocalChildNodes + registry 子 _handleChildren；dom-node-textcontent：字符数据
+  // 后代）。视图空即值空——不落写缓存兜底（缓存对子增删 stale，extra.html
+  // 'Removing child nodes in non-dirty textarea' 断言面）。
+  function _zwTaLiveText(handle) {
+    var kids = (typeof _zwLocalChildNodes === 'function') ? _zwLocalChildNodes(null, handle) : null;
+    var reg = (typeof _handleChildren !== 'undefined' && _handleChildren[handle]) ? _handleChildren[handle] : null;
+    var list = (kids && kids.length) ? ((reg && reg.length) ? kids.concat(reg) : kids)
+      : ((reg && reg.length) ? reg : (kids || []));
+    var out = '';
+    for (var i = 0; i < list.length; i++) {
+      var n = list[i];
+      if (!n) continue;
+      if (n.nodeType === 3 || n.nodeType === 4) {
+        out += String(n.nodeValue != null ? n.nodeValue : (n.data != null ? n.data : ''));
+      } else if (n.nodeType === 1 && typeof n.textContent === 'string') {
+        out += n.textContent;
+      }
+    }
+    return out;
+  }
   // text control 当前 value 串（mirror value getter 的 lazy-init 逻辑，仅读不改缓存——选区 clamp 须 length）。
   function _controlValue(sel, handle, key) {
     if (_inputValues[key] != null && (_inputValuesSet[key] === true || _stableValueKey(key))) return String(_inputValues[key]);
     var v = '';
-    if (!handle && sel && _isTag(sel, 'TEXTAREA')) {
-      try { v = __zw_get_text(sel) || ''; } catch (_e) {}
+    // R3906：textarea 判定走 _realTag（handle 形 detached 元素同样成立）——detached
+    // textarea 的 value 是其文本内容（无 value 属性可回落，sel/handle 两形各按其读）。
+    // 旧 `!handle && sel` 门使 detached textarea 恒读 ''（extra.html 换行归一/same-value
+    // 族 'expected 3 but got 0' 断言面根因）。handle 形活文本走 _zwTaLiveText（写缓存
+    // 对子节点增删 stale——extra.html 'Removing child nodes in non-dirty' 断言面）。
+    if (_realTag(sel, handle) === 'TEXTAREA') {
+      try {
+        if (!handle && sel) v = __zw_get_text(sel) || '';
+        else v = _zwTaLiveText(handle);
+      } catch (_eTa) {}
     } else {
       try {
-        var va = handle ? __zw_get_attr_handle(handle, 'value') : (sel ? __zw_get_attr(sel, 'value') : null);
+        // attr 回落读走 latest-wins（sel 形 pending SetAttr 只在 lw 变体可见——
+        // defaultValue=/setAttribute('value') 后选区/setRangeText 即读当前值，
+        // 同 _captureInputDefault/`_reflectedTypeEnum` 口径）。
+        var va = handle ? __zw_get_attr_handle(handle, 'value')
+          : (sel ? (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'value') : __zw_get_attr(sel, 'value')) : null);
         if (va != null) v = va;
       } catch (_e) {}
     }
@@ -9054,11 +9098,18 @@
   }
   function _clearBoolDefault(key, attr) { _boolDefaultDirty[key + ':' + attr] = false; }
 
-  // 选区偏移 clamp：把任意输入归一为 [0, len] 内整数（Chromium 对超界/负值/非数 clamp 到边界，非抛）。
-  function _clampSelOffset(v, len) {
-    var n = (typeof v === 'number') ? Math.floor(v) : parseInt(v, 10);
+  // R3906：WebIDL unsigned long 转换（ECMAScript ToUint32）——true→1、undefined/NaN→0、
+  // -1→2^32-1、2^32→0（WPT selection-start-end 'edge-case values' 与 setSelectionRange
+  // (-1,1)/(1,-1)/(true,1) 断言面）。HTML §4.10.20 各 IDL 参数先转换后 clamp。
+  function _zwSelUint(v) {
+    var n = Number(v);
     if (isNaN(n)) n = 0;
-    if (n < 0) n = 0;
+    return n >>> 0;
+  }
+  // 选区偏移 clamp：WebIDL unsigned long 转换（_zwSelUint）后归一为 [0, len]（超界 clamp
+  // 到边界，非抛；负值经 wrap 落 2^32-1 再 clamp 到 len——Chromium oracle 同形）。
+  function _clampSelOffset(v, len) {
+    var n = _zwSelUint(v);
     if (n > len) n = len;
     return n;
   }
@@ -9076,6 +9127,48 @@
   function _selObj(key) {
     if (!_textSelection[key]) _textSelection[key] = { start: 0, end: 0, direction: 'forward' };
     return _textSelection[key];
+  }
+
+  // R3906：选区校准基准值（API value 规范形）。textarea 按规范换行归一（\r\n|\r → \n，
+  // HTML §4.10.11 raw value → API value）；input 按类型 value 净化算法（value-mode 脏缓存
+  // 已净化——净化幂等，重入无害）。relevant value 变化检测与偏移 clamp 均以该形为基准
+  //（selection-start-end-extra 'url 净化缩短钳到 18' / 'textarea 换行形变不算变化' 断言面）。
+  function _zwSelNormValue(sel, handle, key) {
+    var v = String(_controlValue(sel, handle, key));
+    // textarea 判定 _realTag（sel/handle 两形）：textarea API 值只做换行归一，不走
+    // input 净化（_zwNormalizeInputType('textarea') → 'text' 会把 \r\n 整体剥掉，
+    // detached textarea 长度即错——HTML §4.10.11 API value 无剥换行步骤）。
+    if (_realTag(sel, handle) === 'TEXTAREA') return v.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    try {
+      var ty = _zwNormalizeInputType(handle ? __zw_get_attr_handle(handle, 'type')
+        : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'type') : __zw_get_attr(sel, 'type')));
+      return String(_zwSanitizeInputValue(v, ty, sel, handle));
+    } catch (_eNorm) { return v; }
+  }
+  // R3906：relevant value 变化的选区惰性校准（HTML §4.10.20「Whenever the relevant value
+  // changes...」）。value IDL setter 的「折叠到值末」在写侧完成（part04）；其余通道
+  //（defaultValue/textContent/子节点增删/类型迁移净化/form reset）在此入口校准：
+  // input（含脏态）→ start/end 钳到新值长；textarea 非脏 → 光标重置到 0（Chromium 锚定：
+  // 非脏态文本内容节点增删/替换即光标丢失——extra.html 'Removing child nodes in
+  // non-dirty textarea should make selection{Start,End} 0' / 'textContent should NOT move
+  // to the end' 断言族）。无基线（so.val undefined）为首次观测：只采纳基线不动选区
+  //（fresh 元素光标在 0，spec「initial state = text entry cursor at the beginning」）。
+  function _zwReconcileSel(sel, handle, key) {
+    var so = _selObj(_textSelKey(sel, handle));
+    var val = _zwSelNormValue(sel, handle, key);
+    if (so.val === val) return so;
+    if (so.val !== undefined) {
+      var len = val.length;
+      // textarea 判定 _realTag（sel/handle 两形成立，同 _controlValue R3906 口径）。
+      if (_realTag(sel, handle) === 'TEXTAREA' && _inputValuesSet[key] !== true) {
+        so.start = 0; so.end = 0;
+      } else {
+        if (so.start > len) so.start = len;
+        if (so.end > len) so.end = len;
+      }
+    }
+    so.val = val;
+    return so;
   }
 
   // `el.parentNode` / `parentElement`：经 host `__zw_parent(sel)` 返真实元素父选择器
@@ -16304,7 +16397,10 @@ return e;
             if (!handle && sel && _isTag(sel, 'TEXTAREA')) {
               _inputValues[key] = __zw_get_text(sel) || '';
             } else {
-              var va = handle ? __zw_get_attr_handle(handle, 'value') : __zw_get_attr(sel, 'value');
+              // R3906：lazy-init 读走 latest-wins（pending SetAttr 只在 lw 变体可见——
+              // 同 `_controlValue`/`_reflectedTypeEnum` 口径，防 stale 值被缓存钉死）。
+              var va = handle ? __zw_get_attr_handle(handle, 'value')
+                : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'value') : __zw_get_attr(sel, 'value'));
               _inputValues[key] = (va == null) ? '' : va;
             }
             return _inputValues[key];
@@ -16318,7 +16414,8 @@ return e;
           // 即 live 默认值；有 setter 的语料走 `_inputValuesSet` 缓存面不变）。
           var vaF = (!handle && sel && _isTag(sel, 'TEXTAREA'))
             ? __zw_get_text(sel)
-            : (handle ? __zw_get_attr_handle(handle, 'value') : (sel ? __zw_get_attr(sel, 'value') : null));
+            : (handle ? __zw_get_attr_handle(handle, 'value')
+              : (sel ? (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'value') : __zw_get_attr(sel, 'value')) : null));
           return (vaF == null) ? '' : vaF;
           } // R5009 片 d：!_rvSkip3——LI/METER 跳过 dirty 缓存，落 part04 数值分支
         }
@@ -16366,11 +16463,12 @@ return e;
         }
         // text-control 选区 getter（R2844）：selectionStart / selectionEnd / selectionDirection。
         // 仅 text control（_isTextControl gate）。默认 {0, 0, 'forward'}（Chromium 150 oracle 锚定）。
-        // 文本编辑器 / 自动选择 / Range 算法读选区状态高频。非 text input 按规范返回 null。
-        // getter 不污染 _textSelection（纯读）。
+        // R3906：读前惰性校准（relevant value 变化 → 钳制/重置，_zwReconcileSel）——无选区
+        // 写入史时首次只采纳基线，光标保持 spec 初始态 0。文本编辑器 / 自动选择 / Range 算法
+        // 读选区状态高频。非 text input 按规范返回 null。
         if (prop === 'selectionStart' || prop === 'selectionEnd' || prop === 'selectionDirection') {
           if (_isTextControl(sel, handle)) {
-            var gs = _textSelection[_textSelKey(sel, handle)] || { start: 0, end: 0, direction: 'forward' };
+            var gs = _zwReconcileSel(sel, handle, key);
             if (prop === 'selectionStart') return gs.start;
             if (prop === 'selectionEnd') return gs.end;
             return gs.direction;
@@ -16378,30 +16476,40 @@ return e;
           if (_realTag(sel, handle) === 'INPUT') return null;
         }
         // `el.setSelectionRange(start, end, direction?)`（HTMLInputElement.textarea，R2844）——设选区。
-        // Chromium 150 oracle 锚定：start/end clamp [0, len]；end<start → start 折叠到 end（setSR(4,2)→{2,2}）；
-        // direction 缺省 'forward'，否则取给定值（'backward'/'none'，其他归 'forward'）。仅 text control。
+        // HTML §4.10.20「set the selection range」：start/end 经 unsigned long 转换（_zwSelUint）
+        // 后 clamp [0, len]；end<start → 双双置于 offset end 前（折叠到 end，非 start）；direction
+        // 仅恒等 'backward'/'forward' 采纳，缺省/'none'/其他一律 'forward'（引擎方向模型：初始
+        // 方向 'forward'，'none' 不落存储——textfieldselection-setSelectionRange setup() 自锚定
+        // expected_direction_none + selection-not-application「assigning 'none' → 初始方向」断言面）。
         if (prop === 'setSelectionRange') {
           if (_isTextControl(sel, handle)) {
             return function(s, e, dir) {
-              var len = _controlValue(sel, handle, key).length;
+              var len = _zwSelNormValue(sel, handle, key).length;
               var ne = _clampSelOffset(e, len);
               var ns = _clampSelOffset(s, len);
               if (ne < ns) ns = ne;
-              var d = (dir === 'backward' || dir === 'none') ? dir : 'forward';
-              var so = _selObj(_textSelKey(sel, handle));
+              var d = (dir === 'backward' || dir === 'forward') ? dir : 'forward';
+              var so = _zwReconcileSel(sel, handle, key);
               // E2 切片 12（editing goal，2026-09-08）：同值早退——spec「To set the
               // selection range」末步：仅当 extent 或 direction 实际变更才排程
               // selectionchange（WPT textcontrols/selectionchange.html
               // 'Setting initial zero selection range'/'same ... twice' 断言族）。
               var changed = (so.start !== ns) || (so.end !== ne) || (so.direction !== d);
               so.start = ns; so.end = ne; so.direction = d;
+              so.val = _zwSelNormValue(sel, handle, key);
               // R3254-M1 残余切片 3：text control 选区变更排 selectionchange——
               // target = 控件自身，bubbles=true（spec「Firing selectionchange event」：
               // target 为 element 时 bubbles；WPT selectionchange-bubble 断言）。
+              // R3906：extent 或 direction 实际变更时 spec 排队 UA 派发 select 事件
+              //（bubbles=true、cancelable=false、isTrusted=true、事件循环异步——
+              // select-event.html 'fires asynchronously'/'is trusted'/'bubbles' 断言面）。
               if (changed) {
                 try {
                   if (typeof globalThis._zwScheduleSelectionChange === 'function') {
                     globalThis._zwScheduleSelectionChange(_makeProxy(sel, handle), true);
+                  }
+                  if (typeof globalThis._zwScheduleSelectEvent === 'function') {
+                    globalThis._zwScheduleSelectEvent(_makeProxy(sel, handle));
                   }
                 } catch (_eSelChSC) {}
               }
@@ -16425,21 +16533,29 @@ return e;
             }
           } else {
             return function(replacement, start, end, selectionMode) {
-            var so = _selObj(_textSelKey(sel, handle));
-            if (arguments.length < 2) start = so.start;
-            if (arguments.length < 3) end = so.end;
-            start = Number(start); end = Number(end);
-            if (isNaN(start)) start = 0;
-            if (isNaN(end)) end = 0;
-            // spec：start > end 抛 IndexSizeError（边界校验先于 clamp）。
+            // R3906：replacement 为必备参数——零参调用 WebIDL TypeError
+            //（textfieldselection-setRangeText 'setRangeText without argument throws
+            // a type error' 全族断言面）。
+            if (arguments.length < 1) {
+              throw new TypeError("Failed to execute 'setRangeText': 1 argument required, but only 0 present.");
+            }
+            var so = _zwReconcileSel(sel, handle, key);
+            // spec 步 3-4（HTML §4.10.20 setRangeText）：start/end 未给 → 当前选区
+            //（selection-value-interactions 单参替换当前选中子串断言面）。
+            if (start === undefined) start = so.start;
+            if (end === undefined) end = so.end;
+            // 步 5：unsigned long 转换先于 start>end 检查——(-1,1) 经 wrap 4294967295>1
+            // 抛 IndexSizeError（转换序与 setSelectionRange 同族）。
+            start = _zwSelUint(start); end = _zwSelUint(end);
             if (start > end) _throwDom('IndexSizeError', 'setRangeText: start greater than end');
-            replacement = String(replacement == null ? '' : replacement);
+            replacement = String(replacement);
             if (selectionMode !== 'select' && selectionMode !== 'start' && selectionMode !== 'end') selectionMode = 'preserve';
-            var val = _controlValue(sel, handle, key);
-            var cs = _clampSelOffset(start, val.length);
-            var ce = _clampSelOffset(end, val.length);
+            var val = _zwSelNormValue(sel, handle, key);
+            var cs = (start > val.length) ? val.length : start;
+            var ce = (end > val.length) ? val.length : end;
             var oldStart = so.start, oldEnd = so.end;
-            // 替换 [cs,ce) 子串；经 proxy value setter 持久化（区分 textarea/input + dirty 跟踪）。
+            // 替换 [cs,ce) 子串；经 proxy value setter 持久化（区分 textarea/input + dirty
+            // 跟踪；R3906 值变更折叠随写发生，下方按 selectionMode 重定选区覆盖）。
             this.value = val.slice(0, cs) + replacement + val.slice(ce);
             // 按 selectionMode 重定选区（spec §4.10.5.23）。delta = 替换后净长度变化。
             var delta = replacement.length - (ce - cs);
@@ -16454,14 +16570,19 @@ return e;
               so.start = (oldStart <= cs) ? oldStart : (oldStart >= ce ? oldStart + delta : cs);
               so.end = (oldEnd <= cs) ? oldEnd : (oldEnd >= ce ? oldEnd + delta : cs);
             }
+            so.val = _zwSelNormValue(sel, handle, key);
             // E2 切片 12（editing goal，2026-09-08）：spec 末步「Set the selection range
             // with selection start and selection end」→ 选区实际变更时排程
             // selectionchange（bubbles=true，控件 target；WPT textcontrols/
             // selectionchange.html 'Calling setRangeText() after select()' 断言族）。
+            // R3906：extent 实际变更时 spec 同步排队 select 事件（同 setSelectionRange 口径）。
             if (so.start !== oldStart || so.end !== oldEnd) {
               try {
                 if (typeof globalThis._zwScheduleSelectionChange === 'function') {
                   globalThis._zwScheduleSelectionChange(_makeProxy(sel, handle), true);
+                }
+                if (typeof globalThis._zwScheduleSelectEvent === 'function') {
+                  globalThis._zwScheduleSelectEvent(_makeProxy(sel, handle));
                 }
               } catch (_eSelChSRT) {}
             }

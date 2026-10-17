@@ -4641,20 +4641,27 @@
         if (prop === 'select') {
           return function() {
             if (_isTextControl(sel, handle)) {
-              var so = _selObj(_textSelKey(sel, handle));
+              var so = _zwReconcileSel(sel, handle, key);
               // E2 切片 12（editing goal，2026-09-08）：spec select() = 「Set the
               // selection range with 0 and infinity」→ 同值时（已全选）不排程
               // selectionchange（WPT textcontrols/selectionchange.html
               // 'Calling select() twice' 断言 1 event 非 2）。
-              var fullLen = _controlValue(sel, handle, key).length;
+              var fullLen = _zwSelNormValue(sel, handle, key).length;
               var changedSel = (so.start !== 0) || (so.end !== fullLen) || (so.direction !== 'forward');
               so.start = 0;
               so.end = fullLen;
               so.direction = 'forward';
+              so.val = _zwSelNormValue(sel, handle, key);
+              // R3906：select() 全选生效时排队 select 事件（spec 同口：
+              // bubbles=true、异步、trusted——select-event.html 'select() method'
+              // 断言族）。
               if (changedSel) {
                 try {
                   if (typeof globalThis._zwScheduleSelectionChange === 'function') {
                     globalThis._zwScheduleSelectionChange(_makeProxy(sel, handle), true);
+                  }
+                  if (typeof globalThis._zwScheduleSelectEvent === 'function') {
+                    globalThis._zwScheduleSelectEvent(_makeProxy(sel, handle));
                   }
                 } catch (_eSelChSel) {}
               }
@@ -10868,6 +10875,8 @@
             var _ivTy = _zwNormalizeInputType(handle ? __zw_get_attr_handle(handle, 'type')
               : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'type') : __zw_get_attr(sel, 'type')));
             var _ivMd = _zwInputValueMode(_ivTy);
+            // R3906：写前选区校准基准（value setter 步 5 折叠判定的旧值侧；仅 value 模式用）。
+            var _r3906OldV = _ivMd === 'value' ? _zwSelNormValue(sel, handle, key) : null;
             // [LegacyNullToEmptyString] DOMString（HTMLInputElement.value）——null → ''（非
             // "null" 串；valueMode file 面 `input.value = null` 期望按空串清空、不抛）。
             var _ivVal = (value === null) ? '' : String(value);
@@ -10893,6 +10902,19 @@
               var _ivSan = (globalThis.__zwSkipValueSanitize === true)
                 ? _ivVal : _zwSanitizeInputValue(_ivVal, _ivTy, sel, handle);
               _inputValues[key] = _ivSan; _inputValuesSet[key] = true;
+              // R3906（HTML §4.10.5.4 value setter 步 5）：值（净化后）变更 → 文本入口
+              // 光标移到新值末 + 反选 + 方向复位 'forward'（selection-start-end 'Initial
+              // .value set should set selectionStart to end of value' 16 案 + after-
+              // content-change 6 案断言面）；同值不折叠（selection-value-interactions
+              // 'not collapsed when value is set to its existing value' 面）。无事件：
+              // spec 值 setter 步无 select/selectionchange 排队。
+              if (_ivSan !== _r3906OldV) {
+                var _r3906so = _selObj(_textSelKey(sel, handle));
+                _r3906so.start = _ivSan.length;
+                _r3906so.end = _ivSan.length;
+                _r3906so.direction = 'forward';
+                _r3906so.val = _ivSan;
+              }
               // value 模式**不写内容属性**（spec：IDL set 走元素当前值，attr 不动——
               // getAttribute('value') 保持 null/作者值。旧 handle 路径 attr 镜像会让
               // default 族 hasAttribute 读到幻影值——R3901 probe 'temporal→checkbox'
@@ -10900,6 +10922,9 @@
               if (!handle && sel) __zw_set_form_value(sel, _ivSan);
             }
           } else {
+            // R3906：TEXTAREA 写前校准基准（API 值换行归一形——\r\n 形变同值不折叠）。
+            var _r3906IsTa = _realTag(sel, handle) === 'TEXTAREA';
+            var _r3906TaOld = _r3906IsTa ? _zwSelNormValue(sel, handle, key) : null;
             _inputValues[key] = String(value); _inputValuesSet[key] = true;
             // input/textarea 的 IDL value 是 retained 当前值，不改 HTML 内容属性/textarea 默认文本。
             // https://html.spec.whatwg.org/multipage/input.html#dom-input-value
@@ -10915,6 +10940,19 @@
                 __zw_set_attr_handle(handle, 'value', String(value));
               } else {
                 __zw_set_form_value(sel, String(value));
+              }
+            }
+            // R3906（HTML §4.10.11 value IDL setter）：API 值变更 → 光标折叠到新值末 +
+            // 方向复位 'forward'（同 INPUT 口径）；归一后同值不折叠（selection-start-end
+            // -extra 'same value with different newlines' 断言面）。
+            if (_r3906IsTa) {
+              var _r3906NewV = _zwSelNormValue(sel, handle, key);
+              if (_r3906NewV !== _r3906TaOld) {
+                var _r3906soT = _selObj(_textSelKey(sel, handle));
+                _r3906soT.start = _r3906NewV.length;
+                _r3906soT.end = _r3906NewV.length;
+                _r3906soT.direction = 'forward';
+                _r3906soT.val = _r3906NewV;
               }
             }
           }
@@ -11004,33 +11042,45 @@
             }
           }
         } else if (p === 'selectionStart' || p === 'selectionEnd' || p === 'selectionDirection') {
-          // text-control 选区 setter（R2844）。Chromium 150 oracle 锚定：保持 0≤start≤end≤len 不变式——
-          // 设 start 超 end → end 跟到 start（{start:99}→ end 升到 start）；设 end 低于 start → end 升回 start
-          //（{end:-5}→ end 升到 start，不降）；start/end 均 clamp [0, len]；direction 仅接受 forward/backward/none。
+          // text-control 选区 setter（R2844/R3906）。spec（HTML §4.10.20）：
+          // selectionStart setter = set-the-selection-range(给定值, max(当前 end, 给定值),
+          // 当前方向)——设 start 超 end → end 跟到 start；selectionEnd setter =
+          // set-the-selection-range(min(当前 start, 给定值), 给定值, 当前方向)——设 end
+          // 低于 start → **start 降到 end**（selection-start-end 'Setting selectionEnd
+          // to a value smaller than selectionStart should decrease selectionStart'
+          // expected 5 断言面）；start/end 均 unsigned long 转换后 clamp [0, len]；
+          // direction 仅恒等 'backward' 采纳，'none'/'forward'/其他归 'forward'
+          //（'none' = 复位初始方向——selection-not-application「assigning 'none' →
+          // initialDirection」断言族）。
           if (_isTextControl(sel, handle)) {
-            var so = _selObj(_textSelKey(sel, handle));
+            var so = _zwReconcileSel(sel, handle, key);
             // E2 切片 12（editing goal，2026-09-08）：变更检测——spec selectionStart/End
             // setter 经「set the selection range」算法，仅 extent/direction 实际变更
             // 才排程 selectionchange（WPT textcontrols/selectionchange.html
             // 'Setting initial zero selectionStart value' 断言）。
             var preStart = so.start, preEnd = so.end, preDir = so.direction;
             if (p === 'selectionStart') {
-              var nsLen = _controlValue(sel, handle, key).length;
+              var nsLen = _zwSelNormValue(sel, handle, key).length;
               var ns2 = _clampSelOffset(value, nsLen);
               if (ns2 > so.end) so.end = ns2;
               so.start = ns2;
             } else if (p === 'selectionEnd') {
-              var neLen = _controlValue(sel, handle, key).length;
+              var neLen = _zwSelNormValue(sel, handle, key).length;
               var ne2 = _clampSelOffset(value, neLen);
-              if (ne2 < so.start) ne2 = so.start;
+              if (ne2 < so.start) so.start = ne2;
               so.end = ne2;
             } else {
-              so.direction = (value === 'backward' || value === 'none') ? value : 'forward';
+              so.direction = (value === 'backward') ? 'backward' : 'forward';
             }
             if (so.start !== preStart || so.end !== preEnd || so.direction !== preDir) {
               try {
                 if (typeof globalThis._zwScheduleSelectionChange === 'function') {
                   globalThis._zwScheduleSelectionChange(_makeProxy(sel, handle), true);
+                }
+                // R3906：extent/direction 实际变更时排队 select 事件（spec 同一
+                // set-the-selection-range 末步口径；bubbles=true、异步、trusted）。
+                if (typeof globalThis._zwScheduleSelectEvent === 'function') {
+                  globalThis._zwScheduleSelectEvent(_makeProxy(sel, handle));
                 }
               } catch (_eSelChSS) {}
             }

@@ -916,6 +916,338 @@ fn test_select_show_picker_r3905() {
     );
 }
 
+#[test]
+fn test_textfieldselection_r3906() {
+    // textfieldselection 面（R3906，HTML §4.10.20）——W1 值 setter 折叠到值末（同值/
+    // 换行归一同值不折叠）；W2 方向模型（'none'/非法/缺省 → 'forward'，仅 backward/
+    // forward 采纳；selectionDirection='none' 复位初始方向）；W3 非法 type 枚举回落
+    // Text 状态（可选文本控件）；W4 setRangeText 零参 TypeError；W5 setRangeText 置
+    // dirty value flag（defaultValue 写不覆写）；W6 unsigned long 转换（wrap 后 clamp）；
+    // W7 selectionEnd setter 低于 start → start 降；W8 relevant value 变化惰性校准
+    //（textarea 非脏内容变更重置 0 / 脏态 defaultValue 不影响当前值）；W9 select 事件
+    // 异步 trusted bubbles 非 cancelable、同值不重发。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <input id='i' type='text'>\
+         <textarea id='t'></textarea>\
+         <input id='n' type='number'>\
+         <input id='inv' type='aninvalidtype'>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r##"
+var i = document.getElementById('i');
+// W1：初始 .value 设值 → 选区折叠到值末（方向复位 forward）。
+i.value = 'abcdefghij';
+globalThis.__w1a = i.selectionStart + ',' + i.selectionEnd + ',' + i.selectionDirection;
+// 同值再设不折叠。
+i.selectionStart = 2; i.selectionEnd = 4;
+i.value = 'abcdefghij';
+globalThis.__w1b = i.selectionStart + ',' + i.selectionEnd;
+// 不同值折叠到新值末。
+i.value = 'xyz';
+globalThis.__w1c = i.selectionStart + ',' + i.selectionEnd;
+// textarea：换行归一形同值（\r\n → \n）不折叠。
+var t = document.createElement('textarea');
+t.textContent = 'abc\ndef';
+t.selectionStart = 2; t.selectionEnd = 5;
+t.firstChild.data = 'abc\r\ndef';
+globalThis.__w2 = t.selectionStart + ',' + t.selectionEnd;
+// textarea：detached 形 API 值换行归一（不剥换行——clamp 以归一形长度为界）。
+var t9 = document.createElement('textarea');
+t9.textContent = 'abc\ndefgh';
+t9.selectionEnd = 9;
+globalThis.__w2g = String(t9.selectionEnd);
+// W6：unsigned long 转换（wrap 后 clamp）。
+i.setSelectionRange(1, -1);
+globalThis.__w6a = i.selectionStart + ',' + i.selectionEnd;
+i.setSelectionRange(-1, 1);
+globalThis.__w6b = i.selectionStart + ',' + i.selectionEnd;
+i.setSelectionRange(true, 1);
+globalThis.__w6c = String(i.selectionStart);
+i.value = 'abcdefghij';
+i.selectionStart = -1;
+globalThis.__w6d = String(i.selectionStart);
+// W2：方向模型（'none' 不落存储——非法/缺省/'none' 一律 'forward'）。
+var t2 = document.createElement('textarea');
+t2.setSelectionRange(0, 1, 'none');
+globalThis.__w2a = t2.selectionDirection;
+t2.setSelectionRange(0, 1, 'hoge');
+globalThis.__w2b = t2.selectionDirection;
+t2.setSelectionRange(0, 1);
+globalThis.__w2c = t2.selectionDirection;
+t2.setSelectionRange(0, 1, 'backward');
+globalThis.__w2d = t2.selectionDirection;
+t2.selectionDirection = 'none';
+globalThis.__w2e = t2.selectionDirection;
+// W7：selectionEnd setter 低于 start → start 降；selectionStart setter 高于 end → end 升。
+var i3 = document.createElement('input');
+i3.value = 'abcdefghij';
+i3.setSelectionRange(8, 8);
+i3.selectionEnd = 5;
+globalThis.__w7 = i3.selectionStart + ',' + i3.selectionEnd;
+i3.setSelectionRange(2, 2);
+i3.selectionStart = 8;
+globalThis.__w7b = i3.selectionStart + ',' + i3.selectionEnd;
+// W4：setRangeText 零参 TypeError。
+var i4 = document.createElement('input');
+i4.value = 'something';
+i4.selectionStart = 4; i4.selectionEnd = 6;
+try { i4.setRangeText(); globalThis.__w4 = 'no-throw'; } catch (e) { globalThis.__w4 = String(e.constructor.name); }
+// W5：单参 setRangeText 替换当前选区 + 置 dirty value flag。
+i4.setRangeText('xyz');
+globalThis.__w5a = i4.value;
+i4.defaultValue = 'changed';
+globalThis.__w5b = i4.value;
+// W3：非法 type 枚举回落 Text 状态（文本控件语义）。
+var iv = document.getElementById('inv');
+globalThis.__w3a = String(iv.selectionStart);
+try { iv.selectionStart = 1; globalThis.__w3b = 'no-throw'; } catch (e) { globalThis.__w3b = 'throw'; }
+globalThis.__w3c = String(iv.setSelectionRange(0, 1)) === 'undefined' ? 'undefined' : 'defined';
+globalThis.__w3c2 = String(iv.selectionEnd); // 空 value clamp 到 0
+var n = document.getElementById('n');
+globalThis.__w3d = String(n.selectionStart);
+try { n.selectionStart = 1; globalThis.__w3e = 'no-throw'; } catch (e) { globalThis.__w3e = String(e.name); }
+// W8：脏态 textarea defaultValue 不影响当前值/选区；非脏内容变更 → 选区重置 0。
+var t5 = document.createElement('textarea');
+t5.value = 'abcdef';
+globalThis.__w8a = String(t5.selectionStart);
+t5.defaultValue = '123';
+globalThis.__w8b = t5.value + '/' + t5.selectionStart;
+var t6 = document.createElement('textarea');
+t6.textContent = 'abcdef';
+t6.selectionStart = 3; t6.selectionEnd = 4;
+t6.textContent = 'ab';
+globalThis.__w8c = t6.selectionStart + ',' + t6.selectionEnd;
+// W8d-f：非脏 textarea 子节点增删/默认值替换 → 选区重置 0（extra.html
+// 'Removing child nodes in non-dirty textarea should make selection{Start,End} 0' 四阶段面）。
+// 活文本读走融合 child 视图（_zwTaLiveText）——写缓存对子节点增删 stale。
+var t7 = document.createElement('textarea');
+t7.textContent = 'foobar';
+t7.selectionStart = 3; t7.selectionEnd = 5;
+t7.firstChild.remove();
+globalThis.__w8d = t7.selectionStart + ',' + t7.selectionEnd;
+t7.appendChild(document.createTextNode('foobar'));
+globalThis.__w8e = t7.selectionStart + ',' + t7.selectionEnd;
+t7.selectionStart = 3; t7.selectionEnd = 5;
+t7.textContent = 'foobar2';
+globalThis.__w8f = t7.selectionStart + ',' + t7.selectionEnd;
+t7.selectionStart = 3; t7.selectionEnd = 5;
+t7.defaultValue = 'foobar';
+globalThis.__w8g = t7.selectionStart + ',' + t7.selectionEnd + '/tc:' + t7.textContent;
+// execute 间隙 flush 主脚本各阶段（W2/W6/W7）排队的 select 事件——此刻无 listener，全部落空。
+"##,
+        )
+        .unwrap();
+    sandbox.execute("globalThis.__drain = 1;").unwrap();
+    sandbox
+        .execute(
+            r##"
+// W9：select 事件——异步 trusted bubbles 非 cancelable；同值重设不重发。
+var i = document.getElementById('i');
+globalThis.__ev = [];
+i.addEventListener('select', function (e) { globalThis.__ev.push(e.isTrusted + '/' + e.bubbles + '/' + e.cancelable); });
+i.setSelectionRange(2, 3);
+i.setSelectionRange(2, 3);
+globalThis.__evSync = String(globalThis.__ev.length);
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__w1a").unwrap().value,
+        "10,10,forward",
+        "W1：初始 .value 设值选区折叠到值末 + 方向 forward"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w1b").unwrap().value,
+        "2,4",
+        "W1：同值再设不折叠"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w1c").unwrap().value,
+        "3,3",
+        "W1：不同值折叠到新值末"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w2").unwrap().value,
+        "2,5",
+        "W1：textarea 换行归一形同值（\\r\\n → \\n）不折叠"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w2g").unwrap().value,
+        "9",
+        "W1：detached textarea API 值换行归一不剥换行（clamp 以归一形长度 9 为界非剥形 8）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w6a").unwrap().value,
+        "1,3",
+        "W6：setSelectionRange(1,-1) end 经 2^32-1 wrap 后 clamp 到 len"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w6b").unwrap().value,
+        "1,1",
+        "W6：setSelectionRange(-1,1) start wrap 后 clamp，end≤start 折叠到 end"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w6c").unwrap().value,
+        "1",
+        "W6：setSelectionRange(true,1) boolean → 1"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w6d").unwrap().value,
+        "10",
+        "W6：selectionStart = -1 经 2^32-1 wrap 后 clamp 到 len"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w2a").unwrap().value,
+        "forward",
+        "W2：setSelectionRange direction 'none' → forward（不落存储）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w2b").unwrap().value,
+        "forward",
+        "W2：setSelectionRange 非法 direction → forward"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w2c").unwrap().value,
+        "forward",
+        "W2：setSelectionRange 缺省 direction → forward"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w2d").unwrap().value,
+        "backward",
+        "W2：setSelectionRange direction 'backward' 采纳"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w2e").unwrap().value,
+        "forward",
+        "W2：selectionDirection='none' 复位初始方向 forward"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w7").unwrap().value,
+        "5,5",
+        "W7：selectionEnd setter 低于 start → start 降到 end"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w7b").unwrap().value,
+        "8,8",
+        "W7：selectionStart setter 高于 end → end 升到 start"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w4").unwrap().value,
+        "TypeError",
+        "W4：setRangeText 零参调用抛 TypeError"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w5a").unwrap().value,
+        "somexyzing",
+        "W5：单参 setRangeText 替换当前选中子串"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w5b").unwrap().value,
+        "somexyzing",
+        "W5：setRangeText 置 dirty value flag——defaultValue 写不覆写当前值"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w3a").unwrap().value,
+        "0",
+        "W3：非法 type 枚举回落 Text 状态——selectionStart 返值非 null"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w3b").unwrap().value,
+        "no-throw",
+        "W3：非法 type 枚举 selectionStart setter 不抛"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w3c").unwrap().value,
+        "undefined",
+        "W3：非法 type 枚举 setSelectionRange 正常执行（不抛，返 undefined）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w3c2").unwrap().value,
+        "0",
+        "W3：setSelectionRange 偏移被空 value 长度 clamp（spec clamp 语义）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w3d").unwrap().value,
+        "null",
+        "W3：number 类型 selectionStart 恒 null（非文本控件）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w3e").unwrap().value,
+        "InvalidStateError",
+        "W3：number 类型 selectionStart setter 抛 InvalidStateError"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w8a").unwrap().value,
+        "6",
+        "W8：textarea .value 设值折叠到值末"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w8b").unwrap().value,
+        "abcdef/6",
+        "W8：脏态 defaultValue 写不影响当前值与选区"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w8c").unwrap().value,
+        "0,0",
+        "W8：非脏 textarea 内容变更选区重置 0"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w8d").unwrap().value,
+        "0,0",
+        "W8d：非脏 textarea firstChild.remove 选区重置 0（活文本读闭合写缓存 stale）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w8e").unwrap().value,
+        "0,0",
+        "W8e：appendChild 后选区维持重置态 0"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w8f").unwrap().value,
+        "0,0",
+        "W8f：textContent= 替换子后选区重置 0"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w8g").unwrap().value,
+        "0,0/tc:foobar",
+        "W8g：defaultValue= 替换子后选区重置 0，textContent 同步可见"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__evSync").unwrap().value,
+        "0",
+        "W9：select 事件非同步派发（事件循环排队）"
+    );
+    // execute 间隙 flush 微任务 fallback timer → select 事件到队列。
+    sandbox.execute("globalThis.__evFlush = String(globalThis.__ev.length);").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__ev.join('|')").unwrap().value,
+        "true/true/false",
+        "W9：select 事件异步到队列，isTrusted=true + bubbles=true + cancelable=false，恰好一次"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__evFlush").unwrap().value,
+        "1",
+        "W9：flush 前恰好排队一次（同值重设不重发）"
+    );
+}
+
 // ── R3318：navigator.serviceWorker（B-gen 生产 shim 移植）──
 //
 // 生产 always-on B-gen shim 路径（part02.js navigator.serviceWorker IIFE，R3318 从 A-gen dom_bridge.rs
@@ -1639,4 +1971,3 @@ fn test_opfs_stream_after_close_and_unique_id_m3() {
         "close 后 write 拒绝 TypeError"
     );
 }
-
