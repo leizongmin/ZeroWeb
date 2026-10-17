@@ -557,17 +557,24 @@ fn test_crypto_subtle_hmac_r2955() {
         sandbox.execute("String(globalThis.__e2)").unwrap().value,
         "DataError"
     );
-    // importKey 不支持的算法（'RSA-OAEP'，本实现仅 HMAC/PBKDF2/HKDF/AES-GCM/CBC/CTR）→
-    // reject NotSupportedError（webcrypto M2b 落地 AES-CBC/CTR 后原 'AES-CBC' 反例失效）。
+    // importKey RSA-OAEP（M4a 起已实现）：缺 hash 成员（RsaHashedImportParams 必填）→
+    // TypeError；格式 'raw' 非 RSA 合法格式 → NotSupportedError（M2b 时代本组断言
+    // RSA 整体 NotSupportedError，随 RSA 落地过期）。
     sandbox
         .execute(
-            "globalThis.__e4='(pending)';\
+            "globalThis.__e4='(pending)'; globalThis.__e5='(pending)';\
              crypto.subtle.importKey('raw', new Uint8Array(16), {name:'RSA-OAEP'}, false, ['encrypt'])\
-               .catch(function(e){ globalThis.__e4 = e.name; });",
+               .catch(function(e){ globalThis.__e4 = e.name; });\
+             crypto.subtle.importKey('raw', new Uint8Array(16), {name:'RSA-OAEP', hash:'SHA-256'}, false, ['encrypt'])\
+               .catch(function(e){ globalThis.__e5 = e.name; });",
         )
         .unwrap();
     assert_eq!(
         sandbox.execute("String(globalThis.__e4)").unwrap().value,
+        "TypeError"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__e5)").unwrap().value,
         "NotSupportedError"
     );
     // sign 无 "sign" usage（仅 'verify'）→ reject InvalidAccessError。

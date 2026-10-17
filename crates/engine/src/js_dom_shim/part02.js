@@ -23,6 +23,11 @@
           reject(new _zw_subtleDE('Unsupported or missing algorithm', 'NotSupportedError')); return;
         }
         var fmt = _zw_upperAscii(String(format == null ? '' : format));
+        // RSA 家族（M4a）：usages 家族/类型子集校验与格式解析整体转入 helper（spki/pkcs8/jwk）。
+        if (_zw_rsaIsFamily(algo.name)) {
+          _zw_rsaImportKey(format, keyData, algo, extractable, usages, resolve, reject);
+          return;
+        }
         var isAes = (algo.name === 'AES-GCM' || algo.name === 'AES-CBC' || algo.name === 'AES-CTR' || algo.name === 'AES-KW');
         var isHmac = algo.name === 'HMAC';
         // HMAC：显式 length 0 → DataError（spec 步骤 1，先于 usages SyntaxError）。
@@ -149,11 +154,34 @@
       });
     },
     // sign(algorithm, key, data) → Promise<ArrayBuffer>。HMAC：algorithm "HMAC"/{name:"HMAC"}，hash 取自 key.algorithm.hash。
+    // RSA（M4a）：RSA-PSS（algorithm.saltLength 必填，缺失 → TypeError）/RSASSA-PKCS1-v1_5，
+    // hash 与 padding 均取自 key（algorithm 参数仅 name[+saltLength]）；key.algorithm.name
+    // 不匹配 / 无 "sign" usage → InvalidAccessError。
     // key.usages 须含 "sign" → 否则 InvalidAccessError。https://w3c.github.io/webcrypto/#SubtleCrypto-method-sign
     sign: function (algorithm, key, data) {
       return new Promise(function (resolve, reject) {
         var name = (typeof algorithm === 'object' && algorithm) ? algorithm.name : algorithm;
         name = _zw_upperAscii(String(name == null ? '' : name));
+        if (name === 'RSA-PSS' || name === 'RSASSA-PKCS1-V1_5') {
+          if (!key || _zw_upperAscii(String(key.algorithm && key.algorithm.name)) !== name) {
+            reject(new _zw_subtleDE('Algorithm does not match key', 'InvalidAccessError')); return;
+          }
+          if (!key.usages || key.usages.indexOf('sign') < 0) {
+            reject(new _zw_subtleDE('Key usages do not include "sign"', 'InvalidAccessError')); return;
+          }
+          var pad = name === 'RSA-PSS' ? 'pss' : 'pkcs1v15';
+          var salt = 0;
+          if (name === 'RSA-PSS') {
+            // RsaPssParams 必填成员 saltLength（WebIDL required → TypeError）。
+            if (typeof algorithm !== 'object' || algorithm.saltLength == null) {
+              reject(new TypeError('RSA-PSS requires a saltLength member')); return;
+            }
+            salt = Number(algorithm.saltLength);
+          }
+          var sig = _zw_rsaSignCall(key, pad, salt, _zw_rsaKeyHash(key), _zw_bufToBytes(data), reject);
+          if (sig) resolve(sig);
+          return;
+        }
         if (name !== 'HMAC' || !key || key.algorithm.name !== 'HMAC') {
           reject(new _zw_subtleDE('Unsupported sign algorithm or key', 'NotSupportedError')); return;
         }
@@ -165,11 +193,30 @@
       });
     },
     // verify(algorithm, key, signature, data) → Promise<boolean>。计算 MAC 后定长比较（无早退，常时近似）。
+    // RSA（M4a）：坏签名/错 saltLength resolve false 不 reject（spec verify 无对应 reject 路径）。
     // https://w3c.github.io/webcrypto/#SubtleCrypto-method-verify
     verify: function (algorithm, key, signature, data) {
       return new Promise(function (resolve, reject) {
         var name = (typeof algorithm === 'object' && algorithm) ? algorithm.name : algorithm;
         name = _zw_upperAscii(String(name == null ? '' : name));
+        if (name === 'RSA-PSS' || name === 'RSASSA-PKCS1-V1_5') {
+          if (!key || _zw_upperAscii(String(key.algorithm && key.algorithm.name)) !== name) {
+            reject(new _zw_subtleDE('Algorithm does not match key', 'InvalidAccessError')); return;
+          }
+          if (!key.usages || key.usages.indexOf('verify') < 0) {
+            reject(new _zw_subtleDE('Key usages do not include "verify"', 'InvalidAccessError')); return;
+          }
+          var pad = name === 'RSA-PSS' ? 'pss' : 'pkcs1v15';
+          var salt = 0;
+          if (name === 'RSA-PSS') {
+            if (typeof algorithm !== 'object' || algorithm.saltLength == null) {
+              reject(new TypeError('RSA-PSS requires a saltLength member')); return;
+            }
+            salt = Number(algorithm.saltLength);
+          }
+          resolve(_zw_rsaVerifyCall(key, pad, salt, _zw_rsaKeyHash(key), _zw_bufToBytes(signature), _zw_bufToBytes(data), reject));
+          return;
+        }
         if (name !== 'HMAC' || !key || key.algorithm.name !== 'HMAC') {
           reject(new _zw_subtleDE('Unsupported verify algorithm or key', 'NotSupportedError')); return;
         }
@@ -238,10 +285,11 @@
         var name = (typeof algorithm === 'object' && algorithm) ? algorithm.name : algorithm;
         name = _zw_upperAscii(String(name == null ? '' : name));
         var isBlock = (name === 'AES-CBC' || name === 'AES-CTR');
-        if (name !== 'AES-GCM' && !isBlock) {
+        var isRsa = (name === 'RSA-OAEP');
+        if (name !== 'AES-GCM' && !isBlock && !isRsa) {
           reject(new _zw_subtleDE('Unsupported encrypt algorithm: ' + name, 'NotSupportedError')); return;
         }
-        if (!key || key.algorithm.name !== name) {
+        if (!key || _zw_upperAscii(String(key.algorithm.name)) !== name) {
           // spec：key.algorithm.name 与算法名不匹配 → InvalidAccessError（WPT「mismatched
           // key and algorithm」组断言 InvalidAccessError，非 NotSupportedError）。
           reject(new _zw_subtleDE('Algorithm does not match key', 'InvalidAccessError')); return;
@@ -250,31 +298,40 @@
           reject(new _zw_subtleDE('Key usages do not include "encrypt"', 'InvalidAccessError')); return;
         }
         var bytes = _zw_bufToBytes(data);
-        var arr = isBlock
+        // RSA-OAEP（M4a）：hash/label 语义——hash 取自 key.algorithm.hash（algorithm 参数仅
+        // name；WPT rsa_vectors 的 encrypt 算法即 {name:"RSA-OAEP"}），label 可选（空 ≡ 无，
+        // RFC 8017 §7.1.1）；明文超长（k − 2·hLen − 2）→ OperationError。
+        var arr = isRsa
+          ? _zw_rsaOaepCall('encrypt', key, _zw_rsaKeyHash(key), (algorithm.label != null) ? _zw_bufToBytes(algorithm.label) : [], bytes, reject)
+          : isBlock
           ? _zw_aesBlockCall(name === 'AES-CTR' ? 'ctr' : 'cbc', 'encrypt', algorithm, key, bytes, reject)
           : _zw_aesGcmCall('encrypt', algorithm, key, bytes, reject);
         if (arr) resolve(arr);
       });
     },
     // decrypt(algorithm, key, data) → Promise<ArrayBuffer>。AES-GCM data 为 ct||tag（tag 校验失败 →
-    // reject OperationError）；AES-CBC data 末块 padding 非法 → OperationError。
+    // reject OperationError）；AES-CBC data 末块 padding 非法 → OperationError。RSA-OAEP（M4a）：
+    // 密文长度 ≠ 模长字节 → OperationError（helper 内预检），解封成功空明文 → 空 ArrayBuffer。
     // https://w3c.github.io/webcrypto/#SubtleCrypto-method-decrypt
     decrypt: function (algorithm, key, data) {
       return new Promise(function (resolve, reject) {
         var name = (typeof algorithm === 'object' && algorithm) ? algorithm.name : algorithm;
         name = _zw_upperAscii(String(name == null ? '' : name));
         var isBlock = (name === 'AES-CBC' || name === 'AES-CTR');
-        if (name !== 'AES-GCM' && !isBlock) {
+        var isRsa = (name === 'RSA-OAEP');
+        if (name !== 'AES-GCM' && !isBlock && !isRsa) {
           reject(new _zw_subtleDE('Unsupported decrypt algorithm: ' + name, 'NotSupportedError')); return;
         }
-        if (!key || key.algorithm.name !== name) {
+        if (!key || _zw_upperAscii(String(key.algorithm.name)) !== name) {
           reject(new _zw_subtleDE('Algorithm does not match key', 'InvalidAccessError')); return;
         }
         if (!key.usages || key.usages.indexOf('decrypt') < 0) {
           reject(new _zw_subtleDE('Key usages do not include "decrypt"', 'InvalidAccessError')); return;
         }
         var bytes = _zw_bufToBytes(data);
-        var arr = isBlock
+        var arr = isRsa
+          ? _zw_rsaOaepCall('decrypt', key, _zw_rsaKeyHash(key), (algorithm.label != null) ? _zw_bufToBytes(algorithm.label) : [], bytes, reject)
+          : isBlock
           ? _zw_aesBlockCall(name === 'AES-CTR' ? 'ctr' : 'cbc', 'decrypt', algorithm, key, bytes, reject)
           : _zw_aesGcmCall('decrypt', algorithm, key, bytes, reject);
         if (arr) resolve(arr);
@@ -321,6 +378,11 @@
             reject(new _zw_subtleDE('Key usages cannot be empty for secret keys', 'SyntaxError')); return;
           }
           resolve(new CryptoKey('secret', extractable, { name: 'HMAC', hash: { name: algo.hash }, length: lenBits }, hu, Array.from(_zw_randomBytes(lenBits / 8))));
+        } else if (_zw_rsaIsFamily(algo.name)) {
+          // RSA（M4a）→ CryptoKeyPair{publicKey, privateKey}（publicKey 恒 extractable）；
+          // 错误序：非法 usage SyntaxError → 生成 OperationError（e<3/偶数，failures
+          // "Bad algorithm property"）→ 私钥空 usages SyntaxError。
+          _zw_rsaGenerateKey(algorithm, extractable, usages, algo, resolve, reject);
         } else {
           reject(new _zw_subtleDE('Unsupported generateKey algorithm', 'NotSupportedError'));
         }
@@ -333,6 +395,11 @@
     // https://w3c.github.io/webcrypto/#SubtleCrypto-method-exportKey
     exportKey: function (format, key) {
       return new Promise(function (resolve, reject) {
+        // RSA 家族（M4a）：spki/pkcs8/jwk 分派整体转入 helper（公/私类型与格式匹配校验在内）。
+        if (key && key.algorithm && _zw_rsaIsFamily(key.algorithm.name)) {
+          _zw_rsaExportKey(format, key, resolve, reject);
+          return;
+        }
         var fmt = _zw_upperAscii(String(format == null ? '' : format));
         if (fmt !== 'RAW' && fmt !== 'JWK') {
           reject(new _zw_subtleDE("Unsupported exportKey format: '" + fmt + "' (only 'raw'/'jwk' supported for symmetric keys)", 'NotSupportedError')); return;
@@ -382,7 +449,8 @@
         var name = _zw_upperAscii(String(wa && wa.name ? wa.name : ''));
         var isKw = name === 'AES-KW';
         var isEnc = (name === 'AES-GCM' || name === 'AES-CBC' || name === 'AES-CTR');
-        if (!isKw && !isEnc) {
+        var isOaep = name === 'RSA-OAEP';
+        if (!isKw && !isEnc && !isOaep) {
           reject(new _zw_subtleDE('Unsupported wrap algorithm: ' + name, 'NotSupportedError')); return;
         }
         if (!wrappingKey || !wrappingKey.algorithm || wrappingKey.algorithm.name !== name) {
@@ -407,6 +475,13 @@
             if (wrapped) resolve(wrapped);
             return;
           }
+          // RSA-OAEP（M4a）：label 取自 wrapParameters.label（可空 ≡ 无）；hash 取自
+          // wrappingKey.algorithm.hash（wrapParameters 无 hash 成员）。
+          if (isOaep) {
+            var wrappedOaep = _zw_rsaOaepCall('encrypt', wrappingKey, _zw_rsaKeyHash(wrappingKey), (wa.label != null) ? _zw_bufToBytes(wa.label) : [], bytes, reject);
+            if (wrappedOaep) resolve(wrappedOaep);
+            return;
+          }
           var arr = (name === 'AES-CTR' || name === 'AES-CBC')
             ? _zw_aesBlockCall(name === 'AES-CTR' ? 'ctr' : 'cbc', 'encrypt', wa, wrappingKey, bytes, reject)
             : _zw_aesGcmCall('encrypt', wa, wrappingKey, bytes, reject);
@@ -427,7 +502,8 @@
         var name = _zw_upperAscii(String(ua && ua.name ? ua.name : ''));
         var isKw = name === 'AES-KW';
         var isDec = (name === 'AES-GCM' || name === 'AES-CBC' || name === 'AES-CTR');
-        if (!isKw && !isDec) {
+        var isOaep = name === 'RSA-OAEP';
+        if (!isKw && !isDec && !isOaep) {
           reject(new _zw_subtleDE('Unsupported unwrap algorithm: ' + name, 'NotSupportedError')); return;
         }
         if (!unwrappingKey || !unwrappingKey.algorithm || unwrappingKey.algorithm.name !== name) {
@@ -437,12 +513,16 @@
           reject(new _zw_subtleDE('Key usages do not include "unwrapKey"', 'InvalidAccessError')); return;
         }
         var fmt = _zw_upperAscii(String(format == null ? '' : format));
-        if (fmt !== 'RAW' && fmt !== 'JWK') {
-          reject(new _zw_subtleDE("Unsupported unwrapKey format: '" + fmt + "' (only 'raw'/'jwk' supported)", 'NotSupportedError')); return;
+        // M4a 起支持 spki/pkcs8（RSA-OAEP 封装的非对称密钥回导，importKey 完成格式校验）。
+        if (fmt !== 'RAW' && fmt !== 'JWK' && fmt !== 'SPKI' && fmt !== 'PKCS8') {
+          reject(new _zw_subtleDE("Unsupported unwrapKey format: '" + fmt + "' (only 'raw'/'jwk'/'spki'/'pkcs8' supported)", 'NotSupportedError')); return;
         }
         var bytes = _zw_bufToBytes(wrappedKey);
         var plain;
-        if (isKw) {
+        if (isOaep) {
+          plain = _zw_rsaOaepCall('decrypt', unwrappingKey, _zw_rsaKeyHash(unwrappingKey), (ua.label != null) ? _zw_bufToBytes(ua.label) : [], bytes, reject);
+          if (!plain) return;
+        } else if (isKw) {
           plain = _zw_aesKwCall('unwrap', unwrappingKey, bytes, reject);
           if (!plain) return;
         } else {
@@ -462,9 +542,7 @@
           if (!parsed || typeof parsed !== 'object') {
             reject(new _zw_subtleDE('unwrapped jwk is not a JsonWebKey', 'DataError')); return;
           }
-          if (parsed.kty !== 'oct') {
-            reject(new _zw_subtleDE("unwrapped jwk kty must be 'oct'", 'DataError')); return;
-          }
+          // kty 校验归 importKey（M4a：jwk 不再限 'oct'——RSA-OAEP 可封装非对称密钥）。
           keyData = parsed;
         } else {
           keyData = new Uint8Array(plain);

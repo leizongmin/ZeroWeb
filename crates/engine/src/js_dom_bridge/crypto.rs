@@ -554,3 +554,396 @@ pub fn crypto_subtle_hkdf(hash_algo: &str, ikm_csv: &str, salt_csv: &str, info_c
     okm.truncate(dklen);
     okm.iter().map(u8::to_string).collect::<Vec<_>>().join(",")
 }
+
+// ---------------------------------------------------------------------------
+// RSA 家族（webcrypto M4a）——RSA-OAEP encrypt/decrypt、RSASSA-PKCS1-v1_5 / RSA-PSS
+// sign/verify、spki/pkcs8/jwk 密钥导入导出与 generateKey。委托 `rsa` 0.9（RustCrypto，
+// 选型见 docs/goal/webcrypto-compat/evidence/2026-10-17-m4a-deps.md）。**密钥材料零落
+// 日志**：分量与 DER 仅经 CSV 桥进出，无 tracing 输出。所有失败返空串（shim 按操作
+// 映射 NotSupportedError/InvalidAccessError/DataError/OperationError）。
+// https://w3c.github.io/webcrypto/#rsa-oaep  https://w3c.github.io/webcrypto/#rsassa-pkcs1
+// https://w3c.github.io/webcrypto/#rsa-pss  https://datatracker.ietf.org/doc/html/rfc8017
+// ---------------------------------------------------------------------------
+
+/// hash 名 → 分发臂（sign/verify/OAEP 共用；接受 `SHA-256`/`SHA256` 两种写法）。
+enum RsaHash {
+    S1,
+    S256,
+    S384,
+    S512,
+}
+
+fn parse_rsa_hash(name: &str) -> Option<RsaHash> {
+    match name.to_ascii_uppercase().as_str() {
+        "SHA-1" | "SHA1" => Some(RsaHash::S1),
+        "SHA-256" | "SHA256" => Some(RsaHash::S256),
+        "SHA-384" | "SHA384" => Some(RsaHash::S384),
+        "SHA-512" | "SHA512" => Some(RsaHash::S512),
+        _ => None,
+    }
+}
+
+/// 大端字节 csv → 大整数（jwk n/e/d 分量与 generateKey publicExponent 共用）。
+fn rsa_uint(bytes_csv: &str) -> rsa::BigUint {
+    rsa::BigUint::from_bytes_be(&bytes_from_csv(bytes_csv))
+}
+
+/// RSA 生成：`bits` 位模长 + `e_csv` 公钥指数（大端字节 csv，通常 1,0,1）→ pkcs8 DER
+/// csv（私钥；公钥经 `crypto_subtle_rsa_export_der` 派生）。e 非法（1/偶数）或生成
+/// 失败 → 空串（shim 映射 OperationError，WPT failures "Bad algorithm property"）。
+/// https://datatracker.ietf.org/doc/html/rfc8017#section-3.1
+pub fn crypto_subtle_rsa_generate(bits: u32, e_csv: &str) -> String {
+    use rsa::pkcs8::EncodePrivateKey;
+    use rsa::rand_core::OsRng;
+    let e = rsa_uint(e_csv);
+    // e 须 ≥3 且为奇数（RFC 8017 §3.1）；奇偶用最低位与 1 位与判定。
+    let one = rsa::BigUint::from(1u8);
+    if e < rsa::BigUint::from(3u8) || (&e & &one) != one {
+        return String::new();
+    }
+    match rsa::RsaPrivateKey::new_with_exp(&mut OsRng, bits as usize, &e) {
+        Ok(key) => match key.to_pkcs8_der() {
+            Ok(doc) => bytes_to_csv(doc.as_bytes()),
+            Err(_) => String::new(),
+        },
+        Err(_) => String::new(),
+    }
+}
+
+/// RSA DER 导入（spki 公钥 / pkcs8 私钥）→ 规范化再编码 DER csv（WPT exportKey
+/// round-trip 逐字节比对，canonical DER 必须稳定）。格式与内容不符（公钥喂 pkcs8、
+/// 私钥喂 spki、损坏 DER）→ 空串。fmt "spki"|"pkcs8"。
+pub fn crypto_subtle_rsa_import(fmt: &str, der_csv: &str) -> String {
+    use rsa::pkcs8::{DecodePrivateKey, DecodePublicKey, EncodePrivateKey, EncodePublicKey};
+    let der = bytes_from_csv(der_csv);
+    match fmt {
+        "spki" => rsa::RsaPublicKey::from_public_key_der(&der)
+            .ok()
+            .and_then(|k| k.to_public_key_der().ok())
+            .map(|doc| bytes_to_csv(doc.as_bytes()))
+            .unwrap_or_default(),
+        "pkcs8" => rsa::RsaPrivateKey::from_pkcs8_der(&der)
+            .ok()
+            .and_then(|k| k.to_pkcs8_der().ok())
+            .map(|doc| bytes_to_csv(doc.as_bytes()))
+            .unwrap_or_default(),
+        _ => String::new(),
+    }
+}
+
+/// RSA jwk 分量导入：n/e 必填；d 非空 → 私钥（p/q 为 CRT 素数；二者同缺走 crate 的
+/// d 反推素数恢复，SP 800-56B App C.2；dp/dq/qi 由 crate 校验重算，不信任入参）。
+/// 一致性校验（p·q=n、d·e≡1 mod λ(n)）失败 → 空串。输出规范化 pkcs8（私）/
+/// spki（公）DER csv。
+/// https://w3c.github.io/webcrypto/#importJwkRSA
+pub fn crypto_subtle_rsa_jwk_import(n_csv: &str, e_csv: &str, d_csv: &str, p_csv: &str, q_csv: &str) -> String {
+    use rsa::pkcs8::{EncodePrivateKey, EncodePublicKey};
+    let n = rsa_uint(n_csv);
+    let e = rsa_uint(e_csv);
+    // 0 的位长为 0——以此判零（BigUint 的 is_zero 来自 num-traits，不引依赖）。
+    if n.bits() == 0 || e.bits() == 0 {
+        return String::new();
+    }
+    if bytes_from_csv(d_csv).is_empty() {
+        return match rsa::RsaPublicKey::new(n, e) {
+            Ok(k) => match k.to_public_key_der() {
+                Ok(doc) => bytes_to_csv(doc.as_bytes()),
+                Err(_) => String::new(),
+            },
+            Err(_) => String::new(),
+        };
+    }
+    let d = rsa_uint(d_csv);
+    let p_bytes = bytes_from_csv(p_csv);
+    let q_bytes = bytes_from_csv(q_csv);
+    // 素数要么全缺（d 反推），要么成对出现——单侧出现按 spec 数据不一致 → 空串。
+    let primes: Vec<rsa::BigUint> = match (p_bytes.is_empty(), q_bytes.is_empty()) {
+        (true, true) => Vec::new(),
+        (false, false) => vec![rsa_uint(p_csv), rsa_uint(q_csv)],
+        _ => return String::new(),
+    };
+    match rsa::RsaPrivateKey::from_components(n, e, d, primes) {
+        Ok(key) => match key.to_pkcs8_der() {
+            Ok(doc) => bytes_to_csv(doc.as_bytes()),
+            Err(_) => String::new(),
+        },
+        Err(_) => String::new(),
+    }
+}
+
+/// RSA 密钥属性：DER（spki 公钥或 pkcs8 私钥，自动识别）→ `"<bits>,<e 字节 csv>"`。
+/// 供 shim 构造 RsaHashedKeyAlgorithm（modulusLength = n 位长、publicExponent =
+/// e 大端字节）。非法 DER → 空串。
+pub fn crypto_subtle_rsa_key_attrs(der_csv: &str) -> String {
+    use rsa::pkcs8::{DecodePrivateKey, DecodePublicKey};
+    use rsa::traits::PublicKeyParts;
+    let der = bytes_from_csv(der_csv);
+    let parse = |der: &[u8]| -> Option<(rsa::BigUint, rsa::BigUint)> {
+        if let Ok(k) = rsa::RsaPrivateKey::from_pkcs8_der(der) {
+            return Some((k.n().clone(), k.e().clone()));
+        }
+        if let Ok(k) = rsa::RsaPublicKey::from_public_key_der(der) {
+            return Some((k.n().clone(), k.e().clone()));
+        }
+        None
+    };
+    match parse(&der) {
+        Some((n, e)) => format!("{},{}", n.bits(), bytes_to_csv(&e.to_bytes_be())),
+        None => String::new(),
+    }
+}
+
+/// RSA DER 转换：pkcs8 私钥 → spki 公钥（fmt "spki"）；fmt "pkcs8" 透传（导入时已
+/// 规范化）。私钥导 spki 失败 / 其他 fmt → 空串。
+pub fn crypto_subtle_rsa_export_der(der_csv: &str, fmt: &str) -> String {
+    use rsa::pkcs8::{DecodePrivateKey, EncodePublicKey};
+    let der = bytes_from_csv(der_csv);
+    match fmt {
+        "spki" => rsa::RsaPrivateKey::from_pkcs8_der(&der)
+            .ok()
+            .and_then(|k| k.to_public_key().to_public_key_der().ok())
+            .map(|doc| bytes_to_csv(doc.as_bytes()))
+            .unwrap_or_default(),
+        "pkcs8" => bytes_to_csv(&der),
+        _ => String::new(),
+    }
+}
+
+/// RSA jwk 导出：DER（spki 公钥 / pkcs8 私钥）→ `;` 分隔的大端分量字段（公钥 2 字段
+/// `n;e`，私钥 8 字段 `n;e;d;p;q;dp;dq;qi`，各字段自身为字节 csv；缺失素数为空字段）。
+/// dp = d mod (p−1)、dq = d mod (q−1)、qi = q^(p−2) mod p（素数 p，Fermat 小定理，
+/// RFC 8017 §3.2）。want_private=true 但 DER 是公钥 → 空串。
+pub fn crypto_subtle_rsa_export_jwk(der_csv: &str, want_private: bool) -> String {
+    use rsa::pkcs8::{DecodePrivateKey, DecodePublicKey};
+    use rsa::traits::{PrivateKeyParts, PublicKeyParts};
+    let der = bytes_from_csv(der_csv);
+    if want_private {
+        let key = match rsa::RsaPrivateKey::from_pkcs8_der(&der) {
+            Ok(k) => k,
+            Err(_) => return String::new(),
+        };
+        let primes = key.primes();
+        let empty = rsa::BigUint::default();
+        let p = primes.first().unwrap_or(&empty);
+        let q = primes.get(1).unwrap_or(&empty);
+        let one = rsa::BigUint::from(1u8);
+        let two = rsa::BigUint::from(2u8);
+        let dp = key.d() % (p - &one);
+        let dq = key.d() % (q - &one);
+        let qi = q.modpow(&(p - &two), p);
+        return [
+            key.n().to_bytes_be(),
+            key.e().to_bytes_be(),
+            key.d().to_bytes_be(),
+            p.to_bytes_be(),
+            q.to_bytes_be(),
+            dp.to_bytes_be(),
+            dq.to_bytes_be(),
+            qi.to_bytes_be(),
+        ]
+        .iter()
+        .map(|b| bytes_to_csv(b))
+        .collect::<Vec<_>>()
+        .join(";");
+    }
+    match rsa::RsaPublicKey::from_public_key_der(&der) {
+        Ok(k) => [k.n().to_bytes_be(), k.e().to_bytes_be()]
+            .iter()
+            .map(|b| bytes_to_csv(b))
+            .collect::<Vec<_>>()
+            .join(";"),
+        Err(_) => String::new(),
+    }
+}
+
+/// RSA-OAEP encrypt/decrypt（RFC 8017 §7.1）。hash 为 normalize 后的摘要名；
+/// mode "encrypt"（spki 公钥）/"decrypt"（pkcs8 私钥）；label_csv 可空（空 = RFC
+/// 缺省空标签）。明文超长（k − 2·hLen − 2）、密文长度 ≠ k、解封校验失败 → 空串
+///（shim 映射 OperationError）。
+/// FIXME: `rsa` 0.9 的 Oaep.label 为 Option<String>（UTF-8），非 UTF-8 标签字节串
+/// 不支持——corpus 标签均 ASCII；标准侧标签为任意 octet string。
+pub fn crypto_subtle_rsa_oaep(hash: &str, mode: &str, key_csv: &str, label_csv: &str, data_csv: &str) -> String {
+    use rsa::Oaep;
+    use rsa::pkcs8::{DecodePrivateKey, DecodePublicKey};
+    use rsa::rand_core::OsRng;
+    use sha2::Digest;
+    let key = bytes_from_csv(key_csv);
+    let data = bytes_from_csv(data_csv);
+    let label_bytes = bytes_from_csv(label_csv);
+    let label = if label_bytes.is_empty() {
+        None
+    } else {
+        match String::from_utf8(label_bytes) {
+            Ok(s) => Some(s),
+            Err(_) => return String::new(),
+        }
+    };
+    macro_rules! oaep {
+        ($h:ty) => {
+            Oaep {
+                digest: Box::new(<$h>::new()),
+                mgf_digest: Box::new(<$h>::new()),
+                label: label.clone(),
+            }
+        };
+    }
+    let out = match (mode, parse_rsa_hash(hash)) {
+        ("encrypt", Some(h)) => {
+            let k = match rsa::RsaPublicKey::from_public_key_der(&key) {
+                Ok(k) => k,
+                Err(_) => return String::new(),
+            };
+            match h {
+                RsaHash::S1 => k.encrypt(&mut OsRng, oaep!(sha1::Sha1), &data),
+                RsaHash::S256 => k.encrypt(&mut OsRng, oaep!(sha2::Sha256), &data),
+                RsaHash::S384 => k.encrypt(&mut OsRng, oaep!(sha2::Sha384), &data),
+                RsaHash::S512 => k.encrypt(&mut OsRng, oaep!(sha2::Sha512), &data),
+            }
+        }
+        ("decrypt", Some(h)) => {
+            let k = match rsa::RsaPrivateKey::from_pkcs8_der(&key) {
+                Ok(k) => k,
+                Err(_) => return String::new(),
+            };
+            match h {
+                RsaHash::S1 => k.decrypt(oaep!(sha1::Sha1), &data),
+                RsaHash::S256 => k.decrypt(oaep!(sha2::Sha256), &data),
+                RsaHash::S384 => k.decrypt(oaep!(sha2::Sha384), &data),
+                RsaHash::S512 => k.decrypt(oaep!(sha2::Sha512), &data),
+            }
+        }
+        _ => return String::new(),
+    };
+    out.map(|v| bytes_to_csv(&v)).unwrap_or_default()
+}
+
+/// RSASSA-PKCS1-v1_5 / RSA-PSS 签名（RFC 8017 §8.2/§8.1）。pad "pkcs1v15"|"pss"，
+/// salt 仅 PSS 有效（spec：PSS saltLength 必填；0 = 确定性无盐）。pkcs8 私钥；先对
+/// data 摘要（`sign` 的 digest_in 为 prehash，DigestInfo 前缀由 padding 添加），
+/// 签名 → 字节 csv；key/参数非法 → 空串。
+pub fn crypto_subtle_rsa_sign(hash: &str, pad: &str, salt: u32, key_csv: &str, data_csv: &str) -> String {
+    use rsa::pkcs8::DecodePrivateKey;
+    use rsa::rand_core::OsRng;
+    let key = match rsa::RsaPrivateKey::from_pkcs8_der(&bytes_from_csv(key_csv)) {
+        Ok(k) => k,
+        Err(_) => return String::new(),
+    };
+    let data = bytes_from_csv(data_csv);
+    let h = match parse_rsa_hash(hash) {
+        Some(h) => h,
+        None => return String::new(),
+    };
+    // prehash：Pkcs1v15Sign / Pss 的 digest_in 均为消息摘要而非原文（RFC 8017 §8.1/§8.2 步骤 2）。
+    macro_rules! prehash {
+        ($h:ty) => {
+            <$h as sha2::Digest>::digest(&data).to_vec()
+        };
+    }
+    if pad == "pss" {
+        let sig = match h {
+            RsaHash::S1 => {
+                let ph = prehash!(sha1::Sha1);
+                key.sign_with_rng(
+                    &mut OsRng,
+                    rsa::pss::Pss::new_with_salt::<sha1::Sha1>(salt as usize),
+                    &ph,
+                )
+            }
+            RsaHash::S256 => {
+                let ph = prehash!(sha2::Sha256);
+                key.sign_with_rng(
+                    &mut OsRng,
+                    rsa::pss::Pss::new_with_salt::<sha2::Sha256>(salt as usize),
+                    &ph,
+                )
+            }
+            RsaHash::S384 => {
+                let ph = prehash!(sha2::Sha384);
+                key.sign_with_rng(
+                    &mut OsRng,
+                    rsa::pss::Pss::new_with_salt::<sha2::Sha384>(salt as usize),
+                    &ph,
+                )
+            }
+            RsaHash::S512 => {
+                let ph = prehash!(sha2::Sha512);
+                key.sign_with_rng(
+                    &mut OsRng,
+                    rsa::pss::Pss::new_with_salt::<sha2::Sha512>(salt as usize),
+                    &ph,
+                )
+            }
+        };
+        return sig.map(|v| bytes_to_csv(&v)).unwrap_or_default();
+    }
+    if pad == "pkcs1v15" {
+        let sig = match h {
+            RsaHash::S1 => key.sign(rsa::Pkcs1v15Sign::new::<sha1::Sha1>(), &prehash!(sha1::Sha1)),
+            RsaHash::S256 => key.sign(rsa::Pkcs1v15Sign::new::<sha2::Sha256>(), &prehash!(sha2::Sha256)),
+            RsaHash::S384 => key.sign(rsa::Pkcs1v15Sign::new::<sha2::Sha384>(), &prehash!(sha2::Sha384)),
+            RsaHash::S512 => key.sign(rsa::Pkcs1v15Sign::new::<sha2::Sha512>(), &prehash!(sha2::Sha512)),
+        };
+        return sig.map(|v| bytes_to_csv(&v)).unwrap_or_default();
+    }
+    String::new()
+}
+
+/// RSASSA-PKCS1-v1_5 / RSA-PSS 验签（spki 公钥）。签名非法或验证失败 → "0"
+///（spec：verify 对非法签名 resolve false 而非 reject）；key/参数非法 → 空串（shim
+/// reject）。
+pub fn crypto_subtle_rsa_verify(
+    hash: &str,
+    pad: &str,
+    salt: u32,
+    key_csv: &str,
+    sig_csv: &str,
+    data_csv: &str,
+) -> String {
+    use rsa::pkcs8::DecodePublicKey;
+    let key = match rsa::RsaPublicKey::from_public_key_der(&bytes_from_csv(key_csv)) {
+        Ok(k) => k,
+        Err(_) => return String::new(),
+    };
+    let sig = bytes_from_csv(sig_csv);
+    let data = bytes_from_csv(data_csv);
+    let h = match parse_rsa_hash(hash) {
+        Some(h) => h,
+        None => return String::new(),
+    };
+    macro_rules! prehash {
+        ($h:ty) => {
+            <$h as sha2::Digest>::digest(&data).to_vec()
+        };
+    }
+    if pad == "pss" {
+        let ok = match h {
+            RsaHash::S1 => {
+                let ph = prehash!(sha1::Sha1);
+                key.verify(rsa::pss::Pss::new_with_salt::<sha1::Sha1>(salt as usize), &ph, &sig)
+            }
+            RsaHash::S256 => {
+                let ph = prehash!(sha2::Sha256);
+                key.verify(rsa::pss::Pss::new_with_salt::<sha2::Sha256>(salt as usize), &ph, &sig)
+            }
+            RsaHash::S384 => {
+                let ph = prehash!(sha2::Sha384);
+                key.verify(rsa::pss::Pss::new_with_salt::<sha2::Sha384>(salt as usize), &ph, &sig)
+            }
+            RsaHash::S512 => {
+                let ph = prehash!(sha2::Sha512);
+                key.verify(rsa::pss::Pss::new_with_salt::<sha2::Sha512>(salt as usize), &ph, &sig)
+            }
+        };
+        return if ok.is_ok() { "1".into() } else { "0".into() };
+    }
+    if pad == "pkcs1v15" {
+        let ok = match h {
+            RsaHash::S1 => key.verify(rsa::Pkcs1v15Sign::new::<sha1::Sha1>(), &prehash!(sha1::Sha1), &sig),
+            RsaHash::S256 => key.verify(rsa::Pkcs1v15Sign::new::<sha2::Sha256>(), &prehash!(sha2::Sha256), &sig),
+            RsaHash::S384 => key.verify(rsa::Pkcs1v15Sign::new::<sha2::Sha384>(), &prehash!(sha2::Sha384), &sig),
+            RsaHash::S512 => key.verify(rsa::Pkcs1v15Sign::new::<sha2::Sha512>(), &prehash!(sha2::Sha512), &sig),
+        };
+        return if ok.is_ok() { "1".into() } else { "0".into() };
+    }
+    String::new()
+}

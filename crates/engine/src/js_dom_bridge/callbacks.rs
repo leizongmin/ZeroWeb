@@ -781,6 +781,116 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // `crypto.subtle.generateKey({name:"RSA-*", ...})`（webcrypto M4a）——RSA 生成。
+    // arg[0]=modulusLength 位，arg[1]=publicExponent 大端字节 csv。返 pkcs8 DER csv（error → 空）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_rsa_generate",
+        Box::new(|args: &[String]| -> String {
+            let bits: u32 = args.first().and_then(|s| s.parse().ok()).unwrap_or(0);
+            let e = args.get(1).map(String::as_str).unwrap_or("");
+            crypto_subtle_rsa_generate(bits, e)
+        }),
+    );
+
+    // RSA spki/pkcs8 导入——解析后规范化再编码。arg[0]="spki"/"pkcs8"，arg[1]=DER csv。
+    // 返规范化 DER csv（error → 空）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_rsa_import",
+        Box::new(|args: &[String]| -> String {
+            let fmt = args.first().map(String::as_str).unwrap_or("");
+            let der = args.get(1).map(String::as_str).unwrap_or("");
+            crypto_subtle_rsa_import(fmt, der)
+        }),
+    );
+
+    // RSA jwk 分量导入。arg[0..5]=n/e/d/p/q 大端字节 csv（d 空 = 公钥）。返 pkcs8（私）/
+    // spki（公）DER csv（error → 空）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_rsa_jwk_import",
+        Box::new(|args: &[String]| -> String {
+            let get = |i: usize| args.get(i).map(String::as_str).unwrap_or("");
+            crypto_subtle_rsa_jwk_import(get(0), get(1), get(2), get(3), get(4))
+        }),
+    );
+
+    // RSA 密钥属性。arg[0]=DER csv（spki/pkcs8 自动识别）。返 "<modulus bits>,<e 大端
+    // 字节 csv>"（error → 空）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_rsa_key_attrs",
+        Box::new(|args: &[String]| -> String {
+            let der = args.first().map(String::as_str).unwrap_or("");
+            crypto_subtle_rsa_key_attrs(der)
+        }),
+    );
+
+    // RSA DER 转换。arg[0]=密钥 DER csv（spki/pkcs8 自动识别），arg[1]="spki"（私钥导
+    // 公钥，公钥透传）/"pkcs8"（仅私钥）。返 DER csv（error → 空）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_rsa_export_der",
+        Box::new(|args: &[String]| -> String {
+            let der = args.first().map(String::as_str).unwrap_or("");
+            let fmt = args.get(1).map(String::as_str).unwrap_or("");
+            crypto_subtle_rsa_export_der(der, fmt)
+        }),
+    );
+
+    // RSA jwk 导出。arg[0]=DER csv，arg[1]="1" 私钥 /"0" 公钥。返 `;` 分隔字段串
+    // （公 n;e，私 n;e;d;p;q;dp;dq;qi；各字段为大端字节 csv）（error → 空）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_rsa_export_jwk",
+        Box::new(|args: &[String]| -> String {
+            let der = args.first().map(String::as_str).unwrap_or("");
+            let want_private = args.get(1).map(String::as_str) == Some("1");
+            crypto_subtle_rsa_export_jwk(der, want_private)
+        }),
+    );
+
+    // `crypto.subtle.encrypt/decrypt("RSA-OAEP", ...)`。arg[0]=hash 名，arg[1]=mode
+    // ("encrypt"/"decrypt")，arg[2]=key DER csv，arg[3]=label csv（可空），arg[4]=data csv。
+    // 返密文/明文 csv（error → 空）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_rsa_oaep",
+        Box::new(|args: &[String]| -> String {
+            let hash = args.first().map(String::as_str).unwrap_or("");
+            let mode = args.get(1).map(String::as_str).unwrap_or("");
+            let key = args.get(2).map(String::as_str).unwrap_or("");
+            let label = args.get(3).map(String::as_str).unwrap_or("");
+            let data = args.get(4).map(String::as_str).unwrap_or("");
+            crypto_subtle_rsa_oaep(hash, mode, key, label, data)
+        }),
+    );
+
+    // `crypto.subtle.sign("RSA-PSS"/"RSASSA-PKCS1-v1_5", ...)`。arg[0]=hash 名，
+    // arg[1]="pss"/"pkcs1v15"，arg[2]=saltLength（PSS），arg[3]=pkcs8 DER csv，
+    // arg[4]=data csv。返签名 csv（error → 空）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_rsa_sign",
+        Box::new(|args: &[String]| -> String {
+            let hash = args.first().map(String::as_str).unwrap_or("");
+            let pad = args.get(1).map(String::as_str).unwrap_or("");
+            let salt: u32 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
+            let key = args.get(3).map(String::as_str).unwrap_or("");
+            let data = args.get(4).map(String::as_str).unwrap_or("");
+            crypto_subtle_rsa_sign(hash, pad, salt, key, data)
+        }),
+    );
+
+    // `crypto.subtle.verify(...)`。arg[0]=hash 名，arg[1]="pss"/"pkcs1v15"，arg[2]=
+    // saltLength，arg[3]=key DER csv（spki/pkcs8），arg[4]=签名 csv，arg[5]=data csv。
+    // 返 "1"/"0"（key/参数 error → 空）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_rsa_verify",
+        Box::new(|args: &[String]| -> String {
+            let hash = args.first().map(String::as_str).unwrap_or("");
+            let pad = args.get(1).map(String::as_str).unwrap_or("");
+            let salt: u32 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
+            let key = args.get(3).map(String::as_str).unwrap_or("");
+            let sig = args.get(4).map(String::as_str).unwrap_or("");
+            let data = args.get(5).map(String::as_str).unwrap_or("");
+            crypto_subtle_rsa_verify(hash, pad, salt, key, sig, data)
+        }),
+    );
+
     // `element.matches(selector)` / `element.closest(selector)`——元素查询 API（直接消费选择器引擎，
     // 含组合器）。elem_sel = 元素唯一选择器（proxy 持有），test_sel = 待测选择器。
     let html = Arc::clone(dom_html);

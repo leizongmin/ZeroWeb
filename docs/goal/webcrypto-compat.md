@@ -1,11 +1,21 @@
 # Web Crypto 兼容 — crypto.getRandomValues / randomUUID / subtle
 
-**版本**: v1.2
+**版本**: v1.3
 **日期**: 2026-10-17
-**状态**: Active——M3b 收口（wrapKey/unwrapKey AES-KW + jwk 格式 +5,069P，
-2026-10-17）；下一步 M4（签名系：ECDSA/RSASSA-PKCS1-v1_5/RSA-PSS/RSA-OAEP）
+**状态**: Active——M4a 收口（RSA 家族 OAEP/PSS/RSASSA-PKCS1-v1_5 +2,351P，
+2026-10-17）；下一步 M4b（EC 签名系：ECDSA/ECDH，随后 Ed25519/X25519 OKP）
 **执行模式**: WPT 驱动（上游 WebCryptoAPI corpus 为验收标尺）+ 实现与语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——加密面）
+
+> **▶ M4a RSA 家族（2026-10-17）**：RSA-OAEP/RSASSA-PKCS1-v1_5/RSA-PSS 全链——
+> importKey spki/pkcs8/jwk、generateKey CryptoKeyPair（publicKey 恒 extractable +
+> usages 类型拆分）、exportKey 三格式、OAEP encrypt/decrypt（label、空明文空返）、
+> RSASSA/PSS sign/verify（确定性锚定、verify 坏签名 resolve false）、wrapKey/
+> unwrapKey RSA-OAEP wrapper + spki/pkcs8 回导。依赖 rsa 0.9（RustCrypto，选型见
+> deps evidence）。rsa_importKey 1,056 全绿、generateKey RSA 六文件全绿、
+> rsa_oaep/rsa_pss/rsa_pkcs 全绿、wrapKey_unwrapKey 86→183 全绿。全量 **32,899 =
+> Pass 17,741（53.9%）+ Fail 15,157 + Timeout 1**（+2,351，零回归）；全绿案 27→41。
+> 明细见 [M4a evidence](webcrypto-compat/evidence/2026-10-17-m4a-rsa.md)。
 
 > **▶ M3b wrapKey/unwrapKey AES-KW + jwk 格式（2026-10-17）**：对称密钥管理面
 > 补齐——wrapKey/unwrapKey（AES-KW RFC 3394 + AES-GCM/CBC/CTR 封装路径）、

@@ -32,6 +32,7 @@ aes-gcm = { workspace = true }
 aes = { workspace = true }
 cbc = { workspace = true }
 ctr = { workspace = true }
+rsa = { workspace = true }
 getrandom = { workspace = true }
 png = { workspace = true }
 flate2 = "1"

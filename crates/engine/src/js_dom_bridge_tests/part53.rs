@@ -221,3 +221,208 @@ fn test_crypto_subtle_kw_jwk_m3b() {
     );
     assert_eq!(sandbox.execute("String(globalThis.__k4)").unwrap().value, "DataError", "HMAC length 0 → DataError");
 }
+
+// webcrypto M4a：crypto.subtle RSA 家族（RSA-OAEP / RSASSA-PKCS1-v1_5 / RSA-PSS）。
+// generateKey 密钥对（publicKey 恒 extractable + usages 类型拆分）、OAEP round-trip（密文
+// 长度 = 模长、随机化两密文不同、decrypt 空/坏长度语义）、RSASSA/PSS 签名确定性
+//（pkcs1v15 与 saltLength=0 的 PSS 均确定性——两次签名逐字节同，PSS 错 saltLength 验签
+// false）、spki/pkcs8/jwk 导入导出 round-trip、错误矩阵（e<3 → OperationError、类型
+// usages 子集 SyntaxError、jwk kty/ext DataError、非 extractable 导出 InvalidAccessError）、
+// RSA-OAEP 封装路径（wrapKey/unwrapKey raw round-trip）。WPT rsa_importKey/generateKey/
+// rsa_oaep/rsa_pss/rsa_pkcs 断言语义（corpus 验收标尺），密钥材料不落日志。
+// https://w3c.github.io/webcrypto/#rsa-oaep-operations  https://datatracker.ietf.org/doc/html/rfc8017
+#[test]
+fn test_crypto_subtle_rsa_m4a() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox
+        .execute(
+            "function hex2b(h){var a=[];for(var i=0;i<h.length;i+=2)a.push(parseInt(h.substr(i,2),16));return new Uint8Array(a);}\
+             function b2hex(u){var s='';for(var i=0;i<u.length;i++){s+=('0'+u[i].toString(16)).slice(-2);}return s;}\
+             function errname(p){return p.then(function(){return 'no-throw';}, function(e){return e.name;});}\
+             function b64u2b(s){s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';var bin=atob(s);var a=[];for(var i=0;i<bin.length;i++)a.push(bin.charCodeAt(i));return a;}",
+        )
+        .unwrap();
+
+    // generateKey RSA-OAEP 1024：密钥对结构（publicKey 恒 extractable、RsaHashedKeyAlgorithm
+    // 成员、usages 按类型拆分）+ OAEP round-trip（密文 = 模长字节、随机化）+ usage 校验。
+    sandbox
+        .execute(
+            "globalThis.__pair='(pending)'; globalThis.__rt='(pending)'; globalThis.__rnd='(pending)';\
+             globalThis.__e1='(pending)';\
+             crypto.subtle.generateKey({name:'RSA-OAEP', hash:'SHA-256', modulusLength:1024, publicExponent:new Uint8Array([1,0,1])}, true, ['encrypt','decrypt','wrapKey','unwrapKey'])\
+               .then(function(kp){ globalThis.__pair=JSON.stringify({\
+                   pubEx:kp.publicKey.extractable, privEx:kp.privateKey.extractable,\
+                   alg:kp.privateKey.algorithm.name, bits:kp.privateKey.algorithm.modulusLength,\
+                   pe:Array.prototype.slice.call(new Uint8Array(kp.privateKey.algorithm.publicExponent)),\
+                   hash:kp.privateKey.algorithm.hash.name,\
+                   pubU:kp.publicKey.usages.join(','), privU:kp.privateKey.usages.join(','),\
+                   pubType:kp.publicKey.type, privType:kp.privateKey.type});\
+                 var msg=hex2b('00a1b2c3d4e5f60718');\
+                 var c1=crypto.subtle.encrypt({name:'RSA-OAEP'}, kp.publicKey, msg);\
+                 var c2=crypto.subtle.encrypt({name:'RSA-OAEP'}, kp.publicKey, msg);\
+                 var dec=c1.then(function(ct){ globalThis.__ctLen=new Uint8Array(ct).length; return crypto.subtle.decrypt({name:'RSA-OAEP'}, kp.privateKey, ct); })\
+                   .then(function(pt){ globalThis.__rt=b2hex(new Uint8Array(pt)); });\
+                 var rnd=Promise.all([c1,c2]).then(function(cs){ globalThis.__rnd=(b2hex(new Uint8Array(cs[0]))!==b2hex(new Uint8Array(cs[1])))?'differ':'same'; });\
+                 var e1=errname(crypto.subtle.decrypt({name:'RSA-OAEP'}, kp.publicKey, new Uint8Array(128).buffer))\
+                   .then(function(n){ globalThis.__e1=n; });\
+                 return Promise.all([dec,rnd,e1]); });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__pair)").unwrap().value,
+        r#"{"pubEx":true,"privEx":true,"alg":"RSA-OAEP","bits":1024,"pe":[1,0,1],"hash":"SHA-256","pubU":"encrypt,wrapKey","privU":"decrypt,unwrapKey","pubType":"public","privType":"private"}"#,
+        "generateKey RSA-OAEP：密钥对结构 + RsaHashedKeyAlgorithm + usages 类型拆分"
+    );
+    assert_eq!(sandbox.execute("String(globalThis.__rt)").unwrap().value, "00a1b2c3d4e5f60718", "RSA-OAEP encrypt/decrypt round-trip");
+    assert_eq!(sandbox.execute("String(globalThis.__ctLen)").unwrap().value, "128", "密文长度 = 模长字节（1024 位 → 128）");
+    assert_eq!(sandbox.execute("String(globalThis.__rnd)").unwrap().value, "differ", "OAEP 随机化：两次加密密文不同");
+    assert_eq!(sandbox.execute("String(globalThis.__e1)").unwrap().value, "InvalidAccessError", "publicKey（无 decrypt usage）decrypt → InvalidAccessError");
+
+    // RSASSA-PKCS1-v1_5：签名确定性（两次同签）+ verify true/篡改 false + 跨算法密钥
+    // InvalidAccessError；RSA-PSS saltLength=0 确定性 + 错 saltLength 验签 false。
+    sandbox
+        .execute(
+            "globalThis.__sig1='(pending)'; globalThis.__sig2='(pending)'; globalThis.__v1='(pending)';\
+             globalThis.__v2='(pending)'; globalThis.__e2='(pending)'; globalThis.__ps1='(pending)';\
+             globalThis.__ps2='(pending)'; globalThis.__pv1='(pending)'; globalThis.__pv2='(pending)';\
+             crypto.subtle.generateKey({name:'RSASSA-PKCS1-v1_5', hash:'SHA-256', modulusLength:1024, publicExponent:new Uint8Array([1,0,1])}, false, ['sign','verify'])\
+               .then(function(kp){\
+                 var msg=hex2b('deadbeef');\
+                 var s1=crypto.subtle.sign({name:'RSASSA-PKCS1-v1_5'}, kp.privateKey, msg);\
+                 var s2=crypto.subtle.sign({name:'RSASSA-PKCS1-v1_5'}, kp.privateKey, msg);\
+                 var v1=s1.then(function(sig){ globalThis.__sig1=b2hex(new Uint8Array(sig));\
+                   return crypto.subtle.verify({name:'RSASSA-PKCS1-v1_5'}, kp.publicKey, sig, msg); })\
+                   .then(function(ok){ globalThis.__v1=String(ok); });\
+                 var v2=s2.then(function(sig){ globalThis.__sig2=b2hex(new Uint8Array(sig));\
+                   var t=new Uint8Array(sig); t[5]^=0xff;\
+                   return crypto.subtle.verify({name:'RSASSA-PKCS1-v1_5'}, kp.publicKey, t.buffer, msg); })\
+                   .then(function(ok){ globalThis.__v2=String(ok); });\
+                 var e2=errname(crypto.subtle.sign({name:'RSA-PSS', saltLength:32}, kp.privateKey, msg))\
+                   .then(function(n){ globalThis.__e2=n; });\
+                 return Promise.all([v1,v2,e2]); })\
+               .then(function(){\
+                 return crypto.subtle.generateKey({name:'RSA-PSS', hash:'SHA-256', modulusLength:1024, publicExponent:new Uint8Array([1,0,1])}, false, ['sign','verify']); })\
+               .then(function(kp){\
+                 var msg=hex2b('cafebabe');\
+                 var p1=crypto.subtle.sign({name:'RSA-PSS', saltLength:0}, kp.privateKey, msg);\
+                 var p2=crypto.subtle.sign({name:'RSA-PSS', saltLength:0}, kp.privateKey, msg);\
+                 var pv1=p1.then(function(sig){ globalThis.__ps1=b2hex(new Uint8Array(sig));\
+                   return crypto.subtle.verify({name:'RSA-PSS', saltLength:0}, kp.publicKey, sig, msg); })\
+                   .then(function(ok){ globalThis.__pv1=String(ok); });\
+                 var pv2=p2.then(function(sig){ globalThis.__ps2=b2hex(new Uint8Array(sig));\
+                   return crypto.subtle.verify({name:'RSA-PSS', saltLength:32}, kp.publicKey, sig, msg); })\
+                   .then(function(ok){ globalThis.__pv2=String(ok); });\
+                 return Promise.all([pv1,pv2]); });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__sig1)").unwrap().value, sandbox.execute("String(globalThis.__sig2)").unwrap().value, "RSASSA-PKCS1-v1_5 签名确定性：两次同签");
+    assert_eq!(sandbox.execute("String(globalThis.__v1)").unwrap().value, "true", "RSASSA verify 好签名 → true");
+    assert_eq!(sandbox.execute("String(globalThis.__v2)").unwrap().value, "false", "RSASSA verify 篡改签名 → false");
+    assert_eq!(sandbox.execute("String(globalThis.__e2)").unwrap().value, "InvalidAccessError", "RSASSA 密钥跨算法（PSS sign）→ InvalidAccessError");
+    assert_eq!(sandbox.execute("String(globalThis.__ps1)").unwrap().value, sandbox.execute("String(globalThis.__ps2)").unwrap().value, "RSA-PSS saltLength=0 签名确定性");
+    assert_eq!(sandbox.execute("String(globalThis.__pv1)").unwrap().value, "true", "RSA-PSS saltLength=0 verify → true");
+    assert_eq!(sandbox.execute("String(globalThis.__pv2)").unwrap().value, "false", "RSA-PSS 错 saltLength verify → false");
+
+    // 导入导出 round-trip：pkcs8/spki 逐字节稳定、jwk 私钥分量（n/e/d）与重导入一致、
+    // 非 extractable 导出 → InvalidAccessError。
+    sandbox
+        .execute(
+            "globalThis.__spki='(pending)'; globalThis.__pk8='(pending)'; globalThis.__jwk='(pending)';\
+             globalThis.__rt8='(pending)'; globalThis.__e3='(pending)';\
+             crypto.subtle.generateKey({name:'RSA-OAEP', hash:'SHA-256', modulusLength:1024, publicExponent:new Uint8Array([1,0,1])}, true, ['encrypt','decrypt','wrapKey','unwrapKey'])\
+               .then(function(kp){\
+                 var e1=crypto.subtle.exportKey('spki', kp.publicKey).then(function(d){ globalThis.__spki=new Uint8Array(d).length; });\
+                 var e2=crypto.subtle.exportKey('pkcs8', kp.privateKey).then(function(d){ return crypto.subtle.importKey('pkcs8', d, {name:'RSA-OAEP', hash:'SHA-256'}, true, ['decrypt','unwrapKey']); })\
+                   .then(function(k){ return crypto.subtle.exportKey('pkcs8', k); })\
+                   .then(function(d){ globalThis.__pk8=b2hex(new Uint8Array(d)).substring(0,16); });\
+                 var e3=crypto.subtle.exportKey('jwk', kp.privateKey).then(function(j){\
+                   globalThis.__jwk=JSON.stringify({kty:j.kty, hasD:!!j.d, hasP:!!j.p, hasQi:!!j.qi, alg:j.alg, ext:j.ext, ops:j.key_ops.join(','), nLen:b64u2b(j.n).length});\
+                   var j2={kty:j.kty,n:j.n,e:j.e,d:j.d,p:j.p,q:j.q,dp:j.dp,dq:j.dq,qi:j.qi};\
+                   return crypto.subtle.importKey('jwk', j2, {name:'RSA-OAEP', hash:'SHA-256'}, true, ['decrypt','unwrapKey']); })\
+                   .then(function(k){ return crypto.subtle.exportKey('pkcs8', k); })\
+                   .then(function(d){ globalThis.__rt8=b2hex(new Uint8Array(d)).substring(0,16); });\
+                 var e4=crypto.subtle.generateKey({name:'RSA-OAEP', hash:'SHA-256', modulusLength:1024, publicExponent:new Uint8Array([1,0,1])}, false, ['decrypt','unwrapKey'])\
+                   .then(function(np){ return errname(crypto.subtle.exportKey('pkcs8', np.privateKey)); })\
+                   .then(function(n){ globalThis.__e3=n; });\
+                 return Promise.all([e1,e2,e3,e4]); });",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__spki)").unwrap().value, "162", "exportKey spki（1024 位 SPKI 162 字节）");
+    let pk8_prefix = sandbox.execute("String(globalThis.__pk8)").unwrap().value.clone();
+    assert_eq!(sandbox.execute("String(globalThis.__rt8)").unwrap().value, pk8_prefix, "jwk 私钥重导入 → pkcs8 与原导出逐字节一致");
+    assert!(pk8_prefix.len() == 16 && pk8_prefix != "(pending)", "pkcs8 导出非空");
+    let jwk = sandbox.execute("String(globalThis.__jwk)").unwrap().value;
+    assert_eq!(
+        jwk,
+        r#"{"kty":"RSA","hasD":true,"hasP":true,"hasQi":true,"alg":"RSA-OAEP-256","ext":true,"ops":"decrypt,unwrapKey","nLen":128}"#,
+        "exportKey jwk 私钥：kty/d/p/qi/alg/ext/key_ops + n 128 字节"
+    );
+    assert_eq!(sandbox.execute("String(globalThis.__e3)").unwrap().value, "InvalidAccessError", "非 extractable 私钥导出 → InvalidAccessError");
+
+    // 错误矩阵：e=1 生成 OperationError、空算法 TypeError、spki+sign usage SyntaxError、
+    // pkcs8 空 usages SyntaxError、jwk kty 'oct' DataError、jwk alg 不匹配 DataError。
+    sandbox
+        .execute(
+            "globalThis.__f1='(pending)'; globalThis.__f2='(pending)'; globalThis.__f3='(pending)';\
+             globalThis.__f4='(pending)'; globalThis.__f5='(pending)'; globalThis.__f6='(pending)';\
+             var f1=errname(crypto.subtle.generateKey({name:'RSA-OAEP', hash:'SHA-256', modulusLength:1024, publicExponent:new Uint8Array([1])}, true, ['encrypt','decrypt']))\
+               .then(function(n){ globalThis.__f1=n; });\
+             var f2=errname(crypto.subtle.generateKey({}, true, ['sign']))\
+               .then(function(n){ globalThis.__f2=n; });\
+             crypto.subtle.generateKey({name:'RSA-OAEP', hash:'SHA-256', modulusLength:1024, publicExponent:new Uint8Array([1,0,1])}, true, ['encrypt','decrypt','wrapKey','unwrapKey'])\
+               .then(function(kp){\
+                 var spki=kp.publicKey._raw.slice();\
+                 var f3b=errname(crypto.subtle.importKey('spki', new Uint8Array(spki).buffer, {name:'RSA-OAEP', hash:'SHA-256'}, true, ['sign']))\
+                   .then(function(n){ globalThis.__f3=n; });\
+                 var pk8=kp.privateKey._raw.slice();\
+                 var f4=errname(crypto.subtle.importKey('pkcs8', new Uint8Array(pk8).buffer, {name:'RSA-OAEP', hash:'SHA-256'}, true, []))\
+                   .then(function(n){ globalThis.__f4=n; });\
+                 var f5=errname(crypto.subtle.importKey('jwk', {kty:'oct', k:'AA'}, {name:'RSA-OAEP', hash:'SHA-256'}, true, ['encrypt']))\
+                   .then(function(n){ globalThis.__f5=n; });\
+                 var jwkBad={kty:'RSA', n:'AQAB', e:'AQAB', alg:'RS256'};\
+                 var f6=errname(crypto.subtle.importKey('jwk', jwkBad, {name:'RSA-OAEP', hash:'SHA-256'}, true, ['encrypt']))\
+                   .then(function(n){ globalThis.__f6=n; });\
+                 return Promise.all([f3b,f4,f5,f6]); });\
+             var _ = Promise.all([f1,f2]);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__f1)").unwrap().value, "OperationError", "e=1（非法指数）generateKey → OperationError");
+    assert_eq!(sandbox.execute("String(globalThis.__f2)").unwrap().value, "TypeError", "空算法对象 generateKey → TypeError");
+    assert_eq!(sandbox.execute("String(globalThis.__f3)").unwrap().value, "SyntaxError", "spki 公钥 + sign usage → SyntaxError");
+    assert_eq!(sandbox.execute("String(globalThis.__f4)").unwrap().value, "SyntaxError", "pkcs8 私钥空 usages → SyntaxError");
+    assert_eq!(sandbox.execute("String(globalThis.__f5)").unwrap().value, "DataError", "jwk kty 'oct' → DataError");
+    assert_eq!(sandbox.execute("String(globalThis.__f6)").unwrap().value, "DataError", "jwk alg 不匹配（RS256 vs RSA-OAEP）→ DataError");
+
+    // RSA-OAEP 封装路径：wrapKey('raw', AES 密钥, RSA wrapper) → unwrapKey → 解出密钥可用。
+    sandbox
+        .execute(
+            "globalThis.__wrt='(pending)';\
+             crypto.subtle.generateKey({name:'RSA-OAEP', hash:'SHA-256', modulusLength:1024, publicExponent:new Uint8Array([1,0,1])}, true, ['wrapKey','unwrapKey'])\
+               .then(function(wp){\
+                 return crypto.subtle.importKey('raw', hex2b('00112233445566778899aabbccddeeff'), {name:'AES-CBC'}, true, ['encrypt','decrypt'])\
+                   .then(function(aes){\
+                     return crypto.subtle.wrapKey('raw', aes, wp.publicKey, {name:'RSA-OAEP'})\
+                       .then(function(w){ return crypto.subtle.unwrapKey('raw', w, wp.privateKey, {name:'RSA-OAEP'}, {name:'AES-CBC'}, true, ['encrypt','decrypt']); })\
+                       .then(function(k){ return crypto.subtle.exportKey('raw', k); }); }); })\
+               .then(function(raw){ globalThis.__wrt=b2hex(new Uint8Array(raw)); });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__wrt)").unwrap().value,
+        "00112233445566778899aabbccddeeff",
+        "RSA-OAEP wrapKey/unwrapKey raw round-trip"
+    );
+}

@@ -2348,11 +2348,17 @@
   // importKey 的 algorithm 归一化：{name:"HMAC", hash:"SHA-XXX"} / {name:"PBKDF2"} / null（unsupported）。
   // HMAC 需 hash；PBKDF2 不需（hash 在 deriveBits 参数里）。name 匹配 ASCII 折叠（_zw_upperAscii）。
   // HMAC 透传显式 length 成员（generateKey/importKey 语义：缺省 = hash 块大小，显式 = 调用值）。
-  // M3b 起 AES 家族含 AES-KW。
+  // M3b 起 AES 家族含 AES-KW。M4a 起 RSA 家族（RsaHashedImportParams：hash 必填成员缺失
+  // → TypeError，WebIDL required dictionary member；name 不在注册表 / hash 非注册摘要名
+  // → null 调用方转 NotSupportedError——WPT generateKey/failures.js 裸名 "RSA"、hash "SHA" 组）。
   function _zw_normalizeImportAlgorithm(algo) {
     if (!algo) return null;
     var name = (typeof algo === 'object' && algo) ? algo.name : algo;
-    if (!name) return null;
+    if (name == null) {
+      // spec normalizeAlgorithm：Algorithm 字典 required name 成员缺失（含 {}）→ TypeError
+      //（WPT digest.js「empty algorithm object」组同语义，generateKey failures 空算法组）。
+      throw new TypeError('Algorithm name is required');
+    }
     name = _zw_upperAscii(String(name));
     if (name === 'HMAC') {
       var hash = _zw_hashName(typeof algo === 'object' ? algo.hash : null);
@@ -2373,6 +2379,21 @@
     }
     if (name === 'HKDF') {
       return { name: 'HKDF' };
+    }
+    if (name === 'RSA-OAEP' || name === 'RSASSA-PKCS1-V1_5' || name === 'RSA-PSS') {
+      if (typeof algo !== 'object' || algo.hash == null) {
+        throw new TypeError('RSA algorithm requires a hash member');
+      }
+      var rsaHash = _zw_hashName(algo.hash);
+      if (!rsaHash || ['SHA-1', 'SHA-256', 'SHA-384', 'SHA-512'].indexOf(rsaHash) < 0) {
+        return null;
+      }
+      // 注：name 已被上方 ASCII 折叠为全大写，本族规范名含小写 "v1_5"，此处回写
+      // 注册表规范拼写（spec normalizeAlgorithm 命中注册表后用注册名）。
+      return {
+        name: (name === 'RSASSA-PKCS1-V1_5') ? 'RSASSA-PKCS1-v1_5' : name,
+        hash: rsaHash
+      };
     }
     return null;
   }
@@ -2591,6 +2612,358 @@
     var res = new Uint8Array(parts.length);
     for (var i = 0; i < parts.length; i++) res[i] = +parts[i];
     return res;
+  }
+
+  // ===== RSA 家族（RSA-OAEP / RSASSA-PKCS1-v1_5 / RSA-PSS）shim 支撑（webcrypto M4a）=====
+  // host 原语见 js_dom_bridge/crypto.rs（rsa 0.9）；字节桥统一 csv（DER/密文/签名/分量），
+  // jwk 分量经 `;` 分隔多字段。密钥材料（DER/分量）不落 tracing（零日志纪律）。
+  // https://w3c.github.io/webcrypto/#rsa-oaep-operations  https://w3c.github.io/webcrypto/#rsassa-pkcs1-operations  https://w3c.github.io/webcrypto/#rsa-pss-operations
+
+  // RSA 家族判定：接受规范拼写 RSASSA-PKCS1-v1_5 与 ASCII 折叠后 RSASSA-PKCS1-V1_5
+  // 两种（key.algorithm.name 存规范拼写，normalize 后参数名为折叠拼写）。
+  function _zw_rsaIsFamily(name) {
+    var u = _zw_upperAscii(String(name));
+    return u === 'RSA-OAEP' || u === 'RSASSA-PKCS1-V1_5' || u === 'RSA-PSS';
+  }
+
+  // 家族全 usages（importKey/generateKey 步骤 2：非法项 → SyntaxError）。
+  function _zw_rsaAllowedUsages(name) {
+    return (_zw_upperAscii(String(name)) === 'RSA-OAEP')
+      ? ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey'] : ['sign', 'verify'];
+  }
+
+  // 按密钥类型的 usages 子集（spec importKey 各格式分支 + generateKey 密钥对拆分：
+  // public ⊆ 加密半/verify，private ⊆ 解密半/sign）。
+  function _zw_rsaTypeUsages(name, isPublic) {
+    if (_zw_upperAscii(String(name)) === 'RSA-OAEP') {
+      return isPublic ? ['encrypt', 'wrapKey'] : ['decrypt', 'unwrapKey'];
+    }
+    return isPublic ? ['verify'] : ['sign'];
+  }
+
+  // jwk alg ↔ 算法映射（RFC 7518 §A.2：RSA-OAEP[-256|384|512] / RS1|RS256|RS384|RS512 /
+  // PS1|PS256|PS384|PS512）。hash 不识别 → null。
+  function _zw_rsaJwkAlg(name, hash) {
+    var u = _zw_upperAscii(String(name));
+    if (hash === 'SHA-1') {
+      return u === 'RSA-OAEP' ? 'RSA-OAEP' : u === 'RSASSA-PKCS1-V1_5' ? 'RS1' : u === 'RSA-PSS' ? 'PS1' : null;
+    }
+    var sfx = hash === 'SHA-256' ? '256' : hash === 'SHA-384' ? '384' : hash === 'SHA-512' ? '512' : null;
+    if (!sfx) return null;
+    if (u === 'RSA-OAEP') return 'RSA-OAEP-' + sfx;
+    if (u === 'RSASSA-PKCS1-V1_5') return 'RS' + sfx;
+    if (u === 'RSA-PSS') return 'PS' + sfx;
+    return null;
+  }
+
+  // host csv → Uint8Array（空串 → null；调用方按操作映射 DataError/OperationError——
+  // decrypt 空 = 空明文，见 _zw_rsaOaepCall）。
+  function _zw_rsaCsvBytes(csv) {
+    if (!csv) return null;
+    var parts = String(csv).split(',');
+    var arr = new Uint8Array(parts.length);
+    for (var i = 0; i < parts.length; i++) arr[i] = +parts[i];
+    return arr;
+  }
+
+  // csv 字节 → base64url（jwk 导出 n/e/d/p/q/dp/dq/qi 分量）。
+  function _zw_b64uFromCsv(csv) {
+    var arr = _zw_rsaCsvBytes(csv);
+    return arr ? _zw_b64uFromBytes(arr) : '';
+  }
+
+  // key.algorithm.hash 兼容串/KeyAlgorithm 字典两种形态（同 _zw_hmacMac）。
+  function _zw_rsaKeyHash(key) {
+    var h = key.algorithm ? key.algorithm.hash : null;
+    return (h && typeof h === 'object') ? h.name : h;
+  }
+
+  // RsaHashedKeyAlgorithm 构造（host key_attrs 返 "<modulusLength 位>,<e 大端 csv>"）。
+  // spec：hash 为 KeyAlgorithm 字典 {name}（WPT assert_goodCryptoKey 取 .hash.name）、
+  // publicExponent 为 BufferSource（mismatchedCryptoKeyAlgorithmMembers 走 equalBuffers）。
+  function _zw_rsaKeyAlgFromDer(derCsv, name, hash) {
+    if (typeof __zw_crypto_subtle_rsa_key_attrs !== 'function') return null;
+    var attrs = __zw_crypto_subtle_rsa_key_attrs(derCsv);
+    if (!attrs) return null;
+    var ci = attrs.indexOf(',');
+    return {
+      name: name,
+      modulusLength: +(attrs.substring(0, ci)),
+      publicExponent: _zw_rsaCsvBytes(attrs.substring(ci + 1)),
+      hash: { name: hash }
+    };
+  }
+
+  // DER（spki 公 / pkcs8 私）→ CryptoKey。spec 公共步骤 10：private 空 usages →
+  // SyntaxError（public 合法，rsa_importKey "Empty Usages" 仅 pkcs8/jwk-private 组）。
+  // _raw 存规范化 DER（plain number[]，structuredClone 逐属性克隆后 export 仍逐字节一致）。
+  function _zw_rsaKeyFromDer(resolve, reject, name, hash, derCsv, type, extractable, usages) {
+    var keyAlg = _zw_rsaKeyAlgFromDer(derCsv, name, hash);
+    if (!keyAlg) {
+      reject(new _zw_subtleDE('RSA key data invalid', 'DataError')); return;
+    }
+    if (type === 'private' && usages.length === 0) {
+      reject(new _zw_subtleDE('Key usages cannot be empty for private keys', 'SyntaxError')); return;
+    }
+    resolve(new CryptoKey(type, extractable, keyAlg, usages, Array.from(_zw_rsaCsvBytes(derCsv))));
+  }
+
+  // RSA-OAEP 运算（encrypt/decrypt/wrapKey/unwrapKey 封装路径共用）：失败 → null 已调
+  // reject OperationError。decrypt 特例：先按 spec 步骤做密文长度 = 模长字节预检（长/短密
+  // 文 → OperationError），随后 host 空串 = 空明文（加密空明文 → 解密 0 字节，WPT
+  // "transferred plaintext during call" 组断言 decrypt 返空而非报错）。
+  function _zw_rsaOaepCall(mode, key, hash, labelBytes, dataBytes, reject) {
+    if (typeof __zw_crypto_subtle_rsa_oaep !== 'function') {
+      reject(_zw_subtleDE('crypto.subtle RSA-OAEP requires host callback', 'NotSupportedError')); return null;
+    }
+    if (mode === 'decrypt') {
+      var k = Math.ceil((Number(key.algorithm && key.algorithm.modulusLength) || 0) / 8);
+      if (dataBytes.length !== k) {
+        reject(_zw_subtleDE('RSA-OAEP decrypt failed (ciphertext length)', 'OperationError')); return null;
+      }
+    }
+    var out = __zw_crypto_subtle_rsa_oaep(hash, mode, (key._raw || []).map(String).join(','), labelBytes.join(','), dataBytes.join(','));
+    if (!out) {
+      if (mode === 'decrypt') return new Uint8Array(0);
+      reject(_zw_subtleDE('RSA-OAEP ' + mode + ' failed', 'OperationError')); return null;
+    }
+    return _zw_rsaCsvBytes(out);
+  }
+
+  // RSASSA-PKCS1-v1_5 / RSA-PSS 签名调用：失败 → null 已调 reject OperationError
+  //（salt 仅 PSS 消费；hash 为 key.algorithm.hash 名）。
+  function _zw_rsaSignCall(key, pad, salt, hash, dataBytes, reject) {
+    if (typeof __zw_crypto_subtle_rsa_sign !== 'function') {
+      reject(_zw_subtleDE('crypto.subtle RSA sign requires host callback', 'NotSupportedError')); return null;
+    }
+    var out = __zw_crypto_subtle_rsa_sign(hash, pad, String(salt), (key._raw || []).map(String).join(','), dataBytes.join(','));
+    if (!out) {
+      reject(_zw_subtleDE('RSA sign failed', 'OperationError')); return null;
+    }
+    return _zw_rsaCsvBytes(out);
+  }
+
+  // 验签：spec 对坏签名 resolve false 而非 reject；host 空串（key 解析失败，常规不可达）
+  // 同 false。
+  function _zw_rsaVerifyCall(key, pad, salt, hash, sigBytes, dataBytes, reject) {
+    if (typeof __zw_crypto_subtle_rsa_verify !== 'function') {
+      reject(_zw_subtleDE('crypto.subtle RSA verify requires host callback', 'NotSupportedError')); return null;
+    }
+    var out = __zw_crypto_subtle_rsa_verify(hash, pad, String(salt), (key._raw || []).map(String).join(','), sigBytes.join(','), dataBytes.join(','));
+    return out === '1';
+  }
+
+  // importKey RSA 分派（part02 importKey 家族判定后整体转入）。顺序（spec 各算法
+  // importKey + 公共步骤）：usages 家族 SyntaxError → 格式分派 → spki/pkcs8 DER 解析
+  // DataError → 类型 usages 子集 SyntaxError → jwk：kty/use/key_ops DataError → d 有无
+  // 定型 + 类型子集 SyntaxError → ext/alg DataError → n/e(/d/p/q) base64url DataError →
+  // host 合成 DER → private 空 usages SyntaxError。
+  // https://w3c.github.io/webcrypto/#SubtleCrypto-method-importKey
+  function _zw_rsaImportKey(format, keyData, algo, extractable, usages, resolve, reject) {
+    var name = algo.name;
+    var u = _zw_normalizeUsages(usages, _zw_rsaAllowedUsages(name));
+    if (!u) {
+      reject(new _zw_subtleDE('Invalid key usages for ' + name, 'SyntaxError')); return;
+    }
+    var fmt = _zw_upperAscii(String(format == null ? '' : format));
+    if (fmt === 'SPKI' || fmt === 'PKCS8') {
+      if (typeof __zw_crypto_subtle_rsa_import !== 'function') {
+        reject(_zw_subtleDE('crypto.subtle RSA import requires host callback', 'NotSupportedError')); return;
+      }
+      var bytes = _zw_bufToBytes(keyData);
+      var derCsv = bytes.length ? __zw_crypto_subtle_rsa_import(fmt.toLowerCase(), bytes.join(',')) : '';
+      if (!derCsv) {
+        reject(new _zw_subtleDE('Invalid RSA ' + fmt.toLowerCase() + ' key data', 'DataError')); return;
+      }
+      var isPublic = (fmt === 'SPKI');
+      if (!_zw_rsaUsagesFitType(name, isPublic, u)) {
+        reject(new _zw_subtleDE('Invalid key usages for ' + name + ' ' + (isPublic ? 'public' : 'private') + ' key', 'SyntaxError')); return;
+      }
+      _zw_rsaKeyFromDer(resolve, reject, name, algo.hash, derCsv, isPublic ? 'public' : 'private', extractable, u);
+      return;
+    }
+    if (fmt === 'JWK') {
+      if (!keyData || typeof keyData !== 'object') {
+        reject(new TypeError('jwk key data must be an object')); return;
+      }
+      if (keyData.kty !== 'RSA') {
+        reject(new _zw_subtleDE("jwk kty must be 'RSA'", 'DataError')); return;
+      }
+      if (u.length > 0 && keyData.use != null && keyData.use !== (name === 'RSA-OAEP' ? 'enc' : 'sig')) {
+        reject(new _zw_subtleDE("jwk use must be '" + (name === 'RSA-OAEP' ? 'enc' : 'sig') + "'", 'DataError')); return;
+      }
+      if (keyData.key_ops != null) {
+        if (!keyData.key_ops || typeof keyData.key_ops.length !== 'number') {
+          reject(new _zw_subtleDE('jwk key_ops must be an array', 'DataError')); return;
+        }
+        var seenOps = {};
+        for (var oi = 0; oi < keyData.key_ops.length; oi++) {
+          var opName = String(keyData.key_ops[oi]);
+          var legalAll = _zw_rsaAllowedUsages(name);
+          if (legalAll.indexOf(opName) < 0 || seenOps[opName]) {
+            reject(new _zw_subtleDE("invalid or duplicate jwk key_ops entry: '" + opName + "'", 'DataError')); return;
+          }
+          seenOps[opName] = 1;
+        }
+        for (var ui = 0; ui < u.length; ui++) {
+          if (seenOps[u[ui]] !== 1) {
+            reject(new _zw_subtleDE("jwk key_ops must contain usage '" + u[ui] + "'", 'DataError')); return;
+          }
+        }
+      }
+      var isPubJwk = (keyData.d == null);
+      if (!_zw_rsaUsagesFitType(name, isPubJwk, u)) {
+        reject(new _zw_subtleDE('Invalid key usages for ' + name + ' ' + (isPubJwk ? 'public' : 'private') + ' key', 'SyntaxError')); return;
+      }
+      if (keyData.ext === false && extractable) {
+        reject(new _zw_subtleDE('jwk ext is false but extractable is true', 'DataError')); return;
+      }
+      if (keyData.alg != null && String(keyData.alg) !== _zw_rsaJwkAlg(name, algo.hash)) {
+        reject(new _zw_subtleDE("jwk alg '" + keyData.alg + "' does not match algorithm", 'DataError')); return;
+      }
+      var n = _zw_bytesFromB64u(keyData.n == null ? '' : keyData.n);
+      var e = _zw_bytesFromB64u(keyData.e == null ? '' : keyData.e);
+      if (!n || !n.length || !e || !e.length) {
+        reject(new _zw_subtleDE('jwk n/e missing or not valid base64url', 'DataError')); return;
+      }
+      var d = [], p = [], q = [];
+      if (!isPubJwk) {
+        d = _zw_bytesFromB64u(keyData.d);
+        if (!d || !d.length) {
+          reject(new _zw_subtleDE('jwk d is not valid base64url', 'DataError')); return;
+        }
+        p = keyData.p != null ? (_zw_bytesFromB64u(keyData.p) || []) : [];
+        q = keyData.q != null ? (_zw_bytesFromB64u(keyData.q) || []) : [];
+      }
+      if (typeof __zw_crypto_subtle_rsa_jwk_import !== 'function') {
+        reject(_zw_subtleDE('crypto.subtle RSA jwk import requires host callback', 'NotSupportedError')); return;
+      }
+      var jwkDer = __zw_crypto_subtle_rsa_jwk_import(n.join(','), e.join(','), d.join(','), p.join(','), q.join(','));
+      if (!jwkDer) {
+        reject(new _zw_subtleDE('RSA jwk components invalid or inconsistent', 'DataError')); return;
+      }
+      _zw_rsaKeyFromDer(resolve, reject, name, algo.hash, jwkDer, isPubJwk ? 'public' : 'private', extractable, u);
+      return;
+    }
+    reject(new _zw_subtleDE("Unsupported importKey format: '" + fmt + "' (only 'spki'/'pkcs8'/'jwk' supported for RSA keys)", 'NotSupportedError'));
+  }
+
+  // 类型 usages 子集判定（spki/pkcs8 分支与 jwk d 分支共用）。
+  function _zw_rsaUsagesFitType(name, isPublic, usages) {
+    var legal = _zw_rsaTypeUsages(name, isPublic);
+    for (var i = 0; i < usages.length; i++) {
+      if (legal.indexOf(usages[i]) < 0) return false;
+    }
+    return true;
+  }
+
+  // generateKey RSA（RSA-OAEP/RSASSA-PKCS1-v1_5/RSA-PSS → CryptoKeyPair）。顺序（spec
+  // generateKey + failures.js 断言序）：usages 非法 SyntaxError → 生成（e<3/偶数等）
+  // OperationError → 私钥空 usages SyntaxError（公共步骤 10，生成成功后）。
+  // publicKey 恒 extractable=true（spec 公共生成步骤）；usages 按类型拆分到两端。
+  function _zw_rsaGenerateKey(algorithm, extractable, usages, algo, resolve, reject) {
+    var name = algo.name;
+    var u = _zw_normalizeUsages(usages, _zw_rsaAllowedUsages(name));
+    if (!u) {
+      reject(new _zw_subtleDE('Invalid key usages for ' + name, 'SyntaxError')); return;
+    }
+    // RsaHashedKeyGenParams 必填成员 modulusLength/publicExponent（WebIDL required；
+    // corpus failures 未覆盖缺成员，缺省按 0/空 → host 拒绝 OperationError，与 e 非法同径）。
+    var gen = (typeof algorithm === 'object' && algorithm) ? algorithm : {};
+    var bits = (gen.modulusLength != null) ? Number(gen.modulusLength) : 0;
+    var eBytes = (gen.publicExponent != null) ? _zw_bufToBytes(gen.publicExponent) : [];
+    if (typeof __zw_crypto_subtle_rsa_generate !== 'function') {
+      reject(_zw_subtleDE('crypto.subtle RSA generateKey requires host callback', 'NotSupportedError')); return;
+    }
+    var pkcs8Csv = __zw_crypto_subtle_rsa_generate(String(bits), eBytes.join(','));
+    if (!pkcs8Csv) {
+      reject(new _zw_subtleDE('RSA key generation failed (invalid modulus/exponent)', 'OperationError')); return;
+    }
+    if (typeof __zw_crypto_subtle_rsa_export_der !== 'function') {
+      reject(_zw_subtleDE('crypto.subtle RSA generateKey requires host callback', 'NotSupportedError')); return;
+    }
+    var spkiCsv = __zw_crypto_subtle_rsa_export_der(pkcs8Csv, 'spki');
+    if (!spkiCsv) {
+      reject(new _zw_subtleDE('RSA public key derivation failed', 'OperationError')); return;
+    }
+    var pubU = [], privU = [];
+    for (var i = 0; i < u.length; i++) {
+      if (_zw_rsaTypeUsages(name, true).indexOf(u[i]) >= 0) pubU.push(u[i]);
+      if (_zw_rsaTypeUsages(name, false).indexOf(u[i]) >= 0) privU.push(u[i]);
+    }
+    if (privU.length === 0) {
+      reject(new _zw_subtleDE('Key usages cannot be empty for private keys', 'SyntaxError')); return;
+    }
+    var keyAlg = _zw_rsaKeyAlgFromDer(pkcs8Csv, name, algo.hash);
+    if (!keyAlg) {
+      reject(new _zw_subtleDE('RSA key generation failed', 'OperationError')); return;
+    }
+    resolve({
+      publicKey: new CryptoKey('public', true, keyAlg, pubU, Array.from(_zw_rsaCsvBytes(spkiCsv))),
+      privateKey: new CryptoKey('private', extractable, keyAlg, privU, Array.from(_zw_rsaCsvBytes(pkcs8Csv)))
+    });
+  }
+
+  // exportKey RSA 分派：spki（公透传/私派生公）、pkcs8（仅私）、jwk（kty/n/e[/d/p/q/dp/
+  // dq/qi] + alg/key_ops/ext）。非 extractable → InvalidAccessError（spec 公共步骤）。
+  function _zw_rsaExportKey(format, key, resolve, reject) {
+    var fmt = _zw_upperAscii(String(format == null ? '' : format));
+    if (!key || !key.extractable) {
+      reject(new _zw_subtleDE('Key is not extractable', 'InvalidAccessError')); return;
+    }
+    var raw = key._raw || [];
+    if (fmt === 'SPKI') {
+      var spkiCsv;
+      if (key.type === 'public') {
+        spkiCsv = raw.join(',');
+      } else {
+        if (typeof __zw_crypto_subtle_rsa_export_der !== 'function') {
+          reject(_zw_subtleDE('crypto.subtle RSA exportKey requires host callback', 'NotSupportedError')); return;
+        }
+        spkiCsv = __zw_crypto_subtle_rsa_export_der(raw.join(','), 'spki');
+      }
+      if (!spkiCsv) {
+        reject(new _zw_subtleDE('Key type does not match exportKey format', 'InvalidAccessError')); return;
+      }
+      resolve(_zw_rsaCsvBytes(spkiCsv));
+      return;
+    }
+    if (fmt === 'PKCS8') {
+      // spec：pkcs8 仅 private（public → InvalidAccessError，与"wrong key type"语义一致）。
+      if (key.type !== 'private') {
+        reject(new _zw_subtleDE('Key is not a private key', 'InvalidAccessError')); return;
+      }
+      resolve(new Uint8Array(raw)); // 导入/生成时已规范化，透传即逐字节稳定
+      return;
+    }
+    if (fmt === 'JWK') {
+      var isPriv = (key.type === 'private');
+      if (typeof __zw_crypto_subtle_rsa_export_jwk !== 'function') {
+        reject(_zw_subtleDE('crypto.subtle RSA exportKey requires host callback', 'NotSupportedError')); return;
+      }
+      var out = __zw_crypto_subtle_rsa_export_jwk(raw.join(','), isPriv ? '1' : '0');
+      if (!out) {
+        reject(new _zw_subtleDE('RSA jwk export failed', 'InvalidAccessError')); return;
+      }
+      var f = out.split(';');
+      var jwk = { kty: 'RSA', n: _zw_b64uFromCsv(f[0]), e: _zw_b64uFromCsv(f[1]) };
+      if (isPriv) {
+        jwk.d = _zw_b64uFromCsv(f[2]);
+        jwk.p = _zw_b64uFromCsv(f[3]);
+        jwk.q = _zw_b64uFromCsv(f[4]);
+        jwk.dp = _zw_b64uFromCsv(f[5]);
+        jwk.dq = _zw_b64uFromCsv(f[6]);
+        jwk.qi = _zw_b64uFromCsv(f[7]);
+      }
+      // spec：alg 按算法+hash 映射（RFC 7518 §A.2）；key_ops/ext 恒输出（无 use 成员）。
+      var alg = _zw_rsaJwkAlg(key.algorithm.name, _zw_rsaKeyHash(key));
+      if (alg) jwk.alg = alg;
+      jwk.key_ops = (key.usages || []).slice();
+      jwk.ext = !!key.extractable;
+      resolve(jwk);
+      return;
+    }
+    reject(new _zw_subtleDE("Unsupported exportKey format: '" + fmt + "' (only 'spki'/'pkcs8'/'jwk' supported for RSA keys)", 'NotSupportedError'));
   }
 
   globalThis.crypto.subtle = globalThis.crypto.subtle || {
