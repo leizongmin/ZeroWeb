@@ -1822,8 +1822,10 @@
   // adopted 数组整体规则 cssText 经 host 回调 `__zw_set_adopted_css(text)` 下发引擎线程局部
   //（collect_stylesheets 在 document sheets **之后**级联——CSSOM author 源顺序）。
   // **已知限制**（对齐 R2809 写回既有语义）：① 视觉生效于下次 render（写源装填异步）；
-  // ② 跨代残留由 renderer `SetDomSnapshot` 无条件清空（同 external css 代际装填，
-  // js_worker.rs 同点）——清空后页面未重设前视觉回落；③ ShadowRoot adopted 与 document
+  // ② 跨代残留由 renderer `ResetDocumentState`（reset_context 重建）清空；同文档重复
+  // 快照走 `__zw_adopted_restore` 恢复钩子重推不清空（R-t2qq 二轮返修 D2——清空曾误挂
+  // 每帧 SetDomSnapshot 致 adopted 最多存活一帧，防回归注释见 renderer js_worker.rs
+  // SetDomSnapshot/ResetDocumentState 两臂）；③ ShadowRoot adopted 与 document
   // adopted 合并为单一文档级级联源（shim shadow 树本就不参与渲染，per-shadow 作用域为
   // fidelity defer）；④ `replace()`/`replaceSync()` 按 `\x1f/\x1e` wire 之外的 plain 文本整表
   // 重解析（best-effort：仅 StyleRule，@-rule 块并入忽略）。
@@ -1878,6 +1880,23 @@
     if (typeof __zw_set_adopted_css !== 'function') return;
     try { __zw_set_adopted_css(_zwAdoptedCombinedText()); } catch (_ePush) {}
   }
+  // 恢复文本钩子（R-t2qq 二轮返修 D2）：worker SetDomSnapshot 臂取本返回值调 host 回调
+  // `__zw_adopted_restore(text)` 装槽——同文档快照刷新（sandbox 不重建）后把闭包持的
+  // 本代 adopted 列表汇总重推进程槽（「从页面真值恢复」而非清空；生产 renderer 每帧
+  // tick_observers_with 都发快照，清空语义挂 ResetDocumentState/url_changed，见
+  // js_worker.rs 两臂防回归注释）。无 adopted → 空串。
+  globalThis.__zw_adopted_restore_text = function () {
+    return _zwAdoptedCombinedText();
+  };
+  // 代际清空钩子：真跨文档切换清 shim 闭包列表并重推空串（进程槽经 __zw_set_adopted_css
+  // 同步清空）。renderer 路径 ResetDocumentState 的 reset_context 销毁重建后重新 eval
+  // shim，闭包列表自然全新，无须调用；browser tab 路径无 Reset 变体，由 SetDomSnapshot
+  // 的 url_changed 守卫调用（tab_js_worker.rs 同臂注释）。
+  globalThis.__zw_adopted_reset = function () {
+    _zwDocAdoptedSheets = [];
+    _zwShadowAdoptedByKey = {};
+    _zwAdoptedPush();
+  };
   globalThis.CSSStyleSheet = function CSSStyleSheet(options) {
     if (options != null && typeof options !== 'object') {
       throw new globalThis.TypeError(

@@ -367,3 +367,108 @@ fn p56_insertbefore_nonchild_ref_still_throws_notfound() {
         "named-prop 族 ref 作参照不得误抛 NotFoundError（guidelines #32 多族包装）"
     );
 }
+
+#[test]
+fn p56_adopted_snapshot_restore_hook_keeps_page_value() {
+    // R-t2qq 二轮返修 D2-a：SetDomSnapshot 语义 = 「从 shim 页面真值恢复」而非清空。
+    // 防回归锁定：生产 renderer tick_observers_with（page_scripts.rs）每帧发快照，
+    // 首轮返修把 `set_active_adopted_css("")` 挂 SetDomSnapshot 臂 ⇒ 页面设
+    // adoptedStyleSheets 后最多一帧即被清空（qq.com 详情页级联回落）。本例模拟 worker
+    // 臂恢复一行（shim `__zw_adopted_restore_text()` → host `__zw_adopted_restore`），
+    // 断言槽值 = 页面最后设置值；含「槽被外部清空后恢复重推」窗口（旧缺陷形态）。
+    let _slot_guard = P56_ADOPTED_SLOT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let html = "<html><head></head><body><h1 id=\"p56h\">t</h1></body></html>";
+    crate::js_dom_bridge::clear_generation_cache();
+    crate::js_dom_bridge::set_active_adopted_css("");
+    let mut sb = p56_sandbox_with_html(html);
+    // 页面设 adopted（replaceSync + adopt）→ shim `_zwAdoptedPush` 装槽。
+    assert_eq!(
+        p56_eval(
+            &mut sb,
+            "(function(){ var s = new CSSStyleSheet(); s.replaceSync('#p56r { color: rgb(9, 105, 218) }'); document.adoptedStyleSheets = [s]; return document.adoptedStyleSheets.length; })()"
+        ),
+        "1"
+    );
+    assert_eq!(
+        &*crate::js_dom_bridge::active_adopted_css(),
+        "#p56r { color: rgb(9, 105, 218) }",
+        "adopt 后槽须持页面规则文本"
+    );
+    // 模拟 SetDomSnapshot 臂恢复行（同 js_worker.rs/tab_js_worker.rs 恢复一行）——
+    // 重复调用模拟帧循环，槽值必须稳定为页面真值（不清空）。
+    let restore_line =
+        "__zw_adopted_restore(typeof __zw_adopted_restore_text === 'function' ? __zw_adopted_restore_text() : '');";
+    p56_eval(&mut sb, restore_line);
+    p56_eval(&mut sb, restore_line);
+    assert_eq!(
+        &*crate::js_dom_bridge::active_adopted_css(),
+        "#p56r { color: rgb(9, 105, 218) }",
+        "SetDomSnapshot 恢复钩子后槽必须保持页面最后设置值（每帧快照不清空）"
+    );
+    // 旧缺陷窗口：槽被外部清空（首轮返修形态）→ 恢复钩子从 shim 真值重推回填。
+    crate::js_dom_bridge::set_active_adopted_css("");
+    p56_eval(&mut sb, restore_line);
+    assert_eq!(
+        &*crate::js_dom_bridge::active_adopted_css(),
+        "#p56r { color: rgb(9, 105, 218) }",
+        "恢复钩子必须从 shim 闭包真值回填被清空的槽"
+    );
+    crate::js_dom_bridge::set_active_adopted_css("");
+}
+
+#[test]
+fn p56_adopted_generation_reset_clears_slot() {
+    // R-t2qq 二轮返修 D2-b：真跨文档代际切换后槽值 = ""。两条清空路径各锁一条：
+    // ① browser tab 路径（无 ResetDocumentState 变体）——SetDomSnapshot url_changed
+    //   守卫调 `__zw_adopted_reset()`：清 shim 闭包列表并重推空串（槽经
+    //   `__zw_set_adopted_css` 同步清空）；
+    // ② renderer ResetDocumentState 路径——reset_context 销毁重建 + 重新 eval shim
+    //  （闭包列表自然全新）+ 宿主 `set_active_adopted_css("")`；后续快照恢复钩子
+    //   返回空串，槽保持 ""（新文档页面 JS 设置前无 adopted 表）。
+    let _slot_guard = P56_ADOPTED_SLOT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let html = "<html><head></head><body><h1 id=\"p56h\">t</h1></body></html>";
+    crate::js_dom_bridge::clear_generation_cache();
+    crate::js_dom_bridge::set_active_adopted_css("");
+    let mut sb = p56_sandbox_with_html(html);
+    let set_adopted =
+        "(function(){ var s = new CSSStyleSheet(); s.replaceSync('#p56r { color: rgb(1, 2, 3) }'); document.adoptedStyleSheets = [s]; })()";
+    // ① url_changed 清空钩子（tab_js_worker.rs SetDomSnapshot 导航分支）。
+    p56_eval(&mut sb, set_adopted);
+    assert!(
+        !crate::js_dom_bridge::active_adopted_css().is_empty(),
+        "前置：页面设 adopted 后槽非空"
+    );
+    p56_eval(&mut sb, "__zw_adopted_reset && __zw_adopted_reset();");
+    assert_eq!(
+        p56_eval(
+            &mut sb,
+            "typeof __zw_adopted_restore_text === 'function' ? __zw_adopted_restore_text() : 'missing'"
+        ),
+        "",
+        "清空钩子后 shim 闭包列表必须为空"
+    );
+    assert!(
+        crate::js_dom_bridge::active_adopted_css().is_empty(),
+        "url_changed 清空钩子后槽必须为空串"
+    );
+    // ② renderer ResetDocumentState 路径：reset_context 重建 + shim 重新 eval + 宿主清槽，
+    // 再以恢复行模拟下一代首帧 SetDomSnapshot——shim 全新 ⇒ 文本空串 ⇒ 槽保持 ""。
+    p56_eval(&mut sb, set_adopted);
+    assert!(
+        !crate::js_dom_bridge::active_adopted_css().is_empty(),
+        "前置：页面设 adopted 后槽非空"
+    );
+    sb.reset_context();
+    sb.execute(generate_js_dom_shim())
+        .expect("Reset 后 shim 重新 eval 须成功");
+    crate::js_dom_bridge::set_active_adopted_css("");
+    p56_eval(
+        &mut sb,
+        "__zw_adopted_restore(typeof __zw_adopted_restore_text === 'function' ? __zw_adopted_restore_text() : '');",
+    );
+    assert!(
+        crate::js_dom_bridge::active_adopted_css().is_empty(),
+        "ResetDocumentState（context 重建）后槽必须为空串，恢复钩子不得回填旧代列表"
+    );
+    crate::js_dom_bridge::set_active_adopted_css("");
+}

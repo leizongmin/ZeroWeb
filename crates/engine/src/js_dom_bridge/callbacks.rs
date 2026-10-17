@@ -847,6 +847,20 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // R-t2qq 二轮返修 D2：恢复钩子 host 侧——worker SetDomSnapshot 臂以 shim
+    // `__zw_adopted_restore_text()` 的返回文本调用，把**当前页面真值**装回
+    // [`crate::js_dom_bridge::ACTIVE_ADOPTED_CSS`]（SetDomSnapshot = 恢复而非清空，
+    // 防回归注释见 apps/renderer/src/js_worker.rs SetDomSnapshot 臂——生产每帧发快照，
+    // 清空挂本回调会令 adopted 最多存活一帧）。空参数（shim 缺恢复文本钩子：旧 shim /
+    // eval 失败）→ 空串保守清空。
+    sandbox.register_callback(
+        "__zw_adopted_restore",
+        Box::new(|args: &[String]| {
+            crate::js_dom_bridge::set_active_adopted_css(args.first().map(String::as_str).unwrap_or_default());
+            String::new()
+        }),
+    );
+
     // `element.querySelector(selector)` / `element.querySelectorAll(selector)`——元素**子树**作用域
     // （spec：仅后代，不含元素自身）。elem_sel = 元素唯一选择器，区别于文档作用域的 query_match/all。
     let html = Arc::clone(dom_html);

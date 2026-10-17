@@ -1500,10 +1500,20 @@ fn js_worker_main(
                 // （collect_stylesheets css 参数）与布局管线同源。每快照无条件覆盖
                 //（含清空，跨文档残留不可能存活）；先于同代 gCS（同通道 FIFO）。
                 zero_engine::js_dom_bridge::set_active_external_css(&external_css);
-                // Constructable stylesheets：adopted 规则文本同点无条件清空（跨代残留
-                // 清理对齐 external css 代际装填；新文档 shim 尚未重设前合成源无 adopted
-                // 表，页面重设 adoptedStyleSheets 后经 __zw_set_adopted_css 再装填）。
-                zero_engine::js_dom_bridge::set_active_adopted_css("");
+                // R-t2qq 二轮返修 D2：adopted 槽随 SetDomSnapshot **恢复而非清空**。
+                // 防回归（为什么清空必须挂 Reset 而不是这里）：生产 renderer
+                // tick_observers_with（page_scripts.rs）**每帧**都发 SetDomSnapshot
+                //（runtime.rs publish_webview → tick_observers，real_rect_enabled 缺省
+                // true），首轮返修把清空挂本臂 ⇒ 页面设 document.adoptedStyleSheets 后
+                // 最多一帧即被清空（级联与 gCS 回落，qq.com 详情页复现）。SetDomSnapshot
+                // 主体是同文档快照刷新——sandbox 不重建、shim 闭包 `_zwDocAdoptedSheets`
+                // 仍持页面真值——故经 `__zw_adopted_restore` 宿主回调把 shim 汇总文本装回
+                // 进程槽；shim 已随 ResetDocumentState 重建时文本为空串 = 清空，跨代残留
+                // 同样闭合。真跨文档代际清空挂下方 ResetDocumentState 臂。钩子缺函数
+                //（旧 shim / shim eval 失败）→ 传空串保守清空（同旧行为）。
+                let _ = sandbox.execute(
+                    "__zw_adopted_restore(typeof __zw_adopted_restore_text === 'function' ? __zw_adopted_restore_text() : '');",
+                );
                 // P6 import map：快照换代即从页面 HTML 重取 `<script type="importmap">`——
                 // 后续 ExecuteModule 编译与动态 import 均按本代 map 解析。每代无条件清空
                 // 重设（无 map/解析失败 → None，按规范整张不注册；保留上一代会跨页污染）。
@@ -1800,6 +1810,15 @@ fn js_worker_main(
                 // A cross-document navigation creates a new global object. Keeping the
                 // renderer worker is an implementation detail, not page-visible state.
                 sandbox.reset_context();
+                // R-t2qq 二轮返修 D2：adopted 槽清空挂**真跨文档代际切换**（本臂）。
+                // WHATWG HTML navigate：cross-document navigation creates a new global
+                // object——新文档在页面 JS 设置前无 adopted 表，槽须清空；shim 闭包列表
+                // 随 context 销毁重建自然失效（下方重新 eval shim 后 `_zwDocAdoptedSheets`
+                // 全新为空），无须 `__zw_adopted_reset`。防回归：清空不得挂 SetDomSnapshot
+                // ——生产 tick_observers_with 每帧发快照（page_scripts.rs），挂那里
+                // adopted 最多存活一帧（首轮返修缺陷根因，qq.com 详情页级联回落）。
+                // https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate
+                zero_engine::js_dom_bridge::set_active_adopted_css("");
                 // t8k 返修（defect-r1 D1）：WS 宿主状态以 worker 生命周期存活，而 shim 连接
                 // 计数器随上下文重建归零——不推进代际，新文档首个连接（同名 ws1）事件被旧代
                 // 残留 pending 吞掉、旧泵终态可误删新槽位。作废旧代际事件面（WHATWG HTML：
