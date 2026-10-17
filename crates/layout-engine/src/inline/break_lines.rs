@@ -912,6 +912,18 @@ impl InlineFormattingContext {
                     current_x += box_width + m_right;
                     current_line.height = current_line.height.max(box_height + m_top + m_bot);
                 }
+                InlineItem::OofAnchor(oid) => {
+                    // R5166：记录行内流静态位（css-position-3 §static-position）——消费点
+                    // 行内光标 x（假想 inline 盒 margin-box 左缘）+ 当前行盒顶 y（行构建期
+                    // current_y = 行顶，push 时 line.y 同值）。零宽不断行：OOF 不参与行内
+                    // 布局（css-position-3 §4.1），不触空白折叠/断行状态（对照 FloatAnchor
+                    // 的断行语义）。abspos 后处理 fix_abspos_inline_static_position 消费。
+                    // FIXME(line-breaking-019)：行尾空白邻接的锚未随软断行迁移到新行行首
+                    //（test20 组 ref 形态），先行落位为本行行尾位。
+                    if let Some(container) = self.container_node_id {
+                        self.oof_static_positions.insert(oid, (container, current_x, current_y));
+                    }
+                }
                 InlineItem::Br | InlineItem::BlockBreak | InlineItem::FloatAnchor(_) => {
                     // 强制换行：将当前行推入结果，开始新行
                     // Br 总是产生一个换行，即使当前行为空

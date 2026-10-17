@@ -2936,6 +2936,19 @@ pub(crate) fn inject_pseudo_text_nodes(
         let needs_box = std::env::var("ZW_PSEUDO_BOX").as_deref() != Ok("0")
             && ((text_blank && (out_of_flow || pseudo_style.display != DisplayValue::Inline))
                 || (out_of_flow && has_decoration)
+                // R5166（css-text-3 line-breaking-019 组 ①）：**positioned**（absolute/fixed）
+                // + 非空文本伪元素 element 盒化——旧门落 text-node 路径，positioned 伪文本被
+                // 当宿主流内文本渲染（019 ::before/::after 渲进 <b> 行内流，test ≠ ref 根因
+                // 之一）。R4572 同论证：positioned 伪元素脱离流内布局，盒化不扰动宿主 IFC；
+                // 盒化后走 OofAnchor 行内静态位锚定（layout-engine abspos pass）。**float 不
+                // 入此臂**——float 伪文本的 text-node 近似路径已被 corpus 锁定（floats-114
+                // `.c:after{float:left}` ON 0.0216 翻红实证），盒化语义随 float 专项重开。
+                // ruby 族宿主排除同臂 3（inlinize 未落地）。kill-switch
+                // `ZW_PSEUDO_OOF_TEXT_BOX=0` 回退。
+                || (pseudo_style.position != PositionValue::Static
+                    && !text_blank
+                    && !parent_is_ruby_family
+                    && std::env::var("ZW_PSEUDO_OOF_TEXT_BOX").as_deref() != Ok("0"))
                 || (pseudo_style.display != DisplayValue::Inline && has_decoration && !parent_is_ruby_family));
         let new_id = if needs_box {
             let el = doc.create_element("zw-pseudo");

@@ -196,6 +196,15 @@ pub(super) fn para_bidi() -> bool {
     selected(*VALUE, || opt_in("ZW_PARA_BIDI"))
 }
 
+/// R5166（css-position-3 §static-position + css-text-3 line-breaking-019）：行内流 OOF
+/// 元素发 `OofAnchor` 条目，断行层记录行内流静态位供 abspos 后处理锚定。default-on；
+/// `ZW_OOF_INLINE_ANCHOR=0` 回退 collect 期静默跳过（旧行为：taffy block-flow cursor
+/// 静态位）。
+pub(super) fn oof_inline_anchor() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_OOF_INLINE_ANCHOR"));
+    selected(*VALUE, || default_on("ZW_OOF_INLINE_ANCHOR"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::select_value;

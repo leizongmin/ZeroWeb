@@ -609,6 +609,17 @@ impl InlineFormattingContext {
                                     .as_ref()
                                     .is_some_and(|ids| ids.contains(&child_id)));
                         if !self.vertical && runtime_flags::skip_oof() && is_oof_child {
+                            // R5166：**inline-level** OOF 发 OofAnchor（零宽/不断行）供断行层
+                            // 记录行内流静态位（css-position-3 §static-position）。block-level
+                            // OOF（块流静态位域：R3930 rtl 镜像 / R4017 前驱兄弟高 / R5139 列流
+                            // 映射）不发——它们的静态位不是行内流位，本锚会打掉既有后处理。
+                            // kill-switch `ZW_OOF_INLINE_ANCHOR=0` 回退静默跳过（旧行为）。
+                            let is_inline_level_oof = style.is_some_and(|s| {
+                                matches!(s.display, DisplayValue::Inline)
+                            });
+                            if is_inline_level_oof && runtime_flags::oof_inline_anchor() {
+                                items.push(InlineItem::OofAnchor(child_id));
+                            }
                             continue;
                         }
 
@@ -1792,6 +1803,10 @@ impl InlineFormattingContext {
                     // R5102（CSS2 §9.7）：out-of-flow 子树同款剪枝——abspos/fixed 后代的
                     // 文本不得经 walk 折回吸收推进行宽（contains-inline-006：run-in 前缀
                     // 隐藏 span 内孙代 abspos 的 "header" 幽灵推进 47px）。双通道同上。
+                    // R5166：剪枝点发 OofAnchor（行内流静态位锚，css-position-3
+                    // §static-position）——inline wrapper（如 019 的 b>span.abs）内的 OOF
+                    // 元素只经此路径；与主路径 OOF 跳过臂同门（horizontal + kill-switch），
+                    // 容器 id 随锚记录（消费侧核对盒树父）。
                     if styles
                         .get(&gc)
                         .is_some_and(|s| {
@@ -1799,6 +1814,17 @@ impl InlineFormattingContext {
                         })
                         || self.oof_walk_nodes.contains(&gc)
                     {
+                        // 先 flush 前导 pending 文本——walk 的文本缓冲是惰性 emit，
+                        // 锚位 = 消费点行内光标，前导文本不入 items 会记到文本前。
+                        flush_pending(&mut text_pending, items, !emitted_text_run, false);
+                        // R5166：同主路径门——仅 inline-level OOF 发锚（block-level 的
+                        // 块流静态位有专属后处理域，行内锚会打掉）。
+                        if !self.vertical
+                            && runtime_flags::oof_inline_anchor()
+                            && styles.get(&gc).is_some_and(|s| matches!(s.display, DisplayValue::Inline))
+                        {
+                            items.push(InlineItem::OofAnchor(gc));
+                        }
                         continue;
                     }
                     // R4331（CSS2 §9.2.1 / HTML br 元素）：`<br>` 强制换行条目与主

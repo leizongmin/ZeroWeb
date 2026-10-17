@@ -54,6 +54,9 @@ use crate::{NodeIdMap, NodeIdSet};
 pub struct InlineFormattingContext {
     /// 包含块的可用宽度。
     pub container_width: f32,
+    /// R5166：容器节点 id——`layout()` 写入，OOF 行内静态位记录时随锚存容器 id，
+    /// 消费侧核对盒树父 == 记录容器（不符回退 taffy 静态位，防错坐标系）。
+    pub container_node_id: Option<zero_dom::NodeId>,
     /// 文本对齐方式。
     pub text_align: TextAlign,
     /// R4213（CSS Text 4 #text-group-align-property）：行组对齐——将块内行盒整体
@@ -186,6 +189,13 @@ pub struct InlineFormattingContext {
     /// R3784：float 子的锚行号（float 源序出现处将落入的行盒 0-based index）。clamp 点
     /// 后的 float 隐藏判据用（css-overflow-4 with-floats-003：clamp 点后的 float 恒隐藏）。
     pub float_anchor_line_idxs: NodeIdMap<usize>,
+    /// R5166：行内流 OOF 元素的静态位（css-position-3 §static-position；key = 元素
+    /// NodeId，value = (记录容器 NodeId, 消费点行内光标 x, 当前行盒顶 y)，容器内容盒
+    /// 坐标系）。`break_items_into_lines` 消费 `OofAnchor` 条目时写入；abspos 后处理
+    /// （`fix_abspos_inline_static_position`）消费，覆盖 taffy 的 block-flow cursor
+    /// 静态位（line-breaking-019：锚在错误行/行首）。容器 id 供消费侧核对盒树父
+    /// == 记录容器（不符回退 taffy 静态位，防错坐标系）。
+    pub oof_static_positions: NodeIdMap<(zero_dom::NodeId, f32, f32)>,
     /// 默认字体度量 — 当 styles HashMap 中找不到元素样式时使用。
     ///
     /// 这主要用于 paint 系统的 IFC，因为 paint 系统传入空的 styles HashMap。
@@ -404,6 +414,8 @@ impl InlineFormattingContext {
             glyph_verticals_overrides: NodeIdMap::default(),
             float_anchor_ys: NodeIdMap::default(),
             float_anchor_line_idxs: NodeIdMap::default(),
+            oof_static_positions: NodeIdMap::default(),
+            container_node_id: None,
             default_font_metrics: None,
             container_font_size: DEFAULT_FONT_SIZE,
             font_size_overrides: NodeIdMap::default(),
@@ -1188,6 +1200,8 @@ impl InlineFormattingContext {
     /// - `container` — 行内格式化上下文的容器节点
     /// - `styles` — 元素 NodeId → ComputedStyle 映射
     pub fn layout(&mut self, doc: &Document, container: NodeId, styles: &HashMap<NodeId, ComputedStyle>) {
+        // R5166：OOF 行内静态位随锚存容器 id（消费侧核对盒树父）。
+        self.container_node_id = Some(container);
         // 从容器自身样式读取 font-size，供 apply_vertical_alignment 计算 strut ascent。
         // CSS 2.1 §10.8.1：strut 由块容器自身的字体度量决定。paint IFC 传入空 styles
         // 时保持默认 16（仅影响行内文本片段的垂直定位，文本 font_size 通常主导 ascent）。
@@ -2061,6 +2075,9 @@ impl InlineFormattingContext {
                     };
                     current_depth = 0.0;
                 }
+                // R5166：vertical 模式 collect 期不发 OofAnchor（OOF 跳过仅 horizontal，
+                // collect_items 镜像臂），此臂为穷尽性兜底。
+                InlineItem::OofAnchor(_) => {}
             }
             item_index += 1;
         }

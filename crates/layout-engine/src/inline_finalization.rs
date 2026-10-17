@@ -50,6 +50,10 @@ pub(crate) struct FinalInlineContext<'a> {
     paint_skip: &'a mut std::collections::HashSet<NodeId>,
     inline_fonts: InlineFontContext<'a>,
     finalized_inline_blocks: &'a NodeIdSet,
+    /// R5166：行内流 OOF 静态位汇聚（css-position-3 §static-position）——各容器的
+    /// stored IFC 跑完后把 `InlineFormattingContext::oof_static_positions` 并入此表，
+    /// engine 据此跑 `fix_abspos_inline_static_position`。
+    pub(crate) oof_static_positions: NodeIdMap<(NodeId, f32, f32)>,
 }
 
 impl<'a> FinalInlineContext<'a> {
@@ -62,6 +66,7 @@ impl<'a> FinalInlineContext<'a> {
             paint_skip,
             inline_fonts,
             finalized_inline_blocks,
+            oof_static_positions: NodeIdMap::default(),
         }
     }
 }
@@ -1598,6 +1603,13 @@ pub(crate) fn compute_final_inline_layouts(
     // （其 test 用真 multicol 已在上方 line 242 排除存储），浮动容器多行存储打破 test/ref 对称致
     // self-source 发散；该 case chromium-Oracle 9.15% 不变 = 非真回归，guard 仅维持 self-source 一致。
     inline_ctx.layout(doc, node_id, styles);
+    // R5166：汇聚本容器 IFC 记录的行内流 OOF 静态位（css-position-3 §static-position）。
+    // 须在 store-gate return 之前——非 stored 容器（非 pure-Ahem 等）的锚位同样有效。
+    if !inline_ctx.oof_static_positions.is_empty() {
+        context
+            .oof_static_positions
+            .extend(inline_ctx.oof_static_positions.iter().map(|(k, v)| (*k, *v)));
+    }
     // R2467 line-clamp slice 2：镜像 IFC `clamped` 到 LayoutBox，让 paint stored 路径
     //（pure-Ahem，inline_layout 已被 cap 到 n 行）能据此补 ellipsis——stored 路径下
     // paint 看到的行数 ≤ n，旧 `line_ys.len() > max` 判定无法独立触发 ellipsis。

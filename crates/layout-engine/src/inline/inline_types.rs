@@ -260,6 +260,15 @@ pub enum InlineItem {
     /// 不得高于源序前文生成的行盒/块顶）。remeasure 用它把 float 子从 taffy 的
     /// block 堆叠位（y=0）搬到行内流锚位（如 [L1-L4][float] 的 y=128）。
     FloatAnchor(zero_dom::NodeId),
+    /// R5166（css-position-3 §static-position + css-text-3 line-breaking-019）：行内流中
+    /// out-of-flow（absolute/fixed）元素的锚点标记——零宽、**不断行**、不触空白折叠状态
+    ///（OOF 脱离常规流不产生行盒，css-position-3 §4.1；对照 FloatAnchor 的断行语义）。
+    /// 断行层据此记录该元素的**行内流静态位**（消费点行内光标 x + 当前行盒顶 y，
+    /// css-text-3 #line-break-details「OOF 锚不跨软换行迁移」的 ref 形态 = 行内消费点），
+    /// abspos 后处理（`fix_abspos_inline_static_position`）据此覆盖 taffy 的
+    /// block-flow cursor 静态位（block.rs 只给块级光标，行内语境锚在错误行/行首）。
+    /// kill-switch `ZW_OOF_INLINE_ANCHOR=0` 回退 collect 期静默跳过。
+    OofAnchor(zero_dom::NodeId),
 }
 
 /// 行盒 — 一行中的所有行内内容。

@@ -1233,3 +1233,94 @@ fn resolve_abspos_against_nested_cb_inner_m(
         );
     }
 }
+
+/// R5166（css-position-3 §static-position + css-text-3 line-breaking-019）：行内流 OOF
+/// 元素的静态位锚定。
+///
+/// taffy 对 absolute 子只给 **block-flow cursor** 静态位（block.rs：content_box_left +
+/// 当前块 y 游标）——行内语境下锚落在错误行（行尾源的锚 y = 下一行顶）且 x 恒内容盒
+/// 左缘（line-breaking-019 探针：inline 流 abs span 落 (0,0)/(0,32)，应在文本后行内位）。
+/// 本 pass 按断行层记录的行内流位（collect 期 `OofAnchor` 条目 → IFC
+/// `oof_static_positions` → FinalInlineContext 汇聚）覆盖 x/y。
+///
+/// 坐标系：锚位 = **记录容器内容盒坐标**（IFC 行内光标系）；absolute 盒 LayoutBox x/y
+/// = 盒树父内容盒坐标（`fix_abspos_static_position_y` / nested-CB pass 同款写入口径）。
+/// OOF 盒树父常是 inline wrapper（019 的 `b>span.abs`），故沿盒树下行累计
+/// 「容器内容原点 → 当前盒内容原点」偏移，锚位按偏移折算回父内容坐标
+///（child.x = 锚位 − 偏移 + margin）。纯树内几何换算，与 CB positioning 无关
+///（静态位是流内位，inset 全 auto 时不参与 CB 方程）。
+///
+/// gate：
+/// - 仅 absolute（fixed CB=视口，`adjust_fixed_to_viewport` 域，静态位语义不同）；
+/// - left+right 全 auto 才改 x、top+bottom 全 auto 才改 y（definite inset 的静态位不
+///   参与求解方程，§10.3.7）；
+/// - 非 multicol 列流映射盒（R5139 `oof_static_mapped` 的映射位优先）；
+/// - y 覆盖仅 margin_top ≤ 0.5（镜像 R4017 保守门：taffy 对 static 另加 margin 的处理
+///   链不明，非零 mt 场景不动）。
+///
+/// margin：x 加 `margin_left`（§10.3.7 静态位为 margin-box 位；019 ref 的 div>.before
+/// `margin-left:2px` 对齐语义依赖）。
+pub(super) fn fix_abspos_inline_static_position(
+    root: &mut LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    anchors: &crate::NodeIdMap<(NodeId, f32, f32)>,
+) {
+    if anchors.is_empty() {
+        return;
+    }
+    // 有锚记录的容器集（坐标系帧来源）。
+    let anchor_containers: crate::NodeIdSet = anchors.values().map(|(c, _, _)| *c).collect();
+    fix_abspos_inline_static_position_walk(root, styles, anchors, &anchor_containers, None);
+}
+
+/// `frame` = Some((容器 id, dx, dy))：dx/dy = 当前盒内容原点 − 容器内容原点
+///（容器内容坐标 → 当前盒内容坐标换算取负）。下行累计口径：子内容原点 = 父内容
+/// 原点 + child.x + child.border + child.padding（child.x 为父内容盒相对，不含
+/// margin）。None = 不在任何锚容器子树内。
+fn fix_abspos_inline_static_position_walk(
+    box_node: &mut LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    anchors: &crate::NodeIdMap<(NodeId, f32, f32)>,
+    anchor_containers: &crate::NodeIdSet,
+    frame: Option<(NodeId, f32, f32)>,
+) {
+    use zero_css_parser::values::LengthValue;
+
+    for child in box_node.children.iter_mut() {
+        if child.is_absolute && !child.is_fixed && !child.oof_static_mapped {
+            let Some(style) = child.node_id.and_then(|id| styles.get(&id)) else {
+                continue;
+            };
+            let x_all_auto = matches!(style.left, LengthValue::Auto) && matches!(style.right, LengthValue::Auto);
+            let y_all_auto = matches!(style.top, LengthValue::Auto) && matches!(style.bottom, LengthValue::Auto);
+            if (x_all_auto || y_all_auto)
+                && let (Some((container, dx, dy)), Some(&(anchor_container, ax, ay))) =
+                    (frame, child.node_id.and_then(|id| anchors.get(&id)))
+                && anchor_container == container
+            {
+                if x_all_auto {
+                    let ml = resolve_abspos_real_length(&style.margin_left, &style.font_size, 0.0, 0.0).unwrap_or(0.0);
+                    child.x = ax - dx + ml;
+                }
+                if y_all_auto
+                    && resolve_abspos_real_length(&style.margin_top, &style.font_size, 0.0, 0.0).unwrap_or(0.0) <= 0.5
+                {
+                    child.y = ay - dy;
+                }
+            }
+        }
+        // 子帧：子自身是有锚记录的容器 → 新帧（偏移归零）；否则路径偏移累计。
+        let child_frame = if child.node_id.is_some_and(|id| anchor_containers.contains(&id)) {
+            Some((child.node_id.unwrap(), 0.0, 0.0))
+        } else {
+            frame.map(|(c, dx, dy)| {
+                (
+                    c,
+                    dx + child.x + child.border_left + child.padding_left,
+                    dy + child.y + child.border_top + child.padding_top,
+                )
+            })
+        };
+        fix_abspos_inline_static_position_walk(child, styles, anchors, anchor_containers, child_frame);
+    }
+}
