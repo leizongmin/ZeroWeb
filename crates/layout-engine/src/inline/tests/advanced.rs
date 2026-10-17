@@ -943,6 +943,9 @@ fn test_inline_block_on_same_line() {
             glyph_descent: 0.0,
         }),
         InlineItem::InlineBlock(InlineBlockBox {
+            // R5165：测试直构原子无 DOM 邻接——GL 旁带恒 false。
+            prev_char_gl: false,
+            next_char_gl: false,
             width: 50.0,
             height: 50.0,
             node_id: NodeId::default(),
@@ -1062,6 +1065,9 @@ fn test_inline_block_wraps_to_next_line() {
             glyph_descent: 0.0,
         }),
         InlineItem::InlineBlock(InlineBlockBox {
+            // R5165：测试直构原子无 DOM 邻接——GL 旁带恒 false。
+            prev_char_gl: false,
+            next_char_gl: false,
             width: 50.0,
             height: 30.0,
             node_id: NodeId::default(),
@@ -1131,6 +1137,9 @@ fn test_inline_block_height_contributes_to_line() {
             glyph_descent: 0.0,
         }),
         InlineItem::InlineBlock(InlineBlockBox {
+            // R5165：测试直构原子无 DOM 邻接——GL 旁带恒 false。
+            prev_char_gl: false,
+            next_char_gl: false,
             width: 40.0,
             height: 60.0,
             node_id: NodeId::default(),
@@ -1163,6 +1172,9 @@ fn test_multiple_inline_blocks_on_same_line() {
     let mut ctx = InlineFormattingContext::new(800.0);
     let items = vec![
         InlineItem::InlineBlock(InlineBlockBox {
+            // R5165：测试直构原子无 DOM 邻接——GL 旁带恒 false。
+            prev_char_gl: false,
+            next_char_gl: false,
             width: 50.0,
             height: 40.0,
             node_id: NodeId::default(),
@@ -1174,6 +1186,9 @@ fn test_multiple_inline_blocks_on_same_line() {
             margin_left: 0.0,
         }),
         InlineItem::InlineBlock(InlineBlockBox {
+            // R5165：测试直构原子无 DOM 邻接——GL 旁带恒 false。
+            prev_char_gl: false,
+            next_char_gl: false,
             width: 50.0,
             height: 40.0,
             node_id: NodeId::default(),
@@ -1692,6 +1707,9 @@ fn test_br_with_inline_blocks() {
             glyph_descent: 0.0,
         }),
         InlineItem::InlineBlock(InlineBlockBox {
+            // R5165：测试直构原子无 DOM 邻接——GL 旁带恒 false。
+            prev_char_gl: false,
+            next_char_gl: false,
             width: 50.0,
             height: 50.0,
             node_id: NodeId::default(),

@@ -706,6 +706,9 @@ fn r4234_line_initial_inline_block_pushed_below_float_band() {
         },
     ]);
     ctx.break_items_into_lines(vec![InlineItem::InlineBlock(InlineBlockBox {
+        // R5165：测试直构原子无 DOM 邻接——GL 旁带恒 false。
+        prev_char_gl: false,
+        next_char_gl: false,
         node_id: NodeId::default(),
         width: 100.0,
         height: 100.0,
@@ -739,6 +742,9 @@ fn r4234_line_initial_inline_block_pushed_below_float_band() {
         is_left: true,
     }]);
     ctx2.break_items_into_lines(vec![InlineItem::InlineBlock(InlineBlockBox {
+        // R5165：测试直构原子无 DOM 邻接——GL 旁带恒 false。
+        prev_char_gl: false,
+        next_char_gl: false,
         node_id: NodeId::default(),
         width: 100.0,
         height: 100.0,

@@ -252,6 +252,9 @@ fn test_zero_width_inline_block() {
     let mut ctx = InlineFormattingContext::new(800.0);
     let items = vec![
         InlineItem::InlineBlock(InlineBlockBox {
+            // R5165：测试直构原子无 DOM 邻接——GL 旁带恒 false。
+            prev_char_gl: false,
+            next_char_gl: false,
             width: 0.0,
             height: 30.0,
             node_id: NodeId::default(),
@@ -328,6 +331,9 @@ fn test_zero_height_inline_block() {
             glyph_descent: 0.0,
         }),
         InlineItem::InlineBlock(InlineBlockBox {
+            // R5165：测试直构原子无 DOM 邻接——GL 旁带恒 false。
+            prev_char_gl: false,
+            next_char_gl: false,
             width: 50.0,
             height: 0.0,
             node_id: NodeId::default(),
@@ -359,6 +365,9 @@ fn test_zero_height_inline_block() {
 fn test_inline_block_margin_top_offsets_box_y() {
     let mut ctx = InlineFormattingContext::new(800.0);
     let items = vec![InlineItem::InlineBlock(InlineBlockBox {
+        // R5165：测试直构原子无 DOM 邻接——GL 旁带恒 false。
+        prev_char_gl: false,
+        next_char_gl: false,
         width: 50.0,
         height: 30.0,
         node_id: NodeId::default(),
@@ -490,6 +499,9 @@ fn space_run() -> TextRun {
 /// 辅助：构造一个给定宽高的 inline-block 盒。
 fn ib_box(width: f32, height: f32) -> InlineBlockBox {
     InlineBlockBox {
+        // R5165：测试直构原子无 DOM 邻接——GL 旁带恒 false。
+        prev_char_gl: false,
+        next_char_gl: false,
         width,
         height,
         node_id: NodeId::default(),
@@ -1750,6 +1762,9 @@ fn test_strut_ascent_uses_container_font_not_line_height() {
     let mut ctx = InlineFormattingContext::new(800.0);
     ctx.container_font_size = 20.0;
     let items = vec![InlineItem::InlineBlock(InlineBlockBox {
+        // R5165：测试直构原子无 DOM 邻接——GL 旁带恒 false。
+        prev_char_gl: false,
+        next_char_gl: false,
         width: 100.0,
         height: 35.0, // 撑高行盒 → 旧 line_height*0.8 = 28
         node_id: NodeId::default(),
@@ -1778,6 +1793,9 @@ fn test_strut_still_applies_when_baseline_below_container_strut() {
     let mut ctx = InlineFormattingContext::new(800.0);
     ctx.container_font_size = 20.0; // strut ascent = 16
     let items = vec![InlineItem::InlineBlock(InlineBlockBox {
+        // R5165：测试直构原子无 DOM 邻接——GL 旁带恒 false。
+        prev_char_gl: false,
+        next_char_gl: false,
         width: 100.0,
         height: 35.0,
         node_id: NodeId::default(),

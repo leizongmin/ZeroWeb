@@ -74,6 +74,18 @@ pub(super) fn cross_run_glue() -> bool {
     selected(*VALUE, || default_on("ZW_CROSS_RUN_GLUE"))
 }
 
+/// R5165（css-text-3 §5.5 line-break-details + UAX #14 GL/WJ/ZWJ）：原子 inline 与
+/// 相邻 GL/WJ/ZWJ 类字符（U+00A0 web-compat 例外除外）间**无软换行机会**——前邻 GL
+/// 的原子盒不因 fit 门折入新行、后邻 GL 的首词不脱离原子折行（spec 语义为横向溢出，
+/// chromium 同；line-breaking-atomic-003/004/018/019 族：NNBSP/FIGURE SPACE 邻原子
+/// 被误折第 2 行，透明 span 露红底 2.0833%）。GL 身份经 `InlineBlockBox::prev_char_gl`
+/// /`next_char_gl` 旁带（§3 折叠吸收后断行层不可见，collect 期在原始 DOM 文本上判定）。
+/// default-on，`ZW_ATOMIC_GL_NO_BREAK=0` 回退无条件原子 fit 折行。
+pub(super) fn atomic_gl_no_break() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_ATOMIC_GL_NO_BREAK"));
+    selected(*VALUE, || default_on("ZW_ATOMIC_GL_NO_BREAK"))
+}
+
 pub(super) fn bidi_fragment_source() -> bool {
     static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_BIDI_FRAGMENT_SOURCE"));
     selected(*VALUE, || default_on("ZW_BIDI_FRAGMENT_SOURCE"))

@@ -225,6 +225,15 @@ pub struct InlineBlockBox {
     pub margin_bottom: f32,
     /// 外边距左侧（px）——推进水平位置。
     pub margin_left: f32,
+    /// R5165（css-text-3 §5.5 line-break-details + UAX #14）：原子盒**前邻**原始文本
+    /// 贴端字符属 GL/WJ/ZWJ 禁断类（U+00A0 例外不计）。§3 折叠把 U+202F/U+2007 吸收为
+    /// 空格后断行层身份消失，collect 期在原始 DOM 文本上判定旁带于此；断行层据此
+    /// 抑制本盒的 fit 折行（随前词横向溢出，chromium 同——line-breaking-atomic-003/018）。
+    pub prev_char_gl: bool,
+    /// R5165：原子盒**后邻**原始文本贴端字符属禁断类——其后首词不因 fit 门折入
+    /// 新行（原子与 GL 字符间无断行机会，spec 语义为横向溢出：
+    /// line-breaking-atomic-004/019）。
+    pub next_char_gl: bool,
 }
 
 /// 行内级条目 — 行内格式化上下文中的原子单位。
@@ -561,6 +570,41 @@ fn is_cc_control_visible(ch: char) -> bool {
     // 仅 TAB/LF/CR 参与折叠（CSS Text §3.1 document white space；FF U+000C 不是
     // newline 也不可折叠——WPT control-chars-00C 期望其可见）。
     ((cp <= 0x1F) || (0x7F..=0x9F).contains(&cp)) && !matches!(cp, 0x09 | 0x0A | 0x0D)
+}
+
+/// R5165（css-text-3 §5.5 line-break-details + UAX #14）：原子 inline 与相邻字符间
+/// 禁断类的成员判定——「除 U+00A0 NO-BREAK SPACE 外，原子 inline 与相邻的 GL、WJ、
+/// ZWJ 断行类字符之间不得有软换行机会」（U+00A0 为 web-compatibility 显式例外，
+/// 其两侧断行机会保留：line-breaking-atomic-001/002 断行必须发生）。
+///
+/// 成员表取自 UCD `LineBreak.txt`（LineBreak-18.0.0）GL/WJ/ZWJ 三类全集：
+/// GL = U+00A0（例外排除）、U+035C..0362、U+0F08、U+0F0C、U+0F12、U+0FD9..0FDA、
+/// U+180E（MVS）、U+1AEB、U+1DCD、U+1DFC、U+2007、U+2011、U+202F、U+FE20、U+FE22、
+/// U+FE24、U+FE26..FE27、U+FE29、U+FE2B、U+FE2D..FE2E、U+1107F、U+13430..13436、
+/// U+13439..1343B、U+16FE4；WJ = U+2060、U+FEFF；ZWJ = U+200D。
+/// 其中 Mn（组合标记）成员经 `estimate_char_width` 零宽路径，正常不独立贴邻原子；
+/// 收全表以保 spec 完整性。折叠面（§3）把 U+202F/U+2007 吸收为空格致断行层身份
+/// 消失——本谓词供 collect 期在**原始**文本边界上调用（见
+/// `InlineBlockBox::prev_char_gl`/`next_char_gl` 旁带）。
+pub(crate) fn is_atomic_gl_suppressing(ch: char) -> bool {
+    matches!(ch,
+        '\u{035C}'..='\u{0362}'   // GL 组合双符类（Mn，零宽）
+        | '\u{0F08}' | '\u{0F0C}' | '\u{0F12}' | '\u{0FD9}'..='\u{0FDA}' // 藏文 GL 标点
+        | '\u{180E}'              // GL MONGOLIAN VOWEL SEPARATOR（line-breaking-atomic MVS 族）
+        | '\u{1AEB}' | '\u{1DCD}' | '\u{1DFC}' // GL 组合标记
+        | '\u{2007}'              // GL FIGURE SPACE（atomic-018/019）
+        | '\u{2011}'              // GL NON-BREAKING HYPHEN
+        | '\u{202F}'              // GL NARROW NO-BREAK SPACE（atomic-003/004）
+        | '\u{200D}'              // ZWJ
+        | '\u{2060}' | '\u{FEFF}' // WJ WORD JOINER / ZWNBSP（atomic-005 族）
+        | '\u{FE20}' | '\u{FE22}' | '\u{FE24}' | '\u{FE26}'..='\u{FE27}' | '\u{FE29}'
+        | '\u{FE2B}' | '\u{FE2D}'..='\u{FE2E}' // GL 组合半符
+        | '\u{1107F}'             // GL BRAHMI NUMBER JOINER
+        | '\u{13430}'..='\u{13436}' | '\u{13439}'..='\u{1343B}' // GL 圣书字连接符
+        | '\u{16FE4}'             // GL 契丹小字填充符
+    )
+    // U+00A0 NO-BREAK SPACE 亦属 GL，但 css-text-3 §5.5 明文例外（web-compat：
+    // 原子两侧断行机会保留），不在此表——误纳会把 001/002 的合法断行禁掉。
 }
 
 /// CSS word-break 行为 — 控制单词内的断行规则。
