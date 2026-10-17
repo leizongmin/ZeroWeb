@@ -2,10 +2,10 @@
   "date": "2026-10-17",
   "mode": "upstream",
   "wpt_data_ref": "v1.10",
-  "total": 16590,
-  "passed": 15460,
-  "rate_pct": 93.2,
-  "extra": "failed=1130;skipped=0",
-  "git_sha": "211d87ff9",
+  "total": 16058,
+  "passed": 14988,
+  "rate_pct": 93.3,
+  "extra": "failed=1070;skipped=0",
+  "git_sha": "b441d2f",
   "note": ""
 }
