@@ -802,11 +802,16 @@ pub fn extract_html_style_text(html: &str) -> String {
             // Resource extraction treats each <style> block as an independent EOF boundary.
             // Close a possible unterminated url(...) so malformed CSS in one block cannot
             // consume URLs from the next block after we concatenate the snippets.
-            // 括在注释内：tokenizer（extract_css_image_urls）在未闭合 url( 原始内容里仍
-            // 扫到 `)` 使 URL token 终止；parser（extract_used_font_families）视整段为
-            // 单个 comment token，不触发错误恢复吞噬后续规则（裸 `)` 会让解析器丢弃
-            // 之后全部规则——inline style 属性块因此在门禁侧全部失联）。
-            out.push_str("\n/* ) */\n");
+            // 单视图双消费（tokenizer 与 CSS parser 消费同一 tokenizer 产出）：
+            // `)` 必须紧跟块文本——未终止 `url("` / `url(` 在块末首个非空白 `)` 处闭合
+            // URL token（CSS Syntax §4.3.7），否则 url key 与 painter 不一致
+            //（R2134/DC-14 假通过；注释形态 `/* ) */` 在未闭合 url 原始内容里只是普通
+            // 字符，URL 不终止——PR #199 集成回归）。
+            // `)` 之后的 `}` 闭合可能未配对的 `{`（parser 侧）：块内 `{` 未闭合时后续
+            // 块会被收进其规则体，@font-face/zw-inline 从顶层消失；块已配平时 `)} ` 落在
+            // 顶层，由两轮有界错误恢复消耗（skip_malformed_qualified_rule 遇顶层 `}`
+            // 不消费即返回，parse_stylesheet 进度保证各 advance 一个 token），不吞规则。
+            out.push_str("\n)}\n");
         }
     }
     // R1796：inline `style=` 属性值（如 `style="background-image: url(x)"`）亦是 CSS 文本，

@@ -4093,6 +4093,42 @@ mod css_image_url_tests {
         assert_eq!(urls, vec!["bg.png"]);
     }
 
+    /// PR #199 集成回归修复：逐块 EOF 闭合后缀 `"\n)}\n"` 单视图双消费。`)` 紧跟块文本
+    /// 服务 tokenizer（R2134：未终止 `url("` 在块末首个非空白 `)` 闭合；注释形态
+    /// `/* ) */` 只是普通字符 → url 丢失）；`}` 闭合块内可能未配对的 `{` 服务 CSS
+    /// parser（extract_font_faces / extract_used_font_families 与 tokenizer 消费同一
+    /// token 流——块内 `{` 未闭合时后续块被收进其规则体；块已配平时 `)}` 落顶层由
+    /// 有界错误恢复消耗，不吞后续规则）。tokenizer 与字体门禁吃同一份文本。
+    #[test]
+    fn extract_html_style_text_suffix_serves_tokenizer_and_font_parser() {
+        let html = concat!(
+            // 块 1：@font-face + 未终止带引号 url + 未闭合 `.one {`（块末 EOF 闭合）。
+            r#"<style>@font-face { font-family: FaceA; src: url(a.woff) }"#,
+            r#" .one { background: url("support/swatch-green.png</style>"#,
+            "\n",
+            // 块 2：多块独立——后缀不得吞掉本块 @font-face/url。
+            r#"<style>@font-face { font-family: FaceB; src: url(b.woff) } p { font-family: FaceB, serif }</style>"#,
+            "\n",
+            // inline style：zw-inline 块须照常解析。
+            r#"<div style="font-family: FaceC">x</div>"#,
+        );
+        let css = extract_html_style_text(html);
+        // tokenizer：未终止 url 由后缀 `)` 闭合；@font-face 内 url 不当图片。
+        assert_eq!(extract_css_image_urls(&css), vec!["support/swatch-green.png"]);
+        // parser：两块 @font-face 全部存活（裸 `)` 吞块 / 未闭合 `{` 收编后续块都不发生）。
+        let faces = extract_font_faces(&css);
+        let face_families: Vec<&str> = faces.iter().map(|(f, ..)| f.as_str()).collect();
+        assert_eq!(face_families, vec!["FaceA", "FaceB"], "后缀不得吞后续块: {css}");
+        // 使用集：p 与 zw-inline 的 font-family 引用存活；FaceA 已声明但无任何
+        // font-family/font 声明引用——使用即取门禁据此跳过其抓取
+        //（modern-page-unneeded-font-face-fetches 核心语义），后缀与解析不得改变该判定。
+        let used = extract_used_font_families(&css);
+        for family in ["faceb", "facec"] {
+            assert!(used.may_reference(family), "应含 {family}: {used:?}");
+        }
+        assert!(!used.may_reference("facea"), "未引用族不入使用集: {used:?}");
+    }
+
     /// R2419：srcset 首 URL 提取（逗号分隔候选，每候选首 token = URL）。
     #[test]
     fn srcset_first_url_parses_first_candidate() {
