@@ -1,11 +1,22 @@
 # Web Crypto 兼容 — crypto.getRandomValues / randomUUID / subtle
 
-**版本**: v1.1
+**版本**: v1.2
 **日期**: 2026-10-17
-**状态**: Active——M3a 收口（AES-GCM tagLength/IV 矩阵 +900P，2026-10-17）；
-下一步 M3b（wrapKey/unwrapKey AES-KW、spki/pkcs8/jwk 格式）
+**状态**: Active——M3b 收口（wrapKey/unwrapKey AES-KW + jwk 格式 +5,069P，
+2026-10-17）；下一步 M4（签名系：ECDSA/RSASSA-PKCS1-v1_5/RSA-PSS/RSA-OAEP）
 **执行模式**: WPT 驱动（上游 WebCryptoAPI corpus 为验收标尺）+ 实现与语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——加密面）
+
+> **▶ M3b wrapKey/unwrapKey AES-KW + jwk 格式（2026-10-17）**：对称密钥管理面
+> 补齐——wrapKey/unwrapKey（AES-KW RFC 3394 + AES-GCM/CBC/CTR 封装路径）、
+> jwk 导入/导出（AES 家族/HMAC，kty/use/key_ops/ext/alg 成员校验）、spki/pkcs8
+> 对称 NotSupportedError、importKey/generateKey length 成员与 usages 错误次序
+> （HmacKeyAlgorithm.hash 为对象）。wrapKey_unwrapKey 1→86P/25F（25F 全
+> RSA-OAEP wrapper，M4 域）、symmetric_importKey 84→606 **全绿**、generateKey
+> AES/HMAC 六文件 + serialization aes*/hmac 全绿；deriveKey 目标 length 透传
+> 级联 pbkdf2 +1,836 / hkdf +768。全量 **32,827 = Pass 15,390（46.9%）+
+> Fail 17,436 + Timeout 1**（M3a 10,321 → +5,069，零回归）；全绿案 13→27。
+> 明细见 [M3b evidence](webcrypto-compat/evidence/2026-10-17-m3b-kw-jwk.md)。
 
 > **▶ M3a AES-GCM tagLength/IV 矩阵（2026-10-17）**：tagLength ∈
 > {32,64,96,104,112,120,128}、IV 12/32 字节、密钥 128/192/256 位全矩阵——

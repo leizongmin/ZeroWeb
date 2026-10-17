@@ -442,7 +442,7 @@ fn test_crypto_subtle_hmac_r2955() {
             .execute(
                 "String(globalThis.__k && globalThis.__k.type === 'secret'\
                    && globalThis.__k.algorithm.name === 'HMAC'\
-                   && globalThis.__k.algorithm.hash === 'SHA-256'\
+                   && globalThis.__k.algorithm.hash.name === 'SHA-256'\
                    && globalThis.__k.extractable === false\
                    && globalThis.__k.usages.join(',') === 'sign,verify')"
             )
@@ -544,7 +544,8 @@ fn test_crypto_subtle_hmac_r2955() {
         )
         .unwrap();
     assert_eq!(sandbox.execute("String(globalThis.__e1)").unwrap().value, "SyntaxError");
-    // importKey 非 raw 格式（'jwk'）→ reject NotSupportedError。
+    // importKey 非 raw 格式（'jwk'）——M3b 起 HMAC jwk 已支持：{} 缺 kty → DataError
+    //（spec jwk 分支 kty 校验，原 NotSupportedError 仅"格式未支持"时）。
     sandbox
         .execute(
             "globalThis.__e2='(pending)';\
@@ -554,7 +555,7 @@ fn test_crypto_subtle_hmac_r2955() {
         .unwrap();
     assert_eq!(
         sandbox.execute("String(globalThis.__e2)").unwrap().value,
-        "NotSupportedError"
+        "DataError"
     );
     // importKey 不支持的算法（'RSA-OAEP'，本实现仅 HMAC/PBKDF2/HKDF/AES-GCM/CBC/CTR）→
     // reject NotSupportedError（webcrypto M2b 落地 AES-CBC/CTR 后原 'AES-CBC' 反例失效）。
@@ -1183,18 +1184,20 @@ fn test_crypto_subtle_keyops_r2959() {
         sandbox.execute("String(globalThis.__e1)").unwrap().value,
         "InvalidAccessError"
     );
-    // exportKey 非 raw 格式（'jwk'）→ reject NotSupportedError。
+    // exportKey 'jwk'——M3b 起 AES 家族已支持：返回 JsonWebKey 对象（kty "oct" + alg
+    // A128GCM + key_ops + ext），原 NotSupportedError 仅"格式未支持"时。
     sandbox
         .execute(
             "globalThis.__e2='(pending)';\
              crypto.subtle.importKey('raw', new Uint8Array(16), {name:'AES-GCM'}, true, ['encrypt'])\
                .then(function(k){ return crypto.subtle.exportKey('jwk', k); })\
+               .then(function(j){ globalThis.__e2 = JSON.stringify({kty:j.kty,alg:j.alg,ext:j.ext,ops:j.key_ops.join(',')}); })\
                .catch(function(e){ globalThis.__e2 = e.name; });",
         )
         .unwrap();
     assert_eq!(
         sandbox.execute("String(globalThis.__e2)").unwrap().value,
-        "NotSupportedError"
+        r#"{"kty":"oct","alg":"A128GCM","ext":true,"ops":"encrypt"}"#
     );
     // deriveKey baseKey 缺 "deriveKey" usage（仅 'deriveBits'）→ reject InvalidAccessError。
     sandbox

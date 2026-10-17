@@ -715,6 +715,18 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // `crypto.subtle.wrapKey/unwrapKey("AES-KW", ...)`（webcrypto M3b）——RFC 3394 封装。
+    // arg[0]=mode("wrap"/"unwrap")，arg[1]=key csv，arg[2]=data csv。返 csv（error → 空）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_aes_kw",
+        Box::new(|args: &[String]| -> String {
+            let mode = args.first().map(String::as_str).unwrap_or("");
+            let key = args.get(1).map(String::as_str).unwrap_or("");
+            let data = args.get(2).map(String::as_str).unwrap_or("");
+            crypto_subtle_aes_kw(mode, key, data)
+        }),
+    );
+
     // `crypto.subtle.encrypt/decrypt("AES-GCM", ...)`（R2957；M3a 矩阵）——AES-128/192/256-GCM。
     // arg[0]=mode("encrypt"/"decrypt")，arg[1]=key csv，arg[2]=iv csv，arg[3]=data csv，arg[4]=aad csv，
     // arg[5]=tagLength 位（缺省 128）。返 csv（error → 空）。

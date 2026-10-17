@@ -2311,6 +2311,9 @@
     this.usages = usages;
     this._raw = raw || null;
   }
+  // spec：接口原型身份标签（WPT assert_goodCryptoKey 断言 key[Symbol.toStringTag] ===
+  // "CryptoKey"——polyfill 构造器无接口对象，须显式挂原型，Performance* 同款先例）。
+  try { CryptoKey.prototype[Symbol.toStringTag] = 'CryptoKey'; } catch (_e) {}
 
   // hash 名归一化：接受串或 {name:...} → 大写 "SHA-XXX"，或 null。
   function _zw_hashName(h) {
@@ -2344,6 +2347,8 @@
 
   // importKey 的 algorithm 归一化：{name:"HMAC", hash:"SHA-XXX"} / {name:"PBKDF2"} / null（unsupported）。
   // HMAC 需 hash；PBKDF2 不需（hash 在 deriveBits 参数里）。name 匹配 ASCII 折叠（_zw_upperAscii）。
+  // HMAC 透传显式 length 成员（generateKey/importKey 语义：缺省 = hash 块大小，显式 = 调用值）。
+  // M3b 起 AES 家族含 AES-KW。
   function _zw_normalizeImportAlgorithm(algo) {
     if (!algo) return null;
     var name = (typeof algo === 'object' && algo) ? algo.name : algo;
@@ -2352,13 +2357,19 @@
     if (name === 'HMAC') {
       var hash = _zw_hashName(typeof algo === 'object' ? algo.hash : null);
       if (!hash) return null;
-      return { name: 'HMAC', hash: hash };
+      var out = { name: 'HMAC', hash: hash };
+      if (typeof algo === 'object' && algo && algo.length != null) out.length = Number(algo.length);
+      return out;
     }
     if (name === 'PBKDF2') {
       return { name: 'PBKDF2' };
     }
-    if (name === 'AES-GCM' || name === 'AES-CBC' || name === 'AES-CTR') {
-      return { name: name };
+    if (name === 'AES-GCM' || name === 'AES-CBC' || name === 'AES-CTR' || name === 'AES-KW') {
+      // length 成员透传（deriveKey 目标按成员取派生长度；importKey/generateKey 不消费
+      // 该成员——前者按数据位长，后者直接读原始 algorithm 对象）。
+      var aesOut = { name: name };
+      if (typeof algo === 'object' && algo && algo.length != null) aesOut.length = Number(algo.length);
+      return aesOut;
     }
     if (name === 'HKDF') {
       return { name: 'HKDF' };
@@ -2383,15 +2394,18 @@
   }
 
   // HMAC MAC 计算（sign/verify 复用）：返 Uint8Array；host 未注册 / unsupported hash → 调 reject 返 null。
+  // hash 兼容串与 KeyAlgorithm 字典（M3b 起 key.algorithm.hash 为 {name:"SHA-XXX"} 对象，spec
+  // HmacKeyAlgorithm）。
   function _zw_hmacMac(algo, key, dataBytes, reject) {
     if (typeof __zw_crypto_subtle_hmac !== 'function') {
       reject(_zw_subtleDE('crypto.subtle HMAC requires host callback', 'NotSupportedError'));
       return null;
     }
+    var hashName = (algo.hash && typeof algo.hash === 'object') ? algo.hash.name : algo.hash;
     var keyCsv = (key._raw || []).map(String).join(',');
-    var macCsv = __zw_crypto_subtle_hmac(algo.hash, keyCsv, dataBytes.join(','));
+    var macCsv = __zw_crypto_subtle_hmac(hashName, keyCsv, dataBytes.join(','));
     if (!macCsv) {
-      reject(_zw_subtleDE("Unsupported HMAC hash: '" + algo.hash + "'", 'NotSupportedError'));
+      reject(_zw_subtleDE("Unsupported HMAC hash: '" + hashName + "'", 'NotSupportedError'));
       return null;
     }
     var parts = macCsv.split(',');
@@ -2400,15 +2414,16 @@
     return arr;
   }
 
-  // AES-GCM 调用（encrypt/decrypt 共用，webcrypto M3a 矩阵）：iv 12/32 字节；tagLength ∈
-  // {32,64,96,104,112,120,128}（spec 合法集，缺省 128；非法 → OperationError）；host 后调
-  // `__zw_crypto_subtle_aes_gcm`，返 Uint8Array；失败调 reject 返 null。AAD 经
-  // algorithm.additionalData（可选）。
+  // AES-GCM 调用（encrypt/decrypt 共用，webcrypto M3a 矩阵）：iv 12/16/32 字节（spec 允许任意
+  // 长度，shim 收敛到 corpus fixtures 的 96/256 位 + wrapKey AES-GCM 封装路径固定 128 位——
+  // M3b）；tagLength ∈ {32,64,96,104,112,120,128}（spec 合法集，缺省 128；非法 →
+  // OperationError）；host 后调 `__zw_crypto_subtle_aes_gcm`，返 Uint8Array；失败调 reject 返
+  // null。AAD 经 algorithm.additionalData（可选）。
   // https://w3c.github.io/webcrypto/#aes-gcm-operations
   function _zw_aesGcmCall(op, algorithm, key, dataBytes, reject) {
     var iv = _zw_bufToBytes(algorithm.iv);
-    if (iv.length !== 12 && iv.length !== 32) {
-      reject(_zw_subtleDE('AES-GCM iv must be 12 or 32 bytes (96/256 bits)', 'OperationError')); return null;
+    if (iv.length !== 12 && iv.length !== 16 && iv.length !== 32) {
+      reject(_zw_subtleDE('AES-GCM iv must be 12, 16 or 32 bytes (96/128/256 bits)', 'OperationError')); return null;
     }
     var tagBits = (algorithm.tagLength != null) ? Number(algorithm.tagLength) : 128;
     if (tagBits !== 32 && tagBits !== 64 && tagBits !== 96 && tagBits !== 104 &&
@@ -2511,7 +2526,9 @@
   }
 
   // 派生/生成的目标密钥长度（位）。AES → 显式 length ∈ {128,192,256} 优先（spec deriveKey
-  // AES 目标按 length 成员取长），缺省 256；HMAC → hash 块大小（SHA-1/256=512，SHA-384/512=1024）。
+  // AES 目标按 length 成员取长），缺省 256；HMAC → 显式 length >0 优先（M3b：generateKey
+  // 生成对应长度，0/负 → 0 由调用方 reject），缺省 = hash 块大小（SHA-1/256=512，
+  // SHA-384/512=1024）（spec HmacKeyGenParams：length 缺省 = hash 块大小）。
   function _zw_keyLengthBits(algo) {
     var n = _zw_upperAscii(String((typeof algo === 'object' && algo) ? algo.name : algo));
     if (n === 'AES-GCM' || n === 'AES-CBC' || n === 'AES-CTR' || n === 'AES-KW') {
@@ -2519,6 +2536,9 @@
       return (len === 128 || len === 192 || len === 256) ? len : 256;
     }
     if (n === 'HMAC') {
+      var mlen = (typeof algo === 'object' && algo && algo.length != null) ? Number(algo.length) : 0;
+      if (mlen > 0) return mlen;
+      if (mlen < 0) return 0;
       var h = _zw_hashName(typeof algo === 'object' ? algo.hash : null);
       return (h === 'SHA-384' || h === 'SHA-512') ? 1024 : 512;
     }
@@ -2531,6 +2551,46 @@
     if (typeof crypto !== 'undefined' && crypto.getRandomValues) crypto.getRandomValues(a);
     else for (var i = 0; i < n; i++) a[i] = (Math.random() * 256) | 0;
     return a;
+  }
+
+  // 字节 ↔ base64url（RFC 4648 §5 无 padding）——jwk 格式 k 成员编解码（webcrypto M3b）。
+  // 复用 btoa/atob（标准字母表 + padding），+/ 与 -_ 替换；atob 非法输入 → null（调用方
+  // 转 DataError，不抛）。
+  function _zw_b64uFromBytes(bytes) {
+    var bin = '';
+    for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i] & 0xff);
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  function _zw_bytesFromB64u(s) {
+    var std = String(s).replace(/-/g, '+').replace(/_/g, '/');
+    while (std.length % 4 !== 0) std += '=';
+    var bin;
+    try { bin = atob(std); } catch (_e) { return null; }
+    var out = [];
+    for (var i = 0; i < bin.length; i++) out.push(bin.charCodeAt(i) & 0xff);
+    return out;
+  }
+
+  // AES-KW（RFC 3394）host 调用（wrapKey/unwrapKey AES-KW 封装路径，webcrypto M3b）：
+  // op "wrap"/"unwrap"；输入 8 字节对齐（host 校验含最小 2 块），失败返 null 已调 reject
+  // OperationError（spec：wrap/unwrap 失败 → OperationError）。
+  // https://w3c.github.io/webcrypto/#aes-kw-operations  https://datatracker.ietf.org/doc/html/rfc3394
+  function _zw_aesKwCall(op, key, dataBytes, reject) {
+    if (dataBytes.length % 8 !== 0) {
+      reject(_zw_subtleDE('AES-KW data must be a multiple of 64 bits', 'OperationError')); return null;
+    }
+    if (typeof __zw_crypto_subtle_aes_kw !== 'function') {
+      reject(_zw_subtleDE('crypto.subtle AES-KW requires host callback', 'NotSupportedError')); return null;
+    }
+    var keyCsv = (key._raw || []).map(String).join(',');
+    var out = __zw_crypto_subtle_aes_kw(op, keyCsv, dataBytes.join(','));
+    if (!out) {
+      reject(_zw_subtleDE('AES-KW ' + op + ' failed (bad key/data)', 'OperationError')); return null;
+    }
+    var parts = out.split(',');
+    var res = new Uint8Array(parts.length);
+    for (var i = 0; i < parts.length; i++) res[i] = +parts[i];
+    return res;
   }
 
   globalThis.crypto.subtle = globalThis.crypto.subtle || {

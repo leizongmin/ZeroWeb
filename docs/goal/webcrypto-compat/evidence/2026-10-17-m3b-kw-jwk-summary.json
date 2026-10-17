@@ -1,0 +1,13 @@
+{
+  "date": "2026-10-17",
+  "slice": "M3b-kw-jwk",
+  "pin": "adfdb1dc35410d672ba82393d511023cf74755bf",
+  "totals": {
+    "cases": 123,
+    "subtests": 32827,
+    "pass": 15390,
+    "fail": 17436,
+    "timeout": 1,
+    "all_green_cases": 27
+  }
+}

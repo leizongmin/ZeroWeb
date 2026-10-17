@@ -167,8 +167,8 @@ fn aes_gcm_run<C: aes_gcm::aead::Aead>(
 /// `crypto.subtle.encrypt/decrypt` 的 AES-GCM 实现（R2957；webcrypto M3a 矩阵扩展）——
 /// AES-128/192/256-GCM 认证对称加密。**PBKDF2 派生密钥的典型消费者**，端到端「用密码加密」
 /// 流程（TLS 级对称加密 + 完整性 + AAD）。mode "encrypt"（返 ct||tag）/ "decrypt"（输入
-/// ct||tag，返 plaintext）；key 16/24/32 字节；iv 12/32 字节（nonce 为 aes-gcm crate 编译期
-/// 泛型，按字节长二分派）；tag_len_bits ∈ {32,64,96,104,112,120,128}（合法集由 shim 校验，
+/// ct||tag，返 plaintext）；key 16/24/32 字节；iv 12/16/32 字节（nonce 为 aes-gcm crate 编译期
+/// 泛型，按字节长分派；16 字节 M3b 起供 wrapKey AES-GCM 封装路径）；tag_len_bits ∈ {32,64,96,104,112,120,128}（合法集由 shim 校验，
 /// 缺省 128）：96-128 位走 crate Aead（TagSize 密封于 U12..U16）；32/64 位 crate 不密封，
 /// 按 NIST SP 800-38D §5.2.1.2 截断语义手做——encrypt 取 128 位 tag 前 tag_len_bits/8 字节，
 /// decrypt 重算全 tag 常时比对前缀。aad 附加认证数据。返 csv，error（bad key/iv/tag 长度、
@@ -189,7 +189,9 @@ pub fn crypto_subtle_aes_gcm(
     let iv = bytes_from_csv(iv_csv);
     let data = bytes_from_csv(data_csv);
     let aad = bytes_from_csv(aad_csv);
-    if iv.len() != 12 && iv.len() != 32 {
+    // 96/128/256 位 IV（M3a 收敛 12/32，M3b 增 16 供 wrapKey AES-GCM 封装路径——spec 允许
+    // 任意 IV 长度，crate NonceSize 开放泛型按字节长分派）。
+    if iv.len() != 12 && iv.len() != 16 && iv.len() != 32 {
         return String::new();
     }
     let tag_bytes = (tag_len_bits / 8) as usize;
@@ -252,10 +254,26 @@ pub fn crypto_subtle_aes_gcm(
             (32, 32) => {
                 truncated_gcm::<aes::Aes256, U32>(mode, &key, GenericArray::from_slice(&iv), &data, &aad, tag_bytes)
             }
+            (16, 16) => {
+                truncated_gcm::<aes::Aes128, U16>(mode, &key, GenericArray::from_slice(&iv), &data, &aad, tag_bytes)
+            }
+            (16, 24) => {
+                truncated_gcm::<aes::Aes192, U16>(mode, &key, GenericArray::from_slice(&iv), &data, &aad, tag_bytes)
+            }
+            (16, 32) => {
+                truncated_gcm::<aes::Aes256, U16>(mode, &key, GenericArray::from_slice(&iv), &data, &aad, tag_bytes)
+            }
             _ => String::new(),
         };
     }
-    let result: Option<Vec<u8>> = if iv.len() == 12 { by_tag!(U12) } else { by_tag!(U32) };
+    let result: Option<Vec<u8>> = match iv.len() {
+        12 => by_tag!(U12),
+        // 96/128/256 位 IV——crate NonceSize 为开放泛型（仅 TagSize 密封），M3b 起
+        // 16 字节 IV 供 wrapKey AES-GCM 封装路径（spec 允许任意 IV 长度）。
+        16 => by_tag!(U16),
+        32 => by_tag!(U32),
+        _ => None,
+    };
     match result {
         Some(v) => v.iter().map(u8::to_string).collect::<Vec<_>>().join(","),
         None => String::new(),
@@ -389,6 +407,102 @@ pub fn crypto_subtle_aes_block(kind: &str, mode: &str, key_csv: &str, iv_csv: &s
         }
     } else {
         String::new()
+    }
+}
+
+/// AES-KW（RFC 3394）wrap/unwrap——`crypto.subtle.wrapKey/unwrapKey` 的 AES-KW 封装路径
+/// （webcrypto M3b）。mode "wrap"（8 字节对齐明文 → +8 字节封装输出）/ "unwrap"（校验
+/// 回绕寄存器 A 恒等于初始 IV A6A6×8 后剥去 8 字节；不匹配 → 空串，shim reject
+/// OperationError）。key 16/24/32 字节；wrap 输入 ≥16 字节且 8 字节对齐、unwrap 输入
+/// ≥24 字节且 8 字节对齐。纯块密码运算（aes crate BlockEncrypt/BlockDecrypt），无认证
+/// 依赖、无时间秘密分支（IV 比对为长度固定的公开常量比较）。
+/// https://datatracker.ietf.org/doc/html/rfc3394#section-2.2.1
+pub fn crypto_subtle_aes_kw(mode: &str, key_csv: &str, data_csv: &str) -> String {
+    use aes::cipher::{BlockDecrypt, BlockEncrypt, KeyInit, generic_array::GenericArray};
+    let key = bytes_from_csv(key_csv);
+    let data = bytes_from_csv(data_csv);
+    if !data.len().is_multiple_of(8) {
+        return String::new();
+    }
+    macro_rules! kw {
+        ($aes:ty) => {{
+            let cipher = <$aes>::new(GenericArray::from_slice(&key));
+            const IV: u64 = 0xA6A6A6A6A6A6A6A6;
+            if mode == "wrap" {
+                if data.len() < 16 {
+                    return String::new();
+                }
+                let n = data.len() / 8;
+                let mut a = IV;
+                let mut blocks: Vec<[u8; 8]> = (0..n)
+                    .map(|i| {
+                        let mut b = [0u8; 8];
+                        b.copy_from_slice(&data[i * 8..i * 8 + 8]);
+                        b
+                    })
+                    .collect();
+                let mut buf = [0u8; 16];
+                for j in 0..=5u64 {
+                    for i in 0..n {
+                        buf[..8].copy_from_slice(&a.to_be_bytes());
+                        buf[8..].copy_from_slice(&blocks[i]);
+                        let mut ga = GenericArray::clone_from_slice(&buf);
+                        cipher.encrypt_block(&mut ga);
+                        let mut hi = [0u8; 8];
+                        hi.copy_from_slice(&ga[..8]);
+                        a = u64::from_be_bytes(hi) ^ (n as u64 * j + i as u64 + 1);
+                        blocks[i].copy_from_slice(&ga[8..]);
+                    }
+                }
+                let mut out = Vec::with_capacity(data.len() + 8);
+                out.extend_from_slice(&a.to_be_bytes());
+                for b in blocks {
+                    out.extend_from_slice(&b);
+                }
+                return bytes_to_csv(&out);
+            }
+            if mode == "unwrap" {
+                if data.len() < 24 {
+                    return String::new();
+                }
+                let n = data.len() / 8 - 1;
+                let mut a = u64::from_be_bytes(data[..8].try_into().unwrap_or([0; 8]));
+                let mut blocks: Vec<[u8; 8]> = (0..n)
+                    .map(|i| {
+                        let mut b = [0u8; 8];
+                        b.copy_from_slice(&data[(i + 1) * 8..(i + 1) * 8 + 8]);
+                        b
+                    })
+                    .collect();
+                let mut buf = [0u8; 16];
+                for j in (0..=5u64).rev() {
+                    for i in (0..n).rev() {
+                        let t = (n as u64 * j + i as u64 + 1).to_be_bytes();
+                        buf[..8].copy_from_slice(&(a ^ u64::from_be_bytes(t)).to_be_bytes());
+                        buf[8..].copy_from_slice(&blocks[i]);
+                        let mut ga = GenericArray::clone_from_slice(&buf);
+                        cipher.decrypt_block(&mut ga);
+                        a = u64::from_be_bytes(ga[..8].try_into().unwrap_or([0; 8]));
+                        blocks[i].copy_from_slice(&ga[8..]);
+                    }
+                }
+                if a != IV {
+                    return String::new();
+                }
+                let mut out = Vec::with_capacity(data.len() - 8);
+                for b in blocks {
+                    out.extend_from_slice(&b);
+                }
+                return bytes_to_csv(&out);
+            }
+            String::new()
+        }};
+    }
+    match key.len() {
+        16 => kw!(aes::Aes128),
+        24 => kw!(aes::Aes192),
+        32 => kw!(aes::Aes256),
+        _ => String::new(),
     }
 }
 
