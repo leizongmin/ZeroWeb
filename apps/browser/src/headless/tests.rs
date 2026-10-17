@@ -1179,6 +1179,89 @@ fn test_target_create_and_close_target_lifecycle() {
     );
 }
 
+/// t4（qq-20261016-r1）：会话启动恰有一个 page target——BrowserShell::new 已带
+/// 初始标签，多建 new_tab 会留下永不导航的幽灵 about:blank target（/json/list 与
+/// PW pages 各多一页，e1-zero B 阶段「新页 url()=about:blank」的一半根因）。
+#[test]
+fn test_session_starts_with_single_page_target() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let session = HeadlessSession::new(800.0, 600.0);
+    assert_eq!(session.shell.tab_count(), 1, "no ghost about:blank target");
+    let targets = super::discovery::http_targets_json(&session, server.addr(), false);
+    let list: Vec<Value> = serde_json::from_str(&targets).unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0]["url"], "about:blank");
+}
+
+/// t4（qq-20261016-r1）：renderer 侧导航提交回写 shell URL 并补发 frameNavigated。
+/// CDP target 元数据（/json/list、Target.getTargets）与客户端 page.url() 都取自
+/// shell Tab/事件流——不回写则 target=_blank 点击后 target url 停留旧值（e1-zero）。
+#[test]
+fn test_navigation_commit_updates_target_url() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    let url = "https://news.qq.com/rain/a/20261016A0CZ0100";
+
+    assert!(session.apply_navigation_commit(url), "changed URL must apply");
+    assert_eq!(session.shell.active_tab().and_then(|t| t.url()), Some(url));
+    // 事件面：frameNavigated 与 emit_navigation_event_family 同形状
+    let event = session
+        .pending_network_events
+        .iter()
+        .find(|(m, _)| m == "Page.frameNavigated")
+        .map(|(_, p)| p.clone())
+        .expect("frameNavigated queued");
+    assert_eq!(event["frame"]["url"], url);
+    assert_eq!(event["frame"]["mimeType"], "text/html");
+    assert!(
+        event["frame"]["id"].as_str().unwrap().starts_with("zeroweb-tab-"),
+        "frame id 对齐 target 命名"
+    );
+    // 上下文换代子集：清旧 context + 重发 main world（id=1，S4 契约）——缺这组
+    // 客户端对新文档 evaluate 全数失败（"object handle is unknown or released"）。
+    assert!(
+        session
+            .pending_network_events
+            .iter()
+            .any(|(m, _)| m == "Runtime.executionContextsCleared")
+    );
+    let ctx = session
+        .pending_network_events
+        .iter()
+        .find(|(m, _)| m == "Runtime.executionContextCreated")
+        .map(|(_, p)| p.clone())
+        .expect("main world context re-announced");
+    assert_eq!(ctx["context"]["id"], 1);
+    assert_eq!(ctx["context"]["name"], "main");
+    assert_eq!(ctx["context"]["auxData"]["isDefault"], true);
+
+    // 发现面：/json/list 与 Target.getTargets 报告最终 URL
+    let targets = super::discovery::http_targets_json(&session, server.addr(), false);
+    let list: Vec<Value> = serde_json::from_str(&targets).unwrap();
+    assert_eq!(list[0]["url"], url);
+    let (result, _) = server.dispatch_with_events(&mut session, "Target.getTargets", Value::Null);
+    assert_eq!(result.unwrap()["targetInfos"][0]["url"], url);
+}
+
+/// t4（qq-20261016-r1）：commit 回声去重——客户端 Page.navigate 已在 cmd_navigate
+/// 写入同一 URL，renderer 的 NavigationCommitted 回声不得重复记历史条目或补发事件。
+#[test]
+fn test_navigation_commit_same_url_is_noop() {
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    let url = "https://www.qq.com/";
+    session.shell.navigate(url);
+    let history_before = session.shell.active_tab().map(|t| t.history_len()).unwrap_or(0);
+    let events_before = session.pending_network_events.len();
+
+    assert!(!session.apply_navigation_commit(url), "same URL must be skipped");
+    assert_eq!(
+        session.shell.active_tab().map(|t| t.history_len()),
+        Some(history_before),
+        "no duplicate history entry"
+    );
+    assert_eq!(session.pending_network_events.len(), events_before, "no extra event");
+}
+
 #[test]
 fn test_target_detach_from_target() {
     let server = HeadlessServer::new(0, 800.0, 600.0);

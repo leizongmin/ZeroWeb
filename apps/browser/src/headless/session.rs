@@ -173,8 +173,10 @@ impl HeadlessSession {
 
     #[cfg(test)]
     pub(super) fn new(viewport_width: f32, viewport_height: f32) -> Self {
-        let mut shell = BrowserShell::new();
-        shell.new_tab(None);
+        // BrowserShell::new 已带一个空白活跃标签；再 new_tab 会多出一个永不导航的
+        // 幽灵 target（/json/list、Target.getTargets 与 PW pages 各多一个
+        // about:blank，e1-zero B 阶段「新页 url()=about:blank」的一半根因）。
+        let shell = BrowserShell::new();
         let config = WebViewConfig {
             width: viewport_width as u32,
             height: viewport_height as u32,
@@ -226,8 +228,9 @@ impl HeadlessSession {
                 }),
             })
             .unwrap_or_else(|error| panic!("failed to set headless viewport: {error}"));
-        let mut shell = BrowserShell::new();
-        shell.new_tab(None);
+        // 同 cfg(test) 路径：BrowserShell::new 已带一个空白活跃标签，不再 new_tab
+        //（幽灵 target 去重，见上）。
+        let shell = BrowserShell::new();
         let (fetch_completion_tx, fetch_completions_rx) = std::sync::mpsc::channel();
         Self {
             shell,
@@ -370,6 +373,20 @@ impl HeadlessSession {
                 }
             }
             IpcMessageKind::LoadFailed(message) | IpcMessageKind::CrashNotification(message) => Ok(Some(Err(message))),
+            // renderer 侧导航提交（target=_blank 点击降级同 traversable、location.href 赋值、
+            // 表单导航——FIXME(tab-ipc)：新建 tab 面落地前均为同 tab 提交）→ 回写 shell URL
+            // 并补发导航事件族（见 apply_navigation_commit）。CDP target 元数据
+            //（/json/list、Target.getTargets、targetInfo）与客户端 page.url() 全部取自
+            // shell Tab/事件流，不回写则新文档加载后 target url 停留旧值（e1-zero B/C
+            // 阶段实测：页内 location.href 已是 news.qq.com，target url() 仍 about:blank）。
+            // spec：target 的 url 为当前文档 URL，Chrome 在 commit 时更新 targetInfo。
+            // https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate
+            // 客户端发起的 Page.navigate 已在 cmd_navigate 写入同一 URL——相同则跳过
+            //（避免重复历史条目与多余事件，见 apply_navigation_commit）。
+            IpcMessageKind::NavigationCommitted(params) => {
+                self.apply_navigation_commit(&params.url);
+                Ok(None)
+            }
             // S11：page console 输出 → 会话事件队列（transport 逐命令排空盖章为
             // `Runtime.consoleAPICalled`； PW 消费面 = msg.type()/text()）。
             IpcMessageKind::ScriptError(params) => {
@@ -1147,6 +1164,60 @@ impl HeadlessSession {
     /// 活跃标签页的主 frame id（proxy_fetch 等 session 侧无 CDP 会话上下文的场景）。
     pub(super) fn active_frame_id(&self) -> Option<String> {
         self.shell.active_tab().map(|tab| format!("zeroweb-tab-{}", tab.id().0))
+    }
+
+    /// renderer 导航提交 → shell 模型回写 + 导航事件族入队。
+    ///
+    /// URL 与当前标签页相同（客户端 Page.navigate 的 commit 回声）时跳过——
+    /// 返回 `false` 且不产生任何模型/事件变化；不同则 `shell.navigate` 记历史条目、
+    /// 更新 URL，并把事件族压入 pending 事件队列。事件族对齐
+    /// `emit_navigation_event_family` 的上下文换代子集（frameStartedLoading →
+    /// frameNavigated → executionContextsCleared → 新 main world context）：
+    /// 缺 context 重置时客户端（PW）对新文档的 evaluate 全数失败
+    ///（"object handle is unknown or has been released"，t4 minrepro 实测）。
+    /// 不含 DCL/load 生命周期与 iframe 探测——那两族由 renderer 的
+    /// DomContentLoaded/LoadComplete 消息自身管线补发（headless 消息面既有路径）。
+    /// 纯函数以便单测钉形状（进程内测试无 renderer 消息面）。
+    pub(super) fn apply_navigation_commit(&mut self, url: &str) -> bool {
+        let changed = self.shell.active_tab().is_none_or(|tab| tab.url() != Some(url));
+        if !changed {
+            return false;
+        }
+        self.shell.navigate(url);
+        let frame_id = self.active_frame_id().unwrap_or_default();
+        let mut push = |method: &str, params: serde_json::Value| {
+            self.pending_network_events.push((method.into(), params));
+        };
+        push("Page.frameStartedLoading", serde_json::json!({ "frameId": frame_id }));
+        push(
+            "Page.frameNavigated",
+            serde_json::json!({
+                "frame": {
+                    "id": frame_id,
+                    "loaderId": "",
+                    "url": url,
+                    "mimeType": "text/html",
+                }
+            }),
+        );
+        // 文档换代：清旧上下文并重发 main world context（id=1，S4 契约）——
+        // 客户端据新 context 事件重建 evaluate 面。
+        push("Runtime.executionContextsCleared", serde_json::json!({}));
+        push(
+            "Runtime.executionContextCreated",
+            serde_json::json!({
+                "context": {
+                    "id": 1,
+                    "origin": "://",
+                    "name": "main",
+                    "auxData": {
+                        "frameId": frame_id,
+                        "isDefault": true,
+                    }
+                }
+            }),
+        );
+        true
     }
 
     /// CDP Runtime 域脚本执行入口：类型化结果（测试进程内路径为扁平字符串语义）。
