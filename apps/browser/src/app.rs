@@ -3074,24 +3074,26 @@ impl BrowserApp {
     /// 下载落盘 + 下载管理器记账（backend 拦截 Content-Disposition: attachment 或
     /// 顶层文档导航的不可内联 Content-Type 后经 TabManager 转交）。整包到达 →
     /// 进度两跳（0/N → N/N），状态链 Pending → Downloading → Completed。
-    fn save_attachment_download(&mut self, download: crate::process_backend::PendingAttachmentDownload) {
+    /// 附件拦截 / 图片另存为 / 页面另存为共用此路径（app_image_save.rs 等）。
+    pub(crate) fn save_attachment_download(&mut self, download: crate::process_backend::PendingAttachmentDownload) {
         let total = download.body.len() as u64;
-        let id = self
-            .shell
-            .downloads_mut()
-            .start_download(&download.url, &download.filename);
+        // D1：同名文件不静默覆盖——落盘前在扩展名前追加 " (n)"（Chrome 惯例），
+        // 下载管理器与完成提示都记实际落盘名。
+        let filename =
+            crate::process_backend::dedupe_download_filename(&self.download_target_dir(), &download.filename);
+        let id = self.shell.downloads_mut().start_download(&download.url, &filename);
         self.shell.downloads_mut().update_progress(id, 0, Some(total));
-        let path = self.download_target_dir().join(&download.filename);
+        let path = self.download_target_dir().join(&filename);
         let write_result = std::fs::write(&path, &download.body);
         match write_result {
             Ok(()) => {
                 self.shell.downloads_mut().mark_completed(id);
                 // 下载完成 toast（3 秒自动消失；渲染层清除）。
-                self.download_toast = Some((download.filename.clone(), Instant::now()));
+                self.download_toast = Some((filename.clone(), Instant::now()));
                 tracing::info!(
                     "SMOKE_EVENT component=browser event=download_completed tab={} file={} bytes={} path={}",
                     download.tab_id.0,
-                    download.filename,
+                    filename,
                     total,
                     path.display()
                 );

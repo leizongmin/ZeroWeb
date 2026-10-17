@@ -139,17 +139,33 @@ impl BrowserApp {
 
         // 根据当前页面能力禁用部分菜单项。
         // about:blank / 无 URL / zero:// 内部页 没有"源代码"或"可审查 DOM"概念，
-        // 应禁用 view_source / inspect / save_as / print，避免无效操作。
+        // 应禁用 view_source / inspect / save_as / print，避免无效操作；
+        // view-source: 页再点"查看源代码"会透传成 view-source:view-source:…
+        // 错误内页，同口径灰显（D2）。
         let active_url = self.shell.active_tab().and_then(|t| t.url());
         let page_inspectable = match active_url {
             None => false,
             Some(u) if u.is_empty() || u == "about:blank" => false,
             Some(u) if u.starts_with("zero://") => false,
+            Some(u) if u.starts_with("view-source:") => false,
             _ => true,
         };
         if !page_inspectable {
             for item in items.iter_mut() {
                 if matches!(item.id(), "view_source" | "inspect" | "save_as" | "print") {
+                    item.set_enabled(false);
+                }
+            }
+        }
+        // D3：「另存为」依赖可独立抓取的 http(s) 源（page_save_fetch.request 对
+        // 其他 scheme 静默丢弃）——view-source:/data: 等一并灰显，消除无反馈 no-op。
+        let page_saveable = matches!(
+            active_url,
+            Some(u) if u.starts_with("http://") || u.starts_with("https://")
+        );
+        if !page_saveable {
+            for item in items.iter_mut() {
+                if item.id() == "save_as" {
                     item.set_enabled(false);
                 }
             }

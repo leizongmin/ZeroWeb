@@ -5821,4 +5821,236 @@ fn page_context_menu_view_source_opens_view_source_tab_via_fetch() {
     }
     server.join().expect("一次性 HTTP 线程应正常结束");
     assert!(opened, "「查看源代码」应经后台抓取开出 view-source 内页");
+
+    // TV-2：oracle 强化——URL 前缀无法判别成功/失败（抓取失败也开同 URL 错误页），
+    // 断言成功页含抓取到的源码正文（错误页只有错误文案，二者可判别）。URL 由
+    // begin_navigation 先置，内容快照晚一拍到达，单独轮询等待。
+    let active = app.shell.active_tab_id().unwrap();
+    let mut html: Option<String> = None;
+    for _ in 0..1000 {
+        app.poll_tab_fetch();
+        html = app.smoke_tab_html(active);
+        if html.as_deref().is_some_and(|h| h.contains("SrcTarget")) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(
+        html.as_deref().is_some_and(|h| h.contains("SrcTarget")),
+        "成功页应含源码正文而非错误页，got: {html:?}"
+    );
+}
+
+/// D1：附件管线同名文件不静默覆盖——同目录连存两次同名，第二个实际落盘为
+/// "name (1).ext"，首个内容保持不变（Chrome 惯例）；下载管理器记实际落盘名。
+/// 附件拦截 / 图片另存为 / 页面另存为共用 save_attachment_download 同一路径。
+#[test]
+fn save_attachment_download_dedupes_duplicate_filenames() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    let dir = std::env::temp_dir().join(format!("zw-dedupe-test-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    app.shell
+        .apply_settings(|s| s.download_directory = dir.display().to_string());
+    let tab = app.shell.active_tab_id().unwrap();
+
+    let save = |app: &mut BrowserApp, filename: &str, body: &[u8]| {
+        app.save_attachment_download(crate::process_backend::PendingAttachmentDownload {
+            tab_id: tab,
+            url: format!("https://zw-dedupe.test/{filename}"),
+            filename: filename.to_string(),
+            body: body.to_vec(),
+        });
+    };
+    save(&mut app, "report.pdf", b"first");
+    save(&mut app, "report.pdf", b"second");
+
+    assert_eq!(
+        std::fs::read(dir.join("report.pdf")).unwrap(),
+        b"first",
+        "首个同名文件内容不被覆盖"
+    );
+    assert_eq!(
+        std::fs::read(dir.join("report (1).pdf")).unwrap(),
+        b"second",
+        "第二次落盘应写去重名 report (1).pdf"
+    );
+    assert!(
+        app.smoke_downloads()
+            .iter()
+            .any(|(_, name, state, _, _)| name == "report (1).pdf" && state == "Completed"),
+        "下载管理器应记实际落盘名"
+    );
+
+    // 无扩展名文件名：末尾直接追加 " (n)"。
+    save(&mut app, "NOTES", b"v1");
+    save(&mut app, "NOTES", b"v2");
+    assert_eq!(std::fs::read(dir.join("NOTES")).unwrap(), b"v1");
+    assert_eq!(std::fs::read(dir.join("NOTES (1)")).unwrap(), b"v2");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// D2/D3：view-source: 页与不可保存 scheme 的菜单可用性——view-source: 页上
+/// 查看源代码/检查元素灰显（再点会透传成 view-source:view-source:… 错误内页），
+/// 另存为对非 http(s) 页（view-source:/data: 等）一并灰显（request() 对该类
+/// scheme 静默丢弃，不再留无反馈 no-op）。
+#[test]
+fn context_menu_disables_source_and_save_actions_on_unsaveable_pages() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    let (cx, cy, _, _) = app.page_content_rect();
+    let right_click = |app: &mut BrowserApp| {
+        app.handle_mouse_click((cx + 40.0) as f64, (cy + 40.0) as f64, true, "Right");
+        assert!(app.is_context_menu_visible_for_test(), "右键页面应打开菜单");
+    };
+
+    // view-source: 内页：源码/检查/另存为全部灰显（走既有 disabled 路径）。
+    app.open_internal_document_tab(
+        "<html><body>view-source body</body></html>".to_string(),
+        "view-source:https://zw-d2.test/page.html",
+        "查看源代码",
+    );
+    right_click(&mut app);
+    assert_eq!(
+        app.smoke_context_menu_item_enabled("view_source"),
+        Some(false),
+        "view-source 页上「查看源代码」应灰显"
+    );
+    assert_eq!(
+        app.smoke_context_menu_item_enabled("inspect"),
+        Some(false),
+        "view-source 页上「检查元素」应灰显"
+    );
+    assert_eq!(
+        app.smoke_context_menu_item_enabled("save_as"),
+        Some(false),
+        "view-source 页上「另存为」应灰显"
+    );
+    app.handle_key("Escape", true, None);
+
+    // data: 页：查看源代码仍可用（抓取失败有错误内页反馈），另存为灰显（D3）。
+    app.open_internal_document_tab(
+        "<html><body>data body</body></html>".to_string(),
+        "data:text/html,<b>d</b>",
+        "data",
+    );
+    right_click(&mut app);
+    assert_eq!(
+        app.smoke_context_menu_item_enabled("save_as"),
+        Some(false),
+        "data: 页上「另存为」应灰显"
+    );
+}
+
+/// TV-1：close_tab_by_id 关闭路径（中键关标签）同样使地址栏失焦并回填相邻标签
+/// URL——审查变异证实该路径此前零覆盖（删掉失焦三行无测试失败）。
+#[test]
+fn close_tab_by_id_middle_click_blurs_address_bar() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    app.new_tab(Some("https://zw-tv1.test/first.html"));
+    app.new_tab(Some("https://zw-tv1.test/second.html"));
+    let _ = app.build_scene_for_test(1280, 900);
+    let count_before = app.shell.tab_count();
+    let active = app.shell.active_tab_id().unwrap();
+
+    // Ctrl+L 聚焦地址栏并输入文字（编辑态悬挂）。
+    let mod_key = BrowserApp::test_modifier_key_name();
+    app.handle_key(mod_key, true, None);
+    app.handle_key("l", true, None);
+    app.handle_key("l", false, None);
+    app.handle_key(mod_key, false, None);
+    for ch in "hello".chars() {
+        app.handle_key(&ch.to_string(), true, None);
+        app.handle_key(&ch.to_string(), false, None);
+    }
+    assert!(app.address_bar_focused, "前置：Ctrl+L 后地址栏应聚焦");
+
+    // 中键点击活跃标签 → close_tab_by_id（与 close 按钮同一函数）→ 失焦。
+    let (tx, tw) = app.tab_layout_rect_for_test(active).expect("活跃标签应有布局");
+    let mx = (tx + tw * 0.5) as f64;
+    let my = ((layout::TAB_BAR_TOP_INSET + layout::TAB_BAR_HEIGHT * 0.5) * app.scale_factor) as f64;
+    app.handle_mouse_click(mx, my, true, "Middle");
+    app.handle_mouse_click(mx, my, false, "Middle");
+
+    assert_eq!(app.shell.tab_count(), count_before - 1, "中键应关闭被点的标签");
+    assert!(!app.address_bar_focused, "close_tab_by_id 关闭标签后地址栏应失焦");
+    assert_eq!(
+        app.smoke_address_bar_text(),
+        "https://zw-tv1.test/first.html",
+        "地址栏应回填相邻标签 URL"
+    );
+}
+
+/// TV-3：另存为失败分支——目标返回 404 时记失败下载项并展开下载面板（与图片
+/// 另存为失败同口径），不弹完成提示、不落盘，不静默吞掉。
+#[test]
+fn page_context_menu_save_as_records_failed_download_on_http_error() {
+    // 本地一次性 HTTP 响应线程：返回 404。
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+    let port = listener.local_addr().unwrap().port();
+    let server = std::thread::spawn(move || {
+        let (stream, _) = listener.accept().expect("accept");
+        let mut stream = stream;
+        use std::io::{Read, Write};
+        let mut buf = [0u8; 1024];
+        let _ = stream.read(&mut buf);
+        let _ = stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+    });
+    let url = format!("http://127.0.0.1:{port}/missing.html");
+
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    let dir = std::env::temp_dir().join(format!("zw-save-fail-test-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    app.shell
+        .apply_settings(|s| s.download_directory = dir.display().to_string());
+    app.navigate_to(&url);
+
+    // 右键页面 → 点「另存为」。
+    let (cx, cy, _, _) = app.page_content_rect();
+    app.handle_mouse_click((cx + 40.0) as f64, (cy + 40.0) as f64, true, "Right");
+    let ids = app.smoke_context_menu_item_ids();
+    let idx = ids
+        .iter()
+        .position(|id| id == "save_as")
+        .expect("Page 菜单应含「另存为」项");
+    let s = app.scale_factor;
+    let row_h = layout::CONTEXT_MENU_ROW_HEIGHT * s;
+    let sep_h = layout::CONTEXT_MENU_SEPARATOR_HEIGHT * s;
+    let (mx, my) = app.smoke_context_menu_origin().expect("菜单已开应有原点");
+    let offset: f32 = ids[..idx].iter().map(|id| if id == "-" { sep_h } else { row_h }).sum();
+    app.handle_mouse_click(
+        (mx + layout::CONTEXT_MENU_WIDTH * s * 0.5) as f64,
+        (my + offset + row_h * 0.5) as f64,
+        true,
+        "Left",
+    );
+
+    // 轮询直至抓取失败记账落地（上限 10s）。
+    let mut failed = false;
+    for _ in 0..1000 {
+        app.poll_tab_fetch();
+        if app
+            .smoke_downloads()
+            .iter()
+            .any(|(_, name, state, _, _)| name == "missing.html" && state == "Failed")
+        {
+            failed = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    server.join().expect("一次性 HTTP 线程应正常结束");
+    assert!(failed, "404 应记失败下载项（不静默吞掉）");
+    assert!(app.smoke_download_panel_visible(), "失败时应展开下载面板供用户感知");
+    assert!(app.smoke_download_toast().is_none(), "失败不弹完成提示");
+    assert!(!dir.join("missing.html").exists(), "失败不应落盘");
+
+    let _ = std::fs::remove_dir_all(&dir);
 }

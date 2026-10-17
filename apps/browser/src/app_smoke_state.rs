@@ -318,6 +318,12 @@ impl BrowserApp {
             .map(str::to_string)
     }
 
+    /// 演示流用：标签页面 HTML 快照（TV-2 view-source 内页内容断言面）。注意
+    /// 多进程管线 IPC 不携带 HTML，该快照仅进程内 worker（测试/stub）可达。
+    pub fn smoke_tab_html(&self, tab_id: zero_browser_shell::TabId) -> Option<String> {
+        self.tabs.page_html(tab_id)
+    }
+
     /// 演示流用：地址栏前导 shield/lock slot 矩形（站点信息图标点击定位）。
     pub fn smoke_address_bar_leading_slot_rect(&self) -> (f32, f32, f32, f32) {
         self.address_bar_leading_slot_rect()
