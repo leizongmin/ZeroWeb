@@ -8687,11 +8687,116 @@
           getDirectory: function () { return Promise.resolve(dirHandle([])); },
         };
       })();
-    })(),    // sendBeacon（R2931）——页面卸载/后台分析 beacon（fire-and-forget POST，analytics/RUM 高频：GA 等
-    // unload 时上报）。headless 无真网络发送（避免无人值守测试依赖外部网络）→ accept-and-return-true
-    //（spec：返 true = 成功入队 best-effort；data 类型不限，忽略）。url 缺省（null/undefined）→ false。
-    sendBeacon: function(url, _data) {
-      return url != null;
+    })(),    // sendBeacon（R2931 → page-state-compat M2 spec 化）——Beacon API processing model
+    //（https://www.w3.org/TR/beacon/#sec-processing-model）：URL 解析失败或 scheme 非
+    // http/https → TypeError；data 提取字节流（keepalive 旗标），64KB 配额超 → 返 false；
+    // CT 非 safelisted → mode cors（safelisted → no-cors）；**先 return true，POST 并行
+    // 继续**（fire-and-forget——卸载窗口不阻塞）。request 面：POST + credentials include +
+    // initiator type "beacon"（资源计时 initiatorType 经 _zwRtPendingInitiator，part01
+    // fetch 包装器消费）+ referrer policy = document 级策略（<meta name=referrer>；
+    // fetch spec determine request's referrer / append-a-request-origin-header——跨源
+    // no-cors POST 的 Origin: null 序列化按 policy 开关，WPT beacon/headers 期望面）。
+    // 数据类型面（BodyInit extract byte stream）：string → text/plain;charset=UTF-8；
+    // Blob → type；URLSearchParams → urlencoded；FormData → multipart；
+    // ArrayBuffer/View → 无 CT——体编码/CT 推断复用 _zwFetchMain 既有分发（R3014/R3015/R3020）。
+    sendBeacon: function(url, data) {
+      // WebIDL：url 必选（boolean sendBeacon(USVString url, optional BodyInit? data = null)）——
+      // 缺参/undefined → TypeError（旧 R2931 stub 返 false，spec 化后同步更新断言）。
+      if (url === undefined) {
+        throw new TypeError("Failed to execute 'sendBeacon' on 'Navigator': 1 argument required, but only 0 present.");
+      }
+      // spec step 3：URL parser(url, API base URL)——失败或 scheme 非 http/https → TypeError。
+      var parsedUrl;
+      try {
+        parsedUrl = new URL(String(url), _zwCurrentHref());
+      } catch (_eBeaconUrl) {
+        throw new TypeError("Failed to execute 'sendBeacon' on 'Navigator': The URL provided is not valid.");
+      }
+      if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+        throw new TypeError("Failed to execute 'sendBeacon' on 'Navigator': The URL scheme must be http or https.");
+      }
+      // spec step 5/6：data 提取 + keepalive 配额（65536 = fetch spec keepalive in-flight
+      // quota 上限；配额按体静态大小判——in-flight 计数共享配额未实现，
+      // FIXME(keepalive-quota-inflight)：fetch keepalive POST 与 beacon 未共享配额池）。
+      var beaconBody = data == null ? null : data;
+      var beaconCt = '';
+      if (beaconBody != null) {
+        var beaconSize = 0;
+        var beaconIsString = typeof beaconBody === 'string';
+        if (beaconIsString) {
+          beaconCt = 'text/plain;charset=UTF-8';
+        } else if (typeof FormData !== 'undefined' && beaconBody instanceof FormData) {
+          beaconCt = beaconBody._zwMultipart().contentType;
+        } else if (typeof URLSearchParams !== 'undefined' && beaconBody instanceof URLSearchParams) {
+          beaconCt = 'application/x-www-form-urlencoded;charset=UTF-8';
+        } else if (typeof Blob !== 'undefined' && beaconBody instanceof Blob) {
+          beaconCt = beaconBody.type || '';
+        } else if (!(typeof ArrayBuffer !== 'undefined' && beaconBody instanceof ArrayBuffer) &&
+                   !(typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView && ArrayBuffer.isView(beaconBody))) {
+          // 其余类型（number/bool/对象等）→ USVString（BodyInit extract 语义）。
+          beaconBody = String(beaconBody);
+          beaconIsString = true;
+          beaconCt = 'text/plain;charset=UTF-8';
+        }
+        // 配额按提取后字节流大小（fetch spec HTTP-network-or-cache fetch 的 keepalive
+        // 检查口径）：文本按 UTF-8 字节，multipart 按序列化体，Blob/AB/View 按字节长。
+        if (beaconIsString) {
+          beaconSize = new TextEncoder().encode(beaconBody).length;
+        } else if (typeof FormData !== 'undefined' && beaconBody instanceof FormData) {
+          beaconSize = beaconBody._zwMultipart().body.length;
+        } else if (typeof URLSearchParams !== 'undefined' && beaconBody instanceof URLSearchParams) {
+          beaconSize = new TextEncoder().encode(String(beaconBody)).length;
+        } else if (typeof Blob !== 'undefined' && beaconBody instanceof Blob) {
+          beaconSize = _zw_blobBytes(beaconBody).length;
+        } else {
+          beaconSize = beaconBody.byteLength;
+        }
+        if (beaconSize > 65536) {
+          return false;
+        }
+      }
+      // spec step 5/6：corsMode——无体或 CT safelisted 值 → no-cors（essence 前缀判定），
+      // 否则 cors（体类型非 safelisted 时 CORS preflight 面由 _zwFetchMain 既有逻辑承接）。
+      var beaconCorsMode = 'no-cors';
+      if (beaconCt) {
+        var _ctEssence = beaconCt.toLowerCase().split(';')[0];
+        if (_ctEssence !== 'text/plain' && _ctEssence !== 'application/x-www-form-urlencoded' &&
+            _ctEssence !== 'multipart/form-data') {
+          beaconCorsMode = 'cors';
+        }
+      }
+      // document 级 referrer policy（<meta name=referrer content=...>；缺省
+      // strict-origin-when-cross-origin——fetch spec default referrer policy）。sendBeacon
+      // 无 init 入口，request referrer policy 唯一来源即 document policy。
+      var beaconPolicy = 'strict-origin-when-cross-origin';
+      try {
+        var _beaconMetas = document.getElementsByTagName('meta');
+        for (var _bmi = 0; _bmi < _beaconMetas.length; _bmi++) {
+          if (String(_beaconMetas[_bmi].getAttribute('name') || '').toLowerCase() === 'referrer') {
+            var _bmc = String(_beaconMetas[_bmi].getAttribute('content') || '').trim().toLowerCase();
+            if (_bmc) beaconPolicy = _bmc;
+            break;
+          }
+        }
+      } catch (_eBeaconPolicy) {}
+      // spec step 7：先 return true（调用方即刻返回），fetch 并行继续；响应/错误均忽略
+      //（fire-and-forget）。__zwBeaconReferrerPolicy = 内部通道旗标（_zwFetchMain 消费——
+      // no-cors POST 分支的 Referer 注入 + Origin policy 序列化，part01）。
+      globalThis._zwRtPendingInitiator = 'beacon';
+      var beaconFetch = globalThis.fetch(parsedUrl.href, {
+        method: 'POST',
+        body: beaconBody,
+        credentials: 'include',
+        mode: beaconCorsMode,
+        referrerPolicy: beaconPolicy,
+        headers: beaconCt === 'text/plain;charset=UTF-8' ? { 'content-type': beaconCt } : undefined,
+        __zwBeaconReferrerPolicy: beaconPolicy,
+      });
+      // keepalive 语义：投递结果不回传调用方——拒绝静默吞（避免未处理 rejection）。
+      if (beaconFetch && typeof beaconFetch.catch === 'function') {
+        beaconFetch.catch(function () {});
+      }
+      return true;
     },
     // userActivation（WAB2-M3-s1，web-api-batch2 goal M3 切片 1，2026-09-24）——瞬态激活面
     // （User Activation API；fullscreen requestFullscreen 激活门消费同源状态）。激活经

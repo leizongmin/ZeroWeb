@@ -5440,6 +5440,9 @@ pub fn run_canvas_worker_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(St
 /// fetch 入参，如 '/images/yellow75.png'）；文件缺失返 Err → shim 落 ok:false（404 语义）。
 fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fetch_bridge::FetchHandler> {
     let root = wpt_root.to_path_buf();
+    // page-state-compat M2：beacon/resources 三端点共享 stash（handler per-case 构建——
+    // 每案新 stash 与 wptserve server.stash 语义对齐；id 键 = token()/UUID 案内唯一）。
+    let beacon_stash: std::sync::Arc<std::sync::Mutex<HashMap<String, String>>> = std::sync::Arc::default();
     let vary_value_override = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
     Some(std::sync::Arc::new(
         move |req: &zero_engine::fetch_bridge::FetchRequest| {
@@ -5477,6 +5480,101 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     headers,
                     body: "wpt.test root\n".to_string(),
                     body_bytes: Some(b"wpt.test root\n".to_vec()),
+                });
+            }
+            if clean == "beacon/resources/inspect-header.py"
+                || clean == "beacon/resources/content-type-and-body.py"
+                || clean == "beacon/resources/url-echo.py"
+            {
+                // page-state-compat M2 fixture：beacon/resources 三端点（上游行为等价——
+                // https://github.com/web-platform-tests/wpt/blob/315976933870/beacon/resources/
+                // inspect-header.py、content-type-and-body.py、url-echo.py）。共享 take 语义
+                // stash（wptserve server.stash.put/take——读后即删）；beacon POST 打 put/store，
+                // 断言侧 fetch 轮询打 get/stat。
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+                let cmd = wpt_query_value(query, "cmd").map(|v| v.to_lowercase()).unwrap_or_default();
+                let id = wpt_query_value(query, "id").unwrap_or_default();
+                let mut headers: Vec<(String, String)> = Vec::new();
+                let mut status: u16 = 200;
+                let mut body = String::new();
+                if clean.ends_with("inspect-header.py") {
+                    headers.push(("content-type".into(), "text/plain".into()));
+                    let header = wpt_query_value(query, "header").unwrap_or_default();
+                    if cmd == "put" {
+                        // 上游 request.headers.get(header, b"")——头缺席存空串。
+                        let value = req
+                            .headers
+                            .iter()
+                            .find(|(n, _)| n.eq_ignore_ascii_case(&header))
+                            .map(|(_, v)| v.clone())
+                            .unwrap_or_default();
+                        if let Ok(mut stash) = beacon_stash.lock() {
+                            stash.insert(id, value);
+                        }
+                    } else if cmd == "get" {
+                        // take 语义；有值（含空串）回 x-request-<header>（pollResult 依
+                        // headers.get != undefined 结束轮询——无值则不发射头，轮询继续）。
+                        let stored = beacon_stash.lock().ok().and_then(|mut s| s.remove(&id));
+                        if let Some(value) = stored {
+                            headers.push((format!("x-request-{}", header.to_lowercase()), value));
+                        }
+                    } else {
+                        status = 400;
+                        body = "ERROR: Bad Command!".into();
+                    }
+                } else if clean.ends_with("content-type-and-body.py") {
+                    headers.push(("content-type".into(), "text/plain".into()));
+                    if cmd == "put" {
+                        // 上游 stash[id] = Content-Type + ": " + body（头缺席 CT 为空串——
+                        // ArrayBuffer/View 无 CT 腿期望 `: <bytes>`）。
+                        let ct = req
+                            .headers
+                            .iter()
+                            .find(|(n, _)| n.eq_ignore_ascii_case("content-type"))
+                            .map(|(_, v)| v.clone())
+                            .unwrap_or_default();
+                        let body_bytes = req.body_bytes.clone().or_else(|| req.body.clone().map(String::into_bytes)).unwrap_or_default();
+                        let value = format!("{}: {}", ct, String::from_utf8_lossy(&body_bytes));
+                        if let Ok(mut stash) = beacon_stash.lock() {
+                            stash.insert(id, value);
+                        }
+                    } else if cmd == "get" {
+                        let stored = beacon_stash.lock().ok().and_then(|mut s| s.remove(&id));
+                        match stored {
+                            Some(value) => body = value,
+                            // 上游缺值 set_error(400)（cmd 合法但 stash 空）。
+                            None => {
+                                status = 400;
+                                body = "ERROR: Bad Command!".into();
+                            }
+                        }
+                    } else {
+                        status = 400;
+                        body = "ERROR: Bad Command!".into();
+                    }
+                } else {
+                    // url-echo.py：store 存原始（百分号编码形态）query 串；stat take 返回
+                    //（无值空体，状态恒 200——上游仅非法 cmd 置 400）。
+                    if cmd == "store" {
+                        let raw_query = req.url.split_once('?').map(|(_, q)| q).unwrap_or("");
+                        if let Ok(mut stash) = beacon_stash.lock() {
+                            stash.insert(id, raw_query.to_string());
+                        }
+                        headers.push(("content-type".into(), "text/plain".into()));
+                    } else if cmd == "stat" {
+                        headers.push(("content-type".into(), "text/plain".into()));
+                        body = beacon_stash.lock().ok().and_then(|mut s| s.remove(&id)).unwrap_or_default();
+                    } else {
+                        status = 400;
+                    }
+                }
+                wpt_add_fetch_metadata(&mut headers, req, status);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status,
+                    status_text: wpt_status_text(status).to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
                 });
             }
             if clean == "service-workers/service-worker/resources/fetch-with-body-worker.py" {
@@ -7673,7 +7771,10 @@ pub(crate) fn run_testharness_html_inner(
     // 面 scheme 门不动）。websockets 先行特例被本判定覆盖（同 http）。
     // webcrypto-compat 残留收口：WebCryptoAPI 无 `.https.` 中缀案同 http（上游
     // 文件名双态语义，historical.any.js 断言非安全上下文面；webcrypto_case_uses_http_page）。
-    let page_scheme = if net_api_case_uses_http_page(case_name) || webcrypto_case_uses_http_page(case_name) {
+    let page_scheme = if net_api_case_uses_http_page(case_name)
+        || webcrypto_case_uses_http_page(case_name)
+        || crate::testharness_page_state::page_state_case_uses_http_page(case_name)
+    {
         "http"
     } else {
         "https"

@@ -2141,13 +2141,15 @@ mod tests {
 
     #[test]
     fn tab_js_worker_page_lifecycle_r2931() {
-        // R2931 页面生命周期/分析簇（镜像 renderer）：sendBeacon + PageTransitionEvent + pageshow 派发。
+        // R2931 页面生命周期/分析簇（镜像 renderer）：sendBeacon（page-state-compat M2 spec 化
+        // ——缺参 TypeError；snapshot 页锚 about:blank → URL 校验面用绝对 http(s) 地址）+
+        // PageTransitionEvent + pageshow 派发。
         let mut worker = TabJsWorkerHandle::spawn(TabId(18));
         worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
         worker
             .execute_script_direct(
-                "globalThis.__beacon1 = navigator.sendBeacon('/analytics', { x: 1 });\
-                 globalThis.__beacon2 = navigator.sendBeacon();\
+                "globalThis.__beacon1 = navigator.sendBeacon('https://example.com/analytics', { x: 1 });\
+                 try { navigator.sendBeacon(); globalThis.__beacon2 = 'no-throw'; } catch (e) { globalThis.__beacon2 = String(e instanceof TypeError); }\
                  globalThis.__pt1 = new PageTransitionEvent('pageshow', { persisted: true }).persisted;\
                  globalThis.__pt2 = new PageTransitionEvent('pageshow').persisted;\
                  globalThis.__ps = 'no';\
@@ -2163,8 +2165,8 @@ mod tests {
         );
         assert_eq!(
             worker.execute_script_direct("String(globalThis.__beacon2)").unwrap(),
-            "false",
-            "sendBeacon() 缺 url → false"
+            "true",
+            "sendBeacon() 缺 url → TypeError（spec 化：WebIDL 必选参）"
         );
         assert_eq!(
             worker.execute_script_direct("String(globalThis.__pt1)").unwrap(),

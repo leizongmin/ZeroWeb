@@ -60,6 +60,20 @@ pub(crate) fn page_state_case_skipped(relative: &str, source: &str) -> bool {
         || source.contains("window.open")
 }
 
+/// page-state corpus 页面 scheme 判定（page-state-compat M2）：`beacon/headers/` 无
+/// `.https.` 中缀的 referrer/origin 案上游按 http 页语义写死期望（HTTP_ORIGIN 腿 =
+/// 同源全 URL Referer、跨源 http→http 无降级——header-referrer-origin-when-cross-
+/// origin.html 在 https 页锚下同源腿被误判跨源实证），runner 页锚随之走 http
+///（net-api M5-S5 页锚 scheme 双态先例）；其余案维持 https（.https. 中缀案、
+/// url-encoding、page-visibility、browser-state——secure-context 面不涉）。
+pub(crate) fn page_state_case_uses_http_page(case_name: &str) -> bool {
+    if !case_name.starts_with("beacon/headers/") {
+        return false;
+    }
+    let file = case_name.rsplit('/').next().unwrap_or(case_name);
+    !file.contains(".https.")
+}
+
 /// Run the imported upstream page-state window subset
 /// （page-state-compat goal M1 / DC-1）。filter 按路径子串过滤（如 `beacon/`、
 /// `page-visibility/`——基线按套件分类）。
