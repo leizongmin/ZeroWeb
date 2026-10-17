@@ -971,6 +971,80 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // OKP 家族（Ed25519/X25519，webcrypto M5）原语。arg[0] 恒算法名（kind）；
+    // 字节桥同 EC——csv 十进制串，多字段 `;` 分隔。密钥材料零 tracing（零日志纪律）。
+    // `crypto.subtle.generateKey({name:"Ed25519"|"X25519"}, ...)`：返 "raw 公钥
+    // csv;pkcs8 DER csv"（error → 空）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_okp_generate",
+        Box::new(|args: &[String]| -> String {
+            crypto_subtle_okp_generate(args.first().map(String::as_str).unwrap_or(""))
+        }),
+    );
+    // importKey spki/raw/pkcs8：arg[0]=kind，arg[1]=fmt，arg[2]=DER csv。返规范化
+    // raw 公钥 / pkcs8 私钥 csv（error → 空）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_okp_import",
+        Box::new(|args: &[String]| -> String {
+            let get = |i: usize| args.get(i).map(String::as_str).unwrap_or("");
+            crypto_subtle_okp_import(get(0), get(1), get(2))
+        }),
+    );
+    // importKey jwk 分量：arg[0]=kind，arg[1]=x csv，arg[2]=d csv（公钥空）。返 raw /
+    // pkcs8 csv（d/x 失配或长度错 → 空）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_okp_jwk_import",
+        Box::new(|args: &[String]| -> String {
+            let get = |i: usize| args.get(i).map(String::as_str).unwrap_or("");
+            crypto_subtle_okp_jwk_import(get(0), get(1), get(2))
+        }),
+    );
+    // exportKey spki/raw/pkcs8：arg[0]=kind，arg[1]=存储 csv，arg[2]=fmt。返 DER/raw
+    // csv（error → 空）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_okp_export_der",
+        Box::new(|args: &[String]| -> String {
+            let get = |i: usize| args.get(i).map(String::as_str).unwrap_or("");
+            crypto_subtle_okp_export_der(get(0), get(1), get(2))
+        }),
+    );
+    // exportKey jwk 分量：arg[0]=kind，arg[1]=存储 csv，arg[2]=want_private。返
+    // "x csv"（公）/"x csv;d csv"（私）（error → 空）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_okp_export_jwk",
+        Box::new(|args: &[String]| -> String {
+            let get = |i: usize| args.get(i).map(String::as_str).unwrap_or("");
+            crypto_subtle_okp_export_jwk(get(0), get(1), get(2) == "1")
+        }),
+    );
+    // `crypto.subtle.sign({name:"Ed25519"}, ...)`：arg[0]=私钥 pkcs8 csv，arg[1]=消息
+    // csv。返 R||S 64 字节 csv（error → 空）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_ed25519_sign",
+        Box::new(|args: &[String]| -> String {
+            let get = |i: usize| args.get(i).map(String::as_str).unwrap_or("");
+            crypto_subtle_ed25519_sign(get(0), get(1))
+        }),
+    );
+    // `crypto.subtle.verify({name:"Ed25519"}, ...)`：arg[0]=raw 公钥 csv，arg[1]=消息
+    // csv，arg[2]=签名 csv。返 "1"/"0"（坏签名同 "0"——spec verify 无 reject 路径）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_ed25519_verify",
+        Box::new(|args: &[String]| -> String {
+            let get = |i: usize| args.get(i).map(String::as_str).unwrap_or("");
+            crypto_subtle_ed25519_verify(get(0), get(1), get(2))
+        }),
+    );
+    // `crypto.subtle.deriveBits({name:"X25519"}, ...)`：arg[0]=私钥 pkcs8 csv，
+    // arg[1]=对方 raw 公钥 csv。返共享 u 坐标 32 字节 csv（全零结果/解析失败 → 空）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_x25519",
+        Box::new(|args: &[String]| -> String {
+            let get = |i: usize| args.get(i).map(String::as_str).unwrap_or("");
+            crypto_subtle_x25519(get(0), get(1))
+        }),
+    );
+
     // `element.matches(selector)` / `element.closest(selector)`——元素查询 API（直接消费选择器引擎，
     // 含组合器）。elem_sel = 元素唯一选择器（proxy 持有），test_sel = 待测选择器。
     let html = Arc::clone(dom_html);

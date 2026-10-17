@@ -1,0 +1,13 @@
+{
+  "date": "2026-10-17",
+  "slice": "M5-okp",
+  "pin": "31597693",
+  "totals": {
+    "cases": 123,
+    "subtests": 33109,
+    "pass": 22836,
+    "fail": 10272,
+    "timeout": 1,
+    "all_green_cases": 67
+  }
+}

@@ -2406,6 +2406,11 @@
       }
       return ecOut;
     }
+    if (name === 'ED25519' || name === 'X25519') {
+      // OKP 家族（M5）：无参数算法（spec Ed25519/X25519 参数字典为空），name 回写
+      // 注册表规范拼写（含小写）。
+      return { name: name === 'ED25519' ? 'Ed25519' : 'X25519' };
+    }
     return null;
   }
 
@@ -2547,6 +2552,24 @@
         var earr = new Uint8Array(eLen);
         for (var ei = 0; ei < eLen; ei++) earr[ei] = +eparts[ei];
         resolve(earr);
+        return;
+      }
+      if (name === 'X25519') {
+        // X25519 臂（M5，deriveKey 路径，镜像 ECDH 臂）：调用方已检 "deriveKey"
+        // usage；此处补 base private/public 校验。目标密钥长度（AES/HMAC）恒字节
+        // 对齐；超 32 字节输出 → OperationError。length null（deriveKey 目标
+        // HKDF/PBKDF2 无 length 成员）→ 全长 32 字节。
+        var xPubD = _zw_x25519Validate(algorithm, key, reject);
+        if (!xPubD) return;
+        var xdparts = _zw_x25519SharedCall(key, xPubD, reject);
+        if (!xdparts) return;
+        var xdLen = (length == null) ? xdparts.length : Math.floor(length / 8);
+        if (xdLen > xdparts.length) {
+          reject(new _zw_subtleDE('derived key length must not exceed the output size', 'OperationError')); return;
+        }
+        var xdarr = new Uint8Array(xdLen);
+        for (var xi = 0; xi < xdLen; xi++) xdarr[xi] = +xdparts[xi];
+        resolve(xdarr);
         return;
       }
       if (name !== 'PBKDF2' && name !== 'HKDF') {
@@ -3378,6 +3401,306 @@
     }
     var out = __zw_crypto_subtle_ecdsa_verify(key.algorithm.namedCurve, (key._raw || []).join(','), dig, sigBytes.join(','));
     return out === '1';
+  }
+
+  // ===== OKP 家族（Ed25519/X25519）shim 支撑（webcrypto M5）=====
+  // host 原语见 js_dom_bridge/crypto.rs（ed25519-dalek/x25519-dalek 3.0）；字节桥同
+  // EC（csv 十进制串，多字段 `;` 分隔）。密钥材料不落 tracing（零日志纪律）。
+  // https://w3c.github.io/webcrypto/#ed25519  https://w3c.github.io/webcrypto/#x25519
+
+  // OKP 家族判定（ASCII 折叠；key.algorithm.name 存规范拼写 "Ed25519"/"X25519"）。
+  function _zw_okpIsFamily(name) {
+    var u = _zw_upperAscii(String(name));
+    return u === 'ED25519' || u === 'X25519';
+  }
+
+  // 家族全 usages（importKey/generateKey 步骤 2：非法项 → SyntaxError）。
+  function _zw_okpAllowedUsages(name) {
+    return (_zw_upperAscii(String(name)) === 'ED25519')
+      ? ['sign', 'verify']
+      : ['deriveKey', 'deriveBits'];
+  }
+
+  // 按密钥类型的 usages 子集（spec importKey 各格式分支 + generateKey 密钥对拆分：
+  // Ed25519 public ⊆ [verify] / private ⊆ [sign]；X25519 public ⊆ [] / private ⊆
+  // [deriveKey, deriveBits]）。
+  function _zw_okpTypeUsages(name, isPublic) {
+    if (_zw_upperAscii(String(name)) === 'ED25519') {
+      return isPublic ? ['verify'] : ['sign'];
+    }
+    return isPublic ? [] : ['deriveKey', 'deriveBits'];
+  }
+
+  // 类型 usages 子集判定（spki/pkcs8/raw 分支与 jwk d 分支共用）。
+  function _zw_okpUsagesFitType(name, isPublic, usages) {
+    var legal = _zw_okpTypeUsages(name, isPublic);
+    for (var i = 0; i < usages.length; i++) {
+      if (legal.indexOf(usages[i]) < 0) return false;
+    }
+    return true;
+  }
+
+  // jwk use 取值（usages 非空时强制，RFC 7517 §4.2）：Ed25519 "sig" / X25519 "enc"。
+  function _zw_okpJwkUse(name) {
+    return (_zw_upperAscii(String(name)) === 'ED25519') ? 'sig' : 'enc';
+  }
+
+  // jwk alg（RFC 8037 §A.2 无注册名——WPT okp_importKey testJwkAlgBehaviours：Ed25519
+  // 接受 "Ed25519"/"EdDSA" 且导出恒 "Ed25519"；X25519 忽略 alg（导入任意值、导出无成员）。
+  function _zw_okpJwkAlg(name) {
+    return (_zw_upperAscii(String(name)) === 'ED25519') ? 'Ed25519' : null;
+  }
+
+  // csv 字节 → ArrayBuffer（OKP exportKey 字节格式；同 EC 语义）。
+  function _zw_okpCsvToArrayBuffer(csv) {
+    var b = _zw_rsaCsvBytes(csv);
+    var u8 = new Uint8Array(b.length);
+    for (var i = 0; i < b.length; i++) u8[i] = b[i];
+    return u8.buffer;
+  }
+
+  // host csv → CryptoKey。spec 公共步骤 10：private 空 usages → SyntaxError（public
+  // 空 usages 合法——X25519 publicUsages 恒空）。_raw：public = raw 公钥 32 字节、
+  // private = pkcs8 48 字节（规范化存储，export 逐字节稳定）。
+  function _zw_okpKeyFromDer(resolve, reject, name, derCsv, type, extractable, usages) {
+    if (type === 'private' && usages.length === 0) {
+      reject(new _zw_subtleDE('Key usages cannot be empty for private keys', 'SyntaxError')); return;
+    }
+    resolve(new CryptoKey(type, extractable, { name: name }, usages, Array.from(_zw_rsaCsvBytes(derCsv))));
+  }
+
+  // importKey OKP 分派（part02 importKey 家族判定后整体转入）。顺序（spec OKP
+  // importKey + 公共步骤，镜像 EC）：usages 家族 SyntaxError → 格式分派：spki/raw/
+  // pkcs8 DER 解析（RFC 8410 定长前缀）DataError → 类型 usages 子集 SyntaxError →
+  // jwk：kty='OKP'/crv 精确匹配 DataError → alg（Ed25519 ∈ {"Ed25519","EdDSA"}，
+  // X25519 忽略）→ use/key_ops/ext DataError → x(/d) base64url 定长 DataError →
+  // d/x 配对校验（host 派生比对，WPT "Invalid key pair"）→ private 空 usages
+  // SyntaxError（最后）。
+  // https://w3c.github.io/webcrypto/#SubtleCrypto-method-importKey
+  function _zw_okpImportKey(format, keyData, algo, extractable, usages, resolve, reject) {
+    var name = algo.name;
+    var u = _zw_normalizeUsages(usages, _zw_okpAllowedUsages(name));
+    if (!u) {
+      reject(new _zw_subtleDE('Invalid key usages for ' + name, 'SyntaxError')); return;
+    }
+    if (typeof __zw_crypto_subtle_okp_import !== 'function' || typeof __zw_crypto_subtle_okp_jwk_import !== 'function') {
+      reject(_zw_subtleDE('crypto.subtle OKP import requires host callback', 'NotSupportedError')); return;
+    }
+    var fmt = _zw_upperAscii(String(format == null ? '' : format));
+    if (fmt === 'SPKI' || fmt === 'RAW' || fmt === 'PKCS8') {
+      var bytes = _zw_bufToBytes(keyData);
+      var derCsv = bytes.length ? __zw_crypto_subtle_okp_import(name, fmt.toLowerCase(), bytes.join(',')) : '';
+      if (!derCsv) {
+        reject(new _zw_subtleDE('Invalid OKP ' + fmt.toLowerCase() + ' key data', 'DataError')); return;
+      }
+      var isPublic = (fmt !== 'PKCS8');
+      if (!_zw_okpUsagesFitType(name, isPublic, u)) {
+        reject(new _zw_subtleDE('Invalid key usages for ' + name + ' ' + (isPublic ? 'public' : 'private') + ' key', 'SyntaxError')); return;
+      }
+      _zw_okpKeyFromDer(resolve, reject, name, derCsv, isPublic ? 'public' : 'private', extractable, u);
+      return;
+    }
+    if (fmt === 'JWK') {
+      if (!keyData || typeof keyData !== 'object') {
+        reject(new TypeError('jwk key data must be an object')); return;
+      }
+      if (keyData.kty !== 'OKP') {
+        reject(new _zw_subtleDE("jwk kty must be 'OKP'", 'DataError')); return;
+      }
+      // crv 精确匹配（大小写敏感——spec 与算法名比较）。
+      if (keyData.crv == null || keyData.crv !== name) {
+        reject(new _zw_subtleDE("jwk crv must equal '" + name + "'", 'DataError')); return;
+      }
+      // alg：Ed25519 接受 "Ed25519"/"EdDSA"（其余含错拼 → DataError）；X25519 忽略。
+      var edAlg = _zw_okpJwkAlg(name);
+      if (edAlg && keyData.alg != null && keyData.alg !== edAlg && keyData.alg !== 'EdDSA') {
+        reject(new _zw_subtleDE("jwk alg must be '" + edAlg + "' or 'EdDSA'", 'DataError')); return;
+      }
+      if (u.length > 0 && keyData.use != null && keyData.use !== _zw_okpJwkUse(name)) {
+        reject(new _zw_subtleDE("jwk use must be '" + _zw_okpJwkUse(name) + "'", 'DataError')); return;
+      }
+      if (keyData.key_ops != null) {
+        if (!keyData.key_ops || typeof keyData.key_ops.length !== 'number') {
+          reject(new _zw_subtleDE('jwk key_ops must be an array', 'DataError')); return;
+        }
+        var seenOps = {};
+        for (var oi = 0; oi < keyData.key_ops.length; oi++) {
+          var opName = String(keyData.key_ops[oi]);
+          var legalAll = _zw_okpAllowedUsages(name);
+          if (legalAll.indexOf(opName) < 0 || seenOps[opName]) {
+            reject(new _zw_subtleDE("invalid or duplicate jwk key_ops entry: '" + opName + "'", 'DataError')); return;
+          }
+          seenOps[opName] = 1;
+        }
+        for (var ui = 0; ui < u.length; ui++) {
+          if (seenOps[u[ui]] !== 1) {
+            reject(new _zw_subtleDE("jwk key_ops must contain usage '" + u[ui] + "'", 'DataError')); return;
+          }
+        }
+      }
+      var isPubJwk = (keyData.d == null);
+      if (!_zw_okpUsagesFitType(name, isPubJwk, u)) {
+        reject(new _zw_subtleDE('Invalid key usages for ' + name + ' ' + (isPubJwk ? 'public' : 'private') + ' key', 'SyntaxError')); return;
+      }
+      if (keyData.ext === false && extractable) {
+        reject(new _zw_subtleDE('jwk ext is false but extractable is true', 'DataError')); return;
+      }
+      if (keyData.x == null) {
+        reject(new _zw_subtleDE("jwk x member is required", 'DataError')); return;
+      }
+      var x = _zw_bytesFromB64u(keyData.x);
+      if (!x) {
+        reject(new _zw_subtleDE('jwk x is not valid base64url', 'DataError')); return;
+      }
+      var d = [];
+      if (!isPubJwk) {
+        d = _zw_bytesFromB64u(keyData.d);
+        if (!d) {
+          reject(new _zw_subtleDE('jwk d is not valid base64url', 'DataError')); return;
+        }
+      }
+      var jwkDer = __zw_crypto_subtle_okp_jwk_import(name, x.join(','), d.join(','));
+      if (!jwkDer) {
+        reject(new _zw_subtleDE('jwk x/d invalid (length or key pair mismatch)', 'DataError')); return;
+      }
+      _zw_okpKeyFromDer(resolve, reject, name, jwkDer, isPubJwk ? 'public' : 'private', extractable, u);
+      return;
+    }
+    reject(new _zw_subtleDE("Unsupported importKey format: '" + fmt + "' (only 'spki'/'raw'/'pkcs8'/'jwk' supported for OKP keys)", 'NotSupportedError'));
+  }
+
+  // generateKey OKP（→ CryptoKeyPair）。顺序（spec generateKey + failures.js 断言序，
+  // 镜像 EC）：usages 非法 SyntaxError → 生成 → 私钥空 usages SyntaxError（公共步骤
+  // 10，生成后）。publicKey 恒 extractable=true；privateKey extractable = 请求值
+  //（spec Secure Curves 现行文本；WPT successes 按 extractable 参数断言两端）。
+  function _zw_okpGenerateKey(algorithm, extractable, usages, algo, resolve, reject) {
+    var name = algo.name;
+    var u = _zw_normalizeUsages(usages, _zw_okpAllowedUsages(name));
+    if (!u) {
+      reject(new _zw_subtleDE('Invalid key usages for ' + name, 'SyntaxError')); return;
+    }
+    if (typeof __zw_crypto_subtle_okp_generate !== 'function') {
+      reject(_zw_subtleDE('crypto.subtle OKP generateKey requires host callback', 'NotSupportedError')); return;
+    }
+    var pairCsv = __zw_crypto_subtle_okp_generate(name);
+    if (!pairCsv) {
+      reject(new _zw_subtleDE('OKP key generation failed', 'OperationError')); return;
+    }
+    var f = pairCsv.split(';');
+    var pubU = [], privU = [];
+    for (var i = 0; i < u.length; i++) {
+      if (_zw_okpTypeUsages(name, true).indexOf(u[i]) >= 0) pubU.push(u[i]);
+      if (_zw_okpTypeUsages(name, false).indexOf(u[i]) >= 0) privU.push(u[i]);
+    }
+    if (privU.length === 0) {
+      reject(new _zw_subtleDE('Key usages cannot be empty for private keys', 'SyntaxError')); return;
+    }
+    var keyAlg = { name: name };
+    resolve({
+      publicKey: new CryptoKey('public', true, keyAlg, pubU, Array.from(_zw_rsaCsvBytes(f[0]))),
+      privateKey: new CryptoKey('private', !!extractable, keyAlg, privU, Array.from(_zw_rsaCsvBytes(f[1])))
+    });
+  }
+
+  // exportKey OKP 分派：spki/raw（public 透传 raw / private 派生公）、pkcs8（仅私）、
+  // jwk（kty='OKP'/crv/x[/d] + alg（仅 Ed25519）/key_ops/ext）。非 extractable →
+  // InvalidAccessError（spec 公共步骤）。
+  function _zw_okpExportKey(format, key, resolve, reject) {
+    var fmt = _zw_upperAscii(String(format == null ? '' : format));
+    if (!key || !key.extractable) {
+      reject(new _zw_subtleDE('Key is not extractable', 'InvalidAccessError')); return;
+    }
+    var name = key.algorithm.name;
+    var raw = key._raw || [];
+    if (fmt === 'SPKI' || fmt === 'RAW') {
+      var outCsv;
+      if (fmt === 'RAW' && key.type === 'public') {
+        outCsv = raw.join(',');
+      } else {
+        if (typeof __zw_crypto_subtle_okp_export_der !== 'function') {
+          reject(_zw_subtleDE('crypto.subtle OKP exportKey requires host callback', 'NotSupportedError')); return;
+        }
+        outCsv = __zw_crypto_subtle_okp_export_der(name, raw.join(','), fmt.toLowerCase());
+      }
+      if (!outCsv) {
+        reject(new _zw_subtleDE('Key type does not match exportKey format', 'InvalidAccessError')); return;
+      }
+      resolve(_zw_okpCsvToArrayBuffer(outCsv));
+      return;
+    }
+    if (fmt === 'PKCS8') {
+      // spec：pkcs8 仅 private（public → InvalidAccessError）。
+      if (key.type !== 'private') {
+        reject(new _zw_subtleDE('Key is not a private key', 'InvalidAccessError')); return;
+      }
+      resolve(_zw_okpCsvToArrayBuffer(raw.join(','))); // 存储即规范 pkcs8，透传
+      return;
+    }
+    if (fmt === 'JWK') {
+      var isPriv = (key.type === 'private');
+      if (typeof __zw_crypto_subtle_okp_export_jwk !== 'function') {
+        reject(_zw_subtleDE('crypto.subtle OKP exportKey requires host callback', 'NotSupportedError')); return;
+      }
+      var out = __zw_crypto_subtle_okp_export_jwk(name, raw.join(','), isPriv ? '1' : '0');
+      if (!out) {
+        reject(new _zw_subtleDE('OKP jwk export failed', 'InvalidAccessError')); return;
+      }
+      var fp = out.split(';');
+      var jwk = { kty: 'OKP', crv: name, x: _zw_b64uFromCsv(fp[0]) };
+      if (isPriv) {
+        jwk.d = _zw_b64uFromCsv(fp[1]);
+      }
+      // alg：仅 Ed25519（RFC 8037 无 X25519 JWK alg 注册——WPT 断言 X25519 导出无
+      // alg 成员）；key_ops/ext 恒输出。
+      var alg = _zw_okpJwkAlg(name);
+      if (alg) jwk.alg = alg;
+      jwk.key_ops = (key.usages || []).slice();
+      jwk.ext = !!key.extractable;
+      resolve(jwk);
+      return;
+    }
+    reject(new _zw_subtleDE("Unsupported exportKey format: '" + fmt + "' (only 'spki'/'raw'/'pkcs8'/'jwk' supported for OKP keys)", 'NotSupportedError'));
+  }
+
+  // X25519 派生公共校验（deriveBits/deriveKey-performDerive 共用，镜像 ECDH）：
+  // public 成员缺失/非 CryptoKey → TypeError；baseKey 非 X25519 / 非 private、
+  // public 非 public 型 / 非 X25519 → InvalidAccessError。返 public key 或 null（已 reject）。
+  function _zw_x25519Validate(algorithm, key, reject) {
+    if (typeof algorithm !== 'object' || !algorithm || algorithm.public == null) {
+      reject(new TypeError('X25519 requires a public member'));
+      return null;
+    }
+    if (!(algorithm.public instanceof CryptoKey)) {
+      reject(new TypeError('X25519 public member must be a CryptoKey'));
+      return null;
+    }
+    if (!key || _zw_upperAscii(String(key.algorithm && key.algorithm.name)) !== 'X25519') {
+      reject(new _zw_subtleDE('Algorithm does not match key', 'InvalidAccessError'));
+      return null;
+    }
+    if (key.type !== 'private') {
+      reject(new _zw_subtleDE('Key is not a private key', 'InvalidAccessError'));
+      return null;
+    }
+    var pub = algorithm.public;
+    if (pub.type !== 'public' || _zw_upperAscii(String(pub.algorithm && pub.algorithm.name)) !== 'X25519') {
+      reject(new _zw_subtleDE('X25519 public key invalid or algorithm mismatch', 'InvalidAccessError'));
+      return null;
+    }
+    return pub;
+  }
+
+  // X25519 共享秘密调用（deriveBits/deriveKey-performDerive 共用）：host 派生，
+  // 全零结果/解析失败 → 空串。返字节数组。
+  function _zw_x25519SharedCall(key, pubKey, reject) {
+    if (typeof __zw_crypto_subtle_x25519 !== 'function') {
+      reject(_zw_subtleDE('crypto.subtle X25519 requires host callback', 'NotSupportedError')); return null;
+    }
+    var shared = __zw_crypto_subtle_x25519((key._raw || []).map(String).join(','), (pubKey._raw || []).join(','));
+    if (!shared) {
+      reject(new _zw_subtleDE('X25519 derivation failed (all-zero shared secret)', 'OperationError')); return null;
+    }
+    return shared.split(',');
   }
 
   globalThis.crypto.subtle = globalThis.crypto.subtle || {

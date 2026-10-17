@@ -1316,3 +1316,360 @@ pub fn crypto_subtle_ecdh(curve: &str, priv_csv: &str, pub_csv: &str) -> String 
         EcCurve::P521 => derive!(p521::NistP521),
     }
 }
+
+// ---------------------------------------------------------------------------
+// OKP（Ed25519/X25519，webcrypto M5）：RFC 8032 纯 EdDSA 签名/验签 + RFC 7748
+// X25519 共享秘密（全零结果拒绝）。委托 ed25519-dalek/x25519-dalek 3.0（dalek
+// 纯 Rust 审计系，选型见 docs/goal/webcrypto-compat/evidence/2026-10-17-m5-okp-
+// deps.md）。SPKI/PKCS#8 按 RFC 8410 定长结构手写编解码（前缀常量，无需 pkcs8
+// feature）。**密钥材料零落日志**：seed/标量仅经 CSV 桥进出，无 tracing 输出。
+// 所有失败返空串（shim 按操作映射 NotSupportedError/InvalidAccessError/
+// DataError/OperationError）。
+// https://w3c.github.io/webcrypto/#ed25519  https://w3c.github.io/webcrypto/#x25519
+// https://datatracker.ietf.org/doc/html/rfc8032  https://datatracker.ietf.org/doc/html/rfc7748
+// ---------------------------------------------------------------------------
+
+/// OKP 种类（spec 密钥参数无成员，kind 即算法名）。
+#[derive(Clone, Copy)]
+enum OkpKind {
+    Ed25519,
+    X25519,
+}
+
+fn parse_okp_kind(name: &str) -> Option<OkpKind> {
+    match name {
+        "Ed25519" => Some(OkpKind::Ed25519),
+        "X25519" => Some(OkpKind::X25519),
+        _ => None,
+    }
+}
+
+// RFC 8410 定长 DER 前缀：SPKI 12 字节（0x03 0x21 0x00 BIT STRING 头）+ 32 字节公钥；
+// PKCS#8 16 字节（0x04 0x22 0x04 0x20 OCTET STRING 头）+ 32 字节私钥。
+const OKP_SPKI_ED: [u8; 12] = [0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00];
+const OKP_SPKI_X: [u8; 12] = [0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x6e, 0x03, 0x21, 0x00];
+const OKP_PKCS8_ED: [u8; 16] = [
+    0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20,
+];
+const OKP_PKCS8_X: [u8; 16] = [
+    0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x6e, 0x04, 0x22, 0x04, 0x20,
+];
+
+/// OS 随机 32 字节（Ed25519 seed / X25519 标量种子）。失败 → None。
+fn okp_random_seed() -> Option<[u8; 32]> {
+    let mut seed = [0u8; 32];
+    getrandom::fill(&mut seed).ok()?;
+    Some(seed)
+}
+
+/// Ed25519：seed → 规范 pkcs8 DER（16 字节前缀 || seed）。
+fn okp_ed_pkcs8_from_seed(seed: &[u8; 32]) -> Vec<u8> {
+    let mut der = OKP_PKCS8_ED.to_vec();
+    der.extend_from_slice(seed);
+    der
+}
+
+/// X25519：标量 → 规范 pkcs8 DER。标量不在此钳位（导入密钥原样存储，RFC 7748
+/// 钳位在运算时施加——dalek StaticSecret::from 内建）。
+fn okp_x_pkcs8_from_scalar(scalar: &[u8; 32]) -> Vec<u8> {
+    let mut der = OKP_PKCS8_X.to_vec();
+    der.extend_from_slice(scalar);
+    der
+}
+
+/// Ed25519：pkcs8 seed → 公钥 32 字节（RFC 8032 A = [s]B 压缩编码）。
+fn okp_ed_public_from_pkcs8(der: &[u8]) -> Option<[u8; 32]> {
+    if der.len() != 48 || der[..16] != OKP_PKCS8_ED {
+        return None;
+    }
+    let mut seed = [0u8; 32];
+    seed.copy_from_slice(&der[16..48]);
+    let sk = ed25519_dalek::SigningKey::from_bytes(&seed);
+    Some(*sk.verifying_key().as_bytes())
+}
+
+/// X25519：pkcs8 标量 → 公钥 32 字节（钳位后标量 × basepoint u 坐标）。
+fn okp_x_public_from_pkcs8(der: &[u8]) -> Option<[u8; 32]> {
+    if der.len() != 48 || der[..16] != OKP_PKCS8_X {
+        return None;
+    }
+    let mut scalar = [0u8; 32];
+    scalar.copy_from_slice(&der[16..48]);
+    let ss = x25519_dalek::StaticSecret::from(scalar);
+    Some(*x25519_dalek::PublicKey::from(&ss).as_bytes())
+}
+
+/// OKP 生成：kind → "raw 公钥 csv;pkcs8 DER csv"。生成/随机源失败 → 空串。
+pub fn crypto_subtle_okp_generate(kind: &str) -> String {
+    let k = match parse_okp_kind(kind) {
+        Some(k) => k,
+        None => return String::new(),
+    };
+    let seed = match okp_random_seed() {
+        Some(s) => s,
+        None => return String::new(),
+    };
+    match k {
+        OkpKind::Ed25519 => {
+            let sk = ed25519_dalek::SigningKey::from_bytes(&seed);
+            let mut out = bytes_to_csv(sk.verifying_key().as_bytes());
+            out.push(';');
+            out.push_str(&bytes_to_csv(&okp_ed_pkcs8_from_seed(&seed)));
+            out
+        }
+        OkpKind::X25519 => {
+            let ss = x25519_dalek::StaticSecret::from(seed);
+            let mut out = bytes_to_csv(x25519_dalek::PublicKey::from(&ss).as_bytes());
+            out.push(';');
+            // 生成密钥导出钳位后标量（与 dalek 运算语义一致，round-trip 稳定）。
+            out.push_str(&bytes_to_csv(&okp_x_pkcs8_from_scalar(&ss.to_bytes())));
+            out
+        }
+    }
+}
+
+/// OKP 导入（spki/raw 公钥 / pkcs8 私钥）：SPKI/PKCS#8 按 RFC 8410 定长前缀 +
+/// 总长校验（跨族/截断/坏 OID → 空串即 DataError）；raw = 32 字节公钥。输出规范化
+/// csv：public = raw 公钥、private = 规范 pkcs8。fmt "spki"|"raw"|"pkcs8"。
+pub fn crypto_subtle_okp_import(kind: &str, fmt: &str, der_csv: &str) -> String {
+    let k = match parse_okp_kind(kind) {
+        Some(k) => k,
+        None => return String::new(),
+    };
+    let der = bytes_from_csv(der_csv);
+    match (k, fmt) {
+        (OkpKind::Ed25519, "spki") | (OkpKind::X25519, "spki") => {
+            let prefix = if matches!(k, OkpKind::Ed25519) {
+                &OKP_SPKI_ED
+            } else {
+                &OKP_SPKI_X
+            };
+            if der.len() != 44 || der[..12] != *prefix {
+                return String::new();
+            }
+            let mut raw = [0u8; 32];
+            raw.copy_from_slice(&der[12..44]);
+            bytes_to_csv(&raw)
+        }
+        (_, "raw") => {
+            if der.len() != 32 {
+                return String::new();
+            }
+            bytes_to_csv(&der)
+        }
+        (OkpKind::Ed25519, "pkcs8") => {
+            if der.len() != 48 || der[..16] != OKP_PKCS8_ED {
+                return String::new();
+            }
+            let seed: [u8; 32] = match der[16..48].try_into() {
+                Ok(s) => s,
+                Err(_) => return String::new(),
+            };
+            bytes_to_csv(&okp_ed_pkcs8_from_seed(&seed))
+        }
+        (OkpKind::X25519, "pkcs8") => {
+            if der.len() != 48 || der[..16] != OKP_PKCS8_X {
+                return String::new();
+            }
+            let scalar: [u8; 32] = match der[16..48].try_into() {
+                Ok(s) => s,
+                Err(_) => return String::new(),
+            };
+            bytes_to_csv(&okp_x_pkcs8_from_scalar(&scalar))
+        }
+        _ => String::new(),
+    }
+}
+
+/// OKP jwk 分量导入：x 必填 32 字节公钥；d 非空 → 私钥，且须与 x 配对（spec
+/// importJwk OKP 步骤 5：派生公钥 ≠ x → DataError——WPT "Invalid key pair" 组）。
+/// 输出 public = raw csv / private = pkcs8 csv。x/d 非 32 字节 → 空串。
+/// https://w3c.github.io/webcrypto/#dfn-Validate-OtpJwk
+pub fn crypto_subtle_okp_jwk_import(kind: &str, x_csv: &str, d_csv: &str) -> String {
+    let k = match parse_okp_kind(kind) {
+        Some(k) => k,
+        None => return String::new(),
+    };
+    let x = bytes_from_csv(x_csv);
+    let d = bytes_from_csv(d_csv);
+    if x.len() != 32 {
+        return String::new();
+    }
+    if d.is_empty() {
+        return bytes_to_csv(&x);
+    }
+    if d.len() != 32 {
+        return String::new();
+    }
+    let (derived, pkcs8) = match k {
+        OkpKind::Ed25519 => {
+            let mut seed = [0u8; 32];
+            seed.copy_from_slice(&d);
+            (
+                *ed25519_dalek::SigningKey::from_bytes(&seed).verifying_key().as_bytes(),
+                okp_ed_pkcs8_from_seed(&seed),
+            )
+        }
+        OkpKind::X25519 => {
+            let mut scalar = [0u8; 32];
+            scalar.copy_from_slice(&d);
+            let ss = x25519_dalek::StaticSecret::from(scalar);
+            (
+                *x25519_dalek::PublicKey::from(&ss).as_bytes(),
+                okp_x_pkcs8_from_scalar(&ss.to_bytes()),
+            )
+        }
+    };
+    // jwk d 与 x 配对校验（失配 → 空串即 DataError）。
+    if derived != x[..] {
+        return String::new();
+    }
+    bytes_to_csv(&pkcs8)
+}
+
+/// OKP DER/raw 导出。fmt "spki"：公钥 raw → SPKI、私钥派生公；"raw"：同 spki 的
+/// 公钥字节；"pkcs8"：仅私钥透传（导入/生成已规范化）。错误/格式不符 → 空串。
+pub fn crypto_subtle_okp_export_der(kind: &str, raw_csv: &str, fmt: &str) -> String {
+    let k = match parse_okp_kind(kind) {
+        Some(k) => k,
+        None => return String::new(),
+    };
+    let stored = bytes_from_csv(raw_csv);
+    // 私钥（存储 = pkcs8）按需派生公钥字节。
+    let public_raw: Option<Vec<u8>> = match stored.len() {
+        32 => Some(stored.clone()),
+        48 => match k {
+            OkpKind::Ed25519 => okp_ed_public_from_pkcs8(&stored).map(|r| r.to_vec()),
+            OkpKind::X25519 => okp_x_public_from_pkcs8(&stored).map(|r| r.to_vec()),
+        },
+        _ => None,
+    };
+    match fmt {
+        "spki" => {
+            let raw = match public_raw {
+                Some(r) => r,
+                None => return String::new(),
+            };
+            let mut der = (if matches!(k, OkpKind::Ed25519) {
+                OKP_SPKI_ED
+            } else {
+                OKP_SPKI_X
+            })
+            .to_vec();
+            der.extend_from_slice(&raw);
+            bytes_to_csv(&der)
+        }
+        "raw" => match public_raw {
+            Some(r) => bytes_to_csv(&r),
+            None => String::new(),
+        },
+        "pkcs8" => {
+            if stored.len() != 48 {
+                return String::new();
+            }
+            bytes_to_csv(&stored)
+        }
+        _ => String::new(),
+    }
+}
+
+/// OKP jwk 导出：`;` 分隔 x（公）/x;d（私），均 32 字节定宽 csv。公钥 raw 派生
+/// 自 pkcs8（私钥导出时）。错误 → 空串。
+pub fn crypto_subtle_okp_export_jwk(kind: &str, raw_csv: &str, want_private: bool) -> String {
+    let k = match parse_okp_kind(kind) {
+        Some(k) => k,
+        None => return String::new(),
+    };
+    let stored = bytes_from_csv(raw_csv);
+    if want_private {
+        if stored.len() != 48 {
+            return String::new();
+        }
+        let x = match k {
+            OkpKind::Ed25519 => okp_ed_public_from_pkcs8(&stored),
+            OkpKind::X25519 => okp_x_public_from_pkcs8(&stored),
+        };
+        let x = match x {
+            Some(x) => x,
+            None => return String::new(),
+        };
+        let mut out = bytes_to_csv(&x);
+        out.push(';');
+        out.push_str(&bytes_to_csv(&stored[16..48]));
+        out
+    } else {
+        if stored.len() != 32 {
+            return String::new();
+        }
+        bytes_to_csv(&stored)
+    }
+}
+
+/// Ed25519 签名（RFC 8032 纯 EdDSA，消息直接签名不预摘要）：key_csv = pkcs8 DER
+/// csv，msg_csv = 消息。签名 = R||S 64 字节定宽 csv。错误 → 空串。
+pub fn crypto_subtle_ed25519_sign(key_csv: &str, msg_csv: &str) -> String {
+    use ed25519_dalek::Signer;
+    let der = bytes_from_csv(key_csv);
+    if der.len() != 48 || der[..16] != OKP_PKCS8_ED {
+        return String::new();
+    }
+    let msg = bytes_from_csv(msg_csv);
+    let mut seed = [0u8; 32];
+    seed.copy_from_slice(&der[16..48]);
+    let sk = ed25519_dalek::SigningKey::from_bytes(&seed);
+    bytes_to_csv(&sk.sign(&msg).to_bytes())
+}
+
+/// Ed25519 验签：key_csv = raw 公钥 csv，sig_csv = R||S。坏签名/错长度/小阶点/
+/// 非规范编码 → "0"（spec verify 无对应 reject 路径）。返 "1"/"0"。
+pub fn crypto_subtle_ed25519_verify(key_csv: &str, msg_csv: &str, sig_csv: &str) -> String {
+    let key = bytes_from_csv(key_csv);
+    let msg = bytes_from_csv(msg_csv);
+    let sig = bytes_from_csv(sig_csv);
+    if key.len() != 32 || sig.len() != 64 {
+        return "0".into();
+    }
+    let pk: [u8; 32] = key.as_slice().try_into().unwrap_or([0; 32]);
+    let vk = match ed25519_dalek::VerifyingKey::from_bytes(&pk) {
+        Ok(vk) => vk,
+        Err(_) => return "0".into(),
+    };
+    let s = match ed25519_dalek::Signature::from_slice(&sig) {
+        Ok(s) => s,
+        Err(_) => return "0".into(),
+    };
+    // 严格验证（RFC 8032 规范性）：拒小阶 R/A（eprint 2020/1244 小阶伪造面，WPT
+    // eddsa_small_order_points 14 例全 expect false/唯一 mixed 例 true——非严格
+    // verify 对小阶 A 误 true）+ 非 canonical S/R。
+    if vk.verify_strict(&msg, &s).is_ok() {
+        "1".into()
+    } else {
+        "0".into()
+    }
+}
+
+/// X25519 共享秘密（RFC 7748 §5）：priv_csv = pkcs8 DER csv（base key），
+/// pub_csv = raw 公钥 csv。返回共享 u 坐标 32 字节定宽 csv（spec deriveBits 结果
+/// 源；截断由 shim 按 length 位处理）。**全零结果 → 空串**（spec 步骤：结果全零
+/// → OperationError——小阶公钥/dom 钳位退化；WPT cfrg "all-zero value result"）。
+pub fn crypto_subtle_x25519(priv_csv: &str, pub_csv: &str) -> String {
+    let der = bytes_from_csv(priv_csv);
+    if der.len() != 48 || der[..16] != OKP_PKCS8_X {
+        return String::new();
+    }
+    let pub_raw = bytes_from_csv(pub_csv);
+    if pub_raw.len() != 32 {
+        return String::new();
+    }
+    let mut scalar = [0u8; 32];
+    scalar.copy_from_slice(&der[16..48]);
+    let mut peer = [0u8; 32];
+    peer.copy_from_slice(&pub_raw);
+    let ss = x25519_dalek::StaticSecret::from(scalar);
+    let shared = ss.diffie_hellman(&x25519_dalek::PublicKey::from(peer));
+    // RFC 7748 §6.1 + spec：全零共享秘密（小阶点输入）→ 拒绝。
+    if shared.as_bytes().iter().all(|&b| b == 0) {
+        return String::new();
+    }
+    bytes_to_csv(shared.as_bytes())
+}

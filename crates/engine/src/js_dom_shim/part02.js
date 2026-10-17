@@ -33,6 +33,11 @@
           _zw_ecImportKey(format, keyData, algo, extractable, usages, resolve, reject);
           return;
         }
+        // OKP 家族（M5）：usages + 格式解析（spki/raw/pkcs8/jwk，含 d/x 配对校验）整体转入 helper。
+        if (_zw_okpIsFamily(algo.name)) {
+          _zw_okpImportKey(format, keyData, algo, extractable, usages, resolve, reject);
+          return;
+        }
         var isAes = (algo.name === 'AES-GCM' || algo.name === 'AES-CBC' || algo.name === 'AES-CTR' || algo.name === 'AES-KW');
         var isHmac = algo.name === 'HMAC';
         // HMAC：显式 length 0 → DataError（spec 步骤 1，先于 usages SyntaxError）。
@@ -205,6 +210,29 @@
           if (ecSig) resolve(ecSig);
           return;
         }
+        if (name === 'ED25519') {
+          // Ed25519（M5，RFC 8032 纯 EdDSA）：无 hash 成员（spec 参数字典仅 name）。
+          // 校验序（spec sign 公共步骤）：算法不匹配 / 非 private / 无 "sign" usage →
+          // InvalidAccessError。
+          if (!key || _zw_upperAscii(String(key.algorithm && key.algorithm.name)) !== 'ED25519') {
+            reject(new _zw_subtleDE('Algorithm does not match key', 'InvalidAccessError')); return;
+          }
+          if (key.type !== 'private') {
+            reject(new _zw_subtleDE('Key is not a private key', 'InvalidAccessError')); return;
+          }
+          if (!key.usages || key.usages.indexOf('sign') < 0) {
+            reject(new _zw_subtleDE('Key usages do not include "sign"', 'InvalidAccessError')); return;
+          }
+          if (typeof __zw_crypto_subtle_ed25519_sign !== 'function') {
+            reject(_zw_subtleDE('crypto.subtle Ed25519 sign requires host callback', 'NotSupportedError')); return;
+          }
+          var edSig = __zw_crypto_subtle_ed25519_sign((key._raw || []).join(','), _zw_bufToBytes(data).join(','));
+          if (!edSig) {
+            reject(new _zw_subtleDE('Ed25519 sign failed', 'OperationError')); return;
+          }
+          resolve(_zw_rsaCsvBytes(edSig));
+          return;
+        }
         if (name !== 'HMAC' || !key || key.algorithm.name !== 'HMAC') {
           reject(new _zw_subtleDE('Unsupported sign algorithm or key', 'NotSupportedError')); return;
         }
@@ -254,6 +282,26 @@
             reject(new _zw_subtleDE('Key usages do not include "verify"', 'InvalidAccessError')); return;
           }
           resolve(_zw_ecdsaVerifyCall(evHash, key, _zw_bufToBytes(signature), _zw_bufToBytes(data), reject));
+          return;
+        }
+        if (name === 'ED25519') {
+          // Ed25519（M5）：坏签名/错长度/小阶点 → resolve false 不 reject（host 归一
+          // "0"，spec verify 无对应 reject 路径）；非 public / 无 "verify" usage →
+          // InvalidAccessError。
+          if (!key || _zw_upperAscii(String(key.algorithm && key.algorithm.name)) !== 'ED25519') {
+            reject(new _zw_subtleDE('Algorithm does not match key', 'InvalidAccessError')); return;
+          }
+          if (key.type !== 'public') {
+            reject(new _zw_subtleDE('Key is not a public key', 'InvalidAccessError')); return;
+          }
+          if (!key.usages || key.usages.indexOf('verify') < 0) {
+            reject(new _zw_subtleDE('Key usages do not include "verify"', 'InvalidAccessError')); return;
+          }
+          if (typeof __zw_crypto_subtle_ed25519_verify !== 'function') {
+            reject(_zw_subtleDE('crypto.subtle Ed25519 verify requires host callback', 'NotSupportedError')); return;
+          }
+          var edOk = __zw_crypto_subtle_ed25519_verify((key._raw || []).join(','), _zw_bufToBytes(data).join(','), _zw_bufToBytes(signature).join(','));
+          resolve(edOk === '1');
           return;
         }
         if (name !== 'HMAC' || !key || key.algorithm.name !== 'HMAC') {
@@ -318,6 +366,35 @@
             earr[full] = +sparts[full] & ((0xff << (8 - lenBits % 8)) & 0xff);
           }
           resolve(earr);
+          return;
+        }
+        if (name === 'X25519') {
+          // X25519（M5）：校验序镜像 ECDH（public 缺失 TypeError → baseKey/public
+          // 校验 InvalidAccessError → "deriveBits" usage）。length：null/省略 → 256
+          //（RFC 7748 输出全长）；> 256 → OperationError（derived_bits_length "bigger
+          // than the output size"）；0 → 空；非 8 倍数 → 取左起 length 位。
+          var xPub = _zw_x25519Validate(algorithm, key, reject);
+          if (!xPub) return;
+          if (!key.usages || key.usages.indexOf('deriveBits') < 0) {
+            reject(new _zw_subtleDE('Key usages do not include "deriveBits"', 'InvalidAccessError')); return;
+          }
+          var xLenBits = (length == null) ? 256 : Number(length);
+          if (!(xLenBits >= 0)) {
+            reject(new TypeError('deriveBits length must be a number')); return;
+          }
+          if (xLenBits > 256) {
+            reject(new _zw_subtleDE('deriveBits length must not exceed the output size', 'OperationError')); return;
+          }
+          var xparts = _zw_x25519SharedCall(key, xPub, reject);
+          if (!xparts) return;
+          var xOutBytes = Math.ceil(xLenBits / 8);
+          var xarr = new Uint8Array(xOutBytes);
+          var xfull = Math.floor(xLenBits / 8);
+          for (var xi = 0; xi < xfull; xi++) xarr[xi] = +xparts[xi];
+          if (xLenBits % 8) {
+            xarr[xfull] = +xparts[xfull] & ((0xff << (8 - xLenBits % 8)) & 0xff);
+          }
+          resolve(xarr);
           return;
         }
         if ((name !== 'PBKDF2' && name !== 'HKDF')) {
@@ -476,6 +553,11 @@
           // TypeError / 未注册 NotSupportedError（EC 专属，RSA 同位是 OperationError）
           // → 私钥空 usages SyntaxError。
           _zw_ecGenerateKey(algorithm, extractable, usages, algo, resolve, reject);
+        } else if (_zw_okpIsFamily(algo.name)) {
+          // OKP（M5，Ed25519/X25519）→ CryptoKeyPair{publicKey, privateKey}（publicKey
+          // 恒 extractable、privateKey 按请求值）；错误序：非法 usage SyntaxError →
+          // 私钥空 usages SyntaxError。
+          _zw_okpGenerateKey(algorithm, extractable, usages, algo, resolve, reject);
         } else {
           reject(new _zw_subtleDE('Unsupported generateKey algorithm', 'NotSupportedError'));
         }
@@ -496,6 +578,11 @@
         // EC 家族（M4b）：spki/raw/pkcs8/jwk 分派整体转入 helper（公/私类型与格式匹配校验在内）。
         if (key && key.algorithm && _zw_ecIsFamily(key.algorithm.name)) {
           _zw_ecExportKey(format, key, resolve, reject);
+          return;
+        }
+        // OKP 家族（M5）：spki/raw/pkcs8/jwk 分派整体转入 helper（公/私类型与格式匹配校验在内）。
+        if (key && key.algorithm && _zw_okpIsFamily(key.algorithm.name)) {
+          _zw_okpExportKey(format, key, resolve, reject);
           return;
         }
         var fmt = _zw_upperAscii(String(format == null ? '' : format));

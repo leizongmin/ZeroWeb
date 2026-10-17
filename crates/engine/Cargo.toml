@@ -36,6 +36,8 @@ rsa = { workspace = true }
 p256 = { workspace = true }
 p384 = { workspace = true }
 p521 = { workspace = true }
+ed25519-dalek = { workspace = true }
+x25519-dalek = { workspace = true }
 getrandom = { workspace = true }
 png = { workspace = true }
 flate2 = "1"

@@ -1,11 +1,23 @@
 # Web Crypto 兼容 — crypto.getRandomValues / randomUUID / subtle
 
-**版本**: v1.4
+**版本**: v1.5
 **日期**: 2026-10-17
-**状态**: Active——M4b 收口（EC 家族 ECDSA/ECDH P-256/384/521 +3,159P，
-2026-10-17）；下一步 M5（OKP 签名系：Ed25519/X25519，含 cfrg_curves 域）
+**状态**: Active——M5 收口（OKP 家族 Ed25519/X25519 +1,936P，2026-10-17）；
+下一步残留收口（pbkdf2/hkdf deriveBits 0 length TypeError 细分 + badHashName
+分类，2,953F）与 tentative 域挂账清点
 **执行模式**: WPT 驱动（上游 WebCryptoAPI corpus 为验收标尺）+ 实现与语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——加密面）
+
+> **▶ M5 OKP 家族（2026-10-17）**：Ed25519/X25519 全链——importKey
+> （raw/spki/pkcs8/jwk）、generateKey（privateKey.extractable=请求值）、
+> exportKey 四格式（RFC 8410 定长 DER）、Ed25519 sign/verify（RFC 8032 确定性
+> + verify_strict 拒小阶伪造）、X25519 deriveBits/deriveKey（RFC 7748 钳位 +
+> 全零拒绝 + length 矩阵）。依赖 ed25519-dalek/x25519-dalek 3.0（选型见 deps
+> evidence）。OKP 14 案全翻绿（eddsa/small_order/cfrg bits+keys/okp_importKey
+> 四文件/generateKey 四文件/serialization ×2）；wrapKey_unwrapKey 239→299 全绿。
+> 全量 **33,109 = Pass 22,836（68.97%）+ Fail 10,272 + Timeout 1**（+1,936，
+> 零回归）；全绿案 53→67。明细见
+> [M5 evidence](webcrypto-compat/evidence/2026-10-17-m5-okp.md)。
 
 > **▶ M4b EC 家族（2026-10-17）**：ECDSA/ECDH P-256/P-384/P-521 全链——
 > importKey（spki/pkcs8/jwk/raw 含 SEC1 压缩点）、generateKey CryptoKeyPair
@@ -116,8 +128,8 @@
 M1 导入与基线（corpus + runner 通道 + csv 回填）→ M2 已实现面 WPT 对齐
 （digest/HMAC/PBKDF2/HKDF/AES-GCM 逐域修失败；随机源零回归）→ M3 补面
 （AES-CBC/CTR、wrapKey/unwrapKey、spki/pkcs8/jwk 格式）→ M4 签名系
-（RSA 三算法 M4a ✓ + EC 家族 M4b ✓）→ M5 OKP（Ed25519/X25519，cfrg_curves
-域）→ 残留收口（pbkdf2/hkdf 0 length 细分、tentative 域挂账清点）+ 归档。
+（RSA 三算法 M4a ✓ + EC 家族 M4b ✓）→ M5 OKP（Ed25519/X25519 ✓）→
+残留收口（pbkdf2/hkdf 0 length 细分、tentative 域挂账清点）+ 归档。
 
 > 原里程碑（M2 digest 从零实现 / M3 importKey+AES-GCM 从零实现）已被
 > 2026-10-17 盘点修正——相应实现 R2793/R2955-R2958 立项前已存在，里程碑
