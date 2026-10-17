@@ -224,7 +224,9 @@ mod tests {
     }
 
     /// C3：headless GPU 纯色 fill 可读回（GPU 不可用时跳过）。
+    /// serial：消费 ZW_COMPOSITOR_GPU_SIMULATE_LOST 的 GPU 测试互斥（TV-3/D-1）。
     #[test]
+    #[serial_test::serial(gpu_env)]
     fn gpu_fill_produces_expected_solid_color() {
         let mut gpu: Option<GpuRenderer> = None;
         let font_loader = FontLoader::new();
@@ -255,7 +257,9 @@ mod tests {
     }
 
     /// C3-S2：GPU 脏区光栅保留区外像素（GPU 不可用时跳过）。
+    /// serial：消费 ZW_COMPOSITOR_GPU_SIMULATE_LOST 的 GPU 测试互斥（TV-3/D-1）。
     #[test]
+    #[serial_test::serial(gpu_env)]
     fn gpu_partial_dirty_preserves_outside_pixels() {
         let mut gpu: Option<GpuRenderer> = None;
         let font_loader = FontLoader::new();
@@ -472,7 +476,9 @@ mod tests {
 
     /// T34：脏区路径对 fills/glyphs 之外的图元类型（此处渐变）整帧拒绝（返回
     /// false → 调用方回退 CPU），不再静默丢弃脏区内内容。GPU 不可用时跳过。
+    /// serial：消费 ZW_COMPOSITOR_GPU_SIMULATE_LOST 的 GPU 测试互斥（TV-3/D-1）。
     #[test]
+    #[serial_test::serial(gpu_env)]
     fn gpu_partial_dirty_rejects_unsupported_primitive_types() {
         let mut gpu: Option<GpuRenderer> = None;
         let font_loader = font_loader_with_system_fonts();
