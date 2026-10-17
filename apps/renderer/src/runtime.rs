@@ -256,6 +256,9 @@ pub(crate) struct RendererRuntime {
     pending_dynamic_scripts: Option<PendingDynamicScripts>,
     /// 本文档中已经开始执行的外链脚本绝对 URL（含解析期与动态插入脚本）。
     executed_external_scripts: HashSet<String>,
+    /// t3 返修 D2（qq-20261016-r1）：上次 mutation 队列非空 drain 的时刻——
+    /// [`MUTATION_DRAIN_MIN_INTERVAL`] 连续 apply 节流的时钟源。
+    last_mutation_drain: Option<std::time::Instant>,
     /// CDP `Page.addScriptToEvaluateOnNewDocument` 已登记脚本（跨文档持久；每个新文档
     /// 在页面脚本执行前整体执行——Chromium 语义，见 `after_page_html_loaded_with_cache`）。
     pre_document_scripts: Vec<String>,
@@ -505,6 +508,7 @@ impl RendererRuntime {
             pending_script_prefetch: None,
             pending_dynamic_scripts: None,
             executed_external_scripts: HashSet::new(),
+            last_mutation_drain: None,
             pre_document_scripts: Vec::new(),
             inflight_fetches: InflightIpcFetches::new(),
             stub_network: false,
@@ -720,6 +724,16 @@ impl RendererRuntime {
         self.try_publish_progress(true)
     }
 
+    /// t3 返修 D2（qq-20261016-r1）：mutation 队列非空臂连续 apply 的最小间隔。
+    ///
+    /// 该臂每 tick 全量克隆 HTML + apply + 渲染，主循环 16ms 节拍下重页实测 ~2-3x 劣化
+    /// （has_async 臂另有 200ms 有界等待的 ~12x 上界，t2-pb1 fix#8 已接受的权衡面，不在
+    /// 本节流内）。100ms 把连续提交节拍压到 ≤10/s，与「一轮 drain 内多次 apply 合并为
+    /// 一次渲染」的批量边界同向（间隔内滞留的 mutation 合并进下一次 apply，渲染总量
+    /// 反而减少）；提交延迟上界 100ms，按现有 timer 兼容水位不可感。自动化求值与页面
+    /// 脚本执行边界不经本 tick 路径，不受影响。
+    const MUTATION_DRAIN_MIN_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
+
     /// 将定时器等异步页面任务产生的 DOM 变更提交到活文档。
     fn drain_pending_script_mutations(&mut self) -> Result<(), String> {
         self.drain_pending_script_mutations_inner()
@@ -728,6 +742,22 @@ impl RendererRuntime {
     fn drain_pending_script_mutations_inner(&mut self) -> Result<(), String> {
         if !self.javascript_enabled {
             return Ok(());
+        }
+        // D2 节流：仅约束「队列非空」的重臂；队列为空时早退与 has_async checkpoint 臂
+        // 节奏不变。
+        if !self
+            .js_worker
+            .mutations()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_empty()
+        {
+            if let Some(last) = self.last_mutation_drain
+                && last.elapsed() < Self::MUTATION_DRAIN_MIN_INTERVAL
+            {
+                return Ok(());
+            }
+            self.last_mutation_drain = Some(std::time::Instant::now());
         }
         let current_url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
         let changed = {
