@@ -7,6 +7,8 @@
 //! `zero_engine::*` 外部路径；私有 helper 仅供族内，`strip_cdata` 例外（`pub`，
 //! 供 `mod.rs::inject_print_page_dividers` 复用）。
 
+use std::collections::HashSet;
+
 /// 提取 HTML 中所有 `<link rel="stylesheet" href="...">` 的 href 原始值。
 ///
 /// 用于 URL 导航路径下外链样式表的加载（goal doc P1 缺口「外部样式表加载缺失」）：
@@ -534,6 +536,153 @@ pub fn extract_font_faces_in_context(
     extract_font_faces_from_rules(&flatten_conditional_rules(std::slice::from_ref(&stylesheet), media_ctx))
 }
 
+/// [`extract_used_font_families`] 的结果：静态可解析的「使用侧」族名集合，外加
+/// var() 污染标记。
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct UsedFontFamilies {
+    families: HashSet<String>,
+    /// 存在含 `var()` 的 `font-family`/`font` 声明——该声明在 computed value 阶段
+    /// 替换、静态提取解析不到最终族名，视为「可能引用任何已声明族」。
+    unresolvable_reference: bool,
+}
+
+impl UsedFontFamilies {
+    /// face 族名（ASCII 小写归一）是否可能被页面引用；`true` 时使用即取门禁不得按
+    /// 族名跳过该 face 的抓取。
+    pub fn may_reference(&self, family_lowercase: &str) -> bool {
+        self.unresolvable_reference || self.families.contains(family_lowercase)
+    }
+}
+
+/// 声明值是否含 `var()` 函数 token（自定义属性引用——tokenizer 解码转义后按函数名
+/// ASCII 大小写不敏感匹配，非裸字符串 `starts_with`）。
+fn value_references_var(value: &str) -> bool {
+    use zero_css_parser::tokenizer::{Token, Tokenizer};
+    Tokenizer::new(value)
+        .any(|spanned| matches!(&spanned.token, Token::Function(name) if name.eq_ignore_ascii_case("var")))
+}
+
+/// 收集 CSS 中 `font-family` 声明引用的全部族名（去引号、ASCII 小写去重）。
+///
+/// 使用即取字体抓取门禁的「使用」侧输入：CSS Fonts Level 4 §5.2 字体匹配算法
+/// （https://drafts.csswg.org/css-fonts-4/#font-style-matching）只在元素 computed
+/// `font-family` 列表引用某族名时才会在该族内选 face——从未被任何 font-family 声明
+/// （含 `font` 简写展开，style-system `expand_shorthands` 单源）引用的 `@font-face`
+/// 永不可能被选中，抓取层据此跳过。
+///
+/// 覆盖面取**保守过近似**（宁多收集勿漏收集，漏收集 = 漏抓 = 可见回退字体回归）：
+/// 条件块（@media/@supports/@layer/@container）不求值、全部递归展开收集（区别于
+/// [`flatten_conditional_rules`] 的按条件过滤——那是声明提取的正确性要求，本函数
+/// 只服务于「有没有可能被用到」的存在性判断）；`@font-face` 规则自身的 font-family
+/// 是声明名而非使用，跳过；@keyframes 块内声明纳入（font-family 为 discrete 动画属性）。
+///
+/// 含 `var()` 的声明（含 `font` 简写）标记 [`UsedFontFamilies::may_reference`] 恒真：
+/// var() 在 computed value 阶段替换、静态提取解析不到最终族名，且 `parse_font_family`
+/// 对含 `(` 的值整声明拒绝——连逗号列表中的合法兄弟族名也会丢，必须在解析前检测。
+pub fn extract_used_font_families(css: &str) -> UsedFontFamilies {
+    use zero_css_parser::ast::{AtRuleBody, Rule};
+
+    fn push_family_value(value: &str, out: &mut HashSet<String>) {
+        for entry in zero_style_system::parse_font_family(value) {
+            let name = zero_style_system::font_family_unquote(&entry)
+                .trim()
+                .to_ascii_lowercase();
+            if !name.is_empty() {
+                out.insert(name);
+            }
+        }
+    }
+
+    fn collect_declarations(declarations: &[zero_css_parser::ast::Declaration], out: &mut UsedFontFamilies) {
+        for decl in declarations {
+            let prop = decl.property.trim();
+            let is_family = prop.eq_ignore_ascii_case("font-family");
+            let is_shorthand = prop.eq_ignore_ascii_case("font");
+            if !is_family && !is_shorthand {
+                continue;
+            }
+            // var() 间接引用静态不可解析——该声明视为「可能引用任何已声明族」。
+            if value_references_var(&decl.value) {
+                out.unresolvable_reference = true;
+                continue;
+            }
+            if is_family {
+                push_family_value(&decl.value, &mut out.families);
+            } else {
+                // `font` 简写第五位即 font-family；展开复用 style-system 单源实现。
+                for (expanded_prop, expanded_value, _, _) in zero_style_system::expand_shorthands(&[(
+                    prop.to_string(),
+                    decl.value.clone(),
+                    decl.important,
+                    (0, 0, 0),
+                )]) {
+                    if expanded_prop == "font-family" {
+                        push_family_value(&expanded_value, &mut out.families);
+                    }
+                }
+            }
+        }
+    }
+
+    fn walk(rules: &[Rule], out: &mut UsedFontFamilies) {
+        for rule in rules {
+            match rule {
+                Rule::Style(style) => collect_declarations(&style.declarations, out),
+                Rule::Keyframes(keyframes) => {
+                    for block in &keyframes.keyframes {
+                        collect_declarations(&block.declarations, out);
+                    }
+                }
+                // 条件块不求值全展开（保守过近似）；@font-face 自身的 font-family 是
+                // 声明名，不属于「使用」。
+                Rule::At(at_rule) => {
+                    if let AtRuleBody::Block(inner) = &at_rule.body {
+                        walk(inner, out);
+                    }
+                }
+                Rule::Layer(layer) => walk(&layer.rules, out),
+                Rule::Supports(supports) => walk(&supports.rules, out),
+                Rule::Container(container) => walk(&container.rules, out),
+                _ => {}
+            }
+        }
+    }
+
+    let stylesheet = zero_css_parser::Parser::parse_stylesheet(css);
+    let mut out = UsedFontFamilies::default();
+    walk(&stylesheet.rules, &mut out);
+    out
+}
+
+/// 文档是否含加载后出现字体使用的动态来源（`<script>` 元素或任一元素的 `style` 属性）。
+///
+/// 使用即取门禁族维度的启用前提：两者皆无时，「CSS 文本静态提取的族名集合」才可信。
+/// 有脚本或内联样式属性时，页面可在加载后经 `el.style.fontFamily`、canvas `ctx.font`、
+/// 动态注入节点等途径引用任何已声明 face，静态提取不可见——族维度跳过整体停用；
+/// unicode-range 维度不受影响（其文本侧 [`extract_html_text`] 已含脚本字面量近似）。
+pub fn html_has_dynamic_font_sources(html: &str) -> bool {
+    let doc = zero_dom::parse_html(html);
+    if !doc.get_elements_by_tag_name("script").is_empty() {
+        return true;
+    }
+    doc.get_elements_by_tag_name_ns(None, "*")
+        .iter()
+        .any(|&elem| doc.get_attribute(elem, "style").is_some())
+}
+
+/// 提取 HTML 文档全部文本（`Node::textContent` 递归语义：含 `<script>`/`<style>`/注释文本）。
+///
+/// 使用即取字体抓取门禁的「文本」侧输入：unicode-range 把 face 限制到码点区间
+/// （CSS Fonts Level 4 §4，https://drafts.csswg.org/css-fonts-4/#unicode-range-desc），
+/// 文本无任一码点落入区间的子集永不参与匹配。取全文而非渲染文本属**保守过近似**：
+/// display:none 文本、脚本字符串字面量（动态注入内容最常见来源）一并纳入命中判定，
+/// 换取「静态文本命中 ⇒ 动态同文字体可用」的下界保证——本切片无渲染触发的懒抓取
+/// 路径（后续切片），漏抓方向必须封死。
+pub fn extract_html_text(html: &str) -> String {
+    let doc = zero_dom::parse_html(html);
+    doc.text_content(doc.root()).unwrap_or_default()
+}
+
 /// 将 CSS feature settings 转为字体整形层输入。
 pub fn font_feature_settings_to_opentype(
     settings: &zero_css_parser::values::FontFeatureSettingsValue,
@@ -653,15 +802,23 @@ pub fn extract_html_style_text(html: &str) -> String {
             // Resource extraction treats each <style> block as an independent EOF boundary.
             // Close a possible unterminated url(...) so malformed CSS in one block cannot
             // consume URLs from the next block after we concatenate the snippets.
-            out.push_str("\n)\n");
+            // 括在注释内：tokenizer（extract_css_image_urls）在未闭合 url( 原始内容里仍
+            // 扫到 `)` 使 URL token 终止；parser（extract_used_font_families）视整段为
+            // 单个 comment token，不触发错误恢复吞噬后续规则（裸 `)` 会让解析器丢弃
+            // 之后全部规则——inline style 属性块因此在门禁侧全部失联）。
+            out.push_str("\n/* ) */\n");
         }
     }
     // R1796：inline `style=` 属性值（如 `style="background-image: url(x)"`）亦是 CSS 文本，
     // 收集后交 extract_css_image_urls 扫描。通配 `"*"` 匹配所有元素。
+    // 使用即取字体门禁（extract_used_font_families）按样式表语法解析该文本——声明必须
+    // 位于规则块内，故属性值包一层中性选择器块（对 url() 文本扫描无影响；逐属性独立
+    // 块还隔离了单个属性内不配对花括号的跨属性吞噬）。
     for elem_id in doc.get_elements_by_tag_name_ns(None, "*") {
         if let Some(style_attr) = doc.get_attribute(elem_id, "style") {
+            out.push_str("zw-inline{");
             out.push_str(&style_attr);
-            out.push('\n');
+            out.push_str("}\n");
         }
     }
     out

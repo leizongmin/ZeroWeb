@@ -37,8 +37,10 @@ impl AsyncFetchHost for StylesheetHost {
 #[test]
 fn external_and_imported_fonts_use_their_stylesheet_base() {
     // https://drafts.csswg.org/css-values-4/#relative-urls
+    // 三个族均被元素引用（使用即取门禁：未被引用的 face 不抓取，URL 基准解析无从验证）。
     let html = r#"<link rel="stylesheet" href="/assets/theme/main.css">
-        <style>@font-face { font-family: Inline; src: url(fonts/inline.ttf) }</style>"#;
+        <style>@font-face { font-family: Inline; src: url(fonts/inline.ttf) }</style>
+        <p style="font-family: Main">m</p><p style="font-family: Extra">e</p><p style="font-family: Inline">i</p>"#;
     let mut load = AsyncPageLoad::from_html("https://example.test/articles/post.html", html.to_string());
     let mut webview = WebView::new(WebViewConfig::default());
     let mut host = StylesheetHost {
