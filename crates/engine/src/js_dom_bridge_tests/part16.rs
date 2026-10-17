@@ -743,6 +743,179 @@ fn test_input_show_picker_r3903() {
     );
 }
 
+#[test]
+fn test_select_show_picker_r3905() {
+    // select.showPicker()——R3905 spec method steps（HTML §4.10.8）：无激活 NotAllowedError；
+    // disabled（含同 turn setAttribute latest-wins 路径）抛 InvalidStateError 且**不消费**激活；
+    // display:none（自身）与 content-visibility:hidden 祖先抛 NotSupportedError 且**不消费**
+    // 激活（being-rendered 检查先于激活消费）；cv 转 visible 后不抛照常消费；multiple 不抛；
+    // 有激活不抛并消费（isActive 翻 false），再调抛 NotAllowedError。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <select id='s'><option>Item 1</option></select>\
+         <select id='h' style='display: none'><option>Item 1</option></select>\
+         <div id='cvp' style='content-visibility: hidden'>\
+           <select id='cv'><option>Item 1</option></select>\
+         </div>\
+         <select id='m' multiple><option>Item 1</option></select>\
+         <select id='d' disabled><option>Item 1</option></select>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "var s = document.querySelector('#s');\
+             globalThis.__ret = String(typeof s.showPicker);\
+             try { s.showPicker(); globalThis.__t1 = 'no'; } catch (e) { globalThis.__t1 = 'yes'; globalThis.__t1n = String(e.name); }\
+             globalThis.__zwUserActivate();\
+             try { s.showPicker(); globalThis.__t2 = 'no'; } catch (e) { globalThis.__t2 = 'yes'; globalThis.__t2n = String(e.name); }\
+             globalThis.__act1 = String(navigator.userActivation.isActive);\
+             try { s.showPicker(); globalThis.__t3 = 'no'; } catch (e) { globalThis.__t3 = 'yes'; globalThis.__t3n = String(e.name); }\
+             var h = document.querySelector('#h');\
+             globalThis.__zwUserActivate();\
+             try { h.showPicker(); globalThis.__t4 = 'no'; } catch (e) { globalThis.__t4 = 'yes'; globalThis.__t4n = String(e.name); }\
+             globalThis.__act2 = String(navigator.userActivation.isActive);\
+             var cv = document.querySelector('#cv');\
+             globalThis.__zwUserActivate();\
+             try { cv.showPicker(); globalThis.__t5 = 'no'; } catch (e) { globalThis.__t5 = 'yes'; globalThis.__t5n = String(e.name); }\
+             globalThis.__act3 = String(navigator.userActivation.isActive);\
+             document.querySelector('#cvp').style.contentVisibility = 'visible';\
+             try { cv.showPicker(); globalThis.__t6 = 'no'; } catch (e) { globalThis.__t6 = 'yes'; globalThis.__t6n = String(e.name); }\
+             globalThis.__act4 = String(navigator.userActivation.isActive);\
+             var m = document.querySelector('#m');\
+             globalThis.__zwUserActivate();\
+             try { m.showPicker(); globalThis.__t7 = 'no'; } catch (e) { globalThis.__t7 = 'yes'; globalThis.__t7n = String(e.name); }\
+             var d = document.querySelector('#d');\
+             globalThis.__zwUserActivate();\
+             try { d.showPicker(); globalThis.__t8 = 'no'; } catch (e) { globalThis.__t8 = 'yes'; globalThis.__t8n = String(e.name); }\
+             globalThis.__act5 = String(navigator.userActivation.isActive);\
+             s.setAttribute('disabled', '');\
+             globalThis.__zwUserActivate();\
+             try { s.showPicker(); globalThis.__t9 = 'no'; } catch (e) { globalThis.__t9 = 'yes'; globalThis.__t9n = String(e.name); }\
+             globalThis.__act6 = String(navigator.userActivation.isActive);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__ret").unwrap().value,
+        "function",
+        "showPicker 方法对 SELECT 恒暴露（spec）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__t1").unwrap().value,
+        "yes",
+        "无瞬态激活调 showPicker() 抛错"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__t1n").unwrap().value,
+        "NotAllowedError",
+        "无激活抛出异常 name = NotAllowedError"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__t2").unwrap().value,
+        "no",
+        "有瞬态激活 showPicker() 不抛（headless 无 picker UI 静默返回）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__act1").unwrap().value,
+        "false",
+        "成功调用消费瞬态激活（isActive 翻 false）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__t3").unwrap().value,
+        "yes",
+        "激活已消费再调抛错"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__t3n").unwrap().value,
+        "NotAllowedError",
+        "激活消费后再调抛出 name = NotAllowedError"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__t4").unwrap().value,
+        "yes",
+        "display:none 自身调 showPicker() 抛错"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__t4n").unwrap().value,
+        "NotSupportedError",
+        "not being rendered 抛出异常 name = NotSupportedError"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__act2").unwrap().value,
+        "true",
+        "NotSupportedError 抛错不消费激活（being-rendered 检查先于消费）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__t5").unwrap().value,
+        "yes",
+        "content-visibility:hidden 祖先调 showPicker() 抛错"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__t5n").unwrap().value,
+        "NotSupportedError",
+        "cv:hidden 祖先抛出异常 name = NotSupportedError"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__act3").unwrap().value,
+        "true",
+        "cv:hidden 抛错不消费激活"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__t6").unwrap().value,
+        "no",
+        "cv 祖先转 visible 后 showPicker() 不抛"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__act4").unwrap().value,
+        "false",
+        "cv 转 visible 后照常消费激活"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__t7").unwrap().value,
+        "no",
+        "multiple select showPicker() 不抛（内联列表箱无弹层）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__t8").unwrap().value,
+        "yes",
+        "disabled select 调 showPicker() 抛错"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__t8n").unwrap().value,
+        "InvalidStateError",
+        "disabled 抛出异常 name = InvalidStateError"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__act5").unwrap().value,
+        "true",
+        "disabled 抛错不消费激活（disabled 检查先于激活消费）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__t9").unwrap().value,
+        "yes",
+        "disabled（同 turn setAttribute latest-wins 路径）调 showPicker() 抛错"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__act6").unwrap().value,
+        "true",
+        "latest-wins disabled 抛错不消费激活"
+    );
+}
+
 // ── R3318：navigator.serviceWorker（B-gen 生产 shim 移植）──
 //
 // 生产 always-on B-gen shim 路径（part02.js navigator.serviceWorker IIFE，R3318 从 A-gen dom_bridge.rs
