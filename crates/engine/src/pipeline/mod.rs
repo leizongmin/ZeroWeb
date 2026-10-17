@@ -4093,6 +4093,35 @@ mod css_image_url_tests {
         assert_eq!(urls, vec!["bg.png"]);
     }
 
+    /// R2134：extract_html_css_image_urls 逐块 EOF 边界——块尾未终止 url() 由 EOF 闭合
+    /// 恢复为干净 url 且不吞第二块。回归锚：923f91cda 把块间分隔符括进注释（parser 侧
+    /// 字体门禁防错误恢复吞噬）后，拼接扫描下 tokenizer 的 consume_url 要求块界换行后
+    /// 下一非空白字符恰为 `)`，注释分隔符不可见即把块尾 url 判 bad-url 丢弃。
+    #[test]
+    fn extract_html_css_image_urls_recovers_unterminated_url_at_block_end() {
+        // 未终止带引号 url（块末 EOF 闭合）+ 第二块不受牵连
+        let html = concat!(
+            r#"<style>.one { background: url("support/swatch-green.png</style>"#,
+            r#"<style>.two { background: url(support/swatch-red.png) }</style>"#,
+        );
+        let urls = extract_html_css_image_urls(html);
+        assert_eq!(urls, vec!["support/swatch-green.png", "support/swatch-red.png"]);
+
+        // 未终止无引号 url 同样 EOF 闭合
+        let html2 = r#"<style>.three { background: url(support/swatch-green.png</style>"#;
+        assert_eq!(extract_html_css_image_urls(html2), vec!["support/swatch-green.png"]);
+    }
+
+    /// extract_html_css_image_urls 跨块去重保首次出现序（与拼接扫描的全局去重等价）。
+    #[test]
+    fn extract_html_css_image_urls_dedupes_across_blocks() {
+        let html = r#"<html><body><style>.a { background: url(x.png) }</style>
+            <div style="background: url(y.png); border-image-source: url(x.png)"></div>
+            </body></html>"#;
+        let urls = extract_html_css_image_urls(html);
+        assert_eq!(urls, vec!["x.png", "y.png"]);
+    }
+
     /// R2419：srcset 首 URL 提取（逗号分隔候选，每候选首 token = URL）。
     #[test]
     fn srcset_first_url_parses_first_candidate() {

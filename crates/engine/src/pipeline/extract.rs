@@ -790,38 +790,83 @@ pub fn extract_css_image_urls(css: &str) -> Vec<String> {
 
 /// R1794：提取 HTML 中所有文档级 CSS 文本并拼接——`<style>` 块 + 元素 inline `style=` 属性。
 ///
-/// 供 `extract_css_image_urls` 扫描图片 `url()` 引用（R1796 起覆盖 inline
-/// `style="background-image: url(...)"` 等属性内引用）。与 `extract_img_srcs` 同模式：
-/// 复用 `zero_dom` 解析（DOM 精确，比正则稳健）。
+/// parser 消费方（`extract_font_faces` / `extract_used_font_families`）的输入形态
+///（R1796 起覆盖 inline `style="background-image: url(...)"` 等属性内引用）。与
+/// `extract_img_srcs` 同模式：复用 `zero_dom` 解析（DOM 精确，比正则稳健）。
+/// tokenizer 消费方（图片 url 扫描）走 [`extract_html_css_image_urls`]，不走拼接。
 pub fn extract_html_style_text(html: &str) -> String {
-    let doc = zero_dom::parse_html(html);
+    let (style_blocks, inline_attrs) = extract_html_style_blocks(html);
     let mut out = String::new();
-    for style_id in doc.get_elements_by_tag_name("style") {
-        if let Some(text) = doc.text_content(style_id) {
-            out.push_str(&text);
-            // Resource extraction treats each <style> block as an independent EOF boundary.
-            // Close a possible unterminated url(...) so malformed CSS in one block cannot
-            // consume URLs from the next block after we concatenate the snippets.
-            // 括在注释内：tokenizer（extract_css_image_urls）在未闭合 url( 原始内容里仍
-            // 扫到 `)` 使 URL token 终止；parser（extract_used_font_families）视整段为
-            // 单个 comment token，不触发错误恢复吞噬后续规则（裸 `)` 会让解析器丢弃
-            // 之后全部规则——inline style 属性块因此在门禁侧全部失联）。
-            out.push_str("\n/* ) */\n");
-        }
+    for text in &style_blocks {
+        out.push_str(text);
+        // 括在注释内：parser 消费方（extract_font_faces / extract_used_font_families）
+        // 视整段为单个 comment token，不触发错误恢复吞噬后续规则（裸 `)` 会让解析器
+        // 丢弃之后全部规则——inline style 属性块因此在门禁侧全部失联）。tokenizer
+        // 消费方对块尾未终止 url( 的终止不依赖分隔符——走
+        // [`extract_html_css_image_urls`] 逐块 EOF 边界，见其文档。
+        out.push_str("\n/* ) */\n");
     }
-    // R1796：inline `style=` 属性值（如 `style="background-image: url(x)"`）亦是 CSS 文本，
-    // 收集后交 extract_css_image_urls 扫描。通配 `"*"` 匹配所有元素。
-    // 使用即取字体门禁（extract_used_font_families）按样式表语法解析该文本——声明必须
-    // 位于规则块内，故属性值包一层中性选择器块（对 url() 文本扫描无影响；逐属性独立
-    // 块还隔离了单个属性内不配对花括号的跨属性吞噬）。
-    for elem_id in doc.get_elements_by_tag_name_ns(None, "*") {
-        if let Some(style_attr) = doc.get_attribute(elem_id, "style") {
-            out.push_str("zw-inline{");
-            out.push_str(&style_attr);
-            out.push_str("}\n");
-        }
+    for attr in &inline_attrs {
+        // 使用即取字体门禁（extract_used_font_families）按样式表语法解析该文本——声明必须
+        // 位于规则块内，故属性值包一层中性选择器块（对 url() 文本扫描无影响；逐属性独立
+        // 块还隔离了单个属性内不配对花括号的跨属性吞噬）。
+        out.push_str("zw-inline{");
+        out.push_str(attr);
+        out.push_str("}\n");
     }
     out
+}
+
+/// [`extract_html_style_text`] 与 [`extract_html_css_image_urls`] 的共享提取面：
+/// `<style>` 块原文序列 + inline `style=` 属性值序列（均保持文档顺序）。通配 `"*"`
+/// 匹配所有元素（R1796：inline 属性值亦是 CSS 文本）。
+fn extract_html_style_blocks(html: &str) -> (Vec<String>, Vec<String>) {
+    let doc = zero_dom::parse_html(html);
+    let mut style_blocks = Vec::new();
+    for style_id in doc.get_elements_by_tag_name("style") {
+        if let Some(text) = doc.text_content(style_id) {
+            style_blocks.push(text);
+        }
+    }
+    let mut inline_attrs = Vec::new();
+    for elem_id in doc.get_elements_by_tag_name_ns(None, "*") {
+        if let Some(style_attr) = doc.get_attribute(elem_id, "style") {
+            inline_attrs.push(style_attr);
+        }
+    }
+    (style_blocks, inline_attrs)
+}
+
+/// R1794/R1796：文档级 CSS `url()` **图片**引用——`<style>` 块与 inline `style=`
+/// 属性逐块独立过 [`extract_css_image_urls`]（每块一个 EOF 边界），跨块去重保首次
+/// 出现序，@font-face / data: / @import 排除与单文本扫描一致。
+///
+/// 与「[`extract_html_style_text`] 拼接后一次扫描」的分道原因：块尾未终止 url( 的
+/// 终止判定——tokenizer（`consume_url`）在字符串被块界换行截断后要求下一非空白字符
+/// 恰为 `)`，注释分隔符不可见即整段判 bad-url 丢弃（`extract_css_urls_unterminated_
+/// at_style_close` 回归实证）；裸 `)` 分隔符则毒化 parser 消费方（见
+/// [`extract_html_style_text`] 注释）。EOF 恢复对两类消费方均无害：tokenizer 块末
+/// EOF 闭合出干净 url（R2134 语义——与 painter 同 key，image cache 不 miss），parser
+/// 每块本就独立无需分隔符。
+pub fn extract_html_css_image_urls(html: &str) -> Vec<String> {
+    fn push_unique(urls: &mut Vec<String>, css: &str) {
+        for url in extract_css_image_urls(css) {
+            if !urls.contains(&url) {
+                urls.push(url);
+            }
+        }
+    }
+    let (style_blocks, inline_attrs) = extract_html_style_blocks(html);
+    let mut urls = Vec::new();
+    for text in &style_blocks {
+        push_unique(&mut urls, text);
+    }
+    // tokenizer 只认 url( token，`zw-inline{}` 包裹仅为 parser 侧声明须位于规则块内，
+    // 此处裸属性值扫描即可。
+    for attr in &inline_attrs {
+        push_unique(&mut urls, attr);
+    }
+    urls
 }
 
 /// 去除 XHTML CDATA 包装（`<![CDATA[...]]>`）。

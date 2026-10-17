@@ -305,9 +305,8 @@ fn get_support_image_color(key: &ImageKey) -> Option<[u8; 4]> {
     None
 }
 fn extract_css_urls(html: &str) -> Vec<String> {
-    // 与生产同源：先经 DOM 抽 `<style>` 块 + inline `style=` 文本（生产
-    // [`zero_engine::extract_html_style_text`]，与 painter/collect_stylesheets 一致），
-    // 再用生产 [`zero_engine::extract_css_image_urls`]（tokenizer 识别 url()：函数名大小写
+    // 与生产同源：DOM 抽 `<style>` 块 + inline `style=` 逐块独立过生产
+    // [`zero_engine::extract_html_css_image_urls`]（tokenizer 识别 url()：函数名大小写
     // 不敏感且可含转义 `URL(` / `U\r\4c (`，内容转义已解码 consume_escape，跳过 @font-face
     // 与 data:，与 painter image key 对齐）。
     //
@@ -315,11 +314,11 @@ fn extract_css_urls(html: &str) -> Vec<String> {
     // driving uri-017 `background: url("support/swatch-green.png</style>` 经 HTML 整体
     // tokenize 时，未终止字符串吸收 `</style>` → 抽成 `support/swatch-green.png</style>`
     //（key 9447…）→ 与 painter（HTML 解析剥离 `</style>` 后得 `support/swatch-green.png`，
-    // key 16204…）不一致 → image_cache miss → 背景图不渲染（DC-14 假通过风险）。改为按
-    // `<style>` 块独立抽文本后，每个块末 EOF 自动闭合未终止 url，与 painter 同语义。
+    // key 16204…）不一致 → image_cache miss → 背景图不渲染（DC-14 假通过风险）。逐块
+    // 独立扫描下每个块末 EOF 自动闭合未终止 url，与 painter 同语义（拼接扫描会被
+    // 注释分隔符打断——extract_html_css_image_urls 文档）。
     // 副作用：不再多抓非 CSS 区域（脚本文本等）偶现的 `url(`——那些本就不参与渲染。
-    let css = zero_engine::extract_html_style_text(html);
-    zero_engine::extract_css_image_urls(&css)
+    zero_engine::extract_html_css_image_urls(html)
         .into_iter()
         .filter(|u| !u.starts_with("http"))
         .collect()
