@@ -1162,6 +1162,14 @@ fn compute_column_widths_inner(
             if cell.col_start >= col_count || grid.collapsed_cols.get(cell.col_start).copied().unwrap_or(false) {
                 continue;
             }
+            // R5169：合成匿名 cell **空盒**（shape A：裸 inline 经 R2160 跳过无子盒，
+            // node_id 借宿主行）——cell_used_width 测空盒 ≈0，列宽照走 run 文本
+            // max-content（anon_max_width，与 usize::MAX 占位 entry 同源）；含子盒的
+            // 合成 cell（shape B）维持盒测量不变。
+            if cell_box.is_anon_table_cell && cell_box.children.is_empty() {
+                col_max_widths[cell.col_start] = col_max_widths[cell.col_start].max(cell.anon_max_width);
+                continue;
+            }
             let (w, _, cell_spec_px) = cell_used_width(cell_box);
             col_max_widths[cell.col_start] = col_max_widths[cell.col_start].max(w);
             if let Some(px) = cell_spec_px {
@@ -2012,6 +2020,26 @@ fn position_cells(
                 - cell_box.padding_right)
                 .max(0.0);
             cell_box.content_width = cell_content_w;
+
+            // R5169（CSS2 §17.2.1：table-row 的非 cell 子生成匿名 cell 包裹）：嵌套
+            // table-row 盒被 build_row 当 cell 收进网格（infer-cells-3 形态，列位正确），
+            // 但其内部是行盒语义——行内 run 的合成匿名 cell 不在本网格（本函数只定位
+            // 网格级 cell），宽度滞留 0 → 其 IFC（compute_final 阶段才跑）按 0 宽换行、
+            // 撑高宿主行（090 行 1 h=184 vs ref 46 实证）。此处把网格解析出的 cell 宽
+            // 传播给行盒 cell 的合成 cell 子，使其 IFC 按列宽排版。
+            if matches!(
+                cell_box.node_id.and_then(|id| styles.get(&id)).map(|s| &s.display),
+                Some(DisplayValue::TableRow)
+            ) {
+                for child in &mut cell_box.children {
+                    if child.is_anon_table_cell {
+                        child.x = 0.0;
+                        child.y = 0.0;
+                        child.width = cell_width;
+                        child.content_width = cell_content_w;
+                    }
+                }
+            }
 
             // 单元格高度：CSS 2.1 规范中，table cell 的 height 属性被视为最小高度。
             // 单元格必须增长以包含其内容，不能裁剪到明确高度。

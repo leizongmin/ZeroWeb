@@ -150,4 +150,123 @@ fn wrap_inline_runs_in_row(row: &mut LayoutBox, doc: &Document, styles: &HashMap
         row.children.insert(run_start, cell);
         idx = run_start + 1;
     }
+
+    // R5169：盒级 drain 收不掉 R2160 跳过的无盒 run（shape A）——DOM 级补空合成 cell。
+    wrap_boxless_runs_in_row(row, doc, styles);
+}
+
+/// R5169：无盒 inline run 的空合成 cell（shape A 补绘）。
+///
+/// 裸 inline 子经 R2160 multi-inline 跳过在 step 8 **无盒**（088 形态），盒级 drain
+/// 看不见它们 → 行只有占位 entry（usize::MAX），网格列已预留但 **run 文本无盒可绘**
+/// （行级 paint_text 被 has_direct_paintable_text 的 TableCell 块级子判据早退；行级
+/// IFC 即便放行也是整行串联，非逐列定位）。本 pass 在 DOM 级按 build_row 同款分组
+/// 语义（非空白文本 + display:Inline 元素为成员；OOF 断 run；其余元素断 run 并以其
+/// 盒为插入锚）补出**空合成 cell 盒**：`node_id` 借宿主行 + `fragment_node_ids`
+/// 圈定 run 成员——paint 侧 fragment 圈定收集（R109 §9.2.1.1 机制，collect_items）
+/// 与 position_cells 真盒定位（x/width=列几何）全部现成，run 文本即按列绘制
+///（088/092 直接受益）。
+///
+/// 幂等：row 子已存在 fragment 相交的合成 cell（shape B drain 产物或既往 pass）
+/// 即跳过，不重复建盒。
+fn wrap_boxless_runs_in_row(row: &mut LayoutBox, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) {
+    let Some(row_node_id) = row.node_id else {
+        return;
+    };
+    // 分组语义与 build_row（table_types.rs DOM 序遍历）一致，保证 fragment 相交
+    // 匹配成立：text 一律入 run_ids（has_content 只计非空白）；display:Inline 元素
+    // 入 run；OOF 断 run（不入）；其余元素断 run，其盒为插入锚。
+    let mut runs: Vec<(Option<NodeId>, Vec<NodeId>)> = Vec::new();
+    let mut run_ids: Vec<NodeId> = Vec::new();
+    let mut run_has_content = false;
+    let flush = |runs: &mut Vec<(Option<NodeId>, Vec<NodeId>)>,
+                 run_ids: &mut Vec<NodeId>,
+                 has_content: bool,
+                 anchor: Option<NodeId>| {
+        if has_content {
+            runs.push((anchor, std::mem::take(run_ids)));
+        }
+        run_ids.clear();
+    };
+    for dom_child in doc.child_nodes(row_node_id) {
+        let Some(node) = doc.get(dom_child) else {
+            continue;
+        };
+        match &node.kind {
+            zero_dom::NodeKind::Text(t) => {
+                run_ids.push(dom_child);
+                run_has_content |= !t.content.trim().is_empty();
+            }
+            zero_dom::NodeKind::Element(_) => {
+                let style = styles.get(&dom_child);
+                let oof = style.is_some_and(|s| {
+                    !matches!(s.float, FloatValue::None)
+                        || matches!(
+                            s.position,
+                            zero_style_system::property::types::PositionValue::Absolute
+                                | zero_style_system::property::types::PositionValue::Fixed
+                        )
+                });
+                if oof {
+                    flush(&mut runs, &mut run_ids, run_has_content, None);
+                    run_has_content = false;
+                    continue;
+                }
+                if matches!(style.map(|s| &s.display), Some(DisplayValue::Inline)) {
+                    run_ids.push(dom_child);
+                    run_has_content = true; // inline 元素（即使空）也构成匿名 cell 内容
+                    continue;
+                }
+                flush(&mut runs, &mut run_ids, run_has_content, Some(dom_child));
+                run_has_content = false;
+            }
+            _ => {}
+        }
+    }
+    flush(&mut runs, &mut run_ids, run_has_content, None);
+
+    let writing_mode = row.writing_mode.clone();
+    for (anchor, run) in runs {
+        // R5169：仅合成员含 inline **元素**的 run——纯文本 run（孤儿 table-row 直系裸
+        // 文本、flex 容器 table-row 伪元素内容）旧有绘制路径（行级直绘）本就正确，空
+        // 合成 cell 以 0 高/未解析列宽接管绘制反而错位（run-in-table-row-between-001/
+        // 002 3.17%、flexbox-with-pseudo-elements-003 2.26% 实证）。boxless 合成只修
+        // R2160 无盒 inline 元素（088/092 形态）。
+        // FIXME(R5169 后继)：纯文本 run 的匿名 cell 合成须连同行级直绘让位一起对接。
+        if !run.iter().any(|id| {
+            styles
+                .get(id)
+                .is_some_and(|s| matches!(s.display, DisplayValue::Inline))
+        }) {
+            continue;
+        }
+        // 幂等 + shape B 让位：已有合成 cell 圈定本 run（任一成员相交）即跳过。
+        if row.children.iter().any(|b| {
+            b.is_anon_table_cell
+                && b.fragment_node_ids
+                    .as_ref()
+                    .is_some_and(|frags| run.iter().any(|id| frags.contains(id)))
+        }) {
+            continue;
+        }
+        let cell = LayoutBox {
+            node_id: Some(row_node_id),
+            fragment_node_ids: Some(run),
+            is_block_level: true,
+            is_anon_table_cell: true,
+            writing_mode: writing_mode.clone(),
+            // 无子盒（run 成员本就无盒）：高度 0，行高由显式 cell 撑起
+            //（position_cells row_height.max）；纯匿名 cell 行行高仍挂账。
+            height: 0.0,
+            content_height: 0.0,
+            ..Default::default()
+        };
+        // 插入锚：run 之后的首个非 inline DOM 兄弟的盒位（保 DOM 序）；无锚（行尾
+        // run）追加行末。锚盒缺失（未盒化）时退化为追加。
+        let insert_at = anchor.and_then(|a| row.children.iter().position(|b| b.node_id == Some(a)));
+        match insert_at {
+            Some(i) => row.children.insert(i, cell),
+            None => row.children.push(cell),
+        }
+    }
 }

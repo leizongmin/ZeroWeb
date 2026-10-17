@@ -1337,7 +1337,10 @@ pub(crate) fn compute_final_inline_layouts(
     // 匿名表 cell 宽度对齐再开）——horizontal cell 同样无 stored 度量，paint Path B 直系
     // 文本落 16px 默认（table-anonymous-objects-062 td 16px 字形 vs span cell 32px 实证）。
     // kill-switch `ZW_CELL_IFC_STORE=0` 回退 vertical-only。
-    let is_table_cell = matches!(style.display, DisplayValue::TableCell);
+    // R5169：合成匿名 cell（node_id 借宿主行）同属 cell 存储域——借来的行样式查
+    // TableCell 不中，须按 is_anon_table_cell 旗标归类，否则走 Path B（见下方
+    // allow_non_ahem_store 处的度量分歧实证）。
+    let is_table_cell = matches!(style.display, DisplayValue::TableCell) || root.is_anon_table_cell;
     let is_vertical_table_cell = is_table_cell && root.writing_mode.is_vertical_block_flow();
     let cell_ifc_store_enabled =
         is_vertical_table_cell || (is_table_cell && std::env::var("ZW_CELL_IFC_STORE").as_deref() != Ok("0"));
@@ -1663,7 +1666,13 @@ pub(crate) fn compute_final_inline_layouts(
     // 不传播 + baseline_offset 非 is_ahem-aware，致混合字体（default 容器 + Ahem span）glyph
     // 位错（floats-006 残余 4.04%）。kill-switch `ZW_FLOAT_INLINE_PAINT=0` 关闭（default-on）。
     let has_float_exclusions = !own_floats.is_empty();
-    let allow_non_ahem_store = has_float_exclusions && std::env::var("ZW_FLOAT_INLINE_PAINT").as_deref() != Ok("0");
+    // R5169：合成匿名 cell 放行 non-Ahem 存储——cell 借宿主行 node_id，行样式（如
+    // infer-cells 系列 body monospace）非 pure-Ahem 会拒存 → paint Path B（空 styles
+    // 重跑）的字体/推进解析与同页真实 cell 的 stored 度量分歧（090/091 绿层推进
+    // 16.9px vs 红层 16.0px，红绿叠层错排）。存 IFC 即冻结 layout 度量（R5167 cell
+    // 存储臂同款），paint use_stored 重放，两层逐像素对齐。
+    let allow_non_ahem_store = (has_float_exclusions && std::env::var("ZW_FLOAT_INLINE_PAINT").as_deref() != Ok("0"))
+        || (root.is_anon_table_cell && crate::table_anon_cell::anon_cell_wrap_enabled());
     if (!is_pure_ahem && !allow_non_ahem_store) || (is_floated && inline_ctx.lines.len() > 1) {
         return;
     }

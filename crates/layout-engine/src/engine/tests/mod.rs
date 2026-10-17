@@ -748,3 +748,4 @@ mod r5164_inline_block_auto_height_tests;
 mod r5166_oof_inline_static_pos_probe;
 mod r5167_table_anon_font_probe;
 mod r5168_anon_cell_wrap;
+mod r5169_anon_cell_run_paint;

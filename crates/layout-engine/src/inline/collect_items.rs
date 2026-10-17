@@ -401,6 +401,26 @@ impl InlineFormattingContext {
                         } else {
                             collapse_whitespace(&text_data.content)
                         };
+                        // R5169（CSS Text 3 §4.1，**仅 fragment 圈定域**）：合成 cell 片段
+                        // 序列跨成员计数连续空白——前序成员文本以可折叠空白结尾时，紧随
+                        // 成员的前导空白折叠进前者（单空格）。估算侧 R5034 pending_space
+                        // 本就如此（fragment_inline_max_width），收集侧旧实现计双空格 →
+                        // 内容宽超列宽误换行（table-anonymous-objects-088 实证）。常规
+                        // 容器遍历不动（全局收口 white-space-mixed torture 系回归实证，
+                        // FIXME(R5169 后继)：跨 white-space 模式连续性全局对齐）。
+                        let mut text = text;
+                        if self.fragment_node_ids.is_some()
+                            && !run_preserves
+                            && items.last().is_some_and(|last| {
+                                matches!(last, InlineItem::Text(tr) if tr.text.ends_with(char::is_whitespace))
+                            })
+                        {
+                            if text.chars().all(char::is_whitespace) {
+                                // 整节点折叠进前序空格。
+                                continue;
+                            }
+                            text = text.trim_start_matches(char::is_whitespace).to_string();
+                        }
                         if !text.is_empty() {
                             // CSS Pseudo 4: generated-content text uses the computed style
                             // of its pseudo element. Normal DOM text nodes still inherit by

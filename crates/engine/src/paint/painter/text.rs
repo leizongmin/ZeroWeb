@@ -34,6 +34,15 @@ fn direct_text_seed_enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var("ZW_PAINT_DIRECT_TEXT_SEED").as_deref() != Ok("0"))
 }
 
+/// R5169：stored 片段基线锚定开关——非 Ahem 片段的 v_offset 同 is_ahem_font 臂取
+/// `baseline_y_abs - frag.y`（存储 IFC 真实行基线），`frag.font_size` 近似把基线当
+/// fs（infer-cells monospace 32px 行基线 37 → 字形整体高 5px 实证）。default-on；
+/// `ZW_STORED_BASELINE_ANCHOR=0` 回退 fs 近似。
+fn stored_baseline_anchor_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_STORED_BASELINE_ANCHOR").as_deref() != Ok("0"))
+}
+
 /// R5120：单行 inline border/padding 整盒几何开关。**默认关（dormant）**——
 /// 几何已实现且自洽（`ZW_INLINE_SINGLE_FRAG_BOX_BORDER=1` 时
 /// border-width-applies-to-008 15.53%→100%），但 bidi 控制页（css/CSS2/bidi-text/
@@ -3304,6 +3313,12 @@ impl super::Painter {
                                 frag.baseline_y_abs - frag.y
                             } else if frag.is_ahem {
                                 0.0
+                            } else if stored_baseline_anchor_enabled() {
+                                // R5169：非 Ahem 片段同样基线锚定——存储 IFC 的 baseline_y
+                                // 是 struts 真实行基线（行顶 + half-leading + ascent），旧
+                                // `frag.font_size` 近似把基线当 fs（infer-cells monospace
+                                // 32px 行基线 37 → 旧 32，字形整体高 5px，红绿叠层错位实证）。
+                                frag.baseline_y_abs - frag.y
                             } else {
                                 frag.font_size
                             };

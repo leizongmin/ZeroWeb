@@ -217,6 +217,12 @@ pub(crate) fn build_grid(
                         } else if rg_display.as_ref().is_some_and(is_table_row) {
                             // 嵌套行组中的行：提取其单元格
                             for (cell_idx, cell_child) in rg_child.children.iter().enumerate() {
+                                // R5168/R5169：合成匿名 cell（node_id 借宿主行、非独立
+                                // cell）不在此提取——build_row DOM 序遍历已为其预留匿名
+                                // 列，此处再计即幻影列。
+                                if cell_child.is_anon_table_cell {
+                                    continue;
+                                }
                                 let cell_colspan = get_colspan(cell_child, doc);
                                 let cell_rowspan = get_rowspan(cell_child, doc);
                                 let col_start = orphan_col_cursor;
