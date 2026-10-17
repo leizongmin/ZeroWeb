@@ -6461,3 +6461,156 @@ fn overflow_active_tab_eviction_keeps_button_at_borrowed_slot() {
         .expect("对照态末槽位应存在");
     assert_eq!(active_rect_swap, last_plain, "活动标签借用的应正是最后一个可视槽位");
 }
+
+/// RV-1 回归（T56）：让位借槽优先普通槽位——可视区末位是 pinned 窄槽时不得借
+/// pinned 槽（pinned 窄槽与普通宽槽 slot_w 语义不同），应借最后一个普通槽位，
+/// pinned 标签保持原槽位可见，▾/「+」按钮位置与无换位态一致。
+///
+/// 注意：tab_layout 现不含 pinned 标签（app_render 可视循环对 pinned 提前
+/// continue，先存缺陷另案记录），故 pinned 槽位几何经 ▾ 按钮 x 断言——其 x
+/// 取最后一个可视槽位（含 pinned）的稳定右缘，pinned 被挤出时右缘即左偏。
+#[test]
+fn overflow_active_tab_eviction_prefers_normal_slot_over_pinned() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+
+    // 槽位几何按 render_tabs 同源常量构造（宽度不依赖运行环境的窗口控件宽度）：
+    // 首标签 + 8 新建 = 9 枚（1 pinned + 8 普通），普通槽压缩到极限最小宽。
+    // strip_limit = 5*36 + 52 + 18 = 250：pinned 槽 [180,232) 为可视末位，
+    // 其后普通槽 [232,268) 起溢出（活动标签所在）。
+    let min_w = layout::TAB_ABSOLUTE_MIN_WIDTH;
+    let strip_limit = 5.0 * min_w + layout::TAB_PINNED_WIDTH + min_w / 2.0;
+    let width = (strip_limit
+        + 2.0 * layout::NEW_TAB_BTN_WIDTH
+        + if app.uses_custom_window_controls() {
+            layout::WINDOW_CONTROLS_WIDTH
+        } else {
+            0.0
+        }
+        + app.tab_bar_leading_inset()) as u32;
+
+    for _ in 0..8 {
+        app.new_tab(None);
+    }
+    let ids = app.smoke_tab_ids();
+    assert!(ids.len() >= 8, "前置：1 枚初始标签 + 8 枚新建标签");
+    app.shell.set_tab_pinned(ids[5], true);
+    app.shell.switch_tab(ids[6]);
+    assert_eq!(app.smoke_active_tab_id(), Some(ids[6]), "前置：活动标签为 ids[6]");
+
+    macro_rules! rect {
+        ($id:expr) => {
+            app.tab_layout_rect_for_test($id).expect("槽位应存在")
+        };
+    }
+
+    // 对照态：活动标签切到首个可视标签（换位解除），得到纯稳定槽位几何。
+    app.shell.switch_tab(ids[0]);
+    let _ = app.build_scene_for_test(width, 400);
+    assert_eq!(
+        app.smoke_tab_overflow().1,
+        3,
+        "前置：3 枚标签溢出隐藏（含活动标签换位源）"
+    );
+    let last_normal_plain = rect!(ids[4]);
+    let btn_x_plain = app.tab_overflow_btn_x_for_test().expect("▾ 应持续渲染");
+
+    // 换位态（活动标签切回隐藏集）。
+    app.shell.switch_tab(ids[6]);
+    let _ = app.build_scene_for_test(width, 400);
+    let swap_layout = app.tab_layout_ids_for_test();
+    // tab_layout 只含普通标签：pinned 尾槽被排除，被挤出的 ids[4] 也不在。
+    assert_eq!(
+        swap_layout,
+        vec![ids[0], ids[1], ids[2], ids[3], ids[6]],
+        "活动标签应借最后一个普通槽位（pinned 槽之前），被让出标签进隐藏集"
+    );
+    assert_eq!(
+        rect!(ids[6]),
+        last_normal_plain,
+        "活动标签借用的应正是最后一个普通槽位，而非 pinned 窄槽"
+    );
+    assert_eq!(
+        app.tab_overflow_btn_x_for_test(),
+        Some(btn_x_plain),
+        "▾ 按钮右缘应仍贴 pinned 尾槽右缘（pinned 未被挤出、换位不移动 ▾）"
+    );
+}
+
+/// RV-1 回归（T56）fallback：无可借普通槽（可视区全为 pinned）时，活动标签借
+/// pinned 槽须全宽接管——slot_x/slot_w/绘制宽度一体同步为借出槽位几何，不残留
+/// 「窄槽位 + 自身窄绘制」未占满借槽的混合语义（▾ 右缘仍贴借槽右缘）。
+///
+/// 注意：tab_layout 现不含 pinned 标签（同上），借出 pinned 槽几何以布局常量
+/// 构造，▾ 按钮 x 兜底校验借槽右缘。
+#[test]
+fn overflow_active_tab_eviction_pinned_fallback_takes_full_slot() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+
+    // 槽位几何按 render_tabs 同源常量构造（宽度不依赖运行环境的窗口控件宽度）：
+    // 首标签 + 4 新建 = 5 枚（前 2 枚 pinned + 3 普通，首枚普通为活动标签），
+    // 普通槽压缩到极限最小宽。strip_limit = 120：p1 [0,52) p2 [52,104) 可见，
+    // t3 [104,140) 起溢出（活动标签所在）。
+    let strip_limit = 120.0f32;
+    let width = (strip_limit
+        + 2.0 * layout::NEW_TAB_BTN_WIDTH
+        + if app.uses_custom_window_controls() {
+            layout::WINDOW_CONTROLS_WIDTH
+        } else {
+            0.0
+        }
+        + app.tab_bar_leading_inset()) as u32;
+
+    for _ in 0..4 {
+        app.new_tab(None);
+    }
+    let ids = app.smoke_tab_ids();
+    assert!(ids.len() >= 4, "前置：1 枚初始标签 + 4 枚新建标签");
+    app.shell.set_tab_pinned(ids[0], true);
+    app.shell.set_tab_pinned(ids[1], true);
+
+    // 对照态：活动标签切到 p1（换位解除），可视区恰为两枚 pinned 标签，
+    // ▾ 右缘 = p2 槽位右缘 = 2 * TAB_PINNED_WIDTH。
+    app.shell.switch_tab(ids[0]);
+    let _ = app.build_scene_for_test(width, 400);
+    assert_eq!(
+        app.smoke_tab_overflow().1,
+        3,
+        "前置：3 枚普通标签溢出隐藏（含活动标签换位源）"
+    );
+    let btn_x_plain = app.tab_overflow_btn_x_for_test().expect("▾ 应持续渲染");
+    assert_eq!(
+        btn_x_plain,
+        2.0 * layout::TAB_PINNED_WIDTH,
+        "前置：▾ 右缘 = p2 pinned 槽右缘"
+    );
+
+    // 换位态（活动标签切回隐藏集）：无可借普通槽，回退借 p2 pinned 槽全宽接管。
+    app.shell.switch_tab(ids[2]);
+    let _ = app.build_scene_for_test(width, 400);
+    let swap_layout = app.tab_layout_ids_for_test();
+    assert_eq!(
+        app.smoke_active_tab_id(),
+        Some(ids[2]),
+        "前置：活动标签为溢出隐藏的普通标签"
+    );
+    // tab_layout 只含普通标签：p1 被排除，p2 被让出进隐藏集，仅剩活动标签。
+    assert_eq!(
+        swap_layout,
+        vec![ids[2]],
+        "无可借普通槽时活动标签应借最后一个 pinned 槽位可见（p2 进隐藏集）"
+    );
+    assert_eq!(
+        app.tab_layout_rect_for_test(ids[2]),
+        Some((layout::TAB_PINNED_WIDTH, layout::TAB_PINNED_WIDTH)),
+        "活动标签应全宽接管借出 pinned 槽（slot_x/slot_w/绘制宽度一体同步）"
+    );
+    assert_eq!(
+        app.tab_overflow_btn_x_for_test(),
+        Some(btn_x_plain),
+        "▾ 右缘应贴借槽右缘（换位不移动 ▾）"
+    );
+}

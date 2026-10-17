@@ -41,6 +41,9 @@ mod tests {
     use super::*;
 
     #[test]
+    // serial(gpu_env)：本测改 ZW_COMPOSITOR_GPU_SIMULATE_LOST，与硬断言 GPU 光栅
+    // 成功的 gpu_raster 测试互斥（T60：并行下环境变量竞态会误伤读者）。
+    #[serial_test::serial(gpu_env)]
     fn simulate_lost_forces_cpu_path() {
         unsafe {
             std::env::set_var("ZW_COMPOSITOR_GPU_SIMULATE_LOST", "1");

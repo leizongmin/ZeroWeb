@@ -481,6 +481,56 @@ fn compositor_partial_dirty_preserves_pixels_outside_region() {
     assert_eq!(frame.rgba[outside + 2], 255, "dirty 外 B 应保留蓝");
 }
 
+/// T60/TV-2 接线（真实合成器进程）：IPC 小数脏区端到端重绘——脏区
+/// (8.0, 8.0, 20.6, 16.4) 归一为 [7,30)×[7,26)，(29,24) 位于 trunc 边界
+/// （[8,28)×[8,24)）之外、归一区域之内，(7,7) 为 1px 墨迹外扩角点，两者都必须
+/// 被重绘。CPU 链路经 `rasterize_into_back` 内部归一（该入口另有变异证红单测
+/// `partial_dirty_fractional_rect_entry_wiring_repaints_normalized_region`）；
+/// lib.rs→GPU 臂的归一接线由 scissor floor/ceil 修复与
+/// `gpu_partial_matches_cpu_region_render` 两臂同区域契约纵深覆盖。
+#[test]
+fn compositor_partial_dirty_fractional_rect_entry_wiring_repaints_normalized_region() {
+    let (mut transport, _comp) = spawn_compositor_with_env(&[("ZW_COMPOSITOR_SCROLL_TRANSFORM", "0")]);
+    let w = 64u32;
+    let h = 64u32;
+
+    assert_eq!(
+        submit_frame(&mut transport, 1, 6, 1, 1, make_frame(w, h, [0, 0, 255, 255])),
+        (6, 1, 1)
+    );
+    assert_eq!(
+        submit_frame(
+            &mut transport,
+            2,
+            6,
+            1,
+            2,
+            make_frame_with_dirty(
+                w,
+                h,
+                [255, 0, 0, 255],
+                vec![IpcRect {
+                    x: 8.0,
+                    y: 8.0,
+                    width: 20.6,
+                    height: 16.4,
+                }],
+            ),
+        ),
+        (6, 1, 2)
+    );
+
+    let frame = get_frame(&mut transport, 3, 6, 1, 2);
+    let pixel = |x: u32, y: u32| -> (u8, u8, u8) {
+        let off = ((y * w + x) * 4) as usize;
+        (frame.rgba[off], frame.rgba[off + 1], frame.rgba[off + 2])
+    };
+    assert_eq!(pixel(29, 24), (255, 0, 0), "ceil 边像素 (29,24) 应被归一后重绘");
+    assert_eq!(pixel(7, 7), (255, 0, 0), "1px 墨迹外扩角点 (7,7) 应被重绘");
+    assert_eq!(pixel(5, 5), (0, 0, 255), "归一区域外应保留旧帧蓝");
+    assert_eq!(pixel(31, 27), (0, 0, 255), "归一区域外应保留旧帧蓝");
+}
+
 /// C3：`ZW_COMPOSITOR_GPU=1` 时 compositor 进程内 GPU 光栅化（不可用时与 CPU 同路径回退）。
 #[test]
 fn compositor_gpu_path_produces_expected_fill() {
