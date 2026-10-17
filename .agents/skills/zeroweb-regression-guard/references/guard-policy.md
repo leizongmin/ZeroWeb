@@ -40,7 +40,9 @@ Chrome parity 默认使用仓库已有的最小代表场景；若变更触及表
 |---|---:|
 | renderer 单进程峰值 | ≤ 192 MiB |
 | compositor 单进程峰值 | ≤ 192 MiB |
-| renderer + compositor 稳定空闲总量 | ≤ 256 MiB |
+| renderer + compositor 稳定空闲总量 | ≤ 320 MiB |
+
+> **idle SUM 预算重校准（2026-10-17，用户批复，ZRG-2026-10-17-01 批复 ⑥）**：256→320。推导 = 本机 headless 路径有意选 lavapipe 软件 Vulkan 保输出确定性（`render-foundation/src/gpu/renderer/mod.rs:353`），compositor 携 ~81 MiB Mesa 栈；idle 稳定期 smaps 实测结构下限 ~291 MiB（环境栈 81 + 二进制代码页 46.5 + 应用堆 ~158 + 系统库 ~6），256 结构上不可达；320 = 下限 + ~10% 余量。单进程 192 两项不动；带/阶跃趋势管控与 DEFERRED 纪律照旧。剖析证据：`.rally/zeroweb-regression-guard/20261017T041100Z-r4377/profile/ANALYSIS.md`（gitignore，组成表与 LegC 对照腿）。
 
 这些分进程数据写入本次报告并用于趋势诊断，但不得伪装成仓库已有 `perf-gate` 基线。绝对预算与 `perf-gate` 相对预算任一失败都算回归；不得拿另一台机器或另一种内存口径的结果比较。
 
