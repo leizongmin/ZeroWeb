@@ -28,6 +28,11 @@
           _zw_rsaImportKey(format, keyData, algo, extractable, usages, resolve, reject);
           return;
         }
+        // EC 家族（M4b）：namedCurve 校验 + usages + 格式解析（spki/raw/pkcs8/jwk）整体转入 helper。
+        if (_zw_ecIsFamily(algo.name)) {
+          _zw_ecImportKey(format, keyData, algo, extractable, usages, resolve, reject);
+          return;
+        }
         var isAes = (algo.name === 'AES-GCM' || algo.name === 'AES-CBC' || algo.name === 'AES-CTR' || algo.name === 'AES-KW');
         var isHmac = algo.name === 'HMAC';
         // HMAC：显式 length 0 → DataError（spec 步骤 1，先于 usages SyntaxError）。
@@ -182,6 +187,24 @@
           if (sig) resolve(sig);
           return;
         }
+        if (name === 'ECDSA') {
+          // spec sign 公共步骤序：hash 归一（缺失 TypeError / 未注册 NotSupportedError）
+          // 先于 key 校验（算法不匹配 / 非 private / 无 "sign" usage → InvalidAccessError）。
+          var ecHash = _zw_ecdsaHash(algorithm, reject);
+          if (!ecHash) return;
+          if (!key || _zw_upperAscii(String(key.algorithm && key.algorithm.name)) !== 'ECDSA') {
+            reject(new _zw_subtleDE('Algorithm does not match key', 'InvalidAccessError')); return;
+          }
+          if (key.type !== 'private') {
+            reject(new _zw_subtleDE('Key is not a private key', 'InvalidAccessError')); return;
+          }
+          if (!key.usages || key.usages.indexOf('sign') < 0) {
+            reject(new _zw_subtleDE('Key usages do not include "sign"', 'InvalidAccessError')); return;
+          }
+          var ecSig = _zw_ecdsaSignCall(ecHash, key, _zw_bufToBytes(data), reject);
+          if (ecSig) resolve(ecSig);
+          return;
+        }
         if (name !== 'HMAC' || !key || key.algorithm.name !== 'HMAC') {
           reject(new _zw_subtleDE('Unsupported sign algorithm or key', 'NotSupportedError')); return;
         }
@@ -217,6 +240,22 @@
           resolve(_zw_rsaVerifyCall(key, pad, salt, _zw_rsaKeyHash(key), _zw_bufToBytes(signature), _zw_bufToBytes(data), reject));
           return;
         }
+        if (name === 'ECDSA') {
+          // 同 sign：hash 归一先于 key 校验；坏签名/错长度/detached → false 不 reject。
+          var evHash = _zw_ecdsaHash(algorithm, reject);
+          if (!evHash) return;
+          if (!key || _zw_upperAscii(String(key.algorithm && key.algorithm.name)) !== 'ECDSA') {
+            reject(new _zw_subtleDE('Algorithm does not match key', 'InvalidAccessError')); return;
+          }
+          if (key.type !== 'public') {
+            reject(new _zw_subtleDE('Key is not a public key', 'InvalidAccessError')); return;
+          }
+          if (!key.usages || key.usages.indexOf('verify') < 0) {
+            reject(new _zw_subtleDE('Key usages do not include "verify"', 'InvalidAccessError')); return;
+          }
+          resolve(_zw_ecdsaVerifyCall(evHash, key, _zw_bufToBytes(signature), _zw_bufToBytes(data), reject));
+          return;
+        }
         if (name !== 'HMAC' || !key || key.algorithm.name !== 'HMAC') {
           reject(new _zw_subtleDE('Unsupported verify algorithm or key', 'NotSupportedError')); return;
         }
@@ -244,8 +283,51 @@
       return new Promise(function (resolve, reject) {
         var name = (typeof algorithm === 'object' && algorithm) ? algorithm.name : algorithm;
         name = _zw_upperAscii(String(name == null ? '' : name));
-        if ((name !== 'PBKDF2' && name !== 'HKDF') || !key || key.algorithm.name !== name) {
-          reject(new _zw_subtleDE('Unsupported deriveBits algorithm or key', 'NotSupportedError')); return;
+        if (name === 'ECDH') {
+          // ECDH（M4b）：校验序（derive.js 断言）——public 成员缺失/非 CryptoKey
+          // TypeError → baseKey 非 ECDH/非 private/无 "deriveBits" usage/public 非法或
+          // 曲线不匹配 InvalidAccessError。length：null/省略 → 域全宽（x 坐标原始字节
+          // 串）；0 → 空；超域宽 → OperationError（derive.js "too many bits"）；非 8 倍数
+          // → 取左起 length 位（尾字节高位保留，零填充至字节边界）。
+          var ecdhPub = _zw_ecdhValidate(algorithm, key, reject);
+          if (!ecdhPub) return;
+          if (!key.usages || key.usages.indexOf('deriveBits') < 0) {
+            reject(new _zw_subtleDE('Key usages do not include "deriveBits"', 'InvalidAccessError')); return;
+          }
+          if (typeof __zw_crypto_subtle_ecdh !== 'function') {
+            reject(_zw_subtleDE('crypto.subtle deriveBits requires host callback', 'NotSupportedError')); return;
+          }
+          var fieldLen = _zw_ecFieldLen[key.algorithm.namedCurve];
+          var lenBits = (length == null) ? fieldLen * 8 : Number(length);
+          if (!(lenBits >= 0)) {
+            reject(new TypeError('deriveBits length must be a number')); return;
+          }
+          if (lenBits > fieldLen * 8) {
+            reject(new _zw_subtleDE('deriveBits length must not exceed the field size', 'OperationError')); return;
+          }
+          var shared = __zw_crypto_subtle_ecdh(key.algorithm.namedCurve, (key._raw || []).join(','), (ecdhPub._raw || []).join(','));
+          if (!shared) {
+            reject(new _zw_subtleDE('ECDH derivation failed', 'OperationError')); return;
+          }
+          var sparts = shared.split(',');
+          var outBytes = Math.ceil(lenBits / 8);
+          var earr = new Uint8Array(outBytes);
+          var full = Math.floor(lenBits / 8);
+          for (var ei = 0; ei < full; ei++) earr[ei] = +sparts[ei];
+          if (lenBits % 8) {
+            earr[full] = +sparts[full] & ((0xff << (8 - lenBits % 8)) & 0xff);
+          }
+          resolve(earr);
+          return;
+        }
+        if ((name !== 'PBKDF2' && name !== 'HKDF')) {
+          reject(new _zw_subtleDE('Unsupported deriveBits algorithm', 'NotSupportedError')); return;
+        }
+        // spec derive 公共步骤：baseKey.algorithm.name 与算法名不匹配 → InvalidAccessError
+        //（WPT hkdf/pbkdf2 "with wrong (ECDH) key" 组断言——此前误归 NotSupportedError，
+        // 被 ECDH generateKey 失败（wrongKey=null）掩盖）。
+        if (!key || _zw_upperAscii(String(key.algorithm && key.algorithm.name)) !== name) {
+          reject(new _zw_subtleDE('Algorithm does not match key', 'InvalidAccessError')); return;
         }
         if (!key.usages || key.usages.indexOf('deriveBits') < 0) {
           reject(new _zw_subtleDE('Key usages do not include "deriveBits"', 'InvalidAccessError')); return;
@@ -265,14 +347,19 @@
         if (!dka) {
           reject(new _zw_subtleDE('Unsupported derived key algorithm', 'NotSupportedError')); return;
         }
-        var lenBits = _zw_keyLengthBits(dka);
-        if (!lenBits) {
+        // spec deriveKey get key length：HKDF/PBKDF2 目标无 length 成员 → length null
+        //（派生取摘要输出全长，再以 raw 导入 KDF 密钥——WebKit bug 282096 /
+        // derive_key_and_encrypt 断言面；AES/HMAC 仍按 _zw_keyLengthBits）。
+        var dkName = _zw_upperAscii(String(dka.name));
+        var kdfTarget = (dkName === 'HKDF' || dkName === 'PBKDF2');
+        var lenBits = kdfTarget ? 0 : _zw_keyLengthBits(dka);
+        if (!lenBits && !kdfTarget) {
           reject(new _zw_subtleDE('Cannot determine derived key length', 'NotSupportedError')); return;
         }
         if (!baseKey || !baseKey.usages || baseKey.usages.indexOf('deriveKey') < 0) {
           reject(new _zw_subtleDE('Key usages do not include "deriveKey"', 'InvalidAccessError')); return;
         }
-        _zw_performDerive(algorithm, baseKey, lenBits).then(function (bits) {
+        _zw_performDerive(algorithm, baseKey, lenBits ? lenBits : null).then(function (bits) {
           return crypto.subtle.importKey('raw', bits, dka, extractable, usages);
         }).then(resolve, reject);
       });
@@ -383,6 +470,12 @@
           // 错误序：非法 usage SyntaxError → 生成 OperationError（e<3/偶数，failures
           // "Bad algorithm property"）→ 私钥空 usages SyntaxError。
           _zw_rsaGenerateKey(algorithm, extractable, usages, algo, resolve, reject);
+        } else if (_zw_ecIsFamily(algo.name)) {
+          // EC（M4b）→ CryptoKeyPair{publicKey, privateKey}（publicKey 恒 extractable）；
+          // 错误序（failures.js 断言）：非法 usage SyntaxError → namedCurve 缺失
+          // TypeError / 未注册 NotSupportedError（EC 专属，RSA 同位是 OperationError）
+          // → 私钥空 usages SyntaxError。
+          _zw_ecGenerateKey(algorithm, extractable, usages, algo, resolve, reject);
         } else {
           reject(new _zw_subtleDE('Unsupported generateKey algorithm', 'NotSupportedError'));
         }
@@ -398,6 +491,11 @@
         // RSA 家族（M4a）：spki/pkcs8/jwk 分派整体转入 helper（公/私类型与格式匹配校验在内）。
         if (key && key.algorithm && _zw_rsaIsFamily(key.algorithm.name)) {
           _zw_rsaExportKey(format, key, resolve, reject);
+          return;
+        }
+        // EC 家族（M4b）：spki/raw/pkcs8/jwk 分派整体转入 helper（公/私类型与格式匹配校验在内）。
+        if (key && key.algorithm && _zw_ecIsFamily(key.algorithm.name)) {
+          _zw_ecExportKey(format, key, resolve, reject);
           return;
         }
         var fmt = _zw_upperAscii(String(format == null ? '' : format));

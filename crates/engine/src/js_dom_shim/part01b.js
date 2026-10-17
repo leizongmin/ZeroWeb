@@ -2395,6 +2395,17 @@
         hash: rsaHash
       };
     }
+    if (name === 'ECDSA' || name === 'ECDH') {
+      // namedCurve 原样透传（spec 曲线名精确匹配、大小写敏感，不折叠）；缺失由
+      // importKey/generateKey 按 EcKeyImportParams/EcKeyGenParams required 成员抛
+      // TypeError（sign/verify 的 EcdsaParams 与 deriveBits 的 EcdhKeyDeriveParams
+      // 无 namedCurve 成员，hash/public 各自校验）。
+      var ecOut = { name: name };
+      if (typeof algo === 'object' && algo && algo.namedCurve != null) {
+        ecOut.namedCurve = algo.namedCurve;
+      }
+      return ecOut;
+    }
     return null;
   }
 
@@ -2504,21 +2515,57 @@
     return res;
   }
 
-  // 派生核心（deriveBits/deriveKey 共用）：PBKDF2/HKDF 分派 + host 调用 + csv→arr，**不做 usage 校验**
-  //（usage 校验由调用方负责——deriveBits 检 "deriveBits"，deriveKey 检 "deriveKey"）。
-  // name 匹配 ASCII 折叠；**未知派生算法 reject NotSupportedError**（不得落入 HKDF 分支——
-  // WPT normalize-algorithm-name "PB<U+212A>DF2" 组断言 NotSupportedError）。
+  // 派生核心（deriveBits/deriveKey 共用）：ECDH/PBKDF2/HKDF 分派 + host 调用 + csv→arr，
+  // **不做 usage 校验**（usage 校验由调用方负责——deriveBits 检 "deriveBits"，
+  // deriveKey 检 "deriveKey"）。name 匹配 ASCII 折叠；**未知派生算法 reject
+  // NotSupportedError**（不得落入 HKDF 分支——WPT normalize-algorithm-name
+  // "PB<U+212A>DF2" 组断言 NotSupportedError）。
   function _zw_performDerive(algorithm, key, length) {
     return new Promise(function (resolve, reject) {
       var name = (typeof algorithm === 'object' && algorithm) ? algorithm.name : algorithm;
       name = _zw_upperAscii(String(name == null ? '' : name));
+      if (name === 'ECDH') {
+        // ECDH 臂（M4b，deriveKey 路径）：调用方已检 "deriveKey" usage；此处补 base
+        // private/public 校验。目标密钥长度（_zw_keyLengthBits：AES/HMAC）恒字节对齐；
+        // 超 x 坐标域宽 → OperationError（与 deriveBits 同径——spec deriveKey 经
+        // deriveBits 取目标长度位）。length null（deriveKey 目标 HKDF/PBKDF2 无
+        // length 成员，spec get key length → null）→ 全域宽 x 坐标。
+        var ecdhPub = _zw_ecdhValidate(algorithm, key, reject);
+        if (!ecdhPub) return;
+        if (typeof __zw_crypto_subtle_ecdh !== 'function') {
+          reject(_zw_subtleDE('crypto.subtle deriveKey requires host callback', 'NotSupportedError')); return;
+        }
+        var eshared = __zw_crypto_subtle_ecdh(key.algorithm.namedCurve, (key._raw || []).map(String).join(','), (ecdhPub._raw || []).join(','));
+        if (!eshared) {
+          reject(new _zw_subtleDE('ECDH derivation failed', 'OperationError')); return;
+        }
+        var eparts = eshared.split(',');
+        var eLen = (length == null) ? eparts.length : Math.floor(length / 8);
+        if (eLen > eparts.length) {
+          reject(new _zw_subtleDE('derived key length must not exceed the field size', 'OperationError')); return;
+        }
+        var earr = new Uint8Array(eLen);
+        for (var ei = 0; ei < eLen; ei++) earr[ei] = +eparts[ei];
+        resolve(earr);
+        return;
+      }
       if (name !== 'PBKDF2' && name !== 'HKDF') {
         reject(_zw_subtleDE('Unsupported derive algorithm: ' + name, 'NotSupportedError')); return;
       }
-      var dkLen = length / 8;
-      var keyCsv = (key._raw || []).map(String).join(',');
+      // spec derive 公共步骤：baseKey.algorithm.name 与算法名不匹配 → InvalidAccessError
+      //（WPT hkdf/pbkdf2 "with wrong (ECDH) key" 全组断言——此前 ECDH generateKey
+      // 失败把 wrongKey 降级为 null 而掩盖，M4b 起真实触发）。
+      if (!key || _zw_upperAscii(String(key.algorithm && key.algorithm.name)) !== name) {
+        reject(new _zw_subtleDE('Algorithm does not match key', 'InvalidAccessError')); return;
+      }
       var hash = _zw_hashName(typeof algorithm === 'object' ? algorithm.hash : null);
       var saltBytes = _zw_bufToBytes(algorithm.salt);
+      // length null（spec deriveKey get key length 对 HKDF/PBKDF2 → null）→ 摘要输出
+      // 字节数（RFC 2104/5869：SHA-1/256/384/512 → 20/32/48/64）；未知 hash → 0 走
+      // 既有 !out → NotSupportedError 路径。
+      var dkLen = (length == null)
+        ? (hash === 'SHA-1' ? 20 : hash === 'SHA-256' ? 32 : hash === 'SHA-384' ? 48 : hash === 'SHA-512' ? 64 : 0)
+        : length / 8;
       var out = '';
       if (name === 'PBKDF2') {
         var iters = Math.floor(Number(algorithm.iterations));
@@ -2528,13 +2575,13 @@
         if (typeof __zw_crypto_subtle_pbkdf2 !== 'function') {
           reject(_zw_subtleDE('crypto.subtle deriveBits requires host callback', 'NotSupportedError')); return;
         }
-        out = __zw_crypto_subtle_pbkdf2(hash, keyCsv, saltBytes.join(','), String(iters), String(dkLen));
+        out = __zw_crypto_subtle_pbkdf2(hash, (key._raw || []).map(String).join(','), saltBytes.join(','), String(iters), String(dkLen));
       } else { // HKDF
         if (!hash || typeof __zw_crypto_subtle_hkdf !== 'function') {
           reject(_zw_subtleDE('HKDF requires hash + host callback', 'NotSupportedError')); return;
         }
         var infoBytes = _zw_bufToBytes(algorithm.info);
-        out = __zw_crypto_subtle_hkdf(hash, keyCsv, saltBytes.join(','), infoBytes.join(','), String(dkLen));
+        out = __zw_crypto_subtle_hkdf(hash, (key._raw || []).map(String).join(','), saltBytes.join(','), infoBytes.join(','), String(dkLen));
       }
       if (!out) {
         reject(_zw_subtleDE("Unsupported deriveBits hash: '" + hash + "'", 'NotSupportedError')); return;
@@ -2964,6 +3011,373 @@
       return;
     }
     reject(new _zw_subtleDE("Unsupported exportKey format: '" + fmt + "' (only 'spki'/'pkcs8'/'jwk' supported for RSA keys)", 'NotSupportedError'));
+  }
+
+  // ===== EC 家族（ECDSA / ECDH，namedCurve P-256/P-384/P-521）shim 支撑（webcrypto M4b）=====
+  // host 原语见 js_dom_bridge/crypto.rs（p256/p384/p521 0.13）；字节桥统一 csv，
+  // jwk 分量经 `;` 分隔多字段。密钥材料（DER/分量）不落 tracing（零日志纪律）。
+  // https://w3c.github.io/webcrypto/#ecdsa-operations  https://w3c.github.io/webcrypto/#ecdh-operations
+
+  // 各曲线域元素宽度（字节）——jwk x/y/d 定长校验/导出零填充与 ECDH deriveBits
+  // 缺省宽度基准（P-521 66 字节含 7 个高位零填充位）。
+  var _zw_ecFieldLen = { 'P-256': 32, 'P-384': 48, 'P-521': 66 };
+
+  // EC 家族判定（ASCII 折叠；key.algorithm.name 存规范拼写）。
+  function _zw_ecIsFamily(name) {
+    var u = _zw_upperAscii(String(name));
+    return u === 'ECDSA' || u === 'ECDH';
+  }
+
+  // namedCurve 合法性（spec 精确比较，大小写敏感——"p-256"/"P521" 均非法）。
+  function _zw_ecCurveOk(curve) {
+    return curve === 'P-256' || curve === 'P-384' || curve === 'P-521';
+  }
+
+  // 家族全 usages（importKey/generateKey 步骤 2：非法项 → SyntaxError）。
+  function _zw_ecAllowedUsages(name) {
+    return (_zw_upperAscii(String(name)) === 'ECDSA') ? ['sign', 'verify'] : ['deriveKey', 'deriveBits'];
+  }
+
+  // 按密钥类型的 usages 子集（spec importKey 各格式分支 + generateKey 密钥对拆分：
+  // ECDSA public ⊆ [verify] / private ⊆ [sign]；ECDH public ⊆ []（推导恒走私钥）/
+  // private ⊆ [deriveKey, deriveBits]）。
+  function _zw_ecTypeUsages(name, isPublic) {
+    if (_zw_upperAscii(String(name)) === 'ECDSA') {
+      return isPublic ? ['verify'] : ['sign'];
+    }
+    return isPublic ? [] : ['deriveKey', 'deriveBits'];
+  }
+
+  // 类型 usages 子集判定（spki/pkcs8/raw 分支与 jwk d 分支共用）。
+  function _zw_ecUsagesFitType(name, isPublic, usages) {
+    var legal = _zw_ecTypeUsages(name, isPublic);
+    for (var i = 0; i < usages.length; i++) {
+      if (legal.indexOf(usages[i]) < 0) return false;
+    }
+    return true;
+  }
+
+  // jwk alg ↔ 曲线映射（RFC 7518 §A.2：ES256/ES384/ES512 仅 ECDSA；P-521 →
+  // ES512 非 ES521；ECDH 无 alg 成员——spec 忽略 jwk alg，import 任意值均合法）。
+  function _zw_ecJwkAlg(name, curve) {
+    if (_zw_upperAscii(String(name)) !== 'ECDSA') return null;
+    return curve === 'P-256' ? 'ES256' : curve === 'P-384' ? 'ES384' : curve === 'P-521' ? 'ES512' : null;
+  }
+
+  // jwk use 取值（usages 非空时强制，RFC 7517 §4.2）：ECDSA "sig" / ECDH "enc"。
+  function _zw_ecJwkUse(name) {
+    return (_zw_upperAscii(String(name)) === 'ECDSA') ? 'sig' : 'enc';
+  }
+
+  // csv 字节 → ArrayBuffer（EC exportKey 字节格式返真 ArrayBuffer——spec 输出
+  // ArrayBuffer，WPT pkcs8-private-only 断言 instanceof ArrayBuffer；equalBuffers/
+  // importKey/wrapKey 均兼容）。
+  function _zw_ecCsvToArrayBuffer(csv) {
+    var b = _zw_rsaCsvBytes(csv);
+    var u8 = new Uint8Array(b.length);
+    for (var i = 0; i < b.length; i++) u8[i] = b[i];
+    return u8.buffer;
+  }
+
+  // host DER csv → CryptoKey。spec 公共步骤 10：private 空 usages → SyntaxError
+  //（public 空 usages 合法——ECDH publicUsages 恒空）。_raw 存规范化 DER
+  //（public = spki、private = pkcs8；structuredClone 逐属性克隆后 export 仍一致）。
+  function _zw_ecKeyFromDer(resolve, reject, name, curve, derCsv, type, extractable, usages) {
+    if (type === 'private' && usages.length === 0) {
+      reject(new _zw_subtleDE('Key usages cannot be empty for private keys', 'SyntaxError')); return;
+    }
+    resolve(new CryptoKey(type, extractable, { name: name, namedCurve: curve }, usages, Array.from(_zw_rsaCsvBytes(derCsv))));
+  }
+
+  // importKey EC 分派（part02 importKey 家族判定后整体转入）。顺序（spec ECDSA/ECDH
+  // importKey + 公共步骤）：namedCurve 缺失 TypeError → 曲线未注册 NotSupportedError →
+  // usages 家族 SyntaxError → 格式分派：spki/raw/pkcs8 DER 解析 DataError → 类型 usages
+  // 子集 SyntaxError → jwk：kty/crv/use/key_ops/ext DataError → d 有无定型 + 类型子集
+  // SyntaxError → x/y(/d) base64url + 定长 DataError → host 合成 DER → private 空
+  // usages SyntaxError（最后）。jwk alg 成员忽略（spec 不校验——WPT "any alg works"）。
+  // https://w3c.github.io/webcrypto/#SubtleCrypto-method-importKey
+  function _zw_ecImportKey(format, keyData, algo, extractable, usages, resolve, reject) {
+    var name = algo.name;
+    var curve = (typeof algo === 'object' && algo) ? algo.namedCurve : null;
+    if (curve == null) {
+      reject(new TypeError('namedCurve member is required')); return;
+    }
+    if (!_zw_ecCurveOk(curve)) {
+      reject(new _zw_subtleDE('Unsupported namedCurve: ' + curve, 'NotSupportedError')); return;
+    }
+    var u = _zw_normalizeUsages(usages, _zw_ecAllowedUsages(name));
+    if (!u) {
+      reject(new _zw_subtleDE('Invalid key usages for ' + name, 'SyntaxError')); return;
+    }
+    if (typeof __zw_crypto_subtle_ec_import !== 'function' || typeof __zw_crypto_subtle_ec_jwk_import !== 'function') {
+      reject(_zw_subtleDE('crypto.subtle EC import requires host callback', 'NotSupportedError')); return;
+    }
+    var fmt = _zw_upperAscii(String(format == null ? '' : format));
+    if (fmt === 'SPKI' || fmt === 'RAW' || fmt === 'PKCS8') {
+      var bytes = _zw_bufToBytes(keyData);
+      var derCsv = bytes.length ? __zw_crypto_subtle_ec_import(curve, fmt.toLowerCase(), bytes.join(',')) : '';
+      if (!derCsv) {
+        reject(new _zw_subtleDE('Invalid EC ' + fmt.toLowerCase() + ' key data', 'DataError')); return;
+      }
+      var isPublic = (fmt !== 'PKCS8');
+      if (!_zw_ecUsagesFitType(name, isPublic, u)) {
+        reject(new _zw_subtleDE('Invalid key usages for ' + name + ' ' + (isPublic ? 'public' : 'private') + ' key', 'SyntaxError')); return;
+      }
+      _zw_ecKeyFromDer(resolve, reject, name, curve, derCsv, isPublic ? 'public' : 'private', extractable, u);
+      return;
+    }
+    if (fmt === 'JWK') {
+      if (!keyData || typeof keyData !== 'object') {
+        reject(new TypeError('jwk key data must be an object')); return;
+      }
+      if (keyData.kty !== 'EC') {
+        reject(new _zw_subtleDE("jwk kty must be 'EC'", 'DataError')); return;
+      }
+      if (keyData.crv == null || keyData.crv !== curve) {
+        reject(new _zw_subtleDE("jwk crv must equal algorithm namedCurve", 'DataError')); return;
+      }
+      if (u.length > 0 && keyData.use != null && keyData.use !== _zw_ecJwkUse(name)) {
+        reject(new _zw_subtleDE("jwk use must be '" + _zw_ecJwkUse(name) + "'", 'DataError')); return;
+      }
+      if (keyData.key_ops != null) {
+        if (!keyData.key_ops || typeof keyData.key_ops.length !== 'number') {
+          reject(new _zw_subtleDE('jwk key_ops must be an array', 'DataError')); return;
+        }
+        var seenOps = {};
+        for (var oi = 0; oi < keyData.key_ops.length; oi++) {
+          var opName = String(keyData.key_ops[oi]);
+          var legalAll = _zw_ecAllowedUsages(name);
+          if (legalAll.indexOf(opName) < 0 || seenOps[opName]) {
+            reject(new _zw_subtleDE("invalid or duplicate jwk key_ops entry: '" + opName + "'", 'DataError')); return;
+          }
+          seenOps[opName] = 1;
+        }
+        for (var ui = 0; ui < u.length; ui++) {
+          if (seenOps[u[ui]] !== 1) {
+            reject(new _zw_subtleDE("jwk key_ops must contain usage '" + u[ui] + "'", 'DataError')); return;
+          }
+        }
+      }
+      if (keyData.x == null || keyData.y == null) {
+        reject(new _zw_subtleDE("jwk x/y members are required", 'DataError')); return;
+      }
+      var isPubJwk = (keyData.d == null);
+      if (!_zw_ecUsagesFitType(name, isPubJwk, u)) {
+        reject(new _zw_subtleDE('Invalid key usages for ' + name + ' ' + (isPubJwk ? 'public' : 'private') + ' key', 'SyntaxError')); return;
+      }
+      if (keyData.ext === false && extractable) {
+        reject(new _zw_subtleDE('jwk ext is false but extractable is true', 'DataError')); return;
+      }
+      var x = _zw_bytesFromB64u(keyData.x);
+      var y = _zw_bytesFromB64u(keyData.y);
+      if (!x || !y) {
+        reject(new _zw_subtleDE('jwk x/y is not valid base64url', 'DataError')); return;
+      }
+      var d = [];
+      if (!isPubJwk) {
+        d = _zw_bytesFromB64u(keyData.d);
+        if (!d) {
+          reject(new _zw_subtleDE('jwk d is not valid base64url', 'DataError')); return;
+        }
+      }
+      var jwkDer = __zw_crypto_subtle_ec_jwk_import(curve, x.join(','), y.join(','), d.join(','));
+      if (!jwkDer) {
+        reject(new _zw_subtleDE('jwk x/y/d invalid (length or curve membership)', 'DataError')); return;
+      }
+      _zw_ecKeyFromDer(resolve, reject, name, curve, jwkDer, isPubJwk ? 'public' : 'private', extractable, u);
+      return;
+    }
+    reject(new _zw_subtleDE("Unsupported importKey format: '" + fmt + "' (only 'spki'/'raw'/'pkcs8'/'jwk' supported for EC keys)", 'NotSupportedError'));
+  }
+
+  // generateKey EC（ECDSA/ECDH → CryptoKeyPair）。顺序（spec generateKey +
+  // failures.js 断言序）：usages 非法 SyntaxError → namedCurve 缺失 TypeError /
+  // 未注册 NotSupportedError（EC 专属顺序——usages 先于曲线校验；RSA 同位是
+  // OperationError）→ 生成 → 私钥空 usages SyntaxError（公共步骤 10，生成后）。
+  // publicKey 恒 extractable=true；usages 按类型拆分到两端（ECDH publicKey usages 恒空）。
+  function _zw_ecGenerateKey(algorithm, extractable, usages, algo, resolve, reject) {
+    var name = algo.name;
+    var u = _zw_normalizeUsages(usages, _zw_ecAllowedUsages(name));
+    if (!u) {
+      reject(new _zw_subtleDE('Invalid key usages for ' + name, 'SyntaxError')); return;
+    }
+    var curve = (typeof algorithm === 'object' && algorithm) ? algorithm.namedCurve : null;
+    if (curve == null) {
+      reject(new TypeError('namedCurve member is required')); return;
+    }
+    if (!_zw_ecCurveOk(curve)) {
+      reject(new _zw_subtleDE('Unsupported namedCurve: ' + curve, 'NotSupportedError')); return;
+    }
+    if (typeof __zw_crypto_subtle_ec_generate !== 'function' || typeof __zw_crypto_subtle_ec_export_der !== 'function') {
+      reject(_zw_subtleDE('crypto.subtle EC generateKey requires host callback', 'NotSupportedError')); return;
+    }
+    var pkcs8Csv = __zw_crypto_subtle_ec_generate(curve);
+    if (!pkcs8Csv) {
+      reject(new _zw_subtleDE('EC key generation failed', 'OperationError')); return;
+    }
+    var spkiCsv = __zw_crypto_subtle_ec_export_der(curve, pkcs8Csv, 'spki');
+    if (!spkiCsv) {
+      reject(new _zw_subtleDE('EC public key derivation failed', 'OperationError')); return;
+    }
+    var pubU = [], privU = [];
+    for (var i = 0; i < u.length; i++) {
+      if (_zw_ecTypeUsages(name, true).indexOf(u[i]) >= 0) pubU.push(u[i]);
+      if (_zw_ecTypeUsages(name, false).indexOf(u[i]) >= 0) privU.push(u[i]);
+    }
+    if (privU.length === 0) {
+      reject(new _zw_subtleDE('Key usages cannot be empty for private keys', 'SyntaxError')); return;
+    }
+    var keyAlg = { name: name, namedCurve: curve };
+    resolve({
+      publicKey: new CryptoKey('public', true, keyAlg, pubU, Array.from(_zw_rsaCsvBytes(spkiCsv))),
+      privateKey: new CryptoKey('private', extractable, keyAlg, privU, Array.from(_zw_rsaCsvBytes(pkcs8Csv)))
+    });
+  }
+
+  // exportKey EC 分派：spki（公透传/私派生公）、raw（SEC1 未压缩点，仅公语义——
+  // 私按 spki 同径派生公）、pkcs8（仅私）、jwk（kty/crv/x/y[/d] + alg/key_ops/ext）。
+  // 非 extractable → InvalidAccessError（spec 公共步骤）。
+  function _zw_ecExportKey(format, key, resolve, reject) {
+    var fmt = _zw_upperAscii(String(format == null ? '' : format));
+    if (!key || !key.extractable) {
+      reject(new _zw_subtleDE('Key is not extractable', 'InvalidAccessError')); return;
+    }
+    var curve = key.algorithm.namedCurve;
+    var raw = key._raw || [];
+    if (fmt === 'SPKI' || fmt === 'RAW') {
+      var outCsv;
+      if (key.type === 'public') {
+        if (fmt === 'SPKI') {
+          outCsv = raw.join(',');
+        } else if (typeof __zw_crypto_subtle_ec_export_der !== 'function') {
+          reject(_zw_subtleDE('crypto.subtle EC exportKey requires host callback', 'NotSupportedError')); return;
+        } else {
+          outCsv = __zw_crypto_subtle_ec_export_der(curve, raw.join(','), 'raw');
+        }
+      } else {
+        if (typeof __zw_crypto_subtle_ec_export_der !== 'function') {
+          reject(_zw_subtleDE('crypto.subtle EC exportKey requires host callback', 'NotSupportedError')); return;
+        }
+        outCsv = __zw_crypto_subtle_ec_export_der(curve, raw.join(','), fmt.toLowerCase());
+      }
+      if (!outCsv) {
+        reject(new _zw_subtleDE('Key type does not match exportKey format', 'InvalidAccessError')); return;
+      }
+      resolve(_zw_ecCsvToArrayBuffer(outCsv));
+      return;
+    }
+    if (fmt === 'PKCS8') {
+      // spec：pkcs8 仅 private（public → InvalidAccessError，与"wrong key type"语义一致）。
+      if (key.type !== 'private') {
+        reject(new _zw_subtleDE('Key is not a private key', 'InvalidAccessError')); return;
+      }
+      resolve(_zw_ecCsvToArrayBuffer(raw.join(','))); // 导入/生成时已规范化，透传即逐字节稳定
+      return;
+    }
+    if (fmt === 'JWK') {
+      var isPriv = (key.type === 'private');
+      if (typeof __zw_crypto_subtle_ec_export_jwk !== 'function') {
+        reject(_zw_subtleDE('crypto.subtle EC exportKey requires host callback', 'NotSupportedError')); return;
+      }
+      var out = __zw_crypto_subtle_ec_export_jwk(curve, raw.join(','), isPriv ? '1' : '0');
+      if (!out) {
+        reject(new _zw_subtleDE('EC jwk export failed', 'InvalidAccessError')); return;
+      }
+      var f = out.split(';');
+      var jwk = { kty: 'EC', crv: curve, x: _zw_b64uFromCsv(f[0]), y: _zw_b64uFromCsv(f[1]) };
+      if (isPriv) {
+        jwk.d = _zw_b64uFromCsv(f[2]);
+      }
+      // spec：alg 按 ECDSA 曲线映射（RFC 7518 §A.2）；ECDH 无 alg；key_ops/ext 恒输出。
+      var alg = _zw_ecJwkAlg(key.algorithm.name, curve);
+      if (alg) jwk.alg = alg;
+      jwk.key_ops = (key.usages || []).slice();
+      jwk.ext = !!key.extractable;
+      resolve(jwk);
+      return;
+    }
+    reject(new _zw_subtleDE("Unsupported exportKey format: '" + fmt + "' (only 'spki'/'raw'/'pkcs8'/'jwk' supported for EC keys)", 'NotSupportedError'));
+  }
+
+  // ECDH 派生公共校验（deriveBits/deriveKey-performDerive 共用）：public 成员缺失 /
+  // 非 CryptoKey → TypeError（EcdhKeyDeriveParams required + WebIDL interface 转换）；
+  // baseKey 非 ECDH / 非 private、public 非 public 型 / 非 ECDH / 曲线不匹配 →
+  // InvalidAccessError。返 public key 或 null（已 reject）。
+  function _zw_ecdhValidate(algorithm, key, reject) {
+    if (typeof algorithm !== 'object' || !algorithm || algorithm.public == null) {
+      reject(new TypeError('ECDH requires a public member'));
+      return null;
+    }
+    if (!(algorithm.public instanceof CryptoKey)) {
+      reject(new TypeError('ECDH public member must be a CryptoKey'));
+      return null;
+    }
+    if (!key || _zw_upperAscii(String(key.algorithm && key.algorithm.name)) !== 'ECDH') {
+      reject(new _zw_subtleDE('Algorithm does not match key', 'InvalidAccessError'));
+      return null;
+    }
+    if (key.type !== 'private') {
+      reject(new _zw_subtleDE('Key is not a private key', 'InvalidAccessError'));
+      return null;
+    }
+    var pub = algorithm.public;
+    if (pub.type !== 'public' ||
+        _zw_upperAscii(String(pub.algorithm && pub.algorithm.name)) !== 'ECDH' ||
+        pub.algorithm.namedCurve !== key.algorithm.namedCurve) {
+      reject(new _zw_subtleDE('ECDH public key invalid or curve mismatch', 'InvalidAccessError'));
+      return null;
+    }
+    return pub;
+  }
+
+  // ECDSA 算法 hash 归一（sign/verify 共用）：hash 成员缺失 → TypeError
+  //（EcdsaParams required）；名不在摘要注册集 → NotSupportedError
+  //（WPT "bad hash name"："SHA256" 无连字符未注册 → NotSupportedError 而非 false；
+  // 注册集此处显式校验——digest host 兼容无连字符别名，不能作注册语义）。
+  function _zw_ecdsaHash(algorithm, reject) {
+    if (typeof algorithm !== 'object' || !algorithm || algorithm.hash == null) {
+      reject(new TypeError('ECDSA requires a hash member'));
+      return null;
+    }
+    var h = _zw_hashName(algorithm.hash);
+    if (!h || ['SHA-1', 'SHA-256', 'SHA-384', 'SHA-512'].indexOf(h) < 0) {
+      var shown = (typeof algorithm.hash === 'object' && algorithm.hash) ? algorithm.hash.name : algorithm.hash;
+      reject(_zw_subtleDE("Unsupported hash algorithm: '" + shown + "'", 'NotSupportedError'));
+      return null;
+    }
+    return h;
+  }
+
+  // ECDSA sign 调用：h = 已归一 hash 名（调用方先经 _zw_ecdsaHash 校验——spec sign
+  // 步骤 hash 归一先于 key 校验），digest host 预摘要后转 ECDSA host。签名 = r||s
+  // 定宽。失败 → null 已调 reject OperationError。
+  function _zw_ecdsaSignCall(h, key, dataBytes, reject) {
+    if (typeof __zw_crypto_subtle_ecdsa_sign !== 'function' || typeof __zw_crypto_subtle_digest !== 'function') {
+      reject(_zw_subtleDE('crypto.subtle ECDSA sign requires host callback', 'NotSupportedError')); return null;
+    }
+    var dig = __zw_crypto_subtle_digest(h, dataBytes.join(','));
+    if (!dig) {
+      reject(_zw_subtleDE("Unsupported hash algorithm: '" + h + "'", 'NotSupportedError')); return null;
+    }
+    var out = __zw_crypto_subtle_ecdsa_sign(key.algorithm.namedCurve, (key._raw || []).join(','), dig);
+    if (!out) {
+      reject(new _zw_subtleDE('ECDSA sign failed', 'OperationError')); return null;
+    }
+    return _zw_rsaCsvBytes(out);
+  }
+
+  // ECDSA verify 调用：spec 对坏签名/错长度/detached 空签名 resolve false 而非 reject；
+  // host 空串（key 解析失败，常规不可达）同 false。
+  function _zw_ecdsaVerifyCall(h, key, sigBytes, dataBytes, reject) {
+    if (typeof __zw_crypto_subtle_ecdsa_verify !== 'function' || typeof __zw_crypto_subtle_digest !== 'function') {
+      reject(_zw_subtleDE('crypto.subtle ECDSA verify requires host callback', 'NotSupportedError')); return null;
+    }
+    var dig = __zw_crypto_subtle_digest(h, dataBytes.join(','));
+    if (!dig) {
+      reject(_zw_subtleDE("Unsupported hash algorithm: '" + h + "'", 'NotSupportedError')); return null;
+    }
+    var out = __zw_crypto_subtle_ecdsa_verify(key.algorithm.namedCurve, (key._raw || []).join(','), dig, sigBytes.join(','));
+    return out === '1';
   }
 
   globalThis.crypto.subtle = globalThis.crypto.subtle || {

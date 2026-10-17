@@ -1,11 +1,23 @@
 # Web Crypto 兼容 — crypto.getRandomValues / randomUUID / subtle
 
-**版本**: v1.3
+**版本**: v1.4
 **日期**: 2026-10-17
-**状态**: Active——M4a 收口（RSA 家族 OAEP/PSS/RSASSA-PKCS1-v1_5 +2,351P，
-2026-10-17）；下一步 M4b（EC 签名系：ECDSA/ECDH，随后 Ed25519/X25519 OKP）
+**状态**: Active——M4b 收口（EC 家族 ECDSA/ECDH P-256/384/521 +3,159P，
+2026-10-17）；下一步 M5（OKP 签名系：Ed25519/X25519，含 cfrg_curves 域）
 **执行模式**: WPT 驱动（上游 WebCryptoAPI corpus 为验收标尺）+ 实现与语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——加密面）
+
+> **▶ M4b EC 家族（2026-10-17）**：ECDSA/ECDH P-256/P-384/P-521 全链——
+> importKey（spki/pkcs8/jwk/raw 含 SEC1 压缩点）、generateKey CryptoKeyPair
+> （publicKey 恒 extractable + usages 类型拆分）、exportKey 四格式（raw=SEC1
+> 未压缩点、jwk x/y/d 定宽零填充）、ECDSA sign/verify（RFC 6979 确定性 +
+> IEEE P1363 r||s）、ECDH deriveBits/deriveKey（x 坐标 + length 位截断）。
+> 依赖 p256/p384/p521 0.13（选型见 deps evidence）。ec_importKey/ecdh_bits/
+> ecdh_keys/sign_verify ecdsa/generateKey EC 四文件/serialization ×2/
+> derive_key_and_encrypt 全绿；derive 共享路径修齐（wrong-key
+> InvalidAccessError、HKDF/PBKDF2 目标 deriveKey length null）。全量
+> **33,028 = Pass 20,900（63.3%）+ Fail 12,127 + Timeout 1**（+3,159，零
+> 回归）；全绿案 41→53。明细见 [M4b evidence](webcrypto-compat/evidence/2026-10-17-m4b-ec.md)。
 
 > **▶ M4a RSA 家族（2026-10-17）**：RSA-OAEP/RSASSA-PKCS1-v1_5/RSA-PSS 全链——
 > importKey spki/pkcs8/jwk、generateKey CryptoKeyPair（publicKey 恒 extractable +
@@ -104,7 +116,8 @@
 M1 导入与基线（corpus + runner 通道 + csv 回填）→ M2 已实现面 WPT 对齐
 （digest/HMAC/PBKDF2/HKDF/AES-GCM 逐域修失败；随机源零回归）→ M3 补面
 （AES-CBC/CTR、wrapKey/unwrapKey、spki/pkcs8/jwk 格式）→ M4 签名系
-（ECDSA/RSASSA-PKCS1-v1_5/RSA-PSS…）+ 收口归档。
+（RSA 三算法 M4a ✓ + EC 家族 M4b ✓）→ M5 OKP（Ed25519/X25519，cfrg_curves
+域）→ 残留收口（pbkdf2/hkdf 0 length 细分、tentative 域挂账清点）+ 归档。
 
 > 原里程碑（M2 digest 从零实现 / M3 importKey+AES-GCM 从零实现）已被
 > 2026-10-17 盘点修正——相应实现 R2793/R2955-R2958 立项前已存在，里程碑

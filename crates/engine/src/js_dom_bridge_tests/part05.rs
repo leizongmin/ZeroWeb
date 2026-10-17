@@ -740,7 +740,9 @@ fn test_crypto_subtle_pbkdf2_r2956() {
         sandbox.execute("String(globalThis.__e3)").unwrap().value,
         "OperationError"
     );
-    // deriveBits algorithm/key 不匹配（HMAC key 用于 PBKDF2）→ reject NotSupportedError。
+    // deriveBits algorithm/key 不匹配（HMAC key 用于 PBKDF2）→ reject InvalidAccessError
+    //（spec derive 公共步骤；M4b 修齐，原 NotSupportedError 与 WPT "wrong (ECDH) key"
+    // 组断言冲突）。
     sandbox
         .execute(
             "globalThis.__e4='(pending)';\
@@ -751,7 +753,7 @@ fn test_crypto_subtle_pbkdf2_r2956() {
         .unwrap();
     assert_eq!(
         sandbox.execute("String(globalThis.__e4)").unwrap().value,
-        "NotSupportedError"
+        "InvalidAccessError"
     );
 }
 
@@ -1042,7 +1044,9 @@ fn test_crypto_subtle_hkdf_r2958() {
         )
         .unwrap();
     assert_eq!(sandbox.execute("String(globalThis.__e2)").unwrap().value, "SyntaxError");
-    // deriveBits algorithm/key 不匹配（PBKDF2 key 用于 HKDF）→ reject NotSupportedError。
+    // deriveBits algorithm/key 不匹配（PBKDF2 key 用于 HKDF）→ reject InvalidAccessError
+    //（spec derive 公共步骤；M4b 修齐，原 NotSupportedError 与 WPT hkdf/pbkdf2
+    // "with wrong (ECDH) key" 组断言冲突）。
     sandbox
         .execute(
             "globalThis.__e3='(pending)';\
@@ -1053,7 +1057,7 @@ fn test_crypto_subtle_hkdf_r2958() {
         .unwrap();
     assert_eq!(
         sandbox.execute("String(globalThis.__e3)").unwrap().value,
-        "NotSupportedError"
+        "InvalidAccessError"
     );
     // length 非 8 倍数（17）→ reject OperationError。
     sandbox
