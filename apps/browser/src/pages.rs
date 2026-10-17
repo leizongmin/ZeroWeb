@@ -338,6 +338,26 @@ pub fn extract_html_title(html: &str) -> Option<String> {
     }
 }
 
+/// 页面「另存为」的落盘文件名：URL 路径末段（query/fragment 剥离与字符清洗
+/// 复用 [`crate::process_backend::parse_attachment_filename`] 同一规则）；
+/// 目录型 URL（路径末段为空）回退 `index.html`；无 .html/.htm 扩展名时补
+/// `.html`——落盘内容是页面 HTML，扩展名须可识别。
+pub(crate) fn save_page_filename(url: &str) -> String {
+    // RFC 3986：query（`?...`）与 fragment（`#...`）不属于 path，先剥离。
+    let no_fragment = url.split('#').next().unwrap_or(url);
+    let path = no_fragment.split('?').next().unwrap_or(no_fragment);
+    let last = path.split('/').next_back().unwrap_or("");
+    if last.is_empty() {
+        return "index.html".to_string();
+    }
+    let name = crate::process_backend::parse_attachment_filename("", last);
+    if name.ends_with(".html") || name.ends_with(".htm") {
+        name
+    } else {
+        format!("{name}.html")
+    }
+}
+
 /// 生成设置页面 HTML（Chrome 风格：CSS toggle switch 开关 + 分组卡片 + pill 选择器）。
 ///
 /// 开关与选择器仍是 `<a>` 链接（`zero://settings/toggle/<key>` 等既有动作 URL 不变），

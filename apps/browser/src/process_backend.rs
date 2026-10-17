@@ -3044,3 +3044,28 @@ pub(crate) fn parse_attachment_filename(disposition: &str, url: &str) -> String 
     }
     "download.bin".to_string()
 }
+
+/// 下载落盘防覆盖（D1）：`dir/filename` 已存在时按 Chrome 惯例在扩展名前追加
+/// " (n)"（n 从 1 起递增，取首个不存在的候选名）。无扩展名（含点首文件名，
+/// 如 ".gitignore"）整体作主干、在末尾追加。只计算文件名，不改文件系统；
+/// 存在性检查与实际写盘之间留有理论竞窗，与 Chrome 同口径可接受。
+pub(crate) fn dedupe_download_filename(dir: &std::path::Path, filename: &str) -> String {
+    if !dir.join(filename).exists() {
+        return filename.to_string();
+    }
+    let (stem, ext) = match filename.rsplit_once('.') {
+        Some((stem, ext)) if !stem.is_empty() => (stem, Some(ext)),
+        _ => (filename, None),
+    };
+    let mut n = 1u32;
+    loop {
+        let candidate = match ext {
+            Some(ext) => format!("{stem} ({n}).{ext}"),
+            None => format!("{filename} ({n})"),
+        };
+        if !dir.join(&candidate).exists() {
+            return candidate;
+        }
+        n += 1;
+    }
+}
