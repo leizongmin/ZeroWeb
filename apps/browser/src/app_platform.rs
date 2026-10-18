@@ -1115,11 +1115,27 @@ pub fn resolve_path_relative_url(input: &str, shell: &BrowserShell) -> String {
 ///
 /// This deliberately differs from address-bar normalization: a relative value
 /// such as `guide/intro.html` is a document-relative link, not a host name.
+/// fragment-only 链接（`href="#anchor"`）按 HTML 链接语义解析为「base + fragment」
+/// 的同文档绝对 URL，不得落入 `normalize_url` 的搜索兜底。
 pub fn resolve_clicked_link_url(input: &str, document_url: Option<&str>) -> String {
     let input = input.trim();
-    let Some(base) = document_url.filter(|url| !url.starts_with("zero://")) else {
+    let Some(base) = document_url else {
         return input.to_string();
     };
+    // fragment-only 引用：同文档导航，新 fragment 取代 base 既有 fragment，空 fragment
+    // 移除 fragment（https://url.spec.whatwg.org/#dom-url-fragment）。
+    if let Some(fragment) = input.strip_prefix('#') {
+        return match url::Url::parse(base) {
+            Ok(mut parsed) => {
+                parsed.set_fragment((!fragment.is_empty()).then_some(fragment));
+                parsed.to_string()
+            }
+            Err(_) => input.to_string(),
+        };
+    }
+    if base.starts_with("zero://") {
+        return input.to_string();
+    }
     zero_engine::resolve_document_url(base, input)
 }
 
@@ -1395,6 +1411,36 @@ mod tests {
         assert_eq!(
             resolve_clicked_link_url("next.html", Some("https://example.com/guide/index.html")),
             "https://example.com/guide/next.html"
+        );
+    }
+
+    #[test]
+    fn clicked_fragment_only_link_resolves_to_same_document_url() {
+        // HTML 链接语义：fragment-only = 同文档导航，解析为「base + 新 fragment」，
+        // 不得落入 normalize_url 的搜索兜底。
+        assert_eq!(
+            resolve_clicked_link_url("#compatibility", Some("https://example.com/en-US/docs/Web")),
+            "https://example.com/en-US/docs/Web#compatibility"
+        );
+    }
+
+    #[test]
+    fn clicked_fragment_link_replaces_existing_fragment() {
+        // WHATWG URL：新 fragment 取代 base 既有 fragment。
+        assert_eq!(
+            resolve_clicked_link_url("#intro", Some("https://example.com/page.html#other")),
+            "https://example.com/page.html#intro"
+        );
+    }
+
+    #[test]
+    fn clicked_relative_link_with_fragment_resolves_against_base() {
+        assert_eq!(
+            resolve_clicked_link_url(
+                "other.html#frag",
+                Some("https://example.com/dir/page.html"),
+            ),
+            "https://example.com/dir/other.html#frag"
         );
     }
 

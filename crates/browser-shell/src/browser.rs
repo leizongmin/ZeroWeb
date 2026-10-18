@@ -446,6 +446,13 @@ impl BrowserShell {
         }
     }
 
+    /// 同文档 fragment 导航（活跃标签）：push 历史条目并更新 URL，不重载文档。
+    pub fn navigate_fragment(&mut self, url: &str) {
+        if let Some(tab) = self.tabs.active_tab_mut() {
+            tab.push_fragment_entry(url);
+        }
+    }
+
     /// 以新 URL 取代活跃标签当前历史条目（不新增条目，见
     /// [`crate::tab::Tab::replace_current_entry_url`]——headless 重定向提交单条目语义）。
     pub fn replace_current_entry_url(&mut self, url: &str) {

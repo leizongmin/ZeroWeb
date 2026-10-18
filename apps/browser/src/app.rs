@@ -1277,6 +1277,15 @@ impl BrowserApp {
         }
     }
 
+    /// 测试用：注入命中测试快照（fragment 锚点定位等主线程快照面的合成数据源）。
+    #[cfg(test)]
+    pub fn inject_hit_test_for_test(&mut self, tab_id: TabId, hit_test: zero_engine::HitTestCache) {
+        self.tabs.ensure_snapshot_for_test(tab_id);
+        if let Some(snap) = self.tabs.snapshot_mut(tab_id) {
+            snap.hit_test = Some(hit_test);
+        }
+    }
+
     /// 测试用：向指定标签注入已完成的 compositor RGBA 位图。
     #[cfg(test)]
     pub fn inject_compositor_frame_for_test(
@@ -2318,7 +2327,12 @@ impl BrowserApp {
     }
 
     fn navigate_to_request(&mut self, url: &str, method: String, body: Option<String>) {
-        if method == "GET" && body.is_none() && self.try_apply_internal_url(url) {
+        // 同文档 fragment 导航（链接点击路径已按文档 base 解析为绝对 URL）先于
+        // 内部页分派与 normalize_url：仅差 fragment 的目标不重载文档、不落搜索兜底。
+        if method == "GET"
+            && body.is_none()
+            && (self.navigate_to_fragment_anchor(url) || self.try_apply_internal_url(url))
+        {
             return;
         }
         if !matches!(method.as_str(), "GET" | "POST")
@@ -2373,6 +2387,105 @@ impl BrowserApp {
         self.clear_tab_favicon(tab_id);
 
         self.start_tab_request(tab_id, url, method, body);
+    }
+
+    /// 同文档 fragment 导航（HTML navigate-to-a-fragment）：目标 URL 除 fragment 外
+    /// 与当前文档一致时不重新加载文档——push 历史条目并滚动/跳转到锚点。
+    /// 锚点不存在仅更新 URL 不滚动（Chrome 同款）；空 fragment 与 `top`（ASCII 大小写
+    /// 不敏感且无匹配元素）回到顶部。返回 `true` 表示已按同文档导航处理。
+    /// https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate-to-a-fragment
+    fn navigate_to_fragment_anchor(&mut self, url: &str) -> bool {
+        let Some((target_base, raw_fragment)) = url.split_once('#') else {
+            return false;
+        };
+        if target_base.is_empty() {
+            return false;
+        }
+        let Some(tab_id) = self.shell.active_tab_id() else {
+            return false;
+        };
+        let Some(current_base) = self
+            .shell
+            .tab(tab_id)
+            .and_then(|tab| tab.url())
+            .map(|current| current.split('#').next().unwrap_or(current).to_string())
+        else {
+            return false;
+        };
+        if current_base != target_base {
+            return false;
+        }
+
+        // 离开当前条目前保存滚动位置；fragment 导航同样 push 历史（back/forward 在
+        // 同文档锚点条目间移动），文档本体保持原状（标题/加载态不变）。
+        self.pending_scroll_restore = None;
+        self.save_history_scroll(tab_id);
+        self.shell.navigate_fragment(url);
+        self.address_bar.set_text(url.to_string());
+        self.autocomplete.clear();
+
+        // 锚点定位：命中测试快照按元素 `id` 查文档坐标 Y（`<a name>` 传统锚未建模 FIXME）。
+        let fragment = Self::percent_decode(raw_fragment);
+        let anchor_y = if fragment.is_empty() {
+            Some(0.0)
+        } else {
+            self.tabs
+                .anchor_scroll_y(tab_id, &fragment)
+                .or_else(|| fragment.eq_ignore_ascii_case("top").then_some(0.0))
+        };
+        if let Some(y) = anchor_y {
+            self.apply_fragment_scroll(tab_id, y);
+        }
+        self.needs_redraw = true;
+        true
+    }
+
+    /// fragment 同文档跳转的滚动落地：按当前布局钳制后立即写入——文档已布局
+    ///（无装载窗口），不存在 pending 恢复期被逐帧 clamp 压回的问题。
+    fn apply_fragment_scroll(&mut self, tab_id: TabId, y: f32) {
+        self.scroll_anim.remove(&tab_id);
+        let max_scroll_y = self.page_scroll_layout(tab_id).max_scroll_y;
+        let state = self.tab_scroll_state(tab_id);
+        self.scroll.insert(
+            tab_id,
+            TabScrollState {
+                x: state.x,
+                y: y.min(max_scroll_y),
+            },
+        );
+        self.needs_redraw = true;
+    }
+
+    /// 历史移动（back/forward）落点与出发为同一文档（URL 除 fragment 外一致，含
+    /// 落点无 fragment 的基础条目）时同文档跳转：不重载文档，滚动按目标条目记录
+    /// 恢复；无记录则定位到该 fragment 锚点（无锚点/空/无 fragment 回顶部）。
+    /// 返回 `true` 表示已处理。
+    fn fragment_jump_after_history_move(&mut self, tab_id: TabId, from_url: Option<&str>, to_url: &str) -> bool {
+        let Some(from_base) = from_url.map(|u| u.split('#').next().unwrap_or(u)) else {
+            return false;
+        };
+        let to_base = to_url.split('#').next().unwrap_or(to_url);
+        if to_base.is_empty() || to_base != from_base {
+            return false;
+        }
+        let raw_fragment = to_url.split_once('#').map(|(_, fragment)| fragment);
+        let recorded = self
+            .shell
+            .tab(tab_id)
+            .map(|tab| tab.history_index())
+            .and_then(|index| self.history_scroll.get(&(tab_id, index)).copied());
+        let y = match recorded {
+            Some(y) => y,
+            None => raw_fragment
+                .map(|fragment| {
+                    self.tabs
+                        .anchor_scroll_y(tab_id, &Self::percent_decode(fragment))
+                        .unwrap_or(0.0)
+                })
+                .unwrap_or(0.0),
+        };
+        self.apply_fragment_scroll(tab_id, y);
+        true
     }
 
     fn load_welcome_page(&mut self, tab_id: TabId) {
@@ -3125,6 +3238,8 @@ impl BrowserApp {
         if let Some(tab_id) = self.shell.active_tab_id() {
             self.save_history_scroll(tab_id);
         }
+        // 出发 URL 先记录：落点为同一文档（除 fragment 外一致）时走同文档跳转（不重载）。
+        let from_url = self.shell.active_tab().and_then(|tab| tab.url().map(str::to_string));
         if !self.shell.go_back() {
             return;
         }
@@ -3136,6 +3251,9 @@ impl BrowserApp {
 
         self.address_bar.set_text(url.clone());
         let tab_id = self.shell.active_tab_id().unwrap();
+        if self.fragment_jump_after_history_move(tab_id, from_url.as_deref(), &url) {
+            return;
+        }
         self.restore_history_scroll(tab_id);
 
         self.start_tab_load(tab_id, url);
@@ -3146,6 +3264,8 @@ impl BrowserApp {
         if let Some(tab_id) = self.shell.active_tab_id() {
             self.save_history_scroll(tab_id);
         }
+        // 出发 URL 先记录：落点为同一文档（除 fragment 外一致）时走同文档跳转（不重载）。
+        let from_url = self.shell.active_tab().and_then(|tab| tab.url().map(str::to_string));
         if !self.shell.go_forward() {
             return;
         }
@@ -3157,6 +3277,9 @@ impl BrowserApp {
 
         self.address_bar.set_text(url.clone());
         let tab_id = self.shell.active_tab_id().unwrap();
+        if self.fragment_jump_after_history_move(tab_id, from_url.as_deref(), &url) {
+            return;
+        }
         self.restore_history_scroll(tab_id);
 
         self.start_tab_load(tab_id, url);

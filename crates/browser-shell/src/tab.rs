@@ -238,6 +238,19 @@ impl Tab {
         self.title = None;
     }
 
+    /// 同文档 fragment 导航记账：push 历史条目并更新 URL，文档不重载——
+    /// loading/title 保持原状（HTML navigate-to-a-fragment 语义）。
+    /// https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate-to-a-fragment
+    pub fn push_fragment_entry(&mut self, url: &str) {
+        self.history.truncate(self.history_index + 1);
+        self.history.push(NavigationEntry {
+            url: url.to_string(),
+            title: self.title.clone(),
+        });
+        self.history_index = self.history.len() - 1;
+        self.url = Some(url.to_string());
+    }
+
     /// 以新 URL 取代当前历史条目（不新增条目）。
     ///
     /// 重定向提交专用：会话命令导航（Page.navigate）在命令时点已写入初始 URL
