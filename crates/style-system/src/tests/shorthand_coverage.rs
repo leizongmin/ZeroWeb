@@ -519,3 +519,68 @@ fn test_font_shorthand_spaced_slash_with_style_weight() {
         Some("serif".to_string())
     );
 }
+
+#[test]
+/// R5181：border-top-radius 侧边简写单值——两角同用（css-borders-4 §3.6.1）。
+fn test_border_side_radius_top_single_value() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let s = compute_style(&doc, div, &[("border-top-radius", "40px")]);
+    assert_eq!(s.border_top_left_radius, LengthValue::Px(40.0));
+    assert_eq!(s.border_top_right_radius, LengthValue::Px(40.0));
+    assert_eq!(s.border_bottom_right_radius, LengthValue::Px(0.0));
+    assert_eq!(s.border_bottom_left_radius, LengthValue::Px(0.0));
+}
+
+#[test]
+/// R5181：无斜杠双值按序分配两角（值序为该侧两角）。
+fn test_border_side_radius_two_values_no_slash() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let s = compute_style(&doc, div, &[("border-right-radius", "5em 2em")]);
+    assert_eq!(s.border_top_right_radius, LengthValue::Px(80.0)); // 5em @ 16px
+    assert_eq!(s.border_bottom_right_radius, LengthValue::Px(32.0)); // 2em @ 16px
+    assert_eq!(s.border_top_left_radius, LengthValue::Px(0.0));
+}
+
+#[test]
+/// R5181：斜杠组为各角完整值 `<h> <v>?`（WPT side-shorthands test/ref 配对语义，
+/// 非 css-backgrounds 的水平/垂直组读法）——第一角 rx=1em/ry=4em、第二角 rx=2em/ry=3em。
+fn test_border_side_radius_slash_per_corner_pair() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let s = compute_style(&doc, div, &[("border-top-radius", "1em 4em / 2em 3em")]);
+    assert_eq!(s.border_top_left_radius, LengthValue::Px(16.0)); // 1em @ 16px
+    assert_eq!(s.border_top_right_radius, LengthValue::Px(32.0)); // 2em @ 16px
+    let ry = s.border_radius_y.as_ref().expect("slash 双值应写入 ry 槽位");
+    assert_eq!(ry[0], LengthValue::Px(64.0)); // tl 4em @ 16px
+    assert_eq!(ry[1], LengthValue::Px(48.0)); // tr 3em @ 16px
+    assert_eq!(ry[2], LengthValue::Px(0.0)); // br 未触及
+    assert_eq!(ry[3], LengthValue::Px(0.0)); // bl 未触及
+}
+
+#[test]
+/// R5181：逻辑侧简写按 horizontal-tb + ltr 映射物理角（inline-start → left 侧：
+/// top-left + bottom-left）；FIXME 垂直书写模式映射见 shorthand dispatcher 注。
+fn test_border_inline_start_radius_logical_mapping() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let s = compute_style(&doc, div, &[("border-inline-start-radius", "6px 2px")]);
+    assert_eq!(s.border_top_left_radius, LengthValue::Px(6.0));
+    assert_eq!(s.border_bottom_left_radius, LengthValue::Px(2.0));
+    assert_eq!(s.border_top_right_radius, LengthValue::Px(0.0));
+    assert_eq!(s.border_bottom_right_radius, LengthValue::Px(0.0));
+}
+
+#[test]
+/// R5181：>2 值非法 → 整条忽略；后续 longhand 仍正常覆盖（级联序）。
+fn test_border_side_radius_invalid_and_longhand_override() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let s = compute_style(
+        &doc,
+        div,
+        &[
+            ("border-top-radius", "1px 2px 3px"),
+            ("border-top-radius", "8px"),
+            ("border-top-right-radius", "1px"),
+        ],
+    );
+    assert_eq!(s.border_top_left_radius, LengthValue::Px(8.0));
+    assert_eq!(s.border_top_right_radius, LengthValue::Px(1.0));
+}

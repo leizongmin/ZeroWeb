@@ -138,6 +138,16 @@ fn pending_shorthand_longhands(property: &str) -> Option<&'static [&'static str]
             "border-bottom-right-radius",
             "border-bottom-left-radius",
         ],
+        // R5181：border-*-radius 侧边简写（css-borders-4 §3.6.1 corner-sizing，
+        // tentative）→ 该侧两角的物理 longhand。
+        "border-top-radius" => &["border-top-left-radius", "border-top-right-radius"],
+        "border-right-radius" => &["border-top-right-radius", "border-bottom-right-radius"],
+        "border-bottom-radius" => &["border-bottom-left-radius", "border-bottom-right-radius"],
+        "border-left-radius" => &["border-top-left-radius", "border-bottom-left-radius"],
+        "border-block-start-radius" => &["border-top-left-radius", "border-top-right-radius"],
+        "border-block-end-radius" => &["border-bottom-left-radius", "border-bottom-right-radius"],
+        "border-inline-start-radius" => &["border-top-left-radius", "border-bottom-left-radius"],
+        "border-inline-end-radius" => &["border-top-right-radius", "border-bottom-right-radius"],
         "inset" => &["top", "right", "bottom", "left"],
         "scroll-margin" => &[
             "scroll-margin-top",
@@ -619,6 +629,68 @@ fn expand_one(property: &str, value: &str, important: bool, specificity: (u32, u
 
         // ── border-radius ──
         "border-radius" => expand_border_radius(value, important, specificity),
+
+        // ── border-*-radius 侧边简写（R5181，css-borders-4 §3.6.1 corner-sizing，
+        // tentative）── 值序为该侧两角（规范 prose）。物理侧书写模式无关；逻辑侧
+        // FIXME: 此处按 horizontal-tb + ltr 固定映射物理角，垂直书写模式需按元素
+        // computed writing-mode 映射——radius 无逻辑 longhand，不能走
+        // border-inline-width 的 apply 层映射模式（简写层不感知元素上下文）。
+        "border-top-radius" => expand_border_side_radius(
+            value,
+            "border-top-left-radius",
+            "border-top-right-radius",
+            important,
+            specificity,
+        ),
+        "border-right-radius" => expand_border_side_radius(
+            value,
+            "border-top-right-radius",
+            "border-bottom-right-radius",
+            important,
+            specificity,
+        ),
+        "border-bottom-radius" => expand_border_side_radius(
+            value,
+            "border-bottom-left-radius",
+            "border-bottom-right-radius",
+            important,
+            specificity,
+        ),
+        "border-left-radius" => expand_border_side_radius(
+            value,
+            "border-top-left-radius",
+            "border-bottom-left-radius",
+            important,
+            specificity,
+        ),
+        "border-block-start-radius" => expand_border_side_radius(
+            value,
+            "border-top-left-radius",
+            "border-top-right-radius",
+            important,
+            specificity,
+        ),
+        "border-block-end-radius" => expand_border_side_radius(
+            value,
+            "border-bottom-left-radius",
+            "border-bottom-right-radius",
+            important,
+            specificity,
+        ),
+        "border-inline-start-radius" => expand_border_side_radius(
+            value,
+            "border-top-left-radius",
+            "border-bottom-left-radius",
+            important,
+            specificity,
+        ),
+        "border-inline-end-radius" => expand_border_side_radius(
+            value,
+            "border-top-right-radius",
+            "border-bottom-right-radius",
+            important,
+            specificity,
+        ),
 
         // ── flex ──
         "flex" => expand_flex(value, important, specificity),
@@ -1541,6 +1613,57 @@ fn split_top_level_slash(value: &str) -> Option<(&str, &str)> {
         }
     }
     None
+}
+
+/// 展开 border-*-radius 侧边简写（R5181，css-borders-4 §3.6.1 corner-sizing，
+/// tentative）。
+///
+/// 语法：`<length-percentage [0,∞]>{1,2} [ / <length-percentage [0,∞]>{1,2} ]?`，
+/// 值序为该侧两角（border-top-radius 为 top-left、top-right，余类推）。无斜杠：
+/// 单值两角同用、双值按序分配，各值同时设该角水平+垂直半径（`<h> <v>?` longhand
+/// 语义，见 apply.rs parse_radius_two_axis）；有斜杠：斜杠前为第一角完整值
+/// （`<h> <v>?`）、斜杠后为第二角完整值。
+///
+/// 注：css-borders-4 编辑草案散文（2026-10 版）把斜杠描述为「前组设水平半径、
+/// 后组设垂直半径」，但 WPT css-borders/tentative/border-radius-side-shorthands
+/// 的 test/ref 配对（规范编辑本人维护、目前唯一实现 WebKit 的可执行判据）只有按
+/// 「前组=第一角完整值、后组=第二角完整值」才自洽（001/002 各案 test 值与 ref
+/// longhand 逐值对表验证，水平/垂直组读法 8 值全不匹配）。按 test 配对语义实现，
+/// 散文歧义挂账跟踪上游。
+fn expand_border_side_radius(
+    value: &str,
+    corner_a: &str,
+    corner_b: &str,
+    important: bool,
+    specificity: (u32, u32, u32),
+) -> Vec<MatchingDecl> {
+    let mk = |prop: &str, val: &str| -> MatchingDecl { (prop.to_string(), val.to_string(), important, specificity) };
+    if matches_css_wide_keyword(value) {
+        return wide_keyword_to_longhands(value, &[corner_a, corner_b], important, specificity);
+    }
+    if let Some((first, second)) = split_top_level_slash(value) {
+        let (Some(a), Some(b)) = (border_radius_side_group(first), border_radius_side_group(second)) else {
+            return vec![];
+        };
+        return vec![mk(corner_a, &a), mk(corner_b, &b)];
+    }
+    match split_top_level_whitespace(value).as_deref() {
+        Some([only]) if is_border_radius_rect_value(only) => vec![mk(corner_a, only), mk(corner_b, only)],
+        Some([a, b]) if is_border_radius_rect_value(a) && is_border_radius_rect_value(b) => {
+            vec![mk(corner_a, a), mk(corner_b, b)]
+        }
+        _ => vec![],
+    }
+}
+
+/// 校验侧边简写斜杠组的 1-2 个半径值（`<h> <v>?`），返回原样拼接串交给 longhand
+/// 解析（parse_radius_two_axis）。>2 值或含非法值 → None（整条声明按非法忽略）。
+fn border_radius_side_group(value: &str) -> Option<String> {
+    let parts = split_top_level_whitespace(value)?;
+    if parts.len() > 2 || !parts.iter().all(|p| is_border_radius_rect_value(p)) {
+        return None;
+    }
+    Some(parts.join(" "))
 }
 
 /// 展开 flex 简写（CSS Flexbox §7.1）。
