@@ -38,6 +38,19 @@ pub(crate) use self::effects::{LayerPaintAreas, border_area_ring_strips, clip_re
 use super::color::resolve_color_current;
 use super::helpers::{PrimitiveCounts, apply_opacity_to_new_primitives, circle_to_polygon, ellipse_to_polygon};
 
+/// R5174：`perspective` 属性祖先上下文（paint_node 栈帧，css-transforms-2 §18-21）。
+#[derive(Clone, Copy)]
+pub(crate) struct ParentPerspective {
+    /// perspective 盒的 DOM 节点（直子匹配门）。
+    pub(crate) node: NodeId,
+    /// perspective-origin 绝对坐标 X（相对自身 border-box 解析，§21）。
+    pub(crate) origin_x: f32,
+    /// perspective-origin 绝对坐标 Y。
+    pub(crate) origin_y: f32,
+    /// 透视距离 d（px，> 0；§19 投影缩放 s = d/(d−τ) 的分母基）。
+    pub(crate) d: f32,
+}
+
 /// 绘制命令生成器 — 将布局盒树转换为渲染图元。
 pub struct Painter {
     /// 生成的渲染图元列表。
@@ -212,6 +225,19 @@ pub struct Painter {
     /// `scroll` 对待（transform 建立包含块，fixed 定位区被拉进变换坐标系）。driving:
     /// background-attachment-fixed-inside-transform-1（transform 祖先内 fixed 须同 scroll）。
     pub(crate) transform_depth: u32,
+    /// R5174：祖先 `perspective` 属性上下文栈（css-transforms-2 §18-21）。paint_node
+    /// 每盒维护：盒自身 perspective 解析 > 0 时以其 perspective-origin（绝对坐标，
+    /// 相对自身 border-box 解析）+ 透视距离入栈，子树绘毕出栈。消费门 = 自元素沿
+    /// DOM 祖先链走查至栈内 perspective 节点（直子直接承接；preserve-3d 中间代
+    /// τ 累加透传，flat 中间代截断，见变换站点注释）。脏矩形路径
+    /// paint_node_in_rect 自递归不经 paint_node 不入栈——该路径维持无透视合成
+    ///（FIXME：如需覆盖改走 paint_node 或同款入栈）。
+    pub(crate) perspective_ctx: Vec<ParentPerspective>,
+    /// R5174：父 perspective 投影合成开关（构造期单次读取，热路径零 env 查询）。
+    /// `ZW_PARENT_PERSPECTIVE=0` 关闭（回退透视折叠合成；解析层 translateZ 归一与
+    /// translateZ 混合列表失效不受开关控制，OFF 相对基线 corpus 差异集见
+    /// docs/goal/rendering-compat R5174 evidence）。
+    pub(crate) parent_perspective_enabled: bool,
     /// R5139：multicol 片段循环 k>0 迭代 / R5137 续片重绘期间为真——列流映射 OOF
     ///（`oof_static_mapped`，CB 在 multicol 之外）不参与本容器碎片复制，其子树在此
     /// 类重绘中整体抑制；映射位的一次绘制由 k=0 迭代照常完成。paint_node 入口判定。
@@ -714,6 +740,8 @@ impl Painter {
             inline_bleed_enabled: std::env::var("ZW_INLINE_BLEED").as_deref() == Ok("1"),
             inline_ca_paint_enabled: std::env::var("ZW_INLINE_CA_PAINT").as_deref() != Ok("0"),
             mc_paint_nesting: 0,
+            perspective_ctx: Vec::new(),
+            parent_perspective_enabled: std::env::var("ZW_PARENT_PERSPECTIVE").as_deref() != Ok("0"),
             paint_skip_nodes: HashSet::new(),
             counters: HashMap::new(),
             bg_clip_text_color: Vec::new(),
@@ -2440,7 +2468,41 @@ impl Painter {
             !matches!(style.transform, TransformValue::None) && !super::helpers::is_singular_transform(style)
         });
         self.transform_depth += u32::from(self_transformed);
+        // R5174：perspective 属性入栈（css-transforms-2 §18：perspective ≠ none 为
+        // 直子建立 3D 透视上下文）——透视距离按元素字号解析长度，perspective-origin
+        // 相对自身 border-box（§21）解析为绝对坐标；子树绘毕出栈。
+        let persp_pushed = if self.parent_perspective_enabled {
+            box_node
+                .node_id
+                .and_then(|id| styles.get(&id).map(|style| (id, style)))
+                .and_then(|(id, style)| {
+                    let font_size_px = resolve_paint_font_size(&style.font_size) as f64;
+                    let d = zero_style_system::computed::resolve_length(&style.perspective, font_size_px, None, None);
+                    (d > 0.0).then(|| {
+                        let origin_comp = |lv: &LengthValue, box_size: f32| match lv {
+                            LengthValue::Percentage(p) => box_size * (*p as f32 / 100.0),
+                            other => {
+                                zero_style_system::computed::resolve_length(other, font_size_px, None, None) as f32
+                            }
+                        };
+                        ParentPerspective {
+                            node: id,
+                            origin_x: offset_x + box_node.x + origin_comp(&style.perspective_origin_x, box_node.width),
+                            origin_y: offset_y + box_node.y + origin_comp(&style.perspective_origin_y, box_node.height),
+                            d: d as f32,
+                        }
+                    })
+                })
+        } else {
+            None
+        };
+        if let Some(ctx) = persp_pushed {
+            self.perspective_ctx.push(ctx);
+        }
         self.paint_node_inner(box_node, styles, offset_x, offset_y, doc, is_root_scope);
+        if persp_pushed.is_some() {
+            self.perspective_ctx.pop();
+        }
         self.transform_depth -= u32::from(self_transformed);
     }
 
@@ -3713,6 +3775,70 @@ impl Painter {
                         }
                         _ => None,
                     };
+                    // R5174（CSS Transforms 2 §18-21 `perspective` 属性）：祖先元素
+                    // perspective > 0 且自身变换保持恒定 z 平面（τ = z 平移累计，
+                    // flat_plane_translate_z）时，透视投影 = 绕 perspective-origin 的
+                    // 等比缩放 s = d/(d−τ)，外层复合于自身仿射矩阵（M' = S∘M）。直子
+                    // 直接承接；中间代须 transform-style:preserve-3d（spec 默认 flat
+                    // 先拍扁、透视不透传，§3d-rendering-contexts）且自身恒定 z 平面
+                    //（τ 逐代累加），沿 DOM 祖先链走查至 perspective 元素止；逐点
+                    // z 变函数（rotateX/Y/3d、perspective()、scale3d）断链。链长 > 1
+                    // 时限定叶实心群体（差集恰为单一边框盒 fill，判据同 R5085 去变换
+                    // 形态/祖先条件）——TP 是区域型全场景后处理、无子树隔离概念，非叶
+                    // 盒的合成重放会清白区域内先绘内容（3d-scene-with-iframe-001
+                    // transform2 形态取证：已缩放绿块被其 union rect 清白凿洞）。
+                    // kill-switch `ZW_PARENT_PERSPECTIVE=0` 关闭（回退透视折叠合成；
+                    // 解析层语义不变，OFF 差异集归因见 R5174 evidence）。
+                    let parent_perspective = if self.parent_perspective_enabled {
+                        doc.and_then(|d| {
+                            let leaf_solid_own = style.backdrop_filter.is_empty()
+                                && box_node.border_top == 0.0
+                                && box_node.border_right == 0.0
+                                && box_node.border_bottom == 0.0
+                                && box_node.border_left == 0.0
+                                && style.opacity >= 1.0
+                                && matches!(
+                                    style.mix_blend_mode,
+                                    zero_style_system::MixBlendModeComputedValue::Normal
+                                )
+                                && self.primitives.fills.len() == counts_before.fills + 1
+                                && self.primitives.rounded_rects.len() == counts_before.rounded_rects
+                                && self.primitives.gradients.len() == counts_before.gradients
+                                && self.primitives.shadows.len() == counts_before.shadows
+                                && self.primitives.images.len() == counts_before.images
+                                && self.primitives.glyphs.len() == counts_before.glyphs
+                                && self.primitives.strokes.len() == counts_before.strokes
+                                && filters_before == self.primitives.filters.len()
+                                && blend_modes_before == self.primitives.blend_modes.len()
+                                && self.primitives.fills[counts_before.fills].rect == rect;
+                            let mut tau = super::helpers::flat_plane_translate_z(style)?;
+                            let mut cur = node_id;
+                            let mut depth = 0_u32;
+                            loop {
+                                let pid = d.parent_node(cur)?;
+                                depth += 1;
+                                if let Some(c) = self.perspective_ctx.iter().rev().find(|c| c.node == pid) {
+                                    if depth > 1 && !leaf_solid_own {
+                                        return None;
+                                    }
+                                    let den = c.d - tau;
+                                    if den.abs() < 1e-6 {
+                                        return None;
+                                    }
+                                    let s = c.d / den;
+                                    return ((s - 1.0).abs() > 1e-6).then_some((c.origin_x, c.origin_y, s));
+                                }
+                                let pstyle = styles.get(&pid)?;
+                                if pstyle.transform_style != zero_style_system::TransformStyleValue::Preserve3d {
+                                    return None;
+                                }
+                                tau += super::helpers::flat_plane_translate_z(pstyle)?;
+                                cur = pid;
+                            }
+                        })
+                    } else {
+                        None
+                    };
                     // R5085：子树恰为单个实色背景填充（叶实心盒）时，变换以「四角矩阵
                     // 映射 path_fill」直接承载，不发射 TransformPrimitive——CPU raster
                     // apply_transform_post 是「union rect 清白 + 反向采样」的全场景像素
@@ -3837,9 +3963,13 @@ impl Painter {
                         && self.primitives.fills[counts_before.fills].rect == rect;
                     let mut direct_filled = false;
                     if solid_leaf_fill
-                        && let Some(tp) =
+                        && let Some(mut tp) =
                             super::helpers::compute_transform_matrix_with_ref_box(style, &rect, ref_box.as_ref())
                     {
+                        // R5174：父 perspective 缩放折叠进直绘矩阵（四角映射同步生效）。
+                        if let Some((ox, oy, s)) = parent_perspective {
+                            super::transform::compose_perspective_scale(&mut tp, ox, oy, s, &rect);
+                        }
                         // 仿射映射四角（x' = a·x + c·y + tx，y' = b·x + d·y + ty），
                         // 以变换后四边形 path_fill 替换原 fill（swap_remove 恰在末位）。
                         let fill = self.primitives.fills.swap_remove(counts_before.fills);
@@ -3857,12 +3987,25 @@ impl Painter {
                         direct_filled = true;
                     }
                     if !direct_filled {
-                        super::helpers::apply_transform_with_ref_box(
-                            style,
-                            &rect,
-                            ref_box.as_ref(),
-                            &mut self.primitives,
-                        );
+                        // R5174：TP 路径同折叠（与直绘共用 compose，改路不拆对）；
+                        // 自身矩阵 None（transform:none / 纯 translateZ 列表 identity
+                        // 早退）但透视缩放 ≠ 1 时合成「绕 origin 缩放」TP——
+                        // perspective-origin 族：子元素仅 translateZ(±z)，投影缩放是
+                        // 唯一视觉载体（s = d/(d−z)，translateZ(t) ≡ translate3d(0,0,t)）。
+                        match super::helpers::compute_transform_matrix_with_ref_box(style, &rect, ref_box.as_ref()) {
+                            Some(mut tp) => {
+                                if let Some((ox, oy, s)) = parent_perspective {
+                                    super::transform::compose_perspective_scale(&mut tp, ox, oy, s, &rect);
+                                }
+                                self.primitives.add_transform(tp);
+                            }
+                            None => {
+                                if let Some((ox, oy, s)) = parent_perspective {
+                                    self.primitives
+                                        .add_transform(super::transform::perspective_scale_tp(&rect, ox, oy, s));
+                                }
+                            }
+                        }
                     }
                     // R3901：纯 translate 列表走图元级平移（CSS Transforms §transform-rendering：
                     // transform 作用于元素及其整个子树）。counts_before = paint_node 起点快照，

@@ -474,6 +474,90 @@ fn rotate3d_unit_axis(x: f64, y: f64, z: f64, deg: f64) -> TransformFunction {
     }
 }
 
+/// R5174（CSS Transforms 2 §18-21 `perspective` 属性）：子元素是否保持「恒定 z 平面」，
+/// 是则返回累计 z 平移 τ。可入集合 = 2D 仿射函数（translate/rotate(z)/scale/skew/
+/// matrix）+ TranslateZ/Translate3d（z 分量累加）；逐点 z 变函数（rotateX/rotateY/
+/// rotate3d/perspective()/scale3d/scaleZ）与 individual rotate/scale（R4201 合成序
+/// 前置）不入——精确投影须真 3D 管线（R3833 已知局限同谱），保持既有 2D 近似。
+pub fn flat_plane_translate_z(style: &ComputedStyle) -> Option<f32> {
+    if style.individual_rotate.is_some() || style.individual_scale.is_some() {
+        return None;
+    }
+    let funcs: &[TransformFunction] = match &style.transform {
+        TransformValue::None => &[],
+        TransformValue::List(f) => f,
+    };
+    flat_plane_list_translate_z(funcs)
+}
+
+/// [`flat_plane_translate_z`] 的列表级变体（R5174 链承接对中间代逐层取 τ 复用）。
+/// 可入函数集以解析层 [`zero_css_parser::values::is_flat_plane_function`] 单源判定；
+/// translateZ(t) 解析层归一为 Translate3d(0, 0, t)（R5174 前无解析臂整表丢弃）。
+fn flat_plane_list_translate_z(funcs: &[TransformFunction]) -> Option<f32> {
+    let mut z = 0.0_f32;
+    for f in funcs {
+        if let TransformFunction::Translate3d(_, _, dz) = f {
+            z += *dz as f32;
+        } else if !zero_css_parser::values::is_flat_plane_function(f) {
+            return None;
+        }
+    }
+    Some(z)
+}
+
+/// R3915 同款并集（compose/合成 TP 共用）：rect ∪ 矩阵映射四角 bbox。
+fn perspective_union_rect(rect: &Rect, a: f32, b: f32, c: f32, d: f32, tx: f32, ty: f32) -> Rect {
+    let map_x = |x: f32, y: f32| a * x + c * y + tx;
+    let map_y = |x: f32, y: f32| b * x + d * y + ty;
+    let (rx0, ry0, rx1, ry1) = (rect.left(), rect.top(), rect.right(), rect.bottom());
+    let mut min_x = map_x(rx0, ry0).min(rect.left());
+    let mut min_y = map_y(rx0, ry0).min(rect.top());
+    let mut max_x = map_x(rx1, ry1).max(rect.right());
+    let mut max_y = map_y(rx1, ry1).max(rect.bottom());
+    for (cx, cy) in [(rx1, ry0), (rx0, ry1)] {
+        min_x = min_x.min(map_x(cx, cy));
+        min_y = min_y.min(map_y(cx, cy));
+        max_x = max_x.max(map_x(cx, cy));
+        max_y = max_y.max(map_y(cx, cy));
+    }
+    let ux0 = rect.left().min(min_x);
+    let uy0 = rect.top().min(min_y);
+    let ux1 = rect.right().max(max_x);
+    let uy1 = rect.bottom().max(max_y);
+    Rect::new(ux0, uy0, ux1 - ux0, uy1 - uy0)
+}
+
+/// R5174：把父 perspective 投影（绕绝对点 (ox,oy) 等比缩放 s = d/(d−τ)）折叠进既有
+/// 仿射 TP——p' = s·M(p) + o·(1−s)，仍属 2D 仿射集合（TP/直绘两路同消费）；
+/// union rect 按折叠后矩阵重算（R3915 同款）。
+pub fn compose_perspective_scale(tp: &mut TransformPrimitive, ox: f32, oy: f32, s: f32, rect: &Rect) {
+    tp.a *= s;
+    tp.b *= s;
+    tp.c *= s;
+    tp.d *= s;
+    tp.tx = s * tp.tx + ox * (1.0 - s);
+    tp.ty = s * tp.ty + oy * (1.0 - s);
+    tp.rect = perspective_union_rect(rect, tp.a, tp.b, tp.c, tp.d, tp.tx, tp.ty);
+}
+
+/// R5174：无自身矩阵（transform:none / 纯 translateZ 列表 compute 侧 identity 早退）
+/// 时的合成 TP = 纯「绕 (ox,oy) 缩放 s」，rect 同款并集。
+pub fn perspective_scale_tp(rect: &Rect, ox: f32, oy: f32, s: f32) -> TransformPrimitive {
+    let tx = ox * (1.0 - s);
+    let ty = oy * (1.0 - s);
+    TransformPrimitive {
+        rect: perspective_union_rect(rect, s, 0.0, 0.0, s, tx, ty),
+        origin_x: ox,
+        origin_y: oy,
+        a: s,
+        b: 0.0,
+        c: 0.0,
+        d: s,
+        tx,
+        ty,
+    }
+}
+
 /// 求纯 translate 列表的累计位移 `(tx, ty)`（CSS Transforms §translate）。
 ///
 /// R3901：旧实现承诺「仅 translate 的列表由 offset 路径处理」（compute_transform_matrix
