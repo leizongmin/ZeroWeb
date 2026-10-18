@@ -13574,10 +13574,18 @@
     this._dt_items = [];        // 有序 item 列表（DataTransferItem 实例；string/file 混排，插入序 = 迭代序）
     this._dt_storeVer = 0;      // item list 版本号——types/files 视图缓存键（任何 item list 变更 +1）
     this._dt_typesCache = null; // { ver, arr }——types FrozenArray 恒等面
+    // dnd-compat M3-S2：drag data store 模式（HTML dnd.html#drag-data-store）——构造缺省
+    // readwrite（脚本自建 DataTransfer 面，M2 构造器语义零变化）；宿主 drag 会话事件
+    //（part06 `__zw_dispatch_event` drag 分支）按事件类型改写：dragstart/drop readwrite、
+    // 其余 protected（getData ''、写方法 no-op，types/长度仍可见）。
+    this._dt_mode = 'readwrite';
     this.effectAllowed = 'none';
     this.dropEffect = 'none';
   }
   DataTransfer.prototype.setData = function (format, data) {
+    // protected 模式拒绝写入（HTML dnd.html#dom-datatransfer-setdata——mode 非 readwrite
+    // 时静默返回；宿主 dragenter/over/leave 期间页面 setData 不落 store）。
+    if (this._dt_mode === 'protected') return;
     var f = String(format);
     for (var i = 0; i < this._dt_items.length; i++) {
       var _si = this._dt_items[i];
@@ -13589,6 +13597,9 @@
     this._dt_storeVer++; // 替换/新增都改 item list（corpus：同 type setData 也换新 types）
   };
   DataTransfer.prototype.getData = function (format) {
+    // protected 模式数据不可见（HTML dnd.html#dom-datatransfer-getdata——mode 非
+    // readwrite 返空串；types/长度仍可见——列表读取不设门）。
+    if (this._dt_mode === 'protected') return '';
     var f = String(format);
     for (var i = 0; i < this._dt_items.length; i++) {
       var it = this._dt_items[i];
@@ -13597,6 +13608,8 @@
     return '';
   };
   DataTransfer.prototype.clearData = function (format) {
+    // protected 模式拒绝清除（同 setData——mode 非 readwrite 静默返回）。
+    if (this._dt_mode === 'protected') return;
     if (format == null) {
       // 仅清 string 项（file 项保留——in-tree WAB2-M2-s3）。已无 string 项 → item list 未变
       //（corpus identity 面：空列表 clearData 不换新 types）。
@@ -13697,6 +13710,9 @@
     return this._items[i] || null;
   };
   DataTransferItemList.prototype.add = function (data, type) {
+    // protected 模式拒绝变更（HTML dnd.html#dom-datatransferitemlist-add——mode 非
+    // readwrite 返 null，store 不变）。
+    if (this._dt._dt_mode === 'protected') return null;
     // add(file)（File-like，按 .size 探测）→ file item；add(data, type) → string item。
     if (data && typeof data === 'object' && typeof data.size === 'number') {
       var fItem = new DataTransferItem('file', data.type || '', null, data);
@@ -13721,6 +13737,8 @@
     return sItem;
   };
   DataTransferItemList.prototype.remove = function (i) {
+    // protected 模式拒绝变更（同 add——mode 非 readwrite no-op）。
+    if (this._dt._dt_mode === 'protected') return;
     var idx = i | 0; // spec unsigned long（负/越界 → no-op，item list 未变——types 恒等面）
     if (idx < 0 || idx >= this._dt._dt_items.length) return;
     var it = this._dt._dt_items[idx];
@@ -13733,6 +13751,8 @@
     this._dt._dt_storeVer++;
   };
   DataTransferItemList.prototype.clear = function () {
+    // protected 模式拒绝变更（同 remove——mode 非 readwrite no-op）。
+    if (this._dt._dt_mode === 'protected') return;
     // 空列表 clear → item list 未变（corpus identity 面：items.clear() 二连调第二次不换新 types）。
     if (this._dt._dt_items.length === 0) return;
     var items = this._dt._dt_items;

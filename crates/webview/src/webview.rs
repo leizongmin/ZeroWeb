@@ -7,12 +7,12 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc;
 
 use zero_engine::{
-    BudgetAdvance, BudgetedRenderSession, DomMutation, MediaType, PipelineTimings, PrefersColorSchemeValue,
-    RenderPipeline, RenderResult, extract_css_image_urls, extract_html_style_text, extract_img_srcs,
-    extract_meta_csp_policies, extract_page_scripts_indexed, extract_script_csp_info, extract_script_source_positions,
-    extract_style_elements_csp, extract_stylesheet_hrefs, generate_js_dom_shim, image_resource_key,
-    page_script_error_check, register_dom_callbacks, resolve_document_url, script_clear_current_script,
-    script_dispatch_dom_event, script_dispatch_img_event, script_dispatch_link_event,
+    BudgetAdvance, BudgetedRenderSession, DomEventDetail, DomMutation, MediaType, PipelineTimings,
+    PrefersColorSchemeValue, RenderPipeline, RenderResult, extract_css_image_urls, extract_html_style_text,
+    extract_img_srcs, extract_meta_csp_policies, extract_page_scripts_indexed, extract_script_csp_info,
+    extract_script_source_positions, extract_style_elements_csp, extract_stylesheet_hrefs, generate_js_dom_shim,
+    image_resource_key, page_script_error_check, register_dom_callbacks, resolve_document_url,
+    script_clear_current_script, script_dispatch_dom_event, script_dispatch_img_event, script_dispatch_link_event,
     script_dispatch_securitypolicyviolation, script_run_classic_page, script_set_current_script,
 };
 // R3150（闭合 R3121 latent）：script_dispatch_native_event 唯一用法（dispatch_event native_dom 分支）
@@ -44,6 +44,9 @@ use crate::{IndexedDbOwner, WebViewError};
 
 mod user_actions;
 pub use user_actions::WebViewUserActionResult;
+
+mod drag_input;
+pub use drag_input::{DRAG_START_THRESHOLD_PX, DragApplyReport, DragEventPlan, DragInputState, DragPointerPhase};
 
 static NEXT_WEBVIEW_ID: AtomicU64 = AtomicU64::new(1);
 static NEXT_IN_PROCESS_FETCH_EVENT_ID: AtomicU64 = AtomicU64::new(1);
@@ -554,6 +557,9 @@ pub struct WebView {
     /// uievents-compat M2 片 1：同目标连击计数（dblclick 判定——UI Events §5.2.2
     /// detail 按连击计数；目标变化即重置；headless 无时间窗，同目标连击近似）。
     click_streak_target: Option<String>,
+    /// dnd-compat M3：宿主拖放会话状态机（mousedown 命中可拖元素武装，move/up/cancel
+    /// 驱动 drag* 事件序——`apply_drag_input` 单入口；导航经导航重置点随会话废弃）。
+    drag_input: DragInputState,
     /// 同上——当前连击计数。
     click_streak_count: u32,
     /// 当前文档页面脚本是否已经执行。
@@ -757,6 +763,7 @@ impl WebView {
             pointer_over: None,
             click_streak_target: None,
             click_streak_count: 0,
+            drag_input: DragInputState::new(),
             page_scripts_initialized: false,
             pending_csp_img_blocks: Vec::new(),
             pending_csp_style_violations: Vec::new(),
@@ -994,6 +1001,8 @@ impl WebView {
         // uievents-compat M2 片 1：导航丢弃悬停/连击态（per-document 生命周期）。
         self.pointer_over = None;
         self.click_streak_target = None;
+        // dnd-compat M3：导航废弃进行中的拖放会话（drag* 事件序不跨 document）。
+        self.drag_input = DragInputState::new();
         self.click_streak_count = 0;
         self.pipeline.set_focused_selector(None);
         self.page_scripts_initialized = false;
@@ -1677,6 +1686,8 @@ impl WebView {
         // uievents-compat M2 片 1：导航丢弃悬停/连击态（per-document 生命周期）。
         self.pointer_over = None;
         self.click_streak_target = None;
+        // dnd-compat M3：导航废弃进行中的拖放会话（drag* 事件序不跨 document）。
+        self.drag_input = DragInputState::new();
         self.click_streak_count = 0;
         self.pipeline.set_focused_selector(None);
         self.page_scripts_initialized = false;
@@ -1816,6 +1827,8 @@ impl WebView {
         // uievents-compat M2 片 1：导航丢弃悬停/连击态（per-document 生命周期）。
         self.pointer_over = None;
         self.click_streak_target = None;
+        // dnd-compat M3：导航废弃进行中的拖放会话（drag* 事件序不跨 document）。
+        self.drag_input = DragInputState::new();
         self.click_streak_count = 0;
         self.pipeline.set_focused_selector(None);
         self.page_scripts_initialized = false;
@@ -1910,6 +1923,8 @@ impl WebView {
         // uievents-compat M2 片 1：导航丢弃悬停/连击态（per-document 生命周期）。
         self.pointer_over = None;
         self.click_streak_target = None;
+        // dnd-compat M3：导航废弃进行中的拖放会话（drag* 事件序不跨 document）。
+        self.drag_input = DragInputState::new();
         self.click_streak_count = 0;
         self.pipeline.set_focused_selector(None);
         self.page_scripts_initialized = false;
@@ -4046,8 +4061,21 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
     /// 原生 `dispatchEvent` 派发（[`script_dispatch_native_event`]）。闭合 S4 host 驱动
     /// 半边；`native_dom` 关（默认）→ 仅 polyfill 路径，零回归。
     pub fn dispatch_event(&mut self, selector: &str, event_type: &str) -> Result<(), WebViewError> {
+        self.dispatch_dom_event_inner(selector, event_type, None).map(|_| ())
+    }
+
+    /// [`Self::dispatch_event`] 的共享实现体（dnd-compat M3 抽出）：接受附加 detail 并返回
+    /// shim 派发值（`'ok'`/`'prevented'`——可取消事件的 defaultPrevented 面，drag 会话状态机
+    /// 依赖）。派发步骤与既有语义逐行保留：shim 通道（`__zw_dispatch_event`）+ P1b native
+    /// 通道 + 共享 mutation 队列 apply。
+    fn dispatch_dom_event_inner(
+        &mut self,
+        selector: &str,
+        event_type: &str,
+        detail: Option<&DomEventDetail>,
+    ) -> Result<String, WebViewError> {
         self.run_page_scripts()?; // 确保监听器已注册
-        let script = script_dispatch_dom_event(selector, event_type, None);
+        let script = script_dispatch_dom_event(selector, event_type, detail);
         self.ensure_sandbox()?;
         let sandbox = self
             .js_sandbox
@@ -4083,9 +4111,10 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                 .ok_or_else(|| WebViewError::Script("no js sandbox".to_string()))?
         };
 
-        sandbox
+        let value = sandbox
             .execute(&script)
-            .map_err(|e| WebViewError::Script(format!("dispatch {event_type}: {e}")))?;
+            .map_err(|e| WebViewError::Script(format!("dispatch {event_type}: {e}")))
+            .map(|result| result.value)?;
         // P1b host→page native 派发（R3121）：经原生绑定派发到 native LISTENERS
         //（polyfill __zw_dispatch_event 不达）。native 回调直改 live doc，下方 apply 空尾
         // 分支的 sync_render_after_native_dom 拾取重渲染。（js-dom M5 收尾：无条件执行。）
@@ -4102,13 +4131,13 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
             self.sync_render_after_native_dom();
             // performance-api-compat M2-S1：事件监听器任务边界。
             self.drain_long_task_entries();
-            return Ok(());
+            return Ok(value);
         }
         // M3-S9：DOM 变更直接应用到活 DOM（见 run_page_scripts_impl 同款注释）。
         self.apply_pending_shared_mutations()?;
         // performance-api-compat M2-S1：事件监听器任务边界（mutation 应用路径）。
         self.drain_long_task_entries();
-        Ok(())
+        Ok(value)
     }
 
     /// js-dom M3 R100：注册 selector→handle 反查回调（JS 侧 query 返回点 identity 统一，
