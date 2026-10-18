@@ -6,8 +6,9 @@
 // ② children 集合 R333 桶并入的直接子判定（append 携带子树时孙代渗入 `el.children`）；
 // ③ CSSOM View `Element.prototype.scrollTop/scrollLeft` 访问器 gOPD 可见（scroll-behavior-
 //    polyfill 装载即 `gOPD(Element.prototype,'scrollTop').set` 解引用 TypeError）；
-// ④ insertBefore 不可见容器（漂移 sel）lenient 臂——融合子列表空 + 外部 ref 不抛
-//    NotFound（React D-back 水合 commit 臂死亡级联根因），非空容器照抛（WPT 守卫）。
+// ④ insertBefore 不可见容器（漂移 sel）lenient 臂——融合子列表空 + **有父**外部 ref 不抛
+//    NotFound（React D-back 水合 commit 臂死亡级联根因），非空容器照抛、ref 无父链
+//    （detached 哨兵）即便空视图容器也照抛（返修 F1；WPT 守卫）。
 
 fn t59_sandbox_with_shim() -> zero_script_sandbox::V8Sandbox {
     let mut sandbox = zero_script_sandbox::V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
@@ -128,8 +129,10 @@ fn t59_scroll_top_left_prototype_accessors_visible() {
     assert_eq!(q("String(globalThis.__roundtrip)"), "33", "实例 scrollTop 读写经 trap 往返");
 }
 
-/// ④ insertBefore 不可见容器 lenient 臂：空融合视图容器 + 外部 ref 放行；
-/// 对照面：有子容器 + 外部 ref 照抛 NotFound（WPT pre-insertion 守卫不放宽）。
+/// ④ insertBefore 不可见容器 lenient 臂：空融合视图容器 + **有父**外部 ref 放行
+/// （React 漂移案 ref.parentNode 落在真实路径上）；对照面两臂照抛 NotFound——
+/// 有子容器 + 外部 ref（WPT pre-insertion 守卫不放宽）、无父 ref（detached 哨兵，
+/// WPT Node-insertBefore pre-insert 步骤 3，返修 F1 收窄臂）。
 #[test]
 fn t59_insert_before_invisible_container_lenient_arm() {
     let mut sandbox = t59_sandbox_with_shim();
@@ -150,6 +153,9 @@ fn t59_insert_before_invisible_container_lenient_arm() {
              globalThis.__lenientErr = '';\
              try { invisible.appendChild(fresh); } catch (e) { /* detached 容器可能走其他分支 */ }\
              try { invisible.insertBefore(document.createElement('p'), outsider); } catch (e) { globalThis.__lenientErr = String(e.name || e); }\
+             var parentless = document.createElement('div');\
+             globalThis.__parentlessErr = '';\
+             try { invisible.insertBefore(document.createElement('p'), parentless); } catch (e) { globalThis.__parentlessErr = String(e.name || e); }\
              var visible = document.getElementById('visible');\
              var kid = document.getElementById('kid');\
              globalThis.__visibleErr = '';\
@@ -163,7 +169,12 @@ fn t59_insert_before_invisible_container_lenient_arm() {
     assert_eq!(
         q("globalThis.__lenientErr"),
         "",
-        "不可见容器（空融合视图）+ 外部 ref 须放行（React 漂移 sel 水合形态）"
+        "不可见容器（空融合视图）+ 有父外部 ref 须放行（React 漂移 sel 水合形态）"
+    );
+    assert_eq!(
+        q("globalThis.__parentlessErr"),
+        "NotFoundError",
+        "无父 ref（detached 哨兵）即便空视图容器也照抛 NotFound（WPT pre-insert 步骤 3，返修 F1）"
     );
     assert_eq!(
         q("globalThis.__visibleErr"),

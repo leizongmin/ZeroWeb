@@ -6416,12 +6416,21 @@
                 // 融合列表**非空**（真实可见）时照抛，WPT pre-insertion-validation-notfound
                 // 族（非空父 + 外部 ref）不受影响。放行后走 refNode.__zwSelector 分支按
                 // ref 真实选择器落位（InsertAdjacent 语义），落点即 React 语义目标。
+                // t6 返修（F1，qq-20261016-r1 t6-repair）：放行还须 **ref 有真实父链**
+                // （`refNode.parentNode != null`）——`_childNodeList` 对从未挂载的
+                // createElement 容器（`!sel` 且 R100 锚回失败）恒返 []，空视图守卫对
+                // detached 容器恒真，「空 detached 父 + 无父 ref」（spec pre-insert 步骤 3
+                // 哨兵：https://dom.spec.whatwg.org/#concept-node-pre-insert；WPT
+                // Node-insertBefore "reference child whose parent is not the context node
+                // must throw NotFoundError"）曾被系统性放行并静默挂子。ref 无父即无
+                // 「漂移到真实路径」证据面 → 照抛；漂移案 ref.parentNode 落在真实路径上，
+                // 放行面不变（t59 ④ 正例 ref 同为有父 ref）。
                 var _r300invisible = true;
                 try {
                   var _r300kidsNow = (typeof _childNodeList === 'function') ? _childNodeList(sel, handle) : null;
                   _r300invisible = !_r300kidsNow || _r300kidsNow.length === 0;
                 } catch (_e300kidsNow) {}
-                if (!_r300invisible && !_r300isChild) {
+                if ((!_r300invisible || _r300rp == null) && !_r300isChild) {
                   throw _zwDomException(
                     "Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node.",
                     'NotFoundError');

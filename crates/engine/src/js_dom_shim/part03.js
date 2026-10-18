@@ -1101,29 +1101,36 @@
   // 适配缺失。此处补原型访问器：代理元素（trap 命中）不受影响；gOPD 内省拿到 {get,set} 使
   // polyfill 按其旧浏览器路径正常安装（其 defineProperty 包装以 D.call(element) 委托回本
   // 访问器 → 经 proxy trap 落真实滚动状态）。非代理 this（Object.create(Element.prototype)
-  // 等继承形态）读回退 0/写忽略——防递归（getter 内 this.scrollTop 再入本访问器）以
-  // _zwScrlAccBusy 重入门闸。两模式（native/polyfill 原型链）都定义；defineProperty 幂等。
-  var _zwScrlAccBusy = false;
+  // 等继承形态）**同 this 再入**（getter 内 this.scrollTop 走原型链回到本访问器）读回退
+  // 0/写忽略——重入门闸以 _zwScrlAccBusy 记录**持锁 this**。两模式（native/polyfill 原型链）
+  // 都定义；defineProperty 幂等。
+  // t6 返修（F2，qq-20261016-r1 t6-repair）：守卫从模块级布尔改「持锁 this + save/restore」
+  // ——布尔把嵌套**异 this**（trap 处理中途触达另一元素）的合法读写也当递归误吞（读 0/写丢）；
+  // 同 this 再入仍拦截（递归面不变），异 this 嵌套放行，finally 复位持锁者（栈式纪律，
+  // 不吞外层持锁）。
+  var _zwScrlAccBusy = null;
   var _zwScrlAccGet = function () {
-    if (_zwScrlAccBusy) return 0;
-    _zwScrlAccBusy = true;
+    if (_zwScrlAccBusy === this) return 0;
+    var _zwScrlPrev = _zwScrlAccBusy;
+    _zwScrlAccBusy = this;
     try {
       var v = this.scrollTop;
       return v === undefined ? 0 : v;
     } catch (_eScrlAcc1) {
       return 0;
     } finally {
-      _zwScrlAccBusy = false;
+      _zwScrlAccBusy = _zwScrlPrev;
     }
   };
   var _zwScrlAccSet = function (v) {
-    if (_zwScrlAccBusy) return v;
-    _zwScrlAccBusy = true;
+    if (_zwScrlAccBusy === this) return v;
+    var _zwScrlPrev = _zwScrlAccBusy;
+    _zwScrlAccBusy = this;
     try {
       this.scrollTop = v;
     } catch (_eScrlAcc2) {
     } finally {
-      _zwScrlAccBusy = false;
+      _zwScrlAccBusy = _zwScrlPrev;
     }
     return v;
   };
