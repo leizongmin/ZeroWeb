@@ -750,3 +750,4 @@ mod r5167_table_anon_font_probe;
 mod r5168_anon_cell_wrap;
 mod r5169_anon_cell_run_paint;
 mod r5170_table_rtl_col_order;
+mod r5172_caption_shrink_to_fit;

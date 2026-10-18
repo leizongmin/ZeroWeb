@@ -607,6 +607,7 @@ impl LayoutEngine {
             abspos: bool,
             vertical_wm: bool,
             block_kw: bool,
+            caption: bool,
         }
         let sizing_targets = SizingTargets {
             intrinsic_kw_or_auto_float: false,
@@ -616,6 +617,7 @@ impl LayoutEngine {
             abspos: false,
             vertical_wm: false,
             block_kw: false,
+            caption: false,
         };
         let sizing_targets = {
             let mut t = sizing_targets;
@@ -673,6 +675,10 @@ impl LayoutEngine {
                 {
                     t.block_kw = true;
                 }
+                // R5172：table-caption 在场（caption 宽 shrink-to-fit pass，§17.4.1）。
+                if matches!(s.display, DisplayValue::TableCaption) {
+                    t.caption = true;
+                }
                 if t.intrinsic_kw_or_auto_float
                     && t.pct_height
                     && t.pct_box_side
@@ -680,6 +686,7 @@ impl LayoutEngine {
                     && t.abspos
                     && t.vertical_wm
                     && t.block_kw
+                    && t.caption
                 {
                     break;
                 }
@@ -750,6 +757,14 @@ impl LayoutEngine {
         } else {
             false
         };
+        // R5172：table-caption 宽 shrink-to-fit（CSS2 §17.4.1，converter TableCaption→
+        // Block 的 fill 满宽修正）。与 abspos shrink 同一 re-run 组（set_style+mark_dirty
+        // 后共用重跑）。无 caption 页面整 pass 跳过（预扫描位标同源）。
+        let changed_caption_shrink = if sizing_targets.caption {
+            Self::apply_caption_shrink_to_fit_width(&mut taffy_tree, &root_box, &dom_to_taffy, styles, doc)
+        } else {
+            false
+        };
         // R1544 Phase 2 layout-time（两阶段 content-size 传播）：vertical 容器把 Auto 维度
         // 的正确 content-size（Σ 子宽 / max 子高）喂回 taffy + mark_dirty，让父级 re-layout
         // 时按正确 container width 传播——解 R1545 postprocess width-set 不传播的缺口（经 taffy
@@ -814,6 +829,7 @@ impl LayoutEngine {
             || changed_ratio_img
             || changed_intrinsic
             || changed_abspos_shrink
+            || changed_caption_shrink
             || changed_vertical
             || changed_ar_container
             || changed_ar_flex_cross

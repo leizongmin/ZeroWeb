@@ -873,6 +873,85 @@ impl LayoutEngine {
         changed
     }
 
+    /// R5172（CSS2 §17.4.1）：table-caption 宽度 shrink-to-fit。
+    ///
+    /// converter 把 `TableCaption` 映射为 taffy Block（taffy 无原生 table 支持）→
+    /// caption 盒 fill 满包含块宽；§17.4.1 caption 的 `width: auto` 应 shrink-to-fit。
+    /// 案 padding-top/right-applies-to-015（1.22%/1.67%）：200px 内容的 caption 被拉满
+    /// 视口，border 线错位。taffy 布局后补测收缩：宽 = min(max-content, CB 可用宽)；
+    /// min-content 下限钳（§10.3.5 preferred_min）未实现（FIXME，案驱动补）；仅水平
+    /// 书写模式（vertical 域 R4436 caption-as-table 另路）。kill-switch
+    /// `ZW_CAPTION_SHRINK_TO_FIT=0` 回退 fill 行为。
+    pub(super) fn apply_caption_shrink_to_fit_width(
+        taffy_tree: &mut TaffyTree<NodeId>,
+        root: &LayoutBox,
+        dom_to_taffy: &HashMap<NodeId, taffy::NodeId>,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        doc: &Document,
+    ) -> bool {
+        use std::sync::LazyLock;
+        static ENABLED: LazyLock<bool> =
+            LazyLock::new(|| std::env::var("ZW_CAPTION_SHRINK_TO_FIT").as_deref() != Ok("0"));
+        if !*ENABLED {
+            return false;
+        }
+        let mut changed = false;
+        // stack 携带父 border-box 宽作 caption 的 CB 口径（caption 的 CB 是表盒；常规案
+        // 表盒无 border/padding，含 frame 的表盒偏大——FIXME 按需精化 padding-box 扣除）。
+        let mut stack: Vec<(&LayoutBox, f32)> = vec![(root, f32::INFINITY)];
+        while let Some((b, cb_width)) = stack.pop() {
+            for child in &b.children {
+                stack.push((child, b.width));
+            }
+            let Some(id) = b.node_id else { continue };
+            let Some(s) = styles.get(&id) else { continue };
+            if !matches!(s.display, zero_css_parser::values::DisplayValue::TableCaption)
+                || !matches!(s.width, LengthValue::Auto)
+                || s.contain.has_size()
+                || b.float != FloatValue::None
+                || b.is_absolute
+                || b.is_fixed
+                || s.writing_mode != WritingModeValue::HorizontalTb
+                // 无子盒的空 caption 不收缩（chromium 实证 fill 可用宽：margin-applies-to-015
+                // 空 caption 应 fill 320−margin，收缩致 border 缺边翻红）；纯 inline 内容
+                // caption（无子盒）同样维持 fill——css-tables-3 caption intrinsic 尺寸
+                // （含文本内容的 shrink 语义）FIXME 案驱动。
+                || b.children.is_empty()
+            {
+                continue;
+            }
+            let Some(&taffy_id) = dom_to_taffy.get(&id) else {
+                continue;
+            };
+            let measured = crate::intrinsic_sizing::block_max_content_width(b, doc, styles).max(0.0);
+            if measured < 0.5 {
+                continue;
+            }
+            // block_max_content_width 返回 **border-box**（含自身 frame）；CB 可用宽按父
+            // border-box 近似（caption 的 CB 是表盒，常规案表盒无 border/padding，含 frame
+            // 的表盒偏大——FIXME 按需精化 padding-box 扣除）。
+            let target_bw = measured.min(cb_width.max(0.0));
+            // 只缩不扩：taffy Block fill 的满宽才触达；已窄于目标的盒（其他 pass 已收缩）
+            // 不覆写。
+            if b.width <= target_bw + 0.5 {
+                continue;
+            }
+            if let Ok(mut style) = taffy_tree.style(taffy_id).cloned() {
+                let frame = b.padding_left + b.padding_right + b.border_left + b.border_right;
+                style.size.width = match style.box_sizing {
+                    taffy::style::BoxSizing::BorderBox => taffy::style::Dimension::length(target_bw),
+                    taffy::style::BoxSizing::ContentBox => {
+                        taffy::style::Dimension::length((target_bw - frame).max(0.0))
+                    }
+                };
+                let _ = taffy_tree.set_style(taffy_id, style);
+                let _ = taffy_tree.mark_dirty(taffy_id);
+                changed = true;
+            }
+        }
+        changed
+    }
+
     /// R3929 辅助：子树内是否有 float 盒（abspos 容器含 float 子时 shrink-to-fit 的
     /// preferred width 须含 float 约束语义，max-content 近似失准，见 width-019/020）。
     fn subtree_has_float(b: &LayoutBox) -> bool {
