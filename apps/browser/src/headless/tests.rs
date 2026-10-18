@@ -1534,6 +1534,20 @@ fn test_navigate_to_history_entry_jumps_and_emits_events() {
     );
     let error = error.expect_err("越界 entryId 必须报错");
     assert_eq!(error.code, -32602);
+    // 负数 entryId 同 -32602（t5 返修 D1：不得 max(0) 钳 0 静默跳首条目——
+    // getNavigationHistory 只产非负 id，负值为越契约输入，Chrome 报错语义）。
+    let (error, _) = server.dispatch_with_events(
+        &mut session,
+        "Page.navigateToHistoryEntry",
+        serde_json::json!({ "entryId": -1 }),
+    );
+    let error = error.expect_err("负数 entryId 必须报错");
+    assert_eq!(error.code, -32602);
+    assert_eq!(
+        session.shell.active_tab().and_then(|t| t.url()),
+        Some(b),
+        "负数 entryId 不改 shell URL（钳 0 会跳回条目 a）"
+    );
 }
 
 /// t4 返修（D1）：NavigationStarted 登记语义——会话命令导航确认既有登记、

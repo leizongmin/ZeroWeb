@@ -3005,6 +3005,50 @@ fn t5_cors_preflight_settles_via_async_callback_contract() {
         "preflight 异步桥：跨源自定义头请求兑现"
     );
 }
+
+/// t5 返修 D2：preflight executor 内裸 `__zw_fetch` 同步抛错 → Promise 构造器把
+/// executor 异常转为 preflight promise rejection；消费点 `.then` 无 onRejected 时
+///（pre-fix）外层 fetch 永不 settle——页面回调不触发（悬挂无信号，比 reject 更难
+/// 排查）。补 onRejected 后按既有 preflight 失败语义 settle（`!pre.ok` 同径：
+/// TypeError 'Failed to fetch'）。当前宿主回调（fetch_bridge/webview）不抛——
+/// 防御面回归守卫，非可达性声明；重定向臂 onRejected 同形由本测试同构覆盖。
+#[test]
+fn t5_cors_preflight_host_sync_throw_rejects_main_fetch() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://www.test.com/page".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 宿主回调同步抛错 mock（D2 防御面构造；不注册 Rust 回调，直接 JS 覆写）。
+    sandbox
+        .execute("globalThis.__zw_fetch = function () { throw new TypeError('host boom'); }; void 0;")
+        .unwrap();
+    // 跨源自定义头 GET → preflight 臂（executor 抛错点）。pre-fix：`__st` 恒
+    // 'pending'（悬挂）；post-fix：按 preflight 失败 settle 为 err。
+    sandbox
+        .execute("globalThis.__st = 'pending'; fetch('https://api.test/data', { headers: { 'X-Custom': 'v' } }).then(function (r) { globalThis.__st = 'ok:' + r.status; }, function (e) { globalThis.__st = 'err:' + e; }); void 0;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__st").unwrap().value,
+        "err:TypeError: Failed to fetch",
+        "宿主同步抛错 → 主 fetch 按 preflight 失败 settle（不悬挂）"
+    );
+    // preflight pending 条目不残留（settlePre 未及删除，onRejected 清理）。
+    let pending = sandbox
+        .execute("Object.keys(globalThis.__zw_pending).filter(function (k) { return k.indexOf('pre') >= 0; }).length")
+        .unwrap()
+        .value;
+    assert_eq!(pending, "0", "抛错后 preflight __zw_pending 条目已清理");
+}
 fn test_request_null_body_text_does_not_mark_body_used() {
     // https://fetch.spec.whatwg.org/#body-mixin
     // WPT Cache.add reads a body-less GET Request; null body consumption must

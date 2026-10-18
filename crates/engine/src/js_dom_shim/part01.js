@@ -3227,8 +3227,9 @@
           }
           // t5：preflight 经 _zwRunPreflight（__zw_pending 异步契约，见该函数注记）。
           globalThis.__zw_fetch_counter = (globalThis.__zw_fetch_counter | 0) + 1;
+          var preId = '__zwfid:pre' + globalThis.__zw_fetch_counter;
           _zwRunPreflight({
-            id: '__zwfid:pre' + globalThis.__zw_fetch_counter,
+            id: preId,
             url: url, method: method, preHeaders: preHeaders, preNames: _preNames,
             preDocOrigin: preDocOrigin, opaqueOrigin: false,
             credentials: credentials, mode: mode, redirect: redirect,
@@ -3247,6 +3248,13 @@
               pre.methods, pre.allowed, preMaxAge, method);
             // 主请求重入（_zwPreDone 跳过本 preflight 臂）；外层 Promise 的 settle 移交。
             _zwFetchMain(input, init, true).then(resolve, reject);
+          }, function () {
+            // t5 返修 D2：rejection 分支——executor 内裸 __zw_fetch 同步抛错（Promise
+            // 构造器转 rejection；对比 _issueNextHop 对同调用点有 try/catch）时无臂
+            // 消费 → 外层 fetch 永不 settle（悬挂无信号）。清 settlePre 未及删除的
+            // preflight pending 条目，按既有 preflight 失败语义 settle（同 !pre.ok）。
+            delete globalThis.__zw_pending[preId];
+            reject(new TypeError('Failed to fetch'));
           });
           return;
           }
@@ -3488,8 +3496,9 @@
               // 同步返 "" → 恒判失败）——经 _zwRunPreflight 等待。缓存保持本臂原
               // 无条件存储语义；失败 → network error；后续跳经 _issueNextHop。
               globalThis.__zw_fetch_counter = (globalThis.__zw_fetch_counter | 0) + 1;
+              var rpId = '__zwfid:repre' + globalThis.__zw_fetch_counter;
               _zwRunPreflight({
-                id: '__zwfid:repre' + globalThis.__zw_fetch_counter,
+                id: rpId,
                 url: nextUrl, method: nextMethod, preHeaders: rpHeaders, preNames: _rpNames,
                 preDocOrigin: rpDocOrigin, opaqueOrigin: _zwHopOriginOpaque,
                 credentials: credentials, mode: mode, redirect: redirect,
@@ -3506,6 +3515,14 @@
                   return;
                 }
                 _issueNextHop();
+              }, function () {
+                // t5 返修 D2：重定向臂同形 rejection 分支（executor 裸 __zw_fetch 同步
+                // 抛错 → preflight promise reject）。失败处置与上方 !rp.ok 一致，另清
+                // settlePre 未及删除的 preflight pending 条目。
+                delete globalThis.__zw_pending[rpId];
+                settled = true;
+                delete globalThis.__zw_pending[currentId || id];
+                reject(new TypeError('Failed to fetch'));
               });
               return;
             }

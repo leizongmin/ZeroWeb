@@ -172,7 +172,8 @@ impl HeadlessServer {
 
     /// CDP Page.navigateToHistoryEntry — shell 历史 Jump + renderer 载入 + 导航事件族
     ///（PW goBack/goForward 的执行半边）。entryId 为 getNavigationHistory 的条目 id
-    ///（= 历史索引）。shell 先跳转再载入：commit 世代登记 client_initiated=true 且
+    ///（= 历史索引，非负）；负值与越界同报 -32602（t5 返修 D1：不静默钳 0 跳首条目，
+    /// Chrome 同为报错语义）。shell 先跳转再载入：commit 世代登记 client_initiated=true 且
     /// shell 已同 URL → 回声跳过（不产生重复历史条目）；HTTP 重定向按 replace 语义
     /// 取代当前条目（apply_navigation_commit）。事件族复用
     /// [`Self::emit_navigation_event_family`]——page.url()（frameNavigated）与 PW
@@ -191,7 +192,15 @@ impl HeadlessServer {
                 code: -32602,
                 message: "Missing 'entryId' parameter".into(),
             })?;
-        let index = entry_id.max(0) as usize;
+        // t5 返修 D1：负数 entryId 同正数越界报 -32602——getNavigationHistory 只产
+        // 非负 id，max(0) 折叠会把负值静默跳到首条目（Chrome 报错不静默）。
+        if entry_id < 0 {
+            return Err(ProtocolError {
+                code: -32602,
+                message: format!("history entry {entry_id} not found"),
+            });
+        }
+        let index = entry_id as usize;
         let url = session
             .shell
             .active_tab()
