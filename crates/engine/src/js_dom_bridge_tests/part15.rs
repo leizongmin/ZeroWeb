@@ -350,7 +350,7 @@ fn test_content_editable_enumerated_production_r3187() {
 // ── R3188：`draggable` enumerated getter 生产路径——case-insensitive + auto-state default-draggable ──
 //
 // spec HTML `draggable`（枚举属性，关键字 true/false case-insensitive，缺省/非法→auto 状态）。IDL getter：
-// true 状态→true；auto 状态→default-draggable（img/audio/video/a[href]→true，余→false）。旧生产 getter 仅
+// true 状态→true；auto 状态→default-draggable（img/a[href]→true，余→false）。旧生产 getter 仅
 // `=== 'true'`（case-sensitive，且 auto 统一 false）。
 
 #[test]

@@ -148,7 +148,7 @@
         // R3204：sel 读源改 latest-wins（`__zw_get_attr_lw`/`__zw_has_attr_lw`）反映同批 `setAttribute`/`.attr()`
         //（缓存仅覆盖 IDL setter→getter；setAttribute→IDL read 旧读纯快照 stale，如 `setAttribute('autocomplete','off')
         // ; el.autocomplete` 返 'on'）。handle 路径不动（本就 latest-wins）。
-        if (prop === 'autofocus' || prop === 'draggable' || prop === 'spellcheck' || prop === 'translate' || prop === 'inert' || prop === 'autocomplete') {
+        if (prop === 'autofocus' || prop === 'draggable' || prop === 'spellcheck' || prop === 'translate' || prop === 'inert' || prop === 'autocomplete' || prop === 'dropzone') {
           var rfc = _reflectedAttrs[key];
           if (rfc && Object.prototype.hasOwnProperty.call(rfc, prop)) return rfc[prop];
           if (prop === 'autofocus' || prop === 'inert') {
@@ -169,7 +169,7 @@
             return (acLo === 'on' || acLo === 'off') ? acLo : 'on';
           }
           // R3188 draggable：enumerated（true/false，case-insensitive），缺省/非法 → auto 状态 → default-draggable
-          //（spec/Chrome：img/audio/video/a[href] 默认可拖拽，余 false）。旧实现仅 `=== 'true'`（case-sensitive，
+          //（spec dnd 段：img/a[href] 默认可拖拽，余 false）。旧实现仅 `=== 'true'`（case-sensitive，
           // 且 auto 状态统一 false——缺省 `<img>` 误判不可拖拽）。
           if (prop === 'draggable') {
             var dgRaw = handle ? __zw_get_attr_handle(handle, 'draggable') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'draggable') : __zw_get_attr(sel, 'draggable'));
@@ -177,6 +177,15 @@
             if (dgLo === 'true') return true;
             if (dgLo === 'false') return false;
             return _defaultDraggable(sel, handle); // auto 状态（缺省/invalid/其它）
+          }
+          // dnd-compat M2-S1：dropzone 反射串——IDL attribute must reflect 同名内容属性
+          //（spec HTML "the dropzone IDL attribute must reflect the content attribute of
+          // the same name"），无关键字归一：缺省 → ''，有值 → 原样。WPT
+          // the-dropzone-attribute/dropzone_attribute.html `el.dropzone = ''` 非undefined、
+          // `setAttribute('dropzone','copy move')` 反射读回（旧 expando 面二者皆断）。
+          if (prop === 'dropzone') {
+            var dzRaw = handle ? __zw_get_attr_handle(handle, 'dropzone') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'dropzone') : __zw_get_attr(sel, 'dropzone'));
+            return (dzRaw == null) ? '' : String(dzRaw);
           }
           var rfRaw = handle ? __zw_get_attr_handle(handle, prop) : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, prop) : __zw_get_attr(sel, prop));
           rfRaw = (rfRaw == null) ? '' : String(rfRaw).toLowerCase();
@@ -2961,6 +2970,13 @@
                 }
               }
             }
+            // dnd-compat M2-S1：setAttribute('dropzone') 同步失效 IDL setter 缓存
+            //（getter 缓存优先——R5009 片 e 同款 stale 面。dropzone_attribute.html
+            // `dropzone = null` 后 `setAttribute('dropzone','copy ...')` 读回期望内容
+            // 属性值，缓存残留 "null" 使其读回 "null"）。
+            if (n === 'dropzone' && _reflectedAttrs[key]) {
+              delete _reflectedAttrs[key]['dropzone'];
+            }
             // R125：id 变更前先摘 pending-ID 索引旧键（写后再摘会摘到新键——proxy.id
             // latest-wins 读新值，旧 id 条目残留 = getElementById 旧 id 误命中）。
             var _r125OldPid = null;
@@ -3211,6 +3227,11 @@
             if (nLower === 'open' && targetTag === 'DIALOG') {
               delete _zwDialogModal[key];
               delete _zwTopLayer[key];
+            }
+            // dnd-compat M2-S1：removeAttribute('dropzone') 同步失效 IDL setter 缓存
+            //（同 setAttribute 面——缓存残留使移除后 IDL get 读回旧值）。
+            if (nLower === 'dropzone' && _reflectedAttrs[key]) {
+              delete _reflectedAttrs[key]['dropzone'];
             }
             // R125：id 移除先摘 pending-ID 索引旧键（写后再摘同样摘到 post-state——
             // remove 后 proxy.id 读 ''/null，_zwPAIdRemove 摘空键 no-op，旧条目残留）。

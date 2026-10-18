@@ -1960,6 +1960,54 @@
       }
     });
   });
+  // dnd-compat M2-S1（2026-10-18）：HTMLElement.prototype 的 draggable/dropzone IDL
+  // accessor——**plain 世界元素**（_zwMEl 直装方法对象 / standalone canvas，R5009 片 e
+  // 「无 proxy trap，逐一手动反射」同因）属性读走原型链，接口原型缺 accessor 使
+  // assert_inherits(canvas, 'draggable') 沿链探测恒 miss（WPT html/editing/dnd
+  // draggable_attribute.html canvas 案）。trap 世界 proxy 的 get/set trap 先于原型命中
+  //（R2848/R3188 分支 + part05 has 白名单），本 accessor 为 plain 世界供给面，双世界
+  // 语义同源：draggable 枚举（true/false 关键字 ASCII 小写，缺省/非法 → auto →
+  // _defaultDraggable 判定）；dropzone 反射串（缺省 ''，同 part04 get trap 列）。
+  if (globalThis.HTMLElement && globalThis.HTMLElement.prototype) {
+    if (!Object.prototype.hasOwnProperty.call(globalThis.HTMLElement.prototype, 'draggable')) {
+      Object.defineProperty(globalThis.HTMLElement.prototype, 'draggable', {
+        configurable: true, enumerable: false, // 非 enumerable——for-in 面 zero change（R3046
+        // expando 枚举既有断言面；corpus 仅 assert_inherits 原型探测，不依赖枚举可见性；
+        // 真浏览器 WebIDL 属性 enumerable 的对齐面如需展开另立切片审计 for-in 全域回归）。
+        get: function () {
+          var _dzRaw = (typeof this.getAttribute === 'function') ? this.getAttribute('draggable') : null;
+          var _dzLo = (_dzRaw == null) ? '' : String(_dzRaw).toLowerCase();
+          if (_dzLo === 'true') return true;
+          if (_dzLo === 'false') return false;
+          // auto 状态：img / 带 href 的 a 默认可拖拽（spec dnd 段；_defaultDraggable
+          // 同判——plain 世界无 sel/handle，经 tagName/hasAttribute 直读）。
+          var _dzTag = this.tagName;
+          if (_dzTag === 'IMG') return true;
+          if (_dzTag === 'A' && typeof this.hasAttribute === 'function') return this.hasAttribute('href');
+          return false;
+        },
+        set: function (v) {
+          if (typeof this.setAttribute === 'function') {
+            this.setAttribute('draggable', v ? 'true' : 'false');
+          }
+        },
+      });
+    }
+    if (!Object.prototype.hasOwnProperty.call(globalThis.HTMLElement.prototype, 'dropzone')) {
+      Object.defineProperty(globalThis.HTMLElement.prototype, 'dropzone', {
+        configurable: true, enumerable: false, // 非 enumerable——同 draggable 注记。
+        get: function () {
+          var _dpRaw = (typeof this.getAttribute === 'function') ? this.getAttribute('dropzone') : null;
+          return (_dpRaw == null) ? '' : String(_dpRaw);
+        },
+        set: function (v) {
+          if (typeof this.setAttribute === 'function') {
+            this.setAttribute('dropzone', v == null ? 'null' : String(v));
+          }
+        },
+      });
+    }
+  }
   // net-api M5-S2：HTMLAnchorElement/HTMLAreaElement stringifier→href（HTML spec：两接口
   // 标注 stringifier——`String(a)`/`a.toString()` 返解析后绝对 href，无 href 属性返 ''）。
   // createElement 产物是**直装方法对象**（_zwMEl，非 trap proxy——属性读走原型链），stringifier
@@ -3393,6 +3441,13 @@
   if (!globalThis.XMLDocument) {
     globalThis.XMLDocument = function XMLDocument() {};
     try { globalThis.XMLDocument.prototype = Object.create(globalThis.Document.prototype); } catch (_eXd128) {}
+  }
+  // dnd-compat M2-S1（2026-10-18）：HTMLDocument legacy 别名——HTML spec 遗留接口，现代
+  // 浏览器与 Document 同一构造器（`HTMLDocument === Document`）。缺名使
+  // html/editing/dnd/historical.html 的 bad-locations 清单取 `HTMLDocument.prototype`
+  // 抛 ReferenceError（非 assert 失败——须定义且无 ondragexit，与 spec 一致）。
+  if (!globalThis.HTMLDocument) {
+    globalThis.HTMLDocument = globalThis.Document;
   }
   // Node.DOCUMENT_POSITION_* 静态常量（compareDocumentPosition bitmask，R2815）——库常读 Node.DOCUMENT_POSITION_FOLLOWING 等。
   globalThis.Node.DOCUMENT_POSITION_DISCONNECTED = 1;

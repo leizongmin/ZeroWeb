@@ -1,0 +1,1992 @@
+[
+  [
+    "html/editing/dnd/datastore/datatransfer-constructor-001.html",
+    [
+      {
+        "name": "Verify DataTransfer constructor",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/editing/dnd/datastore/datatransfer-types.html",
+    [
+      {
+        "name": "type's state on DataTransfer creation",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Relationship between types and items",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "type's identity",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Verify type is a read-only attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "DataTransfer containing files",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/editing/dnd/datastore/datatransferitemlist-remove.html",
+    [
+      {
+        "name": "remove()ing an out-of-bounds index does nothing",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "remove()ing an item will put the associated DataTransferItem object in the disabled mode",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/editing/dnd/dom/draggable.html",
+    [
+      {
+        "name": "an <a> element should have a draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "a <div> element should have a draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "an <img> element should have a draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "an <a> element should be draggable by default",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "a <div> element should not be draggable by default",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "an <img> element should be draggable by default",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "an <a> element with draggable=\"true\" should be draggable",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "a <div> element with draggable=\"true\" should be draggable",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "an <img> element with draggable=\"true\" should be draggable",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "an <a> element with draggable=\"false\" should not be draggable",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "a <div> element with draggable=\"false\" should not be draggable",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "an <img> element with draggable=\"false\" should not be draggable",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "an <a> element with draggable=\"auto\" should be draggable",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "a <div> element with draggable=\"auto\" should not be draggable",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "an <img> element with draggable=\"auto\" should be draggable",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "an <a> element with draggable=\"foo\" should be draggable",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "a <div> element with draggable=\"foo\" should not be draggable",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "an <img> element with draggable=\"foo\" should be draggable",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "an <a> element with the draggable property set to true through a script should be draggable",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "a <div> element with the draggable property set to true through a script should be draggable",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "an <img> element with the draggable property set to true through a script should be draggable",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "an <a> element with the draggable property set to false through a script should not be draggable",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "a <div> element with the draggable property set to false through a script should not be draggable",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "an <img> element with the draggable property set to false through a script should not be draggable",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "an <a> element with the draggable property set to \"foo\" through a script should be draggable",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "a <div> element with the draggable property set to \"foo\" through a script should be draggable",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "an <img> element with the draggable property set to \"foo\" through a script should be draggable",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/editing/dnd/dom/events.html",
+    [
+      {
+        "name": "element.ondragstart initial value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "element.ondrag must initial value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "element.ondragenter initial value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "element.ondragleave initial value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "element.ondragover initial value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "element.ondrop initial value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "element.ondragend initial value",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/editing/dnd/dom/specials.html",
+    [
+      {
+        "name": "ondragstart in window",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ondrag in window",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ondragover in window",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ondragenter in window",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ondragleave in window",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ondrop in window",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ondragend in window",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ondragstart in document",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ondrag in document",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ondragover in document",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ondragenter in document",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ondragleave in document",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ondrop in document",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ondragend in document",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ondragstart in HTMLElement",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ondrag in HTMLElement",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ondragover in HTMLElement",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ondragenter in HTMLElement",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ondragleave in HTMLElement",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ondrop in HTMLElement",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ondragend in HTMLElement",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/editing/dnd/historical.html",
+    [
+      {
+        "name": "ondragexit must not be present on the GlobalEventHandlers locations",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/editing/dnd/synthetic/001.html",
+    [
+      {
+        "name": "window.DragEvent should be exposed",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "DragEvent should have all of the inherited init*Event methods",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "initMouseEvent should not throw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "initUIEvent should not throw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "initEvent should not throw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "DragEvent constructor with null as the dataTransfer parameter should be able to fire the event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "DragEvent constructor with undefined as the dataTransfer parameter should be able to fire the event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "DragEvent constructor with custom object as the dataTransfer parameter should throw TypeError",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "initMouseEvent should be able to fire the event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "initUIEvent should be able to fire the event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "initEvent should be able to fire the event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "DragEvent constructor with null as the dataTransfer parameter should give null as the dataTransfer",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "DragEvent constructor with undefined as the dataTransfer parameter should give null as the dataTransfer",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "initMouseEvent should give null as the dataTransfer",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "initUIEvent should give null as the dataTransfer",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "initEvent should give null as the dataTransfer",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/editing/dnd/the-draggable-attribute/draggable-enumerated-ascii-case-insensitive.html",
+    [
+      {
+        "name": "keyword false",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/editing/dnd/the-draggable-attribute/draggable_attribute.html",
+    [
+      {
+        "name": "Element a should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element abbr should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element acronym should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element address should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element applet should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element area should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element article should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element aside should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element attachment should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element audio should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element b should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element base should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element basefont should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element bdi should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element bdo should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element bgsound should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element big should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element blink should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element blockquote should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element body should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element br should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element button should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element canvas should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element caption should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element center should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element cite should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element code should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element col should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element colgroup should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element command should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element data should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element datalist should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element dd should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element del should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element details should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element dfn should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element dialog should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element dir should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element directory should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element div should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element dl should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element dt should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element em should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element embed should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element fieldset should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element figcaption should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element figure should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element font should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element foo-BAR should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element foo-bar should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element foo should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element footer should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element form should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element frame should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element frameset should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element h1 should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element h2 should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element h3 should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element h4 should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element h5 should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element h6 should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element head should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element header should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element hgroup should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element hr should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element html should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element i should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element iframe should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element image should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element img should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element input should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element ins should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element isindex should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element kbd should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element keygen should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element label should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element layer should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element legend should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element li should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element link should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element listing should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element main should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element map should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element mark should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element marquee should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element menu should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element meta should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element meter should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element mod should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element multicol should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element nav should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element nextid should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element nobr should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element noembed should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element noframes should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element nolayer should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element noscript should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element object should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element ol should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element optgroup should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element option should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element output should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element p should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element param should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element picture should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element plaintext should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element pre should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element progress should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element q should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element quasit should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element rb should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element rp should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element rt should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element rtc should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element ruby should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element s should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element samp should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element script should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element section should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element select should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element slot should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element small should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element source should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element spacer should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element span should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element strike should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element strong should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element style should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element sub should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element summary should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element sup should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element table should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element tbody should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element td should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element textarea should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element tfoot should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element th should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element thead should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element time should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element title should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element tr should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element track should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element tt should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element u should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element ul should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element var should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element video should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element wbr should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element xmp should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element xxx should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element å-bar should have draggable property",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element a draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element abbr draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element acronym draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element address draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element applet draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element area draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element article draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element aside draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element attachment draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element audio draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element b draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element base draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element basefont draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element bdi draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element bdo draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element bgsound draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element big draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element blink draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element blockquote draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element body draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element br draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element button draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element canvas draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element caption draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element center draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element cite draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element code draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element col draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element colgroup draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element command draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element data draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element datalist draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element dd draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element del draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element details draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element dfn draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element dialog draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element dir draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element directory draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element div draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element dl draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element dt draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element em draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element embed draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element fieldset draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element figcaption draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element figure draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element font draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element foo-BAR draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element foo-bar draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element foo draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element footer draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element form draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element frame draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element frameset draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element h1 draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element h2 draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element h3 draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element h4 draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element h5 draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element h6 draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element head draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element header draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element hgroup draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element hr draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element html draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element i draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element iframe draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element image draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element img draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element input draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element ins draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element isindex draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element kbd draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element keygen draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element label draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element layer draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element legend draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element li draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element link draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element listing draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element main draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element map draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element mark draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element marquee draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element menu draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element meta draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element meter draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element mod draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element multicol draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element nav draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element nextid draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element nobr draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element noembed draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element noframes draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element nolayer draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element noscript draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element object draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element ol draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element optgroup draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element option draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element output draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element p draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element param draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element picture draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element plaintext draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element pre draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element progress draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element q draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element quasit draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element rb draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element rp draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element rt draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element rtc draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element ruby draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element s draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element samp draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element script draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element section draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element select draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element slot draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element small draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element source draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element spacer draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element span draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element strike draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element strong draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element style draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element sub draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element summary draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element sup draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element table draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element tbody draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element td draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element textarea draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element tfoot draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element th draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element thead draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element time draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element title draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element tr draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element track draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element tt draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element u draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element ul draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element var draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element video draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element wbr draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element xmp draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element xxx draggable attribute test",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Element å-bar draggable attribute test",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "html/editing/dnd/the-dropzone-attribute/dropzone_attribute.html",
+    [
+      {
+        "name": "div.dropzone should not be undefined if it's been set",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "div.dropzone should not be null",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "div dropzone idl attribute must reflect the content attribute of the same name",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "div dropzone content attribute is set to the literal value",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ]
+]

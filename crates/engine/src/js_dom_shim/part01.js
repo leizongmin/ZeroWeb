@@ -1002,11 +1002,12 @@
     return (raw === '' || lo === 'true') ? 'true' : (lo === 'false' ? 'false' : 'inherit');
   }
   // R3188：`draggable` auto 状态 default-draggable 判定。spec HTML `draggable` 为枚举属性，缺省/非法 → auto
-  // 状态——元素的拖拽性由 UA 默认行为决定。spec/Chrome：`img`/`audio`/`video` 默认可拖拽，`a`（带 href）默认可
-  // 拖拽，余默认不可拖拽。供 `draggable` getter 在 auto 状态下求值（true/false 关键字未命中时）。
+  // 状态——元素的拖拽性由 UA 默认行为决定。spec（dnd 段）仅 `img` 与带 `href` 的 `a` 默认可拖拽，余默认不可
+  // 拖拽（audio/video 非默认可拖拽——html/editing/dnd dom/draggable.html video 案实证）。供 `draggable`
+  // getter 在 auto 状态下求值（true/false 关键字未命中时）。
   function _defaultDraggable(sel, handle) {
     var tag = _realTag(sel, handle);
-    if (tag === 'IMG' || tag === 'AUDIO' || tag === 'VIDEO') return true;
+    if (tag === 'IMG') return true;
     if (tag === 'A') {
       return (handle
         ? __zw_has_attr_handle(handle, 'href')

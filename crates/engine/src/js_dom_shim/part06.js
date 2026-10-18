@@ -3605,7 +3605,14 @@
           }
           if ((cmd === 'copy' || cmd === 'cut') && ev.defaultPrevented && dt !== null
               && typeof globalThis.__zwClipboardStoreWrite === 'function') {
-            globalThis.__zwClipboardStoreWrite(dt._dt_data);
+            // dnd-compat M2-S2：DataTransfer 事实源改有序 item 列表（_dt_items）——剪贴板
+            // 载荷从此导出（string 项 type→内容 map，形状与旧 _dt_data 一致）。
+            var _cpPayload = {};
+            for (var _cpI = 0; _cpI < dt._dt_items.length; _cpI++) {
+              var _cpIt = dt._dt_items[_cpI];
+              if (_cpIt.kind === 'string') _cpPayload[_cpIt.type] = _cpIt._data;
+            }
+            globalThis.__zwClipboardStoreWrite(_cpPayload);
           }
         } catch (_e) {}
       } else if ((cmd === 'inserthtml' || cmd === 'inserttext')

@@ -525,7 +525,7 @@
             __zw_remove_attr(sel, _bAttrName);
             moAttr = _bAttrName;
           }
-        } else if (p === 'autofocus' || p === 'draggable' || p === 'spellcheck' || p === 'translate' || p === 'inert' || p === 'autocomplete') {
+        } else if (p === 'autofocus' || p === 'draggable' || p === 'spellcheck' || p === 'translate' || p === 'inert' || p === 'autocomplete' || p === 'dropzone') {
           // reflected 布尔/枚举全局属性（R2848/R2850）：autofocus/draggable/spellcheck/translate（R2848）
           // + inert/autocomplete（R2850）。autofocus/inert=boolean presence（truthy 设空值 / falsy 真移除）；
           // autocomplete=enumerated 串（任意值写 attr）；draggable/spellcheck="true"/"false"；translate="yes"/"no"。
@@ -561,6 +561,14 @@
             rc4[p] = _acV;
             if (handle) __zw_set_attr_handle(handle, 'autocomplete', String(value));
             else { __zw_set_attr(sel, 'autocomplete', String(value)); moAttr = 'autocomplete'; }
+          } else if (p === 'dropzone') {
+            // dnd-compat M2-S1：dropzone 反射串（getter 无关键字归一，spec reflect 同名
+            // 内容属性）——IDL set 走 WebIDL DOMString：`el.dropzone = null` 落 attr
+            // "null"（WPT dropzone_attribute.html `assert_not_equals(el.dropzone, null)`），
+            // '' → 空串（非 undefined）。
+            rc4[p] = String(value);
+            if (handle) __zw_set_attr_handle(handle, 'dropzone', rc4[p]);
+            else { __zw_set_attr(sel, 'dropzone', rc4[p]); moAttr = 'dropzone'; }
           } else {
             var sv = !!value;
             rc4[p] = sv;
@@ -1022,6 +1030,18 @@
             // `in` 可见性（secure context only——PE spec rawupdate 仅安全上下文；WPT
             // pointerevent_pointerrawupdate.https.html documentElement 断言面）。
             || (prop === 'onpointerrawupdate' && globalThis.isSecureContext === true)
+            // dnd-compat M2-S1（2026-10-18）：draggable/dropzone IDL 属性 + ondrag*
+            // 事件 handler 族的存在性（HTMLElement 接口成员；值面 = part04 R2848/
+            // R3188 get trap 分支 + 本次 dropzone 反射列，R2933 供给 on* 读值）。
+            // WPT html/editing/dnd draggable_attribute.html `assert_idl_attribute`/
+            // dom/draggable.html `assert_idl_attribute(el, 'draggable')` 沿原型链
+            // 探测，has 白名单缺列使 `in`/描述符探测恒 false（media-elements 切片 3
+            // 同款根因）；specials.html `'ondrag*' in div` 七名逐一断言。on* 列已知
+            // 事件类型清单式（窗口 R143 先例，不认任意 on* 串）。
+            || prop === 'draggable' || prop === 'dropzone'
+            || prop === 'ondragstart' || prop === 'ondrag' || prop === 'ondragover'
+            || prop === 'ondragenter' || prop === 'ondragleave' || prop === 'ondrop'
+            || prop === 'ondragend'
             // 尾簇 33：'value' 的 `in` 可见性 **tag-gate**（HTMLTextAreaElement 等
             // IDL value 接口成员归属——div 等非 form-control 元素 `'value' in el` 应
             // false；无条件 true 使消费方 `'value' in el ? el.value : el.textContent`
@@ -13356,6 +13376,38 @@
   _defineEventSubclass('DragEvent', 'MouseEvent', [
     ['dataTransfer', 'dataTransfer', null],
   ]);
+  // dnd-compat M2-S3（2026-10-18）：DragEventInit.dataTransfer 是 `DataTransfer?`——显式非 null/
+  // undefined 值非 DataTransfer 实例 → TypeError（WebIDL dictionary 接口类型校验；WPT
+  // html/editing/dnd synthetic/001.html `new DragEvent(..., {dataTransfer: {}})` 断言面，旧静默
+  // 收编任意对象）。DataTransfer 定义在本文件 DragEvent 之后——经 globalThis 延迟解析（构造期
+  // 已就绪）。挂原构造器外层（R109 UIEvent wrapper 先例——保 prototype/子类注册不动）。
+  var DragEventBase = globalThis.DragEvent;
+  if (DragEventBase) {
+    var DragEventCtorDnd = function DragEvent(type) {
+      var options = arguments.length > 1 ? arguments[1] : undefined;
+      if (options != null && typeof options === 'object'
+          && options.dataTransfer != null
+          && !(globalThis.DataTransfer && options.dataTransfer instanceof globalThis.DataTransfer)) {
+        throw new globalThis.TypeError(
+          "Failed to construct 'DragEvent': member dataTransfer is not of type DataTransfer.");
+      }
+      // 普通构造（this.constructor === 本 wrapper）→ 去 this 载体裸调，内层 ctor 走工厂分支
+      //（_makeEvent 注册 dispatch 面——直接 apply 会因 prototype 重挂使 `this.constructor !==
+      // Ctor` 误入 super 分支，产出的对象无 _makeEvent 注册，dispatchEvent 报「Argument 1 is
+      // not of type 'Event'」——synthetic/001.html null/undefined 四案实证）。子类 super()
+      //（this.constructor 为子类）→ 真 [[Construct]] 分支，this 原样透传。
+      if (this instanceof DragEventCtorDnd && this.constructor === DragEventCtorDnd) {
+        return DragEventBase(type, options);
+      }
+      return DragEventBase.apply(this, arguments);
+    };
+    try {
+      Object.defineProperty(DragEventCtorDnd, 'name', { value: 'DragEvent', configurable: true });
+    } catch (_eDnd) {}
+    DragEventCtorDnd.prototype = DragEventBase.prototype;
+    DragEventCtorDnd.prototype.constructor = DragEventCtorDnd;
+    globalThis.DragEvent = DragEventCtorDnd;
+  }
   // js-dom M4 R14：createEvent alias 用例（Document-createEvent.https.html aliases 表）需这些 event 子类
   // 构造器存在（createEvent('BeforeUnloadEvent') → Object.getPrototypeOf(ev)===BeforeUnloadEvent.prototype）。
   // headless 无对应真实事件源，构造器仅为 createEvent 合成 + instanceof + 原型链（无特化字段，空 props）。
@@ -13509,58 +13561,105 @@
     ['shiftKey', 'shiftKey', false],
   ]);
 
-  // R2937 DataTransfer——拖放载荷容器（format→string map + effectAllowed/dropEffect + files/items 只读视图）。
+  // R2937 DataTransfer——拖放载荷容器（有序 item 列表 + effectAllowed/dropEffect + files/items 只读视图）。
   // headless 无真拖拽源（无 OS 文件 / 无 pointer-drag 几何），但 D&D 库（SortableJS / react-dnd fallback /
   // file-drop handler）经 setData/getData 读写 payload，drop handler 读 dataTransfer.getData('text/plain') 等。
-  // 实现：in-JS format map；types = Object.keys(map)；files/items 只读空（无真文件）；setDragImage no-op。
+  // dnd-compat M2-S2（2026-10-18）改版：**有序 item 列表（_dt_items）为唯一事实源**（spec data store item
+  // list——旧 format map + files 数组双源在 string/file 混插时失插入序，items.remove(0) 误删后入项）。
+  // types 经 store 版本号（_dt_storeVer）缓存 FrozenArray（spec：item list 未变返同一 FrozenArray，任何
+  // 变更换新——含同 type 替换；缺失 format 的 clearData / 越界 remove / 空列表 clear / add 抛
+  // NotSupportedError 均不变）。clearData() 仅清 string 项（file 项保留——in-tree WAB2-M2-s3 镜像
+  // dataTransfer-clearData 案）。
   function DataTransfer() {
-    this._dt_data = {};
+    this._dt_items = [];        // 有序 item 列表（DataTransferItem 实例；string/file 混排，插入序 = 迭代序）
+    this._dt_storeVer = 0;      // item list 版本号——types/files 视图缓存键（任何 item list 变更 +1）
+    this._dt_typesCache = null; // { ver, arr }——types FrozenArray 恒等面
     this.effectAllowed = 'none';
     this.dropEffect = 'none';
-    this._dt_files = [];
   }
   DataTransfer.prototype.setData = function (format, data) {
-    this._dt_data[String(format)] = String(data);
+    var f = String(format);
+    for (var i = 0; i < this._dt_items.length; i++) {
+      var _si = this._dt_items[i];
+      if (_si.kind === 'string' && _si.type === f) { _si._data = String(data); break; } // 同 type 原位替换
+    }
+    if (i === this._dt_items.length) {
+      this._dt_items.push(new DataTransferItem('string', f, String(data), null));
+    }
+    this._dt_storeVer++; // 替换/新增都改 item list（corpus：同 type setData 也换新 types）
   };
   DataTransfer.prototype.getData = function (format) {
-    return this._dt_data[String(format)] || '';
+    var f = String(format);
+    for (var i = 0; i < this._dt_items.length; i++) {
+      var it = this._dt_items[i];
+      if (it.kind === 'string' && it.type === f) return it._data;
+    }
+    return '';
   };
   DataTransfer.prototype.clearData = function (format) {
-    if (format == null) this._dt_data = {};
-    else delete this._dt_data[String(format)];
+    if (format == null) {
+      // 仅清 string 项（file 项保留——in-tree WAB2-M2-s3）。已无 string 项 → item list 未变
+      //（corpus identity 面：空列表 clearData 不换新 types）。
+      var removed = false;
+      for (var i = this._dt_items.length - 1; i >= 0; i--) {
+        if (this._dt_items[i].kind === 'string') { this._dt_items.splice(i, 1); removed = true; }
+      }
+      if (removed) this._dt_storeVer++;
+      return;
+    }
+    var f = String(format);
+    for (var j = 0; j < this._dt_items.length; j++) {
+      if (this._dt_items[j].kind === 'string' && this._dt_items[j].type === f) {
+        this._dt_items.splice(j, 1);
+        this._dt_storeVer++;
+        return;
+      }
+    }
+    // 缺失 format → item list 未变（corpus identity 面）。
   };
   DataTransfer.prototype.setDragImage = function (_img, _x, _y) { /* headless 无真拖拽图像，no-op */ };
   Object.defineProperty(DataTransfer.prototype, 'types', {
     get: function () {
-      // WAB2-M2-s3（web-api-batch2 goal）：含 file 项时追加 'Files'（spec DnD types getter：
-      // items 含 file 项 → types 追加 "Files"）。上游 dataTransfer-clearData 案：add(file) ×2
-      // → types.length 1；清空 string 项后 types[0] === 'Files'。
+      // dnd-compat M2-S2：FrozenArray 语义（spec types getter 返 FrozenArray<DOMString>）——
+      // Object.isFrozen ✓ + Array.isArray ✓；store 未变返同一对象（_dt_storeVer 缓存键）。
+      // string types 按插入序在前，file 项非空 → 'Files' 恒末位。
       // https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransfer-types
-      var keys = Object.keys(this._dt_data);
-      if (this._dt_files && this._dt_files.length > 0) keys.push('Files');
-      return keys;
+      if (this._dt_typesCache && this._dt_typesCache.ver === this._dt_storeVer) return this._dt_typesCache.arr;
+      var arr = [];
+      for (var i = 0; i < this._dt_items.length; i++) {
+        if (this._dt_items[i].kind === 'string') arr.push(this._dt_items[i].type);
+      }
+      for (var j = 0; j < this._dt_items.length; j++) {
+        if (this._dt_items[j].kind === 'file') { arr.push('Files'); break; }
+      }
+      Object.freeze(arr);
+      this._dt_typesCache = { ver: this._dt_storeVer, arr: arr };
+      return arr;
     },
   });
   Object.defineProperty(DataTransfer.prototype, 'files', {
     get: function () {
       // R3902b：dt.files 须为 FileList 实例（HTML §4.10.5.4 input.files setter 接收
       // FileList——WPT files.html「setting <input type=file>.files from DataTransfer」
-      // 断言面：dt.files 为裸数组时 setter TypeError）。_dt_files 保持裸数组（items
-      // push/clear 面零改动），FileList 视图惰性建+缓存；_dt_files 整体被换（clearData
-      // 复位 13580 面）时经 _zwFiles 同一性重绑。
-      if (!this._dt_filesView || this._dt_filesView._zwFiles !== this._dt_files) {
+      // 断言面：dt.files 为裸数组时 setter TypeError）。视图按 store 版本缓存（file 项
+      // 插入序导出），item list 变更后经版本号重建新 FileList。
+      if (!this._dt_filesView || this._dt_filesViewVer !== this._dt_storeVer) {
+        var arr = [];
+        for (var i = 0; i < this._dt_items.length; i++) {
+          if (this._dt_items[i].kind === 'file') arr.push(this._dt_items[i]._file);
+        }
         var fl = new FileList();
-        fl._zwFiles = this._dt_files;
+        fl._zwFiles = arr;
         this._dt_filesView = fl;
+        this._dt_filesViewVer = this._dt_storeVer;
       }
       return this._dt_filesView;
     },
   });
-  // R2948 DataTransferItemList——dataTransfer.items 的真实视图（替代 R2937 的空数组占位）。
-  // 每次 access 按当前 _dt_data（string items）+ _dt_files（file items）重建（live 语义）；item/add/remove/clear
-  // 经 owner DataTransfer 的 setData/clearData/文件 push 操作回写，与 types/files/getData 保持一致。indexed getter
-  //（items[0]）+ length + Symbol.iterator 覆盖索引访问 / 扩展 / for-of；item.add(data,type)=string item，
-  // item.add(file)=file item（File-like，按 .size 探测）。modern D&D 库（react-dnd / SortableJS items API）经此读写。
+  // R2948 DataTransferItemList——dataTransfer.items 的实时视图（共享 owner 的 _dt_items store）。
+  // 每次 access 返新视图对象（spec live DataTransferItemList），索引/length/item()/for-of 全走同一 store；
+  // add/remove/clear 直接变更 store（捕获的 DataTransferItem 对象随 disabled mode 原位失效，datatransferitemlist-
+  // remove.html 断言面）。item.add(data,type)=string item，item.add(file)=file item（File-like，按 .size 探测）。
   Object.defineProperty(DataTransfer.prototype, 'items', {
     get: function () {
       return new DataTransferItemList(this);
@@ -13568,6 +13667,8 @@
   });
   // R2948 DataTransferItem——拖放项（kind='string'|'file'，type=MIME）。getAsString(cb) 异步回调字符串内容
   //（spec：微任务，headless 简化同步调 cb）；getAsFile() string→null，file→其 File-like 对象。
+  // remove()/clear() 后项进 disabled mode（kind=''/type=''、getAsFile null、getAsString no-op——对象
+  // 身份保留，捕获引用的属性读同步失效）。
   function DataTransferItem(kind, type, data, file) {
     this.kind = kind;
     this.type = type || '';
@@ -13584,21 +13685,10 @@
   };
   function DataTransferItemList(dt) {
     this._dt = dt;
-    var list = [];
-    var data = dt._dt_data || {};
-    for (var k in data) {
-      if (Object.prototype.hasOwnProperty.call(data, k)) {
-        list.push(new DataTransferItem('string', k, data[k], null));
-      }
-    }
-    var files = dt._dt_files || [];
-    for (var i = 0; i < files.length; i++) {
-      var f = files[i];
-      list.push(new DataTransferItem('file', (f && f.type) || '', null, f));
-    }
-    this._items = list;
-    // indexed getter：复制为编号属性（items[0]..items[n-1]）。
-    for (var j = 0; j < list.length; j++) this[j] = list[j];
+    this._items = dt._dt_items; // 共享 store（live——owner 侧变更对本视图 length/item()/迭代可见）
+    // indexed 属性快照（items[0]..items[n-1]）。视图生命周期内的 store 变更经 length/item() 读新态
+    //（corpus 每断言新取 items——快照面仅覆盖同步 for-of/索引遍历）。
+    for (var j = 0; j < this._items.length; j++) this[j] = this._items[j];
   }
   Object.defineProperty(DataTransferItemList.prototype, 'length', {
     get: function () { return this._items.length; },
@@ -13609,31 +13699,51 @@
   DataTransferItemList.prototype.add = function (data, type) {
     // add(file)（File-like，按 .size 探测）→ file item；add(data, type) → string item。
     if (data && typeof data === 'object' && typeof data.size === 'number') {
-      this._dt._dt_files.push(data);
       var fItem = new DataTransferItem('file', data.type || '', null, data);
+      this._dt._dt_items.push(fItem);
+      this._dt._dt_storeVer++;
+      this[this._dt._dt_items.length - 1] = fItem;
       return fItem;
     }
     var t = String(type || '');
+    // spec：item list 已含同 type 项 → NotSupportedError 且 store 不变（corpus
+    // datatransfer-types "Failing to add ... does not change the underlying data store"）。
+    for (var i = 0; i < this._dt._dt_items.length; i++) {
+      if (this._dt._dt_items[i].type === t) {
+        throw new (globalThis.DOMException || Error)('Failed to execute \'add\' on \'DataTransferItemList\': An item already exists with type \'' + t + '\'.', 'NotSupportedError');
+      }
+    }
     var s = String(data);
-    this._dt.setData(t, s);
     var sItem = new DataTransferItem('string', t, s, null);
-    this._items.push(sItem);
-    this[this._items.length - 1] = sItem;
+    this._dt._dt_items.push(sItem);
+    this._dt._dt_storeVer++;
+    this[this._dt._dt_items.length - 1] = sItem;
     return sItem;
   };
   DataTransferItemList.prototype.remove = function (i) {
-    var it = this._items[i];
-    if (!it) return;
-    if (it.kind === 'string') {
-      this._dt.clearData(it.type);
-    } else {
-      var idx = this._dt._dt_files.indexOf(it._file);
-      if (idx >= 0) this._dt._dt_files.splice(idx, 1);
-    }
+    var idx = i | 0; // spec unsigned long（负/越界 → no-op，item list 未变——types 恒等面）
+    if (idx < 0 || idx >= this._dt._dt_items.length) return;
+    var it = this._dt._dt_items[idx];
+    // disabled mode：捕获的 item 对象原位清空（kind/type 空串、getAsFile null、getAsString no-op）。
+    it.kind = '';
+    it.type = '';
+    it._data = null;
+    it._file = null;
+    this._dt._dt_items.splice(idx, 1);
+    this._dt._dt_storeVer++;
   };
   DataTransferItemList.prototype.clear = function () {
-    this._dt.clearData();
-    this._dt._dt_files = [];
+    // 空列表 clear → item list 未变（corpus identity 面：items.clear() 二连调第二次不换新 types）。
+    if (this._dt._dt_items.length === 0) return;
+    var items = this._dt._dt_items;
+    for (var i = 0; i < items.length; i++) {
+      items[i].kind = '';
+      items[i].type = '';
+      items[i]._data = null;
+      items[i]._file = null;
+    }
+    items.length = 0;
+    this._dt._dt_storeVer++;
   };
   if (Symbol && Symbol.iterator) {
     DataTransferItemList.prototype[Symbol.iterator] = function () {
