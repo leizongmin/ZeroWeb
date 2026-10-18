@@ -3641,10 +3641,10 @@ impl Painter {
             // border-shape-overflow-child-clip 构型）。覆盖填充改写 + v2 条带裁剪与
             // clip-path polygon 臂共用同一入口。
             // R4547（css-borders-4 §corner-shaping）：corner-shape 非初始态时溢出内容
-            // 同样裁剪到形角化 border-box 轮廓（shaped_corner_polygon；scoop/负指数
-            // superellipse 返回 None 回退纯矩形，与 R4248 定界一致）。v2 条带使部分
-            // 相交子内容正确渲染（bevel-overflow 构型：corner-shape:bevel + overflow:clip
-            // + 溢出子层应裁成菱形；R4540 前 strips 不渲染故不可行）。
+            // 同样裁剪到形角化 border-box 轮廓（shaped_corner_polygon；R5179 起全形
+            // 状按 §3.9.4.2 分 regime 出几何，不再有 None 回退——round 初始态除外）。
+            // v2 条带使部分相交子内容正确渲染（bevel-overflow 构型：corner-shape:bevel
+            // + overflow:clip + 溢出子层应裁成菱形；R4540 前 strips 不渲染故不可行）。
             // kill-switch `ZW_CORNER_SHAPE_OVERFLOW=0`（回退纯矩形裁剪）。
             let shaped_overflow = box_node.node_id.and_then(|node_id| {
                 styles.get(&node_id).and_then(|style| {
@@ -3652,7 +3652,34 @@ impl Painter {
                         if std::env::var("ZW_CORNER_SHAPE_OVERFLOW").as_deref() == Ok("0") {
                             return None;
                         }
-                        super::helpers::shaped_corner_polygon(style, box_node.width, box_node.height, abs_x, abs_y)
+                        // R5179（css-overflow-4 §3）：overflow:clip 轴按
+                        // overflow-clip-margin 外扩后套形角几何（半径不变）——clip
+                        // 区域随 margin 长大，角形状属于扩后的矩形。零 margin 与
+                        // 既有 border-box 多边形逐位一致。margin-box 变体
+                        // （content/padding/border-box 基准）未在此分支区分。
+                        let mx = if box_node.overflow_x == OverflowClip::Clip {
+                            box_node.overflow_clip_margin_length
+                        } else {
+                            0.0
+                        };
+                        let my = if box_node.overflow_y == OverflowClip::Clip {
+                            box_node.overflow_clip_margin_length
+                        } else {
+                            0.0
+                        };
+                        super::helpers::shaped_corner_polygon_in_box(
+                            style,
+                            abs_x - mx,
+                            abs_y - my,
+                            box_node.width + 2.0 * mx,
+                            box_node.height + 2.0 * my,
+                            [
+                                crate::paint::helpers::length_to_f32(&style.border_top_left_radius),
+                                crate::paint::helpers::length_to_f32(&style.border_top_right_radius),
+                                crate::paint::helpers::length_to_f32(&style.border_bottom_right_radius),
+                                crate::paint::helpers::length_to_f32(&style.border_bottom_left_radius),
+                            ],
+                        )
                     })
                 })
             });

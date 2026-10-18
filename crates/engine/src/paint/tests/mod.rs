@@ -32,6 +32,7 @@ mod r5174_parent_perspective;
 mod r5175_perspective_used_value;
 mod r5176_transformed_paint_phase;
 mod r5177_inline_text_color;
+mod r5179_corner_shape_geometry;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;
