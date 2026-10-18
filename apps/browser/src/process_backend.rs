@@ -2455,6 +2455,7 @@ mod navigation_contract_tests {
                         src: None,
                         link_text: None,
                         draggable: false,
+                        drag_barrier: false,
                     },
                 ),
                 (
@@ -2468,6 +2469,7 @@ mod navigation_contract_tests {
                         src: None,
                         link_text: None,
                         draggable: true,
+                        drag_barrier: false,
                     },
                 ),
             ]

@@ -66,6 +66,7 @@ fn sample_frame() -> zero_page_runtime::FrameModel {
                     src: None,
                     link_text: None,
                     draggable: false,
+                    drag_barrier: false,
                 },
             )],
             parents: Vec::new(),

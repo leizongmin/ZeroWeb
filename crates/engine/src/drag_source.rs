@@ -39,6 +39,43 @@ pub(crate) fn element_draggable(doc: &Document, id: NodeId) -> bool {
     }
 }
 
+/// UA 拖拽手势屏障：文本控件（text 类 `input`/`textarea`）、`select` 与
+/// `contenteditable` true 状态元素上，按压-拖动手势被文本选择/控件交互消费，
+/// 不得作为元素拖拽起点——自身不可起拖（即使显式 `draggable=true`），且**阻断向
+/// 可拖祖先上溯**（corpus `interactiveelements/*_inside_draggable_element`：可拖父级
+/// 不得因屏障内元素的按压-move 起拖）。
+///
+/// spec 依据：processing model 只规定「沿祖先链取首个 IDL `draggable` true 元素」，
+/// 编辑区/文本控件的例外属 UA 手势语义（Chromium 行为口径，`Node::CanStartDrag`
+/// 编辑/禁用链划界同构）；语料验收 `html/editing/dnd/interactiveelements/`。
+/// input 文本态集合 = spec Text/Search/Tel/URL/Email/Password + Number（缺省/未识别
+/// type → Text 状态）；`contenteditable` 取 true 关键字或空串（true 状态）。
+/// FIXME(dnd-compat)：继承可编辑区内的非编辑子元素（编辑宿主后代）未屏障——corpus
+/// 未覆盖，Chromium 语义按编辑样式链判定，待语料证据再收。
+/// https://html.spec.whatwg.org/multipage/dnd.html#drag-and-drop-processing-model
+pub(crate) fn drag_gesture_barrier(doc: &Document, id: NodeId) -> bool {
+    let Some(node) = doc.get(id) else {
+        return false;
+    };
+    let NodeKind::Element(e) = &node.kind else {
+        return false;
+    };
+    match e.tag_name().as_bytes() {
+        b"TEXTAREA" | b"SELECT" => true,
+        b"INPUT" => {
+            let itype = doc.get_attribute(id, "type").unwrap_or_default();
+            // 仅非文本入口不设屏障（corpus：input button/reset/submit/image 默认可拖）。
+            matches!(
+                itype.to_ascii_lowercase().as_str(),
+                "" | "text" | "search" | "tel" | "url" | "email" | "password" | "number"
+            )
+        }
+        _ => doc
+            .get_attribute(id, "contenteditable")
+            .is_some_and(|v| v.is_empty() || v.eq_ignore_ascii_case("true")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -82,5 +119,48 @@ mod tests {
         let doc2 = zero_dom::parse_html(r#"<body><img id="i2" draggable="false"></body>"#);
         let i2 = doc2.get_element_by_id("i2").expect("i2");
         assert!(!element_draggable(&doc2, i2), "显式 false 压过 img 默认可拖");
+    }
+
+    /// 手势屏障矩阵：文本控件（text 类 input/textarea/select/contenteditable）设屏障；
+    /// 按钮类 input 与普通元素不设。显式 `draggable=true` 不豁免（corpus 口径）。
+    #[test]
+    fn drag_gesture_barrier_matrix() {
+        let doc = zero_dom::parse_html(
+            r#"<body>
+                <input id="t" type="text" draggable="true">
+                <input id="t2">
+                <input id="pw" type="PASSWORD">
+                <input id="num" type="number">
+                <textarea id="ta" draggable="true"></textarea>
+                <select id="sel" draggable="true"></select>
+                <div id="ce" contenteditable="true" draggable="true"></div>
+                <div id="ce-empty" contenteditable="" draggable="true"></div>
+                <button id="btn" draggable="true">b</button>
+                <input id="btn2" type="button" draggable="true">
+                <input id="img" type="image" draggable="true">
+                <input id="chk" type="checkbox">
+                <div id="plain"></div>
+                <div id="ce-false" contenteditable="false"></div>
+            </body>"#,
+        );
+        for (id, want) in [
+            ("t", true),
+            ("t2", true), // type 缺省 → Text 状态
+            ("pw", true), // ASCII case-insensitive
+            ("num", true),
+            ("ta", true),
+            ("sel", true),
+            ("ce", true),
+            ("ce-empty", true), // contenteditable="" = true 状态
+            ("btn", false),
+            ("btn2", false),
+            ("img", false),
+            ("chk", false),
+            ("plain", false),
+            ("ce-false", false), // false 状态非编辑宿主
+        ] {
+            let el = doc.get_element_by_id(id).expect(id);
+            assert_eq!(drag_gesture_barrier(&doc, el), want, "屏障判定：#{id}");
+        }
     }
 }

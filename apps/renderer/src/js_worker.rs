@@ -3952,6 +3952,7 @@ mod tests {
                         src: None,
                         link_text: None,
                         draggable: false,
+                        drag_barrier: false,
                     },
                 ),
                 (
@@ -3965,6 +3966,7 @@ mod tests {
                         src: None,
                         link_text: None,
                         draggable: false,
+                        drag_barrier: false,
                     },
                 ),
             ],
@@ -4047,6 +4049,7 @@ mod tests {
                         src: None,
                         link_text: None,
                         draggable: false,
+                        drag_barrier: false,
                     },
                 ),
                 (
@@ -4060,6 +4063,7 @@ mod tests {
                         src: None,
                         link_text: None,
                         draggable: false,
+                        drag_barrier: false,
                     },
                 ),
             ],

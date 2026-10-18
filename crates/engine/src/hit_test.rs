@@ -108,6 +108,9 @@ struct HitTestNodeMeta {
     /// dnd-compat M3：拖拽源仲裁按「最近可拖祖先或自身」解析（见
     /// [`drag_source_cached`]），自身态在此、祖先态随 nodes 表上溯。
     draggable: bool,
+    /// 本元素是否 UA 拖拽手势屏障（文本控件/select/contenteditable，[`crate::drag_source`]）。
+    /// dnd-compat M3-s5：屏障自身不可起拖并阻断祖先上溯（[`drag_source_cached`]）。
+    drag_barrier: bool,
 }
 
 impl HitTestCache {
@@ -253,6 +256,7 @@ impl HitTestCache {
                             src: meta.src.clone(),
                             link_text: meta.link_text.clone(),
                             draggable: meta.draggable,
+                            drag_barrier: meta.drag_barrier,
                         },
                     )
                 })
@@ -283,6 +287,7 @@ impl HitTestCache {
                             src: meta.src,
                             link_text: meta.link_text,
                             draggable: meta.draggable,
+                            drag_barrier: meta.drag_barrier,
                         },
                     )
                 })
@@ -371,6 +376,8 @@ pub struct HitTestNodeSnapshot {
     pub link_text: Option<String>,
     /// 本元素 `draggable` IDL 状态（[`crate::drag_source`]；祖先态由消费侧上溯解析）。
     pub draggable: bool,
+    /// 本元素是否 UA 拖拽手势屏障（[`crate::drag_source`]；祖先态由消费侧上溯解析）。
+    pub drag_barrier: bool,
 }
 
 /// IPC / 快照可传输的完整命中测试缓存。
@@ -495,6 +502,7 @@ fn collect_hit_test_nodes(
                     link_text,
                     // 每元素一次属性查 + 标签匹配（缺属性时），与同节点 id/class 查同量级。
                     draggable: crate::drag_source::element_draggable(doc, node_id),
+                    drag_barrier: crate::drag_source::drag_gesture_barrier(doc, node_id),
                 },
             );
         }
@@ -747,6 +755,8 @@ pub struct ElementHit {
 
 /// 命中节点向上查找最近 `draggable` true 元素（含自身）并取其选择器——与
 /// [`find_link_href_cached`] 同一行走语义（nodes 表自身态 + parents 表 DOM 父链）。
+/// 行走途中（含起点）遇 UA 手势屏障元素（文本控件/select/contenteditable，M3-s5）
+/// 即终止返 `None`——屏障内按压-拖动被文本选择交互消费，不得逃逸到可拖祖先。
 /// 无布局盒的中间祖先不可见（与 [`nearest_element_cached`] 同一保真度边界）。
 fn drag_source_cached(
     mut node: NodeId,
@@ -754,10 +764,13 @@ fn drag_source_cached(
     parents: &HashMap<NodeId, NodeId>,
 ) -> Option<String> {
     loop {
-        if let Some(meta) = nodes.get(&node)
-            && meta.draggable
-        {
-            return Some(meta.selector.clone());
+        if let Some(meta) = nodes.get(&node) {
+            if meta.drag_barrier {
+                return None;
+            }
+            if meta.draggable {
+                return Some(meta.selector.clone());
+            }
         }
         let parent = parents.get(&node).copied()?;
         node = parent;
@@ -765,15 +778,19 @@ fn drag_source_cached(
 }
 
 /// 文档路径版（[`element_hit_from_node`] 消费）：沿 DOM 父链找最近 `draggable` true
-/// 元素并取其选择器。
+/// 元素并取其选择器；屏障元素（含起点）终止返 `None`（语义同 [`drag_source_cached`]）。
 fn drag_source_in_doc(doc: &Document, mut node: NodeId) -> Option<String> {
     loop {
         if doc
             .get(node)
             .is_some_and(|data| matches!(data.kind, NodeKind::Element(_)))
-            && crate::drag_source::element_draggable(doc, node)
         {
-            return crate::unique_selector_for_node(doc, node);
+            if crate::drag_source::drag_gesture_barrier(doc, node) {
+                return None;
+            }
+            if crate::drag_source::element_draggable(doc, node) {
+                return crate::unique_selector_for_node(doc, node);
+            }
         }
         node = doc.parent_node(node)?;
     }
@@ -1907,5 +1924,53 @@ mod tests {
         let plain = hit_test_element(&doc, &layout.root, &styles, 30.0, 130.0).expect("hit plain");
         assert_eq!(plain.id.as_deref(), Some("plain"));
         assert!(plain.drag_source.is_none(), "普通 div 非拖拽源");
+    }
+
+    /// M3-s5 手势屏障：文本控件/contenteditable 命中（即使显式 `draggable=true`）不得
+    /// 起拖且**阻断向可拖祖先上溯**；按钮类控件不屏障（仍可从命中元素上溯到可拖父级）。
+    /// corpus 口径 `html/editing/dnd/interactiveelements/*_inside_draggable_element`。
+    #[test]
+    fn drag_source_barrier_blocks_text_controls_and_editable() {
+        let html = r#"<html><body>
+            <div id="p1" draggable="true" style="position:absolute; left:0px; top:0px; width:200px; height:100px;">
+                <input id="it" type="text" draggable="true" style="position:absolute; left:10px; top:10px; width:80px; height:20px;">
+                <button id="bt" style="position:absolute; left:10px; top:50px; width:60px; height:24px;">b</button>
+            </div>
+            <div id="p2" draggable="true" style="position:absolute; left:220px; top:0px; width:200px; height:100px;">
+                <div id="ce" contenteditable="true" style="position:absolute; left:10px; top:10px; width:80px; height:40px;">x</div>
+            </div>
+        </body></html>"#;
+        let (doc, layout, styles) = render_with_styles(html, "");
+        let cache = HitTestCache::from_document(&doc, &layout.root, &styles);
+        let restored = HitTestCache::from_snapshot(cache.snapshot());
+
+        // 命中 input text（自身 draggable=true）→ 屏障，None 且不上溯到 #p1。
+        let it = hit_test_element(&doc, &layout.root, &styles, 30.0, 15.0).expect("hit input");
+        assert_eq!(it.id.as_deref(), Some("it"));
+        assert!(
+            it.drag_source.is_none(),
+            "文本控件为手势屏障：自身可拖属性不豁免，且阻断祖先上溯"
+        );
+        let live_it = cache.hit_test_element(30.0, 15.0).expect("cache hit input");
+        assert!(live_it.drag_source.is_none(), "缓存路径同判");
+        let restored_it = restored.hit_test_element(30.0, 15.0).expect("restored hit input");
+        assert!(
+            restored_it.drag_source.is_none(),
+            "快照往返保真（barrier 位随 meta 走 IPC）"
+        );
+
+        // 命中 button（非屏障）→ 仍上溯到可拖父级 #p1（无屏障时的既有语义不变）。
+        let bt = hit_test_element(&doc, &layout.root, &styles, 30.0, 60.0).expect("hit button");
+        assert_eq!(bt.id.as_deref(), Some("bt"));
+        assert_eq!(
+            bt.drag_source.as_deref(),
+            Some("#p1"),
+            "按钮类非屏障：最近可拖祖先语义不变"
+        );
+
+        // 命中 contenteditable → 屏障，不得逃逸到可拖父级 #p2。
+        let ce = hit_test_element(&doc, &layout.root, &styles, 240.0, 20.0).expect("hit ce");
+        assert_eq!(ce.id.as_deref(), Some("ce"));
+        assert!(ce.drag_source.is_none(), "编辑宿主为手势屏障");
     }
 }

@@ -1,23 +1,26 @@
 # Drag and Drop 兼容 — DataTransfer / DragEvent / 拖放交互（门控 goal）
 
-**版本**: v1.2
+**版本**: v1.3
 **日期**: 2026-10-18
-**状态**: Active·**门控**（M1 + M2 自主面已收口——可执行 testharness 子集
-387/387 全绿；拖放交互管线须用户点名批准——99-webgl 门控模式）
+**状态**: Active·**M3 交互管线推进中**（RFC v1.0 已确认——M1+M2 自主面收口
+387/387；M3-s1~s4 已提交，s5 交互语义收口完成，corpus 437/446（98.0%））
 **执行模式**: WPT 驱动（上游 dnd corpus 为验收标尺）+ 分层实现
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——交互面）
 
-> **▶ 当前状态（2026-10-18 M2 收口）**：可执行 testharness 子集
-> **213/387（55.0%）→ 387/387（100.0%）**，净 +174 零回归。M2 七簇失败一轮
-> 全闭（原型链反射 + video 默认值 / types FrozenArray / item disabled mode /
-> element has-trap on* / HTMLDocument 别名 / DragEvent 字典校验 / dropzone
-> 反射），见 [M2 收口 evidence](dnd-compat/evidence/2026-10-18-m2-convergence.md)
-> 与 [M1 基线 evidence](dnd-compat/evidence/2026-10-18-m1-baseline.md)。
-> 语料路径已修正（上游无顶层 `dnd/`，语料在 `html/editing/dnd/`——Contents API
-> 404 实测）。
-> **下一步**：自主面已无余量；DC-3 交互管线为用户门控——拖拽状态机/
-> drop target 命中/testdriver Actions 面的实现须用户点名批准（点名后先出
-> RFC，输入注入架构征询再动工）。点名前本 goal 无自主切片可推进。
+> **▶ 当前状态（2026-10-18 M3-s5）**：交互管线 RFC 确认后 s1~s5 连续推进，
+> corpus **213/387（55.0%）→ 437/446（98.0%）**。s1 拖拽源命中标志全链透传 →
+> s2 zero-webview 拖放会话状态机 → s3 浏览器仲裁与 DragInput IPC → s4 runner
+> 真管道注入（语料 11→44 案）→ s5 交互语义收口（UA 拖拽手势屏障 + 边界事件
+> relatedTarget + dragstart 发起 move 初始 target 更新，24+1 案翻绿）。管线
+> 证据与剩余失败簇见 [M3 管线 corpus evidence](dnd-compat/evidence/2026-10-18-m3-pipeline-corpus.md)
+> 与 [M3-s5 evidence](dnd-compat/evidence/2026-10-18-m3-s5-semantics.md)；
+> RFC 见 [M3 管线 RFC v1.0](dnd-compat/m3-drag-input-pipeline-spec-rfc.md)。
+> **剩余失败（9 案，语料外延已甄别）**：input 文本选择手势 3 案（选择/
+> display 变更交互域）、declarative shadow DOM 重排 1 案、注入 trace 超时
+> 2 案（input_image）、pointer-suppression 完整面 1 案、js-file File 面 2 案
+> ——均为独立域，不阻塞管线语义收口判定。
+> **下一步**：M4 收口归档（DC-4 门禁 + 剩余簇挂账评估）；若继续自主推进，
+> 优先 input 文本选择手势簇（3 案同域）。
 
 > **▶ 拆分动机（2026-10-08 html5test 缺口立项，用户「立项」）**：web-api-batch2
 > （编号 92，已收口）明确挂账「DnD excluded pending host drag-input pipeline」；

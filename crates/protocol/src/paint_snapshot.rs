@@ -657,6 +657,10 @@ pub struct IpcHitTestNodeMeta {
     /// 本元素 `draggable` IDL 状态（dnd-compat M3 拖拽源仲裁；祖先态由消费侧上溯解析）。
     #[serde(default)]
     pub draggable: bool,
+    /// 本元素是否 UA 拖拽手势屏障（dnd-compat M3-s5：文本控件/select/contenteditable——
+    /// 自身不可起拖并阻断祖先上溯；祖先态由消费侧上溯解析）。
+    #[serde(default)]
+    pub drag_barrier: bool,
 }
 
 /// IPC 命中测试缓存。

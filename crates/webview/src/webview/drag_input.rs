@@ -8,7 +8,8 @@
 //! 事件序（spec https://html.spec.whatwg.org/multipage/dnd.html#drag-and-drop-processing-model）：
 //! mousedown 命中可拖源（宿主按 `ElementHit::drag_source` 仲裁后 `arm`）→ 首个超过
 //! 阈值的 move 派 `dragstart`（cancelable）→ 未取消则同批派 `drag` + 首目标 `dragenter`/`dragover`
-//! → 后续 move 派 `dragover`（目标变化时前置 `dragleave`/`dragenter`）→ up 时按最近一次
+//! → 后续 move 派 `dragover`（目标变化时前置 `dragleave`/`dragenter`，边界事件携带
+//! `relatedTarget`——leave = 新目标、enter = 上次边界目标，初始源不算既有目标）→ up 时按最近一次
 //! dragenter/over 是否被取消决定 `drop`（cancelable）或 `dragleave`，两分支都收尾 `dragend`
 //! （不可取消）→ Esc 走取消步（`dragleave` + `dragend`）。dragstart 被取消 → 会话不启动、
 //! 事件流回归点击语义。
@@ -51,6 +52,9 @@ pub struct DragEventPlan {
     pub client_y: f32,
     /// 会话 id——同会话全部事件共享同一 DataTransfer 实例（shim `__zwDragSessions[id]`）。
     pub session: u64,
+    /// `DragEvent.relatedTarget`——边界事件语义（spec fire a DND event：dragleave =
+    /// 正在进入的新目标；dragenter = 上次边界迁移目标）。非边界事件恒 `None`。
+    pub related_target: Option<String>,
 }
 
 /// 待报告的取消判定点（宿主派发完该批事件后以
@@ -77,20 +81,26 @@ enum DragInner {
         session: u64,
     },
     /// dragstart 已派发，待 `report_default_prevented` 判定（坐标 = 触发 move 的指针位，
-    /// 补派 drag/enter/over 同位——spec 同一指针事件内的连续派发）。
+    /// 补派 drag 同位——spec 同一指针事件内的连续派发）。`target` = 该 move 的命中落点：
+    /// 接受后按此做**初始目标更新**（落点在源外时接受批内直接完成源→落点边界迁移——
+    /// UA 逐 move 处理模型，Chrome/corpus 口径）。
     StartDispatched {
         source: String,
         x: f32,
         y: f32,
         session: u64,
+        target: Option<String>,
     },
     /// 会话进行中。`current_target` = 最近一次 dragenter 的新目标（离开全部元素 → None）；
-    /// `over_accepted` = 最近一次 dragenter/over 未被取消（drop 资格判据；None = 尚未报告）。
+    /// `over_accepted` = 最近一次 dragenter/over 未被取消（drop 资格判据；None = 尚未报告）；
+    /// `boundary_prev` = 上次**更新期边界迁移**进入的目标（初始接受批的源自身不算——
+    /// dragenter.relatedTarget 语义，corpus 口径首个真目标 related 为 null）。
     Dragging {
         source: String,
         current_target: Option<String>,
         session: u64,
         over_accepted: Option<bool>,
+        boundary_prev: Option<String>,
     },
 }
 
@@ -175,6 +185,7 @@ impl DragInputState {
                     x,
                     y,
                     session,
+                    target,
                 };
                 self.outstanding = Some(Outstanding::Start);
                 vec![DragEventPlan {
@@ -183,6 +194,7 @@ impl DragInputState {
                     client_x: x,
                     client_y: y,
                     session,
+                    related_target: None,
                 }]
             }
             (
@@ -205,6 +217,7 @@ impl DragInputState {
                     current_target,
                     session,
                     over_accepted,
+                    boundary_prev,
                 },
                 DragPointerPhase::Move,
             ) => {
@@ -217,6 +230,7 @@ impl DragInputState {
                         current_target: current_target.clone(),
                         session,
                         over_accepted,
+                        boundary_prev,
                     };
                     match current_target {
                         Some(sel) => {
@@ -227,12 +241,16 @@ impl DragInputState {
                                 client_x: x,
                                 client_y: y,
                                 session,
+                                related_target: None,
                             }]
                         }
                         None => Vec::new(),
                     }
                 } else {
-                    // 目标变化：旧目标 dragleave（不可取消）→ 新目标 dragenter + dragover。
+                    // 目标变化：旧目标 dragleave（不可取消；related = 正在进入的新目标，spec
+                    // fire a DND event）→ 新目标 dragenter（related = 上次边界迁移目标；初始
+                    // 接受批的源自身不算既有拖拽目标，首个真目标 related 为 null——corpus
+                    // `events/dragenter-dragleave-related-target` 口径）+ dragover。
                     let mut plans = Vec::new();
                     if let Some(old) = current_target.clone() {
                         plans.push(DragEventPlan {
@@ -241,6 +259,7 @@ impl DragInputState {
                             client_x: x,
                             client_y: y,
                             session,
+                            related_target: target.clone(),
                         });
                     }
                     if let Some(new) = target.clone() {
@@ -250,6 +269,7 @@ impl DragInputState {
                             client_x: x,
                             client_y: y,
                             session,
+                            related_target: boundary_prev.clone(),
                         });
                         plans.push(DragEventPlan {
                             selector: new,
@@ -257,17 +277,19 @@ impl DragInputState {
                             client_x: x,
                             client_y: y,
                             session,
+                            related_target: None,
                         });
                         self.outstanding = Some(Outstanding::Over);
                     } else {
-                        // 离开全部元素：drop 资格清零。
+                        // 离开全部元素：drop 资格清零；边界链清零（再入目标按首入语义 related=null）。
                         self.outstanding = None;
                     }
                     self.inner = DragInner::Dragging {
+                        current_target: target.clone(),
                         source,
-                        current_target: target,
                         session,
                         over_accepted: None,
+                        boundary_prev: target,
                     };
                     plans
                 }
@@ -278,6 +300,7 @@ impl DragInputState {
                     current_target,
                     session,
                     over_accepted,
+                    ..
                 },
                 DragPointerPhase::Up,
             ) => {
@@ -291,6 +314,7 @@ impl DragInputState {
                             client_x: x,
                             client_y: y,
                             session,
+                            related_target: None,
                         },
                         DragEventPlan {
                             selector: source,
@@ -298,16 +322,19 @@ impl DragInputState {
                             client_x: x,
                             client_y: y,
                             session,
+                            related_target: None,
                         },
                     ],
                     (Some(target), _) => vec![
                         // 目标拒绝（dragover/enter 被取消或未报告）——operation none，不 drop。
+                        // spec 释放步 dragleave 无 specific related target → null。
                         DragEventPlan {
                             selector: target,
                             event_type: "dragleave",
                             client_x: x,
                             client_y: y,
                             session,
+                            related_target: None,
                         },
                         DragEventPlan {
                             selector: source,
@@ -315,6 +342,7 @@ impl DragInputState {
                             client_x: x,
                             client_y: y,
                             session,
+                            related_target: None,
                         },
                     ],
                     (None, _) => vec![DragEventPlan {
@@ -323,6 +351,7 @@ impl DragInputState {
                         client_x: x,
                         client_y: y,
                         session,
+                        related_target: None,
                     }],
                 }
             }
@@ -335,7 +364,8 @@ impl DragInputState {
                 },
                 DragPointerPhase::Cancel,
             ) => {
-                // spec 取消步：对当前目标派 dragleave，随后源上派 dragend（不可取消）。
+                // spec 取消步：对当前目标派 dragleave（无 specific related target），
+                // 随后源上派 dragend（不可取消）。
                 self.inner = DragInner::Idle;
                 self.outstanding = None;
                 let mut plans = Vec::new();
@@ -346,6 +376,7 @@ impl DragInputState {
                         client_x: x,
                         client_y: y,
                         session,
+                        related_target: None,
                     });
                 }
                 plans.push(DragEventPlan {
@@ -354,6 +385,7 @@ impl DragInputState {
                     client_x: x,
                     client_y: y,
                     session,
+                    related_target: None,
                 });
                 plans
             }
@@ -362,49 +394,115 @@ impl DragInputState {
 
     /// 回填上一批计划中**最后一个可取消事件**的 `defaultPrevented`
     /// （shim `__zw_dispatch_event` 返 `'prevented'` → `true`）。返回追补事件计划
-    ///（仅 dragstart 通过时返 `drag` + 首目标 `dragenter`/`dragover`，其余返空）。
+    ///（仅 dragstart 通过时返 `drag` + 初始目标更新批——落点在源上为
+    /// `dragenter`/`dragover`@source，在源外为源→落点边界迁移三连，其余返空）。
     pub fn report_default_prevented(&mut self, prevented: bool) -> Vec<DragEventPlan> {
         let outstanding = self.outstanding.take();
         let inner = std::mem::take(&mut self.inner);
         match (outstanding, inner) {
-            (Some(Outstanding::Start), DragInner::StartDispatched { source, x, y, session }) => {
+            (
+                Some(Outstanding::Start),
+                DragInner::StartDispatched {
+                    source,
+                    x,
+                    y,
+                    session,
+                    target,
+                },
+            ) => {
                 if prevented {
                     // dragstart 被取消 → 拖拽操作不启动（spec），事件流回归点击语义。
                     self.inner = DragInner::Idle;
                     Vec::new()
                 } else {
-                    // 同批补派：drag（源，不可取消）→ 首目标 dragenter + dragover（初始
-                    // 目标 = 源自身——指针尚未离开按下点）。批以 dragover 收尾 → 待报告。
+                    // 接受批：drag（源，不可取消）+ **初始目标更新**——落点仍在源上 →
+                    // enter/over@source（指针未离开按下点的常规起拖）；落点已在源外
+                    //（起拖 move 一次到位）→ 接受批内完成源→落点边界迁移（UA 逐 move
+                    // 处理模型：dragstart 后 UA 立即按当前指针位置跑目标更新步——
+                    // Chrome/corpus 口径，enter(新).related=null：源不算既有拖拽目标）。
+                    // 批以 over 收尾 → 待报告（悬空落点 dragleave 收尾，无待判定）。
+                    let away = matches!(&target, Some(t) if *t != source);
                     self.inner = DragInner::Dragging {
-                        current_target: Some(source.clone()),
+                        current_target: match &target {
+                            Some(t) if *t != source => target.clone(),
+                            Some(_) => Some(source.clone()),
+                            None => None,
+                        },
+                        boundary_prev: if away { target.clone() } else { None },
                         source: source.clone(),
                         session,
                         over_accepted: None,
                     };
-                    self.outstanding = Some(Outstanding::Over);
-                    vec![
-                        DragEventPlan {
-                            selector: source.clone(),
-                            event_type: "drag",
-                            client_x: x,
-                            client_y: y,
-                            session,
-                        },
-                        DragEventPlan {
-                            selector: source.clone(),
-                            event_type: "dragenter",
-                            client_x: x,
-                            client_y: y,
-                            session,
-                        },
-                        DragEventPlan {
-                            selector: source,
-                            event_type: "dragover",
-                            client_x: x,
-                            client_y: y,
-                            session,
-                        },
-                    ]
+                    let mut batch = vec![DragEventPlan {
+                        selector: source.clone(),
+                        event_type: "drag",
+                        client_x: x,
+                        client_y: y,
+                        session,
+                        related_target: None,
+                    }];
+                    match target {
+                        Some(t) if t != source => {
+                            batch.push(DragEventPlan {
+                                selector: source.clone(),
+                                event_type: "dragleave",
+                                client_x: x,
+                                client_y: y,
+                                session,
+                                related_target: Some(t.clone()),
+                            });
+                            batch.push(DragEventPlan {
+                                selector: t.clone(),
+                                event_type: "dragenter",
+                                client_x: x,
+                                client_y: y,
+                                session,
+                                related_target: None,
+                            });
+                            batch.push(DragEventPlan {
+                                selector: t,
+                                event_type: "dragover",
+                                client_x: x,
+                                client_y: y,
+                                session,
+                                related_target: None,
+                            });
+                            self.outstanding = Some(Outstanding::Over);
+                        }
+                        Some(sel) => {
+                            batch.push(DragEventPlan {
+                                selector: sel,
+                                event_type: "dragenter",
+                                client_x: x,
+                                client_y: y,
+                                session,
+                                related_target: None,
+                            });
+                            batch.push(DragEventPlan {
+                                selector: source,
+                                event_type: "dragover",
+                                client_x: x,
+                                client_y: y,
+                                session,
+                                related_target: None,
+                            });
+                            self.outstanding = Some(Outstanding::Over);
+                        }
+                        None => {
+                            // 悬空落点（指针已离源、无新目标）：源 dragleave（related=null），
+                            // current_target 归 None；批无尾 over → 无待判定。
+                            batch.push(DragEventPlan {
+                                selector: source,
+                                event_type: "dragleave",
+                                client_x: x,
+                                client_y: y,
+                                session,
+                                related_target: None,
+                            });
+                            self.outstanding = None;
+                        }
+                    }
+                    batch
                 }
             }
             (
@@ -413,6 +511,7 @@ impl DragInputState {
                     source,
                     current_target,
                     session,
+                    boundary_prev,
                     ..
                 },
             ) => {
@@ -422,6 +521,7 @@ impl DragInputState {
                     current_target,
                     session,
                     over_accepted,
+                    boundary_prev,
                 };
                 Vec::new()
             }
@@ -490,6 +590,7 @@ impl WebView {
                     client_x: Some(plan.client_x),
                     client_y: Some(plan.client_y),
                     data_transfer_id: Some(plan.session),
+                    related_target: plan.related_target.clone(),
                     ..Default::default()
                 };
                 last_prevented =
@@ -725,5 +826,118 @@ mod tests {
         // 补派批报告后再多余的 report 返空计划（不产出事件）；over_accepted 的批次序
         // 契约由宿主保证——每批派发后恰好报告一次（apply_drag_input 内建）。
         assert_eq!(s.report_default_prevented(true), Vec::new());
+    }
+
+    /// 边界事件 relatedTarget（spec fire a DND event：dragleave.related = 正在进入的
+    /// 新目标、dragenter.related = 上次边界迁移目标；初始接受批不建立边界链——首个真
+    /// 目标 related 为 null，corpus `events/dragenter-dragleave-related-target` 口径）。
+    #[test]
+    fn boundary_events_carry_related_target() {
+        let mut s = DragInputState::new();
+        s.arm("div#src".into(), 0.0, 0.0);
+        assert_eq!(
+            s.on_pointer(DragPointerPhase::Move, 30.0, 30.0, Some("div#src".into()))
+                .len(),
+            1
+        );
+        // 初始接受批（源自身 drag/enter/over）：related 全 null。
+        let accept = s.report_default_prevented(false);
+        assert!(accept.iter().all(|p| p.related_target.is_none()));
+
+        // 首真目标 A：leave(源).related = A；enter(A).related = null（源不算既有目标）。
+        let to_a = s.on_pointer(DragPointerPhase::Move, 60.0, 60.0, Some("div#a".into()));
+        assert_eq!(
+            to_a.iter()
+                .map(|p| (p.event_type, p.selector.as_str(), p.related_target.as_deref()))
+                .collect::<Vec<_>>(),
+            [
+                ("dragleave", "div#src", Some("div#a")),
+                ("dragenter", "div#a", None),
+                ("dragover", "div#a", None),
+            ]
+        );
+        s.report_default_prevented(false);
+
+        // A → B：enter(B).related = A；leave(A).related = B。
+        let to_b = s.on_pointer(DragPointerPhase::Move, 90.0, 90.0, Some("div#b".into()));
+        assert_eq!(
+            to_b.iter()
+                .map(|p| (p.event_type, p.selector.as_str(), p.related_target.as_deref()))
+                .collect::<Vec<_>>(),
+            [
+                ("dragleave", "div#a", Some("div#b")),
+                ("dragenter", "div#b", Some("div#a")),
+                ("dragover", "div#b", None),
+            ]
+        );
+
+        // 离开全部元素：leave.related = null，边界链清零。
+        let off = s.on_pointer(DragPointerPhase::Move, 120.0, 120.0, None);
+        assert_eq!(off.len(), 1);
+        assert_eq!(off[0].event_type, "dragleave");
+        assert!(off[0].related_target.is_none());
+
+        // 再入 A：按首入语义 related = null。
+        let back = s.on_pointer(DragPointerPhase::Move, 60.0, 60.0, Some("div#a".into()));
+        let enter_back = back.iter().find(|p| p.event_type == "dragenter").expect("enter");
+        assert!(enter_back.related_target.is_none(), "再入目标 related=null");
+    }
+
+    /// 起拖 move 落点已在源外（一次到位手势）→ 接受批内完成源→落点边界迁移
+    ///（UA 逐 move 处理模型——dragstart 后 UA 立即按当前指针位置跑目标更新步；
+    /// corpus `events/dragenter-dragleave-related-target`：enter(新).related=null，
+    /// 后续 drop 落在该目标）。
+    #[test]
+    fn initiating_move_away_from_source_transitions_in_accept_batch() {
+        let mut s = DragInputState::new();
+        s.arm("div#src".into(), 0.0, 0.0);
+        let start = s.on_pointer(DragPointerPhase::Move, 60.0, 60.0, Some("div#a".into()));
+        assert_eq!(start.len(), 1);
+        assert_eq!(start[0].event_type, "dragstart");
+        let accept = s.report_default_prevented(false);
+        assert_eq!(
+            accept
+                .iter()
+                .map(|p| (p.event_type, p.selector.as_str(), p.related_target.as_deref()))
+                .collect::<Vec<_>>(),
+            [
+                ("drag", "div#src", None),
+                ("dragleave", "div#src", Some("div#a")),
+                ("dragenter", "div#a", None),
+                ("dragover", "div#a", None),
+            ]
+        );
+        // 批宿主协议：接受批以 over 收尾 → 恰好一次回报（over 通过）。
+        assert_eq!(s.report_default_prevented(false), Vec::new());
+        // 释放：drop 落在初始更新后的目标 A（over 通过）。
+        let up = s.on_pointer(DragPointerPhase::Up, 60.0, 60.0, Some("div#a".into()));
+        assert_eq!(
+            up.iter()
+                .map(|p| (p.event_type, p.selector.as_str()))
+                .collect::<Vec<_>>(),
+            [("drop", "div#a"), ("dragend", "div#src")]
+        );
+    }
+
+    /// 起拖 move 命中为空（悬空落点）→ 接受批仅 drag，无待判定。
+    #[test]
+    fn initiating_move_dangling_target_only_drags() {
+        let mut s = DragInputState::new();
+        s.arm("div#src".into(), 0.0, 0.0);
+        assert_eq!(s.on_pointer(DragPointerPhase::Move, 60.0, 60.0, None).len(), 1);
+        let accept = s.report_default_prevented(false);
+        assert_eq!(
+            accept
+                .iter()
+                .map(|p| (p.event_type, p.selector.as_str(), p.related_target.as_deref()))
+                .collect::<Vec<_>>(),
+            [("drag", "div#src", None), ("dragleave", "div#src", None)]
+        );
+        // 后续 move 进入目标 A：正常边界迁移（current_target 已悬空 → 无 leave）。
+        let to_a = s.on_pointer(DragPointerPhase::Move, 90.0, 90.0, Some("div#a".into()));
+        assert_eq!(
+            to_a.iter().map(|p| p.event_type).collect::<Vec<_>>(),
+            ["dragenter", "dragover"]
+        );
     }
 }
