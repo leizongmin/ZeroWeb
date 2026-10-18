@@ -2,42 +2,41 @@
 
 **版本**: v2.0
 **日期**: 2026-10-18（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 8 收口（HTMLOptionsCollection/option list 基建 R3908 +54P），下一步 selectedness/selectedIndex 语义切片
+**状态**: Active——M2 切片 9 收口（selectedness/selectedIndex 语义 R3909 +34P），下一步 forms 域大簇归因切片
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-18 M2 切片 8）**：HTMLOptionsCollection/option
-> list 基建（R3908/R3908b）——spec「list of options」统一构造
-> `_zwListOfOptions`（OPTION 收录不递归；select/hr/datalist 整枝排除；
-> 嵌套 optgroup 整枝排除、顶层 optgroup 照常下钻，HTML §4.10.7）；
-> HTMLOptionsCollection 代理（length grow/shrink、`[i]=null` 移除、
-> `[i]=element` 先补空再追加/replace——replace 取「先删旧项+前插旧项
-> 后继」序规避 R51 overlay nextSibling identity miss；namedItem/add/
-> selectedIndex/value）；`_zwIsSelectTag` 前缀 select 判定
-> （createElementNS 'foo:select' 六处换用）；selectedOptions HTMLCollection
-> 形代理（三 trap 齐：get 原型回落/has/getOwnPropertyDescriptor）+
-> 非 multiple selectedness 视图归一（最后者胜/首项回落）；
-> option.selected IDL setter = dirty selectedness（不反射属性，
-> `_optSelectedDirty`，R3908b）——宿主激活链（script_gen.rs）分流为
-> 显式属性写保渲染/序列化面。part58 `test_html_options_collection_r3908`
-> 契约（W1–W9）。forms 3515→**3569P**；九域 4477→**4531P**
-> （4531/7412 = **61.13%**），对 s7 账本逐 subtest diff **净 +54P**
-> （HTMLOptionsCollection 三文件 15P、selectedOptions 簇 18P、
-> script-mutation 5P、inserted-or-removed 4P、select-named-getter 4P、
-> option-selected 2P、option-list/optgroup 溢出 6P），**回归 0**、
-> 新增/消失 0；对 s6 基线同为零回归。zero-engine --lib 3111 全过、
-> make test 全腿绿（browser 腿 DISPLAY=:102 环境归因复跑 650P/0F，
-> s6 同款）、clippy/fmt 过、零新增依赖。账本见
-> [evidence/2026-10-18-m2s8-r3908.md](html-semantics-compat/evidence/2026-10-18-m2s8-r3908.md)。
-> **卡点**：无阻塞。**下一步**：selectedness/selectedIndex 语义切片——
-> select-ask-for-reset 3F（node remove/insert 触发重置）、
-> selected-index 7F（selectedIndex setter/reset-algorithm）、
-> select-add 2F + select-remove 2F（add(n)/remove(n) 语义）、
-> option-element-constructor 3F（构造器 dirtiness——R3908b 已铺底）、
-> select-validity 7F；forms 域大块余簇依归因排后（form-submission
-> encoding ~255F、label clicks ~80F、form-autocomplete ~66F、
-> meter ~48F）。**独立挂账**：通用 replaceChild sel 形 oldChild 落尾
-> 缺口（remove+append 序，zz-probe2/3 三源实证，本轮已清诊断页）。
+> **▶ 当前状态（2026-10-18 M2 切片 9）**：selectedness/selectedIndex 语义
+> （R3909）——读侧三层模型（R3908/R3908b）补齐**写侧触发点**与真态读径：
+> selectedness setting algorithm（互斥按 Chromium「受影响者胜」affKey，
+> 非 spec 列表序 last-wins；无选中 size 1 回落首个非 disabled）；
+> ask-for-a-reset 家族（`_mo_notify` childList 汇流钩——插入步批内逐 option
+> 依序各跑、innerHTML 直写落容器级合流、Blink 重回落 clean 让位/dirty 保持）；
+> selected 属性变更步两半钩（dirtiness false 时跟随增删）；selectedIndex
+> setter（不跑 setting、可全不选；`options.selectedIndex=` 同径）；
+> select.value setter 双形态统一写 JS 真态（旧 `!handle && _isTag` 双重排除
+> 丢整条写面）；form.reset select 复位算法；select.remove(n)/add 祖先检查
+> + add 走元素代理；select value-missing 约束校验（placeholder label option
+> 四条件）；Option() 构造器（属性只随 defaultSelected 参 + clean 层显式
+> 初始 selectedness）。读侧 selectedIndex/value/selectedView 全改 JS 真态
+> （宿主读短路移除），回落仅限 pristine 且 size 1 跳 disabled。
+> part59 契约 12 测（W1–W12）；part11 R2999 两处期望按 R3909 行为修正。
+> forms 3569→**3602P**；九域 4531→**4565P**（4565/7412 = **61.59%**），
+> 对 s8 账本逐 subtest diff **净 +34P**（select-value-selectedOption 8、
+> selected-index 7、select-validity 6、ask-for-reset 3、constructor 3、
+> add 2、remove 2、validity.tentative 1、option-disabled-optgroup-wrapper 1
+> 联带、contextmenu-historical 1 非因果联带同 s7 runner 非确定性挂账），
+> **回归 0**、新增/消失 0；对 s6 基线同为零回归。zero-engine --lib 3138
+> 全过、make test 全腿绿、clippy/fmt 过、零新增依赖。账本见
+> [evidence/2026-10-18-m2s9-r3909.md](html-semantics-compat/evidence/2026-10-18-m2s9-r3909.md)。
+> **卡点**：无阻塞。**下一步**：forms 域大簇归因切片——form-submission
+> encoding ~255F（提交编码/charset 面）、label clicks ~80F（激活行为）、
+> form-autocomplete ~66F、meter ~48F 依归因排序；存量小挂账：option.form
+> owner 1F、option-text-setter 1F。**独立挂账**：通用 replaceChild sel 形
+> oldChild 落尾缺口（remove+append 序，zz-probe2/3 三源实证）；
+> part42 t8g 墙钟钉 <2000ms 在 make test clippy 并行负载下边缘越限一次
+> （2.33s，隔离 0.49s/单跑套件绿，HEAD 同测同款边缘——非本切片归因，
+> 观察账）。
 
 
 
@@ -119,6 +118,20 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-18 M2 切片 9**：selectedness/selectedIndex 语义（R3909）——
+  selectedness setting（受影响者胜 affKey + size 1 非 disabled 回落）、
+  ask-for-a-reset 汇流钩（`_mo_notify` childList 触发、批插依序、innerHTML
+  容器合流、Blink 重回落）、selected 属性变更步两半、selectedIndex setter
+  （可全不选）、select.value setter 双形态真态写（旧 guard 双重排除丢写面
+  根因修复）、form.reset 复位算法、select.remove(n)/add 祖先检查 + 元素代理
+  add、select value-missing（placeholder 四条件）、Option() 构造器
+  （属性只随 defaultSelected + clean 层）；读侧 selectedIndex/value/视图
+  全改 JS 真态，pristine-only size 1 跳 disabled 回落。part59 契约 12 测。
+  select-value-selectedOption +8、selected-index 13/13、select-validity
+  6/6 等**净 +34P**；forms 3569→3602P、九域 4531→4565P（61.59%），对
+  s8/s6 账本 diff 均零回归。zero-engine --lib 3138 全过、make test 全腿绿、
+  clippy/fmt 过、零新增依赖。挂账：option.form 1F、text-setter 1F、
+  replaceChild sel 形落尾缺口、t8g 墙钟钉 clippy 并行负载边缘越限观察账。
 - **2026-10-18 M2 切片 8**：HTMLOptionsCollection/option list 基建
   （R3908/R3908b）——`_zwListOfOptions` 统一构造（嵌套 optgroup 排除、
   select/hr/datalist 整枝）、HTMLOptionsCollection 代理（length/索引

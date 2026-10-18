@@ -2904,6 +2904,9 @@
           return function(name, value) {
             var n = _r116AttrName(name); // R116：空名 InvalidCharacterError + HTML 文档小写
             var v = String(value);
+            // R3909：option selected 内容属性变更步前半（快照须在写入前取——dirtiness
+            // false 时 selectedness 跟随属性增删，翻转即重置所属 select）。
+            var _optSelSnap9 = (n === 'selected') ? _zwOptSelAttrPre(sel, handle) : null;
             // R122：实例层同步——非 NS setAttribute（spec `dom-element-setattribute`「set an
             // attribute」按**限定名**匹配：qualified name 全等的第一实例原位改值，miss 才 push
             // 新无 ns 实例。WPT "setAttribute should set the attribute with the given qualified
@@ -3118,6 +3121,8 @@
               try { _zwNAAttrChanged(proxy); } catch (_eNA32s) {}
             }
             _mo_notify(sel, handle, { type: 'attributes', attributeName: n, oldValue: moOld });
+            // R3909：option selected 内容属性变更步后半（Pre 快照消费）。
+            if (_optSelSnap9) _zwOptSelAttrPost(_optSelSnap9, sel, handle);
             if (ceEntry) _ce_dispatchAttrChange(ceEntry, proxy, n, ceOld, v);
             // WC-M3 切片 8 第九增量（web-components goal，spec DOM「use these attribute
             // change steps to update a slot's/slottable's name」——slot 的 name 属性与
@@ -3146,6 +3151,8 @@
             var n = _r116AttrName(name); // R116：空名 InvalidCharacterError + HTML 文档小写
             var nLower = n;
             var targetTag = _realTag(sel, handle);
+            // R3909：option selected 内容属性变更步前半（写入前快照）。
+            var _optSelSnap9 = (n === 'selected') ? _zwOptSelAttrPre(sel, handle) : null;
             // R122：非 NS 移除按**限定名**剔实例（与 setAttribute 的限定名 upsert 对称），
             // 并解绑 Attr（ownerElement=null——WPT "Attribute loses its owner when removed"：
             // removeAttribute 后 attr.ownerElement 须 null，否则 setAttributeNode 误抛
@@ -3257,6 +3264,8 @@
               try { _zwNAAttrChanged(proxy); } catch (_eNA32r) {}
             }
             if (_rmExisted) _mo_notify(sel, handle, { type: 'attributes', attributeName: n, oldValue: moOld });
+            // R3909：option selected 内容属性变更步后半（Pre 快照消费）。
+            if (_optSelSnap9) _zwOptSelAttrPost(_optSelSnap9, sel, handle);
             // WC-M3 切片 8 第九增量：slot/name 属性移除的 slotchange 队列面（与
             // setAttribute 挂钩对称——移除 slot 属性使 slottable 失配/回默认分配）。
             if (_rmExisted && (n === 'slot' || String(n).toLowerCase() === 'name')) {
@@ -7283,6 +7292,26 @@
             return oldChild;
           };
         }
+        // `select.remove(index)`（R3909，HTML §4.10.7 dom-select-remove——移除 list of
+        // options 第 index 项；负数/越界经 uint32 回转 no-op）。无参调用落下方
+        // ChildNode remove()（WebIDL 重载解析：remove(long) 不容 0 参——WPT
+        // select-remove「remove() should work on select elements」期望自移除）。
+        if (prop === 'remove' && _zwIsSelectTag(sel, handle)) {
+          return function (index) {
+            if (arguments.length === 0) {
+              var _sr9Parent = _makeProxy(sel, handle).parentNode;
+              if (_sr9Parent && typeof _sr9Parent.removeChild === 'function') {
+                _sr9Parent.removeChild(_makeProxy(sel, handle));
+              }
+              return;
+            }
+            var _sr9List = _zwListOfOptions(sel, handle);
+            var _sr9i = _zwToUint32(index);
+            if (_sr9i < _sr9List.length) {
+              try { _sr9List[_sr9i].remove(); } catch (_eSr9) {}
+            }
+          };
+        }
         if (prop === 'remove') {
           return function() {
             // R129（js-dom M4）：Text/Comment/PI 的 ChildNode.remove（WPT
@@ -9169,8 +9198,19 @@
                       else if (_it !== 'submit' && _it !== 'reset' && _it !== 'button' && _it !== 'image' && _it !== 'file')
                         c.value = c.defaultValue;
                     } else if (_ct === 'SELECT') {
-                      var _opts = c.options;
-                      for (var j = 0; _opts && j < _opts.length; j++) _opts[j].selected = _opts[j].defaultSelected;
+                      // R3909：select 复位算法（HTML §4.10.7 the-reset-algorithm-for-a-
+                      // select-element）——各 option selectedness 按 selected 属性、
+                      // dirtiness 全 false（清 dirty/clean 键回落属性默认层），再跑
+                      // selectedness setting（无属性选中时 display size 1 回落首个非
+                      // disabled）。旧 `.selected = defaultSelected` 走 IDL setter 会
+                      // 反向置脏（R3908b 语义），reset 后 selectedIndex 读不走属性面。
+                      var _rl9 = _zwListOfOptions(c.__zwSelector, c.__zwHandle);
+                      for (var j = 0; j < _rl9.length; j++) {
+                        var _rk9 = _zwOptKey(_rl9[j].__zwSelector, _rl9[j].__zwHandle);
+                        delete _optSelectedDirty[_rk9];
+                        delete _optSelectedClean[_rk9];
+                      }
+                      _zwSelectednessSetting(c.__zwSelector, c.__zwHandle);
                     }
                     if (typeof __zw_clear_user_edited === 'function') __zw_clear_user_edited(c);
                   } catch (_e) {}
@@ -10886,12 +10926,35 @@
             if (_rvEntry) {
               _ce_dispatchAttrChange(_rvEntry, _makeProxy(sel, handle), _rvAttr, _rvOld, _rvVal, null);
             }
-          } else if (!handle && sel && typeof __zw_select_option === 'function' && _isTag(sel, 'SELECT')) {
-            // P1a select：编程设 `<select>.value = value` → 记 SelectOption mutation（apply 时
-            // mark 匹配 option selected + deselect 兄弟）。匹配浏览器：编程设值不自动派 change。
-            __zw_select_option(sel, String(value));
-            // SelectOption 改的是子 option 的 selected 属性，非 select 元素自身的属性 mutation；
-            // 不发 select 的 attributes MO 通知（语义正确）。
+          } else if (_zwIsSelectTag(sel, handle)) {
+            // P1a select：编程设 `<select>.value = value`（HTML §4.10.7 value setter
+            // steps——全员 selectedness=false、首个 value 匹配者 selectedness=true +
+            // dirtiness=true；不跑 selectedness setting、不派 change）。
+            // R3909：同步写 JS 真态（dirty/clean 层）——createElement select 同 turn 读
+            // （validity/selectedIndex/option.selected）立即可见。旧 guard
+            // `!handle && _isTag(sel,'SELECT')` 双重排除（_isTag 纯 host 快照探测对未
+            // apply 元素恒 miss + handle 形整支跳过），写整条丢失——同 turn 读回落
+            // pristine 视图（form-validation-valueMissing「Selected the option with
+            // value equals to 1」回归面）。SelectOption mutation 仍照记（渲染/序列化面
+            // selected 属性承载，js_dom_bridge.rs apply 侧）；其改的是子 option 的
+            // selected 属性，非 select 元素自身属性 mutation，不发 select 的 MO attr 通知。
+            var _r3909vv = String(value);
+            var _r3909vl = _zwListOfOptions(sel, handle);
+            var _r3909vm = null;
+            for (var _r3909vi = 0; _r3909vi < _r3909vl.length; _r3909vi++) {
+              var _r3909vo = _r3909vl[_r3909vi];
+              if (!_r3909vo) continue;
+              _zwOptWriteSelState(_r3909vo, false);
+              if (_r3909vm == null) {
+                try { if (_zwOptionValue(_r3909vo) === _r3909vv) _r3909vm = _r3909vo; } catch (_r3909ve) {}
+              }
+            }
+            if (_r3909vm != null) {
+              _optSelectedDirty[_zwOptKey(_r3909vm.__zwSelector, _r3909vm.__zwHandle)] = true;
+            }
+            if (sel && typeof __zw_select_option === 'function') {
+              __zw_select_option(sel, _r3909vv);
+            }
           } else if (_realTag(sel, handle) === 'OUTPUT') {
             // https://html.spec.whatwg.org/multipage/form-elements.html#dom-output-value
             // Capture default mode before entering value mode, then replace descendants.

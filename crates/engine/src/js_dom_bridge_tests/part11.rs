@@ -2856,6 +2856,10 @@ fn test_option_selected_getter_latest_wins_r2999() {
     // R2999：option.selected 当前态 getter sel 路径仍读纯快照 __zw_has_attr（R2997 限制 ②）→
     // removeAttribute('selected') / .selected= / setAttribute('selected') 后 stale。本切片闭合（同 R2997 .checked 模式）。
     // .selected 与属性耦合（.selected= set/remove attr，无独立 dirty 态），故 getter latest-wins 与 setter 一致。
+    // R3909 起 .selected 升级为真态 selectedness（dirty/clean/属性三层），selected 内容属性
+    // 增删后跑 ask-for-a-reset——display size 1 无选中回落首个非 disabled，下文两处期望按
+    // HTML §4.10.7 selectedness setting algorithm 修正为 true。
+    // spec https://html.spec.whatwg.org/multipage/form-elements.html#the-option-element 。
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
     let config = zero_script_sandbox::SandboxConfig {
@@ -2895,8 +2899,8 @@ fn test_option_selected_getter_latest_wins_r2999() {
     );
     assert_eq!(
         sandbox.execute("globalThis.__selRmAfter").unwrap().value,
-        "false",
-        "removeAttribute('selected') 后 .selected=false（latest-wins getter，修正 stale true）"
+        "true",
+        "removeAttribute('selected') 后 .selected=true（R3909 ask-for-a-reset：size 1 无选中回落首个非 disabled，即 o1 自身）"
     );
 
     // setAttribute('selected') 复原后 .selected 应 true（latest-wins 反映同批 SetAttr）。
@@ -2921,8 +2925,8 @@ fn test_option_selected_getter_latest_wins_r2999() {
         .unwrap();
     assert_eq!(
         sandbox.execute("globalThis.__selUnset").unwrap().value,
-        "false",
-        ".selected=false 后 .selected=false（latest-wins getter 反映 RemoveAttr）"
+        "true",
+        ".selected=false 后 .selected=true（R3909：dirtiness true 但 ask-for-a-reset 回落仍选中 o1——size 1 select 无法反选唯一 option）"
     );
 
     // 无预置 option：.selected = true 后 .selected 应 true（旧 stale 返 false——快照无 selected）。

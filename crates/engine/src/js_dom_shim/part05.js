@@ -439,7 +439,10 @@
           // `option.defaultSelected = x`（R5009 片 d，M4 片 d）——boolean 反射 `selected`
           // 属性（truthy→设存在，falsy→移除）。旧无分支 → 落 expando 兜底，attr 不写
           //（<option selected> 的 truthy 面因属性本就存在而侥幸过，falsy 面 5F）。
+          // R3909：反射写入后跑 selected 内容属性变更步（dirtiness false 时
+          // selectedness 跟随——spec defaultSelected set 走 attribute 变更面）。
           if (_realTag(sel, handle) === 'OPTION') {
+            var _dsSnap9 = _zwOptSelAttrPre(sel, handle);
             _clearBoolDefault(key, 'selected');
             if (value) {
               if (handle) __zw_set_attr_handle(handle, 'selected', '');
@@ -451,7 +454,13 @@
             } else if (!handle && typeof __zw_remove_attr === 'function') {
               __zw_remove_attr(sel, 'selected'); moAttr = 'selected';
             }
+            _zwOptSelAttrPost(_dsSnap9, sel, handle);
           }
+        } else if (p === 'selectedIndex' && _zwIsSelectTag(sel, handle)) {
+          // `select.selectedIndex = n` / `options.selectedIndex = n`（R3909，HTML
+          // §4.10.7 set the selected index——全员 selectedness=false、命中者 true +
+          // dirtiness true；不触发 selectedness setting，-1/越界可全不选）。
+          _zwSetSelectSelectedIndex(sel, handle, value);
         } else if (p === 'selected' && _realTag(sel, handle) === 'OPTION') {
           // `option.selected = x`（R3908b，HTML §4.10.9
           // https://html.spec.whatwg.org/multipage/form-elements.html#dom-option-selected）——
@@ -459,7 +468,11 @@
           // selected 内容属性（defaultSelected 才反射该属性；attribute 变更/MO 面不触发
           // 与 spec 一致——option-selectedness-script-mutation「IDL selected does not
           // reflect」两案断言面）。读侧 getter 脏态优先（part03 selected getter）。
+          // R3909：setter 尾跑 ask for a reset（HTML §4.10.9 selected setter 步——
+          // 非 multiple 互斥清兄弟 + 全不选时 display size 1 回落首个非 disabled；
+          // 目标 true 时绝对胜出——Chromium/WPT ask-for-reset 反向循环）。
           _optSelectedDirty[key] = !!value;
+          _zwAskForReset(sel, handle, key);
         } else if (p === 'defaultChecked') {
           // `input.defaultChecked = x`（R2840）——boolean 反射 `checked` 属性（truthy→设存在，falsy→移除）。
           // R2998：显式设 defaultChecked 重同步（清 dirty，getter 回落新属性值 latest-wins）。

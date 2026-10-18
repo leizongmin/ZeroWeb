@@ -5604,7 +5604,52 @@
         } catch (_e) {}
         valueMissing = checked !== '1';
       } else if (tag === 'SELECT') {
-        valueMissing = _controlValue(sel, handle, key).trim() === '';
+        // R3909：select value-missing（HTML §4.10.7 constraint validation——required
+        // 且 ①list 内无 selectedness true 者，或 ②唯一 selected 者即 placeholder
+        // label option。placeholder 定义（required + display size 1 + list 首项
+        // value 空串 + 与 select 间无 optgroup 祖先）。旧「value 空串即 missing」把
+        // 非占位空 option 误判 missing（select-validity 全簇断言面）。pristine
+        // size-1 无显式态时按读取侧视图同门回落首个非 disabled 计。
+        var _vlList = _zwListOfOptions(sel, handle);
+        var _vlSelCount = 0, _vlSelOpt = null;
+        for (var _vi = 0; _vi < _vlList.length; _vi++) {
+          var _vo = _vlList[_vi];
+          if (!_vo) continue;
+          if (_vo.selected === true) { _vlSelCount++; if (!_vlSelOpt) _vlSelOpt = _vo; }
+        }
+        if (_vlSelCount === 0 && _vlList.length && !_zwOptAnyDirty(_vlList)
+            && _zwSelectDisplaySize(sel, handle) === 1) {
+          for (var _vj = 0; _vj < _vlList.length; _vj++) {
+            var _vk = _vlList[_vj];
+            if (_vk && !_zwOptIsDisabled(_vk.__zwSelector, _vk.__zwHandle)) {
+              _vlSelOpt = _vk; _vlSelCount = 1; break;
+            }
+          }
+        }
+        if (_vlSelCount === 0) {
+          valueMissing = true;
+        } else if (_vlSelCount === 1 && _zwSelectDisplaySize(sel, handle) === 1) {
+          var _vlFirst = _vlList.length ? _vlList[0] : null;
+          var _vlIsPh = false;
+          if (_vlFirst) {
+            try { _vlIsPh = _zwOptionValue(_vlFirst) === ''; } catch (_eVv) { _vlIsPh = false; }
+            if (_vlIsPh) {
+              try {
+                var _vlCur = _vlFirst;
+                for (var _vg = 0; _vg < 64 && _vlCur; _vg++) {
+                  _vlCur = _vlCur.parentNode;
+                  if (!_vlCur || _vlCur.nodeType !== 1) break;
+                  var _vlT = _realTag(_vlCur.__zwSelector, _vlCur.__zwHandle);
+                  if (_vlT === 'SELECT') break;
+                  if (_vlT === 'OPTGROUP') { _vlIsPh = false; break; }
+                }
+              } catch (_eVg) {}
+            }
+          }
+          valueMissing = _vlIsPh && _vlSelOpt === _vlFirst;
+        } else {
+          valueMissing = false;
+        }
       } else if (ty === 'file') {
         valueMissing = true; // headless 无真文件
       } else {
@@ -15627,9 +15672,339 @@ return e;
     return false;
   }
 
+  // ===== R3909：selectedness 真态写侧（HTML §4.10.7 ask-for-a-reset 家族） =====
+  // 读侧模型三层：`_optSelectedDirty`（dirty selectedness，dirtiness true）→
+  // `_optSelectedClean`（构造器显式初始 selectedness，dirtiness false）→ selected
+  // 内容属性（解析面默认层，含宿主 SelectOption 链）。写侧触发点：option.selected=
+  // setter、selectedIndex/value setter、option 插入/移除（_mo_notify 汇流钩）、
+  // form.reset()——均最终跑 `_zwSelectednessSetting`（互斥最后者胜 + 无选中
+  // display size 1 回落首个非 disabled selectedness=true）。
+
+  // option 记账 key（part05 selected setter / part03 getter 同口径 `_elKey`）。
+  function _zwOptKey(oSel, oHnd) { return oHnd ? ('@' + oHnd) : oSel; }
+
+  // option 属性存在性（handle latest-wins → sel latest-wins → 快照链）。
+  function _zwOptHasAttr(oSel, oHnd, name) {
+    if (oHnd && typeof __zw_has_attr_handle === 'function') {
+      try { return __zw_has_attr_handle(oHnd, name) === '1'; } catch (_e) {}
+    }
+    if (!oHnd && oSel && typeof __zw_has_attr_lw === 'function') {
+      try { return __zw_has_attr_lw(oSel, name) === '1'; } catch (_e2) {}
+    }
+    if (!oHnd && oSel && typeof __zw_has_attr === 'function') {
+      try { return __zw_has_attr(oSel, name) === '1'; } catch (_e3) {}
+    }
+    return false;
+  }
+
+  // option selectedness 读（dirty → clean → 属性/宿主链——part03 selected getter 同序，
+  // `__zw_option_selected` 额外感知宿主 SelectOption 编程选中态）。dirty 层**条目存在即
+  // 权威**（dirtiness true 时 selectedness 以条目值为准——false 亦然；否则 clean 层回落态
+  // 会透过 dirty false 误现，selectedness setting 走查误判既有 true → 回落失效，WPT
+  // select-ask-for-reset「change selectedness of option」t2b 实证）。
+  function _zwOptSelState(oSel, oHnd, oKey) {
+    if (typeof _optSelectedDirty === 'object' && _optSelectedDirty
+        && Object.prototype.hasOwnProperty.call(_optSelectedDirty, oKey)) {
+      return _optSelectedDirty[oKey] === true;
+    }
+    if (typeof _optSelectedClean === 'object' && _optSelectedClean
+        && Object.prototype.hasOwnProperty.call(_optSelectedClean, oKey)) {
+      return _optSelectedClean[oKey] === true;
+    }
+    if (oHnd) return _zwOptHasAttr(oSel, oHnd, 'selected');
+    if (oSel && typeof __zw_option_selected === 'function') {
+      try { return __zw_option_selected(oSel) === '1'; } catch (_e) {}
+    }
+    return _zwOptHasAttr(oSel, oHnd, 'selected');
+  }
+
+  // dirty 层真态判定（selected setter / selectedIndex 命中写入——「用户显式态」，
+  // 插入重回落让位判定只认这层，clean 回落态不算）。
+  function _zwOptDirtySelected(oKey) {
+    return typeof _optSelectedDirty === 'object' && _optSelectedDirty
+      && Object.prototype.hasOwnProperty.call(_optSelectedDirty, oKey)
+      && _optSelectedDirty[oKey] === true;
+  }
+
+  // option disabled 判定（HTML §4.10.9 concept-option-disabled——disabled 属性，或
+  // disabled optgroup 祖先；上行遇 select/hr/datalist/option 截断）。64 层帽防环。
+  function _zwOptIsDisabled(oSel, oHnd) {
+    if (_zwOptHasAttr(oSel, oHnd, 'disabled')) return true;
+    try {
+      if (oSel == null && oHnd == null) return false;
+      var cur = _makeProxy(oSel, oHnd);
+      for (var g = 0; g < 64 && cur; g++) {
+        cur = cur.parentNode;
+        if (!cur || cur.nodeType !== 1) return false;
+        var t = null;
+        try { t = _realTag(cur.__zwSelector, cur.__zwHandle); } catch (_eT) { t = null; }
+        if (t === 'SELECT' || t === 'HR' || t === 'DATALIST' || t === 'OPTION') return false;
+        if (t === 'OPTGROUP' && _zwOptHasAttr(cur.__zwSelector, cur.__zwHandle, 'disabled')) return true;
+      }
+    } catch (_eP) {}
+    return false;
+  }
+
+  // display size（HTML §4.10.7 the-display-size-of-a-select-element）——size 属性非负
+  // 整数解析成功即其值；缺失/失败回落 4（multiple）/1。
+  function _zwSelectDisplaySize(sel, handle) {
+    var sv = null;
+    try {
+      sv = handle ? __zw_get_attr_handle(handle, 'size')
+        : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'size') : __zw_get_attr(sel, 'size'));
+    } catch (_eS) { sv = null; }
+    if (sv != null) {
+      var m = String(sv).match(/^[ \t\n\f\r]*([0-9]+)[ \t\n\f\r]*$/);
+      if (m) return parseInt(m[1], 10);
+    }
+    return _zwSelectIsMultiple(sel, handle) ? 4 : 1;
+  }
+
+  // option 最近祖先 select（含自身；spec cached nearest ancestor select 的活链等价）。
+  function _zwOptNearestSelect(oSel, oHnd) {
+    try {
+      if (oSel == null && oHnd == null) return null;
+      if (_zwIsSelectTag(oSel, oHnd)) return { sel: oSel, hnd: oHnd };
+      var cur = _makeProxy(oSel, oHnd);
+      for (var g = 0; g < 64 && cur; g++) {
+        cur = cur.parentNode;
+        if (!cur || cur.nodeType !== 1) return null;
+        if (_zwIsSelectTag(cur.__zwSelector, cur.__zwHandle)) {
+          return { sel: cur.__zwSelector, hnd: cur.__zwHandle };
+        }
+      }
+    } catch (_eN) {}
+    return null;
+  }
+
+  // selectedness setting algorithm（HTML §4.10.7）——非 multiple：多选中**最后者胜**
+  //（前者 selectedness 显式落 false）；全不选且 display size 1 → 首个非 disabled
+  // option selectedness=true（fallback）。返回 hasChanged。
+  // affKey：本轮**受影响 option**（selected setter 目标 / selected 属性变更步目标 /
+  // 新插入 option）——true 时绝对胜出（其余 true 一律清、自身保留）；读出 false 时
+  // 按普通列表序走查 + 回落（`o.selected = false` 后 spec 要求回落仍生效）。spec 走查
+  // 只给出列表序互斥，但 Chromium 对 setter/属性/插入面一致按受影响者胜（WPT
+  // select-ask-for-reset 反向循环与属性面 tiebreak 实测 010），按浏览器行为实现。
+  function _zwSelectednessSetting(sel, handle, affKey) {
+    var list = _zwListOfOptions(sel, handle);
+    if (_zwSelectIsMultiple(sel, handle)) return false;
+    var last = null, firstEnabled = null;
+    var changed = false;
+    var affTrue = false;
+    for (var i = 0; i < list.length; i++) {
+      var o = list[i];
+      if (!o) continue;
+      var ok = _zwOptKey(o.__zwSelector, o.__zwHandle);
+      if (_zwOptSelState(o.__zwSelector, o.__zwHandle, ok)) {
+        if (affTrue) {
+          // affected 已在列表序更早处胜出——其余 true 一律清。
+          _zwOptWriteSelState(o, false);
+          changed = true;
+        } else if (affKey != null && ok === affKey) {
+          // affected 自身 true——保留；last 保持既有 true 供走查后补清。
+          affTrue = true;
+        } else if (last != null) {
+          _zwOptWriteSelState(last, false);
+          changed = true;
+          last = o;
+        } else {
+          last = o;
+        }
+      }
+      if (firstEnabled == null && !_zwOptIsDisabled(o.__zwSelector, o.__zwHandle)) {
+        firstEnabled = o;
+      }
+    }
+    if (affTrue && last != null && _zwOptKey(last.__zwSelector, last.__zwHandle) !== affKey) {
+      // affected 在列表序上晚于既有 true——走查途中 last（受影响前唯一存活 true）未被清，
+      // 此处补清（受影响者绝对胜出）。
+      _zwOptWriteSelState(last, false);
+      changed = true;
+    }
+    if (last == null && !affTrue && firstEnabled != null && _zwSelectDisplaySize(sel, handle) === 1) {
+      _zwOptWriteSelState(firstEnabled, true);
+      changed = true;
+    }
+    return changed;
+  }
+
+  // ask for a reset given option（HTML §4.10.7）——最近祖先 select 上跑
+  // selectedness setting algorithm；affKey 透传（受影响 option 绝对胜出）。
+  function _zwAskForReset(oSel, oHnd, affKey) {
+    var s = _zwOptNearestSelect(oSel, oHnd);
+    if (s) _zwSelectednessSetting(s.sel, s.hnd, affKey);
+  }
+
+  // childList 汇流触发（part01 `_mo_notify` 钩）——OPTION/OPTGROUP 子树增删时在受影响
+  // select 上跑 selectedness setting（spec option insertion steps 的树级等价；移除面
+  // 从**父容器**侧找 select——节点已摘链）。其余 tag 零开销跳过。
+  function _zwSelectResetOnMutation(pSel, pHnd, added, removed) {
+    var i, n, t, s;
+    var _ranSetting = false;
+    if (removed) {
+      for (i = 0; i < removed.length; i++) {
+        n = removed[i];
+        if (!n || n.nodeType !== 1) continue;
+        t = null;
+        try { t = _realTag(n.__zwSelector, n.__zwHandle); } catch (_eR) { t = null; }
+        if (t === 'OPTION' || t === 'OPTGROUP') {
+          s = _zwOptNearestSelect(pSel, pHnd);
+          if (s) _zwSelectednessSetting(s.sel, s.hnd);
+          return;
+        }
+      }
+    }
+    if (added) {
+      for (i = 0; i < added.length; i++) {
+        n = added[i];
+        if (!n || n.nodeType !== 1) continue;
+        t = null;
+        try { t = _realTag(n.__zwSelector, n.__zwHandle); } catch (_eA) { t = null; }
+        if (t === 'OPTION' || t === 'OPTGROUP') {
+          // spec：insertion steps 对批内每个 option **依序**各跑一次 ask for a reset
+          //（批 append(first, second) 时 affected=second——取首项曾令脚本批插
+          // selected 属性 option 的胜出面被 re-fallback 清掉，R3909 回归根因）。
+          s = _zwOptNearestSelect(n.__zwSelector, n.__zwHandle);
+          if (s) {
+            // Blink 行为（Chromium 实测 + WPT select-validity「Remove and add back
+            // the placeholder label option」案）：非 multiple + display size 1 且新插
+            // OPTION 为 list **新首项**、当前无 dirty-selected 时，clean 层回落态
+            // 让位（非用户态）——回落重选新首项。dirty-selected 保持（Chromium V1
+            // 实测 idx 不变）。
+            var _insReFallback = false;
+            var _affK = t === 'OPTION' ? _zwOptKey(n.__zwSelector, n.__zwHandle) : undefined;
+            if (t === 'OPTION' && !_zwSelectIsMultiple(s.sel, s.hnd)
+                && _zwSelectDisplaySize(s.sel, s.hnd) === 1) {
+              var _insList = _zwListOfOptions(s.sel, s.hnd);
+              if (_insList.length && _insList[0]
+                  && _zwOptKey(_insList[0].__zwSelector, _insList[0].__zwHandle) === _affK) {
+                var _insDirty = false;
+                for (var _idi = 0; _idi < _insList.length; _idi++) {
+                  var _ido = _insList[_idi];
+                  if (!_ido) continue;
+                  if (_zwOptDirtySelected(_zwOptKey(_ido.__zwSelector, _ido.__zwHandle))) { _insDirty = true; break; }
+                }
+                if (!_insDirty) {
+                  for (var _idc = 0; _idc < _insList.length; _idc++) {
+                    var _ico = _insList[_idc];
+                    if (!_ico) continue;
+                    var _ick = _zwOptKey(_ico.__zwSelector, _ico.__zwHandle);
+                    // 只清 **clean 层**回落真态；selected 内容属性背书的 true 不可在此清——
+                    // 批插入（append(first, second)）按序模拟时后续兄弟的 insertion steps
+                    // 尚未跑，其属性态须留给下方 setting 走查按 affected/列表序裁定
+                    //（清掉曾致 second 在自身步骤读 false，script-mutation「removing
+                    // selected attribute」precondition 1F）。
+                    if (!_zwOptDirtySelected(_ick) && _zwOptSelState(_ico.__zwSelector, _ico.__zwHandle, _ick)
+                        && !_zwOptHasAttr(_ico.__zwSelector, _ico.__zwHandle, 'selected')) {
+                      _zwOptWriteSelState(_ico, false);
+                    }
+                  }
+                  _insReFallback = true;
+                }
+              }
+            }
+            // 新插入 OPTION 自身即受影响者（带 selected 属性/显式态时绝对胜出，
+            // WPT ask-for-reset「insert selected option, should remain selected」）；
+            // OPTGROUP 子树插入无单一受影响 option → 普通列表序走查。
+            _zwSelectednessSetting(s.sel, s.hnd, _insReFallback ? undefined : _affK);
+            _ranSetting = true;
+          }
+        }
+      }
+    }
+    // R3909 追加：容器本身是 SELECT 且本条记录未经上方逐点路径（innerHTML= 直写
+    // select 子树——解析产物为 _zwMEl 包装、无 handle/selector，tag 探测全落空）。
+    // 整体替换 = 旧子移除步 + 新子插入步的合流，容器上跑一次无 affected 的 setting
+    //（selected 属性多真态按列表序 last-wins 归一，WPT inserted-or-removed
+    // 「Inserted by innerHTML」断言面）。
+    if (!_ranSetting && (added || removed) && _zwIsSelectTag(pSel, pHnd)) {
+      _zwSelectednessSetting(pSel, pHnd);
+    }
+  }
+
+  // selected 内容属性变更步（HTML §4.10.9 the-option-element「Whenever an option
+  // element's selected attribute is added or removed」）——dirtiness false 时
+  // selectedness 跟随属性增删，翻转即重置所属 select。分两半由属性写入调用点驱动：
+  // Pre 在写入**前**取快照，Post 在写入后消费（dirty → 步骤无效果）。
+  function _zwOptSelAttrPre(oSel, oHnd) {
+    try {
+      if (_realTag(oSel, oHnd) !== 'OPTION') return null;
+      var k = _zwOptKey(oSel, oHnd);
+      if (typeof _optSelectedDirty === 'object' && _optSelectedDirty
+          && Object.prototype.hasOwnProperty.call(_optSelectedDirty, k)) return null;
+      return { k: k, sel: _zwOptSelState(oSel, oHnd, k), attr: _zwOptHasAttr(oSel, oHnd, 'selected') };
+    } catch (_ePre) { return null; }
+  }
+  function _zwOptSelAttrPost(snap, oSel, oHnd) {
+    if (!snap) return;
+    try {
+      var nowAttr = _zwOptHasAttr(oSel, oHnd, 'selected');
+      var changed = false;
+      if (nowAttr && !snap.attr && !snap.sel) { _optSelectedClean[snap.k] = true; changed = true; }
+      else if (!nowAttr && snap.attr && snap.sel) { _optSelectedClean[snap.k] = false; changed = true; }
+      else { delete _optSelectedClean[snap.k]; }
+      if (changed) {
+        var s = _zwOptNearestSelect(oSel, oHnd);
+        if (s) _zwSelectednessSetting(s.sel, s.hnd, snap.k);
+      }
+    } catch (_ePost) {}
+  }
+
+  // 显式态判定：list 内任一 option 带 dirty/clean 键 → 有脚本态（读取侧**不再**做
+  // 解析面回落——selectedIndex=-1 置全员显式 false 后必须读出 -1，spec 明示 setter
+  // 不触发 selectedness setting、可全不选）。
+  function _zwOptAnyDirty(list) {
+    for (var i = 0; i < list.length; i++) {
+      var o = list[i];
+      if (!o) continue;
+      var k = _zwOptKey(o.__zwSelector, o.__zwHandle);
+      if (typeof _optSelectedDirty === 'object' && _optSelectedDirty
+          && Object.prototype.hasOwnProperty.call(_optSelectedDirty, k)) return true;
+      if (typeof _optSelectedClean === 'object' && _optSelectedClean
+          && Object.prototype.hasOwnProperty.call(_optSelectedClean, k)) return true;
+    }
+    return false;
+  }
+
+  // selectedness 显式写（HTML §4.10.7 各算法只改 selectedness、**不**置 dirtiness
+  // ——仅 IDL 面 setter 置 dirty。已脏 option 落 dirty 层；否则落 clean 层，dirtiness
+  // 保持 false，selected 属性增删步仍生效）。
+  function _zwOptWriteSelState(o, v) {
+    var k = _zwOptKey(o.__zwSelector, o.__zwHandle);
+    if (typeof _optSelectedDirty === 'object' && _optSelectedDirty
+        && Object.prototype.hasOwnProperty.call(_optSelectedDirty, k)) {
+      _optSelectedDirty[k] = v === true;
+    } else {
+      _optSelectedClean[k] = v === true;
+    }
+  }
+
+  // set the selected index（HTML §4.10.7「To set the selected index of a select
+  // element」）——全员 selectedness=false，index 命中者 selectedness=true +
+  // dirtiness=true（命中者恒落 dirty 层）。**不**跑 selectedness setting（spec 明示
+  // setter 可全不选——-1/越界面 selectedIndex 读 -1、value 读 ''）。
+  // HTMLSelectElement 与 HTMLOptionsCollection 的 selectedIndex setter 共用。
+  function _zwSetSelectSelectedIndex(sel, handle, value) {
+    var list = _zwListOfOptions(sel, handle);
+    var n = Math.trunc(Number(value));
+    if (isNaN(n)) n = 0; // WebIDL long：NaN/±0 → 0
+    for (var i = 0; i < list.length; i++) {
+      var o = list[i];
+      if (!o) continue;
+      if (i === n) {
+        _optSelectedDirty[_zwOptKey(o.__zwSelector, o.__zwHandle)] = true;
+      } else {
+        _zwOptWriteSelState(o, false);
+      }
+    }
+  }
+
   // selectedness 读取侧归一视图（HTML §4.10.7 selectedness——非 multiple：多选中
-  // **最后者胜**（WPT invalid-select 断言面）；无选中回落 list 首项——解析归一
-  // （placeholder/first-option）的读取侧镜像，host `__zw_select_value` 同语义）。
+  // **最后者胜**（WPT invalid-select 断言面）；无选中回落首个**非 disabled** option
+  //——解析归一（placeholder/first-option）的读取侧镜像，host `__zw_select_value` 同
+  // 语义。R3909：回落仅限 **pristine**（list 无 dirty 键）——脚本显式置空（如
+  // selectedIndex=-1，spec 不触发 selectedness setting）后必须读出全不选；回落跳
+  // disabled（selected-index「get disabled」期望 1）。
   function _zwSelectSelectedView(sel, handle) {
     var _svList = _zwListOfOptions(sel, handle);
     var _svHits = [];
@@ -15640,7 +16015,13 @@ return e;
     }
     if (_zwSelectIsMultiple(sel, handle)) return _svHits;
     if (_svHits.length > 1) return [_svHits[_svHits.length - 1]];
-    if (_svHits.length === 0 && _svList.length) return [_svList[0]];
+    if (_svHits.length === 0 && _svList.length && !_zwOptAnyDirty(_svList)
+        && _zwSelectDisplaySize(sel, handle) === 1) {
+      for (var _svf = 0; _svf < _svList.length; _svf++) {
+        if (!_zwOptIsDisabled(_svList[_svf].__zwSelector, _svList[_svf].__zwHandle)) return [_svList[_svf]];
+      }
+      return [];
+    }
     return _svHits;
   }
 
@@ -15703,6 +16084,16 @@ return e;
         if (prop === 'add') {
           return function (element, before) {
             if (before === element) return;
+            // R3909：HierarchyRequestError 祖先检查（spec HTMLOptionsCollection add
+            // 步 1——element 是 select 祖先即抛；select-add 断言面）。
+            var _ocAnc = _makeProxy(sel, handle);
+            for (var _ocAi = 0; _ocAi < 64 && _ocAnc; _ocAi++) {
+              if (_ocAnc === element) {
+                _throwDom('HierarchyRequestError',
+                  'The element to be added is an ancestor of the select element.');
+              }
+              _ocAnc = _ocAnc.parentNode;
+            }
             var _pxA = _makeProxy(sel, handle);
             var _lA = _ocList();
             var _refEl = null;
@@ -15733,19 +16124,33 @@ return e;
           };
         }
         if (prop === 'selectedIndex') {
-          if (!handle && sel && typeof __zw_select_index === 'function') {
-            try { return parseInt(__zw_select_index(sel), 10); } catch (_e) {}
+          // R3909：与 select.selectedIndex getter 同口径 JS 真态计算（宿主读短路移除
+          // ——`.selected=`/索引 setter 的脚本态在 JS dirty 层）。HTMLOptionsCollection
+          // selectedIndex 读委托 select 同语义（HTML common-dom-interfaces）。
+          var _svFirst = -1, _svLast = -1;
+          for (var _oi2 = 0; _oi2 < _ol.length; _oi2++) {
+            var _oi2o = _ol[_oi2];
+            if (_oi2o && _oi2o.selected === true) {
+              if (_svFirst < 0) _svFirst = _oi2;
+              _svLast = _oi2;
+            }
           }
-          var _svIdx = _zwSelectSelectedView(sel, handle);
-          if (_svIdx.length) {
-            for (var _oi2 = 0; _oi2 < _ol.length; _oi2++) { if (_ol[_oi2] === _svIdx[0]) return _oi2; }
+          if (_zwSelectIsMultiple(sel, handle)) {
+            if (_svFirst >= 0) return _svFirst;
+            return -1;
+          }
+          if (_svLast >= 0) return _svLast;
+          if (_ol.length && !_zwOptAnyDirty(_ol) && _zwSelectDisplaySize(sel, handle) === 1) {
+            for (var _oi3 = 0; _oi3 < _ol.length; _oi3++) {
+              if (!_zwOptIsDisabled(_ol[_oi3].__zwSelector, _ol[_oi3].__zwHandle)) return _oi3;
+            }
           }
           return -1;
         }
         if (prop === 'value') {
-          if (!handle && sel && typeof __zw_select_value === 'function') {
-            try { return __zw_select_value(sel); } catch (_e) { return ''; }
-          }
+          // R3909：宿主 `__zw_select_value` 读短路移除——双形态统一 JS 真态（同
+          // selectedIndex getter 理由；`__zw_option_selected` 默认层已含宿主
+          // SelectOption 编程选中态）。视图无选中且非 pristine → ''（-1 面）。
           var _svVal = _zwSelectSelectedView(sel, handle);
           return _svVal.length ? _zwOptionValue(_svVal[0]) : '';
         }
@@ -15753,12 +16158,22 @@ return e;
           var _n3 = Number(prop);
           return _n3 < _ol.length ? _ol[_n3] : undefined;
         }
+        // 对象原型面方法兜底（runner assert_array_equals 读 `actual.hasOwnProperty`；
+        // this 绑代理，[[GetOwnProperty]] 经 gOPD 陷阱回答 length/规范索引）。
+        var _ocP = Object.prototype[prop];
+        if (typeof _ocP === 'function') return _ocP;
         return undefined;
       },
       set: function (_t, prop, value) {
         if (typeof prop !== 'string') return true;
         var _px2 = _makeProxy(sel, handle);
         var _sl = _ocList();
+        // R3909：`options.selectedIndex = n` 委托 select 同语义 setter（HTML
+        // common-dom-interfaces——HTMLOptionsCollection selectedIndex 反射 select）。
+        if (prop === 'selectedIndex') {
+          _zwSetSelectSelectedIndex(sel, handle, value);
+          return true;
+        }
         if (prop === 'length') {
           var _nl = _zwToUint32(value);
           if (_nl < _sl.length) {
@@ -15808,6 +16223,31 @@ return e;
           return true;
         }
         return true;
+      },
+      // R3909：`in` 判定 + own 属性探测（assert_array_equals 对 select.options 的
+      // `"length" in actual` / `actual.hasOwnProperty(i)` 调用面——select-remove
+      // 「options.remove(n)」断言路径；trap 语义与 selectedOptions 同款，gOPD 报
+      // configurable:true 防 proxy invariant TypeError）。
+      has: function (_t, prop) {
+        if (prop === 'length') return true;
+        if (typeof prop === 'string' && _zwIsCanonicalIndex(prop)) {
+          return Number(prop) < _ocList().length;
+        }
+        return Reflect.has(_t, prop);
+      },
+      getOwnPropertyDescriptor: function (_t, prop) {
+        var _ocl9 = _ocList();
+        if (prop === 'length') {
+          return { value: _ocl9.length, enumerable: true, configurable: true, writable: true };
+        }
+        if (typeof prop === 'string' && _zwIsCanonicalIndex(prop)) {
+          var _n9 = Number(prop);
+          if (_n9 < _ocl9.length) {
+            return { value: _ocl9[_n9], enumerable: true, configurable: true, writable: true };
+          }
+          return undefined;
+        }
+        return Reflect.getOwnPropertyDescriptor(_t, prop);
       }
     });
     _zwOptionsCollCache.set(_px, _ocColl);
@@ -16760,12 +17200,8 @@ return e;
         }
         if (prop === 'value') {
           // P1a select：<select>.value = 选中 option 的 value（HTML spec 语义，非 value 属性）。
-          // selected 会随 host 设值变化，故不缓存（每次查 host 反映最新 dom_html）。
-          if (!handle && sel && typeof __zw_select_value === 'function' && _isTag(sel, 'SELECT')) {
-            try { return __zw_select_value(sel); } catch (_e) { return ''; }
-          }
-          // R3908：handle 形 select.value——归一选中视图首项的 option value
-          //（R3907 `_zwOptionValue` 同口径；无选中回落 list 首项镜像 host 语义）。
+          // R3909：双形态统一 JS 真态视图（宿主读短路移除，理由同 selectedIndex getter；
+          // 视图回落含 pristine 非 disabled 镜像——无选中且有脚本态 → ''）。
           if (_zwIsSelectTag(sel, handle)) {
             var _hvSel = _zwSelectSelectedView(sel, handle);
             return _hvSel.length ? _zwOptionValue(_hvSel[0]) : '';
@@ -17231,16 +17667,35 @@ return e;
           return false;
         }
         if (prop === 'selectedIndex') {
-          // P1a select：选中 option 的索引（host `__zw_select_index`）。非 select → -1。
-          if (!handle && sel && typeof __zw_select_index === 'function' && _isTag(sel, 'SELECT')) {
-            try { return parseInt(__zw_select_index(sel), 10); } catch (_e) {}
-          }
-          // R3908：handle 形（createElement select）——归一选中视图首项在 list 的索引。
+          // P1a select：选中 option 的索引。非 select → -1。
+          // R3909：sel/handle 双形态统一走 JS 真态计算（R3908b 起 `.selected=`/索引
+          // setter 的 selectedness 在 JS dirty 层——宿主 `__zw_select_index` 只见属性/
+          // SelectOption 面，sel 形先前短路致脚本态不可见，selected-index「set and
+          // reset」等 7F 根因）。口径：最后选中者索引；无选中且 pristine → 首个非
+          // disabled（视图回落镜像）；有脚本态全不选（selectedIndex=-1）→ -1。
           if (_zwIsSelectTag(sel, handle)) {
             var _siList = _zwListOfOptions(sel, handle);
-            var _siSel = _zwSelectSelectedView(sel, handle);
-            if (_siSel.length && _siSel[0]) {
-              for (var _sii = 0; _sii < _siList.length; _sii++) { if (_siList[_sii] === _siSel[0]) return _sii; }
+            var _siFirst = -1, _siLast = -1;
+            for (var _sii = 0; _sii < _siList.length; _sii++) {
+              var _siO = _siList[_sii];
+              if (_siO && _siO.selected === true) {
+                if (_siFirst < 0) _siFirst = _sii;
+                _siLast = _sii;
+              }
+            }
+            // multiple → 首个选中（spec selected index 语义）；非 multiple 真态互斥
+            //（最后者胜）→ 取最后命中。无选中：pristine 且 display size 1 → 首个非
+            // disabled 回落（spec 解析面 fallback；size>1 无回落 → -1）。
+            if (_zwSelectIsMultiple(sel, handle)) {
+              if (_siFirst >= 0) return _siFirst;
+              return -1;
+            }
+            if (_siLast >= 0) return _siLast;
+            if (_siList.length && !_zwOptAnyDirty(_siList)
+                && _zwSelectDisplaySize(sel, handle) === 1) {
+              for (var _sij = 0; _sij < _siList.length; _sij++) {
+                if (!_zwOptIsDisabled(_siList[_sij].__zwSelector, _siList[_sij].__zwHandle)) return _sij;
+              }
             }
             return -1;
           }
@@ -17258,6 +17713,12 @@ return e;
           if (typeof _optSelectedDirty === 'object' && _optSelectedDirty
               && Object.prototype.hasOwnProperty.call(_optSelectedDirty, key)) {
             return _optSelectedDirty[key] === true;
+          }
+          // R3909：构造器显式初始 selectedness 层（dirtiness false——Option() ≤3 参恒
+          // false、第 4 参落真值；属性增删步仍生效，见 part02 构造器 + attr 钩）。
+          if (typeof _optSelectedClean === 'object' && _optSelectedClean
+              && Object.prototype.hasOwnProperty.call(_optSelectedClean, key)) {
+            return _optSelectedClean[key] === true;
           }
           if (handle && typeof __zw_has_attr_handle === 'function') {
             try { return __zw_has_attr_handle(handle, 'selected') === '1'; } catch (_e) {}
@@ -17297,16 +17758,32 @@ return e;
           return _zwListOfOptions(sel, handle)[Number(prop)];
         }
         // `select.add(element, before?)`（HTMLOptionsCollection，R2832）——追加 option（或插 before 前）。
-        // 仅 SELECT（_realTag gate）；与 `new Option()` 配对做动态下拉填充。appendChild / insertBefore 复用。
-        if (prop === 'add' && _realTag(sel, handle) === 'SELECT') {
+        // 仅 SELECT（_zwIsSelectTag gate）；与 `new Option()` 配对做动态下拉填充。
+        // R3909：走**元素代理** appendChild/insertBefore（旧裸 `__zw_append_child` wire 对
+        // sel 父 + handle 子形态不进 `_zwListOfOptions` 融合视图——select-add「add option
+        // element」options[0] undefined 根因）；并前置 HierarchyRequestError 祖先检查
+        //（spec HTMLOptionsCollection add 步 1——element 是 select 祖先即抛，select-add
+        // 「option 祖先包住 select」案）。
+        if (prop === 'add' && _zwIsSelectTag(sel, handle)) {
           return function (element, before) {
-            if (!element || !element.__zwHandle) return undefined;
+            // sel 形（解析面，无 handle）同样受理——WPT select-add 祖先 option 为解析面
+            // 代理，`!__zwHandle` 早退会静默吞掉 HierarchyRequestError。
+            if (!element || (element.__zwHandle == null && !element.__zwSelector)) return undefined;
+            var _ad9Anc = _makeProxy(sel, handle);
+            for (var _ad9i = 0; _ad9i < 64 && _ad9Anc; _ad9i++) {
+              if (_ad9Anc === element) {
+                _throwDom('HierarchyRequestError',
+                  'The element to be added is an ancestor of the select element.');
+              }
+              _ad9Anc = _ad9Anc.parentNode;
+            }
+            var _ad9Px = _makeProxy(sel, handle);
             if (before == null) {
-              if (handle) __zw_append_child_handle(handle, element.__zwHandle);
-              else __zw_append_child(sel, element.__zwHandle);
-            } else if (before.__zwSelector) {
-              if (handle) __zw_insert_before_handle(handle, element.__zwHandle, before.__zwSelector);
-              else __zw_insert_before(sel, element.__zwHandle, before.__zwSelector);
+              _ad9Px.appendChild(element);
+            } else if (before && (before.__zwSelector || before.__zwHandle)) {
+              try { _ad9Px.insertBefore(element, before); } catch (_eAd9) {
+                _ad9Px.appendChild(element);
+              }
             }
             return undefined;
           };
