@@ -4,7 +4,10 @@
 
 - 通道不变：`make testharness-dnd`（test-guard 包裹，语料 pin
   315976933870b34d6ea30e3f6643403edae678ba）。
-- 原始账本：[run1（终版）](2026-10-18-m3-s5-semantics-run1.txt)。
+- 原始账本：[run1（终版）](2026-10-18-m3-s5-semantics-run1.txt)；
+  [run2（rebase 后 HEAD 复验）](2026-10-18-m3-s5-semantics-run2-postrebase.txt)
+  ——s5 提交 rebase 到上游 df5037d91/fb25efeb5 之上后复跑，437P/4F/5T 逐项一致
+  （上游 paint/selectedness 两提交对本语料零影响）。
 - 上轮基线：s4 账本 446 subtest 412P/29F/5T
   （[M3-s4](2026-10-18-m3-pipeline-corpus.md)）。
 
