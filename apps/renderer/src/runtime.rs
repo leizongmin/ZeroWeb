@@ -33,13 +33,13 @@ use zero_engine::{
 };
 use zero_protocol::IpcChannel;
 use zero_protocol::message::{
-    DispatchDomEventParams, DispatchDomEventResultParams, FetchParams, FetchResponseParams, FocusChangeInfo,
-    FramePublishMode, HitTestElementResultParams, HitTestLinkParams, HitTestLinkResultParams, ImeEventParams,
-    ImeEventType, IndexedDbConnectionEventAckParams, IndexedDbConnectionEventParams, IpcColorScheme, IpcMediaType,
-    IpcMessage, IpcMessageKind, IpcPrintOrientation, KeyboardEventParams, LoadHtmlParams, MouseEventParams,
-    NavigateParams, NavigationCommittedParams, NavigationStartedParams, ScrollEventParams,
-    ServiceWorkerHostCommandParams, SetColorSchemeParams, SetMediaTypeParams, SetPrintPageSetupParams,
-    SetViewportParams, StorageOpParams, TabNavigateRequestParams,
+    DispatchDomEventParams, DispatchDomEventResultParams, DragInputParams, DragInputPhase, DragInputResultParams,
+    FetchParams, FetchResponseParams, FocusChangeInfo, FramePublishMode, HitTestElementResultParams, HitTestLinkParams,
+    HitTestLinkResultParams, ImeEventParams, ImeEventType, IndexedDbConnectionEventAckParams,
+    IndexedDbConnectionEventParams, IpcColorScheme, IpcMediaType, IpcMessage, IpcMessageKind, IpcPrintOrientation,
+    KeyboardEventParams, LoadHtmlParams, MouseEventParams, NavigateParams, NavigationCommittedParams,
+    NavigationStartedParams, ScrollEventParams, ServiceWorkerHostCommandParams, SetColorSchemeParams,
+    SetMediaTypeParams, SetPrintPageSetupParams, SetViewportParams, StorageOpParams, TabNavigateRequestParams,
 };
 use zero_protocol::transport::PipeTransport;
 use zero_protocol::{ProcessRole, is_disconnected_channel_message};
@@ -2914,6 +2914,30 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         self.send_with_id(msg_id, IpcMessageKind::HitTestElementResult(result))
     }
 
+    /// 拖放输入（dnd-compat M3）：委托 zero-webview 拖放会话状态机（命中仲裁、drag* 事件序、
+    /// 取消判定同 `apply_drag_input` 单入口），回执 `consumed`/`prevented` 供浏览器仲裁。
+    fn handle_drag_input(&mut self, msg_id: u64, params: DragInputParams) -> Result<(), String> {
+        let phase = match params.phase {
+            DragInputPhase::Down => zero_webview::DragPointerPhase::Down,
+            DragInputPhase::Move => zero_webview::DragPointerPhase::Move,
+            DragInputPhase::Up => zero_webview::DragPointerPhase::Up,
+            DragInputPhase::Cancel => zero_webview::DragPointerPhase::Cancel,
+        };
+        let report = self
+            .webview
+            .as_mut()
+            .expect("webview")
+            .apply_drag_input(phase, params.x, params.y)
+            .map_err(|error| error.to_string())?;
+        self.send_with_id(
+            msg_id,
+            IpcMessageKind::DragInputResult(DragInputResultParams {
+                consumed: report.consumed,
+                prevented: report.prevented,
+            }),
+        )
+    }
+
     fn handle_dispatch_dom_event(&mut self, msg_id: u64, params: DispatchDomEventParams) -> Result<(), String> {
         let event_type = params.event_type.clone();
         let key = params.key.clone();
@@ -3329,6 +3353,9 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             IpcMessageKind::DispatchDomEvent(params) => {
                 self.run_frame_transaction(|runtime| runtime.handle_dispatch_dom_event(msg.id, params))
             }
+            IpcMessageKind::DragInput(params) => {
+                self.run_frame_transaction(|runtime| runtime.handle_drag_input(msg.id, params))
+            }
             IpcMessageKind::AutomationRequest(request) => {
                 self.run_frame_transaction(|runtime| runtime.handle_automation_request(msg.id, request))
             }
@@ -3361,6 +3388,7 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             | IpcMessageKind::HitTestElementResult(_)
             | IpcMessageKind::HitTestImageResult(_)
             | IpcMessageKind::DispatchDomEventResult(_)
+            | IpcMessageKind::DragInputResult(_)
             | IpcMessageKind::FocusOwnerChanged(_)
             | IpcMessageKind::AutomationResponse(_)
             | IpcMessageKind::IndexedDbRequest(_)

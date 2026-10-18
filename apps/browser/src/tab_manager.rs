@@ -6,8 +6,8 @@ use std::time::{Duration, Instant};
 use zero_browser_shell::TabId;
 use zero_engine::{DomEventDetail, MediaType, PrefersColorSchemeValue, selector_from_element_hit};
 use zero_protocol::message::{
-    AutomationOperation, AutomationResult, AutomationValue, DispatchDomEventParams, ImeEventParams,
-    TabNavigateRequestParams,
+    AutomationOperation, AutomationResult, AutomationValue, DispatchDomEventParams, DragInputParams, DragInputPhase,
+    ImeEventParams, TabNavigateRequestParams,
 };
 use zero_render_foundation::image_cache::ImageCache;
 
@@ -68,6 +68,8 @@ pub struct TabManager {
     event_targets: HashMap<TabId, String>,
     /// primary press 时捕获的稳定页面目标；release/click 不重新命中其他节点。
     pressed_targets: HashMap<TabId, zero_page_runtime::PageTarget>,
+    /// 武装中的拖放会话（dnd-compat M3）：Tab → 武装点文档坐标，供取消步复用。
+    drag_sessions: HashMap<TabId, (f32, f32)>,
     /// 焦点位于可编辑文本控件（input 文本类 / textarea）的 Tab（R3254-H1 回执维护；
     /// 滚动默认动作守卫，覆盖 Tab 导航/JS auto-focus 等无 ime_rect 的场景）。
     focused_text_input: HashSet<TabId>,
@@ -112,6 +114,7 @@ impl TabManager {
             javascript_enabled: true,
             event_targets: HashMap::new(),
             pressed_targets: HashMap::new(),
+            drag_sessions: HashMap::new(),
             focused_text_input: HashSet::new(),
             ime_target_rects: HashMap::new(),
             pending_dispatch: HashMap::new(),
@@ -831,8 +834,10 @@ impl TabManager {
         );
     }
 
-    /// 处理页面按下：异步派发 mousedown。
-    pub fn dispatch_page_mousedown(&mut self, tab_id: TabId, doc_x: f32, doc_y: f32) {
+    /// 处理页面按下：异步派发 mousedown；命中可拖元素（`drag_source_eligible`）时武装
+    /// 拖放会话并下发 `DragInput{Down}`（dnd-compat M3，仅多进程 peer 通道——worker 通道
+    /// 由 WPT runner 注入承担）。返回是否武装（宿主据此抑制 scroll-drag 手势创建）。
+    pub fn dispatch_page_mousedown(&mut self, tab_id: TabId, doc_x: f32, doc_y: f32) -> bool {
         if let Some(hit) = self.hit_test_element(tab_id, doc_x, doc_y) {
             let selector = selector_from_element_hit(&hit);
             if let Some(target) = self.page_target_for_hit(tab_id, &hit) {
@@ -853,11 +858,63 @@ impl TabManager {
                 selection.map(|offset| (offset, offset)),
                 None,
             );
+            let armed = hit.drag_source_eligible && self.process_backend.is_some();
+            if armed {
+                self.drag_sessions.insert(tab_id, (doc_x, doc_y));
+                self.send_drag_input(tab_id, DragInputPhase::Down, doc_x, doc_y);
+            } else {
+                self.drag_sessions.remove(&tab_id);
+            }
+            armed
         } else {
             self.pressed_targets.remove(&tab_id);
+            self.drag_sessions.remove(&tab_id);
             // https://w3c.github.io/uievents/#event-type-mousedown
             // 与 click 一致：命中缓存缺失不能阻断真实的页面指针事件。
             self.dispatch_dom_event_async(tab_id, None, doc_x, doc_y, "mousedown", None, false, None, None);
+            false
+        }
+    }
+
+    /// 转发拖放会话的 mousemove（仅武装会话有 IPC 代价；dnd-compat M3）。
+    pub fn dispatch_page_mousemove(&mut self, tab_id: TabId, doc_x: f32, doc_y: f32) {
+        if self.drag_sessions.contains_key(&tab_id) {
+            self.send_drag_input(tab_id, DragInputPhase::Move, doc_x, doc_y);
+        }
+    }
+
+    /// 结束拖放会话（mouseup）：武装中则转发 `DragInput{Up}` 并清除标记，返回是否有会话
+    /// （宿主据此抑制 click 合成——被消费的拖放手势不再触发激活）。
+    pub fn finish_page_drag(&mut self, tab_id: TabId, doc_x: f32, doc_y: f32) -> bool {
+        if self.drag_sessions.remove(&tab_id).is_some() {
+            self.send_drag_input(tab_id, DragInputPhase::Up, doc_x, doc_y);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Esc 取消拖放会话（优先于 chrome 快捷键路由）；返回是否取消了会话。
+    /// 坐标取武装点（取消步的 dragleave/dragend 事件面用最后已知位置）。
+    pub fn cancel_page_drag(&mut self, tab_id: TabId) -> bool {
+        if let Some((x, y)) = self.drag_sessions.remove(&tab_id) {
+            self.send_drag_input(tab_id, DragInputPhase::Cancel, x, y);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// 拖放会话是否武装中（mousemove 转发与文本选区抑制的门）。
+    pub fn page_drag_active(&self, tab_id: TabId) -> bool {
+        self.drag_sessions.contains_key(&tab_id)
+    }
+
+    fn send_drag_input(&mut self, tab_id: TabId, phase: DragInputPhase, x: f32, y: f32) {
+        if let Some(ref mut backend) = self.process_backend {
+            let message_id = self.next_dispatch_id;
+            self.next_dispatch_id += 1;
+            backend.dispatch_drag_input_fire_and_forget(tab_id, message_id, DragInputParams { phase, x, y });
         }
     }
 

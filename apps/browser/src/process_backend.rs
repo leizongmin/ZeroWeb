@@ -12,13 +12,13 @@ use zero_browser_shell::TabId;
 use zero_engine::{IndexedDbHandler, PrefersColorSchemeValue};
 use zero_protocol::ProtocolError;
 use zero_protocol::message::{
-    AutomationOperation, AutomationRequest, AutomationResponse, DispatchDomEventParams, FetchParams, FocusChangeInfo,
-    FramePublishMode, ImeEventParams, IndexedDbConnectionEventAckParams, IndexedDbConnectionEventParams,
-    IndexedDbRequestParams, IndexedDbResponseParams, IpcColorScheme, IpcMediaType, IpcMessage, IpcMessageKind,
-    IpcPrintOrientation, LoadHtmlParams, NavigationCommittedParams, NavigationStartedParams, ScrollEventParams,
-    ServiceWorkerOperation, ServiceWorkerRequestParams, SetColorSchemeParams, SetMediaTypeParams,
-    SetPrintPageSetupParams, SetViewportParams, StorageOpParams, StorageOperation, StorageType,
-    TabNavigateRequestParams,
+    AutomationOperation, AutomationRequest, AutomationResponse, DispatchDomEventParams, DragInputParams,
+    DragInputResultParams, FetchParams, FocusChangeInfo, FramePublishMode, ImeEventParams,
+    IndexedDbConnectionEventAckParams, IndexedDbConnectionEventParams, IndexedDbRequestParams, IndexedDbResponseParams,
+    IpcColorScheme, IpcMediaType, IpcMessage, IpcMessageKind, IpcPrintOrientation, LoadHtmlParams,
+    NavigationCommittedParams, NavigationStartedParams, ScrollEventParams, ServiceWorkerOperation,
+    ServiceWorkerRequestParams, SetColorSchemeParams, SetMediaTypeParams, SetPrintPageSetupParams, SetViewportParams,
+    StorageOpParams, StorageOperation, StorageType, TabNavigateRequestParams,
 };
 use zero_protocol::process::{ProcessManager, RendererHandle};
 use zero_render_foundation::image_cache::{ImageData, ImageKey};
@@ -198,6 +198,8 @@ pub struct ProcessTabBackend {
     service_worker_owner: BrowserServiceWorkerOwner,
     /// 异步 DOM 事件派发的回执（按 dispatch id 收集，由 TabManager 消费）。
     pending_dispatch_results: Vec<(u64, bool)>,
+    /// 拖放输入回执（dnd-compat M3；遥测/调试用，主流程不阻塞在回执上）。
+    pending_drag_results: Vec<(u64, DragInputResultParams)>,
     /// 页面焦点所有者变更（R3254-H1，由 TabManager 消费同步 event_targets）。
     pending_focus_changes: Vec<(TabId, FocusChangeInfo)>,
     /// live renderer 自动化脚本回执（request id → tab + response）。
@@ -305,6 +307,7 @@ impl ProcessTabBackend {
             fetch_proxy: TabFetchProxy::new(),
             service_worker_owner,
             pending_dispatch_results: Vec::new(),
+            pending_drag_results: Vec::new(),
             pending_focus_changes: Vec::new(),
             pending_automation_responses: HashMap::new(),
             compositor_status: crate::compositor_client::status(),
@@ -1843,6 +1846,9 @@ impl ProcessTabBackend {
                     IpcMessageKind::DispatchDomEventResult(result) => {
                         self.pending_dispatch_results.push((msg.id, result.default_allowed));
                     }
+                    IpcMessageKind::DragInputResult(result) => {
+                        self.pending_drag_results.push((msg.id, result));
+                    }
                     IpcMessageKind::FocusOwnerChanged(info) => {
                         self.pending_focus_changes.push((tab_id, info));
                     }
@@ -1901,6 +1907,11 @@ impl ProcessTabBackend {
     /// 取出异步 DOM 事件派发的回执（dispatch id, default_allowed）。
     pub fn take_dispatch_results(&mut self) -> Vec<(u64, bool)> {
         std::mem::take(&mut self.pending_dispatch_results)
+    }
+
+    /// 取出拖放输入回执（dnd-compat M3；主流程不消费，留作观测面）。
+    pub fn take_drag_results(&mut self) -> Vec<(u64, DragInputResultParams)> {
+        std::mem::take(&mut self.pending_drag_results)
     }
 
     /// 取出页面焦点变更回执（R3254-H1）。
@@ -1970,6 +1981,23 @@ impl ProcessTabBackend {
         {
             self.pending_dispatch_results.push((dispatch_id, true));
         }
+    }
+
+    /// 转发拖放输入给 renderer 的 WebView 状态机（fire-and-forget，dnd-compat M3）。
+    ///
+    /// 渲染进程不存在或发送失败时静默丢弃：拖放会话不是导航语义，没有“默认动作”
+    /// 需要合成回执兜底；renderer 侧未武装时回执 `consumed=false`。
+    pub fn dispatch_drag_input_fire_and_forget(&mut self, tab_id: TabId, message_id: u64, params: DragInputParams) {
+        let Some(rid) = self.tab_to_renderer.get(&tab_id).copied() else {
+            return;
+        };
+        let Some(renderer) = self.manager.get_renderer(rid) else {
+            return;
+        };
+        let _ = renderer.send(IpcMessage {
+            id: message_id,
+            kind: IpcMessageKind::DragInput(params),
+        });
     }
 
     /// 把平台 IME 生命周期事件直接转发给 renderer 的页面输入状态机。
