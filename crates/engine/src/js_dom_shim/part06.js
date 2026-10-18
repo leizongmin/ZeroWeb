@@ -594,6 +594,11 @@
     }
     if (!inSubtree) return;
     _plKey = null; _plSel = null; _plHandle = null; _plUnadjusted = false;
+    // RFC §6.5：移除解锁通知 host 镜像（同步清——镜像与 shim 态同拍；change 事件
+    // 仍按 s1 语义异步 task 派）。
+    if (typeof __zw_pointer_lock_state_changed === 'function') {
+      try { __zw_pointer_lock_state_changed(JSON.stringify({ locked: false, selector: null, handle: null, unadjustedMovement: false })); } catch (_ePlhR) {}
+    }
     _fsQueueStep(function () {
       _firePointerLockEvent('pointerlockchange');
     });
@@ -4867,6 +4872,11 @@
     exitPointerLock: function () {
       if (!_plKey) return; // 非锁定 → no-op，不派事件（spec）
       _plKey = null; _plSel = null; _plHandle = null; _plUnadjusted = false;
+      // pointerlock-compat M3 s3（RFC §6.5）：exit 通知 host 镜像（先镜像后事件——
+      // 页面 handler 内经宿主仲裁面读到的已是退出后状态）。
+      if (typeof __zw_pointer_lock_state_changed === 'function') {
+        try { __zw_pointer_lock_state_changed(JSON.stringify({ locked: false, selector: null, handle: null, unadjustedMovement: false })); } catch (_ePlhX) {}
+      }
       _firePointerLockEvent('pointerlockchange');
     },
     // document.title——getter 返首 <title> 文本（空白折叠，spec 一致）；首访惰性读 querySelector('title')

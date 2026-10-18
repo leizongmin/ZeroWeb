@@ -38,8 +38,9 @@ use zero_protocol::message::{
     HitTestLinkResultParams, ImeEventParams, ImeEventType, IndexedDbConnectionEventAckParams,
     IndexedDbConnectionEventParams, IpcColorScheme, IpcMediaType, IpcMessage, IpcMessageKind, IpcPrintOrientation,
     KeyboardEventParams, LoadHtmlParams, MouseEventParams, NavigateParams, NavigationCommittedParams,
-    NavigationStartedParams, ScrollEventParams, ServiceWorkerHostCommandParams, SetColorSchemeParams,
-    SetMediaTypeParams, SetPrintPageSetupParams, SetViewportParams, StorageOpParams, TabNavigateRequestParams,
+    NavigationStartedParams, PointerLockChangedParams, PointerLockInputParams, PointerLockInputPhase,
+    ScrollEventParams, ServiceWorkerHostCommandParams, SetColorSchemeParams, SetMediaTypeParams,
+    SetPrintPageSetupParams, SetViewportParams, StorageOpParams, TabNavigateRequestParams,
 };
 use zero_protocol::transport::PipeTransport;
 use zero_protocol::{ProcessRole, is_disconnected_channel_message};
@@ -924,6 +925,12 @@ impl RendererRuntime {
             self.pending_frame_title = None;
             self.pending_frame_network_fetch = false;
             return Err(error);
+        }
+        // pointerlock-compat M3 s3：帧事务内页面脚本可能 grant/exit 锁（§6.5 host 桥
+        // 写镜像）——事务收尾排空跃迁报告，PointerLockChanged 上报浏览器（s4 转发门
+        // /Esc 判据；Commit 3 仅浏览器排队）。
+        if let Some(locked) = self.webview.as_mut().and_then(|w| w.take_pointer_lock_report()) {
+            self.send_regular(IpcMessageKind::PointerLockChanged(PointerLockChangedParams { locked }))?;
         }
         let Some(work) = work else {
             return Ok(());
@@ -2938,6 +2945,32 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         )
     }
 
+    /// 指针锁定输入（pointerlock-compat M3 s3）：锁定态宿主指针改道——`apply_locked_pointer_move`
+    /// /`apply_locked_pointer_button` 单入口（未锁定 no-op，镜像判据；ImeEvent 同款
+    /// 无回执）。锁定跃迁（页面脚本 grant/exit 经 §6.5 host 桥写镜像）由
+    /// `run_frame_transaction` 收尾排空上报。
+    fn handle_pointer_lock_input(&mut self, params: PointerLockInputParams) -> Result<(), String> {
+        let webview = self.webview.as_mut().expect("webview");
+        match params.phase {
+            PointerLockInputPhase::Move => {
+                webview
+                    .apply_locked_pointer_move(params.x, params.y)
+                    .map_err(|e| e.to_string())?;
+            }
+            PointerLockInputPhase::Down => {
+                webview
+                    .apply_locked_pointer_button(zero_webview::LockedButtonPhase::Down, params.x, params.y)
+                    .map_err(|e| e.to_string())?;
+            }
+            PointerLockInputPhase::Up => {
+                webview
+                    .apply_locked_pointer_button(zero_webview::LockedButtonPhase::Up, params.x, params.y)
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+        Ok(())
+    }
+
     fn handle_dispatch_dom_event(&mut self, msg_id: u64, params: DispatchDomEventParams) -> Result<(), String> {
         let event_type = params.event_type.clone();
         let key = params.key.clone();
@@ -3356,6 +3389,9 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             IpcMessageKind::DragInput(params) => {
                 self.run_frame_transaction(|runtime| runtime.handle_drag_input(msg.id, params))
             }
+            IpcMessageKind::PointerLockInput(params) => {
+                self.run_frame_transaction(|runtime| runtime.handle_pointer_lock_input(params))
+            }
             IpcMessageKind::AutomationRequest(request) => {
                 self.run_frame_transaction(|runtime| runtime.handle_automation_request(msg.id, request))
             }
@@ -3389,6 +3425,7 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             | IpcMessageKind::HitTestImageResult(_)
             | IpcMessageKind::DispatchDomEventResult(_)
             | IpcMessageKind::DragInputResult(_)
+            | IpcMessageKind::PointerLockChanged(_)
             | IpcMessageKind::FocusOwnerChanged(_)
             | IpcMessageKind::AutomationResponse(_)
             | IpcMessageKind::IndexedDbRequest(_)

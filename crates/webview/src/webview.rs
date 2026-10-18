@@ -48,6 +48,9 @@ pub use user_actions::WebViewUserActionResult;
 mod drag_input;
 pub use drag_input::{DRAG_START_THRESHOLD_PX, DragApplyReport, DragEventPlan, DragInputState, DragPointerPhase};
 
+mod pointer_lock;
+pub use pointer_lock::{LockedButtonPhase, PointerLockState};
+
 static NEXT_WEBVIEW_ID: AtomicU64 = AtomicU64::new(1);
 static NEXT_IN_PROCESS_FETCH_EVENT_ID: AtomicU64 = AtomicU64::new(1);
 const MAX_SERVICE_WORKER_SCRIPT_BYTES: usize = 16 * 1024 * 1024;
@@ -560,6 +563,12 @@ pub struct WebView {
     /// dnd-compat M3：宿主拖放会话状态机（mousedown 命中可拖元素武装，move/up/cancel
     /// 驱动 drag* 事件序——`apply_drag_input` 单入口；导航经导航重置点随会话废弃）。
     drag_input: DragInputState,
+    /// pointerlock-compat M3 s3：宿主指针锁定镜像（shim grant/exit 经 §6.5 host 桥
+    /// 通知写；锁定态宿主指针输入 `apply_locked_pointer_move` 单入口改道锁目标；
+    /// 导航随导航重置点清零）。Arc 共享形同 selector_handle_map——host 桥闭包持
+    /// 同一副本，三武装点（execute_script_with_dom / run_page_scripts / dispatch）
+    /// 并列注册，浏览器与 runner 路径无分叉。
+    pointer_lock: std::sync::Arc<std::sync::Mutex<PointerLockState>>,
     /// 同上——当前连击计数。
     click_streak_count: u32,
     /// 当前文档页面脚本是否已经执行。
@@ -764,6 +773,7 @@ impl WebView {
             click_streak_target: None,
             click_streak_count: 0,
             drag_input: DragInputState::new(),
+            pointer_lock: std::sync::Arc::new(std::sync::Mutex::new(PointerLockState::new())),
             page_scripts_initialized: false,
             pending_csp_img_blocks: Vec::new(),
             pending_csp_style_violations: Vec::new(),
@@ -1003,6 +1013,12 @@ impl WebView {
         self.click_streak_target = None;
         // dnd-compat M3：导航废弃进行中的拖放会话（drag* 事件序不跨 document）。
         self.drag_input = DragInputState::new();
+        // pointerlock-compat M3 s3：导航清锁镜像（锁不跨 document——RFC §6.4；
+        // 解锁跃迁挂报告随渲染循环上报）。
+        self.pointer_lock
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .set_unlocked();
         self.click_streak_count = 0;
         self.pipeline.set_focused_selector(None);
         self.page_scripts_initialized = false;
@@ -1688,6 +1704,12 @@ impl WebView {
         self.click_streak_target = None;
         // dnd-compat M3：导航废弃进行中的拖放会话（drag* 事件序不跨 document）。
         self.drag_input = DragInputState::new();
+        // pointerlock-compat M3 s3：导航清锁镜像（锁不跨 document——RFC §6.4；
+        // 解锁跃迁挂报告随渲染循环上报）。
+        self.pointer_lock
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .set_unlocked();
         self.click_streak_count = 0;
         self.pipeline.set_focused_selector(None);
         self.page_scripts_initialized = false;
@@ -1829,6 +1851,12 @@ impl WebView {
         self.click_streak_target = None;
         // dnd-compat M3：导航废弃进行中的拖放会话（drag* 事件序不跨 document）。
         self.drag_input = DragInputState::new();
+        // pointerlock-compat M3 s3：导航清锁镜像（锁不跨 document——RFC §6.4；
+        // 解锁跃迁挂报告随渲染循环上报）。
+        self.pointer_lock
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .set_unlocked();
         self.click_streak_count = 0;
         self.pipeline.set_focused_selector(None);
         self.page_scripts_initialized = false;
@@ -1925,6 +1953,12 @@ impl WebView {
         self.click_streak_target = None;
         // dnd-compat M3：导航废弃进行中的拖放会话（drag* 事件序不跨 document）。
         self.drag_input = DragInputState::new();
+        // pointerlock-compat M3 s3：导航清锁镜像（锁不跨 document——RFC §6.4；
+        // 解锁跃迁挂报告随渲染循环上报）。
+        self.pointer_lock
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .set_unlocked();
         self.click_streak_count = 0;
         self.pipeline.set_focused_selector(None);
         self.page_scripts_initialized = false;
@@ -3048,6 +3082,7 @@ impl WebView {
             // 反查「本元素是否是 createElement 建立的 handle 节点」，命中则包装回原
             // handle proxy（identity 统一，见 WebView.selector_handle_map 文档）。
             Self::register_identity_bridge_callback(&self.selector_handle_map, &mut **sandbox);
+            Self::register_pointer_lock_state_callback(&self.pointer_lock, &mut **sandbox);
             Self::register_forward_identity_bridge_callback(&self.handle_selector_forward, &mut **sandbox);
         }
 
@@ -3171,6 +3206,7 @@ impl WebView {
             Some(&self.layout_rect_snapshot),
         );
         Self::register_identity_bridge_callback(&self.selector_handle_map, &mut **sandbox);
+        Self::register_pointer_lock_state_callback(&self.pointer_lock, &mut **sandbox);
         Self::register_forward_identity_bridge_callback(&self.handle_selector_forward, &mut **sandbox);
 
         // 原生 DOM 绑定已在 ensure_sandbox 后经 `install_native_dom_bindings` 安装（见上）。
@@ -4099,6 +4135,7 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
             Some(&self.layout_rect_snapshot),
         );
         Self::register_identity_bridge_callback(&self.selector_handle_map, &mut **sandbox);
+        Self::register_pointer_lock_state_callback(&self.pointer_lock, &mut **sandbox);
         Self::register_forward_identity_bridge_callback(&self.handle_selector_forward, &mut **sandbox);
 
         // 确保 shim 已注入（无页面脚本时 run_page_scripts 提前返回，shim 未初始化）

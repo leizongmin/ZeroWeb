@@ -3886,6 +3886,10 @@
                 var ok = true;
                 try { ok = __zw_pointer_lock_enabled() === '1'; } catch (_e) {}
                 if (!ok) {
+                  // RFC §6.5：deny 通知（镜像未锁态保持不变——跃迁判定在 host 侧静默）。
+                  if (typeof __zw_pointer_lock_state_changed === 'function') {
+                    try { __zw_pointer_lock_state_changed(JSON.stringify({ locked: false, selector: sel, handle: handle, unadjustedMovement: unadj })); } catch (_ePlhD) {}
+                  }
                   _firePointerLockEvent('pointerlockerror');
                   reject(new (globalThis.DOMException || Error)('pointer lock is unavailable', 'NotAllowedError'));
                   return;
@@ -3901,6 +3905,13 @@
               _plSel = sel;
               _plHandle = handle;
               _plUnadjusted = unadj;
+              // pointerlock-compat M3 s3（RFC §6.5）：grant/option 重锁通知 host 镜像
+              // （webview `PointerLockState`——typeof 守卫未注册静默，同 deny 开关风格）。
+              // selector 发纯 `sel`（非 _elKey 复合键——host 侧 querySelector 解析面，
+              // 与 drag hit selector 同约束；handle 附带供诊断）。
+              if (typeof __zw_pointer_lock_state_changed === 'function') {
+                try { __zw_pointer_lock_state_changed(JSON.stringify({ locked: true, selector: sel, handle: handle, unadjustedMovement: unadj })); } catch (_ePlhG) {}
+              }
               _firePointerLockEvent('pointerlockchange');
               resolve(undefined);
             });

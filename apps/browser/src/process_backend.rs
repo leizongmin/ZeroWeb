@@ -16,9 +16,10 @@ use zero_protocol::message::{
     DragInputResultParams, FetchParams, FocusChangeInfo, FramePublishMode, ImeEventParams,
     IndexedDbConnectionEventAckParams, IndexedDbConnectionEventParams, IndexedDbRequestParams, IndexedDbResponseParams,
     IpcColorScheme, IpcMediaType, IpcMessage, IpcMessageKind, IpcPrintOrientation, LoadHtmlParams,
-    NavigationCommittedParams, NavigationStartedParams, ScrollEventParams, ServiceWorkerOperation,
-    ServiceWorkerRequestParams, SetColorSchemeParams, SetMediaTypeParams, SetPrintPageSetupParams, SetViewportParams,
-    StorageOpParams, StorageOperation, StorageType, TabNavigateRequestParams,
+    NavigationCommittedParams, NavigationStartedParams, PointerLockChangedParams, ScrollEventParams,
+    ServiceWorkerOperation, ServiceWorkerRequestParams, SetColorSchemeParams, SetMediaTypeParams,
+    SetPrintPageSetupParams, SetViewportParams, StorageOpParams, StorageOperation, StorageType,
+    TabNavigateRequestParams,
 };
 use zero_protocol::process::{ProcessManager, RendererHandle};
 use zero_render_foundation::image_cache::{ImageData, ImageKey};
@@ -202,6 +203,9 @@ pub struct ProcessTabBackend {
     pending_drag_results: Vec<(u64, DragInputResultParams)>,
     /// 页面焦点所有者变更（R3254-H1，由 TabManager 消费同步 event_targets）。
     pending_focus_changes: Vec<(TabId, FocusChangeInfo)>,
+    /// 指针锁定镜像跃迁（pointerlock-compat M3 s3；s4 转发门/Esc 分支判据消费，
+    /// Commit 3 仅排队——零产品行为变化）。
+    pending_pointer_lock_changes: Vec<(TabId, PointerLockChangedParams)>,
     /// live renderer 自动化脚本回执（request id → tab + response）。
     pending_automation_responses: HashMap<u64, (TabId, AutomationResponse)>,
     /// 上一次轮询观察到的 compositor client 状态，用于只处理一次断线边沿。
@@ -309,6 +313,7 @@ impl ProcessTabBackend {
             pending_dispatch_results: Vec::new(),
             pending_drag_results: Vec::new(),
             pending_focus_changes: Vec::new(),
+            pending_pointer_lock_changes: Vec::new(),
             pending_automation_responses: HashMap::new(),
             compositor_status: crate::compositor_client::status(),
             browser_gpu_present: false,
@@ -1852,6 +1857,9 @@ impl ProcessTabBackend {
                     IpcMessageKind::FocusOwnerChanged(info) => {
                         self.pending_focus_changes.push((tab_id, info));
                     }
+                    IpcMessageKind::PointerLockChanged(params) => {
+                        self.pending_pointer_lock_changes.push((tab_id, params));
+                    }
                     IpcMessageKind::AutomationResponse(response) => {
                         self.pending_automation_responses.insert(msg.id, (tab_id, response));
                     }
@@ -1917,6 +1925,11 @@ impl ProcessTabBackend {
     /// 取出页面焦点变更回执（R3254-H1）。
     pub fn take_focus_changes(&mut self) -> Vec<(TabId, FocusChangeInfo)> {
         std::mem::take(&mut self.pending_focus_changes)
+    }
+
+    /// 取出指针锁定跃迁回执（pointerlock-compat M3 s3；s4 桌面转发门消费）。
+    pub fn take_pointer_lock_changes(&mut self) -> Vec<(TabId, PointerLockChangedParams)> {
+        std::mem::take(&mut self.pending_pointer_lock_changes)
     }
 
     /// 向 live renderer 发起异步自动化操作。

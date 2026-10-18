@@ -1,11 +1,11 @@
 # Spec+RFC：M2 指针捕获管线——锁定语义 + 位移流 + 锁定态输入改道
 
-**版本**: v1.2（已确认·M3 实施中）
+**版本**: v1.3（已确认·M3 实施中）
 **日期**: 2026-10-19
 **作者**: AI Assistant
 **状态**: 已确认——方案 A + N1–N4 纳入 + fsKey 同族修复随 FR-10，经用户
 2026-10-19 征询通过；M3 已用户点名启动（同日），s1 起按 §8 顺序实施；
-v1.1/v1.2 为实施期修正（语料钉死，见 §12 修订历史，需求/验收/切片不变）
+v1.1–v1.3 为实施期修正（语料钉死，见 §12 修订历史，需求/验收/切片不变）
 **需求来源**: [docs/goal/pointerlock-compat.md](../pointerlock-compat.md) DC-2/M2
 （用户 2026-10-19 点名批准起草 RFC，同日征询确认）；
 范围输入 = [M1 甄别报告五缺口](evidence/2026-10-18-m1-baseline.md) +
@@ -534,3 +534,4 @@ M1 五缺口（甄别报告 45-52 行）+ 本轮新发现：
 | v1.0 | 2026-10-19 | 用户征询确认：方案 A（PR-1 关闭）、N1–N4 范围纳入、`_fs*` 同族泄漏随 FR-10 一并修（§6.8）、实施时机另启。状态转已确认，待实施点名 |
 | v1.1 | 2026-10-19 | M3 s1 实施期修正（语料钉死，B 面 2 案实跑翻绿验证）：§6.1 activation 门「消费」改「仅检查不消费」（`unadjustedMovement_update` 案一次激活连续两次请求均须过，spec request steps 无 consume 步）；§6.1 `_plOpts` 对象深相等改 `_plUnadjusted` 有效布尔相等（语料只变异单成员，最小实现）。需求/验收/切片/方案不变 |
 | v1.2 | 2026-10-19 | M3 s2 实施期补充（movementX_Y_basic 实跑翻绿验证）：§6.3 位移流 shim 面落点除 part06 mouse 分支透传外，**part05 `MouseEvent` 构造器 init 键表需补 `movementX`/`movementY`（缺省 0）**——键表外的 init 键被静默丢弃（constructor.html M1 红案「movementX 缺省 undefined vs 0」的真根因）；PointerEvent/WheelEvent 经原型链继承。§6.3 假设「shim 合成 screenX 与 clientX 一致」落定为 mouse 分支显式 `screenX=clientX`/`screenY=clientY`（dom/events 构造路径 screenX 断言不受影响——分支隔离）。需求/验收/切片/方案不变 |
+| v1.3 | 2026-10-19 | M3 s3 实施期修正（管线就绪，e2e 桥测试一次全绿验证）：① §6.5「事件派发改道」**不实施**——shim change/error 保持 s1 `_firePointerLockEvent` 同步派发（corpus 已验证 N1 面），host 桥只做状态镜像（双馈管线本义）；改道经 host→page 脚本回环会把同步派发变异步任务，破坏 corpus 已钉时序。② §6.5 payload `selector` 发纯 `sel`（非 `_elKey` 复合键 `@handle`——host 侧 querySelector 解析面）。③ §6.5 `PointerLockChanged{locked, tab_id}` → `{locked}`——renderer 无 tab 身份，通道关联同 FocusOwnerChanged 先例。④ §8.2 步骤 5 注册点在 webview.rs 非 js_dom_bridge.rs——Arc 共享镜像需 webview 侧状态，静态注册函数与 identity bridge 三武装点并列。需求/验收/切片/方案不变 |

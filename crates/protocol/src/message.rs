@@ -100,6 +100,13 @@ pub enum IpcMessageKind {
     DragInput(DragInputParams),
     /// 拖放输入回执（渲染→浏览器）。
     DragInputResult(DragInputResultParams),
+    /// 指针锁定输入（浏览器→渲染，pointerlock-compat M3 s3；锁定态宿主指针改道
+    /// 锁目标——无回执，ImeEvent 同款 fire-and-forget）。
+    PointerLockInput(PointerLockInputParams),
+    /// 指针锁定镜像跃迁回执（渲染→浏览器；转发门/Esc 分支判据——s4 消费，
+    /// Commit 3 仅排队。tab_id 不内嵌——renderer 无 tab 身份，通道关联同
+    /// FocusOwnerChanged 先例）。
+    PointerLockChanged(PointerLockChangedParams),
 
     // ── 网络请求（渲染→浏览器→网络）──
     /// 发起网络请求。
@@ -2500,4 +2507,34 @@ pub struct DragInputResultParams {
     pub consumed: bool,
     /// 最后派发的可取消事件是否被页面取消（dragstart 取消 = 会话未启动）。
     pub prevented: bool,
+}
+
+/// 指针键相位（pointerlock-compat M3 s3 锁定态改道面——与 webview
+/// `LockedButtonPhase` 对应，Move 走位移入口）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PointerLockInputPhase {
+    /// 移动 → `apply_locked_pointer_move`（delta 由镜像态算）。
+    Move,
+    /// 按下 → 改道派 mousedown。
+    Down,
+    /// 抬起 → 改道派 mouseup。
+    Up,
+}
+
+/// 指针锁定输入（浏览器→渲染）。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct PointerLockInputParams {
+    /// 输入相位。
+    pub phase: PointerLockInputPhase,
+    /// 视口 CSS 逻辑像素 x。
+    pub x: f32,
+    /// 视口 CSS 逻辑像素 y。
+    pub y: f32,
+}
+
+/// 指针锁定镜像跃迁回执（渲染→浏览器）。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct PointerLockChangedParams {
+    /// 跃迁后的锁定布尔（true = 页面元素持锁；仅在锁定布尔变化时上报）。
+    pub locked: bool,
 }

@@ -332,6 +332,38 @@ mod tests {
         assert_eq!(output.len(), 4 + len);
     }
 
+    /// 指针锁定两消息序列化往返（pointerlock-compat M3 s3 契约面——协议漂移门）。
+    #[test]
+    fn test_pointer_lock_messages_roundtrip() {
+        let input = IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::PointerLockInput(super::super::message::PointerLockInputParams {
+                phase: super::super::message::PointerLockInputPhase::Move,
+                x: 12.5,
+                y: -3.25,
+            }),
+        };
+        let decoded: IpcMessage = serialize::deserialize(&serialize::serialize(&input).unwrap()).unwrap();
+        assert_eq!(decoded.id, 1);
+        match decoded.kind {
+            IpcMessageKind::PointerLockInput(params) => {
+                assert_eq!(params.phase, super::super::message::PointerLockInputPhase::Move);
+                assert_eq!(params.x, 12.5);
+                assert_eq!(params.y, -3.25);
+            }
+            other => panic!("unexpected kind: {other:?}"),
+        }
+        let changed = IpcMessage {
+            id: 2,
+            kind: IpcMessageKind::PointerLockChanged(super::super::message::PointerLockChangedParams { locked: true }),
+        };
+        let decoded: IpcMessage = serialize::deserialize(&serialize::serialize(&changed).unwrap()).unwrap();
+        match decoded.kind {
+            IpcMessageKind::PointerLockChanged(params) => assert!(params.locked),
+            other => panic!("unexpected kind: {other:?}"),
+        }
+    }
+
     /// 测试共享内存通道对双向通信。
     #[test]
     fn test_shared_channel_pair_bidirectional() {

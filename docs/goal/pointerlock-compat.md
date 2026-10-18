@@ -1,9 +1,10 @@
 # Pointer Lock 兼容 — requestPointerLock / 指针捕获语义（门控 goal）
 
-**版本**: v1.5
+**版本**: v1.6
 **日期**: 2026-10-19
-**状态**: **M3 实施中（用户 2026-10-19 点名）·s1+s2 完成（执行子集
-75.0%→80.0%）·s3 锁管线待做**——M2 RFC v1.2（已确认，实施期修正见其 §12）。
+**状态**: **M3 实施中（用户 2026-10-19 点名）·s1+s2 完成（执行子集 80.0%）
+·s3 管线就绪（Commit 3 落地）·C 面/桌面待做（Commit 4–5）**——M2 RFC
+v1.3（已确认，实施期修正见其 §12）。
 RFC 见 [m2-pointer-capture-pipeline-spec-rfc.md](pointerlock-compat/m2-pointer-capture-pipeline-spec-rfc.md)；
 M1 甄别报告见
 [evidence/2026-10-18-m1-baseline.md](pointerlock-compat/evidence/2026-10-18-m1-baseline.md)
@@ -19,8 +20,17 @@ M1 甄别报告见
 > 指针捕获本质依赖 host 光标管线（隐藏系统光标 + 相对位移流）——host-runtime
 > 面，缺即门控。
 
-## 当前状态（2026-10-19 M3 s2 收口）
+## 当前状态（2026-10-19 M3 s3 Commit 3 收口）
 
+- **M3 s3 管线就绪（2026-10-19，Commit 3）**：webview 锁镜像新模块
+  `pointer_lock.rs`（`apply_locked_pointer_move`/`_button` 单入口 + 导航四连点
+  清理）+ host 桥 `__zw_pointer_lock_state_changed`（shim 四处通知 + identity
+  bridge 三武装点并列注册，浏览器/runner 无分叉）+ IPC 双向
+  （PointerLockInput/PointerLockChanged + renderer 臂 + process_backend 排队）。
+  e2e 桥测试一次全绿（grant→镜像→改道位移→exit→报告）。实施期修正四点
+  （事件派发改道不实施/payload 纯 sel/省 tab_id/注册点在 webview）→ RFC v1.3。
+  见 [s3 证据](pointerlock-compat/evidence/2026-10-19-m3-s3-lock-pipeline.md)。
+  **下一步**：Commit 4 = C 面 12 案执行 + runner 锁定路由 + 桌面激活（§6.6/6.7）。
 - **M3 s2 完成（2026-10-19）**：位移流字段落地（FR-4，RFC §6.3 三层：序列化
   movementX/Y + runner 事件源算 delta + shim mouse 分支透传）。**实施期发现**
   shim `MouseEvent` 构造键表缺 movementX/Y（键表外 init 键静默丢弃——
@@ -34,7 +44,6 @@ M1 甄别报告见
   （1/4 → 3/4 = 75.0% 中间口径）；fullscreen 桥测试零回归；make test 全绿。
   实施期修正两处（激活不消费/有效布尔比对）→ RFC v1.1。见
   [s1 证据](pointerlock-compat/evidence/2026-10-19-m3-s1-semantic-group.md)。
-- **下一步（无卡点）**：s3 锁管线（RFC §6.4–6.7，FR-5/7/8）按合约自主推进。
 - **M1 完成**：corpus 导入 27/27 测试资产（pin 31597693）+ census + 可执行
   子集甄别 + runner 通道（`make testharness-pointerlock`）+ 基线落账 +
   csv planned 行回填（active，1/4 = 25.0%）。
