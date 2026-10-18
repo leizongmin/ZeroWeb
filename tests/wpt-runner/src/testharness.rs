@@ -10434,7 +10434,14 @@ promise_test(async function() {
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].status, HarnessStatus::Fail);
-        assert!(results[0].message.as_deref().unwrap().contains("boom"));
+        // 诊断增强（PR#206 D1）：全量负载下曾出现 message 非 boom 的完成态——
+        // 失败时带出实际 status/message，供负载红取数定位。
+        assert!(
+            results[0].message.as_deref().unwrap().contains("boom"),
+            "实际 status={:?} message={:?}",
+            results[0].status,
+            results[0].message
+        );
     }
 
     #[test]
@@ -10552,7 +10559,7 @@ async_test(function(test) {
             "delayed-completion.html",
             html,
             harness,
-            Duration::from_secs(1),
+            Duration::from_secs(10),
         );
 
         assert_eq!(results.len(), 1);
