@@ -1,9 +1,12 @@
 # Pointer Lock 兼容 — requestPointerLock / 指针捕获语义（门控 goal）
 
-**版本**: v1.1
-**日期**: 2026-10-18
-**状态**: **M1 完成（DC-1 ✅）·BLOCK 于 M2 门控**——捕获管线 RFC 须用户点名
-批准后启动；M1 甄别报告见
+**版本**: v1.3
+**日期**: 2026-10-19
+**状态**: **M1 完成（DC-1 ✅）·M2 RFC v1.0 已确认（DC-2 征询门 ✅）·
+BLOCK 于 M3 实施点名**——用户 2026-10-19 点名批准起草并同日征询确认
+（方案 A + N1–N4 纳入 + fsKey 同族修复随 FR-10），实施待点名另启。
+RFC 见 [m2-pointer-capture-pipeline-spec-rfc.md](pointerlock-compat/m2-pointer-capture-pipeline-spec-rfc.md)；
+M1 甄别报告见
 [evidence/2026-10-18-m1-baseline.md](pointerlock-compat/evidence/2026-10-18-m1-baseline.md)
 **执行模式**: WPT 驱动（上游 pointerlock corpus 为验收标尺）
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——交互面）
@@ -28,10 +31,14 @@
   host `__zw_pointer_lock_enabled` deny 开关）。缺口五项（transient activation
   门 / deny TypeError≠NotAllowedError / 位移流 / unadjustedMovement / 全屏
   联动+移除解锁+retarget）已列入甄别报告 M2 RFC 范围输入。
-- **卡点（BLOCK）**：DC-2 捕获管线 RFC 须**用户点名批准**——按任务约定不代替
-  用户决策。点名后从 RFC（参考 lei-spec-rfc + dnd M3 管线 RFC 先例
-  `docs/goal/dnd-compat/m3-drag-input-pipeline-spec-rfc.md`，可合并征询减
-  重复评审）起步。
+- **M2 RFC（2026-10-19）**：用户点名批准起草，同日征询**确认通过**
+  （v1.0）。方案 = shim 语义权威 + webview 锁镜像双馈管线；FR-1~FR-10
+  覆盖 M1 五缺口 + 探索新发现 N1–N4（change/error 事件面 bubbles/target/
+  trusted 不符、重复请求 no-op 条件过粗、锁态/激活跨导航泄漏、锁态宿主不
+  可见）；`_fs*` 同族跨导航泄漏随 FR-10 一并修（用户确认）；s1–s4 切片、
+  五提交切分。Lint 26P/0F。实施合约萃取待 M3 启动时做。
+- **卡点（BLOCK）**：等待用户点名 M3 实施——启动时从 RFC v1.0 萃取实施
+  合约，按 §8 交接顺序 s1→s4 推进。
 - **跨域 residual**：`Event.NONE` 等 Event 接口 phase 常量缺失
   （constructor.html s1 红）归 dom/events 域（uievents 50 residual），不占
   本 goal 分母口径。
@@ -48,13 +55,14 @@ M1 完成 corpus census 与可执行子集甄别（API 面存在性/异常语义
 
 - **DC-1（自主）✅ 2026-10-18** 导入 + census + 可执行子集甄别报告 + csv
   planned 行回填——见 [M1 基线](pointerlock-compat/evidence/2026-10-18-m1-baseline.md)
-- **DC-2（门控，须点名）** 捕获管线 RFC 征询通过后实现收口
+- **DC-2（征询门 ✅ 2026-10-19，实现收口待点名）** 捕获管线 RFC v1.0
+  已确认（方案 A）；实现收口待 M3 点名
 - **DC-3** 回归测试账本纪律；make test 全绿、make reftest 零回归
 
 ## 里程碑
 
-M1 盘点（自主，**✅ 完成**）→ M2 管线 RFC（**用户门控，BLOCK 中**）→
-M3 实现与收口（门控）。
+M1 盘点（自主，**✅ 完成**）→ M2 管线 RFC（**✅ v1.0 已确认 2026-10-19**）→
+M3 实现与收口（**待用户点名**）。
 
 ## 依赖约束（run-rules §9）
 
