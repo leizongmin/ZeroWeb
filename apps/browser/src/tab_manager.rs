@@ -54,6 +54,8 @@ pub struct TabManager {
     color_scheme: PrefersColorSchemeValue,
     /// 当前渲染媒体类型（DC-12 @media print；transient 打印预览，非新 Tab 默认）。
     media_type: MediaType,
+    /// 当前用户打印页面设置（T61 打印预览设置；None = 引擎 `@page`/默认链）。
+    print_page_setup: Option<zero_engine::PrintPageSetup>,
     pending_loaded: Vec<(TabId, String, String)>,
     /// 待落盘的附件下载（backend 拦截，BrowserApp 消费落盘 + 记账）。
     pending_downloads: Vec<crate::process_backend::PendingAttachmentDownload>,
@@ -99,6 +101,7 @@ impl TabManager {
             device_scale_factor: 1.0,
             color_scheme,
             media_type: MediaType::Screen,
+            print_page_setup: None,
             pending_loaded: Vec::new(),
             pending_downloads: Vec::new(),
             pending_errors: Vec::new(),
@@ -218,6 +221,28 @@ impl TabManager {
     /// 当前渲染媒体类型（供 UI toggle 判方向；R1993）。
     pub fn media_type(&self) -> MediaType {
         self.media_type
+    }
+
+    /// 更新用户打印页面设置并通知所有 Tab（T61 打印预览设置面板）。
+    ///
+    /// 镜像 `set_media_type`：dedup + 广播 in-process workers + 多进程 backend。
+    /// 份数不参与渲染（Chrome 同为仅影响打印作业），留在宿主设置层，不经此广播。
+    pub fn set_print_page_setup(&mut self, setup: Option<zero_engine::PrintPageSetup>) {
+        if self.print_page_setup == setup {
+            return;
+        }
+        self.print_page_setup = setup;
+        for worker in self.workers.values() {
+            worker.send(TabWorkerCommand::SetPrintPageSetup(setup));
+        }
+        if let Some(ref mut backend) = self.process_backend {
+            backend.set_print_page_setup(setup);
+        }
+    }
+
+    /// 当前用户打印页面设置（T61；供 UI/诊断读回）。
+    pub fn print_page_setup(&self) -> Option<zero_engine::PrintPageSetup> {
+        self.print_page_setup
     }
 
     /// 确保 Tab 存在 worker / 进程。

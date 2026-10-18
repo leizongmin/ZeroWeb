@@ -5,8 +5,8 @@ use std::time::{Duration, Instant};
 
 use zero_browser_shell::{
     BrowserMenuLabel, BrowserSettings, BrowserShell, ColorThemePreference, ContextMenu, ContextType, FindWrapHint,
-    MenuItem, SearchEngine, SessionState, SuggestionSource, TabId, TabMenuLabel, UiLanguage, browser_menu_label,
-    tab_menu_label,
+    MenuItem, PrintOrientationPreference, SearchEngine, SessionState, SuggestionSource, TabId, TabMenuLabel,
+    UiLanguage, browser_menu_label, tab_menu_label,
 };
 use zero_engine::PrefersColorSchemeValue;
 use zero_engine::{set_char_measure_fn, set_fallback_line_metrics_fn, set_text_shape_fn};
@@ -208,6 +208,9 @@ pub struct BrowserApp {
     /// 缩放百分比浮层显示起始时刻。None 表示不显示。
     /// zoom_in/out/reset 触发时记录，3 秒后由渲染层清除。
     zoom_indicator_start: Option<Instant>,
+    /// T61：打印预览设置面板各行的命中区（物理像素 `(x, y, w, h)`；渲染层写入，输入层消费）。
+    /// 行 0 = 方向（整行切换），行 1 = 份数、行 2 = 边距（左半 − / 右半 +）。全零 = 未显示。
+    print_setup_panel_rows: [(f32, f32, f32, f32); 3],
     /// 下载完成 toast：`(文件名, 显示起始时刻)`。下载完成时记录，3 秒后由渲染层清除。
     download_toast: Option<(String, Instant)>,
     /// 关闭标签撤销 toast 显示起始时刻。关闭标签时记录，5 秒后由渲染层清除；
@@ -410,6 +413,7 @@ impl BrowserApp {
             loading_anim_start: None,
             menu_anim_start: None,
             zoom_indicator_start: None,
+            print_setup_panel_rows: [(0.0, 0.0, 0.0, 0.0); 3],
             download_toast: None,
             closed_tab_toast: None,
             history_scroll: HashMap::new(),
@@ -1315,6 +1319,17 @@ impl BrowserApp {
     #[cfg(test)]
     pub fn media_type_for_test(&self) -> zero_engine::MediaType {
         self.tabs.media_type()
+    }
+
+    /// 测试用：当前下发的打印页面设置（T61）。
+    #[cfg(test)]
+    pub fn print_page_setup_for_test(&self) -> Option<zero_engine::PrintPageSetup> {
+        self.tabs.print_page_setup()
+    }
+
+    /// ui_driver：打印预览设置面板第 `row` 行命中矩形（渲染层写入；未渲染返回 None）。
+    pub(crate) fn print_setup_panel_rect(&self, row: usize) -> Option<(f32, f32, f32, f32)> {
+        self.print_setup_panel_rows.get(row).copied()
     }
 
     /// 测试用：窗口是否处于全屏。
@@ -2839,7 +2854,82 @@ impl BrowserApp {
             _ => zero_engine::MediaType::Print,
         };
         self.tabs.set_media_type(next);
+        // T61：预览态按当前设置下发打印页面设置（方向/边距）。Screen 态下发无害——
+        // Print 页几何仅 Print 媒体消费。
+        self.sync_print_page_setup_from_settings();
         self.needs_redraw = true;
+    }
+
+    /// T61：把设置中的打印页面设置换算成 [`zero_engine::PrintPageSetup`] 下发所有 Tab。
+    /// 方向/边距参与 Print 布局；份数仅打印作业语义（Chrome 同），不经渲染链。
+    fn sync_print_page_setup_from_settings(&mut self) {
+        let settings = self.shell.settings();
+        let orientation = match settings.print_orientation {
+            PrintOrientationPreference::Portrait => zero_engine::PrintOrientation::Portrait,
+            PrintOrientationPreference::Landscape => zero_engine::PrintOrientation::Landscape,
+        };
+        self.tabs.set_print_page_setup(Some(zero_engine::PrintPageSetup {
+            orientation,
+            margin_mm: settings.print_margin_mm,
+        }));
+    }
+
+    /// T61：切换打印页面方向（预览面板方向行点击；纵向 ↔ 横向）。持久化并即时下发。
+    pub fn cycle_print_orientation(&mut self) {
+        self.shell.apply_settings(|settings| {
+            settings.print_orientation = match settings.print_orientation {
+                PrintOrientationPreference::Portrait => PrintOrientationPreference::Landscape,
+                PrintOrientationPreference::Landscape => PrintOrientationPreference::Portrait,
+            };
+        });
+        self.sync_print_page_setup_from_settings();
+        self.needs_redraw = true;
+    }
+
+    /// T61：按步进调整打印份数（预览面板 −/+；clamp 1–99），持久化。
+    /// 份数不影响预览渲染（Chrome print dialog 同为作业参数）。
+    pub fn adjust_print_copies(&mut self, delta: i32) {
+        self.shell.apply_settings(|settings| {
+            let next = i64::from(settings.print_copies) + i64::from(delta);
+            settings.print_copies = next.clamp(
+                i64::from(BrowserSettings::PRINT_COPIES_MIN),
+                i64::from(BrowserSettings::PRINT_COPIES_MAX),
+            ) as u32;
+        });
+        self.needs_redraw = true;
+    }
+
+    /// T61：按步进调整打印页边距（预览面板 −/+；clamp 0–50mm），持久化并即时下发。
+    /// `@page { margin }` 显式声明时页面值优先（引擎 `extract_print_page_geometry` 裁决）。
+    pub fn adjust_print_margin(&mut self, delta_mm: f32) {
+        self.shell.apply_settings(|settings| {
+            settings.print_margin_mm = (settings.print_margin_mm + delta_mm).clamp(
+                BrowserSettings::PRINT_MARGIN_MIN_MM,
+                BrowserSettings::PRINT_MARGIN_MAX_MM,
+            );
+        });
+        self.sync_print_page_setup_from_settings();
+        self.needs_redraw = true;
+    }
+
+    /// T61：打印预览设置面板行命中测试（渲染层写入的物理像素矩形）。
+    /// 返回 `(行索引, 是否右半)`；行 0 整行有效，行 1/2 左半 − / 右半 +。
+    fn print_setup_panel_hit(&self, x: f32, y: f32) -> Option<(usize, bool)> {
+        for (row, &(rx, ry, rw, rh)) in self.print_setup_panel_rows.iter().enumerate() {
+            if rw <= 0.0 {
+                continue;
+            }
+            if x >= rx && x < rx + rw && y >= ry && y < ry + rh {
+                return Some((row, x >= rx + rw / 2.0));
+            }
+        }
+        None
+    }
+
+    /// T61：当前打印设置 `(方向, 份数, 边距 mm)`（ui_driver 断言与诊断读回）。
+    pub fn print_settings(&self) -> (PrintOrientationPreference, u32, f32) {
+        let s = self.shell.settings();
+        (s.print_orientation, s.print_copies, s.print_margin_mm)
     }
 
     /// 停止当前页加载（Esc / loading 时点击刷新按钮）。
@@ -3316,16 +3406,57 @@ impl BrowserApp {
         self.open_bookmarks_import_page(Some(outcome));
     }
 
+    /// 从文件导入书签（`zero://bookmarks/import/file?path=...`；T62 文件源）。
+    ///
+    /// 与剪贴板导入共用 Netscape 解析器与 shell 合并逻辑；读取失败与「未解析出
+    /// 条目」都给用户可见结果（防数据丢失：不静默丢弃，失败回显路径供核对）。
+    fn apply_bookmarks_import_from_file(&mut self, path: String) {
+        let outcome = match std::fs::read_to_string(&path) {
+            Ok(text) => {
+                let entries = pages::parse_bookmarks_import_html(&text);
+                if entries.is_empty() {
+                    tracing::info!("bookmarks import(file): no entries parsed");
+                    pages::BookmarkImportOutcome::FileNoEntries
+                } else {
+                    let (added, skipped) = self.shell.import_bookmarks(&entries);
+                    tracing::info!("bookmarks import(file): added={added} skipped={skipped}");
+                    pages::BookmarkImportOutcome::Imported { added, skipped }
+                }
+            }
+            Err(err) => {
+                tracing::warn!("bookmarks import(file): cannot read {path}: {err}");
+                pages::BookmarkImportOutcome::FileUnavailable { path }
+            }
+        };
+        self.open_bookmarks_import_page(Some(outcome));
+    }
+
     /// 处理书签管理页内部动作 URL（过滤 / 编辑表单 / 删除 / 保存提交 / 导入）。
     ///
     /// `zero://bookmarks` 精确路径不在此处理（列表页经 [`Self::load_local_tab_url`] 装载）。
-    fn try_apply_bookmarks_url(&mut self, url: &str) -> bool {
+    pub(crate) fn try_apply_bookmarks_url(&mut self, url: &str) -> bool {
         if url == "zero://bookmarks/import" {
             self.open_bookmarks_import_page(None);
             return true;
         }
         if url == "zero://bookmarks/import/apply" {
             self.apply_bookmarks_import();
+            return true;
+        }
+        if let Some(rest) = url.strip_prefix("zero://bookmarks/import/file?") {
+            // T62 文件源导入：表单 GET `path` 参数（urlencoded；`+` 先于 %XX 解码）。
+            let path = Self::parse_form_query(rest)
+                .into_iter()
+                .find(|(key, _)| key == "path")
+                .map(|(_, value)| pages::percent_decode_form_value(&value))
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            if path.is_empty() {
+                self.open_bookmarks_import_page(None);
+            } else {
+                self.apply_bookmarks_import_from_file(path);
+            }
             return true;
         }
         if let Some(rest) = url.strip_prefix("zero://bookmarks?q=") {

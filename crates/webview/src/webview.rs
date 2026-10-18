@@ -653,6 +653,8 @@ pub struct WebView {
     prefers_color_scheme: PrefersColorSchemeValue,
     /// 渲染媒体类型（DC-12 @media print/screen；R1992）。默认 `Screen` = 零行为变更。
     media_type: MediaType,
+    /// 用户打印页面设置（T61 打印预览设置面板；None = 沿用 `@page`/引擎默认）。
+    print_page_setup: Option<zero_engine::PrintPageSetup>,
     /// 是否跳过调试属性指示器（R1996）。默认 true：指示器不属于网页内容。
     /// 持久化到字段，resize 重建 pipeline 后按下推，避免设置丢失。
     skip_indicators: bool,
@@ -790,6 +792,7 @@ impl WebView {
             font_metric_map: HashMap::new(),
             prefers_color_scheme: PrefersColorSchemeValue::Light,
             media_type: MediaType::Screen,
+            print_page_setup: None,
             skip_indicators: true,
             security_context: SecurityContext::new(),
         }
@@ -1030,6 +1033,8 @@ impl WebView {
         self.sync_pipeline_page_state();
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
         self.pipeline.set_media_type(self.media_type);
+        // T61：用户打印页面设置随媒体类型同点重放（render 入口状态重放纪律）。
+        self.pipeline.set_print_page_setup(self.print_page_setup);
         let result = self.pipeline.render_html(&html, css_str);
         let render_result = self.absorb_render_result(&result);
         self.last_render = Some(render_result.clone());
@@ -1109,6 +1114,8 @@ impl WebView {
         self.sync_pipeline_page_state();
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
         self.pipeline.set_media_type(self.media_type);
+        // T61：用户打印页面设置随媒体类型同点重放（render 入口状态重放纪律）。
+        self.pipeline.set_print_page_setup(self.print_page_setup);
         let result = self.pipeline.render_html(html, &self.cached_css);
         let render_result = self.absorb_render_result(&result);
         self.last_render = Some(render_result.clone());
@@ -1866,6 +1873,8 @@ impl WebView {
         self.sync_pipeline_page_state();
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
         self.pipeline.set_media_type(self.media_type);
+        // T61：用户打印页面设置随媒体类型同点重放（render 入口状态重放纪律）。
+        self.pipeline.set_print_page_setup(self.print_page_setup);
         let result = self.pipeline.render_html(&self.cached_html, &self.cached_css);
         let render_result = self.absorb_render_result(&result);
         self.last_render = Some(render_result.clone());
@@ -1880,6 +1889,8 @@ impl WebView {
         self.sync_pipeline_page_state();
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
         self.pipeline.set_media_type(self.media_type);
+        // T61：用户打印页面设置随媒体类型同点重放（render 入口状态重放纪律）。
+        self.pipeline.set_print_page_setup(self.print_page_setup);
         let result = self.pipeline.repaint_cached_viewport(&self.cached_css)?;
         let render_result = self.absorb_render_result(&result);
         self.last_render = Some(render_result.clone());
@@ -1937,6 +1948,8 @@ impl WebView {
         self.sync_pipeline_page_state();
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
         self.pipeline.set_media_type(self.media_type);
+        // T61：用户打印页面设置随媒体类型同点重放（render 入口状态重放纪律）。
+        self.pipeline.set_print_page_setup(self.print_page_setup);
         self.pipeline.advance_budgeted_render(session, budget_ms)
     }
 
@@ -2132,6 +2145,16 @@ impl WebView {
     pub fn set_media_type(&mut self, media_type: MediaType) {
         self.media_type = media_type;
         self.pipeline.set_media_type(media_type);
+    }
+
+    /// 设置用户打印页面设置（T61 打印预览：方向 + 页边距；`None` 清除回默认链）。
+    ///
+    /// 镜像 `set_media_type`：持久化字段 + 即时下推 pipeline，后续 render 入口重放。
+    /// 真实优先级（`@page` > 用户设置 > A4/0 默认）由引擎
+    /// `extract_print_page_geometry` 统一裁决。
+    pub fn set_print_page_setup(&mut self, setup: Option<zero_engine::PrintPageSetup>) {
+        self.print_page_setup = setup;
+        self.pipeline.set_print_page_setup(setup);
     }
 
     /// 设置是否跳过调试属性指示器（R1996）。

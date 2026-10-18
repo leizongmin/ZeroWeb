@@ -1224,6 +1224,22 @@ impl BrowserApp {
             return;
         }
 
+        // 5c. 打印预览设置面板点击（T61）：方向整行切换；份数/边距行左半 − / 右半 +。
+        //     命中区与渲染同源（render_print_preview_indicator 写入 print_setup_panel_rows），
+        //     仅打印预览激活期非零。悬浮于页面区之上，先于页面内容派发。
+        if let Some((row, right_half)) = self.print_setup_panel_hit(x_f, y_f) {
+            match row {
+                0 => self.cycle_print_orientation(),
+                1 => self.adjust_print_copies(if right_half { 1 } else { -1 }),
+                2 => {
+                    let step = zero_browser_shell::BrowserSettings::PRINT_MARGIN_STEP_MM;
+                    self.adjust_print_margin(if right_half { step } else { -step });
+                }
+                _ => {}
+            }
+            return;
+        }
+
         // 6. 页面内容区域 — 链接点击 / 取消地址栏焦点
         let (content_x, content_y, content_w, content_h) = self.page_content_rect();
         let page_top = content_y;

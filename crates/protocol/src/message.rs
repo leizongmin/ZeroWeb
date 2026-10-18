@@ -33,6 +33,8 @@ pub enum IpcMessageKind {
     SetColorScheme(SetColorSchemeParams),
     /// 更新渲染媒体类型（浏览器→渲染，DC-12 @media print；R1993）。
     SetMediaType(SetMediaTypeParams),
+    /// 更新用户打印页面设置（浏览器→渲染，T61 打印预览设置面板）。
+    SetPrintPageSetup(SetPrintPageSetupParams),
     /// 更新页面 JavaScript 执行策略；不影响用户代理默认动作。
     SetJavascriptEnabled(bool),
     /// CDP `Page.addScriptToEvaluateOnNewDocument` 预注入脚本登记（浏览器→渲染）。
@@ -678,6 +680,27 @@ pub enum IpcMediaType {
 pub struct SetMediaTypeParams {
     /// 渲染媒体类型。
     pub media_type: IpcMediaType,
+}
+
+/// IPC 打印页面方向（T61 打印预览；对应 CSS Paged Media `size` 方向分量）。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum IpcPrintOrientation {
+    /// 纵向。
+    Portrait,
+    /// 横向。
+    Landscape,
+}
+
+/// 用户打印页面设置参数（浏览器→渲染，T61）。
+///
+/// 优先级（引擎 `extract_print_page_geometry` 裁决）：`@page { size/margin }` 显式声明
+/// > 本设置 > A4 纵向 + 0 边距默认。份数不参与渲染，不经 IPC。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct SetPrintPageSetupParams {
+    /// 页面方向。
+    pub orientation: IpcPrintOrientation,
+    /// 四边统一页边距（毫米）。
+    pub margin_mm: f32,
 }
 
 /// 页面绘制帧的 Browser IPC 发布模式。

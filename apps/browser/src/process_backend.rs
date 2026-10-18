@@ -15,9 +15,9 @@ use zero_protocol::message::{
     AutomationOperation, AutomationRequest, AutomationResponse, DispatchDomEventParams, FetchParams, FocusChangeInfo,
     FramePublishMode, ImeEventParams, IndexedDbConnectionEventAckParams, IndexedDbConnectionEventParams,
     IndexedDbRequestParams, IndexedDbResponseParams, IpcColorScheme, IpcMediaType, IpcMessage, IpcMessageKind,
-    LoadHtmlParams, NavigationCommittedParams, NavigationStartedParams, ScrollEventParams, ServiceWorkerOperation,
-    ServiceWorkerRequestParams, SetColorSchemeParams, SetMediaTypeParams, SetViewportParams, StorageOpParams,
-    StorageOperation, StorageType,
+    IpcPrintOrientation, LoadHtmlParams, NavigationCommittedParams, NavigationStartedParams, ScrollEventParams,
+    ServiceWorkerOperation, ServiceWorkerRequestParams, SetColorSchemeParams, SetMediaTypeParams,
+    SetPrintPageSetupParams, SetViewportParams, StorageOpParams, StorageOperation, StorageType,
 };
 use zero_protocol::process::{ProcessManager, RendererHandle};
 use zero_render_foundation::image_cache::{ImageData, ImageKey};
@@ -1694,6 +1694,27 @@ impl ProcessTabBackend {
             self.send_to_renderer(
                 tab_id,
                 IpcMessageKind::SetMediaType(SetMediaTypeParams { media_type: ipc_media }),
+            );
+        }
+    }
+
+    /// 广播用户打印页面设置到所有 live 渲染进程（T61 打印预览设置面板）。
+    pub fn set_print_page_setup(&mut self, setup: Option<zero_engine::PrintPageSetup>) {
+        let Some(setup) = setup else {
+            return; // None（清除）仅发生在设置重置路径；当前 UI 无入口，无需广播
+        };
+        let orientation = match setup.orientation {
+            zero_engine::PrintOrientation::Portrait => IpcPrintOrientation::Portrait,
+            zero_engine::PrintOrientation::Landscape => IpcPrintOrientation::Landscape,
+        };
+        let tabs: Vec<TabId> = self.tab_to_renderer.keys().copied().collect();
+        for tab_id in tabs {
+            self.send_to_renderer(
+                tab_id,
+                IpcMessageKind::SetPrintPageSetup(SetPrintPageSetupParams {
+                    orientation,
+                    margin_mm: setup.margin_mm,
+                }),
             );
         }
     }

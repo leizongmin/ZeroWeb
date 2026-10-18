@@ -250,12 +250,14 @@ impl BrowserApp {
         (fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows, overlay_rounded_rects)
     }
 
-    /// 渲染打印预览徽标（DC-12 @media print；R1994）。
+    /// 渲染打印预览面板（DC-12 @media print；R1994 + T61 设置项）。
     ///
-    /// `Ctrl+P` 切换打印预览（`toggle_print_preview`）后，`media_type == Print` 期间在页面
-    /// 右下角持久显示「Print Preview — Ctrl+P to exit」徽标，给用户明确反馈当前为打印
-    /// 媒体渲染（@media print 样式生效）。镜像 `render_zoom_indicator` 的右下角圆角浮层，
-    /// 但**无 3 秒自动隐藏**（持久态，随 toggle 消失）。
+    /// `Ctrl+P` 切换打印预览（`toggle_print_preview`）后，`media_type == Print` 期间在
+    /// 左下角持久显示面板：标题行（Ctrl+P 退出提示）+ 三组设置行（方向 / 份数 / 页边距）。
+    /// 方向整行点击切换，份数/边距行左半 − / 右半 +（命中区渲染时写入
+    /// `print_setup_panel_rows`，输入层 `print_setup_panel_hit` 消费）。设置经
+    /// `apply_settings` 持久化到 profile（对齐 zoom 持久化模式）。
+    /// 镜像 `render_zoom_indicator` 的圆角浮层，但**无 3 秒自动隐藏**（持久态，随 toggle 消失）。
     fn render_print_preview_indicator(
         &mut self,
         fills: &mut Vec<FillPrimitive>,
@@ -264,6 +266,8 @@ impl BrowserApp {
         height: u32,
         s: f32,
     ) {
+        // 非打印媒体态面板不显示，命中区一并清零（防陈旧矩形吃掉页面点击）。
+        self.print_setup_panel_rows = [(0.0, 0.0, 0.0, 0.0); 3];
         if self.font_id.is_none() {
             return;
         }
@@ -271,13 +275,30 @@ impl BrowserApp {
         if self.tabs.media_type() != zero_engine::MediaType::Print {
             return;
         }
-        let label = "Print Preview — Ctrl+P to exit";
         let font_size = layout::CHROME_FONT_SIZE * s;
-        let label_w = self.measure_ui_text_width(label, font_size);
+        let title = "Print Preview — Ctrl+P to exit";
+        let (orientation, copies, margin_mm) = self.print_settings();
+        let orientation_label = match orientation {
+            zero_browser_shell::PrintOrientationPreference::Portrait => "Portrait",
+            zero_browser_shell::PrintOrientationPreference::Landscape => "Landscape",
+        };
+        let rows = [
+            title.to_string(),
+            format!("Orientation: {orientation_label}"),
+            format!("Copies:  - {copies} +"),
+            format!("Margin:  - {} mm +", margin_mm as i32),
+        ];
         let pad_h = 12.0 * s;
         let pad_v = 8.0 * s;
+        let row_h = font_size + 8.0 * s;
+        let row_gap = 4.0 * s;
+        let row_count = rows.len() as f32;
+        let label_w = rows
+            .iter()
+            .map(|r| self.measure_ui_text_width(r, font_size))
+            .fold(0.0f32, f32::max);
         let box_w = label_w + pad_h * 2.0;
-        let box_h = font_size + pad_v * 2.0;
+        let box_h = row_count * row_h + (row_count - 1.0) * row_gap + pad_v * 2.0;
         let margin = 16.0 * s;
         // 左下角（避开右下角缩放浮层 + 滚动条）。
         let box_x = margin;
@@ -295,14 +316,24 @@ impl BrowserApp {
             radius - border,
             self.chrome_palette.find_bar_bg,
         );
-        self.draw_ui_text(
-            label,
-            box_x + pad_h,
-            box_y + pad_v,
-            font_size,
-            self.chrome_palette.find_bar_text,
-            glyphs,
-        );
+        for (i, label) in rows.iter().enumerate() {
+            let row_x = box_x + pad_h;
+            let row_y = box_y + pad_v + i as f32 * (row_h + row_gap);
+            if i > 0 {
+                // 设置行画可点击按钮底色（悬浮面板背景上再叠一层，提示可交互）。
+                push_rounded_rect_fill(
+                    fills,
+                    row_x - 4.0 * s,
+                    row_y - 2.0 * s,
+                    box_w - 2.0 * pad_h + 8.0 * s,
+                    row_h,
+                    4.0 * s,
+                    self.chrome_palette.context_menu_hover_bg,
+                );
+                self.print_setup_panel_rows[i - 1] = (row_x - 4.0 * s, row_y - 2.0 * s, box_w - 2.0 * pad_h + 8.0 * s, row_h);
+            }
+            self.draw_ui_text(label, row_x, row_y + (row_h - font_size) / 2.0, font_size, self.chrome_palette.find_bar_text, glyphs);
+        }
     }
 
     /// 渲染缩放百分比浮层。zoom 操作后 3 秒内显示在页面右下角。

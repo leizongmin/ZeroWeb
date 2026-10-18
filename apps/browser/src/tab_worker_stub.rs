@@ -12,6 +12,7 @@ pub enum TabWorkerCommand {
     SetJavascriptEnabled(bool),
     SetColorScheme(PrefersColorSchemeValue),
     SetMediaType(MediaType),
+    SetPrintPageSetup(Option<zero_engine::PrintPageSetup>),
     Resize {
         width: u32,
         height: u32,

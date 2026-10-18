@@ -1438,6 +1438,84 @@ fn toggle_print_preview_flips_media_type() {
     assert_eq!(app.media_type_for_test(), zero_engine::MediaType::Screen);
 }
 
+/// T61：`toggle_print_preview` 按当前设置下发打印页面设置（方向/边距经
+/// `sync_print_page_setup_from_settings` 注入 TabManager，最终进引擎 Print 分页链）。
+/// settings.json 为跨测试共享持久资源（guidelines #19），持锁串行。
+#[test]
+fn toggle_print_preview_pushes_print_page_setup_from_settings() {
+    let _guard = MULTIPROCESS_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    assert!(app.print_page_setup_for_test().is_none(), "Screen 默认态不下发");
+    app.shell.apply_settings(|settings| {
+        settings.print_orientation = zero_browser_shell::PrintOrientationPreference::Landscape;
+        settings.print_margin_mm = 10.0;
+    });
+    app.toggle_print_preview();
+    let setup = app.print_page_setup_for_test().expect("Print 态应下发页面设置");
+    assert_eq!(setup.orientation, zero_engine::PrintOrientation::Landscape);
+    assert!(
+        (setup.margin_mm - 10.0).abs() <= f32::EPSILON,
+        "margin_mm 应取设置值，got {}",
+        setup.margin_mm
+    );
+}
+
+/// T61：方向切换 + 份数/边距步进调整持久化到设置，方向/边距即时下发引擎链。
+/// 断言前先归位已知值——settings.json 为跨测试共享持久资源（guidelines #19），
+/// 不依赖盘上初始态；同款持锁串行。
+#[test]
+fn print_setup_panel_actions_persist_and_push() {
+    let _guard = MULTIPROCESS_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.toggle_print_preview();
+
+    // 方向：Portrait ↔ Landscape 往返，设置持久化 + 即时下发。
+    app.shell.apply_settings(|settings| {
+        settings.print_orientation = zero_browser_shell::PrintOrientationPreference::Portrait
+    });
+    app.cycle_print_orientation();
+    assert_eq!(
+        app.shell.settings().print_orientation,
+        zero_browser_shell::PrintOrientationPreference::Landscape
+    );
+    assert_eq!(
+        app.print_page_setup_for_test().unwrap().orientation,
+        zero_engine::PrintOrientation::Landscape
+    );
+    app.cycle_print_orientation();
+    assert_eq!(
+        app.shell.settings().print_orientation,
+        zero_browser_shell::PrintOrientationPreference::Portrait
+    );
+
+    // 份数：先归位再步进；1 下限 / 99 上限 clamp。份数仅作业语义，不下发渲染链。
+    app.shell.apply_settings(|settings| settings.print_copies = 5);
+    app.adjust_print_copies(1);
+    assert_eq!(app.shell.settings().print_copies, 6);
+    app.adjust_print_copies(-1);
+    assert_eq!(app.shell.settings().print_copies, 5);
+    app.shell.apply_settings(|settings| settings.print_copies = 1);
+    app.adjust_print_copies(-1);
+    assert_eq!(app.shell.settings().print_copies, 1);
+    app.shell.apply_settings(|settings| settings.print_copies = 99);
+    app.adjust_print_copies(1);
+    assert_eq!(app.shell.settings().print_copies, 99);
+
+    // 边距：先归位再步进；0 / 50 clamp；调整即时下发引擎链。
+    app.shell.apply_settings(|settings| settings.print_margin_mm = 10.0);
+    app.adjust_print_margin(-5.0);
+    assert!((app.shell.settings().print_margin_mm - 5.0).abs() <= f32::EPSILON);
+    assert!((app.print_page_setup_for_test().unwrap().margin_mm - 5.0).abs() <= f32::EPSILON);
+    app.adjust_print_margin(5.0);
+    assert!((app.shell.settings().print_margin_mm - 10.0).abs() <= f32::EPSILON);
+    app.shell.apply_settings(|settings| settings.print_margin_mm = 0.0);
+    app.adjust_print_margin(-5.0);
+    assert!((app.shell.settings().print_margin_mm - 0.0).abs() <= f32::EPSILON);
+    app.shell.apply_settings(|settings| settings.print_margin_mm = 50.0);
+    app.adjust_print_margin(5.0);
+    assert!((app.shell.settings().print_margin_mm - 50.0).abs() <= f32::EPSILON);
+}
+
 /// 点击地址栏右侧三点按钮应打开浏览器菜单。
 #[test]
 fn browser_menu_button_opens_context_menu() {
@@ -6613,4 +6691,64 @@ fn overflow_active_tab_eviction_pinned_fallback_takes_full_slot() {
         Some(btn_x_plain),
         "▾ 右缘应贴借槽右缘（换位不移动 ▾）"
     );
+}
+
+/// T62：文件源书签导入——`zero://bookmarks/import/file?path=...` 读临时 Netscape
+/// HTML 文件导入并刷新书签；不存在路径给用户可见结果且书签不变。
+/// 书签 URL 按运行唯一（BrowserApp::new 加载真实 profile，shell 按 URL 去重——
+/// 固定 URL 会在重跑时被上次导入去重为 0 新增）。
+#[test]
+fn bookmarks_import_from_file_parses_and_merges() {
+    let _guard = MULTIPROCESS_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    let len_before = app.shell.bookmarks().len();
+    let uniq = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let root_url = format!("https://example.net/t62-root-{uniq}");
+    let folder_url = format!("https://example.org/t62-folder-{uniq}");
+
+    // 导入文件（含 1 条根级 + 1 条文件夹内书签；URL 与既有书签去重逻辑由 shell 合并保证）。
+    let dir = std::env::temp_dir().join(format!("zw-t62-import-{}-{uniq}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("create temp dir");
+    let file_path = dir.join("bookmarks.html");
+    std::fs::write(
+        &file_path,
+        format!(
+            r#"<!DOCTYPE NETSCAPE-Bookmark-file-1>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">
+<TITLE>Bookmarks</TITLE>
+<H1>Bookmarks</H1>
+<DL><p>
+  <DT><H3>测试文件夹</H3>
+  <DL><p>
+    <DT><A HREF="{folder_url}">文件夹内书签</A>
+  </DL><p>
+  <DT><A HREF="{root_url}">根级书签</A>
+</DL><p>
+"#
+        ),
+    )
+    .expect("write temp bookmarks file");
+    let url = format!(
+        "zero://bookmarks/import/file?path={}",
+        crate::pages::percent_encode_query_value(&file_path.to_string_lossy())
+    );
+    assert!(app.try_apply_bookmarks_url(&url), "文件导入 URL 应被内部动作处理");
+    assert_eq!(app.shell.bookmarks().len(), len_before + 2, "应新增 2 条书签");
+    assert!(
+        app.shell.bookmarks().list_root().iter().any(|b| b.url() == root_url),
+        "根级书签应入列"
+    );
+
+    // 不存在的路径：书签不变，导入页给出可见错误（回显路径）。
+    let missing = dir.join("does-not-exist.html");
+    let url = format!(
+        "zero://bookmarks/import/file?path={}",
+        crate::pages::percent_encode_query_value(&missing.to_string_lossy())
+    );
+    assert!(app.try_apply_bookmarks_url(&url));
+    assert_eq!(app.shell.bookmarks().len(), len_before + 2, "失败导入不得改动书签");
+    let _ = std::fs::remove_dir_all(&dir);
 }
