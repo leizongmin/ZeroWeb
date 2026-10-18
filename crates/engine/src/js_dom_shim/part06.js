@@ -432,6 +432,7 @@
   var _plSel = null;
   var _plHandle = null;
   var _plKey = null; // _elKey(sel,handle) of 指针锁元素；同 _fsKey 语义
+  var _plTarget = null; // 锁定元素原对象（任意包装族——FR-7 实例域 retarget 上行起点；与 _plKey 同生灭）
   var _plUnadjusted = false; // 锁定生效的 unadjustedMovement 有效布尔（M2 RFC s1 N2：no-op 比对面；与 _plKey 同生灭）
 
   // WAB2-M3-s1（web-api-batch2 goal M3 切片 1，2026-09-24）：**瞬态激活面**（User
@@ -593,7 +594,7 @@
       } catch (_ePlr) {}
     }
     if (!inSubtree) return;
-    _plKey = null; _plSel = null; _plHandle = null; _plUnadjusted = false;
+    _plKey = null; _plSel = null; _plHandle = null; _plTarget = null; _plUnadjusted = false;
     // RFC §6.5：移除解锁通知 host 镜像（同步清——镜像与 shim 态同拍；change 事件
     // 仍按 s1 语义异步 task 派）。
     if (typeof __zw_pointer_lock_state_changed === 'function') {
@@ -601,6 +602,103 @@
     }
     _fsQueueStep(function () {
       _firePointerLockEvent('pointerlockchange');
+    });
+  }
+
+  // M2 RFC s4（FR-7 shadow retarget，spec
+  // https://w3c.github.io/pointerlock/#widl-DocumentOrShadowRoot-pointerlockelement）：
+  // 锁目标（_plTarget 原对象）沿 parentNode 上行的 **composed 视图 retarget**——
+  // parent 是 shadow root（鸭面判定：nodeType 11 + nodeName '#shadow-root' + host，
+  // 同时覆盖 handle 域 _wrapHandle 产物与轻量 shadow 对象——R307 实例域克隆树的
+  // attachShadow 走轻量路径，产物无 handle）即跨一个 shadow 边界：该 root 的视图 =
+  // 跨界时所在节点（root 树内以 root 为父的祖先/自身），document 视图 = 跨过的
+  // 最外层 host（spec retarget 算法——WPT pointerlock_shadow 逐层断言面：
+  // document→host2、root2→host3、root3→canvas、无键 root→null）。返回
+  // { docView, byRoot, roots, views }：byRoot 按 handle 键（part04 trap 分支消费）；
+  // roots/views 平行数组按**对象身份**键（ShadowRoot.prototype accessor 消费——
+  // 轻量 shadow 无 handle 可键）。docView null = 未跨边界，document getter 回落
+  // 目标自身（既有轻 DOM 行为不变）。trap 代理经 _proxyCache、实例域对象为活树
+  // 原对象，两侧 identity 均稳定，跨族 `===` 断言不受影响（learning #32）。
+  function _plRetargetViews() {
+    var views = {};
+    var roots = [];
+    var vnodes = [];
+    var docView = null;
+    if (!_plKey || !_plTarget) return { docView: docView, byRoot: views, roots: roots, views: vnodes };
+    var cur = _plTarget;
+    var hops = 0;
+    while (cur && hops++ < 64) {
+      var p = null;
+      try { p = cur.parentNode; } catch (_ePlrvp) { break; }
+      if (!p) break;
+      var isRoot = false;
+      try { isRoot = p.nodeType === 11 && p.nodeName === '#shadow-root' && p.host; } catch (_ePlrvr) { isRoot = false; }
+      if (isRoot) {
+        roots.push(p);
+        vnodes.push(cur);
+        var ph = null;
+        try { ph = p.__zwHandle; } catch (_ePlrvh) { ph = null; }
+        if (ph) views[ph] = cur;
+        cur = p.host;
+        docView = cur;
+        continue;
+      }
+      cur = p;
+    }
+    return { docView: docView, byRoot: views, roots: roots, views: vnodes };
+  }
+
+  // M2 RFC s1/s4：requestPointerLock 共享 grant 流——trap 代理域（part04 get trap
+  // 闭包）与 Element.prototype 轻量回落（R307 实例域元素无 proxy trap，经原型链
+  // 达本层）共一层语义：① options 校验 ② host deny ③ 激活门 ④ 同元素同选项
+  // no-op ⑤ grant + change + resolve（各步细则见 part04 trap 分支注记）。
+  // rawElem = 调用方原对象（记入 _plTarget 供 FR-7 retarget 沿实例链上行；trap 域
+  // 传 proxy——_proxyCache 缓存 identity 稳定）；sel/handle 为代理域坐标，实例域
+  // 双 null → _plKey 走对象身份盖章（同 _ceConnKeyFor plain 记账面——_elKey(null,null)
+  // 返 null 会毁掉「已锁」真值判定）。
+  function _plRequestLock(rawElem, sel, handle, options) {
+    if (options != null && typeof options !== 'object') {
+      return Promise.reject(new TypeError("Failed to execute 'requestPointerLock' on 'Element': The provided value is not of type 'PointerLockOptions'."));
+    }
+    var unadj = false;
+    if (options != null && typeof options === 'object') {
+      try { unadj = !!options.unadjustedMovement; } catch (_eU) { unadj = false; }
+    }
+    return new Promise(function (resolve, reject) {
+      if (typeof __zw_pointer_lock_enabled === 'function') {
+        var ok = true;
+        try { ok = __zw_pointer_lock_enabled() === '1'; } catch (_e) {}
+        if (!ok) {
+          // RFC §6.5：deny 通知（镜像未锁态保持不变——跃迁判定在 host 侧静默）。
+          if (typeof __zw_pointer_lock_state_changed === 'function') {
+            try { __zw_pointer_lock_state_changed(JSON.stringify({ locked: false, selector: sel, handle: handle, unadjustedMovement: unadj })); } catch (_ePlhD) {}
+          }
+          _firePointerLockEvent('pointerlockerror');
+          reject(new (globalThis.DOMException || Error)('pointer lock is unavailable', 'NotAllowedError'));
+          return;
+        }
+      }
+      if (!_zwTransientActive) {
+        _firePointerLockEvent('pointerlockerror');
+        reject(new (globalThis.DOMException || Error)('A user gesture is required to request pointer lock.', 'NotAllowedError'));
+        return;
+      }
+      var key = (sel || handle) ? _elKey(sel, handle) : _ceConnKeyFor(rawElem);
+      if (_plKey === key && _plUnadjusted === unadj) { resolve(undefined); return; } // 同元素同选项 → no-op
+      _plKey = key;
+      _plSel = sel;
+      _plHandle = handle;
+      _plTarget = rawElem || null;
+      _plUnadjusted = unadj;
+      // pointerlock-compat M3 s3（RFC §6.5）：grant/option 重锁通知 host 镜像
+      // （webview `PointerLockState`——typeof 守卫未注册静默，同 deny 开关风格）。
+      // selector 发纯 `sel`（非 _elKey 复合键——host 侧 querySelector 解析面，
+      // 与 drag hit selector 同约束；handle 附带供诊断）。
+      if (typeof __zw_pointer_lock_state_changed === 'function') {
+        try { __zw_pointer_lock_state_changed(JSON.stringify({ locked: true, selector: sel, handle: handle, unadjustedMovement: unadj })); } catch (_ePlhG) {}
+      }
+      _firePointerLockEvent('pointerlockchange');
+      resolve(undefined);
     });
   }
 
@@ -4867,11 +4965,20 @@
     // https://w3c.github.io/pointerlock/#dom-document-pointerlockelement
     get pointerLockElement() {
       if (!_plKey) return null;
+      // M2 RFC s4（FR-7）：shadow 树内锁目标的 document 视图 = retarget 最外层
+      // host（_plRetargetViews composed 上行）；未跨边界回落目标原对象 _plTarget
+      //（trap 域 = 缓存 proxy 同 _makeProxy 产物；实例域 = 活树原对象——sel/handle
+      // 双 null，_makeProxy(null,null) 无意义）。B/C 面行为不变。
+      try {
+        var _plDocViews = _plRetargetViews();
+        if (_plDocViews && _plDocViews.docView) return _plDocViews.docView;
+      } catch (_ePlDoc) {}
+      if (_plTarget) return _plTarget;
       return _makeProxy(_plSel, _plHandle);
     },
     exitPointerLock: function () {
       if (!_plKey) return; // 非锁定 → no-op，不派事件（spec）
-      _plKey = null; _plSel = null; _plHandle = null; _plUnadjusted = false;
+      _plKey = null; _plSel = null; _plHandle = null; _plTarget = null; _plUnadjusted = false;
       // pointerlock-compat M3 s3（RFC §6.5）：exit 通知 host 镜像（先镜像后事件——
       // 页面 handler 内经宿主仲裁面读到的已是退出后状态）。
       if (typeof __zw_pointer_lock_state_changed === 'function') {

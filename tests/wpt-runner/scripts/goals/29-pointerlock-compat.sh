@@ -14,6 +14,11 @@ source "${SCRIPT_DIR}/lib.sh"
 GOAL="pointerlock-compat"
 DIRS=( "pointerlock" )
 
+# TBD-1 已决（RFC §10，s4 落地 2026-10-19）：pointerlock_shadow 依赖的 shadow-dom
+# 测试 helper（createTestTree 等）——单文件补拉（20-net-api-compat 资产先例；不入
+# DIRS 扫描面，runner 只扫 pointerlock/）。实跑 shadow 案翻绿（M3 Commit 5）。
+fetch_raw "shadow-dom/resources/shadow-dom.js" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+
 goals_fetch_all
 goals_inventory
 goals_next_steps "${GOAL}"

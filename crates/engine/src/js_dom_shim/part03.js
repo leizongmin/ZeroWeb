@@ -1419,6 +1419,50 @@
     Object.setPrototypeOf(globalThis.ShadowRoot.prototype,
       globalThis.DocumentFragment ? globalThis.DocumentFragment.prototype : globalThis.Node.prototype);
   } catch (_e194sr) {}
+  // pointerlock-compat M3 s4（FR-7，spec
+  // https://w3c.github.io/pointerlock/#widl-DocumentOrShadowRoot-pointerlockelement）：
+  // ShadowRoot.prototype pointerLockElement accessor——轻量 shadow（R179 工厂产物，
+  // 无 handle、无 proxy trap，R307 实例域克隆树 attachShadow 即此路径）经原型链获
+  // DocumentOrShadowRoot 语义；handle 域 _wrapHandle 产物由 part04 get trap 分支
+  // 先答（proxy trap 先于原型查找），不达本面。视图按**对象身份**匹配（part06
+  // _plRetargetViews roots/views 平行数组——轻量 shadow 无 handle 可键）。
+  try {
+    if (globalThis.ShadowRoot && globalThis.ShadowRoot.prototype
+        && !Object.getOwnPropertyDescriptor(globalThis.ShadowRoot.prototype, 'pointerLockElement')) {
+      Object.defineProperty(globalThis.ShadowRoot.prototype, 'pointerLockElement', {
+        configurable: true,
+        get: function () {
+          var _plRvLs = (typeof _plRetargetViews === 'function') ? _plRetargetViews() : null;
+          if (!_plRvLs) return null;
+          for (var _plRvLi = 0; _plRvLi < _plRvLs.roots.length; _plRvLi++) {
+            if (_plRvLs.roots[_plRvLi] === this) return _plRvLs.views[_plRvLi];
+          }
+          return null;
+        },
+      });
+    }
+  } catch (_ePlPle) {}
+  // pointerlock-compat M3 s4：Element.prototype requestPointerLock 轻量回落——
+  // R307 实例域元素无 proxy trap（trap 分支只服务 _makeProxy/_wrapHandle 产物），
+  // 克隆树（createTestTree 惯例）内元素经原型链达本层。grant 流委托 part06
+  // `_plRequestLock`（与 trap 域同一层语义）；rawElem = this（实例域活树原对象，
+  // identity 天然稳定——learning #32）、sel/handle 双 null（实例对象无代理坐标，
+  // _plKey 由对象身份盖章）。guard 同上 attachShadow 原型面（重复装载幂等）。
+  try {
+    if (globalThis.Element && globalThis.Element.prototype
+        && typeof globalThis.Element.prototype.requestPointerLock !== 'function') {
+      Object.defineProperty(globalThis.Element.prototype, 'requestPointerLock', {
+        value: function (options) {
+          var own = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(this) || {}, 'requestPointerLock');
+          if (own && typeof own.value === 'function' && own.value !== globalThis.Element.prototype.requestPointerLock) {
+            return own.value.call(this, options);
+          }
+          return _plRequestLock(this, null, null, options);
+        },
+        writable: true, configurable: true,
+      });
+    }
+  } catch (_ePlRpl) {}
   // R366（js-dom M1/M4 CE registry 专项 slice 2b）：**ShadowRoot.prototype innerHTML
   // accessor**——shadow 的 node document 路由面（spec `dom-innerhtml-innerhtml`：
   // fragment 序列化 setter）。WPT create-element-realm-after-adoption 的

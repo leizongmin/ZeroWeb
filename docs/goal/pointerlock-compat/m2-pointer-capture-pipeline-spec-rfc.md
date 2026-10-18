@@ -1,6 +1,6 @@
 # Spec+RFC：M2 指针捕获管线——锁定语义 + 位移流 + 锁定态输入改道
 
-**版本**: v1.4（已确认·M3 实施中）
+**版本**: v1.5（已确认·M3 收口）
 **日期**: 2026-10-19
 **作者**: AI Assistant
 **状态**: 已确认——方案 A + N1–N4 纳入 + fsKey 同族修复随 FR-10，经用户
@@ -454,11 +454,11 @@ M1 五缺口（甄别报告 45-52 行）+ 本轮新发现：
 
 | ID | 项目 | 优先级 | 缺失信息 | 下一步 |
 |---|---|---|---|---|
-| TBD-1 | `pointerlock_shadow` 依赖 `../shadow-dom/resources/shadow-dom.js` 补拉 | 重要（阻塞 FR-7 验收） | goal fetch 脚本 DIRS 扩展 vs 单文件补拉 | s4 前定；不成则该案按记账纪律排除并显式记录 |
-| TBD-2 | shim 合成事件 `screenX==clientX` 假设 | 重要（FR-4 断言前提） | s2 实跑首查 | s2 落账时验证；不成立则 delta 锚点改 client 差并复核语料等式 |
-| TBD-3 | runner `Actions.scroll` 与 button 3/4 合成能力 | 重要（FR-9/wheel 案前提） | runner op 面实查 | s3 实查；不支持则对应案按记账纪律记录，不阻塞主链 |
-| TBD-4 | OS 光标隐藏/显示（桌面 UX） | 可选 | 平台窗口面方案 | 排除面挂账，远期池 |
-| TBD-5 | C 面实跑后的上游红/残留 | 重要 | 实跑数据 | s3/s4 落账，按 goal 记账纪律处理 |
+| TBD-1 | `pointerlock_shadow` 依赖 `../shadow-dom/resources/shadow-dom.js` 补拉 | 重要（阻塞 FR-7 验收） | ~~goal fetch 脚本 DIRS 扩展 vs 单文件补拉~~ **已决（s4）**：单文件补拉落地（goal 脚本 `fetch_raw`，pin 31597693）；实跑 shadow 案翻绿 |
+| TBD-2 | shim 合成事件 `screenX==clientX` 假设 | 重要（FR-4 断言前提） | ~~s2 实跑首查~~ **已决（s2）**：假设成立（mouse 分支合成 screenX=clientX），movementX_Y_basic 翻绿 |
+| TBD-3 | runner `Actions.scroll` 与 button 3/4 合成能力 | 重要（FR-9/wheel 案前提） | **记账（s4）**：`Actions.scroll` 未实现——wheel 案 ×2 记账 runner 域；桌面锁定 wheel 转发同域挂账（webview 无 DOM wheel 派发底座） |
+| TBD-4 | OS 光标隐藏/显示（桌面 UX） | 可选 | **排除面**：远期池（平台窗口面方案） |
+| TBD-5 | C 面实跑后的上游红/残留 | 重要 | **已决（s4）**：残留 3 红 = constructor（Event.NONE 跨域 residual，dom/events 域）+ wheel×2（TBD-3 记账），归因清晰不阻塞收口 |
 
 已决：
 - 范围五缺口 + 新缺口 N1–N4 全覆盖（M1 报告 82-92 行挂账逐项对映，无静默
@@ -536,3 +536,4 @@ M1 五缺口（甄别报告 45-52 行）+ 本轮新发现：
 | v1.2 | 2026-10-19 | M3 s2 实施期补充（movementX_Y_basic 实跑翻绿验证）：§6.3 位移流 shim 面落点除 part06 mouse 分支透传外，**part05 `MouseEvent` 构造器 init 键表需补 `movementX`/`movementY`（缺省 0）**——键表外的 init 键被静默丢弃（constructor.html M1 红案「movementX 缺省 undefined vs 0」的真根因）；PointerEvent/WheelEvent 经原型链继承。§6.3 假设「shim 合成 screenX 与 clientX 一致」落定为 mouse 分支显式 `screenX=clientX`/`screenY=clientY`（dom/events 构造路径 screenX 断言不受影响——分支隔离）。需求/验收/切片/方案不变 |
 | v1.3 | 2026-10-19 | M3 s3 实施期修正（管线就绪，e2e 桥测试一次全绿验证）：① §6.5「事件派发改道」**不实施**——shim change/error 保持 s1 `_firePointerLockEvent` 同步派发（corpus 已验证 N1 面），host 桥只做状态镜像（双馈管线本义）；改道经 host→page 脚本回环会把同步派发变异步任务，破坏 corpus 已钉时序。② §6.5 payload `selector` 发纯 `sel`（非 `_elKey` 复合键 `@handle`——host 侧 querySelector 解析面）。③ §6.5 `PointerLockChanged{locked, tab_id}` → `{locked}`——renderer 无 tab 身份，通道关联同 FocusOwnerChanged 先例。④ §8.2 步骤 5 注册点在 webview.rs 非 js_dom_bridge.rs——Arc 共享镜像需 webview 侧状态，静态注册函数与 identity bridge 三武装点并列。需求/验收/切片/方案不变 |
 | v1.4 | 2026-10-19 | M3 Commit 4 实施期修正（C 面 18 案实跑翻绿验证）：① §6.4 `apply_locked_pointer_button` 签名扩为 `(phase, button, x, y)`——锁定只改 target 不改键态，mousedown/mouseup 按物理键透传 `button`/`buttons`（`mouse_buttons_back_forward` back/forward mouseup 断言面实证：首跑 Timeout 暴露缺 button），镜像 buttons 掩码随相位置/清（与 shim `_zwButtonMask` 同映射）。② §6.6 桌面 Esc 释放通道落 `PointerLockInputPhase::Exit` 变体（UA 手势释放相位）→ renderer `execute_script("document.exitPointerLock();")` 走页面可见 API、§6.5 host 桥回环关宿主镜像；桌面 wheel 锁定转发（§6.6 wheel 子句）挂账——webview 无 DOM wheel 派发底座，建管线无验证面（corpus wheel 案本身 TBD-3），与 TBD-3 同域。需求/验收/切片/方案不变 |
+| v1.5 | 2026-10-19 | M3 Commit 5 / s4 收口实施期修正（pointerlock_shadow 实跑翻绿验证，通道终账 19/22、文件 15/18）：① §6.2/FR-7 retarget 重写为**双域**——实施期发现 `createTestTree` 克隆树为 R307 实例域（内部节点无 `__zwHandle`，attachShadow 经 `Element.prototype` 轻量路径产 `[object Object]` shadow，无 handle），原 handle 域 `_shadowHandles` 判界对整树不可达（探针链：ids map 完整 11 键 → R2–R5 读 undefined → 两族父节点分族实证）。落点：锁态增 `_plTarget` 原对象（grant/exit/移除/导航清四站点），`_plRetargetViews` 鸭面判界（nodeType 11 + `#shadow-root` + host）沿实例链上行，视图双键（`byRoot` handle 键给 part04 trap 分支 + roots/views 平行数组对象身份键给 `ShadowRoot.prototype` accessor——轻量 shadow 无 handle 可键）；`Element.prototype.requestPointerLock` 轻量回落（实例域无 proxy trap；grant 流抽 `_plRequestLock` 与 trap 域共享，实例 `_plKey` 走 `_ceConnKeyFor` 对象身份盖章——`_elKey(null,null)` 返 null 毁真值判定）。② §10 TBD-1/2/5 转已决、TBD-3 转记账（wheel×2 + 桌面 wheel 同域）、TBD-4 维持排除面。需求/验收/切片/方案不变 |

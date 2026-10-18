@@ -2268,6 +2268,15 @@
           var _smm = _shadowHandleMeta[handle];
           return _smm ? _smm.mode : 'open';
         }
+        // pointerlock-compat M3 s4（FR-7，spec
+        // https://w3c.github.io/pointerlock/#widl-DocumentOrShadowRoot-pointerlockelement）：
+        // shadow root 视图的锁元素 = 锁目标祖先链中以本 root 为父的节点（目标在
+        // 树内 = 目标自身，内层跨界 host 次之；不在树内 = null——WPT
+        // pointerlock_shadow 逐层断言面）。
+        if (isShadow && prop === 'pointerLockElement') {
+          var _plRootViews = _plRetargetViews();
+          return _plRootViews.byRoot[handle] || null;
+        }
         // Text/Comment 节点的 nodeValue/data = 文本（经 __zw_get_text_handle 读回，element 的 nodeValue 为 null）。
         if ((isText || isComment) && (prop === 'nodeValue' || prop === 'data')) {
           // R121：JS 侧覆盖缓存优先（孤立代理保真；miss 回落 wire）。
@@ -3873,48 +3882,12 @@
         //    trusted）+ resolve。headless 无真位移流/光标隐藏——host 锁镜像（M2 s3 管线）经桥另记。
         // https://w3c.github.io/pointerlock/#dom-element-requestpointerlock
         if (prop === 'requestPointerLock') {
+          // M2 RFC s4：grant 流抽至 part06 `_plRequestLock` 共享（Element.prototype
+          // 轻量回落同层——R307 实例域元素经原型链获同语义；上方 ①-⑤ 注记随流）。
+          // 本 trap 闭包传 sel/handle 坐标；rawElem = 调用 this（proxy，_proxyCache
+          // 缓存 identity 稳定——FR-7 retarget 以原对象上行）。
           return function (options) {
-            if (arguments.length >= 1 && options != null && typeof options !== 'object') {
-              return Promise.reject(new TypeError("Failed to execute 'requestPointerLock' on 'Element': The provided value is not of type 'PointerLockOptions'."));
-            }
-            var unadj = false;
-            if (options != null && typeof options === 'object') {
-              try { unadj = !!options.unadjustedMovement; } catch (_eU) { unadj = false; }
-            }
-            return new Promise(function (resolve, reject) {
-              if (typeof __zw_pointer_lock_enabled === 'function') {
-                var ok = true;
-                try { ok = __zw_pointer_lock_enabled() === '1'; } catch (_e) {}
-                if (!ok) {
-                  // RFC §6.5：deny 通知（镜像未锁态保持不变——跃迁判定在 host 侧静默）。
-                  if (typeof __zw_pointer_lock_state_changed === 'function') {
-                    try { __zw_pointer_lock_state_changed(JSON.stringify({ locked: false, selector: sel, handle: handle, unadjustedMovement: unadj })); } catch (_ePlhD) {}
-                  }
-                  _firePointerLockEvent('pointerlockerror');
-                  reject(new (globalThis.DOMException || Error)('pointer lock is unavailable', 'NotAllowedError'));
-                  return;
-                }
-              }
-              if (!_zwTransientActive) {
-                _firePointerLockEvent('pointerlockerror');
-                reject(new (globalThis.DOMException || Error)('A user gesture is required to request pointer lock.', 'NotAllowedError'));
-                return;
-              }
-              if (_plKey === key && _plUnadjusted === unadj) { resolve(undefined); return; } // 同元素同选项 → no-op
-              _plKey = key;
-              _plSel = sel;
-              _plHandle = handle;
-              _plUnadjusted = unadj;
-              // pointerlock-compat M3 s3（RFC §6.5）：grant/option 重锁通知 host 镜像
-              // （webview `PointerLockState`——typeof 守卫未注册静默，同 deny 开关风格）。
-              // selector 发纯 `sel`（非 _elKey 复合键——host 侧 querySelector 解析面，
-              // 与 drag hit selector 同约束；handle 附带供诊断）。
-              if (typeof __zw_pointer_lock_state_changed === 'function') {
-                try { __zw_pointer_lock_state_changed(JSON.stringify({ locked: true, selector: sel, handle: handle, unadjustedMovement: unadj })); } catch (_ePlhG) {}
-              }
-              _firePointerLockEvent('pointerlockchange');
-              resolve(undefined);
-            });
+            return _plRequestLock(this, sel, handle, options);
           };
         }
         // R3047：scroll 方法（headless 无真视口滚动 → JS-side 状态追踪）。scrollTo/scrollBy 更新 `_scrollOffsets[key]`

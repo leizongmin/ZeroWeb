@@ -1,10 +1,10 @@
 # Pointer Lock 兼容 — requestPointerLock / 指针捕获语义（门控 goal）
 
-**版本**: v1.7
+**版本**: v1.8
 **日期**: 2026-10-19
-**状态**: **M3 实施中（用户 2026-10-19 点名）·s1–s3 完成 + C 面执行 + 桌面
-激活落地（Commit 4；执行面 18/22 子测试 Pass，文件口径 14/18 全绿）·
-总账收口待做（Commit 5）**——M2 RFC v1.4（已确认，实施期修正见其 §12）。
+**状态**: **M3 完成（2026-10-19 收口）·s1–s4 全落地·执行面 19/22 子测试
+Pass（86.4%），文件口径 15/18 全绿·红案 3 全部记账（constructor 跨域 residual
++ wheel×2 TBD-3）**——M2 RFC v1.5（已确认，实施期修正见其 §12）。
 RFC 见 [m2-pointer-capture-pipeline-spec-rfc.md](pointerlock-compat/m2-pointer-capture-pipeline-spec-rfc.md)；
 M1 甄别报告见
 [evidence/2026-10-18-m1-baseline.md](pointerlock-compat/evidence/2026-10-18-m1-baseline.md)
@@ -20,8 +20,18 @@ M1 甄别报告见
 > 指针捕获本质依赖 host 光标管线（隐藏系统光标 + 相对位移流）——host-runtime
 > 面，缺即门控。
 
-## 当前状态（2026-10-19 M3 Commit 4 收口）
+## 当前状态（2026-10-19 M3 Commit 5 收口）
 
+- **M3 收口完成（2026-10-19，Commit 5）：FR-7 双域 retarget + corpus 总账**。
+  TBD-1 已决（shadow-dom.js 单文件补拉）；FR-7 实施期发现克隆树为 R307
+  **实例域**（内部节点无 `__zwHandle`，attachShadow 走原型轻量路径）——初始
+  handle 域 retarget 不可达，重写为域无关 composed 上行（`_plTarget` 原对象 +
+  鸭面判界 + 对象身份视图表）+ `Element.prototype.requestPointerLock` 轻量回落 +
+  `ShadowRoot.prototype.pointerLockElement` accessor；`pointerlock_shadow` 全案
+  翻绿。通道终账 **19/22（86.4%），文件 15/18**；红案 3 记账（constructor
+  Event.NONE 跨域 residual、wheel×2 TBD-3）。门禁 make test 全绿 + make reftest
+  712/712 零回归。实施期修正 → RFC v1.5。见
+  [Commit 5 证据](pointerlock-compat/evidence/2026-10-19-m3-commit5-s4-close.md)。
 - **M3 Commit 4 完成（2026-10-19）：C 面执行 + 桌面激活**。C 面 18 案入
   执行面：**18/22 子测试 Pass，文件口径 14/18 全绿**——maintains-mousedown
   （buttons 键态）/all_mouse_events（click 组合 + 独占 retarget）/
@@ -87,14 +97,15 @@ M1 完成 corpus census 与可执行子集甄别（API 面存在性/异常语义
 
 - **DC-1（自主）✅ 2026-10-18** 导入 + census + 可执行子集甄别报告 + csv
   planned 行回填——见 [M1 基线](pointerlock-compat/evidence/2026-10-18-m1-baseline.md)
-- **DC-2（征询门 ✅ 2026-10-19，实现收口待点名）** 捕获管线 RFC v1.0
-  已确认（方案 A）；实现收口待 M3 点名
-- **DC-3** 回归测试账本纪律；make test 全绿、make reftest 零回归
+- **DC-2（✅ 2026-10-19）** 捕获管线 RFC 已确认（方案 A，终版 v1.5）；M3
+  实现收口完成（s1–s4）
+- **DC-3（✅ 2026-10-19）** 回归测试账本纪律（通道 19/22 逐案落账、红案
+  3 记账归因）；make test 全绿、make reftest 712/712 零回归
 
 ## 里程碑
 
 M1 盘点（自主，**✅ 完成**）→ M2 管线 RFC（**✅ v1.1 已确认 2026-10-19**）→
-M3 实现与收口（**实施中，s1 ✅**）。
+M3 实现与收口（**✅ 完成 2026-10-19，s1–s4 + Commit 5 收口**）。
 
 ## 依赖约束（run-rules §9）
 
