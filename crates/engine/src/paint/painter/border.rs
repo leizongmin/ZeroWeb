@@ -212,12 +212,8 @@ impl super::Painter {
                 let bb = box_node.border_bottom;
                 let bl = box_node.border_left;
                 let clamp0 = |v: f32| v.max(0.0);
-                let full_r = [
-                    crate::paint::helpers::length_to_f32(&style.border_top_left_radius),
-                    crate::paint::helpers::length_to_f32(&style.border_top_right_radius),
-                    crate::paint::helpers::length_to_f32(&style.border_bottom_right_radius),
-                    crate::paint::helpers::length_to_f32(&style.border_bottom_left_radius),
-                ];
+                // 内圈全半径与外圈同口径（R5183：shaped_radius_spec 规范解析）。
+                let full_r = crate::paint::helpers::shaped_radius_spec(style, w, h);
                 let inset_bw = [bl.max(bt), bt.max(br_), br_.max(bb), bb.max(bl)];
                 let radii4 = std::array::from_fn(|i: usize| {
                     // R5179：凹侧内圈保留全半径——chromium 实渲染的边框带 = 沿外轮廓
@@ -579,6 +575,7 @@ impl super::Painter {
                     rect,
                     src.unwrap_or(Rect::new(0.0, 0.0, 1.0, 1.0)),
                 )),
+                clip_polygon: None,
             });
         }
     }
@@ -1038,6 +1035,7 @@ impl super::Painter {
                     rect,
                     filters: kinds,
                     raster_drop_shadow_source: None,
+                    clip_polygon: None,
                 });
             }
         };

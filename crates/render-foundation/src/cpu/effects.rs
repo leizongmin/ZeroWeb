@@ -36,6 +36,20 @@ pub fn apply_filter(
         return;
     }
 
+    // R5183 形状滤区（css-filters-2 #BackdropFilter）：先快照矩形像素，滤镜照常全
+    // 矩形应用（blur 等邻域读取仍见未滤背景），循环结束后恢复多边形外像素——等价
+    // 「滤镜仅作用于多边形内」。
+    let clip_backup = filter.clip_polygon.as_ref().map(|poly| {
+        let poly_dev: Vec<(f32, f32)> = poly.iter().map(|(x, y)| (x * scale, y * scale)).collect();
+        let mut buf = Vec::with_capacity(((right - left) * (bottom - top)) as usize * 4);
+        for y in top..bottom {
+            for x in left..right {
+                buf.extend_from_slice(&fb.get_pixel(x, y));
+            }
+        }
+        (poly_dev, buf)
+    });
+
     // 依次应用每个滤镜
     for f in &filter.filters {
         match f {
@@ -288,6 +302,33 @@ pub fn apply_filter(
             }
         }
     }
+
+    // R5183：恢复形状多边形外像素（滤镜仅作用于多边形内）。
+    if let Some((poly_dev, buf)) = clip_backup {
+        let row = (right - left) as usize;
+        for y in top..bottom {
+            for x in left..right {
+                if !point_in_polygon(x as f32 + 0.5, y as f32 + 0.5, &poly_dev) {
+                    let idx = ((y - top) as usize * row + (x - left) as usize) * 4;
+                    fb.set_pixel(x, y, [buf[idx], buf[idx + 1], buf[idx + 2], buf[idx + 3]]);
+                }
+            }
+        }
+    }
+}
+
+/// 偶奇射线投射点入多边形测试（PNPOLY 口径；顶点隐式尾→首闭合）。
+fn point_in_polygon(px: f32, py: f32, poly: &[(f32, f32)]) -> bool {
+    let mut inside = false;
+    let mut j = poly.len() - 1;
+    for (i, (xi, yi)) in poly.iter().enumerate() {
+        let (xj, yj) = poly[j];
+        if (*yi > py) != (yj > py) && px < (xj - xi) * (py - yi) / (yj - yi) + xi {
+            inside = !inside;
+        }
+        j = i;
+    }
+    inside
 }
 
 /// 直 alpha 语义的 CSS 滤镜应用（R4283 alpha 保真 slice 3，filter-effects-1 §8）。
@@ -875,6 +916,7 @@ mod tests {
             rect: Rect::new(5.0, 5.0, 15.0, 15.0),
             filters: vec![FilterKind::Blur(2.0)],
             raster_drop_shadow_source: None,
+            clip_polygon: None,
         };
         apply_filter(&mut fb, &filter, 1.0, None);
         let after = fb.get_pixel(6, 6);
@@ -892,6 +934,7 @@ mod tests {
             rect: Rect::new(0.0, 0.0, 10.0, 10.0),
             filters: vec![FilterKind::Opacity(0.5)],
             raster_drop_shadow_source: None,
+            clip_polygon: None,
         };
         apply_filter(&mut fb, &filter, 1.0, None);
 
@@ -915,11 +958,31 @@ mod tests {
             rect: Rect::new(0.0, 0.0, 10.0, 10.0),
             filters: vec![FilterKind::Brightness(2.0)],
             raster_drop_shadow_source: None,
+            clip_polygon: None,
         };
         apply_filter(&mut fb, &filter, 1.0, None);
 
         let p = fb.get_pixel(5, 5);
         assert_eq!(p[0], 200, "brightness(2.0) should double the value");
+    }
+
+    /// R5183：clip_polygon 形状滤区——滤镜仅作用于多边形内，多边形外像素复原
+    /// （css-filters-2 #BackdropFilter 滤区按 border box 形状裁剪）。
+    #[test]
+    fn filter_clip_polygon_masks_region() {
+        let mut fb = FrameBuffer::new(10, 10);
+        fb.clear(255, 255, 255, 255);
+
+        let filter = FilterPrimitive {
+            rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+            filters: vec![FilterKind::Brightness(0.0)],
+            raster_drop_shadow_source: None,
+            clip_polygon: Some(vec![(2.0, 0.0), (6.0, 0.0), (6.0, 10.0), (2.0, 10.0)]),
+        };
+        apply_filter(&mut fb, &filter, 1.0, None);
+
+        assert_eq!(fb.get_pixel(4, 5), [0, 0, 0, 255], "多边形内 brightness(0) 应变黑");
+        assert_eq!(fb.get_pixel(1, 5), [255, 255, 255, 255], "多边形外像素应复原白色");
     }
 
     /// P2-7：混合公式已知值（CSS Compositing-1 §5.1）。
@@ -1037,6 +1100,7 @@ fn drop_shadow_piece_src_subrect_shape() {
             Rect::new(0.0, 0.0, 30.0, 30.0),
             Rect::new(0.0, 0.0, 0.75, 0.75),
         )),
+        clip_polygon: None,
     };
     let mut fb = FrameBuffer::new(60, 30);
     fb.clear(255, 255, 255, 255);

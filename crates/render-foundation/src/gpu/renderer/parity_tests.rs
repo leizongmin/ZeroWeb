@@ -213,6 +213,7 @@ fn parity_scene_supported_rejects_unimplemented() {
         rect: Rect::new(0.0, 0.0, 8.0, 8.0),
         filters: vec![crate::primitive::FilterKind::Opacity(0.5)],
         raster_drop_shadow_source: None,
+        clip_polygon: None,
     });
     assert!(crate::gpu::scene_support::scene_supported(&with_filter));
     assert!(crate::gpu::scene_support::scene_supported(&with_filter));
@@ -960,6 +961,7 @@ fn parity_color_filter_matches_cpu() {
         rect: Rect::new(0.0, 0.0, 32.0, 32.0),
         filters: vec![crate::primitive::FilterKind::Brightness(1.5)],
         raster_drop_shadow_source: None,
+        clip_polygon: None,
     });
     let cpu_fb = render_cpu(32, 32, &p, None);
     let gpu_px = render_gpu(32, 32, &p, None);

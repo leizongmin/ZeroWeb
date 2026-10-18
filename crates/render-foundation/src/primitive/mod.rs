@@ -445,6 +445,11 @@ pub struct FilterPrimitive {
     /// None——其阴影已由 painter ShadowPrimitive 轮廓近似随子树发射，CPU 面再实现
     /// 会双绘（既有防护）。
     pub raster_drop_shadow_source: Option<(ImageKey, Rect, Rect)>,
+    /// R5183：滤镜区形状裁剪（css-filters-2 #BackdropFilter——滤镜区按 border box
+    /// 形状裁剪，corner-shape 时为形角轮廓，含 % 半径规范解析）。绝对逻辑坐标多边形
+    /// 顶点（隐式尾→首闭合，与 PathFill.vertices 同口径）；None = 矩形滤区（既有
+    /// 行为）。GPU 后处理路径暂不消费（FIXME(gpu-shaped-backdrop-clip)）。
+    pub clip_polygon: Option<Vec<(f32, f32)>>,
 }
 
 /// CSS transform 图元 — 对指定区域内的所有图元应用 2D 仿射变换。

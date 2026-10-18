@@ -1382,6 +1382,7 @@ impl super::Painter {
             rect,
             filters,
             raster_drop_shadow_source: None,
+            clip_polygon: None,
         });
     }
 
@@ -1410,6 +1411,7 @@ impl super::Painter {
                 rect,
                 filters: kinds,
                 raster_drop_shadow_source: source.map(|k| (k, rect, Rect::new(0.0, 0.0, 1.0, 1.0))),
+                clip_polygon: None,
             });
         }
     }
@@ -1525,10 +1527,22 @@ impl super::Painter {
         );
         // 元素级 filter：DropShadow 由 painter ShadowPrimitive 近似承担（同 apply_filter
         // 主路径，双绘防护）——raster_drop_shadow_source=None。
+        // R5183：滤区跟随形角轮廓（css-filters-2 #BackdropFilter，滤镜区按 border box
+        // 形状裁剪）——半角半径经 shaped_radius_spec 规范解析（含 %）；全 round 无形
+        // 角返回 None（矩形滤区，既有行为）。
+        let clip_polygon = super::super::helpers::shaped_corner_polygon_in_box(
+            style,
+            abs_x,
+            abs_y,
+            box_node.width,
+            box_node.height,
+            super::super::helpers::shaped_radius_spec(style, box_node.width, box_node.height),
+        );
         self.primitives.add_filter(FilterPrimitive {
             rect,
             filters,
             raster_drop_shadow_source: None,
+            clip_polygon,
         });
     }
 

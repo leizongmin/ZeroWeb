@@ -802,6 +802,7 @@ impl super::Painter {
                             Rect::new(img_x, img_y, img_w, img_h),
                             Rect::new(0.0, 0.0, 1.0, 1.0),
                         )),
+                        clip_polygon: None,
                     });
             }
         }

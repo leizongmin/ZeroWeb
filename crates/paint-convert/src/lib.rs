@@ -293,6 +293,9 @@ pub fn to_render_primitives(params: PaintSnapshotParams) -> RenderPrimitives {
             raster_drop_shadow_source: None,
             rect: ipc_rect_to_rect(filter.rect),
             filters: filter.filters.into_iter().map(ipc_filter_kind_to_kind).collect(),
+            // R5183 形状滤区未随 IPC 契约传输（zero-protocol FilterParams 无多边形
+            // 字段）——renderer 进程路径保持矩形滤区（FIXME(ipc-shaped-backdrop-clip)）。
+            clip_polygon: None,
         });
     }
     for blend in params.blend_modes {

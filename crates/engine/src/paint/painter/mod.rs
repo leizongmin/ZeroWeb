@@ -3667,18 +3667,16 @@ impl Painter {
                         } else {
                             0.0
                         };
+                        // R5183：半径百分比相对元素 border-box（clip 区域虽外扩 mx/my，
+                        // 半径属于元素本身），shaped_radius_spec 规范口径与形角边框带
+                        // 一致。
                         super::helpers::shaped_corner_polygon_in_box(
                             style,
                             abs_x - mx,
                             abs_y - my,
                             box_node.width + 2.0 * mx,
                             box_node.height + 2.0 * my,
-                            [
-                                crate::paint::helpers::length_to_f32(&style.border_top_left_radius),
-                                crate::paint::helpers::length_to_f32(&style.border_top_right_radius),
-                                crate::paint::helpers::length_to_f32(&style.border_bottom_right_radius),
-                                crate::paint::helpers::length_to_f32(&style.border_bottom_left_radius),
-                            ],
+                            crate::paint::helpers::shaped_radius_spec(style, box_node.width, box_node.height),
                         )
                     })
                 })

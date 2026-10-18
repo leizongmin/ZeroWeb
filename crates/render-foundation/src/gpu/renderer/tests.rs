@@ -1535,6 +1535,7 @@ fn test_gpu_full_scene_filter_opacity_multiplies_rgb() {
         rect: Rect::new(0.0, 0.0, 32.0, 32.0),
         filters: vec![crate::primitive::FilterKind::Opacity(0.5)],
         raster_drop_shadow_source: None,
+        clip_polygon: None,
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
@@ -1577,6 +1578,7 @@ fn test_gpu_full_scene_filter_brightness() {
         rect: Rect::new(0.0, 0.0, 32.0, 32.0),
         filters: vec![crate::primitive::FilterKind::Brightness(0.5)],
         raster_drop_shadow_source: None,
+        clip_polygon: None,
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
@@ -1616,6 +1618,7 @@ fn test_gpu_full_scene_filter_contrast() {
         rect: Rect::new(0.0, 0.0, 32.0, 32.0),
         filters: vec![crate::primitive::FilterKind::Contrast(2.0)],
         raster_drop_shadow_source: None,
+        clip_polygon: None,
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
@@ -1654,6 +1657,7 @@ fn test_gpu_full_scene_filter_grayscale() {
         rect: Rect::new(0.0, 0.0, 32.0, 32.0),
         filters: vec![crate::primitive::FilterKind::Grayscale(1.0)],
         raster_drop_shadow_source: None,
+        clip_polygon: None,
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
@@ -1696,6 +1700,7 @@ fn test_gpu_full_scene_filter_hue_rotate() {
         rect: Rect::new(0.0, 0.0, 32.0, 32.0),
         filters: vec![crate::primitive::FilterKind::HueRotate(120.0)],
         raster_drop_shadow_source: None,
+        clip_polygon: None,
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
@@ -1738,6 +1743,7 @@ fn test_gpu_full_scene_filter_invert() {
         rect: Rect::new(0.0, 0.0, 32.0, 32.0),
         filters: vec![crate::primitive::FilterKind::Invert(1.0)],
         raster_drop_shadow_source: None,
+        clip_polygon: None,
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
@@ -1776,6 +1782,7 @@ fn test_gpu_full_scene_filter_saturate() {
         rect: Rect::new(0.0, 0.0, 32.0, 32.0),
         filters: vec![crate::primitive::FilterKind::Saturate(0.0)],
         raster_drop_shadow_source: None,
+        clip_polygon: None,
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
@@ -1817,6 +1824,7 @@ fn test_gpu_full_scene_filter_sepia() {
         rect: Rect::new(0.0, 0.0, 32.0, 32.0),
         filters: vec![crate::primitive::FilterKind::Sepia(1.0)],
         raster_drop_shadow_source: None,
+        clip_polygon: None,
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);
@@ -1932,6 +1940,7 @@ fn test_gpu_full_scene_filter_blur_softens_edges() {
         rect: Rect::new(0.0, 0.0, 32.0, 32.0),
         filters: vec![crate::primitive::FilterKind::Blur(3.0)],
         raster_drop_shadow_source: None,
+        clip_polygon: None,
     });
     let font_loader = FontLoader::new();
     let mut glyph_cache = GlyphCache::new(64);

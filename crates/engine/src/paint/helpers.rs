@@ -27,6 +27,19 @@ pub fn apply_text_transform(text: &str, transform: &TextTransformValue) -> Strin
 /// - 凸侧 K ≥ 0：曲线心 = 内角点 C，指数 n = 2K（K=1 圆、K=0 直弦 ≡ bevel）。
 /// - 凹侧 K ≤ −1：曲线心 = 盒角点 P，n = 2|K|（K=−1 即 scoop 凹圆弧）。
 /// - square = 直角（无切削，经盒角点 P）；notch = 经内角点 C 的阶梯。
+///
+/// R5183：形角半径规范解析（`BorderRadiusSpec::from_style_with_box` 口径：百分比
+/// 相对 border-box、min(w,h)/2 钳制、§5.5 相邻重叠收缩）——此前形角三消费端用裸
+/// `length_to_f32`，Percentage 返 0 整盒退直角（同页 plain 弧带出圆弧的自相矛盾
+/// 渲染）。
+pub(crate) fn shaped_radius_spec(style: &ComputedStyle, box_w: f32, box_h: f32) -> [f32; 4] {
+    let spec = BorderRadiusSpec::from_style_with_box(style, box_w, box_h);
+    [spec.top_left, spec.top_right, spec.bottom_right, spec.bottom_left]
+}
+
+/// R4248：元素形角多边形便捷入口——半径按 [`shaped_radius_spec`] 规范解析（R5183
+/// 起 % 相对 border-box），顶点为绝对页面坐标；全 round（corner-shape 初始态）返
+/// 回 None。
 pub fn shaped_corner_polygon(
     style: &ComputedStyle,
     box_w: f32,
@@ -40,12 +53,7 @@ pub fn shaped_corner_polygon(
         abs_y,
         box_w,
         box_h,
-        [
-            length_to_f32(&style.border_top_left_radius),
-            length_to_f32(&style.border_top_right_radius),
-            length_to_f32(&style.border_bottom_right_radius),
-            length_to_f32(&style.border_bottom_left_radius),
-        ],
+        shaped_radius_spec(style, box_w, box_h),
     )
 }
 
