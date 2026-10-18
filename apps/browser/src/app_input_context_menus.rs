@@ -400,7 +400,7 @@ impl BrowserApp {
                     // T53-1：与页面点击失焦同款——失焦清 IME 合成态，防 preedit
                     // 残留叠加在导航后 URL 上绘制。
                     self.address_bar_ime_preedit.clear();
-                    self.navigate_to(&text);
+                    self.navigate_from_ui(&text);
                 }
             }
             "select_all" => {
@@ -458,7 +458,7 @@ impl BrowserApp {
             }
             "bookmark_open" => {
                 if let Some(url) = &bookmark_url {
-                    self.navigate_to(url);
+                    self.navigate_from_ui(url);
                 }
             }
             "bookmark_open_new_tab" => {
@@ -731,11 +731,11 @@ impl BrowserApp {
 
         // 子菜单项 id 派发
         if let Some(url) = item_id.strip_prefix("history:") {
-            self.navigate_to(url);
+            self.navigate_from_ui(url);
             return;
         }
         if let Some(url) = item_id.strip_prefix("bookmark:") {
-            self.navigate_to(url);
+            self.navigate_from_ui(url);
             return;
         }
         if let Some(url) = item_id.strip_prefix("closed_tab:") {

@@ -1468,33 +1468,50 @@ pub enum BookmarkImportOutcome {
     NoEntries,
     /// 导入完成：`added` 新增、`skipped` 跳过（URL 重复或超限）。
     Imported { added: usize, skipped: usize },
+    /// 文件源：指定路径无法读取（T62；回显路径供用户核对）。
+    FileUnavailable { path: String },
+    /// 文件源：内容未解析出任何书签条目（T62；需 Netscape 书签 HTML）。
+    FileNoEntries,
 }
 
 /// 生成书签导入页 HTML（`zero://bookmarks/import`；设置页「导入书签」入口）。
 ///
-/// 引擎内部页无文件选择能力，导入源为系统剪贴板：用户先复制书签 HTML 文件的
-/// 全部文本，再点「从剪贴板导入」（`zero://bookmarks/import/apply`）。
+/// 双导入源：系统剪贴板（复制书签 HTML 文件全部文本后点「从剪贴板导入」，
+/// `zero://bookmarks/import/apply`）与文件路径（T62：输入书签 HTML 文件路径后
+/// 提交 `zero://bookmarks/import/file?path=...`，复用同一 Netscape 解析器与结果区）。
 /// `outcome` 非空时在页首展示上次导入结果。
 pub fn generate_bookmarks_import_html(outcome: Option<&BookmarkImportOutcome>) -> String {
     use zero_browser_shell::UiLanguage;
     let lang = UiLanguage::detect_from_env();
-    let (title, step1, step2, step3, import_label, view_label) = match lang {
-        UiLanguage::ZhCn => (
-            "导入书签 — ZeroBrowser",
-            "在原浏览器中把书签导出为 HTML 文件（Netscape 书签格式）。",
-            "用文本编辑器打开该文件，全选并复制全部内容。",
-            "回到本页点击下方按钮，从剪贴板导入。",
-            "从剪贴板导入",
-            "查看书签",
-        ),
-        UiLanguage::EnUs => (
-            "Import Bookmarks — ZeroBrowser",
-            "Export bookmarks as an HTML file (Netscape format) from your previous browser.",
-            "Open the file in a text editor and copy its entire contents.",
-            "Come back here and press the button below to import from the clipboard.",
-            "Import from Clipboard",
-            "View Bookmarks",
-        ),
+    let (title, step1, step2, step3, import_label, view_label, file_heading, path_placeholder, file_import_label) =
+        match lang {
+            UiLanguage::ZhCn => (
+                "导入书签 — ZeroBrowser",
+                "在原浏览器中把书签导出为 HTML 文件（Netscape 书签格式）。",
+                "用文本编辑器打开该文件，全选并复制全部内容。",
+                "回到本页点击下方按钮，从剪贴板导入。",
+                "从剪贴板导入",
+                "查看书签",
+                "或直接从文件导入：",
+                "书签 HTML 文件路径",
+                "从文件导入",
+            ),
+            UiLanguage::EnUs => (
+                "Import Bookmarks — ZeroBrowser",
+                "Export bookmarks as an HTML file (Netscape format) from your previous browser.",
+                "Open the file in a text editor and copy its entire contents.",
+                "Come back here and press the button below to import from the clipboard.",
+                "Import from Clipboard",
+                "View Bookmarks",
+                "Or import directly from a file:",
+                "Path to bookmarks HTML file",
+                "Import from File",
+            ),
+        };
+    // 读取失败时回显用户输入的路径（便于核对拼写），其余结果不预填。
+    let refill_path = match outcome {
+        Some(BookmarkImportOutcome::FileUnavailable { path }) => path.as_str(),
+        _ => "",
     };
     let result_html = match outcome {
         Some(BookmarkImportOutcome::Imported { added, skipped }) => {
@@ -1509,16 +1526,33 @@ pub fn generate_bookmarks_import_html(outcome: Option<&BookmarkImportOutcome>) -
             )
         }
         Some(outcome) => {
-            let text = match lang {
+            let text: String = match lang {
                 UiLanguage::ZhCn => match outcome {
-                    BookmarkImportOutcome::ClipboardUnavailable => "无法读取剪贴板，请确认桌面会话后重试。",
-                    _ => "剪贴板内容中没有识别到书签条目。",
+                    BookmarkImportOutcome::ClipboardUnavailable => "无法读取剪贴板，请确认桌面会话后重试。".to_string(),
+                    BookmarkImportOutcome::FileUnavailable { path } => {
+                        // D3：path 来自用户输入/远端 URL 参数，插入内部页 HTML 前转义
+                        //（与同函数 refill_path 同纪律），阻断内部页 HTML 注入。
+                        format!("无法读取书签文件「{}」，请检查路径后重试。", html_escape(path))
+                    }
+                    BookmarkImportOutcome::FileNoEntries => {
+                        "文件内容中没有识别到书签条目（需 Netscape 书签 HTML）。".to_string()
+                    }
+                    _ => "剪贴板内容中没有识别到书签条目。".to_string(),
                 },
                 UiLanguage::EnUs => match outcome {
                     BookmarkImportOutcome::ClipboardUnavailable => {
-                        "Could not read the clipboard; check your desktop session and retry."
+                        "Could not read the clipboard; check your desktop session and retry.".to_string()
                     }
-                    _ => "No bookmark entries recognized in the clipboard contents.",
+                    BookmarkImportOutcome::FileUnavailable { path } => {
+                        format!(
+                            "Could not read the bookmarks file \"{}\"; check the path and retry.",
+                            html_escape(path)
+                        )
+                    }
+                    BookmarkImportOutcome::FileNoEntries => {
+                        "No bookmark entries recognized in the file (Netscape bookmarks HTML expected).".to_string()
+                    }
+                    _ => "No bookmark entries recognized in the clipboard contents.".to_string(),
                 },
             };
             format!(
@@ -1534,12 +1568,22 @@ pub fn generate_bookmarks_import_html(outcome: Option<&BookmarkImportOutcome>) -
   <li>{step3}</li>
 </ol>
 <p><a href="zero://bookmarks/import/apply" style="display:inline-block;background:#1a73e8;color:#fff;font-size:14px;padding:9px 22px;border-radius:4px;text-decoration:none;">{import_label}</a>
-<a href="zero://bookmarks" style="margin-left:12px;color:#1a73e8;text-decoration:none;font-size:13px;">{view_label}</a></p>"#,
+<a href="zero://bookmarks" style="margin-left:12px;color:#1a73e8;text-decoration:none;font-size:13px;">{view_label}</a></p>
+<hr style="border:none;border-top:1px solid #dadce0;margin:18px 0;">
+<p style="font-size:14px;color:#3c4043;">{file_heading}</p>
+<form action="zero://bookmarks/import/file" method="get" style="margin:0;">
+  <input type="text" name="path" value="{path_value}" placeholder="{path_placeholder}" aria-label="{path_placeholder}" style="font-size:14px;padding:6px 10px;border:1px solid #dadce0;border-radius:4px;width:420px;">
+  <button type="submit" style="margin-left:8px;font-size:14px;padding:7px 16px;background:#1a73e8;color:#fff;border:none;border-radius:4px;">{file_import_label}</button>
+</form>"#,
         step1 = step1,
         step2 = step2,
         step3 = step3,
         import_label = import_label,
         view_label = view_label,
+        file_heading = file_heading,
+        path_value = html_escape(refill_path),
+        path_placeholder = path_placeholder,
+        file_import_label = file_import_label,
     );
     internal_page_shell(title, &body)
 }
@@ -2125,6 +2169,30 @@ mod tests {
         assert!(out.contains("<DL><p>"));
         assert!(out.trim_end().ends_with("</DL><p>"));
         assert!(!out.contains("<DT>"), "empty store must export no entries: {out}");
+    }
+
+    /// T62：导入页含文件源表单与文件源结果区文案（失败回显路径，不静默丢数据）。
+    #[test]
+    fn t62_import_page_has_file_form_and_file_outcomes() {
+        let html = generate_bookmarks_import_html(None);
+        assert!(html.contains("action=\"zero://bookmarks/import/file\""), "{html}");
+        assert!(html.contains("name=\"path\""), "{html}");
+
+        let miss = generate_bookmarks_import_html(Some(&BookmarkImportOutcome::FileUnavailable {
+            path: "/tmp/missing.html".to_string(),
+        }));
+        assert!(miss.contains("/tmp/missing.html"), "失败应回显路径: {miss}");
+        assert!(
+            miss.contains("value=\"/tmp/missing.html\""),
+            "失败后应回填输入框: {miss}"
+        );
+
+        let empty = generate_bookmarks_import_html(Some(&BookmarkImportOutcome::FileNoEntries));
+        assert!(empty.contains("Netscape"), "{empty}");
+
+        // 非 FileUnavailable 结果不回填路径输入框。
+        let imported = generate_bookmarks_import_html(Some(&BookmarkImportOutcome::Imported { added: 2, skipped: 1 }));
+        assert!(imported.contains("value=\"\""), "{imported}");
     }
 
     #[test]

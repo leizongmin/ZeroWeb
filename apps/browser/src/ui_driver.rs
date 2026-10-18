@@ -184,6 +184,17 @@ enum Step {
     AssertPrintPreview {
         on: bool,
     },
+    /// 打印设置断言（T61）：方向/份数/边距逐一校验，缺省不校验。
+    AssertPrintSetup {
+        orientation: Option<String>,
+        copies: Option<u32>,
+        margin_mm: Option<f32>,
+    },
+    /// 点击打印预览设置面板控件（T61）：按渲染层写入的命中矩形取中心，窗口尺寸无关。
+    /// control ∈ orientation | copies_minus | copies_plus | margin_minus | margin_plus。
+    ClickPrintSetup {
+        control: String,
+    },
     /// 隐私开关断言（T16）：给定字段逐一校验，缺省不校验。
     AssertSettingsToggles {
         js: Option<bool>,
@@ -430,6 +441,14 @@ impl Step {
             }),
             "assert_print_preview" => Ok(Self::AssertPrintPreview {
                 on: value.get("on").and_then(Value::as_bool).unwrap_or(true),
+            }),
+            "assert_print_setup" => Ok(Self::AssertPrintSetup {
+                orientation: value.get("orientation").and_then(Value::as_str).map(str::to_string),
+                copies: value.get("copies").and_then(Value::as_u64).map(|v| v as u32),
+                margin_mm: value.get("margin_mm").and_then(Value::as_f64).map(|v| v as f32),
+            }),
+            "click_print_setup" => Ok(Self::ClickPrintSetup {
+                control: text("control")?,
             }),
             "assert_settings_toggles" => Ok(Self::AssertSettingsToggles {
                 js: value.get("js").and_then(Value::as_bool),
@@ -1041,6 +1060,82 @@ impl UiDriver {
                 }
                 tracing::info!(
                     "UI_DRIVER_STEP step={} assert_print_preview media={media} status=passed",
+                    self.next + 1
+                );
+                Ok(())
+            }
+            Step::AssertPrintSetup {
+                orientation,
+                copies,
+                margin_mm,
+            } => {
+                let (a_orientation, a_copies, a_margin_mm) = app.print_settings();
+                if let Some(want) = orientation {
+                    let actual = match a_orientation {
+                        zero_browser_shell::PrintOrientationPreference::Portrait => "portrait",
+                        zero_browser_shell::PrintOrientationPreference::Landscape => "landscape",
+                    };
+                    if actual != want {
+                        return Err(format!(
+                            "assert_print_setup failed: orientation is {actual}, expected {want}"
+                        ));
+                    }
+                }
+                if let Some(want) = copies
+                    && a_copies != *want
+                {
+                    return Err(format!(
+                        "assert_print_setup failed: copies is {a_copies}, expected {want}"
+                    ));
+                }
+                if let Some(want) = margin_mm
+                    && (a_margin_mm - want).abs() > f32::EPSILON
+                {
+                    return Err(format!(
+                        "assert_print_setup failed: margin_mm is {a_margin_mm}, expected {want}"
+                    ));
+                }
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} assert_print_setup orientation={a_orientation:?} copies={a_copies} margin_mm={a_margin_mm} status=passed",
+                    self.next + 1
+                );
+                Ok(())
+            }
+            Step::ClickPrintSetup { control } => {
+                let (row, right) = match control.as_str() {
+                    "orientation" => (0usize, false),
+                    "copies_minus" => (1, false),
+                    "copies_plus" => (1, true),
+                    "margin_minus" => (2, false),
+                    "margin_plus" => (2, true),
+                    other => {
+                        return Err(format!(
+                            "click_print_setup: unknown control \"{other}\" (orientation|copies_minus|copies_plus|margin_minus|margin_plus)"
+                        ));
+                    }
+                };
+                let (rx, ry, rw, rh) = app
+                    .print_setup_panel_rect(row)
+                    .filter(|&(_, _, rw, _)| rw > 0.0)
+                    .ok_or_else(|| {
+                        "click_print_setup: panel row not visible (print preview inactive or not rendered)".to_string()
+                    })?;
+                // 行 0 整行有效；行 1/2 点渲染实测的 −/+ 字形起点（D4：字形位与
+                // 行宽比例无关，按比例采样会点进错误半区）。
+                let cx = if row == 0 {
+                    rx + rw * 0.5
+                } else {
+                    let (minus_x, plus_x) = app
+                        .print_setup_panel_stepper_x(row)
+                        .ok_or_else(|| "click_print_setup: stepper glyphs not rendered".to_string())?;
+                    if right { plus_x + 2.0 } else { minus_x + 2.0 }
+                };
+                let cy = ry + rh / 2.0;
+                app.handle_mouse_move(cx as f64, cy as f64);
+                app.handle_mouse_click(cx as f64, cy as f64, true, "Left");
+                app.handle_mouse_click(cx as f64, cy as f64, false, "Left");
+                tracing::info!(
+                    "UI_DRIVER_STEP step={} click_print_setup control={control} x={cx} y={cy}",
                     self.next + 1
                 );
                 Ok(())

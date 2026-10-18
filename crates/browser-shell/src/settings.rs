@@ -96,6 +96,27 @@ impl SearchEngine {
     }
 }
 
+/// 打印页面方向偏好（T61 打印预览设置；CSS Paged Media `size` 方向分量）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PrintOrientationPreference {
+    /// 纵向（A4 793.7 × 1122.5 px @96dpi）。
+    #[default]
+    Portrait,
+    /// 横向（A4 宽高互换）。
+    Landscape,
+}
+
+/// 默认打印份数（settings.json 旧版本缺字段时的 serde 兜底）。
+fn default_print_copies() -> u32 {
+    1
+}
+
+/// 默认打印页边距 mm（0 = 与引擎 `@page` 缺省链一致，升级零行为变更）。
+fn default_print_margin_mm() -> f32 {
+    0.0
+}
+
 /// 浏览器设置。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BrowserSettings {
@@ -123,6 +144,15 @@ pub struct BrowserSettings {
     /// 按站点记住的页面缩放（origin → zoom；Chrome per-site zoom 语义）。
     #[serde(default)]
     pub zoom_by_origin: HashMap<String, f32>,
+    /// 打印页面方向（T61 打印预览设置面板）。
+    #[serde(default)]
+    pub print_orientation: PrintOrientationPreference,
+    /// 打印份数（1–99；仅随打印作业语义，不影响预览渲染——Chrome 同）。
+    #[serde(default = "default_print_copies")]
+    pub print_copies: u32,
+    /// 打印页边距（毫米，0–50；`@page { margin }` 显式声明时被页面覆盖）。
+    #[serde(default = "default_print_margin_mm")]
+    pub print_margin_mm: f32,
 }
 
 impl Default for BrowserSettings {
@@ -139,6 +169,9 @@ impl Default for BrowserSettings {
             download_directory: String::new(),
             color_theme: ColorThemePreference::Auto,
             zoom_by_origin: HashMap::new(),
+            print_orientation: PrintOrientationPreference::Portrait,
+            print_copies: 1,
+            print_margin_mm: 0.0,
         }
     }
 }
@@ -150,6 +183,16 @@ impl BrowserSettings {
     pub const DEFAULT_ZOOM_MAX: f32 = 5.0;
     /// 设置页 / 快捷键缩放步进。
     pub const DEFAULT_ZOOM_STEP: f32 = 0.1;
+    /// 打印份数下限（Chrome print dialog 1–99）。
+    pub const PRINT_COPIES_MIN: u32 = 1;
+    /// 打印份数上限。
+    pub const PRINT_COPIES_MAX: u32 = 99;
+    /// 打印页边距下限（毫米）。
+    pub const PRINT_MARGIN_MIN_MM: f32 = 0.0;
+    /// 打印页边距上限（毫米）。
+    pub const PRINT_MARGIN_MAX_MM: f32 = 50.0;
+    /// 打印页边距步进（毫米）。
+    pub const PRINT_MARGIN_STEP_MM: f32 = 5.0;
 
     /// 创建默认设置。
     pub fn new() -> Self {
@@ -204,5 +247,51 @@ impl BrowserSettings {
     /// 保存到默认路径。
     pub fn save_default(&self) -> Result<(), String> {
         self.save(&Self::default_config_path())
+    }
+}
+
+#[cfg(test)]
+mod print_settings_tests {
+    use super::*;
+
+    /// T61：settings.json 旧版本缺打印字段时 serde 兜底默认值（升级零行为变更：
+    /// 纵向 / 1 份 / 0 边距，与引擎 `@page` 缺省链一致）。
+    #[test]
+    fn t61_legacy_settings_json_defaults() {
+        let legacy = r#"{
+            "search_engine": "Google",
+            "home_url": "https://example.com",
+            "show_bookmarks_bar": true,
+            "javascript_enabled": true,
+            "cookies_enabled": true,
+            "block_third_party_cookies": true,
+            "do_not_track": false,
+            "default_zoom": 1.0,
+            "download_directory": ""
+        }"#;
+        let settings: BrowserSettings = serde_json::from_str(legacy).expect("legacy json should parse");
+        assert_eq!(settings.print_orientation, PrintOrientationPreference::Portrait);
+        assert_eq!(settings.print_copies, 1);
+        assert!((settings.print_margin_mm - 0.0).abs() <= f32::EPSILON);
+    }
+
+    /// T61：打印设置字段的 serde 往返（snake_case 方向枚举）。
+    #[test]
+    fn t61_print_settings_roundtrip() {
+        let settings = BrowserSettings {
+            print_orientation: PrintOrientationPreference::Landscape,
+            print_copies: 3,
+            print_margin_mm: 15.0,
+            ..BrowserSettings::default()
+        };
+        let json = serde_json::to_string(&settings).expect("serialize");
+        let back: BrowserSettings = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.print_orientation, PrintOrientationPreference::Landscape);
+        assert_eq!(back.print_copies, 3);
+        assert!((back.print_margin_mm - 15.0).abs() <= f32::EPSILON);
+        assert!(
+            json.contains("\"landscape\""),
+            "orientation 应为 snake_case，json={json}"
+        );
     }
 }

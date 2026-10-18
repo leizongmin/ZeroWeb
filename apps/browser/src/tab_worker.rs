@@ -113,6 +113,8 @@ pub enum TabWorkerCommand {
     SetColorScheme(PrefersColorSchemeValue),
     /// 更新渲染媒体类型（DC-12 @media print 打印预览；R1993）。
     SetMediaType(zero_engine::MediaType),
+    /// 更新用户打印页面设置（T61 打印预览设置面板）。
+    SetPrintPageSetup(Option<zero_engine::PrintPageSetup>),
     /// 异步向页面元素派发 DOM 事件（click / keydown 等）。
     ///
     /// 结果通过 `TabWorkerMessage::DispatchResult` 异步回送，避免 UI 主线程阻塞等待。
@@ -409,6 +411,17 @@ fn tab_worker_main(
                 }
                 TabWorkerCommand::SetMediaType(media_type) => {
                     wv.set_media_type(media_type);
+                    if wv.last_render().is_some() {
+                        with_measure(&font_loader, font_id, || {
+                            if wv.render_incremental().is_none() {
+                                wv.render();
+                            }
+                        });
+                        push_snapshot(&wv, &msg_tx, _js_worker.as_ref());
+                    }
+                }
+                TabWorkerCommand::SetPrintPageSetup(setup) => {
+                    wv.set_print_page_setup(setup);
                     if wv.last_render().is_some() {
                         with_measure(&font_loader, font_id, || {
                             if wv.render_incremental().is_none() {

@@ -36,9 +36,10 @@ use zero_protocol::message::{
     DispatchDomEventParams, DispatchDomEventResultParams, FetchParams, FetchResponseParams, FocusChangeInfo,
     FramePublishMode, HitTestElementResultParams, HitTestLinkParams, HitTestLinkResultParams, ImeEventParams,
     ImeEventType, IndexedDbConnectionEventAckParams, IndexedDbConnectionEventParams, IpcColorScheme, IpcMediaType,
-    IpcMessage, IpcMessageKind, KeyboardEventParams, LoadHtmlParams, MouseEventParams, NavigateParams,
-    NavigationCommittedParams, NavigationStartedParams, ScrollEventParams, ServiceWorkerHostCommandParams,
-    SetColorSchemeParams, SetMediaTypeParams, SetViewportParams, StorageOpParams,
+    IpcMessage, IpcMessageKind, IpcPrintOrientation, KeyboardEventParams, LoadHtmlParams, MouseEventParams,
+    NavigateParams, NavigationCommittedParams, NavigationStartedParams, ScrollEventParams,
+    ServiceWorkerHostCommandParams, SetColorSchemeParams, SetMediaTypeParams, SetPrintPageSetupParams,
+    SetViewportParams, StorageOpParams, TabNavigateRequestParams,
 };
 use zero_protocol::transport::PipeTransport;
 use zero_protocol::{ProcessRole, is_disconnected_channel_message};
@@ -2584,6 +2585,18 @@ return JSON.stringify({{action:action,name:name,val:val}});\
     /// 主文档 fetch host 不支持 method；POST 响应即文档 HTML，外链子资源仍经 host 异步抓取）。POST fetch 失败 →
     /// 回落 GET `start`（保 load 状态机一致，复用既有 load-failure 处理；documented）。
     fn navigate_with(&mut self, params: NavigateParams, method: &str, body: Option<&str>) -> Result<(), String> {
+        // T62-D1 返修：zero:// 内部页由浏览器生成与装载（load_local_tab_url 分派），
+        // 渲染端网络栈无 zero:// scheme 处理（fetch builder error → 错误页）。
+        // GET 无 body 的 zero:// 导航转交浏览器（与单进程 worker 回执
+        // pending_navigations 同语义）；带 body/非 GET 的 zero:// 维持原错误路径。
+        if method.eq_ignore_ascii_case("GET") && body.is_none() && params.url.starts_with("zero://") {
+            return self.send_regular(IpcMessageKind::TabNavigateRequest(TabNavigateRequestParams {
+                url: params.url.clone(),
+                method: method.to_string(),
+                body: None,
+                initiator: self.current_url.clone(),
+            }));
+        }
         tracing::info!("导航到: {} ({})", params.url, method);
         // A submit/click may have dirtied the old document earlier in the same
         // input transaction. Never publish that stale snapshot under the new epoch.
@@ -2778,6 +2791,19 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         }
         if let Some(wv) = self.webview.as_mut() {
             wv.set_media_type(ipc_media_to_engine(params.media_type));
+        }
+        self.try_republish_cached()
+    }
+
+    fn handle_set_print_page_setup(&mut self, params: SetPrintPageSetupParams) -> Result<(), String> {
+        // T61 打印预览设置：方向/边距下推 webview（matchMedia 无 page-setup 语义，媒体上下文不涉）。
+        // present=false = 清除回默认（TV-2：与 in-process 路广播语义对齐，两路不分歧）。
+        if let Some(wv) = self.webview.as_mut() {
+            let setup = params.present.then(|| zero_engine::PrintPageSetup {
+                orientation: ipc_print_orientation_to_engine(params.orientation),
+                margin_mm: params.margin_mm,
+            });
+            wv.set_print_page_setup(setup);
         }
         self.try_republish_cached()
     }
@@ -3236,6 +3262,11 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             IpcMessageKind::SetViewport(params) => self.handle_set_viewport(params),
             IpcMessageKind::SetColorScheme(params) => self.handle_set_color_scheme(params),
             IpcMessageKind::SetMediaType(params) => self.handle_set_media_type(params),
+            IpcMessageKind::SetPrintPageSetup(params) => self.handle_set_print_page_setup(params),
+            IpcMessageKind::TabNavigateRequest(_) => {
+                // 浏览器→渲染方向不存在本请求（渲染端出站消息回环不入站）。
+                Err("TabNavigateRequest is renderer-outbound only".to_string())
+            }
             IpcMessageKind::SetJavascriptEnabled(enabled) => {
                 self.javascript_enabled = enabled;
                 Ok(())
@@ -3821,6 +3852,14 @@ fn ipc_media_to_engine(media: IpcMediaType) -> MediaType {
     match media {
         IpcMediaType::Screen => MediaType::Screen,
         IpcMediaType::Print => MediaType::Print,
+    }
+}
+
+/// IPC 打印方向 → engine PrintOrientation（T61 打印预览）。
+fn ipc_print_orientation_to_engine(orientation: IpcPrintOrientation) -> zero_engine::PrintOrientation {
+    match orientation {
+        IpcPrintOrientation::Portrait => zero_engine::PrintOrientation::Portrait,
+        IpcPrintOrientation::Landscape => zero_engine::PrintOrientation::Landscape,
     }
 }
 
