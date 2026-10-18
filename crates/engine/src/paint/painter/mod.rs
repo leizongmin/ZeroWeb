@@ -71,6 +71,11 @@ pub struct Painter {
     /// 盒于容器首行原点（层②缺陷），盒位错误时外延放大错位墨水（bleed-001/002 翻红
     /// 实证），待行位锚定切片落地后 default-on。构造期单次读取，热路径零 env 查询。
     pub(crate) inline_bleed_enabled: bool,
+    /// R5171：单行 inline box-level 背景/边框/背景图按内容区锚定 border-box 绘制
+    /// （CSS2 §10.6.2/§10.8.1，消费 `inline_reported_rect`，见
+    /// `inline_ca_paint_override`）。`ZW_INLINE_CA_PAINT=0` 关闭（恢复行盒域绘制）。
+    /// 构造期单次读取，热路径零 env 查询。
+    pub(crate) inline_ca_paint_enabled: bool,
     /// R5135：multicol 嵌套绘制深度——外层 cso 循环绘制嵌套 multicol 子树时 +1，
     /// paint_node 返回后 −1。深度 ≥1 的 cso 循环对列内容横向不裁剪（chromium 实测
     /// 2026-10-15 probeI/011：嵌套列内容溢出可见至最外层容器内容右缘——内层列
@@ -707,6 +712,7 @@ impl Painter {
             inline_frag_visibility_enabled: std::env::var("ZW_INLINE_FRAG_VISIBILITY").as_deref() != Ok("0"),
             inline_wrapper_bg_enabled: std::env::var("ZW_INLINE_WRAPPER_BG").as_deref() != Ok("0"),
             inline_bleed_enabled: std::env::var("ZW_INLINE_BLEED").as_deref() == Ok("1"),
+            inline_ca_paint_enabled: std::env::var("ZW_INLINE_CA_PAINT").as_deref() != Ok("0"),
             mc_paint_nesting: 0,
             paint_skip_nodes: HashSet::new(),
             counters: HashMap::new(),
@@ -1890,6 +1896,58 @@ impl Painter {
         }
     }
 
+    /// R5171：单行 inline box-level 装饰（背景/边框/背景图）的内容区锚定绘制面。
+    ///
+    /// CSS2 §10.6.2/§10.8.1：inline 非替换盒的 content area = 元素主字体 A+D，
+    /// **与 line-height 无关**，半 leading 属行盒。布局侧树几何保持行盒域（流
+    /// bookkeeping，r3773 判例），但 `inline_reported_rect`（R4379/R4383 记录臂，
+    /// 只记录不上树）已持有内容区锚定的 border-box（含 padding/border）。显式
+    /// line-height 页两者差半 leading 量——box-level 装饰按树几何绘制即多涂
+    /// 行盒带（driving: inline-non-replaced-height-002/003：span h=250 应 200）。
+    ///
+    /// 返回 `Some((覆写盒, 调整后 abs_y))`：clone 树盒仅覆写 y/height，其余字段
+    /// 原样保留——padding/border 域已是声明值（inline_finalization），R4297 缺失量
+    /// 口径的 `inline_box_vertical_bleed` 输入不变（缺失量恒 0，不双计）。报告值
+    /// 与树值差 ≤0.25px（normal line-height：引擎常数行高 ≡ A+D，hl=0；provider
+    /// 入树臂两者本就同值）不 clone，零行为差。
+    ///
+    /// 作用域 = **收缩轴**（报告盒矮于树盒，即显式 line-height > 主字体 A+D 的半
+    /// leading 多涂）；扩张轴（line-height < A+D）不动，见函数体内挂账注释。
+    ///
+    /// kill-switch：`ZW_INLINE_CA_PAINT=0` 回退行盒域绘制。
+    /// https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
+    fn inline_ca_paint_override(
+        &self,
+        box_node: &LayoutBox,
+        style: &ComputedStyle,
+        abs_y: f32,
+    ) -> Option<(LayoutBox, f32)> {
+        if !self.inline_ca_paint_enabled
+            || !matches!(style.display, DisplayValue::Inline)
+            || box_node.is_absolute
+            || box_node.is_fixed
+        {
+            return None;
+        }
+        let (reported_y, reported_h) = box_node.inline_reported_rect?;
+        // 只收缩不扩张：本切片只修「显式 line-height > 主字体 A+D」的半 leading 多涂带
+        //（inline-non-replaced-height-002/003：报告盒矮于树盒）。扩张轴（line-height <
+        // A+D）与 highlight overlay 的行盒缘语义（css-pseudo-4 highlight-bounds：选区
+        // 高亮可外延至行盒缘，R5052/R5054 选区站按行盒口径）及 R639/R1442 fragment
+        // 站相交——active-selection-027 A/B 实证扩张致两侧分化翻红，本切片不动
+        //（FIXME 挂账：扩张轴须与 fragment/selection 站同切片校准）。
+        if reported_h > box_node.height - 0.25 {
+            return None;
+        }
+        if (reported_y - box_node.y).abs() <= 0.25 && (reported_h - box_node.height).abs() <= 0.25 {
+            return None;
+        }
+        let mut b = box_node.clone();
+        b.y = reported_y;
+        b.height = reported_h;
+        Some((b, abs_y + (reported_y - box_node.y)))
+    }
+
     /// 仅绘制与脏区域相交的节点（增量绘制）。
     ///
     /// 遍历布局树时跳过与脏区域完全不相交的子树，
@@ -2145,6 +2203,10 @@ impl Painter {
                                 .fold(0.0_f32, f32::max),
                         ) * 1.5
                     && doc.is_some_and(|d| text::has_direct_paintable_text(d, node_id, Some(styles)));
+                // R5171：单行 inline box-level 装饰改按内容区锚定 border-box（未抑制时
+                // box-level 是唯一施画者；多行无记录值、定位盒不参与，保持树几何）。
+                let inline_ca = self.inline_ca_paint_override(box_node, style, abs_y);
+                let (deco_box, deco_abs_y) = inline_ca.as_ref().map_or((box_node, abs_y), |(b, y)| (b, *y));
                 // R4248（CSS Borders 4 §corner-shaping）：corner-shape 装饰裁剪窗——
                 // 背景/边框/outline 图元绘制后统一裁到形角多边形。窗口准备走
                 // #[inline(never)] 助手（paint 递归帧敏感，深嵌套页栈溢出史）。
@@ -2160,14 +2222,14 @@ impl Painter {
                     match r5086_bg_pos {
                         Some(pos) => {
                             let draw_before = self.primitives.draw_order.len();
-                            self.paint_background(box_node, abs_x, abs_y, style, styles);
+                            self.paint_background(deco_box, abs_x, deco_abs_y, style, styles);
                             let end = self.primitives.draw_order.len();
                             if pos < draw_before && end > draw_before {
                                 // rotate_right 把 [draw_before..end) 段移到 [pos..end) 前端。
                                 self.primitives.draw_order[pos..].rotate_right(end - draw_before);
                             }
                         }
-                        None => self.paint_background(box_node, abs_x, abs_y, style, styles),
+                        None => self.paint_background(deco_box, abs_x, deco_abs_y, style, styles),
                     }
                 }
                 // 0b. box-shadow inset 相位（R4137，CSS Backgrounds 附录 E：背景之上、内容之下）。
@@ -2222,7 +2284,8 @@ impl Painter {
                         // 「applied instead of the border-style」替换常规边框绘制——
                         // border-style 边框不再画出（此前 border 从图像条带下方露出，
                         // driving: border-image-outset-003 黑框 + border-image-006 红框）。
-                        self.paint_borders(box_node, abs_x, abs_y, style);
+                        // R5171：inline 单行内容区锚定面（deco_box/deco_abs_y）。
+                        self.paint_borders(deco_box, abs_x, deco_abs_y, style);
                     }
                 }
                 if !is_table_internal {
@@ -2783,6 +2846,11 @@ impl Painter {
                                 .fold(0.0_f32, f32::max),
                         ) * 1.5
                     && doc.is_some_and(|d| text::has_direct_paintable_text(d, node_id, Some(styles)));
+                // R5171：单行 inline box-level 装饰改按内容区锚定 border-box（同
+                // paint_node_in_rect——box-level 未抑制时是唯一施画者；多行无记录值、
+                // 定位盒不参与，保持树几何）。
+                let inline_ca = self.inline_ca_paint_override(box_node, style, abs_y);
+                let (deco_box, deco_abs_y) = inline_ca.as_ref().map_or((box_node, abs_y), |(b, y)| (b, *y));
                 // R4519（R1473 step-2 slice ①）：bordered nested-spanner wrapper 的区域×列
                 // fragment 分段装饰（layout 侧 apply_bordered_region_fragments 预计算）。
                 // 非空时取代整盒 bg/box-shadow/bg-image/border 绘制——按 spanner 区域
@@ -2816,14 +2884,14 @@ impl Painter {
                     match r5086_bg_pos {
                         Some(pos) => {
                             let draw_before = self.primitives.draw_order.len();
-                            self.paint_background(box_node, abs_x, abs_y, style, styles);
+                            self.paint_background(deco_box, abs_x, deco_abs_y, style, styles);
                             let end = self.primitives.draw_order.len();
                             if pos < draw_before && end > draw_before {
                                 // rotate_right 把 [draw_before..end) 段移到 [pos..end) 前端。
                                 self.primitives.draw_order[pos..].rotate_right(end - draw_before);
                             }
                         }
-                        None => self.paint_background(box_node, abs_x, abs_y, style, styles),
+                        None => self.paint_background(deco_box, abs_x, deco_abs_y, style, styles),
                     }
                 }
 
@@ -2886,7 +2954,8 @@ impl Painter {
                         // 「applied instead of the border-style」替换常规边框绘制——
                         // border-style 边框不再画出（此前 border 从图像条带下方露出，
                         // driving: border-image-outset-003 黑框 + border-image-006 红框）。
-                        self.paint_borders(box_node, abs_x, abs_y, style);
+                        // R5171：inline 单行内容区锚定面（deco_box/deco_abs_y）。
+                        self.paint_borders(deco_box, abs_x, deco_abs_y, style);
                     }
                 }
 
