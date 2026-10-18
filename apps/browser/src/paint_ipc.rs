@@ -72,6 +72,7 @@ fn hit_test_cache_from_ipc(cache: IpcHitTestCache) -> Option<HitTestCache> {
                 href: meta.href,
                 src: meta.src,
                 link_text: meta.link_text,
+                draggable: meta.draggable,
             },
         ));
     }
@@ -153,6 +154,7 @@ mod tests {
                             href: None,
                             src: None,
                             link_text: None,
+                            draggable: false,
                         },
                     ),
                     (
@@ -165,6 +167,7 @@ mod tests {
                             href: Some("https://example.com".to_string()),
                             src: None,
                             link_text: Some("Example Link".to_string()),
+                            draggable: true,
                         },
                     ),
                 ]

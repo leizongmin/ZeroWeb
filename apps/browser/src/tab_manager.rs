@@ -1146,6 +1146,7 @@ mod ime_tests {
             y: 25.0,
             width: 240.0,
             height: 80.0,
+            drag_source_eligible: false,
         };
         assert_eq!(manager.update_ime_target_rect(tab_id, 30.0, 30.0, &hit), Some(3));
         assert_eq!(manager.page_ime_rect(tab_id), Some((31.5, 27.0, 1.0, 18.0)));
@@ -1179,6 +1180,7 @@ mod ime_tests {
             y: 0.0,
             width: 20.0,
             height: 10.0,
+            drag_source_eligible: false,
         };
 
         let target = manager.page_target_for_hit(tab_id, &hit).expect("target");
