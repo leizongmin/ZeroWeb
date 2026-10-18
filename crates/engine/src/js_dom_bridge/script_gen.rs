@@ -1296,11 +1296,16 @@ pub fn script_run_classic_page(code: &str, script_index: usize, source_url: Opti
         format!("+'{}'", escape_js_string(&format!("\n{tail}")))
     };
     format!(
+        // T64 返修（缺陷首轮 D1/D2）：①message/stack 访问各带 try 守卫——异形
+        // throw 对象（getter 抛错）退化为栈文本可见（旧臂吞为静默）；②V8 判定
+        // 锚定「首行非帧行」——quickjs 首帧行含消息子串（如 `new Error('eval')`
+        // 的 'eval' ⊂ 'at <eval>…'）时子串命中会把消息顶掉，帧行形状一律前置
+        // 消息。V8 字节形状（首行含消息且非帧行）保持原样返回。
         // security-hardening M2-s6：`(0,globalThis.__zwRealEval||eval)`——eval 门禁
         // per-script 包装（webview 侧）会把 globalThis.eval 换成检查包装，本机制自身的
         // 页面脚本执行必须走**原生 eval**（包装安装片段先捕获 __zwRealEval；无门禁时
         // 回落 eval，语义同为间接 eval 全局作用域）。
-        "globalThis.__zw_set_current_script&&globalThis.__zw_set_current_script({idx});\nglobalThis.{g}=undefined;\ntry{{(0,globalThis.__zwRealEval||eval)({code_literal}{export_suffix});}}catch(__zw_e){{globalThis.{g}=function(e){{var m=(e&&e.message)?String(e.message):String(e);var s=(e&&e.stack)?String(e.stack):'';if(!s)return m;var nl=s.indexOf('\\n');var head=nl<0?s:s.slice(0,nl);return (m&&head.indexOf(m)>=0)?s:m+'\\n'+s;}}(__zw_e);}}\nfinally{{globalThis.__zw_clear_current_script&&globalThis.__zw_clear_current_script();}}",
+        "globalThis.__zw_set_current_script&&globalThis.__zw_set_current_script({idx});\nglobalThis.{g}=undefined;\ntry{{(0,globalThis.__zwRealEval||eval)({code_literal}{export_suffix});}}catch(__zw_e){{globalThis.{g}=function(e){{var m='';try{{m=(e&&e.message!==undefined)?String(e.message):String(e);}}catch(_em){{m='';}}var s='';try{{s=(e&&e.stack)?String(e.stack):'';}}catch(_es){{s='';}}if(!s)return m;var nl=s.indexOf('\\n');var head=nl<0?s:s.slice(0,nl);var v8=m&&head.indexOf(m)>=0&&!/^\\s*at\\s/.test(head);return v8?s:(m?m+'\\n'+s:s);}}(__zw_e);}}\nfinally{{globalThis.__zw_clear_current_script&&globalThis.__zw_clear_current_script();}}",
         idx = script_index,
         g = PAGE_SCRIPT_ERROR_GLOBAL
     )
