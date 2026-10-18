@@ -5603,6 +5603,8 @@ fn inject_anchor_doc(app: &mut BrowserApp, tab: TabId, anchor_y: f32) {
                     href: None,
                     src: None,
                     link_text: None,
+                    draggable: false,
+                    drag_barrier: false,
                 },
             ),
             (
@@ -5615,6 +5617,8 @@ fn inject_anchor_doc(app: &mut BrowserApp, tab: TabId, anchor_y: f32) {
                     href: None,
                     src: None,
                     link_text: None,
+                    draggable: false,
+                    drag_barrier: false,
                 },
             ),
         ],
