@@ -270,6 +270,26 @@ fn test_tab_history_len_and_index() {
 }
 
 #[test]
+fn test_tab_jump_history_arbitrary_index() {
+    // t5（qq-20261016-r1）：CDP Page.navigateToHistoryEntry 共享路径——任意索引
+    // 跳转，url/title 随目标条目更新（go_back/go_forward 的步长泛化）。
+    let mut tab = Tab::new("https://a.com");
+    tab.set_title("A");
+    tab.navigate("https://b.com");
+    tab.set_title("B");
+    tab.navigate("https://c.com");
+    assert!(tab.jump_history(0), "跳到首条目");
+    assert_eq!(tab.url(), Some("https://a.com"));
+    assert_eq!(tab.title(), Some("A"));
+    assert_eq!(tab.history_index(), 0);
+    assert!(tab.jump_history(2), "前向跳到末条目");
+    assert_eq!(tab.url(), Some("https://c.com"));
+    assert_eq!(tab.title(), None, "末条目标题未 set_title，随条目回退 None");
+    assert!(!tab.jump_history(9), "越界索引失败且状态不变");
+    assert_eq!(tab.url(), Some("https://c.com"));
+}
+
+#[test]
 fn test_tab_navigate_resets_title() {
     let mut tab = Tab::new("https://a.com");
     tab.set_title("Page A");

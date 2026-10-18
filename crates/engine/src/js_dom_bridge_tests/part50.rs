@@ -410,3 +410,31 @@ fn m5s4_uninit_let_decl_exports_cross_script() {
         );
     }
 }
+
+/// t5（qq-20261016-r1）execute 错误栈捕获：classic 页面脚本抛错时 sentinel 携带
+/// 栈帧行——此前 catch 臂只存 `__zw_e.message`，栈丢弃（t2 P3 'Runtime error'
+/// pageerror 无栈无法归因的同族缺口：classic 顶层脚本错误全走此路径）。消费面：
+/// `script_report_error` 取首行（window.onerror 消息形状不变），ScriptErrorParams
+/// 全文携带帧行供 pageerror 归因。
+#[test]
+fn t5_classic_page_thrown_error_sentinel_carries_stack_frames() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    let wrapped =
+        crate::js_dom_bridge::script_run_classic_page("function boomSentinel(){ throw new TypeError('boom-sentinel'); } boomSentinel();", 0, None);
+    sandbox.execute(&wrapped).unwrap();
+    let err = sandbox
+        .execute(&crate::js_dom_bridge::page_script_error_check())
+        .unwrap()
+        .value;
+    assert!(err.contains("boom-sentinel"), "sentinel 非空且含消息：{err}");
+    assert!(err.contains("    at "), "sentinel 须携带栈帧行：{err}");
+    assert!(err.contains("boomSentinel"), "帧行须指向抛出函数：{err}");
+    // 首行 = 消息（script_report_error / window.onerror 消费形状不变）。
+    let first_line = err.lines().next().unwrap_or("");
+    assert_eq!(first_line, "TypeError: boom-sentinel", "首行保持消息本体");
+}

@@ -1101,7 +1101,9 @@ fn execute_chunk<F: Fn(&str) -> Result<String, String>>(
 
 /// 执行 classic 页面 `<script>` 体，顶层 try-catch 包装未捕获 throw（[`script_run_classic_page`]）+
 /// 执行期设/清 `document.currentScript`（R3258）。
-/// 成功 → `Ok(())`；抛错 → sentinel 读出消息 → `Err(msg)`（调用方 `run_page_scripts` 据此报 window.onerror）。
+/// 成功 → `Ok(())`；抛错 → sentinel 读出错误文本（首行消息 + 栈帧行，t5 错误栈捕获）→
+/// `Err(msg)`（调用方 `run_page_scripts` 据此报 window.onerror——`script_report_error`
+/// 取首行，消息形状不变；ScriptErrorParams 携带全文供 pageerror 归因）。
 /// 包装器 execute 不会抛（try-catch 兜底），随后的 sentinel 读取 execute 在干净 Isolate 上可靠。
 fn run_page_script_caught(
     js_worker: &RendererJsWorker,

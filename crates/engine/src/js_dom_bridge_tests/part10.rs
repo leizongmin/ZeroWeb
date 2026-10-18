@@ -2935,6 +2935,120 @@ fn test_fetch_range_safelisted_preflight_t8s4() {
         "普通自定义头 → preflight（既有面守卫）"
     );
 }
+
+/// t5（qq-20261016-r1）CORS-preflight 异步桥回归：浏览器 fetch_bridge 契约下
+/// `__zw_fetch` 同步返 ""（抓取完成后经 `__zwResolveCallback` 异步 resolve），
+/// preflight OPTIONS 须挂 `__zw_pending` 等待——旧实现同步读返回值
+/// `_makeResponseFromWire("")` 判 status 0 → preflight 恒失败 → 一切跨源自定义头
+/// POST 即时 `Failed to fetch`（qq.com `web_feed/getPcPageList` 全灭、懒内容区块
+/// 不挂载的「缺失第一环」）。本测试以生产同形异步 mock 复现：OPTIONS resolve
+///（ACAO/ACAM/ACAH 覆盖）→ 主 GET 自动重入 → 200 兑现；同步宿主（webview
+/// fetch_handler / 测试合成 handler）行为由 [`test_fetch_range_safelisted_preflight_t8s4`] 守卫。
+/// https://fetch.spec.whatwg.org/#cors-preflight-fetch
+#[test]
+fn t5_cors_preflight_settles_via_async_callback_contract() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://www.test.com/page".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // fetch_bridge 异步契约 mock：记 (id, method) 后返 ""（不就地结算），Rust 侧
+    // resolve_async_callback 投递 wire——[`crate::fetch_bridge::FetchBridge::register`] 同形。
+    let seen: Arc<Mutex<Vec<(String, String)>>> = Arc::new(Mutex::new(vec![]));
+    {
+        let seen = Arc::clone(&seen);
+        sandbox
+            .register_callback("__zw_fetch", Box::new(move |args| {
+                let id = args.first().cloned().unwrap_or_default();
+                let method = args.get(1).cloned().unwrap_or_default();
+                seen.lock().unwrap_or_else(|e| e.into_inner()).push((id, method));
+                String::new()
+            }));
+    }
+    let drain_seen = |seen: &Arc<Mutex<Vec<(String, String)>>>| -> Vec<(String, String)> {
+        std::mem::take(&mut *seen.lock().unwrap_or_else(|e| e.into_inner()))
+    };
+
+    // 跨源自定义头 GET → preflight 臂（pre-fix：同步读 "" 判 status 0 → 即时
+    // `err:TypeError: Failed to fetch`，断言以 `ok:200` 失败暴露）。
+    sandbox
+        .execute("globalThis.__st = 'pending'; fetch('https://api.test/data', { headers: { 'X-Custom': 'v' } }).then(function (r) { globalThis.__st = 'ok:' + r.status; }, function (e) { globalThis.__st = 'err:' + e; }); void 0;")
+        .unwrap();
+    let seen1 = drain_seen(&seen);
+    assert_eq!(seen1.len(), 1, "仅 OPTIONS 派发，主请求待 preflight 结果");
+    assert_eq!(seen1[0].1, "OPTIONS", "跨源自定义头 → preflight OPTIONS 先行");
+
+    // OPTIONS 异步 resolve：2xx + ACAO(文档 origin) + ACAM/ACAH 覆盖 → 缓存并重入主 GET。
+    let pre_wire = "__zwfr:200\u{001f}OK\u{001f}Access-Control-Allow-Origin\u{001e}https://www.test.com\u{001e}Access-Control-Allow-Methods\u{001e}GET, OPTIONS\u{001e}Access-Control-Allow-Headers\u{001e}*\u{001f}";
+    sandbox.resolve_async_callback(&seen1[0].0, pre_wire);
+    let seen2 = drain_seen(&seen);
+    assert_eq!(seen2.len(), 1, "preflight 通过 → 主 GET 重入（异步契约）");
+    assert_eq!(seen2[0].1, "GET");
+
+    // 主请求异步 resolve → fetch 兑现 200（pre-fix 此前已在 reject 分支终结）。
+    let main_wire =
+        "__zwfr:200\u{001f}OK\u{001f}Access-Control-Allow-Origin\u{001e}https://www.test.com\u{001f}feed-payload";
+    sandbox.resolve_async_callback(&seen2[0].0, main_wire);
+    assert_eq!(
+        sandbox.execute("globalThis.__st").unwrap().value,
+        "ok:200",
+        "preflight 异步桥：跨源自定义头请求兑现"
+    );
+}
+
+/// t5 返修 D2：preflight executor 内裸 `__zw_fetch` 同步抛错 → Promise 构造器把
+/// executor 异常转为 preflight promise rejection；消费点 `.then` 无 onRejected 时
+///（pre-fix）外层 fetch 永不 settle——页面回调不触发（悬挂无信号，比 reject 更难
+/// 排查）。补 onRejected 后按既有 preflight 失败语义 settle（`!pre.ok` 同径：
+/// TypeError 'Failed to fetch'）。当前宿主回调（fetch_bridge/webview）不抛——
+/// 防御面回归守卫，非可达性声明；重定向臂 onRejected 同形由本测试同构覆盖。
+#[test]
+fn t5_cors_preflight_host_sync_throw_rejects_main_fetch() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://www.test.com/page".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 宿主回调同步抛错 mock（D2 防御面构造；不注册 Rust 回调，直接 JS 覆写）。
+    sandbox
+        .execute("globalThis.__zw_fetch = function () { throw new TypeError('host boom'); }; void 0;")
+        .unwrap();
+    // 跨源自定义头 GET → preflight 臂（executor 抛错点）。pre-fix：`__st` 恒
+    // 'pending'（悬挂）；post-fix：按 preflight 失败 settle 为 err。
+    sandbox
+        .execute("globalThis.__st = 'pending'; fetch('https://api.test/data', { headers: { 'X-Custom': 'v' } }).then(function (r) { globalThis.__st = 'ok:' + r.status; }, function (e) { globalThis.__st = 'err:' + e; }); void 0;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__st").unwrap().value,
+        "err:TypeError: Failed to fetch",
+        "宿主同步抛错 → 主 fetch 按 preflight 失败 settle（不悬挂）"
+    );
+    // preflight pending 条目不残留（settlePre 未及删除，onRejected 清理）。
+    let pending = sandbox
+        .execute("Object.keys(globalThis.__zw_pending).filter(function (k) { return k.indexOf('pre') >= 0; }).length")
+        .unwrap()
+        .value;
+    assert_eq!(pending, "0", "抛错后 preflight __zw_pending 条目已清理");
+}
 fn test_request_null_body_text_does_not_mark_body_used() {
     // https://fetch.spec.whatwg.org/#body-mixin
     // WPT Cache.add reads a body-less GET Request; null body consumption must

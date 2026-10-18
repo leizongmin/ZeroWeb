@@ -661,7 +661,8 @@ lineNumber:{line},columnNumber:{column}}});\
 }
 
 /// 顶层 try-catch 包装捕获的页面脚本错误所写入的 sentinel 全局名。包装器在成功时将其留为
-/// `undefined`，抛错时设为错误消息字符串。调用方经 [`page_script_error_check`] 读取。
+/// `undefined`，抛错时设为错误文本（stack 优先——首行消息 + 栈帧行）。调用方经
+/// [`page_script_error_check`] 读取。
 pub const PAGE_SCRIPT_ERROR_GLOBAL: &str = "__zw_pgerr__";
 
 /// `var` 声明的 accessor 转导出片段（R201）：get/set 双向转发 eval 绑定——后续脚本
@@ -1211,9 +1212,13 @@ fn scan_top_level_decl_exports(code: &str, is_strict: bool) -> String {
 ///
 /// **作用域**：`code` 内的 `var`/`function` 声明提升到脚本顶层作用域（try 块对它们透明），与未包装
 /// 行为一致；顶层 `let`/`const`/`class` 会变为 try 块作用域——classic 内联脚本罕见，module 走
-/// `execute_module`。成功时 sentinel 留 `undefined`（非字符串），抛错时设为消息字符串，二者经
-/// [`page_script_error_check`] 的 `===undefined` 判别可靠区分（即便 `throw undefined` 也只产生
-/// 字符串 "undefined"，不与 undefined 值混淆）。
+/// `execute_module`。成功时 sentinel 留 `undefined`（非字符串），抛错时设为错误文本
+///（`__zw_e.stack` 优先——首行消息 + 栈帧行，t5 execute 错误栈捕获；无 stack 回退 message /
+/// String(e)），二者经 [`page_script_error_check`] 的 `===undefined` 判别可靠区分（即便
+/// `throw undefined` 也只产生字符串 "undefined"，不与 undefined 值混淆）。
+/// 消费方 [`page_script_error_check`] 返回后，window.onerror 报告经
+/// [`script_report_error`] 取首行（带栈文本不改变 5-arg 消息形状），ScriptErrorParams
+/// 全文携带栈帧行（pageerror 归因面）。
 pub fn script_run_classic_page(code: &str, script_index: usize, source_url: Option<&str>) -> String {
     let code_literal = format!("'{}'", escape_js_string(code));
     // R147（js-dom M4）：顶层函数声明的**全局发布**。间接 eval `(0,eval)` 中源内
@@ -1283,7 +1288,7 @@ pub fn script_run_classic_page(code: &str, script_index: usize, source_url: Opti
         // per-script 包装（webview 侧）会把 globalThis.eval 换成检查包装，本机制自身的
         // 页面脚本执行必须走**原生 eval**（包装安装片段先捕获 __zwRealEval；无门禁时
         // 回落 eval，语义同为间接 eval 全局作用域）。
-        "globalThis.__zw_set_current_script&&globalThis.__zw_set_current_script({idx});\nglobalThis.{g}=undefined;\ntry{{(0,globalThis.__zwRealEval||eval)({code_literal}{export_suffix});}}catch(__zw_e){{globalThis.{g}=(__zw_e&&__zw_e.message)?String(__zw_e.message):String(__zw_e);}}\nfinally{{globalThis.__zw_clear_current_script&&globalThis.__zw_clear_current_script();}}",
+        "globalThis.__zw_set_current_script&&globalThis.__zw_set_current_script({idx});\nglobalThis.{g}=undefined;\ntry{{(0,globalThis.__zwRealEval||eval)({code_literal}{export_suffix});}}catch(__zw_e){{globalThis.{g}=(__zw_e&&__zw_e.stack)?String(__zw_e.stack):((__zw_e&&__zw_e.message)?String(__zw_e.message):String(__zw_e));}}\nfinally{{globalThis.__zw_clear_current_script&&globalThis.__zw_clear_current_script();}}",
         idx = script_index,
         g = PAGE_SCRIPT_ERROR_GLOBAL
     )
@@ -1306,8 +1311,9 @@ pub fn script_clear_current_script() -> &'static str {
     "if(typeof __zw_clear_current_script==='function')__zw_clear_current_script();"
 }
 
-/// 读取 [`script_run_classic_page`] 写入的 sentinel：返回空串表示成功（无抛错），非空串为错误消息。
-/// 调用方据此把抛错 surface 为 `Err`。作为独立 execute（包装器执行后 Isolate 干净，本次读取可靠）。
+/// 读取 [`script_run_classic_page`] 写入的 sentinel：返回空串表示成功（无抛错），非空串为
+/// 错误文本（首行消息 + 栈帧行，t5 错误栈捕获）。调用方据此把抛错 surface 为 `Err`。
+/// 作为独立 execute（包装器执行后 Isolate 干净，本次读取可靠）。
 pub fn page_script_error_check() -> String {
     format!(
         "(globalThis.{g}===undefined)?'':globalThis.{g}",

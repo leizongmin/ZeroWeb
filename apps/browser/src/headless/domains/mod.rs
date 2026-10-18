@@ -230,14 +230,7 @@ impl HeadlessServer {
             "Runtime.getIsolateId" => Ok(serde_json::json!({ "id": "zw-isolate" })),
             "Storage.getStorageKey" => Ok(serde_json::json!({ "storageKey": "zeroweb-active-tab" })),
             "Network.emulateNetworkConditionsByRule" => Ok(serde_json::json!({ "ruleIds": [] })),
-            "Page.getNavigationHistory" => Ok(serde_json::json!({
-                "currentIndex": 0,
-                "entries": [{
-                    "id": 1,
-                    "url": session.shell.tabs().next().and_then(|t| t.url().map(str::to_string)).unwrap_or_else(|| "about:blank".into()),
-                    "title": session.shell.tabs().next().and_then(|t| t.title().map(str::to_string)).unwrap_or_default(),
-                }],
-            })),
+            "Page.getNavigationHistory" => self.cmd_page_get_navigation_history(session),
             // ── 未知命令 ──
             _ => Err(ProtocolError {
                 code: -32601,
@@ -344,6 +337,12 @@ impl HeadlessServer {
             }
             // CDP 形状：{data: "<base64>"}（BiDi browsingContext.captureScreenshot 走对象形）
             "Page.captureScreenshot" => (self.cmd_page_capture_screenshot(session, params), events),
+            // CDP 历史遍历执行半边（PW goBack/goForward：getNavigationHistory 选条目 →
+            // 本命令跳转）——shell 真实历史 Jump + renderer 载入 + 导航事件族
+            "Page.navigateToHistoryEntry" => {
+                let result = self.cmd_page_navigate_to_history_entry(session, cdp_session, params, &mut events);
+                (result, events)
+            }
             "Page.enable" => (Ok(serde_json::json!({})), events),
             // CDP Runtime 域：remoteObject 类型化形状（BiDi script.evaluate 走旧实现）
             "Runtime.evaluate" => (self.cmd_runtime_evaluate(session, params), events),
