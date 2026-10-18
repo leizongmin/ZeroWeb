@@ -1461,6 +1461,11 @@ impl super::Painter {
                     // 推进行宽（run-in-contains-inline-006 孙代 abspos 幽灵推进）。vertical
                     // 模式不注入（镜像 layout 期 OOF skip 臂的 vertical 例外）。
                     .with_oof_walk_nodes(collect_oof_walk_nodes(box_node, doc, styles, is_vertical))
+                    // R5177（CSS 2.1 §16.1）：color 差异元素集——walk 折回门在 Path B
+                    //（空 styles）下的判定信号；layout 期按 run owner 填充（见
+                    // store_font_sizes_from_ifc），layout IFC 有 styles 直判同语义（见
+                    // collect_flat_inline_children 折回臂）。
+                    .with_color_divergent_walk_nodes(box_node.inline_color_divergent_nodes.clone())
                     // R3840：元素级 bidi-override 恢复（layout 期按文本节点 id 存储）。
                     .with_text_node_bidi_overrides(box_node.text_node_bidi_overrides.clone())
                     // R3778：run 级有效 white-space 覆盖——inline 包裹层声明的 pre 等在
@@ -2204,6 +2209,10 @@ impl super::Painter {
                                         $frag_nid,
                                     );
                                 }
+                                // R5177：color 差异拆分归因的外层 inline 载体补标在渲染
+                                // 循环前统一处理（mark_split_owner_ancestor_chain_painted，
+                                // 仅拆分 owner 上溯——普通 run 归因 id 即外层自身，热路径
+                                // 逐片段上溯是无谓开销）。
                             }
 
                             // R358：per-fragment color（带 abs-pos guard）。
@@ -3289,6 +3298,29 @@ impl super::Painter {
                         self.primitives.add_fill(*r, *c);
                     }
 
+                    // R5177：color 差异拆分归因片段的祖先载体补标（宏内逐片段上溯的
+                    // 热点外提）——拆分归因后 frag nid 是内层元素，外层 inline 载体
+                    //（has_direct_paintable_text 的 PHASEA_STORE_EXT 臂放行 paint_text）
+                    // 的 Path B 重跑会重复渲染已由 IFC 片段覆盖的子树文本（span>
+                    // div{display:inline} probe 双绘实证）。仅对拆分归因 owner 上溯
+                    // display:Inline 补标；divergent 集空短路零开销（普通 run 归因 id
+                    // 即外层自身，宏内 insert(frag_nid) 已覆盖）。
+                    let r5177_divergent = &box_node.inline_color_divergent_nodes;
+                    if !r5177_divergent.is_empty()
+                        && let Some(styles) = styles
+                    {
+                        mark_split_owner_ancestor_chain_painted(
+                            &mut self.painted_inline_nodes,
+                            doc,
+                            styles,
+                            stored_fragments
+                                .iter()
+                                .map(|f| f.node_id)
+                                .chain(fragments.iter().map(|f| f.node_id)),
+                            r5177_divergent,
+                        );
+                    }
+
                     if use_stored {
                         // R4332：owner 片段序首/末旗标（宏参数传入，见宏首注释）。
                         let r4332_edges = owner_fragment_edge_flags(
@@ -3851,6 +3883,34 @@ pub(super) fn mark_inline_wrapper_chain_painted(
         }
         painted.insert(id);
         stack.extend(doc.child_nodes(id));
+    }
+}
+
+/// R5177：color 差异拆分归因片段的祖先载体补标——拆分归因后片段 nid 是内层元素
+/// 自身，外层 inline 载体（has_direct_paintable_text 的 PHASEA_STORE_EXT 臂放行
+/// paint_text）的 Path B 重跑会重复渲染已由 IFC 片段覆盖的子树文本；旧折回归因下
+/// 外层 nid 自身被 insert 恰好覆盖此面。对每个拆分归因 owner 沿祖先链上溯
+/// display:Inline 元素 insert，dedup 拦住外层重跑（抑制面与旧折回行为等价）。
+/// 调用方先按 divergent 集过滤 owner；渲染循环前一次调用，非逐片段。
+pub(super) fn mark_split_owner_ancestor_chain_painted(
+    painted: &mut std::collections::HashSet<NodeId>,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    owners: impl Iterator<Item = NodeId>,
+    divergent: &zero_layout_engine::NodeIdSet,
+) {
+    for owner in owners.filter(|id| divergent.contains(id)) {
+        let mut ancestor = doc.parent_node(owner);
+        while let Some(id) = ancestor {
+            if !styles
+                .get(&id)
+                .is_some_and(|s| matches!(s.display, DisplayValue::Inline))
+            {
+                break;
+            }
+            painted.insert(id);
+            ancestor = doc.parent_node(id);
+        }
     }
 }
 

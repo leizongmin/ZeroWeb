@@ -88,6 +88,13 @@ pub struct InlineFormattingContext {
     /// 47px）。判定双通道同 display_none_walk_nodes：layout 趟 styles 直判；Path B 由
     /// 本集判定。
     pub oof_walk_nodes: NodeIdSet,
+    /// R5177（CSS 2.1 §16.1）：computed color 与父元素不同的元素集合——FLAT_CHILD_WALK
+    /// 折回门的 paint Path B（空 styles）判定信号（layout IFC 有 styles 直判不消费）。
+    /// color 不一致的纯文本 inline 子折回外层会把子树文本归因外层，paint 侧 R358
+    /// per-fragment color 按外层色渲染（outline-027：span>div{display:inline;
+    /// color:lime} 的 XX 折回 span 画成容器黑）。painter 从真实 computed styles
+    /// 扫描注入，两臂同语义同值。
+    pub color_divergent_walk_nodes: NodeIdSet,
     /// R3840：paint Path B 恢复元素级 `unicode-bidi: bidi-override`（key = inline
     /// owner 元素 NodeId，value = 方向 rtl?）。layout 期经
     /// `LayoutBox.text_node_bidi_overrides` 存储。
@@ -389,6 +396,7 @@ impl InlineFormattingContext {
             block_child_walk_nodes: NodeIdSet::default(),
             display_none_walk_nodes: NodeIdSet::default(),
             oof_walk_nodes: NodeIdSet::default(),
+            color_divergent_walk_nodes: NodeIdSet::default(),
             text_node_bidi_overrides: NodeIdMap::default(),
             text_align_last: None,
             break_word: false,
@@ -568,6 +576,12 @@ impl InlineFormattingContext {
     /// 设置 out-of-flow 后代元素集（见 `oof_walk_nodes` 字段文档）。
     pub fn with_oof_walk_nodes(mut self, nodes: NodeIdSet) -> Self {
         self.oof_walk_nodes = nodes;
+        self
+    }
+
+    /// R5177：设置 color 差异元素集（walk 折回门 paint Path B 信号，见字段文档）。
+    pub fn with_color_divergent_walk_nodes(mut self, nodes: NodeIdSet) -> Self {
+        self.color_divergent_walk_nodes = nodes;
         self
     }
 

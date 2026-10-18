@@ -31,6 +31,7 @@ mod r5173_transform_3d_axis_direct;
 mod r5174_parent_perspective;
 mod r5175_perspective_used_value;
 mod r5176_transformed_paint_phase;
+mod r5177_inline_text_color;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;
