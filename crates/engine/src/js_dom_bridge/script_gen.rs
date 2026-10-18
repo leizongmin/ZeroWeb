@@ -55,7 +55,11 @@ pub struct DomEventDetail {
     pub data_transfer_id: Option<u64>,
 }
 
-fn escape_js_string(s: &str) -> String {
+/// JS 单引号字符串字面量转义（`'` `\` `\n` `\r`）。
+///
+/// t6（siteopt qq-20261016-r1）pub 导出：renderer automation `Runtime.evaluate`
+/// 语句序列修复（间接 eval 字面量包装）与 script_gen 既有包装同源复用。
+pub fn escape_js_string(s: &str) -> String {
     s.replace('\\', "\\\\")
         .replace('\'', "\\'")
         .replace('\n', "\\n")

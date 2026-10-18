@@ -1091,6 +1091,58 @@
       }
     }
   }
+  // t6（siteopt qq-20261016-r1）：CSSOM View `scrollTop`/`scrollLeft` 是 **Element.prototype
+  // 访问器**（https://drafts.csswg.org/cssom-view/#dom-element-scrolltop）——Chrome 的
+  // `Object.getOwnPropertyDescriptor(Element.prototype,'scrollTop')` 返 {get,set}。本桥的
+  // 元素实例读写走 proxy get/set trap（part04 get 'scrollTop' / part05 set 分支），原型上此前
+  // 无此属性 → gOPD 返 undefined。站点 scroll-behavior-polyfill（jsDelivr 2.0.13，qq.com 静态
+  // 资源）装载即 `Object.getOwnPropertyDescriptor(Element.prototype,"scrollTop").set` 解引用
+  // → TypeError "reading 'set'"（t6 journey 每轮 1 条实证），polyfill 死亡连带 smooth-scroll
+  // 适配缺失。此处补原型访问器：代理元素（trap 命中）不受影响；gOPD 内省拿到 {get,set} 使
+  // polyfill 按其旧浏览器路径正常安装（其 defineProperty 包装以 D.call(element) 委托回本
+  // 访问器 → 经 proxy trap 落真实滚动状态）。非代理 this（Object.create(Element.prototype)
+  // 等继承形态）**同 this 再入**（getter 内 this.scrollTop 走原型链回到本访问器）读回退
+  // 0/写忽略——重入门闸以 _zwScrlAccBusy 记录**持锁 this**。两模式（native/polyfill 原型链）
+  // 都定义；defineProperty 幂等。
+  // t6 返修（F2，qq-20261016-r1 t6-repair）：守卫从模块级布尔改「持锁 this + save/restore」
+  // ——布尔把嵌套**异 this**（trap 处理中途触达另一元素）的合法读写也当递归误吞（读 0/写丢）；
+  // 同 this 再入仍拦截（递归面不变），异 this 嵌套放行，finally 复位持锁者（栈式纪律，
+  // 不吞外层持锁）。
+  var _zwScrlAccBusy = null;
+  var _zwScrlAccGet = function () {
+    if (_zwScrlAccBusy === this) return 0;
+    var _zwScrlPrev = _zwScrlAccBusy;
+    _zwScrlAccBusy = this;
+    try {
+      var v = this.scrollTop;
+      return v === undefined ? 0 : v;
+    } catch (_eScrlAcc1) {
+      return 0;
+    } finally {
+      _zwScrlAccBusy = _zwScrlPrev;
+    }
+  };
+  var _zwScrlAccSet = function (v) {
+    if (_zwScrlAccBusy === this) return v;
+    var _zwScrlPrev = _zwScrlAccBusy;
+    _zwScrlAccBusy = this;
+    try {
+      this.scrollTop = v;
+    } catch (_eScrlAcc2) {
+    } finally {
+      _zwScrlAccBusy = _zwScrlPrev;
+    }
+    return v;
+  };
+  // enumerable:false——WebIDL 接口成员不可枚举（for...in 不出现；R3046 expando 枚举
+  // 回归钉实证：enumerable:true 曾把 scrollTop/scrollLeft 混入元素 expando 键）。
+  // gOPD 描述符不受 enumerable 影响（polyfill 解引用面只要 {get,set} 存在）。
+  try {
+    Object.defineProperty(globalThis.Element.prototype, 'scrollTop',
+      { get: _zwScrlAccGet, set: _zwScrlAccSet, enumerable: false, configurable: true });
+    Object.defineProperty(globalThis.Element.prototype, 'scrollLeft',
+      { get: _zwScrlAccGet, set: _zwScrlAccSet, enumerable: false, configurable: true });
+  } catch (_eScrlAccDef) {}
   // R3019：DOM 接口构造器占位——库（DOMPurify 等）常做 `x instanceof HTMLFormElement` /
   // `el.attributes instanceof NamedNodeMap` / `node.content instanceof DocumentFragment` 校验。
   // 这些构造器须以 function 存在（否则 `instanceof undefined` 抛 TypeError 中断 sanitize）。本桥接的
@@ -8580,7 +8632,15 @@
   function _r134MatchTypeSelector(handle, q) {
     var s = String(q).trim();
     if (!s) return false;
-    if (/[\s>+~\[.#:(]"'/.test(s)) return null;
+    // t6（siteopt qq-20261016-r1）修形：旧 regex `/[\s>+~\[.#:(]"'/` 字符类后粘连了 `"'`
+    // 字面量——只命中「特殊字符后紧跟引号」的串，`.cls`/`#id` 等常规 compound 全部漏判
+    // 不返 null → 落到尾部 `low === local` 标签比对返 false → 调用侧（part04 matches）
+    // `!== null` 早退，class/id 选择器对 handle-only 元素恒 false（Swiper
+    // `Kj(el,'.swiper-wrapper')` 全 miss 的直接根因）。修为单字符类。**不含 ':'**——
+    // `ns|type` wire 形态（R134 本体显式处理，'urn:ns|h'）的冒号是 ns 分隔符非伪类
+    // 指示符（t59 前车：误含 ':' 曾打断 WPT matches-namespaced-elements 的 ns-bar 断言）；
+    // 伪类/函数伪类不含于此类时落调用侧 compound regex/锚回臂（detached 保守 false 不变）。
+    if (/[\s>+~\[.#]/.test(s)) return null;
     var nsMeta = (typeof _nsHandles !== 'undefined' && _nsHandles[handle]) || null;
     var local = nsMeta ? String(nsMeta.qualifiedName || '') : '';
     var c = local.indexOf(':');
