@@ -40,10 +40,10 @@ DOM、CSS、布局、渲染、JavaScript 绑定、网络和安全边界都在这
 | Android 浏览器 | ✅ | Kotlin/Compose 界面 + Rust 内核；多标签、键盘与输入法、下载、通知、中英双语 |
 | 多进程架构 | ✅ | 渲染、图像解码、合成分别在独立进程；页面脚本只在渲染进程内运行 |
 | 嵌入 API `ZeroWebView` | ✅ | 稳定 API 与 demo，接入 Service Worker、WASM 和安全检查 |
-| HTML / CSS 渲染 | 🚧 | 上游 WPT reftest 约 93% 通过（15,431 / 16,590，2026-10-16） |
+| HTML / CSS 渲染 | 🚧 | 上游 WPT reftest 约 93.6% 通过（15,528 / 16,590，2026-10-19） |
 | JavaScript 与 DOM | 🚧 | V8 / QuickJS 双引擎，原生 DOM 绑定，Web Components、Worker、ES Modules |
 | 网络、存储与安全 | ✅ | HTTP/1.1 和 HTTP/2、Cookie、IndexedDB、Cache API、OPFS、Service Worker；CSP、HSTS、混合内容阻止、站点隔离 |
-| 编辑与输入 | ✅ | contenteditable、Selection、键盘默认动作、剪贴板、全屏 |
+| 编辑与输入 | ✅ | contenteditable、Selection、键盘默认动作、剪贴板、全屏、拖放 |
 | 媒体 | 🚧 | VP9 / AV1 / H.264 视频，MP3 / Vorbis / Opus / AAC 音频，基础 Web Audio |
 | 自动化与调试 | ✅ | WebDriver、CDP（可被 Playwright 驱动）、复用 Chrome DevTools 前端的调试面板 |
 | WebGL / WebGPU | ⏳ | 尚未进入主线 |
@@ -53,7 +53,7 @@ DOM、CSS、布局、渲染、JavaScript 绑定、网络和安全边界都在这
 ## 还缺什么
 
 - **真实网站兼容性**：静态页面渲染接近可用，但登录、复杂脚本、长会话等真实站点交互还没系统验收。
-- **Web API 覆盖**：部分 API 还在补齐，例如拖放、Pointer Lock、Web Crypto；WebGL / WebGPU 尚未开始。
+- **Web API 覆盖**：部分 API 还在补齐，例如 Pointer Lock；WebGL / WebGPU 尚未开始。
 - **性能**：还没用 Speedometer、JetStream 等基准做系统优化。
 - **完整产品体验**：没有扩展系统、没有 WebRTC，完整媒体播放体验也不是近期重点。
 - **正式发布**：目前只有每周预发布构建，还没有稳定版本。
