@@ -6754,6 +6754,42 @@ fn bookmarks_import_from_file_parses_and_merges() {
         },
     );
     assert_eq!(app.shell.bookmarks().len(), added_first, "表单重复导入应被 URL 去重");
+
+    // D5 回归钉（TVR2）：路径含 % 字面序列（文件名 with%20pct.html，表单编码后
+    // %2520 → 一次解码 %20）。执行点若二次解码则路径被改写 → 读取失败书签不增。
+    let pct_dir = std::env::temp_dir().join(format!("zw-t62-pct-{}-{uniq}", std::process::id()));
+    std::fs::create_dir_all(&pct_dir).expect("create pct dir");
+    let pct_file = pct_dir.join("with%20pct.html");
+    std::fs::write(
+        &pct_file,
+        format!(
+            r#"<!DOCTYPE NETSCAPE-Bookmark-file-1><DL><p><DT><A HREF="https://example.org/t62-pct-{uniq}">百分号路径书签</A></DL><p>"#
+        ),
+    )
+    .expect("write pct bookmarks file");
+    let pct_url = format!(
+        "zero://bookmarks/import/file?path={}",
+        crate::pages::percent_encode_query_value(&pct_file.to_string_lossy())
+    );
+    app.handle_renderer_tab_navigate(
+        active,
+        zero_protocol::message::TabNavigateRequestParams {
+            url: pct_url,
+            method: "GET".to_string(),
+            body: None,
+            initiator: Some("zero://bookmarks/import".to_string()),
+        },
+    );
+    assert!(
+        app.shell
+            .bookmarks()
+            .list_root()
+            .iter()
+            .any(|b| b.url() == format!("https://example.org/t62-pct-{uniq}")),
+        "含 % 字面序列的路径应单次解码后可读（D5）"
+    );
+    let _ = std::fs::remove_dir_all(&pct_dir);
+    let count_after_pct = app.shell.bookmarks().len();
     assert!(
         app.shell.bookmarks().list_root().iter().any(|b| b.url() == root_url),
         "根级书签应入列"
@@ -6774,7 +6810,7 @@ fn bookmarks_import_from_file_parses_and_merges() {
             initiator: Some("zero://bookmarks/import".to_string()),
         },
     );
-    assert_eq!(app.shell.bookmarks().len(), added_first, "失败导入不得改动书签");
+    assert_eq!(app.shell.bookmarks().len(), count_after_pct, "失败导入不得改动书签");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -6794,7 +6830,13 @@ fn bookmarks_import_file_url_blocked_from_non_import_page() {
     let dir = std::env::temp_dir().join(format!("zw-t62-gate-{}-{uniq}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("create temp dir");
     let file_path = dir.join("bookmarks.html");
-    std::fs::write(&file_path, "<DL><p></DL><p>").expect("write temp bookmarks file");
+    // fixture 必须非空（TVR1）：空文件下门禁被整体移除的变异不红（0 条导入无差）。
+    let gated_url = format!("https://example.org/t62-gated-{uniq}");
+    std::fs::write(
+        &file_path,
+        format!(r#"<!DOCTYPE NETSCAPE-Bookmark-file-1><DL><p><DT><A HREF="{gated_url}">门禁探针书签</A></DL><p>"#),
+    )
+    .expect("write temp bookmarks file");
     let url = format!(
         "zero://bookmarks/import/file?path={}",
         crate::pages::percent_encode_query_value(&file_path.to_string_lossy())
