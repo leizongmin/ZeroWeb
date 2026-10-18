@@ -5,6 +5,8 @@ use zero_layout_engine::LayoutBox;
 use zero_render_foundation::color::Color;
 use zero_style_system::{ComputedStyle, property::types::BorderStyleValue};
 
+use crate::paint::helpers::BorderRadiusSpec;
+
 use super::clip::{circle_to_polygon, ellipse_to_polygon};
 use super::color::resolve_color_current;
 use super::helpers::resolve_inset_length;
@@ -160,6 +162,60 @@ pub(crate) fn border_shape_plan(
     }
 }
 
+/// R5184（css-borders-4 §border-shape + WPT 判例）：stroke mode `inset(0 round R)`
+/// 与默认 half-border-box 的 border-radius 等价判定。CSS Backgrounds §5.5 单角钳制
+/// 使描边带与 border-radius: R 渲染逐弧重合（outline-auto-with-border R=60→外弧
+/// 50、outline-auto-forms R=25→25 判例；chromium 同构复用圆角栅格）。命中时
+/// painter 按 border-radius 同款图元路径施绘——同图元 = 同栅格 = 配对像素一致。
+/// 非 0 inset / 非 Length 圆角 / 显式其他 geometry-box 不在等价域（无判例，维持
+/// 形状路径施绘）。kill-switch 同 `ZW_BORDER_SHAPE`。
+pub(crate) fn border_shape_round_inset_equivalent_radii(
+    style: &ComputedStyle,
+    box_node: &LayoutBox,
+) -> Option<BorderRadiusSpec> {
+    if std::env::var("ZW_BORDER_SHAPE").as_deref() == Ok("0") {
+        return None;
+    }
+    let BorderShapeValue::Stroke { shape, geometry_box } = &style.border_shape else {
+        return None;
+    };
+    if !matches!(geometry_box, BorderShapeGeometryBox::HalfBorderBox) {
+        return None;
+    }
+    let ClipPathValue::Inset {
+        top,
+        right,
+        bottom,
+        left,
+        round,
+    } = shape
+    else {
+        return None;
+    };
+    let font_size = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None) as f32;
+    let zero = |v: &zero_css_parser::values::LengthValue| resolve_inset_length(v, 0.0, font_size) == 0.0;
+    if !(zero(top) && zero(right) && zero(bottom) && zero(left)) {
+        return None;
+    }
+    let Some(ClipPathRadius::Length(v)) = round else {
+        return None;
+    };
+    // 单角钳制 min(R, min(w,h)/2)——与 BorderRadiusSpec::from_style_with_box 对
+    // border-radius: R 的解析同口径（R2314 百分比相对短边判例）。
+    let half_min = box_node.width.min(box_node.height) / 2.0;
+    let declared = resolve_inset_length(v, half_min, font_size);
+    let r = declared.min(half_min).max(0.0);
+    if r <= 0.0 {
+        return None;
+    }
+    Some(BorderRadiusSpec {
+        top_left: r,
+        top_right: r,
+        bottom_right: r,
+        bottom_left: r,
+    })
+}
+
 /// geometry-box → 引用盒绝对矩形（§7.3；half-border-box = border-box 各侧内缩
 /// 半个 relevant side border-width）。
 fn border_shape_ref_box(
@@ -202,8 +258,7 @@ fn border_shape_ref_box(
     }
 }
 
-/// basic-shape → 绝对坐标多边形顶点（css-shapes-1 解析语义；slice 1 忽略 inset()
-/// round 圆角）。circle/ellipse 64 段近似。
+/// basic-shape → 绝对坐标多边形顶点（css-shapes-1 解析语义）。circle/ellipse 64 段近似。
 fn border_shape_vertices(shape: &ClipPathValue, bx: f32, by: f32, bw: f32, bh: f32, font_size: f32) -> Vec<(f32, f32)> {
     const SEGMENTS: usize = 64;
     match shape {
@@ -213,12 +268,29 @@ fn border_shape_vertices(shape: &ClipPathValue, bx: f32, by: f32, bw: f32, bh: f
             right,
             bottom,
             left,
-            ..
+            round,
         } => {
             let t = resolve_inset_length(top, bh, font_size);
             let r = resolve_inset_length(right, bw, font_size);
             let b = resolve_inset_length(bottom, bh, font_size);
             let l = resolve_inset_length(left, bw, font_size);
+            let (iw, ih) = (bw - l - r, bh - t - b);
+            // R5184（css-shapes-1 inset() round；css-borders-4 §border-shape）：
+            // 单一圆角按 CSS Backgrounds §5.5 单角钳制 min(r, min(iw,ih)/2)（均匀
+            // 半径相邻必不重叠）出圆角矩形多边形——half-border-box 描边带经此钳制
+            // 与 border-radius 渲染逐弧重合（outline-auto-with-border R=60→45+5=50、
+            // outline-auto-forms R=25→20+5=25 判例）。圆角百分比按内矩形短边解析：
+            // FIXME 规范为横/纵各相对宽/高的椭圆角，ZW 圆角模型取单值近似。
+            if let Some(ClipPathRadius::Length(v)) = round
+                && iw > 0.0
+                && ih > 0.0
+            {
+                let corner = resolve_inset_length(v, iw.min(ih), font_size).min(iw.min(ih) / 2.0);
+                if corner > 0.0 {
+                    return super::helpers::rounded_corner_polygon_in_box(bx + l, by + t, iw, ih, [corner; 4]);
+                }
+            }
+            // FIXME: round 关键词半径与非均匀椭圆角未支持，回退方角四顶点。
             vec![
                 (bx + l, by + t),
                 (bx + bw - r, by + t),
@@ -550,5 +622,95 @@ mod tests {
         assert_eq!(spec.top_right, 20.0);
         assert_eq!(spec.bottom_right, 0.0);
         assert_eq!(spec.bottom_left, 0.0);
+    }
+
+    // ── R5184: inset() round 圆角多边形 ─────────────────────────────────
+
+    fn inset_shape(round: Option<ClipPathRadius>) -> ClipPathValue {
+        ClipPathValue::Inset {
+            top: LengthValue::Px(0.0),
+            right: LengthValue::Px(0.0),
+            bottom: LengthValue::Px(0.0),
+            left: LengthValue::Px(0.0),
+            round,
+        }
+    }
+
+    /// R5184：inset(0 round 60px) on half-border rect (5,5,90,90)——半径钳制
+    /// min(60, 45) = 45，弧心 (50,50)，顶缘弧顶 (50,5) 应为顶点（描边带外缘
+    /// = r50 弧心 (50,50)，与 border-radius:60px 渲染逐弧重合的判例几何）。
+    #[test]
+    fn test_r5184_inset_round_clamped_polygon() {
+        let verts = border_shape_vertices(
+            &inset_shape(Some(ClipPathRadius::Length(LengthValue::Px(60.0)))),
+            5.0,
+            5.0,
+            90.0,
+            90.0,
+            16.0,
+        );
+        assert!(verts.len() >= 16, "圆角多边形应远多于 4 顶点：{}", verts.len());
+        // 弧顶 (50, 5)：钳制后 45 半径弧的最高点。
+        assert!(
+            verts
+                .iter()
+                .any(|(x, y)| (x - 50.0).abs() < 0.01 && (y - 5.0).abs() < 0.01),
+            "顶缘弧顶 (50,5) 应为顶点：{verts:?}"
+        );
+        // 无顶点落在盒角 (5,5)（方角已被弧替代）。
+        assert!(
+            !verts
+                .iter()
+                .any(|(x, y)| (x - 5.0).abs() < 0.5 && (y - 5.0).abs() < 0.5),
+            "盒角 (5,5) 不应有顶点：{verts:?}"
+        );
+    }
+
+    /// 无 round → 方角四顶点 byte-identical（既有用户零扰动契约）。
+    #[test]
+    fn test_r5184_inset_without_round_square_unchanged() {
+        let verts = border_shape_vertices(&inset_shape(None), 5.0, 5.0, 90.0, 90.0, 16.0);
+        assert_eq!(verts.len(), 4);
+        assert_eq!(verts[0], (5.0, 5.0));
+        assert_eq!(verts[1], (95.0, 5.0));
+        assert_eq!(verts[2], (95.0, 95.0));
+        assert_eq!(verts[3], (5.0, 95.0));
+    }
+
+    /// 负尺寸内矩形（collapsed shape，如 inset(100px) on 197×197）回退方角——
+    /// 退化 bowtie 语义保持（扫描线近似零面积）。
+    #[test]
+    fn test_r5184_inset_round_degenerate_falls_back() {
+        let shape = ClipPathValue::Inset {
+            top: LengthValue::Px(100.0),
+            right: LengthValue::Px(100.0),
+            bottom: LengthValue::Px(100.0),
+            left: LengthValue::Px(100.0),
+            round: Some(ClipPathRadius::Length(LengthValue::Px(20.0))),
+        };
+        let verts = border_shape_vertices(&shape, 0.5, 0.5, 197.0, 197.0, 16.0);
+        assert_eq!(verts.len(), 4, "负尺寸内矩形应回退 4 顶点：{verts:?}");
+    }
+
+    /// 非正方形盒钳制：forms 判例几何——inset(0 round 25px) on (5,5,190,40)：
+    /// 半径钳到 min(25, 40/2) = 20，弧心 (25,25)，顶/底弧顶 (25,5)/(25,45)。
+    #[test]
+    fn test_r5184_inset_round_clamp_non_square() {
+        let verts = border_shape_vertices(
+            &inset_shape(Some(ClipPathRadius::Length(LengthValue::Px(25.0)))),
+            5.0,
+            5.0,
+            190.0,
+            40.0,
+            16.0,
+        );
+        for apex in [(25.0_f32, 5.0_f32), (25.0, 45.0)] {
+            assert!(
+                verts
+                    .iter()
+                    .any(|(x, y)| (x - apex.0).abs() < 0.01 && (y - apex.1).abs() < 0.01),
+                "弧顶 {apex:?} 应为顶点：{verts:?}"
+            );
+        }
     }
 }

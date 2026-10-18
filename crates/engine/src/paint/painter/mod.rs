@@ -2333,6 +2333,19 @@ impl Painter {
                 // R4143：table-internal 同样两相位绘制（见上方 BeforeBackground 注）。
                 self.paint_box_shadow(box_node, abs_x, abs_y, style, ShadowPhase::AfterBackground);
                 // R2063：attachment:fixed → 视口锚定平铺、裁剪到元素盒；否则元素盒锚定。
+                // R5184（css-borders-4 §7.5.3）：border-shape 活跃时背景图像层裁剪到
+                // 形状背景多边形（stroke = 路径、fill = 内形状，≡ R4534 背景色语义）
+                // ——collapsed/负尺寸形状（inset(100px)、circle(0%)）须把渐变等图像
+                // 层一并裁没（border-shape-collapsed-shape-clips-background）。等价域
+                // （stroke inset(0 round R)）按 border-radius 元素行为不加形状窗。
+                let shape_bg_poly =
+                    if crate::paint::helpers::border_shape_round_inset_equivalent_radii(style, box_node).is_none() {
+                        super::helpers::border_shape_plan(style, box_node, abs_x, abs_y)
+                            .map(|p| p.background_vertices().to_vec())
+                    } else {
+                        None
+                    };
+                let bg_image_counts = PrimitiveCounts::snapshot(&self.primitives);
                 if style
                     .background_attachment
                     .iter()
@@ -2341,6 +2354,9 @@ impl Painter {
                     self.paint_background_image_fixed(box_node, abs_x, abs_y, style);
                 } else {
                     self.paint_background_image(box_node, abs_x, abs_y, style);
+                }
+                if let Some(polygon) = shape_bg_poly {
+                    super::helpers::clip_all_primitives_to_polygon(&mut self.primitives, &bg_image_counts, &polygon);
                 }
                 // border-collapse: collapse 时，表格外边框由边缘单元格绘制，
                 // 表格元素本身不绘制边框（避免与单元格边框重叠）
@@ -3055,6 +3071,23 @@ impl Painter {
                 // R4549：clip:text 恒色激活时同步抑制（v1 激活必无 image 层故无需此门；
                 // 恒色 image 层的色已由字形承载，全盒 image 绘制会盖掉字形裁剪语义）。
                 if !skip_split_inline_deco && !skip_contents_deco && !spanner_segs_active && !bg_clip_text_solid {
+                    // R5184（css-borders-4 §7.5.3）：border-shape 活跃时背景图像层裁剪到
+                    // 形状背景多边形（stroke = 路径、fill = 内形状，≡ R4534 背景色语义）
+                    // ——collapsed/负尺寸形状（inset(100px)、circle(0%)）须把渐变等图像
+                    // 层一并裁没（border-shape-collapsed-shape-clips-background）。等价域
+                    // （stroke inset(0 round R)）按 border-radius 元素行为不加形状窗。
+                    //（paint_node_in_rect 脏矩形路径同窗。）
+                    let shape_bg_poly = if crate::paint::helpers::border_shape_round_inset_equivalent_radii(
+                        style, box_node,
+                    )
+                    .is_none()
+                    {
+                        super::helpers::border_shape_plan(style, box_node, abs_x, abs_y)
+                            .map(|p| p.background_vertices().to_vec())
+                    } else {
+                        None
+                    };
+                    let bg_image_counts = PrimitiveCounts::snapshot(&self.primitives);
                     // R2063：attachment:fixed → 视口锚定平铺、裁剪到元素盒；否则元素盒锚定。
                     if style
                         .background_attachment
@@ -3064,6 +3097,13 @@ impl Painter {
                         self.paint_background_image_fixed(box_node, abs_x, abs_y, style);
                     } else {
                         self.paint_background_image(box_node, abs_x, abs_y, style);
+                    }
+                    if let Some(polygon) = shape_bg_poly {
+                        super::helpers::clip_all_primitives_to_polygon(
+                            &mut self.primitives,
+                            &bg_image_counts,
+                            &polygon,
+                        );
                     }
                 }
 
@@ -4679,7 +4719,11 @@ impl Painter {
         //（stroke mode = 路径多边形——超出内缘的带由居中描边覆盖，与 oracle 语义
         // 一致；fill mode = 内形状多边形）。bg image 的形状裁剪挂账 slice 3
         //（ImagePrimitive.clip 仅矩形），此时 image 照常规矩形发射。
-        if let Some(plan) = super::helpers::border_shape_plan(style, box_node, abs_x, abs_y)
+        // R5184：等价域（stroke inset(0 round R) + half-border-box）不裁 path_fill，
+        // 落入常规圆角路径（下方 radii 注入等价半径）——与 border-radius 渲染同图元。
+        let shape_equiv_radii = super::helpers::border_shape_round_inset_equivalent_radii(style, box_node);
+        if shape_equiv_radii.is_none()
+            && let Some(plan) = super::helpers::border_shape_plan(style, box_node, abs_x, abs_y)
             && !matches!(style.background_color, ColorValue::Transparent)
         {
             let bg = resolve_color_current(&style.background_color, &style.color);
@@ -4690,7 +4734,10 @@ impl Painter {
         }
         // border-radius 百分比/含百分比 calc 需 border-box 尺寸解析（R2314）；
         // box_node.width/height 即 border-box 尺寸。
-        let radii = super::helpers::BorderRadiusSpec::from_style_with_box(style, box_node.width, box_node.height);
+        // R5184：border-shape 等价半径优先（border-radius 对 border-shape 元素视为 0）。
+        let radii = shape_equiv_radii.unwrap_or_else(|| {
+            super::helpers::BorderRadiusSpec::from_style_with_box(style, box_node.width, box_node.height)
+        });
 
         // 根据 background-clip 决定背景绘制区域
         // R4296：inline 非原子盒垂直外延（padding/border 渲染于行盒之外，CSS2 §10.8.1；

@@ -162,6 +162,10 @@ pub fn clip_all_primitives_to_polygon(
         // R4542（css-borders-4 §border-shape）：replaced 元素（img 等）内容同样裁剪到
         // 多边形内缘——条带以 clip 窗口承载（crop 语义，source 仍映射完整 rect 不重采样）。
         clip_images_to_polygon_inplace(primitives, from.images, polygon, true);
+        // R5184：渐变层同样条带裁剪（clip 窗口保持渐变相位，R3909 crop 语义）——
+        // border-shape 背景渐变（collapsed-shape-clips-background）与 corner-shape/
+        // clip-path 窗口的渐变层此前溢出多边形。
+        clip_gradients_to_polygon_inplace(primitives, from.gradients, polygon, true);
     } else {
         // 将每个 fill 矩形与多边形求交，生成多个子矩形
         let mut new_fills = Vec::new();
@@ -366,6 +370,73 @@ fn clip_images_to_polygon_inplace(
                             clip_radius: None,
                         });
                     primitives.draw_order.push(DrawOp::Image(idx));
+                    let tail = primitives.draw_order.pop();
+                    let Some(tail) = tail else { break };
+                    if k == 0 {
+                        primitives.draw_order[op_pos] = tail;
+                    } else {
+                        primitives.draw_order.insert(op_pos + k, tail);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// R5184：gradients 多边形条带裁剪（原地 + op 登记）——与 images v2 同一不变式。
+///
+/// 对 `[start..len)` 内每个 gradient：以 rect 为几何做扫描线条带，
+/// - 0 条带（多边形外/退化形状如 inset(100px)、circle(0%)）→ rect 清零
+///   （`DrawOp::Gradient(i)` 重放为无绘制）；
+/// - 1 条带 = 原 rect（含于多边形）→ 原样保留；
+/// - 其余（部分相交）→ 原 rect 清零，逐条带追加新 GradientPrimitive（rect 保持
+///   完整 rect（渐变相位不重映射）+ `clip = Some(条带)` crop 窗口，R3909 语义），
+///   并把原 `Gradient(i)` op 槽位替换/插入为条带 op（z 序 = 原 op 槽位保序）。
+///
+/// gradients 向量只增不减，op 插入零索引位移（R4540 v2 不变式）。
+fn clip_gradients_to_polygon_inplace(
+    primitives: &mut RenderPrimitives,
+    start: usize,
+    polygon: &[(f32, f32)],
+    midpoint: bool,
+) {
+    use zero_render_foundation::primitive::{DrawOp, FillPrimitive, GradientPrimitive};
+
+    for i in start..primitives.gradients.len() {
+        let probe = FillPrimitive {
+            rect: primitives.gradients[i].rect,
+            color: zero_render_foundation::color::Color::BLACK,
+        };
+        let strips = clip_fill_to_polygon(&probe, polygon, midpoint);
+        match strips.len() {
+            0 => primitives.gradients[i].rect = Rect::new(0.0, 0.0, 0.0, 0.0),
+            1 if strips[0].rect == primitives.gradients[i].rect => {}
+            _ => {
+                let g = &primitives.gradients[i];
+                let rect = g.rect;
+                let kind = g.kind.clone();
+                let stops = g.stops.clone();
+                let repeating = g.repeating;
+                let interpolation = g.interpolation;
+                primitives.gradients[i].rect = Rect::new(0.0, 0.0, 0.0, 0.0);
+                let Some(op_pos) = primitives
+                    .draw_order
+                    .iter()
+                    .position(|op| matches!(op, DrawOp::Gradient(j) if *j == i))
+                else {
+                    continue;
+                };
+                for (k, strip) in strips.iter().enumerate() {
+                    let idx = primitives.gradients.len();
+                    primitives.gradients.push(GradientPrimitive {
+                        rect,
+                        kind: kind.clone(),
+                        stops: stops.clone(),
+                        repeating,
+                        interpolation,
+                        clip: Some(strip.rect),
+                    });
+                    primitives.draw_order.push(DrawOp::Gradient(idx));
                     let tail = primitives.draw_order.pop();
                     let Some(tail) = tail else { break };
                     if k == 0 {
@@ -968,6 +1039,85 @@ mod tests {
                 assert!(*j < p.images.len(), "Image op 索引 {} 越界", j);
             }
         }
+    }
+
+    /// R5184：gradients 多边形条带裁剪——clip 窗口条带 + op 槽位登记（gradients
+    /// 向量只增不减，零索引位移）。
+    #[test]
+    fn test_clip_gradients_inplace_registers_strip_ops_without_index_shift() {
+        use zero_render_foundation::primitive::{DrawOp, GradientKind, GradientPrimitive, GradientStop};
+        let mut p = RenderPrimitives::new();
+        p.add_gradient(GradientPrimitive {
+            rect: Rect::new(0.0, 0.0, 8.0, 8.0),
+            kind: GradientKind::Linear {
+                x0: 0.0,
+                y0: 0.0,
+                x1: 8.0,
+                y1: 0.0,
+            },
+            stops: vec![
+                GradientStop {
+                    offset: 0.0,
+                    color: Color::BLACK,
+                },
+                GradientStop {
+                    offset: 1.0,
+                    color: Color::WHITE,
+                },
+            ],
+            repeating: false,
+            interpolation: Default::default(),
+            clip: None,
+        });
+        // 矩形多边形 [0,8]×[2,6]：与 gradient 部分相交。
+        let polygon = vec![(0.0_f32, 2.0_f32), (8.0, 2.0), (8.0, 6.0), (0.0, 6.0)];
+        clip_gradients_to_polygon_inplace(&mut p, 0, &polygon, true);
+        // 原 gradient 清零；条带以新 gradient（clip 窗口）追加在尾部（向量只增）。
+        assert_eq!(p.gradients[0].rect.size.width, 0.0, "部分相交 gradient 应清零");
+        assert!(p.gradients.len() >= 5, "条带 gradient 应追加：{}", p.gradients.len());
+        assert_eq!(
+            p.gradients[1].rect,
+            Rect::new(0.0, 0.0, 8.0, 8.0),
+            "条带 rect 保持完整 rect（相位不重映射）"
+        );
+        assert!(p.gradients[1].clip.is_some(), "条带应以 clip 窗口承载");
+        // op 登记：原 Gradient(0) op 被替换为条带 op；全部 Gradient op 索引有效。
+        assert!(
+            !p.draw_order.iter().any(|op| matches!(op, DrawOp::Gradient(0))),
+            "Gradient(0) op 应被条带 op 替换"
+        );
+        for op in &p.draw_order {
+            if let DrawOp::Gradient(j) = op {
+                assert!(*j < p.gradients.len(), "Gradient op 索引 {} 越界", j);
+            }
+        }
+    }
+
+    /// R5184：退化多边形（collapsed shape，circle(0%) 的 64 重合顶点）→ 0 条带 →
+    /// rect 清零（背景层整体裁没的判例语义）。
+    #[test]
+    fn test_clip_gradients_inplace_degenerate_polygon_zeroes() {
+        use zero_render_foundation::primitive::{GradientKind, GradientPrimitive, GradientStop};
+        let mut p = RenderPrimitives::new();
+        p.add_gradient(GradientPrimitive {
+            rect: Rect::new(0.0, 0.0, 8.0, 8.0),
+            kind: GradientKind::Linear {
+                x0: 0.0,
+                y0: 0.0,
+                x1: 8.0,
+                y1: 0.0,
+            },
+            stops: vec![GradientStop {
+                offset: 0.0,
+                color: Color::BLACK,
+            }],
+            repeating: false,
+            interpolation: Default::default(),
+            clip: None,
+        });
+        let degenerate: Vec<(f32, f32)> = vec![(3.0, 3.0); 64];
+        clip_gradients_to_polygon_inplace(&mut p, 0, &degenerate, true);
+        assert_eq!(p.gradients[0].rect.size.width, 0.0, "退化多边形应清零 gradient");
     }
 
     /// R4541：border-shape overflow 裁剪多边形——stroke mode 半宽内缩与 fill mode 内形状。

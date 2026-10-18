@@ -106,7 +106,12 @@ impl super::Painter {
         // R4534（css-borders-4 §7.5.1）：border-shape 活跃时抑制常规 4 边绘制与形角
         // 环带（border-radius 视为 0、corner-shape 隐式忽略），改发射形状描边
         //（stroke mode，路径居中描边）或内外形状环带填充（fill mode，even-odd）。
-        if let Some(plan) = super::super::helpers::border_shape_plan(style, box_node, abs_x, abs_y) {
+        // R5184：等价域（stroke inset(0 round R) + half-border-box）跳过形状描边，
+        // 落 R5180 弧带/条带路径（spec 注入等价半径）——与 border-radius 渲染同图元。
+        let shape_equiv_radii = crate::paint::helpers::border_shape_round_inset_equivalent_radii(style, box_node);
+        if shape_equiv_radii.is_none()
+            && let Some(plan) = super::super::helpers::border_shape_plan(style, box_node, abs_x, abs_y)
+        {
             match plan {
                 crate::paint::helpers::BorderShapePlan::Stroke { vertices, width, color } => {
                     if width > 0.0 {
@@ -261,7 +266,9 @@ impl super::Painter {
         // corpus self-source 下 radius+border 案两侧同变（learnings
         // 「border-radius-band-sharp-strips」）。内盒非正（边框厚过半盒）回退条带。
         if let Some(band_b) = crate::paint::helpers::round_band_uniform_border(style, box_node) {
-            let spec = crate::paint::helpers::BorderRadiusSpec::from_style_with_box(style, w, h);
+            // R5184：border-shape 等价域注入等价半径（否则 border-radius 视为 0）。
+            let spec = shape_equiv_radii
+                .unwrap_or_else(|| crate::paint::helpers::BorderRadiusSpec::from_style_with_box(style, w, h));
             if !spec.is_zero() && w - 2.0 * band_b > 0.0 && h - 2.0 * band_b > 0.0 {
                 let border_color = resolve_color_current(&style.border_top_color, &style.color);
                 let full_r = [spec.top_left, spec.top_right, spec.bottom_right, spec.bottom_left];
