@@ -18,6 +18,7 @@ mod runner_text_metrics;
 mod testharness;
 mod testharness_console;
 mod testharness_cookies;
+mod testharness_dnd;
 mod testharness_fileapi;
 mod testharness_html_semantics;
 mod testharness_page_state;
@@ -122,6 +123,8 @@ Commands:
   testharness-page-state  Run pinned page-state corpus (beacon + page-visibility +
                        html/browsers/offline/browser-state) window testharness cases
                        (page-state-compat goal M1 / DC-1)
+  testharness-dnd  Run imported html/editing/dnd testharness executable subset
+                       (DataTransfer/DragEvent constructor face; dnd-compat goal M1 / DC-1)
   testharness-service-workers  Run pinned Service Worker M1 core testharness cases
   testharness-service-workers-fetch  Run pinned Service Worker M2 fetch testharness cases
   testharness-service-workers-cache-storage  Run pinned Service Worker CacheStorage testharness cases
@@ -329,6 +332,9 @@ fn main() {
         "testharness-html-semantics" => cmd_testharness_html_semantics(&options, filter.as_deref()),
         "testharness-page-state" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
             testharness_page_state::run_page_state_cases(wpt_root, filter)
+        }),
+        "testharness-dnd" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
+            testharness_dnd::run_dnd_cases(wpt_root, filter)
         }),
         "testharness-fileapi" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
             testharness_fileapi::run_fileapi_cases(wpt_root, filter)

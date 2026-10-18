@@ -1,11 +1,21 @@
 # Drag and Drop 兼容 — DataTransfer / DragEvent / 拖放交互（门控 goal）
 
-**版本**: v1.0
-**日期**: 2026-10-08
-**状态**: Active·**门控**（M1 盘点 + M2 构造器/DataTransfer 面自主；拖放交互管线
-须用户点名批准——99-webgl 门控模式）
+**版本**: v1.1
+**日期**: 2026-10-18
+**状态**: Active·**门控**（M1 已收口；M2 构造器/DataTransfer 面自主推进中；
+拖放交互管线须用户点名批准——99-webgl 门控模式）
 **执行模式**: WPT 驱动（上游 dnd corpus 为验收标尺）+ 分层实现
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——交互面）
+
+> **▶ 当前状态（2026-10-18 M1 收口）**：基线 213/387 = 55.0%（11 个可执行
+> testharness 案；957 文件语料 census，946 案为真实拖拽交互面排除记入 M3 门控）。
+> M2 七簇失败已归因（原型链反射 / types FrozenArray / item disabled mode /
+> element has-trap on* / HTMLDocument 别名 / DragEvent 字典校验 / dropzone 反射），
+> 见 [M1 基线 evidence](dnd-compat/evidence/2026-10-18-m1-baseline.md)。
+> **下一步**：M2 按簇收敛；语料路径已修正（上游无顶层 `dnd/`，语料在
+> `html/editing/dnd/`——Contents API 404 实测）。
+> **M3 门控提醒**：交互管线（拖拽状态机/事件序/testdriver Actions 面）未经用户
+> 点名不实现。
 
 > **▶ 拆分动机（2026-10-08 html5test 缺口立项，用户「立项」）**：web-api-batch2
 > （编号 92，已收口）明确挂账「DnD excluded pending host drag-input pipeline」；
@@ -14,6 +24,9 @@
 > **▶ 基线事实（立项时点，M1 盘点复核）**：DataTransfer/DragEvent 构造器存在性
 > 未盘点；draggable 属性/dragstart-dragover-drop 事件序依赖宿主拖拽状态机
 > （mousedown 后拖动判据、drop target 命中）——host drag-input 管道缺失即挂账面。
+> M1 盘点后事实上修：DataTransfer/DragEvent/DataTransferItemList/Item 构造器面
+> 已在 web-api-batch2（R2937/R2948）落地（js_dom_shim/part05.js），draggable
+> 反射 R2848 已落——M2 语义收敛而非从零建面。
 
 ## Mission
 
