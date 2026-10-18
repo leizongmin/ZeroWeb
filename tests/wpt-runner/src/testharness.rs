@@ -10433,10 +10433,12 @@ promise_test(async function() {
         );
 
         assert_eq!(results.len(), 1);
-        // 本测语义：脚本错误 ⇒ 失败结果（消息具体文案非契约——负载下脚本经
-        // js_worker 延迟批次执行时，错误走通用 page-script 通道，消息为泛化
-        // 包装（诊断取数 2026-10-18：'page script threw (declared tests: 0):
-        // Script error: … execute:3:33'），同步路径才保留原始 Error 文本）。
+        // 本测语义：脚本错误 ⇒ 失败结果。消息具体文案非契约：负载下（全量 make
+        // test）实测 message 为进程内 sentinel try-catch 的泛化包装（'page script
+        // threw (declared tests: 0): Script error: page script: at <eval>…'，
+        // 2026-10-18 诊断取数）——负载下 V8 stack 缺 'Error: boom' 首行的真因
+        // 未定位（勘误：曾误记为 js_worker 延迟批次，实际 wpt-runner 全程进程内
+        // 直建 V8Sandbox）。产品级错误消息保真改进已入运行台账 backlog。
         assert_eq!(results[0].status, HarnessStatus::Fail);
         assert!(
             results[0].message.as_deref().is_some_and(|m| !m.is_empty()),
