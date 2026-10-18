@@ -84,30 +84,32 @@ pub fn rounded_corner_polygon_in_box(x0: f32, y0: f32, box_w: f32, box_h: f32, r
     corner_polygon_with_kinds([CornerShapeKind::Round; 4], x0, y0, box_w, box_h, radii4)
 }
 
-/// R5180：弧带 even-odd 顶点串联（keyhole 切点）。shaped 多边形首点 = TL start、
-/// 末点 = BL end，同在左缘竖边上——各自在闭合边中点插入切点顶点后，外圈末点与
-/// 内圈首点为切点对，两条桥边（外切点→内切点、内重复切点→外首点）互为反向且
-/// 整段落在左缘边带色内：非水平桥的成对交叉产生 1px 填充亦落在既有带色上，无
-/// 可见伪影。朴素串联（外末→内首直连）两条桥边以不同 x 交叉扫描线，在带内撕出
-/// 背景色隙（corner-shape-square 案 385px 判例）。
+/// 弧带 even-odd 顶点串联（keyhole 切点）。各多边形先在闭合边（末点→首点）中点
+/// 插入切点顶点再串联：外圈末点与内圈首点为同一切点对，两条桥边几何重合互为
+/// 反向，even-odd 扫描交点逐对抵消，仅填环带。朴素串联（外末→内首直连）两条桥
+/// 边以不同 x 交叉扫描线，在带内撕出背景色隙（R5180 corner-shape-square 案 385px
+/// 判例；R5182 border-shape fill 用户 polygon 同根因）。R5180 限定 shaped 多边形
+///（首点 = TL start、末点 = BL end 同在左缘竖边）；R5182 起切点 = 闭合边真中点，
+/// 任意顶点序（用户 polygon）适用——首末同 x 时中点 x 不变，既有调用方行为不变。
 pub fn concat_ring_vertices(mut outer: Vec<(f32, f32)>, inner: Vec<(f32, f32)>) -> Vec<(f32, f32)> {
-    let outer_cut = cut_polygon_at_left_edge(&outer);
-    let inner_cut = cut_polygon_at_left_edge(&inner);
+    let outer_cut = cut_polygon_at_closing_edge(&outer);
+    let inner_cut = cut_polygon_at_closing_edge(&inner);
     outer.clear();
     outer.extend(outer_cut);
     outer.extend(inner_cut);
     outer
 }
 
-/// R5180：keyhole 切点——多边形首末点同在左缘竖边（shaped/round 多边形构造约定）
-/// 时，在闭合边中点插入切点顶点（首尾各一）。供环带串联方自行预切（如
-/// BorderShapePlan::Fill 消费端做朴素 extend 时）。
-pub fn cut_polygon_at_left_edge(pts: &[(f32, f32)]) -> Vec<(f32, f32)> {
+/// keyhole 切点——在多边形闭合边（末点→首点）中点插入切点顶点（首尾各一）。
+/// R5180 供 shaped/round 多边形（首末同在左缘竖边）使用；R5182 通用化为任意
+/// 顶点序（用户 polygon）：首末同 x 时切点与旧左缘中点逐位一致。供环带串联方
+///（[`concat_ring_vertices`]）自行预切。
+pub fn cut_polygon_at_closing_edge(pts: &[(f32, f32)]) -> Vec<(f32, f32)> {
     let n = pts.len();
+    let (fx, fy) = pts[0];
     let (lx, ly) = pts[n - 1];
-    let (_, fy) = pts[0];
-    // 切点 = 闭合边（左缘竖边）中点；首末点同 x 由 shaped 多边形构造约定保证。
-    let mid = (lx, (ly + fy) / 2.0);
+    // 切点 = 闭合边中点；首末点同 x（shaped 构造约定）时即左缘竖边中点。
+    let mid = ((fx + lx) / 2.0, (fy + ly) / 2.0);
     let mut out = Vec::with_capacity(n + 2);
     out.push(mid);
     out.extend_from_slice(pts);

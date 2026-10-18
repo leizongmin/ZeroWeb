@@ -114,14 +114,11 @@ impl super::Painter {
                         self.primitives.add_path_stroke(flat, color, width, true);
                     }
                 }
-                crate::paint::helpers::BorderShapePlan::Fill {
-                    mut outer,
-                    inner,
-                    color,
-                } => {
-                    // even-odd：外+内顶点串联 → 扫描线仅填环带（render_path_fill 语义）。
-                    outer.extend(inner);
-                    let flat: Vec<f32> = outer.into_iter().flat_map(|(x, y)| [x, y]).collect();
+                crate::paint::helpers::BorderShapePlan::Fill { outer, inner, color } => {
+                    // even-odd：外+内经 keyhole 切点串联（R5182）→ 扫描线仅填环带且
+                    // 无撕裂（朴素 extend 的两条桥边不同 x 交叉，带内撕出背景色隙）。
+                    let ring = crate::paint::helpers::concat_ring_vertices(outer, inner);
+                    let flat: Vec<f32> = ring.into_iter().flat_map(|(x, y)| [x, y]).collect();
                     self.primitives.add_path_fill(flat, color);
                 }
             }
