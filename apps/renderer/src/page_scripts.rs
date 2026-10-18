@@ -2628,6 +2628,48 @@ mod tests {
         worker.shutdown();
     }
 
+    /// T64-D1 返修钉：quickjs 栈首帧行含消息子串（`new Error('eval')` 的
+    /// 'eval' ⊂ 'at <eval>…'）时子串命中不得把消息顶掉——onerror 应收到
+    /// 'Error: eval' 开头的消息（V8 形状原样返回同满足）。
+    #[test]
+    fn run_page_scripts_quickjs_frame_line_not_eaten_d1() {
+        let mut worker = RendererJsWorker::spawn(114);
+        let html = "<html><body>\
+            <script>window.onerror = function(msg){ globalThis.__d1 = String(msg); return true; };</script>\
+            <script>throw new Error('eval');</script>\
+            </body></html>";
+        worker.set_dom_snapshot(html, "https://example.com/page");
+        run_scripts(html, &worker);
+        let err = wait_for_global(&worker, "__d1", 1000);
+        // 引擎无关断言：消息文本须先于任何帧行（quickjs 消息 'eval' 前置；
+        // v8 栈首行 'Error: eval' 原样返回——两腿同满足）。
+        let first_line = err.lines().next().unwrap_or_default();
+        assert!(
+            first_line.contains("eval") && !first_line.trim_start().starts_with("at "),
+            "消息子串与帧行相交时消息不得被帧行顶掉，got: {err}"
+        );
+        worker.shutdown();
+    }
+
+    /// T64-D2 返修钉：异形 throw 对象（message getter 抛错）不得静默——
+    /// onerror 仍应收到可见错误（栈文本退化为可见性载体）。
+    #[test]
+    fn run_page_scripts_exotic_throw_still_reported_d2() {
+        let mut worker = RendererJsWorker::spawn(115);
+        let html = "<html><body>\
+            <script>window.onerror = function(msg){ globalThis.__d2 = String(msg); return true; };</script>\
+            <script>throw { get message(){ throw 0; }, stack: 'SENTINEL_STACK_R1' };</script>\
+            </body></html>";
+        worker.set_dom_snapshot(html, "https://example.com/page");
+        run_scripts(html, &worker);
+        let err = wait_for_global(&worker, "__d2", 1000);
+        assert!(
+            err.contains("SENTINEL_STACK_R1"),
+            "异形 throw 对象仍应可见（栈文本退化载体），got: {err}"
+        );
+        worker.shutdown();
+    }
+
     /// R2942 mirror：finish_page_load 派发 stylesheet fetch 失败的 window 'error'（经 __zw_report_error hook
     /// → window.onerror legacy 5-arg）。模拟 host 从 AsyncPageLoad.take_failed_resources drain 注入。
     #[test]

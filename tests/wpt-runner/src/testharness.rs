@@ -10514,16 +10514,15 @@ promise_test(async function() {
         );
 
         assert_eq!(results.len(), 1);
-        // 本测语义：脚本错误 ⇒ 失败结果。消息具体文案非契约：负载下（全量 make
-        // test）实测 message 为进程内 sentinel try-catch 的泛化包装（'page script
-        // threw (declared tests: 0): Script error: page script: at <eval>…'，
-        // 2026-10-18 诊断取数）——负载下 V8 stack 缺 'Error: boom' 首行的真因
-        // 未定位（勘误：曾误记为 js_worker 延迟批次，实际 wpt-runner 全程进程内
-        // 直建 V8Sandbox）。产品级错误消息保真改进已入运行台账 backlog。
+        // 本测语义：脚本错误 ⇒ 失败结果，且失败消息须携带抛错原始消息（T64 消息保真）。
+        // 历史：quickjs 腿下 Error.stack 仅帧行、无 'Error: boom' 消息头（非负载因素；
+        // 曾误归因 js_worker 延迟批次——70c3c96f8/PR#208 勘误），70c3c96f8 因此把断言
+        // 收窄为「非空」。哨兵 catch 臂改为消息保真组合（script_run_classic_page，
+        // 2026-10-18）后恢复消息断言，v8/quickjs 两腿共同钉死。
         assert_eq!(results[0].status, HarnessStatus::Fail);
         assert!(
-            results[0].message.as_deref().is_some_and(|m| !m.is_empty()),
-            "失败结果应带非空消息: {:?}",
+            results[0].message.as_deref().is_some_and(|m| m.contains("boom")),
+            "失败结果应携带抛错消息: {:?}",
             results[0].message
         );
     }
