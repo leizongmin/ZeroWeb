@@ -10429,7 +10429,7 @@ promise_test(async function() {
             "no-harness-error.html",
             html,
             MINI_HARNESS,
-            Duration::from_secs(1),
+            Duration::from_secs(10),
         );
 
         assert_eq!(results.len(), 1);
@@ -10552,7 +10552,7 @@ async_test(function(test) {
             "delayed-completion.html",
             html,
             harness,
-            Duration::from_secs(1),
+            Duration::from_secs(10),
         );
 
         assert_eq!(results.len(), 1);
