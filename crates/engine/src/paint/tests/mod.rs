@@ -27,6 +27,7 @@ mod r5150_contain_size_multicol_paint;
 mod r5151_zeroh_fragmentainer_oof_flush;
 mod r5155_contain_paint_corner_clip_tests;
 mod r5171_inline_ca_paint;
+mod r5173_transform_3d_axis_direct;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;

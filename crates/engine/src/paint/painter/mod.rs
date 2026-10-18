@@ -3780,12 +3780,42 @@ impl Painter {
                             )
                         }),
                     };
+                    // R5173（CSS Transforms 2 §3D 变换函数 2D 投影）：rotateX 的矩阵构建
+                    // 产出精确轴对齐 scale (1,0,0,cos)，X 轴 rotate3d 经 rotate3d_unit_axis
+                    // 归一到同集合——四角映射 = 精确几何，与 2D 集合同构（非恒等近似）。
+                    // 收缩投影（|cos|<1）下 TP 重采样路径的「rect 清白」会把元素布局矩形
+                    // 内先绘下层内容一并清白弃置，且露出区域无下层像素可恢复（下层在元素
+                    // 绘制时已被覆盖）——css-transform-3d-rotateX-positive 族：绿块投影几何
+                    // 正确、红块 border 上下横带被清白，1.11%×4。
+                    // rotateY 不入直绘（corpus 实证配对拆对面）：backdrop-filter-3d-
+                    // transform-perspective 配对 test 侧 .card 被 backdrop-filter 门锁死
+                    // TP、ref 侧同几何实心盒改直绘后 AA/边缘相位单侧分化（45° 非整数
+                    // texel 相位，双线性插值 vs 直绘 AA）——首轮翻红 2 案，rotateY 退回
+                    // 双侧 TP 同相（rotateY 域 reveal 缺陷案驱动再探）。无子盒限定：
+                    // 带子盒元素维持 TP 与 2D 直绘门风险面隔离。
+                    // kill-switch `ZW_TRANSFORM_3D_AXIS_DIRECT=0` 回退 TP 路径（LazyLock
+                    // 进程级快照，OFF 判别经 corpus OFF 轮承担——R3858 教训）。
+                    static TRANSFORM_3D_AXIS_DIRECT: std::sync::LazyLock<bool> =
+                        std::sync::LazyLock::new(|| std::env::var("ZW_TRANSFORM_3D_AXIS_DIRECT").as_deref() != Ok("0"));
+                    let axis_exact_3d = *TRANSFORM_3D_AXIS_DIRECT
+                        && box_node.children.is_empty()
+                        && match &style.transform {
+                            TransformValue::List(fs) => fs.iter().all(|f| match f {
+                                TransformFunction::RotateX(_) => true,
+                                // X 单位轴 rotate3d = 精确 rotateX 投影（rotate3d_unit_axis
+                                // 归一）；其他轴/混合轴不入（Y 轴配对拆对面，混合轴恒等
+                                // 近似 compute 侧 is_identity 早退零发射）。
+                                TransformFunction::Rotate3d(x, y, z, _) => *x != 0.0 && *y == 0.0 && *z == 0.0,
+                                _ => false,
+                            }),
+                            TransformValue::None => false,
+                        };
                     let solid_leaf_fill = std::env::var("ZW_TRANSFORM_SOLID_FILL_DIRECT").as_deref() != Ok("0")
                         && !inside_transformed_ancestor
                         && style.backdrop_filter.is_empty()
                         && style.individual_rotate.is_none()
                         && style.individual_scale.is_none()
-                        && pure_2d_transform
+                        && (pure_2d_transform || axis_exact_3d)
                         && box_node.border_top == 0.0
                         && box_node.border_right == 0.0
                         && box_node.border_bottom == 0.0
