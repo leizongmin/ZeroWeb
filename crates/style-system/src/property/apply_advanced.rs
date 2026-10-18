@@ -571,7 +571,14 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 if !perspective_length_is_valid(value, &v) {
                     return false;
                 }
-                style.perspective = v;
+                // css-transforms-2 §perspective-property + csswg-drafts#413/#6320：显式
+                // <1px（含 0px）used value clamp 到 1px，仍建立透视上下文（≠ none）。
+                // none 保持 Px(0.0) 哨兵：绘制侧以 d>0 门区分「无上下文」与「d=1px 上下文」。
+                // FIXME: 非 px 单位/Calc 绘制侧 resolve 后 <1px 未 clamp（罕见路径）。
+                style.perspective = match v {
+                    LengthValue::Px(px) if px < 1.0 => LengthValue::Px(1.0),
+                    other => other,
+                };
                 return true;
             }
         }

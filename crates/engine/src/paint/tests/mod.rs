@@ -29,6 +29,7 @@ mod r5155_contain_paint_corner_clip_tests;
 mod r5171_inline_ca_paint;
 mod r5173_transform_3d_axis_direct;
 mod r5174_parent_perspective;
+mod r5175_perspective_used_value;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;

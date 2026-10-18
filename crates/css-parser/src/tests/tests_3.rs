@@ -711,8 +711,8 @@ fn test_parse_transform_3d_functions() {
     let result = parse_transform("translate(10px, 20px) rotate(45deg)");
     assert!(result.is_some());
 
-    // perspective 不接受零或负值
-    assert_eq!(parse_transform("perspective(0)"), None);
+    // R5175（csswg-drafts#6320）：0 合法（clamp 在绘制侧），负值语法无效
+    assert!(parse_transform("perspective(0)").is_some());
     assert_eq!(parse_transform("perspective(-100px)"), None);
 
     // rotate3d 需要 4 个参数

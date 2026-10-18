@@ -380,6 +380,46 @@ pub fn compute_transform_matrix_with_ref_box(
         final_ty = -origin_x * b + origin_y * (1.0 - d) + ty;
     }
 
+    // R5175（css-transforms-2 §funcdef-perspective + csswg-drafts#413/#6320）：perspective()
+    // 恒定 z 平面投影折叠。列表恰含一个 perspective(pd) 且后缀（列表右侧，先应用于点）
+    // 全为平面函数时（is_flat_plane_function 单源判定），后缀把元素 quad 映到 z=τ 平行
+    // 平面（τ = translate3d z 累计），透视投影 = 绕 transform-origin 均匀缩放
+    // s = d/(d−τ)；列表局部系中 origin 已由外层 T(o)·M·T(−o) 包裹，均匀缩放为标量
+    // s·I，与前后函数全部可交换——整表近似 = 现有合成结果绕 origin × s
+    //（compose_perspective_scale 同式）。d < 1px 取 1px（#6320 used value clamp）；
+    // 多个 perspective()、逐点 z 变后缀（rotateX/Y/3d、scale3d/scaleZ）、w ≤ 0（quad
+    // 触达/越过视点，投影非仿射）不折叠，维持既有恒等近似（transform3d-perspective-006：
+    // perspective(100px) translatez(50px) → s=2；perspective-zero 族 d ≤ 0.5px → 1px
+    // 后 s=2）。
+    if funcs
+        .iter()
+        .filter(|f| matches!(f, TransformFunction::Perspective(_)))
+        .count()
+        == 1
+    {
+        let p_idx = funcs
+            .iter()
+            .position(|f| matches!(f, TransformFunction::Perspective(_)))
+            .unwrap_or(0);
+        if let Some(TransformFunction::Perspective(pd)) = funcs.get(p_idx) {
+            let d_used = (*pd as f32).max(1.0);
+            if let Some(tau) = flat_plane_list_translate_z(&funcs[p_idx + 1..]) {
+                let w = 1.0 - tau / d_used;
+                if w > 1e-6 {
+                    let s = 1.0 / w;
+                    if (s - 1.0).abs() > 1e-6 {
+                        a *= s;
+                        b *= s;
+                        c *= s;
+                        d *= s;
+                        final_tx = s * final_tx + origin_x * (1.0 - s);
+                        final_ty = s * final_ty + origin_y * (1.0 - s);
+                    }
+                }
+            }
+        }
+    }
+
     // 检查是否为 identity 变换
     let is_identity = (a - 1.0).abs() < 1e-6
         && b.abs() < 1e-6

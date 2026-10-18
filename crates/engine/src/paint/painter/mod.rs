@@ -3826,7 +3826,9 @@ impl Painter {
                                         return None;
                                     }
                                     let s = c.d / den;
-                                    return ((s - 1.0).abs() > 1e-6).then_some((c.origin_x, c.origin_y, s));
+                                    // w = 1−τ/d ≤ 0（τ ≥ d，子平面触达/越过视点）投影非
+                                    // 仿射，超出等比近似域（#413 clamp 后 d=1px 使该域可达）。
+                                    return (s > 0.0 && (s - 1.0).abs() > 1e-6).then_some((c.origin_x, c.origin_y, s));
                                 }
                                 let pstyle = styles.get(&pid)?;
                                 if pstyle.transform_style != zero_style_system::TransformStyleValue::Preserve3d {

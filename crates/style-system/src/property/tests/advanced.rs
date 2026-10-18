@@ -1348,6 +1348,12 @@ fn test_perspective_apply() {
     assert_eq!(style.perspective, LengthValue::Px(500.0));
     assert!(apply_property_value(&mut style, "perspective", "1em"));
     assert_eq!(style.perspective, LengthValue::Em(1.0));
+    // css-transforms-2 §perspective-property + csswg-drafts#413/#6320：显式 <1px
+    // used value clamp 到 1px（仍建立透视上下文，≠ none 的 Px(0.0) 哨兵）。
+    assert!(apply_property_value(&mut style, "perspective", "0px"));
+    assert_eq!(style.perspective, LengthValue::Px(1.0));
+    assert!(apply_property_value(&mut style, "perspective", "0.5px"));
+    assert_eq!(style.perspective, LengthValue::Px(1.0));
     let previous = style.perspective.clone();
     assert!(!apply_property_value(&mut style, "perspective", "-1px"));
     assert_eq!(style.perspective, previous);

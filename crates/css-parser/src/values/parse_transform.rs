@@ -454,14 +454,23 @@ pub fn parse_transform(value: &str) -> Option<TransformValue> {
         functions.push(func);
     }
 
-    // R5174：translateZ 与逐点 z 变函数（rotateX/Y、非 z 轴 rotate3d、perspective()、
-    // scale3d/scaleZ 等）混用的列表整表按语法失效——基线（translateZ 无解析臂）本就
-    // 整表不可解析；若放行到 2D 仿射管线的逐函数近似，代数等价的不同表述会投影出
-    // 不同结果（perspective-transforms-equivalence：rotateY(90)+tZ(250) 与
+    // R5174：translateZ 与逐点 z 变函数（rotateX/Y、非 z 轴 rotate3d、scale3d/scaleZ
+    // 等）混用的列表整表按语法失效——基线（translateZ 无解析臂）本就整表不可解析；
+    // 若放行到 2D 仿射管线的逐函数近似，代数等价的不同表述会投影出不同结果
+    //（perspective-transforms-equivalence：rotateY(90)+tZ(250) 与
     // rotateZ(90)+rotateX(90)+tZ(250) 的 R3833 退化兜底对 rotY 归零、rotZ 幸存 →
     // 同页拆对）。恒定 z 平面列表（含 translateZ，父 perspective 折叠承接）与不含
     // translateZ 的列表（translate3d 混合等，基线本就可解析且双侧近似同相）不受影响。
-    if translatez_seen && functions.iter().any(|f| !is_flat_plane_function(f)) {
+    // R5175 豁免 perspective()：perspective(d) + 恒定 z 平面后缀恰为折叠形
+    //（engine compute_transform_matrix_with_ref_box：s = d/(d−τ) 绕 transform-origin
+    // 等比缩放，transform3d-perspective-006），等价表述投影一致；equivalence 拆对案形
+    // 是 rotateX/Y 组合（无 perspective），不受豁免影响——perspective+rotateX+tZ
+    //（preserve3d-and-flattening-001-ref）仍失效。
+    if translatez_seen
+        && functions
+            .iter()
+            .any(|f| !is_flat_plane_function(f) && !matches!(f, TransformFunction::Perspective(_)))
+    {
         return None;
     }
 
@@ -740,10 +749,8 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
             Some(TransformFunction::Rotate3d(x, y, z, angle))
         }
         "perspective" => {
+            // R5175：0 合法（csswg-drafts#6320 used value clamp 在绘制侧 d.max(1.0)）。
             let val = parse_perspective_length_number(args)?;
-            if val <= 0.0 {
-                return None;
-            }
             Some(TransformFunction::Perspective(val))
         }
         "matrix" => {
@@ -866,7 +873,10 @@ fn parse_translate_length_number(s: &str) -> Option<f64> {
 
 fn parse_perspective_length_number(s: &str) -> Option<f64> {
     let value = parse_translate_length_number(s)?;
-    (value > 0.0).then_some(value)
+    // R5175（css-transforms-2 §funcdef-perspective + csswg-drafts#6320）：0 为合法声明
+    //（<length [0,∞)>），used value clamp 到 1px 在绘制侧折叠层（d.max(1.0)）——CSSOM
+    // 保真存储原值。负值语法无效维持拒绝。
+    (value >= 0.0).then_some(value)
 }
 
 /// 解析 CSS 数值（可能带 px/deg/grad/rad/turn 等单位）。

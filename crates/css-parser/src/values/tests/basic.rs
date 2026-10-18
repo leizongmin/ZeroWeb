@@ -900,9 +900,9 @@ fn test_parse_perspective_func() {
         _ => panic!("expected TransformValue::List, got {result:?}"),
     }
 
-    // perspective(0) 应返回 None（必须为正数）
-    assert!(parse_transform("perspective(0)").is_none());
-    // perspective(-100) 应返回 None（必须为正数）
+    // R5175（csswg-drafts#6320）：perspective(0) 合法（clamp 在绘制侧）
+    assert!(parse_transform("perspective(0)").is_some());
+    // perspective(-100) 应返回 None（<length [0,∞)>，负值语法无效）
     assert!(parse_transform("perspective(-100)").is_none());
 }
 
