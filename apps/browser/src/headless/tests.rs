@@ -1449,6 +1449,93 @@ fn test_redirect_commit_replaces_client_history_entry() {
     );
 }
 
+/// t5（qq-20261016-r1）：getNavigationHistory 报告 shell 真实导航历史——
+/// 此前为单条目 currentIndex=0 桩，PW goBack 恒取不到上一条目（t4 遗留 D 诚实失败）。
+/// 条目 id = 历史索引（navigateToHistoryEntry 同规则还原）；title 未取得回退 URL。
+/// URL 用不可达本地端口：cmd_navigate 的载入失败不阻历史记账（success=false 同路径）。
+#[test]
+fn test_get_navigation_history_reports_shell_history() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    let urls = ["http://127.0.0.1:9/a", "http://127.0.0.1:9/b", "http://127.0.0.1:9/c"];
+    for url in urls {
+        let (result, _) = server.dispatch_with_events(&mut session, "Page.navigate", serde_json::json!({ "url": url }));
+        assert!(result.is_ok(), "Page.navigate 命令面成功（载入成败分离）");
+    }
+    let history = server
+        .dispatch(&mut session, "Page.getNavigationHistory", Value::Null)
+        .expect("getNavigationHistory must answer");
+    assert_eq!(history["currentIndex"], 2, "当前停在第 3 条");
+    let entries = history["entries"].as_array().expect("entries array");
+    assert_eq!(entries.len(), 3, "三步导航三条目（桩只有 1 条）");
+    let face_urls: Vec<&str> = entries.iter().map(|e| e["url"].as_str().unwrap()).collect();
+    assert_eq!(face_urls, urls, "entries 按导航序报告 shell 历史");
+    for (idx, entry) in entries.iter().enumerate() {
+        assert_eq!(entry["id"], idx as i64, "条目 id = 历史索引");
+        assert_eq!(entry["url"], urls[idx]);
+        assert_eq!(
+            entry["title"], "Error loading page",
+            "载入失败标题回退（cmd_navigate 同径）"
+        );
+    }
+}
+
+/// t5（qq-20261016-r1）：navigateToHistoryEntry 接 shell 历史 Jump——跳转后 shell
+/// URL 回退、frameNavigated 事件族指向目标条目（page.url() 与 PW waitForNavigation
+/// 依赖面）、currentIndex 对齐；再前向跳转恢复。PW goBack = 选 entries[current-1]
+/// → 本命令载入（t4 遗留：命令此前未实现，-32601）。
+#[test]
+fn test_navigate_to_history_entry_jumps_and_emits_events() {
+    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let mut session = HeadlessSession::new(800.0, 600.0);
+    let a = "http://127.0.0.1:9/a";
+    let b = "http://127.0.0.1:9/b";
+    for url in [a, b] {
+        let _ = server.dispatch_with_events(&mut session, "Page.navigate", serde_json::json!({ "url": url }));
+    }
+    // 后退：entryId 0 = 首条目（getNavigationHistory 的 id 契约）。
+    let (result, events) = server.dispatch_with_events(
+        &mut session,
+        "Page.navigateToHistoryEntry",
+        serde_json::json!({ "entryId": 0 }),
+    );
+    assert!(result.is_ok(), "navigateToHistoryEntry 成功：{result:?}");
+    assert_eq!(
+        session.shell.active_tab().and_then(|t| t.url()),
+        Some(a),
+        "shell URL 回退到条目 a"
+    );
+    let nav = events
+        .iter()
+        .find(|e| e.method == "Page.frameNavigated")
+        .expect("frameNavigated 事件族（page.url() 依赖）");
+    assert_eq!(nav.params["frame"]["url"], a);
+    let history = server
+        .dispatch(&mut session, "Page.getNavigationHistory", Value::Null)
+        .unwrap();
+    assert_eq!(history["currentIndex"], 0, "历史面对齐跳转");
+    // 前进：entryId 1 回到 b（goForward 同半边）。
+    let (result, _) = server.dispatch_with_events(
+        &mut session,
+        "Page.navigateToHistoryEntry",
+        serde_json::json!({ "entryId": 1 }),
+    );
+    assert!(result.is_ok());
+    assert_eq!(
+        session.shell.active_tab().and_then(|t| t.url()),
+        Some(b),
+        "前向跳转回 b"
+    );
+    // 越界 entryId：-32602（Chrome 同为 entry not found 错误，不静默）。
+    let (error, _) = server.dispatch_with_events(
+        &mut session,
+        "Page.navigateToHistoryEntry",
+        serde_json::json!({ "entryId": 9 }),
+    );
+    let error = error.expect_err("越界 entryId 必须报错");
+    assert_eq!(error.code, -32602);
+}
+
 /// t4 返修（D1）：NavigationStarted 登记语义——会话命令导航确认既有登记、
 /// renderer 侧导航采纳自增世代、陈旧信号丢弃不覆盖登记不回退世代。
 #[test]

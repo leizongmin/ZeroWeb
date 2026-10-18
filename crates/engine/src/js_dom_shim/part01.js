@@ -2610,6 +2610,63 @@
     if (!_zwFetchIsSafelistedMethod(method)) return true;
     return _zwPreNamesOf(headersWire).length > 0; // net-api M4-S26：单一事实源
   }
+  // t5（qq-20261016-r1）CORS-preflight 异步桥修复：preflight OPTIONS 经 `__zw_pending`
+  // 契约等待 host 解析——旧实现同步读 `__zw_fetch` 返回 wire，浏览器异步路径
+  //（renderer fetch_bridge）同步返 ""，`_makeResponseFromWire("")` 判 status 0 →
+  // preflight 恒失败 → **一切跨源自定义头 POST 即时 `Failed to fetch`**（qq.com 首页
+  // `i.news.qq.com/web_feed/getPcPageList` 全灭、懒内容区块不挂载的「缺失第一环」；
+  // Chrome 同请求 200）。同步宿主（webview fetch_handler / reftest / 测试合成 handler）
+  // wire 就地结算，行为不变。
+  // https://fetch.spec.whatwg.org/#cors-preflight-fetch
+  // p: { id, url, method, preHeaders, preNames, preDocOrigin, opaqueOrigin,
+  //      credentials, mode, redirect } → Promise<{ resp, ok }>。缓存与失败处置由调用方
+  // 执行（主路径仅成功才缓存；重定向臂保持无条件缓存原语义）。
+  function _zwRunPreflight(p) {
+    return new Promise(function (preResolve) {
+      var settlePre = function (preWire) {
+        delete globalThis.__zw_pending[p.id];
+        var preResp = _makeResponseFromWire(preWire);
+        var preOrigin = response_headers_get(preResp, 'access-control-allow-origin');
+        var preMethods = response_headers_get(preResp, 'access-control-allow-methods');
+        var preAllowedHdrs = response_headers_get(preResp, 'access-control-allow-headers');
+        var preOk = (preResp.status >= 200 && preResp.status < 300) &&
+          (preOrigin === p.preDocOrigin || p.opaqueOrigin && preOrigin === 'null' ||
+           (preOrigin === '*' && p.credentials !== 'include'));
+        // net-api M4-S23：ACAM/ACAH 覆盖判定 spec 化——非 safelisted method 须 ACAM
+        // 覆盖（缺 ACAM → 拒）；`*` 通配 method（无凭据）。自定义头须 ACAH 覆盖
+        //（缺 ACAH → 拒；`*` 通配——authorization 例外面记账）。
+        if (preOk && !_zwFetchIsSafelistedMethod(p.method)) {
+          if (!preMethods || (preMethods !== '*' &&
+              String(preMethods).toLowerCase().split(',').map(function (s) { return s.trim(); })
+                .indexOf(String(p.method).toLowerCase()) < 0)) {
+            preOk = false;
+          }
+        }
+        if (preOk && p.preNames.length > 0) {
+          if (!preAllowedHdrs || preAllowedHdrs !== '*') {
+            var allowed = String(preAllowedHdrs || '').toLowerCase().split(',')
+              .map(function (s) { return s.trim(); });
+            for (var ai = 0; ai < p.preNames.length; ai++) {
+              if (allowed.indexOf(p.preNames[ai]) < 0) { preOk = false; break; }
+            }
+          } else if (p.preNames.indexOf('authorization') >= 0) {
+            // net-api M4-S24：ACAH `*` 不覆盖 authorization（wildcard 面须重 preflight）。
+            preOk = false;
+          }
+        }
+        preResolve({ resp: preResp, ok: preOk, methods: preMethods, allowed: preAllowedHdrs });
+      };
+      globalThis.__zw_pending[p.id] = settlePre;
+      var preWireSync = __zw_fetch(p.id, 'OPTIONS', p.url, p.preHeaders, '', '', '', p.mode, p.redirect, p.credentials);
+      // 同步返回契约（headless webview fetch_handler 直返 wire）——就地结算；
+      // 异步契约（fetch_bridge 返 ""）→ 等 __zwResolveCallback。双结算由 __zw_pending
+      // 删除 + Promise 单 settle 防护。
+      if (typeof preWireSync === 'string' &&
+          (preWireSync.indexOf('__zwfr:') === 0 || preWireSync.indexOf('__zw_fetch_error:') === 0)) {
+        settlePre(preWireSync);
+      }
+    });
+  }
   // R2923 fetch 完整化：`fetch(input, init)` 透传 method/headers/body → host 返 status/headers/body。
   // input = URL 字符串或 Request-like（.url/.method/.headers/.body）；init = { method, headers, body }。
   // method 默认 GET；GET/HEAD 无 body。`__zw_fetch` 未注册（engine/reftest/polyfill 无 host fetch handler）
@@ -2976,7 +3033,9 @@
   }
 
   if (!globalThis.fetch) {
-    var _zwFetchMain = function(input, init) {
+    // `_zwPreDone`（t5）：preflight 已通过的重入标记——跳过 preflight 臂直接发主请求
+    //（重入由 preflight .then 回调发起，见 _zwRunPreflight 消费点）。
+    var _zwFetchMain = function(input, init, _zwPreDone) {
       init = init || {};
       var isObj = input && typeof input === 'object';
       var isRequestLike = isObj && input.url !== undefined;
@@ -3133,7 +3192,7 @@
         // cors 请求先发 OPTIONS（ACRM/ACAH + Origin），2xx + ACAM/ACAH 覆盖 → 继续；
         // 失败 → network error。M4-S22：cache 命中（ACAM/ACAH 覆盖当前 method/自定义头，
         // Max-Age 未过期）→ 跳过 OPTIONS。
-        if (mode === 'cors' && _zwFetchNeedsPreflight(method, headersWire) &&
+        if (!_zwPreDone && mode === 'cors' && _zwFetchNeedsPreflight(method, headersWire) &&
             _zwHasRealPageOrigin() && _zwUrlOrigin(url) !== _zwUrlOrigin(_zwCurrentHref())) {
           var preDocOrigin = _zwUrlOrigin(_zwCurrentHref());
           if (!_zwPreflightCacheHit(
@@ -3166,51 +3225,30 @@
             // 「should be omitted」面）；空值头触发 preflight 但不入 ACRH 值。
             preHeaders = _zwAddHeader(preHeaders, 'access-control-request-headers', _acrhNames.sort().join(', '));
           }
+          // t5：preflight 经 _zwRunPreflight（__zw_pending 异步契约，见该函数注记）。
           globalThis.__zw_fetch_counter = (globalThis.__zw_fetch_counter | 0) + 1;
-          var preWire = __zw_fetch(
-            '__zwfid:pre' + globalThis.__zw_fetch_counter,
-            'OPTIONS', url, preHeaders, '', '', '', mode, redirect, credentials);
-          var preResp = _makeResponseFromWire(preWire);
-          var preOrigin = response_headers_get(preResp, 'access-control-allow-origin');
-          var preMethods = response_headers_get(preResp, 'access-control-allow-methods');
-          var preAllowedHdrs = response_headers_get(preResp, 'access-control-allow-headers');
-          var preOk = (preResp.status >= 200 && preResp.status < 300) &&
-            (preOrigin === preDocOrigin || (preOrigin === '*' && credentials !== 'include'));
-          // net-api M4-S23：ACAM/ACAH 覆盖判定 spec 化——非 safelisted method 须 ACAM
-          // 覆盖（缺 ACAM → 拒——preflight「server refuses」面：上游 preflight.py 无
-          // allow_methods 时不出 ACAM，浏览器须拒）；`*` 通配 method（无凭据）。
-          if (preOk && !_zwFetchIsSafelistedMethod(method)) {
-            if (!preMethods || (preMethods !== '*' &&
-                String(preMethods).toLowerCase().split(',').map(function (s) { return s.trim(); })
-                  .indexOf(method.toLowerCase()) < 0)) {
-              preOk = false;
+          _zwRunPreflight({
+            id: '__zwfid:pre' + globalThis.__zw_fetch_counter,
+            url: url, method: method, preHeaders: preHeaders, preNames: _preNames,
+            preDocOrigin: preDocOrigin, opaqueOrigin: false,
+            credentials: credentials, mode: mode, redirect: redirect,
+          }).then(function (pre) {
+            if (!pre.ok) {
+              reject(new TypeError('Failed to fetch'));
+              return;
             }
-          }
-          // 自定义头须 ACAH 覆盖（缺 ACAH → 拒；`*` 通配——authorization 例外面记账）。
-          if (preOk && _preNames.length > 0) {
-            if (!preAllowedHdrs || preAllowedHdrs !== '*') {
-              var allowed = String(preAllowedHdrs || '').toLowerCase().split(',')
-                .map(function (s) { return s.trim(); });
-              for (var ai = 0; ai < _preNames.length; ai++) {
-                if (allowed.indexOf(_preNames[ai]) < 0) { preOk = false; break; }
-              }
-            } else if (_preNames.indexOf('authorization') >= 0) {
-              // net-api M4-S24：ACAH `*` 不覆盖 authorization（wildcard 面须重 preflight）。
-              preOk = false;
-            }
-          }
-          if (!preOk) {
-            reject(new TypeError('Failed to fetch'));
-            return;
-          }
-          // net-api M4-S22：preflight 成功 → 缓存（Max-Age 头缺省 5s——spec default；
-          // 头存在时逐字采用（含 0 = 立即过期不可缓存——cors 域 max_age=0 用例面）；
-          // cache.py 10s / timeout.py 1s / invalidation.py 10s 面）。
-          var preMaxAgeRaw = response_headers_get(preResp, 'access-control-max-age');
-          var preMaxAge = preMaxAgeRaw == null ? 5 : (parseInt(preMaxAgeRaw, 10) || 0);
-          _zwPreflightCacheStore(
-            _zwUrlOrigin(url) + '|' + (credentials === 'include' ? 'i' : 's'),
-            preMethods, preAllowedHdrs, preMaxAge, method);
+            // net-api M4-S22：preflight 成功 → 缓存（Max-Age 头缺省 5s——spec default；
+            // 头存在时逐字采用（含 0 = 立即过期不可缓存——cors 域 max_age=0 用例面）；
+            // cache.py 10s / timeout.py 1s / invalidation.py 10s 面）。
+            var preMaxAgeRaw = response_headers_get(pre.resp, 'access-control-max-age');
+            var preMaxAge = preMaxAgeRaw == null ? 5 : (parseInt(preMaxAgeRaw, 10) || 0);
+            _zwPreflightCacheStore(
+              _zwUrlOrigin(url) + '|' + (credentials === 'include' ? 'i' : 's'),
+              pre.methods, pre.allowed, preMaxAge, method);
+            // 主请求重入（_zwPreDone 跳过本 preflight 臂）；外层 Promise 的 settle 移交。
+            _zwFetchMain(input, init, true).then(resolve, reject);
+          });
+          return;
           }
         }
         // https://fetch.spec.whatwg.org/#append-a-request-origin-header — HTTP-network fetch
@@ -3394,6 +3432,35 @@
             // 递归语义；cors-redirect-preflight「after redirection」面）。preflight
             // cache 命中则跳过；Origin 按当前 opaque 语义携带；失败 → network error。
             var _rpNames = _zwPreNamesOf(nextWire);
+            // t5：下一跳发放（preflight 臂回调与免 preflight 落空路径共用）。
+            var _issueNextHop = function () {
+              hopCount++;
+              if (signal && signal._aborted) {
+                settled = true;
+                delete globalThis.__zw_pending[id];
+                reject(signal.reason);
+                return;
+              }
+              globalThis.__zw_fetch_counter = (globalThis.__zw_fetch_counter | 0) + 1;
+              var hopId = '__zwfid:' + globalThis.__zw_fetch_counter;
+              globalThis.__zw_pending[hopId] = function(rawNext) {
+                settleFetch(rawNext, nextUrl, nextMethod, nextBody, nextWire, hopId);
+              };
+              try {
+                var hopSync = __zw_fetch(hopId, nextMethod, nextUrl, nextWire,
+                  nextBody == null ? '' : nextBody, '', '', mode, redirect, credentials);
+                // 同步返回契约（headless webview fetch_handler 直返 wire）——本跳就地结算；
+                // 异步契约（fetch_bridge 返 ""）→ 等 __zwResolveCallback。双结算由 settled 防护。
+                if (typeof hopSync === 'string' &&
+                    (hopSync.indexOf('__zwfr:') === 0 || hopSync.indexOf('__zw_fetch_error:') === 0)) {
+                  settleFetch(hopSync, nextUrl, nextMethod, nextBody, nextWire, hopId);
+                }
+              } catch (_eHopFetch) {
+                settled = true;
+                delete globalThis.__zw_pending[hopId];
+                reject(new TypeError('Failed to fetch'));
+              }
+            };
             if (mode === 'cors' && _zwFetchNeedsPreflight(nextMethod, nextWire) &&
                 nextUrl && _zwUrlOrigin(nextUrl) !== _zwUrlOrigin(_zwCurrentHref()) &&
                 !_zwPreflightCacheHit(
@@ -3417,73 +3484,32 @@
               if (_rpAcrh.length > 0) {
                 rpHeaders = _zwAddHeader(rpHeaders, 'access-control-request-headers', _rpAcrh.sort().join(', '));
               }
+              // t5：重定向臂 preflight 与主路径同一异步契约缺陷（浏览器 fetch_bridge
+              // 同步返 "" → 恒判失败）——经 _zwRunPreflight 等待。缓存保持本臂原
+              // 无条件存储语义；失败 → network error；后续跳经 _issueNextHop。
               globalThis.__zw_fetch_counter = (globalThis.__zw_fetch_counter | 0) + 1;
-              var rpWire = __zw_fetch(
-                '__zwfid:repre' + globalThis.__zw_fetch_counter,
-                'OPTIONS', nextUrl, rpHeaders, '', '', '', mode, redirect, credentials);
-              var rpResp = _makeResponseFromWire(rpWire);
-              var rpOrigin = response_headers_get(rpResp, 'access-control-allow-origin');
-              var rpMethods = response_headers_get(rpResp, 'access-control-allow-methods');
-              var rpAllowed = response_headers_get(rpResp, 'access-control-allow-headers');
-              var rpOk = (rpResp.status >= 200 && rpResp.status < 300) &&
-                (rpOrigin === rpDocOrigin || rpOrigin === 'null' && _zwHopOriginOpaque ||
-                 (rpOrigin === '*' && credentials !== 'include'));
-              if (rpOk && !_zwFetchIsSafelistedMethod(nextMethod)) {
-                if (!rpMethods || (rpMethods !== '*' &&
-                    String(rpMethods).toLowerCase().split(',').map(function (x) { return x.trim(); })
-                      .indexOf(String(nextMethod).toLowerCase()) < 0)) {
-                  rpOk = false;
+              _zwRunPreflight({
+                id: '__zwfid:repre' + globalThis.__zw_fetch_counter,
+                url: nextUrl, method: nextMethod, preHeaders: rpHeaders, preNames: _rpNames,
+                preDocOrigin: rpDocOrigin, opaqueOrigin: _zwHopOriginOpaque,
+                credentials: credentials, mode: mode, redirect: redirect,
+              }).then(function (rp) {
+                var rpMaxAgeRaw = response_headers_get(rp.resp, 'access-control-max-age');
+                var rpMaxAge = rpMaxAgeRaw == null ? 5 : (parseInt(rpMaxAgeRaw, 10) || 0);
+                _zwPreflightCacheStore(
+                  _zwUrlOrigin(nextUrl) + '|' + (credentials === 'include' ? 'i' : 's'),
+                  rp.methods, rp.allowed, rpMaxAge, nextMethod);
+                if (!rp.ok) {
+                  settled = true;
+                  delete globalThis.__zw_pending[currentId || id];
+                  reject(new TypeError('Failed to fetch'));
+                  return;
                 }
-              }
-              if (rpOk && _rpNames.length > 0) {
-                if (!rpAllowed || rpAllowed !== '*') {
-                  var rpAllowedList = String(rpAllowed || '').toLowerCase().split(',')
-                    .map(function (x) { return x.trim(); });
-                  for (var rj = 0; rj < _rpNames.length; rj++) {
-                    if (rpAllowedList.indexOf(_rpNames[rj]) < 0) { rpOk = false; break; }
-                  }
-                } else if (_rpNames.indexOf('authorization') >= 0) {
-                  rpOk = false; // net-api M4-S24：`*` 不覆盖 authorization
-                }
-              }
-              var rpMaxAgeRaw = response_headers_get(rpResp, 'access-control-max-age');
-              var rpMaxAge = rpMaxAgeRaw == null ? 5 : (parseInt(rpMaxAgeRaw, 10) || 0);
-              _zwPreflightCacheStore(
-                _zwUrlOrigin(nextUrl) + '|' + (credentials === 'include' ? 'i' : 's'),
-                rpMethods, rpAllowed, rpMaxAge, nextMethod);
-              if (!rpOk) {
-                settled = true;
-                delete globalThis.__zw_pending[currentId || id];
-                reject(new TypeError('Failed to fetch'));
-                return;
-              }
-            }
-            hopCount++;
-            if (signal && signal._aborted) {
-              settled = true;
-              delete globalThis.__zw_pending[id];
-              reject(signal.reason);
+                _issueNextHop();
+              });
               return;
             }
-            globalThis.__zw_fetch_counter = (globalThis.__zw_fetch_counter | 0) + 1;
-            var hopId = '__zwfid:' + globalThis.__zw_fetch_counter;
-            globalThis.__zw_pending[hopId] = function(rawNext) {
-              settleFetch(rawNext, nextUrl, nextMethod, nextBody, nextWire, hopId);
-            };
-            try {
-              var hopSync = __zw_fetch(hopId, nextMethod, nextUrl, nextWire,
-                nextBody == null ? '' : nextBody, '', '', mode, redirect, credentials);
-              // 同步返回契约（headless webview fetch_handler 直返 wire）——本跳就地结算；
-              // 异步契约（fetch_bridge 返 ""）→ 等 __zwResolveCallback。双结算由 settled 防护。
-              if (typeof hopSync === 'string' &&
-                  (hopSync.indexOf('__zwfr:') === 0 || hopSync.indexOf('__zw_fetch_error:') === 0)) {
-                settleFetch(hopSync, nextUrl, nextMethod, nextBody, nextWire, hopId);
-              }
-            } catch (_eHopFetch) {
-              settled = true;
-              delete globalThis.__zw_pending[hopId];
-              reject(new TypeError('Failed to fetch'));
-            }
+            _issueNextHop();
             return;
           }
           settled = true;

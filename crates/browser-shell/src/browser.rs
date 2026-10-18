@@ -530,6 +530,16 @@ impl BrowserShell {
         }
     }
 
+    /// 跳转到活跃标签的指定历史索引（任意步长，见
+    /// [`crate::tab::Tab::jump_history`]——headless CDP 历史遍历共享路径）。
+    pub fn jump_history(&mut self, index: usize) -> bool {
+        if let Some(tab) = self.tabs.active_tab_mut() {
+            tab.jump_history(index)
+        } else {
+            false
+        }
+    }
+
     // ── 书签操作 ──
 
     /// 将当前页面添加到书签。

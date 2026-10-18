@@ -52,6 +52,18 @@ pub struct NavigationEntry {
     pub(crate) title: Option<String>,
 }
 
+impl NavigationEntry {
+    /// 条目 URL。
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+
+    /// 条目标题（页面标题未取得时为 `None`）。
+    pub fn title(&self) -> Option<&str> {
+        self.title.as_deref()
+    }
+}
+
 impl Tab {
     /// 创建新的标签页。
     pub fn new(url: &str) -> Self {
@@ -270,6 +282,24 @@ impl Tab {
         if self.history_index > 0 {
             self.history_index -= 1;
             let entry = &self.history[self.history_index];
+            self.url = Some(entry.url.clone());
+            self.title = entry.title.clone();
+            self.loading = false;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// 跳转到指定历史索引（任意步长后退/前进，CDP `Page.navigateToHistoryEntry`
+    /// 共享路径）。
+    ///
+    /// 返回 `true` 表示成功（url/title 随目标条目更新），`false` 表示索引越界。
+    /// url/title/loading 语义与 [`Self::go_back`]/[`Self::go_forward`] 一致。
+    pub fn jump_history(&mut self, index: usize) -> bool {
+        if index < self.history.len() {
+            self.history_index = index;
+            let entry = &self.history[index];
             self.url = Some(entry.url.clone());
             self.title = entry.title.clone();
             self.loading = false;

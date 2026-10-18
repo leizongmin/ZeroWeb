@@ -17,11 +17,34 @@ macro_rules! v8_try_catch_message {
                     .to_string(try_catch)
                     .map(|s| s.to_rust_string_lossy(try_catch))
                     .unwrap_or_else(|| "exception".to_string());
-                if let Some(stack) = try_catch.stack_trace() {
-                    if let Some(stack_s) = stack.to_string(try_catch) {
-                        out.push('\n');
-                        out.push_str(&stack_s.to_rust_string_lossy(try_catch));
-                    }
+                // t5（qq-20261016-r1）execute 错误栈捕获：栈文本 = TryCatch::stack_trace()
+                //（Message 面）优先；无帧行时回落异常对象 `.stack` 属性（Error.stack，
+                // promise-reject 报告同径）——部分抛出形态 Message 面无帧而对象属性仍在。
+                // 栈文本首行为消息本体，只拼帧行：无帧不拼（消除 t2 qq.com 'set'
+                // pageerror 实测的 msg\nmsg 重复形态——页面设 Error.stackTraceLimit=0
+                // 或栈捕获关闭时 stack 文本退化为消息单行）。
+                let mut stack_text = try_catch
+                    .stack_trace()
+                    .and_then(|stack| stack.to_string(try_catch))
+                    .map(|s| s.to_rust_string_lossy(try_catch))
+                    .filter(|text| text.contains('\n'));
+                if stack_text.is_none() {
+                    stack_text = exception
+                        .try_cast::<v8::Object>()
+                        .ok()
+                        .and_then(|obj| {
+                            v8::String::new(try_catch, "stack").and_then(|key| obj.get(try_catch, key.into()))
+                        })
+                        .filter(|value| value.is_string())
+                        .and_then(|value| value.to_string(try_catch))
+                        .map(|s| s.to_rust_string_lossy(try_catch))
+                        .filter(|text| text.contains('\n'));
+                }
+                if let Some(text) = stack_text
+                    && let Some((_head, frames)) = text.split_once('\n')
+                {
+                    out.push('\n');
+                    out.push_str(frames);
                 }
                 out
             } else {
@@ -1840,6 +1863,22 @@ mod tests {
         let mut sandbox = V8Sandbox::new().unwrap();
         let result = sandbox.execute("null.toString()");
         assert!(matches!(result, Err(ScriptError::RuntimeError(_))));
+    }
+
+    /// t5（qq-20261016-r1）execute 错误栈捕获：必抛脚本的 Err 文本须带栈帧行
+    ///（`    at `）——此前 Message 面无帧时拼出 msg\nmsg 重复形态、可归因性为零
+    ///（t2 P3 'set' pageerror 证据）。帧行来源：TryCatch::stack_trace()，无帧回落
+    /// 异常对象 `.stack`。
+    #[test]
+    fn test_execute_runtime_error_carries_stack_frames() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        let err = sandbox
+            .execute("function boom(){ null.toString(); } boom();")
+            .expect_err("必抛脚本");
+        let text = err.to_string();
+        assert!(text.contains("Runtime error"), "前缀保持：{text}");
+        assert!(text.contains("    at "), "错误文本须含栈帧行：{text}");
+        assert!(text.contains("boom"), "帧行须指向抛出函数：{text}");
     }
 
     #[test]

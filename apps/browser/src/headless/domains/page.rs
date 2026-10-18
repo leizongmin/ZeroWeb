@@ -139,6 +139,92 @@ impl HeadlessServer {
         Ok(serde_json::json!({ "frameId": frame_id, "loaderId": loader_id }))
     }
 
+    /// CDP Page.getNavigationHistory — shell Tab 真实导航历史（PW goBack/goForward 的
+    /// 选择半边：`entries[currentIndex±delta]` 选条目）。条目 id 即历史索引（
+    /// [`Self::cmd_page_navigate_to_history_entry`] 按同一规则还原目标索引）；title
+    /// 未取得时回退 URL（CDP 形状 title 必带）。此前为单条目 currentIndex=0 桩——
+    /// goBack 恒取不到上一条目返回 false（t4 遗留 D 阶段诚实失败）。
+    pub(super) fn cmd_page_get_navigation_history(
+        &self,
+        session: &mut HeadlessSession,
+    ) -> Result<Value, ProtocolError> {
+        let tab = session.shell.active_tab().ok_or_else(|| ProtocolError {
+            code: -32000,
+            message: "No active tab".into(),
+        })?;
+        let entries: Vec<Value> = tab
+            .navigation_history()
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| {
+                serde_json::json!({
+                    "id": index as i64,
+                    "url": entry.url(),
+                    "title": entry.title().unwrap_or_else(|| entry.url()),
+                })
+            })
+            .collect();
+        Ok(serde_json::json!({
+            "currentIndex": tab.history_index() as i64,
+            "entries": entries,
+        }))
+    }
+
+    /// CDP Page.navigateToHistoryEntry — shell 历史 Jump + renderer 载入 + 导航事件族
+    ///（PW goBack/goForward 的执行半边）。entryId 为 getNavigationHistory 的条目 id
+    ///（= 历史索引）。shell 先跳转再载入：commit 世代登记 client_initiated=true 且
+    /// shell 已同 URL → 回声跳过（不产生重复历史条目）；HTTP 重定向按 replace 语义
+    /// 取代当前条目（apply_navigation_commit）。事件族复用
+    /// [`Self::emit_navigation_event_family`]——page.url()（frameNavigated）与 PW
+    /// waitForNavigation 依赖面。
+    pub(super) fn cmd_page_navigate_to_history_entry(
+        &self,
+        session: &mut HeadlessSession,
+        cdp_session: Option<&str>,
+        params: Value,
+        events: &mut Vec<ServerEvent>,
+    ) -> Result<Value, ProtocolError> {
+        let entry_id = params
+            .get("entryId")
+            .and_then(|v| v.as_i64())
+            .ok_or_else(|| ProtocolError {
+                code: -32602,
+                message: "Missing 'entryId' parameter".into(),
+            })?;
+        let index = entry_id.max(0) as usize;
+        let url = session
+            .shell
+            .active_tab()
+            .and_then(|tab| tab.navigation_history().get(index))
+            .map(|entry| entry.url().to_string())
+            .ok_or_else(|| ProtocolError {
+                code: -32602,
+                message: format!("history entry {entry_id} not found"),
+            })?;
+        if !session.shell.jump_history(index) {
+            return Err(ProtocolError {
+                code: -32602,
+                message: format!("history entry {entry_id} not found"),
+            });
+        }
+        // 发布构建由 renderer 载入目标 URL；单元测试保留内存 WebView fixture
+        //（cmd_navigate 同形：历史面已跳转，载入失败不改历史语义）。
+        #[cfg(test)]
+        let render_result = session.webview.fetch_url(&url).map(|_| ());
+        #[cfg(not(test))]
+        let render_result = session.navigate_renderer(&url);
+        let title = if render_result.is_ok() {
+            url.clone()
+        } else {
+            "Error loading page".to_string()
+        };
+        session.shell.on_page_loaded(&title);
+        let frame_id = self.session_frame_id(session, cdp_session);
+        let loader_id = format!("zw-loader-{}", self.next_session_id.fetch_add(1, Ordering::SeqCst));
+        self.emit_navigation_event_family(session, cdp_session, &frame_id, &loader_id, &url, events);
+        Ok(serde_json::json!({}))
+    }
+
     /// Page.getLayoutMetrics — 视口映射（启动参数初始化，Emulation 运行时可变）。
     pub(super) fn cmd_page_get_layout_metrics(&self) -> Value {
         let (vw, vh) = self.viewport_size();
