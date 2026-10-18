@@ -65,6 +65,7 @@ impl LayoutEngine {
         dom_to_taffy: &HashMap<NodeId, taffy::NodeId>,
         styles: &HashMap<NodeId, ComputedStyle>,
         doc: &Document,
+        replaced_intrinsic: &HashMap<NodeId, (f32, f32)>,
     ) -> bool {
         let mut changed = false;
         // R5036：栈携带第一趟 content CB 宽——fit-content(%) 的 arg 相对 CB 解析
@@ -85,9 +86,16 @@ impl LayoutEngine {
             // R4149：宽轴关键字（min/max-width content 关键字）是物理水平轴属性，vertical-rl
             // 的盒同样受钳（flex-item-min-width-min-content：vertical-rl item min-width:
             // min-content 应 floor 到子 100px 块宽）——kw 盒不限书写模式，其余保持 HorizontalTb。
+            // R5178：替换元素 min/max-width 关键字改走解析式专属臂（下方），不经主测量路径。
+            // flex/grid item 排除（R5178 corpus 回归判例 flex-minimum-height-flex-items-023）：
+            // item 的 min-*:min-content 走 css-flexbox §4.5 自动最小尺寸（content-based，
+            // min(内容建议, 指定建议)），非 css-sizing §5.1 transferred/固有——域不同。
+            let replaced_kw =
+                b.is_replaced && !b.is_flex_grid_item && (content_kw(&s.min_width) || content_kw(&s.max_width));
             let kw_any_mode = (content_kw(&s.min_width) || content_kw(&s.max_width)) && !b.is_replaced;
-            if !(is_flex_grid || is_block)
-                || (!matches!(b.writing_mode, WritingModeValue::HorizontalTb) && !kw_any_mode)
+            if !replaced_kw
+                && (!(is_flex_grid || is_block)
+                    || (!matches!(b.writing_mode, WritingModeValue::HorizontalTb) && !kw_any_mode))
             {
                 continue;
             }
@@ -137,6 +145,49 @@ impl LayoutEngine {
             };
             let kw_min = std::env::var("ZW_WIDTH_KEYWORD_CLAMP").as_deref() != Ok("0") && kw_content(&s.min_width);
             let kw_max = std::env::var("ZW_WIDTH_KEYWORD_CLAMP").as_deref() != Ok("0") && kw_content(&s.max_width);
+            // R5178（css-sizing-3 §5.1 + csswg #3973）：替换元素 min/max-width content 关键字
+            // ——min/max-content size = 固有比 × definite 块尺寸（transferred size），无效比退
+            // 固有宽（attr/解码，replaced_intrinsic 表）。converter 把 min/max-width 关键字映射
+            // length(0)/auto 且 R4149 主臂 `!b.is_replaced` 排除 → 无人钳（replaced-min-width-
+            // min-content：canvas attr 10×10 + w:10px h:100px + min-width:min-content 渲
+            // 10×100 窄条，应 transferred 100×100）。比源 CSS aspect-ratio 显式优先（R5048
+            // 同序）；transferred 源 = CSS height 可解析定长（R5040：% 高在固有测量语境循环
+            // → 非 definite）。仅写 min/max 约束不清定宽——width:10px 是真声明，css-sizing-3
+            // §5.3 min-width 胜 width 由 taffy 约束求解（min_size 与 converter 的 length(0)
+            // 伪影同槽覆盖）。水平书写限定（width 是物理水平轴属性，垂直镜像属块轴别名域）。
+            if replaced_kw && matches!(b.writing_mode, WritingModeValue::HorizontalTb) {
+                let ratio = s.aspect_ratio.filter(|&r| r > 0.0).or_else(|| {
+                    replaced_intrinsic
+                        .get(&id)
+                        .and_then(|&(iw, ih)| (iw > 0.0 && ih > 0.0).then_some(iw / ih))
+                });
+                let transferred = ratio.and_then(|r| {
+                    crate::intrinsic_sizing::resolve_intrinsic_real_length(&s.height, s)
+                        .filter(|&h| h > 0.0)
+                        .map(|h| h * r)
+                });
+                let attr_w = replaced_intrinsic.get(&id).map_or(0.0, |&(iw, _)| iw);
+                let target = transferred.filter(|&t| t > 0.5).or((attr_w > 0.5).then_some(attr_w));
+                if let (Some(target), Some(&taffy_id)) = (target, dom_to_taffy.get(&id))
+                    && let Ok(mut style) = taffy_tree.style(taffy_id).cloned()
+                {
+                    // min 优先于 max（css-sizing-3 §5.2，R4149 主臂同注）。
+                    if kw_min {
+                        if b.width < target - 1.0 {
+                            style.min_size.width = taffy::style::Dimension::length(target);
+                            let _ = taffy_tree.set_style(taffy_id, style);
+                            let _ = taffy_tree.mark_dirty(taffy_id);
+                            changed = true;
+                        }
+                    } else if kw_max && b.width > target + 1.0 {
+                        style.max_size.width = taffy::style::Dimension::length(target);
+                        let _ = taffy_tree.set_style(taffy_id, style);
+                        let _ = taffy_tree.mark_dirty(taffy_id);
+                        changed = true;
+                    }
+                }
+                continue;
+            }
             // R5036：fit-content(L) 关键字的 arg 与目标值标记（公式 min(W_max, max(W_min, L))）。
             let kw_fit_arg = |v: &LengthValue| match v {
                 LengthValue::FitContent(inner) => crate::intrinsic_sizing::resolve_intrinsic_real_length(inner, s),
@@ -405,6 +456,8 @@ impl LayoutEngine {
         root: &LayoutBox,
         dom_to_taffy: &HashMap<NodeId, taffy::NodeId>,
         styles: &HashMap<NodeId, ComputedStyle>,
+        doc: &Document,
+        replaced_intrinsic: &HashMap<NodeId, (f32, f32)>,
         measure_text: impl Fn(
             NodeId,
             taffy::geometry::Size<Option<f32>>,
@@ -426,6 +479,77 @@ impl LayoutEngine {
             }
             let Some(id) = b.node_id else { continue };
             let Some(s) = styles.get(&id) else { continue };
+            // R5178（css-sizing-3 §5.1 + csswg #3973）：替换元素块轴 min/max-height content
+            // 关键字——镜像宽轴臂：min/max-content block size = 固有比 × definite 内联尺寸
+            //（transferred size），无效比退固有高。主径 measure 语义对 replaced 无内容可测
+            //（§5.1 的答案就是固有/transferred 值）。比源 CSS aspect-ratio 优先（R5048 同序），
+            // 表（canvas attr/解码 img）缺席时 DOM attr 直读兜底（svg 等 gather 表外 tag，
+            // svg-no-ar-min-height-min-content：svg attr 0×100 + w:100px h:10px +
+            // min-height:min-content 渲 100×10 矮条，应固有高 100）。flex/grid item 排除
+            //（同宽轴臂：item 的块轴 min-*:min-content = css-flexbox §4.5 自动最小尺寸，
+            // flex-minimum-height-flex-items-023 corpus 回归判例）。仅水平书写（垂直模式
+            // height 族 = block-size 别名域，R4560 正交臂语义）。
+            if b.is_replaced && !b.is_flex_grid_item && (content_kw(&s.min_height) || content_kw(&s.max_height)) {
+                if matches!(b.writing_mode, WritingModeValue::HorizontalTb) {
+                    let ratio = s.aspect_ratio.filter(|&r| r > 0.0).or_else(|| {
+                        replaced_intrinsic
+                            .get(&id)
+                            .and_then(|&(iw, ih)| (iw > 0.0 && ih > 0.0).then_some(iw / ih))
+                    });
+                    let transferred = ratio.and_then(|r| {
+                        crate::intrinsic_sizing::resolve_intrinsic_real_length(&s.width, s)
+                            .filter(|&w| w > 0.0)
+                            .map(|w| w / r)
+                    });
+                    let attr_intrinsic = replaced_intrinsic.get(&id).map(|&(iw, ih)| (iw, ih)).or_else(|| {
+                        doc.get(id).and_then(|node| match &node.kind {
+                            zero_dom::NodeKind::Element(elem) => {
+                                let parse = |name: &str| {
+                                    elem.get_attribute(name)
+                                        .and_then(|v| v.parse::<f32>().ok().filter(|n| n.is_finite()))
+                                };
+                                let w = parse("width");
+                                let h = parse("height");
+                                Some((w.unwrap_or(0.0), h.unwrap_or(0.0)))
+                            }
+                            _ => None,
+                        })
+                    });
+                    let attr_w = attr_intrinsic.map_or(0.0, |(iw, _)| iw);
+                    let attr_h = attr_intrinsic.map_or(0.0, |(_, ih)| ih);
+                    // 无 definite 内联宽可转递时的固有块尺寸：有比 → 固有宽 / 比
+                    //（css-sizing-4 §3.2：aspect-ratio 生效时自然高弃用，块固有经宽推导；
+                    // R3796 判例 canvas attr 100×50 + aspect-ratio:1 + width:max-content 的
+                    // max-height:max-content = 100/1 = 100，非 attr 高 50）；无比 → attr 高。
+                    let intrinsic_h = ratio
+                        .and_then(|r| (attr_w > 0.0 && r > 0.0).then_some(attr_w / r))
+                        .filter(|&v| v > 0.5)
+                        .or((attr_h > 0.5).then_some(attr_h))
+                        .unwrap_or(0.0);
+                    let target = transferred
+                        .filter(|&t| t > 0.5)
+                        .or((intrinsic_h > 0.5).then_some(intrinsic_h));
+                    if let (Some(target), Some(&taffy_id)) = (target, dom_to_taffy.get(&id))
+                        && let Ok(mut style) = taffy_tree.style(taffy_id).cloned()
+                    {
+                        // min 优先于 max（css-sizing-3 §5.2，R4557 主臂同注）。
+                        if content_kw(&s.min_height) {
+                            if b.height < target - 1.0 {
+                                style.min_size.height = taffy::style::Dimension::length(target);
+                                let _ = taffy_tree.set_style(taffy_id, style);
+                                let _ = taffy_tree.mark_dirty(taffy_id);
+                                changed = true;
+                            }
+                        } else if content_kw(&s.max_height) && b.height > target + 1.0 {
+                            style.max_size.height = taffy::style::Dimension::length(target);
+                            let _ = taffy_tree.set_style(taffy_id, style);
+                            let _ = taffy_tree.mark_dirty(taffy_id);
+                            changed = true;
+                        }
+                    }
+                }
+                continue;
+            }
             if b.is_replaced || b.is_absolute || b.is_fixed {
                 continue;
             }

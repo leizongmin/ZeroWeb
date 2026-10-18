@@ -745,7 +745,14 @@ impl LayoutEngine {
         // 百分比 height 的页面失效。改为先求值再合并，确保四趟都执行。
         // R4215：无 content 关键字 / auto+float 目标形态时整 pass 跳过（预扫描位标同源）。
         let changed_intrinsic = if sizing_targets.intrinsic_kw_or_auto_float {
-            Self::apply_intrinsic_content_sizing(&mut taffy_tree, &root_box, &dom_to_taffy, styles, doc)
+            Self::apply_intrinsic_content_sizing(
+                &mut taffy_tree,
+                &root_box,
+                &dom_to_taffy,
+                styles,
+                doc,
+                &intrinsic_for_r695,
+            )
         } else {
             false
         };
@@ -808,6 +815,8 @@ impl LayoutEngine {
                 &root_box,
                 &dom_to_taffy,
                 styles,
+                doc,
+                &intrinsic_for_r695,
                 |dom_id, known, available| {
                     measure_text_content(
                         doc,
