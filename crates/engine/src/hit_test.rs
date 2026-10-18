@@ -106,7 +106,7 @@ struct HitTestNodeMeta {
     link_text: Option<String>,
     /// 本元素 `draggable` IDL 状态（enumerated 反射 + auto 默认，[`crate::drag_source`]）。
     /// dnd-compat M3：拖拽源仲裁按「最近可拖祖先或自身」解析（见
-    /// [`drag_source_eligible_cached`]），自身态在此、祖先态随 nodes 表上溯。
+    /// [`drag_source_cached`]），自身态在此、祖先态随 nodes 表上溯。
     draggable: bool,
 }
 
@@ -600,7 +600,7 @@ fn element_hit_from_cache(
         y,
         width,
         height,
-        drag_source_eligible: drag_source_eligible_cached(element, nodes, parents),
+        drag_source: drag_source_cached(element, nodes, parents),
     })
 }
 
@@ -738,45 +738,44 @@ pub struct ElementHit {
     pub width: f32,
     /// 布局盒高度。
     pub height: f32,
-    /// 命中元素或其最近祖先处于 `draggable` true 状态（dnd-compat M3：拖拽源仲裁判据）。
-    /// spec：拖拽源 = 用户选择元素的最近可拖祖先或自身。
+    /// 拖拽源选择器：命中元素自身或最近 `draggable` true 祖先的选择器；`None` = 无可拖源。
+    /// dnd-compat M3：dragstart 须派至该源而非命中元素（spec：拖拽源 = 用户选择元素的
+    /// 最近可拖祖先或自身——祖先可拖而命中元素不可拖时，事件目标是祖先）。
     /// https://html.spec.whatwg.org/multipage/dnd.html#drag-and-drop-processing-model
-    pub drag_source_eligible: bool,
+    pub drag_source: Option<String>,
 }
 
-/// 命中节点向上查找最近 `draggable` true 元素（含自身）——与 [`find_link_href_cached`]
-/// 同一行走语义（nodes 表自身态 + parents 表 DOM 父链）。无布局盒的中间祖先不可见
-/// （与 [`nearest_element_cached`] 同一保真度边界）。
-fn drag_source_eligible_cached(
+/// 命中节点向上查找最近 `draggable` true 元素（含自身）并取其选择器——与
+/// [`find_link_href_cached`] 同一行走语义（nodes 表自身态 + parents 表 DOM 父链）。
+/// 无布局盒的中间祖先不可见（与 [`nearest_element_cached`] 同一保真度边界）。
+fn drag_source_cached(
     mut node: NodeId,
     nodes: &HashMap<NodeId, HitTestNodeMeta>,
     parents: &HashMap<NodeId, NodeId>,
-) -> bool {
+) -> Option<String> {
     loop {
-        if nodes.get(&node).is_some_and(|meta| meta.draggable) {
-            return true;
+        if let Some(meta) = nodes.get(&node)
+            && meta.draggable
+        {
+            return Some(meta.selector.clone());
         }
-        let Some(parent) = parents.get(&node).copied() else {
-            return false;
-        };
+        let parent = parents.get(&node).copied()?;
         node = parent;
     }
 }
 
-/// 文档路径版（[`element_hit_from_node`] 消费）：沿 DOM 父链找最近 `draggable` true 元素。
-fn has_drag_source_ancestor(doc: &Document, mut node: NodeId) -> bool {
+/// 文档路径版（[`element_hit_from_node`] 消费）：沿 DOM 父链找最近 `draggable` true
+/// 元素并取其选择器。
+fn drag_source_in_doc(doc: &Document, mut node: NodeId) -> Option<String> {
     loop {
         if doc
             .get(node)
             .is_some_and(|data| matches!(data.kind, NodeKind::Element(_)))
             && crate::drag_source::element_draggable(doc, node)
         {
-            return true;
+            return crate::unique_selector_for_node(doc, node);
         }
-        let Some(parent) = doc.parent_node(node) else {
-            return false;
-        };
-        node = parent;
+        node = doc.parent_node(node)?;
     }
 }
 
@@ -870,7 +869,7 @@ fn element_hit_from_node(doc: &Document, layout: &LayoutBox, node: NodeId) -> Op
         y,
         width,
         height,
-        drag_source_eligible: has_drag_source_ancestor(doc, element),
+        drag_source: drag_source_in_doc(doc, element),
     })
 }
 
@@ -1860,14 +1859,15 @@ mod tests {
         assert_eq!(hit.id.as_deref(), Some("link"), "显式 auto 后代仍可命中");
     }
 
-    /// dnd-compat M3：`ElementHit.drag_source_eligible`——命中元素自身或最近祖先处于
-    /// `draggable` true 状态（spec 拖拽源 = 用户选择元素的最近可拖祖先或自身）。
+    /// dnd-compat M3：`ElementHit.drag_source`——命中元素自身或最近 `draggable` true
+    /// 祖先的选择器（spec 拖拽源 = 用户选择元素的最近可拖祖先或自身；祖先可拖而命中
+    /// 元素不可拖时事件目标是祖先，非命中元素）。
     /// 文档路径（element_hit_from_node）与缓存路径（element_hit_from_cache，含快照
     /// 往返，多进程主进程消费）同判；`a[href]` auto 状态默认可拖，无 href 的 `a`
     /// 与普通 `div` 不可拖。
     /// https://html.spec.whatwg.org/multipage/dnd.html#drag-and-drop-processing-model
     #[test]
-    fn drag_source_eligible_nearest_ancestor_or_self() {
+    fn drag_source_nearest_ancestor_or_self() {
         let html = r#"<html><body>
             <div id="src" draggable="true" style="position:absolute; left:0px; top:0px; width:200px; height:100px;">
                 <span id="inner" style="position:absolute; left:10px; top:10px; width:50px; height:20px;">x</span>
@@ -1882,25 +1882,30 @@ mod tests {
 
         let inner = hit_test_element(&doc, &layout.root, &styles, 20.0, 15.0).expect("hit inner");
         assert_eq!(inner.id.as_deref(), Some("inner"));
-        assert!(inner.drag_source_eligible, "祖先 div[draggable=true] 使后代成为拖拽源");
+        assert_eq!(
+            inner.drag_source.as_deref(),
+            Some("#src"),
+            "祖先 div[draggable=true] 是拖拽源（事件目标为祖先选择器）"
+        );
         let live_hit = cache.hit_test_element(20.0, 15.0).expect("cache hit inner");
-        assert!(live_hit.drag_source_eligible, "缓存路径同判");
+        assert_eq!(live_hit.drag_source.as_deref(), Some("#src"), "缓存路径同判");
         let restored_hit = restored.hit_test_element(20.0, 15.0).expect("restored hit inner");
-        assert!(
-            restored_hit.drag_source_eligible,
-            "快照往返保真（draggable 随 meta 走 IPC）"
+        assert_eq!(
+            restored_hit.drag_source.as_deref(),
+            Some("#src"),
+            "快照往返保真（draggable + selector 随 meta 走 IPC）"
         );
 
         let link = hit_test_element(&doc, &layout.root, &styles, 240.0, 20.0).expect("hit link");
         assert_eq!(link.id.as_deref(), Some("l"));
-        assert!(link.drag_source_eligible, "a[href] auto 状态默认可拖");
+        assert!(link.drag_source.is_some(), "a[href] auto 状态默认可拖（源为自身）");
 
         let no_href = hit_test_element(&doc, &layout.root, &styles, 240.0, 80.0).expect("hit bare a");
         assert_eq!(no_href.id.as_deref(), Some("n"));
-        assert!(!no_href.drag_source_eligible, "无 href 的 a 非拖拽源");
+        assert!(no_href.drag_source.is_none(), "无 href 的 a 非拖拽源");
 
         let plain = hit_test_element(&doc, &layout.root, &styles, 30.0, 130.0).expect("hit plain");
         assert_eq!(plain.id.as_deref(), Some("plain"));
-        assert!(!plain.drag_source_eligible, "普通 div 非拖拽源");
+        assert!(plain.drag_source.is_none(), "普通 div 非拖拽源");
     }
 }

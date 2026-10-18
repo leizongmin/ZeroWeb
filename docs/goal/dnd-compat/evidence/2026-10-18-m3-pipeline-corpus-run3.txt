@@ -1,0 +1,480 @@
+Pass html/editing/dnd/datastore/datatransfer-constructor-001.html :: Verify DataTransfer constructor
+Pass html/editing/dnd/datastore/datatransfer-types.html :: type's state on DataTransfer creation
+Pass html/editing/dnd/datastore/datatransfer-types.html :: Relationship between types and items
+Pass html/editing/dnd/datastore/datatransfer-types.html :: type's identity
+Pass html/editing/dnd/datastore/datatransfer-types.html :: Verify type is a read-only attribute
+Pass html/editing/dnd/datastore/datatransfer-types.html :: DataTransfer containing files
+Pass html/editing/dnd/datastore/datatransferitemlist-remove.html :: remove()ing an out-of-bounds index does nothing
+Pass html/editing/dnd/datastore/datatransferitemlist-remove.html :: remove()ing an item will put the associated DataTransferItem object in the disabled mode
+Pass html/editing/dnd/dom/draggable.html :: an <a> element should have a draggable property
+Pass html/editing/dnd/dom/draggable.html :: a <div> element should have a draggable property
+Pass html/editing/dnd/dom/draggable.html :: an <img> element should have a draggable property
+Pass html/editing/dnd/dom/draggable.html :: an <a> element should be draggable by default
+Pass html/editing/dnd/dom/draggable.html :: a <div> element should not be draggable by default
+Pass html/editing/dnd/dom/draggable.html :: an <img> element should be draggable by default
+Pass html/editing/dnd/dom/draggable.html :: an <a> element with draggable="true" should be draggable
+Pass html/editing/dnd/dom/draggable.html :: a <div> element with draggable="true" should be draggable
+Pass html/editing/dnd/dom/draggable.html :: an <img> element with draggable="true" should be draggable
+Pass html/editing/dnd/dom/draggable.html :: an <a> element with draggable="false" should not be draggable
+Pass html/editing/dnd/dom/draggable.html :: a <div> element with draggable="false" should not be draggable
+Pass html/editing/dnd/dom/draggable.html :: an <img> element with draggable="false" should not be draggable
+Pass html/editing/dnd/dom/draggable.html :: an <a> element with draggable="auto" should be draggable
+Pass html/editing/dnd/dom/draggable.html :: a <div> element with draggable="auto" should not be draggable
+Pass html/editing/dnd/dom/draggable.html :: an <img> element with draggable="auto" should be draggable
+Pass html/editing/dnd/dom/draggable.html :: an <a> element with draggable="foo" should be draggable
+Pass html/editing/dnd/dom/draggable.html :: a <div> element with draggable="foo" should not be draggable
+Pass html/editing/dnd/dom/draggable.html :: an <img> element with draggable="foo" should be draggable
+Pass html/editing/dnd/dom/draggable.html :: an <a> element with the draggable property set to true through a script should be draggable
+Pass html/editing/dnd/dom/draggable.html :: a <div> element with the draggable property set to true through a script should be draggable
+Pass html/editing/dnd/dom/draggable.html :: an <img> element with the draggable property set to true through a script should be draggable
+Pass html/editing/dnd/dom/draggable.html :: an <a> element with the draggable property set to false through a script should not be draggable
+Pass html/editing/dnd/dom/draggable.html :: a <div> element with the draggable property set to false through a script should not be draggable
+Pass html/editing/dnd/dom/draggable.html :: an <img> element with the draggable property set to false through a script should not be draggable
+Pass html/editing/dnd/dom/draggable.html :: an <a> element with the draggable property set to "foo" through a script should be draggable
+Pass html/editing/dnd/dom/draggable.html :: a <div> element with the draggable property set to "foo" through a script should be draggable
+Pass html/editing/dnd/dom/draggable.html :: an <img> element with the draggable property set to "foo" through a script should be draggable
+Pass html/editing/dnd/dom/events.html :: element.ondragstart initial value
+Pass html/editing/dnd/dom/events.html :: element.ondrag must initial value
+Pass html/editing/dnd/dom/events.html :: element.ondragenter initial value
+Pass html/editing/dnd/dom/events.html :: element.ondragleave initial value
+Pass html/editing/dnd/dom/events.html :: element.ondragover initial value
+Pass html/editing/dnd/dom/events.html :: element.ondrop initial value
+Pass html/editing/dnd/dom/events.html :: element.ondragend initial value
+Pass html/editing/dnd/dom/specials.html :: ondragstart in window
+Pass html/editing/dnd/dom/specials.html :: ondrag in window
+Pass html/editing/dnd/dom/specials.html :: ondragover in window
+Pass html/editing/dnd/dom/specials.html :: ondragenter in window
+Pass html/editing/dnd/dom/specials.html :: ondragleave in window
+Pass html/editing/dnd/dom/specials.html :: ondrop in window
+Pass html/editing/dnd/dom/specials.html :: ondragend in window
+Pass html/editing/dnd/dom/specials.html :: ondragstart in document
+Pass html/editing/dnd/dom/specials.html :: ondrag in document
+Pass html/editing/dnd/dom/specials.html :: ondragover in document
+Pass html/editing/dnd/dom/specials.html :: ondragenter in document
+Pass html/editing/dnd/dom/specials.html :: ondragleave in document
+Pass html/editing/dnd/dom/specials.html :: ondrop in document
+Pass html/editing/dnd/dom/specials.html :: ondragend in document
+Pass html/editing/dnd/dom/specials.html :: ondragstart in HTMLElement
+Pass html/editing/dnd/dom/specials.html :: ondrag in HTMLElement
+Pass html/editing/dnd/dom/specials.html :: ondragover in HTMLElement
+Pass html/editing/dnd/dom/specials.html :: ondragenter in HTMLElement
+Pass html/editing/dnd/dom/specials.html :: ondragleave in HTMLElement
+Pass html/editing/dnd/dom/specials.html :: ondrop in HTMLElement
+Pass html/editing/dnd/dom/specials.html :: ondragend in HTMLElement
+Fail html/editing/dnd/events/dragenter-dragleave-related-target.html :: dragenter and dragleave events should set relatedTarget to the element being entered or exited
+  assert_not_equals: dragenter fired on zone A got disallowed value undefined
+Timeout html/editing/dnd/events/pointer-suppression.html :: html/editing/dnd/events/pointer-suppression.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 23873, 10323, 1562], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Pass html/editing/dnd/historical.html :: ondragexit must not be present on the GlobalEventHandlers locations
+Pass html/editing/dnd/interactiveelements/button_inside_draggable_element.html :: Draggable button should be draggable from border
+Pass html/editing/dnd/interactiveelements/button_inside_draggable_element.html :: Draggable button should be draggable from button text
+Fail html/editing/dnd/interactiveelements/contenteditable_inside_draggable_element.html :: Contenteditable inside draggable element should not be draggable from border
+  assert_false: dragstart should not fire expected false got true
+Fail html/editing/dnd/interactiveelements/contenteditable_inside_draggable_element.html :: Contenteditable inside draggable element should not be draggable while selecting text
+  assert_false: dragstart should not fire expected false got true
+Fail html/editing/dnd/interactiveelements/disabled_input_text_inside_draggable_element.html :: Disabled text input with inside draggable element should not be draggable from border
+  assert_false: dragstart should not fire expected false got true
+Fail html/editing/dnd/interactiveelements/disabled_input_text_inside_draggable_element.html :: Disabled text input with inside draggable element should not be draggable while attempting to select text
+  assert_false: dragstart should not fire expected false got true
+Pass html/editing/dnd/interactiveelements/draggable_button.html :: Button inside draggable element should be draggable from border
+Pass html/editing/dnd/interactiveelements/draggable_button.html :: Button inside draggable element should be draggable from button text
+Fail html/editing/dnd/interactiveelements/draggable_contenteditable.html :: Draggable contenteditable element should not be draggable from border
+  assert_false: dragstart should not fire expected false got true
+Fail html/editing/dnd/interactiveelements/draggable_contenteditable.html :: Draggable contenteditable element should not be draggable while selecting text
+  assert_false: dragstart should not fire expected false got true
+Fail html/editing/dnd/interactiveelements/draggable_disabled_input_text.html :: Disabled draggable text input should not be draggable from border
+  assert_false: dragstart should not fire expected false got true
+Fail html/editing/dnd/interactiveelements/draggable_disabled_input_text.html :: Disabled draggable text input should not be draggable while attempting to select text
+  assert_false: dragstart should not fire expected false got true
+Pass html/editing/dnd/interactiveelements/draggable_input_button.html :: Draggable input button should be draggable from border
+Pass html/editing/dnd/interactiveelements/draggable_input_button.html :: Draggable input button should be draggable from button text
+Pass html/editing/dnd/interactiveelements/draggable_input_image.html :: Wait for image load
+Pass html/editing/dnd/interactiveelements/draggable_input_image.html :: Draggable input image button should be draggable from border
+Timeout html/editing/dnd/interactiveelements/draggable_input_image.html :: html/editing/dnd/interactiveelements/draggable_input_image.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 23873, 2321], state={"loaded":true,"pending":1,"phase":4,"tests":3}, test_wait=false)
+Pass html/editing/dnd/interactiveelements/draggable_input_reset.html :: Draggable input reset button should be draggable from border
+Pass html/editing/dnd/interactiveelements/draggable_input_reset.html :: Draggable input reset button should be draggable from button text
+Pass html/editing/dnd/interactiveelements/draggable_input_submit.html :: Draggable input submit button should be draggable from border
+Pass html/editing/dnd/interactiveelements/draggable_input_submit.html :: Draggable input submit button should be draggable from button text
+Fail html/editing/dnd/interactiveelements/draggable_input_text.html :: Draggable input text should not be draggable from border
+  assert_false: dragstart should not fire expected false got true
+Fail html/editing/dnd/interactiveelements/draggable_input_text.html :: Draggable input text should not be draggable while attempting to select text
+  assert_false: dragstart should not fire expected false got true
+Fail html/editing/dnd/interactiveelements/draggable_readonly_input_text.html :: Readonly draggable input text should not be draggable from border
+  assert_false: dragstart should not fire expected false got true
+Fail html/editing/dnd/interactiveelements/draggable_readonly_input_text.html :: Readonly draggable input text should not be draggable while attempting to select text
+  assert_false: dragstart should not fire expected false got true
+Fail html/editing/dnd/interactiveelements/draggable_select.html :: Draggable select should not be draggable from border
+  assert_false: dragstart should not fire expected false got true
+Pass html/editing/dnd/interactiveelements/draggable_select.html :: Draggable select should not be draggable from select body
+Fail html/editing/dnd/interactiveelements/draggable_select_multiple.html :: Draggable select multiple input should not be draggable from border
+  assert_false: dragstart should not fire expected false got true
+Fail html/editing/dnd/interactiveelements/draggable_textarea.html :: Draggable textarea should not be draggable from border
+  assert_false: dragstart should not fire expected false got true
+Fail html/editing/dnd/interactiveelements/draggable_textarea.html :: Draggable textarea should not be draggable while attempting to select text
+  assert_false: dragstart should not fire expected false got true
+Pass html/editing/dnd/interactiveelements/input_button_inside_draggable_element.html :: Input button inside draggable element should be draggable from border
+Pass html/editing/dnd/interactiveelements/input_button_inside_draggable_element.html :: Input button inside draggable element should be draggable from button text
+Pass html/editing/dnd/interactiveelements/input_image_inside_draggable_element.html :: Wait for image load
+Pass html/editing/dnd/interactiveelements/input_image_inside_draggable_element.html :: Input image button inside draggable element should be draggable from border
+Timeout html/editing/dnd/interactiveelements/input_image_inside_draggable_element.html :: html/editing/dnd/interactiveelements/input_image_inside_draggable_element.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 23873, 2351], state={"loaded":true,"pending":1,"phase":4,"tests":3}, test_wait=false)
+Pass html/editing/dnd/interactiveelements/input_reset_inside_draggable_element.html :: Input reset button inside draggable element should be draggable from border
+Pass html/editing/dnd/interactiveelements/input_reset_inside_draggable_element.html :: Input reset button inside draggable element should be draggable from button text
+Pass html/editing/dnd/interactiveelements/input_submit_inside_draggable_element.html :: Input submit button inside draggable element should be draggable from border
+Pass html/editing/dnd/interactiveelements/input_submit_inside_draggable_element.html :: Input submit button inside draggable element should be draggable from button text
+Fail html/editing/dnd/interactiveelements/input_text_inside_draggable_element.html :: Input text inside draggable element should not be draggable border
+  assert_false: dragstart should not fire expected false got true
+Fail html/editing/dnd/interactiveelements/input_text_inside_draggable_element.html :: Draggable input text should not be draggable while attempting to select text
+  assert_false: dragstart should not fire expected false got true
+Fail html/editing/dnd/interactiveelements/readonly_input_text_inside_draggable_element.html :: Readonly input text inside draggable element should not be draggable
+  assert_false: dragstart should not fire expected false got true
+Fail html/editing/dnd/interactiveelements/readonly_input_text_inside_draggable_element.html :: Readonly input text inside draggable element should not be draggable while attempting to select text
+  assert_false: dragstart should not fire expected false got true
+Fail html/editing/dnd/interactiveelements/select_inside_draggable_element.html :: Select input inside draggable element should not be draggable from border
+  assert_false: dragstart should not fire expected false got true
+Pass html/editing/dnd/interactiveelements/select_inside_draggable_element.html :: Select input inside draggable element should not be draggable from select body
+Fail html/editing/dnd/interactiveelements/select_multiple_inside_draggable_element.html :: Select multiple input inside draggable element should not be draggable from border
+  assert_false: dragstart should not fire expected false got true
+Fail html/editing/dnd/interactiveelements/textarea_inside_draggable_element.html :: Textarea inside draggable element should not be draggable from border
+  assert_false: dragstart should not fire expected false got true
+Fail html/editing/dnd/interactiveelements/textarea_inside_draggable_element.html :: Textarea inside draggable element should not be draggable while attempting to select text
+  assert_false: dragstart should not fire expected false got true
+Timeout html/editing/dnd/js-file-fallback-text-only.html :: html/editing/dnd/js-file-fallback-text-only.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 23873, 2193], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Timeout html/editing/dnd/js-file-image-drag.html :: html/editing/dnd/js-file-image-drag.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 23873, 1825], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Fail html/editing/dnd/platform/mousedown-drag-select-input-display-change.html :: text selection drag should still work when mousedown a display change
+  assert_not_equals: selection shouldn't be started from the start got disallowed value 0
+Fail html/editing/dnd/platform/mousedown-drag-select-input-display-change.html :: text click after selecting some characters should collapse selection to start
+  assert_equals: <input> should be focused expected Element node <input value="XXXXXXXXXXXXXXXXXXXXX" onmousedown="this.st... but got Element node <body><input value="XXXXXXXXXXXXXXXXXXXXX" onmousedown="t...
+Fail html/editing/dnd/platform/mousedown-drag-select-input-display-change.html :: text click after selecting some characters should collapse selection to middle of the value
+  assert_equals: <input> should be focused expected Element node <input value="XXXXXXXXXXXXXXXXXXXXX" onmousedown="this.st... but got Element node <body><input value="XXXXXXXXXXXXXXXXXXXXX" onmousedown="t...
+Pass html/editing/dnd/platform/mousedown-move-inner-when-dragging-1.html :: dragstart should still fire when the mousedown event moves the inner element around
+Fail html/editing/dnd/platform/mousedown-move-inner-when-dragging-2.html :: dragstart should still fire when the mousedown event moves the container of the inner element around
+  promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'getElementById')"
+Pass html/editing/dnd/platform/pointerdown-add-display-none.html :: dragstart should still fire when the dragged element gets display:none in its pointerdown
+Pass html/editing/dnd/platform/pointerdown-add-overflow-hidden.html :: dragstart should still fire when the dragged element gets overflow:hidden in its pointerdown
+Pass html/editing/dnd/synthetic/001.html :: window.DragEvent should be exposed
+Pass html/editing/dnd/synthetic/001.html :: DragEvent should have all of the inherited init*Event methods
+Pass html/editing/dnd/synthetic/001.html :: initMouseEvent should not throw
+Pass html/editing/dnd/synthetic/001.html :: initUIEvent should not throw
+Pass html/editing/dnd/synthetic/001.html :: initEvent should not throw
+Pass html/editing/dnd/synthetic/001.html :: DragEvent constructor with null as the dataTransfer parameter should be able to fire the event
+Pass html/editing/dnd/synthetic/001.html :: DragEvent constructor with undefined as the dataTransfer parameter should be able to fire the event
+Pass html/editing/dnd/synthetic/001.html :: DragEvent constructor with custom object as the dataTransfer parameter should throw TypeError
+Pass html/editing/dnd/synthetic/001.html :: initMouseEvent should be able to fire the event
+Pass html/editing/dnd/synthetic/001.html :: initUIEvent should be able to fire the event
+Pass html/editing/dnd/synthetic/001.html :: initEvent should be able to fire the event
+Pass html/editing/dnd/synthetic/001.html :: DragEvent constructor with null as the dataTransfer parameter should give null as the dataTransfer
+Pass html/editing/dnd/synthetic/001.html :: DragEvent constructor with undefined as the dataTransfer parameter should give null as the dataTransfer
+Pass html/editing/dnd/synthetic/001.html :: initMouseEvent should give null as the dataTransfer
+Pass html/editing/dnd/synthetic/001.html :: initUIEvent should give null as the dataTransfer
+Pass html/editing/dnd/synthetic/001.html :: initEvent should give null as the dataTransfer
+Pass html/editing/dnd/the-draggable-attribute/draggable-enumerated-ascii-case-insensitive.html :: keyword false
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element a should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element abbr should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element acronym should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element address should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element applet should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element area should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element article should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element aside should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element attachment should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element audio should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element b should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element base should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element basefont should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element bdi should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element bdo should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element bgsound should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element big should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element blink should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element blockquote should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element body should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element br should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element button should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element canvas should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element caption should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element center should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element cite should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element code should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element col should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element colgroup should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element command should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element data should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element datalist should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element dd should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element del should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element details should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element dfn should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element dialog should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element dir should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element directory should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element div should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element dl should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element dt should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element em should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element embed should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element fieldset should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element figcaption should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element figure should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element font should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element foo-BAR should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element foo-bar should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element foo should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element footer should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element form should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element frame should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element frameset should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element h1 should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element h2 should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element h3 should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element h4 should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element h5 should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element h6 should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element head should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element header should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element hgroup should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element hr should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element html should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element i should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element iframe should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element image should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element img should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element input should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element ins should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element isindex should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element kbd should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element keygen should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element label should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element layer should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element legend should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element li should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element link should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element listing should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element main should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element map should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element mark should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element marquee should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element menu should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element meta should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element meter should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element mod should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element multicol should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element nav should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element nextid should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element nobr should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element noembed should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element noframes should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element nolayer should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element noscript should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element object should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element ol should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element optgroup should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element option should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element output should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element p should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element param should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element picture should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element plaintext should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element pre should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element progress should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element q should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element quasit should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element rb should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element rp should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element rt should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element rtc should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element ruby should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element s should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element samp should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element script should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element section should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element select should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element slot should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element small should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element source should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element spacer should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element span should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element strike should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element strong should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element style should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element sub should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element summary should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element sup should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element table should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element tbody should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element td should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element textarea should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element tfoot should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element th should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element thead should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element time should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element title should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element tr should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element track should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element tt should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element u should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element ul should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element var should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element video should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element wbr should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element xmp should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element xxx should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element å-bar should have draggable property
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element a draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element abbr draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element acronym draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element address draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element applet draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element area draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element article draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element aside draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element attachment draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element audio draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element b draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element base draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element basefont draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element bdi draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element bdo draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element bgsound draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element big draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element blink draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element blockquote draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element body draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element br draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element button draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element canvas draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element caption draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element center draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element cite draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element code draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element col draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element colgroup draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element command draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element data draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element datalist draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element dd draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element del draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element details draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element dfn draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element dialog draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element dir draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element directory draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element div draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element dl draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element dt draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element em draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element embed draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element fieldset draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element figcaption draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element figure draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element font draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element foo-BAR draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element foo-bar draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element foo draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element footer draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element form draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element frame draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element frameset draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element h1 draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element h2 draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element h3 draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element h4 draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element h5 draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element h6 draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element head draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element header draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element hgroup draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element hr draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element html draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element i draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element iframe draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element image draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element img draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element input draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element ins draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element isindex draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element kbd draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element keygen draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element label draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element layer draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element legend draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element li draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element link draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element listing draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element main draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element map draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element mark draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element marquee draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element menu draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element meta draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element meter draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element mod draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element multicol draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element nav draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element nextid draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element nobr draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element noembed draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element noframes draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element nolayer draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element noscript draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element object draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element ol draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element optgroup draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element option draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element output draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element p draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element param draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element picture draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element plaintext draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element pre draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element progress draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element q draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element quasit draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element rb draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element rp draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element rt draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element rtc draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element ruby draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element s draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element samp draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element script draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element section draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element select draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element slot draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element small draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element source draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element spacer draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element span draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element strike draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element strong draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element style draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element sub draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element summary draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element sup draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element table draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element tbody draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element td draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element textarea draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element tfoot draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element th draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element thead draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element time draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element title draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element tr draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element track draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element tt draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element u draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element ul draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element var draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element video draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element wbr draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element xmp draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element xxx draggable attribute test
+Pass html/editing/dnd/the-draggable-attribute/draggable_attribute.html :: Element å-bar draggable attribute test
+Pass html/editing/dnd/the-dropzone-attribute/dropzone_attribute.html :: div.dropzone should not be undefined if it's been set
+Pass html/editing/dnd/the-dropzone-attribute/dropzone_attribute.html :: div.dropzone should not be null
+Pass html/editing/dnd/the-dropzone-attribute/dropzone_attribute.html :: div dropzone idl attribute must reflect the content attribute of the same name
+Pass html/editing/dnd/the-dropzone-attribute/dropzone_attribute.html :: div dropzone content attribute is set to the literal value

@@ -834,7 +834,7 @@ impl TabManager {
         );
     }
 
-    /// 处理页面按下：异步派发 mousedown；命中可拖元素（`drag_source_eligible`）时武装
+    /// 处理页面按下：异步派发 mousedown；命中可拖源（`drag_source`）时武装
     /// 拖放会话并下发 `DragInput{Down}`（dnd-compat M3，仅多进程 peer 通道——worker 通道
     /// 由 WPT runner 注入承担）。返回是否武装（宿主据此抑制 scroll-drag 手势创建）。
     pub fn dispatch_page_mousedown(&mut self, tab_id: TabId, doc_x: f32, doc_y: f32) -> bool {
@@ -858,7 +858,7 @@ impl TabManager {
                 selection.map(|offset| (offset, offset)),
                 None,
             );
-            let armed = hit.drag_source_eligible && self.process_backend.is_some();
+            let armed = hit.drag_source.is_some() && self.process_backend.is_some();
             if armed {
                 self.drag_sessions.insert(tab_id, (doc_x, doc_y));
                 self.send_drag_input(tab_id, DragInputPhase::Down, doc_x, doc_y);
@@ -1203,7 +1203,7 @@ mod ime_tests {
             y: 25.0,
             width: 240.0,
             height: 80.0,
-            drag_source_eligible: false,
+            drag_source: None,
         };
         assert_eq!(manager.update_ime_target_rect(tab_id, 30.0, 30.0, &hit), Some(3));
         assert_eq!(manager.page_ime_rect(tab_id), Some((31.5, 27.0, 1.0, 18.0)));
@@ -1237,7 +1237,7 @@ mod ime_tests {
             y: 0.0,
             width: 20.0,
             height: 10.0,
-            drag_source_eligible: false,
+            drag_source: None,
         };
 
         let target = manager.page_target_for_hit(tab_id, &hit).expect("target");

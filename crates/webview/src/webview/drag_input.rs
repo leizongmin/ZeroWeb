@@ -6,7 +6,7 @@
 //! - 外部嵌入宿主经 [`WebView::apply_drag_input`]（本模块胶水）。
 //!
 //! 事件序（spec https://html.spec.whatwg.org/multipage/dnd.html#drag-and-drop-processing-model）：
-//! mousedown 命中可拖元素（宿主按 `ElementHit::drag_source_eligible` 仲裁后 `arm`）→ 首个超过
+//! mousedown 命中可拖源（宿主按 `ElementHit::drag_source` 仲裁后 `arm`）→ 首个超过
 //! 阈值的 move 派 `dragstart`（cancelable）→ 未取消则同批派 `drag` + 首目标 `dragenter`/`dragover`
 //! → 后续 move 派 `dragover`（目标变化时前置 `dragleave`/`dragenter`）→ up 时按最近一次
 //! dragenter/over 是否被取消决定 `drop`（cancelable）或 `dragleave`，两分支都收尾 `dragend`
@@ -28,7 +28,7 @@ pub const DRAG_START_THRESHOLD_PX: f32 = 2.0;
 /// 本身走既有鼠标管线，避免双派）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DragPointerPhase {
-    /// mousedown——命中 `drag_source_eligible` 元素时武装会话。
+    /// mousedown——命中可拖源（`ElementHit::drag_source`）时武装会话。
     Down,
     /// mousemove。
     Move,
@@ -119,7 +119,7 @@ impl DragInputState {
         !matches!(self.inner, DragInner::Idle)
     }
 
-    /// mousedown 武装会话（宿主已按 `drag_source_eligible` 仲裁；仅 Idle 态生效）。
+    /// mousedown 武装会话（宿主已按 `drag_source` 仲裁；仅 Idle 态生效）。
     pub fn arm(&mut self, source: String, x: f32, y: f32) {
         if self.is_active() {
             return; // 防御：会话进行中不重武装（browser 仲裁保证不发生）
@@ -442,13 +442,17 @@ pub struct DragApplyReport {
     pub consumed: bool,
     /// 最后派发的可取消事件是否被页面取消（dragstart 取消 = 会话未启动；dragover 取消 = 目标拒绝）。
     pub prevented: bool,
+    /// 拖放会话是否处于拖拽中（dragstart 接受后至 dragend 前）——此窗口真实浏览器
+    /// 抑制鼠标/指针事件面（mousemove/mouseup 被 drop/dragend 替代）；runner 注入与
+    /// 宿主仲裁据此并行维护鼠标面（dnd-compat M3 RFC §5.6）。
+    pub session_active: bool,
 }
 
 impl WebView {
     /// 拖放输入单入口：命中查询 → 状态机推进 → 按序派发计划（`dispatch_dom_event_inner`
     /// 同一宿主通道，坐标/会话 id 经 detail 透传）→ 回填取消判定直至批空。
     ///
-    /// 命中：`Down` 按 [`zero_engine::ElementHit::drag_source_eligible`] 仲裁武装；
+    /// 命中：`Down` 按 [`zero_engine::ElementHit::drag_source`]（最近可拖祖先或自身）仲裁武装；
     /// `Move`/`Up` 以命中选择器为当前目标；hit-test 缓存未注入 / 无命中 → `None`（悬空）。
     /// `Cancel` 不查命中（Esc 取消当前会话）。
     pub fn apply_drag_input(
@@ -462,8 +466,9 @@ impl WebView {
         let mut state = std::mem::take(&mut self.drag_input);
         let mut batch = match phase {
             DragPointerPhase::Down => {
-                if let Some(h) = hit.as_ref().filter(|h| h.drag_source_eligible) {
-                    state.arm(h.selector.clone(), x, y);
+                // 武装源 = 最近可拖祖先或自身的选择器（dragstart 派至该源而非命中元素）。
+                if let Some(source) = hit.as_ref().and_then(|h| h.drag_source.clone()) {
+                    state.arm(source, x, y);
                 }
                 Vec::new()
             }
@@ -495,7 +500,12 @@ impl WebView {
             batch = state.report_default_prevented(last_prevented);
         }
         self.drag_input = state;
-        Ok(DragApplyReport { consumed, prevented })
+        let session_active = matches!(self.drag_input.inner, DragInner::Dragging { .. });
+        Ok(DragApplyReport {
+            consumed,
+            prevented,
+            session_active,
+        })
     }
 }
 

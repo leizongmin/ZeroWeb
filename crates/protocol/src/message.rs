@@ -2468,7 +2468,7 @@ pub struct DispatchDomEventResultParams {
 
 /// 拖放输入相位（dnd-compat M3）。
 ///
-/// `Down` 供 renderer 侧状态机按命中 `drag_source_eligible` 仲裁武装；`Move`/`Up` 驱动
+/// `Down` 供 renderer 侧状态机按命中 `drag_source`（最近可拖祖先或自身）仲裁武装；`Move`/`Up` 驱动
 /// drag* 事件序（HTML dnd processing model）；`Cancel` = Esc 等宿主取消。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DragInputPhase {

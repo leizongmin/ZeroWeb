@@ -7700,6 +7700,18 @@ fn wpt_status_text(status: u16) -> &'static str {
     }
 }
 
+/// testdriver Actions 指针步注入模式（dnd-compat M3）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PointerStepInjection {
+    /// uievents/pointerevents 通道：shim 脚本合成（`script_pointer_*`，仅事件面）。
+    /// 两套注入模式并存的取舍见 dnd-compat M3 RFC §5.6（dnd 语料走与桌面相同的
+    /// 真实状态机，非假面；收敛不在本期）。
+    ShimSynthesis,
+    /// dnd 通道：宿主拖放状态机真管道（`WebView::apply_drag_input`——drag* 事件序
+    /// + DataTransfer 会话与桌面浏览器同一实现）。
+    DragStateMachine,
+}
+
 pub(crate) fn run_testharness_html_inner(
     wpt_root: &Path,
     case_name: &str,
@@ -7707,6 +7719,28 @@ pub(crate) fn run_testharness_html_inner(
     harness_source: &str,
     inline_extras: &[(&str, &str)],
     timeout: Duration,
+) -> Vec<HarnessSubtestResult> {
+    run_testharness_html_with_pointer_injection(
+        wpt_root,
+        case_name,
+        source,
+        harness_source,
+        inline_extras,
+        timeout,
+        PointerStepInjection::ShimSynthesis,
+    )
+}
+
+/// [`run_testharness_html_inner`] 的注入模式参数化形态（dnd 通道传
+/// [`PointerStepInjection::DragStateMachine`]，其余通道经包装走默认）。
+pub(crate) fn run_testharness_html_with_pointer_injection(
+    wpt_root: &Path,
+    case_name: &str,
+    source: &str,
+    harness_source: &str,
+    inline_extras: &[(&str, &str)],
+    timeout: Duration,
+    pointer_injection: PointerStepInjection,
 ) -> Vec<HarnessSubtestResult> {
     let unsupported = unsupported_testdriver_dependencies(source);
     if !unsupported.is_empty() {
@@ -8080,6 +8114,10 @@ pub(crate) fn run_testharness_html_inner(
     // uievents-compat 尾簇 8：最后已知指针位（pointer 命令 resolve 后记录）——
     // mutation 驱动悬停重结算的命中测试输入。
     let mut td_last_pointer: Option<(f32, f32)> = None;
+    // dnd-compat M3：拖放会话 Dragging 期间真实浏览器抑制鼠标/指针事件面
+    //（dragstart 接受至 dragend；dragstart 取消 = 鼠标流恢复正常）——跨命令持续，
+    // 与 td_last_pointer 同生命周期。
+    let mut td_drag_mouse_suppressed = false;
     // M3 扩批 XVI：文件字节缓存（同 src 只读盘一次；注册表 contains_source 幂等）。
     let mut media_byte_cache: std::collections::HashMap<String, std::rc::Rc<Vec<u8>>> =
         std::collections::HashMap::new();
@@ -8216,7 +8254,14 @@ pub(crate) fn run_testharness_html_inner(
         last_state = probe.state;
         last_test_wait = probe.test_wait;
         for command in probe.commands {
-            let result = apply_testdriver_command(&mut webview, &command, &mut td_refresh_ver, &mut td_last_pointer);
+            let result = apply_testdriver_command(
+                &mut webview,
+                &command,
+                &mut td_refresh_ver,
+                &mut td_last_pointer,
+                pointer_injection,
+                &mut td_drag_mouse_suppressed,
+            );
             // R347：目标未解析（元素尚未 materialize）→ 重新入队下帧重试。
             let unresolved = result.as_deref().is_some_and(|message| {
                 message.starts_with("testdriver target not found")
@@ -9062,6 +9107,8 @@ fn apply_testdriver_command(
     command: &TestdriverCommand,
     td_refresh_ver: &mut u64,
     last_pointer: &mut Option<(f32, f32)>,
+    pointer_injection: PointerStepInjection,
+    drag_mouse_suppressed: &mut bool,
 ) -> Option<String> {
     // R145：selector 延迟解析——enqueue 时 mutation 未 apply（正置表空），出队时
     //（跨 turn）经 stub 的 `__zw_td_selector` 现场解析（apply 已 merge handle→selector）。
@@ -9108,11 +9155,25 @@ fn apply_testdriver_command(
             let off_y = parts.next().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
             let pointer_type = parts.next().unwrap_or("mouse").to_string();
             let _ = pointer_type;
-            mut_hover_settle_if_dirty(webview, last_pointer, td_refresh_ver);
+            // dnd-compat M3：真管道注入——鼠标/指针事件面（shim 合成）与宿主拖放
+            // 状态机（`apply_drag_input`，与桌面同一实现）并行喂入。dragstart 接受后
+            // （Dragging）真实浏览器抑制鼠标/指针事件面：本步及后续 move/up 不再派
+            // mousemove/pointermove；dragstart 取消 = 鼠标流恢复正常（自动化注入语义）。
+            let drag_suppress = pointer_injection == PointerStepInjection::DragStateMachine && *drag_mouse_suppressed;
+            if !drag_suppress {
+                mut_hover_settle_if_dirty(webview, last_pointer, td_refresh_ver);
+            }
             let (hit_sel, px, py) = resolve_pointer_target(webview, &selector, off_x, off_y, absolute, td_refresh_ver);
             *last_pointer = Some((px, py));
-            let script = zero_engine::script_pointer_move(&hit_sel, px, py);
-            let _ = webview.execute_script(&script);
+            if !drag_suppress {
+                let script = zero_engine::script_pointer_move(&hit_sel, px, py);
+                let _ = webview.execute_script(&script);
+            }
+            if pointer_injection == PointerStepInjection::DragStateMachine
+                && let Ok(report) = webview.apply_drag_input(zero_webview::DragPointerPhase::Move, px, py)
+            {
+                *drag_mouse_suppressed = report.session_active;
+            }
             None
         }
         "click" => {
@@ -9166,6 +9227,12 @@ fn apply_testdriver_command(
             let _ = webview.execute_script(&focus_script);
             let script = zero_engine::script_pointer_down_sequence(&hit_sel, px, py, &pointer_type, button);
             let _ = webview.execute_script(&script);
+            // dnd-compat M3：down 步并行武装拖放会话（drag_source_eligible 命中仲裁）；
+            // 新按下重置鼠标面抑制（dragstart 未重判）。
+            if pointer_injection == PointerStepInjection::DragStateMachine {
+                *drag_mouse_suppressed = false;
+                let _ = webview.apply_drag_input(zero_webview::DragPointerPhase::Down, px, py);
+            }
             None
         }
         // uievents-compat M3：Actions up 步——text =
@@ -9189,9 +9256,20 @@ fn apply_testdriver_command(
             let off_y = parts.next().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
             let pointer_type = parts.next().unwrap_or("mouse").to_string();
             let button = parts.next().and_then(|v| v.parse::<i16>().ok()).unwrap_or(0);
-            mut_hover_settle_if_dirty(webview, last_pointer, td_refresh_ver);
+            // dnd-compat M3：Dragging 中释放 → drop/dragend（或 dragleave+dragend）
+            // 替代鼠标事件面；未拖拽释放（未武装/dragstart 已取消）→ mouseup 面正常
+            // 派发 + 状态机安静清武装（自动化注入语义：两种输入路径并行）。
+            let drag_suppress = pointer_injection == PointerStepInjection::DragStateMachine && *drag_mouse_suppressed;
+            if !drag_suppress {
+                mut_hover_settle_if_dirty(webview, last_pointer, td_refresh_ver);
+            }
             let (hit_sel, px, py) = resolve_pointer_target(webview, &selector, off_x, off_y, absolute, td_refresh_ver);
             *last_pointer = Some((px, py));
+            if drag_suppress {
+                let _ = webview.apply_drag_input(zero_webview::DragPointerPhase::Up, px, py);
+                *drag_mouse_suppressed = false;
+                return None;
+            }
             let script = zero_engine::script_pointer_up_sequence(
                 &hit_sel,
                 &down_selector,
@@ -9202,6 +9280,9 @@ fn apply_testdriver_command(
                 &ancestor_chain,
             );
             let _ = webview.execute_script(&script);
+            if pointer_injection == PointerStepInjection::DragStateMachine {
+                let _ = webview.apply_drag_input(zero_webview::DragPointerPhase::Up, px, py);
+            }
             None
         }
         // R3254-K2（keyboard goal M1 切片 2，2026-09-07）：Actions 键盘链命令——

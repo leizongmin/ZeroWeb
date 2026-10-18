@@ -32,16 +32,23 @@
 //!   指针链驱动真实拖放——按内容规则排除（M3 门控面，约束 2「不预建交互管线
 //!   占位」）。
 
-use crate::testharness::{HarnessStatus, HarnessSubtestResult, corpus_case_timeout, run_testharness_html_inner};
+use crate::testharness::{
+    HarnessStatus, HarnessSubtestResult, PointerStepInjection, corpus_case_timeout,
+    run_testharness_html_with_pointer_injection,
+};
 use std::path::Path;
 
 /// dnd corpus 扫描子目录（可执行面 + 三 interface 目录供 skip 记账；helper
-/// 目录 `resources/` 与交互面目录不进扫描面）。
+/// 目录 `resources/` 不进扫描面。dnd-compat M3：`interactiveelements`/`platform`/
+/// `events` 三交互面目录进入扫描面——Actions 指针链改走宿主拖放状态机真管道）。
 pub const DND_TEST_SUBDIRS: &[&str] = &[
     "html/editing/dnd",
     "html/editing/dnd/dom",
     "html/editing/dnd/synthetic",
     "html/editing/dnd/datastore",
+    "html/editing/dnd/interactiveelements",
+    "html/editing/dnd/platform",
+    "html/editing/dnd/events",
     "html/editing/dnd/the-datatransfer-interface",
     "html/editing/dnd/the-datatransferitem-interface",
     "html/editing/dnd/the-dragevent-interface",
@@ -64,18 +71,16 @@ const INTERFACES_JS_SRC: &str = "/html/semantics/interfaces.js";
 /// - 无 testharness 引用（IE testcenter 遗产自校验页——PASS/FAIL 文案由真实拖拽
 ///   落 DOM；datastore/events/dropzone 编号案 + helper-drop-box-here.xhtml 形态；
 ///   本通道只扫 .html，此规则兜住 datastore/053~058 无 harness 引用的 .html）
-/// - 内容标记 `test_driver.Actions`（指针链拖拽输入注入——host drag-input 管线
-///   M3 用户门控面，goal 约束 2 不预建占位）：js-file-fallback-text-only、
-///   js-file-image-drag
+///
+/// dnd-compat M3：`test_driver.Actions` 内容排除已移除——Actions 指针链改走
+/// 宿主拖放状态机真管道（`PointerStepInjection::DragStateMachine`），语料驱动
+/// 与桌面同源；部分案可能仍因其他 testdriver API 或上游红被记 skip/fail，实跑落账。
 pub(crate) fn dnd_case_skipped(relative: &str, source: &str) -> bool {
     let name = relative.rsplit('/').next().unwrap_or(relative);
     if name.contains("-manual.") {
         return true;
     }
     if !source.contains("testharness.js") {
-        return true;
-    }
-    if source.contains("test_driver.Actions") {
         return true;
     }
     false
@@ -134,13 +139,14 @@ pub fn run_dnd_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<
             } else {
                 Vec::new()
             };
-            let results = run_testharness_html_inner(
+            let results = run_testharness_html_with_pointer_injection(
                 wpt_root,
                 &relative,
                 &source,
                 &harness_source,
                 &extras,
                 corpus_case_timeout(),
+                PointerStepInjection::DragStateMachine,
             );
             cases.push((relative, results));
         }
