@@ -2,41 +2,46 @@
 
 **版本**: v2.0
 **日期**: 2026-10-18（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 9 收口（selectedness/selectedIndex 语义 R3909 +34P），下一步 forms 域大簇归因切片
+**状态**: Active——M2 切片 10 收口（form 提交 construct-entry-list 对齐 + dialog 提交分支 R3910 +12P），下一步 firing submission events flag 簇
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-18 M2 切片 9）**：selectedness/selectedIndex 语义
-> （R3909）——读侧三层模型（R3908/R3908b）补齐**写侧触发点**与真态读径：
-> selectedness setting algorithm（互斥按 Chromium「受影响者胜」affKey，
-> 非 spec 列表序 last-wins；无选中 size 1 回落首个非 disabled）；
-> ask-for-a-reset 家族（`_mo_notify` childList 汇流钩——插入步批内逐 option
-> 依序各跑、innerHTML 直写落容器级合流、Blink 重回落 clean 让位/dirty 保持）；
-> selected 属性变更步两半钩（dirtiness false 时跟随增删）；selectedIndex
-> setter（不跑 setting、可全不选；`options.selectedIndex=` 同径）；
-> select.value setter 双形态统一写 JS 真态（旧 `!handle && _isTag` 双重排除
-> 丢整条写面）；form.reset select 复位算法；select.remove(n)/add 祖先检查
-> + add 走元素代理；select value-missing 约束校验（placeholder label option
-> 四条件）；Option() 构造器（属性只随 defaultSelected 参 + clean 层显式
-> 初始 selectedness）。读侧 selectedIndex/value/selectedView 全改 JS 真态
-> （宿主读短路移除），回落仅限 pristine 且 size 1 跳 disabled。
-> part59 契约 12 测（W1–W12）；part11 R2999 两处期望按 R3909 行为修正。
-> forms 3569→**3602P**；九域 4531→**4565P**（4565/7412 = **61.59%**），
-> 对 s8 账本逐 subtest diff **净 +34P**（select-value-selectedOption 8、
-> selected-index 7、select-validity 6、ask-for-reset 3、constructor 3、
-> add 2、remove 2、validity.tentative 1、option-disabled-optgroup-wrapper 1
-> 联带、contextmenu-historical 1 非因果联带同 s7 runner 非确定性挂账），
-> **回归 0**、新增/消失 0；对 s6 基线同为零回归。zero-engine --lib 3138
-> 全过、make test 全腿绿、clippy/fmt 过、零新增依赖。账本见
-> [evidence/2026-10-18-m2s9-r3909.md](html-semantics-compat/evidence/2026-10-18-m2s9-r3909.md)。
-> **卡点**：无阻塞。**下一步**：forms 域大簇归因切片——form-submission
-> encoding ~255F（提交编码/charset 面）、label clicks ~80F（激活行为）、
-> form-autocomplete ~66F、meter ~48F 依归因排序；存量小挂账：option.form
-> owner 1F、option-text-setter 1F。**独立挂账**：通用 replaceChild sel 形
-> oldChild 落尾缺口（remove+append 序，zz-probe2/3 三源实证）；
-> part42 t8g 墙钟钉 <2000ms 在 make test clippy 并行负载下边缘越限一次
-> （2.33s，隔离 0.49s/单跑套件绿，HEAD 同测同款边缘——非本切片归因，
-> 观察账）。
+> **▶ 当前状态（2026-10-18 M2 切片 10）**：form 提交 construct-entry-list
+> 对齐 + method=dialog 分支（R3910，切片 9 后 forms 大簇归因的 3 个引擎
+> 可修簇）——提交路径补 spec 顺序：constructing entry list flag
+> （`__zwFormDataConstructing` 与 part02 `new FormData(form)` 共用同
+> flag）submit 入口早退（先于 submit 事件派发）、条目构造窗口置位、
+> formdata 派发 finally 清位；formdata 事件以共享条目存储派发
+> （`fd._p = entry list`，handler 对 `e.formData` 增删直接改写提交条目）；
+> action 解析自函数头移至 formdata 派发与 dialog 分支之后（旧位序使
+> `new URL('','about:blank')` 失败时在条目构造前静默 return，丢 formdata
+> 面与 dialog 面）。method=dialog 分支落地：无祖先 dialog → return；
+> image 提交者 selected coordinates "x,y"（`_zwImgSelCoords`，非指针激活
+> 0,0）；submit 提交者 optional value（value 属性 present 才设含空串，
+> 缺失不改 returnValue）；`_zwDialogClose(subject, result)`。
+> close-the-dialog 步 1：无 open 属性早退 return false（不设 returnValue
+> 不派 close）——dialog close()/requestClose()/Esc/提交四处共享路径。
+> SubmitEvent/FormDataEvent 构造器 WebIDL 化（无 new TypeError、type
+> 必填、formData required 且须 FormData 实例、submitter
+> `(Element or null)`）。part59 契约 6 测。forms 3602→**3605P**、
+> dialog-element 38→**47P**、九域 4565→**4577P**（4577/7377 =
+> **62.05%**；总数 7412→7377 系 Timeout 面变化），对 s9 账本逐 subtest
+> diff **净 +12P、回归 0**、新增/消失 2/37（form-double-submit-
+> requestsubmit 36F→文件级 Timeout、area-coords 子测名换行重渲染，
+> 均零 P 差异）。zero-engine --lib 3169 全过、make test 全腿绿
+> （browser bin 腿 2 案环境归因，:102 复跑 658P/0F）、clippy/fmt 过、
+> 零新增依赖。账本见
+> [evidence/2026-10-18-m2s10-r3910.md](html-semantics-compat/evidence/2026-10-18-m2s10-r3910.md)。
+> **卡点**：无阻塞。**已知面变化（挂账）**：formdata 按 spec 派发后
+> form-double-submit-requestsubmit 36F 转 Timeout（断言过后等静态 runner
+> 不存在的 iframe 导航），归 navigation-compat M3 基建门控；
+> submit-dialog-close-event 文件级挂起维持 s9 形态（async_test 步进
+> 交互，独立排查）。**下一步**：firing submission events flag 簇
+> （form-submission-algorithm t2-t4 invalid/submit 重入语义）+ image
+> 按钮坐标 offsetX 面（dialog-form-submission t5）+
+> dialog-return-value returnValue setter String 强转 1F；存量小挂账：
+> option.form 1F、option-text-setter 1F、replaceChild sel 形落尾、
+> t8g 观察账。
 
 
 
@@ -118,6 +123,21 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-18 M2 切片 10**：form 提交 construct-entry-list 对齐 + dialog
+  提交分支（R3910）——constructing entry list flag 共享（submit 入口
+  早退先于 submit 事件、构造窗口置位/finally 清位）、formdata 事件共享
+  条目存储派发（handler 增删改写提交条目）、action 解析按 spec 顺序后移
+  （旧位序丢 formdata/dialog 面）；method=dialog 分支（无祖先 return、
+  image 坐标、optional value、_zwDialogClose）；close-the-dialog 步 1
+  无 open 早退（四处共享路径）；SubmitEvent/FormDataEvent 构造器
+  WebIDL 化。part59 契约 6 测。forms 3602→3605P、dialog-element
+  38→47P、九域 4565→4577P（62.05%），对 s9 账本逐 subtest diff 净
+  +12P、回归 0。zero-engine --lib 3169 全过、make test 全腿绿
+  （browser 腿 :102 复跑）、clippy/fmt 过、零新增依赖。挂账：
+  form-double-submit-requestsubmit 36F→Timeout（iframe 导航基建，归
+  navigation-compat M3）、submit-dialog-close-event 挂起维持、
+  firing submission events flag（t2-t4）、image 坐标 offsetX 面（t5）、
+  dialog-return-value returnValue setter String 强转 1F。
 - **2026-10-18 M2 切片 9**：selectedness/selectedIndex 语义（R3909）——
   selectedness setting（受影响者胜 affKey + size 1 非 disabled 回落）、
   ask-for-a-reset 汇流钩（`_mo_notify` childList 触发、批插依序、innerHTML

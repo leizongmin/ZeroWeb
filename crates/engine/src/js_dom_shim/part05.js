@@ -13354,10 +13354,28 @@
 
   // net-api M4-S19：FormDataEvent（HTML spec §the-formdataevent-interface）——'formdata'
   // 事件载体（new FormData(form) / form 提交构条目时派发；e.formData 可变）。
+  // R3910：WebIDL 构造器语义补齐（WPT form-submission-0/FormDataEvent.window.js
+  // 「Failing FormDataEvent constructor」断言面）——无 new TypeError；type 必填；
+  // init dict 必须为对象（null/undefined/原始值 TypeError）；FormDataEventInit.formData
+  // required 且非空（nullable）接口类型——缺省/null/undefined/非 FormData 均 TypeError。
+  // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#the-formdataevent-interface
   function FormDataEvent(type, options) {
+    if (!(this instanceof FormDataEvent)) {
+      throw new TypeError("Failed to construct 'FormDataEvent': Please use the 'new' operator, this DOM object constructor cannot be called as a function.");
+    }
+    if (arguments.length < 1) {
+      throw new TypeError("Failed to construct 'FormDataEvent': 1 argument required, but only 0 present.");
+    }
+    if (arguments.length < 2 || options === null || typeof options !== 'object') {
+      throw new TypeError("Failed to construct 'FormDataEvent': The provided value is not of type 'FormDataEventInit'.");
+    }
+    var _fdVal = options.formData;
+    if (!(_fdVal instanceof globalThis.FormData)) {
+      throw new TypeError("Failed to construct 'FormDataEvent': Failed to read the 'formData' property from 'FormDataEventInit': The provided value is not of type 'FormData'.");
+    }
     var ev = _makeEvent(type, options);
     Object.setPrototypeOf(ev, FormDataEvent.prototype);
-    ev.formData = (options && options.formData) ? options.formData : new globalThis.FormData();
+    ev.formData = _fdVal;
     return ev;
   }
   FormDataEvent.prototype = Object.create(Event.prototype);
@@ -14709,10 +14727,27 @@
   // SubmitEvent——submit 事件（form 提交，R2984）。extends Event，加 `submitter`（触发提交的按钮 proxy / null）。
   // host submit 派发经 __zw_dispatch_event(form_sel, 'submit', {submitter: btn_sel})；submitter 缺省 null
   //（Enter 隐式提交）。表单多 submit 按钮场景（"保存"/"删除"同 form）读 event.submitter 判激活按钮高频。
+  // R3910：WebIDL 构造器语义补齐（WPT form-submission-0/SubmitEvent.window.js
+  // 「Failing SubmitEvent constructor」断言面）——无 new TypeError；type 必填；
+  // submitter 为 `(Element or null)`——非 null/undefined 且非元素 proxy（tagName
+  // 字符串面，requestSubmit submitter 校验同型）→ TypeError；init dict 可选（null/
+  // undefined 合法，submitter 缺省 null）。
+  // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#submitevent
   function SubmitEvent(type, options) {
+    if (!(this instanceof SubmitEvent)) {
+      throw new TypeError("Failed to construct 'SubmitEvent': Please use the 'new' operator, this DOM object constructor cannot be called as a function.");
+    }
+    if (arguments.length < 1) {
+      throw new TypeError("Failed to construct 'SubmitEvent': 1 argument required, but only 0 present.");
+    }
+    var _subVal = (options && options.submitter !== undefined) ? options.submitter : null;
+    if (_subVal !== null
+        && !(typeof _subVal === 'object' && typeof _subVal.tagName === 'string' && _subVal.tagName !== '')) {
+      throw new TypeError("Failed to construct 'SubmitEvent': Failed to read the 'submitter' property from 'SubmitEventInit': The provided value is not of type '(Element or null)'.");
+    }
     var ev = _makeEvent(type, options);
     Object.setPrototypeOf(ev, SubmitEvent.prototype);
-    ev.submitter = (options && options.submitter) || null;
+    ev.submitter = _subVal;
     return ev;
   }
   SubmitEvent.prototype = Object.create(Event.prototype);

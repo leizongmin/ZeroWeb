@@ -8874,6 +8874,14 @@
         // 初始化一次；此处若 var 声明会被 get trap 每属性访问重置）。
         function _zwRunFormSubmit(fKey, fSel, fHandle, submitter) {
           if (_zwSubmitBusy) return;
+          // R3910：spec submit 步 2——constructing entry list flag true → return（先于
+          // submit 事件派发；formdata handler / new FormData(form) handler 内的重入
+          // requestSubmit/click 同短路）。form.submit() 通道经 _zwFormSubmitNavigate
+          // 顶部同 flag 检查覆盖。
+          try {
+            var _rsFlEl = _makeProxy(fSel, fHandle);
+            if (_rsFlEl && _rsFlEl.__zwFormDataConstructing) return;
+          } catch (_eRsFl) {}
           _zwSubmitBusy = true;
           try {
             // spec：form 未连入文档（detached createElement / removed 子树）→ 不提交
@@ -8945,23 +8953,16 @@
         // list 导航（共享 helper 既有局限，二轮 review note）。
         function _zwFormSubmitNavigate(fSel, fHandle, submitter) {
           try {
-            // M2-S4J：__zw_request_navigate 缺失不再前置早退（navigate 事件/intercept 面
-            // 不依赖 host 回调——WPT navigate-form 族在 testharness 沙箱无该回调时仍须
-            // 派发；host 传输仅在默认分支 typeof-guard）。
-            // net-api M5-S7：提交导航基 = 文档基 URL（spec form submission algorithm
-            // 对 document base URL mutate action URL）。
-            var _base = (typeof globalThis._zwDocBaseURL === 'function')
-              ? globalThis._zwDocBaseURL()
-              : String(globalThis.location.href || 'about:blank');
-            // ① action：submitter formaction > form action 属性 > 文档地址（spec：无
-            // action 属性 → 文档地址；空串 resolve 即 base）。
-            var _actionRaw = null;
-            try { if (submitter) _actionRaw = submitter.getAttribute('formaction'); } catch (_eA1) {}
-            if (_actionRaw == null || _actionRaw === '') {
-              _actionRaw = fHandle ? __zw_get_attr_handle(fHandle, 'action') : __zw_get_attr(fSel, 'action');
-            }
-            var _u = null;
-            try { _u = new URL(_actionRaw == null ? '' : String(_actionRaw), _base); } catch (_eA2) { return; }
+            // R3910：spec submit 步 2 / construct-entry-list 步 1——constructing entry
+            // list flag true → return（construct-entry-list，
+            // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-entry-list）。
+            // flag 与 part02 new FormData(form) 共用 __zwFormDataConstructing（同 spec
+            // flag）：formdata handler 内 form.submit() 短路（form-submission-algorithm
+            // t1），handler 内 new FormData(form) 抛 InvalidStateError（既有 ctor 面）。
+            try {
+              var _flEl = _makeProxy(fSel, fHandle);
+              if (_flEl && _flEl.__zwFormDataConstructing) return;
+            } catch (_eFl0) {}
             // ② method：submitter formmethod > form method 属性 > GET（大小写不敏感）。
             var _method = '';
             try { if (submitter) _method = String(submitter.getAttribute('formmethod') || ''); } catch (_eM1) {}
@@ -8972,9 +8973,15 @@
             // spec §4.10.22 步骤 4-7：method 归一——get→GET；非 post/dialog（含缺失、
             // 未知值）→ 默认 GET。M2-S4J：POST 入面（navigate 事件 formData 非 null 面——
             // WPT navigate-form / -userInitiated；host 传输无 method/body 面仍是 documented
-            // 边界——非拦截 POST 的 host 导航近似同 URL GET）。dialog 排除维持。
-            if (_method === 'dialog') return;
+            // 边界——非拦截 POST 的 host 导航近似同 URL GET）。dialog 分支移至条目构造 +
+            // formdata 派发之后（R3910——spec 顺序：entry list / formdata 先于 dialog
+            // 分支，formdata handler 可先于关闭改写条目或关闭 dialog）。
             var _isPost = (_method === 'post');
+            // R3910：spec construct-entry-list 步 2——置位 constructing entry list flag
+            //（条目构造 + formdata 派发窗口内重入面短路），窗口尾 finally 清位。
+            var _flForm = null;
+            try { _flForm = _makeProxy(fSel, fHandle); } catch (_eFl1) { _flForm = null; }
+            try { if (_flForm) _flForm.__zwFormDataConstructing = true; } catch (_eFl2) {}
             // ③ entry list（tree order，_formControls；spec §4.10.22.2 子集）。
             var _ctrls = _formControls(fSel);
             var _pairs = [];
@@ -9073,7 +9080,82 @@
                 }
               }
             } catch (_eImg) {}
-            // ④ urlencoded 序列化（spec serialize urlencoded：换行归一 \r\n → 百分号编码 →
+            // R3910：spec construct-entry-list 尾——formdata 事件派发（entry list 与
+            // FormData 共享存储：handler 对 e.formData 的增删直接改写 _pairs，对后续
+            // 提交编码可见——spec「Return a clone of entry list」的克隆发生在 fire 之后）；
+            // finally 清 constructing entry list flag。
+            if (_flForm) {
+              try {
+                var _fdEv = new FormData();
+                _fdEv._p = _pairs;
+                _dispatchWithBubble(_elKey(fSel, fHandle), fSel, fHandle,
+                  new FormDataEvent('formdata', { formData: _fdEv, bubbles: true }));
+              } catch (_eFd0) {}
+              finally { try { _flForm.__zwFormDataConstructing = false; } catch (_eFd1) {} }
+            }
+            // R3910：spec form submission algorithm dialog 分支（construct-entry-list 与
+            // cannot-navigate 之后）——无祖先 dialog → return；subject = 最近祖先 dialog；
+            // result 缺省 null（close-the-dialog 不改 returnValue）：image 按钮提交者 →
+            // selected coordinates "x,y"（非指针激活 0,0）；submit 按钮提交者 → optional
+            // value（value 内容属性 present 才设——含空串；缺失不改 returnValue）；关闭
+            // subject（未 open 由 close-the-dialog 步 1 早退——不改 returnValue、不派
+            // close）。https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-submission-algorithm
+            if (_method === 'dialog') {
+              var _dlgResult = null;
+              var _dlgSubIsImage = false, _dlgSubIsSubmitBtn = false;
+              try {
+                var _dlgSubTag = submitter ? String(submitter.tagName || '').toUpperCase() : '';
+                var _dlgSubTy = submitter ? String(submitter.type || '').toLowerCase() : '';
+                _dlgSubIsImage = (_dlgSubTag === 'INPUT' && _dlgSubTy === 'image');
+                _dlgSubIsSubmitBtn = (_dlgSubTag === 'INPUT' && _dlgSubTy === 'submit')
+                  || (_dlgSubTag === 'BUTTON' && _dlgSubTy === 'submit');
+              } catch (_eDlg0) {}
+              if (_dlgSubIsImage || _dlgSubIsSubmitBtn) {
+                if (_dlgSubIsImage) {
+                  var _dlgImgKey = null;
+                  try { _dlgImgKey = _elKey(submitter.__zwSelector || null, submitter.__zwHandle || null); } catch (_eDlg1) {}
+                  var _dlgImgC = (_dlgImgKey != null && globalThis._zwImgSelCoords)
+                    ? globalThis._zwImgSelCoords[_dlgImgKey] : null;
+                  _dlgResult = String((_dlgImgC && _dlgImgC[0] != null) ? _dlgImgC[0] : 0)
+                    + ',' + String((_dlgImgC && _dlgImgC[1] != null) ? _dlgImgC[1] : 0);
+                } else {
+                  var _dlgVal = null;
+                  try { _dlgVal = submitter.getAttribute('value'); } catch (_eDlg2) {}
+                  if (_dlgVal != null) _dlgResult = String(_dlgVal);
+                }
+              }
+              var _dlgEl = null;
+              try {
+                _dlgEl = (_flForm && typeof _flForm.closest === 'function') ? _flForm.closest('dialog') : null;
+              } catch (_eDlg3) { _dlgEl = null; }
+              if (!_dlgEl) return;
+              var _dlgSel = null, _dlgHandle = null;
+              try { _dlgSel = _dlgEl.__zwSelector || null; _dlgHandle = _dlgEl.__zwHandle || null; } catch (_eDlg4) {}
+              try {
+                _zwDialogClose(_elKey(_dlgSel, _dlgHandle), _dlgSel, _dlgHandle,
+                  _dlgResult === null ? undefined : _dlgResult);
+              } catch (_eDlg5) {}
+              return;
+            }
+            // ④ action：submitter formaction > form action 属性 > 文档地址（spec：无
+            // action 属性 → 文档地址；空串 resolve 即 base）。R3910：action 解析自函数
+            // 头移至此处——spec form submission algorithm 顺序为 construct-entry-list
+            //（含 formdata 派发）→ dialog 分支 → action 解析，解析失败 return 不影响
+            // 已派发面；文档基 = 提交基 URL（net-api M5-S7 同口径）。
+            // M2-S4J：__zw_request_navigate 缺失不再前置早退（navigate 事件/intercept 面
+            // 不依赖 host 回调——WPT navigate-form 族在 testharness 沙箱无该回调时仍须
+            // 派发；host 传输仅在默认分支 typeof-guard）。
+            var _base = (typeof globalThis._zwDocBaseURL === 'function')
+              ? globalThis._zwDocBaseURL()
+              : String(globalThis.location.href || 'about:blank');
+            var _actionRaw = null;
+            try { if (submitter) _actionRaw = submitter.getAttribute('formaction'); } catch (_eA1) {}
+            if (_actionRaw == null || _actionRaw === '') {
+              _actionRaw = fHandle ? __zw_get_attr_handle(fHandle, 'action') : __zw_get_attr(fSel, 'action');
+            }
+            var _u = null;
+            try { _u = new URL(_actionRaw == null ? '' : String(_actionRaw), _base); } catch (_eA2) { return; }
+            // ⑤ urlencoded 序列化（spec serialize urlencoded：换行归一 \r\n → 百分号编码 →
             // 空格 '+'；encodeURIComponent 除 `*`-集合差异与 spec 编码集一致）。
             function _encPair(n, v) {
               function enc(s) {

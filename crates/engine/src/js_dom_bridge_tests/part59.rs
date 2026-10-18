@@ -850,3 +850,362 @@ globalThis.__w10d = p9.value + '|' + q0.selected + '/' + q1.selected + '|' + p9.
         "SelectOption mutation 应照记（渲染/序列化面）"
     );
 }
+
+// ── R3910：form 提交 construct-entry-list 对齐（formdata 事件 + 共享 flag）+
+// method=dialog 分支 + SubmitEvent/FormDataEvent 构造器 WebIDL 语义 ──
+//
+// 生产 shim 路径：part04 `_zwFormSubmitNavigate`（顶部 constructing entry list flag
+// 检查 → 条目构造窗口置位 `__zwFormDataConstructing`（与 part02 new FormData(form)
+// 共用同 spec flag）→ 条目构造后派发 formdata（FormData 与 entry list 共享 _p，
+// handler 增删对提交编码可见）→ finally 清位 → method=dialog 分支移至 fire 之后：
+// 最近祖先 dialog 为 subject，result = image 按钮坐标 "x,y" / submit 按钮 optional
+// value（value 属性 present 才设，含空串）/ null 不改 returnValue）+ part01
+// `_zwDialogClose` 未 open 早退（close-the-dialog 步 1）+ part05 两构造器无 new
+// TypeError / required 成员校验。
+// spec https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-submission-algorithm
+// 及 #constructing-entry-list、#the-formdataevent-interface、#submitevent。
+
+// W1：SubmitEvent / FormDataEvent 构造器 WebIDL 语义（WPT form-submission-0
+// FormDataEvent.window.js / SubmitEvent.window.js「Failing constructor」断言面）。
+#[test]
+fn test_r3910_submitevent_formdataevent_ctor_webidl() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r##"
+function tryCtor(f) { try { f(); return 'no-throw'; } catch (e) { return e.constructor.name; } }
+globalThis.__fe = [
+  tryCtor(function () { FormDataEvent('', { formData: new FormData() }); }),
+  tryCtor(function () { new FormDataEvent(); }),
+  tryCtor(function () { new FormDataEvent('foo'); }),
+  tryCtor(function () { new FormDataEvent('foo', null); }),
+  tryCtor(function () { new FormDataEvent('foo', { formData: null }); }),
+  tryCtor(function () { new FormDataEvent('foo', { formData: 'bar' }); })
+].join(',');
+var __fd = new FormData();
+var __fev = new FormDataEvent('bar', { formData: __fd, bubbles: true });
+globalThis.__feOk = (__fev.formData === __fd) + '/' + __fev.bubbles;
+globalThis.__se = [
+  tryCtor(function () { SubmitEvent(''); }),
+  tryCtor(function () { new SubmitEvent(); }),
+  tryCtor(function () { new SubmitEvent('foo', { submitter: 'bar' }); })
+].join(',');
+var __btn = document.createElement('button');
+var __sev = new SubmitEvent('bar', { submitter: __btn, bubbles: true });
+globalThis.__seOk = (__sev.submitter === __btn)
+  + '/' + (new SubmitEvent('x', null).submitter === null)
+  + '/' + (new SubmitEvent('x').submitter === null)
+  + '/' + __sev.bubbles;
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__fe").unwrap().value,
+        "TypeError,TypeError,TypeError,TypeError,TypeError,TypeError",
+        "W1：FormDataEvent 无 new/0 参/缺 init/null init/null formData/非 FormData → TypeError"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__feOk").unwrap().value,
+        "true/true",
+        "W1：成功构造——formData 同一实例 + bubbles 透传"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__se").unwrap().value,
+        "TypeError,TypeError,TypeError",
+        "W1：SubmitEvent 无 new/0 参/submitter 非元素 → TypeError"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__seOk").unwrap().value,
+        "true/true/true/true",
+        "W1：成功构造——submitter 元素实例 + null/缺省 dict → null + bubbles"
+    );
+}
+
+// W2：dialog.close() 于未 open dialog 为 no-op（不改 returnValue）——close-the-dialog
+// 步 1 早退（WPT dialog-close「doesn't have an open attribute aborts the steps」+
+// dialog-return-value「no-op close()」断言面）。
+#[test]
+fn test_r3910_dialog_close_not_open_noop() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r##"
+var d = document.createElement('dialog');
+document.body.appendChild(d);
+d.returnValue = 'keep-me';
+var __closeFired = 0;
+d.addEventListener('close', function () { __closeFired++; });
+d.close('x');
+globalThis.__r = d.returnValue + '/' + d.hasAttribute('open') + '/' + __closeFired;
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r").unwrap().value,
+        "keep-me/false/0",
+        "W2：未 open close('x') → returnValue 不变、无 close 事件"
+    );
+}
+
+// W3：method=dialog 提交——submit 按钮 optional value 三态（有 value 属性 → 设
+// returnValue；无属性 → 不改；空串属性 → 设空串），close 事件计数，弹回重开。
+#[test]
+fn test_r3910_dialog_submit_optional_value() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <dialog id='dgA'><form id='fmA' method='dialog'><button id='btA' value='rv1'>ok</button></form></dialog>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r##"
+var dg = document.getElementById('dgA');
+var bt = document.getElementById('btA');
+var __closeN = 0;
+dg.addEventListener('close', function () { __closeN++; });
+// ①：value 属性 → returnValue = 属性值。
+dg.show();
+bt.click();
+globalThis.__r1 = dg.open + '/' + dg.returnValue + '/' + __closeN;
+// ②：移除 value 属性 → returnValue 不改。
+dg.show();
+dg.returnValue = 'initial';
+bt.removeAttribute('value');
+bt.click();
+globalThis.__r2 = dg.open + '/' + dg.returnValue;
+// ③：空串 value 属性 → returnValue 设空串。
+dg.show();
+dg.returnValue = 'initial2';
+bt.setAttribute('value', '');
+bt.click();
+globalThis.__r3 = dg.open + '/' + dg.returnValue + '/' + __closeN;
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r1").unwrap().value,
+        "false/rv1/1",
+        "W3①：value 属性 → 关闭 + returnValue=rv1 + close 事件 1 次"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r2").unwrap().value,
+        "false/initial",
+        "W3②：无 value 属性 → 关闭但 returnValue 不改（optional value 缺失）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r3").unwrap().value,
+        "false//3",
+        "W3③：空串 value 属性 → returnValue 设空串（'false//3' 中段为空串）"
+    );
+}
+
+// W4：dialog 分支边界——method=dialog 无祖先 dialog → return（无导航无异常）；
+// formmethod=dialog 覆盖 form method=post → 关闭最近祖先 dialog。
+#[test]
+fn test_r3910_dialog_submit_no_ancestor_and_formmethod() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <form id='fmB' method='dialog'><button id='btB'>go</button></form>\
+         <dialog id='dgC'><form id='fmC' method='post'><button id='btC' formmethod='dialog'>go</button></form></dialog>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r##"
+var btB = document.getElementById('btB');
+var __navN = 0;
+if (typeof navigation === 'object' && navigation && typeof navigation.addEventListener === 'function') {
+  navigation.addEventListener('navigate', function () { __navN++; });
+}
+// ①：method=dialog 无祖先 dialog → return，无导航。
+btB.click();
+globalThis.__r1 = __navN;
+// ②：formmethod=dialog 覆盖 method=post → 关闭祖先 dialog，无 value 属性 → returnValue 不改。
+var dg = document.getElementById('dgC');
+var bt = document.getElementById('btC');
+dg.show();
+dg.returnValue = 'pre';
+bt.click();
+globalThis.__r2 = dg.open + '/' + dg.returnValue + '/' + __navN;
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r1").unwrap().value,
+        "0",
+        "W4①：无祖先 dialog → return（零导航）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r2").unwrap().value,
+        "false/pre/0",
+        "W4②：formmethod=dialog 覆盖 post → 关闭 dialog，无 value 属性 returnValue 不改"
+    );
+}
+
+// W5：form.submit() 派发 formdata（bubbles、FormDataEvent 实例、e.formData 为
+// FormData）；handler 内重入 form.submit() 经 constructing entry list flag 短路
+//（单次 fire）；handler 内 new FormData(form) 抛 InvalidStateError（flag 共享）。
+#[test]
+fn test_r3910_formdata_event_on_submit() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><form id='fmD'><input id='inD' name='n1' value='v1'></form></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r##"
+var f = document.getElementById('fmD');
+var __c = 0, __fdIs = '', __bub = '', __evIs = '', __reErr = '';
+f.addEventListener('formdata', function (e) {
+  __c++;
+  __fdIs = e.formData instanceof FormData;
+  __bub = e.bubbles;
+  __evIs = e instanceof FormDataEvent;
+  try { new FormData(f); __reErr = 'no-throw'; } catch (err) { __reErr = err.name; }
+  f.submit(); // 重入：constructing entry list flag true → 短路（不再 fire）
+});
+f.submit();
+globalThis.__r = __c + '/' + __fdIs + '/' + __bub + '/' + __evIs + '/' + __reErr;
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r").unwrap().value,
+        "1/true/true/true/InvalidStateError",
+        "W5：formdata 单次 fire + bubbles + FormDataEvent/FormData 实例 + 重入 submit 短路 + 共享 flag 抛 InvalidStateError"
+    );
+}
+
+// W6：formdata handler 对 e.formData 的增删改写提交 entry list（FormData 与 entry
+// list 共享存储——POST navigate 事件 formData 读侧可见 handler 追加项）。
+#[test]
+fn test_r3910_formdata_mutation_reaches_entry_list() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><form id='fmE' method='post' action='/echo'><input id='inE' name='n1' value='v1'></form></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "https://example.com/dir/page.html".to_string(),
+    ));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r##"
+var f = document.getElementById('fmE');
+f.addEventListener('formdata', function (e) { e.formData.append('extra', 'x1'); });
+globalThis.__navN1 = 'unset';
+globalThis.__navExtra = 'unset';
+globalThis.__navSeen = 'no-nav';
+if (typeof navigation === 'object' && navigation && typeof navigation.addEventListener === 'function') {
+  navigation.addEventListener('navigate', function (e) {
+    globalThis.__navSeen = 'nav';
+    if (e.formData) {
+      globalThis.__navN1 = String(e.formData.get('n1'));
+      globalThis.__navExtra = String(e.formData.get('extra'));
+    }
+    e.preventDefault();
+  });
+}
+f.submit();
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__navSeen").unwrap().value,
+        "nav",
+        "W6：POST 提交派发 navigate 事件"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__navN1 + ',' + globalThis.__navExtra").unwrap().value,
+        "v1,x1",
+        "W6：entry list 含控件 n1=v1 且 formdata handler 追加的 extra=x1 可见（共享存储）"
+    );
+}

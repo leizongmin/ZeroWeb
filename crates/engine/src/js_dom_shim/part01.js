@@ -573,10 +573,16 @@
   // https://html.spec.whatwg.org/multipage/interactive-elements.html#dom-dialog-close
   function _zwDialogClose(key, sel, handle, returnValue) {
     var wasOpen = _zwDialogHasOpen(sel, handle) || !!_zwDialogModal[key];
+    // R3910：spec close-the-dialog 步 1——无 open 属性直接 return（close-the-dialog，
+    // https://html.spec.whatwg.org/multipage/interactive-elements.html#close-the-dialog）。
+    // 旧实现继续置 returnValue → close() 于未 open dialog 仍改 returnValue（WPT
+    // dialog-close「doesn't have an open attribute aborts the steps」+ dialog-return-value
+    // 「no-op close()」断言面；dialog 提交分支「closing the dialog while submitting」同面）。
+    if (!wasOpen) return false;
     _zwRemoveAttr(key, sel, handle, 'open');
     if (_zwDialogModal[key]) { delete _zwDialogModal[key]; delete _zwTopLayer[key]; }
     if (returnValue !== undefined) _expando[key + '::returnValue'] = String(returnValue);
-    if (wasOpen) _dispatchWithBubble(key, sel, handle, _makeEvent('close', { bubbles: false, cancelable: false }));
+    _dispatchWithBubble(key, sel, handle, _makeEvent('close', { bubbles: false, cancelable: false }));
     return wasOpen;
   }
   // R3290：dialog open 内容属性是否 present（boolean 属性，presence 判定）。latest-wins 反映同 execute 内
