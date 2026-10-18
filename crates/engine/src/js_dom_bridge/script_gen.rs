@@ -1222,6 +1222,8 @@ fn scan_top_level_decl_exports(code: &str, is_strict: bool) -> String {
 /// 行为一致；顶层 `let`/`const`/`class` 会变为 try 块作用域——classic 内联脚本罕见，module 走
 /// `execute_module`。成功时 sentinel 留 `undefined`（非字符串），抛错时设为错误文本
 ///（T64 消息保真组合：**首行消息 + 栈帧行**，R2940 契约——stack 是附加信息不可替代 message）。
+/// 多行消息时哨兵文本含消息两次（多行使 V8「首行含消息」判定回落 `m+'\n'+s` 组合，而 `s`
+/// 首行即 ToString(e)）。
 /// V8 `e.stack` 首行即 ToString(e)（"Name: message"），首行含 message 时原样保留（V8 形状
 /// 字节不变，t5 execute 错误栈捕获）；QuickJS `e.stack` **仅帧行、无消息头**（曾在
 /// renderer/wpt quickjs 腿把 window.onerror 消息顶成首帧文本 'at <eval> (<input>:1:6)'），

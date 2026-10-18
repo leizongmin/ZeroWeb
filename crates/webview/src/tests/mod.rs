@@ -18,6 +18,8 @@ mod integration;
 mod mixed_content_gate;
 mod more_coverage;
 mod opfs_owner;
+// T67（TV-1 遗留）：打印设置 → 渲染输出几何的程序化断言（webview render 入口级）。
+mod print_setup_geometry;
 mod service_worker_fetch;
 mod service_worker_iframe;
 mod service_worker_runtime;
