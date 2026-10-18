@@ -35,6 +35,8 @@ fn test_r5175_property_zero_clamp_establishes_context() {
     let mut parent_style = ComputedStyle::default();
     // 显式 0px 经 style-system store 层 clamp 后的存储值（Px(1.0)）；none 保持
     // Px(0.0) 哨兵不建立上下文（见 test_r5175_property_none_no_context）。
+    // R5176 transformable display 门——default 是 Inline，测块级父须显式 Block。
+    parent_style.display = zero_css_parser::values::DisplayValue::Block;
     parent_style.perspective = zero_css_parser::values::LengthValue::Px(1.0);
     parent_style.perspective_origin_x = zero_css_parser::values::LengthValue::Px(0.0);
     parent_style.perspective_origin_y = zero_css_parser::values::LengthValue::Px(0.0);

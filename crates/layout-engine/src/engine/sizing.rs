@@ -2660,5 +2660,28 @@ impl LayoutEngine {
             || s.individual_rotate.is_some()
             || s.individual_scale.is_some()
             || s.individual_translate.is_some()
+            // R5176（css-transforms-2 §perspective-property）：perspective ≠ none 建立
+            // 堆叠上下文——applies to **transformable elements**，非原子 inline（含
+            // display:contents/none 无 principal box）不适用（perspective-untransformable-
+            // no-stacking-context：inline span perspective 不建 SC，z:-1 abspos 子归祖先
+            // SC step 2 画在 span 背景之后；R4070 contain 臂同款排除）。none 恒为 Px(0.0)
+            // 哨兵（R5175 store clamp 后显式 <length> 值 ≥1px；属性语法域无百分比）。
+            // kill-switch `ZW_PERSPECTIVE_STACKING_CONTEXT=0`——perspective 父入 scope
+            // 是 R5176 变换子相位重排的前提（变换子收集须落在父 ctx 窗口内，否则
+            // R5174 父透视折叠失去 ctx 栈配对）。
+            || (perspective_sc_enabled()
+                && !matches!(s.perspective, LengthValue::Px(0.0))
+                && !matches!(
+                    s.display,
+                    DisplayValue::Inline | DisplayValue::Contents | DisplayValue::None
+                ))
     }
+}
+
+/// R5176：perspective 建立堆叠上下文开关（进程级单读，热路径零 env 查询——R5108
+/// per-node env::var 被 bench-gate 抓 +54% 判例）。unit 不翻 env（LazyLock/构造期
+/// 快照，进程内 set_var 不可靠——R3858 教训），OFF 反证由 corpus OFF 轮承担。
+fn perspective_sc_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_PERSPECTIVE_STACKING_CONTEXT").as_deref() != Ok("0"))
 }

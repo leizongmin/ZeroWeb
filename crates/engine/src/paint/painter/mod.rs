@@ -238,6 +238,16 @@ pub struct Painter {
     /// translateZ 混合列表失效不受开关控制，OFF 相对基线 corpus 差异集见
     /// docs/goal/rendering-compat R5174 evidence）。
     pub(crate) parent_perspective_enabled: bool,
+    /// R5176：变换元素绘制相位开关（构造期单次读取，热路径零 env 查询）。
+    /// `ZW_TRANSFORM_PAINT_PHASE=0` 关闭（回退变换元素 in-flow 相位绘制；变换仍生效，
+    /// 只回退 step 8 相位重排——css-transforms-1 App E step 8：transformed 与 positioned
+    /// 同层按 tree order）。OFF 反证由 corpus OFF 轮承担（R3858 教训）。
+    pub(crate) transform_paint_phase_enabled: bool,
+    /// R5176：multicol 片段领地深度——cso 片段循环 / nested-spanner 片段循环期间 >0。
+    /// 领地内变换子**不**重排到 step 8（无 scope 收集器可达 cso 子树——scope collect
+    /// 对 multicol 的 cso 子整支跳过；主循环若排除则盒永久丢失），保持 in-flow 片段
+    /// 绘制。collect 与主循环以同一快照判定（构造期传参），保证收集集 ≡ 排除集。
+    pub(crate) multicol_fragment_depth: u32,
     /// R5139：multicol 片段循环 k>0 迭代 / R5137 续片重绘期间为真——列流映射 OOF
     ///（`oof_static_mapped`，CB 在 multicol 之外）不参与本容器碎片复制，其子树在此
     /// 类重绘中整体抑制；映射位的一次绘制由 k=0 迭代照常完成。paint_node 入口判定。
@@ -260,6 +270,23 @@ pub struct Painter {
 
 fn is_positioned_child(box_node: &LayoutBox) -> bool {
     box_node.is_absolute || box_node.is_fixed || box_node.is_relative || box_node.is_sticky
+}
+
+/// R5176（css-transforms-1 §4 + CSS 2.1 Appendix E step 8）：变换元素（transform ≠
+/// none，必然建立堆叠上下文——engine.rs `style_creates_stacking_context`）与 positioned
+/// 后代同属 step 8 绘制组，须按 tree order 混排，而非 steps 3/4/5 in-flow 相位。
+/// collect_positioned_descendants 与主循环排除必须同判（收集集 ≡ 排除集，否则双绘/漏绘）。
+/// 门：非 positioned；z_index == 0（非 positioned 元素的 z-index 不参与堆叠，v1 保守
+/// 留 legacy 相位）；有样式且 transform ≠ none。multicol 片段领地由调用方
+/// `multicol_fragment_depth == 0` 快照另门（cso 子树无收集器可达）。
+fn box_paints_in_transform_phase(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> bool {
+    if is_positioned_child(box_node) || box_node.z_index != 0 {
+        return false;
+    }
+    box_node
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .is_some_and(|s| !matches!(s.transform, TransformValue::None))
 }
 
 /// R5139：子树内是否存在列流映射 OOF（含自身）。multicol 片段循环用其分流迟延
@@ -564,10 +591,12 @@ fn collect_positioned_descendants<'a>(
     styles: &HashMap<NodeId, ComputedStyle>,
     out: &mut Vec<DeferredPositioned<'a>>,
     doc: Option<&zero_dom::Document>,
+    transform_phase: bool,
 ) {
-    collect_positioned_descendants_inner(box_node, abs_x, abs_y, styles, None, false, out, doc);
+    collect_positioned_descendants_inner(box_node, abs_x, abs_y, styles, None, false, out, doc, transform_phase);
 }
 
+#[allow(clippy::too_many_arguments)]
 fn collect_positioned_descendants_inner<'a>(
     box_node: &'a LayoutBox,
     abs_x: f32,
@@ -577,6 +606,7 @@ fn collect_positioned_descendants_inner<'a>(
     clip_is_scope_root: bool,
     out: &mut Vec<DeferredPositioned<'a>>,
     doc: Option<&zero_dom::Document>,
+    transform_phase: bool,
 ) {
     let (cx, cy) = child_content_origin(box_node, abs_x, abs_y);
     let needs_clip = compute_needs_clip(box_node, styles, doc);
@@ -622,6 +652,21 @@ fn collect_positioned_descendants_inner<'a>(
                 abs_y: child_abs_y,
                 clip_rect: child_clip,
             });
+        } else if transform_phase && box_paints_in_transform_phase(child, styles) {
+            // R5176（css-transforms-1 §4 + App E step 8）：in-flow/float 变换元素与
+            // positioned 同属 step 8 组——收集到所属 scope（z_index==0 桶，tree order
+            // 与 positioned 项混排），step 6 flush 施绘；不下钻（transform 自成 SC
+            // scope，其 positioned/变换后代由它自己的 collect/flush 在其效果窗口内
+            // 收集，R505 同理）。裁剪矩形照 relative/sticky 口径整保留——变换元素的
+            // CB 仍是 static 父链（transform 只改变其后代 CB），恒在裁剪祖先子树内。
+            // multicol 片段领地不入（调用方以 depth==0 快照传参，见
+            // multicol_fragment_depth）。
+            out.push(DeferredPositioned {
+                node: child,
+                abs_x: child_abs_x,
+                abs_y: child_abs_y,
+                clip_rect,
+            });
         } else if child.creates_stacking_context {
             // in-flow 但建立堆叠上下文（opacity<1/transform/filter 等 CSS3 SC 触发器）：
             // 自成 scope，其 positioned 后代由它自己的 collect/flush 收集。不下钻避免
@@ -630,7 +675,17 @@ fn collect_positioned_descendants_inner<'a>(
             continue;
         } else {
             // in-flow/float 非 scope：下钻找嵌套 positioned
-            collect_positioned_descendants_inner(child, child_abs_x, child_abs_y, styles, clip_rect, true, out, doc);
+            collect_positioned_descendants_inner(
+                child,
+                child_abs_x,
+                child_abs_y,
+                styles,
+                clip_rect,
+                true,
+                out,
+                doc,
+                transform_phase,
+            );
         }
     }
 }
@@ -685,7 +740,19 @@ fn collect_mapped_oof_in_multicol<'a>(
             );
         } else {
             let mut sub: Vec<DeferredPositioned> = Vec::new();
-            collect_positioned_descendants_inner(child, child_abs_x, child_abs_y, styles, None, false, &mut sub, doc);
+            // R5176：multicol 片段领地内变换子不入相位重排（领地主循环不排除，收集会
+            // 双绘）——transform_phase 恒 false；变换子树内的映射 OOF 留 legacy 域。
+            collect_positioned_descendants_inner(
+                child,
+                child_abs_x,
+                child_abs_y,
+                styles,
+                None,
+                false,
+                &mut sub,
+                doc,
+                false,
+            );
             out.extend(sub.into_iter().filter(|i| subtree_has_mapped_oof(i.node)));
         }
     }
@@ -742,6 +809,8 @@ impl Painter {
             mc_paint_nesting: 0,
             perspective_ctx: Vec::new(),
             parent_perspective_enabled: std::env::var("ZW_PARENT_PERSPECTIVE").as_deref() != Ok("0"),
+            transform_paint_phase_enabled: std::env::var("ZW_TRANSFORM_PAINT_PHASE").as_deref() != Ok("0"),
+            multicol_fragment_depth: 0,
             paint_skip_nodes: HashSet::new(),
             counters: HashMap::new(),
             bg_clip_text_color: Vec::new(),
@@ -2470,7 +2539,10 @@ impl Painter {
         self.transform_depth += u32::from(self_transformed);
         // R5174：perspective 属性入栈（css-transforms-2 §18：perspective ≠ none 为
         // 直子建立 3D 透视上下文）——透视距离按元素字号解析长度，perspective-origin
-        // 相对自身 border-box（§21）解析为绝对坐标；子树绘毕出栈。
+        // 相对自身 border-box（§21）解析为绝对坐标；子树绘毕出栈。R5176：applies to
+        // transformable elements——非原子 inline/contents/none 无 principal box 不适用
+        //（与 layout 侧 perspective-SC 门同口径，perspective-untransformable-no-stacking-
+        // context 案形；两侧同判保证 ctx 窗口 ≡ scope 窗口）。
         let persp_pushed = if self.parent_perspective_enabled {
             box_node
                 .node_id
@@ -2478,7 +2550,11 @@ impl Painter {
                 .and_then(|(id, style)| {
                     let font_size_px = resolve_paint_font_size(&style.font_size) as f64;
                     let d = zero_style_system::computed::resolve_length(&style.perspective, font_size_px, None, None);
-                    (d > 0.0).then(|| {
+                    let transformable_display = !matches!(
+                        style.display,
+                        DisplayValue::Inline | DisplayValue::Contents | DisplayValue::None
+                    );
+                    (d > 0.0 && transformable_display).then(|| {
                         let origin_comp = |lv: &LengthValue, box_size: f32| match lv {
                             LengthValue::Percentage(p) => box_size * (*p as f32 / 100.0),
                             other => {
@@ -2711,8 +2787,19 @@ impl Painter {
         // 上提到祖先而漏掉效果（opacity:0 不隐藏内容的 R505 回归）。详见 R505。
         let is_scope = self_positioned || box_node.creates_stacking_context || is_root_scope;
         let mut collected_positioned: Vec<DeferredPositioned> = Vec::new();
+        // R5176：变换子相位重排旗标——与主循环排除同快照（multicol 片段领地不入，
+        // 见 multicol_fragment_depth）；collect 与排除集同判保证收集 ≡ 排除。
+        let transform_phase_defer = self.transform_paint_phase_enabled && self.multicol_fragment_depth == 0;
         if is_scope {
-            collect_positioned_descendants(box_node, abs_x, abs_y, styles, &mut collected_positioned, doc);
+            collect_positioned_descendants(
+                box_node,
+                abs_x,
+                abs_y,
+                styles,
+                &mut collected_positioned,
+                doc,
+                transform_phase_defer,
+            );
         }
 
         // R5024：z-index:auto positioned 元素（pseudo-SC，不建堆叠上下文）的负 z-index
@@ -3176,6 +3263,9 @@ impl Painter {
             (!paint_as_multicol || child.column_span_offsets.is_empty())
                 && (!defer_abspos || (!child.is_absolute && !child.is_fixed))
                 && !is_positioned_child(child)
+                // R5176：变换子改由 scope 的 step 6 flush 施绘（App E step 8 组），
+                // 不入 in-flow 相位；collect 侧同旗标收集（transform_phase_defer）。
+                && !(transform_phase_defer && box_paints_in_transform_phase(child, styles))
         }) {
             if is_canvas_box {
                 continue;
@@ -3225,6 +3315,13 @@ impl Painter {
         // layout 预计算的 fragment 表驱动（区域×列 cell 语义：逐条目 paint 位置 + cell
         // 裁剪）——通用 cso 循环的 content-band 裁剪语义与区域 cell 模型不兼容
         //（006：cell 含 margin/border 带，col 顶可在盒顶上方）。表空走原路径。
+        // R5176：multicol 片段领地——cso 片段循环 / nested-spanner 片段循环期间变换子
+        // 保持 in-flow 片段绘制：scope collect 对 multicol 的 cso 子整支跳过（片段内容
+        // 无收集器可达），主循环若排除则盒永久丢失。领地内 transform_phase_defer 已在
+        // collect/主循环构造时按 depth==0 判定为 false，此处深度仅保证嵌套 paint_node
+        // 递归（R4506 wrapper 整体绘制等）同口径。
+        let prev_multicol_fragment_depth = self.multicol_fragment_depth;
+        self.multicol_fragment_depth += 1;
         if !box_node.nested_spanner_child_frags.is_empty() {
             for frag in &box_node.nested_spanner_child_frags {
                 let Some(child) = box_node.children.get(frag.child_idx) else {
@@ -3348,6 +3445,8 @@ impl Painter {
                     if !is_breaking && col_h < 0.5 && box_node.content_height < 0.5 && !child.has_size_containment {
                         if std::env::var("ZW_MC_ZEROH_OOF_FLUSH").as_deref() != Ok("0") {
                             let mut local_positioned: Vec<DeferredPositioned> = Vec::new();
+                            // R5176：multicol 片段领地内 transform_phase=false（同上——
+                            // 领地主循环不排除变换子，收集即双绘）。
                             collect_positioned_descendants(
                                 child,
                                 frag_abs_x,
@@ -3355,6 +3454,7 @@ impl Painter {
                                 styles,
                                 &mut local_positioned,
                                 doc,
+                                false,
                             );
                             self.flush_fragment_local_positioned(
                                 &local_positioned,
@@ -3404,7 +3504,16 @@ impl Painter {
                     // 逻辑见 flush_fragment_local_positioned（R5151 提取共用，含 R3922
                     // 逐项裁剪与 R1080 child_clip 兜底、R5139 映射项分流）。
                     let mut local_positioned: Vec<DeferredPositioned> = Vec::new();
-                    collect_positioned_descendants(child, frag_abs_x, frag_abs_y, styles, &mut local_positioned, doc);
+                    // R5176：multicol 片段领地内 transform_phase=false（同上）。
+                    collect_positioned_descendants(
+                        child,
+                        frag_abs_x,
+                        frag_abs_y,
+                        styles,
+                        &mut local_positioned,
+                        doc,
+                        false,
+                    );
                     self.flush_fragment_local_positioned(&local_positioned, child, frag_abs_x, frag_abs_y, styles, doc);
 
                     super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_frag, &clip_rect);
@@ -3510,6 +3619,8 @@ impl Painter {
                 }
             }
         }
+
+        self.multicol_fragment_depth = prev_multicol_fragment_depth;
 
         // 如果需要裁剪，将子节点产生的图元裁剪到 padding box 范围内（CSS §11.1.1，见 R793）
         // R4501：multicol spanner 区域平衡片段**不建立自身裁剪**——片段盒宽 = 列宽（40px），

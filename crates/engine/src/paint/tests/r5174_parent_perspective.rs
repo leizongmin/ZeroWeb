@@ -48,6 +48,9 @@ fn test_r5174_translate_z_child_perspective_scale() {
     parent.children.push(make_box(Some(child_nid), 0.0, 25.0, 50.0, 50.0));
 
     let mut parent_style = ComputedStyle::default();
+    // R5176 transformable display 门（Inline/Contents/None 不适用 perspective）——
+    // default 是 Inline，测块级父须显式 Block（真实引擎 UA 层 div→block）。
+    parent_style.display = zero_css_parser::values::DisplayValue::Block;
     parent_style.perspective = zero_css_parser::values::LengthValue::Px(2.0);
     parent_style.perspective_origin_x = zero_css_parser::values::LengthValue::Px(0.0);
     parent_style.perspective_origin_y = zero_css_parser::values::LengthValue::Percentage(50.0);
@@ -93,6 +96,8 @@ fn test_r5174_own_transform_folds_perspective() {
     parent.children.push(make_box(Some(child_nid), 0.0, 25.0, 50.0, 50.0));
 
     let mut parent_style = ComputedStyle::default();
+    // R5176 transformable display 门——default 是 Inline，测块级父须显式 Block。
+    parent_style.display = zero_css_parser::values::DisplayValue::Block;
     parent_style.perspective = zero_css_parser::values::LengthValue::Px(2.0);
     parent_style.perspective_origin_x = zero_css_parser::values::LengthValue::Px(0.0);
     parent_style.perspective_origin_y = zero_css_parser::values::LengthValue::Percentage(50.0);
@@ -274,6 +279,8 @@ fn test_r5174_chain_preserve_3d_folds() {
     parent.children.push(mid);
 
     let mut parent_style = ComputedStyle::default();
+    // R5176 transformable display 门——default 是 Inline，测块级父须显式 Block。
+    parent_style.display = zero_css_parser::values::DisplayValue::Block;
     parent_style.perspective = zero_css_parser::values::LengthValue::Px(2.0);
 
     let mut mid_style = ComputedStyle::default();
@@ -409,6 +416,8 @@ fn test_r5174_percent_origin_resolution() {
     parent.children.push(make_box(Some(child_nid), 0.0, 25.0, 50.0, 50.0));
 
     let mut parent_style = ComputedStyle::default();
+    // R5176 transformable display 门——default 是 Inline，测块级父须显式 Block。
+    parent_style.display = zero_css_parser::values::DisplayValue::Block;
     parent_style.perspective = zero_css_parser::values::LengthValue::Px(2.0);
 
     let mut child_style = ComputedStyle::default();
