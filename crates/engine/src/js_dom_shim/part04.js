@@ -1537,10 +1537,38 @@
             // R358（js-dom M1）：handle 容器 scoped liveSpec——held 集合随 append/remove
             // 反映（WPT live collection 断言面）；快照换代由 `__zw_reset_pending_state`
             // 清桶（R357 被哨兵拦截的 stale 根因已消）。
+            // t6（siteopt qq-20261016-r1）：R333 并入 matches 改**直接子判定**——桶记账
+            // 经 `_zwHCCollectSubtree` 子树扁平化（part05 _zwHCLiveInvalidate），append
+            // 携带子树的节点把孙代一并落进本容器桶；旧 catch-all matches（nodeType===1）
+            // 在并入面把孙代当直接子收进 `children`（探针：c[w[s1]] 读出 [w,s1]，
+            // Chrome [w]——qq.com 首页 Swiper mount `Kj(el,'.swiper-wrapper')[0]` 全
+            // miss 的伴生根因）。判据用 **mutation-time 父记账链**（`_zwNodeParent` 反链
+            // + R334 `_zwSelPendingParent` 槽）而非 parentNode 读：pending 窗口内
+            // parentNode 视图滞后（t8e 批插/移动族断言面），反链在 `_mo_notify` 汇流点
+            // 按变更后树写入。能证明挂在其他节点下 → 孙代拒；无记账（sel 老子代等）
+            // → 保守放行（保 R120 detached 作用域并入面与 t8e 树序族）。
+            var _t6IsDirectChild = function (el) {
+              if (!el || el.nodeType !== 1) return false;
+              try {
+                // 仅 handle 反链可证嵌套（mutation-time 父记账，_mo_notify 汇流点写入）：
+                // 反链父非本容器（双身份 parentSel 优先比对）→ 孙代拒。sel 域解析子
+                // （iAH/R97 批，无 handle）不带反链——保守放行保 t8e 树序族；其桶泄漏面
+                // 待 sel 域批记账切片后收口。
+                if (el.__zwHandle && typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
+                  var _t6lk = _zwNodeParent[el.__zwHandle];
+                  if (_t6lk && (_t6lk.parentSel != null || _t6lk.parentHandle != null)) {
+                    if (_t6lk.parentSel != null) {
+                      if (_t6lk.parentSel !== sel) return false;
+                    } else if (_t6lk.parentHandle !== handle) {
+                      return false;
+                    }
+                  }
+                }
+              } catch (_eT6dc) {}
+              return true;
+            };
             var _r81Coll = _zwMakeCollection(_r81Kids.filter(function (k) { return k && k.nodeType === 1; }), true, {
-              matches: function (el358ch) {
-                return !!el358ch && el358ch.nodeType === 1;
-              },
+              matches: _t6IsDirectChild,
               scopeHandle: handle,
               scopeSel: null,
             });
@@ -1563,6 +1591,8 @@
               // length 增长，旧恒快照值）。R357 被哨兵拦截的 stale 根因 =
               // `__zw_reset_pending_state` 缺失（SetDomSnapshot 换代不清桶）；现挂钩后
               // 桶残留随换代清空，R333 门（mutation 容器 === 作用域容器）继续防跨容器。
+              // sel 桶 matches 保持 catch-all（t8e 树序族守卫；t6 判据收窄见 handle 分支
+              // 注记——sel 域批记账切片前，此处收窄曾断 t8e 四用例）。
               var _r318Coll = _zwMakeCollection(_r318ek, true, {
                 matches: function (el358c) {
                   return !!el358c && el358c.nodeType === 1;
@@ -4203,6 +4233,48 @@
             if (!sel && handle) {
               var _r134M = _r134MatchTypeSelector(handle, q);
               if (_r134M !== null) return _r134M;
+              // t6（siteopt qq-20261016-r1）：class/id/attr 等**非 type 选择器**两臂：
+              // ① R100 锚回（元素已连入文档）→ 委托 host 按当前位匹配——复合/伪类/
+              //    组合器全语义活。此前直接 return false 使 `dynamicEl.matches('.cls')`
+              //    恒 false（Swiper mount `Kj(el,'.swiper-wrapper')[0]` 找不到 wrapper
+              //    → slidesEl/wrapperEl undefined → updateSlides 'children' TypeError
+              //    实证；React 动态子树的 class 匹配同族）。
+              // ② 未锚回（真 detached）→ 单 compound（tag/.cls/#id 及其链）按自有
+              //    属性匹配；组合器/伪类保守 false（同 R134 既有保守面）。
+              var _t6Anchor = (typeof _r100SelOfHandle === 'function') ? _r100SelOfHandle(handle) : null;
+              if (_t6Anchor && typeof __zw_matches === 'function') {
+                try { return __zw_matches(_t6Anchor, q) === '1'; } catch (_eT6m1) {}
+              }
+              var _t6Simple = /^[A-Za-z][A-Za-z0-9-]*(?:\.[A-Za-z0-9_-]+)*$|^\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$|^#[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$|^\*$/;
+              if (_t6Simple.test(q)) {
+                var _t6Want = q.split('.');
+                var _t6Tag = _t6Want[0];
+                var _t6Id = '';
+                if (_t6Tag && _t6Tag.charAt(0) === '#') {
+                  // `#id[.cls…]` 形态：首段是 id 非标签。
+                  _t6Id = _t6Tag.slice(1);
+                  _t6Tag = '';
+                }
+                if (_t6Tag && _t6Tag !== '*') {
+                  var _t6My = '';
+                  try { _t6My = String(_realTag(null, handle) || ''); } catch (_eT6m2) {}
+                  if (_t6My.toLowerCase() !== _t6Tag.toLowerCase()) return false;
+                }
+                if (_t6Id) {
+                  var _t6MyId = '';
+                  try { _t6MyId = String((typeof __zw_get_attr_handle === 'function') ? __zw_get_attr_handle(handle, 'id') : '') || ''; } catch (_eT6m4) {}
+                  if (_t6MyId !== _t6Id) return false;
+                }
+                if (_t6Want.length > 1) {
+                  var _t6Cls = '';
+                  try { _t6Cls = String((typeof __zw_get_attr_handle === 'function') ? __zw_get_attr_handle(handle, 'class') : '') || ''; } catch (_eT6m3) {}
+                  var _t6Have = _t6Cls.split(/\s+/);
+                  for (var _t6ci = 1; _t6ci < _t6Want.length; _t6ci++) {
+                    if (_t6Want[_t6ci] && _t6Have.indexOf(_t6Want[_t6ci]) < 0) return false;
+                  }
+                }
+                return true;
+              }
               // handle-only 非 type selector（伪类/属性/组合器）→ 不走文档校验抛
               //（detached 元素的选择器面有限，保守 false）。
               return false;
@@ -6334,9 +6406,26 @@
                 || _zwSameNodeIdentity(_r300rp, _r300self)
                 || _r126IsChildOf(sel, handle, refNode) === true;
               if (!_r300isChild) {
-                throw _zwDomException(
-                  "Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node.",
-                  'NotFoundError');
+                // t6（siteopt qq-20261016-r1）：**不可见容器 lenient 臂**（D-back 水合间歇
+                // NotFound 根因）。React 长生命容器 proxy 持**捕获期位置路径**（nth-child 链），
+                // 先行 DOM 变更使位次漂移后，融合子列表空、ref.parentNode 落在真实（已漂移
+                // 前移的）路径上 → 三臂全 miss 照抛 NotFound → React commit 臂死亡、整段
+                // 区块不挂载（qq.com 首页 swiper 容器 0 挂载、channel-feed 缺失实证）。
+                // 融合视图**空**时 shim 对「ref 是否为子」无证据面（既非确认非子）——与
+                // R126 'lenient-stale-parent' 同哲学：视图体系内不可证伪时按调用方视图放行；
+                // 融合列表**非空**（真实可见）时照抛，WPT pre-insertion-validation-notfound
+                // 族（非空父 + 外部 ref）不受影响。放行后走 refNode.__zwSelector 分支按
+                // ref 真实选择器落位（InsertAdjacent 语义），落点即 React 语义目标。
+                var _r300invisible = true;
+                try {
+                  var _r300kidsNow = (typeof _childNodeList === 'function') ? _childNodeList(sel, handle) : null;
+                  _r300invisible = !_r300kidsNow || _r300kidsNow.length === 0;
+                } catch (_e300kidsNow) {}
+                if (!_r300invisible && !_r300isChild) {
+                  throw _zwDomException(
+                    "Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node.",
+                    'NotFoundError');
+                }
               }
             }
             // R296（js-dom M4）：spec `dom-node-pre-insert` 步骤 4——**Document/

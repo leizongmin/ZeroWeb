@@ -741,15 +741,21 @@ var __zw = globalThis.__zwAutomationHandles = globalThis.__zwAutomationHandles |
   return r;
 })();"#;
 
-/// [`AutomationOperation::EvaluateRetaining`] 脚本：执行表达式并按
+/// [`AutomationOperation::EvaluateRetaining`] 脚本：执行脚本并按
 /// returnByValue 语义处理结果（false：对象 → 注册表句柄；true：对象按值深序列化）。
-/// 表达式语义（Chromium `Runtime.evaluate` 单表达式形态）；末尾分号剥除——
-/// PW 安装源为 IIFE 自调用（`...();`），直拼 `(...;)` 不编译。
+/// 脚本语义（Chromium `Runtime.evaluate`：按 **Script 语句序列**编译，completion value
+/// 为结果）——t6（siteopt qq-20261016-r1）：旧实现 `(expression)` 包装把语句序列变非法
+/// 表达式（`window.scrollBy(0,800); 1` → `(window.scrollBy(0,800); 1)` 抛
+/// "SyntaxError: Unexpected token ';'"，qq.com journey 每 evaluate 一条 pageerror，
+/// trial/t6/journey/baseline-r1-9817.json 实证 ×18/轮）。改经**间接 eval** 执行：语句序列
+/// 合法、completion value 即求值结果、`var`/`function` 声明落全局（Chrome global-scope 语义）；
+/// `__zwRealEval||eval` 走原生 eval（eval 门禁包装替换 globalThis.eval 时，同 script_gen
+/// M2-s6 先例）。
 fn evaluate_retaining_script(script: &str, group: &str, return_by_value: bool) -> String {
-    let expression = script.trim_end().strip_suffix(';').unwrap_or_else(|| script.trim_end());
     let by_value = if return_by_value { "true" } else { "false" };
+    let script_literal = format!("'{}'", zero_engine::escape_js_string(script));
     format!(
-        "(function(){{{HANDLE_REGISTRY_JS}\nvar __zwV = ({expression});\nreturn __zw.tail(__zwV, {group:?}, {by_value});}})()"
+        "(function(){{{HANDLE_REGISTRY_JS}\nvar __zwV = (0,globalThis.__zwRealEval||eval)({script_literal});\nreturn __zw.tail(__zwV, {group:?}, {by_value});}})()"
     )
 }
 
@@ -1104,6 +1110,44 @@ mod tests {
     }
 
     // ── objectId 句柄桥（CDP Runtime.evaluate returnByValue:false 语义）──
+
+    /// t6（siteopt qq-20261016-r1）：`Runtime.evaluate` 按 **Script 语句序列**编译
+    /// （Chrome 语义，completion value 为结果）。旧 `(expression)` 包装对语句序列抛
+    /// "SyntaxError: Unexpected token ';'"（qq.com journey 每 evaluate 一条 pageerror，
+    /// trial/t6/journey/baseline-r1-9817.json ×18/轮）。回归钉：多语句 + 尾分号 +
+    /// completion value + `var` 全局可见四断言。
+    #[test]
+    fn evaluate_accepts_statement_sequences() {
+        let mut runtime = runtime();
+        // 语句序列 + 尾分号：旧包装 `(a(); b)` 编译失败，Chrome 返回 completion value 2。
+        let result = runtime
+            .execute_automation_request(
+                1,
+                AutomationRequest {
+                    operation: AutomationOperation::EvaluateRetaining {
+                        script: "globalThis.__zwT6Seq = 1; __zwT6Seq + 1;".into(),
+                        group: None,
+                        return_by_value: true,
+                    },
+                },
+            )
+            .expect("statement sequence must evaluate");
+        assert_eq!(result, AutomationResult::Value(AutomationValue::Number(2.0)));
+        // `var` 声明落全局（indirect eval global-scope 语义，Chrome 对齐）：后续 evaluate 可见。
+        let result = runtime
+            .execute_automation_request(
+                1,
+                AutomationRequest {
+                    operation: AutomationOperation::EvaluateRetaining {
+                        script: "var __zwT6Var = 41; __zwT6Var + 1".into(),
+                        group: None,
+                        return_by_value: true,
+                    },
+                },
+            )
+            .expect("var declare evaluate");
+        assert_eq!(result, AutomationResult::Value(AutomationValue::Number(42.0)));
+    }
 
     /// 保留对象返回句柄引用、原始类型按值返回。
     #[test]
