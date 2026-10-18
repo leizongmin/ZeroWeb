@@ -229,6 +229,21 @@ impl HitTestCache {
         out
     }
 
+    /// fragment 锚点定位：`id` 属性匹配元素的布局盒左上角 Y（文档坐标）。
+    ///
+    /// 同文档 fragment 导航滚动定位的数据源（HTML the-indicated-part-of-the-document
+    /// 按 `id` 匹配）；布局树外元素（display:none 等）无布局盒返回 `None`。
+    /// `<a name>` 传统锚未建模（FIXME：完整语义还需 `a[name]` 匹配）。
+    pub fn anchor_y(&self, id: &str) -> Option<f32> {
+        let node = self
+            .nodes
+            .iter()
+            .find(|(_, meta)| meta.id.as_deref() == Some(id))
+            .map(|(node, _)| *node)?;
+        let (_, y, _, _) = layout_box_for_node(&self.layout_root, node, 0.0, 0.0)?;
+        Some(y)
+    }
+
     /// 导出可跨进程传输的快照（不含完整 DOM）。
     pub fn snapshot(&self) -> HitTestCacheSnapshot {
         HitTestCacheSnapshot {
@@ -944,6 +959,51 @@ mod tests {
         cache.fill_layout_rect_snapshot(&snapshot);
         let rects = snapshot.lock().expect("rect snapshot");
         assert_eq!(rects[&node_id_to_u64(input)], (41.0, 52.0, 100.0, 40.0));
+    }
+
+    /// 同文档 fragment 导航定位：`anchor_y` 按 `id` 匹配元素并返回文档坐标 Y
+    ///（子盒坐标按 border/padding 累积，与 hit/gBCR 同源）；无匹配返回 `None`。
+    #[test]
+    fn anchor_y_locates_element_by_id_in_document_coordinates() {
+        let doc = zero_dom::parse_html(r#"<body><fieldset><input id="target"></fieldset></body>"#);
+        let body = doc.get_elements_by_tag_name("body")[0];
+        let fieldset = doc.get_elements_by_tag_name("fieldset")[0];
+        let input = doc.get_element_by_id("target").expect("target input");
+        let mut root = LayoutBox {
+            node_id: Some(body),
+            width: 800.0,
+            height: 600.0,
+            padding_left: 8.0,
+            padding_top: 8.0,
+            ..LayoutBox::default()
+        };
+        let mut fieldset_box = LayoutBox {
+            node_id: Some(fieldset),
+            x: 10.0,
+            y: 20.0,
+            width: 300.0,
+            height: 200.0,
+            border_left: 2.0,
+            border_top: 2.0,
+            padding_left: 16.0,
+            padding_top: 16.0,
+            ..LayoutBox::default()
+        };
+        fieldset_box.children.push(LayoutBox {
+            node_id: Some(input),
+            x: 5.0,
+            y: 6.0,
+            width: 100.0,
+            height: 40.0,
+            ..LayoutBox::default()
+        });
+        root.children.push(fieldset_box);
+        let cache = HitTestCache::from_document(&doc, &root, &HashMap::new());
+
+        // 文档坐标累积：8(root padding) + 20(fieldset y) + 2(border) + 16(padding) + 6
+        // = 52，与上方 hit/gBCR 断言同一 fixture 同源。
+        assert_eq!(cache.anchor_y("target"), Some(52.0));
+        assert_eq!(cache.anchor_y("missing"), None);
     }
 
     /// slice13（CSS2 §10.6.2）：`HitTestCache::fill_layout_rect_snapshot`（gBCR 直填

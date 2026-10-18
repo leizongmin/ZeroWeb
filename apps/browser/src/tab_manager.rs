@@ -557,6 +557,14 @@ impl TabManager {
         hit_test.hit_test_element(x, y)
     }
 
+    /// fragment 锚点定位：按元素 `id` 查命中测试快照的文档坐标 Y（主线程快照）。
+    ///
+    /// 同文档 fragment 导航滚动定位数据源；快照 miss（首帧未绘制/无布局）返回 `None`。
+    pub fn anchor_scroll_y(&mut self, tab_id: TabId, id: &str) -> Option<f32> {
+        let snap = self.snapshots.get(&tab_id)?;
+        snap.hit_test.as_ref()?.anchor_y(id)
+    }
+
     fn page_target_for_hit(
         &self,
         tab_id: TabId,
