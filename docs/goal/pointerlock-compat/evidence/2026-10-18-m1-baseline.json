@@ -1,0 +1,37 @@
+[
+  [
+    "pointerlock/constructor.html",
+    [
+      {
+        "name": "Default event values for mouse event interface and its pointer lock extensions.",
+        "status": "Fail",
+        "message": "assert_equals: expected (undefined) undefined but got (number) 0"
+      },
+      {
+        "name": "Default event values for pointerlockerror using a dictionary",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "pointerlock/pointerlock-requires-gesture.html",
+    [
+      {
+        "name": "Request pointer lock without user gesture should fail",
+        "status": "Fail",
+        "message": "assert_unreached: Pointer lock should not be granted without a user gesture Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "pointerlock/pointerlock_without_gesture.html",
+    [
+      {
+        "name": "pointerlock_without_gesture",
+        "status": "Fail",
+        "message": "assert_unreached: Must not acquire pointer lock. Reached unreachable code"
+      }
+    ]
+  ]
+]
