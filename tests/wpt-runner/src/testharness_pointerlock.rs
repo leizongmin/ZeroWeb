@@ -52,16 +52,11 @@ pub(crate) fn pointerlock_case_skipped(relative: &str, source: &str) -> bool {
     if name.contains("-manual.") {
         return true;
     }
-    // pointerlock-compat M3 s2：movementX_Y_basic 只断言 mousemove 位移流
-    // （movementX == screenX 前后差，Pointer Lock spec #dom-mouseevent-movementx），
-    // 不取真锁——其 test_driver.Actions 步走 runner 合成指针管线即满足，窄化放行
-    // （捕获管线门控例外，同 s1 B 面两案先例）。
-    if name == "movementX_Y_basic.html" {
-        return false;
-    }
-    if source.contains("test_driver.") || source.contains("test-helper.js") {
-        return true;
-    }
+    // pointerlock-compat M3 s3（RFC §6.7）：`test_driver.`/`test-helper.js` 内容
+    // skip 删除——C 面 14 案入执行面（锁管线 Commit 3 就绪，锁定路由 + 激活注入
+    // 驱动；红案按能力缺口记账）。s2 的 movementX_Y_basic 例外随规则删除自然
+    // 收敛（其 Actions 步走锁定路由外常规合成管线）。保留：-manual（真实用户
+    // 交互）+ 无 testharness 兜底。
     if !source.contains("testharness.js") {
         return true;
     }

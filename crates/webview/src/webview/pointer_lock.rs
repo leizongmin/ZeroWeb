@@ -31,6 +31,10 @@ pub struct PointerLockState {
     /// 待上报的锁定布尔跃迁（None = 无变化；Some = 上报浏览器 TabManager 的
     /// locked 新值，s4 转发门/Esc 分支判据——RFC §6.5 PointerLockChanged）。
     pending_report: Option<bool>,
+    /// 锁定期按下键位掩码（`MouseEvent.buttons`——主键 Down=1/Up=0，锁内拖拽
+    /// move 断言面；C 面实跑补——spec https://w3c.github.io/pointerlock/ 锁定
+    /// 不改变 buttons 语义，目标恒为锁元素）。
+    buttons: u16,
 }
 
 impl PointerLockState {
@@ -90,6 +94,18 @@ impl PointerLockState {
     }
 }
 
+/// WebDriver button index → `MouseEvent.buttons` 位掩码位（与 shim `_zwButtonMask`
+/// 同映射——index 1=middle→bit2(4)、2=right→bit1(2)，spec
+/// https://www.w3.org/TR/pointerevents/#dom-pointerevent-buttons；界外/负值 → 0）。
+fn buttons_mask_bit(button: i16) -> u16 {
+    match button {
+        1 => 4,
+        2 => 2,
+        b if (0..=15).contains(&b) => 1u16 << b,
+        _ => 0,
+    }
+}
+
 /// 指针键相位（锁定态改道面——`apply_locked_pointer_button` 输入）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LockedButtonPhase {
@@ -141,13 +157,15 @@ impl WebView {
     }
 
     /// 锁定态位移单入口（RFC §6.4）：未锁定 no-op；锁定则 delta 由镜像态算、
-    /// 直接向锁目标派 mousemove（不 hit test、不合成跨界序），坐标/位移经
-    /// s2 位移流 detail 透传（shim mouse 分支消费面）。
+    /// 直接向锁目标派 pointermove + mousemove 对（不 hit test、不合成跨界序
+    /// ——boundary 抑制断言面），坐标/位移/buttons 经 detail 透传。派发序按
+    /// PE2 §11 compat mouse 事件跟随对应 pointer 事件（spec
+    /// https://www.w3.org/TR/pointerevents2/#compatibility-mapping-for-mouse-events）。
     pub fn apply_locked_pointer_move(&mut self, x: f32, y: f32) -> Result<bool, WebViewError> {
-        let (target, delta) = {
+        let (target, delta, buttons) = {
             let mut state = self.pointer_lock.lock().unwrap_or_else(|e| e.into_inner());
             match state.advance_move(x, y) {
-                Some(delta) => (state.target().unwrap_or_default().to_string(), delta),
+                Some(delta) => (state.target().unwrap_or_default().to_string(), delta, state.buttons),
                 None => return Ok(false),
             }
         };
@@ -156,25 +174,41 @@ impl WebView {
             client_y: Some(y),
             movement_x: delta.0,
             movement_y: delta.1,
+            buttons: Some(buttons),
             ..Default::default()
         };
+        self.dispatch_dom_event_inner(&target, "pointermove", Some(&detail))?;
         self.dispatch_dom_event_inner(&target, "mousemove", Some(&detail))?;
         Ok(true)
     }
 
     /// 锁定态指针键改道（RFC §6.4 `apply_locked_pointer_button`）：Down/Up 各派
-    /// mousedown/mouseup 到锁目标。click 合成不在本入口（shim `__zw_pointer_up_sequence`
-    /// 组合逻辑针对合成管线；锁定态 click 语料未钉——FIXME: C 面实跑若暴露
-    /// locked click 断言面再按 Pointer Lock spec §retarget 补组合）。
+    /// mousedown/mouseup 到锁目标，`button`/`buttons` 按物理键透传（锁定只改
+    /// target 不改键态——back/forward mouseup 断言面）；镜像 buttons 位随相位
+    /// 置/清，锁内 move 透传同一掩码。Up 后组合 click（主键）或 auxclick（非主
+    /// 键，UI Events spec https://www.w3.org/TR/uievents/#event-type-auxclick）到
+    /// 锁目标（Pointer Lock retarget——PE2 spec
+    /// https://www.w3.org/TR/pointerevents2/#the-click-auxclick-and-contextmenu-events，
+    /// 携 pointerType 走 PointerEvent 实例 + R108 pre-click activation 原型链）。
     pub fn apply_locked_pointer_button(
         &mut self,
         phase: LockedButtonPhase,
+        button: i16,
         x: f32,
         y: f32,
     ) -> Result<bool, WebViewError> {
         let target = match self.pointer_lock_target() {
             Some(target) => target,
             None => return Ok(false),
+        };
+        let mask_bit = buttons_mask_bit(button);
+        let buttons = {
+            let mut state = self.pointer_lock.lock().unwrap_or_else(|e| e.into_inner());
+            match phase {
+                LockedButtonPhase::Down => state.buttons |= mask_bit,
+                LockedButtonPhase::Up => state.buttons &= !mask_bit,
+            }
+            state.buttons
         };
         let event_type = match phase {
             LockedButtonPhase::Down => "mousedown",
@@ -183,9 +217,24 @@ impl WebView {
         let detail = DomEventDetail {
             client_x: Some(x),
             client_y: Some(y),
+            button: Some(button),
+            buttons: Some(buttons),
             ..Default::default()
         };
         self.dispatch_dom_event_inner(&target, event_type, Some(&detail))?;
+        if phase == LockedButtonPhase::Up {
+            let click_type = if button == 0 { "click" } else { "auxclick" };
+            let click_detail = DomEventDetail {
+                client_x: Some(x),
+                client_y: Some(y),
+                button: Some(button),
+                buttons: Some(buttons),
+                detail: Some(1),
+                pointer_type: Some("mouse".to_string()),
+                ..Default::default()
+            };
+            self.dispatch_dom_event_inner(&target, click_type, Some(&click_detail))?;
+        }
         Ok(true)
     }
 
@@ -368,5 +417,68 @@ mod tests {
         assert_eq!(webview.pointer_lock_target(), None);
         assert_eq!(webview.take_pointer_lock_report(), Some(false));
         assert!(!webview.apply_locked_pointer_move(20.0, 20.0).unwrap());
+    }
+
+    /// C 面锁定改道行为钉（三修一体）：buttons 掩码随相位置/清 + move 透传、
+    /// pointermove 先于 mousemove（PE2 §11 compat 序）、Up 组合 click/auxclick；
+    /// 全事件落锁目标 #t、另一元素 #o 零事件（独占 retarget——all_mouse_events
+    /// 断言面）。
+    #[test]
+    fn locked_pointer_button_move_sequence_e2e() {
+        use crate::WebViewConfig;
+        let mut webview = WebView::new(WebViewConfig::default());
+        webview.prepare_document_state("https://zero.test/lock-seq");
+        webview.load_html(
+            r#"<html><body><div id="t"></div><div id="o"></div></body></html>"#,
+            None,
+        );
+        webview
+            .execute_script_with_dom(
+                "globalThis.__seq = [];\
+                 ['pointermove', 'mousemove', 'mousedown', 'mouseup', 'click', 'auxclick']\
+                   .forEach(function (type) {\
+                     document.addEventListener(type, function (e) {\
+                       globalThis.__seq.push(e.type + ':' + e.target.id + ':' + e.buttons);\
+                     });\
+                   });",
+            )
+            .map_err(|error| format!("listener failed: {error}"))
+            .unwrap();
+        webview
+            .execute_script_with_dom("__zwUserActivate(); document.getElementById('t').requestPointerLock();")
+            .map_err(|error| format!("grant failed: {error}"))
+            .unwrap();
+        assert_eq!(webview.take_pointer_lock_report(), Some(true));
+        assert!(
+            webview
+                .apply_locked_pointer_button(LockedButtonPhase::Down, 0, 10.0, 10.0)
+                .unwrap()
+        );
+        assert!(webview.apply_locked_pointer_move(12.0, 10.0).unwrap());
+        assert!(
+            webview
+                .apply_locked_pointer_button(LockedButtonPhase::Up, 0, 12.0, 10.0)
+                .unwrap()
+        );
+        // 非主键（back=3）：mousedown/mouseup buttons 位按掩码（1<<3=8），Up 组合
+        // auxclick 而非 click（UI Events——mouse_buttons_back_forward 断言面）。
+        assert!(
+            webview
+                .apply_locked_pointer_button(LockedButtonPhase::Down, 3, 12.0, 10.0)
+                .unwrap()
+        );
+        assert!(
+            webview
+                .apply_locked_pointer_button(LockedButtonPhase::Up, 3, 12.0, 10.0)
+                .unwrap()
+        );
+        assert_eq!(
+            webview
+                .execute_script_with_dom("globalThis.__seq.join('|')")
+                .expect("log"),
+            "mousedown:t:1|pointermove:t:1|mousemove:t:1|mouseup:t:0|click:t:0\
+             |mousedown:t:8|mouseup:t:0|auxclick:t:0",
+            "锁内主键 Down→move→Up + back 键：buttons 掩码 + click/auxclick 组合，独占锁目标"
+        );
     }
 }

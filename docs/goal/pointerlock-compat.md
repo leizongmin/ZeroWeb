@@ -1,10 +1,10 @@
 # Pointer Lock 兼容 — requestPointerLock / 指针捕获语义（门控 goal）
 
-**版本**: v1.6
+**版本**: v1.7
 **日期**: 2026-10-19
-**状态**: **M3 实施中（用户 2026-10-19 点名）·s1+s2 完成（执行子集 80.0%）
-·s3 管线就绪（Commit 3 落地）·C 面/桌面待做（Commit 4–5）**——M2 RFC
-v1.3（已确认，实施期修正见其 §12）。
+**状态**: **M3 实施中（用户 2026-10-19 点名）·s1–s3 完成 + C 面执行 + 桌面
+激活落地（Commit 4；执行面 18/22 子测试 Pass，文件口径 14/18 全绿）·
+总账收口待做（Commit 5）**——M2 RFC v1.4（已确认，实施期修正见其 §12）。
 RFC 见 [m2-pointer-capture-pipeline-spec-rfc.md](pointerlock-compat/m2-pointer-capture-pipeline-spec-rfc.md)；
 M1 甄别报告见
 [evidence/2026-10-18-m1-baseline.md](pointerlock-compat/evidence/2026-10-18-m1-baseline.md)
@@ -20,8 +20,19 @@ M1 甄别报告见
 > 指针捕获本质依赖 host 光标管线（隐藏系统光标 + 相对位移流）——host-runtime
 > 面，缺即门控。
 
-## 当前状态（2026-10-19 M3 s3 Commit 3 收口）
+## 当前状态（2026-10-19 M3 Commit 4 收口）
 
+- **M3 Commit 4 完成（2026-10-19）：C 面执行 + 桌面激活**。C 面 18 案入
+  执行面：**18/22 子测试 Pass，文件口径 14/18 全绿**——maintains-mousedown
+  （buttons 键态）/all_mouse_events（click 组合 + 独占 retarget）/
+  suppress_boundary（pointermove 同发 + 零 boundary）/mouse_buttons_back_forward
+  （button 穿透）翻绿；红案 4 = constructor（Event.NONE 跨域残留，不占分母）/
+  shadow（TBD-1）/wheel×2（TBD-3）。桌面激活（§6.6）：宿主仲裁镜像
+  `pointer_lock_tabs`（回执维护 + 三连清）+ 转发门/Esc Exit 相位（dnd 邻位）
+  + chrome 悬停跳过 + IPC 契约 Exit + renderer 臂。实施期修正两点
+  （button 签名/Exit 相位）→ RFC v1.4。见
+  [Commit 4 证据](pointerlock-compat/evidence/2026-10-19-m3-commit4-cface-desktop.md)。
+  **下一步**：Commit 5 = s4 收口（corpus 总账 csv 回填、FR 残留、DC-3 门禁）。
 - **M3 s3 管线就绪（2026-10-19，Commit 3）**：webview 锁镜像新模块
   `pointer_lock.rs`（`apply_locked_pointer_move`/`_button` 单入口 + 导航四连点
   清理）+ host 桥 `__zw_pointer_lock_state_changed`（shim 四处通知 + identity
@@ -30,7 +41,6 @@ M1 甄别报告见
   e2e 桥测试一次全绿（grant→镜像→改道位移→exit→报告）。实施期修正四点
   （事件派发改道不实施/payload 纯 sel/省 tab_id/注册点在 webview）→ RFC v1.3。
   见 [s3 证据](pointerlock-compat/evidence/2026-10-19-m3-s3-lock-pipeline.md)。
-  **下一步**：Commit 4 = C 面 12 案执行 + runner 锁定路由 + 桌面激活（§6.6/6.7）。
 - **M3 s2 完成（2026-10-19）**：位移流字段落地（FR-4，RFC §6.3 三层：序列化
   movementX/Y + runner 事件源算 delta + shim mouse 分支透传）。**实施期发现**
   shim `MouseEvent` 构造键表缺 movementX/Y（键表外 init 键静默丢弃——

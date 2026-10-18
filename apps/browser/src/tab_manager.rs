@@ -7,7 +7,7 @@ use zero_browser_shell::TabId;
 use zero_engine::{DomEventDetail, MediaType, PrefersColorSchemeValue, selector_from_element_hit};
 use zero_protocol::message::{
     AutomationOperation, AutomationResult, AutomationValue, DispatchDomEventParams, DragInputParams, DragInputPhase,
-    ImeEventParams, TabNavigateRequestParams,
+    ImeEventParams, PointerLockChangedParams, PointerLockInputParams, PointerLockInputPhase, TabNavigateRequestParams,
 };
 use zero_render_foundation::image_cache::ImageCache;
 
@@ -73,6 +73,10 @@ pub struct TabManager {
     /// 焦点位于可编辑文本控件（input 文本类 / textarea）的 Tab（R3254-H1 回执维护；
     /// 滚动默认动作守卫，覆盖 Tab 导航/JS auto-focus 等无 ime_rect 的场景）。
     focused_text_input: HashSet<TabId>,
+    /// 页面元素持锁的 Tab（pointerlock-compat M3 s4，RFC §6.6 宿主仲裁镜像——
+    /// PointerLockChanged 回执维护；锁定态转发门 `page_pointer_lock_active` 与
+    /// Esc 分支的判据。导航/关 Tab 由渲染端四连点复位 + 回执双向关镜）。
+    pointer_lock_tabs: HashSet<TabId>,
     /// Last focused page text-control insertion area in document CSS pixels.
     ime_target_rects: HashMap<TabId, (f32, f32, f32, f32)>,
     /// dispatch_id → PendingDispatch。
@@ -116,6 +120,7 @@ impl TabManager {
             pressed_targets: HashMap::new(),
             drag_sessions: HashMap::new(),
             focused_text_input: HashSet::new(),
+            pointer_lock_tabs: HashSet::new(),
             ime_target_rects: HashMap::new(),
             pending_dispatch: HashMap::new(),
             pending_actions: VecDeque::new(),
@@ -276,6 +281,7 @@ impl TabManager {
         self.snapshots.remove(&tab_id);
         self.event_targets.remove(&tab_id);
         self.focused_text_input.remove(&tab_id);
+        self.pointer_lock_tabs.remove(&tab_id);
         self.ime_target_rects.remove(&tab_id);
         if let Some(ref mut backend) = self.process_backend {
             backend.remove_renderer(tab_id);
@@ -306,6 +312,7 @@ impl TabManager {
         }
         self.event_targets.remove(&tab_id);
         self.focused_text_input.remove(&tab_id);
+        self.pointer_lock_tabs.remove(&tab_id);
         self.ime_target_rects.remove(&tab_id);
         if let Some(snap) = self.snapshots.get_mut(&tab_id) {
             snap.begin_navigation(url.clone());
@@ -339,6 +346,7 @@ impl TabManager {
         self.ensure_tab(tab_id);
         self.event_targets.remove(&tab_id);
         self.focused_text_input.remove(&tab_id);
+        self.pointer_lock_tabs.remove(&tab_id);
         self.ime_target_rects.remove(&tab_id);
         if let Some(snap) = self.snapshots.get_mut(&tab_id) {
             snap.begin_navigation(url.unwrap_or("about:blank").to_string());
@@ -409,6 +417,10 @@ impl TabManager {
                     self.focused_text_input.remove(&tab_id);
                 }
             }
+            // pointerlock-compat M3 s4（§6.6）：锁定跃迁同步宿主仲裁镜像——
+            // 转发门/Esc 分支判据（渲染端导航复位 + 回执双向关镜）。
+            let reports = backend.take_pointer_lock_changes();
+            self.apply_pointer_lock_reports(reports);
         }
         #[cfg(any(test, feature = "test-support"))]
         for (tab_id, worker) in &self.workers {
@@ -918,6 +930,52 @@ impl TabManager {
         self.drag_sessions.contains_key(&tab_id)
     }
 
+    /// 页面元素是否持锁（pointerlock-compat M3 s4，RFC §6.6）——锁定态指针
+    /// 转发门（非按压 move 也转发）与 chrome 悬停/Esc 分支的判据。
+    pub fn page_pointer_lock_active(&self, tab_id: TabId) -> bool {
+        self.pointer_lock_tabs.contains(&tab_id)
+    }
+
+    /// PointerLockChanged 回执落宿主镜像（poll 排空点抽出——单测直驱同路径）。
+    fn apply_pointer_lock_reports(&mut self, reports: Vec<(TabId, PointerLockChangedParams)>) {
+        for (tab_id, params) in reports {
+            if params.locked {
+                self.pointer_lock_tabs.insert(tab_id);
+            } else {
+                self.pointer_lock_tabs.remove(&tab_id);
+            }
+        }
+    }
+
+    /// 转发锁定态指针位移（PointerLockInput{Move}，fire-and-forget；delta 由
+    /// 渲染端镜像算）。
+    pub fn dispatch_pointer_lock_move(&mut self, tab_id: TabId, x: f32, y: f32) {
+        self.send_pointer_lock_input(tab_id, PointerLockInputPhase::Move, x, y);
+    }
+
+    /// 转发锁定态指针键（Down/Up，主键——桌面侧键属平台导航手势域）。
+    pub fn dispatch_pointer_lock_button(&mut self, tab_id: TabId, phase: PointerLockInputPhase, x: f32, y: f32) {
+        self.send_pointer_lock_input(tab_id, phase, x, y);
+    }
+
+    /// UA 手势释放（桌面 Esc，RFC §6.6）：Exit 相位 → renderer exitPointerLock
+    /// 语义（shim 清态 + change 事件，§6.5 通道回环关宿主镜像）。
+    pub fn dispatch_pointer_lock_exit(&mut self, tab_id: TabId) {
+        self.send_pointer_lock_input(tab_id, PointerLockInputPhase::Exit, 0.0, 0.0);
+    }
+
+    fn send_pointer_lock_input(&mut self, tab_id: TabId, phase: PointerLockInputPhase, x: f32, y: f32) {
+        if let Some(ref mut backend) = self.process_backend {
+            let message_id = self.next_dispatch_id;
+            self.next_dispatch_id += 1;
+            backend.dispatch_pointer_lock_input_fire_and_forget(
+                tab_id,
+                message_id,
+                PointerLockInputParams { phase, x, y },
+            );
+        }
+    }
+
     fn send_drag_input(&mut self, tab_id: TabId, phase: DragInputPhase, x: f32, y: f32) {
         if let Some(ref mut backend) = self.process_backend {
             let message_id = self.next_dispatch_id;
@@ -1300,5 +1358,29 @@ mod ime_tests {
         manager.dispatch_page_click(tab_id, b.0, b.1, false);
         assert_eq!(manager.event_targets.get(&tab_id).map(String::as_str), Some("#a"));
         assert!(!manager.pressed_targets.contains_key(&tab_id));
+    }
+
+    /// pointerlock-compat M3 s4（§6.6）：宿主仲裁镜像生命周期——回执跃迁落镜、
+    /// 冗余回执幂等、导航清理关镜（转发门/Esc 分支判据面）。
+    #[test]
+    fn pointer_lock_mirror_follows_reports_and_cleanup() {
+        let tab_id = TabId(3);
+        let mut manager = TabManager::new((800, 600), PrefersColorSchemeValue::Light);
+        manager.ensure_tab(tab_id);
+        assert!(!manager.page_pointer_lock_active(tab_id));
+        // grant 回执开镜。
+        manager.apply_pointer_lock_reports(vec![(tab_id, PointerLockChangedParams { locked: true })]);
+        assert!(manager.page_pointer_lock_active(tab_id));
+        // 冗余 false（未锁通知，渲染端跃迁判定本不应上报——防御幂等）不动镜像。
+        manager.apply_pointer_lock_reports(vec![(tab_id, PointerLockChangedParams { locked: true })]);
+        assert!(manager.page_pointer_lock_active(tab_id));
+        // exit 回执关镜。
+        manager.apply_pointer_lock_reports(vec![(tab_id, PointerLockChangedParams { locked: false })]);
+        assert!(!manager.page_pointer_lock_active(tab_id));
+        // 重新锁定后导航清理（锁不跨 document）。
+        manager.apply_pointer_lock_reports(vec![(tab_id, PointerLockChangedParams { locked: true })]);
+        assert!(manager.page_pointer_lock_active(tab_id));
+        manager.navigate_request(tab_id, "https://zero.test/next".to_string(), "GET".to_string(), None);
+        assert!(!manager.page_pointer_lock_active(tab_id));
     }
 }

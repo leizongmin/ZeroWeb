@@ -2948,7 +2948,8 @@ return JSON.stringify({{action:action,name:name,val:val}});\
     /// 指针锁定输入（pointerlock-compat M3 s3）：锁定态宿主指针改道——`apply_locked_pointer_move`
     /// /`apply_locked_pointer_button` 单入口（未锁定 no-op，镜像判据；ImeEvent 同款
     /// 无回执）。锁定跃迁（页面脚本 grant/exit 经 §6.5 host 桥写镜像）由
-    /// `run_frame_transaction` 收尾排空上报。
+    /// `run_frame_transaction` 收尾排空上报。IPC 面（{phase,x,y}）仅主键（button=0）；
+    /// runner 路径按物理键透传（back/forward mouseup 断言面）。
     fn handle_pointer_lock_input(&mut self, params: PointerLockInputParams) -> Result<(), String> {
         let webview = self.webview.as_mut().expect("webview");
         match params.phase {
@@ -2959,12 +2960,19 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             }
             PointerLockInputPhase::Down => {
                 webview
-                    .apply_locked_pointer_button(zero_webview::LockedButtonPhase::Down, params.x, params.y)
+                    .apply_locked_pointer_button(zero_webview::LockedButtonPhase::Down, 0, params.x, params.y)
                     .map_err(|e| e.to_string())?;
             }
             PointerLockInputPhase::Up => {
                 webview
-                    .apply_locked_pointer_button(zero_webview::LockedButtonPhase::Up, params.x, params.y)
+                    .apply_locked_pointer_button(zero_webview::LockedButtonPhase::Up, 0, params.x, params.y)
+                    .map_err(|e| e.to_string())?;
+            }
+            PointerLockInputPhase::Exit => {
+                // UA 手势释放（桌面 Esc，RFC §6.6）：走页面可见 API——shim exit
+                // 清态 + 派 change，§6.5 host 桥回环关镜像（帧事务尾排空上报）。
+                webview
+                    .execute_script("document.exitPointerLock();")
                     .map_err(|e| e.to_string())?;
             }
         }

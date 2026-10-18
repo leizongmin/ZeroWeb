@@ -115,6 +115,25 @@ impl BrowserApp {
             }
         }
 
+        // pointerlock-compat M3 s4（§6.6）：Escape 释放页面指针锁（UA 手势释放，
+        // spec 默认退出手势；非语料驱动，产品合理性纳入）。同款守卫——菜单/
+        // 查找栏/地址栏更高优先级 Escape 语义先行；Exit 相位 → renderer
+        // exitPointerLock 语义（§6.5 通道回环关宿主镜像）。
+        if key == "Escape"
+            && pressed
+            && !self.context_menu.visible
+            && !self.shell.find_state().is_active()
+            && !self.address_bar_focused
+        {
+            if let Some(tab_id) = self.shell.active_tab_id()
+                && self.tabs.page_pointer_lock_active(tab_id)
+            {
+                self.tabs.dispatch_pointer_lock_exit(tab_id);
+                self.needs_redraw = true;
+                return;
+            }
+        }
+
         // Escape 停止加载：仅当没有其他 Escape 上下文（菜单/查找栏/地址栏）打开，
         // 且当前活动标签正在加载时。优先级最低，放在各早返回之后。
         if key == "Escape"

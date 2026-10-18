@@ -16,8 +16,8 @@ use zero_protocol::message::{
     DragInputResultParams, FetchParams, FocusChangeInfo, FramePublishMode, ImeEventParams,
     IndexedDbConnectionEventAckParams, IndexedDbConnectionEventParams, IndexedDbRequestParams, IndexedDbResponseParams,
     IpcColorScheme, IpcMediaType, IpcMessage, IpcMessageKind, IpcPrintOrientation, LoadHtmlParams,
-    NavigationCommittedParams, NavigationStartedParams, PointerLockChangedParams, ScrollEventParams,
-    ServiceWorkerOperation, ServiceWorkerRequestParams, SetColorSchemeParams, SetMediaTypeParams,
+    NavigationCommittedParams, NavigationStartedParams, PointerLockChangedParams, PointerLockInputParams,
+    ScrollEventParams, ServiceWorkerOperation, ServiceWorkerRequestParams, SetColorSchemeParams, SetMediaTypeParams,
     SetPrintPageSetupParams, SetViewportParams, StorageOpParams, StorageOperation, StorageType,
     TabNavigateRequestParams,
 };
@@ -2010,6 +2010,26 @@ impl ProcessTabBackend {
         let _ = renderer.send(IpcMessage {
             id: message_id,
             kind: IpcMessageKind::DragInput(params),
+        });
+    }
+
+    /// 把锁定态指针输入直接转发给 renderer（pointerlock-compat M3 s4，RFC §6.6；
+    /// ImeEvent/DragInput 同款无回执）。
+    pub fn dispatch_pointer_lock_input_fire_and_forget(
+        &mut self,
+        tab_id: TabId,
+        message_id: u64,
+        params: PointerLockInputParams,
+    ) {
+        let Some(rid) = self.tab_to_renderer.get(&tab_id).copied() else {
+            return;
+        };
+        let Some(renderer) = self.manager.get_renderer(rid) else {
+            return;
+        };
+        let _ = renderer.send(IpcMessage {
+            id: message_id,
+            kind: IpcMessageKind::PointerLockInput(params),
         });
     }
 

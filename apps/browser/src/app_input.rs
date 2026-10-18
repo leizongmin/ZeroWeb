@@ -625,6 +625,13 @@ impl BrowserApp {
             self.needs_redraw = true;
         }
 
+        // pointerlock-compat M3 s4（§6.6）：锁定态 chrome 悬停消费整体跳过
+        //（tooltip/链接悬停/滚动条悬停——锁定的语义即光标不可达 chrome）。
+        let page_locked = self
+            .shell
+            .active_tab_id()
+            .is_some_and(|tab_id| self.tabs.page_pointer_lock_active(tab_id));
+
         if (old_pos.0 - x).abs() > 1.0 || (old_pos.1 - y).abs() > 1.0 {
             if self.address_bar_drag && self.address_bar_focused && self.left_button_down {
                 let s = self.scale_factor;
@@ -647,7 +654,19 @@ impl BrowserApp {
                 self.update_window_control_hover(x, y);
             }
             self.update_tab_bar_drag(x, y);
-            self.update_tab_tooltip_hover(x, y);
+            if !page_locked {
+                self.update_tab_tooltip_hover(x, y);
+            }
+        }
+
+        // pointerlock-compat M3 s4（§6.6）：锁定态非按压 move 也转发页面
+        //（delta 由渲染端镜像算，PointerLockInput{Move}）；与 dnd 转发门并列
+        // 邻位。锁定会话不可能武装拖放/选区/滚动条手势（按下已改道）。
+        if page_locked
+            && let Some(tab_id) = self.shell.active_tab_id()
+            && let Some((_, doc_x, doc_y)) = self.page_doc_point(x as f32, y as f32)
+        {
+            self.tabs.dispatch_pointer_lock_move(tab_id, doc_x, doc_y);
         }
 
         if self.left_button_down {
@@ -679,8 +698,10 @@ impl BrowserApp {
             self.needs_redraw = true;
         }
 
-        self.update_hovered_link_at(x, y);
-        self.update_scrollbar_hover(x, y);
+        if !page_locked {
+            self.update_hovered_link_at(x, y);
+            self.update_scrollbar_hover(x, y);
+        }
     }
 
     fn update_scrollbar_hover(&mut self, x: f64, y: f64) {
@@ -783,8 +804,37 @@ impl BrowserApp {
                 if self.tab_tooltip.take().is_some() {
                     self.needs_redraw = true;
                 }
+                // pointerlock-compat M3 s4（§6.6）：锁定态指针键改道页面——chrome
+                // 命中面（滚动条/选区武装/scroll-drag）整体跳过（锁定的语义即
+                // 光标不可达 chrome；内容区外落点按常规 chrome 处理）。
+                if let Some(tab_id) = self.shell.active_tab_id()
+                    && self.tabs.page_pointer_lock_active(tab_id)
+                    && let Some((_, doc_x, doc_y)) = self.page_doc_point(x as f32, y as f32)
+                {
+                    self.tabs.dispatch_pointer_lock_button(
+                        tab_id,
+                        zero_protocol::message::PointerLockInputPhase::Down,
+                        doc_x,
+                        doc_y,
+                    );
+                    return;
+                }
             } else {
                 self.left_button_down = false;
+                // pointerlock-compat M3 s4（§6.6）：锁定态键释放改道页面（按下已
+                // 改道，桌面手势态无从武装；click/auxclick 由渲染端 Up 组合）。
+                if let Some(tab_id) = self.shell.active_tab_id()
+                    && self.tabs.page_pointer_lock_active(tab_id)
+                    && let Some((_, doc_x, doc_y)) = self.page_doc_point(x as f32, y as f32)
+                {
+                    self.tabs.dispatch_pointer_lock_button(
+                        tab_id,
+                        zero_protocol::message::PointerLockInputPhase::Up,
+                        doc_x,
+                        doc_y,
+                    );
+                    return;
+                }
                 if self.context_menu.visible && self.context_menu_suppress_left_up {
                     self.context_menu_suppress_left_up = false;
                     self.scrollbar_drag = None;

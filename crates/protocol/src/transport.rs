@@ -362,6 +362,22 @@ mod tests {
             IpcMessageKind::PointerLockChanged(params) => assert!(params.locked),
             other => panic!("unexpected kind: {other:?}"),
         }
+        // s4：UA 手势释放相位（桌面 Esc → renderer exitPointerLock 语义）。
+        let exit = IpcMessage {
+            id: 3,
+            kind: IpcMessageKind::PointerLockInput(super::super::message::PointerLockInputParams {
+                phase: super::super::message::PointerLockInputPhase::Exit,
+                x: 0.0,
+                y: 0.0,
+            }),
+        };
+        let decoded: IpcMessage = serialize::deserialize(&serialize::serialize(&exit).unwrap()).unwrap();
+        match decoded.kind {
+            IpcMessageKind::PointerLockInput(params) => {
+                assert_eq!(params.phase, super::super::message::PointerLockInputPhase::Exit);
+            }
+            other => panic!("unexpected kind: {other:?}"),
+        }
     }
 
     /// 测试共享内存通道对双向通信。

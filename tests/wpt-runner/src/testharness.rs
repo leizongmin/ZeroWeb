@@ -9155,6 +9155,15 @@ fn apply_testdriver_command(
             let off_y = parts.next().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
             let pointer_type = parts.next().unwrap_or("mouse").to_string();
             let _ = pointer_type;
+            // pointerlock-compat M3 s3 路由（RFC §6.7）：锁定态 move 改道锁目标——
+            // delta 由 webview 镜像算，跳过 `__zw_pointer_move` 合成（防双派）与
+            // 悬停结算/跨界序（锁定态光标不可达其他元素，boundary 序无意义）。
+            if webview.pointer_lock_target().is_some() {
+                let (_, px, py) = resolve_pointer_target(webview, &selector, off_x, off_y, absolute, td_refresh_ver);
+                *last_pointer = Some((px, py));
+                let _ = webview.apply_locked_pointer_move(px, py);
+                return None;
+            }
             // dnd-compat M3：真管道注入——鼠标/指针事件面（shim 合成）与宿主拖放
             // 状态机（`apply_drag_input`，与桌面同一实现）并行喂入。dragstart 接受后
             // （Dragging）真实浏览器抑制鼠标/指针事件面：本步及后续 move/up 不再派
@@ -9223,6 +9232,14 @@ fn apply_testdriver_command(
             let off_y = parts.next().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
             let pointer_type = parts.next().unwrap_or("mouse").to_string();
             let button = parts.next().and_then(|v| v.parse::<i16>().ok()).unwrap_or(0);
+            // pointerlock-compat M3 s3 路由（RFC §6.7）：锁定态 down 改道锁目标
+            // （mousedown 经 apply_locked_pointer_button；跳过合成序/悬停结算）。
+            if webview.pointer_lock_target().is_some() {
+                let (_, px, py) = resolve_pointer_target(webview, &selector, off_x, off_y, absolute, td_refresh_ver);
+                *last_pointer = Some((px, py));
+                let _ = webview.apply_locked_pointer_button(zero_webview::LockedButtonPhase::Down, button, px, py);
+                return None;
+            }
             mut_hover_settle_if_dirty(webview, last_pointer, td_refresh_ver);
             let (hit_sel, px, py) = resolve_pointer_target(webview, &selector, off_x, off_y, absolute, td_refresh_ver);
             *last_pointer = Some((px, py));
@@ -9262,6 +9279,15 @@ fn apply_testdriver_command(
             let off_y = parts.next().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
             let pointer_type = parts.next().unwrap_or("mouse").to_string();
             let button = parts.next().and_then(|v| v.parse::<i16>().ok()).unwrap_or(0);
+            // pointerlock-compat M3 s3 路由（RFC §6.7）：锁定态 up 改道锁目标
+            // （mouseup；click 组合语义经 shim `__zw_pointer_up_sequence` 的合成管线
+            // 不在本入口——锁定 click 语料未钉）。
+            if webview.pointer_lock_target().is_some() {
+                let (_, px, py) = resolve_pointer_target(webview, &selector, off_x, off_y, absolute, td_refresh_ver);
+                *last_pointer = Some((px, py));
+                let _ = webview.apply_locked_pointer_button(zero_webview::LockedButtonPhase::Up, button, px, py);
+                return None;
+            }
             // dnd-compat M3：Dragging 中释放 → drop/dragend（或 dragleave+dragend）
             // 替代鼠标事件面；未拖拽释放（未武装/dragstart 已取消）→ mouseup 面正常
             // 派发 + 状态机安静清武装（自动化注入语义：两种输入路径并行）。

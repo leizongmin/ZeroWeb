@@ -2519,6 +2519,9 @@ pub enum PointerLockInputPhase {
     Down,
     /// 抬起 → 改道派 mouseup。
     Up,
+    /// UA 手势释放（桌面 Esc，RFC §6.6）→ renderer 触发 `exitPointerLock`
+    /// 语义（shim 清态 + 派 change，§6.5 通道回环关镜）。
+    Exit,
 }
 
 /// 指针锁定输入（浏览器→渲染）。
