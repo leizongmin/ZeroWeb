@@ -211,6 +211,11 @@ pub struct BrowserApp {
     /// T61：打印预览设置面板各行的命中区（物理像素 `(x, y, w, h)`；渲染层写入，输入层消费）。
     /// 行 0 = 方向（整行切换），行 1 = 份数、行 2 = 边距（左半 − / 右半 +）。全零 = 未显示。
     print_setup_panel_rows: [(f32, f32, f32, f32); 3],
+    /// T61-D4：份数/边距行的 −/+ 字形起点 x（渲染层按文本前缀实测写入；行 0 为 (0,0)）。
+    print_setup_panel_steppers: [(f32, f32); 3],
+    /// T62-D2：一次性放行文件导入动作 URL（仅 UI 入口设置；内容锚点/渲染端表单
+    /// 各自经来源门禁后亦可置位）。try_apply_bookmarks_url 消费后即复位。
+    allow_file_import_once: bool,
     /// 下载完成 toast：`(文件名, 显示起始时刻)`。下载完成时记录，3 秒后由渲染层清除。
     download_toast: Option<(String, Instant)>,
     /// 关闭标签撤销 toast 显示起始时刻。关闭标签时记录，5 秒后由渲染层清除；
@@ -414,6 +419,8 @@ impl BrowserApp {
             menu_anim_start: None,
             zoom_indicator_start: None,
             print_setup_panel_rows: [(0.0, 0.0, 0.0, 0.0); 3],
+            print_setup_panel_steppers: [(0.0, 0.0); 3],
+            allow_file_import_once: false,
             download_toast: None,
             closed_tab_toast: None,
             history_scroll: HashMap::new(),
@@ -570,6 +577,10 @@ impl BrowserApp {
             if self.shell.active_tab_id() == Some(tab_id) {
                 self.navigate_to_request(&url, method, body);
             }
+        }
+        // T62-D1：多进程渲染端 zero:// 导航装载请求（与上loop同语义）。
+        for (tab_id, request) in self.tabs.take_renderer_navigations() {
+            self.handle_renderer_tab_navigate(tab_id, request);
         }
         if let Some(id) = self.shell.active_tab_id() {
             self.clamp_tab_scroll(id);
@@ -1330,6 +1341,12 @@ impl BrowserApp {
     /// ui_driver：打印预览设置面板第 `row` 行命中矩形（渲染层写入；未渲染返回 None）。
     pub(crate) fn print_setup_panel_rect(&self, row: usize) -> Option<(f32, f32, f32, f32)> {
         self.print_setup_panel_rows.get(row).copied()
+    }
+
+    /// ui_driver：第 `row` 行 −/+ 字形起点 x（D4；未渲染/无步进行返回 None）。
+    pub(crate) fn print_setup_panel_stepper_x(&self, row: usize) -> Option<(f32, f32)> {
+        let (minus_x, plus_x) = self.print_setup_panel_steppers.get(row).copied()?;
+        (plus_x > minus_x).then_some((minus_x, plus_x))
     }
 
     /// 测试用：窗口是否处于全屏。
@@ -2228,6 +2245,12 @@ impl BrowserApp {
             {
                 self.try_apply_bookmarks_url(u);
             }
+            // T62-D2：文件导入动作 URL 为一次性语义——F5/worker GET 刷新分派一律
+            // 回导入页（不重复执行导入；表单提交的实际执行走渲染端
+            // TabNavigateRequest → navigate_to_request → try_apply_internal_url）。
+            u if u.starts_with("zero://bookmarks/import/file?") => {
+                self.open_bookmarks_import_page(None);
+            }
             "zero://shortcuts" => self.open_shortcuts_page(),
             u if u.starts_with("zero://") => self.load_welcome_page(tab_id),
             _ => self.tabs.navigate(tab_id, url.to_string()),
@@ -2283,6 +2306,15 @@ impl BrowserApp {
     /// 导航到指定 URL
     pub fn navigate_to(&mut self, url: &str) {
         self.navigate_to_request(url, "GET".to_string(), None);
+    }
+
+    /// UI 入口导航（地址栏/自动补全/主页/书签栏/启动 URL）：用户可信路径，为
+    /// T62-D2 文件导入动作 URL 置一次性放行位（内容路径 navigate_to 不置位）。
+    pub fn navigate_from_ui(&mut self, url: &str) {
+        if url.starts_with("zero://bookmarks/import/file?") {
+            self.allow_file_import_once = true;
+        }
+        self.navigate_to(url);
     }
 
     fn navigate_to_request(&mut self, url: &str, method: String, body: Option<String>) {
@@ -2476,7 +2508,7 @@ impl BrowserApp {
         // CLI 位置参数作为启动 URL（对齐 Chrome `zero-browser <url>` 行为）：走
         // 地址栏同一 navigate_to 路径，normalize_url 的 scheme 启发式对其同样生效。
         if let Some(url) = self.startup_url.take() {
-            self.navigate_to(&url);
+            self.navigate_from_ui(&url);
         }
     }
 
@@ -2913,15 +2945,37 @@ impl BrowserApp {
     }
 
     /// T61：打印预览设置面板行命中测试（渲染层写入的物理像素矩形）。
-    /// 返回 `(行索引, 是否右半)`；行 0 整行有效，行 1/2 左半 − / 右半 +。
-    fn print_setup_panel_hit(&self, x: f32, y: f32) -> Option<(usize, bool)> {
+    /// 返回 `(行索引, 动作)`：行 0 = `Some(false)`（方向切换）；行 1/2 命中区按
+    /// 渲染实测的 −/+ 字形起点划定（D4：行宽二分会把可见 + 判进 − 区），字形区
+    /// 之外（标签/数值）为 `Some(row, None)`——点击被面板消费但不触发动作
+    /// （面板悬浮于页面区之上，穿透会误点下层页面内容）；面板外返回 None。
+    fn print_setup_panel_hit(&self, x: f32, y: f32) -> Option<(usize, Option<bool>)> {
         for (row, &(rx, ry, rw, rh)) in self.print_setup_panel_rows.iter().enumerate() {
             if rw <= 0.0 {
                 continue;
             }
-            if x >= rx && x < rx + rw && y >= ry && y < ry + rh {
-                return Some((row, x >= rx + rw / 2.0));
+            if x < rx || x >= rx + rw || y < ry || y >= ry + rh {
+                continue;
             }
+            if row == 0 {
+                return Some((row, Some(false)));
+            }
+            let (minus_x, plus_x) = self.print_setup_panel_steppers[row];
+            if plus_x <= minus_x {
+                // 渲染层未写入（陈旧帧）：退化为行宽二分，保持可用。
+                return Some((row, Some(x >= rx + rw / 2.0)));
+            }
+            const GLYPH_TOUCH_PAD: f32 = 6.0;
+            let plus = x >= plus_x - GLYPH_TOUCH_PAD;
+            let minus = x >= minus_x - GLYPH_TOUCH_PAD;
+            return Some((
+                row,
+                match (minus, plus) {
+                    (_, true) => Some(true),
+                    (true, false) => Some(false),
+                    (false, false) => None,
+                },
+            ));
         }
         None
     }
@@ -3406,6 +3460,33 @@ impl BrowserApp {
         self.open_bookmarks_import_page(Some(outcome));
     }
 
+    /// T62-D1：处理渲染端 zero:// 导航装载请求。
+    ///
+    /// D2 来源门禁：文件导入动作 URL 仅认导入页发起的表单提交（initiator 为渲染端
+    /// 权威当前页——内部页的 shell 侧 tab URL 因 try_apply 早退不更新，不可用）。
+    /// 非导入页来源（远端页面锚点/表单直链动作 URL）或路径为空：不执行本地文件
+    /// 读取，落导入页。其余 zero:// GET 走 navigate_to_request（内部分派与 F5 共用）。
+    pub(crate) fn handle_renderer_tab_navigate(
+        &mut self,
+        tab_id: TabId,
+        request: zero_protocol::message::TabNavigateRequestParams,
+    ) {
+        if self.shell.active_tab_id() != Some(tab_id) {
+            return;
+        }
+        if request.url.starts_with("zero://bookmarks/import/file?") {
+            // D2 来源门禁：仅导入页发起的表单提交放行（initiator 为渲染端权威当前
+            // 页——内部页的 shell 侧 tab URL 因 try_apply 早退不更新，不可用）；
+            // 执行点统一在 try_apply_bookmarks_url（一次性放行位）。
+            if request.initiator.as_deref() == Some("zero://bookmarks/import") {
+                self.allow_file_import_once = true;
+            }
+            self.navigate_to_request(&request.url, "GET".to_string(), None);
+            return;
+        }
+        self.navigate_to_request(&request.url, request.method, request.body);
+    }
+
     /// 从文件导入书签（`zero://bookmarks/import/file?path=...`；T62 文件源）。
     ///
     /// 与剪贴板导入共用 Netscape 解析器与 shell 合并逻辑；读取失败与「未解析出
@@ -3444,14 +3525,24 @@ impl BrowserApp {
             return true;
         }
         if let Some(rest) = url.strip_prefix("zero://bookmarks/import/file?") {
-            // T62 文件源导入：表单 GET `path` 参数（urlencoded；`+` 先于 %XX 解码）。
-            let path = Self::parse_form_query(rest)
-                .into_iter()
-                .find(|(key, _)| key == "path")
-                .map(|(_, value)| pages::percent_decode_form_value(&value))
-                .unwrap_or_default()
-                .trim()
-                .to_string();
+            // T62-D2：文件导入动作 URL 的唯一执行点。放行位仅由两类可信入口置位：
+            // UI 直输（地址栏/自动补全/书签栏，navigate_from_ui）与导入页自身表单
+            // 提交（渲染端 TabNavigateRequest 携带 initiator，来源门禁见
+            // handle_renderer_tab_navigate）。内容锚点/远端表单/刷新分派无放行位
+            // ——不执行本地文件读取，落导入页（Chrome 对 web→browser-scheme 同类
+            // 阻断语义）。path 由 parse_form_query 单次解码（D5：无二次解码）。
+            let allow = std::mem::take(&mut self.allow_file_import_once);
+            let path = if allow {
+                Self::parse_form_query(rest)
+                    .into_iter()
+                    .find(|(key, _)| key == "path")
+                    .map(|(_, value)| value)
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string()
+            } else {
+                String::new()
+            };
             if path.is_empty() {
                 self.open_bookmarks_import_page(None);
             } else {

@@ -1120,8 +1120,16 @@ impl UiDriver {
                     .ok_or_else(|| {
                         "click_print_setup: panel row not visible (print preview inactive or not rendered)".to_string()
                     })?;
-                // 行 0 整行有效；行 1/2 点对应半边中心（避开居中标签文本，仍在命中半区内）。
-                let cx = if right { rx + rw * 0.75 } else { rx + rw * 0.25 };
+                // 行 0 整行有效；行 1/2 点渲染实测的 −/+ 字形起点（D4：字形位与
+                // 行宽比例无关，按比例采样会点进错误半区）。
+                let cx = if row == 0 {
+                    rx + rw * 0.5
+                } else {
+                    let (minus_x, plus_x) = app
+                        .print_setup_panel_stepper_x(row)
+                        .ok_or_else(|| "click_print_setup: stepper glyphs not rendered".to_string())?;
+                    if right { plus_x + 2.0 } else { minus_x + 2.0 }
+                };
                 let cy = ry + rh / 2.0;
                 app.handle_mouse_move(cx as f64, cy as f64);
                 app.handle_mouse_click(cx as f64, cy as f64, true, "Left");

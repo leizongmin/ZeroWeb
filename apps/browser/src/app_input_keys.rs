@@ -42,7 +42,7 @@ impl BrowserApp {
                 }
                 "Home" => {
                     let home = self.shell.settings().home_url.clone();
-                    self.navigate_to(&home);
+                    self.navigate_from_ui(&home);
                     return;
                 }
                 _ => {}
@@ -409,7 +409,7 @@ impl BrowserApp {
                         self.new_tab_background(&nav_url);
                         self.update_address_bar_from_active_tab();
                     } else {
-                        self.navigate_to(&nav_url);
+                        self.navigate_from_ui(&nav_url);
                     }
                 }
                 self.address_bar_focused = false;

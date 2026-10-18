@@ -1530,7 +1530,9 @@ pub fn generate_bookmarks_import_html(outcome: Option<&BookmarkImportOutcome>) -
                 UiLanguage::ZhCn => match outcome {
                     BookmarkImportOutcome::ClipboardUnavailable => "无法读取剪贴板，请确认桌面会话后重试。".to_string(),
                     BookmarkImportOutcome::FileUnavailable { path } => {
-                        format!("无法读取书签文件「{path}」，请检查路径后重试。")
+                        // D3：path 来自用户输入/远端 URL 参数，插入内部页 HTML 前转义
+                        //（与同函数 refill_path 同纪律），阻断内部页 HTML 注入。
+                        format!("无法读取书签文件「{}」，请检查路径后重试。", html_escape(path))
                     }
                     BookmarkImportOutcome::FileNoEntries => {
                         "文件内容中没有识别到书签条目（需 Netscape 书签 HTML）。".to_string()
@@ -1542,7 +1544,10 @@ pub fn generate_bookmarks_import_html(outcome: Option<&BookmarkImportOutcome>) -
                         "Could not read the clipboard; check your desktop session and retry.".to_string()
                     }
                     BookmarkImportOutcome::FileUnavailable { path } => {
-                        format!("Could not read the bookmarks file \"{path}\"; check the path and retry.")
+                        format!(
+                            "Could not read the bookmarks file \"{}\"; check the path and retry.",
+                            html_escape(path)
+                        )
                     }
                     BookmarkImportOutcome::FileNoEntries => {
                         "No bookmark entries recognized in the file (Netscape bookmarks HTML expected).".to_string()

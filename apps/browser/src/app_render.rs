@@ -268,6 +268,7 @@ impl BrowserApp {
     ) {
         // 非打印媒体态面板不显示，命中区一并清零（防陈旧矩形吃掉页面点击）。
         self.print_setup_panel_rows = [(0.0, 0.0, 0.0, 0.0); 3];
+        self.print_setup_panel_steppers = [(0.0, 0.0); 3];
         if self.font_id.is_none() {
             return;
         }
@@ -331,6 +332,24 @@ impl BrowserApp {
                     self.chrome_palette.context_menu_hover_bg,
                 );
                 self.print_setup_panel_rows[i - 1] = (row_x - 4.0 * s, row_y - 2.0 * s, box_w - 2.0 * pad_h + 8.0 * s, row_h);
+                // D4：−/+ 字形起点按文本前缀实测（命中区与渲染同源，行宽二分会把
+                // 可见 + 判进行宽左半）。行文本前缀与下方 rows 构造严格对应。
+                // rows = [标题, 方向, 份数, 边距]：i=2 份数 / i=3 边距写实测位
+                //（命中/ui_driver 的行参数 0=方向、1=份数、2=边距，经 i-1 索引）。
+                let (minus_prefix, plus_prefix) = match i {
+                    2 => (
+                        "Copies:  - ".to_string(),
+                        format!("Copies:  - {copies}"),
+                    ),
+                    3 => (
+                        format!("Margin:  - {} mm ", margin_mm as i32),
+                        format!("Margin:  - {} mm +", margin_mm as i32),
+                    ),
+                    _ => (String::new(), String::new()),
+                };
+                let minus_x = row_x + self.measure_ui_text_width(&minus_prefix, font_size);
+                let plus_x = row_x + self.measure_ui_text_width(&plus_prefix, font_size);
+                self.print_setup_panel_steppers[i - 1] = (minus_x, plus_x);
             }
             self.draw_ui_text(label, row_x, row_y + (row_h - font_size) / 2.0, font_size, self.chrome_palette.find_bar_text, glyphs);
         }

@@ -7,6 +7,7 @@ use zero_browser_shell::TabId;
 use zero_engine::{DomEventDetail, MediaType, PrefersColorSchemeValue, selector_from_element_hit};
 use zero_protocol::message::{
     AutomationOperation, AutomationResult, AutomationValue, DispatchDomEventParams, ImeEventParams,
+    TabNavigateRequestParams,
 };
 use zero_render_foundation::image_cache::ImageCache;
 
@@ -78,6 +79,8 @@ pub struct TabManager {
     pending_actions: VecDeque<(TabId, PendingTabAction)>,
     /// R3254-M10：单进程 worker 表单提交导航请求（(TabId, url, method, body)）。
     pending_navigations: Vec<(TabId, String, String, Option<String>)>,
+    /// T62-D1：多进程渲染端 zero:// 导航装载请求（同 pending_navigations 语义）。
+    pending_renderer_navigations: Vec<(TabId, TabNavigateRequestParams)>,
     /// 下一个 dispatch_id。
     next_dispatch_id: u64,
 }
@@ -114,6 +117,7 @@ impl TabManager {
             pending_dispatch: HashMap::new(),
             pending_actions: VecDeque::new(),
             pending_navigations: Vec::new(),
+            pending_renderer_navigations: Vec::new(),
             next_dispatch_id: 1,
         };
         if manager.process_backend.is_some() {
@@ -375,6 +379,8 @@ impl TabManager {
             self.pending_loaded.extend(backend.take_page_loaded_events());
             self.pending_errors.extend(backend.take_page_error_events());
             self.pending_downloads.extend(backend.take_pending_downloads());
+            self.pending_renderer_navigations
+                .extend(backend.take_tab_navigate_requests());
             for (dispatch_id, default_allowed) in backend.take_dispatch_results() {
                 Self::resolve_dispatch(
                     &mut self.pending_dispatch,
@@ -1043,6 +1049,11 @@ impl TabManager {
     /// R3254-M10：取出单进程表单提交导航请求（(TabId, url, method, body)）。
     pub fn take_pending_navigations(&mut self) -> Vec<(TabId, String, String, Option<String>)> {
         std::mem::take(&mut self.pending_navigations)
+    }
+
+    /// T62-D1：取出多进程渲染端 zero:// 导航装载请求。
+    pub fn take_renderer_navigations(&mut self) -> Vec<(TabId, TabNavigateRequestParams)> {
+        std::mem::take(&mut self.pending_renderer_navigations)
     }
 
     /// Tab 是否已注册。

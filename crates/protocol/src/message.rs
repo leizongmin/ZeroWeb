@@ -262,6 +262,8 @@ pub enum IpcMessageKind {
     IndexedDbResponse(IndexedDbResponseParams),
     /// 页面导航开始（renderer → browser storage-key authority）。
     NavigationStarted(NavigationStartedParams),
+    /// 渲染端请求浏览器装载页面（zero:// GET 转交；T62-D1 返修）。
+    TabNavigateRequest(TabNavigateRequestParams),
     /// 页面导航提交（renderer → browser storage-key authority）。
     NavigationCommitted(NavigationCommittedParams),
     /// IndexedDB connection 的 versionchange 通知（browser → renderer）。
@@ -697,10 +699,31 @@ pub enum IpcPrintOrientation {
 /// > 本设置 > A4 纵向 + 0 边距默认。份数不参与渲染，不经 IPC。
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct SetPrintPageSetupParams {
+    /// 是否携带设置（false = 清除回默认；清除路径当前 UI 无入口，广播保持两路一致）。
+    pub present: bool,
     /// 页面方向。
     pub orientation: IpcPrintOrientation,
     /// 四边统一页边距（毫米）。
     pub margin_mm: f32,
+}
+
+/// 渲染端请求浏览器装载页面（渲染→浏览器，T62-D1 返修）。
+///
+/// 渲染端表单 GET 提交等页面发起的导航对 `zero://` 无 fetch 能力（网络栈无该
+/// scheme 处理，直接落错误页）；内部页由浏览器侧生成与装载（`load_local_tab_url`
+/// 分派），故渲染端把 zero:// GET 导航转交浏览器，与单进程 worker 回执
+/// （`pending_navigations`）同语义。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TabNavigateRequestParams {
+    /// 目标 URL（当前仅 zero:// GET）。
+    pub url: String,
+    /// HTTP 方法（恒 "GET"）。
+    pub method: String,
+    /// 请求体（zero:// GET 恒 None）。
+    pub body: Option<String>,
+    /// 发起导航时渲染端的当前页 URL（来源门禁判别器：内部页的 shell 侧
+    /// tab URL 因 try_apply 早退不更新而不可靠，渲染端 current_url 权威）。
+    pub initiator: Option<String>,
 }
 
 /// 页面绘制帧的 Browser IPC 发布模式。

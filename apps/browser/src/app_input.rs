@@ -991,7 +991,7 @@ impl BrowserApp {
             if let Some(idx) = self.autocomplete_hit_test(x, y) {
                 let url = self.autocomplete.suggestions.get(idx).map(|s| s.url().to_string());
                 if let Some(url) = url {
-                    self.navigate_to(&url);
+                    self.navigate_from_ui(&url);
                     self.address_bar_focused = false;
                     self.autocomplete.clear();
                     // T53-1：与页面点击失焦同款——失焦清 IME 合成态，防 preedit
@@ -1111,7 +1111,7 @@ impl BrowserApp {
                     }
                     3 => {
                         let home = self.shell.settings().home_url.clone();
-                        self.navigate_to(&home);
+                        self.navigate_from_ui(&home);
                     }
                     _ => {}
                 }
@@ -1224,18 +1224,21 @@ impl BrowserApp {
             return;
         }
 
-        // 5c. 打印预览设置面板点击（T61）：方向整行切换；份数/边距行左半 − / 右半 +。
-        //     命中区与渲染同源（render_print_preview_indicator 写入 print_setup_panel_rows），
-        //     仅打印预览激活期非零。悬浮于页面区之上，先于页面内容派发。
-        if let Some((row, right_half)) = self.print_setup_panel_hit(x_f, y_f) {
-            match row {
-                0 => self.cycle_print_orientation(),
-                1 => self.adjust_print_copies(if right_half { 1 } else { -1 }),
-                2 => {
-                    let step = zero_browser_shell::BrowserSettings::PRINT_MARGIN_STEP_MM;
-                    self.adjust_print_margin(if right_half { step } else { -step });
+        // 5c. 打印预览设置面板点击（T61）：方向整行切换；份数/边距行按渲染实测的
+        //     −/+ 字形位命中（D4）。命中区与渲染同源（render_print_preview_indicator
+        //     写入 print_setup_panel_rows/steppers），仅打印预览激活期非零。
+        //     悬浮于页面区之上，先于页面内容派发；字形区外的行内点击消费不动作。
+        if let Some((row, action)) = self.print_setup_panel_hit(x_f, y_f) {
+            if let Some(plus) = action {
+                match row {
+                    0 => self.cycle_print_orientation(),
+                    1 => self.adjust_print_copies(if plus { 1 } else { -1 }),
+                    2 => {
+                        let step = zero_browser_shell::BrowserSettings::PRINT_MARGIN_STEP_MM;
+                        self.adjust_print_margin(if plus { step } else { -step });
+                    }
+                    _ => {}
                 }
-                _ => {}
             }
             return;
         }
@@ -1388,7 +1391,7 @@ impl BrowserApp {
             if self.ctrl_pressed || self.cmd_pressed {
                 self.new_tab_background(&url);
             } else {
-                self.navigate_to(&url);
+                self.navigate_from_ui(&url);
             }
         }
     }

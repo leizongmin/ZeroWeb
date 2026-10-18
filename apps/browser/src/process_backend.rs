@@ -18,6 +18,7 @@ use zero_protocol::message::{
     IpcPrintOrientation, LoadHtmlParams, NavigationCommittedParams, NavigationStartedParams, ScrollEventParams,
     ServiceWorkerOperation, ServiceWorkerRequestParams, SetColorSchemeParams, SetMediaTypeParams,
     SetPrintPageSetupParams, SetViewportParams, StorageOpParams, StorageOperation, StorageType,
+    TabNavigateRequestParams,
 };
 use zero_protocol::process::{ProcessManager, RendererHandle};
 use zero_render_foundation::image_cache::{ImageData, ImageKey};
@@ -192,6 +193,7 @@ pub struct ProcessTabBackend {
     indexed_db_init_error: Option<String>,
     pending_loaded: Vec<(TabId, String, String)>,
     pending_errors: Vec<(TabId, String)>,
+    pending_tab_navigates: Vec<(TabId, TabNavigateRequestParams)>,
     fetch_proxy: TabFetchProxy,
     service_worker_owner: BrowserServiceWorkerOwner,
     /// 异步 DOM 事件派发的回执（按 dispatch id 收集，由 TabManager 消费）。
@@ -299,6 +301,7 @@ impl ProcessTabBackend {
             indexed_db_init_error: storage_error,
             pending_loaded: Vec::new(),
             pending_errors: Vec::new(),
+            pending_tab_navigates: Vec::new(),
             fetch_proxy: TabFetchProxy::new(),
             service_worker_owner,
             pending_dispatch_results: Vec::new(),
@@ -392,8 +395,14 @@ impl ProcessTabBackend {
         snapshot_seq: &mut HashMap<TabId, u64>,
         pending_loaded: &mut Vec<(TabId, String, String)>,
         pending_errors: &mut Vec<(TabId, String)>,
+        pending_tab_navigates: &mut Vec<(TabId, TabNavigateRequestParams)>,
     ) {
         match kind {
+            IpcMessageKind::TabNavigateRequest(params) => {
+                // T62-D1：渲染端 zero:// GET 导航转交浏览器装载（同单进程
+                // pending_navigations 语义；来源门禁在 app 消费侧以 initiator 裁决）。
+                pending_tab_navigates.push((tab_id, params));
+            }
             IpcMessageKind::TitleChanged(title) => {
                 if std::env::var("ZERO_BROWSER_PRODUCT_SMOKE").as_deref() == Ok("1") {
                     tracing::info!(
@@ -1494,6 +1503,11 @@ impl ProcessTabBackend {
         std::mem::take(&mut self.pending_errors)
     }
 
+    /// 取出渲染端 zero:// 导航装载请求（T62-D1）。
+    pub fn take_tab_navigate_requests(&mut self) -> Vec<(TabId, TabNavigateRequestParams)> {
+        std::mem::take(&mut self.pending_tab_navigates)
+    }
+
     /// 确保 Tab 有对应渲染进程。
     pub fn ensure_renderer(&mut self, tab_id: TabId, viewport: (u32, u32)) {
         self.viewport = viewport;
@@ -1700,20 +1714,26 @@ impl ProcessTabBackend {
 
     /// 广播用户打印页面设置到所有 live 渲染进程（T61 打印预览设置面板）。
     pub fn set_print_page_setup(&mut self, setup: Option<zero_engine::PrintPageSetup>) {
-        let Some(setup) = setup else {
-            return; // None（清除）仅发生在设置重置路径；当前 UI 无入口，无需广播
-        };
-        let orientation = match setup.orientation {
-            zero_engine::PrintOrientation::Portrait => IpcPrintOrientation::Portrait,
-            zero_engine::PrintOrientation::Landscape => IpcPrintOrientation::Landscape,
+        // TV-2：None（清除）同样广播——与 in-process worker 路语义对齐，两路不分歧。
+        let (present, orientation, margin_mm) = match setup {
+            Some(s) => (
+                true,
+                match s.orientation {
+                    zero_engine::PrintOrientation::Portrait => IpcPrintOrientation::Portrait,
+                    zero_engine::PrintOrientation::Landscape => IpcPrintOrientation::Landscape,
+                },
+                s.margin_mm,
+            ),
+            None => (false, IpcPrintOrientation::Portrait, 0.0),
         };
         let tabs: Vec<TabId> = self.tab_to_renderer.keys().copied().collect();
         for tab_id in tabs {
             self.send_to_renderer(
                 tab_id,
                 IpcMessageKind::SetPrintPageSetup(SetPrintPageSetupParams {
+                    present,
                     orientation,
-                    margin_mm: setup.margin_mm,
+                    margin_mm,
                 }),
             );
         }
@@ -1838,6 +1858,7 @@ impl ProcessTabBackend {
                             snapshot_seq,
                             &mut self.pending_loaded,
                             &mut self.pending_errors,
+                            &mut self.pending_tab_navigates,
                         );
                     }
                 }
@@ -1854,6 +1875,7 @@ impl ProcessTabBackend {
                     snapshot_seq,
                     &mut self.pending_loaded,
                     &mut self.pending_errors,
+                    &mut self.pending_tab_navigates,
                 );
             }
         }
@@ -2158,6 +2180,7 @@ mod navigation_contract_tests {
         snap.begin_navigation("https://example.com".into());
         let mut pending_loaded = Vec::new();
         let mut pending_errors = Vec::new();
+        let mut pending_tab_navigates = Vec::new();
 
         let epoch = snap.navigation_epoch;
         let mut snapshot_seq = std::collections::HashMap::new();
@@ -2168,6 +2191,7 @@ mod navigation_contract_tests {
             &mut snapshot_seq,
             &mut pending_loaded,
             &mut pending_errors,
+            &mut pending_tab_navigates,
         );
 
         assert!(!snap.loading);
@@ -2188,6 +2212,7 @@ mod navigation_contract_tests {
         let epoch = snap.navigation_epoch;
         let mut pending_loaded = Vec::new();
         let mut pending_errors = Vec::new();
+        let mut pending_tab_navigates = Vec::new();
         let mut snapshot_seq = std::collections::HashMap::new();
 
         let payload = IpcImagePayload {
@@ -2210,6 +2235,7 @@ mod navigation_contract_tests {
                 &mut snapshot_seq,
                 &mut pending_loaded,
                 &mut pending_errors,
+                &mut pending_tab_navigates,
             );
         }
 
@@ -2232,6 +2258,7 @@ mod navigation_contract_tests {
         let epoch = snap.navigation_epoch;
         let mut pending_loaded = Vec::new();
         let mut pending_errors = Vec::new();
+        let mut pending_tab_navigates = Vec::new();
         let mut snapshot_seq = std::collections::HashMap::new();
 
         ProcessTabBackend::apply_inbound_message(
@@ -2250,6 +2277,7 @@ mod navigation_contract_tests {
             &mut snapshot_seq,
             &mut pending_loaded,
             &mut pending_errors,
+            &mut pending_tab_navigates,
         );
 
         assert!(
@@ -2267,6 +2295,7 @@ mod navigation_contract_tests {
         snap.last_render = None;
         let mut pending_loaded = Vec::new();
         let mut pending_errors = Vec::new();
+        let mut pending_tab_navigates = Vec::new();
 
         let mut snapshot_seq = std::collections::HashMap::new();
         ProcessTabBackend::apply_inbound_message(
@@ -2276,6 +2305,7 @@ mod navigation_contract_tests {
             &mut snapshot_seq,
             &mut pending_loaded,
             &mut pending_errors,
+            &mut pending_tab_navigates,
         );
 
         assert!(snap.loading);
@@ -2291,6 +2321,7 @@ mod navigation_contract_tests {
         let epoch = snap.navigation_epoch;
         let mut pending_loaded = Vec::new();
         let mut pending_errors = Vec::new();
+        let mut pending_tab_navigates = Vec::new();
 
         let mut snapshot_seq = std::collections::HashMap::new();
         ProcessTabBackend::apply_inbound_message(
@@ -2300,6 +2331,7 @@ mod navigation_contract_tests {
             &mut snapshot_seq,
             &mut pending_loaded,
             &mut pending_errors,
+            &mut pending_tab_navigates,
         );
 
         assert!(snap.loading);
@@ -2360,6 +2392,7 @@ mod navigation_contract_tests {
         };
         let mut pending_loaded = Vec::new();
         let mut pending_errors = Vec::new();
+        let mut pending_tab_navigates = Vec::new();
         let mut snapshot_seq = std::collections::HashMap::new();
         let mut paint = paint_with_red_fill(5);
         paint.document_height = 1200.0;
@@ -2427,6 +2460,7 @@ mod navigation_contract_tests {
             &mut snapshot_seq,
             &mut pending_loaded,
             &mut pending_errors,
+            &mut pending_tab_navigates,
         );
 
         assert_eq!(
@@ -2692,6 +2726,7 @@ mod compositor_fallback_tests {
 
         let mut pending_loaded = Vec::new();
         let mut pending_errors = Vec::new();
+        let mut pending_tab_navigates = Vec::new();
         let mut snapshot_seq = std::collections::HashMap::new();
         ProcessTabBackend::apply_inbound_message(
             tab_id,
@@ -2700,6 +2735,7 @@ mod compositor_fallback_tests {
             &mut snapshot_seq,
             &mut pending_loaded,
             &mut pending_errors,
+            &mut pending_tab_navigates,
         );
 
         assert!(snap.last_render.is_some(), "Legacy ViewPainted 应恢复页面渲染");

@@ -6706,6 +6706,8 @@ fn bookmarks_import_from_file_parses_and_merges() {
         .duration_since(std::time::UNIX_EPOCH)
         .expect("clock")
         .as_nanos();
+    // D2 来源门禁：文件读取动作的两条可信入口——UI 直输（navigate_from_ui）与
+    // 导入页表单提交（渲染端 TabNavigateRequest，initiator 为导入页）。
     let root_url = format!("https://example.net/t62-root-{uniq}");
     let folder_url = format!("https://example.org/t62-folder-{uniq}");
 
@@ -6735,8 +6737,23 @@ fn bookmarks_import_from_file_parses_and_merges() {
         "zero://bookmarks/import/file?path={}",
         crate::pages::percent_encode_query_value(&file_path.to_string_lossy())
     );
-    assert!(app.try_apply_bookmarks_url(&url), "文件导入 URL 应被内部动作处理");
-    assert_eq!(app.shell.bookmarks().len(), len_before + 2, "应新增 2 条书签");
+    // UI 直输腿（地址栏语义）：放行位由 navigate_from_ui 置位。
+    app.navigate_from_ui(&url);
+    assert_eq!(app.shell.bookmarks().len(), len_before + 2, "UI 直输应执行导入");
+    let added_first = len_before + 2;
+
+    // 渲染端表单腿：重复导入同文件——既有 URL 去重（skipped），总数不变。
+    let active = app.shell.active_tab_id().expect("active tab");
+    app.handle_renderer_tab_navigate(
+        active,
+        zero_protocol::message::TabNavigateRequestParams {
+            url: url.clone(),
+            method: "GET".to_string(),
+            body: None,
+            initiator: Some("zero://bookmarks/import".to_string()),
+        },
+    );
+    assert_eq!(app.shell.bookmarks().len(), added_first, "表单重复导入应被 URL 去重");
     assert!(
         app.shell.bookmarks().list_root().iter().any(|b| b.url() == root_url),
         "根级书签应入列"
@@ -6748,7 +6765,76 @@ fn bookmarks_import_from_file_parses_and_merges() {
         "zero://bookmarks/import/file?path={}",
         crate::pages::percent_encode_query_value(&missing.to_string_lossy())
     );
-    assert!(app.try_apply_bookmarks_url(&url));
-    assert_eq!(app.shell.bookmarks().len(), len_before + 2, "失败导入不得改动书签");
+    app.handle_renderer_tab_navigate(
+        active,
+        zero_protocol::message::TabNavigateRequestParams {
+            url,
+            method: "GET".to_string(),
+            body: None,
+            initiator: Some("zero://bookmarks/import".to_string()),
+        },
+    );
+    assert_eq!(app.shell.bookmarks().len(), added_first, "失败导入不得改动书签");
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// D2 来源门禁（返修）：非导入页（远端页面/任意当前页）发起的文件导入动作 URL
+/// 不得执行本地文件读取与书签写入——落导入页（无路径执行）。
+#[test]
+fn bookmarks_import_file_url_blocked_from_non_import_page() {
+    let _guard = MULTIPROCESS_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    let len_before = app.shell.bookmarks().len();
+    let uniq = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    // 当前页为远端页面（模拟远端页面表单直链动作 URL：initiator 为远端页）。
+    app.navigate_to("https://example.net/t62-remote-origin");
+    let dir = std::env::temp_dir().join(format!("zw-t62-gate-{}-{uniq}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("create temp dir");
+    let file_path = dir.join("bookmarks.html");
+    std::fs::write(&file_path, "<DL><p></DL><p>").expect("write temp bookmarks file");
+    let url = format!(
+        "zero://bookmarks/import/file?path={}",
+        crate::pages::percent_encode_query_value(&file_path.to_string_lossy())
+    );
+    let active = app.shell.active_tab_id().expect("active tab");
+    app.handle_renderer_tab_navigate(
+        active,
+        zero_protocol::message::TabNavigateRequestParams {
+            url,
+            method: "GET".to_string(),
+            body: None,
+            initiator: Some("https://example.net/t62-remote-origin".to_string()),
+        },
+    );
+    assert_eq!(
+        app.shell.bookmarks().len(),
+        len_before,
+        "非导入页来源不得执行文件导入（D2）"
+    );
+    // 锚点/地址栏路径（浏览器侧分派）同样不执行文件读取。
+    let url2 = format!(
+        "zero://bookmarks/import/file?path={}",
+        crate::pages::percent_encode_query_value(&file_path.to_string_lossy())
+    );
+    assert!(
+        !app.try_apply_bookmarks_url(&url2) || app.shell.bookmarks().len() == len_before,
+        "浏览器侧分派不得执行文件导入（D2）"
+    );
+    assert_eq!(app.shell.bookmarks().len(), len_before);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// D3（返修）：FileUnavailable 的 path 插入内部页 HTML 前必须转义。
+#[test]
+fn bookmarks_import_error_message_escapes_path() {
+    let hostile = r#"<img src=x onerror=alert(1)>"#;
+    let outcome = crate::pages::BookmarkImportOutcome::FileUnavailable {
+        path: hostile.to_string(),
+    };
+    let html = crate::pages::generate_bookmarks_import_html(Some(&outcome));
+    assert!(!html.contains(r#"<img src=x"#), "错误文案不得包含未转义 HTML: {html}");
+    assert!(html.contains("&lt;img"), "错误文案应含转义后的路径: {html}");
 }
