@@ -2127,11 +2127,20 @@ fn test_fullscreen_removal_exit_wab2m3s2() {
 
 #[test]
 fn test_pointer_lock_api_r2939() {
-    // R2939 Pointer Lock API（spec-alike，镜像 R2938 Fullscreen）：element.requestPointerLock() 返 Promise
-    //（grant→resolve + 设 pointerLockElement + 派 pointerlockchange；deny→reject TypeError + 派 pointerlockerror）；
-    // document.exitPointerLock() 返 **void**（undefined，与 exitFullscreen 返 Promise 不同）+ 清状态 + 派
-    // pointerlockchange；pointerLockElement 反映状态；pointerlockchange/pointerlockerror 经 document listener +
-    // document.onpointerlockchange/onpointerlockerror IDL handler 触发。
+    // R2939 Pointer Lock API（spec-alike）+ M2 RFC s1（2026-10-19）语义组：
+    // ① 激活门（FR-1）：无瞬态激活 → 请求 reject NotAllowedError + 派 pointerlockerror，不置态
+    //   （镜像 WPT pointerlock-requires-gesture/without_gesture）；
+    // ② grant 路径：激活注入后 requestPointerLock 设 pointerLockElement + 派 pointerlockchange +
+    //   resolve；change 事件面（FR-2/N1）：target===document、bubbles=false、cancelable=false、
+    //   isTrusted=true、Event 真原型；激活**不消费**（后续请求无需再注入——unadjustedMovement_update
+    //   案一次激活连续请求面）；
+    // ③ 同元素同选项 → no-op（不派事件仍 resolve）；同元素异选项（unadjustedMovement 翻转）→
+    //   重授派 change（N2 no-op 条件过粗修复）；options 非字典 → TypeError reject；
+    // ④ exitPointerLock 返 void + 清态 + 派 change；非锁定 no-op；
+    // ⑤ document.onpointerlockchange/onpointerlockerror IDL handler 触发；
+    // ⑥ 移除解锁（FR-6）：remove() 锁定元素/其祖先 → 同步 null + 异步 change（target=document）；
+    // ⑦ 导航清理（FR-10）：__zw_reset_form_state 清 _pl*/_fs*/激活（gate 复拒）；
+    // ⑧ deny 开关（RFC §6.1：permission-denied 归 NotAllowedError）+ 派 pointerlockerror。
     // https://w3c.github.io/pointerlock/
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
@@ -2157,12 +2166,47 @@ fn test_pointer_lock_api_r2939() {
         "pointerLockElement 初值 null"
     );
 
-    // grant 路径：requestPointerLock 设 pointerLockElement + 派 pointerlockchange + resolve。
+    // ① 激活门：无激活 → 两次请求均 reject NotAllowedError（DOMException）+ pointerlockerror
+    //（document listener + onpointerlockerror IDL 双计）+ 不置态（镜像 without_gesture 两连请求）。
     sandbox
         .execute(
-            "globalThis.__plc = 0; globalThis.__ple = 'x';\
-             document.addEventListener('pointerlockchange', function(){\
+            "globalThis.__plerr = 0; globalThis.__rej1 = [];\
+             document.addEventListener('pointerlockerror', function(){ globalThis.__plerr++; });\
+             document.onpointerlockerror = function(){ globalThis.__plerr += 10; };\
+             globalThis.__plReq1 = function(){\
+               return document.body.requestPointerLock().then(function(){ globalThis.__rej1.push('resolved'); },\
+                 function(e){ globalThis.__rej1.push((e instanceof DOMException) ? e.name : 'other:' + e); });\
+             };\
+             __plReq1(); __plReq1();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__rej1.join('|')").unwrap().value,
+        "NotAllowedError|NotAllowedError",
+        "无激活两次请求均 reject NotAllowedError（镜像 without_gesture）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__plerr)").unwrap().value,
+        "22",
+        "激活门失败每次请求派 pointerlockerror（listener+IDL 双计）"
+    );
+    assert_eq!(
+        sandbox.execute("String(document.pointerLockElement)").unwrap().value,
+        "null",
+        "激活门失败不置 pointerLockElement"
+    );
+
+    // ② 激活注入 → grant：change 事件面断言（target=document/不冒泡/不可取消/trusted/Event 真原型）+
+    // 状态设位 + resolve。**只注入这一次**——后续 ③④⑦ 请求全部通过即证明门不消费激活。
+    sandbox
+        .execute(
+            "globalThis.__zwUserActivate();\
+             globalThis.__plc = 0; globalThis.__plface = ''; globalThis.__ple = '';\
+             document.addEventListener('pointerlockchange', function(ev){\
                globalThis.__plc++;\
+               globalThis.__plface = (ev.target === document ? 'doc' : 'other') + ':' +\
+                 (ev.bubbles === false) + ':' + (ev.cancelable === false) + ':' +\
+                 (ev.isTrusted === true) + ':' + (ev instanceof Event ? 'Event' : 'bare');\
                globalThis.__ple = document.pointerLockElement ? document.pointerLockElement.id : '(null)';\
              });\
              globalThis.__ok = false;\
@@ -2172,12 +2216,17 @@ fn test_pointer_lock_api_r2939() {
     assert_eq!(
         sandbox.execute("String(globalThis.__plc)").unwrap().value,
         "1",
-        "requestPointerLock 派发一次 pointerlockchange"
+        "grant 派发一次 pointerlockchange"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__plface)").unwrap().value,
+        "doc:true:true:true:Event",
+        "change 事件面：target=document/不冒泡/不可取消/isTrusted/Event 真原型（镜像 api_behavior）"
     );
     assert_eq!(
         sandbox.execute("String(globalThis.__ple)").unwrap().value,
         "c",
-        "pointerlockchange handler 内 pointerLockElement === 锁定元素（id='c'）"
+        "handler 内 pointerLockElement === 锁定元素（id='c'）"
     );
     assert_eq!(
         sandbox.execute("String(globalThis.__ok)").unwrap().value,
@@ -2185,25 +2234,71 @@ fn test_pointer_lock_api_r2939() {
         "requestPointerLock Promise resolves"
     );
 
-    // 相同元素重复 requestPointerLock → no-op（计数不变仍 resolve）。
+    // ③ 相同元素重复 requestPointerLock（无 options，有效 unadjustedMovement 同为 false）→
+    // no-op（计数不变仍 resolve）；无需再注入激活 → 证明激活门不消费。
     sandbox
         .execute(
-            "globalThis.__ok2 = false;\
-             document.getElementById('c').requestPointerLock().then(function(){ globalThis.__ok2 = true; });",
+            "globalThis.__ok3 = false;\
+             document.getElementById('c').requestPointerLock().then(function(){ globalThis.__ok3 = true; });",
         )
         .unwrap();
     assert_eq!(
         sandbox.execute("String(globalThis.__plc)").unwrap().value,
         "1",
-        "相同元素重复 requestPointerLock 不再派 pointerlockchange（no-op）"
+        "同元素同选项重复请求不派 pointerlockchange（no-op）"
     );
     assert_eq!(
-        sandbox.execute("String(globalThis.__ok2)").unwrap().value,
+        sandbox.execute("String(globalThis.__ok3)").unwrap().value,
         "true",
-        "重复 requestPointerLock 仍 resolve"
+        "no-op 请求仍 resolve 且激活未被消费"
     );
 
-    // exitPointerLock → 清状态 + 派 pointerlockchange；返 void（undefined，与 exitFullscreen 返 Promise 不同）。
+    // ④ 同元素异选项（unadjustedMovement 翻转）→ 重授派 change（镜像 unadjustedMovement_update 案）。
+    sandbox
+        .execute(
+            "globalThis.__ok4 = false;\
+             document.getElementById('c').requestPointerLock({ unadjustedMovement: true })\
+               .then(function(){ globalThis.__ok4 = true; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__plc)").unwrap().value,
+        "2",
+        "同元素异选项重授派 pointerlockchange（N2 修复）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ple)").unwrap().value,
+        "c",
+        "重授后 pointerLockElement 保持目标元素"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ok4)").unwrap().value,
+        "true",
+        "异选项请求 resolve（不实现 NotSupportedError——语料 unadjustedMovement 两案）"
+    );
+
+    // options 非字典参数 → TypeError reject（镜像 requestFullscreen ①），不派事件不改状态。
+    sandbox
+        .execute(
+            "globalThis.__rej5 = null;\
+             document.getElementById('c').requestPointerLock('x').then(\
+               function(){ globalThis.__rej5 = 'resolved'; },\
+               function(e){ globalThis.__rej5 = (e instanceof TypeError) ? 'TypeError' : 'other'; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rej5)").unwrap().value,
+        "TypeError",
+        "非字典 options reject TypeError"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__plc)").unwrap().value,
+        "2",
+        "options 校验失败不派事件"
+    );
+
+    // ⑤ exitPointerLock → 清状态 + 派 pointerlockchange；返 void（undefined，与 exitFullscreen 返
+    // Promise 不同）。
     sandbox
         .execute("globalThis.__ex = typeof document.exitPointerLock();")
         .unwrap();
@@ -2214,8 +2309,8 @@ fn test_pointer_lock_api_r2939() {
     );
     assert_eq!(
         sandbox.execute("String(globalThis.__plc)").unwrap().value,
-        "2",
-        "exitPointerLock 派发 pointerlockchange（第二次）"
+        "3",
+        "exitPointerLock 派发 pointerlockchange（第三次）"
     );
     assert_eq!(
         sandbox.execute("String(document.pointerLockElement)").unwrap().value,
@@ -2227,7 +2322,7 @@ fn test_pointer_lock_api_r2939() {
     sandbox.execute("document.exitPointerLock();").unwrap();
     assert_eq!(
         sandbox.execute("String(globalThis.__plc)").unwrap().value,
-        "2",
+        "3",
         "非锁定态 exitPointerLock 不派 pointerlockchange"
     );
 
@@ -2246,30 +2341,128 @@ fn test_pointer_lock_api_r2939() {
     );
     sandbox.execute("document.exitPointerLock();").unwrap(); // 清理锁定态
 
-    // deny 路径：host `__zw_pointer_lock_enabled` 返 '0' → requestPointerLock reject TypeError + 派 pointerlockerror
-    //（document listener + document.onpointerlockerror IDL handler 触发）。
+    // ⑥ 移除解锁（FR-6 shim 侧，镜像 WPT remove_target 案面 + fullscreen removal 测试结构）：
+    // remove() 锁定元素自身 → 同步 null + 异步 change（锁定元素 detached → target=document）。
+    sandbox
+        .execute(
+            "globalThis.__rm = [];\
+             document.onpointerlockchange = function(ev){\
+               globalThis.__rm.push('change:' + (ev.target === document ? 'document' : 'element'));\
+             };\
+             var el = document.createElement('div'); document.body.appendChild(el);\
+             el.requestPointerLock().then(function(){\
+               globalThis.__rm.push('sync:' + String(document.pointerLockElement != null));\
+               el.remove();\
+               globalThis.__rm.push('after-rm:' + String(document.pointerLockElement));\
+             });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__rm.join('|')").unwrap().value,
+        "change:document|sync:true|after-rm:null|change:document",
+        "移除锁定元素：grant change(document) + 同步 null + 异步 change(document)"
+    );
+
+    // 祖先链命中：移除锁定元素的父 → 同步 null + 异步 change。
+    sandbox
+        .execute(
+            "globalThis.__rm2 = [];\
+             document.onpointerlockchange = function(ev){\
+               globalThis.__rm2.push('change:' + (ev.target === document ? 'document' : 'element'));\
+             };\
+             var par = document.createElement('div'); document.body.appendChild(par);\
+             var chi = document.createElement('div'); par.appendChild(chi);\
+             chi.requestPointerLock().then(function(){\
+               par.remove();\
+               globalThis.__rm2.push('after-parent-rm:' + String(document.pointerLockElement));\
+             });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__rm2.join('|')").unwrap().value,
+        "change:document|after-parent-rm:null|change:document",
+        "移除锁定元素祖先：grant change + 同步 null + 异步 change"
+    );
+
+    // 无涉移除不影响锁态（镜像 remove-child「不应受影响」面）。
+    sandbox
+        .execute(
+            "globalThis.__rm3 = [];\
+             document.onpointerlockchange = function(){ globalThis.__rm3.push('change'); };\
+             var keep = document.createElement('div'); document.body.appendChild(keep);\
+             var tmp = document.createElement('div'); document.body.appendChild(tmp);\
+             keep.requestPointerLock().then(function(){\
+               tmp.remove();\
+               globalThis.__rm3.push('kept:' + String(document.pointerLockElement === keep));\
+             });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__rm3.join('|')").unwrap().value,
+        "change|kept:true",
+        "无涉移除不影响锁定态"
+    );
+
+    // ⑦ 导航清理（FR-10 shim 侧 + _fs* 同族）：锁态 + 全屏并存 → __zw_reset_form_state() →
+    // pointerLockElement/fullscreenElement 双清 + 激活清零（gate 复拒 NotAllowedError）。
+    sandbox
+        .execute(
+            "document.getElementById('c').requestPointerLock();\
+             document.getElementById('c').requestFullscreen().then(function(){\
+               globalThis.__navr = String(document.pointerLockElement != null) + ':' +\
+                 String(document.fullscreenElement != null);\
+               __zw_reset_form_state();\
+               globalThis.__navr += '|' + String(document.pointerLockElement) + ':' +\
+                 String(document.fullscreenElement);\
+             });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__navr)").unwrap().value,
+        "true:true|null:null",
+        "导航清理：_pl*/_fs* 双清（FR-10 + fullscreen 同族泄漏修复）"
+    );
+    sandbox
+        .execute(
+            "globalThis.__rej9 = null;\
+             document.body.requestPointerLock().then(function(){ globalThis.__rej9 = 'resolved'; },\
+               function(e){ globalThis.__rej9 = (e instanceof DOMException && e.name === 'NotAllowedError')\
+                 ? 'NotAllowedError' : 'other'; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__rej9)").unwrap().value,
+        "NotAllowedError",
+        "导航清理后激活已清零 → 激活门复拒 NotAllowedError"
+    );
+
+    // ⑧ deny 路径（RFC §6.1：host `__zw_pointer_lock_enabled` 返 '0' = permission-denied 归
+    // NotAllowedError）+ pointerlockerror（listener + IDL 双计）。先注入激活——证明 deny 判定
+    // 独立于激活门（deny 检查在前）。
     sandbox.register_callback(
         "__zw_pointer_lock_enabled",
         Box::new(|_args: &[String]| "0".to_string()),
     );
     sandbox
         .execute(
-            "globalThis.__plerr = 0; globalThis.__rej = null;\
-             document.addEventListener('pointerlockerror', function(){ globalThis.__plerr++; });\
-             document.onpointerlockerror = function(){ globalThis.__plerr += 10; };\
-             document.body.requestPointerLock().then(function(){ globalThis.__rej = 'resolved'; },\
-               function(err){ globalThis.__rej = (err instanceof TypeError) ? 'TypeError' : 'other'; });",
+            "globalThis.__zwUserActivate();\
+             globalThis.__plerr2 = 0; globalThis.__rej10 = null;\
+             document.addEventListener('pointerlockerror', function(){ globalThis.__plerr2++; });\
+             document.onpointerlockerror = function(){ globalThis.__plerr2 += 10; };\
+             document.body.requestPointerLock().then(function(){ globalThis.__rej10 = 'resolved'; },\
+               function(e){ globalThis.__rej10 = (e instanceof DOMException && e.name === 'NotAllowedError')\
+                 ? 'NotAllowedError' : 'other'; });",
         )
         .unwrap();
     assert_eq!(
-        sandbox.execute("String(globalThis.__plerr)").unwrap().value,
+        sandbox.execute("String(globalThis.__plerr2)").unwrap().value,
         "11",
         "deny 路径派 pointerlockerror（document listener + document.onpointerlockerror）"
     );
     assert_eq!(
-        sandbox.execute("String(globalThis.__rej)").unwrap().value,
-        "TypeError",
-        "deny 路径 reject TypeError"
+        sandbox.execute("String(globalThis.__rej10)").unwrap().value,
+        "NotAllowedError",
+        "deny 路径 reject NotAllowedError（RFC §6.1 permission-denied 语义）"
     );
     assert_eq!(
         sandbox.execute("String(document.pointerLockElement)").unwrap().value,

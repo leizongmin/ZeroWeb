@@ -3855,28 +3855,53 @@
             });
           };
         }
-        // R2939 `el.requestPointerLock()`——指针锁请求（spec 返 Promise，headless 无真 OS 指针锁）。grant/deny
-        // 二分：可用（host `__zw_pointer_lock_enabled` 未注册或返 '1'，默认）→ 设 pointerLockElement + 派
-        // pointerlockchange + resolve；禁用（返 '0'）→ 派 pointerlockerror + reject TypeError。相同元素重复
-        // 请求 → no-op resolve。镜像 R2938 Fullscreen。
+        // R2939 `el.requestPointerLock(options)`——指针锁请求（spec 返 Promise，headless 无真 OS 指针锁）。
+        // M2 RFC s1（2026-10-19）语义组：
+        // ① options 校验（PointerLockOptions 字典：非字典参数 → TypeError reject，镜像 requestFullscreen ①；
+        //    `unadjustedMovement` 读有效布尔（IDL ToBoolean），getter 异常保守 false）；
+        // ② host deny 开关（`__zw_pointer_lock_enabled` 返 '0'，如 iframe sandbox / Feature-Policy 拒绝）→
+        //    派 pointerlockerror + reject NotAllowedError（RFC §6.1：permission-denied 语义归 NotAllowedError
+        //    ——spec pointer lock permission state 非 granted 面）；
+        // ③ 激活门（FR-1）：瞬态激活缺失 → pointerlockerror + NotAllowedError（WPT
+        //    pointerlock-requires-gesture/without_gesture 案面）。**不消费**激活（spec request steps 只检查
+        //    不消费——unadjustedMovement_update 案一次激活连续两次请求均须过；与 requestFullscreen 的同步
+        //    消费先例不同，fullscreen spec 显式 consume，pointerlock 无 consume 步）；
+        // ④ 同元素同选项 → no-op resolve 不派事件（spec「already locked」）；**同元素异选项
+        //   （unadjustedMovement 翻转）仍重授 + 派 change**（unadjustedMovement_update 案断言面，N2 no-op
+        //    条件过粗修复——比对有效布尔 `_plUnadjusted`，不深比较 options 对象）；
+        // ⑤ grant：设 _pl* 锁态 + 派 pointerlockchange（FR-2 事件面：target=document、不冒泡、不可取消、
+        //    trusted）+ resolve。headless 无真位移流/光标隐藏——host 锁镜像（M2 s3 管线）经桥另记。
         // https://w3c.github.io/pointerlock/#dom-element-requestpointerlock
         if (prop === 'requestPointerLock') {
-          return function () {
+          return function (options) {
+            if (arguments.length >= 1 && options != null && typeof options !== 'object') {
+              return Promise.reject(new TypeError("Failed to execute 'requestPointerLock' on 'Element': The provided value is not of type 'PointerLockOptions'."));
+            }
+            var unadj = false;
+            if (options != null && typeof options === 'object') {
+              try { unadj = !!options.unadjustedMovement; } catch (_eU) { unadj = false; }
+            }
             return new Promise(function (resolve, reject) {
               if (typeof __zw_pointer_lock_enabled === 'function') {
                 var ok = true;
                 try { ok = __zw_pointer_lock_enabled() === '1'; } catch (_e) {}
                 if (!ok) {
-                  _fireDocEvent('pointerlockerror');
-                  reject(new TypeError('pointer lock is unavailable'));
+                  _firePointerLockEvent('pointerlockerror');
+                  reject(new (globalThis.DOMException || Error)('pointer lock is unavailable', 'NotAllowedError'));
                   return;
                 }
               }
-              if (_plKey === key) { resolve(undefined); return; } // 已锁定元素 → no-op
+              if (!_zwTransientActive) {
+                _firePointerLockEvent('pointerlockerror');
+                reject(new (globalThis.DOMException || Error)('A user gesture is required to request pointer lock.', 'NotAllowedError'));
+                return;
+              }
+              if (_plKey === key && _plUnadjusted === unadj) { resolve(undefined); return; } // 同元素同选项 → no-op
               _plKey = key;
               _plSel = sel;
               _plHandle = handle;
-              _fireDocEvent('pointerlockchange');
+              _plUnadjusted = unadj;
+              _firePointerLockEvent('pointerlockchange');
               resolve(undefined);
             });
           };
@@ -7525,6 +7550,8 @@
             // WAB2-M3-s2：移除子树含全屏元素 → fullscreenElement 同步置 null + 异步 change
             //（target=document）。见 part06 _fsOnNodeRemoved。
             if (typeof _fsOnNodeRemoved === 'function') _fsOnNodeRemoved(sel, handle);
+            // M2 RFC s1（FR-6）：移除子树含指针锁元素 → 同步解锁 + 异步 change。见 part06 _plOnNodeRemoved。
+            if (typeof _plOnNodeRemoved === 'function') _plOnNodeRemoved(sel, handle);
             // R140：live childNodes 同步（remove() 后父的旧引用反映）。
             try {
               if (globalThis._zwLiveNLSync) {

@@ -1,10 +1,9 @@
 # Pointer Lock 兼容 — requestPointerLock / 指针捕获语义（门控 goal）
 
-**版本**: v1.3
+**版本**: v1.4
 **日期**: 2026-10-19
-**状态**: **M1 完成（DC-1 ✅）·M2 RFC v1.0 已确认（DC-2 征询门 ✅）·
-BLOCK 于 M3 实施点名**——用户 2026-10-19 点名批准起草并同日征询确认
-（方案 A + N1–N4 纳入 + fsKey 同族修复随 FR-10），实施待点名另启。
+**状态**: **M3 实施中（用户 2026-10-19 点名）·s1 完成（B 面 25.0%→75.0%
+中间口径）·s2 位移流待做**——M2 RFC v1.1（已确认，实施期修正见其 §12）。
 RFC 见 [m2-pointer-capture-pipeline-spec-rfc.md](pointerlock-compat/m2-pointer-capture-pipeline-spec-rfc.md)；
 M1 甄别报告见
 [evidence/2026-10-18-m1-baseline.md](pointerlock-compat/evidence/2026-10-18-m1-baseline.md)
@@ -20,8 +19,16 @@ M1 甄别报告见
 > 指针捕获本质依赖 host 光标管线（隐藏系统光标 + 相对位移流）——host-runtime
 > 面，缺即门控。
 
-## 当前状态（2026-10-18 M1 收口）
+## 当前状态（2026-10-19 M3 s1 收口）
 
+- **M3 s1 完成（2026-10-19）**：shim 语义组落地（FR-1 激活门 NotAllowedError
+  不消费 + FR-2 事件面新派发器 + FR-3 options/no-op 细化 + FR-6 移除解锁 +
+  FR-10 导航清理含 `_fs*` 同族 + §6.2 真实输入激活白名单）。B 面 2 案翻绿
+  （1/4 → 3/4 = 75.0% 中间口径）；fullscreen 桥测试零回归；make test 全绿。
+  实施期修正两处（激活不消费/有效布尔比对）→ RFC v1.1。见
+  [s1 证据](pointerlock-compat/evidence/2026-10-19-m3-s1-semantic-group.md)。
+  剩余红案 constructor.html mouse 扩展面为 FR-4/s2 范围（M1 基线即红）。
+- **下一步（无卡点）**：s2 位移流字段（RFC §6.3，FR-4）按合约自主推进。
 - **M1 完成**：corpus 导入 27/27 测试资产（pin 31597693）+ census + 可执行
   子集甄别 + runner 通道（`make testharness-pointerlock`）+ 基线落账 +
   csv planned 行回填（active，1/4 = 25.0%）。
@@ -32,13 +39,13 @@ M1 甄别报告见
   门 / deny TypeError≠NotAllowedError / 位移流 / unadjustedMovement / 全屏
   联动+移除解锁+retarget）已列入甄别报告 M2 RFC 范围输入。
 - **M2 RFC（2026-10-19）**：用户点名批准起草，同日征询**确认通过**
-  （v1.0）。方案 = shim 语义权威 + webview 锁镜像双馈管线；FR-1~FR-10
-  覆盖 M1 五缺口 + 探索新发现 N1–N4（change/error 事件面 bubbles/target/
-  trusted 不符、重复请求 no-op 条件过粗、锁态/激活跨导航泄漏、锁态宿主不
-  可见）；`_fs*` 同族跨导航泄漏随 FR-10 一并修（用户确认）；s1–s4 切片、
-  五提交切分。Lint 26P/0F。实施合约萃取待 M3 启动时做。
-- **卡点（BLOCK）**：等待用户点名 M3 实施——启动时从 RFC v1.0 萃取实施
-  合约，按 §8 交接顺序 s1→s4 推进。
+  （v1.0；M3 实施期修正 → v1.1）。方案 = shim 语义权威 + webview 锁镜像
+  双馈管线；FR-1~FR-10 覆盖 M1 五缺口 + 探索新发现 N1–N4（change/error
+  事件面 bubbles/target/trusted 不符、重复请求 no-op 条件过粗、锁态/激活
+  跨导航泄漏、锁态宿主不可见）；`_fs*` 同族跨导航泄漏随 FR-10 一并修
+  （用户确认）；s1–s4 切片、五提交切分。Lint 26P/0F。
+- **M3 点名（2026-10-19）**：用户点名启动，按 §8 交接顺序 s1→s4 实施，
+  实施阶段持续执行不中断。
 - **跨域 residual**：`Event.NONE` 等 Event 接口 phase 常量缺失
   （constructor.html s1 红）归 dom/events 域（uievents 50 residual），不占
   本 goal 分母口径。
@@ -61,8 +68,8 @@ M1 完成 corpus census 与可执行子集甄别（API 面存在性/异常语义
 
 ## 里程碑
 
-M1 盘点（自主，**✅ 完成**）→ M2 管线 RFC（**✅ v1.0 已确认 2026-10-19**）→
-M3 实现与收口（**待用户点名**）。
+M1 盘点（自主，**✅ 完成**）→ M2 管线 RFC（**✅ v1.1 已确认 2026-10-19**）→
+M3 实现与收口（**实施中，s1 ✅**）。
 
 ## 依赖约束（run-rules §9）
 

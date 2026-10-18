@@ -432,6 +432,7 @@
   var _plSel = null;
   var _plHandle = null;
   var _plKey = null; // _elKey(sel,handle) of 指针锁元素；同 _fsKey 语义
+  var _plUnadjusted = false; // 锁定生效的 unadjustedMovement 有效布尔（M2 RFC s1 N2：no-op 比对面；与 _plKey 同生灭）
 
   // WAB2-M3-s1（web-api-batch2 goal M3 切片 1，2026-09-24）：**瞬态激活面**（User
   // Activation API + Fullscreen 激活门共享状态）。headless 无真用户输入 → 激活由
@@ -540,16 +541,62 @@
     });
   }
 
-  // R2938/R2939 文档级事件派发（fullscreenchange/fullscreenerror/pointerlockchange/pointerlockerror）。
-  // spec：在 document 上派发，bubbles、非 cancelable。document/window listener 同存于 _elKey('html', null)
-  //（document.addEventListener 转发 html proxy，window dispatchEvent/addEventListener 同 key），故一次
-  // _dispatchToListeners 触达 document.addEventListener + window.addEventListener + document/window 对应
-  // on* IDL handler。currentTarget = document（spec 事件 target）。
-  function _fireDocEvent(type) {
+  // M2 RFC s1（FR-2 修 N1 事件面）：pointerlockchange/pointerlockerror 文档级派发。
+  // spec：在 document 上派发、**不冒泡、不可取消**（WPT pointerlock_api_behavior
+  // 「does not bubble / not cancelable」+ `target === document` 断言——旧 _makeEvent
+  // 裸对象 + bubbles:true + target null 三者均不符）。**Event 真原型**（`new
+  // globalThis.Event`，instanceof Event 可用——照 _fireFsElementEvent 先例）；
+  // `__zwTrusted` 内部印记（part03 _makeEvent isTrusted 读 init 成员）→ UA 合成
+  // 语义 isTrusted=true（spec：change/error 由 UA 在锁状态迁移时派发。注：公开
+  // Event 构造器现状即透传 __zwTrusted，为既有面，本函数未扩大暴露）。
+  // document/window listener 同存于 _elKey('html', null)（document.addEventListener
+  // 转发 html proxy，window dispatchEvent/addEventListener 同 key），一次
+  // _dispatchToListeners 触达 document.addEventListener + window.addEventListener +
+  // document/window 对应 on* IDL handler。currentTarget = document；target 显式
+  // 设置（第四参是 currentTarget 不写 target——照 _fireFsElementEvent document
+  // 回落同款）。
+  // https://w3c.github.io/pointerlock/#dom-document-onpointerlockchange
+  function _firePointerLockEvent(type) {
+    var ev;
     try {
-      var ev = _makeEvent(type, { bubbles: true, cancelable: false });
+      ev = new globalThis.Event(type, { bubbles: false, cancelable: false, __zwTrusted: true });
+    } catch (_eC) {
+      ev = _makeEvent(type, { bubbles: false, cancelable: false, __zwTrusted: true });
+    }
+    try { ev.target = globalThis.document; ev.srcElement = globalThis.document; } catch (_eT) {}
+    try {
       _dispatchToListeners(_elKey('html', null), ev, 'all', globalThis.document);
     } catch (_e) {}
+  }
+
+  // M2 RFC s1（FR-6 shim 侧）：节点移除对指针锁联动（spec「锁定目标脱离文档 → 解锁」，
+  // WPT pointerlock_remove_target 案面）——移除子树包含锁定元素（本节点或祖先链命中，
+  // 照 _fsOnNodeRemoved parentNode 上行比对，parent 链读移除前视图）→ pointerLockElement
+  // **同步**置 null + 异步 step 派 pointerlockchange（锁定元素 detached → target=document
+  // ——派发器恒以 document 为 target，无 isConnected 探查）。仅 el.remove() 路径挂钩
+  //（同 fullscreen 先例按精准修改不扩；removeChild/replaceWith 语料未触达）。
+  function _plOnNodeRemoved(removedSel, removedHandle) {
+    if (!_plKey) return;
+    var removedKey = _elKey(removedSel, removedHandle);
+    var inSubtree = (_plKey === removedKey);
+    if (!inSubtree) {
+      try {
+        var walker = _makeProxy(_plSel, _plHandle);
+        var hops = 0;
+        while (walker && hops++ < 64) {
+          if (_elKey(walker.__zwSelector, walker.__zwHandle) === removedKey) {
+            inSubtree = true;
+            break;
+          }
+          walker = walker.parentNode;
+        }
+      } catch (_ePlr) {}
+    }
+    if (!inSubtree) return;
+    _plKey = null; _plSel = null; _plHandle = null; _plUnadjusted = false;
+    _fsQueueStep(function () {
+      _firePointerLockEvent('pointerlockchange');
+    });
   }
 
   // NodeFilter 常量（spec `dom-nodefilter`，R41 对齐上游 NodeFilter-constants.html 全表）——
@@ -4819,8 +4866,8 @@
     },
     exitPointerLock: function () {
       if (!_plKey) return; // 非锁定 → no-op，不派事件（spec）
-      _plKey = null; _plSel = null; _plHandle = null;
-      _fireDocEvent('pointerlockchange');
+      _plKey = null; _plSel = null; _plHandle = null; _plUnadjusted = false;
+      _firePointerLockEvent('pointerlockchange');
     },
     // document.title——getter 返首 <title> 文本（空白折叠，spec 一致）；首访惰性读 querySelector('title')
     // 并缓存；setter 更新缓存。R3035：setter 经 `__zw_set_text('title', v)` 写回 host `<title>` 元素（SetText
@@ -5170,7 +5217,7 @@
   // R2938/R2939 document IDL on-event handler（spec Document handler 属性：onfullscreenchange/onfullscreenerror /
   // onpointerlockchange/onpointerlockerror）。document 为普通对象（非 Proxy，无法经 on* get/set trap）→
   // defineProperty getter/setter：setter 注册/移除 listener（document.addEventListener 转发 html key，与
-  // _fireDocEvent 派发点一致 → 可触）；getter 返存储 fn。element 侧 on* 经 R2933 通用 on* 路由已支持，无需此处定义。
+  // 文档级事件派发点一致 → 可触）；getter 返存储 fn。element 侧 on* 经 R2933 通用 on* 路由已支持，无需此处定义。
   var _docOnHandlers = {};
   function _defineDocOnHandler(type) {
     Object.defineProperty(globalThis.document, 'on' + type, {
@@ -13637,6 +13684,19 @@
         ev._zwUaDispatch = true;
       }
     } catch (_e312h) {}
+    // M2 RFC s1 §6.2（FR-1 完整性）：宿主派发**输入族**事件 → 置瞬态激活（HTML spec
+    // 「triggering an event with transient activation」触发集：pointerdown/mousedown/
+    // pointerup/keydown/touchend）——真实桌面点击/按键由此可过 requestPointerLock/
+    // requestFullscreen 激活门（产品路径，不依赖 runner 签发注入）。白名单外
+    //（load/error/DOMContentLoaded 等生命周期事件）不置——防页面生命周期流转自授激活。
+    // https://html.spec.whatwg.org/multipage/interaction.html#tracking-user-activation
+    try {
+      if (ev && typeof ev === 'object' && (type === 'pointerdown' || type === 'mousedown'
+        || type === 'pointerup' || type === 'keydown' || type === 'touchend')) {
+        _zwTransientActive = true;
+        _zwActiveEver = true;
+      }
+    } catch (_e312ua) {}
     // R145（js-dom M4）：sel→handle identity 桥——listener 注册在 handle proxy 的
     // `_listenerStore['@'+handle]`（createElement/cloneNode 产物经 addEventListener），
     // sel-key 派发查不到（WPT pointer-event-document-move：模板 clone 的 p 上

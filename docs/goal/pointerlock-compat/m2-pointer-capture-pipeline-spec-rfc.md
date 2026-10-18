@@ -1,11 +1,11 @@
 # Spec+RFC：M2 指针捕获管线——锁定语义 + 位移流 + 锁定态输入改道
 
-**版本**: v1.0（已确认）
+**版本**: v1.1（已确认·M3 实施中）
 **日期**: 2026-10-19
 **作者**: AI Assistant
 **状态**: 已确认——方案 A + N1–N4 纳入 + fsKey 同族修复随 FR-10，经用户
-2026-10-19 征询通过；**实施待用户点名启动**（用户同日裁决「仅确认，实施
-另启」）
+2026-10-19 征询通过；M3 已用户点名启动（同日），s1 起按 §8 顺序实施；
+v1.1 为实施期修正（语料钉死，见 §12 修订历史，需求/验收/切片不变）
 **需求来源**: [docs/goal/pointerlock-compat.md](../pointerlock-compat.md) DC-2/M2
 （用户 2026-10-19 点名批准起草 RFC，同日征询确认）；
 范围输入 = [M1 甄别报告五缺口](evidence/2026-10-18-m1-baseline.md) +
@@ -238,13 +238,14 @@ M1 五缺口（甄别报告 45-52 行）+ 本轮新发现：
 
 ### 6.1 shim 语义修复组（FR-1/2/3/6 shim 侧，s1）
 
-- **activation 门**（`part04.js:3833-3853` 内）：`requestPointerLock` 进入
-  即查 `_zwTransientActive`——false：`_fireDocEvent('pointerlockerror')`（改
-  用 §6.2 新派发器）+ `reject(new DOMException('...', 'NotAllowedError'))`
-  （替换现 TypeError，`part04.js:3842`），不置态；true：同步置 false（消费，
-  fullscreen 先例 `part04.js:3812` 同款）后走 grant。host deny 开关
-  （`__zw_pointer_lock_enabled` 返 '0'）语义保留，deny 路径同样改
-  NotAllowedError + 新派发器。
+- **activation 门**（`part04.js` requestPointerLock 内）：host deny 开关
+  （`__zw_pointer_lock_enabled` 返 '0'）先查（'0' → 派 pointerlockerror +
+  reject NotAllowedError——permission-denied 语义归 NotAllowedError，替换现
+  TypeError）；再查 `_zwTransientActive`——false：派 pointerlockerror（§6.2
+  新派发器）+ `reject(DOMException 'NotAllowedError')`，不置态；true：
+  **仅检查不消费**（v1.1 实施期修正：`unadjustedMovement_update` 案一次激活
+  连续两次请求均须过——spec request steps 无 consume 步，与 requestFullscreen
+  的显式同步消费先例不同）。
 - **change/error 事件面**（修 N1）：新增 `_firePointerLockEvent(type)`
   替代 `_fireDocEvent` 调用（`part04.js:3840,3849`、`part06.js:4823`）——
   `target=document`（照 fullscreen 事件路径显式设 target 的回落
@@ -252,17 +253,19 @@ M1 五缺口（甄别报告 45-52 行）+ 本轮新发现：
   `isTrusted=true`（`__zwTrusted` 印记，`part03.js:8427`）。
 - **options 参数**：签名改 `function (options)`；解析 `{unadjustedMovement}`（缺省
   视为 false；非法字典按 WebIDL 忽略未知键）；存入锁态
-  （`_plOpts`，与 `_plKey` 同生灭）。**不实现 NotSupportedError 拒绝**——
+  （`_plUnadjusted` 有效布尔，与 `_plKey` 同生灭——v1.1 实施期修正：语料只
+  变异 unadjustedMovement 单成员，按最小实现比对有效布尔而非对象深相等）。
+  **不实现 NotSupportedError 拒绝**——
   语料两案不容（§2.2-4）；真 raw input 在排除面（§1.3）。
 - **重复请求语义**（修 N2）：no-op 条件从「同元素」细化为「同元素且
-  `_plOpts` 深相等」；否则按重新授锁定态 + 派 change（`pointerlock_
-  unadjustedMovement_update` 断言面）。
+  `_plUnadjusted` 有效布尔相等」；否则按重新授锁定态 + 派 change
+  （`pointerlock_unadjustedMovement_update` 断言面）。
 - **移除钩子**（FR-6 shim 侧）：新增 `_plOnNodeRemoved`（照 `_fsOnNodeRemoved`
   `part06.js:516-541` 模式：沿 parentNode 上行比对 `_plKey`，命中则同步清
   `_pl*` + 异步派 change），挂 `el.remove()` 路径（`part04.js:7427-7429`
   邻位）。**不扩** removeChild/replaceWith——fullscreen 先例明示按精准修改
   不扩（`part06.js:513-515` 注释），语料两案均走 `remove()`。
-- **导航清理**（FR-10 shim 侧，修 N3）：`_plKey/_plSel/_plHandle/_plOpts`
+- **导航清理**（FR-10 shim 侧，修 N3）：`_plKey/_plSel/_plHandle/_plUnadjusted`
   与 `_zwTransientActive/_zwActiveEver` 加入 `__zw_reset_form_state` 清单
   （`part01.js:5787`，导航时 `js_worker.rs:1725`/`tab_js_worker.rs:549`
   触发）。清零不派事件（文档已替换，无监听面意义）。**同站一并清
@@ -529,3 +532,4 @@ M1 五缺口（甄别报告 45-52 行）+ 本轮新发现：
 |---|---|---|
 | v0.1 | 2026-10-19 | 首稿：四路探索（现状实现面/dnd 管线/激活与生命周期基础设施/语料断言面）、三方案对比、方案 A 详细设计、s1–s4 切片、Lint。随用户 2026-10-19「批准启动 M2 RFC」门控放行起草 |
 | v1.0 | 2026-10-19 | 用户征询确认：方案 A（PR-1 关闭）、N1–N4 范围纳入、`_fs*` 同族泄漏随 FR-10 一并修（§6.8）、实施时机另启。状态转已确认，待实施点名 |
+| v1.1 | 2026-10-19 | M3 s1 实施期修正（语料钉死，B 面 2 案实跑翻绿验证）：§6.1 activation 门「消费」改「仅检查不消费」（`unadjustedMovement_update` 案一次激活连续两次请求均须过，spec request steps 无 consume 步）；§6.1 `_plOpts` 对象深相等改 `_plUnadjusted` 有效布尔相等（语料只变异单成员，最小实现）。需求/验收/切片/方案不变 |
