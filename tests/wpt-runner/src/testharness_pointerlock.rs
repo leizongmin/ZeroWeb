@@ -52,6 +52,13 @@ pub(crate) fn pointerlock_case_skipped(relative: &str, source: &str) -> bool {
     if name.contains("-manual.") {
         return true;
     }
+    // pointerlock-compat M3 s2：movementX_Y_basic 只断言 mousemove 位移流
+    // （movementX == screenX 前后差，Pointer Lock spec #dom-mouseevent-movementx），
+    // 不取真锁——其 test_driver.Actions 步走 runner 合成指针管线即满足，窄化放行
+    // （捕获管线门控例外，同 s1 B 面两案先例）。
+    if name == "movementX_Y_basic.html" {
+        return false;
+    }
     if source.contains("test_driver.") || source.contains("test-helper.js") {
         return true;
     }

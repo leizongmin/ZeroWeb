@@ -53,6 +53,11 @@ pub struct DomEventDetail {
     /// 拖放会话 id——dnd-compat M3：shim `__zwDragSessions[id]` 定位同会话共享 DataTransfer
     /// 实例（dragstart→dragend 同一对象，HTML dnd processing model）；None = 非 drag* 事件。
     pub data_transfer_id: Option<u64>,
+    /// MouseEvent.movementX——指针锁定兼容 M3 s2：自上一 mouse 事件的 screen 坐标差
+    /// （Pointer Lock spec `dom-mouseevent-movementx`，不限锁定态）；缺省 0。
+    pub movement_x: i64,
+    /// MouseEvent.movementY——同上，Y 轴位移。
+    pub movement_y: i64,
 }
 
 /// JS 单引号字符串字面量转义（`'` `\` `\n` `\r`）。
@@ -130,8 +135,11 @@ pub fn script_dispatch_dom_event(selector: &str, event_type: &str, detail: Optio
                 .data_transfer_id
                 .map(|v| format!("{v}"))
                 .unwrap_or_else(|| "null".to_string());
+            // pointerlock-compat M3 s2：movementX/Y 位移流透传（i64 缺省 0）。
+            let movement_x = d.movement_x;
+            let movement_y = d.movement_y;
             format!(
-                "{{key:{key},code:{code},submitter:{submitter},data:{data},inputType:{input_type},isComposing:{is_composing},shiftKey:{shift_key},ctrlKey:{ctrl_key},altKey:{alt_key},metaKey:{meta_key},clientX:{client_x},clientY:{client_y},button:{button},buttons:{buttons},detail:{detail_count},relatedTarget:{related_target},bubbles:{bubbles},pointerType:{pointer_type},pointerId:{pointer_id},dataTransferId:{data_transfer_id}}}"
+                "{{key:{key},code:{code},submitter:{submitter},data:{data},inputType:{input_type},isComposing:{is_composing},shiftKey:{shift_key},ctrlKey:{ctrl_key},altKey:{alt_key},metaKey:{meta_key},clientX:{client_x},clientY:{client_y},button:{button},buttons:{buttons},detail:{detail_count},relatedTarget:{related_target},bubbles:{bubbles},pointerType:{pointer_type},pointerId:{pointer_id},dataTransferId:{data_transfer_id},movementX:{movement_x},movementY:{movement_y}}}"
             )
         }
     };
@@ -266,9 +274,14 @@ if(t)t.dispatchEvent({{type:'{esc_ty}',target:t,currentTarget:t,bubbles:true}});
 /// 指针悬停目标变化时执行：调 shim 钩子 `__zw_pointer_move(sel, x, y)`（part06.js）
 /// ——跨界时派发 over/out/enter/leave 边界序（relatedTarget 对侧；enter/leave 不冒泡），
 /// 随后在新目标上派 pointermove/mousemove 对。宿主侧悬停态自持（webview `pointer_over`）。
-pub fn script_pointer_move(selector: &str, client_x: f32, client_y: f32) -> String {
+/// pointerlock-compat M3 s2：`movement_x`/`movement_y` 为自上一指针位置的位移
+/// （Pointer Lock spec `dom-mouseevent-movementx`），第 4 参 chordBtn 传 undefined
+/// 保持原槽位，位移落第 5/6 参。
+pub fn script_pointer_move(selector: &str, client_x: f32, client_y: f32, movement_x: i64, movement_y: i64) -> String {
     let sel = escape_js_string(selector);
-    format!("if(typeof __zw_pointer_move==='function')__zw_pointer_move('{sel}',{client_x},{client_y});")
+    format!(
+        "if(typeof __zw_pointer_move==='function')__zw_pointer_move('{sel}',{client_x},{client_y},undefined,{movement_x},{movement_y});"
+    )
 }
 
 /// 生成「mutation 驱动悬停重结算」脚本（uievents-compat 尾簇 8）。runner 在探测环

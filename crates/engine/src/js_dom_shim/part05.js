@@ -12771,6 +12771,11 @@
   var MouseEventCtor = _defineEventSubclass('MouseEvent', 'UIEvent', [
     ['screenX', 'screenX', 0], ['screenY', 'screenY', 0],
     ['clientX', 'clientX', 0], ['clientY', 'clientY', 0],
+    // pointerlock-compat M3 s2：movementX/Y 位移流（Pointer Lock spec
+    // https://w3c.github.io/pointerlock/#dom-mouseevent-movementx——自上一 mouse
+    // 事件的 screen 差，不限锁定态；构造缺省 0。constructor.html mouse 扩展面
+    // 缺省/初始化跟随断言面）。PointerEvent/WheelEvent 经父链继承本表。
+    ['movementX', 'movementX', 0], ['movementY', 'movementY', 0],
     ['pageX', 'pageX', 0], ['pageY', 'pageY', 0],
     ['offsetX', 'offsetX', 0], ['offsetY', 'offsetY', 0],
     // uievents-compat 尾簇 37（2026-10-07）：layerX/layerY 反射（非标准但 Chrome/

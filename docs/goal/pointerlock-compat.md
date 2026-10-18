@@ -1,9 +1,9 @@
 # Pointer Lock 兼容 — requestPointerLock / 指针捕获语义（门控 goal）
 
-**版本**: v1.4
+**版本**: v1.5
 **日期**: 2026-10-19
-**状态**: **M3 实施中（用户 2026-10-19 点名）·s1 完成（B 面 25.0%→75.0%
-中间口径）·s2 位移流待做**——M2 RFC v1.1（已确认，实施期修正见其 §12）。
+**状态**: **M3 实施中（用户 2026-10-19 点名）·s1+s2 完成（执行子集
+75.0%→80.0%）·s3 锁管线待做**——M2 RFC v1.2（已确认，实施期修正见其 §12）。
 RFC 见 [m2-pointer-capture-pipeline-spec-rfc.md](pointerlock-compat/m2-pointer-capture-pipeline-spec-rfc.md)；
 M1 甄别报告见
 [evidence/2026-10-18-m1-baseline.md](pointerlock-compat/evidence/2026-10-18-m1-baseline.md)
@@ -19,16 +19,22 @@ M1 甄别报告见
 > 指针捕获本质依赖 host 光标管线（隐藏系统光标 + 相对位移流）——host-runtime
 > 面，缺即门控。
 
-## 当前状态（2026-10-19 M3 s1 收口）
+## 当前状态（2026-10-19 M3 s2 收口）
 
+- **M3 s2 完成（2026-10-19）**：位移流字段落地（FR-4，RFC §6.3 三层：序列化
+  movementX/Y + runner 事件源算 delta + shim mouse 分支透传）。**实施期发现**
+  shim `MouseEvent` 构造键表缺 movementX/Y（键表外 init 键静默丢弃——
+  constructor.html M1 红案真根因），part05 补表项 → RFC v1.2；
+  mouse 分支合成 screenX=clientX（§6.3 假设落定）。movementX_Y_basic 实跑
+  翻绿（skip 窄化 13→12），执行子集 **4/5 = 80.0%**。见
+  [s2 证据](pointerlock-compat/evidence/2026-10-19-m3-s2-movement-stream.md)。
 - **M3 s1 完成（2026-10-19）**：shim 语义组落地（FR-1 激活门 NotAllowedError
   不消费 + FR-2 事件面新派发器 + FR-3 options/no-op 细化 + FR-6 移除解锁 +
   FR-10 导航清理含 `_fs*` 同族 + §6.2 真实输入激活白名单）。B 面 2 案翻绿
   （1/4 → 3/4 = 75.0% 中间口径）；fullscreen 桥测试零回归；make test 全绿。
   实施期修正两处（激活不消费/有效布尔比对）→ RFC v1.1。见
   [s1 证据](pointerlock-compat/evidence/2026-10-19-m3-s1-semantic-group.md)。
-  剩余红案 constructor.html mouse 扩展面为 FR-4/s2 范围（M1 基线即红）。
-- **下一步（无卡点）**：s2 位移流字段（RFC §6.3，FR-4）按合约自主推进。
+- **下一步（无卡点）**：s3 锁管线（RFC §6.4–6.7，FR-5/7/8）按合约自主推进。
 - **M1 完成**：corpus 导入 27/27 测试资产（pin 31597693）+ census + 可执行
   子集甄别 + runner 通道（`make testharness-pointerlock`）+ 基线落账 +
   csv planned 行回填（active，1/4 = 25.0%）。

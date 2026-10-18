@@ -4477,3 +4477,42 @@ fn test_create_document_type_r15() {
 }
 
 
+
+// pointerlock-compat M3 s2（2026-10-19）：位移流 shim 面——`__zw_pointer_move` 第 5/6
+// 参透传 mousemove movementX/Y（Pointer Lock spec #dom-mouseevent-movementx——自上一
+// mouse 事件的 screen 差，不限锁定态）；合成 screenX/Y = clientX/Y（无宿主窗口几何时
+// 视口即 screen 基准，movementX_Y_basic 逐步断言依赖）。pointermove 走 PointerEvent
+// 分支不消费位移（s2 消费面 = MouseEvent——RFC §6.3 mouse 分支最小实现）。
+#[test]
+fn test_pointer_move_movement_stream_s2() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox
+        .execute(
+            "globalThis.__mv = [];\
+             document.addEventListener('mousemove', function (e) {\
+               globalThis.__mv.push(e.movementX + ',' + e.movementY + ',' + e.screenX + ',' + e.screenY + ',' + e.clientX);\
+             });",
+        )
+        .unwrap();
+    sandbox.execute(&script_pointer_move("html", 100.0, 50.0, 7, -3)).unwrap();
+    sandbox.execute(&script_pointer_move("html", 90.0, 80.0, -10, 30)).unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__mv.join('|')").unwrap().value,
+        "7,-3,100,50,100|-10,30,90,80,90",
+        "mousemove 位移流透传 + 合成 screenX/Y=clientX/Y"
+    );
+}

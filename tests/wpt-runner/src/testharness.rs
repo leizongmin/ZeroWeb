@@ -9164,9 +9164,15 @@ fn apply_testdriver_command(
                 mut_hover_settle_if_dirty(webview, last_pointer, td_refresh_ver);
             }
             let (hit_sel, px, py) = resolve_pointer_target(webview, &selector, off_x, off_y, absolute, td_refresh_ver);
+            // pointerlock-compat M3 s2（RFC §6.3）：位移流在事件源算 delta——自上一
+            // move 步位置的差，i64 截断（spec movement 为 long）；首步无前位 → 0。
+            let (mv_x, mv_y) = match *last_pointer {
+                Some((last_x, last_y)) => ((px - last_x) as i64, (py - last_y) as i64),
+                None => (0, 0),
+            };
             *last_pointer = Some((px, py));
             if !drag_suppress {
-                let script = zero_engine::script_pointer_move(&hit_sel, px, py);
+                let script = zero_engine::script_pointer_move(&hit_sel, px, py, mv_x, mv_y);
                 let _ = webview.execute_script(&script);
             }
             if pointer_injection == PointerStepInjection::DragStateMachine

@@ -459,7 +459,7 @@ impl WebView {
         let is_pointer_action = matches!(request.action, HtmlUserAction::Activate);
         let target_selector = selector.clone();
         if javascript_enabled && is_pointer_action && self.pointer_over.as_deref() != Some(target_selector.as_str()) {
-            self.execute_dom_script(executor, &script_pointer_move(&target_selector, 0.0, 0.0))?;
+            self.execute_dom_script(executor, &script_pointer_move(&target_selector, 0.0, 0.0, 0, 0))?;
             self.pointer_over = Some(target_selector.clone());
         }
         // 同目标连击（dblclick 判定，UI Events §3.3——detail 按连击计数；目标变化

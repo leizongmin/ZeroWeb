@@ -13614,6 +13614,14 @@
         cancelable: _mCan,
         clientX: (detail && typeof detail.clientX === 'number') ? detail.clientX : 0,
         clientY: (detail && typeof detail.clientY === 'number') ? detail.clientY : 0,
+        // pointerlock-compat M3 s2：screenX/Y 合成面 = clientX/Y（无宿主窗口几何时
+        // 视口即 screen 基准）；movementX/Y 位移流透传（Pointer Lock spec
+        // https://w3c.github.io/pointerlock/#dom-mouseevent-movementx——自上一 mouse
+        // 事件的 screen 差，不限锁定态；缺省 0。constructor.html mouse 扩展面断言面）。
+        screenX: (detail && typeof detail.clientX === 'number') ? detail.clientX : 0,
+        screenY: (detail && typeof detail.clientY === 'number') ? detail.clientY : 0,
+        movementX: (detail && typeof detail.movementX === 'number') ? detail.movementX : 0,
+        movementY: (detail && typeof detail.movementY === 'number') ? detail.movementY : 0,
         button: (detail && typeof detail.button === 'number') ? detail.button : 0,
         buttons: (detail && typeof detail.buttons === 'number') ? detail.buttons
           : (type === 'mouseup' || type === 'mousemove') ? 0 : 1,
@@ -14232,7 +14240,7 @@
       el.hasPointerCapture = function (pid) { return globalThis.__zwPortalCaptureHas(el, pid); };
     } catch (_e23am) {}
   };
-  globalThis.__zw_pointer_move = function (sel, x, y, chordBtn19) {
+  globalThis.__zw_pointer_move = function (sel, x, y, chordBtn19, mvX19, mvY19) {
     var st = _zwPtrState;
     var _dragSelM = sel; // 拖选 sel 键回落锚（retarget 前的 origin 元素）
     // 尾簇 23：捕获期 portal 路由——inner 捕获激活时全部事件随捕获目标（视口出框
@@ -14403,7 +14411,11 @@
     if (!st.compatSuppressed) {
       __zw_dispatch_event(sel, 'mousemove', {
         clientX: x || 0, clientY: y || 0,
-        button: 0, buttons: st.buttons // 尾簇 16：compat mouse 面按钮恒 0（同上）
+        button: 0, buttons: st.buttons, // 尾簇 16：compat mouse 面按钮恒 0（同上）
+        // pointerlock-compat M3 s2：位移流（事件源算 delta——runner 持前后位置；
+        // Pointer Lock spec #dom-mouseevent-movementx）。
+        movementX: (typeof mvX19 === 'number') ? mvX19 : 0,
+        movementY: (typeof mvY19 === 'number') ? mvY19 : 0
       });
     }
     // 尾簇 18：range input 拖拽持续取值（按下键位非零 + down 落在 range 上）。
