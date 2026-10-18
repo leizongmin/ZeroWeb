@@ -336,14 +336,16 @@ impl BrowserApp {
                 // 可见 + 判进行宽左半）。行文本前缀与下方 rows 构造严格对应。
                 // rows = [标题, 方向, 份数, 边距]：i=2 份数 / i=3 边距写实测位
                 //（命中/ui_driver 的行参数 0=方向、1=份数、2=边距，经 i-1 索引）。
+                // 前缀边界 = 各自字形起点：minus 在标签后（不含 − 字形本身——
+                // R1 教训：含入即越过减字形使减区退化），plus 在值与间隔空格后。
                 let (minus_prefix, plus_prefix) = match i {
                     2 => (
-                        "Copies:  - ".to_string(),
-                        format!("Copies:  - {copies}"),
+                        "Copies:  ".to_string(),
+                        format!("Copies:  - {copies} "),
                     ),
                     3 => (
+                        "Margin:  ".to_string(),
                         format!("Margin:  - {} mm ", margin_mm as i32),
-                        format!("Margin:  - {} mm +", margin_mm as i32),
                     ),
                     _ => (String::new(), String::new()),
                 };
