@@ -50,6 +50,9 @@ pub struct DomEventDetail {
     /// PointerEvent.pointerId——uievents-compat 尾簇 11：None = 缺省（UA 指针 1）；
     /// Some(-1) = 非指针生成（click() API / Enter 激活，PE spec）。
     pub pointer_id: Option<i32>,
+    /// 拖放会话 id——dnd-compat M3：shim `__zwDragSessions[id]` 定位同会话共享 DataTransfer
+    /// 实例（dragstart→dragend 同一对象，HTML dnd processing model）；None = 非 drag* 事件。
+    pub data_transfer_id: Option<u64>,
 }
 
 /// JS 单引号字符串字面量转义（`'` `\` `\n` `\r`）。
@@ -122,8 +125,13 @@ pub fn script_dispatch_dom_event(selector: &str, event_type: &str, detail: Optio
                 .pointer_id
                 .map(|v| format!("{v}"))
                 .unwrap_or_else(|| "null".to_string());
+            // dnd-compat M3：dataTransferId 透传（null = 非 drag* 事件，shim drag 分支不触）。
+            let data_transfer_id = d
+                .data_transfer_id
+                .map(|v| format!("{v}"))
+                .unwrap_or_else(|| "null".to_string());
             format!(
-                "{{key:{key},code:{code},submitter:{submitter},data:{data},inputType:{input_type},isComposing:{is_composing},shiftKey:{shift_key},ctrlKey:{ctrl_key},altKey:{alt_key},metaKey:{meta_key},clientX:{client_x},clientY:{client_y},button:{button},buttons:{buttons},detail:{detail_count},relatedTarget:{related_target},bubbles:{bubbles},pointerType:{pointer_type},pointerId:{pointer_id}}}"
+                "{{key:{key},code:{code},submitter:{submitter},data:{data},inputType:{input_type},isComposing:{is_composing},shiftKey:{shift_key},ctrlKey:{ctrl_key},altKey:{alt_key},metaKey:{meta_key},clientX:{client_x},clientY:{client_y},button:{button},buttons:{buttons},detail:{detail_count},relatedTarget:{related_target},bubbles:{bubbles},pointerType:{pointer_type},pointerId:{pointer_id},dataTransferId:{data_transfer_id}}}"
             )
         }
     };
@@ -1217,9 +1225,13 @@ fn scan_top_level_decl_exports(code: &str, is_strict: bool) -> String {
 /// **作用域**：`code` 内的 `var`/`function` 声明提升到脚本顶层作用域（try 块对它们透明），与未包装
 /// 行为一致；顶层 `let`/`const`/`class` 会变为 try 块作用域——classic 内联脚本罕见，module 走
 /// `execute_module`。成功时 sentinel 留 `undefined`（非字符串），抛错时设为错误文本
-///（`__zw_e.stack` 优先——首行消息 + 栈帧行，t5 execute 错误栈捕获；无 stack 回退 message /
-/// String(e)），二者经 [`page_script_error_check`] 的 `===undefined` 判别可靠区分（即便
-/// `throw undefined` 也只产生字符串 "undefined"，不与 undefined 值混淆）。
+///（T64 消息保真组合：**首行消息 + 栈帧行**，R2940 契约——stack 是附加信息不可替代 message）。
+/// V8 `e.stack` 首行即 ToString(e)（"Name: message"），首行含 message 时原样保留（V8 形状
+/// 字节不变，t5 execute 错误栈捕获）；QuickJS `e.stack` **仅帧行、无消息头**（曾在
+/// renderer/wpt quickjs 腿把 window.onerror 消息顶成首帧文本 'at <eval> (<input>:1:6)'），
+/// 此时把 `message` 前置为首行、帧行随后。无 stack 回退 message / String(e)。IIFE 组合避免
+/// `var` 泄漏进间接 eval 的全局作用域。二者经 [`page_script_error_check`] 的 `===undefined`
+/// 判别可靠区分（即便 `throw undefined` 也只产生字符串 "undefined"，不与 undefined 值混淆）。
 /// 消费方 [`page_script_error_check`] 返回后，window.onerror 报告经
 /// [`script_report_error`] 取首行（带栈文本不改变 5-arg 消息形状），ScriptErrorParams
 /// 全文携带栈帧行（pageerror 归因面）。
@@ -1288,11 +1300,16 @@ pub fn script_run_classic_page(code: &str, script_index: usize, source_url: Opti
         format!("+'{}'", escape_js_string(&format!("\n{tail}")))
     };
     format!(
+        // T64 返修（缺陷首轮 D1/D2）：①message/stack 访问各带 try 守卫——异形
+        // throw 对象（getter 抛错）退化为栈文本可见（旧臂吞为静默）；②V8 判定
+        // 锚定「首行非帧行」——quickjs 首帧行含消息子串（如 `new Error('eval')`
+        // 的 'eval' ⊂ 'at <eval>…'）时子串命中会把消息顶掉，帧行形状一律前置
+        // 消息。V8 字节形状（首行含消息且非帧行）保持原样返回。
         // security-hardening M2-s6：`(0,globalThis.__zwRealEval||eval)`——eval 门禁
         // per-script 包装（webview 侧）会把 globalThis.eval 换成检查包装，本机制自身的
         // 页面脚本执行必须走**原生 eval**（包装安装片段先捕获 __zwRealEval；无门禁时
         // 回落 eval，语义同为间接 eval 全局作用域）。
-        "globalThis.__zw_set_current_script&&globalThis.__zw_set_current_script({idx});\nglobalThis.{g}=undefined;\ntry{{(0,globalThis.__zwRealEval||eval)({code_literal}{export_suffix});}}catch(__zw_e){{globalThis.{g}=(__zw_e&&__zw_e.stack)?String(__zw_e.stack):((__zw_e&&__zw_e.message)?String(__zw_e.message):String(__zw_e));}}\nfinally{{globalThis.__zw_clear_current_script&&globalThis.__zw_clear_current_script();}}",
+        "globalThis.__zw_set_current_script&&globalThis.__zw_set_current_script({idx});\nglobalThis.{g}=undefined;\ntry{{(0,globalThis.__zwRealEval||eval)({code_literal}{export_suffix});}}catch(__zw_e){{globalThis.{g}=function(e){{var m='';try{{m=(e&&e.message!==undefined)?String(e.message):String(e);}}catch(_em){{m='';}}var s='';try{{s=(e&&e.stack)?String(e.stack):'';}}catch(_es){{s='';}}if(!s)return m;var nl=s.indexOf('\\n');var head=nl<0?s:s.slice(0,nl);var v8=m&&head.indexOf(m)>=0&&!/^\\s*at\\s/.test(head);return v8?s:(m?m+'\\n'+s:s);}}(__zw_e);}}\nfinally{{globalThis.__zw_clear_current_script&&globalThis.__zw_clear_current_script();}}",
         idx = script_index,
         g = PAGE_SCRIPT_ERROR_GLOBAL
     )

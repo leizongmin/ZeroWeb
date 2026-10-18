@@ -96,6 +96,10 @@ pub enum IpcMessageKind {
     DispatchDomEvent(DispatchDomEventParams),
     /// DOM 事件派发结果（渲染→浏览器）。
     DispatchDomEventResult(DispatchDomEventResultParams),
+    /// 拖放输入（浏览器→渲染，dnd-compat M3；回执 `DragInputResult`）。
+    DragInput(DragInputParams),
+    /// 拖放输入回执（渲染→浏览器）。
+    DragInputResult(DragInputResultParams),
 
     // ── 网络请求（渲染→浏览器→网络）──
     /// 发起网络请求。
@@ -2460,4 +2464,40 @@ pub struct DispatchDomEventParams {
 pub struct DispatchDomEventResultParams {
     /// `preventDefault()` 未被调用。
     pub default_allowed: bool,
+}
+
+/// 拖放输入相位（dnd-compat M3）。
+///
+/// `Down` 供 renderer 侧状态机按命中 `drag_source`（最近可拖祖先或自身）仲裁武装；`Move`/`Up` 驱动
+/// drag* 事件序（HTML dnd processing model）；`Cancel` = Esc 等宿主取消。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DragInputPhase {
+    /// mousedown。
+    Down,
+    /// mousemove。
+    Move,
+    /// mouseup。
+    Up,
+    /// 宿主取消（Esc）。
+    Cancel,
+}
+
+/// 拖放输入（浏览器→渲染）。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct DragInputParams {
+    /// 输入相位。
+    pub phase: DragInputPhase,
+    /// 视口 CSS 逻辑像素 x。
+    pub x: f32,
+    /// 视口 CSS 逻辑像素 y。
+    pub y: f32,
+}
+
+/// 拖放输入回执（渲染→浏览器）。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct DragInputResultParams {
+    /// 状态机是否派发了 drag* 事件（true → 宿主抑制 click 合成 / scroll-drag 手势）。
+    pub consumed: bool,
+    /// 最后派发的可取消事件是否被页面取消（dragstart 取消 = 会话未启动）。
+    pub prevented: bool,
 }

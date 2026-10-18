@@ -2822,6 +2822,24 @@ fn normalize_url_scheme_heuristics_table() {
     }
 }
 
+/// fragment 修复不回归地址栏语义：裸词与裸 `#fragment` 输入仍走搜索兜底——
+/// fragment 链接语义只作用于页面链接点击路径（resolve_clicked_link_url +
+/// 同文档 fragment 导航），地址栏入口维持 normalize_url 行为。
+#[test]
+fn normalize_url_keeps_search_fallback_for_bare_words_and_bare_fragment() {
+    let shell = zero_browser_shell::BrowserShell::new();
+    assert_eq!(
+        crate::app::normalize_url("hello world", &shell),
+        shell.settings().search("hello world"),
+        "地址栏裸词输入仍走搜索兜底"
+    );
+    assert_eq!(
+        crate::app::normalize_url("#compatibility", &shell),
+        shell.settings().search("#compatibility"),
+        "地址栏裸 fragment 输入维持搜索回退（同文档 fragment 只由链接点击路径触发）"
+    );
+}
+
 /// I5：host:port（数字端口）不应判为搜索词；含空格的冒号查询仍是搜索词。
 #[test]
 fn looks_like_search_query_treats_numeric_host_port_as_url() {
@@ -5545,6 +5563,73 @@ fn inject_scrollable_doc(app: &mut BrowserApp, tab: TabId) {
     );
 }
 
+/// fragment 导航测试辅助：在可滚动文档上注入带 `id="intro"` 锚点（文档坐标
+/// `anchor_y`）的命中测试快照（stub 无渲染管线，合成快照驱动锚点定位面）。
+fn inject_anchor_doc(app: &mut BrowserApp, tab: TabId, anchor_y: f32) {
+    use zero_engine::{
+        HitTestCache, HitTestCacheSnapshot, HitTestLayoutSnapshot, HitTestNodeSnapshot, node_id_from_u64,
+    };
+    let id_root = node_id_from_u64(1);
+    let id_anchor = node_id_from_u64(2);
+    let cache = HitTestCache::from_snapshot(HitTestCacheSnapshot {
+        doc_root: node_id_from_u64(0),
+        // root body(0,0,800,5000) + 子 h2#intro(0,anchor_y,800,40)——快照子坐标
+        // 为绝对（相对 root 内容原点），root 偏移为零时 anchor_y 即返回原值。
+        layout_root: HitTestLayoutSnapshot {
+            node_id: Some(id_root),
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 5000.0,
+            reported: None,
+            children: vec![HitTestLayoutSnapshot {
+                node_id: Some(id_anchor),
+                x: 0.0,
+                y: anchor_y,
+                width: 800.0,
+                height: 40.0,
+                reported: None,
+                children: vec![],
+            }],
+        },
+        nodes: vec![
+            (
+                id_root,
+                HitTestNodeSnapshot {
+                    tag_name: "body".into(),
+                    id: None,
+                    class_name: None,
+                    selector: "body".into(),
+                    href: None,
+                    src: None,
+                    link_text: None,
+                    draggable: false,
+                    drag_barrier: false,
+                },
+            ),
+            (
+                id_anchor,
+                HitTestNodeSnapshot {
+                    tag_name: "h2".into(),
+                    id: Some("intro".into()),
+                    class_name: None,
+                    selector: "#intro".into(),
+                    href: None,
+                    src: None,
+                    link_text: None,
+                    draggable: false,
+                    drag_barrier: false,
+                },
+            ),
+        ],
+        parents: vec![(id_anchor, id_root)],
+        hidden_nodes: Vec::new(),
+        pe_none_nodes: Vec::new(),
+    });
+    app.inject_hit_test_for_test(tab, cache);
+    inject_scrollable_doc(app, tab);
+}
+
 /// t48：back/forward 滚动位置保持——离开历史条目前保存偏移，返回时在页面
 /// 装载完成后恢复，前进回到新导航条目时从顶部开始（Chrome 同款会话内滚动保持）。
 /// 恢复经 page_loaded 落地（poll_tab_fetch 驱动），避免空白文档期被 clamp 压回 0。
@@ -5620,6 +5705,94 @@ fn back_to_never_visited_entry_starts_at_top() {
     inject_scrollable_doc(&mut app, tab);
     app.apply_pending_scroll_restore_for_test(tab);
     assert_eq!(app.smoke_scroll_offset_y(), 300.0, "第二页离开前的 300 应被保存");
+}
+
+/// 同文档 fragment 导航（HTML navigate-to-a-fragment）：仅差 fragment 的导航不重载
+/// 文档（不置 loading、标题保持），push 历史、更新地址栏，滚动跳到锚点 id，且不落
+/// normalize_url 的搜索兜底；跨文档 fragment 目标仍走完整装载。
+/// https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate-to-a-fragment
+#[test]
+fn same_document_fragment_navigation_jumps_without_reload() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    let tab = app.shell.active_tab_id().unwrap();
+
+    app.navigate_to("https://example.com/docs");
+    inject_anchor_doc(&mut app, tab, 1000.0);
+    app.shell.on_page_loaded("Docs");
+
+    // 页面内 `#intro` 链接点击（链接点击路径已按文档 base 解析为绝对 URL）。
+    app.navigate_to("https://example.com/docs#intro");
+
+    assert_eq!(
+        app.shell.active_tab().and_then(|t| t.url()),
+        Some("https://example.com/docs#intro"),
+        "URL 应更新为带 fragment 的目标"
+    );
+    assert!(
+        !app.shell.active_tab().unwrap().is_loading(),
+        "同文档 fragment 导航不重载文档（不置 loading）"
+    );
+    assert_eq!(app.shell.active_tab().and_then(|t| t.title()), Some("Docs"));
+    assert!(app.address_bar_text().ends_with("#intro"), "地址栏显示目标 URL");
+    assert!(
+        app.shell.active_tab().unwrap().can_go_back(),
+        "fragment 导航同样 push 历史（替代搜索兜底条目）"
+    );
+    assert_eq!(app.smoke_scroll_offset_y(), 1000.0, "滚动跳到锚点 id 文档坐标");
+    assert_eq!(app.pending_scroll_restore_for_test(), None, "无重载滚动挂起");
+
+    // 锚点不存在：仅更新 URL 不滚动（Chrome 同款）。
+    app.navigate_to("https://example.com/docs#missing");
+    assert_eq!(
+        app.shell.active_tab().and_then(|t| t.url()),
+        Some("https://example.com/docs#missing")
+    );
+    assert_eq!(app.smoke_scroll_offset_y(), 1000.0, "无匹配锚点不改变滚动");
+
+    // 跨文档 fragment 目标不是同文档导航：仍走完整装载（置 loading）。
+    app.navigate_to("https://example.com/other#intro");
+    assert!(
+        app.shell.active_tab().unwrap().is_loading(),
+        "跨文档 fragment 导航保持既有装载语义"
+    );
+}
+
+/// fragment 历史条目的 back/forward：落点与出发仅差 fragment 时同文档跳转——
+/// 不重载文档（无 pending 滚动挂起），滚动按条目记录恢复，前进回锚点条目定位锚点。
+#[test]
+fn back_forward_fragment_entries_jump_without_reload() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.scale_factor = 1.0;
+    let tab = app.shell.active_tab_id().unwrap();
+
+    app.navigate_to("https://example.com/docs");
+    inject_anchor_doc(&mut app, tab, 1000.0);
+    app.shell.on_page_loaded("Docs");
+    app.set_tab_scroll_for_test(tab, page_scroll::TabScrollState { x: 0.0, y: 500.0 });
+
+    app.navigate_to("https://example.com/docs#intro");
+    assert_eq!(app.smoke_scroll_offset_y(), 1000.0);
+
+    app.go_back();
+    assert_eq!(
+        app.shell.active_tab().and_then(|t| t.url()),
+        Some("https://example.com/docs"),
+        "back 回基础条目"
+    );
+    assert!(!app.shell.active_tab().unwrap().is_loading(), "back 到同文档条目不重载");
+    assert_eq!(app.pending_scroll_restore_for_test(), None);
+    assert_eq!(app.smoke_scroll_offset_y(), 500.0, "恢复离开基础条目前的滚动");
+
+    app.go_forward();
+    assert_eq!(
+        app.shell.active_tab().and_then(|t| t.url()),
+        Some("https://example.com/docs#intro")
+    );
+    assert!(!app.shell.active_tab().unwrap().is_loading());
+    assert_eq!(app.smoke_scroll_offset_y(), 1000.0, "前进回锚点条目恢复离开时位置");
 }
 
 /// T50：Ctrl+W 关闭标签后地址栏失焦——关闭前 Ctrl+L 聚焦输入的编辑态不残留，

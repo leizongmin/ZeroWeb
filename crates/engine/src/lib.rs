@@ -36,6 +36,9 @@ pub mod dom_bridge;
 // P1b S1 原生 DOM 绑定（feature-gated v8；替换 polyfill 字符串桥，RFC p1b-v8-native-bindings）。
 #[cfg(feature = "v8")]
 pub mod dom_bindings;
+// dnd-compat M3：drag source 判定（draggable enumerated 状态 + 默认可拖）——core 命中快照
+// 与 v8 门控反射共用，不依赖脚本引擎 feature。
+pub mod drag_source;
 // js-dom goal M6 S0q：QuickJS（rquickjs）原生 DOM 绑定骨架（镜像 V8 dom_bindings，DC-7 双引擎对等）。
 pub mod element_from_point;
 #[cfg(feature = "script-runtime")]

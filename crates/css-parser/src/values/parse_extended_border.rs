@@ -640,16 +640,28 @@ pub fn parse_counter_set(value: &str) -> Option<CounterSetValue> {
 /// 支持：none | inset() | circle() | ellipse() | polygon()
 /// R4248（CSS Borders 4 §corner-shaping）：解析 corner-shape 属性值。
 ///
-/// 语法：`<corner-shape-value>{1,4}`，关键字 round/bevel/scoop/notch/square 或
-/// `superellipse(<number>)`（数值可负，如 superellipse(-5)）。角序同 border-radius：
-/// 1 值四角同形；2 值 [TL, TR]（BR=TL、BL=TR）；3 值 [TL, TR, BR]（BL=TR）；4 值全序。
+/// 语法：`<corner-shape-value>{1,4}`，关键字 round/bevel/scoop/notch/square/squircle
+/// 或 `superellipse(<number> | infinity | -infinity)`（数值可负，如 superellipse(-5)）。
+/// css-borders-4 §3.7：squircle ≡ superellipse(2)、superellipse(∞) ≡ square、
+/// superellipse(−∞) ≡ notch（解析层映射到对应关键字变体）；NaN 非法。有限值保留
+/// 原参数 K（指数 n = 2K 由几何层解释）。角序同 border-radius：1 值四角同形；
+/// 2 值 [TL, TR]（BR=TL、BL=TR）；3 值 [TL, TR, BR]（BL=TR）；4 值全序。
 pub fn parse_corner_shape(value: &str) -> Option<CornerShapeValue> {
     use crate::values::types::{CornerShapeKind, CornerShapeValue};
     let parse_kind = |kw: &str| -> Option<CornerShapeKind> {
         let lower = kw.trim().to_ascii_lowercase();
         if let Some(inner) = lower.strip_prefix("superellipse(").and_then(|s| s.strip_suffix(')')) {
             let n: f64 = inner.trim().parse().ok()?;
-            return n.is_finite().then_some(CornerShapeKind::Superellipse(n));
+            if n.is_nan() {
+                return None;
+            }
+            return if n == f64::INFINITY {
+                Some(CornerShapeKind::Square)
+            } else if n == f64::NEG_INFINITY {
+                Some(CornerShapeKind::Notch)
+            } else {
+                Some(CornerShapeKind::Superellipse(n))
+            };
         }
         match lower.as_str() {
             "round" => Some(CornerShapeKind::Round),
@@ -657,6 +669,7 @@ pub fn parse_corner_shape(value: &str) -> Option<CornerShapeValue> {
             "scoop" => Some(CornerShapeKind::Scoop),
             "notch" => Some(CornerShapeKind::Notch),
             "square" => Some(CornerShapeKind::Square),
+            "squircle" => Some(CornerShapeKind::Superellipse(2.0)),
             _ => None,
         }
     };
@@ -1232,6 +1245,64 @@ mod r4534_border_shape_parse_tests {
     fn stroke_mode_circle() {
         let v = parse_border_shape("circle()");
         assert!(matches!(v, Some(BorderShapeValue::Stroke { .. })), "got {:?}", v);
+    }
+
+    // R5179（css-borders-4 §3.7）：superellipse(±∞)/squircle 关键字映射与 K 语义。
+    #[test]
+    fn corner_shape_superellipse_infinity_maps_to_square() {
+        use crate::values::types::{CornerShapeKind, CornerShapeValue};
+        let v = parse_corner_shape("superellipse(infinity)").expect("infinity 合法");
+        assert!(
+            matches!(v, CornerShapeValue::All(CornerShapeKind::Square)),
+            "superellipse(∞) ≡ square，got {:?}",
+            v
+        );
+        let v = parse_corner_shape("superellipse(-INFINITY)").expect("-infinity 合法");
+        assert!(
+            matches!(v, CornerShapeValue::All(CornerShapeKind::Notch)),
+            "superellipse(−∞) ≡ notch，got {:?}",
+            v
+        );
+    }
+
+    #[test]
+    fn corner_shape_superellipse_finite_keeps_argument_and_rejects_nan() {
+        use crate::values::types::{CornerShapeKind, CornerShapeValue};
+        let v = parse_corner_shape("superellipse(-100)").expect("负大值合法");
+        assert!(
+            matches!(v, CornerShapeValue::All(CornerShapeKind::Superellipse(k)) if k == -100.0),
+            "有限值保留原始参数 K，got {:?}",
+            v
+        );
+        assert!(parse_corner_shape("superellipse(nan)").is_none(), "NaN 非法");
+        assert!(parse_corner_shape("superellipse()").is_none(), "空参非法");
+    }
+
+    #[test]
+    fn corner_shape_squircle_keyword() {
+        use crate::values::types::{CornerShapeKind, CornerShapeValue};
+        let v = parse_corner_shape("squircle").expect("squircle 合法");
+        assert!(
+            matches!(v, CornerShapeValue::All(CornerShapeKind::Superellipse(k)) if k == 2.0),
+            "squircle ≡ superellipse(2)，got {:?}",
+            v
+        );
+        // 4 值角序：bevel scoop notch squircle（overflow-clip-margin 案形）。
+        let v = parse_corner_shape("bevel scoop notch squircle").expect("四值合法");
+        match v {
+            CornerShapeValue::PerCorner(c) => {
+                assert_eq!(
+                    *c,
+                    [
+                        CornerShapeKind::Bevel,
+                        CornerShapeKind::Scoop,
+                        CornerShapeKind::Notch,
+                        CornerShapeKind::Superellipse(2.0),
+                    ]
+                );
+            }
+            _ => panic!("应为 PerCorner，got {:?}", v),
+        }
     }
 }
 

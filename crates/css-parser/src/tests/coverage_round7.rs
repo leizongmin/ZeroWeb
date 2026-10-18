@@ -472,9 +472,13 @@ fn test_parse_transform_perspective() {
 
 #[test]
 fn test_parse_transform_perspective_zero() {
-    // perspective(0) — 值 <= 0 应返回 None
+    // R5175（csswg-drafts#6320）：perspective(0) 合法（<length [0,∞)>），used value
+    // clamp 到 1px 在绘制侧（engine 折叠层 d.max(1.0)）——解析层保真存储 0。
     let result = parse_transform("perspective(0)");
-    assert!(result.is_none());
+    assert!(matches!(
+        result,
+        Some(TransformValue::List(fs)) if matches!(fs.as_slice(), [TransformFunction::Perspective(0.0)])
+    ));
 }
 
 #[test]

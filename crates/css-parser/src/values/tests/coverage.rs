@@ -194,7 +194,8 @@ fn test_transform_perspective() {
 
 #[test]
 fn test_transform_perspective_zero_fails() {
-    assert!(parse_transform("perspective(0)").is_none());
+    // R5175（csswg-drafts#6320）：0 合法（used value clamp 在绘制侧）。
+    assert!(parse_transform("perspective(0)").is_some());
 }
 
 #[test]

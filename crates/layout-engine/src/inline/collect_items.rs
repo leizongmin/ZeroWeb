@@ -801,6 +801,44 @@ impl InlineFormattingContext {
                                     }
                                 }
                             }
+                            // R5178（css-sizing-3 §5.1 + csswg #3973）：替换元素 min-height
+                            // content 关键字的 IFC 原子盒 floor——min-content 块尺寸 = 固有比 ×
+                            // definite 内联尺寸（transferred），无有效比退 attr 固有高。converter
+                            // 把关键字映射 length(0) 且本径不经 taffy min_size：inline-only 容器
+                            // 的 6.5 remeasure 以 IFC 原子盒高同步子盒（svg-no-ar-min-height-
+                            // min-content：attr 0×100 + w:100px h:10px + min-height:min-content
+                            // 应高 100，非 10 矮条）。块级 replaced 由 sizing pass 的 taffy
+                            // min_size 臂覆盖（apply_block_axis_content_sizing R5178 臂）；max 侧
+                            // cap 仍归 R5110 postprocess（clamp_replaced_min_content_keywords），
+                            // 此处不重复。仅水平书写（垂直块轴 = R4560 别名域）。
+                            if !self.vertical
+                                && matches!(
+                                    elem_data.local_name(),
+                                    "svg" | "canvas" | "video" | "iframe" | "embed" | "object"
+                                        | "applet"
+                                )
+                                && let Some(s) = style
+                                && matches!(
+                                    s.min_height,
+                                    LengthValue::MinContent | LengthValue::MaxContent
+                                )
+                            {
+                                let attr_w = Self::parse_html_dimension_attr(elem_data.get_attribute("width"));
+                                let attr_h = Self::parse_html_dimension_attr(elem_data.get_attribute("height"));
+                                let ratio = s
+                                    .aspect_ratio
+                                    .filter(|&r| r > 0.0)
+                                    .or_else(|| (attr_w > 0.0 && attr_h > 0.0).then_some(attr_w / attr_h));
+                                let target = ratio
+                                    .and_then(|r| (w > 0.0).then_some(w / r))
+                                    .filter(|&t| t > 0.5)
+                                    .or((attr_h > 0.5).then_some(attr_h));
+                                if let Some(target) = target
+                                    && h < target - 0.5
+                                {
+                                    h = target;
+                                }
+                            }
                             // R5078（CSS2 §10.3.2 + §10.6.2 replaced sizing）：iframe 无
                             // 固有尺寸——CSS auto 侧缺省值（attr px 定值 / height attr %
                             // 相对父 CB definite 高可解 → %×CB 高 / 否则 default）落
@@ -1926,10 +1964,33 @@ impl InlineFormattingContext {
                             }
                             continue;
                         }
-                        let child_ws = styles
-                            .get(&gc)
+                        let child_style = styles.get(&gc);
+                        let child_ws = child_style
                             .map(|st| Self::run_white_space(&st.white_space))
                             .or_else(|| self.ws_overrides.get(&gc).copied());
+                        // R5177（CSS 2.1 §16.1 color 继承 + css-ui outline-027 案形）：
+                        // computed color 与外层 inline 不同的纯文本壳不折回——祖先吸收把
+                        // 子树文本归因外层，paint 侧 R358 per-fragment color 按外层色渲染
+                        //（span>div{display:inline;color:lime} 的 XX 折回 span 画成容器
+                        // 黑）。对齐 R4300d white-space 判例：子自身构造独立 run
+                        //（build_flatten_run_for_element 归因子自身，fragment color 取
+                        // 子色）。判定双通道同 vertical_walk_nodes：有 styles（layout IFC）
+                        // 直判 computed color；paint Path B（空 styles）读
+                        // color_divergent_walk_nodes（layout 期按 run owner 填充，见
+                        // store_font_sizes_from_ifc）——两臂同值不引入 IFC 分段分歧
+                        //（R4300e 判例）。样式查找复用 child_style（ws 判定同源）。
+                        let color_divergent = child_style
+                            .zip(style)
+                            .map(|(c, p)| c.color != p.color)
+                            .unwrap_or_else(|| self.color_divergent_walk_nodes.contains(&gc));
+                        if color_divergent {
+                            flush_pending(&mut text_pending, items, !emitted_text_run, false);
+                            emitted_text_run = true;
+                            if let Some(item) = self.build_flatten_run_for_element(doc, gc, styles) {
+                                items.push(item);
+                            }
+                            continue;
+                        }
                         // R4300d 修正：ws_override=None = **继承容器 flags**（collect 主路径
                         // 同语义），非「与父不同」——旧比较把 (Some, None) 判异，把继承态
                         // 子（如 `<q>` 嵌套）无谓拆 run（quotes-001 的 27v1 整段被拆成

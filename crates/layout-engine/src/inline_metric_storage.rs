@@ -138,6 +138,21 @@ fn store_font_sizes_from_ifc_mode(
         {
             box_node.inline_block_child_nodes.insert(owner);
         }
+        // R5177：color 差异元素信号（FLAT_CHILD_WALK 折回门）——computed color 与父
+        // 元素不同的 inline 子被 layout 侧同一判定门拆为独立 run（owner = 元素自身），
+        // 故按 owner 复算同一对比较（owner.color vs 父元素 color ≡ 折回臂直判的
+        // gc.color vs walk 层 color）填充覆盖完备；paint Path B（空 styles）据此
+        // 复现「不折回归因外层」，两段归因恒等。
+        if let Some(owner) = font_owner
+            && let Some(owner_style) = styles.get(&owner)
+            && let Some(parent_color) = doc
+                .parent_node(owner)
+                .and_then(|pid| styles.get(&pid))
+                .map(|s| &s.color)
+            && parent_color != &owner_style.color
+        {
+            box_node.inline_color_divergent_nodes.insert(owner);
+        }
         // R4440：vertical 帧的 fragment 宽高转置（width=列宽=line-height、height=行内
         // advance）——存 line_height 槽须取 frag.width，否则 paint Path B 的
         // line_height_overrides 读到 advance（80/140）→ vrl 列高=advance → 列 x =

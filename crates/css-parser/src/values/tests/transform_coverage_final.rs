@@ -335,7 +335,8 @@ fn test_transform_perspective_invalid() {
 fn test_transform_perspective_accepts_length_units_without_polluting_angles() {
     assert!(parse_transform("perspective(1vh)").is_some());
     assert!(parse_transform("perspective(2ch)").is_some());
-    assert!(parse_transform("perspective(0)").is_none());
+    // R5175（csswg-drafts#6320）：0 合法（clamp 在绘制侧），负值语法无效。
+    assert!(parse_transform("perspective(0)").is_some());
     assert!(parse_transform("perspective(-1px)").is_none());
     assert!(parse_transform("rotate(1vh)").is_none());
 }

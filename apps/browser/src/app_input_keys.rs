@@ -98,6 +98,23 @@ impl BrowserApp {
             return;
         }
 
+        // dnd-compat M3：Escape 取消页面拖放会话（HTML 规范取消步合成 dragleave +
+        // dragend）。守卫与下方“停止加载”一致——菜单/查找栏/地址栏的更高优先级
+        // Escape 语义先行；拖放会话存在时活动标签必不处于地址栏焦点（按下即失焦）。
+        if key == "Escape"
+            && pressed
+            && !self.context_menu.visible
+            && !self.shell.find_state().is_active()
+            && !self.address_bar_focused
+        {
+            if let Some(tab_id) = self.shell.active_tab_id()
+                && self.tabs.cancel_page_drag(tab_id)
+            {
+                self.needs_redraw = true;
+                return;
+            }
+        }
+
         // Escape 停止加载：仅当没有其他 Escape 上下文（菜单/查找栏/地址栏）打开，
         // 且当前活动标签正在加载时。优先级最低，放在各早返回之后。
         if key == "Escape"

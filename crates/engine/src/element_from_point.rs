@@ -162,6 +162,8 @@ mod tests {
                         href: None,
                         src: None,
                         link_text: None,
+                        draggable: false,
+                        drag_barrier: false,
                     },
                 ),
                 (
@@ -174,6 +176,8 @@ mod tests {
                         href: None,
                         src: None,
                         link_text: None,
+                        draggable: false,
+                        drag_barrier: false,
                     },
                 ),
             ],

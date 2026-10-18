@@ -439,7 +439,10 @@
           // `option.defaultSelected = x`（R5009 片 d，M4 片 d）——boolean 反射 `selected`
           // 属性（truthy→设存在，falsy→移除）。旧无分支 → 落 expando 兜底，attr 不写
           //（<option selected> 的 truthy 面因属性本就存在而侥幸过，falsy 面 5F）。
+          // R3909：反射写入后跑 selected 内容属性变更步（dirtiness false 时
+          // selectedness 跟随——spec defaultSelected set 走 attribute 变更面）。
           if (_realTag(sel, handle) === 'OPTION') {
+            var _dsSnap9 = _zwOptSelAttrPre(sel, handle);
             _clearBoolDefault(key, 'selected');
             if (value) {
               if (handle) __zw_set_attr_handle(handle, 'selected', '');
@@ -451,7 +454,13 @@
             } else if (!handle && typeof __zw_remove_attr === 'function') {
               __zw_remove_attr(sel, 'selected'); moAttr = 'selected';
             }
+            _zwOptSelAttrPost(_dsSnap9, sel, handle);
           }
+        } else if (p === 'selectedIndex' && _zwIsSelectTag(sel, handle)) {
+          // `select.selectedIndex = n` / `options.selectedIndex = n`（R3909，HTML
+          // §4.10.7 set the selected index——全员 selectedness=false、命中者 true +
+          // dirtiness true；不触发 selectedness setting，-1/越界可全不选）。
+          _zwSetSelectSelectedIndex(sel, handle, value);
         } else if (p === 'selected' && _realTag(sel, handle) === 'OPTION') {
           // `option.selected = x`（R3908b，HTML §4.10.9
           // https://html.spec.whatwg.org/multipage/form-elements.html#dom-option-selected）——
@@ -459,7 +468,11 @@
           // selected 内容属性（defaultSelected 才反射该属性；attribute 变更/MO 面不触发
           // 与 spec 一致——option-selectedness-script-mutation「IDL selected does not
           // reflect」两案断言面）。读侧 getter 脏态优先（part03 selected getter）。
+          // R3909：setter 尾跑 ask for a reset（HTML §4.10.9 selected setter 步——
+          // 非 multiple 互斥清兄弟 + 全不选时 display size 1 回落首个非 disabled；
+          // 目标 true 时绝对胜出——Chromium/WPT ask-for-reset 反向循环）。
           _optSelectedDirty[key] = !!value;
+          _zwAskForReset(sel, handle, key);
         } else if (p === 'defaultChecked') {
           // `input.defaultChecked = x`（R2840）——boolean 反射 `checked` 属性（truthy→设存在，falsy→移除）。
           // R2998：显式设 defaultChecked 重同步（清 dirty，getter 回落新属性值 latest-wins）。
@@ -13341,10 +13354,28 @@
 
   // net-api M4-S19：FormDataEvent（HTML spec §the-formdataevent-interface）——'formdata'
   // 事件载体（new FormData(form) / form 提交构条目时派发；e.formData 可变）。
+  // R3910：WebIDL 构造器语义补齐（WPT form-submission-0/FormDataEvent.window.js
+  // 「Failing FormDataEvent constructor」断言面）——无 new TypeError；type 必填；
+  // init dict 必须为对象（null/undefined/原始值 TypeError）；FormDataEventInit.formData
+  // required 且非空（nullable）接口类型——缺省/null/undefined/非 FormData 均 TypeError。
+  // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#the-formdataevent-interface
   function FormDataEvent(type, options) {
+    if (!(this instanceof FormDataEvent)) {
+      throw new TypeError("Failed to construct 'FormDataEvent': Please use the 'new' operator, this DOM object constructor cannot be called as a function.");
+    }
+    if (arguments.length < 1) {
+      throw new TypeError("Failed to construct 'FormDataEvent': 1 argument required, but only 0 present.");
+    }
+    if (arguments.length < 2 || options === null || typeof options !== 'object') {
+      throw new TypeError("Failed to construct 'FormDataEvent': The provided value is not of type 'FormDataEventInit'.");
+    }
+    var _fdVal = options.formData;
+    if (!(_fdVal instanceof globalThis.FormData)) {
+      throw new TypeError("Failed to construct 'FormDataEvent': Failed to read the 'formData' property from 'FormDataEventInit': The provided value is not of type 'FormData'.");
+    }
     var ev = _makeEvent(type, options);
     Object.setPrototypeOf(ev, FormDataEvent.prototype);
-    ev.formData = (options && options.formData) ? options.formData : new globalThis.FormData();
+    ev.formData = _fdVal;
     return ev;
   }
   FormDataEvent.prototype = Object.create(Event.prototype);
@@ -13574,10 +13605,18 @@
     this._dt_items = [];        // 有序 item 列表（DataTransferItem 实例；string/file 混排，插入序 = 迭代序）
     this._dt_storeVer = 0;      // item list 版本号——types/files 视图缓存键（任何 item list 变更 +1）
     this._dt_typesCache = null; // { ver, arr }——types FrozenArray 恒等面
+    // dnd-compat M3-S2：drag data store 模式（HTML dnd.html#drag-data-store）——构造缺省
+    // readwrite（脚本自建 DataTransfer 面，M2 构造器语义零变化）；宿主 drag 会话事件
+    //（part06 `__zw_dispatch_event` drag 分支）按事件类型改写：dragstart/drop readwrite、
+    // 其余 protected（getData ''、写方法 no-op，types/长度仍可见）。
+    this._dt_mode = 'readwrite';
     this.effectAllowed = 'none';
     this.dropEffect = 'none';
   }
   DataTransfer.prototype.setData = function (format, data) {
+    // protected 模式拒绝写入（HTML dnd.html#dom-datatransfer-setdata——mode 非 readwrite
+    // 时静默返回；宿主 dragenter/over/leave 期间页面 setData 不落 store）。
+    if (this._dt_mode === 'protected') return;
     var f = String(format);
     for (var i = 0; i < this._dt_items.length; i++) {
       var _si = this._dt_items[i];
@@ -13589,6 +13628,9 @@
     this._dt_storeVer++; // 替换/新增都改 item list（corpus：同 type setData 也换新 types）
   };
   DataTransfer.prototype.getData = function (format) {
+    // protected 模式数据不可见（HTML dnd.html#dom-datatransfer-getdata——mode 非
+    // readwrite 返空串；types/长度仍可见——列表读取不设门）。
+    if (this._dt_mode === 'protected') return '';
     var f = String(format);
     for (var i = 0; i < this._dt_items.length; i++) {
       var it = this._dt_items[i];
@@ -13597,6 +13639,8 @@
     return '';
   };
   DataTransfer.prototype.clearData = function (format) {
+    // protected 模式拒绝清除（同 setData——mode 非 readwrite 静默返回）。
+    if (this._dt_mode === 'protected') return;
     if (format == null) {
       // 仅清 string 项（file 项保留——in-tree WAB2-M2-s3）。已无 string 项 → item list 未变
       //（corpus identity 面：空列表 clearData 不换新 types）。
@@ -13697,6 +13741,9 @@
     return this._items[i] || null;
   };
   DataTransferItemList.prototype.add = function (data, type) {
+    // protected 模式拒绝变更（HTML dnd.html#dom-datatransferitemlist-add——mode 非
+    // readwrite 返 null，store 不变）。
+    if (this._dt._dt_mode === 'protected') return null;
     // add(file)（File-like，按 .size 探测）→ file item；add(data, type) → string item。
     if (data && typeof data === 'object' && typeof data.size === 'number') {
       var fItem = new DataTransferItem('file', data.type || '', null, data);
@@ -13721,6 +13768,8 @@
     return sItem;
   };
   DataTransferItemList.prototype.remove = function (i) {
+    // protected 模式拒绝变更（同 add——mode 非 readwrite no-op）。
+    if (this._dt._dt_mode === 'protected') return;
     var idx = i | 0; // spec unsigned long（负/越界 → no-op，item list 未变——types 恒等面）
     if (idx < 0 || idx >= this._dt._dt_items.length) return;
     var it = this._dt._dt_items[idx];
@@ -13733,6 +13782,8 @@
     this._dt._dt_storeVer++;
   };
   DataTransferItemList.prototype.clear = function () {
+    // protected 模式拒绝变更（同 remove——mode 非 readwrite no-op）。
+    if (this._dt._dt_mode === 'protected') return;
     // 空列表 clear → item list 未变（corpus identity 面：items.clear() 二连调第二次不换新 types）。
     if (this._dt._dt_items.length === 0) return;
     var items = this._dt._dt_items;
@@ -14676,10 +14727,27 @@
   // SubmitEvent——submit 事件（form 提交，R2984）。extends Event，加 `submitter`（触发提交的按钮 proxy / null）。
   // host submit 派发经 __zw_dispatch_event(form_sel, 'submit', {submitter: btn_sel})；submitter 缺省 null
   //（Enter 隐式提交）。表单多 submit 按钮场景（"保存"/"删除"同 form）读 event.submitter 判激活按钮高频。
+  // R3910：WebIDL 构造器语义补齐（WPT form-submission-0/SubmitEvent.window.js
+  // 「Failing SubmitEvent constructor」断言面）——无 new TypeError；type 必填；
+  // submitter 为 `(Element or null)`——非 null/undefined 且非元素 proxy（tagName
+  // 字符串面，requestSubmit submitter 校验同型）→ TypeError；init dict 可选（null/
+  // undefined 合法，submitter 缺省 null）。
+  // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#submitevent
   function SubmitEvent(type, options) {
+    if (!(this instanceof SubmitEvent)) {
+      throw new TypeError("Failed to construct 'SubmitEvent': Please use the 'new' operator, this DOM object constructor cannot be called as a function.");
+    }
+    if (arguments.length < 1) {
+      throw new TypeError("Failed to construct 'SubmitEvent': 1 argument required, but only 0 present.");
+    }
+    var _subVal = (options && options.submitter !== undefined) ? options.submitter : null;
+    if (_subVal !== null
+        && !(typeof _subVal === 'object' && typeof _subVal.tagName === 'string' && _subVal.tagName !== '')) {
+      throw new TypeError("Failed to construct 'SubmitEvent': Failed to read the 'submitter' property from 'SubmitEventInit': The provided value is not of type '(Element or null)'.");
+    }
     var ev = _makeEvent(type, options);
     Object.setPrototypeOf(ev, SubmitEvent.prototype);
-    ev.submitter = (options && options.submitter) || null;
+    ev.submitter = _subVal;
     return ev;
   }
   SubmitEvent.prototype = Object.create(Event.prototype);

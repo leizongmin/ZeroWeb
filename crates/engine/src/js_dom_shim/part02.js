@@ -10185,11 +10185,23 @@
   // 创建（`select.add(new Option('Apple','a'))` 动态下拉填充高频）。返 createElement('option') proxy，
   // 设 text/value/selected；允许 new 与无 new（返值覆盖 this）。shim 元素为 Proxy 非 ctor 实例，故
   // `instanceof Option` 不成立（documented；返回的 proxy 经 tagName='OPTION' + option.text 等可识别）。
+  // R3909（HTML §4.10.9 the-option-element 构造步）：
+  // ① selected 内容属性**只**随 defaultSelected 参（旧 `defaultSelected || selected` 把
+  //    第 4 参也反射成属性——「incongruous with defaultSelected」「does not set dirtiness」
+  //    hasAttribute(selected) 期望 false 断言面）；
+  // ② 构造尾落**显式初始 selectedness**（`_optSelectedClean`，dirtiness false）——≤3 参
+  //    恒 false（spec 注：三参以下覆盖初始 selectedness，即使第三参 true——「defaultSelected
+  //    only」selected 期望 false，属性存在但 selectedness 不跟随解析默认层）、第 4 参取其
+  //    真值（R3908b 读序 dirty → clean → 属性，clean 层见 part01/part03）。
   function Option(text, value, defaultSelected, selected) {
     var el = globalThis.document.createElement('option');
     if (text !== undefined) { try { el.textContent = String(text); } catch (_e) {} }
     if (value !== undefined) { try { el.setAttribute('value', String(value)); } catch (_e) {} }
-    if (defaultSelected || selected) { try { el.setAttribute('selected', ''); } catch (_e) {} }
+    if (defaultSelected) { try { el.setAttribute('selected', ''); } catch (_e2) {} }
+    try {
+      var _ocKey9 = (el.__zwHandle != null) ? ('@' + el.__zwHandle) : el.__zwSelector;
+      _optSelectedClean[_ocKey9] = (arguments.length >= 4) ? !!selected : false;
+    } catch (_e3) {}
     return el;
   }
   globalThis.Option = globalThis.Option || Option;

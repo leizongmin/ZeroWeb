@@ -136,6 +136,11 @@
   // selectedIndex= 的 SelectOption 覆盖不清 dirty（spec 应整体覆盖），当前语料无
   // 「.selected= 后同 select select.value=」组合，挂账。经 `__zw_reset_form_state` 清空。
   var _optSelectedDirty = {};
+  // HTMLOptionElement 非脏显式 selectedness（R3909，HTML §4.10.9 the-option-element
+  // 构造步）：Option() 构造器第 4 参（≤3 参恒 false）落**显式初始 selectedness** 但
+  // dirtiness 保持 false——读序 dirty → clean → selected 属性；dirtiness false 时
+  // selected 内容属性增删步仍生效（覆盖 clean 键）。经 `__zw_reset_form_state` 清空。
+  var _optSelectedClean = {};
   // HTMLInputElement.files 引用面（R3902b，HTML §4.10.5.4
   // https://html.spec.whatwg.org/multipage/input.html#dom-input-files）：`.files=` setter
   // 存 FileList 引用（identity 保真——WPT files.html「FileList should not be copied / can
@@ -568,10 +573,16 @@
   // https://html.spec.whatwg.org/multipage/interactive-elements.html#dom-dialog-close
   function _zwDialogClose(key, sel, handle, returnValue) {
     var wasOpen = _zwDialogHasOpen(sel, handle) || !!_zwDialogModal[key];
+    // R3910：spec close-the-dialog 步 1——无 open 属性直接 return（close-the-dialog，
+    // https://html.spec.whatwg.org/multipage/interactive-elements.html#close-the-dialog）。
+    // 旧实现继续置 returnValue → close() 于未 open dialog 仍改 returnValue（WPT
+    // dialog-close「doesn't have an open attribute aborts the steps」+ dialog-return-value
+    // 「no-op close()」断言面；dialog 提交分支「closing the dialog while submitting」同面）。
+    if (!wasOpen) return false;
     _zwRemoveAttr(key, sel, handle, 'open');
     if (_zwDialogModal[key]) { delete _zwDialogModal[key]; delete _zwTopLayer[key]; }
     if (returnValue !== undefined) _expando[key + '::returnValue'] = String(returnValue);
-    if (wasOpen) _dispatchWithBubble(key, sel, handle, _makeEvent('close', { bubbles: false, cancelable: false }));
+    _dispatchWithBubble(key, sel, handle, _makeEvent('close', { bubbles: false, cancelable: false }));
     return wasOpen;
   }
   // R3290：dialog open 内容属性是否 present（boolean 属性，presence 判定）。latest-wins 反映同 execute 内
@@ -4508,6 +4519,14 @@
     // insertAdjacent/textContent= 等 13 处均经此）。集合下次读取时 lazy 重查（_zwHCLiveInvalidate
     // 在 part05 定义，同一 IIFE 作用域；hoisting 使前向引用安全）。
     if (baseRecord && baseRecord.type === 'childList') {
+      // R3909：ask-for-a-reset 汇流触发（OPTION/OPTGROUP 子树增删 → 受影响 select 跑
+      // selectedness setting；其余 tag 零开销跳过。_mo_notify 是全部 childList 记录的
+      // 单一汇流点——append/remove/insertBefore/replaceChild/options[i]= 等全经此）。
+      try {
+        if (typeof _zwSelectResetOnMutation === 'function') {
+          _zwSelectResetOnMutation(sel, handle, baseRecord.addedNodes, baseRecord.removedNodes);
+        }
+      } catch (_eOpt9Mo) {}
       var _na36flats = _zwHCLiveInvalidate(baseRecord.addedNodes, baseRecord.removedNodes, sel, handle);
       // js-dom M4 R51：同汇流点维护 child→parent 反向链（_zwNodeParent registry 声明于 part01）。
       // added：记父（sel 或 handle，按 mutation 目标）；removed：清链（detached 后 parentNode=null）。
@@ -5765,7 +5784,7 @@
       if (_proxyCache[key] === el) { delete _userEdited[key]; return; }
     }
   };
-  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputValuesSet = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _checkedDirtyState = {}; _optSelectedDirty = {}; _inputFiles = {}; _classCache = {}; _customValidity = {}; _userEdited = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _resourceStates = {}; _textareaDefault = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; if (typeof globalThis.__zw_pointer_reset === 'function') globalThis.__zw_pointer_reset(); };
+  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputValuesSet = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _checkedDirtyState = {}; _optSelectedDirty = {}; _optSelectedClean = {}; _inputFiles = {}; _classCache = {}; _customValidity = {}; _userEdited = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _resourceStates = {}; _textareaDefault = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; if (typeof globalThis.__zw_pointer_reset === 'function') globalThis.__zw_pointer_reset(); };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF

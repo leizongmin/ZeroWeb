@@ -654,6 +654,14 @@ impl BrowserApp {
             if self.scrollbar_drag.is_some() {
                 self.update_scrollbar_drag(x as f32, y as f32);
             } else {
+                // dnd-compat M3：武装中的拖放会话把 mousemove 转发给渲染端状态机
+                //（drag/dragover/dragleave 由其按目标变化合成）；未武装时零开销。
+                if let Some(tab_id) = self.shell.active_tab_id()
+                    && self.tabs.page_drag_active(tab_id)
+                    && let Some((_, doc_x, doc_y)) = self.page_doc_point(x as f32, y as f32)
+                {
+                    self.tabs.dispatch_page_mousemove(tab_id, doc_x, doc_y);
+                }
                 self.update_content_pointer_drag(x, y);
             }
         }
@@ -808,6 +816,20 @@ impl BrowserApp {
                 if was_scrollbar_drag || was_scroll_drag {
                     self.page_selection_drag = false;
                     return;
+                }
+                // dnd-compat M3：拖放会话收尾——dragover 已接受则合成 drop + dragend，
+                // 否则 dragleave + dragend；被消费的拖放手势不再合成 click。
+                if let Some((tab_id, doc_x, doc_y)) = self.page_doc_point(x as f32, y as f32) {
+                    if self.tabs.finish_page_drag(tab_id, doc_x, doc_y) {
+                        self.page_selection_drag = false;
+                        return;
+                    }
+                } else if let Some(tab_id) = self.shell.active_tab_id() {
+                    // 释放落在内容区外（浏览器 chrome）：按取消收尾，防止会话滞留。
+                    if self.tabs.cancel_page_drag(tab_id) {
+                        self.page_selection_drag = false;
+                        return;
+                    }
                 }
                 if self.page_selection_drag {
                     self.page_selection_drag = false;
@@ -1333,13 +1355,17 @@ impl BrowserApp {
                     return;
                 }
                 if let Some((tab_id, doc_x, doc_y)) = self.page_doc_point(x_f, y_f) {
-                    self.tabs.dispatch_page_mousedown(tab_id, doc_x, doc_y);
-                    self.content_pointer_drag = Some(ContentPointerDrag {
-                        start_x: x,
-                        start_y: y,
-                        last_y: y,
-                        scrolling: false,
-                    });
+                    // dnd-compat M3：命中可拖源时武装拖放会话——抑制 scroll-drag 手势
+                    // 与文本选区拖拽，mousemove/up 改走 DragInput 通道。
+                    let drag_armed = self.tabs.dispatch_page_mousedown(tab_id, doc_x, doc_y);
+                    if !drag_armed {
+                        self.content_pointer_drag = Some(ContentPointerDrag {
+                            start_x: x,
+                            start_y: y,
+                            last_y: y,
+                            scrolling: false,
+                        });
+                    }
                     let idx = self
                         .page_glyphs(tab_id)
                         .and_then(|glyphs| hit_test_caret(&glyphs, doc_x, doc_y))
@@ -1353,7 +1379,7 @@ impl BrowserApp {
                     } else {
                         self.page_selection.insert(tab_id, GlyphSelection::collapsed(idx));
                     }
-                    self.page_selection_drag = true;
+                    self.page_selection_drag = !drag_armed;
                     self.needs_redraw = true;
                 }
             }

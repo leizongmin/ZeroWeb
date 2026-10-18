@@ -396,6 +396,9 @@ pub fn parse_transform(value: &str) -> Option<TransformValue> {
     }
 
     let mut functions = Vec::new();
+    // R5174：列表是否含 translateZ（归一为 Translate3d 后与 translate3d 不可区分，
+    // 须在 token 层记录出处——混合列表有效性判据只针对 translateZ 出处，见循环后）。
+    let mut translatez_seen = false;
     let mut pos = 0;
     let bytes = value.as_bytes();
 
@@ -445,7 +448,30 @@ pub fn parse_transform(value: &str) -> Option<TransformValue> {
 
         // 解析函数
         let func = parse_transform_function(name, args_str)?;
+        if name.eq_ignore_ascii_case("translatez") {
+            translatez_seen = true;
+        }
         functions.push(func);
+    }
+
+    // R5174：translateZ 与逐点 z 变函数（rotateX/Y、非 z 轴 rotate3d、scale3d/scaleZ
+    // 等）混用的列表整表按语法失效——基线（translateZ 无解析臂）本就整表不可解析；
+    // 若放行到 2D 仿射管线的逐函数近似，代数等价的不同表述会投影出不同结果
+    //（perspective-transforms-equivalence：rotateY(90)+tZ(250) 与
+    // rotateZ(90)+rotateX(90)+tZ(250) 的 R3833 退化兜底对 rotY 归零、rotZ 幸存 →
+    // 同页拆对）。恒定 z 平面列表（含 translateZ，父 perspective 折叠承接）与不含
+    // translateZ 的列表（translate3d 混合等，基线本就可解析且双侧近似同相）不受影响。
+    // R5175 豁免 perspective()：perspective(d) + 恒定 z 平面后缀恰为折叠形
+    //（engine compute_transform_matrix_with_ref_box：s = d/(d−τ) 绕 transform-origin
+    // 等比缩放，transform3d-perspective-006），等价表述投影一致；equivalence 拆对案形
+    // 是 rotateX/Y 组合（无 perspective），不受豁免影响——perspective+rotateX+tZ
+    //（preserve3d-and-flattening-001-ref）仍失效。
+    if translatez_seen
+        && functions
+            .iter()
+            .any(|f| !is_flat_plane_function(f) && !matches!(f, TransformFunction::Perspective(_)))
+    {
+        return None;
     }
 
     if functions.is_empty() {
@@ -453,6 +479,31 @@ pub fn parse_transform(value: &str) -> Option<TransformValue> {
     } else {
         Some(TransformValue::List(functions))
     }
+}
+
+/// R5174：恒定 z 平面函数判定——父 perspective 折叠（engine paint/transform.rs
+/// flat_plane_list_translate_z）与解析层 translateZ 混合列表有效性共用本判据：
+/// 2D 仿射函数 + translate/translate3d（z 分量仅平移，平面恒定）可入；rotateX/
+/// rotateY/rotate3d/perspective()/scale3d/scaleZ 等逐点 z 变函数不入（精确投影须
+/// 真 3D 管线）。
+pub fn is_flat_plane_function(f: &TransformFunction) -> bool {
+    matches!(
+        f,
+        TransformFunction::Translate(_, _)
+            | TransformFunction::TranslateX(_)
+            | TransformFunction::TranslateY(_)
+            | TransformFunction::TranslateMixed(_, _, _, _)
+            | TransformFunction::TranslateXMixed(_, _)
+            | TransformFunction::TranslateYMixed(_, _)
+            | TransformFunction::Translate3d(_, _, _)
+            | TransformFunction::Rotate(_)
+            | TransformFunction::RotateZ(_)
+            | TransformFunction::Scale(_, _)
+            | TransformFunction::ScaleX(_)
+            | TransformFunction::ScaleY(_)
+            | TransformFunction::Skew(_, _)
+            | TransformFunction::Matrix(_, _, _, _, _, _)
+    )
 }
 
 /// R4201（css-transforms-2 §individual-transforms）：`translate` 属性值解析——
@@ -657,6 +708,14 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
             let tz = parse_translate_length_number(parts[2])?;
             Some(TransformFunction::Translate3d(tx, ty, tz))
         }
+        // R5174：translateZ(t) ≡ translate3d(0, 0, t)（css-transforms-1 §16）——解析层
+        // 归一到 Translate3d 承载（此前无解析臂，整个 transform list 按语法失效被丢弃，
+        // perspective-origin 族：子元素 translateZ 的透视缩放从未生效）。z 消费在
+        // 父 perspective 投影（paint/transform.rs flat_plane_translate_z）。
+        "translatez" => {
+            let tz = parse_translate_length_number(args)?;
+            Some(TransformFunction::Translate3d(0.0, 0.0, tz))
+        }
         // R3832：scaleZ(sz) — 2D 投影恒等，但函数必须可解析（否则整个 transform list
         // 按语法失效被丢弃 → scaleX(2) scaleY(2) scaleZ(2) 整体不应用，transform3d-
         // scale-003 谱系）。
@@ -690,10 +749,8 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
             Some(TransformFunction::Rotate3d(x, y, z, angle))
         }
         "perspective" => {
+            // R5175：0 合法（csswg-drafts#6320 used value clamp 在绘制侧 d.max(1.0)）。
             let val = parse_perspective_length_number(args)?;
-            if val <= 0.0 {
-                return None;
-            }
             Some(TransformFunction::Perspective(val))
         }
         "matrix" => {
@@ -816,7 +873,10 @@ fn parse_translate_length_number(s: &str) -> Option<f64> {
 
 fn parse_perspective_length_number(s: &str) -> Option<f64> {
     let value = parse_translate_length_number(s)?;
-    (value > 0.0).then_some(value)
+    // R5175（css-transforms-2 §funcdef-perspective + csswg-drafts#6320）：0 为合法声明
+    //（<length [0,∞)>），used value clamp 到 1px 在绘制侧折叠层（d.max(1.0)）——CSSOM
+    // 保真存储原值。负值语法无效维持拒绝。
+    (value >= 0.0).then_some(value)
 }
 
 /// 解析 CSS 数值（可能带 px/deg/grad/rad/turn 等单位）。

@@ -3,7 +3,7 @@
 //! 包含 BorderEdgeSpec、paint_borders、paint_border_image、paint_border_edge、
 //! border_fill_rect、paint_3d_border、paint_outline。
 
-use zero_css_parser::values::{ColorValue, LengthValue};
+use zero_css_parser::values::{ColorValue, CornerShapeKind, LengthValue};
 use zero_layout_engine::LayoutBox;
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
@@ -215,12 +215,34 @@ impl super::Painter {
                 let bb = box_node.border_bottom;
                 let bl = box_node.border_left;
                 let clamp0 = |v: f32| v.max(0.0);
-                let radii4 = [
-                    clamp0(crate::paint::helpers::length_to_f32(&style.border_top_left_radius) - bl.max(bt)),
-                    clamp0(crate::paint::helpers::length_to_f32(&style.border_top_right_radius) - bt.max(br_)),
-                    clamp0(crate::paint::helpers::length_to_f32(&style.border_bottom_right_radius) - br_.max(bb)),
-                    clamp0(crate::paint::helpers::length_to_f32(&style.border_bottom_left_radius) - bb.max(bl)),
+                let full_r = [
+                    crate::paint::helpers::length_to_f32(&style.border_top_left_radius),
+                    crate::paint::helpers::length_to_f32(&style.border_top_right_radius),
+                    crate::paint::helpers::length_to_f32(&style.border_bottom_right_radius),
+                    crate::paint::helpers::length_to_f32(&style.border_bottom_left_radius),
                 ];
+                let inset_bw = [bl.max(bt), bt.max(br_), br_.max(bb), bb.max(bl)];
+                let radii4 = std::array::from_fn(|i: usize| {
+                    // R5179：凹侧内圈保留全半径——chromium 实渲染的边框带 = 沿外轮廓
+                    // 的 bw 均匀内描边：凹侧（notch 阶梯 / scoop 与深 K 凹弧）的内圈
+                    // 腿位 = 内盒角点 + 全半径（notch/深 K 精确；scoop 的真描边弧心
+                    // 在外盒角、半径 r+bw，全半径内弧是 builder 可表达下的最近近似，
+                    // 偏差 ≤ ~1px——FIXME 如需像素级对齐再引入逐角真描边）。
+                    // §3.9.4.2 adjusted 公式在凹侧腿与外圈重合（带宽归零），与
+                    // chromium/WPT ref 不符，此处以 chromium 为准。凸侧同心内缩
+                    // （r − bw，圆心不变）维持 §3.9.4.2 语义。
+                    let kind_i = style.corner_shape.corner(i);
+                    let concave = match kind_i {
+                        CornerShapeKind::Notch | CornerShapeKind::Scoop => true,
+                        CornerShapeKind::Superellipse(k) => k <= -1.0,
+                        _ => false,
+                    };
+                    if concave {
+                        full_r[i].max(0.0)
+                    } else {
+                        clamp0(full_r[i] - inset_bw[i])
+                    }
+                });
                 let bg = resolve_color_current(&style.background_color, &style.color);
                 if let Some(inner) = crate::paint::helpers::shaped_corner_polygon_in_box(
                     style,

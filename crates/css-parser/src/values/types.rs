@@ -872,17 +872,19 @@ pub enum CalcOp {
 /// R4248（CSS Borders 4 §corner-shaping）：corner-shape 单角形状。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CornerShapeKind {
-    /// round（初始值；≡ superellipse(2)）。
+    /// round（初始值；≡ superellipse(1)，指数 n = 2K = 2 的圆）。
     Round,
-    /// bevel 直线切角（≡ superellipse(1)）。
+    /// bevel 直线切角（≡ superellipse(0)，直弦）。
     Bevel,
-    /// scoop 凹弧（弧心在盒角点）。
+    /// scoop 凹弧（≡ superellipse(−1)；弧心在盒角点）。
     Scoop,
-    /// notch 方形内凹阶梯。
+    /// notch 方形内凹阶梯（≡ superellipse(−∞)）。
     Notch,
-    /// square 直角（不切削）。
+    /// square 直角（不切削；≡ superellipse(∞)）。
     Square,
-    /// superellipse(n)：|x/r|^n + |y/r|^n = 1（n=2 圆、1 bevel、∞ square）。
+    /// superellipse(K)：CSS 原始参数（css-borders-4 §3.7 单位曲线
+    /// x^(2K) + y^(2K) = 1，指数 n = 2K 由几何层解释；K=1 圆、0 bevel、
+    /// 2 squircle、负值凹侧）。±∞ 由解析层映射 Square/Notch，NaN 拒绝。
     Superellipse(f64),
 }
 

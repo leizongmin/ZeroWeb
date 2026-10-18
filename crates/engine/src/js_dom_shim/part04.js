@@ -2934,6 +2934,9 @@
           return function(name, value) {
             var n = _r116AttrName(name); // R116：空名 InvalidCharacterError + HTML 文档小写
             var v = String(value);
+            // R3909：option selected 内容属性变更步前半（快照须在写入前取——dirtiness
+            // false 时 selectedness 跟随属性增删，翻转即重置所属 select）。
+            var _optSelSnap9 = (n === 'selected') ? _zwOptSelAttrPre(sel, handle) : null;
             // R122：实例层同步——非 NS setAttribute（spec `dom-element-setattribute`「set an
             // attribute」按**限定名**匹配：qualified name 全等的第一实例原位改值，miss 才 push
             // 新无 ns 实例。WPT "setAttribute should set the attribute with the given qualified
@@ -3148,6 +3151,8 @@
               try { _zwNAAttrChanged(proxy); } catch (_eNA32s) {}
             }
             _mo_notify(sel, handle, { type: 'attributes', attributeName: n, oldValue: moOld });
+            // R3909：option selected 内容属性变更步后半（Pre 快照消费）。
+            if (_optSelSnap9) _zwOptSelAttrPost(_optSelSnap9, sel, handle);
             if (ceEntry) _ce_dispatchAttrChange(ceEntry, proxy, n, ceOld, v);
             // WC-M3 切片 8 第九增量（web-components goal，spec DOM「use these attribute
             // change steps to update a slot's/slottable's name」——slot 的 name 属性与
@@ -3176,6 +3181,8 @@
             var n = _r116AttrName(name); // R116：空名 InvalidCharacterError + HTML 文档小写
             var nLower = n;
             var targetTag = _realTag(sel, handle);
+            // R3909：option selected 内容属性变更步前半（写入前快照）。
+            var _optSelSnap9 = (n === 'selected') ? _zwOptSelAttrPre(sel, handle) : null;
             // R122：非 NS 移除按**限定名**剔实例（与 setAttribute 的限定名 upsert 对称），
             // 并解绑 Attr（ownerElement=null——WPT "Attribute loses its owner when removed"：
             // removeAttribute 后 attr.ownerElement 须 null，否则 setAttributeNode 误抛
@@ -3287,6 +3294,8 @@
               try { _zwNAAttrChanged(proxy); } catch (_eNA32r) {}
             }
             if (_rmExisted) _mo_notify(sel, handle, { type: 'attributes', attributeName: n, oldValue: moOld });
+            // R3909：option selected 内容属性变更步后半（Pre 快照消费）。
+            if (_optSelSnap9) _zwOptSelAttrPost(_optSelSnap9, sel, handle);
             // WC-M3 切片 8 第九增量：slot/name 属性移除的 slotchange 队列面（与
             // setAttribute 挂钩对称——移除 slot 属性使 slottable 失配/回默认分配）。
             if (_rmExisted && (n === 'slot' || String(n).toLowerCase() === 'name')) {
@@ -7381,6 +7390,26 @@
             return oldChild;
           };
         }
+        // `select.remove(index)`（R3909，HTML §4.10.7 dom-select-remove——移除 list of
+        // options 第 index 项；负数/越界经 uint32 回转 no-op）。无参调用落下方
+        // ChildNode remove()（WebIDL 重载解析：remove(long) 不容 0 参——WPT
+        // select-remove「remove() should work on select elements」期望自移除）。
+        if (prop === 'remove' && _zwIsSelectTag(sel, handle)) {
+          return function (index) {
+            if (arguments.length === 0) {
+              var _sr9Parent = _makeProxy(sel, handle).parentNode;
+              if (_sr9Parent && typeof _sr9Parent.removeChild === 'function') {
+                _sr9Parent.removeChild(_makeProxy(sel, handle));
+              }
+              return;
+            }
+            var _sr9List = _zwListOfOptions(sel, handle);
+            var _sr9i = _zwToUint32(index);
+            if (_sr9i < _sr9List.length) {
+              try { _sr9List[_sr9i].remove(); } catch (_eSr9) {}
+            }
+          };
+        }
         if (prop === 'remove') {
           return function() {
             // R129（js-dom M4）：Text/Comment/PI 的 ChildNode.remove（WPT
@@ -8943,6 +8972,14 @@
         // 初始化一次；此处若 var 声明会被 get trap 每属性访问重置）。
         function _zwRunFormSubmit(fKey, fSel, fHandle, submitter) {
           if (_zwSubmitBusy) return;
+          // R3910：spec submit 步 2——constructing entry list flag true → return（先于
+          // submit 事件派发；formdata handler / new FormData(form) handler 内的重入
+          // requestSubmit/click 同短路）。form.submit() 通道经 _zwFormSubmitNavigate
+          // 顶部同 flag 检查覆盖。
+          try {
+            var _rsFlEl = _makeProxy(fSel, fHandle);
+            if (_rsFlEl && _rsFlEl.__zwFormDataConstructing) return;
+          } catch (_eRsFl) {}
           _zwSubmitBusy = true;
           try {
             // spec：form 未连入文档（detached createElement / removed 子树）→ 不提交
@@ -9014,23 +9051,16 @@
         // list 导航（共享 helper 既有局限，二轮 review note）。
         function _zwFormSubmitNavigate(fSel, fHandle, submitter) {
           try {
-            // M2-S4J：__zw_request_navigate 缺失不再前置早退（navigate 事件/intercept 面
-            // 不依赖 host 回调——WPT navigate-form 族在 testharness 沙箱无该回调时仍须
-            // 派发；host 传输仅在默认分支 typeof-guard）。
-            // net-api M5-S7：提交导航基 = 文档基 URL（spec form submission algorithm
-            // 对 document base URL mutate action URL）。
-            var _base = (typeof globalThis._zwDocBaseURL === 'function')
-              ? globalThis._zwDocBaseURL()
-              : String(globalThis.location.href || 'about:blank');
-            // ① action：submitter formaction > form action 属性 > 文档地址（spec：无
-            // action 属性 → 文档地址；空串 resolve 即 base）。
-            var _actionRaw = null;
-            try { if (submitter) _actionRaw = submitter.getAttribute('formaction'); } catch (_eA1) {}
-            if (_actionRaw == null || _actionRaw === '') {
-              _actionRaw = fHandle ? __zw_get_attr_handle(fHandle, 'action') : __zw_get_attr(fSel, 'action');
-            }
-            var _u = null;
-            try { _u = new URL(_actionRaw == null ? '' : String(_actionRaw), _base); } catch (_eA2) { return; }
+            // R3910：spec submit 步 2 / construct-entry-list 步 1——constructing entry
+            // list flag true → return（construct-entry-list，
+            // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-entry-list）。
+            // flag 与 part02 new FormData(form) 共用 __zwFormDataConstructing（同 spec
+            // flag）：formdata handler 内 form.submit() 短路（form-submission-algorithm
+            // t1），handler 内 new FormData(form) 抛 InvalidStateError（既有 ctor 面）。
+            try {
+              var _flEl = _makeProxy(fSel, fHandle);
+              if (_flEl && _flEl.__zwFormDataConstructing) return;
+            } catch (_eFl0) {}
             // ② method：submitter formmethod > form method 属性 > GET（大小写不敏感）。
             var _method = '';
             try { if (submitter) _method = String(submitter.getAttribute('formmethod') || ''); } catch (_eM1) {}
@@ -9041,9 +9071,15 @@
             // spec §4.10.22 步骤 4-7：method 归一——get→GET；非 post/dialog（含缺失、
             // 未知值）→ 默认 GET。M2-S4J：POST 入面（navigate 事件 formData 非 null 面——
             // WPT navigate-form / -userInitiated；host 传输无 method/body 面仍是 documented
-            // 边界——非拦截 POST 的 host 导航近似同 URL GET）。dialog 排除维持。
-            if (_method === 'dialog') return;
+            // 边界——非拦截 POST 的 host 导航近似同 URL GET）。dialog 分支移至条目构造 +
+            // formdata 派发之后（R3910——spec 顺序：entry list / formdata 先于 dialog
+            // 分支，formdata handler 可先于关闭改写条目或关闭 dialog）。
             var _isPost = (_method === 'post');
+            // R3910：spec construct-entry-list 步 2——置位 constructing entry list flag
+            //（条目构造 + formdata 派发窗口内重入面短路），窗口尾 finally 清位。
+            var _flForm = null;
+            try { _flForm = _makeProxy(fSel, fHandle); } catch (_eFl1) { _flForm = null; }
+            try { if (_flForm) _flForm.__zwFormDataConstructing = true; } catch (_eFl2) {}
             // ③ entry list（tree order，_formControls；spec §4.10.22.2 子集）。
             var _ctrls = _formControls(fSel);
             var _pairs = [];
@@ -9142,7 +9178,82 @@
                 }
               }
             } catch (_eImg) {}
-            // ④ urlencoded 序列化（spec serialize urlencoded：换行归一 \r\n → 百分号编码 →
+            // R3910：spec construct-entry-list 尾——formdata 事件派发（entry list 与
+            // FormData 共享存储：handler 对 e.formData 的增删直接改写 _pairs，对后续
+            // 提交编码可见——spec「Return a clone of entry list」的克隆发生在 fire 之后）；
+            // finally 清 constructing entry list flag。
+            if (_flForm) {
+              try {
+                var _fdEv = new FormData();
+                _fdEv._p = _pairs;
+                _dispatchWithBubble(_elKey(fSel, fHandle), fSel, fHandle,
+                  new FormDataEvent('formdata', { formData: _fdEv, bubbles: true }));
+              } catch (_eFd0) {}
+              finally { try { _flForm.__zwFormDataConstructing = false; } catch (_eFd1) {} }
+            }
+            // R3910：spec form submission algorithm dialog 分支（construct-entry-list 与
+            // cannot-navigate 之后）——无祖先 dialog → return；subject = 最近祖先 dialog；
+            // result 缺省 null（close-the-dialog 不改 returnValue）：image 按钮提交者 →
+            // selected coordinates "x,y"（非指针激活 0,0）；submit 按钮提交者 → optional
+            // value（value 内容属性 present 才设——含空串；缺失不改 returnValue）；关闭
+            // subject（未 open 由 close-the-dialog 步 1 早退——不改 returnValue、不派
+            // close）。https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-submission-algorithm
+            if (_method === 'dialog') {
+              var _dlgResult = null;
+              var _dlgSubIsImage = false, _dlgSubIsSubmitBtn = false;
+              try {
+                var _dlgSubTag = submitter ? String(submitter.tagName || '').toUpperCase() : '';
+                var _dlgSubTy = submitter ? String(submitter.type || '').toLowerCase() : '';
+                _dlgSubIsImage = (_dlgSubTag === 'INPUT' && _dlgSubTy === 'image');
+                _dlgSubIsSubmitBtn = (_dlgSubTag === 'INPUT' && _dlgSubTy === 'submit')
+                  || (_dlgSubTag === 'BUTTON' && _dlgSubTy === 'submit');
+              } catch (_eDlg0) {}
+              if (_dlgSubIsImage || _dlgSubIsSubmitBtn) {
+                if (_dlgSubIsImage) {
+                  var _dlgImgKey = null;
+                  try { _dlgImgKey = _elKey(submitter.__zwSelector || null, submitter.__zwHandle || null); } catch (_eDlg1) {}
+                  var _dlgImgC = (_dlgImgKey != null && globalThis._zwImgSelCoords)
+                    ? globalThis._zwImgSelCoords[_dlgImgKey] : null;
+                  _dlgResult = String((_dlgImgC && _dlgImgC[0] != null) ? _dlgImgC[0] : 0)
+                    + ',' + String((_dlgImgC && _dlgImgC[1] != null) ? _dlgImgC[1] : 0);
+                } else {
+                  var _dlgVal = null;
+                  try { _dlgVal = submitter.getAttribute('value'); } catch (_eDlg2) {}
+                  if (_dlgVal != null) _dlgResult = String(_dlgVal);
+                }
+              }
+              var _dlgEl = null;
+              try {
+                _dlgEl = (_flForm && typeof _flForm.closest === 'function') ? _flForm.closest('dialog') : null;
+              } catch (_eDlg3) { _dlgEl = null; }
+              if (!_dlgEl) return;
+              var _dlgSel = null, _dlgHandle = null;
+              try { _dlgSel = _dlgEl.__zwSelector || null; _dlgHandle = _dlgEl.__zwHandle || null; } catch (_eDlg4) {}
+              try {
+                _zwDialogClose(_elKey(_dlgSel, _dlgHandle), _dlgSel, _dlgHandle,
+                  _dlgResult === null ? undefined : _dlgResult);
+              } catch (_eDlg5) {}
+              return;
+            }
+            // ④ action：submitter formaction > form action 属性 > 文档地址（spec：无
+            // action 属性 → 文档地址；空串 resolve 即 base）。R3910：action 解析自函数
+            // 头移至此处——spec form submission algorithm 顺序为 construct-entry-list
+            //（含 formdata 派发）→ dialog 分支 → action 解析，解析失败 return 不影响
+            // 已派发面；文档基 = 提交基 URL（net-api M5-S7 同口径）。
+            // M2-S4J：__zw_request_navigate 缺失不再前置早退（navigate 事件/intercept 面
+            // 不依赖 host 回调——WPT navigate-form 族在 testharness 沙箱无该回调时仍须
+            // 派发；host 传输仅在默认分支 typeof-guard）。
+            var _base = (typeof globalThis._zwDocBaseURL === 'function')
+              ? globalThis._zwDocBaseURL()
+              : String(globalThis.location.href || 'about:blank');
+            var _actionRaw = null;
+            try { if (submitter) _actionRaw = submitter.getAttribute('formaction'); } catch (_eA1) {}
+            if (_actionRaw == null || _actionRaw === '') {
+              _actionRaw = fHandle ? __zw_get_attr_handle(fHandle, 'action') : __zw_get_attr(fSel, 'action');
+            }
+            var _u = null;
+            try { _u = new URL(_actionRaw == null ? '' : String(_actionRaw), _base); } catch (_eA2) { return; }
+            // ⑤ urlencoded 序列化（spec serialize urlencoded：换行归一 \r\n → 百分号编码 →
             // 空格 '+'；encodeURIComponent 除 `*`-集合差异与 spec 编码集一致）。
             function _encPair(n, v) {
               function enc(s) {
@@ -9267,8 +9378,19 @@
                       else if (_it !== 'submit' && _it !== 'reset' && _it !== 'button' && _it !== 'image' && _it !== 'file')
                         c.value = c.defaultValue;
                     } else if (_ct === 'SELECT') {
-                      var _opts = c.options;
-                      for (var j = 0; _opts && j < _opts.length; j++) _opts[j].selected = _opts[j].defaultSelected;
+                      // R3909：select 复位算法（HTML §4.10.7 the-reset-algorithm-for-a-
+                      // select-element）——各 option selectedness 按 selected 属性、
+                      // dirtiness 全 false（清 dirty/clean 键回落属性默认层），再跑
+                      // selectedness setting（无属性选中时 display size 1 回落首个非
+                      // disabled）。旧 `.selected = defaultSelected` 走 IDL setter 会
+                      // 反向置脏（R3908b 语义），reset 后 selectedIndex 读不走属性面。
+                      var _rl9 = _zwListOfOptions(c.__zwSelector, c.__zwHandle);
+                      for (var j = 0; j < _rl9.length; j++) {
+                        var _rk9 = _zwOptKey(_rl9[j].__zwSelector, _rl9[j].__zwHandle);
+                        delete _optSelectedDirty[_rk9];
+                        delete _optSelectedClean[_rk9];
+                      }
+                      _zwSelectednessSetting(c.__zwSelector, c.__zwHandle);
                     }
                     if (typeof __zw_clear_user_edited === 'function') __zw_clear_user_edited(c);
                   } catch (_e) {}
@@ -10984,12 +11106,35 @@
             if (_rvEntry) {
               _ce_dispatchAttrChange(_rvEntry, _makeProxy(sel, handle), _rvAttr, _rvOld, _rvVal, null);
             }
-          } else if (!handle && sel && typeof __zw_select_option === 'function' && _isTag(sel, 'SELECT')) {
-            // P1a select：编程设 `<select>.value = value` → 记 SelectOption mutation（apply 时
-            // mark 匹配 option selected + deselect 兄弟）。匹配浏览器：编程设值不自动派 change。
-            __zw_select_option(sel, String(value));
-            // SelectOption 改的是子 option 的 selected 属性，非 select 元素自身的属性 mutation；
-            // 不发 select 的 attributes MO 通知（语义正确）。
+          } else if (_zwIsSelectTag(sel, handle)) {
+            // P1a select：编程设 `<select>.value = value`（HTML §4.10.7 value setter
+            // steps——全员 selectedness=false、首个 value 匹配者 selectedness=true +
+            // dirtiness=true；不跑 selectedness setting、不派 change）。
+            // R3909：同步写 JS 真态（dirty/clean 层）——createElement select 同 turn 读
+            // （validity/selectedIndex/option.selected）立即可见。旧 guard
+            // `!handle && _isTag(sel,'SELECT')` 双重排除（_isTag 纯 host 快照探测对未
+            // apply 元素恒 miss + handle 形整支跳过），写整条丢失——同 turn 读回落
+            // pristine 视图（form-validation-valueMissing「Selected the option with
+            // value equals to 1」回归面）。SelectOption mutation 仍照记（渲染/序列化面
+            // selected 属性承载，js_dom_bridge.rs apply 侧）；其改的是子 option 的
+            // selected 属性，非 select 元素自身属性 mutation，不发 select 的 MO attr 通知。
+            var _r3909vv = String(value);
+            var _r3909vl = _zwListOfOptions(sel, handle);
+            var _r3909vm = null;
+            for (var _r3909vi = 0; _r3909vi < _r3909vl.length; _r3909vi++) {
+              var _r3909vo = _r3909vl[_r3909vi];
+              if (!_r3909vo) continue;
+              _zwOptWriteSelState(_r3909vo, false);
+              if (_r3909vm == null) {
+                try { if (_zwOptionValue(_r3909vo) === _r3909vv) _r3909vm = _r3909vo; } catch (_r3909ve) {}
+              }
+            }
+            if (_r3909vm != null) {
+              _optSelectedDirty[_zwOptKey(_r3909vm.__zwSelector, _r3909vm.__zwHandle)] = true;
+            }
+            if (sel && typeof __zw_select_option === 'function') {
+              __zw_select_option(sel, _r3909vv);
+            }
           } else if (_realTag(sel, handle) === 'OUTPUT') {
             // https://html.spec.whatwg.org/multipage/form-elements.html#dom-output-value
             // Capture default mode before entering value mode, then replace descendants.

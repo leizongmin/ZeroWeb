@@ -22,6 +22,7 @@ mod testharness_dnd;
 mod testharness_fileapi;
 mod testharness_html_semantics;
 mod testharness_page_state;
+mod testharness_pointerlock;
 mod testharness_webmessaging;
 mod wpt_file_loader;
 mod ws_fixture;
@@ -125,6 +126,9 @@ Commands:
                        (page-state-compat goal M1 / DC-1)
   testharness-dnd  Run imported html/editing/dnd testharness executable subset
                        (DataTransfer/DragEvent constructor face; dnd-compat goal M1 / DC-1)
+  testharness-pointerlock  Run imported pointerlock testharness executable subset
+                       (event constructor + rejection-semantics face; capture
+                       pipeline user-gated; pointerlock-compat goal M1 / DC-1)
   testharness-service-workers  Run pinned Service Worker M1 core testharness cases
   testharness-service-workers-fetch  Run pinned Service Worker M2 fetch testharness cases
   testharness-service-workers-cache-storage  Run pinned Service Worker CacheStorage testharness cases
@@ -335,6 +339,9 @@ fn main() {
         }),
         "testharness-dnd" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
             testharness_dnd::run_dnd_cases(wpt_root, filter)
+        }),
+        "testharness-pointerlock" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
+            testharness_pointerlock::run_pointerlock_cases(wpt_root, filter)
         }),
         "testharness-fileapi" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
             testharness_fileapi::run_fileapi_cases(wpt_root, filter)

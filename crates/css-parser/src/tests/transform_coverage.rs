@@ -59,11 +59,11 @@ fn test_parse_transform_perspective_negative() {
     assert!(result.is_none());
 }
 
-// 测试 perspective 零（调用 parse_css_number 并检查 <= 0.0）
+// 测试 perspective 零（R5175：csswg-drafts#6320 — 0 合法，clamp 在绘制侧）
 #[test]
 fn test_parse_transform_perspective_zero() {
     let result = parse_transform("perspective(0px)");
-    assert!(result.is_none());
+    assert!(result.is_some());
 }
 
 // 测试 matrix 参数数量错误

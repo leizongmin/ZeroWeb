@@ -21,9 +21,12 @@ pub fn apply_text_transform(text: &str, transform: &TextTransformValue) -> Strin
 /// R4248（CSS Borders 4 §corner-shaping）：构造 corner-shape 形状的边界多边形
 ///（border-box 绝对坐标，顺时针 TL→TR→BR→BL）。四角均 round（初始态）返回 None。
 ///
-/// 形状语义：round = 圆弧（圆心 C 在角内）；bevel = 直线（无中间点）；scoop = 凹弧
-///（圆心在盒角点 P）；notch = 经内角点 C 的阶梯；square = 直角（无切削，经盒角点 P）；
-/// superellipse(n)：|dx/r|^n + |dy/r|^n = 1 参数化（n=2 ≡ round、1 ≡ bevel、∞ ≡ square）。
+/// 形状语义（css-borders-4 §3.7：superellipse(K) 的单位曲线 x^(2K) + y^(2K) = 1，
+/// round ≡ K=1、bevel ≡ K=0、scoop ≡ K=−1、notch ≡ K=−∞、square ≡ K=+∞；
+/// §3.9.4.2 渲染算法按 K 分 regime）：
+/// - 凸侧 K ≥ 0：曲线心 = 内角点 C，指数 n = 2K（K=1 圆、K=0 直弦 ≡ bevel）。
+/// - 凹侧 K ≤ −1：曲线心 = 盒角点 P，n = 2|K|（K=−1 即 scoop 凹圆弧）。
+/// - square = 直角（无切削，经盒角点 P）；notch = 经内角点 C 的阶梯。
 pub fn shaped_corner_polygon(
     style: &ComputedStyle,
     box_w: f32,
@@ -60,16 +63,6 @@ pub fn shaped_corner_polygon_in_box(
 
     if style.corner_shape.is_all_round() {
         return None;
-    }
-    // R4248 定界：scoop 与负指数 superellipse 的像素级几何（凹弧心/负幂外凸）与
-    // chromium 未对齐（corner-shape-backdrop-filter-overflow 回归实证）——此类页
-    // 回退 round 裁剪（= 切片前行为，该族本就 green）。仅放行已实证对齐的形状。
-    for i in 0..4 {
-        match style.corner_shape.corner(i) {
-            CornerShapeKind::Scoop => return None,
-            CornerShapeKind::Superellipse(n) if n <= 0.0 => return None,
-            _ => {}
-        }
     }
     let radii = BorderRadiusSpec {
         top_left: radii4[0],
@@ -137,36 +130,85 @@ pub fn shaped_corner_polygon_in_box(
         ),
     ];
 
+    // 每角 8 段：R5179 实测 16 段对 corpus 残差（square/notch-mixed 等径向系统偏差）
+    // 零改善——弦高 AA 非残差来源，加密只增顶点成本，保持 8。
     let n_samples = 8usize;
     let mut pts: Vec<(f32, f32)> = Vec::new();
     for (kind, r, start, end, c, corner_pt, a0, a1) in corners {
         pts.push(start);
         match kind {
-            CornerShapeKind::Round | CornerShapeKind::Superellipse(_) => {
-                let e = match kind {
-                    CornerShapeKind::Superellipse(m) => m,
-                    _ => 2.0,
-                };
+            CornerShapeKind::Round => {
+                // round ≡ superellipse(1)：指数 n = 2K = 2（圆）。
                 for k in 1..n_samples {
                     let t = k as f64 / n_samples as f64;
                     let ang = a0 + (a1 - a0) * t;
-                    // superellipse 参数化（n=2 退化为圆）：以 C 为基准，按角的象限符号。
+                    // 圆弧参数化：以 C 为基准，按角的象限符号。
                     let (sx, sy) = ((ang.cos()).signum(), (ang.sin()).signum());
                     let (ca, sa) = (ang.cos().abs(), ang.sin().abs());
-                    let px = c.0 as f64 + sx * r as f64 * ca.powf(2.0 / e);
-                    let py = c.1 as f64 + sy * r as f64 * sa.powf(2.0 / e);
+                    let px = c.0 as f64 + sx * r as f64 * ca;
+                    let py = c.1 as f64 + sy * r as f64 * sa;
                     pts.push((px as f32, py as f32));
                 }
             }
-            CornerShapeKind::Scoop => {
-                // 凹弧：圆心 = 盒角点 P；start/end 相对 P 的极角 = (a0+180°, a1+180°)。
+            CornerShapeKind::Superellipse(k_arg) if k_arg > 0.0 => {
+                // 凸侧（css-borders-4 §3.7/§3.9.4.2）：指数 n = 2K，曲线心 = C；
+                // |dx/r|^n + |dy/r|^n = 1（K=1 退化为圆即 round，K→大逼近 square）。
+                let n = 2.0 * k_arg;
                 for k in 1..n_samples {
                     let t = k as f64 / n_samples as f64;
-                    let ang = a0 + std::f64::consts::PI + (a1 - a0) * t;
-                    pts.push((
-                        (corner_pt.0 as f64 + r as f64 * ang.cos()) as f32,
-                        (corner_pt.1 as f64 + r as f64 * ang.sin()) as f32,
-                    ));
+                    let ang = a0 + (a1 - a0) * t;
+                    let (sx, sy) = ((ang.cos()).signum(), (ang.sin()).signum());
+                    let (ca, sa) = (ang.cos().abs(), ang.sin().abs());
+                    let px = c.0 as f64 + sx * r as f64 * ca.powf(2.0 / n);
+                    let py = c.1 as f64 + sy * r as f64 * sa.powf(2.0 / n);
+                    pts.push((px as f32, py as f32));
+                }
+            }
+            CornerShapeKind::Scoop | CornerShapeKind::Superellipse(_) => {
+                // superellipse(0) ≡ bevel：直弦（start→end），无中间点（k=0 直通）。
+                // 凹侧（css-borders-4 §3.9.4.2）：曲线心 = 盒角点 P。
+                // K ≤ −1（scoop ≡ K=−1，step 37）：n = 2|K|，
+                //   point = P + T^(1/n)·(end−P) + (1−T)^(1/n)·(start−P)
+                //   —— K=−1 时 n=2 即以 P 为圆心、过 start/end 的凹圆弧；
+                //   K→−∞ 塌缩为经 C 的阶梯（≡ notch，解析层已映射关键字）。
+                // −1 < K < 0（step 38，切线交点族）：
+                //   point = P + (1−(1−T)^½)·(end−P) + (1−T^½)·(start−P)。
+                let k_arg = match kind {
+                    CornerShapeKind::Scoop => -1.0, // scoop ≡ superellipse(-1)
+                    CornerShapeKind::Superellipse(k) => k,
+                    _ => unreachable!("arm 仅 Scoop | Superellipse 进入"),
+                };
+                if k_arg != 0.0 {
+                    // R5179：深凹 K（n = 2|K| ≥ 64）曲线与 notch 阶梯的最大偏差
+                    // （T=½ 处）= r·√2·(½ − 2^(−1/n)) ≤ r·0.0153 ≈ 0.38px @ r=25
+                    // ——低于 8 段圆弧弦高的既有近似容差（r(1−cos(π/16)) ≈ 0.049r），
+                    // 直接走 notch 阶梯。亚像素贴边的规范曲线经 path_fill 无 AA 光栅
+                    // 化会放大成整像素腿位溢出（superellipse(-100) 案形 204px 差→0），
+                    // 且 WPT ref 即精确阶梯。
+                    if k_arg <= -32.0 {
+                        pts.push(c);
+                    } else {
+                        let deep_n = if k_arg <= -1.0 {
+                            Some(-2.0 * k_arg)
+                        } else {
+                            None // −1 < K < 0：切线交点族
+                        };
+                        for k in 1..n_samples {
+                            let t = k as f64 / n_samples as f64;
+                            let (wx, wy) = match deep_n {
+                                Some(n) => (t.powf(1.0 / n), (1.0 - t).powf(1.0 / n)),
+                                None => (1.0 - (1.0 - t).sqrt(), 1.0 - t.sqrt()),
+                            };
+                            pts.push((
+                                (corner_pt.0 as f64
+                                    + wx * (end.0 - corner_pt.0) as f64
+                                    + wy * (start.0 - corner_pt.0) as f64) as f32,
+                                (corner_pt.1 as f64
+                                    + wx * (end.1 - corner_pt.1) as f64
+                                    + wy * (start.1 - corner_pt.1) as f64) as f32,
+                            ));
+                        }
+                    }
                 }
             }
             CornerShapeKind::Notch => {
@@ -180,7 +222,6 @@ pub fn shaped_corner_polygon_in_box(
         } else {
             end
         });
-        let _ = corner_pt;
     }
     Some(pts)
 }

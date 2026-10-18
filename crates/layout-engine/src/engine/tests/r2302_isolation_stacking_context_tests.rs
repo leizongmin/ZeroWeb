@@ -42,3 +42,29 @@ fn test_other_stacking_context_triggers_preserved() {
     s.opacity = 1.0;
     assert!(!LayoutEngine::style_creates_stacking_context(false, &s));
 }
+
+#[test]
+fn test_r5176_perspective_stacking_context_transformable_gate() {
+    // R5176（css-transforms-2 §perspective-property）：perspective ≠ none 建 SC。
+    // none 恒为 Px(0.0) 哨兵（R5175 store clamp 后显式值 ≥1px）。块级元素显式
+    // Block（真实引擎 UA 层 div→block；ComputedStyle::default() 是 Inline 初始值）。
+    let mut s = ComputedStyle::default();
+    s.display = zero_css_parser::values::DisplayValue::Block;
+    s.perspective = zero_css_parser::values::LengthValue::Px(100.0);
+    assert!(
+        LayoutEngine::style_creates_stacking_context(false, &s),
+        "perspective ≠ none on transformable element → SC"
+    );
+
+    // inline span 上的 perspective 不适用（非 transformable）→ 不建 SC
+    //（perspective-untransformable-no-stacking-context：z:-1 abspos 子须画在
+    // span 背景之后，即归祖先 SC step 2）。R4070 同款排除 Inline/Contents/None。
+    let mut inline = ComputedStyle::default();
+    inline.perspective = zero_css_parser::values::LengthValue::Px(100.0);
+    inline.display = zero_css_parser::values::DisplayValue::Inline;
+    assert!(!LayoutEngine::style_creates_stacking_context(false, &inline));
+
+    // perspective: none（Px(0.0) 哨兵）→ 不建 SC
+    let none = ComputedStyle::default();
+    assert!(!LayoutEngine::style_creates_stacking_context(false, &none));
+}

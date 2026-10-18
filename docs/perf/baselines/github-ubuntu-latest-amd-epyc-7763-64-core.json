@@ -36,15 +36,15 @@
     },
     {
       "id": "mb/zero-browser-shell/download_manager_100",
-      "p95": 17304.273731153113,
+      "p95": 16806.86406067678,
       "tier": "budget",
-      "tightened_at": "2026-09-27T20:05:59Z"
+      "tightened_at": "2026-10-18T13:27:45Z"
     },
     {
       "id": "mb/zero-browser-shell/history_search_1k",
-      "p95": 21.25994769429373,
+      "p95": 21.253212533596837,
       "tier": "budget",
-      "tightened_at": "2026-10-06T19:26:33Z"
+      "tightened_at": "2026-10-18T13:27:45Z"
     },
     {
       "id": "mb/zero-browser-shell/tab_creation_100",
@@ -53,9 +53,9 @@
     },
     {
       "id": "mb/zero-canvas/fill_rect_1000",
-      "p95": 8235258.25,
+      "p95": 8143461.1,
       "tier": "budget",
-      "tightened_at": "2026-10-05T19:29:56Z"
+      "tightened_at": "2026-10-18T13:27:45Z"
     },
     {
       "id": "mb/zero-canvas/path_ops_1000_segments",
@@ -291,9 +291,9 @@
     },
     {
       "id": "mb/zero-net/parse_url",
-      "p95": 474.2520153231179,
+      "p95": 466.0045074334259,
       "tier": "budget",
-      "tightened_at": "2026-10-05T13:26:34Z"
+      "tightened_at": "2026-10-18T13:27:45Z"
     },
     {
       "id": "mb/zero-protocol/ipc_deserialize_10000",
@@ -327,9 +327,9 @@
     },
     {
       "id": "mb/zero-render-foundation/damage_tracker/add_damage/1000",
-      "p95": 20865.110285335104,
+      "p95": 20860.47716229349,
       "tier": "budget",
-      "tightened_at": "2026-10-05T19:29:56Z"
+      "tightened_at": "2026-10-18T13:27:45Z"
     },
     {
       "id": "mb/zero-render-foundation/damage_tracker/add_damage/500",
@@ -446,9 +446,9 @@
     },
     {
       "id": "mb/zero-security/same_origin_check_1000",
-      "p95": 3431.6610951008647,
+      "p95": 3124.9546209307405,
       "tier": "budget",
-      "tightened_at": "2026-10-02T19:26:02Z"
+      "tightened_at": "2026-10-18T13:27:45Z"
     },
     {
       "id": "mb/zero-storage/indexeddb_write_100",
@@ -518,14 +518,15 @@
     },
     {
       "id": "mb/zero-wasm-sandbox/wasm_call_add_i32_1000",
-      "p95": 138471.625,
+      "p95": 138191.07371794872,
       "tier": "budget",
-      "tightened_at": "2026-10-05T13:26:34Z"
+      "tightened_at": "2026-10-18T13:27:45Z"
     },
     {
       "id": "mb/zero-wasm-sandbox/wasm_factorial_100_calls",
-      "p95": 66216.33503898635,
-      "tier": "budget"
+      "p95": 65516.70956059874,
+      "tier": "budget",
+      "tightened_at": "2026-10-18T13:27:45Z"
     },
     {
       "id": "mb/zero-wasm-sandbox/wasm_module_compile",
@@ -535,9 +536,9 @@
     },
     {
       "id": "mb/zero-wasm-sandbox/wasm_module_instantiate",
-      "p95": 315.7311429842117,
+      "p95": 310.65447184554773,
       "tier": "budget",
-      "tightened_at": "2026-10-08T19:26:14Z"
+      "tightened_at": "2026-10-18T13:27:45Z"
     },
     {
       "id": "mb/zero-webview/webview_builder_create",

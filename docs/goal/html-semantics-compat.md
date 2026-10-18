@@ -2,42 +2,46 @@
 
 **版本**: v2.0
 **日期**: 2026-10-18（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 8 收口（HTMLOptionsCollection/option list 基建 R3908 +54P），下一步 selectedness/selectedIndex 语义切片
+**状态**: Active——M2 切片 10 收口（form 提交 construct-entry-list 对齐 + dialog 提交分支 R3910 +12P），下一步 firing submission events flag 簇
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-18 M2 切片 8）**：HTMLOptionsCollection/option
-> list 基建（R3908/R3908b）——spec「list of options」统一构造
-> `_zwListOfOptions`（OPTION 收录不递归；select/hr/datalist 整枝排除；
-> 嵌套 optgroup 整枝排除、顶层 optgroup 照常下钻，HTML §4.10.7）；
-> HTMLOptionsCollection 代理（length grow/shrink、`[i]=null` 移除、
-> `[i]=element` 先补空再追加/replace——replace 取「先删旧项+前插旧项
-> 后继」序规避 R51 overlay nextSibling identity miss；namedItem/add/
-> selectedIndex/value）；`_zwIsSelectTag` 前缀 select 判定
-> （createElementNS 'foo:select' 六处换用）；selectedOptions HTMLCollection
-> 形代理（三 trap 齐：get 原型回落/has/getOwnPropertyDescriptor）+
-> 非 multiple selectedness 视图归一（最后者胜/首项回落）；
-> option.selected IDL setter = dirty selectedness（不反射属性，
-> `_optSelectedDirty`，R3908b）——宿主激活链（script_gen.rs）分流为
-> 显式属性写保渲染/序列化面。part58 `test_html_options_collection_r3908`
-> 契约（W1–W9）。forms 3515→**3569P**；九域 4477→**4531P**
-> （4531/7412 = **61.13%**），对 s7 账本逐 subtest diff **净 +54P**
-> （HTMLOptionsCollection 三文件 15P、selectedOptions 簇 18P、
-> script-mutation 5P、inserted-or-removed 4P、select-named-getter 4P、
-> option-selected 2P、option-list/optgroup 溢出 6P），**回归 0**、
-> 新增/消失 0；对 s6 基线同为零回归。zero-engine --lib 3111 全过、
-> make test 全腿绿（browser 腿 DISPLAY=:102 环境归因复跑 650P/0F，
-> s6 同款）、clippy/fmt 过、零新增依赖。账本见
-> [evidence/2026-10-18-m2s8-r3908.md](html-semantics-compat/evidence/2026-10-18-m2s8-r3908.md)。
-> **卡点**：无阻塞。**下一步**：selectedness/selectedIndex 语义切片——
-> select-ask-for-reset 3F（node remove/insert 触发重置）、
-> selected-index 7F（selectedIndex setter/reset-algorithm）、
-> select-add 2F + select-remove 2F（add(n)/remove(n) 语义）、
-> option-element-constructor 3F（构造器 dirtiness——R3908b 已铺底）、
-> select-validity 7F；forms 域大块余簇依归因排后（form-submission
-> encoding ~255F、label clicks ~80F、form-autocomplete ~66F、
-> meter ~48F）。**独立挂账**：通用 replaceChild sel 形 oldChild 落尾
-> 缺口（remove+append 序，zz-probe2/3 三源实证，本轮已清诊断页）。
+> **▶ 当前状态（2026-10-18 M2 切片 10）**：form 提交 construct-entry-list
+> 对齐 + method=dialog 分支（R3910，切片 9 后 forms 大簇归因的 3 个引擎
+> 可修簇）——提交路径补 spec 顺序：constructing entry list flag
+> （`__zwFormDataConstructing` 与 part02 `new FormData(form)` 共用同
+> flag）submit 入口早退（先于 submit 事件派发）、条目构造窗口置位、
+> formdata 派发 finally 清位；formdata 事件以共享条目存储派发
+> （`fd._p = entry list`，handler 对 `e.formData` 增删直接改写提交条目）；
+> action 解析自函数头移至 formdata 派发与 dialog 分支之后（旧位序使
+> `new URL('','about:blank')` 失败时在条目构造前静默 return，丢 formdata
+> 面与 dialog 面）。method=dialog 分支落地：无祖先 dialog → return；
+> image 提交者 selected coordinates "x,y"（`_zwImgSelCoords`，非指针激活
+> 0,0）；submit 提交者 optional value（value 属性 present 才设含空串，
+> 缺失不改 returnValue）；`_zwDialogClose(subject, result)`。
+> close-the-dialog 步 1：无 open 属性早退 return false（不设 returnValue
+> 不派 close）——dialog close()/requestClose()/Esc/提交四处共享路径。
+> SubmitEvent/FormDataEvent 构造器 WebIDL 化（无 new TypeError、type
+> 必填、formData required 且须 FormData 实例、submitter
+> `(Element or null)`）。part59 契约 6 测。forms 3602→**3605P**、
+> dialog-element 38→**47P**、九域 4565→**4577P**（4577/7377 =
+> **62.05%**；总数 7412→7377 系 Timeout 面变化），对 s9 账本逐 subtest
+> diff **净 +12P、回归 0**、新增/消失 2/37（form-double-submit-
+> requestsubmit 36F→文件级 Timeout、area-coords 子测名换行重渲染，
+> 均零 P 差异）。zero-engine --lib 3169 全过、make test 全腿绿
+> （browser bin 腿 2 案环境归因，:102 复跑 658P/0F）、clippy/fmt 过、
+> 零新增依赖。账本见
+> [evidence/2026-10-18-m2s10-r3910.md](html-semantics-compat/evidence/2026-10-18-m2s10-r3910.md)。
+> **卡点**：无阻塞。**已知面变化（挂账）**：formdata 按 spec 派发后
+> form-double-submit-requestsubmit 36F 转 Timeout（断言过后等静态 runner
+> 不存在的 iframe 导航），归 navigation-compat M3 基建门控；
+> submit-dialog-close-event 文件级挂起维持 s9 形态（async_test 步进
+> 交互，独立排查）。**下一步**：firing submission events flag 簇
+> （form-submission-algorithm t2-t4 invalid/submit 重入语义）+ image
+> 按钮坐标 offsetX 面（dialog-form-submission t5）+
+> dialog-return-value returnValue setter String 强转 1F；存量小挂账：
+> option.form 1F、option-text-setter 1F、replaceChild sel 形落尾、
+> t8g 观察账。
 
 
 
@@ -119,6 +123,35 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-18 M2 切片 10**：form 提交 construct-entry-list 对齐 + dialog
+  提交分支（R3910）——constructing entry list flag 共享（submit 入口
+  早退先于 submit 事件、构造窗口置位/finally 清位）、formdata 事件共享
+  条目存储派发（handler 增删改写提交条目）、action 解析按 spec 顺序后移
+  （旧位序丢 formdata/dialog 面）；method=dialog 分支（无祖先 return、
+  image 坐标、optional value、_zwDialogClose）；close-the-dialog 步 1
+  无 open 早退（四处共享路径）；SubmitEvent/FormDataEvent 构造器
+  WebIDL 化。part59 契约 6 测。forms 3602→3605P、dialog-element
+  38→47P、九域 4565→4577P（62.05%），对 s9 账本逐 subtest diff 净
+  +12P、回归 0。zero-engine --lib 3169 全过、make test 全腿绿
+  （browser 腿 :102 复跑）、clippy/fmt 过、零新增依赖。挂账：
+  form-double-submit-requestsubmit 36F→Timeout（iframe 导航基建，归
+  navigation-compat M3）、submit-dialog-close-event 挂起维持、
+  firing submission events flag（t2-t4）、image 坐标 offsetX 面（t5）、
+  dialog-return-value returnValue setter String 强转 1F。
+- **2026-10-18 M2 切片 9**：selectedness/selectedIndex 语义（R3909）——
+  selectedness setting（受影响者胜 affKey + size 1 非 disabled 回落）、
+  ask-for-a-reset 汇流钩（`_mo_notify` childList 触发、批插依序、innerHTML
+  容器合流、Blink 重回落）、selected 属性变更步两半、selectedIndex setter
+  （可全不选）、select.value setter 双形态真态写（旧 guard 双重排除丢写面
+  根因修复）、form.reset 复位算法、select.remove(n)/add 祖先检查 + 元素代理
+  add、select value-missing（placeholder 四条件）、Option() 构造器
+  （属性只随 defaultSelected + clean 层）；读侧 selectedIndex/value/视图
+  全改 JS 真态，pristine-only size 1 跳 disabled 回落。part59 契约 12 测。
+  select-value-selectedOption +8、selected-index 13/13、select-validity
+  6/6 等**净 +34P**；forms 3569→3602P、九域 4531→4565P（61.59%），对
+  s8/s6 账本 diff 均零回归。zero-engine --lib 3138 全过、make test 全腿绿、
+  clippy/fmt 过、零新增依赖。挂账：option.form 1F、text-setter 1F、
+  replaceChild sel 形落尾缺口、t8g 墙钟钉 clippy 并行负载边缘越限观察账。
 - **2026-10-18 M2 切片 8**：HTMLOptionsCollection/option list 基建
   （R3908/R3908b）——`_zwListOfOptions` 统一构造（嵌套 optgroup 排除、
   select/hr/datalist 整枝）、HTMLOptionsCollection 代理（length/索引

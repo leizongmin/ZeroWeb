@@ -13343,6 +13343,12 @@
     __zw_dispatch_element_event('script', 'src', absSrc, type);
   };
 
+  // dnd-compat M3-S2：拖放会话 DataTransfer 注册表——宿主状态机（zero-webview drag_input）
+  // 为每个 dragstart 会话分配递增 id，同会话全部 drag* 事件经 `__zwDragSessions[id]` 取到
+  // **同一** DataTransfer 实例（HTML dnd.html#drag-and-drop-processing-model——dragstart 事件
+  // 的 dataTransfer 与后续 dragenter/over/leave/drop/dragend 的为同一对象）；dragend 派发后
+  // 删除会话项（store 生命周期结束）。
+  globalThis.__zwDragSessions = {};
   globalThis.__zw_dispatch_event = function(sel, type, detail) {
     var ev;
     if (type === 'submit') {
@@ -13409,6 +13415,37 @@
         altKey: _zmDef8.altKey,
         metaKey: _zmDef8.metaKey
       });
+    } else if (type === 'dragstart' || type === 'drag' || type === 'dragenter'
+               || type === 'dragover' || type === 'dragleave' || type === 'drop'
+               || type === 'dragend') {
+      // dnd-compat M3-S2（2026-10-18）：宿主拖放会话事件——DragEvent extends MouseEvent +
+      // dataTransfer（会话共享实例，见 `__zwDragSessions` 注记）。事件序/取消语义由宿主
+      // 状态机（zero-webview drag_input，HTML dnd.html#drag-and-drop-processing-model）驱动，
+      // 本分支只负责实例构造与 data store 模式切换：dragstart/drop = readwrite（源/目标
+      // 读写 payload），drag/dragenter/dragover/dragleave/dragend = protected（getData ''
+      // 、setData/clearData/items 变更 no-op——part05 模式门控，types/长度仍可见）。
+      // cancelable：dragstart/dragenter/dragover/drop ✓；drag/dragleave/dragend ✗（spec 事件表）。
+      // 全族冒泡（spec：drag events bubble）。retarget 由宿主按命中选择器驱动。
+      var _dCan = type === 'dragstart' || type === 'dragenter' || type === 'dragover' || type === 'drop';
+      var _dtId = (detail && detail.dataTransferId != null) ? detail.dataTransferId : 0;
+      var _dDt = __zwDragSessions[_dtId] || (__zwDragSessions[_dtId] = new DataTransfer());
+      _dDt._dt_mode = (type === 'dragstart' || type === 'drop') ? 'readwrite' : 'protected';
+      var _dMod = _zwModInit(detail);
+      ev = new DragEvent(type, {
+        bubbles: (detail && detail.bubbles != null) ? !!detail.bubbles : true,
+        cancelable: _dCan,
+        clientX: (detail && typeof detail.clientX === 'number') ? detail.clientX : 0,
+        clientY: (detail && typeof detail.clientY === 'number') ? detail.clientY : 0,
+        button: (detail && typeof detail.button === 'number') ? detail.button : 0,
+        buttons: (detail && typeof detail.buttons === 'number') ? detail.buttons : 1,
+        relatedTarget: (detail && detail.relatedTarget) ? _wrapSelector(detail.relatedTarget) : null,
+        shiftKey: _dMod.shiftKey,
+        ctrlKey: _dMod.ctrlKey,
+        altKey: _dMod.altKey,
+        metaKey: _dMod.metaKey,
+        dataTransfer: _dDt
+      });
+      if (type === 'dragend') { delete __zwDragSessions[_dtId]; }
     } else if (type === 'pointerdown' || type === 'pointerup' || type === 'pointermove'
                || type === 'pointerover' || type === 'pointerout' || type === 'pointerenter'
                || type === 'pointerleave' || type === 'pointercancel'

@@ -1,23 +1,45 @@
 # Drag and Drop 兼容 — DataTransfer / DragEvent / 拖放交互（门控 goal）
 
-**版本**: v1.2
+**版本**: v1.4
 **日期**: 2026-10-18
-**状态**: Active·**门控**（M1 + M2 自主面已收口——可执行 testharness 子集
-387/387 全绿；拖放交互管线须用户点名批准——99-webgl 门控模式）
+**状态**: **Done**（2026-10-18 收口，DC-1~4 逐项判定见下——corpus 终态
+437/446（98.0%），剩余 9 红挂账各自域）
 **执行模式**: WPT 驱动（上游 dnd corpus 为验收标尺）+ 分层实现
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——交互面）
 
-> **▶ 当前状态（2026-10-18 M2 收口）**：可执行 testharness 子集
-> **213/387（55.0%）→ 387/387（100.0%）**，净 +174 零回归。M2 七簇失败一轮
-> 全闭（原型链反射 + video 默认值 / types FrozenArray / item disabled mode /
-> element has-trap on* / HTMLDocument 别名 / DragEvent 字典校验 / dropzone
-> 反射），见 [M2 收口 evidence](dnd-compat/evidence/2026-10-18-m2-convergence.md)
-> 与 [M1 基线 evidence](dnd-compat/evidence/2026-10-18-m1-baseline.md)。
-> 语料路径已修正（上游无顶层 `dnd/`，语料在 `html/editing/dnd/`——Contents API
-> 404 实测）。
-> **下一步**：自主面已无余量；DC-3 交互管线为用户门控——拖拽状态机/
-> drop target 命中/testdriver Actions 面的实现须用户点名批准（点名后先出
-> RFC，输入注入架构征询再动工）。点名前本 goal 无自主切片可推进。
+> **▶ 收口判定（2026-10-18 M4）**：corpus **213/387（55.0%）→ 437/446
+> （98.0%）**，累计 +224 Pass 零回归。M1 导入甄别（11 可执行案基线）→ M2
+> 七簇收敛（+174，387/387 全绿）→ M3 交互管线（RFC v1.0 确认后 s1~s5：
+> 拖拽源命中全链透传 → zero-webview 会话状态机 → 浏览器仲裁 DragInput IPC →
+> runner 真管道注入 11→44 案 → UA 手势屏障 + 边界 relatedTarget + 初始
+> target 更新，+25）。管线语义（dragstart→dragenter/over/leave→drop→dragend
+> 事件序、source node 仲裁、手势例外）按 Chrome 口径收口。
+>
+> **DC 逐项**：DC-1 ✅（导入+census+甄别+CSV 回填）；DC-2 ✅（M2 收口
+> evidence）；DC-3 ✅（RFC v1.0 确认，管线五切片落地）；DC-4 ✅ 按偏差记账
+> ——账本纪律全（每切片 evidence+run 原账）、reftest 全绿零回归（Layout
+> 508/508、Text 204/204）、product-smoke 全绿（oracle 15.48%、struct-check
+> 全过）、make test 除**外部既有红**外全腿绿（quickjs renderer lib
+> `run_page_scripts_reports_uncaught_error_r2940`：T64 根因已定位、修复在
+> `origin/error-fidelity-20261018` 分支待并——clean-tree 复现证明非本 goal
+> 引入；另有 browser-shell bookmarks 并行间歇失败在案）。
+>
+> **剩余 9 红挂账（域外归因，本 goal 不再推进）**：
+>
+> | 红面 | 案数 | 归属域 |
+> |---|---|---|
+> | input 文本拖选（mousedown-drag-select-input-display-change） | 3 | 文本选择域（selection-compat 已分类「Actions 拖选无选区构建」） |
+> | shadow DOM 重排后 dragstart（mousedown-move-inner-when-dragging-2） | 1 | shadow DOM 渲染级 composed tree（web-components 挂账协调面） |
+> | input_image 注入 trace 超时 | 2 | runner 注入基建（`<input type=image>` 加载面） |
+> | pointer-suppression 完整抑制事件面 | 1 | runner 注入基建（pointercancel/out/leave 抑制面） |
+> | js-file DataTransfer File 面 | 2 | File 面（`items.add(File)` 依赖，M3 范围外） |
+>
+> 证据：[M1 基线](dnd-compat/evidence/2026-10-18-m1-baseline.md)、
+> [M2 收口](dnd-compat/evidence/2026-10-18-m2-convergence.md)、
+> [M3 管线语料](dnd-compat/evidence/2026-10-18-m3-pipeline-corpus.md)、
+> [M3-s5 语义收口](dnd-compat/evidence/2026-10-18-m3-s5-semantics.md)、
+> [M3 管线 RFC v1.0](dnd-compat/m3-drag-input-pipeline-spec-rfc.md)。
+> 文档归档移动（archive/ 模式 A）可后续执行，webcrypto 同例。
 
 > **▶ 拆分动机（2026-10-08 html5test 缺口立项，用户「立项」）**：web-api-batch2
 > （编号 92，已收口）明确挂账「DnD excluded pending host drag-input pipeline」；

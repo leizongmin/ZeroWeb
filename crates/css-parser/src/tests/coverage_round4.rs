@@ -472,7 +472,8 @@ fn test_transform_perspective() {
 
 #[test]
 fn test_transform_perspective_invalid() {
-    assert!(parse_transform("perspective(0)").is_none());
+    // R5175（csswg-drafts#6320）：0 合法（clamp 在绘制侧），负值语法无效。
+    assert!(parse_transform("perspective(0)").is_some());
     assert!(parse_transform("perspective(-100)").is_none());
 }
 

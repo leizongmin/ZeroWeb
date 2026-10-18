@@ -751,3 +751,5 @@ mod r5168_anon_cell_wrap;
 mod r5169_anon_cell_run_paint;
 mod r5170_table_rtl_col_order;
 mod r5172_caption_shrink_to_fit;
+/// R5178 替换元素 min/max-width/height content 关键字 transferred size（csswg #3973）。
+mod r5178_replaced_content_kw_tests;
