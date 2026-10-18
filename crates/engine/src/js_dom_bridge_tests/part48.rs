@@ -530,3 +530,107 @@ fn ready_state_lifecycle_transitions_and_rs_dispatch_s48() {
         "IDL document.onreadystatechange 每次过渡各触发 1 次（共 2 次）"
     );
 }
+
+/// dnd-compat M3-S2：宿主拖放会话 shim 面——`__zw_dispatch_event` drag* 分支。
+/// 断言面（HTML dnd.html#drag-and-drop-processing-model）：
+/// ① drag* 事件为 DragEvent 实例；② 同会话（同 dataTransferId）全部事件共享同一
+/// DataTransfer 实例；③ protected 模式（drag/dragenter/dragover）getData 返 ''，
+/// readwrite 模式（dragstart/drop）可读写；④ 可取消类型（dragstart/dragenter/
+/// dragover/drop）取消结局经 `'ok'/'prevented'` 返回值达宿主；⑤ dragend 不可取消。
+#[test]
+fn drag_session_datatransfer_identity_and_mode_s48() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><head></head><body><div id=\"src\">s</div><div id=\"dst\">d</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://zero.test/s48dnd".to_string()));
+    let canvas_registry: Arc<Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 页面脚本：源/目标监听记录事件面。
+    sandbox
+        .execute(
+            "globalThis.__log = [];\
+             globalThis.__dts = {};\
+             document.getElementById('src').addEventListener('dragstart', function (e) {\
+               globalThis.__dts.start = e.dataTransfer;\
+               e.dataTransfer.setData('text/plain', 'p1');\
+               globalThis.__log.push('start:' + (e instanceof DragEvent) + ':' + e.cancelable + ':' + e.bubbles);\
+             });\
+             document.getElementById('dst').addEventListener('dragenter', function (e) {\
+               globalThis.__log.push('enter:' + (e.dataTransfer === globalThis.__dts.start) + ':' + e.dataTransfer.getData('text/plain'));\
+             });\
+             document.getElementById('dst').addEventListener('dragover', function (e) {\
+               globalThis.__log.push('over:' + e.dataTransfer.getData('text/plain'));\
+               e.preventDefault();\
+             });\
+             document.getElementById('dst').addEventListener('drop', function (e) {\
+               globalThis.__log.push('drop:' + e.dataTransfer.getData('text/plain'));\
+             });\
+             document.getElementById('src').addEventListener('dragend', function (e) {\
+               globalThis.__log.push('end:' + (e.dataTransfer === globalThis.__dts.start) + ':' + e.cancelable);\
+             });",
+        )
+        .unwrap();
+
+    // 宿主会话序（同 zero-webview drag_input 状态机产出的事件计划形态）。
+    let detail = |x: f32, y: f32, id: u64| DomEventDetail {
+        client_x: Some(x),
+        client_y: Some(y),
+        data_transfer_id: Some(id),
+        ..Default::default()
+    };
+    // dragstart（readwrite：setData 落 store）→ 'ok'（未取消）。
+    assert_eq!(
+        sandbox.execute(&script_dispatch_dom_event("#src", "dragstart", Some(&detail(10.0, 10.0, 7)))).unwrap().value,
+        "ok",
+        "dragstart 未取消 → 'ok'"
+    );
+    // drag / dragenter / dragover（protected：getData 返 ''）——dragover preventDefault → 'prevented'。
+    sandbox.execute(&script_dispatch_dom_event("#src", "drag", Some(&detail(20.0, 20.0, 7)))).unwrap();
+    sandbox.execute(&script_dispatch_dom_event("#dst", "dragenter", Some(&detail(30.0, 30.0, 7)))).unwrap();
+    assert_eq!(
+        sandbox.execute(&script_dispatch_dom_event("#dst", "dragover", Some(&detail(30.0, 30.0, 7)))).unwrap().value,
+        "prevented",
+        "dragover preventDefault → 'prevented' 达宿主（drop 资格判据）"
+    );
+    // drop（readwrite：getData 读回 dragstart 写入的 payload）。
+    assert_eq!(
+        sandbox.execute(&script_dispatch_dom_event("#dst", "drop", Some(&detail(30.0, 30.0, 7)))).unwrap().value,
+        "ok",
+        "drop 未取消 → 'ok'"
+    );
+    // dragend（不可取消、会话收尾）。
+    sandbox.execute(&script_dispatch_dom_event("#src", "dragend", Some(&detail(30.0, 30.0, 7)))).unwrap();
+
+    assert_eq!(
+        sandbox.execute("globalThis.__log.join('|')").unwrap().value,
+        "start:true:true:true|enter:true:|over:|drop:p1|end:true:false",
+        "事件面：DragEvent 实例/可取消/冒泡 + 同会话 DataTransfer 恒等 + protected getData '' + drop readwrite getData 'p1' + dragend 不可取消"
+    );
+
+    // 会话清理：dragend 后同 id 重触 dragenter → 新 DataTransfer 实例（types 空）。
+    sandbox
+        .execute(
+            "document.getElementById('dst').addEventListener('dragenter', function (e) {\
+               globalThis.__fresh = (e.dataTransfer === globalThis.__dts.start);\
+             });",
+        )
+        .unwrap();
+    sandbox.execute(&script_dispatch_dom_event("#dst", "dragenter", Some(&detail(30.0, 30.0, 7)))).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__fresh) + ':' + globalThis.__dts.start.types.length").unwrap().value,
+        "false:1",
+        "dragend 后会话删除——同 id 重触为新实例（types 仅剩 dragstart 写入的 text/plain 1 项）"
+    );
+}

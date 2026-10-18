@@ -50,6 +50,9 @@ pub struct DomEventDetail {
     /// PointerEvent.pointerId——uievents-compat 尾簇 11：None = 缺省（UA 指针 1）；
     /// Some(-1) = 非指针生成（click() API / Enter 激活，PE spec）。
     pub pointer_id: Option<i32>,
+    /// 拖放会话 id——dnd-compat M3：shim `__zwDragSessions[id]` 定位同会话共享 DataTransfer
+    /// 实例（dragstart→dragend 同一对象，HTML dnd processing model）；None = 非 drag* 事件。
+    pub data_transfer_id: Option<u64>,
 }
 
 fn escape_js_string(s: &str) -> String {
@@ -118,8 +121,13 @@ pub fn script_dispatch_dom_event(selector: &str, event_type: &str, detail: Optio
                 .pointer_id
                 .map(|v| format!("{v}"))
                 .unwrap_or_else(|| "null".to_string());
+            // dnd-compat M3：dataTransferId 透传（null = 非 drag* 事件，shim drag 分支不触）。
+            let data_transfer_id = d
+                .data_transfer_id
+                .map(|v| format!("{v}"))
+                .unwrap_or_else(|| "null".to_string());
             format!(
-                "{{key:{key},code:{code},submitter:{submitter},data:{data},inputType:{input_type},isComposing:{is_composing},shiftKey:{shift_key},ctrlKey:{ctrl_key},altKey:{alt_key},metaKey:{meta_key},clientX:{client_x},clientY:{client_y},button:{button},buttons:{buttons},detail:{detail_count},relatedTarget:{related_target},bubbles:{bubbles},pointerType:{pointer_type},pointerId:{pointer_id}}}"
+                "{{key:{key},code:{code},submitter:{submitter},data:{data},inputType:{input_type},isComposing:{is_composing},shiftKey:{shift_key},ctrlKey:{ctrl_key},altKey:{alt_key},metaKey:{meta_key},clientX:{client_x},clientY:{client_y},button:{button},buttons:{buttons},detail:{detail_count},relatedTarget:{related_target},bubbles:{bubbles},pointerType:{pointer_type},pointerId:{pointer_id},dataTransferId:{data_transfer_id}}}"
             )
         }
     };

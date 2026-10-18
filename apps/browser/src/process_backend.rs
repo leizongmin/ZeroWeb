@@ -2426,6 +2426,7 @@ mod navigation_contract_tests {
                         href: None,
                         src: None,
                         link_text: None,
+                        draggable: false,
                     },
                 ),
                 (
@@ -2438,6 +2439,7 @@ mod navigation_contract_tests {
                         href: Some("https://example.com".to_string()),
                         src: None,
                         link_text: None,
+                        draggable: true,
                     },
                 ),
             ]

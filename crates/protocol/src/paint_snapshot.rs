@@ -654,6 +654,9 @@ pub struct IpcHitTestNodeMeta {
     /// 链接锚文本（仅 `a` 元素，textContent trim，空→`None`；右键菜单「复制链接文本」）。
     #[serde(default)]
     pub link_text: Option<String>,
+    /// 本元素 `draggable` IDL 状态（dnd-compat M3 拖拽源仲裁；祖先态由消费侧上溯解析）。
+    #[serde(default)]
+    pub draggable: bool,
 }
 
 /// IPC 命中测试缓存。
