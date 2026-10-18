@@ -1,5 +1,7 @@
+---
 date: 2026-10-18
 modules: engine
+---
 
 # border-radius+border 边框带按直角条带绘制——弧带缺失被 corpus 自洽掩盖
 
@@ -20,10 +22,12 @@ vs clip-path/radius 管线（ref）」才暴露。
 
 ## 解决
 
-未修（R5180 候选）：`paint_borders` 对 plain round 补「外弧+内弧 ring path_fill」，
-可直接复用 shaped ring 的成对多边形代码（CornerShapeKind::Round 臂已有圆弧采样）。
-风险面：改动后 self-source corpus 的 radius+border 案两侧同变，理论零翻红，但需
-A/B 全量确认。
+R5180 已修：`paint_borders` plain round + 均匀实线边框走「外弧+内弧 ring
+path_fill」（`round_band_uniform_border` 门 + `concat_ring_vertices` 串联，见
+[evenodd-ring-keyhole-cut](2026-10-19-evenodd-ring-keyhole-cut.md)）。corpus
+A/B 基线 1,065 → ON 1,064：真翻绿 4，真翻红 3（self-source 并非零翻红——
+部分案的 PASS 依赖 ref 侧直角条带覆盖 offset 叠加，修真几何后需 ref 侧同修，
+见挂账 side-shorthands 椭圆半径）。
 
 ## 避免
 

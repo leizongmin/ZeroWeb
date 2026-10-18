@@ -4,9 +4,9 @@
 //! 几何）（T59，2026-10-17；纯移动零行为变化）。本文件保留跨族共享的长度/杂项
 //! 工具，并按原 `paint::helpers::X` 路径 re-export 四族全部公开项——调用方零改动。
 
-use zero_css_parser::values::{LengthValue, eval_calc};
+use zero_css_parser::values::{CornerShapeKind, LengthValue, eval_calc};
 use zero_layout_engine::LayoutBox;
-use zero_style_system::{ComputedStyle, TextTransformValue};
+use zero_style_system::{BorderCollapseValue, BorderStyleValue, ComputedStyle, TextTransformValue};
 
 pub use super::border_shape::*;
 pub use super::clip::*;
@@ -59,11 +59,71 @@ pub fn shaped_corner_polygon_in_box(
     box_h: f32,
     radii4: [f32; 4],
 ) -> Option<Vec<(f32, f32)>> {
-    use zero_css_parser::values::CornerShapeKind;
-
     if style.corner_shape.is_all_round() {
         return None;
     }
+    Some(corner_polygon_with_kinds(
+        [
+            style.corner_shape.corner(0),
+            style.corner_shape.corner(1),
+            style.corner_shape.corner(2),
+            style.corner_shape.corner(3),
+        ],
+        x0,
+        y0,
+        box_w,
+        box_h,
+        radii4,
+    ))
+}
+
+/// R5180（css-backgrounds-3 §5.5 弧带）：plain border-radius（corner-shape 初始态，
+/// 全 round）的圆角矩形多边形——与 [`CornerShapeKind::Round`] 臂同一 8 段圆弧采样，
+/// 供边框弧带（外圈+内圈 even-odd 环）复用 shaped 采样体。
+pub fn rounded_corner_polygon_in_box(x0: f32, y0: f32, box_w: f32, box_h: f32, radii4: [f32; 4]) -> Vec<(f32, f32)> {
+    corner_polygon_with_kinds([CornerShapeKind::Round; 4], x0, y0, box_w, box_h, radii4)
+}
+
+/// R5180：弧带 even-odd 顶点串联（keyhole 切点）。shaped 多边形首点 = TL start、
+/// 末点 = BL end，同在左缘竖边上——各自在闭合边中点插入切点顶点后，外圈末点与
+/// 内圈首点为切点对，两条桥边（外切点→内切点、内重复切点→外首点）互为反向且
+/// 整段落在左缘边带色内：非水平桥的成对交叉产生 1px 填充亦落在既有带色上，无
+/// 可见伪影。朴素串联（外末→内首直连）两条桥边以不同 x 交叉扫描线，在带内撕出
+/// 背景色隙（corner-shape-square 案 385px 判例）。
+pub fn concat_ring_vertices(mut outer: Vec<(f32, f32)>, inner: Vec<(f32, f32)>) -> Vec<(f32, f32)> {
+    let outer_cut = cut_polygon_at_left_edge(&outer);
+    let inner_cut = cut_polygon_at_left_edge(&inner);
+    outer.clear();
+    outer.extend(outer_cut);
+    outer.extend(inner_cut);
+    outer
+}
+
+/// R5180：keyhole 切点——多边形首末点同在左缘竖边（shaped/round 多边形构造约定）
+/// 时，在闭合边中点插入切点顶点（首尾各一）。供环带串联方自行预切（如
+/// BorderShapePlan::Fill 消费端做朴素 extend 时）。
+pub fn cut_polygon_at_left_edge(pts: &[(f32, f32)]) -> Vec<(f32, f32)> {
+    let n = pts.len();
+    let (lx, ly) = pts[n - 1];
+    let (_, fy) = pts[0];
+    // 切点 = 闭合边（左缘竖边）中点；首末点同 x 由 shaped 多边形构造约定保证。
+    let mid = (lx, (ly + fy) / 2.0);
+    let mut out = Vec::with_capacity(n + 2);
+    out.push(mid);
+    out.extend_from_slice(pts);
+    out.push(mid);
+    out
+}
+
+/// 按 per-corner 形状构建形角多边形（shaped 入口与 plain round 入口共用采样体）。
+fn corner_polygon_with_kinds(
+    kinds: [CornerShapeKind; 4],
+    x0: f32,
+    y0: f32,
+    box_w: f32,
+    box_h: f32,
+    radii4: [f32; 4],
+) -> Vec<(f32, f32)> {
     let radii = BorderRadiusSpec {
         top_left: radii4[0],
         top_right: radii4[1],
@@ -86,7 +146,7 @@ pub fn shaped_corner_polygon_in_box(
     ); 4] = [
         // TL：左缘端 (x0,y0+r) → 顶缘端 (x0+r,y0)；C=(x0+r,y0+r)；弧 180°→270°
         (
-            style.corner_shape.corner(0),
+            kinds[0],
             radii.top_left,
             (x0, y0 + radii.top_left),
             (x0 + radii.top_left, y0),
@@ -97,7 +157,7 @@ pub fn shaped_corner_polygon_in_box(
         ),
         // TR：顶缘端 (x1-r,y0) → 右缘端 (x1,y0+r)；C=(x1-r,y0+r)；弧 270°→360°
         (
-            style.corner_shape.corner(1),
+            kinds[1],
             radii.top_right,
             (x1 - radii.top_right, y0),
             (x1, y0 + radii.top_right),
@@ -108,7 +168,7 @@ pub fn shaped_corner_polygon_in_box(
         ),
         // BR：右缘端 (x1,y1-r) → 底缘端 (x1-r,y1)；C=(x1-r,y1-r)；弧 0°→90°
         (
-            style.corner_shape.corner(2),
+            kinds[2],
             radii.bottom_right,
             (x1, y1 - radii.bottom_right),
             (x1 - radii.bottom_right, y1),
@@ -119,7 +179,7 @@ pub fn shaped_corner_polygon_in_box(
         ),
         // BL：底缘端 (x0+r,y1) → 左缘端 (x0,y1-r)；C=(x0+r,y1-r)；弧 90°→180°
         (
-            style.corner_shape.corner(3),
+            kinds[3],
             radii.bottom_left,
             (x0 + radii.bottom_left, y1),
             (x0, y1 - radii.bottom_left),
@@ -223,7 +283,7 @@ pub fn shaped_corner_polygon_in_box(
             end
         });
     }
-    Some(pts)
+    pts
 }
 
 /// 四角圆角半径集合。
@@ -308,6 +368,46 @@ impl BorderRadiusSpec {
     pub fn is_zero(&self) -> bool {
         self.top_left == 0.0 && self.top_right == 0.0 && self.bottom_right == 0.0 && self.bottom_left == 0.0
     }
+}
+
+/// R5180（css-backgrounds-3 §5.5 弧带）：plain round 弧带适用判定——非 collapse、
+/// 四边 Solid 同色等宽且非零宽，成立时返回等宽宽度 b。border.rs 边框弧带与
+/// border-area sliver 环（effects.rs）共用口径，保证两路径逐像素同形。
+/// kill-switch `ZW_ROUND_BORDER_BAND=0` 整体恢复条带（旧行为）。
+pub fn round_band_uniform_border(style: &ComputedStyle, box_node: &LayoutBox) -> Option<f32> {
+    if std::env::var("ZW_ROUND_BORDER_BAND").as_deref() == Ok("0") {
+        return None;
+    }
+    if !style.corner_shape.is_all_round() {
+        return None;
+    }
+    if matches!(style.border_collapse, BorderCollapseValue::Collapse) {
+        return None;
+    }
+    let b = [
+        box_node.border_top,
+        box_node.border_right,
+        box_node.border_bottom,
+        box_node.border_left,
+    ];
+    if !(b[0] > 0.0 && b[1] == b[0] && b[2] == b[0] && b[3] == b[0]) {
+        return None;
+    }
+    let solid = |s: &BorderStyleValue| matches!(s, BorderStyleValue::Solid);
+    if !(solid(&style.border_top_style)
+        && solid(&style.border_right_style)
+        && solid(&style.border_bottom_style)
+        && solid(&style.border_left_style))
+    {
+        return None;
+    }
+    let uniform_color = style.border_top_color == style.border_right_color
+        && style.border_right_color == style.border_bottom_color
+        && style.border_bottom_color == style.border_left_color;
+    if !uniform_color {
+        return None;
+    }
+    Some(b[0])
 }
 
 /// 解析 border-radius 单角长度值为像素半径。

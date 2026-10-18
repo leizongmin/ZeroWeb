@@ -5,8 +5,11 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（165）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（168）
 
+- 2026-10-19 [even-odd 填充串联内外多边形不切 keyhole 会撕出桥隙](bugs/2026-10/2026-10-19-evenodd-ring-keyhole-cut.md) — engine
+- 2026-10-18 [CPU path_fill 无 AA 保守光栅化——亚像素贴边曲线放大成整像素差](bugs/2026-10/2026-10-18-cpu-path-fill-conservative-rasterization.md) — engine, render-foundation
+- 2026-10-18 [border-radius+border 边框带按直角条带绘制——弧带缺失被 corpus 自洽掩盖](bugs/2026-10/2026-10-18-border-radius-band-sharp-strips.md) — engine
 - 2026-10-16 [自源 reftest diff 幅度跳变：先补 oracle-shot 对照再立根因域](bugs/2026-10/2026-10-16-self-source-reftest-jump-needs-oracle-shot-first.md) — layout-engine, wpt-runner
 - 2026-10-16 [命名 Grid 轨道与单命名区域简写不可丢弃](bugs/2026-10/2026-10-16-mdn-named-grid-track-list-and-area-shorthand.md) — crates/style-system, crates/layout-engine
 - 2026-10-16 [HTMLCollection 的 Proxy 必须接受 Symbol 键并实现迭代](bugs/2026-10/2026-10-16-htmlcollection-proxy-symbol-iterator.md) — crates/engine, apps/renderer
@@ -243,8 +246,9 @@
 - 2026-08-07 [WPT reftest @font-face loader 缓存：键必须等于构造函数输入（+Arc 共享解析结果）](performance/2026-08/2026-08-07-wpt-reftest-font-face-cache.md) — tests/wpt-runner/src/reftest.rs（FRESH_LOADER_CACHE）, crates/render-foundation/src/font/loader.rs（FontLoader::duplicate, fonts: HashMap<u32, Arc<fontdue::Font>>）
 - 2026-08-07 [CJK 字形栅格化重尾优化：FreeType face 缓存 + 采样哈希](performance/2026-08/2026-08-07-cjk-raster-face-cache.md)
 
-## Platform — 平台与环境相关经验（29）
+## Platform — 平台与环境相关经验（30）
 
+- 2026-10-18 [亚秒级调度突发可穿透 1min loadavg 静窗守卫——基准落盘需逐指标校验](platform/2026-10/2026-10-18-subsecond-burst-pierce-loadavg-guard.md)
 - 2026-10-11 [shim 异步事件必须 task 承载——microtask 链与 promise_test 完成回调竞速](platform/2026-10/2026-10-11-wpt-eventwatcher-task-dispatch.md) — engine
 - 2026-10-09 [symlink 路径调用 skill 脚本会静默空转（.claude/skills → .agents/skills）](platform/2026-10/2026-10-09-symlinked-skill-script-silent-noop.md) — tools
 - 2026-10-08 [shim js 变更后 cargo 未重编 engine：探针打到旧 renderer 的构建盲区](platform/2026-10/2026-10-08-shim-js-include-str-rebuild-gap.md) — engine

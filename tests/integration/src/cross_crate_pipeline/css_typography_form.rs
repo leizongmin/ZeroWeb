@@ -12,6 +12,13 @@ fn render_pipeline(html: &str, css: &str) -> zero_engine::RenderResult {
     pipeline.render_html(html, css)
 }
 
+/// 存在填充类图元——rect fills 或 path fills（R5180 起圆角边框弧带为单条
+/// even-odd path_fill，不再产生四边 rect strip）。
+fn has_fill_prims(result: &zero_engine::RenderResult) -> bool {
+    let prims = result.primitives();
+    !prims.fills.is_empty() || !prims.path_fills.is_empty()
+}
+
 // ── 1. 字体和文本属性管线 ──────────────────────────────────────────
 
 #[test]
@@ -214,7 +221,7 @@ fn test_border_radius_render() {
     "#;
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives().fills.is_empty());
+    assert!(has_fill_prims(&result));
 }
 
 #[test]
@@ -359,7 +366,7 @@ fn test_css_variables_render() {
     "#;
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives().fills.is_empty());
+    assert!(has_fill_prims(&result));
     assert!(!result.primitives().glyphs.is_empty());
 }
 
@@ -601,7 +608,7 @@ fn test_landing_page_render() {
     "##;
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives().fills.is_empty());
+    assert!(has_fill_prims(&result));
     assert!(!result.primitives().glyphs.is_empty());
     assert!(!result.primitives().gradients.is_empty());
     assert!(!result.primitives().shadows.is_empty());
@@ -631,7 +638,7 @@ fn test_styled_form_render() {
     "#;
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives().fills.is_empty());
+    assert!(has_fill_prims(&result));
     assert!(!result.primitives().glyphs.is_empty());
 }
 
@@ -653,7 +660,7 @@ fn test_pricing_cards_render() {
     "#;
     let result = render_pipeline(html, css);
     assert!(result.timings.total_ms >= 0.0);
-    assert!(!result.primitives().fills.is_empty());
+    assert!(has_fill_prims(&result));
     assert!(!result.primitives().glyphs.is_empty());
     assert!(!result.primitives().shadows.is_empty());
 }

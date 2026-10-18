@@ -1,5 +1,7 @@
+---
 date: 2026-10-18
 modules: engine, render-foundation
+---
 
 # CPU path_fill 无 AA 保守光栅化——亚像素贴边曲线放大成整像素差
 

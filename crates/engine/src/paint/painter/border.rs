@@ -259,6 +259,39 @@ impl super::Painter {
             }
         }
 
+        // R5180（css-backgrounds-3 §5.5 弧带）：plain border-radius 的边框带按弧绘制——
+        // 外圈（BorderRadiusSpec::from_style_with_box 规范口径：百分比/钳制/§5.5 重叠
+        // 收缩，与背景裁剪同形）+ 内圈（padding edge，max(0, r−bw) 同心）两多边形串联
+        // 单次 even-odd path_fill（cpu/stroke.rs 扫描线 even-odd），孔区不涂改背景，
+        // 透明背景亦适用。适用判定（非 collapse、四边 Solid 同色等宽）见 helpers
+        // `round_band_uniform_border`；其余（杂色/异宽/非 Solid/零半径）维持条带路径。
+        // corpus self-source 下 radius+border 案两侧同变（learnings
+        // 「border-radius-band-sharp-strips」）。内盒非正（边框厚过半盒）回退条带。
+        if let Some(band_b) = crate::paint::helpers::round_band_uniform_border(style, box_node) {
+            let spec = crate::paint::helpers::BorderRadiusSpec::from_style_with_box(style, w, h);
+            if !spec.is_zero() && w - 2.0 * band_b > 0.0 && h - 2.0 * band_b > 0.0 {
+                let border_color = resolve_color_current(&style.border_top_color, &style.color);
+                let full_r = [spec.top_left, spec.top_right, spec.bottom_right, spec.bottom_left];
+                // 内圈 = padding edge（css-backgrounds-3 §5.5：内半径 max(0, r − bw)；
+                // 等宽时圆心不变，与外圈同心）。
+                let inner_radii = full_r.map(|r| (r - band_b).max(0.0));
+                let ring = crate::paint::helpers::concat_ring_vertices(
+                    crate::paint::helpers::rounded_corner_polygon_in_box(abs_x, abs_y, w, h, full_r),
+                    crate::paint::helpers::rounded_corner_polygon_in_box(
+                        abs_x + band_b,
+                        abs_y + band_b,
+                        w - 2.0 * band_b,
+                        h - 2.0 * band_b,
+                        inner_radii,
+                    ),
+                );
+                // even-odd：外+内顶点串联 → 扫描线仅填环带（同 BorderShapePlan::Fill）。
+                let flat: Vec<f32> = ring.into_iter().flat_map(|(x, y)| [x, y]).collect();
+                self.primitives.add_path_fill(flat, border_color);
+                return;
+            }
+        }
+
         // 每条边的有效厚度：collapse 时外边缘=full，内共享边=half；非 collapse=原值。
         let eff = |side: usize, v: f32| -> f32 {
             if collapse {

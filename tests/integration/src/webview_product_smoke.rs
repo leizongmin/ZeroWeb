@@ -73,13 +73,18 @@ fn test_smoke_load_multi_paragraph_page() {
     // 必须有 glyph（文本内容）
     assert!(!result.primitives().glyphs.is_empty(), "页面应包含文本 glyph");
 
-    // 必须有 fill（背景、边框等）
-    assert!(!result.primitives().fills.is_empty(), "页面应包含填充图元");
+    // 必须有 fill（背景、边框等；R5180 起圆角边框弧带为 path_fill）
+    let prims = result.primitives();
+    assert!(
+        !prims.fills.is_empty() || !prims.path_fills.is_empty(),
+        "页面应包含填充图元"
+    );
 
     // 应有圆角矩形（.card 的 border-radius）
-    // 注：圆角矩形可能通过 fills 或 rounded_rects 实现
-    let has_rounded = !result.primitives().rounded_rects.is_empty();
-    let has_border_fill = result.primitives().fills.len() >= 3; // 至少有背景+边框
+    // 注：圆角矩形可能通过 fills、rounded_rects 或 path fills 实现——R5180 起
+    // 圆角边框为单条 even-odd path_fill 弧带（不再是四边 rect strip）
+    let has_rounded = !prims.rounded_rects.is_empty();
+    let has_border_fill = prims.fills.len() + prims.path_fills.len() >= 2; // 背景+边框弧带
     assert!(has_rounded || has_border_fill, "页面应有圆角或边框填充图元");
 
     // URL 状态

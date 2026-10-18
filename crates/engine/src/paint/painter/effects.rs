@@ -103,6 +103,15 @@ pub(crate) fn border_area_ring_strips(
         // 正常路径区分）。
         return Some(Vec::new());
     }
+    // R5180：uniform round 弧带 → 逐行 sliver 环——与 paint_borders 弧带同顶点、同
+    // even-odd 扫描线判定（render_path_fill 语义），bg-clip:border-area 的图像裁剪
+    // 与边框环带逐像素同形（square 条带 vs 弧带曾在 corner-shape 套件互斥翻红）。
+    if let Some(b) = crate::paint::helpers::round_band_uniform_border(style, box_node) {
+        let spec = crate::paint::helpers::BorderRadiusSpec::from_style_with_box(style, bw, bh);
+        if !spec.is_zero() && bw - 2.0 * b > 0.0 && bh - 2.0 * b > 0.0 {
+            return Some(round_band_row_strips(bx, by, bw, bh, b, spec));
+        }
+    }
     let ink_aware = std::env::var("ZW_BORDER_AREA_INK").as_deref() != Ok("0");
     let (bt, br_, bb, bl) = (
         box_node.border_top,
@@ -166,6 +175,59 @@ pub(crate) fn border_area_ring_strips(
         );
     }
     Some(strips)
+}
+
+/// R5180：弧带逐行 sliver——对弧带环多边形（外圈全半径 + 内圈 r−bw 同心，顶点串联）
+/// 做与 cpu/stroke.rs render_path_fill 相同的 even-odd 扫描线展开：fy = y+0.5 半开
+/// 交叉（`y0 <= fy && y1 > fy`）、跨度 [floor, ceil)。顶点与判定同源 → 图像裁剪
+/// 与 path_fill 边框环带逐像素同形。
+fn round_band_row_strips(
+    bx: f32,
+    by: f32,
+    bw: f32,
+    bh: f32,
+    b: f32,
+    spec: crate::paint::helpers::BorderRadiusSpec,
+) -> Vec<Rect> {
+    let full_r = [spec.top_left, spec.top_right, spec.bottom_right, spec.bottom_left];
+    let inner_r = full_r.map(|r| (r - b).max(0.0));
+    let ring = crate::paint::helpers::concat_ring_vertices(
+        crate::paint::helpers::rounded_corner_polygon_in_box(bx, by, bw, bh, full_r),
+        crate::paint::helpers::rounded_corner_polygon_in_box(bx + b, by + b, bw - 2.0 * b, bh - 2.0 * b, inner_r),
+    );
+    let n = ring.len();
+    let (mut min_y, mut max_y) = (f32::MAX, f32::MIN);
+    for &(_, y) in &ring {
+        min_y = min_y.min(y);
+        max_y = max_y.max(y);
+    }
+    let top = min_y.floor().max(0.0) as u32;
+    let bottom = max_y.ceil().max(0.0) as u32;
+    let mut strips = Vec::new();
+    for y in top..bottom {
+        let fy = y as f32 + 0.5;
+        let mut xs: Vec<f32> = Vec::new();
+        for i in 0..n {
+            let j = (i + 1) % n;
+            let (x0, y0) = ring[i];
+            let (x1, y1) = ring[j];
+            if (y0 <= fy && y1 > fy) || (y1 <= fy && y0 > fy) {
+                let t = (fy - y0) / (y1 - y0);
+                xs.push(x0 + t * (x1 - x0));
+            }
+        }
+        xs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let mut idx = 0;
+        while idx + 1 < xs.len() {
+            let left = xs[idx].floor();
+            let right = xs[idx + 1].ceil();
+            if right > left {
+                strips.push(Rect::new(left, y as f32, right - left, 1.0));
+            }
+            idx += 2;
+        }
+    }
+    strips
 }
 
 /// R4530：单侧墨迹条带发射。`horizontal` 侧 band 轴 = y（[band_lo, band_hi] 厚度带）、
@@ -336,6 +398,58 @@ impl super::Painter {
             } else {
                 color_value_to_render(&shadow.color)
             };
+
+            // R5180（css-backgrounds-3 #shadow-shape）：零模糊零偏移的 inset spread 环随
+            // border-radius 成形——外圈 = padding box（R2476 perimeter）半径 max(0, r−bw)，
+            // 内圈 = 再内缩 spread、半径 max(0, r−bw−spread)，与边框弧带同 keyhole
+            // even-odd 串联（逐像素同形；chromium oracle box-shadow-radius-002 判例
+            // y=60 外弧 = padding box r−bw）。blur/offset≠0、负 spread、零半径维持
+            // ShadowPrimitive 方环（既有行为）。同 ZW_ROUND_BORDER_BAND 开关。
+            if shadow.inset
+                && shadow.blur_radius == 0.0
+                && shadow.offset_x == 0.0
+                && shadow.offset_y == 0.0
+                && shadow.spread_radius > 0.0
+                && std::env::var("ZW_ROUND_BORDER_BAND").as_deref() != Ok("0")
+            {
+                let spec = crate::paint::helpers::BorderRadiusSpec::from_style_with_box(
+                    style,
+                    box_node.width,
+                    box_node.height,
+                );
+                let (bl, bt, br_, bb) = (
+                    box_node.border_left,
+                    box_node.border_top,
+                    box_node.border_right,
+                    box_node.border_bottom,
+                );
+                if !spec.is_zero() {
+                    let r_pad = [
+                        (spec.top_left - bl.max(bt)).max(0.0),
+                        (spec.top_right - bt.max(br_)).max(0.0),
+                        (spec.bottom_right - br_.max(bb)).max(0.0),
+                        (spec.bottom_left - bb.max(bl)).max(0.0),
+                    ];
+                    let s = shadow.spread_radius;
+                    let pw = (box_node.width - bl - br_).max(0.0);
+                    let ph = (box_node.height - bt - bb).max(0.0);
+                    if pw - 2.0 * s > 0.0 && ph - 2.0 * s > 0.0 {
+                        let ring = crate::paint::helpers::concat_ring_vertices(
+                            crate::paint::helpers::rounded_corner_polygon_in_box(abs_x + bl, abs_y + bt, pw, ph, r_pad),
+                            crate::paint::helpers::rounded_corner_polygon_in_box(
+                                abs_x + bl + s,
+                                abs_y + bt + s,
+                                pw - 2.0 * s,
+                                ph - 2.0 * s,
+                                r_pad.map(|r| (r - s).max(0.0)),
+                            ),
+                        );
+                        let flat: Vec<f32> = ring.into_iter().flat_map(|(x, y)| [x, y]).collect();
+                        self.primitives.add_path_fill(flat, color);
+                        continue;
+                    }
+                }
+            }
 
             // R4139：outer shadow 携带元素 border-box 作 punch-out 区域——阴影「drawn
             // outside the border edge only」，盒内部分由 renderer 清零（透明 bg/border
