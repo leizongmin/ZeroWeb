@@ -3916,7 +3916,7 @@ impl Painter {
             if style.filter.iter().any(|f| matches!(f, FilterComputedValue::Url(_)))
                 && let Some(doc) = doc
             {
-                self.apply_svg_reference_filter(doc, box_node, abs_x, abs_y, style, styles);
+                self.apply_svg_reference_filter(doc, box_node, abs_x, abs_y, style, styles, &counts_before);
             }
         }
 

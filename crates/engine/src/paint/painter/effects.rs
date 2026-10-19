@@ -1522,7 +1522,9 @@ impl super::Painter {
         abs_y: f32,
         style: &ComputedStyle,
         styles: &HashMap<zero_dom::NodeId, ComputedStyle>,
+        source_counts: &PrimitiveCounts,
     ) {
+        let mut source_removed = false;
         for value in &style.filter {
             let FilterComputedValue::Url(reference) = value else {
                 continue;
@@ -1540,6 +1542,24 @@ impl super::Painter {
             let Some(color) = constant_filter_chain_color(doc, filter_node_id) else {
                 continue;
             };
+            // R5199（filter-effects-1 §11.4）：filter 输出替换元素渲染——region 外
+            // 不再自绘源。首条成功链发射前修剪本盒已发射图元（背景/边框/自身文本
+            // 及 defer 的 abspos 子，自 counts_before 快照起；流内子此时尚未绘制，
+            // 其抑制归 isolate 机制域）。此前驱动案皆 hidden/空盒自绘本就为零，
+            // 缺口由 filter-region-calc-001（region 半宽，div 右半红残留 2.08%）
+            // 暴露。isolate 路径（门禁③）对常量链不收集——本分支是常量链唯一
+            // 消费点，抑制面不与 paint_skip 重叠。
+            if !source_removed {
+                let p = &mut self.primitives;
+                p.fills.truncate(source_counts.fills);
+                p.rounded_rects.truncate(source_counts.rounded_rects);
+                p.gradients.truncate(source_counts.gradients);
+                p.shadows.truncate(source_counts.shadows);
+                p.images.truncate(source_counts.images);
+                p.glyphs.truncate(source_counts.glyphs);
+                p.strokes.truncate(source_counts.strokes);
+                source_removed = true;
+            }
             self.primitives.add_fill(region, color);
         }
     }
@@ -2338,7 +2358,14 @@ pub(crate) fn svg_filter_region(
     // region-units-001：width="1em" font-size=10px + 10px 宽盒 → 10×10 = 100，
     // 旧版仅认无单位数致 "1em" 解析失败 region None → 恒色填充静默跳过）。
     // rem/ex 的根字号/x-height 语境不在本路径消费面，维持不解析（None = 无
-    // filter，同引用不可解析语义）。// FIXME: calc() 区域值（filter-region-calc-001）。
+    // filter，同引用不可解析语义）。R5199：math 函数区域值（filter-region-
+    // calc-001，CSS Values 4 §math-functions——<length-percentage> 处 calc()/
+    // min()/max()/clamp() 均有效）经既有 parse_math_function + eval_calc_with_context
+    // 求值；上下文 parent_length=1.0 使百分比项 = p/100 分量比，与两分支既有
+    // 字面 % 口径一致（objectBoundingBox：用户单位数 = 分量比，px/em 项同为比；
+    // userSpaceOnUse：% 项 = p/100 同字面 % 现状——视口相对 % 语义缺口两处
+    // 同记 FIXME）；font_size 供 em 项；vh/vw 等语境不设 → None fail-closed，
+    // 与普通路径单位表同能力面。
     let font_px = styles
         .get(&filter_node_id)
         .and_then(|s| match s.font_size {
@@ -2355,6 +2382,14 @@ pub(crate) fn svg_filter_region(
                 .ok()
                 .filter(|n| n.is_finite())
                 .map(|n| (n / 100.0, true))
+        } else if let Some(expr) = zero_css_parser::values::parse_math_function(v) {
+            let ctx = zero_css_parser::values::CalcContext {
+                parent_length: Some(1.0),
+                font_size: Some(f64::from(font_px)),
+                ..Default::default()
+            };
+            let n = zero_css_parser::values::eval_calc_with_context(&expr, &ctx)?;
+            Some((n as f32, false))
         } else {
             let num_end = v
                 .find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-' || c == '+'))
@@ -3067,6 +3102,89 @@ mod tests {
             (region.size.width, region.size.height),
             (12.0, 32.0),
             "12px = 12 用户单位；2em 无计算字号回落 16px = 32"
+        );
+    }
+
+    /// R5199（filter-region-calc-001）：区域值 math 函数——calc() 混合 % 与
+    /// 绝对单位（objectBoundingBox：百分比项 p/100 + 用户单位项同为分量比，
+    /// 结果 × bbox 分量）；min()/clamp() 同面；userSpaceOnUse 结果即用户单位。
+    #[test]
+    fn r5199_filter_region_math_function_values() {
+        use zero_dom::parse_html;
+        // corpus 案形态：div 200×100，width="calc(25% + 0.25px)" height="1"
+        //（obb）→ w = (0.25 + 0.25)×200 = 100，h = 1×100 = 100。
+        let doc = parse_html(
+            r#"<html><body><svg width="0" height="0"><defs>
+                <filter id="f" x="0" y="0" width="calc(25% + 0.25px)" height="1" font-size="10px">
+                    <feFlood flood-color="green"/>
+                </filter></defs></svg></body></html>"#,
+        );
+        let fid = doc.get_element_by_id("f").expect("filter by id");
+        let region = svg_filter_region(
+            &doc,
+            fid,
+            &build_box(0.0, 0.0, 8.0, 8.0, 200.0, 100.0),
+            8.0,
+            8.0,
+            &HashMap::new(),
+        )
+        .expect("calc region");
+        assert_eq!(
+            (region.size.width, region.size.height),
+            (100.0, 100.0),
+            "calc(25% + 0.25px) = 0.5 分量比 × bbox 200 = 100（filter-region-calc-001）"
+        );
+        // em 项 + min()：min(1em, 30px)（computed font-size 10px）= min(10, 30) = 10 比 ×50 = 500。
+        let doc = parse_html(
+            r#"<html><body><svg width="0" height="0"><defs>
+                <filter id="g" x="0" y="0" width="min(1em, 30px)" height="2" font-size="10px">
+                    <feFlood flood-color="green"/>
+                </filter></defs></svg></body></html>"#,
+        );
+        let gid = doc.get_element_by_id("g").expect("filter by id");
+        let mut styles = HashMap::new();
+        let mut cs = zero_style_system::ComputedStyle::default();
+        cs.font_size = zero_css_parser::values::LengthValue::Px(10.0);
+        styles.insert(gid, cs);
+        let region = svg_filter_region(&doc, gid, &build_box(0.0, 0.0, 8.0, 8.0, 50.0, 50.0), 8.0, 8.0, &styles)
+            .expect("min() region");
+        assert_eq!(region.size.width, 500.0, "min(1em, 30px) = 10 比 × 50");
+        // userSpaceOnUse：clamp(5px, 12px, 100px) = 12 用户单位（结果即 px）。
+        let doc = parse_html(
+            r#"<html><body><svg width="0" height="0"><defs>
+                <filter id="u" filterUnits="userSpaceOnUse" x="0" y="0"
+                        width="clamp(5px, 12px, 100px)" height="20px"/>
+                </defs></svg></body></html>"#,
+        );
+        let uid = doc.get_element_by_id("u").expect("filter by id");
+        let region = svg_filter_region(
+            &doc,
+            uid,
+            &build_box(0.0, 0.0, 8.0, 8.0, 50.0, 50.0),
+            8.0,
+            8.0,
+            &HashMap::new(),
+        )
+        .expect("clamp() userSpaceOnUse region");
+        assert_eq!(region.size.width, 12.0, "clamp(5px, 12px, 100px) = 12");
+        // 不可求值（rem 无根字号语境）→ None fail-closed，与普通路径单位表同面。
+        let doc = parse_html(
+            r#"<html><body><svg width="0" height="0"><defs>
+                <filter id="r" x="0" y="0" width="calc(1rem + 2px)" height="1"/>
+                </defs></svg></body></html>"#,
+        );
+        let rid = doc.get_element_by_id("r").expect("filter by id");
+        assert!(
+            svg_filter_region(
+                &doc,
+                rid,
+                &build_box(0.0, 0.0, 8.0, 8.0, 50.0, 50.0),
+                8.0,
+                8.0,
+                &HashMap::new()
+            )
+            .is_none(),
+            "rem 无语境 fail-closed"
         );
     }
 
