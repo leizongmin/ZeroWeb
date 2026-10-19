@@ -140,6 +140,13 @@ enum JsWorkerCommand {
         new_version: Option<u64>,
         reply: Sender<Result<(), String>>,
     },
+    /// T66（键入延迟根因修复）：优先通道唤醒令牌。分派环空闲时阻塞在普通通道
+    /// `recv_timeout(WORKER_IDLE_POLL)`，优先命令到达不会中断该等待——交互路径
+    /// （键入/选区/焦点同步）每次优先脚本往返都要等满 50ms 轮询（ui_driver 实测
+    /// 每键 4 次往返 ~220ms，连打呈「丢字」）。等待回复的优先发送端投递后向普通
+    /// 通道同步发本令牌即时唤醒分派环；令牌自身是 no-op，picked 即丢弃，不参与
+    /// 快照屏障与 fix#18 搁置序。
+    WakePrio,
     Shutdown,
 }
 
@@ -1034,6 +1041,7 @@ impl WorkerCensus {
             JsWorkerCommand::ResetDocumentState { .. } => "ResetDocumentState",
             JsWorkerCommand::SetViewportHint { .. } => "SetViewportHint",
             JsWorkerCommand::DispatchIndexedDbConnectionEvent { .. } => "DispatchIndexedDbConnectionEvent",
+            JsWorkerCommand::WakePrio => "WakePrio",
             JsWorkerCommand::Shutdown => "Shutdown",
         }
     }
@@ -1470,6 +1478,9 @@ fn js_worker_main(
             started: std::time::Instant::now(),
         });
         match cmd {
+            // T66：唤醒令牌本身无工作——分派环回顶先清优先队列（令牌唯一职责）。
+            // census 守卫已在上方建账，走 Drop 入账（零耗时）。
+            JsWorkerCommand::WakePrio => {}
             JsWorkerCommand::Execute { script, reply, .. } => {
                 #[cfg(test)]
                 execution_count.fetch_add(1, Ordering::Relaxed);
@@ -2260,6 +2271,9 @@ impl zero_page_runtime::JsExecutor for RendererJsWorker {
                 seq: self.cmd_seq.fetch_add(1, Ordering::Relaxed),
             })
             .map_err(|e| e.to_string())?;
+        // T66：优先通道不唤醒阻塞在普通通道 recv_timeout(WORKER_IDLE_POLL) 的分派环
+        // （std mpsc 无跨通道 select），同步令牌即时唤醒；见 JsWorkerCommand::WakePrio。
+        let _ = self.cmd_tx.send(JsWorkerCommand::WakePrio);
         match reply_rx.recv_timeout(timeout) {
             Ok(result) => result,
             Err(_) => Err("js worker execute wait timeout".to_string()),
@@ -2270,6 +2284,37 @@ impl zero_page_runtime::JsExecutor for RendererJsWorker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// T66 回归钉：空闲 worker 上等待回复的优先脚本必须被 WakePrio 即时唤醒，
+    /// 不能等满 WORKER_IDLE_POLL 轮询量子。键入路径每次优先脚本往返（插入原子脚本、
+    /// 活值快照、选区同步）都走本通道；缺唤醒时每次往返固定叠加 ~50ms（ui_driver
+    /// 实测每键 4 次往返 ~220ms，连打呈「丢字」）。变异验证：移除
+    /// execute_script_priority_bounded 的 WakePrio 发送，10 次连发总耗时超 100ms 上限即红。
+    #[test]
+    fn priority_execute_wakes_idle_dispatch_loop() {
+        let worker = RendererJsWorker::spawn(6143);
+        // 预热：首条优先执行强制 worker 完成 spawn 侧 setup（shim 安装等）并进入分派环；
+        // 再静置两个轮询量子，worker 必已驻留在 recv_timeout(WORKER_IDLE_POLL) 等待。
+        let warmup =
+            zero_page_runtime::JsExecutor::execute_script_priority_bounded(&worker, "1+1", Duration::from_secs(2));
+        assert_eq!(warmup.as_deref(), Ok("2"), "warmup execute failed: {warmup:?}");
+        std::thread::sleep(Duration::from_millis(150));
+        // 无唤醒时每条优先执行要等满 [0, 50ms] 均匀分布的轮询量子（期望 25ms/条），
+        // 单次采样判据不红；连发 10 条取总耗时——唤醒路径 ~2ms/条（总 ~20ms），
+        // 缺唤醒期望 ~250ms，100ms 上限两侧均有 ≥4 倍余量，变异必红（二项汇聚）。
+        let started = std::time::Instant::now();
+        for _ in 0..10 {
+            let result =
+                zero_page_runtime::JsExecutor::execute_script_priority_bounded(&worker, "2+2", Duration::from_secs(2));
+            assert_eq!(result.as_deref(), Ok("4"), "priority execute failed: {result:?}");
+        }
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed < Duration::from_millis(100),
+            "10 priority executes took {elapsed:?} on idle worker; WakePrio wake is missing \
+             (WORKER_IDLE_POLL quantum leaked into the interactive path)"
+        );
+    }
 
     /// t-p103 D2-1：决议批吸取行为钉——保序（= FIFO 提交序）、普通通道非 Resolve
     /// 兄弟不丢（吸取遇非 Resolve 停下走 deferred_normal aside）、其余决议照常
