@@ -12752,7 +12752,15 @@
   function _wcRebuildAsHandle(node) {
     try {
       if (!node || typeof node !== 'object') return node;
-      if (node.nodeType === 3) return globalThis.document.createTextNode(String(node.data == null ? '' : node.data));
+      if (node.nodeType === 3) {
+        // R5197（html-syntax-compat P6）：物化传递 noscript 序列化印章——源 plain 树
+        // `__zwTreeScripting=false`（disabled 惯性文档解析盖章）是 noscript 文本子
+        // 转义/直出判据（part04 融合序列化 + _zwMSerialize 同款分支），新建
+        // handle 域 textNode 不带会翻回字面（WPT escaping template.innerHTML）。
+        var _r5197tn = globalThis.document.createTextNode(String(node.data == null ? '' : node.data));
+        try { if (node.__zwTreeScripting === false) _r5197tn.__zwTreeScripting = false; } catch (_e5197ts) {}
+        return _r5197tn;
+      }
       if (node.nodeType === 8) return globalThis.document.createComment(String(node.data == null ? '' : node.data));
       if (node.nodeType !== 1) return node;
       var tag = String(node.tagName || 'DIV').toLowerCase();

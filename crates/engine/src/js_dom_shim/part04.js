@@ -1292,7 +1292,27 @@
               for (var _ihi = 0; _ihi < _ihKids.length; _ihi++) {
                 var _ihn = _ihKids[_ihi];
                 if (!_ihn) continue;
-                if (_ihn.nodeType === 3) _ihOut += _zwMEscapeText(_ihn.nodeValue != null ? _ihn.nodeValue : (_ihn.data != null ? _ihn.data : ''));
+                if (_ihn.nodeType === 3) {
+                  // R5197（html-syntax-compat P6）：noscript literal 分支对齐
+                  // _zwMSerialize R5001（spec fragment serializing algorithm——parent
+                  // 为 noscript 且 scripting enabled → data 直出；disabled → 转义）。
+                  // 9dcd16661 把 innerHTML 产物物化为真 handle 树后，本融合序列化
+                  // 接管该形态，无条件转义使 div.innerHTML 的 noscript 内容再转义
+                  //（WPT escaping div.innerHTML 期望字面 '& <>'）。旗标按 owner
+                  // 文档判（物化丢逐节点 `__zwTreeScripting` 印章——contents owner
+                  // doc / detached doc 工厂恒盖 `__zwScriptingEnabled=false`，
+                  // part03:13953；主文档无印记 = enabled）。
+                  var _r5197v = _ihn.nodeValue != null ? _ihn.nodeValue : (_ihn.data != null ? _ihn.data : '');
+                  var _r5197scrOff = _ihn.__zwTreeScripting === false;
+                  if (!_r5197scrOff) {
+                    try {
+                      var _r5197od = _makeProxy(sel, handle).ownerDocument;
+                      _r5197scrOff = !!(_r5197od && _r5197od.__zwScriptingEnabled === false);
+                    } catch (_e5197od) {}
+                  }
+                  if (_realTag(sel, handle) === 'NOSCRIPT' && !_r5197scrOff) _ihOut += String(_r5197v);
+                  else _ihOut += _zwMEscapeText(_r5197v);
+                }
                 else if (_ihn.nodeType === 8) _ihOut += '<!--' + (_ihn.nodeValue != null ? _ihn.nodeValue : _ihn.data) + '-->';
                 else if (_ihn.nodeType === 7) {
                   // R5003 M3 片 b（html-syntax-compat）：PI 序列化（spec fragment

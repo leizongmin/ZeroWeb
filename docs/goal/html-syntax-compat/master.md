@@ -1,9 +1,21 @@
 # HTML 文档面兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../html-syntax-compat.md](../html-syntax-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-19（P6 form-pointer 边界修复——账目修正 + 通道 61228/61333）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-20（P6b escaping noscript 漂移归因修复 + 组合态复测——通道 61233/61333）
 
 ## 当前状态
+
+**P6b escaping noscript 漂移修复（2026-10-20）**：`escaping.html` **8/9 → 9/9
+全绿**，全通道 **61229/61333 = 99.83%**（rebase 4bc987928 后组合态复测
+**61233/61333**——+4P/−9F/+5T 全落 render-blocking 挂账域，本 goal 域零回归，
+见证据组合态节）。归因（bisect 有效落点）：9dcd16661
+（2026-10-10）innerHTML 产物物化真 handle 树改读路径，part04 融合序列化对文本子
+无条件转义缺 noscript 分支。R5197：融合序列化补 literal/escape 判据（子节点
+`__zwTreeScripting` 印章 + ownerDocument `__zwScriptingEnabled` 回落）+
+`_wcRebuildAsHandle` text node 印章传递。**vs-M4 漂移账清零**（script-inserted
+双案归 rendering-compat 域维持）。常驻测试
+`test_noscript_serialization_literal_escape_r5197` 双面。证据：
+[evidence/2026-10-20-p6b-escaping-noscript.md](evidence/2026-10-20-p6b-escaping-noscript.md)。
 
 **P6 form-pointer 边界修复（2026-10-19）**：`fragment-parse-form-in-template`
 **1F → 1P**，全通道 **61228/61333 = 99.83%**。R5196：`_zwMEl` 自有 `form`
@@ -192,10 +204,17 @@ html5lib 3 案 document.write 管线面）。证据：
 | P4 | html/dom 接口语义（createContextualFragment 已落 ✅） | ✅ **M4 片 e ✅（2026-10-07，99.86%）**：ARIA Element 反射（8 属性表/树链有效性/树内 id 解析/显式引用/FrozenArray 缓存）+ aria nullable getter 面；历史：M3 片 c/e + M4 片 a/b/c/d 递次收口；通道残差全分类挂账（render-blocking 管线域/html5ever 升级账/架构缝） |
 | P5 | 文档级编码嗅探（encoding-compat M4 转入） | ✅ **P5 落地面收口（2026-10-19）**：R5003 字节级 decode 载入（charset/ reftest 22 案入通道，基线 18/22）+ R5006 prescan 注释跳过（meta-* 8 案 8F→8P）+ testharness 通道 charset 9 案新入（30 子测，8P）；通道外余量维持：xmldecl/ 3 案（iframe 形态）+ the-input-byte-stream 9 案（HTTP 头形态）；XHR responseXML characterSet 22F 新记账（XHR/shim 域） |
 | P6 | fragment-parse form-pointer 边界（账目修正） | ✅ **P6 修复（2026-10-19）**：R5196 `_zwMEl` 自有 form accessor TEMPLATE 边界（1F→1P，通道 61228/61333）；账目修正——非 post-M4 漂移，M4 冻结起既有 1F（「QSA 补面翻绿」记述不实） |
+| P6b | escaping noscript 真实漂移 | ✅ **P6b 修复（2026-10-20）**：bisect 归因 9dcd16661（innerHTML 物化改读路径）→ R5197 融合序列化 noscript 分支 + 物化印章传递（8/9→9/9，通道 61229/61333，组合态复测 61233/61333）；vs-M4 漂移账清零 |
 | — | render-blocking 机制面（62 案 19.3%） | 📊 M1 已基线；**rendering-compat 域挂账维持（2026-10-19 归因收口：SyntaxError 41 案 M1 起既有 + post-M4 漂移 2 案）** |
 
 ## 已完成切片
 
+- **P6b（2026-10-20）**：escaping noscript 漂移归因修复——bisect 落点
+  9dcd16661（innerHTML 物化真 handle 树，融合序列化无条件转义缺 noscript
+  分支）；R5197 融合序列化 literal/escape 判据 + `_wcRebuildAsHandle` 印章
+  传递；8/9→9/9 通道 61229/61333（组合态复测 61233，render-blocking 域
+  有利漂移逐桶核账）；vs-M4 漂移账清零。常驻测试 part21 r5197
+  双面。证据 evidence/2026-10-20-p6b-escaping-noscript.md。
 - **P6（2026-10-19）**：fragment-parse form-pointer 边界修复——R5196 `_zwMEl`
   自有 form accessor 祖先/root 上行 TEMPLATE 即断（inline content 视图捷径
   逃逸面）；1F→1P 通道 61228/61333；账目修正（M4 冻结起既有 1F 非 post-M4
@@ -285,10 +304,9 @@ Goal 已收口（DC-1~4 全满足；P5 落地面 2026-10-19 收口）。后续�
 口，归各自域）：
 1. **charset XHR responseXML characterSet 面（22F，新账）** → XHR/shim 域立项
    评估（响应文档 characterSet 未接线）。
-2. **vs-M4 漂移余案归因修复**：escaping noscript 序列化（P6 复核为**真实
-   post-M4 漂移**——M3a/M4 证据实记 9/9，现 1F；候选区间 post-M4 main，与并行
-   流 part03/04 活动面相邻）+ script-inserted 双案（rendering-compat 域内）；
-   form-pointer 已 P6 修复并账目修正（2026-10-19）。
+2. **vs-M4 漂移账清零（2026-10-20）**：escaping noscript 已 P6b 归因修复
+   （9dcd16661 物化读路径回退，R5197）；form-pointer 已 P6 修复并改判 M4 既有
+   账；余 script-inserted 双案维持 rendering-compat 域挂账。
 3. **同 turn sel 移树同步视图**（async-apply 架构缝，aria-element 2F + 跨 goal
    收益）——引擎架构片。
 4. **维持既有挂账**：render-blocking 行为面 → rendering-compat 域；html5ever

@@ -1988,6 +1988,52 @@ fn test_template_content_form_owner_boundary_r5196() {
     );
 }
 
+/// R5197（html-syntax-compat P6）：noscript 文本子序列化 literal/escape 双面——
+/// handle 融合序列化（part04 innerHTML getter）对齐 `_zwMSerialize` R5001 分支：
+/// scripting enabled（主文档）→ data 直出；disabled（template contents owner doc，
+/// 物化经 `_wcRebuildAsHandle` 印章传递）→ 转义。WPT escaping.html div.innerHTML /
+/// template.innerHTML 双子测（真实 post-M4 漂移：9dcd16661 物化改读路径）。
+#[test]
+fn test_noscript_serialization_literal_escape_r5197() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let out = sandbox
+        .execute(
+            "var parts = [];\n\
+             // 主文档（scripting enabled）：noscript 内容直出字面\n\
+             var d = document.createElement('div');\n\
+             document.body.appendChild(d);\n\
+             d.innerHTML = '<noscript>& <></noscript>';\n\
+             parts.push('div:' + d.firstChild.innerHTML);\n\
+             // template（contents owner doc scripting disabled）：noscript 内容再转义\n\
+             var t = document.createElement('template');\n\
+             document.body.appendChild(t);\n\
+             t.innerHTML = '<noscript>&amp;&nbsp;&lt;&gt;</noscript>';\n\
+             parts.push('tpl:' + t.content.firstChild.innerHTML);\n\
+             parts.join('~')",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out, "div:& <>~tpl:&amp;&nbsp;&lt;&gt;",
+        "R5197 noscript 序列化双面：主文档字面直出、inert 模板再转义"
+    );
+}
+
 /// R151②：`template.content` fragment 视图的 ParentNode API（children/firstElementChild/
 /// childElementCount/getElementsByClassName）——WPT Event-dispatch-single-activation 的
 /// `Array.from(template.content.children)` + `getElementsByClassNameInclusive`。
