@@ -512,6 +512,37 @@
       }
       return true;
     }
+    // R5181：handle 元素沿 _zwNodeParent 反链上行，shadow root 容器经 _shadowHandleMeta
+    // 跳 host——与 isConnected getter（part04 R90/R91）同款 shadow 边界穿越。此前直接落
+    // _elConnected 的 parentNode 链：shadow 树内容（shadowRoot.innerHTML/appendChild 渲染，
+    // 如 Lit 组件 shadow 内的 <dialog>）的 parentNode 断在 shadow root fragment 容器 →
+    // 恒判 disconnected → dialog.show()/showModal()/showPopover() 对 shadow 内元素抛
+    // InvalidStateError（MDN 搜索弹层打开链根因；spec isConnected 连接态含 shadow-including
+    // 祖先链，https://dom.spec.whatwg.org/#connected）。
+    if (handle && typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
+      var _icLink = _zwNodeParent[handle];
+      var _icGuard = 0;
+      while (_icLink && _icGuard++ < 64) {
+        if (_icLink.innerBody) return true; // iframe body 记账形态（R369 同 getter）
+        if (_icLink.parentSel) return true; // 挂到 sel 节点（html/body/容器）→ 在档
+        var _icParent = _icLink.parentHandle;
+        if (!_icParent) break;
+        var _icShadowMeta = (typeof _shadowHandleMeta !== 'undefined' && _shadowHandleMeta)
+          ? _shadowHandleMeta[_icParent]
+          : null;
+        if (_icShadowMeta) {
+          if (_icShadowMeta.hostSel) return true; // host 是 sel 节点 → 在档
+          _icParent = _icShadowMeta.hostHandle;
+        }
+        _icLink = _icParent ? _zwNodeParent[_icParent] : null;
+      }
+      // 反链走尽未证明在档：回落 rect 探测（getter 同款——append 已应用且在布局树的
+      // 元素命中；getBoundingClientRect 缺失或空 → disconnected）。
+      if (typeof __zw_getBoundingClientRect === 'function') {
+        try { return __zw_getBoundingClientRect(handle) !== ''; } catch (_eIC) { return false; }
+      }
+      return false;
+    }
     return _elConnected(_makeProxy(sel, handle));
   }
   // R3217：ns → 限定名重构，供 get/has/removeAttributeNS 查找 setAttributeNS 存的 'prefix:local' 限定名属性。
