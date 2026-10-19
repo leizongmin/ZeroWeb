@@ -1002,6 +1002,49 @@ return log.join(',');})()";
     );
 }
 
+/// Event 接口 eventPhase 常量（pointerlock-compat constructor residual 收敛切片，
+/// 2026-10-19）：`Event.NONE` 等 4 常量挂接口对象 + Event.prototype。native 构造器
+/// 注册覆盖 `globalThis.Event` 后 shim（part05.js R23）常量失效——WPT
+/// pointerlock/constructor.html 的 `assert_equals(ev.eventPhase, Event.NONE)` 读到
+/// undefined（唯一红案）。验收镜像该断言 + 原型链/派发期数值一致性。
+#[test]
+fn native_event_phase_constants_interface_and_prototype() {
+    let html = r#"<div id="a"></div>"#;
+    // 镜像 WPT 断言形态：未派发 event 的 eventPhase === Event.NONE（此前 undefined）。
+    let script = "(()=>{\
+const e=new Event('pointerlockchange');\
+return (e.eventPhase===Event.NONE)+'/'+e.eventPhase;})()";
+    assert_eq!(
+        run_script(html, script),
+        "true/0",
+        "Event.NONE 静态常量 + 未派发 eventPhase===NONE（WPT constructor.html 断言）"
+    );
+    // 4 常量全量（接口对象 + Event.prototype + 实例原型链，数值 NONE=0/CAPTURING=1/AT_TARGET=2/BUBBLING=3）。
+    let script2 = "(()=>{\
+const names=['NONE','CAPTURING_PHASE','AT_TARGET','BUBBLING_PHASE'];\
+const vals=names.map(k=>Event[k]).join(',');\
+const protoVals=names.map(k=>Event.prototype[k]).join(',');\
+const instVals=names.map(k=>new Event('x')[k]).join(',');\
+return vals+'|'+protoVals+'|'+instVals;})()";
+    assert_eq!(
+        run_script(html, script2),
+        "0,1,2,3|0,1,2,3|0,1,2,3",
+        "4 eventPhase 常量：接口对象/prototype/实例 三面数值一致"
+    );
+    // 派发期 eventPhase 数值与常量一致（AT_TARGET=2 镜像既有 child:2 断言的常量形态）。
+    let script3 = "(()=>{\
+const el=__zw_native_element_for_id('a');\
+let phase=0;\
+el.addEventListener('click',e=>{phase=e.eventPhase;});\
+el.dispatchEvent(new Event('click'));\
+return (phase===Event.AT_TARGET)+'/'+(phase===Event.BUBBLING_PHASE);})()";
+    assert_eq!(
+        run_script(html, script3),
+        "true/false",
+        "派发期 eventPhase===Event.AT_TARGET（常量与派发覆写数值一致）"
+    );
+}
+
 // ── R3128 capture 阶段 + useCapture（三阶段派发）──
 //
 // HTML: <div id="parent"><div id="child"></div></div>

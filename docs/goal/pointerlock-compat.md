@@ -1,10 +1,10 @@
 # Pointer Lock 兼容 — requestPointerLock / 指针捕获语义（门控 goal）
 
-**版本**: v1.9
+**版本**: v2.0
 **日期**: 2026-10-19
-**状态**: **M3 完成（2026-10-19 收口）+ TBD-3 收敛（同日收口后切片）·
-执行面 21/22 子测试 Pass（95.5%），文件口径 16/18 全绿·红案余 1 全部记账
-（constructor 跨域 residual）**——M2 RFC v1.6（已确认，实施期修正见其 §12）。
+**状态**: **M3 完成 + constructor residual 收敛（2026-10-19，收口后切片 2）·
+执行面 22/22 子测试 Pass（100%），文件 18/18 全绿·通道零红**——M2 RFC v1.7
+（已确认，实施期修正见其 §12）。
 RFC 见 [m2-pointer-capture-pipeline-spec-rfc.md](pointerlock-compat/m2-pointer-capture-pipeline-spec-rfc.md)；
 M1 甄别报告见
 [evidence/2026-10-18-m1-baseline.md](pointerlock-compat/evidence/2026-10-18-m1-baseline.md)
@@ -20,8 +20,24 @@ M1 甄别报告见
 > 指针捕获本质依赖 host 光标管线（隐藏系统光标 + 相对位移流）——host-runtime
 > 面，缺即门控。
 
-## 当前状态（2026-10-19 TBD-3 收敛）
+## 当前状态（2026-10-19 constructor residual 收敛，通道零红）
 
+- **constructor residual 收敛完成（2026-10-19，收口后切片 2）：最后一红
+  `Event.NONE` 关闭，通道 22/22（100%）、文件 18/18 首次全绿**。实施期修正
+  修复面定位——缺装面在 native `dom_bindings/event.rs`（页面 realm 的
+  `globalThis.Event` 被 `register_ctor` 原生构造器覆盖，shim part05 R23 常量
+  生产页面不生效），非 shim：`attach_event_constants` 补装 NONE=0/
+  CAPTURING_PHASE=1/AT_TARGET=2/BUBBLING_PHASE=3（接口对象静态 +
+  Event.prototype，WebIDL es-constants）+ dom_bindings 钉测试。附带收益：
+  dom 通道 Event 面 A/B 实跑 **+21 subtest 翻绿、零新增红**（251→230 fail，
+  Event-constants/bubbles/dispatch 序/EventListenerOptions-capture 族——均以
+  eventPhase 常量断言）；uievents wheel 族 3/3 零回归；make test 全绿 +
+  make reftest 712/712。**账本校正**：Commit 4 起文件口径少记 1（wheel×2 同
+  文件按两文件计）——Commit 5 实为 16/18、TBD-3 实为 17/18，历史记录保留
+  以证据 §4 为准。见
+  [constructor 证据](pointerlock-compat/evidence/2026-10-19-constructor-residual-event-constants.md)。
+  **下一步**：goal 通道零红，无未决实现项；挂账同下（桌面 wheel 转发随
+  renderer wheel 派发底座另启）。
 - **TBD-3 收敛完成（2026-10-19，M3 收口后切片）：锁定态 wheel retarget +
   滚动链默认动作，wheel 案 ×2 翻绿**。实施期复核发现 TBD-3 记账归因过时——
   `Actions.scroll` 自 uievents 尾簇 35 已实现（`wheel_scroll` 命令 →
@@ -92,9 +108,11 @@ M1 甄别报告见
   （用户确认）；s1–s4 切片、五提交切分。Lint 26P/0F。
 - **M3 点名（2026-10-19）**：用户点名启动，按 §8 交接顺序 s1→s4 实施，
   实施阶段持续执行不中断。
-- **跨域 residual**：`Event.NONE` 等 Event 接口 phase 常量缺失
-  （constructor.html s1 红）归 dom/events 域（uievents 50 residual），不占
-  本 goal 分母口径。
+- **跨域 residual（✅ 2026-10-19 已收敛）**：`Event.NONE` 等 Event 接口
+  phase 常量缺失（constructor.html 红，原归 dom/events 域 / uievents 50
+  residual）——native `dom_bindings/event.rs` `attach_event_constants` 补装，
+  通道翻绿；附带 dom 通道 Event 面 +21 subtest（见
+  [constructor 证据](pointerlock-compat/evidence/2026-10-19-constructor-residual-event-constants.md)）。
 
 ## Mission
 
@@ -108,15 +126,17 @@ M1 完成 corpus census 与可执行子集甄别（API 面存在性/异常语义
 
 - **DC-1（自主）✅ 2026-10-18** 导入 + census + 可执行子集甄别报告 + csv
   planned 行回填——见 [M1 基线](pointerlock-compat/evidence/2026-10-18-m1-baseline.md)
-- **DC-2（✅ 2026-10-19）** 捕获管线 RFC 已确认（方案 A，终版 v1.6）；M3
-  实现收口完成（s1–s4 + TBD-3 收敛）
-- **DC-3（✅ 2026-10-19）** 回归测试账本纪律（通道 21/22 逐案落账、红案
-  余 1 记账归因）；make test 全绿、make reftest 712/712 零回归
+- **DC-2（✅ 2026-10-19）** 捕获管线 RFC 已确认（方案 A，终版 v1.7）；M3
+  实现收口完成（s1–s4 + TBD-3 收敛 + constructor residual 收敛）
+- **DC-3（✅ 2026-10-19）** 回归测试账本纪律（通道 22/22 逐案落账、红案
+  全部收敛——constructor residual 切片关闭最后一红）；make test 全绿、
+  make reftest 712/712 零回归
 
 ## 里程碑
 
-M1 盘点（自主，**✅ 完成**）→ M2 管线 RFC（**✅ v1.6 已确认 2026-10-19**）→
-M3 实现与收口（**✅ 完成 2026-10-19，s1–s4 + Commit 5 收口 + TBD-3 收敛**）。
+M1 盘点（自主，**✅ 完成**）→ M2 管线 RFC（**✅ v1.7 已确认 2026-10-19**）→
+M3 实现与收口（**✅ 完成 2026-10-19，s1–s4 + Commit 5 收口 + TBD-3 收敛 +
+constructor residual 收敛，通道 22/22 全绿**）。
 
 ## 依赖约束（run-rules §9）
 

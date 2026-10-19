@@ -63,6 +63,7 @@ pub(super) fn build_and_register(scope: &mut v8::PinScope, global: v8::Local<v8:
     // Event 基类：原型方法一次挂。
     let event_tmpl = v8::FunctionTemplate::builder(native_event_constructor_invoke).build(scope);
     attach_event_proto_methods(scope, event_tmpl);
+    attach_event_constants(scope, event_tmpl);
     register_ctor(scope, global, "Event", event_tmpl);
     // CustomEvent / MouseEvent / KeyboardEvent extends Event（inherit → 原型链 + instanceof Event）。
     let ce_tmpl = v8::FunctionTemplate::builder(native_custom_event_constructor_invoke).build(scope);
@@ -110,6 +111,44 @@ fn attach_event_proto_methods(scope: &mut v8::PinScope, tmpl: v8::Local<v8::Func
     let init_evt = v8::FunctionTemplate::builder(native_init_event_invoke).build(scope);
     if let Some(k) = v8::String::new(scope, "initEvent") {
         proto.set(k.into(), init_evt.into());
+    }
+}
+
+/// Event 接口 eventPhase 常量（pointerlock-compat constructor residual 收敛切片，
+/// 2026-10-19）：`NONE=0`/`CAPTURING_PHASE=1`/`AT_TARGET=2`/`BUBBLING_PHASE=3`，挂
+/// **接口对象**（`Event.NONE` 静态）+ **Event.prototype**（实例经原型链继承，含
+/// `createEvent` 产物与子类实例）。spec DOM `Event` 常量
+/// https://dom.spec.whatwg.org/#interface-event + WebIDL 常量暴露
+/// https://webidl.spec.whatwg.org/#es-constants（数据属性，可写可枚举可配置）。
+///
+/// JS shim 同语义先例 part05.js R23（enumerable:false 是 shim 侧 R10 for-in
+/// 约定）；native 模板路径此前缺装——页面 realm 的 `globalThis.Event` 经
+/// [`register_ctor`] 被原生构造器覆盖，shim 侧常量不生效，WPT
+/// pointerlock/constructor.html 的 `assert_equals(ev.eventPhase, Event.NONE)` 读到
+/// undefined。常量只挂定义接口（Event）：子类接口对象无自有常量，子类实例经
+/// Event.prototype 原型链可达。派发期 `eventPhase` 数值（1/2/3）与常量定义一致
+///（[`event_target`] 派发覆写）。
+fn attach_event_constants(scope: &mut v8::PinScope, tmpl: v8::Local<v8::FunctionTemplate>) {
+    const PHASE_CONSTANTS: [(&str, i32); 4] = [
+        ("NONE", 0),
+        ("CAPTURING_PHASE", 1),
+        ("AT_TARGET", 2),
+        ("BUBBLING_PHASE", 3),
+    ];
+    // Event.prototype：实例经原型链继承。
+    let proto = tmpl.prototype_template(scope);
+    for (name, value) in PHASE_CONSTANTS {
+        if let Some(k) = v8::String::new(scope, name) {
+            proto.set(k.into(), v8::Integer::new(scope, value).into());
+        }
+    }
+    // 接口对象（Event 构造器静态常量）。
+    if let Some(f) = tmpl.get_function(scope) {
+        for (name, value) in PHASE_CONSTANTS {
+            if let Some(k) = v8::String::new(scope, name) {
+                let _ = f.set(scope, k.into(), v8::Integer::new(scope, value).into());
+            }
+        }
     }
 }
 
