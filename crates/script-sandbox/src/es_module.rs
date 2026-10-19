@@ -267,7 +267,9 @@ pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&st
         let escaped = spec.replace('\\', "\\\\").replace('\'', "\\'");
         // R5182：已缓存（本文档更早的 module script 元素已求值）→ 不再执行——同文档模块
         // 恰好一次（红态实测共享依赖跨元素计数 4；HTML module map 命中即复用）。
-        out.push_str(&format!("if (!__moduleCache['{escaped}']) __moduleCache['{escaped}'] = {iife};\n"));
+        out.push_str(&format!(
+            "if (!__moduleCache['{escaped}']) __moduleCache['{escaped}'] = {iife};\n"
+        ));
     }
     Ok(out)
 }
@@ -612,7 +614,10 @@ fn transform_import(
         let dep = inline_dep_once(&specifier, registry, visited)?;
         return match &dep {
             // R5182：Fresh 内联包记忆化——与 prelude 急切求值共享实例，不重复执行模块体。
-            DepInline::Fresh(code) => Ok(format!("  var _mod_{safe} = {};\n", memoized_dep_expr(&specifier, code))),
+            DepInline::Fresh(code) => Ok(format!(
+                "  var _mod_{safe} = {};\n",
+                memoized_dep_expr(&specifier, code)
+            )),
             DepInline::Visited(_) => Ok(String::new()),
         };
     }
@@ -639,7 +644,10 @@ fn transform_import(
         match &dep {
             DepInline::Fresh(code) => {
                 // R5182：Fresh 内联包记忆化（与 prelude / 其他元素共享实例）。
-                result.push_str(&format!("  var {exports_var} = {};\n", memoized_dep_expr(&specifier, code)));
+                result.push_str(&format!(
+                    "  var {exports_var} = {};\n",
+                    memoized_dep_expr(&specifier, code)
+                ));
             }
             DepInline::Visited(_) => {
                 result.push_str(&format!("  var {exports_var} = {};\n", dep.exports_expr()));
@@ -676,7 +684,10 @@ fn transform_import(
         match &dep {
             DepInline::Fresh(code) => {
                 // R5182：Fresh 内联包记忆化（与 prelude / 其他元素共享实例）。
-                result.push_str(&format!("  var {exports_var} = {};\n", memoized_dep_expr(&specifier, code)));
+                result.push_str(&format!(
+                    "  var {exports_var} = {};\n",
+                    memoized_dep_expr(&specifier, code)
+                ));
             }
             DepInline::Visited(_) => {
                 result.push_str(&format!("  var {exports_var} = {};\n", dep.exports_expr()));
@@ -702,7 +713,10 @@ fn transform_import(
         match &dep {
             DepInline::Fresh(code) => {
                 // R5182：Fresh 内联包记忆化（与 prelude / 其他元素共享实例）。
-                result.push_str(&format!("  var {exports_var} = {};\n", memoized_dep_expr(&specifier, code)));
+                result.push_str(&format!(
+                    "  var {exports_var} = {};\n",
+                    memoized_dep_expr(&specifier, code)
+                ));
             }
             DepInline::Visited(_) => {
                 result.push_str(&format!("  var {exports_var} = {};\n", dep.exports_expr()));
@@ -2110,7 +2124,9 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         .unwrap();
         // R5182：首行为模块缓存初始化（幂等），其后的入口体保持 async IIFE 包裹
         // （async 入口体暂不记忆化——见 compile_module_script FIXME）。
-        assert!(compiled.starts_with("globalThis.__moduleCache = globalThis.__moduleCache || {};\n(async function() {"));
+        assert!(
+            compiled.starts_with("globalThis.__moduleCache = globalThis.__moduleCache || {};\n(async function() {")
+        );
         assert!(compiled.contains("await Promise.resolve();"));
     }
 
@@ -2928,12 +2944,22 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         let mut reg1 = ModuleRegistry::new();
         reg1.register("https://zero.test/n.js", dep_src);
         let p1 = build_module_runtime_prelude(&reg1, Some("https://zero.test/ne1.js")).unwrap();
-        let t1 = compile_module_script("import { val } from 'https://zero.test/n.js';globalThis.__v1 = val;", "https://zero.test/ne1.js", &reg1).unwrap();
+        let t1 = compile_module_script(
+            "import { val } from 'https://zero.test/n.js';globalThis.__v1 = val;",
+            "https://zero.test/ne1.js",
+            &reg1,
+        )
+        .unwrap();
         sandbox.execute(&format!("{p1}\n{t1}")).unwrap();
         let mut reg2 = ModuleRegistry::new();
         reg2.register("https://zero.test/n.js", dep_src);
         let p2 = build_module_runtime_prelude(&reg2, Some("https://zero.test/ne2.js")).unwrap();
-        let t2 = compile_module_script("import { val } from 'https://zero.test/n.js';globalThis.__v2 = val;", "https://zero.test/ne2.js", &reg2).unwrap();
+        let t2 = compile_module_script(
+            "import { val } from 'https://zero.test/n.js';globalThis.__v2 = val;",
+            "https://zero.test/ne2.js",
+            &reg2,
+        )
+        .unwrap();
         sandbox.execute(&format!("{p2}\n{t2}")).unwrap();
         assert_eq!(
             sandbox.execute("String(globalThis.__r5182n)").unwrap().value,
@@ -2941,7 +2967,10 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
             "具名导入共享依赖只求值一次"
         );
         assert_eq!(
-            sandbox.execute("String(globalThis.__v1 + globalThis.__v2)").unwrap().value,
+            sandbox
+                .execute("String(globalThis.__v1 + globalThis.__v2)")
+                .unwrap()
+                .value,
             "82",
             "两个元素读到同一导出实例（val=41×2）"
         );
