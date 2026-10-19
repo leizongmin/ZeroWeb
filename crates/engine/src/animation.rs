@@ -15,7 +15,7 @@ use std::collections::HashMap;
 
 use zero_css_parser::ast::{KeyframeBlock, KeyframeSelector, KeyframesRule};
 use zero_css_parser::values::{
-    AnimationDirectionValue, AnimationFillModeValue, TimingFunctionValue, TransformFunction,
+    AnimationDirectionValue, AnimationFillModeValue, LengthValue, TimingFunctionValue, TransformFunction,
 };
 use zero_style_system::{ComputedStyle, FilterComputedValue};
 
@@ -283,6 +283,44 @@ fn underlying_individual_value(style: &ComputedStyle, name: &str) -> Option<Stri
         ("translate", _) => Some("0px".to_string()),
         ("rotate", _) => Some("0deg".to_string()),
         ("scale", _) => Some("1".to_string()),
+        _ => None,
+    }
+}
+
+/// R5189：keyframe 值 `revert-layer` 的 underlying 解析（css-cascade-5 §revert-layer——
+/// 动画 origin 的 revert-layer 回退到 author origin，即**动画未叠加**时的元素级联值）。
+/// 从动画启动时传入的 ComputedStyle 序列化（`start_animation_with_underlying` 的
+/// underlying 参数此刻仍为 pre-animation 级联结果，见 pipeline
+/// apply_animation_overrides 的启动时序）。仅覆盖插值器长度臂的属性 + opacity；
+/// 非 Px 形态（%/auto/em）返回 None 保原值走既有离散回退。
+///
+/// FIXME(revert-keyframe)：普通 `revert` 须回退到 UA origin（低两层），ComputedStyle
+/// 只有全量级联结果、无 origin 分层数据；自定义属性（--x）动画依赖 var()/@property
+/// 管线——两者均维持原值离散回退（revert-layer-011 域）。
+fn underlying_cascade_value(style: &ComputedStyle, name: &str) -> Option<String> {
+    let len = |v: &LengthValue| match v {
+        LengthValue::Px(x) => Some(format!("{x}px")),
+        _ => None,
+    };
+    match name {
+        "width" => len(&style.width),
+        "height" => len(&style.height),
+        "top" => len(&style.top),
+        "left" => len(&style.left),
+        "right" => len(&style.right),
+        "bottom" => len(&style.bottom),
+        "margin-top" => len(&style.margin_top),
+        "margin-right" => len(&style.margin_right),
+        "margin-bottom" => len(&style.margin_bottom),
+        "margin-left" => len(&style.margin_left),
+        "padding-top" => len(&style.padding_top),
+        "padding-right" => len(&style.padding_right),
+        "padding-bottom" => len(&style.padding_bottom),
+        "padding-left" => len(&style.padding_left),
+        "font-size" => len(&style.font_size),
+        "letter-spacing" => len(&style.letter_spacing),
+        "word-spacing" => len(&style.word_spacing),
+        "opacity" => Some(format!("{:.4}", style.opacity)),
         _ => None,
     }
 }
@@ -783,6 +821,19 @@ impl AnimationClock {
         };
         if let Some(style) = underlying {
             resolve_implicit_boundaries(&mut keyframes, style);
+            // R5189：keyframe 值 `revert-layer` 在插值前解析为 underlying（动画未叠加时）
+            // 级联值——css-cascade-5：动画 origin 回退到 author origin。解析失败（属性
+            // 不在覆盖面/非 Px 形态）保持原值走既有离散回退。普通 `revert` 见
+            // FIXME(revert-keyframe)。
+            for point in &mut keyframes {
+                for (name, value) in point.properties.iter_mut() {
+                    if value.trim().eq_ignore_ascii_case("revert-layer")
+                        && let Some(resolved) = underlying_cascade_value(style, name)
+                    {
+                        *value = resolved;
+                    }
+                }
+            }
         }
 
         let state = AnimationState {
@@ -2646,5 +2697,79 @@ mod tests {
         // 0% 帧是空的，50% 帧有 opacity:0.5 → 在 progress=0 时应返回空或初始值
         // 由于 from 帧无属性，插值结果取决于实现
         assert!(props.is_empty() || props.iter().any(|p| p.name == "opacity"));
+    }
+
+    /// R5189：keyframe 值 `revert-layer` 在动画 origin 回退到 author origin（动画未叠加
+    /// 时的级联值）后再插值——`from {width:50px} to {width:revert-layer}`、underlying
+    /// width:150px → p=0.5 处 width 应为 100px（revert-layer-010：ref 100px 方块）。
+    #[test]
+    fn test_keyframe_revert_layer_resolves_underlying() {
+        let mut clock = AnimationClock::new();
+        let rule = make_keyframes(
+            "rev",
+            vec![(0.0, vec![("width", "50px")]), (100.0, vec![("width", "revert-layer")])],
+        );
+        clock.register_keyframes(&rule);
+
+        let mut style = ComputedStyle::default();
+        style.width = LengthValue::Px(150.0);
+        assert!(clock.start_animation_with_underlying(
+            1,
+            &AnimationConfig {
+                name: "rev".to_string(),
+                duration: 2.0,
+                delay: 0.0,
+                timing_function: TimingFunctionValue::Linear,
+                iteration_count: Some(1.0),
+                direction: AnimationDirectionValue::Normal,
+                fill_mode: AnimationFillModeValue::None,
+                current_time: 0.0,
+            },
+            Some(&style),
+        ));
+
+        let props = clock.tick(1, 1.0);
+        let width = props
+            .iter()
+            .find(|p| p.name == "width")
+            .expect("p=0.5 应产出 width 插值");
+        assert_eq!(width.value, "100.00px", "revert-layer 应解析为 150px 再插值");
+    }
+
+    /// R5189：非覆盖面属性（如 transform）的 `revert-layer` 保持原值——离散回退不破坏。
+    #[test]
+    fn test_keyframe_revert_layer_unsupported_property_kept() {
+        let mut clock = AnimationClock::new();
+        let rule = make_keyframes(
+            "rev2",
+            vec![
+                (0.0, vec![("transform", "translateY(0px)")]),
+                (100.0, vec![("transform", "revert-layer")]),
+            ],
+        );
+        clock.register_keyframes(&rule);
+
+        let style = ComputedStyle::default();
+        assert!(clock.start_animation_with_underlying(
+            1,
+            &AnimationConfig {
+                name: "rev2".to_string(),
+                duration: 2.0,
+                delay: 0.0,
+                timing_function: TimingFunctionValue::Linear,
+                iteration_count: Some(1.0),
+                direction: AnimationDirectionValue::Normal,
+                fill_mode: AnimationFillModeValue::None,
+                current_time: 0.0,
+            },
+            Some(&style),
+        ));
+
+        let props = clock.tick(1, 1.0);
+        // transform 不在 underlying 覆盖面 → to 值保持 revert-layer 关键字 → p=0.5 离散
+        // 取 from（既有行为），不 panic、不产出错误值。
+        if let Some(p) = props.iter().find(|p| p.name == "transform") {
+            assert!(p.value.contains("translate"), "离散回退应取 from 值，got {p:?}");
+        }
     }
 }

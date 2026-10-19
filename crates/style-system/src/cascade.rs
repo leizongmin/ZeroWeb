@@ -630,11 +630,15 @@ fn cascade_impl<'a>(
         // 罕见 → 仅在检测到合法 revert-layer 声明时走 slow path（排序 + tier 回退），
         // 全部 tier 均 revert-layer → 保留最高声明值（即 revert-layer 关键字）交
         // inheritance.rs 按 ≈unset 解析（不破坏 R2386「lone revert-layer 通过 cascade」）。
-        // kill-switch `ZW_REVERT_LAYER=0` 关闭时 revert-layer 是普通 CSS-wide 值，永不走
-        // slow path。
+        // R5189：普通 `revert`（css-cascade-4 #default）同理走 slow path——触发整个
+        // origin 截止（revert-val-001：display:revert 应回退 UA div display:block）；
+        // 无更低 origin 声明时保留关键字交 inheritance（同 lone revert-layer 语义）。
+        // kill-switch `ZW_REVERT_LAYER=0` 关闭时 revert-layer/revert 是普通 CSS-wide 值，
+        // 永不走 slow path。
         let mut dummy = ComputedStyle::default();
         let mut best: Option<&CascadedDeclaration> = None;
         let mut saw_revert_layer = false;
+        let mut saw_revert = false;
         for d in &decls {
             // CSS-wide 关键字（inherit/initial/unset/revert/revert-layer）对任何属性都合法，
             // 由 inheritance/compute pass 解析——须短路，否则会被 is_invalid_enum_value
@@ -650,11 +654,15 @@ fn cascade_impl<'a>(
                 saw_revert_layer = true;
                 continue;
             }
+            if revert_layer_active && is_revert_value(d.value) {
+                saw_revert = true;
+                continue;
+            }
             if best.is_none_or(|b| d.order > b.order) {
                 best = Some(d);
             }
         }
-        if !saw_revert_layer {
+        if !saw_revert_layer && !saw_revert {
             if let Some(b) = best {
                 result.insert(property.to_string(), b.value.to_string());
                 winner_orders.insert(property.to_string(), b.order.clone());
@@ -675,6 +683,12 @@ fn cascade_impl<'a>(
         // cascade-5「roll back the cascade to the previous layer」移除不区分 importance）
         // 一并移除。多层嵌套 revert-layer 逐层更新截止。
         let mut cutoff: Option<(Origin, CascadeCtx)> = None;
+        // R5189：普通 `revert`（css-cascade-4 #default）回退**整个 origin**——声明所在
+        // origin 的全部上下文（任何 layer/style 属性，不区分 importance）与更高 origin
+        // 一并移除，只允许更低 origin 的声明参与；无更低声明则保留关键字交 inheritance
+        // （继承属性→父值、非继承属性→初始值，同既有 resolve_keyword Revert 臂）。
+        // revert-val-001：author `display:revert` 应回退到 UA div display:block。
+        let mut revert_cutoff: Option<Origin> = None;
         for d in &sorted {
             let valid = is_css_wide_keyword(d.value)
                 || (!is_invalid_negative_length(property, d.value)
@@ -688,6 +702,18 @@ fn cascade_impl<'a>(
             }
             if revert_layer_active && is_revert_layer_value(d.value) {
                 cutoff = Some((d.order.origin, CascadeCtx::of(&d.order)));
+                continue;
+            }
+            if revert_layer_active && is_revert_value(d.value) {
+                revert_cutoff = Some(d.order.origin);
+                continue;
+            }
+            if let Some(origin) = &revert_cutoff {
+                // R5189：revert 截止——同 origin（任何上下文）全部移除，只认更低 origin。
+                if (d.order.origin as u8) < (*origin as u8) {
+                    winner = Some(d);
+                    break;
+                }
                 continue;
             }
             if let Some((origin, ctx)) = &cutoff {
@@ -722,6 +748,11 @@ fn cascade_impl<'a>(
 /// 值是否为 `revert-layer` 关键字（R2388 tier 回退触发条件）。
 fn is_revert_layer_value(value: &str) -> bool {
     value.trim().eq_ignore_ascii_case("revert-layer")
+}
+
+/// 值是否为普通 `revert` 关键字（R5189 origin 回退触发条件；不匹配 `revert-layer`）。
+fn is_revert_value(value: &str) -> bool {
+    value.trim().eq_ignore_ascii_case("revert")
 }
 
 /// R4245：级联上下文（slow path revert-layer 层截止用）。
@@ -1346,6 +1377,109 @@ mod tests {
         ];
         let result = cascade(decls, false);
         assert_eq!(result.get("background-color"), Some(&"red".to_string()));
+    }
+
+    /// R5189：普通 `revert` 回退整个 origin——author `display:revert` 应回退 UA
+    /// `display:block`（revert-val-001 核心语义；div 的 UA display:block 由
+    /// ua_default_display 以 UA origin 声明注入级联）。
+    #[test]
+    fn test_revert_falls_back_to_lower_origin() {
+        let decls = vec![
+            CascadedDeclaration {
+                property: "display",
+                value: "inline",
+                order: CascadeOrder::new(Origin::Author, None, (1, 0, 0), 0, false),
+            },
+            CascadedDeclaration {
+                property: "display",
+                value: "revert",
+                order: CascadeOrder::new(Origin::Author, None, (1, 0, 0), 1, false),
+            },
+            CascadedDeclaration {
+                property: "display",
+                value: "block",
+                order: CascadeOrder::new(Origin::UserAgent, None, (0, 0, 1), 0, false),
+            },
+        ];
+        let result = cascade(decls, false);
+        assert_eq!(
+            result.get("display"),
+            Some(&"block".to_string()),
+            "author display:revert 应回退到 UA display:block"
+        );
+    }
+
+    /// R5189：revert 移除 author 全部上下文——layered author 声明也不得在回退后参与。
+    #[test]
+    fn test_revert_rolls_back_all_author_contexts() {
+        let decls = vec![
+            CascadedDeclaration {
+                property: "color",
+                value: "red",
+                order: CascadeOrder::new(Origin::Author, Some(0), (1, 0, 0), 0, false),
+            },
+            CascadedDeclaration {
+                property: "color",
+                value: "revert",
+                order: CascadeOrder::new(Origin::Author, None, (1, 0, 0), 1, false),
+            },
+            CascadedDeclaration {
+                property: "color",
+                value: "green",
+                order: CascadeOrder::new(Origin::UserAgent, None, (0, 0, 1), 0, false),
+            },
+        ];
+        let result = cascade(decls, false);
+        assert_eq!(
+            result.get("color"),
+            Some(&"green".to_string()),
+            "revert 后 author layered red 不参与，应取 UA green"
+        );
+    }
+
+    /// R5189：无更低 origin 声明时保留 `revert` 关键字交 inheritance 解析
+    ///（继承属性→父值、非继承属性→初始值；同 lone revert-layer 语义，R2386）。
+    #[test]
+    fn test_revert_without_lower_origin_keeps_keyword() {
+        let decls = vec![CascadedDeclaration {
+            property: "color",
+            value: "revert",
+            order: CascadeOrder::new(Origin::Author, None, (1, 0, 0), 0, false),
+        }];
+        let result = cascade(decls, false);
+        assert_eq!(
+            result.get("color"),
+            Some(&"revert".to_string()),
+            "无更低 origin 声明时 revert 关键字应通过 cascade"
+        );
+    }
+
+    /// R5189：revert 非胜出声明时惰性——更高优先级 concrete 值照常胜出，不触发回退。
+    #[test]
+    fn test_revert_below_winner_is_inert() {
+        let decls = vec![
+            CascadedDeclaration {
+                property: "display",
+                value: "revert",
+                order: CascadeOrder::new(Origin::Author, None, (1, 0, 0), 0, false),
+            },
+            CascadedDeclaration {
+                property: "display",
+                value: "inline",
+                order: CascadeOrder::new(Origin::Author, None, (1, 0, 0), 1, false),
+            },
+            CascadedDeclaration {
+                property: "display",
+                value: "block",
+                order: CascadeOrder::new(Origin::UserAgent, None, (0, 0, 1), 0, false),
+            },
+        ];
+        let result = cascade(decls, false);
+        assert_eq!(
+            result.get("display"),
+            Some(&"inline".to_string()),
+            "revert 之下的声明惰性，author inline（source order 更大）应胜出"
+        );
     }
 
     /// R2388：unlayered 声明优先级高于 layered——unlayered revert-layer 回退到 layered 值。
