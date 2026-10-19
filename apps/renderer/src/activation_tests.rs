@@ -330,3 +330,93 @@ fn blank_target_anchor_hit_descendant_navigates_s29() {
         "span-in-anchor 点击 → 激活 a 祖先 → 导航落地 history"
     );
 }
+
+#[test]
+fn typed_key_render_keeps_h1_glyph_positions_aligned_with_initial_layout() {
+    // T68 复现钉（diag t63 第三发现，t68-discrim e2e 判别）：点击聚焦后帧干净，
+    // **首个键入字符的渲染帧**整页字距错乱——键入走 `execute_shared_action` →
+    // `dispatch_external_user_action_with_javascript` → `apply_dom_script_result` →
+    // `render_with_dom_mutations`（纯表单值臂 `paint_form_value_mutations` 只重绘不
+    // 重排）。该分发链是 runtime 中唯一未包 `with_measure_ctx_opt` 的产帧路径：
+    // paint 阶段 `shape_text_for_paint` 在空 measure ctx 下返回 None → 整页 glyph
+    // 位置回退 estimate 启发式（与初始布局的 hmtx/shaping 分叉 → "I npor t"）。
+    // h1 文本两帧未变 → 同码点 glyph x 序列必须逐位相同。
+    // 页面复刻 zero://bookmarks/import（pages.rs generate_bookmarks_import_html）。
+    let html = "<html><head><style>\
+        h1 { font-size: 28px; color: #1a73e8; }\
+        </style></head><body style=\"font-family: Segoe UI, sans-serif; margin: 0; padding: 40px;\">\
+        <h1>Import Bookmarks — ZeroBrowser</h1>\
+        <ol style=\"font-size:14px;color:#3c4043;line-height:1.9;padding-left:20px;\">\
+        <li>Export bookmarks as an HTML file (Netscape format) from your previous browser.</li>\
+        <li>Open the file in a text editor and copy its entire contents.</li>\
+        <li>Come back here and press the button below to import from the clipboard.</li></ol>\
+        <p><a href=\"zero://bookmarks/import/apply\" style=\"display:inline-block;background:#1a73e8;color:#fff;font-size:14px;padding:9px 22px;border-radius:4px;text-decoration:none;\">Import from Clipboard</a>\
+        <a href=\"zero://bookmarks\" style=\"margin-left:12px;color:#1a73e8;text-decoration:none;font-size:13px;\">View Bookmarks</a></p>\
+        <hr style=\"border:none;border-top:1px solid #dadce0;margin:18px 0;\">\
+        <p style=\"font-size:14px;color:#3c4043;\">Or import directly from a file:</p>\
+        <form action=\"zero://bookmarks/import/file\" method=\"get\" style=\"margin:0;\">\
+        <input type=\"text\" name=\"path\" value=\"\" placeholder=\"Path to bookmarks HTML file\" aria-label=\"Path to bookmarks HTML file\" style=\"font-size:14px;padding:6px 10px;border:1px solid #dadce0;border-radius:4px;width:420px;\">\
+        <button type=\"submit\" style=\"margin-left:8px;font-size:14px;padding:7px 16px;background:#1a73e8;color:#fff;border:none;border-radius:4px;\">Import from File</button>\
+        </form></body></html>";
+    let mut runtime = RendererRuntime::new(3468);
+    runtime.compositor_publish = None;
+    runtime.outbound = PipeTransport::new(std::io::empty(), Box::new(std::io::sink()));
+    runtime.current_url = Some("zero://t68-probe".to_string());
+    {
+        let font_loader = &runtime.font_loader;
+        let font_id = runtime.font_id;
+        let wv = runtime.webview.as_mut().unwrap();
+        text_metrics::with_measure_ctx_opt(font_loader, font_id, || {
+            wv.load_html(html, None);
+        });
+    }
+    let h1: Vec<char> = "Import Bookmarks — ZeroBrowser".chars().collect();
+    let extract = |glyphs: &[zero_render_foundation::primitive::GlyphPrimitive], text: &[char]| -> Vec<(char, i64)> {
+        // 按码点子序列匹配 h1（跨元素噪声过滤），返回 (码点, x 的 1/1000 整数)。
+        // 空格不产 glyph 图元（词间隔由 advance 承载），跳过匹配。
+        let mut out = Vec::new();
+        let mut it = glyphs.iter();
+        'outer: for &want in text {
+            if want == ' ' {
+                continue;
+            }
+            for g in it.by_ref() {
+                if g.glyph_id == want as u32 {
+                    out.push((want, (g.x * 1000.0).round() as i64));
+                    continue 'outer;
+                }
+            }
+            panic!("glyph for {want:?} not found");
+        }
+        out
+    };
+    let initial = extract(
+        runtime
+            .webview
+            .as_ref()
+            .unwrap()
+            .last_render()
+            .unwrap()
+            .primitives
+            .glyphs
+            .as_slice(),
+        &h1,
+    );
+    // 生产键入入口（runtime.rs apply_text_input_at → execute_shared_action）。
+    runtime
+        .apply_text_input_at("input[name=\"path\"]", "a")
+        .expect("typed key dispatch");
+    let typed = extract(
+        runtime
+            .webview
+            .as_ref()
+            .unwrap()
+            .last_render()
+            .unwrap()
+            .primitives
+            .glyphs
+            .as_slice(),
+        &h1,
+    );
+    assert_eq!(initial, typed, "键入渲染帧 h1 glyph x 与初始布局分叉（字距错乱）");
+}

@@ -1125,6 +1125,12 @@ impl RendererRuntime {
     /// 回调改了 DOM → 单次 rerender（rerender 再入 publish_webview，但 depth>0 跳过 tick，有界）。
     fn tick_observers_inner(&mut self) -> Result<(), String> {
         let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+        // T68：observer tick 的 mutation 应用含渲染（apply_recorded_mutations →
+        // `apply_dom_mutations_and_render`），且在每次帧发布末尾运行——空 measure ctx
+        // 下 paint 回退 estimate，产出整页字距错乱帧并取代发布帧（键入后首帧错乱的
+        // 实际产生点，diag t63 第三发现）。与其余产帧路径同点包 measure ctx。
+        let font_loader = &self.font_loader;
+        let font_id = self.font_id;
         let changed = {
             let mut ctx = PageScriptContext {
                 html: &mut self.cached_html,
@@ -1132,7 +1138,7 @@ impl RendererRuntime {
                 js_worker: &self.js_worker,
                 webview: self.webview.as_mut(),
             };
-            page_scripts::tick_observers(&mut ctx)
+            text_metrics::with_measure_ctx_opt(font_loader, font_id, || page_scripts::tick_observers(&mut ctx))
         };
         if changed {
             // `apply_dom_mutations_and_render` 已在 live DOM 上完成增量渲染；这里只发布
@@ -1145,7 +1151,7 @@ impl RendererRuntime {
     /// P1a form input：向 selector 指向的焦点 input/textarea 注入一个字符（更新 value + 派发
     /// 'input' 事件）；回调改了 DOM 则单次 rerender。调用方须先判定 key 为可打印单字符。
     fn apply_text_input_at(&mut self, selector: &str, key: &str) -> Result<(), String> {
-        eprintln!("KB:INSERT sel={selector} key={key}");
+        tracing::debug!(selector, key, "text input insert");
         self.execute_shared_action(
             selector,
             zero_page_runtime::HtmlUserAction::InsertText { text: key.to_string() },
@@ -1199,12 +1205,22 @@ impl RendererRuntime {
             action,
             shift: false,
         };
-        let result = self
-            .webview
-            .as_mut()
-            .expect("webview")
-            .dispatch_external_user_action_with_javascript(&self.js_worker, self.javascript_enabled, request)
-            .map_err(|error| error.to_string())?;
+        // T68：动作分发链在 webview 内 apply mutation 并渲染（`apply_dom_script_result`
+        // → `render_with_dom_mutations`，纯表单值臂 `paint_form_value_mutations` 只重绘
+        // 不重排）——paint 的 `shape_text_for_paint` 在空 measure ctx 下返回 None，整页
+        // glyph 位置回退 estimate 启发式，与初始布局的 hmtx/shaping 分叉（键入/删除/
+        // Reset 后首帧整页字距错乱，diag t63 第三发现）。与其余产帧路径（staged load
+        // tick / rerender / resize republish）同点包 measure ctx。字段不相交借用：
+        // font_loader/webview/js_worker 各自独立。
+        let font_loader = &self.font_loader;
+        let font_id = self.font_id;
+        let result = {
+            let wv = self.webview.as_mut().expect("webview");
+            text_metrics::with_measure_ctx_opt(font_loader, font_id, || {
+                wv.dispatch_external_user_action_with_javascript(&self.js_worker, self.javascript_enabled, request)
+            })
+        }
+        .map_err(|error| error.to_string())?;
         self.sync_cached_html_from_webview();
         if sync_text {
             self.sync_text_control_state_from_worker(selector);
@@ -1415,7 +1431,14 @@ impl RendererRuntime {
         let Some(webview) = self.webview.as_mut() else {
             return Ok(false);
         };
-        let _ = webview.apply_dom_mutations_and_render(std::slice::from_ref(&mutation))?;
+        // T68：IME 组合输入同走 mutation 渲染（T68 修复同族）——包 measure ctx 防
+        // paint 回退 estimate 致整页字距错乱（diag t63 第三发现「IME」面）。
+        let font_loader = &self.font_loader;
+        let font_id = self.font_id;
+        let rendered = text_metrics::with_measure_ctx_opt(font_loader, font_id, || {
+            webview.apply_dom_mutations_and_render(std::slice::from_ref(&mutation))
+        });
+        rendered?;
         Ok(true)
     }
 

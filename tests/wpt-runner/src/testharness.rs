@@ -10567,12 +10567,24 @@ promise_test(async function() {
             "no-harness-test-wait.html",
             html,
             MINI_HARNESS,
-            Duration::from_millis(10),
+            // PR#206 同族第三例：Timeout 语义死限保持「页面永不完成」语义，但从 10ms
+            // 放宽到 1s——消息断言要求 runner 至少完成一次 probe 采样（last_test_wait
+            // 初值 false，10ms 在 make test 并行负载下可于首轮 probe 前过线，消息恒
+            // test_wait=false → 确定性红；1s 对齐同形姊妹测
+            // registered_tests_cannot_complete_with_empty_results，负载下 probe 采样
+            // ms 级完成，不弱化检测力：probe 采样被移除即 test_wait=true 消失转红）。
+            Duration::from_secs(1),
         );
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].status, HarnessStatus::Timeout);
-        assert!(results[0].message.as_deref().unwrap().contains("test_wait=true"));
+        // 诊断增强（PR#206 D1 同款）：失败时带出实际 status/message，供负载红取数。
+        assert!(
+            results[0].message.as_deref().unwrap().contains("test_wait=true"),
+            "实际 status={:?} message={:?}",
+            results[0].status,
+            results[0].message
+        );
     }
 
     #[test]
