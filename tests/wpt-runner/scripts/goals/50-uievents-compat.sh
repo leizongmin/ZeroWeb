@@ -24,5 +24,11 @@ fetch_dir_html "uievents/order-of-events/focus-events"
 # .html，资源文件漏拉 → 三案 page-threw「script fetch failed」，各折 1 条文件级
 # Fail）。同 tail-30 textInput support/ 人工补拉先例，此处脚本化（幂等 + pin）。
 fetch_raw "uievents/mouse/resources/utils.js"
+# 尾簇 42（2026-10-19）：textInput support/ 三件脚本化——七案 import
+# support/{common.js,basic.sub.js,no-textInput.sub.js}（tail-30 人工补拉未入脚本，
+# wpt-data 重建后再次丢失 → page-threw/TO）。同上，幂等 + pin。
+fetch_raw "uievents/textInput/support/common.js"
+fetch_raw "uievents/textInput/support/basic.sub.js"
+fetch_raw "uievents/textInput/support/no-textInput.sub.js"
 goals_inventory
 goals_next_steps "${GOAL}"
