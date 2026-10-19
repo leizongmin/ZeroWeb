@@ -211,6 +211,8 @@ impl Default for ComputedStyle {
             stroke_width: LengthValue::Px(1.0),
             // R4280：fill 未声明 = None（authored attr / resvg 缺省 black 生效）。
             fill: None,
+            // R5187：stroke 未声明 = None（authored attr / SVG 缺省 none 生效）。
+            stroke: None,
             perspective: LengthValue::Px(0.0),
             perspective_origin_x: LengthValue::Percentage(50.0),
             perspective_origin_y: LengthValue::Percentage(50.0),

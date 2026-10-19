@@ -1045,15 +1045,16 @@ impl Painter {
         // taint/shape_disable 之后——内联 url 项取到的是 taint 改写后的原语。
         // kill-switch ZW_SVG_FILTER_FN=0。
         source = crate::paint::svg_filter_functions::rewrite_css_function_filters(&source);
-        // R4280（SVG2 presentation）：CSS `fill`/`width`/`height` 声明注入序列化
-        // style/geometry attr——css-parser 尚无 fill 属性管道（R4280 V1），CSS 声明经
-        // style attr 让 usvg 采纳（style > presentation attr，与 CSS 优先级语义一致）；
-        // width/height 为 SVG2 几何属性（resvg 按 attr 取形）。
+        // R4280（SVG2 presentation）：CSS `fill`/`stroke`/`stroke-width`/`width`/
+        // `height` 声明注入序列化 style/geometry attr——css-parser 尚无完整 SVG
+        // presentation 属性管道（R4280 V1），CSS 声明经 style attr 让 usvg 采纳
+        //（style > presentation attr，与 CSS 优先级语义一致）；width/height 为
+        // SVG2 几何属性（resvg 按 attr 取形）。
         {
-            let mut fills: Vec<(NodeId, String)> = Vec::new();
+            let mut presentations: Vec<(NodeId, Vec<String>)> = Vec::new();
             let mut geometry: Vec<(NodeId, String, String)> = Vec::new();
-            collect_css_svg_presentation(doc, node_id, styles, &mut fills, &mut geometry);
-            source = apply_css_svg_presentation_to_source(&source, &fills, &geometry, doc, node_id);
+            collect_css_svg_presentation(doc, node_id, styles, &mut presentations, &mut geometry);
+            source = apply_css_svg_presentation_to_source(&source, &presentations, &geometry, doc);
         }
         // ZW_DEBUG_SVG_SOURCE=1：dump 合成后序列化源（svg transform 域调试设施）。
         if std::env::var("ZW_DEBUG_SVG_SOURCE").as_deref() == Ok("1") {
@@ -5165,16 +5166,19 @@ fn find_layout_box_by_node(box_node: &LayoutBox, node_id: NodeId) -> Option<&Lay
 ///   API；stroke 案残差归后续切片）。
 ///
 /// R4280：收集 svg 子树内 CSS presentation 声明 → 序列化串。
-/// - fill：V1 色值子集。
+/// - fill/stroke/stroke-width：V1 色值子集（R5187 起 stroke 色值 + stroke-width
+///   Px≠初始 1；无声明级追踪，显式 `stroke-width: 1px` 覆盖 authored attr 不注入，
+///   FIXME(decl-tracking)）。
 /// - width/height：SVG2 几何属性非 auto 值。
-fn collect_css_svg_presentation(
+pub(crate) fn collect_css_svg_presentation(
     doc: &Document,
     subtree_root: NodeId,
     styles: &HashMap<NodeId, ComputedStyle>,
-    fills: &mut Vec<(NodeId, String)>,
+    presentations: &mut Vec<(NodeId, Vec<String>)>,
     geometry: &mut Vec<(NodeId, String, String)>,
 ) {
     if let Some(style) = styles.get(&subtree_root) {
+        let mut decls: Vec<String> = Vec::new();
         if let Some(fill) = &style.fill {
             let css_fill = fill_color_to_css(fill);
             {
@@ -5187,7 +5191,21 @@ fn collect_css_svg_presentation(
                     let _ = writeln!(f, "SVG-FILL node={:?} fill={}", subtree_root, css_fill);
                 }
             }
-            fills.push((subtree_root, css_fill));
+            decls.push(format!("fill: {css_fill}"));
+        }
+        // R5187：stroke 色值（`none` 已在 apply 臂折叠为 Transparent）。
+        if let Some(stroke) = &style.stroke {
+            decls.push(format!("stroke: {}", fill_color_to_css(stroke)));
+        }
+        // R5187：stroke-width——仅 Px 且 ≠ SVG 初始 1（registry 初始值）；百分比/
+        // em 等按字体/视口上下文解析留后续。
+        if let zero_css_parser::values::LengthValue::Px(n) = style.stroke_width
+            && n != 1.0
+        {
+            decls.push(format!("stroke-width: {n}px"));
+        }
+        if !decls.is_empty() {
+            presentations.push((subtree_root, decls));
         }
         let geo =
             |geometry: &mut Vec<(NodeId, String, String)>, attr: &str, v: &zero_css_parser::values::LengthValue| {
@@ -5222,12 +5240,12 @@ fn collect_css_svg_presentation(
         }
     }
     for child in doc.child_nodes(subtree_root) {
-        collect_css_svg_presentation(doc, child, styles, fills, geometry);
+        collect_css_svg_presentation(doc, child, styles, presentations, geometry);
     }
 }
 
-/// R4280：ColorValue → svg fill 色串（currentColor 落 black——元素 color 继承解析
-/// 留后续；alpha<255 → rgba）。
+/// R4280：ColorValue → svg presentation 色串（currentColor 落 black——元素 color
+/// 继承解析留后续；alpha<255 → rgba）。
 fn fill_color_to_css(fill: &zero_css_parser::values::ColorValue) -> String {
     let c = crate::paint::color::color_value_to_render(fill);
     if c.a == 255 {
@@ -5237,20 +5255,17 @@ fn fill_color_to_css(fill: &zero_css_parser::values::ColorValue) -> String {
     }
 }
 
-/// R4280：把 CSS fill 注入序列化源——定位元素开标签（id/class 指纹，退化为子树内
-/// 首个同标签），合并进 style attr（usvg 采纳 style presentation > attr，与 CSS
-/// 优先级一致）。无 id/class 且子树内同标签多个时注入首个（V1 局限，corpus 场景
-/// 多为单元素）。
-fn apply_css_svg_presentation_to_source(
+/// R4280：把 CSS presentation 声明注入序列化源（R5187 起 fill/stroke/stroke-width
+/// 逐元素聚合为声明组一次合并）。定位见 [`locate_element_open_tag`]。
+pub(crate) fn apply_css_svg_presentation_to_source(
     source: &str,
-    fills: &[(NodeId, String)],
+    presentations: &[(NodeId, Vec<String>)],
     geometry: &[(NodeId, String, String)],
     doc: &Document,
-    subtree_root: NodeId,
 ) -> String {
     let mut out = source.to_string();
-    for (node_id, fill_value) in fills {
-        if let Some(new_source) = rewrite_fill_for_node(&out, *node_id, fill_value, doc, subtree_root) {
+    for (node_id, decls) in presentations {
+        if let Some(new_source) = rewrite_presentation_for_node(&out, *node_id, decls, doc) {
             out = new_source;
         }
     }
@@ -5258,7 +5273,7 @@ fn apply_css_svg_presentation_to_source(
         if std::env::var("ZW_URL_CHAIN_DEBUG").as_deref() == Ok("1") {
             eprintln!("[url-chain] geo-inject node={node_id:?} {attr}={value}");
         }
-        if let Some(new_source) = rewrite_geometry_attr_for_node(&out, *node_id, attr, value, doc, subtree_root) {
+        if let Some(new_source) = rewrite_geometry_attr_for_node(&out, *node_id, attr, value, doc) {
             out = new_source;
         }
     }
@@ -5273,27 +5288,20 @@ fn rewrite_geometry_attr_for_node(
     attr: &str,
     value: &str,
     doc: &Document,
-    subtree_root: NodeId,
 ) -> Option<String> {
     let node = doc.get(node_id)?;
     let NodeKind::Element(elem) = &node.kind else {
         return None;
     };
     let tag = elem.local_name().to_string();
-    let needle = if node_id == subtree_root {
-        format!("<{tag}")
-    } else if let Some(id) = elem.get_attribute("id") {
-        format!(r#"<{tag} id="{id}""#)
-    } else if let Some(cls) = elem.get_attribute("class") {
-        let first = cls.split_whitespace().next().unwrap_or("");
-        format!(r#"<{tag} class="{first}"#)
-    } else {
-        format!("<{tag}")
-    };
-    let pos = source.find(&needle)?;
-    let gt_rel = source[pos..].find('>')?;
-    let tag_end = pos + gt_rel;
-    let lt = source[pos..=tag_end].rfind('<').unwrap_or(pos);
+    // R5187：定位去属性序依赖（见 locate_element_open_tag 注）。
+    let (lt, tag_end) = locate_element_open_tag(
+        source,
+        &tag,
+        elem.get_attribute("id").as_deref(),
+        elem.get_attribute("class").as_deref(),
+        true,
+    )?;
     let tag_text = &source[lt..=tag_end];
     let attr_pattern = format!("{attr}=\"");
     let new_tag = if let Some(apos) = tag_text.find(&attr_pattern) {
@@ -5309,73 +5317,125 @@ fn rewrite_geometry_attr_for_node(
     Some(format!("{}{}{}", &source[..lt], new_tag, &source[tag_end + 1..]))
 }
 
-fn rewrite_fill_for_node(
+/// R5187：在序列化文本中定位元素开标签 span（含 '>'）。指纹 = id/class **属性
+/// 全文**（`id="v"` / `class="v"`，v 为 authored attr 原文），在候选开标签内任意
+/// 位置匹配——去 R4280 V1 的「class 紧跟标签名」属性序依赖（`<rect x=.. class="s">`
+/// 实证失配 → fill/geometry/transform 注入集体静默丢失，border-shape-shadow 判例
+/// ref 侧全黑根因）。id 优先于 class；有指纹而无候选匹配 → None（静默跳过，与
+/// V1 一致）；无指纹时 fallback_first = 取首个同标签开标签（根/无标识元素），
+/// false = None（transform 域「无声明勿动」语义）。候选 `<tag` 后一字符须非字母
+/// 数字及 `-_:`（防 `<rect` 误配 `<rectX`）；属性值含 '>' 时按首个 '>' 截断为
+/// V1 既有局限，不变更。
+pub(crate) fn locate_element_open_tag(
     source: &str,
-    node_id: NodeId,
-    fill_value: &str,
-    doc: &Document,
-    subtree_root: NodeId,
-) -> Option<String> {
+    tag: &str,
+    id: Option<&str>,
+    class: Option<&str>,
+    fallback_first: bool,
+) -> Option<(usize, usize)> {
+    let fingerprint = id
+        .map(|v| format!(r#"id="{v}""#))
+        .or_else(|| class.map(|v| format!(r#"class="{v}""#)));
+    let prefix = format!("<{tag}");
+    let mut scan = 0;
+    while let Some(rel) = source[scan..].find(&prefix) {
+        let lt = scan + rel;
+        scan = lt + prefix.len();
+        if source[scan..]
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == ':')
+        {
+            continue;
+        }
+        let Some(gt_rel) = source[lt..].find('>') else {
+            continue;
+        };
+        let tag_end = lt + gt_rel;
+        if let Some(fp) = &fingerprint {
+            if source[lt..=tag_end].contains(fp) {
+                return Some((lt, tag_end));
+            }
+        } else if fallback_first {
+            return Some((lt, tag_end));
+        }
+    }
+    None
+}
+
+/// R4280/R5187：把该元素 CSS presentation 声明（fill/stroke/stroke-width）合并进
+/// 序列化源中其开标签的 style attr（usvg 采纳 style presentation > attr，与 CSS
+/// 优先级语义一致）。定位经 [`locate_element_open_tag`]。
+fn rewrite_presentation_for_node(source: &str, node_id: NodeId, decls: &[String], doc: &Document) -> Option<String> {
     let node = doc.get(node_id)?;
     let NodeKind::Element(elem) = &node.kind else {
         return None;
     };
     let tag = elem.local_name().to_string();
-    let needle = if node_id == subtree_root {
-        format!("<{tag}")
-    } else if let Some(id) = elem.get_attribute("id") {
-        format!(r#"<{tag} id="{id}""#)
-    } else if let Some(cls) = elem.get_attribute("class") {
-        let first = cls.split_whitespace().next().unwrap_or("");
-        if first.is_empty() {
-            format!("<{tag} class=")
-        } else {
-            format!(r#"<{tag} class="{first}"#)
-        }
-    } else {
-        format!("<{tag}")
-    };
-    let pos = source.find(&needle)?;
-    let gt_rel = source[pos..].find('>')?;
-    let tag_end = pos + gt_rel;
-    let lt = source[pos..=tag_end].rfind('<').map(|r| pos + r).unwrap_or(pos);
+    let (lt, tag_end) = locate_element_open_tag(
+        source,
+        &tag,
+        elem.get_attribute("id").as_deref(),
+        elem.get_attribute("class").as_deref(),
+        true,
+    )?;
     let tag_text = &source[lt..=tag_end];
-    let new_tag = merge_style_fill_in_tag(tag_text, fill_value);
+    let new_tag = merge_style_decls_in_tag(tag_text, decls);
     Some(format!("{}{}{}", &source[..lt], new_tag, &source[tag_end + 1..]))
 }
 
-/// R4280：开标签文本内合并 `fill: <value>` 进 style attr（无 style attr 则新增）。
-fn merge_style_fill_in_tag(tag_text: &str, fill_value: &str) -> String {
-    let decl = format!("fill: {fill_value}");
-    if let Some(spos) = tag_text.find("style=\"") {
-        let vstart = spos + "style=\"".len();
-        let Some(vend_rel) = tag_text[vstart..].find('"') else {
-            return tag_text.to_string();
+/// R4280：开标签文本内逐条合并声明进 style attr（无 style attr 则新增；同名
+/// 属性声明替换、其余保留——与 CSS「后者覆盖」级联语义一致）。同名判定带属性名
+/// 边界（`stroke` 不得误配 `stroke-width`，`fill` 不得误配 `transform: fill-box`）。
+pub(crate) fn merge_style_decls_in_tag(tag_text: &str, decls: &[String]) -> String {
+    let mut current = tag_text.to_string();
+    for decl in decls {
+        let Some(colon) = decl.find(':') else {
+            continue;
         };
-        let vend = vstart + vend_rel;
-        let style_val = &tag_text[vstart..vend];
-        // 已有 fill 声明 → 替换；否则前插。
-        let merged = if style_val.to_ascii_lowercase().contains("fill:") {
-            let mut repl = String::new();
-            for d in style_val.split(';') {
-                let dt = d.trim();
-                if dt.to_ascii_lowercase().starts_with("fill:") {
-                    repl.push_str(&decl);
-                } else if !dt.is_empty() {
-                    repl.push_str(dt);
+        let prop = decl[..colon].trim().to_ascii_lowercase();
+        if prop.is_empty() {
+            continue;
+        }
+        let decl_text = format!("{prop}: {}", decl[colon + 1..].trim());
+        // 属性名边界：声明名 = prop 且随後即 ':'（允许冒号前空白）。
+        let is_same_prop = |dt: &str| {
+            let lower = dt.to_ascii_lowercase();
+            lower.starts_with(&prop) && lower[prop.len()..].trim_start().starts_with(':')
+        };
+        let mut merged_tag = current.clone();
+        if let Some(spos) = merged_tag.find("style=\"") {
+            let vstart = spos + "style=\"".len();
+            let Some(vend_rel) = merged_tag[vstart..].find('"') else {
+                continue;
+            };
+            let vend = vstart + vend_rel;
+            let style_val = &merged_tag[vstart..vend];
+            // 已有同名声明 → 替换；否则前插。
+            let merged = if style_val.split(';').any(|d| is_same_prop(d.trim())) {
+                let mut repl = String::new();
+                for d in style_val.split(';') {
+                    let dt = d.trim();
+                    if is_same_prop(dt) {
+                        repl.push_str(&decl_text);
+                    } else if !dt.is_empty() {
+                        repl.push_str(dt);
+                    }
+                    repl.push_str("; ");
                 }
-                repl.push_str("; ");
-            }
-            repl.trim_end_matches("; ").to_string()
+                repl.trim_end_matches("; ").to_string()
+            } else {
+                format!("{decl_text}; {style_val}")
+            };
+            merged_tag = format!("{}style=\"{}\"{}", &merged_tag[..spos], merged, &merged_tag[vend + 1..]);
+        } else if let Some(stripped) = merged_tag.strip_suffix("/>") {
+            merged_tag = format!("{stripped} style=\"{decl_text}\"/>");
         } else {
-            format!("{decl}; {style_val}")
-        };
-        format!("{}style=\"{}\"{}", &tag_text[..spos], merged, &tag_text[vend + 1..])
-    } else if let Some(stripped) = tag_text.strip_suffix("/>") {
-        format!("{stripped} style=\"{decl}\"/>")
-    } else {
-        format!("{} style=\"{decl}\">", &tag_text[..tag_text.len() - 1])
+            merged_tag = format!("{} style=\"{decl_text}\">", &merged_tag[..merged_tag.len() - 1]);
+        }
+        current = merged_tag;
     }
+    current
 }
 
 /// R5125（filter-effects-1 §7.1）：CSS `filter` 声明的计算值注入 SVG 序列化源。
@@ -5511,7 +5571,7 @@ fn apply_css_svg_filter_for_node(
     if !filter_url_refs_resolve(source, value) {
         return Some(stripped);
     }
-    rewrite_geometry_attr_for_node(&stripped, node_id, "filter", value, doc, subtree_root)
+    rewrite_geometry_attr_for_node(&stripped, node_id, "filter", value, doc)
 }
 
 /// R5125（filter-effects-1 §7.1 #typedef-filter-url）：url 项引用有效性——引用
@@ -5751,9 +5811,14 @@ pub(crate) fn collect_css_transforms(
             }
             // R4099：StrokeBox/BorderBox = object bbox 外扩 stroke-width/2（SVG2
             // §TermStrokeBoundingBox；dash array 不影响 stroke bbox）。
+            // R5187：宽取**子树最大计算 stroke-width**（容器 g/a 的 stroke bbox 由子
+            // 形状描边并集决定，SVG2 同名定义；旧取 target 自身宽——g 无声明落初始
+            // 1px，stroke-box-mutation-003/004 中心 (119.5,99.5) 实证错 9.5px；描边
+            // 经 R5187 注入真实渲染后错位显形超模糊阈）。stroke:none 仍计入（V1 近
+            // 似，FIXME(stroke-none-bbox)）。
             zero_style_system::TransformBoxValue::StrokeBox | zero_style_system::TransformBoxValue::BorderBox => {
                 svg_element_bbox(doc, subtree_root).map(|(x, y, w, h)| {
-                    let half = resolve_svg_stroke_width(st, font_size_px) / 2.0;
+                    let half = subtree_max_stroke_width(doc, subtree_root, styles, font_size_px) / 2.0;
                     (x - half, y - half, w + half * 2.0, h + half * 2.0)
                 })
             }
@@ -5848,6 +5913,27 @@ fn resolve_svg_stroke_width(st: &ComputedStyle, font_size_px: f32) -> f32 {
         LengthValue::Percentage(p) => (*p / 100.0 * diagonal as f64) as f32,
         other => zero_style_system::computed::resolve_length(other, font_size_px as f64, None, None) as f32,
     }
+}
+
+/// R5187：目标子树内最大计算 stroke-width（容器 stroke bbox 语义，见
+/// collect_css_transforms StrokeBox 臂注）。
+fn subtree_max_stroke_width(
+    doc: &Document,
+    subtree_root: NodeId,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    font_size_px: f32,
+) -> f32 {
+    fn walk(doc: &Document, id: NodeId, styles: &HashMap<NodeId, ComputedStyle>, font_size_px: f32, max: &mut f32) {
+        if let Some(st) = styles.get(&id) {
+            *max = max.max(resolve_svg_stroke_width(st, font_size_px));
+        }
+        for child in doc.child_nodes(id) {
+            walk(doc, child, styles, font_size_px, max);
+        }
+    }
+    let mut max = 0.0_f32;
+    walk(doc, subtree_root, styles, font_size_px, &mut max);
+    max
 }
 
 /// R4098：向上找最近 `<svg>` 祖先，返回其参考 viewport —— viewBox 4 值
@@ -6291,7 +6377,9 @@ pub(crate) fn apply_css_transforms_to_source(
 }
 
 /// 对单个元素节点改写序列化文本中其开标签的 transform attr。
-/// 指纹 = 元素在其 attr 中的标识属性（id 优先，退 class 首个）＋ 标签名。
+/// 指纹 = 元素在其 attr 中的标识属性（id 优先，退 class 属性全文），定位见
+/// [`locate_element_open_tag`]（R5187 去属性序依赖）；无标识属性时仅根元素
+///（subtree_root）回退首个同标签，非根不动（「无声明勿动」语义不变）。
 fn rewrite_transform_attr_for_node(
     source: &str,
     node_id: NodeId,
@@ -6304,31 +6392,16 @@ fn rewrite_transform_attr_for_node(
         return None;
     };
     let tag = elem.local_name().to_string();
-    let id_attr = elem.get_attribute("id");
-    let class_attr = elem.get_attribute("class");
-    // 根元素（svg）在序列化文本的开头。
-    if node_id == subtree_root {
-        let gt = source.find('>')?;
-        let head = &source[..gt];
-        return Some(rewrite_or_insert_transform_in_tag(head, svg_value, source, gt));
-    }
-    // 非根：找带指纹的开标签。
-    let needle = if let Some(id) = &id_attr {
-        format!("<{tag} ",).to_string() + &format!(r#"id="{id}""#)
-    } else if let Some(cls) = &class_attr {
-        let first = cls.split_whitespace().next().unwrap_or("");
-        if first.is_empty() {
-            return None;
-        }
-        format!(r#"<{tag} class="{first}"#)
-    } else {
-        return None;
-    };
-    let pos = source.find(&needle)?;
-    let gt_rel = source[pos..].find('>')?;
-    let gt = pos + gt_rel;
-    let head = &source[..gt];
-    Some(rewrite_or_insert_transform_in_tag(head, svg_value, source, gt))
+    let is_root = node_id == subtree_root;
+    let (_, tag_end) = locate_element_open_tag(
+        source,
+        &tag,
+        elem.get_attribute("id").as_deref(),
+        elem.get_attribute("class").as_deref(),
+        is_root,
+    )?;
+    let head = &source[..tag_end];
+    Some(rewrite_or_insert_transform_in_tag(head, svg_value, source, tag_end))
 }
 
 /// 在 `[..tag_end)` 的当前开标签内改写或插入 transform attr，拼回整个文本。

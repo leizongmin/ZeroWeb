@@ -340,6 +340,9 @@ pub struct ComputedStyle {
     /// R4280：`fill` 值（SVG2 presentation paint，V1 色值子集——ColorValue；None =
     /// 未声明（authored attr / resvg 缺省 black 生效）。继承语义 V1 不做，见 apply arm 注。
     pub fill: Option<zero_css_parser::values::ColorValue>,
+    /// R5187：`stroke` 值（SVG2 presentation paint，V1 色值子集，与 fill 同型；None =
+    /// 未声明（authored attr / SVG 缺省 none 生效）。继承语义 V1 不做，同 fill）。
+    pub stroke: Option<zero_css_parser::values::ColorValue>,
     /// perspective 属性。
     pub perspective: LengthValue,
     /// perspective-origin X 分量。

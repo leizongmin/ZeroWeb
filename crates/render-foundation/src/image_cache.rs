@@ -865,7 +865,10 @@ pub fn svg_content_extents(source: &[u8], viewport_w: u32, viewport_h: u32) -> O
     let bytes = preprocess_svg_transform_origin(&bytes);
     let bytes = inject_svg_target_dims(&bytes, viewport_w, viewport_h);
     let tree = resvg::usvg::Tree::from_data(&bytes, &resvg::usvg::Options::default()).ok()?;
-    let bbox = tree.root().abs_bounding_box();
+    // R5187：stroke 计入（SVG2 §TermStrokeBoundingBox）——描边外半环越界 viewBox
+    // 时几何 bbox 漏计 → 扩展画布不足，外环被画布裁掉（border-shape-shadow 判例
+    // ref 侧 spread 环缺失实证）。
+    let bbox = tree.root().abs_stroke_bounding_box();
     Some((bbox.right(), bbox.bottom()))
 }
 
