@@ -3201,6 +3201,16 @@ impl WebView {
             .as_mut()
             .ok_or_else(|| WebViewError::Script("no js sandbox".to_string()))?;
 
+        // R5182-D1：进程内路径无 reset_context（js_sandbox 持久、load_html 不触沙箱），
+        // 文档脚本阶段起点显式复位模块缓存——跨文档导航后同 URL 模块须在新文档重新求值
+        //（不复位则零次求值：模块级初始化/事件绑定静默缺失）。与 renderer ResetDocumentState
+        // 臂的 sandbox.reset_context、tab 路径 script_phase_begin 构成三宿主一致的每文档复位面。
+        // best-effort：复位失败仅告警不中止脚本阶段（与相邻 SW commit 臂同策略）。spec：
+        // https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate
+        if let Err(error) = sandbox.execute(zero_script_sandbox::MODULE_CACHE_RESET_SCRIPT) {
+            tracing::warn!("module cache reset at page script phase begin: {error}");
+        }
+
         // R100：共享 append-only 队列（读回调全量历史语义，apply 取游标尾部）+
         // identity 反查回调。
         let mutations = self.shared_mutations.clone();
@@ -3888,7 +3898,10 @@ impl WebView {
                 let url = self.current_url.as_deref().unwrap_or("about:blank");
                 match zero_script_sandbox::compile_module_script(&code, url, &registry) {
                     Ok(transformed) => {
-                        let prelude = zero_script_sandbox::build_module_runtime_prelude(&registry).unwrap_or_default();
+                        // R5182：入口（当前 script 元素）不在 prelude 急切求值——由 transformed 体承担，
+                        // 模块体恰好执行一次（__moduleCache 挂 globalThis，跨元素共享、随导航重建复位）。
+                        let prelude =
+                            zero_script_sandbox::build_module_runtime_prelude(&registry, Some(url)).unwrap_or_default();
                         format!("__zw_begin_script && __zw_begin_script();\n{prelude}\n{transformed}")
                     }
                     Err(e) => {
