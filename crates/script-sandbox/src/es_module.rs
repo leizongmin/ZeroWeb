@@ -177,14 +177,27 @@ impl std::fmt::Debug for EsModuleSandbox {
 
 // ── 核心转换逻辑（纯函数） ──
 
+/// 文档级模块缓存复位脚本——宿主在**每文档脚本阶段起点**执行一次，使模块缓存按文档
+/// 隔离（HTML navigate：跨文档导航创建新 global object 与新 module map，同 URL 模块在
+/// 新文档重新求值；https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate）。
+///
+/// R5182-D1 三宿主复位面：renderer 路径经 `ResetDocumentState` 臂 `reset_context` 销毁
+/// 重建全局对象（缓存随之消失，无须本脚本）；tab worker 路径（`tab_scripts::script_phase_begin`）
+/// 与 webview 进程内路径（`run_page_scripts_impl`，无 reset_context）持持久 context，
+/// 必须显式执行本脚本——不复位则同 URL 模块在新文档零次求值（D1 回归）。
+pub const MODULE_CACHE_RESET_SCRIPT: &str = "globalThis.__moduleCache = {};\n";
+
 /// 把依赖 IIFE 包成 `__moduleCache` 记忆化赋值表达式——模块体求值恰好一次（HTML module
 /// map 命中即复用，https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script）。
 /// R5182：prelude 急切求值、入口体内联、后续 module script 元素三条发射路径共享同一缓存实例；
 /// 调用方保证 `globalThis.__moduleCache` 已初始化（`compile_module_script` 输出与 prelude 的
-/// 首行 init 均已就位后才轮到本表达式求值）。
+/// 首行 init 均已就位后才轮到本表达式求值）。命中判定用 `=== undefined`（contains 语义，
+/// TV-4：不依赖「导出对象恒真值」这一未强制不变量）。
 fn memoized_dep_expr(key: &str, code: &str) -> String {
     let key_js = json_stringify(key);
-    format!("(globalThis.__moduleCache[{key_js}] = globalThis.__moduleCache[{key_js}] || {code})")
+    format!(
+        "(globalThis.__moduleCache[{key_js}] = globalThis.__moduleCache[{key_js}] === undefined ? ({code}) : globalThis.__moduleCache[{key_js}])"
+    )
 }
 
 /// 将 ES Module 源码编译为可在 V8 中执行的 IIFE 脚本（内联依赖）。
@@ -212,13 +225,14 @@ pub fn compile_dependency_iife(specifier: &str, registry: &ModuleRegistry) -> Re
 
 /// 生成模块运行时 prelude（`__moduleCache` + 动态 `import()` 支持）。
 ///
-/// R5182（模块恰好一次求值）：`__moduleCache` 挂 `globalThis`（`||=` 语义持久）而非每次
-/// 调用 `var __moduleCache = {}` 重置——同文档多个 module script 元素共享一份模块缓存
-/// （HTML module map 语义，fetch-a-single-module-script 命中即复用；跨文档导航经
-/// `reset_context` 销毁重建全局对象自然复位，无须宿主接线）。`entry` 为入口模块 URL：
-/// 入口不在 prelude 急切执行（否则入口体跑两遍），由调用方 `compile_module_script` 的
-/// 转换体承担该入口的求值；非入口注册模块照旧急切求值（转换式架构无 live binding，
-/// 入口的静态导入依赖 prelude 预热的依赖实例）。
+/// R5182（模块恰好一次求值）：`__moduleCache` 挂 `globalThis` 持久——同文档多个 module
+/// script 元素共享一份模块缓存（HTML module map 语义，fetch-a-single-module-script 命中
+/// 即复用）。**文档边界由宿主负责**：renderer 路径经 `reset_context` 销毁重建全局对象自然
+/// 复位；tab worker 与 webview 进程内路径持持久 context，须在每文档脚本阶段起点执行
+/// [`MODULE_CACHE_RESET_SCRIPT`]（否则跨文档导航后同 URL 模块零次求值——D1 回归）。
+/// `entry` 为入口模块 URL：入口不在 prelude 急切执行（否则入口体跑两遍），由调用方
+/// `compile_module_script` 的转换体承担该入口的求值；非入口注册模块照旧急切求值（转换式
+/// 架构无 live binding，入口的静态导入依赖 prelude 预热的依赖实例）。
 pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&str>) -> Result<String, ScriptError> {
     let mut out = String::from("globalThis.__moduleCache = globalThis.__moduleCache || {};\n");
     // t8j：helper（__zw_load_module / __zw_dynamic_import）必须先于 `__moduleCache[spec] = IIFE`
@@ -266,9 +280,10 @@ pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&st
         let iife = build_dep_iife(spec, registry, &mut HashSet::new())?;
         let escaped = spec.replace('\\', "\\\\").replace('\'', "\\'");
         // R5182：已缓存（本文档更早的 module script 元素已求值）→ 不再执行——同文档模块
-        // 恰好一次（红态实测共享依赖跨元素计数 4；HTML module map 命中即复用）。
+        // 恰好一次（红态实测共享依赖跨元素计数 4；HTML module map 命中即复用）。判定用
+        // `=== undefined`（contains 语义，TV-4）。
         out.push_str(&format!(
-            "if (!__moduleCache['{escaped}']) __moduleCache['{escaped}'] = {iife};\n"
+            "if (__moduleCache['{escaped}'] === undefined) __moduleCache['{escaped}'] = {iife};\n"
         ));
     }
     Ok(out)
@@ -2878,17 +2893,24 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
     // customElements.define "already used" ×14 + lit-html 命名空间导入 undefined → 搜索模态
     // 永不渲染。红态两支：(1) 入口自注册进 registry（collect_module_deps 语义）被 prelude
     // 急切执行 + 转换体再执行；(2) `var __moduleCache = {}` 每次 execute_module 重置，跨
-    // 元素重跑整张依赖子图。复位语义：跨文档导航 reset_context 销毁重建全局对象
-    // （js_worker Reset 臂；HTML navigate "creates a new global object"）→ 持久缓存天然
-    // 按文档隔离，无须宿主接线。
+    // 元素重跑整张依赖子图。复位语义（R5182-D1 返修）：缓存按文档隔离——renderer 路径经
+    // `reset_context` 销毁重建全局对象；tab worker（`script_phase_begin`）与 webview 进程内
+    // （`run_page_scripts_impl`）持持久 context，由宿主在每文档脚本阶段起点执行
+    // [`MODULE_CACHE_RESET_SCRIPT`] 复位（三宿主一致：每文档恰好一次）。
 
     /// R5182 测试用持久上下文沙箱（renderer/tab worker 生产形态；part60 同款配置）。
-    fn r5182_sandbox() -> crate::V8Sandbox {
+    /// 双后端按本文件既定模式 cfg 分支（TV-1：quickjs 腿与 CI linux-x86_64-quickjs /
+    /// windows-aarch64 走 `--no-default-features --features quickjs`，V8Sandbox 不存在）。
+    #[cfg(any(feature = "v8", feature = "quickjs"))]
+    fn r5182_sandbox() -> Box<dyn crate::Sandbox> {
         let config = crate::SandboxConfig {
             persistent_context: true,
             ..Default::default()
         };
-        let mut sandbox = crate::V8Sandbox::with_config(config).unwrap();
+        #[cfg(feature = "v8")]
+        let mut sandbox: Box<dyn crate::Sandbox> = Box::new(crate::V8Sandbox::with_config(config).unwrap());
+        #[cfg(all(feature = "quickjs", not(feature = "v8")))]
+        let mut sandbox: Box<dyn crate::Sandbox> = Box::new(crate::QuickJSSandbox::with_config(config).unwrap());
         // 动态 import 取回面在纯沙箱无宿主：注册空 stub（本组用例只走静态 import 面）。
         sandbox.register_callback("__zw_compile_module", Box::new(|_args| String::new()));
         sandbox
@@ -2993,11 +3015,58 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
             "文档 1：模块求值一次"
         );
         sandbox.reset_context();
+        // TV-2：中间断言钉住「新全局里计数器未定义」——若复位失效（global 保留），此处读到
+        // "1"（泄漏的记忆化实例命中并跳过模块体，下方断言也会假绿）。
+        assert_eq!(
+            sandbox.execute("String(globalThis.__r5182r)").unwrap().value,
+            "undefined",
+            "reset_context 后新全局不含上一文档的模块副作用（泄漏抑制重求值会被此断言抓住）"
+        );
         sandbox.execute(&format!("{prelude}\n{transformed}")).unwrap();
         assert_eq!(
             sandbox.execute("String(globalThis.__r5182r)").unwrap().value,
             "1",
             "文档 2（reset_context 后新全局）：重新求值一次（缓存未跨文档泄漏）"
+        );
+    }
+
+    #[test]
+    fn test_r5182_host_reset_script_reenables_per_document() {
+        // R5182-D1：tab worker（script_phase_begin）与 webview 进程内（run_page_scripts_impl）
+        // 两条持久 context 路径的文档边界 = 宿主执行 MODULE_CACHE_RESET_SCRIPT。同一沙箱
+        // （不 reset_context）模拟跨文档导航：复位前共享（第二文档零次求值＝D1 回归形态），
+        // 复位后新文档重新求值一次。renderer 路径由 reset_context 覆盖（上一用例）。
+        let mut sandbox = r5182_sandbox();
+        let body = "globalThis.__r5182h=(globalThis.__r5182h||0)+1;";
+        let mut registry = ModuleRegistry::new();
+        registry.register("https://zero.test/page.js", body);
+        let prelude = build_module_runtime_prelude(&registry, Some("https://zero.test/page.js")).unwrap();
+        let transformed = compile_module_script(body, "https://zero.test/page.js", &registry).unwrap();
+        let run_page = |sandbox: &mut Box<dyn crate::Sandbox>| {
+            let prelude = prelude.clone();
+            let transformed = transformed.clone();
+            sandbox.execute(&format!("{prelude}\n{transformed}")).unwrap();
+        };
+        run_page(&mut sandbox);
+        assert_eq!(
+            sandbox.execute("String(globalThis.__r5182h)").unwrap().value,
+            "1",
+            "文档 1：模块求值一次"
+        );
+        // 文档 2 无复位（D1 回归形态对照）：持久 context 下记忆化命中 → 零次求值。
+        run_page(&mut sandbox);
+        assert_eq!(
+            sandbox.execute("String(globalThis.__r5182h)").unwrap().value,
+            "1",
+            "无复位的持久 context：共享缓存命中，模块体不重执行（本用例钉住缓存持久性）"
+        );
+        // 文档 2 复位（宿主在脚本阶段起点执行 MODULE_CACHE_RESET_SCRIPT）：重新求值一次。
+        sandbox.execute(crate::es_module::MODULE_CACHE_RESET_SCRIPT).unwrap();
+        run_page(&mut sandbox);
+        assert_eq!(
+            sandbox.execute("String(globalThis.__r5182h)").unwrap().value,
+            "2",
+            "宿主执行复位脚本后：同 URL 模块在新文档重新求值（恰好一次，D1 修复语义）"
         );
     }
 }

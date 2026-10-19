@@ -221,6 +221,15 @@ impl PageScriptRunner {
 /// `runtime::after_page_html_loaded_with_cache` 的阶段起点注入对齐。
 pub fn script_phase_begin(js_worker: Option<&TabJsWorkerHandle>) {
     let Some(worker) = js_worker else { return };
+    // R5182-D1：tab worker 为持久 context 全生命周期（无 ResetDocumentState/reset_context），
+    // 文档脚本阶段起点显式复位模块缓存——跨文档导航后同 URL 模块须在新文档重新求值
+    //（不复位则零次求值：模块级初始化/事件绑定静默缺失，页面交互失效）。与 renderer 路径
+    // ResetDocumentState 臂的 sandbox.reset_context（renderer js_worker.rs）构成三宿主一致的
+    // 每文档复位面（webview 路径在 run_page_scripts_impl 起点同款）。spec：
+    // https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate
+    if let Err(e) = worker.execute_script_direct(zero_script_sandbox::MODULE_CACHE_RESET_SCRIPT) {
+        warn!("module cache reset at script phase begin: {e}");
+    }
     let script = script_set_ready_state("loading");
     if let Err(e) = worker.execute_script_direct(&script) {
         warn!("set readyState loading: {e}");
