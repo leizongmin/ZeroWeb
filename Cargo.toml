@@ -78,6 +78,8 @@ fontdue = "0.9"
 swash = "0.2"
 softbuffer = "0.4"
 resvg = "0.47"
+# SVG 源级管线（R5190 style 属性 sanitize）：与 usvg 0.47 传递依赖同版，style 属性分词对齐
+simplecss = "0.2"
 
 # 文字排版
 rustybuzz = "0.20"

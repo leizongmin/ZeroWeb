@@ -7379,6 +7379,7 @@ dependencies = [
  "rsa",
  "sha1",
  "sha2 0.10.9",
+ "simplecss",
  "slotmap",
  "thiserror 2.0.18",
  "tracing",

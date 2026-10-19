@@ -1019,6 +1019,14 @@ impl Painter {
         if !css_transforms.is_empty() {
             source = apply_css_transforms_to_source(&source, &css_transforms, doc, node_id);
         }
+        // R5190（css-transforms-1 #transform-attribute-specificity）：style 属性中
+        // 无效 transform 声明源级剔除——usvg 逐声明盲替换同名 presentation attribute
+        // 且解析失败回退 identity，致 svg-inline-styles-005/006/010/013 属性变换
+        // 整体丢失。**置于 R3938 之后**：CSS 合法声明（deg/px 单位）由 R3938 以同名
+        // 替换先行改写为计算值（此处若先剔除会拆掉 R3938 的同名替换锚点——001 案
+        // 翻红实证）；此处只处理 R3938 覆盖不到的残留 invalid 声明。
+        // kill-switch ZW_SVG_STYLE_SANITIZE=0（default-on）。
+        source = crate::paint::svg_style_sanitize::sanitize_svg_style_attrs(&source);
         // R4270（filter-effects-1 §15 Privacy Considerations）：SVG filter tainting 规则——
         // 受限原语 feDisplacementMap 的位移映射（in2）为 tainted 输入（标准输入恒 tainted；
         // feFlood/feDropShadow currentcolor 系；feImage）时按 spec 作 pass through（输出 =

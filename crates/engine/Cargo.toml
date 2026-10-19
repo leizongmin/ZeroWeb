@@ -22,6 +22,7 @@ zero-canvas = { workspace = true }
 zero-net = { workspace = true }
 zero-security = { workspace = true }
 zero-script-sandbox = { workspace = true, optional = true }
+simplecss = { workspace = true }
 thiserror = { workspace = true }
 url = { workspace = true }
 tracing = { workspace = true }
