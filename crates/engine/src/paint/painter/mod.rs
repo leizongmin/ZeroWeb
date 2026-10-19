@@ -6408,15 +6408,96 @@ fn rewrite_transform_attr_for_node(
     };
     let tag = elem.local_name().to_string();
     let is_root = node_id == subtree_root;
-    let (_, tag_end) = locate_element_open_tag(
-        source,
-        &tag,
-        elem.get_attribute("id").as_deref(),
-        elem.get_attribute("class").as_deref(),
-        is_root,
-    )?;
+    let id = elem.get_attribute("id");
+    let class = elem.get_attribute("class");
+    let located = match (id.as_deref(), class.as_deref(), is_root) {
+        // R5195：无 id/class 的非根元素（translate-in-svg：`<rect style="translate: …">`）
+        // 旧实现不可定位 → CSS transform 注入静默丢失。回退 = 同标签**无指纹元素序数**
+        // 定位：DOM 侧按文档序数出目标在「同标签且无 id/class」元素中的序号，文本侧
+        // 扫描同标签开标签并跳过含 id=/class= 者取同序——序列化保文档序，两侧过滤
+        // 条件一致（id/class 存在性），序数对齐。
+        (None, None, false) => {
+            let ordinal = plain_same_tag_ordinal(doc, subtree_root, node_id)?;
+            locate_nth_plain_open_tag(source, &tag, ordinal)?
+        }
+        (id, class, root) => locate_element_open_tag(source, &tag, id, class, root)?,
+    };
+    let (_, tag_end) = located;
     let head = &source[..tag_end];
     Some(rewrite_or_insert_transform_in_tag(head, svg_value, source, tag_end))
+}
+
+/// R5195：目标在子树文档序中作为「同标签且无 id/class 属性」元素的序号（0 基）。
+/// 目标自身有 id/class 时返回 None（调用方走指纹路径）。遍历序与序列化一致
+///（outer_html 同为 child_nodes 文档序），保证与 [`locate_nth_plain_open_tag`]
+/// 的文本侧计数对齐。
+pub(crate) fn plain_same_tag_ordinal(doc: &Document, subtree_root: NodeId, node_id: NodeId) -> Option<usize> {
+    let target = doc.get(node_id)?;
+    let NodeKind::Element(elem) = &target.kind else {
+        return None;
+    };
+    if elem.get_attribute("id").is_some() || elem.get_attribute("class").is_some() {
+        // 有指纹 → 不属序数序列，调用方走指纹路径。
+        return None;
+    }
+    let tag = elem.local_name();
+    // 先序 DFS（与 child_nodes 文档序一致）：命中目标时 count = 文档序中位于其前的
+    // 同标签无指纹元素数，即文本侧 [`locate_nth_plain_open_tag`] 的序数。
+    fn walk(doc: &Document, current: NodeId, node_id: NodeId, tag: &str, count: &mut usize) -> bool {
+        if let Some(n) = doc.get(current)
+            && let NodeKind::Element(e) = &n.kind
+            && e.local_name() == tag
+        {
+            if current == node_id {
+                return true;
+            }
+            if e.get_attribute("id").is_none() && e.get_attribute("class").is_none() {
+                *count += 1;
+            }
+        }
+        doc.child_nodes(current)
+            .into_iter()
+            .any(|child| walk(doc, child, node_id, tag, count))
+    }
+    let mut count = 0usize;
+    if walk(doc, subtree_root, node_id, tag, &mut count) {
+        Some(count)
+    } else {
+        None
+    }
+}
+
+/// R5195：定位 source 中第 `ordinal` 个（0 基）**无 id=/class= 属性**的同标签开标签。
+/// 与 [`locate_element_open_tag`] 共享标签名边界与指纹存在性语义；含 id=/class= 的
+/// 开标签不计入序数（与 DOM 侧 [`plain_same_tag_ordinal`] 过滤条件一致）。
+pub(crate) fn locate_nth_plain_open_tag(source: &str, tag: &str, ordinal: usize) -> Option<(usize, usize)> {
+    let prefix = format!("<{tag}");
+    let mut scan = 0usize;
+    let mut seen = 0usize;
+    while let Some(rel) = source[scan..].find(&prefix) {
+        let lt = scan + rel;
+        scan = lt + prefix.len();
+        if source[scan..]
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == ':')
+        {
+            continue;
+        }
+        let Some(gt_rel) = source[lt..].find('>') else {
+            continue;
+        };
+        let tag_end = lt + gt_rel;
+        let open_tag = &source[lt..=tag_end];
+        if open_tag.contains("id=\"") || open_tag.contains("class=\"") {
+            continue;
+        }
+        if seen == ordinal {
+            return Some((lt, tag_end));
+        }
+        seen += 1;
+    }
+    None
 }
 
 /// 在 `[..tag_end)` 的当前开标签内改写或插入 transform attr，拼回整个文本。
@@ -6467,7 +6548,14 @@ fn strip_style_transform_declarations(tag: &str) -> String {
             let lower = d.to_ascii_lowercase();
             !(lower.starts_with("transform:")
                 || lower.starts_with("transform-box:")
-                || lower.starts_with("transform-origin:"))
+                || lower.starts_with("transform-origin:")
+                // R5195（css-transforms-2 §individual-transforms）：individual 三属性
+                // 同剥——R5015 已把它们合成进 transform attr，style 残留被 usvg 原生
+                // 采纳即双轨（rotate-animation-on-svg：动画采样写入 style attr 的
+                // rotate 与注入 attr 叠加净恒等，方块停在原点）。
+                || lower.starts_with("translate:")
+                || lower.starts_with("rotate:")
+                || lower.starts_with("scale:"))
         })
         .collect();
     if kept.is_empty() {

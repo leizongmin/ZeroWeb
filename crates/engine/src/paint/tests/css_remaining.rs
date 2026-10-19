@@ -1239,3 +1239,90 @@ fn r5098_inline_frag_visibility_filters_hidden_glyphs() {
         "R5098: 可见内容不受过滤影响（on {visible_on} == off {visible_off}）"
     );
 }
+
+/// R5195：无 id/class 的非根 SVG 元素 CSS transform 注入定位——序数回退。
+/// [`locate_nth_plain_open_tag`] 与 DOM 侧 [`plain_same_tag_ordinal`] 的过滤条件
+///（同标签 + 无 id=/class=）一致，序列化保文档序 → 序数对齐；含指纹的开标签
+/// 不计入序数。
+#[test]
+fn r5195_locate_nth_plain_open_tag_ordinal() {
+    use crate::paint::painter::{locate_nth_plain_open_tag, plain_same_tag_ordinal};
+    let source = r#"<svg><rect x="1" y="1"/><rect id="mid" width="9"/><g class="c"><rect width="5"/></g><rect fill="green"/></svg>"#;
+    // plain rect 序：#1 首个、#2 g 内、#3 green；id="mid" 与 class="c" 所在标签不计入。
+    let (lt, te) = locate_nth_plain_open_tag(source, "rect", 2).expect("ordinal 2 命中");
+    assert!(source[lt..=te].contains(r#"fill="green""#), "got {}", &source[lt..=te]);
+    let (lt1, te1) = locate_nth_plain_open_tag(source, "rect", 1).expect("ordinal 1 命中");
+    assert!(source[lt1..=te1].contains(r#"width="5""#), "got {}", &source[lt1..=te1]);
+    assert!(
+        locate_nth_plain_open_tag(source, "rect", 3).is_none(),
+        "序数越界 → None"
+    );
+    // 标签名边界：`<rect` 不得误配 `<rectX`。
+    assert!(locate_nth_plain_open_tag(r#"<rectx x="1"/><rect x="2"/>"#, "rect", 1).is_none());
+
+    // DOM 侧序数与文本侧对齐：目标 = 文档第 3 个 plain rect → ordinal 2。
+    let doc = zero_dom::parse_html(
+        r#"<html><body><svg><rect x="1"/><rect id="mid"/><rect class="c"/><rect fill="green"/></svg></body></html>"#,
+    );
+    let svg_id = doc.get_elements_by_tag_name("svg").into_iter().next().expect("svg");
+    let greens: Vec<_> = doc
+        .get_elements_by_tag_name("rect")
+        .into_iter()
+        .filter(|id| doc.outer_html(*id).contains(r#"fill="green""#))
+        .collect();
+    assert_eq!(greens.len(), 1);
+    assert_eq!(
+        plain_same_tag_ordinal(&doc, svg_id, greens[0]),
+        Some(1),
+        "目标 plain rect 序数 = 1（仅首个 rect 在其前；id/class 元素不计入）"
+    );
+}
+
+/// R5195 回归：无 id/class 的 SVG rect（translate-in-svg 形态：inline
+/// `style="translate: 100px 100px"`）的 CSS transform 注入不再静默丢失——
+/// 序列化源中目标开标签（第 2 个 plain rect）获得 transform attr，且红 rect
+///（无 CSS 声明）不动（「无声明勿动」语义不变）。
+#[test]
+fn r5195_css_transform_injection_reaches_plain_svg_element() {
+    let css = "svg { display: block; width: 400px; height: 400px; }";
+    let html = format!(
+        r##"<html><head><style>{css}</style></head><body style="margin:0">
+        <svg width="400" height="400">
+          <rect x="101" y="101" width="98" height="98" fill="red"/>
+          <rect width="100" height="100" fill="green" style="translate: 100px 100px"/>
+        </svg>
+        </body></html>"##
+    );
+    let doc = zero_dom::parse_html(&html);
+    let sheet = zero_css_parser::Parser::parse_stylesheet(css);
+    let mut sys = zero_style_system::StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[sheet]);
+    let svg_id = doc.get_elements_by_tag_name("svg").into_iter().next().expect("svg");
+    let mut out: Vec<(zero_dom::NodeId, String)> = Vec::new();
+    crate::paint::painter::collect_css_transforms(&doc, svg_id, &styles, &mut out);
+    assert_eq!(out.len(), 1, "仅绿 rect 有 CSS transform 声明");
+    assert!(out[0].1.contains("translate(100 100)"), "got {}", out[0].1);
+
+    let source = doc.outer_html(svg_id);
+    let rewritten = crate::paint::painter::apply_css_transforms_to_source(&source, &out, &doc, svg_id);
+    // 定位绿 rect 开标签（fill="green" 所在标签），transform 注入其中。
+    let green_open = rewritten
+        .find(r#"fill="green""#)
+        .map(|p| rewritten[..p].rfind("<rect").unwrap_or(p))
+        .expect("绿 rect 存在");
+    let green_tag_end = rewritten[green_open..].find('>').expect("开标签闭合") + green_open;
+    let green_tag = &rewritten[green_open..=green_tag_end];
+    assert!(
+        green_tag.contains(r#"transform="translate(100 100)""#),
+        "绿 rect 开标签应获注入 transform，got: {green_tag}"
+    );
+    // 红 rect（无声明）不动。
+    let red_open = rewritten.find("<rect").expect("红 rect 首个");
+    let red_tag_end = rewritten[red_open..].find('>').expect("开标签闭合") + red_open;
+    assert!(
+        !rewritten[red_open..=red_tag_end].contains("transform="),
+        "红 rect 无 CSS 声明不得被改写，got: {}",
+        &rewritten[red_open..=red_tag_end]
+    );
+}

@@ -9,6 +9,13 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5195 实现轮（SVG 无指纹元素 transform 注入定位——两案翻绿 + 两案假绿转真红）**（2026-10-19）
+>
+> - **域核**：SVG translate 三案（translate-in-svg 4.17% / attribute-in-svg 12.50% / css-property-in-svg 12.50%）dump + 代码走查——R5015 组合逻辑完整，根因在注入定位：`locate_element_open_tag` 指纹仅 id/class，无指纹非根返回 None → `<rect style="translate: …">` 类目标 transform attr 注入静默丢失。两案新翻红（rotate/scale-animation-on-svg）stash 对照实证基线绿 = 双错假绿（test 动画与 ref 静态声明都无法注入 → 同样未旋转），定位器修复后 ref 正确旋转、test 侧暴露动画值不进计算样式（harness 无真时间轴）→ 假绿转真红归 WAAPI/individual 属性动画挂账域，非回归。css-property-in-svg 修复需 SVG transform presentation attr 级联（attr rotate 中心 = 用户空间原点，viewBox min≠0 存量案有翻红风险）→ 挂账。
+> - **实现**（zero-engine painter）：① 无 id/class 非根元素序数回退定位——DOM 侧先序 DFS 计「同标签且无 id/class」序数 + 文档序文本侧同过滤扫描，序列化保序 → 对齐；指纹/根路径与「无声明勿动」不变。② strip_style_transform_declarations 扩族 translate:/rotate:/scale:（R5015 已合成进 attr，style 残留被 usvg 原生采纳即双轨；仅注入目标路径）。unit +2。
+> - **验证**：两案翻绿 ✓ 0.00%；corpus 16,590 = 15,562 + 1,028（持平）comm diff FIXED=2 NEW=2（假绿转真红）；make reftest 712/712；make test 19,825P + 2 既有环境红（19,823+2）；product-smoke EXIT=0 welcome 15.50%；bench-gate ×3 FAIL 5/4/5 全墙钟族 NEW=0 判例同族；fmt+clippy 0 告警。证据：[r5195](rendering-compat/evidence/r5195-svg-plain-tag-transform-inject-2026-10-19.md)。
+> - **下一步**：R5196 ① 续择轻域核未深核候选（transform-compound-001 12.53%、css-transforms-transformlist 3.30%、transform-percent-010、huge-length-tiny-scale 10.08%、filter-region-units-001 2.08%）② 深结构域维持不动（WAAPI 真时间轴组+individual 属性动画〔新增 rotate/scale-animation-on-svg 驱动案〕、SVG transform presentation attr 级联、SVG image href、伪盒实体化、display:table+transform+abspos、3D/preserve-3d 组、backdrop-root、变换子树嵌套组合域）。
+
 > **▶ R5194 实现轮（filter saturate/grayscale 规范 luma 权重 + 空参缺省面——两案翻绿）**（2026-10-19）
 >
 > - **域核**：R5193 所列 6 候选全落挂账（fill-box-mutation-002 → SVG `<image>` href 渲染缺口 dump 实证；generated-001/002 → 伪盒实体化 feature 域，伪元素仅合成文本子节点无伪样式；abspos-006/007 维持；fractional-scale 低价值）。扩带重筛从未域核 14 案锁定 filter 函数族两缺口。
