@@ -644,6 +644,76 @@ pub fn clip_images_to_rounded_rect(
     }
 }
 
+/// R5201（CSS Overflow 3 §3 裁剪区域圆角）：对快照之后新增、矩形截断后触及
+/// clip_rect 圆角角的 fill 图元改写为圆角矩形图元——先经
+/// clip_all_primitives_to_rect 截断，每角仅当 fill 两条邻边与裁剪边逐位重合时
+/// 承接该角半径（此时角区弧线与裁剪区圆角弧逐位一致）；未触及角的 fill 保持
+/// 矩形。draw_order 原位换槽（R4539 惯用法：尾部追加后 pop 回填原 op 槽位），
+/// 绘制顺序不变；原 fill 清零防 legacy 分桶路径双绘。
+/// 图片由 clip_images_to_rounded_rect 另行处理（crop 窗口 + 逐像素剔除，
+/// R5155）；glyph/渐变/阴影的圆角剔除无案面，FIXME 案驱动再接。
+pub fn clip_fills_to_rounded_rect(
+    primitives: &mut RenderPrimitives,
+    from: &PrimitiveCounts,
+    clip_rect: &Rect,
+    radii: [f32; 4],
+) {
+    use zero_render_foundation::primitive::{DrawOp, RoundedRectPrimitive};
+
+    if radii[0] <= 0.0 && radii[1] <= 0.0 && radii[2] <= 0.0 && radii[3] <= 0.0 {
+        return;
+    }
+    for i in from.fills..primitives.fills.len() {
+        // 截断后的 fill ⊆ clip_rect；邻边与裁剪边重合（截断为直接赋值，逐位
+        // 相等；0.01 容差兜无截断恰好重合形态）→ 该角落在裁剪区圆角角上。
+        let r = primitives.fills[i].rect;
+        let coincide = |a: f32, b: f32| (a - b).abs() < 0.01;
+        let corner_radii = [
+            if coincide(r.left(), clip_rect.left()) && coincide(r.top(), clip_rect.top()) {
+                radii[0]
+            } else {
+                0.0
+            },
+            if coincide(r.right(), clip_rect.right()) && coincide(r.top(), clip_rect.top()) {
+                radii[1]
+            } else {
+                0.0
+            },
+            if coincide(r.right(), clip_rect.right()) && coincide(r.bottom(), clip_rect.bottom()) {
+                radii[2]
+            } else {
+                0.0
+            },
+            if coincide(r.left(), clip_rect.left()) && coincide(r.bottom(), clip_rect.bottom()) {
+                radii[3]
+            } else {
+                0.0
+            },
+        ];
+        if corner_radii[0] <= 0.0 && corner_radii[1] <= 0.0 && corner_radii[2] <= 0.0 && corner_radii[3] <= 0.0 {
+            continue;
+        }
+        let color = primitives.fills[i].color;
+        primitives.add_rounded_rect(RoundedRectPrimitive {
+            rect: r,
+            color,
+            top_left_radius: corner_radii[0],
+            top_right_radius: corner_radii[1],
+            bottom_right_radius: corner_radii[2],
+            bottom_left_radius: corner_radii[3],
+        });
+        primitives.fills[i].rect = Rect::ZERO;
+        if let Some(pos) = primitives
+            .draw_order
+            .iter()
+            .position(|op| matches!(op, DrawOp::Fill(j) if *j == i))
+            && let Some(tail) = primitives.draw_order.pop()
+        {
+            primitives.draw_order[pos] = tail;
+        }
+    }
+}
+
 /// 对快照之后新增的所有图元应用 opacity（alpha 衰减）。
 pub fn apply_opacity_to_new_primitives(primitives: &mut RenderPrimitives, from: &PrimitiveCounts, opacity: f32) {
     for fill in primitives.fills.iter_mut().skip(from.fills) {
@@ -1184,5 +1254,68 @@ mod tests {
             .map(|(x, y)| ((x - cx).powi(2) + (y - cx).powi(2)).sqrt())
             .fold(f32::MIN, f32::max);
         assert!((r_max - 30.0).abs() < 1.0, "内形状半径应 ≈30（64 段逼近）：{r_max}");
+    }
+
+    // ── clip_fills_to_rounded_rect ──────────────────────────────────────
+
+    /// R5201：触及裁剪边的 fill 改写圆角矩形——radii 写入、原 fill 清零、
+    /// draw_order 原位换槽；窗口内部 fill 不动；全零半径 no-op。
+    #[test]
+    fn r5201_clip_fills_to_rounded_rect_rewrite() {
+        let clip = Rect::new(0.0, 0.0, 50.0, 50.0);
+        let mut p = RenderPrimitives::new();
+        p.add_fill(Rect::new(0.0, 0.0, 50.0, 50.0), Color::rgb(255, 0, 0));
+        let from = PrimitiveCounts::snapshot(&p);
+        // 快照后：一个铺满裁剪窗口（触及裁剪边）+ 一个严格窗口内部。
+        p.add_fill(Rect::new(0.0, 0.0, 50.0, 50.0), Color::rgb(0, 0, 255));
+        p.add_fill(Rect::new(10.0, 10.0, 20.0, 20.0), Color::rgb(0, 255, 0));
+        clip_fills_to_rounded_rect(&mut p, &from, &clip, [10.0, 10.0, 10.0, 10.0]);
+        assert_eq!(p.rounded_rects.len(), 1, "触及裁剪边的 fill 应改写为圆角矩形");
+        let rr = &p.rounded_rects[0];
+        assert_eq!(rr.rect, clip);
+        assert_eq!(rr.color, Color::rgb(0, 0, 255));
+        assert!(
+            rr.top_left_radius == 10.0
+                && rr.top_right_radius == 10.0
+                && rr.bottom_right_radius == 10.0
+                && rr.bottom_left_radius == 10.0
+        );
+        assert_eq!(p.fills[1].rect, Rect::ZERO, "原 fill 应清零防双绘");
+        assert_eq!(p.fills[2].rect, Rect::new(10.0, 10.0, 20.0, 20.0), "窗口内部 fill 不动");
+        // draw_order 原位换槽：长度不变，RoundedRect op 落在原 Fill op 槽位。
+        assert_eq!(p.draw_order.len(), 3);
+        assert!(matches!(p.draw_order[0], DrawOp::Fill(0)));
+        assert!(matches!(p.draw_order[1], DrawOp::RoundedRect(0)));
+        assert!(matches!(p.draw_order[2], DrawOp::Fill(2)));
+
+        // 部分触及：fill 截断后只与裁剪窗右/下边重合 → 仅右下角承接半径，rect
+        // 保持 fill 截断后自身（非 clip_rect）。
+        let mut q = RenderPrimitives::new();
+        q.add_fill(Rect::new(0.0, 0.0, 50.0, 50.0), Color::rgb(255, 0, 0));
+        let from_q = PrimitiveCounts::snapshot(&q);
+        q.add_fill(Rect::new(40.0, 40.0, 40.0, 40.0), Color::rgb(0, 0, 255));
+        // 惯例前置：先矩形截断（调用点在 clip_all_primitives_to_rect 之后）。
+        clip_all_primitives_to_rect(&mut q, &from_q, &clip);
+        clip_fills_to_rounded_rect(&mut q, &from_q, &clip, [10.0, 10.0, 10.0, 10.0]);
+        assert_eq!(q.rounded_rects.len(), 1, "触及右下角的 fill 应改写");
+        let rr = &q.rounded_rects[0];
+        assert_eq!(rr.rect, Rect::new(40.0, 40.0, 10.0, 10.0), "rect 应为截断后 fill 自身");
+        assert!(
+            rr.top_left_radius == 0.0
+                && rr.top_right_radius == 0.0
+                && rr.bottom_right_radius == 10.0
+                && rr.bottom_left_radius == 0.0,
+            "仅右下角承接半径，got {:?}",
+            rr
+        );
+
+        // 全零半径：no-op（矩形裁剪既有行为）。
+        let mut z = RenderPrimitives::new();
+        z.add_fill(Rect::new(0.0, 0.0, 50.0, 50.0), Color::rgb(255, 0, 0));
+        let from_z = PrimitiveCounts::snapshot(&z);
+        z.add_fill(Rect::new(0.0, 0.0, 50.0, 50.0), Color::rgb(0, 0, 255));
+        clip_fills_to_rounded_rect(&mut z, &from_z, &clip, [0.0; 4]);
+        assert!(z.rounded_rects.is_empty(), "全零半径不应改写");
+        assert_eq!(z.fills[1].rect, clip, "全零半径应保持 fill 原样");
     }
 }

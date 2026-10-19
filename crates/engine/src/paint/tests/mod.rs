@@ -40,6 +40,7 @@ mod r5185_border_area_shape_band;
 mod r5186_shape_join_outline;
 mod r5187_svg_css_presentation;
 mod r5188_border_shape_shadow;
+mod r5201_overflow_clip_radius_tests;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;

@@ -433,7 +433,9 @@ fn paint_containment_clips(contain: ContainComputedValue, display: DisplayValue)
 /// 区域 = padding box 的圆角形状——四角半径取 border-box 百分比解析 + 相邻收缩
 /// （css-backgrounds-3 §5.5）后扣减对应边 border 宽 clamp 0（与 border.rs 背景内
 /// 圈公式一致）。返回 None = 无圆角（矩形裁剪，既有行为）。
-/// FIXME: overflow:hidden/clip + border-radius 的通用裁剪未接（案驱动）；
+/// R5201：overflow:clip + border-radius 的 fill 圆角裁剪已由 overflow_clip_radii
+/// 接通（hidden 面待 backdrop-filter 祖先裁剪域，见该函数注）；图片/glyph/渐变/
+/// 阴影仍案驱动。
 /// FIXME: 椭圆双轴（border-radius 斜杠垂直半径）未消费，单 r 模型与绘制端
 /// fill_rounded_rect 一致。
 fn paint_containment_clip_radii(box_node: &LayoutBox, style: &ComputedStyle) -> Option<[f32; 4]> {
@@ -565,6 +567,55 @@ fn overflow_clip_rect(box_node: &LayoutBox, abs_x: f32, abs_y: f32) -> Rect {
         w = 2.0 * CLIP_UNBOUNDED;
     }
     Rect::new(x, y, w, h)
+}
+
+/// R5201（CSS Overflow 3 §3）：overflow 裁剪区域的圆角——裁剪边形如外 box-shadow
+/// spread（csswg #7103 消费记录）：相对 border-box 每侧取有符号内缩 dx（内缩为正、
+/// 外扩为负），角半径 = clamp0(规格半径 − max(dx_x, dx_y))（R5155 邻边收缩同族；
+/// clip 轴裁剪边 = 基准盒 ± margin，等价于 padding-box 半径 + spread）。单轴 clip
+/// 时另一轴 ±1e5 无界，dx 取 max 自然落到有界轴。
+/// gate = 任一轴为 `clip`（§3 shaped edge 的定义域）。`hidden` 轴 Chromium 同样圆整，
+/// 但 corpus 的 backdrop-filter 祖先裁剪对（backdrop-filter-nested-border-radius-clip
+/// ±3）此刻绿依赖 hidden 方形裁剪——backdrop 采样未接祖先圆角裁剪（filter-effects
+/// 域挂账），hidden 面待该域接通后放开（案驱动）。无规格半径或四角全零 → None。
+/// FIXME: 椭圆双轴（border-radius 斜杠垂直半径）未消费，单 r 模型与绘制端
+/// fill_rounded_rect 一致。
+fn overflow_clip_radii(
+    box_node: &LayoutBox,
+    style: &ComputedStyle,
+    clip_rect: &Rect,
+    abs_x: f32,
+    abs_y: f32,
+) -> Option<[f32; 4]> {
+    if box_node.overflow_x != OverflowClip::Clip && box_node.overflow_y != OverflowClip::Clip {
+        return None;
+    }
+    let bw = box_node.border_left
+        + box_node.padding_left
+        + box_node.content_width
+        + box_node.padding_right
+        + box_node.border_right;
+    let bh = box_node.border_top
+        + box_node.padding_top
+        + box_node.content_height
+        + box_node.padding_bottom
+        + box_node.border_bottom;
+    if bw <= 0.0 || bh <= 0.0 {
+        return None;
+    }
+    let spec = super::helpers::BorderRadiusSpec::from_style_with_box(style, bw, bh);
+    let dl = clip_rect.left() - abs_x;
+    let dr = abs_x + bw - clip_rect.right();
+    let dt = clip_rect.top() - abs_y;
+    let db = abs_y + bh - clip_rect.bottom();
+    let clamp0 = |v: f32| v.max(0.0);
+    let radii = [
+        clamp0(spec.top_left - dl.max(dt)),
+        clamp0(spec.top_right - dr.max(dt)),
+        clamp0(spec.bottom_right - dr.max(db)),
+        clamp0(spec.bottom_left - dl.max(db)),
+    ];
+    (radii[0] > 0.0 || radii[1] > 0.0 || radii[2] > 0.0 || radii[3] > 0.0).then_some(radii)
 }
 
 /// 收集 scope 根子树中所有 positioned descendants（z-index:auto pseudo-SC + real-SC，含嵌套），
@@ -2501,6 +2552,23 @@ impl Painter {
                     radii,
                 );
             }
+            // R5201：overflow 裁剪圆角——触及裁剪角的 fill 改写圆角矩形（CSS
+            // Overflow 3 §3 shaped clip edge，gate 见 overflow_clip_radii：仅 clip
+            // 轴；hidden 面/backdrop-filter 祖先裁剪域挂账）。仅 fill：图片面
+            //（attachment local 背景图 post-snapshot 发射与 border_shape 圆角双裁
+            // 冲突，attachment-local-clipping-image-6 实证 10.62% 整块差）/glyph/
+            // 渐变/阴影仍案驱动。
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+                && let Some(radii) = overflow_clip_radii(box_node, style, &clip_rect, abs_x, abs_y)
+            {
+                super::helpers::clip_fills_to_rounded_rect(
+                    &mut self.primitives,
+                    &counts_before_children,
+                    &clip_rect,
+                    radii,
+                );
+            }
         }
 
         let _ = is_hidden;
@@ -3766,6 +3834,23 @@ impl Painter {
                 && let Some(radii) = paint_containment_clip_radii(box_node, style)
             {
                 super::helpers::clip_images_to_rounded_rect(
+                    &mut self.primitives,
+                    &counts_before_children,
+                    &clip_rect,
+                    radii,
+                );
+            }
+            // R5201：overflow 裁剪圆角——触及裁剪角的 fill 改写圆角矩形（CSS
+            // Overflow 3 §3 shaped clip edge，gate 见 overflow_clip_radii：仅 clip
+            // 轴；hidden 面/backdrop-filter 祖先裁剪域挂账）。仅 fill：图片面
+            //（attachment local 背景图 post-snapshot 发射与 border_shape 圆角双裁
+            // 冲突，attachment-local-clipping-image-6 实证 10.62% 整块差）/glyph/
+            // 渐变/阴影仍案驱动。
+            if let Some(node_id) = box_node.node_id
+                && let Some(style) = styles.get(&node_id)
+                && let Some(radii) = overflow_clip_radii(box_node, style, &clip_rect, abs_x, abs_y)
+            {
+                super::helpers::clip_fills_to_rounded_rect(
                     &mut self.primitives,
                     &counts_before_children,
                     &clip_rect,

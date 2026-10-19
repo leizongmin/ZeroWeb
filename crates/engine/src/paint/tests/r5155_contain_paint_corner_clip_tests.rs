@@ -39,8 +39,10 @@ fn r5155_contain_paint_radius_rounds_image_clip() {
     }
 }
 
-/// 窄门对照：overflow:hidden + border-radius（无 contain:paint）不启用圆角窗口
-///（通用 overflow 圆角裁剪未接，FIXME 案驱动；现状 = 矩形窗口）。
+/// 窄门对照：overflow:hidden + border-radius（无 contain:paint）不启用图片圆角
+/// 窗口——R5201 的 overflow 裁剪圆角仅接 fill 面（图片面与 attachment local
+/// 背景图 post-snapshot 发射的 border_shape 圆角双裁冲突，attachment-local-
+/// clipping-image-6 实证），containment 臂的图片窗口维持 R5155 原状。
 #[test]
 fn r5155_overflow_radius_without_containment_unchanged() {
     let mut pipeline = RenderPipeline::new(800.0, 600.0);
@@ -53,7 +55,7 @@ fn r5155_overflow_radius_without_containment_unchanged() {
     assert!(!p.images.is_empty(), "img 应生成 image 图元");
     assert!(
         p.images.iter().all(|img| img.clip_radius.is_none()),
-        "无 containment 的 overflow 圆角不应写 clip_radius（现状矩形窗口）"
+        "无 containment 的 overflow 圆角不应写图片 clip_radius（R5201 仅 fill 面）"
     );
 }
 
