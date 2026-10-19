@@ -855,6 +855,38 @@ fn svg_width_height_attrs_map_to_px_hints() {
     );
 }
 
+/// R5198（SVG2 Appendix M presentation attributes）：SVG 命名空间元素 `font-size`
+/// 属性映射 CSS font-size hint——`<filter font-size="10px">` 是其 region 长度
+/// `width="1em"` 的 em 解析语境（filter-region-units-001）。无单位数值按 SVG2
+/// 用户单位译为 px；HTML 命名空间元素不受影响。
+#[test]
+fn svg_font_size_attr_maps_to_hint() {
+    let doc = parse_html(
+        r#"<html><body><svg width="0" height="0"><filter id="f" font-size="10px" width="1em"><feFlood/></filter></svg><div font-size="12px">x</div></body></html>"#,
+    );
+    let filter = doc.get_element_by_id("f").expect("filter");
+    let hints = collect_presentational_hints(&doc, filter);
+    assert!(
+        hints.iter().any(|(p, v)| p == "font-size" && v == "10px"),
+        "filter font-size attr 应映射 hint: {hints:?}"
+    );
+    // 无单位数值 → 用户单位 → px。
+    let doc2 = parse_html(r#"<svg><text font-size="14">x</text></svg>"#);
+    let text = doc2.get_elements_by_tag_name("text")[0];
+    let hints2 = collect_presentational_hints(&doc2, text);
+    assert!(
+        hints2.iter().any(|(p, v)| p == "font-size" && v == "14px"),
+        "无单位 font-size 应译 px: {hints2:?}"
+    );
+    // HTML 命名空间元素（div）不映射——presentation attr 按 namespace 归属。
+    let div = doc.get_elements_by_tag_name("div")[0];
+    let hints3 = collect_presentational_hints(&doc, div);
+    assert!(
+        !hints3.iter().any(|(p, _)| p == "font-size"),
+        "HTML 命名空间 font-size 属性不应映射: {hints3:?}"
+    );
+}
+
 /// R5197（SVG2 §7.2 geometry properties：width/height = <length-percentage> | auto）：
 /// % attr 透传为 CSS % hint（chromium 同模型——svg-intrinsic-size-005 以「CSS % 侧
 /// 与 attr % 侧恒等」构造）。abspos % attr 高仍由 R4018 sizing 臂覆写（门已改判

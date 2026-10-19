@@ -6,6 +6,7 @@
 //! 还包含 CSS 交互/提示属性指示器：cursor、image-rendering、isolation、
 //! will-change、pointer-events、user-select、overscroll-behavior、touch-action。
 
+use std::collections::HashMap;
 use zero_css_parser::values::{ColorValue, LengthValue};
 use zero_dom::{Document, NodeKind};
 use zero_layout_engine::LayoutBox;
@@ -1520,6 +1521,7 @@ impl super::Painter {
         abs_x: f32,
         abs_y: f32,
         style: &ComputedStyle,
+        styles: &HashMap<zero_dom::NodeId, ComputedStyle>,
     ) {
         for value in &style.filter {
             let FilterComputedValue::Url(reference) = value else {
@@ -1532,7 +1534,7 @@ impl super::Painter {
             let Some(filter_node_id) = doc.get_element_by_id(id) else {
                 continue;
             };
-            let Some(region) = svg_filter_region(doc, filter_node_id, box_node, abs_x, abs_y) else {
+            let Some(region) = svg_filter_region(doc, filter_node_id, box_node, abs_x, abs_y, styles) else {
                 continue;
             };
             let Some(color) = constant_filter_chain_color(doc, filter_node_id) else {
@@ -2320,6 +2322,7 @@ pub(crate) fn svg_filter_region(
     box_node: &LayoutBox,
     abs_x: f32,
     abs_y: f32,
+    styles: &HashMap<zero_dom::NodeId, ComputedStyle>,
 ) -> Option<Rect> {
     let node = doc.get(filter_node_id)?;
     let NodeKind::Element(elem) = &node.kind else {
@@ -2328,6 +2331,21 @@ pub(crate) fn svg_filter_region(
     if elem.local_name() != "filter" {
         return None;
     }
+    // R5198（filter-effects-1 §11.3 <length-percentage> + SVG2 §7.10）：单位后缀
+    // 解析——em/ex 相对 <filter> 元素自身计算 font-size（presentation attr
+    // `font-size="10px"` 进级联；无计算值回落 CSS 初始 16px），px/pt/pc/in/cm/mm
+    // 绝对换算；objectBoundingBox 分支下**用户单位数 = bbox 分量比**（filter-
+    // region-units-001：width="1em" font-size=10px + 10px 宽盒 → 10×10 = 100，
+    // 旧版仅认无单位数致 "1em" 解析失败 region None → 恒色填充静默跳过）。
+    // rem/ex 的根字号/x-height 语境不在本路径消费面，维持不解析（None = 无
+    // filter，同引用不可解析语义）。// FIXME: calc() 区域值（filter-region-calc-001）。
+    let font_px = styles
+        .get(&filter_node_id)
+        .and_then(|s| match s.font_size {
+            LengthValue::Px(v) if v.is_finite() && v > 0.0 => Some(v as f32),
+            _ => None,
+        })
+        .unwrap_or(16.0);
     // <length-percentage>：百分比 → 分量比，否则字面 px（SVG 尺寸 attr 无单位 = 用户单位）。
     let parse_len = |v: &str| -> Option<(f32, bool)> {
         let v = v.trim();
@@ -2338,7 +2356,22 @@ pub(crate) fn svg_filter_region(
                 .filter(|n| n.is_finite())
                 .map(|n| (n / 100.0, true))
         } else {
-            v.parse::<f32>().ok().filter(|n| n.is_finite()).map(|n| (n, false))
+            let num_end = v
+                .find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-' || c == '+'))
+                .unwrap_or(v.len());
+            let (num_s, unit) = v.split_at(num_end);
+            let n: f32 = num_s.parse().ok().filter(|n: &f32| n.is_finite())?;
+            let scale = match unit {
+                "" | "px" => 1.0,
+                "em" => font_px,
+                "pt" => 96.0 / 72.0,
+                "pc" => 16.0,
+                "in" => 96.0,
+                "cm" => 96.0 / 2.54,
+                "mm" => 96.0 / 25.4,
+                _ => return None,
+            };
+            Some((n * scale, false))
         }
     };
     let units = elem.get_attribute("filterUnits").unwrap_or_default();
@@ -2916,8 +2949,15 @@ mod tests {
                 </filter></defs></svg></body></html>"#,
         );
         let fid = doc.get_element_by_id("f_flood").expect("filter by id");
-        let region = svg_filter_region(&doc, fid, &build_box(0.0, 0.0, 8.0, 8.0, 0.0, 0.0), 8.0, 8.0)
-            .expect("userSpaceOnUse region");
+        let region = svg_filter_region(
+            &doc,
+            fid,
+            &build_box(0.0, 0.0, 8.0, 8.0, 0.0, 0.0),
+            8.0,
+            8.0,
+            &HashMap::new(),
+        )
+        .expect("userSpaceOnUse region");
         assert_eq!(
             (region.origin.x, region.origin.y, region.size.width, region.size.height),
             (8.0, 8.0, 100.0, 100.0)
@@ -2933,8 +2973,15 @@ mod tests {
                 </filter></defs></svg></body></html>"#,
         );
         let fid = doc.get_element_by_id("flood_green").expect("filter by id");
-        let region = svg_filter_region(&doc, fid, &build_box(0.0, 0.0, 8.0, 8.0, 100.0, 100.0), 8.0, 8.0)
-            .expect("objectBoundingBox region");
+        let region = svg_filter_region(
+            &doc,
+            fid,
+            &build_box(0.0, 0.0, 8.0, 8.0, 100.0, 100.0),
+            8.0,
+            8.0,
+            &HashMap::new(),
+        )
+        .expect("objectBoundingBox region");
         assert_eq!(
             (region.origin.x, region.origin.y, region.size.width, region.size.height),
             (8.0, 8.0, 100.0, 100.0)
@@ -2950,12 +2997,77 @@ mod tests {
         );
         let fid = doc.get_element_by_id("f_merge").expect("filter by id");
         assert!(constant_filter_chain_color(&doc, fid).is_none(), "feMerge 非常量链");
-        let region = svg_filter_region(&doc, fid, &build_box(0.0, 0.0, 8.0, 8.0, 100.0, 100.0), 8.0, 8.0)
-            .expect("default region");
+        let region = svg_filter_region(
+            &doc,
+            fid,
+            &build_box(0.0, 0.0, 8.0, 8.0, 100.0, 100.0),
+            8.0,
+            8.0,
+            &HashMap::new(),
+        )
+        .expect("default region");
         // 缺省 x/y=-10% w/h=120%：origin = 8-10 = -2（spec 缺省 region 外扩 10%）。
         let approx = |a: f32, b: f32| (a - b).abs() < 0.01;
         assert!(approx(region.origin.x, -2.0) && approx(region.origin.y, -2.0));
         assert!(approx(region.size.width, 120.0) && approx(region.size.height, 120.0));
+    }
+
+    /// R5198（filter-effects-1 §11.3 + SVG2 §7.10）：objectBoundingBox 单位下带
+    /// 后缀长度先按 CSS 单位换算为用户单位、再作 bbox 分量比——filter-region-units-
+    /// 001 形态：font-size="10px" 的 filter，width="1em" → 10 用户单位 × 10px 盒宽
+    /// = 100；height="1" → 1 × 100px 盒高 = 100；px 后缀同用户单位语义。
+    #[test]
+    fn r5198_filter_region_em_unit_resolves_via_element_font_size() {
+        use super::svg_filter_region;
+        use zero_dom::parse_html;
+
+        let doc = parse_html(
+            r#"<html><body><svg width="0" height="0"><defs>
+                <filter id="f" x="0" y="0" width="1em" height="1" font-size="10px">
+                    <feFlood flood-color="green"/>
+                </filter></defs></svg></body></html>"#,
+        );
+        let fid = doc.get_element_by_id("f").expect("filter by id");
+        let mut styles = std::collections::HashMap::new();
+        let mut cs = zero_style_system::ComputedStyle::default();
+        cs.font_size = zero_css_parser::values::LengthValue::Px(10.0);
+        styles.insert(fid, cs);
+        let region = svg_filter_region(
+            &doc,
+            fid,
+            &build_box(0.0, 0.0, 8.0, 8.0, 10.0, 100.0),
+            8.0,
+            8.0,
+            &styles,
+        )
+        .expect("em-unit region");
+        assert_eq!(
+            (region.origin.x, region.origin.y, region.size.width, region.size.height),
+            (8.0, 8.0, 100.0, 100.0),
+            "1em（font-size 10px）= 10 用户单位 × 10px 盒宽 = 100"
+        );
+
+        // px 后缀（userSpaceOnUse）：字面用户单位；无计算 font-size 时 em 回落 CSS 初始 16px。
+        let doc = parse_html(
+            r#"<html><body><svg width="0" height="0"><defs>
+                <filter id="g" filterUnits="userSpaceOnUse" x="0" y="0" width="12px" height="2em"/>
+            </defs></svg></body></html>"#,
+        );
+        let gid = doc.get_element_by_id("g").expect("filter by id");
+        let region = svg_filter_region(
+            &doc,
+            gid,
+            &build_box(0.0, 0.0, 8.0, 8.0, 50.0, 50.0),
+            8.0,
+            8.0,
+            &HashMap::new(),
+        )
+        .expect("px/em userSpaceOnUse region");
+        assert_eq!(
+            (region.size.width, region.size.height),
+            (12.0, 32.0),
+            "12px = 12 用户单位；2em 无计算字号回落 16px = 32"
+        );
     }
 
     /// R4273 观测辅助：构造最小 LayoutBox（origin 用 x/y 字段）。

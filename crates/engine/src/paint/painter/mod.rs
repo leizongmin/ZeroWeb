@@ -1747,6 +1747,7 @@ impl Painter {
         &mut self,
         box_node: &LayoutBox,
         doc: &Document,
+        styles: &HashMap<NodeId, ComputedStyle>,
         abs_x: f32,
         abs_y: f32,
         spec_index: usize,
@@ -1769,7 +1770,7 @@ impl Painter {
             let crate::paint::svg_filter_chain::FilterStep::Url(fid) = step else {
                 continue;
             };
-            if let Some(r) = effects::svg_filter_region(doc, *fid, box_node, abs_x, abs_y) {
+            if let Some(r) = effects::svg_filter_region(doc, *fid, box_node, abs_x, abs_y, styles) {
                 let covers_box = r.origin.x <= abs_x + REGION_EPSILON
                     && r.origin.y <= abs_y + REGION_EPSILON
                     && r.origin.x + r.size.width >= abs_x + box_node.width - REGION_EPSILON
@@ -2657,7 +2658,14 @@ impl Painter {
                 .position(|spec| spec.node_id == node_id && spec.region.is_none())
         {
             if let Some(doc) = doc {
-                self.finalize_isolate_spec(box_node, doc, offset_x + box_node.x, offset_y + box_node.y, spec_index);
+                self.finalize_isolate_spec(
+                    box_node,
+                    doc,
+                    styles,
+                    offset_x + box_node.x,
+                    offset_y + box_node.y,
+                    spec_index,
+                );
                 if self.isolate_specs[spec_index].region.is_some() {
                     self.paint_skip_nodes.insert(node_id);
                     return;
@@ -3908,7 +3916,7 @@ impl Painter {
             if style.filter.iter().any(|f| matches!(f, FilterComputedValue::Url(_)))
                 && let Some(doc) = doc
             {
-                self.apply_svg_reference_filter(doc, box_node, abs_x, abs_y, style);
+                self.apply_svg_reference_filter(doc, box_node, abs_x, abs_y, style, styles);
             }
         }
 

@@ -2274,6 +2274,26 @@ fn collect_presentational_hints(doc: &Document, element: NodeId) -> Vec<(String,
     let tag = elem.local_name().to_ascii_lowercase();
     let mut hints = Vec::new();
 
+    // R5198（SVG2 Appendix M presentation attributes：font-size 对任意 SVG 命名空间
+    // 元素有效）：SVG 元素 `font-size` 属性映射 CSS font-size 声明（filter-region-
+    // units-001：`<filter font-size="10px">` 是其 region 长度 `width="1em"` 的 em
+    // 解析语境，computed font-size 经 styles 供 paint 侧 region 单位换算）。SVG2
+    // `<length>` 无单位 = 用户单位，翻译为 CSS px；HTML 命名空间元素不受影响
+    //（presentation attribute 按 namespace 归属，HTML 无 font-size 属性）。
+    if elem.namespace() == "http://www.w3.org/2000/svg"
+        && let Some(v) = elem_attr(elem, "font-size")
+    {
+        let v = v.trim();
+        if !v.is_empty() {
+            let val = if v.parse::<f64>().is_ok() {
+                format!("{v}px")
+            } else {
+                v.to_string()
+            };
+            hints.push(("font-size".to_string(), val));
+        }
+    }
+
     if let Some(text) = elem_attr(elem, "text") {
         hints.push(("color".to_string(), normalize_html_color(&text)));
     }
