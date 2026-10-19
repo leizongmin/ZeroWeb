@@ -473,12 +473,13 @@ fn test_parse_grid_auto_flow_case_insensitive() {
 }
 
 #[test]
-/// inherit_property 对不可继承属性返回 false
+/// inherit_property 对未支持属性返回 false
 fn test_inherit_property_returns_false_for_non_inheritable() {
     let parent = ComputedStyle::default();
     let mut child = ComputedStyle::default();
-    // transform 仍不在 inherit 表；display/float/position/width 等 R545/R754 已支持显式 inherit
-    assert!(!inherit_property(&parent, &mut child, "transform"));
+    // R5193：transform/transform-origin 支持显式 inherit（复制父计算值）；
+    // display/float/position/width 等 R545/R754 已支持显式 inherit；未知属性仍 false。
+    assert!(inherit_property(&parent, &mut child, "transform"));
     assert!(!inherit_property(&parent, &mut child, "unknown-prop"));
 }
 
@@ -1205,12 +1206,19 @@ fn test_custom_property_chained() {
 #[test]
 /// 测试对非继承属性显式设置 inherit：没有父元素时使用默认值
 fn test_inherit_non_inherited_explicit() {
-    // transform 仍不在 inherit 表（不可继承属性调用 inherit_property 返回 false）
+    // R5193：transform 支持显式 inherit（css-transforms-1 computed value，复制父计算值）
     let parent = ComputedStyle::default();
     let mut child = ComputedStyle::default();
+    assert!(inherit_property(&parent, &mut child, "transform"));
 
-    // transform 不可继承
-    assert!(!inherit_property(&parent, &mut child, "transform"));
+    // transform-origin 同轮支持：复制父计算值
+    let mut parent_o = ComputedStyle::default();
+    parent_o.transform_origin_x = LengthValue::Px(100.0);
+    parent_o.transform_origin_y = LengthValue::Px(200.0);
+    let mut child_o = ComputedStyle::default();
+    assert!(inherit_property(&parent_o, &mut child_o, "transform-origin"));
+    assert_eq!(child_o.transform_origin_x, LengthValue::Px(100.0));
+    assert_eq!(child_o.transform_origin_y, LengthValue::Px(200.0));
 
     // R545：width 现支持显式 inherit（CSS `inherit` 对任意属性生效），复制父元素计算值
     let mut parent_w = ComputedStyle::default();
@@ -1402,7 +1410,7 @@ fn test_backface_visibility_apply() {
 }
 
 #[test]
-/// 测试 transform-origin 不继承
+/// 测试 transform-origin 默认不继承；显式 inherit 复制父计算值（R5193）
 fn test_transform_origin_not_inherited() {
     assert!(!PropertyRegistry::is_inherited("transform-origin"));
 
@@ -1410,10 +1418,12 @@ fn test_transform_origin_not_inherited() {
     parent.transform_origin_x = LengthValue::Px(100.0);
     parent.transform_origin_y = LengthValue::Px(200.0);
 
+    // R5193：显式 `transform-origin: inherit` 复制父计算值；无声明时默认仍不继承
+    //（默认继承 pass 只覆盖 is_inherited 属性）。
     let mut child = ComputedStyle::default();
-    assert!(!inherit_property(&parent, &mut child, "transform-origin"));
-    assert_eq!(child.transform_origin_x, LengthValue::Percentage(50.0));
-    assert_eq!(child.transform_origin_y, LengthValue::Percentage(50.0));
+    assert!(inherit_property(&parent, &mut child, "transform-origin"));
+    assert_eq!(child.transform_origin_x, LengthValue::Px(100.0));
+    assert_eq!(child.transform_origin_y, LengthValue::Px(200.0));
 }
 
 #[test]

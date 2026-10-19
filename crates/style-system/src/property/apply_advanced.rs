@@ -329,6 +329,25 @@ fn position_value_to_computed(
     })
 }
 
+/// R5193：当前样式上已归一化的计算字号（R4643 font-size 预解析保证 Px；级联外
+/// 路径非 Px 残留按根字号回落，与 inheritance.rs parent_font_size_px 口径一致）。
+fn own_font_size_px(style: &ComputedStyle) -> f64 {
+    match style.font_size {
+        LengthValue::Px(v) if v.is_finite() && v > 0.0 => v,
+        _ => crate::computed::ROOT_FONT_SIZE,
+    }
+}
+
+/// R5193：font 相对长度（em）按所属元素字号绝对化为 px（css-transforms-1
+/// #transform-property computed value）；其余单位原样保留（% 相对参考框，
+/// 绘制期解析；rem 根依赖面维持记档候选，同 R4643 口径）。
+fn normalize_font_relative_length(v: LengthValue, font_size_px: f64) -> LengthValue {
+    match v {
+        LengthValue::Em(n) => LengthValue::Px(n * font_size_px),
+        other => other,
+    }
+}
+
 fn parse_origin_xy(value: &str) -> Option<(LengthValue, LengthValue)> {
     let parts = split_top_level_whitespace(value)?;
     match parts.as_slice() {
@@ -510,7 +529,11 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
     match property {
         // ── Transforms ──
         "transform" => {
-            if let Some(v) = values::parse_transform(value) {
+            // R5193（css-transforms-1 #transform-property computed value）：计算值
+            // 须将相对长度按**所属元素** font-size 绝对化——R4643 font-size 预解析
+            // 保证此处 font_size 已是 Px。inherit 复制与动画取值复制的是绝对化的
+            // 计算值，不随子元素字号二次缩放（transform-inherit-001）。
+            if let Some(v) = values::parse_transform_computed(value, own_font_size_px(style)) {
                 style.transform = v;
                 return true;
             }
@@ -555,8 +578,12 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
         "transform-origin" => {
             // https://drafts.csswg.org/css-transforms-1/#transform-origin-property
             if let Some((x, y)) = parse_origin_xy(value) {
-                style.transform_origin_x = x;
-                style.transform_origin_y = y;
+                // R5193：font 相对长度（em）按所属元素字号在计算值期绝对化——
+                // inherit 复制后不随子元素字号二次缩放（transform-inherit-origin-001）。
+                // % 保持到绘制期按参考框解析。
+                let font = own_font_size_px(style);
+                style.transform_origin_x = normalize_font_relative_length(x, font);
+                style.transform_origin_y = normalize_font_relative_length(y, font);
                 // R4109：声明显式 origin（含 50% 50%）——svg 侧初始 used value 0 0 仅限未声明。
                 style.transform_origin_declared = true;
                 return true;

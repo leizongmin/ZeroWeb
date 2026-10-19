@@ -95,6 +95,16 @@ pub fn compute_inherited_style_with_quirks(
     // computed value 时按元素自身最终 font-size 解析、与声明应用顺序无关：
     // https://drafts.csswg.org/css-cascade-4/#computed
     //（`font` 简写已在级联前展开为 longhands，故 font-size 单点预应用即覆盖依赖根。）
+    // R5193：**非级联** font-size 同样先行继承——主循环期 em 急切解析（R4642
+    // resolve_effect_length、R5193 transform em 归一）须读最终计算字号；仅继承
+    // 字号时旧路径迟至主循环后的默认继承 pass 才落值，其间 em 按默认 16px 解析。
+    // 父样式自根向下恒为归一化 Px（parent_font_size_px 口径），复制即终值；
+    // 主循环后默认 pass 重复继承为幂等字段复制，无副作用。
+    if !cascaded.contains_key("font-size") {
+        if let Some(parent) = parent_style {
+            inherit_property(parent, &mut style, "font-size");
+        }
+    }
     if let Some(fs) = cascaded.get("font-size") {
         match resolve_keyword(fs, "font-size", parent_style) {
             KeywordResolution::Concrete(v) => {
@@ -479,7 +489,9 @@ fn resolve_keyword<'a>(value: &'a str, _property: &str, _parent: Option<&Compute
 mod tests {
     use super::*;
     use crate::property::{ComputedStyle, LineHeightValue};
-    use zero_css_parser::values::{ColorValue, DisplayValue, LengthValue, PositionValue, VisibilityValue};
+    use zero_css_parser::values::{
+        ColorValue, DisplayValue, LengthValue, PositionValue, TransformFunction, TransformValue, VisibilityValue,
+    };
 
     /// 创建一个带自定义 color 和 font-size 的父样式。
     fn make_parent_style() -> ComputedStyle {
@@ -1335,6 +1347,75 @@ mod tests {
             matches!(style_em.font_size, LengthValue::Px(v) if (v - 10.8).abs() < 1e-6),
             "字面 1.2em 走 Em 通道，实际 {:?}",
             style_em.font_size
+        );
+    }
+
+    // ═══ R5193：transform 系 inherit 复制绝对化计算值（css-transforms-1
+    // #transform-property computed value——相对长度按所属元素字号绝对化后再继承） ═══
+
+    #[test]
+    fn test_transform_inherit_copies_absolute_computed_value() {
+        // transform-inherit-001 形状：父 font 25px + translate(1em,1em)，
+        // 子 font 100px + transform:inherit → 复制 25px 绝对值，不按子字号重解析。
+        let mut parent = ComputedStyle::default();
+        parent.font_size = LengthValue::Px(25.0);
+        let mut cascaded_p = HashMap::new();
+        cascaded_p.insert("transform".to_string(), "translate(1em, 1em)".to_string());
+        let parent_style = compute_inherited_style(Some(&parent), &cascaded_p);
+        assert!(
+            matches!(
+                &parent_style.transform,
+                TransformValue::List(fns) if fns[0] == TransformFunction::Translate(25.0, 25.0)
+            ),
+            "父 transform 计算值应为 25px 平移，实际 {:?}",
+            parent_style.transform
+        );
+
+        let mut cascaded_c = HashMap::new();
+        cascaded_c.insert("font-size".to_string(), "100px".to_string());
+        cascaded_c.insert("transform".to_string(), "inherit".to_string());
+        let child_style = compute_inherited_style(Some(&parent_style), &cascaded_c);
+        assert_eq!(child_style.transform, parent_style.transform, "inherit 复制父计算值");
+    }
+
+    #[test]
+    fn test_transform_origin_em_normalized_then_inherited_absolute() {
+        // transform-inherit-origin-001 形状：父 font 10px + origin 5em 10em →
+        // 50px/100px；子 font 20px + origin:inherit → 复制绝对值（非 100px/200px）。
+        let mut parent = ComputedStyle::default();
+        parent.font_size = LengthValue::Px(10.0);
+        let mut cascaded_p = HashMap::new();
+        cascaded_p.insert("transform-origin".to_string(), "5em 10em".to_string());
+        let parent_style = compute_inherited_style(Some(&parent), &cascaded_p);
+        assert_eq!(parent_style.transform_origin_x, LengthValue::Px(50.0));
+        assert_eq!(parent_style.transform_origin_y, LengthValue::Px(100.0));
+        assert!(parent_style.transform_origin_declared);
+
+        let mut cascaded_c = HashMap::new();
+        cascaded_c.insert("font-size".to_string(), "20px".to_string());
+        cascaded_c.insert("transform-origin".to_string(), "inherit".to_string());
+        let child_style = compute_inherited_style(Some(&parent_style), &cascaded_c);
+        assert_eq!(child_style.transform_origin_x, LengthValue::Px(50.0));
+        assert_eq!(child_style.transform_origin_y, LengthValue::Px(100.0));
+    }
+
+    #[test]
+    fn test_inherited_font_size_bases_transform_em() {
+        // 非级联 font-size（仅继承）时 transform em 仍按最终计算字号解析——
+        // R5193 预解析继承臂：主循环前落值，非 16px 默认。
+        let mut parent = ComputedStyle::default();
+        parent.font_size = LengthValue::Px(32.0);
+        // 子级联只有 transform；font-size 靠继承。
+        let mut cascaded = HashMap::new();
+        cascaded.insert("transform".to_string(), "translateX(1em)".to_string());
+        let style = compute_inherited_style(Some(&parent), &cascaded);
+        assert!(
+            matches!(
+                &style.transform,
+                TransformValue::List(fns) if fns[0] == TransformFunction::TranslateX(32.0)
+            ),
+            "继承字号 32px 应为 em 基准，实际 {:?}",
+            style.transform
         );
     }
 }

@@ -7,6 +7,7 @@
 
 use crate::values::{
     ColorValue, parse_box_shadow, parse_gradient, parse_grid_area, parse_text_shadow, parse_transform,
+    parse_transform_computed,
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -323,4 +324,47 @@ fn test_parse_matrix_length_percent_args_rejected() {
     // 纯 number 与 number 型 calc 仍接受
     assert!(parse_transform("matrix(1, 0, 0, 1, 50, 0)").is_some());
     assert!(parse_transform("matrix(1, 0, 0, 1, calc(2 * 25), 0)").is_some());
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// R5193：级联应用点计算值字号归一（css-transforms-1 #transform-property
+// computed value——相对长度按所属元素 font-size 转绝对，transform-inherit-001）
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_parse_transform_computed_resolves_em_with_font() {
+    // transform-inherit-001 形状：font 25px 下 translate(1em, 1em) → 25px。
+    let result = parse_transform_computed("translate(1em, 1em)", 25.0).unwrap();
+    match result {
+        TransformValue::List(fns) => assert_eq!(fns[0], TransformFunction::Translate(25.0, 25.0)),
+        other => panic!("expected List, got {other:?}"),
+    }
+    // 单轴同面。
+    let x = parse_transform_computed("translateX(2em)", 10.0).unwrap();
+    match x {
+        TransformValue::List(fns) => assert_eq!(fns[0], TransformFunction::TranslateX(20.0)),
+        other => panic!("expected List, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_parse_transform_no_font_context_keeps_numeric_passthrough() {
+    // 无字号上下文路径（动画插值/校验/individual 属性）维持既有数值直通。
+    let result = parse_transform("translate(1em, 0)").unwrap();
+    match result {
+        TransformValue::List(fns) => assert_eq!(fns[0], TransformFunction::Translate(1.0, 0.0)),
+        other => panic!("expected List, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_parse_transform_computed_keeps_percent_and_px() {
+    // % 保持到绘制期（border-box 相对，Mixed 变体）；px 原样。
+    let result = parse_transform_computed("translate(50%, 10px)", 25.0).unwrap();
+    match result {
+        TransformValue::List(fns) => {
+            assert_eq!(fns[0], TransformFunction::TranslateMixed(50.0, true, 10.0, false))
+        }
+        other => panic!("expected List, got {other:?}"),
+    }
 }

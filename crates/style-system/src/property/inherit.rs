@@ -568,6 +568,22 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.page_break_inside = parent.page_break_inside.clone();
             true
         }
+        // R5193（css-transforms-1 #transform-property / #transform-origin-property
+        // computed value）：transform 系非继承属性遇显式 `inherit` 关键字复制父元素
+        // **计算值**。计算值已由级联应用点绝对化（em → px，apply_advanced 同轮），
+        // 直接复制不随子元素字号二次缩放（transform-inherit-001/
+        // transform-inherit-origin-001：父字号下解析的 1em，子继承后仍是该绝对值，
+        // 而非按子字号重解析声明值）。
+        "transform" => {
+            child.transform = parent.transform.clone();
+            true
+        }
+        "transform-origin" => {
+            child.transform_origin_x = parent.transform_origin_x.clone();
+            child.transform_origin_y = parent.transform_origin_y.clone();
+            child.transform_origin_declared = parent.transform_origin_declared;
+            true
+        }
         _ => false,
     }
 }

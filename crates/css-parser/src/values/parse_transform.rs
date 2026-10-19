@@ -393,7 +393,24 @@ pub enum TransformFunction {
 /// 解析 CSS transform 属性值。
 ///
 /// 支持格式如 `"translate(10px, 20px) rotate(45deg) scale(2)"`。
+///
+/// 无字号上下文路径（动画插值/有效性校验/individual 属性）：translate 系
+/// `<length>` 的 font 相对单位维持数值直通（既有行为）。
 pub fn parse_transform(value: &str) -> Option<TransformValue> {
+    parse_transform_inner(value, None)
+}
+
+/// R5193：级联应用点入口——计算值期 font 相对长度归一（css-transforms-1
+/// #transform-property computed value：相对长度按**所属元素** font-size 转绝对，
+/// `inherit` 复制与动画取值不随消费元素字号二次缩放，transform-inherit-001）。
+/// 归一范围限 translate 系 `<length>` 的 `em`；rem 依赖根字号、ex/cap 系依赖
+/// 字体 metrics，维持数值直通（与 R4643 font-size 归一化范围口径一致）。
+// FIXME: rem 根依赖面（跨 crate 需根字号上下文，与 R4643 记档候选同立项）。
+pub fn parse_transform_computed(value: &str, font_size_px: f64) -> Option<TransformValue> {
+    parse_transform_inner(value, Some(font_size_px))
+}
+
+fn parse_transform_inner(value: &str, font_size_px: Option<f64>) -> Option<TransformValue> {
     let value = value.trim();
 
     if value.eq_ignore_ascii_case("none") {
@@ -452,7 +469,7 @@ pub fn parse_transform(value: &str) -> Option<TransformValue> {
         let args_str = value[args_start..pos - 1].trim();
 
         // 解析函数
-        let func = parse_transform_function(name, args_str)?;
+        let func = parse_transform_function(name, args_str, font_size_px)?;
         if name.eq_ignore_ascii_case("translatez") {
             translatez_seen = true;
         }
@@ -525,14 +542,15 @@ pub fn parse_individual_translate(value: &str) -> Option<TransformFunction> {
     if parts.is_empty() || parts.len() > 3 {
         return None;
     }
-    let (tx, txp) = parse_len_or_pct(parts.first()?)?;
+    // R5193 字号归一仅限 transform 属性级联应用点；individual 属性维持数值直通（无驱动案）。
+    let (tx, txp) = parse_len_or_pct(parts.first()?, None)?;
     let (ty, typ) = match parts.get(1) {
-        Some(s) => parse_len_or_pct(s)?,
+        Some(s) => parse_len_or_pct(s, None)?,
         None => (0.0, false),
     };
     // 第三值 = Z（2D 投影忽略，仅校验合法性）。
     if let Some(z) = parts.get(2) {
-        parse_len_or_pct(z)?;
+        parse_len_or_pct(z, None)?;
     }
     Some(match (txp, typ) {
         (true, _) | (_, true) => TransformFunction::TranslateMixed(tx, txp, ty, typ),
@@ -595,7 +613,7 @@ pub fn parse_individual_scale(value: &str) -> Option<TransformFunction> {
 }
 
 /// 解析单个变换函数。
-fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction> {
+fn parse_transform_function(name: &str, args: &str, font_size_px: Option<f64>) -> Option<TransformFunction> {
     // CSS 关键字大小写不敏感（CSS Syntax §3.1）：`translatex`/`Translate`/`MATRIX` 等同 canonical-case。
     // R2295：修复 parse_transform 不 lowercase name → 非 canonical-case 函数名被丢（WPT transform 测试常用小写）。
     let name = name.to_ascii_lowercase();
@@ -605,9 +623,9 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
             if parts.len() > 2 {
                 return None;
             }
-            let (tx, txp) = parse_len_or_pct(parts.first()?)?;
+            let (tx, txp) = parse_len_or_pct(parts.first()?, font_size_px)?;
             let (ty, typ) = match parts.get(1) {
-                Some(p) => parse_len_or_pct(p)?,
+                Some(p) => parse_len_or_pct(p, font_size_px)?,
                 None => (0.0, false),
             };
             // 任一分量为 % → Mixed 变体（paint 期对 border-box 求值）；纯 px 走既有 Translate（零回归）。
@@ -622,7 +640,7 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
             if parts.len() != 1 {
                 return None;
             }
-            let (tx, txp) = parse_len_or_pct(parts.first()?)?;
+            let (tx, txp) = parse_len_or_pct(parts.first()?, font_size_px)?;
             Some(if txp {
                 TransformFunction::TranslateXMixed(tx, true)
             } else {
@@ -634,7 +652,7 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
             if parts.len() != 1 {
                 return None;
             }
-            let (ty, typ) = parse_len_or_pct(parts.first()?)?;
+            let (ty, typ) = parse_len_or_pct(parts.first()?, font_size_px)?;
             Some(if typ {
                 TransformFunction::TranslateYMixed(ty, true)
             } else {
@@ -710,9 +728,9 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
             if parts.len() != 3 {
                 return None;
             }
-            let tx = parse_translate_length_number(parts[0])?;
-            let ty = parse_translate_length_number(parts[1])?;
-            let tz = parse_translate_length_number(parts[2])?;
+            let tx = parse_translate_length_number(parts[0], font_size_px)?;
+            let ty = parse_translate_length_number(parts[1], font_size_px)?;
+            let tz = parse_translate_length_number(parts[2], font_size_px)?;
             Some(TransformFunction::Translate3d(tx, ty, tz))
         }
         // R5174：translateZ(t) ≡ translate3d(0, 0, t)（css-transforms-1 §16）——解析层
@@ -720,7 +738,7 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
         // perspective-origin 族：子元素 translateZ 的透视缩放从未生效）。z 消费在
         // 父 perspective 投影（paint/transform.rs flat_plane_translate_z）。
         "translatez" => {
-            let tz = parse_translate_length_number(args)?;
+            let tz = parse_translate_length_number(args, font_size_px)?;
             Some(TransformFunction::Translate3d(0.0, 0.0, tz))
         }
         // R3832：scaleZ(sz) — 2D 投影恒等，但函数必须可解析（否则整个 transform list
@@ -854,17 +872,17 @@ fn split_transform_value_args(args: &str) -> Option<Vec<&str>> {
 /// 解析 translate 分量：返回 `(数值, 是否百分比)`。`%` 保留原数（paint 期对 border-box 求值），
 /// 其余长度走 translate 专用 length parser，避免污染 angle/scale/matrix grammar。
 /// driving: R2294 transform `translate(%)`。
-fn parse_len_or_pct(s: &str) -> Option<(f64, bool)> {
+fn parse_len_or_pct(s: &str, font_size_px: Option<f64>) -> Option<(f64, bool)> {
     let s = s.trim();
     if let Some(num) = s.strip_suffix('%') {
         let value = num.trim().parse::<f64>().ok()?;
         value.is_finite().then_some((value, true))
     } else {
-        Some((parse_translate_length_number(s)?, false))
+        Some((parse_translate_length_number(s, font_size_px)?, false))
     }
 }
 
-fn parse_translate_length_number(s: &str) -> Option<f64> {
+fn parse_translate_length_number(s: &str, font_size_px: Option<f64>) -> Option<f64> {
     if matches!(
         s.trim().to_ascii_lowercase().as_str(),
         "thin" | "medium" | "thick" | "auto" | "min-content" | "max-content" | "fit-content"
@@ -873,8 +891,13 @@ fn parse_translate_length_number(s: &str) -> Option<f64> {
     }
     if let Some(length) = parse_length(s) {
         let value = match length {
+            // R5193：有字号上下文时 em 按所属元素字号绝对化（css-transforms-1
+            // #transform-property computed value）；无上下文路径维持数值直通。
+            LengthValue::Em(v) => match font_size_px {
+                Some(font) => v * font,
+                None => v,
+            },
             LengthValue::Px(v)
-            | LengthValue::Em(v)
             | LengthValue::Ex(v)
             | LengthValue::Rex(v)
             | LengthValue::Cap(v)
@@ -896,7 +919,8 @@ fn parse_translate_length_number(s: &str) -> Option<f64> {
 }
 
 fn parse_perspective_length_number(s: &str) -> Option<f64> {
-    let value = parse_translate_length_number(s)?;
+    // perspective() 函数面维持数值直通（R5193 归一限 translate 系，无驱动案）。
+    let value = parse_translate_length_number(s, None)?;
     // R5175（css-transforms-2 §funcdef-perspective + csswg-drafts#6320）：0 为合法声明
     //（<length [0,∞)>），used value clamp 到 1px 在绘制侧折叠层（d.max(1.0)）——CSSOM
     // 保真存储原值。负值语法无效维持拒绝。
