@@ -714,3 +714,78 @@ fn busy_worker_bounded_input_call_degrades_instead_of_blocking_t8() {
     );
     assert!(snap.is_none(), "超时按「结果未知」降级为 None（fix#13 同语义）");
 }
+
+/// T68-D1 返修钉（缺陷首轮）：DOM-mutating click 派发（dispatch_dom_at）的
+/// 渲染帧曾无度量 ctx → 整页 glyph 回退 estimate（menu/手风琴/Tab 点击均
+/// 触发）。锚定帧行判定 + 可重入 ctx 修复后：onclick 改文本的 click 帧
+/// 前缀 glyph x 必须与初始布局逐位一致（est 15.4px 步进 vs 真实 7.781px
+/// 不规则 advance，判别力见 activation_tests 同款钉）。
+#[test]
+fn dom_mutating_click_dispatch_keeps_h1_glyph_positions_aligned() {
+    let html = "<html><head><style>\
+            h1 { font-size: 28px; color: #1a73e8; }\
+            </style></head><body style=\"font-family: Segoe UI, sans-serif; margin: 0; padding: 40px;\">\
+            <h1 id=\"h\">Import Bookmarks — ZeroBrowser</h1>\
+            <div id=\"b\" onclick=\"document.getElementById('h').textContent='Import Bookmarks — ZeroBrowser XX';\">BTN</div>\
+            </body></html>";
+    let mut runtime = RendererRuntime::new(3469);
+    runtime.compositor_publish = None;
+    runtime.outbound = PipeTransport::new(std::io::empty(), Box::new(std::io::sink()));
+    runtime.current_url = Some("zero://t68-d1-probe".to_string());
+    {
+        let font_loader = &runtime.font_loader;
+        let font_id = runtime.font_id;
+        let wv = runtime.webview.as_mut().unwrap();
+        text_metrics::with_measure_ctx_opt(font_loader, font_id, || {
+            wv.load_html(html, None);
+        });
+    }
+    let h1: Vec<char> = "Import Bookmarks — ZeroBrowser".chars().collect();
+    let extract = |glyphs: &[zero_render_foundation::primitive::GlyphPrimitive], text: &[char]| -> Vec<(char, i64)> {
+        let mut out = Vec::new();
+        let mut it = glyphs.iter();
+        'outer: for &want in text {
+            if want == ' ' {
+                continue;
+            }
+            for g in it.by_ref() {
+                if g.glyph_id == want as u32 {
+                    out.push((want, (g.x * 1000.0).round() as i64));
+                    continue 'outer;
+                }
+            }
+            panic!("glyph for {want:?} not found");
+        }
+        out
+    };
+    let initial = extract(
+        runtime
+            .webview
+            .as_ref()
+            .unwrap()
+            .last_render()
+            .unwrap()
+            .primitives
+            .glyphs
+            .as_slice(),
+        &h1,
+    );
+    // onclick 改 h1 文本（追加 XX）——click 帧覆盖前缀 + 新增尾部。
+    runtime.dispatch_dom_at(Some("b".to_string()), 0.0, 0.0, "click", None);
+    let after = extract(
+        runtime
+            .webview
+            .as_ref()
+            .unwrap()
+            .last_render()
+            .unwrap()
+            .primitives
+            .glyphs
+            .as_slice(),
+        &h1,
+    );
+    assert_eq!(
+        initial, after,
+        "click 派发帧 h1 前缀 glyph x 与初始布局分叉（estimate 回退）"
+    );
+}

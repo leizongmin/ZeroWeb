@@ -762,6 +762,10 @@ impl RendererRuntime {
             self.last_mutation_drain = Some(std::time::Instant::now());
         }
         let current_url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+        // T68 返修（缺陷首轮 D2）：timer/异步回调 DOM mutation 主通道的批量渲染
+        // 与其余产帧路径同点包 measure ctx（SPA timer 更新场景曾产出 estimate 帧）。
+        let font_loader = self.font_loader.duplicate();
+        let font_id = self.font_id;
         let changed = {
             let mut ctx = PageScriptContext {
                 html: &mut self.cached_html,
@@ -775,7 +779,9 @@ impl RendererRuntime {
             if let Some(wv) = ctx.webview.as_deref_mut() {
                 wv.begin_script_batch();
             }
-            let changed = page_scripts::drain_pending_dom_mutations(&mut ctx);
+            let changed = text_metrics::with_measure_ctx_opt(&font_loader, font_id, || {
+                page_scripts::drain_pending_dom_mutations(&mut ctx)
+            });
             if let Some(wv) = ctx.webview.as_deref_mut()
                 && let Err(e) = wv.end_script_batch()
             {
@@ -1444,13 +1450,20 @@ impl RendererRuntime {
 
     fn dispatch_composition_events_at(&mut self, selector: &str, events: &[(&str, &str)]) -> bool {
         let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+        // T68 返修（缺陷首轮 D5）：组合事件派发的 mutation 渲染与其余产帧路径同点
+        // 包 measure ctx（preedit 臂已包、本臂曾裸跑——event_changed 且 paint 未变
+        // 的窄窗口可发布 estimate 帧）。
+        let font_loader = self.font_loader.duplicate();
+        let font_id = self.font_id;
         let mut ctx = PageScriptContext {
             html: &mut self.cached_html,
             url: &url,
             js_worker: &self.js_worker,
             webview: self.webview.as_mut(),
         };
-        page_scripts::dispatch_composition_events(&mut ctx, self.javascript_enabled, selector, events)
+        text_metrics::with_measure_ctx_opt(&font_loader, font_id, || {
+            page_scripts::dispatch_composition_events(&mut ctx, self.javascript_enabled, selector, events)
+        })
     }
 
     fn handle_ime_event(&mut self, params: ImeEventParams) -> Result<(), String> {
@@ -2459,13 +2472,20 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             }
             let js_enabled = self.javascript_enabled;
             let current_url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+            // T68 返修（缺陷首轮 D1）：onclick 等 DOM-mutating 派发的渲染与其余
+            // 产帧路径同点包 measure ctx（menu/手风琴/Tab 点击曾产出 estimate 帧
+            // 且持续到下次全量重排版）。
+            let font_loader = self.font_loader.duplicate();
+            let font_id = self.font_id;
             let mut ctx = PageScriptContext {
                 html: &mut self.cached_html,
                 url: &current_url,
                 js_worker: &self.js_worker,
                 webview: self.webview.as_mut(),
             };
-            let result = dispatch_dom_event(&mut ctx, js_enabled, &sel, event_type, detail.as_ref());
+            let result = text_metrics::with_measure_ctx_opt(&font_loader, font_id, || {
+                dispatch_dom_event(&mut ctx, js_enabled, &sel, event_type, detail.as_ref())
+            });
             if result.html_changed {
                 // 事件回调产生的 mutation 已由 WebView 增量渲染，只需发布新帧。
                 self.invalidate_script_render();
