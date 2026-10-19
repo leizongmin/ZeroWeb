@@ -3839,7 +3839,10 @@ impl WebView {
                 let url = self.current_url.as_deref().unwrap_or("about:blank");
                 match zero_script_sandbox::compile_module_script(&code, url, &registry) {
                     Ok(transformed) => {
-                        let prelude = zero_script_sandbox::build_module_runtime_prelude(&registry).unwrap_or_default();
+                        // R5182：入口（当前 script 元素）不在 prelude 急切求值——由 transformed 体承担，
+                        // 模块体恰好执行一次（__moduleCache 挂 globalThis，跨元素共享、随导航重建复位）。
+                        let prelude =
+                            zero_script_sandbox::build_module_runtime_prelude(&registry, Some(url)).unwrap_or_default();
                         format!("__zw_begin_script && __zw_begin_script();\n{prelude}\n{transformed}")
                     }
                     Err(e) => {

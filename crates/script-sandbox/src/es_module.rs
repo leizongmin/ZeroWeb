@@ -177,14 +177,31 @@ impl std::fmt::Debug for EsModuleSandbox {
 
 // ── 核心转换逻辑（纯函数） ──
 
+/// 把依赖 IIFE 包成 `__moduleCache` 记忆化赋值表达式——模块体求值恰好一次（HTML module
+/// map 命中即复用，https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script）。
+/// R5182：prelude 急切求值、入口体内联、后续 module script 元素三条发射路径共享同一缓存实例；
+/// 调用方保证 `globalThis.__moduleCache` 已初始化（`compile_module_script` 输出与 prelude 的
+/// 首行 init 均已就位后才轮到本表达式求值）。
+fn memoized_dep_expr(key: &str, code: &str) -> String {
+    let key_js = json_stringify(key);
+    format!("(globalThis.__moduleCache[{key_js}] = globalThis.__moduleCache[{key_js}] || {code})")
+}
+
 /// 将 ES Module 源码编译为可在 V8 中执行的 IIFE 脚本（内联依赖）。
 pub fn compile_module_script(source: &str, url: &str, registry: &ModuleRegistry) -> Result<String, ScriptError> {
     let uses_await = source.contains("await");
     let body = build_module_script(source, url, registry, uses_await, &mut HashSet::new())?;
+    // R5182：首行初始化文档级模块缓存（幂等）——独立调用路径（EsModuleSandbox、SW 编译）
+    // 不经过 prelude 也能安全使用记忆化发射点。
+    let init = "globalThis.__moduleCache = globalThis.__moduleCache || {};\n";
     if source.contains("import(") || uses_await {
-        Ok(format!("(async function() {{\n{body}\n}})();\n"))
+        // FIXME(R5182)：async 入口体暂不记忆化——缓存实例会成 Promise（依赖读取方期望导出
+        // 对象）。共享 async 模块的跨元素恰好一次留待后续切片（活体证据：MDN 入口链均同步）。
+        Ok(format!("{init}(async function() {{\n{body}\n}})();\n"))
     } else {
-        Ok(body)
+        // 记忆化入口体：本模块若已作为他元素依赖求值过（缓存命中）→ 复用实例，模块体
+        // 恰好执行一次（红态实测入口计数 2：prelude 急切 + 转换体各一次）。
+        Ok(format!("{init}{}", memoized_dep_expr(url, &body)))
     }
 }
 
@@ -194,8 +211,16 @@ pub fn compile_dependency_iife(specifier: &str, registry: &ModuleRegistry) -> Re
 }
 
 /// 生成模块运行时 prelude（`__moduleCache` + 动态 `import()` 支持）。
-pub fn build_module_runtime_prelude(registry: &ModuleRegistry) -> Result<String, ScriptError> {
-    let mut out = String::from("var __moduleCache = {};\n");
+///
+/// R5182（模块恰好一次求值）：`__moduleCache` 挂 `globalThis`（`||=` 语义持久）而非每次
+/// 调用 `var __moduleCache = {}` 重置——同文档多个 module script 元素共享一份模块缓存
+/// （HTML module map 语义，fetch-a-single-module-script 命中即复用；跨文档导航经
+/// `reset_context` 销毁重建全局对象自然复位，无须宿主接线）。`entry` 为入口模块 URL：
+/// 入口不在 prelude 急切执行（否则入口体跑两遍），由调用方 `compile_module_script` 的
+/// 转换体承担该入口的求值；非入口注册模块照旧急切求值（转换式架构无 live binding，
+/// 入口的静态导入依赖 prelude 预热的依赖实例）。
+pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&str>) -> Result<String, ScriptError> {
+    let mut out = String::from("globalThis.__moduleCache = globalThis.__moduleCache || {};\n");
     // t8j：helper（__zw_load_module / __zw_dynamic_import）必须先于 `__moduleCache[spec] = IIFE`
     // 注册求值——注册右侧的 IIFE **立即执行模块体**（依赖预热 + collect_module_deps 把入口模块
     // 自身也注册进 registry，见 js_worker/tab_js_worker collect_module_deps）。模块体顶层的
@@ -233,9 +258,16 @@ pub fn build_module_runtime_prelude(registry: &ModuleRegistry) -> Result<String,
         "globalThis.__zw_dynamic_import = function(spec) {\n  var parent = (this && this.referrer) || ((typeof _importMeta !== 'undefined' && _importMeta.url) || 'about:blank');\n  try {\n    return Promise.resolve(__zw_load_module(spec, parent));\n  } catch (e) {\n    return Promise.reject(e);\n  }\n};\n",
     );
     for spec in registry.specifiers() {
+        // R5182：入口跳过急切求值——入口由调用方的转换体求值一次（否则 prelude 急切执行
+        // 一遍 + 转换体再执行一遍，模块体副作用翻倍；红态实测入口计数 2）。
+        if entry == Some(spec) {
+            continue;
+        }
         let iife = build_dep_iife(spec, registry, &mut HashSet::new())?;
         let escaped = spec.replace('\\', "\\\\").replace('\'', "\\'");
-        out.push_str(&format!("__moduleCache['{escaped}'] = {iife};\n"));
+        // R5182：已缓存（本文档更早的 module script 元素已求值）→ 不再执行——同文档模块
+        // 恰好一次（红态实测共享依赖跨元素计数 4；HTML module map 命中即复用）。
+        out.push_str(&format!("if (!__moduleCache['{escaped}']) __moduleCache['{escaped}'] = {iife};\n"));
     }
     Ok(out)
 }
@@ -579,7 +611,8 @@ fn transform_import(
         let safe = safe_ident(&specifier);
         let dep = inline_dep_once(&specifier, registry, visited)?;
         return match &dep {
-            DepInline::Fresh(code) => Ok(format!("  var _mod_{safe} = {code};\n")),
+            // R5182：Fresh 内联包记忆化——与 prelude 急切求值共享实例，不重复执行模块体。
+            DepInline::Fresh(code) => Ok(format!("  var _mod_{safe} = {};\n", memoized_dep_expr(&specifier, code))),
             DepInline::Visited(_) => Ok(String::new()),
         };
     }
@@ -605,7 +638,8 @@ fn transform_import(
         let mut result = String::new();
         match &dep {
             DepInline::Fresh(code) => {
-                result.push_str(&format!("  var {exports_var} = {code};\n"));
+                // R5182：Fresh 内联包记忆化（与 prelude / 其他元素共享实例）。
+                result.push_str(&format!("  var {exports_var} = {};\n", memoized_dep_expr(&specifier, code)));
             }
             DepInline::Visited(_) => {
                 result.push_str(&format!("  var {exports_var} = {};\n", dep.exports_expr()));
@@ -641,7 +675,8 @@ fn transform_import(
         let mut result = String::new();
         match &dep {
             DepInline::Fresh(code) => {
-                result.push_str(&format!("  var {exports_var} = {code};\n"));
+                // R5182：Fresh 内联包记忆化（与 prelude / 其他元素共享实例）。
+                result.push_str(&format!("  var {exports_var} = {};\n", memoized_dep_expr(&specifier, code)));
             }
             DepInline::Visited(_) => {
                 result.push_str(&format!("  var {exports_var} = {};\n", dep.exports_expr()));
@@ -666,7 +701,8 @@ fn transform_import(
         let mut result = String::new();
         match &dep {
             DepInline::Fresh(code) => {
-                result.push_str(&format!("  var {exports_var} = {code};\n"));
+                // R5182：Fresh 内联包记忆化（与 prelude / 其他元素共享实例）。
+                result.push_str(&format!("  var {exports_var} = {};\n", memoized_dep_expr(&specifier, code)));
             }
             DepInline::Visited(_) => {
                 result.push_str(&format!("  var {exports_var} = {};\n", dep.exports_expr()));
@@ -1667,7 +1703,7 @@ mod tests {
                 String::new()
             }),
         );
-        let prelude = build_module_runtime_prelude(&ModuleRegistry::new()).unwrap();
+        let prelude = build_module_runtime_prelude(&ModuleRegistry::new(), None).unwrap();
         // 忠实复刻 execute_module_in_sandbox：prelude + 调用方代码单次 execute；
         // 微任务检查点在 execute 内跑 → .then 落定发生在返回前，__zw_report 已被调。
         sandbox
@@ -1714,7 +1750,7 @@ mod tests {
             "https://zero.test/m.js",
             "globalThis.__t8j_probe_ran = true;\nimport('_').catch(function(){});\nglobalThis.__t8j_after_import = true;\n__zw_report('after=' + (globalThis.__t8j_after_import === true));",
         );
-        let prelude = build_module_runtime_prelude(&registry).unwrap();
+        let prelude = build_module_runtime_prelude(&registry, None).unwrap();
         sandbox
             .execute(&prelude)
             .expect("注册求值阶段模块体顶层 import() 不得同步 throw（红态：helper 反序 → ReferenceError）");
@@ -1772,7 +1808,7 @@ mod tests {
             "https://zero.test/m.js",
             "import('./dep.js').then(function (m) { __zw_report('dep=' + m.default); }, function (e) { __zw_report('rej=' + e.message); });",
         );
-        let prelude = build_module_runtime_prelude(&registry).unwrap();
+        let prelude = build_module_runtime_prelude(&registry, None).unwrap();
         sandbox.execute(&prelude).expect("模块体注册求值不得同步 throw");
         assert_eq!(
             seen_parent.lock().unwrap().as_deref(),
@@ -1830,7 +1866,7 @@ mod tests {
                 String::new()
             }),
         );
-        let prelude = build_module_runtime_prelude(&ModuleRegistry::new()).unwrap();
+        let prelude = build_module_runtime_prelude(&ModuleRegistry::new(), None).unwrap();
         // prelude 与驱动代码单次 execute（非持久 context 跨 execute 全局不可见，复刻真实路径）。
         let driver = "\
 var a = __zw_load_module('./config.js', 'https://zero.test/app/a/m.js');\n\
@@ -1873,7 +1909,7 @@ __zw_report('A=' + a.default + '|B=' + b.default);";
             }),
         );
         let registry = ModuleRegistry::new();
-        let prelude = build_module_runtime_prelude(&registry).unwrap();
+        let prelude = build_module_runtime_prelude(&registry, None).unwrap();
         // 单引号字符串含 `import(`（MDN 式特性检测/错误消息常见形态）+ 合法动态 import
         // （dep 缺失走 rejection）——两语句都必须存活。
         let source = "\
@@ -2072,7 +2108,9 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
             &registry,
         )
         .unwrap();
-        assert!(compiled.starts_with("(async function() {"));
+        // R5182：首行为模块缓存初始化（幂等），其后的入口体保持 async IIFE 包裹
+        // （async 入口体暂不记忆化——见 compile_module_script FIXME）。
+        assert!(compiled.starts_with("globalThis.__moduleCache = globalThis.__moduleCache || {};\n(async function() {"));
         assert!(compiled.contains("await Promise.resolve();"));
     }
 
@@ -2813,5 +2851,124 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         let stmts = split_statements(src);
         assert_eq!(stmts.len(), 2, "stmts={stmts:?}");
         assert!(stmts[0].contains("/['\"]/g"), "stmts={stmts:?}");
+    }
+
+    // ── R5182（site-search-availability，MDN 搜索弹层链上游根因）：模块恰好一次求值 ──
+    // HTML module map：同一文档的模块记录只求值一次——fetch-a-single-module-script 命中
+    // module map 直接复用（https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script）；
+    // ECMA-262 module record evaluate 不得重入（https://tc39.es/ecma262/#sec-moduleevaluation）。
+    // 活体最小复现（2026-10-19，本地 HTTP 页，域无关）：zw 单 module script 元素执行 2 次、
+    // 多元素无共享（Chrome 均 1 次）；MDN 5 个 module 元素 → webpack 运行时多代执行 →
+    // customElements.define "already used" ×14 + lit-html 命名空间导入 undefined → 搜索模态
+    // 永不渲染。红态两支：(1) 入口自注册进 registry（collect_module_deps 语义）被 prelude
+    // 急切执行 + 转换体再执行；(2) `var __moduleCache = {}` 每次 execute_module 重置，跨
+    // 元素重跑整张依赖子图。复位语义：跨文档导航 reset_context 销毁重建全局对象
+    // （js_worker Reset 臂；HTML navigate "creates a new global object"）→ 持久缓存天然
+    // 按文档隔离，无须宿主接线。
+
+    /// R5182 测试用持久上下文沙箱（renderer/tab worker 生产形态；part60 同款配置）。
+    fn r5182_sandbox() -> crate::V8Sandbox {
+        let config = crate::SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        };
+        let mut sandbox = crate::V8Sandbox::with_config(config).unwrap();
+        // 动态 import 取回面在纯沙箱无宿主：注册空 stub（本组用例只走静态 import 面）。
+        sandbox.register_callback("__zw_compile_module", Box::new(|_args| String::new()));
+        sandbox
+    }
+
+    #[test]
+    fn test_r5182_entry_module_evaluates_once_per_element() {
+        let mut sandbox = r5182_sandbox();
+        let body = "globalThis.__r5182=(globalThis.__r5182||0)+1;";
+        let mut registry = ModuleRegistry::new();
+        // 入口自注册（collect_module_deps 把入口 URL 也放进 registry——t8j 语义）。
+        registry.register("https://zero.test/entry.js", body);
+        // 复刻宿主执行形（renderer/tab execute_module_in_sandbox）：prelude(入口跳过急切) + 转换体单次 execute。
+        let prelude = build_module_runtime_prelude(&registry, Some("https://zero.test/entry.js")).unwrap();
+        let transformed = compile_module_script(body, "https://zero.test/entry.js", &registry).unwrap();
+        sandbox.execute(&format!("{prelude}\n{transformed}")).unwrap();
+        assert_eq!(
+            sandbox.execute("String(globalThis.__r5182)").unwrap().value,
+            "1",
+            "入口模块每元素只求值一次（红态：prelude 急切执行入口 + 转换体再执行 = 2）"
+        );
+    }
+
+    #[test]
+    fn test_r5182_shared_dep_evaluates_once_across_elements() {
+        let mut sandbox = r5182_sandbox();
+        let dep_src = "globalThis.__r5182dep=(globalThis.__r5182dep||0)+1;";
+        // 元素 1：入口 = 共享模块本体（MDN 形态：runtime.js 既是 script 元素又是依赖）。
+        let mut reg1 = ModuleRegistry::new();
+        reg1.register("https://zero.test/a.js", dep_src);
+        let p1 = build_module_runtime_prelude(&reg1, Some("https://zero.test/a.js")).unwrap();
+        let t1 = compile_module_script(dep_src, "https://zero.test/a.js", &reg1).unwrap();
+        sandbox.execute(&format!("{p1}\n{t1}")).unwrap();
+        // 元素 2：内联入口静态 import 共享模块（同文档第二个 module script 元素）。
+        let mut reg2 = ModuleRegistry::new();
+        reg2.register("https://zero.test/a.js", dep_src);
+        let p2 = build_module_runtime_prelude(&reg2, Some("https://zero.test/e2.js")).unwrap();
+        let t2 = compile_module_script("import 'https://zero.test/a.js';", "https://zero.test/e2.js", &reg2).unwrap();
+        sandbox.execute(&format!("{p2}\n{t2}")).unwrap();
+        assert_eq!(
+            sandbox.execute("String(globalThis.__r5182dep)").unwrap().value,
+            "1",
+            "共享依赖跨 module script 元素只求值一次（红态：__moduleCache 每调用重置 + 内联重执行 = 4）"
+        );
+    }
+
+    #[test]
+    fn test_r5182_named_import_shared_dep_via_cache_read() {
+        // 边界变体（证明非仅副作用 import 形态有效）：具名导入走记忆化缓存读——依赖
+        // 只在首个发射点求值一次，后续元素读同一导出实例。
+        let mut sandbox = r5182_sandbox();
+        let dep_src = "globalThis.__r5182n=(globalThis.__r5182n||0)+1;export const val = 41;";
+        let mut reg1 = ModuleRegistry::new();
+        reg1.register("https://zero.test/n.js", dep_src);
+        let p1 = build_module_runtime_prelude(&reg1, Some("https://zero.test/ne1.js")).unwrap();
+        let t1 = compile_module_script("import { val } from 'https://zero.test/n.js';globalThis.__v1 = val;", "https://zero.test/ne1.js", &reg1).unwrap();
+        sandbox.execute(&format!("{p1}\n{t1}")).unwrap();
+        let mut reg2 = ModuleRegistry::new();
+        reg2.register("https://zero.test/n.js", dep_src);
+        let p2 = build_module_runtime_prelude(&reg2, Some("https://zero.test/ne2.js")).unwrap();
+        let t2 = compile_module_script("import { val } from 'https://zero.test/n.js';globalThis.__v2 = val;", "https://zero.test/ne2.js", &reg2).unwrap();
+        sandbox.execute(&format!("{p2}\n{t2}")).unwrap();
+        assert_eq!(
+            sandbox.execute("String(globalThis.__r5182n)").unwrap().value,
+            "1",
+            "具名导入共享依赖只求值一次"
+        );
+        assert_eq!(
+            sandbox.execute("String(globalThis.__v1 + globalThis.__v2)").unwrap().value,
+            "82",
+            "两个元素读到同一导出实例（val=41×2）"
+        );
+    }
+
+    #[test]
+    fn test_r5182_cache_resets_across_document_reset() {
+        // 复位边界：跨文档导航 reset_context 销毁重建全局对象——缓存不得泄漏到新文档
+        // （同 URL 再导航必须重新求值；HTML navigate "creates a new global object"）。
+        let mut sandbox = r5182_sandbox();
+        let body = "globalThis.__r5182r=(globalThis.__r5182r||0)+1;";
+        let mut registry = ModuleRegistry::new();
+        registry.register("https://zero.test/doc.js", body);
+        let prelude = build_module_runtime_prelude(&registry, Some("https://zero.test/doc.js")).unwrap();
+        let transformed = compile_module_script(body, "https://zero.test/doc.js", &registry).unwrap();
+        sandbox.execute(&format!("{prelude}\n{transformed}")).unwrap();
+        assert_eq!(
+            sandbox.execute("String(globalThis.__r5182r)").unwrap().value,
+            "1",
+            "文档 1：模块求值一次"
+        );
+        sandbox.reset_context();
+        sandbox.execute(&format!("{prelude}\n{transformed}")).unwrap();
+        assert_eq!(
+            sandbox.execute("String(globalThis.__r5182r)").unwrap().value,
+            "1",
+            "文档 2（reset_context 后新全局）：重新求值一次（缓存未跨文档泄漏）"
+        );
     }
 }
