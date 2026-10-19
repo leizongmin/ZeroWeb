@@ -181,21 +181,39 @@ pub(crate) fn svg_attr_percentage_height(node_id: zero_dom::NodeId, doc: &zero_d
     pct.is_finite().then_some(pct)
 }
 
-/// svg 的有效比例值（CSS aspect-ratio 优先，回退 viewBox w/h）。
+/// svg 的有效比例值（CSS aspect-ratio → viewBox w/h → attr width/height 之比）。
 pub(crate) fn svg_ratio_value(elem: &ElementData, style: &ComputedStyle) -> Option<f32> {
     if let Some(r) = style.aspect_ratio.filter(|r| r.is_finite() && *r > 0.0) {
         return Some(r);
     }
-    let vb = elem
-        .get_attribute("viewBox")
-        .or_else(|| elem.get_attribute("viewbox"))?;
-    let nums: Vec<&str> = vb.split([' ', ',']).filter(|t| !t.is_empty()).collect();
-    if nums.len() != 4 {
+    if let Some(vb) = elem.get_attribute("viewBox").or_else(|| elem.get_attribute("viewbox")) {
+        let nums: Vec<&str> = vb.split([' ', ',']).filter(|t| !t.is_empty()).collect();
+        if nums.len() == 4
+            && let (Ok(vw), Ok(vh)) = (nums[2].parse::<f32>(), nums[3].parse::<f32>())
+            && vh > 0.0
+            && vw > 0.0
+        {
+            return Some(vw / vh);
+        }
         return None;
     }
-    let vw: f32 = nums[2].parse().ok()?;
-    let vh: f32 = nums[3].parse().ok()?;
-    (vh > 0.0 && vw > 0.0).then_some(vw / vh)
+    // R5196 无 viewBox：attr width/height 双在场（均非 %）→ 固有比 = attr 值之比。
+    // % attr 对不产比（css-sizing-3 §intrinsic sizes：% 在内在尺寸贡献中按 auto
+    // 处理，比率随之不立——svg-intrinsic-size-005：attr %/% 有比而 CSS %/% 无比
+    // 会在 max-content 容器内两侧失配；bugzilla 1790167 同结论）。
+    let pw = parse_ratio_dim(elem.get_attribute("width")?)?;
+    let ph = parse_ratio_dim(elem.get_attribute("height")?)?;
+    (pw > 0.0 && ph > 0.0).then_some(pw / ph)
+}
+
+/// attr 尺寸值按比率语义解析：无单位数 / px（% 拒绝——见上 R5196 注）。
+fn parse_ratio_dim(v: String) -> Option<f32> {
+    let t = v.trim();
+    if t.ends_with('%') {
+        return None;
+    }
+    let t = t.strip_suffix("px").unwrap_or(t);
+    t.parse::<f32>().ok().filter(|n| n.is_finite())
 }
 
 /// SVG 尺寸 attr 值解析：剥离 `px` 后缀后按 f32（SVG2 允许 px 单位；% 由调用方分支）。
@@ -420,5 +438,32 @@ mod tests {
         let (dw, dh) = svg_default_used_size(&elem, &style, None).expect("used");
         assert_eq!(dw, Some(100.0));
         assert!((dh - 100.0).abs() < 0.5, "viewBox 1:1 → h = 100/1：{dh}");
+    }
+
+    /// R5196（SVG2 §intrinsic sizing）：无 viewBox 时 attr width/height 双在场
+    /// （均非 %）的固有比；% attr 对不产比（css-sizing-3：% 内在贡献按 auto，
+    /// svg-intrinsic-size-005 两侧失配反例）。
+    #[test]
+    fn r5196_attr_pair_ratio_without_viewbox() {
+        // %/% → 无比（% 对不立比，两侧与 CSS %/% 同权落默认解析）。
+        let (elem, style) = setup(
+            r#"<html><body><svg width="100%" height="100%"></svg></body></html>"#,
+            "",
+        );
+        assert_eq!(svg_ratio_value(&elem, &style), None);
+        // abs 对 → 比 4/3。
+        let (elem2, style2) = setup(r#"<html><body><svg width="400" height="300"></svg></body></html>"#, "");
+        assert_eq!(svg_ratio_value(&elem2, &style2), Some(4.0 / 3.0));
+        // viewBox 比优先于 attr 对（attr %/% 亦不回退补位）。
+        let (elem3, style3) = setup(
+            r#"<html><body><svg viewBox="0 0 100 200" width="100%" height="100%"></svg></body></html>"#,
+            "",
+        );
+        assert_eq!(svg_ratio_value(&elem3, &style3), Some(0.5), "viewBox 比优先于 attr 对");
+        // 单边缺失 / 单边 % → None。
+        let (elem4, style4) = setup(r#"<html><body><svg width="100%"></svg></body></html>"#, "");
+        assert_eq!(svg_ratio_value(&elem4, &style4), None);
+        let (elem5, style5) = setup(r#"<html><body><svg width="50%" height="200"></svg></body></html>"#, "");
+        assert_eq!(svg_ratio_value(&elem5, &style5), None);
     }
 }

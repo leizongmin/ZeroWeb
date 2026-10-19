@@ -705,7 +705,7 @@ fn r4105_svg_transform_origin_offset_by_reference_box_origin() {
     let styles = sys.compute_styles(&doc, &[sheet]);
     let mut css_transforms: Vec<(zero_dom::NodeId, String)> = Vec::new();
     let svg_id = doc.get_elements_by_tag_name("svg").into_iter().next().expect("svg");
-    crate::paint::painter::collect_css_transforms(&doc, svg_id, &styles, &mut css_transforms);
+    crate::paint::painter::collect_css_transforms(&doc, svg_id, &styles, None, &mut css_transforms);
     assert_eq!(css_transforms.len(), 1, "rect 的 CSS transform 应被收集");
     let (_, svg_attr) = &css_transforms[0];
     assert!(
@@ -767,7 +767,7 @@ fn r4109_svg_initial_transform_origin_is_zero_zero() {
     let styles = sys.compute_styles(&doc, &[sheet]);
     let svg_id = doc.get_elements_by_tag_name("svg").into_iter().next().expect("svg");
     let mut out: Vec<(zero_dom::NodeId, String)> = Vec::new();
-    crate::paint::painter::collect_css_transforms(&doc, svg_id, &styles, &mut out);
+    crate::paint::painter::collect_css_transforms(&doc, svg_id, &styles, None, &mut out);
     assert_eq!(out.len(), 1);
     let (_, attr) = &out[0];
     assert!(
@@ -789,7 +789,7 @@ fn r4109_svg_initial_transform_origin_is_zero_zero() {
     let styles2 = sys2.compute_styles(&doc2, &[sheet2]);
     let svg2 = doc2.get_elements_by_tag_name("svg").into_iter().next().expect("svg");
     let mut out2: Vec<(zero_dom::NodeId, String)> = Vec::new();
-    crate::paint::painter::collect_css_transforms(&doc2, svg2, &styles2, &mut out2);
+    crate::paint::painter::collect_css_transforms(&doc2, svg2, &styles2, None, &mut out2);
     assert_eq!(out2.len(), 1);
     let (_, attr2) = &out2[0];
     assert!(
@@ -824,7 +824,7 @@ fn r4106_svg_element_bbox_path_and_container() {
     let styles = sys.compute_styles(&doc, &[sheet]);
     let svg_id = doc.get_elements_by_tag_name("svg").into_iter().next().expect("svg");
     let mut css_transforms: Vec<(zero_dom::NodeId, String)> = Vec::new();
-    crate::paint::painter::collect_css_transforms(&doc, svg_id, &styles, &mut css_transforms);
+    crate::paint::painter::collect_css_transforms(&doc, svg_id, &styles, None, &mut css_transforms);
     assert_eq!(css_transforms.len(), 1, "path 的 CSS transform 应被收集");
     let (_, svg_attr) = &css_transforms[0];
     // path bbox (200,100,100,100)，origin 0,0 → 旋转中心 = bbox 原点 (200,100)。
@@ -845,7 +845,7 @@ fn r4106_svg_element_bbox_path_and_container() {
     let styles2 = sys2.compute_styles(&doc2, &[sheet2]);
     let svg2 = doc2.get_elements_by_tag_name("svg").into_iter().next().expect("svg");
     let mut css2: Vec<(zero_dom::NodeId, String)> = Vec::new();
-    crate::paint::painter::collect_css_transforms(&doc2, svg2, &styles2, &mut css2);
+    crate::paint::painter::collect_css_transforms(&doc2, svg2, &styles2, None, &mut css2);
     assert_eq!(css2.len(), 1, "曲线 path 的 transform 仍被收集");
     assert!(
         !css2[0].1.contains("translate("),
@@ -1300,7 +1300,7 @@ fn r5195_css_transform_injection_reaches_plain_svg_element() {
     let styles = sys.compute_styles(&doc, &[sheet]);
     let svg_id = doc.get_elements_by_tag_name("svg").into_iter().next().expect("svg");
     let mut out: Vec<(zero_dom::NodeId, String)> = Vec::new();
-    crate::paint::painter::collect_css_transforms(&doc, svg_id, &styles, &mut out);
+    crate::paint::painter::collect_css_transforms(&doc, svg_id, &styles, None, &mut out);
     assert_eq!(out.len(), 1, "仅绿 rect 有 CSS transform 声明");
     assert!(out[0].1.contains("translate(100 100)"), "got {}", out[0].1);
 
@@ -1325,4 +1325,31 @@ fn r5195_css_transform_injection_reaches_plain_svg_element() {
         "红 rect 无 CSS 声明不得被改写，got: {}",
         &rewritten[red_open..=red_tag_end]
     );
+}
+
+/// R5196（SVG2 §transform-box 最近 SVG viewport）：无 viewBox 时 % 尺寸 attr 的
+/// transform 参考框 = 已布局根 svg 尺寸（collect_css_transforms viewport 参，
+/// transform-percent-010 形态）；无布局尺寸 → 保守降级不产出。
+#[test]
+fn r5196_viewbox_percent_attr_resolves_via_layout_viewport() {
+    let html = r#"<html><body style="margin:0">
+        <svg width="100%" height="100%">
+          <g style="transform: translate(50%, 50%)"><rect width="100" height="100" fill="green"/></g>
+        </svg>
+        </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let sheet = zero_css_parser::Parser::parse_stylesheet("");
+    let mut sys = zero_style_system::StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[sheet]);
+    let svg_id = doc.get_elements_by_tag_name("svg").into_iter().next().expect("svg");
+    // 已布局视口 200×200：attr %/% → 参考框 200×200 → translate 50% = 100。
+    let mut out: Vec<(zero_dom::NodeId, String)> = Vec::new();
+    crate::paint::painter::collect_css_transforms(&doc, svg_id, &styles, Some((200.0, 200.0)), &mut out);
+    assert_eq!(out.len(), 1, "g 有 transform 声明");
+    assert!(out[0].1.contains("translate(100 100)"), "got {}", out[0].1);
+    // 无布局尺寸：attr %/% 无法直解析 → 保守降级不产出。
+    let mut none_out: Vec<(zero_dom::NodeId, String)> = Vec::new();
+    crate::paint::painter::collect_css_transforms(&doc, svg_id, &styles, None, &mut none_out);
+    assert!(none_out.is_empty(), "无 viewport 参应保守降级，got {none_out:?}");
 }

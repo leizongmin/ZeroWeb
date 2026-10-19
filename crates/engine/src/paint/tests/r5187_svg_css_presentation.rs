@@ -126,7 +126,7 @@ fn test_r5187_svg_css_presentation_synthesis() {
         svg_style.overflow_x
     );
     let mut transforms = Vec::new();
-    super::super::painter::collect_css_transforms(&doc, svg_id, &styles, &mut transforms);
+    super::super::painter::collect_css_transforms(&doc, svg_id, &styles, None, &mut transforms);
     let mut source = doc.outer_html(svg_id);
     source = apply_css_svg_presentation_to_source(&source, &presentations, &geometry, &doc);
     source = super::super::painter::apply_css_transforms_to_source(&source, &transforms, &doc, svg_id);

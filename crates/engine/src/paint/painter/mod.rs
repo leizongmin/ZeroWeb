@@ -994,7 +994,15 @@ impl Painter {
         // transform（R3937 实证）——序列化后把 computed transform 翻译改写/插入
         // transform attr（仅覆盖**有 CSS transform 声明**的元素，无声明勿动 attr）。
         let mut css_transforms: Vec<(NodeId, String)> = Vec::new();
-        collect_css_transforms(doc, node_id, styles, &mut css_transforms);
+        // R5196：根 svg 布局尺寸作 viewport 语义源（transform-box:view-box 无 viewBox
+        // attr 时 % 变换的参考框——SVG2 §transform-box 参考框 = 最近 SVG viewport）。
+        collect_css_transforms(
+            doc,
+            node_id,
+            styles,
+            Some((container_w, container_h)),
+            &mut css_transforms,
+        );
         // 序列化子树为 SVG 源文本；usvg 要求根有 SVG 命名空间——序列化保留属性但
         // XHTML 文档的默认 xmlns 在根 html 上、svg 元素可能只有 xmlns:svg 前缀声明，
         // 检测根 open tag 无 `xmlns=` 时补默认命名空间（替换/插入一次）。
@@ -5801,6 +5809,7 @@ pub(crate) fn collect_css_transforms(
     doc: &Document,
     subtree_root: NodeId,
     styles: &HashMap<NodeId, ComputedStyle>,
+    viewport: Option<(f32, f32)>,
     out: &mut Vec<(NodeId, String)>,
 ) {
     if let Some(st) = styles.get(&subtree_root)
@@ -5812,7 +5821,7 @@ pub(crate) fn collect_css_transforms(
         // 参考框 + origin 换算（CSS Transforms 1 §transform-box / §transform-origin）。
         let font_size_px = zero_style_system::computed::resolve_length(&st.font_size, 16.0, None, None) as f32;
         let ref_box = match st.transform_box {
-            zero_style_system::TransformBoxValue::ViewBox => svg_viewbox_of(doc, subtree_root),
+            zero_style_system::TransformBoxValue::ViewBox => svg_viewbox_of(doc, subtree_root, viewport),
             // FillBox/ContentBox：SVG 元素无 padding，content-box = fill-box。
             zero_style_system::TransformBoxValue::FillBox | zero_style_system::TransformBoxValue::ContentBox => {
                 svg_element_bbox(doc, subtree_root)
@@ -5900,7 +5909,7 @@ pub(crate) fn collect_css_transforms(
         }
     }
     for child in doc.child_nodes(subtree_root) {
-        collect_css_transforms(doc, child, styles, out);
+        collect_css_transforms(doc, child, styles, viewport, out);
     }
 }
 
@@ -5946,7 +5955,7 @@ fn subtree_max_stroke_width(
 
 /// R4098：向上找最近 `<svg>` 祖先，返回其参考 viewport —— viewBox 4 值
 /// (min_x, min_y, w, h)；无 viewBox 时用根 attr width/height（origin 原点 0,0）。
-fn svg_viewbox_of(doc: &Document, node_id: NodeId) -> Option<(f32, f32, f32, f32)> {
+fn svg_viewbox_of(doc: &Document, node_id: NodeId, viewport: Option<(f32, f32)>) -> Option<(f32, f32, f32, f32)> {
     let mut cur = doc.parent_node(node_id);
     while let Some(id) = cur {
         if let Some(node) = doc.get(id)
@@ -5964,11 +5973,23 @@ fn svg_viewbox_of(doc: &Document, node_id: NodeId) -> Option<(f32, f32, f32, f32
                 }
                 return None;
             }
-            // 无 viewBox：参考 = viewport 尺寸（attr width/height；百分比/缺失 → None 保守降级）。
-            let w = elem.get_attribute("width").and_then(|v| v.trim().parse::<f32>().ok())?;
-            let h = elem
-                .get_attribute("height")
-                .and_then(|v| v.trim().parse::<f32>().ok())?;
+            // 无 viewBox：参考 = viewport 尺寸——attr abs 值直读；百分比/缺失 attr 由
+            // R5196 回退根 svg **布局尺寸**（SVG2 根缺省 width/height = 100%；attr
+            // "100%" 无法直解析，布局层已按 CB 解析定值；transform-percent-010：容器
+            // 400→200 变异后 % 平移须按新 viewport 重解析）。无布局尺寸 → None 保守降级。
+            let parse_dim = |v: Option<&str>, laid: Option<f32>| -> Option<f32> {
+                let t = v?.trim();
+                if t.ends_with('%') {
+                    let pct: f32 = t.trim_end_matches('%').parse().ok()?;
+                    Some(pct / 100.0 * laid?)
+                } else {
+                    t.parse::<f32>().ok()
+                }
+            };
+            let laid_w = viewport.map(|v| v.0);
+            let laid_h = viewport.map(|v| v.1);
+            let w = parse_dim(elem.get_attribute("width").as_deref(), laid_w).or(laid_w)?;
+            let h = parse_dim(elem.get_attribute("height").as_deref(), laid_h).or(laid_h)?;
             return Some((0.0, 0.0, w, h));
         }
         cur = doc.parent_node(id);
