@@ -9,9 +9,12 @@
 //! - `opacity`（浮点插值）
 //! - `background-color` / `color`（RGBA 颜色插值）
 //! - `width` / `height`（长度插值）
-//! - `transform`（通过 opacity/translate 的简单场景）
+//! - `transform`（R5191 起函数列表插值，见 [`transform_interp`]）
 
 use std::collections::HashMap;
+
+// R5191：transform 函数列表插值（css-transforms-1 §13.2 unmatrix + 2D 函数逐参数）。
+mod transform_interp;
 
 use zero_css_parser::ast::{KeyframeBlock, KeyframeSelector, KeyframesRule};
 use zero_css_parser::values::{
@@ -256,6 +259,13 @@ fn resolve_implicit_boundaries(points: &mut [KeyframePoint], style: &ComputedSty
 /// 属性初值（translate ≡ 0px、rotate ≡ 0deg、scale ≡ 1——css-values §initial），
 /// 保证空边界帧被填充、插值段不因 to 侧 properties 空而整段无输出。
 fn underlying_individual_value(style: &ComputedStyle, name: &str) -> Option<String> {
+    // R5191（css-animations-1 §keyframes：隐式边界帧 = underlying value）：transform
+    // 计算值序列化——from-only/to-only keyframes 的空边界帧补键，否则插值循环
+    // （to 侧属性集驱动）零输出、动画值永不应用。与 [`underlying_cascade_value`]
+    // 的 transform arm 同语义（revert-layer 解析面），序列化函数列表 spec-correct 形态。
+    if name == "transform" {
+        return Some(crate::js_dom_bridge::computed_style::transform_to_css(&style.transform));
+    }
     let declared = match name {
         "translate" => style.individual_translate.as_ref(),
         "rotate" => style.individual_rotate.as_ref(),
@@ -321,6 +331,14 @@ fn underlying_cascade_value(style: &ComputedStyle, name: &str) -> Option<String>
         "letter-spacing" => len(&style.letter_spacing),
         "word-spacing" => len(&style.word_spacing),
         "opacity" => Some(format!("{:.4}", style.opacity)),
+        // R5191（css-animations-1 §keyframes：隐式边界帧 = underlying value）：
+        // transform 计算值序列化（函数列表，js_dom_bridge 同款 spec-correct 形态）。
+        // 缺失即 from-only/to-only keyframes 的空边界帧补 underlying——注册层给单点
+        // keyframes 补的空 100%/0% 点若无此键，插值循环（to 侧属性集驱动）零输出，
+        // transform 动画值永不应用（transform-non-invertible-discrete-interpolation：
+        // from-only 非可逆 matrix3d 黑块原样）。`none` → "none"（apply 侧 parse 为
+        // TransformValue::None）。无插值臂 → 离散切换（t≤0.5 取 from，规范同款回退）。
+        "transform" => Some(crate::js_dom_bridge::computed_style::transform_to_css(&style.transform)),
         _ => None,
     }
 }
@@ -432,6 +450,14 @@ pub fn interpolate_property_value(property: &str, from: &str, to: &str, t: f64) 
         // 数值插值；一侧为 none 时按另一侧函数序列展开为初始值列表；异构（含
         // drop-shadow）回落离散切换。
         "filter" | "backdrop-filter" => match interpolate_filter_list(from, to, t) {
+            Some(v) => v,
+            None if t > 0.5 => to.to_string(),
+            None => from.to_string(),
+        },
+        // R5191（css-transforms-1 §13.2 / css-transforms-2 §14）：transform 函数列表
+        // 插值——同构列表逐函数插值、matrix↔matrix 走规范 2D unmatrix 分解、none 侧
+        // 恒等展开；异构/3D/无效回落离散切换（既有默认臂同语义，零回归）。
+        "transform" => match transform_interp::interpolate_transform_value(from, to, t) {
             Some(v) => v,
             None if t > 0.5 => to.to_string(),
             None => from.to_string(),
@@ -597,7 +623,8 @@ fn filter_function_initial(f: &zero_css_parser::values::FilterValue) -> zero_css
 }
 
 /// 线性插值。
-fn lerp(a: f64, b: f64, t: f64) -> f64 {
+// R5191：pub(crate)——transform 函数列表插值（animation/transform_interp.rs）复用。
+pub(crate) fn lerp(a: f64, b: f64, t: f64) -> f64 {
     a + (b - a) * t
 }
 
@@ -2736,9 +2763,11 @@ mod tests {
         assert_eq!(width.value, "100.00px", "revert-layer 应解析为 150px 再插值");
     }
 
-    /// R5189：非覆盖面属性（如 transform）的 `revert-layer` 保持原值——离散回退不破坏。
+    /// R5189/R5191：`transform` 的 `revert-layer` 解析为 underlying 序列化值
+    ///（R5191 起 transform 纳入 underlying 序列化面，与 width 臂同语义）；p=0.5
+    /// 离散边界取 from（`t > 0.5` 才切 to），不 panic、不产出错误值。
     #[test]
-    fn test_keyframe_revert_layer_unsupported_property_kept() {
+    fn test_keyframe_revert_layer_transform_resolves_underlying() {
         let mut clock = AnimationClock::new();
         let rule = make_keyframes(
             "rev2",
@@ -2766,10 +2795,60 @@ mod tests {
         ));
 
         let props = clock.tick(1, 1.0);
-        // transform 不在 underlying 覆盖面 → to 值保持 revert-layer 关键字 → p=0.5 离散
-        // 取 from（既有行为），不 panic、不产出错误值。
+        // p=0.5 离散边界取 from；to 侧 revert-layer 已解析为 underlying（基线 none）。
         if let Some(p) = props.iter().find(|p| p.name == "transform") {
             assert!(p.value.contains("translate"), "离散回退应取 from 值，got {p:?}");
         }
+        // p=1.0 → to 侧 = underlying 序列化（默认 ComputedStyle → "none"），
+        // 不再是 revert-layer 关键字（R5191：transform 纳入 underlying 面后的规范语义）。
+        let props_end = clock.tick(1, 2.0);
+        let to_val = props_end.iter().find(|p| p.name == "transform").expect("to 侧输出");
+        assert_eq!(
+            to_val.value, "none",
+            "revert-layer 应解析为 underlying 序列化，got {to_val:?}"
+        );
+    }
+
+    /// R5191（css-animations-1 §keyframes：隐式边界帧 = underlying value）：
+    /// from-only transform keyframes——注册层补的空 100% 点经 underlying 序列化补
+    /// `transform` 键，插值循环（to 侧属性集驱动）不再零输出，t≈0 离散取 from。
+    /// driving: transform-non-invertible-discrete-interpolation（from-only 非可逆
+    /// matrix3d 旧版黑块原样——动画值从未应用到 ComputedStyle）。
+    #[test]
+    fn test_from_only_transform_keyframe_emits_value() {
+        let mut clock = AnimationClock::new();
+        let rule = make_keyframes(
+            "anim",
+            vec![(0.0, vec![("transform", "matrix3d(2,0,0,0, 0,2,0,0, 0,0,0,0, 0,0,0,1)")])],
+        );
+        clock.register_keyframes(&rule);
+
+        let style = ComputedStyle::default();
+        assert!(clock.start_animation_with_underlying(
+            7,
+            &AnimationConfig {
+                name: "anim".to_string(),
+                duration: 100.0,
+                delay: 0.0,
+                timing_function: TimingFunctionValue::Linear,
+                iteration_count: Some(1.0),
+                direction: AnimationDirectionValue::Normal,
+                fill_mode: AnimationFillModeValue::Forwards,
+                current_time: 0.0,
+            },
+            Some(&style),
+        ));
+
+        // p≈0（100s 线性起点）：离散切换取 from 值——matrix3d 原样透传（apply 侧
+        // parse 成功 → is_singular_transform 剔除渲染）。
+        let props = clock.tick(7, 0.02);
+        let tp = props
+            .iter()
+            .find(|p| p.name == "transform")
+            .expect("from-only 应有 transform 输出");
+        assert!(
+            tp.value.contains("matrix3d(2"),
+            "t≈0 离散应取 from 的 matrix3d，got {tp:?}"
+        );
     }
 }

@@ -2045,7 +2045,9 @@ fn aspect_ratio_str(ratio: Option<f32>, auto: bool) -> String {
 /// **已知 diverge**：Chromium getComputedStyle 对非 none transform 返 **resolved matrix**
 ///（`matrix(...)` / `matrix3d(...)`）；CSS 规范（L1/L2）+ Firefox 返函数列表（长度解析为 px、
 /// 百分比保留——border-box 相对，须 layout 故保 `%`）。ZeroWeb 返函数列表（spec-correct）。
-fn transform_to_css(t: &TransformValue) -> String {
+/// R5191：`pub(crate)` 供动画 keyframe underlying 序列化复用（css-animations-1
+/// §keyframes 隐式边界帧 = underlying value；animation.rs `underlying_cascade_value`）。
+pub(crate) fn transform_to_css(t: &TransformValue) -> String {
     match t {
         TransformValue::None => "none".to_string(),
         TransformValue::List(fns) => fns.iter().map(transform_function_to_css).collect::<Vec<_>>().join(" "),
@@ -3455,7 +3457,7 @@ fn empty_cells_to_css(e: &EmptyCellsComputedValue) -> String {
 
 /// 序列化单个 [`TransformFunction`]。translate 类长度为 px（混合百分比分支保 `%`）；rotate/skew
 /// 角度为 `deg`；scale 系数无单位；matrix 6 分量无单位。
-fn transform_function_to_css(f: &TransformFunction) -> String {
+pub(crate) fn transform_function_to_css(f: &TransformFunction) -> String {
     use TransformFunction as Tf;
     match f {
         Tf::Translate(tx, ty) => {
@@ -3512,6 +3514,11 @@ fn transform_function_to_css(f: &TransformFunction) -> String {
             format_num(*e, ""),
             format_num(*f, "")
         ),
+        // R5191（css-transforms-2 §funcdef-matrix3d）：列主序 a1..a16 逗号+空格序列。
+        Tf::Matrix3d(m) => {
+            let parts: Vec<String> = m.iter().map(|v| format_num(*v, "")).collect();
+            format!("matrix3d({})", parts.join(", "))
+        }
     }
 }
 

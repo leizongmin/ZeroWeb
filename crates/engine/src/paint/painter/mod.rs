@@ -6316,6 +6316,13 @@ pub(crate) fn transform_value_to_svg(
             Tf::Matrix(a, b, c, d, e, f_) => {
                 format!("matrix({a} {b} {c} {d} {e} {f_})")
             }
+            // R5191：matrix3d 2D 投影形序列化为 SVG matrix（SVG transform 属性语法无
+            // 3D 函数）；奇异/真 3D 形与下方 ScaleZ/RotateX/RotateY 同策略恒等跳过
+            //（ZW 无 3D 渲染语义，css-transforms-2 域挂账）。
+            Tf::Matrix3d(m) => match crate::paint::transform::matrix3d_2d_projection(m) {
+                Some((a, b, c, d, e, f_)) => format!("matrix({a} {b} {c} {d} {e} {f_})"),
+                None => continue,
+            },
             // 3D 函数：ZW 无 3D 渲染语义（css-transforms-2 域挂账），恒等投影跳过。
             // R5015：RotateZ 摘出——2D rotate（见上方 arm），跳过会使 individual
             // `rotate: <angle>` 在 SVG 位图路径整体丢失。

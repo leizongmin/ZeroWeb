@@ -24,7 +24,9 @@ use zero_script_sandbox::Sandbox;
 static MUTATION_VERSION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 // getComputedStyle 计算与序列化（R2709 从本文件拆出，控制主文件行数）。
-mod computed_style;
+// R5191：pub(crate)——动画 keyframe underlying 序列化复用 transform_to_css
+//（animation.rs underlying_cascade_value，css-animations-1 §keyframes 隐式边界帧）。
+pub(crate) mod computed_style;
 pub use computed_style::*;
 
 // getComputedStyle per-generation 缓存（E14 真站停摆修复，从 computed_style 拆出）。

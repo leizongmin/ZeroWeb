@@ -232,3 +232,76 @@ fn test_grid_area_only_slash() {
     let result = parse_grid_area("/");
     assert!(result.is_none());
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// R5191：matrix3d 解析（css-transforms-2 §funcdef-matrix3d）
+// ═══════════════════════════════════════════════════════════════════════
+
+use crate::values::{TransformFunction, TransformValue};
+
+#[test]
+fn test_parse_matrix3d_16_args_column_major() {
+    // transform3d-matrix3d-001 形状：2D 仿射形（列主序 a1..a16，空白容忍）。
+    let result = parse_transform("matrix3d(1,2,0,0, 3,4,0,0, 0,0,1,0, 5,6,0,1)").unwrap();
+    match result {
+        TransformValue::List(fns) => match &fns[0] {
+            TransformFunction::Matrix3d(m) => {
+                assert_eq!(
+                    m.as_slice(),
+                    &[
+                        1.0, 2.0, 0.0, 0.0, 3.0, 4.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 5.0, 6.0, 0.0, 1.0
+                    ]
+                );
+            }
+            other => panic!("expected Matrix3d, got {other:?}"),
+        },
+        other => panic!("expected List, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_parse_matrix3d_scientific_and_negative() {
+    let result = parse_transform("matrix3d(-1.5, 2e1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)").unwrap();
+    match result {
+        TransformValue::List(fns) => match &fns[0] {
+            TransformFunction::Matrix3d(m) => {
+                assert_eq!(m[0], -1.5);
+                assert_eq!(m[1], 20.0);
+            }
+            other => panic!("expected Matrix3d, got {other:?}"),
+        },
+        other => panic!("expected List, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_parse_matrix3d_wrong_arity_rejected() {
+    // 15/17 参数 → 整体无效（保持「无效即整体丢弃」语义）。
+    assert!(parse_transform("matrix3d(1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0)").is_none());
+    assert!(parse_transform("matrix3d(1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1, 2)").is_none());
+    // 空参数
+    assert!(parse_transform("matrix3d()").is_none());
+}
+
+#[test]
+fn test_parse_matrix3d_math_and_keyword_args() {
+    // number 型 math 函数（calc 有限求值）与 matrix 同面跟随（parse_transform_number
+    // 同款，css-values-4 <number> math）；关键字拒绝。
+    assert!(parse_transform("matrix3d(calc(1 + 1), 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)").is_some());
+    // 带维度的 math（px 量纲）非 <number> → 拒绝。
+    assert!(parse_transform("matrix3d(calc(1px + 1px), 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)").is_none());
+    assert!(parse_transform("matrix3d(none, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)").is_none());
+}
+
+#[test]
+fn test_parse_matrix3d_case_insensitive() {
+    let result = parse_transform("MATRIX3D(1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1)");
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_parse_matrix3d_with_translatez_list_invalid() {
+    // R5174 判据：matrix3d 保守按逐点 z 变函数处理，与 translateZ 混用整表失效
+    //（与旧版 matrix3d 解析失败同语义，零回归）。
+    assert!(parse_transform("translateZ(10px) matrix3d(1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1)").is_none());
+}

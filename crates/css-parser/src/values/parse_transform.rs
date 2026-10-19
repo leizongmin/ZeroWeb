@@ -383,6 +383,11 @@ pub enum TransformFunction {
     Perspective(f64),
     /// matrix(a, b, c, d, e, f) — 二维矩阵变换。
     Matrix(f64, f64, f64, f64, f64, f64),
+    /// R5191（css-transforms-2 §funcdef-matrix3d）：matrix3d(a1..a16) — 列主序
+    /// 4×4 矩阵。`Box` 保枚举尺寸（16×f64 直接内联会撑大所有变体）。渲染消费面
+    /// 见 engine `paint/transform.rs`：det3D 奇异剔除 + 2D 投影形合成；真 3D 形
+    /// 整体无效（ZW 无 3D 管线，与旧版解析失败丢弃同语义）。
+    Matrix3d(Box<[f64; 16]>),
 }
 
 /// 解析 CSS transform 属性值。
@@ -485,7 +490,9 @@ pub fn parse_transform(value: &str) -> Option<TransformValue> {
 /// flat_plane_list_translate_z）与解析层 translateZ 混合列表有效性共用本判据：
 /// 2D 仿射函数 + translate/translate3d（z 分量仅平移，平面恒定）可入；rotateX/
 /// rotateY/rotate3d/perspective()/scale3d/scaleZ 等逐点 z 变函数不入（精确投影须
-/// 真 3D 管线）。
+/// 真 3D 管线）。R5191：matrix3d 同样不入——其 z 面（a3/a7/a9/a10/a11/a12/a15）
+/// 是否恒定须看参数值，保守按逐点 z 变处理（与 translateZ 混用整表失效 = 旧版
+/// matrix3d 解析失败的现状语义，零回归）。
 pub fn is_flat_plane_function(f: &TransformFunction) -> bool {
     matches!(
         f,
@@ -761,6 +768,18 @@ fn parse_transform_function(name: &str, args: &str) -> Option<TransformFunction>
             Some(TransformFunction::Matrix(
                 vals[0], vals[1], vals[2], vals[3], vals[4], vals[5],
             ))
+        }
+        // R5191（css-transforms-2 §funcdef-matrix3d）：16 个纯 <number>（同 matrix，
+        // 经 parse_transform_number；math 函数面跟随）。列主序 a1..a16 原样承载，
+        // 语义解释（奇异/2D 投影/真 3D）在消费方 engine paint/transform.rs。
+        "matrix3d" => {
+            let vals = parse_transform_number_args(args)?;
+            if vals.len() != 16 {
+                return None;
+            }
+            let mut m = Box::new([0.0_f64; 16]);
+            m.copy_from_slice(&vals);
+            Some(TransformFunction::Matrix3d(m))
         }
         _ => None,
     }

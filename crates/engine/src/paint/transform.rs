@@ -50,8 +50,10 @@ pub fn apply_transform_offset(style: &ComputedStyle, _abs_x: f32, _abs_y: f32) -
 /// 整元素不可见，`Nothing should appear except this text`）。
 ///
 /// 覆盖可判定奇异面（保守）：`scale3d(_, _, 0)`（z 缩放 0）、`scale(0,_)`/`scaleX(0)`/
-/// `scaleY(0)`（轴缩放 0）。`rotate3d`/`matrix3d` 的奇异判定需完整 3D 矩阵（ZW 无 3D
-/// 矩阵合成，缺失维恒等）不在本 helper 范围。
+/// `scaleY(0)`（轴缩放 0）。R5191：`matrix3d` 左上 3×3 行列式为 0（如 z 行全 0 的
+/// `matrix3d(2,0,0,0, 0,2,0,0, 0,0,0,0, 0,0,0,1)`，transform-non-invertible-discrete-
+/// interpolation：chrome 元素消失，2D 投影形 scale(2) 可逆故须 det3D 判定）同样奇异。
+/// `rotate3d` 的奇异判定仍不在范围（R3833 恒等近似，|θ|=90° 由 scale 系面兜底）。
 pub fn is_singular_transform(style: &ComputedStyle) -> bool {
     let own_singular = match &style.transform {
         TransformValue::None => false,
@@ -60,6 +62,7 @@ pub fn is_singular_transform(style: &ComputedStyle) -> bool {
             TransformFunction::Scale(sx, sy) => *sx == 0.0 || sy.is_some_and(|sy| sy == 0.0),
             TransformFunction::ScaleX(sx) => *sx == 0.0,
             TransformFunction::ScaleY(sy) => *sy == 0.0,
+            TransformFunction::Matrix3d(m) => matrix3d_is_singular(m),
             _ => false,
         }),
     };
@@ -69,6 +72,36 @@ pub fn is_singular_transform(style: &ComputedStyle) -> bool {
     // R4201：individual `scale: 0`（承载为 Scale(sx, sy)）同样构成奇异。
     matches!(&style.individual_scale, Some(TransformFunction::Scale(sx, sy))
         if *sx == 0.0 || sy.is_some_and(|sy| sy == 0.0))
+}
+
+/// R5191（css-transforms-2 §funcdef-matrix3d）：matrix3d 列主序 4×4 的左上 3×3
+/// 行列式（x/y/z 轴基向量张成体积；w 行/列不影响线性部分可逆性）。
+///
+/// | a1 a5 a9  |   det = a1(a6·a11 − a7·a10) − a5(a2·a11 − a3·a10) + a9(a2·a7 − a3·a6)
+/// | a2 a6 a10 |
+/// | a3 a7 a11 |
+///
+/// det ≈ 0 → 元素整体不渲染（[`is_singular_transform`]）；`det < 0` 是镜像、非奇异。
+/// 阈值 1e-12 吸收整数参数浮点乘加的舍入尾差（案例均为精确奇异/非奇异）。
+fn matrix3d_is_singular(m: &[f64; 16]) -> bool {
+    let det =
+        m[0] * (m[5] * m[10] - m[6] * m[9]) - m[4] * (m[1] * m[10] - m[2] * m[9]) + m[8] * (m[1] * m[6] - m[2] * m[5]);
+    det.abs() < 1e-12
+}
+
+/// R5191（css-transforms-2 §serialization 同源的 2D 投影条件）：matrix3d 可表为
+/// 2D 仿射当且仅当 w 行仅 a16（w' = a16·w 恒定）且 z 列不参与 x/y（a9 = a10 = 0）：
+/// `a4 == a8 == a12 == 0 && a16 == 1 && a9 == a10 == 0` →
+/// `matrix(m11, m12, m21, m22, m41, m42)` = `(a1, a2, a5, a6, a13, a14)`。
+/// a3/a7/a11/a15（z 行）与 a15 之外的第 3 列平移对 x/y 投影无贡献，可为任意值
+///（transform3d-matrix3d-002 `matrix3d(1,0,0,0, 0,2,0,0, 0,0,3,0, 4,5,6,1)` 的
+/// scaleZ/z 平移投影丢弃后与 ref 一致）。不满足 → `None`（真 3D/透视面）。
+pub(crate) fn matrix3d_2d_projection(m: &[f64; 16]) -> Option<(f64, f64, f64, f64, f64, f64)> {
+    if m[3] == 0.0 && m[7] == 0.0 && m[11] == 0.0 && m[15] == 1.0 && m[8] == 0.0 && m[9] == 0.0 {
+        Some((m[0], m[1], m[4], m[5], m[12], m[13]))
+    } else {
+        None
+    }
 }
 
 /// R4035：元素是否背对观察者（CSS Transforms 2 §backface-visibility）。
@@ -178,6 +211,14 @@ pub fn compute_transform_matrix_with_ref_box(
     // | a  c  tx |
     // | b  d  ty |
     // | 0  0   1 |
+    // R5191：matrix3d 预检——奇异（det3D≈0，通常已被 is_singular_transform 上层剔除，
+    // 此处兜底）或真 3D/透视形（2D 投影条件不满足）→ 整体返 None 不合成，与旧版
+    // matrix3d 解析失败整体丢弃同语义（零回归：matrix3d 真面行为不变）；仅 2D 投影
+    // 形参与合成（transform3d-matrix3d-001/002 翻绿路径）。
+    if funcs.iter().any(|f| matches!(f, TransformFunction::Matrix3d(m) if matrix3d_is_singular(m) || matrix3d_2d_projection(m).is_none()))
+    {
+        return None;
+    }
     let mut a = 1.0_f32;
     let mut b = 0.0_f32;
     let mut c = 0.0_f32;
@@ -258,6 +299,11 @@ pub fn compute_transform_matrix_with_ref_box(
             TransformFunction::Perspective(_) => (1.0, 0.0, 0.0, 1.0, 0.0, 0.0),
             TransformFunction::Matrix(ma, mb, mc, md, me, mf) => {
                 (*ma as f32, *mb as f32, *mc as f32, *md as f32, *me as f32, *mf as f32)
+            }
+            // R5191：matrix3d 2D 投影形展开（奇异/真 3D 形已在循环前守卫整体 None）。
+            TransformFunction::Matrix3d(m) => {
+                let (ma, mb, mc, md, me, mf) = matrix3d_2d_projection(m).expect("guarded non-projectable matrix3d");
+                (ma as f32, mb as f32, mc as f32, md as f32, me as f32, mf as f32)
             }
         };
 
@@ -360,6 +406,13 @@ pub fn compute_transform_matrix_with_ref_box(
                 TransformFunction::Perspective(_) => (1.0, 0.0, 0.0, 1.0, 0.0, 0.0),
                 TransformFunction::Matrix(ma, mb, mc, md, me, mf) => {
                     (*ma as f32, *mb as f32, *mc as f32, *md as f32, *me as f32, *mf as f32)
+                }
+                // R5191：兜底重算循环与主循环同面（2D 投影形展开；循环前守卫已剔
+                // 奇异/真 3D 形）。链含 Matrix3d 时 rotX/rotY 兜底不可达（本循环
+                // 仅 det≈0 且含 rotX/rotY 触发，Matrix3d 分支展开后同主循环语义）。
+                TransformFunction::Matrix3d(m) => {
+                    let (ma, mb, mc, md, me, mf) = matrix3d_2d_projection(m).expect("guarded non-projectable matrix3d");
+                    (ma as f32, mb as f32, mc as f32, md as f32, me as f32, mf as f32)
                 }
             };
             let new_a = a * fa + c * fb;
@@ -1169,5 +1222,84 @@ mod tests {
         let mut rx = ComputedStyle::default();
         rx.transform = TransformValue::List(vec![TransformFunction::RotateX(180.0)]);
         assert!(transform_shows_backface(&rx), "rotateX(180deg) 背面朝向观察者");
+    }
+
+    // ── R5191：matrix3d 奇异判定 + 2D 投影合成 ─────────────────────────
+
+    fn m3d(a: [f64; 16]) -> TransformFunction {
+        TransformFunction::Matrix3d(Box::new(a))
+    }
+
+    #[test]
+    fn test_matrix3d_singular_detection() {
+        // 目标案形状（transform-non-invertible-discrete-interpolation）：z 行全 0 →
+        // det3D = 0 → 奇异 → 元素不渲染（chrome 同；2D 投影形 scale(2) 可逆，
+        // 故必须 det3D 判定）。
+        let mut style = ComputedStyle::default();
+        style.transform = TransformValue::List(vec![m3d([
+            2.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ])]);
+        assert!(is_singular_transform(&style), "z 行全 0 → det3D=0 奇异");
+        // scale3d(2,2,3) 等价（diag 2,2,3）→ 非奇异
+        let mut ok = ComputedStyle::default();
+        ok.transform = TransformValue::List(vec![m3d([
+            2.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ])]);
+        assert!(!is_singular_transform(&ok));
+        // 镜像（det3D < 0）非奇异——不渲染条件是 det == 0 而非 det <= 0
+        let mut mirror = ComputedStyle::default();
+        mirror.transform = TransformValue::List(vec![m3d([
+            -1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ])]);
+        assert!(!is_singular_transform(&mirror), "det=-1 镜像非奇异");
+    }
+
+    #[test]
+    fn test_matrix3d_2d_projection() {
+        // 001：2D 仿射形 → matrix(1,2,3,4,5,6)
+        let m001 = [
+            1.0, 2.0, 0.0, 0.0, 3.0, 4.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 5.0, 6.0, 0.0, 1.0,
+        ];
+        assert_eq!(matrix3d_2d_projection(&m001), Some((1.0, 2.0, 3.0, 4.0, 5.0, 6.0)));
+        // 002：scaleZ(3)/z 平移 6 投影丢弃 → matrix(1,0,0,2,4,5)
+        let m002 = [
+            1.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 3.0, 0.0, 4.0, 5.0, 6.0, 1.0,
+        ];
+        assert_eq!(matrix3d_2d_projection(&m002), Some((1.0, 0.0, 0.0, 2.0, 4.0, 5.0)));
+        // 003：w 行 a4=-0.005（透视）→ 不可投影
+        let m003 = [
+            1.0, 0.0, 0.0, -0.005, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        assert_eq!(matrix3d_2d_projection(&m003), None);
+        // 005：a16=2（w' = 2w 透视缩放）→ 不可投影
+        let m005 = [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 2.0,
+        ];
+        assert_eq!(matrix3d_2d_projection(&m005), None);
+    }
+
+    #[test]
+    fn test_compute_transform_matrix_matrix3d_2d_shape() {
+        // 001 形状合成：origin = 100×100 盒中心 (50,50)。
+        // final_tx = 50·(1−1) − 50·3 + 5 = −145；final_ty = −50·2 + 50·(1−4) + 6 = −244。
+        let mut style = ComputedStyle::default();
+        style.transform = TransformValue::List(vec![m3d([
+            1.0, 2.0, 0.0, 0.0, 3.0, 4.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 5.0, 6.0, 0.0, 1.0,
+        ])]);
+        let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let tp = compute_transform_matrix(&style, &rect).expect("2D 形 matrix3d 参与合成");
+        assert_eq!((tp.a, tp.b, tp.c, tp.d), (1.0, 2.0, 3.0, 4.0));
+        assert_eq!((tp.tx, tp.ty), (-145.0, -244.0));
+    }
+
+    #[test]
+    fn test_compute_transform_matrix_matrix3d_true_3d_returns_none() {
+        // 真 3D/透视形（003 a4≠0）：整体返 None 不合成（与旧版解析失败丢弃同语义）。
+        let mut style = ComputedStyle::default();
+        style.transform = TransformValue::List(vec![m3d([
+            1.0, 0.0, 0.0, -0.005, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ])]);
+        let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+        assert!(compute_transform_matrix(&style, &rect).is_none());
     }
 }
