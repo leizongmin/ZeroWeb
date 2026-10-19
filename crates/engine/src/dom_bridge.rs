@@ -356,7 +356,8 @@ fn extract_string_arg(input: &str) -> Option<String> {
 /// 注入（错误/调用结果/导出描述）在多 execute 消费流中错位（实测：第二个
 /// instantiate 的错误覆写第一个的）。已装本桥（`_modules` 标记）则整段跳过；
 /// 原生 V8 WebAssembly（无 `_modules`，js_dom_shim 页面路径）仍被桥接对象覆盖，
-/// execute 路径既有契约不变。
+/// execute 路径既有契约不变；唯原生 `Memory` 构造器回挂到桥对象（桥不实现
+/// Memory，WPT /common/sab.js 探测依赖它——详见安装点注释）。
 pub fn generate_dom_api_polyfill() -> String {
     r#"(function() {
   // DOM API polyfill for ZeroBrowser
@@ -416,10 +417,12 @@ pub fn generate_dom_api_polyfill() -> String {
   }
 
   // 幂等安装（详见函数级文档）——已有本桥（_modules 标记）则保留跨 execute 状态；
-  // 原生 V8 WebAssembly（无 _modules）仍被桥接对象覆盖（execute 路径既有契约）
+  // 原生 V8 WebAssembly（无 _modules）仍被桥接对象覆盖（execute 路径既有契约），
+  // 但原生 Memory 构造器回挂（见桥对象尾部的保留逻辑）
   if (typeof globalThis.WebAssembly !== 'undefined' && globalThis.WebAssembly._modules) {
     return;
   }
+  var __zwPrevWasm__ = globalThis.WebAssembly;
   globalThis.WebAssembly = {
     _modules: {},
     _instances: {},
@@ -638,6 +641,18 @@ pub fn generate_dom_api_polyfill() -> String {
     LinkError: __wasmMakeErrorClass__('LinkError'),
     RuntimeError: __wasmMakeErrorClass__('RuntimeError')
   };
+
+  // 原生 Memory 构造器保留：桥不实现 Memory（宿主 wasm 运行时的线性内存走
+  // instance exports 面——exports.memory.grow 桥接，无独立构造器语义），而原生
+  // 引擎（V8）的 Memory 是 WPT 基建依赖——/common/sab.js 以
+  // `new WebAssembly.Memory({shared:true}).buffer.constructor` 探测
+  // SharedArrayBuffer；桥覆盖原生后 Memory 缺位 → 全部 SAB 变体
+  // 「sabConstructor is not a constructor」（encoding corpus encodeInto/
+  // textdecoder-streaming 等 80+ 案，2026-10-17 runner 预热改走 with_dom 后暴露）。
+  // 仅回挂构造器，compile/instantiate 的宿主桥语义不变。
+  if (__zwPrevWasm__ && __zwPrevWasm__.Memory) {
+    globalThis.WebAssembly.Memory = __zwPrevWasm__.Memory;
+  }
 
   if (globalThis.document && (globalThis.document.__zwHandle !== undefined || globalThis.document.__zwShimInstalled)) return;
   var _nodeIdCounter = 1;

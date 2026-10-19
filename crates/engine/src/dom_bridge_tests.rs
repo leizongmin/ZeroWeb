@@ -1359,6 +1359,24 @@ fn test_polyfill_webassembly_error_classes() {
 }
 
 #[test]
+fn test_polyfill_webassembly_native_memory_preserved() {
+    // 原生 Memory 回挂（encoding-compat 复跑 2026-10-19）：桥覆盖原生 V8
+    // WebAssembly 后 Memory 缺位，WPT /common/sab.js 的
+    // `new WebAssembly.Memory({shared:true})` 探测抛 TypeError → 全部 SAB
+    // 变体「sabConstructor is not a constructor」（encoding corpus 80+ 案）。
+    // 桥安装须把原生 Memory 构造器回挂到桥对象。
+    let polyfill = generate_dom_api_polyfill();
+    assert!(
+        polyfill.contains("__zwPrevWasm__"),
+        "须先捕获覆盖前的原生 WebAssembly 引用"
+    );
+    assert!(
+        polyfill.contains("globalThis.WebAssembly.Memory = __zwPrevWasm__.Memory"),
+        "桥安装后须回挂原生 Memory 构造器"
+    );
+}
+
+#[test]
 fn test_polyfill_webassembly_compile() {
     let polyfill = generate_dom_api_polyfill();
     assert!(polyfill.contains("Promise.resolve"));

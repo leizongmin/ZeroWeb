@@ -1,8 +1,8 @@
 # 编码兼容 — TextEncoder / TextDecoder / encoding 标签
 
-**版本**: v1.3
-**日期**: 2026-09-12（立项）| 2026-10-02（收口——DC-1~4 全满足）
-**状态**: Completed（全语料 12070/12075 = 99.96%；残差 5 记账；嗅探挂账转 html-syntax-compat）
+**版本**: v1.4
+**日期**: 2026-09-12（立项）| 2026-10-02（收口——DC-1~4 全满足）| 2026-10-19（复跑修齐 SAB 跨 goal 回归）
+**状态**: Completed（全语料 12071/12075 = 99.97%；残差 4 记账；嗅探挂账转 html-syntax-compat）
 **执行模式**: WPT 驱动（上游 encoding/ corpus 为验收标尺）+ 语义修齐；
 轻量快赢切片
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——编码面）
@@ -70,8 +70,9 @@ goal 的划界线，双向记账；与其他 goal 无共享面。
       evidence/2026-10-02-m2-labels-legacy-decode.md）
 - [x] **DC-3**：TextEncoder UTF-8 语义 + BOM/ fatal/ ignore 模式 + 编码往返修齐
       （2026-10-02 M3 满足——99.96%；孤立代理 → U+FFFD、encodeInto spec 语义、
-      BOM 拆分嗅探/fatal/ignoreBOM、streams 93.9%；残差 5 记账 transfer 结构面 ×4 +
-      encoding_rs 契约 ×1，evidence/2026-10-02-m3-textencoder-modes-streams.md）
+      BOM 拆分嗅探/fatal/ignoreBOM、streams 93.9%；2026-10-19 复跑修齐 runner
+      SAB 跨 goal 回归后 99.97%；残差 4 记账 transfer 结构面 ×3 +
+      encoding_rs 契约 ×1，evidence/2026-10-19-revalidation-sab-regression.md）
 - [x] **DC-4**：`make test` 全绿 + clippy `-D warnings` + fmt + reftest 零回归
       （2026-10-02——make test 68 suites 全绿、clippy 零告警、fmt 零 diff、
       make reftest 700/700 不一致 0；判定见 evidence/2026-10-02-m4-dc-verdict.md）

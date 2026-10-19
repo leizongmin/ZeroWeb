@@ -47,7 +47,11 @@ DIRS=(
 
 goals_fetch_all
 # /common 数据依赖显式补拉（fetch-media-subset.sh 先例）：encodeInto.any.js 与
-# encoding/streams/decode-utf8.any.js 经 `META: script=/common/sab.js` 消费。
+# encoding/streams/decode-utf8.any.js 经 `META: script=/common/sab.js` 消费；
+# api-invalid-label.any.js / textdecoder-fatal-single-byte.any.js 经
+# `META: script=/common/subset-tests.js` 消费（缺失时两案整案塌缩为单个
+# load-support Fail——2026-10-19 复跑实测 3421 分母消失）。
 fetch_raw "common/sab.js"
+fetch_raw "common/subset-tests.js"
 goals_inventory
 goals_next_steps "${GOAL}"
