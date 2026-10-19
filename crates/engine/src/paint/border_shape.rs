@@ -11,6 +11,16 @@ use super::clip::{circle_to_polygon, ellipse_to_polygon};
 use super::color::resolve_color_current;
 use super::helpers::resolve_inset_length;
 
+/// R5184 kill-switch（`ZW_BORDER_SHAPE=0` 整体禁用 border-shape 路径）。
+// OPTIMIZATION：进程内只读一次——下方三个消费端均在 painter 逐元素热路径，
+// `env::var` 每次上锁扫描 environ，500 元素页一次 paint 数千次查询，实测
+// CI bench-gate `paint_complex_page_500_elements` +34% 超预算。kill-switch
+// 约定进程启动前设定，读一次与逐次读语义等价。
+fn border_shape_disabled() -> bool {
+    static KILL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *KILL.get_or_init(|| std::env::var("ZW_BORDER_SHAPE").as_deref() == Ok("0"))
+}
+
 /// R4534（css-borders-4 §7）：border-shape 形状方案——形状 → 绝对坐标多边形 +
 /// relevant side 边框色/宽（§7.6：block-start→inline-start→block-end→inline-end
 /// 首个非 none 边；horizontal-tb LTR = top→left→bottom→right）。
@@ -84,7 +94,7 @@ pub fn border_shape_overflow_polygon(
     abs_x: f32,
     abs_y: f32,
 ) -> Option<Vec<(f32, f32)>> {
-    if std::env::var("ZW_BORDER_SHAPE").as_deref() == Ok("0") {
+    if border_shape_disabled() {
         return None;
     }
     let font_size = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None) as f32;
@@ -120,7 +130,7 @@ pub(crate) fn border_shape_plan(
     abs_x: f32,
     abs_y: f32,
 ) -> Option<BorderShapePlan> {
-    if std::env::var("ZW_BORDER_SHAPE").as_deref() == Ok("0") {
+    if border_shape_disabled() {
         return None;
     }
     let border_shape = match &style.border_shape {
@@ -231,7 +241,7 @@ pub(crate) fn border_shape_round_inset_equivalent_radii(
     style: &ComputedStyle,
     box_node: &LayoutBox,
 ) -> Option<BorderRadiusSpec> {
-    if std::env::var("ZW_BORDER_SHAPE").as_deref() == Ok("0") {
+    if border_shape_disabled() {
         return None;
     }
     let BorderShapeValue::Stroke { shape, geometry_box } = &style.border_shape else {
