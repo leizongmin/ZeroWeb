@@ -1936,6 +1936,58 @@ fn test_clone_node_deep_fills_child_registry_r151() {
     );
 }
 
+/// R5196（html-syntax-compat P6）：template content 内 form owner 关联不越界——
+/// `_zwMEl` 自有 `form` accessor 的祖先/root 上行命中 TEMPLATE 即断（inline content
+/// 视图 parentNode 指模板 proxy 是视图捷径，宿主 form 不可越界关联；get trap 的
+/// R5009 片 e 门被自有属性遮蔽）。WPT fragment-parse-form-in-template-001.tentative
+/// 'inputs[0].form' 期望 null（M4 冻结起既有 1F，本轮修复）。
+#[test]
+fn test_template_content_form_owner_boundary_r5196() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    // WPT 案形态：宿主 <form> 包 <template id=t>；innerHTML 解析 <div><form></div><input>
+    // （form element pointer 在 template context 为 null——input 不关联）。
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><form><template id=\"t\"></template></form></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let out = sandbox
+        .execute(
+            "var t = document.getElementById('t');\n\
+             t.innerHTML = '<div><form></div><input type=text></form>';\n\
+             var inputs = t.content.querySelectorAll('input');\n\
+             var parts = [];\n\
+             parts.push('forms:' + t.content.querySelectorAll('form').length);\n\
+             parts.push('inputs:' + inputs.length);\n\
+             parts.push('form:' + (inputs[0].form === null ? 'null' : String(inputs[0].form && inputs[0].form.tagName)));\n\
+             // 同 content 树内 form= 属性关联仍成立（root 上行停在 TEMPLATE，树内 id 可见）\n\
+             t.innerHTML = '<form id=\"cf\"></form><input form=\"cf\">';\n\
+             var i2 = t.content.querySelectorAll('input')[0];\n\
+             parts.push('attrSameTree:' + (i2.form && i2.form.getAttribute('id')));\n\
+             // form= 指宿主侧 id——树外不可见，null\n\
+             t.innerHTML = '<input form=\"hostform\">';\n\
+             parts.push('attrCrossTree:' + (t.content.querySelectorAll('input')[0].form === null ? 'null' : 'leak'));\n\
+             parts.join('~')",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out, "forms:1~inputs:1~form:null~attrSameTree:cf~attrCrossTree:null",
+        "R5196 template content form owner 边界：宿主 form 不越界关联，树内 form= 关联保持"
+    );
+}
+
 /// R151②：`template.content` fragment 视图的 ParentNode API（children/firstElementChild/
 /// childElementCount/getElementsByClassName）——WPT Event-dispatch-single-activation 的
 /// `Array.from(template.content.children)` + `getElementsByClassNameInclusive`。

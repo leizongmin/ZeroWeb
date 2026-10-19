@@ -11748,8 +11748,20 @@
       var formAssociated = { button: 1, fieldset: 1, input: 1, object: 1, output: 1, select: 1, textarea: 1 };
       if (!formAssociated[tag]) return null;
       var formId = node.getAttribute('form');
+      // R5196（html-syntax-compat P6）：template content 内 form owner 关联不越界——
+      // contents 是独立树（fragment 解析不设 form element pointer，WHATWG#12257），
+      // 而 inline content 视图把解析子的 parentNode 指到模板 proxy（视图捷径非真实
+      // 祖先），祖先/root 上行会逃逸进宿主文档命中宿主 form。祖先链与 root 上行命中
+      // TEMPLATE 即断（part03 get trap 同名 getter 的 R5009 片 e 门被本自有属性
+      // 遮蔽——WPT fragment-parse-form-in-template 'inputs[0].form' 期望 null，
+      // M4 冻结起既有 1F）。form= 属性关联 root 停在 TEMPLATE 本身：同 content 树
+      // 内 id 匹配仍关联（spec form owner 算法树内查找），宿主侧 form 不可见。
+      // https://html.spec.whatwg.org/multipage/parsing.html#parsing-html-fragments
+      var isTplNode = function (n) {
+        return !!n && n.nodeType === 1 && String(n.localName || n.nodeName || '').toLowerCase() === 'template';
+      };
       var root = node;
-      while (root.parentNode) root = root.parentNode;
+      while (root.parentNode && !isTplNode(root)) root = root.parentNode;
       function findForm(current) {
         if (!current) return null;
         if (current.nodeType === 1 && current.localName === 'form' &&
@@ -11763,6 +11775,7 @@
       }
       if (formId) return findForm(root);
       for (var ancestor = node.parentNode; ancestor; ancestor = ancestor.parentNode) {
+        if (isTplNode(ancestor)) break;
         if (ancestor.nodeType === 1 && ancestor.localName === 'form') return ancestor;
       }
       return null;
