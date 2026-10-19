@@ -331,6 +331,48 @@ fn r4018_abspos_inline_element_margin_top_participates() {
     );
 }
 
+/// R5197（SVG2 §7.2 attr % → CSS % hint + css-sizing-3 definite CB）：无 viewBox 的
+/// `%` 尺寸 attr 对 svg 在 definite 容器按 % 解析双维（transform-percent-010 形态：
+/// 容器 200×200 → svg 100%/100% → 200×200；旧 % attr 不透传 → 高落默认 150）。
+#[test]
+fn r5197_svg_percent_attr_pair_resolves_in_definite_container() {
+    let html = r#"<html><body style="margin:0">
+<div style="width: 200px; height: 200px;">
+<svg width="100%" height="100%">
+<rect x="0" y="0" width="200" height="200" fill="green" />
+</svg>
+</div>
+</body></html>"#;
+    let (doc, result) = layout(html);
+    let sid = doc.get_elements_by_tag_name("svg").into_iter().next().expect("svg");
+    let (w, h) = find_box(&result.root, sid).expect("svg box");
+    assert!(
+        (w - 200.0).abs() < 1.0 && (h - 200.0).abs() < 1.0,
+        "R5197: svg width/height=100% 应按 definite 容器解析 200×200，实际 {w}×{h}"
+    );
+}
+
+/// R5197（CSS Cascading 3 §4 author > presentation hint）：abspos svg 同时有 % attr
+/// 高与作者 CSS % 高时，作者声明胜出——R4018 臂门扩 Percentage 后不得用 attr 直读
+/// 值覆写作者 %（attr 50% + CSS height:25% 应 25% × 192 = 48，覆写 bug 会给 96）。
+#[test]
+fn r5197_abspos_svg_author_css_percent_height_beats_attr_hint() {
+    let html = r#"<html><body style="margin:0">
+<div style="position: relative; width: 200px; height: 192px;">
+<svg version="1.1" xmlns="http://www.w3.org/2000/svg" height="50%" style="position: absolute; top: 0; left: 0; height: 25%;">
+<rect x="0" y="0" width="200" height="100" fill="blue" />
+</svg>
+</div>
+</body></html>"#;
+    let (doc, result) = layout(html);
+    let sid = doc.get_elements_by_tag_name("svg").into_iter().next().expect("svg");
+    let (_w, h) = find_box(&result.root, sid).expect("svg box");
+    assert!(
+        (h - 48.0).abs() < 1.0,
+        "R5197: 作者 CSS height:25% 应压过 attr height=50%，实际 {h}"
+    );
+}
+
 /// R4054（CSS2 §10.8.1 + SVG2 §7.2）：替换 inline 元素（svg，UA display:inline）的
 /// 垂直 padding 参与 taffy 布局——converter 的 R1442 inline 垂直 padding 清零 gate
 /// 语义是「**非替换** inline 元素不影响 line box 高度」，替换元素的 margin-box 参与

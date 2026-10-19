@@ -1028,10 +1028,21 @@ fn apply_replaced_element_sizing(
                     doc.get(p)
                         .is_some_and(|n| matches!(&n.kind, NodeKind::Element(e) if e.local_name() == "svg"))
                 });
-                if taffy_style.aspect_ratio.is_none() && !nested_in_svg {
+                if taffy_style.aspect_ratio.is_none() && !nested_in_svg && !svg_ratio_cleared(dh) {
                     taffy_style.aspect_ratio = Some(-dh);
                 }
-                taffy::style::Dimension::auto()
+                // R5197（SVG2 §7.2 attr % → CSS % hint）：无比哨兵面（-150）不再盲写
+                // auto——hint 化后 `height="100%"` 的 computed height 是**存在声明**
+                //（%），交 taffy 按语境解析（definite CB → 定值：transform-percent-010
+                // 容器 200×200 → svg 200 高；indefinite → 同 auto）。computed 非 %（含
+                // Auto）仍 auto；Px 面已被 svg_default_used_size 的 css_abs 早退拦在
+                // 门外（不会以哨兵形态到达此处）。
+                match &computed.height {
+                    LengthValue::Percentage(p) if p.is_finite() && *p >= 0.0 => {
+                        taffy::style::Dimension::percent((*p as f32) / 100.0)
+                    }
+                    _ => taffy::style::Dimension::auto(),
+                }
             } else {
                 taffy::style::Dimension::length(dh)
             };

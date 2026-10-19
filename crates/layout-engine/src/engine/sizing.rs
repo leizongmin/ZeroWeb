@@ -829,16 +829,29 @@ impl LayoutEngine {
             //（absolute-replaced-height-027/034：50% × 192 = 96，旧落 default 150）。
             // taffy 的 svg gate 对 % attr 无信号面（负 dh 已被比信号占用），taffy 布局后
             // 修正：仅在 CSS height auto 时覆写，% × cb_height 定值写入。
+            // R5197：attr % hint 化后 computed height 为 Percentage（hint 而来）——门
+            // 扩双收 Auto | Percentage，仍以 **attr 直读值**覆写（与 hint 同值，覆写
+            // 幂等）；作者 CSS % height（无 attr）经 svg_attr_percentage_height 返回
+            // None 不进本臂，走 taffy 常规 % 解析。
             if b.is_replaced
                 && b.is_absolute
-                && matches!(s.height, LengthValue::Auto)
+                && matches!(s.height, LengthValue::Auto | LengthValue::Percentage(_))
                 && cb_height.is_finite()
                 && cb_height > 0.5
                 && let Some(pct) = crate::svg_default_size::svg_attr_percentage_height(id, doc)
                 && let Some(&taffy_id) = dom_to_taffy.get(&id)
                 && let Ok(mut style) = taffy_tree.style(taffy_id).cloned()
             {
-                let h = (pct / 100.0 * cb_height).max(0.0);
+                // R5197：computed % 与 attr % 不等 = 作者 CSS % 压过 presentation
+                // hint（CSS Cascading 3 §4，author > presentation hint）——覆写值取
+                // computed %；等值（hint 同源）或 Auto（% attr 旧路）取 attr 直读值。
+                // svg_default_used_size (b) 臂对 % 高落 default 150，computed % 不到
+                // taffy，故作者 % 也经本臂按 CB padding-box 解析（与 R4018 同语义）。
+                let eff_pct = match &s.height {
+                    LengthValue::Percentage(p) if p.is_finite() && (*p - f64::from(pct)).abs() >= 1e-3 => *p as f32,
+                    _ => pct,
+                };
+                let h = (eff_pct / 100.0 * cb_height).max(0.0);
                 if (b.height - h).abs() > 0.5 {
                     style.size.height = taffy::style::Dimension::length(h);
                     let _ = taffy_tree.set_style(taffy_id, style);

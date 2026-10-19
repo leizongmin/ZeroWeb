@@ -2255,6 +2255,15 @@ impl Default for StyleSystem {
 /// `(property, value, important)` 三元组列表。
 /// CSS2 Appendix D 表现提示：把 HTML 表现属性映射为作者样式声明（property, value）。
 /// specificity 由调用方设为 (0,0,0)。
+/// R5197：% attr 值回写 hint 文本——整值去 `.0`（50.0 → "50"，12.5 → "12.5"）。
+fn trim_pct(pct: f64) -> String {
+    if pct.fract() == 0.0 && pct.abs() < 1e15 {
+        format!("{}", pct as i64)
+    } else {
+        format!("{pct}")
+    }
+}
+
 fn collect_presentational_hints(doc: &Document, element: NodeId) -> Vec<(String, String)> {
     let Some(n) = doc.get(element) else {
         return Vec::new();
@@ -2276,16 +2285,15 @@ fn collect_presentational_hints(doc: &Document, element: NodeId) -> Vec<(String,
         // 尺寸，不定值声明不折叠（contain-size-replaced-002：width="100" + contain:size
         // → used 100 宽；旧实现 attr 只进 layout 层 attr sizing，converter 的 contain
         // 臂读 computed width=Auto → CIS-or-0 折叠为 0 → svg 整体消失）。
-        // 仅纯数字（px）值——% 值不透传：abspos svg 的 % attr 高由 R4018
-        // svg_attr_percentage_height 按 CB padding-box 解析（r4018 单测锚 96），
-        // hint 写 height:% 会把 computed 从 Auto 改为 % 使该臂失活（落 default 150）。
+        // R5197：% 值透传（同函数 svg 臂 % 分支注）——abspos % attr 高仍由 R4018
+        // sizing 臂覆写（该臂门已改判 Auto | Percentage 双收，r4018 锚 96 维持）。
         "svg" => {
             for attr in ["width", "height"] {
                 // R5000（SVG2 §7.2 width/height attribute）：attr 值接受 CSS 长度——
                 // `width="100px"` 与 `width="100"` 同为 definite 100。旧过滤只收纯数字，
                 // px 后缀 attr 被丢 → computed width Auto → R4000 viewBox ratio-only 臂
                 // 「隐式 100%」把 svg 拉满容器（replaced-element-008：ar 1/1 + w:100px
-                // → 784×784，chromium 100×100）。% 值不透传（见上注：R4018 语义）。
+                // → 784×784，chromium 100×100）。
                 if let Some(v) = elem_attr(elem, attr)
                     .map(|v| v.trim().to_string())
                     .filter(|v| !v.is_empty())
@@ -2294,6 +2302,21 @@ fn collect_presentational_hints(doc: &Document, element: NodeId) -> Vec<(String,
                     let is_len = !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit() || c == '.');
                     if is_len {
                         hints.push((attr.to_string(), format!("{digits}px")));
+                        continue;
+                    }
+                    // R5197（SVG2 §7.2 geometry properties：width/height =
+                    // <length-percentage> | auto，presentation attr 同映射）：%
+                    // attr 透传为 CSS % hint（chromium 同模型——svg-intrinsic-size-005
+                    // 以「CSS % 侧与 attr % 侧恒等」构造，两侧必须走同一 computed 面）。
+                    // 旧版不透传使 attr %/% svg 在 abspos（R4018 单臂补）与
+                    // definite 容器（transform-percent-010 布局高）双语境各自为政。
+                    // 负 % 非法（SVG2 值域非负）→ 无 hint 落默认。
+                    if v.ends_with('%')
+                        && let Ok(pct) = v[..v.len() - 1].trim().parse::<f64>()
+                        && pct.is_finite()
+                        && pct >= 0.0
+                    {
+                        hints.push((attr.to_string(), format!("{}%", trim_pct(pct))));
                     }
                 }
             }

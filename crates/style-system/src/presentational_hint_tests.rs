@@ -855,17 +855,34 @@ fn svg_width_height_attrs_map_to_px_hints() {
     );
 }
 
-/// R4054：% 值不透传——abspos svg 的 % attr 高由 R4018 svg_attr_percentage_height
-/// 按 CB padding-box 解析（r4018 单测锚 50% × 192 = 96）；hint 写 height:% 会把
-/// computed 从 Auto 改为 % 使该臂失活（落 default 150）。
+/// R5197（SVG2 §7.2 geometry properties：width/height = <length-percentage> | auto）：
+/// % attr 透传为 CSS % hint（chromium 同模型——svg-intrinsic-size-005 以「CSS % 侧
+/// 与 attr % 侧恒等」构造）。abspos % attr 高仍由 R4018 sizing 臂覆写（门已改判
+/// Auto | Percentage 双收，r4018 锚 50% × 192 = 96 维持）；负 % 非法不产 hint。
 #[test]
-fn svg_percentage_size_attrs_not_mapped() {
+fn svg_percentage_size_attrs_map_to_percent_hints() {
     let doc = parse_html(r#"<svg width="50%" height="50%"><rect width="10" height="10"/></svg>"#);
     let svg = doc.get_elements_by_tag_name("svg")[0];
     let hints = collect_presentational_hints(&doc, svg);
     assert!(
-        !hints.iter().any(|(p, _)| p == "width" || p == "height"),
-        "svg % attr 不应产生 hint: {hints:?}"
+        hints.iter().any(|(p, v)| p == "width" && v == "50%"),
+        "svg % width attr 应映射 50% hint: {hints:?}"
+    );
+    assert!(
+        hints.iter().any(|(p, v)| p == "height" && v == "50%"),
+        "svg % height attr 应映射 50% hint: {hints:?}"
+    );
+    // 负 % 非法（SVG2 值域非负）→ 不产 hint。
+    let doc_neg = parse_html(r#"<svg width="-10%" height="30%"><rect width="10" height="10"/></svg>"#);
+    let svg_neg = doc_neg.get_elements_by_tag_name("svg")[0];
+    let hints_neg = collect_presentational_hints(&doc_neg, svg_neg);
+    assert!(
+        !hints_neg.iter().any(|(p, _)| p == "width"),
+        "负 % width 不应产生 hint: {hints_neg:?}"
+    );
+    assert!(
+        hints_neg.iter().any(|(p, v)| p == "height" && v == "30%"),
+        "height 30% 应正常映射: {hints_neg:?}"
     );
 }
 
