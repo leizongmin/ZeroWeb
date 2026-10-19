@@ -1007,6 +1007,11 @@ impl Painter {
         // XHTML 文档的默认 xmlns 在根 html 上、svg 元素可能只有 xmlns:svg 前缀声明，
         // 检测根 open tag 无 `xmlns=` 时补默认命名空间（替换/插入一次）。
         let mut source = doc.outer_html(node_id);
+        // R5200（filter-effects-1 + SVG2 文档级 id 语义）：跨 svg 引用的 `<filter>`
+        // 注入序列化源（mini-doc 自洽化）。置于 xmlns 补丁前——注入内容同获命名
+        // 空间声明（含携带 xlink: 的场景）；置于 taint/R5123 等源级 pass 前——
+        // 注入内容同受其约束。kill-switch ZW_SVG_CROSS_FILTER_REFS=0。
+        source = crate::paint::svg_cross_filter_refs::inject_cross_svg_filter_defs(&source, doc);
         if !source.contains("xmlns=")
             && let Some(idx) = source.find('>')
         {

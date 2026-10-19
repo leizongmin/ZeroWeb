@@ -6,6 +6,7 @@ mod color;
 mod gradient;
 mod helpers;
 pub(crate) mod painter;
+pub(crate) mod svg_cross_filter_refs;
 pub(crate) mod svg_displacement_scale;
 pub(crate) mod svg_filter_chain;
 pub(crate) mod svg_filter_functions;

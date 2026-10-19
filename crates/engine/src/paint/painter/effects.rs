@@ -1560,7 +1560,13 @@ impl super::Painter {
                 p.strokes.truncate(source_counts.strokes);
                 source_removed = true;
             }
-            self.primitives.add_fill(region, color);
+            // R5200（filter-effects-1 §11.6）：原语子区域裁剪——feFlood 显式
+            // x/y/width/height 时输出限于子区域（CSS 引用路径 % 基准 = 参考盒）；
+            // 缺省 = 整个 region（既有行为）。attr 不可解析 → 链不可用，跳过。
+            let Some(fill) = svg_primitive_subregion(doc, filter_node_id, region, box_node, styles) else {
+                continue;
+            };
+            self.primitives.add_fill(fill, color);
         }
     }
 
@@ -2374,41 +2380,7 @@ pub(crate) fn svg_filter_region(
         })
         .unwrap_or(16.0);
     // <length-percentage>：百分比 → 分量比，否则字面 px（SVG 尺寸 attr 无单位 = 用户单位）。
-    let parse_len = |v: &str| -> Option<(f32, bool)> {
-        let v = v.trim();
-        if let Some(p) = v.strip_suffix('%') {
-            p.trim()
-                .parse::<f32>()
-                .ok()
-                .filter(|n| n.is_finite())
-                .map(|n| (n / 100.0, true))
-        } else if let Some(expr) = zero_css_parser::values::parse_math_function(v) {
-            let ctx = zero_css_parser::values::CalcContext {
-                parent_length: Some(1.0),
-                font_size: Some(f64::from(font_px)),
-                ..Default::default()
-            };
-            let n = zero_css_parser::values::eval_calc_with_context(&expr, &ctx)?;
-            Some((n as f32, false))
-        } else {
-            let num_end = v
-                .find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-' || c == '+'))
-                .unwrap_or(v.len());
-            let (num_s, unit) = v.split_at(num_end);
-            let n: f32 = num_s.parse().ok().filter(|n: &f32| n.is_finite())?;
-            let scale = match unit {
-                "" | "px" => 1.0,
-                "em" => font_px,
-                "pt" => 96.0 / 72.0,
-                "pc" => 16.0,
-                "in" => 96.0,
-                "cm" => 96.0 / 2.54,
-                "mm" => 96.0 / 25.4,
-                _ => return None,
-            };
-            Some((n * scale, false))
-        }
-    };
+    let parse_len = |v: &str| parse_len_pct(v, font_px);
     let units = elem.get_attribute("filterUnits").unwrap_or_default();
     let (x, y, w, h) = if units.eq_ignore_ascii_case("userSpaceOnUse") {
         let literal = |attr: &str, dflt: f32| -> Option<f32> {
@@ -2447,10 +2419,112 @@ pub(crate) fn svg_filter_region(
     Some(Rect::new(x, y, w, h))
 }
 
-/// R4273：常量输出链判定——`<filter>` 恰一个**元素**子（文本/注释忽略），且为
-/// feFlood 或常量 feColorMatrix；返回输出色。多原语组合（feComposite/feMerge 等
-/// 需 SourceGraphic 隔离）→ None（调用方 no-op）。
-pub(crate) fn constant_filter_chain_color(doc: &Document, filter_node_id: zero_dom::NodeId) -> Option<Color> {
+/// R5198/R5199 提取（region 与原语子区域两处共用）：`<length-percentage>` 解析
+/// ——% → 分量比；math 函数（CSS Values 4 §math-functions）经 parse_math_function
+/// 与 eval_calc_with_context 求值（parent_length = 1.0 使 % 项 = p/100 分量比，
+/// font_size 供 em 项；vh/vw/rem 语境不设 → None fail-closed）；无单位 = 用户
+/// 单位；px/pt/pc/in/cm/mm 绝对换算；em 相对 font_px。返回 (数值, 是否百分比)。
+fn parse_len_pct(v: &str, font_px: f32) -> Option<(f32, bool)> {
+    let v = v.trim();
+    if let Some(p) = v.strip_suffix('%') {
+        p.trim()
+            .parse::<f32>()
+            .ok()
+            .filter(|n| n.is_finite())
+            .map(|n| (n / 100.0, true))
+    } else if let Some(expr) = zero_css_parser::values::parse_math_function(v) {
+        let ctx = zero_css_parser::values::CalcContext {
+            parent_length: Some(1.0),
+            font_size: Some(f64::from(font_px)),
+            ..Default::default()
+        };
+        let n = zero_css_parser::values::eval_calc_with_context(&expr, &ctx)?;
+        Some((n as f32, false))
+    } else {
+        let num_end = v
+            .find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-' || c == '+'))
+            .unwrap_or(v.len());
+        let (num_s, unit) = v.split_at(num_end);
+        let n: f32 = num_s.parse().ok().filter(|n: &f32| n.is_finite())?;
+        let scale = match unit {
+            "" | "px" => 1.0,
+            "em" => font_px,
+            "pt" => 96.0 / 72.0,
+            "pc" => 16.0,
+            "in" => 96.0,
+            "cm" => 96.0 / 2.54,
+            "mm" => 96.0 / 25.4,
+            _ => return None,
+        };
+        Some((n * scale, false))
+    }
+}
+
+/// R5200（filter-effects-1 §11.6 Filter primitive subregion）：常量链发射原语
+/// 的子区域矩形。任一 x/y/width/height attr 缺席走 §11.6 缺省（全缺 → 整个
+/// filter region，R4273/R5199 既有案行为不变）；CSS filter 引用路径（HTML 盒，
+/// 本函数唯一消费点——SVG 元素引用走 resvg 位图路径）的基准框 = **参考盒**
+///（css-filters #reference-box，border box）：userSpaceOnUse 下 % 相对参考盒
+///（svg-filter-primitive-units-user-space ③⑥ 实证：feFlood w/h=100% 绘
+/// 100×100 参考盒而非 120×120 region，x/y 取 region 原点）；objectBoundingBox
+/// 沿用 region 同款「用户单位数 = 分量比」。x/y 缺省 0 = region 原点偏移，
+/// w/h 缺省 = 参考盒分量 1.0。attr 不可解析 → None（同 region 不可解析 =
+/// 链不可用语义）。
+fn svg_primitive_subregion(
+    doc: &Document,
+    filter_node_id: zero_dom::NodeId,
+    region: Rect,
+    box_node: &LayoutBox,
+    styles: &HashMap<zero_dom::NodeId, ComputedStyle>,
+) -> Option<Rect> {
+    let node = doc.get(filter_node_id)?;
+    let NodeKind::Element(filter_elem) = &node.kind else {
+        return None;
+    };
+    let prim_id = constant_chain_primitive(doc, filter_node_id)?;
+    let prim_node = doc.get(prim_id)?;
+    let NodeKind::Element(prim_elem) = &prim_node.kind else {
+        return None;
+    };
+    let has = |a: &str| prim_elem.get_attribute(a).is_some();
+    if !has("x") && !has("y") && !has("width") && !has("height") {
+        return Some(region);
+    }
+    // em 基准 = 发射原语自身计算 font-size（与 region 取 filter 元素字号平行）。
+    let font_px = styles
+        .get(&prim_id)
+        .and_then(|s| match s.font_size {
+            LengthValue::Px(v) if v.is_finite() && v > 0.0 => Some(v as f32),
+            _ => None,
+        })
+        .unwrap_or(16.0);
+    let usou = filter_elem
+        .get_attribute("primitiveUnits")
+        .is_some_and(|u| u.eq_ignore_ascii_case("userSpaceOnUse"));
+    let resolve = |attr: &str, dflt: f32, base: f32| -> Option<f32> {
+        match prim_elem.get_attribute(attr) {
+            Some(v) => {
+                let (n, is_pct) = parse_len_pct(&v, font_px)?;
+                Some(if usou && !is_pct { n } else { n * base })
+            }
+            None => Some(dflt * base),
+        }
+    };
+    let sx = resolve("x", 0.0, box_node.width)?;
+    let sy = resolve("y", 0.0, box_node.height)?;
+    let sw = resolve("width", 1.0, box_node.width)?;
+    let sh = resolve("height", 1.0, box_node.height)?;
+    Some(Rect::new(
+        region.origin.x + sx,
+        region.origin.y + sy,
+        sw.max(0.0),
+        sh.max(0.0),
+    ))
+}
+
+/// R5200 提取：常量链 emitting 原语——`<filter>` 恰一个**元素**子（文本/注释
+/// 忽略）。多元素子非常量链（feComposite/feMerge 等需 SourceGraphic 隔离）。
+fn constant_chain_primitive(doc: &Document, filter_node_id: zero_dom::NodeId) -> Option<zero_dom::NodeId> {
     let element_children: Vec<zero_dom::NodeId> = doc
         .child_nodes(filter_node_id)
         .into_iter()
@@ -2459,7 +2533,14 @@ pub(crate) fn constant_filter_chain_color(doc: &Document, filter_node_id: zero_d
     if element_children.len() != 1 {
         return None;
     }
-    let node = doc.get(element_children[0])?;
+    Some(element_children[0])
+}
+
+/// R4273：常量输出链判定——`<filter>` 恰一个**元素**子（文本/注释忽略），且为
+/// feFlood 或常量 feColorMatrix；返回输出色。多原语组合（feComposite/feMerge 等
+/// 需 SourceGraphic 隔离）→ None（调用方 no-op）。
+pub(crate) fn constant_filter_chain_color(doc: &Document, filter_node_id: zero_dom::NodeId) -> Option<Color> {
+    let node = doc.get(constant_chain_primitive(doc, filter_node_id)?)?;
     let NodeKind::Element(elem) = &node.kind else {
         return None;
     };
@@ -3186,6 +3267,69 @@ mod tests {
             .is_none(),
             "rem 无语境 fail-closed"
         );
+    }
+
+    /// R5200（filter-effects-1 §11.6）：原语子区域——CSS 引用路径 % 基准 =
+    /// 参考盒（border box），x/y 缺省 = region 原点；全缺 attr = region 不变。
+    #[test]
+    fn r5200_primitive_subregion_reference_box_base() {
+        use zero_dom::parse_html;
+        // corpus 案形态（③⑥）：filter userSpaceOnUse + feFlood w/h=100% →
+        // 子区域 = 参考盒 100×100 @ region 原点（非 region 120×120）。
+        let doc = parse_html(
+            r#"<html><body><svg width="0" height="0"><defs>
+                <filter id="f1" primitiveUnits="userSpaceOnUse">
+                    <feFlood flood-color="green" width="100%" height="100%"/>
+                </filter></defs></svg></body></html>"#,
+        );
+        let fid = doc.get_element_by_id("f1").expect("filter by id");
+        let region = Rect::new(0.0, 0.0, 120.0, 120.0);
+        let box100 = build_box(0.0, 0.0, 8.0, 8.0, 100.0, 100.0);
+        let sub = svg_primitive_subregion(&doc, fid, region, &box100, &HashMap::new()).expect("subregion");
+        assert_eq!(
+            (sub.origin.x, sub.origin.y, sub.size.width, sub.size.height),
+            (0.0, 0.0, 100.0, 100.0),
+            "w/h 100% = 参考盒（svg-filter-primitive-units-user-space ③⑥）"
+        );
+        // obb 缺省（primitiveUnits 未给）：width="50%" → 0.5 × 参考盒宽；height
+        // 缺省 = 满分量 100。
+        let doc = parse_html(
+            r#"<html><body><svg width="0" height="0"><defs>
+                <filter id="f2"><feFlood flood-color="green" width="50%"/></filter>
+            </defs></svg></body></html>"#,
+        );
+        let fid = doc.get_element_by_id("f2").expect("filter by id");
+        let sub = svg_primitive_subregion(&doc, fid, region, &box100, &HashMap::new()).expect("subregion obb");
+        assert_eq!((sub.size.width, sub.size.height), (50.0, 100.0));
+        // 无任一子区域 attr → 整个 region（R4273/R5199 既有案行为不变）。
+        let doc = parse_html(
+            r#"<html><body><svg width="0" height="0"><defs>
+                <filter id="f3"><feFlood flood-color="green"/></filter>
+            </defs></svg></body></html>"#,
+        );
+        let fid = doc.get_element_by_id("f3").expect("filter by id");
+        let sub = svg_primitive_subregion(&doc, fid, region, &box100, &HashMap::new()).expect("subregion default");
+        assert_eq!((sub.size.width, sub.size.height), (120.0, 120.0), "缺省 = region");
+        // userSpaceOnUse 字面数 = 用户单位（非分量比）。
+        let doc = parse_html(
+            r#"<html><body><svg width="0" height="0"><defs>
+                <filter id="f4" primitiveUnits="userSpaceOnUse">
+                    <feFlood flood-color="green" width="80" height="60"/>
+                </filter></defs></svg></body></html>"#,
+        );
+        let fid = doc.get_element_by_id("f4").expect("filter by id");
+        let sub = svg_primitive_subregion(&doc, fid, region, &box100, &HashMap::new()).expect("subregion usou px");
+        assert_eq!((sub.size.width, sub.size.height), (80.0, 60.0));
+        // x/y 显式（userSpaceOnUse px）：相对 region 原点偏移。
+        let doc = parse_html(
+            r#"<html><body><svg width="0" height="0"><defs>
+                <filter id="f5" primitiveUnits="userSpaceOnUse">
+                    <feFlood flood-color="green" x="5" y="5" width="80" height="60"/>
+                </filter></defs></svg></body></html>"#,
+        );
+        let fid = doc.get_element_by_id("f5").expect("filter by id");
+        let sub = svg_primitive_subregion(&doc, fid, region, &box100, &HashMap::new()).expect("subregion xy");
+        assert_eq!((sub.origin.x, sub.origin.y), (5.0, 5.0), "x/y = region 原点 + 偏移");
     }
 
     /// R4273 观测辅助：构造最小 LayoutBox（origin 用 x/y 字段）。
