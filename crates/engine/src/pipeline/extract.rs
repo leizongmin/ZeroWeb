@@ -114,7 +114,27 @@ pub fn extract_page_scripts_indexed(html: &str) -> Vec<(PageScript, usize)> {
             continue;
         }
         let is_module = script_is_module(type_attr.as_deref());
-        if let Some(src) = doc.get_attribute(script_id, "src") {
+        // R5005（html-syntax-compat M4 残差重归因）：SVG `<script href=…>`（SVG2 外部
+        // 脚本引用——HTML script 用 src，SVG script 用 href/xlink:href）此前只查 src →
+        // WPT unclosed-svg-script 的 self-closing 变体不执行。仅 SVG 命名空间元素
+        // 降级查 href（HTML script 无 href 属性，不放宽无效标记形态）。
+        let src_attr = if doc
+            .get(script_id)
+            .map(|n| match n {
+                zero_dom::NodeData {
+                    kind: zero_dom::NodeKind::Element(e),
+                    ..
+                } => e.namespace() == "http://www.w3.org/2000/svg",
+                _ => false,
+            })
+            .unwrap_or(false)
+        {
+            doc.get_attribute(script_id, "href")
+                .or_else(|| doc.get_attribute(script_id, "src"))
+        } else {
+            doc.get_attribute(script_id, "src")
+        };
+        if let Some(src) = src_attr {
             let src = src.trim();
             if !src.is_empty() {
                 if is_module {
@@ -1138,6 +1158,29 @@ mod tests {
         // （旧断言基于 parser 内联占位——template 内 script 误占 index 0。spec：
         // contents 非文档树后代，真实浏览器 gEBTN 亦不含，两者一致。）
         assert_eq!(scripts[0].1, 0, "template scripts are not in the document tree");
+    }
+
+    /// R5005（html-syntax-compat M4 残差重归因）：SVG `<script href=…>` 外部脚本提取
+    ///——SVG2 script 以 href（非 src）引用外链，仅 SVG 命名空间元素降级查 href；
+    /// HTML `<script href>`（无效形态）不放宽。Driving WPT：unclosed-svg-script
+    /// 「SVG scripts with self-closing start tag should run」。
+    #[test]
+    fn extract_page_scripts_svg_href_external_r5005() {
+        // SVG script href → External；HTML script href → 不视为外链（无效形态不放宽）。
+        let html = "<svg><script href=\"support/svg-script-self-closing.js\"/></svg>\
+            <script href=\"x.js\">console.log(1)</script>";
+        let scripts = extract_page_scripts_indexed(html);
+        assert_eq!(scripts.len(), 2, "SVG href 外链 + HTML 内联各一条");
+        assert!(
+            matches!(&scripts[0].0, PageScript::External(s) if s == "support/svg-script-self-closing.js"),
+            "SVG script href 应按外部脚本提取，实得 {:?}",
+            scripts[0].0
+        );
+        assert!(
+            matches!(&scripts[1].0, PageScript::Inline(c) if c.contains("console.log")),
+            "HTML script href 不应视为外链（内联仍执行），实得 {:?}",
+            scripts[1].0
+        );
     }
 
     /// script 内容起始行列提取（security-hardening M2-s2）：1-based 行列 + 全量

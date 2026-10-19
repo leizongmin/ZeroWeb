@@ -45,8 +45,10 @@ pub fn load_file_reftests(wpt_data_dir: &Path) -> Vec<FileReftestCase> {
                 continue;
             }
 
-            // 读取测试 HTML
-            let test_html = match std::fs::read_to_string(&test_path) {
+            // 读取测试 HTML（R5003：字节级读 + encoding sniffing 解码——read_to_string
+            // 对非 UTF-8 文件恒 Err，html/syntax/charset/ 等编码案被整案剔除出通道；
+            // spec「encoding sniffing」file:// 近似，UTF-8/BOM 案行为不变）
+            let test_html = match std::fs::read(&test_path).map(|bytes| zero_dom::decode_document_bytes(&bytes)) {
                 Ok(html) => html,
                 Err(e) => {
                     errors.push(format!("{}: {}", relative_str, e));
@@ -78,7 +80,7 @@ pub fn load_file_reftests(wpt_data_dir: &Path) -> Vec<FileReftestCase> {
                 } else {
                     let ref_path = resolve_ref_path(wpt_data_dir, &test_path, raw_ref);
                     let ref_base = ref_path.parent().map(|p| p.to_path_buf());
-                    match std::fs::read_to_string(&ref_path) {
+                    match std::fs::read(&ref_path).map(|bytes| zero_dom::decode_document_bytes(&bytes)) {
                         Ok(html) => (html, ref_base),
                         Err(e) => {
                             errors.push(format!("{} ref {}: {}", relative_str, reference.ref_path, e));

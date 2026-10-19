@@ -25,6 +25,19 @@ fetch_dir_html "html/syntax/parsing/support"
 # depth-2 resources/ 补拉（html5lib 树构造语料——html5lib_write/url/write_single 三案
 # 引 resources/common.js + tests*.dat，M2 首轮跑 script fetch failed 记账后补）。
 fetch_dir_html "html/syntax/parsing/resources"
+# depth-2 references/ 补拉（P5 落地面——charset/ 11 案 rel=match 参考页；runner
+# reftest-upstream 通道经 R5003 字节级嗅探解码后按参考页像素对比运行）。
+fetch_dir_html "html/syntax/charset/references"
+# 单文件依赖补拉：html/resources/common.js（HTML5_ELEMENTS 表——outerHTML 双域 +
+# name-content-attribute 三案引 ../../resources/common.js；DIRS 深度递归不达
+# html/resources 域）与实体表数据 named-character-references-data.js
+# （named-character-references 案 sibling 引用；.js 依赖 fetch_dir_html 幂等快路径
+# 跳过后不保新）。2026-10-19 复测发现两资产与 6 个 parsing 页从 wpt-data 脱落
+# （gitignored 目录无删除路径，成因不明）——断补后通道总分塌缩 2595 子测，记账。
+# html/dom/render-blocking/dummy.html 在 pin 中不存在（上游后增资产）——034/035/037
+# 案该引用 404 为 pin 期资产缺口，不补拉。
+fetch_raw "html/resources/common.js"
+fetch_raw "html/syntax/parsing/named-character-references-data.js"
 fetch_raw "html/dom/render-blocking/support/dummy-1.mjs"
 fetch_raw "html/dom/render-blocking/support/target-red.css"
 

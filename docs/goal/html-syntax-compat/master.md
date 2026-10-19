@@ -1,9 +1,43 @@
 # HTML 文档面兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../html-syntax-compat.md](../html-syntax-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-07（M4 收口——DC-1~4 全满足，99.86% 冻结）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-19（P5 落地面收口——99.83% 复测冻结，残差重归因）
 
 ## 当前状态
+
+**P5 落地面已收口（2026-10-19）**：全通道复测 **61227/61333 = 99.83%**（+1
+Unsupported 通道记账）。四修落地：R5003 reftest 字节级 decode 载入（charset/
+编码案入通道）+ R5004 annotation-xml HTML integration point（math-parse01/03
+5F→0F）+ R5005 SVG script href 外链（unclosed-svg-script +1P）+ R5006 prescan
+注释跳过（charset meta-* 8 案 8F→8P）；另 **corpus 断补修复**——wpt-data 8 案页
++ 2 资产脱落（成因不明，fetch 脚本无删除路径）致通道总分较 M4 虚减 2595 子测，
+已按 pin 补拉 + fetch 脚本显式记账。**html5ever 0.39 升级评估关闭**：升级可闭合
+0F（complete_script 在 0.29 与 main 均为死 API 实证；definitionurl 调整两侧逐字
+相同且 DOM 存储正确），残差改记「html5ever tokenizer 能力缝 2F」。P5 reftest
+基线 18/22（4 案 0 像素差归因渲染端字体 notdef 回退，通道层挂账）。vs M4 漂移
+4 案记账（script-inserted 双案 / fragment-parse form-pointer 回红 / escaping
+noscript 序列化）——均 post-M4 main 多流 merge 区间形成，非本轮改动触及；
+escaping/noscript 案与并行流活动工作面相邻，记碰头信号。M1 账逐案对账仅
+render-blocking script-inserted 双案 −1P（该域既挂账 rendering-compat）。
+DC-4 终态实测：fmt / guarded clippy / make reftest **712/712** 全绿；make test
+75/76 suites 全绿——余 1 suite 2F 为 GPU filter 单测 luma 断言滞后于渲染流域
+当日提交 8e7ba040f（着色器已切 709、单测未同步），碰头信号记账不硬解。
+/tmp 共享 tmpfs 另见 cand-target 20G 并行流构建物占满（36K 余量）——共享资源
+碰头信号记账。证据：
+[evidence/2026-10-19-p5-landing.md](evidence/2026-10-19-p5-landing.md)。
+
+**M4 已收口（2026-10-07）**：全通道冻结 **61218/61304 = 99.86%**（M1 基线
+71.6% → +7334），M1 基线逐案 **0 回归**。收口前末波 2 小修：
+template.content.querySelectorAll 补面 + video/IMG width/height "-0" 缓存
+归一。**DC-1~4 全满足**（判定明细见
+[evidence/2026-10-07-m4-close.md](evidence/2026-10-07-m4-close.md)）；DC-4
+终态实测（make test 68 suites EXIT=0——首跑 service_worker 单进程内存超限
+guard 杀为已知负载敏感 flake 型，复跑 0F 确认 / clippy / fmt / reftest
+704/704）。
+残差 86F 全分类挂账：render-blocking 行为面 ~67F（**渲染管线域 →
+rendering-compat 挂账**——M1 碰头决策点落定：IDL 面已修齐，行为面非本 goal
+桥接/解析域）、html5ever 0.29 core 8F（0.39 升级账）、读一致性缝 2F、
+async-apply 缝 2F、document.all 1F、html5lib 3F、通道支撑 1F。
 
 **M4 已收口（2026-10-07）**：全通道冻结 **61218/61304 = 99.86%**（M1 基线
 71.6% → +7334），M1 基线逐案 **0 回归**。收口前末波 2 小修：
@@ -159,8 +193,8 @@ html5lib 3 案 document.write 管线面）。证据：
 | P2 | 解析树一致性（innerHTML/outerHTML/DOMParser）逐簇修齐 | ✅ **M2 收口（2026-10-02）**：五片落地（charref/foreign ns/CDATA/characterSet/生命周期），通道可执行面全绿 75.35%，DC-4 门禁实测齐（reftest 700/700）；残差分类记账（P5 通道外 19 案 + html5lib 管线面 3 案） |
 | P3 | 序列化边缘（XMLSerializer/HTML serializer） | ✅ **M3 片 b 落地（2026-10-03）**：serializing-html-fragments 域 **137/137 全绿**（template/processing-instructions/outerHTML canvas 面）+ serializing-xml-fragments 域 **112/112 全绿**（`_zwXMLSerialize` XML 序列化 + 读链视图文档对齐）；escaping.html 9/9（片 a）；残差：ambiguous-ampersand 读链 seam（挂账） |
 | P4 | html/dom 接口语义（createContextualFragment 已落 ✅） | ✅ **M4 片 e ✅（2026-10-07，99.86%）**：ARIA Element 反射（8 属性表/树链有效性/树内 id 解析/显式引用/FrozenArray 缓存）+ aria nullable getter 面；历史：M3 片 c/e + M4 片 a/b/c/d 递次收口；通道残差全分类挂账（render-blocking 管线域/html5ever 升级账/架构缝） |
-| P5 | 文档级编码嗅探（encoding-compat M4 转入） | 🔄 testharness 通道可执行面首片 ✅（sniff→Document label→characterSet 管线，2026-10-02）；📊 通道外案面仍记账：charset/ 7 案（reftest 形态）+ xmldecl/ 3 案（iframe 形态）+ the-input-byte-stream 9 案（HTTP 头形态）= 19 案 testharness 通道外记账；encoding/ 域 bom-handling/eof-*/sniffing 案面（已在 wpt-data，encoding 通道按 document.characterSet 规则 skip）尚未基线，落地通道（reftest import / 通道扩展）随 M2+ 定 |
-| — | render-blocking 机制面（62 案 19.3%） | 📊 M1 已基线；`blocking=render` 与渲染管线耦合，是否本 goal 修齐随 M3 碰头定 |
+| P5 | 文档级编码嗅探（encoding-compat M4 转入） | ✅ **P5 落地面收口（2026-10-19）**：R5003 字节级 decode 载入（charset/ reftest 22 案入通道，基线 18/22）+ R5006 prescan 注释跳过（meta-* 8 案 8F→8P）+ testharness 通道 charset 9 案新入（30 子测，8P）；通道外余量维持：xmldecl/ 3 案（iframe 形态）+ the-input-byte-stream 9 案（HTTP 头形态）；XHR responseXML characterSet 22F 新记账（XHR/shim 域） |
+| — | render-blocking 机制面（62 案 19.3%） | 📊 M1 已基线；**rendering-compat 域挂账维持（2026-10-19 归因收口：SyntaxError 41 案 M1 起既有 + post-M4 漂移 2 案）** |
 
 ## 已完成切片
 
@@ -244,15 +278,20 @@ html5lib 3 案 document.write 管线面）。证据：
 
 ## 下一步计划
 
-Goal 已收口（DC-1~4 全满足）。后续账目（均不阻收口，归各自域）：
-1. **render-blocking 行为面（~67F）** → rendering-compat 域立项评估（管线集成；
-   本 goal 的 IDL/tokenlist 面已修齐）。
-2. **html5ever 0.39 升级评估**（既挂账）——预计闭合 math/svg-script 8F + 静态
-   template noscript 解析面。
+Goal 已收口（DC-1~4 全满足；P5 落地面 2026-10-19 收口）。后续账目（均不阻收
+口，归各自域）：
+1. **charset XHR responseXML characterSet 面（22F，新账）** → XHR/shim 域立项
+   评估（响应文档 characterSet 未接线）。
+2. **vs-M4 漂移 4 案归因修复**：fragment-parse form-pointer（M4e 自修面回红，
+   候选 10a596b50/a460cd2cf）+ escaping noscript 序列化（碰头信号，与并行流
+   part03/04/15/60 相邻）+ script-inserted 双案（rendering-compat 域内）。
 3. **同 turn sel 移树同步视图**（async-apply 架构缝，aria-element 2F + 跨 goal
    收益）——引擎架构片。
-4. **维持既有挂账**：bench-gate 等让复评（静窗）；P5 通道外 19 案落地通道
-   （reftest import 优先）；读一致性架构片余量（ambiguous-ampersand 2F）；
-   XHR XML MIME 解析挂账；document.all exotic 对象（1F）。
+4. **维持既有挂账**：render-blocking 行为面 → rendering-compat 域；html5ever
+   升级评估已关闭（残差改记 tokenizer 能力缝 2F，升级无收益）；读一致性片
+   余量（ambiguous-ampersand 2F，涉并行流碰撞）；bench-gate 等让复评（静窗）；
+   P5 通道外 12 案（xmldecl 3 + input-byte-stream 9）维持通道外记账；XHR XML
+   MIME 解析挂账；document.all exotic 对象（1F）；charset reftest 4 案字体
+   回退像素语义（随渲染通道复评）。
 
 **待用户决策清单**：（空）

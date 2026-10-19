@@ -1040,3 +1040,108 @@ fn parse_html_fragment_table_context_r3182() {
     let serialized = doc.outer_html(doc.root());
     assert_eq!(serialized, "<html><tbody><tr><td>x</td></tr></tbody></html>");
 }
+
+/// R5004（html-syntax-compat M4 残差重归因）：MathML `annotation-xml` HTML
+/// integration point——sink 判定补面后 `encoding=text/html`（ASCII case-insensitive
+/// 全值匹配，含 `application/xhtml+xml`）按 HTML 解析（p 留在 annotation-xml 内），
+/// 无 encoding / encoding=foo 时 p breakout 出 math（成 div 子）。WPT math-parse03
+/// 「p in annotation-xml」族断言的解析底座回归锁。
+#[test]
+fn mathml_annotation_xml_integration_point_r5004() {
+    // encoding=text/html → integration point：p 留在 annotation-xml。
+    let doc = parse_html(
+        "<div><math><semantics><mi>x</mi>\
+         <annotation-xml encoding=text/html><p id=p6texthtml>x</p></annotation-xml>\
+         </semantics></math></div>",
+    );
+    let p = doc.get_element_by_id("p6texthtml").expect("p in tree");
+    let parent = doc
+        .parent_node(p)
+        .map(|pe| {
+            doc.get(pe)
+                .and_then(|n| match n {
+                    crate::node::NodeData {
+                        kind: crate::node::NodeKind::Element(e),
+                        ..
+                    } => Some(e.local_name().to_string()),
+                    _ => None,
+                })
+                .unwrap_or_default()
+        })
+        .unwrap_or_default();
+    assert_eq!(
+        parent, "annotation-xml",
+        "encoding=text/html 应按 integration point 留在 annotation-xml"
+    );
+
+    // 无 encoding → 非 integration point：p breakout 出 math（div 直接子）。
+    let doc2 = parse_html(
+        "<div><math><semantics><mi>x</mi>\
+         <annotation-xml><p id=p6default>x</p></annotation-xml>\
+         </semantics></math></div>",
+    );
+    let p2 = doc2.get_element_by_id("p6default").expect("p in tree");
+    let parent2 = doc2
+        .parent_node(p2)
+        .map(|pe| {
+            doc2.get(pe)
+                .and_then(|n| match n {
+                    crate::node::NodeData {
+                        kind: crate::node::NodeKind::Element(e),
+                        ..
+                    } => Some(e.local_name().to_string()),
+                    _ => None,
+                })
+                .unwrap_or_default()
+        })
+        .unwrap_or_default();
+    assert_eq!(parent2, "div", "无 encoding 应 breakout 成 div 子");
+
+    // encoding=TEXT/HTML（大写形态，ASCII case-insensitive）→ integration point。
+    let doc3 = parse_html(
+        "<div><math><semantics><mi>x</mi>\
+         <annotation-xml encoding=TEXT/HTML><p id=p6uc>x</p></annotation-xml>\
+         </semantics></math></div>",
+    );
+    let p3 = doc3.get_element_by_id("p6uc").expect("p in tree");
+    let parent3 = doc3
+        .parent_node(p3)
+        .map(|pe| {
+            doc3.get(pe)
+                .and_then(|n| match n {
+                    crate::node::NodeData {
+                        kind: crate::node::NodeKind::Element(e),
+                        ..
+                    } => Some(e.local_name().to_string()),
+                    _ => None,
+                })
+                .unwrap_or_default()
+        })
+        .unwrap_or_default();
+    assert_eq!(
+        parent3, "annotation-xml",
+        "encoding=TEXT/HTML 大写形态同为 integration point"
+    );
+}
+
+/// R5004：foreign 属性 `DEFINITIONurl` 调整面——html5ever tokenizer 小写 → tree
+/// builder adjust_mathml_attributes 映射 `definitionurl` → `definitionURL`（无
+/// namespace），DOM 存储保留调整后大小写。WPT math-parse03「DEFINITIONurl attribute
+/// markup should produce a definitionURL attribute」的解析底座回归锁（shim 读侧
+/// case-sensitive 命中依赖本存储形态）。
+#[test]
+fn mathml_definitionurl_adjustment_r5004() {
+    let doc =
+        parse_html("<div><math><semantics DEFINITIONurl=\"www.example.org/FOO\"><mi>a</mi></semantics></math></div>");
+    let sem = doc.query_selector(doc.root(), "semantics").expect("semantics in tree");
+    assert_eq!(
+        doc.get_attribute(sem, "definitionURL").as_deref(),
+        Some("www.example.org/FOO"),
+        "DEFINITIONurl 应调整为 definitionURL 存储"
+    );
+    assert_eq!(
+        doc.get_attribute(sem, "definitionurl"),
+        None,
+        "小写形式不应命中（调整后大小写敏感）"
+    );
+}

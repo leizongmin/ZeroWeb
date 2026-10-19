@@ -526,6 +526,30 @@ impl TreeSink for DomBuilder {
         }
     }
 
+    /// R5004（html-syntax-compat M4 残差重归因）：MathML `annotation-xml` HTML
+    /// integration point 判定——html5ever 把 encoding 属性的持有方委托给 sink
+    ///（属性存储在宿主树，core 不查），trait 默认恒 false → `encoding=text/html`
+    /// 的 annotation-xml 未按 integration point 处理（p 错误 breakout 出 math，
+    /// WPT math-parse03 两断言根因）。spec：encoding 属性 ASCII case-insensitive
+    /// 全值匹配 `text/html` / `application/xhtml+xml`。
+    /// https://html.spec.whatwg.org/multipage/parsing.html#tree-construction
+    fn is_mathml_annotation_xml_integration_point(&self, handle: &Self::Handle) -> bool {
+        const MATHML_NS: &str = "http://www.w3.org/1998/Math/MathML";
+        let inner = self.inner.borrow();
+        match inner.nodes.get(*handle) {
+            Some(NodeData {
+                kind: NodeKind::Element(elem),
+                ..
+            }) if elem.name.ns == *MATHML_NS && elem.name.local == *"annotation-xml" => {
+                elem.get_attribute("encoding").is_some_and(|v| {
+                    let v = v.to_ascii_lowercase();
+                    v == "text/html" || v == "application/xhtml+xml"
+                })
+            }
+            _ => false,
+        }
+    }
+
     fn reparent_children(&self, node: &Self::Handle, new_parent: &Self::Handle) {
         let mut inner = self.inner.borrow_mut();
 
@@ -564,6 +588,26 @@ fn parse_html_with_builder(html: &str, scripting_enabled: bool) -> Document {
     doc
 }
 
+/// R5003（html-syntax-compat P5 落地面）：文档字节 → 解码字符串——spec「encoding
+/// sniffing」对 file:// 形态的近似（无 HTTP 头通道）：BOM 优先（spec「determine the
+/// encoding」BOM 步），否则 `<meta charset>` 预扫描（[`sniff_meta_charset`]；meta
+/// 标签结构为 ASCII，单/多字节编码对其 ASCII 透明，字节面 lossy 近似成立），缺省
+/// UTF-8 lossy。供 runner reftest 文件载入链消费——`read_to_string` 对非 UTF-8
+/// 文件恒 `Err`，windows-1251 等编码案此前被整案剔除出通道。
+/// https://encoding.spec.whatwg.org/#decode-a-byte-stream
+pub fn decode_document_bytes(bytes: &[u8]) -> String {
+    if let Some((enc, _)) = encoding_rs::Encoding::for_bom(bytes) {
+        return enc.decode(bytes).0.into_owned();
+    }
+    // 预扫描窗口取前 4096 字节：每字符至少 1 字节，lossy 后字符数 ≥ sniff 的
+    // 1024 字符窗口，不漏首屏 meta。
+    let prescan_window = String::from_utf8_lossy(&bytes[..bytes.len().min(4096)]);
+    match sniff_meta_charset(&prescan_window).and_then(|label| encoding_rs::Encoding::for_label(label.as_bytes())) {
+        Some(enc) => enc.decode(bytes).0.into_owned(),
+        None => String::from_utf8_lossy(bytes).into_owned(),
+    }
+}
+
 /// R5000 片 c（html-syntax-compat P5）：`<meta charset>` 预扫描——spec「encoding
 /// sniffing → prescan a byte stream to determine its encoding」的字符串近似（runner
 /// 以已解码字符串载入页面；BOM/HTTP 头优先级在载入链上游）。前 1024 字符内的 `<meta`：
@@ -576,7 +620,19 @@ pub(crate) fn sniff_meta_charset(html: &str) -> Option<String> {
     let window: String = html.chars().take(1024).collect();
     let lower = window.to_ascii_lowercase();
     let mut search = 0usize;
-    while let Some(rel) = lower[search..].find("<meta") {
+    loop {
+        // 注释跳过（spec prescan：`<!--` → 推进到 `-->` 后回到主循环）——注释内的
+        // `<meta` 不参与嗅探（meta-commented-out 等 8 案毒化注释面）。未闭合注释
+        // → 同 spec：扫描窗尽，返回 None。`<!` 非注释形态（DOCTYPE/谬误声明）无
+        // `<meta` 字面，逐字符走自然跳过。
+        let rel_meta = lower[search..].find("<meta");
+        let rel_comment = lower[search..].find("<!--");
+        if rel_comment.is_some_and(|rc| rel_meta.is_none_or(|rm| rc < rm)) {
+            let rc = search + rel_comment.unwrap();
+            search = rc + 4 + lower[rc + 4..].find("-->")? + 3;
+            continue;
+        }
+        let rel = rel_meta?;
         let tag_start = search + rel + "<meta".len();
         let (attrs, tag_end) = collect_meta_attrs(&window, tag_start)?;
         // charset 属性优先（spec：有 charset 属性 → 提取）；label 不可识别 → spec
@@ -599,7 +655,6 @@ pub(crate) fn sniff_meta_charset(html: &str) -> Option<String> {
         }
         search = tag_end;
     }
-    None
 }
 
 /// 收集 meta 标签属性至标签闭（'>'；引号内不截断）。返 (attr 列表, 标签闭后位置)。
@@ -1725,6 +1780,51 @@ mod cdata_fragment_tests {
         // 1024 窗内生效。
         let near = format!("<html>{}<meta charset=koi8-r>", "x".repeat(500));
         assert_eq!(sniff_meta_charset(&near), Some("koi8-r".to_string()));
+        // 注释内 meta 不参与嗅探（meta-commented-out 毒化注释面）——注释后真 meta 生效。
+        assert_eq!(
+            sniff_meta_charset("<!--<meta charset=\"ISO-8859-8\">--><meta charset=\"ISO-8859-5\">"),
+            Some("ISO-8859-5".to_string())
+        );
+        // 仅注释 meta → None（缺省 UTF-8 面成立的前提）。
+        assert_eq!(sniff_meta_charset("<!--<meta charset=\"ISO-8859-8\">-->"), None);
+        // 未闭合注释 → 扫描窗尽返回 None。
+        assert_eq!(sniff_meta_charset("<!--<meta charset=koi8-r>"), None);
+        // 先真 meta 后注释——首个产出编码的 meta 生效，注释不回扫。
+        assert_eq!(
+            sniff_meta_charset("<meta charset=koi8-r><!--<meta charset=ISO-8859-8>-->"),
+            Some("koi8-r".to_string())
+        );
+        // raw-text 元素内 meta 同样命中——spec prescan 是字节级扫描、不跟踪
+        // tokenizer raw-text 态（charset/in-script・in-style・in-title 等
+        // mismatch 案的语义依据：嗅探生效 → 乱码 → 与 UTF-8 ref 像素不同）。
+        assert_eq!(
+            sniff_meta_charset("<head><script><meta charset=\"windows-1251\"></script>"),
+            Some("windows-1251".to_string())
+        );
+    }
+
+    #[test]
+    fn decode_document_bytes_sniffing() {
+        // BOM 优先于 meta（spec determine the encoding 步骤序）。
+        let bom_utf8 = b"\xEF\xBB\xBF<meta charset=\"windows-1251\"><p>x";
+        assert_eq!(decode_document_bytes(bom_utf8), "<meta charset=\"windows-1251\"><p>x");
+        // 非 UTF-8 字节 + meta 嗅探 → 按声明解码（此前 read_to_string 恒 Err 的案面）。
+        let cp1251 = b"<html><head><meta charset=\"windows-1251\"></head><body><p>\xC6\xE0\xE2\xE0\xEB";
+        assert_eq!(
+            decode_document_bytes(cp1251),
+            encoding_rs::WINDOWS_1251.decode(cp1251).0.into_owned()
+        );
+        // raw-text 内 meta 嗅探生效（in-script 案形态——文件本体是合法 UTF-8，
+        // 但声明 windows-1251 → 字节按 windows-1251 解码产生不同于 ref 的乱码）。
+        let in_script = b"<!DOCTYPE html>\n<head><script><meta charset=\"windows-1251\"></script></head>";
+        assert_eq!(
+            decode_document_bytes(in_script),
+            encoding_rs::WINDOWS_1251.decode(in_script).0.into_owned()
+        );
+        // 无 meta 非 UTF-8 → 缺省 UTF-8 lossy。
+        assert_eq!(decode_document_bytes(b"<p>\xFF"), "<p>\u{FFFD}");
+        // 合法 UTF-8 无 meta → 原文。
+        assert_eq!(decode_document_bytes("<p>ж</p>".as_bytes()), "<p>ж</p>");
     }
 
     #[test]
