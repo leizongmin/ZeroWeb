@@ -7847,6 +7847,14 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     // 时把 http 页锚误判 secure，historical.any.js 断言面失效。with_dom 先注册
     // DOM 回调（含 page URL）再装 shim，location 初值即真页锚。
     let _ = webview.execute_script_with_dom("0;globalThis.__zwPageShowRunnerOwned = true;");
+    // wasm/jsapi 通道形态还原（2026-10-19 复跑实证）：with_dom 注入的 dom polyfill 以
+    // 桥接对象替换原生 V8 WebAssembly（生产 execute 路径既有契约），桥 stub
+    // Module/exports 使 wasm/jsapi 通道自基线 715/719 塌缩至 141/460。经桥的
+    // __zwNative__ 不可枚举锚点整面回挂原生——还原 b785548dc 之前全部 runner corpus
+    // 的页面环境形态；生产路径不回挂，宿主 wasm-sandbox 桥语义不变。
+    let _ = webview.execute_script(
+        "if (globalThis.WebAssembly && globalThis.WebAssembly.__zwNative__) globalThis.WebAssembly = globalThis.WebAssembly.__zwNative__;",
+    );
     // M3 扩批 XVIII（2026-09-03，注册竞态消除）：媒体源按需供给方——宿主桥 play
     // 未命中（源未登记）时**同步**读 wpt-data 字节补登记，消除「重试等下一 probe
     // tick」的时序依赖（全套件并行负载下 tick 延迟放大，track-cues-enter-exit 的

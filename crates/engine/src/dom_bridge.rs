@@ -653,6 +653,16 @@ pub fn generate_dom_api_polyfill() -> String {
   if (__zwPrevWasm__ && __zwPrevWasm__.Memory) {
     globalThis.WebAssembly.Memory = __zwPrevWasm__.Memory;
   }
+  // 原生引用整体锚点（不可枚举——不进接口面遍历）：runner 页面环境需还原 10-17 前
+  // 原生 V8 接口形态（wasm/jsapi 通道基线 715/719 系原生跑出；桥 stub Module/exports
+  // 替换致通道塌缩 141/460，2026-10-19 复跑实证）——runner 预热后经此锚点整面回挂
+  // （testharness.rs 预热序列）。生产 execute 路径不消费该键，宿主 wasm-sandbox 桥
+  // 语义不变。
+  if (__zwPrevWasm__ && typeof __zwPrevWasm__.Module === 'function') {
+    Object.defineProperty(globalThis.WebAssembly, '__zwNative__', {
+      value: __zwPrevWasm__, writable: false, enumerable: false, configurable: false
+    });
+  }
 
   if (globalThis.document && (globalThis.document.__zwHandle !== undefined || globalThis.document.__zwShimInstalled)) return;
   var _nodeIdCounter = 1;

@@ -3076,6 +3076,31 @@ fn test_text_decoder_legacy_labels_encoding_compat_m2() {
         "AA"
     );
 
+    // fatal stream 错误后 iso-2022-jp 转义态保留（spec do not flush 置位不重置 decoder——
+    // 唯一状态合法存续的解码器；stream 面错误后 shim 不重建 handle，WPT textdecoder-mistakes
+    // `fatal stream: iso-2022-jp` 等价本地锁定）。
+    assert_eq!(
+        sandbox
+            .execute("var fd1 = new TextDecoder('iso-2022-jp',{fatal:true}); fd1.decode(new Uint8Array([0x7e]))")
+            .unwrap()
+            .value,
+        "~"
+    );
+    assert_eq!(
+        sandbox
+            .execute("try { fd1.decode(new Uint8Array([0x1b,0x28,0x4a,0xff]),{stream:true}); 'no-throw' } catch (e) { e.constructor.name }")
+            .unwrap()
+            .value,
+        "TypeError"
+    );
+    assert_eq!(
+        sandbox
+            .execute("fd1.decode(new Uint8Array([0x7e])).charCodeAt(0).toString(16)")
+            .unwrap()
+            .value,
+        "203e"
+    );
+
     // UTF-8 主干零回归（host 未触路径——纯 JS 快路仍剥 BOM）。
     assert_eq!(
         sandbox

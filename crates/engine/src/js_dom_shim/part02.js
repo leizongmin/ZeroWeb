@@ -1102,7 +1102,9 @@
     // net-api M4-S21：UTF-8 decode 剥首部 BOM（encoding spec UTF-8 decode——ignoreBOM=false
     // 缺省；xhr json.any.js data: URL BOM 面与 fetch text() 一致形态）。
     // encoding-compat M2：非 utf-8 编码走 host 有状态 decoder（`last` = !stream；fatal
-    // malformed → TypeError 并重建 handle——spec fatal 错误后 decoder 不再可用）。
+    // malformed → TypeError。spec 只在 do not flush 未置位（非 stream 调用入态）时重置
+    // decoder——stream 面错误抛出后转义态保留（iso-2022-jp 唯一状态合法存续），flush
+    // 面错误后下次 decode 重置序列（重建 handle 等价）。
     decode: function (buf, options) {
       var bytes;
       if (buf == null) bytes = new Uint8Array(0);
@@ -1127,8 +1129,12 @@
         var csv = typeof bytes.join === 'function' ? bytes.join(',') : _zwBytesCsv(bytes);
         var out = JSON.parse(__zw_text_decoder_decode(this._zwLegacyHandle, csv, legacyFatal, last));
         if (out.err) {
-          // spec fatal：错误后 decoder 不再可用——重建 handle 丢弃损坏状态。
-          this._zwLegacyHandle = __zw_text_decoder_new(this.encoding, this.ignoreBOM ? '1' : '0');
+          // spec fatal：stream 中途抛错不重置 decoder（do not flush 已置位 → 状态保留，
+          // https://encoding.spec.whatwg.org/#dom-textdecoder-decode 步骤 1 只在未置位时
+          // 重建实例）；非 stream（flush）错误后下次 decode 重置序列——重建 handle 等价。
+          if (!streamFlag) {
+            this._zwLegacyHandle = __zw_text_decoder_new(this.encoding, this.ignoreBOM ? '1' : '0');
+          }
           throw new TypeError("Failed to decode: the encoded data is not valid.");
         }
         if (!streamFlag) this._zwDone = true;

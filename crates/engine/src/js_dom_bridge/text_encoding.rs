@@ -83,7 +83,7 @@ pub fn text_decoder_new(label: &str, ignore_bom: bool) -> String {
 /// `TextDecoder.prototype.decode(bytes, {stream})` 的 legacy host 半步：字节 csv 喂
 /// handle 对应 decoder。`last` = !stream（flush——残余不完整序列按 fatal/替换语义收尾）。
 /// 返 JSON `{"text":...,"err":0|1}`：err = fatal 且 malformed（shim 抛 TypeError——spec
-/// fatal 错误后本 decoder 不再可用，shim 重建 handle）。handle 缺失（封顶逐出后超期
+/// do not flush 置位时状态保留、未置位时 shim 重建 handle 等价 reset）。handle 缺失（封顶逐出后超期
 /// 使用）→ 返空串（透明降级，与丢跨块状态的上界行为一致）。
 pub fn text_decoder_decode(handle: u64, bytes_csv: &str, fatal: bool, last: bool) -> String {
     let data = bytes_from_csv(bytes_csv);

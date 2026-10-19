@@ -585,7 +585,10 @@ fn test_polyfill_length_reasonable() {
     // 均为规范面增项（+1.5KB，61.0KB），A→B 收敛是大重构不宜捆绑本切片，上限 60000 → 63000。
     // page-wasm M3 切片 2 评估：compileStreaming/Response Content-Type 校验为 DC-3 规范面
     // 增项（+1.7KB，64.7KB），同结论——上限 63000 → 66000。
-    assert!(polyfill.len() < 66000, "Polyfill too large: {} bytes", polyfill.len());
+    // encoding-compat 复跑 2026-10-19 评估：桥安装补原生引用 stash 锚点（__zwNative__
+    // 不可枚举 defineProperty，wasm/jsapi 通道 715/719 原生形态还原，+0.5KB，66.5KB），
+    // 同结论——A→B 收敛是大重构不宜捆绑本修复，上限 66000 → 67000。
+    assert!(polyfill.len() < 67000, "Polyfill too large: {} bytes", polyfill.len());
 }
 
 // ── Web Worker API 测试 ──

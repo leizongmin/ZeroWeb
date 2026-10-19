@@ -1377,6 +1377,24 @@ fn test_polyfill_webassembly_native_memory_preserved() {
 }
 
 #[test]
+fn test_polyfill_webassembly_native_reference_stashed() {
+    // 原生引用锚点（wasm/jsapi 通道形态还原 2026-10-19）：桥整体替换原生后，runner
+    // 侧无法从页面环境取回原生 V8 接口面（wasm/jsapi 基线 715/719 的环境形态）——
+    // 桥安装须把覆盖前的原生引用以不可枚举键 stash 到桥对象，runner 预热后整面回挂
+    // （testharness.rs 预热序列，restore 语句与锚点键名双向锁定）。生产 execute
+    // 路径不消费该键，宿主 wasm-sandbox 桥语义不变。
+    let polyfill = generate_dom_api_polyfill();
+    assert!(
+        polyfill.contains("Object.defineProperty(globalThis.WebAssembly, '__zwNative__'"),
+        "桥安装须 stash 覆盖前的原生 WebAssembly 引用（__zwNative__ 锚点）"
+    );
+    assert!(
+        polyfill.contains("enumerable: false"),
+        "__zwNative__ 锚点须不可枚举（不进接口面遍历）"
+    );
+}
+
+#[test]
 fn test_polyfill_webassembly_compile() {
     let polyfill = generate_dom_api_polyfill();
     assert!(polyfill.contains("Promise.resolve"));
