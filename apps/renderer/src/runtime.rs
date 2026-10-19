@@ -762,11 +762,14 @@ impl RendererRuntime {
             self.last_mutation_drain = Some(std::time::Instant::now());
         }
         let current_url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
-        // T68 返修（缺陷首轮 D2）：timer/异步回调 DOM mutation 主通道的批量渲染
-        // 与其余产帧路径同点包 measure ctx（SPA timer 更新场景曾产出 estimate 帧）。
+        // T68 返修（缺陷首轮 D2 + TV 复核 RV1）：timer/异步回调 DOM mutation 主通道
+        // 的**整段批量边界**（begin → drain（含逐次 apply 渲染）→ end_script_batch
+        // 渲染）都在 measure ctx 内——批量 defer 下真正产帧点是 end_script_batch
+        // （webview render_after_deferred_batch），只包 drain 段零可观测效果
+        //（TV 复核 M2 实证）。ctx 已可重入，嵌套安全。
         let font_loader = self.font_loader.duplicate();
         let font_id = self.font_id;
-        let changed = {
+        let changed = text_metrics::with_measure_ctx_opt(&font_loader, font_id, || {
             let mut ctx = PageScriptContext {
                 html: &mut self.cached_html,
                 url: &current_url,
@@ -779,16 +782,14 @@ impl RendererRuntime {
             if let Some(wv) = ctx.webview.as_deref_mut() {
                 wv.begin_script_batch();
             }
-            let changed = text_metrics::with_measure_ctx_opt(&font_loader, font_id, || {
-                page_scripts::drain_pending_dom_mutations(&mut ctx)
-            });
+            let changed = page_scripts::drain_pending_dom_mutations(&mut ctx);
             if let Some(wv) = ctx.webview.as_deref_mut()
                 && let Err(e) = wv.end_script_batch()
             {
                 tracing::warn!("end script batch render (drain): {e}");
             }
             changed
-        };
+        });
         if changed {
             self.execute_new_dynamic_scripts();
             self.try_publish_progress(true)?;
