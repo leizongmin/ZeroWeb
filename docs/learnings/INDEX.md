@@ -5,8 +5,10 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（168）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（170）
 
+- 2026-10-19 [基建缺口修复会暴露 vacuous-pass 断言，需同轮把被钉行为真值化](bugs/2026-10/2026-10-19-vacuous-pass-exposed-by-named-access.md) — engine
+- 2026-10-19 [配对型 reftest 单侧门控无法恢复双侧一致](bugs/2026-10/2026-10-19-reftest-pair-single-side-gate-futile.md) — engine
 - 2026-10-19 [even-odd 填充串联内外多边形不切 keyhole 会撕出桥隙](bugs/2026-10/2026-10-19-evenodd-ring-keyhole-cut.md) — engine
 - 2026-10-18 [CPU path_fill 无 AA 保守光栅化——亚像素贴边曲线放大成整像素差](bugs/2026-10/2026-10-18-cpu-path-fill-conservative-rasterization.md) — engine, render-foundation
 - 2026-10-18 [border-radius+border 边框带按直角条带绘制——弧带缺失被 corpus 自洽掩盖](bugs/2026-10/2026-10-18-border-radius-band-sharp-strips.md) — engine
@@ -176,8 +178,10 @@
 - 2026-07-29 [reftest-upstream 大目录触发 test-guard OOM 杀进程（fail-list 捕获空致误判）](bugs/2026-07/2026-07-29-reftest-upstream-large-dir-testguard-oom.md) — tests/wpt-runner（cmd_reftest_upstream）, scripts/test-guard.rs（OOM 包裹器）
 - 2026-07-25 [product-smoke 输出 PNG 路径陷阱（stale 文件致假 bug 误判）](bugs/2026-07/2026-07-25-product-smoke-png-stale-trap.md) — tests/wpt-runner（cmd_product_smoke）, legacy/product smoke 诊断流程
 
-## Patterns — 可复用代码模式与最佳实践（21）
+## Patterns — 可复用代码模式与最佳实践（23）
 
+- 2026-10-19 [spec 字面与 WPT 语料分歧时：先查真实引擎结果，语料是验收标尺](patterns/2026-10/2026-10-19-spec-literal-vs-corpus-pin.md) — engine
+- 2026-10-19 [shim 新 API 需 trap 分支 + 原型回落双层，否则克隆树/实例域元素静默缺方法](patterns/2026-10/2026-10-19-shim-new-api-dual-domain-trap-and-prototype.md) — js_dom_shim
 - 2026-10-09 [final_acceptance 派发与回执契约速查](patterns/2026-10/2026-10-09-final-acceptance-dispatch-contract.md) — .agents/skills/zeroweb-site-optimizer
 - 2026-10-09 [已落账证据的不可变性与纯路径转写勘误规程](patterns/2026-10/2026-10-09-evidence-transcription-path-only-correction.md) — .agents/skills/zeroweb-site-optimizer
 - 2026-10-07 [无 perf/gdb/Profiler 下定位 js worker 饱和的方法阶梯（bilibili 输入卡死案）](patterns/2026-10/2026-10-07-js-worker-saturation-diagnosis-without-perf.md)
@@ -246,8 +250,10 @@
 - 2026-08-07 [WPT reftest @font-face loader 缓存：键必须等于构造函数输入（+Arc 共享解析结果）](performance/2026-08/2026-08-07-wpt-reftest-font-face-cache.md) — tests/wpt-runner/src/reftest.rs（FRESH_LOADER_CACHE）, crates/render-foundation/src/font/loader.rs（FontLoader::duplicate, fonts: HashMap<u32, Arc<fontdue::Font>>）
 - 2026-08-07 [CJK 字形栅格化重尾优化：FreeType face 缓存 + 采样哈希](performance/2026-08/2026-08-07-cjk-raster-face-cache.md)
 
-## Platform — 平台与环境相关经验（30）
+## Platform — 平台与环境相关经验（32）
 
+- 2026-10-19 [rebase/pull 翻新源文件 mtime 会触发 cdp 测试 stale binary 守卫](platform/2026-10/2026-10-19-stale-guard-vs-rebase-mtime.md) — engine,browser
+- 2026-10-19 [quickjs 测试矩阵不含 zero-browser --tests，其中 bookmark 建标签页测预存红](platform/2026-10/2026-10-19-quickjs-matrix-excludes-browser-tests.md) — browser
 - 2026-10-18 [亚秒级调度突发可穿透 1min loadavg 静窗守卫——基准落盘需逐指标校验](platform/2026-10/2026-10-18-subsecond-burst-pierce-loadavg-guard.md)
 - 2026-10-11 [shim 异步事件必须 task 承载——microtask 链与 promise_test 完成回调竞速](platform/2026-10/2026-10-11-wpt-eventwatcher-task-dispatch.md) — engine
 - 2026-10-09 [symlink 路径调用 skill 脚本会静默空转（.claude/skills → .agents/skills）](platform/2026-10/2026-10-09-symlinked-skill-script-silent-noop.md) — tools

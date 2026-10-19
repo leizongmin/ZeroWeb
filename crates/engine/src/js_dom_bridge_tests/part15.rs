@@ -1706,7 +1706,9 @@ fn test_global_reflected_attrs_sel_lw_production_r3204() {
         "setAttribute('autofocus','')→IDL read true（旧 stale false）"
     );
 
-    // 缺省 autocomplete → 'on'（missing-default，spec；验证 lw 不破坏 default）。
+    // 缺省 autocomplete：R4001 起 INPUT 走 selected autocomplete value 算法——无属性
+    // → ''（IDL-exposed default，WPT form-autocomplete「missing attribute」期望
+    // elements[0] === ''）；枚举反射缺省 'on' 仅 FORM/非 form-associated 元素保留。
     let default_input = sandbox
         .execute(
             "var i2=document.createElement('input');\
@@ -1714,7 +1716,7 @@ fn test_global_reflected_attrs_sel_lw_production_r3204() {
         )
         .unwrap()
         .value;
-    assert_eq!(default_input, "on", "input 缺省 autocomplete → 'on'（missing-default，lw 未破坏）");
+    assert_eq!(default_input, "", "input 缺省 autocomplete → ''（R4001 selected value 算法 default）");
 }
 
 // ── R3205：CE attributeChangedCallback old-value sel latest-wins（`__zw_has_attr(sel)` 审计最后一项）──

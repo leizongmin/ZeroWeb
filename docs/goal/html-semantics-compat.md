@@ -2,33 +2,38 @@
 
 **版本**: v2.0
 **日期**: 2026-10-19（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 12 收口（populateForm 同 turn 二次插入 sibling 断链修复 R4000 +2P），下一步 M2 forms 域余簇评估（encoding 三簇 + double-submit 族归 navigation-compat 门控，评估存量小挂账）
+**状态**: Active——M2 切片 13 收口（selected autocomplete value 算法 + HTMLCollection named access R4001 +81P），下一步 M2 切片 14：meter 值净化簇（44F，域内最大可独立收口簇）
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-19 M2 切片 12）**：populateForm 同 turn 二次插入
-> sibling 断链修复（R4000）。根因：part03 `_zwPendingParsedForSel`
-> （R3254-K3 sel→pending 签名归一门）候选收集循环 `candCount > 1`
-> 提前 return 把签名盖章截断到前 2 个候选——同 turn 第二批
-> insertAdjacentHTML 的 pending 解析节点永无 `__zwSig3k` 章 → hits 恒 0
-> → 门判负 → 兄弟导航落 live/snapshot 视图返 null；「签名歧义 → 保守
-> 不归一」本由 hits 侧 `hits === 1` 唯一性判定实现，候选数截断属缺陷。
-> 修复 = 删除该行（全量盖章，歧义保守语义不变）。切片 11 的 firing
-> submission events flag 契约（t2/t3）随之解锁：form-submission-algorithm
-> t2「If firing submission events flag of form is true, then return」、
-> t3「'invalid' event」Fail→Pass。part59 契约 1 测（W11，target 属性钉
-> form identity）。九域 4579→**4581P**（4581/7377 = **62.10%**），对
-> s11 账本逐 subtest diff **净 +2P、回归 0、新增/消失 0**（账本取自
-> rebase 后合并树复跑，对 rebase 前账本 0 变化）。
-> zero-engine --lib 3224 全过、clippy/fmt 过、browser bin 腿 :102
-> 665P/0F、cdp 4P/9P、quickjs 矩阵腿全绿、零新增依赖。账本见
-> [evidence/2026-10-19-m2s12-r4000.md](html-semantics-compat/evidence/2026-10-19-m2s12-r4000.md)。
-> **下一步**：M2 forms 域余簇评估——form-submission-algorithm 余 F 已
-> 全部归 iframe 导航基建簇（Cannot navigate / submit 事件派发面 /
-> encoding 三簇 / double-submit 族，归 navigation-compat M3 门控），
-> forms 域内可独立收口的余案盘点（option.form 1F、option-text-setter
-> 1F、replaceChild sel 形落尾、t8g 观察账等存量小挂账）→ 决定 M2
-> 收口或续切。
+> **▶ 当前状态（2026-10-19 M2 切片 13）**：forms 域余簇评估定策
+> **续切**（可独立收口簇充足），本轮收口 autocomplete 簇（R4001）。
+> ① part04 selected autocomplete value 算法（category 全表 + token 消费
+> 序 credential→contact→mode→section + anchor mantle（hidden）+ Off/
+> Automatic 短路），INPUT/SELECT/TEXTAREA getter 分支接入，FORM/其余
+> 保持枚举反射；spec 字面仅 section 小写、corpus+Chrome 67/67 钉 field
+> 亦小写，以语料为准（经验
+> [spec-literal-vs-corpus-pin](../learnings/patterns/2026-10-19-spec-literal-vs-corpus-pin.md)）。
+> setter 缓存旁路（三类 tag 不入 `_reflectedAttrs`）。② part03
+> `_liveQueryCollection` 补 HTMLCollection named property（id/name 树序
+> 首匹配）——`document.forms.X` 旧恒 undefined。③ 该修复暴露
+> HTMLFieldSetElement.html 旧 vacuous-pass（`forms.fm1` 与 `fieldset.form`
+> 双 undefined 空转多轮），part03 R2841 `.form` 表补 FIELDSET 真值化
+> （经验
+> [vacuous-pass-exposed-by-named-access](../learnings/bugs/2026-10-19-vacuous-pass-exposed-by-named-access.md)）。
+> part60 契约 1 测（W1–W5）；part15 R3204 input 缺省断言随 spec 修正
+> （'on'→''）。九域 4581→**4662P**（4662/7377 = **63.20%**），对 s12
+> 逐 subtest diff **净 +81P、回归 0**（autocomplete 66 + form_attribute
+> 7 + reset-form 3 + form 1 + button-events 边界新录 4；录得 7368 条
+> vs 7377：−11 全为 script timing/load 家族超时边界上报漂移，P 零损失）。
+> zero-engine --lib 3245 全过、clippy/fmt 过、make test 全腿绿（browser
+> bin/--tests :102 均 665P/0F、cdp 6P/4P/9P、quickjs 矩阵全绿）、零新增
+> 依赖。账本见
+> [evidence/2026-10-19-m2s13-r4001.md](html-semantics-compat/evidence/2026-10-19-m2s13-r4001.md)。
+> **下一步**：M2 切片 14——meter 值净化簇（the-meter-element/meter.html
+> 44F：min/max/low/high/optimum 钳制算法 + value setter 抛错面，纯算术
+> + 反射）；候选后备 labels IDL 簇 ~30F、form_attribute 动态关联余案
+> ~50F（中深，mutation 钩子面）。
 
 
 
@@ -110,6 +115,19 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-19 M2 切片 13**：selected autocomplete value 算法 + HTMLCollection
+  named access（R4001）——part04 category 全表 + token 算法（INPUT/SELECT/
+  TEXTAREA getter，FORM/其余保持枚举反射；field token 小写为 corpus+Chrome
+  67/67 钉死行为）、part05 setter 缓存旁路、part03 `_liveQueryCollection`
+  named property 补齐（`document.forms.X` 可达）、part03 `.form` 表补
+  FIELDSET（named access 修复暴露 vacuous-pass 真值化）。part60 契约
+  W1–W5；part15 R3204 input 缺省断言 'on'→''（spec 修正）。九域
+  4581→4662P（63.20%），对 s12 逐 subtest diff 净 +81P、回归 0（−11 条
+  上报漂移全为 runner 超时边界，P 零损失）。zero-engine --lib 3245 全过、
+  make test 全腿绿、clippy/fmt 过、零新增依赖。挂账：meter 净化 44F
+  （下一切片）、labels IDL ~30F、form_attribute 动态关联 ~50F（中深）、
+  encoding 三簇/double-submit 归 navigation-compat M3 维持、R3204 类
+  既有契约钉旧行为风险记入（动枚举反射分发区先跑 part10/part15）。
 - **2026-10-19 M2 切片 12**：populateForm 同 turn 二次插入 sibling 断链
   修复（R4000）——`_zwPendingParsedForSel` 候选收集 `candCount > 1`
   提前 return 缺陷删除（签名盖章截断致第二批 pending 节点 hits 恒 0，

@@ -136,3 +136,116 @@ customElements.define('mdn-search-button', MDNSearchButton);
         "R5181：已打开 dialog 再 showModal 恒抛 InvalidStateError（spec show a modal dialog 步骤）"
     );
 }
+
+/// R4001（html-semantics M2 切片 13）：selected autocomplete value 算法 + HTMLCollection
+/// named property 访问。INPUT/SELECT/TEXTAREA 的 autocomplete IDL getter 返 token 解析值
+///（Off/Automatic 短路、category 门、contact/mode/section 前缀拼串、anchor mantle
+///（hidden）恒 ''、field ASCII 小写——corpus keywords 面钉死）；FORM 与其余元素保持
+/// 枚举反射（R5009 片 d/R2850）。`document.forms.X` named access 补 HTMLCollection
+/// supported property names（id/name 树序首匹配）。WPT 标尺：
+/// html/semantics/forms/the-form-element/form-autocomplete.html（67 测）。
+#[test]
+fn test_selected_autocomplete_value_r4001() {
+    let mut sandbox = t59_sandbox_with_shim();
+    let mutations: std::sync::Arc<std::sync::Mutex<Vec<DomMutation>>> = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+    let dom_html: std::sync::Arc<std::sync::Mutex<String>> =
+        std::sync::Arc::new(std::sync::Mutex::new("<html><body><form id='f1' autocomplete='off'><input></form></body></html>".to_string()));
+    let page_url: std::sync::Arc<std::sync::Mutex<String>> = std::sync::Arc::new(std::sync::Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    crate::js_dom_bridge::register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // W1：Off/Automatic 短路 + anchor mantle（hidden）+ unknown category → default ''。
+    sandbox
+        .execute(
+            "var i = document.createElement('input');\
+             globalThis.__ac = [];\
+             function w(v){ i.setAttribute('autocomplete', v); globalThis.__ac.push(i.autocomplete); }\
+             w('on'); w('OFF'); w('on off'); w('call-sign');\
+             var h = document.createElement('input'); h.type = 'hidden';\
+             h.setAttribute('autocomplete', 'on'); globalThis.__ac.push(h.autocomplete);\
+             h.setAttribute('autocomplete', 'off'); globalThis.__ac.push(h.autocomplete);\
+             var t = document.createElement('textarea');\
+             t.setAttribute('autocomplete', '  \\n'); globalThis.__ac.push(t.autocomplete);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__ac.join(',')").unwrap().value,
+        "on,off,,,,,",
+        "W1：on/OFF 短路、多 token off 折 default、unknown field 折 default、hidden anchor mantle 恒 ''、纯空白 ''"
+    );
+
+    // W2：field 小写归一 + contact/mode/section 拼串（spec 序：section → mode → contact → field → credential）。
+    sandbox
+        .execute(
+            "var i = document.createElement('input');\
+             globalThis.__ac2 = [];\
+             function w(v){ i.setAttribute('autocomplete', v); globalThis.__ac2.push(i.autocomplete); }\
+             w(' NAME'); w('home tel'); w('shipping country'); w('billing  work  email');\
+             w('  section-FOO  bday'); w('section-login shipping work tel webauthn');\
+             w('username webauthn'); w('foo off'); w('foo section-foo billing name');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__ac2.join('|')").unwrap().value,
+        "name|home tel|shipping country|billing work email|section-foo bday|section-login shipping work tel webauthn|username webauthn||",
+        "W2：token 小写归一 + contact/mode/section 拼串 + credential 后缀 + 非法首 token default"
+    );
+
+    // W3：FORM 枚举反射不越界到 input；missing attr → ''（default）。
+    sandbox
+        .execute(
+            "globalThis.__fa = document.getElementById('f1').autocomplete;\
+             globalThis.__ia = document.querySelector('#f1 input').autocomplete;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__fa").unwrap().value,
+        "off",
+        "W3：FORM enumerated 反射（off 合法值透传）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ia)").unwrap().value,
+        "",
+        "W3：input 无 autocomplete 属性 → ''（IDL-exposed default，非枚举 'on'）"
+    );
+
+    // W4：IDL setter 存原串、getter 按现值重算（不走 _reflectedAttrs 缓存）。
+    sandbox
+        .execute(
+            "var i = document.createElement('input');\
+             i.autocomplete = ' NAME';\
+             globalThis.__sa = i.autocomplete;\
+             globalThis.__attr = i.getAttribute('autocomplete');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__sa").unwrap().value,
+        "name",
+        "W4：IDL set ' NAME' → get 'name'（getter 重算算法）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__attr)").unwrap().value,
+        " NAME",
+        "W4：IDL setter 存原串内容属性（spec on setting）"
+    );
+
+    // W5：HTMLCollection named property（document.forms.X → id/name 树序首匹配，miss → undefined）。
+    sandbox
+        .execute(
+            "var f = document.createElement('form'); f.setAttribute('name', 'myform'); document.body.appendChild(f);\
+             globalThis.__nf = document.forms.myform === f;\
+             globalThis.__ni = document.forms.nosuch;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__nf)").unwrap().value,
+        "true",
+        "W5：document.forms.myform named access 命中（name 属性）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ni)").unwrap().value,
+        "undefined",
+        "W5：miss → undefined（非抛错）"
+    );
+}

@@ -564,14 +564,20 @@
             // R5009 片 d（M4 片 d）：FORM 的 autocomplete 是枚举反射（[on, off]，
             // missing/invalid default on）——**缓存须存归一值**（getter 优先读缓存，
             // 存原串使 IDL set "OFF"/"xon" 后 IDL get 读回原串——WPT
-            // reflection-forms 'form.autocomplete IDL set' 簇）。非 FORM（input/
-            // select/textarea 的 autocomplete 是 token 串反射，customGetter）仍存原串。
+            // reflection-forms 'form.autocomplete IDL set' 簇）。
+            // R4001：INPUT/SELECT/TEXTAREA 的 getter 走 selected autocomplete value
+            // 算法（按现值重算），**不入缓存**——缓存原串反使 IDL set→get 绕过算法；
+            // setter 仍原串写内容属性（spec on setting：set the content attribute）。
+            // 其余元素枚举反射存原串（R2850）。
+            var _acTag = _realTag(sel, handle);
             var _acV = String(value);
-            if (_realTag(sel, handle) === 'FORM') {
+            if (_acTag === 'FORM') {
               var _acLo = _zwASCIILower(_acV);
               _acV = (_acLo === 'on' || _acLo === 'off') ? _acLo : 'on';
+              rc4[p] = _acV;
+            } else if (_acTag !== 'INPUT' && _acTag !== 'SELECT' && _acTag !== 'TEXTAREA') {
+              rc4[p] = _acV;
             }
-            rc4[p] = _acV;
             if (handle) __zw_set_attr_handle(handle, 'autocomplete', String(value));
             else { __zw_set_attr(sel, 'autocomplete', String(value)); moAttr = 'autocomplete'; }
           } else if (p === 'dropzone') {

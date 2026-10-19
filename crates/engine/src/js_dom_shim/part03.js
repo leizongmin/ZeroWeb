@@ -15566,7 +15566,18 @@ return e;
         }
         var idx = parseInt(prop, 10);
         if (!isNaN(idx) && String(idx) === String(prop)) return list[idx];
-        return list[prop];
+        var listed = list[prop];
+        if (listed != null) return listed;
+        // HTMLCollection named property（DOM spec supported property names——id 或
+        //（HTML ns）name 首匹配，树序）。R4001：`document.forms.missing_attribute`
+        // 形态旧返 undefined（form-autocomplete 前 4 测读 'autocomplete' of undefined）。
+        for (var ni = 0; ni < list.length; ni++) {
+          var nel = list[ni];
+          if (!nel) continue;
+          try { if (nel.getAttribute && nel.getAttribute('id') === prop) return nel; } catch (_eNid) {}
+          try { if (nel.getAttribute && nel.getAttribute('name') === prop) return nel; } catch (_eNnm) {}
+        }
+        return listed;
       },
       has: function(_t, prop) {
         if (iteratorMethod && prop === Symbol.iterator) return true;
@@ -18617,10 +18628,12 @@ return e;
         // （form owner）。form 校验 / 序列化库读 input.form 找 owner form 上下文高频。**spec 顺序**：
         // ① `form` 属性关联优先（`<input form="id">` → getElementById(id)，即使无 ancestor form）；
         // ② 否则最近 ancestor <form>（经 `_ancestorChain` 上行）。handle-only detached / 无 owner → null。
+        // R4001：FIELDSET 入面（form-associated 元素同算法；named access 修复后
+        // HTMLFieldSetElement.html 旧 vacuous-pass `form === undefined` 断言现按真值判）。
         // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#association-of-controls-and-forms
         if (prop === 'form') {
           var fcTag = _realTag(sel, handle);
-          if (fcTag === 'INPUT' || fcTag === 'SELECT' || fcTag === 'TEXTAREA' || fcTag === 'BUTTON' || fcTag === 'OUTPUT') {
+          if (fcTag === 'INPUT' || fcTag === 'SELECT' || fcTag === 'TEXTAREA' || fcTag === 'BUTTON' || fcTag === 'OUTPUT' || fcTag === 'FIELDSET') {
             try {
               var hasFormAttr = false;
               if (handle && typeof __zw_has_attr_handle === 'function') {

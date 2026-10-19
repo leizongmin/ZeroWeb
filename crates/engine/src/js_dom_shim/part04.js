@@ -140,6 +140,89 @@
           }
           return (handle ? __zw_get_attr_handle(handle, _ariaName) : __zw_get_attr(sel, _ariaName)) || '';
         }
+        // R4001（html-semantics M2 切片 13）：selected autocomplete value 算法助手族。
+        // determine a field's category（HTML §4.10.19 autofill-processing-model 表）——
+        // 返 'off'|'on'(Automatic)|'normal'|'contact'|'credential'|null，ASCII case-insensitive。
+        // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#determine-a-field's-category
+        function _zwAutocompleteFieldCategory(tok) {
+          var t = tok.toLowerCase();
+          if (t === 'off') return 'off';
+          if (t === 'on') return 'on'; // Automatic
+          if (t === 'webauthn') return 'credential';
+          if (t === 'tel' || t === 'tel-country-code' || t === 'tel-national' || t === 'tel-area-code'
+            || t === 'tel-local' || t === 'tel-local-prefix' || t === 'tel-local-suffix'
+            || t === 'tel-extension' || t === 'email' || t === 'impp') return 'contact';
+          switch (t) {
+            case 'name': case 'honorific-prefix': case 'given-name': case 'additional-name':
+            case 'family-name': case 'honorific-suffix': case 'nickname': case 'organization-title':
+            case 'username': case 'new-password': case 'current-password': case 'one-time-code':
+            case 'organization': case 'street-address': case 'address-line1': case 'address-line2':
+            case 'address-line3': case 'address-level4': case 'address-level3': case 'address-level2':
+            case 'address-level1': case 'country': case 'country-name': case 'postal-code':
+            case 'cc-name': case 'cc-given-name': case 'cc-additional-name': case 'cc-family-name':
+            case 'cc-number': case 'cc-exp': case 'cc-exp-month': case 'cc-exp-year': case 'cc-csc':
+            case 'cc-type': case 'transaction-currency': case 'transaction-amount': case 'language':
+            case 'bday': case 'bday-day': case 'bday-month': case 'bday-year': case 'sex':
+            case 'url': case 'photo':
+              return 'normal';
+          }
+          return null;
+        }
+        // selected autocomplete value（同节 "These values are defined as the result of running
+        // the following algorithm"——IDL-exposed autofill value）。仅 INPUT/SELECT/TEXTAREA 的
+        // autocomplete IDL getter 消费；FORM/其余元素走枚举反射（R5009 片 d/R2850）。
+        // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#autofill-processing-model
+        function _zwSelectedAutocompleteValue(sel, handle) {
+          var acRaw = handle ? __zw_get_attr_handle(handle, 'autocomplete')
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'autocomplete') : __zw_get_attr(sel, 'autocomplete'));
+          if (acRaw == null) return '';
+          var acStr = String(acRaw).replace(/^[\x09\x0a\x0c\x0d\x20]+|[\x09\x0a\x0c\x0d\x20]+$/g, '');
+          if (acStr === '') return ''; // split on ASCII whitespace：空串/纯空白 → 空 token 列表 → default
+          var tokens = acStr.split(/[\x09\x0a\x0c\x0d\x20]+/);
+          // autofill anchor mantle：仅 input[type=hidden]（其余 wear expectation mantle）。
+          var anchorMantle = false;
+          if (_realTag(sel, handle) === 'INPUT') {
+            var acTy = handle ? __zw_get_attr_handle(handle, 'type') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'type') : __zw_get_attr(sel, 'type'));
+            anchorMantle = String(acTy == null ? '' : acTy).toLowerCase() === 'hidden';
+          }
+          var index = tokens.length - 1;
+          var field = tokens[index];
+          var category = _zwAutocompleteFieldCategory(field);
+          if (category === null) return ''; // default
+          if ((category === 'off' || category === 'on') && (tokens.length > 1 || anchorMantle)) return ''; // default
+          if (category === 'off') return 'off';
+          if (category === 'on') return 'on';
+          // field 归一 ASCII 小写：spec 字面仅 section 显式小写，corpus keywords 面
+          //（" NAME" → "name"，Chrome 上游 67/67 全过）钉死单/多 token field 皆小写。
+          var idlValue = field.toLowerCase();
+          if (category === 'credential' && tokens[index].toLowerCase() === 'webauthn') {
+            if (index === 0) return idlValue; // done
+            index--;
+            category = _zwAutocompleteFieldCategory(tokens[index]);
+            if (category !== 'normal' && category !== 'contact') return ''; // default
+            idlValue = tokens[index].toLowerCase() + ' ' + idlValue;
+          }
+          if (index === 0) return idlValue; // done
+          index--;
+          if (category === 'contact') {
+            var contact = tokens[index].toLowerCase();
+            if (contact === 'home' || contact === 'work' || contact === 'mobile' || contact === 'fax' || contact === 'pager') {
+              idlValue = contact + ' ' + idlValue;
+              if (index === 0) return idlValue; // done
+              index--;
+            }
+          }
+          var mode = tokens[index].toLowerCase();
+          if (mode === 'shipping' || mode === 'billing') {
+            idlValue = mode + ' ' + idlValue;
+            if (index === 0) return idlValue; // done
+            index--;
+          }
+          if (index !== 0) return ''; // default（section 只能是首 token）
+          var tok0 = tokens[0];
+          if (tok0.length < 8 || tok0.substr(0, 8).toLowerCase() !== 'section-') return ''; // default
+          return tok0.toLowerCase() + ' ' + idlValue;
+        }
         // reflected 布尔/枚举全局属性（R2848/R2850）：autofocus/draggable/spellcheck/translate（R2848）
         // + inert/autocomplete（R2850）——旧 fallthrough 返 undefined（spec 须布尔/串）。getter 优先读
         // _reflectedAttrs 缓存（setter 写解析值，同步 set→get 即时），无缓存则 host attr 解析。spec 默认：
@@ -161,6 +244,13 @@
               : (typeof __zw_has_attr === 'function' ? __zw_has_attr(sel, prop) : '0')) === '1';
           }
           if (prop === 'autocomplete') {
+            // R4001：INPUT/SELECT/TEXTAREA 的 autocomplete IDL getter 返 selected
+            // autocomplete value（token 解析算法）——不走 _reflectedAttrs 缓存（IDL
+            // setter 存原串，getter 恒按现值重算，IDL set " NAME" → get "name"）。
+            var acTag = _realTag(sel, handle);
+            if (acTag === 'INPUT' || acTag === 'SELECT' || acTag === 'TEXTAREA') {
+              return _zwSelectedAutocompleteValue(sel, handle);
+            }
             // enumerated 串反射：attr 值 ascii 小写归一（合法 on/off）；缺省/空/非法
             // → "on"（spec missing-default + invalid → default，WPT reflection-forms
             // 'form.autocomplete setAttribute() to junk' 期望 "on" 实证）。
