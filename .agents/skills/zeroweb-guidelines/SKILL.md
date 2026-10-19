@@ -22,7 +22,7 @@ description: 从 docs/learnings 提炼 ZeroWeb 工程不变式。在本仓编写
 | 布局 / 后处理 pass | #18、#29 |
 | IPC / 同步脚本 / 宿主桥 | #12–15、#24–25、#30、#32 |
 | 存储 / 并发缓存 | #16、#19、#22 |
-| 性能 / 测试工具 | #9–11、#17–20、#23、#27–28、#31；shim 循环加 #26 |
+| 性能 / 测试工具 | #9–11、#17–20、#23、#27–28、#31、#33；shim 循环加 #26 |
 
 ## 与「简单至上」的关系
 
@@ -32,7 +32,7 @@ ZeroWeb 中一切来自网页的输入（HTML/CSS/JS 传值）都是**不可信�
 
 以下场景可临时放宽（合入 main 前必须恢复，放宽结束自动恢复全部）：
 
-- 原型 / spike：#7 像素等价、#11 性能三件套、#23 定向性能门禁、#26 trap 域成本模型、#27 产物目录隔离、#28 执行体证据核验、#29 pass 归因与臂覆盖审计可先单跑看方向，合入前补全验证
+- 原型 / spike：#7 像素等价、#11 性能三件套、#23 定向性能门禁、#26 trap 域成本模型、#27 产物目录隔离、#28 执行体证据核验、#29 pass 归因与臂覆盖审计、#33 双侧影响预核对可先单跑看方向，合入前补全验证
 - 紧急热修复且用户确认：#11 可先单跑，事后补同条件配对对照
 
 任何场景下不可放宽：#1、#2、#16、#21、#31（信任边界与数据丢失）。
@@ -203,3 +203,9 @@ FileReader、XHR 进度族、IDB request 族、MediaElement 族等多事件异�
 js_dom_shim 里「同一 DOM 节点 = 同一个 JS 对象」不成立，且多族并存是设计使然：树行走/getElementById/querySelector 返回按 `(sel, handle)` 缓存的 sel-proxy，innerHTML 解析经 named-prop 写入的 `globalThis[id]` 就是活树真实节点对象，文本节点包装逐访问新建——跨族 `===` 恒为 false。涉及节点 identity 的保存/断言路径先确认对象来源族；跨族匹配用「双侧重投影到同一族再比」的 match-only 模式，凡写回端点/容器的值保持调用方路径原对象——重投影对象作写入目标反而丢 identity。`globalThis[id] = node` 型注册的 guard 不能只查 `undefined`：同一文档重复解析是常态，注册值必须自带世代标记并可覆盖刷新，否则上一代死 wrapper 滞留，方法落空、删除断言静默失真。
 
 依据：[js_dom_shim 多族包装 identity 恒败与吸附目标重投影陷阱](../../../docs/learnings/bugs/2026-10/2026-10-14-js-dom-wrapper-family-identity.md)。
+
+### 33. self-source reftest 的判定单位是双侧像素一致，PASS 不证规范符合
+
+corpus 的 test/ref 两页均由本引擎渲染，判定是两页像素差而非单页绝对正确性：双侧同错的自洽 PASS 会长期掩盖共享渲染缺陷（新功能与旧功能在 ref 页混搭时，旧功能缺口以新案形式冒头；probe 时两侧行为差先归因「渲染路径不自洽」，不直接归因 ZW vs chromium）。修共享缺陷前先画两侧预期渲染对照，确认方案下「双侧一致」不变式仍成立——只让 test 侧回退的单侧门控必然失配（ref 侧无该属性、门永不触发，两侧朝相反方向变化），可行方向只有双侧同修到一致或整体回退。
+
+依据：[border-radius 弧带缺失被 corpus 自洽掩盖](../../../docs/learnings/bugs/2026-10/2026-10-18-border-radius-band-sharp-strips.md)、[配对型 reftest 单侧门控无法恢复双侧一致](../../../docs/learnings/bugs/2026-10/2026-10-19-reftest-pair-single-side-gate-futile.md)。
