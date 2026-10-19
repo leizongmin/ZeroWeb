@@ -1,7 +1,7 @@
 # 编码兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../encoding-compat.md](../encoding-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-19（二轮复跑——iso-2022-jp 残差清偿 99.98% + wasm 通道原生形态还原）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-19（三轮复跑——组合态 main 独立核对持平 99.98%，零源码改动验证轮）
 
 ## 当前状态
 
@@ -36,9 +36,11 @@ structured-clone 管道落地）。文档级编码嗅探面已双向记账转 ht
 里程碑台账：M1（10-01）corpus 通道 + 基线 6.1%；M2（10-02）labels 全表 + legacy 解码
 （encoding_rs host native + 有状态 decoder 表）98.4%；M3（10-02）utf-8 spec 状态机 +
 TextEncoder/streams 语义 99.96%；复跑（10-19 一轮）回归修齐 99.97%；复跑（10-19 二轮）
-iso-2022-jp 清偿 + wasm 通道还原 99.98%。逐轮证据见 evidence/
+iso-2022-jp 清偿 + wasm 通道还原 99.98%；复跑（10-19 三轮）组合态 main（渲染流 7 commit
+之上）独立核对 12072/12075 逐字持平、3 Fail 与残差记账逐一吻合。逐轮证据见 evidence/
 （m1-baseline / m2-labels-legacy-decode / m3-textencoder-modes-streams / m4-dc-verdict /
-2026-10-19-revalidation-sab-regression / 2026-10-19-iso2022jp-clear-wasm-native-restore）。
+2026-10-19-revalidation-sab-regression / 2026-10-19-iso2022jp-clear-wasm-native-restore /
+2026-10-19-revalidation-combined-main）。
 
 ## 缺口清单
 
