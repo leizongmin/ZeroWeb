@@ -1124,6 +1124,44 @@ fn parse_position_three_four(parts: &[String]) -> Option<BackgroundPositionValue
     Some(BackgroundPositionValue::TwoValue(Box::new(h), Box::new(v)))
 }
 
+/// R5185：background-position-x / -y 单轴 longhand 值（css-backgrounds-4 §2.4）：
+/// `center | <本轴边缘> | <lp> | <本轴边缘> <lp>`。非本轴关键字/边缘（x 轴遇
+/// top/bottom）→ None（整条声明丢，语法违规语义）。
+pub fn parse_background_position_axis(value: &str, horizontal: bool) -> Option<BackgroundPositionValue> {
+    let lower = value.trim().to_ascii_lowercase();
+    let parts = split_top_level_whitespace(&lower);
+    match parts.as_slice() {
+        [single] => {
+            let v = parse_position_component(single)?;
+            let axis_ok = match v {
+                BackgroundPositionValue::Left | BackgroundPositionValue::Right => horizontal,
+                BackgroundPositionValue::Top | BackgroundPositionValue::Bottom => !horizontal,
+                _ => true,
+            };
+            axis_ok.then_some(v)
+        }
+        [edge_tok, offset_tok] => {
+            let side = parse_background_edge(edge_tok)?;
+            let axis_ok = match side {
+                BackgroundEdge::Left | BackgroundEdge::Right => horizontal,
+                BackgroundEdge::Top | BackgroundEdge::Bottom => !horizontal,
+            };
+            if !axis_ok {
+                return None;
+            }
+            let offset = parse_position_component(offset_tok)?;
+            if !is_offset_only(&offset) {
+                return None;
+            }
+            Some(BackgroundPositionValue::EdgeOffset {
+                side,
+                offset: Box::new(offset),
+            })
+        }
+        _ => None,
+    }
+}
+
 /// 解析 background-position 边缘关键字为 BackgroundEdge（left/right/top/bottom）。
 /// center 不算边缘（不可带偏移）。
 fn parse_background_edge(s: &str) -> Option<BackgroundEdge> {

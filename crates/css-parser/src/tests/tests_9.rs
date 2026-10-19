@@ -1771,3 +1771,61 @@ fn test_background_position_two_value_rejects_same_axis_keywords() {
     assert!(parse_background_position("top bottom").is_none());
     assert!(parse_background_position("bottom top").is_none());
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// R5185：background-position-x / -y 单轴 longhand（css-backgrounds-4 §2.4）。
+// clip-border-area-border-shape-background-position 判例 `right 100px` /
+// `bottom 100px`（边关键字+偏移）；改前整条声明丢 → 回退 0 0 相位错半环。
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_background_position_axis_x_edge_offset() {
+    use crate::values::{BackgroundEdge, BackgroundPositionValue as Bp, parse_background_position_axis};
+    let v = parse_background_position_axis("right 100px", true).expect("x 轴边+偏移应解析");
+    assert!(
+        matches!(v, Bp::EdgeOffset { side: BackgroundEdge::Right, ref offset } if matches!(**offset, Bp::Length(_))),
+        "应为 EdgeOffset(Right, length)：{v:?}"
+    );
+}
+
+#[test]
+fn test_background_position_axis_y_edge_offset() {
+    use crate::values::{BackgroundEdge, BackgroundPositionValue as Bp, parse_background_position_axis};
+    let v = parse_background_position_axis("bottom 100px", false).expect("y 轴边+偏移应解析");
+    assert!(
+        matches!(v, Bp::EdgeOffset { side: BackgroundEdge::Bottom, ref offset } if matches!(**offset, Bp::Length(_))),
+        "应为 EdgeOffset(Bottom, length)：{v:?}"
+    );
+}
+
+#[test]
+fn test_background_position_axis_wrong_axis_rejected() {
+    use crate::values::parse_background_position_axis;
+    assert!(parse_background_position_axis("top", true).is_none(), "x 轴遇 top 应拒");
+    assert!(
+        parse_background_position_axis("left 5px", false).is_none(),
+        "y 轴遇 left 对应拒"
+    );
+    assert!(
+        parse_background_position_axis("center 5px", true).is_none(),
+        "center 不可带偏移"
+    );
+    assert!(
+        parse_background_position_axis("10px 20px", true).is_none(),
+        "两分量非边对应拒"
+    );
+}
+
+#[test]
+fn test_background_position_axis_single_components() {
+    use crate::values::{BackgroundPositionValue as Bp, parse_background_position_axis};
+    assert!(matches!(
+        parse_background_position_axis("center", true),
+        Some(Bp::Center)
+    ));
+    assert!(matches!(
+        parse_background_position_axis("10px", false),
+        Some(Bp::Length(_))
+    ));
+    assert!(matches!(parse_background_position_axis("right", true), Some(Bp::Right)));
+}

@@ -1880,6 +1880,34 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 }
             }
         }
+        // R5185（css-backgrounds-4 §2.4）：background-position-x / -y 单轴 longhand——
+        // 单值应用到全部层（cyclic 1 项；多层逗号列表 FIXME 挂账）。层位置归一
+        // TwoValue 后补丁目标轴：单值层按 resolve_background_position 同语义拆轴
+        //（垂直关键字 → (center, v)，其余 → (v, center)）。
+        // clip-border-area-border-shape-background-position 判例 `background-position-x:
+        // right 100px` / `-y: bottom 100px`（边关键字+偏移）。
+        "background-position-x" | "background-position-y" => {
+            let horizontal = property == "background-position-x";
+            if let Some(comp) = values::parse_background_position_axis(value, horizontal)
+                .and_then(|v| position_value_to_computed(v, style))
+            {
+                use BackgroundPositionComputedValue as Bpc;
+                let patch = |layer: &Bpc| -> Bpc {
+                    let (x, y) = match layer {
+                        Bpc::TwoValue(x, y) => ((**x).clone(), (**y).clone()),
+                        Bpc::Top | Bpc::Bottom => (Bpc::Center, layer.clone()),
+                        single => (single.clone(), Bpc::Center),
+                    };
+                    if horizontal {
+                        Bpc::TwoValue(Box::new(comp.clone()), Box::new(y))
+                    } else {
+                        Bpc::TwoValue(Box::new(x), Box::new(comp.clone()))
+                    }
+                };
+                style.background_position = style.background_position.iter().map(patch).collect();
+                return true;
+            }
+        }
         // object-position（CSS Images §3）：替换元素内容在其盒内的对齐位置，语法同
         // background-position（<position>）。默认 50% 50%（Center）。R2303 补——旧 impl
         // 完全缺该属性，object-fit 的 compute_object_fit_rect 恒居中。

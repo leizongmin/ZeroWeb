@@ -2027,3 +2027,50 @@ fn test_apply_property_background_multi_layer_longhands() {
     assert!(!apply_property_value(&mut style, "background-repeat", "repeat, bogus"));
     assert_eq!(style.background_repeat.len(), 3); // 未被覆盖
 }
+
+// ── R5185：background-position-x / -y 单轴 longhand（css-backgrounds-4 §2.4）──
+
+#[test]
+fn test_apply_background_position_x_edge_offset() {
+    use zero_css_parser::values::BackgroundEdge;
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "background-position-x", "right 100px"));
+    assert_eq!(
+        style.background_position,
+        vec![BackgroundPositionComputedValue::TwoValue(
+            Box::new(BackgroundPositionComputedValue::EdgeOffset(
+                BackgroundEdge::Right,
+                Box::new(BackgroundPositionComputedValue::Length(100.0))
+            )),
+            Box::new(BackgroundPositionComputedValue::Percent(0.0)),
+        )]
+    );
+}
+
+#[test]
+fn test_apply_background_position_y_patches_existing_x() {
+    use zero_css_parser::values::BackgroundEdge;
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "background-position", "30px 40px"));
+    assert!(apply_property_value(
+        &mut style,
+        "background-position-y",
+        "bottom 100px"
+    ));
+    assert_eq!(
+        style.background_position,
+        vec![BackgroundPositionComputedValue::TwoValue(
+            Box::new(BackgroundPositionComputedValue::Length(30.0)),
+            Box::new(BackgroundPositionComputedValue::EdgeOffset(
+                BackgroundEdge::Bottom,
+                Box::new(BackgroundPositionComputedValue::Length(100.0))
+            )),
+        )]
+    );
+}
+
+#[test]
+fn test_apply_background_position_x_wrong_axis_rejected() {
+    let mut style = ComputedStyle::default();
+    assert!(!apply_property_value(&mut style, "background-position-x", "top 5px"));
+}

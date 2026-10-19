@@ -216,6 +216,133 @@ pub(crate) fn border_shape_round_inset_equivalent_radii(
     })
 }
 
+/// R5185（css-backgrounds-4 §2.1 background-clip:border-area × css-borders-4
+/// §border-shape）：border-area 环带多边形（even-odd 外+内串联，[`super::helpers::concat_ring_vertices`]
+/// keyhole 切点）——border-area 的背景可见区 = 边框墨迹带，形状元素即描边带环
+/// （fill mode = 外/内形状间环带）。带不可得（非凸路径 / miter 比 > 4 / 退化）→
+/// None（调用方回退既有行为：R4529 矩形环带 + R5184 填充窗）。FIXME：带环出盒
+/// 部分（如 polygon 顶点外扩越 border-box）受 painting area = border-box 限制不
+/// 绘——overflow 判例 poking ~250px 在 fuzzy totalPixels 容差内。
+pub(crate) fn border_shape_border_area_band(
+    style: &ComputedStyle,
+    box_node: &LayoutBox,
+    abs_x: f32,
+    abs_y: f32,
+) -> Option<Vec<(f32, f32)>> {
+    match border_shape_plan(style, box_node, abs_x, abs_y)? {
+        BorderShapePlan::Fill { outer, inner, .. } => Some(super::helpers::concat_ring_vertices(outer, inner)),
+        BorderShapePlan::Stroke { vertices, width, .. } => {
+            if width <= 0.0 {
+                return None;
+            }
+            let outer = offset_convex_polygon(&vertices, width / 2.0)?;
+            let inner = offset_convex_polygon(&vertices, -width / 2.0)?;
+            Some(super::helpers::concat_ring_vertices(outer, inner))
+        }
+    }
+}
+
+/// R5185：背景图像层形状裁剪多边形选择——border-area 层 = 带环（上函数），其余层
+/// = 填充多边形（R5184：stroke = 路径、fill = 内形状，≡ R4534 背景色语义）。
+/// border-shape 不活跃 → None。带不可得时 border-area 回退填充多边形（维持现态）。
+pub(crate) fn border_shape_bg_image_clip_polygon(
+    style: &ComputedStyle,
+    box_node: &LayoutBox,
+    abs_x: f32,
+    abs_y: f32,
+) -> Option<Vec<(f32, f32)>> {
+    use zero_style_system::property::types::BackgroundClipComputedValue;
+    let plan = border_shape_plan(style, box_node, abs_x, abs_y)?;
+    let border_area = style
+        .background_clip
+        .iter()
+        .any(|c| matches!(c, BackgroundClipComputedValue::BorderArea));
+    if border_area {
+        Some(
+            border_shape_border_area_band(style, box_node, abs_x, abs_y)
+                .unwrap_or_else(|| plan.background_vertices().to_vec()),
+        )
+    } else {
+        Some(plan.background_vertices().to_vec())
+    }
+}
+
+/// 凸多边形 miter 偏移（d > 0 外扩 / d < 0 内缩）——逐边法向平移线，相邻偏移线
+/// 交点 = 偏移顶点（join = miter，css-borders-4 §border-shape 描边带边界）。
+/// 非凸（相邻边 cross 变号）/ 平行边退化 / miter 比 > 4（sin(θ/2) < 1/4，斜切
+/// 限制域 bevel 拓扑独立轮评估）→ None。
+pub(crate) fn offset_convex_polygon(pts: &[(f32, f32)], d: f32) -> Option<Vec<(f32, f32)>> {
+    let n = pts.len();
+    if n < 3 || d == 0.0 {
+        return None;
+    }
+    // 有向面积定外向法线符号（屏幕坐标 y 向下，代数自洽不依赖视觉朝向）。
+    let area2: f32 = (0..n)
+        .map(|i| {
+            let (x1, y1) = pts[i];
+            let (x2, y2) = pts[(i + 1) % n];
+            x1 * y2 - x2 * y1
+        })
+        .sum();
+    if area2.abs() < 1e-9 {
+        return None;
+    }
+    let outward_pos = area2 > 0.0;
+    let edges: Vec<(f32, f32)> = (0..n)
+        .map(|i| {
+            let (x1, y1) = pts[i];
+            let (x2, y2) = pts[(i + 1) % n];
+            (x2 - x1, y2 - y1)
+        })
+        .collect();
+    // 凸性：相邻边 cross 全同号（共线段跳过）。
+    let mut sign = 0i8;
+    for i in 0..n {
+        let (ax, ay) = edges[i];
+        let (bx, by) = edges[(i + 1) % n];
+        let c = ax * by - ay * bx;
+        if c.abs() < 1e-6 {
+            continue;
+        }
+        let s = if c > 0.0 { 1 } else { -1 };
+        if sign == 0 {
+            sign = s;
+        } else if s != sign {
+            return None;
+        }
+    }
+    let mut out = Vec::with_capacity(n);
+    for i in 0..n {
+        // 偏移线 L_j：过 pts[j] + n_j·d、方向 e_j；n_j = e_j 的外向单位法线。
+        let line = |j: usize| -> Option<((f32, f32), (f32, f32))> {
+            let (ex, ey) = edges[j];
+            let len = (ex * ex + ey * ey).sqrt();
+            if len < 1e-9 {
+                return None;
+            }
+            let (ex, ey) = (ex / len, ey / len);
+            let (nx, ny) = if outward_pos { (ey, -ex) } else { (-ey, ex) };
+            let (px, py) = pts[j];
+            Some(((px + nx * d, py + ny * d), (ex, ey)))
+        };
+        let ((ax, ay), (e1x, e1y)) = line((i + n - 1) % n)?;
+        let ((bx, by), (e2x, e2y)) = line(i)?;
+        let denom = e1x * e2y - e1y * e2x;
+        if denom.abs() < 1e-9 {
+            return None;
+        }
+        // miter 比 = 1/sin(θ内/2) = 1/cos(转角/2) > 4 ⟺ cos_t < −0.875（尖刺域
+        // bevel 拓扑独立轮评估）。
+        let cos_t = (e1x * e2x + e1y * e2y).clamp(-1.0, 1.0);
+        if cos_t < -0.875 {
+            return None;
+        }
+        let t = ((bx - ax) * e2y - (by - ay) * e2x) / denom;
+        out.push((ax + t * e1x, ay + t * e1y));
+    }
+    Some(out)
+}
+
 /// geometry-box → 引用盒绝对矩形（§7.3；half-border-box = border-box 各侧内缩
 /// 半个 relevant side border-width）。
 fn border_shape_ref_box(

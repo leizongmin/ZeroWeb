@@ -1505,6 +1505,12 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.background_position = default_style.background_position.clone();
             true
         }
+        // R5185：单轴 longhand（css-backgrounds-4 §2.4）——存储面为合并 position
+        // 字段，initial 复位两轴（孤立复位连带另一轴，registry initial_value 同注）。
+        "background-position-x" | "background-position-y" => {
+            style.background_position = default_style.background_position.clone();
+            true
+        }
         "background-repeat" => {
             style.background_repeat = default_style.background_repeat.clone();
             true

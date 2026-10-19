@@ -320,6 +320,15 @@ impl PropertyRegistry {
                 Box::new(BackgroundPositionComputedValue::Percent(0.0)),
                 Box::new(BackgroundPositionComputedValue::Percent(0.0)),
             )])),
+            // R5185：单轴 longhand（css-backgrounds-4 §2.4 initial = 0%）——存储面为
+            // 合并 position 字段，initial 复位两轴（孤立 `background-position-x: initial`
+            // 连带复位 y 为简化语义；`all` 展开两 longhand 各自复位同值收敛一致）。
+            "background-position-x" | "background-position-y" => {
+                Some(BackgroundPosition(vec![BackgroundPositionComputedValue::TwoValue(
+                    Box::new(BackgroundPositionComputedValue::Percent(0.0)),
+                    Box::new(BackgroundPositionComputedValue::Percent(0.0)),
+                )]))
+            }
             "background-repeat" => Some(BackgroundRepeat(vec![BackgroundRepeatComputedValue::Repeat])),
             "background-size" => Some(BackgroundSize(vec![BackgroundSizeComputedValue::Auto])),
             "background-attachment" => Some(BackgroundAttachment(BackgroundAttachmentComputedValue::Scroll)),
@@ -657,6 +666,8 @@ impl PropertyRegistry {
             "line-clamp",
             "background-image",
             "background-position",
+            "background-position-x",
+            "background-position-y",
             "background-repeat",
             "background-size",
             "background-attachment",

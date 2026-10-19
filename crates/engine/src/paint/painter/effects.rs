@@ -521,6 +521,14 @@ impl super::Painter {
         // 多值 clip cyclic `i % len`；单值 clip 时 i%1=0 全层同值 = 旧行为 byte-identical）。
         // clip rect 仍以 layer 0 值作标量基线（R4354 local 扩展段的 caller 计算基准）。
         let (clip_x, clip_y, clip_w, clip_h) = clip_rect_for_layer(style, box_node, abs_x, abs_y, 0);
+        // R5185（css-backgrounds-4 §2.1 × css-borders-4 §border-shape）：形状带环
+        // 活跃时 border-area 层跳过矩形环带条带——带环（含 fill mode 环带/出盒描边
+        // 带）不被 border-box 减 padding-box 矩形环包含，矩形条带会截掉内区段；
+        // 全 rect tile 发射后由背景形状窗（border_shape_bg_image_clip_polygon 带
+        // 环多边形）裁剪。等价域（border-radius 元素）仍走矩形/弧带既有路径。
+        let shape_band_active = crate::paint::helpers::border_shape_round_inset_equivalent_radii(style, box_node)
+            .is_none()
+            && crate::paint::helpers::border_shape_border_area_band(style, box_node, abs_x, abs_y).is_some();
         let layer_areas = LayerPaintAreas {
             clips: (0..style.background_image.len())
                 .map(|i| clip_rect_for_layer(style, box_node, abs_x, abs_y, i))
@@ -531,8 +539,12 @@ impl super::Painter {
                         style.background_clip_for_layer(i),
                         BackgroundClipComputedValue::BorderArea
                     ) {
-                        let (bx, by, bw, bh) = clip_rect_for_layer(style, box_node, abs_x, abs_y, i);
-                        border_area_ring_strips(style, box_node, bx, by, bw, bh)
+                        if shape_band_active {
+                            None
+                        } else {
+                            let (bx, by, bw, bh) = clip_rect_for_layer(style, box_node, abs_x, abs_y, i);
+                            border_area_ring_strips(style, box_node, bx, by, bw, bh)
+                        }
                     } else {
                         None
                     }

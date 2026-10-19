@@ -2338,10 +2338,10 @@ impl Painter {
                 // ——collapsed/负尺寸形状（inset(100px)、circle(0%)）须把渐变等图像
                 // 层一并裁没（border-shape-collapsed-shape-clips-background）。等价域
                 // （stroke inset(0 round R)）按 border-radius 元素行为不加形状窗。
+                // R5185：border-area 层裁到带环（§2.1 环带 = 描边带）而非填充多边形。
                 let shape_bg_poly =
                     if crate::paint::helpers::border_shape_round_inset_equivalent_radii(style, box_node).is_none() {
-                        super::helpers::border_shape_plan(style, box_node, abs_x, abs_y)
-                            .map(|p| p.background_vertices().to_vec())
+                        super::helpers::border_shape_bg_image_clip_polygon(style, box_node, abs_x, abs_y)
                     } else {
                         None
                     };
@@ -3077,13 +3077,13 @@ impl Painter {
                     // 层一并裁没（border-shape-collapsed-shape-clips-background）。等价域
                     // （stroke inset(0 round R)）按 border-radius 元素行为不加形状窗。
                     //（paint_node_in_rect 脏矩形路径同窗。）
+                    // R5185：border-area 层裁到带环（§2.1 环带 = 描边带）而非填充多边形。
                     let shape_bg_poly = if crate::paint::helpers::border_shape_round_inset_equivalent_radii(
                         style, box_node,
                     )
                     .is_none()
                     {
-                        super::helpers::border_shape_plan(style, box_node, abs_x, abs_y)
-                            .map(|p| p.background_vertices().to_vec())
+                        super::helpers::border_shape_bg_image_clip_polygon(style, box_node, abs_x, abs_y)
                     } else {
                         None
                     };
@@ -4727,7 +4727,17 @@ impl Painter {
             && !matches!(style.background_color, ColorValue::Transparent)
         {
             let bg = resolve_color_current(&style.background_color, &style.color);
-            let verts = plan.background_vertices().to_vec();
+            // R5185（css-backgrounds-4 §2.1）：border-area 底色 = 带环填充（环外
+            // padding/content 区不涂）；带不可得回退填充多边形（R4534 语义）。
+            let verts = if matches!(
+                style.background_clip.last(),
+                Some(BackgroundClipComputedValue::BorderArea)
+            ) {
+                super::helpers::border_shape_border_area_band(style, box_node, abs_x, abs_y)
+                    .unwrap_or_else(|| plan.background_vertices().to_vec())
+            } else {
+                plan.background_vertices().to_vec()
+            };
             self.primitives
                 .add_path_fill(verts.into_iter().flat_map(|(x, y)| [x, y]).collect(), bg);
             return;
