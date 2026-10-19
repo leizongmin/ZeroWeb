@@ -305,3 +305,22 @@ fn test_parse_matrix3d_with_translatez_list_invalid() {
     //（与旧版 matrix3d 解析失败同语义，零回归）。
     assert!(parse_transform("translateZ(10px) matrix3d(1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1)").is_none());
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// R5192：matrix 系参数纯 <number> 面（transform-matrix-008）
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_parse_matrix_length_percent_args_rejected() {
+    // css-transforms-1 §funcdef-matrix：matrix() 参数为 <number>，<length>/
+    // <percentage> 是语法错误 → 整 transform 声明无效（008 案：旧解析剥 px 接受
+    // 50 并平移；`50%` 一直拒绝）。
+    assert!(parse_transform("matrix(1, 0, 0, 1, 50px, 0)").is_none());
+    assert!(parse_transform("matrix(1, 0, 0, 1, 50%, 0)").is_none());
+    assert!(parse_transform("matrix3d(1em, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)").is_none());
+    // rotate3d 分量同 <number> 面
+    assert!(parse_transform("rotate3d(1px, 0, 0, 45deg)").is_none());
+    // 纯 number 与 number 型 calc 仍接受
+    assert!(parse_transform("matrix(1, 0, 0, 1, 50, 0)").is_some());
+    assert!(parse_transform("matrix(1, 0, 0, 1, calc(2 * 25), 0)").is_some());
+}

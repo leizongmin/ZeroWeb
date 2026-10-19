@@ -813,7 +813,12 @@ fn parse_transform_scale_args(args: &str) -> Option<Vec<f64>> {
 
 fn parse_transform_number(value: &str) -> Option<f64> {
     // https://drafts.csswg.org/css-transforms-1/#transform-functions
-    parse_css_number(value).or_else(|| parse_finite_number_math(value))
+    // R5192：纯 <number> 面（matrix/matrix3d/rotate3d 分量/scale 回落）——带单位
+    // token 拒绝（transform-matrix-008：matrix() 参数 <length>/<percentage> 为
+    // 语法错误，整 transform 无效；旧 parse_css_number 先行臂剥 px/em/rem 返回
+    // 原数使 matrix(…,50px,…) 被接受并平移）。length/angle 面各有专用解析器
+    //（parse_translate_length_number/parse_angle），不经此处。
+    parse_finite_number_math(value)
 }
 
 /// R5076（css-transforms-1 §funcdef-scale 系）：scale 族的参数语法为

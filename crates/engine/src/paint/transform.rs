@@ -53,6 +53,8 @@ pub fn apply_transform_offset(style: &ComputedStyle, _abs_x: f32, _abs_y: f32) -
 /// `scaleY(0)`（轴缩放 0）。R5191：`matrix3d` 左上 3×3 行列式为 0（如 z 行全 0 的
 /// `matrix3d(2,0,0,0, 0,2,0,0, 0,0,0,0, 0,0,0,1)`，transform-non-invertible-discrete-
 /// interpolation：chrome 元素消失，2D 投影形 scale(2) 可逆故须 det3D 判定）同样奇异。
+/// R5192：2D `matrix` 行列式 a·d − b·c 为 0（transform-singular-001
+/// `matrix(1,1,1,1,0,0)`：CTM 不可逆 → 元素与内容不显示）。
 /// `rotate3d` 的奇异判定仍不在范围（R3833 恒等近似，|θ|=90° 由 scale 系面兜底）。
 pub fn is_singular_transform(style: &ComputedStyle) -> bool {
     let own_singular = match &style.transform {
@@ -62,6 +64,7 @@ pub fn is_singular_transform(style: &ComputedStyle) -> bool {
             TransformFunction::Scale(sx, sy) => *sx == 0.0 || sy.is_some_and(|sy| sy == 0.0),
             TransformFunction::ScaleX(sx) => *sx == 0.0,
             TransformFunction::ScaleY(sy) => *sy == 0.0,
+            TransformFunction::Matrix(a, b, c, d, _, _) => (a * d - b * c).abs() < 1e-12,
             TransformFunction::Matrix3d(m) => matrix3d_is_singular(m),
             _ => false,
         }),
@@ -1251,6 +1254,27 @@ mod tests {
         mirror.transform = TransformValue::List(vec![m3d([
             -1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
         ])]);
+        assert!(!is_singular_transform(&mirror), "det=-1 镜像非奇异");
+    }
+
+    #[test]
+    fn test_matrix2d_singular_detection() {
+        // R5192（transform-singular-001）：matrix(1,1,1,1,0,0) det = 1·1 − 1·1 = 0 →
+        // CTM 不可逆 → 元素与内容不显示（css-transforms-1 #transform-function-lists）。
+        let mut singular = ComputedStyle::default();
+        singular.transform = TransformValue::List(vec![TransformFunction::Matrix(1.0, 1.0, 1.0, 1.0, 0.0, 0.0)]);
+        assert!(is_singular_transform(&singular), "det=0 → 奇异");
+        // 全 0 矩阵同样奇异
+        let mut zero = ComputedStyle::default();
+        zero.transform = TransformValue::List(vec![TransformFunction::Matrix(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)]);
+        assert!(is_singular_transform(&zero));
+        // 平移非奇异
+        let mut translate = ComputedStyle::default();
+        translate.transform = TransformValue::List(vec![TransformFunction::Matrix(1.0, 0.0, 0.0, 1.0, 5.0, 6.0)]);
+        assert!(!is_singular_transform(&translate));
+        // 镜像（det<0）非奇异——不渲染条件是 det == 0 而非 det <= 0
+        let mut mirror = ComputedStyle::default();
+        mirror.transform = TransformValue::List(vec![TransformFunction::Matrix(1.0, 0.0, 0.0, -1.0, 0.0, 0.0)]);
         assert!(!is_singular_transform(&mirror), "det=-1 镜像非奇异");
     }
 
