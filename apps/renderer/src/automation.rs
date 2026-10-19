@@ -163,6 +163,10 @@ impl RendererRuntime {
             // 侧渲染永久缺该变更，长臂饱和期是常态窗口）。补答成功即按同步路径同款
             // 收尾（焦点/缓存 HTML 回读、console 与 document.write drain、按需发布）。
             if result.is_ok() {
+                // T68 返修（缺陷首轮 D4）：补答后的 mutation 渲染与其余产帧路径
+                // 同点包 measure ctx（此前仅同步臂包裹）。
+                let font_loader = self.font_loader.duplicate();
+                let font_id = self.font_id;
                 let changed = {
                     let current_url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
                     let mut context = super::page_scripts::PageScriptContext {
@@ -172,7 +176,9 @@ impl RendererRuntime {
                         webview: self.webview.as_mut(),
                     };
                     let html_snapshot = context.html.clone();
-                    super::page_scripts::apply_recorded_mutations(&mut context, &html_snapshot).is_some()
+                    super::text_metrics::with_measure_ctx_opt(&font_loader, font_id, || {
+                        super::page_scripts::apply_recorded_mutations(&mut context, &html_snapshot).is_some()
+                    })
                 };
                 if let Err(e) = self.automation_eval_sync_tail(changed) {
                     result = Err(e);

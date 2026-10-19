@@ -79,9 +79,13 @@ pub fn shape_text(
 pub fn with_measure_ctx_opt<R>(font_loader: &FontLoader, font_id: Option<u32>, f: impl FnOnce() -> R) -> R {
     match font_id {
         Some(_id) => MEASURE_CTX.with(|cell| {
+            // T68 返修（缺陷首轮 D3）：save/restore 可重入——嵌套包裹（如
+            // automation 外层 → SendKeys → execute_shared_action 内层）内层退出
+            // 不得清掉外层 ctx（set/reset 非重入实现曾使后续派发渲染裸跑）。
+            let prev = cell.get();
             cell.set(Some(font_loader as *const FontLoader));
             let result = f();
-            cell.set(None);
+            cell.set(prev);
             result
         }),
         None => f(),
