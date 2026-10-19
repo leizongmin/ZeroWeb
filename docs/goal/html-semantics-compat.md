@@ -1,47 +1,41 @@
 # HTML Semantics 兼容 — html/semantics 语义面（主攻大域）
 
 **版本**: v2.0
-**日期**: 2026-10-18（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 10 收口（form 提交 construct-entry-list 对齐 + dialog 提交分支 R3910 +12P），下一步 firing submission events flag 簇
+**日期**: 2026-10-19（v1.0 立项 2026-10-08）
+**状态**: Active——M2 切片 11 收口（firing submission events flag + dialog returnValue DOMString + 宿主 click 坐标注入 R3999 +2P），下一步 populateForm 同 turn 二次插入 sibling 断链（解锁 form-submission-algorithm t2/t3）
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-18 M2 切片 10）**：form 提交 construct-entry-list
-> 对齐 + method=dialog 分支（R3910，切片 9 后 forms 大簇归因的 3 个引擎
-> 可修簇）——提交路径补 spec 顺序：constructing entry list flag
-> （`__zwFormDataConstructing` 与 part02 `new FormData(form)` 共用同
-> flag）submit 入口早退（先于 submit 事件派发）、条目构造窗口置位、
-> formdata 派发 finally 清位；formdata 事件以共享条目存储派发
-> （`fd._p = entry list`，handler 对 `e.formData` 增删直接改写提交条目）；
-> action 解析自函数头移至 formdata 派发与 dialog 分支之后（旧位序使
-> `new URL('','about:blank')` 失败时在条目构造前静默 return，丢 formdata
-> 面与 dialog 面）。method=dialog 分支落地：无祖先 dialog → return；
-> image 提交者 selected coordinates "x,y"（`_zwImgSelCoords`，非指针激活
-> 0,0）；submit 提交者 optional value（value 属性 present 才设含空串，
-> 缺失不改 returnValue）；`_zwDialogClose(subject, result)`。
-> close-the-dialog 步 1：无 open 属性早退 return false（不设 returnValue
-> 不派 close）——dialog close()/requestClose()/Esc/提交四处共享路径。
-> SubmitEvent/FormDataEvent 构造器 WebIDL 化（无 new TypeError、type
-> 必填、formData required 且须 FormData 实例、submitter
-> `(Element or null)`）。part59 契约 6 测。forms 3602→**3605P**、
-> dialog-element 38→**47P**、九域 4565→**4577P**（4577/7377 =
-> **62.05%**；总数 7412→7377 系 Timeout 面变化），对 s9 账本逐 subtest
-> diff **净 +12P、回归 0**、新增/消失 2/37（form-double-submit-
-> requestsubmit 36F→文件级 Timeout、area-coords 子测名换行重渲染，
-> 均零 P 差异）。zero-engine --lib 3169 全过、make test 全腿绿
-> （browser bin 腿 2 案环境归因，:102 复跑 658P/0F）、clippy/fmt 过、
-> 零新增依赖。账本见
-> [evidence/2026-10-18-m2s10-r3910.md](html-semantics-compat/evidence/2026-10-18-m2s10-r3910.md)。
-> **卡点**：无阻塞。**已知面变化（挂账）**：formdata 按 spec 派发后
-> form-double-submit-requestsubmit 36F 转 Timeout（断言过后等静态 runner
-> 不存在的 iframe 导航），归 navigation-compat M3 基建门控；
-> submit-dialog-close-event 文件级挂起维持 s9 形态（async_test 步进
-> 交互，独立排查）。**下一步**：firing submission events flag 簇
-> （form-submission-algorithm t2-t4 invalid/submit 重入语义）+ image
-> 按钮坐标 offsetX 面（dialog-form-submission t5）+
-> dialog-return-value returnValue setter String 强转 1F；存量小挂账：
-> option.form 1F、option-text-setter 1F、replaceChild sel 形落尾、
-> t8g 观察账。
+> **▶ 当前状态（2026-10-19 M2 切片 11）**：firing submission events flag +
+> dialog returnValue WebIDL 化 + 宿主 click 坐标注入（R3999，切片 10
+> 挂账三簇全部收口）。① 每 form 粒度 `__zwFiringSubmissionEvents`（spec
+> form submission algorithm 步 5.1/5.2/5.4/5.7：入口 flag true 早退先于
+> 校验与 submit 派发、interactive validation + submit 事件窗口置位、
+> finally 清位；仅 click 激活/requestSubmit 通道，`form.submit()` 直走
+> 导航不查）；② dialog.returnValue IDL setter WebIDL DOMString 转换
+> （null→"null"、7→"7"；undefined→"" 为兼容性例外，与
+> dialog-form-submission 共同钉住）；③ 宿主泛型 click 派发期注入数值
+> offsetX/offsetY（事件类保持泛型 Event 不改 R108 协作面，取值口径与
+> `_zwImgRecordClickCoords` 完全一致——dialog-form-submission t5 的
+> listener 读数与 returnValue 自洽断言成立；并行 regression-guard 流在
+> 共享树实现同号改动，归并收口经过见账本排查记录 3）。part59 契约 3 测
+> （W7 flag 窗口/W8 returnValue DOMString/W9 click offsets + dialog
+> 坐标耦合）+ part14 ⑦ 旧期望修正（null→"null"）。九域 4577→**4579P**
+> （4579/7377 = **62.07%**），对 s10 账本逐 subtest diff **净 +2P、
+> 回归 0**、新增/消失 0：dialog-return-value 翻绿（全 F）+
+> dialog-form-submission t5 Fail→Pass（8/8）；forms 域 3605P 不动
+> （flag 契约面在 corpus 不可见，见卡点）。zero-engine --lib 3193 全过、
+> make test 全腿绿（browser bin 腿 2 案环境归因，:102 复跑 664P/0F）、
+> clippy/fmt 过、零新增依赖。账本见
+> [evidence/2026-10-19-m2s11-r3999.md](html-semantics-compat/evidence/2026-10-19-m2s11-r3999.md)。
+> **卡点**：firing flag 的 t2/t3（form-submission-algorithm）被
+> **populateForm 二次调用缺口**挡住——targetted-form.js 同 turn 两次
+> insertAdjacentHTML('afterbegin')，第二次插入的 nextSibling 返回 null
+> （R3254-K3 同步视图补偿面：隐式提交三测 promise_test 跨 turn 无恙、
+> t1-t3 同步单 turn 触发；探针证据与归因见账本挂账）。**下一步**：
+> populateForm 同 turn 二次插入 sibling 断链修复（解锁 t2/t3，+2P 面
+> flag 契约已就位）；存量小挂账：option.form 1F、option-text-setter
+> 1F、replaceChild sel 形落尾、t8g 观察账。
 
 
 
@@ -123,6 +117,20 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-19 M2 切片 11**：firing submission events flag + dialog
+  returnValue WebIDL 化 + 宿主 click 坐标注入（R3999）——每 form 粒度
+  `__zwFiringSubmissionEvents`（spec 步 5.1/5.2/5.4/5.7，入口早退 +
+  窗口置位 + finally 清位，仅激活/requestSubmit 通道）；returnValue
+  setter DOMString 转换（null→"null"，undefined→"" 兼容例外）；泛型
+  click offsetX/offsetY 派发期注入（与 image selected coordinates 同
+  口径，事件类保持泛型不改 R108 面；并行 regression-guard 流协作归并，
+  账本排查记录 3）。part59 契约 3 测 + part14 期望修正。九域
+  4577→4579P（62.07%），对 s10 逐 subtest diff 净 +2P、回归 0：
+  dialog-return-value 翻绿、dialog-form-submission 8/8。zero-engine
+  --lib 3193 全过、make test 全腿绿（browser 腿 :102 复跑 664P/0F）、
+  clippy/fmt 过、零新增依赖。挂账：populateForm 同 turn 二次插入 sibling 断链
+  （R3254-K3 面，挡 form-submission-algorithm t2/t3，flag 契约已就位）、
+  既有小挂账维持。
 - **2026-10-18 M2 切片 10**：form 提交 construct-entry-list 对齐 + dialog
   提交分支（R3910）——constructing entry list flag 共享（submit 入口
   早退先于 submit 事件、构造窗口置位/finally 清位）、formdata 事件共享

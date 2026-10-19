@@ -13603,6 +13603,29 @@
       if (detail && typeof detail.detail === 'number') {
         try { ev.detail = detail.detail; } catch (_eM2d) {}
       }
+      // R3999（html-semantics s11）：宿主泛型 click 的 offsetX/offsetY 派发期注入。
+      // 事件类保持泛型 Event（上支 MouseEvent 分支注记——R108 pre-click activation/
+      // 取消回滚协议协作面不改），但真实浏览器 click 事件恒有 offsetX/offsetY 数值
+      //（CSSOM View §dom-mouseevent-offsetx）；WPT dialog-form-submission t5 的
+      // click listener 读 event.offsetX/offsetY 作期望值（与 returnValue 自洽断言）。
+      // 取值口径与 part04 `_zwImgRecordClickCoords`（image 按钮 selected coordinates
+      // 记录）完全一致——client 坐标（未注入缺省 0）- gBCR 左/上原点，round + 负值
+      // 钳 0——同一事件驱动的两读数恒等；gBCR 缺席/非有限（bridge 沙箱无注册、
+      // detached）回落 0 原点（recorder 同款回落 [0,0]——两环境读数仍恒等）。
+      if (type === 'click') {
+        try {
+          var _genCx = (detail && typeof detail.clientX === 'number') ? detail.clientX : 0;
+          var _genCy = (detail && typeof detail.clientY === 'number') ? detail.clientY : 0;
+          var _genRx = 0, _genRy = 0;
+          if (typeof __zw_getBoundingClientRect === 'function') {
+            var _genR = String(__zw_getBoundingClientRect(sel) || '').split(',');
+            var _genRxN = Number(_genR[0]), _genRyN = Number(_genR[1]);
+            if (isFinite(_genRxN) && isFinite(_genRyN)) { _genRx = _genRxN; _genRy = _genRyN; }
+          }
+          ev.offsetX = Math.max(0, Math.round(_genCx - _genRx));
+          ev.offsetY = Math.max(0, Math.round(_genCy - _genRy));
+        } catch (_eGenOff) {}
+      }
     }
     // R312（js-dom M4）：宿主派发 = UA 合成事件，isTrusted=true（spec——真实浏览器
     // 的用户输入/激活事件链全部 trusted；`__zw_dispatch_event` 只被 engine 的

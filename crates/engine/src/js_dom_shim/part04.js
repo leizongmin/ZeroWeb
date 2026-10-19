@@ -8969,7 +8969,9 @@
         // 重入守卫：submit/invalid 事件处理中的重入 requestSubmit/click 直接返回（spec 的
         // "submit event is firing" 标志语义——form-requestsubmit 的 reentrant 用例——
         // requestSubmit()+requestSubmit() 只派发一次）。flag 声明在 part05（IIFE 作用域，
-        // 初始化一次；此处若 var 声明会被 get trap 每属性访问重置）。
+        // 初始化一次；此处若 var 声明会被 get trap 每属性访问重置）。R3999 起每 form
+        // 粒度的 spec flag（__zwFiringSubmissionEvents）落地，本守卫仍是 shim 级全局
+        // 重入闸（跨 form 嵌套提交同被挡——spec 应放行，headless 简化，documented）。
         function _zwRunFormSubmit(fKey, fSel, fHandle, submitter) {
           if (_zwSubmitBusy) return;
           // R3910：spec submit 步 2——constructing entry list flag true → return（先于
@@ -8980,6 +8982,15 @@
             var _rsFlEl = _makeProxy(fSel, fHandle);
             if (_rsFlEl && _rsFlEl.__zwFormDataConstructing) return;
           } catch (_eRsFl) {}
+          // R3999：spec submit 步 5.1——firing submission events flag true → return。
+          // 仅「submitted from submit() method = false」通道（click 激活 / requestSubmit
+          // ——三入口共享本函数）；form.submit() 直走 _zwFormSubmitNavigate，不入本
+          // 函数、不查此 flag（spec 步 5 整段跳过）。form-submission-algorithm t2/t3
+          // 的重入面（invalid/submit 事件派发窗口内嵌套 click 不再触发校验/提交）。
+          try {
+            var _fsEl0 = _makeProxy(fSel, fHandle);
+            if (_fsEl0 && _fsEl0.__zwFiringSubmissionEvents) return;
+          } catch (_eFs0) {}
           _zwSubmitBusy = true;
           try {
             // spec：form 未连入文档（detached createElement / removed 子树）→ 不提交
@@ -9002,29 +9013,42 @@
                 if (_fnv != null) _doValidate = false;
               } catch (_e) {}
             }
-            if (_doValidate) {
-              var _firstInv = null;
-              try {
-                var _fcs2 = _formControls(fSel);
-                for (var _ci2 = 0; _fcs2 && _ci2 < _fcs2.length; _ci2++) {
-                  var _c2 = _fcs2[_ci2];
-                  try {
-                    if (_c2.validity && !_c2.validity.valid) {
-                      if (typeof _c2.dispatchEvent === 'function') {
-                        try { _c2.dispatchEvent(new Event('invalid', { cancelable: true, bubbles: false })); } catch (_e2) {}
+            // R3999：spec submit 步 5.2——置位 firing submission events flag，窗口覆盖
+            // interactive validation（步 5.4 negative 先清位再 return）与 submit 事件
+            // 派发（步 5.6 派发后清位），finally 统一清位。步 5.3 user validity
+            //（:user-invalid 面）未实现（FIXME 挂账）。
+            var _fsForm = null;
+            try { _fsForm = _makeProxy(fSel, fHandle); } catch (_eFs1) { _fsForm = null; }
+            try { if (_fsForm) _fsForm.__zwFiringSubmissionEvents = true; } catch (_eFs2) {}
+            try {
+              if (_doValidate) {
+                var _firstInv = null;
+                try {
+                  var _fcs2 = _formControls(fSel);
+                  for (var _ci2 = 0; _fcs2 && _ci2 < _fcs2.length; _ci2++) {
+                    var _c2 = _fcs2[_ci2];
+                    try {
+                      if (_c2.validity && !_c2.validity.valid) {
+                        if (typeof _c2.dispatchEvent === 'function') {
+                          try { _c2.dispatchEvent(new Event('invalid', { cancelable: true, bubbles: false })); } catch (_e2) {}
+                        }
+                        if (_firstInv == null) _firstInv = _c2;
                       }
-                      if (_firstInv == null) _firstInv = _c2;
-                    }
-                  } catch (_e3) {}
-                }
-              } catch (_e4) {}
-              if (_firstInv != null) return; // 中止提交（interactive validation 失败）
+                    } catch (_e3) {}
+                  }
+                } catch (_e4) {}
+                if (_firstInv != null) return; // 中止提交（interactive validation 失败；finally 清 flag）
+              }
+              // dispatch submit SubmitEvent（cancelable，含 submitter）。
+              var _sev;
+              try { _sev = new SubmitEvent('submit', { bubbles: true, cancelable: true, submitter: submitter || null }); }
+              catch (_e) { _sev = new Event('submit', { bubbles: true, cancelable: true }); }
+              var _notCanceled = _dispatchWithBubble(fKey, fSel, fHandle, _sev);
+            } finally {
+              // R3999：spec submit 步 5.4 negative / 步 5.7——两出口统一清位（步 5.8
+              // shouldContinue 判定在窗口外）。
+              try { if (_fsForm) _fsForm.__zwFiringSubmissionEvents = false; } catch (_eFs3) {}
             }
-            // dispatch submit SubmitEvent（cancelable，含 submitter）。
-            var _sev;
-            try { _sev = new SubmitEvent('submit', { bubbles: true, cancelable: true, submitter: submitter || null }); }
-            catch (_e) { _sev = new Event('submit', { bubbles: true, cancelable: true }); }
-            var _notCanceled = _dispatchWithBubble(fKey, fSel, fHandle, _sev);
             // spec §4.10.22 form submission algorithm：submit 未取消 → 默认动作 = 构造
             // entry list + 导航到 mutated action URL。旧实现 headless 无导航（documented
             // no-op）——baidu 搜索框输入 + #su 点击 submit 触发但 URL 不变（站内搜索
@@ -10925,8 +10949,13 @@
           }
         } else if (p === 'returnValue' && _realTag(sel, handle) === 'DIALOG') {
           // R3290：HTMLDialogElement.returnValue IDL setter。spec：存任意值为串（不反射内容属性——dialog 无
-          // returnValue 内容属性）。lenient 接受任意值（null → ''，与 getter 默认值一致）。
-          _expando[key + '::returnValue'] = (value == null) ? '' : String(value);
+          // returnValue 内容属性）。R3999：WebIDL DOMString 转换——null → "null"、
+          // 7 → "7"（dialog-return-value「returnValue = null 期望 'null'」根因；
+          // 旧 lenient null → '' 与 spec 不符）。getter 默认 ''（未设过）不变。
+          // 例外：undefined → ''（纯 WebIDL 应 "undefined"，但 dialog-form-submission
+          // 「calling form.submit() in click handler」测 `= undefined` 后断言 ''；
+          // 与 dialog-return-value 的 null→'null' 共同钉住，兼容性取舍）。
+          _expando[key + '::returnValue'] = (value === undefined) ? '' : String(value);
         } else if (p === 'popover') {
           // R3071：popover enumerated setter。spec：null → removeAttribute（清 popover 元素身份）；余 → setAttribute
           //（getter 经 `_zwReadPopover` 映射 invalid→manual，real browser 一致）。不写 _reflectedAttrs 缓存

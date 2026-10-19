@@ -1394,3 +1394,173 @@ f.submit();
         "W6：entry list 含控件 n1=v1 且 formdata handler 追加的 extra=x1 可见（共享存储）"
     );
 }
+
+// W7：firing submission events flag（R3999，spec submit 步 5.1/5.2/5.4/5.7）——
+// ① submit 事件派发窗口内 flag 为 true，窗口后复位；② 窗口内嵌套 click
+// 短路（不再跑 interactive validation → 无 invalid 事件、submit 不重复派发，
+// form-submission-algorithm t2 形态）；③ invalid 事件派发窗口内嵌套 click
+// 短路（invalid 计数不翻倍，t3 形态）。
+#[test]
+fn test_r3999_firing_submission_events_flag() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><form id='fmF'><input id='rqF'><input id='sb1F' type='submit'><input id='sb2F' type='submit'></form></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r##"
+var f = document.getElementById('fmF');
+var rq = document.getElementById('rqF');
+var sb1 = document.getElementById('sb1F');
+var sb2 = document.getElementById('sb2F');
+var __inv = 0, __sub = 0, __flagInSubmit = '', __flagAfter = '';
+rq.oninvalid = function () { __inv++; sb2.click(); }; // t3 形态：invalid 窗口内嵌套 click
+f.onsubmit = function () {
+  __sub++;
+  __flagInSubmit = (f.__zwFiringSubmissionEvents === true);
+  rq.required = true;       // t2 形态：submit 窗口内使控件失效
+  sb1.click();              // 窗口内嵌套 click → 短路（不校验不重复派发）
+  __flagAfter = (f.__zwFiringSubmissionEvents === true); // 嵌套未破坏外层窗口
+};
+sb1.click();
+globalThis.__r7 = __sub + '/' + __inv + '/' + __flagInSubmit + '/' + __flagAfter;
+// 第二相（t3 形态主跑）：控件现已 required 且为空 → click 必 invalid；
+// invalid handler 内嵌套 sb2.click() 因 flag 短路 → 计数恰 1。
+sb1.click();
+globalThis.__r7 += '/' + __inv + '/' + (f.__zwFiringSubmissionEvents === false);
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r7").unwrap().value,
+        "1/0/true/true/1/true",
+        "W7：submit 单次派发 + 窗口内 flag true/窗口后 false + 嵌套 click 短路（无 invalid）+ invalid 窗口嵌套 click 计数不翻倍"
+    );
+}
+
+// W8：dialog.returnValue IDL setter 的 WebIDL DOMString 转换（R3999）——
+// null → "null"、数字 → 串（dialog-return-value 根因面）；close(null) → "null"、
+// close()/close(undefined) 不改值（close-the-dialog 步：result 缺省不设）。
+#[test]
+fn test_r3999_dialog_returnvalue_domstring() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body><dialog id='dgH'></dialog></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r##"
+var d = document.getElementById('dgH');
+var __r = '';
+__r += (d.returnValue === '') + '/';
+d.returnValue = 'direct';
+__r += (d.returnValue === 'direct') + '/';
+d.returnValue = null;
+__r += (d.returnValue === 'null') + '/';
+d.returnValue = 7;
+__r += (d.returnValue === '7') + '/';
+d.returnValue = '';
+__r += (d.returnValue === '') + '/';
+d.showModal(); d.close(null);
+__r += (d.returnValue === 'null') + '/';
+d.returnValue = 'keep-noarg';
+d.showModal(); d.close();
+__r += (d.returnValue === 'keep-noarg') + '/';
+d.showModal(); d.close(undefined);
+__r += (d.returnValue === 'keep-noarg');
+globalThis.__r8 = __r;
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r8").unwrap().value,
+        "true/true/true/true/true/true/true/true",
+        "W8：returnValue setter DOMString 转换（null→'null'、7→'7'）+ close(null)→'null' + close()/close(undefined) 不改值"
+    );
+}
+
+// W9：宿主泛型 click 的 offsetX/offsetY 注入 + image 提交者 dialog 坐标耦合（R3999，
+// dialog-form-submission t5 断言面）——① `__zw_dispatch_event` 宿主 click（泛型
+// Event，R108/取消回滚协议协作面不改）携带数值 offsetX/offsetY（与 part04
+// `_zwImgRecordClickCoords` 同口径：client - gBCR 原点、round + 负值钳 0）；②
+// requestSubmit(image 提交者) 走 dialog 提交分支 → returnValue 取 selected
+// coordinates "0,0"，与 listener 读到的 offsetX/offsetY 串恒等（t5 自洽断言——
+// runner 侧宿主 click 后经 S4J `__zwNavFormRequestSubmit` 补提交，桥沙箱无该
+// host 回调注册，以同到达 `_zwRunFormSubmit` 的 requestSubmit 等价驱动）。
+#[test]
+fn test_r3999_host_click_offsets_dialog_image_coords() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><dialog id='dgJ'><form id='fmJ' method='dialog'><input id='imJ' type='image'></form></dialog></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r##"
+var d = document.getElementById('dgJ');
+var f = document.getElementById('fmJ');
+var im = document.getElementById('imJ');
+var __off = null, __offTy = '';
+im.addEventListener('click', function (e) {
+  __offTy = (typeof e.offsetX) + '/' + (typeof e.offsetY);
+  __off = e.offsetX + ',' + e.offsetY;
+});
+d.showModal();
+__zw_dispatch_event('#imJ', 'click', null);
+globalThis.__r9a = __offTy + '|' + __off + '|' + d.open + '|' + (d.returnValue === '');
+if (typeof globalThis.__zwNavFormRequestSubmit === 'function') __zwNavFormRequestSubmit(f, im);
+else f.requestSubmit(im);
+globalThis.__r9b = d.open + '/' + (d.returnValue === __off);
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r9a").unwrap().value,
+        "number/number|0,0|true|true",
+        "W9：宿主泛型 click 携带数值 offsetX/offsetY（未注入坐标 → gBCR 原点钳 0），dialog 未关、returnValue 未设"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r9b").unwrap().value,
+        "false/true",
+        "W9：image 提交者 dialog 提交 → returnValue 恒等 listener 读数（t5 自洽面）+ dialog 已关"
+    );
+}

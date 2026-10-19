@@ -2724,7 +2724,9 @@ fn test_html_dialog_element_api_r3290() {
     assert_eq!(sandbox.execute("globalThis.__detOpen").unwrap().value, "false", "details 默认 open=false（共用反射属性）");
     assert_eq!(sandbox.execute("globalThis.__detOpenAfter").unwrap().value, "true", "details.open=true setter → open=true");
 
-    // ⑦ returnValue 直接 IDL setter（不反射内容属性）：null→''，串值存。
+    // ⑦ returnValue 直接 IDL setter（不反射内容属性）：串值存；null 按 WebIDL
+    //    DOMString 转换 → "null"（R3999 修正——旧 lenient null→'' 与 spec 不符，
+    //    WPT dialog-return-value「returnValue = null 期望 'null'」根因）。
     sandbox.execute(
         "var d5 = document.getElementById('d5');\
          d5.returnValue = 'xyz';\
@@ -2733,7 +2735,7 @@ fn test_html_dialog_element_api_r3290() {
          globalThis.__rvNull = JSON.stringify(d5.returnValue);",
     ).unwrap();
     assert_eq!(sandbox.execute("globalThis.__rvXyz").unwrap().value, "xyz", "returnValue setter 存串值");
-    assert_eq!(sandbox.execute("globalThis.__rvNull").unwrap().value, r#""""#, "returnValue=null setter → ''");
+    assert_eq!(sandbox.execute("globalThis.__rvNull").unwrap().value, r#""null""#, "returnValue=null setter → 'null'（R3999 spec 修正）");
 
     // ⑧ show → showModal 互斥：show 后 showModal 关前非模态态再开模态（不抛，因 show 后 d1 仍 open——
     //    实际 spec：showModal 已 open 抛。验证 d1 经 ②show() 后 showModal 抛 InvalidStateError（同 ③）已隐含）。
