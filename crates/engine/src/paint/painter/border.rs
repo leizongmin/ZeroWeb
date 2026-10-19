@@ -115,8 +115,14 @@ impl super::Painter {
             match plan {
                 crate::paint::helpers::BorderShapePlan::Stroke { vertices, width, color } => {
                     if width > 0.0 {
-                        let flat: Vec<f32> = vertices.into_iter().flat_map(|(x, y)| [x, y]).collect();
+                        let flat: Vec<f32> = vertices.iter().flat_map(|(x, y)| [*x, *y]).collect();
                         self.primitives.add_path_stroke(flat, color, width, true);
+                        // R5186：miter join 楔形补齐逐段粗线无 join 的顶点缺口
+                        //（尖角 miter 尖刺，polygon-miter-limit 判例）。
+                        for wedge in crate::paint::helpers::stroke_miter_wedges(&vertices, width) {
+                            let flat: Vec<f32> = wedge.into_iter().flat_map(|(x, y)| [x, y]).collect();
+                            self.primitives.add_path_fill(flat, color);
+                        }
                     }
                 }
                 crate::paint::helpers::BorderShapePlan::Fill { outer, inner, color } => {
@@ -1575,6 +1581,57 @@ impl super::Painter {
         // outline-color 初始 = currentColor（CSS UI：invert 无浏览器支持回落 currentColor），
         // 须按元素自身 color 解析（color_value_to_render 无元素色上下文会回落黑色）。
         let color = resolve_color_current(&style.outline_color, &style.color);
+
+        // R5186（css-ui §outline + css-borders-4 §border-shape，判例 outline /
+        // outline-double）：形状活跃时 outline 随形状路径——带 = 路径外向
+        // [offset, offset + width]（ref 判例内缘 = 形状路径：circle r50 outline 4px
+        // → 带 [50,54]）。solid/auto 单带；double 三等分两条子带（两线 + 中隙，
+        // w/3 每段）。等价域（inset round R）不在此——落 border-radius 同构既有路径。
+        // offset_convex_polygon 拒绝（非凸 / miter>4）或 fill mode / 其他线型 →
+        // 回退下方矩形路径（FIXME: 非凸 bevel 拓扑与 fill mode 外形状带）。
+        if crate::paint::helpers::border_shape_border_path_active(style)
+            && matches!(
+                style.outline_style,
+                OutlineStyleValue::Solid | OutlineStyleValue::Auto | OutlineStyleValue::Double
+            )
+            && crate::paint::helpers::border_shape_round_inset_equivalent_radii(style, box_node).is_none()
+            && let Some(crate::paint::helpers::BorderShapePlan::Stroke { vertices, .. }) =
+                crate::paint::helpers::border_shape_plan(style, box_node, abs_x, abs_y)
+        {
+            let fracs: &[(f32, f32)] = if matches!(style.outline_style, OutlineStyleValue::Double) {
+                &[(0.0, 1.0 / 3.0), (2.0 / 3.0, 1.0)]
+            } else {
+                &[(0.0, 1.0)]
+            };
+            let offset_poly = |d: f32| -> Option<Vec<(f32, f32)>> {
+                if d == 0.0 {
+                    Some(vertices.clone())
+                } else {
+                    crate::paint::helpers::offset_convex_polygon(&vertices, d)
+                }
+            };
+            let mut rings = Vec::with_capacity(fracs.len());
+            let mut shaped = true;
+            for &(f0, f1) in fracs {
+                match (
+                    offset_poly(offset + f1 * outline_width),
+                    offset_poly(offset + f0 * outline_width),
+                ) {
+                    (Some(outer), Some(inner)) => rings.push(crate::paint::helpers::concat_ring_vertices(outer, inner)),
+                    _ => {
+                        shaped = false;
+                        break;
+                    }
+                }
+            }
+            if shaped {
+                for ring in rings {
+                    let flat: Vec<f32> = ring.into_iter().flat_map(|(x, y)| [x, y]).collect();
+                    self.primitives.add_path_fill(flat, color);
+                }
+                return;
+            }
+        }
 
         // 计算外侧矩形坐标。
         // R4196（css-ui-3 §outline-props，outline-013）：outline 形状外缘尺寸不得小于

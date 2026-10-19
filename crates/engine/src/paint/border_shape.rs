@@ -162,6 +162,64 @@ pub(crate) fn border_shape_plan(
     }
 }
 
+/// R5186（css-borders-4 §border-shape，判例 inner-outer）：形状活跃即视为「有边框
+/// 可绘」——绘制入口的布局边框宽门禁放行 fill mode 环带（环带宽 = 外/内形状围成
+/// 域，与 border 宽解耦；border-style none 判例环带 = 外形状到内形状整段）。
+/// stroke mode 环带仍由 plan 侧 `width > 0` 门禁压空（style none → 宽 0 → 无带）。
+pub(crate) fn border_shape_border_path_active(style: &ComputedStyle) -> bool {
+    !matches!(style.border_shape, BorderShapeValue::None)
+}
+
+/// R5186（css-borders-4 §border-shape，判例 polygon-miter-limit）：形状描边的 miter
+/// join 楔形。CPU path stroke = 逐段粗线无 join 几何——凸顶点处两段端帽间缺口、
+/// 尖角顶点丢失 miter 尖刺（ref `stroke-miterlimit=1000` 保留尖刺，ratio ≈ 5）。
+/// 逐顶点发射 [外偏移点 A, miter 尖点 M, 外偏移点 B] 楔形（一次 even-odd
+/// path_fill）：凹顶点楔形落于带内属同色冗余覆盖无害；自交路径（bowtie）交叉处
+/// 无顶点不受影响。外侧按局部转向判定（cross 符号 → 右/左法线族），不依赖全局
+/// 有向面积（自交时无意义）。miter 不设限（判例语义「keeps miter joins」）；
+/// 近平行边（|cross| 过小，t 发散）与超界 t 跳过——FIXME(miter-bevel-limit)：
+/// bevel/miter-limit 拓扑独立轮评估。
+pub(crate) fn stroke_miter_wedges(pts: &[(f32, f32)], width: f32) -> Vec<Vec<(f32, f32)>> {
+    let n = pts.len();
+    if n < 3 || width <= 0.0 {
+        return Vec::new();
+    }
+    let h = width * 0.5;
+    let mut wedges = Vec::new();
+    for i in 0..n {
+        let (px, py) = pts[(i + n - 1) % n];
+        let (cx, cy) = pts[i];
+        let (qx, qy) = pts[(i + 1) % n];
+        let (ux, uy) = (cx - px, cy - py);
+        let (wx, wy) = (qx - cx, qy - cy);
+        let ul = (ux * ux + uy * uy).sqrt();
+        let wl = (wx * wx + wy * wy).sqrt();
+        if ul < 1e-9 || wl < 1e-9 {
+            continue;
+        }
+        let (ux, uy) = (ux / ul, uy / ul);
+        let (wx, wy) = (wx / wl, wy / wl);
+        let cross = ux * wy - uy * wx;
+        if cross.abs() < 1e-9 {
+            continue; // 共线：无 join 缺口
+        }
+        let (n1x, n1y, n2x, n2y) = if cross > 0.0 {
+            (uy, -ux, wy, -wx)
+        } else {
+            (-uy, ux, -wy, wx)
+        };
+        let a = (cx + n1x * h, cy + n1y * h);
+        let b = (cx + n2x * h, cy + n2y * h);
+        // M = 直线 (A, u) ∩ (B, w)：t·u − s·w = B−A，叉乘 w 消 s。
+        let t = ((b.0 - a.0) * wy - (b.1 - a.1) * wx) / cross;
+        if !t.is_finite() || t.abs() > 1e4 {
+            continue;
+        }
+        wedges.push(vec![a, (a.0 + t * ux, a.1 + t * uy), b]);
+    }
+    wedges
+}
+
 /// R5184（css-borders-4 §border-shape + WPT 判例）：stroke mode `inset(0 round R)`
 /// 与默认 half-border-box 的 border-radius 等价判定。CSS Backgrounds §5.5 单角钳制
 /// 使描边带与 border-radius: R 渲染逐弧重合（outline-auto-with-border R=60→外弧

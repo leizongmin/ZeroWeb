@@ -2365,7 +2365,10 @@ impl Painter {
                 if (box_node.border_top > 0.0
                     || box_node.border_right > 0.0
                     || box_node.border_bottom > 0.0
-                    || box_node.border_left > 0.0)
+                    || box_node.border_left > 0.0
+                    // R5186：border-shape 活跃即进入（fill mode 环带宽与 border 宽解耦，
+                    // border-style none 判例 inner-outer；stroke mode 零宽由 plan 压空）。
+                    || super::helpers::border_shape_border_path_active(style))
                     && !is_collapsed_table
                     // R4332：多行 inline（skip_inline_box_border）改由 paint_text
                     // per-fragment 描绘（union 矩形跨行整框与 chromium per-fragment 语义相悖）。
@@ -3115,7 +3118,9 @@ impl Painter {
                     && (box_node.border_top > 0.0
                         || box_node.border_right > 0.0
                         || box_node.border_bottom > 0.0
-                        || box_node.border_left > 0.0)
+                        || box_node.border_left > 0.0
+                        // R5186：border-shape 活跃即进入（同 paint_node_in_rect 门）。
+                        || super::helpers::border_shape_border_path_active(style))
                 {
                     let fieldset_legend = doc.and_then(|doc| {
                         let node = doc.get(node_id)?;

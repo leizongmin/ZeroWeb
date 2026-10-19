@@ -37,6 +37,7 @@ mod r5180_round_border_band;
 mod r5182_border_shape_fill_ring;
 mod r5183_shaped_percent_radius;
 mod r5185_border_area_shape_band;
+mod r5186_shape_join_outline;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;
