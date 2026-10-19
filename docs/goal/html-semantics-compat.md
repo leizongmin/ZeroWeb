@@ -2,40 +2,33 @@
 
 **版本**: v2.0
 **日期**: 2026-10-19（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 11 收口（firing submission events flag + dialog returnValue DOMString + 宿主 click 坐标注入 R3999 +2P），下一步 populateForm 同 turn 二次插入 sibling 断链（解锁 form-submission-algorithm t2/t3）
+**状态**: Active——M2 切片 12 收口（populateForm 同 turn 二次插入 sibling 断链修复 R4000 +2P），下一步 M2 forms 域余簇评估（encoding 三簇 + double-submit 族归 navigation-compat 门控，评估存量小挂账）
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-19 M2 切片 11）**：firing submission events flag +
-> dialog returnValue WebIDL 化 + 宿主 click 坐标注入（R3999，切片 10
-> 挂账三簇全部收口）。① 每 form 粒度 `__zwFiringSubmissionEvents`（spec
-> form submission algorithm 步 5.1/5.2/5.4/5.7：入口 flag true 早退先于
-> 校验与 submit 派发、interactive validation + submit 事件窗口置位、
-> finally 清位；仅 click 激活/requestSubmit 通道，`form.submit()` 直走
-> 导航不查）；② dialog.returnValue IDL setter WebIDL DOMString 转换
-> （null→"null"、7→"7"；undefined→"" 为兼容性例外，与
-> dialog-form-submission 共同钉住）；③ 宿主泛型 click 派发期注入数值
-> offsetX/offsetY（事件类保持泛型 Event 不改 R108 协作面，取值口径与
-> `_zwImgRecordClickCoords` 完全一致——dialog-form-submission t5 的
-> listener 读数与 returnValue 自洽断言成立；并行 regression-guard 流在
-> 共享树实现同号改动，归并收口经过见账本排查记录 3）。part59 契约 3 测
-> （W7 flag 窗口/W8 returnValue DOMString/W9 click offsets + dialog
-> 坐标耦合）+ part14 ⑦ 旧期望修正（null→"null"）。九域 4577→**4579P**
-> （4579/7377 = **62.07%**），对 s10 账本逐 subtest diff **净 +2P、
-> 回归 0**、新增/消失 0：dialog-return-value 翻绿（全 F）+
-> dialog-form-submission t5 Fail→Pass（8/8）；forms 域 3605P 不动
-> （flag 契约面在 corpus 不可见，见卡点）。zero-engine --lib 3193 全过、
-> make test 全腿绿（browser bin 腿 2 案环境归因，:102 复跑 664P/0F）、
-> clippy/fmt 过、零新增依赖。账本见
-> [evidence/2026-10-19-m2s11-r3999.md](html-semantics-compat/evidence/2026-10-19-m2s11-r3999.md)。
-> **卡点**：firing flag 的 t2/t3（form-submission-algorithm）被
-> **populateForm 二次调用缺口**挡住——targetted-form.js 同 turn 两次
-> insertAdjacentHTML('afterbegin')，第二次插入的 nextSibling 返回 null
-> （R3254-K3 同步视图补偿面：隐式提交三测 promise_test 跨 turn 无恙、
-> t1-t3 同步单 turn 触发；探针证据与归因见账本挂账）。**下一步**：
-> populateForm 同 turn 二次插入 sibling 断链修复（解锁 t2/t3，+2P 面
-> flag 契约已就位）；存量小挂账：option.form 1F、option-text-setter
-> 1F、replaceChild sel 形落尾、t8g 观察账。
+> **▶ 当前状态（2026-10-19 M2 切片 12）**：populateForm 同 turn 二次插入
+> sibling 断链修复（R4000）。根因：part03 `_zwPendingParsedForSel`
+> （R3254-K3 sel→pending 签名归一门）候选收集循环 `candCount > 1`
+> 提前 return 把签名盖章截断到前 2 个候选——同 turn 第二批
+> insertAdjacentHTML 的 pending 解析节点永无 `__zwSig3k` 章 → hits 恒 0
+> → 门判负 → 兄弟导航落 live/snapshot 视图返 null；「签名歧义 → 保守
+> 不归一」本由 hits 侧 `hits === 1` 唯一性判定实现，候选数截断属缺陷。
+> 修复 = 删除该行（全量盖章，歧义保守语义不变）。切片 11 的 firing
+> submission events flag 契约（t2/t3）随之解锁：form-submission-algorithm
+> t2「If firing submission events flag of form is true, then return」、
+> t3「'invalid' event」Fail→Pass。part59 契约 1 测（W11，target 属性钉
+> form identity）。九域 4579→**4581P**（4581/7377 = **62.10%**），对
+> s11 账本逐 subtest diff **净 +2P、回归 0、新增/消失 0**（账本取自
+> rebase 后合并树复跑，对 rebase 前账本 0 变化）。
+> zero-engine --lib 3224 全过、clippy/fmt 过、browser bin 腿 :102
+> 665P/0F、cdp 4P/9P、quickjs 矩阵腿全绿、零新增依赖。账本见
+> [evidence/2026-10-19-m2s12-r4000.md](html-semantics-compat/evidence/2026-10-19-m2s12-r4000.md)。
+> **下一步**：M2 forms 域余簇评估——form-submission-algorithm 余 F 已
+> 全部归 iframe 导航基建簇（Cannot navigate / submit 事件派发面 /
+> encoding 三簇 / double-submit 族，归 navigation-compat M3 门控），
+> forms 域内可独立收口的余案盘点（option.form 1F、option-text-setter
+> 1F、replaceChild sel 形落尾、t8g 观察账等存量小挂账）→ 决定 M2
+> 收口或续切。
 
 
 
@@ -117,6 +110,18 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-19 M2 切片 12**：populateForm 同 turn 二次插入 sibling 断链
+  修复（R4000）——`_zwPendingParsedForSel` 候选收集 `candCount > 1`
+  提前 return 缺陷删除（签名盖章截断致第二批 pending 节点 hits 恒 0，
+  兄弟导航断链；歧义保守语义由 hits 唯一性判定承担不变）。part59 契约
+  1 测（W11）。解锁切片 11 flag 契约：form-submission-algorithm t2/t3
+  Fail→Pass，九域 4579→4581P（62.10%），对 s11 逐 subtest diff 净
+  +2P、回归 0（账本绑定 rebase 后合并树，对 rebase 前复跑 0 变化）。
+  zero-engine --lib 3224 全过、clippy/fmt 过、browser bin 腿 :102
+  665P/0F、quickjs 矩阵腿全绿、零新增依赖。挂账：
+  form-submission 余 F 归 iframe 导航基建簇（navigation-compat M3）、
+  既有小挂账维持、二批插入后 body.childNodes 融合视图丢 base 尾节点
+  （corpus 无消费面，观察项）。
 - **2026-10-19 M2 切片 11**：firing submission events flag + dialog
   returnValue WebIDL 化 + 宿主 click 坐标注入（R3999）——每 form 粒度
   `__zwFiringSubmissionEvents`（spec 步 5.1/5.2/5.4/5.7，入口早退 +

@@ -1564,3 +1564,58 @@ globalThis.__r9b = d.open + '/' + (d.returnValue === __off);
         "W9：image 提交者 dialog 提交 → returnValue 恒等 listener 读数（t5 自洽面）+ dialog 已关"
     );
 }
+
+// W11：populateForm 二批插入 sibling 链（R4000，form-submission-algorithm t2/t3 断言
+// 面）——/common/targetted-form.js `populateForm` 形状：同 turn 两次
+// body.insertAdjacentHTML('afterbegin')，每批 `<iframe name=…></iframe><form
+// target=…></form>`，iframe 名唯一、form 无 name；返回
+// `getElementsByName(frameName)[0].nextSibling` 作提交链入口。第二批次命中 host
+// apply-pending 视图的 sel proxy，其兄弟导航走 R3254-K3 签名归一（part03
+// `_zwPendingParsedForSel`）——旧版候选收集 `candCount > 1` 提前 return 把签名盖章截到
+// 前 2 个候选，第二批 pending 节点永无 `__zwSig3k` 章（hits 恒 0 → 门判负 → live 视图
+// 返 null）。契约：两批 iframe 的兄弟链都按 composed 视图解析，form identity 用
+// target 属性钉住（第二批 nextSibling 必须是第二批的 form，非同名歧义回退），
+// first-child 的 previousSibling 恒 null。
+#[test]
+fn test_r4000_populateform_second_batch_sibling_chain() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><script>var x = 1;</script></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            r##"
+document.body.insertAdjacentHTML('afterbegin',
+  '<iframe name="ftt-0"></iframe><form action="/common/blank.html" target="ftt-0"><input name=n10 value=v10></form>');
+document.body.insertAdjacentHTML('afterbegin',
+  '<iframe name="ftt-1"></iframe><form action="/common/blank.html" target="ftt-1"><input><input type=submit></form>');
+var f0 = document.getElementsByName('ftt-0')[0];
+var f1 = document.getElementsByName('ftt-1')[0];
+function tag(n) { return (n && n.tagName) || 'null'; }
+function tgt(n) { return (n && n.getAttribute && n.getAttribute('target')) || '-'; }
+globalThis.__r11 = tag(f0.nextSibling) + '|' + tgt(f0.nextSibling) + ',' +
+  tag(f1.nextSibling) + '|' + tgt(f1.nextSibling) + ',' +
+  tag(f1.previousSibling) + ',' +
+  tag(f0.previousSibling) + '|' + tgt(f0.previousSibling);
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r11").unwrap().value,
+        "FORM|ftt-0,FORM|ftt-1,null,FORM|ftt-1",
+        "W11：二批插入后两批 iframe 的 sibling 链按 composed 视图解析（R3254-K3 签名归一覆盖多批 pending），target 钉 identity"
+    );
+}

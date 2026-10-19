@@ -8851,7 +8851,10 @@
           var nd = bucket.added[i];
           if (!nd || nd.nodeType !== 1 || nd.__zwHandle || nd.__zwSelector) continue;
           if (!nd._zwSelPendingParent) continue;
-          if (candCount > 1) return;
+          // R4000：全量收集——旧版 `candCount > 1` 提前 return 把盖章面截到前 2 个候选，
+          // 同 turn 第二批 insertAdjacentHTML 的 pending 节点永无签名章（sig=undefined），
+          // hits 恒 0 → sel proxy 兄弟导航断链（populateForm t2/t3 根因）。「签名歧义 →
+          // 保守不归一」由下方 `hits === 1` 唯一性判定实现，不以候选数截断。
           var tag = '';
           try { tag = String(nd.tagName || '').toUpperCase(); } catch (_et) {}
           var attrs = { id: '', name: '', class: '' };
