@@ -1,10 +1,10 @@
 # Pointer Lock 兼容 — requestPointerLock / 指针捕获语义（门控 goal）
 
-**版本**: v1.8
+**版本**: v1.9
 **日期**: 2026-10-19
-**状态**: **M3 完成（2026-10-19 收口）·s1–s4 全落地·执行面 19/22 子测试
-Pass（86.4%），文件口径 15/18 全绿·红案 3 全部记账（constructor 跨域 residual
-+ wheel×2 TBD-3）**——M2 RFC v1.5（已确认，实施期修正见其 §12）。
+**状态**: **M3 完成（2026-10-19 收口）+ TBD-3 收敛（同日收口后切片）·
+执行面 21/22 子测试 Pass（95.5%），文件口径 16/18 全绿·红案余 1 全部记账
+（constructor 跨域 residual）**——M2 RFC v1.6（已确认，实施期修正见其 §12）。
 RFC 见 [m2-pointer-capture-pipeline-spec-rfc.md](pointerlock-compat/m2-pointer-capture-pipeline-spec-rfc.md)；
 M1 甄别报告见
 [evidence/2026-10-18-m1-baseline.md](pointerlock-compat/evidence/2026-10-18-m1-baseline.md)
@@ -20,8 +20,20 @@ M1 甄别报告见
 > 指针捕获本质依赖 host 光标管线（隐藏系统光标 + 相对位移流）——host-runtime
 > 面，缺即门控。
 
-## 当前状态（2026-10-19 M3 Commit 5 收口）
+## 当前状态（2026-10-19 TBD-3 收敛）
 
+- **TBD-3 收敛完成（2026-10-19，M3 收口后切片）：锁定态 wheel retarget +
+  滚动链默认动作，wheel 案 ×2 翻绿**。实施期复核发现 TBD-3 记账归因过时——
+  `Actions.scroll` 自 uievents 尾簇 35 已实现（`wheel_scroll` 命令 →
+  `__zw_wheel_scroll`），真缺口是锁定改道未覆盖 wheel 源。落点 shim
+  `__zw_wheel_scroll` 锁定分支（`_plTarget` 原对象直派 + 未取消沿 overflow
+  scrollable 链滚动）+ webview e2e 钉；runner/`script_wheel_scroll` 零改动
+  （语义权威在 shim，桌面 wheel 底座接入即自动获得 retarget）。通道
+  **21/22（95.5%），文件 16/18**；uievents wheel 族 3/3 零回归；make test
+  全绿 + make reftest 712/712。RFC → v1.6。见
+  [TBD-3 证据](pointerlock-compat/evidence/2026-10-19-tbd3-wheel-retarget.md)。
+  **下一步**：goal 自身无未决实现项（残留挂账见下）；桌面 wheel 转发随
+  renderer wheel 派发底座另启。
 - **M3 收口完成（2026-10-19，Commit 5）：FR-7 双域 retarget + corpus 总账**。
   TBD-1 已决（shadow-dom.js 单文件补拉）；FR-7 实施期发现克隆树为 R307
   **实例域**（内部节点无 `__zwHandle`，attachShadow 走原型轻量路径）——初始
@@ -42,7 +54,6 @@ M1 甄别报告见
   + chrome 悬停跳过 + IPC 契约 Exit + renderer 臂。实施期修正两点
   （button 签名/Exit 相位）→ RFC v1.4。见
   [Commit 4 证据](pointerlock-compat/evidence/2026-10-19-m3-commit4-cface-desktop.md)。
-  **下一步**：Commit 5 = s4 收口（corpus 总账 csv 回填、FR 残留、DC-3 门禁）。
 - **M3 s3 管线就绪（2026-10-19，Commit 3）**：webview 锁镜像新模块
   `pointer_lock.rs`（`apply_locked_pointer_move`/`_button` 单入口 + 导航四连点
   清理）+ host 桥 `__zw_pointer_lock_state_changed`（shim 四处通知 + identity
@@ -97,15 +108,15 @@ M1 完成 corpus census 与可执行子集甄别（API 面存在性/异常语义
 
 - **DC-1（自主）✅ 2026-10-18** 导入 + census + 可执行子集甄别报告 + csv
   planned 行回填——见 [M1 基线](pointerlock-compat/evidence/2026-10-18-m1-baseline.md)
-- **DC-2（✅ 2026-10-19）** 捕获管线 RFC 已确认（方案 A，终版 v1.5）；M3
-  实现收口完成（s1–s4）
-- **DC-3（✅ 2026-10-19）** 回归测试账本纪律（通道 19/22 逐案落账、红案
-  3 记账归因）；make test 全绿、make reftest 712/712 零回归
+- **DC-2（✅ 2026-10-19）** 捕获管线 RFC 已确认（方案 A，终版 v1.6）；M3
+  实现收口完成（s1–s4 + TBD-3 收敛）
+- **DC-3（✅ 2026-10-19）** 回归测试账本纪律（通道 21/22 逐案落账、红案
+  余 1 记账归因）；make test 全绿、make reftest 712/712 零回归
 
 ## 里程碑
 
-M1 盘点（自主，**✅ 完成**）→ M2 管线 RFC（**✅ v1.1 已确认 2026-10-19**）→
-M3 实现与收口（**✅ 完成 2026-10-19，s1–s4 + Commit 5 收口**）。
+M1 盘点（自主，**✅ 完成**）→ M2 管线 RFC（**✅ v1.6 已确认 2026-10-19**）→
+M3 实现与收口（**✅ 完成 2026-10-19，s1–s4 + Commit 5 收口 + TBD-3 收敛**）。
 
 ## 依赖约束（run-rules §9）
 

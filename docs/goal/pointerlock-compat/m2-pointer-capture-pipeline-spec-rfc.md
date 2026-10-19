@@ -1,11 +1,11 @@
 # Spec+RFC：M2 指针捕获管线——锁定语义 + 位移流 + 锁定态输入改道
 
-**版本**: v1.5（已确认·M3 收口）
+**版本**: v1.6（已确认·M3 收口 + TBD-3 收敛）
 **日期**: 2026-10-19
 **作者**: AI Assistant
 **状态**: 已确认——方案 A + N1–N4 纳入 + fsKey 同族修复随 FR-10，经用户
 2026-10-19 征询通过；M3 已用户点名启动（同日），s1 起按 §8 顺序实施；
-v1.1–v1.4 为实施期修正（语料钉死，见 §12 修订历史，需求/验收/切片不变）
+v1.1–v1.6 为实施期/收口后修正（语料钉死，见 §12 修订历史，需求/验收/切片不变）
 **需求来源**: [docs/goal/pointerlock-compat.md](../pointerlock-compat.md) DC-2/M2
 （用户 2026-10-19 点名批准起草 RFC，同日征询确认）；
 范围输入 = [M1 甄别报告五缺口](evidence/2026-10-18-m1-baseline.md) +
@@ -456,7 +456,7 @@ M1 五缺口（甄别报告 45-52 行）+ 本轮新发现：
 |---|---|---|---|---|
 | TBD-1 | `pointerlock_shadow` 依赖 `../shadow-dom/resources/shadow-dom.js` 补拉 | 重要（阻塞 FR-7 验收） | ~~goal fetch 脚本 DIRS 扩展 vs 单文件补拉~~ **已决（s4）**：单文件补拉落地（goal 脚本 `fetch_raw`，pin 31597693）；实跑 shadow 案翻绿 |
 | TBD-2 | shim 合成事件 `screenX==clientX` 假设 | 重要（FR-4 断言前提） | ~~s2 实跑首查~~ **已决（s2）**：假设成立（mouse 分支合成 screenX=clientX），movementX_Y_basic 翻绿 |
-| TBD-3 | runner `Actions.scroll` 与 button 3/4 合成能力 | 重要（FR-9/wheel 案前提） | **记账（s4）**：`Actions.scroll` 未实现——wheel 案 ×2 记账 runner 域；桌面锁定 wheel 转发同域挂账（webview 无 DOM wheel 派发底座） |
+| TBD-3 | runner `Actions.scroll` 与 button 3/4 合成能力 | 重要（FR-9/wheel 案前提） | **已决（收口后切片，2026-10-19）**：button 3/4 已随 FR-9 翻绿（Commit 4 button 穿透）；`Actions.scroll` 实为既有能力（uievents 尾簇 35 `wheel_scroll` 步，s4 记账归因过时）——真缺口是锁定态 wheel retarget + 滚动链默认动作，落地 shim `__zw_wheel_scroll`（`_plKey` 置位时 retarget `_plTarget` + 未取消沿 overflow scrollable 链滚动）后 wheel 案 ×2 翻绿（通道 21/22）。桌面锁定 wheel 转发仍挂账（webview 无 DOM wheel 派发底座，v1.4 同域） |
 | TBD-4 | OS 光标隐藏/显示（桌面 UX） | 可选 | **排除面**：远期池（平台窗口面方案） |
 | TBD-5 | C 面实跑后的上游红/残留 | 重要 | **已决（s4）**：残留 3 红 = constructor（Event.NONE 跨域 residual，dom/events 域）+ wheel×2（TBD-3 记账），归因清晰不阻塞收口 |
 
@@ -537,3 +537,4 @@ M1 五缺口（甄别报告 45-52 行）+ 本轮新发现：
 | v1.3 | 2026-10-19 | M3 s3 实施期修正（管线就绪，e2e 桥测试一次全绿验证）：① §6.5「事件派发改道」**不实施**——shim change/error 保持 s1 `_firePointerLockEvent` 同步派发（corpus 已验证 N1 面），host 桥只做状态镜像（双馈管线本义）；改道经 host→page 脚本回环会把同步派发变异步任务，破坏 corpus 已钉时序。② §6.5 payload `selector` 发纯 `sel`（非 `_elKey` 复合键 `@handle`——host 侧 querySelector 解析面）。③ §6.5 `PointerLockChanged{locked, tab_id}` → `{locked}`——renderer 无 tab 身份，通道关联同 FocusOwnerChanged 先例。④ §8.2 步骤 5 注册点在 webview.rs 非 js_dom_bridge.rs——Arc 共享镜像需 webview 侧状态，静态注册函数与 identity bridge 三武装点并列。需求/验收/切片/方案不变 |
 | v1.4 | 2026-10-19 | M3 Commit 4 实施期修正（C 面 18 案实跑翻绿验证）：① §6.4 `apply_locked_pointer_button` 签名扩为 `(phase, button, x, y)`——锁定只改 target 不改键态，mousedown/mouseup 按物理键透传 `button`/`buttons`（`mouse_buttons_back_forward` back/forward mouseup 断言面实证：首跑 Timeout 暴露缺 button），镜像 buttons 掩码随相位置/清（与 shim `_zwButtonMask` 同映射）。② §6.6 桌面 Esc 释放通道落 `PointerLockInputPhase::Exit` 变体（UA 手势释放相位）→ renderer `execute_script("document.exitPointerLock();")` 走页面可见 API、§6.5 host 桥回环关宿主镜像；桌面 wheel 锁定转发（§6.6 wheel 子句）挂账——webview 无 DOM wheel 派发底座，建管线无验证面（corpus wheel 案本身 TBD-3），与 TBD-3 同域。需求/验收/切片/方案不变 |
 | v1.5 | 2026-10-19 | M3 Commit 5 / s4 收口实施期修正（pointerlock_shadow 实跑翻绿验证，通道终账 19/22、文件 15/18）：① §6.2/FR-7 retarget 重写为**双域**——实施期发现 `createTestTree` 克隆树为 R307 实例域（内部节点无 `__zwHandle`，attachShadow 经 `Element.prototype` 轻量路径产 `[object Object]` shadow，无 handle），原 handle 域 `_shadowHandles` 判界对整树不可达（探针链：ids map 完整 11 键 → R2–R5 读 undefined → 两族父节点分族实证）。落点：锁态增 `_plTarget` 原对象（grant/exit/移除/导航清四站点），`_plRetargetViews` 鸭面判界（nodeType 11 + `#shadow-root` + host）沿实例链上行，视图双键（`byRoot` handle 键给 part04 trap 分支 + roots/views 平行数组对象身份键给 `ShadowRoot.prototype` accessor——轻量 shadow 无 handle 可键）；`Element.prototype.requestPointerLock` 轻量回落（实例域无 proxy trap；grant 流抽 `_plRequestLock` 与 trap 域共享，实例 `_plKey` 走 `_ceConnKeyFor` 对象身份盖章——`_elKey(null,null)` 返 null 毁真值判定）。② §10 TBD-1/2/5 转已决、TBD-3 转记账（wheel×2 + 桌面 wheel 同域）、TBD-4 维持排除面。需求/验收/切片/方案不变 |
+| v1.6 | 2026-10-19 | 收口后 TBD-3 收敛切片（wheel×2 实跑翻绿验证，通道 19/22→**21/22（95.5%）**、文件 15/18→16/18）：实施期复核发现 TBD-3 记账归因过时——`Actions.scroll` 自 uievents 尾簇 35（`Actions.prototype.scroll` → `wheel_scroll` 命令 → `__zw_wheel_scroll`）已实现，真缺口是 §6.4 锁定态 wheel 改道未覆盖 wheel 源：① `__zw_wheel_scroll` 锁定分支（`_plKey` 置位时 retarget `_plTarget` 原对象直派——learning #32 identity 保持；未锁定路径逐字节不变，uievents wheel 族零回归面）——Pointer Lock spec https://w3c.github.io/pointerlock/#user-interface「wheel 事件 target 为锁元素，与光标位置无关」。② 锁定且未 preventDefault 走滚动链默认动作 `_zwWheelScrollChain`（CSSOM View §7 + spec「lock target is the target from which scrolling should chain」——computed overflow-y/x cascade 优先、宿主 miss 回落 inline、shorthand 单值展开双轴；经 R3047 setter 滚动，不钳制范围因 shim 布局 rect 无溢出展开量）。runner/`script_wheel_scroll` 零改动（语义权威在 shim，未来桌面 wheel 底座接入即自动获得 retarget）。§10 TBD-3 转已决；桌面锁定 wheel 转发维持挂账（renderer 无 DOM wheel 派发底座，验证面同前）。需求/验收/切片/方案不变 |

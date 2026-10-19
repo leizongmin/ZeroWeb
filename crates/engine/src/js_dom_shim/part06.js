@@ -14566,9 +14566,18 @@
   // cancelable 语义保留不消费）。target = runner 命中元素（origin 元素/viewport
   // 命中——resolve 与指针命令同款）。R312 UA 通道印记（UA 合成 wheel——isTrusted
   // true；页面 redispatch 翻 false 同款）。
+  // pointerlock-compat TBD-3 收敛：锁定态 wheel **retarget 到锁目标**（Pointer
+  // Lock spec https://w3c.github.io/pointerlock/#user-interface——锁定中 wheel
+  // 事件 target 为锁元素，与光标位置无关，不 hit test；`_plTarget` 原对象直派
+  // 保持 identity——learning #32）；未取消走滚动默认动作（CSSOM View §7
+  // https://www.w3.org/TR/cssom-view-1/#scrolling——wheel 默认动作 = 自 target
+  // 起滚动链，Pointer Lock spec「the lock target is the target from which
+  // scrolling should chain」）。未锁定路径维持原口径（不消费滚动默认动作）。
   globalThis.__zw_wheel_scroll = function(sel, px, py, dx, dy) {
     try {
       var hit = (sel && document.querySelector(sel)) || document.body;
+      var locked = !!_plKey;
+      if (locked) hit = _plTarget || _makeProxy(_plSel, _plHandle) || hit;
       if (!hit) return;
       var ev = new globalThis.WheelEvent('wheel', {
         bubbles: true, cancelable: true, composed: true,
@@ -14582,8 +14591,46 @@
       } catch (_eWt35) {}
       hit.dispatchEvent(ev);
       try { ev._zwUaDispatch = false; } catch (_eWt35b) {}
+      if (locked && !ev.defaultPrevented) _zwWheelScrollChain(hit, dx || 0, dy || 0);
     } catch (_eW35) {}
   };
+  // 锁定态 wheel 滚动链（wheel 默认动作）：自锁目标沿 parentNode 上行找首个
+  // delta 轴 overflow scrollable（'scroll'/'auto'——computed cascade 优先，宿主
+  // miss 回落 inline style；shorthand 单值展开双轴，CSS Overflow 3
+  // https://drafts.csswg.org/css-overflow-3/#propdef-overflow），经 R3047 setter
+  // 滚动（同步派 'scroll' 事件）。不钳制滚动范围——shim 布局 rect 无溢出展开量
+  //（scrollHeight≈clientHeight 近似），与 setter 负值 clamp 同口径。
+  function _zwWheelScrollChain(start, dx, dy) {
+    var node = start;
+    while (node && node.nodeType === 1) {
+      var oy = '', ox = '';
+      try {
+        var cs = globalThis.getComputedStyle(node);
+        if (cs) {
+          oy = String(cs.getPropertyValue('overflow-y') || '');
+          ox = String(cs.getPropertyValue('overflow-x') || '');
+        }
+      } catch (_eOvA) {}
+      try {
+        if (!oy && node.style && node.style.overflowY) oy = String(node.style.overflowY);
+        if (!ox && node.style && node.style.overflowX) ox = String(node.style.overflowX);
+      } catch (_eOvB) {}
+      if (oy !== 'scroll' && oy !== 'auto' || ox !== 'scroll' && ox !== 'auto') {
+        var sh = '';
+        try {
+          sh = String((cs && cs.getPropertyValue('overflow')) || (node.style && node.style.overflow) || '');
+        } catch (_eOvC) {}
+        if (sh) {
+          var parts = sh.split(/\s+/);
+          if (oy !== 'scroll' && oy !== 'auto') oy = parts.length > 1 ? parts[1] : parts[0];
+          if (ox !== 'scroll' && ox !== 'auto') ox = parts[0];
+        }
+      }
+      if (dy !== 0 && (oy === 'scroll' || oy === 'auto')) { node.scrollTop += dy; return; }
+      if (dx !== 0 && (ox === 'scroll' || ox === 'auto')) { node.scrollLeft += dx; return; }
+      node = node.parentNode;
+    }
+  }
   // 悬停态导航重置（part01 `__zw_reset_form_state` 同族——per-page 状态生命周期）。
   globalThis.__zw_pointer_reset = function () {
     _zwPtrState.overSel = null;

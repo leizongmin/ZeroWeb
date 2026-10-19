@@ -481,4 +481,108 @@ mod tests {
             "锁内主键 Down→move→Up + back 键：buttons 掩码 + click/auxclick 组合，独占锁目标"
         );
     }
+
+    /// 锁定态 wheel retarget + 滚动链默认动作（TBD-3 收敛——WPT
+    /// pointerlock_wheel_event_outside_target 断言面）：锁定中 `__zw_wheel_scroll`
+    /// 的 selector 命中光标下元素，wheel 事件仍落锁目标；未取消 → 滚动链自锁目标
+    /// 滚首个 overflow scrollable（Pointer Lock spec
+    /// https://w3c.github.io/pointerlock/ + CSSOM View §7）；preventDefault →
+    /// 不滚；解锁 → 回落常规命中（wheel 落光标下元素、无滚动消费）。
+    #[test]
+    fn locked_wheel_retarget_scroll_chain_e2e() {
+        use crate::WebViewConfig;
+        let mut webview = WebView::new(WebViewConfig::default());
+        webview.prepare_document_state("https://zero.test/lock-wheel");
+        webview.load_html(
+            r#"<html><body>
+                 <div id="t" style="position:absolute;left:0;top:0;width:50px;height:50px;overflow:scroll;">
+                   <div style="height:1000px;"></div>
+                 </div>
+                 <div id="o" style="position:absolute;left:200px;top:200px;width:100px;height:100px;overflow:scroll;">
+                   <div style="height:1000px;"></div>
+                 </div>
+               </body></html>"#,
+            None,
+        );
+        webview
+            .execute_script_with_dom(
+                "globalThis.__wl = [];\
+                 document.getElementById('t').addEventListener('wheel', function (e) {\
+                   globalThis.__wl.push('t:' + e.deltaY);\
+                 });\
+                 document.getElementById('o').addEventListener('wheel', function (e) {\
+                   globalThis.__wl.push('o:' + e.deltaY);\
+                 });",
+            )
+            .map_err(|error| format!("listener failed: {error}"))
+            .unwrap();
+        // 锁 #t；wheel 步 selector 指向光标下元素 #o——锁定 retarget 后落 #t 且
+        // 滚动链滚 #t（overflow:scroll 首个 scrollable），#o 不滚。
+        webview
+            .execute_script_with_dom("__zwUserActivate(); document.getElementById('t').requestPointerLock();")
+            .map_err(|error| format!("grant failed: {error}"))
+            .unwrap();
+        assert!(webview.pointer_lock_target().is_some());
+        webview
+            .execute_script_with_dom("__zw_wheel_scroll('#o', 250, 250, 0, 100);")
+            .map_err(|error| format!("wheel failed: {error}"))
+            .unwrap();
+        assert_eq!(
+            webview
+                .execute_script_with_dom("globalThis.__wl.join('|')")
+                .expect("log"),
+            "t:100",
+            "锁定 wheel retarget 到锁目标（selector 命中元素被覆盖）"
+        );
+        assert_eq!(
+            webview
+                .execute_script_with_dom(
+                    "document.getElementById('t').scrollTop + '/' + document.getElementById('o').scrollTop"
+                )
+                .expect("scroll"),
+            "100/0",
+            "滚动链自锁目标滚首个 scrollable，非目标不滚"
+        );
+        // preventDefault：wheel 仍派发，滚动默认动作被取消。
+        webview
+            .execute_script_with_dom(
+                "globalThis.__pd = true;\
+                 document.getElementById('t').addEventListener('wheel', function (e) {\
+                   if (globalThis.__pd) e.preventDefault();\
+                 });\
+                 __zw_wheel_scroll('#o', 250, 250, 0, 100);",
+            )
+            .map_err(|error| format!("wheel prevented failed: {error}"))
+            .unwrap();
+        assert_eq!(
+            webview
+                .execute_script_with_dom(
+                    "document.getElementById('t').scrollTop + '/' + document.getElementById('o').scrollTop"
+                )
+                .expect("scroll"),
+            "100/0",
+            "preventDefault 取消滚动默认动作（scrollTop 不动）"
+        );
+        // 解锁：回落常规命中——wheel 落 selector 命中元素 #o，无滚动消费（原口径）。
+        webview
+            .execute_script_with_dom("document.exitPointerLock(); __zw_wheel_scroll('#o', 250, 250, 0, 100);")
+            .map_err(|error| format!("unlocked wheel failed: {error}"))
+            .unwrap();
+        assert_eq!(
+            webview
+                .execute_script_with_dom("globalThis.__wl.join('|')")
+                .expect("log"),
+            "t:100|t:100|o:100",
+            "解锁后 wheel 回落光标下元素"
+        );
+        assert_eq!(
+            webview
+                .execute_script_with_dom(
+                    "document.getElementById('t').scrollTop + '/' + document.getElementById('o').scrollTop"
+                )
+                .expect("scroll"),
+            "100/0",
+            "解锁路径不消费滚动默认动作（uievents 尾簇 35 口径不变）"
+        );
+    }
 }
