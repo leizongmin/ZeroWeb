@@ -3087,6 +3087,19 @@ impl WebView {
         }
 
         self.drain_next_async_callback_if_pending(std::time::Duration::from_millis(20));
+        // uievents-compat 回归修复（2026-10-19）：本路径此前缺 native 绑定安装——runner
+        // 预热线改走本变体（webcrypto M6）后，warmup 先装 shim（shim 构造器定义全局
+        // 胜出），页脚本路径 run_page_scripts_impl 首次 install_native_dom_bindings
+        // 全量 register_ctor 覆盖 Event/MouseEvent/KeyboardEvent 全局，而 ensure_js_shim
+        // 幂等不再重装 → shim 事件面（getModifierState / init* 0 参 TypeError / 派发
+        // composed 字段）在生产 realm 失效（WPT event-getmodifierstate 16F +
+        // keyboardevent-composed 3F + Event-subclasses-init 2F + mouse/attributes
+        // composed 1F）。与 `execute_script` 和页脚本路径收敛同一「native 先装、shim
+        // 后覆盖」次序；install 幂等（同代际仅刷 DOM 源），DOM 回调（含 page-url →
+        // isSecureContext）先于本调用的注册序不变——webcrypto [SecureContext] 门禁
+        // 语义保持。
+        #[cfg(any(feature = "v8", feature = "quickjs"))]
+        self.install_native_dom_bindings();
         self.ensure_js_shim()?;
         let result = {
             let sandbox = self
