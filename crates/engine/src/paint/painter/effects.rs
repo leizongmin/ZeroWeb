@@ -399,6 +399,28 @@ impl super::Painter {
                 color_value_to_render(&shadow.color)
             };
 
+            // R5188（css-borders-4 §border-shape，判例 two-shapes-shadow）：形状活跃时
+            // 零模糊阴影随形状成形——inset 环带随描边带内缘、outset 平移外扩 + punch-out
+            // 随边框墨迹外缘（环带不可得：非凸/内缩退化 → 落回下方既有路径）。
+            // 先于 R5180 border-radius 环带：形状是显式声明；等价域多边形与圆角栅格
+            // 同构（R5184 判例）。
+            if shadow.blur_radius == 0.0
+                && let Some(ring) = crate::paint::border_shape::border_shape_shadow_ring(
+                    style,
+                    box_node,
+                    abs_x,
+                    abs_y,
+                    shadow.inset,
+                    shadow.offset_x,
+                    shadow.offset_y,
+                    shadow.spread_radius,
+                )
+            {
+                let flat: Vec<f32> = ring.into_iter().flat_map(|(x, y)| [x, y]).collect();
+                self.primitives.add_path_fill(flat, color);
+                continue;
+            }
+
             // R5180（css-backgrounds-3 #shadow-shape）：零模糊零偏移的 inset spread 环随
             // border-radius 成形——外圈 = padding box（R2476 perimeter）半径 max(0, r−bw)，
             // 内圈 = 再内缩 spread、半径 max(0, r−bw−spread)，与边框弧带同 keyhole
@@ -444,6 +466,57 @@ impl super::Painter {
                                 r_pad.map(|r| (r - s).max(0.0)),
                             ),
                         );
+                        let flat: Vec<f32> = ring.into_iter().flat_map(|(x, y)| [x, y]).collect();
+                        self.primitives.add_path_fill(flat, color);
+                        continue;
+                    }
+                }
+            }
+
+            // R5188（css-backgrounds-3 §7.1 × border-radius，R5180 outset 对称臂；
+            // chromium oracle box-shadow-radius-002 判例外阴影随圆角，判例
+            // shadow-transparent / double-ellipse）：零模糊 outset 阴影环随
+            // border-radius——阴影形状 = border-box 圆角矩形平移 (dx,dy) 后外扩
+            // spread（平行曲线：半径 r+s，负 spread max(0,·)），punch-out =
+            // border-box 圆角矩形自身（R2476 outset perimeter = border box）。
+            // spread 外扩致尺寸非正 → 回退 ShadowPrimitive 方环。corner-shape 非初始
+            //（bevel/scoop/... 声明）→ 随形角阴影域未实现（FIXME: corner-shape
+            // shadow 平行曲线按 kind 出形）→ 回退方环既有行为（false-green 对维持）。
+            if !shadow.inset
+                && shadow.blur_radius == 0.0
+                && style.corner_shape.is_all_round()
+                && std::env::var("ZW_ROUND_BORDER_BAND").as_deref() != Ok("0")
+            {
+                let spec = crate::paint::helpers::BorderRadiusSpec::from_style_with_box(
+                    style,
+                    box_node.width,
+                    box_node.height,
+                );
+                if !spec.is_zero() {
+                    let s = shadow.spread_radius;
+                    let (ew, eh) = (box_node.width + 2.0 * s, box_node.height + 2.0 * s);
+                    if ew > 0.0 && eh > 0.0 {
+                        let radii = [
+                            (spec.top_left + s).max(0.0),
+                            (spec.top_right + s).max(0.0),
+                            (spec.bottom_right + s).max(0.0),
+                            (spec.bottom_left + s).max(0.0),
+                        ];
+                        let shadow_shape = crate::paint::helpers::rounded_corner_polygon_in_box(
+                            abs_x - s + shadow.offset_x,
+                            abs_y - s + shadow.offset_y,
+                            ew,
+                            eh,
+                            radii,
+                        );
+                        let punch = crate::paint::helpers::rounded_corner_polygon_in_box(
+                            abs_x,
+                            abs_y,
+                            box_node.width,
+                            box_node.height,
+                            [spec.top_left, spec.top_right, spec.bottom_right, spec.bottom_left],
+                        );
+                        let ring = crate::paint::helpers::concat_ring_vertices(shadow_shape, punch);
                         let flat: Vec<f32> = ring.into_iter().flat_map(|(x, y)| [x, y]).collect();
                         self.primitives.add_path_fill(flat, color);
                         continue;

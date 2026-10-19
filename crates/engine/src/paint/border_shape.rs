@@ -325,6 +325,158 @@ pub(crate) fn border_shape_bg_image_clip_polygon(
     }
 }
 
+/// R5188（css-borders-4 §border-shape，判例 two-shapes-shadow / combined-shadow）：
+/// 形状活跃时零模糊 box-shadow 的随形 even-odd 环带顶点。
+/// - inset（零偏移、spread > 0）：环带 = 描边带内缘（fill mode = 内形状；stroke
+///   mode = 路径内缩 relevant side width/2）与再内缩 spread 之间（ref 语义 = SVG
+///   stroke-width=2·spread clip 到内缘）。
+/// - outset（任意偏移/spread）：阴影形状 = 边框墨迹外缘（fill mode = 外形状；
+///   stroke mode = 路径外扩 width/2——border-shape-shadow ref 实证 spread 自边框
+///   外缘量起）平移 (dx,dy) 后外扩 spread，与原位置形状 even-odd 对称差 =
+///   punch-out（CSS Backgrounds §7.1「drawn outside the border edge only」）。
+///
+/// 非凸路径（offset miter 比 > 4）/ 内缩退化（spread 超内切半径，偏移多边形翻转）/
+/// 顶点 < 3 → None（调用方回退 ShadowPrimitive 方环既有行为）。FIXME：outset 对称
+/// 差在透明背景元素上会把「盒内非阴影区」误涂（even-odd XOR ≠ 布尔差）——corpus
+/// 判例均为不透明背景/边框整盖、绘制序在背景之下，像素等价；布尔差拓扑独立轮评估。
+pub(crate) fn border_shape_shadow_ring(
+    style: &ComputedStyle,
+    box_node: &LayoutBox,
+    abs_x: f32,
+    abs_y: f32,
+    inset: bool,
+    offset_x: f32,
+    offset_y: f32,
+    spread: f32,
+) -> Option<Vec<(f32, f32)>> {
+    let plan = border_shape_plan(style, box_node, abs_x, abs_y)?;
+    if inset {
+        if offset_x != 0.0 || offset_y != 0.0 || spread <= 0.0 {
+            return None;
+        }
+        let perimeter = match &plan {
+            BorderShapePlan::Fill { inner, .. } => inner.clone(),
+            BorderShapePlan::Stroke { vertices, width, .. } => {
+                if *width > 0.0 {
+                    offset_convex_polygon(vertices, -width / 2.0)?
+                } else {
+                    vertices.clone()
+                }
+            }
+        };
+        if perimeter.len() < 3 {
+            return None;
+        }
+        // spread ≥ 内切半径 → 环带吞没全域（偏移线过质心后翻转成伪小多边形）→
+        // 形状路径不可得，回退方环既有行为。
+        if spread >= polygon_inradius(&perimeter) {
+            return None;
+        }
+        let band = offset_convex_polygon(&perimeter, -spread)?;
+        // 内缩退化（spread 超内切半径）→ 偏移多边形翻转/越界：面积符号翻转、不再
+        // 严格小于内缘、或带顶点越出内缘 → 回退方环。
+        let (a_edge, a_band) = (polygon_area2(&perimeter), polygon_area2(&band));
+        if a_edge.signum() != a_band.signum() || a_band.abs() >= a_edge.abs() || !convex_contains_all(&perimeter, &band)
+        {
+            return None;
+        }
+        Some(super::helpers::concat_ring_vertices(perimeter, band))
+    } else {
+        let base = match &plan {
+            BorderShapePlan::Fill { outer, .. } => outer.clone(),
+            BorderShapePlan::Stroke { vertices, width, .. } => {
+                if *width > 0.0 {
+                    offset_convex_polygon(vertices, *width / 2.0)?
+                } else {
+                    vertices.clone()
+                }
+            }
+        };
+        if base.len() < 3 {
+            return None;
+        }
+        // 负 spread 内缩同内切半径守卫（正 spread 外扩无翻转域，不需守卫）。
+        if spread < 0.0 && -spread >= polygon_inradius(&base) {
+            return None;
+        }
+        let grown = if spread != 0.0 {
+            let g = offset_convex_polygon(&base, spread)?;
+            // 外扩/内缩方向校验：偏移多边形翻转（符号变号）、与 spread 方向相悖、
+            // 或负 spread 内缩带顶点越出基圈 → 退化回退方环。
+            let (a_base, a_grown) = (polygon_area2(&base), polygon_area2(&g));
+            if a_base.signum() != a_grown.signum()
+                || (spread > 0.0 && a_grown.abs() <= a_base.abs())
+                || (spread < 0.0 && (a_grown.abs() >= a_base.abs() || !convex_contains_all(&base, &g)))
+            {
+                return None;
+            }
+            g
+        } else {
+            base.clone()
+        };
+        let moved: Vec<(f32, f32)> = grown.into_iter().map(|(x, y)| (x + offset_x, y + offset_y)).collect();
+        Some(super::helpers::concat_ring_vertices(moved, base))
+    }
+}
+
+/// shoelace 有向面积 ×2（顶点序保留符号；退化共线 ≈ 0）。环带退化判定用。
+fn polygon_area2(pts: &[(f32, f32)]) -> f32 {
+    pts.iter()
+        .enumerate()
+        .map(|(i, (x1, y1))| {
+            let (x2, y2) = pts[(i + 1) % pts.len()];
+            x1 * y2 - x2 * y1
+        })
+        .sum()
+}
+
+/// 凸多边形内切半径（质心到各边线距离最小值；质心在凸域内，距离恒正）。
+/// spread 超内切半径 → 内缩偏移线过质心，偏移多边形翻转成伪小多边形。
+fn polygon_inradius(pts: &[(f32, f32)]) -> f32 {
+    let n = pts.len();
+    let (cx, cy) = (
+        pts.iter().map(|p| p.0).sum::<f32>() / n as f32,
+        pts.iter().map(|p| p.1).sum::<f32>() / n as f32,
+    );
+    let mut min = f32::MAX;
+    for i in 0..n {
+        let (x1, y1) = pts[i];
+        let (x2, y2) = pts[(i + 1) % n];
+        let (ex, ey) = (x2 - x1, y2 - y1);
+        let len = (ex * ex + ey * ey).sqrt();
+        if len < 1e-9 {
+            continue;
+        }
+        let d = ((ex * (cy - y1) - ey * (cx - x1)) / len).abs();
+        min = min.min(d);
+    }
+    min
+}
+
+/// 凸多边形包含判定（逐点边界叉积同号；共线段跳过）。内缩退化（偏移多边形翻转
+/// 越界）判定用——翻转路径的顶点必落基圈外。
+fn convex_contains_all(outer: &[(f32, f32)], pts: &[(f32, f32)]) -> bool {
+    let n = outer.len();
+    pts.iter().all(|&(px, py)| {
+        let mut sign = 0i8;
+        for i in 0..n {
+            let (x1, y1) = outer[i];
+            let (x2, y2) = outer[(i + 1) % n];
+            let c = (x2 - x1) * (py - y1) - (y2 - y1) * (px - x1);
+            if c.abs() < 1e-6 {
+                continue;
+            }
+            let s = if c > 0.0 { 1 } else { -1 };
+            if sign == 0 {
+                sign = s;
+            } else if s != sign {
+                return false;
+            }
+        }
+        true
+    })
+}
+
 /// 凸多边形 miter 偏移（d > 0 外扩 / d < 0 内缩）——逐边法向平移线，相邻偏移线
 /// 交点 = 偏移顶点（join = miter，css-borders-4 §border-shape 描边带边界）。
 /// 非凸（相邻边 cross 变号）/ 平行边退化 / miter 比 > 4（sin(θ/2) < 1/4，斜切
