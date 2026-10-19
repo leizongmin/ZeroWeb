@@ -100,7 +100,10 @@ pub fn apply_filter(
                 for y in top..bottom {
                     for x in left..right {
                         let p = fb.get_pixel(x, y);
-                        let gray = p[0] as f32 * 0.299 + p[1] as f32 * 0.587 + p[2] as f32 * 0.114;
+                        // R5194（filter-effects-1 #funcdef-filter-grayscale ≡ saturate(1-amount)）：
+                        // luma 权重 = saturate 矩阵 s=0 行（0.213/0.715/0.072，709 派生），
+                        // 非 Rec601（0.299/0.587/0.114）——与 hue-rotate R4272 系数同源。
+                        let gray = p[0] as f32 * 0.213 + p[1] as f32 * 0.715 + p[2] as f32 * 0.072;
                         fb.set_pixel(
                             x,
                             y,
@@ -174,7 +177,8 @@ pub fn apply_filter(
                 for y in top..bottom {
                     for x in left..right {
                         let p = fb.get_pixel(x, y);
-                        let gray = p[0] as f32 * 0.299 + p[1] as f32 * 0.587 + p[2] as f32 * 0.114;
+                        // R5194：luma 权重 = saturate 矩阵 s=0 行（同 straight_alpha 臂注）。
+                        let gray = p[0] as f32 * 0.213 + p[1] as f32 * 0.715 + p[2] as f32 * 0.072;
                         fb.set_pixel(
                             x,
                             y,
@@ -391,7 +395,8 @@ pub fn apply_filter_straight_alpha(fb: &mut FrameBuffer, filters: &[FilterKind],
             }
             FilterKind::Grayscale(amount) => {
                 apply_region_color_op(fb, left, top, right, bottom, |p| {
-                    let gray = p[0] as f32 * 0.299 + p[1] as f32 * 0.587 + p[2] as f32 * 0.114;
+                    // R5194：luma 权重 = saturate 矩阵 s=0 行（同上 Grayscale 臂注）。
+                    let gray = p[0] as f32 * 0.213 + p[1] as f32 * 0.715 + p[2] as f32 * 0.072;
                     [
                         (p[0] as f32 + (gray - p[0] as f32) * amount).round().clamp(0.0, 255.0) as u8,
                         (p[1] as f32 + (gray - p[1] as f32) * amount).round().clamp(0.0, 255.0) as u8,
@@ -427,7 +432,11 @@ pub fn apply_filter_straight_alpha(fb: &mut FrameBuffer, filters: &[FilterKind],
             }
             FilterKind::Saturate(amount) => {
                 apply_region_color_op(fb, left, top, right, bottom, |p| {
-                    let gray = p[0] as f32 * 0.299 + p[1] as f32 * 0.587 + p[2] as f32 * 0.114;
+                    // R5194（filter-effects-1 #funcdef-filter-saturate / #saturateEquivalent）：
+                    // 规范矩阵 M(s) = lerp(M0, I, s)，M0 行 = 0.213/0.715/0.072（709 派生）
+                    // —— gray + (c-gray)*s 恰为该矩阵；旧 Rec601 权重使 saturate(0) 黄
+                    // 得 (226,226,226)，规范/chromium 为 (237,237,237)（filter-saturate-001）。
+                    let gray = p[0] as f32 * 0.213 + p[1] as f32 * 0.715 + p[2] as f32 * 0.072;
                     [
                         (gray + (p[0] as f32 - gray) * amount).round().clamp(0.0, 255.0) as u8,
                         (gray + (p[1] as f32 - gray) * amount).round().clamp(0.0, 255.0) as u8,
@@ -898,6 +907,34 @@ mod tests {
         let c0 = 0.0_f32.to_radians();
         let out = hue_rotate(120, 60, 30, c0.cos(), c0.sin());
         assert_eq!(out, [120, 60, 30], "0° 应为恒等变换");
+    }
+
+    /// R5194：saturate/grayscale 的 luma 权重改 saturate 矩阵 s=0 行
+    ///（0.213/0.715/0.072，709 派生）——saturate(0) 黄 (255,255,0) → (237,237,237)；
+    /// 旧 Rec601 权重得 (226,226,226)，与规范/chromium 差 11/通道
+    ///（driving: filter-saturate-001）。
+    #[test]
+    fn saturate_zero_uses_spec_luma_weights() {
+        let mut fb = FrameBuffer::new_filled(8, 8, 255, 255, 0, 255);
+        let filter = FilterPrimitive {
+            rect: Rect::new(0.0, 0.0, 8.0, 8.0),
+            filters: vec![FilterKind::Saturate(0.0)],
+            raster_drop_shadow_source: None,
+            clip_polygon: None,
+        };
+        apply_filter(&mut fb, &filter, 1.0, None);
+        assert_eq!(fb.get_pixel(4, 4), [237, 237, 237, 255]);
+
+        // grayscale(1) ≡ saturate(0)（filter-effects-1 #funcdef-filter-grayscale 同矩阵）。
+        let mut fb2 = FrameBuffer::new_filled(8, 8, 255, 255, 0, 255);
+        let filter2 = FilterPrimitive {
+            rect: Rect::new(0.0, 0.0, 8.0, 8.0),
+            filters: vec![FilterKind::Grayscale(1.0)],
+            raster_drop_shadow_source: None,
+            clip_polygon: None,
+        };
+        apply_filter(&mut fb2, &filter2, 1.0, None);
+        assert_eq!(fb2.get_pixel(4, 4), [237, 237, 237, 255]);
     }
 
     #[test]

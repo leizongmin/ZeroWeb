@@ -84,6 +84,25 @@ pub fn parse_filter(value: &str) -> Option<FilterValue> {
         }
         let inner = value[paren_pos + 1..value.len() - 1].trim();
 
+        // R5194（filter-effects-1 #funcdef-filter-brightness 等）：参数可选（`?`），
+        // 空参合法——亮度/透明系函数缺省 1（恒等），blur 缺省 0px，hue-rotate 缺省
+        // 0deg；drop-shadow/url 参数必填维持拒绝。旧实现拒空参 → 声明无效 → 前置
+        // 声明（如 `brightness(0)`）漏出（filters-test-brightness-003）。
+        if inner.is_empty() {
+            return match func_name.to_ascii_lowercase().as_str() {
+                "blur" => Some(FilterValue::Blur(0.0)),
+                "hue-rotate" => Some(FilterValue::HueRotate(0.0)),
+                "brightness" => Some(FilterValue::Brightness(1.0)),
+                "contrast" => Some(FilterValue::Contrast(1.0)),
+                "grayscale" => Some(FilterValue::Grayscale(1.0)),
+                "invert" => Some(FilterValue::Invert(1.0)),
+                "opacity" => Some(FilterValue::Opacity(1.0)),
+                "saturate" => Some(FilterValue::Saturate(1.0)),
+                "sepia" => Some(FilterValue::Sepia(1.0)),
+                _ => None,
+            };
+        }
+
         match func_name.to_ascii_lowercase().as_str() {
             "blur" => {
                 let px: f32 = parse_filter_non_negative_length_px(inner)?;

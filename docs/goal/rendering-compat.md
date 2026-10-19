@@ -9,6 +9,15 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5194 实现轮（filter saturate/grayscale 规范 luma 权重 + 空参缺省面——两案翻绿）**（2026-10-19）
+>
+> - **域核**：R5193 所列 6 候选全落挂账（fill-box-mutation-002 → SVG `<image>` href 渲染缺口 dump 实证；generated-001/002 → 伪盒实体化 feature 域，伪元素仅合成文本子节点无伪样式；abspos-006/007 维持；fractional-scale 低价值）。扩带重筛从未域核 14 案锁定 filter 函数族两缺口。
+> - **翻绿**：filter-saturate-001（8.33%→0.00%，取像素实证 saturate 用了 Rec601 luma 0.299/0.587/0.114，规范矩阵 M0 = 709 派生 0.213/0.715/0.072，ZW 的 hue-rotate R4272 本已 709）、filters-test-brightness-003（8.33%→0.00%，filter 函数空参合法缺省面：亮度/透明系缺省 1、blur/hue-rotate 缺省 0，旧拒空参使前置 brightness(0) 漏出）。
+> - **实现**：zero-render-foundation cpu/effects 5 臂 + gpu/pipeline 着色器 2 臂 luma 权重 601→709（grayscale ≡ saturate(1−p) 同改，sepia 本即规范值）；zero-css-parser parse_filter 空参前置臂。unit +2。全局权重变更零翻红。
+> - **挂账**：SVG `<image>` href 渲染缺口（view-box-mutation-002 同族）、生成内容伪盒实体化域、分数缩放光栅边缘精度（低价值）；扩带未深核候选留待下轮：transform-compound-001（12.53%）、css-transforms-transformlist、transform-percent-010（SVG 视口变更后 % 重解析）、translate 系 SVG 三案、huge-length-tiny-scale、filter-region-units-001。既有挂账全维持。
+> - **验证**：corpus 16,590 = 15,562 + 1,028（1,030 − 2 FIXED + 0 NEW-RED 双向 comm）；reftest 712/712；test 19,823P + 2 基线环境红（+2 unit 吻合）；smoke 15.50%；bench 三窗（新增 render-foundation 面）5/4/6 全 NEW=0 全墙钟族；clippy 0 告警。证据：evidence/r5194-filter-luma-optional-arg-2026-10-19.md
+> - **下一步**：① 扩带未深核候选续域核择轻（compound-001/transformlist/percent-010/SVG translate 三案/huge-length/filter-region-units）② 深结构域维持不动（3D 组、WAAPI 真时间轴、backdrop-root、变换子树嵌套、SVG image、伪盒实体化）。
+
 > **▶ R5193 实现轮（transform 系计算值绝对化 + 显式 inherit 复制——三案翻绿）**（2026-10-19）
 >
 > - **主攻**：inherit 族 4 案根因为双 bug 叠加——① translate 系 em 解析层剥单位（`translate(1em,1em)` ≡ `Translate(1.0,1.0)` 与 1px 不可分，parse_len_or_pct → parse_translate_length_number）；② transform/transform-origin 无显式 inherit 臂（resolve_keyword 泛化分派 → inherit_property 无臂返回值丢弃 → 声明静默失效）。规范语义（css-transforms-1 #transform-property computed value）：相对长度按**所属元素** font-size 绝对化**后**再继承（inherit-001 点名 naive 按子字号重解析错误）。

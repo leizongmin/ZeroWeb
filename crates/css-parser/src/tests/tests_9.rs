@@ -555,6 +555,34 @@ fn test_filter_brightness() {
 }
 
 #[test]
+fn test_filter_optional_arg_defaults() {
+    use crate::values::FilterValue;
+    // R5194（filter-effects-1 #funcdef-filter-*）：空参合法——亮度/透明系缺省 1
+    //（恒等），blur/hue-rotate 缺省 0；drop-shadow/url 参数必填仍拒。旧实现拒空参
+    // → 声明无效 → 同元素前置声明（brightness(0)）漏出（filters-test-brightness-003）。
+    assert!(matches!(
+        parse_filter("brightness()"),
+        Some(FilterValue::Brightness(1.0))
+    ));
+    assert!(matches!(parse_filter("contrast()"), Some(FilterValue::Contrast(1.0))));
+    assert!(matches!(parse_filter("grayscale()"), Some(FilterValue::Grayscale(1.0))));
+    assert!(matches!(parse_filter("invert()"), Some(FilterValue::Invert(1.0))));
+    assert!(matches!(parse_filter("opacity()"), Some(FilterValue::Opacity(1.0))));
+    assert!(matches!(parse_filter("saturate()"), Some(FilterValue::Saturate(1.0))));
+    assert!(matches!(parse_filter("sepia()"), Some(FilterValue::Sepia(1.0))));
+    assert!(matches!(
+        parse_filter("hue-rotate()"),
+        Some(FilterValue::HueRotate(0.0))
+    ));
+    assert!(parse_filter("drop-shadow()").is_none());
+    // percentage 参数面回归（filter-saturate-001 形：`saturate( 0% )`）。
+    assert!(matches!(
+        parse_filter("saturate( 0% )"),
+        Some(FilterValue::Saturate(0.0))
+    ));
+}
+
+#[test]
 fn test_filter_brightness_percentage() {
     let f = parse_filter("brightness(150%)");
     assert!(f.is_some());

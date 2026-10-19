@@ -460,8 +460,9 @@ fn fs_color_filter(in: VertexOutput) -> @location(0) vec4f {
         // 2 = contrast
         out = (c.rgb - vec3(0.5)) * p + vec3(0.5);
     } else if (m < 3.5) {
-        // 3 = grayscale(p)：lerp 向 Rec601 luma（CPU: c + (gray-c)*amt）
-        let gray = dot(c.rgb, vec3(0.299, 0.587, 0.114));
+        // 3 = grayscale(p)：lerp 向 saturate 矩阵 s=0 行 luma（0.213/0.715/0.072，
+        // 709 派生——R5194 与 CPU grayscale 对齐，非 Rec601；CPU: c + (gray-c)*amt）
+        let gray = dot(c.rgb, vec3(0.213, 0.715, 0.072));
         out = mix(c.rgb, vec3(gray), p);
     } else if (m < 4.5) {
         // 4 = hue-rotate(p degrees)：filter-effects-1 规范矩阵（Rec601 luma 权重，
@@ -484,8 +485,10 @@ fn fs_color_filter(in: VertexOutput) -> @location(0) vec4f {
         // 5 = invert(p)：CPU c + (255-2c)*amt ≡ mix(c, 1-c, p)
         out = mix(c.rgb, vec3(1.0) - c.rgb, p);
     } else if (m < 6.5) {
-        // 6 = saturate(p)：lerp 从 luma 向原色（CPU gray + (c-gray)*amt ≡ mix(gray, c, p)）
-        let gray = dot(c.rgb, vec3(0.299, 0.587, 0.114));
+        // 6 = saturate(p)：lerp 从 luma 向原色（filter-effects-1 #funcdef-filter-saturate
+        // 矩阵 M(s)=lerp(M0,I,s)，M0=0.213/0.715/0.072——R5194 与 CPU saturate 对齐，
+        // 非 Rec601；CPU gray + (c-gray)*amt ≡ mix(gray, c, p)）
+        let gray = dot(c.rgb, vec3(0.213, 0.715, 0.072));
         out = mix(vec3(gray), c.rgb, p);
     } else {
         // 7 = sepia(p)：sepia 矩阵后 lerp（CPU c + (s-c)*amt，s 经 .min(255) 钳制）
