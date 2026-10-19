@@ -1818,7 +1818,13 @@ fn position_cells(
     let table_is_display_table = table_box
         .node_id
         .and_then(|id| styles.get(&id))
-        .is_some_and(|s| matches!(s.display, DisplayValue::Table | DisplayValue::InlineTable));
+        .is_some_and(|s| matches!(s.display, DisplayValue::Table | DisplayValue::InlineTable))
+        // R5202（CSS2 §17.2.1.1）：merge_orphan_table_run 合成的匿名 table 包装盒
+        //（node_id=None）也是表容器——直连 cell 匿名行的 cell 须自携行 y（下行
+        // is_direct_cell_row / cell_carries_row_y 门），否则 caption-side:top 的
+        // caption 占位下移丢失（caption-position-001 ①：cell 压 caption 位实证）。
+        // 门语义与 build_grid 的 container_is_true_table（table_grid.rs）一致。
+        || (table_box.is_anon_table_root && table_box.node_id.is_none());
     // 跟踪每个行组的起始 row_y，用于计算行在行组内的相对位置
     // 避免 paint 链中行组位置 + 行位置导致的双重计数
     // 跟踪每个行组的起始 row_y，用于计算行在行组内的相对位置
@@ -1934,7 +1940,13 @@ fn position_cells(
         // 不覆盖 table 的 x/y（table 由正常流定位）和 width/height（由
         // apply_table_size_constraints 设置）。孤立行组的匿名行（table_box 是行组）
         // 仍需设置行组几何。
-        let is_direct_cell_row = row.is_anonymous && row.row_group_index.is_none() && table_is_display_table;
+        // R5202：行组（tbody）内提取的匿名行 cells 带 parent_rg_idx——y 由行组帧
+        // 承载（update_row_group_positions 接管），不算直连 cell 行，维持行组盒
+        // 几何写入（remove-caption-from-anon-table 绿面）。
+        let is_direct_cell_row = row.is_anonymous
+            && row.row_group_index.is_none()
+            && table_is_display_table
+            && row.cells.iter().all(|c| c.parent_rg_idx.is_none());
         // R5167：行组内直接 cell 匿名行（133：table-row-group > 裸 table-cell span）。
         // 行组盒几何由 update_row_group_positions 统一接管（本循环写入的 rg y/height
         // 会被其 first_row_y/total_h 覆盖），此处跳过写避免多匿名行时 last-write-wins
@@ -2222,24 +2234,78 @@ fn position_cells(
     // margin 随 caption 占位；margin-applies-to-015：caption mb 50 未计入 → abspos
     // wrapper shrink-wrap 矮 50）。bottom-caption 的 margin-top 由其后处理补。
     let (top_caption_mb, _bottom_caption_mt) = caption_vertical_margins(table_box, styles);
+    // R5202（CSS2 §17.4.1）：匿名 table 包装盒（node_id=None）的高度须含
+    // caption-side:bottom caption 的占位——包装盒是外层流父（div 边框盒）的收缩
+    // 适应子，漏计致 caption 内容溢出容器（caption-position-001 ②：cat 图溢出
+    // div 边框实证）。真表维持既有口径（caption 悬于表盒外、表高不含 caption，
+    // caption-side-applies-to-* 全绿面）。
+    let bottom_caption_extent = if table_box.node_id.is_none() {
+        table_box
+            .children
+            .iter()
+            .filter(|c| {
+                c.node_id.is_some_and(|id| {
+                    styles.get(&id).is_some_and(|s| {
+                        s.display == DisplayValue::TableCaption
+                            && s.caption_side == zero_style_system::property::CaptionSideValue::Bottom
+                    })
+                })
+            })
+            .map(|c| c.height)
+            .sum::<f32>()
+    } else {
+        0.0
+    };
     // 后处理：应用 min-height/max-height/min-width/max-width 约束
-    apply_table_size_constraints(table_box, grid, row_y + top_caption_mb, col_widths, spacing_y, styles);
+    apply_table_size_constraints(
+        table_box,
+        grid,
+        row_y + top_caption_mb + bottom_caption_extent,
+        col_widths,
+        spacing_y,
+        styles,
+    );
 
     // 后处理：更新行组（tbody/thead/tfoot）的位置以包含其所有行
     // 对于 position:relative 的行组，还需应用 inset 偏移
     update_row_group_positions(table_box, grid, styles);
 
-    // 后处理：caption-side:bottom——将标题移到表格底部
-    // 当前 caption 由 taffy 作为 table 子元素布局，默认在顶部。
-    // caption-side:bottom 时需移到 row_y（表格内容总高）之后。
+    // 后处理：caption-side 定位（CSS2 §17.4.1）。
+    // 当前 caption 由 taffy 作为 table 子元素按 DOM 序布局——top caption 产于行
+    // 内容之后时滞留表底。R5202：top caption 累计置顶（行偏移 top_caption_extent
+    // 已按 Σ top caption 高预留，见 position_cells 的 row_y 初始化）；bottom
+    // caption 移到 row_y（表格内容总高）之后（既有行为）。
+    // 匿名 table 包装盒（node_id=None）非 taffy 子（merge_orphan_table_run 后处理
+    // 合成），真表由 taffy 把首 caption 的 margin-top 逃逸到表盒 y（probe 实测：
+    // caption mt 16 → table.y += 16、caption.y = 0），包装盒无此机制——自补首
+    // top caption 的 margin-top 到盒 y，与真表路径同语义（caption-position-001
+    // ①：UA p margin 1em 缺失致内容整体高 16px 实证）。
+    let mut top_caption_y = 0.0f32;
+    let mut first_top_caption_mt: Option<f32> = None;
     for child in &mut table_box.children {
-        if let Some(child_id) = child.node_id
-            && let Some(child_style) = styles.get(&child_id)
-            && child_style.display == DisplayValue::TableCaption
-            && child_style.caption_side == zero_style_system::property::CaptionSideValue::Bottom
-        {
-            child.y = row_y;
+        let Some(child_id) = child.node_id else {
+            continue;
+        };
+        let Some(child_style) = styles.get(&child_id) else {
+            continue;
+        };
+        if child_style.display != DisplayValue::TableCaption {
+            continue;
         }
+        if child_style.caption_side == zero_style_system::property::CaptionSideValue::Bottom {
+            child.y = row_y;
+        } else {
+            child.y = top_caption_y;
+            if first_top_caption_mt.is_none() {
+                first_top_caption_mt = resolve_table_used_length(&child_style.margin_top, child_style);
+            }
+            top_caption_y += child.height;
+        }
+    }
+    if table_box.node_id.is_none()
+        && let Some(mt) = first_top_caption_mt
+    {
+        table_box.y += mt;
     }
 }
 
