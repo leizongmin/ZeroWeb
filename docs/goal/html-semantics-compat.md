@@ -1,39 +1,32 @@
 # HTML Semantics 兼容 — html/semantics 语义面（主攻大域）
 
 **版本**: v2.0
-**日期**: 2026-10-19（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 13 收口（selected autocomplete value 算法 + HTMLCollection named access R4001 +81P），下一步 M2 切片 14：meter 值净化簇（44F，域内最大可独立收口簇）
+**日期**: 2026-10-20（v1.0 立项 2026-10-08）
+**状态**: Active——M2 切片 14 收口（meter 实际值算法 + double setter R4002 +48P），下一步 M2 切片 15：labelable/labels IDL 簇（~30F）
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-19 M2 切片 13）**：forms 域余簇评估定策
-> **续切**（可独立收口簇充足），本轮收口 autocomplete 簇（R4001）。
-> ① part04 selected autocomplete value 算法（category 全表 + token 消费
-> 序 credential→contact→mode→section + anchor mantle（hidden）+ Off/
-> Automatic 短路），INPUT/SELECT/TEXTAREA getter 分支接入，FORM/其余
-> 保持枚举反射；spec 字面仅 section 小写、corpus+Chrome 67/67 钉 field
-> 亦小写，以语料为准（经验
-> [spec-literal-vs-corpus-pin](../learnings/patterns/2026-10-19-spec-literal-vs-corpus-pin.md)）。
-> setter 缓存旁路（三类 tag 不入 `_reflectedAttrs`）。② part03
-> `_liveQueryCollection` 补 HTMLCollection named property（id/name 树序
-> 首匹配）——`document.forms.X` 旧恒 undefined。③ 该修复暴露
-> HTMLFieldSetElement.html 旧 vacuous-pass（`forms.fm1` 与 `fieldset.form`
-> 双 undefined 空转多轮），part03 R2841 `.form` 表补 FIELDSET 真值化
-> （经验
-> [vacuous-pass-exposed-by-named-access](../learnings/bugs/2026-10-19-vacuous-pass-exposed-by-named-access.md)）。
-> part60 契约 1 测（W1–W5）；part15 R3204 input 缺省断言随 spec 修正
-> （'on'→''）。九域 4581→**4662P**（4662/7377 = **63.20%**），对 s12
-> 逐 subtest diff **净 +81P、回归 0**（autocomplete 66 + form_attribute
-> 7 + reset-form 3 + form 1 + button-events 边界新录 4；录得 7368 条
-> vs 7377：−11 全为 script timing/load 家族超时边界上报漂移，P 零损失）。
-> zero-engine --lib 3245 全过、clippy/fmt 过、make test 全腿绿（browser
-> bin/--tests :102 均 665P/0F、cdp 6P/4P/9P、quickjs 矩阵全绿）、零新增
-> 依赖。账本见
-> [evidence/2026-10-19-m2s13-r4001.md](html-semantics-compat/evidence/2026-10-19-m2s13-r4001.md)。
-> **下一步**：M2 切片 14——meter 值净化簇（the-meter-element/meter.html
-> 44F：min/max/low/high/optimum 钳制算法 + value setter 抛错面，纯算术
-> + 反射）；候选后备 labels IDL 簇 ~30F、form_attribute 动态关联余案
-> ~50F（中深，mutation 钩子面）。
+> **▶ 当前状态（2026-10-20 M2 切片 14）**：meter 值净化簇收口（R4002）。
+> ① part04 `_zwMeterActualValues` 实际值算法 getter（HTML §4.10.16 六 IDL
+> 属性缺省/钳制：min 缺省 0、max 缺省 1 且 <min 折 min、value/low/high/
+> optimum 钳制序）+ 浮点解析「rules for parsing floating-point number
+> values」整串匹配（前导 + 跳过，meter-leading-plus-sign 语料钉死；
+> trailing junk → 缺省）；R5009 片 e 旧「全缺省 0 + 前缀解析」由语料修正。
+> ② 六属性 setter WebIDL double 转换（NaN/±Infinity → TypeError）+
+> best representation 写内容属性；METER 移出 BUTTON/LI/PROGRESS/PARAM/
+> OPTION 的 value 纯反射族。part60 契约 1 测（W1–W5）。九域 4662→
+> **4683P**（4683/7377 = **63.48%**），对 s13 逐 subtest diff 净 +21P
+> （meter +48；**跨流窗口 −27 已对照实验归因、meter 排除**——scripting-1
+> −24 主假设归 script-sandbox 模块缓存三部曲、interactive-elements −3
+> 匹配 s7 通道家族与窗口三候选并存两说，commit 级 bisect 留属主流，
+> 碰头信号见切片账本）。forms
+> 3688→3736。账本绑定 B2 提交树（16 变更文件 B2 复跑与 B1 持平）。
+> 账本见
+> [evidence/2026-10-20-m2s14-r4002.md](html-semantics-compat/evidence/2026-10-20-m2s14-r4002.md)。
+> **下一步**：M2 切片 15——labelable/labels IDL 簇（~30F：output/
+> progress/select/textarea/button labels 缺失 + hidden null，轻量）；
+> 候选后备 form_attribute 动态关联余案 ~50F（中深，mutation 钩子面）、
+> clicking-noninteractive-* 57F（label 激活行为面）。
 
 
 
@@ -115,6 +108,25 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-20 M2 切片 14**：meter 实际值算法 + double setter（R4002）——
+  part04 `_zwMeterActualValues`（六 IDL getter 缺省/钳制 + 浮点整串解析，
+  前导 + 跳过为语料钉死行为；R5009 片 e 旧前缀解析修正）+ 六 setter
+  WebIDL double 转换（非有限 TypeError）+ best representation 写属性 +
+  METER 移出 value 纯反射族（part03 host-read 委托支/part05 tag-gate
+  不变）。part60 契约 1 测（W1–W5）。meter 簇 14P/48F→62P/0F，forms
+  3688→3736，九域 4662→4683P（63.48%），对 s13 逐 subtest diff 净 +21P。
+  **跨流窗口 −27P 对照实验归因、meter 排除**：B2 提交树 16 变更文件复跑
+  与 B1 全量账本持平（账本绑定提交树）；无 meter 对照重建原样复现；
+  scripting-1 −24 主假设归 script-sandbox 模块缓存三部曲（8458c9223/
+  a85c7ade4——安静机恒 Timeout 而 s13 负载下 18P，方向与边界漂移相悖）、
+  interactive-elements −3 签名匹配 s7 runner 通道 realm 家族（Fail
+  "wrong global"）与窗口候选 3ccfdc479/b2fde4965/368ce9158 并存两说，
+  commit 级 bisect 因旧 commit v8 源码构建指纹受阻留属主流。本切片由
+  rollover 双触发并发会话同树推进，记账已合并（见切片账本说明）。make
+  test 59 腿 58 绿 + 1 既有无 display 环境腿（xvfb 同二进制 665P/0F）、
+  clippy/fmt 过、零新增依赖。挂账：labels IDL ~30F（下一切片）、
+  form_attribute 动态关联 ~50F（中深）、clicking-noninteractive-* 57F、
+  module/dialog 跨流碰头两项（属主流核账）、navigation-compat M3 项维持。
 - **2026-10-19 M2 切片 13**：selected autocomplete value 算法 + HTMLCollection
   named access（R4001）——part04 category 全表 + token 算法（INPUT/SELECT/
   TEXTAREA getter，FORM/其余保持枚举反射；field token 小写为 corpus+Chrome

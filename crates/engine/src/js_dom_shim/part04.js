@@ -223,6 +223,40 @@
           if (tok0.length < 8 || tok0.substr(0, 8).toLowerCase() !== 'section-') return ''; // default
           return tok0.toLowerCase() + ' ' + idlValue;
         }
+        // R4002（html-semantics M2 切片 14）：HTMLMeterElement 实际值算法（HTML
+        // §4.10.16 the meter element）——六 IDL 属性 getter 返实际值：
+        //   minimum = min attr（浮点解析成功）否则 0；
+        //   maximum = max attr 否则 1，< minimum 折 minimum；
+        //   value   = value attr 否则 0，钳入 [minimum, maximum]；
+        //   low     = low attr 否则 minimum，钳入 [minimum, maximum]；
+        //   high    = high attr 否则 maximum，再 < low 折 low、> maximum 折 maximum；
+        //   optimum = optimum attr 否则 (minimum+maximum)/2，钳入 [minimum, maximum]。
+        // 属性解析 =「rules for parsing floating-point number values」：去前后 ASCII
+        // 空白后整串匹配（前导 + 跳过——step 9，meter-leading-plus-sign corpus 钉死）；
+        // 空串/裸 +/-/裸点/'+-5'/trailing junk → error；指数放大成 ±Infinity → error。
+        // https://html.spec.whatwg.org/multipage/form-elements.html#the-meter-element
+        function _zwMeterActualValues(sel, handle) {
+          function _mtParse(name) {
+            var raw = handle ? __zw_get_attr_handle(handle, name)
+              : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, name) : __zw_get_attr(sel, name));
+            var s = String(raw == null ? '' : raw).replace(/^[ \t\n\f\r]+/, '').replace(/[ \t\n\f\r]+$/, '');
+            if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(s)) return NaN;
+            var v = Number(s);
+            return isFinite(v) ? v : NaN;
+          }
+          var min = _mtParse('min'); if (isNaN(min)) min = 0;
+          var max = _mtParse('max'); if (isNaN(max)) max = 1;
+          if (max < min) max = min;
+          var value = _mtParse('value'); if (isNaN(value)) value = 0;
+          if (value < min) value = min; else if (value > max) value = max;
+          var low = _mtParse('low'); if (isNaN(low)) low = min;
+          if (low < min) low = min; else if (low > max) low = max;
+          var high = _mtParse('high'); if (isNaN(high)) high = max;
+          if (high < low) high = low; else if (high > max) high = max;
+          var optimum = _mtParse('optimum'); if (isNaN(optimum)) optimum = (min + max) / 2;
+          if (optimum < min) optimum = min; else if (optimum > max) optimum = max;
+          return { value: value, min: min, max: max, low: low, high: high, optimum: optimum };
+        }
         // reflected 布尔/枚举全局属性（R2848/R2850）：autofocus/draggable/spellcheck/translate（R2848）
         // + inert/autocomplete（R2850）——旧 fallthrough 返 undefined（spec 须布尔/串）。getter 优先读
         // _reflectedAttrs 缓存（setter 写解析值，同步 set→get 即时），无缓存则 host attr 解析。spec 默认：
@@ -9795,18 +9829,15 @@
           var _p5ncRaw = handle ? __zw_get_attr_handle(handle, 'nonce') : __zw_get_attr(sel, 'nonce');
           return (_p5ncRaw == null) ? '' : String(_p5ncRaw);
         }
-        // R5009 片 e（M4 片 c）：METER double 反射（value/min/max/low/high/optimum，
-        // default 0——spec 浮点前缀解析，trailing junk 忽略；非有限/NaN → 0）。
+        // R4002（html-semantics M2 切片 14）：meter 实际值算法 getter（HTML §4.10.16
+        // the meter element）——六 IDL 属性返实际值（缺省/钳制规则见
+        // _zwMeterActualValues）。R5009 片 e 旧「全缺省 0 + 前缀解析」钉错行为，
+        // 由 corpus the-meter-element 两文件修正（WPT meter.html 51 测 +
+        // meter-leading-plus-sign.html 12 测）。
         if (_realTag(sel, handle) === 'METER'
             && (prop === 'value' || prop === 'min' || prop === 'max'
                 || prop === 'low' || prop === 'high' || prop === 'optimum')) {
-          var _p5mtRaw = handle
-            ? __zw_get_attr_handle(handle, String(prop))
-            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, String(prop)) : __zw_get_attr(sel, String(prop)));
-          var _p5mtS = String(_p5mtRaw == null ? '' : _p5mtRaw);
-          var _p5mtM = /^[ \t\n\f\r]*([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?)/.exec(_p5mtS);
-          var _p5mtV = _p5mtM ? Number(_p5mtM[1]) : 0;
-          return (isNaN(_p5mtV) || !isFinite(_p5mtV)) ? 0 : _p5mtV;
+          return _zwMeterActualValues(sel, handle)[prop];
         }
         // R5009 片 e：inputMode 全局枚举（HTMLElement）——none/text/tel/url/email/
         // numeric/decimal/search ascii 小写；missing/invalid → ''（WPT reflection-misc
@@ -11227,22 +11258,38 @@
             if (handle) { __zw_set_attr_handle(handle, 'max', String(_pgMaxNum)); moAttr = 'max'; }
             else { __zw_set_attr(sel, 'max', String(_pgMaxNum)); moAttr = 'max'; }
           }
-        } else if (p === 'value'
-                   || (_realTag(sel, handle) === 'METER'
-                       && (p === 'low' || p === 'high' || p === 'optimum'))) {
+        } else if (_realTag(sel, handle) === 'METER'
+                   && (p === 'value' || p === 'min' || p === 'max'
+                       || p === 'low' || p === 'high' || p === 'optimum')) {
+          // R4002（html-semantics M2 切片 14）：meter 六属性 setter——WebIDL `double`
+          // 转换（ToNumber，NaN/±Infinity → TypeError，WPT meter.html 'Invalid
+          // floating-point number values' 六抛）；通过 → best representation 写内容
+          // 属性（String(Number)）+ CE 反应派发（沿 R5009 片 d 分支结构）。
+          // spec §4.10.16 IDL attributes（setter steps）。
+          var _mtNum = Number(value);
+          if (isNaN(_mtNum) || !isFinite(_mtNum)) {
+            throw new TypeError("Failed to set the '" + p + "' property on 'HTMLMeterElement': The provided double value is non-finite.");
+          }
+          var _mtEntry = _ce_registry_gen ? _ceEntryFor(key, sel, handle) : null;
+          var _mtOld = _mtEntry ? _ce_attrValue(sel, handle, p) : null;
+          var _mtStr = String(_mtNum);
+          if (handle) { __zw_set_attr_handle(handle, p, _mtStr); moAttr = p; }
+          else { __zw_set_attr(sel, p, _mtStr); moAttr = p; }
+          if (_mtEntry) {
+            _ce_dispatchAttrChange(_mtEntry, _makeProxy(sel, handle), p, _mtOld, _mtStr, null);
+          }
+        } else if (p === 'value') {
           // WC-M3 切片 8 第十小步（web-components goal，spec HTML 各元素的 reflected
-          // `value` IDL）：BUTTON/LI/METER/PROGRESS/PARAM/OPTION 的 value IDL 是**纯
+          // `value` IDL）：BUTTON/LI/PROGRESS/PARAM/OPTION 的 value IDL 是**纯
           // 内容属性反射**（无 INPUT 的 dirty-flag 语义）——写 value 属性 + moAttr 汇流
           //（CEReactions attributeChanged + R45 MO record）。WPT reactions
-          // 'value on HTMLButtonElement/LI/Meter/Progress/Param ...' 簇。
+          // 'value on HTMLButtonElement/LI/Progress/Param ...' 簇。
+          // R4002：METER 移出本族（六属性改 double 转换 setter，见上支）。
           var _rvTag = _realTag(sel, handle);
-          if (_rvTag === 'BUTTON' || _rvTag === 'LI' || _rvTag === 'METER'
+          if (_rvTag === 'BUTTON' || _rvTag === 'LI'
               || _rvTag === 'PROGRESS' || _rvTag === 'PARAM' || _rvTag === 'OPTION') {
             // CE 反应内联派发（'value' 不入全局映射——INPUT 的 dirty-flag 语义不受影响）：
             // 写前捕旧值，写后 dispatch（observed 过滤/值真变判定在 dispatch 内）。
-            // R5009 片 d（M4 片 d）：meter.low/high/optimum 同分支逐字写（同名小写
-            // 内容属性；double 型串化 String 转换即 spec「best representation」——
-            // "1e-10"/"1e+25"/"0"（-0）全对齐）。
             var _rvAttr = (p === 'value') ? 'value' : p;
             var _rvEntry = _ce_registry_gen ? _ceEntryFor(key, sel, handle) : null;
             var _rvOld = _rvEntry ? _ce_attrValue(sel, handle, _rvAttr) : null;

@@ -249,3 +249,114 @@ fn test_selected_autocomplete_value_r4001() {
         "W5：miss → undefined（非抛错）"
     );
 }
+
+/// R4002（html-semantics M2 切片 14）：HTMLMeterElement 实际值算法 + double setter。
+/// 六 IDL 属性 getter 返实际值（min 缺省 0；max 缺省 1、<min 折 min；value/low/high/
+/// optimum 缺省与钳制见 spec）；属性解析走「rules for parsing floating-point number
+/// values」（前导 + 跳过、裸符号/裸点/trailing junk → 缺省）；setter WebIDL double
+/// 转换（非有限 → TypeError）+ best representation 写内容属性。WPT 标尺：
+/// html/semantics/forms/the-meter-element/meter.html（51 测）+
+/// meter-leading-plus-sign.html（12 测）。
+#[test]
+fn test_meter_actual_values_r4002() {
+    let mut sandbox = t59_sandbox_with_shim();
+    let mutations: std::sync::Arc<std::sync::Mutex<Vec<DomMutation>>> = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+    let dom_html: std::sync::Arc<std::sync::Mutex<String>> =
+        std::sync::Arc::new(std::sync::Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: std::sync::Arc<std::sync::Mutex<String>> = std::sync::Arc::new(std::sync::Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    crate::js_dom_bridge::register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // W1：缺省面——全缺省 {0,0,1,0,1,0.5}；max < min 折 min（连 low/high/optimum 随折）。
+    sandbox
+        .execute(
+            "var m = document.createElement('meter');\
+             globalThis.__m1 = [m.value, m.min, m.max, m.low, m.high, m.optimum].join(',');\
+             m.max = -1; globalThis.__m2 = [m.max, m.low, m.high, m.optimum].join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__m1").unwrap().value,
+        "0,0,1,0,1,0.5",
+        "W1：全缺省——value 0/min 0/max 1/low 0/high 1/optimum 0.5"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__m2").unwrap().value,
+        "0,0,0,0",
+        "W1：max=-1 < min=0 折 min，low/high 缺省随折，optimum 中点 0"
+    );
+
+    // W2：钳制面——value<min / value>max / low 越界 / high<low 折 low / optimum 越界。
+    sandbox
+        .execute(
+            "var a = document.createElement('meter'); a.min = 10; a.max = 20; a.value = 5;\
+             var b = document.createElement('meter'); b.min = 10; b.max = 20; b.value = 25;\
+             var c = document.createElement('meter'); c.min = 10; c.max = 20; c.low = 5; c.high = 30; c.optimum = 9;\
+             var d = document.createElement('meter'); d.min = -20; d.low = -10.3; d.high = -15.2; d.max = -2; d.value = -9;\
+             globalThis.__m3 = [a.value, b.value, c.low, c.high, c.optimum, d.low, d.high, d.value].join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__m3").unwrap().value,
+        "10,20,10,20,10,-10.3,-10.3,-9",
+        "W2：value<min 折 min、value>max 折 max、low/high 钳 [min,max]、high<low 折 low、optimum<min 折 min"
+    );
+
+    // W3：内容属性解析——非法串回落缺省；前导 + 跳过；trailing junk 报错（整串解析）。
+    sandbox
+        .execute(
+            "var i = document.createElement('div'); i.innerHTML = '<meter id=mA value=abc></meter><meter id=mB value=-10 min=4.5></meter>\
+             <meter id=mC value=+5 max=+10></meter><meter id=mD value=10foo></meter><meter id=mE max=+-5></meter>';\
+             document.body.appendChild(i);\
+             var rA = document.getElementById('mA'), rB = document.getElementById('mB');\
+             var rC = document.getElementById('mC'), rD = document.getElementById('mD'), rE = document.getElementById('mE');\
+             globalThis.__m4 = [rA.value, rB.value, rC.value, rC.max, rD.value, rE.max].join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__m4").unwrap().value,
+        "0,4.5,5,10,0,1",
+        "W3：'abc'→0、-10 折 min 4.5、'+5'/'+10' 前导 + 跳过、'10foo' 整串报错→0、'+-5' 报错→max 缺省 1"
+    );
+
+    // W4：double setter——非有限 → TypeError（value/min/max/low/high/optimum 六面）；
+    // 合法值写 best representation 内容属性（12.5 → "12.5"）。
+    sandbox
+        .execute(
+            "var m = document.createElement('meter'); globalThis.__threw = [];\
+             ['value','min','max','low','high','optimum'].forEach(function (k) {\
+               try { m[k] = 'foobar'; globalThis.__threw.push('no'); } catch (e) { globalThis.__threw.push(e.constructor.name); }\
+             });\
+             m.min = 0; m.max = 100; m.value = 12.5; globalThis.__attr = m.getAttribute('value'); globalThis.__got = m.value;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__threw.join(',')").unwrap().value,
+        "TypeError,TypeError,TypeError,TypeError,TypeError,TypeError",
+        "W4：六属性 setter 'foobar' 全抛 TypeError（WebIDL double 转换）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__attr)").unwrap().value,
+        "12.5",
+        "W4：合法值写 best representation 内容属性"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__got)").unwrap().value,
+        "12.5",
+        "W4：setter 后 getter 读回实际值"
+    );
+
+    // W5：getter 恒按内容属性重算——setAttribute 后 IDL 读即时反映（无缓存钉死）。
+    sandbox
+        .execute(
+            "var m = document.createElement('meter'); m.min = 10; m.max = 20; m.value = 15;\
+             m.setAttribute('value', '50'); globalThis.__m5 = m.value;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__m5)").unwrap().value,
+        "20",
+        "W5：setAttribute 后 getter 重算钳制（50 → max 20）"
+    );
+}
