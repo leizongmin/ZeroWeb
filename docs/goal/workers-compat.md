@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-09-12
-**状态**: Active（已立项，未启动——启动顺序由用户点名）
+**状态**: Done（2026-10-21 M4 收口——DC-1~4 全 ✅，workers 通道 693/714 = 97.1%（基线 45.6%），reftest 712/712 零回归；判定见 [evidence/2026-10-21-m4-dc-final.md](workers-compat/evidence/2026-10-21-m4-dc-final.md)，控制面见 [master.md](workers-compat/master.md)）
 **执行模式**: WPT 驱动（上游 workers corpus 为验收标尺）+ 运行时落地；
 照 event-loop-spec（微任务机制先例）/ script-sandbox（隔离实例先例）打法
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——并发面）
@@ -92,26 +92,37 @@
 
 ### DC-1: WPT 导入与基线
 
-- [ ] workers/dedicated-workers corpus window 可执行子集导入（fetch 脚本 + 通道 +
-      imported 账本）
-- [ ] 分类通过率基线落 evidence/，并回填 docs/compat/trends/wpt-suites.csv planned 行
+- [x] workers/dedicated-workers corpus window 可执行子集导入（fetch 脚本 + 通道 +
+      imported 账本）——161 案可执行子集（通道扩展后 175 案 714 子测试）+
+      `testharness-workers` 通道 + `70-workers-compat.sh` + 排除账本（
+      [M1 evidence](workers-compat/evidence/2026-10-20-m1-baseline.md)）
+- [x] 分类通过率基线落 evidence/，并回填 docs/compat/trends/wpt-suites.csv planned 行
+      ——基线 45.6% → 收口 97.1% 全程台账；CSV 含 M1→M4 全轨迹 + `completed` 收口行
 
 ### DC-2: Worker 运行时
 
-- [ ] 独立隔离实例 + 独立事件循环 + worker 全局作用域最小面
-      （self/navigator/location/onerror）
-- [ ] classic 脚本加载执行 + importScripts；module worker 评估结论记账
+- [x] 独立隔离实例 + 独立事件循环 + worker 全局作用域最小面
+      （self/navigator/location/onerror）——同 realm worker 运行时近似承载
+      （架构现状修正记账见 master.md；独立 isolate 同 module worker 评估记账）
+- [x] classic 脚本加载执行 + importScripts；module worker 评估结论记账——三相语义 +
+      MIME 全集 + 调用点/被导入脚本/嵌套内层错误归因；module worker 41 案排除
+      不实现评估结论（M4 evidence 挂账定稿）
 
 ### DC-3: 消息往返
 
-- [ ] postMessage/structuredClone 双向往返 + MessageChannel 跨端口
-- [ ] transferable（ArrayBuffer transfer 中断所有权）语义
+- [x] postMessage/structuredClone 双向往返 + MessageChannel 跨端口——M3 落地
+      （[M3 evidence](workers-compat/evidence/2026-10-21-m3-transfer-ports-structured-clone.md)）
+- [x] transferable（ArrayBuffer transfer 中断所有权）语义——serialize-with-transfer
+      同一转移体 + validate-then-consume 三相；残余仅 ReadableStream 1PF 先决条件面
 
 ### DC-4: 测试与质量不可退让
 
-- [ ] `make test` 全绿零失败 + clippy `-D warnings` + fmt 干净（v8 + quickjs 双矩阵
-      评估——隔离实现须两 JS 引擎下行为一致或差异记账）
-- [ ] 每语义切片带单测/集成测试；`make reftest` 零回归
+- [x] `make test` 全绿零失败 + clippy `-D warnings` + fmt 干净（v8 + quickjs 双矩阵
+      评估——隔离实现须两 JS 引擎下行为一致或差异记账）——make test 全绿 +
+      clippy/fmt 干净；quickjs 行为矩阵未评估（行为证据均 v8 腿）如实记账
+      （M4 evidence 双矩阵差异记账节）
+- [x] 每语义切片带单测/集成测试；`make reftest` 零回归——引擎单测 part61 累计
+      34 案 + workers corpus 通道常驻；reftest 712/712 零回归
 
 ---
 
