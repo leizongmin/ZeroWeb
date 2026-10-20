@@ -1,9 +1,22 @@
 # HTML 文档面兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../html-syntax-compat.md](../html-syntax-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-20（P6b escaping noscript 漂移归因修复 + 组合态复测——通道 61233/61333）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-20（P7 XHR document 编码嗅探——charset 22F 清零，通道 61255/61333）
 
 ## 当前状态
+
+**P7 XHR document 编码嗅探（2026-10-20）**：html/syntax/charset `xhr.html`
+**22F → 22P 清零**，全通道 **61255/61333 = 99.89%**（rebase cb8f59044 后组合
+态；同日三独立跑全等 61255P/65F/13T——确定性确认，Fail 87→65 全为既有挂账
+域零新增）。XHR set-a-document-response final encoding 接线：BOM →
+override/MIME charset → meta 嗅探 → UTF-8，非 UTF-8 重解码 + `_zwEncoding`
+槽（characterSet/charset/inputEncoding 三别名）。嗅探语义定谳 WebKit
+HTMLMetaCharsetParser（tokenizer 感知 + head 区段追踪 + 1024 停扫 + 属性值
+字符引用解码——spec 纯字节 prescan 被 ncr/in-script 案证伪）；runner fetch
+通道非 UTF-8 .html 原字节直供（原 from_utf8_lossy 内联路径先于 JS 解码损失
+字节面）。补 `rel` IDL 反射。余账：XHR XML MIME 分支 final encoding 接线
+（FIXME 记账，非 22 案面）。证据：
+[evidence/2026-10-20-xhr-responsexml-charset.md](evidence/2026-10-20-xhr-responsexml-charset.md)。
 
 **P6b escaping noscript 漂移修复（2026-10-20）**：`escaping.html` **8/9 → 9/9
 全绿**，全通道 **61229/61333 = 99.83%**（rebase 4bc987928 后组合态复测
@@ -205,6 +218,7 @@ html5lib 3 案 document.write 管线面）。证据：
 | P5 | 文档级编码嗅探（encoding-compat M4 转入） | ✅ **P5 落地面收口（2026-10-19）**：R5003 字节级 decode 载入（charset/ reftest 22 案入通道，基线 18/22）+ R5006 prescan 注释跳过（meta-* 8 案 8F→8P）+ testharness 通道 charset 9 案新入（30 子测，8P）；通道外余量维持：xmldecl/ 3 案（iframe 形态）+ the-input-byte-stream 9 案（HTTP 头形态）；XHR responseXML characterSet 22F 新记账（XHR/shim 域） |
 | P6 | fragment-parse form-pointer 边界（账目修正） | ✅ **P6 修复（2026-10-19）**：R5196 `_zwMEl` 自有 form accessor TEMPLATE 边界（1F→1P，通道 61228/61333）；账目修正——非 post-M4 漂移，M4 冻结起既有 1F（「QSA 补面翻绿」记述不实） |
 | P6b | escaping noscript 真实漂移 | ✅ **P6b 修复（2026-10-20）**：bisect 归因 9dcd16661（innerHTML 物化改读路径）→ R5197 融合序列化 noscript 分支 + 物化印章传递（8/9→9/9，通道 61229/61333，组合态复测 61233/61333）；vs-M4 漂移账清零 |
+| P7 | charset XHR responseXML characterSet 面（22F 新账） | ✅ **P7 修复（2026-10-20）**：WebKit HTMLMetaCharsetParser 语义嗅探 + final encoding 接线 + runner 非 UTF-8 .html 字节保真（22F→22P，通道 61255/61333）；余账 XML MIME final encoding（FIXME） |
 | — | render-blocking 机制面（62 案 19.3%） | 📊 M1 已基线；**rendering-compat 域挂账维持（2026-10-19 归因收口：SyntaxError 41 案 M1 起既有 + post-M4 漂移 2 案）** |
 
 ## 已完成切片
@@ -302,8 +316,9 @@ html5lib 3 案 document.write 管线面）。证据：
 
 Goal 已收口（DC-1~4 全满足；P5 落地面 2026-10-19 收口）。后续账目（均不阻收
 口，归各自域）：
-1. **charset XHR responseXML characterSet 面（22F，新账）** → XHR/shim 域立项
-   评估（响应文档 characterSet 未接线）。
+1. ~~charset XHR responseXML characterSet 面（22F，新账）~~ ✅ P7 修复清零
+   （2026-10-20，22F→22P，通道 61255/61333）。余账：XHR XML MIME 分支
+   final encoding 接线（FIXME 挂账，非 22 案断言面）。
 2. **vs-M4 漂移账清零（2026-10-20）**：escaping noscript 已 P6b 归因修复
    （9dcd16661 物化读路径回退，R5197）；form-pointer 已 P6 修复并改判 M4 既有
    账；余 script-inserted 双案维持 rendering-compat 域挂账。

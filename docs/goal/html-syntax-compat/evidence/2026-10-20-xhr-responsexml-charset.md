@@ -73,5 +73,11 @@ windows-1251 解码 EF BF BD；`dec(E6,B6)=[436]` 证 host TextDecoder 本身正
 ## 门禁
 
 - `cargo fmt --check` / `cargo clippy -p zero-wpt-runner --all-targets`：clean。
-- `make test`：见 run 记录（JS 经 include_str! 进产品）。
-- 全通道复跑 totals：见 master.md 当日行（本轮改动前 P6b 记 61229/61333）。
+- `make test`：全腿绿，2 环境红均非本轮归因——SW owner 测
+  （process_backend::service_worker_owner_tests）单测隔离复跑 **12P/0F**（全
+  通道并发跑时 multiprocess 时序抖动）；bookmark_context_menu_open_in_new_tab
+  R5174/R5176 在案（stash 归零态基线同红）。
+- 全通道复跑（rebase cb8f59044 后组合态）：**61255/61333 = 99.89%**
+  （61255P/65F/13T；改动前同基线账 61233P/87F/13T——+22P/−22F 恰为本轮
+  22 案，零外溢）。同日三独立跑结果逐位全等（含并发双 rally 实例重入，
+  无文件冲突——确定性佐证）。
