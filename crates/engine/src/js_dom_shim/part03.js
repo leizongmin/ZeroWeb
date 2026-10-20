@@ -2177,6 +2177,31 @@
     SVGAnimateMotionElement: 'SVGAnimationElement',
     SVGAnimateTransformElement: 'SVGAnimationElement', SVGMPathElement: 'SVGAnimationElement',
     SVGLinearGradientElement: 'SVGGradientElement', SVGRadialGradientElement: 'SVGGradientElement',
+    // svg-compat M2 S2a：fe 族具体接口（S2a 反射属性需按接口落 prototype——
+    // filter primitive 族挂抽象层 SVGFilterPrimitiveElement（x/y/width/height
+    // mixin 反射在父类一次定义）；灯光三元素 spec : SVGElement（非 primitive，
+    // 无 x/y 面）；feMergeNode spec : SVGElement（无 x/y——改写 S1 表的
+    // SVGFilterPrimitiveElement 映射）。
+    SVGFEBlendElement: 'SVGFilterPrimitiveElement',
+    SVGFEColorMatrixElement: 'SVGFilterPrimitiveElement',
+    SVGFECompositeElement: 'SVGFilterPrimitiveElement',
+    SVGFEConvolveMatrixElement: 'SVGFilterPrimitiveElement',
+    SVGFEDiffuseLightingElement: 'SVGFilterPrimitiveElement',
+    SVGFEDisplacementMapElement: 'SVGFilterPrimitiveElement',
+    SVGFEDropShadowElement: 'SVGFilterPrimitiveElement',
+    SVGFEFloodElement: 'SVGFilterPrimitiveElement',
+    SVGFEGaussianBlurElement: 'SVGFilterPrimitiveElement',
+    SVGFEImageElement: 'SVGFilterPrimitiveElement',
+    SVGFEMergeElement: 'SVGFilterPrimitiveElement',
+    SVGFEMergeNodeElement: 'SVGElement',
+    SVGFEMorphologyElement: 'SVGFilterPrimitiveElement',
+    SVGFEOffsetElement: 'SVGFilterPrimitiveElement',
+    SVGFESpecularLightingElement: 'SVGFilterPrimitiveElement',
+    SVGFETileElement: 'SVGFilterPrimitiveElement',
+    SVGFETurbulenceElement: 'SVGFilterPrimitiveElement',
+    SVGFEDistantLightElement: 'SVGElement',
+    SVGFEPointLightElement: 'SVGElement',
+    SVGFESpotLightElement: 'SVGElement',
   };
   var _zwSvgElementIfaces = ['SVGElement', 'SVGGraphicsElement', 'SVGGeometryElement',
     'SVGTextContentElement', 'SVGTextPositioningElement', 'SVGAnimationElement',
@@ -2193,7 +2218,15 @@
     'SVGStyleElement', 'SVGScriptElement', 'SVGForeignObjectElement',
     'SVGDescElement', 'SVGMetadataElement', 'SVGViewElement', 'SVGMPathElement',
     'SVGAnimateElement', 'SVGSetElement', 'SVGAnimateMotionElement',
-    'SVGAnimateTransformElement'];
+    'SVGAnimateTransformElement',
+    // svg-compat M2 S2a：fe 族具体接口（同 _zwSvgIfaceParents 扩容注记）。
+    'SVGFEBlendElement', 'SVGFEColorMatrixElement', 'SVGFECompositeElement',
+    'SVGFEConvolveMatrixElement', 'SVGFEDiffuseLightingElement',
+    'SVGFEDisplacementMapElement', 'SVGFEDropShadowElement', 'SVGFEFloodElement',
+    'SVGFEGaussianBlurElement', 'SVGFEImageElement', 'SVGFEMergeElement',
+    'SVGFEMergeNodeElement', 'SVGFEMorphologyElement', 'SVGFEOffsetElement',
+    'SVGFESpecularLightingElement', 'SVGFETileElement', 'SVGFETurbulenceElement',
+    'SVGFEDistantLightElement', 'SVGFEPointLightElement', 'SVGFESpotLightElement'];
   for (var _si = 0; _si < _zwSvgElementIfaces.length; _si++) {
     var _sn = _zwSvgElementIfaces[_si];
     if (!globalThis[_sn]) {
@@ -2236,15 +2269,17 @@
     animatemotion: 'SVGAnimateMotionElement',
     animatetransform: 'SVGAnimateTransformElement', mpath: 'SVGMPathElement',
     foreignobject: 'SVGForeignObjectElement',
-    fecolormatrix: 'SVGFilterPrimitiveElement', feconvolvematrix: 'SVGFilterPrimitiveElement',
-    feblend: 'SVGFilterPrimitiveElement', feturbulence: 'SVGFilterPrimitiveElement',
-    fediffuselighting: 'SVGFilterPrimitiveElement', fespecularlighting: 'SVGFilterPrimitiveElement',
-    feoffset: 'SVGFilterPrimitiveElement', fedisplacementmap: 'SVGFilterPrimitiveElement',
-    feflood: 'SVGFilterPrimitiveElement', fetile: 'SVGFilterPrimitiveElement',
-    fecomposite: 'SVGFilterPrimitiveElement', fegaussianblur: 'SVGFilterPrimitiveElement',
-    femorphology: 'SVGFilterPrimitiveElement', femerge: 'SVGFilterPrimitiveElement',
-    femergenode: 'SVGFilterPrimitiveElement', feimage: 'SVGFilterPrimitiveElement',
-    fedropshadow: 'SVGFilterPrimitiveElement', fecomponenttransfer: 'SVGFilterPrimitiveElement',
+    fecolormatrix: 'SVGFEColorMatrixElement', feconvolvematrix: 'SVGFEConvolveMatrixElement',
+    feblend: 'SVGFEBlendElement', feturbulence: 'SVGFETurbulenceElement',
+    fediffuselighting: 'SVGFEDiffuseLightingElement', fespecularlighting: 'SVGFESpecularLightingElement',
+    feoffset: 'SVGFEOffsetElement', fedisplacementmap: 'SVGFEDisplacementMapElement',
+    feflood: 'SVGFEFloodElement', fetile: 'SVGFETileElement',
+    fecomposite: 'SVGFECompositeElement', fegaussianblur: 'SVGFEGaussianBlurElement',
+    femorphology: 'SVGFEMorphologyElement', femerge: 'SVGFEMergeElement',
+    femergenode: 'SVGFEMergeNodeElement', feimage: 'SVGFEImageElement',
+    fedropshadow: 'SVGFEDropShadowElement', fecomponenttransfer: 'SVGFilterPrimitiveElement',
+    fedistantlight: 'SVGFEDistantLightElement', fepointlight: 'SVGFEPointLightElement',
+    fespotlight: 'SVGFESpotLightElement',
     fefuncr: 'SVGComponentTransferFunctionElement', fefuncg: 'SVGComponentTransferFunctionElement',
     fefuncb: 'SVGComponentTransferFunctionElement', fefunca: 'SVGComponentTransferFunctionElement',
   };
@@ -2273,6 +2308,410 @@
     Object.defineProperty(_zwSvgAnimatedStringCtor.prototype, Symbol.toStringTag, {
       value: 'SVGAnimatedString',
     });
+  }
+  // svg-compat M2 S2a：SVG 值类型底座——SVGLength 单位模型 + SVGAnimatedLength/
+  // SVGAnimatedNumber 反射（spec SVG2 types.html §InterfaceSVGLength /
+  // §InterfaceSVGAnimatedLength / §InterfaceSVGAnimatedNumber）。落点形态：反射
+  // 属性定义为**接口 prototype 上的 accessor**（get trap R93 尾部原型链回落以
+  // 元素 proxy 为 this 派发——accessor 内 this.getAttribute/this.setAttribute 走
+  // 既有同步面，与 initial→setAttribute→remove/invalid 反射语义闭环）；HTML 元素
+  // 零新路径（accessor 只在 SVG 接口链上）。SameObject 经 per-element 缓存
+  //（_zwSvgClsCache 同款）。数值基座：SVGAnimatedNumber.baseVal 是**数值型**
+  // accessor（float 校验 setter——WPT SVGAnimatedNumber：'aString'/NaN/Infinity
+  // → TypeError）；SVGAnimatedLength.baseVal 是 getter-only accessor（赋值 sloppy
+  // 静默），值载体 SVGLength 对象自持单位状态机（value/valueInSpecifiedUnits/
+  // valueAsString/unitType + convertToSpecifiedUnits/newValueSpecifiedUnits）。
+  var _zwSvgLengthCtor = globalThis.SVGLength;
+  if (!_zwSvgLengthCtor) {
+    _zwSvgLengthCtor = new Function('return function SVGLength() {}')();
+    globalThis.SVGLength = _zwSvgLengthCtor;
+    // spec SVG2 SVGLength unitType 常量（SVG_LENGTHTYPE_*，0..10；11+ 新单位
+    // 不入 convertToSpecifiedUnits 合法域——WPT SVGLength：11 → NotSupportedError）。
+    _zwSvgLengthCtor.SVG_LENGTHTYPE_UNKNOWN = 0;
+    _zwSvgLengthCtor.SVG_LENGTHTYPE_NUMBER = 1;
+    _zwSvgLengthCtor.SVG_LENGTHTYPE_PERCENTAGE = 2;
+    _zwSvgLengthCtor.SVG_LENGTHTYPE_EMS = 3;
+    _zwSvgLengthCtor.SVG_LENGTHTYPE_EXS = 4;
+    _zwSvgLengthCtor.SVG_LENGTHTYPE_PX = 5;
+    _zwSvgLengthCtor.SVG_LENGTHTYPE_CM = 6;
+    _zwSvgLengthCtor.SVG_LENGTHTYPE_MM = 7;
+    _zwSvgLengthCtor.SVG_LENGTHTYPE_IN = 8;
+    _zwSvgLengthCtor.SVG_LENGTHTYPE_PT = 9;
+    _zwSvgLengthCtor.SVG_LENGTHTYPE_PC = 10;
+    Object.defineProperty(_zwSvgLengthCtor.prototype, Symbol.toStringTag, {
+      value: 'SVGLength',
+    });
+  }
+  var _zwSvgAnimatedLengthCtor = globalThis.SVGAnimatedLength;
+  if (!_zwSvgAnimatedLengthCtor) {
+    _zwSvgAnimatedLengthCtor = new Function('return function SVGAnimatedLength() {}')();
+    globalThis.SVGAnimatedLength = _zwSvgAnimatedLengthCtor;
+    Object.defineProperty(_zwSvgAnimatedLengthCtor.prototype, Symbol.toStringTag, {
+      value: 'SVGAnimatedLength',
+    });
+  }
+  var _zwSvgAnimatedNumberCtor = globalThis.SVGAnimatedNumber;
+  if (!_zwSvgAnimatedNumberCtor) {
+    _zwSvgAnimatedNumberCtor = new Function('return function SVGAnimatedNumber() {}')();
+    globalThis.SVGAnimatedNumber = _zwSvgAnimatedNumberCtor;
+    Object.defineProperty(_zwSvgAnimatedNumberCtor.prototype, Symbol.toStringTag, {
+      value: 'SVGAnimatedNumber',
+    });
+  }
+  // SVGLength 串解析：`[+-]?数 [单位]?`（单位大小写不敏感——'1pX' 合法；deg/
+  // 未知单位/空串/裸垃圾 → null 即 SyntaxError 面）。数支持小数与指数形态。
+  var _zwSvgLenUnits = { '': 1, '%': 2, em: 3, ex: 4, px: 5, cm: 6, mm: 7, in: 8, pt: 9, pc: 10 };
+  var _zwSvgLenSuffixes = { 1: '', 2: '%', 3: 'em', 4: 'ex', 5: 'px', 6: 'cm', 7: 'mm', 8: 'in', 9: 'pt', 10: 'pc' };
+  // CSS 长度单位第二表：unitType 无常量（unitType=UNKNOWN）但 setter 不抛、value
+  // 按 CSS 换算（spec SVGLength-px WPT：'48q' → UNKNOWN + value≈CSS px 值）。
+  // q=1/4mm 纯物理可精确；其余语境单位（rem/vw/cap/ch/ic/lh 族）依赖字体/视口
+  // 度量——FIXME（spec SVG2 types.html §InterfaceSVGLength）：随 em/ex/percentage
+  // 上下文面（SVGLength-rem/-viewport 族）后续切片一并收，暂不录入（setter 抛
+  // SyntaxError，对应案保持现状）。
+  var _zwSvgLenCssUnits = { q: 96 / 25.4 / 4 };
+  var _zwSvgLenParse = function (str) {
+    var m = /^\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)\s*([a-zA-Z%]*)\s*$/.exec(String(str));
+    if (!m) return null;
+    var su = m[2].toLowerCase();
+    var ut = _zwSvgLenUnits[su];
+    if (ut) return { ut: ut, vu: Number(m[1]) };
+    var cf = _zwSvgLenCssUnits[su];
+    if (cf) return { ut: 0, vu: Number(m[1]), cf: cf, su: su };
+    return null;
+  };
+  // 数值序列化取 8 位有效数字再剥尾零（Blink SerializeNumber 的 %.8g 语义）——
+  // WPT SVGLength-px mm 案断言 valueAsString === referenceValue.toFixed(1)+"mm"
+  //（48px→12.699999999999998 → "12.7"）；JS String() 直排会输出全尾数失配。
+  var _zwSvgLenFmt = function (v) {
+    if (v === 0) return '0';
+    var s = v.toPrecision(8);
+    if (s.indexOf('e') < 0 && s.indexOf('E') < 0 && s.indexOf('.') >= 0) {
+      s = s.replace(/0+$/, '').replace(/\.$/, '');
+    }
+    return s;
+  };
+  var _zwSvgLenSerialize = function (vu, ut) {
+    return _zwSvgLenFmt(vu) + (_zwSvgLenSuffixes[ut] || '');
+  };
+  // px 换算因子（px per unit）。FIXME（spec SVG2 convertToSpecifiedUnits 上下文
+  // 面）：em/ex 应取元素字体度量、percentage 应取视口维度——此处取初始值近似
+  //（16px 字体 / 8px x-height / detached 100 单位视口 → 1px = 1%）；关联元素的
+  // 上下文精确换算（SVGLength-viewport/-px-with-context/-em 族）后续切片补。
+  var _zwSvgLenFactor = function (ut) {
+    if (ut === 2) return 1;
+    if (ut === 3) return 16;
+    if (ut === 4) return 8;
+    if (ut === 6) return 96 / 2.54;
+    if (ut === 7) return 96 / 25.4;
+    if (ut === 8) return 96;
+    if (ut === 9) return 96 / 72;
+    if (ut === 10) return 16;
+    return 1;
+  };
+  // CSS 物理长度单位串 → px（font-size 语境解析消费；em/% 语境相关由调用方处理）。
+  var _zwSvgLenCssLenToPx = function (n, u) {
+    if (u === 'pt') return n * 96 / 72;
+    if (u === 'pc') return n * 16;
+    if (u === 'cm') return n * 96 / 2.54;
+    if (u === 'mm') return n * 96 / 25.4;
+    if (u === 'in') return n * 96;
+    if (u === 'q') return n * 96 / 25.4 / 4;
+    return n;
+  };
+  // WebIDL unsigned short 归一（ToUint16：NaN→0，负数模 65536）——convertTo
+  // 合法域 1..10，0（UNKNOWN）/11+/65535 → NotSupportedError（spec SVGLength）。
+  var _zwSvgLenUnitNorm = function (u) {
+    var n = Number(u);
+    if (isNaN(n)) return 0;
+    n = ((n % 65536) + 65536) % 65536;
+    return n;
+  };
+  var _zwSvgLenDomErr = function (msg, name) {
+    return new (globalThis.DOMException || Error)(msg, name);
+  };
+  // SVGLength 实例工厂：el 为 null → detached（createSVGLength 面，闭包自持状态）；
+  // 否则 reflected（live 解析 el 内容属性，写透 setAttribute——同步经 proxy 方法）。
+  // readOnly → animVal 面（变更面抛 NoModificationAllowedError，spec 读-only 步骤①）。
+  var _zwMakeSVGLength = function (el, attr, initial, readOnly) {
+    var sl = new _zwSvgLengthCtor();
+    var st = el ? null : { ut: 1, vu: 0 };
+    var cur = function () {
+      if (!el) return st;
+      var raw = null;
+      try { raw = el.getAttribute(attr); } catch (_eRd) { raw = null; }
+      var p = (raw == null) ? _zwSvgLenParse(initial) : _zwSvgLenParse(raw);
+      if (!p) p = _zwSvgLenParse(initial);
+      return p || { ut: 1, vu: 0 };
+    };
+    var write = function (vu, ut, src) {
+      if (!el) { st.ut = ut; st.vu = vu; st.cf = src && src.cf; st.su = src && src.su; return; }
+      var suffix = (src && src.su) || _zwSvgLenSuffixes[ut] || '';
+      try { el.setAttribute(attr, _zwSvgLenFmt(vu) + suffix); } catch (_eWr) {}
+    };
+    var roThrow = function () {
+      throw _zwSvgLenDomErr('read-only SVGLength', 'NoModificationAllowedError');
+    };
+    // 语境换算因子（spec SVG2 convertToSpecifiedUnits 步骤 5 视口基准 / 步骤 4
+    // 字体基准）。仅 percentage/em 态触发，向上限 32 hop：
+    // - percentage：最近 svg 祖先（含自身）width/height 属性数值（'%' 值 parseFloat
+    //   即百分数近似——嵌套视口递归解析 FIXME）；方向性按属性名表（spec
+    //   horizontal = x/x1/x2/dx/width/refX/markerWidth、vertical = y/y1/y2/dy/
+    //   height/refY/markerHeight，名单外方向 unspecified → 对角线/sqrt(2)——
+    //   WPT SVGLength-convertToSpecifiedUnits-percentage-directionality）。
+    //   无 svg 语境（detached）→ 因子 1（viewport 100 假设）。
+    // - em：沿链 style 内联 `font-size:` 优先，次 presentation 属性 font-size，
+    //   单位换算 px；缺省 16（CSS initial）。ex 无字体度量保持常量近似。
+    var _vpBase = function (dim) {
+      var node = el;
+      for (var hops = 0; node && hops < 32; hops++) {
+        var tg = '';
+        try { tg = String(node.tagName || '').toUpperCase(); } catch (_eTg) { break; }
+        if (tg === 'SVG') {
+          var v = null;
+          try { v = node.getAttribute(dim); } catch (_eGa) { v = null; }
+          if (v != null) {
+            var n = parseFloat(v);
+            if (!isNaN(n)) return n;
+          }
+          return 100;
+        }
+        try { node = node.parentNode; } catch (_ePn) { break; }
+      }
+      return null;
+    };
+    var _pctPx = function () {
+      if (!el) return 1;
+      var la = '';
+      try { la = String(attr || '').toLowerCase(); } catch (_eLa) { la = ''; }
+      var w = _vpBase('width'), h = _vpBase('height');
+      if (w == null || h == null) return 1;
+      if (la === 'x' || la === 'x1' || la === 'x2' || la === 'dx' || la === 'width'
+          || la === 'refx' || la === 'markerwidth') return w / 100;
+      if (la === 'y' || la === 'y1' || la === 'y2' || la === 'dy' || la === 'height'
+          || la === 'refy' || la === 'markerheight') return h / 100;
+      return Math.sqrt(w * w + h * h) / Math.SQRT2 / 100;
+    };
+    var _fontPx = function () {
+      var node = el;
+      for (var hops = 0; node && hops < 32; hops++) {
+        var fs = null;
+        try { fs = node.getAttribute && node.getAttribute('style'); } catch (_eS1) { fs = null; }
+        if (fs) {
+          var m = /font-size\s*:\s*([+-]?[\d.]+)\s*(px|pt|pc|cm|mm|in|q)?/i.exec(String(fs));
+          if (m) return _zwSvgLenCssLenToPx(parseFloat(m[1]), (m[2] || 'px').toLowerCase());
+        }
+        try { fs = node.getAttribute && node.getAttribute('font-size'); } catch (_eS2) { fs = null; }
+        if (fs) {
+          var m2 = /^\s*([+-]?[\d.]+)\s*([a-zA-Z%]*)\s*$/.exec(String(fs));
+          if (m2) return _zwSvgLenCssLenToPx(parseFloat(m2[1]), (m2[2] || 'px').toLowerCase());
+        }
+        try { node = node.parentNode; } catch (_eP3) { break; }
+      }
+      return 16;
+    };
+    // 当前态的 px 换算因子：有 unitType 走常量表（percentage/em 走语境）；
+    // UNKNOWN（CSS 单位 q）走解析时记录的物理因子（写回串保留原单位后缀——
+    // valueAsString '48q' 往返保真）。
+    var _unitPx = function (c) {
+      return c.ut ? _unitPxFactor(c.ut) : (c.cf || 1);
+    };
+    // 目标单位因子（convertToSpecifiedUnits 换算分母）——percentage/em 同样
+    // 走语境因子（WPT percentage-directionality：30px → x → 10% 基于 viewport
+    // width 150，非常量 1）。
+    var _unitPxFactor = function (ut) {
+      if (ut === 2) return _pctPx();
+      if (ut === 3) return _fontPx();
+      return _zwSvgLenFactor(ut);
+    };
+    Object.defineProperty(sl, 'unitType', { configurable: true, get: function () { return cur().ut; } });
+    Object.defineProperty(sl, 'value', {
+      configurable: true,
+      get: function () { var c = cur(); return c.vu * _unitPx(c); },
+      set: function (v) {
+        if (readOnly) roThrow();
+        var n = Number(v);
+        if (!isFinite(n)) throw new TypeError('The provided float value is non-finite');
+        var c = cur();
+        write(n / _unitPx(c), c.ut, c);
+      },
+    });
+    Object.defineProperty(sl, 'valueInSpecifiedUnits', {
+      configurable: true,
+      get: function () { return cur().vu; },
+      set: function (v) {
+        if (readOnly) roThrow();
+        var n = Number(v);
+        if (!isFinite(n)) throw new TypeError('The provided float value is non-finite');
+        var c = cur();
+        write(n, c.ut, c);
+      },
+    });
+    Object.defineProperty(sl, 'valueAsString', {
+      configurable: true,
+      get: function () {
+        var c = cur();
+        return _zwSvgLenFmt(c.vu) + (c.su || _zwSvgLenSuffixes[c.ut] || '');
+      },
+      set: function (v) {
+        if (readOnly) roThrow();
+        var p = _zwSvgLenParse(v);
+        if (!p) throw _zwSvgLenDomErr('invalid length: ' + String(v), 'SyntaxError');
+        write(p.vu, p.ut, p);
+      },
+    });
+    sl.convertToSpecifiedUnits = function (unitType) {
+      if (readOnly) roThrow();
+      // required 参数缺失 → TypeError（WebIDL；WPT SVGLength：convertToSpecifiedUnits()
+      // 无参 TypeError 而非 NotSupportedError——0 值参数才落 NotSupportedError）。
+      if (arguments.length < 1) throw new TypeError('1 argument required, but only 0 present');
+      var ut = _zwSvgLenUnitNorm(unitType);
+      if (ut < 1 || ut > 10) {
+        throw _zwSvgLenDomErr('invalid unit type', 'NotSupportedError');
+      }
+      var c = cur();
+      write(c.vu * _unitPx(c) / _unitPxFactor(ut), ut);
+    };
+    sl.newValueSpecifiedUnits = function (unitType, valueInSpecifiedUnits) {
+      if (readOnly) roThrow();
+      if (arguments.length < 2) throw new TypeError('2 arguments required, but only ' + arguments.length + ' present');
+      // 校验序：value float 校验先于 unitType（WPT SVGLength ('aString','aString')
+      // → TypeError 而非 NotSupportedError）。
+      var n = Number(valueInSpecifiedUnits);
+      if (!isFinite(n)) throw new TypeError('The provided float value is non-finite');
+      var ut = _zwSvgLenUnitNorm(unitType);
+      if (ut < 1 || ut > 10) {
+        throw _zwSvgLenDomErr('invalid unit type', 'NotSupportedError');
+      }
+      write(n, ut);
+    };
+    return sl;
+  };
+  // 反射 wrapper 与 per-element SameObject 缓存（className 同款键形态——proxy
+  // __zwSelector/__zwHandle 顶部短路读取）。
+  var _zwSvgAnimCache = {};
+  var _zwSvgAnimKey = function (el, prop) {
+    try { return el.__zwSelector + '\u0000' + (el.__zwHandle || '') + '\u0000' + prop; } catch (_eK) { return null; }
+  };
+  var _zwMakeAnimatedLength = function (el, attr, initial) {
+    var w = new _zwSvgAnimatedLengthCtor();
+    var base = _zwMakeSVGLength(el, attr, initial, false);
+    var anim = _zwMakeSVGLength(el, attr, initial, true);
+    // baseVal getter-only（spec readonly；赋值 sloppy 静默——WPT SVGAnimatedLength
+    // `baseVal = -1` 后值不变）。
+    Object.defineProperty(w, 'baseVal', { configurable: true, get: function () { return base; } });
+    Object.defineProperty(w, 'animVal', { configurable: true, get: function () { return anim; } });
+    return w;
+  };
+  var _zwGetAnimatedLength = function (el, prop, attr, initial) {
+    var k = _zwSvgAnimKey(el, prop);
+    if (k && _zwSvgAnimCache[k]) return _zwSvgAnimCache[k];
+    var w = _zwMakeAnimatedLength(el, attr, initial);
+    if (k) _zwSvgAnimCache[k] = w;
+    return w;
+  };
+  var _zwMakeAnimatedNumber = function (el, attr, initial) {
+    var w = new _zwSvgAnimatedNumberCtor();
+    var read = function () {
+      var raw = null;
+      try { raw = el.getAttribute(attr); } catch (_eRd) { raw = null; }
+      if (raw == null) return initial;
+      var n = parseFloat(raw);
+      return isNaN(n) ? initial : n;
+    };
+    // baseVal 数值型 accessor（float 校验 setter——非有限值 TypeError，spec
+    // WebIDL float 转换）；animVal getter-only 数值。
+    Object.defineProperty(w, 'baseVal', {
+      configurable: true,
+      get: read,
+      set: function (v) {
+        var n = Number(v);
+        if (!isFinite(n)) throw new TypeError('The provided float value is non-finite');
+        try { el.setAttribute(attr, String(n)); } catch (_eWr) {}
+      },
+    });
+    Object.defineProperty(w, 'animVal', { configurable: true, get: read });
+    return w;
+  };
+  var _zwGetAnimatedNumber = function (el, prop, attr, initial) {
+    var k = _zwSvgAnimKey(el, prop);
+    if (k && _zwSvgAnimCache[k]) return _zwSvgAnimCache[k];
+    var w = _zwMakeAnimatedNumber(el, attr, initial);
+    if (k) _zwSvgAnimCache[k] = w;
+    return w;
+  };
+  // 反射定义表：接口名 → { 属性名: [内容属性名, 初值] }。初值面来自 WPT
+  // SVGAnimatedLength/Number-initial-values 的 per-attr 配置（spec 元素索引
+  // 属性缺省表）。同一接口内多属性映射同名内容属性（kernelUnitLengthX/Y →
+  // kernelUnitLength 等——set 走同名属性 X/Y 同步联动，spec 语义）。
+  var _zwSvgLenDefs = {
+    SVGSVGElement: { x: ['x', '0'], y: ['y', '0'], width: ['width', '100%'], height: ['height', '100%'] },
+    SVGRectElement: { x: ['x', '0'], y: ['y', '0'], width: ['width', '0'], height: ['height', '0'], rx: ['rx', '0'], ry: ['ry', '0'] },
+    SVGCircleElement: { cx: ['cx', '0'], cy: ['cy', '0'], r: ['r', '0'] },
+    SVGEllipseElement: { cx: ['cx', '0'], cy: ['cy', '0'], rx: ['rx', '0'], ry: ['ry', '0'] },
+    SVGLineElement: { x1: ['x1', '0'], y1: ['y1', '0'], x2: ['x2', '0'], y2: ['y2', '0'] },
+    SVGForeignObjectElement: { x: ['x', '0'], y: ['y', '0'], width: ['width', '0'], height: ['height', '0'] },
+    SVGImageElement: { x: ['x', '0'], y: ['y', '0'], width: ['width', '0'], height: ['height', '0'] },
+    SVGMarkerElement: { refX: ['refX', '0'], refY: ['refY', '0'], markerWidth: ['markerWidth', '3'], markerHeight: ['markerHeight', '3'] },
+    SVGMaskElement: { x: ['x', '-10%'], y: ['y', '-10%'], width: ['width', '120%'], height: ['height', '120%'] },
+    SVGPatternElement: { x: ['x', '0'], y: ['y', '0'], width: ['width', '0'], height: ['height', '0'] },
+    SVGFilterElement: { x: ['x', '-10%'], y: ['y', '-10%'], width: ['width', '120%'], height: ['height', '120%'] },
+    SVGLinearGradientElement: { x1: ['x1', '0%'], y1: ['y1', '0%'], x2: ['x2', '100%'], y2: ['y2', '0%'] },
+    SVGRadialGradientElement: { cx: ['cx', '50%'], cy: ['cy', '50%'], r: ['r', '50%'], fx: ['fx', '50%'], fy: ['fy', '50%'], fr: ['fr', '0%'] },
+    SVGUseElement: { x: ['x', '0'], y: ['y', '0'], width: ['width', '0'], height: ['height', '0'] },
+    SVGTextContentElement: { textLength: ['textLength', '0'] },
+    SVGTextPathElement: { startOffset: ['startOffset', '0'] },
+    // filter primitive mixin（fe 族经 prototype 继承一次定义）。
+    SVGFilterPrimitiveElement: { x: ['x', '0%'], y: ['y', '0%'], width: ['width', '100%'], height: ['height', '100%'] },
+  };
+  var _zwSvgNumDefs = {
+    SVGComponentTransferFunctionElement: { slope: ['slope', 1], intercept: ['intercept', 0], amplitude: ['amplitude', 1], exponent: ['exponent', 1], offset: ['offset', 0] },
+    SVGFECompositeElement: { k1: ['k1', 0], k2: ['k2', 0], k3: ['k3', 0], k4: ['k4', 0] },
+    SVGFEConvolveMatrixElement: { divisor: ['divisor', 1], bias: ['bias', 0], kernelUnitLengthX: ['kernelUnitLength', 0], kernelUnitLengthY: ['kernelUnitLength', 0] },
+    SVGFEDiffuseLightingElement: { surfaceScale: ['surfaceScale', 1], diffuseConstant: ['diffuseConstant', 1], kernelUnitLengthX: ['kernelUnitLength', 0], kernelUnitLengthY: ['kernelUnitLength', 0] },
+    SVGFEDisplacementMapElement: { scale: ['scale', 0] },
+    SVGFEDistantLightElement: { azimuth: ['azimuth', 0], elevation: ['elevation', 0] },
+    SVGFEDropShadowElement: { dx: ['dx', 2], dy: ['dy', 2], stdDeviationX: ['stdDeviation', 2], stdDeviationY: ['stdDeviation', 2] },
+    SVGFEGaussianBlurElement: { stdDeviationX: ['stdDeviation', 0], stdDeviationY: ['stdDeviation', 0] },
+    SVGFEMorphologyElement: { radiusX: ['radius', 0], radiusY: ['radius', 0] },
+    SVGFEOffsetElement: { dx: ['dx', 0], dy: ['dy', 0] },
+    SVGFEPointLightElement: { x: ['x', 0], y: ['y', 0], z: ['z', 0] },
+    SVGFESpecularLightingElement: { surfaceScale: ['surfaceScale', 1], specularConstant: ['specularConstant', 1], specularExponent: ['specularExponent', 1], kernelUnitLengthX: ['kernelUnitLength', 0], kernelUnitLengthY: ['kernelUnitLength', 0] },
+    SVGFESpotLightElement: { x: ['x', 0], y: ['y', 0], z: ['z', 0], pointsAtX: ['pointsAtX', 0], pointsAtY: ['pointsAtY', 0], pointsAtZ: ['pointsAtZ', 0], specularExponent: ['specularExponent', 1], limitingConeAngle: ['limitingConeAngle', 0] },
+    SVGFETurbulenceElement: { baseFrequencyX: ['baseFrequency', 0], baseFrequencyY: ['baseFrequency', 0], seed: ['seed', 0] },
+    SVGGeometryElement: { pathLength: ['pathLength', 0] },
+    SVGStopElement: { offset: ['offset', 0] },
+  };
+  var _zwDefSvgProps = function (defs, isNum) {
+    for (var iname in defs) {
+      var iface = globalThis[iname];
+      if (!iface || !iface.prototype) continue;
+      var pm = defs[iname];
+      for (var pn in pm) {
+        (function (prop, attr, initial) {
+          if (isNum) {
+            Object.defineProperty(iface.prototype, prop, {
+              configurable: true,
+              get: function () { return _zwGetAnimatedNumber(this, prop, attr, initial); },
+            });
+          } else {
+            Object.defineProperty(iface.prototype, prop, {
+              configurable: true,
+              get: function () { return _zwGetAnimatedLength(this, prop, attr, initial); },
+            });
+          }
+        })(pn, pm[pn][0], pm[pn][1]);
+      }
+    }
+  };
+  _zwDefSvgProps(_zwSvgLenDefs, false);
+  _zwDefSvgProps(_zwSvgNumDefs, true);
+  // SVGSVGElement.createSVGLength（spec SVGSVGElement 工厂族首项——detached
+  // SVGLength 是单位模型族的测试载体；createSVGMatrix/Rect/Point 等 S2b/S3 补）。
+  if (globalThis.SVGSVGElement && globalThis.SVGSVGElement.prototype
+      && !globalThis.SVGSVGElement.prototype.createSVGLength) {
+    globalThis.SVGSVGElement.prototype.createSVGLength = function () {
+      return _zwMakeSVGLength(null, null, null, false);
+    };
   }
   // WC-M1 切片 4（spec create-a-native-element / interface object [[Call]]）：
   // 接口构造器被 **custom element 的 super() 调用**且无升级在途（`new klass()` 形态，

@@ -10215,9 +10215,16 @@
         //（spec reflected string 缺省空串，非 null/undefined）。
         // R5009 片 d：`name` 先走 tag 门（form 关联族反射、余 undefined——WPT
         // name-content-attribute-and-property doesNotReflect 全族）。
+        // svg-compat M2 S2a：width/height 对 **SVG ns 元素** 放行 R3037（FLAT 串读是
+        // HTML 面反射——SVG 的 width/height 是 SVGAnimatedLength 接口 reflection，
+        // accessor 在接口 prototype 上经 R93 原型链回落派发；spec SVG2 types.html
+        // §InterfaceSVGAnimatedLength）。ns 判定经 _zwIsSvgNsEl（handle _nsHandles +
+        // sel R5000 epoch memo），HTML 元素路径不变。
         var _rsAttr = (prop === 'name')
           ? _reflectedNameAttr(_realTag(sel, handle), prop)
-          : _reflectedStringAttr(prop);
+          : ((prop === 'width' || prop === 'height') && _zwIsSvgNsEl(sel, handle))
+            ? null
+            : _reflectedStringAttr(prop);
         if (_rsAttr) {
           if (handle) return __zw_get_attr_handle(handle, _rsAttr) || '';
           if (typeof __zw_get_attr_lw === 'function') return __zw_get_attr_lw(sel, _rsAttr) || '';
