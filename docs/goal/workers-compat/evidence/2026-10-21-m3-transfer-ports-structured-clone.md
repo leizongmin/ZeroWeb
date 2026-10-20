@@ -1,6 +1,6 @@
 # M3——postMessage transfer/ports + structured-clone 语义（2026-10-21）
 
-全量 **678/714 = 95.0%**（678P/27F/8T/1PF，178 案）。证据 JSON：
+全量 **678/714 = 95.0%**（678P/27F/8T/1PF，175 案）。证据 JSON：
 [2026-10-21-m3-transfer-ports-structured-clone.json](2026-10-21-m3-transfer-ports-structured-clone.json)
 （runner `testharness-workers --json` 原样输出）。
 

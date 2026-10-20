@@ -1,6 +1,6 @@
 # P7 后半 + 环境值面——importScripts 错误归因 + worker rAF/search（2026-10-21）
 
-全量 **693/714 = 97.1%**（693P/12F/8T/1PF，178 案）。证据 JSON：
+全量 **693/714 = 97.1%**（693P/12F/8T/1PF，175 案）。证据 JSON：
 [2026-10-21-p7-import-error-attribution-env-values.json](2026-10-21-p7-import-error-attribution-env-values.json)
 （runner `testharness-workers --json` 原样输出）。
 
