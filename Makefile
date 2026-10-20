@@ -256,7 +256,10 @@ test: target-disk-guard target/test-guard
 	# 此前只跑 --bin zero-browser，集成套件失败不可见（T55 预存失败借此隐藏两个月）。
 	# cdp 钉为 headless 真进程面（自带本地 HTTP 测试页，无需 display），串行避免
 	# 浏览器进程互相挤占；test-guard 运行段内存/墙钟与 bin 腿同口径。
-	ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test -p zero-browser --tests -- --test-threads=1
+	# R5207（2026-10-20）：cargo `--tests` 含 bin test harness——本腿会重跑 666 条 bin
+	# 单测，无 R385 的 Xvfb 前缀时 headless 环境 winit 腿恒败（XNotSupported，
+	# window_surface_present_smoke / paste_and_go 两处非语义红灯）。
+	ZERO_NOPROXY=1 ZW_GUARD_RUNNER_PREFIX="xvfb-run -a" ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test -p zero-browser --tests -- --test-threads=1
 	@if ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 120 -- cargo test -p zero-render-foundation gpu::renderer::tests::test_gpu_renderer_headless_creation -- --exact --test-threads=1 >/dev/null 2>&1; then \
 		echo "wgpu adapter available; running adapter-only GPU tests"; \
 		ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test -p zero-render-foundation gpu::renderer:: -- --test-threads=1; \

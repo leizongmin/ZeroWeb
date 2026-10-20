@@ -757,3 +757,5 @@ mod r5178_replaced_content_kw_tests;
 mod r5205_clamp_shrink_cascade_tests;
 /// R5206 clamp 内层 extent 末子 declared margin 吸收（line-clamp-022/024 锚点）。
 mod r5206_clamp_inner_margin_tests;
+/// R5207 匿名表根 §9.5 float 推开 + 保 shrink 宽（clear-applies-to-005/006 锚点）。
+mod r5207_anon_table_float_tests;

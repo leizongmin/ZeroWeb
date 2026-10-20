@@ -64,6 +64,13 @@ fn is_table_box(b: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> bool 
     if is_float(b) {
         return false;
     }
+    // R5207：孤立 table-internal 元素经 mark_anonymous_table_roots / merge_orphan_table_run
+    // 形成的匿名 table 根（CSS2 §17.2.1.1）与真表同为块级 BFC，同属 §9.5 推开候选——
+    // step8 layout_table 收窄后 x 回落流位 0，step5 的 BFC 推开无重跑（R1518 同构），
+    // 不识别则压在前置 float 上（clear-applies-to-005/006：colgroup/col + row 群包装盒）。
+    if b.is_anon_table_root {
+        return true;
+    }
     b.node_id
         .and_then(|id| styles.get(&id))
         .is_some_and(|s| matches!(s.display, DisplayValue::Table | DisplayValue::InlineTable))
@@ -116,8 +123,15 @@ fn fix_inner(
     // === A: re-wrap table 子树内层 float（收窄 td 内 inner float 堆叠）===
     adjust_float_positions(&mut root.children[tidx], doc, styles);
 
+    // R5207：匿名 table 根的几何在初始布局已定稿（shrink-to-fit 宽含内），本 pass 仅做
+    // C 步 §9.5 推位，不重排——layout_table 重排按 fill-available 度量，会把已 shrink
+    // 的匿名表根撑宽（clear-applies-to-001：96 → 480，cell 背景横跨整行）。
+    let is_anon_root = root.children[tidx].is_anon_table_root;
+
     // === B: 重算 table 高度（inner float 堆叠后 table h 增长，如 100→200）===
-    layout_table(&mut root.children[tidx], doc, styles, inline_fonts);
+    if !is_anon_root {
+        layout_table(&mut root.children[tidx], doc, styles, inline_fonts);
+    }
 
     // 先用不可变读取计算 natural_y / avoidance_x / is_cleared（避免与下方可变借用冲突）
     let mut table_h = root.children[tidx].height;
@@ -172,6 +186,7 @@ fn fix_inner(
         && declared_w.is_none()
         && !is_cleared
         && !root_is_cell
+        && !is_anon_root
         && let Some(rl) = right_float_left
         && rl > 0.5
         && effective_w > rl + 0.5
@@ -294,7 +309,11 @@ fn fix_inner(
         // R1721：beside 判定加 `fill_w < content_width` 捕获 float:right（nx=0 但填部分宽）。
         let beside = nx > 0.5 || fill_w < content_width - 0.5;
         let pos_change = (nx - table.x).abs() > 0.5 || (ny - table.y).abs() > 0.5;
-        let width_change = if beside {
+        // R5207：匿名表根 beside 不填可用宽（保 shrink-to-fit，理由同 B 步 gate——填宽臂是
+        // floats-wrap-bfc-002 真表判例）；仅 below 溢出 clamp 仍适用。
+        let width_change = if is_anon_root {
+            !beside && table.width > mw + 0.5
+        } else if beside {
             (table.width - mw).abs() > 0.5
         } else {
             table.width > mw + 0.5
@@ -313,7 +332,8 @@ fn fix_inner(
             }
             // beside float（nx>0）：auto-width BFC table 填可用宽（非 shrink-to-fit）。
             // below floats（nx=0）：仅当溢出时 clamp。合并为 `beside || 溢出` → 设 mw。
-            if beside || table.width > mw {
+            // R5207：匿名表根 beside 不填（保 shrink 宽），溢出 clamp 照旧。
+            if (!is_anon_root && beside) || table.width > mw {
                 table.width = mw;
             }
             pushed = true;
