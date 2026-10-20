@@ -3065,20 +3065,42 @@
       // pending-removed → 整棵子树 out-of-document（WPT "must not return nodes not
       // present in document"：outer.removeChild(middle) 后 inner.appendChild(h1) 的
       // h1 不可见）。
+      // R5206（html-syntax-compat P9）：同 turn 容器挂载**同步父记录优先**（写点
+      // part05 `_recordHandleChild` / part04 R5009——sel 子挂 shadow/fragment 容器
+      // 时记录，sel 父接手时清除）。sel 子移入 shadow 树同 turn 内 host 快照仍列
+      // 原位，快照命中必须让位：父链经同步记录命中 shadow 根或分离 fragment = 整棵
+      // 子树不在文档树（spec getElementById 只搜文档树，shadow 树不可见——WPT
+      // aria-element-reflection 'Reparenting referenced element cannot cause
+      // retargeting' 的 lyingBanana 断言：apple 移入 shadowFridge 影树后
+      // getElementById('apple') 须命中改名 banana 而非快照 stale 的 apple）。
       function _r125AncestorRemoved(nd) {
         var cur = nd, guard = 0;
         while (cur && guard++ < 32) {
           if (_zwPRSet().has(cur)) return true;
           var next = null;
           try {
-            var ph = cur.__zwHandle;
-            if (ph && typeof _zwNodeParent !== 'undefined' && _zwNodeParent[ph]) {
-              var link = _zwNodeParent[ph];
-              if (link.parentSel) next = _wrapSelector(link.parentSel);
-              else if (link.parentHandle) next = _wrapHandle(link.parentHandle);
-            } else if (cur.__zwSelector && typeof __zw_parent === 'function') {
-              var psel = __zw_parent(cur.__zwSelector);
-              if (psel) next = _wrapSelector(psel);
+            var aspKey = cur.__zwSelector || null;
+            var asp = (aspKey && typeof _zwAriaSyncParent !== 'undefined')
+              ? _zwAriaSyncParent[String(aspKey)] : null;
+            if (asp && asp.parentHandle) {
+              if ((typeof _shadowHandles !== 'undefined' && _shadowHandles[asp.parentHandle])
+                  || (typeof _fragmentHandles !== 'undefined' && _fragmentHandles[asp.parentHandle])) {
+                return true;
+              }
+              next = (typeof _wrapHandle === 'function') ? _wrapHandle(asp.parentHandle) : null;
+            } else if (asp && asp.parentSel) {
+              next = (typeof _wrapSelector === 'function') ? _wrapSelector(asp.parentSel) : null;
+            }
+            if (!next) {
+              var ph = cur.__zwHandle;
+              if (ph && typeof _zwNodeParent !== 'undefined' && _zwNodeParent[ph]) {
+                var link = _zwNodeParent[ph];
+                if (link.parentSel) next = _wrapSelector(link.parentSel);
+                else if (link.parentHandle) next = _wrapHandle(link.parentHandle);
+              } else if (cur.__zwSelector && typeof __zw_parent === 'function') {
+                var psel = __zw_parent(cur.__zwSelector);
+                if (psel) next = _wrapSelector(psel);
+              }
             }
           } catch (_eP) { next = null; }
           cur = next;

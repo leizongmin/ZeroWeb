@@ -138,17 +138,26 @@ fn with_query_view_doc<R>(
         {
             return f(doc);
         }
-        let prev_count = cache_guard
-            .as_ref()
-            .and_then(|(key, _)| {
-                (Arc::ptr_eq(&key.dom_arc, html)
-                    && Arc::ptr_eq(&key.mut_arc, mutations)
-                    && count > key.count
-                    && key.drain_gen == MUT_DRAIN_GEN.load(std::sync::atomic::Ordering::Relaxed)
-                    && key.view_gen == view_gen)
+        let prev_count = {
+            let mut_guard = mutations.lock().unwrap_or_else(|e| e.into_inner());
+            cache_guard
+                .as_ref()
+                .and_then(|(key, _)| {
+                    (Arc::ptr_eq(&key.dom_arc, html)
+                        && Arc::ptr_eq(&key.mut_arc, mutations)
+                        && count > key.count
+                        && key.drain_gen == MUT_DRAIN_GEN.load(std::sync::atomic::Ordering::Relaxed)
+                        && key.view_gen == view_gen
+                        // R5206：链段含重置（SetInnerHtml 不应用、链基座缺重置语义，
+                        // 新窗口也看不到它）即退全量重建，让 latest-wins 在全窗口生效。
+                        && mut_guard.len() >= key.count
+                        && !mut_guard[..key.count]
+                            .iter()
+                            .any(|m| matches!(m, DomMutation::SetInnerHtml { .. })))
                     .then_some(key.count)
-            })
-            .unwrap_or(0);
+                })
+                .unwrap_or(0)
+        };
         let chain_hit = prev_count > 0;
         // 结构级 mutation 子集（见 register_dom_callbacks 处 R57 文档——属性级/handle
         // 链/Remove/SetInnerHtml 不应用）。Remove 排除：被移除元素的 proxy 属性读取
@@ -173,20 +182,47 @@ fn with_query_view_doc<R>(
             if mut_guard.len() < count {
                 Vec::new()
             } else {
-                mut_guard[prev_count..count]
+                // R5206 同 turn 重置覆盖（窗口内 latest-wins）：SetInnerHtml(S) 语义上
+                // 抹掉其前同容器全部结构插入——R5001 document.write 流每步
+                // `body.innerHTML = baseline` + `insertAdjacentHTML(累计缓冲)`，全量重放
+                // 会把 N 个截断分片子树堆上基座（ambiguous-ampersand 160 divs、
+                // probe-write 19 个 written div 实证）。只重放最后一次重置之后的插入：
+                // 写流的最终态 = 基座（重置基线 = 写前 body 内容）+ 最终满缓冲，与活
+                // 文档一致。R5001 基线恒等写前内容 ⇒ 本筛减对写流精确；基线 ≠ 基座
+                // 内容的一般 SIH 形态不在本次修复面（重置本体仍不应用，R3029 语义
+                // 保持）。
+                let last_reset: HashMap<&str, usize> = mut_guard[prev_count..count]
                     .iter()
-                    .filter(|m| matches!(m, DomMutation::InsertAdjacentHtml { .. }))
-                    .filter(|m| {
+                    .enumerate()
+                    .filter_map(|(i, m)| match m {
+                        DomMutation::SetInnerHtml { selector, .. } => Some((selector.as_str(), i)),
+                        _ => None,
+                    })
+                    .collect();
+                let kept: Vec<usize> = mut_guard[prev_count..count]
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, m)| match m {
+                        DomMutation::InsertAdjacentHtml { selector, .. } => {
+                            last_reset.get(selector.as_str()).is_none_or(|&r| r < *i)
+                        }
+                        _ => false,
+                    })
+                    .filter(|(_, m)| {
                         // uievents-compat 尾簇 13：**基座已反映去重**——dom_html 存在换代
                         // 写入点（R55 dispatch_event 每次重注册换新 Arc = 最新 cached_html、
                         // user_actions 批末更新），基座可能已含「已 apply 的落地拷贝」；
                         // 全量重放再插一次即双计（WPT image_map img-resized 双案：视图
                         // 幽灵 → hit test 命中残影）。fragment 首元素带 id 且基座已有同
                         // id → 视该 op 已反映，跳过；无 id 片段照旧重放（无法判重，保守）。
-                        if let DomMutation::InsertAdjacentHtml { html: frag, .. } = m
+                        if let DomMutation::InsertAdjacentHtml { html: frag, .. } = *m
                             && let Some(start) = frag.find("id=")
                         {
-                            let rest = &frag[start + 4..];
+                            // R5206：`id=` 是 3 字节——曾 `start + 4` 双重越界面：分片在
+                            // `id=` 处截断时 panic（byte index out of bounds，char-by-char
+                            // document.write 探针实证）；带引号 id（`id="foo"`）rest 首字节
+                            // 恰越过开引号，strip_prefix('"') 恒 miss，去重从未生效。
+                            let rest = &frag[start + 3..];
                             let id = rest.strip_prefix('"').and_then(|r| r.find('"').map(|i| &r[..i]));
                             if let Some(id) = id
                                 && !id.is_empty()
@@ -197,8 +233,9 @@ fn with_query_view_doc<R>(
                         }
                         true
                     })
-                    .cloned()
-                    .collect()
+                    .map(|(i, _)| i)
+                    .collect();
+                kept.into_iter().map(|i| mut_guard[prev_count + i].clone()).collect()
             }
         };
         if !structural.is_empty() {
@@ -3389,5 +3426,105 @@ mod query_reparse_tests {
         });
         let seen_fresh = with_query_doc(html_b, count_divs);
         assert_eq!(seen_fresh, 2, "post-backoff miss must reparse to the fresh doc");
+    }
+}
+
+#[cfg(test)]
+mod view_doc_replay_tests {
+    use super::*;
+
+    /// R5206 离一回归：IAH 分片在 `id=` 处截断（`<div id=`——char-by-char
+    /// document.write 的真实切边形态）曾 `&frag[start + 4..]` 越界 panic
+    /// （byte index out of bounds，runner 整体 abort）。`id=` 是 3 字节。
+    #[test]
+    fn iah_fragment_ending_at_id_attr_does_not_panic() {
+        let html = Arc::new(std::sync::Mutex::new("<html><body></body></html>".to_string()));
+        let mutations: Arc<std::sync::Mutex<Vec<DomMutation>>> =
+            Arc::new(std::sync::Mutex::new(vec![DomMutation::InsertAdjacentHtml {
+                selector: "body".into(),
+                position: "beforeend".into(),
+                html: "<div id=".into(),
+            }]));
+        // 不 panic 即达标（截断分片解析产物允许为空）。
+        let ran = with_query_view_doc(&html, &mutations, |_doc| true);
+        assert!(ran);
+    }
+
+    /// R5206：带引号 id 去重激活——曾 `start + 4` 越过开引号使 `strip_prefix('"')`
+    /// 恒 miss，R342 去重对 `id="x"` 形态从未生效。基座已含同 id 的分片跳过
+    ///（防换代双计），异 id / 无引号形态照旧应用（无引号保守不判重）。
+    #[test]
+    fn iah_quoted_id_dedup_against_pinned_base() {
+        let html = Arc::new(std::sync::Mutex::new(
+            "<html><body><div id=\"a\"></div><div id=\"c\"></div></body></html>".to_string(),
+        ));
+        let mutations: Arc<std::sync::Mutex<Vec<DomMutation>>> = Arc::new(std::sync::Mutex::new(vec![
+            // 基座已有 #a（带引号）→ 视已反映，跳过。
+            DomMutation::InsertAdjacentHtml {
+                selector: "body".into(),
+                position: "beforeend".into(),
+                html: "<div id=\"a\">dup</div>".into(),
+            },
+            // #b 新 id → 应用。
+            DomMutation::InsertAdjacentHtml {
+                selector: "body".into(),
+                position: "beforeend".into(),
+                html: "<div id=\"b\">new</div>".into(),
+            },
+            // 无引号 id=a → 保守不判重，照旧应用（双计容忍优先于误丢）。
+            DomMutation::InsertAdjacentHtml {
+                selector: "body".into(),
+                position: "beforeend".into(),
+                html: "<div id=a>unquoted</div>".into(),
+            },
+        ]));
+        let div_count = with_query_view_doc(&html, &mutations, |doc| {
+            crate::js_dom_bridge::query_all_selector_list_doc(doc, "div")
+                .split('|')
+                .filter(|s| !s.is_empty())
+                .count()
+        });
+        // 基座 a、c + 应用 b + 无引号 a 副本 = 4（quoted a 被 dedup 掉）。
+        assert_eq!(div_count, 4);
+    }
+
+    /// R5206 latest-wins：窗口内同容器 SetInnerHtml 重置抹掉其前全部结构插入——
+    /// R5001 document.write 流每步 `innerHTML = 基线` + `insertAdjacentHTML(累计
+    /// 缓冲)`，全量重放曾把 N 个截断分片子树堆上视图（ambiguous-ampersand 160
+    /// divs 实证）。只重放最后一次重置之后的插入。
+    #[test]
+    fn iah_after_innerhtml_reset_latest_wins() {
+        let html = Arc::new(std::sync::Mutex::new("<html><body></body></html>".to_string()));
+        let mutations: Arc<std::sync::Mutex<Vec<DomMutation>>> = Arc::new(std::sync::Mutex::new(vec![
+            DomMutation::SetInnerHtml {
+                selector: "body".into(),
+                html: "<p>base</p>".into(),
+            },
+            DomMutation::InsertAdjacentHtml {
+                selector: "body".into(),
+                position: "beforeend".into(),
+                html: "<div id=\"one\"></div>".into(),
+            },
+            // 第二次重置：#one 已被语义抹掉。
+            DomMutation::SetInnerHtml {
+                selector: "body".into(),
+                html: "<p>base</p>".into(),
+            },
+            DomMutation::InsertAdjacentHtml {
+                selector: "body".into(),
+                position: "beforeend".into(),
+                html: "<div id=\"two\"></div>".into(),
+            },
+        ]));
+        let (one, two) = with_query_view_doc(&html, &mutations, |doc| {
+            let sel_list = |sel: &str| {
+                crate::js_dom_bridge::query_all_selector_list_doc(doc, sel)
+                    .split('|')
+                    .any(|s| !s.is_empty())
+            };
+            (sel_list("#one"), sel_list("#two"))
+        });
+        assert!(!one, "IAH before the last SetInnerHtml reset must not replay");
+        assert!(two, "IAH after the last SetInnerHtml reset must replay");
     }
 }

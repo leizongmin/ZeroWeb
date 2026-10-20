@@ -2034,6 +2034,67 @@ fn test_noscript_serialization_literal_escape_r5197() {
     );
 }
 
+/// R5206（html-syntax-compat P9）：ARIA Element 反射跨文档 scope + getElementById
+/// 同 turn shadow 移树两面——① 树链行走终点按**文档对象身份**落桶（主文档 'doc'/
+/// 分离文档 WeakMap 序号；曾 String(document)='[object Object]' 使主/分离文档同
+/// 桶，跨文档引用误判 valid）；② plain 子 append 入 sel 父后 parentNode 重指
+///（spec pre-insert「set parent」——工厂 stale 指针使移入主文档后仍沿 detached 链
+/// 上行）；③ 同 turn 移入 shadow 树的元素 getElementById 不可见（`_zwAriaSyncParent`
+/// 同步父记录优先于 host 快照，WPT 'Reparenting referenced element cannot cause
+/// retargeting' lyingBanana 面——快照 stale 命中让位于改名元素）。
+#[test]
+fn test_aria_cross_doc_scope_and_get_element_by_id_shadow_move_r5206() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"host\"></div><div id=\"pantry\"></div>\
+         <div id=\"bowl\"><div id=\"apple\">I am an apple</div>\
+         <div id=\"banana\">I am a banana</div></div></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let out = sandbox
+        .execute(
+            "var parts = [];\n\
+             // ① 跨文档引用 = invalid scope（getter null）；span 移入主文档后同树可见\n\
+             var newDoc = document.implementation.createHTMLDocument('r5206');\n\
+             var span = newDoc.createElement('span');\n\
+             newDoc.body.appendChild(span);\n\
+             var host = document.getElementById('host');\n\
+             host.ariaActiveDescendantElement = span;\n\
+             parts.push('crossDoc:' + (host.ariaActiveDescendantElement === null ? 'null' : 'leak'));\n\
+             host.appendChild(span);\n\
+             parts.push('afterMove:' + (host.ariaActiveDescendantElement === span ? 'visible' : 'hidden'));\n\
+             parts.push('parent:' + (span.parentNode === host ? 'host' : 'stale'));\n\
+             // ② 同 turn shadow 移树 + 改名：getElementById 命中改名元素非快照 stale 元素\n\
+             var pantry = document.getElementById('pantry');\n\
+             var shadowRoot = pantry.attachShadow({mode: 'open'});\n\
+             var apple = document.getElementById('apple');\n\
+             var banana = document.getElementById('banana');\n\
+             shadowRoot.appendChild(apple);\n\
+             banana.setAttribute('id', 'apple');\n\
+             parts.push('gEBI:' + (document.getElementById('apple') === banana ? 'banana' : 'stale'));\n\
+             parts.join('~')",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out, "crossDoc:null~afterMove:visible~parent:host~gEBI:banana",
+        "R5206 跨文档 scope 按文档身份落桶 + plain 子 parentNode 重指 + shadow 移树 gEBI 门"
+    );
+}
+
 /// R151②：`template.content` fragment 视图的 ParentNode API（children/firstElementChild/
 /// childElementCount/getElementsByClassName）——WPT Event-dispatch-single-activation 的
 /// `Array.from(template.content.children)` + `getElementsByClassNameInclusive`。

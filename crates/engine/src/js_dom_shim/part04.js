@@ -5604,6 +5604,24 @@
                 })(child, 0);
               } catch (_e368sp) {}
             }
+            // R5206（html-syntax-compat P9）：sel 父 + plain 子的 **parentNode 重指**
+            // ——R368 盖章后子已有 host 身份，但页面持有的工厂对象 parentNode 仍是
+            // detached 源树数据指针（R84 重指分支 gated 父 `handle` 非空——sel 父
+            // handle=null 整体跳过）。spec `concept-node-pre-insert` 步骤 6「set
+            // parent」：append 后同 turn 读 child.parentNode 须返新父（WPT
+            // aria-element-reflection 'Cross-document references and moves'：跨文档
+            // 引用的 scope 判定沿树链上行，stale detached 链使 span 移入主文档后仍判
+            // invalid scope）。getter 返调用方父 proxy（identity 保持调用方路径原对象，
+            // R32）；形状对齐 R84 defineProperty 先例。
+            if (child && child.nodeType === 1 && child.__zwHandle && !child.__zwSelector && !handle) {
+              var _r5201Parent = this;
+              if (_r5201Parent && typeof _r5201Parent === 'object') {
+                try {
+                  Object.defineProperty(child, 'parentNode', { get: function () { return _r5201Parent; }, configurable: true });
+                  Object.defineProperty(child, 'parentElement', { get: function () { return _r5201Parent; }, configurable: true });
+                } catch (_e5201pp) {}
+              }
+            }
             // R177（js-dom M4）：跨文档 adopt（sel 父路径）——plain 子（无 handle——
             // iframe 工厂/detached doc createElement 产物）append 到主文档元素后
             // ownerDocument 重指主 document（spec `concept-node-adopt`；WPT

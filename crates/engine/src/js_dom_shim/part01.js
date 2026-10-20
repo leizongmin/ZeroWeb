@@ -902,8 +902,11 @@
   // FrozenArray 身份缓存（spec caching invariant——同态重读须返回**同一数组对象**；
   // 签名 = 结果键集 + 来源 + attr 串 + 自身树根——树迁移/attr 变更即失配换新）。
   var _zwAriaElCache = {};
-  // 非主文档对象 → 树身份 id（WeakMap——分离文档跨文档引用面）。
+  // 非主文档对象 → 树身份 id（WeakMap——分离文档跨文档引用面）。id 序号独立
+  // 计数（WeakMap 无 size——曾 'doc' + (size + 1) 产出 'docNaN' 使所有分离文档
+  // 同桶）。
   var _zwAriaDocIds = new WeakMap();
+  var _zwAriaDocIdSeq = 0;
   // 节点所属**树链**（内树 → 外根；树身份：'doc' 主文档 / 'sh:<handle>' shadow 树 /
   // 'frag:<handle>' 分离 fragment / 'h:<handle>' 分离元素根 / 'sel:<sel>' 其他）。
   // spec 有效性：E 对 A 有效 ⟺ T_E ∈ C_A（同树或 E 在 A 的 shadow-including 祖先树
@@ -944,6 +947,29 @@
             chain.push('h:' + h);
           }
         } else {
+          // R5206（html-syntax-compat P9）：行走终点为 **document 对象**（nodeType 9——
+          // detached/createHTMLDocument 树的 html 根 parentNode 指向 document 而非 null，
+          // 主文档根同理）——按文档身份落桶（主文档 'doc'、分离文档 WeakMap id）。曾
+          // String(document)='[object Object]' 使主/分离文档同落 'sel:' 桶、树身份同串，
+          // 跨文档引用误判 valid（WPT 'Cross-document references and moves' 实证）。
+          var _aeNt9 = null;
+          try { _aeNt9 = cur.nodeType; } catch (_eNt9) { _aeNt9 = null; }
+          if (_aeNt9 === 9) {
+            var _aeIsMain = cur === (typeof document !== 'undefined' ? document : null);
+            if (!_aeIsMain) {
+              // 包装族身份归一（R5206）：handle 族链行走终点的 document 包装对象与
+              // globalThis.document 非同一 JS 对象（多族并存，R32）——defaultView 是
+              // browsing context 锚（主文档 = window，分离文档 spec 无 → null）。
+              try { _aeIsMain = cur.defaultView === globalThis; } catch (_eDv9) { _aeIsMain = false; }
+            }
+            if (_aeIsMain) {
+              chain.push('doc');
+            } else {
+              if (!_zwAriaDocIds.has(cur)) _zwAriaDocIds.set(cur, 'doc' + (++_zwAriaDocIdSeq));
+              chain.push(String(_zwAriaDocIds.get(cur)));
+            }
+            break;
+          }
           var s = String(cur);
           // R5009 片 e：'html' 根需区分主文档与 implementation.createHTMLDocument 的
           // 分离文档根（ownerDocument 身份——跨文档引用无效性依赖树身份区分，WPT
@@ -955,7 +981,7 @@
             if (!_aeDoc || _aeDoc === (typeof document !== 'undefined' ? document : null)) {
               chain.push('doc');
             } else {
-              if (!_zwAriaDocIds.has(_aeDoc)) _zwAriaDocIds.set(_aeDoc, 'doc' + (_zwAriaDocIds.size + 1));
+              if (!_zwAriaDocIds.has(_aeDoc)) _zwAriaDocIds.set(_aeDoc, 'doc' + (++_zwAriaDocIdSeq));
               chain.push(String(_zwAriaDocIds.get(_aeDoc)));
             }
           } else {
