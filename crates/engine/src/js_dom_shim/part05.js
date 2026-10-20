@@ -1602,7 +1602,7 @@
   // contentType 'application/xml'（R81 `new Document()` 同款语义）；XHTML：HTML 解析 +
   // namespaceURI HTMLNS。文档模型复用 `_makeDetachedDocument`（查询/mutation/Range 全可用），
   // docEl.textContent 供用例 load 断言。
-  function _zwMakeIframeDoc(kind, markup) {
+  function _zwMakeIframeDoc(kind, markup, charsetLabel) {
     var doc = _makeDetachedDocument('');
     var _r115WinRef = null; // defaultView 槽（_zwMakeIframeWin 建后回填）
     doc._zwMarkup = String(markup || '');
@@ -1613,18 +1613,23 @@
     // 编码名）。`_zwEncodingFromLabel`：ASCII 大小写不敏感 + 首尾空白剥离 + label
     // 表映射；HTML meta 场景特例（spec HTML「documentEncoding」）：utf-16/utf-16be/
     // utf-16le → UTF-8、x-user-defined → windows-1252。
+    // html-syntax（2026-10-20）：嗅探标签优先（part01 `_zwFinishIframeEntry` 字节
+    // 面传入——BOM/transport charset/meta 1024 窗语义，胜 regex 面）；无嗅探时
+    // 回落 meta regex；仍无则导航默认 windows-1252（spec encoding sniffing 算法
+    // 落空分支——XML 声明不参与）。
     // https://encoding.spec.whatwg.org/#names-and-labels
     // https://html.spec.whatwg.org/multipage/#documentEncoding
+    // https://html.spec.whatwg.org/multipage/parsing.html#encoding-sniffing-algorithm
     try {
-      var _r141M = /<meta[^>]+charset\s*=\s*["']?\s*([^"'>\s]+)\s*["']?/i.exec(String(markup || ''));
-      if (_r141M) {
-        var _r141Name = _zwEncodingFromLabel(_r141M[1], true);
-        if (_r141Name) {
-          Object.defineProperty(doc, 'characterSet', { configurable: true, get: function () { return _r141Name; } });
-          Object.defineProperty(doc, 'charset', { configurable: true, get: function () { return _r141Name; } });
-          Object.defineProperty(doc, 'inputEncoding', { configurable: true, get: function () { return _r141Name; } });
-        }
+      var _r141Name = (typeof charsetLabel === 'string' && charsetLabel) || null;
+      if (!_r141Name) {
+        var _r141M = /<meta[^>]+charset\s*=\s*["']?\s*([^"'>\s]+)\s*["']?/i.exec(String(markup || ''));
+        if (_r141M) _r141Name = _zwEncodingFromLabel(_r141M[1], true);
       }
+      if (!_r141Name) _r141Name = 'windows-1252';
+      Object.defineProperty(doc, 'characterSet', { configurable: true, get: function () { return _r141Name; } });
+      Object.defineProperty(doc, 'charset', { configurable: true, get: function () { return _r141Name; } });
+      Object.defineProperty(doc, 'inputEncoding', { configurable: true, get: function () { return _r141Name; } });
     } catch (_e141m) {}
     if (kind === 'xml') {
       doc.contentType = 'application/xml';
@@ -1959,6 +1964,39 @@
     // 非 R209 时代的 query-tree），push 不扰动 restoreIframe 清理循环（循环读
     // firstChild/lastChild 即本数组首末——docEl 入列后循环正确跳过 doctype 只
     // 清 doctype 后的动态子）。
+    // html-syntax（2026-10-20，xmldecl 收编）：文档级前导 bogus comment——HTML 解析
+    // before html 插入模式忽略 whitespace、对 `<?…>` 产 bogus comment 节点挂
+    // Document：真浏览器 iframe 子文档 doc.firstChild = `?xml …?` 注释（nodeValue 以
+    // `?xml` 开头；UTF-16 面解码后 `?x` 形态同满足）。仅 HTML kind（XML/XHTML 文档
+    // 走 XML 解析器，`<?xml` 是声明不产节点）。WPT xmldecl 三案 test_support.js 的
+    // firstChild nodeType/nodeValue 断言面。
+    // https://html.spec.whatwg.org/multipage/parsing.html#the-before-html-insertion-mode
+    if (kind === 'html') {
+      try {
+        var _rxmlMk = String(markup || '');
+        var _rxmlS = 0;
+        while (_rxmlS < _rxmlMk.length
+          && (_rxmlMk.charAt(_rxmlS) === '\t' || _rxmlMk.charAt(_rxmlS) === '\n'
+            || _rxmlMk.charAt(_rxmlS) === '\f' || _rxmlMk.charAt(_rxmlS) === '\r'
+            || _rxmlMk.charAt(_rxmlS) === ' ')) _rxmlS++;
+        if (_rxmlMk.charAt(_rxmlS) === '<' && _rxmlMk.charAt(_rxmlS + 1) === '?') {
+          var _rxmlGt = _rxmlMk.indexOf('>', _rxmlS + 2);
+          if (_rxmlGt > 0) {
+            var _rxmlData = _rxmlMk.slice(_rxmlS + 1, _rxmlGt);
+            var _rxmlCm = {
+              nodeType: 8, nodeName: '#comment',
+              data: _rxmlData, nodeValue: _rxmlData,
+              ownerDocument: doc, parentNode: null, childNodes: [],
+              hasChildNodes: function () { return false; },
+              get firstChild() { return null; },
+              get lastChild() { return null; }
+            };
+            _rxmlCm.parentNode = doc;
+            doc.childNodes.push(_rxmlCm);
+          }
+        }
+      } catch (_eRxml) {}
+    }
     try {
       docEl.parentNode = doc;
       doc.childNodes.push(docEl);

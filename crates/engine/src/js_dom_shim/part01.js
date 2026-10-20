@@ -1330,17 +1330,68 @@
       // 形态 name\x1evalue\x1e…（fetch_bridge encode_headers）；命中即覆盖 effective url
       //（doc._zwURL 槽 + entry.url——history/URL 面同源）。
       var effectiveUrl = url;
+      var _zwFrameCt = '';
       if (parts.length > 2) {
         var hdrs360 = String(parts[2] || '').split('\x1e');
         for (var h360 = 0; h360 + 1 < hdrs360.length; h360 += 2) {
           if (hdrs360[h360] === 'X-Zero-Final-URL' && hdrs360[h360 + 1]) {
             effectiveUrl = String(hdrs360[h360 + 1]);
-            break;
+          // 大小写不敏感取 Content-Type——sidecar headers wire 按原始大小写入列
+          //（runner 推小写 `content-type`；HTTP 头名本就 case-insensitive）。
+          } else if (String(hdrs360[h360]).toLowerCase() === 'content-type' && !_zwFrameCt) {
+            _zwFrameCt = String(hdrs360[h360 + 1]);
           }
         }
       }
+      // html-syntax（2026-10-20）：iframe 子文档编码面——`__zw_bytes:` wire（R3021，
+      // 非 UTF-8 body_bytes 的 host 序列化形态）按字节解码而非字面 csv 落 markup：
+      // BOM → transport charset 参数（Content-Type；confidence certain 胜 prescan）
+      // → WHATWG prescan（1024 窗 meta 归纳 + get-an-XML-encoding 兜底——bogo-XML
+      // declaration 经此参与导航编码）→ UTF-8 lossy。嗅探标签经 `_zwMakeIframeDoc`
+      // 第三参落 characterSet 三别名。
+      // https://html.spec.whatwg.org/multipage/parsing.html#encoding-sniffing-algorithm
+      var _zwFrameCharset = null;
+      // transport charset 参数（Content-Type；confidence certain，BOM 与 prescan 之前）。
+      var _zwFrameTransport = null;
+      if (_zwFrameCt) {
+        var _zwCtM = /charset\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s;]+))/i.exec(_zwFrameCt);
+        var _zwCtRaw = _zwCtM ? (_zwCtM[1] != null ? _zwCtM[1] : (_zwCtM[2] != null ? _zwCtM[2] : _zwCtM[3])) : '';
+        if (_zwCtRaw && typeof _zwEncodingFromLabel === 'function') _zwFrameTransport = _zwEncodingFromLabel(_zwCtRaw, false);
+      }
+      if (body.indexOf('__zw_bytes:') === 0) {
+        var _zwFrameBytes = _zwDecodeBytesPrefix(body);
+        var _zwFrameBom = (_zwFrameBytes[0] === 0xFF && _zwFrameBytes[1] === 0xFE) ? 'UTF-16LE'
+          : (_zwFrameBytes[0] === 0xFE && _zwFrameBytes[1] === 0xFF) ? 'UTF-16BE'
+          : (_zwFrameBytes[0] === 0xEF && _zwFrameBytes[1] === 0xBB && _zwFrameBytes[2] === 0xBF) ? 'UTF-8' : null;
+        var _zwFrameLabel = _zwFrameTransport;
+        if (!_zwFrameBom && !_zwFrameLabel && typeof _zwFramePrescanCharset === 'function') {
+          _zwFrameLabel = _zwFramePrescanCharset(_zwFrameBytes);
+        }
+        _zwFrameCharset = _zwFrameBom || _zwFrameLabel;
+        var _zwFrameText = null;
+        if (_zwFrameCharset && _zwFrameCharset !== 'UTF-8') {
+          // replacement 编码 TextDecoder 恒 RangeError（encoding spec：replacement 无
+          // decoder）——字符集标签保留（characterSet 断言面），解码降级 windows-1252。
+          var _zwDecName = _zwFrameCharset === 'replacement' ? 'windows-1252' : _zwFrameCharset;
+          try { _zwFrameText = new TextDecoder(_zwDecName).decode(_zwFrameBytes); } catch (_eIframeDec) { _zwFrameText = null; }
+        }
+        body = _zwFrameText != null ? _zwFrameText : new TextDecoder().decode(_zwFrameBytes);
+      } else {
+        // html-syntax（2026-10-20）：合法 UTF-8 plain wire 同走嗅探——非 UTF-8 字节的
+        // 语料走上方 bytes 分支，纯 ASCII/合法 UTF-8 语料（replacement.htm 的
+        // ISO-2022-KR bogo 声明等）此前直接落缺省 charset。流序同 spec：BOM
+        //（UTF-8 BOM 已随解码成 \uFEFF）→ transport → text prescan（string 视图）。
+        // https://html.spec.whatwg.org/multipage/parsing.html#encoding-sniffing-algorithm
+        if (body.charCodeAt(0) === 0xFEFF) _zwFrameCharset = 'UTF-8';
+        else if (_zwFrameTransport) _zwFrameCharset = _zwFrameTransport;
+        else if (typeof _zwFramePrescanCharset === 'function') _zwFrameCharset = _zwFramePrescanCharset(body);
+      }
       var kind = _zwIframeKindFromUrl(url);
-      entry.doc = _zwMakeIframeDoc(kind, body);
+      // html-syntax（2026-10-20）：Content-Type text/html 判 HTML 解析面——URL 扩展
+      // 启发之外的动态端点（xmldecl trickle.py 等 wptserve text/html 输出）按响应
+      // MIME 走 HTML 文档语义（kind 'xml' 会丢 bogus comment 与编码嗅探消费面）。
+      if (kind !== 'html' && /^text\/html\b/i.test(String(_zwFrameCt || ''))) kind = 'html';
+      entry.doc = _zwMakeIframeDoc(kind, body, _zwFrameCharset);
       // uievents-compat 尾簇 23（2026-10-06）：body id 落视图——`<body id=…>` 的
       // 子文档（pointercapture_in_frame 内页）body 视图 getAttribute 此前恒 null
       //（_zwMakeIframeDoc 的 R159/R255 提取链对 fetch 形态断链）——从原始 markup
@@ -2757,6 +2808,164 @@
     var arr = new Uint8Array(parts.length);
     for (var i = 0; i < parts.length; i++) arr[i] = parseInt(parts[i], 10) & 0xFF;
     return arr;
+  }
+
+  // WHATWG「prescan a byte stream to determine its encoding」（iframe/导航路径——与
+  // XHR 响应文档的 WebKit token 扫描 `_zwXhrScanMetaCharset` 语义不同面）：
+  // ① UTF-16 XML 声明字节序（3C 00 3F 00 78 00 / 00 3C 00 3F 00 78）直接定 UTF-16LE/BE；
+  // ② 循环：<!-- 滑到 -->；`<meta` + 空白/slash 走属性归纳（charset 属性命中经
+  //    `_zwEncodingFromLabel(…, true)` 归一即返回——utf-16 系→UTF-8、
+  //    x-user-defined→windows-1252 与 spec processing 步一致）；`<`(+`/`)+字母滑到
+  //    空白/> 后掠属性；`<!`/`</`/`<?` 滑到 `>`；其余逐字节；③ 1024 窗界/EOF 中止 →
+  //    「get an XML encoding」兜底：流首小写 `<?xml` + 首 `>` 前寻 `encoding` 子串 +
+  //    `=` + 成对引号 + 值内无 ≤0x20 字节 → label 归一（bogo-XML-declaration 编码面，
+  //    meta 命中时被 prescan 先行返回胜出）。
+  // https://html.spec.whatwg.org/multipage/parsing.html#prescan-a-data-state-based-on-the-byte-stream
+  function _zwFramePrescanCharset(bytes) {
+    var n = bytes.length;
+    // bt 兼容两种流形态：Uint8Array（`__zw_bytes:` wire）与 string（合法 UTF-8
+    // plain wire——ASCII 语义按 code unit 等价于字节面）。
+    function bt(i) {
+      if (i >= n) return -1;
+      var v = bytes[i];
+      return typeof v === 'number' ? (v & 0xFF) : v.charCodeAt(0);
+    }
+    function isWsC(c) { return c === 0x09 || c === 0x0A || c === 0x0C || c === 0x0D || c === 0x20; }
+    function lower(c) { return c >= 0x41 && c <= 0x5A ? c + 0x20 : c; }
+    var _paPos = 0; // get an attribute 共享游标（spec 算法的 position）
+    // get an attribute：返 null = 无属性（`>`/EOF；EOF 另置 _paPos=n 使循环中止）。
+    function getAttr() {
+      var pos = _paPos;
+      while (pos < n && (isWsC(bt(pos)) || bt(pos) === 0x2F)) pos++;
+      if (pos >= n) { _paPos = n; return null; }
+      if (bt(pos) === 0x3E) { _paPos = pos; return null; }
+      var name = '';
+      var sawEq = false;
+      for (;;) {
+        var c = bt(pos);
+        if (c < 0) { _paPos = n; return null; }
+        if (c === 0x3D && name !== '') { pos++; sawEq = true; break; }
+        if (isWsC(c)) break; // spaces
+        if (c === 0x2F || c === 0x3E) { _paPos = pos; return { name: name, value: '' }; }
+        name += String.fromCharCode(lower(c));
+        pos++;
+      }
+      if (!sawEq) {
+        while (pos < n && isWsC(bt(pos))) pos++;
+        if (pos >= n) { _paPos = n; return null; }
+        if (bt(pos) !== 0x3D) { _paPos = pos; return { name: name, value: '' }; }
+        pos++;
+      }
+      while (pos < n && isWsC(bt(pos))) pos++;
+      if (pos >= n) { _paPos = n; return null; }
+      var q = bt(pos);
+      if (q === 0x22 || q === 0x27) {
+        pos++;
+        var out = '';
+        while (pos < n && bt(pos) !== q) { out += String.fromCharCode(lower(bt(pos))); pos++; }
+        if (pos >= n) { _paPos = n; return null; }
+        _paPos = pos + 1; // 闭引号后
+        return { name: name, value: out };
+      }
+      if (q === 0x3E) { _paPos = pos; return { name: name, value: '' }; }
+      var out2 = '';
+      while (pos < n && !isWsC(bt(pos)) && bt(pos) !== 0x3E) { out2 += String.fromCharCode(lower(bt(pos))); pos++; }
+      _paPos = pos;
+      return { name: name, value: out2 };
+    }
+    // get an XML encoding（中止兜底）。`<?xml` 前缀按字节面大小写敏感（spec 0x78 0x6D 0x6C）。
+    function getXmlEncoding() {
+      if (!(bt(0) === 0x3C && bt(1) === 0x3F && bt(2) === 0x78 && bt(3) === 0x6D && bt(4) === 0x6C)) return null;
+      var gt = -1;
+      for (var i = 5; i < n; i++) { if (bt(i) === 0x3E) { gt = i; break; } }
+      if (gt < 0) return null;
+      var p = -1;
+      for (var j = 0; j + 8 <= gt; j++) {
+        if (bt(j) === 0x65 && bt(j + 1) === 0x6E && bt(j + 2) === 0x63 && bt(j + 3) === 0x6F
+          && bt(j + 4) === 0x64 && bt(j + 5) === 0x69 && bt(j + 6) === 0x6E && bt(j + 7) === 0x67) { p = j + 8; break; }
+      }
+      if (p < 0) return null;
+      while (p < n && bt(p) <= 0x20) p++;
+      if (p >= n || bt(p) !== 0x3D) return null;
+      p++;
+      while (p < n && bt(p) <= 0x20) p++;
+      if (p >= n) return null;
+      var q = bt(p);
+      if (q !== 0x22 && q !== 0x27) return null;
+      var e2 = p + 1;
+      while (e2 < n && bt(e2) !== q) e2++;
+      if (e2 >= n) return null;
+      var lbl = '';
+      for (var k2 = p + 1; k2 < e2; k2++) {
+        var bb = bt(k2);
+        if (bb <= 0x20) return null;
+        lbl += String.fromCharCode(bb);
+      }
+      // htmlMeta=true：utf-16 系→UTF-8（spec「If the encoding is UTF-16BE/LE, then
+      // change it to UTF-8」）；x-user-defined→windows-1252（同表特例，无害超集）。
+      return typeof _zwEncodingFromLabel === 'function' ? _zwEncodingFromLabel(lbl, true) : null;
+    }
+    var end = Math.min(n, 1024); // 编码嗅探调用方的 end condition（1024 字节窗）
+    if (end >= 6) {
+      if (bt(0) === 0x3C && bt(1) === 0x00 && bt(2) === 0x3F && bt(3) === 0x00 && bt(4) === 0x78 && bt(5) === 0x00) return 'UTF-16LE';
+      if (bt(0) === 0x00 && bt(1) === 0x3C && bt(2) === 0x00 && bt(3) === 0x3F && bt(4) === 0x00 && bt(5) === 0x78) return 'UTF-16BE';
+    }
+    var i2 = 0;
+    while (i2 < end) {
+      if (bt(i2) === 0x3C && bt(i2 + 1) === 0x21 && bt(i2 + 2) === 0x2D && bt(i2 + 3) === 0x2D) {
+        i2 += 4;
+        while (i2 < end && !(bt(i2) === 0x2D && bt(i2 + 1) === 0x2D && bt(i2 + 2) === 0x3E)) i2++;
+        if (i2 < end) i2 += 3;
+        continue;
+      }
+      if (bt(i2) === 0x3C) {
+        var d1 = bt(i2 + 1), d2 = bt(i2 + 2), d3 = bt(i2 + 3), d4 = bt(i2 + 4), d5 = bt(i2 + 5);
+        if (lower(d1) === 0x6D && lower(d2) === 0x65 && lower(d3) === 0x74 && lower(d4) === 0x61
+          && (d5 === 0x09 || d5 === 0x0A || d5 === 0x0C || d5 === 0x0D || d5 === 0x20 || d5 === 0x2F)) {
+          _paPos = i2 + 5; // 指向序列内的空白/slash 字节
+          var seen = {}, sawCharset = false, charset = null;
+          for (;;) {
+            var attr = getAttr();
+            if (!attr) break;
+            if (seen[attr.name]) continue;
+            seen[attr.name] = 1;
+            // content/http-equiv pragma 面略（charset 属性即本套件全断面；
+            // charset 未知 label → failure 语义 = 不返回、prescan 续走）。
+            if (attr.name === 'charset') {
+              sawCharset = true;
+              charset = typeof _zwEncodingFromLabel === 'function' ? _zwEncodingFromLabel(attr.value, true) : null;
+            }
+          }
+          i2 = _paPos;
+          if (sawCharset && charset) return charset;
+          i2++; // next byte
+          continue;
+        }
+        if (d1 === 0x21 || d1 === 0x2F || d1 === 0x3F) {
+          i2++;
+          while (i2 < end && bt(i2) !== 0x3E) i2++;
+          if (i2 < end) i2++;
+          continue;
+        }
+        var ln = d1 === 0x2F ? d2 : d1;
+        if ((ln >= 0x41 && ln <= 0x5A) || (ln >= 0x61 && ln <= 0x7A)) {
+          i2++;
+          while (i2 < end && !(bt(i2) === 0x09 || bt(i2) === 0x0A || bt(i2) === 0x0C || bt(i2) === 0x0D || bt(i2) === 0x20 || bt(i2) === 0x3E)) i2++;
+          // 游标同步：spec 只有一个 position 指针——skip 与 get an attribute 共用。
+          // 旧 _paPos 残留时 getAttr 从陈位起扫、null 落点回跳 i2 → 死循环（baseline.htm
+          // `<p>` 首遇即触发：getAttr 从 0 起把 `<?xml` 区当属性吃完停在 41，i2 回跳）。
+          _paPos = i2;
+          if (i2 < end) {
+            for (;;) { if (!getAttr()) break; }
+            i2 = _paPos;
+          }
+          i2++;
+          continue;
+        }
+      }
+      i2++;
+    }
+    return getXmlEncoding();
   }
 
   // ── M2-S1（net-api-compat）：fetch scheme dispatch ─────────────────────────────

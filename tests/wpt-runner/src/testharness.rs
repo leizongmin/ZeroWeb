@@ -4283,9 +4283,10 @@ pub const HTML_SYNTAX_CORPUS_SUBDIRS: &[&str] = &[
 ///   directionality/bdi test 页——testharness 通道外，P5 落地面归 reftest 通道）
 /// - HTTP 头编码面（`flags content='http'`——the-input-byte-stream 11 案断言依赖
 ///   per-file HTTP charset 头，本地 file 通道无法复现测试条件；P5 记账）
-/// - iframe 依赖面（runner 无多 frame 文档管道，net-api 先例——xmldecl/ 3 案
-///   子文档 characterSet 探针、serializing.html 解析上下文 iframe、
-///   doctype-system-identifier-distinction compatMode iframe 面）
+/// - iframe 依赖面（runner 无多 frame 文档管道，net-api 先例——serializing.html
+///   解析上下文 iframe、doctype-system-identifier-distinction compatMode iframe
+///   面；例外：xmldecl/ 3 案 2026-10-20 起收编——R115 同步 iframe 管道 + 子文档
+///   字节解码/嗅探（part01 _zwFinishIframeEntry）就绪，support/ corpus 已补拉）
 /// - worker 执行面（net-api 先例；当前语料零命中，re-pin 增案防静默错跑）
 fn html_syntax_case_skipped(relative: &str, source: &str) -> bool {
     let name = relative.rsplit('/').next().unwrap_or(relative);
@@ -4306,7 +4307,7 @@ fn html_syntax_case_skipped(relative: &str, source: &str) -> bool {
     source.contains("rel=match")
         || source.contains("rel=\"match\"")
         || source.contains("content='http'")
-        || source.contains("<iframe")
+        || (source.contains("<iframe") && !relative.starts_with("html/syntax/xmldecl/"))
         || source.contains("createElement('iframe')")
         || source.contains("createElement(\"iframe\")")
         || source.contains("new Worker(")
@@ -7485,11 +7486,39 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     body_bytes: Some(body.as_bytes().to_vec()),
                 });
             }
+            if clean == "html/syntax/xmldecl/support/trickle.py" {
+                // html-syntax（2026-10-20，xmldecl 收编）：wptserve CGI 静态等价——上游
+                // trickle.py 逐字节 trickle 输出固定正文（Content-Type: text/html 无
+                // charset；编码由正文 bogo-XML declaration 嗅探，windows-1251 断言面）。
+                // 同步 fetch 通道无流式语义，输出与上游脚本逐字一致（"declation" 为
+                // 上游原文拼写）。正文含 0xE6 非 UTF-8 字节 → R3021 `__zw_bytes:` wire。
+                let body: &[u8] = b"<?xml version=\"1.0\" encoding=\"windows-1251\"?>\n\
+                    <p>Normal XML declation as slow byte-by-byte trickle</p>\n\
+                    <p>Test: \xE6</p>\n\
+                    <p>If &#x0436;, XML decl takes effect</p>";
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), "text/html".into()));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: String::from_utf8_lossy(body).into_owned(),
+                    body_bytes: Some(body.to_vec()),
+                });
+            }
             match std::fs::read(root.join(clean)) {
                 Ok(bytes) => {
                     let query = path_part.split_once('?').map(|(_, query)| query).unwrap_or("");
                     let mut headers = wpt_pipe_headers(query);
                     headers.extend(wpt_static_resource_headers(clean));
+                    // wptserve `.headers` sidecar 语义：同名 sidecar 的 Content-Type
+                    // 覆盖默认 MIME（wpt_static_resource_headers）——替换而非追加
+                    //（重复 content-type 头在 CT 解析侧首项胜出，保留单头不变量）。
+                    if let Some(sidecar_ct) = wpt_sidecar_content_type(&root, clean) {
+                        headers.retain(|(n, _)| !n.eq_ignore_ascii_case("content-type"));
+                        headers.push(("content-type".into(), sidecar_ct));
+                    }
                     if clean == "service-workers/cache-storage/resources/simple.txt"
                         && wpt_query_value(query, "zw-filtered").as_deref() == Some("cors")
                     {
@@ -7671,7 +7700,7 @@ fn wpt_static_resource_headers(path: &str) -> Vec<(String, String)> {
     // clipboard-apis write-blobs 族经 `fetch('resources/greenbox.png')` → blob.type 断言
     // 'image/png'（Response.blob() 读 content-type 头 → Blob.type），缺映射时 blob.type=''
     // → 3 案 4 subtest 红斑。表驱动照上游 wptserve mime.types 常用子集。
-    let content_type = if path.ends_with(".html") {
+    let content_type = if path.ends_with(".html") || path.ends_with(".htm") {
         Some("text/html")
     } else if path.ends_with(".txt") {
         Some("text/plain")
@@ -7699,6 +7728,27 @@ fn wpt_static_resource_headers(path: &str) -> Vec<(String, String)> {
     content_type
         .map(|value| vec![("content-type".to_string(), value.to_string())])
         .unwrap_or_default()
+}
+
+/// `.headers` sidecar（wptserve per-file 响应头）读取——`<path>.headers` INI 形态
+///（`[section]` 忽略、`key: value` 行），返回 Content-Type 值；文件缺失/无该行返 None。
+/// 消费面：fetch 通道静态服务对同名 sidecar 的 Content-Type 覆盖默认 MIME
+///（xmldecl support `*-vs-http` 族——断言 HTTP charset 头优先于 XML 声明/meta）。
+/// reftest 通道 CSS 侧已有独立 sidecar 读取（resources.rs charset determination）。
+fn wpt_sidecar_content_type(root: &Path, path: &str) -> Option<String> {
+    let bytes = std::fs::read(root.join(format!("{path}.headers"))).ok()?;
+    let text = String::from_utf8_lossy(&bytes);
+    text.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('[') && !line.starts_with('#') && !line.starts_with(';'))
+        .find_map(|line| {
+            line.split_once(':').and_then(|(key, value)| {
+                key.trim()
+                    .eq_ignore_ascii_case("content-type")
+                    .then(|| value.trim().to_string())
+                    .filter(|v| !v.is_empty())
+            })
+        })
 }
 
 fn wpt_status_text(status: u16) -> &'static str {

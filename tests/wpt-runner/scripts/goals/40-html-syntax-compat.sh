@@ -28,6 +28,10 @@ fetch_dir_html "html/syntax/parsing/resources"
 # depth-2 references/ 补拉（P5 落地面——charset/ 11 案 rel=match 参考页；runner
 # reftest-upstream 通道经 R5003 字节级嗅探解码后按参考页像素对比运行）。
 fetch_dir_html "html/syntax/charset/references"
+# depth-2 support/ 补拉（P5 通道外余量收编——xmldecl/ 3 案 iframe 子文档面：40 枚
+# bogo-XML-declaration/meta/编码窗 fixture（.htm）+ test_support.js 断言表；
+# lib.sh fetch_dir_html 增 .htm/.headers 后此目录一次拉全）。
+fetch_dir_html "html/syntax/xmldecl/support"
 # 单文件依赖补拉：html/resources/common.js（HTML5_ELEMENTS 表——outerHTML 双域 +
 # name-content-attribute 三案引 ../../resources/common.js；DIRS 深度递归不达
 # html/resources 域）与实体表数据 named-character-references-data.js
