@@ -609,3 +609,133 @@ fn test_offsetparent_body_null_r4003c() {
         "W2：自 body 的上行遍历 1 步终止（修复前 body 自返死循环）"
     );
 }
+
+/// R4004（html-semantics M2 切片 16）：label 激活行为转发面。交互内容判定
+///（HTML §4.2.6.2：a[href]/audio[controls]/button/details/iframe/img[usemap]/
+/// input(type≠hidden)/label/select/textarea/video[controls]，仅 HTML 命名空间，
+/// tabindex/object 不算）豁免转发；非交互 target 冒泡经 label 站时对 labeled
+/// control（for 优先）跑 synthetic click。属性存在性判定走 has 句柄
+///（`__zw_get_attr_handle` 缺失返空串，`!= null` 恒真——修复面）。附 R368 盖章
+/// 属性回填（createElement 产物 append 后 host 侧 type 可读——hidden 仍非
+/// labelable）。WPT 标尺：clicking-noninteractive-unlabelable-content.html +
+/// clicking-noninteractive-labelable-content.html。
+#[test]
+fn test_label_activation_r4004() {
+    let mut sandbox = t59_sandbox_with_shim();
+    let mutations: std::sync::Arc<std::sync::Mutex<Vec<DomMutation>>> = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+    let dom_html: std::sync::Arc<std::sync::Mutex<String>> =
+        std::sync::Arc::new(std::sync::Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: std::sync::Arc<std::sync::Mutex<String>> = std::sync::Arc::new(std::sync::Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    crate::js_dom_bridge::register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 挂 corpus 同构面板：label[for] × 交互/非交互 target 全家福，控件各自独立
+    // button（for 关联，排除无 for 子树查找的耦合）。
+    sandbox
+        .execute(
+            "var d = document.createElement('div');\
+             d.innerHTML = '<form>'\
+             + '<label id=cLa for=cBtnA><a id=cA1></a></label><button id=cBtnA></button>'\
+             + '<label id=cLb for=cBtnB><a id=cA2 href=\"#x\"></a></label><button id=cBtnB></button>'\
+             + '<label id=cLc for=cBtnC><audio id=cAu1></audio></label><button id=cBtnC></button>'\
+             + '<label id=cLd for=cBtnD><audio id=cAu2 controls></audio></label><button id=cBtnD></button>'\
+             + '<label id=cLe for=cBtnE><img id=cIm1></label><button id=cBtnE></button>'\
+             + '<label id=cLf for=cBtnF><img id=cIm2 usemap=\"#m\"></label><button id=cBtnF></button>'\
+             + '<label id=cLg for=cBtnG><input id=cIn1 type=hidden></label><button id=cBtnG></button>'\
+             + '<label id=cLh for=cBtnH><input id=cIn2 type=text></label><button id=cBtnH></button>'\
+             + '<label id=cLi for=cBtnI><div id=cDv tabindex=\"0\"></div></label><button id=cBtnI></button>'\
+             + '<label id=cLj for=cBtnJ><object id=cOb></object></label><button id=cBtnJ></button>'\
+             + '<label id=cLk for=cBtnK><details id=cDt></details></label><button id=cBtnK></button>'\
+             + '<label id=cLl for=cBtnL><select id=cSel></select></label><button id=cBtnL></button>'\
+             + '</form>'\
+             + '<label id=w2l><button id=w2b></button></label>'\
+             + '<label id=w2h><input type=hidden id=w2hi></label>';\
+             document.body.appendChild(d);\
+             globalThis.__clk = {};\
+             ['cBtnA','cBtnB','cBtnC','cBtnD','cBtnE','cBtnF','cBtnG','cBtnH','cBtnI','cBtnJ','cBtnK','cBtnL','w2b','w2hi'].forEach(function (id) {\
+               globalThis.__clk[id] = 0;\
+               document.getElementById(id).addEventListener('click', function () { globalThis.__clk[id]++; });\
+             });\
+             globalThis.__fire = function (id) {\
+               document.getElementById(id).dispatchEvent(new MouseEvent('click', { bubbles: true }));\
+             };",
+        )
+        .unwrap();
+
+    // W1：非交互 target 冒泡经 label 站转发到 for 控件；交互 target 豁免。
+    // a[href]/audio[controls]/img[usemap]/input(hidden↔text) 四组属性对称对，
+    // 钉死 has 存在性判定（缺失属性 ≠ 存在——修复前恒真恒豁免）。
+    sandbox
+        .execute(
+            "['cA1','cAu1','cIm1','cIn1','cDv','cOb'].forEach(function (id) { globalThis.__fire(id); });\
+             globalThis.__w1a = ['cBtnA','cBtnC','cBtnE','cBtnG','cBtnI','cBtnJ'].map(function (id) { return globalThis.__clk[id]; }).join(',');\
+             ['cA2','cAu2','cIm2','cIn2','cDt','cSel'].forEach(function (id) { globalThis.__fire(id); });\
+             globalThis.__w1b = ['cBtnB','cBtnD','cBtnF','cBtnH','cBtnK','cBtnL'].map(function (id) { return globalThis.__clk[id]; }).join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__w1a").unwrap().value,
+        "1,1,1,1,1,1",
+        "W1：a 无 href / audio 无 controls / img 无 usemap / input hidden / div[tabindex] / object 均非交互 → 控件各转发 1 次"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w1b").unwrap().value,
+        "0,0,0,0,0,0",
+        "W1：a[href] / audio[controls] / img[usemap] / input text / details / select 交互 → 豁免转发"
+    );
+
+    // W2：重入面——label 内 button 自身点击（target 交互 → 挂钩 skip）计 1；
+    // label 内 hidden input 点击（非交互、非 labelable、无 control）计 1 不多计。
+    sandbox
+        .execute("globalThis.__fire('w2b'); globalThis.__fire('w2hi');\
+                  globalThis.__w2 = globalThis.__clk.w2b + ',' + globalThis.__clk.w2hi;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__w2").unwrap().value,
+        "1,1",
+        "W2：交互 target 免转发自身计 1；hidden input 无 control 不转发计 1（修复前误 labelable 转发自身计 2）"
+    );
+
+    // W3：R368 盖章属性回填——createElement 产物（plain，无身份）append 入 label
+    // 后 host 侧 type 可读：hidden 仍非 labelable（修复前 host 裸节点 type 空被当
+    // 默认 text → 误 labelable，树序先命中 hidden）。回填生效时 [hidden, button]
+    // 的 control 跳过 hidden 命中 button；纯 hidden 的 label.control null。
+    sandbox
+        .execute(
+            "var l3 = document.createElement('label'); document.body.appendChild(l3);\
+             var i3 = document.createElement('input'); i3.setAttribute('type', 'hidden');\
+             l3.appendChild(i3);\
+             var b3 = document.createElement('button'); l3.appendChild(b3);\
+             var l6 = document.createElement('label'); document.body.appendChild(l6);\
+             var i4 = document.createElement('input'); i4.setAttribute('type', 'hidden');\
+             l6.appendChild(i4);\
+             globalThis.__w3 = String(l3.control === b3) + ',' + String(l6.control);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__w3").unwrap().value,
+        "true,null",
+        "W3：盖章回填后 host 侧 hidden 非 labelable（[hidden,button] control 命中 button）；纯 hidden label.control null"
+    );
+
+    // W4：SVG 命名空间 <details> 非交互（名单仅 HTML 命名空间）——svg details
+    // 在 label[for] 内 click 照常转发。
+    sandbox
+        .execute(
+            "var c4 = document.createElement('div');\
+             c4.innerHTML = '<label id=cLw for=cBtnA></label>';\
+             document.body.appendChild(c4.firstChild);\
+             var sd = document.createElementNS('http://www.w3.org/2000/svg', 'details');\
+             document.getElementById('cLw').appendChild(sd);\
+             globalThis.__clk.cBtnA = 0;\
+             sd.dispatchEvent(new MouseEvent('click', { bubbles: true }));\
+             globalThis.__w4 = globalThis.__clk.cBtnA;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__w4)").unwrap().value,
+        "1",
+        "W4：SVG 命名空间 details 非交互 → label[for=cBtnA] 照常转发"
+    );
+}

@@ -258,54 +258,10 @@
           return { value: value, min: min, max: max, low: low, high: high, optimum: optimum };
         }
         // R4003（html-semantics M2 切片 15）：label.control + labelable el.labels
-        //（HTML §4.10.4 the label element）。labelable elements = button/input
-        //（type 非 Hidden）/meter/output/progress/select/textarea；非 labelable 的
-        // INPUT（hidden）`.labels` 返 null，fieldset/label/object/img/keygen 无此
-        // IDL 属性（fallthrough undefined——labelable-elements 语料两态分明）。
-        function _zwIsLabelableSelTag(eSel, eHnd) {
-          var tag = _realTag(eSel, eHnd);
-          if (tag !== 'BUTTON' && tag !== 'INPUT' && tag !== 'METER' && tag !== 'OUTPUT'
-              && tag !== 'PROGRESS' && tag !== 'SELECT' && tag !== 'TEXTAREA') return false;
-          if (tag === 'INPUT') {
-            var hTy = eHnd ? __zw_get_attr_handle(eHnd, 'type')
-              : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(eSel, 'type') : __zw_get_attr(eSel, 'type'));
-            if (String(hTy == null ? '' : hTy).toLowerCase() === 'hidden') return false;
-          }
-          return true;
-        }
-        // labeled control 算法：有 for → getElementById 命中且 labelable；无 for →
-        // 子树首个 labelable 后代（树序）。miss → null。
-        // https://html.spec.whatwg.org/multipage/forms.html#labeled-control
-        function _zwLabeledControl(lSel, lHnd) {
-          var fRaw = lHnd ? __zw_get_attr_handle(lHnd, 'for')
-            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(lSel, 'for') : __zw_get_attr(lSel, 'for'));
-          var fVal = (fRaw == null) ? '' : String(fRaw);
-          if (fVal !== '') {
-            var cand = null;
-            try { cand = globalThis.document.getElementById(fVal); } catch (_eGet) { cand = null; }
-            if (cand && typeof cand === 'object') {
-              try {
-                if (_zwIsLabelableSelTag(cand.__zwSelector, cand.__zwHandle)) return cand;
-              } catch (_eTag) {}
-            }
-            return null;
-          }
-          // 无 for：本 label 子树 querySelectorAll（树序）+ JS 侧 labelable 过滤
-          //（type=hidden 活读，避免 QSA 选择器对属性快照的 stale 匹配）。
-          var scope = null;
-          try {
-            scope = _makeProxy(lSel, lHnd).querySelectorAll('button,input,meter,output,progress,select,textarea');
-          } catch (_eS) { scope = null; }
-          if (!scope) return null;
-          for (var di = 0; di < scope.length; di++) {
-            var dEl = scope[di];
-            if (!dEl || typeof dEl !== 'object') continue;
-            try {
-              if (_zwIsLabelableSelTag(dEl.__zwSelector, dEl.__zwHandle)) return dEl;
-            } catch (_eL) {}
-          }
-          return null;
-        }
+        //（HTML §4.10.4 the label element）。`_zwIsLabelableSelTag` / `_zwLabeledControl`
+        // R4004（切片 16）起上移到 part03 共享作用域（`_zwLabelActivationForward` 的
+        // dispatch 侧消费点不在本 trap 闭包内；本脚本单文件拼接，声明提升全局可见，
+        // 下方 control/labels getter 与 focus 拦截的调用点零变化）。
         // R4003：el.labels——返「labeled control 为本元素」的 label 元素活集合
         //（树序；[SameObject] 每元素缓存一个集合对象——缓存表 _zwLabelsCache 在
         // part01 共享作用域，本 trap 体 per-access 执行不能持状态；hidden 切换期
@@ -4856,20 +4812,22 @@
                     || _realTag(sel, handle) === 'IFRAME' || _realTag(sel, handle) === 'EMBED') {
                   _r155Interactive = true;
                 }
-                if (!_r155Interactive) {
+                // R4004：重入互斥双闸——`__zwLblClickInProgress`（嵌套递归）+
+                // `ev.__zwLblFwd4004` 事件标记（R112 post-activation 段/bubble 站
+                // 挂钩先行转发时此处让位；label.click() 旧 post+trap 双转、probe
+                // t7 单转发断言）。
+                if (!_r155Interactive && globalThis.__zwLblClickInProgress !== true
+                    && ev.__zwLblFwd4004 !== true) {
+                  // R4004（html-semantics M2 切片 16）：控件查找迁移 `_zwLabeledControl`
+                  //（R4003，part03 共享作用域）——for 属性优先 + 无 for 取子树树序首个
+                  // labelable。旧 document 级扫描 + sel 前缀匹配无视 for（label for=X
+                  // 且子树内另有更早 labelable 时指错控件）。
                   var _r155Ctl = null;
-                  try {
-                    var _r155All = globalThis.document.querySelectorAll('input, button, select, textarea, output, meter, progress');
-                    for (var _r155i = 0; _r155i < _r155All.length; _r155i++) {
-                      var _r155c = _r155All.item ? _r155All.item(_r155i) : _r155All[_r155i];
-                      if (!_r155c) continue;
-                      // 候选控件须在该 LABEL 子树内（sel 前缀判定——容器唯一选择器前缀）。
-                      var _r155cs = _r155c.__zwSelector || '';
-                      if (_r155cs && _r155cs.indexOf(sel) === 0) { _r155Ctl = _r155c; break; }
-                    }
-                  } catch (_e155q) { _r155Ctl = null; }
+                  try { _r155Ctl = _zwLabeledControl(sel, handle); } catch (_e155lc) { _r155Ctl = null; }
                   if (_r155Ctl && typeof _r155Ctl.click === 'function') {
-                    try { _r155Ctl.click(); } catch (_e155f) {}
+                    try { ev.__zwLblFwd4004 = true; } catch (_e155m2) {}
+                    globalThis.__zwLblClickInProgress = true;
+                    try { _r155Ctl.click(); } catch (_e155f) {} finally { globalThis.__zwLblClickInProgress = false; }
                   }
                 }
               }
@@ -5571,6 +5529,58 @@
                 // 原样保留，JS toLowerCase 会展开为多码点致印章与 host 存档分叉。
                 (globalThis._zwHandleCreateTag = globalThis._zwHandleCreateTag || {})[child.__zwHandle] = _r368Tag;
               } catch (_e368st) {}
+              // R4004（html-semantics M2 切片 16）：盖章 plain 子的属性快照回填 host。
+              // `__zw_create_element` 产裸 tag 节点，plain attributes（模板解析/克隆
+              // 产物）不随行——host 侧属性读（get/has_attr_handle、属性选择器）全空：
+              // input[type=hidden] 被 host 当默认 text（误 labelable → label 激活
+              // 转发自身 clicked 多计；误交互 → 免转发面错位）。回填以 plain
+              // `getAttributeNames` 为源一次写入；此后 host 侧 set/remove 正常演进，
+              // R368「身份归 host」口径不变。
+              try {
+                if (typeof child.getAttributeNames === 'function') {
+                  var _r4004Ans = child.getAttributeNames();
+                  for (var _r4004Ai = 0; _r4004Ai < _r4004Ans.length; _r4004Ai++) {
+                    var _r4004An = String(_r4004Ans[_r4004Ai] || '');
+                    if (!_r4004An) continue;
+                    try {
+                      var _r4004Av = child.getAttribute(_r4004An);
+                      __zw_set_attr_handle(child.__zwHandle, _r4004An, String(_r4004Av == null ? '' : _r4004Av));
+                    } catch (_e4004aw) {}
+                  }
+                }
+              } catch (_e4004at) {}
+              // R4004（html-semantics M2 切片 16）：盖章 plain 子的事件方法转 live。
+              // _zwMEl 本地事件面（R99 per-object listener 表 / R167 本地 dispatch /
+              // R151 本地 click）与 live 派发（`_dispatchWithBubble` + `_listenerStore`）
+              // 是两套系统：盖章子获得 live 身份后，后代（span.click()）的 live 派发仍
+              // 触不到本地监听表——clicking-noninteractive-* 的盖章克隆监听全失根因
+              // 之一。四个事件方法按调用时 `__zwHandle` 现值转 live（proxy 同语义：
+              // R143 去重 / R106 守卫 / R108 激活链接管）；无章回落捕获的本实现
+              //（detached 本地语义零变化）。
+              try {
+                var _r4004Add = child.addEventListener, _r4004Rem = child.removeEventListener,
+                    _r4004Dis = child.dispatchEvent, _r4004Clk = child.click;
+                child.addEventListener = function (type, fn, opts) {
+                  var _h = child.__zwHandle;
+                  if (_h) { var _p = _makeProxy(null, _h); if (_p) return _p.addEventListener(type, fn, opts); }
+                  return _r4004Add && _r4004Add.call(child, type, fn, opts);
+                };
+                child.removeEventListener = function (type, fn, opts) {
+                  var _h = child.__zwHandle;
+                  if (_h) { var _p = _makeProxy(null, _h); if (_p) return _p.removeEventListener(type, fn, opts); }
+                  return _r4004Rem && _r4004Rem.call(child, type, fn, opts);
+                };
+                child.dispatchEvent = function (event) {
+                  var _h = child.__zwHandle;
+                  if (_h) { var _p = _makeProxy(null, _h); if (_p) return _p.dispatchEvent(event); }
+                  return _r4004Dis && _r4004Dis.call(child, event);
+                };
+                child.click = function () {
+                  var _h = child.__zwHandle;
+                  if (_h) { var _p = _makeProxy(null, _h); if (_p) return _p.click(); }
+                  return _r4004Clk && _r4004Clk.call(child);
+                };
+              } catch (_e4004wrap) {}
               // R368：adopt 子树传播——盖章 plain 子的 ownerDocument 重指主 document
               //（spec `concept-node-adopt` 递归 descendants）。R177/R181 的传播分支 gated
               // `!child.__zwHandle`，盖章子（含子树）在此独立传播（configurable getter，

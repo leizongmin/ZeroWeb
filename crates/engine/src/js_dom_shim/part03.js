@@ -2251,6 +2251,21 @@
       // 等接口成员原型命中面依赖，preserves-pitch 断言面）。
       // https://html.spec.whatwg.org/multipage/media.html#htmlaudioelement
       if (globalThis.HTMLMediaElement && globalThis.HTMLMediaElement.prototype) {
+        // R4004（html-semantics M2 切片 16）：HTMLMediaElement.prototype 本体也须接
+        // HTMLElement 链——part01b 定义的函数声明 prototype 原生原型是 Object.prototype，
+        // Audio/Video 链到 Media 后整条链仍缺 HTMLElement 之上的原型成员（cloneNode
+        // /addEventListener 等）——clicking-noninteractive-unlabelable 的
+        // `<audio>` srcElement.cloneNode is not a function 语料根因。幂等补链
+        //（已接链跳过），成员零覆盖（Media 自有 preservesPitch 等保留）。
+        try {
+          var _r4004Mp = globalThis.HTMLMediaElement.prototype;
+          var _r4004Mc = _r4004Mp, _r4004Mg = 0, _r4004MLinked = false;
+          while (_r4004Mc && _r4004Mg++ < 32) {
+            if (_r4004Mc === globalThis.HTMLElement.prototype) { _r4004MLinked = true; break; }
+            _r4004Mc = Object.getPrototypeOf(_r4004Mc);
+          }
+          if (!_r4004MLinked) Object.setPrototypeOf(_r4004Mp, globalThis.HTMLElement.prototype);
+        } catch (_e4004ml) {}
         globalThis[_zn].prototype = Object.create(globalThis.HTMLMediaElement.prototype);
       }
       // WC-M1 切片 4：customized built-in 的 super() 在途建元素——part01b 的 Illegal
@@ -8083,6 +8098,142 @@
     return false;
   }
 
+  // R4003（html-semantics M2 切片 15，R4004 自 part04 trap 闭包上移）：labelable
+  // elements = button/input（type 非 Hidden）/meter/output/progress/select/textarea；
+  // 非 labelable 的 INPUT（hidden）`.labels` 返 null。
+  function _zwIsLabelableSelTag(eSel, eHnd) {
+    var tag = _realTag(eSel, eHnd);
+    if (tag !== 'BUTTON' && tag !== 'INPUT' && tag !== 'METER' && tag !== 'OUTPUT'
+        && tag !== 'PROGRESS' && tag !== 'SELECT' && tag !== 'TEXTAREA') return false;
+    if (tag === 'INPUT') {
+      var hTy = eHnd ? __zw_get_attr_handle(eHnd, 'type')
+        : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(eSel, 'type') : __zw_get_attr(eSel, 'type'));
+      if (String(hTy == null ? '' : hTy).toLowerCase() === 'hidden') return false;
+    }
+    return true;
+  }
+  // labeled control 算法：有 for → getElementById 命中且 labelable；无 for →
+  // 子树首个 labelable 后代（树序）。miss → null。
+  // https://html.spec.whatwg.org/multipage/forms.html#labeled-control
+  function _zwLabeledControl(lSel, lHnd) {
+    var fRaw = lHnd ? __zw_get_attr_handle(lHnd, 'for')
+      : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(lSel, 'for') : __zw_get_attr(lSel, 'for'));
+    var fVal = (fRaw == null) ? '' : String(fRaw);
+    if (fVal !== '') {
+      var cand = null;
+      try { cand = globalThis.document.getElementById(fVal); } catch (_eGet) { cand = null; }
+      if (cand && typeof cand === 'object') {
+        try {
+          if (_zwIsLabelableSelTag(cand.__zwSelector, cand.__zwHandle)) return cand;
+        } catch (_eTag) {}
+      }
+      return null;
+    }
+    // 无 for：子树树序首个 labelable 后代。R4004 改直走 childNodes 树序 DFS + JS 侧
+    // labelable 过滤（type=hidden 活读）——不再经 querySelectorAll 逗号表：运行期
+    // 动态子（createElement/innerHTML 产物，handle 身份）在逗号选择器路径不可见
+    //（单 tag 表命中、七 tag 逗号表 0——probe10 实证），静态解析子才有 sel 身份；
+    // childNodes 视图对两族身份子一致可见。
+    var flat4004 = [];
+    (function _zwLcWalk(n, _lcDepth) {
+      if (!n || _lcDepth > 64) return;
+      var ks = null;
+      try { ks = n.childNodes; } catch (_eLcK) { ks = null; }
+      if (!ks || !ks.length) return;
+      for (var _lcI = 0; _lcI < ks.length; _lcI++) {
+        var _lcC = ks[_lcI];
+        if (!_lcC || _lcC.nodeType !== 1) continue;
+        flat4004.push(_lcC);
+        _zwLcWalk(_lcC, _lcDepth + 1);
+      }
+    })(_makeProxy(lSel, lHnd), 0);
+    for (var di = 0; di < flat4004.length; di++) {
+      var dEl = flat4004[di];
+      try {
+        if (_zwIsLabelableSelTag(dEl.__zwSelector, dEl.__zwHandle)) return dEl;
+      } catch (_eL) {}
+    }
+    return null;
+  }
+  // R4004（html-semantics M2 切片 16）：交互内容判定（HTML §4.2.6.2 interactive
+  // content）——label 激活行为的 target 豁免面。名单按 spec：a[href] / audio[controls]
+  // / button / details / embed / iframe / img[usemap] / input（type 非 Hidden） /
+  // label / select / textarea / video[controls]；**仅 HTML 命名空间**（SVG-ns
+  // <details> 非交互——clicking-noninteractive-unlabelable 的 createElementNS(svg,
+  // 'details') 语料钉死）；tabindex / object 不在名单（spec 曾列后移除，同语料
+  // "no longer interactive" 段）。属性活读（handle 优先，plain getAttribute 兜底）。
+  // https://html.spec.whatwg.org/multipage/dom.html#interactive-content-2
+  function _zwIsInteractiveContentEl(el) {
+    if (!el || typeof el !== 'object') return false;
+    var ns = null;
+    try { ns = el.namespaceURI; } catch (_eNs) { ns = null; }
+    if (ns != null && ns !== 'http://www.w3.org/1999/xhtml') return false;
+    var tag = '';
+    try { tag = _realTag(el.__zwSelector, el.__zwHandle); } catch (_eTag4004) { tag = ''; }
+    // 存在性判定必须走 has 句柄（"1"/"0"）——`__zw_get_attr_handle` 对缺失属性返
+    // 空串（callbacks.rs `unwrap_or_default`），`!= null` 恒真把无 href 的 a、无
+    // controls 的 audio/video、无 usemap 的 img 全误判成交互内容（clicking-
+    // noninteractive test-3 簇 12F 根因）。与 part04 aria/role 读同惯例。
+    var has = function (name) {
+      try {
+        if (el.__zwHandle) return __zw_has_attr_handle(el.__zwHandle, name) === '1';
+        if (el.__zwSelector && typeof __zw_has_attr_lw === 'function') return __zw_has_attr_lw(el.__zwSelector, name) === '1';
+      } catch (_eAt4004) {}
+      try { return typeof el.hasAttribute === 'function' && el.hasAttribute(name) === true; } catch (_eAt2) { return false; }
+    };
+    switch (tag) {
+      case 'A': return has('href');
+      case 'AUDIO': case 'VIDEO': return has('controls');
+      case 'BUTTON': case 'DETAILS': case 'EMBED': case 'IFRAME':
+      case 'LABEL': case 'SELECT': case 'TEXTAREA': return true;
+      case 'IMG': return has('usemap');
+      case 'INPUT': {
+        var ty4004 = '';
+        try {
+          ty4004 = el.__zwHandle ? __zw_get_attr_handle(el.__zwHandle, 'type')
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(el.__zwSelector, 'type') : '');
+        } catch (_eTy4004) { ty4004 = ''; }
+        return String(ty4004 == null ? '' : ty4004).toLowerCase() !== 'hidden';
+      }
+      default: return false;
+    }
+  }
+  // R4004：label 激活行为（HTML §4.10.4 the label element:activation-behaviour）——
+  // click 冒泡经 label 站且未取消、target 非交互内容时，对 labeled control 跑
+  // synthetic click activation（control.click()，R108/R57 语义全接管）。控件查找复用
+  // `_zwLabeledControl`（R4003——for 属性优先，无 for 取子树树序首个 labelable）。
+  // 重入阻断：synthetic click 的 target 即控件本身（key 相等 → 跳过）——spec click
+  // in progress 语义的等价面；label>meter 首子语料的 0<n<30 容忍带内（whatwg/html#5415）。
+  // 调用点：`_dispatchWithBubble` bubble 循环的 label 站（后代 target 面）。label
+  // 自身为 click 目标（label.click()）走 proxy click() 的 R155 既有转发，不在本钩子。
+  // FIXME: dispatchEvent 直接派发到 label 本体（非 click() API）当前不转发——spec
+  // 激活行为对任意 click 派发生效；无语料消费，留待有面时补 target 站挂钩。
+  // https://html.spec.whatwg.org/multipage/forms.html#the-label-element:activation-behaviour
+  function _zwLabelActivationForward(lSel, lHnd, event) {
+    var tgt = null;
+    try { tgt = event && event.target; } catch (_eTg4004) { tgt = null; }
+    if (!tgt || typeof tgt !== 'object') return;
+    if (_zwIsInteractiveContentEl(tgt)) return;
+    var ctl = null;
+    try { ctl = _zwLabeledControl(lSel, lHnd); } catch (_eCtl4004) { ctl = null; }
+    if (!ctl || typeof ctl !== 'object' || typeof ctl.click !== 'function') return;
+    var tgtKey = null, ctlKey = null;
+    try { tgtKey = _elKey(tgt.__zwSelector, tgt.__zwHandle); } catch (_eKt4004) { tgtKey = null; }
+    try { ctlKey = _elKey(ctl.__zwSelector, ctl.__zwHandle); } catch (_eKc4004) { ctlKey = null; }
+    if (tgtKey != null && ctlKey != null && tgtKey === ctlKey) return;
+    // R4004：双闸——① spec「click in progress flag」的全局同步近似（转发恒同步
+    // 完成）：拦嵌套 dispatch 的重转发环（labelable 语料 meter.click()：control =
+    // meter → post 段转发 → 内层全新事件，事件级标记拦不住）；② `__zwLblFwd4004`
+    // 事件标记：拦同一事件内三路（挂钩 / R112 post-activation `act:label` 段 /
+    // click() trap R155）双转（hook 转发完成后 flag 已复原，同事件的 post 段需
+    // 标记识别——second-child 语料 buttonClicked==1 断言；part21 r155 / probe t7
+    // 同标尺）。
+    if (globalThis.__zwLblClickInProgress === true) return;
+    try { event.__zwLblFwd4004 = true; } catch (_eM4004) {}
+    globalThis.__zwLblClickInProgress = true;
+    try { ctl.click(); } catch (_eFwd4004) {} finally { globalThis.__zwLblClickInProgress = false; }
+  }
+
   function _dispatchWithBubble(targetKey, targetSel, targetHandle, event, targetSlot, receiverProxy) {
     var target = _makeProxy(targetSel, targetHandle);
     // WC-M3 切片 8 第九增量（web-components goal）：**receiver identity 保持**——
@@ -8301,6 +8452,24 @@
           break;
         }
         var _r114PH = _r114L.parentHandle;
+        // R4004（html-semantics M2 切片 16）：plainParent hop——handle 子挂 plain
+        //（_zwMEl）父时反链只有 plainParent 槽（R180），链构建至此即断（零祖先站：
+        // template.content 克隆节点 append 进 live 树盖章（R368）后，其 span 子的
+        // click 上行无从抵达盖章祖先站——clicking-noninteractive-* 的
+        // span.click() 祖先监听全失根因）。沿 plain parentNode 上行找盖了章
+        //（__zwHandle）的锚祖先，以该 handle 接续 live 链（锚的反链由 append
+        // 汇流点记 parentSel/parentHandle）。消费先例：_zwClickActivationConnected
+        // 的 R180 段。
+        if (!_r114PH && _r114L.plainParent) {
+          var _r4004Pp = _r114L.plainParent, _r4004Hop = 0;
+          while (_r4004Pp && !_r4004Pp.__zwHandle && _r4004Hop++ < 64) {
+            var _r4004PpNext = null;
+            try { _r4004PpNext = _r4004Pp.parentNode || null; } catch (_e4004pp) { _r4004PpNext = null; }
+            if (!_r4004PpNext || _r4004PpNext.nodeType !== 1) break;
+            _r4004Pp = _r4004PpNext;
+          }
+          if (_r4004Pp && _r4004Pp.__zwHandle) _r114PH = _r4004Pp.__zwHandle;
+        }
         if (!_r114PH || _r114Seen['h' + _r114PH]) break;
         var _r114Pm = typeof _shadowHandleMeta !== 'undefined' ? _shadowHandleMeta[_r114PH] : null;
         if (_r114Pm) {
@@ -8462,7 +8631,21 @@
           }
           break;
         }
-        if (!_r114Ld.parentHandle) break;
+        if (!_r114Ld.parentHandle) {
+          // R4004：plainParent hop（同链构建段）——连入文档判定须跨过 plain 父段，
+          // 否则盖章克隆子树的 click 不经 document/window 虚站。
+          if (!_r114Ld.plainParent) break;
+          var _r4004Ip = _r114Ld.plainParent, _r4004IHop = 0;
+          while (_r4004Ip && !_r4004Ip.__zwHandle && _r4004IHop++ < 64) {
+            var _r4004Inext = null;
+            try { _r4004Inext = _r4004Ip.parentNode || null; } catch (_e4004ip) { _r4004Inext = null; }
+            if (!_r4004Inext || _r4004Inext.nodeType !== 1) break;
+            _r4004Ip = _r4004Inext;
+          }
+          if (!_r4004Ip || !_r4004Ip.__zwHandle) break;
+          _r114Hd = _r4004Ip.__zwHandle;
+          continue;
+        }
         _r114Hd = _r114Ld.parentHandle;
       }
     }
@@ -8648,6 +8831,17 @@
             if (_r114BubSup) globalThis.event = undefined;
             _dispatchToListeners(bKey, event, 'bubble', bAnc, _r114B.sel === 'html' ? null : undefined);
             if (_r114BubSup) globalThis.event = event;
+            // R4004（html-semantics M2 切片 16）：label 激活行为——click 冒泡经 label
+            // 站且未取消、target 非交互内容 → synthetic click 到 labeled control
+            //（spec the-label-element activation behavior；后代 target 面。label 自身
+            // 为目标走 proxy click() 的 R155；preventDefault 后不再转发——spec 取消
+            // 面默认动作不跑）。
+            if (event.type === 'click' && !event._defaultPrevented
+                && typeof _zwLabelActivationForward === 'function') {
+              var _r4004Stag = '';
+              try { _r4004Stag = _realTag(_r114B.sel, _r114B.handle); } catch (_e4004st) { _r4004Stag = ''; }
+              if (_r4004Stag === 'LABEL') _zwLabelActivationForward(_r114B.sel, _r114B.handle, event);
+            }
             if (bubbleStopped()) break;
           }
         }
@@ -8750,20 +8944,28 @@
           && !(event.cancelable && event._defaultPrevented)
           && _zwClickActivationConnected(_r112Act.sel, _r112Act.handle)) {
         if (_r112Act.type === 'act:label') {
-          // R155（js-dom M4）：LABEL 的 activation behavior——转发 click 到内部第一个
-          // labelable 控件（spec the-label-element；click 落 LABEL 自身或其非交互后代时，
-          // target 已是 interactive 的场景 nearest 判定不会到 LABEL——checkbox/input 自身
-          // 激活优先，天然满足「interactive content 后代为 target 时 no-op」）。
+          // R155（js-dom M4）：LABEL 的 activation behavior——转发 click 到内部
+          // labelable 控件（spec the-label-element；click 落 LABEL 自身或其非交互
+          // 后代时，target 已是 interactive 的场景 nearest 判定不会到 LABEL——
+          // checkbox/input 自身激活优先，天然满足「interactive content 后代为
+          // target 时 no-op」）。R4004：控件查找迁移 `_zwLabeledControl`（for 优先，
+          // 与 click() trap R155 同源；旧 `__zw_query_all_sub` 子树首个无视 for——
+          // label for=X 且子树另有更早 labelable 时指错控件）。重入互斥双闸：
+          // `__zwLblClickInProgress`（嵌套递归）+ `__zwLblFwd4004` 事件标记（同
+          // 事件三路双转——bubble 站挂钩先行转发时此处让位）。交互 target 豁免与
+          // 挂钩同款（`_zwIsInteractiveContentEl`，spec §4.2.6.2——旧路径缺此检查，
+          // audio[controls]/input text 等 target 被 spec 禁止的转发）。
           try {
-            var _r155Ctl = null;
-            if (_r112Act.sel && typeof __zw_query_all_sub === 'function') {
-              var _r155List = __zw_query_all_sub(_r112Act.sel, 'input, button, select, textarea');
-              if (_r155List) {
-                var _r155Sels = String(_r155List).split('|').filter(function (x) { return x; });
-                if (_r155Sels.length) _r155Ctl = _wrapSelector(_r155Sels[0]);
+            if (globalThis.__zwLblClickInProgress !== true && event.__zwLblFwd4004 !== true
+                && !_zwIsInteractiveContentEl(event && event.target)) {
+              var _r155Ctl = null;
+              try { _r155Ctl = _zwLabeledControl(_r112Act.sel, _r112Act.handle); } catch (_e155lc2) { _r155Ctl = null; }
+              if (_r155Ctl && typeof _r155Ctl.click === 'function') {
+                try { event.__zwLblFwd4004 = true; } catch (_e155m) {}
+                globalThis.__zwLblClickInProgress = true;
+                try { _r155Ctl.click(); } finally { globalThis.__zwLblClickInProgress = false; }
               }
             }
-            if (_r155Ctl && typeof _r155Ctl.click === 'function') _r155Ctl.click();
           } catch (_e155a) {}
         } else {
           try {

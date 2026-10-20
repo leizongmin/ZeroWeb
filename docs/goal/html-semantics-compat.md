@@ -2,37 +2,37 @@
 
 **版本**: v2.0
 **日期**: 2026-10-20（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 15 收口（labels IDL 簇 + label.focus() 前递 R4003 系 +27P），下一步 M2 切片 16：clicking-noninteractive-* label 激活面（57F）
+**状态**: Active——M2 切片 16 收口（label 激活行为面 R4004 +64P），下一步 M2 切片 17：form_attribute 动态关联余案 ~50F（mutation 钩子面）
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-20 M2 切片 15）**：labels IDL 簇收口（R4003/
-> R4003b/R4003c，rollover 双触发两会话同树合记）。
-> ① R4003 label.control + labelable el.labels（会话 A）：part03
-> `_liveQueryCollection` 泛化（自定义快照 + NodeList 原型 target +
-> `__zwNL` 印记透读）；part04 labeled control 算法（for→getElementById
-> 命中且 labelable；无 for→子树树序首个 labelable，七 tag 判定 hidden
-> 活读）+ labels 反查活集合（[SameObject] per-element-key 缓存居 part01
-> 共享作用域）；hidden→null，fieldset/label/object/img/keygen 无 IDL
-> undefined。② R4003b label.focus() 前递（会话 B）：forward-focus
-> 2P/4F→6P/0F。③ R4003c body/html offsetParent→null（会话 B）：解
-> clickOn 沿 offsetParent 上行 body 自返死循环，定向整测 Pass。part60
-> 契约 3 测（W1–W5 + r4003b/c）。九域 4683→**4710P**（4710/7358 =
-> **64.00%**；reported 分母与 s14 当轮持平，s14 块 7377 系 M1 口径），
-> 对 s14 逐 subtest diff **净 +27P、回归 0**：labelable-elements
-> 5P/21F→26P/0F、button/input-labels 各 1F→P、forward-focus +4；
-> inert-label-focus 失败模式漂移 +0（run2 二进制未含 R4003c——落树
-> 晚于其启动，定向安静机两度 Pass，corpus 面归下轮账本）。gates：
-> zero-engine --lib 3273P/0F、make test 58 腿绿 + browser bin 腿 xvfb
-> 隔离复跑 665P/0F（R385 族）、clippy/fmt 过、零新增依赖。并发碰头
-> 信号（共享 target 指纹污染 E0425、run kill 史 ×4）与 run2 绑定二进制
-> 考证见切片账本。
+> **▶ 当前状态（2026-10-20 M2 切片 16）**：label 激活行为面收口（R4004）。
+> ① 交互内容判定（HTML §4.2.6.2）：存在性判定改 `__zw_has_attr_handle`
+> ==='1'——`__zw_get_attr_handle` 缺失返空串致 `!= null` 恒真，无 href 的
+> a、无 controls 的 audio/video、无 usemap 的 img 全误判交互（12F 根因）；
+> 仅 HTML 命名空间，tabindex/object 不算。② R368 盖章属性回填：host 裸
+> tag 节点吃不到 plain attributes（hidden input 被当默认 text 误
+> labelable）。③ label 激活转发三路归一：新增 bubble 站挂钩（target 非交互
+> → 对 labeled control synthetic click），R112 post-activation 段与 click()
+> trap R155 控件查找迁移 `_zwLabeledControl`（for 优先）+ 补交互 target
+> 豁免，三路互斥双闸（`__zwLblClickInProgress` spec click-in-progress 同步
+> 近似 + `__zwLblFwd4004` 事件标记）——meter.click() 自转发死循环
+> （clicked=691）与旧 post+trap 双转（label.click() 二次翻转）一并收敛；
+> 链构建/inDoc walk 补 plainParent hop、R11 媒体原型补链、`_zwLabeledControl`
+> 无 for 改 childNodes 树序 DFS（QSA 逗号表对运行期 handle 子不可见）、
+> R368 盖章子四事件方法转 live。part60 契约 1 测（W1–W4）。九域
+> 4710→**4774P**，对 s15 逐 subtest diff **净 +64P、回归 0**：
+> clicking-noninteractive-* 57F 全数翻绿（0P/57F→57P/0F），**意外翻绿
+> 7 案**——label-inside-anchor 与 proxy-click Timeout→Pass、
+> the-dialog-element 四文件 5 案（含 inert-label-focus 负载超时观察账
+> 消账）。gates：zero-engine --lib 3289P/0F、make test 主矩阵绿 +
+> browser bin 腿既有失败 stash 对照定谳非本轮（bookmark_context_menu
+> 稳定复现，归 R385 族观察账）、clippy/fmt 过、零新增依赖。
 > 账本见
-> [evidence/2026-10-20-m2s15-r4003.md](html-semantics-compat/evidence/2026-10-20-m2s15-r4003.md)。
-> **下一步**：M2 切片 16——clicking-noninteractive-* 57F（label 激活
-> 行为面，中深；R4003c clickOn 修复已扫清一个死循环障碍）；候选后备
-> form_attribute 动态关联余案 ~50F（mutation 钩子面）、proxy-modifier
-> 4F、inert-label-focus 负载超时观察账。
+> [evidence/2026-10-20-m2s16-r4004.md](html-semantics-compat/evidence/2026-10-20-m2s16-r4004.md)。
+> **下一步**：M2 切片 17——form_attribute 动态关联余案 ~50F（mutation
+> 钩子面）；候选后备 proxy-modifier tentative 4F（modifier 键面）、
+> details 键盘激活 / summary toggle coalescing（M1 起既有深层）。
 
 
 > **▶ 拆分动机（2026-10-08 预留编号立项，用户「候选 goal 也立项吧」）**：继
@@ -113,6 +113,21 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-20 M2 切片 16**：label 激活行为面（R4004）——交互内容判定
+  存在性走 has 句柄（get_attr_handle 缺失返空串致恒真误判）、R368 盖章
+  属性回填、label 激活转发三路归一（bubble 站挂钩新设 + post/trap 迁移
+  `_zwLabeledControl` for 感知 + 交互 target 豁免补齐 + 双闸互斥收敛
+  自转发死循环与 post+trap 双转）+ plainParent hop/R11 媒体补链/DFS 控件
+  查找/盖章子事件方法转 live。part60 契约 1 测。九域 4710→4774P，对 s15
+  逐 subtest diff 净 +64P、回归 0：clicking-noninteractive-* 57F 全数
+  翻绿、意外翻绿 7 案（label-inside-anchor/proxy-click Timeout→Pass、
+  dialog 系 5 案含 inert-label-focus 观察账消账）。zero-engine --lib
+  3289P/0F、make test 主矩阵绿 + browser bin 腿既有失败 stash 对照定谳
+  非本轮、clippy/fmt 过、零新增依赖。make test 与 clippy 并行触发 guard
+  总内存超限（8GB 预算下编译峰值 ~8.8GB，16GB 放行）记 evidence。挂账：
+  form_attribute 动态关联 ~50F（下一切片）、proxy-modifier tentative 4F、
+  details 键盘激活 / summary toggle coalescing（M1 起既有）、
+  navigation-compat M3 项维持。
 - **2026-10-20 M2 切片 15**：labels IDL 簇 + label.focus() 前递
   （R4003/R4003b/R4003c，rollover 双触发两会话同树合记）——part03
   `_liveQueryCollection` 泛化（自定义快照 + NodeList 原型 target +
