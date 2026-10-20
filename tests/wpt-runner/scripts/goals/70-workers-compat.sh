@@ -12,6 +12,12 @@ source "${SCRIPT_DIR}/lib.sh"
 
 GOAL="workers-compat"
 DIRS=( "workers" "dedicated-workers"  )
+# M3 补充依赖目录：semantics/structured-clone/dedicated.html 的页面级 META script
+# （structured-clone-battery-of-tests*.js）与 /common/sab.js——该案脚本经 <script src>
+# 由 runner 页面通道抓取，语料缺文件即 ReferenceError（2026-10-21 记账后补）。
+# 仅作支撑资产：runner workers 通道扫描面（WORKERS_TEST_SUBDIRS）不含该目录，
+# 不引入新执行案。
+DIRS+=( "html/webappapis/structured-clone" )
 # 语料三层嵌套（interfaces/WorkerGlobalScope/close/ 等），shallow Contents API 只递归
 # 一层拉不全——走 git trees 深挖（lib.sh fetch_dir_deep，全量树；WebCrypto 先例）。
 # .any.js window 变体 opt-in（Worker-base64/WorkerNavigator/importScripts error 面
@@ -27,5 +33,7 @@ GOAL_PULL_WORKER_JS=1
 GOAL_PULL_HEADERS_TARGETS=1
 
 goals_fetch_all
+# 单文件支撑资产（不整目录拉——common/ 为全语料共享根，只取本 goal 依赖）。
+fetch_raw "common/sab.js" || echo "  common/sab.js 拉取失败（瞬时错误重跑续拉）" >&2
 goals_inventory
 goals_next_steps "${GOAL}"
