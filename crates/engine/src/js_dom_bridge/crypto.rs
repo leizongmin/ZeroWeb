@@ -344,7 +344,7 @@ where
 
 /// `crypto.subtle.encrypt/decrypt` 的 AES-CBC/CTR 实现（webcrypto M2b）——AES-128/192/256
 /// CBC（PKCS#7 填充）与 CTR（16 字节大端计数器，NIST SP 800-38A）。RustCrypto
-/// `cbc`/`ctr` crate（选型见 docs/goal/webcrypto-compat/evidence/2026-10-17-m2b-deps.md）。
+/// `cbc`/`ctr` crate（选型见 docs/goal/archive/webcrypto-compat/evidence/2026-10-17-m2b-deps.md）。
 /// kind "cbc"/"ctr"，mode "encrypt"/"decrypt"（CTR 加解密同路径）；key 16/24/32 字节；
 /// iv/counter 16 字节（长度由 shim 校验）；CBC 解密 padding 非法（含密文非块对齐/空串）→
 /// 空串（shim reject OperationError，填充校验在 crate 内不经手写 unpad）。CTR 无认证，
@@ -558,7 +558,7 @@ pub fn crypto_subtle_hkdf(hash_algo: &str, ikm_csv: &str, salt_csv: &str, info_c
 // ---------------------------------------------------------------------------
 // RSA 家族（webcrypto M4a）——RSA-OAEP encrypt/decrypt、RSASSA-PKCS1-v1_5 / RSA-PSS
 // sign/verify、spki/pkcs8/jwk 密钥导入导出与 generateKey。委托 `rsa` 0.9（RustCrypto，
-// 选型见 docs/goal/webcrypto-compat/evidence/2026-10-17-m4a-deps.md）。**密钥材料零落
+// 选型见 docs/goal/archive/webcrypto-compat/evidence/2026-10-17-m4a-deps.md）。**密钥材料零落
 // 日志**：分量与 DER 仅经 CSV 桥进出，无 tracing 输出。所有失败返空串（shim 按操作
 // 映射 NotSupportedError/InvalidAccessError/DataError/OperationError）。
 // https://w3c.github.io/webcrypto/#rsa-oaep  https://w3c.github.io/webcrypto/#rsassa-pkcs1
@@ -953,7 +953,7 @@ pub fn crypto_subtle_rsa_verify(
 // （spki/pkcs8/raw+压缩点/jwk 分量）、DER 导出（私派生公）、ECDSA 签名/验签
 //（签名 = IEEE P1363 r||s 定宽拼接，RFC 6979 确定性 nonce）、ECDH 共享秘密
 //（共享点 x 坐标）。委托 p256/p384/p521 0.13（RustCrypto，选型见
-// docs/goal/webcrypto-compat/evidence/2026-10-17-m4b-deps.md）。**密钥材料零落
+// docs/goal/archive/webcrypto-compat/evidence/2026-10-17-m4b-deps.md）。**密钥材料零落
 // 日志**：标量/坐标仅经 CSV 桥进出，无 tracing 输出。所有失败返空串（shim 按操
 // 作映射 NotSupportedError/InvalidAccessError/DataError/OperationError）。
 // https://w3c.github.io/webcrypto/#ecdsa  https://w3c.github.io/webcrypto/#ecdh
@@ -1320,7 +1320,7 @@ pub fn crypto_subtle_ecdh(curve: &str, priv_csv: &str, pub_csv: &str) -> String 
 // ---------------------------------------------------------------------------
 // OKP（Ed25519/X25519，webcrypto M5）：RFC 8032 纯 EdDSA 签名/验签 + RFC 7748
 // X25519 共享秘密（全零结果拒绝）。委托 ed25519-dalek/x25519-dalek 3.0（dalek
-// 纯 Rust 审计系，选型见 docs/goal/webcrypto-compat/evidence/2026-10-17-m5-okp-
+// 纯 Rust 审计系，选型见 docs/goal/archive/webcrypto-compat/evidence/2026-10-17-m5-okp-
 // deps.md）。SPKI/PKCS#8 按 RFC 8410 定长结构手写编解码（前缀常量，无需 pkcs8
 // feature）。**密钥材料零落日志**：seed/标量仅经 CSV 桥进出，无 tracing 输出。
 // 所有失败返空串（shim 按操作映射 NotSupportedError/InvalidAccessError/

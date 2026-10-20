@@ -2,7 +2,7 @@
 # Goal: webstorage-compat（编号 15——推进顺序见同目录 README.md）
 # 快赢切片（纯 JS API 面；zero-storage localStorage/sessionStorage 既有实现首次 goal 化度量）
 # M1 资产预置：fetch webstorage 子集；基线运行（runner 通道 + Makefile target + skip
-# 规则）= 各 goal M1 rally 轮落地，契约见 docs/goal/webstorage-compat.md DC-1。
+# 规则）= 各 goal M1 rally 轮落地，契约见 docs/goal/archive/webstorage-compat.md DC-1。
 # 用法：bash tests/wpt-runner/scripts/goals/15-webstorage-compat.sh（FORCE=1 强制重拉）
 set -euo pipefail
 

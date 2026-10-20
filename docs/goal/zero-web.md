@@ -495,7 +495,7 @@ zero-web/
 
 **交付物**：
 - [x] WASM 支持（Wasmtime 集成，页面 WASM 与 JS 互操作）——专项目标 2026-09-07 立项、2026-09-12 收口归档至 `docs/goal/archive/page-wasm.md`（DC-1~4 ✅，WPT jsapi 31 案 715/719 = 99.4%；余 4 Timeout 为 V8 前台消息循环泵跨流卡点，落 event-loop-spec 流域）
-- [ ] 更多 DOM API（MutationObserver、IntersectionObserver、ResizeObserver、Clipboard API、Fullscreen API、Drag & Drop）——MO host 触发 + IO/RO WPT 基线 + checkpoint spec 化**已拆专项目标**（2026-09-07 立项，2026-09-12 收口归档至 `docs/goal/archive/event-loop-spec.md`，DC-1~4 ✅）；Clipboard/Fullscreen **已拆专项目标** [web-api-batch2](web-api-batch2.md)（2026-09-12 立项）；Drag & Drop **已拆专项目标** [dnd-compat](dnd-compat.md)（2026-10-08 立项，2026-10-18 收口 Done，DC-1~4 ✅——交互管线五切片落地，corpus 437/446 = 98.0%，剩余 9 红挂账各自域：文本选择/shadow DOM/runner 注入基建/File 面）
+- [ ] 更多 DOM API（MutationObserver、IntersectionObserver、ResizeObserver、Clipboard API、Fullscreen API、Drag & Drop）——MO host 触发 + IO/RO WPT 基线 + checkpoint spec 化**已拆专项目标**（2026-09-07 立项，2026-09-12 收口归档至 `docs/goal/archive/event-loop-spec.md`，DC-1~4 ✅）；Clipboard/Fullscreen **已拆专项目标** [web-api-batch2](web-api-batch2.md)（2026-09-12 立项）；Drag & Drop **已拆专项目标** [dnd-compat](archive/dnd-compat.md)（2026-10-08 立项，2026-10-18 收口 Done，DC-1~4 ✅——交互管线五切片落地，corpus 437/446 = 98.0%，剩余 9 红挂账各自域：文本选择/shadow DOM/runner 注入基建/File 面）
 - [x] Web Components（Custom Elements + Shadow DOM）——专项目标 2026-09-07 立项、2026-09-11 收口归档至 `docs/goal/archive/web-components.md`（DC-1~5 ✅，WPT 三目录 76.0%；Shadow DOM 渲染级等用户点名专项）
 - [x] `script-sandbox` crate 支持 QuickJS feature gate——quickjs feature 已落地且 CI 双 feature 矩阵常驻（`ci.yml` linux-x86_64-quickjs job + `--no-default-features --features quickjs`，2026-09-12 核实）
 - [x] Service Worker 基础（注册、fetch 事件拦截、缓存管理）——专项目标 2026-09-06 收口（真实 worker 执行环境 + 生命周期真事件 + fetch 拦截 + Cache API 集成；归档于 `docs/goal/archive/service-workers/`）

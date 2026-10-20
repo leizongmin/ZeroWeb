@@ -2,7 +2,7 @@
 
 **版本**: v1.2
 **日期**: 2026-10-08（立项）| 2026-10-11（收口——DC-1~4 全满足）
-**状态**: Completed（可执行子集 1251/1251 = 100%；排除面 30 案全分类挂账；
+**状态**: ✅ Completed（可执行子集 1251/1251 = 100%；排除面 30 案全分类挂账；
 判定文档 [webstorage-compat/evidence/2026-10-11-m3-close-verdict.md](webstorage-compat/evidence/2026-10-11-m3-close-verdict.md)）
 **执行模式**: WPT 驱动（上游 webstorage corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——存储面）

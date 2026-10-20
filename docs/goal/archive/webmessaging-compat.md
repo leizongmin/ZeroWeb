@@ -2,7 +2,7 @@
 
 **版本**: v1.3
 **日期**: 2026-10-12
-**状态**: Completed（可执行面收口，2026-10-12；跨 document 主体挂 navigation-compat M3 门槛重入）
+**状态**: ✅ Completed（可执行面收口，2026-10-12；跨 document 主体挂 navigation-compat M3 门槛重入）
 **执行模式**: WPT 驱动（上游 webmessaging corpus 为验收标尺）+ 实现/语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——页面间通信面）
 **运行时控制面板**: [webmessaging-compat/master.md](webmessaging-compat/master.md)

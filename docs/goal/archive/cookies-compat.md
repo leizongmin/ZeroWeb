@@ -2,7 +2,7 @@
 
 **版本**: v1.3
 **日期**: 2026-10-12
-**状态**: Completed——M1/M2/M3 收口（2026-10-12）
+**状态**: ✅ Completed——M1/M2/M3 收口（2026-10-12）
 **执行模式**: WPT 驱动（上游 cookies corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——存储与状态面）
 
@@ -10,7 +10,7 @@
 > - **结果**：可执行面 **533/533 = 100%**（轨迹 3.9% → 100%，无下行轮次）；
 >   不可执行面 304（标记 303 + 传输腿 Timeout 1）如实记账。DC-1~3 全满足
 >   （DC-3 make test 以分解逐腿 + 预存异流域红记账口径核对，见 M3 证据）。
->   证据：[evidence/2026-10-12-m3-close.md](evidence/2026-10-12-m3-close.md)。
+>   证据：[evidence/2026-10-12-m3-close.md](cookies-compat/evidence/2026-10-12-m3-close.md)。
 > - **收口期跨流修复**（rule 10 归因后）：e776d6875 误删 render_session 初始化
 >   （首渲染 panic，webdriver 导航族 8 红）→ cb4e15955；3ed4223cf 编辑事故
 >   （clippy 腿编译红）→ 9ac80aedb。
@@ -107,7 +107,7 @@
 
 通道 + 甄别 + 基线完成：22 案 837 子测试，可执行面 21/533（3.9%），不可执行面 304
 标记记账。testdriver `delete_all_cookies` 基建打通。证据见
-[evidence/2026-10-12-m1-baseline.md](evidence/2026-10-12-m1-baseline.md)。
+[evidence/2026-10-12-m1-baseline.md](cookies-compat/evidence/2026-10-12-m1-baseline.md)。
 
 ### M2 — document.cookie 语义收敛（DC-2 清单逐项）✅ 2026-10-12
 
@@ -116,7 +116,7 @@ shim in-JS jar 重写（`_zwCookieJar`）：CTL 拒收（480 Fail 簇清零）�
 （RFC 6265 §5.3 步骤 6）、覆盖原位（bis §5.6 步骤 20——单测抓到的真 bug，ordering
 案被 skip 由单测补位）。可执行面 3.9% → **100%**（533/533），不可执行面 304 不变。
 混合案（prefix DOM+list.py）口径：DOM 面计分、回执腿记排除域。证据见
-[evidence/2026-10-12-m2-semantics.md](evidence/2026-10-12-m2-semantics.md)。
+[evidence/2026-10-12-m2-semantics.md](cookies-compat/evidence/2026-10-12-m2-semantics.md)。
 
 ### M3 — 收口（最终账本 + 归档）✅ 2026-10-12
 
@@ -125,4 +125,4 @@ make test 分解逐腿全绿（含两处跨流预存红灯修复：webdriver 导
 e776d6875 误删行 → cb4e15955；clippy 腿编译红根因 3ed4223cf 编辑事故 →
 9ac80aedb）；`cdp_focus_governance` quickjs 腿预存红记焦点流域碰头账（不硬解，
 rule 9）。收口判定与逐腿记录见
-[evidence/2026-10-12-m3-close.md](evidence/2026-10-12-m3-close.md)。
+[evidence/2026-10-12-m3-close.md](cookies-compat/evidence/2026-10-12-m3-close.md)。

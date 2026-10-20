@@ -19,25 +19,25 @@ goal 入口文档 `docs/goal/<goal>.md` DC-1。
 
 | 序号 | Goal | WPT 测试集 | 门控/挂账 |
 |------|------|-----------|----------|
-| 10 | [timing-animation-compat](../../../../docs/goal/timing-animation-compat.md) | hr-time; performance-timeline; user-timing; web-animations | **已收口**（2026-10-04） |
-| 15 | [webstorage-compat](../../../../docs/goal/webstorage-compat.md) | webstorage | 无（快赢；2026-10-08 立项） |
-| 16 | [fileapi-compat](../../../../docs/goal/fileapi-compat.md) | FileAPI | 无（2026-10-08 立项） |
-| 17 | [webmessaging-compat](../../../../docs/goal/webmessaging-compat.md) | webmessaging | 无（2026-10-08 立项；跨 frame 面挂 navigation-compat M3 门槛） |
-| 18 | [cookies-compat](../../../../docs/goal/cookies-compat.md) | cookies | 无（快赢；HTTP 头驱动用例可执行性 M1 甄别） |
-| 19 | [performance-api-compat](../../../../docs/goal/performance-api-compat.md) | performance-api（resource/navigation/event/longtask） | 缺面甄别在 M1（host 数据管道） |
-| 20 | [net-api-compat](../../../../docs/goal/net-api-compat.md) | fetch; xhr; url; mimesniff; streams; eventsource | **已收口**（2026-10-04）；WebSocket 二期挂账 |
-| 21 | [console-compat](../../../../docs/goal/console-compat.md) | console | 无（极小快赢；console 捕获通道 M1 甄别，触面先与 devtools 流协调） |
-| 22 | [touch-events-compat](../../../../docs/goal/touch-events-compat.md) | touch-events | **已收口**（2026-10-14）；注入面挂宿主触摸注入管线重入 |
-| 23 | [selection-compat](../../../../docs/goal/selection-compat.md) | selection | 无（2026-10-08 立项） |
-| 24 | [compression-compat](../../../../docs/goal/compression-compat.md) | compression | 无（实现型小套件，M2 实现轮） |
+| 10 | [timing-animation-compat](../../../../docs/goal/archive/timing-animation-compat.md) | hr-time; performance-timeline; user-timing; web-animations |  **已收口**（2026-09-28 M4；10-11 漂移核对零回归，已归档） |
+| 15 | [webstorage-compat](../../../../docs/goal/archive/webstorage-compat.md) | webstorage |  **已收口**（2026-10-11，1251/1251 = 100%，已归档）；排除面 30 案挂账 navigation-compat M3 |
+| 16 | [fileapi-compat](../../../../docs/goal/archive/fileapi-compat.md) | FileAPI |  **已收口**（2026-10-11，493/499 = 98.8%，已归档）；残余 6F 跨域归 net-api/webmessaging |
+| 17 | [webmessaging-compat](../../../../docs/goal/archive/webmessaging-compat.md) | webmessaging |  **已收口**（2026-10-12，133/135 = 98.5%，已归档）；跨 document 面挂 navigation-compat M3 门槛 |
+| 18 | [cookies-compat](../../../../docs/goal/archive/cookies-compat.md) | cookies |  **已收口**（2026-10-12，533/533 = 100%，已归档） |
+| 19 | [performance-api-compat](../../../../docs/goal/archive/performance-api-compat.md) | performance-api（resource/navigation/event/longtask） |  **已收口**（2026-10-13，191/293 = 65.2%，已归档） |
+| 20 | [net-api-compat](../../../../docs/goal/archive/net-api-compat.md) | fetch; xhr; url; mimesniff; streams; eventsource |  **已收口**（2026-10-01 M4-S29；M5 重入 2026-10-14 收口，已归档）；WebSocket 二期挂账 |
+| 21 | [console-compat](../../../../docs/goal/archive/console-compat.md) | console |  **已收口**（2026-10-14，corpus 28/28 = 100%，已归档） |
+| 22 | [touch-events-compat](../../../../docs/goal/archive/touch-events-compat.md) | touch-events |  **已收口**（2026-10-14，可执行面非中性 100%，已归档）；注入面挂宿主触摸注入管线重入 |
+| 23 | [selection-compat](../../../../docs/goal/archive/selection-compat.md) | selection |  **已收口**（2026-10-15 M3，终态 99.93%，已归档） |
+| 24 | [compression-compat](../../../../docs/goal/archive/compression-compat.md) | compression |  **已收口**（2026-10-15，245/318 = 77.04%，已归档）；brotli 挂 mission-defer（重开 = brotli 依赖评审立项） |
 | 25 | [html-semantics-compat](../../../../docs/goal/html-semantics-compat.md) | html/semantics 十子域 | **主攻大域**（分域切片收口制） |
-| 26 | [webcrypto-compat](../../../../docs/goal/webcrypto-compat.md) | WebCryptoAPI | 无（2026-10-08 立项；随机源面已有，subtle 实现轮分片自主） |
+| 26 | [webcrypto-compat](../../../../docs/goal/archive/webcrypto-compat.md) | WebCryptoAPI |  **已收口**（2026-10-17 M6，25,788/33,109 = 77.89%，已归档）；余 Fail 全 .tentative. 草案域 |
 | 27 | [page-state-compat](../../../../docs/goal/archive/page-state-compat.md) | beacon; page-visibility; online | **已收口**（2026-10-18）；偏差记账 beacon 混合内容阻断与 keepalive in-flight 配额池（FIXME） |
-| 28 | [dnd-compat](../../../../docs/goal/dnd-compat.md) | dnd | **门控 goal**（M1 盘点 + M2 构造器面自主；拖放交互管线须用户点名） |
+| 28 | [dnd-compat](../../../../docs/goal/archive/dnd-compat.md) | dnd |  **已收口**（2026-10-18，437/446 = 98.0%，已归档） |
 | 29 | [pointerlock-compat](../../../../docs/goal/pointerlock-compat.md) | pointerlock | **门控 goal**（M1 盘点 ✅ 2026-10-18，1/4=25.0%；指针捕获管线须用户点名——M2 RFC BLOCK 中） |
-| 30 | [encoding-compat](../../../../docs/goal/encoding-compat.md) | encoding | **已收口**（2026-10-04） |
+| 30 | [encoding-compat](../../../../docs/goal/archive/encoding-compat.md) | encoding |  **已收口**（2026-10-02 M4；10-19 三轮复跑终态 99.98%，已归档） |
 | 40 | [html-syntax-compat](../../../../docs/goal/archive/html-syntax-compat.md) | html/syntax; html/dom | **已收口**（2026-10-07 M4；P10 终态 2026-10-20，已归档） |
-| 50 | [uievents-compat](../../../../docs/goal/uievents-compat.md) | uievents; pointerevents | **已收口**（2026-10-07）；touch 挂账已由编号 22 收口（2026-10-14）；pointerlock/IME 挂账 |
+| 50 | [uievents-compat](../../../../docs/goal/archive/uievents-compat.md) | uievents; pointerevents |  **已收口**（2026-10-07 M4；M5 巡检 2026-10-20 收口 1805P/166F/95TO，已归档）；pointerlock/IME 挂账 |
 | 60 | [navigation-compat](../../../../docs/goal/navigation-compat.md) | history; navigation-api; html/browsers | M2 轻面推进中；**M3 iframe 切片用户门控** |
 | 70 | [workers-compat](../../../../docs/goal/workers-compat.md) | workers; dedicated-workers | M1 ✅（2026-10-20，161 案 45.6%；pin 无 dedicated-workers 目录由 workers/ 承载）；M2 语义收敛 |
 | 80 | [svg-compat](../../../../docs/goal/svg-compat.md) | svg | 推进中；渲染面归 rendering-compat |

@@ -2,7 +2,7 @@
 # Goal: net-api-compat（编号 20——推进顺序见同目录 README.md）
 # 主攻切片（WebSocket 二期挂账）
 # M1 资产预置：fetch xhr url mimesniff streams eventsource 子集；基线运行（runner 通道 + Makefile target + skip
-# 规则）= 各 goal M1 rally 轮落地，契约见 docs/goal/net-api-compat.md DC-1。
+# 规则）= 各 goal M1 rally 轮落地，契约见 docs/goal/archive/net-api-compat.md DC-1。
 # 用法：bash tests/wpt-runner/scripts/goals/20-net-api-compat.sh（FORCE=1 强制重拉）
 #
 # **拉取面（2026-09-28 M1 rally 轮定稿，照 fetch-dom-subset.sh SUBDIRS 先例显式列目录）**：

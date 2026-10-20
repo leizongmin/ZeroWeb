@@ -9,7 +9,8 @@ longtask **13/13（100%）**、navigation-timing **81/95（85.3%）**、event-ti
 PASS 35/35。目标文档状态已置 Done；余量挂账带数字分型见下方 §下一步。
 
 **当前状态**：M2 三 slice 全部实现完成（longtask 13/13、event-timing 55/72、
-navigation-timing 81/95；M2-S1 的 bench-gate 静机收口仍挂起，见卡点）；M3-S1
+navigation-timing 81/95；M2-S1 的 bench-gate 静机收口已完成——2026-10-13，
+见下文收口记录）；M3-S1
 resource-timing 条目生成完成（10/113 → 35/113）；M3-S2 resource net 元数据桥
 完成——**35/113 → 42/113（37.2%）**。实现：`_makeResponseFromWire` 挂
 `__zwRtMeta`（响应对象携带，无全局态）——encodedBodySize = content-length

@@ -2,7 +2,7 @@
 
 **版本**: v1.3
 **日期**: 2026-10-14
-**状态**: Completed——M1/M2/M3 收口（2026-10-14，corpus 28/28 = 100%）
+**状态**: ✅ Completed——M1/M2/M3 收口（2026-10-14，corpus 28/28 = 100%）
 **执行模式**: WPT 驱动（上游 console corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——开发者面）
 
@@ -10,7 +10,7 @@
 > - **结果**：DC-1/2/3 全满足。全 corpus **28/28 = 100%**（同日基线 8/28 =
 >     28.6%）；`make test` 71 套件全绿、`make reftest` 710/710、
 >     `make product-smoke` exit 0（welcome oracle 15.35% < 20 门）。
->     证据：[evidence/2026-10-14-m3-close.md](evidence/2026-10-14-m3-close.md)。
+>     证据：[evidence/2026-10-14-m3-close.md](console-compat/evidence/2026-10-14-m3-close.md)。
 > - **语义面**：WebIDL namespace IDL（空原型中间层 + `Symbol.toStringTag`）、
 >     count map/timer table 状态记账 + label ToString 异常传播、Formatter
 >     （%s/%d/%i/%f/%o/%O/%c/%%）、BiDi log.entryAdded 页内捕获通道。
@@ -83,12 +83,12 @@
 
 ### DC-1: WPT 导入与基线
 
-- [x] console corpus 导入 + 可执行子集甄别（console 捕获通道需求结论落 evidence/）——2026-10-14，[evidence/2026-10-14-m1-baseline.md](evidence/2026-10-14-m1-baseline.md)
+- [x] console corpus 导入 + 可执行子集甄别（console 捕获通道需求结论落 evidence/）——2026-10-14，[evidence/2026-10-14-m1-baseline.md](console-compat/evidence/2026-10-14-m1-baseline.md)
 - [x] 分类通过率基线落 evidence/，并回填 docs/compat/trends/wpt-suites.csv planned 行——8/28 = 28.6%（可执行面 8/23 = 34.8%）
 
 ### DC-2: IDL 与格式化语义收敛
 
-- [x] 可执行子集口径收敛，分级通过率不再下行两个连续轮次——2026-10-14，28/28 = 100%（同日基线 28.6% → 收口，[evidence/2026-10-14-m2-semantics.md](evidence/2026-10-14-m2-semantics.md)）
+- [x] 可执行子集口径收敛，分级通过率不再下行两个连续轮次——2026-10-14，28/28 = 100%（同日基线 28.6% → 收口，[evidence/2026-10-14-m2-semantics.md](console-compat/evidence/2026-10-14-m2-semantics.md)）
 
 ### DC-3: 测试与质量不可退让
 

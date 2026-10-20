@@ -2,7 +2,7 @@
 # Goal: encoding-compat（编号 30——推进顺序见同目录 README.md）
 # 小快赢（legacy 编码标签表）
 # M1 资产预置：fetch encoding corpus；基线运行（runner 通道 + Makefile target + skip
-# 规则）= M1 rally 轮落地，契约见 docs/goal/encoding-compat.md DC-1。
+# 规则）= M1 rally 轮落地，契约见 docs/goal/archive/encoding-compat.md DC-1。
 # 用法：bash tests/wpt-runner/scripts/goals/30-encoding-compat.sh（FORCE=1 强制重拉）
 #
 # **拉取面（2026-10-01 M1 rally 轮定稿，照 20-net-api-compat.sh 先例显式列目录）**：

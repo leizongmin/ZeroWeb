@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-09-12
-**状态**: Done（2026-09-28 M4 收口——DC-1~4 全 ✅，收口快照 1107/1571 subtests = 70.5%（基线 319/1376 = 23.2%），reftest 691/691 零回归；控制面见 [master.md](timing-animation-compat/master.md)）
+**状态**: ✅ Completed（2026-09-28 M4 收口——DC-1~4 全 ✅，收口快照 1107/1571 subtests = 70.5%（基线 319/1376 = 23.2%），reftest 691/691 零回归；控制面见 [master.md](timing-animation-compat/master.md)）
 **执行模式**: WPT 驱动（上游计时/动画面 corpus 为验收标尺）+ 语义修齐；
 定位为**轻量快赢切片**（不触布局/渲染计算，只做 JS API 面）
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——计时与动画面）

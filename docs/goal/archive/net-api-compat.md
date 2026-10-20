@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-09-12
-**状态**: Completed（2026-10-01 收口——六 corpus 9292/11659 = 79.7%，DC-1~4
+**状态**: ✅ Completed（2026-10-01 收口——六 corpus 9292/11659 = 79.7%，DC-1~4
 逐项核对通过；控制面见 `net-api-compat/master.md`，收口判定见
 `net-api-compat/evidence/2026-10-01-m4-s29-closure.md`；结构性残余为跨域记账项。
 **M5 二期重入收口（2026-10-14）**：P6 WebSocket 收口（M5-S1~S4，websockets

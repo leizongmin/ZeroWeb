@@ -2,7 +2,7 @@
 
 **版本**: v1.6
 **日期**: 2026-10-08（立项） | 2026-10-11（M1 基线 + M2-P1/P3/P4/P5 + M3 收口）
-**状态**: Completed（2026-10-11 收口——493/499 = 98.8%，DC-1~3 逐项核对通过；
+**状态**: ✅ Completed（2026-10-11 收口——493/499 = 98.8%，DC-1~3 逐项核对通过；
 控制面见 `fileapi-compat/master.md`，收口判定见
 `fileapi-compat/evidence/2026-10-11-m3-closure.md`；残余 6F 全部跨域记账项，
 重入条件在案）
@@ -37,9 +37,9 @@ drag-drop 文件入口（uievents/rendering 面依赖）。
 
 - **DC-1** 导入 + 基线 + csv planned 行回填（可执行子集甄别落 evidence/）——✅ 2026-10-11
 - **DC-2** Blob/File 构造器与 slice 语义、FileReader 读状态机、objectURL 生命周期
-  对齐，分级通过率不再下行两个连续轮次
+  对齐，分级通过率不再下行两个连续轮次——✅ 2026-10-11
 - **DC-3** 每修复附回归测试（imported-tests.txt 账本纪律）；make test 全绿、
-  make reftest 零回归、product-smoke 逐字节恒值
+  make reftest 零回归、product-smoke 逐字节恒值——✅ 2026-10-11
 
 ## 里程碑
 

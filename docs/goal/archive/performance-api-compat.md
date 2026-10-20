@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-10-08
-**状态**: Done（2026-10-13 收口——DC-1~3 全 ✅，收口快照 191/293 subtests =
+**状态**: ✅ Completed（2026-10-13 收口——DC-1~3 全 ✅，收口快照 191/293 subtests =
 65.2%（M1 基线 77/293 = 26.3%）：longtask 13/13、navigation-timing 81/95、
 event-timing 55/72、resource-timing 42/113；make test 全绿、reftest 零回归
 （failed 0.0%）、product-smoke PASS、bench-gate PASS 35/35；余量挂账带数字

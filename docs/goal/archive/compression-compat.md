@@ -2,7 +2,7 @@
 
 **版本**: v1.3
 **日期**: 2026-10-15（v1.0 立项 2026-10-08）
-**状态**: **Completed**——终态 245/318 = 77.04%（非 brotli 面 245/245 全绿）；73 Fail 全为 brotli mission-defer 挂账，重开条件 = brotli crate 依赖评审立项
+**状态**: ✅ Completed——终态 245/318 = 77.04%（非 brotli 面 245/245 全绿）；73 Fail 全为 brotli mission-defer 挂账，重开条件 = brotli crate 依赖评审立项
 **执行模式**: WPT 驱动（上游 compression corpus 为验收标尺）+ 实现
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——数据面）
 

@@ -2206,7 +2206,7 @@ fn test_canvas_float16_overlay_roundtrip_r34xx() {
 }
 
 // webcrypto M2b：crypto.subtle AES-CBC / AES-CTR——encrypt/decrypt + generateKey/importKey 扩展。
-// host RustCrypto cbc/ctr（选型 docs/goal/webcrypto-compat/evidence/2026-10-17-m2b-deps.md）。
+// host RustCrypto cbc/ctr（选型 docs/goal/archive/webcrypto-compat/evidence/2026-10-17-m2b-deps.md）。
 // 向量锚定 NIST SP 800-38A：CBC-AES128 F.2.1 / CBC-AES256 F.2.5 / CTR-AES128 F.5.1 首块
 // + 192 位 round-trip + 坏 padding OperationError + iv/counter ≠16 DataError + generateKey
 // length 语义（128/192/256 合法、越界 OperationError、缺省 256）。

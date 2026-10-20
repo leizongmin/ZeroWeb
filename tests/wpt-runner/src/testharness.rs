@@ -3514,7 +3514,7 @@ pub fn run_secure_contexts_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(
     run_corpus_subdirs(wpt_root, SECURE_CONTEXTS_SUBDIRS, filter, security_case_skipped)
 }
 
-// ══ timing-animation-compat goal（docs/goal/timing-animation-compat.md M1 / DC-1）══
+// ══ timing-animation-compat goal（docs/goal/archive/timing-animation-compat.md M1 / DC-1）══
 // 四 corpus（hr-time / performance-timeline / user-timing / web-animations）window
 // 可执行子集。fetch 侧 = `scripts/goals/10-timing-animation-compat.sh`（目录清单 +
 // .any.js 显式清单补拉），运行面 skip 规则与 fetch 清单同域双保险。.any.js 以 window
@@ -3774,7 +3774,7 @@ pub fn run_web_animations_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(S
     run_timing_subdirs(wpt_root, WEB_ANIMATIONS_SUBDIRS, filter, web_animations_case_skipped)
 }
 
-// ── performance-api-compat goal（docs/goal/performance-api-compat.md M1 / DC-1）：
+// ── performance-api-compat goal（docs/goal/archive/performance-api-compat.md M1 / DC-1）：
 // resource / navigation / event / longtask 四 corpus window 可执行子集。拉取面 =
 // tests/wpt-runner/scripts/goals/19-performance-api-compat.sh（DIRS 与本表同域双
 // 保险）。WPT 无 performance-api 顶层目录——四件套是四个独立顶层套件（M1 实测）。
@@ -3817,7 +3817,7 @@ fn performance_api_absolute_helper_extras(wpt_root: &Path, source: &str) -> Vec<
 }
 
 /// performance-api 四 corpus 共用筛减（M1 可执行面定义，缺面逐项理由同步
-/// docs/goal/performance-api-compat/evidence/ M1 甄别报告）：
+/// docs/goal/archive/performance-api-compat/evidence/ M1 甄别报告）：
 /// - timing 基础（manual/ref/idlharness——[`timing_base_case_skipped`]；idlharness
 ///   依赖 WebIDLParser build 期生成资产，clipboard idlharness 先例）
 /// - iframe / worker 依赖（runner 无多 frame / worker 文档管道，timing 先例）：
@@ -3947,7 +3947,7 @@ fn run_performance_api_subdirs(
     cases
 }
 
-// ── net-api-compat goal（docs/goal/net-api-compat.md M1 / DC-1）：六 corpus window
+// ── net-api-compat goal（docs/goal/archive/net-api-compat.md M1 / DC-1）：六 corpus window
 // 可执行子集（fetch / xhr / url / mimesniff / streams / eventsource）。拉取面 =
 // tests/wpt-runner/scripts/goals/20-net-api-compat.sh（DIRS 与本表同域双保险）。
 
