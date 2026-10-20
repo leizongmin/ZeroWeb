@@ -2,37 +2,31 @@
 
 **版本**: v2.0
 **日期**: 2026-10-21（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 17 收口（form owner 动态关联 R4005/R4006 +64P），下一步 M2 切片 18：label.form IDL（form.html 余 10F，labels IDL 簇延伸）
+**状态**: Active——M2 切片 18 收口（label.form IDL R4007 +10P），下一步 M2 切片 19：proxy-modifier tentative 4F / details·summary 深层面归因
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-21 M2 切片 17）**：form owner 动态关联收口
-> （R4005/R4006，rollover 接续会话——上轮 429 限流中断的在途实现经契约
-> 测试 + 全量账本验证后收口）。① `.form` getter 重写：祖先上行改 JS 视图
-> parentNode（pending 槽/sel host 链/handle 反链三族统一——旧 `_ancestorChain`
-> 对 handle-only 子恒空、对异步 wire 窗口的 sel 子读旧树）；form attr 关联
-> 查控件所在树（detached form 仍是 owner，spec reset the form owner）+ sel
-> 读 latest-wins + OBJECT 入 gate。② R52 消零 purge 复活：WeakRef 旁表
-> `_zwProxyWeakResurrect`——`_makeProxy` miss 时恢复仍被页面持有的原 proxy
-> （同 turn append+remove 身份断修复），弃持自清、泄漏口径不变。③ R4006
-> gEBI pending 窗口树序：同 id 多候选入池按 JS 视图位次取首（不可比保守保
-> 插入序），单候选 fast path 保留 + `_r125Overridden` 改名门补入。part60
-> 契约 1 测（W1–W4）。九域 4774→**4838P**（65.90%），对 s16 逐 subtest
-> diff **净 +64P、回归 0**：form_attribute.html 43P/57F→**100P/0F** 满绿、
-> association.window.js 翻绿、object.form + form-elements-filter +1+1、
-> select-tab* 意外翻绿 2 案、load-error-events runner 上报展开 +2（非行为）。
-> gates：zero-engine --lib 3310P/0F、make test 全腿绿（GPU adapter 腿
-> 94P/2F 读回容差漂移结构不阻塞、非本轮——render-foundation 不依赖
-> engine，归 rendering 流观察账）、clippy/fmt 过、零新增依赖。全量跑
-> 5400s 限被兄弟流并行负载顶爆，10800s 放行（记 evidence）。
+> **▶ 当前状态（2026-10-21 M2 切片 18）**：label.form IDL 收口（R4007，
+> rollover 接续会话——上轮 429 限流中断的在途实现经契约测试 + 全量账本
+> 验证后收口）。`.form` getter 分发区补 LABEL 分支：`_zwLabeledControl`
+> （R4003 for 优先 + 树序 DFS）取控件后委托控件 `.form`（R4005 关联面
+> 全继承）；label 自身 form content attribute 不参与（非 form-associated
+> ——form.html label-form 语料钉 null）。part60 契约 1 测（W1–W3）。九域
+> 4838→**4848P**（65.82%，账本条目口径），对 s17 逐 subtest diff **净
+> +10P、回归 0**：form.html `label.form` 8 案全数翻绿（7P/10F→15P/2F）、
+> dialog autofocus 两案意外翻绿（child-sequential-focus 0/5→1/4、
+> dialog-showModal 2/8→3/7，焦点链联带面）。余 4F 同根维持挂账：parser
+> form element pointer 表规则（form.html 2F + form_owner_and_table×2，
+> 树构建器深结构，动则单独立项征询）。gates：zero-engine --lib 3325P/0F、
+> make test 76 腿 22222P/0F 全绿、clippy/fmt 过、零新增依赖。本轮环境
+> 记录：上轮遗留孤儿全量 runner（旧二进制）清理；release 缓存指纹失新
+> E0560（clean 后 42s 全绿，源无问题）。
 > 账本见
-> [evidence/2026-10-21-m2s17-r4005.md](html-semantics-compat/evidence/2026-10-21-m2s17-r4005.md)。
-> **下一步**：M2 切片 18——label.form IDL（HTMLLabelElement.form =
-> labeled control 的 form owner，form-control-infrastructure/form.html 余
-> 10F，labels IDL 簇延伸）；候选后备 form_owner_and_table parser form
-> element pointer 表规则（深结构，动则单独立项）、proxy-modifier
-> tentative 4F、details 键盘激活 / summary toggle coalescing（M1 起既有
-> 深层）。
+> [evidence/2026-10-21-m2s18-r4007.md](html-semantics-compat/evidence/2026-10-21-m2s18-r4007.md)。
+> **下一步**：M2 切片 19——proxy-modifier tentative 4F（modifier 键面）
+> 或 details 键盘激活 / summary toggle coalescing（M1 起既有深层）归因
+> 切片；forms 域余 F 逐簇归因后再定；parser form element pointer 维持
+> 单独立项征询不越界。
 
 
 > **▶ 拆分动机（2026-10-08 预留编号立项，用户「候选 goal 也立项吧」）**：继
@@ -113,6 +107,16 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-21 M2 切片 18**：label.form IDL（R4007，rollover 接续）——
+  `.form` getter 分发区补 LABEL 分支，`_zwLabeledControl` 取控件后委托
+  控件 `.form`（R4005 关联面全继承），label 自身 form 属性不参与。
+  part60 契约 1 测（W1–W3）。九域 4838→4848P（65.82%，账本条目口径），
+  对 s17 逐 subtest diff 净 +10P、回归 0：form.html label.form 8 案
+  翻绿（7P/10F→15P/2F）、dialog autofocus 两案意外翻绿（焦点链联带）。
+  zero-engine --lib 3325P/0F、make test 76 腿 22222P/0F 全绿、clippy/fmt
+  过、零新增依赖。挂账：parser form element pointer 表规则 4F 同根
+  （深结构单独立项）、proxy-modifier tentative 4F、details 键盘激活 /
+  summary toggle coalescing、navigation-compat M3 项维持。
 - **2026-10-21 M2 切片 17**：form owner 动态关联（R4005/R4006，rollover
   接续）——`.form` getter 重写（JS 视图 parentNode 三族统一上行 + form
   attr 控件所在树查找 + latest-wins 读 + OBJECT gate）、R52 消零 purge

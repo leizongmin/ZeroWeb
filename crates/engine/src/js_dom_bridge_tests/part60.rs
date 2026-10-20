@@ -866,3 +866,102 @@ fn test_form_owner_dynamic_r4005() {
         "W4：object 元素 `.form` 关联祖先 form（gate 补 OBJECT）"
     );
 }
+
+// R4007（html-semantics M2 切片 18）：HTMLLabelElement.form——labeled control 的
+// form owner（无 labeled control → null）。修复面：`.form` getter 补 LABEL 分支，
+// 经 `_zwLabeledControl`（for 优先 + 子树树序 DFS，R4003/R4004 既有）委托控件的
+// `.form`（R4005 关联面）；label 自身 form content attribute 不参与（label 非
+// form-associated——form.html label-form 语料期望 null）。`.control` 本体 R4003
+// 已在 part04 分发区，本契约只钉 `.form` 委托链。
+#[test]
+fn test_label_form_r4007() {
+    let mut sandbox = t59_sandbox_with_shim();
+    let mutations: std::sync::Arc<std::sync::Mutex<Vec<DomMutation>>> = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+    let dom_html: std::sync::Arc<std::sync::Mutex<String>> =
+        std::sync::Arc::new(std::sync::Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: std::sync::Arc<std::sync::Mutex<String>> = std::sync::Arc::new(std::sync::Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    crate::js_dom_bridge::register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // W1：无 labeled control → null（裸 label / form 属性不参与——label 非
+    // form-associated）。
+    sandbox
+        .execute(
+            "var f1 = document.createElement('form'); f1.id = 'lF1'; document.body.appendChild(f1);\
+             var lb1 = document.createElement('label'); lb1.id = 'lLb1'; document.body.appendChild(lb1);\
+             var lb2 = document.createElement('label'); lb2.id = 'lLb2'; lb2.setAttribute('form', 'lF1');\
+             document.body.appendChild(lb2);\
+             globalThis.__l1a = String(lb1.form === null);\
+             globalThis.__l1b = String(lb2.form === null);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__l1a").unwrap().value,
+        "true",
+        "W1：裸 label `.form` null（修复前 undefined）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__l1b").unwrap().value,
+        "true",
+        "W1：label 自身 form 属性不参与关联（期望 null 非 form）"
+    );
+
+    // W2：包绕控件 → 控件的 form owner（祖先 form）；for= 指向 → 目标控件的
+    // form owner；reparent 后同步跟随（委托 R4005 面不重复钉树序细节）。
+    sandbox
+        .execute(
+            "var c1 = document.createElement('input');\
+             var lb3 = document.createElement('label'); lb3.appendChild(c1);\
+             f1.appendChild(lb3);\
+             globalThis.__l2a = String(lb3.form === f1);\
+             var c2 = document.createElement('input'); c2.id = 'lC2'; f1.appendChild(c2);\
+             var lb4 = document.createElement('label'); lb4.setAttribute('for', 'lC2');\
+             document.body.appendChild(lb4);\
+             globalThis.__l2b = String(lb4.form === f1);\
+             var f2 = document.createElement('form'); f2.id = 'lF2'; document.body.appendChild(f2);\
+             f2.appendChild(c2);\
+             globalThis.__l2c = String(lb4.form === f2 && lb4.control.form === f2);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__l2a").unwrap().value,
+        "true",
+        "W2：包绕控件 label `.form` = 控件祖先 form"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__l2b").unwrap().value,
+        "true",
+        "W2：for= label `.form` = 目标控件 form owner"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__l2c").unwrap().value,
+        "true",
+        "W2：控件 reparent 后 label.form 同步跟随新 owner（委托 R4005 面）"
+    );
+
+    // W3：for= 指向带 form 属性的控件 → 控件 form attr 关联面（R4005）；for=
+    // miss（非 labelable 或无此 id）→ null。
+    sandbox
+        .execute(
+            "var c3 = document.createElement('input'); c3.id = 'lC3'; c3.setAttribute('form', 'lF1');\
+             f1.appendChild(c3);\
+             var lb5 = document.createElement('label'); lb5.setAttribute('for', 'lC3');\
+             document.body.appendChild(lb5);\
+             globalThis.__l3a = String(lb5.form === f1);\
+             var lb6 = document.createElement('label'); lb6.setAttribute('for', 'nope');\
+             document.body.appendChild(lb6);\
+             globalThis.__l3b = String(lb6.form === null);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__l3a").unwrap().value,
+        "true",
+        "W3：for= 控件带 form 属性 → form attr 关联（委托 R4005）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__l3b").unwrap().value,
+        "true",
+        "W3：for= miss → null"
+    );
+}

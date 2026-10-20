@@ -19683,6 +19683,19 @@ return e;
         // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#association-of-controls-and-forms
         if (prop === 'form') {
           var fcTag = _realTag(sel, handle);
+          // R4007（M2 切片 18）：HTMLLabelElement.form——labeled control 的 form
+          // owner（无 labeled control → null）。label 自身的 form content attribute
+          // 不参与关联（label 非 form-associated——form.html label-form form="form"
+          // 期望 null）；`.control`（R4003）同算法在 part04 分发区。
+          // https://html.spec.whatwg.org/multipage/forms.html#the-label-element
+          if (fcTag === 'LABEL') {
+            var lblFormCtl = null;
+            try { lblFormCtl = _zwLabeledControl(sel, handle); } catch (_eLblForm) { lblFormCtl = null; }
+            if (lblFormCtl && typeof lblFormCtl === 'object') {
+              try { return lblFormCtl.form; } catch (_eLblForm2) { return null; }
+            }
+            return null;
+          }
           if (fcTag === 'INPUT' || fcTag === 'SELECT' || fcTag === 'TEXTAREA' || fcTag === 'BUTTON' || fcTag === 'OUTPUT' || fcTag === 'FIELDSET' || fcTag === 'OBJECT') {
             try {
               var hasFormAttr = false;
