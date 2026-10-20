@@ -960,7 +960,10 @@
           }
           if (handle) __zw_set_attr_handle(handle, _refAttr, _refVal);
           else __zw_set_attr(sel, _refAttr, _refVal);
-          if (_refAttr === 'src' && _realTag(sel, handle) === 'IFRAME' &&
+          // navigation-compat M3：srcdoc 与 src 同为 process-the-iframe-attributes 触发
+          // 属性（spec #the-iframe-element：set/changed/removed 任一都重新处理；目标
+          // 优先级 srcdoc > src 在 _zwLoadIframeEntry 入口统一判定）。
+          if ((_refAttr === 'src' || _refAttr === 'srcdoc') && _realTag(sel, handle) === 'IFRAME' &&
               typeof globalThis.__zw_reload_iframe === 'function' &&
               typeof _zwIframeNavigationConnected === 'function' &&
               _zwIframeNavigationConnected(sel, handle)) {
@@ -1646,6 +1649,23 @@
     var _r115WinRef = null; // defaultView 槽（_zwMakeIframeWin 建后回填）
     doc._zwMarkup = String(markup || '');
     doc.__r115SetWin = function (w) { _r115WinRef = w; };
+    // navigation-compat M3：iframe 子文档的 doc.location——browsing context 内文档
+    // 的 location 非空（spec html.spec.whatwg.org/multipage/nav-history-apis.html
+    // #dom-document-location；content_document_changes_only_after_load_matures 在
+    // 成熟度门前就读 `contentDocument.location.toString() === "about:blank"`，win
+    // 尚未物化也须可用）。detached 工厂的 null getter（_makeDetachedDocument）只
+    // 适用非浏览上下文文档（createHTMLDocument 面不改）。doc-anchored 单例读
+    // `_zwURL` 槽（finish 路径写 effectiveUrl，R360），无槽回 about:blank；
+    // win 物化后 win.location 与之同源（href 同读该槽）。
+    var _zwDocLoc = {
+      get href() {
+        try { return doc._zwURL ? String(doc._zwURL) : 'about:blank'; } catch (_eDocLoc) { return 'about:blank'; }
+      },
+      toString: function () { return this.href; },
+    };
+    try {
+      Object.defineProperty(doc, 'location', { configurable: true, get: function () { return _zwDocLoc; } });
+    } catch (_eDocLocDef) {}
     // R141（js-dom M4）：`<meta charset>` → 文档编码归一化（WPT
     // Document-characterSet-normalization-1/2 654 subtest——iframe 子文档的
     // characterSet/inputEncoding/charset 期望 WHATWG encoding label 表归一化后的
@@ -3660,6 +3680,18 @@
       }
       return {
         get href() { return href(); },
+        // navigation-compat M3：子文档 location.href 写侧 → iframe 重导航（相对 URL
+        // 按当前文档地址解析；iframe-network-error「frames.existingIframe1.location.
+        // href = 不可达主机」断言入口——错误页仍派 load）。
+        set href(v) {
+          var frame = null;
+          try { frame = _proxyCache[frameKey] || null; } catch (_eLocHref) {}
+          if (frame && typeof globalThis.__zw_reload_iframe === 'function') {
+            // viaNavigation：子发起导航不经「process the iframe attributes」，即使
+            // srcdoc 属性仍在场也按 URL 取资源（about:srcdoc 只由属性处理路径服务）。
+            globalThis.__zw_reload_iframe(frame, iframeResolveHistoryUrl(v), { viaNavigation: true });
+          }
+        },
         get protocol() { var u = parsed(); return u ? u.protocol : ''; },
         get host() { var u = parsed(); return u ? u.host : ''; },
         get hostname() { var u = parsed(); return u ? u.hostname : ''; },
@@ -3667,8 +3699,12 @@
         get search() { var u = parsed(); return u ? u.search : ''; },
         get hash() { var u = parsed(); return u ? u.hash : ''; },
         get origin() { var u = parsed(); return u ? u.origin : 'null'; },
-        assign: function () {},
-        replace: function () {},
+        assign: function (v) {
+          this.href = v;
+        },
+        replace: function (v) {
+          this.href = v;
+        },
         reload: function () { iframeReload({ reload: true }); },
         toString: function () { return href(); }
       };
