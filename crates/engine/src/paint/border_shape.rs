@@ -268,8 +268,9 @@ pub(crate) fn border_shape_round_inset_equivalent_radii(
     let Some(ClipPathRadius::Length(v)) = round else {
         return None;
     };
-    // 单角钳制 min(R, min(w,h)/2)——与 BorderRadiusSpec::from_style_with_box 对
-    // border-radius: R 的解析同口径（R2314 百分比相对短边判例）。
+    // 单角钳制 min(R, min(w,h)/2)——R5203 起 border-radius 解析（from_style_with_box）
+    // 已去半短边钳制，clip-path inset round 仍保留（规范两处同为 §5.5 口径无钳制；
+    // 无 corpus 驱动案，行为分歧挂账不改，仅此注释记录）。
     let half_min = box_node.width.min(box_node.height) / 2.0;
     let declared = resolve_inset_length(v, half_min, font_size);
     let r = declared.min(half_min).max(0.0);
@@ -866,12 +867,13 @@ mod tests {
     }
 
     #[test]
-    fn test_r2314_border_radius_percentage_clamped() {
-        // 50% on 200×100 → 0.5×200=100，钳制到 min(200,100)/2=50（CSS 单角半径不超边长一半）
+    fn test_r2314_border_radius_percentage_no_half_side_clamp() {
+        // R5203：50% on 200×100 → 0.5×200=100，不再按半短边钳制（§5.5 角重叠
+        // 收缩才是规范口径，单角 100 无重叠保持原值；修前钳到 50 与 px 不同形）
         let mut style = ComputedStyle::default();
         style.border_top_left_radius = LengthValue::Percentage(50.0);
         let spec = BorderRadiusSpec::from_style_with_box(&style, 200.0, 100.0);
-        assert_eq!(spec.top_left, 50.0);
+        assert_eq!(spec.top_left, 100.0);
     }
 
     #[test]

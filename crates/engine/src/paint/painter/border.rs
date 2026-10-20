@@ -264,7 +264,7 @@ impl super::Painter {
         }
 
         // R5180（css-backgrounds-3 §5.5 弧带）：plain border-radius 的边框带按弧绘制——
-        // 外圈（BorderRadiusSpec::from_style_with_box 规范口径：百分比/钳制/§5.5 重叠
+        // 外圈（BorderRadiusSpec::from_style_with_box 规范口径：百分比/§5.5 重叠
         // 收缩，与背景裁剪同形）+ 内圈（padding edge，max(0, r−bw) 同心）两多边形串联
         // 单次 even-odd path_fill（cpu/stroke.rs 扫描线 even-odd），孔区不涂改背景，
         // 透明背景亦适用。适用判定（非 collapse、四边 Solid 同色等宽）见 helpers

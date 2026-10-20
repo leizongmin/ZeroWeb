@@ -5068,7 +5068,31 @@ impl Painter {
             // 圆角矩形：通过 add_rounded_rect 记录 DrawOp（draw_order 是默认渲染路径，
             // 直接 push 到 rounded_rects 会绕过 DrawOp 记录导致圆角背景被丢弃）。
             // R4354：local + 滚动容器时取 contents-clip 内半径（radii_override）。
-            let r = radii_override.unwrap_or(radii);
+            // R5203（css-backgrounds-3 #corner-shaping）：clip 内盒（padding/content）的
+            // 背景**色**圆角 = 外圈半径按越过的边宽同心内缩（内曲线同 §5.5 模型；
+            // cut 取轴 max 与 R4354 local 臂同式，均等边框驱动案下精确）——此前直接用
+            // border-box 半径配内盒 rect，与边框带内缘（R5180 max(0, r−bw)）不同形，
+            // 同一元素 default-clip 与 content-box-clip 背景不自洽
+            //（background-clip-{content,padding}-box-with-border-radius-* 实证）。
+            let r = radii_override.unwrap_or_else(|| {
+                let cut = match color_clip {
+                    Some(BackgroundClipComputedValue::PaddingBox) => box_node.border_left.max(box_node.border_top),
+                    Some(BackgroundClipComputedValue::ContentBox | BackgroundClipComputedValue::Text) => {
+                        box_node.border_left.max(box_node.border_top) + box_node.padding_left.max(box_node.padding_top)
+                    }
+                    _ => 0.0,
+                };
+                if cut <= 0.0 {
+                    radii
+                } else {
+                    super::helpers::BorderRadiusSpec {
+                        top_left: (radii.top_left - cut).max(0.0),
+                        top_right: (radii.top_right - cut).max(0.0),
+                        bottom_right: (radii.bottom_right - cut).max(0.0),
+                        bottom_left: (radii.bottom_left - cut).max(0.0),
+                    }
+                }
+            });
             self.primitives.add_rounded_rect(RoundedRectPrimitive {
                 rect: Rect::new(clip_x, clip_y, clip_w, clip_h),
                 color: resolve_color_current(&style.background_color, &style.color),

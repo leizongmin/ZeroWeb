@@ -333,13 +333,12 @@ impl BorderRadiusSpec {
     ///
     /// driving：R2314 border-radius 百分比（`border-radius: 50%` 圆形）与含百分比 calc。
     pub fn from_style_with_box(style: &ComputedStyle, box_w: f32, box_h: f32) -> Self {
-        let max_r = (box_w.min(box_h) / 2.0).max(0.0);
         let font_size_px = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
         let mut spec = Self {
-            top_left: resolve_radius_length(&style.border_top_left_radius, box_w, max_r, font_size_px),
-            top_right: resolve_radius_length(&style.border_top_right_radius, box_w, max_r, font_size_px),
-            bottom_right: resolve_radius_length(&style.border_bottom_right_radius, box_w, max_r, font_size_px),
-            bottom_left: resolve_radius_length(&style.border_bottom_left_radius, box_w, max_r, font_size_px),
+            top_left: resolve_radius_length(&style.border_top_left_radius, box_w, font_size_px),
+            top_right: resolve_radius_length(&style.border_top_right_radius, box_w, font_size_px),
+            bottom_right: resolve_radius_length(&style.border_bottom_right_radius, box_w, font_size_px),
+            bottom_left: resolve_radius_length(&style.border_bottom_left_radius, box_w, font_size_px),
         };
         spec.shrink_overlapping_corners(box_w, box_h);
         spec
@@ -423,23 +422,20 @@ pub fn round_band_uniform_border(style: &ComputedStyle, box_node: &LayoutBox) ->
 /// 解析 border-radius 单角长度值为像素半径。
 ///
 /// - `Px`：已解析的绝对值（em/rem/vw 与不含百分比的 calc 已在 computed 阶段解析为 Px），
-///   原值返回（不钳制，保持既有 px 行为 byte-identical）。
+///   原值返回。
 /// - `Percentage`：CSS Backgrounds §5.1，相对于 border-box 宽度（水平半径语义）。
 /// - `Calc`：含百分比的 calc/min/max/clamp（无百分比的已在 computed 解析为 Px），
 ///   以 `box_w` 为百分比基准（parent_length）求值；不可解（如需 font 上下文）→ 回退 0.0。
 ///
-/// 百分比与 calc 结果钳制到 `max_r`（= min(box_w, box_h) / 2）：CSS 规定单角半径不超过
-/// 边长一半，避免圆角超出边框盒致视觉溢出。Px 值不钳制（既有行为不变）。
-fn resolve_radius_length(v: &LengthValue, box_w: f32, max_r: f32, font_size_px: f64) -> f32 {
+/// R5203：不按半短边钳制——§5.5 角重叠收缩（[`BorderRadiusSpec::shrink_overlapping_corners`]）
+/// 才是规范口径，均匀半径下二者等价（f·r = 半边长），非均匀单角大半径（100% 单角
+/// = 四分之一圆）此前被过度钳制致与 px 半径不同形（background-clip-*-with-
+/// border-radius-002 %/px 两侧不对称实证）。
+fn resolve_radius_length(v: &LengthValue, box_w: f32, font_size_px: f64) -> f32 {
     match v {
         LengthValue::Px(p) => *p as f32,
-        LengthValue::Percentage(pct) => {
-            let r = (pct / 100.0) * box_w as f64;
-            r.min(max_r as f64) as f32
-        }
-        LengthValue::Calc(expr) => eval_calc(expr, Some(box_w as f64))
-            .map(|r| r.min(max_r as f64) as f32)
-            .unwrap_or(0.0),
+        LengthValue::Percentage(pct) => ((pct / 100.0) * box_w as f64) as f32,
+        LengthValue::Calc(expr) => eval_calc(expr, Some(box_w as f64)).unwrap_or(0.0) as f32,
         // computed 阶段未解析的其余真实长度单位：按当前 font-size 在 paint 边界解析。
         _ => zero_style_system::computed::resolve_length(v, font_size_px, None, None) as f32,
     }

@@ -42,6 +42,7 @@ mod r5187_svg_css_presentation;
 mod r5188_border_shape_shadow;
 mod r5201_overflow_clip_radius_tests;
 mod r5202_anon_table_caption_tests;
+mod r5203_bg_clip_radius_tests;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;
