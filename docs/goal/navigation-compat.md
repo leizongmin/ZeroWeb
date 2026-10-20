@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-09-12
-**状态**: Active（M2 收口——2026-10-11 M2-S1~S9 三十三片落地，全量 20.9%→**85.7%**（408/476；location-interface 97.7% / traversal 93.3% / history-interface 98.2% / navigation-api 93.3%）；M4 收口评估 DC-1/2/4 满足、DC-3 维持用户门控 pending（M3 iframe 深结构切片为唯一剩余项，2026-10-04 征询维持挂起默认）；残余 75 案逐案有账 + bfcache/fission 挂账定稿；控制面见 [master.md](navigation-compat/master.md)）
+**状态**: Active（M2 收口——S1~S12 落地，全量 20.9%→**91.8%**（437/476，全量 NotRun 清零；location-interface 100% / traversal 93.3% / history-interface 98.2% / navigation-api 95.0%）；M4 收口评估 DC-1/2/4 满足；**M3 启动授权已获批（2026-10-21 用户批复「批准 M3 最小面」，未豁免 DC-3）**；bfcache/fission 挂账定稿；控制面见 [master.md](navigation-compat/master.md)）
 **执行模式**: WPT 驱动（上游导航面 corpus 为验收标尺）+ 语义修齐；
 iframe 浏览上下文为**用户门控深结构切片**（先例：R1043 vertical-mode / Phase A IFC）
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——导航与浏览上下文面）
@@ -100,7 +100,8 @@ iframe 浏览上下文为**用户门控深结构切片**（先例：R1043 vertic
 
 - [ ] 门控获批后：嵌套 browsing context 最小面（contentWindow/contentDocument/
       frames/parent/top）+ iframe 元素属性语义
-- [ ] 未获批期间：本 DC 保持 pending，不阻塞 DC-2/DC-4 的收口记账
+- [x] 门控已获批（2026-10-21 用户批复「批准 M3 最小面」，未豁免 DC-3——
+      完成面随 M3 实施结果判定）
 
 ### DC-4: 测试与质量不可退让
 
@@ -121,7 +122,8 @@ iframe 浏览上下文为**用户门控深结构切片**（先例：R1043 vertic
 
 ### M3 — iframe 浏览上下文（用户门控）
 
-**目标**：frame tree 最小面 + iframe 属性语义；**启动前须用户点名批准**。
+**目标**：frame tree 最小面 + iframe 属性语义；门控**已批准**（2026-10-21
+用户批复「批准 M3 最小面」），转入执行。
 
 ### M4 — 收口
 

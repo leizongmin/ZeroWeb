@@ -1495,6 +1495,52 @@ fn nested_float_bottoms(child: &LayoutBox, child_border_y: f32, outer_content_y_
     (left, right)
 }
 
+/// R5210（CSS2 §8.3.1 × §9.5.2）：首流内子链的 clear 阻断折叠值重解析。
+/// 自 `box_node` 起沿「父↔首流内子」可折叠对下行，收集各环 declared mt 的折叠值；
+/// 返回 `Some((folded, break_mt))` = 链上存在 clear 阻断点（阻断点 mt 留本级、
+/// 不计入链值），`folded` 为阻断点以上链值、`break_mt` 为阻断点字段 mt（供击发
+/// 门核对 taffy 确已把整链折进 `box_node` 字段）。返回 `None` = 链在抵达 clear
+/// 阻断点前遇到不可穿越边界（顶 border/padding、BFC、空块自折叠、非块级首子
+/// 即行内内容、无流内子）→ 不激活，维持既有字段语义（零行为变化）。
+/// https://www.w3.org/TR/CSS22/visuren.html#flow-control
+fn chain_clear_break_fold(box_node: &LayoutBox) -> Option<(f32, f32)> {
+    use zero_css_parser::values::{ClearValue, FloatValue};
+    let no_clear = |c: &ClearValue| matches!(c, ClearValue::None | ClearValue::InlineStart | ClearValue::InlineEnd);
+    let mut folded = box_node.declared_margin_top;
+    let mut cur = box_node;
+    loop {
+        // 可穿越环：普通块级、无顶框边、非 BFC、非空块（空块自折叠走 R1317 链）。
+        if cur.border_top != 0.0
+            || cur.padding_top != 0.0
+            || crate::margin_collapse::establishes_bfc(cur)
+            || !cur.is_block_level
+            || crate::margin_collapse::is_empty_block(cur)
+        {
+            return None;
+        }
+        // 首个流内子（定位/浮动不入对）；首个流内子非块级 = 行内内容，链断。
+        let first = cur
+            .children
+            .iter()
+            .find(|c| !c.is_absolute && !c.is_fixed && matches!(c.float, FloatValue::None))?;
+        if !first.is_block_level {
+            return None;
+        }
+        if !no_clear(&first.clear) {
+            // clear 阻断点：§8.3.1「the child has no clearance」——其 mt 留本级。
+            return Some((folded, first.margin_top));
+        }
+        folded = crate::margin_collapse::collapse_two_margins(folded, first.declared_margin_top);
+        cur = first;
+    }
+}
+
+/// R5210 链值重解析开关（`ZW_CLEAR_CHAIN_MT_REFOLD=0` 关闭，default-on）。
+/// OPTIMIZATION：kill-switch 进程级单读（R5108 教训：per-node env::var 致
+/// bench-gate 微基准超预算）。
+static CLEAR_CHAIN_MT_REFOLD: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_CLEAR_CHAIN_MT_REFOLD").as_deref() != Ok("0"));
+
 pub(crate) fn adjust_float_positions_with_context(
     box_node: &mut LayoutBox,
     box_content_abs_y: f32,
@@ -2046,6 +2092,22 @@ pub(crate) fn adjust_float_positions_with_context(
                     .any(|s| s.is_block_level && !s.is_absolute && !s.is_fixed && matches!(s.float, FloatValue::None))
             })
             .collect();
+        // R5210：各子是否为首个流内子（前置同胞全为浮动/定位）。taffy 仅对首流内子
+        // 执行「父↔子顶边距折叠」，链值字段语义只在此成立——非首子的字段 mt 另有
+        // 兄弟折叠语义，不参与链重解析。
+        let is_first_in_flow: Vec<bool> = {
+            let mut seen_in_flow = false;
+            box_node
+                .children
+                .iter()
+                .map(|c| {
+                    let in_flow = !c.is_absolute && !c.is_fixed && matches!(c.float, FloatValue::None);
+                    let first = !seen_in_flow && in_flow;
+                    seen_in_flow |= in_flow;
+                    first
+                })
+                .collect()
+        };
 
         for (idx, child) in box_node.children.iter_mut().enumerate() {
             child_float_contexts[idx] = (active_left_float_bottom, active_right_float_bottom);
@@ -2168,6 +2230,48 @@ pub(crate) fn adjust_float_positions_with_context(
                 continue;
             }
 
+            // R5210（CSS2 §8.3.1 × §9.5.2）：float 上下文重定位的链值 mt 归位。
+            // taffy 把「父↔首流内子」可折叠对的整条下行链值折进链顶盒字段
+            // margin_top（内层成员 y 不再含各自 mt；无 float 时提取层保序正确）。
+            // 本重定位若直接用字段 mt，会在内层成员本级重放已上折的 margin
+            //（逐级堆叠泄漏：clear-on-child-with-margins-2 的 B1/B2/CL 三层各
+            // +16px、容器 132 应 100），且祖先帧整体下移令递归透传的 float 底边
+            // 在嵌套帧内失真——clearance 假设位对比失准，正 clearance 判成负。
+            // 击发门（五重，未击发零行为变化）：kill-switch 开、本子无 clear、
+            // 本子为首个流内子、下行链存在 clear 阻断点（chain_clear_break_fold）、
+            // 且字段 mt == collapse(重解析值, 阻断点字段 mt)（防 taffy 未折叠的
+            // 树形误归位）。归位动作：字段 mt 置重解析值（R3808 撤销语义同款，
+            // 撤销后 R3808 两臂首条件自然不再击发，防双计）+ extent 缩减记录
+            //（R5109 祖先传播同款）。clear 阻断点的两臂语义（§9.5.2 C1/C2）：
+            // 零/负 clearance 时其 mt 留本级与折叠世界几何重合（中间链 mt 和为
+            // 零），正 clearance 时即本臂目标——mt 参与假设位/不折叠位对比。
+            // kill-switch `ZW_CLEAR_CHAIN_MT_REFOLD=0` 关闭（default-on）。
+            let child_placement_mt = if *CLEAR_CHAIN_MT_REFOLD
+                && matches!(
+                    child.clear,
+                    ClearValue::None | ClearValue::InlineStart | ClearValue::InlineEnd
+                )
+                && is_first_in_flow[idx]
+            {
+                match chain_clear_break_fold(child) {
+                    Some((folded, break_mt))
+                        if (crate::margin_collapse::collapse_two_margins(folded, break_mt) - child.margin_top)
+                            .abs()
+                            < 0.01 =>
+                    {
+                        let over = child.margin_top - folded;
+                        if over.abs() > 0.01 {
+                            child.margin_top = folded;
+                            child.clearance_extent_reduction += over;
+                        }
+                        folded
+                    }
+                    _ => child.margin_top,
+                }
+            } else {
+                child.margin_top
+            };
+
             // CSS 2.1 §9.5.2 Clearance 计算
             // 假设位置（hypothetical position）：无 clear 时元素应在的位置，
             // 基于正常流的 flow_bottom + margin 折叠计算。
@@ -2189,7 +2293,10 @@ pub(crate) fn adjust_float_positions_with_context(
                     };
                     // 假设位置：基于正常流的 flow_bottom + margin 折叠
                     // CSS 2.1 §9.5.2：「as if 'clear' were 'none'」
-                    let collapsed_margin = crate::margin_collapse::collapse_two_margins(last_flow_mb, child.margin_top);
+                    // R5210：假设位用链值归位后的本级 mt（clear 子未击发重解析，
+                    // 恒等字段值；链上祖先已归位——见 child_placement_mt 注释）。
+                    let collapsed_margin =
+                        crate::margin_collapse::collapse_two_margins(last_flow_mb, child_placement_mt);
                     let hypothetical_y = flow_bottom + collapsed_margin;
 
                     if clear_bottom > hypothetical_y {
@@ -2199,7 +2306,7 @@ pub(crate) fn adjust_float_positions_with_context(
                         // C2（不含 margin 折叠）：clearance = clear_bottom - (flow_bottom + child.margin_top)
                         // 最终位置 = max(clear_bottom, flow_bottom + child.margin_top)
                         // 当元素自身 margin-top 足够大时，即使不折叠也已在浮动之下
-                        let uncollapsed_pos = flow_bottom + child.margin_top;
+                        let uncollapsed_pos = flow_bottom + child_placement_mt;
                         // R4235：content-rel 模式（同 line_y/钳制分支）——写点去 offset。
                         child.y = if clamp_content_rel {
                             clear_bottom.max(uncollapsed_pos)
@@ -2355,8 +2462,10 @@ pub(crate) fn adjust_float_positions_with_context(
                     // 子的定位同样不可信 —— 须以 flow_bottom 重定位。
                     if float_y_offset > 0.0 || had_clearance {
                         // CSS 2.1：非 clear 元素的位置 = 正常流位置（假设 float 不存在）
+                        // R5210：mt 用链值归位后的本级值（已上折的首子链 margin 不在
+                        // 本级重放——旧字段值使 B1/B2/CL 逐级堆叠 +16px）。
                         let collapsed_margin =
-                            crate::margin_collapse::collapse_two_margins(last_flow_mb, child.margin_top);
+                            crate::margin_collapse::collapse_two_margins(last_flow_mb, child_placement_mt);
                         let correct_y = flow_bottom + collapsed_margin;
                         child.y = if clamp_content_rel {
                             correct_y
