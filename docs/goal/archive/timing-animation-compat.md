@@ -1,5 +1,7 @@
 # 计时与动画兼容 — hr-time / performance-timeline / user-timing / WAAPI
 
+> **整体归档（模式 A，2026-10-20）**：按原目标约定范围收口；控制面与证据随入口归档，原有排除项、残差和重入条件保留。对应 Rally 启动脚本已删除。
+
 **版本**: v1.0
 **日期**: 2026-09-12
 **状态**: ✅ Completed（2026-09-28 M4 收口——DC-1~4 全 ✅，收口快照 1107/1571 subtests = 70.5%（基线 319/1376 = 23.2%），reftest 691/691 零回归；控制面见 [master.md](timing-animation-compat/master.md)）
@@ -167,8 +169,8 @@ resource/navigation-timing 重入条件挂账定稿。
 
 - **入口文档**（本文件）：定义 Mission、Done Criteria、执行协议和文档治理规则。
   仅在目标本身实质变化时修改；每轮执行不重写。
-- **运行时控制平面** `docs/goal/timing-animation-compat/master.md`：当前真实状态
+- **运行时控制平面** `docs/goal/archive/timing-animation-compat/master.md`：当前真实状态
   唯一控制面板。
-- **归档区域** `docs/goal/timing-animation-compat/archive/`：只追加不修改。
-- **证据区域** `docs/goal/timing-animation-compat/evidence/`：WPT 基线/修齐账本，
+- **归档区域** `docs/goal/archive/timing-animation-compat/archive/`：只追加不修改。
+- **证据区域** `docs/goal/archive/timing-animation-compat/evidence/`：WPT 基线/修齐账本，
   持续追加。

@@ -1,5 +1,7 @@
 # HTML 文档面兼容 — 运行时控制面板（master.md）
 
+> **已归档（模式 A，2026-10-20）**：当前终态、历史验证与挂账保留；入口见 [归档目标](../html-syntax-compat.md)。
+
 **入口文档**: [../html-syntax-compat.md](../html-syntax-compat.md)
 **创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-20（P10 document.write 流同 turn 读收敛，ambiguous-ampersand 2F→0F，通道 61347/61422）
 

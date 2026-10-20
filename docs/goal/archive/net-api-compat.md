@@ -1,5 +1,7 @@
 # 网络 API 兼容 — fetch / XHR / URL / Streams / EventSource
 
+> **整体归档（模式 A，2026-10-20）**：按原目标约定范围收口；控制面与证据随入口归档，原有排除项、残差和重入条件保留。对应 Rally 启动脚本已删除。
+
 **版本**: v1.0
 **日期**: 2026-09-12
 **状态**: ✅ Completed（2026-10-01 收口——六 corpus 9292/11659 = 79.7%，DC-1~4
@@ -187,6 +189,6 @@ WebSocket 二期切片挂账已定稿。
 
 - **入口文档**（本文件）：定义 Mission、Done Criteria、执行协议和文档治理规则。
   仅在目标本身实质变化时修改；每轮执行不重写。
-- **运行时控制平面** `docs/goal/net-api-compat/master.md`：当前真实状态唯一控制面板。
-- **归档区域** `docs/goal/net-api-compat/archive/`：只追加不修改。
-- **证据区域** `docs/goal/net-api-compat/evidence/`：WPT 基线/修齐账本，持续追加。
+- **运行时控制平面** `docs/goal/archive/net-api-compat/master.md`：当前真实状态唯一控制面板。
+- **归档区域** `docs/goal/archive/net-api-compat/archive/`：只追加不修改。
+- **证据区域** `docs/goal/archive/net-api-compat/evidence/`：WPT 基线/修齐账本，持续追加。

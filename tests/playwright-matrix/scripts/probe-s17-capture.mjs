@@ -89,7 +89,7 @@ const summary = {
 }
 fs.writeFileSync(`${OUT}/zw-capture-summary.json`, JSON.stringify(summary, null, 2))
 console.log(`ZeroWeb capture: ${totalCalls} calls / ${calls.size} methods; ${totalEvents} events / ${events.size} events`)
-const base = JSON.parse(fs.readFileSync('../../docs/goal/cdp-protocol/evidence/chromium-capture-summary-2026-09-12.json', 'utf8'))
+const base = JSON.parse(fs.readFileSync('../../docs/goal/archive/cdp-protocol/evidence/chromium-capture-summary-2026-09-12.json', 'utf8'))
 const baseMethods = new Set((base.methods || []).map((e) => e.method))
 const baseEvents = new Set((base.browserEvents || []).map((e) => e.method))
 const zwMethods = new Set(calls.keys())

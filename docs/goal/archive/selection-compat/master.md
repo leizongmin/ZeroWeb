@@ -1,5 +1,7 @@
 # selection-compat — 运行时控制面
 
+> **已归档（模式 A，2026-10-20）**：当前终态、历史验证与挂账保留；入口见 [归档目标](../selection-compat.md)。
+
 > 状态头（2026-10-15——**goal 收口**：M1/M2/M3 全部完成，DC-1/2/3 满足）
 
 **当前状态**：M3 收口完成（[evidence/2026-10-15-m3-close.md](evidence/2026-10-15-m3-close.md)）。
@@ -40,7 +42,7 @@ goal 边界排除域（execCommand 归 editing 域）。uievents 套件基线为
 ## 碰撞管理（run-rules §9）
 
 本 goal 工作面：`crates/engine/src/js_dom_shim/part06.js`（Selection 段）、
-`tests/wpt-runner/wpt-data/selection/`（只增）、`docs/goal/selection-compat/`、
+`tests/wpt-runner/wpt-data/selection/`（只增）、`docs/goal/archive/selection-compat/`、
 `docs/compat/trends/wpt-suites.csv`（本 goal 行）。已归档 js-dom（Range 遗产）
 与 editing（编辑面）不再动工；渲染面（选区高亮 ::selection）归
 rendering-compat（R5052~R5086 已有系列修复），本 goal 不触碰 paint 路径。

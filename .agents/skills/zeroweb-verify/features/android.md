@@ -5,7 +5,7 @@
 移动用户导航、多标签/缩略图、触摸/IME、旋转/返回/后台恢复、收藏历史、下载通知、
 SAF 导出/取消、外部 Intent，服务断连后恢复。
 完整 FR-001~009 原操作及预期复用
-[设备验收清单](../../../../docs/goal/android-browser/evidence/device-acceptance-checklist.md)，
+[设备验收清单](../../../../docs/goal/archive/android-browser/evidence/device-acceptance-checklist.md)，
 不复制已有清单，不把安装/四进程启动算作全部功能通过。
 源码：`apps/android-browser/app/src/main/java/com/leizm/zeroweb/MainActivity.kt`、
 `apps/android-browser/rust`；准备：

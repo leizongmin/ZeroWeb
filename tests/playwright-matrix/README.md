@@ -1,6 +1,6 @@
 # playwright-matrix — Playwright (pin) CDP 测试链
 
-CDP 协议 goal（`docs/goal/cdp-protocol.md`）的 Playwright 测试工程。Node 为 **测试-only
+CDP 协议 goal（`docs/goal/archive/cdp-protocol.md`）的 Playwright 测试工程。Node 为 **测试-only
 依赖**，不进入任何产品构建。
 
 ## Pin
@@ -25,7 +25,7 @@ make cdp-e2e               # （仓库根）ZeroWeb 收口门：双跑全核心�
 - `steps-report.json` — 逐步 ok/error 报告；**指向 ZeroWeb 时此文件即差距清单**
 - `chromium-capture.md` / `chromium-capture-summary.json` — 按域分组的命令矩阵事实源
 
-账本落点：`docs/goal/cdp-protocol/evidence/cdp-command-matrix.md`（三态登记为人工判定件；
+账本落点：`docs/goal/archive/cdp-protocol/evidence/cdp-command-matrix.md`（三态登记为人工判定件；
 生成的明细拷贝入 `evidence/` 时按日期命名）。
 
 ## 指向 ZeroWeb（M1+ 验收同款入口）

@@ -13262,8 +13262,21 @@
       if (o.focusReset !== undefined && o.focusReset !== null && o.focusReset !== 'after-transition' && o.focusReset !== 'manual') {
         throw new globalThis.TypeError("Failed to read the 'focusReset' property from 'NavigationInterceptOptions': The provided value '" + String(o.focusReset) + "' is not a valid enum value of type NavigationFocusReset.");
       }
-      this._zwScrollMode = (o.scroll === 'manual') ? 'manual' : 'after-transition';
-      this._zwFocusReset = (o.focusReset === 'manual') ? 'manual' : 'after-transition';
+      // navigation-compat S11：仅**显式提供**时覆写（spec intercept steps——
+      //「If options["scroll"] exists, then set event's scroll behavior」「If
+      // options["focusReset"] exists, then set event's focus reset」，只在 member
+      // exists 时 set——https://html.spec.whatwg.org/multipage/nav-history-apis.html#
+      // navigateevent-intercept）。事件未 intercept 前两态 undefined，消费面
+      // `_zwScrollMode || 'after-transition'` / `=== 'manual'` 判定缺省同型；多次
+      // intercept() 时先前 'manual' 保留、后续无参 intercept() 不回落缺省（WPT
+      // focus-reset multiple-intercept「manual + (not provided)」/「(not provided)
+      // + manual」双序案面）。null 与缺省同型（上方枚举校验同门）。
+      if (o.scroll !== undefined && o.scroll !== null) {
+        this._zwScrollMode = (o.scroll === 'manual') ? 'manual' : 'after-transition';
+      }
+      if (o.focusReset !== undefined && o.focusReset !== null) {
+        this._zwFocusReset = (o.focusReset === 'manual') ? 'manual' : 'after-transition';
+      }
       if (!this._zwHandlers) this._zwHandlers = [];
       this._zwHandlers.push(typeof o.handler === 'function' ? o.handler : undefined);
       this._zwIntercepted = true;
@@ -13894,6 +13907,26 @@
     ['message', 'message', ''], ['filename', 'filename', ''],
     ['lineno', 'lineno', 0], ['colno', 'colno', 0], ['error', 'error', null],
   ]);
+  // workers-compat M2：ErrorEvent 无 new 调用抛 TypeError（WebIDL 构造器语义——
+  // Worker_dispatchEvent_ErrorEvent「ErrorEvent constructor called as normal function」面）。
+  // 仅 ErrorEvent 收口：其余 _defineEventSubclass 子类构造器行为由页面通道既有用例锚定，
+  // 不在本目标范围内扩大。
+  // https://webidl.spec.whatwg.org/#inteface-without-call
+  (function () {
+    var ErrCtor = globalThis.ErrorEvent;
+    if (typeof ErrCtor !== 'function') return;
+    var Guarded = function (type, options) {
+      if (!(this instanceof Guarded)) {
+        throw new TypeError("Failed to construct 'ErrorEvent': Please use the 'new' operator, this DOM interface constructor cannot be called as a function.");
+      }
+      var ev = new ErrCtor(type, options);
+      return ev;
+    };
+    Guarded.prototype = ErrCtor.prototype;
+    Object.defineProperty(Guarded, 'name', { value: 'ErrorEvent', configurable: true });
+    try { Object.defineProperty(Guarded, 'length', { value: 1, configurable: true }); } catch (_eLen) {}
+    globalThis.ErrorEvent = Guarded;
+  })();
 
   // EventTarget——事件目标基类型（独立构造器，R2779）。库常用 `new EventTarget()` / `extends EventTarget`
   // 做事件发射器（pub-sub / 自定义事件总线）。元素 / document / window 经各自 addEventListener 路径；
@@ -14426,50 +14459,519 @@
     }
     try { return decodeURIComponent(payload); } catch (_e) { return payload; }
   }
-  function _zwWorkerLocation(hrefValue) {
-    function href() {
-      return String(hrefValue || 'about:blank');
+  // M2（workers-compat DC-2）：WorkerLocation 接口对象——worker 内 location 的
+  // 构造器面（interface-objects 断言 self.WorkerLocation own property +
+  // location instanceof WorkerLocation）。getter 面沿用前 _zwWorkerLocation 对象实现，
+  // 补 port（空串，USVString 语义）。
+  // spec https://html.spec.whatwg.org/multipage/workers.html#workerlocation。
+  // FIXME(searchParams)：WorkerLocation.searchParams 未落（corpus 记账 master.md P3）。
+  function WorkerLocation(hrefValue) {
+    this._zwHref = String(hrefValue || 'about:blank');
+  }
+  function _zwWorkerLocationUrl(self) {
+    try {
+      if (typeof globalThis.URL === 'function') return new globalThis.URL(self._zwHref, self._zwHref);
+    } catch (_eWorkerLocationUrl) {}
+    return null;
+  }
+  WorkerLocation.prototype = {
+    constructor: WorkerLocation,
+    get href() { return this._zwHref; },
+    get protocol() { var u = _zwWorkerLocationUrl(this); return u ? u.protocol : ''; },
+    get host() { var u = _zwWorkerLocationUrl(this); return u ? u.host : ''; },
+    get hostname() { var u = _zwWorkerLocationUrl(this); return u ? u.hostname : ''; },
+    get port() { var u = _zwWorkerLocationUrl(this); return u ? u.port : ''; },
+    get pathname() { var u = _zwWorkerLocationUrl(this); return u ? u.pathname : ''; },
+    get search() { var u = _zwWorkerLocationUrl(this); return u ? u.search : ''; },
+    get hash() { var u = _zwWorkerLocationUrl(this); return u ? u.hash : ''; },
+    get origin() { var u = _zwWorkerLocationUrl(this); return u ? u.origin : 'null'; },
+    toString: function () { return this._zwHref; }
+  };
+  // upstream Worker-location.sub 断言 String(WorkerLocation) 为 native 形态；
+  // 真实函数体带参数名（hrefValue）不满足 → own toString 返回掩码字符串
+  //（实例 location.toString() 走 prototype 的 href 面，不受影响）。
+  WorkerLocation.toString = function () { return 'function WorkerLocation() { [native code] }'; };
+  // M2（workers-compat DC-2）：WorkerNavigator 接口对象——worker 侧 navigator
+  // 最小面（WorkerNavigator.any.js：instanceof + appName/appCodeName/product 常量
+  // + platform/userAgent/onLine 类型；interfaces/WorkerUtils/navigator/008.worker.js：
+  // 可枚举属性只读——赋值 TypeError。WebIDL readonly 在 sloppy 亦抛 → setter 显式
+  // throw，不依赖 strict 指令（worker 脚本经 with(self) 内联，指令不生效））。
+  // 值直读 window navigator（part02 同源值面），不做快照复制。
+  // spec https://html.spec.whatwg.org/multipage/workers.html#workernavigator。
+  function WorkerNavigator() {}
+  (function () {
+    var keys = ['userAgent', 'appName', 'appVersion', 'appCodeName', 'product', 'productSub',
+      'vendor', 'vendorSub', 'platform', 'language', 'languages', 'onLine', 'cookieEnabled',
+      'doNotTrack', 'hardwareConcurrency', 'maxTouchPoints', 'deviceMemory', 'webdriver',
+      'connection', 'userAgentData', 'plugins', 'mimeTypes'];
+    for (var i = 0; i < keys.length; i++) {
+      (function (key) {
+        Object.defineProperty(WorkerNavigator.prototype, key, {
+          enumerable: true,
+          configurable: true,
+          get: function () { return globalThis.navigator ? globalThis.navigator[key] : undefined; },
+          set: function () {
+            throw new TypeError("Cannot assign to read only property '" + key + "' of WorkerNavigator");
+          },
+        });
+      })(keys[i]);
     }
-    function parsed() {
-      try {
-        if (typeof globalThis.URL === 'function') return new globalThis.URL(href(), href());
-      } catch (_eWorkerLocationUrl) {}
+  })();
+  // M2（workers-compat DC-2）：importScripts/worker 脚本源抓取（data:/blob:/外链三源）。
+  // blob: 同源校验同 Worker 构造 blob 分支（origin 可解析拒跨源、opaque 放行）；外链经
+  // host __zw_fetch_script（MIME 判定在 fetcher 侧——runner 按扩展名/.headers sidecar
+  // 派生 wptserve MIME，非 scripty 返 Err）。失败统一返 null（调用方转 NetworkError）。
+  // M2：importScripts 脚本 MIME 判定（JavaScript MIME type 全集，mimesniff——
+  // fetch 相对 data:/blob: 源同样适用：data: 取 URL mediatype（缺省
+  // text/plain 非 scripty，RFC 2397），blob: 取 Blob.type。importscripts_mime(_local)
+  // 案面；失败按 fetch 相失败（NetworkError）。
+  // https://html.spec.whatwg.org/multipage/workers.html#dom-workerglobalscope-importscripts
+  // https://mimesniff.spec.whatwg.org/#javascript-mime-type
+  function _zwWorkerScriptyMime(mime) {
+    var essence = String(mime || '').split(';')[0].trim().toLowerCase();
+    return essence === 'text/javascript' || essence === 'application/javascript'
+      || essence === 'text/ecmascript' || essence === 'application/ecmascript';
+  }
+  function _zwWorkerImportSource(baseHref, rawUrl, resolvedUrl) {
+    if (String(rawUrl).indexOf('data:') === 0) {
+      var meta = String(rawUrl).slice(5).split(',')[0];
+      var mime = meta ? meta.replace(/;base64$/i, '') : '';
+      if (!_zwWorkerScriptyMime(mime)) return null;
+      return _zwDecodeWorkerScript(rawUrl);
+    }
+    var blobKey = String(resolvedUrl);
+    if (String(rawUrl).indexOf('blob:') === 0 || blobKey.indexOf('blob:') === 0) {
+      if (typeof _zwBlobStore === 'object' && _zwBlobStore !== null
+          && Object.prototype.hasOwnProperty.call(_zwBlobStore, blobKey)) {
+        var blobScript = _zwBlobStore[blobKey];
+        var blobUrlMatch = /^([^\/]+:\/\/[^\/]*)\//.exec(blobKey.slice(5));
+        var blobOrigin = (globalThis.location && globalThis.location.origin) || '';
+        if (blobUrlMatch && blobUrlMatch[1] !== blobOrigin) return null;
+        if (!_zwWorkerScriptyMime(blobScript && blobScript.type)) return null;
+        return _zw_utf8_decode(_zw_blobBytes(blobScript));
+      }
       return null;
     }
-    return {
-      get href() { return href(); },
-      get protocol() { var u = parsed(); return u ? u.protocol : ''; },
-      get host() { var u = parsed(); return u ? u.host : ''; },
-      get hostname() { var u = parsed(); return u ? u.hostname : ''; },
-      get pathname() { var u = parsed(); return u ? u.pathname : ''; },
-      get search() { var u = parsed(); return u ? u.search : ''; },
-      get hash() { var u = parsed(); return u ? u.hash : ''; },
-      get origin() { var u = parsed(); return u ? u.origin : 'null'; },
-      toString: function () { return href(); }
-    };
+    if (typeof __zw_fetch_script !== 'function') return null;
+    try { return __zw_fetch_script(String(baseHref || ''), String(rawUrl)) || null; } catch (_eImportFetch) { return null; }
+  }
+  // M2：importScripts 相（spec 三步——URL 解析 → fetch → 顺序执行）的参数归一：
+  // 字符串直用；undefined/null/数字常量按 String() 归一（010-012 案：常量参数
+  // 走构造期内联路径的同款解析）。其余类型（对象/函数）按 String() 归一。
+  function _zwImportArgString(value) {
+    if (typeof value === 'string') return value;
+    return String(value);
+  }
+  // M2：importScripts 调用位扫描（字符串/模板/注释/正则字面量感知——字面量内容
+  // 不参与标识符匹配，防字符串内 `importScripts(` 误报）。返回调用位记录
+  // {start(标识符首), open('(' 位), close(')' 位)}；扫描状态异常（未终止字符串/
+  // 正则）返 null——调用方整体放弃重写（保守，防误替换扩大）。
+  function _zwScanImportCalls(src) {
+    var calls = [];
+    var n = src.length;
+    var i = 0;
+    var prev = ''; // 前一有效 token（正则 vs 除法判定 + 词边界检查）
+    while (i < n) {
+      var ch = src.charAt(i);
+      if (ch === '"' || ch === "'" || ch === '`') {
+        i++;
+        while (i < n) {
+          if (src.charAt(i) === '\\') { i += 2; continue; }
+          if (src.charAt(i) === ch) { i++; break; }
+          if (src.charAt(i) === '\n') return null;
+          i++;
+        }
+        if (i >= n && src.charAt(i - 1) !== ch) return null;
+        prev = 'x';
+        continue;
+      }
+      if (ch === '/' && src.charAt(i + 1) === '/') {
+        while (i < n && src.charAt(i) !== '\n') i++;
+        continue;
+      }
+      if (ch === '/' && src.charAt(i + 1) === '*') {
+        i += 2;
+        while (i < n && !(src.charAt(i) === '*' && src.charAt(i + 1) === '/')) i++;
+        if (i >= n) return null;
+        i += 2;
+        continue;
+      }
+      if (ch === '/') {
+        // 正则字面量判定：前一 token ∈ {( , , , = , : , [ , ! , & , | , ? , ; , { ,
+        // return/case 等关键词} 或源首；否则按除法 token 处理。
+        var regexAfterKeywords = '|return|case|typeof|void|delete|in|of|do|else|new|instanceof|';
+        var regexHere = prev === '' || '(,=:[!&|?;{'.indexOf(prev) >= 0
+          || (prev.length > 1 && regexAfterKeywords.indexOf('|' + prev + '|') >= 0);
+        if (regexHere) {
+          i++;
+          var inClass = false;
+          var closed = false;
+          while (i < n) {
+            var rc = src.charAt(i);
+            if (rc === '\\') { i += 2; continue; }
+            if (rc === '\n') return null;
+            if (inClass) {
+              if (rc === ']') inClass = false;
+            } else if (rc === '[') {
+              inClass = true;
+            } else if (rc === '/') {
+              closed = true;
+              i++;
+              break;
+            }
+            i++;
+          }
+          if (!closed) return null;
+          while (i < n && /[a-z]/i.test(src.charAt(i))) i++;
+          prev = 'x';
+          continue;
+        }
+        prev = '/';
+        i++;
+        continue;
+      }
+      if (/[A-Za-z_$]/.test(ch)) {
+        var start = i;
+        while (i < n && /[A-Za-z0-9_$]/.test(src.charAt(i))) i++;
+        var word = src.slice(start, i);
+        if (word === 'importScripts'
+            && (start === 0 || !/[A-Za-z0-9_$.]/.test(src.charAt(start - 1)))
+            && src.charAt(i) !== '.') {
+          var j = i;
+          while (j < n && /\s/.test(src.charAt(j))) j++;
+          if (src.charAt(j) === '(') {
+            var depth = 0;
+            var k = j;
+            var closedCall = false;
+            while (k < n) {
+              var kc = src.charAt(k);
+              if (kc === '"' || kc === "'" || kc === '`') {
+                k++;
+                while (k < n) {
+                  if (src.charAt(k) === '\\') { k += 2; continue; }
+                  if (src.charAt(k) === kc) { break; }
+                  if (src.charAt(k) === '\n') return null;
+                  k++;
+                }
+                if (k >= n) return null;
+              } else if (kc === '/' && src.charAt(k + 1) === '/') {
+                while (k < n && src.charAt(k) !== '\n') k++;
+              } else if (kc === '/' && src.charAt(k + 1) === '*') {
+                k += 2;
+                while (k < n && !(src.charAt(k) === '*' && src.charAt(k + 1) === '/')) k++;
+                if (k >= n) return null;
+                k += 2;
+                continue;
+              } else if (kc === '(') {
+                depth++;
+              } else if (kc === ')') {
+                depth--;
+                if (depth === 0) { closedCall = true; k++; break; }
+              } else if (kc === ';') {
+                break; // 语句尾仍未闭合——非法调用形态，不重写
+              }
+              k++;
+            }
+            if (closedCall) calls.push({ start: start, open: j, close: k - 1 });
+          }
+          prev = 'x';
+          continue;
+        }
+        prev = word;
+        continue;
+      }
+      if (!/\s/.test(ch)) prev = ch;
+      i++;
+    }
+    return calls;
+  }
+  // M2：解析 importScripts 实参表（顶层逗号切分）。字符串字面量解转义；undefined/
+  // null/数字常量按 String() 归一。出现其余形态（标识符/表达式/缺参）→ 返 null
+  // （该调用不重写，走运行时 importScripts）。
+  function _zwParseImportArgs(src, listStart, listEnd) {
+    var args = [];
+    var depth = 0;
+    var segStart = listStart;
+    var i = listStart;
+    function pushSegment(segEnd) {
+      // 注释剥离（引号感知——字符串内 `//` 不是注释）：`//` 至行尾、`/*...*/`
+      // 归一为空白（004 案实参表内行注释）。未闭合块注释按吞尾处理。
+      function stripComments(text) {
+        var out = '';
+        var i = 0;
+        while (i < text.length) {
+          var c = text.charAt(i);
+          if (c === '"' || c === "'" || c === '`') {
+            out += c;
+            i++;
+            while (i < text.length) {
+              if (text.charAt(i) === '\\') {
+                out += text.charAt(i) + (text.charAt(i + 1) || '');
+                i += 2;
+                continue;
+              }
+              out += text.charAt(i);
+              if (text.charAt(i) === c) { i++; break; }
+              i++;
+            }
+            continue;
+          }
+          if (c === '/' && text.charAt(i + 1) === '/') {
+            while (i < text.length && text.charAt(i) !== '\n') i++;
+            out += ' ';
+            continue;
+          }
+          if (c === '/' && text.charAt(i + 1) === '*') {
+            i += 2;
+            while (i < text.length && !(text.charAt(i) === '*' && text.charAt(i + 1) === '/')) i++;
+            i += 2;
+            out += ' ';
+            continue;
+          }
+          out += c;
+          i++;
+        }
+        return out;
+      }
+      var text = stripComments(src.slice(segStart, segEnd));
+      // 空白段（importScripts() / 尾逗号）：importScripts() 整表空段跳过；非空表
+      // 内空段按非法处理。
+      if (/^\s*$/.test(text)) {
+        if (args.length === 0 && text.trim() === '') return;
+        throw null;
+      }
+      text = text.trim();
+      var q = text.charAt(0);
+      if ((q === '"' || q === "'") && text.charAt(text.length - 1) === q && text.length >= 2) {
+        var lit = '';
+        for (var li = 1; li < text.length - 1; li++) {
+          var lc = text.charAt(li);
+          if (lc === '\\') {
+            var nc = text.charAt(li + 1);
+            if (nc === 'n') { lit += '\n'; li++; }
+            else if (nc === 't') { lit += '\t'; li++; }
+            else if (nc === 'r') { lit += '\r'; li++; }
+            else if (nc === 'b') { lit += '\b'; li++; }
+            else if (nc === 'f') { lit += '\f'; li++; }
+            else if (nc === 'v') { lit += '\v'; li++; }
+            else if (nc === '0') { lit += '\0'; li++; }
+            else if (nc === 'u') {
+              var hex = text.slice(li + 2, li + 6);
+              if (!/^[0-9a-fA-F]{4}$/.test(hex)) throw null;
+              lit += String.fromCharCode(parseInt(hex, 16));
+              li += 5;
+            } else if (nc === 'x') {
+              var hex2 = text.slice(li + 2, li + 4);
+              if (!/^[0-9a-fA-F]{2}$/.test(hex2)) throw null;
+              lit += String.fromCharCode(parseInt(hex2, 16));
+              li += 3;
+            } else if (nc === '\n') {
+              li++; // 行延续
+            } else {
+              lit += nc;
+              li++;
+            }
+          } else {
+            lit += lc;
+          }
+        }
+        args.push(lit);
+        return;
+      }
+      if (text === 'undefined') { args.push('undefined'); return; }
+      if (text === 'null') { args.push('null'); return; }
+      if (/^[0-9]+(\.[0-9]+)?$/.test(text)) { args.push(text); return; }
+      throw null;
+    }
+    try {
+      while (i < listEnd) {
+        var ch = src.charAt(i);
+        if (ch === '"' || ch === "'" || ch === '`') {
+          i++;
+          while (i < listEnd) {
+            if (src.charAt(i) === '\\') { i += 2; continue; }
+            if (src.charAt(i) === ch) { break; }
+            i++;
+          }
+          if (i >= listEnd) throw null;
+        } else if (ch === '/' && src.charAt(i + 1) === '/') {
+          while (i < listEnd && src.charAt(i) !== '\n') i++; // 实参表内行注释（004 案）
+        } else if (ch === '/' && src.charAt(i + 1) === '*') {
+          i += 2;
+          while (i < listEnd && !(src.charAt(i) === '*' && src.charAt(i + 1) === '/')) i++;
+          i += 2;
+        } else if (ch === '(' || ch === '[' || ch === '{') {
+          depth++;
+        } else if (ch === ')' || ch === ']' || ch === '}') {
+          depth--;
+        } else if (ch === ',' && depth === 0) {
+          pushSegment(i);
+          segStart = i + 1;
+        }
+        i++;
+      }
+      pushSegment(listEnd);
+    } catch (_e) {
+      return null;
+    }
+    return args;
+  }
+  // M2（workers-compat DC-2）：importScripts 调用位内联——构造期把字面量/常量参数
+  // 的语句位调用重写为同作用域 direct eval 序列（sloppy direct eval 的 var/function
+  // 声明落调用位所在 var-env → 与 worker 脚本共享作用域，008/009 案断言）。旧实现
+  // 把 import 源提升到 body 顶部并正则剥行——try/catch 内调用的失败/顺序语义丢失、
+  // 含 `;` 的字符串参数被截断（003-012 案全数错位）。spec 三相：
+  // ① 全参 URL 解析（失败 SyntaxError DOMException，不执行任何脚本——002 案）；
+  // ② 全参 fetch（失败 NetworkError，不执行任何脚本——blob-url「前脚本 revoke
+  //    后脚本 URL 仍可用」案钉 fetch 先全量后执行）；
+  // ③ 顺序 eval（SyntaxError/运行时异常在执行位抛出并中止后续——004/005/006 案）。
+  // 重写范围：语句位（前向非空白 ∈ {源首, ;, }）+ 全参字面量/常量；其余保留原调用
+  // 走运行时 importScripts（Function 隔离、定义不泄漏——限制记账 master.md P4）。
+  // https://html.spec.whatwg.org/multipage/workers.html#dom-workerglobalscope-importscripts
+  // FIXME(strict-import)：以 "use strict" 指令开头的导入源经 direct eval 落 sloppy
+  //（指令位置失效）——strict 语义差异记账；corpus 命中面（support/name.js 族）边缘。
+  // 顶层级 function 声明名扫描（workers-compat M2——Timer.js 面型的字符串定时器回调
+  // 需按名访问顶层级函数）。注释/字符串感知的行级近似：深度按行首计（行内 { } 同行
+  // 平衡不计入判定），仅语句位（行首 trim 后 `function 名(`）命中。**已知限制**：
+  // 正则字面量不识别（含 {/引号的正则可能干扰深度/字符串态）——corpus 面未现，记账。
+  function _zwCollectTopLevelFunctionNames(src) {
+    var names = [];
+    var depth = 0;
+    var inBlock = false;
+    var lines = String(src).split('\n');
+    for (var li = 0; li < lines.length; li++) {
+      var s = lines[li];
+      var startDepth = depth;
+      var startInBlock = inBlock;
+      var stripped = '';
+      var j = 0;
+      var strCh = null;
+      while (j < s.length) {
+        var c = s[j];
+        if (inBlock) {
+          if (c === '*' && s[j + 1] === '/') { inBlock = false; j += 2; } else { j++; }
+          continue;
+        }
+        if (strCh) {
+          if (c === '\\') { j += 2; continue; }
+          if (c === strCh) strCh = null;
+          j++;
+          continue;
+        }
+        if (c === '/' && s[j + 1] === '/') break; // 行注释——余下不计
+        if (c === '/' && s[j + 1] === '*') { inBlock = true; j += 2; continue; }
+        if (c === '\'' || c === '"' || c === '`') { strCh = c; j++; continue; }
+        if (c === '{') depth++;
+        else if (c === '}') depth = depth > 0 ? depth - 1 : 0;
+        stripped += c;
+        j++;
+      }
+      if (startDepth === 0 && !startInBlock) {
+        var m = /^\s*function\s+([A-Za-z_$][0-9A-Za-z_$]*)\s*\(/.exec(stripped);
+        if (m && names.indexOf(m[1]) < 0) names.push(m[1]);
+      }
+    }
+    return names;
+  }
+  function _zwInlineImportScripts(src, baseHref) {
+    var calls = _zwScanImportCalls(src);
+    if (calls === null || calls.length === 0) return src;
+    var out = '';
+    var last = 0;
+    for (var ci = 0; ci < calls.length; ci++) {
+      var call = calls[ci];
+      var p = call.start - 1;
+      while (p >= 0 && /\s/.test(src.charAt(p))) p--;
+      // 语句位：源首/`;`/块尾 `}`/块首 `{`（try/if 块内首语句——003/006 案）/`)`
+      //（if(cond) 单语句）/`:`（label/case 子句）。
+      if (p >= 0 && ';}{):'.indexOf(src.charAt(p)) < 0) continue;
+      var args = _zwParseImportArgs(src, call.open + 1, call.close);
+      if (args === null) continue;
+      var resolved = [];
+      var resolveFailed = false;
+      for (var ri = 0; ri < args.length; ri++) {
+        var u = null;
+        try { u = new URL(args[ri], baseHref).href; } catch (_eInlineResolve) {}
+        if (u === null) { resolveFailed = true; break; }
+        resolved.push(u);
+      }
+      out += src.slice(last, call.start);
+      if (resolveFailed) {
+        // 原生构造器优先（R384 wrong-global 先例）：with(self) 内词法 `DOMException`
+        // 落 shim 闭包构造器，与用例断言的 globalThis.DOMException 恒不同一。
+        out += 'throw new (globalThis.DOMException || DOMException)("Failed to resolve importScripts URL.", "SyntaxError");';
+        last = call.close + 1;
+        continue;
+      }
+      var sources = [];
+      var fetchFailed = false;
+      for (var fi = 0; fi < args.length; fi++) {
+        var s = _zwWorkerImportSource(baseHref, args[fi], resolved[fi]);
+        if (s === null) { fetchFailed = true; break; }
+        sources.push(s);
+      }
+      if (fetchFailed) {
+        out += 'throw new (globalThis.DOMException || DOMException)("Failed to fetch importScripts.", "NetworkError");';
+        last = call.close + 1;
+        continue;
+      }
+      for (var si = 0; si < sources.length; si++) {
+        out += 'eval(' + JSON.stringify(sources[si]) + ');';
+      }
+      last = call.close + 1;
+    }
+    out += src.slice(last);
+    return out;
   }
   function Worker(url, options, baseUrl) {
     if (!(this instanceof Worker)) return new Worker(url, options, baseUrl);
-    this._et_listeners = {}; // EventTarget 内部 listener map（构造器未自动调，手动初始化）
-    this._terminated = false;
-    this._onmessage = null;
-    this._onerror = null;
-    this._scriptUrl = String(url);
-    this._resolvedScriptUrl = '';
-    this._handler = null; // worker 的 onmessage（脚本执行时经 wctx.onmessage setter 注入）
-    this._context = null;
-    var main = this; // Worker 实例（worker→main 派发 MessageEvent 到此）
+    // WebIDL 构造器分型（Worker-constructor 面）：url 缺参 TypeError；URL 解析失败
+    // SyntaxError DOMException（spec #dom-worker「parse scriptURL, on failure throw」
+    // ——原回落原样字符串使解析失败静默成 fetch 失败面，与 'http://invalid:123$'
+    // 断言相悖）。url.toString() 抛保持透传（'toString propagation' 面）。
+    // https://html.spec.whatwg.org/multipage/workers.html#dom-worker
+    if (arguments.length === 0) {
+      throw new (globalThis.TypeError || TypeError)("Failed to construct 'Worker': 1 argument required, but only 0 present.");
+    }
+    var _zwUrlStr = String(url);
     var parentHref = baseUrl != null ? String(baseUrl) : '';
     if (!parentHref) {
       try { parentHref = String(typeof location !== 'undefined' && location.href ? location.href : ''); } catch (_e) {}
     }
-    try { this._resolvedScriptUrl = new URL(String(url), parentHref || 'about:blank').href; } catch (_e) {
-      this._resolvedScriptUrl = String(url);
+    var _zwResolvedUrl = '';
+    try {
+      _zwResolvedUrl = new URL(_zwUrlStr, parentHref || 'about:blank').href;
+    } catch (_eParse) {
+      // 宿主未设页面 URL 或 opaque base（about:blank——R3080 API 表面/嵌入沙盒，
+      // 不能解析相对与 blob: 形态）保持旧回落原样字符串；有真实 base 的解析失败按
+      // spec 抛 SyntaxError DOMException（'http://invalid:123$' 断言面）。
+      if (parentHref && parentHref !== 'about:blank') {
+        throw new (globalThis.DOMException || DOMException)(
+          "Failed to construct 'Worker': The URL '" + _zwUrlStr + "' is invalid.", 'SyntaxError');
+      }
+      _zwResolvedUrl = _zwUrlStr;
     }
+    this._et_listeners = {}; // EventTarget 内部 listener map（构造器未自动调，手动初始化）
+    this._terminated = false;
+    this._closed = false; // WorkerGlobalScope.close()（spec closing 标记——与 terminate 分立，见 wctx.close 注记）
+    this._timerIds = []; // worker 作用域定时器注册表（close 清空——wctx.close 注记）
+    this._closedTimerSeq = 0; // close 后定时器序号（不排程但返回值仍自增——005 面）
+    this._onmessage = null;
+    this._onerror = null;
+    this._scriptUrl = _zwUrlStr;
+    this._resolvedScriptUrl = _zwResolvedUrl;
+    this._handler = null; // worker 的 onmessage（脚本执行时经 wctx.onmessage setter 注入）
+    this._context = null;
+    var main = this; // Worker 实例（worker→main 派发 MessageEvent 到此）
     // worker self 上下文（DedicatedWorkerGlobalScope 近似）。postMessage 经 microtask 派发到主 Worker 实例。
     var wctx = {
       // worker→main：structuredClone + queueMicrotask 派发 'message' 到 Worker 实例（对称 MessagePort R2779）。
+      // close 不拦 worker→page 出站投递（closing 只停 worker 事件循环取新任务——
+      // WorkerGlobalScope-close「close 后 postMessage('Should be delivered') 仍达」面；
+      // 拦的是入站投递——Worker.prototype.postMessage 投递位查 _closed）；terminate
+      // 全拦（入口 + 投递位查 _terminated）。
       postMessage: function (msg) {
+        if (main._terminated) return;
         var data = typeof structuredClone === 'function' ? structuredClone(msg) : msg;
         if (typeof queueMicrotask === 'function') {
           queueMicrotask(function () {
@@ -14478,32 +14980,115 @@
           });
         }
       },
-      // R34xx（G6）：importScripts 经 host __zw_fetch_script 同步抓取并执行（worker 测试
-      // 框架的 testharness.js/canvas-tests.js 导入——OffscreenCanvas worker 变体）。
+      // M2（workers-compat DC-2）：importScripts 运行时路径（非字面量参数兜底）——
+      // spec 三相：全参 URL 解析（失败 SyntaxError DOMException，不执行任何脚本）
+      // → 全参 fetch（失败 NetworkError，不执行）→ 顺序执行（异常透传并中止后续）。
+      // DOMException 取 globalThis 优先（R384 wrong-global 先例——词法 `DOMException`
+      // 落 shim 闭包内构造器，与用例经 wctx 镜像到的原生构造器恒不同一）。
+      // Function 隔离执行——顶层定义不泄漏到调用作用域（字面量/常量参数走构造期
+      // 内联路径：direct eval 同 var-env；此限制记账 master.md P4）。
+      // https://html.spec.whatwg.org/multipage/workers.html#dom-workerglobalscope-importscripts
       importScripts: function () {
+        var base = String(wctx.location && wctx.location.href ? wctx.location.href : '');
+        var de = globalThis.DOMException || DOMException;
+        var sources = [];
         for (var ai = 0; ai < arguments.length; ai++) {
-          var u = String(arguments[ai]);
-          if (typeof __zw_fetch_script !== 'function') continue;
-          var src = null;
-          try {
-            src = __zw_fetch_script(String(wctx.location && wctx.location.href ? wctx.location.href : ''), u) || null;
-          } catch (_e) { src = null; }
-          if (src === null) continue;
-          try {
-            var body = 'var postMessage=self.postMessage.bind(self);'
-              + 'var importScripts=function(){};'
-              + 'var location=self.location;'
-              + 'var Worker=self.Worker;'
-              + 'var onmessage;'
-              + src
-              + '\n;if(typeof onmessage==="function")self.onmessage=onmessage;';
-            new Function('self', body).call(null, wctx);
-          } catch (_e) { /* 导入失败不阻断（测试自行报告） */ }
+          var raw = _zwImportArgString(arguments[ai]);
+          var resolvedUrl = null;
+          try { resolvedUrl = new URL(raw, base).href; } catch (_eImportResolve) {}
+          if (resolvedUrl === null) {
+            throw new de("Failed to resolve importScripts URL '" + raw + "'.", 'SyntaxError');
+          }
+          var src = _zwWorkerImportSource(base, raw, resolvedUrl);
+          if (src === null) {
+            throw new de("Failed to fetch importScripts '" + raw + "'.", 'NetworkError');
+          }
+          sources.push(src);
+        }
+        for (var ei = 0; ei < sources.length; ei++) {
+          var body = 'var postMessage=self.postMessage.bind(self);'
+            + 'var importScripts=self.importScripts;'
+            + 'var location=self.location;'
+            + 'var Worker=self.Worker;'
+            + 'var onmessage;'
+            + 'with(self){' + sources[ei] + '\n;}'
+            + '\n;if(typeof onmessage==="function")self.onmessage=onmessage;';
+          // this 传 wctx——worker 顶层 this === self（spec #the-global-scope，
+          // 与主脚本执行路径 15426 同款）。
+          new Function('self', body).call(wctx, wctx);
         }
       },
-      close: function () { main._terminated = true; },
+      // close()——WorkerGlobalScope 生命周期收口（spec #dom-workerglobalscope-close）：
+      // 置独立 closing 标记（非 terminate 的 _terminated）——worker→page 出站投递
+      // 不拦（wctx.postMessage 注记）；拦的是入站投递与新任务（Worker.prototype.
+      // postMessage 投递位查 _closed——WorkerGlobalScope-close「sending a message
+      // after closing」无二次 pong 面）。
+      // close 清空事件循环已排队任务——close 前注册的定时器不再执行（同页
+      // 「closeWithPendingEvents」面：定时器不 fire、错误不上报）；同任务 close 后
+      // 抛错仍上报（「closeWithError」面——_zwReportToOwner 只查 _terminated）。
+      // 宿主定时器已入队回调无法撤回 → close 时 clear 注册表（_timerIds）。
+      close: function () {
+        main._closed = true;
+        var ids = main._timerIds;
+        main._timerIds = [];
+        for (var ci = 0; ci < ids.length; ci++) {
+          try { globalThis.clearTimeout(ids[ci]); globalThis.clearInterval(ids[ci]); } catch (_eClrT) {}
+        }
+      },
+      // worker 作用域定时器：回调抛 → 未捕获错误管线（不逸出到 page 定时器上下文）。
+      // setTimeout 字符串形态按 worker 全局作用域编译（with(self)——throw.js 面型）。
+      // ID 透传宿主定时器（clear 与 page 同 ID 空间），登记 _timerIds 供 close 清空。
+      // 字符串形态的错误栈坐标相对包装体（`with(self){`+串，无前导行——行不偏移、
+      // 首行列 −10），function 形态回调定义在主脚本体内（默认体偏移）——各形态分别
+      // 传定位偏移（_reportError 二参）。
+      setTimeout: function (fn, delay) {
+        // closing 后事件循环不再取新任务——定时器不再排程（close/setTimeout
+        // 「close 后 setTimeout(x,0) 无回调」面）；close 前已排程的由 close 清空。
+        // 返回值仍为自增序号（WindowTimers/005——close 后首个 setInterval 传回
+        // 未用计数值 1 而非 0；序号不登记 → clear 无目标，与排程禁止面一致）。
+        if (main._closed) return ++main._closedTimerSeq;
+        var args = Array.prototype.slice.call(arguments, 2);
+        var id;
+        if (typeof fn === 'function') {
+          id = globalThis.setTimeout(function () {
+            try { fn.apply(null, args); } catch (e) { main._reportError(e); }
+          }, delay);
+        } else {
+          id = globalThis.setTimeout(function () {
+            try { new Function('self', 'with(self){' + String(fn) + '\n;}').call(wctx, wctx); }
+            catch (e) { main._reportError(e, 0); }
+          }, delay);
+        }
+        main._timerIds.push(id);
+        return id;
+      },
+      setInterval: function (fn, delay) {
+        if (main._closed) return ++main._closedTimerSeq;
+        var args = Array.prototype.slice.call(arguments, 2);
+        var id;
+        if (typeof fn === 'function') {
+          id = globalThis.setInterval(function () {
+            try { fn.apply(null, args); } catch (e) { main._reportError(e); }
+          }, delay);
+        } else {
+          id = globalThis.setInterval(function () {
+            try { new Function('self', 'with(self){' + String(fn) + '\n;}').call(wctx, wctx); }
+            catch (e) { main._reportError(e, 0); }
+          }, delay);
+        }
+        main._timerIds.push(id);
+        return id;
+      },
+      clearTimeout: function (id) { return globalThis.clearTimeout(id); },
+      clearInterval: function (id) { return globalThis.clearInterval(id); },
     };
-    wctx.self = wctx;
+    // self 只读（spec DedicatedWorkerGlobalScope.self readonly——Worker-replace-self/
+    // self.any.js「self = 1 不变原文」面；getter-only accessor 赋值静默忽略，不抛）。
+    Object.defineProperty(wctx, 'self', {
+      enumerable: true,
+      configurable: true,
+      get: function () { return wctx; },
+    });
     wctx._et_listeners = {};
     if (!globalThis.WorkerGlobalScope) {
       globalThis.WorkerGlobalScope = function WorkerGlobalScope() {};
@@ -14551,9 +15136,17 @@
     wctx.fetch = function (input, init) {
       var requestInput = input;
       if (!(input && typeof input === 'object' && input.url !== undefined)) {
+        var _wBase = (wctx.location && wctx.location.href ? String(wctx.location.href) : '') || 'about:blank';
         try {
-          requestInput = new globalThis.URL(String(input), wctx.location && wctx.location.href ? wctx.location.href : 'about:blank').href;
+          requestInput = new globalThis.URL(String(input), _wBase).href;
         } catch (_eWorkerFetchUrl) {
+          // workers-compat M2：相对解析失败（data:/about: 等非分层 base——data-url
+          // worker「cross-origin worker」面）→ fetch 以 TypeError 拒（spec：URL 解析
+          // 失败即 network error；不落 page 全局 base 重试）。
+          // https://fetch.spec.whatwg.org/#dom-global-fetch
+          if (typeof Promise === 'function') {
+            return Promise.reject(new TypeError("Failed to parse URL from " + String(input)));
+          }
           requestInput = input;
         }
       }
@@ -14562,12 +15155,13 @@
     wctx.CacheStorage = globalThis.CacheStorage;
     wctx.Cache = globalThis.Cache;
     wctx.caches = globalThis.caches;
-    // R34xx：CanvasGradient/CanvasPattern/CanvasRenderingContext2D 全局（gradient.object.
-    // type/return、pattern.basic.type 的 self.CanvasGradient/CanvasPattern 断言——
-    // instanceof 与实例原型链同主全局对象）。
+    // R34xx：CanvasGradient/CanvasPattern 全局（gradient.object.type/return、
+    // pattern.basic.type 的 self.CanvasGradient/CanvasPattern 断言——instanceof 与
+    // 实例原型链同主全局对象）。CanvasRenderingContext2D **不**入 worker 面（2D 上下文
+    // 仅 window——spec 无 DedicatedWorkerGlobalScope 暴露；semantics/interface-objects/
+    // 002.worker.js unexpected 表钉「should not be exposed」）。
     wctx.CanvasGradient = globalThis.CanvasGradient;
     wctx.CanvasPattern = globalThis.CanvasPattern;
-    wctx.CanvasRenderingContext2D = globalThis.CanvasRenderingContext2D;
     // R34xx（G6）：worker 字体面——复用全局 FontFace/FontFaceSet（part06 的
     // `new FontFace(...).load()` 经 host __zw_load_font 真实加载 + document.fonts 同款
     // FontFaceSet 语义）；self.fonts 为独立 FontFaceSet 实例（worker 测试的 add/ready）。
@@ -14577,13 +15171,242 @@
       : { add: function () { return this; }, ready: Promise.resolve(), load: function () { return Promise.resolve([]); } };
     wctx.Worker = function (nestedUrl, nestedOptions) { return new Worker(nestedUrl, nestedOptions, main._resolvedScriptUrl); };
     try { wctx.Worker.prototype = Worker.prototype; } catch (_e) {}
-    wctx.location = wctx.location || _zwWorkerLocation(main._resolvedScriptUrl);
+    wctx.WorkerLocation = WorkerLocation;
+    wctx.location = wctx.location || new WorkerLocation(main._resolvedScriptUrl);
+    wctx.WorkerNavigator = WorkerNavigator;
+    wctx.navigator = new WorkerNavigator();
+    // DedicatedWorkerGlobalScope-members 面：onoffline/ononline 事件 handler 惯名
+    // 存在（own property null 缺省——`in self` 断言面；网络状态事件未接凭证记账）。
+    wctx.onoffline = null;
+    wctx.ononline = null;
+    // M2（workers-compat DC-2）：worker 全局接口面补齐（interface-objects 001/002
+    // 断言 self.<I> own property——with(self) 透传不满足 own property 判定）。
+    // window shim 已有构造器镜像直挂；IDB* 族镜像（IndexedDB 在 worker 可用面，
+    // interface-objects 001 expected 表）；页面侧缺位的抽象接口（XMLHttpRequestEventTarget/
+    // FileReaderSync/TextMetrics）落无功能接口对象（own-property 面即用例断言面——
+    // 与 part02 IDBFactory `|| function` 先例同型）。
+    var _zwWorkerInterfaces = ['Event', 'EventTarget', 'CustomEvent', 'MessageChannel', 'MessagePort',
+      'MessageEvent', 'PromiseRejectionEvent', 'ErrorEvent', 'CloseEvent', 'ProgressEvent',
+      'EventSource', 'WebSocket', 'XMLHttpRequest', 'XMLHttpRequestUpload', 'XMLHttpRequestEventTarget',
+      'FormData', 'Blob', 'File', 'FileList', 'FileReader', 'URLSearchParams', 'Path2D', 'TextMetrics',
+      'DOMException', 'btoa', 'atob',
+      'ReadableStream', 'WritableStream', 'ByteLengthQueuingStrategy', 'CountQueuingStrategy',
+      'BroadcastChannel', 'ArrayBuffer', 'Int8Array', 'Uint8Array', 'Uint8ClampedArray',
+      'Int16Array', 'Uint16Array', 'Int32Array', 'Uint32Array', 'Float16Array', 'Float32Array',
+      'Float64Array', 'DataView',
+      'IDBFactory', 'IDBDatabase', 'IDBRequest', 'IDBOpenDBRequest', 'IDBVersionChangeEvent',
+      'IDBObjectStore', 'IDBIndex', 'IDBKeyRange', 'IDBCursor', 'IDBCursorWithValue', 'IDBTransaction'];
+    for (var wi = 0; wi < _zwWorkerInterfaces.length; wi++) {
+      var iname = _zwWorkerInterfaces[wi];
+      if (globalThis[iname] !== undefined && wctx[iname] === undefined) wctx[iname] = globalThis[iname];
+    }
+    // 页面侧缺位的 worker 规范接口——无功能接口对象（interface-objects 001 own-property 面）。
+    var _zwWorkerInertInterfaces = ['XMLHttpRequestEventTarget', 'FileReaderSync', 'TextMetrics'];
+    for (var zi = 0; zi < _zwWorkerInertInterfaces.length; zi++) {
+      var zname = _zwWorkerInertInterfaces[zi];
+      if (wctx[zname] === undefined) {
+        var zfn = new Function('return function ' + zname + '() {}')();
+        try { Object.defineProperty(zfn, 'length', { value: 0, configurable: true }); } catch (_eZLen) {}
+        wctx[zname] = zfn;
+      }
+    }
+    // workers-compat M2（DC-2/DC-3）：worker 专属面——
+    // ① WorkerPerformance（worker-performance.worker.js：performance.timing/navigation
+    //    须 undefined、navigation/resource entries 空表；now/mark/measure 同 window 面）；
+    // ② indexedDB 惯名存在但 open 拒（opaque origin SecurityError——data:/blob: worker
+    //    存储不可用，data-url「indexedDB is present/inaccessible」双案面）；
+    // ③ worker 形 FormData（构造 length 0——worker 无 form 参数，Worker-formdata
+    //    `FormData.length === 0` 面；实例经内部 page FormData 承载数据，克隆拒绝注册同页型）。
+    wctx.performance = (function () {
+      var store = [];
+      var wp = {};
+      wp.now = function () { return globalThis.performance ? globalThis.performance.now() : 0; };
+      wp.mark = function (name) { store.push({ name: String(name), entryType: 'mark', startTime: wp.now(), duration: 0 }); };
+      // measure(name, markA, markB)：起点/终点取同名 mark 的 startTime（缺省 0/now）——
+      // worker-performance「measure's startTime is the first mark's startTime /
+      // duration = mark 差」面（https://w3c.github.io/user-timing/#dom-performance-measure）。
+      wp.measure = function (name, startMark, endMark) {
+        var start = 0, end = wp.now();
+        var si, ei;
+        for (si = store.length - 1; si >= 0; si--) {
+          if (store[si].entryType === 'mark' && store[si].name === String(startMark)) { start = store[si].startTime; break; }
+        }
+        for (ei = store.length - 1; ei >= 0; ei--) {
+          if (store[ei].entryType === 'mark' && store[ei].name === String(endMark)) { end = store[ei].startTime; break; }
+        }
+        store.push({ name: String(name), entryType: 'measure', startTime: start, duration: end - start });
+      };
+      wp.clearMarks = function () { store = store.filter(function (e) { return e.entryType !== 'mark'; }); };
+      wp.clearMeasures = function () { store = store.filter(function (e) { return e.entryType !== 'measure'; }); };
+      wp.getEntries = function () { return store.slice(); };
+      wp.getEntriesByName = function (n) { return store.filter(function (e) { return e.name === String(n); }); };
+      wp.getEntriesByType = function (t) { return store.filter(function (e) { return e.entryType === String(t); }); };
+      // resource timing 面函数存在性（worker-performance「clearResourceTimings/
+      // setResourceTimingBufferSize is not a function」面）——resource entry 采集未落
+      //（记账 master.md P3），函数为空操作。
+      wp.clearResourceTimings = function () {};
+      wp.setResourceTimingBufferSize = function () {};
+      wp.toJSON = function () { return {}; };
+      return wp;
+    })();
+    if (globalThis.indexedDB !== undefined) {
+      var _idbDE = globalThis.DOMException || DOMException;
+      wctx.indexedDB = {
+        open: function () { throw new _idbDE('Storage is not available in workers with an opaque origin.', 'SecurityError'); },
+        deleteDatabase: function () { throw new _idbDE('Storage is not available in workers with an opaque origin.', 'SecurityError'); },
+        cmp: globalThis.indexedDB.cmp ? globalThis.indexedDB.cmp.bind(globalThis.indexedDB) : function () { return 0; },
+        databases: function () { return Promise.reject(new _idbDE('Storage is not available in workers with an opaque origin.', 'SecurityError')); },
+      };
+    }
+    if (typeof globalThis.FormData === 'function') {
+      var WFormData = function () { this._zwFd = new globalThis.FormData(); };
+      WFormData.prototype.append = function () { return this._zwFd.append.apply(this._zwFd, arguments); };
+      WFormData.prototype.delete = function (k) { return this._zwFd.delete(k); };
+      WFormData.prototype.get = function (k) { return this._zwFd.get(k); };
+      WFormData.prototype.getAll = function (k) { return this._zwFd.getAll(k); };
+      WFormData.prototype.has = function (k) { return this._zwFd.has(k); };
+      WFormData.prototype.set = function () { return this._zwFd.set.apply(this._zwFd, arguments); };
+      wctx.FormData = WFormData;
+    }
+    // workers-compat M2（DC-3）：平台对象克隆拒绝注册——postMessage(worker navigator 实例)/
+    // postMessage(formData) 抛 DataCloneError（postMessage_DataCloneErr / Worker-formdata 面；
+    // spec StructuredSerialize：FormData/Navigator 类无序列化槽位）。注册在 part02
+    // `_zwNonCloneableProtos`（structuredClone 拒绝点）。
+    try {
+      if (typeof globalThis.__zwRegisterNonCloneableProto === 'function') {
+        globalThis.__zwRegisterNonCloneableProto(WorkerNavigator.prototype);
+        globalThis.__zwRegisterNonCloneableProto(WorkerLocation.prototype);
+        if (typeof globalThis.FormData === 'function') {
+          globalThis.__zwRegisterNonCloneableProto(globalThis.FormData.prototype);
+        }
+      }
+    } catch (_eNcReg) {}
     // onmessage setter：worker 脚本 `self.onmessage = fn` 或 bare `onmessage = fn`（经 IIFE 影子同步）注入 handler。
+    // WebIDL EventHandler 转换面（onmessage.worker.js）：callable 或对象存原值（对象经
+    // handleEvent 分派——postMessage 投递侧同语义）；primitive（1/null 除外）置 null；
+    // getter 对未设返 null（`_handler` 存原值即可回读对象形态）。
     Object.defineProperty(wctx, 'onmessage', {
       configurable: true,
-      set: function (fn) { if (typeof fn === 'function') main._handler = fn; },
-      get: function () { return main._handler; },
+      set: function (fn) {
+        if (fn === null || fn === undefined) { main._handler = null; return; }
+        var t = typeof fn;
+        if (t === 'function' || (t === 'object' && fn !== null)) {
+          main._handler = fn;
+        } else {
+          main._handler = null;
+        }
+      },
+      get: function () { return main._handler || null; },
     });
+    // onerror setter：worker 全局错误事件 handler（bare `onerror = fn` 经 with(self)
+    // 命中；与 page 侧 Worker 实例的 _onerror 分名存储）。
+    Object.defineProperty(wctx, 'onerror', {
+      configurable: true,
+      set: function (fn) { main._internalOnError = (typeof fn === 'function') ? fn : null; },
+      get: function () { return main._internalOnError || null; },
+    });
+    // M2（workers-compat DC-2/P7）：worker 未捕获错误上报管线（report the exception，
+    // https://html.spec.whatwg.org/multipage/workers.html#report-the-exception）。
+    // ① worker 全局作用域 error 事件（同步、cancelable）：listener preventDefault 或
+    //    legacy onerror(message, filename, lineno, colno, error) 返 true → handled，
+    //    不再向 page 侧上报（handled.html 面；legacy 签名 5 参——handled.js/
+    //    ErrorEvent-error.js 的 onerror 形参表）；
+    // ② 未 handled → page 侧 Worker 实例 ErrorEvent（微任务；`Uncaught <name>: <message>`
+    //    格式化——message-helper 断言面；**不带** error 成员——page 侧不可见原错误值，
+    //    Worker_ErrorEvent_error t1 面）；preventDefault → handled，不再向 window 报告；
+    // ③ 仍未 handled → 传播到 window（R2940 __zw_report_error——legacy 5 参签名 +
+    //    window error listener；propagate-to-window-onerror 面）。
+    // 内部 listener/handler 再抛作为新的未捕获错误**追加**一次 page 侧上报（原错与
+    // 再抛错各一次——exception-in-onerror 双错面），不回环 worker 全局（防自馈）。
+    var _zwFormatWorkerErrorMessage = function (err) {
+      var en = (err && err.name) ? String(err.name) : '';
+      var em = (err && err.message !== undefined && err.message !== null) ? String(err.message) : String(err);
+      return en ? ('Uncaught ' + en + (em ? ': ' + em : '')) : ('Uncaught ' + em);
+    };
+    // 错误定位抽取（P7 运行时簇）：err.lineNumber/columnNumber（引擎直供）优先，
+    // 兜底 V8 栈首帧 `<anon>:LINE:COL`。bodyOffset 为该错误编译体的 with(self) 前导
+    // 行数（主脚本体=2：影子声明行 + with(self) 与源首行同行故源行 N=栈行 N−2；
+    // 定时器包装体=0）；源首行（解析后行 1）与 `with(self){` 同行，列再减其长度 10。
+    // 拿不到坐标报 0/0（typeof number 断言面仍过；精确 call-site 溯源记账 P7）。
+    var _zwWorkerErrorLocation = function (err, bodyOffset) {
+      var line = 0, col = 0;
+      if (!err || typeof err !== 'object') return { line: 0, col: 0 };
+      if (typeof err.lineNumber === 'number' && err.lineNumber > 0) line = err.lineNumber;
+      if (typeof err.columnNumber === 'number' && err.columnNumber > 0) col = err.columnNumber;
+      if (!line && typeof err.stack === 'string') {
+        var frames = err.stack.split('\n');
+        for (var fi = 0; fi < frames.length; fi++) {
+          var m = frames[fi].match(/:(\d+):(\d+)\)?\s*$/);
+          if (m) { line = Number(m[1]); col = Number(m[2]); break; }
+        }
+      }
+      line = line > bodyOffset ? line - bodyOffset : 0;
+      if (line === 1 && col > 10) col -= 10; // with(self){ 前缀仅与源首行同行
+      if (line < 1) { line = 0; col = 0; }
+      return { line: line, col: col };
+    };
+    var _zwReportToOwner = function (e, loc) {
+      if (typeof queueMicrotask !== 'function') return;
+      var message = _zwFormatWorkerErrorMessage(e);
+      var filename = String(main._resolvedScriptUrl || '');
+      var lineno = loc ? loc.line : 0;
+      var colno = loc ? loc.col : 0;
+      queueMicrotask(function () {
+        // 只查 _terminated——close 后已入队错误上报仍达（WorkerGlobalScope-close
+        // 「closeWithError：close 同任务抛错 page onerror 收尾」面；close 侧拦新
+        // 任务靠定时器清空 + postMessage 入口门，不在上报位重复拦）。
+        if (main._terminated) return;
+        // page 侧 error 成员置缺省 null（spec：Worker 对象 error 事件不带原错误值——
+        // ErrorEventInit.error 缺省 null，Worker_ErrorEvent_error t1 断言）。
+        var pageEv = new ErrorEvent('error', {
+          message: message, filename: filename, lineno: lineno, colno: colno,
+          cancelable: true,
+        });
+        try { main.dispatchEvent(pageEv); } catch (_ePage) {}
+        if (pageEv.defaultPrevented !== true && typeof globalThis.__zw_report_error === 'function') {
+          globalThis.__zw_report_error(message, filename, lineno, colno);
+        }
+      });
+    };
+    main._reportError = function (err, bodyOffset) {
+      var loc = _zwWorkerErrorLocation(err, bodyOffset === undefined ? 2 : bodyOffset);
+      var message = _zwFormatWorkerErrorMessage(err);
+      var filename = String(main._resolvedScriptUrl || '');
+      // ① worker 全局作用域 error 事件（listeners + preventDefault 面）。
+      var workerEv = new ErrorEvent('error', {
+        message: message, filename: filename, lineno: loc.line, colno: loc.col,
+        error: err, cancelable: true,
+      });
+      var internalThrew = null;
+      // 派发期暂隐 onerror——shim generic dispatch 对 on* handler 的调用形态是
+      // (event)（part05 R114 位），worker 全局 OnErrorEventHandler 的 legacy 5 参
+      // 签名由 ①' 独家承载；不隐则 handler 先收 (event)、返 false 时再被 ①' 调
+      // （双调用），返 true 时走 14084 preventDefault 短路（message-helper handler
+      // 变体的实参断言面）。
+      var _zwSavedOnErr = main._internalOnError;
+      main._internalOnError = null;
+      try {
+        globalThis.EventTarget.prototype.dispatchEvent.call(wctx, workerEv);
+      } catch (_eListen) { internalThrew = _eListen; }
+      main._internalOnError = _zwSavedOnErr;
+      var handled = workerEv.defaultPrevented === true;
+      // ①' legacy onerror handler（5 参签名；返 true → handled——handled.html/
+      // throw-on-message-Worker 面；返 false/undefined → 继续）。
+      if (internalThrew === null && !handled && typeof main._internalOnError === 'function') {
+        var r = null;
+        try {
+          r = main._internalOnError(message, filename, loc.line, loc.col, err);
+        } catch (_eHandler) { internalThrew = _eHandler; }
+        if (r === true) handled = true;
+      }
+      if (internalThrew !== null) {
+        // ② 内部再抛：原错与再抛错各上报一次（顺序保持），不回环 worker 全局。
+        _zwReportToOwner(err, loc);
+        _zwReportToOwner(internalThrew, _zwWorkerErrorLocation(internalThrew, bodyOffset === undefined ? 2 : bodyOffset));
+        return;
+      }
+      if (!handled) _zwReportToOwner(err, loc);
+    };
     function _zwWorkerExposeBareGlobalCode() {
       return "var __zwWorkerBindings='';"
         + "for(var __zwk in self){"
@@ -14618,12 +15441,17 @@
         // https://w3c.github.io/FileAPI/#blob-url-scheme-fetch（取全字节，脚本按 UTF-8 解码）
         scriptSrc = _zw_utf8_decode(_zw_blobBytes(blobScript));
       } else {
-        // blob URL 查无此 blob（revoke 后使用 / 跨源）→ fetch 失败语义：异步 error 事件。
+        // blob URL 查无此 blob（revoke 后使用 / 跨源）→ fetch 失败语义：异步 error 事件
+        //（ErrorEvent——spec error 事件即 ErrorEvent，message/filename init dict 填充）。
         // https://html.spec.whatwg.org/worker-processing-model step 7（fetch 失败 → error event）
         if (typeof queueMicrotask === 'function') {
           queueMicrotask(function () {
-            if (main._terminated) return;
-            main.dispatchEvent(new Event('error', { message: 'Worker script blob URL could not be resolved: ' + blobUrl }));
+            if (main._terminated || main._closed) return;
+            main.dispatchEvent(new ErrorEvent('error', {
+              message: 'Worker script blob URL could not be resolved: ' + blobUrl,
+              filename: blobUrl,
+              cancelable: true,
+            }));
           });
         }
       }
@@ -14638,61 +15466,105 @@
       }
     }
     if (scriptSrc) {
-      // R34xx（G6）：预提取 importScripts 源并**内联**到同一 Function 作用域（worker 测试
-      // 框架的 testharness.js/canvas-tests.js 全局定义须与测试脚本共享——各自独立
-      // Function 会隔离 _assertPixel 等定义）。移除原 importScripts 行（已内联）。
-      var inlineImports = '';
-      if (typeof __zw_fetch_script === 'function') {
-        var importCalls = scriptSrc.match(/importScripts\([^;]*?\)/g) || [];
-        for (var ii = 0; ii < importCalls.length; ii++) {
-          var urlMatch = importCalls[ii].match(/["']([^"']+)["']/);
-          if (!urlMatch) continue;
-          var impSrc = null;
-          try {
-            impSrc = __zw_fetch_script(String(wctx.location && wctx.location.href ? wctx.location.href : ''), urlMatch[1]) || null;
-          } catch (_e) { impSrc = null; }
-          if (impSrc !== null) inlineImports += impSrc + '\n';
-        }
-        scriptSrc = scriptSrc.replace(/importScripts\([^;]*?\);/g, '');
-      }
+      // M2（workers-compat DC-2）：importScripts 调用位内联（语义见
+      // _zwInlineImportScripts 注记——三相 spec 语义 + direct eval 同作用域定义共享，
+      // 替代旧「顶部提升 + 正则剥行」实现）。字面量/常量参数调用重写；其余形态
+      // 保留原调用走运行时 wctx.importScripts。
+      scriptSrc = _zwInlineImportScripts(scriptSrc, String(main._resolvedScriptUrl || ''));
+      // workers-compat M2：worker 顶层级 function 声明暴露到 self（Timer.js 面型——
+      // 顶层级 `function X(){}` 在 with(self){} 内按 Annex B 落函数作用域，延迟求值
+      // 的 setTimeout 字符串回调（独立编译体）取不到 →  ReferenceError。扫描语句位
+      // 声明名，脚本体末尾 `self.X = eval('X')` 补挂（仅 self.X 未设时——脚本显式
+      // 赋值面不被覆盖；块内/嵌套声明不扫）。行首深度近似：{} 深度 0 的行才算。
+      var _zwToplevelFns = _zwCollectTopLevelFunctionNames(scriptSrc);
+      var body = _zwWorkerExposeBareGlobalCode()
+        + 'var postMessage=self.postMessage.bind(self);'
+        + 'var importScripts=self.importScripts;'
+        + 'var location=self.location;'
+        + 'var Worker=self.Worker;'
+        + 'var fetch=self.fetch.bind(self);'
+        + 'var onmessage;'
+        + 'with(self){'
+        + scriptSrc
+        + (_zwToplevelFns.length
+          ? '\n;try{for(var __zwTi=0;__zwTi<' + JSON.stringify(_zwToplevelFns) + '.length;__zwTi++){var __zwFn=' + JSON.stringify(_zwToplevelFns) + '[__zwTi];if(self[__zwFn]===undefined){try{self[__zwFn]=eval(__zwFn);}catch(_eZwFn){}}}}catch(_eZwFnAll){}'
+          : '')
+        + '\n;if(typeof onmessage==="function")self.onmessage=onmessage;}';
+      // M2：解析/运行时分离（worker-processing-model）——`new Function` 构造抛
+      // （脚本语法错）→ fetch/parse 失败分支：Worker 对象 error 事件为**普通 Event**
+      //（非 ErrorEvent、无 message/filename init、不派 worker 全局事件——
+      // dedicated-worker-parse-error-failure「args[0].constructor === Event」/
+      // runtime-error-is-not-parse-error「parse error dispatches plain Event」面）；
+      // 调用期抛（运行时错误）→ 未捕获错误上报管线（ErrorEvent 双层）。
+      var workerFn = null;
       try {
-        var body = inlineImports
-          + _zwWorkerExposeBareGlobalCode()
-          + 'var postMessage=self.postMessage.bind(self);'
-          + 'var importScripts=function(){};'
-          + 'var location=self.location;'
-          + 'var Worker=self.Worker;'
-          + 'var fetch=self.fetch.bind(self);'
-          + 'var onmessage;'
-          + 'with(self){'
-          + scriptSrc
-          + '\n;if(typeof onmessage==="function")self.onmessage=onmessage;}';
-        new Function('self', body).call(null, wctx);
-      } catch (e) {
-        // worker 脚本抛（语法/运行时）→ microtask 派发 'error' 到 Worker 实例（spec onerror）。
+        workerFn = new Function('self', body);
+      } catch (_eParse) {
         if (typeof queueMicrotask === 'function') {
-          var em = (e && e.message) ? String(e.message) : String(e);
           queueMicrotask(function () {
-            if (main._terminated) return;
-            main.dispatchEvent(new Event('error', { message: em }));
+            if (main._terminated || main._closed) return;
+            main.dispatchEvent(new Event('error'));
           });
         }
+        return;
+      }
+      try {
+        // spec：worker 顶层级 this === self（run-a-worker/001「postMessage(this===self)」面）。
+        workerFn.call(wctx, wctx);
+      } catch (e) {
+        main._reportError(e);
+      }
+    } else if (typeof __zw_fetch_script === 'function') {
+      // M2（workers-compat DC-2）：worker 脚本 fetch 失败（网络/非 scripty MIME——
+      // MIME 判定在 fetcher 侧）→ 异步 ErrorEvent（blob 分支同型）。未注册 fetcher
+      // 的嵌入宿主保持 R3080 静默（API 表面可用）。
+      // https://html.spec.whatwg.org/multipage/workers.html#worker-processing-model
+      if (typeof queueMicrotask === 'function') {
+        queueMicrotask(function () {
+          if (main._terminated || main._closed) return;
+          main.dispatchEvent(new ErrorEvent('error', {
+            message: 'Failed to fetch worker script: ' + String(url),
+            filename: String(url),
+            cancelable: true,
+          }));
+        });
       }
     }
   }
   Worker.prototype = Object.create(EventTarget.prototype);
+  // assert_class_string(new Worker, '[object Worker]')（Worker_basic 面——toStringTag 原型
+  // 标记，R5000 片 d 同款）。
+  try { if (typeof Symbol === 'function' && Symbol.toStringTag) Object.defineProperty(Worker.prototype, Symbol.toStringTag, { value: 'Worker', configurable: true }); } catch (_e5000wk) {}
   Worker.prototype.constructor = Worker;
-  // main→worker：structuredClone + queueMicrotask 派发 worker global scope 的 message 事件。
+  // main→worker：structuredClone + queueMicrotask 派发 worker global scope 的 message 事件
+  //（listeners + onmessage handler 同一事件对象；handler/listener 抛 → 未捕获错误管线）。
+  // onmessage 为 WebIDL EventHandler：callable 直调；对象经 handleEvent 分派（onmessage.worker.js
+  // 「Setting onmessage to an object」面——set 存对象，投递位 handleEvent 调用）。
   Worker.prototype.postMessage = function (message, _transfer) {
-    if (this._terminated) return;
+    if (this._terminated || this._closed) return;
     var data = typeof structuredClone === 'function' ? structuredClone(message) : message;
     var target = this;
     if (typeof queueMicrotask === 'function') {
       queueMicrotask(function () {
-        if (target._terminated) return;
+        if (target._terminated || target._closed) return;
         if (!target._context || typeof target._context.dispatchEvent !== 'function') return;
-        try { target._context.dispatchEvent(new MessageEvent('message', { data: data, origin: '' })); }
-        catch (_e) { /* worker handler 抛 → 真浏览器触发 worker error；headless 静默 */ }
+        var ev = new MessageEvent('message', { data: data, origin: '' });
+        // 派发期暂隐 _handler——wctx.onmessage getter 返 handler 时 shim generic
+        // dispatch 的 R114 on* 调用位已调一次，下方显式 _handler 调用会双重派发
+        //（close 页面流「二次 pong」实测）；wctx 无 dispatchEvent 的宿主形态走
+        // 下方显式位（早退不隐不变）。与 worker 全局 onerror 暂隐同款。
+        var _zwSavedHandler = target._handler;
+        target._handler = null;
+        try { target._context.dispatchEvent(ev); }
+        catch (e) { target._handler = _zwSavedHandler; if (typeof target._reportError === 'function') target._reportError(e); return; }
+        target._handler = _zwSavedHandler;
+        if (target._handler !== null && target._handler !== undefined) {
+          try {
+            if (typeof target._handler === 'function') target._handler(ev);
+            else if (typeof target._handler.handleEvent === 'function') target._handler.handleEvent(ev);
+          }
+          catch (e) { if (typeof target._reportError === 'function') target._reportError(e); }
+        }
       });
     }
   };
@@ -14789,7 +15661,9 @@
   function MessageEvent(type, options) {
     var ev = _makeEvent(type, options);
     Object.setPrototypeOf(ev, MessageEvent.prototype);
-    ev.data = options && options.data !== undefined ? options.data : null;
+    // workers-compat M2（DC-3）：`postMessage(undefined)` 的 e.data === undefined 面——
+    // data 键存在性判定（`!== undefined` 会把序列化后的 undefined 误落 null 默认）。
+    ev.data = options && 'data' in options ? options.data : null;
     ev.origin = (options && options.origin) || '';
     ev.lastEventId = (options && options.lastEventId) || '';
     ev.source = (options && options.source) || null;
@@ -14798,6 +15672,9 @@
   }
   MessageEvent.prototype = Object.create(Event.prototype);
   MessageEvent.prototype.constructor = MessageEvent;
+  // R5000 片 d 同款：原型 toStringTag（assert_class_string 的 [object MessageEvent] 面——
+  // postMessage_event_properties / DedicatedWorkerGlobalScope/postMessage/message-event）。
+  try { if (typeof Symbol === 'function' && Symbol.toStringTag) Object.defineProperty(MessageEvent.prototype, Symbol.toStringTag, { value: 'MessageEvent' }); } catch (_e5000me) {}
   globalThis.MessageEvent = globalThis.MessageEvent || MessageEvent;
 
   // SubmitEvent——submit 事件（form 提交，R2984）。extends Event，加 `submitter`（触发提交的按钮 proxy / null）。

@@ -5864,6 +5864,17 @@
   // plain object/Date/RegExp/Map/Set/ArrayBuffer/TypedArray；循环引用经 WeakMap 记忆不爆栈；
   // function/symbol 抛 DataCloneError（spec）。**已知限制**：symbol-keyed 属性不拷（Object.keys 仅
   // string-keyed）；非特殊对象一律克隆为普通对象（spec StructuredSerialize，M2-P1 更正——原型不保留）。
+  // workers-compat M2（DC-3）：平台对象不可克隆面——注册表 `_zwNonCloneableProtos`（构造器
+  // prototype 登记，FormData/WorkerNavigator/WorkerLocation 等由各方调用
+  // `__zwRegisterNonCloneableProto` 登记）；命中即抛 DataCloneError（spec StructuredSerialize
+  // platform-object 情形——FormData/Navigator 类无序列化槽位，postMessage_DataCloneErr /
+  // Worker-formdata 断言面）。
+  var _zwNonCloneableProtos = [];
+  globalThis.__zwRegisterNonCloneableProto = function (proto) {
+    if (proto && typeof proto === 'object' && _zwNonCloneableProtos.indexOf(proto) < 0) {
+      _zwNonCloneableProtos.push(proto);
+    }
+  };
   function _zw_structured_clone(val, seen) {
     if (val === null) return val;
     var t = typeof val;
@@ -5873,6 +5884,12 @@
     if (t === 'symbol') throw new _cloneDE('symbol could not be cloned.', 'DataCloneError');
     if (t !== 'object') return val; // primitive（number/string/boolean/undefined/bigint）原样
     if (seen.has(val)) return seen.get(val); // 循环引用 → 已记忆的克隆
+    // workers-compat M2：平台对象克隆拒绝（isPrototypeOf 走原型链——子类实例同拒）。
+    for (var _nci = 0; _nci < _zwNonCloneableProtos.length; _nci++) {
+      if (_zwNonCloneableProtos[_nci].isPrototypeOf(val)) {
+        throw new _cloneDE('The provided value is a platform object and could not be cloned.', 'DataCloneError');
+      }
+    }
     if (val instanceof Date) { var d = new Date(val.getTime()); seen.set(val, d); return d; }
     if (val instanceof RegExp) { var r = new RegExp(val.source, val.flags); seen.set(val, r); return r; }
     if (val instanceof Map) {
@@ -6953,7 +6970,10 @@
   // M2-S4E：焦点变更追踪 + 导航结算焦点重置（spec nav-history-apis focus changed during
   // ongoing navigation + potentially-reset-the-focus——finish event 步骤 4，先于 scroll 与
   // navigatesuccess/navigateerror 派发）。导航期间（dispatch 起）focus()/blur() 均记变；
-  // 有变或 focusReset 'manual' → 跳过；否则焦点落 autofocus 委托（文档序首个 [autofocus]）
+  // 有变或 focusReset 'manual' → 跳过；否则焦点落 autofocus 委托（文档序首个**合格**
+  // [autofocus]——flush autofocus candidates 的合格性门：非 disabled、非 hidden
+  // input；disabled 候选跳过续查次位，全灭落 body。S12：WPT autofocus delayed
+  // 变体「disabled before finished」双案——disabled 首候选被取而代之/次位递补）
   // 或 body（清 activeElement，**不派** body focus 事件——WPT change-focus-then-remove
   // 「onfocus shouldn't fire due to focus reset」）。
   var _navFocusChanged = false;
@@ -6964,8 +6984,16 @@
     if (fc) return;
     if ((ev && ev._zwFocusReset) === 'manual') return;
     var _at = null;
-    try { _at = globalThis.document.querySelector('[autofocus]'); } catch (_eAf) {}
-    if (_at && typeof _at.focus === 'function') {
+    try {
+      var _cands = globalThis.document.querySelectorAll('[autofocus]');
+      for (var _ci = 0; _ci < _cands.length; _ci++) {
+        var _ce = _cands[_ci];
+        if (_ce.disabled) continue;
+        if (_ce.tagName === 'INPUT' && String(_ce.type).toLowerCase() === 'hidden') continue;
+        if (typeof _ce.focus === 'function') { _at = _ce; break; }
+      }
+    } catch (_eAf) {}
+    if (_at) {
       try { _at.focus(); } catch (_eAf2) {}
     } else {
       // body 聚焦走**完整 focusing 序**（blur(+focusout) 落旧焦点——监听器可重入导航，

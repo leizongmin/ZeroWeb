@@ -1,5 +1,7 @@
 # 计时与动画兼容 — 运行时控制面板（master.md）
 
+> **已归档（模式 A，2026-10-20）**：当前终态、历史验证与挂账保留；入口见 [归档目标](../timing-animation-compat.md)。
+
 **入口文档**: [../timing-animation-compat.md](../timing-animation-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
 **最后更新**: 2026-10-11（收口后漂移核对：四通道复跑零净回归，DONE 态维持）

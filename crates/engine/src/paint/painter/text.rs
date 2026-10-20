@@ -1041,6 +1041,30 @@ impl super::Painter {
             {
                 return;
             }
+            // R5209（CSS2 §17.2.1）：孤立 retrofit 行组不是 IFC 容器——直系裸文本已由
+            // R5209 合成匿名 cell（is_anon_table_cell 旗标，借行组 node_id + fragment
+            // 圈定）接管绘制。行组自身 paint_text 的 Path B 重跑会把整子树 cell 文本
+            // 扁平吸进单 IFC（table-internal 盒不播种字体键（R4233/R4558 收窄）→
+            // 16px 兜底度量 + 窄容器换行，161 静态 probe 实证垃圾重绘叠在 32px 正确
+            // 渲染上）。抑制行组级直绘，cell 文本由各 cell 盒自绘。真 table 内行组
+            //（anontbl=false）与 vertical 域维持现状零回归面；合成 cell 借行组
+            // node_id 但持 is_anon_table_cell 旗标，不落入本门。
+            if box_node.is_anon_table_root
+                && !box_node.is_anon_table_cell
+                && !box_node.writing_mode.is_vertical_block_flow()
+                && styles.is_some_and(|m| {
+                    m.get(&node_id).is_some_and(|s| {
+                        matches!(
+                            s.display,
+                            DisplayValue::TableRowGroup
+                                | DisplayValue::TableHeaderGroup
+                                | DisplayValue::TableFooterGroup
+                        )
+                    })
+                })
+            {
+                return;
+            }
             // R4328：已并入后继块的 run-in 自盒抑制 DOM 文本绘制——其内容由后继块
             // IFC 前置渲染；自盒 Path B 仍按 DOM 子文本绘出会在块外重影
             //（run-in-breaking-001「Run-in header」块外重影实证：target PathB 79

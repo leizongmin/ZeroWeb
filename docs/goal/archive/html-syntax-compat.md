@@ -1,5 +1,7 @@
 # HTML 文档面兼容 — html/syntax / html/dom
 
+> **整体归档（模式 A，2026-10-20）**：按原目标约定范围收口；控制面与证据随入口归档，原有排除项、残差和重入条件保留。对应 Rally 启动脚本已删除。
+
 **版本**: v1.0
 **日期**: 2026-09-12
 **状态**: ✅ Completed（M4 收口 2026-10-07；P5 落地面收口 2026-10-19；P6/P6b 漂移清账 2026-10-20；P7 XHR/P8 xmldecl 编码收编 2026-10-20；P9 aria 跨文档 scope + 视图回放修复 2026-10-20；P10 document.write 流同 turn 读收敛、ambiguous-ampersand 清零、async-apply 缝挂账面全关 2026-10-20——全通道 **61347/61422 = 99.91%**，余量全为既有挂账域，见 [master.md](html-syntax-compat/master.md) 与 [P10 证据](html-syntax-compat/evidence/2026-10-20-p10-write-stream-same-turn-read.md)、[收口证据](html-syntax-compat/evidence/2026-10-07-m4-close.md)）
@@ -67,10 +69,10 @@ encoding-compat 嗅探划界双向记账；与 js-dom（已归档）DOM 接口�
 
 - [x] **DC-1**：html/syntax + html/dom corpus 可执行子集导入 + 分类基线 +
       suites CSV 回填（2026-10-02 M1：113 案 43884/61304 = 71.6%，见
-      `docs/goal/html-syntax-compat/evidence/2026-10-02-m1-baseline.md`）
+      `docs/goal/archive/html-syntax-compat/evidence/2026-10-02-m1-baseline.md`）
 - [x] **DC-2**：解析树一致性（innerHTML/outerHTML/DOMParser）逐簇修齐
       （M2 五片 2026-10-02 判定成立 + M3/M4 递次收口；残差全分类挂账，
-      见 `docs/goal/html-syntax-compat/evidence/2026-10-07-m4-close.md`）
+      见 `docs/goal/archive/html-syntax-compat/evidence/2026-10-07-m4-close.md`）
 - [x] **DC-3**：序列化边缘 + html/dom 接口语义 + createContextualFragment 补面
       （serializing 双域全绿 + escaping 9/9 + CF 落地；接口面 61218/61304 = 99.86%）
 - [x] **DC-4**：`make test` 全绿 + clippy `-D warnings` + fmt + reftest 零回归
@@ -86,5 +88,5 @@ encoding-compat 嗅探划界双向记账；与 js-dom（已归档）DOM 接口�
 
 ## Document Control / Archive Policy
 
-入口文档实质变化才改；控制平面 `docs/goal/html-syntax-compat/master.md`；
+入口文档实质变化才改；控制平面 `docs/goal/archive/html-syntax-compat/master.md`；
 archive/ 只追加；evidence/ 持续追加。

@@ -1,0 +1,68 @@
+.language-switcher a {
+  padding: 8px 9px;
+  border-radius: 5px;
+  color: var(--muted);
+  font: 700 12px/1 var(--body);
+}
+
+.language-switcher a[aria-current="page"] {
+  background: var(--paper);
+  color: var(--blue);
+  box-shadow: 0 1px 3px #a9bdd555;
+}
+
+.language-switcher a:focus-visible,
+.guide a:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+}
+
+.guide {
+  max-width: 760px;
+  margin: auto;
+  overflow-wrap: anywhere;
+}
+
+.guide h2 {
+  margin-top: 2.2rem;
+}
+
+.guide a,
+.update-card h2 a,
+.update-summary h3 a {
+  color: var(--blue);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.guide pre {
+  padding: 1rem;
+  background: var(--pale);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow-x: auto;
+}
+
+.chart-section details {
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow-x: auto;
+}
+
+.chart-section summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.chart-section details table {
+  width: 100%;
+  margin-top: 1rem;
+  text-align: left;
+}
+
+.chart-section details th,
+.chart-section details td {
+  padding: .5rem;
+}

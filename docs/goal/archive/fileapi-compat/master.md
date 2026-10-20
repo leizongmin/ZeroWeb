@@ -1,5 +1,7 @@
 # File API 兼容 — 运行时控制面板（master.md）
 
+> **已归档（模式 A，2026-10-20）**：当前终态、历史验证与挂账保留；入口见 [归档目标](../fileapi-compat.md)。
+
 **入口文档**: [../fileapi-compat.md](../fileapi-compat.md)
 **创建日期**: 2026-10-08（goal 立项） | **最后更新**: 2026-10-12（收口记账修正——csv completed 行 + evidence 计数对齐磁盘实际）
 

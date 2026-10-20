@@ -3426,7 +3426,7 @@ fn fullscreen_case_skipped(relative: &str, source: &str) -> bool {
     source.contains("<iframe")
 }
 
-/// Security-hardening goal（docs/goal/security-hardening.md M1 / DC-1）pinned upstream
+/// Security-hardening goal（docs/goal/archive/security-hardening.md M1 / DC-1）pinned upstream
 /// subset directories. Cases are fetched by `fetch-security-csp-subset.sh` into
 /// `wpt-data/`（gitignored）——CSP 覆盖范围指令目录 + securitypolicyviolation/generic/
 /// meta/gen top.meta 面（M2+ 扩批目录见 fetch 脚本头注释）。
@@ -4610,7 +4610,7 @@ fn service_worker_any_js_source(path: &str, case_source: &str) -> String {
     }
 }
 
-fn wpt_meta_scripts(path: &str, source: &str) -> Vec<String> {
+pub(crate) fn wpt_meta_scripts(path: &str, source: &str) -> Vec<String> {
     let case_dir = path.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
     source
         .lines()
@@ -4753,8 +4753,102 @@ fn wpt_data_script_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::S
         if clean.is_empty() {
             return Err("empty path".to_string());
         }
+        // workers-compat M2：script MIME 判定（classic worker(-imported) script 的
+        // fetch 步骤——非 JavaScript MIME 按网络错误失败；Worker_script_mimetype/
+        // importscripts_mime 案面）。派生序（wptserve 语义）：① `<file>.headers`
+        // sidecar Content-Type 覆盖（无扩展名脚本 `1`/`null`/`undefined`、nosniff
+        // 面）；② `workers/support/imported_script.py?mime=` 动态 handler（wptserve
+        // 返空体——成功源以 "\n" 交付，__zw_fetch_script 以空串承载 Err 不可区分，
+        // 空脚本与 "\n" 执行语义恒等）；③ 扩展名 .js/.mjs scripty，其余（含无扩展
+        // 名）非 scripty。
+        // https://html.spec.whatwg.org/multipage/workers.html#dom-workerglobalscope-importscripts
+        fn mime_is_scripty(mime: &str) -> bool {
+            let essence = mime.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
+            matches!(
+                essence.as_str(),
+                "text/javascript" | "application/javascript" | "text/ecmascript" | "application/ecmascript"
+            )
+        }
+        let mime_from_sidecar = std::fs::read_to_string(root.join(format!("{clean}.headers")))
+            .ok()
+            .and_then(|headers| {
+                headers.lines().find_map(|line| {
+                    let (key, value) = line.split_once(':')?;
+                    if key.trim().eq_ignore_ascii_case("content-type") {
+                        Some(value.trim().to_string())
+                    } else {
+                        None
+                    }
+                })
+            });
+        let scripty = if let Some(mime) = mime_from_sidecar {
+            mime_is_scripty(&mime)
+        } else if clean == "workers/support/imported_script.py" {
+            // wptserve 动态 handler 语义：按 `?mime=` 查询回 Content-Type + 空体——
+            // 文件本体（Python 源）不交付，scripty 成功直接以 "\n" 作源（空脚本与
+            // "\n" 执行语义恒等，__zw_fetch_script 以空串承载 Err 不可区分）；非
+            // scripty → Err（NetworkError 语义）。查询值 shim 原样透传（无浏览器
+            // 编码）；容忍 +/%20/%3B 最小编码。
+            let mime = src
+                .split('?')
+                .nth(1)
+                .and_then(|query| query.split('&').find_map(|kv| kv.strip_prefix("mime=")))
+                .map(|value| {
+                    value
+                        .replace('+', " ")
+                        .replace("%20", " ")
+                        .replace("%3B", ";")
+                        .replace("%3b", ";")
+                });
+            if mime.map(|mime| mime_is_scripty(&mime)).unwrap_or(false) {
+                return Ok("\n".to_string());
+            }
+            return Err(format!("non-scripty MIME for script: {clean}"));
+        } else {
+            matches!(
+                std::path::Path::new(clean).extension().and_then(|e| e.to_str()),
+                Some("js") | Some("mjs")
+            )
+        };
+        if !scripty {
+            return Err(format!("non-scripty MIME for script: {clean}"));
+        }
+        // workers-compat M2：`.any.js` 作 worker 顶脚本（页面 `new Worker('/…x.any.worker.js')`
+        // —— dedicated 通道）→ 返回 ClassicWorkerHandler 同构包装源（GLOBAL flags +
+        // importScripts testharness + META 依赖 + 语料正文内嵌 + done()）——上游
+        // AnyWorkerHandler 语义。worker 自真实合成 origin（wpt.test）服务，正文
+        // importScripts 根绝对路径可解析（data: URL wrapper 的 base 解析必抛已废弃）。
+        // 正文内嵌而非 importScripts 自引用——该路径命中本分支会再包一层成环。
+        // dedicated 变体对外 URL 为 `.any.worker.js`（upstream wptserve 命名——
+        // examples/general.any.js 断言 self.location.pathname
+        // `/workers/examples/general.any.worker.js`）：磁盘仍读 `.any.js` 源文件，
+        // 包装 relative 用 worker 路径（location 面走该名）。裸 `.any.js` 请求仍收
+        // （importScripts 直引语料、 Window lane 之外的既有抓取面不变）。
+        let (worker_relative, file_relative): (&str, Option<String>) =
+            if let Some(base) = clean.strip_suffix(".any.worker.js") {
+                (clean, Some(format!("{base}.any.js")))
+            } else {
+                (clean, None)
+            };
+        if worker_relative.ends_with(".any.js") || worker_relative.ends_with(".any.worker.js") {
+            let fetch_path = file_relative.as_deref().unwrap_or(worker_relative);
+            let case_bytes =
+                std::fs::read(root.join(fetch_path)).map_err(|e| format!("script fetch failed: {fetch_path} ({e})"))?;
+            let case_source = String::from_utf8_lossy(&case_bytes).into_owned();
+            // .sub 模板替换与主读路径同全集（{{hosts[alt][]}} 字面残留会使 URL 解析
+            // 抛 SyntaxError，跨源 muted-errors 案期望的 NetworkError 前置走样）。
+            let case_source = apply_wpt_substitutions(&case_source);
+            return Ok(crate::testharness_workers::synthesize_any_worker_source(
+                worker_relative,
+                &case_source,
+            ));
+        }
         let full = root.join(clean);
-        std::fs::read_to_string(&full)
+        // lossy 解码（无效 UTF-8 → U+FFFD）——脚本源浏览器按 UTF-8 带替换解码
+        // （workers/semantics/encodings/004.worker.js 原始无效字节用例；严格
+        // read_to_string 对该类源返 Err → 脚本抓取失败）。
+        std::fs::read(&full)
+            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
             .map(|source| {
                 // net-api M4-S22：替换面收口到 apply_wpt_substitutions 全集（原仅 host/
                 // domains[www1]/ports[https][0] 三项——get-host-info 的 {{ports[http][0]}}
@@ -7993,6 +8087,20 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     let _ = webview.execute_script(
         "(function(){try{if(globalThis.__zwPagerevealFired===undefined){globalThis.__zwPagerevealFired=false;}var _zwOrigRaf=globalThis.requestAnimationFrame;if(typeof _zwOrigRaf==='function'){globalThis.requestAnimationFrame=function(fn){try{if(!globalThis.__zwPagerevealFired){globalThis.__zwPagerevealFired=true;var mk=globalThis.__zwMakeTrustedEvent;var pr=mk?mk('pagereveal'):new Event('pagereveal');try{if(globalThis.Event&&globalThis.Event.prototype){Object.setPrototypeOf(pr,globalThis.Event.prototype);}}catch(_e5prp){}globalThis.dispatchEvent(pr);}}catch(_e5pr){}return _zwOrigRaf.call(globalThis,fn);};}}catch(_e5pr0){}})();",
     );
+    // M2-S12（navigation-compat，2026-10-20）：初始 autofocus 处理——spec flush
+    // autofocus candidates 的「ready for post-load tasks」相位（文档序首个合格
+    // candidate 获焦；interaction.html#the-autofocus-attribute）。runner 模型里
+    // 页面脚本用同步 rAF stub，setup 期 `rAF×2` await 在脚本任务内即解——该相位
+    // 必须落在**全部页面脚本之前**才可观察（真浏览器 post-parse 相位的页可观察
+    // 等价位）。合格性：connected（querySelectorAll 语义自带）+ 非 disabled +
+    // 非 hidden input；首个即 break（flush 语义：余者作废）。
+    // 仅 testharness runner 路径执行，零产品面（产品宿主 autofocus 管线随真实
+    // focus 域另行接线）。WPT navigation-api/focus-reset/autofocus promise_setup
+    // 「Non-navigation API autofocus was processed」。
+    // FIXME(产品面): 浏览器宿主解析路径的 autofocus 初始处理未接线。
+    let _ = webview.execute_script(
+        "(function(){try{var _c=document.querySelectorAll('[autofocus]');for(var i=0;i<_c.length;i++){var _e=_c[i];if(_e.disabled)continue;if(_e.tagName==='INPUT'&&String(_e.type).toLowerCase()==='hidden')continue;if(typeof _e.focus==='function'){_e.focus();break;}}}catch(_eAfp){}})();",
+    );
     let script_result = webview.run_page_scripts_strict();
     let _zw_hb3 = std::fs::write("/tmp/zw-hb2.txt", format!("post-scripts {}\n", case_name));
     // R3254-E2 切片（editing goal，2026-09-07）：DOMContentLoaded/load 派发 + harness_loaded
@@ -8855,7 +8963,7 @@ fn extract_script_src(open_tag: &str) -> Option<&str> {
 }
 
 /// 规范化相对路径（处理 `..` 上溯，如 "dom/nodes/../constants.js" → "dom/constants.js"）。
-fn normalize_relative(path: &str) -> String {
+pub(crate) fn normalize_relative(path: &str) -> String {
     let mut stack: Vec<&str> = Vec::new();
     for seg in path.split('/') {
         match seg {
@@ -9724,12 +9832,17 @@ fn apply_testdriver_command(
                     // 非字符编辑/导航键（Backspace/Tab/ENTER）：keydown → 默认动作（取消
                     // 只抑制字符插入类序，此处动作照旧执行——与旧版行为一致）→ keyup。
                     _ => {
+                        // navigation-compat S11：TAB 不做 send 目标自聚焦——焦点导航键的
+                        // 迁移起点是页面当前焦点（dispatch_tab_focus），首键 focus 前缀
+                        // （编辑键自聚焦语义）会把焦点抢到 send 目标、起点错位。
+                        let is_tab = matches!(action, HtmlUserAction::MoveFocus { forward: true });
+                        let tab_keydown = if is_tab { String::new() } else { focus_prefix.clone() };
                         dispatch_key_event_script_focused(
                             webview,
                             &selector,
                             "keydown",
                             &key_detail,
-                            focus_prefix.as_str(),
+                            tab_keydown.as_str(),
                         );
                         // uievents-compat 尾簇 11（2026-10-05）：Enter on **formless**
                         // buttonish（BUTTON / input type=button|submit|reset）= 激活点击
@@ -9772,6 +9885,8 @@ fn apply_testdriver_command(
                             let click_script =
                                 zero_engine::script_dispatch_dom_event(&selector, "click", Some(&click_detail));
                             let _ = webview.execute_script(&click_script);
+                        } else if is_tab {
+                            action_error = dispatch_tab_focus(webview);
                         } else {
                             action_error = dispatch_action(webview, target, action);
                         }
@@ -9871,6 +9986,67 @@ fn dispatch_action(
         Ok(result) => Some(format!("action was not applicable: {:?}", result.noop_reason)),
         Err(error) => Some(error.to_string()),
     }
+}
+
+/// navigation-compat S11（2026-10-20）：TAB 焦点导航的宿主接线——页面可见焦点迁移。
+/// host `MoveFocus` 默认动作只产出 `PageEffect::Focus(next)` 效果，页面可见迁移是
+/// **宿主层职责**（真浏览器宿主 renderer 消费效果走 blur_focused/focus_via_tab——
+/// 失焦相位 blur/focusout → 获焦相位 focus/focusin + `document.activeElement` 同步，
+/// apps/renderer/src/runtime.rs `apply_webview_action_effects`）。runner 宿主此前
+/// 丢弃 effects：页面 focus listener 永不触发，focus-reset helpers 的 waitForFocus
+/// 门铃永挂（WPT navigation-api/focus-reset basic/multiple-intercept 两案 case
+/// Timeout）。
+///
+/// 迁移走**页面原生 focusing steps**（querySelector 候选序 + `next.focus()`——shim
+/// el.focus() 连接臂自带完整迁移序：旧焦点 blur/focusout → 新焦点 focus + `_activeElKey`
+/// handle 形键同步；后续 el.remove() 的 `_zwUnfocusIfFocused` 按 handle 形键比对——
+/// host 侧 `_zwFocusSel(sel)` 写 sel 形键（`_elKey(sel,null)`）与 remove 钩子
+/// `_elKey(sel,handle)` 恒 miss，页面原生 focus 是唯一与既有 unfocus 机制同键体系
+/// 的入口）。tab 序 = 正 tabindex 升序在前 + 零/缺省按文档序（HTML §6.5.3
+/// sequential focus navigation）；起点 = 页面真实焦点（`document.activeElement` 身份
+/// 比对——querySelector 同源 _makeProxy 缓存 identity 相等，handle 兜底双判）；
+/// 无下一可聚焦 → 焦点不变（真浏览器 Tab 落浏览器 UI，headless 近似驻留）。
+/// https://html.spec.whatwg.org/multipage/interaction.html#sequential-focus-navigation
+/// https://html.spec.whatwg.org/multipage/interaction.html#focusing-steps
+fn dispatch_tab_focus(webview: &mut WebView) -> Option<String> {
+    // 候选集 = 标准可聚焦面（a/area 带 href、button、input 非 hidden、select、
+    // textarea、summary、[tabindex]）；排除 disabled 与 tabindex=-1。真值读 live 树
+    // ——appendChild 动态元素天然在面（引擎 cached_html 快照路径的窗口期不适用）。
+    let script = "(function(){\
+        var act=document.activeElement;\
+        var all=document.querySelectorAll('a[href],area[href],button,input,select,textarea,summary,[tabindex]');\
+        var pos=[],zero=[];\
+        for(var i=0;i<all.length;i++){\
+            var el=all[i];\
+            if(el.disabled)continue;\
+            var ti=el.getAttribute('tabindex');\
+            if(ti==='-1')continue;\
+            if(el.tagName==='INPUT'&&String(el.type).toLowerCase()==='hidden')continue;\
+            var n=parseInt(ti,10);\
+            if(n>0)pos.push([n,el]);else zero.push(el);\
+        }\
+        pos.sort(function(a,b){return a[0]-b[0];});\
+        var seq=[];\
+        for(var j=0;j<pos.length;j++)seq.push(pos[j][1]);\
+        for(var k2=0;k2<zero.length;k2++)seq.push(zero[k2]);\
+        var idx=-1;\
+        for(var m2=0;m2<seq.length;m2++){\
+            if(seq[m2]===act||(act.__zwHandle&&seq[m2].__zwHandle===act.__zwHandle)){idx=m2;break;}\
+        }\
+        var next=null;\
+        if(idx>=0&&idx+1<seq.length)next=seq[idx+1];\
+        else if(idx<0&&seq.length)next=seq[0];\
+        if(next&&next.focus)next.focus();\
+        return JSON.stringify({from:(act===document.body||!act)?'body':'el',moved:next?1:0});\
+    })()";
+    let result = webview
+        .execute_script(script)
+        .map(|v| v.trim().to_string())
+        .unwrap_or_default();
+    if std::env::var("ZW_TD_DEBUG").as_deref() == Ok("1") {
+        eprintln!("[tab-focus] {result}");
+    }
+    None
 }
 
 fn resolve_testdriver_command(webview: &mut WebView, id: u64, error: Option<&str>) -> Result<(), String> {

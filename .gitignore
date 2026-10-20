@@ -104,3 +104,5 @@ docs/goal/devtools/evidence/*.png
 docs/goal/devtools/evidence/*.jpg
 docs/goal/devtools/evidence/*.jpeg
 docs/goal/devtools/evidence/*.webp
+
+*.log

@@ -7,7 +7,7 @@ const copy = {
   }
 };
 
-let language = 'en';
+let language = typeof document !== 'undefined' && document.documentElement.lang.startsWith('zh') ? 'zh' : 'en';
 let metricsData = null;
 
 function t(key) { return copy[language][key]; }
@@ -19,17 +19,6 @@ function unitLabel(unit) { return unit === 'MB' ? 'MB' : 'ms'; }
 const REPO_BASE = 'https://github.com/leizongmin/ZeroWeb/blob/main/';
 const SUITE_STATUS_KEYS = { active: 'statusActive', completed: 'statusCompleted', planned: 'statusPlanned' };
 function esc(value) { return String(value).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]); }
-
-function setLanguage(next, persist = true) {
-  language = copy[next] ? next : 'en';
-  document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en';
-  document.title = language === 'zh' ? '测试数据 — ZeroWeb' : 'Test results — ZeroWeb';
-  document.querySelectorAll('[data-i18n]').forEach((element) => { element.textContent = t(element.dataset.i18n); });
-  document.querySelectorAll('[data-i18n-html]').forEach((element) => { element.innerHTML = t(element.dataset.i18nHtml); });
-  document.querySelectorAll('[data-language]').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.language === language)));
-  if (persist) localStorage.setItem('zeroweb-language', language);
-  if (metricsData) render();
-}
 
 function summaryCard(label, value, detail) { return `<article class="metric-card"><span>${label}</span><strong>${value}</strong><small>${detail}</small></article>`; }
 function renderSummary() {
@@ -109,9 +98,10 @@ function render() {
   renderSummary(); renderWpt(); renderSuites(); renderPerformancePicker(); renderPerformance();
 }
 
-const savedLanguage = localStorage.getItem('zeroweb-language');
-const detectedLanguage = navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en';
-setLanguage(savedLanguage || detectedLanguage, false);
-document.querySelectorAll('[data-language]').forEach((button) => button.addEventListener('click', () => setLanguage(button.dataset.language)));
+// Enhance the statically generated tables; the URL owns the page language.
+// https://developers.google.com/search/docs/specialty/international/managing-multi-regional-sites
 document.getElementById('metric-select').addEventListener('change', renderPerformance);
-fetch('metrics.json').then((response) => { if (!response.ok) throw new Error('unavailable'); return response.json(); }).then((data) => { metricsData = data; render(); }).catch(() => { document.getElementById('data-freshness').textContent = t('error'); });
+fetch('/metrics.json').then((response) => { if (!response.ok) throw new Error('unavailable'); return response.json(); }).then((data) => { metricsData = data; render(); }).catch(() => {
+  // Keep the published measurements available when enhancement fails.
+  if (!document.getElementById('suites-table').querySelector('table')) document.getElementById('data-freshness').textContent = t('error');
+});

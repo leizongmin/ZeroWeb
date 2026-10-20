@@ -37,10 +37,10 @@ bash tests/wpt-runner/scripts/goals/10-timing-animation-compat.sh
   web-animations/timing-model/animations    29 案
   web-animations/timing-model/time-transformations     1 案
   web-animations/timing-model/timelines     7 案
-== M1 下一步（rally 轮，契约见 docs/goal/timing-animation-compat.md DC-1）==
+== M1 下一步（rally 轮，契约见 docs/goal/archive/timing-animation-compat.md DC-1）==
   1. runner 通道：zero-wpt-runner 新增 testharness 子命令 + per-dir skip 规则
   2. Makefile：fetch-wpt / testharness target（test-guard 包裹，照 testharness-fs 先例）
-  3. 基线：分类通过率（文本 + JSON）落 docs/goal/timing-animation-compat/evidence/
+  3. 基线：分类通过率（文本 + JSON）落 docs/goal/archive/timing-animation-compat/evidence/
   4. 回填：docs/compat/trends/wpt-suites.csv planned 行转数据行（evidence 列给来源）
 rustc -O scripts/test-guard.rs -o target/test-guard
 cargo build --release --bin zero-wpt-runner

@@ -1,0 +1,3592 @@
+[
+  [
+    "workers/Worker-base64.any.js",
+    [
+      {
+        "name": "Tests that atob() / btoa() functions are exposed to workers",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/Worker-call.worker.js",
+    [
+      {
+        "name": "Test calling functions from WorkerContext.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/Worker-constructor-proto.any.js",
+    [
+      {
+        "name": "Tests that setting the proto of a built in constructor is not reset.",
+        "status": "Fail",
+        "message": "WorkerLocation is not defined"
+      }
+    ]
+  ],
+  [
+    "workers/Worker-custom-event.any.js",
+    [
+      {
+        "name": "Test CustomEvents on workers.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/Worker-formdata.any.js",
+    [
+      {
+        "name": "Test FormData interface object",
+        "status": "Fail",
+        "message": "assert_equals: expected 0 but got 2"
+      }
+    ]
+  ],
+  [
+    "workers/Worker-location.sub.any.js",
+    [
+      {
+        "name": "Test WorkerLocation properties.",
+        "status": "Fail",
+        "message": "assert_equals: expected \"function WorkerLocation() { [native code] }\" but got \"function WorkerLocation(hrefValue) { this._zwHref = String(hrefValue || 'about:blank'); }\""
+      }
+    ]
+  ],
+  [
+    "workers/Worker-messageport.html",
+    [
+      {
+        "name": "Test sending messages to workers with no port.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Test getting messages from a worker on a port.",
+        "status": "Fail",
+        "message": "assert_equals: expected \"[object MessagePort]\" but got \"\""
+      },
+      {
+        "name": "Test sending message to a worker on a port.",
+        "status": "Timeout",
+        "message": "Test timed out"
+      },
+      {
+        "name": "Test sending many messages to workers using ports.",
+        "status": "Timeout",
+        "message": "Test timed out"
+      }
+    ]
+  ],
+  [
+    "workers/Worker-multi-port.html",
+    [
+      {
+        "name": "Test empty postMessage throws exception.",
+        "status": "Fail",
+        "message": "assert_throws_js: Empty postMessage should throw exception. function \"function() { worker.postMessage(); }\" did not throw"
+      },
+      {
+        "name": "Test postMessage with null ports throws exception.",
+        "status": "Fail",
+        "message": "assert_throws_js: postMessage with null ports should throw exception. function \"function() { worker.postMessage(\"null port\",\n                                                   [channel.port1, null,\n                                                    channel.port2]); }\" did not throw"
+      },
+      {
+        "name": "Test postMessage with incorrect ports throws exception",
+        "status": "Fail",
+        "message": "assert_throws_dom: postMessage with incorrect ports should throw exception. function \"function() { worker.postMessage(\"notAPort\",\n                                                    [channel.port1, {},\n                                                     channel.port2]); }\" did not throw"
+      },
+      {
+        "name": "Test postMessage without sequence throws exception",
+        "status": "Fail",
+        "message": "assert_throws_dom: postMessage without sequence should throw exception. function \"function() { worker.postMessage(\"notASequence\", [{length: 3}]) }\" did not throw"
+      },
+      {
+        "name": "Test postMessage on channel with previous failed postMessage calls.",
+        "status": "Fail",
+        "message": "assert_throws_dom: postMessage with incorrect ports should throw exception. function \"function() { worker.postMessage(\"notAPort\",\n                                                    [channel.port1, {},\n                                                     channel.port2]); }\" did not throw"
+      },
+      {
+        "name": "Test postMessage with no port.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Test postMessage with no arguments.",
+        "status": "Fail",
+        "message": "Cannot read properties of null (reading 'startsWith')"
+      },
+      {
+        "name": "Test postMessage with no ports and empty array.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Test postMessage with two ports.",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      }
+    ]
+  ],
+  [
+    "workers/Worker-nested-importScripts-error.html",
+    [
+      {
+        "name": "Tests that errors from the import scripts come from the expected file.",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      }
+    ]
+  ],
+  [
+    "workers/Worker-replace-event-handler.any.js",
+    [
+      {
+        "name": "Tests that repeatedly setting 'onmessage' within a worker doesn't crash.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/Worker-replace-global-constructor.any.js",
+    [
+      {
+        "name": "Test replacing global constructors in a worker context.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/Worker-replace-self.any.js",
+    [
+      {
+        "name": "Test that self is not replaceable.",
+        "status": "Fail",
+        "message": "assert_unreached: FAIL: unexpected exception (Error: assert_true: expected true got false) received while replacing self. Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "workers/Worker-simultaneous-errors.html",
+    [
+      {
+        "name": "Test simultaneous errors on workers.",
+        "status": "Fail",
+        "message": "assert_equals: expected 4 but got 0"
+      }
+    ]
+  ],
+  [
+    "workers/Worker-structure-message.html",
+    [
+      {
+        "name": "workers/Worker-structure-message.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201856, 709], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "workers/Worker-terminate-forever.html",
+    [
+      {
+        "name": "workers/Worker-terminate-forever.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 1): Script error: page script: Execution timeout: 90000ms"
+      }
+    ]
+  ],
+  [
+    "workers/Worker-termination-with-port-messages.html",
+    [
+      {
+        "name": "This test terminates a worker when there are many undelivered MessagePort messages still waiting to be dispatched into the Worker Context. This causes termination of JS execution and test should not try to dispatch the remaining messages. Test succeeds if it does not hang or crash (if worker thread is running in the separate process, that process could hang or crash).",
+        "status": "Timeout",
+        "message": "Test timed out"
+      }
+    ]
+  ],
+  [
+    "workers/Worker-timeout-cancel-order.html",
+    [
+      {
+        "name": "Tests setting and canceling timeout in workers.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/Worker-timeout-decreasing-order.html",
+    [
+      {
+        "name": "Tests timeouts on the worker are fired in decreasing order.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/Worker-timeout-increasing-order.html",
+    [
+      {
+        "name": "Tests timeouts on the worker are fired in increasing order.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/WorkerGlobalScope-close.html",
+    [
+      {
+        "name": "Test type of close function.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Test workers do not deliver pending events.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "workers/WorkerGlobalScope-close.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201856, 2848], state={\"loaded\":true,\"pending\":3,\"phase\":4,\"tests\":5}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "workers/WorkerGlobalScope_ErrorEvent_colno.htm",
+    [
+      {
+        "name": " WorkerGlobalScope onerror event handler argument: col ",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/WorkerGlobalScope_ErrorEvent_filename.htm",
+    [
+      {
+        "name": " WorkerGlobalScope onerror event handler argument: location ",
+        "status": "Fail",
+        "message": "assert_equals: expected \"https://wpt.test/workers/support/ErrorEvent.js\" but got \"\""
+      }
+    ]
+  ],
+  [
+    "workers/WorkerGlobalScope_ErrorEvent_lineno.htm",
+    [
+      {
+        "name": " WorkerGlobalScope onerror event handler argument: line ",
+        "status": "Fail",
+        "message": "assert_equals: expected 3 but got 0"
+      }
+    ]
+  ],
+  [
+    "workers/WorkerGlobalScope_ErrorEvent_message.htm",
+    [
+      {
+        "name": " WorkerGlobalScope onerror event handler argument: message ",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/WorkerGlobalScope_importScripts.htm",
+    [
+      {
+        "name": " WorkerGlobalScope API: importScripts() ",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/WorkerGlobalScope_importScripts_NetworkErr.htm",
+    [
+      {
+        "name": " importScripts() with non-existent script file ",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/WorkerGlobalScope_importScripts_NosniffErr.htm",
+    [
+      {
+        "name": "importScripts throws on 'nosniff' violation",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/WorkerGlobalScope_requestAnimationFrame.worker.js",
+    [
+      {
+        "name": "WorkerGlobalScope_requestAnimationFrame",
+        "status": "Fail",
+        "message": "assert_less_than: expected a number but got a \"string\""
+      }
+    ]
+  ],
+  [
+    "workers/WorkerGlobalScope_setInterval.htm",
+    [
+      {
+        "name": "workers/WorkerGlobalScope_setInterval.htm",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201856, 431], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "workers/WorkerGlobalScope_setTimeout.htm",
+    [
+      {
+        "name": "workers/WorkerGlobalScope_setTimeout.htm",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201856, 430], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "workers/WorkerLocation.htm",
+    [
+      {
+        "name": " WorkerLocation object ",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/WorkerLocation_hash.htm",
+    [
+      {
+        "name": " WorkerLocation URL decomposition IDL attribute: hash ",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/WorkerLocation_hash_encoding.htm",
+    [
+      {
+        "name": " WorkerLocation.hash with url encoding string ",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/WorkerLocation_hash_nonexist.htm",
+    [
+      {
+        "name": " WorkerLocation.hash with no <fragment> component ",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/WorkerLocation_host.htm",
+    [
+      {
+        "name": " WorkerLocation URL decomposition IDL attribute: host ",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/WorkerLocation_hostname.htm",
+    [
+      {
+        "name": " WorkerLocation URL decomposition IDL attribute: hostname ",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/WorkerLocation_href.htm",
+    [
+      {
+        "name": " WorkerLocation href attribute ",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/WorkerLocation_pathname.htm",
+    [
+      {
+        "name": " WorkerLocation URL decomposition IDL attribute: pathname ",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/WorkerLocation_port.htm",
+    [
+      {
+        "name": " WorkerLocation URL decomposition IDL attribute: port ",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/WorkerLocation_protocol.htm",
+    [
+      {
+        "name": " WorkerLocation URL decomposition IDL attribute: protocol ",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/WorkerLocation_search.htm",
+    [
+      {
+        "name": " WorkerLocation URL decomposition IDL attribute: search ",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/WorkerLocation_search_empty.htm",
+    [
+      {
+        "name": " WorkerLocation.search with empty <query> ",
+        "status": "Fail",
+        "message": "assert_equals: expected \"\" but got \"?\""
+      }
+    ]
+  ],
+  [
+    "workers/WorkerLocation_search_fragment.htm",
+    [
+      {
+        "name": " WorkerLocation.search with <fragment> in <query> ",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/WorkerLocation_search_nonexist.htm",
+    [
+      {
+        "name": " WorkerLocation.search  with no <query> component ",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/WorkerNavigator-hardware-concurrency.any.js",
+    [
+      {
+        "name": "Test worker navigator hardware concurrency.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/WorkerNavigator.any.js",
+    [
+      {
+        "name": "Testing Navigator properties on workers.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/WorkerNavigator_appName.htm",
+    [
+      {
+        "name": " WorkerNavigator appName ",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/WorkerNavigator_appVersion.htm",
+    [
+      {
+        "name": " WorkerNavigator appVersion ",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/WorkerNavigator_onLine.htm",
+    [
+      {
+        "name": " WorkerNavigator.onLine ",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/WorkerNavigator_platform.htm",
+    [
+      {
+        "name": " WorkerNavigator.platform ",
+        "status": "Fail",
+        "message": "assert_equals: expected \"Win32\" but got \"Windows\""
+      }
+    ]
+  ],
+  [
+    "workers/WorkerNavigator_userAgent.htm",
+    [
+      {
+        "name": " WorkerNavigator.userAgent ",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/WorkerNavigator_userAgentData.http.html",
+    [
+      {
+        "name": "Test that userAgentData is not available in workers in non-secure contexts",
+        "status": "Fail",
+        "message": "assert_equals: expected (undefined) undefined but got (object) [object \"[object Object]\", object \"[object Object]\", object \"[object Object]\"]"
+      }
+    ]
+  ],
+  [
+    "workers/WorkerPerformanceNow.html",
+    [
+      {
+        "name": "workers/WorkerPerformanceNow.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201856, 797], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "workers/Worker_ErrorEvent_bubbles_cancelable.htm",
+    [
+      {
+        "name": "workers/Worker_ErrorEvent_bubbles_cancelable.htm",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201856, 563], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "workers/Worker_ErrorEvent_error.htm",
+    [
+      {
+        "name": "Worker_ErrorEvent_error",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Error handler outside the worker should not see the error value",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "workers/Worker_ErrorEvent_error.htm",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201856, 848], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":3}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "workers/Worker_ErrorEvent_filename.htm",
+    [
+      {
+        "name": "workers/Worker_ErrorEvent_filename.htm",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201856, 534], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "workers/Worker_ErrorEvent_lineno.htm",
+    [
+      {
+        "name": "workers/Worker_ErrorEvent_lineno.htm",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201856, 407], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "workers/Worker_ErrorEvent_message.htm",
+    [
+      {
+        "name": "workers/Worker_ErrorEvent_message.htm",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201856, 457], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "workers/Worker_ErrorEvent_type.htm",
+    [
+      {
+        "name": "workers/Worker_ErrorEvent_type.htm",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201856, 453], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "workers/Worker_NosniffErr.htm",
+    [
+      {
+        "name": " Worker with nosniff X-Content-Type-Options header ",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/Worker_basic.htm",
+    [
+      {
+        "name": "Worker constructor",
+        "status": "Fail",
+        "message": "assert_class_string: expected \"[object Worker]\" but got \"[object Object]\""
+      },
+      {
+        "name": "MessageEvent.data",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "MessageEvent.type",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/Worker_dispatchEvent_ErrorEvent.htm",
+    [
+      {
+        "name": " ErrorEvent and Worker.dispatchEvent() ",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "initErrorEvent",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "ErrorEvent constructor called as normal function",
+        "status": "Fail",
+        "message": "assert_throws_js: Calling ErrorEvent constructor without 'new' must throw function \"() => ErrorEvent('')\" did not throw"
+      }
+    ]
+  ],
+  [
+    "workers/Worker_terminate_event_queue.htm",
+    [
+      {
+        "name": "workers/Worker_terminate_event_queue.htm",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 1): Script error: page script: Execution timeout: 90000ms"
+      }
+    ]
+  ],
+  [
+    "workers/baseurl/alpha/importScripts-in-worker.html",
+    [
+      {
+        "name": "workers/baseurl/alpha/importScripts-in-worker.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":0,\"phase\":4,\"tests\":0})"
+      }
+    ]
+  ],
+  [
+    "workers/baseurl/alpha/worker-in-worker.html",
+    [
+      {
+        "name": "Base URL in workers: new Worker()",
+        "status": "Fail",
+        "message": "assert_unreached: Got error event Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "workers/baseurl/alpha/xhr-in-worker.html",
+    [
+      {
+        "name": "workers/baseurl/alpha/xhr-in-worker.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":0,\"phase\":4,\"tests\":0})"
+      }
+    ]
+  ],
+  [
+    "workers/constructors/Worker/AbstractWorker.onerror.html",
+    [
+      {
+        "name": "AbstractWorker.onerror",
+        "status": "Fail",
+        "message": "assert_equals: ErrorEvent.filename expected \"https://wpt.test/workers/constructors/Worker/AbstractWorker.onerror.js\" but got \"AbstractWorker.onerror.js\""
+      }
+    ]
+  ],
+  [
+    "workers/constructors/Worker/Blob-url.html",
+    [
+      {
+        "name": "Worker supports Blob url",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/constructors/Worker/DedicatedWorkerGlobalScope-members.worker.js",
+    [
+      {
+        "name": "existence of postMessage",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of onmessage",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of self",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of location",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of close",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of onerror",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "existence of onoffline",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "existence of ononline",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "existence of addEventListener",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of removeEventListener",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of dispatchEvent",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of importScripts",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of navigator",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of setTimeout",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "existence of clearTimeout",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "existence of setInterval",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "existence of clearInterval",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "existence of btoa",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "existence of atob",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      }
+    ]
+  ],
+  [
+    "workers/constructors/Worker/Worker-constructor.html",
+    [
+      {
+        "name": "Test toString propagation exception.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Test recursive Worker creation.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Test worker creation with no arguments",
+        "status": "Fail",
+        "message": "assert_throws_js: invoking Worker constructor without arguments should result in an exception. function \"function() { new Worker(); }\" did not throw"
+      },
+      {
+        "name": "Test invalid script URL.",
+        "status": "Fail",
+        "message": "assert_throws_dom: Invoking Worker constructor with invalid script URL should result in an exception. function \"function() { var worker = new Worker('http://invalid:123$'); }\" did not throw"
+      },
+      {
+        "name": "Test the Worker object defines postMessage() and addEventListener().",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Test Worker creation with empty script URL.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Test not existent script URL.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/constructors/Worker/constructor-utf16-bom.html",
+    [
+      {
+        "name": "Worker with UTF-16BE BOM",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Worker with UTF-16LE BOM",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/constructors/Worker/ctor-1.html",
+    [
+      {
+        "name": "workers/constructors/Worker/ctor-1.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201856, 188], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "workers/constructors/Worker/ctor-null.html",
+    [
+      {
+        "name": "workers/constructors/Worker/ctor-null.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201856, 194], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "workers/constructors/Worker/ctor-undefined.html",
+    [
+      {
+        "name": "workers/constructors/Worker/ctor-undefined.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201856, 204], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "workers/constructors/Worker/expected-self-properties.worker.js",
+    [
+      {
+        "name": "existence of XMLHttpRequest",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of WebSocket",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of EventSource",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of MessageChannel",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of Worker",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/constructors/Worker/same-origin.html",
+    [
+      {
+        "name": "non-parsable URL",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { new Worker('https://test:test'); }\" did not throw"
+      },
+      {
+        "name": "unsupported_scheme",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "data_url",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "about_blank",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "example_invalid",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "port_81",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "https_port_80",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "https_port_8000",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "http_post_8012",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "javascript_url",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/constructors/Worker/terminate.html",
+    [
+      {
+        "name": "terminate()",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/constructors/Worker/unexpected-self-properties.worker.js",
+    [
+      {
+        "name": "existence of open",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of print",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of stop",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of getComputedStyle",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of getSelection",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of releaseEvents",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of captureEvents",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of alert",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of confirm",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of prompt",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of addEventStream",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of removeEventStream",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of back",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of forward",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of attachEvent",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of detachEvent",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of navigate",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of DOMParser",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of XMLSerializer",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of XPathEvaluator",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of XSLTProcessor",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of opera",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of Image",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of Option",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of frames",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of Audio",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of SVGUnitTypes",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of SVGZoomAndPan",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of java",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of netscape",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of sun",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of Packages",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of ByteArray",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of closed",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of defaultStatus",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of document",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of event",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of frameElement",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of history",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of innerHeight",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of innerWidth",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of opener",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of outerHeight",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of outerWidth",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of pageXOffset",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of pageYOffset",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of parent",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of screen",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of screenLeft",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of screenTop",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of screenX",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of screenY",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of status",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of top",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of window",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of length",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "existence of SharedWorker",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/constructors/Worker/use-base-url.html",
+    [
+      {
+        "name": "Use the document base url when resolving worker URLs",
+        "status": "Fail",
+        "message": "assert_unreached: received error event Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "workers/data-url.html",
+    [
+      {
+        "name": "application/javascript MIME allowed",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "text/plain MIME allowed",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "empty MIME allowed",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "indexedDB is present",
+        "status": "Fail",
+        "message": "assert_equals: expected \"PASS\" but got \"FAIL\""
+      },
+      {
+        "name": "indexedDB is inaccessible",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "worker has opaque origin",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "invalid javascript produces error",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "communication goes both ways",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "cross-origin worker",
+        "status": "Fail",
+        "message": "assert_equals: expected \"PASS\" but got \"FAIL\""
+      }
+    ]
+  ],
+  [
+    "workers/dedicated-worker-from-blob-url.window.js",
+    [
+      {
+        "name": "Creating a dedicated worker from a blob URL works.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Creating a dedicated worker from a blob URL works immediately before revoking.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Blob URLs should not resolve relative to document base URL.",
+        "status": "Fail",
+        "message": "assert_equals: Should not be able to resolve request with relative file path in blob expected false but got true"
+      }
+    ]
+  ],
+  [
+    "workers/dedicated-worker-parse-error-failure.html",
+    [
+      {
+        "name": "Classic worker construction for script with syntax error should dispatch an event named error.",
+        "status": "Fail",
+        "message": "assert_equals: expected function \"function Event(type, options) {\n    var ev = _makeEvent(type, options);\n    var nt = this instanceof globalThis.Event && this.constructor !== globalThis.Event\n      ? this\n      : null;\n    var proto = (nt && nt.constructor && nt.constructor.prototype) || globalThis.Event.prototype;\n    if (!proto || proto === Object.prototype) proto = globalThis.Event.prototype;\n    Object.setPrototypeOf(ev, proto);\n    // 真 [[Construct]] 语义：整对象搬运（own data 属性 for-in 拷贝 + getter/setter 属性\n    // getOwnPropertyDescriptor 逐个 defineProperty——cancelBubble/returnValue/srcElement 是\n    // 非枚举 accessor，for-in 漏它们会致 WPT Event-cancelBubble/returnValue 读 undefined）。\n    if (nt) {\n      var keys109 = Object.getOwnPropertyNames(ev);\n      for (var i109 = 0; i109 < keys109.length; i109++) {\n        var k109 = keys109[i109];\n        if (k109 === 'constructor') continue;\n        var d109 = Object.getOwnPropertyDescriptor(ev, k109);\n        if (d109) Object.defineProperty(nt, k109, d109);\n      }\n      return nt;\n ...\" but got function \"function (type) {\n        var options = arguments.length > 1 ? arguments[1] : undefined;\n      // R109：真构造器化（同 Event 修复）——`class X extends MouseEvent` 的 super() 要求本 ctor\n      // 以 [[Construct]] 语义填充 new.target 的 this；工厂返对象会致子类 this 未初始化。\n      var o = (options == null || typeof options !== 'object') ? {} : options;\n      var isSuperCall = this instanceof Ctor && this.constructor !== Ctor;\n      if (isSuperCall) {\n        // super(type, options) 反射：以 new.target 的 this 为载体，先经父构造器（Event 真构造器\n        // 已填基础字段），再补子类 + 父链专属字段。\n        Parent.call(this, type, options);\n        var chainS = [];\n        var curS = name;\n        var guardS = 0;\n        while (curS && _eventSubclassProps[curS] && guardS++ < 32) {\n          var entryS = _eventSubclassProps[curS];\n          chainS = chainS.concat(entryS[0]);\n          curS = entryS[1];\n        }\n        for (var iS = 0; iS < chainS.length; iS++) {\n          var pS = chainS[iS];\n          // net-api M3-S2：第 4 元为可选 IDL 转换器（ProgressEvent double/b...\""
+      },
+      {
+        "name": "Static import on classic worker should dispatch an event named error.",
+        "status": "Fail",
+        "message": "assert_equals: expected function \"function Event(type, options) {\n    var ev = _makeEvent(type, options);\n    var nt = this instanceof globalThis.Event && this.constructor !== globalThis.Event\n      ? this\n      : null;\n    var proto = (nt && nt.constructor && nt.constructor.prototype) || globalThis.Event.prototype;\n    if (!proto || proto === Object.prototype) proto = globalThis.Event.prototype;\n    Object.setPrototypeOf(ev, proto);\n    // 真 [[Construct]] 语义：整对象搬运（own data 属性 for-in 拷贝 + getter/setter 属性\n    // getOwnPropertyDescriptor 逐个 defineProperty——cancelBubble/returnValue/srcElement 是\n    // 非枚举 accessor，for-in 漏它们会致 WPT Event-cancelBubble/returnValue 读 undefined）。\n    if (nt) {\n      var keys109 = Object.getOwnPropertyNames(ev);\n      for (var i109 = 0; i109 < keys109.length; i109++) {\n        var k109 = keys109[i109];\n        if (k109 === 'constructor') continue;\n        var d109 = Object.getOwnPropertyDescriptor(ev, k109);\n        if (d109) Object.defineProperty(nt, k109, d109);\n      }\n      return nt;\n ...\" but got function \"function (type) {\n        var options = arguments.length > 1 ? arguments[1] : undefined;\n      // R109：真构造器化（同 Event 修复）——`class X extends MouseEvent` 的 super() 要求本 ctor\n      // 以 [[Construct]] 语义填充 new.target 的 this；工厂返对象会致子类 this 未初始化。\n      var o = (options == null || typeof options !== 'object') ? {} : options;\n      var isSuperCall = this instanceof Ctor && this.constructor !== Ctor;\n      if (isSuperCall) {\n        // super(type, options) 反射：以 new.target 的 this 为载体，先经父构造器（Event 真构造器\n        // 已填基础字段），再补子类 + 父链专属字段。\n        Parent.call(this, type, options);\n        var chainS = [];\n        var curS = name;\n        var guardS = 0;\n        while (curS && _eventSubclassProps[curS] && guardS++ < 32) {\n          var entryS = _eventSubclassProps[curS];\n          chainS = chainS.concat(entryS[0]);\n          curS = entryS[1];\n        }\n        for (var iS = 0; iS < chainS.length; iS++) {\n          var pS = chainS[iS];\n          // net-api M3-S2：第 4 元为可选 IDL 转换器（ProgressEvent double/b...\""
+      }
+    ]
+  ],
+  [
+    "workers/dedicated-worker-runtime-error-is-not-parse-error.html",
+    [
+      {
+        "name": "eval() with syntax error dispatches ErrorEvent at Worker",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "JSON.parse() error dispatches ErrorEvent at Worker",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Script parse error dispatches plain Event at Worker",
+        "status": "Fail",
+        "message": "assert_equals: Script parse error should dispatch Event, not ErrorEvent expected function \"function Event(type, options) {\n    var ev = _makeEvent(type, options);\n    var nt = this instanceof globalThis.Event && this.constructor !== globalThis.Event\n      ? this\n      : null;\n    var proto = (nt && nt.constructor && nt.constructor.prototype) || globalThis.Event.prototype;\n    if (!proto || proto === Object.prototype) proto = globalThis.Event.prototype;\n    Object.setPrototypeOf(ev, proto);\n    // 真 [[Construct]] 语义：整对象搬运（own data 属性 for-in 拷贝 + getter/setter 属性\n    // getOwnPropertyDescriptor 逐个 defineProperty——cancelBubble/returnValue/srcElement 是\n    // 非枚举 accessor，for-in 漏它们会致 WPT Event-cancelBubble/returnValue 读 undefined）。\n    if (nt) {\n      var keys109 = Object.getOwnPropertyNames(ev);\n      for (var i109 = 0; i109 < keys109.length; i109++) {\n        var k109 = keys109[i109];\n        if (k109 === 'constructor') continue;\n        var d109 = Object.getOwnPropertyDescriptor(ev, k109);\n        if (d109) Object.defineProperty(nt, k109, d109);\n      }\n      return nt;\n ...\" but got function \"function (type) {\n        var options = arguments.length > 1 ? arguments[1] : undefined;\n      // R109：真构造器化（同 Event 修复）——`class X extends MouseEvent` 的 super() 要求本 ctor\n      // 以 [[Construct]] 语义填充 new.target 的 this；工厂返对象会致子类 this 未初始化。\n      var o = (options == null || typeof options !== 'object') ? {} : options;\n      var isSuperCall = this instanceof Ctor && this.constructor !== Ctor;\n      if (isSuperCall) {\n        // super(type, options) 反射：以 new.target 的 this 为载体，先经父构造器（Event 真构造器\n        // 已填基础字段），再补子类 + 父链专属字段。\n        Parent.call(this, type, options);\n        var chainS = [];\n        var curS = name;\n        var guardS = 0;\n        while (curS && _eventSubclassProps[curS] && guardS++ < 32) {\n          var entryS = _eventSubclassProps[curS];\n          chainS = chainS.concat(entryS[0]);\n          curS = entryS[1];\n        }\n        for (var iS = 0; iS < chainS.length; iS++) {\n          var pS = chainS[iS];\n          // net-api M3-S2：第 4 元为可选 IDL 转换器（ProgressEvent double/b...\""
+      }
+    ]
+  ],
+  [
+    "workers/examples/general.any.js",
+    [
+      {
+        "name": "Test that should pass",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Worker top-level script is a generated script.",
+        "status": "Fail",
+        "message": "assert_equals: expected \"/workers/examples/general.any.worker.js\" but got \"/workers/examples/general.any.js\""
+      }
+    ]
+  ],
+  [
+    "workers/examples/general.worker.js",
+    [
+      {
+        "name": "Test that should pass",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Worker top-level script is the .worker.js file itself.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/importscripts_mime.any.js",
+    [
+      {
+        "name": "importScripts() requires scripty MIME types: text/javascript is allowed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types: application/javascript is allowed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types: text/ecmascript is allowed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types: image/png is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types: text/csv is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types: video/mpeg is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types: text/html is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types: text/plain is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types: application/xml is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types: application/octet-stream is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types: text/potato is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types: potato/text is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types: aaa/aaa is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types: zzz/zzz is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types: text/javascript; charset=utf-8 is allowed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types: text/javascript;charset=utf-8 is allowed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types: text/javascript;bla;bla is allowed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types: text/csv; charset=utf-8 is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types: text/csv;charset=utf-8 is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types: text/csv;bla;bla is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types: Text/html is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types: text/Html is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types: TeXt/HtMl is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types: TEXT/HTML is blocked.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/importscripts_mime_local.any.js",
+    [
+      {
+        "name": "importScripts() requires scripty MIME types for data: URLs: text/javascript is allowed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for data: URLs: application/javascript is allowed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for data: URLs: text/ecmascript is allowed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for data: URLs: image/png is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for data: URLs: text/csv is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for data: URLs: video/mpeg is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for data: URLs: text/html is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for data: URLs: text/plain is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for data: URLs: application/xml is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for data: URLs: application/octet-stream is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for data: URLs: text/potato is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for data: URLs: potato/text is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for data: URLs: aaa/aaa is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for data: URLs: zzz/zzz is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for data: URLs: text/javascript; charset=utf-8 is allowed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for data: URLs: text/javascript;charset=utf-8 is allowed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for data: URLs: text/javascript;bla;bla is allowed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for data: URLs: text/csv; charset=utf-8 is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for data: URLs: text/csv;charset=utf-8 is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for data: URLs: text/csv;bla;bla is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for data: URLs: Text/html is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for data: URLs: text/Html is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for data: URLs: TeXt/HtMl is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for data: URLs: TEXT/HTML is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for blob: URLs: text/javascript is allowed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for blob: URLs: application/javascript is allowed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for blob: URLs: text/ecmascript is allowed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for blob: URLs: image/png is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for blob: URLs: text/csv is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for blob: URLs: video/mpeg is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for blob: URLs: text/html is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for blob: URLs: text/plain is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for blob: URLs: application/xml is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for blob: URLs: application/octet-stream is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for blob: URLs: text/potato is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for blob: URLs: potato/text is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for blob: URLs: aaa/aaa is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for blob: URLs: zzz/zzz is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for blob: URLs: text/javascript; charset=utf-8 is allowed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for blob: URLs: text/javascript;charset=utf-8 is allowed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for blob: URLs: text/javascript;bla;bla is allowed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for blob: URLs: text/csv; charset=utf-8 is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for blob: URLs: text/csv;charset=utf-8 is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for blob: URLs: text/csv;bla;bla is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for blob: URLs: Text/html is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for blob: URLs: text/Html is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for blob: URLs: TeXt/HtMl is blocked.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "importScripts() requires scripty MIME types for blob: URLs: TEXT/HTML is blocked.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/DedicatedWorkerGlobalScope/EventTarget.worker.js",
+    [
+      {
+        "name": "removeEventListener",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "target",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/DedicatedWorkerGlobalScope/onmessage.worker.js",
+    [
+      {
+        "name": "Setting onmessage to 1",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Setting onmessage to an object",
+        "status": "Fail",
+        "message": "assert_equals: attribute should return the object it was set to. expected object \"[object Object]\" but got null"
+      },
+      {
+        "name": "Setting onmessage to a function",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Setting onmessage to 1 (again)",
+        "status": "Fail",
+        "message": "assert_equals: attribute should return null after being set to a primitive expected (object) null but got (function) function \"function(e) { triggered = true; }\""
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/DedicatedWorkerGlobalScope/postMessage/event-ports-dedicated.html",
+    [
+      {
+        "name": "e.ports in dedicated worker",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/DedicatedWorkerGlobalScope/postMessage/imagedata-cloned-canvas-in-array.html",
+    [
+      {
+        "name": "posting an imagedata (from a cloned canvas) in an array",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/DedicatedWorkerGlobalScope/postMessage/message-event.html",
+    [
+      {
+        "name": "Properties of the 'message' event",
+        "status": "Fail",
+        "message": "assert_class_string: expected \"[object MessageEvent]\" but got \"[object Event]\""
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/DedicatedWorkerGlobalScope/postMessage/return-value.worker.js",
+    [
+      {
+        "name": "return value of postMessage",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/DedicatedWorkerGlobalScope/postMessage/second-argument-dictionary.html",
+    [
+      {
+        "name": "Using dictionary as postMessage's second argument",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/DedicatedWorkerGlobalScope/postMessage/second-argument-null-in-array.html",
+    [
+      {
+        "name": "Using [null] in postMessage's second argument",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/DedicatedWorkerGlobalScope/postMessage/second-argument-null.html",
+    [
+      {
+        "name": "Using null in postMessage's second argument",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/DedicatedWorkerGlobalScope/postMessage/second-argument-undefined.html",
+    [
+      {
+        "name": "Using undefined in postMessage's second argument",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/DedicatedWorkerGlobalScope/postMessage/setting-postMessage.html",
+    [
+      {
+        "name": "setting postMessage",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/DedicatedWorkerGlobalScope/postMessage/structured-clone-imagedata.html",
+    [
+      {
+        "name": "structured clone of ImageData",
+        "status": "Fail",
+        "message": "assert_equals: expected \"[object ImageData]\" but got \"[object Object]\""
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/DedicatedWorkerGlobalScope/postMessage/structured-clone-message.html",
+    [
+      {
+        "name": "undefined",
+        "status": "Fail",
+        "message": "assert_equals: expected (undefined) undefined but got (object) null"
+      },
+      {
+        "name": "null",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "false",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "true",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "1",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "NaN",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Infinity",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "string",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "date",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "regexp",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "self",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "array",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "object",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "error",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "structured clone of message",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerGlobalScope/close/incoming-message.html",
+    [
+      {
+        "name": "close() and incoming message",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerGlobalScope/close/sending-messages.html",
+    [
+      {
+        "name": "workers/interfaces/WorkerGlobalScope/close/sending-messages.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201856, 228], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerGlobalScope/close/setInterval.html",
+    [
+      {
+        "name": "close() and setInterval",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerGlobalScope/close/setTimeout.html",
+    [
+      {
+        "name": "close() and setTimeout",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerGlobalScope/location/members.html",
+    [
+      {
+        "name": "members of WorkerLocation",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerGlobalScope/location/redirect.html",
+    [
+      {
+        "name": "workers/interfaces/WorkerGlobalScope/location/redirect.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201856, 596], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerGlobalScope/location/returns-same-object.any.js",
+    [
+      {
+        "name": "location === location",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerGlobalScope/location/setting-members.html",
+    [
+      {
+        "name": "setting members of WorkerLocation",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerGlobalScope/location/worker-separate-file.html",
+    [
+      {
+        "name": "location with a worker in separate file",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerGlobalScope/onerror/handled.html",
+    [
+      {
+        "name": "onerror, \"handled\"",
+        "status": "Fail",
+        "message": "assert_unreached: Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerGlobalScope/onerror/message-classic-DOMException.html",
+    [
+      {
+        "name": "Throw DOMException-TypeError in toplevel: classic: listener",
+        "status": "Fail",
+        "message": "assert_regexp_match: expected object \"/TypeError/\" but got \"Throw in toplevel\""
+      },
+      {
+        "name": "Throw DOMException-TypeError in toplevel: classic: handler",
+        "status": "Fail",
+        "message": "assert_regexp_match: expected object \"/TypeError/\" but got \"Throw in toplevel\""
+      },
+      {
+        "name": "Throw DOMException-TypeError in setTimeout-function: classic: listener",
+        "status": "Timeout",
+        "message": "Test timed out"
+      },
+      {
+        "name": "Throw DOMException-TypeError in setTimeout-function: classic: handler",
+        "status": "Timeout",
+        "message": "Test timed out"
+      },
+      {
+        "name": "Throw DOMException-TypeError in setTimeout-string: classic: listener",
+        "status": "Timeout",
+        "message": "Test timed out"
+      },
+      {
+        "name": "Throw DOMException-TypeError in setTimeout-string: classic: handler",
+        "status": "Timeout",
+        "message": "Test timed out"
+      },
+      {
+        "name": "Throw DOMException-TypeError in onmessage: classic: listener",
+        "status": "Timeout",
+        "message": "Test timed out"
+      },
+      {
+        "name": "Throw DOMException-TypeError in onmessage: classic: handler",
+        "status": "Timeout",
+        "message": "Test timed out"
+      },
+      {
+        "name": "Throw DOMException-TypeError in onerror: classic: listener",
+        "status": "Timeout",
+        "message": "Test timed out"
+      },
+      {
+        "name": "Throw DOMException-TypeError in onerror: classic: handler",
+        "status": "Timeout",
+        "message": "Test timed out"
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerGlobalScope/onerror/message-classic-Error.html",
+    [
+      {
+        "name": "Throw Error in toplevel: classic: listener",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Throw Error in toplevel: classic: handler",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Throw Error in setTimeout-function: classic: listener",
+        "status": "Timeout",
+        "message": "Test timed out"
+      },
+      {
+        "name": "Throw Error in setTimeout-function: classic: handler",
+        "status": "Timeout",
+        "message": "Test timed out"
+      },
+      {
+        "name": "Throw Error in setTimeout-string: classic: listener",
+        "status": "Timeout",
+        "message": "Test timed out"
+      },
+      {
+        "name": "Throw Error in setTimeout-string: classic: handler",
+        "status": "Timeout",
+        "message": "Test timed out"
+      },
+      {
+        "name": "Throw Error in onmessage: classic: listener",
+        "status": "Timeout",
+        "message": "Test timed out"
+      },
+      {
+        "name": "Throw Error in onmessage: classic: handler",
+        "status": "Timeout",
+        "message": "Test timed out"
+      },
+      {
+        "name": "Throw Error in onerror: classic: listener",
+        "status": "Timeout",
+        "message": "Test timed out"
+      },
+      {
+        "name": "Throw Error in onerror: classic: handler",
+        "status": "Timeout",
+        "message": "Test timed out"
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerGlobalScope/onerror/message-module-DOMException.html",
+    [
+      {
+        "name": "Throw DOMException-TypeError in toplevel: module: listener",
+        "status": "Fail",
+        "message": "assert_regexp_match: expected object \"/TypeError/\" but got \"Throw in toplevel\""
+      },
+      {
+        "name": "Throw DOMException-TypeError in toplevel: module: handler",
+        "status": "Fail",
+        "message": "assert_regexp_match: expected object \"/TypeError/\" but got \"Throw in toplevel\""
+      },
+      {
+        "name": "Throw DOMException-TypeError in setTimeout-function: module: listener",
+        "status": "Timeout",
+        "message": "Test timed out"
+      },
+      {
+        "name": "Throw DOMException-TypeError in setTimeout-function: module: handler",
+        "status": "Timeout",
+        "message": "Test timed out"
+      },
+      {
+        "name": "Throw DOMException-TypeError in setTimeout-string: module: listener",
+        "status": "Timeout",
+        "message": "Test timed out"
+      },
+      {
+        "name": "Throw DOMException-TypeError in setTimeout-string: module: handler",
+        "status": "Timeout",
+        "message": "Test timed out"
+      },
+      {
+        "name": "Throw DOMException-TypeError in onmessage: module: listener",
+        "status": "Timeout",
+        "message": "Test timed out"
+      },
+      {
+        "name": "Throw DOMException-TypeError in onmessage: module: handler",
+        "status": "Timeout",
+        "message": "Test timed out"
+      },
+      {
+        "name": "Throw DOMException-TypeError in onerror: module: listener",
+        "status": "Timeout",
+        "message": "Test timed out"
+      },
+      {
+        "name": "Throw DOMException-TypeError in onerror: module: handler",
+        "status": "Timeout",
+        "message": "Test timed out"
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerGlobalScope/onerror/message-module-Error.html",
+    [
+      {
+        "name": "Throw Error in toplevel: module: listener",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Throw Error in toplevel: module: handler",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Throw Error in setTimeout-function: module: listener",
+        "status": "Timeout",
+        "message": "Test timed out"
+      },
+      {
+        "name": "Throw Error in setTimeout-function: module: handler",
+        "status": "Timeout",
+        "message": "Test timed out"
+      },
+      {
+        "name": "Throw Error in setTimeout-string: module: listener",
+        "status": "Timeout",
+        "message": "Test timed out"
+      },
+      {
+        "name": "Throw Error in setTimeout-string: module: handler",
+        "status": "Timeout",
+        "message": "Test timed out"
+      },
+      {
+        "name": "Throw Error in onmessage: module: listener",
+        "status": "Timeout",
+        "message": "Test timed out"
+      },
+      {
+        "name": "Throw Error in onmessage: module: handler",
+        "status": "Timeout",
+        "message": "Test timed out"
+      },
+      {
+        "name": "Throw Error in onerror: module: listener",
+        "status": "Timeout",
+        "message": "Test timed out"
+      },
+      {
+        "name": "Throw Error in onerror: module: handler",
+        "status": "Timeout",
+        "message": "Test timed out"
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerGlobalScope/onerror/not-handled.html",
+    [
+      {
+        "name": "Not handled evaluation error => Worker.onerror handler",
+        "status": "Fail",
+        "message": "assert_equals: e.filename expected \"https://wpt.test/workers/interfaces/WorkerGlobalScope/onerror/not-handled.js\" but got \"not-handled.js\""
+      },
+      {
+        "name": "Not handled evaluation error => Worker error listener",
+        "status": "Fail",
+        "message": "assert_equals: e.filename expected \"https://wpt.test/workers/interfaces/WorkerGlobalScope/onerror/not-handled.js\" but got \"not-handled.js\""
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerGlobalScope/onerror/propagate-to-window-onerror.html",
+    [
+      {
+        "name": "workers/interfaces/WorkerGlobalScope/onerror/propagate-to-window-onerror.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201856, 495], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerGlobalScope/self.any.js",
+    [
+      {
+        "name": "self === self",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "self instanceof WorkerGlobalScope",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "'self' in self",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "self = 1",
+        "status": "Fail",
+        "message": "assert_equals: expected (object) object \"[object Object]\" but got (number) 1"
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerUtils/WindowTimers/001.html",
+    [
+      {
+        "name": "setTimeout",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerUtils/WindowTimers/002.html",
+    [
+      {
+        "name": "clearTimeout",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerUtils/WindowTimers/003.html",
+    [
+      {
+        "name": "setInterval",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerUtils/WindowTimers/004.html",
+    [
+      {
+        "name": "clearInterval",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerUtils/WindowTimers/005.html",
+    [
+      {
+        "name": "workers/interfaces/WorkerUtils/WindowTimers/005.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201856, 167], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerUtils/importScripts/001.worker.js",
+    [
+      {
+        "name": "001",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerUtils/importScripts/002.worker.js",
+    [
+      {
+        "name": "002",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerUtils/importScripts/003.html",
+    [
+      {
+        "name": "importScripts running scripts",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerUtils/importScripts/004.html",
+    [
+      {
+        "name": "importScripts broken script",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerUtils/importScripts/005.html",
+    [
+      {
+        "name": "importScripts separate scripts",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerUtils/importScripts/006.html",
+    [
+      {
+        "name": "importScripts uncaught exception",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerUtils/importScripts/007.html",
+    [
+      {
+        "name": "postMessage in importScripts",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerUtils/importScripts/008.html",
+    [
+      {
+        "name": "variables and functions crossing importScripts boundary",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerUtils/importScripts/009.html",
+    [
+      {
+        "name": "variables and functions crossing importScripts boundary, take 2",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerUtils/importScripts/010.html",
+    [
+      {
+        "name": "importScripts(undefined)",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerUtils/importScripts/011.html",
+    [
+      {
+        "name": "importScripts(null)",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerUtils/importScripts/012.html",
+    [
+      {
+        "name": "importScripts(1)",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerUtils/importScripts/blob-url.worker.js",
+    [
+      {
+        "name": "Blob URLs work on importScripts",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "A revoked blob URL will fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Revoking a blob URL in an earlier script will not fail",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerUtils/importScripts/catch.sub.any.js",
+    [
+      {
+        "name": "Same-origin syntax error",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Same-origin throw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cross-origin syntax error",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cross-origin throw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Redirect-to-cross-origin syntax error",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Redirect-to-Cross-origin throw",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerUtils/importScripts/report-error-cross-origin.sub.any.js",
+    [
+      {
+        "name": "workers/interfaces/WorkerUtils/importScripts/report-error-cross-origin.sub.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201856, 122], state={\"loaded\":true,\"pending\":4,\"phase\":4,\"tests\":4}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerUtils/importScripts/report-error-redirect-to-cross-origin.sub.any.js",
+    [
+      {
+        "name": "workers/interfaces/WorkerUtils/importScripts/report-error-redirect-to-cross-origin.sub.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201856, 134], state={\"loaded\":true,\"pending\":4,\"phase\":4,\"tests\":4}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerUtils/importScripts/report-error-same-origin.sub.any.js",
+    [
+      {
+        "name": "workers/interfaces/WorkerUtils/importScripts/report-error-same-origin.sub.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201856, 121], state={\"loaded\":true,\"pending\":4,\"phase\":4,\"tests\":4}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerUtils/importScripts/report-error-setTimeout-cross-origin.sub.any.js",
+    [
+      {
+        "name": "workers/interfaces/WorkerUtils/importScripts/report-error-setTimeout-cross-origin.sub.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201856, 133], state={\"loaded\":true,\"pending\":4,\"phase\":4,\"tests\":4}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerUtils/importScripts/report-error-setTimeout-redirect-to-cross-origin.sub.any.js",
+    [
+      {
+        "name": "workers/interfaces/WorkerUtils/importScripts/report-error-setTimeout-redirect-to-cross-origin.sub.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201856, 145], state={\"loaded\":true,\"pending\":4,\"phase\":4,\"tests\":4}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerUtils/importScripts/report-error-setTimeout-same-origin.sub.any.js",
+    [
+      {
+        "name": "workers/interfaces/WorkerUtils/importScripts/report-error-setTimeout-same-origin.sub.any.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201856, 132], state={\"loaded\":true,\"pending\":4,\"phase\":4,\"tests\":4}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerUtils/navigator/002.html",
+    [
+      {
+        "name": "navigator.appName",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerUtils/navigator/003.html",
+    [
+      {
+        "name": "navigator.appVersion",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerUtils/navigator/004.html",
+    [
+      {
+        "name": "navigator.platform",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerUtils/navigator/005.html",
+    [
+      {
+        "name": "navigator.userAgent",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerUtils/navigator/006.html",
+    [
+      {
+        "name": "navigator.onLine",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerUtils/navigator/007.html",
+    [
+      {
+        "name": "workers/interfaces/WorkerUtils/navigator/007.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201856, 168], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerUtils/navigator/008.worker.js",
+    [
+      {
+        "name": "navigator properties are read-only",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/interfaces/WorkerUtils/navigator/language.html",
+    [
+      {
+        "name": "navigator.language",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/nested_worker.worker.js",
+    [
+      {
+        "name": "Nested worker",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/nested_worker_close_from_parent_worker.html",
+    [
+      {
+        "name": "Test terminating a nested workers by calling terminate() from its parent worker",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/nested_worker_close_self.worker.js",
+    [
+      {
+        "name": "workers/nested_worker_close_self.worker.js",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201856, 83], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "workers/nested_worker_importScripts.worker.js",
+    [
+      {
+        "name": "Nested worker that calls importScripts()",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/nested_worker_sync_xhr.worker.js",
+    [
+      {
+        "name": "Nested worker that issues a sync XHR",
+        "status": "Fail",
+        "message": "assert_equals: expected \"Pass\" but got \"Fail\""
+      }
+    ]
+  ],
+  [
+    "workers/nested_worker_terminate_from_document.html",
+    [
+      {
+        "name": "Test terminating a chain of nested workers by calling terminate() from the owning document",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/postMessage_DataCloneErr.htm",
+    [
+      {
+        "name": " postMessage() with WorkerNavigator ",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"Pass\" but got (object) object \"[object Object]\""
+      }
+    ]
+  ],
+  [
+    "workers/postMessage_clone_port.htm",
+    [
+      {
+        "name": " postMessage(): clone a port ",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/postMessage_clone_port_error.htm",
+    [
+      {
+        "name": " postMessage(): cloning source port ",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/postMessage_event_properties.htm",
+    [
+      {
+        "name": " postMessage(): MessageEvent properties ",
+        "status": "Fail",
+        "message": "assert_class_string: expected \"[object MessageEvent]\" but got \"[object Event]\""
+      }
+    ]
+  ],
+  [
+    "workers/postMessage_ports_readonly_array.htm",
+    [
+      {
+        "name": " postMessage(): read-only ports array ",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/postMessage_target_source.htm",
+    [
+      {
+        "name": " postMessage(): target port and source port ",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/semantics/encodings/001.html",
+    [
+      {
+        "name": "encoding, dedicated worker",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/semantics/encodings/003.html",
+    [
+      {
+        "name": "URL encoding, dedicated worker",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      }
+    ]
+  ],
+  [
+    "workers/semantics/encodings/004.worker.js",
+    [
+      {
+        "name": "Decoding invalid utf-8",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/semantics/interface-objects/001.worker.js",
+    [
+      {
+        "name": "The WorkerGlobalScope interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The DedicatedWorkerGlobalScope interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The Worker interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The MessagePort interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The MessageEvent interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The WorkerNavigator interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The MessageChannel interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The WorkerLocation interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The ImageData interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The ImageBitmap interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The CanvasGradient interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The CanvasPattern interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The TextMetrics interface object should be exposed.",
+        "status": "Fail",
+        "message": "assert_own_property: expected property \"TextMetrics\" missing"
+      },
+      {
+        "name": "The Path2D interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The PromiseRejectionEvent interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The EventSource interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The BroadcastChannel interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The WebSocket interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The CloseEvent interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The ArrayBuffer interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The Int8Array interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The Uint8Array interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The Uint8ClampedArray interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The Int16Array interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The Uint16Array interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The Int32Array interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The Uint32Array interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The Float16Array interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The Float32Array interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The Float64Array interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The DataView interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The XMLHttpRequestEventTarget interface object should be exposed.",
+        "status": "Fail",
+        "message": "assert_own_property: expected property \"XMLHttpRequestEventTarget\" missing"
+      },
+      {
+        "name": "The XMLHttpRequestUpload interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The XMLHttpRequest interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The ProgressEvent interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The FormData interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The URL interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The URLSearchParams interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The File interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The Blob interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The FileList interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The FileReader interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The FileReaderSync interface object should be exposed.",
+        "status": "Fail",
+        "message": "assert_own_property: expected property \"FileReaderSync\" missing"
+      },
+      {
+        "name": "The EventTarget interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The ErrorEvent interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The Event interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The CustomEvent interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The DOMException interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The ReadableStream interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The WritableStream interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The ByteLengthQueuingStrategy interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The CountQueuingStrategy interface object should be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The IDBRequest interface object should be exposed.",
+        "status": "Fail",
+        "message": "assert_own_property: expected property \"IDBRequest\" missing"
+      },
+      {
+        "name": "The IDBOpenDBRequest interface object should be exposed.",
+        "status": "Fail",
+        "message": "assert_own_property: expected property \"IDBOpenDBRequest\" missing"
+      },
+      {
+        "name": "The IDBVersionChangeEvent interface object should be exposed.",
+        "status": "Fail",
+        "message": "assert_own_property: expected property \"IDBVersionChangeEvent\" missing"
+      },
+      {
+        "name": "The IDBFactory interface object should be exposed.",
+        "status": "Fail",
+        "message": "assert_own_property: expected property \"IDBFactory\" missing"
+      },
+      {
+        "name": "The IDBDatabase interface object should be exposed.",
+        "status": "Fail",
+        "message": "assert_own_property: expected property \"IDBDatabase\" missing"
+      },
+      {
+        "name": "The IDBObjectStore interface object should be exposed.",
+        "status": "Fail",
+        "message": "assert_own_property: expected property \"IDBObjectStore\" missing"
+      },
+      {
+        "name": "The IDBIndex interface object should be exposed.",
+        "status": "Fail",
+        "message": "assert_own_property: expected property \"IDBIndex\" missing"
+      },
+      {
+        "name": "The IDBKeyRange interface object should be exposed.",
+        "status": "Fail",
+        "message": "assert_own_property: expected property \"IDBKeyRange\" missing"
+      },
+      {
+        "name": "The IDBCursor interface object should be exposed.",
+        "status": "Fail",
+        "message": "assert_own_property: expected property \"IDBCursor\" missing"
+      },
+      {
+        "name": "The IDBCursorWithValue interface object should be exposed.",
+        "status": "Fail",
+        "message": "assert_own_property: expected property \"IDBCursorWithValue\" missing"
+      },
+      {
+        "name": "The IDBTransaction interface object should be exposed.",
+        "status": "Fail",
+        "message": "assert_own_property: expected property \"IDBTransaction\" missing"
+      }
+    ]
+  ],
+  [
+    "workers/semantics/interface-objects/002.worker.js",
+    [
+      {
+        "name": "The SharedWorker interface object should not be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The CanvasPath interface object should not be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The SharedWorkerGlobalScope interface object should not be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The AbstractView interface object should not be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The AbstractWorker interface object should not be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The ApplicationCache interface object should not be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The Location interface object should not be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The Navigator interface object should not be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The Audio interface object should not be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The HTMLCanvasElement interface object should not be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The Path interface object should not be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The CanvasProxy interface object should not be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The CanvasRenderingContext2D interface object should not be exposed.",
+        "status": "Fail",
+        "message": "assert_false: expected false got true"
+      },
+      {
+        "name": "The DrawingStyle interface object should not be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The BeforeUnloadEvent interface object should not be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The PopStateEvent interface object should not be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The HashChangeEvent interface object should not be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The PageTransitionEvent interface object should not be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The DOMImplementation interface object should not be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The IDBEnvironment interface object should not be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The Database interface object should not be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The UIEvent interface object should not be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The FocusEvent interface object should not be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The MouseEvent interface object should not be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The WheelEvent interface object should not be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The InputEvent interface object should not be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The KeyboardEvent interface object should not be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The CompositionEvent interface object should not be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The VTTCue interface object should not be exposed.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The VTTRegion interface object should not be exposed.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/semantics/multiple-workers/002.html",
+    [
+      {
+        "name": "creating 3 sibling dedicated workers",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/semantics/multiple-workers/003.html",
+    [
+      {
+        "name": "creating 3 nested dedicated workers",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "workers/semantics/multiple-workers/exposure.any.js",
+    [
+      {
+        "name": "Worker exposure",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "SharedWorker exposure",
+        "status": "Fail",
+        "message": "assert_not_equals: got disallowed value undefined"
+      }
+    ]
+  ],
+  [
+    "workers/semantics/run-a-worker/001.html",
+    [
+      {
+        "name": "worker global scope, dedicated worker",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      }
+    ]
+  ],
+  [
+    "workers/semantics/structured-clone/dedicated.html",
+    [
+      {
+        "name": "workers/semantics/structured-clone/dedicated.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: page script: ReferenceError: runStructuredCloneBatteryOfTests is not defined\n    at eval (eval at <anonymous> (unknown source), <anonymous>:1:1)\n    at eval (<anonymous>)\n    at <anonymous>:3:38"
+      }
+    ]
+  ],
+  [
+    "workers/worker-performance.worker.js",
+    [
+      {
+        "name": "Can use performance.now in workers",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Can use performance.mark in workers",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Can use performance.measure in workers",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Can use performance.getEntriesByName in workers",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Can use performance.getEntriesByType in workers",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Performance marks and measures seem to be working correctly in workers",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Can use clearMarks and clearMeasures in workers",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Resource timing seems to work in workers",
+        "status": "Fail",
+        "message": "assert_equals: getEntriesByType(\"resource\") returns one entry with initiatorType of xmlhttprequest expected 1 but got 0"
+      },
+      {
+        "name": "performance.clearResourceTimings in workers",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.setResourceTimingBufferSize in workers",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "performance.timing is not available in workers",
+        "status": "Fail",
+        "message": "assert_equals: performance.timing is undefined expected \"undefined\" but got \"object\""
+      },
+      {
+        "name": "performance.navigation is not available in workers",
+        "status": "Fail",
+        "message": "assert_equals: performance.navigation is undefined expected \"undefined\" but got \"object\""
+      },
+      {
+        "name": "performance.toJSON is available in workers",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "There are no navigation type performance entries in workers",
+        "status": "Fail",
+        "message": "assert_equals: getEntriesByType(\"navigation\") returns nothing expected 0 but got 1"
+      }
+    ]
+  ],
+  [
+    "workers/worker-request-animation-frame.html",
+    [
+      {
+        "name": "workers/worker-request-animation-frame.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201856, 586], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "workers/worker-url-encoding.html",
+    [
+      {
+        "name": "Worker URL is parsed using document encoding",
+        "status": "Fail",
+        "message": "assert_equals: expected \"?%DF\" but got \"?%C3%9F\""
+      }
+    ]
+  ]
+]

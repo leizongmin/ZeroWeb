@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fetch the pinned Clipboard API testharness subset used by the web-api-batch2 goal
-# (docs/goal/web-api-batch2.md, M1 / DC-1).
+# (docs/goal/archive/web-api-batch2.md, M1 / DC-1).
 #
 # 与 fetch-observers-subset.sh 同构（同 WPT_REV pin + raw 拉单文件，显式清单）。
 # wpt-data 整体 gitignored，用例按需 fetch、不入库。

@@ -52,4 +52,4 @@ cargo test -p zero-android-browser
 
 - Android 浏览器实现 RFC：`docs/specs/android-browser-spec-rfc.md`
 - 多进程协议与 Android socket 传输：`crates/protocol/src/transport.rs`（`android_socket_transport_from_fd`）
-- 冒烟与验收证据：[docs/goal/android-browser/evidence/](../../../docs/goal/android-browser/evidence/)（工具链 bootstrap、renderer 路径、CI 冒烟、真机验收清单等）
+- 冒烟与验收证据：[docs/goal/archive/android-browser/evidence/](../../../docs/goal/archive/android-browser/evidence)（工具链 bootstrap、renderer 路径、CI 冒烟、真机验收清单等）

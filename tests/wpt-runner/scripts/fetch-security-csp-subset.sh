@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fetch the pinned upstream security corpora subset used by the security-hardening
-# goal (docs/goal/security-hardening.md, M1 / DC-1).
+# goal (docs/goal/archive/security-hardening.md, M1 / DC-1).
 #
 # 与 fetch-observers-subset.sh 同一 WPT_REV pin，但枚举/取数走 **sparse blob:none
 # 浅克隆**而非逐文件 raw 拉：本三 corpus 首批即 400+ 文件，逐文件 raw + contents

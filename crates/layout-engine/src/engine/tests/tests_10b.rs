@@ -223,8 +223,10 @@ fn test_bfc_float_avoidance_right() {
 
 /// 测试孤立 table-row-group 作为块级兄弟时仍应布局其匿名行内的 table-cell。
 ///
-/// 该场景对应 clear-applies-to-001：`display: table-row-group` 不应触发 clear，
-/// 但其内部匿名行仍必须参与 table 布局，否则单元格会停留在 taffy 的错误位置。
+/// 该场景对应 clear-applies-to-001：`display: table-row-group` 不应触发 clear
+/// （不被推到 float 下方），但其内部匿名行仍必须参与 table 布局，否则单元格会
+/// 停留在 taffy 的错误位置。R5207：匿名表根同时是 §9.5 BFC，应横避 float
+/// 落在 float 右侧（x = float 右缘），非旧判例的重叠位（WPT 001 ref 方块 beside）。
 #[test]
 fn test_orphan_table_row_group_positions_anonymous_cells() {
     let (mut doc, body) = make_doc_with_body();
@@ -271,14 +273,20 @@ fn test_orphan_table_row_group_positions_anonymous_cells() {
     let cell_b_box = find_child_by_node_id(&result.root, cell_b).expect("cell_b found");
 
     assert!(
-        row_group_box.x < float_box.x + float_box.width - 0.5,
-        "table-row-group clear should not apply: rg.x={}, float_right={}",
+        row_group_box.x >= float_box.x + float_box.width - 0.5,
+        "table-row-group anon root should avoid float per §9.5 (clear not applied): rg.x={}, float_right={}",
         row_group_box.x,
         float_box.x + float_box.width
     );
     assert!(
-        (cell_a_box.x - row_group_box.x).abs() < 1.0,
-        "first anonymous cell should start at row group left edge: cell_a.x={}, rg.x={}",
+        row_group_box.y < float_box.y + float_box.height - 0.5,
+        "clear:both on table-row-group must not push it below float: rg.y={}, float_bottom={}",
+        row_group_box.y,
+        float_box.y + float_box.height
+    );
+    assert!(
+        cell_a_box.x.abs() < 1.0,
+        "first anonymous cell should start at row group left edge (child coords are parent-relative): cell_a.x={}, rg.x={}",
         cell_a_box.x,
         row_group_box.x
     );

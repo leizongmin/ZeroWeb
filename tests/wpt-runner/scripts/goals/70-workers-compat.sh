@@ -15,11 +15,16 @@ DIRS=( "workers" "dedicated-workers"  )
 # 语料三层嵌套（interfaces/WorkerGlobalScope/close/ 等），shallow Contents API 只递归
 # 一层拉不全——走 git trees 深挖（lib.sh fetch_dir_deep，全量树；WebCrypto 先例）。
 # .any.js window 变体 opt-in（Worker-base64/WorkerNavigator/importScripts error 面
-# 等 31 案是 window 可执行面成员——webstorage/net-api 先例）。
-# 注：上游 pin 无 dedicated-workers 目录（dedicated worker 用例 2026 起并入 workers/，
-# .worker.js in-worker harness 形态 21 案 fetch 层排除，M2 评估重入）——跳过属预期。
+# 等 31 案是 window 可执行面成员——webstorage/net-api 先例；M2 起 dedicated 变体
+# 经 testharness_workers 变体分道走 dedicated worker 通道）。
+# .worker.js in-worker harness 形态 opt-in（M2 worker harness 通道重入——
+# fetch_tests_from_worker 聚合，canvas worker 通道先例）。
+# 注：上游 pin 无 dedicated-workers 目录（dedicated worker 用例 2026 起并入
+# workers/）——跳过属预期。
 GOAL_FETCH_DEEP=1
 GOAL_PULL_ANY_JS=1
+GOAL_PULL_WORKER_JS=1
+GOAL_PULL_HEADERS_TARGETS=1
 
 goals_fetch_all
 goals_inventory

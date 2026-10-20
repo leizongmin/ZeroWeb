@@ -1,5 +1,7 @@
 # Selection 兼容 — window.getSelection / Selection API
 
+> **整体归档（模式 A，2026-10-20）**：按原目标约定范围收口；控制面与证据随入口归档，原有排除项、残差和重入条件保留。对应 Rally 启动脚本已删除。
+
 **版本**: v1.0
 **日期**: 2026-10-08
 **状态**: ✅ Completed（M3 收口 2026-10-15——终态 2968/2970，99.93%）
@@ -15,7 +17,7 @@
 > 体收敛，余缺口为 toString rendered text 语义（已修，2966/2970）、Actions
 > 拖选选区构建 + live-range 边界吸附（已修，M2 切片 2）、
 > document.open 依赖（跨域挂账）。证据：
-> `docs/goal/selection-compat/evidence/2026-10-14-m1-baseline.md`、
+> `docs/goal/archive/selection-compat/evidence/2026-10-14-m1-baseline.md`、
 > `evidence/2026-10-14-m2s2-anchor-removal.md`。
 >
 > **▶ 终态（2026-10-15 M3 收口）**：**2968/2970（99.93%）**，分级通过率

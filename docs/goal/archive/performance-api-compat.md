@@ -1,5 +1,7 @@
 # Performance API 兼容 — resource / navigation / event-timing / longtask 扩面
 
+> **整体归档（模式 A，2026-10-20）**：按原目标约定范围收口；控制面与证据随入口归档，原有排除项、残差和重入条件保留。对应 Rally 启动脚本已删除。
+
 **版本**: v1.0
 **日期**: 2026-10-08
 **状态**: ✅ Completed（2026-10-13 收口——DC-1~3 全 ✅，收口快照 191/293 subtests =

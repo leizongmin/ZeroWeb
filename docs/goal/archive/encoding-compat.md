@@ -1,5 +1,7 @@
 # 编码兼容 — TextEncoder / TextDecoder / encoding 标签
 
+> **整体归档（模式 A，2026-10-20）**：按原目标约定范围收口；控制面与证据随入口归档，原有排除项、残差和重入条件保留。对应 Rally 启动脚本已删除。
+
 **版本**: v1.5
 **日期**: 2026-09-12（立项）| 2026-10-02（收口——DC-1~4 全满足）| 2026-10-19（复跑修齐 SAB 跨 goal 回归）| 2026-10-19（二轮复跑——iso-2022-jp 残差清偿 + wasm 通道原生还原）
 **状态**: ✅ Completed（全语料 12072/12075 = 99.98%；残差 3 记账；嗅探挂账转 html-syntax-compat）
@@ -91,5 +93,5 @@ goal 的划界线，双向记账；与其他 goal 无共享面。
 
 ## Document Control / Archive Policy
 
-入口文档实质变化才改；控制平面 `docs/goal/encoding-compat/master.md`；
+入口文档实质变化才改；控制平面 `docs/goal/archive/encoding-compat/master.md`；
 archive/ 只追加；evidence/ 持续追加。

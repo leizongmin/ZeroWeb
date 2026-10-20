@@ -1,5 +1,7 @@
 # Web Messaging 兼容 — 运行时控制面板（master.md）
 
+> **已归档（模式 A，2026-10-20）**：当前终态、历史验证与挂账保留；入口见 [归档目标](../webmessaging-compat.md)。
+
 **入口文档**: [../webmessaging-compat.md](../webmessaging-compat.md)
 **创建日期**: 2026-10-08（goal 立项） | **最后更新**: 2026-10-12（M3 收口）
 

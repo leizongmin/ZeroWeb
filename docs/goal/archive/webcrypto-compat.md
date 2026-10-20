@@ -1,5 +1,7 @@
 # Web Crypto 兼容 — crypto.getRandomValues / randomUUID / subtle
 
+> **整体归档（模式 A，2026-10-20）**：按原目标约定范围收口；控制面与证据随入口归档，原有排除项、残差和重入条件保留。对应 Rally 启动脚本已删除。
+
 **版本**: v1.7
 **日期**: 2026-10-17
 **状态**: ✅ Completed（2026-10-17 M6 终判，DC-1~3 全 ✅——corpus 终态

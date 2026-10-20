@@ -93,13 +93,19 @@ for entry in json.load(sys.stdin):
         fi
         ;;
       file)
-        # 拉 .html 用例 + .js 依赖；排除 .worker.js（需 dedicated worker harness，
-        # runner 无 worker 文档管道）。.any.js 默认排除，goal 脚本设
+        # 拉 .html 用例 + .js 依赖；.worker.js（in-worker harness 形态）默认排除，
+        # goal 脚本设 GOAL_PULL_WORKER_JS=1 时拉取——runner 侧 fetch_tests_from_worker
+        # 聚合管道（canvas worker 通道先例；workers-compat M2 worker harness 通道）。
+        # .any.js 默认排除，goal 脚本设
         # GOAL_PULL_ANY_JS=1 时拉取——runner 侧 any_js_window_wrapper window 变体
         # 执行已支持（fs/wasm/timing 先例；streams/ 等以 .any.js 为唯一形态的域
         # 必须拉，否则语料为空）。
         case "${name}" in
-          *.worker.js) ;;
+          *.worker.js)
+            if [[ "${GOAL_PULL_WORKER_JS:-0}" == "1" ]]; then
+              fetch_raw "${dir}/${name}" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+            fi
+            ;;
           *.any.js)
             if [[ "${GOAL_PULL_ANY_JS:-0}" == "1" ]]; then
               fetch_raw "${dir}/${name}" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
@@ -111,8 +117,18 @@ for entry in json.load(sys.stdin):
           # .headers sidecar（wptserve per-file 响应头——xmldecl support 的
           # *-vs-http 族断言 HTTP charset 头优先；runner fetch 通道读 sidecar
           # 覆盖 Content-Type。无害全量拉取——上游对 .html 同名 sidecar 语义）。
+          # GOAL_PULL_HEADERS_TARGETS=1：sidecar 目标文件一并拉取（wptserve `foo` +
+          # `foo.headers` MIME sidecar 语义——workers importScripts `1`/`null`/
+          # `undefined` 无扩展名脚本面）；仅无扩展名目标生效（有扩展名目标已被
+          # 扩展名分支拉取，避免双拉）。
           *.headers)
             fetch_raw "${dir}/${name}" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+            if [[ "${GOAL_PULL_HEADERS_TARGETS:-0}" == "1" ]]; then
+              local header_target="${name%.headers}"
+              if [[ -n "${header_target}" && "${header_target}" != *.* ]]; then
+                fetch_raw "${dir}/${header_target}" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+              fi
+            fi
             ;;
         esac
         ;;
@@ -183,7 +199,11 @@ for entry in d["tree"]:
     [[ -z "${name}" ]] && continue
     [[ "${type}" != "blob" ]] && continue
     case "${name}" in
-      *.worker.js) ;;
+      *.worker.js)
+        if [[ "${GOAL_PULL_WORKER_JS:-0}" == "1" ]]; then
+          fetch_raw "${dir}/${name}" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+        fi
+        ;;
       *.any.js)
         if [[ "${GOAL_PULL_ANY_JS:-0}" == "1" ]]; then
           fetch_raw "${dir}/${name}" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
@@ -191,8 +211,16 @@ for entry in d["tree"]:
         ;;
       # .htm 与 .headers 同 fetch_dir_html 扩展模式（workers corpus 三层 .htm 用例 +
       # .headers sidecar——深挖模式此前漏拉，2026-10-20 workers-compat M1 补齐）。
+      # GOAL_PULL_HEADERS_TARGETS=1 的 sidecar 目标带拉语义同 fetch_dir_html（此处
+      # name 为相对路径，%#.headers 还原目标；仅无扩展名目标生效防双拉）。
       *.html | *.htm | *.headers | *.js | *.json | *.xml | *.xhtml | *.svg)
         fetch_raw "${dir}/${name}" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+        if [[ "${GOAL_PULL_HEADERS_TARGETS:-0}" == "1" && "${name}" == *.headers ]]; then
+          local header_target="${name%.headers}"
+          if [[ -n "${header_target}" && "${header_target}" != *.* ]]; then
+            fetch_raw "${dir}/${header_target}" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+          fi
+        fi
         ;;
     esac
   done <<< "${listing}"

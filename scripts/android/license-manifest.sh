@@ -4,12 +4,12 @@
 # 提取 name/version/license 输出 Markdown 清单。未知许可证的包单独列「跟进」。
 #
 # 用法: license-manifest.sh [output.md]
-#   默认输出 docs/goal/android-browser/evidence/license-manifest.md
+#   默认输出 docs/goal/archive/android-browser/evidence/license-manifest.md
 #   平台由 ZERO_LICENSE_TARGET 控制（默认 aarch64-linux-android，即 release APK ABI）
 set -euo pipefail
 
 repo_root=$(git rev-parse --show-toplevel)
-output="${1:-$repo_root/docs/goal/android-browser/evidence/license-manifest.md}"
+output="${1:-$repo_root/docs/goal/archive/android-browser/evidence/license-manifest.md}"
 target="${ZERO_LICENSE_TARGET:-aarch64-linux-android}"
 meta_file=$(mktemp)
 trap 'rm -f "$meta_file"' EXIT
