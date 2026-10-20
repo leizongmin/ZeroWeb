@@ -1146,6 +1146,22 @@
         if (handle && _nsHandles[handle]) {
           var _nsgp = _nsHandles[handle].namespace;
           if (_nsgp !== 'http://www.w3.org/1999/xhtml' && _gp.Element && _gp.Element.prototype) {
+            // svg-compat M2 S1：createElementNS 产物按 ns 路由——SVG ns 查
+            // __zwSvgTagIface（表键全小写；qualifiedName 冒号后 localName），miss →
+            // SVGElement.prototype（spec HTML element interface 表：SVG ns 表外元素
+            // 接口 SVGElement）；MathML ns → MathMLElement.prototype；其余 ns 保持
+            // Element.prototype 回落（R80 零回归）。
+            if (_nsgp === 'http://www.w3.org/2000/svg' && _gp.SVGElement && _gp.SVGElement.prototype) {
+              var _svgQ = String(_nsHandles[handle].qualifiedName || '');
+              var _svgC = _svgQ.indexOf(':');
+              var _svgL = (_svgC >= 0 ? _svgQ.slice(_svgC + 1) : _svgQ).toLowerCase();
+              var _svgI = _gp.__zwSvgTagIface && _gp.__zwSvgTagIface[_svgL];
+              if (_svgI && _gp[_svgI] && _gp[_svgI].prototype) return _gp[_svgI].prototype;
+              return _gp.SVGElement.prototype;
+            }
+            if (_nsgp === 'http://www.w3.org/1998/Math/MathML' && _gp.MathMLElement && _gp.MathMLElement.prototype) {
+              return _gp.MathMLElement.prototype;
+            }
             return _gp.Element.prototype;
           }
         }
@@ -1197,6 +1213,29 @@
             _ifaceTag = _nsc >= 0 ? _nsl.slice(_nsc + 1) : _nsl;
           } else {
             _ifaceTag = _realTag(sel, handle).toLowerCase();
+          }
+          // svg-compat M2 S1：解析产物（sel 型 proxy）SVG/MathML 元素路由——spec
+          // interface-by-namespace（HTML 解析 foreign content：`<svg>` 子树产物
+          // SVG ns，`document.querySelector('svg') instanceof SVGSVGElement` 应
+          // true；旧路径落 HTMLUnknownElement/HTMLElement 面全错）。**词表门控**：
+          // tag 仅在 SVG/MathML 词表命中才付 `_zwSelNs` ns 探测往返（代缓存；#26
+          // 热路径成本——getPrototypeOf 在逐属性读被触发，HTML 页零新增宿主调用，
+          // SVG tag 才一次探测）。HTML ns 的双词表 tag（a/script/style/title——
+          // `document.createElement('a')` 是 HTMLAnchorElement 非 SVGAElement）
+          // 探测非 SVG/MathML ns 时落回既有 HTML 表路径，行为不变。
+          if (_gp.__zwSvgTagIface && _gp.__zwSvgTagIface[_ifaceTag] && _gp.SVGElement && _gp.SVGElement.prototype) {
+            if (_zwIsSvgNsEl(sel, handle)) {
+              var _psvgI = _gp.__zwSvgTagIface[_ifaceTag];
+              if (_gp[_psvgI] && _gp[_psvgI].prototype) return _gp[_psvgI].prototype;
+              return _gp.SVGElement.prototype;
+            }
+          } else if (_gp.__zwMathTagIface && _gp.__zwMathTagIface[_ifaceTag] && _gp.MathMLElement && _gp.MathMLElement.prototype) {
+            var _mathNsV = (handle && typeof _nsHandles !== 'undefined' && _nsHandles[handle])
+              ? _nsHandles[handle].namespace
+              : _zwSelNs(sel, handle);
+            if (_mathNsV === 'http://www.w3.org/1998/Math/MathML') {
+              return _gp.MathMLElement.prototype;
+            }
           }
           var _iface = _gp.__zwHtmlTagIface && _gp.__zwHtmlTagIface[_ifaceTag];
           if (_iface && _gp[_iface] && _gp[_iface].prototype) return _gp[_iface].prototype;

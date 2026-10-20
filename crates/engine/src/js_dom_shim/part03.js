@@ -2143,28 +2143,120 @@
   // js-dom M3 R100：SVG 元素接口构造器（Vue runtime 挂载期 resolveRootNamespace 读
   // `container instanceof SVGElement`——缺构造器 ReferenceError 使 mount 中止）。
   // spec SVGElement 链：SVGElement → Element（非 HTMLElement）；最小可判别构造器
-  //（空 stub，供 typeof/instanceof 面），prototype 链 SVGElement → Element.prototype，
-  // SVGSVGElement → SVGElement.prototype。
-  var _zwSvgElementIfaces = ['SVGElement', 'SVGSVGElement', 'SVGGraphicsElement',
-    'SVGTitleElement', 'SVGPathElement', 'SVGTSpanElement', 'SVGTextElement',
+  //（空 stub，供 typeof/instanceof 面）。
+  // svg-compat M2 S1：prototype 链按 spec SVG2 类型索引全表（SVG2 types.html +
+  // HTML spec SVG element interface 表）——SVGGraphicsElement/SVGGeometryElement/
+  // SVGTextContentElement/SVGTextPositioningElement/SVGAnimationElement/
+  // SVGGradientElement/SVGFilterPrimitiveElement/SVGComponentTransferFunctionElement
+  // 抽象层 + 具体元素接口挂各自父类（types/scripted 70 案 0P 基线的 instanceof
+  // 靶面：`path instanceof SVGGeometryElement`、`svg instanceof SVGSVGElement`
+  // 需经 Graphics）。数组按父先子后排序（创建循环依赖）。MathMLElement 同法
+  //（Element 直接子类；MathML 元素接口单一，S1 不设子类）。
+  var _zwSvgIfaceParents = {
+    SVGElement: 'Element',
+    SVGGraphicsElement: 'SVGElement',
+    SVGGeometryElement: 'SVGGraphicsElement',
+    SVGTextContentElement: 'SVGGraphicsElement',
+    SVGTextPositioningElement: 'SVGTextContentElement',
+    SVGAnimationElement: 'SVGElement',
+    SVGGradientElement: 'SVGElement',
+    SVGFilterPrimitiveElement: 'SVGElement',
+    SVGComponentTransferFunctionElement: 'SVGElement',
+    SVGSVGElement: 'SVGGraphicsElement',
+    SVGPathElement: 'SVGGeometryElement', SVGRectElement: 'SVGGeometryElement',
+    SVGCircleElement: 'SVGGeometryElement', SVGEllipseElement: 'SVGGeometryElement',
+    SVGLineElement: 'SVGGeometryElement', SVGPolygonElement: 'SVGGeometryElement',
+    SVGPolylineElement: 'SVGGeometryElement',
+    SVGTextElement: 'SVGTextPositioningElement', SVGTSpanElement: 'SVGTextPositioningElement',
+    SVGTextPathElement: 'SVGTextContentElement',
+    SVGUseElement: 'SVGGraphicsElement', SVGImageElement: 'SVGGraphicsElement',
+    SVGSwitchElement: 'SVGGraphicsElement', SVGAElement: 'SVGGraphicsElement',
+    SVGForeignObjectElement: 'SVGGraphicsElement', SVGGElement: 'SVGGraphicsElement',
+    SVGDefsElement: 'SVGGraphicsElement', SVGSymbolElement: 'SVGGraphicsElement',
+    SVGAnimateElement: 'SVGAnimationElement', SVGSetElement: 'SVGAnimationElement',
+    SVGAnimateMotionElement: 'SVGAnimationElement',
+    SVGAnimateTransformElement: 'SVGAnimationElement', SVGMPathElement: 'SVGAnimationElement',
+    SVGLinearGradientElement: 'SVGGradientElement', SVGRadialGradientElement: 'SVGGradientElement',
+  };
+  var _zwSvgElementIfaces = ['SVGElement', 'SVGGraphicsElement', 'SVGGeometryElement',
+    'SVGTextContentElement', 'SVGTextPositioningElement', 'SVGAnimationElement',
+    'SVGGradientElement', 'SVGFilterPrimitiveElement',
+    'SVGComponentTransferFunctionElement',
+    'SVGSVGElement', 'SVGTitleElement', 'SVGPathElement', 'SVGTSpanElement',
+    'SVGTextElement', 'SVGTextPathElement',
     'SVGCircleElement', 'SVGEllipseElement', 'SVGLineElement', 'SVGRectElement',
     'SVGPolygonElement', 'SVGPolylineElement', 'SVGImageElement', 'SVGUseElement',
     'SVGGElement', 'SVGDefsElement', 'SVGSymbolElement', 'SVGSwitchElement',
-    'SVGAElement', 'SVGStopElement', 'SVGGradientElement', 'SVGLinearGradientElement',
+    'SVGAElement', 'SVGStopElement', 'SVGLinearGradientElement',
     'SVGRadialGradientElement', 'SVGPatternElement', 'SVGLayerElement', 'SVGMaskElement',
     'SVGMarkerElement', 'SVGClipPathElement', 'SVGFilterElement', 'SVGFEElement',
     'SVGStyleElement', 'SVGScriptElement', 'SVGForeignObjectElement',
+    'SVGDescElement', 'SVGMetadataElement', 'SVGViewElement', 'SVGMPathElement',
     'SVGAnimateElement', 'SVGSetElement', 'SVGAnimateMotionElement',
     'SVGAnimateTransformElement'];
   for (var _si = 0; _si < _zwSvgElementIfaces.length; _si++) {
     var _sn = _zwSvgElementIfaces[_si];
     if (!globalThis[_sn]) {
       globalThis[_sn] = new Function('return function ' + _sn + '() {}')();
-      globalThis[_sn].prototype = (_sn === 'SVGElement')
-        ? Object.create(globalThis.Element ? globalThis.Element.prototype : Object.prototype)
-        : Object.create(globalThis.SVGElement.prototype);
+      var _sp = _zwSvgIfaceParents[_sn] || 'SVGElement';
+      var _spp = globalThis[_sp] && globalThis[_sp].prototype ? globalThis[_sp].prototype : globalThis.Object.prototype;
+      globalThis[_sn].prototype = Object.create(_spp);
     }
   }
+  // svg-compat M2 S1：MathMLElement 构造器（此前仅 part05 iframe window 名单转发、
+  // realm 内未定义——R80 非 HTML ns 回落 Element.prototype 使 `instanceof
+  // MathMLElement` 恒 false）。spec：MathMLElement → Element，MathML 元素接口
+  // 单一（unknown 元素亦 MathMLElement）。
+  if (!globalThis.MathMLElement) {
+    globalThis.MathMLElement = new Function('return function MathMLElement() {}')();
+    globalThis.MathMLElement.prototype = Object.create(
+      globalThis.Element && globalThis.Element.prototype ? globalThis.Element.prototype : globalThis.Object.prototype);
+  }
+  // svg-compat M2 S1：SVG localName → 接口名映射（getPrototypeOf 路由，R11
+  // __zwHtmlTagIface 先例）。表键全小写：SVG localName 大小写敏感但元素名单内
+  // 无仅大小写差异对（clippath/lineargradient 等），与 `_realTag` 小写化产物
+  // 同域，免 cased localName 依赖。表外 SVG ns 元素 → SVGElement（spec HTML
+  // element interface 表外 SVG 元素回落）；SVG 1.1 已移除元素（font/altglyph/
+  // cursor/tref 等）同回落。fe 灯光子元素（fedistantlight/fepointlight/
+  // fespotlight）非 filter primitive（spec : SVGElement）。
+  globalThis.__zwSvgTagIface = {
+    svg: 'SVGSVGElement', g: 'SVGGElement', defs: 'SVGDefsElement',
+    symbol: 'SVGSymbolElement', use: 'SVGUseElement', switch: 'SVGSwitchElement',
+    image: 'SVGImageElement', path: 'SVGPathElement', rect: 'SVGRectElement',
+    circle: 'SVGCircleElement', ellipse: 'SVGEllipseElement', line: 'SVGLineElement',
+    polygon: 'SVGPolygonElement', polyline: 'SVGPolylineElement',
+    text: 'SVGTextElement', tspan: 'SVGTSpanElement', textpath: 'SVGTextPathElement',
+    marker: 'SVGMarkerElement', pattern: 'SVGPatternElement',
+    clippath: 'SVGClipPathElement', mask: 'SVGMaskElement', a: 'SVGAElement',
+    view: 'SVGViewElement', script: 'SVGScriptElement', style: 'SVGStyleElement',
+    desc: 'SVGDescElement', title: 'SVGTitleElement', metadata: 'SVGMetadataElement',
+    filter: 'SVGFilterElement', lineargradient: 'SVGLinearGradientElement',
+    radialgradient: 'SVGRadialGradientElement', stop: 'SVGStopElement',
+    animate: 'SVGAnimateElement', set: 'SVGSetElement',
+    animatemotion: 'SVGAnimateMotionElement',
+    animatetransform: 'SVGAnimateTransformElement', mpath: 'SVGMPathElement',
+    foreignobject: 'SVGForeignObjectElement',
+    fecolormatrix: 'SVGFilterPrimitiveElement', feconvolvematrix: 'SVGFilterPrimitiveElement',
+    feblend: 'SVGFilterPrimitiveElement', feturbulence: 'SVGFilterPrimitiveElement',
+    fediffuselighting: 'SVGFilterPrimitiveElement', fespecularlighting: 'SVGFilterPrimitiveElement',
+    feoffset: 'SVGFilterPrimitiveElement', fedisplacementmap: 'SVGFilterPrimitiveElement',
+    feflood: 'SVGFilterPrimitiveElement', fetile: 'SVGFilterPrimitiveElement',
+    fecomposite: 'SVGFilterPrimitiveElement', fegaussianblur: 'SVGFilterPrimitiveElement',
+    femorphology: 'SVGFilterPrimitiveElement', femerge: 'SVGFilterPrimitiveElement',
+    femergenode: 'SVGFilterPrimitiveElement', feimage: 'SVGFilterPrimitiveElement',
+    fedropshadow: 'SVGFilterPrimitiveElement', fecomponenttransfer: 'SVGFilterPrimitiveElement',
+    fefuncr: 'SVGComponentTransferFunctionElement', fefuncg: 'SVGComponentTransferFunctionElement',
+    fefuncb: 'SVGComponentTransferFunctionElement', fefunca: 'SVGComponentTransferFunctionElement',
+  };
+  // svg-compat M2 S1：MathML 词表门控（sel 型 ns 探测只对下表 tag 付 `_zwSelNs`
+  // 往返；接口一律 MathMLElement，无子类表）。MathML Core 2023 元素集。
+  globalThis.__zwMathTagIface = {
+    math: 1, mi: 1, mn: 1, mo: 1, ms: 1, mtext: 1, mrow: 1, mfrac: 1,
+    msub: 1, msup: 1, msubsup: 1, munder: 1, mover: 1, munderover: 1,
+    mmultiscripts: 1, mtable: 1, mtr: 1, mtd: 1, mlabeledtr: 1, mspace: 1,
+    mstyle: 1, merror: 1, mpadded: 1, mphantom: 1, mroot: 1, msqrt: 1,
+    maction: 1, semantics: 1, annotation: 1, 'annotation-xml': 1,
+  };
   // SVG className IDL（spec SVG2 https://svgwg.org/svg2-draft/types.html#InterfaceSVGAnimatedString）：
   // `SVGElement.className` 是 **[SameObject] readonly SVGAnimatedString**（baseVal/animVal 同值 reflect
   // class 属性；`el.className === el.className` 恒真）。HTML 元素维持 string 反射（spec dom-classname）。
