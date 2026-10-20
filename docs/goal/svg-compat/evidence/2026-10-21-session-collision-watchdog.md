@@ -64,3 +64,27 @@ testdriver 面，按既有各 goal 口径记账）。均不建议 svg-compat 域
 - 结算：双 session 工作在提交内 landing 文档与 master.md 署名（架构 +
   R3037 门控 vs 就地精修）；零内容分叉。与前三次不同：重叠发生在同一
   未提交工作面且以 identical-content 提交收敛——恢复约定首次经受真竞争。
+
+## 第五次重叠：S2b 侦察/看护与持有实现（05:44-06:58，全程零源码竞争）
+
+- 本 session（S2a 收口后的延续轮）按计划进 S2b：05:40-05:44 完成 WPT 语义
+  侦察（Matrix DOMMatrix2DInit 双拼写/SameValueZero、Angle 度值模型含 turn
+  第二表与 grad 精确 360、枚举 invalid→initial、orientType/orientAngle 联动、
+  feComposite LIGHTER、textPath side 等）并写好 s2b-probe.html，正要落码时
+  发现并行 session 已在 part03.js 落 S2b 实现（05:43 起，+838 行）。
+- 本 session 按 master.md 约定退避源码面，转看护：监控进度（05:49/05:58
+  两轮编辑、06:00 首轮全量、06:16 完成）并独立分析其 run1 JSON——发现
+  styling/attr-style-type 3P→3F 真回归；持有 session 同步察觉，06:17:46
+  part04 tag 门控修复后 06:19 复跑（run2）。
+- run2 独立对账（本 session 解析）：554P/1006F/32T，attr-style-type 3P
+  恢复，对 v2 基线与 S2a 态均零真回归；types 399P。持有 session 06:37 起
+  `make test`（DC-4），06:58 前后提交 ca2520cb2 并推送（含 master.md 更新
+  与 evidence）。
+- 本 session 修好自有探针三处断言错误（两处矩阵乘法复用了 d=2 的矩阵——
+  实现的 4/40 是正确数学；一处 feComposite 误按 filter-effects-1 记
+  LIGHTER=6，实际 SVG1.1+filter-effects-1 定 ARITHMETIC=6/LIGHTER=7），
+  对提交态复跑探针 6/6 Pass——独立验证通道闭环。
+- 结算：本 session 零源码行，产出 = 侦察语义账 + 独立回归对账 + 探针复核；
+  持有 session 端到端实现并落地。五次重叠中首次**双向零改对方工作面**。
+  记账口径提醒：evidence 的 34.8% 为不含 NR 分母（554/1592），与此前含 NR
+  口径（27.5% = 430/1563）不可直比——已在 master.md 注记。

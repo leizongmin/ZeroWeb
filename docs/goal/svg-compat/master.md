@@ -12,8 +12,9 @@ createSVG{Matrix,Rect,Point,Number,Angle} 工厂族 + ownerSVGElement
 （foreignObject 边界清零）+ marker setOrientToAngle/Auto。part04 R3037
 type/method 对 SVG ns 放行（style/script tag 门控保留 reflected string）。
 types 子面 **399P/208F/0T**（S2a 279P/281F，+120P/-73F）；全 corpus 486 案
-**554P/1006F/32T = 34.8%**（+124P/-77F，Timeout 32 持平，全绿案 33→63，
-逐案零真回归）；S2b 靶面案全绿（Enumeration initial-values 48/48、
+**554P/1006F/32T**（+124P/-77F，Timeout 32 持平，全绿案 33→63，
+逐案零真回归；通过率口径注：554/1610 含 NR 子测试 = 34.4%，S2a 记账的
+27.5% 同口径，evidence 记 34.8% 为不含 NR 分母）；S2b 靶面案全绿（Enumeration initial-values 48/48、
 MarkerElement 5/5、SVGMatrix 9/9、ownerSVGElement 16/16 等 35 案）。机制探针
 8/8。卡点：无。下一步：M2 S2c——SVGNumberList/LengthList（numberOfItems/
 parse-invalid-clears 语义）+ SVGPointList/SVGStringList 存在性，解锁
