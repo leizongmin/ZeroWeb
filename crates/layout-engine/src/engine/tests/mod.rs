@@ -755,3 +755,5 @@ mod r5172_caption_shrink_to_fit;
 mod r5178_replaced_content_kw_tests;
 /// R5205 clamp 收缩兄弟级联 + 末子 margin 吸收（line-clamp-023/025 锚点）。
 mod r5205_clamp_shrink_cascade_tests;
+/// R5206 clamp 内层 extent 末子 declared margin 吸收（line-clamp-022/024 锚点）。
+mod r5206_clamp_inner_margin_tests;

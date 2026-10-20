@@ -3597,14 +3597,36 @@ pub(super) fn apply_cross_block_line_clamp(
                     // 位置在边界、本体可见，R3770b 豁免）把 extent 推到自身底边
                     //（auto-032：abspos h=100 静态位 y=133 → 容器收缩到 233 而非约束
                     // 138，橙色背景高出 95px = 13.70% diff 主源）。
-                    let extent = c
-                        .children
-                        .iter()
-                        .filter(|g| !g.line_clamp_hidden && !g.is_absolute && !g.is_fixed)
-                        .map(|g| g.y + g.height)
-                        .fold(0.0f32, f32::max);
-                    if extent > 0.0 && extent + pb < c.height - 0.5 {
-                        let new_content = extent;
+                    let visible = || {
+                        c.children
+                            .iter()
+                            .filter(|g| !g.line_clamp_hidden && !g.is_absolute && !g.is_fixed)
+                    };
+                    let extent = visible().map(|g| g.y + g.height).fold(0.0f32, f32::max);
+                    // R5206（CSS2 §8.3.1/§10.6.3）：本盒有 bottom 框边（padding/border
+                    // -bottom > 0）时，末可见 in-flow 子的 adjoining bottom margin 不与
+                    // 盒外塌（框边阻断折叠组），属本盒 extent——022/024 的橙 .inner
+                    // margin 4 经紫盒 bg 透出（紫盒高 140 = 框 2 + 橙 margin 8 + 橙盒
+                    // 130，非 136）；023 紫盒无边框，margin 塌穿排除，原 fold 值即正确。
+                    // declared 而非 collapsed-effective（R5205 025 判例：塌穿链已隐藏
+                    // 子 margin 不计——024 的 .clamped-margin 20 已隐藏被 filter 排除，
+                    // 此处仍取声明值防塌穿链记账漂移）。
+                    let absorbed_margin = if c.padding_bottom + c.border_bottom > 0.5 {
+                        visible()
+                            .max_by(|a, g| {
+                                (a.y + a.height)
+                                    .partial_cmp(&(g.y + g.height))
+                                    .unwrap_or(std::cmp::Ordering::Equal)
+                            })
+                            .and_then(|last| {
+                                (last.declared_margin_bottom > 0.01).then_some(last.declared_margin_bottom)
+                            })
+                            .unwrap_or(0.0)
+                    } else {
+                        0.0
+                    };
+                    if extent > 0.0 && extent + absorbed_margin + pb < c.height - 0.5 {
+                        let new_content = extent + absorbed_margin;
                         c.height = new_content + pb;
                         c.content_height = new_content;
                     }
