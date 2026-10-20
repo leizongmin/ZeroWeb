@@ -4752,6 +4752,19 @@
     name = String(name);
     return Object.prototype.hasOwnProperty.call(this._attrs, name) ? this._attrs[name] : null;
   };
+  // charset 面（html-syntax-compat）：`rel` IDL 反射——link/a/area 元素的 rel
+  // 反射同名内容属性（缺省 ''）；其余元素 undefined（无此接口）。WPT
+  // html/syntax/charset/xhr.html 以 `link.rel == "match"` 判定响应文档期望面。
+  // https://html.spec.whatwg.org/multipage/links.html#dom-link-rel
+  Object.defineProperty(_zwParseEl.prototype, 'rel', {
+    configurable: true,
+    get: function () {
+      var ln = this.localName;
+      if (ln !== 'link' && ln !== 'a' && ln !== 'area') return undefined;
+      var v = this._attrs ? this._attrs.rel : null;
+      return v == null ? '' : String(v);
+    }
+  });
   // R156（js-dom M4）：ownerDocument 缺省回落（WPT Element-matches 的
   // runSpecialMatchesTests 断言 `element.ownerDocument.defaultView.TypeError`——
   // 解析元素缺 ownerDocument 直接 'reading defaultView' TypeError 整 subtest 崩）。
@@ -5156,6 +5169,24 @@
   // 解析（`__zw_parse_html_child_nodes` arg[3]='0'）与序列化（`__zwTreeScripting`
   // 印章 → noscript 转义分支）按旗标分流。
   _zwParsedDoc.prototype.__zwScriptingEnabled = false;
+  // charset 面（html-syntax-compat）：Document 编码三别名。`_zwEncoding` 槽由
+  // XHR document 响应按嗅探/transport 编码挂入（part03 _zwFillFromResponse）；
+  // 其余工厂文档（DOMParser 等）缺省 UTF-8——spec parse-from-string 文档编码恒
+  // UTF-8。
+  // https://dom.spec.whatwg.org/#dom-domparser-parsefromstring
+  _zwParsedDoc.prototype._zwEncoding = null;
+  Object.defineProperty(_zwParsedDoc.prototype, 'characterSet', {
+    configurable: true,
+    get: function () { return this._zwEncoding || 'UTF-8'; }
+  });
+  Object.defineProperty(_zwParsedDoc.prototype, 'charset', {
+    configurable: true,
+    get: function () { return this._zwEncoding || 'UTF-8'; }
+  });
+  Object.defineProperty(_zwParsedDoc.prototype, 'inputEncoding', {
+    configurable: true,
+    get: function () { return this._zwEncoding || 'UTF-8'; }
+  });
   _zwParsedDoc.prototype.querySelector = function (sel) {
     if (typeof __zw_parse_html_query !== 'function') return null;
     var arr = JSON.parse(__zw_parse_html_query(this._html, String(sel), '0'));

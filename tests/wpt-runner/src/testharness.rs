@@ -7513,11 +7513,22 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     // setupRangeTests——deleteFromDocument/getSelection iframe 簇根因）。
                     // 主文档面 runner 已有 inline_local_scripts 预处理；此处对 fetch 通道
                     // 返回的 .html 同样内联相对 src（绝对/`/resources/` 保留原标签）。
+                    // html-syntax（2026-10-20）：非 UTF-8 文档字节保真——XHR document
+                    // 响应的 charset 嗅探/解码消费原始字节（html/syntax/charset 22 案
+                    // 断言 windows-1251 等遗留编码字节面）；from_utf8_lossy 把裸字节
+                    // 改写为 EF BF BD，信息先于 JS 侧 TextDecoder 损失。合法 UTF-8 时
+                    // 维持内联路径（往返恒等）；非 UTF-8 时跳过内联、原字节直供（上游
+                    // charset 语料为纯标记、无相对 src 脚本；FIXME: 非 UTF-8 文档的
+                    // 相对脚本内联待字节级 tokenizer）。
                     let body = if clean.ends_with(".html") {
-                        let html = String::from_utf8_lossy(&bytes).into_owned();
-                        let inlined = inline_local_scripts(&html, &root, clean);
-                        let inlined_bytes = inlined.clone().into_bytes();
-                        (inlined_bytes, inlined)
+                        match std::str::from_utf8(&bytes) {
+                            Ok(html) => {
+                                let inlined = inline_local_scripts(html, &root, clean);
+                                let inlined_bytes = inlined.clone().into_bytes();
+                                (inlined_bytes, inlined)
+                            }
+                            Err(_) => (bytes.clone(), String::from_utf8_lossy(&bytes).into_owned()),
+                        }
                     } else {
                         (bytes.clone(), String::from_utf8_lossy(&bytes).into_owned())
                     };

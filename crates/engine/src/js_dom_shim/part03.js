@@ -229,6 +229,244 @@
       }
       return new TextDecoder().decode(bytes);
     }
+    // html-syntax-compat charset 面：XHR document 响应（HTML MIME）的编码嗅探。
+    // xhr.spec set a document response：charset = get a final encoding（override
+    // charset ?? response MIME charset 参数）→ null 则嗅探 → 仍 null 则 UTF-8，
+    // 以 known definite encoding 解析（confidence certain——树构建 mid-stream
+    // change-encoding 不再触发），document's encoding 记入 characterSet。
+    // https://xhr.spec.whatwg.org/#the-response-type
+    // 嗅探语义取 WebKit/Blink 共享 HTMLMetaCharsetParser 的互操作细化（WPT
+    // html/syntax/charset 22 案期望的来源；spec 纯词法 prescan 被两族用例证伪：
+    // in-script/in-style/in-title 要求 rawtext 内容不产 meta token，ncr 要求
+    // tokenizer 解属性值字符引用）：真实 tokenizer 状态机扫描 + head 区段追踪
+    // （head 非法标签终结区段）+ 离区段后消费满 1024 字节无条件停扫。
+    // https://html.spec.whatwg.org/multipage/parsing.html#prescan-a-byte-stream-to-determine-its-encoding
+    // https://github.com/WebKit/WebKit/blob/main/Source/WebCore/html/parser/HTMLMetaCharsetParser.cpp
+    // 属性值 character reference 解码（tokenizer 面值语义——ncr.html 的
+    // `&#119;indows-1251` 靠它命中）。数字引用容缺分号，命名引用五枚；
+    // FIXME: 全量 named character reference 表（编码归纳面不依赖）。
+    function _zwXhrDocDecodeRef(v) {
+      if (v.indexOf('&') < 0) return v;
+      return v.replace(/&(#[xX][0-9a-fA-F]+;?|#[0-9]+;?|amp;|lt;|gt;|quot;|apos;)/g, function (m, g) {
+        if (g.charCodeAt(0) !== 0x23) {
+          return { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }[g.slice(0, -1)];
+        }
+        var cp = (g.charCodeAt(1) === 0x78 || g.charCodeAt(1) === 0x58)
+          ? parseInt(g.slice(2), 16) : parseInt(g.slice(1), 10);
+        if (!(cp >= 0x20) || cp > 0x10FFFF) return '�';
+        try { return String.fromCodePoint(cp); } catch (_eRef) { return '�'; }
+      });
+    }
+    // WebKit extractCharset 移植：content 值内找 `charset=`（ASCII 大小写不敏感），
+    // 引号值须闭合，裸值至空白/引号/分号；未命中返空串。
+    function _zwXhrDocExtractCharset(value) {
+      var s = String(value);
+      var lower = s.toLowerCase();
+      var pos = 0;
+      while (true) {
+        pos = lower.indexOf('charset', pos);
+        if (pos === -1) break;
+        pos += 7;
+        while (pos < s.length && s.charCodeAt(pos) <= 0x20) pos++;
+        if (pos >= s.length) break;
+        if (s.charAt(pos) !== '=') continue;
+        pos++;
+        while (pos < s.length && s.charCodeAt(pos) <= 0x20) pos++;
+        var quote = 0;
+        if (pos < s.length && (s.charAt(pos) === '"' || s.charAt(pos) === "'")) quote = s.charCodeAt(pos++);
+        if (pos >= s.length) break;
+        var end = pos;
+        while (end < s.length && ((quote && s.charCodeAt(end) !== quote)
+          || (!quote && s.charCodeAt(end) > 0x20 && s.charAt(end) !== '"' && s.charAt(end) !== "'" && s.charAt(end) !== ';'))) end++;
+        if (quote && end >= s.length) break; // 引号未闭合 → 本轮失败
+        return s.substring(pos, end);
+      }
+      return '';
+    }
+    // WebKit encodingFromMetaAttributes 移植：charset 属性优先（命中即断）；
+    // content 提取值需 http-equiv=content-type 联立（need pragma 语义）。
+    // 命中返标签串（未归一），否则 null（继续扫后续 meta）。
+    function _zwXhrDocMetaCharset(attrs) {
+      var gotPragma = false;
+      var mode = 0; // 0 无 / 1 charset / 2 pragma
+      var charset = '';
+      for (var k = 0; k < attrs.length; k++) {
+        var an = attrs[k][0], av = attrs[k][1];
+        if (an === 'http-equiv') {
+          if (av.toLowerCase() === 'content-type') gotPragma = true;
+        } else if (an === 'charset') {
+          charset = av;
+          mode = 1;
+          break;
+        } else if (an === 'content') {
+          charset = _zwXhrDocExtractCharset(av);
+          if (charset !== '') mode = 2;
+        }
+      }
+      if (mode === 1 || (mode === 2 && gotPragma)) return charset;
+      return null;
+    }
+    // 编码嗅探扫描：字节序 Latin-1 语义单趟扫描（checkForMetaCharset）。
+    // ① 标记构造逐 token（注释/doctype/bogus 掠过；标签名/属性名小写、属性值
+    //   解字符引用）；② meta start tag 按上式归纳编码 label，经
+    //   `_zwEncodingFromLabel(label, true)` 归一（含 utf-16 系→UTF-8 与
+    //   x-user-defined→windows-1252 特例），未知 label 视为未命中续扫；
+    //   ③ rawtext/RCDATA/script data 元素内容不产 token（textarea/title→RCDATA，
+    //   style/iframe/xmp/noembed/noframes→RAWTEXT；noscript 按 markup——XHR
+    //   响应文档 scripting disabled）；④ head 区段追踪：start tag 名不在
+    //   {script,noscript,style,link,meta,object,title,base} 且非 html/head、或
+    //   end tag 名不在该集 → 区段终结（html/head start tag 不终结）；⑤ 区段
+    //   终结后已消费 ≥1024 字节即停扫（WebKit bytesToCheckUnconditionally——
+    //   窗界按 token 端点，token 起扫前未达界则该 token 照常处理）。
+    // 返回 WHATWG 归一编码名，未命中返 null。
+    function _zwXhrScanMetaCharset(bytes) {
+      var n = bytes.length;
+      var HEAD_OK = { script: 1, noscript: 1, style: 1, link: 1, meta: 1, object: 1, title: 1, base: 1 };
+      function rawStateFor(name) {
+        if (name === 'script') return 'script';
+        if (name === 'textarea' || name === 'title') return 'rcdata';
+        if (name === 'style' || name === 'iframe' || name === 'xmp' || name === 'noembed' || name === 'noframes') return 'raw';
+        if (name === 'plaintext') return 'plaintext';
+        return null;
+      }
+      function stops(end) { return !inHead && end >= 1024; }
+      function isWs(c) { return c === 0x20 || c === 0x09 || c === 0x0A || c === 0x0C || c === 0x0D; }
+      function latin1(s, e) {
+        var out = '';
+        for (var k = s; k < e; k++) out += String.fromCharCode(bytes[k]);
+        return out;
+      }
+      // 标签读取：小写名 + 属性表（[name, 值]）直至 `>` 或 EOF；EOF 中断照常出 token。
+      function readTag(p) {
+        var name = '';
+        while (p < n) {
+          var c = bytes[p];
+          if (c === 0x20 || c === 0x09 || c === 0x0A || c === 0x0C || c === 0x0D || c === 0x2F || c === 0x3E) break;
+          name += String.fromCharCode(c >= 0x41 && c <= 0x5A ? c + 32 : c);
+          p++;
+        }
+        var attrs = [];
+        while (p < n) {
+          while (p < n && (isWs(bytes[p]) || bytes[p] === 0x2F)) p++;
+          if (p >= n) break;
+          if (bytes[p] === 0x3E) { p++; break; }
+          var an = '';
+          while (p < n) {
+            var c2 = bytes[p];
+            if (isWs(c2) || c2 === 0x2F || c2 === 0x3E || c2 === 0x3D) break;
+            an += String.fromCharCode(c2 >= 0x41 && c2 <= 0x5A ? c2 + 32 : c2);
+            p++;
+          }
+          var q = p;
+          while (q < n && isWs(bytes[q])) q++;
+          var av = '';
+          if (q < n && bytes[q] === 0x3D) {
+            p = q + 1;
+            while (p < n && isWs(bytes[p])) p++;
+            if (p < n && (bytes[p] === 0x22 || bytes[p] === 0x27)) {
+              var qc = bytes[p];
+              p++;
+              var start = p;
+              while (p < n && bytes[p] !== qc) p++;
+              av = _zwXhrDocDecodeRef(latin1(start, p));
+              if (p < n) p++; // 闭合引号
+            } else {
+              var start2 = p;
+              while (p < n && !isWs(bytes[p]) && bytes[p] !== 0x3E) p++;
+              av = _zwXhrDocDecodeRef(latin1(start2, p));
+            }
+          } else {
+            p = q;
+          }
+          if (an !== '') attrs.push([an, av]);
+        }
+        return { name: name, attrs: attrs, end: p };
+      }
+      var i = 0, inHead = true, state = null, rawTag = '';
+      while (i < n) {
+        if (state === 'plaintext') {
+          i = n;
+          break;
+        }
+        if (state) {
+          // rawtext/RCDATA/script data 内容：消费至匹配 `</name`（后随空白/`/`/`>`）
+          // 处，内容不产 token（meta 不可见——in-script/in-style/in-title 面）。
+          var pat = '</' + rawTag;
+          var ci = -1;
+          for (var p = i; p + pat.length <= n; p++) {
+            var ok = true;
+            for (var q2 = 0; q2 < pat.length; q2++) {
+              var cb = pat.charCodeAt(q2), bb = bytes[p + q2];
+              if (bb !== cb && !(cb >= 0x61 && cb <= 0x7A && bb === cb - 32)) { ok = false; break; }
+            }
+            if (ok) {
+              var nx = p + pat.length;
+              if (nx >= n || isWs(bytes[nx]) || bytes[nx] === 0x2F || bytes[nx] === 0x3E) { ci = p; break; }
+            }
+          }
+          i = ci === -1 ? n : ci;
+          state = null;
+          if (stops(i)) return null;
+          continue;
+        }
+        // DATA：字符段 flush 至下一 `<`（token 端点停扫判据）。
+        var lt = i;
+        while (lt < n && bytes[lt] !== 0x3C) lt++;
+        if (lt > i || lt >= n) {
+          if (stops(lt)) return null;
+          if (lt >= n) break;
+          i = lt;
+        }
+        var d = i + 1 < n ? bytes[i + 1] : -1;
+        if (d === 0x21) {
+          // `<!--` 注释 → `-->`；doctype/bogus → `>`。
+          var end2;
+          if (i + 3 < n && bytes[i + 2] === 0x2D && bytes[i + 3] === 0x2D) {
+            end2 = i + 4;
+            while (end2 + 2 < n && !(bytes[end2] === 0x2D && bytes[end2 + 1] === 0x2D && bytes[end2 + 2] === 0x3E)) end2++;
+            end2 = Math.min(end2 + 3, n);
+          } else {
+            var g = bytes.indexOf(0x3E, i);
+            end2 = g === -1 ? n : g + 1;
+          }
+          i = end2;
+          if (stops(i)) return null;
+          continue;
+        }
+        if (d === 0x3F || (d === 0x2F && !((i + 2 < n) && ((bytes[i + 2] >= 0x41 && bytes[i + 2] <= 0x5A) || (bytes[i + 2] >= 0x61 && bytes[i + 2] <= 0x7A))))) {
+          // `<?` 与 `</`+非字母 → bogus comment 至 `>`。
+          var g2 = bytes.indexOf(0x3E, i);
+          i = g2 === -1 ? n : g2 + 1;
+          if (stops(i)) return null;
+          continue;
+        }
+        if (d === 0x2F) {
+          // end tag：名掠读（属性不归纳），permitted 名不终结 head 区段。
+          var r2 = readTag(i + 2);
+          i = r2.end;
+          if (!HEAD_OK[r2.name]) inHead = false;
+          if (stops(i)) return null;
+          continue;
+        }
+        var r = readTag(i + 1);
+        i = r.end;
+        var st = rawStateFor(r.name);
+        if (st) {
+          state = st;
+          rawTag = r.name;
+        } else if (r.name === 'meta') {
+          var lbl = _zwXhrDocMetaCharset(r.attrs);
+          if (lbl && typeof _zwEncodingFromLabel === 'function') {
+            var enc = _zwEncodingFromLabel(lbl, true);
+            if (enc) return enc;
+          }
+        }
+        // head 区段追踪（start tag：html/head 不终结）。
+        if (!HEAD_OK[r.name] && r.name !== 'html' && r.name !== 'head') inHead = false;
+        if (stops(i)) return null;
+      }
+      return null;
+    }
     // net-api M3-S2：响应填充共享路径（async .then 与 sync __zw_fetch 同构）。
     // responseType 效果：json → 解析（失败 null）；arraybuffer → Uint8Array；blob →
     // Blob（type = final MIME——CT 解析，null 回落 override，仍 null → text/xml，
@@ -340,7 +578,41 @@
         }
         if (typeof _zwParsedDoc === 'function'
             && (docMime === 'text/html' || docMime === 'application/xhtml+xml')) {
-          self.response = new _zwParsedDoc(text);
+          // 编码判定（charset 面语义与依据见 _zwXhrScanMetaCharset 注释块）：
+          // BOM 优先 → get a final encoding → 嗅探 → UTF-8；命中非 UTF-8 编码时
+          // 按 `new TextDecoder(charset)` 重解码（text 的 UTF-8 lossy 解码只作
+          // 回落——windows-1251 案的 'ж' 字符断言依赖真解码）。编码名挂
+          // `_zwEncoding` 槽（_zwParsedDoc.prototype 的 characterSet/charset/
+          // inputEncoding 三别名读取）。
+          // FIXME: XML MIME 分支的 final encoding 接线（本轮 22 案账为 HTML MIME）。
+          var docCharset = null;
+          var docBom = (bytes[0] === 0xFF && bytes[1] === 0xFE) ? 'UTF-16LE'
+            : (bytes[0] === 0xFE && bytes[1] === 0xFF) ? 'UTF-16BE'
+            : (bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) ? 'UTF-8' : null;
+          if (docBom) {
+            docCharset = docBom; // _zwXhrDecode 已按 BOM 编码解码——text 直用
+          } else {
+            var docFinal = self._zwXhrOverrideMime ? self._zwXhrOverrideCharset : null;
+            if (!docFinal && !self._zwXhrOverrideMime && docCtRaw && docParsed) {
+              for (var dci = 0; dci < docParsed.params.length; dci++) {
+                if (docParsed.params[dci][0] === 'charset') docFinal = docParsed.params[dci][1];
+              }
+            }
+            var docFinalRepl = docFinal && typeof __zw_text_encoding_of === 'function'
+              && __zw_text_encoding_of(docFinal) === 'replacement';
+            if (docFinal && !docFinalRepl && typeof _zwEncodingFromLabel === 'function') {
+              docCharset = _zwEncodingFromLabel(docFinal, false);
+            }
+            if (!docCharset && typeof _zwXhrScanMetaCharset === 'function') {
+              docCharset = _zwXhrScanMetaCharset(bytes);
+            }
+          }
+          var docText = text;
+          if (docCharset && docCharset !== 'UTF-8') {
+            try { docText = new TextDecoder(docCharset).decode(bytes); } catch (_eXhrDocDecode) { docCharset = null; }
+          }
+          self.response = new _zwParsedDoc(docText);
+          if (docCharset) self.response._zwEncoding = docCharset;
           self.responseXML = self.response;
         } else if (_zwXhrIsXmlMime(docMime) && typeof _zwXmlParseDoc === 'function') {
           self.responseXML = _zwXmlParseDoc(text);
