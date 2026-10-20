@@ -19,6 +19,12 @@ use super::float::{ContentSlot, FloatContext, FloatIntrinsicWidthCalculator};
 #[cfg(feature = "float_layout")]
 use crate::{Clear, Float, FloatDirection};
 
+/// R5211（CSS2 §8.3.1 × §9.5.1）：float 子不阻断父盒 collapse-through
+///（kill-switch `ZW_FLOAT_CHILD_COLLAPSE_THROUGH=0` 回退，default-on）。
+#[cfg(feature = "float_layout")]
+static FLOAT_CHILD_COLLAPSE_THROUGH: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_FLOAT_CHILD_COLLAPSE_THROUGH").as_deref() != Ok("0"));
+
 /// Context for positioning Block and Float boxes within a Block Formatting Context
 pub struct BlockFormattingContext {
     /// The float positioning context that handles positioning floats within this Block Formatting Context
@@ -897,6 +903,17 @@ fn perform_final_layout_on_in_flow_children(
                     ));
                 }
 
+                // CSS2 §9.5.1：float 属 out of flow，不构成父盒的 in-flow 内容——
+                // 仅含 float 子的父盒没有 in-flow 子与行盒，其自身上下 margin 按
+                // §8.3.1 相邻（self-collapsing），不得阻断父级 collapse-through
+                //（margin-collapse-114：float-only .b 阻断后 mt/mb 被拆成两段
+                // 重放，后续兄弟 y 偏高一段）。float 分支在下方通用赋值前已
+                // continue，这里补上「不阻断」置位。
+                // kill-switch `ZW_FLOAT_CHILD_COLLAPSE_THROUGH=0` 回退（R5211）。
+                if *FLOAT_CHILD_COLLAPSE_THROUGH {
+                    item.can_be_collapsed_through = true;
+                }
+
                 continue;
             }
 
@@ -920,8 +937,29 @@ fn perform_final_layout_on_in_flow_children(
                     let min_y = committed_y_offset + y_margin_offset;
 
                     #[cfg(feature = "float_layout")]
-                    if has_active_floats {
+                    // R5211：`has_active_floats` 是循环前初值——同容器前序兄弟
+                    // 子树放置的 float 对后续项不可见（new-fc-separates-from-float-4：
+                    // 白盒看不到前兄 inner 所置 float，既不避让也不触发 §9.5 分离
+                    // 断链）。按项重查补上。kill-switch 同闸回退。
+                    if has_active_floats || (*FLOAT_CHILD_COLLAPSE_THROUGH && block_ctx.has_active_floats(min_y)) {
                         let slot = block_ctx.find_content_slot(min_y, item.clear, None);
+                        // CSS2 §9.5：立 BFC 的块盒 "MUST NOT overlap the margin box
+                        // of any floats … MAY place it adjacent to such floats if
+                        // there is sufficient space"——definite 宽超出槽宽即无充足
+                        // 空间，须下移到全部 float 之底（find_content_slot 只回
+                        // 「最低有自由空间的位置」，不考虑盒宽）。
+                        // https://www.w3.org/TR/CSS22/visuren.html#bfc-blocks
+                        let slot = match item.size.width {
+                            Some(width)
+                                if *FLOAT_CHILD_COLLAPSE_THROUGH
+                                    && width + item_non_auto_x_margin_sum > slot.width =>
+                            {
+                                let below_all_floats =
+                                    block_ctx.cleared_threshold(Clear::Both).unwrap_or(slot.y).max(min_y);
+                                block_ctx.find_content_slot(below_all_floats, item.clear, None)
+                            }
+                            _ => slot,
+                        };
                         has_active_floats = slot.segment_id.is_some();
                         let stretch_width = slot.width - item_non_auto_x_margin_sum;
                         break 'block (stretch_width, Point { x: slot.x, y: slot.y }, slot.width);
@@ -1077,6 +1115,28 @@ fn perform_final_layout_on_in_flow_children(
                     y: float_avoiding_position.y,
                 }
             };
+            #[cfg(feature = "float_layout")]
+            // R5211 CSS §9.5.2：仅「真引入 clearance」世界（clear_pos > 假设位
+            // = committed + 折叠 margin）margin 消耗在 clearance 之前，顶边即
+            // float 底、不得再叠加 y_margin_offset——塌穿链正确传播 active
+            // 折叠集后（float-only UL 不再重置），clearfix 形态旧式
+            // max(committed, clear_pos) + margin 双计上方 margin（::after
+            // 132 应 114，wrapper 高 153 应 135）。假设位超 float 底（不引入
+            // clearance，clear-clearance-calculation-003：假设位 100 > float 底
+            // 40，落位归 ZW 下游 float_positioning 修正层，taffy 口径须维持）
+            // 或无 float 底（clear_pos = 0，负 margin 页 relpos-calcs/top 家族
+            // 依赖）走旧式。
+            // kill-switch `ZW_FLOAT_CHILD_COLLAPSE_THROUGH=0` 回退。
+            let placement_y = if *FLOAT_CHILD_COLLAPSE_THROUGH
+                && clear_pos > 0.0
+                && clear_pos > committed_y_offset + y_margin_offset
+            {
+                (committed_y_offset + y_margin_offset).max(clear_pos)
+            } else {
+                committed_y_offset.max(clear_pos) + y_margin_offset
+            };
+            #[cfg(not(feature = "float_layout"))]
+            let placement_y = committed_y_offset.max(clear_pos) + y_margin_offset;
             let mut location = if item.is_in_same_bfc {
                 Point {
                     x: match direction {
@@ -1089,7 +1149,7 @@ fn perform_final_layout_on_in_flow_children(
                                 + inset_offset.x
                         }
                     },
-                    y: committed_y_offset.max(clear_pos) + y_margin_offset + inset_offset.y,
+                    y: placement_y + inset_offset.y,
                 }
             } else {
                 // TODO: handle inset and margins
@@ -1150,12 +1210,46 @@ fn perform_final_layout_on_in_flow_children(
                 ));
             }
 
+            // R5211 CSS §9.5.2/§9.5：塌穿链上的首个非自塌项若恰为「分离点」——
+            // clear 引入 clearance（假设位 ≤ 相关 float 底），或非 same-BFC 盒
+            // 被 float 推开分离——其 top margin 自分离处起不再与前文折叠，不得
+            // 折入 first-child 链逃逸出父盒。§9.5.2 Example 1：引入 clearance
+            // 后 M1、M2 各自生效、clearance 可为负，净效果为 clear 盒顶边贴
+            // float 底（margin 消耗在 clearance 之前，落位见上方 placement_y）；
+            // BFC 分离时 margin 不逃逸、自身位置由 find_content_slot 落到 float
+            // 下方。若放任逃逸，margin 会把祖先整体推低
+            //（adjoining-float-before-clearance）或把 float 推离原位
+            //（new-fc-separates-from-float-4）。与 FLOAT_CHILD_COLLAPSE_THROUGH
+            // 同闸回退。
+            // 击发粒度两支分治：clear 支（clearance 语义）限「float 在本容器
+            // 子树内」（floated_content_height_contribution > 0，place_floated_box
+            // 按容器局部累计、sub_context 清零、子贡献上行合并）——float 在链内
+            // 时逃逸 margin 连同 float 一起移动，假设位 = committed；float 在
+            // 链外（前兄子树所置，no-clearance-due-to-large-margin：float 在
+            // body 层、margin 被 padding 容器拦停推红盒过 float 底 → 规范不引入
+            // clearance）时 margin 属真实下推，不得断链。非 same-BFC 支（§9.5
+            // BFC 分离语义）不限——float-3 的 float 在门 ctx 上一级子树
+            //（contribution = 0）但逃逸仍推 float，分离照样必需。
+            // 坐标系：cleared_threshold/find_content_slot 均已折算回容器局部
+            // 坐标，与 committed_y_offset 同空间。
+            #[cfg(feature = "float_layout")]
+            let separation_breaks_first_margin_collapse = *FLOAT_CHILD_COLLAPSE_THROUGH
+                && ((block_ctx.floated_content_height_contribution() > 0.0
+                    && block_ctx
+                        .cleared_threshold(item.clear)
+                        .is_some_and(|float_bottom| float_bottom > committed_y_offset))
+                    || (!item.is_in_same_bfc && float_avoiding_position.y > committed_y_offset));
+            #[cfg(not(feature = "float_layout"))]
+            let separation_breaks_first_margin_collapse = false;
+
             // Update first_child_top_margin_set
             if is_collapsing_with_first_margin_set {
                 if item.can_be_collapsed_through {
                     first_child_top_margin_set = first_child_top_margin_set
                         .collapse_with_set(top_margin_set)
                         .collapse_with_set(bottom_margin_set);
+                } else if separation_breaks_first_margin_collapse {
+                    is_collapsing_with_first_margin_set = false;
                 } else {
                     first_child_top_margin_set = first_child_top_margin_set.collapse_with_set(top_margin_set);
                     is_collapsing_with_first_margin_set = false;
