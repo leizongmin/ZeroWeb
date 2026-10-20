@@ -1,9 +1,26 @@
 # HTML 文档面兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../html-syntax-compat.md](../html-syntax-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-20（P7 XHR document 编码嗅探——charset 22F 清零，通道 61255/61333）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-20（P8 xmldecl 收编——iframe 子文档编码嗅探 88/88 全绿，通道 61343/61422）
 
 ## 当前状态
+
+**P8 xmldecl 收编（2026-10-20）**：`html/syntax/xmldecl` **88/88 全绿**，
+全通道 **61343P/65F/13T/1U = 61422**（vs P7 基线 61255P/65F/13T——**+88P
+零新增 Fail/Timeout**，Fail 集仍全落 render-blocking 58F + syntax/parsing
+4F + dom 3F 既有挂账域）。四层落地：① WHATWG prescan 算法
+`_zwFramePrescanCharset`（1024 窗 meta 归纳 + get-an-XML-encoding 兜底，
+字节/字符串双视图）；② iframe 解码链 BOM → transport charset → prescan →
+重解码（replacement 标签保留降级 1252；plain wire 合法 UTF-8 同走嗅探）；
+③ kind 按 Content-Type text/html 判 HTML 解析语义（trickle.py 动态端点）；
+④ runner trickle.py 静态等价 + `.headers` sidecar CT + `.htm` MIME。
+死循环教训（prescan 单 position 游标）沉淀
+[learnings/bugs/2026-10](../../../learnings/bugs/2026-10/2026-10-20-prescan-position-cursor.md)。
+评估关闭两项：XHR XML MIME final encoding（corpus 零断言无验证面）；
+the-input-byte-stream 9 案复制（上游自述式测试依赖 wptserve 管道，复制需
+发明 oracle）。证据：
+[evidence/2026-10-20-p8-xmldecl-iframe-charset.md](evidence/2026-10-20-p8-xmldecl-iframe-charset.md)。
+
 
 **P7 XHR document 编码嗅探（2026-10-20）**：html/syntax/charset `xhr.html`
 **22F → 22P 清零**，全通道 **61255/61333 = 99.89%**（rebase cb8f59044 后组合
