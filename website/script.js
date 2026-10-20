@@ -27,26 +27,4 @@ const translations = {
   }
 };
 
-function setLanguage(language, persist = true) {
-  const selected = translations[language] ? language : 'en';
-  document.documentElement.lang = selected === 'zh' ? 'zh-CN' : 'en';
-  document.title = selected === 'zh' ? 'ZeroWeb — AI 自主软件工程实验' : 'ZeroWeb — An AI-autonomous software engineering experiment';
-  document.querySelectorAll('[data-i18n]').forEach((element) => { element.textContent = translations[selected][element.dataset.i18n]; });
-  document.querySelectorAll('[data-i18n-html]').forEach((element) => { element.innerHTML = translations[selected][element.dataset.i18nHtml]; });
-  document.querySelectorAll('[data-language]').forEach((button) => { button.setAttribute('aria-pressed', String(button.dataset.language === selected)); });
-  if (persist) localStorage.setItem('zeroweb-language', selected);
-  renderLatestUpdates();
-}
-
-const latestUpdates = [];
-function renderLatestUpdates() {
-  const list = document.getElementById('home-update-list');
-  if (!list || !latestUpdates.length) return;
-  const lang = document.documentElement.lang.startsWith('zh') ? 'zh' : 'en';
-  list.innerHTML = latestUpdates.map((item) => `<article class="update-summary"><span class="update-date">${item.date}</span><h3>${item.title[lang]}</h3><p>${item.summary[lang]}</p></article>`).join('');
-}
-fetch('updates.json').then((response) => { if (!response.ok) throw new Error('unavailable'); return response.json(); }).then((data) => { latestUpdates.push(...data.slice(0, 3)); renderLatestUpdates(); }).catch(() => {});
-const savedLanguage = localStorage.getItem('zeroweb-language');
-const detectedLanguage = navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en';
-setLanguage(savedLanguage || detectedLanguage, false);
-document.querySelectorAll('[data-language]').forEach((button) => button.addEventListener('click', () => setLanguage(button.dataset.language)));
+// Copy is consumed by scripts/website-render.mjs during static generation.

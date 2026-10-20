@@ -6,6 +6,10 @@ on:
     paths:
       - 'website/**'
       - 'scripts/generate-website-metrics.py'
+      - 'scripts/generate-website.py'
+      - 'scripts/website-render.mjs'
+      - 'scripts/test-website-seo.py'
+      - 'scripts/test-guard.rs'
       - 'docs/perf/trends/benchmark-trend.csv'
       - 'docs/goal/rendering-compat/evidence/wpt-trends/trend.csv'
       - 'docs/compat/trends/wpt-suites.csv'
@@ -23,17 +27,32 @@ concurrency:
 
 jobs:
   deploy:
+    timeout-minutes: 10
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Generate website metrics
-        run: python scripts/generate-website-metrics.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Prepare resource guard
+        run: |
+          ulimit -v 8388608
+          timeout 60 rustc --edition 2024 scripts/test-guard.rs -o "$RUNNER_TEMP/website-guard"
+      - name: Generate static website
+        env:
+          GOOGLE_SITE_VERIFICATION: ${{ vars.GOOGLE_SITE_VERIFICATION }}
+          BING_SITE_VERIFICATION: ${{ vars.BING_SITE_VERIFICATION }}
+        run: |
+          "$RUNNER_TEMP/website-guard" --per-proc-mem 1 --total-mem 2 --time-limit 120 -- python scripts/generate-website.py --output "$RUNNER_TEMP/zeroweb-site"
+      - name: Validate SEO and internal links
+        run: |
+          "$RUNNER_TEMP/website-guard" --per-proc-mem 1 --total-mem 2 --time-limit 120 -- python scripts/test-website-seo.py "$RUNNER_TEMP/zeroweb-site"
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:
-          path: website
+          path: ${{ runner.temp }}/zeroweb-site
       - id: deployment
         uses: actions/deploy-pages@v5
