@@ -1394,6 +1394,10 @@ impl LayoutEngine {
         // line_clamp_hidden，paint 据此跳过整子树）。须在各子 IFC 终化（compute_final_inline_
         // layouts）与 R109 回填之后（inline_layout 行几何已终态）。
         apply_cross_block_line_clamp(&mut root_box, styles, doc);
+        // R5205：clamp 收缩的兄弟位移 + 祖先缩高传播——apply_cross_block_line_clamp
+        // 只收缩容器自身，布局期定位的后续兄弟/祖先高需按净差修正（line-clamp-023）。
+        // 须在 12.7 vertical-rl 重定位之前（HorizontalTb 兄弟位移 pass 的既定次序）。
+        shift_siblings_after_clamp_shrink(&mut root_box);
 
         // 12.7 后处理（R1544 Phase 2）：vertical-rl/lr 容器的 block-level in-flow 子用
         // native block-flow 重定位（rl 右到左 / lr 左到右，同 y），并修正容器 block-size
@@ -2588,6 +2592,7 @@ impl LayoutEngine {
             had_clearance: false,
             clearance_active: false,
             clearance_extent_reduction: 0.0,
+            clamp_shrink_delta: 0.0,
             is_anon_table_root: false,
             is_anon_table_cell: false,
             column_gap: 0.0,

@@ -44,6 +44,8 @@ mod r5201_overflow_clip_radius_tests;
 mod r5202_anon_table_caption_tests;
 mod r5203_bg_clip_radius_tests;
 mod r5204_skip_spaces_decoration_tests;
+/// R5205 paint Path B 分带窗口绝对锚定（line-clamp serif 簇省略号行位）。
+mod r5205_clamp_ellipsis_anchor_tests;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;

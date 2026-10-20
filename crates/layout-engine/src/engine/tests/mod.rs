@@ -753,3 +753,5 @@ mod r5170_table_rtl_col_order;
 mod r5172_caption_shrink_to_fit;
 /// R5178 替换元素 min/max-width/height content 关键字 transferred size（csswg #3973）。
 mod r5178_replaced_content_kw_tests;
+/// R5205 clamp 收缩兄弟级联 + 末子 margin 吸收（line-clamp-023/025 锚点）。
+mod r5205_clamp_shrink_cascade_tests;

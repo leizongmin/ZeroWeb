@@ -1304,6 +1304,44 @@ pub(super) fn shift_siblings_after_clearance_containment(box_node: &mut LayoutBo
     total
 }
 
+/// R5205：跨块 clamp 收缩的后续兄弟位移 + 祖先缩高传播（css-overflow-4 #line-clamp）。
+/// `apply_cross_block_line_clamp` 在布局后收缩 clamp 容器高（可见 extent），但布局期
+/// taffy 定位的后续兄弟 y 与祖先高仍是收缩前值（line-clamp-023 的 Following content
+/// 下移 64px = 2 隐藏行高）。本 pass 消费 walk 尾记录的 `clamp_shrink_delta`（净位置
+/// 差，含末子 bottom margin 吸收差额），自底向上：标记盒的后续 in-flow 兄弟上移
+/// delta，祖先 auto 高同步收缩并继续上抛。镜像 `shift_siblings_after_clearance_
+/// containment` 的 delta 传播模式（R5109）。
+/// 标记盒（clamp 容器）自身已按可见 extent 收缩（含其内部一切嵌套收缩），内部不再
+/// 二次收缩/位移——命中标记即上抛、不递归（嵌套 clamp 容器的内层标记随之成为死数据，
+/// 单次遍历不再访问）。返回值 = 本盒净缩量（供父层位移/缩高）。
+pub(super) fn shift_siblings_after_clamp_shrink(box_node: &mut LayoutBox) -> f32 {
+    if box_node.clamp_shrink_delta > 0.0 {
+        return std::mem::take(&mut box_node.clamp_shrink_delta);
+    }
+    let mut total = 0.0f32;
+    let mut shift = 0.0f32;
+    for child in &mut box_node.children {
+        if shift > 0.0 && is_shiftable_in_flow_block(child) {
+            child.y -= shift;
+        }
+        let cr = shift_siblings_after_clamp_shrink(child);
+        if cr > 0.0 {
+            shift += cr;
+            total += cr;
+        }
+    }
+    if total > 0.0 {
+        // 仅 auto 声明收缩盒高与 content 高（definite 高保持——溢出/裁剪/滚动溢出
+        // 语义由盒自身接管；021 的 overflow:scroll 定高容器 ch 计入滚动溢出，收缩会
+        // 改变 scrollHeight 语义）。
+        if box_node.declared_height_auto {
+            box_node.height = (box_node.height - total).max(0.0);
+            box_node.content_height = (box_node.content_height - total).max(0.0);
+        }
+    }
+    total
+}
+
 /// R1492/R1495：修正「plain block + inline 元素子 → remeasure_inline_only_containers
 /// 长高后后续兄弟未下移」致重叠（wintertc `<p>` 长高后 `<div>` 兄弟仍定位在旧 taffy 高处）。
 ///
@@ -3767,6 +3805,10 @@ pub(super) fn apply_cross_block_line_clamp(
             return;
         }
         // 自身 IFC 已由 R2431 cap 过（容器有直接 inline 文本时），此处只处理跨块预算。
+        // R5205：进入 walk 前的盒高（布局期 taffy 值）——walk 尾收缩后据此记
+        // `clamp_shrink_delta`（净位置差），供 shift_siblings_after_clamp_shrink 位移
+        // 后续兄弟 + 收缩祖先。
+        let h_before = b.height;
         let mut remaining = limit;
         let mut ellipsis_host: Option<(usize, usize)> = None;
         let mut out = WalkOutput {
@@ -3801,7 +3843,7 @@ pub(super) fn apply_cross_block_line_clamp(
             // extent 的贡献 = min(float bottom, clamp 边界)；无边界信息时（未 exhausted，
             // 预算未耗尽——此时本 walk 本就不收缩）不适用）。
             let boundary = out.boundary_y;
-            let extent = b
+            let mut extent = b
                 .children
                 .iter()
                 .filter(|c| !c.line_clamp_hidden && !c.is_absolute && !c.is_fixed)
@@ -3815,6 +3857,34 @@ pub(super) fn apply_cross_block_line_clamp(
                 })
                 .fold(0.0f32, f32::max)
                 .max(0.0);
+            // R5205（css-overflow-4 #line-clamp + CSS2 §8.3.1）：Count(n) 收缩时末可见
+            // in-flow 子的 adjoining bottom margin 吸入 extent——容器有 bottom 框边
+            //（padding/border-bottom > 0）时该 margin 不与容器外塌（框边阻断折叠组），
+            // 属容器内容 extent 的一部分（023：.inner margin-bottom 4 → 盒高 148 非
+            // 144）。layout 期 taffy 把它泄在盒外计入后续兄弟位，吸收差额记入 marker
+            //（兄弟位移按位置差口径，不含被吸入盒内的 margin）。Auto 限值不走此臂
+            //（已有 zero_margin_extent 语义，R3780）。
+            if auto_constraint_px.is_none() && b.padding_bottom + b.border_bottom > 0.5 {
+                let bottom_child = b
+                    .children
+                    .iter()
+                    .filter(|c| {
+                        !c.line_clamp_hidden && !c.is_absolute && !c.is_fixed && matches!(c.float, FloatValue::None)
+                    })
+                    .max_by(|a, c| {
+                        (a.y + a.height)
+                            .partial_cmp(&(c.y + c.height))
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    });
+                if let Some(last) = bottom_child
+                    && last.declared_margin_bottom > 0.01
+                {
+                    // declared 而非 collapsed-effective：后者含塌穿链上**已隐藏**子的
+                    // margin（025 的 .clamped-margin margin 20 经塌穿记到 .inner 上——
+                    // assert「margins of hidden boxes are ignored」，吸收须用自身声明 4）。
+                    extent += last.declared_margin_bottom;
+                }
+            }
             let new_content = if let Some(constraint) = auto_constraint_px {
                 let constraint = constraint as f32;
                 extent.max(out.zero_margin_extent.min(constraint))
@@ -3829,6 +3899,13 @@ pub(super) fn apply_cross_block_line_clamp(
             // float 溢出边界部分由 paint 裁到 padding-box（css-overflow-4 with-floats-006
             // 「clipped to the line-clamp container's content edge」）。
             b.line_clamp_clip = true;
+            // R5205：净收缩量 = 盒高差——layout 期 taffy 未把末子 mb 泄入兄弟间距
+            //（023 实测 <p> y = h_layout + p margin-top，无 mb 项），吸收后间距口径
+            // 不变，位移量即纯盒高差。
+            let shrink = h_before - b.height;
+            if shrink > 0.5 {
+                b.clamp_shrink_delta = shrink;
+            }
         }
     }
     walk(root, styles, doc);

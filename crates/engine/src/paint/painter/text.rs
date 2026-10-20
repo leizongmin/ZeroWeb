@@ -3696,9 +3696,19 @@ impl super::Painter {
                                 //（auto-with-ruby-003：省略号在 'x' 旁而非 "Line 5" 后）。
                                 // max-y = base 文本行（与 ellipsis 末行文本尾定位语义一致；
                                 // paint under 位真实现后 rt 在 base 下方，届时改取 base 行）。
+                                // R5205：带窗口按 **绝对** glyph y 比较——重跑 IFC 的行盒 y
+                                // 是内容盒局部坐标（0 起），fragments 已加盒 content 原点
+                                //（border+padding [+valign]，content_y）。不锚定原点时带整体
+                                // 偏移 δ：δ > 0.5 的盒（页面上方有 margin/border/padding 的
+                                // 常见形态）末可见行落出末带窗口，line_ys 少一行 → ellipsis
+                                // 附到 cap−1 行（line-clamp-022/023/024/025 serif 簇）。
                                 fragment_glyphs
                                     .iter()
-                                    .filter(|g| g.font_size > 0.0 && g.y >= l.y - 0.5 && g.y <= l.y + l.height + 0.5)
+                                    .filter(|g| {
+                                        g.font_size > 0.0
+                                            && g.y >= content_y + l.y - 0.5
+                                            && g.y <= content_y + l.y + l.height + 0.5
+                                    })
                                     .map(|g| g.y)
                                     .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
                             })

@@ -357,6 +357,12 @@ pub struct LayoutBox {
     /// test/td 内容高多出 16/64px 露红底）。`shift_siblings_after_clearance_containment`
     /// 消费本值（后序上浮：后续兄弟上移 + 祖先缩高），消费后清零防重入双计。
     pub clearance_extent_reduction: f32,
+    /// R5205：跨块 clamp 容器的净收缩量（位置差口径，含末子 bottom margin 吸收差额）
+    /// ——`apply_cross_block_line_clamp` walk 尾收缩容器高后，布局期定位的后续兄弟 y
+    /// 与祖先高仍是收缩前值（line-clamp-023 的 Following content 下移 = 2 隐藏行高）。
+    /// `shift_siblings_after_clamp_shrink` 消费（后续 in-flow 兄弟上移 + 祖先 auto 高
+    /// 收缩并继续上抛），消费后清零防重入双计。
+    pub clamp_shrink_delta: f32,
     /// 是否为「孤立 table-internal 元素」（display:table-row-group/table-row/table-cell 等，
     /// 且父元素非 table/table-internal）——CSS Tables §2.4 应为其生成匿名 table 包装盒。
     /// 此标记让该元素在 establishes_bfc 中被视为匿名 table（建立 BFC，隔离 margin 折叠
@@ -740,6 +746,7 @@ impl Default for LayoutBox {
             has_size_containment: false,
             clearance_active: false,
             clearance_extent_reduction: 0.0,
+            clamp_shrink_delta: 0.0,
             is_anon_table_root: false,
             is_anon_table_cell: false,
             column_gap: 0.0,
