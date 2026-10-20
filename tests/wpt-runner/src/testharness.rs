@@ -4610,7 +4610,7 @@ fn service_worker_any_js_source(path: &str, case_source: &str) -> String {
     }
 }
 
-fn wpt_meta_scripts(path: &str, source: &str) -> Vec<String> {
+pub(crate) fn wpt_meta_scripts(path: &str, source: &str) -> Vec<String> {
     let case_dir = path.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
     source
         .lines()
@@ -4753,8 +4753,90 @@ fn wpt_data_script_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::S
         if clean.is_empty() {
             return Err("empty path".to_string());
         }
+        // workers-compat M2：script MIME 判定（classic worker(-imported) script 的
+        // fetch 步骤——非 JavaScript MIME 按网络错误失败；Worker_script_mimetype/
+        // importscripts_mime 案面）。派生序（wptserve 语义）：① `<file>.headers`
+        // sidecar Content-Type 覆盖（无扩展名脚本 `1`/`null`/`undefined`、nosniff
+        // 面）；② `workers/support/imported_script.py?mime=` 动态 handler（wptserve
+        // 返空体——成功源以 "\n" 交付，__zw_fetch_script 以空串承载 Err 不可区分，
+        // 空脚本与 "\n" 执行语义恒等）；③ 扩展名 .js/.mjs scripty，其余（含无扩展
+        // 名）非 scripty。
+        // https://html.spec.whatwg.org/multipage/workers.html#dom-workerglobalscope-importscripts
+        fn mime_is_scripty(mime: &str) -> bool {
+            let essence = mime.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
+            matches!(
+                essence.as_str(),
+                "text/javascript" | "application/javascript" | "text/ecmascript" | "application/ecmascript"
+            )
+        }
+        let mime_from_sidecar = std::fs::read_to_string(root.join(format!("{clean}.headers")))
+            .ok()
+            .and_then(|headers| {
+                headers.lines().find_map(|line| {
+                    let (key, value) = line.split_once(':')?;
+                    if key.trim().eq_ignore_ascii_case("content-type") {
+                        Some(value.trim().to_string())
+                    } else {
+                        None
+                    }
+                })
+            });
+        let scripty = if let Some(mime) = mime_from_sidecar {
+            mime_is_scripty(&mime)
+        } else if clean == "workers/support/imported_script.py" {
+            // wptserve 动态 handler 语义：按 `?mime=` 查询回 Content-Type + 空体——
+            // 文件本体（Python 源）不交付，scripty 成功直接以 "\n" 作源（空脚本与
+            // "\n" 执行语义恒等，__zw_fetch_script 以空串承载 Err 不可区分）；非
+            // scripty → Err（NetworkError 语义）。查询值 shim 原样透传（无浏览器
+            // 编码）；容忍 +/%20/%3B 最小编码。
+            let mime = src
+                .split('?')
+                .nth(1)
+                .and_then(|query| query.split('&').find_map(|kv| kv.strip_prefix("mime=")))
+                .map(|value| {
+                    value
+                        .replace('+', " ")
+                        .replace("%20", " ")
+                        .replace("%3B", ";")
+                        .replace("%3b", ";")
+                });
+            if mime.map(|mime| mime_is_scripty(&mime)).unwrap_or(false) {
+                return Ok("\n".to_string());
+            }
+            return Err(format!("non-scripty MIME for script: {clean}"));
+        } else {
+            matches!(
+                std::path::Path::new(clean).extension().and_then(|e| e.to_str()),
+                Some("js") | Some("mjs")
+            )
+        };
+        if !scripty {
+            return Err(format!("non-scripty MIME for script: {clean}"));
+        }
+        // workers-compat M2：`.any.js` 作 worker 顶脚本（页面 `new Worker('/…x.any.js')`
+        // —— dedicated 通道）→ 返回 ClassicWorkerHandler 同构包装源（GLOBAL flags +
+        // importScripts testharness + META 依赖 + 语料正文内嵌 + done()）——上游
+        // AnyWorkerHandler 语义。worker 自真实合成 origin（wpt.test）服务，正文
+        // importScripts 根绝对路径可解析（data: URL wrapper 的 base 解析必抛已废弃）。
+        // 正文内嵌而非 importScripts 自引用——该路径命中本分支会再包一层成环。
+        if clean.ends_with(".any.js") {
+            let case_bytes =
+                std::fs::read(root.join(clean)).map_err(|e| format!("script fetch failed: {clean} ({e})"))?;
+            let case_source = String::from_utf8_lossy(&case_bytes).into_owned();
+            // .sub 模板替换与主读路径同全集（{{hosts[alt][]}} 字面残留会使 URL 解析
+            // 抛 SyntaxError，跨源 muted-errors 案期望的 NetworkError 前置走样）。
+            let case_source = apply_wpt_substitutions(&case_source);
+            return Ok(crate::testharness_workers::synthesize_any_worker_source(
+                clean,
+                &case_source,
+            ));
+        }
         let full = root.join(clean);
-        std::fs::read_to_string(&full)
+        // lossy 解码（无效 UTF-8 → U+FFFD）——脚本源浏览器按 UTF-8 带替换解码
+        // （workers/semantics/encodings/004.worker.js 原始无效字节用例；严格
+        // read_to_string 对该类源返 Err → 脚本抓取失败）。
+        std::fs::read(&full)
+            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
             .map(|source| {
                 // net-api M4-S22：替换面收口到 apply_wpt_substitutions 全集（原仅 host/
                 // domains[www1]/ports[https][0] 三项——get-host-info 的 {{ports[http][0]}}
@@ -8855,7 +8937,7 @@ fn extract_script_src(open_tag: &str) -> Option<&str> {
 }
 
 /// 规范化相对路径（处理 `..` 上溯，如 "dom/nodes/../constants.js" → "dom/constants.js"）。
-fn normalize_relative(path: &str) -> String {
+pub(crate) fn normalize_relative(path: &str) -> String {
     let mut stack: Vec<&str> = Vec::new();
     for seg in path.split('/') {
         match seg {

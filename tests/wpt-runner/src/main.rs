@@ -72,8 +72,8 @@ Commands:
   testharness-fileapi  Run imported FileAPI (blob/file/FileReader/url) window testharness cases (fileapi-compat goal M1 / DC-1)
   testharness-webmessaging  Run imported webmessaging (postMessage/MessageChannel/BroadcastChannel)
                        window testharness cases (webmessaging-compat goal M1 / DC-1)
-  testharness-workers  Run imported workers/dedicated-workers window testharness cases
-                       (workers-compat goal M1 / DC-1)
+  testharness-workers  Run imported workers/dedicated-workers testharness cases
+                       (window + dedicated-worker variants, workers-compat goal)
   testharness-cookies  Run imported cookies (document.cookie semantics) window testharness
                        cases (cookies-compat goal M1 / DC-1)
   testharness-console  Run pinned console corpus (namespace/label-conversion/format-tolerance)
