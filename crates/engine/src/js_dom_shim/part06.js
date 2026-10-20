@@ -2743,6 +2743,47 @@
     }
     return false;
   };
+  // R4006（M2 切片 17）：pending 窗口同 id 多候选的树序判定——JS 视图上行公共祖先
+  //（parentNode getter 三族：pending 槽/sel host 链/handle `_zwNodeParent` 反链）+
+  // 融合 childNodes 位次比较。位次不可得（身份不等/超深度）→ 保守判先者仍先
+  //（维持插入序，与旧行为一致不回退）。**模块级声明**——gEBI 是全 shim 高频路径，
+  // 函数体内声明会让每次调用实例化 4 个闭包（T8G 墙钟钉：曾拖慢全套件 ~s 级）。
+  // https://dom.spec.whatwg.org/#dom-document-getelementbyid（tree order 首个）
+  function _r4006ParentOf(nd) {
+    try {
+      var p = nd.parentNode;
+      return p && (p.nodeType === 1 || p.nodeType === 9 || p.nodeType === 11) ? p : null;
+    } catch (_e6p) { return null; }
+  }
+  function _r4006ChildIdx(parent, nd) {
+    try {
+      var kids = parent.childNodes;
+      for (var ci = 0; ci < kids.length; ci++) if (kids[ci] === nd) return ci;
+    } catch (_e6c) {}
+    return -1;
+  }
+  function _r4006TreeCmp(a, b) {
+    if (a === b) return 0;
+    var ac = [], bc = [], n;
+    for (n = a; n && ac.length < 64; n = _r4006ParentOf(n)) ac.unshift(n);
+    for (n = b; n && bc.length < 64; n = _r4006ParentOf(n)) bc.unshift(n);
+    var ci = 0;
+    while (ci < ac.length && ci < bc.length && ac[ci] === bc[ci]) ci++;
+    // 不可比（异根/身份分裂——同节点 raw+wrapped 双登记的既有形态）返 0 保插入序：
+    // 返 -1 会让 `_r4006TreeFirst` 逐位替换到末位元素（identity 断回归根因）。
+    if (ci === 0) return 0;
+    if (ci === ac.length) return -1;
+    if (ci === bc.length) return 1;
+    var ia = _r4006ChildIdx(ac[ci - 1], ac[ci]);
+    var ib = _r4006ChildIdx(bc[ci - 1], bc[ci]);
+    if (ia < 0 || ib < 0) return 0;
+    return ia - ib;
+  }
+  function _r4006TreeFirst(list) {
+    var first = list[0];
+    for (var fi = 1; fi < list.length; fi++) if (_r4006TreeCmp(list[fi], first) < 0) first = list[fi];
+    return first;
+  }
 
   globalThis.document = {
     // js-dom M3 R100：shim document 标记——generate_dom_api_polyfill（execute_script_with_dom
@@ -2992,18 +3033,41 @@
       // sel/handle 身份，挂载点由 insertAdjacentHTML/innerHTML setter 的 R3254-K3/R304 记账）。
       var pendingEarly = _zwPendingAddedById.get(idText);
       if (pendingEarly && pendingEarly.length) {
-        for (var pei = 0; pei < pendingEarly.length; pei++) {
-          var pen = pendingEarly[pei];
-          if (!pen || _zwPRSet().has(pen) || _r125AncestorRemoved(pen)) continue;
-          var peSel = pen.__zwSelector || null;
-          var peH = pen.__zwHandle || null;
-          if (peH && _zwMutationInDoc(null, peH)) return pen;
-          if (peSel && _zwMutationInDoc(peSel, null)) return pen;
-          if (!peSel && !peH && pen._zwSelPendingParent) {
-            var pePl = pen._zwSelPendingParent;
-            if (pePl.parentSel && _zwMutationInDoc(pePl.parentSel, null)) return pen;
-            if (pePl.parentHandle && _zwMutationInDoc(null, pePl.parentHandle)) return pen;
+        // R4006：同 id 多候选（插入序 ≠ 树序——insertBefore 前插、id 改名重登记）先
+        // 全量过门入池再按树序取首（`_r4006*` 助手在模块级）；**单候选走旧直返
+        // fast path**（gEBI 高频，池数组与树序比较只在真多候选时付费）。
+        // `_r125Overridden` 门新增——pending 条目 id 已被改名（form1.id='form-one'）
+        // 后旧键条目不再持有 idText。
+        if (pendingEarly.length === 1) {
+          var pen1 = pendingEarly[0];
+          if (pen1 && !_zwPRSet().has(pen1) && !_r125AncestorRemoved(pen1) && !_r125Overridden(pen1)) {
+            var pe1Sel = pen1.__zwSelector || null;
+            var pe1H = pen1.__zwHandle || null;
+            if (pe1H && _zwMutationInDoc(null, pe1H)) return pen1;
+            if (pe1Sel && _zwMutationInDoc(pe1Sel, null)) return pen1;
+            if (!pe1Sel && !pe1H && pen1._zwSelPendingParent) {
+              var pe1Pl = pen1._zwSelPendingParent;
+              if (pe1Pl.parentSel && _zwMutationInDoc(pe1Pl.parentSel, null)) return pen1;
+              if (pe1Pl.parentHandle && _zwMutationInDoc(null, pe1Pl.parentHandle)) return pen1;
+            }
           }
+        } else {
+          var pePool = [];
+          for (var pei = 0; pei < pendingEarly.length; pei++) {
+            var pen = pendingEarly[pei];
+            if (!pen || _zwPRSet().has(pen) || _r125AncestorRemoved(pen) || _r125Overridden(pen)) continue;
+            var peSel = pen.__zwSelector || null;
+            var peH = pen.__zwHandle || null;
+            if (peH && _zwMutationInDoc(null, peH)) pePool.push(pen);
+            else if (peSel && _zwMutationInDoc(peSel, null)) pePool.push(pen);
+            else if (!peSel && !peH && pen._zwSelPendingParent) {
+              var pePl = pen._zwSelPendingParent;
+              if (pePl.parentSel && _zwMutationInDoc(pePl.parentSel, null)) pePool.push(pen);
+              else if (pePl.parentHandle && _zwMutationInDoc(null, pePl.parentHandle)) pePool.push(pen);
+            }
+          }
+          if (pePool.length === 1) return pePool[0];
+          if (pePool.length > 1) return _r4006TreeFirst(pePool);
         }
       }
       // uievents-compat M3 尾簇 7：R334 重插 by-selector 索引命中——重插的 sel 子在 wire

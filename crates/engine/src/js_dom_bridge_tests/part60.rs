@@ -739,3 +739,130 @@ fn test_label_activation_r4004() {
         "W4：SVG 命名空间 details 非交互 → label[for=cBtnA] 照常转发"
     );
 }
+
+// R4005/R4006（html-semantics M2 切片 17）：form owner 动态关联 + getElementById
+// pending 窗口同 id 树序。修复面：
+// ① `.form` getter 祖先上行改 JS 视图 parentNode（handle `_zwNodeParent` 反链 /
+//    R334 pending 槽 / sel host 链三族）——旧 `_ancestorChain`（host 链）对 handle-only
+//    子恒空、对异步 wire 窗口的 sel 子读旧树；
+// ② form attr 关联查控件所在树（detached form 仍是 owner）+ OBJECT 入 gate；
+// ③ R52 消零 purge 后 `_makeProxy` WeakRef 复活（同 turn append+remove 后页面仍持有
+//    的原 proxy 不重铸——identity 断修复）；
+// ④ getElementById pending 候选池树序取首（insertBefore 前插/改名重登记）+ 改名条目
+//    `_r125Overridden` 门。sel 面的 latest-wins 属性读由语料 parser-inserted 用例覆盖。
+#[test]
+fn test_form_owner_dynamic_r4005() {
+    let mut sandbox = t59_sandbox_with_shim();
+    let mutations: std::sync::Arc<std::sync::Mutex<Vec<DomMutation>>> = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+    let dom_html: std::sync::Arc<std::sync::Mutex<String>> =
+        std::sync::Arc::new(std::sync::Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: std::sync::Arc<std::sync::Mutex<String>> = std::sync::Arc::new(std::sync::Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    crate::js_dom_bridge::register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // W1：handle-only 子的祖先上行（JS 视图反链）+ reparent 同步跟随。修复前
+    // `_ancestorChain` 无 sel 恒空 → basic 关联 null；reparent 后 host 链滞后旧 form。
+    sandbox
+        .execute(
+            "var f1 = document.createElement('form'); f1.id = 'rF1'; document.body.appendChild(f1);\
+             var c1 = document.createElement('button'); f1.appendChild(c1);\
+             var f2 = document.createElement('form'); f2.id = 'rF2'; document.body.appendChild(f2);\
+             globalThis.__w1a = String(c1.form === f1);\
+             f2.appendChild(c1);\
+             globalThis.__w1b = String(c1.form === f2);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__w1a").unwrap().value,
+        "true",
+        "W1：handle 子 append 后 `.form` 即关联祖先 form（JS 视图反链上行，修复前 null）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w1b").unwrap().value,
+        "true",
+        "W1：reparent 后 `.form` 同步跟到新父 form（修复前滞留旧树）"
+    );
+
+    // W2：form attr 关联的查找域 = 控件所在树 + R52 purge 身份。控件随 form 出文档
+    // （detached 树）后 detached form 仍是 owner，且 === 页面持有对象（修复前 gEBI/
+    // wrapHandle 重铸第二 wrapper → assert_equals 身份断失败）。
+    sandbox
+        .execute(
+            "var f3 = document.createElement('form'); f3.id = 'rF3'; document.body.appendChild(f3);\
+             var c2 = document.createElement('button'); c2.setAttribute('form', 'rF3');\
+             f3.appendChild(c2);\
+             document.body.removeChild(f3);\
+             globalThis.__w2 = String(c2.form === f3);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__w2").unwrap().value,
+        "true",
+        "W2：detached 树内 form attr 仍关联（同树查找）且 === 原 proxy（WeakRef 复活，修复前身份断）"
+    );
+
+    // W3：同 id 树序（R4006 候选池）——改名进来的 duplicate id 候选按树序取首；
+    // 移除后回落次序；尾部重插回到树序；改名走远的条目不误命中。
+    sandbox
+        .execute(
+            "var f4 = document.createElement('form'); f4.id = 'rF4'; document.body.appendChild(f4);\
+             var f5 = document.createElement('form'); f5.id = 'rF5'; document.body.appendChild(f5);\
+             var c3 = document.createElement('button'); c3.setAttribute('form', 'rF4');\
+             f4.appendChild(c3);\
+             f5.id = 'rF4';\
+             f5.parentNode.insertBefore(f5, f4);\
+             globalThis.__w3a = String(document.getElementById('rF4') === f5);\
+             globalThis.__w3b = String(c3.form === f5);\
+             f5.parentNode.removeChild(f5);\
+             globalThis.__w3c = String(c3.form === f4);\
+             f5.id = 'rF5';\
+             f4.parentNode.appendChild(f5);\
+             globalThis.__w3d = String(c3.form === f4);\
+             f4.id = 'rF9';\
+             globalThis.__w3e = String(document.getElementById('rF4') === null\
+               && document.getElementById('rF9') === f4);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__w3a").unwrap().value,
+        "true",
+        "W3：getElementById 同 id 多候选树序取首（insertBefore 前插的 f5 胜出插入序首位）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w3b").unwrap().value,
+        "true",
+        "W3：form owner 跟随树序首个 id 匹配（=f5）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w3c").unwrap().value,
+        "true",
+        "W3：f5 移除后回落 f4（pending-removed 门 + 候选池过滤）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w3d").unwrap().value,
+        "true",
+        "W3：f5 尾部重插后树序首回到 f4（form2 保 duplicate id 场景）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w3e").unwrap().value,
+        "true",
+        "W3：f4 改名后旧 id 不误命中（null）且新 id 可查（=f4）——pending 条目改名摘旧键登新键"
+    );
+
+    // W4：OBJECT 入 form-associated gate（R4005 补面——修复前 `.form` getter 不认
+    // object，13 案全灭）。
+    sandbox
+        .execute(
+            "var ob = document.createElement('object');\
+             var f6 = document.createElement('form'); f6.id = 'rF6'; document.body.appendChild(f6);\
+             f6.appendChild(ob);\
+             globalThis.__w4 = String(ob.form === f6);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__w4").unwrap().value,
+        "true",
+        "W4：object 元素 `.form` 关联祖先 form（gate 补 OBJECT）"
+    );
+}

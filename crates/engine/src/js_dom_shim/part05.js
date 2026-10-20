@@ -10727,6 +10727,12 @@
         // 二次（GR3 探针 tc/apc/ib 三段同涨的根源）。仅 handle 键（'@h'）可安全清：同 handle
         // 不会再被访问（节点已消零）；sel 键保留（快照节点 identity 稳定语义）。
         if (_rv && _rv.__zwHandle) {
+          // R4005：purge 前 stash WeakRef 复活条目（页面弃持后 deref 自清——泄漏
+          // 口径不变；仍持有时 `_makeProxy` miss 恢复原对象，identity 断修复）。
+          if (typeof WeakRef === 'function' && typeof _zwProxyWeakResurrect !== 'undefined'
+              && _zwProxyWeakResurrect && typeof _zwProxyWeakResurrect.set === 'function') {
+            try { _zwProxyWeakResurrect.set('@' + _rv.__zwHandle, new WeakRef(_rv)); } catch (_e4005wr) {}
+          }
           // R52：消零节点的 proxy/expando 缓存清理（强引用泄漏 → V8 堆涨）。**仅清不参与子树
           // 遍历的表**——`_handleChildren`/`_zwNodeParent` 保留（invalidate 后的 CE 断连传播
           //（_ceApplyConn 子树展开）仍依赖它们，R2994 测试实证提前清破坏 disconnectedCallback）。

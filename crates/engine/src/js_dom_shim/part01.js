@@ -62,6 +62,14 @@
   // 精修目标，但纯 JS Proxy 缓存即可达成，无需 rusty_v8 对象绑定）。proxy 无状态（仅委托
   // host 回调），缓存安全；key 复用 `_elKey`（@handle / sel），与 _listenerStore 同生命周期。
   var _proxyCache = {};
+  // R4005（html-semantics M2 切片 17）：消零 purge 复活旁表（key → WeakRef(proxy)）。
+  // R52 的 `_proxyCache` 定点清理（内存泄漏修复）使同 turn append+remove 节点的强
+  // 缓存条目消失；页面仍持有的原 proxy 之后经 `_wrapHandle`/`_parentNodeFor` 重铸出
+  // 第二 wrapper（同 handle 双对象，identity 断——WPT form_attribute
+  // "not in the document" 族 `assert_equals(this.form, form1)` 期望原对象）。
+  // WeakRef 不保活：页面弃持后 deref() 为 undefined，`_makeProxy` miss 自清条目，
+  // R52 泄漏口径不变。写入点仅 R52 purge（part05），读取点 `_makeProxy` miss（part03）。
+  var _zwProxyWeakResurrect = new Map();
   // R128（js-dom M4）：用户原型存储（`Object.setPrototypeOf(elementProxy, proto)` ——WPT
   // Node-cloneNode "Node with custom prototype"：setPrototypeOf 在 proxy 上默认落 target
   // 且 getPrototypeOf trap 不读 target → 用户原型被静默丢弃。存储后 getPrototypeOf 优先

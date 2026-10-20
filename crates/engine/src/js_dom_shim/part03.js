@@ -17624,6 +17624,19 @@ return e;
   function _makeProxy(sel, handle) {
     var key = _elKey(sel, handle);
     if (_proxyCache[key]) return _proxyCache[key];
+    // R4005：消零 purge 复活——R52 清掉的强条目若页面仍持有原 proxy（WeakRef 活），
+    // 恢复强缓存并返回原对象（跨 purge 身份稳定）；已弃持（deref undefined）则自清。
+    if (_zwProxyWeakResurrect && typeof _zwProxyWeakResurrect.get === 'function') {
+      var _r4005wr = _zwProxyWeakResurrect.get(key);
+      if (_r4005wr) {
+        var _r4005p = typeof _r4005wr.deref === 'function' ? _r4005wr.deref() : null;
+        if (_r4005p) {
+          _proxyCache[key] = _r4005p;
+          return _r4005p;
+        }
+        _zwProxyWeakResurrect.delete(key);
+      }
+    }
     // R57（FV M1）：约束校验 API 属性存在性——validator.js 的 pre_check 用
     // `"validity" in ctl`。has trap 返回 true（V8 直接 execute 生效）+ **target
     // 预置属性**（webview 页面脚本路径的 `in` 不调 has trap——实测——走 target
@@ -19131,13 +19144,15 @@ return e;
         // `.form`（form-associated 控件 INPUT/SELECT/TEXTAREA/BUTTON/OUTPUT，R2841）——返所属 <form> 元素
         // （form owner）。form 校验 / 序列化库读 input.form 找 owner form 上下文高频。**spec 顺序**：
         // ① `form` 属性关联优先（`<input form="id">` → getElementById(id)，即使无 ancestor form）；
-        // ② 否则最近 ancestor <form>（经 `_ancestorChain` 上行）。handle-only detached / 无 owner → null。
+        // ② 否则最近 ancestor <form>（JS 视图 parentNode 上行，R4005——sel/handle/pending 三族统一）。无 owner → null。
         // R4001：FIELDSET 入面（form-associated 元素同算法；named access 修复后
         // HTMLFieldSetElement.html 旧 vacuous-pass `form === undefined` 断言现按真值判）。
+        // R4005（M2 切片 17）：OBJECT 补入（form-associated 名单含 object——
+        // HTML §4.8.6 the-object-element）。
         // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#association-of-controls-and-forms
         if (prop === 'form') {
           var fcTag = _realTag(sel, handle);
-          if (fcTag === 'INPUT' || fcTag === 'SELECT' || fcTag === 'TEXTAREA' || fcTag === 'BUTTON' || fcTag === 'OUTPUT' || fcTag === 'FIELDSET') {
+          if (fcTag === 'INPUT' || fcTag === 'SELECT' || fcTag === 'TEXTAREA' || fcTag === 'BUTTON' || fcTag === 'OUTPUT' || fcTag === 'FIELDSET' || fcTag === 'OBJECT') {
             try {
               var hasFormAttr = false;
               if (handle && typeof __zw_has_attr_handle === 'function') {
@@ -19147,25 +19162,68 @@ return e;
               } else if (sel && typeof __zw_has_attr === 'function') {
                 hasFormAttr = __zw_has_attr(sel, 'form') === '1';
               }
-              var formAttr = handle ? __zw_get_attr_handle(handle, 'form') : (sel ? __zw_get_attr(sel, 'form') : '');
+              // R4005：sel 读走 latest-wins（同批 setAttribute('form') 后 `.form`
+              // 立即可见——`__zw_get_attr` 宿主快照 miss 致 formAttr 空串误判 null）。
+              var formAttr = handle
+                ? __zw_get_attr_handle(handle, 'form')
+                : (sel ? (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'form') : __zw_get_attr(sel, 'form')) : '');
               if (hasFormAttr) {
-                if (formAttr && globalThis.document && globalThis.document.getElementById) {
-                  var byId = globalThis.document.getElementById(formAttr);
-                  if (byId && String(byId.tagName || '').toUpperCase() === 'FORM') return byId;
+                if (formAttr) {
+                  // R4005：form attr 关联的 id 匹配域是**控件所在树**（spec reset the
+                  // form owner——树内树序首个 id 匹配的 form 元素），非 document 全局：
+                  // 控件随 form 出文档（detached 树）时 detached form 仍是 owner（WPT
+                  // "not in the document but has the form attribute set"）。① root 上行
+                  // 遇 document → 树即主文档 → getElementById（树序首个，R4006 门面）；
+                  // ② detached 根 → 根子树树序扫（pre-order DFS 首个 id 匹配）。
+                  // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#reset-the-form-owner
+                  var fRoot = proxy, fRootIsDoc = false;
+                  for (var frh = 0; frh < 64; frh++) {
+                    var fpar = null;
+                    try { fpar = fRoot.parentNode; } catch (_eFr) { break; }
+                    if (!fpar) break;
+                    if (fpar.nodeType === 9) { fRootIsDoc = true; break; }
+                    fRoot = fpar;
+                  }
+                  var fHit = null;
+                  if (fRootIsDoc) {
+                    if (globalThis.document && globalThis.document.getElementById) {
+                      fHit = globalThis.document.getElementById(formAttr);
+                    }
+                  } else {
+                    (function _r4005ScanId(nd) {
+                      if (fHit || !nd || nd.nodeType !== 1) return;
+                      try { if (nd.getAttribute('id') === formAttr) { fHit = nd; return; } } catch (_eS1) {}
+                      var fk = null;
+                      try { fk = nd.children; } catch (_eS2) {}
+                      if (fk) for (var fki = 0; fki < fk.length; fki++) {
+                        _r4005ScanId(fk[fki]);
+                        if (fHit) return;
+                      }
+                    })(fRoot);
+                  }
+                  if (fHit && String(fHit.tagName || '').toUpperCase() === 'FORM') return fHit;
                 }
                 return null;
               }
-              if (sel) {
-                var fchain = _ancestorChain(sel);
-                for (var fi = 1; fi < fchain.length; fi++) {
-                  var fChainTag = (__zw_get_tag(fchain[fi]) || '').toUpperCase();
-                  // R5009 片 e（M4 片 e）：template content 内 form element pointer 为
-                  // null（fragment 解析不设 form 指针——WHATWG#12257，WPT
-                  // fragment-parse-form-in-template 'inputs[0].form' 期望 null）；
-                  // 祖先链先于 FORM 命中 TEMPLATE 即无关联。
-                  if (fChainTag === 'TEMPLATE') break;
-                  if (fChainTag === 'FORM') return _wrapSelector(fchain[fi]);
-                }
+              // R4005（M2 切片 17）：祖先上行改走 JS 视图 parentNode——旧 `_ancestorChain`
+              // （host `__zw_parent`）两缺口：① sel 子 append 后 host mutation 异步
+              // drain（R334 `_zwSelPendingParent` 槽），读旧树 → parser-inserted
+              // reparent 后 form owner 滞后旧 form；② handle-only 子（createElement
+              // 动态构造产物）无 sel，链恒空 → basic form association 恒 null。
+              // JS 视图 parentNode 统一三族：pending 槽优先 → sel `__zw_parent` →
+              // handle `_zwNodeParent` 反链（sel/handle/plain 父）。FORM 返站 proxy
+              //（_wrapSelector/_wrapHandle 与 getElementById 同缓存，identity 一致）；
+              // TEMPLATE 先于 FORM 命中即无关联（R5009 片 e 同口径：template content
+              // 内 form element pointer 为 null——WHATWG#12257，
+              // WPT fragment-parse-form-in-template 'inputs[0].form' 期望 null）。
+              // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-owner
+              var fnode = proxy;
+              for (var fhops = 0; fhops < 64 && fnode; fhops++) {
+                var fChainTag = '';
+                try { fChainTag = String(fnode.tagName || '').toUpperCase(); } catch (_eFt) { break; }
+                if (fChainTag === 'FORM') return fnode;
+                if (fChainTag === 'TEMPLATE') break;
+                try { fnode = fnode.parentNode; } catch (_eFp) { break; }
               }
             } catch (_e) {}
             return null;

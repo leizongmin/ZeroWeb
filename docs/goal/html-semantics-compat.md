@@ -1,38 +1,38 @@
 # HTML Semantics 兼容 — html/semantics 语义面（主攻大域）
 
 **版本**: v2.0
-**日期**: 2026-10-20（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 16 收口（label 激活行为面 R4004 +64P），下一步 M2 切片 17：form_attribute 动态关联余案 ~50F（mutation 钩子面）
+**日期**: 2026-10-21（v1.0 立项 2026-10-08）
+**状态**: Active——M2 切片 17 收口（form owner 动态关联 R4005/R4006 +64P），下一步 M2 切片 18：label.form IDL（form.html 余 10F，labels IDL 簇延伸）
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-20 M2 切片 16）**：label 激活行为面收口（R4004）。
-> ① 交互内容判定（HTML §4.2.6.2）：存在性判定改 `__zw_has_attr_handle`
-> ==='1'——`__zw_get_attr_handle` 缺失返空串致 `!= null` 恒真，无 href 的
-> a、无 controls 的 audio/video、无 usemap 的 img 全误判交互（12F 根因）；
-> 仅 HTML 命名空间，tabindex/object 不算。② R368 盖章属性回填：host 裸
-> tag 节点吃不到 plain attributes（hidden input 被当默认 text 误
-> labelable）。③ label 激活转发三路归一：新增 bubble 站挂钩（target 非交互
-> → 对 labeled control synthetic click），R112 post-activation 段与 click()
-> trap R155 控件查找迁移 `_zwLabeledControl`（for 优先）+ 补交互 target
-> 豁免，三路互斥双闸（`__zwLblClickInProgress` spec click-in-progress 同步
-> 近似 + `__zwLblFwd4004` 事件标记）——meter.click() 自转发死循环
-> （clicked=691）与旧 post+trap 双转（label.click() 二次翻转）一并收敛；
-> 链构建/inDoc walk 补 plainParent hop、R11 媒体原型补链、`_zwLabeledControl`
-> 无 for 改 childNodes 树序 DFS（QSA 逗号表对运行期 handle 子不可见）、
-> R368 盖章子四事件方法转 live。part60 契约 1 测（W1–W4）。九域
-> 4710→**4774P**，对 s15 逐 subtest diff **净 +64P、回归 0**：
-> clicking-noninteractive-* 57F 全数翻绿（0P/57F→57P/0F），**意外翻绿
-> 7 案**——label-inside-anchor 与 proxy-click Timeout→Pass、
-> the-dialog-element 四文件 5 案（含 inert-label-focus 负载超时观察账
-> 消账）。gates：zero-engine --lib 3289P/0F、make test 主矩阵绿 +
-> browser bin 腿既有失败 stash 对照定谳非本轮（bookmark_context_menu
-> 稳定复现，归 R385 族观察账）、clippy/fmt 过、零新增依赖。
+> **▶ 当前状态（2026-10-21 M2 切片 17）**：form owner 动态关联收口
+> （R4005/R4006，rollover 接续会话——上轮 429 限流中断的在途实现经契约
+> 测试 + 全量账本验证后收口）。① `.form` getter 重写：祖先上行改 JS 视图
+> parentNode（pending 槽/sel host 链/handle 反链三族统一——旧 `_ancestorChain`
+> 对 handle-only 子恒空、对异步 wire 窗口的 sel 子读旧树）；form attr 关联
+> 查控件所在树（detached form 仍是 owner，spec reset the form owner）+ sel
+> 读 latest-wins + OBJECT 入 gate。② R52 消零 purge 复活：WeakRef 旁表
+> `_zwProxyWeakResurrect`——`_makeProxy` miss 时恢复仍被页面持有的原 proxy
+> （同 turn append+remove 身份断修复），弃持自清、泄漏口径不变。③ R4006
+> gEBI pending 窗口树序：同 id 多候选入池按 JS 视图位次取首（不可比保守保
+> 插入序），单候选 fast path 保留 + `_r125Overridden` 改名门补入。part60
+> 契约 1 测（W1–W4）。九域 4774→**4838P**（65.90%），对 s16 逐 subtest
+> diff **净 +64P、回归 0**：form_attribute.html 43P/57F→**100P/0F** 满绿、
+> association.window.js 翻绿、object.form + form-elements-filter +1+1、
+> select-tab* 意外翻绿 2 案、load-error-events runner 上报展开 +2（非行为）。
+> gates：zero-engine --lib 3310P/0F、make test 全腿绿（GPU adapter 腿
+> 94P/2F 读回容差漂移结构不阻塞、非本轮——render-foundation 不依赖
+> engine，归 rendering 流观察账）、clippy/fmt 过、零新增依赖。全量跑
+> 5400s 限被兄弟流并行负载顶爆，10800s 放行（记 evidence）。
 > 账本见
-> [evidence/2026-10-20-m2s16-r4004.md](html-semantics-compat/evidence/2026-10-20-m2s16-r4004.md)。
-> **下一步**：M2 切片 17——form_attribute 动态关联余案 ~50F（mutation
-> 钩子面）；候选后备 proxy-modifier tentative 4F（modifier 键面）、
-> details 键盘激活 / summary toggle coalescing（M1 起既有深层）。
+> [evidence/2026-10-21-m2s17-r4005.md](html-semantics-compat/evidence/2026-10-21-m2s17-r4005.md)。
+> **下一步**：M2 切片 18——label.form IDL（HTMLLabelElement.form =
+> labeled control 的 form owner，form-control-infrastructure/form.html 余
+> 10F，labels IDL 簇延伸）；候选后备 form_owner_and_table parser form
+> element pointer 表规则（深结构，动则单独立项）、proxy-modifier
+> tentative 4F、details 键盘激活 / summary toggle coalescing（M1 起既有
+> 深层）。
 
 
 > **▶ 拆分动机（2026-10-08 预留编号立项，用户「候选 goal 也立项吧」）**：继
@@ -113,6 +113,21 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-21 M2 切片 17**：form owner 动态关联（R4005/R4006，rollover
+  接续）——`.form` getter 重写（JS 视图 parentNode 三族统一上行 + form
+  attr 控件所在树查找 + latest-wins 读 + OBJECT gate）、R52 消零 purge
+  WeakRef 复活（identity 断修复、泄漏口径不变）、gEBI pending 窗口同 id
+  树序取首 + `_r125Overridden` 改名门。part60 契约 1 测（W1–W4）。九域
+  4774→4838P（65.90%），对 s16 逐 subtest diff 净 +64P、回归 0：
+  form_attribute.html 43P/57F→100P/0F 满绿、association.window.js 翻绿、
+  object.form/form-elements-filter +1+1、select-tab* 意外翻绿 2、
+  load-error-events 上报展开 +2。zero-engine --lib 3310P/0F、make test
+  全腿绿（GPU adapter 94P/2F 容差漂移结构不阻塞非本轮、归 rendering 流
+  观察账）、clippy/fmt 过、零新增依赖。全量轮 5400s 限被兄弟流并行负载
+  顶爆、10800s 放行记 evidence。挂账：label.form IDL（form.html 余 10F，
+  下一切片）、form_owner_and_table parser 指针表规则 2F（深结构）、
+  proxy-modifier 4F、details 键盘激活 / summary toggle coalescing、
+  navigation-compat M3 项维持。
 - **2026-10-20 M2 切片 16**：label 激活行为面（R4004）——交互内容判定
   存在性走 has 句柄（get_attr_handle 缺失返空串致恒真误判）、R368 盖章
   属性回填、label 激活转发三路归一（bubble 站挂钩新设 + post/trap 迁移
