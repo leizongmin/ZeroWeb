@@ -765,3 +765,5 @@ mod r5208_blocks_divide_tables_tests;
 /// R5209 行组裸文本 → 匿名 cell + 孤立 retrofit 匿名行 cell 自携行 y
 ///（table-anonymous-objects-161~166 锚点）。
 mod r5209_row_group_stray_text_tests;
+/// R5210 float 重定位链值 mt 归位（clear-on-child-with-margins-2 锚点）。
+mod r5210_clear_chain_mt_refold_tests;
