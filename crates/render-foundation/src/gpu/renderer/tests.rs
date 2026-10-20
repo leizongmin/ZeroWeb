@@ -1643,7 +1643,8 @@ fn test_gpu_full_scene_filter_contrast() {
 }
 
 /// DC-9 GPU filter:grayscale — 红色填充 + Grayscale(1.0)，断言三通道收敛为灰
-///（mode 3 路径：lerp 向 Rec601 luma，red 0.299 luma ≈ sRGB-encoded 148）。
+///（mode 3 路径：lerp 向 saturate 矩阵 s=0 行 luma——R5194 709 派生
+/// 0.213/0.715/0.072，red 0.213×255≈54）。
 #[serial]
 #[test]
 fn test_gpu_full_scene_filter_grayscale() {
@@ -1675,12 +1676,12 @@ fn test_gpu_full_scene_filter_grayscale() {
 
     let pixels = renderer.read_pixels().expect("read_pixels");
     let (r, g, b) = (pixels[0] as i32, pixels[1] as i32, pixels[2] as i32);
-    // grayscale(1.0)：三通道相等（灰），值在中灰区间（red 线性 1.0 luma=0.299 → sRGB≈148）。
+    // grayscale(1.0)：三通道相等（灰），值在暗中灰区间（red 0.213×255≈54，R5194）。
     assert!((r - g).abs() <= 8, "R≈G after Grayscale(1.0), got r={r} g={g}");
     assert!((g - b).abs() <= 8, "G≈B after Grayscale(1.0), got g={g} b={b}");
     assert!(
-        (60..=100).contains(&r),
-        "gray value mid-range (luma 0.299×255≈76), got r={r}"
+        (44..=64).contains(&r),
+        "gray value dark-mid-range (luma 0.213×255≈54), got r={r}"
     );
 }
 
@@ -1800,12 +1801,12 @@ fn test_gpu_full_scene_filter_saturate() {
 
     let pixels = renderer.read_pixels().expect("read_pixels");
     let (r, g, b) = (pixels[0] as i32, pixels[1] as i32, pixels[2] as i32);
-    // saturate(0.0)：三通道收敛为 luma 灰（red luma=0.299 → sRGB≈148）。
+    // saturate(0.0)：三通道收敛为 luma 灰（red 0.213×255≈54，R5194）。
     assert!((r - g).abs() <= 8, "R≈G after Saturate(0.0), got r={r} g={g}");
     assert!((g - b).abs() <= 8, "G≈B after Saturate(0.0), got g={g} b={b}");
     assert!(
-        (60..=100).contains(&r),
-        "gray value mid-range (luma 0.299×255≈76), got r={r}"
+        (44..=64).contains(&r),
+        "gray value dark-mid-range (luma 0.213×255≈54), got r={r}"
     );
 }
 
