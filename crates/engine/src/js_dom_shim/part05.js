@@ -9758,6 +9758,21 @@
         }
         for (var _pa = 0; _pa < _r333Cand.length; _pa++) {
           var _pnd = _r333Cand[_pa];
+          // R5206（html-syntax-compat）：文档级集合的枚举源已含查询视图回放内容
+          //（`__zw_query_all_tagged` 走 with_query_view_doc——R57 attr/text/tag 同源），
+          // **内容已在视图的解析补偿代理**再并入一次即双计（ambiguous-ampersand：gEBT
+          // 4 vs 2——parse(base)+parse(buffer) 代理各 dup 一份；plain IAH 同 turn gEBT
+          // 3 vs 2 同型）。剔除判据 = 创建站点打标（part04）：`inViewReplay` 恒真于
+          // IAH 站（InsertAdjacentHtml 被视图回放应用），写流重放门内的 innerHTML 站
+          // （基线重放 = 基座内容）；**普通 innerHTML 站不打标**——SIH 不被视图回放
+          // （R3029），代理是同 turn 文档级枚举唯一可见面（探针实证：打标误伤 → gEBT
+          // len 1→0）。判据仍要求无 handle/sel + parentSel + 非 noWire：handle 空间
+          // 内容不进视图回放，全局并入是其唯一查询可见面。scoped 集合不适用：其枚举
+          // 源是 shim 融合视图（无视图回放），补偿代理是内容唯一可见面。
+          if (_r333Cand === _zwPendingAdded && _pnd && !_pnd.__zwHandle && !_pnd.__zwSelector
+              && _pnd._zwSelPendingParent && _pnd._zwSelPendingParent.parentSel
+              && _pnd._zwSelPendingParent.inViewReplay
+              && !_pnd._zwSelPendingParent.noWire) continue;
           // R54：构建期并入同款主文档过滤（走 `_zwNodeParent` 挂载记账链——append 当时写入，
           // 不断链；detached/foreign 容器根无链 → false）。scoped 桶条目已在桶内（父匹配），
           // 跳过 in-doc 门以保 detached 作用域容器（R120 WPT 形态）可并入。
@@ -12223,10 +12238,22 @@
     }
     // 动态 pending 子（按文档序 append 顺序；R54 in-doc 门——detached/foreign 容器子
     // 不进文档级枚举，WPT live-collection 的容器子经 element 级集合的作用域放行覆盖）。
+    // R5206（html-syntax-compat）：**内容已在视图的解析补偿代理不进文档级枚举**——本
+    // 枚举源（`__zw_query_all_tagged`）已含查询视图回放内容，补偿代理再并入即双计
+    // （ambiguous-ampersand：gEBT 4 vs 2；plain IAH 同 turn gEBT 3 vs 2 同型）。判据 =
+    // 创建站点打标（part04 `inViewReplay`：IAH 站恒真、写流重放门内 innerHTML 站真）
+    // 加 K3 切片 C 同款（无 handle/sel、挂 `_zwSelPendingParent` 槽、非 noWire、父为
+    // sel）；**普通 innerHTML 代理不打标保留**——SIH 不被视图回放（R3029），代理是其
+    // 同 turn 文档级枚举唯一可见面。handle 父槽条目保留——handle 空间内容不进视图回放，
+    // 全局并入是其唯一文档级可见面。
     if (typeof _zwPendingAdded !== 'undefined' && _zwPendingAdded) {
       for (var p = 0; p < _zwPendingAdded.length; p++) {
         var _pd119 = _zwPendingAdded[p];
         if (_pd119 && _pd119.__zwHandle && !_zwMutationInDoc(null, _pd119.__zwHandle)) continue;
+        if (_pd119 && !_pd119.__zwHandle && !_pd119.__zwSelector
+            && _pd119._zwSelPendingParent && _pd119._zwSelPendingParent.parentSel
+            && _pd119._zwSelPendingParent.inViewReplay
+            && !_pd119._zwSelPendingParent.noWire) continue;
         push(_pd119);
       }
     }

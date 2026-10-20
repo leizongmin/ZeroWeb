@@ -1,9 +1,24 @@
 # HTML 文档面兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../html-syntax-compat.md](../html-syntax-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-20（P9 aria 跨文档 scope + gEBI 同 turn shadow 移树 2F→0F + 视图回放 latest-wins/R342 离一修复，通道 61345/61422）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-20（P10 document.write 流同 turn 读收敛，ambiguous-ampersand 2F→0F，通道 61347/61422）
 
 ## 当前状态
+
+**P10 document.write 流同 turn 读收敛（2026-10-20）**：ambiguous-ampersand
+**2F → 0F 清零**（P9 遗留挂账的 async-apply 缝 document.write 子集收口），
+全通道 **61347P/61F/13T/1U = 61422 = 99.91%**（+2P −2F 零漂移，Fail 集构成
+逐域核对不变）。R5206 续二五点：写流重放门（`__zwDocWriteReplay`）+ innerHTML
+setter 门内 removed 记账只留补偿代理（基线重放非真移除——static div 从 gEBT
+消失根因）+ 创建站点打标 `_zwSelPendingParent.inViewReplay`（IAH 站恒真/写流
+门内 innerHTML 站真/**普通 innerHTML 站不打标**——SIH 不被视图回放，代理是其
+同 turn 文档级枚举唯一可见面，初版无差别过滤被探针证伪 len 1→0）+ part05 两处
+文档级并入剔打标代理（顺带修复 plain IAH 既有双计 gEBT 3 vs 2）+
+`__zw_child_nodes` raw 缺席 sel 回落查询视图（written div childNodes 恒空根因）。
+常驻测试 part24 双案（写流四断言 + 打标两侧语义）。**余账收敛**：本 goal 通道
+63F → 61F，全为既有挂账域（58 render-blocking + 2 svg-script tokenizer 缝 +
+1 document.all）；R3029 SIH 不回放的 stale base 限制维持（无案主张）。
+证据：[evidence/2026-10-20-p10-write-stream-same-turn-read.md](evidence/2026-10-20-p10-write-stream-same-turn-read.md)。
 
 **P9 ARIA 跨文档 scope + 视图回放修复（2026-10-20）**：`aria-element-reflection`
 **2F → 0F**（M4 片 e 起挂账的 async-apply 缝 aria 子集全部翻绿）——R5206 三修：
@@ -255,10 +270,18 @@ html5lib 3 案 document.write 管线面）。证据：
 | P6b | escaping noscript 真实漂移 | ✅ **P6b 修复（2026-10-20）**：bisect 归因 9dcd16661（innerHTML 物化改读路径）→ R5197 融合序列化 noscript 分支 + 物化印章传递（8/9→9/9，通道 61229/61333，组合态复测 61233/61333）；vs-M4 漂移账清零 |
 | P7 | charset XHR responseXML characterSet 面（22F 新账） | ✅ **P7 修复（2026-10-20）**：WebKit HTMLMetaCharsetParser 语义嗅探 + final encoding 接线 + runner 非 UTF-8 .html 字节保真（22F→22P，通道 61255/61333）；余账 XML MIME final encoding（FIXME） |
 | P9 | aria-element 跨文档 scope + gEBI 同 turn shadow 移树（async-apply 缝 aria 子集 2F） | ✅ **P9 修复（2026-10-20）**：R5206 三修（树链 nodeType-9 文档身份/sel 父 plain 子重指/`_zwAriaSyncParent` 消费）2F→0F + 附带修 callbacks 视图回放 R342 离一 panic 与 latest-wins 重置覆盖（通道 61345/61422，零回归） |
+| P10 | async-apply 缝 document.write 子集（ambiguous-ampersand 2F——shim 侧读路径多层积累） | ✅ **P10 修复（2026-10-20）**：R5206 续二五点（写流重放门/removed 记账门/创建站点打标/文档级并入剔打标代理/childNodes raw 缺席回落视图）2F→0F，顺带修 plain IAH 既有双计；通道 61347/61422 零漂移 |
 | — | render-blocking 机制面（62 案 19.3%） | 📊 M1 已基线；**rendering-compat 域挂账维持（2026-10-19 归因收口：SyntaxError 41 案 M1 起既有 + post-M4 漂移 2 案）** |
 
 ## 已完成切片
 
+- **P10（2026-10-20）**：document.write 流同 turn 读收敛——ambiguous-ampersand
+  2F→0F（R5206 续二：写流重放门 `__zwDocWriteReplay` + innerHTML 门内 removed
+  记账只留补偿代理 + 创建站点打标 `inViewReplay`（普通 innerHTML 不打标保留）
+  + part05 文档级并入剔打标代理（顺带修 plain IAH 既有双计）+ childNodes raw
+  缺席回落视图）；通道 61347/61422（+2P −2F 零漂移），plain IAH 同 turn gEBT
+  3→2 双计修复附验证。常驻测试 part24 双案。证据
+  evidence/2026-10-20-p10-write-stream-same-turn-read.md。
 - **P9（2026-10-20）**：ARIA 跨文档 scope + gEBI 同 turn shadow 移树
   2F→0F——R5206 三修（`_zwAriaTreeChain` nodeType-9 身份落桶 +
   `_zwAriaDocIdSeq` 替代 WeakMap.size / sel 父 plain 子 parentNode 重指 /
@@ -369,12 +392,11 @@ Goal 已收口（DC-1~4 全满足；P5 落地面 2026-10-19 收口）。后续�
    账；余 script-inserted 双案维持 rendering-compat 域挂账。
 3. ~~同 turn sel 移树同步视图（async-apply 架构缝，aria-element 2F）~~ ✅
    P9 修复（2026-10-20，R5206 三修 2F→0F，未动 async-apply 整体架构）。
-   缝的 **document.write 子集**维持挂账：ambiguous-ampersand 2F——host 视图
-   层已由 R5206 续修收敛（latest-wins + 去重激活，通道零回归），残差在 shim
-   侧读路径 overlay 多层积累（pending 桶/children 融合/tag 视图读数分裂，
-   整页单程序执行无 apply 代际推进；`__zw_apply_generation_bump` 每写收敛
-   尝试实证无效反爆 children 层 498）——需 apply 边界的 shim 侧重设计，
-   机制图谱见 P9 证据文档。
+   ~~缝的 **document.write 子集**：ambiguous-ampersand 2F~~ ✅ **P10 修复
+   （2026-10-20，R5206 续二 2F→0F 清零）**——shim 侧读路径三层缝（raw wrapper
+   误入 removed 记账/补偿代理与视图回放双计/raw 缺席容器子视图恒空）全部
+   收敛，R3029 SIH 不回放的 stale base 限制维持（无案主张）。async-apply 缝
+   在本 goal 的挂账面至此**全部关闭**。
 4. **维持既有挂账**：render-blocking 行为面 → rendering-compat 域；html5ever
    升级评估已关闭（残差改记 tokenizer 能力缝 2F，升级无收益）；bench-gate
    等让复评（静窗）；P5 通道外 12 案（xmldecl 3 + input-byte-stream 9）维持

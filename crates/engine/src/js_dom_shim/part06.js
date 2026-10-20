@@ -4564,8 +4564,16 @@
       try {
         var _dwbBody = globalThis.document.body;
         if (_dwbBody) {
-          _dwbBody.innerHTML = globalThis.__zwDocWriteBase;
-          _dwbBody.insertAdjacentHTML('beforeend', globalThis.__zwDocWriteBuffer);
+          // R5206：写流重放门——基线重放的非代理移除不进 removed 记账（part04 innerHTML
+          // setter 消费；追加语义下基线内容原样复活，非真移除）。
+          var _dwbPrevGate = globalThis.__zwDocWriteReplay;
+          globalThis.__zwDocWriteReplay = true;
+          try {
+            _dwbBody.innerHTML = globalThis.__zwDocWriteBase;
+            _dwbBody.insertAdjacentHTML('beforeend', globalThis.__zwDocWriteBuffer);
+          } finally {
+            globalThis.__zwDocWriteReplay = _dwbPrevGate;
+          }
         }
       } catch (_eDwb) {}
     },

@@ -2973,3 +2973,113 @@ fn r379_replacewith_mark_and_generation_bump() {
         "R379 M6 replaceWith 移除标记同步生效 + pa2a 换代清理钩子接线 + pa2b apply 代际钩子幂等可调"
     );
 }
+
+// R5206（html-syntax-compat）：document.write 流（R5001）same-turn 读收敛——两缝：
+// ① 文档级枚举/集合不并「内容已在视图回放」的 sel 父解析补偿代理——`__zw_query_all_tagged`
+//    枚举源已含查询视图回放内容（latest-wins 后 = base + 末次满缓冲），补偿代理再并入即
+//    双计（ambiguous-ampersand gEBT 4 vs 2；plain IAH 同 turn gEBT 3 vs 2 同型）；
+// ② `__zw_child_nodes` raw 缺席 sel 回落查询视图——R57 attr/text/tag 已走视图回放，
+//    子视图独走 raw 快照；写流新建容器 sel 在 raw 恒缺席 → childNodes 恒空
+//    （ambiguous-ampersand written div k0，「Number of elements document.write」F）。
+// 剔除判据 = 创建站点打标（`_zwSelPendingParent.inViewReplay`）：IAH 站恒真（
+// InsertAdjacentHtml 被视图回放应用）、写流重放门内 innerHTML 站真（基线重放 = 基座
+// 内容）；**普通 innerHTML 站不打标**——SIH 不被视图回放（R3029），代理是同 turn 文档级
+// 枚举唯一可见面（打标误伤探针实证 gEBT len 1→0，见 evidence）。
+#[test]
+fn r5206_write_stream_doc_query_no_dup_and_absent_child_view() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='static'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox
+        .execute(
+            r##"
+            try {
+              var log = [];
+              document.write("<div id='qw'><p>w1</p></div>");
+              var divs = globalThis.document.getElementsByTagName('div');
+              // ① 无 dup 且基线内容不因重放记账消失：gEBT = [static, qw]。
+              log.push('len:' + divs.length);
+              log.push('n0:' + (divs[0] ? (divs[0].id || divs[0].tagName) : '-'));
+              // ② raw 缺席回落视图：qw 的路径包装 childNodes = [p]。
+              log.push('kids:' + (divs[1] ? divs[1].childNodes.length : -1));
+              log.push('txt:' + (divs[1] && divs[1].firstChild ? divs[1].firstChild.textContent : ''));
+              globalThis.__r5206m = log.join('|');
+            } catch (err) { globalThis.__r5206m = 'ERR:' + err.message; }
+            "##,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r5206m").unwrap().value;
+    assert_eq!(
+        out, "len:2|n0:static|kids:1|txt:w1",
+        "R5206 写流文档级查询无补偿代理双计 + 基线内容不因重放记账消失 + raw 缺席容器 childNodes 回落查询视图（written div 子可见）"
+    );
+}
+
+// R5206 续：剔除判据钉面（独立沙箱，无写流前置）——打标制（`_zwSelPendingParent.
+// inViewReplay`）对 plain 路径的两侧语义：
+// ① 普通 innerHTML（SIH 不被视图回放，R3029）代理不打标保留——插入内容同 turn 文档级
+//    gEBT 可见（无差别过滤时 len 1→0 回归，探针实证）；真替换语义 static 消失；
+// ② 普通 IAH 代理打标剔除——InsertAdjacentHtml 被视图回放应用，代理再并入即双计
+//    （既有 bug：gEBT len 3 vs 2，探针实证 ia1 两份）；
+// ③ handle 空间（createElement+appendChild）不涉视图回放，并入不受判据影响。
+#[test]
+fn r5206_plain_path_compensation_stamp_semantics() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='static'></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    sandbox
+        .execute(
+            r##"
+            try {
+              var log = [];
+              document.body.innerHTML = "<div id='ih1'>x</div>";
+              var d1 = globalThis.document.getElementsByTagName('div');
+              log.push('ih:' + d1.length + ':' + (d1[0] ? (d1[0].id || d1[0].tagName) : '-'));
+              document.body.insertAdjacentHTML('beforeend', '<div id="ia1">y</div>');
+              var d2 = globalThis.document.getElementsByTagName('div');
+              // 集合语义钉面（树序为 merge 尾部追加既有语义，不在本轮修复面）：长度 2 +
+              // ia1 恰一次 + ih1 在场。
+              var ids2 = [];
+              for (var _i2 = 0; _i2 < d2.length; _i2++) ids2.push(d2[_i2].id || d2[_i2].tagName);
+              ids2.sort();
+              log.push('ia:' + d2.length + ':' + ids2.join(','));
+              var pe = globalThis.document.createElement('p');
+              document.body.appendChild(pe);
+              log.push('hp:' + globalThis.document.getElementsByTagName('p').length);
+              globalThis.__r5206p = log.join('|');
+            } catch (err) { globalThis.__r5206p = 'ERR:' + err.message; }
+            "##,
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r5206p").unwrap().value;
+    assert_eq!(
+        out, "ih:1:ih1|ia:2:ia1,ih1|hp:1",
+        "R5206 打标判据两侧语义：plain innerHTML 代理保留（SIH 不被视图回放，插入内容同 turn 可见）+ plain IAH 代理剔除（视图回放已含，双计修复）+ handle 并入不受影响"
+    );
+}

@@ -2553,6 +2553,13 @@ pub fn parse_template_contents_deep_json(html: &str, elem_sel: &str) -> String {
     format!("[{}]", entries.join(","))
 }
 
+/// sel 在文档中是否存在（供遍历族回调做 raw 缺席判定——R5206：`__zw_child_nodes`
+/// 对 raw 快照缺席的 sel 回落查询视图；与 [`child_nodes_json_doc`] 共用同一缓存文档时
+/// 增量成本仅一次 selector 游走）。
+pub fn element_exists_doc(doc: &Document, elem_sel: &str) -> bool {
+    find_by_selector(doc, elem_sel).is_some()
+}
+
 /// [`child_nodes_json`] 的 doc 版（调用方经 `with_query_doc` 缓存解析结果——js-dom R52：
 /// 每次 DOM 遍历读全文档 re-parse 是 testharness mega-case 的 per-op 主成本，
 /// `body.firstChild` 实测 1.2ms/次；缓存后纯遍历 ~µs 级）。

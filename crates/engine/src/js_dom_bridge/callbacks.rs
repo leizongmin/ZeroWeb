@@ -1285,6 +1285,7 @@ pub fn register_dom_callbacks(
     // 节点级遍历 API（含文本/注释节点）：childNodes/firstChild/lastChild（子列表）、
     // previousSibling/nextSibling（兄弟对）。JSON 序列化（文本内容含任意字符）。
     let html = Arc::clone(dom_html);
+    let m = Arc::clone(mutations);
     sandbox.register_callback(
         "__zw_child_nodes",
         Box::new(move |args| {
@@ -1292,6 +1293,18 @@ pub fn register_dom_callbacks(
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
             // js-dom R52：DOM 遍历族回调接 `with_query_doc` 缓存（旧每次全文档 re-parse，
             // `body.firstChild` 实测 1.2ms/次——testharness mega-case per-op 主成本）。
+            // R5206（html-syntax-compat）：**raw 缺席 sel 回落查询视图**——属性/文本/tag
+            // 族已走视图回放（R57：同批插入元素的 attr/text 可见），子视图独走 raw 快照；
+            // document.write 流（R5001）每写步经 innerHTML/IAH 新建的容器 sel 在 raw 快照
+            // 恒缺席，其 childNodes 恒空（ambiguous-ampersand written div k0）。存在性判定
+            // 与子列表读共用同一 `with_query_doc` 缓存文档（解析命中缓存，增量为一次
+            // selector 游走）；已存在节点保持 raw 读——identity/稳定语义不变。
+            let raw_absent = with_query_doc_live_aware(&snap, true, |doc| !element_exists_doc(doc, &elem_sel));
+            if raw_absent {
+                // R3028 同款锁纪律：snap guard 须在查询视图构建（会再锁 html）前释放。
+                drop(snap);
+                return with_query_view_doc(&html, &m, |doc| child_nodes_json_doc(doc, &elem_sel));
+            }
             with_query_doc_live_aware(&snap, true, |doc| child_nodes_json_doc(doc, &elem_sel))
         }),
     );

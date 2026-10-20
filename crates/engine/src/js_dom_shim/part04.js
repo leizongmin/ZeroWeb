@@ -8267,7 +8267,11 @@
                       for (var _iahi = 0; _iahi < _iahAdded.length; _iahi++) {
                         var _iahN = _iahAdded[_iahi];
                         if (!_iahN) continue;
-                        _iahN._zwSelPendingParent = { parentSel: _iahParentSel || null, parentHandle: _iahParentHandle || null, nextSibling: _iahRef };
+                        // R5206 续（html-syntax-compat）：IAH 内容经队列 InsertAdjacentHtml
+                        // 重放进查询视图（with_query_view_doc 结构级子集）——补偿代理对文档级
+                        // 枚举恒冗余（plain IAH 同 turn gEBT 双计实证），打标供 part05 剔除；
+                        // handle 父槽（parentSel null）不打标——handle 空间内容不进视图回放。
+                        _iahN._zwSelPendingParent = { parentSel: _iahParentSel || null, parentHandle: _iahParentHandle || null, nextSibling: _iahRef, inViewReplay: !!(_iahParentSel) };
                         if (_iahHostProxy) {
                           try { _iahN.parentNode = _iahHostProxy; } catch (_eiahpp) {}
                         }
@@ -10741,7 +10745,11 @@
                 var _r304HostProxy = (sel && typeof _wrapSelector === 'function') ? _wrapSelector(sel) : null;
                 for (var _r304a = 0; _r304a < _ihAdded.length; _r304a++) {
                   if (_ihAdded[_r304a]) {
-                    _ihAdded[_r304a]._zwSelPendingParent = { parentSel: sel || null, parentHandle: handle || null, nextSibling: null };
+                    // R5206 续（html-syntax-compat）：innerHTML 只入队 SetInnerHtml——视图
+                    // 回放不应用（R3029），补偿代理是同 turn 文档级枚举唯一可见面，默认不打
+                    // 标；写流重放门内（R5001 基线重放）内容=基线/缓冲，均在视图（基座 parse
+                    // + IAH latest-wins），打标供 part05 剔除。
+                    _ihAdded[_r304a]._zwSelPendingParent = { parentSel: sel || null, parentHandle: handle || null, nextSibling: null, inViewReplay: globalThis.__zwDocWriteReplay === true };
                     if (_r304HostProxy) {
                       try { _ihAdded[_r304a].parentNode = _r304HostProxy; } catch (_e304pp) {}
                     }
@@ -10797,6 +10805,20 @@
                 && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')
                 && typeof globalThis._zwSyncTextTracksFromChildren === 'function') {
               try { globalThis._zwSyncTextTracksFromChildren(sel, handle, _elKey(sel, handle)); } catch (_eTtIh) {}
+            }
+            // R5206（html-syntax-compat）：document.write 流（R5001 追加语义）的基线重放
+            // `innerHTML = 基线` 不是真移除——基线内容由重放原样复活。原始快照 wrapper 进
+            // removed 记账（`_zwPendingRemoved`）会被查询漏斗按 identity 剔除（gEBT 集合
+            // 构建 splice；id 形元素两条包装路径同落 '#id' 必命中——ambiguous-ampersand
+            // static div 从 gEBT 消失）。写流门内 removedNodes 只保留解析补偿代理
+            //（`_zwSelPendingParent` 槽）——写际 消零 收敛依赖它们；raw wrapper 不记账。
+            // 门外的普通 innerHTML 不受影响（真替换语义，旧子移除照常记账）。
+            if (globalThis.__zwDocWriteReplay === true && _ihRemoved && _ihRemoved.length) {
+              var _ihRKeep = [];
+              for (var _ihRw = 0; _ihRw < _ihRemoved.length; _ihRw++) {
+                if (_ihRemoved[_ihRw] && _ihRemoved[_ihRw]._zwSelPendingParent) _ihRKeep.push(_ihRemoved[_ihRw]);
+              }
+              _ihRemoved = _ihRKeep;
             }
             _mo_notify(sel, handle, { type: 'childList', addedNodes: _ihAdded, removedNodes: _ihRemoved });
             // R125：innerHTML 替换后旧子的 pending-ID 索引同步剔除——host 快照未换代前
