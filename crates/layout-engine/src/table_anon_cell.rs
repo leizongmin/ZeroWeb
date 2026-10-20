@@ -68,6 +68,24 @@ pub(crate) fn synthesize_anon_table_cells(
             wrap_inline_runs_in_row(root, doc, styles);
         }
     }
+    // R5209（CSS2 §17.2.1：table-row-group 的非 table-row 子 → 匿名 cell 包裹）：
+    // 孤立行组 retrofit（is_anon_table_root）的直系裸文本无盒（行组不是 IFC 容器，
+    // 文本不参与任何行级直绘，probe 实证整段丢失）——合成空匿名 cell（R5169 同款
+    // 借 node_id + fragment 圈定）。真 table 内的行组不合成（anontbl=false）：
+    // R5202/R5167 行组帧语义未含此形态，保持现状零回归面。
+    // FIXME(R5209 后继)：行组内 inline 元素 run 成员未合成（现断 run，仅纯文本
+    // run 入匿名 cell）——inline 元素的盒化路径与本合成未对接。
+    let is_orphan_row_group = root.is_anon_table_root
+        && !root.writing_mode.is_vertical_block_flow()
+        && root.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+            matches!(
+                s.display,
+                DisplayValue::TableRowGroup | DisplayValue::TableHeaderGroup | DisplayValue::TableFooterGroup
+            )
+        });
+    if is_orphan_row_group {
+        wrap_stray_text_runs_in_row_group(root, doc);
+    }
     for child in &mut root.children {
         synthesize_anon_table_cells(child, doc, styles);
     }
@@ -153,6 +171,84 @@ fn wrap_inline_runs_in_row(row: &mut LayoutBox, doc: &Document, styles: &HashMap
 
     // R5169：盒级 drain 收不掉 R2160 跳过的无盒 run（shape A）——DOM 级补空合成 cell。
     wrap_boxless_runs_in_row(row, doc, styles);
+}
+
+/// R5209：孤立行组内 boxless 裸文本 run 的空合成 cell。
+///
+/// 行组不是 IFC 容器，直系裸文本无盒无绘（table-anonymous-objects-161 实证
+/// "Row 22, Col 1" 整段丢失）。与 R5169 行级 boxless 合成的两点差异：
+/// - 纯文本 run 即合成（行级反向受限：行有直绘路径，空 cell 接管反而错位
+///   run-in-table-row-between-001/002；行组无竞争路径，合成是纯增益）；
+/// - 任何元素子（table-internal / inline / OOF）一律断 run——inline 元素的
+///   盒化路径与本合成未对接（FIXME 见调用点）。
+///
+/// 插入锚 = run 后首个元素子的盒位（保 DOM 序）；幂等 = 已有合成 cell 圈定
+/// 本 run 成员即跳过。网格侧由 build_grid is_orphan 臂按 is_anon_table_cell
+/// 旗标收进匿名行，行 y 由 position_cells 自携（R5209 Part A）。
+fn wrap_stray_text_runs_in_row_group(group: &mut LayoutBox, doc: &Document) {
+    let Some(group_node_id) = group.node_id else {
+        return;
+    };
+    let mut runs: Vec<(Option<NodeId>, Vec<NodeId>)> = Vec::new();
+    let mut run_ids: Vec<NodeId> = Vec::new();
+    let mut run_has_content = false;
+    let flush = |runs: &mut Vec<(Option<NodeId>, Vec<NodeId>)>,
+                 run_ids: &mut Vec<NodeId>,
+                 has_content: bool,
+                 anchor: Option<NodeId>| {
+        if has_content {
+            runs.push((anchor, std::mem::take(run_ids)));
+        }
+        run_ids.clear();
+    };
+    for dom_child in doc.child_nodes(group_node_id) {
+        let Some(node) = doc.get(dom_child) else {
+            continue;
+        };
+        match &node.kind {
+            zero_dom::NodeKind::Text(t) => {
+                run_ids.push(dom_child);
+                run_has_content |= !t.content.trim().is_empty();
+            }
+            // 任何元素子断 run（含 inline/OOF，见函数文档）；其盒为插入锚。
+            zero_dom::NodeKind::Element(_) => {
+                flush(&mut runs, &mut run_ids, run_has_content, Some(dom_child));
+                run_has_content = false;
+            }
+            _ => {}
+        }
+    }
+    flush(&mut runs, &mut run_ids, run_has_content, None);
+
+    let writing_mode = group.writing_mode.clone();
+    for (anchor, run) in runs {
+        // 幂等：已有合成 cell 圈定本 run（任一成员相交）即跳过。
+        if group.children.iter().any(|b| {
+            b.is_anon_table_cell
+                && b.fragment_node_ids
+                    .as_ref()
+                    .is_some_and(|frags| run.iter().any(|id| frags.contains(id)))
+        }) {
+            continue;
+        }
+        let cell = LayoutBox {
+            node_id: Some(group_node_id),
+            fragment_node_ids: Some(run),
+            is_block_level: true,
+            is_anon_table_cell: true,
+            writing_mode: writing_mode.clone(),
+            // 无子盒：高度 0，行高由同网格显式 cell 撑起（position_cells
+            // row_height.max）；纯匿名 cell 行行高挂账（R5168 同）。
+            height: 0.0,
+            content_height: 0.0,
+            ..Default::default()
+        };
+        let insert_at = anchor.and_then(|a| group.children.iter().position(|b| b.node_id == Some(a)));
+        match insert_at {
+            Some(i) => group.children.insert(i, cell),
+            None => group.children.push(cell),
+        }
+    }
 }
 
 /// R5169：无盒 inline run 的空合成 cell（shape A 补绘）。

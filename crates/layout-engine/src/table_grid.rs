@@ -167,7 +167,11 @@ pub(crate) fn build_grid(
     for (child_idx, child, child_display) in &children_with_priority {
         if is_orphan {
             match child_display {
-                Some(d) if is_table_cell(d) => {
+                // R5209（CSS2 §17.2.1：行组非 row 子 → 匿名 cell）：孤立行组内
+                // wrap_stray_runs_in_row_group 合成的空匿名 cell 借宿主行组 node_id
+                //（样式查表得 TableRowGroup），按 is_anon_table_cell 旗标识别收进
+                // 网格——161~166 中段 [匿名cell][cell]…[row] 形态。
+                Some(d) if is_table_cell(d) || child.is_anon_table_cell => {
                     let colspan = get_colspan(child, doc);
                     let rowspan = get_rowspan(child, doc);
                     let col_start = orphan_col_cursor;

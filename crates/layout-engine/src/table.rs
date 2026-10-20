@@ -2099,9 +2099,14 @@ fn position_cells(
             // 行 y 须由 cell 自携 local_y，否则非首行裸 cell 与首行同 y 重叠
             //（table-anonymous-objects-063/133 "Row 22" 与 "Row 1" 同 y 实证；
             // 16px 字号下差异亚阈潜伏，32px 下外露 >1%）。正常行 cell 相对行帧
-            // 定位，y 保持 0；孤立行组匿名行（table_box = 行组即行帧）维持 0。
-            let cell_carries_row_y =
-                r5167_enabled && row.is_anonymous && (is_direct_cell_row || row.row_group_index.is_some());
+            // 定位，y 保持 0。
+            // R5209：孤立 retrofit（table_box 是 row-group/row 等表内盒，非
+            // display:table）的匿名行同样无行盒帧——非首匿名行的 cell 须自携
+            // local_y（161：row-group 内 [row][匿名行][row] 的中行 cell 压回
+            // y=0 与首行重叠实证）。单匿名行形态 local_y=0 恒等，零变化。
+            let cell_carries_row_y = r5167_enabled
+                && row.is_anonymous
+                && (is_direct_cell_row || row.row_group_index.is_some() || !table_is_display_table);
             cell_box.y = (if cell_carries_row_y { local_y } else { 0.0 }) + cell_rel_dy;
             cell_box.width = cell_width;
 

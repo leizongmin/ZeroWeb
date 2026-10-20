@@ -762,3 +762,6 @@ mod r5207_anon_table_float_tests;
 /// R5208 blocks-divide-tables：分隔符后孤立 row 停分隔符下 + 虚高塌缩收缩传播
 ///（table-anonymous-objects-081~084 锚点）。
 mod r5208_blocks_divide_tables_tests;
+/// R5209 行组裸文本 → 匿名 cell + 孤立 retrofit 匿名行 cell 自携行 y
+///（table-anonymous-objects-161~166 锚点）。
+mod r5209_row_group_stray_text_tests;
