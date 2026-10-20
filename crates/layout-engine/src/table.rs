@@ -156,7 +156,7 @@ fn adjust_table_layout_inner(
                 } else {
                     let old_height = root.children[run_start].height;
                     layout_table(&mut root.children[run_start], doc, styles, inline_fonts);
-                    reflow_siblings_after_table_height_change(root, run_start, old_height);
+                    reflow_siblings_after_table_height_change(root, run_start, old_height, true);
                     for child in &mut root.children[run_start].children {
                         adjust_table_layout_inner(child, doc, styles, true, inline_fonts);
                     }
@@ -164,7 +164,7 @@ fn adjust_table_layout_inner(
             } else if child_is_real_table {
                 let old_height = root.children[idx].height;
                 layout_table(&mut root.children[idx], doc, styles, inline_fonts);
-                reflow_siblings_after_table_height_change(root, idx, old_height);
+                reflow_siblings_after_table_height_change(root, idx, old_height, true);
                 // R2061：abspos table 内容高确定后按 §10.3.7 重算垂直 auto-margin 居中
                 //（old_height = taffy stretch 高 = CB 可用）。在调用方调用覆盖 build_grid
                 // 空表早返路径与正常路径；非 abspos table 经 recenter 内部 gate no-op。
@@ -174,7 +174,28 @@ fn adjust_table_layout_inner(
                 }
                 idx += 1;
             } else {
+                // R5208（CSS2 §17.2.1.1）：普通块子的递归可能在其内部完成匿名 table
+                // 包装（block 分隔符裹住连续 cell run），taffy 按「内部盒各自成块竖排」
+                // 给出的虚高塌缩为真实表高——后续兄弟仍停在按**旧**虚高排出的位置，
+                // 须按收缩差重排（083：block 分隔符 h 54→18，后继孤立 row 停在 72 应
+                // 36，再叠加 position_cells 的 y 覆写即与前表重叠）。
+                // 门控（A/B 实证）：只传播**收缩**——增长侧（blocks-017 的
+                // `div>*{display:block}` 表内 tbody 单孤儿 reflow 回填 parent.height
+                // 等）是 ZW 盒模型归一的既有中间态，corpus 依赖其不外溢；父高 definite
+                // Px（line-clamp-021 的 scroll height:3lh / blocks-017 的 div
+                // height:180px）不回填，防固定高容器被内表变化击穿。
+                let old_height = root.children[idx].height;
                 adjust_table_layout_inner(&mut root.children[idx], doc, styles, child_in_table, inline_fonts);
+                let shrank = root.children[idx].height < old_height - 0.01;
+                if shrank {
+                    // R5208：父高 definite Px（line-clamp-021 的 scroll height:3lh）不回填，
+                    // 防固定高容器被内表虚高塌缩击穿；仅位移兄弟。
+                    let parent_height_definite = root
+                        .node_id
+                        .and_then(|id| styles.get(&id))
+                        .is_some_and(|s| matches!(s.height, zero_css_parser::values::LengthValue::Px(_)));
+                    reflow_siblings_after_table_height_change(root, idx, old_height, !parent_height_definite);
+                }
                 idx += 1;
             }
         }
@@ -288,7 +309,16 @@ fn merge_orphan_table_run(
 
 /// taffy 将 table 映射为 block，高度常大于 table 后处理算出的真实高度。
 /// 收缩 table 后需把后续普通流兄弟上移（与 inline_finalization 的 shrink 重排同谱系）。
-fn reflow_siblings_after_table_height_change(parent: &mut LayoutBox, table_idx: usize, old_table_height: f32) {
+///
+/// `update_parent_height`：父容器高度是否随 delta 回填——definite Px 高的容器
+///（fixed/外定高）不回填（R5208：内表高度变化不得击穿外定高，scroll 容器
+/// height:3lh 实证），仅位移兄弟。
+fn reflow_siblings_after_table_height_change(
+    parent: &mut LayoutBox,
+    table_idx: usize,
+    old_table_height: f32,
+    update_parent_height: bool,
+) {
     if !matches!(parent.writing_mode, WritingModeValue::HorizontalTb) {
         return;
     }
@@ -311,9 +341,11 @@ fn reflow_siblings_after_table_height_change(parent: &mut LayoutBox, table_idx: 
         }
         sibling.y += height_delta;
     }
-    parent.height += height_delta;
-    let padding_border = parent.padding_top + parent.padding_bottom + parent.border_top + parent.border_bottom;
-    parent.content_height = (parent.height - padding_border).max(0.0);
+    if update_parent_height {
+        parent.height += height_delta;
+        let padding_border = parent.padding_top + parent.padding_bottom + parent.border_top + parent.border_bottom;
+        parent.content_height = (parent.height - padding_border).max(0.0);
+    }
 }
 
 /// 对单个 table 容器执行布局。
@@ -1963,8 +1995,18 @@ fn position_cells(
             // content 偏移 perimeter_x。collapse 模式 perimeter_x=0，无变化。
             let in_row_group = row.row_group_index.is_some();
             let row_x_offset = if in_row_group { 0.0 } else { perimeter_x };
-            row_box.x = row_rel_dx + row_x_offset;
-            row_box.y = local_y + row_rel_dy;
+            // R5208（CSS2 §17.2.1.1 孤儿 table-internal retrofit）：匿名行 + 无行组 ⇒
+            // get_row_box 返回 table_box 自身（孤立 row 经匿名表根包装的盒子），其 x/y
+            // 是父级正常流/float 定位的落点，不是表内网格偏移——只更新宽高、保留流位置
+            //（旧实现把 local_y=0 写进位置槽，块分隔符之后的孤立 row 被拉回 y=0 与
+            // 前表重叠：table-anonymous-objects-083/084 Row 333 压 Row 1）。
+            if row.is_anonymous && row.row_group_index.is_none() {
+                row_box.x += row_rel_dx;
+                row_box.y += row_rel_dy;
+            } else {
+                row_box.x = row_rel_dx + row_x_offset;
+                row_box.y = local_y + row_rel_dy;
+            }
             row_box.width = table_content_width - 2.0 * perimeter_x;
             row_box.height = row_height;
         }

@@ -759,3 +759,6 @@ mod r5205_clamp_shrink_cascade_tests;
 mod r5206_clamp_inner_margin_tests;
 /// R5207 匿名表根 §9.5 float 推开 + 保 shrink 宽（clear-applies-to-005/006 锚点）。
 mod r5207_anon_table_float_tests;
+/// R5208 blocks-divide-tables：分隔符后孤立 row 停分隔符下 + 虚高塌缩收缩传播
+///（table-anonymous-objects-081~084 锚点）。
+mod r5208_blocks_divide_tables_tests;

@@ -1839,7 +1839,7 @@ fn test_r2061_reflow_skips_abspos_table_parent_height() {
         ..Default::default()
     };
     let old_table_height = 200.0_f32;
-    reflow_siblings_after_table_height_change(&mut parent, 0, old_table_height);
+    reflow_siblings_after_table_height_change(&mut parent, 0, old_table_height, true);
 
     // abspos table 不在流内：父高度不被 table 收缩 delta（200→100）影响，保持 200。
     assert_eq!(
