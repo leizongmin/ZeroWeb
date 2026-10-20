@@ -6953,7 +6953,10 @@
   // M2-S4E：焦点变更追踪 + 导航结算焦点重置（spec nav-history-apis focus changed during
   // ongoing navigation + potentially-reset-the-focus——finish event 步骤 4，先于 scroll 与
   // navigatesuccess/navigateerror 派发）。导航期间（dispatch 起）focus()/blur() 均记变；
-  // 有变或 focusReset 'manual' → 跳过；否则焦点落 autofocus 委托（文档序首个 [autofocus]）
+  // 有变或 focusReset 'manual' → 跳过；否则焦点落 autofocus 委托（文档序首个**合格**
+  // [autofocus]——flush autofocus candidates 的合格性门：非 disabled、非 hidden
+  // input；disabled 候选跳过续查次位，全灭落 body。S12：WPT autofocus delayed
+  // 变体「disabled before finished」双案——disabled 首候选被取而代之/次位递补）
   // 或 body（清 activeElement，**不派** body focus 事件——WPT change-focus-then-remove
   // 「onfocus shouldn't fire due to focus reset」）。
   var _navFocusChanged = false;
@@ -6964,8 +6967,16 @@
     if (fc) return;
     if ((ev && ev._zwFocusReset) === 'manual') return;
     var _at = null;
-    try { _at = globalThis.document.querySelector('[autofocus]'); } catch (_eAf) {}
-    if (_at && typeof _at.focus === 'function') {
+    try {
+      var _cands = globalThis.document.querySelectorAll('[autofocus]');
+      for (var _ci = 0; _ci < _cands.length; _ci++) {
+        var _ce = _cands[_ci];
+        if (_ce.disabled) continue;
+        if (_ce.tagName === 'INPUT' && String(_ce.type).toLowerCase() === 'hidden') continue;
+        if (typeof _ce.focus === 'function') { _at = _ce; break; }
+      }
+    } catch (_eAf) {}
+    if (_at) {
       try { _at.focus(); } catch (_eAf2) {}
     } else {
       // body 聚焦走**完整 focusing 序**（blur(+focusout) 落旧焦点——监听器可重入导航，

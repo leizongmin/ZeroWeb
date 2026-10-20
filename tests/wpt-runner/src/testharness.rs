@@ -8075,6 +8075,20 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     let _ = webview.execute_script(
         "(function(){try{if(globalThis.__zwPagerevealFired===undefined){globalThis.__zwPagerevealFired=false;}var _zwOrigRaf=globalThis.requestAnimationFrame;if(typeof _zwOrigRaf==='function'){globalThis.requestAnimationFrame=function(fn){try{if(!globalThis.__zwPagerevealFired){globalThis.__zwPagerevealFired=true;var mk=globalThis.__zwMakeTrustedEvent;var pr=mk?mk('pagereveal'):new Event('pagereveal');try{if(globalThis.Event&&globalThis.Event.prototype){Object.setPrototypeOf(pr,globalThis.Event.prototype);}}catch(_e5prp){}globalThis.dispatchEvent(pr);}}catch(_e5pr){}return _zwOrigRaf.call(globalThis,fn);};}}catch(_e5pr0){}})();",
     );
+    // M2-S12（navigation-compat，2026-10-20）：初始 autofocus 处理——spec flush
+    // autofocus candidates 的「ready for post-load tasks」相位（文档序首个合格
+    // candidate 获焦；interaction.html#the-autofocus-attribute）。runner 模型里
+    // 页面脚本用同步 rAF stub，setup 期 `rAF×2` await 在脚本任务内即解——该相位
+    // 必须落在**全部页面脚本之前**才可观察（真浏览器 post-parse 相位的页可观察
+    // 等价位）。合格性：connected（querySelectorAll 语义自带）+ 非 disabled +
+    // 非 hidden input；首个即 break（flush 语义：余者作废）。
+    // 仅 testharness runner 路径执行，零产品面（产品宿主 autofocus 管线随真实
+    // focus 域另行接线）。WPT navigation-api/focus-reset/autofocus promise_setup
+    // 「Non-navigation API autofocus was processed」。
+    // FIXME(产品面): 浏览器宿主解析路径的 autofocus 初始处理未接线。
+    let _ = webview.execute_script(
+        "(function(){try{var _c=document.querySelectorAll('[autofocus]');for(var i=0;i<_c.length;i++){var _e=_c[i];if(_e.disabled)continue;if(_e.tagName==='INPUT'&&String(_e.type).toLowerCase()==='hidden')continue;if(typeof _e.focus==='function'){_e.focus();break;}}}catch(_eAfp){}})();",
+    );
     let script_result = webview.run_page_scripts_strict();
     let _zw_hb3 = std::fs::write("/tmp/zw-hb2.txt", format!("post-scripts {}\n", case_name));
     // R3254-E2 切片（editing goal，2026-09-07）：DOMContentLoaded/load 派发 + harness_loaded
