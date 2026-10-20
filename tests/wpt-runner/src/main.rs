@@ -23,6 +23,7 @@ mod testharness_fileapi;
 mod testharness_html_semantics;
 mod testharness_page_state;
 mod testharness_pointerlock;
+mod testharness_svg;
 mod testharness_webmessaging;
 mod testharness_workers;
 mod wpt_file_loader;
@@ -74,6 +75,8 @@ Commands:
                        window testharness cases (webmessaging-compat goal M1 / DC-1)
   testharness-workers  Run imported workers/dedicated-workers testharness cases
                        (window + dedicated-worker variants, workers-compat goal)
+  testharness-svg  Run imported svg/ testharness cases (SVG document model,
+                       svg-compat goal M1 / DC-1)
   testharness-cookies  Run imported cookies (document.cookie semantics) window testharness
                        cases (cookies-compat goal M1 / DC-1)
   testharness-console  Run pinned console corpus (namespace/label-conversion/format-tolerance)
@@ -354,6 +357,9 @@ fn main() {
         }),
         "testharness-workers" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
             testharness_workers::run_workers_cases(wpt_root, filter)
+        }),
+        "testharness-svg" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
+            testharness_svg::run_svg_cases(wpt_root, filter)
         }),
         "testharness-cookies" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
             testharness_cookies::run_cookies_cases(wpt_root, filter)

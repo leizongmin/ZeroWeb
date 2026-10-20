@@ -12,6 +12,13 @@ source "${SCRIPT_DIR}/lib.sh"
 
 GOAL="svg-compat"
 DIRS=( "svg"  )
+# 语料三层嵌套（`types/scripted/`、`struct/reftests/`、`animations/scripted/` 等
+# ——上游 pin 全树 2224 blobs），shallow Contents API 只递归一层拉不全——走 git
+# trees 深挖（lib.sh fetch_dir_deep，2 次 API 调用拿全量清单；WebCrypto/workers
+# 先例）。扩展名分流天然覆盖 .svg 文档（WPT svg/ 用例页大量为 .svg 形态——渲染
+# 断言面）与 .html（testharness DOM 面）；渲染断言面占比盘点在 M1 rally 轮按
+# 内容分类入档（docs/goal/svg-compat/evidence/）。
+GOAL_FETCH_DEEP=1
 
 goals_fetch_all
 goals_inventory
