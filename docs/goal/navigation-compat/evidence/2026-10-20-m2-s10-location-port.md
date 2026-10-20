@@ -43,4 +43,10 @@ parser 域——本 goal Support Envelope 明示 dom「不改 parser 核心」�
   history-traversal 目录 44/45（唯一 Fail = order-in-bfcache-restore，bfcache
   挂账维持）。
 
+## 组合态追认（a621721d4 合入后）
+
+push 时 rebase 撞兄弟流 R4004 label 激活归一（引擎 shim part03 共享面）——组合态
+HEAD 全量复跑对 S10 账本**逐行恒等**（410P/34F/26T/14NR 零漂移），label 转发面
+对导航语料零波及。
+
 原始输出：[2026-10-20-m2-s10-location-port.txt](2026-10-20-m2-s10-location-port.txt)。

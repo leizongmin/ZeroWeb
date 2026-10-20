@@ -366,7 +366,8 @@ document.write parser 域；计数口径自 S4W 起按 evidence txt 原始 Pass 
   **43/43 收满**；per-subtest 语义 diff 恰一行零回归。008 挂账改判：document.write
   引擎全缺（shim/原生绑定零注册面、语料在账用户零）注入链不成立——parser 域
   （envelope 外）+ `www.` 主机形态双缺口维持挂账。门禁：runner 单测 224P/0F +
-  clippy -D warnings 零 warning + fmt 干净。
+  clippy -D warnings 零 warning + fmt 干净。push rebase 撞兄弟流 R4004（shim
+  label 激活共享面）——组合态复跑对 S10 账本逐行恒等零漂移追认。
   证据：[evidence/2026-10-20-m2-s10-location-port.md](evidence/2026-10-20-m2-s10-location-port.md)。
 
 ## M4 收口评估（2026-10-09）
