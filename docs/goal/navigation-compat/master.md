@@ -2,9 +2,10 @@
 
 **入口文档**: [../navigation-compat.md](../navigation-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-20（组成态复核——语料清空事故自愈修复入脚本 + scroll-restoration-order
-新案收口；全量 85.7%→**85.9%**（409/476，M2 分母口径沿用）；计数口径自 S4W 起按 evidence txt
-原始 Pass 行；M3 维持用户门控挂起）
+**最后更新**: 2026-10-20（组成态复核零漂移 + M2-S10 location_port origin 端口化
+收口——全量 409→**410**/476（86.1%），location-interface 43/43 收满、008 挂账改判
+document.write parser 域；计数口径自 S4W 起按 evidence txt 原始 Pass 行；M3 维持
+用户门控挂起、M2 收口裁决征询已发待批复）
 
 ---
 
@@ -25,8 +26,8 @@
 | # | 缺口 | 状态 |
 |---|------|------|
 | P1 | 四 corpus 导入 + 基线 | ✅ 落地（fetch 三域 + 嵌套 resources 2026-10-07 恢复后入库；基线 20.9%，S1+S2 后全量 29.2%） |
-| P2 | history pushState/replaceState/state/length/back/forward/go 语义 | ✅ S3 收口 + S4P 速率限制：the-history-interface 81.6%→**98.2%**（55/56——traverse 入队 + 空串 URL + 跨源 SecurityError + push/replaceState 10s/100 次速率窗；S4W 撤销 007「外部脚本基建」挂账——实为外链 404 abort 掩盖，7 子测试真实翻绿）；余 008 Timeout 挂账 |
-| P3 | popstate/hashchange 事件序 + location 写侧导航语义（带重入 guard） | 🔶 S1+S2+S4F+S4P 落地：location-interface 41.9%→**97.7%**（exotic 内部方法面 Proxy 承载收口 + 动态 append 脚本执行通道）、traversal 62.2%→**93.3%**；余 2F = runner 无端口 URL（形态缺口挂账） |
+| P2 | history pushState/replaceState/state/length/back/forward/go 语义 | ✅ S3 收口 + S4P 速率限制：the-history-interface 81.6%→**98.2%**（55/56——traverse 入队 + 空串 URL + 跨源 SecurityError + push/replaceState 10s/100 次速率窗；S4W 撤销 007「外部脚本基建」挂账——实为外链 404 abort 掩盖，7 子测试真实翻绿）；余 008 Timeout 挂账（S10 定性改判：document.write 引擎全缺——parser 域、envelope 外——+ `www.` 主机形态双缺口，非纯 runner 形态、非 M3） |
+| P3 | popstate/hashchange 事件序 + location 写侧导航语义（带重入 guard） | ✅ 收口：location-interface 41.9%→**100%**（43/43——S1 exotic Proxy + S4P 动态脚本通道 + S10 location_port origin 端口化）；history-traversal 目录 44/45（余 order-in-bfcache-restore 1F = bfcache 挂账） |
 | P3b | Navigation API（window.navigation 全域） | 🔶 S4~S4Y 二十七段落地 + S9 锚 href 动态写可见性（→**93.3%**，txt 原始 Pass 行 239/255）：read side/navigate/intercept/traverse/scroll-behavior/focus-reset/location exotic/precommitHandler/traverseTo/ongoing-abort/anchor-downloadRequest/host 激活锚线程/form submit navigate/activation 暴露/transition 派发时机/dispose 深簇/navState 入槽克隆/同文档 navState 承继/reentrant 孤儿 transition/提交期 abort/`:target` URL 同步/window.stop abort 面/session history 50 条上限/traverse 语义面/navigationType 随载入态（锚激活例外恒 push）/片段指示元素 decoded 匹配 + 无匹配滚顶 + 锚 record push 例外 + 跨源 canIntercept/pushState·replaceState hashChange=false/location.reload 接线 + 目的态承继/navigate() 同 URL auto→replace/runner readyState 宿过渡/navigateerror filename fire 时快照（S4P 回归追认收口）/锚 download presence own 门/锚激活 href 动态写 latest-wins 读全收；「静态锚 href IDL 落 attr 回流 element IDL 域」**销项**（S9 定因勘误——attr 持久化从未缺失，纯快照读 stale；双案全绿）；余 Tab 焦点导航 2T + autofocus load 期 14 NotRun（7 断言 × 2 variants，DOM 焦点域）、scroll-behavior reload 族 4F（渲染域） |
 | P4 | iframe 浏览上下文最小面（contentWindow/frames/parent/top + 属性语义） | ⏳ M3 **用户门控** |
 | P5 | bfcache / fission 挂账定稿 | ✅ M4 定稿（bfcache：无实现面，依赖 frame tree→Document 快照管线，挂账至 M3 后续立项；fission：charter 排除维持。见 [M4 评估](evidence/2026-10-09-m4-closeout-assessment.md)） |
@@ -355,6 +356,18 @@
   同日二跑（HEAD 全新 release 重建，防陈旧二进制纪律）对 final 账本状态行集合逐行
   恒等零漂移，非 Pass 75 案逐案核对与挂账一致、无新可切片项；证据：
   [evidence/2026-10-20-composition-patrol.md](evidence/2026-10-20-composition-patrol.md)。
+- **M2-S10 location_port origin 端口化 + history 008 定性改判（2026-10-20）**：
+  对 6 案 runner 形态/任务模型挂账重评——location_port 案义自洽要求 URL 带显式端口
+  （权威段 ":" 后子串 == location.port；无端口恒 Fail），上游 wptserve 恒带端口而
+  runner 缺省 origin 无端口 = 案设环境缺失。修 = 跟随 net-api/webcrypto 页面形态
+  谓词先例的单案 origin 端口化（`navigation_case_uses_ported_origin`，https 案锚
+  `wpt.test:9443`；fetch handler 纯路径解析端口安全），引擎端口解析 + location.port
+  仍为真断言。1 翻 Fail→Pass；全量 409→**410**/476（86.1%）；location-interface
+  **43/43 收满**；per-subtest 语义 diff 恰一行零回归。008 挂账改判：document.write
+  引擎全缺（shim/原生绑定零注册面、语料在账用户零）注入链不成立——parser 域
+  （envelope 外）+ `www.` 主机形态双缺口维持挂账。门禁：runner 单测 224P/0F +
+  clippy -D warnings 零 warning + fmt 干净。
+  证据：[evidence/2026-10-20-m2-s10-location-port.md](evidence/2026-10-20-m2-s10-location-port.md)。
 
 ## M4 收口评估（2026-10-09）
 
@@ -378,7 +391,8 @@
    **scroll-position-vertical-lr（S8 块起始边 scrollX 对齐）**；剩余余项：vertical-rl/
    inline-nearest/reload 族经探针三分维持渲染域、bfcache 族（helper 资产双缺口）、
    focus-reset 2T（send_keys TAB）逐案核验挂账属实；其余全为 A 域回流与 B 类形态
-   缺口（下两条）。
+   缺口（下两条）。S10 复核再收 runner 形态挂账 location_port 一案、008 定性改判
+   （见切片账）。
 2. **replace-before-load 38F 重定性 → M3 依赖**（2026-10-09 勘察）：全簇为 iframe 载体
    （setupSentinelIframe/insertIframe + 子文档 load 前自导航），断言 iframe 自有 session
    history 的 replace 语义——单文档 runner 形态不可达，随 M3 frame tree 一并解锁。

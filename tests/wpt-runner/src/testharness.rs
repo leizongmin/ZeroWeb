@@ -4015,6 +4015,15 @@ fn webcrypto_case_uses_http_page(case_name: &str) -> bool {
     !file.contains(".https.")
 }
 
+/// navigation-compat M2-S10 单案 origin 端口化：上游 wptserve 恒带显式端口
+/// （http :8800 / https :9443），location_port.html 断言取 `location.href` 权威段
+/// ":" 后子串与 `location.port` 全等——runner 缺省 origin 无端口时权威段整体
+/// （"wpt.test"）≠ ""，案设环境缺失恒 Fail。单案端口化 = 复现上游端口形态；
+/// 引擎 URL 权威端口解析与 location.port 语义仍是真实断言目标。
+fn navigation_case_uses_ported_origin(case_name: &str) -> bool {
+    case_name.ends_with("/the-location-interface/location_port.html")
+}
+
 /// net-api 六 corpus 共用运行面筛减规则（fetch 脚本头注释同域，双保险）：
 /// - `*/resources/`（helper 资产——fetch/api/resources、xhr/resources、url/resources、
 ///   eventsource/resources、streams/resources 等，META script / inline 消费不按案跑）
@@ -7884,8 +7893,15 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     } else {
         "https"
     };
-    webview.prepare_document_state(&format!("{page_scheme}://wpt.test/{case_name}"));
-    let page_url = format!("{page_scheme}://wpt.test/{case_name}");
+    // navigation-compat M2-S10：location_port 单案 origin 端口化（https 案锚上游
+    // :9443 形态；谓词注释见 navigation_case_uses_ported_origin）。
+    let page_authority = if navigation_case_uses_ported_origin(case_name) {
+        "wpt.test:9443"
+    } else {
+        "wpt.test"
+    };
+    webview.prepare_document_state(&format!("{page_scheme}://{page_authority}/{case_name}"));
+    let page_url = format!("{page_scheme}://{page_authority}/{case_name}");
     let _zw_hb = std::fs::write("/tmp/zw-hb.txt", format!("prepared {}\n", case_name));
     // M3 扩批：播放泵时钟原点（tab_worker pump_epoch 同款——registry play/tick 共用
     // 单调毫秒；桥 play 传 0 即本原点）。
