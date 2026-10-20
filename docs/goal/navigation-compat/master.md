@@ -2,9 +2,9 @@
 
 **入口文档**: [../navigation-compat.md](../navigation-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-11（M2-S1~S9 三十三片——location-interface 97.7% / traversal 93.3% /
-history-interface 98.2% / navigation-api 93.3%（txt 原始 Pass 行 239/255）；全量 20.9%→**85.7%**（408/476）；
-计数口径自 S4W 起按 evidence txt 原始 Pass 行）
+**最后更新**: 2026-10-20（组成态复核——语料清空事故自愈修复入脚本 + scroll-restoration-order
+新案收口；全量 85.7%→**85.9%**（409/476，M2 分母口径沿用）；计数口径自 S4W 起按 evidence txt
+原始 Pass 行；M3 维持用户门控挂起）
 
 ---
 
@@ -337,6 +337,21 @@ history-interface 98.2% / navigation-api 93.3%（txt 原始 Pass 行 239/255）�
   残余处置抽核维持（sandbox allow_top_navigation 2F = popup+iframe+beforeunload 载体、
   history 008 = `www.` 跨主机脚本 URL，均属实挂账）。证据：
   [evidence/2026-10-11-composition-recheck-r5050-r5051.md](evidence/2026-10-11-composition-recheck-r5050-r5051.md)。
+- **组成态复核：语料清空事故恢复 + scroll-restoration-order 收口（2026-10-20）**：
+  开工跑测暴露 wpt-data 整目录重建（fetch-wpt-data `rm -rf` 重 clone 前例）后语料自愈
+  断链——未认证 API 403 → resources/ 全缺、`.mjs` 白名单盲区（S4E/S4G 手工补拉未入
+  脚本）、get-host-info.sub.js 缺失、快路径 support 文件洞，四项补拉全部入 goal 脚本
+  （`dc126dc4e`），整目录重建可全量重建。组成态语义 diff 对 2026-10-11 账本恰 3 行
+  （+新案 scroll-restoration-order；get-host-info 两案 Pass→Fail→补拉复绿）。新案定性 =
+  10 月语料从未抓取的**新增可执行面真缺口非回归**（全部账本 grep 零出现）；修复 =
+  hash-only traverse 保存滚动位恢复——popstate 派发后 hashchange 派发前（spec
+  apply-the-history restore scroll position 步；`_scrollToAnchorForHash` 布尔化 +
+  `_hist_dispatchPopState` defer 块带 skipScroll/锚未命中/_histRestoreScroll 自有
+  has+manual 三重门恢复，S4Z/S4R 锚滚绿面零触碰）。全量 409P/35F/26T/14NR，对 10 月
+  账本零漂移仅 +1 新 Pass；全量 85.7%→**85.9%**（409/476）。make exit 1 定性慢性面
+  （sandbox 双案 `open()`→null 页面抛错，2026-08-13 `2b855a1d2` 起既有——10 月账本
+  格式不记错误明细故当时不可见；判读看状态行集合，exit code 不作组成态门禁）。
+  证据：[evidence/2026-10-20-composition-recheck.md](evidence/2026-10-20-composition-recheck.md)。
 
 ## M4 收口评估（2026-10-09）
 

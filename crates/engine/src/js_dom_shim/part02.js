@@ -5965,8 +5965,11 @@
     //（spec apply-the-history step scroll restoration mode；WPT scroll-restoration-
     // fragment-scrolling-samedoc「manual 优先于片段滚」）。hash-setter 新导航不受门
     //（同案「new navigations should scroll to fragment」基面）。
+    // 2026-10-20：捕获指示元素命中面（返回值）——无指示元素时 popstate/hashchange 之间
+    // 恢复目标 entry 保存滚动位（下同 defer 块）。
+    var _zwTravAnchorHit = false;
     if (hashChanged && !skipScroll && (cur.scrollRestoration || 'auto') !== 'manual') {
-      _scrollToAnchorForHash(String(newHref).split('#')[1] || '', true);
+      _zwTravAnchorHit = _scrollToAnchorForHash(String(newHref).split('#')[1] || '', true);
     }
     // M2-S4T 挂账注记：popstate/hashchange 维持 _defer microtask 近似（spec 为 task）。
     // intercepted traverse 的空链面存在 WPT 双案时序冲突——ordering/currententrychange-
@@ -5981,6 +5984,15 @@
       var ev = new PopStateEvent('popstate', { state: st, __zwTrusted: true });
       ev.target = globalThis;
       _dispatchToListeners(_elKey('html', null), ev, 'all', globalThis);
+      // 2026-10-20：hash-only traverse 的保存滚动位恢复——spec apply-the-history 的
+      // restore scroll position 步在 fire popstate 之后、fire hashchange 之前
+      //（WPT scroll-restoration-order「after popstate, before hashchange」回归门）。
+      // 门：plain traverse（skipScroll——intercepted 走 _navCommitTraversal 的
+      // _zwRestore/e.scroll() 面，不得双恢复）+ 指示元素未命中（锚滚绿面零触碰，
+      // 与同步段同谓词）+ _histRestoreScroll 内部 has/manual 复判（S4Z 门）。
+      if (hashChanged && !skipScroll && !_zwTravAnchorHit) {
+        _histRestoreScroll(cur);
+      }
       if (hashChanged) {
         var hev = new HashChangeEvent('hashchange', { oldURL: oldHrefBefore, newURL: newHref, __zwTrusted: true });
         hev.target = globalThis;
@@ -7428,8 +7440,9 @@
   // 闭合 R3061 限制②）复用。real browser 同文档片段导航滚锚（<a href="#sec"> / location.hash= / history.back()
   // 到 #sec entry 均滚到 id="sec" 或 name="sec" 元素）。headless 无真 viewport → scrollIntoView 更新 scrollTop
   //（R3060）+ 派 scroll 事件（documented 近似）。无匹配元素 → 不滚。函数声明提升：_hist_dispatchPopState（前定义）可调。
+  // 返回是否命中指示元素（traverse 保存位恢复门用——无命中才走恢复，2026-10-20）。
   function _scrollToAnchorForHash(frag, _noTopFallback) {
-    if (!frag || !globalThis.document) return;
+    if (!frag || !globalThis.document) return false;
     var anchor = null;
     // M2-S4R：spec find a potential indicated element——raw ID 面在先；
     // https://html.spec.whatwg.org/multipage/browsing-the-web.html#find-a-potential-indicated-element
@@ -7463,7 +7476,7 @@
         _winScrollGen++;
         _zwFireScroll(null, null, null);
       }
-      return;
+      return false;
     }
     // M2-S4D：窗口滚动位同步——fragment 导航后 window.scrollY 可观测（WPT scroll-behavior
     // after-transition-* 「navigate('#frag') 后 scrollY ≠ 0」基面）。先取**滚动前**几何算绝对
@@ -7535,6 +7548,7 @@
         } catch (_eS7b) {}
       }
     } catch (_eS7f) {}
+    return true;
   }
 
   // R3006：`location.hash = v` setter——更新 hash + 新 history entry + 异步派发 hashchange（SPA hash 路由核心，
