@@ -30,12 +30,21 @@ v2 = 486 案 1527 子测试 **134P/1339F/36T/18NR = 8.8%**（20 案全绿）；�
 
 ## 下一步计划
 
-1. **M2 S1 类层级路由**：`__zwSvgTagIface`（localName→接口名，SVG2 element
-   index 全表）+ part05.js R80 分支 SVG ns 路由（命中表→接口 prototype；
-   miss→SVGElement.prototype）+ 缺失接口构造器补齐（desc/metadata/textPath/
-   view/geometry/animation 族）；MathML ns 同法。验证：`make testharness-svg
-   FILTER=types`（70 案 0P 基线）+ FILTER=struct。
+1. **M2 S1 类层级路由**（**本 session 持有**，2026-10-21 03:5x 起——基线通道与
+   v1/v2 运行的原 session 继续推进；后续会话请先核对 `git log` 与工作区，
+   本切片进行中请退避看护，勿并行改 js_dom_shim）：
+   `__zwSvgTagIface`（localName→接口名，SVG2 element index 全表）+ part05.js
+   R80 分支 SVG ns 路由（命中表→接口 prototype；miss→SVGElement.prototype）+
+   缺失接口构造器补齐（desc/metadata/textPath/view/geometry/animation 族）；
+   MathML ns 同法。验证：`make testharness-svg FILTER=types`（70 案 0P 基线）+
+   FILTER=struct。
 2. **M2 S2-S4**：值类型底座 → SVGSVGElement 面 → SVGGraphicsElement + 几何
    （切片序见 evidence/2026-10-21-m2-implementation-plan.md）。
 
 **待用户决策清单**：（空）
+
+**会话并行注记（2026-10-21）**：本 clone 今日出现三次会话重叠（延续轮看护
+session 代做 M1 收口 c10396886 + CSV 合规修正 b5382745a，均经独立验证后确认；
+记录见 evidence/2026-10-21-session-collision-watchdog.md）。约定：同 clone 同
+goal 的后到会话先读本文件与 git log，活跃实现面被持有时退避为看护/侦察，落
+ evidence 不抢源码面。
