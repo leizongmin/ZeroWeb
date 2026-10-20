@@ -66,8 +66,10 @@ S2b——SVGMatrix/Rect/Point/Angle 值对象 + Animated{Integer,Enumeration,...
 
 **待用户决策清单**：（空）
 
-**会话并行注记（2026-10-21）**：本 clone 今日出现三次会话重叠（延续轮看护
-session 代做 M1 收口 c10396886 + CSV 合规修正 b5382745a，均经独立验证后确认；
-记录见 evidence/2026-10-21-session-collision-watchdog.md）。约定：同 clone 同
+**会话并行注记（2026-10-21）**：本 clone 今日出现四次会话重叠（前三次：
+延续轮看护 session 代做 M1 收口 c10396886 + CSV 合规修正 b5382745a，均经
+独立验证后确认；第四次：S2a 同一未提交实现面真竞争，并行 session 就地
+精修后以 identical-content 提交 f96e87aee 收敛——均见
+evidence/2026-10-21-session-collision-watchdog.md）。约定：同 clone 同
 goal 的后到会话先读本文件与 git log，活跃实现面被持有时退避为看护/侦察，落
  evidence 不抢源码面。
