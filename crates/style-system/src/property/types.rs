@@ -1660,6 +1660,8 @@ pub enum PropertyValue {
     TextDecorationInset(zero_css_parser::values::TextDecorationInsetValue),
     /// text-underline-offset 值（CSS Text Decoration 4 §2.5，继承）。
     TextUnderlineOffset(zero_css_parser::values::TextUnderlineOffsetValue),
+    /// text-decoration-skip-spaces 值（CSS Text Decoration 4，不继承）。R5204。
+    TextDecorationSkipSpaces(zero_css_parser::values::TextDecorationSkipSpacesValue),
     /// text-emphasis-style 值（CSS Text Decoration 3 §3.1）。
     TextEmphasisStyle(TextEmphasisStyleValue),
     /// text-emphasis-position 值（§3.2）。

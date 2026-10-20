@@ -102,6 +102,10 @@ impl PropertyRegistry {
             "text-underline-offset" => Some(TextUnderlineOffset(
                 zero_css_parser::values::TextUnderlineOffsetValue::Auto,
             )),
+            // CSS Text Decoration 4 #text-decoration-skip-spaces-property：不继承。R5204。
+            "text-decoration-skip-spaces" => Some(TextDecorationSkipSpaces(
+                zero_css_parser::values::TextDecorationSkipSpacesValue::None,
+            )),
             // CSS Text Decoration 3 §3.1/§3.2：emphasis-style 与 position 均继承。
             "text-emphasis-style" => Some(TextEmphasisStyle(TextEmphasisStyleValue::None)),
             "text-emphasis-position" => Some(TextEmphasisPosition(TextEmphasisPositionValue::OverRight)),
@@ -424,6 +428,7 @@ impl PropertyRegistry {
                 | "direction"
                 | "tab-size"
                 | "text-underline-offset"
+                | "text-decoration-skip-spaces"
                 | "text-emphasis-color"
                 | "text-emphasis-style"
                 | "text-emphasis-position"
@@ -513,6 +518,7 @@ impl PropertyRegistry {
             "text-decoration-thickness",
             "text-decoration-inset",
             "text-underline-offset",
+            "text-decoration-skip-spaces",
             "text-emphasis-style",
             "text-emphasis-position",
             "text-emphasis-color",

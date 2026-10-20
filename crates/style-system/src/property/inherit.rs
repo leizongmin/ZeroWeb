@@ -896,6 +896,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
             style.text_underline_offset = default_style.text_underline_offset.clone();
             true
         }
+        "text-decoration-skip-spaces" => {
+            style.text_decoration_skip_spaces = default_style.text_decoration_skip_spaces;
+            true
+        }
         "text-emphasis-style" => {
             style.text_emphasis_style = default_style.text_emphasis_style.clone();
             true

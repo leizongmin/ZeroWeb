@@ -170,6 +170,10 @@ pub struct ComputedStyle {
     /// text-underline-offset 属性（CSS Text Decoration 4 §2.5，**继承**）。
     /// 下划线相对默认位置的额外下沉（正值=下沉，负值=上抬）；仅影响 underline。
     pub text_underline_offset: zero_css_parser::values::TextUnderlineOffsetValue,
+    /// text-decoration-skip-spaces 属性（CSS Text Decoration 4
+    /// #text-decoration-skip-spaces-property，不继承）。R5204。
+    /// 装饰线两端空白/字距裁剪，paint 期换算两端 inset。
+    pub text_decoration_skip_spaces: zero_css_parser::values::TextDecorationSkipSpacesValue,
     /// text-emphasis-style 属性（CSS Text Decoration 3 §3.1，继承）。
     pub text_emphasis_style: TextEmphasisStyleValue,
     /// text-emphasis-position 属性（§3.2，继承）。默认 OverRight。

@@ -697,6 +697,27 @@ pub struct TextDecorationInsetValue {
     pub end: LengthValue,
 }
 
+/// CSS text-decoration-skip-spaces 值（CSS Text Decoration 4
+/// #text-decoration-skip-spaces-property）。R5204。
+///
+/// 装饰线两端的空白/字距裁剪：`none`（默认，不裁）/ `all`（行首尾空白 + 行尾
+/// letter-spacing）/ `[ start || end ]`（对应端空白）。词内空白不产装饰缺口
+///（spec `all` 全跳语义的子集，无驱动案 FIXME）。非继承。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TextDecorationSkipSpacesValue {
+    /// none（默认）：不裁剪。
+    None,
+    /// all：行首尾空白 + 行尾 letter-spacing。
+    All,
+    /// start / end 关键字组合（`[ start || end ]`，至少一端为 true）。
+    StartEnd {
+        /// 行首空白裁剪。
+        start: bool,
+        /// 行尾空白裁剪。
+        end: bool,
+    },
+}
+
 /// CSS text-emphasis-style 值（CSS Text Decoration 3 §3.1）。
 /// 解析后存为标记字符（如 filled dot → '•' U+2022），None = 无标记。
 #[derive(Debug, Clone, PartialEq, Eq)]

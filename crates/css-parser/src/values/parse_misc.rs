@@ -602,6 +602,27 @@ pub fn parse_text_underline_offset(value: &str) -> Option<TextUnderlineOffsetVal
     text_underline_offset_length_is_valid(v, &length).then_some(TextUnderlineOffsetValue::Length(length))
 }
 
+/// 解析 text-decoration-skip-spaces（CSS Text Decoration 4）。R5204。
+///
+/// `none | all | [ start || end ]`——start/end 可任意序组合（`||` 语法），
+/// 其余值非法返回 None（声明被丢弃，回退 initial none）。
+pub fn parse_text_decoration_skip_spaces(value: &str) -> Option<TextDecorationSkipSpacesValue> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "none" => Some(TextDecorationSkipSpacesValue::None),
+        "all" => Some(TextDecorationSkipSpacesValue::All),
+        "start" => Some(TextDecorationSkipSpacesValue::StartEnd {
+            start: true,
+            end: false,
+        }),
+        "end" => Some(TextDecorationSkipSpacesValue::StartEnd {
+            start: false,
+            end: true,
+        }),
+        "start end" | "end start" => Some(TextDecorationSkipSpacesValue::StartEnd { start: true, end: true }),
+        _ => None,
+    }
+}
+
 fn text_underline_offset_length_is_valid(raw: &str, value: &LengthValue) -> bool {
     if matches!(
         raw.trim().to_ascii_lowercase().as_str(),

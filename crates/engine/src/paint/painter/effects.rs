@@ -1254,10 +1254,47 @@ impl super::Painter {
         }
     }
 
+    /// R5204（CSS Text Decoration 4 #text-decoration-skip-spaces-property）：装饰线
+    /// 两端裁剪量——行首/行尾空白（start/end/all）与行尾 letter-spacing（仅 all，
+    /// 行级 advance 已按 char_count 计入尾随 ls）。词内空白不产缺口（spec `all`
+    /// 全跳语义的子集，无驱动案 FIXME）。默认 none → (0,0) 早退零开销。
+    pub(crate) fn decoration_skip_trims(
+        &self,
+        style: &ComputedStyle,
+        text: &str,
+        font_id: u32,
+        font_size: f32,
+        is_ahem: bool,
+        letter_spacing_px: f32,
+    ) -> (f32, f32) {
+        let (trim_start, trim_end, all) = match style.text_decoration_skip_spaces {
+            zero_css_parser::values::TextDecorationSkipSpacesValue::None => return (0.0, 0.0),
+            zero_css_parser::values::TextDecorationSkipSpacesValue::All => (true, true, true),
+            zero_css_parser::values::TextDecorationSkipSpacesValue::StartEnd { start, end } => (start, end, false),
+        };
+        let mut skip_start = 0.0;
+        if trim_start {
+            for c in text.chars().take_while(|c| c.is_whitespace()) {
+                skip_start += self.measure_char_cached(font_id, c, font_size, is_ahem);
+            }
+        }
+        let mut skip_end = 0.0;
+        if trim_end {
+            for c in text.chars().rev().take_while(|c| c.is_whitespace()) {
+                skip_end += self.measure_char_cached(font_id, c, font_size, is_ahem);
+            }
+        }
+        if all {
+            skip_end += letter_spacing_px;
+        }
+        (skip_start, skip_end)
+    }
+
     /// 绘制文本装饰线（underline / overline / line-through）。
     ///
     /// 支持自定义装饰颜色（CSS `text-decoration-color`）和装饰样式
     /// （solid/dotted/dashed/wavy/double）。直接从 ComputedStyle 读取样式信息。
+    /// `skip_start/skip_end` 为 R5204 skip-spaces 两端裁剪（调用点按片段文本预计算）。
     pub(crate) fn paint_text_decoration_from_style(
         &mut self,
         base_x: f32,
@@ -1266,6 +1303,8 @@ impl super::Painter {
         total_width: f32,
         text_color: Color,
         style: &ComputedStyle,
+        skip_start: f32,
+        skip_end: f32,
     ) {
         if total_width <= 0.0 {
             return;
@@ -1306,8 +1345,9 @@ impl super::Painter {
         };
         let inset_start = inset_to_px(&style.text_decoration_inset.start);
         let inset_end = inset_to_px(&style.text_decoration_inset.end);
-        let line_x = base_x + inset_start;
-        let line_w = total_width - inset_start - inset_end;
+        // R5204：skip-spaces 裁剪与 inset 同轴叠加（inset 先、skip 后，同向内缩）。
+        let line_x = base_x + inset_start + skip_start;
+        let line_w = total_width - inset_start - inset_end - skip_start - skip_end;
         if line_w <= 0.0 {
             return;
         }

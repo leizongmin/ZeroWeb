@@ -114,6 +114,7 @@ impl Default for ComputedStyle {
                 end: LengthValue::Px(0.0),
             },
             text_underline_offset: zero_css_parser::values::TextUnderlineOffsetValue::Auto,
+            text_decoration_skip_spaces: zero_css_parser::values::TextDecorationSkipSpacesValue::None,
             text_emphasis_style: TextEmphasisStyleValue::None,
             text_emphasis_position: TextEmphasisPositionValue::OverRight,
             ruby_position: RubyPositionValue::Over,

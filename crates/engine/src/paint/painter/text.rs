@@ -1357,8 +1357,25 @@ impl super::Painter {
                     parent_is_ahem.entry(nid).or_insert(is_ahem_box);
                 }
 
-                let mut parent_letter_spacing: NodeIdMap<f32> =
-                    build_text_parent_override_map(doc, &box_node.text_node_letter_spacing);
+                // R5204：letter-spacing 与下方 word-spacing（R4133）同构——layout IFC
+                // element 分支（flatten run）产出片段 node_id = 元素自身，
+                // text_node_letter_spacing 按元素 id 键存；build_text_parent_override_map
+                // 只保留文本节点键，元素键整条丢弃 → paint Path B 重跑 IFC 查不到覆盖落 0
+                // → 声明/继承在 inline 元素的 letter-spacing 全丢（span-direct/inherit
+                // probe pitch 17.6 = 纯字宽实证；驱动案 text-decoration-skip-spaces-005
+                // ref 侧 span.text ls 全无）。此处理法同 R4133：文本节点 re-key 父元素，
+                // 元素键原样保留。
+                let mut parent_letter_spacing: NodeIdMap<f32> = box_node
+                    .text_node_letter_spacing
+                    .iter()
+                    .filter_map(|(&tn, &ls)| {
+                        if is_text(tn) {
+                            doc.parent_node(tn).map(|pid| (pid, ls))
+                        } else {
+                            Some((tn, ls))
+                        }
+                    })
+                    .collect();
                 // R4233：Path B 直系文本兜底——盒无 stored per-fragment 键时（合成盒 /
                 // 存储缺失），重跑 IFC 的直系文本 run 查不到覆盖会落 0，而容器自身 ls
                 // 即直系文本 run 的 ls（继承语义）。以盒 id 播种兜底；span 内 run 的
@@ -2136,6 +2153,14 @@ impl super::Painter {
                                         }
                                     }
                                 }
+                                let (skip_s, skip_e) = self.decoration_skip_trims(
+                                    style,
+                                    &transformed,
+                                    default_font_id.0,
+                                    fragment.font_size,
+                                    frag_is_ahem,
+                                    frag_letter_spacing,
+                                );
                                 self.paint_text_decoration_from_style(
                                     frag_base_x,
                                     frag_base_y,
@@ -2143,6 +2168,8 @@ impl super::Painter {
                                     text_width,
                                     frag_color,
                                     style,
+                                    skip_s,
+                                    skip_e,
                                 );
                             }
                         }
@@ -3153,6 +3180,14 @@ impl super::Painter {
                                 );
                             }
 
+                            let (skip_s, skip_e) = self.decoration_skip_trims(
+                                style,
+                                &transformed,
+                                frag_font_id.0,
+                                $frag_fs,
+                                is_ahem_frag,
+                                frag_letter_spacing,
+                            );
                             self.paint_text_decoration_from_style(
                                 frag_base_x,
                                 frag_base_y,
@@ -3160,7 +3195,38 @@ impl super::Painter {
                                 text_width,
                                 frag_color,
                                 style,
+                                skip_s,
+                                skip_e,
                             );
+                            // R5204：owner 自身声明的装饰补绘（CSS 2.1 §16.3.1 各元素
+                            // 自设装饰独立成线）。text-decoration-line 非继承，容器无
+                            // 装饰而 span 自声明时（skip-spaces-001~008 ref 页
+                            // span{underline} 结构）此前整条丢失。上方容器调用已覆盖
+                            // 直系文本（owner == 容器盒），此处仅补 flatten/嵌套 owner；
+                            // 更深包装链（span>em>text 中 span 的装饰）仍缺（FIXME）。
+                            if let Some(owner_style) = owner_style_opt
+                                && owner_style.text_decoration_line.has_any()
+                                && Some(owner_id) != box_node.node_id
+                            {
+                                let (o_skip_s, o_skip_e) = self.decoration_skip_trims(
+                                    owner_style,
+                                    &transformed,
+                                    frag_font_id.0,
+                                    $frag_fs,
+                                    is_ahem_frag,
+                                    frag_letter_spacing,
+                                );
+                                self.paint_text_decoration_from_style(
+                                    frag_base_x,
+                                    frag_base_y,
+                                    $frag_fs,
+                                    text_width,
+                                    frag_color,
+                                    owner_style,
+                                    o_skip_s,
+                                    o_skip_e,
+                                );
+                            }
                         }};
                     }
 
@@ -3781,6 +3847,8 @@ impl super::Painter {
             self.measure_char_cached(default_font_id.0, 'A', font_size, false),
             color,
             style,
+            0.0,
+            0.0,
         );
     }
 

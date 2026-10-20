@@ -1639,3 +1639,57 @@ fn test_tokenizer_invalid_numbers() {
         assert!(!tokens.is_empty());
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// text-decoration-skip-spaces 解析测试（R5204）
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_parse_text_decoration_skip_spaces_keywords() {
+    // 关键字 + 双关键字（顺序无关）
+    assert_eq!(
+        parse_text_decoration_skip_spaces("none"),
+        Some(TextDecorationSkipSpacesValue::None)
+    );
+    assert_eq!(
+        parse_text_decoration_skip_spaces("all"),
+        Some(TextDecorationSkipSpacesValue::All)
+    );
+    assert_eq!(
+        parse_text_decoration_skip_spaces("start"),
+        Some(TextDecorationSkipSpacesValue::StartEnd {
+            start: true,
+            end: false
+        })
+    );
+    assert_eq!(
+        parse_text_decoration_skip_spaces("end"),
+        Some(TextDecorationSkipSpacesValue::StartEnd {
+            start: false,
+            end: true
+        })
+    );
+    assert_eq!(
+        parse_text_decoration_skip_spaces("start end"),
+        Some(TextDecorationSkipSpacesValue::StartEnd { start: true, end: true })
+    );
+    assert_eq!(
+        parse_text_decoration_skip_spaces("end start"),
+        Some(TextDecorationSkipSpacesValue::StartEnd { start: true, end: true })
+    );
+    // 大小写不敏感（ascii-lowercase）
+    assert_eq!(
+        parse_text_decoration_skip_spaces("ALL"),
+        Some(TextDecorationSkipSpacesValue::All)
+    );
+}
+
+#[test]
+fn test_parse_text_decoration_skip_spaces_invalid() {
+    // 未知关键字 / 三关键字 / 重复 → None
+    assert_eq!(parse_text_decoration_skip_spaces("auto"), None);
+    assert_eq!(parse_text_decoration_skip_spaces("spaces"), None);
+    assert_eq!(parse_text_decoration_skip_spaces("start end start"), None);
+    assert_eq!(parse_text_decoration_skip_spaces("start start"), None);
+    assert_eq!(parse_text_decoration_skip_spaces(""), None);
+}
