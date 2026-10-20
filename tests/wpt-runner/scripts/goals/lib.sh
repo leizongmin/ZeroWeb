@@ -189,7 +189,9 @@ for entry in d["tree"]:
           fetch_raw "${dir}/${name}" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
         fi
         ;;
-      *.html | *.js | *.json | *.xml | *.xhtml | *.svg)
+      # .htm 与 .headers 同 fetch_dir_html 扩展模式（workers corpus 三层 .htm 用例 +
+      # .headers sidecar——深挖模式此前漏拉，2026-10-20 workers-compat M1 补齐）。
+      *.html | *.htm | *.headers | *.js | *.json | *.xml | *.xhtml | *.svg)
         fetch_raw "${dir}/${name}" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
         ;;
     esac

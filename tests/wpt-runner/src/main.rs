@@ -24,6 +24,7 @@ mod testharness_html_semantics;
 mod testharness_page_state;
 mod testharness_pointerlock;
 mod testharness_webmessaging;
+mod testharness_workers;
 mod wpt_file_loader;
 mod ws_fixture;
 
@@ -71,6 +72,8 @@ Commands:
   testharness-fileapi  Run imported FileAPI (blob/file/FileReader/url) window testharness cases (fileapi-compat goal M1 / DC-1)
   testharness-webmessaging  Run imported webmessaging (postMessage/MessageChannel/BroadcastChannel)
                        window testharness cases (webmessaging-compat goal M1 / DC-1)
+  testharness-workers  Run imported workers/dedicated-workers window testharness cases
+                       (workers-compat goal M1 / DC-1)
   testharness-cookies  Run imported cookies (document.cookie semantics) window testharness
                        cases (cookies-compat goal M1 / DC-1)
   testharness-console  Run pinned console corpus (namespace/label-conversion/format-tolerance)
@@ -348,6 +351,9 @@ fn main() {
         }),
         "testharness-webmessaging" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
             testharness_webmessaging::run_webmessaging_cases(wpt_root, filter)
+        }),
+        "testharness-workers" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
+            testharness_workers::run_workers_cases(wpt_root, filter)
         }),
         "testharness-cookies" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
             testharness_cookies::run_cookies_cases(wpt_root, filter)

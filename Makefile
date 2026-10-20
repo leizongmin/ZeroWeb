@@ -674,6 +674,16 @@ fetch-wpt-webmessaging:
 testharness-webmessaging: target-disk-guard fetch-wpt-webmessaging target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),900) -- ./target/release/zero-wpt-runner testharness-webmessaging $(if $(FILTER),$(FILTER),)
 
+# Workers goal M1 / DC-1（docs/goal/workers-compat.md）：语料 fetch 走 goals/70
+# 预置脚本（webmessaging 先例）；runner 可执行子集 skip 域（SharedWorker/module/
+# iframe/multi-global/module-worker 记账）见 testharness_workers.rs
+# workers_case_skipped 文档。make testharness-workers FILTER=constructors/。
+fetch-wpt-workers:
+	bash tests/wpt-runner/scripts/goals/70-workers-compat.sh
+
+testharness-workers: target-disk-guard fetch-wpt-workers target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),1800) -- ./target/release/zero-wpt-runner testharness-workers $(if $(FILTER),$(FILTER),)
+
 # Service Worker WPT 分母：294 个 source 必须有唯一且可重建的执行 lane。
 audit-wpt-service-workers-disposition:
 	python3 tests/wpt-runner/scripts/audit-service-worker-disposition.py
