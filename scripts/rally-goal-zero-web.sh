@@ -5,8 +5,8 @@
 # agent-command 用 claude-glm（GLM-5.1，bigmodel 通道）。
 #
 # 用法：
-#   bash scripts/rally-zero-web.sh                # 推进 zero-web goal
-#   bash scripts/rally-zero-web.sh --dry-run      # 只打印命令
+#   bash scripts/rally-goal-zero-web.sh                # 推进 zero-web goal
+#   bash scripts/rally-goal-zero-web.sh --dry-run      # 只打印命令
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

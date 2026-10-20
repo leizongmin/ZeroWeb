@@ -5,8 +5,8 @@
 # agent-command 用 claude-glm（GLM-5.1，bigmodel 通道）。
 #
 # 用法：
-#   bash scripts/rally-rendering-compat.sh         # 推进 rendering-compat goal
-#   bash scripts/rally-rendering-compat.sh --dry-run
+#   bash scripts/rally-goal-rendering-compat.sh         # 推进 rendering-compat goal
+#   bash scripts/rally-goal-rendering-compat.sh --dry-run
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -18,7 +18,7 @@
 ## Architecture
 - learning 的 date frontmatter 是日期真值，路径必须 `<分类>/<YYYY-MM>/<YYYY-MM-DD>-topic.md`，四类为 bugs/patterns/performance/platform；生成器拒绝 flat 布局与日期漂移。 (`scripts/gen-learnings-index.py`)
 - 事实层案例、生成 INDEX 和 guidelines 方法论各有独立职责；guidelines 只保留跨案例不变式，不重复 exemplar 细节，按索引回读证据。 (`docs/rally/learning-maintenance.md`, `.agents/skills/zeroweb-guidelines/SKILL.md`)
-- 每个 cron job prompt 带自己的范围、session_reuse 和 max_session_uses，goal wrapper 则通过 rally run 转发参数；不能从调度器启动推定每个任务都共享同一会话。 (`scripts/rally-zero-web.sh`, `docs/rally/jobs.yaml`)
+- 每个 cron job prompt 带自己的范围、session_reuse 和 max_session_uses，goal wrapper 则通过 rally run 转发参数；不能从调度器启动推定每个任务都共享同一会话。 (`scripts/rally-goal-zero-web.sh`, `docs/rally/jobs.yaml`)
 
 ## Decisions
 - learning-maintenance 的直接维护授权只覆盖指定 guidelines 与手册资产，不外溢到 AGENTS/其他 Skills；普通任务读取此手册也不会获得该 cron 的通知或推送权限。 (`docs/rally/learning-maintenance.md`, `docs/rally/jobs.yaml`)

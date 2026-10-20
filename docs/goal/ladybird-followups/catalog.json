@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "goals": [
+    {
+      "id": "renderer-trust-boundary",
+      "priority": "P0",
+      "title": "Renderer 特权请求与进程信任边界",
+      "sources": ["crates/protocol/src/lib.rs", "crates/engine/src/ws_bridge.rs", "crates/security/src/lib.rs", "apps/browser/src/process_backend.rs"],
+      "reuse": ["docs/goal/archive/security-hardening/master.md", "docs/goal/cookies-compat.md", "docs/engineering/quality-gates.md"],
+      "scenarios": ["IPC-01-forged-origin-session", "IPC-02-cookie-hsts-privilege", "IPC-03-automation-role", "IPC-04-sandbox-thread-order"],
+      "first_step": "建立消息发送者、可信身份来源、权限、存储所有者和拒绝动作矩阵；先核对真实调用链，不宣称已发现漏洞。"
+    },
+    {
+      "id": "incremental-rendering-oracle",
+      "priority": "P0",
+      "title": "增量样式布局与完整计算对照",
+      "sources": ["crates/style-system/src/lib.rs", "crates/layout-engine/src/lib.rs", "crates/engine/src/pipeline/mod.rs", "crates/engine/src/pipeline_budget.rs"],
+      "reuse": ["docs/goal/rendering-compat.md", "scripts/record-wpt-trend.sh", ".agents/skills/zeroweb-browser-chrome-parity/SKILL.md"],
+      "scenarios": ["INC-01-dom-cssom-mutations", "INC-02-inheritance-shadow-has", "INC-03-layout-cache-inputs", "INC-04-final-output-and-retention"],
+      "first_step": "盘点现有完整计算、增量入口和缓存；选一组确定性变更序列，对最终样式、几何、溢出与像素建立双路径基线。"
+    },
+    {
+      "id": "background-resource-lifecycle",
+      "priority": "P0",
+      "title": "后台页面与重复导航资源生命周期",
+      "sources": ["apps/browser/src/process_backend.rs", "apps/renderer/src/runtime.rs", "crates/page-runtime/src/lib.rs", "crates/engine/src/animation.rs"],
+      "reuse": ["docs/goal/archive/page-state-compat.md", "docs/goal/navigation-compat.md", ".agents/skills/zeroweb-regression-guard/SKILL.md"],
+      "scenarios": ["BG-01-nested-and-hidden-timers", "BG-02-offscreen-and-idle-present", "BG-03-repeat-navigation-stalled-resource", "BG-04-close-and-resume"],
+      "first_step": "用隔离 profile 与本地 fixture 建立后台 timer、视口外动画、重复导航及不结束子资源的资源观测基线。"
+    },
+    {
+      "id": "dom-operation-bench",
+      "priority": "P1",
+      "title": "跨浏览器 DOM 与脚本桥接操作基准",
+      "sources": ["crates/engine/src/dom_bindings/mod.rs", "crates/engine/src/js_dom_shim/part01.js", "crates/script-sandbox/src/lib.rs", "scripts/bench-report.sh"],
+      "reuse": ["scripts/perf-gate.sh", "docs/specs/performance-and-resource-budget.md", "tests/playwright-matrix/README.md"],
+      "scenarios": ["BENCH-01-style-and-geometry-read", "BENCH-02-replace-and-list-mutation", "BENCH-03-canvas-state", "BENCH-04-paired-and-semantic-check"],
+      "first_step": "固定真实 DOM fixture、操作数量、预热与采样协议，对照 ZeroWeb/Chrome，区分桥接、样式和布局成本。"
+    },
+    {
+      "id": "compositor-animation-continuity",
+      "priority": "P2",
+      "title": "主线程阻塞时的合成动画与 Worker Canvas",
+      "sources": ["crates/engine/src/animation.rs", "apps/compositor/src/main.rs", "crates/protocol/src/lib.rs", "crates/canvas/src/lib.rs"],
+      "reuse": ["docs/goal/workers-compat.md", "docs/goal/webgl-compat.md", "docs/goal/archive/timing-animation-compat/master.md", ".agents/skills/zeroweb-browser-chrome-parity/SKILL.md"],
+      "scenarios": ["COMP-01-transform-opacity-under-js-load", "COMP-02-script-state-and-end-event", "COMP-03-hit-test-pause-cancel", "COMP-04-worker-canvas-transfer"],
+      "first_step": "在生产窗口中记录主线程有界阻塞期间的动画、呈现与查询状态；先明确支持子集，WebGL 遵守既有门控。"
+    },
+    {
+      "id": "media-runtime-isolation",
+      "priority": "P2",
+      "title": "平台媒体解码与媒体运行时隔离",
+      "sources": ["crates/media/src/lib.rs", "crates/webview/src/webview.rs", "apps/renderer/src/runtime.rs", "crates/protocol/src/lib.rs"],
+      "reuse": ["docs/goal/archive/media-playback/master.md", "docs/goal/archive/media-audio/master.md", "docs/goal/archive/media-elements/master.md", ".agents/skills/zeroweb-verify/features/media.md"],
+      "scenarios": ["MEDIA-01-cpu-copy-and-capability", "MEDIA-02-clock-seek-and-state", "MEDIA-03-decoder-crash-recovery", "MEDIA-04-platform-fallback-and-permissions"],
+      "first_step": "测量现有长视频 CPU、复制与 A/V 同步，核对 decoder 权限，形成媒体进程及平台解码 RFC 后再选择实现切片。"
+    },
+    {
+      "id": "browser-delivery-loop",
+      "priority": "P1-release",
+      "title": "安装更新与崩溃反馈交付闭环",
+      "sources": ["scripts/package-macos.sh", "scripts/package-linux.sh", "scripts/package-windows.ps1", "apps/browser/src/main.rs"],
+      "reuse": ["docs/goal/desktop-browser.md", "docs/goal/archive/android-browser/master.md", ".agents/skills/zeroweb-verify/features/embedding-automation.md"],
+      "scenarios": ["DELIVERY-01-install-and-version", "DELIVERY-02-update-interruption-rollback", "DELIVERY-03-local-crash-report-consent", "DELIVERY-04-recover-session-and-feedback"],
+      "first_step": "盘点现有打包、版本、崩溃恢复和更新入口，建立隔离安装验收矩阵；分发渠道、签名与报告服务另记待定。"
+    }
+  ]
+}

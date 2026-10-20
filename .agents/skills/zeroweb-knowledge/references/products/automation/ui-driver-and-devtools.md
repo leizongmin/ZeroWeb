@@ -21,7 +21,7 @@
 - DevTools bundle 必须外供，未配置返回 503，配置目录内缺文件返回 404；发现响应的 devtools:// URL 只是入口形态，不能证明 frontend 可加载。 (`apps/browser/src/headless/devtools_serve.rs`, `apps/browser/src/headless/discovery.rs`)
 - DevTools 静态路径同时做词法过滤与 canonical 根约束，防 .. 与 symlink 逃逸；只验证请求字符串前缀不足以保护 bundle 目录。 (`apps/browser/src/headless/devtools_serve.rs`)
 - Playwright 直连 CDP_ENDPOINT_URL 时跳过捕获代理，只产 steps-report；没有 capture.jsonl 不等于执行失败，也不能用直连结果声称捕获了全部协议流量。 (`tests/playwright-matrix/README.md`, `tests/playwright-matrix/scripts/capture-core-flow.mjs`)
-- scripts/rally-devtools.sh 启动的是长期目标推进，不是一次 DevTools smoke；阅读它或链接它不授权启动无人值守网站/调试优化任务。 (`scripts/rally-devtools.sh`)
+- scripts/rally-goal-devtools.sh 启动的是长期目标推进，不是一次 DevTools smoke；阅读它或链接它不授权启动无人值守网站/调试优化任务。 (`scripts/rally-goal-devtools.sh`)
 - UiDriver::type 逐字符调用 handle_key，未经过 IME preedit/commit；字符能输入不证明候选框、组合文字或 InputConnection 正确，IME 验收需要对应宿主入口。 (`apps/browser/src/ui_driver.rs`, `apps/browser/src/app_input.rs`)
 - UiDriver 创建时开始计算600秒 deadline，配置只拒绝空路径，不拒绝已有输出目录；shot 的 File::create 会覆盖同名图，所以新运行应隔离输出，路径安全不等于旧证据安全。 (`apps/browser/src/ui_driver.rs`)
 

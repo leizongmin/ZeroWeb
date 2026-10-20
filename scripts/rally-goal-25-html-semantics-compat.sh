@@ -7,8 +7,8 @@
 #   （rally 轮内也可直接跑；编号索引见该目录 README.md）。
 #
 # 用法：
-#   bash scripts/25-html-semantics-compat.sh                # 推进 html-semantics-compat goal
-#   bash scripts/25-html-semantics-compat.sh --dry-run      # 只打印命令
+#   bash scripts/rally-goal-25-html-semantics-compat.sh                # 推进 html-semantics-compat goal
+#   bash scripts/rally-goal-25-html-semantics-compat.sh --dry-run      # 只打印命令
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
