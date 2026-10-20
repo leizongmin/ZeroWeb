@@ -1,5 +1,9 @@
 # ZeroWeb: 基于 Rust 的跨平台浏览器 — 目标执行契约
 
+> **2026-10-20 归档整理**：以下 18 个子目标按各自约定范围已完成并整体归档（模式 A）；原排除项与重入条件保留，详见[归档索引](archive/README.md)。cookies-compat、dnd-compat、uievents-compat 保留原控制面与启动脚本，质量门禁例外待复核。
+>
+> [timing-animation-compat](archive/timing-animation-compat.md)、[webstorage-compat](archive/webstorage-compat.md)、[fileapi-compat](archive/fileapi-compat.md)、[webmessaging-compat](archive/webmessaging-compat.md)、[performance-api-compat](archive/performance-api-compat.md)、[net-api-compat](archive/net-api-compat.md)、[console-compat](archive/console-compat.md)、[touch-events-compat](archive/touch-events-compat.md)、[selection-compat](archive/selection-compat.md)、[compression-compat](archive/compression-compat.md)、[webcrypto-compat](archive/webcrypto-compat.md)、[pointerlock-compat](archive/pointerlock-compat.md)、[encoding-compat](archive/encoding-compat.md)、[html-syntax-compat](archive/html-syntax-compat.md)、[security-hardening](archive/security-hardening.md)、[web-api-batch2](archive/web-api-batch2.md)、[android-browser](archive/android-browser.md)、[cdp-protocol](archive/cdp-protocol.md)。
+
 **版本**: v1.1
 **日期**: 2026-05-30（2026-08-04 状态刷新）
 **状态**: Active
@@ -495,7 +499,7 @@ zero-web/
 
 **交付物**：
 - [x] WASM 支持（Wasmtime 集成，页面 WASM 与 JS 互操作）——专项目标 2026-09-07 立项、2026-09-12 收口归档至 `docs/goal/archive/page-wasm.md`（DC-1~4 ✅，WPT jsapi 31 案 715/719 = 99.4%；余 4 Timeout 为 V8 前台消息循环泵跨流卡点，落 event-loop-spec 流域）
-- [ ] 更多 DOM API（MutationObserver、IntersectionObserver、ResizeObserver、Clipboard API、Fullscreen API、Drag & Drop）——MO host 触发 + IO/RO WPT 基线 + checkpoint spec 化**已拆专项目标**（2026-09-07 立项，2026-09-12 收口归档至 `docs/goal/archive/event-loop-spec.md`，DC-1~4 ✅）；Clipboard/Fullscreen **已拆专项目标** [web-api-batch2](web-api-batch2.md)（2026-09-12 立项）；Drag & Drop **已拆专项目标** [dnd-compat](dnd-compat.md)（2026-10-08 立项，2026-10-18 收口 Done，DC-1~4 ✅——交互管线五切片落地，corpus 437/446 = 98.0%，剩余 9 红挂账各自域：文本选择/shadow DOM/runner 注入基建/File 面）
+- [ ] 更多 DOM API（MutationObserver、IntersectionObserver、ResizeObserver、Clipboard API、Fullscreen API、Drag & Drop）——MO host 触发 + IO/RO WPT 基线 + checkpoint spec 化**已拆专项目标**（2026-09-07 立项，2026-09-12 收口归档至 `docs/goal/archive/event-loop-spec.md`，DC-1~4 ✅）；Clipboard/Fullscreen **已拆专项目标** [web-api-batch2](archive/web-api-batch2.md)（2026-09-12 立项）；Drag & Drop **已拆专项目标** [dnd-compat](dnd-compat.md)（2026-10-08 立项，2026-10-18 收口 Done，DC-1~4 ✅——交互管线五切片落地，corpus 437/446 = 98.0%，剩余 9 红挂账各自域：文本选择/shadow DOM/runner 注入基建/File 面）
 - [x] Web Components（Custom Elements + Shadow DOM）——专项目标 2026-09-07 立项、2026-09-11 收口归档至 `docs/goal/archive/web-components.md`（DC-1~5 ✅，WPT 三目录 76.0%；Shadow DOM 渲染级等用户点名专项）
 - [x] `script-sandbox` crate 支持 QuickJS feature gate——quickjs feature 已落地且 CI 双 feature 矩阵常驻（`ci.yml` linux-x86_64-quickjs job + `--no-default-features --features quickjs`，2026-09-12 核实）
 - [x] Service Worker 基础（注册、fetch 事件拦截、缓存管理）——专项目标 2026-09-06 收口（真实 worker 执行环境 + 生命周期真事件 + fetch 拦截 + Cache API 集成；归档于 `docs/goal/archive/service-workers/`）
@@ -513,7 +517,7 @@ zero-web/
 
 ### M13: 性能优化 + 安全加固
 
-**目标**：系统性能优化和安全模型深化。——安全面**已拆专项目标** [security-hardening](security-hardening.md)（2026-09-12 立项：CSP 完整实现 + Mixed Content + HSTS + 权限模型语义层，WPT 三 corpus 验收；站点隔离挂账等点名）。注：资源预加载面已被归档 RFC `network-loading-performance-2026-08-14`（P0/P1/P2 ✅）覆盖。
+**目标**：系统性能优化和安全模型深化。——安全面**已拆专项目标** [security-hardening](archive/security-hardening.md)（2026-09-12 立项：CSP 完整实现 + Mixed Content + HSTS + 权限模型语义层，WPT 三 corpus 验收；站点隔离挂账等点名）。注：资源预加载面已被归档 RFC `network-loading-performance-2026-08-14`（P0/P1/P2 ✅）覆盖。
 
 **交付物**：
 - [ ] 渲染管线优化（GPU 批处理、纹理 atlas 优化、减少 draw call）
@@ -521,10 +525,10 @@ zero-web/
 - [ ] JS 执行优化（V8 快照预热、减少 Rust↔JS 桥开销）
 - [x] 资源预加载（speculative parsing、`<link rel="preload">`）——归档 RFC network-loading-performance-2026-08-14 已实施（P0/P1/P2 ✅）
 - [ ] 站点隔离（跨站 iframe 在独立渲染进程中）——深多进程重构，挂账等用户点名
-- [ ] CSP 完整实现（所有主要指令、report-only 模式）——已拆 [security-hardening](security-hardening.md)
-- [ ] Mixed Content 阻止（HTTPS 页面阻止 HTTP 子资源）——已拆 [security-hardening](security-hardening.md)
-- [ ] HSTS 支持——已拆 [security-hardening](security-hardening.md)
-- [ ] 权限模型基础（摄像头/麦克风/定位/通知的权限请求 UI）——语义层已拆 [security-hardening](security-hardening.md)（DC-4），提示 UI 归 desktop-browser
+- [ ] CSP 完整实现（所有主要指令、report-only 模式）——已拆 [security-hardening](archive/security-hardening.md)
+- [ ] Mixed Content 阻止（HTTPS 页面阻止 HTTP 子资源）——已拆 [security-hardening](archive/security-hardening.md)
+- [ ] HSTS 支持——已拆 [security-hardening](archive/security-hardening.md)
+- [ ] 权限模型基础（摄像头/麦克风/定位/通知的权限请求 UI）——语义层已拆 [security-hardening](archive/security-hardening.md)（DC-4），提示 UI 归 desktop-browser
 
 **验收标准**：
 - Speedometer 或等效基准有基线数据且不退化
@@ -541,7 +545,7 @@ zero-web/
 
 **交付物**：
 - [ ] 可访问性基础（ARIA 属性传递、键盘导航、焦点管理、高对比度模式）
-- [ ] Android 平台适配（APK 打包、触摸输入、虚拟键盘、移动端 UI）——**已拆专项目标** `docs/goal/android-browser.md`（2026-09-07 立项：现状功能中期 M2 级、治理缺位，先建 CI 门禁与冒烟验收）
+- [ ] Android 平台适配（APK 打包、触摸输入、虚拟键盘、移动端 UI）——**专项目标已完成并归档** `docs/goal/archive/android-browser.md`（2026-09-13 DC-1~4 满足；CI/模拟器冒烟及恢复验收完成，真机/页面级验收仍待设备）
 - [ ] 鸿蒙 PC 架构预留和初步适配（平台胶水层、输入法适配）
 - [ ] 发布打包（macOS .app/.dmg、Linux .AppImage/.deb、Windows .exe 安装包）
 - [ ] 自动更新机制基础

@@ -17,7 +17,7 @@
 //! 的 logging 观测——`test_driver.bidi` 捕获通道）runner 侧未提供，经
 //! `unsupported_testdriver_dependencies` 整案 Unsupported（诚实记账不 skip，
 //! 分母可见；捕获通道落地后零改动自动重入）。甄别结论与基线见
-//! docs/goal/console-compat/evidence/2026-10-14-m1-baseline.md。
+//! docs/goal/archive/console-compat/evidence/2026-10-14-m1-baseline.md。
 
 use crate::testharness::{HarnessSubtestResult, run_any_js_corpus_subdirs};
 use std::path::Path;

@@ -511,7 +511,7 @@ testharness-intersection-observer: target-disk-guard fetch-wpt-observers target/
 testharness-resize-observer: target-disk-guard fetch-wpt-observers target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),900) -- ./target/release/zero-wpt-runner testharness-resize-observer $(if $(FILTER),$(FILTER),)
 
-# web-api-batch2 goal M1（Clipboard API + Fullscreen，docs/goal/web-api-batch2.md）：
+# web-api-batch2 goal M1（Clipboard API + Fullscreen，docs/goal/archive/web-api-batch2.md）：
 # 上游 clipboard-apis/ + fullscreen/ 两 corpus window 可执行子集（fetch 脚本显式清单
 # + runner 侧内容规则筛减 manual/iframe/rendering/resources；`:fullscreen` 样式面
 # 跨域记账 rendering-compat 流域）。基线首跑只记通过率不作为 land 门禁。filter 按
@@ -537,7 +537,7 @@ testharness-css-variables: fetch-wpt-data fetch-wpt-css-variables target-disk-gu
 testharness-css-variables-one: fetch-wpt-css-variables target-disk-guard target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-variables $(if $(FILTER),$(FILTER),)
 
-# security-hardening goal M1（docs/goal/security-hardening.md）：上游 content-security-policy/
+# security-hardening goal M1（docs/goal/archive/security-hardening.md）：上游 content-security-policy/
 # + mixed-content/ + secure-contexts/ 三 corpus window 可执行子集（fetch 脚本 sparse
 # 克隆首批指令面 + runner 侧内容规则筛减 ref/manual/iframe/worker）。基线首跑只记
 # 通过率不作为 land 门禁。filter 按路径子串透传：make testharness-csp FILTER=script-src。
@@ -574,7 +574,7 @@ testharness-user-timing: target-disk-guard fetch-wpt-timing-animation target/tes
 testharness-web-animations: target-disk-guard fetch-wpt-timing-animation target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),1800) -- ./target/release/zero-wpt-runner testharness-web-animations $(if $(FILTER),$(FILTER),)
 
-# WebStorage goal M1 / DC-1（docs/goal/webstorage-compat.md）：语料 fetch 走 goals/15
+# WebStorage goal M1 / DC-1（docs/goal/archive/webstorage-compat.md）：语料 fetch 走 goals/15
 # 预置脚本（timing-animation 先例）；runner 可执行子集 skip 域见 WEBSTORAGE_CASES 文档。
 # make testharness-webstorage FILTER=getitem。
 fetch-wpt-webstorage:
@@ -583,7 +583,7 @@ fetch-wpt-webstorage:
 testharness-webstorage: target-disk-guard fetch-wpt-webstorage target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),900) -- ./target/release/zero-wpt-runner testharness-webstorage $(if $(FILTER),$(FILTER),)
 
-# Compression goal M1 / DC-1（docs/goal/compression-compat.md）：语料 fetch 走
+# Compression goal M1 / DC-1（docs/goal/archive/compression-compat.md）：语料 fetch 走
 # goals/24 预置脚本（webstorage 先例；含 resources/ + third_party/pako + media
 # 两文件运行依赖）；runner 可执行子集 skip 域见 testharness.rs
 # compression_case_skipped 文档。make testharness-compression FILTER=decompression。
@@ -602,7 +602,7 @@ testharness-html-semantics: target-disk-guard fetch-wpt-html-semantics target/te
 testharness-compression: target-disk-guard fetch-wpt-compression target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),900) -- ./target/release/zero-wpt-runner testharness-compression $(if $(FILTER),$(FILTER),)
 
-# webcrypto goal M1 / DC-1（docs/goal/webcrypto-compat.md）：WebCryptoAPI 语料
+# webcrypto goal M1 / DC-1（docs/goal/archive/webcrypto-compat.md）：WebCryptoAPI 语料
 # fetch 走 goals/26 预置脚本（git trees 深挖 + /common 补拉）；runner 可执行子集
 # skip 域见 testharness.rs webcrypto_case_skipped 文档。
 # make testharness-webcrypto FILTER=digest。
@@ -623,10 +623,10 @@ fetch-wpt-cookies:
 testharness-cookies: target-disk-guard fetch-wpt-cookies target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),900) -- ./target/release/zero-wpt-runner testharness-cookies $(if $(FILTER),$(FILTER),)
 
-# Console goal M1 / DC-1（docs/goal/console-compat.md）：语料 fetch 走 goals/21
+# Console goal M1 / DC-1（docs/goal/archive/console-compat.md）：语料 fetch 走 goals/21
 # 预置脚本。BiDi log.entryAdded 捕获通道依赖案（count/timing/format-specifier
 # logging 面）整案 Unsupported——通道甄别结论见
-# docs/goal/console-compat/evidence/2026-10-14-m1-baseline.md。
+# docs/goal/archive/console-compat/evidence/2026-10-14-m1-baseline.md。
 # make testharness-console FILTER=count。
 fetch-wpt-console:
 	bash tests/wpt-runner/scripts/goals/21-console-compat.sh
@@ -634,11 +634,11 @@ fetch-wpt-console:
 testharness-console: target-disk-guard fetch-wpt-console target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),900) -- ./target/release/zero-wpt-runner testharness-console $(if $(FILTER),$(FILTER),)
 
-# Performance API goal M1 / DC-1（docs/goal/performance-api-compat.md）：语料 fetch 走
+# Performance API goal M1 / DC-1（docs/goal/archive/performance-api-compat.md）：语料 fetch 走
 # goals/19 预置脚本（WPT 无 performance-api 顶层目录——resource/navigation/event/
 # longtask 四独立套件，goals/19 DIRS 记账）；runner 可执行子集 skip 域见
 # testharness.rs performance_api_case_skipped 文档，缺面甄别报告落
-# docs/goal/performance-api-compat/evidence/。make testharness-resource-timing
+# docs/goal/archive/performance-api-compat/evidence/。make testharness-resource-timing
 # FILTER=buffer-full。
 fetch-wpt-performance-api:
 	bash tests/wpt-runner/scripts/goals/19-performance-api-compat.sh
@@ -655,7 +655,7 @@ testharness-event-timing: target-disk-guard fetch-wpt-performance-api target/tes
 testharness-longtask-timing: target-disk-guard fetch-wpt-performance-api target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),900) -- ./target/release/zero-wpt-runner testharness-longtask-timing $(if $(FILTER),$(FILTER),)
 
-# FileAPI goal M1 / DC-1（docs/goal/fileapi-compat.md）：语料 fetch 走 goals/16
+# FileAPI goal M1 / DC-1（docs/goal/archive/fileapi-compat.md）：语料 fetch 走 goals/16
 # 预置脚本；runner 可执行子集 skip 域见 testharness_fileapi.rs fileapi_case_skipped 文档。
 # make testharness-fileapi FILTER=blob/。
 fetch-wpt-fileapi:
@@ -664,7 +664,7 @@ fetch-wpt-fileapi:
 testharness-fileapi: target-disk-guard fetch-wpt-fileapi target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),900) -- ./target/release/zero-wpt-runner testharness-fileapi $(if $(FILTER),$(FILTER),)
 
-# Web Messaging goal M1 / DC-1（docs/goal/webmessaging-compat.md）：语料 fetch 走
+# Web Messaging goal M1 / DC-1（docs/goal/archive/webmessaging-compat.md）：语料 fetch 走
 # goals/17 预置脚本；runner 可执行子集 skip 域（跨 document→navigation M3、
 # worker→workers-compat）见 testharness_webmessaging.rs webmessaging_case_skipped
 # 文档。make testharness-webmessaging FILTER=with-ports/。

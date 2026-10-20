@@ -15,7 +15,7 @@
 编写时核对的仓库位置：`apps/browser/src/main.rs` 的 `run_headless` 和
 `apps/browser/src/headless/` 的协议实现。当前 `--headless` 进入远程控制服务，
 `--remote-debugging-port` 不能单独证明存在 GUI CDP 服务。
-`docs/goal/cdp-protocol/master.md` 可查进度，实际代码与探针结果决定本次能力。
+`docs/goal/archive/cdp-protocol/master.md` 可查进度，实际代码与探针结果决定本次能力。
 `zero-webdriver` live renderer 属行为诊断；不能与无关 GUI 初始帧拼成完整 E2E。
 
 最小预检在本地合成页面执行：导航到带按钮/输入框的页面，订阅实际支持的日志事件，

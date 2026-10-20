@@ -2,7 +2,7 @@
 # Goal: webmessaging-compat（编号 17——推进顺序见同目录 README.md）
 # postMessage/MessageChannel/BroadcastChannel 面（多进程 IPC 有底子，window 面未度量）
 # M1 资产预置：fetch webmessaging 子集；基线运行（runner 通道 + Makefile target + skip
-# 规则）= 各 goal M1 rally 轮落地，契约见 docs/goal/webmessaging-compat.md DC-1。
+# 规则）= 各 goal M1 rally 轮落地，契约见 docs/goal/archive/webmessaging-compat.md DC-1。
 # 用法：bash tests/wpt-runner/scripts/goals/17-webmessaging-compat.sh（FORCE=1 强制重拉）
 #
 # **拉取面（2026-10-12 M1 rally 轮定稿）**："webmessaging" 递归一层覆盖顶层

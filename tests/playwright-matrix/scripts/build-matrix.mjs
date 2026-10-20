@@ -6,7 +6,7 @@
 //   chromium-capture.md           — 按域分组的人类可读明细（evidence/ 引用件）
 //
 // 三态登记（实现/部分/不实现 vs ZeroWeb）是人工判定件，落
-// docs/goal/cdp-protocol/evidence/cdp-command-matrix.md；本脚本只产出捕获侧事实。
+// docs/goal/archive/cdp-protocol/evidence/cdp-command-matrix.md；本脚本只产出捕获侧事实。
 
 import fs from 'node:fs'
 import path from 'node:path'
