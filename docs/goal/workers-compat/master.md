@@ -2,11 +2,21 @@
 
 **入口文档**: [../workers-compat.md](../workers-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-21（P7 后半 + 环境值面收口——importScripts 错误归因 + worker rAF/search 97.1%）
+**最后更新**: 2026-10-21（M4 收口判定——DC-1~4 全满足，goal 完成）
 
 ---
 
 ## 当前状态
+
+**M4 收口判定完成（2026-10-21）——Done Criteria 全部满足，goal 完成**。
+DC-1（corpus 导入+基线+CSV 回填）/ DC-2（同 realm 近似承载+全局面+importScripts，
+架构现状修正记账）/ DC-3（消息往返+transfer，M3）/ DC-4（make test 全绿 +
+clippy/fmt 干净 + reftest 712/712 零回归 + 每切片单测）逐项判定通过；
+quickjs 行为矩阵未评估（行为证据均 v8 腿，quickjs 腿为 clippy 编译门）如实
+记账。SharedWorker（66 案排除 + exposure 1F window 变体同账）/ nested worker
+（已实现；terminate 深度固有边界）/ module worker（41 案排除，不实现评估
+结论）三笔挂账定稿。残余 21（12F+8T+1PF）全部定性不阻 DC。判定全文：
+[evidence/2026-10-21-m4-dc-final.md](evidence/2026-10-21-m4-dc-final.md)。
 
 **P7 后半 + 环境值面完成（2026-10-21）**：importScripts 错误归因（共享三相实现
 ——调用点/被导入脚本/嵌套内层优先，report-error-\* 13F 翻绿）+ worker 作用域
@@ -73,7 +83,7 @@ M2 按「不另起炉灶」约束在此实现上补语义（M1 失败簇即工�
 | P3 | worker 全局作用域最小面（self/navigator/location/onerror） | ✅ 大面完成 + 值域收口（rAF 数值递增、search 空 query 根因修）；残余记账：Worker-location.sub `:80`、platform、userAgentData（P8 合成 origin 簇）、resource timing/nested_sync_xhr（功能缺口） |
 | P4 | classic 脚本执行 + importScripts；module worker 评估 | ✅ 完成（三相语义 + MIME 全集 + 原生 DOMException + 调用点/被导入脚本/嵌套内层错误归因）；module 面目录级排除记账不变 |
 | P5 | postMessage/structuredClone 往返 + transferable（ArrayBuffer transfer） | ✅ M3 完成（同一转移体 + validate-then-consume + 视图面全集；残余仅 ReadableStream 1PF 先决条件面） |
-| P6 | SharedWorker / nested worker 挂账定稿 | ⏳ M4（SharedWorker exposure 1F + ctor-\* 3T + navigator/007 1T 等待型；定稿挂账） |
+| P6 | SharedWorker / nested worker 挂账定稿 | ✅ M4 定稿（SharedWorker 66 案排除 + exposure 1F window 变体同账，重入条件 isolate 化；nested 已实现、terminate 深度固有边界记账；module worker 41 案排除不实现评估结论——见 M4 evidence 挂账定稿节） |
 | P7 | ErrorEvent 溯源簇（filename/lineno 精确上报） | ✅ 完成（前半 legacy 5 参 + 抑制面；后半 importScripts 调用点/被导入脚本/嵌套内层优先归因，13F 翻绿） |
 | P8 | runner 基建：wptserve 动态 handler 302 重定向（baseurl 族） | ⏳ 记账（baseurl 3F+3T + location/redirect 1T + Worker-location.sub/platform/userAgentData 3F——302 语义 + 合成 origin 恒 https 两根因；URL 编码 2F 同属文档编码管线缺口） |
 
@@ -83,6 +93,9 @@ M2 按「不另起炉灶」约束在此实现上补语义（M1 失败簇即工�
 
 ## 已完成切片
 
+- **M4 收口判定（2026-10-21）**：DC-1~4 逐项判定通过 + reftest 712/712 零回归
+  + quickjs 行为矩阵差异记账 + SharedWorker/nested/module 三笔挂账定稿 +
+  残余 21 全部定性不阻 DC。**goal 完成**。判定全文见 M4 evidence。
 - **P7 后半 + 环境值面（2026-10-21）**：importScripts 错误归因共享三相实现
   （`_zwCaller` 调用点 / `_zwScriptUrl` 被导入脚本 / 嵌套内层优先；构造期调用点
   改写 `__zwImportTracked` 不偏移行号 + 递归改写跨层 helper）+ worker 作用域
@@ -115,13 +128,13 @@ M2 按「不另起炉灶」约束在此实现上补语义（M1 失败簇即工�
 
 ## 下一步计划
 
-1. **M4 收口评估**：对照入口文档 DC-1~4 逐项判定——DC-4 需最终 `make test`/
-   `make reftest` 零回归确认 + clippy/fmt；残余 12F+8T+1PF 定稿（P6
-   SharedWorker/nested 挂账 + P8 runner 基建/合成 origin + URL 编码/terminate
-   深度/同步 XHR 功能缺口，均不阻 DC 即记 license）。
-2. **可选推进**（不阻 M4）：P8 runner 302 重定向语义（baseurl 族 3F+3T）；文档
-   编码 → worker URL 解码管线（URL 编码 2F）；worker resource timing 采集。
-3. 门禁：每切片 `make test` 全绿 + clippy -D warnings + fmt；v8/quickjs 双矩阵在
-   M2 动 shim 后评估。
+**goal 已完成（2026-10-21）**：DC-1~4 全满足，无本 goal 待办。残余 21 的后续
+归属（均已在 M4 evidence 定性）：
+
+1. **P8 runner 基建**（302 重定向 + 合成 origin 策略）——归 wpt-runner 基建
+   改进议题，非本 goal 源码面；baseurl 族 6 + 环境值 3 + URL 编码 2 同账。
+2. **terminate 中断深度**（1F+1T）与 SharedWorker（66 案）——重入条件均为
+   独立 isolate/线程化立项。
+3. **resource timing / nested sync XHR**（2F）——功能缺口，归对应子面 goal。
 
 **待用户决策清单**：（空）
