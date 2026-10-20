@@ -2,11 +2,29 @@
 
 **入口文档**: [../workers-compat.md](../workers-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-21（M2 切片三收口——错误管线三相 + close 语义 + 全局面 91.1%）
+**最后更新**: 2026-10-21（P7 后半 + 环境值面收口——importScripts 错误归因 + worker rAF/search 97.1%）
 
 ---
 
 ## 当前状态
+
+**P7 后半 + 环境值面完成（2026-10-21）**：importScripts 错误归因（共享三相实现
+——调用点/被导入脚本/嵌套内层优先，report-error-\* 13F 翻绿）+ worker 作用域
+rAF（setTimeout 逐回调派发 + 数值严格递增时间戳）+ URL search 空 query 根因修
+（共享序列化器，裸尾 `?` 返空串）。全量 **693/714 = 97.1%**
+（M3 收口 95.0% → +15P，含 P7 会话内 691 锚点）。证据：
+[evidence/2026-10-21-p7-import-error-attribution-env-values.md](evidence/2026-10-21-p7-import-error-attribution-env-values.md)
+（含残余 12F+8T+1PF 六簇清单）。引擎单测 part61 累计 275+6 案，
+`cargo test -p zero-engine --lib` 3339/3339。
+
+**M3 完成（2026-10-21）**：transfer/ports + structured-clone 语义（serialize-with-
+transfer 同一转移体、validate-then-consume 三相、MessagePort 改挂随迁、视图面
+DataView/resizable/OOB/SAB、包装对象/Error/FileList/ImageData/OffscreenCanvas）+
+postMessage 第二参联合形态 + 投递载体 microtask→task + ImageBitmap/MessagePort
+接口类化。**678/714 = 95.0%**（M2 切片三 91.1% → +165P，Timeout 11→8）。
+证据：[evidence/2026-10-21-m3-transfer-ports-structured-clone.md](evidence/2026-10-21-m3-transfer-ports-structured-clone.md)
+（分母 563→714 因 battery 支撑资产补齐）。
+提交 `3ca356bb8`。
 
 **M2 切片三完成（2026-10-21）**：错误管线三相（worker 全局 onerror legacy 5 参
 签名 + 返回 true 抑制 + 派发去重 + 解析错误 plain Event/运行时错误 ErrorEvent
@@ -52,19 +70,29 @@ M2 按「不另起炉灶」约束在此实现上补语义（M1 失败簇即工�
 |---|------|------|
 | P1 | workers/dedicated-workers corpus 导入 + 基线 | ✅ M1 + M2 通道扩展（175 案/563 子测试，含 any.js dedicated 变体 + .worker.js 形态） |
 | P2 | 与 zero-page-runtime 的 worker 契约协商（实例归属/消息通道） | ⏳ M3 前置（transfer/ports 若触协议面先对契约） |
-| P3 | worker 全局作用域最小面（self/navigator/location/onerror） | ◐ 大面完成（onerror 三相、members 19/19、performance timing/navigation、MessageEvent/Location 面）；残余值域：WorkerLocation `:80` 端口形态与 search `"?"` 形态、WorkerNavigator.platform、rAF dt 类型、resource timing（7F 记账） |
-| P4 | classic 脚本执行 + importScripts；module worker 评估 | ◐ 完成（三相语义 + MIME 全集 + 原生 DOMException）；残余：importScripts 调用点归因（P7）；module 面目录级排除记账不变 |
-| P5 | postMessage/structuredClone 往返 + transferable（ArrayBuffer transfer） | ⏳ M3——Worker-multi-port 7F + Worker-messageport 1F+2T + e.ports/ImageData/ transfer 面（11F+4T） |
-| P6 | SharedWorker / nested worker 挂账定稿 | ⏳ M4（SharedWorker 排除面已在基线甄别表记账；exposure.any.js 1F 同簇） |
-| P7 | ErrorEvent 溯源簇（filename/lineno 精确上报） | ◐ 前半完成（legacy 5 参签名 + 抑制面 + worker 内 4 案参数型翻绿）；后半：importScripts 调用点 filename/lineno 归因（report-error-* 6×2F + nested-importScripts 1F，需脚本装载表） |
-| P8 | runner 基建：wptserve 动态 handler 302 重定向（baseurl 族） | ⏳ 记账（文件型 runner 无重定向语义；baseurl/alpha 1F+2T + use-base-url 1F + blob-url base 1F + location/redirect 1T 同属基建面） |
+| P3 | worker 全局作用域最小面（self/navigator/location/onerror） | ✅ 大面完成 + 值域收口（rAF 数值递增、search 空 query 根因修）；残余记账：Worker-location.sub `:80`、platform、userAgentData（P8 合成 origin 簇）、resource timing/nested_sync_xhr（功能缺口） |
+| P4 | classic 脚本执行 + importScripts；module worker 评估 | ✅ 完成（三相语义 + MIME 全集 + 原生 DOMException + 调用点/被导入脚本/嵌套内层错误归因）；module 面目录级排除记账不变 |
+| P5 | postMessage/structuredClone 往返 + transferable（ArrayBuffer transfer） | ✅ M3 完成（同一转移体 + validate-then-consume + 视图面全集；残余仅 ReadableStream 1PF 先决条件面） |
+| P6 | SharedWorker / nested worker 挂账定稿 | ⏳ M4（SharedWorker exposure 1F + ctor-\* 3T + navigator/007 1T 等待型；定稿挂账） |
+| P7 | ErrorEvent 溯源簇（filename/lineno 精确上报） | ✅ 完成（前半 legacy 5 参 + 抑制面；后半 importScripts 调用点/被导入脚本/嵌套内层优先归因，13F 翻绿） |
+| P8 | runner 基建：wptserve 动态 handler 302 重定向（baseurl 族） | ⏳ 记账（baseurl 3F+3T + location/redirect 1T + Worker-location.sub/platform/userAgentData 3F——302 语义 + 合成 origin 恒 https 两根因；URL 编码 2F 同属文档编码管线缺口） |
 
-M2/M3 失败簇最新清单（6 簇）见
-[evidence/2026-10-21-m2-slice3-error-pipeline.md](evidence/2026-10-21-m2-slice3-error-pipeline.md)
-「残余 50 失败」节。
+残余失败簇最新清单（6 簇）见
+[evidence/2026-10-21-p7-import-error-attribution-env-values.md](evidence/2026-10-21-p7-import-error-attribution-env-values.md)
+「残余 21」节。
 
 ## 已完成切片
 
+- **P7 后半 + 环境值面（2026-10-21）**：importScripts 错误归因共享三相实现
+  （`_zwCaller` 调用点 / `_zwScriptUrl` 被导入脚本 / 嵌套内层优先；构造期调用点
+  改写 `__zwImportTracked` 不偏移行号 + 递归改写跨层 helper）+ worker 作用域
+  rAF（setTimeout 逐回调 + 数值严格递增 + cancel 句柄表）+ URL search 空 query
+  根因修（serialize_url 裸尾 `?` 返空串）。97.1%（+15P）。引擎单测 part61 +6 案。
+- **M3（2026-10-21）**：transfer/ports + structured-clone 语义（serialize-with-
+  transfer 同一转移体 + validate-then-consume 三相 + MessagePort 改挂随迁 +
+  视图面 DataView/resizable/OOB/SAB + 包装对象/Error/FileList/ImageData/
+  OffscreenCanvas + postMessage 第二参联合 + 投递 task 化 + 接口类化）。
+  95.0%（+165P，Timeout 11→8）。引擎单测 part61 9 案。提交 `3ca356bb8`。
 - **M2 切片三（2026-10-21）**：错误管线三相（legacy 5 参 onerror + 返回 true
   抑制 + dispatch 置空去重 + 解析/运行时错误分型）+ close() 全语义（出站投递/
   入站丢弃/定时器清空+排程禁止+序号自增/同任务错误上报）+ 全局面（onoffline/
@@ -87,13 +115,13 @@ M2/M3 失败簇最新清单（6 簇）见
 
 ## 下一步计划
 
-1. **M3**：transfer/ports + structured-clone 语义（P5——MessageChannel/MessagePort
-   序列化、e.ports、ArrayBuffer transfer、ImageData clone；残余 11F+4T）；动协议面
-   前先对 zero-page-runtime 契约（P2）。
-2. **M3 可选**：importScripts 调用点 filename/lineno 归因（P7 后半，需脚本装载表）；
-   环境值域对齐（WorkerLocation `:80`/search、platform 值）。
-3. **M4**：DC 判定收口 + SharedWorker/nested/module 挂账定稿（P6）。
-4. 门禁：每切片 `make test` 全绿 + clippy -D warnings + fmt；v8/quickjs 双矩阵在
+1. **M4 收口评估**：对照入口文档 DC-1~4 逐项判定——DC-4 需最终 `make test`/
+   `make reftest` 零回归确认 + clippy/fmt；残余 12F+8T+1PF 定稿（P6
+   SharedWorker/nested 挂账 + P8 runner 基建/合成 origin + URL 编码/terminate
+   深度/同步 XHR 功能缺口，均不阻 DC 即记 license）。
+2. **可选推进**（不阻 M4）：P8 runner 302 重定向语义（baseurl 族 3F+3T）；文档
+   编码 → worker URL 解码管线（URL 编码 2F）；worker resource timing 采集。
+3. 门禁：每切片 `make test` 全绿 + clippy -D warnings + fmt；v8/quickjs 双矩阵在
    M2 动 shim 后评估。
 
 **待用户决策清单**：（空）

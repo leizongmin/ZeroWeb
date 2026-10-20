@@ -1,5 +1,6 @@
 // part61 — workers-compat M2 切片：importScripts 三相语义与 worker 全局最小面；
-// M3 切片补充：postMessage transfer/ports + structured-clone 语义（DC-3）。
+// M3 切片补充：postMessage transfer/ports + structured-clone 语义（DC-3）；
+// P7 后半补充：importScripts 错误归因 + worker rAF/WorkerLocation.search 环境值面。
 // 本文件经 js_dom_bridge_tests.rs 的 include! 并入同一模块（part31 先例——
 // part21 4071 行超 2000 行上限后新工作落新文件）。契约：docs/goal/workers-compat.md
 // DC-2/DC-3；WPT 案面 workers/interfaces/WorkerUtils/importScripts/{002-012}、
@@ -1027,3 +1028,196 @@ fn test_m3_postmessage_union_second_arg() {
     );
 }
 
+
+/// P7 后半（report-error 面）：非字面量实参的 importScripts 运行时调用——构造期
+/// 标识符改写为 __zwImportTracked，fetch 失败 NetworkError 的 filename/lineno 指向
+/// 调用位（worker 脚本内第 2 行调用位）。
+#[test]
+fn test_p7_import_runtime_call_site_attribution() {
+    use zero_script_sandbox::Sandbox;
+    let mut sandbox = worker_m2_sandbox("https://wpt.test/p7/call.html", |_page, src| {
+        if src == "call-worker.js" {
+            "function doImportScripts(u) {\n  importScripts(u);\n}\ndoImportScripts('missing.js');"
+                .to_string()
+        } else {
+            String::new()
+        }
+    });
+    sandbox
+        .execute(
+            "globalThis.__err = null;\
+             var worker = new Worker('call-worker.js');\
+             worker.onerror = function (event) { globalThis.__err = { filename: event.filename, lineno: event.lineno }; };",
+        )
+        .unwrap();
+    worker_m2_pump(&mut sandbox, 6);
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__err)").unwrap().value,
+        r#"{"filename":"https://wpt.test/p7/call-worker.js","lineno":2}"#,
+        "运行时调用 fetch 失败归因调用位：filename=worker 脚本、lineno=调用行"
+    );
+}
+
+/// P7 后半：被导入脚本解析错（内联 eval 包装）——filename 指向被导入脚本、
+/// lineno 报 1（解析错栈无编译位坐标，单行语料面），SyntaxError 透传。
+#[test]
+fn test_p7_import_parse_error_script_attribution() {
+    use zero_script_sandbox::Sandbox;
+    let mut sandbox = worker_m2_sandbox("https://wpt.test/p7/parse.html", |_page, src| {
+        if src == "parse-worker.js" {
+            "importScripts('bad.js');".to_string()
+        } else if src == "bad.js" {
+            " + ;".to_string()
+        } else {
+            String::new()
+        }
+    });
+    sandbox
+        .execute(
+            "globalThis.__err = null;\
+             var worker = new Worker('parse-worker.js');\
+             worker.onerror = function (event) { globalThis.__err = { filename: event.filename, lineno: event.lineno, message: String(event.message).slice(0, 30) }; };",
+        )
+        .unwrap();
+    worker_m2_pump(&mut sandbox, 6);
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__err)").unwrap().value,
+        r#"{"filename":"https://wpt.test/p7/bad.js","lineno":1,"message":"Uncaught SyntaxError: Unexpect"}"#,
+        "解析错归因被导入脚本：filename=bad.js、lineno=1、SyntaxError 透传"
+    );
+}
+
+/// P7 后半：嵌套 importScripts 解析错——内层脚本先标 _zwScriptUrl、外层透传，
+/// 归因内层（Worker-nested-importScripts-error 面）。
+#[test]
+fn test_p7_import_nested_innermost_wins() {
+    use zero_script_sandbox::Sandbox;
+    let mut sandbox = worker_m2_sandbox("https://wpt.test/p7/nested.html", |_page, src| {
+        if src == "outer-worker.js" {
+            "importScripts('outer.js');".to_string()
+        } else if src == "outer.js" {
+            "importScripts('inner.js');".to_string()
+        } else if src == "inner.js" {
+            "SELECT * FROM TABLE;".to_string()
+        } else {
+            String::new()
+        }
+    });
+    sandbox
+        .execute(
+            "globalThis.__err = null;\
+             var worker = new Worker('outer-worker.js');\
+             worker.onerror = function (event) { globalThis.__err = { filename: event.filename, lineno: event.lineno }; };",
+        )
+        .unwrap();
+    worker_m2_pump(&mut sandbox, 6);
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__err)").unwrap().value,
+        r#"{"filename":"https://wpt.test/p7/inner.js","lineno":1}"#,
+        "嵌套链解析错归因内层 inner.js"
+    );
+}
+
+/// P7 后半（cross-origin report-error 面同构）：经内联 helper 的运行时调用——
+/// helper 内 doImportScripts 的 importScripts 调用（非字面量实参）构造期改写，
+/// fetch 失败 filename/lineno 指向 helper.js 的调用位（第 2 行）。
+#[test]
+fn test_p7_import_helper_runtime_call_attribution() {
+    use zero_script_sandbox::Sandbox;
+    let mut sandbox = worker_m2_sandbox("https://wpt.test/p7/helper.html", |_page, src| {
+        if src == "helper-main.js" {
+            "importScripts('helper.js');\nrun();".to_string()
+        } else if src == "helper.js" {
+            "function doImportScripts(u) {\n  importScripts(u);\n}\nfunction run() { doImportScripts('gone.js'); }".to_string()
+        } else {
+            String::new()
+        }
+    });
+    sandbox
+        .execute(
+            "globalThis.__err = null;\
+             var worker = new Worker('helper-main.js');\
+             worker.onerror = function (event) { globalThis.__err = { filename: event.filename, lineno: event.lineno }; };",
+        )
+        .unwrap();
+    worker_m2_pump(&mut sandbox, 6);
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__err)").unwrap().value,
+        r#"{"filename":"https://wpt.test/p7/helper.js","lineno":2}"#,
+        "内联 helper 运行时调用归因 helper.js 调用位（cross-origin report-error 面同构）"
+    );
+}
+
+/// worker rAF 面（WorkerGlobalScope_requestAnimationFrame.worker.js）：三次嵌套回调
+/// 时间戳为数值且严格递增——worker 专属实现经 setTimeout(0) 逐回调派发（worker 无
+/// 渲染帧，spec 近似「每回调一帧」）+ performance.now() 数值时间戳；页面 part01 同步
+/// stub 为 string/恒值，不满足本面。
+#[test]
+fn test_p7_worker_raf_numeric_strictly_increasing_timestamps() {
+    use zero_script_sandbox::Sandbox;
+    let mut sandbox = worker_m2_sandbox("https://wpt.test/p7/raf.html", |_page, src| {
+        if src == "raf-worker.js" {
+            "var res = [];\nfunction step(t) {\n  res.push(t);\n  if (res.length < 3) { requestAnimationFrame(step); } else { postMessage(res); }\n}\nrequestAnimationFrame(step);".to_string()
+        } else {
+            String::new()
+        }
+    });
+    sandbox
+        .execute(
+            "globalThis.__raf = null;\
+             var worker = new Worker('raf-worker.js');\
+             worker.onmessage = function (event) { globalThis.__raf = event.data; };",
+        )
+        .unwrap();
+    worker_m2_pump(&mut sandbox, 8);
+    assert_eq!(
+        sandbox
+            .execute("JSON.stringify([typeof globalThis.__raf, globalThis.__raf && globalThis.__raf.length])")
+            .unwrap()
+            .value,
+        r#"["object",3]"#,
+        "三次嵌套 rAF 回调全部派发并回传"
+    );
+    assert_eq!(
+        sandbox
+            .execute(
+                "globalThis.__raf.every(function (t) { return typeof t === 'number'; }) && \
+                 globalThis.__raf[0] < globalThis.__raf[1] && globalThis.__raf[1] < globalThis.__raf[2]"
+            )
+            .unwrap()
+            .value,
+        "true",
+        "时间戳数值型且跨回调严格递增"
+    );
+}
+
+/// WorkerLocation.search 空 query 面（WorkerLocation_search_empty.htm）：裸尾 `?` 的
+/// search 为空串（URL spec §search getter——query 为 null 或空串均返空串）；根因修在
+/// 共享序列化器 js_dom_bridge::serialize_url（页面 URL 对象同路径）。
+#[test]
+fn test_p7_worker_location_search_empty_query() {
+    use zero_script_sandbox::Sandbox;
+    let mut sandbox = worker_m2_sandbox("https://wpt.test/p7/search-empty.html", |_page, src| {
+        if src == "search-worker.js?" {
+            "postMessage(self.location.search);".to_string()
+        } else {
+            String::new()
+        }
+    });
+    sandbox
+        .execute(
+            "globalThis.__search = 'pending';\
+             var worker = new Worker('search-worker.js?');\
+             worker.onmessage = function (event) { globalThis.__search = event.data; };",
+        )
+        .unwrap();
+    worker_m2_pump(&mut sandbox, 6);
+    assert_eq!(
+        sandbox
+            .execute("JSON.stringify(globalThis.__search)")
+            .unwrap()
+            .value,
+        r#""""#,
+        "裸尾 ? 的 WorkerLocation.search 为空串"
+    );
+}
