@@ -257,6 +257,96 @@
           if (optimum < min) optimum = min; else if (optimum > max) optimum = max;
           return { value: value, min: min, max: max, low: low, high: high, optimum: optimum };
         }
+        // R4003（html-semantics M2 切片 15）：label.control + labelable el.labels
+        //（HTML §4.10.4 the label element）。labelable elements = button/input
+        //（type 非 Hidden）/meter/output/progress/select/textarea；非 labelable 的
+        // INPUT（hidden）`.labels` 返 null，fieldset/label/object/img/keygen 无此
+        // IDL 属性（fallthrough undefined——labelable-elements 语料两态分明）。
+        function _zwIsLabelableSelTag(eSel, eHnd) {
+          var tag = _realTag(eSel, eHnd);
+          if (tag !== 'BUTTON' && tag !== 'INPUT' && tag !== 'METER' && tag !== 'OUTPUT'
+              && tag !== 'PROGRESS' && tag !== 'SELECT' && tag !== 'TEXTAREA') return false;
+          if (tag === 'INPUT') {
+            var hTy = eHnd ? __zw_get_attr_handle(eHnd, 'type')
+              : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(eSel, 'type') : __zw_get_attr(eSel, 'type'));
+            if (String(hTy == null ? '' : hTy).toLowerCase() === 'hidden') return false;
+          }
+          return true;
+        }
+        // labeled control 算法：有 for → getElementById 命中且 labelable；无 for →
+        // 子树首个 labelable 后代（树序）。miss → null。
+        // https://html.spec.whatwg.org/multipage/forms.html#labeled-control
+        function _zwLabeledControl(lSel, lHnd) {
+          var fRaw = lHnd ? __zw_get_attr_handle(lHnd, 'for')
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(lSel, 'for') : __zw_get_attr(lSel, 'for'));
+          var fVal = (fRaw == null) ? '' : String(fRaw);
+          if (fVal !== '') {
+            var cand = null;
+            try { cand = globalThis.document.getElementById(fVal); } catch (_eGet) { cand = null; }
+            if (cand && typeof cand === 'object') {
+              try {
+                if (_zwIsLabelableSelTag(cand.__zwSelector, cand.__zwHandle)) return cand;
+              } catch (_eTag) {}
+            }
+            return null;
+          }
+          // 无 for：本 label 子树 querySelectorAll（树序）+ JS 侧 labelable 过滤
+          //（type=hidden 活读，避免 QSA 选择器对属性快照的 stale 匹配）。
+          var scope = null;
+          try {
+            scope = _makeProxy(lSel, lHnd).querySelectorAll('button,input,meter,output,progress,select,textarea');
+          } catch (_eS) { scope = null; }
+          if (!scope) return null;
+          for (var di = 0; di < scope.length; di++) {
+            var dEl = scope[di];
+            if (!dEl || typeof dEl !== 'object') continue;
+            try {
+              if (_zwIsLabelableSelTag(dEl.__zwSelector, dEl.__zwHandle)) return dEl;
+            } catch (_eL) {}
+          }
+          return null;
+        }
+        // R4003：el.labels——返「labeled control 为本元素」的 label 元素活集合
+        //（树序；[SameObject] 每元素缓存一个集合对象——缓存表 _zwLabelsCache 在
+        // part01 共享作用域，本 trap 体 per-access 执行不能持状态；hidden 切换期
+        // getter 返 null 但缓存对象存活，type 切回后同一对象重新可见——
+        // labelable-elements hidden-toggle 断言面）。
+        function _zwLabelsCollection(eSel, eHnd) {
+          var eKey = _zwOptKey(eSel, eHnd);
+          if (_zwLabelsCache[eKey]) return _zwLabelsCache[eKey];
+          var selfSel = eSel, selfHnd = eHnd;
+          var coll = _liveQueryCollection(null, function () {
+            var out = [];
+            var labels = globalThis.document.querySelectorAll('label');
+            for (var i = 0; i < labels.length; i++) {
+              var L = labels[i];
+              if (!L || typeof L !== 'object') continue;
+              try {
+                var ctl = _zwLabeledControl(L.__zwSelector, L.__zwHandle);
+                if (ctl && _zwOptKey(ctl.__zwSelector, ctl.__zwHandle) === _zwOptKey(selfSel, selfHnd)) out.push(L);
+              } catch (_eC) {}
+            }
+            return out;
+          }, true);
+          // R159/R198 约定：instanceof NodeList 经 Symbol.hasInstance 认 `__zwNL`
+          // 印记（原型链不参与判定）。
+          try { coll.__zwNL = true; } catch (_eNL) {}
+          _zwLabelsCache[eKey] = coll;
+          return coll;
+        }
+        // R4003：label.control + labelable el.labels getter 分发（HTML §4.10.4）。
+        // control 仅 HTMLLabelElement；labels 仅七 labelable tag（hidden input →
+        // null），fieldset/label/object/img/keygen 无该 IDL → 落回 undefined。
+        if (prop === 'control' || prop === 'labels') {
+          var lblTag = _realTag(sel, handle);
+          if (prop === 'control' && lblTag === 'LABEL') {
+            return _zwLabeledControl(sel, handle);
+          }
+          if (prop === 'labels' && _zwIsLabelableSelTag(sel, handle)) {
+            return _zwLabelsCollection(sel, handle);
+          }
+          if (prop === 'labels' && lblTag === 'INPUT') return null;
+        }
         // reflected 布尔/枚举全局属性（R2848/R2850）：autofocus/draggable/spellcheck/translate（R2848）
         // + inert/autocomplete（R2850）——旧 fallthrough 返 undefined（spec 须布尔/串）。getter 优先读
         // _reflectedAttrs 缓存（setter 写解析值，同步 set→get 即时），无缓存则 host attr 解析。spec 默认：
@@ -3780,6 +3870,35 @@
           return function() {
             var oldKey = _activeElKey;
             if (oldKey === key) return; // 已聚焦 → no-op（spec：不重派 focus）
+            // R4003b（html-semantics M2 切片 15）：label.focus() 前递（HTML §4.10.4
+            // the label element——label 非可聚焦时把聚焦转发给 labeled control；WPT
+            // forward-focus-to-associated-element 六向：for/无 for/tabindex=""/
+            // display:none+tabindex 前递；tabindex="0"/"-1" 渲染态落 label 本尊）。
+            // 可聚焦判定：tabindex 为合法整数（前后 ASCII 空白容忍）**且** being
+            // rendered（自身或祖先 display:none——showPicker/R3074 同口径遍历，
+            // computed style 不可用时 lenient 视为渲染）。无可转发 control 时落回
+            // 既有通用路径（引擎限制③「不校验可聚焦性」现状保持）。
+            // https://html.spec.whatwg.org/multipage/forms.html#the-label-element
+            if (_realTag(sel, handle) === 'LABEL') {
+              var _lblTi = handle ? __zw_get_attr_handle(handle, 'tabindex')
+                : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'tabindex') : __zw_get_attr(sel, 'tabindex'));
+              var _lblFocusable = _lblTi != null && /^[+-]?[0-9]+$/.test(
+                String(_lblTi).replace(/^[ \t\n\f\r]+/, '').replace(/[ \t\n\f\r]+$/, ''));
+              if (_lblFocusable && typeof __zw_get_computed_style === 'function' && sel) {
+                var _lfCur = sel, _lfGuard = 0;
+                while (_lfCur && _lfGuard++ < 64) {
+                  var _lfDisp = '';
+                  try { _lfDisp = __zw_get_computed_style(_lfCur, 'display'); } catch (_eLd) {}
+                  if (_lfDisp === 'none') { _lblFocusable = false; break; }
+                  try { _lfCur = __zw_parent(_lfCur); } catch (_eLp) { _lfCur = ''; }
+                }
+              }
+              if (!_lblFocusable) {
+                var _lblCtl = null;
+                try { _lblCtl = _zwLabeledControl(sel, handle); } catch (_eLc) {}
+                if (_lblCtl) return _makeProxy(_lblCtl.__zwSelector, _lblCtl.__zwHandle).focus();
+              }
+            }
             // T55（R114/R148 失连面）：未连接元素（createElement 未挂载等）的 focus()
             // 归解析节点所有权（_zwMElFocused，activeElement getter 直读）——M2-S4E
             //（b5e0b5874，2026-10-08）给 getter 加的惰性 isConnected 校验会把
@@ -9746,6 +9865,15 @@
         // 正确（visible→非 null body / hidden→null）；`offsetTop - offsetParent.offsetTop` 嵌套坐标
         // 为近似（offsetTop 本就 viewport-relative，见上注）。
         if (prop === 'offsetParent') {
+          // R4003c（html-semantics M2 切片 15）：html/body 自身 offsetParent → null
+          //（CSSOM View §offsetParent——body/html 无 offset parent，real browser
+          // `document.body.offsetParent === null`）。此前 body 有 rect → 自返 body，
+          // 「沿 offsetParent 上行累积坐标」的页面惯用遍历死循环——inert-label-focus
+          // 语料 clickOn 坐标累积 90s Execution timeout 实证（R4003b focus 前递使
+          // 该脚本首次走到 clickOn 而暴露）。
+          // https://drafts.csswg.org/cssom-view-1/#dom-htmlelement-offsetparent
+          var _opTag = _realTag(sel, handle);
+          if (_opTag === 'BODY' || _opTag === 'HTML') return null;
           var rp = _layoutRect(sel, handle);
           return rp ? _wrapSelector('body') : null;
         }

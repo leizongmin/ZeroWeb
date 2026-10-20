@@ -739,6 +739,10 @@
   // 动机——`__zw_set_attr` 仅入队 mutation（异步 apply），同步 set→get 往返须客户端缓存（get 优先读缓存）。
   // 值结构：{ title?: string, lang?: string, dir?: string, tabindex?: number }。
   var _reflectedAttrs = {};
+  // R4003（html-semantics M2 切片 15）：el.labels 集合 [SameObject] per-element-key
+  // 缓存（HTML §4.10.4 labels IDL「must return the same object」）——hidden 切换期
+  // getter 返 null 但对象存活，type 切回后同一集合对象重新可见。
+  var _zwLabelsCache = {};
   // R3037：reflected string 内容属性 IDL 名 → 内容属性名。这些属性 get 旧返 undefined（get trap 未拦），
   // 写正常（set trap generic fallthrough → __zw_set_attr）。表单校验库读 input.min/max/pattern/type、
   // analytics 读 src/name 等全失效。get trap 经 [`_reflectedStringAttr`] 查表，命中则读内容属性（缺省 ''，

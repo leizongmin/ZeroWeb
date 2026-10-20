@@ -360,3 +360,252 @@ fn test_meter_actual_values_r4002() {
         "W5：setAttribute 后 getter 重算钳制（50 → max 20）"
     );
 }
+
+/// R4003（html-semantics M2 切片 15）：label.control + labelable el.labels。
+/// labeled control 算法（for → getElementById 命中且 labelable；无 for → 子树
+/// 首个 labelable 后代）；labels = labeled control 为本元素的 label 活集合
+///（[SameObject] 缓存，hidden 切换期 null 但对象存活）；labelable = button/
+/// input（type 非 hidden）/meter/output/progress/select/textarea，hidden input
+/// labels → null，fieldset/label/object/img/keygen 无该 IDL → undefined。
+/// WPT 标尺：labelable-elements.html（26 测）+ button-labels.html +
+/// input-labels.html。
+#[test]
+fn test_labels_idl_r4003() {
+    let mut sandbox = t59_sandbox_with_shim();
+    let mutations: std::sync::Arc<std::sync::Mutex<Vec<DomMutation>>> = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+    let dom_html: std::sync::Arc<std::sync::Mutex<String>> =
+        std::sync::Arc::new(std::sync::Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: std::sync::Arc<std::sync::Mutex<String>> = std::sync::Arc::new(std::sync::Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    crate::js_dom_bridge::register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 挂 corpus 同构树（form 内 label[for] × labelable/非 labelable 全家福 + 无 for 嵌套）。
+    sandbox
+        .execute(
+            "var d = document.createElement('div');\
+             d.innerHTML = '<form>'\
+             + '<output id=tOutput></output><label id=lb0 for=tOutput></label>'\
+             + '<progress id=tProgress></progress><label id=lb1 for=tProgress></label>'\
+             + '<select id=tSelect></select><label id=lb2 for=tSelect></label>'\
+             + '<textarea id=tArea></textarea><label id=lb3 for=tArea></label>'\
+             + '<button id=tButton></button><label id=lb4 for=tButton></label>'\
+             + '<input type=hidden id=tHidden><label id=lb5 for=tHidden></label>'\
+             + '<input type=radio id=tRadio><label id=lb6 for=tRadio></label>'\
+             + '<meter id=tMeter></meter><label id=lb8 for=tMeter></label>'\
+             + '<keygen id=tKeygen><label id=lb7 for=tKeygen></label>'\
+             + '<fieldset id=tFieldset></fieldset><label id=lb9 for=tFieldset></label>'\
+             + '<label id=tLabel></label><label id=lb10 for=tLabel></label>'\
+             + '<object id=tObject></object><label id=lb11 for=tObject></label>'\
+             + '<img id=tImg><label id=lb12 for=tImg></label>'\
+             + '</form>'\
+             + '<label id=outerL>B:<label id=innerL>C:<button id=nButton></button></label></label>';\
+             document.body.appendChild(d);",
+        )
+        .unwrap();
+
+    // W1：control——for → 七 labelable 各命中（.id 可读）；非 labelable → null。
+    sandbox
+        .execute(
+            "globalThis.__w1 = [\
+             ['lb0','tOutput'],['lb1','tProgress'],['lb2','tSelect'],['lb3','tArea'],\
+             ['lb4','tButton'],['lb6','tRadio'],['lb8','tMeter']].map(function (p) {\
+               var c = document.getElementById(p[0]).control;\
+               return c ? (c.id === p[1] ? 'ok' : 'bad:' + c.id) : 'null';\
+             }).join(',')\
+             + '|' + ['lb5','lb7','lb9','lb10','lb11','lb12'].map(function (id) {\
+               return String(document.getElementById(id).control);\
+             }).join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__w1").unwrap().value,
+        "ok,ok,ok,ok,ok,ok,ok|null,null,null,null,null,null",
+        "W1：control 命中七 labelable；hidden/keygen/fieldset/label/object/img 的 label.control → null"
+    );
+
+    // W2：control 无 for → 子树首个 labelable 后代（嵌套双层 label 同指 button）。
+    sandbox
+        .execute(
+            "globalThis.__w2 = [document.getElementById('outerL').control.id,\
+             document.getElementById('innerL').control.id].join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__w2").unwrap().value,
+        "nButton,nButton",
+        "W2：无 for 嵌套 label 的 control 均为首个 labelable 后代"
+    );
+
+    // W3：labels——长度 1 + [0].id；无关联 → length 0。
+    sandbox
+        .execute(
+            "globalThis.__w3 = [\
+             ['tOutput','lb0'],['tProgress','lb1'],['tSelect','lb2'],['tArea','lb3'],\
+             ['tButton','lb4'],['tRadio','lb6'],['tMeter','lb8']].map(function (p) {\
+               var el = document.getElementById(p[0]);\
+               return el.labels.length === 1 && el.labels[0].id === p[1] ? 'ok' : 'bad';\
+             }).join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__w3").unwrap().value,
+        "ok,ok,ok,ok,ok,ok,ok",
+        "W3：七 labelable 元素 labels 长度与首项（树序）正确"
+    );
+
+    // W4：hidden 面——labels === null；type→text 后 1 项；保留集合活性（type 回
+    // hidden → 旧集合 length 0 且 getter null）；再切 checkbox → SameObject + 1 项。
+    sandbox
+        .execute(
+            "var h = document.getElementById('tHidden');\
+             globalThis.__w4a = String(h.labels);\
+             h.type = 'text';\
+             var ok1 = h.labels.length === 1 && h.labels[0].id === 'lb5';\
+             var kept = h.labels;\
+             h.type = 'hidden';\
+             globalThis.__w4 = [String(h.labels), String(kept.length), ok1 ? 'ok' : 'bad'].join(',');\
+             h.type = 'checkbox';\
+             globalThis.__w4b = [kept === h.labels, h.labels.length].join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__w4a").unwrap().value,
+        "null",
+        "W4：hidden input labels → null"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w4").unwrap().value,
+        "null,0,ok",
+        "W4：type→text 后 labels 1 项；回 hidden 后保留集合空且 getter null"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w4b").unwrap().value,
+        "true,1",
+        "W4：切回 checkbox 后 SameObject 成立且集合恢复 1 项"
+    );
+
+    // W5：非 labelable 元素无 labels IDL（undefined）；labels instanceof NodeList。
+    sandbox
+        .execute(
+            "globalThis.__w5 = ['tKeygen','tFieldset','tLabel','tObject','tImg'].map(function (id) {\
+               return String(document.getElementById(id).labels);\
+             }).join(',') + '|' + (document.getElementById('tButton').labels instanceof NodeList);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__w5").unwrap().value,
+        "undefined,undefined,undefined,undefined,undefined|true",
+        "W5：keygen/fieldset/label/object/img labels → undefined；labelable 集合为 NodeList 实例"
+    );
+}
+
+/// R4003b（html-semantics M2 切片 15）：label.focus() 前递。label 非可聚焦
+///（无 tabindex / tabindex="" / display:none 子树）时 focus 转发给 labeled
+/// control；tabindex="0"/"-1" 渲染态落 label 本尊不转发。转发经 control 自身
+/// focus()（已聚焦 no-op 短路随之继承）。WPT 标尺：
+/// html/semantics/forms/the-label-element/forward-focus-to-associated-element.html（6 测）。
+#[test]
+fn test_label_focus_forwarding_r4003b() {
+    let mut sandbox = t59_sandbox_with_shim();
+    let mutations: std::sync::Arc<std::sync::Mutex<Vec<DomMutation>>> = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+    // 解析树挂载（WPT 同构——computed style 面按解析文档解析，运行时 innerHTML
+    // 挂载的 display:none 解析不参与，W1 case f 须走与 WPT 一致的解析形态）。
+    let dom_html: std::sync::Arc<std::sync::Mutex<String>> =
+        std::sync::Arc::new(std::sync::Mutex::new(
+            "<html><body><form>\
+             <input id=fa type=checkbox><label id=la for=fa>a</label>\
+             <label id=lb><input id=fb type=checkbox></label>\
+             <label id=lc tabindex=0><input id=fc type=checkbox></label>\
+             <label id=ld tabindex=-1><input id=fd type=checkbox></label>\
+             <label id=le tabindex=\"\"><input id=fe type=checkbox></label>\
+             <input id=ff type=checkbox><label id=lf for=ff tabindex=0 style=\"display:none\">f</label>\
+             </form></body></html>"
+                .to_string(),
+        ));
+    let page_url: std::sync::Arc<std::sync::Mutex<String>> = std::sync::Arc::new(std::sync::Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    crate::js_dom_bridge::register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // W1：六向聚焦——for/无 for/tabindex=""/display:none+tabindex=0 前递 control；
+    // tabindex="0"/"-1" 渲染态落 label 本尊（既有通用路径保持）。
+    sandbox
+        .execute(
+            r##"
+globalThis.__hits = [];
+['fa','fb','fc','fd','fe','ff','la','lb','lc','ld','le','lf'].forEach(function (id) {
+  document.getElementById(id).addEventListener('focus', function () { globalThis.__hits.push(id); });
+});
+['a','b','c','d','e','f'].forEach(function (n) { document.getElementById('l' + n).focus(); });
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__hits.join(',')").unwrap().value,
+        "fa,fb,lc,ld,fe,ff",
+        "W1：for/无 for/tabindex=\"\"/display:none 前递 input；tabindex=0/-1 渲染态落 label 本尊"
+    );
+
+    // W2：转发已聚焦 control → 经 control 自身 no-op 短路（不重派 focus）。
+    sandbox
+        .execute(
+            "globalThis.__hits = [];\
+             document.getElementById('la').focus();\
+             globalThis.__w2a = globalThis.__hits.join(',');\
+             globalThis.__hits = [];\
+             document.getElementById('la').focus();\
+             globalThis.__w2b = globalThis.__hits.join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__w2a").unwrap().value,
+        "fa",
+        "W2：la.focus() 首次前递 fa 获焦（W1 尾 ff 持焦点 → 非重派）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w2b").unwrap().value,
+        "",
+        "W2：fa 已聚焦 → 二次 la.focus() 经转发 no-op 短路"
+    );
+}
+
+/// R4003c（html-semantics M2 切片 15）：html/body offsetParent → null。CSSOM View
+/// §offsetParent——body/html 无 offset parent；此前 body 有 rect 自返 body，「沿
+/// offsetParent 上行」的页面惯用遍历死循环（inert-label-focus 语料 clickOn 坐标
+/// 累积 90s Execution timeout 实证）。
+#[test]
+fn test_offsetparent_body_null_r4003c() {
+    let mut sandbox = t59_sandbox_with_shim();
+    let mutations: std::sync::Arc<std::sync::Mutex<Vec<DomMutation>>> = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+    let dom_html: std::sync::Arc<std::sync::Mutex<String>> =
+        std::sync::Arc::new(std::sync::Mutex::new("<html><body><div id=d></div></body></html>".to_string()));
+    let page_url: std::sync::Arc<std::sync::Mutex<String>> = std::sync::Arc::new(std::sync::Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    crate::js_dom_bridge::register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // body/html 自返 null；自 body 起的 offsetParent 上行遍历 1 步终止（修复前
+    // body 自返 body 死循环）。div 的 body 回落依赖布局 rect（lib 沙箱无布局，
+    // 该面由 WPT 语料 clickOn 遍历覆盖）。
+    sandbox
+        .execute(
+            "globalThis.__op = [\
+             String(document.body.offsetParent === null),\
+             String(document.documentElement.offsetParent === null)].join(',');\
+             var steps = 0;\
+             for (var n = document.body; n; n = n.offsetParent) { if (++steps > 8) break; }\
+             globalThis.__steps = steps;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__op").unwrap().value,
+        "true,true",
+        "W1：body/html offsetParent → null（CSSOM View §offsetParent）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__steps)").unwrap().value,
+        "1",
+        "W2：自 body 的上行遍历 1 步终止（修复前 body 自返死循环）"
+    );
+}

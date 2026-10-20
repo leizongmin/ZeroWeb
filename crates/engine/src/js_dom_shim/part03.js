@@ -15536,9 +15536,10 @@ return e;
   // 内部支持）。disjoint tag 故无需去重。R2833：扩展自单串以修正 links（旧返全部 `<a>`，spec 仅 a[href]）。
   // `has` trap（R2833）使 `Array.prototype.map/forEach/filter.call(coll, fn)` 等数组方法工作——它们先经
   // HasProperty 判定索引存在性，无 has trap 时 {length:0} target 对数值索引恒判 absent 致迭代得空。
-  function _liveQueryCollection(sel) {
+  function _liveQueryCollection(sel, customSnapshot, asNodeList) {
     var sels = Array.isArray(sel) ? sel : [sel];
     function snapshot() {
+      if (customSnapshot) return customSnapshot();
       var list = [];
       for (var i = 0; i < sels.length; i++) {
         var found = globalThis.document.querySelectorAll(sels[i]);
@@ -15559,10 +15560,18 @@ return e;
         };
       }
       : null;
-    return new Proxy({ length: 0 }, {
+    // R4003：asNodeList → target 挂 NodeList.prototype（WPT button-labels
+    // `labels instanceof NodeList` 断言；R159/R198 同一构造器可见性面）。
+    var _lqcTarget = asNodeList && globalThis.NodeList && globalThis.NodeList.prototype
+      ? Object.create(globalThis.NodeList.prototype)
+      : { length: 0 };
+    return new Proxy(_lqcTarget, {
       get: function(_t, prop) {
         // https://dom.spec.whatwg.org/#interface-htmlcollection
         if (iteratorMethod && prop === Symbol.iterator) return iteratorMethod;
+        // R4003：内部印记透读（`__zwNL`——instanceof NodeList 经 Symbol.hasInstance
+        // 认记，get trap 此前只查快照列表不回落 target，印记读恒 undefined）。
+        if (prop === '__zwNL' || prop === '__zwQSA') return _t[prop];
         if (typeof prop !== 'string') return undefined;
         var list = snapshot();
         if (prop === 'length') return list.length;
