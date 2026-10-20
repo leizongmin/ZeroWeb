@@ -36,7 +36,7 @@ goal 入口文档 `docs/goal/<goal>.md` DC-1。
 | 28 | [dnd-compat](../../../../docs/goal/dnd-compat.md) | dnd | **门控 goal**（M1 盘点 + M2 构造器面自主；拖放交互管线须用户点名） |
 | 29 | [pointerlock-compat](../../../../docs/goal/pointerlock-compat.md) | pointerlock | **门控 goal**（M1 盘点 ✅ 2026-10-18，1/4=25.0%；指针捕获管线须用户点名——M2 RFC BLOCK 中） |
 | 30 | [encoding-compat](../../../../docs/goal/encoding-compat.md) | encoding | **已收口**（2026-10-04） |
-| 40 | [html-syntax-compat](../../../../docs/goal/html-syntax-compat.md) | html/syntax; html/dom | **已收口**（2026-10-04） |
+| 40 | [html-syntax-compat](../../../../docs/goal/archive/html-syntax-compat.md) | html/syntax; html/dom | **已收口**（2026-10-07 M4；P10 终态 2026-10-20，已归档） |
 | 50 | [uievents-compat](../../../../docs/goal/uievents-compat.md) | uievents; pointerevents | **已收口**（2026-10-07）；touch 挂账已由编号 22 收口（2026-10-14）；pointerlock/IME 挂账 |
 | 60 | [navigation-compat](../../../../docs/goal/navigation-compat.md) | history; navigation-api; html/browsers | M2 轻面推进中；**M3 iframe 切片用户门控** |
 | 70 | [workers-compat](../../../../docs/goal/workers-compat.md) | workers; dedicated-workers | M1 ✅（2026-10-20，161 案 45.6%；pin 无 dedicated-workers 目录由 workers/ 承载）；M2 语义收敛 |

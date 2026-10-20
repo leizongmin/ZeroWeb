@@ -55,7 +55,7 @@ https://html.spec.whatwg.org/multipage/parsing.html#prescan-a-data-state-based-o
 position 指针——tag skip 与 get-an-attribute 必须同游标。首版 letter-tag
 分支 getAttr 从陈旧 `_paPos` 起扫、null 落点早于 `i2`、`i2 = _paPos` 回跳，
 baseline.htm 首个 `<p>` 即死循环。修法：skip 落点回写 `_paPos = i2` 后才进
-属性循环。教训已沉淀 [learnings](../../../learnings/INDEX.md)（见
+属性循环。教训已沉淀 [learnings](../../../../learnings/INDEX.md)（见
 prescan-position-cursor 条目）。
 
 **探针方法论**：`createElement('iframe')` 在本 runner 是无条件 skip

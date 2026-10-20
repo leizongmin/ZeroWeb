@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-09-12
-**状态**: Closed（M4 收口 2026-10-07；P5 落地面收口 2026-10-19；P6/P6b 漂移清账 2026-10-20；P7 XHR/P8 xmldecl 编码收编 2026-10-20；P9 aria 跨文档 scope + 视图回放修复 2026-10-20；P10 document.write 流同 turn 读收敛、ambiguous-ampersand 清零、async-apply 缝挂账面全关 2026-10-20——全通道 **61347/61422 = 99.91%**，余量全为既有挂账域，见 [master.md](html-syntax-compat/master.md) 与 [P10 证据](html-syntax-compat/evidence/2026-10-20-p10-write-stream-same-turn-read.md)、[收口证据](html-syntax-compat/evidence/2026-10-07-m4-close.md)）
+**状态**: ✅ Completed（M4 收口 2026-10-07；P5 落地面收口 2026-10-19；P6/P6b 漂移清账 2026-10-20；P7 XHR/P8 xmldecl 编码收编 2026-10-20；P9 aria 跨文档 scope + 视图回放修复 2026-10-20；P10 document.write 流同 turn 读收敛、ambiguous-ampersand 清零、async-apply 缝挂账面全关 2026-10-20——全通道 **61347/61422 = 99.91%**，余量全为既有挂账域，见 [master.md](html-syntax-compat/master.md) 与 [P10 证据](html-syntax-compat/evidence/2026-10-20-p10-write-stream-same-turn-read.md)、[收口证据](html-syntax-compat/evidence/2026-10-07-m4-close.md)）
 **执行模式**: WPT 驱动（上游 html/syntax + html/dom corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 文档面）
 
