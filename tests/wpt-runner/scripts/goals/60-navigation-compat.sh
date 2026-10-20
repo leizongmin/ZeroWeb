@@ -66,5 +66,15 @@ goals_fetch_all
 fetch_raw "common/stringifiers.js"
 # M2-S4F：immutable prototype helper（location-prototype-setting-same-origin——[[SetPrototypeOf]] 面）
 fetch_raw "common/test-setting-immutable-prototype.js"
+# 2026-10-20 组成态复核：fetch_dir_html 扩展名白名单不含 .mjs（lib.sh 既有约定），
+# DIRS 里两个 resources 目录的 helpers.mjs 拉不到——S4E/S4G 当年为手工 raw 补拉，
+# wpt-data 整目录重建（fetch-wpt-data 重 clone 前例）即失、无法自愈。此处置入脚本
+# 保证幂等续拉可完整重建语料（40-html-syntax dummy-1.mjs 同款先例）。
+fetch_raw "navigation-api/focus-reset/resources/helpers.mjs"
+fetch_raw "navigation-api/ordering-and-transition/resources/helpers.mjs"
+# 2026-10-20 组成态复核：S4R/S9 跨源案（intercept-cross-origin /
+# navigate-anchor-cross-origin）引用 /common/get-host-info.sub.js——27-page-state
+# 先例单文件补拉（wpt-data 重建后 common/ 子集不含它，缺之则 get_host_info 未定义）。
+fetch_raw "common/get-host-info.sub.js"
 goals_inventory
 goals_next_steps "${GOAL}"
