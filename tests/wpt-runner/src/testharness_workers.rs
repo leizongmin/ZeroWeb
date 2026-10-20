@@ -90,17 +90,25 @@ pub(crate) enum AnyJsLane {
 }
 
 /// Parse `// META: global=` tokens（多行/逗号并集——上游 `global=` 单行多值 +
-/// 多行同键均为合法形态）。
+/// 多行同键均为合法形态）。前缀兼容 `//META:` 无空格形态（upstream serve.py
+/// meta 解析按 `//\s*META:`——corpus 实例 Worker-constructor-proto.any.js）。
 fn wpt_meta_globals(source: &str) -> Vec<String> {
     let mut globals = Vec::new();
     for line in source.lines() {
         let trimmed = line.trim();
-        if let Some(value) = trimmed.strip_prefix("// META: global=") {
-            for token in value.split(',') {
-                let token = token.trim();
-                if !token.is_empty() && !globals.iter().any(|existing| existing == token) {
-                    globals.push(token.to_string());
-                }
+        let meta_value = trimmed
+            .strip_prefix("// META: ")
+            .or_else(|| trimmed.strip_prefix("//META: "));
+        let Some(meta_value) = meta_value else {
+            continue;
+        };
+        let Some(value) = meta_value.strip_prefix("global=") else {
+            continue;
+        };
+        for token in value.split(',') {
+            let token = token.trim();
+            if !token.is_empty() && !globals.iter().any(|existing| existing == token) {
+                globals.push(token.to_string());
             }
         }
     }
@@ -133,7 +141,8 @@ pub(crate) fn workers_any_js_lane(source: &str) -> AnyJsLane {
 /// 一层成环）。FIXME(inline-strict)：正文以 "use strict" 开头时内嵌于非指令位、
 /// strict 语义失效（upstream importScripts 独立脚本指令位生效——corpus 边缘）。
 ///
-/// 执行形态：页面 `new Worker('/…case.any.js')` 外链（上游 AnyWorkerHandler 语义
+/// 执行形态：页面 `new Worker('/…case.any.worker.js')` 外链（`.any.js` 源经
+/// fetcher 映射；上游 AnyWorkerHandler 语义
 /// ——worker 自真实合成 origin 服务，正文 importScripts 根绝对路径可解析；
 /// 此前 data: URL wrapper 内联交付，data: base 对根绝对路径 URL 解析必抛 SyntaxError，
 /// 相①整脚本中止 → dedicated 通道 importScripts 族全灭 `tests:0`）。
@@ -173,6 +182,21 @@ fn run_worker_js_case(wpt_root: &Path, relative: &str, harness_source: &str) -> 
         "<!doctype html><meta charset=\"utf-8\">\
          <script src=\"/resources/testharness.js\"></script>\
          <script>fetch_tests_from_worker(new Worker('/{relative}'));</script>"
+    );
+    run_testharness_html_inner(wpt_root, relative, &page, harness_source, &[], corpus_case_timeout())
+}
+
+/// `.any.js` dedicated 变体执行：页面 `new Worker('/…case.any.worker.js')`——
+/// upstream wptserve dedicated 变体对外 URL 命名（examples/general.any.js 断言
+/// self.location.pathname 带 `.any.worker.js`；fetcher 侧按 `.worker.js` 后缀
+/// 映射回磁盘 `.any.js` 源）。上报案名仍为 `.any.js` 源路径（与 M1/M2 台账键
+/// 一致，跨轮可比）。
+fn run_any_js_dedicated_case(wpt_root: &Path, relative: &str, harness_source: &str) -> Vec<HarnessSubtestResult> {
+    let worker_relative = relative.replacen(".any.js", ".any.worker.js", 1);
+    let page = format!(
+        "<!doctype html><meta charset=\"utf-8\">\
+         <script src=\"/resources/testharness.js\"></script>\
+         <script>fetch_tests_from_worker(new Worker('/{worker_relative}'));</script>"
     );
     run_testharness_html_inner(wpt_root, relative, &page, harness_source, &[], corpus_case_timeout())
 }
@@ -274,8 +298,9 @@ pub fn run_workers_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, 
                 match workers_any_js_lane(&source) {
                     // dedicated 变体同 `.worker.js` 外链通道——`.any.js` 的 worker 源
                     // 包装在 fetcher 侧（`synthesize_any_worker_source`，ClassicWorkerHandler
-                    // 同构），页面 `new Worker('/…case.any.js')` 拿真合成 origin 作 base。
-                    AnyJsLane::DedicatedWorker => run_worker_js_case(wpt_root, &relative, &harness_source),
+                    // 同构），worker URL 为 `.any.worker.js` 变体名（拿真合成 origin 作
+                    // base + upstream location 命名面）。
+                    AnyJsLane::DedicatedWorker => run_any_js_dedicated_case(wpt_root, &relative, &harness_source),
                     AnyJsLane::Window => run_any_js_window_case(wpt_root, &relative, &source, &harness_source),
                     // 仅 sharedworker / serviceworker 变体：goal 契约面之外（M1 排除表
                     // SharedWorker 面同域），不收集。

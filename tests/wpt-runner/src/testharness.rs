@@ -4813,21 +4813,33 @@ fn wpt_data_script_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::S
         if !scripty {
             return Err(format!("non-scripty MIME for script: {clean}"));
         }
-        // workers-compat M2：`.any.js` 作 worker 顶脚本（页面 `new Worker('/…x.any.js')`
+        // workers-compat M2：`.any.js` 作 worker 顶脚本（页面 `new Worker('/…x.any.worker.js')`
         // —— dedicated 通道）→ 返回 ClassicWorkerHandler 同构包装源（GLOBAL flags +
         // importScripts testharness + META 依赖 + 语料正文内嵌 + done()）——上游
         // AnyWorkerHandler 语义。worker 自真实合成 origin（wpt.test）服务，正文
         // importScripts 根绝对路径可解析（data: URL wrapper 的 base 解析必抛已废弃）。
         // 正文内嵌而非 importScripts 自引用——该路径命中本分支会再包一层成环。
-        if clean.ends_with(".any.js") {
+        // dedicated 变体对外 URL 为 `.any.worker.js`（upstream wptserve 命名——
+        // examples/general.any.js 断言 self.location.pathname
+        // `/workers/examples/general.any.worker.js`）：磁盘仍读 `.any.js` 源文件，
+        // 包装 relative 用 worker 路径（location 面走该名）。裸 `.any.js` 请求仍收
+        // （importScripts 直引语料、 Window lane 之外的既有抓取面不变）。
+        let (worker_relative, file_relative): (&str, Option<String>) =
+            if let Some(base) = clean.strip_suffix(".any.worker.js") {
+                (clean, Some(format!("{base}.any.js")))
+            } else {
+                (clean, None)
+            };
+        if worker_relative.ends_with(".any.js") || worker_relative.ends_with(".any.worker.js") {
+            let fetch_path = file_relative.as_deref().unwrap_or(worker_relative);
             let case_bytes =
-                std::fs::read(root.join(clean)).map_err(|e| format!("script fetch failed: {clean} ({e})"))?;
+                std::fs::read(root.join(fetch_path)).map_err(|e| format!("script fetch failed: {fetch_path} ({e})"))?;
             let case_source = String::from_utf8_lossy(&case_bytes).into_owned();
             // .sub 模板替换与主读路径同全集（{{hosts[alt][]}} 字面残留会使 URL 解析
             // 抛 SyntaxError，跨源 muted-errors 案期望的 NetworkError 前置走样）。
             let case_source = apply_wpt_substitutions(&case_source);
             return Ok(crate::testharness_workers::synthesize_any_worker_source(
-                clean,
+                worker_relative,
                 &case_source,
             ));
         }
