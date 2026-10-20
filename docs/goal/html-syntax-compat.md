@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-09-12
-**状态**: Closed（M4 收口 2026-10-07；P5 落地面收口 2026-10-19；P6/P6b 漂移清账 2026-10-20——全通道 61233/61333 = 99.83%，vs-M4 漂移账清零；残差归域挂账，见 [master.md](html-syntax-compat/master.md) 与 [P6b 证据](html-syntax-compat/evidence/2026-10-20-p6b-escaping-noscript.md)、[收口证据](html-syntax-compat/evidence/2026-10-07-m4-close.md)）
+**状态**: Closed（M4 收口 2026-10-07；P5 落地面收口 2026-10-19；P6/P6b 漂移清账 2026-10-20；P7 XHR/P8 xmldecl 编码收编 2026-10-20——61343/61422；P9 aria 跨文档 scope + 视图回放修复 2026-10-20——全通道 **61345/61422 = 99.90%**，残差归域挂账，见 [master.md](html-syntax-compat/master.md) 与 [P9 证据](html-syntax-compat/evidence/2026-10-20-p9-aria-crossdoc-gEBI.md)、[收口证据](html-syntax-compat/evidence/2026-10-07-m4-close.md)）
 **执行模式**: WPT 驱动（上游 html/syntax + html/dom corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 文档面）
 

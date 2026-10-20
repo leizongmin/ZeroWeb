@@ -1,9 +1,27 @@
 # HTML 文档面兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../html-syntax-compat.md](../html-syntax-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-20（P8 xmldecl 收编——iframe 子文档编码嗅探 88/88 全绿，通道 61343/61422）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-20（P9 aria 跨文档 scope + gEBI 同 turn shadow 移树 2F→0F + 视图回放 latest-wins/R342 离一修复，通道 61345/61422）
 
 ## 当前状态
+
+**P9 ARIA 跨文档 scope + 视图回放修复（2026-10-20）**：`aria-element-reflection`
+**2F → 0F**（M4 片 e 起挂账的 async-apply 缝 aria 子集全部翻绿）——R5206 三修：
+`_zwAriaTreeChain` nodeType-9 文档身份落桶（主/分离文档同串 bucket 根因 +
+WeakMap.size 'docNaN' 死代码激活）、sel 父 plain 子 parentNode/parentElement
+重指（R368 盖章后 R84 gated 跳过洞）、getElementById `_r125AncestorRemoved`
+先消费 `_zwAriaSyncParent` 同步父记录（shadow 移树后 gEBI stale 短路）。续查
+ambiguous-ampersand 时发现共享路径双缺陷并修复（callbacks.rs
+`with_query_view_doc`）：**R342 id 去重离一**（`start + 4` 应为 `start + 3`——
+截断分片 panic 且带引号 id 去重自落地起从未生效）+ **同 turn 重置覆盖
+latest-wins**（R5001 write 流每步 SIH+IAH 入队，全量重放堆 N 个截断分片子树——
+host 视图 160 divs → 收敛 base + 满缓冲）。全通道 **61345P/63F/13T/1U =
+61422**（+2P −2F vs P8，两行为变更零回归）；ambiguous-ampersand 2F 维持挂账
+（残差在 shim 侧读路径 overlay 多层积累——host 层已收敛，探针
+`_zwApplyGeneration()=0` 证实整页单程序无 apply，归 async-apply 缝
+document.write 子集）。常驻测试 part21 r5206 四断言 + callbacks
+view_doc_replay_tests 三案。证据：
+[evidence/2026-10-20-p9-aria-crossdoc-gEBI.md](evidence/2026-10-20-p9-aria-crossdoc-gEBI.md)。
 
 **P8 xmldecl 收编（2026-10-20）**：`html/syntax/xmldecl` **88/88 全绿**，
 全通道 **61343P/65F/13T/1U = 61422**（vs P7 基线 61255P/65F/13T——**+88P
@@ -236,10 +254,20 @@ html5lib 3 案 document.write 管线面）。证据：
 | P6 | fragment-parse form-pointer 边界（账目修正） | ✅ **P6 修复（2026-10-19）**：R5196 `_zwMEl` 自有 form accessor TEMPLATE 边界（1F→1P，通道 61228/61333）；账目修正——非 post-M4 漂移，M4 冻结起既有 1F（「QSA 补面翻绿」记述不实） |
 | P6b | escaping noscript 真实漂移 | ✅ **P6b 修复（2026-10-20）**：bisect 归因 9dcd16661（innerHTML 物化改读路径）→ R5197 融合序列化 noscript 分支 + 物化印章传递（8/9→9/9，通道 61229/61333，组合态复测 61233/61333）；vs-M4 漂移账清零 |
 | P7 | charset XHR responseXML characterSet 面（22F 新账） | ✅ **P7 修复（2026-10-20）**：WebKit HTMLMetaCharsetParser 语义嗅探 + final encoding 接线 + runner 非 UTF-8 .html 字节保真（22F→22P，通道 61255/61333）；余账 XML MIME final encoding（FIXME） |
+| P9 | aria-element 跨文档 scope + gEBI 同 turn shadow 移树（async-apply 缝 aria 子集 2F） | ✅ **P9 修复（2026-10-20）**：R5206 三修（树链 nodeType-9 文档身份/sel 父 plain 子重指/`_zwAriaSyncParent` 消费）2F→0F + 附带修 callbacks 视图回放 R342 离一 panic 与 latest-wins 重置覆盖（通道 61345/61422，零回归） |
 | — | render-blocking 机制面（62 案 19.3%） | 📊 M1 已基线；**rendering-compat 域挂账维持（2026-10-19 归因收口：SyntaxError 41 案 M1 起既有 + post-M4 漂移 2 案）** |
 
 ## 已完成切片
 
+- **P9（2026-10-20）**：ARIA 跨文档 scope + gEBI 同 turn shadow 移树
+  2F→0F——R5206 三修（`_zwAriaTreeChain` nodeType-9 身份落桶 +
+  `_zwAriaDocIdSeq` 替代 WeakMap.size / sel 父 plain 子 parentNode 重指 /
+  getElementById 先消费 `_zwAriaSyncParent`）；附带 R5206 续修 callbacks
+  视图回放——R342 离一（`start+4`→`start+3`，截断分片 panic + 带引号 id
+  去重激活）+ 窗口内 latest-wins 重置覆盖（写流 N 分片堆积收敛）+
+  增量链 SIH 前置退全量；通道 61345/61422（+2P −2F 零回归）。常驻测试
+  part21 r5206 四断言 + callbacks view_doc_replay_tests 三案。证据
+  evidence/2026-10-20-p9-aria-crossdoc-gEBI.md。
 - **P6b（2026-10-20）**：escaping noscript 漂移归因修复——bisect 落点
   9dcd16661（innerHTML 物化真 handle 树，融合序列化无条件转义缺 noscript
   分支）；R5197 融合序列化 literal/escape 判据 + `_wcRebuildAsHandle` 印章
@@ -339,13 +367,20 @@ Goal 已收口（DC-1~4 全满足；P5 落地面 2026-10-19 收口）。后续�
 2. **vs-M4 漂移账清零（2026-10-20）**：escaping noscript 已 P6b 归因修复
    （9dcd16661 物化读路径回退，R5197）；form-pointer 已 P6 修复并改判 M4 既有
    账；余 script-inserted 双案维持 rendering-compat 域挂账。
-3. **同 turn sel 移树同步视图**（async-apply 架构缝，aria-element 2F + 跨 goal
-   收益）——引擎架构片。
+3. ~~同 turn sel 移树同步视图（async-apply 架构缝，aria-element 2F）~~ ✅
+   P9 修复（2026-10-20，R5206 三修 2F→0F，未动 async-apply 整体架构）。
+   缝的 **document.write 子集**维持挂账：ambiguous-ampersand 2F——host 视图
+   层已由 R5206 续修收敛（latest-wins + 去重激活，通道零回归），残差在 shim
+   侧读路径 overlay 多层积累（pending 桶/children 融合/tag 视图读数分裂，
+   整页单程序执行无 apply 代际推进；`__zw_apply_generation_bump` 每写收敛
+   尝试实证无效反爆 children 层 498）——需 apply 边界的 shim 侧重设计，
+   机制图谱见 P9 证据文档。
 4. **维持既有挂账**：render-blocking 行为面 → rendering-compat 域；html5ever
-   升级评估已关闭（残差改记 tokenizer 能力缝 2F，升级无收益）；读一致性片
-   余量（ambiguous-ampersand 2F，涉并行流碰撞）；bench-gate 等让复评（静窗）；
-   P5 通道外 12 案（xmldecl 3 + input-byte-stream 9）维持通道外记账；XHR XML
-   MIME 解析挂账；document.all exotic 对象（1F）；charset reftest 4 案字体
-   回退像素语义（随渲染通道复评）。
+   升级评估已关闭（残差改记 tokenizer 能力缝 2F，升级无收益）；bench-gate
+   等让复评（静窗）；P5 通道外 12 案（xmldecl 3 + input-byte-stream 9）维持
+   通道外记账；XHR XML MIME 解析挂账；document.all exotic 对象（1F——
+   [[IsHTMLDDA]] 不可实现性 P9 轮评估关闭：truthy JS 对象破真实站
+   `if (document.all)` IE 探测产品兼容，无 V8/QuickJS 公开 API）；charset
+   reftest 4 案字体回退像素语义（随渲染通道复评）。
 
 **待用户决策清单**：（空）
