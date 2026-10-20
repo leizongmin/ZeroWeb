@@ -13262,8 +13262,21 @@
       if (o.focusReset !== undefined && o.focusReset !== null && o.focusReset !== 'after-transition' && o.focusReset !== 'manual') {
         throw new globalThis.TypeError("Failed to read the 'focusReset' property from 'NavigationInterceptOptions': The provided value '" + String(o.focusReset) + "' is not a valid enum value of type NavigationFocusReset.");
       }
-      this._zwScrollMode = (o.scroll === 'manual') ? 'manual' : 'after-transition';
-      this._zwFocusReset = (o.focusReset === 'manual') ? 'manual' : 'after-transition';
+      // navigation-compat S11：仅**显式提供**时覆写（spec intercept steps——
+      //「If options["scroll"] exists, then set event's scroll behavior」「If
+      // options["focusReset"] exists, then set event's focus reset」，只在 member
+      // exists 时 set——https://html.spec.whatwg.org/multipage/nav-history-apis.html#
+      // navigateevent-intercept）。事件未 intercept 前两态 undefined，消费面
+      // `_zwScrollMode || 'after-transition'` / `=== 'manual'` 判定缺省同型；多次
+      // intercept() 时先前 'manual' 保留、后续无参 intercept() 不回落缺省（WPT
+      // focus-reset multiple-intercept「manual + (not provided)」/「(not provided)
+      // + manual」双序案面）。null 与缺省同型（上方枚举校验同门）。
+      if (o.scroll !== undefined && o.scroll !== null) {
+        this._zwScrollMode = (o.scroll === 'manual') ? 'manual' : 'after-transition';
+      }
+      if (o.focusReset !== undefined && o.focusReset !== null) {
+        this._zwFocusReset = (o.focusReset === 'manual') ? 'manual' : 'after-transition';
+      }
       if (!this._zwHandlers) this._zwHandlers = [];
       this._zwHandlers.push(typeof o.handler === 'function' ? o.handler : undefined);
       this._zwIntercepted = true;

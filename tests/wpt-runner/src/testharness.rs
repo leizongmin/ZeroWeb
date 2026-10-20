@@ -9724,12 +9724,17 @@ fn apply_testdriver_command(
                     // 非字符编辑/导航键（Backspace/Tab/ENTER）：keydown → 默认动作（取消
                     // 只抑制字符插入类序，此处动作照旧执行——与旧版行为一致）→ keyup。
                     _ => {
+                        // navigation-compat S11：TAB 不做 send 目标自聚焦——焦点导航键的
+                        // 迁移起点是页面当前焦点（dispatch_tab_focus），首键 focus 前缀
+                        // （编辑键自聚焦语义）会把焦点抢到 send 目标、起点错位。
+                        let is_tab = matches!(action, HtmlUserAction::MoveFocus { forward: true });
+                        let tab_keydown = if is_tab { String::new() } else { focus_prefix.clone() };
                         dispatch_key_event_script_focused(
                             webview,
                             &selector,
                             "keydown",
                             &key_detail,
-                            focus_prefix.as_str(),
+                            tab_keydown.as_str(),
                         );
                         // uievents-compat 尾簇 11（2026-10-05）：Enter on **formless**
                         // buttonish（BUTTON / input type=button|submit|reset）= 激活点击
@@ -9772,6 +9777,8 @@ fn apply_testdriver_command(
                             let click_script =
                                 zero_engine::script_dispatch_dom_event(&selector, "click", Some(&click_detail));
                             let _ = webview.execute_script(&click_script);
+                        } else if is_tab {
+                            action_error = dispatch_tab_focus(webview);
                         } else {
                             action_error = dispatch_action(webview, target, action);
                         }
@@ -9871,6 +9878,67 @@ fn dispatch_action(
         Ok(result) => Some(format!("action was not applicable: {:?}", result.noop_reason)),
         Err(error) => Some(error.to_string()),
     }
+}
+
+/// navigation-compat S11（2026-10-20）：TAB 焦点导航的宿主接线——页面可见焦点迁移。
+/// host `MoveFocus` 默认动作只产出 `PageEffect::Focus(next)` 效果，页面可见迁移是
+/// **宿主层职责**（真浏览器宿主 renderer 消费效果走 blur_focused/focus_via_tab——
+/// 失焦相位 blur/focusout → 获焦相位 focus/focusin + `document.activeElement` 同步，
+/// apps/renderer/src/runtime.rs `apply_webview_action_effects`）。runner 宿主此前
+/// 丢弃 effects：页面 focus listener 永不触发，focus-reset helpers 的 waitForFocus
+/// 门铃永挂（WPT navigation-api/focus-reset basic/multiple-intercept 两案 case
+/// Timeout）。
+///
+/// 迁移走**页面原生 focusing steps**（querySelector 候选序 + `next.focus()`——shim
+/// el.focus() 连接臂自带完整迁移序：旧焦点 blur/focusout → 新焦点 focus + `_activeElKey`
+/// handle 形键同步；后续 el.remove() 的 `_zwUnfocusIfFocused` 按 handle 形键比对——
+/// host 侧 `_zwFocusSel(sel)` 写 sel 形键（`_elKey(sel,null)`）与 remove 钩子
+/// `_elKey(sel,handle)` 恒 miss，页面原生 focus 是唯一与既有 unfocus 机制同键体系
+/// 的入口）。tab 序 = 正 tabindex 升序在前 + 零/缺省按文档序（HTML §6.5.3
+/// sequential focus navigation）；起点 = 页面真实焦点（`document.activeElement` 身份
+/// 比对——querySelector 同源 _makeProxy 缓存 identity 相等，handle 兜底双判）；
+/// 无下一可聚焦 → 焦点不变（真浏览器 Tab 落浏览器 UI，headless 近似驻留）。
+/// https://html.spec.whatwg.org/multipage/interaction.html#sequential-focus-navigation
+/// https://html.spec.whatwg.org/multipage/interaction.html#focusing-steps
+fn dispatch_tab_focus(webview: &mut WebView) -> Option<String> {
+    // 候选集 = 标准可聚焦面（a/area 带 href、button、input 非 hidden、select、
+    // textarea、summary、[tabindex]）；排除 disabled 与 tabindex=-1。真值读 live 树
+    // ——appendChild 动态元素天然在面（引擎 cached_html 快照路径的窗口期不适用）。
+    let script = "(function(){\
+        var act=document.activeElement;\
+        var all=document.querySelectorAll('a[href],area[href],button,input,select,textarea,summary,[tabindex]');\
+        var pos=[],zero=[];\
+        for(var i=0;i<all.length;i++){\
+            var el=all[i];\
+            if(el.disabled)continue;\
+            var ti=el.getAttribute('tabindex');\
+            if(ti==='-1')continue;\
+            if(el.tagName==='INPUT'&&String(el.type).toLowerCase()==='hidden')continue;\
+            var n=parseInt(ti,10);\
+            if(n>0)pos.push([n,el]);else zero.push(el);\
+        }\
+        pos.sort(function(a,b){return a[0]-b[0];});\
+        var seq=[];\
+        for(var j=0;j<pos.length;j++)seq.push(pos[j][1]);\
+        for(var k2=0;k2<zero.length;k2++)seq.push(zero[k2]);\
+        var idx=-1;\
+        for(var m2=0;m2<seq.length;m2++){\
+            if(seq[m2]===act||(act.__zwHandle&&seq[m2].__zwHandle===act.__zwHandle)){idx=m2;break;}\
+        }\
+        var next=null;\
+        if(idx>=0&&idx+1<seq.length)next=seq[idx+1];\
+        else if(idx<0&&seq.length)next=seq[0];\
+        if(next&&next.focus)next.focus();\
+        return JSON.stringify({from:(act===document.body||!act)?'body':'el',moved:next?1:0});\
+    })()";
+    let result = webview
+        .execute_script(script)
+        .map(|v| v.trim().to_string())
+        .unwrap_or_default();
+    if std::env::var("ZW_TD_DEBUG").as_deref() == Ok("1") {
+        eprintln!("[tab-focus] {result}");
+    }
+    None
 }
 
 fn resolve_testdriver_command(webview: &mut WebView, id: u64, error: Option<&str>) -> Result<(), String> {
