@@ -10271,9 +10271,19 @@
         // accessor 在接口 prototype 上经 R93 原型链回落派发；spec SVG2 types.html
         // §InterfaceSVGAnimatedLength）。ns 判定经 _zwIsSvgNsEl（handle _nsHandles +
         // sel R5000 epoch memo），HTML 元素路径不变。
+        // svg-compat M2 S2b：type/method 同款放行——SVG 的 type 是枚举反射面
+        //（feTurbulence/feColorMatrix/feFuncX.type、textPath.method 是
+        // SVGAnimatedEnumeration，spec SVG2 types.html
+        // §InterfaceSVGAnimatedEnumeration）；HTML 元素（input.type/form.method）不变。
+        // 例外：svg style/script 的 type 是 **reflected string**（HTMLStyleElement
+        // 同款语义，WPT svg/styling attr-style-type 断言缺省 '' + IDL round-trip），
+        // tag 门控保留 FLAT 串读。
+        var _rsSvgGate = (prop === 'width' || prop === 'height'
+          || ((prop === 'type' || prop === 'method')
+            && _realTag(sel, handle) !== 'STYLE' && _realTag(sel, handle) !== 'SCRIPT'));
         var _rsAttr = (prop === 'name')
           ? _reflectedNameAttr(_realTag(sel, handle), prop)
-          : ((prop === 'width' || prop === 'height') && _zwIsSvgNsEl(sel, handle))
+          : (_rsSvgGate && _zwIsSvgNsEl(sel, handle))
             ? null
             : _reflectedStringAttr(prop);
         if (_rsAttr) {

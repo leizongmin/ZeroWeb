@@ -2713,6 +2713,844 @@
       return _zwMakeSVGLength(null, null, null, false);
     };
   }
+  // svg-compat M2 S2b：值对象批（spec SVG2 types.html §InterfaceSVGAngle/Rect/
+  // Point/Matrix/Number + §InterfaceSVGAnimated*）。与 S2a 同款落点：接口
+  // prototype accessor（get trap R93 尾部回落以元素 proxy 为 this 派发）+
+  // per-element SameObject 缓存；detached 实例由 createSVG* 工厂供（WPT
+  // SVGMatrix/SVGRect/SVGPoint 直接经 createSVG* 载体验证）。SVGAnimatedInteger
+  // 的 baseVal 同 AnimatedNumber 是数值面（ToInt32 setter 不抛——'aString'/
+  // 元素 → 0，WPT SVGAnimatedInteger）；SVGAnimatedEnumeration 的 baseVal 是
+  // 数值枚举（合法值写回关键词、域外 TypeError——WPT MarkerElement/
+  // SVGClipPathElement）。
+  var _zwSvgAngleCtor = globalThis.SVGAngle;
+  if (!_zwSvgAngleCtor) {
+    _zwSvgAngleCtor = new Function('return function SVGAngle() {}')();
+    globalThis.SVGAngle = _zwSvgAngleCtor;
+    // spec SVG1.1 IDL SVG_ANGLETYPE_*。
+    _zwSvgAngleCtor.SVG_ANGLETYPE_UNKNOWN = 0;
+    _zwSvgAngleCtor.SVG_ANGLETYPE_UNSPECIFIED = 1;
+    _zwSvgAngleCtor.SVG_ANGLETYPE_DEG = 2;
+    _zwSvgAngleCtor.SVG_ANGLETYPE_RAD = 3;
+    _zwSvgAngleCtor.SVG_ANGLETYPE_GRAD = 4;
+    Object.defineProperty(_zwSvgAngleCtor.prototype, Symbol.toStringTag, {
+      value: 'SVGAngle',
+    });
+  }
+  var _zwSvgAnimatedAngleCtor = globalThis.SVGAnimatedAngle;
+  if (!_zwSvgAnimatedAngleCtor) {
+    _zwSvgAnimatedAngleCtor = new Function('return function SVGAnimatedAngle() {}')();
+    globalThis.SVGAnimatedAngle = _zwSvgAnimatedAngleCtor;
+    Object.defineProperty(_zwSvgAnimatedAngleCtor.prototype, Symbol.toStringTag, {
+      value: 'SVGAnimatedAngle',
+    });
+  }
+  var _zwSvgAnimatedIntegerCtor = globalThis.SVGAnimatedInteger;
+  if (!_zwSvgAnimatedIntegerCtor) {
+    _zwSvgAnimatedIntegerCtor = new Function('return function SVGAnimatedInteger() {}')();
+    globalThis.SVGAnimatedInteger = _zwSvgAnimatedIntegerCtor;
+    Object.defineProperty(_zwSvgAnimatedIntegerCtor.prototype, Symbol.toStringTag, {
+      value: 'SVGAnimatedInteger',
+    });
+  }
+  var _zwSvgAnimatedEnumCtor = globalThis.SVGAnimatedEnumeration;
+  if (!_zwSvgAnimatedEnumCtor) {
+    _zwSvgAnimatedEnumCtor = new Function('return function SVGAnimatedEnumeration() {}')();
+    globalThis.SVGAnimatedEnumeration = _zwSvgAnimatedEnumCtor;
+    Object.defineProperty(_zwSvgAnimatedEnumCtor.prototype, Symbol.toStringTag, {
+      value: 'SVGAnimatedEnumeration',
+    });
+  }
+  var _zwSvgAnimatedBoolCtor = globalThis.SVGAnimatedBoolean;
+  if (!_zwSvgAnimatedBoolCtor) {
+    _zwSvgAnimatedBoolCtor = new Function('return function SVGAnimatedBoolean() {}')();
+    globalThis.SVGAnimatedBoolean = _zwSvgAnimatedBoolCtor;
+    Object.defineProperty(_zwSvgAnimatedBoolCtor.prototype, Symbol.toStringTag, {
+      value: 'SVGAnimatedBoolean',
+    });
+  }
+  var _zwSvgRectCtor = globalThis.SVGRect;
+  if (!_zwSvgRectCtor) {
+    _zwSvgRectCtor = new Function('return function SVGRect() {}')();
+    globalThis.SVGRect = _zwSvgRectCtor;
+    Object.defineProperty(_zwSvgRectCtor.prototype, Symbol.toStringTag, {
+      value: 'SVGRect',
+    });
+  }
+  var _zwSvgAnimatedRectCtor = globalThis.SVGAnimatedRect;
+  if (!_zwSvgAnimatedRectCtor) {
+    _zwSvgAnimatedRectCtor = new Function('return function SVGAnimatedRect() {}')();
+    globalThis.SVGAnimatedRect = _zwSvgAnimatedRectCtor;
+    Object.defineProperty(_zwSvgAnimatedRectCtor.prototype, Symbol.toStringTag, {
+      value: 'SVGAnimatedRect',
+    });
+  }
+  var _zwSvgParCtor = globalThis.SVGPreserveAspectRatio;
+  if (!_zwSvgParCtor) {
+    _zwSvgParCtor = new Function('return function SVGPreserveAspectRatio() {}')();
+    globalThis.SVGPreserveAspectRatio = _zwSvgParCtor;
+    // spec SVG1.1 IDL（align 1..10 / meetOrSlice 1..2）。
+    _zwSvgParCtor.SVG_PRESERVEASPECTRATIO_UNKNOWN = 0;
+    _zwSvgParCtor.SVG_PRESERVEASPECTRATIO_NONE = 1;
+    _zwSvgParCtor.SVG_PRESERVEASPECTRATIO_XMINYMIN = 2;
+    _zwSvgParCtor.SVG_PRESERVEASPECTRATIO_XMIDYMIN = 3;
+    _zwSvgParCtor.SVG_PRESERVEASPECTRATIO_XMAXYMIN = 4;
+    _zwSvgParCtor.SVG_PRESERVEASPECTRATIO_XMINYMID = 5;
+    _zwSvgParCtor.SVG_PRESERVEASPECTRATIO_XMIDYMID = 6;
+    _zwSvgParCtor.SVG_PRESERVEASPECTRATIO_XMAXYMID = 7;
+    _zwSvgParCtor.SVG_PRESERVEASPECTRATIO_XMINYMAX = 8;
+    _zwSvgParCtor.SVG_PRESERVEASPECTRATIO_XMIDYMAX = 9;
+    _zwSvgParCtor.SVG_PRESERVEASPECTRATIO_XMAXYMAX = 10;
+    _zwSvgParCtor.SVG_MEETORSLICE_UNKNOWN = 0;
+    _zwSvgParCtor.SVG_MEETORSLICE_MEET = 1;
+    _zwSvgParCtor.SVG_MEETORSLICE_SLICE = 2;
+    Object.defineProperty(_zwSvgParCtor.prototype, Symbol.toStringTag, {
+      value: 'SVGPreserveAspectRatio',
+    });
+  }
+  var _zwSvgAnimatedParCtor = globalThis.SVGAnimatedPreserveAspectRatio;
+  if (!_zwSvgAnimatedParCtor) {
+    _zwSvgAnimatedParCtor = new Function('return function SVGAnimatedPreserveAspectRatio() {}')();
+    globalThis.SVGAnimatedPreserveAspectRatio = _zwSvgAnimatedParCtor;
+    Object.defineProperty(_zwSvgAnimatedParCtor.prototype, Symbol.toStringTag, {
+      value: 'SVGAnimatedPreserveAspectRatio',
+    });
+  }
+  var _zwSvgMatrixCtor = globalThis.SVGMatrix;
+  if (!_zwSvgMatrixCtor) {
+    _zwSvgMatrixCtor = new Function('return function SVGMatrix() {}')();
+    globalThis.SVGMatrix = _zwSvgMatrixCtor;
+    Object.defineProperty(_zwSvgMatrixCtor.prototype, Symbol.toStringTag, {
+      value: 'SVGMatrix',
+    });
+  }
+  var _zwSvgPointCtor = globalThis.SVGPoint;
+  if (!_zwSvgPointCtor) {
+    _zwSvgPointCtor = new Function('return function SVGPoint() {}')();
+    globalThis.SVGPoint = _zwSvgPointCtor;
+    Object.defineProperty(_zwSvgPointCtor.prototype, Symbol.toStringTag, {
+      value: 'SVGPoint',
+    });
+  }
+  var _zwSvgNumberCtor = globalThis.SVGNumber;
+  if (!_zwSvgNumberCtor) {
+    _zwSvgNumberCtor = new Function('return function SVGNumber() {}')();
+    globalThis.SVGNumber = _zwSvgNumberCtor;
+    Object.defineProperty(_zwSvgNumberCtor.prototype, Symbol.toStringTag, {
+      value: 'SVGNumber',
+    });
+  }
+  // SVGUnitTypes 常量容器（spec SVG2 types.html；枚举反射 initial/valid 面引用）。
+  var _zwSvgUnitTypesCtor = globalThis.SVGUnitTypes;
+  if (!_zwSvgUnitTypesCtor) {
+    _zwSvgUnitTypesCtor = new Function('return function SVGUnitTypes() {}')();
+    globalThis.SVGUnitTypes = _zwSvgUnitTypesCtor;
+    _zwSvgUnitTypesCtor.SVG_UNIT_TYPE_UNKNOWN = 0;
+    _zwSvgUnitTypesCtor.SVG_UNIT_TYPE_USERSPACEONUSE = 1;
+    _zwSvgUnitTypesCtor.SVG_UNIT_TYPE_OBJECTBOUNDINGBOX = 2;
+    Object.defineProperty(_zwSvgUnitTypesCtor.prototype, Symbol.toStringTag, {
+      value: 'SVGUnitTypes',
+    });
+  }
+  // 接口枚举常量（spec SVG1.1 IDL + SVG2 扩展；WPT enumeration initial-values
+  // 按接口名直接引用）。
+  var _zwSvgEnumConsts = {
+    SVGMarkerElement: {
+      SVG_MARKERUNITS_UNKNOWN: 0, SVG_MARKERUNITS_STROKEWIDTH: 1, SVG_MARKERUNITS_USERSPACEONUSE: 2,
+      SVG_MARKER_ORIENT_UNKNOWN: 0, SVG_MARKER_ORIENT_AUTO: 1, SVG_MARKER_ORIENT_ANGLE: 2,
+      SVG_MARKER_ORIENT_AUTO_START_REVERSE: 3,
+    },
+    SVGGradientElement: { SVG_SPREADMETHOD_UNKNOWN: 0, SVG_SPREADMETHOD_PAD: 1, SVG_SPREADMETHOD_REFLECT: 2, SVG_SPREADMETHOD_REPEAT: 3 },
+    SVGComponentTransferFunctionElement: {
+      SVG_FECOMPONENTTRANSFER_TYPE_UNKNOWN: 0, SVG_FECOMPONENTTRANSFER_TYPE_IDENTITY: 1,
+      SVG_FECOMPONENTTRANSFER_TYPE_TABLE: 2, SVG_FECOMPONENTTRANSFER_TYPE_DISCRETE: 3,
+      SVG_FECOMPONENTTRANSFER_TYPE_LINEAR: 4, SVG_FECOMPONENTTRANSFER_TYPE_GAMMA: 5,
+    },
+    SVGFEBlendElement: {
+      SVG_FEBLEND_MODE_UNKNOWN: 0, SVG_FEBLEND_MODE_NORMAL: 1, SVG_FEBLEND_MODE_MULTIPLY: 2,
+      SVG_FEBLEND_MODE_SCREEN: 3, SVG_FEBLEND_MODE_DARKEN: 4, SVG_FEBLEND_MODE_LIGHTEN: 5,
+      SVG_FEBLEND_MODE_OVERLAY: 6, SVG_FEBLEND_MODE_COLOR_DODGE: 7, SVG_FEBLEND_MODE_COLOR_BURN: 8,
+      SVG_FEBLEND_MODE_HARD_LIGHT: 9, SVG_FEBLEND_MODE_SOFT_LIGHT: 10, SVG_FEBLEND_MODE_DIFFERENCE: 11,
+      SVG_FEBLEND_MODE_EXCLUSION: 12, SVG_FEBLEND_MODE_HUE: 13, SVG_FEBLEND_MODE_SATURATION: 14,
+      SVG_FEBLEND_MODE_COLOR: 15, SVG_FEBLEND_MODE_LUMINOSITY: 16,
+    },
+    SVGFEColorMatrixElement: {
+      SVG_FECOLORMATRIX_TYPE_UNKNOWN: 0, SVG_FECOLORMATRIX_TYPE_MATRIX: 1,
+      SVG_FECOLORMATRIX_TYPE_SATURATE: 2, SVG_FECOLORMATRIX_TYPE_HUEROTATE: 3,
+      SVG_FECOLORMATRIX_TYPE_LUMINANCETOALPHA: 4,
+    },
+    SVGFECompositeElement: {
+      SVG_FECOMPOSITE_OPERATOR_UNKNOWN: 0, SVG_FECOMPOSITE_OPERATOR_OVER: 1,
+      SVG_FECOMPOSITE_OPERATOR_IN: 2, SVG_FECOMPOSITE_OPERATOR_OUT: 3,
+      SVG_FECOMPOSITE_OPERATOR_ATOP: 4, SVG_FECOMPOSITE_OPERATOR_XOR: 5,
+      SVG_FECOMPOSITE_OPERATOR_ARITHMETIC: 6, SVG_FECOMPOSITE_OPERATOR_LIGHTER: 7,
+    },
+    SVGFEConvolveMatrixElement: {
+      SVG_EDGEMODE_UNKNOWN: 0, SVG_EDGEMODE_DUPLICATE: 1, SVG_EDGEMODE_WRAP: 2, SVG_EDGEMODE_NONE: 3,
+    },
+    SVGFEDisplacementMapElement: {
+      SVG_CHANNEL_UNKNOWN: 0, SVG_CHANNEL_R: 1, SVG_CHANNEL_G: 2, SVG_CHANNEL_B: 3, SVG_CHANNEL_A: 4,
+    },
+    SVGFEMorphologyElement: { SVG_MORPHOLOGY_OPERATOR_UNKNOWN: 0, SVG_MORPHOLOGY_OPERATOR_ERODE: 1, SVG_MORPHOLOGY_OPERATOR_DILATE: 2 },
+    SVGFETurbulenceElement: {
+      SVG_STITCHTYPE_UNKNOWN: 0, SVG_STITCHTYPE_STITCH: 1, SVG_STITCHTYPE_NOSTITCH: 2,
+      SVG_TURBULENCE_TYPE_UNKNOWN: 0, SVG_TURBULENCE_TYPE_FRACTALNOISE: 1, SVG_TURBULENCE_TYPE_TURBULENCE: 2,
+    },
+    SVGTextContentElement: { LENGTHADJUST_UNKNOWN: 0, LENGTHADJUST_SPACING: 1, LENGTHADJUST_SPACINGANDGLYPHS: 2 },
+    SVGTextPathElement: {
+      TEXTPATH_METHODTYPE_UNKNOWN: 0, TEXTPATH_METHODTYPE_ALIGN: 1, TEXTPATH_METHODTYPE_STRETCH: 2,
+      TEXTPATH_SPACINGTYPE_UNKNOWN: 0, TEXTPATH_SPACINGTYPE_AUTO: 1, TEXTPATH_SPACINGTYPE_EXACT: 2,
+      TEXTPATH_SIDETYPE_UNKNOWN: 0, TEXTPATH_SIDETYPE_LEFT: 1, TEXTPATH_SIDETYPE_RIGHT: 2,
+    },
+  };
+  (function () {
+    for (var iname in _zwSvgEnumConsts) {
+      var iface = globalThis[iname];
+      if (!iface) continue;
+      var cs = _zwSvgEnumConsts[iname];
+      for (var cn in cs) {
+        if (iface[cn] === undefined) iface[cn] = cs[cn];
+      }
+    }
+  })();
+  // SVGAngle：值 = 指定单位数值 × 单位因子（度数域）；'auto'/'auto-start-reverse'
+  // 等非角度串回落 UNSPECIFIED 0（orient 属性语义——orientType 联动靠同一解析）。
+  // turn 无 SVG_ANGLETYPE 常量 → UNKNOWN + CSS 因子 + 后缀保真（'2turn' 往返，
+  // S2a q 单位同款）。
+  var _zwSvgAngleUnits = { '': 1, deg: 2, rad: 3, grad: 4 };
+  var _zwSvgAngleFactor = function (ut) {
+    if (ut === 3) return 180 / Math.PI;
+    if (ut === 4) return 360 / 400;
+    return 1;
+  };
+  var _zwSvgAngleParse = function (str) {
+    var m = /^\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)\s*([a-zA-Z]*)\s*$/.exec(String(str));
+    if (!m) return null;
+    var su = m[2].toLowerCase();
+    var ut = _zwSvgAngleUnits[su];
+    if (ut) return { ut: ut, vu: Number(m[1]) };
+    if (su === 'turn') return { ut: 0, vu: Number(m[1]), cf: 360, su: 'turn' };
+    return null;
+  };
+  var _zwMakeSVGAngle = function (el, attr, readOnly) {
+    var an = new _zwSvgAngleCtor();
+    var st = el ? null : { ut: 1, vu: 0 };
+    var cur = function () {
+      if (!el) return st;
+      var raw = null;
+      try { raw = el.getAttribute(attr); } catch (_eRd) { raw = null; }
+      var p = raw == null ? null : _zwSvgAngleParse(raw);
+      return p || { ut: 1, vu: 0 };
+    };
+    var write = function (vu, ut, src) {
+      if (!el) { st.ut = ut; st.vu = vu; st.cf = src && src.cf; st.su = src && src.su; return; }
+      var suffix = (src && src.su) || ({ 1: '', 2: 'deg', 3: 'rad', 4: 'grad' })[ut] || '';
+      try { el.setAttribute(attr, _zwSvgLenFmt(vu) + suffix); } catch (_eWr) {}
+    };
+    var roThrow = function () {
+      throw _zwSvgLenDomErr('read-only SVGAngle', 'NoModificationAllowedError');
+    };
+    var unitPx = function (c) { return c.ut ? _zwSvgAngleFactor(c.ut) : (c.cf || 1); };
+    Object.defineProperty(an, 'unitType', { configurable: true, get: function () { return cur().ut; } });
+    Object.defineProperty(an, 'value', {
+      configurable: true,
+      get: function () { var c = cur(); return c.vu * unitPx(c); },
+      set: function (v) {
+        if (readOnly) roThrow();
+        var n = Number(v);
+        if (!isFinite(n)) throw new TypeError('The provided float value is non-finite');
+        var c = cur();
+        write(n / unitPx(c), c.ut, c);
+      },
+    });
+    Object.defineProperty(an, 'valueInSpecifiedUnits', {
+      configurable: true,
+      get: function () { return cur().vu; },
+      set: function (v) {
+        if (readOnly) roThrow();
+        var n = Number(v);
+        if (!isFinite(n)) throw new TypeError('The provided float value is non-finite');
+        var c = cur();
+        write(n, c.ut, c);
+      },
+    });
+    Object.defineProperty(an, 'valueAsString', {
+      configurable: true,
+      get: function () {
+        var c = cur();
+        return _zwSvgLenFmt(c.vu) + (c.su || ({ 1: '', 2: 'deg', 3: 'rad', 4: 'grad' })[c.ut] || '');
+      },
+      set: function (v) {
+        if (readOnly) roThrow();
+        var p = _zwSvgAngleParse(v);
+        if (!p) throw _zwSvgLenDomErr('invalid angle: ' + String(v), 'SyntaxError');
+        write(p.vu, p.ut, p);
+      },
+    });
+    an.newValueSpecifiedUnits = function (unitType, valueInSpecifiedUnits) {
+      if (readOnly) roThrow();
+      if (arguments.length < 2) throw new TypeError('2 arguments required, but only ' + arguments.length + ' present');
+      var n = Number(valueInSpecifiedUnits);
+      if (!isFinite(n)) throw new TypeError('The provided float value is non-finite');
+      var ut = _zwSvgLenUnitNorm(unitType);
+      if (ut < 1 || ut > 4) {
+        throw _zwSvgLenDomErr('invalid unit type', 'NotSupportedError');
+      }
+      write(n, ut);
+    };
+    an.convertToSpecifiedUnits = function (unitType) {
+      if (readOnly) roThrow();
+      if (arguments.length < 1) throw new TypeError('1 argument required, but only 0 present');
+      var ut = _zwSvgLenUnitNorm(unitType);
+      if (ut < 1 || ut > 4) {
+        throw _zwSvgLenDomErr('invalid unit type', 'NotSupportedError');
+      }
+      var c = cur();
+      write(c.vu * unitPx(c) / _zwSvgAngleFactor(ut), ut);
+    };
+    return an;
+  };
+  var _zwMakeAnimatedAngle = function (el, attr) {
+    var w = new _zwSvgAnimatedAngleCtor();
+    var base = _zwMakeSVGAngle(el, attr, false);
+    var anim = _zwMakeSVGAngle(el, attr, true);
+    Object.defineProperty(w, 'baseVal', { configurable: true, get: function () { return base; } });
+    Object.defineProperty(w, 'animVal', { configurable: true, get: function () { return anim; } });
+    return w;
+  };
+  var _zwGetAnimatedAngle = function (el, prop, attr) {
+    var k = _zwSvgAnimKey(el, prop);
+    if (k && _zwSvgAnimCache[k]) return _zwSvgAnimCache[k];
+    var w = _zwMakeAnimatedAngle(el, attr);
+    if (k) _zwSvgAnimCache[k] = w;
+    return w;
+  };
+  // SVGAnimatedInteger：baseVal 数值面，getter 整数校验（非整数内容值回落
+  // initial——WPT order '-1.5' → 3）；setter ToInt32 归一（NaN → 0，不抛——
+  // WPT 'aString'/元素 → 0）。
+  var _zwMakeAnimatedInteger = function (el, attr, initial) {
+    var w = new _zwSvgAnimatedIntegerCtor();
+    var read = function () {
+      var raw = null;
+      try { raw = el.getAttribute(attr); } catch (_eRd) { raw = null; }
+      if (raw == null) return initial;
+      var n = Number(raw);
+      return (!isFinite(n) || n % 1 !== 0) ? initial : n;
+    };
+    Object.defineProperty(w, 'baseVal', {
+      configurable: true,
+      get: read,
+      set: function (v) {
+        var n = Number(v);
+        if (isNaN(n)) n = 0;
+        n = n | 0;
+        try { el.setAttribute(attr, String(n)); } catch (_eWr) {}
+      },
+    });
+    Object.defineProperty(w, 'animVal', { configurable: true, get: read });
+    return w;
+  };
+  var _zwGetAnimatedInteger = function (el, prop, attr, initial) {
+    var k = _zwSvgAnimKey(el, prop);
+    if (k && _zwSvgAnimCache[k]) return _zwSvgAnimCache[k];
+    var w = _zwMakeAnimatedInteger(el, attr, initial);
+    if (k) _zwSvgAnimCache[k] = w;
+    return w;
+  };
+  // SVGAnimatedEnumeration：baseVal 数值枚举——getter 按关键词精确查表（大小写
+  // 敏感；invalid/缺失回落 initial）；setter 数值查反表写回关键词，域外（0/负/
+  // 越界/非数）TypeError（WPT MarkerElement/SVGClipPathElement）。orientType 的
+  // 角度态（'0'/'20deg' 等）由 initial 兜底（关键词表只含 auto 族）。
+  var _zwMakeAnimatedEnum = function (el, attr, map, setMap, initial) {
+    var w = new _zwSvgAnimatedEnumCtor();
+    var read = function () {
+      var raw = null;
+      try { raw = el.getAttribute(attr); } catch (_eRd) { raw = null; }
+      if (raw != null) {
+        var n = map[raw];
+        if (n !== undefined) return n;
+      }
+      return initial;
+    };
+    Object.defineProperty(w, 'baseVal', {
+      configurable: true,
+      get: read,
+      set: function (v) {
+        var n = Number(v);
+        if (isNaN(n)) throw new TypeError('The provided value is not a valid enum value');
+        var kw = setMap[n];
+        if (kw === undefined) throw new TypeError('The provided value is not a valid enum value');
+        try { el.setAttribute(attr, kw); } catch (_eWr) {}
+      },
+    });
+    Object.defineProperty(w, 'animVal', { configurable: true, get: read });
+    return w;
+  };
+  var _zwGetAnimatedEnum = function (el, prop, attr, map, setMap, initial) {
+    var k = _zwSvgAnimKey(el, prop);
+    if (k && _zwSvgAnimCache[k]) return _zwSvgAnimCache[k];
+    var w = _zwMakeAnimatedEnum(el, attr, map, setMap, initial);
+    if (k) _zwSvgAnimCache[k] = w;
+    return w;
+  };
+  // 枚举反射定义表：接口 → { 属性: [内容属性, 关键词表, initial, setMap?] }。
+  // setMap 缺省 = 关键词表反查；orientType 显式（ANGLE 态写回 '0' 角度值）。
+  var _zwUnitKw = { userSpaceOnUse: 1, objectBoundingBox: 2 };
+  var _zwSvgEnumDefs = {
+    SVGClipPathElement: { clipPathUnits: ['clipPathUnits', _zwUnitKw, 1] },
+    SVGComponentTransferFunctionElement: { type: ['type', { identity: 1, table: 2, discrete: 3, linear: 4, gamma: 5 }, 1] },
+    SVGFEBlendElement: { mode: ['mode', { normal: 1, multiply: 2, screen: 3, darken: 4, lighten: 5, overlay: 6, 'color-dodge': 7, 'color-burn': 8, 'hard-light': 9, 'soft-light': 10, difference: 11, exclusion: 12, hue: 13, saturation: 14, color: 15, luminosity: 16 }, 1] },
+    SVGFEColorMatrixElement: { type: ['type', { matrix: 1, saturate: 2, hueRotate: 3, luminanceToAlpha: 4 }, 1] },
+    SVGFECompositeElement: { operator: ['operator', { over: 1, 'in': 2, out: 3, atop: 4, xor: 5, arithmetic: 6, lighter: 7 }, 1] },
+    SVGFEConvolveMatrixElement: { edgeMode: ['edgeMode', { duplicate: 1, wrap: 2, none: 3 }, 1] },
+    SVGFEDisplacementMapElement: { xChannelSelector: ['xChannelSelector', { R: 1, G: 2, B: 3, A: 4 }, 4], yChannelSelector: ['yChannelSelector', { R: 1, G: 2, B: 3, A: 4 }, 4] },
+    SVGFEMorphologyElement: { operator: ['operator', { erode: 1, dilate: 2 }, 1] },
+    SVGFETurbulenceElement: { stitchTiles: ['stitchTiles', { stitch: 1, noStitch: 2 }, 2], type: ['type', { fractalNoise: 1, turbulence: 2 }, 2] },
+    SVGFilterElement: { filterUnits: ['filterUnits', _zwUnitKw, 2], primitiveUnits: ['primitiveUnits', _zwUnitKw, 1] },
+    SVGGradientElement: { gradientUnits: ['gradientUnits', _zwUnitKw, 2], spreadMethod: ['spreadMethod', { pad: 1, reflect: 2, repeat: 3 }, 1] },
+    SVGMarkerElement: {
+      markerUnits: ['markerUnits', { strokeWidth: 1, userSpaceOnUse: 2 }, 1],
+      orientType: ['orient', { auto: 1, 'auto-start-reverse': 3 }, 2, { 1: 'auto', 2: '0', 3: 'auto-start-reverse' }],
+    },
+    SVGMaskElement: { maskUnits: ['maskUnits', _zwUnitKw, 2], maskContentUnits: ['maskContentUnits', _zwUnitKw, 1] },
+    SVGPatternElement: { patternUnits: ['patternUnits', _zwUnitKw, 2], patternContentUnits: ['patternContentUnits', _zwUnitKw, 1] },
+    SVGTextContentElement: { lengthAdjust: ['lengthAdjust', { spacing: 1, spacingAndGlyphs: 2 }, 1] },
+    SVGTextPathElement: { method: ['method', { align: 1, stretch: 2 }, 1], spacing: ['spacing', { auto: 1, exact: 2 }, 2], side: ['side', { left: 1, right: 2 }, 1] },
+  };
+  (function () {
+    for (var iname in _zwSvgEnumDefs) {
+      var iface = globalThis[iname];
+      if (!iface || !iface.prototype) continue;
+      var pm = _zwSvgEnumDefs[iname];
+      for (var pn in pm) {
+        (function (prop, conf) {
+          var attr = conf[0], map = conf[1], initial = conf[2];
+          var setMap = conf[3];
+          if (!setMap) {
+            setMap = {};
+            for (var kw in map) setMap[map[kw]] = kw;
+          }
+          Object.defineProperty(iface.prototype, prop, {
+            configurable: true,
+            get: function () { return _zwGetAnimatedEnum(this, prop, attr, map, setMap, initial); },
+          });
+        })(pn, pm[pn]);
+      }
+    }
+  })();
+  // Integer/Boolean/Angle 反射定义表（WPT initial-values per-attr 配置）。
+  var _zwSvgIntDefs = {
+    SVGFEConvolveMatrixElement: { orderX: ['order', 3], orderY: ['order', 3], targetX: ['targetX', 0], targetY: ['targetY', 0] },
+    SVGFETurbulenceElement: { numOctaves: ['numOctaves', 1] },
+  };
+  (function () {
+    for (var iname in _zwSvgIntDefs) {
+      var iface = globalThis[iname];
+      if (!iface || !iface.prototype) continue;
+      var pm = _zwSvgIntDefs[iname];
+      for (var pn in pm) {
+        (function (prop, attr, initial) {
+          Object.defineProperty(iface.prototype, prop, {
+            configurable: true,
+            get: function () { return _zwGetAnimatedInteger(this, prop, attr, initial); },
+          });
+        })(pn, pm[pn][0], pm[pn][1]);
+      }
+    }
+  })();
+  // SVGAnimatedBoolean：baseVal/animVal 是原始 boolean 面（ToBoolean setter——
+  // 全值接受写 'true'/'false'；WPT preserveAlpha：对象 truthy/null false）。
+  var _zwMakeAnimatedBool = function (el, attr) {
+    var w = new _zwSvgAnimatedBoolCtor();
+    var read = function () {
+      var raw = null;
+      try { raw = el.getAttribute(attr); } catch (_eRd) { raw = null; }
+      return raw === 'true';
+    };
+    Object.defineProperty(w, 'baseVal', {
+      configurable: true,
+      get: read,
+      set: function (v) {
+        try { el.setAttribute(attr, v ? 'true' : 'false'); } catch (_eWr) {}
+      },
+    });
+    Object.defineProperty(w, 'animVal', { configurable: true, get: read });
+    return w;
+  };
+  var _zwGetAnimatedBool = function (el, prop, attr) {
+    var k = _zwSvgAnimKey(el, prop);
+    if (k && _zwSvgAnimCache[k]) return _zwSvgAnimCache[k];
+    var w = _zwMakeAnimatedBool(el, attr);
+    if (k) _zwSvgAnimCache[k] = w;
+    return w;
+  };
+  if (globalThis.SVGFEConvolveMatrixElement && globalThis.SVGFEConvolveMatrixElement.prototype
+      && !Object.prototype.hasOwnProperty.call(globalThis.SVGFEConvolveMatrixElement.prototype, 'preserveAlpha')) {
+    Object.defineProperty(globalThis.SVGFEConvolveMatrixElement.prototype, 'preserveAlpha', {
+      configurable: true,
+      get: function () { return _zwGetAnimatedBool(this, 'preserveAlpha', 'preserveAlpha'); },
+    });
+  }
+  if (globalThis.SVGMarkerElement && globalThis.SVGMarkerElement.prototype
+      && !Object.prototype.hasOwnProperty.call(globalThis.SVGMarkerElement.prototype, 'orientAngle')) {
+    Object.defineProperty(globalThis.SVGMarkerElement.prototype, 'orientAngle', {
+      configurable: true,
+      get: function () { return _zwGetAnimatedAngle(this, 'orientAngle', 'orient'); },
+    });
+  }
+  if (globalThis.SVGMarkerElement && globalThis.SVGMarkerElement.prototype) {
+    var _zwMarkerProto = globalThis.SVGMarkerElement.prototype;
+    if (!_zwMarkerProto.setOrientToAuto) {
+      // spec SVG2 SVGMarkerElement.setOrientToAuto：orient → 'auto'（orientType
+      // /orientAngle 经同一属性解析自动联动）。
+      _zwMarkerProto.setOrientToAuto = function () {
+        try { this.setAttribute('orient', 'auto'); } catch (_eWr) {}
+      };
+    }
+    if (!_zwMarkerProto.setOrientToAngle) {
+      _zwMarkerProto.setOrientToAngle = function (angle) {
+        if (arguments.length < 1) throw new TypeError('1 argument required, but only 0 present');
+        try { this.setAttribute('orient', String(angle.valueAsString)); } catch (_eWr) {}
+      };
+    }
+  }
+  // SVGRect：detached（createSVGRect）/ reflected（viewBox——'x y w h' 四数解析，
+  // invalid 回零矩形；写透 setAttribute 保真四字段）。float 校验 setter（非有限
+  // TypeError；null → 0 ToNumber）。
+  var _zwMakeSVGRect = function (el, attr) {
+    var rc = new _zwSvgRectCtor();
+    var st = el ? null : { x: 0, y: 0, width: 0, height: 0 };
+    var cur = function () {
+      if (!el) return st;
+      var out = { x: 0, y: 0, width: 0, height: 0 };
+      var raw = null;
+      try { raw = el.getAttribute(attr); } catch (_eRd) { raw = null; }
+      if (raw == null) return out;
+      var ps = String(raw).trim().split(/[\s,]+/);
+      if (ps.length === 4) {
+        var keys = ['x', 'y', 'width', 'height'];
+        for (var i = 0; i < 4; i++) {
+          var n = Number(ps[i]);
+          if (!isNaN(n)) out[keys[i]] = n;
+        }
+      }
+      return out;
+    };
+    var write = function (c) {
+      if (!el) { st.x = c.x; st.y = c.y; st.width = c.width; st.height = c.height; return; }
+      try {
+        el.setAttribute(attr, _zwSvgLenFmt(c.x) + ' ' + _zwSvgLenFmt(c.y)
+          + ' ' + _zwSvgLenFmt(c.width) + ' ' + _zwSvgLenFmt(c.height));
+      } catch (_eWr) {}
+    };
+    var fields = ['x', 'y', 'width', 'height'];
+    for (var fi = 0; fi < 4; fi++) {
+      (function (f) {
+        Object.defineProperty(rc, f, {
+          configurable: true,
+          get: function () { return cur()[f]; },
+          set: function (v) {
+            var n = Number(v);
+            if (!isFinite(n)) throw new TypeError('The provided float value is non-finite');
+            var c = cur();
+            c[f] = n;
+            write(c);
+          },
+        });
+      })(fields[fi]);
+    }
+    return rc;
+  };
+  var _zwMakeAnimatedRect = function (el, attr) {
+    var w = new _zwSvgAnimatedRectCtor();
+    var base = _zwMakeSVGRect(el, attr);
+    var anim = _zwMakeSVGRect(el, attr);
+    Object.defineProperty(w, 'baseVal', { configurable: true, get: function () { return base; } });
+    Object.defineProperty(w, 'animVal', { configurable: true, get: function () { return anim; } });
+    return w;
+  };
+  var _zwSvgRectCache = {};
+  var _zwGetAnimatedRect = function (el, prop, attr) {
+    var k = _zwSvgAnimKey(el, prop);
+    if (k && _zwSvgRectCache[k]) return _zwSvgRectCache[k];
+    var w = _zwMakeAnimatedRect(el, attr);
+    if (k) _zwSvgRectCache[k] = w;
+    return w;
+  };
+  var _zwSvgRectDefs = { SVGSVGElement: 'viewBox', SVGSymbolElement: 'viewBox', SVGMarkerElement: 'viewBox', SVGPatternElement: 'viewBox' };
+  (function () {
+    for (var iname in _zwSvgRectDefs) {
+      var iface = globalThis[iname];
+      if (!iface || !iface.prototype) continue;
+      (function (prop, attr) {
+        Object.defineProperty(iface.prototype, prop, {
+          configurable: true,
+          get: function () { return _zwGetAnimatedRect(this, prop, attr); },
+        });
+      })('viewBox', _zwSvgRectDefs[iname]);
+    }
+  })();
+  // SVGPreserveAspectRatio：align（none/xMinYMin..xMaxYMax → 1..10）+
+  // meetOrSlice（meet 1/slice 2）；invalid/缺失回落 xMidYMid meet（spec 缺省）。
+  var _zwParAlignMap = { none: 1, xMinYMin: 2, xMidYMin: 3, xMaxYMin: 4, xMinYMid: 5, xMidYMid: 6, xMaxYMid: 7, xMinYMax: 8, xMidYMax: 9, xMaxYMax: 10 };
+  var _zwParAlignOf = { 1: 'none', 2: 'xMinYMin', 3: 'xMidYMin', 4: 'xMaxYMin', 5: 'xMinYMid', 6: 'xMidYMid', 7: 'xMaxYMid', 8: 'xMinYMax', 9: 'xMidYMax', 10: 'xMaxYMax' };
+  var _zwMakeSVGPar = function (el, attr) {
+    var pa = new _zwSvgParCtor();
+    var st = el ? null : { align: 6, mos: 1 };
+    var cur = function () {
+      if (!el) return st;
+      var out = { align: 6, mos: 1 };
+      var raw = null;
+      try { raw = el.getAttribute(attr); } catch (_eRd) { raw = null; }
+      if (raw == null) return out;
+      var ps = String(raw).trim().split(/[\s,]+/);
+      var a = _zwParAlignMap[ps[0]];
+      if (a !== undefined) out.align = a;
+      if (ps[1] === 'slice') out.mos = 2;
+      else if (ps[1] === 'meet') out.mos = 1;
+      return out;
+    };
+    var write = function (c) {
+      if (!el) return;
+      try { el.setAttribute(attr, _zwParAlignOf[c.align] + (c.mos === 2 ? ' slice' : ' meet')); } catch (_eWr) {}
+    };
+    Object.defineProperty(pa, 'align', {
+      configurable: true,
+      get: function () { return cur().align; },
+      set: function (v) {
+        var n = Number(v);
+        if (isNaN(n) || _zwParAlignOf[n] === undefined) {
+          throw new TypeError('The provided value is not a valid alignment type');
+        }
+        var c = cur();
+        c.align = n;
+        write(c);
+      },
+    });
+    Object.defineProperty(pa, 'meetOrSlice', {
+      configurable: true,
+      get: function () { return cur().mos; },
+      set: function (v) {
+        var n = Number(v);
+        if (isNaN(n) || (n !== 1 && n !== 2)) {
+          throw new TypeError('The provided value is not a valid meet-or-slice type');
+        }
+        var c = cur();
+        c.mos = n;
+        write(c);
+      },
+    });
+    return pa;
+  };
+  var _zwMakeAnimatedPar = function (el, attr) {
+    var w = new _zwSvgAnimatedParCtor();
+    var base = _zwMakeSVGPar(el, attr);
+    var anim = _zwMakeSVGPar(el, attr);
+    Object.defineProperty(w, 'baseVal', { configurable: true, get: function () { return base; } });
+    Object.defineProperty(w, 'animVal', { configurable: true, get: function () { return anim; } });
+    return w;
+  };
+  var _zwSvgParCache = {};
+  var _zwGetAnimatedPar = function (el, prop, attr) {
+    var k = _zwSvgAnimKey(el, prop);
+    if (k && _zwSvgParCache[k]) return _zwSvgParCache[k];
+    var w = _zwMakeAnimatedPar(el, attr);
+    if (k) _zwSvgParCache[k] = w;
+    return w;
+  };
+  var _zwSvgParDefs = { SVGSVGElement: 'preserveAspectRatio', SVGSymbolElement: 'preserveAspectRatio', SVGImageElement: 'preserveAspectRatio', SVGMarkerElement: 'preserveAspectRatio', SVGPatternElement: 'preserveAspectRatio' };
+  (function () {
+    for (var iname in _zwSvgParDefs) {
+      var iface = globalThis[iname];
+      if (!iface || !iface.prototype) continue;
+      (function (prop, attr) {
+        Object.defineProperty(iface.prototype, prop, {
+          configurable: true,
+          get: function () { return _zwGetAnimatedPar(this, prop, attr); },
+        });
+      })('preserveAspectRatio', _zwSvgParDefs[iname]);
+    }
+  })();
+  // SVGMatrix：2D 仿射 {a b c d e f}（列主形 [a c e; b d f]）；变换方法一律
+  // post-multiply 返回新实例（spec SVG2 §InterfaceSVGMatrix）。multiply 参数是
+  // DOMMatrix2DInit 字典——a..f 与 m11..m42 别名拼写，别名对不一致 TypeError、
+  // SameValueZero（0/-0）一致放行、非有限 TypeError（css-geometry
+  // validate-and-fixup）。
+  var _zwMakeSVGMatrix = function () {
+    var m = new _zwSvgMatrixCtor();
+    var st = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+    var fields = ['a', 'b', 'c', 'd', 'e', 'f'];
+    for (var fi = 0; fi < 6; fi++) {
+      (function (f) {
+        Object.defineProperty(m, f, {
+          configurable: true,
+          get: function () { return st[f]; },
+          set: function (v) {
+            var n = Number(v);
+            if (!isFinite(n)) throw new TypeError('The provided float value is non-finite');
+            st[f] = n;
+          },
+        });
+      })(fields[fi]);
+    }
+    var _newM = function (a, b, c, d, e, f) {
+      var nm = _zwMakeSVGMatrix();
+      nm.a = a; nm.b = b; nm.c = c; nm.d = d; nm.e = e; nm.f = f;
+      return nm;
+    };
+    var _fixup2D = function (src) {
+      var d = src == null ? {} : Object(src);
+      var pairs = [['a', 'm11', 1], ['b', 'm12', 0], ['c', 'm21', 0], ['d', 'm22', 1], ['e', 'm41', 0], ['f', 'm42', 0]];
+      var out = {};
+      for (var i = 0; i < 6; i++) {
+        var an = pairs[i][0];
+        var va = d[an], ve = d[pairs[i][1]];
+        var ha = va !== undefined, he = ve !== undefined;
+        if (ha) va = Number(va);
+        if (he) ve = Number(ve);
+        if ((ha && !isFinite(va)) || (he && !isFinite(ve))) {
+          throw new TypeError('non-finite matrix value');
+        }
+        if (ha && he && !((va === ve) || (va === 0 && ve === 0))) {
+          throw new TypeError('alias and element disagree');
+        }
+        out[an] = ha ? va : (he ? ve : pairs[i][2]);
+      }
+      return out;
+    };
+    m.multiply = function (second) {
+      var v = _fixup2D(second);
+      return _newM(
+        st.a * v.a + st.c * v.b,
+        st.b * v.a + st.d * v.b,
+        st.a * v.c + st.c * v.d,
+        st.b * v.c + st.d * v.d,
+        st.a * v.e + st.c * v.f + st.e,
+        st.b * v.e + st.d * v.f + st.f
+      );
+    };
+    m.translate = function (x, y) {
+      return _newM(st.a, st.b, st.c, st.d, st.e + st.a * x + st.c * y, st.f + st.b * x + st.d * y);
+    };
+    m.scale = function (s) { return _newM(st.a * s, st.b * s, st.c * s, st.d * s, st.e, st.f); };
+    m.scaleNonUniform = function (sx, sy) {
+      return _newM(st.a * sx, st.b * sx, st.c * sy, st.d * sy, st.e, st.f);
+    };
+    m.rotate = function (angle) {
+      var r = angle * Math.PI / 180;
+      var co = Math.cos(r), si = Math.sin(r);
+      // post-multiply 旋转：[a c; b d] × [co -si; si co]。
+      return _newM(
+        st.a * co + st.c * si, st.b * co + st.d * si,
+        -st.a * si + st.c * co, -st.b * si + st.d * co,
+        st.e, st.f
+      );
+    };
+    m.rotateFromVector = function (x, y) {
+      return m.rotate(Math.atan2(y, x) * 180 / Math.PI);
+    };
+    // skewX：x' = x + y·tan（第二列 c/d 变）；skewY：y' = y + x·tan（第一列 a/b 变）。
+    m.skewX = function (angle) {
+      var t = Math.tan(angle * Math.PI / 180);
+      return _newM(st.a, st.b, st.c + st.a * t, st.d + st.b * t, st.e, st.f);
+    };
+    m.skewY = function (angle) {
+      var t = Math.tan(angle * Math.PI / 180);
+      return _newM(st.a + st.c * t, st.b + st.d * t, st.c, st.d, st.e, st.f);
+    };
+    m.flipX = function () { return _newM(-st.a, -st.b, st.c, st.d, -st.e, st.f); };
+    m.flipY = function () { return _newM(st.a, st.b, -st.c, -st.d, st.e, -st.f); };
+    m.inverse = function () {
+      var det = st.a * st.d - st.b * st.c;
+      return _newM(
+        st.d / det, -st.b / det, -st.c / det, st.a / det,
+        (st.c * st.f - st.d * st.e) / det, (st.b * st.e - st.a * st.f) / det
+      );
+    };
+    return m;
+  };
+  // SVGPoint：float 校验 x/y + matrixTransform（spec SVG2 §InterfaceSVGPoint）。
+  var _zwMakeSVGPoint = function () {
+    var pt = new _zwSvgPointCtor();
+    var st = { x: 0, y: 0 };
+    var fields = ['x', 'y'];
+    for (var fi = 0; fi < 2; fi++) {
+      (function (f) {
+        Object.defineProperty(pt, f, {
+          configurable: true,
+          get: function () { return st[f]; },
+          set: function (v) {
+            var n = Number(v);
+            if (!isFinite(n)) throw new TypeError('The provided float value is non-finite');
+            st[f] = n;
+          },
+        });
+      })(fields[fi]);
+    }
+    pt.matrixTransform = function (matrix) {
+      var mx = matrix || { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+      var np = _zwMakeSVGPoint();
+      np.x = mx.a * st.x + mx.c * st.y + mx.e;
+      np.y = mx.b * st.x + mx.d * st.y + mx.f;
+      return np;
+    };
+    return pt;
+  };
+  // SVGNumber：float 校验 value accessor（detached 载体；List 面 S2c 消费）。
+  var _zwMakeSVGNumber = function () {
+    var nn = new _zwSvgNumberCtor();
+    var val = 0;
+    Object.defineProperty(nn, 'value', {
+      configurable: true,
+      get: function () { return val; },
+      set: function (v) {
+        var n = Number(v);
+        if (!isFinite(n)) throw new TypeError('The provided float value is non-finite');
+        val = n;
+      },
+    });
+    return nn;
+  };
+  // SVGSVGElement 工厂族收尾（createSVGLength 见 S2a 块；全部 detached 值对象）。
+  if (globalThis.SVGSVGElement && globalThis.SVGSVGElement.prototype) {
+    var _zwSvgSvgProto = globalThis.SVGSVGElement.prototype;
+    var _zwSvgFactories = {
+      createSVGMatrix: _zwMakeSVGMatrix,
+      createSVGRect: _zwMakeSVGRect,
+      createSVGPoint: _zwMakeSVGPoint,
+      createSVGNumber: _zwMakeSVGNumber,
+      createSVGAngle: function () { return _zwMakeSVGAngle(null, null, false); },
+    };
+    for (var _zwFName in _zwSvgFactories) {
+      (function (name, make) {
+        if (!_zwSvgSvgProto[name]) {
+          _zwSvgSvgProto[name] = function () { return make(); };
+        }
+      })(_zwFName, _zwSvgFactories[_zwFName]);
+    }
+  }
+  // SVGElement.ownerSVGElement（spec SVG2 types.html §SVGElement）：沿 parent
+  // 链找最近 svg 祖先（树结构计算，脱离文档不变）；foreignObject 边界清零
+  //（WPT ownerSVGElement-01：fo 内外层 svg → null）；无 svg 祖先 → null。
+  if (globalThis.SVGElement && globalThis.SVGElement.prototype
+      && !Object.prototype.hasOwnProperty.call(globalThis.SVGElement.prototype, 'ownerSVGElement')) {
+    Object.defineProperty(globalThis.SVGElement.prototype, 'ownerSVGElement', {
+      configurable: true,
+      get: function () {
+        var node = this;
+        for (var hops = 0; node && hops < 32; hops++) {
+          var pn = null;
+          try { pn = node.parentNode; } catch (_ePn) { return null; }
+          if (!pn) return null;
+          var lt = '';
+          try { lt = String(pn.localName || pn.tagName || '').toLowerCase(); } catch (_eL) { return null; }
+          if (lt === 'svg') return pn;
+          if (lt === 'foreignobject') return null;
+          node = pn;
+        }
+        return null;
+      },
+    });
+  }
   // WC-M1 切片 4（spec create-a-native-element / interface object [[Call]]）：
   // 接口构造器被 **custom element 的 super() 调用**且无升级在途（`new klass()` 形态，
   // spec customized built-in constructor：new klass() 产生真实元素，localName = 接口
