@@ -1,9 +1,22 @@
 # UI/指针事件兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../uievents-compat.md](../uievents-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-08（goal Done 维持；待决策清单 4 项首次征询登记）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-20（M5 回归巡检两轮——尾簇 42 realm/资产双回归修复 + 尾簇 43 动态控件 identity 回归修复，corpus 1805P/166F/95TO）
 
 ## 当前状态
+
+**M5 回归巡检（2026-10-19/20，goal Done 后）——两轮三修，corpus 1794P→1805P/166F/95TO**：
+尾簇 42（realm 构造器归属翻转 + textInput 资产丢失）：`execute_script_with_dom`
+补装 native 绑定（恢复「native 先装、shim 后覆盖」不变式，16 子测翻绿 + 捕获链
+等附带 8）+ textInput support 三件资产补拉脚本化（24P 全绿）——
+[evidence/2026-10-20-m5-tail42.md](evidence/2026-10-20-m5-tail42.md)；
+尾簇 43（keydown-input-events 动态控件 identity）：`_resolveInputTarget` 回落
+R100 identity 反查包回原 handle proxy（此前 `_wrapSelector` 隔离 proxy 使页面
+listener 收不到 beforeinput/input），1F→P，逐条 diff 仅 1 翻转零涟漪——
+[evidence/2026-10-20-m5-tail43.md](evidence/2026-10-20-m5-tail43.md)。
+跨流观察（非本 goal）：main HEAD `make test` 中 render-foundation GPU 全场景
+filter grayscale/saturate 两测试失败（A/B 实证与本 goal 改动无关，adapter-only
+腿 if 复合中段失败被吞）——渲染流域归因。
 
 **M3 + 尾簇 1/2/4/5/6/7/8/9/10/11/12/13/14/15/16/17/18/19 落地（2026-10-05）**：基线 230P → M2 片 1 343P →
 M3 375P → 尾簇 1 451P → 尾簇 2 457P → 尾簇 4 492P → 尾簇 5 502P → 尾簇 6a 1107P →
@@ -66,9 +79,10 @@ selection key 存活面 +14**（见下节与
 [evidence/2026-10-04-m3-tail5.json](evidence/2026-10-04-m3-tail5.json)（尾簇 5 后）、
 [evidence/2026-10-04-m3-tail6a.json](evidence/2026-10-04-m3-tail6a.json)（尾簇 6a 后）、
 [evidence/2026-10-04-m3-tail6bc.json](evidence/2026-10-04-m3-tail6bc.json)（尾簇 6b+6c 后）。
-门禁：`make test` **EXIT=0**（尾簇 41 后一次通过）+ clippy（quickjs 面，
+门禁：`make test` **EXIT=0**（尾簇 43 后一次通过）+ clippy（quickjs 面，
 -D warnings）EXIT=0 + fmt 无 diff + shim 拼接 node --check 全绿 + corpus 全量
-**1794P/170F/96TO**（尾簇 41——逐条 diff 仅 3 文件翻转零回归）+ reftest
+**1805P/166F/95TO**（尾簇 43——逐条 diff 仅 1 子测翻转零涟漪；尾簇 41 时点
+1794P/170F/96TO）+ reftest
 **704/704（failed 0）**（尾簇 37 复核；38/39/41 零渲染面改动复用）+
 **product-smoke EXIT=0**（diff 15.40% ≤ 20% + struct-check PASS——本 goal
 首跑，DC-4 M4 列项补齐）。历史（尾簇 34 后）：1787P/176F/96TO。
@@ -714,6 +728,13 @@ fractional untrusted 104→680P（+576）、tilt 1→24P（全绿）、construct
   互不派生 + 跨界事件携源 pointerType + 站内 release 延迟生效三态）。3F 修复
   1791P→1794P，余 5F 根因重归类进定稿清单；M4 门禁全绿（make test EXIT=0 +
   product-smoke 首跑通过）。[evidence/2026-10-07-m4-tail41.md](evidence/2026-10-07-m4-tail41.md)。
+- **M5 尾簇 42（2026-10-19/20，3ccfdc479 + 3f37525b2）**：Done 后回归巡检首轮——
+  realm 构造器归属翻转（execute_script_with_dom 补装 native 绑定，16+8 翻绿）+
+  textInput support 三件资产补拉脚本化（24P 全绿）。1756P→1804P/167F/95TO。
+  [evidence/2026-10-20-m5-tail42.md](evidence/2026-10-20-m5-tail42.md)。
+- **M5 尾簇 43（2026-10-20，本轮）**：keydown-input-events 动态控件 identity
+  反查（`_resolveInputTarget` 包回原 handle proxy）。1F→P，1804P→1805P/166F/95TO，
+  逐条 diff 仅 1 翻转零涟漪。[evidence/2026-10-20-m5-tail43.md](evidence/2026-10-20-m5-tail43.md)。
 
 ## 下一步计划
 

@@ -5810,7 +5810,14 @@
     if (!resolved) return null;
     var tag = (typeof __zw_get_tag === 'function' ? __zw_get_tag(resolved) : '').toUpperCase();
     if (tag !== 'INPUT' && tag !== 'TEXTAREA') return null;
-    return { element: _wrapSelector(resolved), key: _elKey(resolved, null) };
+    // R100 identity 反查（同 query 返回点约定）：createElement 建立的动态控件经
+    // handle→selector 倒置 merge 后须包装回**原 handle proxy**——`_wrapSelector`
+    // 直接新建 sel proxy 会派发/写值到隔离对象上，页面 listener 收不到
+    //（keydown-input-events 动态 input 实测 sameAsQs:false、eventLog 只收 keydown）。
+    // key 同步取 proxy 自身 selector/handle，与页面侧选区状态（setSelectionRange 写
+    // `_textSelection`）同源。静态元素无 handle 登记 → 回落原行为，零回归。
+    var el = (typeof _zwQueryWrapIdentity === 'function') ? _zwQueryWrapIdentity(resolved) : _wrapSelector(resolved);
+    return { element: el, key: _elKey(el.__zwSelector || resolved, el.__zwHandle || null) };
   }
   // P1a form input：导航（URL 变化）时清 value 缓存——防跨页同选择器 stale value。
   globalThis.__zw_mark_user_edited = function(sel) { _userEdited[_elKey(String(sel), null)] = true; };
