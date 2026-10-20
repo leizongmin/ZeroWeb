@@ -14439,27 +14439,422 @@
     }
     try { return decodeURIComponent(payload); } catch (_e) { return payload; }
   }
-  function _zwWorkerLocation(hrefValue) {
-    function href() {
-      return String(hrefValue || 'about:blank');
+  // M2（workers-compat DC-2）：WorkerLocation 接口对象——worker 内 location 的
+  // 构造器面（interface-objects 断言 self.WorkerLocation own property +
+  // location instanceof WorkerLocation）。getter 面沿用前 _zwWorkerLocation 对象实现，
+  // 补 port（空串，USVString 语义）。
+  // spec https://html.spec.whatwg.org/multipage/workers.html#workerlocation。
+  // FIXME(searchParams)：WorkerLocation.searchParams 未落（corpus 记账 master.md P3）。
+  function WorkerLocation(hrefValue) {
+    this._zwHref = String(hrefValue || 'about:blank');
+  }
+  function _zwWorkerLocationUrl(self) {
+    try {
+      if (typeof globalThis.URL === 'function') return new globalThis.URL(self._zwHref, self._zwHref);
+    } catch (_eWorkerLocationUrl) {}
+    return null;
+  }
+  WorkerLocation.prototype = {
+    constructor: WorkerLocation,
+    get href() { return this._zwHref; },
+    get protocol() { var u = _zwWorkerLocationUrl(this); return u ? u.protocol : ''; },
+    get host() { var u = _zwWorkerLocationUrl(this); return u ? u.host : ''; },
+    get hostname() { var u = _zwWorkerLocationUrl(this); return u ? u.hostname : ''; },
+    get port() { var u = _zwWorkerLocationUrl(this); return u ? u.port : ''; },
+    get pathname() { var u = _zwWorkerLocationUrl(this); return u ? u.pathname : ''; },
+    get search() { var u = _zwWorkerLocationUrl(this); return u ? u.search : ''; },
+    get hash() { var u = _zwWorkerLocationUrl(this); return u ? u.hash : ''; },
+    get origin() { var u = _zwWorkerLocationUrl(this); return u ? u.origin : 'null'; },
+    toString: function () { return this._zwHref; }
+  };
+  // M2（workers-compat DC-2）：WorkerNavigator 接口对象——worker 侧 navigator
+  // 最小面（WorkerNavigator.any.js：instanceof + appName/appCodeName/product 常量
+  // + platform/userAgent/onLine 类型；interfaces/WorkerUtils/navigator/008.worker.js：
+  // 可枚举属性只读——赋值 TypeError。WebIDL readonly 在 sloppy 亦抛 → setter 显式
+  // throw，不依赖 strict 指令（worker 脚本经 with(self) 内联，指令不生效））。
+  // 值直读 window navigator（part02 同源值面），不做快照复制。
+  // spec https://html.spec.whatwg.org/multipage/workers.html#workernavigator。
+  function WorkerNavigator() {}
+  (function () {
+    var keys = ['userAgent', 'appName', 'appVersion', 'appCodeName', 'product', 'productSub',
+      'vendor', 'vendorSub', 'platform', 'language', 'languages', 'onLine', 'cookieEnabled',
+      'doNotTrack', 'hardwareConcurrency', 'maxTouchPoints', 'deviceMemory', 'webdriver',
+      'connection', 'userAgentData', 'plugins', 'mimeTypes'];
+    for (var i = 0; i < keys.length; i++) {
+      (function (key) {
+        Object.defineProperty(WorkerNavigator.prototype, key, {
+          enumerable: true,
+          configurable: true,
+          get: function () { return globalThis.navigator ? globalThis.navigator[key] : undefined; },
+          set: function () {
+            throw new TypeError("Cannot assign to read only property '" + key + "' of WorkerNavigator");
+          },
+        });
+      })(keys[i]);
     }
-    function parsed() {
-      try {
-        if (typeof globalThis.URL === 'function') return new globalThis.URL(href(), href());
-      } catch (_eWorkerLocationUrl) {}
+  })();
+  // M2（workers-compat DC-2）：importScripts/worker 脚本源抓取（data:/blob:/外链三源）。
+  // blob: 同源校验同 Worker 构造 blob 分支（origin 可解析拒跨源、opaque 放行）；外链经
+  // host __zw_fetch_script（MIME 判定在 fetcher 侧——runner 按扩展名/.headers sidecar
+  // 派生 wptserve MIME，非 scripty 返 Err）。失败统一返 null（调用方转 NetworkError）。
+  // M2：importScripts 脚本 MIME 判定（JavaScript MIME type 全集，mimesniff——
+  // fetch 相对 data:/blob: 源同样适用：data: 取 URL mediatype（缺省
+  // text/plain 非 scripty，RFC 2397），blob: 取 Blob.type。importscripts_mime(_local)
+  // 案面；失败按 fetch 相失败（NetworkError）。
+  // https://html.spec.whatwg.org/multipage/workers.html#dom-workerglobalscope-importscripts
+  // https://mimesniff.spec.whatwg.org/#javascript-mime-type
+  function _zwWorkerScriptyMime(mime) {
+    var essence = String(mime || '').split(';')[0].trim().toLowerCase();
+    return essence === 'text/javascript' || essence === 'application/javascript'
+      || essence === 'text/ecmascript' || essence === 'application/ecmascript';
+  }
+  function _zwWorkerImportSource(baseHref, rawUrl, resolvedUrl) {
+    if (String(rawUrl).indexOf('data:') === 0) {
+      var meta = String(rawUrl).slice(5).split(',')[0];
+      var mime = meta ? meta.replace(/;base64$/i, '') : '';
+      if (!_zwWorkerScriptyMime(mime)) return null;
+      return _zwDecodeWorkerScript(rawUrl);
+    }
+    var blobKey = String(resolvedUrl);
+    if (String(rawUrl).indexOf('blob:') === 0 || blobKey.indexOf('blob:') === 0) {
+      if (typeof _zwBlobStore === 'object' && _zwBlobStore !== null
+          && Object.prototype.hasOwnProperty.call(_zwBlobStore, blobKey)) {
+        var blobScript = _zwBlobStore[blobKey];
+        var blobUrlMatch = /^([^\/]+:\/\/[^\/]*)\//.exec(blobKey.slice(5));
+        var blobOrigin = (globalThis.location && globalThis.location.origin) || '';
+        if (blobUrlMatch && blobUrlMatch[1] !== blobOrigin) return null;
+        if (!_zwWorkerScriptyMime(blobScript && blobScript.type)) return null;
+        return _zw_utf8_decode(_zw_blobBytes(blobScript));
+      }
       return null;
     }
-    return {
-      get href() { return href(); },
-      get protocol() { var u = parsed(); return u ? u.protocol : ''; },
-      get host() { var u = parsed(); return u ? u.host : ''; },
-      get hostname() { var u = parsed(); return u ? u.hostname : ''; },
-      get pathname() { var u = parsed(); return u ? u.pathname : ''; },
-      get search() { var u = parsed(); return u ? u.search : ''; },
-      get hash() { var u = parsed(); return u ? u.hash : ''; },
-      get origin() { var u = parsed(); return u ? u.origin : 'null'; },
-      toString: function () { return href(); }
-    };
+    if (typeof __zw_fetch_script !== 'function') return null;
+    try { return __zw_fetch_script(String(baseHref || ''), String(rawUrl)) || null; } catch (_eImportFetch) { return null; }
+  }
+  // M2：importScripts 相（spec 三步——URL 解析 → fetch → 顺序执行）的参数归一：
+  // 字符串直用；undefined/null/数字常量按 String() 归一（010-012 案：常量参数
+  // 走构造期内联路径的同款解析）。其余类型（对象/函数）按 String() 归一。
+  function _zwImportArgString(value) {
+    if (typeof value === 'string') return value;
+    return String(value);
+  }
+  // M2：importScripts 调用位扫描（字符串/模板/注释/正则字面量感知——字面量内容
+  // 不参与标识符匹配，防字符串内 `importScripts(` 误报）。返回调用位记录
+  // {start(标识符首), open('(' 位), close(')' 位)}；扫描状态异常（未终止字符串/
+  // 正则）返 null——调用方整体放弃重写（保守，防误替换扩大）。
+  function _zwScanImportCalls(src) {
+    var calls = [];
+    var n = src.length;
+    var i = 0;
+    var prev = ''; // 前一有效 token（正则 vs 除法判定 + 词边界检查）
+    while (i < n) {
+      var ch = src.charAt(i);
+      if (ch === '"' || ch === "'" || ch === '`') {
+        i++;
+        while (i < n) {
+          if (src.charAt(i) === '\\') { i += 2; continue; }
+          if (src.charAt(i) === ch) { i++; break; }
+          if (src.charAt(i) === '\n') return null;
+          i++;
+        }
+        if (i >= n && src.charAt(i - 1) !== ch) return null;
+        prev = 'x';
+        continue;
+      }
+      if (ch === '/' && src.charAt(i + 1) === '/') {
+        while (i < n && src.charAt(i) !== '\n') i++;
+        continue;
+      }
+      if (ch === '/' && src.charAt(i + 1) === '*') {
+        i += 2;
+        while (i < n && !(src.charAt(i) === '*' && src.charAt(i + 1) === '/')) i++;
+        if (i >= n) return null;
+        i += 2;
+        continue;
+      }
+      if (ch === '/') {
+        // 正则字面量判定：前一 token ∈ {( , , , = , : , [ , ! , & , | , ? , ; , { ,
+        // return/case 等关键词} 或源首；否则按除法 token 处理。
+        var regexAfterKeywords = '|return|case|typeof|void|delete|in|of|do|else|new|instanceof|';
+        var regexHere = prev === '' || '(,=:[!&|?;{'.indexOf(prev) >= 0
+          || (prev.length > 1 && regexAfterKeywords.indexOf('|' + prev + '|') >= 0);
+        if (regexHere) {
+          i++;
+          var inClass = false;
+          var closed = false;
+          while (i < n) {
+            var rc = src.charAt(i);
+            if (rc === '\\') { i += 2; continue; }
+            if (rc === '\n') return null;
+            if (inClass) {
+              if (rc === ']') inClass = false;
+            } else if (rc === '[') {
+              inClass = true;
+            } else if (rc === '/') {
+              closed = true;
+              i++;
+              break;
+            }
+            i++;
+          }
+          if (!closed) return null;
+          while (i < n && /[a-z]/i.test(src.charAt(i))) i++;
+          prev = 'x';
+          continue;
+        }
+        prev = '/';
+        i++;
+        continue;
+      }
+      if (/[A-Za-z_$]/.test(ch)) {
+        var start = i;
+        while (i < n && /[A-Za-z0-9_$]/.test(src.charAt(i))) i++;
+        var word = src.slice(start, i);
+        if (word === 'importScripts'
+            && (start === 0 || !/[A-Za-z0-9_$.]/.test(src.charAt(start - 1)))
+            && src.charAt(i) !== '.') {
+          var j = i;
+          while (j < n && /\s/.test(src.charAt(j))) j++;
+          if (src.charAt(j) === '(') {
+            var depth = 0;
+            var k = j;
+            var closedCall = false;
+            while (k < n) {
+              var kc = src.charAt(k);
+              if (kc === '"' || kc === "'" || kc === '`') {
+                k++;
+                while (k < n) {
+                  if (src.charAt(k) === '\\') { k += 2; continue; }
+                  if (src.charAt(k) === kc) { break; }
+                  if (src.charAt(k) === '\n') return null;
+                  k++;
+                }
+                if (k >= n) return null;
+              } else if (kc === '/' && src.charAt(k + 1) === '/') {
+                while (k < n && src.charAt(k) !== '\n') k++;
+              } else if (kc === '/' && src.charAt(k + 1) === '*') {
+                k += 2;
+                while (k < n && !(src.charAt(k) === '*' && src.charAt(k + 1) === '/')) k++;
+                if (k >= n) return null;
+                k += 2;
+                continue;
+              } else if (kc === '(') {
+                depth++;
+              } else if (kc === ')') {
+                depth--;
+                if (depth === 0) { closedCall = true; k++; break; }
+              } else if (kc === ';') {
+                break; // 语句尾仍未闭合——非法调用形态，不重写
+              }
+              k++;
+            }
+            if (closedCall) calls.push({ start: start, open: j, close: k - 1 });
+          }
+          prev = 'x';
+          continue;
+        }
+        prev = word;
+        continue;
+      }
+      if (!/\s/.test(ch)) prev = ch;
+      i++;
+    }
+    return calls;
+  }
+  // M2：解析 importScripts 实参表（顶层逗号切分）。字符串字面量解转义；undefined/
+  // null/数字常量按 String() 归一。出现其余形态（标识符/表达式/缺参）→ 返 null
+  // （该调用不重写，走运行时 importScripts）。
+  function _zwParseImportArgs(src, listStart, listEnd) {
+    var args = [];
+    var depth = 0;
+    var segStart = listStart;
+    var i = listStart;
+    function pushSegment(segEnd) {
+      // 注释剥离（引号感知——字符串内 `//` 不是注释）：`//` 至行尾、`/*...*/`
+      // 归一为空白（004 案实参表内行注释）。未闭合块注释按吞尾处理。
+      function stripComments(text) {
+        var out = '';
+        var i = 0;
+        while (i < text.length) {
+          var c = text.charAt(i);
+          if (c === '"' || c === "'" || c === '`') {
+            out += c;
+            i++;
+            while (i < text.length) {
+              if (text.charAt(i) === '\\') {
+                out += text.charAt(i) + (text.charAt(i + 1) || '');
+                i += 2;
+                continue;
+              }
+              out += text.charAt(i);
+              if (text.charAt(i) === c) { i++; break; }
+              i++;
+            }
+            continue;
+          }
+          if (c === '/' && text.charAt(i + 1) === '/') {
+            while (i < text.length && text.charAt(i) !== '\n') i++;
+            out += ' ';
+            continue;
+          }
+          if (c === '/' && text.charAt(i + 1) === '*') {
+            i += 2;
+            while (i < text.length && !(text.charAt(i) === '*' && text.charAt(i + 1) === '/')) i++;
+            i += 2;
+            out += ' ';
+            continue;
+          }
+          out += c;
+          i++;
+        }
+        return out;
+      }
+      var text = stripComments(src.slice(segStart, segEnd));
+      // 空白段（importScripts() / 尾逗号）：importScripts() 整表空段跳过；非空表
+      // 内空段按非法处理。
+      if (/^\s*$/.test(text)) {
+        if (args.length === 0 && text.trim() === '') return;
+        throw null;
+      }
+      text = text.trim();
+      var q = text.charAt(0);
+      if ((q === '"' || q === "'") && text.charAt(text.length - 1) === q && text.length >= 2) {
+        var lit = '';
+        for (var li = 1; li < text.length - 1; li++) {
+          var lc = text.charAt(li);
+          if (lc === '\\') {
+            var nc = text.charAt(li + 1);
+            if (nc === 'n') { lit += '\n'; li++; }
+            else if (nc === 't') { lit += '\t'; li++; }
+            else if (nc === 'r') { lit += '\r'; li++; }
+            else if (nc === 'b') { lit += '\b'; li++; }
+            else if (nc === 'f') { lit += '\f'; li++; }
+            else if (nc === 'v') { lit += '\v'; li++; }
+            else if (nc === '0') { lit += '\0'; li++; }
+            else if (nc === 'u') {
+              var hex = text.slice(li + 2, li + 6);
+              if (!/^[0-9a-fA-F]{4}$/.test(hex)) throw null;
+              lit += String.fromCharCode(parseInt(hex, 16));
+              li += 5;
+            } else if (nc === 'x') {
+              var hex2 = text.slice(li + 2, li + 4);
+              if (!/^[0-9a-fA-F]{2}$/.test(hex2)) throw null;
+              lit += String.fromCharCode(parseInt(hex2, 16));
+              li += 3;
+            } else if (nc === '\n') {
+              li++; // 行延续
+            } else {
+              lit += nc;
+              li++;
+            }
+          } else {
+            lit += lc;
+          }
+        }
+        args.push(lit);
+        return;
+      }
+      if (text === 'undefined') { args.push('undefined'); return; }
+      if (text === 'null') { args.push('null'); return; }
+      if (/^[0-9]+(\.[0-9]+)?$/.test(text)) { args.push(text); return; }
+      throw null;
+    }
+    try {
+      while (i < listEnd) {
+        var ch = src.charAt(i);
+        if (ch === '"' || ch === "'" || ch === '`') {
+          i++;
+          while (i < listEnd) {
+            if (src.charAt(i) === '\\') { i += 2; continue; }
+            if (src.charAt(i) === ch) { break; }
+            i++;
+          }
+          if (i >= listEnd) throw null;
+        } else if (ch === '/' && src.charAt(i + 1) === '/') {
+          while (i < listEnd && src.charAt(i) !== '\n') i++; // 实参表内行注释（004 案）
+        } else if (ch === '/' && src.charAt(i + 1) === '*') {
+          i += 2;
+          while (i < listEnd && !(src.charAt(i) === '*' && src.charAt(i + 1) === '/')) i++;
+          i += 2;
+        } else if (ch === '(' || ch === '[' || ch === '{') {
+          depth++;
+        } else if (ch === ')' || ch === ']' || ch === '}') {
+          depth--;
+        } else if (ch === ',' && depth === 0) {
+          pushSegment(i);
+          segStart = i + 1;
+        }
+        i++;
+      }
+      pushSegment(listEnd);
+    } catch (_e) {
+      return null;
+    }
+    return args;
+  }
+  // M2（workers-compat DC-2）：importScripts 调用位内联——构造期把字面量/常量参数
+  // 的语句位调用重写为同作用域 direct eval 序列（sloppy direct eval 的 var/function
+  // 声明落调用位所在 var-env → 与 worker 脚本共享作用域，008/009 案断言）。旧实现
+  // 把 import 源提升到 body 顶部并正则剥行——try/catch 内调用的失败/顺序语义丢失、
+  // 含 `;` 的字符串参数被截断（003-012 案全数错位）。spec 三相：
+  // ① 全参 URL 解析（失败 SyntaxError DOMException，不执行任何脚本——002 案）；
+  // ② 全参 fetch（失败 NetworkError，不执行任何脚本——blob-url「前脚本 revoke
+  //    后脚本 URL 仍可用」案钉 fetch 先全量后执行）；
+  // ③ 顺序 eval（SyntaxError/运行时异常在执行位抛出并中止后续——004/005/006 案）。
+  // 重写范围：语句位（前向非空白 ∈ {源首, ;, }）+ 全参字面量/常量；其余保留原调用
+  // 走运行时 importScripts（Function 隔离、定义不泄漏——限制记账 master.md P4）。
+  // https://html.spec.whatwg.org/multipage/workers.html#dom-workerglobalscope-importscripts
+  // FIXME(strict-import)：以 "use strict" 指令开头的导入源经 direct eval 落 sloppy
+  //（指令位置失效）——strict 语义差异记账；corpus 命中面（support/name.js 族）边缘。
+  function _zwInlineImportScripts(src, baseHref) {
+    var calls = _zwScanImportCalls(src);
+    if (calls === null || calls.length === 0) return src;
+    var out = '';
+    var last = 0;
+    for (var ci = 0; ci < calls.length; ci++) {
+      var call = calls[ci];
+      var p = call.start - 1;
+      while (p >= 0 && /\s/.test(src.charAt(p))) p--;
+      // 语句位：源首/`;`/块尾 `}`/块首 `{`（try/if 块内首语句——003/006 案）/`)`
+      //（if(cond) 单语句）/`:`（label/case 子句）。
+      if (p >= 0 && ';}{):'.indexOf(src.charAt(p)) < 0) continue;
+      var args = _zwParseImportArgs(src, call.open + 1, call.close);
+      if (args === null) continue;
+      var resolved = [];
+      var resolveFailed = false;
+      for (var ri = 0; ri < args.length; ri++) {
+        var u = null;
+        try { u = new URL(args[ri], baseHref).href; } catch (_eInlineResolve) {}
+        if (u === null) { resolveFailed = true; break; }
+        resolved.push(u);
+      }
+      out += src.slice(last, call.start);
+      if (resolveFailed) {
+        // 原生构造器优先（R384 wrong-global 先例）：with(self) 内词法 `DOMException`
+        // 落 shim 闭包构造器，与用例断言的 globalThis.DOMException 恒不同一。
+        out += 'throw new (globalThis.DOMException || DOMException)("Failed to resolve importScripts URL.", "SyntaxError");';
+        last = call.close + 1;
+        continue;
+      }
+      var sources = [];
+      var fetchFailed = false;
+      for (var fi = 0; fi < args.length; fi++) {
+        var s = _zwWorkerImportSource(baseHref, args[fi], resolved[fi]);
+        if (s === null) { fetchFailed = true; break; }
+        sources.push(s);
+      }
+      if (fetchFailed) {
+        out += 'throw new (globalThis.DOMException || DOMException)("Failed to fetch importScripts.", "NetworkError");';
+        last = call.close + 1;
+        continue;
+      }
+      for (var si = 0; si < sources.length; si++) {
+        out += 'eval(' + JSON.stringify(sources[si]) + ');';
+      }
+      last = call.close + 1;
+    }
+    out += src.slice(last);
+    return out;
   }
   function Worker(url, options, baseUrl) {
     if (!(this instanceof Worker)) return new Worker(url, options, baseUrl);
@@ -14491,27 +14886,40 @@
           });
         }
       },
-      // R34xx（G6）：importScripts 经 host __zw_fetch_script 同步抓取并执行（worker 测试
-      // 框架的 testharness.js/canvas-tests.js 导入——OffscreenCanvas worker 变体）。
+      // M2（workers-compat DC-2）：importScripts 运行时路径（非字面量参数兜底）——
+      // spec 三相：全参 URL 解析（失败 SyntaxError DOMException，不执行任何脚本）
+      // → 全参 fetch（失败 NetworkError，不执行）→ 顺序执行（异常透传并中止后续）。
+      // DOMException 取 globalThis 优先（R384 wrong-global 先例——词法 `DOMException`
+      // 落 shim 闭包内构造器，与用例经 wctx 镜像到的原生构造器恒不同一）。
+      // Function 隔离执行——顶层定义不泄漏到调用作用域（字面量/常量参数走构造期
+      // 内联路径：direct eval 同 var-env；此限制记账 master.md P4）。
+      // https://html.spec.whatwg.org/multipage/workers.html#dom-workerglobalscope-importscripts
       importScripts: function () {
+        var base = String(wctx.location && wctx.location.href ? wctx.location.href : '');
+        var de = globalThis.DOMException || DOMException;
+        var sources = [];
         for (var ai = 0; ai < arguments.length; ai++) {
-          var u = String(arguments[ai]);
-          if (typeof __zw_fetch_script !== 'function') continue;
-          var src = null;
-          try {
-            src = __zw_fetch_script(String(wctx.location && wctx.location.href ? wctx.location.href : ''), u) || null;
-          } catch (_e) { src = null; }
-          if (src === null) continue;
-          try {
-            var body = 'var postMessage=self.postMessage.bind(self);'
-              + 'var importScripts=function(){};'
-              + 'var location=self.location;'
-              + 'var Worker=self.Worker;'
-              + 'var onmessage;'
-              + src
-              + '\n;if(typeof onmessage==="function")self.onmessage=onmessage;';
-            new Function('self', body).call(null, wctx);
-          } catch (_e) { /* 导入失败不阻断（测试自行报告） */ }
+          var raw = _zwImportArgString(arguments[ai]);
+          var resolvedUrl = null;
+          try { resolvedUrl = new URL(raw, base).href; } catch (_eImportResolve) {}
+          if (resolvedUrl === null) {
+            throw new de("Failed to resolve importScripts URL '" + raw + "'.", 'SyntaxError');
+          }
+          var src = _zwWorkerImportSource(base, raw, resolvedUrl);
+          if (src === null) {
+            throw new de("Failed to fetch importScripts '" + raw + "'.", 'NetworkError');
+          }
+          sources.push(src);
+        }
+        for (var ei = 0; ei < sources.length; ei++) {
+          var body = 'var postMessage=self.postMessage.bind(self);'
+            + 'var importScripts=self.importScripts;'
+            + 'var location=self.location;'
+            + 'var Worker=self.Worker;'
+            + 'var onmessage;'
+            + 'with(self){' + sources[ei] + '\n;}'
+            + '\n;if(typeof onmessage==="function")self.onmessage=onmessage;';
+          new Function('self', body).call(null, wctx);
         }
       },
       close: function () { main._terminated = true; },
@@ -14590,7 +14998,27 @@
       : { add: function () { return this; }, ready: Promise.resolve(), load: function () { return Promise.resolve([]); } };
     wctx.Worker = function (nestedUrl, nestedOptions) { return new Worker(nestedUrl, nestedOptions, main._resolvedScriptUrl); };
     try { wctx.Worker.prototype = Worker.prototype; } catch (_e) {}
-    wctx.location = wctx.location || _zwWorkerLocation(main._resolvedScriptUrl);
+    wctx.WorkerLocation = WorkerLocation;
+    wctx.location = wctx.location || new WorkerLocation(main._resolvedScriptUrl);
+    wctx.WorkerNavigator = WorkerNavigator;
+    wctx.navigator = new WorkerNavigator();
+    // M2（workers-compat DC-2）：worker 全局接口面补齐（interface-objects 001/002
+    // 断言 self.<I> own property——with(self) 透传不满足 own property 判定）。
+    // window shim 已有构造器镜像直挂；缺位面（FileReaderSync/IDB* 族/TextMetrics/
+    // Float16Array 按引擎）不造功能桩——记账 master.md P3。
+    var _zwWorkerInterfaces = ['Event', 'EventTarget', 'CustomEvent', 'MessageChannel', 'MessagePort',
+      'MessageEvent', 'PromiseRejectionEvent', 'ErrorEvent', 'CloseEvent', 'ProgressEvent',
+      'EventSource', 'WebSocket', 'XMLHttpRequest', 'XMLHttpRequestUpload', 'XMLHttpRequestEventTarget',
+      'FormData', 'Blob', 'File', 'FileList', 'FileReader', 'URLSearchParams', 'Path2D', 'TextMetrics',
+      'DOMException',
+      'ReadableStream', 'WritableStream', 'ByteLengthQueuingStrategy', 'CountQueuingStrategy',
+      'BroadcastChannel', 'ArrayBuffer', 'Int8Array', 'Uint8Array', 'Uint8ClampedArray',
+      'Int16Array', 'Uint16Array', 'Int32Array', 'Uint32Array', 'Float16Array', 'Float32Array',
+      'Float64Array', 'DataView'];
+    for (var wi = 0; wi < _zwWorkerInterfaces.length; wi++) {
+      var iname = _zwWorkerInterfaces[wi];
+      if (globalThis[iname] !== undefined && wctx[iname] === undefined) wctx[iname] = globalThis[iname];
+    }
     // onmessage setter：worker 脚本 `self.onmessage = fn` 或 bare `onmessage = fn`（经 IIFE 影子同步）注入 handler。
     Object.defineProperty(wctx, 'onmessage', {
       configurable: true,
@@ -14631,12 +15059,16 @@
         // https://w3c.github.io/FileAPI/#blob-url-scheme-fetch（取全字节，脚本按 UTF-8 解码）
         scriptSrc = _zw_utf8_decode(_zw_blobBytes(blobScript));
       } else {
-        // blob URL 查无此 blob（revoke 后使用 / 跨源）→ fetch 失败语义：异步 error 事件。
+        // blob URL 查无此 blob（revoke 后使用 / 跨源）→ fetch 失败语义：异步 error 事件
+        //（ErrorEvent——spec error 事件即 ErrorEvent，message/filename init dict 填充）。
         // https://html.spec.whatwg.org/worker-processing-model step 7（fetch 失败 → error event）
         if (typeof queueMicrotask === 'function') {
           queueMicrotask(function () {
             if (main._terminated) return;
-            main.dispatchEvent(new Event('error', { message: 'Worker script blob URL could not be resolved: ' + blobUrl }));
+            main.dispatchEvent(new ErrorEvent('error', {
+              message: 'Worker script blob URL could not be resolved: ' + blobUrl,
+              filename: blobUrl,
+            }));
           });
         }
       }
@@ -14651,28 +15083,15 @@
       }
     }
     if (scriptSrc) {
-      // R34xx（G6）：预提取 importScripts 源并**内联**到同一 Function 作用域（worker 测试
-      // 框架的 testharness.js/canvas-tests.js 全局定义须与测试脚本共享——各自独立
-      // Function 会隔离 _assertPixel 等定义）。移除原 importScripts 行（已内联）。
-      var inlineImports = '';
-      if (typeof __zw_fetch_script === 'function') {
-        var importCalls = scriptSrc.match(/importScripts\([^;]*?\)/g) || [];
-        for (var ii = 0; ii < importCalls.length; ii++) {
-          var urlMatch = importCalls[ii].match(/["']([^"']+)["']/);
-          if (!urlMatch) continue;
-          var impSrc = null;
-          try {
-            impSrc = __zw_fetch_script(String(wctx.location && wctx.location.href ? wctx.location.href : ''), urlMatch[1]) || null;
-          } catch (_e) { impSrc = null; }
-          if (impSrc !== null) inlineImports += impSrc + '\n';
-        }
-        scriptSrc = scriptSrc.replace(/importScripts\([^;]*?\);/g, '');
-      }
+      // M2（workers-compat DC-2）：importScripts 调用位内联（语义见
+      // _zwInlineImportScripts 注记——三相 spec 语义 + direct eval 同作用域定义共享，
+      // 替代旧「顶部提升 + 正则剥行」实现）。字面量/常量参数调用重写；其余形态
+      // 保留原调用走运行时 wctx.importScripts。
+      scriptSrc = _zwInlineImportScripts(scriptSrc, String(main._resolvedScriptUrl || ''));
       try {
-        var body = inlineImports
-          + _zwWorkerExposeBareGlobalCode()
+        var body = _zwWorkerExposeBareGlobalCode()
           + 'var postMessage=self.postMessage.bind(self);'
-          + 'var importScripts=function(){};'
+          + 'var importScripts=self.importScripts;'
           + 'var location=self.location;'
           + 'var Worker=self.Worker;'
           + 'var fetch=self.fetch.bind(self);'
@@ -14682,14 +15101,34 @@
           + '\n;if(typeof onmessage==="function")self.onmessage=onmessage;}';
         new Function('self', body).call(null, wctx);
       } catch (e) {
-        // worker 脚本抛（语法/运行时）→ microtask 派发 'error' 到 Worker 实例（spec onerror）。
+        // worker 脚本抛（语法/运行时）→ microtask 派发 ErrorEvent 到 Worker 实例
+        //（spec onerror；message/filename/lineno init dict——error 事件即 ErrorEvent）。
         if (typeof queueMicrotask === 'function') {
           var em = (e && e.message) ? String(e.message) : String(e);
+          var el = (e && e.lineNumber !== undefined) ? e.lineNumber : 0;
           queueMicrotask(function () {
             if (main._terminated) return;
-            main.dispatchEvent(new Event('error', { message: em }));
+            main.dispatchEvent(new ErrorEvent('error', {
+              message: em,
+              filename: String(url),
+              lineno: el,
+            }));
           });
         }
+      }
+    } else if (typeof __zw_fetch_script === 'function') {
+      // M2（workers-compat DC-2）：worker 脚本 fetch 失败（网络/非 scripty MIME——
+      // MIME 判定在 fetcher 侧）→ 异步 ErrorEvent（blob 分支同型）。未注册 fetcher
+      // 的嵌入宿主保持 R3080 静默（API 表面可用）。
+      // https://html.spec.whatwg.org/multipage/workers.html#worker-processing-model
+      if (typeof queueMicrotask === 'function') {
+        queueMicrotask(function () {
+          if (main._terminated) return;
+          main.dispatchEvent(new ErrorEvent('error', {
+            message: 'Failed to fetch worker script: ' + String(url),
+            filename: String(url),
+          }));
+        });
       }
     }
   }
