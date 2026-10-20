@@ -1657,14 +1657,48 @@
     // 适用非浏览上下文文档（createHTMLDocument 面不改）。doc-anchored 单例读
     // `_zwURL` 槽（finish 路径写 effectiveUrl，R360），无槽回 about:blank；
     // win 物化后 win.location 与之同源（href 同读该槽）。
-    var _zwDocLoc = {
-      get href() {
+    var _zwDocLoc = (function () {
+      function dHref() {
         try { return doc._zwURL ? String(doc._zwURL) : 'about:blank'; } catch (_eDocLoc) { return 'about:blank'; }
-      },
-      toString: function () { return this.href; },
-    };
+      }
+      function dParsed() {
+        try {
+          if (typeof globalThis.URL === 'function') return new globalThis.URL(dHref(), dHref());
+        } catch (_eDocLocUrl) {}
+        return null;
+      }
+      return {
+        get href() { return dHref(); },
+        // navigation-compat M3-S2：全 URL 解析读面（spec
+        // https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-document-location
+        // ——WPT srcdoc_process_attributes / iframe_remove_src 只经
+        // contentDocument.location.protocol 断言，不触 contentWindow——win 物化前
+        // 也须可用；srcdoc 档案 'about:'、blob: 档案 'blob:'）。
+        get protocol() { var u = dParsed(); return u ? u.protocol : ''; },
+        get host() { var u = dParsed(); return u ? u.host : ''; },
+        get hostname() { var u = dParsed(); return u ? u.hostname : ''; },
+        get pathname() { var u = dParsed(); return u ? u.pathname : ''; },
+        get search() { var u = dParsed(); return u ? u.search : ''; },
+        get hash() { var u = dParsed(); return u ? u.hash : ''; },
+        get origin() { var u = dParsed(); return u ? u.origin : 'null'; },
+        toString: function () { return this.href; },
+      };
+    })();
+    // navigation-compat M3-S2：spec dom-document-location——browsing context 内
+    // document.location 与 window.location 返回**同一** Location 对象。win 物化后
+    // 惰性切到 win.location（iframeLocation 全面含 hash 写侧）；物化前 _zwDocLoc
+    // 服务成熟度门前读（content_document_changes_only_after_load_matures 的
+    // toString 面维持）与只读 contentDocument 案面。
     try {
-      Object.defineProperty(doc, 'location', { configurable: true, get: function () { return _zwDocLoc; } });
+      Object.defineProperty(doc, 'location', {
+        configurable: true,
+        get: function () {
+          var w = null;
+          try { w = doc.defaultView || null; } catch (_eDocLocDv) {}
+          if (w && w.location) return w.location;
+          return _zwDocLoc;
+        },
+      });
     } catch (_eDocLocDef) {}
     // R141（js-dom M4）：`<meta charset>` → 文档编码归一化（WPT
     // Document-characterSet-normalization-1/2 654 subtest——iframe 子文档的
@@ -3698,6 +3732,38 @@
         get pathname() { var u = parsed(); return u ? u.pathname : ''; },
         get search() { var u = parsed(); return u ? u.search : ''; },
         get hash() { var u = parsed(); return u ? u.hash : ''; },
+        // navigation-compat M3-S2：hash 写侧——同文档片段导航（spec
+        // https://html.spec.whatwg.org/multipage/nav-history-apis.html#the-location-interface
+        // location.hash setter：更新 URL（'#' 前缀可省、空值剥 hash）+ push 会话
+        // 条目 + 异步派 hashchange；同值 no-op 不派）。子窗无 Navigation API 面，
+        // 不走父窗 _setLocationHash（那系 host history/navigation 记账——part02）。
+        // srcdoc_change_hash 前两步断言面。
+        set hash(v) {
+          var raw = String(v);
+          var frag = raw.charAt(0) === '#' ? raw : '#' + raw;
+          var cur = href();
+          var next = cur.split('#')[0] + (frag === '#' ? '' : frag);
+          if (next === cur) return; // hash 未变 → no-op（spec 不派事件）
+          var oldUrl = cur;
+          iframeSetCurrentHistoryUrl(next);
+          var w = null;
+          try { w = doc.defaultView || null; } catch (_eHashWin) {}
+          try {
+            if (w && w.history && w.history._entries) {
+              w.history._entries = w.history._entries.slice(0, (w.history._cursor || 0) + 1);
+              w.history._entries.push({ state: null, url: next });
+              w.history._cursor = w.history._entries.length - 1;
+            }
+          } catch (_eHashHist) {}
+          // FIXME(popstate): spec 片段导航还同步派 popstate（子窗 popstate 事件面未建）。
+          _defer(function () {
+            try {
+              var hev = new HashChangeEvent('hashchange', { oldURL: oldUrl, newURL: next, __zwTrusted: true });
+              hev.target = w || doc;
+              if (w && typeof w.onhashchange === 'function') w.onhashchange(hev);
+            } catch (_eHashFire) {}
+          });
+        },
         get origin() { var u = parsed(); return u ? u.origin : 'null'; },
         assign: function (v) {
           this.href = v;

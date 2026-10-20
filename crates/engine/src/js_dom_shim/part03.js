@@ -15254,6 +15254,13 @@
       set innerHTML(v) { bodyHtml = v == null ? '' : String(v); _tree = null; _zwQWrapGen++; _zwQWrapCache.clear(); _zwNodeBridgeMap.clear(); },
       get textContent() { ensureTree(); return _tree.textContent || ''; },
       set textContent(v) { bodyHtml = v == null ? '' : String(v); _tree = null; _zwQWrapGen++; _zwQWrapCache.clear(); _zwNodeBridgeMap.clear(); },
+      // navigation-compat M3-S2：detached/iframe 文档 body 的 innerText——合成树无
+      // 渲染信息，R3260 近似语义维持（≈ textContent；spec
+      // https://html.spec.whatwg.org/#the-innertext-idl-attribute 的 CSS 感知步在
+      // headless 合成树上不可达）。srcdoc-anchor / srcdoc-attribute-reset /
+      // srcdoc_change_hash 经 contentDocument.body.innerText 断言。
+      get innerText() { return this.textContent; },
+      set innerText(v) { this.textContent = v; },
       querySelector: function (sel) { if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel, arguments.length); return queryOne(sel); },
       querySelectorAll: function (sel) { if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel, arguments.length); return queryAll(sel); },
       // R132（js-dom M4）：body 的 set/has/get/removeAttribute 族（WPT Document-importNode

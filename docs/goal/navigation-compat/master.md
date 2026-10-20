@@ -2,11 +2,13 @@
 
 **入口文档**: [../navigation-compat.md](../navigation-compat.md)
 **创建日期**: 2026-09-12（goal 立项）
-**最后更新**: 2026-10-21（**M3-S1 iframe 最小面落地**——the-iframe-element
-**16P→25P**，域内恰 4 案翻绿、全量 corpus 对本工作树逐路径零回归；M2 终态
-维持 437/476（**91.8%**，S12 详情见切片账）。navigation-api 5 案对 S12 账本
-Pass→Fail 为 S12 后既有回归（隔离探针定性归 d45247864 邻域，非本切片，
-归 html-semantics 面）。M3 门控 2026-10-21 获批，DC-3 未豁免）
+**最后更新**: 2026-10-21（**M3-S2 子文档 location 合流 + 合成树 innerText 落地**
+——the-iframe-element 25P→**27P**（+2 案翻绿，srcdoc-anchor /
+srcdoc-attribute-reset；srcdoc_change_hash Fail→Timeout 为推进位移，卡联合
+session history 缺口 = 下一切片候选），全量 corpus 其余 425 路径逐案恒等；
+M3-S1 详情见切片账。M2 终态维持 437/476（**91.8%**）。navigation-api 5 案对
+S12 账本 Pass→Fail 为 S12 后既有回归（隔离探针定性归 d45247864 邻域，非本
+切片，归 html-semantics 面）。M3 门控 2026-10-21 获批，DC-3 未豁免）
 
 ---
 
@@ -31,7 +33,7 @@ Pass→Fail 为 S12 后既有回归（隔离探针定性归 d45247864 邻域，�
 | P2 | history pushState/replaceState/state/length/back/forward/go 语义 | ✅ S3 收口 + S4P 速率限制：the-history-interface 81.6%→**98.2%**（55/56——traverse 入队 + 空串 URL + 跨源 SecurityError + push/replaceState 10s/100 次速率窗；S4W 撤销 007「外部脚本基建」挂账——实为外链 404 abort 掩盖，7 子测试真实翻绿）；余 008 Timeout 挂账（S10 定性改判：document.write 引擎全缺——parser 域、envelope 外——+ `www.` 主机形态双缺口，非纯 runner 形态、非 M3） |
 | P3 | popstate/hashchange 事件序 + location 写侧导航语义（带重入 guard） | ✅ 收口：location-interface 41.9%→**100%**（43/43——S1 exotic Proxy + S4P 动态脚本通道 + S10 location_port origin 端口化）；history-traversal 目录 44/45（余 order-in-bfcache-restore 1F = bfcache 挂账） |
 | P3b | Navigation API（window.navigation 全域） | 🔶 S4~S4Y 二十七段落地 + S9 锚 href 动态写可见性（→**93.3%**，txt 原始 Pass 行 239/255）：read side/navigate/intercept/traverse/scroll-behavior/focus-reset/location exotic/precommitHandler/traverseTo/ongoing-abort/anchor-downloadRequest/host 激活锚线程/form submit navigate/activation 暴露/transition 派发时机/dispose 深簇/navState 入槽克隆/同文档 navState 承继/reentrant 孤儿 transition/提交期 abort/`:target` URL 同步/window.stop abort 面/session history 50 条上限/traverse 语义面/navigationType 随载入态（锚激活例外恒 push）/片段指示元素 decoded 匹配 + 无匹配滚顶 + 锚 record push 例外 + 跨源 canIntercept/pushState·replaceState hashChange=false/location.reload 接线 + 目的态承继/navigate() 同 URL auto→replace/runner readyState 宿过渡/navigateerror filename fire 时快照（S4P 回归追认收口）/锚 download presence own 门/锚激活 href 动态写 latest-wins 读全收/Tab 焦点导航（S11 runner 宿主 dispatch_tab_focus）+ intercept() scroll/focusReset 显式覆写门/autofocus load 期处理（S12 runner 初始 flush）+ 结算委托合格性门（S12 part02 首合格迭代）；「静态锚 href IDL 落 attr 回流 element IDL 域」**销项**（S9 定因勘误——attr 持久化从未缺失，纯快照读 stale；双案全绿）；autofocus 14 NotRun **销项**（S12，全量 NotRun 清零）；余 scroll-behavior reload 族 4F（渲染域） |
-| P4 | iframe 浏览上下文最小面（contentWindow/frames/parent/top + 属性语义） | 🔶 **M3-S1 落地（2026-10-21）**：srcdoc 处理模型 + sandbox 指令（ASCII 解析 + allow-scripts 门 + supports 固定表）+ 成熟度 servedDoc 双读面 + frames named access + 子文档 location 写侧 + load 信任面——the-iframe-element **16P→25P**（+4 案全案翻绿、域内零回归）；余 F 集中 meta-refresh 形态 / src-encoding / javascript: URL 族 / {{hosts}} 模板面；后续切片：stash 协议、子发起嵌套导航控制、popup 管理、parent→child postMessage、联合 iframe session history |
+| P4 | iframe 浏览上下文最小面（contentWindow/frames/parent/top + 属性语义） | 🔶 **M3-S1+S2 落地（2026-10-21）**：S1 srcdoc 处理模型 + sandbox 指令（ASCII 解析 + allow-scripts 门 + supports 固定表）+ 成熟度 servedDoc 双读面 + frames named access + 子文档 location 写侧 + load 信任面（16P→**25P**）；S2 doc.location↔win.location 同一对象（全 URL 解析面）+ 子窗 hash 写侧 + 合成树 innerText（25P→**27P**，srcdoc-anchor / srcdoc-attribute-reset 翻绿；srcdoc_change_hash 推进位移卡联合史）；余 F 集中 meta-refresh 形态 / src-encoding / javascript: URL 族 / {{hosts}} 模板面；后续切片：**联合 iframe session history**（srcdoc_change_hash step3/4 + replace-before-load 38F 前置）、stash 协议、子发起嵌套导航控制、popup 管理、parent→child postMessage |
 | P5 | bfcache / fission 挂账定稿 | ✅ M4 定稿（bfcache：无实现面，依赖 frame tree→Document 快照管线，挂账至 M3 后续立项；fission：charter 排除维持。见 [M4 评估](evidence/2026-10-09-m4-closeout-assessment.md)） |
 
 ## 已完成切片
@@ -440,6 +442,24 @@ Pass→Fail 为 S12 后既有回归（隔离探针定性归 d45247864 邻域，�
   既有语义）；fmt/clippy 零 warning；make test 76 suites **22,231P/0F/199I**；
   reftest 未跑（零布局/绘制触达）。
   证据：[evidence/2026-10-21-m3-s1-iframe-minimal-face.md](evidence/2026-10-21-m3-s1-iframe-minimal-face.md)。
+- **M3-S2 子文档 location 合流 + 合成树 innerText（2026-10-21）**：srcdoc 深语义
+  簇三根因同轮——①doc.location↔win.location 同一对象（spec dom-document-location：
+  `_zwDocLoc` 扩全 URL 解析读面 + doc.location getter 惰性切 win.location；
+  srcdoc_process_attributes / iframe_remove_src 只读 contentDocument.location
+  .protocol 不触 contentWindow——S1 href-only 单例返 undefined 即簇根因；成熟度
+  门前 toString 面维持）；②子窗 location.hash 写侧（同文档片段导航：'#' 可省 /
+  空值剥 / 同值 no-op，URL 槽 + 子会话条目 push + 异步 trusted HashChangeEvent
+  到 win.onhashchange；父窗 `_setLocationHash` 通道不动——子窗无 Navigation API
+  面；FIXME(popstate) 记账）；③合成树 body.innerText（R3260 近似 ≈ textContent，
+  detached 工厂 body 视图；srcdoc-anchor 族经 contentDocument.body.innerText
+  断言——textContent 通而 innerText undefined 即簇根因）。域内 27P/32F/28T、
+  恰 2 案翻绿（srcdoc-anchor、srcdoc-attribute-reset）+ srcdoc_change_hash
+  Fail→Timeout 推进位移（innerText 门过后深入 step 3/4，卡联合 iframe session
+  history 缺口——无 Pass 丢失，联合史最小面列下一切片）；全量 corpus 对 S1
+  逐路径 diff 其余 425 路径恒等。part63 三案 3/3；引擎库 3353/3353；fmt/clippy
+  零 warning；make test 76 suites **22,250P/0F/199I**；reftest 未跑（零布局/
+  绘制触达）。
+  证据：[evidence/2026-10-21-m3-s2-child-location-innertext.md](evidence/2026-10-21-m3-s2-child-location-innertext.md)。
 
 ## M4 收口评估（2026-10-09）
 
@@ -476,11 +496,15 @@ Pass→Fail 为 S12 后既有回归（隔离探针定性归 d45247864 邻域，�
    `FIXME(产品面)` 挂真实 focus 域）；
    scroll anchoring + rect 快照刷新（渲染域，回流 rendering-compat）。
 6. **M3**：frame tree 最小面——**已批准启动（2026-10-21 用户批复「批准 M3 最小面」，
-   未豁免 DC-3）**；**S1 已落地（2026-10-21，见切片账）**。后续切片候选：
-   服务端 stash 协议端点、子发起嵌套导航控制（iframe_sandbox_navigate_*）、
-   popup 窗口管理（iframe_sandbox_popups_* + 用户手势）、parent→child
-   postMessage、联合 iframe session history——解锁 replace-before-load 38F +
-   bfcache 族 + 跨文档链等 iframe 载体缺口。fission/进程模型触碰即 BLOCK 上报用户。
+   未豁免 DC-3）**；**S1+S2 已落地（2026-10-21，见切片账）**。下一切片首选
+   **联合 iframe session history 最小面**（子同文档条目入父窗遍历序——
+   srcdoc_change_hash step3/4 直接受益 + replace-before-load 38F 解锁前置；
+   设计约束：父窗 _hist_entries/Navigation records 面不得膨胀——联合序须独立
+   游标或标记条目旁路，M2 收口面零回归）；其后：服务端 stash 协议端点、
+   子发起嵌套导航控制（iframe_sandbox_navigate_*）、popup 窗口管理
+   （iframe_sandbox_popups_* + 用户手势）、parent→child postMessage——解锁
+   replace-before-load 38F + bfcache 族 + 跨文档链等 iframe 载体缺口。
+   fission/进程模型触碰即 BLOCK 上报用户。
 
 **待用户决策清单**：
 - [x] M3 iframe 深结构切片启动授权（未获批期间 DC-3 保持 pending，不阻塞 M2 收口）
