@@ -3,7 +3,7 @@
 **日期**：2026-10-22
 **状态**：Active；M1 ✅、M2-S1 全链路 ✅（DC-1 有条件成立）、M2-S2 全链路 ✅（S2a 查询一致性 + S2b 结束事件 + S2c DC-2 验收有条件成立）、M2-S3 全链路 ✅（S3a 取消 + S3b 暂停 + S3c 命中面 + S3d DC-3 验收成立；flag 默认仍关）。
 **当前卡点**：无阻塞卡点。遗留缺口两项待排期：① 忙窗采样空洞（keep-alive tick 挂在 `wayland_client::conn::blocking_read`，呈现路径与 Wayland 解耦后消失）；② renderer 忙窗每文本更新全文档重解析（token 爆发 1:1 锁定忙片，放大主线程占空）。
-**下一步**：M3-S1 切片 RFC——真线程 worker 执行面（flag 门控，复用 script-sandbox WorkerRuntime）+ worker canvas 桥（`canvas_context_op` 契约复用）+ 脱离主线程的呈现管线设计（browser 中继 → compositor patch surface）。
+**下一步**：M3-S1a 实现批——renderer `worker_host.rs`（`WorkerRuntime` 宿主 + 事件泵，`service_worker_host` 同构）+ shim Worker 构造器 flag 分流（`ZW_THREADED_WORKERS`，默认关）+ 宿主桥通道推演核对（RFC §3 首行 Assumption），flag 关零行为 + workers-compat 钉住核对同批。
 **入口**：[目标契约](../compositor-animation-continuity.md) / [启动与证据协议](../ladybird-followups/README.md)
 
 ## 缺口与待决
@@ -21,6 +21,7 @@
 | 加载期 budget 路径不导出动画声明（发空集，加载窗无采样属预期） | runner 泵路径接入导出（S1b 已知边界记档） | OPEN（低优先：flag 关同视觉，冻结不劣化） |
 | CSS 动画 currentTime/playState 查询面缺失（WAAPI shim 只收 el.animate()，无 CSSAnimation 接口） | 独立切片评估新 API 面；WAAPI shim 既有语义不动（WPT web-animations 钉住） | OPEN（S2 范围裁剪，DC-2 届时有条件完成；S2 RFC §1） |
 | 空白区点击不派发：browser selector=None 且 renderer hit_test None 时事件静默丢弃，无 html/body 兜底（真实浏览器语义应派发至 html）——真实输入 fixture 落点必须瞄准元素（DC-3 已按此设计） | 独立小切片：dispatch_dom_at None 分支补 html/body 兜底 + WPT 钉住 | OPEN（预存在缺口，DC-3 排查中定位，2026-10-22 证据 README §坐标换算） |
+| 注入器备选通路：到期点经 `MouseEvent` IPC 直发 renderer（provider 感知命中）替代 winit+chrome 高换算——页面视口 CSS px 语义免 `doc = win − 91` 耦合，且「基线位（视觉已离开）注入不命中」子句可严格注入（winit 路径被浏览器侧基线仲裁错判，S3c RFC §2.3 ④ 分析；现 fixture 以落点规避未覆盖该子句） | 独立评估：切通路后 dc3 observe 重校准重跑（坐标语义变化使已落账证据脚本失配）+ 补基线位点击场景 | OPEN（2026-10-22 双流碰撞处置：并行流已先落账 winit 路径 DC-3 证据批（84195324d），本流通路修正未合入，完整实现存本地分支 keep/s3c4-injector-ipc-path） |
 
 ## 里程碑
 
@@ -28,7 +29,7 @@
 |---|---|---|---|
 | M1 | 真实窗口阻塞基线与支持矩阵 | ✅ 完成（headless 基线 + 真实窗口帧序列 FROZEN，内容归因像素三重证实；窗口多帧采样工具 frame_dump 已入库） | [2026-10-21-m1-comp01-baseline](evidence/2026-10-21-m1-comp01-baseline/README.md) / [2026-10-21-m1-window-frames](evidence/2026-10-21-m1-window-frames/README.md) |
 | M2 | 合成动画、状态与输入一致切片 | ✅ 完成（S1 全链路 ✅ DC-1 有条件成立；S2 全链路 ✅ DC-2 有条件成立；S3a 取消 ✅、S3b 暂停 ✅、S3c 命中面 ✅、S3d DC-3 验收成立——命中/暂停/取消/恢复四场景真实窗口双向证据；currentTime/playState 面范围裁剪记缺口；flag 默认关，翻默认属后续独立决策 perf-gate 前置） | [m2-slice-compositor-sampling](m2-slice-compositor-sampling.md) / [S2 RFC](m2-slice-query-consistency.md) / [S3 RFC](m2-slice-state-input-consistency.md) / [S1e DC-1 证据](evidence/2026-10-21-m2s1e-dc1-acceptance/README.md) / [S2c DC-2 证据](evidence/2026-10-21-m2s2c-dc2-acceptance/README.md) / [S3d DC-3 证据](evidence/2026-10-22-m2s3d-dc3-acceptance/README.md) |
-| M3 | Worker 2D 呈现与生命周期 | IN_PROGRESS（COMP-04 基线 FROZEN——worker canvas 同 realm 泄漏实测 + 真线程/呈现管线缺口定版；切片 RFC 下一步） | [2026-10-22-m3-comp04-baseline](evidence/2026-10-22-m3-comp04-baseline/README.md) |
+| M3 | Worker 2D 呈现与生命周期 | IN_PROGRESS（COMP-04 基线 FROZEN——worker canvas 同 realm 泄漏实测 + 真线程/呈现管线缺口定版；S1 切片 RFC 定稿——四批次 S1a 宿主/S1b canvas 桥/S1c patch 呈现/S1d 生命周期，协议末尾追加 patch 三消息，双 flag 门控默认关） | [2026-10-22-m3-comp04-baseline](evidence/2026-10-22-m3-comp04-baseline/README.md) / [S1 RFC](m3-slice-worker-canvas.md) |
 | M4 | GPU/语义/资源与 DC 审计 | NOT_STARTED | 无 |
 
 ## 验证基线
@@ -63,5 +64,6 @@
 
 2026-10-22 续轮（S3d，证据批）：DC-3 COMP-03 真实窗口验收——fixture comp03（三动画元素 + 回执五格按点击到达序号占位 + q-strip 灰度相位条带 + 忙窗跨取消/恢复）+ dc3 observe/analyze 脚本（ZW_INJECT_CLICKS 三击 3000/4500/5500ms，analyze 冻结段结构化识别不依赖时间线常量）。排查定位两项输入链路事实：① **窗口→文档坐标须扣 chrome 高 ~91px**（layout.rs TOOLBAR_HEIGHT=90，实测 doc = win − 91）——初版按 ~40px 假设，三击在 doc 空间偏高 ~50px 全落空；经 ui_driver 对照实验（基线静态点击同样不达）+ 临时插桩（browser dispatch / renderer recv / dispatch_at 三点 debug 行）定位后标定，插桩已回退；② **空白区点击静默不派发**（browser selector=None + renderer hit_test None → 事件消失，无 html/body 兜底）——预存在缺口记入缺口表，fixture 落点全部瞄准元素规避。时间线定版：pause@1.5s 冻结 45px（理论值，实测条带 46px）、cancel@3.5s、resume@4.5s、判定@5.5s，全部落入 frame_dump 512 帧采集窗（~8.2s），注入锚 tab loaded 较页面 load 提前 0~2.5s 的 Δ 由「点击 2 恒在暂停窗内、点击 3 旋转绕中心任意相位命中」设计吸收。实测（evidence/2026-10-22-m2s3d-dc3-acceptance/）：ON 512 帧 distinct 504、五回执全 pass（hit-a@5515/hit-b@6792/hit-c@7790/ev-cancel@3873/phase-resume@7957）、renderer 恰 1 行 animationcancel elapsed=3.589s、hit 位移 224→430px 17 帧越基线、条带冻结 46px 恢复 Δ=0；OFF 87 帧收敛 4 distinct、零越基线、零动画事件、hit-a 占位失配红（判别签名）。DC-3 判成立；M2 全链路收官，下一步 M3（Worker 2D 呈现与生命周期，DC-4）。
 2026-10-22 续轮（M3 基线，证据批）：DC-4 COMP-04 基线探针——fixture comp04（主线程 canvas 移动条 + blob worker 探针 + 50ms beat + 900ms 单片忙窗）+ comp04 probe sh/mjs（s0–s3 四采样：空闲×2→忙窗后→mutation 正控）。三重证据钉死 worker canvas 同 realm 泄漏：worker 内 `new OffscreenCanvas().getContext('2d')` 表面成功（ctx=object draw=ok），实为 worker 函数体（`new Function('self',body).call(wctx,wctx)`）沿页面全局作用域链解析到主线程 `__zw_canvas_op` host 回调、写入 renderer 主线程 CanvasRegistry（无 paint 路径，幻影注册表项）；beat 忙窗停顿 949ms vs 忙窗前 51ms；忙窗内 canvas 绘制停摆（draws_in_load=0，16 帧稀疏日志 spans 守卫非空真）。两笔源码事实修正：`transferControlToOffscreen` 已存在（R3313 主线程共享 handle，part05.js:7595 过时注释）；页面 rAF 为预算制同步 stub（`_rafBudget` 耗尽静默停，初版 rAF 自续环 ~513 次后确定性停摆——改 setInterval，连续 canvas 动画驱动器只能选定时器族）。DC-4 缺口定版：真线程 worker 执行面 + 脱离 renderer 主线程呈现管线；切片方向记档（WorkerRuntime 复用 / canvas_context_op 契约复用 / browser 中继 + compositor patch surface），详细 RFC 下一步。证据落账 evidence/2026-10-22-m3-comp04-baseline/（本轮零 engine/protocol/renderer/compositor 源码改动，仅 fixture + 脚本 + 文档）。
+2026-10-22 续轮（M3-S1 RFC + 碰撞处置）：同日双流碰撞——本流按 S3c RFC §2.3 ④ 完成注入器 IPC 通路修正（commit 10b0fab5d，未推），pull 时发现并行流已先落账 S3d DC-3 证据批（84195324d，winit 路径 + chrome 高标定）与 M3 基线（bd0d75e37）。按 run-rules §9 碰头纪律本流让位：10b0fab5d 弃合入（存本地分支 keep/s3c4-injector-ipc-path），本流独立起草的 comp03 fixture/analyze 稿废弃（几何面与落账版同构、无增量），备选通路价值记入缺口表待决行（免 chrome 耦合 + 可严格注入「基线位不命中」子句）。碰撞两版 DC-3 判定面等价，落账版为准。本轮主推进转 M3-S1 切片 RFC（m3-slice-worker-canvas.md）：源码核查三先例定设计前提——① script-sandbox `WorkerRuntime`（ThreadedRuntimeCore + 看门狗 terminate_execution + WorkerEvent Message/Error/Closed）可承载真线程 worker；② renderer `service_worker_host.rs`（HashMap<u64, Runtime> 事件转 wire 消息）为进程内线程化运行时 IPC 先例；③ renderer stdout 管道多线程可写（`compositor_publish_thread.rs` SharedWriter `Arc<Mutex<Box<dyn Write+Send>>>` 主线程/发布线程已共写）——worker 数据面绕开被阻塞主线程直写 browser、browser 中继 compositor 的管线成立。
 
 复用资产：timing-animation（runner 泵/查询面）、workers-compat（worker 生命周期）；不重复实现。授权记录：2026-10-20 规划轮不授权提交/推送；2026-10-21 用户启动指令授权按仓库规则提交推送。生产 GPU 证据口径：headless GPU 光栅为生产渲染管线+生产 GPU 光栅路径，非窗口合成器 vsync 帧序列（局限见证据 README）。
