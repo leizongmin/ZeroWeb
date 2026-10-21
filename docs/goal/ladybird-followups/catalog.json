@@ -42,7 +42,7 @@
       "priority": "P2",
       "title": "主线程阻塞时的合成动画与 Worker Canvas",
       "sources": ["crates/engine/src/animation.rs", "apps/compositor/src/main.rs", "crates/protocol/src/lib.rs", "crates/canvas/src/lib.rs"],
-      "reuse": ["docs/goal/workers-compat.md", "docs/goal/webgl-compat.md", "docs/goal/archive/timing-animation-compat/master.md", ".agents/skills/zeroweb-browser-chrome-parity/SKILL.md"],
+      "reuse": ["docs/goal/archive/workers-compat.md", "docs/goal/webgl-compat.md", "docs/goal/archive/timing-animation-compat/master.md", ".agents/skills/zeroweb-browser-chrome-parity/SKILL.md"],
       "scenarios": ["COMP-01-transform-opacity-under-js-load", "COMP-02-script-state-and-end-event", "COMP-03-hit-test-pause-cancel", "COMP-04-worker-canvas-transfer"],
       "first_step": "在生产窗口中记录主线程有界阻塞期间的动画、呈现与查询状态；先明确支持子集，WebGL 遵守既有门控。"
     },

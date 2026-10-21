@@ -128,7 +128,7 @@ Web 标准覆盖面极广，"最新标准"不可能在一个里程碑中完成�
 - [ ] 网络：HTTP/HTTPS 请求、HTML/CSS/JS/资源加载、Fetch API
 - [ ] 导航：链接点击、表单提交、同源策略实施
 - [ ] WebSocket 基础通信
-- [ ] Web Workers（基本的 Dedicated Worker）
+- [x] Web Workers（基本的 Dedicated Worker）——[专项已完成并归档](archive/workers-compat.md)（2026-10-21 M4 收口，workers 通道 693/714 = 97.1%，基线 45.6%）
 - [ ] ES Modules（`<script type="module">` 支持）
 - [ ] Storage：localStorage / sessionStorage / IndexedDB 基础
 - [ ] 安全：CORS、CSP 基础、同源策略、Cookie 安全属性（Secure/HttpOnly/SameSite）、渲染进程沙箱
@@ -427,7 +427,7 @@ zero-web/
 **交付物**：
 - [ ] `canvas` crate 实现 Canvas 2D API（CanvasRenderingContext2D：路径、矩形、圆弧、文本、图像绘制、变换矩阵、合成模式、渐变/图案、clip、save/restore、getImageData/putImageData）
 - [ ] `<canvas>` 元素与 DOM/渲染管线完整集成
-- [ ] Web Workers 基础支持（Dedicated Worker：`new Worker()`、`postMessage`、`onmessage`）
+- [x] Web Workers 基础支持（Dedicated Worker：`new Worker()`、`postMessage`、`onmessage`）——[专项已完成并归档](archive/workers-compat.md)（2026-10-21 M4 收口）
 - [ ] `storage` crate 实现 localStorage / sessionStorage（完整的 Storage API）
 - [x] IndexedDB 基础实现（打开数据库、创建 object store、基础 CRUD 事务）——
   [专项已完成并归档](archive/storage-indexeddb.md)（WPT 168/210 文件，1073/1073 Pass）

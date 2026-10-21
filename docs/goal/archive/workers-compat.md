@@ -1,8 +1,10 @@
 # Worker 并发兼容 — Dedicated Worker
 
+> **整体归档（模式 A，2026-10-21）**：M4 收口判定 DC-1~4 全满足；控制面与证据随入口归档，残余 21 与 SharedWorker/nested/module 三笔挂账的重入条件保留。对应 Rally 启动脚本已删除。
+
 **版本**: v1.0
 **日期**: 2026-09-12
-**状态**: Done（2026-10-21 M4 收口——DC-1~4 全 ✅，workers 通道 693/714 = 97.1%（基线 45.6%），reftest 712/712 零回归；判定见 [evidence/2026-10-21-m4-dc-final.md](workers-compat/evidence/2026-10-21-m4-dc-final.md)，控制面见 [master.md](workers-compat/master.md)）
+**状态**: ✅ Completed——2026-10-21 M4 收口，DC-1~4 全 ✅，workers 通道 693/714 = 97.1%（基线 45.6%），reftest 712/712 零回归；判定见 [evidence/2026-10-21-m4-dc-final.md](workers-compat/evidence/2026-10-21-m4-dc-final.md)，控制面见 [master.md](workers-compat/master.md)
 **执行模式**: WPT 驱动（上游 workers corpus 为验收标尺）+ 运行时落地；
 照 event-loop-spec（微任务机制先例）/ script-sandbox（隔离实例先例）打法
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——并发面）

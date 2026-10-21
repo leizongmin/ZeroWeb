@@ -49,4 +49,5 @@
 | [web-api-batch2.md](./web-api-batch2.md) + [web-api-batch2/](./web-api-batch2/)（模式 A：master/evidence 及原有 archive） | 2026-10-20 | 已完成（DC-1~4 满足；Clipboard 83.6%、Fullscreen 88.0%） |
 | [android-browser.md](./android-browser.md) + [android-browser/](./android-browser/)（模式 A：master/evidence 及原有 archive） | 2026-10-20 | 已完成（DC-1~4 满足；CI/模拟器冒烟及恢复验收完成；真机/页面级验收仍待设备） |
 | [cdp-protocol.md](./cdp-protocol.md) + [cdp-protocol/](./cdp-protocol/)（模式 A：master/evidence 及原有 archive） | 2026-10-20 | 已完成（用户批准分支 B 收口；expected-green 33 步；iframe 内容操作剔除挂账） |
+| [workers-compat.md](./workers-compat.md) + [workers-compat/](./workers-compat/)（模式 A：master/evidence） | 2026-10-21 | 已完成（DC-1~4 ✅：dedicated worker 同 realm 近似承载 + importScripts 三相 + transfer/ports + structured-clone + 错误管线三相，workers 通道 693/714 = 97.1%（基线 45.6%），reftest 712/712 零回归；三笔挂账定稿——SharedWorker 66 案排除、nested terminate 深度固有边界、module worker 41 案不实现；残余 21（12F+8T+1PF）全定性不阻 DC：runner 302 基建/合成 origin→wpt-runner 基建、terminate 深度+SharedWorker→isolate 化重入、resource timing/nested sync XHR→功能缺口；quickjs 行为矩阵未评估如实记账；完成日 2026-10-21） |
 `rendering-compat/` 子目录的已完成设计稿见 [`../rendering-compat/archive/`](../rendering-compat/archive/)。

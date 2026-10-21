@@ -2,7 +2,7 @@
 // M3 切片补充：postMessage transfer/ports + structured-clone 语义（DC-3）；
 // P7 后半补充：importScripts 错误归因 + worker rAF/WorkerLocation.search 环境值面。
 // 本文件经 js_dom_bridge_tests.rs 的 include! 并入同一模块（part31 先例——
-// part21 4071 行超 2000 行上限后新工作落新文件）。契约：docs/goal/workers-compat.md
+// part21 4071 行超 2000 行上限后新工作落新文件）。契约：docs/goal/archive/workers-compat.md
 // DC-2/DC-3；WPT 案面 workers/interfaces/WorkerUtils/importScripts/{002-012}、
 // WorkerNavigator.any.js、semantics/interface-objects/001.worker.js、
 // semantics/structured-clone/dedicated.html battery、Worker-multi-port。
