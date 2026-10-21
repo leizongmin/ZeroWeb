@@ -34,10 +34,10 @@ goal 入口文档 `docs/goal/<goal>.md` DC-1。
 | 26 | [webcrypto-compat](../../../../docs/goal/archive/webcrypto-compat.md) | WebCryptoAPI | 无（2026-10-08 立项；随机源面已有，subtle 实现轮分片自主） |
 | 27 | [page-state-compat](../../../../docs/goal/archive/page-state-compat.md) | beacon; page-visibility; online | **已收口**（2026-10-18）；偏差记账 beacon 混合内容阻断与 keepalive in-flight 配额池（FIXME） |
 | 28 | [dnd-compat](../../../../docs/goal/archive/dnd-compat.md) | dnd |  **已收口**（2026-10-18，437/446 = 98.0%，已归档） |
-| 29 | [pointerlock-compat](../../../../docs/goal/archive/pointerlock-compat.md) | pointerlock | **门控 goal**（M1 盘点 ✅ 2026-10-18，1/4=25.0%；指针捕获管线须用户点名——M2 RFC BLOCK 中） |
+| 29 | [pointerlock-compat](../../../../docs/goal/archive/pointerlock-compat.md) | pointerlock | **已收口**（2026-10-19 M3 完成 22/22，已归档） |
 | 30 | [encoding-compat](../../../../docs/goal/archive/encoding-compat.md) | encoding | **已收口**（2026-10-04） |
 | 40 | [html-syntax-compat](../../../../docs/goal/archive/html-syntax-compat.md) | html/syntax; html/dom | **已收口**（2026-10-04） |
-| 50 | [uievents-compat](../../../../docs/goal/archive/uievents-compat.md) | uievents; pointerevents |  **已收口**（2026-10-07 M4；M5 巡检 2026-10-20 收口 1805P/166F/95TO，已归档）；pointerlock/IME 挂账 |
+| 50 | [uievents-compat](../../../../docs/goal/archive/uievents-compat.md) | uievents; pointerevents |  **已收口**（2026-10-07 M4；M5 巡检 2026-10-20 收口 1805P/166F/95TO，已归档）；IME 挂账 |
 | 60 | [navigation-compat](../../../../docs/goal/navigation-compat.md) | history; navigation-api; html/browsers | M2 轻面推进中；**M3 iframe 切片用户门控** |
 | 70 | [workers-compat](../../../../docs/goal/archive/workers-compat.md) | workers; dedicated-workers | **已收口**（2026-10-21 M4，693/714 = 97.1%，基线 45.6%，已归档）；残余 21 挂账 runner 基建/isolate 化/功能缺口 |
 | 80 | [svg-compat](../../../../docs/goal/svg-compat.md) | svg | 推进中；渲染面归 rendering-compat |

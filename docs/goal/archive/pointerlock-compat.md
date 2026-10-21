@@ -4,9 +4,7 @@
 
 **版本**: v2.0
 **日期**: 2026-10-19
-**状态**: **M3 完成 + constructor residual 收敛（2026-10-19，收口后切片 2）·
-执行面 22/22 子测试 Pass（100%），文件 18/18 全绿·通道零红**——M2 RFC v1.7
-（已确认，实施期修正见其 §12）。
+**状态**: ✅ Completed（2026-10-19 收口，2026-10-20 整体归档（模式 A）——M3 完成 + constructor residual 收敛（收口后切片 2）；执行面 22/22 子测试 Pass（100%）、文件 18/18 全绿、通道零红；M2 RFC v1.7 已确认，实施期修正见其 §12）。
 RFC 见 [m2-pointer-capture-pipeline-spec-rfc.md](pointerlock-compat/m2-pointer-capture-pipeline-spec-rfc.md)；
 M1 甄别报告见
 [evidence/2026-10-18-m1-baseline.md](pointerlock-compat/evidence/2026-10-18-m1-baseline.md)
