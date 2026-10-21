@@ -1,34 +1,41 @@
 # SVG 文档面兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../svg-compat.md](../svg-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-21（M2 S4b-1 落地）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-21（M2 S4b-2 落地）
 
 ## 当前状态
 
-**M2 S4b-1 完成（2026-10-21）**：SVGGraphicsElement.getBBox 属性级面——
-非渲染零盒（#1018：display:none 祖先链 + defs/symbol/clipPath/mask/marker/
-pattern 子树三源判定）+ 形状公式盒（rect/circle/ellipse；ellipse 负半径取
-另轴）+ 点集盒（line/polygon/polyline/path；零面积保留定位、path 无产线段
-取末 moveto 锚点）+ 容器并集（子 transform 右先合成、空盒跳过、自身
-transform 不参与）+ use 解引用影子树（defs 内容照常渲染）+ text 定位零
-面积（字形度量挂账）+ SVGBoundingBoxOptions fill:false 全关零盒。flatten
-三处退化修正（arc 端点重合省略 / cubic·quad 全重合不采样 / anchors·drawn
-追踪）。全 corpus 486 案 **997P/665F/40T/0NR = 58.6%**（含 NR 口径，S4a
-858P/804F = 50.4% 以来 **+139P/-139F**，Timeout 40 持平，全绿案 125→133，
-逐案零 DOWN 子测试级零回归）。getBBox 八案全绿（-01 19/19、-04、-06、
--07 49/49、-08、-10、replaceitem 1/1、transform-dynamic 1/1）；-03 11/12、
--05 4/15、-09 20/24 分面实收。机制探针 10/10。卡点①：S4b-2 stroke/markers/
-clip 扩展（-05 11F + -09 4F，paint 几盒子系统）。卡点②：全 workspace
-`make test` fmt 门禁红于并行 comp-anim 流 frame_dump.rs（9799e6435，
-origin/main 同红，非本流文件；本切片经 test-guard 定向 zero-engine 验证，
-见 evidence）。下一步：S4b-2 → S4c pathData API 评估。
+**M2 S4b-2 完成（2026-10-21）**：SVGBoundingBoxOptions paint 几何盒——
+stroke 面（`_zwSvgStrokeBbox` 公式盒 ±sw/2；line/poly/polyline/path 走
+`_zwSvgGeomLens`+`_zwSvgStrokeWalk`：逐样本法向 offset + run 内部样本
+sw/2 外逼近盘（曲线对称极值 chord 零欠冲根修）+ 数据顶点 join（round
+圆盘 / miter 尖含 1/sinHalf ≤ miterlimit 门槛）+ run 端 cap（butt 无延伸
+/ round 圆盘 / square）+ 命令性零长段 zeros（round/square 产点、butt 不
+产、moveto-only run 不产））+ markers 面（start/mid/end 顶点放置：
+markerUnits 缺省 strokeWidth、viewBox→markerWidth/Height、refX/refY 对
+位、orient 数值（auto FIXME→0）、任意 marker 盒并入 fill 盒）+ clipped
+面（clipPath 子级并集：circle∩circle 精确 lens 盒 + use 子解引用 + 子自
+身 clip 递归；objectBoundingBox 以 fill 盒为参照；SVG1.1 clip 属性
+rect(t,r,b,l) 相对元素原点；引用缺失/非 clipPath/空 clipPath 全裁零盒；
+严格相交——边点接触→EMPTY；查询元素为 use 时区域随 (x,y) 平移）。
+clip/marker 子树渲染判定走 skipTagGuard（defs 归属豁免）。text 定位点集
+重写（tspan 子定位点并集 + x/y 缺省 0）。全 corpus 486 案
+**1012P/650F/40T/0NR = 59.5%**（S4b-1 997P/665F 同分母 +15P/-15F，Timeout
+持平，全绿案 133→135，逐案零 DOWN）。-05 4/15→**15/15**、-09 20/24→
+**24/24**、getBBox 全量 146P/2F（唯二 F 既有挂账）；path/parsing 116P/0F
+零回归。卡点①：S4c pathData API（path/interfaces 0P/56F 未实现面）。
+卡点②：fo5 零盒机制溯源未闭环（行为两侧对齐 Chrome，机制未溯，探针待
+跑，不阻塞）。fmt 门禁已绿（fa6ffacc9 修复 comp-anim 流带入红，
+`cargo fmt --all --check` EXIT=0），跨流碰头解除；定向
+`cargo test -p zero-engine`（test-guard）3358P/0F。下一步：S4c pathData
+API 评估 → S4 完成后 M2 CSV 行回填。
 
 ## 缺口清单
 
 | # | 缺口 | 状态 |
 |---|------|------|
 | P1 | svg/ corpus 导入 + 基线 + 渲染断言面占比盘点 | ✅ M1（2026-10-21，8.8% 基线） |
-| P2 | SVG DOM 类层级 + SVGSVGElement viewBox/CTM 最小面 | ⏳ M2（S1 ✅ S2a ✅ S2b ✅ S2c ✅ S3 ✅ S4a ✅ 2026-10-21，S4b→S4c 进行中） |
+| P2 | SVG DOM 类层级 + SVGSVGElement viewBox/CTM 最小面 | ⏳ M2（S1 ✅ S2a ✅ S2b ✅ S2c ✅ S3 ✅ S4a ✅ S4b-1 ✅ S4b-2 ✅ 2026-10-21，S4c 进行中） |
 | P3 | SVGGeometryElement 几何接口 + 事件目标化 | ⏳ M3 |
 | P4 | SMIL 评估 + 渲染断言面挂账定稿 | ⏳ M4 |
 
@@ -80,14 +87,22 @@ origin/main 同红，非本流文件；本切片经 test-guard 定向 zero-engin
   见 watchdog 第六次记录）。workspace make test fmt 门禁红于并行 comp-anim
   流（9799e6435 非本流文件），本切片经 test-guard 定向 zero-engine
   3355P/0F 验证。证据：evidence/2026-10-21-m2-s4b1-getbbox-landing.md。
+- **M2 S4b-2（2026-10-21）**：SVGBoundingBoxOptions paint 几何盒（本
+  session 端到端持有——stroke walk + markers 顶点放置 + clip 交集装配，
+  三处根因修出：clip 子树 defs 豁免 skipTagGuard / run 内部样本外逼近盘 /
+  `_zwSvgBboxIntersect` 严格相交，两轮修出后全量对账）。corpus
+  1012P/650F/40T/0NR = 59.5%（+15P/-15F，全绿案 133→135，零 DOWN 零子
+  测试回归）；-05 4/15→15/15、-09 20/24→24/24。第七次会话重叠：并行
+  看护 session 跑全量 corpus 对账并外部精修 evidence，本 session 互让等待
+  后核验 runner 二进制含本切片改动采其收尾数字；源码面/master.md 归本
+  session。fmt 门禁绿（fa6ffacc9 修复），定向 zero-engine（test-guard）
+  3358P/0F。证据：evidence/2026-10-21-m2-s4b2-paint-geometry-landing.md。
 
 ## 下一步计划
 
-1. **M2 S4b-2 SVGBoundingBoxOptions 扩展**（-05 11F + -09 4F）：stroke 外扩
-   （miter/bevel/round join + butt/round cap，flatten 折线复用）、markers
-   （markerUnits/markerWidth·Height/viewBox/refX·refY/orient 顶点放置）、
-   clip（clipPath 三单位制 + 嵌套 clip-on-clip + use-in-clipPath + 空表
-   零盒 + 非法引用不裁）→ S4c pathData API 评估。S4 完成后 M2 CSV 行回填。
+1. **M2 S4c pathData API**（path/interfaces 0P/56F 未实现面）：getPathData/
+   setPathData（normalize 选项、malformed d 截断、detached 元素、SMIL/Web
+   Animations base value 域划界）评估切片边界 → S4 完成后 M2 CSV 行回填。
 2. **M4 SMIL 分类账重跑**：S3 脚手架已释放时序面（seeking-events 族 F→T、
    invalid-value 族平凡全绿），M4 SMIL 评估须以 S3 后口径重跑分类（见
    evidence/2026-10-21-m4-smil-assessment-prep.md + S3 landing 排片对位）。
@@ -100,10 +115,10 @@ origin/main 同红，非本流文件；本切片经 test-guard 定向 zero-engin
    getComputedTextLength 族，字形度量依赖）；image 内在尺寸（-03 image1/2 +
    svg-image-intrinsic-size 族，图片加载态依赖）。
 
-**跨流碰头信号（2026-10-21，run-rules §9/§10）**：workspace `make test`
-第一步 `cargo fmt --check` 红于并行 comp-anim 流
-`apps/compositor/src/frame_dump.rs`（9799e6435 引入，origin/main 同红）。
-非本流文件未动，待该流或合流轮次修复后全 workspace 门禁复核。
+**跨流碰头信号（2026-10-21，run-rules §9/§10）——已解除**：workspace fmt
+红于 comp-anim 流 `apps/compositor/src/frame_dump.rs`（9799e6435 引入，
+origin/main 同红），已由 fa6ffacc9 机械重排修复；S4b-2 轮
+`cargo fmt --all --check` EXIT=0 复核绿，全 workspace 门禁恢复可用。
 
 **待用户决策清单**：（空）
 
@@ -113,4 +128,6 @@ origin/main 同红，非本流文件；本切片经 test-guard 定向 zero-engin
 精修后以 identical-content 提交 f96e87aee 收敛——均见
 evidence/2026-10-21-session-collision-watchdog.md）。约定：同 clone 同
 goal 的后到会话先读本文件与 git log，活跃实现面被持有时退避为看护/侦察，落
- evidence 不抢源码面。
+ evidence 不抢源码面。第七次（S4b-2 轮）：看护 session 跑全量 corpus 对账 +
+ 外部精修 evidence 终版，持有 session 互让等待（不并行双 runner，前轮两次
+ corpus 被 SIGTERM 即资源互杀实证），核验二进制含本方改动后采其收尾数字。
