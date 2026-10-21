@@ -88,3 +88,26 @@ testdriver 面，按既有各 goal 口径记账）。均不建议 svg-compat 域
   持有 session 端到端实现并落地。五次重叠中首次**双向零改对方工作面**。
   记账口径提醒：evidence 的 34.8% 为不含 NR 分母（554/1592），与此前含 NR
   口径（27.5% = 430/1563）不可直比——已在 master.md 注记。
+
+## 第六次重叠：S4b 源码面（10:4x-10:54，本方两处编辑撤除退避）
+
+- 本 session（S4a 收口 09a2a7b50 推送后）按 master.md 下一步进 S4b：完成
+  getBBox-01..10 + coordinate-systems/text/geometry 消费案断言面侦察（非渲染
+  清零/形状零面积保留点位/多 moveto 仅末锚点/SVGBoundingBoxOptions 分旗/
+  text bbox 布局挂账），两处源码编辑在途（_zwSvgArcGeom 抽取 + flatten arc
+  体替换）时察觉文件并发变更：并行 session 已在 part03.js 落 S4b 实现
+  （flatten anchors/drawn 追踪 + arc 端点重合退化分支——注释引 getBBox-07
+  path_arc_same_point——+243 行 getBBox 块，mid-flight）。
+- 本方 arc 体替换 Edit 因对方同函数改动 old_string 失配而失败（察觉点）；
+  helper 插入已落盘。处置：**全量撤除本方两处编辑**（helper 移除，替换未
+  落地），工作区还原为纯对方改动（+247/-1），按约定退避为看护。
+- 本方 S4b 侦察产出（断言面账）留本记录供持有 session/收口对账用：
+  getBBox-03 ellipse 负半径 invalid→auto 取另一半径（ellipse1 同 circle
+  r=10）；-07 多 moveto 期望**末** moveto 点（M 10 20 M 30 40 → (30,40,0,0)，
+  非 anchor 并集）；-09 stroke:true 对轴对齐线仅法向扩展（butt 端帽不沿轴向
+  扩——(10,20,40,0)→(10,18,40,4)）、零长段 butt 不绘制/round 出 sw 方块、
+  moveto-only 无段无端帽；-05 text 对比与 -10 zoom 对比在零面积 stub 下
+  平凡满足；-03 image 负维 + href（onload 内在尺寸 2 子）与 -05
+  markers/clipped 8 子、-02 tspan 布局面挂账。
+- 看护计划：监控持有 session 提交；落地后做独立 corpus 对账（基线
+  /tmp/s4a-full.json，858P/804F/40T/0NR = 50.4%）+ 零真回归核查。
