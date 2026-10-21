@@ -762,7 +762,12 @@
   // textarea）的 name IDL 反射内容属性，**其余元素 .name= 是 expando**（WPT
   // name-content-attribute-and-property doesNotReflect 全族——FLAT 全表反射曾把
   // div.name= 写成内容属性）。getter/setter 经 `_reflectedNameAttr` tag 门。
-  var _REFLECTED_NAME_TAGS = ' a button embed fieldset form frame iframe img input map meta object output param select slot textarea ';
+  // R4100（html-semantics M2 切片 21）：details 入 name 反射表（spec exclusive
+  // accordions——HTMLDetailsElement.name IDL 反射 name 内容属性；name-attribute.html
+  // 互斥场景以 IDL 面写 name）。WPT name-content-attribute-and-property 的 details
+  // 子测以 `'name' in HTMLDetailsElement.prototype` 自适配（reflecting/非 reflecting
+  // 双路径）——原型 accessor 同步补（part03 ifaces 循环后）。
+  var _REFLECTED_NAME_TAGS = ' a button details embed fieldset form frame iframe img input map meta object output param select slot textarea ';
   var _REFLECTED_STRING_FLAT = ' type placeholder alt min max step pattern action method enctype target rel download headers srcset sizes loading accept inputmode src usemap sandbox cite coords shape ping media align version background text link scroll color dirname border srcdoc integrity hreflang charset rev clear event for scrolling frameborder archive code standby codetype face behavior direction acceptcharset wrap accept frame rules summary width height cellPadding cellSpacing ch chOff headers abbr axis valign content scheme ';
   // R5009 片 e（M4 片 a）：ARIA enumerated 反射表（elements-aria-enumerated.js）
   // ——kw 白名单 / inv invalidVal / d defaultVal（null → missing 返 null，即

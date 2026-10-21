@@ -1296,3 +1296,175 @@ fn test_details_summary_toggle_r4009() {
         "T9：detached details 的 open 写照派 toggle（trusted + ToggleEvent 原型）"
     );
 }
+
+// R4100（html-semantics M2 切片 21）：details name= 互斥簇（exclusive accordions）——
+// ① parser/markup 构造面（innerHTML 产物）：树序处理——既存 open 成员胜出、
+//    新解析 open 元素让位（given-prong），parser-open 照排程 toggle（closed→open，
+//    随后互斥关闭经 R4009 队列合并 net-zero 单事件）；
+// ② open 写入面（IDL setter / setAttribute）：真开变迁关组内全部其他 open
+//    （others-prong）；
+// ③ name 变更面（IDL / setAttribute）：subject open 且组内已有 open → 自身让位
+//    （given-prong）；
+// ④ 移动插入面（appendChild/insertBefore）：新插入 open 元素让位既存 open 成员；
+// ⑤ 空/缺失 name 不成组；detached（未连接）照常 enforcement。
+// 组口径：同树根 + 同名非空 name + DETAILS。WPT 语料：name-attribute.html
+// （basic/more-complex/tree-scopes/mutation-order/name-changes/parser-order/
+//  insertion/disconnected 全场景）。
+#[test]
+fn test_details_name_exclusivity_r4100() {
+    let mut sandbox = t59_sandbox_with_shim();
+    let mutations: std::sync::Arc<std::sync::Mutex<Vec<DomMutation>>> = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+    let dom_html: std::sync::Arc<std::sync::Mutex<String>> = std::sync::Arc::new(std::sync::Mutex::new(
+        "<html><body><div id='ct4100'></div><div id='ct4100b'></div><div id='ct4100c'></div>\
+         <div id='q4100'></div></body></html>"
+            .to_string(),
+    ));
+    let page_url: std::sync::Arc<std::sync::Mutex<String>> = std::sync::Arc::new(std::sync::Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    crate::js_dom_bridge::register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // T1：markup 构造面（innerHTML 解析产物）——树序第一 open 胜出、其余让位；
+    // parser-open toggle 排程（x1 的 open→闭合并 net-zero 单事件）。
+    sandbox
+        .execute(
+            "var ct = document.getElementById('ct4100');\
+             ct.innerHTML = '<details name=\"a\" id=\"x0\" open></details>'\
+               + '<details name=\"a\" id=\"x1\" open></details>'\
+               + '<details name=\"b\" id=\"x2\" open></details>';\
+             globalThis.__t4100 = { x0: [], x1: [], x2: [] };\
+             ['x0', 'x1', 'x2'].forEach(function (id) {\
+               document.getElementById(id).addEventListener('toggle', function (ev) {\
+                 globalThis.__t4100[id].push(ev.oldState + '>' + ev.newState);\
+               });\
+             });\
+             globalThis.__s1 = ['x0', 'x1', 'x2'].map(function (id) {\
+               return Number(document.getElementById(id).open); }).join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__s1").unwrap().value,
+        "1,0,1",
+        "T1：innerHTML 解析产物互斥——组 a 树序第一 open 胜出（x1 让位），组 b 独立"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__t4100.x0.join('|') + '#' + globalThis.__t4100.x1.join('|') + '#' + globalThis.__t4100.x2.join('|')").unwrap().value,
+        "closed>open#closed>closed#closed>open",
+        "T1：parser-open 照排程 toggle（x0/x2 closed→open）；x1 解析后互斥关闭合并 net-zero 单事件"
+    );
+
+    // T2：open IDL setter close-others——x1 真开 → x0 让位（others-prong）。
+    sandbox
+        .execute("document.getElementById('x1').open = true; \
+                  globalThis.__s2 = Number(document.getElementById('x0').open) + ',' + Number(document.getElementById('x1').open);")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__s2").unwrap().value,
+        "0,1",
+        "T2：open IDL 真开 → 组内既存 open 成员让位"
+    );
+
+    // T3：setAttribute('open', '') 同面（x0 重开 → x1 让位）。
+    sandbox
+        .execute("document.getElementById('x0').setAttribute('open', ''); \
+                  globalThis.__s3 = Number(document.getElementById('x0').open) + ',' + Number(document.getElementById('x1').open);")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__s3").unwrap().value,
+        "1,0",
+        "T3：setAttribute('open','') 真开面同 close-others"
+    );
+
+    // T4：name IDL 变更面 given-prong——跨组并入即让位；重开走 close-others；
+    // setAttribute('name') 同口径。
+    sandbox
+        .execute(
+            "var ctb = document.getElementById('ct4100b');\
+             ctb.innerHTML = '<details name=\"a\" id=\"y0\" open></details>'\
+               + '<details name=\"b\" id=\"y1\" open></details>';\
+             var y1 = document.getElementById('y1');\
+             y1.name = 'a';\
+             globalThis.__s4 = Number(document.getElementById('y0').open) + ',' + Number(y1.open);\
+             y1.setAttribute('name', 'b'); y1.open = true;\
+             globalThis.__s5 = Number(document.getElementById('y0').open) + ',' + Number(y1.open);\
+             y1.setAttribute('name', 'a');\
+             globalThis.__s6 = Number(document.getElementById('y0').open) + ',' + Number(y1.open);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__s4 + ' ' + globalThis.__s5 + ' ' + globalThis.__s6").unwrap().value,
+        "1,0 1,1 1,0",
+        "T4：name 变更并入既有 open 组 → 自身让位（IDL 与 setAttribute 同口径）；独组（b）重开不跨组影响组 a"
+    );
+
+    // T5：移动插入面——detached 开元素 append 入组让位；写面与插入面两次真变迁
+    // 同任务（无 await 让位），spec toggle task queue 合并单 net-zero 事件
+    //（oldState 取首变迁前 closed / newState 取任务运行时当下 closed）。
+    sandbox
+        .execute(
+            "var ctc = document.getElementById('ct4100c');\
+             ctc.innerHTML = '<details name=\"a\" id=\"z0\" open></details>';\
+             var z1 = document.createElement('details'); z1.id = 'z1'; z1.name = 'a'; z1.open = true;\
+             globalThis.__t5z1 = [];\
+             z1.addEventListener('toggle', function (ev) { globalThis.__t5z1.push(ev.oldState + '>' + ev.newState); });\
+             ctc.appendChild(z1);\
+             globalThis.__s7 = Number(document.getElementById('z0').open) + ',' + Number(z1.open);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__s7 + '#' + globalThis.__t5z1.join('|')").unwrap().value,
+        "1,0#closed>closed",
+        "T5：appendChild 开元素入组让位——同任务开+关合并单 net-zero toggle（spec 口径）"
+    );
+
+    // T6：insertBefore 首位插入开元素同样让位（既存 open 成员不因树序变前而让）。
+    sandbox
+        .execute(
+            "var z2 = document.createElement('details'); z2.id = 'z2'; z2.name = 'a'; z2.open = true;\
+             var ctc = document.getElementById('ct4100c');\
+             ctc.insertBefore(z2, document.getElementById('z0'));\
+             globalThis.__s8 = Number(z2.open) + ',' + Number(document.getElementById('z0').open);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__s8").unwrap().value,
+        "0,1",
+        "T6：insertBefore 首位开元素让位——given-prong 关新插入者而非既存成员"
+    );
+
+    // T7：空/缺失 name 不成组（各自保持 open）；detached 容器组照常 enforcement。
+    sandbox
+        .execute(
+            "var ct = document.getElementById('ct4100');\
+             ct.innerHTML = '<details id=\"n0\" open></details><details id=\"n1\" open></details>'\
+               + '<details name=\"\" id=\"n2\" open></details>';\
+             globalThis.__s9 = ['n0', 'n1', 'n2'].map(function (id) {\
+               return Number(document.getElementById(id).open); }).join(',');\
+             var dq = document.createElement('div');\
+             dq.innerHTML = '<details name=\"a\" id=\"q0\" open></details><details name=\"a\" id=\"q1\"></details>';\
+             globalThis.__s10 = Number(dq.firstElementChild.open) + ',' + Number(dq.lastElementChild.open);\
+             dq.lastElementChild.open = true;\
+             globalThis.__s11 = Number(dq.firstElementChild.open) + ',' + Number(dq.lastElementChild.open);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__s9 + ' ' + globalThis.__s10 + ' ' + globalThis.__s11").unwrap().value,
+        "1,1,1 1,0 0,1",
+        "T7：空/缺失 name 不成组；detached 容器组照常互斥（given/others 双 prong）"
+    );
+
+    // T8：name IDL 反射 round-trip + 原型成员存在性（`'name' in
+    // HTMLDetailsElement.prototype`——name-content-attribute-and-property 自适配判定面）。
+    sandbox
+        .execute(
+            "var d = document.createElement('details'); d.name = 'grp';\
+             globalThis.__s12 = d.getAttribute('name') + '#' + d.name\
+               + '#' + ('name' in globalThis.HTMLDetailsElement.prototype);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__s12").unwrap().value,
+        "grp#grp#true",
+        "T8：details.name IDL 反射 round-trip + 原型成员存在性"
+    );
+}

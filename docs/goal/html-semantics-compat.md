@@ -2,34 +2,36 @@
 
 **版本**: v2.0
 **日期**: 2026-10-21（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 20 收口（details/summary 深层面 R4009 +18P），下一步 M2 切片 21：details name= 互斥簇（name-attribute.html 18F + file Timeout，interactive-elements 最大剩余杠杆）
+**状态**: Active——M2 切片 21 收口（details name= 互斥簇 R4100 +14P），下一步 M2 切片 22：dialog 元素簇（the-dialog-element ~180F，interactive-elements 剩余最大杠杆）
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-21 M2 切片 20）**：details/summary 深层面（R4009，
-> rollover 接续——代码为上会话 429 中断遗留 WIP，本会话 rebase 后续推，
-> 宿主路径双 toggle 缺陷被集成测试证伪后重设计收口）。四层：toggle 事件
-> 任务队列（part03 `_zwDetailsToggleQ4009`——per-element 去重/同任务合并/
-> 净零仍派/同态不排程/detached 派发；单一 choke point 落 part04 `open`
-> IDL setter + attr 尾钩，页面 JS 与 plan script_set_open 同经；trusted +
-> ToggleEvent 原型身份）+ summary 激活行为（part03 bubble 站钩后代 target
-> 面 + part04 click() post 分支本体面，首个 summary 元素子身份比对，交互
-> 豁免含祖先面）+ ToggleEvent 接口（part05 `_defineEventSubclass`）+ 宿主
-> 空格路由（webview SUMMARY → plan_summary）。双 toggle 修复：plan_summary
-> 移除 followup toggle（page-runtime），发射权统一归队列——集成断言
-> `click:false,toggle:true,click:true` 维持不变，事件形状由同步裸 Event
-> 近似转正为 spec 口径。part60 T1–T9 契约。九域 4855→**4873P**（66.09%），
-> 对 s19 逐 subtest diff **净 +18P、回归 0**，全部落 interactive-elements
-> （77→95P）：toggleEvent.html 1P/2F+未上报→9P/0F、activation-behavior
-> 2P/7F→9P/0F、anchor-without-link 0P/2F→2P/0F、details-keyboard
-> -activation 0P/1F→1P/0F。gates：zero-engine --lib 3358P/0F、page-runtime
-> lib 136P/0F、webview lib 785P/0F、renderer activation 9P/0F、integration
-> html_compat 21P/0F、clippy workspace 过、fmt 本切片文件 clean、零新增
+> **▶ 当前状态（2026-10-21 M2 切片 21）**：details name= 互斥簇（R4100）。
+> spec exclusive accordions 两 prong（others=开写面关其他 open；given=插入/
+> name 变更面自身让位）+ 组口径（同树根 + 同名非空 name + DETAILS）。核心
+> 结构发现：innerHTML-into-sel 解析产物是 `_zwMEl` plain wrapper（无 sel/
+> handle 身份），与 t8r 物化 identity 元素混合同树——统一 node-based 核心
+> `__zwDetailsExclusivityNode4100`（childNodes DFS 组枚举弃 querySelectorAll，
+> 身份态 `_elKey` 比对/包装态对象身份）+ R4009 队列第 4 参 plainNode 通道
+> + 解析扫描顺序插入模拟（树序第一 open 胜出——第 k 元素只看片内在前 live
+> open + 片外既存 open；CeAttach 整批一次扫描，逐 root 扫描会把兄弟判片外）
+> + 六挂接面（identity 四处 + wrapper setAttribute/removeAttribute 尾钩 +
+> 解析面三处：CeAttach 尾/_ihMat 物化尾/wrapper 本地 innerHTML R181 尾）。
+> part01 `_REFLECTED_NAME_TAGS` details + part03 原型 name accessor。
+> 关键取舍：解析面排程 toggle（spec attribute change steps 字面）与 test 3
+> 期望序互斥——取 spec 口径，test 3 维持 F，净 +13P 且清 name-attribute
+> file Timeout。part60 T1–T8 契约。九域 4873→**4887P**（66.29%），对 s20
+> 逐 subtest diff **净 +14P、回归 0**，全部落 interactive-elements（95→
+> 109P，264→235F）：name-attribute 2P/14F+Timeout→15P/3F（12 翻绿 + 2 案
+> Timeout 吞没转上报即 P）、details-name-exclusivity-fragment-insertion
+> 0P/1F→1P/0F。gates：zero-engine --lib 3374P/0F、page-runtime+webview
+> 785P/0F、integration html_compat 21P/0F、clippy 过、fmt clean、零新增
 > 依赖。账本见
-> [evidence/2026-10-21-m2s20-r4009.md](html-semantics-compat/evidence/2026-10-21-m2s20-r4009.md)。
-> **下一步**：M2 切片 21——details name= 属性互斥簇
-> （name-attribute.html 18F + file Timeout，单文件占 interactive-elements
-> 剩余 264F 的 19）；余挂账 toggleEvent 尾部 ontoggle 面、
+> [evidence/2026-10-21-m2s21-r4100.md](html-semantics-compat/evidence/2026-10-21-m2s21-r4100.md)。
+> **下一步**：M2 切片 22——dialog 元素簇（the-dialog-element ~180F：
+> requestClose 75F、closedby corner-cases 30F、inert 14F、toggle-events
+> 12F、closedby-bounds 10F 等，interactive-elements 剩余最大杠杆）；余挂账
+> toggleEvent 尾部 ontoggle（document-parse 面，需 init-order 调查）、
 > ToggleEvent.source/commandfor、anchor-with-inline 导航缺口（导航域）、
 > parser form element pointer 4F 同根维持单独立项征询不越界。
 

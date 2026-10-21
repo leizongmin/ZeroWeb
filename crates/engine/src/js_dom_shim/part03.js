@@ -6072,6 +6072,23 @@
       }
     }
   })();
+  // R4100（html-semantics M2 切片 21）：HTMLDetailsElement.prototype.name accessor
+  //（spec exclusive accordions——details.name IDL 反射 name 内容属性；`'name' in
+  // HTMLDetailsElement.prototype` 判定面——WPT name-content-attribute-and-property
+  // 据此把 details 归入 reflecting 组生成 doesReflect 子测）。实例面读写在元素
+  // proxy get/set trap（`_reflectedNameAttr` tag 门，part01 `_REFLECTED_NAME_TAGS`
+  // 收 details）；本 accessor 服务原型成员存在性与 plain 元素兜底。
+  try {
+    if (globalThis.HTMLDetailsElement && globalThis.HTMLDetailsElement.prototype
+        && !Object.prototype.hasOwnProperty.call(globalThis.HTMLDetailsElement.prototype, 'name')) {
+      Object.defineProperty(globalThis.HTMLDetailsElement.prototype, 'name', {
+        get: function () { return this.getAttribute ? (this.getAttribute('name') || '') : ''; },
+        set: function (v) { if (this.setAttribute) this.setAttribute('name', String(v)); },
+        configurable: true,
+        enumerable: false, // 非枚举——同 preservesPitch 惯例，避免漏进元素枚举面
+      });
+    }
+  } catch (_e4dn4100) {}
   // js-dom M4 R107：HTMLBodyElement/HTMLFrameSetElement.prototype 的 Window-forwarding
   // handler 属性（onblur/onerror/onfocus/onload/onscroll/onresize）以 **enumerable**
   // data property（值 null）挂原型——spec IDL handler 属性 for-in 可见（WPT
@@ -9137,6 +9154,14 @@
         }
         if (pc) _ceApplyConn(root, true);
       }
+      // R4100（html-semantics M2 切片 21）：markup 构造面 details name= 互斥
+      // + parser-open toggle 排程（spec the-details-element——attribute change
+      // steps 与 insertion steps 也随 parser 插入运行；详见 __zwDetailsScan4100）。
+      // 整批 roots 一次扫描——互斥片段口径须含全部顶层解析子（循环内逐 root 扫描
+      // 会把兄弟 wrapper 判成片外成员，树序第一 open 胜出口径被破坏）。
+      try {
+        if (typeof globalThis.__zwDetailsScan4100 === 'function') globalThis.__zwDetailsScan4100(list, true);
+      } catch (_e4cea4100) {}
     } catch (_eCea) {}
   };
   // WC-M3 切片 8 第二增量（web-components goal，spec DOM §retargeting / §shadow-including）：
@@ -12940,26 +12965,50 @@
   }
   // prePresent：调用方写入前捕获的 presence（null = 调用方未判，内部自读）。写后读
   //当下 presence 比对——真变迁才入队。`__zwMakeTrustedEvent` 旁落地（part04 复用）。
-  function _zwToggleQueueNotify4009(sel, handle, prePresent) {
+  // R4100（html-semantics M2 切片 21）：第 4 参 `plainNode`（可选）——`_zwMEl` 包装
+  // 对象（innerHTML-into-plain 容器解析产物，无 sel/handle 身份）走同队列：presence
+  // 直读包装对象 attrs、key 用 `_zwPlainDetailsKey4100` 对象身份戳、派发用包装对象
+  // 自身 dispatchEvent（R167 本地面）。缺省时身份元素路径零变化。
+  function _zwToggleQueueNotify4009(sel, handle, prePresent, plainNode) {
+    var isPlain = plainNode != null;
     var tag = '';
-    try { tag = _realTag(sel, handle); } catch (_eTag4009) { tag = ''; }
+    if (isPlain) {
+      try { tag = String(plainNode.tagName || '').toUpperCase(); } catch (_eTagP4100) { return; }
+    } else {
+      try { tag = _realTag(sel, handle); } catch (_eTag4009) { tag = ''; }
+    }
     if (tag !== 'DETAILS') return; // dialog open setter 同面但无 toggle 语义（R3290）
-    var pre = (prePresent === null || prePresent === undefined)
-      ? _zwDetailsHasOpen4009(sel, handle) : !!prePresent;
-    var post = _zwDetailsHasOpen4009(sel, handle);
+    var pre, post;
+    if (isPlain) {
+      try {
+        pre = (prePresent === null || prePresent === undefined)
+          ? plainNode.hasAttribute('open') : !!prePresent;
+        post = plainNode.hasAttribute('open');
+      } catch (_ePreP4100) { return; }
+    } else {
+      pre = (prePresent === null || prePresent === undefined)
+        ? _zwDetailsHasOpen4009(sel, handle) : !!prePresent;
+      post = _zwDetailsHasOpen4009(sel, handle);
+    }
     if (post === pre) return; // 同态写不排程（t9/t10）
-    var key = _elKey(sel, handle);
+    var key = isPlain ? _zwPlainDetailsKey4100(plainNode) : _elKey(sel, handle);
     if (key == null) return;
     if (_zwDetailsToggleQ4009[key]) return; // 已排程——同任务后续变迁仅更新存在性
-    var entry = _zwDetailsToggleQ4009[key] = { sel: sel, handle: handle, old: post ? 'closed' : 'open' };
+    var entry = _zwDetailsToggleQ4009[key] = { sel: sel, handle: handle, old: post ? 'closed' : 'open', plain: isPlain ? plainNode : null };
     var fire = function () {
       if (_zwDetailsToggleQ4009[key] !== entry) return;
       delete _zwDetailsToggleQ4009[key];
       try {
-        var newState = _zwDetailsHasOpen4009(entry.sel, entry.handle) ? 'open' : 'closed';
-        var proxy = _makeProxy(entry.sel, entry.handle);
-        if (!proxy || typeof proxy.dispatchEvent !== 'function') return;
-        proxy.dispatchEvent(_zwMakeTrustedToggleEvent4009(entry.old, newState));
+        var newState, target;
+        if (entry.plain) {
+          newState = entry.plain.hasAttribute('open') ? 'open' : 'closed';
+          target = entry.plain;
+        } else {
+          newState = _zwDetailsHasOpen4009(entry.sel, entry.handle) ? 'open' : 'closed';
+          target = _makeProxy(entry.sel, entry.handle);
+        }
+        if (!target || typeof target.dispatchEvent !== 'function') return;
+        target.dispatchEvent(_zwMakeTrustedToggleEvent4009(entry.old, newState));
       } catch (_eFire4009) {}
     };
     // 异步 task 排程——`_zwScheduleSelectEvent`（R3906）同款 timer 链模板。
@@ -12968,6 +13017,218 @@
     else if (typeof Promise === 'function') Promise.resolve().then(fire);
     else fire();
   }
+
+  // ── R4100（html-semantics M2 切片 21）：details name= 互斥簇 enforcement ──
+  //
+  // spec the-details-element 互斥算法两个 prong（exclusive accordions）：
+  // - 'others'（open 写入面：IDL setter / setAttribute('open') 尾钩，仅真开变迁）：
+  //   subject 刚 open → 关组内全部其他 open 元素（spec「ensure details exclusivity
+  //   by closing other elements」——组内恰一其他 open 是断言不变式；本实现关全部以
+  //   复原「组内至多一 open」，conforming 态与 spec 单关等价）。
+  // - 'given'（插入面 / name 变更面：appendChild/insertBefore/markup 构造面、name
+  //   IDL 与 setAttribute('name')）：组内任一其他 open → 关 subject 自身（spec
+  //   「closing the given element」——insertion steps + name attribute change steps
+  //   分支；既存 open 成员胜出，新插入/新入组者让位——WPT name-attribute.html
+  //   parser 场景树序第一 open 胜出口径）。
+  // 组口径（spec details name group）：同树根（`_zwNodeRootOf` parentNode 链顶，不跨
+  // shadow 容器——shadow tree 是独立组）+ 同名非空 name 属性 + DETAILS 标签；空/
+  // 缺失 name 不成组。detached（未连接）照常 enforcement（disconnected/template
+  // 场景面）。**双身份态统一按节点面处理**：sel/handle 身份元素（`__zwSelector`/
+  // `__zwHandle`，t8r 物化/createElement 产物）与 `_zwMEl` 包装对象（innerHTML-into-
+  // plain 容器解析产物，无身份——attrs 本地存、事件本地面 R167）混合出现在同一
+  // querySelectorAll 结果中（R304 overlay 视图），核心 duck-typing 兼容两态；关闭统一
+  // `removeAttribute('open')`——身份态 proxy 尾钩自动入 R4009 队列，包装态经其
+  // setAttribute/removeAttribute 方法尾钩（下 `_zwMDetailsAttrTail4100`）显式入队。
+  // https://html.spec.whatwg.org/multipage/interactive-elements.html#the-details-element
+  var _zwPlainTgSeq4100 = 0;
+  function _zwPlainDetailsKey4100(node) {
+    try {
+      if (node.__zwPlainTg4100 === undefined) {
+        _zwPlainTgSeq4100 += 1;
+        node.__zwPlainTg4100 = 'p' + _zwPlainTgSeq4100;
+      }
+      return 'plain4100:' + node.__zwPlainTg4100;
+    } catch (_ePk4100) { return null; }
+  }
+  // 节点身份元组（sel/handle 或 null）——包装态两者皆 null，`identified` 为 false。
+  function _zwDetailsNodeId4100(node) {
+    var s = null, h = null;
+    try { s = node.__zwSelector || null; } catch (_e4s4100) { s = null; }
+    try { h = node.__zwHandle || null; } catch (_e4h4100) { h = null; }
+    return { sel: s, hnd: h, identified: !!(s || h) };
+  }
+  // 属性读封装（身份 proxy 与包装对象统一——两者都有 getAttribute/hasAttribute）。
+  function _zwDetailsNameOf4100(el) {
+    try { return String(el.getAttribute('name') || ''); } catch (_e4nm4100) { return ''; }
+  }
+  function _zwDetailsIsOpen4100(el) {
+    try { return !!el.hasAttribute('open'); } catch (_e4op4100) { return false; }
+  }
+  // 同元素判定（身份态 key 比对——querySelector/proxy 可能产出新对象；包装态对象身份）。
+  function _zwDetailsSame4100(a, b) {
+    var ai = _zwDetailsNodeId4100(a), bi = _zwDetailsNodeId4100(b);
+    if (ai.identified && bi.identified && typeof _elKey === 'function') {
+      return _elKey(ai.sel, ai.hnd) === _elKey(bi.sel, bi.hnd);
+    }
+    return a === b;
+  }
+  // 子树 DFS 收集 DETAILS（childNodes 直读——身份 proxy、包装对象、混合树统一；
+  // 前序树序，root 自身 inclusive）。shadow 容器边界天然隔离（host.childNodes 不含
+  // shadow tree，shadow root 独立 root）——与 spec 同树根组口径一致。
+  function _zwDetailsCollect4100(root) {
+    var out = [];
+    try {
+      (function walk(n) {
+        if (!n || typeof n !== 'object') return;
+        var nt = 0;
+        try { nt = n.nodeType; } catch (_e4cw1) { return; }
+        if (nt === 1) {
+          var tg = '';
+          try { tg = String(n.tagName || '').toUpperCase(); } catch (_e4cw2) {}
+          if (tg === 'DETAILS') out.push(n);
+        }
+        var kids = null;
+        try { kids = n.childNodes; } catch (_e4cw3) { kids = null; }
+        if (kids && typeof kids.length === 'number') {
+          for (var i = 0; i < kids.length; i++) walk(kids[i]);
+        }
+      })(root);
+    } catch (_e4cw4) {}
+    return out;
+  }
+  // node 是否在 roots 任一子树内（parentNode 链上行命中即真——片外成员判定）。
+  function _zwDetailsIsInFrag4100(node, roots) {
+    var c = node, g = 0;
+    while (c && g++ < 128) {
+      for (var i = 0; i < roots.length; i++) { if (roots[i] && c === roots[i]) return true; }
+      try { c = c.parentNode; } catch (_e4if4100) { return false; }
+    }
+    return false;
+  }
+  // 组内关闭统一出口。身份态 removeAttribute 走 proxy 方法尾钩自动入 R4009 队列
+  //（不重复 notify）；包装态走包装对象方法尾钩（同上自动），唯当方法尾钩缺席时
+  //（极少——老调用面）才显式补 notify。
+  function _zwDetailsCloseOpen4100(node, idt) {
+    try {
+      var before = null;
+      try { before = node.hasAttribute('open'); } catch (_e4hb4100) {}
+      node.removeAttribute('open');
+      if (!idt.identified && before && typeof _zwToggleQueueNotify4009 === 'function') {
+        // 包装态兜底：方法尾钩通常已 notify（队列 per-element 去重吸收重复）。
+        _zwToggleQueueNotify4009(null, null, true, node);
+      }
+    } catch (_e4rm4100) {}
+  }
+  // 统一核心（node-based）：subject 为身份元素或包装对象皆可。
+  globalThis.__zwDetailsExclusivityNode4100 = function (subject, mode) {
+    try {
+      if (!subject || typeof subject !== 'object') return;
+      var tag = '';
+      try { tag = String(subject.tagName || '').toUpperCase(); } catch (_e4tgA4100) { return; }
+      if (tag !== 'DETAILS') return;
+      var name = _zwDetailsNameOf4100(subject);
+      if (!name) return; // 空/缺失 name 不成组（spec name group 口径）
+      var hasOpen = _zwDetailsIsOpen4100(subject);
+      if (mode === 'given' && !hasOpen) return;
+      if (typeof _zwNodeRootOf !== 'function') return;
+      var root = _zwNodeRootOf(subject);
+      if (!root) return;
+      var all = _zwDetailsCollect4100(root);
+      var group = [];
+      for (var gi = 0; gi < all.length; gi++) {
+        var cand = all[gi];
+        if (_zwDetailsNameOf4100(cand) !== name) continue;
+        if (_zwDetailsSame4100(cand, subject)) continue;
+        group.push(cand);
+      }
+      if (!group.length) return;
+      if (mode === 'given') {
+        // given-prong：组内任一其他 open → 关 subject（自身让位既存 open 成员）。
+        var otherOpen = false;
+        for (var oi = 0; oi < group.length; oi++) {
+          if (_zwDetailsIsOpen4100(group[oi])) { otherOpen = true; break; }
+        }
+        if (otherOpen) _zwDetailsCloseOpen4100(subject, _zwDetailsNodeId4100(subject));
+      } else {
+        // others-prong：subject 刚 open → 关组内全部其他 open（树序处理；
+        // conforming 态至多一其他 open，spec 单关等价）。
+        for (var ci = 0; ci < group.length; ci++) {
+          if (_zwDetailsIsOpen4100(group[ci])) {
+            _zwDetailsCloseOpen4100(group[ci], _zwDetailsNodeId4100(group[ci]));
+          }
+        }
+      }
+    } catch (_e4x4100) {}
+  };
+  // (sel, handle) 入口——身份态既有调用点（part04 proxy 尾钩/IDL setter/插入尾、
+  // part05 反射尾）统一转发节点核心，签名不变。
+  globalThis.__zwDetailsExclusivity4100 = function (sel, handle, mode) {
+    try {
+      if (typeof _makeProxy !== 'function') return;
+      var subject = _makeProxy(sel || null, handle || null);
+      if (subject && typeof globalThis.__zwDetailsExclusivityNode4100 === 'function') {
+        globalThis.__zwDetailsExclusivityNode4100(subject, mode);
+      }
+    } catch (_e4eh4100) {}
+  };
+  // 插入面 details 扫描（roots 混合身份/包装两态）——`isParse` 为 true（innerHTML/
+  // outerHTML/insertAdjacentHTML 解析产物）时按 spec「attribute change steps 与
+  // insertion steps 随 parser 按树序逐元素运行」模拟顺序插入：带 open 属性的新
+  // DETAILS 排程 toggle（closed→open；同任务后续互斥关闭经 R4009 队列 per-element
+  // 去重合并单事件）；互斥 given-prong 用**树序在前的同组 live open 成员**口径
+  //（第 k 个元素插入时刻组内只有 0..k-1 已存在——树序第一 open 胜出，后者让位；
+  // WPT name-attribute.html test 2/15 parser 场景口径）+ 片外既存 open 成员检查
+  //（先于本片段插入，同样让新元素让位）。移动面（appendChild/insertBefore 脚本
+  // 单元素插入）用全组口径 'given'（插入时刻全树已存在）；移动面不重排 toggle
+  //——open 变迁已在属性写面排程，重复 notify 由队列 per-element 去重吸收。
+  globalThis.__zwDetailsScan4100 = function (roots, isParse) {
+    try {
+      var list = roots ? (roots.length !== undefined ? roots : [roots]) : [];
+      // 片段成员（前序树序；root 自身 inclusive，roots 顺序拼接）。
+      var frag = [];
+      for (var i = 0; i < list.length; i++) {
+        var r = list[i];
+        if (!r || typeof r !== 'object') continue;
+        var nt = 0;
+        try { nt = r.nodeType; } catch (_e4nt4100) { nt = 0; }
+        if (nt !== 1 && nt !== 9 && nt !== 11) continue;
+        var sub = _zwDetailsCollect4100(r);
+        for (var j = 0; j < sub.length; j++) frag.push(sub[j]);
+      }
+      for (var fi = 0; fi < frag.length; fi++) {
+        var el = frag[fi];
+        if (isParse && _zwDetailsIsOpen4100(el) && typeof _zwToggleQueueNotify4009 === 'function') {
+          var idt = _zwDetailsNodeId4100(el);
+          if (idt.identified) _zwToggleQueueNotify4009(idt.sel, idt.hnd, false);
+          else _zwToggleQueueNotify4009(null, null, false, el);
+        }
+        var name = _zwDetailsNameOf4100(el);
+        if (!name || !_zwDetailsIsOpen4100(el)) continue;
+        if (!isParse) {
+          if (typeof globalThis.__zwDetailsExclusivityNode4100 === 'function') {
+            globalThis.__zwDetailsExclusivityNode4100(el, 'given');
+          }
+          continue;
+        }
+        // 解析面 given-prong（顺序插入模拟）。
+        var close = false;
+        for (var pj = 0; pj < fi; pj++) {
+          if (_zwDetailsNameOf4100(frag[pj]) === name && _zwDetailsIsOpen4100(frag[pj])) { close = true; break; }
+        }
+        if (!close) {
+          var root2 = _zwNodeRootOf(el);
+          var all2 = root2 ? _zwDetailsCollect4100(root2) : [];
+          for (var ci = 0; ci < all2.length; ci++) {
+            var cand = all2[ci];
+            if (_zwDetailsSame4100(cand, el)) continue;
+            if (_zwDetailsIsInFrag4100(cand, list)) continue; // 片段成员由顺序规则管
+            if (_zwDetailsNameOf4100(cand) === name && _zwDetailsIsOpen4100(cand)) { close = true; break; }
+          }
+        }
+        if (close) _zwDetailsCloseOpen4100(el, _zwDetailsNodeId4100(el));
+      }
+    } catch (_e4s4100) {}
+  };
 
   // ── R4009：summary 激活行为（spec the-summary-element activation behaviour）──
   //
@@ -15432,18 +15693,30 @@
     // setAttribute 已存在则更新值（latest-wins），否则追加；id/class 同步 IDL 反射字段。
     node.setAttribute = function (n, v) {
       n = String(n); var sv = v == null ? '' : String(v);
-      for (var i = 0; i < attrs.length; i++) { if (attrs[i].name === n) { attrs[i].value = sv; _zwMReflectIdl(node, n); _zwMQueueSlotAttr(n); return; } }
+      var _r4100Had = null;
+      if (n.toLowerCase() === 'open' || n.toLowerCase() === 'name') {
+        try { _r4100Had = node.hasAttribute(n); } catch (_e44100a) { _r4100Had = null; }
+      }
+      for (var i = 0; i < attrs.length; i++) { if (attrs[i].name === n) { attrs[i].value = sv; _zwMReflectIdl(node, n); _zwMQueueSlotAttr(n); _zwMDetailsAttrTail4100(n, _r4100Had); return; } }
       attrs.push({ name: n, value: sv });
       _zwMReflectIdl(node, n);
       _zwMQueueSlotAttr(n);
+      _zwMDetailsAttrTail4100(n, _r4100Had);
     };
     // removeAttribute 移除全部同名属性（去重保险），同步清 IDL 反射字段。
     node.removeAttribute = function (n) {
       n = String(n);
+      var _r4100Had = null;
+      if (n.toLowerCase() === 'open') {
+        try { _r4100Had = node.hasAttribute(n); } catch (_e44100b) { _r4100Had = null; }
+      }
       var _hadSlotAttr = attrs.some(function (a) { return a.name === n; }) && (n === 'slot' || String(n).toLowerCase() === 'name');
       for (var i = attrs.length - 1; i >= 0; i--) { if (attrs[i].name === n) attrs.splice(i, 1); }
       _zwMReflectIdl(node, n);
       if (_hadSlotAttr) _zwMQueueSlotAttr(n);
+      // R4100（html-semantics M2 切片 21）：DETAILS open 移除 → toggle 排程（had 为
+      // 移除前 presence，真关变迁才入队——notify 内比对）。name 移除成组失败无 steps。
+      if (n.toLowerCase() === 'open') _zwMDetailsAttrTail4100(n, _r4100Had);
     };
     // WC-M3 切片 8 第九增量（web-components goal，spec slot's/slottable's name 的
     // attribute change steps → assign slottables → signal）：slot 的 name / slottable 的
@@ -15456,6 +15729,26 @@
       if (typeof globalThis.__zwQueuePlainSlotchange === 'function') {
         try { globalThis.__zwQueuePlainSlotchange(node); } catch (_eScAttrP) {}
       }
+    };
+    // R4100（html-semantics M2 切片 21）：DETAILS open/name 属性写尾钩（包装态）——
+    // open 真开变迁（新增）排程 toggle + others-prong 互斥，真关变迁（移除）排程
+    // toggle；name 写入 given-prong（新入组者让位既存 open 成员——spec name
+    // attribute change steps）。`had` 为调用方写入前捕获的 presence（null = 未判，
+    // notify 内自读）。布尔反射 accessor（`_zwMDefineBooleanReflected` 的 open）走
+    // node.setAttribute/removeAttribute，本尾钩自动覆盖，accessor 本体零改动。
+    var _zwMDetailsAttrTail4100 = function (n, had) {
+      var ln = String(n).toLowerCase();
+      if (ln !== 'open' && ln !== 'name') return;
+      var isDet = false;
+      try { isDet = String(node.tagName || '').toUpperCase() === 'DETAILS'; } catch (_e4dt4100) {}
+      if (!isDet || typeof globalThis.__zwDetailsExclusivityNode4100 !== 'function') return;
+      if (ln === 'name') { globalThis.__zwDetailsExclusivityNode4100(node, 'given'); return; }
+      var nowOpen = false;
+      try { nowOpen = node.hasAttribute('open'); } catch (_e4no4100) {}
+      if (typeof _zwToggleQueueNotify4009 === 'function') {
+        _zwToggleQueueNotify4009(null, null, had, node);
+      }
+      if (nowOpen && !had) globalThis.__zwDetailsExclusivityNode4100(node, 'others');
     };
     // js-dom M3 R96：setAttributeNS（WPT attributes.html 非 HTML 文档变体在 detached doc 元素上
     // 调 `el.setAttributeNS(ns, qn, v)`——旧缺方法抛 TypeError 整 subtest 崩）。最小语义：忽略 ns 按
@@ -16122,6 +16415,13 @@
             }
           } catch (_e181od) {}
         }
+        // R4100（html-semantics M2 切片 21）：包装世界本地 innerHTML 解析产物 details
+        // 扫描——parser-open toggle 排程 + given-prong 互斥（本地面不经
+        // __zwCeAttachForAdded，属 plain innerHTML 路径；detached doc / template
+        // content 容器场景，WPT name-attribute.html test 10/12 走此路径）。
+        try {
+          if (typeof globalThis.__zwDetailsScan4100 === 'function') globalThis.__zwDetailsScan4100(kids, true);
+        } catch (_e181d4100) {}
       }, configurable: true });
     Object.defineProperty(node, 'outerHTML', { get: function () { return _zwMSerialize(node); }, configurable: true });
     // js-dom M4 R81：元素导航 getter 族补齐（firstElementChild/lastElementChild/childElementCount

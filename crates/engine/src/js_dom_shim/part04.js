@@ -3444,6 +3444,18 @@
             if (n === 'open' && typeof _zwToggleQueueNotify4009 === 'function') {
               _zwToggleQueueNotify4009(sel, handle, _rmExisted);
             }
+            // R4100（html-semantics M2 切片 21）：details open 属性新增 → others-prong
+            // 互斥——组内其他 open 元素全关（spec attribute change steps open 分支
+            // 「closing other elements」；已有 open 的同值写不属属性变迁，`!_rmExisted` 门）。
+            if (n === 'open' && !_rmExisted && typeof globalThis.__zwDetailsExclusivity4100 === 'function') {
+              globalThis.__zwDetailsExclusivity4100(sel, handle, 'others');
+            }
+            // R4100：details name 属性写面 → given-prong（spec attribute change steps
+            // name 分支「closing the given element」——subject open 且组内已有 open 时
+            // 自身让位；helper 内 name/open 缺失早退，name 移除面按 spec name-gate 无事）。
+            if (n === 'name' && typeof globalThis.__zwDetailsExclusivity4100 === 'function') {
+              globalThis.__zwDetailsExclusivity4100(sel, handle, 'given');
+            }
           };
         }
         if (prop === 'removeAttribute') {
@@ -6166,6 +6178,13 @@
                 _ceApplyConn(ceAdded[ci], cePconn);
                 _zwStartConnectedIframe(ceAdded[ci], cePconn);
               }
+              // R4100（html-semantics M2 切片 21）：移动插入面 details name= 互斥
+              //（given-prong——spec details element insertion steps；open toggle 已在
+              // 属性写面排程，isParse=false 不重排，重复 notify 由队列去重吸收）。
+              // `ceAdded || [newNode]`：fragment flatten 未命中的直插形态也覆盖。
+              try {
+                if (typeof globalThis.__zwDetailsScan4100 === 'function') globalThis.__zwDetailsScan4100(ceAdded || [newNode], false);
+              } catch (_e4ap4100) {}
               // WC-M3：shadow 树内增删 → slotchange 微任务（slot 分配变化面）。
               if (handle && typeof globalThis.__zwMaybeQueueSlotchange === 'function') {
                 try { globalThis.__zwMaybeQueueSlotchange(handle); } catch (_eSc4) {}
@@ -7500,6 +7519,14 @@
                 var cePconn = _ceParentConnected(sel, handle);
                 for (var ci = 0; ci < ceAdded.length; ci++) _ceApplyConn(ceAdded[ci], cePconn);
               }
+              // R4100（html-semantics M2 切片 21）：移动插入面 details name= 互斥
+              //（given-prong，同 appendChild 尾口径——spec details element insertion
+              // steps；新插入 open 元素让位既存 open 成员）。`ceAdded || [newNode]`：
+              // ref 为 plain wrapper（无 selector/handle）时 wire 子分支全 miss、
+              // ceAdded 未定义，scan 仍须覆盖 newNode 本体。
+              try {
+                if (typeof globalThis.__zwDetailsScan4100 === 'function') globalThis.__zwDetailsScan4100(ceAdded || [newNode], false);
+              } catch (_e4ib4100) {}
               // R263：insert 段调整（wire 插入 + registry 记账后调用——读插入后
               // newParent/newIndex；与开头的 remove 段成对 = WPT testInsertBefore 序
               // modifyForRemove + modifyForInsert）。fragment 形态逐子调整。
@@ -10864,6 +10891,13 @@
                       }
                     }
                   }
+                  // R4100（html-semantics M2 切片 21）：物化（handle 树）解析产物 details
+                  // 扫描——parser-open toggle 排程 + given-prong 互斥。`_ihMat` 路径不经
+                  // `__zwCeAttachForAdded`（仅回退代理走），本尾钩补解析面（WPT
+                  // name-attribute.html test 16/17 走 innerHTML-into-handle 容器场景）。
+                  try {
+                    if (typeof globalThis.__zwDetailsScan4100 === 'function') globalThis.__zwDetailsScan4100(_ihMat, true);
+                  } catch (_eIhD4100) {}
                 } else {
                   globalThis.__zwCeAttachForAdded(_ihAdded, _ceParentConnected(sel, handle));
                 }
@@ -11421,7 +11455,15 @@
               delete _zwTopLayer[key];
             }
           }
-          if (_r4009PreOpen !== null) _zwToggleQueueNotify4009(sel, handle, _r4009PreOpen);
+          if (_r4009PreOpen !== null) {
+            _zwToggleQueueNotify4009(sel, handle, _r4009PreOpen);
+            // R4100（html-semantics M2 切片 21）：open IDL 写面（真开变迁）→
+            // others-prong 互斥（同 setAttribute('open') 尾钩口径——`value && 写前
+            // 未 open` 门；页面 JS 与 plan 层 script_set_open 同经本分支）。
+            if (value && !_r4009PreOpen && typeof globalThis.__zwDetailsExclusivity4100 === 'function') {
+              globalThis.__zwDetailsExclusivity4100(sel, handle, 'others');
+            }
+          }
         } else if (p === 'returnValue' && _realTag(sel, handle) === 'DIALOG') {
           // R3290：HTMLDialogElement.returnValue IDL setter。spec：存任意值为串（不反射内容属性——dialog 无
           // returnValue 内容属性）。R3999：WebIDL DOMString 转换——null → "null"、

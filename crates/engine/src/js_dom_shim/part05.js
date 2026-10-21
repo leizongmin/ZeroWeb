@@ -960,6 +960,13 @@
           }
           if (handle) __zw_set_attr_handle(handle, _refAttr, _refVal);
           else __zw_set_attr(sel, _refAttr, _refVal);
+          // R4100（html-semantics M2 切片 21）：details name IDL 写面 → given-prong
+          // 互斥（spec attribute change steps name 分支「closing the given element」
+          // ——subject open 且组内已有 open → 自身让位；同 setAttribute('name') 尾钩
+          // 口径，helper 内非 DETAILS/无 name/未 open 早退）。
+          if (_refAttr === 'name' && typeof globalThis.__zwDetailsExclusivity4100 === 'function') {
+            globalThis.__zwDetailsExclusivity4100(sel, handle, 'given');
+          }
           // navigation-compat M3：srcdoc 与 src 同为 process-the-iframe-attributes 触发
           // 属性（spec #the-iframe-element：set/changed/removed 任一都重新处理；目标
           // 优先级 srcdoc > src 在 _zwLoadIframeEntry 入口统一判定）。
