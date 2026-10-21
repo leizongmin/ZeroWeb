@@ -2,31 +2,32 @@
 
 **版本**: v2.0
 **日期**: 2026-10-21（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 18 收口（label.form IDL R4007 +10P），下一步 M2 切片 19：proxy-modifier tentative 4F / details·summary 深层面归因
+**状态**: Active——M2 切片 19 收口（label 本体激活转发 R4008 +7P），下一步 M2 切片 20：details/summary 深层面（键盘激活 / toggle coalescing）或 forms 余 F 逐簇归因
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-21 M2 切片 18）**：label.form IDL 收口（R4007，
-> rollover 接续会话——上轮 429 限流中断的在途实现经契约测试 + 全量账本
-> 验证后收口）。`.form` getter 分发区补 LABEL 分支：`_zwLabeledControl`
-> （R4003 for 优先 + 树序 DFS）取控件后委托控件 `.form`（R4005 关联面
-> 全继承）；label 自身 form content attribute 不参与（非 form-associated
-> ——form.html label-form 语料钉 null）。part60 契约 1 测（W1–W3）。九域
-> 4838→**4848P**（65.82%，账本条目口径），对 s17 逐 subtest diff **净
-> +10P、回归 0**：form.html `label.form` 8 案全数翻绿（7P/10F→15P/2F）、
-> dialog autofocus 两案意外翻绿（child-sequential-focus 0/5→1/4、
-> dialog-showModal 2/8→3/7，焦点链联带面）。余 4F 同根维持挂账：parser
-> form element pointer 表规则（form.html 2F + form_owner_and_table×2，
-> 树构建器深结构，动则单独立项征询）。gates：zero-engine --lib 3325P/0F、
-> make test 76 腿 22222P/0F 全绿、clippy/fmt 过、零新增依赖。本轮环境
-> 记录：上轮遗留孤儿全量 runner（旧二进制）清理；release 缓存指纹失新
-> E0560（clean 后 42s 全绿，源无问题）。
+> **▶ 当前状态（2026-10-21 M2 切片 19）**：label 本体激活转发（R4008，
+> rollover 双触发两会话同树协作合账，commit 88793f87d）。三层：shim 交互
+> 豁免身份比较（bubble 站挂钩 + R155 post 段——「target 即 label 本体时不
+> 豁免」，spec 豁免只覆盖 interactive content 后代）+ 宿主面上移（renderer
+> `activate_label_at` 既有 + webview user_actions plan 链新增：Activate 落
+> LABEL → `associated_label_control_selector` 解析（labelable 过滤防环）→
+> click 未取消时递归 control 完整激活管线、取消抑制、disabled noop）；shim
+> 不承接宿主 generic Event——renderer 路径双激活实证（checkbox 翻转两次，
+> 首发实现的 shim finally 段转发被集成测试证伪后重设计）。part60 W1–W6
+> 重写 + integration label_activation_forwards_to_labeled_control（for=/
+> 包裹/取消三面）。九域 4848→**4855P**（65.91%，账本条目口径），对 s18
+> 逐 subtest diff **净 +7P、回归 0**：proxy-modifier tentative 4F 全数翻绿
+> （主面）、label-forwarded-click-pointer-properties 未上报→2P/0F（isTrusted
+> trusted 面随宿主派发通道翻绿，label.click() not-trusted 面走 R155 保持）、
+> simulated-click-inert 翻绿。gates：zero-engine --lib 3355P/0F（合账复跑）、
+> webview lib 785P/0F、renderer activation OK、integration html_compat
+> 21P/0F、clippy/fmt 过、零新增依赖。
 > 账本见
-> [evidence/2026-10-21-m2s18-r4007.md](html-semantics-compat/evidence/2026-10-21-m2s18-r4007.md)。
-> **下一步**：M2 切片 19——proxy-modifier tentative 4F（modifier 键面）
-> 或 details 键盘激活 / summary toggle coalescing（M1 起既有深层）归因
-> 切片；forms 域余 F 逐簇归因后再定；parser form element pointer 维持
-> 单独立项征询不越界。
+> [evidence/2026-10-21-m2s19-r4008.md](html-semantics-compat/evidence/2026-10-21-m2s19-r4008.md)。
+> **下一步**：M2 切片 20——details/summary 深层面（键盘激活 / summary
+> toggle coalescing，M1 起既有）或 forms 域余 F 逐簇归因后再定；parser
+> form element pointer 表规则 4F 同根维持单独立项征询不越界。
 
 
 > **▶ 拆分动机（2026-10-08 预留编号立项，用户「候选 goal 也立项吧」）**：继
@@ -107,6 +108,22 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-21 M2 切片 19**：label 本体激活转发（R4008，rollover 双触发
+  两会话同树协作合账，commit 88793f87d）——shim 交互豁免身份比较（bubble
+  站挂钩 + R155 post 段，target 即 label 本体不豁免）+ 宿主面上移（renderer
+  activate_label_at 既有 + webview user_actions plan 链递归 Activate，
+  labelable 过滤防环/取消抑制/disabled noop）；shim 不承接宿主 generic
+  Event（首发 shim finally 段转发被 renderer 双激活集成测试证伪后重设计，
+  checkbox 双翻）。part60 W1–W6 重写 + integration 三面新测。九域
+  4848→4855P（65.91%），对 s18 逐 subtest diff 净 +7P、回归 0：
+  proxy-modifier tentative 4F 全翻绿（主面）、label-forwarded-click-pointer
+  -properties 未上报→2P/0F（isTrusted trusted 面随宿主派发通道翻绿）、
+  simulated-click-inert 翻绿。zero-engine --lib 3355P/0F、webview lib
+  785P/0F、renderer activation OK、integration html_compat 21P/0F、
+  clippy/fmt 过、零新增依赖。协作分工：对侧会话代码提交 + 全量 corpus，
+  本会话 kill 冗余全量轮 + docs 合账 + 账本独立复算。挂账：parser form
+  element pointer 表规则 4F 同根（深结构单独立项）、details 键盘激活 /
+  summary toggle coalescing、navigation-compat M3 项维持。
 - **2026-10-21 M2 切片 18**：label.form IDL（R4007，rollover 接续）——
   `.form` getter 分发区补 LABEL 分支，`_zwLabeledControl` 取控件后委托
   控件 `.form`（R4005 关联面全继承），label 自身 form 属性不参与。
