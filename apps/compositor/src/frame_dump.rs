@@ -43,12 +43,19 @@ impl FrameDumper {
     }
 
     /// 落盘一帧 front buffer（RGBA8）。失败降级：warn 一次后永久停用，不阻塞合成。
-    pub fn dump(&mut self, surface_id: u64, navigation_epoch: u64, frame_id: u64, width: u32, height: u32, rgba: &[u8]) {
+    pub fn dump(
+        &mut self,
+        surface_id: u64,
+        navigation_epoch: u64,
+        frame_id: u64,
+        width: u32,
+        height: u32,
+        rgba: &[u8],
+    ) {
         if self.disabled || self.written >= self.max_frames {
             return;
         }
-        let result =
-            self.write_frame(surface_id, navigation_epoch, frame_id, width, height, rgba);
+        let result = self.write_frame(surface_id, navigation_epoch, frame_id, width, height, rgba);
         if let Err(error) = result {
             tracing::warn!("compositor: frame dump 写失败，停用本会话采集: {error}");
             self.disabled = true;
@@ -70,7 +77,10 @@ impl FrameDumper {
             .unwrap_or_default();
         std::fs::create_dir_all(&self.dir)?;
         let file_name = format!("frame-s{surface_id}-e{navigation_epoch}-f{frame_id}.bin");
-        let mut file = std::fs::File::options().write(true).create_new(true).open(self.dir.join(&file_name))?;
+        let mut file = std::fs::File::options()
+            .write(true)
+            .create_new(true)
+            .open(self.dir.join(&file_name))?;
         file.write_all(rgba)?;
         file.sync_all()?;
         // manifest 追加写：采样清单与像素一一对应（文件名含 frame_id 天然去重）。
@@ -98,10 +108,7 @@ mod tests {
     use super::*;
 
     fn dump_dir(tag: &str) -> PathBuf {
-        std::env::temp_dir().join(format!(
-            "zw-comp-dump-test-{}-{tag}",
-            std::process::id()
-        ))
+        std::env::temp_dir().join(format!("zw-comp-dump-test-{}-{tag}", std::process::id()))
     }
 
     #[test]
