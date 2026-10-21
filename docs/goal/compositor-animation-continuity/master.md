@@ -3,7 +3,7 @@
 **日期**：2026-10-21
 **状态**：Active；M1 ✅、M2-S1 全链路 ✅（S1a-S1e 已落，DC-1 有条件成立：非忙窗 256 帧连续采样双通道像素归因；忙窗 ~1s 空洞归因浏览器主线程 Wayland 耦合，见证据）。flag 默认仍关。
 **当前卡点**：无阻塞卡点。遗留缺口两项待排期：① 忙窗采样空洞（keep-alive tick 挂在 `wayland_client::conn::blocking_read`，呈现路径与 Wayland 解耦后消失）；② renderer 忙窗每文本更新全文档重解析（token 爆发 1:1 锁定忙片，放大主线程占空）。
-**下一步**：M2-S2（查询一致性/DC-2）或 S1 遗留缺口修复，见 [切片 RFC](m2-slice-compositor-sampling.md) §5 与下方缺口表。
+**下一步**：M2-S2 已立项——[S2 切片 RFC](m2-slice-query-consistency.md)（查询一致性/结束事件，S2a 引擎查询覆盖 hook → S2b 终结判定+浏览器唤醒 → S2c COMP-02 验收）；S1 遗留缺口见表。
 **入口**：[目标契约](../compositor-animation-continuity.md) / [启动与证据协议](../ladybird-followups/README.md)
 
 ## 缺口与待决
@@ -19,13 +19,14 @@
 | 忙窗采样空洞 ~1s：browser 主线程 tick 挂在 `wayland_client::conn::blocking_read`（WSLg Weston 同步往返），keep-alive Get 停 → compositor 零采样；帧相位不跳、忙后即恢复（4 次复现确定性） | 呈现/tick 与 Wayland 读取解耦（泵线程或事件驱动唤醒），属既有呈现路径不在 S1 采样链路 | OPEN（S1e 证据 §空洞归因；非本切片修） |
 | renderer 忙窗每文本 DOM 更新全文档重解析（token 爆发与忙片 1:1） | 增量解析或标记行文本更新走局部失效 | OPEN（engine 既有行为，两模式一致，放大主线程占空） |
 | 加载期 budget 路径不导出动画声明（发空集，加载窗无采样属预期） | runner 泵路径接入导出（S1b 已知边界记档） | OPEN（低优先：flag 关同视觉，冻结不劣化） |
+| CSS 动画 currentTime/playState 查询面缺失（WAAPI shim 只收 el.animate()，无 CSSAnimation 接口） | 独立切片评估新 API 面；WAAPI shim 既有语义不动（WPT web-animations 钉住） | OPEN（S2 范围裁剪，DC-2 届时有条件完成；S2 RFC §1） |
 
 ## 里程碑
 
 | 阶段 | 产物 | 状态 | 证据 |
 |---|---|---|---|
 | M1 | 真实窗口阻塞基线与支持矩阵 | ✅ 完成（headless 基线 + 真实窗口帧序列 FROZEN，内容归因像素三重证实；窗口多帧采样工具 frame_dump 已入库） | [2026-10-21-m1-comp01-baseline](evidence/2026-10-21-m1-comp01-baseline/README.md) / [2026-10-21-m1-window-frames](evidence/2026-10-21-m1-window-frames/README.md) |
-| M2 | 合成动画、状态与输入一致切片 | IN_PROGRESS（S1 全链路 ✅：S1a protocol 契约、S1b renderer 导出+作用域、S1c compositor 存储+采样、S1d browser keep-alive、S1e DC-1 验收有条件成立；下一步 S2 查询一致性） | [m2-slice-compositor-sampling](m2-slice-compositor-sampling.md) / [S1e DC-1 证据](evidence/2026-10-21-m2s1e-dc1-acceptance/README.md) |
+| M2 | 合成动画、状态与输入一致切片 | IN_PROGRESS（S1 全链路 ✅：S1a-S1e 见执行记录，DC-1 有条件成立；S2 已立项 RFC 定稿：查询一致性 gCS 覆盖 + 结束事件 renderer 侧惰性判定 + 浏览器唤醒，currentTime/playState 面范围裁剪记缺口） | [m2-slice-compositor-sampling](m2-slice-compositor-sampling.md) / [S2 RFC](m2-slice-query-consistency.md) / [S1e DC-1 证据](evidence/2026-10-21-m2s1e-dc1-acceptance/README.md) |
 | M3 | Worker 2D 呈现与生命周期 | NOT_STARTED | 无 |
 | M4 | GPU/语义/资源与 DC 审计 | NOT_STARTED | 无 |
 
