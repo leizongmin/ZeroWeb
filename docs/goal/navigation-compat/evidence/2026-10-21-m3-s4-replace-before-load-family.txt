@@ -1,0 +1,148 @@
+bash tests/wpt-runner/scripts/goals/60-navigation-compat.sh
+== fetch 语料（pin 315976933，FORCE=0）==
+  navigation-api/currententrychange-event: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/focus-reset: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigate-event: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigation-activation: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigation-history-entry: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigation-methods: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/ordering-and-transition: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/per-entry-events: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/precommit-handler: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/scroll-behavior: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/state: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/updateCurrentEntry-method: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigation-methods/return-value: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigation-methods/resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigation-history-entry/resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/ordering-and-transition/resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigate-event/resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigation-activation/resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+curl: (22) The requested URL returned error: 404
+  navigation-api/per-entry-events/resources: API 列目录失败（限流/网络）——跳过，稍后重跑续拉
+  html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/browsing-the-web/navigating-across-documents/initial-empty-document/resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/browsing-the-web/navigating-across-documents/resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/history/the-history-interface: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/history/the-location-interface: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/history/the-session-history-of-browsing-contexts: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/history/joint-session-history: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/browsing-the-web/history-traversal: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/browsing-the-web/navigating-across-documents: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/browsing-the-web/scroll-to-fragid: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/browsing-the-web/unloading-documents: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/embedded-content/the-iframe-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+== 语料盘点（wpt-data 本地 .html，含子目录）==
+  navigation-api                 439 案
+  navigation-api/navigation-methods/return-value    73 案
+  navigation-api/navigation-methods/resources     5 案
+  navigation-api/navigation-history-entry/resources     5 案
+  navigation-api/state/resources     0 案
+  navigation-api/precommit-handler/resources     0 案
+  navigation-api/focus-reset/resources     0 案
+  navigation-api/ordering-and-transition/resources     1 案
+  navigation-api/navigate-event/resources     9 案
+  navigation-api/navigation-activation/resources     1 案
+  navigation-api/per-entry-events/resources     0 案
+  html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources     4 案
+  html/browsers/browsing-the-web/navigating-across-documents/initial-empty-document/resources     1 案
+  html/browsers/browsing-the-web/navigating-across-documents/multiple-globals/resources     0 案
+  html/browsers/browsing-the-web/navigating-across-documents/resources    24 案
+  html/browsers/history/the-history-interface   111 案
+  html/browsers/history/the-location-interface    98 案
+  html/browsers/history/the-session-history-of-browsing-contexts     5 案
+  html/browsers/history/joint-session-history     8 案
+  html/browsers/browsing-the-web/history-traversal    79 案
+  html/browsers/browsing-the-web/navigating-across-documents   127 案
+  html/browsers/browsing-the-web/scroll-to-fragid    24 案
+  html/browsers/browsing-the-web/unloading-documents    83 案
+  html/semantics/embedded-content/the-iframe-element   161 案
+== M1 下一步（rally 轮，契约见 docs/goal/navigation-compat.md DC-1）==
+  1. runner 通道：zero-wpt-runner 新增 testharness 子命令 + per-dir skip 规则
+  2. Makefile：fetch-wpt / testharness target（test-guard 包裹，照 testharness-fs 先例）
+  3. 基线：分类通过率（文本 + JSON）落 docs/goal/navigation-compat/evidence/
+  4. 回填：docs/compat/trends/wpt-suites.csv planned 行转数据行（evidence 列给来源）
+rustc -O scripts/test-guard.rs -o target/test-guard
+cargo build --release --bin zero-wpt-runner
+   Compiling zero-engine v0.1.0 (/lzcapp/document/work/ZeroWeb-3/crates/engine)
+   Compiling zero-page-runtime v0.1.0 (/lzcapp/document/work/ZeroWeb-3/crates/page-runtime)
+   Compiling zero-webview v0.1.0 (/lzcapp/document/work/ZeroWeb-3/crates/webview)
+   Compiling zero-wpt-runner v0.1.0 (/lzcapp/document/work/ZeroWeb-3/tests/wpt-runner)
+    Finished `release` profile [optimized] target(s) in 31.60s
+./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 2700 -- ./target/release/zero-wpt-runner testharness-navigation replace-before-load
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/a-click-during-load.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/a-click-during-load.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 3211, 938], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/a-click-during-pageshow.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/a-click-during-pageshow.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 3211, 946], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/a-click.html :: aElement.click() before the load event must NOT replace
+  assert_equals: expected "https://wpt.test/common/blank.html?thereplacement" but got "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/code-injector.html?pipe=sub(none)&code=%0A%20%20%20%20const%20a%20%3D%20document.createElement(%22a%22)%3B%0A%20%20%20%20a.href%20%3D%20%22%2Fcommon%2Fblank.html%3Fthereplacement%22%3B%0A%20%20%20%20document.currentScript.before(a)%3B%0A%20%20%20%20a.click()%3B%0A%20%20"
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/a-user-click-during-load.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/a-user-click-during-load.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 3211, 23873, 1052], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/a-user-click-during-pageshow.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/a-user-click-during-pageshow.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 3211, 23873, 1060], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/a-user-click.html :: User click on <a> before the load event must NOT replace
+  assert_equals: expected "https://wpt.test/common/blank.html?thereplacement" but got "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/slow-code-injector.html?pipe=sub(none)&code=%0A%20%20%20%20const%20a%20%3D%20document.createElement(%22a%22)%3B%0A%20%20%20%20a.href%20%3D%20%22%2Fcommon%2Fblank.html%3Fthereplacement%22%3B%0A%20%20%20%20a.id%20%3D%20%22the-anchor%22%3B%0A%20%20%20%20a.textContent%20%3D%20%22needs%20to%20have%20content%20to%20be%20clickable%22%3B%0A%20%20%20%20document.currentScript.before(a)%3B%0A%20%20%20%20parent.test_driver.click(a)%3B%0A%20%20"
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-requestsubmit-during-load.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-requestsubmit-during-load.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 3211, 1286], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-requestsubmit-during-pageshow.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-requestsubmit-during-pageshow.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 3211, 1294], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-requestsubmit.html :: Replace before load, triggered by formElement.requestSubmit()
+  assert_equals: expected "https://wpt.test/common/blank.html?thereplacement=" but got "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/code-injector.html?pipe=sub(none)&code=%0A%20%20%20%20const%20form%20%3D%20document.createElement(%22form%22)%3B%0A%20%20%20%20form.action%20%3D%20%22%2Fcommon%2Fblank.html%22%3B%0A%0A%20%20%20%20const%20input%20%3D%20document.createElement(%22input%22)%3B%0A%20%20%20%20input.type%20%3D%20%22hidden%22%3B%0A%20%20%20%20input.name%20%3D%20%22thereplacement%22%3B%0A%20%20%20%20form.append(input)%3B%0A%0A%20%20%20%20document.currentScript.before(form)%3B%0A%20%20%20%20form.requestSubmit()%3B%0A%20%20"
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-button-click-during-load.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-button-click-during-load.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 3211, 1383], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-button-click-during-pageshow.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-button-click-during-pageshow.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 3211, 1391], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-button-click.html :: Replace before load, triggered by submitButton.click()
+  assert_equals: expected "https://wpt.test/common/blank.html?thereplacement=" but got "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/code-injector.html?pipe=sub(none)&code=%0A%20%20%20%20const%20form%20%3D%20document.createElement(%22form%22)%3B%0A%20%20%20%20form.action%20%3D%20%22%2Fcommon%2Fblank.html%22%3B%0A%0A%20%20%20%20const%20input%20%3D%20document.createElement(%22input%22)%3B%0A%20%20%20%20input.type%20%3D%20%22hidden%22%3B%0A%20%20%20%20input.name%20%3D%20%22thereplacement%22%3B%0A%20%20%20%20form.append(input)%3B%0A%0A%20%20%20%20const%20button%20%3D%20document.createElement(%22button%22)%3B%0A%20%20%20%20button.type%20%3D%20%22submit%22%3B%0A%20%20%20%20form.append(button)%3B%0A%0A%20%20%20%20document.currentScript.before(form)%3B%0A%20%20%20%20button.click()%3B%0A%20%20"
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-cross-frame-crossorigin.sub.html :: No replace before load, triggered by cross-iframe formElement.submit() [iframe is cross-origin]
+  promise_test: Unhandled rejection with value: object "TypeError: Invalid URL host: {{hosts[][www]}}"
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-cross-frame.html :: No replace before load, triggered by cross-iframe formElement.submit()
+  assert_equals: frame's onload not fired yet expected (undefined) undefined but got (boolean) true
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-during-load.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-during-load.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 3211, 1279], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-during-pageshow.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit-during-pageshow.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 3211, 1287], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/form-submit.html :: Replace before load, triggered by same-document formElement.submit()
+  assert_equals: expected "https://wpt.test/common/blank.html?thereplacement=" but got "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/code-injector.html?pipe=sub(none)&code=%0A%20%20%20%20const%20form%20%3D%20document.createElement(%22form%22)%3B%0A%20%20%20%20form.action%20%3D%20%22%2Fcommon%2Fblank.html%22%3B%0A%0A%20%20%20%20const%20input%20%3D%20document.createElement(%22input%22)%3B%0A%20%20%20%20input.type%20%3D%20%22hidden%22%3B%0A%20%20%20%20input.name%20%3D%20%22thereplacement%22%3B%0A%20%20%20%20form.append(input)%3B%0A%0A%20%20%20%20document.currentScript.before(form)%3B%0A%20%20%20%20form.submit()%3B%0A%20%20"
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/history-pushstate-during-load.html :: history.pushState() during the load event must NOT replace
+  assert_equals: history.length must change after waiting for the replacement expected 2 but got 1
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/history-pushstate-during-pageshow.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/history-pushstate-during-pageshow.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 3211, 894], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/history-pushstate.html :: history.pushState() before the load event must NOT replace
+  assert_equals: history.length must change after waiting for the replacement expected 2 but got 1
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/iframe-src-during-load.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/iframe-src-during-load.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 3211, 1082], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/iframe-src-during-pageshow.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/iframe-src-during-pageshow.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 3211, 1090], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/iframe-src.html :: Replace before load, triggered by setting iframeElement.src
+  assert_equals: onload must not yet have fired expected (undefined) undefined but got (boolean) true
+Pass html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-assign-during-load.html :: Replace during the load event, triggered by location.assign()
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-assign-during-pageshow.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-assign-during-pageshow.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 3211, 1047], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-assign-user-click.html :: NO replace before load, triggered by location.assign()
+  assert_equals: expected "https://wpt.test/common/blank.html?thereplacement" but got "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/slow-code-injector.html?pipe=sub(none)&code=%0A%20%20%20%20const%20button%20%3D%20document.createElement(%22button%22)%3B%0A%20%20%20%20button.id%20%3D%20%22the-button%22%3B%0A%20%20%20%20button.textContent%20%3D%20%22needs%20to%20have%20content%20to%20be%20clickable%22%3B%0A%20%20%20%20button.onclick%20%3D%20()%20%3D%3E%20%7B%20location.assign(%22%2Fcommon%2Fblank.html%3Fthereplacement%22)%3B%20%7D%3B%0A%20%20%20%20document.currentScript.before(button)%3B%0A%20%20%20%20parent.test_driver.click(button)%3B%0A%20%20"
+Pass html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-assign.html :: Replace before load, triggered by location.assign()
+Pass html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter-during-load.html :: href
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter-during-load.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter-during-load.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 3211, 2764], state={"loaded":true,"pending":2,"phase":4,"tests":3}, test_wait=false)
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter-during-pageshow.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter-during-pageshow.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 3211, 2786], state={"loaded":true,"pending":3,"phase":4,"tests":3}, test_wait=false)
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter-user-click.html :: href
+  assert_equals: expected "https://wpt.test/common/blank.html?thereplacement" but got "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/slow-code-injector.html?pipe=sub(none)&code=%0A%20%20%20%20const%20button%20%3D%20document.createElement(%22button%22)%3B%0A%20%20%20%20button.id%20%3D%20%22the-button%22%3B%0A%20%20%20%20button.textContent%20%3D%20%22needs%20to%20have%20content%20to%20be%20clickable%22%3B%0A%20%20%20%20button.onclick%20%3D%20()%20%3D%3E%20%7B%20location.href%20%3D%20%22%2Fcommon%2Fblank.html%3Fthereplacement%22%3B%20%7D%3B%0A%20%20%20%20document.currentScript.before(button)%3B%0A%20%20%20%20parent.test_driver.click(button)%3B%0A%20%20"
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter-user-click.html :: search
+  assert_equals: expected "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/slow-code-injector.html?thereplacement" but got "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/slow-code-injector.html?pipe=sub(none)&code=%0A%20%20%20%20const%20button%20%3D%20document.createElement(%22button%22)%3B%0A%20%20%20%20button.id%20%3D%20%22the-button%22%3B%0A%20%20%20%20button.textContent%20%3D%20%22needs%20to%20have%20content%20to%20be%20clickable%22%3B%0A%20%20%20%20button.onclick%20%3D%20()%20%3D%3E%20%7B%20location.search%20%3D%20%22thereplacement%22%3B%20%7D%3B%0A%20%20%20%20document.currentScript.before(button)%3B%0A%20%20%20%20parent.test_driver.click(button)%3B%0A%20%20"
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter-user-click.html :: hash
+  assert_equals: expected "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/slow-code-injector.html?pipe=sub(none)&code=%0A%20%20%20%20const%20button%20%3D%20document.createElement(%22button%22)%3B%0A%20%20%20%20button.id%20%3D%20%22the-button%22%3B%0A%20%20%20%20button.textContent%20%3D%20%22needs%20to%20have%20content%20to%20be%20clickable%22%3B%0A%20%20%20%20button.onclick%20%3D%20()%20%3D%3E%20%7B%20location.hash%20%3D%20%22thereplacement%22%3B%20%7D%3B%0A%20%20%20%20document.currentScript.before(button)%3B%0A%20%20%20%20parent.test_driver.click(button)%3B%0A%20%20#thereplacement" but got "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/slow-code-injector.html?pipe=sub(none)&code=%0A%20%20%20%20const%20button%20%3D%20document.createElement(%22button%22)%3B%0A%20%20%20%20button.id%20%3D%20%22the-button%22%3B%0A%20%20%20%20button.textContent%20%3D%20%22needs%20to%20have%20content%20to%20be%20clickable%22%3B%0A%20%20%20%20button.onclick%20%3D%20()%20%3D%3E%20%7B%20location.hash%20%3D%20%22thereplacement%22%3B%20%7D%3B%0A%20%20%20%20document.currentScript.before(button)%3B%0A%20%20%20%20parent.test_driver.click(button)%3B%0A%20%20"
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter-user-mouseup.html :: href
+  assert_equals: expected "https://wpt.test/common/blank.html?thereplacement" but got "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/slow-code-injector.html?pipe=sub(none)&code=%0A%20%20%20%20const%20button%20%3D%20document.createElement(%22button%22)%3B%0A%20%20%20%20button.id%20%3D%20%22the-button%22%3B%0A%20%20%20%20button.textContent%20%3D%20%22needs%20to%20have%20content%20to%20be%20clickable%22%3B%0A%20%20%20%20button.onmouseup%20%3D%20()%20%3D%3E%20%7B%20location.href%20%3D%20%22%2Fcommon%2Fblank.html%3Fthereplacement%22%3B%20%7D%3B%0A%20%20%20%20document.currentScript.before(button)%3B%0A%20%20%20%20parent.test_driver.click(button)%3B%0A%20%20"
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter-user-mouseup.html :: search
+  assert_equals: expected "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/slow-code-injector.html?thereplacement" but got "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/slow-code-injector.html?pipe=sub(none)&code=%0A%20%20%20%20const%20button%20%3D%20document.createElement(%22button%22)%3B%0A%20%20%20%20button.id%20%3D%20%22the-button%22%3B%0A%20%20%20%20button.textContent%20%3D%20%22needs%20to%20have%20content%20to%20be%20clickable%22%3B%0A%20%20%20%20button.onmouseup%20%3D%20()%20%3D%3E%20%7B%20location.search%20%3D%20%22thereplacement%22%3B%20%7D%3B%0A%20%20%20%20document.currentScript.before(button)%3B%0A%20%20%20%20parent.test_driver.click(button)%3B%0A%20%20"
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter-user-mouseup.html :: hash
+  assert_equals: expected "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/slow-code-injector.html?pipe=sub(none)&code=%0A%20%20%20%20const%20button%20%3D%20document.createElement(%22button%22)%3B%0A%20%20%20%20button.id%20%3D%20%22the-button%22%3B%0A%20%20%20%20button.textContent%20%3D%20%22needs%20to%20have%20content%20to%20be%20clickable%22%3B%0A%20%20%20%20button.onmouseup%20%3D%20()%20%3D%3E%20%7B%20location.hash%20%3D%20%22thereplacement%22%3B%20%7D%3B%0A%20%20%20%20document.currentScript.before(button)%3B%0A%20%20%20%20parent.test_driver.click(button)%3B%0A%20%20#thereplacement" but got "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/slow-code-injector.html?pipe=sub(none)&code=%0A%20%20%20%20const%20button%20%3D%20document.createElement(%22button%22)%3B%0A%20%20%20%20button.id%20%3D%20%22the-button%22%3B%0A%20%20%20%20button.textContent%20%3D%20%22needs%20to%20have%20content%20to%20be%20clickable%22%3B%0A%20%20%20%20button.onmouseup%20%3D%20()%20%3D%3E%20%7B%20location.hash%20%3D%20%22thereplacement%22%3B%20%7D%3B%0A%20%20%20%20document.currentScript.before(button)%3B%0A%20%20%20%20parent.test_driver.click(button)%3B%0A%20%20"
+Pass html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter.html :: href
+Fail html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter.html :: search
+  assert_equals: expected "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/code-injector.html?thereplacement" but got "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources/code-injector.html?pipe=sub(none)&code=location.search%20%3D%20%60thereplacement%60%3B"
+Timeout html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter.html :: html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/location-setter.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 3211, 2488], state={"loaded":true,"pending":1,"phase":4,"tests":3}, test_wait=false)
+make: *** [Makefile:452：testharness-navigation] 错误 1
+exit=2

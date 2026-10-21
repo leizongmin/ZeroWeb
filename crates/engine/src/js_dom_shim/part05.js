@@ -3677,7 +3677,12 @@
           }
         } catch (_eHistTarget) {}
       }
-      globalThis.__zw_reload_iframe(frame, targetUrl, flags || {});
+      var _rlFlags = flags || {};
+      // navigation-compat M3-S4：子发起标记——replace-before-load「置换前载入」
+      // 仅作用于子文档自导航（location/history 面）；父层 src 属性更替维持 push
+      //（R388 契约面，js_dom_bridge part25）。
+      _rlFlags.__zwChildNav = true;
+      globalThis.__zw_reload_iframe(frame, targetUrl, _rlFlags);
     }
     function iframeResolveHistoryUrl(url) {
       if (url == null) return doc && doc._zwURL ? String(doc._zwURL) : 'about:blank';
@@ -3723,7 +3728,8 @@
           if (frame && typeof globalThis.__zw_reload_iframe === 'function') {
             // viaNavigation：子发起导航不经「process the iframe attributes」，即使
             // srcdoc 属性仍在场也按 URL 取资源（about:srcdoc 只由属性处理路径服务）。
-            globalThis.__zw_reload_iframe(frame, iframeResolveHistoryUrl(v), { viaNavigation: true });
+            // __zwChildNav：M3-S4 replace-before-load 仅作用子发起（R388 父层 src 更替维持 push）。
+            globalThis.__zw_reload_iframe(frame, iframeResolveHistoryUrl(v), { viaNavigation: true, __zwChildNav: true });
           }
         },
         get protocol() { var u = parsed(); return u ? u.protocol : ''; },

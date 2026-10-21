@@ -205,6 +205,167 @@ fn m3s2_child_body_inner_text() {
     );
 }
 
+/// M3-S4 子文档载入中自导航（spec
+/// https://html.spec.whatwg.org/multipage/iframe-embed-object.html#the-iframe-element
+/// ——pending 初始导航被载入中自导航取代：被取代文档不派元素 load，最终只派一次
+/// load 且地址为取代后文档）。replace-before-load 族 waitForLoad 首断言面。
+#[test]
+fn m3s4_child_during_load_self_nav_single_load() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = m3s2_sandbox(
+        "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/probe.html",
+        "<html><body></body></html>",
+    );
+    let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let log_fetch = log.clone();
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            let url = args.get(2).cloned().unwrap_or_default();
+            log_fetch.lock().unwrap().push(format!("fetch:{}", url));
+            if url.contains("injector") {
+                "__zwfr:200\x1fOK\x1fcontent-type\x1etext/html\x1e\x1f<script>location.href = 'https://wpt.test/common/blank.html?repl';</script>".to_string()
+            } else {
+                "__zwfr:200\x1fOK\x1fcontent-type\x1etext/html\x1e\x1f<p>t</p>".to_string()
+            }
+        }),
+    );
+    let log_js = log.clone();
+    sandbox.register_callback(
+        "__zw_report",
+        Box::new(move |args| {
+            log_js.lock().unwrap().push(args.first().cloned().unwrap_or_default());
+            "".to_string()
+        }),
+    );
+    sandbox
+        .execute(
+            "var iframe = document.createElement('iframe');\
+             iframe.src = 'https://wpt.test/html/scratch/injector.html';\
+             var n = 0;\
+             iframe.addEventListener('load', function () {\
+               n++;\
+               __zw_report('load' + n + ':' + iframe.contentWindow.location.href);\
+             });\
+             document.body.appendChild(iframe);",
+        )
+        .unwrap();
+    for _ in 0..8 {
+        sandbox.execute("0").unwrap();
+    }
+    sandbox
+        .execute(
+            "__zw_report('final:' + iframe.contentWindow.location.href + '#n=' + n +\
+             '#hlen=' + iframe.contentWindow.history._entries.length + '#plen=' + history.length);",
+        )
+        .unwrap();
+    let seq = log.lock().unwrap().clone();
+    let loads: Vec<&String> = seq.iter().filter(|l| l.starts_with("load")).collect();
+    assert_eq!(
+        loads.len(),
+        1,
+        "被取代文档不派元素 load——恰一次（实际序列 {seq:?}）"
+    );
+    assert!(
+        loads[0].ends_with("blank.html?repl"),
+        "load 事件时点地址已是取代后文档（实际 {seq:?}）"
+    );
+    assert!(
+        seq.last().is_some_and(|l| l == "final:https://wpt.test/common/blank.html?repl#n=1#hlen=1#plen=1"),
+        "终态地址 + 计数 + 子局部历史折叠为 1 条（replace 不 push）+ 父窗长度不膨胀（实际 {seq:?}）"
+    );
+}
+
+/// M3-S4 父窗 back 的 frame 局部回退（spec
+/// https://html.spec.whatwg.org/multipage/nav-history-apis.html#joint-session-history
+/// 联合遍历最小近似——顶层账本无更早条目时落最近活动 frame 的局部前一条目）。
+/// replace-before-load checkSentinelIframe 断言面（ONE history.back() 必须把
+/// 哨兵 iframe 驱回前一条目）：两段属性载入（src 更换 push 子局部历史）后父窗
+/// back → frame 以 {history:true} 重载回首段地址 + 元素 load 派发 + 子局部
+/// 历史弹出收缩；父窗 history.length 不膨胀。
+#[test]
+fn m3s4_parent_back_falls_back_to_frame_local_history() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = m3s2_sandbox(
+        "https://wpt.test/html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/sentinel.html",
+        "<html><body></body></html>",
+    );
+    let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let log_fetch = log.clone();
+    sandbox.register_callback(
+        "__zw_fetch",
+        Box::new(move |args| {
+            let url = args.get(2).cloned().unwrap_or_default();
+            log_fetch.lock().unwrap().push(format!("fetch:{}", url));
+            format!("__zwfr:200\x1fOK\x1fcontent-type\x1etext/html\x1e\x1f<p>{}</p>", url)
+        }),
+    );
+    let log_js = log.clone();
+    sandbox.register_callback(
+        "__zw_report",
+        Box::new(move |args| {
+            log_js.lock().unwrap().push(args.first().cloned().unwrap_or_default());
+            "".to_string()
+        }),
+    );
+    sandbox
+        .execute(
+            "var iframe = document.createElement('iframe');\
+             iframe.src = 'https://wpt.test/x/s-start.html';\
+             var n = 0;\
+             iframe.addEventListener('load', function () {\
+               n++;\
+               __zw_report('load' + n + ':' + iframe.contentWindow.location.href);\
+             });\
+             document.body.appendChild(iframe);",
+        )
+        .unwrap();
+    for _ in 0..8 {
+        sandbox.execute("0").unwrap();
+    }
+    // 第二段属性载入：src 更换（载入后 push 子局部历史 → [s-start, s-end]）。
+    sandbox
+        .execute("document.querySelector('iframe').src = 'https://wpt.test/x/s-end.html';")
+        .unwrap();
+    for _ in 0..8 {
+        sandbox.execute("0").unwrap();
+    }
+    // 父窗 back：顶层账本无更早条目（history.length 1）→ frame 局部回退。
+    sandbox
+        .execute("__zw_report('pre:' + history.length + ':' + iframe.contentWindow.history._entries.length); history.back();")
+        .unwrap();
+    for _ in 0..8 {
+        sandbox.execute("0").unwrap();
+    }
+    sandbox
+        .execute(
+            "__zw_report('post:' + iframe.contentWindow.location.href + ':' +\
+             iframe.contentWindow.history._entries.length + ':' + history.length);",
+        )
+        .unwrap();
+    let seq = log.lock().unwrap().clone();
+    assert!(
+        seq.iter().any(|l| l == "pre:1:2"),
+        "回退前父窗长度 1、子局部历史 2 条（实际序列 {seq:?}）"
+    );
+    let loads: Vec<&String> = seq.iter().filter(|l| l.starts_with("load")).collect();
+    assert_eq!(
+        loads.len(),
+        3,
+        "三段载入各派一次元素 load（s-start / s-end / back 重载）（实际序列 {seq:?}）"
+    );
+    assert!(
+        seq.iter().any(|l| l == "load3:https://wpt.test/x/s-start.html"),
+        "父窗 back 重载落子局部前一条目（实际序列 {seq:?}）"
+    );
+    assert!(
+        seq.iter().any(|l| l == "post:https://wpt.test/x/s-start.html:1:1"),
+        "回退后子局部历史弹出收缩为 1 条、父窗长度恒 1（实际序列 {seq:?}）"
+    );
+}
+
 /// M3-S3 联合 iframe session history（spec
 /// https://html.spec.whatwg.org/multipage/nav-history-apis.html#joint-session-history
 /// ——父窗 history back/forward 覆盖子同文档条目；父窗 `_hist_entries`/

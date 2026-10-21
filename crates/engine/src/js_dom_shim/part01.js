@@ -1332,6 +1332,9 @@
   // win }）——静态 `<iframe src="/common/dummy.xml|.xhtml">` 用例族（Document-createElement /
   // case / createElementNS 等 ~750 subtest）经此取子文档。导航清空（页级）。
   var _iframeDocCache = {};
+  // navigation-compat M3-S4：iframe 导航序号（父窗 back 的 frame 局部回退目标选取
+  // ——最近活动 frame 优先；_zwJointFrameBackTarget 消费）。
+  var _zwIframeNavSeq = 0;
   var _zwIframeFetchSeq = 0;
   function _zwIframeKindFromUrl(url) {
     return /\.xhtml(\?|#|$)/i.test(url) ? 'xhtml'
@@ -1771,14 +1774,17 @@
       // （globalThis）仍是宿主（近似——子文档脚本一般经 window 显式访问）。
       // https://html.spec.whatwg.org/multipage/nav-history-apis.html#the-window-object
       // Iframe scripts resolve browser globals against their child Window.
+      // navigation-compat M3-S4：history 入形参表——replace-before-load 族注入代码
+      // `history.pushState(...)` 裸标识符此前误解析父窗 history（pushState 落父窗
+      // 账本、子窗 URL 不变）。
       var fn = new Function(
         'window', 'self', 'parent', 'top', 'document', 'location',
-        'navigator', 'XMLHttpRequest', 'fetch', 'Headers', 'Request', 'Response', 'URL', 'caches',
+        'navigator', 'XMLHttpRequest', 'fetch', 'Headers', 'Request', 'Response', 'URL', 'caches', 'history',
         combined206 + exportSuffix206);
       fn.call(
         win, win, win, globalThis, globalThis, doc, loc,
         win.navigator, win.XMLHttpRequest, win.fetch, win.Headers, win.Request,
-        win.Response, win.URL, win.caches
+        win.Response, win.URL, win.caches, win.history
       );
     } catch (_eR206x) {
       try { win.unexpectedException = _eR206x; } catch (_eR206w) {}
@@ -1916,11 +1922,22 @@
     var _zwPrevServed = previous && previous !== entry;
     if (_zwPrevServed && previous.doc) entry.servedDoc = previous.doc;
     entry.history = previous && previous.history ? previous.history.slice() : [];
+    // navigation-compat M3-S4：replace-before-load（spec
+    // https://html.spec.whatwg.org/multipage/nav-history-apis.html#navigate
+    // 「置换前载入」面——iframe 首次 load 事件未派前的自导航**替换**当前会话条目，
+    // 不 push；replace-before-load 38 案簇断言面）。loadedOnce 随 entry 链承继。
+    entry.loadedOnce = !!(previous && previous.loadedOnce);
     if (flags && flags.history && entry.history.length > 1) {
       entry.history.pop();
     } else if (entry.url && (!entry.history.length || entry.history[entry.history.length - 1] !== entry.url)) {
-      entry.history.push(entry.url);
+      if (flags && flags.__zwChildNav &&
+          previous && previous.history && previous.history.length && !previous.loadedOnce) {
+        entry.history[entry.history.length - 1] = entry.url; // 前载入被取代文档：原地替换
+      } else {
+        entry.history.push(entry.url);
+      }
     }
+    entry._zwNavSeq = ++_zwIframeNavSeq;
     // https://html.spec.whatwg.org/multipage/nav-history-apis.html#session-history
     // Cross-document iframe navigations replace the Window but preserve the nested
     // browsing context's session history for history.go()/back().
@@ -1947,6 +1964,9 @@
           // 通道回落 'no-src'——同为终态文档）。error 态 doc 为 null，翻转即回归
           // 既有「contentDocument null」语义。
           if (_zwPrevServed) entry.servedDoc = entry.doc;
+          // navigation-compat M3-S4：首 load 已派——后续导航按 push 记账
+          //（replace-before-load 翻转点；被取代文档的 dispatch 因 entry 失位不达此处）。
+          entry.loadedOnce = true;
           // navigation-compat M3：UA 派发的 iframe 元素 load 是 trusted event
           //（iframe-load-event「e.isTrusted」断言面）——R312 `__zwMakeTrustedEvent`
           // 出口（dispatch guard 对无 _zwUaDispatch 印记的事件翻 isTrusted=false）。
@@ -1986,6 +2006,9 @@
             _zwIframeWin.__zwRunInlineScripts();
           }
         } catch (_eIframeScript) {}
+        // navigation-compat M3-S4：与 reload 路径同批的首 load 翻转（src 先于插入
+        // 设定的 iframe 走本通道——loadedOnce 翻转点不缺位）。
+        try { entry.loadedOnce = true; } catch (_eLoadOnce) {}
         try {
           frame.dispatchEvent(typeof globalThis.__zwMakeTrustedEvent === 'function'
             ? globalThis.__zwMakeTrustedEvent('load')

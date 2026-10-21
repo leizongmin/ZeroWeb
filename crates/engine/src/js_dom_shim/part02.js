@@ -6510,6 +6510,28 @@
       } catch (_eJf5) {}
     });
   };
+  // navigation-compat M3-S4：frame 局部回退目标选取——顶层账本无可达条目时，
+  // 取**最近活动**（_zwNavSeq 最大）且局部历史 >1 条目的 iframe，落其前一条目
+  //（spec
+  // https://html.spec.whatwg.org/multipage/nav-history-apis.html#joint-session-history
+  // 联合遍历的最小近似——replace-before-load 哨兵面：iframe 载入后自导航 push
+  // 子局部历史，父窗 history.back() 驱动 frame 局部 back）。FIXME(joint-frame-forward)：
+  // entry.history pop 模型无前向槽——仅支持 delta −1；FIXME(joint-frame-back)：
+  // 多 frame 在场按最近活动近似，不做联合序并序。
+  function _zwJointFrameBackTarget() {
+    var bestKey = null, bestSeq = -1;
+    for (var key in _iframeDocCache) {
+      var e = _iframeDocCache[key];
+      if (!e || !e.doc || !e.history || e.history.length < 2) continue;
+      var seq = e._zwNavSeq || 0;
+      if (seq > bestSeq) { bestSeq = seq; bestKey = key; }
+    }
+    if (bestKey == null) return null;
+    var prev = _iframeDocCache[bestKey].history[_iframeDocCache[bestKey].history.length - 2];
+    var frame = _proxyCache[bestKey];
+    if (prev == null || !frame) return null;
+    return { frame: frame, url: prev };
+  }
   function _hist_applyTopTraversal(delta, ctrl, atEnd, info) {
     var target = _hist_cursor + delta;
     if (target < 0 || target > _hist_entries.length - 1) {
@@ -6524,11 +6546,29 @@
           var pe = _navNavAbortError();
           ctrl.reject(pe);
           ctrl.finishedSettle(pe, true);
-        } else {
-          var ie = new (globalThis.DOMException || DOMException)('Cannot go back or forward.', 'InvalidStateError');
-          ctrl.reject(ie);
-          ctrl.finishedSettle(ie, true);
+          return;
         }
+      }
+      // M3-S4：frame 局部回退（仅 delta −1，见 _zwJointFrameBackTarget 注释）——
+      // ctrl 结算镜像同目标分支（resolve + 延迟 finishedSettle），落地走
+      // {history:true} 重载（frame 局部 pop 记账 + 元素 load 派发）。
+      if (delta === -1 && !(ctrl && atEnd)) {
+        var _fbT = _zwJointFrameBackTarget();
+        if (_fbT) {
+          if (ctrl) {
+            _defer(function () {
+              if (ctrl.resolve) ctrl.resolve(_navPub(_navCurrent()));
+              if (ctrl.finishedSettle) ctrl.finishedSettle(null, false, _navPub(_navCurrent()));
+            });
+          }
+          globalThis.__zw_reload_iframe(_fbT.frame, _fbT.url, { history: true });
+          return;
+        }
+      }
+      if (ctrl) {
+        var ie = new (globalThis.DOMException || DOMException)('Cannot go back or forward.', 'InvalidStateError');
+        ctrl.reject(ie);
+        ctrl.finishedSettle(ie, true);
       }
       return;
     }

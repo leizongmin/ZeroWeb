@@ -7681,7 +7681,15 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     let body = if clean.ends_with(".html") {
                         match std::str::from_utf8(&bytes) {
                             Ok(html) => {
-                                let inlined = inline_local_scripts(html, &root, clean);
+                                // navigation-compat M3-S4（wptserve 模板面）：fetch 通道
+                                // .html 按该请求查询串做 `{{GET[name]}}` 替换——上游
+                                // wptserve 对每请求资源注入（replace-before-load 族
+                                // code-injector.html?code=<enc js> 载体；主文档通道
+                                // run_testharness_html_inner 已替换，iframe 子文档此前拿
+                                // 字面量 → 注入脚本语法错误，自导航从未发生）。替换先于
+                                // 脚本内联（注入代码须进提取出的 script 源）。
+                                let substituted = wpt_apply_get_query_substitutions(html.to_string(), query);
+                                let inlined = inline_local_scripts(&substituted, &root, clean);
                                 let inlined_bytes = inlined.clone().into_bytes();
                                 (inlined_bytes, inlined)
                             }
@@ -7752,6 +7760,34 @@ fn wpt_query_value(query: &str, name: &str) -> Option<String> {
                 .to_string(),
         )
     })
+}
+
+/// wptserve `{{GET[name]}}` 查询模板替换（fetch 通道 .html——iframe 子文档面）。
+/// 上游 wptserve 对每请求资源按**该请求查询串**注入模板（wpt.py 模板语义；
+/// replace-before-load 族的 code-injector.html?code=<enc js> 即此载体——主文档通道
+/// run_testharness_html_inner 侧已替换，子文档此前拿字面量 → 注入脚本语法错误）。
+/// 值全集百分号解码（脚本通道 security-hardening M2-s4 的五项最小表不够——注入
+/// 代码含 %0A/%3D/%3B/%2F/%60）；无匹配占位符 → 空串（上游缺参语义）。
+fn wpt_apply_get_query_substitutions(mut body: String, query: &str) -> String {
+    if !body.contains("{{GET[") {
+        return body;
+    }
+    for pair in query.split('&') {
+        if pair.is_empty() {
+            continue;
+        }
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        let decoded = percent_encoding::percent_decode_str(value)
+            .decode_utf8_lossy()
+            .to_string();
+        body = body.replace(&format!("{{{{GET[{key}]}}}}"), &decoded);
+    }
+    // 残留 `{{GET[...]}}`（查询未提供）→ 空串。
+    while let Some(start) = body.find("{{GET[") {
+        let Some(end) = body[start..].find("}}") else { break };
+        body.replace_range(start..start + end + 2, "");
+    }
+    body
 }
 
 fn wpt_url_origin(url: &str) -> String {
