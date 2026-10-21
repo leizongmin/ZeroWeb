@@ -1,31 +1,34 @@
 # SVG 文档面兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../svg-compat.md](../svg-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-21（M2 S2b 落地）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-21（M2 S2c 落地）
 
 ## 当前状态
 
-**M2 S2b 完成（2026-10-21）**：值对象批落地——SVGMatrix/Rect/Point/Angle/
-Number 值对象 + SVGAnimated{Integer,Enumeration,Boolean,Angle,Rect,
-PreserveAspectRatio} 反射 + 17 接口枚举常量与关键词表 + SVGSVGElement
-createSVG{Matrix,Rect,Point,Number,Angle} 工厂族 + ownerSVGElement
-（foreignObject 边界清零）+ marker setOrientToAngle/Auto。part04 R3037
-type/method 对 SVG ns 放行（style/script tag 门控保留 reflected string）。
-types 子面 **399P/208F/0T**（S2a 279P/281F，+120P/-73F）；全 corpus 486 案
-**554P/1006F/32T**（+124P/-77F，Timeout 32 持平，全绿案 33→63，
-逐案零真回归；通过率口径注：554/1610 含 NR 子测试 = 34.4%，S2a 记账的
-27.5% 同口径，evidence 记 34.8% 为不含 NR 分母）；S2b 靶面案全绿（Enumeration initial-values 48/48、
-MarkerElement 5/5、SVGMatrix 9/9、ownerSVGElement 16/16 等 35 案）。机制探针
-8/8。卡点：无。下一步：M2 S2c——SVGNumberList/LengthList（numberOfItems/
-parse-invalid-clears 语义）+ SVGPointList/SVGStringList 存在性，解锁
-SameObject-identity 41 断言（transform.baseVal.getItem 死点）。
+**M2 S2c 完成（2026-10-21）**：List/Transform 批落地——值列表引擎
+（SVG{Length,Number,Point,String}List：parse-invalid-clears/条目混合态
+live+快照回落/变更面全表/IndexSizeError 域/写透序列化）+ SVGTransform
+（type/matrix SameObject 就地更新 + set* 族）+ SVGTransformList（live 对象
+存储 + 所有权语义：无主收编/已属插副本 + consolidate 归并）+ 反射挂点
+（SVGTextPositioningElement x/y/dx/dy/rotate、polygon/polyline
+points/animatedPoints、SVGTests requiredExtensions/systemLanguage、
+SVGGraphicsElement.transform、pattern/gradientTransform、
+createSVGTransform 工厂）。types 子面 **491P/191F/0T**（S2b 399P/208F，
++92P/-17F）；全 corpus 486 案 **681P/965F/32T/18NR = 40.2%**（含 NR 口径，
++127P/-41F，Timeout 32 持平，全绿案 63→76，逐案零真回归；分母
+1610→1696 为 SameObject-identity 早崩释放披露面）；S2c 靶面 13 案全绿
+（**SameObject-identity 81/81**——S2a 挂账 41 断言死点随 transform 反射
+解除、TransformList.list-01 14/14、systemLanguage-parsing 13/13、LengthList
+四案等）。机制探针 7/7。卡点：无。下一步：M2 S3——SVGSVGElement 面
+（pauseAnimations 族 stub + currentTranslate 真对象复核 + CTM；盘点见
+evidence/2026-10-21-m2-s3-svgsvgelement-prep.md）。
 
 ## 缺口清单
 
 | # | 缺口 | 状态 |
 |---|------|------|
 | P1 | svg/ corpus 导入 + 基线 + 渲染断言面占比盘点 | ✅ M1（2026-10-21，8.8% 基线） |
-| P2 | SVG DOM 类层级 + SVGSVGElement viewBox/CTM 最小面 | ⏳ M2（S1 ✅ S2a ✅ S2b ✅ 2026-10-21，S2c→S4 进行中） |
+| P2 | SVG DOM 类层级 + SVGSVGElement viewBox/CTM 最小面 | ⏳ M2（S1 ✅ S2a ✅ S2b ✅ S2c ✅ 2026-10-21，S3→S4 进行中） |
 | P3 | SVGGeometryElement 几何接口 + 事件目标化 | ⏳ M3 |
 | P4 | SMIL 评估 + 渲染断言面挂账定稿 | ⏳ M4 |
 
@@ -48,21 +51,27 @@ SameObject-identity 41 断言（transform.baseVal.getItem 死点）。
   types 399P/208F/0T（+120P）；全 corpus 554P/1006F/32T = 34.8%（+124P，
   全绿案 33→63，零真回归）；S2b 靶面 35 案全绿。证据：
   evidence/2026-10-21-m2-s2b-value-objects-landing.md。
+- **M2 S2c（2026-10-21）**：List/Transform 批（本 session 端到端持有——
+  List 案语义精读、值列表引擎 + Transform live 对象存储、探针一轮修正、
+  两轮全量对账）。types 491P/191F/0T（+92P）；全 corpus
+  681P/965F/32T/18NR = 40.2%（+127P，全绿案 63→76，零真回归）；S2c 靶面
+  13 案全绿（SameObject-identity 81/81 解锁）。证据：
+  evidence/2026-10-21-m2-s2c-list-transform-landing.md。
 
 ## 下一步计划
 
-1. **M2 S2c List 类型**：SVGNumberList/LengthList（numberOfItems/
-   parse-invalid-clears-items 语义）+ SVGPointList/SVGStringList 存在性；
-   SVGTransform 面评估（transform 反射 + SameObject-identity 41 断言解锁）。
-2. **M2 S3 SVGSVGElement 面**：动画控制 stub（pauseAnimations 族，释放
-   动画面 275 案脚手架）+ 工厂族剩余 + currentTranslate 反射 + CTM
-   （盘点见 evidence/2026-10-21-m2-s3-svgsvgelement-prep.md）；S3 落地后
+1. **M2 S3 SVGSVGElement 面**：动画控制 stub（pauseAnimations 族，释放
+   动画面 275 案脚手架）+ 工厂族剩余 + currentTranslate 反射（S2c 后
+   SameObject-identity 的 DOMPointReadOnly 断言系 undefined 恒等假绿，
+   S3 须落真对象复核）+ CTM（盘点见
+   evidence/2026-10-21-m2-s3-svgsvgelement-prep.md）；S3 落地后
    M4 SMIL 分类账须重跑（当前时序面被脚手架遮蔽，见
    evidence/2026-10-21-m4-smil-assessment-prep.md）。
-3. **M2 S4 几何面**：S4a getTotalLength/getPointAtLength 纯路径数学 →
-   S4b getBBox 形状属性级 bbox → S4c pathData API 评估；文本几何 ~55F
-   挂账候选（盘点见 evidence/2026-10-21-m2-s4-geometry-prep.md）。
-4. **上下文换算补面（S2a FIXME）**：SVGLength 关联元素的 em/ex/percentage
+2. **M2 S4 几何面**：S4a getTotalLength/getPointAtLength 纯路径数学 →
+   S4b getBBox 形状属性级 bbox（S2c 残余 svgtransformlist-replaceitem
+   卡点即 getBBox）→ S4c pathData API 评估；文本几何 ~55F 挂账候选
+   （盘点见 evidence/2026-10-21-m2-s4-geometry-prep.md）。
+3. **上下文换算补面（S2a FIXME）**：SVGLength 关联元素的 em/ex/percentage
    上下文（SVGLength-viewport 8F / percentage-directionality 6F）——与 S4b
    getBBox 的几何上下文同批评估。
 

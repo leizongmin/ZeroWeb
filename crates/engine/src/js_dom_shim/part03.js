@@ -2432,10 +2432,16 @@
   // SVGLength 实例工厂：el 为 null → detached（createSVGLength 面，闭包自持状态）；
   // 否则 reflected（live 解析 el 内容属性，写透 setAttribute——同步经 proxy 方法）。
   // readOnly → animVal 面（变更面抛 NoModificationAllowedError，spec 读-only 步骤①）。
-  var _zwMakeSVGLength = function (el, attr, initial, readOnly) {
+  // listCtx（S2c-a 列表条目）→ cur/write 路由到列表引擎的按位读写（条目 i 读属性
+  // 串第 i 个 token、写重建串）；seedState → detached 初始态（removeItem 返回的
+  // 脱离条目按快照态构建——spec 条目脱离列表后值保留）。
+  var _zwMakeSVGLength = function (el, attr, initial, readOnly, listCtx, seedState) {
     var sl = new _zwSvgLengthCtor();
-    var st = el ? null : { ut: 1, vu: 0 };
+    var st = el ? null
+      : (seedState ? { ut: seedState.ut || 1, vu: seedState.vu || 0, su: seedState.su || '' }
+        : { ut: 1, vu: 0 });
     var cur = function () {
+      if (listCtx) return listCtx.cur();
       if (!el) return st;
       var raw = null;
       try { raw = el.getAttribute(attr); } catch (_eRd) { raw = null; }
@@ -2444,6 +2450,7 @@
       return p || { ut: 1, vu: 0 };
     };
     var write = function (vu, ut, src) {
+      if (listCtx) return listCtx.write(vu, ut, src);
       if (!el) { st.ut = ut; st.vu = vu; st.cf = src && src.cf; st.su = src && src.su; return; }
       var suffix = (src && src.su) || _zwSvgLenSuffixes[ut] || '';
       try { el.setAttribute(attr, _zwSvgLenFmt(vu) + suffix); } catch (_eWr) {}
@@ -3550,6 +3557,774 @@
         return null;
       },
     });
+  }
+  // svg-compat M2 S2c-a：List 类型底座（spec SVG2 types.html §InterfaceSVGLengthList
+  // / §InterfaceSVGNumberList / §InterfaceSVGPointList / §InterfaceSVGStringList /
+  // §InterfaceSVGAnimatedLengthList / §InterfaceSVGAnimatedNumberList；TransformList
+  // 面随 SVGTransform 落 S2c-b）。语义要点（WPT 对位）：
+  // - parse-invalid-clears（WPT SVGList-parse-invalid-clears-items）：length/number
+  //   列表任一 token 非法 → 整表清空（0 items）；point 列表坐标对贪心配对、奇数尾
+  //   坐标截断（'0,0 100,0 20' → 2 items）但非法 token 仍整表清空；string 列表逗号
+  //   分隔 + ASCII whitespace trim、空 token 保留（HTML set-of-comma-separated-tokens：
+  //   '' → ['']、',' → ['','']、双逗号产空 token——WPT systemLanguage-parsing）。
+  // - 条目混合态（WPT SVGLengthList-appendItemFromClearedList /
+  //   SVGAnimatedLengthList 'dynamic'）：getItem(i) 返回绑定 (el, attr, i) 的条目
+  //   wrapper——getter 重读内容属性、越界回落 getItem 时快照（来源列表 clear 后
+  //   旧条目值仍可读）；setter 写透重建属性串；每次调用返回新 wrapper（列表条目
+  //   无 SameObject 约束，spec 无 [SameObject] 标注）。
+  // - 变更面（spec SVGListBase 语义 + WPT SVGLengthList-basics/getItem/appendItem）：
+  //   initialize/getItem/insertItemBefore/replaceItem/removeItem/appendItem/clear +
+  //   legacy length getter + 索引 getter（Proxy get trap）；索引 setter TypeError
+  //   （Proxy set trap——列表接口无 indexed setter）。条目类型不符 TypeError（先于
+  //   index 归一）；index WebIDL unsigned long（'aString'/对象/null → 0、负 →
+  //   mod 2³²）；getItem/removeItem 越界 IndexSizeError、replaceItem index ≥
+  //   numberOfItems IndexSizeError、insertItemBefore/appendItem clamp 尾插。
+  //   animVal 只读列表：变更方法抛 NoModificationAllowedError。removeItem 返回
+  //   **脱离**条目（快照态构建——live 绑定会读到后移位条目，WPT
+  //   SVGTransformList.list-01 removeItem 返回值断言）。
+  // - SameObject：Animated wrapper 与 SVGTests/points 直接列表经 _zwSvgAnimCache
+  //   缓存（WPT SameObject-identity）；baseVal 与 animVal 恒异体（spec）。
+  // 反射挂点：SVGTextContentElement x/y/dx/dy（LengthList）+ rotate（NumberList）
+  //（text/tspan/textPath 经 S1 层级继承）；SVGPolygon/PolylineElement
+  // points/animatedPoints；SVGElement requiredExtensions/systemLanguage（SVGTests
+  // 面——readonly SVGStringList 无 Animated wrapper，spec SVG2 struct.html
+  // §InterfaceSVGTests）。
+  var _zwSvgLengthListCtor = globalThis.SVGLengthList;
+  if (!_zwSvgLengthListCtor) {
+    _zwSvgLengthListCtor = new Function('return function SVGLengthList() {}')();
+    globalThis.SVGLengthList = _zwSvgLengthListCtor;
+    Object.defineProperty(_zwSvgLengthListCtor.prototype, Symbol.toStringTag, { value: 'SVGLengthList' });
+  }
+  var _zwSvgNumberListCtor = globalThis.SVGNumberList;
+  if (!_zwSvgNumberListCtor) {
+    _zwSvgNumberListCtor = new Function('return function SVGNumberList() {}')();
+    globalThis.SVGNumberList = _zwSvgNumberListCtor;
+    Object.defineProperty(_zwSvgNumberListCtor.prototype, Symbol.toStringTag, { value: 'SVGNumberList' });
+  }
+  var _zwSvgPointListCtor = globalThis.SVGPointList;
+  if (!_zwSvgPointListCtor) {
+    _zwSvgPointListCtor = new Function('return function SVGPointList() {}')();
+    globalThis.SVGPointList = _zwSvgPointListCtor;
+    Object.defineProperty(_zwSvgPointListCtor.prototype, Symbol.toStringTag, { value: 'SVGPointList' });
+  }
+  var _zwSvgStringListCtor = globalThis.SVGStringList;
+  if (!_zwSvgStringListCtor) {
+    _zwSvgStringListCtor = new Function('return function SVGStringList() {}')();
+    globalThis.SVGStringList = _zwSvgStringListCtor;
+    Object.defineProperty(_zwSvgStringListCtor.prototype, Symbol.toStringTag, { value: 'SVGStringList' });
+  }
+  var _zwSvgAnimatedLengthListCtor = globalThis.SVGAnimatedLengthList;
+  if (!_zwSvgAnimatedLengthListCtor) {
+    _zwSvgAnimatedLengthListCtor = new Function('return function SVGAnimatedLengthList() {}')();
+    globalThis.SVGAnimatedLengthList = _zwSvgAnimatedLengthListCtor;
+    Object.defineProperty(_zwSvgAnimatedLengthListCtor.prototype, Symbol.toStringTag, { value: 'SVGAnimatedLengthList' });
+  }
+  var _zwSvgAnimatedNumberListCtor = globalThis.SVGAnimatedNumberList;
+  if (!_zwSvgAnimatedNumberListCtor) {
+    _zwSvgAnimatedNumberListCtor = new Function('return function SVGAnimatedNumberList() {}')();
+    globalThis.SVGAnimatedNumberList = _zwSvgAnimatedNumberListCtor;
+    Object.defineProperty(_zwSvgAnimatedNumberListCtor.prototype, Symbol.toStringTag, { value: 'SVGAnimatedNumberList' });
+  }
+  // 列表 token 解析（kind → fn(raw) → 态数组）。raw null（属性缺省）→ 空表；
+  // 空串按各 kind 语法解析（string 列表 '' → ['']——空串是合法单 token）。
+  var _zwSvgListParse = {
+    length: function (raw) {
+      if (raw == null) return [];
+      var toks = String(raw).split(/[\s,]+/);
+      var out = [];
+      for (var i = 0; i < toks.length; i++) {
+        if (toks[i] === '') continue;
+        var p = _zwSvgLenParse(toks[i]);
+        if (!p) return []; // 任一 token 非法 → 整表清空（WPT parse-invalid-clears）
+        out.push(p);
+      }
+      return out;
+    },
+    number: function (raw) {
+      if (raw == null) return [];
+      var toks = String(raw).split(/[\s,]+/);
+      var out = [];
+      for (var i = 0; i < toks.length; i++) {
+        if (toks[i] === '') continue;
+        var n = Number(toks[i]);
+        if (!isFinite(n)) return [];
+        out.push({ vu: n });
+      }
+      return out;
+    },
+    point: function (raw) {
+      if (raw == null) return [];
+      var toks = String(raw).split(/[\s,]+/);
+      var nums = [];
+      for (var i = 0; i < toks.length; i++) {
+        if (toks[i] === '') continue;
+        var n = Number(toks[i]);
+        if (!isFinite(n)) return []; // 非法 token → 整表清空
+        nums.push(n);
+      }
+      // 坐标对贪心配对、奇数尾截断（'0,0 100,0 20' → 2 items）。
+      var out = [];
+      for (var j = 0; j + 1 < nums.length; j += 2) out.push({ x: nums[j], y: nums[j + 1] });
+      return out;
+    },
+    string: function (raw) {
+      if (raw == null) return [];
+      // 逗号分隔不折叠；token 首尾 ASCII whitespace trim；空 token 保留。
+      var parts = String(raw).split(',');
+      for (var i = 0; i < parts.length; i++) {
+        parts[i] = parts[i].replace(/^[ \t\n\f\r]+/, '').replace(/[ \t\n\f\r]+$/, '');
+      }
+      return parts;
+    },
+  };
+  // 列表序列化（kind → fn(态数组) → 属性串；写透形态与 WPT getAttribute 断言对位
+  //——length/number 空格分隔、point 'x,y' 对空格分隔、string 逗号连接）。
+  var _zwSvgListFmt = {
+    length: function (arr) {
+      var parts = [];
+      for (var i = 0; i < arr.length; i++) {
+        parts.push(_zwSvgLenFmt(arr[i].vu) + (arr[i].su || _zwSvgLenSuffixes[arr[i].ut] || ''));
+      }
+      return parts.join(' ');
+    },
+    number: function (arr) {
+      var parts = [];
+      for (var i = 0; i < arr.length; i++) parts.push(_zwSvgLenFmt(arr[i].vu));
+      return parts.join(' ');
+    },
+    point: function (arr) {
+      var parts = [];
+      for (var i = 0; i < arr.length; i++) parts.push(_zwSvgLenFmt(arr[i].x) + ',' + _zwSvgLenFmt(arr[i].y));
+      return parts.join(' ');
+    },
+    string: function (arr) { return arr.join(','); },
+  };
+  // WebIDL unsigned long index 归一（'aString'/对象/null → NaN → 0；负数 mod 2³²
+  //——WPT getItem('aString')/getItem(element)/getItem(null) 全落 index 0）。
+  var _zwSvgListIdx = function (v) {
+    var n = Number(v);
+    if (isNaN(n)) n = 0;
+    return n >>> 0;
+  };
+  // 条目类型校验 + 状态提取（kind 表）。string 条目是 DOMString 原始值（String
+  // 归一，无 TypeError 面）。
+  var _zwSvgListItemCheck = {
+    length: function (it) { return it instanceof _zwSvgLengthCtor; },
+    number: function (it) { return it instanceof _zwSvgNumberCtor; },
+    point: function (it) { return it instanceof _zwSvgPointCtor; },
+    string: function (it) { return true; },
+  };
+  var _zwSvgListItemState = {
+    length: function (it) { return { ut: it.unitType, vu: it.valueInSpecifiedUnits, su: '' }; },
+    number: function (it) { return { vu: it.value }; },
+    point: function (it) { return { x: it.x, y: it.y }; },
+    string: function (it) { return String(it); },
+  };
+  // 列表引擎：kind ∈ length/number/point/string，readOnly → animVal 面。列表对象
+  // 是 Proxy（legacy length getter + 索引 getter 走 get trap 实时解析；索引 setter
+  // 抛 TypeError——spec 列表接口无 indexed setter，WPT SVGLengthList-basics
+  // 'list[0] = 30' 簇）。
+  var _zwSvgListCtors = {
+    length: _zwSvgLengthListCtor,
+    number: _zwSvgNumberListCtor,
+    point: _zwSvgPointListCtor,
+    string: _zwSvgStringListCtor,
+  };
+  var _zwMakeSvgList = function (kind, el, attr, readOnly) {
+    var target = new _zwSvgListCtors[kind]();
+    var parse = function () {
+      var raw = null;
+      try { raw = el.getAttribute(attr); } catch (_eRd) { raw = null; }
+      return _zwSvgListParse[kind](raw);
+    };
+    var roThrow = function () {
+      throw _zwSvgLenDomErr(kind + ' list is read-only', 'NoModificationAllowedError');
+    };
+    var write = function (arr) {
+      try { el.setAttribute(attr, _zwSvgListFmt[kind](arr)); } catch (_eWr) {}
+    };
+    // 绑定条目 wrapper（live 读 + 越界快照回落 + 写透）。length 条目复用
+    // _zwMakeSVGLength 完整接口（listCtx 路由）；number/point 独立轻量面。
+    var makeItem = function (idx, snap) {
+      if (kind === 'string') return snap;
+      if (kind === 'length') {
+        return _zwMakeSVGLength(el, attr, null, readOnly, {
+          cur: function () {
+            var arr = parse();
+            return idx < arr.length ? arr[idx] : snap;
+          },
+          write: function (vu, ut, src) {
+            var arr = parse();
+            if (idx >= arr.length) return;
+            arr[idx] = { ut: ut, vu: vu, su: (src && src.su) || '' };
+            write(arr);
+          },
+        });
+      }
+      if (kind === 'number') {
+        var nn = new _zwSvgNumberCtor();
+        Object.defineProperty(nn, 'value', {
+          configurable: true,
+          get: function () {
+            var arr = parse();
+            return idx < arr.length ? arr[idx].vu : snap;
+          },
+          set: function (v) {
+            if (readOnly) roThrow();
+            var n = Number(v);
+            if (!isFinite(n)) throw new TypeError('The provided float value is non-finite');
+            var arr = parse();
+            if (idx >= arr.length) return;
+            arr[idx] = { vu: n };
+            write(arr);
+          },
+        });
+        return nn;
+      }
+      // point 条目：x/y 独立 accessor（任一字段写重建整串）。
+      var pt = new _zwSvgPointCtor();
+      var ptField = function (field, snapV) {
+        Object.defineProperty(pt, field, {
+          configurable: true,
+          get: function () {
+            var arr = parse();
+            return idx < arr.length ? arr[idx][field] : snapV;
+          },
+          set: function (v) {
+            if (readOnly) roThrow();
+            var n = Number(v);
+            if (!isFinite(n)) throw new TypeError('The provided float value is non-finite');
+            var arr = parse();
+            if (idx >= arr.length) return;
+            var cur2 = { x: arr[idx].x, y: arr[idx].y };
+            cur2[field] = n;
+            arr[idx] = cur2;
+            write(arr);
+          },
+        });
+      };
+      ptField('x', snap.x);
+      ptField('y', snap.y);
+      return pt;
+    };
+    // 脱离条目（removeItem 返回——快照态，无列表绑定）。
+    var makeDetachedItem = function (state) {
+      if (kind === 'string') return state;
+      if (kind === 'length') return _zwMakeSVGLength(null, null, null, false, null, state);
+      if (kind === 'number') {
+        var nn = _zwMakeSVGNumber();
+        nn.value = state.vu;
+        return nn;
+      }
+      var pt = _zwMakeSVGPoint();
+      pt.x = state.x;
+      pt.y = state.y;
+      return pt;
+    };
+    target.clear = function () {
+      if (readOnly) roThrow();
+      write([]);
+    };
+    target.initialize = function (item) {
+      if (readOnly) roThrow();
+      if (!_zwSvgListItemCheck[kind](item)) throw new TypeError('wrong item type for ' + kind + ' list');
+      var st = _zwSvgListItemState[kind](item);
+      write([st]);
+      return makeItem(0, st);
+    };
+    target.getItem = function (i) {
+      var arr = parse();
+      var idx = _zwSvgListIdx(i);
+      if (idx >= arr.length) throw _zwSvgLenDomErr('index out of range', 'IndexSizeError');
+      return makeItem(idx, arr[idx]);
+    };
+    target.insertItemBefore = function (item, i) {
+      if (readOnly) roThrow();
+      if (!_zwSvgListItemCheck[kind](item)) throw new TypeError('wrong item type for ' + kind + ' list');
+      var arr = parse();
+      var idx = Math.min(_zwSvgListIdx(i), arr.length);
+      var st = _zwSvgListItemState[kind](item);
+      arr.splice(idx, 0, st);
+      write(arr);
+      return makeItem(idx, st);
+    };
+    target.replaceItem = function (item, i) {
+      if (readOnly) roThrow();
+      if (!_zwSvgListItemCheck[kind](item)) throw new TypeError('wrong item type for ' + kind + ' list');
+      var arr = parse();
+      var idx = _zwSvgListIdx(i);
+      if (idx >= arr.length) throw _zwSvgLenDomErr('index out of range', 'IndexSizeError');
+      var st = _zwSvgListItemState[kind](item);
+      arr[idx] = st;
+      write(arr);
+      return makeItem(idx, st);
+    };
+    target.removeItem = function (i) {
+      if (readOnly) roThrow();
+      var arr = parse();
+      var idx = _zwSvgListIdx(i);
+      if (idx >= arr.length) throw _zwSvgLenDomErr('index out of range', 'IndexSizeError');
+      var removed = arr.splice(idx, 1)[0];
+      write(arr);
+      return makeDetachedItem(removed);
+    };
+    target.appendItem = function (item) {
+      if (readOnly) roThrow();
+      if (!_zwSvgListItemCheck[kind](item)) throw new TypeError('wrong item type for ' + kind + ' list');
+      var arr = parse();
+      var st = _zwSvgListItemState[kind](item);
+      arr.push(st);
+      write(arr);
+      return makeItem(arr.length - 1, st);
+    };
+    return new Proxy(target, {
+      get: function (t, p) {
+        if (typeof p === 'string') {
+          if (p === 'numberOfItems' || p === 'length') return parse().length;
+          if (/^(0|[1-9][0-9]*)$/.test(p)) {
+            var arr = parse();
+            var idx = p >>> 0;
+            if (idx < arr.length) return makeItem(idx, arr[idx]);
+            return undefined;
+          }
+        }
+        return t[p];
+      },
+      set: function (t, p, v) {
+        if (typeof p === 'string' && /^(0|[1-9][0-9]*)$/.test(p)) {
+          throw new TypeError('SVG list has no indexed setter');
+        }
+        t[p] = v;
+        return true;
+      },
+    });
+  };
+  // 直接列表取值（SVGTests/points 面——无 Animated wrapper，SameObject 经缓存）。
+  var _zwGetSvgList = function (el, prop, attr, kind, readOnly) {
+    var k = _zwSvgAnimKey(el, prop);
+    if (k && _zwSvgAnimCache[k]) return _zwSvgAnimCache[k];
+    var l = _zwMakeSvgList(kind, el, attr, readOnly);
+    if (k) _zwSvgAnimCache[k] = l;
+    return l;
+  };
+  // Animated 列表 wrapper（baseVal/animVal 异体，spec「animVal 恒异于 baseVal」）。
+  var _zwMakeAnimatedLengthList = function (el, attr) {
+    var w = new _zwSvgAnimatedLengthListCtor();
+    var base = _zwMakeSvgList('length', el, attr, false);
+    var anim = _zwMakeSvgList('length', el, attr, true);
+    Object.defineProperty(w, 'baseVal', { configurable: true, get: function () { return base; } });
+    Object.defineProperty(w, 'animVal', { configurable: true, get: function () { return anim; } });
+    return w;
+  };
+  var _zwGetAnimatedLengthList = function (el, prop, attr) {
+    var k = _zwSvgAnimKey(el, prop);
+    if (k && _zwSvgAnimCache[k]) return _zwSvgAnimCache[k];
+    var w = _zwMakeAnimatedLengthList(el, attr);
+    if (k) _zwSvgAnimCache[k] = w;
+    return w;
+  };
+  var _zwMakeAnimatedNumberList = function (el, attr) {
+    var w = new _zwSvgAnimatedNumberListCtor();
+    var base = _zwMakeSvgList('number', el, attr, false);
+    var anim = _zwMakeSvgList('number', el, attr, true);
+    Object.defineProperty(w, 'baseVal', { configurable: true, get: function () { return base; } });
+    Object.defineProperty(w, 'animVal', { configurable: true, get: function () { return anim; } });
+    return w;
+  };
+  var _zwGetAnimatedNumberList = function (el, prop, attr) {
+    var k = _zwSvgAnimKey(el, prop);
+    if (k && _zwSvgAnimCache[k]) return _zwSvgAnimCache[k];
+    var w = _zwMakeAnimatedNumberList(el, attr);
+    if (k) _zwSvgAnimCache[k] = w;
+    return w;
+  };
+  // 反射注册：S2a _zwDefSvgProps 同款 prototype accessor（R93 原型链回落派发）。
+  // x/y/dx/dy/rotate 挂 **SVGTextPositioningElement**（spec 仅 text/tspan 有定位
+  // 列表——textPath 是 SVGTextContentElement 无 x/y 面）。
+  if (globalThis.SVGTextPositioningElement && globalThis.SVGTextPositioningElement.prototype) {
+    var _zwTcp = globalThis.SVGTextPositioningElement.prototype;
+    var _zwTcpList = { x: 'x', y: 'y', dx: 'dx', dy: 'dy' };
+    for (var _zwTclName in _zwTcpList) {
+      (function (prop, attr) {
+        if (!Object.prototype.hasOwnProperty.call(_zwTcp, prop)) {
+          Object.defineProperty(_zwTcp, prop, {
+            configurable: true,
+            get: function () { return _zwGetAnimatedLengthList(this, prop, attr); },
+          });
+        }
+      })(_zwTclName, _zwTcpList[_zwTclName]);
+    }
+    if (!Object.prototype.hasOwnProperty.call(_zwTcp, 'rotate')) {
+      Object.defineProperty(_zwTcp, 'rotate', {
+        configurable: true,
+        get: function () { return _zwGetAnimatedNumberList(this, 'rotate', 'rotate'); },
+      });
+    }
+  }
+  var _zwSvgPolyIfaces = ['SVGPolygonElement', 'SVGPolylineElement'];
+  for (var _zwPi = 0; _zwPi < _zwSvgPolyIfaces.length; _zwPi++) {
+    var _zwPolyIface = globalThis[_zwSvgPolyIfaces[_zwPi]];
+    if (!_zwPolyIface || !_zwPolyIface.prototype) continue;
+    (function (proto) {
+      if (!Object.prototype.hasOwnProperty.call(proto, 'points')) {
+        Object.defineProperty(proto, 'points', {
+          configurable: true,
+          get: function () { return _zwGetSvgList(this, 'points', 'points', 'point', false); },
+        });
+      }
+      if (!Object.prototype.hasOwnProperty.call(proto, 'animatedPoints')) {
+        Object.defineProperty(proto, 'animatedPoints', {
+          configurable: true,
+          get: function () { return _zwGetSvgList(this, 'animatedPoints', 'points', 'point', true); },
+        });
+      }
+    })(_zwPolyIface.prototype);
+  }
+  if (globalThis.SVGElement && globalThis.SVGElement.prototype) {
+    var _zwSep = globalThis.SVGElement.prototype;
+    var _zwSvgTestsAttrs = { requiredExtensions: 'requiredExtensions', systemLanguage: 'systemLanguage' };
+    for (var _zwStaName in _zwSvgTestsAttrs) {
+      (function (prop) {
+        if (!Object.prototype.hasOwnProperty.call(_zwSep, prop)) {
+          Object.defineProperty(_zwSep, prop, {
+            configurable: true,
+            get: function () { return _zwGetSvgList(this, prop, prop, 'string', true); },
+          });
+        }
+      })(_zwStaName);
+    }
+  }
+  // svg-compat M2 S2c-b：SVGTransform + SVGTransformList（spec SVG2 coords.html
+  // §InterfaceSVGTransform / §InterfaceSVGTransformList）。与 S2c-a 值列表的关键
+  // 差异：TransformList 条目是 **live 对象存储**（list-02：appendItem 进 list1 的
+  // 同一 transform 对象 setTranslate 后 list1[1] 值同步——属性串只是派生序列化，
+  // 不能按串重解析丢对象身份）。语义要点：
+  // - SVGTransform：type（SVG_TRANSFORM_* 0..6）+ matrix SameObject（单实例就地
+  //   更新——set* 族经 S2b matrix 校验 setter 重写 a..f）；setTranslate/setScale/
+  //   setRotate/setSkewX/setSkewY（setMatrix 未实现 FIXME——corpus 未消费）。
+  // - transform 属性解析：锚定扫描（fn 名严格 + 全串须为合法 fn 序列，残渣非
+  //   分隔符 → 整表清空——WPT SVGList-parse-invalid-clears 'translate(10,20)
+  //   INVALID' → 0 items）；rotate 中心点公式 e = cx(1-cos) + cy·sin。
+  // - 条目所有权（list-02 'appendItem() with SVGTransform that already exist'）：
+  //   无主条目按引用收编（live），已属他列表 → 插入副本（快照态）。
+  // - consolidate（§InterfaceSVGTransformList）：空表 null、只读抛
+  //   NoModificationAllowedError、否则按序 post-multiply 归并为单 MATRIX 条目。
+  // - 反射：SVGGraphicsElement.transform + SVGPatternElement.patternTransform +
+  //   SVGGradientElement.gradientTransform（Animated wrapper SameObject 缓存）+
+  //   SVGSVGElement.createSVGTransform 工厂。
+  var _zwSvgTransformCtor = globalThis.SVGTransform;
+  if (!_zwSvgTransformCtor) {
+    _zwSvgTransformCtor = new Function('return function SVGTransform() {}')();
+    globalThis.SVGTransform = _zwSvgTransformCtor;
+    // spec SVG1.1 IDL SVG_TRANSFORM_*。
+    _zwSvgTransformCtor.SVG_TRANSFORM_UNKNOWN = 0;
+    _zwSvgTransformCtor.SVG_TRANSFORM_MATRIX = 1;
+    _zwSvgTransformCtor.SVG_TRANSFORM_TRANSLATE = 2;
+    _zwSvgTransformCtor.SVG_TRANSFORM_SCALE = 3;
+    _zwSvgTransformCtor.SVG_TRANSFORM_ROTATE = 4;
+    _zwSvgTransformCtor.SVG_TRANSFORM_SKEWX = 5;
+    _zwSvgTransformCtor.SVG_TRANSFORM_SKEWY = 6;
+    Object.defineProperty(_zwSvgTransformCtor.prototype, Symbol.toStringTag, { value: 'SVGTransform' });
+  }
+  var _zwSvgTransformListCtor = globalThis.SVGTransformList;
+  if (!_zwSvgTransformListCtor) {
+    _zwSvgTransformListCtor = new Function('return function SVGTransformList() {}')();
+    globalThis.SVGTransformList = _zwSvgTransformListCtor;
+    Object.defineProperty(_zwSvgTransformListCtor.prototype, Symbol.toStringTag, { value: 'SVGTransformList' });
+  }
+  var _zwSvgAnimatedTransformListCtor = globalThis.SVGAnimatedTransformList;
+  if (!_zwSvgAnimatedTransformListCtor) {
+    _zwSvgAnimatedTransformListCtor = new Function('return function SVGAnimatedTransformList() {}')();
+    globalThis.SVGAnimatedTransformList = _zwSvgAnimatedTransformListCtor;
+    Object.defineProperty(_zwSvgAnimatedTransformListCtor.prototype, Symbol.toStringTag, { value: 'SVGAnimatedTransformList' });
+  }
+  // transform 属性锚定解析（fn 序列 → 态数组）。返回 {type, a..f}；语法残渣
+  // （非分隔符）→ []（parse-invalid-clears 语义，对位 S2c-a）。
+  var _zwSvgTransformParse = function (raw) {
+    if (raw == null) return [];
+    var s = String(raw);
+    var out = [];
+    var pos = 0;
+    var rad = function (d) { return d * Math.PI / 180; };
+    while (pos < s.length) {
+      while (pos < s.length && /[\s,]/.test(s[pos])) pos++;
+      if (pos >= s.length) break;
+      var m = /^(matrix|translate|scale|rotate|skewX|skewY)\s*\(([^)]*)\)/.exec(s.slice(pos));
+      if (!m) return [];
+      var args = [];
+      var toks = m[2].split(/[\s,]+/);
+      for (var i = 0; i < toks.length; i++) {
+        if (toks[i] === '') continue;
+        var n = Number(toks[i]);
+        if (!isFinite(n)) return [];
+        args.push(n);
+      }
+      var fn = m[1];
+      var st = null;
+      if (fn === 'matrix') {
+        if (args.length !== 6) return [];
+        st = { type: 1, a: args[0], b: args[1], c: args[2], d: args[3], e: args[4], f: args[5] };
+      } else if (fn === 'translate') {
+        if (args.length < 1 || args.length > 2) return [];
+        st = { type: 2, a: 1, b: 0, c: 0, d: 1, e: args[0], f: args.length > 1 ? args[1] : 0 };
+      } else if (fn === 'scale') {
+        if (args.length < 1 || args.length > 2) return [];
+        var sy = args.length > 1 ? args[1] : args[0];
+        st = { type: 3, a: args[0], b: 0, c: 0, d: sy, e: 0, f: 0 };
+      } else if (fn === 'rotate') {
+        if (args.length < 1 || args.length > 3) return [];
+        var cx = args.length > 1 ? args[1] : 0;
+        var cy = args.length > 2 ? args[2] : 0;
+        var co = Math.cos(rad(args[0])), si = Math.sin(rad(args[0]));
+        st = { type: 4, a: co, b: si, c: -si, d: co, e: cx * (1 - co) + cy * si, f: cy * (1 - co) - cx * si };
+      } else if (fn === 'skewX') {
+        if (args.length !== 1) return [];
+        st = { type: 5, a: 1, b: 0, c: Math.tan(rad(args[0])), d: 1, e: 0, f: 0 };
+      } else {
+        if (args.length !== 1) return [];
+        st = { type: 6, a: 1, b: Math.tan(rad(args[0])), c: 0, d: 1, e: 0, f: 0 };
+      }
+      out.push(st);
+      pos += m[0].length;
+    }
+    return out;
+  };
+  // 态 → 属性串（canonical 形态；corpus 不断言变更后属性串形态——仅保读路径
+  // round-trip 'translate(100)' 不重写）。
+  var _zwSvgTransformFmt = function (st) {
+    if (st.type === 2) return 'translate(' + _zwSvgLenFmt(st.e) + ', ' + _zwSvgLenFmt(st.f) + ')';
+    if (st.type === 3) return 'scale(' + _zwSvgLenFmt(st.a) + ', ' + _zwSvgLenFmt(st.d) + ')';
+    if (st.type === 4) return 'rotate(' + _zwSvgLenFmt(Math.atan2(st.b, st.a) * 180 / Math.PI) + ')';
+    if (st.type === 5) return 'skewX(' + _zwSvgLenFmt(Math.atan(st.c) * 180 / Math.PI) + ')';
+    if (st.type === 6) return 'skewY(' + _zwSvgLenFmt(Math.atan(st.b) * 180 / Math.PI) + ')';
+    return 'matrix(' + _zwSvgLenFmt(st.a) + ', ' + _zwSvgLenFmt(st.b) + ', ' + _zwSvgLenFmt(st.c)
+      + ', ' + _zwSvgLenFmt(st.d) + ', ' + _zwSvgLenFmt(st.e) + ', ' + _zwSvgLenFmt(st.f) + ')';
+  };
+  // 2×3 post-multiply（S2b multiply 同式——consolidate 归并用）。
+  var _zwSvgTransformMul = function (p, q) {
+    return {
+      a: p.a * q.a + p.c * q.b, b: p.b * q.a + p.d * q.b,
+      c: p.a * q.c + p.c * q.d, d: p.b * q.c + p.d * q.d,
+      e: p.a * q.e + p.c * q.f + p.e, f: p.b * q.e + p.d * q.f + p.f,
+    };
+  };
+  // SVGTransform 实例（detached，state 可由 set* 族重写；matrix 单实例就地更新；
+  // initState → 从解析态构建——列表条目/consolidate 载体）。
+  var _zwMakeSVGTransform = function (initState) {
+    var t = new _zwSvgTransformCtor();
+    var m = _zwMakeSVGMatrix();
+    var type = 1;
+    var setAll = function (ty, st) {
+      m.a = st.a; m.b = st.b; m.c = st.c; m.d = st.d; m.e = st.e; m.f = st.f;
+      type = ty;
+    };
+    if (initState) setAll(initState.type, initState);
+    Object.defineProperty(t, 'type', { configurable: true, get: function () { return type; } });
+    Object.defineProperty(t, 'matrix', { configurable: true, get: function () { return m; } });
+    var num = function (v) {
+      var n = Number(v);
+      if (!isFinite(n)) throw new TypeError('The provided float value is non-finite');
+      return n;
+    };
+    t.setTranslate = function (x, y) {
+      setAll(2, { a: 1, b: 0, c: 0, d: 1, e: num(x), f: y === undefined ? 0 : num(y) });
+    };
+    t.setScale = function (x, y) {
+      setAll(3, { a: num(x), b: 0, c: 0, d: y === undefined ? num(x) : num(y), e: 0, f: 0 });
+    };
+    t.setRotate = function (angle, cx, cy) {
+      var r = num(angle) * Math.PI / 180;
+      var co = Math.cos(r), si = Math.sin(r);
+      var px = cx === undefined ? 0 : num(cx);
+      var py = cy === undefined ? 0 : num(cy);
+      setAll(4, { a: co, b: si, c: -si, d: co, e: px * (1 - co) + py * si, f: py * (1 - co) - px * si });
+    };
+    t.setSkewX = function (angle) {
+      setAll(5, { a: 1, b: 0, c: Math.tan(num(angle) * Math.PI / 180), d: 1, e: 0, f: 0 });
+    };
+    t.setSkewY = function (angle) {
+      setAll(6, { a: 1, b: Math.tan(num(angle) * Math.PI / 180), c: 0, d: 1, e: 0, f: 0 });
+    };
+    // 对象态抽取（所有权克隆 / consolidate / 序列化消费）。
+    t.__zwTransformState = function () {
+      return { type: type, a: m.a, b: m.b, c: m.c, d: m.d, e: m.e, f: m.f };
+    };
+    return t;
+  };
+  var _zwTransformFromState = function (st) {
+    return _zwMakeSVGTransform(st);
+  };
+  // TransformList：条目 live 对象存储 + 属性串派生缓存（raw 变更才重解析——
+  // 条目对象跨读保身份）。readOnly → animVal。
+  var _zwMakeSvgTransformList = function (el, attr, readOnly) {
+    var target = new _zwSvgTransformListCtor();
+    var cacheRaw = null;
+    var cacheArr = null;
+    var parse = function () {
+      var raw = null;
+      try { raw = el.getAttribute(attr); } catch (_eRd) { raw = null; }
+      if (cacheArr && raw === cacheRaw) return cacheArr;
+      var sts = _zwSvgTransformParse(raw);
+      var arr = [];
+      for (var i = 0; i < sts.length; i++) arr.push(_zwTransformFromState(sts[i]));
+      cacheRaw = raw;
+      cacheArr = arr;
+      return arr;
+    };
+    var roThrow = function () {
+      throw _zwSvgLenDomErr('transform list is read-only', 'NoModificationAllowedError');
+    };
+    var write = function (arr) {
+      var parts = [];
+      for (var i = 0; i < arr.length; i++) parts.push(_zwSvgTransformFmt(arr[i].__zwTransformState()));
+      var s = parts.join(' ');
+      try { el.setAttribute(attr, s); } catch (_eWr) {}
+      cacheRaw = s;
+      cacheArr = arr;
+    };
+    var check = function (it) { return it instanceof _zwSvgTransformCtor; };
+    // 所有权语义（list-01 insertItemBefore/replaceItem 同列表断言 + list-02 双列表
+    // 断言）：已属任意列表（含本列表）→ 插入 **副本**（原位保留、值快照）；无主
+    // （createSVGTransform / removeItem 后）→ 按引用收编（live——set* 后列表可见）。
+    var adopt = function (it) {
+      if (it.__zwTlOwner) return _zwTransformFromState(it.__zwTransformState());
+      it.__zwTlOwner = target;
+      return it;
+    };
+    var api = target;
+    api.clear = function () {
+      if (readOnly) roThrow();
+      write([]);
+    };
+    api.initialize = function (item) {
+      if (readOnly) roThrow();
+      if (!check(item)) throw new TypeError('wrong item type for transform list');
+      var t = adopt(item);
+      write([t]);
+      return t;
+    };
+    api.getItem = function (i) {
+      var arr = parse();
+      var idx = _zwSvgListIdx(i);
+      if (idx >= arr.length) throw _zwSvgLenDomErr('index out of range', 'IndexSizeError');
+      return arr[idx];
+    };
+    api.insertItemBefore = function (item, i) {
+      if (readOnly) roThrow();
+      if (!check(item)) throw new TypeError('wrong item type for transform list');
+      var arr = parse();
+      var idx = Math.min(_zwSvgListIdx(i), arr.length);
+      var t = adopt(item);
+      arr.splice(idx, 0, t);
+      write(arr);
+      return t;
+    };
+    api.replaceItem = function (item, i) {
+      if (readOnly) roThrow();
+      if (!check(item)) throw new TypeError('wrong item type for transform list');
+      var arr = parse();
+      var idx = _zwSvgListIdx(i);
+      if (idx >= arr.length) throw _zwSvgLenDomErr('index out of range', 'IndexSizeError');
+      var t = adopt(item);
+      arr[idx] = t;
+      write(arr);
+      return t;
+    };
+    api.removeItem = function (i) {
+      if (readOnly) roThrow();
+      var arr = parse();
+      var idx = _zwSvgListIdx(i);
+      if (idx >= arr.length) throw _zwSvgLenDomErr('index out of range', 'IndexSizeError');
+      var removed = arr.splice(idx, 1)[0];
+      removed.__zwTlOwner = null;
+      write(arr);
+      return removed;
+    };
+    api.appendItem = function (item) {
+      if (readOnly) roThrow();
+      if (!check(item)) throw new TypeError('wrong item type for transform list');
+      var t = adopt(item);
+      var arr = parse();
+      arr.push(t);
+      write(arr);
+      return t;
+    };
+    api.consolidate = function () {
+      if (readOnly) roThrow();
+      var arr = parse();
+      if (arr.length === 0) return null;
+      var acc = arr[0].__zwTransformState();
+      for (var i = 1; i < arr.length; i++) acc = _zwSvgTransformMul(acc, arr[i].__zwTransformState());
+      acc.type = 1;
+      var t = _zwTransformFromState(acc);
+      write([t]);
+      return t;
+    };
+    return new Proxy(target, {
+      get: function (t, p) {
+        if (typeof p === 'string') {
+          if (p === 'numberOfItems' || p === 'length') return parse().length;
+          if (/^(0|[1-9][0-9]*)$/.test(p)) {
+            var arr = parse();
+            var idx = p >>> 0;
+            if (idx < arr.length) return arr[idx];
+            return undefined;
+          }
+        }
+        return t[p];
+      },
+      set: function (t, p, v) {
+        if (typeof p === 'string' && /^(0|[1-9][0-9]*)$/.test(p)) {
+          throw new TypeError('SVG list has no indexed setter');
+        }
+        t[p] = v;
+        return true;
+      },
+    });
+  };
+  var _zwMakeAnimatedTransformList = function (el, attr) {
+    var w = new _zwSvgAnimatedTransformListCtor();
+    var base = _zwMakeSvgTransformList(el, attr, false);
+    var anim = _zwMakeSvgTransformList(el, attr, true);
+    Object.defineProperty(w, 'baseVal', { configurable: true, get: function () { return base; } });
+    Object.defineProperty(w, 'animVal', { configurable: true, get: function () { return anim; } });
+    return w;
+  };
+  var _zwSvgTransformCache = {};
+  var _zwGetAnimatedTransformList = function (el, prop, attr) {
+    var k = _zwSvgAnimKey(el, prop);
+    if (k && _zwSvgTransformCache[k]) return _zwSvgTransformCache[k];
+    var w = _zwMakeAnimatedTransformList(el, attr);
+    if (k) _zwSvgTransformCache[k] = w;
+    return w;
+  };
+  // 反射注册（S2c-a 同款 prototype accessor）：graphics 面 transform、pattern/
+  // gradient 变换属性。
+  if (globalThis.SVGGraphicsElement && globalThis.SVGGraphicsElement.prototype
+      && !Object.prototype.hasOwnProperty.call(globalThis.SVGGraphicsElement.prototype, 'transform')) {
+    Object.defineProperty(globalThis.SVGGraphicsElement.prototype, 'transform', {
+      configurable: true,
+      get: function () { return _zwGetAnimatedTransformList(this, 'transform', 'transform'); },
+    });
+  }
+  var _zwSvgTransformDefs = { SVGPatternElement: 'patternTransform', SVGGradientElement: 'gradientTransform' };
+  for (var _zwTfdName in _zwSvgTransformDefs) {
+    var _zwTfdIface = globalThis[_zwTfdName];
+    if (!_zwTfdIface || !_zwTfdIface.prototype) continue;
+    (function (prop, attr) {
+      if (!Object.prototype.hasOwnProperty.call(_zwTfdIface.prototype, prop)) {
+        Object.defineProperty(_zwTfdIface.prototype, prop, {
+          configurable: true,
+          get: function () { return _zwGetAnimatedTransformList(this, prop, attr); },
+        });
+      }
+    })(_zwSvgTransformDefs[_zwTfdName], _zwSvgTransformDefs[_zwTfdName]);
+  }
+  if (globalThis.SVGSVGElement && globalThis.SVGSVGElement.prototype
+      && !globalThis.SVGSVGElement.prototype.createSVGTransform) {
+    globalThis.SVGSVGElement.prototype.createSVGTransform = function () {
+      return _zwMakeSVGTransform();
+    };
   }
   // WC-M1 切片 4（spec create-a-native-element / interface object [[Call]]）：
   // 接口构造器被 **custom element 的 super() 调用**且无升级在途（`new klass()` 形态，
