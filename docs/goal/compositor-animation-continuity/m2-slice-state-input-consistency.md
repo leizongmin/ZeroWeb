@@ -5,7 +5,7 @@
 
 ## 0. 执行摘要
 
-DC-3：「动画过程中点击、暂停、取消、切后台再恢复 → 命中当前几何，暂停/取消立即正确，恢复不跳旧世代；真实输入和事件断言」。现状核查（2026-10-21 源码级）：命中测试对 CSS transform 零感知（`hit_test.rs` 全文无 transform 处理，点击走 `webview.hit_test_element` → layout 基线几何）——compositor 采样让视觉动起来后，点击命中与视觉几何分叉是该路径**新引入**的不一致；`animation-play-state: paused` 已解析并 gCS 序列化（`computed_style.rs:2585`）但动画运行时无暂停语义（`animation.rs` 无 paused 状态，动画照跑）；`animationcancel` 仅有 display:none 触发（R347，`cancel_display_none`），动画名移除等取消因与导出域派发去重未验。本切片按 S3a 取消 → S3b 暂停 → S3c 命中 → S3d COMP-03 证据推进；协议零新增消息（暂停经 start 时间重映射、取消复用既有事件管线、命中走进程级 provider 槽）。
+DC-3：「动画过程中点击、暂停、取消、切后台再恢复 → 命中当前几何，暂停/取消立即正确，恢复不跳旧世代；真实输入和事件断言」。现状核查（2026-10-21 源码级）：命中测试对 CSS transform 零感知（`hit_test.rs` 全文无 transform 处理，点击走 `webview.hit_test_element` → layout 基线几何）——compositor 采样让视觉动起来后，点击命中与视觉几何分叉是该路径**新引入**的不一致；`animation-play-state: paused` 已解析并 gCS 序列化（`computed_style.rs:2585`）但动画运行时无暂停语义（`animation.rs` 无 paused 状态）；`animationcancel` 仅有 display:none 触发（R347，`cancel_display_none`），且真实 renderer 动画时钟冻结（`webview.render()` → `render_html` 不调 `tick_animation_styles`），engine 运行时对导出域动画的完成与取消均不可见——S2b 因此用 renderer 侧惰性判定，取消同构。本切片按 S3a 取消 → S3b 暂停 → S3c 命中 → S3d COMP-03 证据推进；协议仅增一个 serde-default 字段（暂停冻结相位），取消复用既有事件管线，命中走进程级 provider 槽。设计修正记录：初稿的「engine 单一权威取消」「start 重映射零协议暂停」经代码推演否决（见 §2.1/§2.2 修正说明），以当前为准。
 
 ## 1. 背景与验收场景
 
@@ -35,18 +35,21 @@ flag 开真实窗口（autostart 自驱动 + env 门控点击注入）：
 
 ### 2.1 取消面（S3a）
 
-**单一权威 = engine 动画运行时**。引擎已拥有取消真相（R347 `cancel_display_none`；`drain_just_finished` 同款 drain 模式先例）：
+**单一权威 = renderer 导出代际差分（S2b 惰性判定同构）**。实现推演修正（2026-10-21，源码核查）：真实 renderer 每帧走 `webview.render()` → `pipeline.render_html`（`webview.rs:1926/1932`），该路径**不调** `tick_animation_styles`——引擎动画时钟在真实 renderer 冻结（M1 BASELINE_FROZEN 的根因），engine 运行时既看不到动画完成（故 S2b 用 renderer 侧判定）也看不到取消（R347 `cancel_display_none` 仅活在 pump/`render_html_animated` 路径）。「engine drain_cancelled 权威」方案在目标场景失效，修正为：
 
-- engine `AnimationRuntime` 增 `cancelled` 记账 + `drain_cancelled()`（镜像 `drain_just_finished`，`FinishedAnimation` 扩展或平行结构携带 name/delay 时刻）；取消成因从 display:none 扩到**活跃动画的 animation-name/timing 从 computed style 消失**（tick 对账：runtime 活跃集 vs 本帧样式，消失即取消；spec-correct：CSS Animations §animationcancel）。导出域约束不变：仅自然终结与取消两类事件，暂停不派发事件。
-- renderer 复用 `dispatch_animation_events` 管线派发 animationcancel（elapsedTime=0，镜像 engine R347 语义）；compositor 导出域的声明消失（代际替换）由既有 per-(surface,epoch) 替换 + 回落基线处理（S1c 已就绪，零改动）——事件与采样两条线**不互相派发**，避免 S2 RFC §2.2 预担心的双派发。
-- exactly-once：`drain` 语义一次取走即不重发；导航换代 `Self::new` 整体重置（S2b 同款），跨代无 cancel 回放（场景 d）。
+- renderer `AnimationExportState` 增代际差分：publish 时对比 `engine_decls` 上代与本代 animation_id 集合，**同 epoch 内**「上代有、本代无、且不在 `finished_reported`」→ 记取消（name/selector 取上代 `engine_decls` 条目），`drain_finished_events` 同点出队（改扩为 `drain_animation_events`：自然终结 + 取消两类），`dispatch_animation_events` 既有管线派发，elapsedTime = duration × iterations（R347 既有口径）。`finished_reported` 对冲：已终结动画的声明消失（fill 消费后被导出规则剔除）不得二次派发 cancel。
+- 导出域外沿（明示简化）：声明消失即取消的判定覆盖 name 移除、display:none、导出规则拒绝（如关键帧中途改写为 matrix）三类；前两类 spec-correct，第三类 CSS 动画仍在（主线程冻结不可见）——记 §3 已知简化，不阻塞。
+- engine R347 保持现状（pump/headless 路径），真实 renderer 无双派发（时钟冻结）；runner 泵路径不导出 compositor（S1b 边界），两路径无交集。
+- exactly-once：差分每代际只评估一次（已评估的消失 id 记入 `cancelled_reported: HashSet<u64>`，镜像 `finished_reported`）；导航换代 `Self::new` 整体重置（S2b 同款），跨代无 cancel 回放（场景 d）。
+- compositor 侧声明消失由既有 per-(surface,epoch) 替换 + 回落基线处理（S1c 已就绪，零改动）。
 
 ### 2.2 暂停面（S3b）
 
-**语义落 engine 运行时，compositor 经 start 重映射零协议变更**：
+**冻结相位经协议显式承载（start 重映射方案否决）**。实现推演修正：compositor 采样按墙钟（`sample_declaration(now)`），start 重映射冻结一次后相位仍随墙钟推进，唯一免 churn 的冻结语义是把冻结相位写进声明——
 
-- engine 运行时给活跃动画增 `paused_at: Option<f64>`：tick 时对账 computed style 的 `animation-play-state`，flip 到 paused 记当前 `current_time` 并冻结进度输出（后续 tick 返回 paused_at 时刻插值）；flip 回 running 以 `start += now - paused_at` 平移重基（进度连续，不跳变）。预存在缺口（flag 关动画照跑）由此一并修复。
-- compositor 导出映射：导出声明 `start_time_s`（engine `ExportedAnimationDeclaration`）对暂停动画直接编码平移后的 start（`start = now - delay - phase × duration`，phase = paused_at 冻结相位），协议 `start_monotonic_ns` 消费侧零改动——compositor `sample_declaration` 对该声明采样恒得冻结相位；恢复运行时代际替换为新 start（既有 advance 判变发布路径，零新消息）。fill/backwards 交互按 `sample_declaration` 既有分支，暂停落在 delay 期内时覆盖为 None（回落底层，与 compositor 基线镜像）。
+- protocol `CompositorAnimationDeclaration` 增 `frozen_phase_s: Option<f64>`（`#[serde(default)]`，FR-11 末尾字段纪律，Android 通配安全）；`sample_declaration` 增分支：`frozen_phase_s = Some(p)` 时活跃相位恒为 p（fill 规则沿用既有分支：delay 期暂停 → backwards fill 或 None，结束后暂停 → finished + fill 语义）。三个消费者（compositor `animation_overrides::apply`、renderer 查询覆盖、S2b 终结判定）同函数自动一致；暂停动画 `finished` 恒 false，不触发 S2b animationend。
+- engine `ExportedAnimationDeclaration` 增 `paused: bool`（computed style `animation-play-state` 对账产物，分类时已知，引擎时钟冻结不影响该布尔）；renderer 发布转换处维护状态机：paused false→true 翻转时以 `sample_declaration` 求当刻相位 p，发 `frozen_phase_s = Some(p)`（声明字节稳定 → sent 判等零 churn）；true→false 恢复时发 `frozen_phase_s = None` 且 `start_monotonic_ns` 重基为 `now − delay − p×duration`（进度从 p 继续，暂停时长不计入，spec CSS Animations §play-state）；未暂停声明该字段恒 None（序列化不变）。
+- engine 运行时暂停语义（pump/headless 路径 + WPT 钉住面）：样式段（4b 对账）对 `animation-play-state: paused` 的活跃动画记 `paused_at`，tick 输出冻结于暂停时刻插值；恢复 `start_time += now − paused_at`。预存在缺口（flag 关/pump 路径 play-state 无效）由此一并修复。
 - 查询一致免费获得：S2a `QueryOverrideTable` 消费同一条声明，gCS 覆盖与像素天然同相（场景 b 前半）。
 
 ### 2.3 命中面（S3c）
@@ -62,26 +65,27 @@ flag 开真实窗口（autostart 自驱动 + env 门控点击注入）：
 
 | 步 | 触点 | 新增 IPC |
 |---|---|---|
-| S3a | engine `animation.rs`（cancelled 记账 + drain_cancelled + 对账取消）+ `pipeline/mod.rs`（事件组装 Cancel 臂）；renderer `runtime.rs`（animationcancel 派发接线，复用 `dispatch_animation_events`） | 无 |
-| S3b | engine `animation.rs`（paused_at 记账/冻结/重基）+ `animation/compositor_export.rs`（暂停 start 平移导出）；pipeline `animation-play-state` 对账 | 无 |
+| S3a | renderer `runtime.rs`（`AnimationExportState` 代际差分 + `cancelled_reported` + `drain_finished_events` 扩为双类事件）；单测（恰一次/换代不回放/finished 不二次 cancel） | 无 |
+| S3b | protocol `animation.rs`（`frozen_phase_s` 字段 + `sample_declaration` 分支）；engine `animation/compositor_export.rs`（`paused` 布尔）+ `animation.rs`/pipeline 4b（运行时 paused_at 记账/冻结/重基，pump 路径）；renderer `runtime.rs`（paused 状态机 + 发布转换） | 无新消息；`CompositorAnimationDeclaration` 增 serde-default 字段（FR-11 追加纪律） |
 | S3c | engine `js_dom_bridge.rs` 或新 `animation/hit_provider.rs`（槽）+ `hit_test.rs`（逆映射点测）；webview 接线；renderer `query_overrides.rs`（element_key 视图 + 注册）+ `runtime.rs`；browser `app_input*.rs`（`ZW_INJECT_CLICKS` 注入器）+ observe 脚本扩展 | 无 |
 | S3d | fixture `comp03-hit-test-pause-cancel.html`（三动画元素 + 命中/暂停/取消回执外显 + `__zwBusy` 复用）+ `scripts/compositor-animation-dc3-observe.sh` + 分析脚本扩展（相位冻结段识别、命中回执格）+ 证据目录 | 无 |
 
-**回滚切点**：S3a/S3b/S3c 各自成批、flag 门控（S3b engine 暂停语义为 flag 无关的 spec-correct 修复，独立成批可回滚）；S3d 证据批。翻默认仍属后续独立决策（perf-gate 前置不变）。
+**回滚切点**：S3a/S3b/S3c 各自成批、flag 门控（S3b protocol 字段 serde-default 向后兼容，engine 运行时暂停语义为 flag 无关的 spec-correct 修复独立成批可回滚）；S3d 证据批。翻默认仍属后续独立决策（perf-gate 前置不变）。
 
 ## 3. 假设与待定
 
 | 项 | 性质 | 说明 |
 |---|---|---|
-| 暂停经 start 重映射与 `sample_declaration` 既有分支兼容（delay 期暂停、fill 交互） | Assumption | 实现时以单测钉住：delay 期暂停 → 覆盖 None；forwards fill 已结束后置 paused → 不复活（`finished_at_t0` 语义不受扰动） |
-| 暂停态导出声明与 S2b 终结判定的交互 | Assumption | 暂停不产生 finished；暂停跨越原定结束时刻后恢复，结束时刻随重基平移（spec：暂停不计入活跃时长），`drain_finished_events` 以重基后声明判定——实现时核对 `sample_declaration(…).finished` 与重基一致性 |
-| engine tick 对账取消的触发时机（样式变更帧 vs 下一 tick） | Assumption | 取消即时性上限 = 一次样式对账 + 内容帧提交 + 声明消息往返；场景 (c) 以「帧序列收敛到基线 + 事件恰一次」验收，不逐帧断言延迟 |
+| 导出域外沿简化：声明消失即取消（含导出规则拒绝类） | Assumption（已知简化） | 关键帧中途改写为 matrix 等导出拒绝会让仍存续的 CSS 动画（主线程冻结不可见）收到 animationcancel，spec 上该动画未取消——真实页面触发面极窄，如实记录；后续如需精确可在 engine_decl 条目携带取消成因再分型 |
+| `frozen_phase_s` 与 `sample_declaration` 既有分支兼容（delay 期暂停、fill 交互） | Assumption | 实现时以单测钉住：delay 期暂停 → backwards fill 或 None；已结束后置 paused → 不复活（finished 语义不受扰动）；alternate 方向的相位换算走既有进度函数 |
+| 暂停跨越原定结束时刻后恢复的终结判定 | Assumption | 恢复重基 start 后 `sample_declaration(…).finished` 以新 start 判定——结束时刻随暂停时长平移（spec：暂停不计入活跃时长）；S2b `drain_finished_events` 无感知（同函数） |
+| 取消即时性上限 | Assumption | = 一次样式对账 + 内容帧提交 + 声明消息往返；场景 (c) 以「帧序列收敛到基线 + 事件恰一次」验收，不逐帧断言延迟 |
 | OS 级遮挡/最小化的「切后台」证据 | Open（环境受限） | WSLg 无窗口自动化工具；如后续环境具备 xdotool/wmctrl 再补遮挡证据，当前以忙窗暂停-恢复承载恢复语义 |
 | `getBoundingClientRect`/`RectBridge` 几何查询面的动画一致性 | Open | 本切片只覆盖点击命中；几何查询面扩展按需另立小切片（S2 RFC §2.1 gCS 覆盖不含几何 API，同理） |
 | WPT 钉住面 | 待办（S3a/S3b 实现批） | CSS Animations 既有 WPT（animationcancel/play-state 相关）回归必须同批核对，行为修复不得翻绿为红 |
 
 ## 4. 与后续切片的契约预留
 
-- 协议本切片零新增消息/字段；暂停经 `start_monotonic_ns` 重映射承载。若 M4 GPU 采样路径需要显式 paused 状态位（避免每代重发），预留 `CompositorAnimationDeclaration.timing` 的可选扩展点——仅在出现真实消费者时追加（S2 RFC §4 `finished` 预留位同款纪律）。
+- 协议本切片零新增消息；`CompositorAnimationDeclaration` 增 serde-default 字段 `frozen_phase_s`（暂停冻结相位，§2.2）。若 M4 GPU 采样路径需要更细的暂停控制（如引擎侧暂停时刻戳），预留 `timing` 的可选扩展点——仅在出现真实消费者时追加（S2 RFC §4 `finished` 预留位同款纪律）。
 - 命中 provider 槽签名（element_key → 折叠仿射）是 engine↔renderer 内部边界；若未来静态 transform 命中一致性立项（缺口表），复用同槽扩展键域即可，不新增第二槽。
 
