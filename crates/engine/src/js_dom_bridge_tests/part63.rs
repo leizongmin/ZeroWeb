@@ -366,6 +366,81 @@ fn m3s4_parent_back_falls_back_to_frame_local_history() {
     );
 }
 
+/// M3-S5 父→子 postMessage 跨窗口投递 + 子文档 onmessage（spec
+/// https://html.spec.whatwg.org/multipage/web-messaging.html#dom-window-postmessage
+/// ——targetOrigin 校验按目标窗 origin，'*' 放行；子文档裸 onmessage 赋值落
+/// 子窗、消息经子窗 onmessage 直调派发；子回程 parent.postMessage 走父窗
+/// self 投递既有面）。iframe_sandbox_block_modals 1-4 断言面（modal 桩即时
+/// 返回 undefined/false/null + 回程值断言）。
+#[test]
+fn m3s5_parent_to_child_postmessage_roundtrip() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = m3s2_sandbox(
+        "https://wpt.test/html/semantics/embedded-content/the-iframe-element/sandbox-block-modals.html",
+        "<html><body><iframe src=\"support/child-modals.html\"></iframe></body></html>",
+    );
+    sandbox
+        .register_callback(
+            "__zw_fetch",
+            Box::new(|args| {
+                let url = args.get(2).cloned().unwrap_or_default();
+                let body = if url.contains("child-modals") {
+                    "<script>function openModal(name){switch(name){case 'alert':return alert('M');\
+                     case 'confirm':return confirm('M?');case 'prompt':return prompt('M:', 'D');\
+                     case 'print':return print();}}\n\
+                     onmessage = function(e){ parent.postMessage(openModal(e.data), '*'); }</script>"
+                } else {
+                    "<p>t</p>"
+                };
+                format!("__zwfr:200\x1fOK\x1fcontent-type\x1etext/html\x1e\x1f{body}")
+            }),
+        );
+    sandbox
+        .execute(
+            "var iframe = document.querySelector('iframe');\
+             globalThis.__r = { got: [] };\
+             window.addEventListener('message', function (e) { __r.got.push('' + JSON.stringify(e.data)); });",
+        )
+        .unwrap();
+    for _ in 0..8 {
+        sandbox.execute("0").unwrap();
+    }
+    // 四段投递：alert/confirm/prompt/print 各一（子窗 onmessage → modal 桩 → 回程）。
+    sandbox
+        .execute(
+            "var w = iframe.contentWindow;\
+             w.postMessage('alert', '*');\
+             w.postMessage('confirm', '*');\
+             w.postMessage('prompt', '*');\
+             w.postMessage('print', '*');",
+        )
+        .unwrap();
+    for _ in 0..12 {
+        sandbox.execute("0").unwrap();
+    }
+    assert_eq!(
+        sandbox
+            .execute("JSON.stringify(globalThis.__r.got)")
+            .unwrap()
+            .value,
+        r#"["undefined","false","null","undefined"]"#,
+        "回程序列 = modal 桩返回值（alert undefined / confirm false / prompt null / print undefined）"
+    );
+    // 子文档裸 onmessage 落子窗（with(window) + 槽位——非父窗 globalThis 误注册）。
+    assert_eq!(
+        sandbox
+            .execute(
+                "JSON.stringify({ onChild: typeof iframe.contentWindow.onmessage,\
+                 onParent: typeof window.onmessage })"
+            )
+            .unwrap()
+            .value,
+        r#"{"onChild":"function","onParent":"object"}"#,
+        "onmessage 绑定子窗、父窗零注册（getter 返 null——typeof 'object'）"
+    );
+}
+
 /// M3-S3 联合 iframe session history（spec
 /// https://html.spec.whatwg.org/multipage/nav-history-apis.html#joint-session-history
 /// ——父窗 history back/forward 覆盖子同文档条目；父窗 `_hist_entries`/

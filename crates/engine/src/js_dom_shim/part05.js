@@ -3967,6 +3967,10 @@
       parent: globalThis,
       top: globalThis.top || globalThis,
       location: iframeLocation(),
+      // navigation-compat M3-S5：onmessage 槽位——with(window){ onmessage = fn }
+      // 裸赋值仅在属性**已在场**时落 with 对象（否则穿透落父窗 global），预置
+      // null 槽使子文档处理器绑定子窗（R2932 误注册面防回环）。
+      onmessage: null,
       history: {
         // https://html.spec.whatwg.org/multipage/nav-history-apis.html#session-history
         // A same iframe element keeps its session history when a navigation creates a

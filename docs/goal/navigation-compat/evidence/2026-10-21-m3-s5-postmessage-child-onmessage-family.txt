@@ -1,0 +1,72 @@
+bash tests/wpt-runner/scripts/goals/60-navigation-compat.sh
+== fetch 语料（pin 315976933，FORCE=0）==
+  navigation-api/currententrychange-event: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/focus-reset: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigate-event: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigation-activation: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigation-history-entry: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigation-methods: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/ordering-and-transition: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/per-entry-events: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/precommit-handler: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/scroll-behavior: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/state: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/updateCurrentEntry-method: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigation-methods/return-value: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigation-methods/resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigation-history-entry/resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/ordering-and-transition/resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigate-event/resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigation-activation/resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+curl: (22) The requested URL returned error: 404
+  navigation-api/per-entry-events/resources: API 列目录失败（限流/网络）——跳过，稍后重跑续拉
+  html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/browsing-the-web/navigating-across-documents/initial-empty-document/resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/browsing-the-web/navigating-across-documents/resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/history/the-history-interface: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/history/the-location-interface: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/history/the-session-history-of-browsing-contexts: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/history/joint-session-history: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/browsing-the-web/history-traversal: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/browsing-the-web/navigating-across-documents: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/browsing-the-web/scroll-to-fragid: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/browsing-the-web/unloading-documents: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/embedded-content/the-iframe-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+== 语料盘点（wpt-data 本地 .html，含子目录）==
+  navigation-api                 439 案
+  navigation-api/navigation-methods/return-value    73 案
+  navigation-api/navigation-methods/resources     5 案
+  navigation-api/navigation-history-entry/resources     5 案
+  navigation-api/state/resources     0 案
+  navigation-api/precommit-handler/resources     0 案
+  navigation-api/focus-reset/resources     0 案
+  navigation-api/ordering-and-transition/resources     1 案
+  navigation-api/navigate-event/resources     9 案
+  navigation-api/navigation-activation/resources     1 案
+  navigation-api/per-entry-events/resources     0 案
+  html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources     4 案
+  html/browsers/browsing-the-web/navigating-across-documents/initial-empty-document/resources     1 案
+  html/browsers/browsing-the-web/navigating-across-documents/multiple-globals/resources     0 案
+  html/browsers/browsing-the-web/navigating-across-documents/resources    24 案
+  html/browsers/history/the-history-interface   111 案
+  html/browsers/history/the-location-interface    98 案
+  html/browsers/history/the-session-history-of-browsing-contexts     5 案
+  html/browsers/history/joint-session-history     8 案
+  html/browsers/browsing-the-web/history-traversal    79 案
+  html/browsers/browsing-the-web/navigating-across-documents   127 案
+  html/browsers/browsing-the-web/scroll-to-fragid    24 案
+  html/browsers/browsing-the-web/unloading-documents    83 案
+  html/semantics/embedded-content/the-iframe-element   161 案
+== M1 下一步（rally 轮，契约见 docs/goal/navigation-compat.md DC-1）==
+  1. runner 通道：zero-wpt-runner 新增 testharness 子命令 + per-dir skip 规则
+  2. Makefile：fetch-wpt / testharness target（test-guard 包裹，照 testharness-fs 先例）
+  3. 基线：分类通过率（文本 + JSON）落 docs/goal/navigation-compat/evidence/
+  4. 回填：docs/compat/trends/wpt-suites.csv planned 行转数据行（evidence 列给来源）
+rustc -O scripts/test-guard.rs -o target/test-guard
+cargo build --release --bin zero-wpt-runner
+    Finished `release` profile [optimized] target(s) in 0.16s
+./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 1800 -- ./target/release/zero-wpt-runner testharness-navigation block_modals
+Pass html/semantics/embedded-content/the-iframe-element/iframe_sandbox_block_modals-1.html :: Frames without `allow-modals` should not be able to open modal dialogs
+Pass html/semantics/embedded-content/the-iframe-element/iframe_sandbox_block_modals-2.html :: Frames without `allow-modals` should not be able to open modal dialogs
+Pass html/semantics/embedded-content/the-iframe-element/iframe_sandbox_block_modals-3.html :: Frames without `allow-modals` should not be able to open modal dialogs
+Pass html/semantics/embedded-content/the-iframe-element/iframe_sandbox_block_modals-4.html :: Frames without `allow-modals` should not be able to open modal dialogs

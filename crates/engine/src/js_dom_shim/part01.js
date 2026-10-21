@@ -1777,10 +1777,17 @@
       // navigation-compat M3-S4：history 入形参表——replace-before-load 族注入代码
       // `history.pushState(...)` 裸标识符此前误解析父窗 history（pushState 落父窗
       // 账本、子窗 URL 不变）。
+      // navigation-compat M3-S5：onmessage 赋值面——子文档 onmessage 处理器须落
+      // **子窗**（with(window) 使裸赋值绑定 win 属性；否则非严格裸赋值落父窗
+      // globalThis.onmessage——R2932 setter 误注册父窗监听，父窗 message 派发
+      // 回环）。仅包合 onmessage 在场的子文档（其余 corpus 面逐字节不变）。
+      var _omWrapped = /(^|[^\w.$])onmessage\s*=[^=]/.test(combined206)
+        ? 'with(window){' + combined206 + exportSuffix206 + '\n}'
+        : combined206 + exportSuffix206;
       var fn = new Function(
         'window', 'self', 'parent', 'top', 'document', 'location',
         'navigator', 'XMLHttpRequest', 'fetch', 'Headers', 'Request', 'Response', 'URL', 'caches', 'history',
-        combined206 + exportSuffix206);
+        _omWrapped);
       fn.call(
         win, win, win, globalThis, globalThis, doc, loc,
         win.navigator, win.XMLHttpRequest, win.fetch, win.Headers, win.Request,
