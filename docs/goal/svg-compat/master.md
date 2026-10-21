@@ -1,37 +1,33 @@
 # SVG 文档面兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../svg-compat.md](../svg-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-21（M3 S1 命中测试落地）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-21（M3 S2 href 反射落地）
 
 ## 当前状态
 
-**M3 S1 完成——SVG 形状命中测试（2026-10-21）**：runner headless 无宿主
-HitTestCache（elementFromPoint host-only 恒 null、形状 gBCR 全零、computed
-fill 空串）是 hit-test 族全灭根因。part06.js 新增 `_zwSvgHitSel` 纯属性几何
-自建命中：fill 区域（rect 精确实心 / circle·ellipse 归一化半径² / path·
-polygon·polyline 逐子路径 nonzero 缠绕 + 未闭合隐式闭合 + 闭域边界点命中）+
-stroke 区域（rect 精确环带含 90° miter 角 / 轮廓采样距离 + 顶点 join 圆盘
-round 近似 / line 仅 stroke）+ pointer-events 关键字表（缺省
-visiblePainted，属性面继承回溯）+ visibility/display 门 + transform 链自根
-向叶左乘逆映射（最外层 svg 局部 = gBCR 平移——runner body 8px margin 实测
-取证；嵌套 svg = x/y 属性平移——shim gBCR 不含嵌套偏移实测不可用）+ 文档序
-逆序首中。集成两点：elementFromPoint 无宿主回落 + `_zwHitTestSel` SVG
-pass（host 路径后、gBCR 近似前）。修出三轮：root 判定方向 + 复合顺序、
-探针 client 坐标基准（8px margin）、fill 闭域边界点（winding 计 0）。
-靶面四案 **86/86 全绿**（rect-001 4 + rect-002 53 + ellipse 24 +
-small-big-path 5，基线全灭）。全 corpus 对账（S4c 基线 1104P/590F/41T =
-63.6%）：原始 **1201P/504F/41T/1746 = 68.8%**，转移矩阵 86 Fail→Pass
-**零 Pass 回归零 DOWN、Timeout 集合恒等**；探针剔除同分母 62.9%→**68.0%**；
-+86P 聚类全部落靶面无归因悬案。DC-4：fmt EXIT=0 + 定向 zero-engine
-（见 evidence）。挂账：pointer-events-bbox 19 子（CSS cascade +
-bounding-box + text/image）、text-hittest 3 子（Ahem 字形格）、
-border-radius 1 子（style-system 协同）、祖先 paint 属性继承、miter join
-尖、viewBox/百分比/clip。下一步：M3 CSV/收尾 → M3 后续面（linking/scripted
-href 族、load-error events）→ M4。
+**M3 S2 完成——SVGURIReference href 反射（2026-10-21）**：linking/scripted
+20F+3T 定性划界后落地 href IDL 反射面（spec SVG2
+linking.html#InterfaceSVGURIReference）：10 接口 prototype accessor
+（SVGAnimationElement 一次覆盖动画五元素）+ live 读优先级（null-ns href 优先、
+legacy xlink:href 回落、缺省 ''）+ baseVal 写回当前 backed 属性（仅 xlink 案
+case 2/5 定谳）+ animVal 无 SMIL 恒同 baseVal + [SameObject] per-element
+缓存 + get trap A/AREA URL 分支 SVG ns 排除（SVGAElement 剥离泄漏的
+HTMLAnchorElement URL 反射）+ set trap readonly 静默门。discard 不落地——
+WPT historical 定谳 `window.SVGDiscardElement === undefined`（首轮 corpus
+对账揪出 Pass→Fail 回归后回退，探针改断言浏览器现实）。靶面
+xlink-href-compat **12/12 全绿**（基线全灭）；全 corpus 对账（S1 基线
+1201P/504F/41T = 68.8%）：原始 **1224P/487F/42T/1753 = 69.8%**，转移矩阵
+13 Fail→Pass（12 靶面 + href-script-markup 1 连带——反射断言是唯一阻碍）
+**零 Pass 回归零 DOWN**，Timeout 41→42 = href-script 文件挂 load 事件
+（S3 边界）；探针剔除同分母 68.0%→**68.8%**。DC-4：fmt EXIT=0 + 定向
+zero-engine 3373P/0F。划界：href-animate 4F 首断言 targetElement
+undefined（M4 SMIL 批）；href-script load 事件语义归 S3；a.ping + a.rel-*
+导航域挂账。下一步：M3 S3（外部脚本加载）→ M4。
 
-（M2 收口记录见 evidence/2026-10-21-m2-s4c-pathdata-landing.md 与下方
-S4c 切片条目：corpus 63.6%，path/interfaces 54P/2F，syncbase F(2)→T
-分类移动机制已溯，DC-4 定向 3372P/0F。）
+（M3 S1 命中测试记录见 evidence/2026-10-21-m3-s1-hittest-landing.md 与
+下方 S1 切片条目：corpus 68.8%，靶面四案 86/86，零 Pass 回归。M2 收口记录
+见 evidence/2026-10-21-m2-s4c-pathdata-landing.md：corpus 63.6%，path/
+interfaces 54P/2F，syncbase F(2)→T 分类移动机制已溯。）
 
 ## 缺口清单
 
@@ -39,7 +35,7 @@ S4c 切片条目：corpus 63.6%，path/interfaces 54P/2F，syncbase F(2)→T
 |---|------|------|
 | P1 | svg/ corpus 导入 + 基线 + 渲染断言面占比盘点 | ✅ M1（2026-10-21，8.8% 基线） |
 | P2 | SVG DOM 类层级 + SVGSVGElement viewBox/CTM 最小面 | ✅ M2（2026-10-21，S1–S4c 全切片 ✅，corpus 63.6%） |
-| P3 | SVGGeometryElement 几何接口 + 事件目标化 | ⏳ M3（S1 命中测试 ✅ 68.8%，几何接口已随 M2 S4a 落地） |
+| P3 | SVGGeometryElement 几何接口 + 事件目标化 | ⏳ M3（S1 命中测试 ✅ + S2 href 反射 ✅ 69.8%，几何接口已随 M2 S4a 落地） |
 | P4 | SMIL 评估 + 渲染断言面挂账定稿 | ⏳ M4 |
 
 ## 已完成切片
@@ -123,18 +119,30 @@ S4c 切片条目：corpus 63.6%，path/interfaces 54P/2F，syncbase F(2)→T
   3373P/0F。挂账：CSS cascade 命中面（pe-bbox 19 子 + border-radius）/
   文本字形命中（text-hittest 3 子）/祖先 paint 属性继承/miter 尖/
   viewBox/百分比/clip。证据：evidence/2026-10-21-m3-s1-hittest-landing.md。
+- **M3 S2（2026-10-21）**：SVGURIReference href 反射（本 session 端到端
+  持有——linking 20F+3T 定性划界、10 接口 accessor + 读写语义 + 两 trap
+  门、corpus r1 揪出 SVGDiscardElement historical 回归后回退款、r2 定稿
+  对账）。靶面 xlink-href-compat 12/12 全绿（基线全灭）+ href-script-markup
+  1 连带翻绿（反射断言是唯一阻碍）；全 corpus 原始 1224P/487F/42T/1753 =
+  69.8%（13 Fail→Pass 零 Pass 回归零 DOWN；Timeout 41→42 = href-script
+  文件挂 load 事件 S3 边界）；探针剔除同分母 68.0%→68.8%。DC-4：fmt
+  EXIT=0 + 定向 zero-engine 3373P/0F。划界：href-animate targetElement
+  归 M4 SMIL 批；href-script load 语义归 S3；a.ping/a.rel-* 导航域挂账。
+  证据：evidence/2026-10-21-m3-s2-href-reflection-landing.md。
 
 ## 下一步计划
 
-1. **M3 S1 CSV 行**：docs/compat/trends/wpt-suites.csv 追加 M3 S1 数据行
-   （原始 68.8% / 探针剔除 68.0%，S1 证据列为来源）。
-2. **M3 后续面评估**：linking/scripted href 族（22F+3T）、script/image
-   load-error events（2T）——切片边界划定后推进；祖先 paint 属性继承
-   （fill/stroke/stroke-width）随命中面后续切片升级。
-3. **M4 SMIL 分类账重跑**：S3 脚手架已释放时序面（seeking-events 族 F→T、
+1. **M3 S3（边界已划）**：SVG script 外部脚本加载语义——href-script-element
+   3 子已因 S2 反射修复转文件 Timeout（首断言 href.baseVal 过、挂 load 事件
+   等待），S3 落 load 事件派发 + dummyScript 等待语义后回收；a.ping 2F
+   （observe_entry ReferenceError + ping 请求管线）与 a.rel-noopener/
+   noreferrer 2T（window.open policy 导航域）挂导航域不进本 goal。
+2. **M4 SMIL 分类账重跑**：S3 脚手架已释放时序面（seeking-events 族 F→T、
    invalid-value 族平凡全绿），M4 SMIL 评估须以 S3 后口径重跑分类（见
    evidence/2026-10-21-m4-smil-assessment-prep.md + S3 landing 排片对位）；
-   S4c 后新增 syncbase-escaped-dots F(2)→T 移动一并归口。
+   S4c 后 syncbase-escaped-dots F(2)→T、S2 后 href-mpath F(1)→T 与
+   href-script F(3)→T 移动一并归口（href-animate 4F 首断言
+   targetElement undefined 属 SVGAnimationElement 目标解析面，随 SMIL 批）。
 4. **上下文换算补面（S2a FIXME）**：SVGLength 关联元素的 em/ex/percentage
    上下文（SVGLength-viewport 8F / percentage-directionality 6F）——与
    getBBox 几何上下文同批评估。

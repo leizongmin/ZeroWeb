@@ -2176,6 +2176,10 @@
     SVGAnimateElement: 'SVGAnimationElement', SVGSetElement: 'SVGAnimationElement',
     SVGAnimateMotionElement: 'SVGAnimationElement',
     SVGAnimateTransformElement: 'SVGAnimationElement', SVGMPathElement: 'SVGAnimationElement',
+    // svg-compat M3 S2 注记：`<discard>` 接口**不建**——WPT animations/historical
+    // 定谳真浏览器不暴露 SVGDiscardElement（`window.SVGDiscardElement ===
+    // undefined`，discard 元素落 SVGElement 通用面），spec SVG2 URIReference 元素
+    // 表的 discard 未落地浏览器，表外回落即正确行为。
     SVGLinearGradientElement: 'SVGGradientElement', SVGRadialGradientElement: 'SVGGradientElement',
     // svg-compat M2 S2a：fe 族具体接口（S2a 反射属性需按接口落 prototype——
     // filter primitive 族挂抽象层 SVGFilterPrimitiveElement（x/y/width/height
@@ -2712,6 +2716,73 @@
   };
   _zwDefSvgProps(_zwSvgLenDefs, false);
   _zwDefSvgProps(_zwSvgNumDefs, true);
+  // svg-compat M3 S2：SVGURIReference.href 反射（spec SVG2
+  // https://svgwg.org/svg2-draft/linking.html#InterfaceSVGURIReference——href IDL
+  // 是 [SameObject] readonly SVGAnimatedString）。读侧 null-ns href 优先、回落
+  // legacy xlink:href、都无 → ''；写侧（href.baseVal = v）写回**当前 backed
+  // 属性**——href 在写 href、仅 xlink:href 在写 xlink:href、都无新建 href
+  // （WPT linking/scripted/xlink-href-compat 12 子定谳：case 2/5 写回 backed、
+  // case 4/7/8 读优先级、case 9/10 移除后回落缺省 ''）；animVal 无 SMIL 评估
+  // 恒同 baseVal（case 11/12 string 值面；动画评估归 M4）。同款落点：接口
+  // prototype accessor（get trap R93 原型链回落以元素 proxy 为 this 派发，
+  // this.hasAttributeNS 等走 R3024/R3217 同步面）+ per-element SameObject
+  // 缓存（_zwSvgAnimCache 同款键形态）。SVGAnimationElement 一次覆盖
+  // animate/set/animateMotion/animateTransform/mpath 五元素（URIReference 挂
+  // 动画基类）；10 接口面 = spec 14 元素去动画族合流、去 discard（未落地
+  // 浏览器，见 _zwSvgIfaceParents 注记）。
+  var _zwSvgHrefCache = {};
+  var _zwSvgHrefXlinkNs = 'http://www.w3.org/1999/xlink';
+  var _zwMakeSvgHref = function (el) {
+    var w = new _zwSvgAnimatedStringCtor();
+    var read = function () {
+      try {
+        if (el.hasAttributeNS(null, 'href')) {
+          var v1 = el.getAttributeNS(null, 'href');
+          return v1 == null ? '' : String(v1);
+        }
+        if (el.hasAttributeNS(_zwSvgHrefXlinkNs, 'href')) {
+          var v2 = el.getAttributeNS(_zwSvgHrefXlinkNs, 'href');
+          return v2 == null ? '' : String(v2);
+        }
+      } catch (_eHr) {}
+      return '';
+    };
+    var write = function (v) {
+      // backed 属性判定按「当时存在的属性」（case 5：仅 xlink:href 在时 baseVal
+      // 写回 xlink:href，即便写后另设 href 会夺走读优先级）；都无 → 新建 href。
+      var ns = null;
+      try {
+        if (!el.hasAttributeNS(null, 'href') && el.hasAttributeNS(_zwSvgHrefXlinkNs, 'href')) {
+          ns = _zwSvgHrefXlinkNs;
+        }
+        el.setAttributeNS(ns, 'href', v == null ? 'null' : String(v));
+      } catch (_eHw) {}
+    };
+    Object.defineProperty(w, 'baseVal', { configurable: true, get: read, set: write });
+    Object.defineProperty(w, 'animVal', { configurable: true, get: read });
+    return w;
+  };
+  var _zwGetSvgHref = function (el) {
+    var k = _zwSvgAnimKey(el, 'href');
+    if (k && _zwSvgHrefCache[k]) return _zwSvgHrefCache[k];
+    var w = _zwMakeSvgHref(el);
+    if (k) _zwSvgHrefCache[k] = w;
+    return w;
+  };
+  (function () {
+    var uris = ['SVGAElement', 'SVGAnimationElement',
+      'SVGFEImageElement', 'SVGFilterElement', 'SVGForeignObjectElement',
+      'SVGImageElement', 'SVGPatternElement', 'SVGScriptElement',
+      'SVGTextPathElement', 'SVGUseElement'];
+    for (var ui = 0; ui < uris.length; ui++) {
+      var iface = globalThis[uris[ui]];
+      if (!iface || !iface.prototype || iface.prototype.href) continue;
+      Object.defineProperty(iface.prototype, 'href', {
+        configurable: true,
+        get: function () { return _zwGetSvgHref(this); },
+      });
+    }
+  })();
   // SVGSVGElement.createSVGLength（spec SVGSVGElement 工厂族首项——detached
   // SVGLength 是单位模型族的测试载体；createSVGMatrix/Rect/Point 等 S2b/S3 补）。
   if (globalThis.SVGSVGElement && globalThis.SVGSVGElement.prototype
@@ -23253,6 +23324,11 @@ return e;
         // 组件 setter（a.pathname='/x'）经 R3070 set-trap 分支接通 `__zw_set_url_part` 重算 href 写回属性
         //（闭合 R2838 旧限制「组件 setter 误设 spurious 属性」）。origin 为只读（无 setter）。
         if (((_realTag(sel, handle) === 'A' || _realTag(sel, handle) === 'AREA') &&
+            // svg-compat M3 S2：SVG ns a（SVGAElement）排除——SVG 的 href 是
+            // SVGURIReference [SameObject] SVGAnimatedString（prototype accessor
+            // 经 R93 原型链回落派发），pathname 等 URL 组件 IDL 不存在于
+            // SVGAElement（真浏览器 undefined）；HTML a/area 路径不变。
+            !_zwIsSvgNsEl(sel, handle) &&
             (prop === 'href' || prop === 'pathname' || prop === 'search' || prop === 'hash' ||
              prop === 'host' || prop === 'hostname' || prop === 'port' || prop === 'protocol' ||
              prop === 'origin' || prop === 'username' || prop === 'password')) ||

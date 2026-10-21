@@ -857,6 +857,14 @@
           } else {
             _imFail();
           }
+        } else if (p === 'href' && _zwIsSvgNsEl(sel, handle)) {
+          // svg-compat M3 S2：SVGURIReference.href IDL 是 readonly（[SameObject]
+          // SVGAnimatedString，spec SVG2 linking.html#InterfaceSVGURIReference）——
+          // SVG ns 元素 `el.href = v` 静默忽略（readonly IDL setter sloppy 无效）；
+          // 写面走 `el.href.baseVal = v` 经 SVGAnimatedString 实例 setter 写回
+          // backed 属性（part03 _zwMakeSvgHref）。须在 R3069 reflected 分支前拦截
+          // ——该分支按 HTML a/area 语义写 href 属性，SVG a 会吃进真浏览器没有的
+          // 假 set→get round-trip。
         } else if ((p === 'name' && typeof _reflectedNameAttr === 'function'
                     && _reflectedNameAttr(_realTag(sel, handle), p) != null)
                    || _reflectedStringAttr(p) || _REFLECTED_UINT[p] || p === 'size' || p === 'href' || p === 'label' || p === 'as' || p === 'crossorigin' || p === 'span' || p === 'scope' || p === 'valign') {
