@@ -204,3 +204,100 @@ fn m3s2_child_body_inner_text() {
         "srcdoc 移除成熟后新文档 body.innerText 为空串"
     );
 }
+
+/// M3-S3 联合 iframe session history（spec
+/// https://html.spec.whatwg.org/multipage/nav-history-apis.html#joint-session-history
+/// ——父窗 history back/forward 覆盖子同文档条目；父窗 `_hist_entries`/
+/// history.length 不膨胀——联合序独立）。srcdoc_change_hash step 3/4 断言面：子
+/// 连写 #1/#2 后父 back/forward 落子条目、子窗收 trusted hashchange，父窗零
+/// hashchange（顶层 URL 未变）。
+#[test]
+fn m3s3_parent_back_forward_routes_child_hash_entries() {
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = m3s2_sandbox(
+        "https://wpt.test/html/semantics/embedded-content/the-iframe-element/joint-hash.html",
+        "<html><body><iframe srcdoc='joint'></iframe></body></html>",
+    );
+    sandbox
+        .execute(
+            "var f = document.querySelector('iframe');\
+             var w = f.contentWindow;\
+             globalThis.__r = { parent: [], child: [], len: history.length };\
+             w.onhashchange = function (e) { __r.child.push(e.oldURL + '>' + e.newURL + ':' + (e.isTrusted === true)); };\
+             window.onhashchange = function (e) { __r.parent.push(e.oldURL + '>' + e.newURL); };\
+             w.location.hash = '1';\
+             w.location.hash = '2';\
+             __r.lenAfter = history.length;",
+        )
+        .unwrap();
+    for _ in 0..4 {
+        sandbox.execute("0").unwrap();
+    }
+    // 子窗两连写各派一次（父窗零派——顶层 URL 未变）。
+    assert_eq!(
+        sandbox
+            .execute("JSON.stringify(globalThis.__r.child)")
+            .unwrap()
+            .value,
+        r#"["about:srcdoc>about:srcdoc#1:true","about:srcdoc#1>about:srcdoc#2:true"]"#,
+        "子写侧两连写各自异步派 trusted hashchange"
+    );
+    assert_eq!(
+        sandbox
+            .execute("JSON.stringify(globalThis.__r.parent)")
+            .unwrap()
+            .value,
+        "[]",
+        "子 hash 写不派父窗 hashchange（顶层 URL 未变）"
+    );
+    // 联合播种不膨胀父窗长度（M2 面维持：恒 1——Navigation/history 顶层账本不变）。
+    assert_eq!(
+        sandbox
+            .execute("globalThis.__r.len + '/' + globalThis.__r.lenAfter + '/' + history.length")
+            .unwrap()
+            .value,
+        "1/1/1",
+        "联合播种前后父窗 history.length 恒 1（顶层账本不膨胀）"
+    );
+    // 父窗 back → 落子条目 #1（子窗 href + trusted hashchange）；forward → #2。
+    sandbox.execute("history.back();").unwrap();
+    for _ in 0..4 {
+        sandbox.execute("0").unwrap();
+    }
+    assert_eq!(
+        sandbox
+            .execute("f.contentWindow.location.href")
+            .unwrap()
+            .value,
+        "about:srcdoc#1",
+        "父窗 back 落子同文档条目（联合序 frame 标记）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("JSON.stringify(globalThis.__r.child[2])")
+            .unwrap()
+            .value,
+        r#""about:srcdoc#2>about:srcdoc#1:true""#,
+        "父 back 驱动子窗 trusted hashchange #2→#1"
+    );
+    sandbox.execute("history.forward();").unwrap();
+    for _ in 0..4 {
+        sandbox.execute("0").unwrap();
+    }
+    assert_eq!(
+        sandbox
+            .execute("f.contentWindow.location.href")
+            .unwrap()
+            .value,
+        "about:srcdoc#2",
+        "父窗 forward 落子同文档条目"
+    );
+    assert_eq!(
+        sandbox
+            .execute("JSON.stringify(globalThis.__r.child[3])")
+            .unwrap()
+            .value,
+        r#""about:srcdoc#1>about:srcdoc#2:true""#,
+        "父 forward 驱动子窗 trusted hashchange #1→#2"
+    );
+}

@@ -6155,6 +6155,19 @@
   }
   var _hist_cursor = 0;
   function _hist_current() { return _hist_entries[_hist_cursor]; }
+  // navigation-compat M3-S3：联合 iframe session history 最小面（spec
+  // https://html.spec.whatwg.org/multipage/nav-history-apis.html#joint-session-history
+  // ——顶层遍历序含子 browsing context 的会话条目）。`_hist_jointSeq` 为独立序列
+  //（null = 无子同文档条目，全部路径与既有行为逐字节相同——M2 收口面零漂移的
+  // 关键约束；顶层 `_hist_entries`/Navigation records **不膨胀**——Navigation
+  // API entries() 只覆盖顶层自身条目）。标记两形：`{top: <_hist_entries 索引>}`
+  //（replaceState 等原地变更天然跟随）与 `{frameKey, url}`（子同文档 hash 条目，
+  // 应用经 part05 `__zwApplyIframeHashEntry` 路由——URL 槽 + 子窗 hashchange，
+  // 父窗不派 navigate/popstate——spec：事件派在条目所属 context）。
+  // FIXME(history.length): joint 在场时 history.length 仍报顶层长度（spec 为
+  // joint 长度）——M2 长度断言面（session-history 50 上限族）零回归优先。
+  var _hist_jointSeq = null;
+  var _hist_jointCursor = 0;
   function _hist_dispatchPopState(oldHrefBefore, skipScroll) {
     // spec：back/forward/go 触发 popstate（pushState/replaceState 不触发），异步派发。
     // R3007：跨 hash 变更的导航同时派 hashchange（spec：hash 变更导航派 popstate + hashchange）。
@@ -6287,6 +6300,16 @@
     if (_hist_entries.length <= 50) return;
     var oldHe = _hist_entries.shift();
     _hist_cursor--;
+    // M3-S3：joint 序列镜像最旧条目出列——顶层标记索引同步前移（先改标记再 shift，
+    // 出列的恰是被 shift 掉的那个；jointSeq[0] 恒镜像顶层首位直到自身被裁）。
+    if (_hist_jointSeq) {
+      for (var _jti = 0; _jti < _hist_jointSeq.length; _jti++) {
+        var _jtm = _hist_jointSeq[_jti];
+        if (_jtm && _jtm.top !== undefined) _jtm.top--;
+      }
+      _hist_jointSeq.shift();
+      _hist_jointCursor--;
+    }
     var rec = _navFindRecord(oldHe);
     if (rec) {
       var di = _navDetached.indexOf(rec);
@@ -6345,6 +6368,8 @@
     var _zwHe = { state: state, url: newUrl2, scrollRestoration: _zwSR };
     _hist_entries.push(_zwHe);
     _hist_cursor = _hist_entries.length - 1;
+    // M3-S3：joint 序列在场时镜像追加顶层标记（前向截断 + 当前位随移到新尾）。
+    if (_hist_jointSeq) _jointPushTop(_hist_cursor);
     if (newUrl2 !== null) _zwSyncDocUrl(newUrl2, true);
     var freshP = _navPushCurrent(_zwHe);
     if (bind) bind.rec = freshP;
@@ -6358,10 +6383,13 @@
   function _hist_queueTraversal(delta, ctrl, info) {
     // M2-S4P3：入队时目标可达性快照——执行前被 push 截断剪除的 traverse 走 AbortError
     // abort（非入队即越界的 InvalidStateError）。
-    var _qtTarget = _hist_cursor + delta;
+    // M3-S3：joint 序列在场时按联合序界做可达性快照（子同文档条目计入 back/forward
+    // 面——spec joint session history；顶层长度面不动）。
+    var _qtTarget = _hist_jointSeq ? _hist_jointCursor + delta : _hist_cursor + delta;
+    var _qtLen = _hist_jointSeq ? _hist_jointSeq.length : _hist_entries.length;
     _hist_pendingTraversals.push({
       delta: delta, ctrl: ctrl || null,
-      atEnd: _qtTarget >= 0 && _qtTarget <= _hist_entries.length - 1,
+      atEnd: _qtTarget >= 0 && _qtTarget <= _qtLen - 1,
       info: info,
     });
     if (typeof setTimeout === 'function') {
@@ -6376,7 +6404,113 @@
       _hist_applyTraversal(item.delta, item.ctrl, item.atEnd, item.info);
     }
   }
+  // ===== M3-S3（navigation-compat）：联合 iframe session history 最小面 =====
+  // joint 序列镜像 + 遍历（声明见 _hist_cursor 旁）。顶层落地复用
+  // _hist_applyTopTraversal（navigate/popstate/滚动恢复面全保留）；frame 落地走
+  // __zwApplyIframeHashEntry（URL 槽 + 子窗异步 trusted hashchange；父窗不派
+  // navigate/popstate——spec：hashchange 派条目所属 browsing context，
+  // https://html.spec.whatwg.org/multipage/nav-history-apis.html#joint-session-history）。
+  // joint 在场（首个子同文档 push 播种后）才改路由——缺席时零行为漂移。
+  function _jointPushTop(idx) {
+    _hist_jointSeq = _hist_jointSeq.slice(0, _hist_jointCursor + 1);
+    _hist_jointSeq.push({ top: idx });
+    _hist_jointCursor = _hist_jointSeq.length - 1;
+  }
   function _hist_applyTraversal(delta, ctrl, atEnd, info) {
+    // M3-S3：joint 在场 → 联合路由；否则原顶层面（函数体未动，更名 _hist_applyTopTraversal）。
+    if (_hist_jointSeq) return _hist_applyJointTraversal(delta, ctrl, atEnd, info);
+    return _hist_applyTopTraversal(delta, ctrl, atEnd, info);
+  }
+  function _hist_applyJointTraversal(delta, ctrl, atEnd, info) {
+    var target = _hist_jointCursor + delta;
+    if (target < 0 || target > _hist_jointSeq.length - 1) {
+      // 越界面镜像 _hist_applyTopTraversal（atEnd 快照已按联合序界计算）。
+      if (ctrl) {
+        var jpe;
+        if (atEnd) {
+          jpe = _navNavAbortError();
+          ctrl.reject(jpe);
+          ctrl.finishedSettle(jpe, true);
+        } else {
+          jpe = new (globalThis.DOMException || DOMException)('Cannot go back or forward.', 'InvalidStateError');
+          ctrl.reject(jpe);
+          ctrl.finishedSettle(jpe, true);
+        }
+      }
+      return;
+    }
+    if (target === _hist_jointCursor) {
+      if (ctrl) {
+        _defer(function () {
+          if (ctrl.resolve) ctrl.resolve(_navPub(_navCurrent()));
+          if (ctrl.finishedSettle) ctrl.finishedSettle(null, false, _navPub(_navCurrent()));
+        });
+      }
+      return;
+    }
+    var marker = _hist_jointSeq[target];
+    _hist_jointCursor = target;
+    if (marker && marker.frameKey !== undefined) {
+      // frame 落地：无 navigate 事件可拦截/抢占——提交（joint cursor 已动）后按顶层
+      // 非 intercept 面结算 ctrl，再交 part05 钩子应用子文档。
+      if (ctrl) {
+        if (ctrl.resolve) ctrl.resolve(_navPub(_navCurrent()));
+        _defer(function () {
+          if (ctrl.finishedSettle) ctrl.finishedSettle(null, false, _navPub(_navCurrent()));
+          _navDispatchAny(new Event('navigatesuccess'));
+        });
+      }
+      if (typeof globalThis.__zwApplyIframeHashEntry === 'function') {
+        try { globalThis.__zwApplyIframeHashEntry(marker.frameKey, marker.url); } catch (_eJFrame) {}
+      }
+      // FIXME(joint-popstate): spec 联合遍历还会在父窗派 popstate（真实浏览器行为）——
+      // 最小面暂不派（父窗 popstate 面未验证的联动，避免 M2 收口面回归）。
+      return;
+    }
+    // 顶层标记：同步顶层 cursor 后复用既有顶层面（step 按 delta 传，目标界已验）。
+    // FIXME(joint): 顶层面内 preventDefault/抢占时顶层 cursor 不动而 jointCursor 已前移
+    // ——取消路径的联合序回滚未建模（最小面）。
+    _hist_applyTopTraversal(marker.top - _hist_cursor, ctrl, true, info);
+  }
+  // M3-S3：子同文档条目登记钩子（part05 子窗 hash 写侧调用）。惰性播种——首个子条目
+  // push 时 1:1 镜像当期顶层列表，cursor 对齐；此后前向截断 + 追加 + 当前位随移。
+  // 顶层 `_hist_entries`/Navigation records 不膨胀（Navigation entries() 只覆盖顶层
+  // 自身条目——父窗面零漂移约束）。
+  globalThis.__zwPushJointHistoryEntry = function (frameKey, url) {
+    if (!_hist_jointSeq) {
+      _hist_jointSeq = [];
+      for (var _jsi = 0; _jsi < _hist_entries.length; _jsi++) {
+        _hist_jointSeq.push({ top: _jsi });
+      }
+      _hist_jointCursor = _hist_cursor;
+    }
+    _hist_jointSeq = _hist_jointSeq.slice(0, _hist_jointCursor + 1);
+    _hist_jointSeq.push({ frameKey: frameKey, url: url });
+    _hist_jointCursor = _hist_jointSeq.length - 1;
+  };
+  // M3-S3：frame 标记落地钩子（part05 子窗 hash 写侧与父窗联合遍历共用派发路径）。
+  // URL 槽（doc._zwURL/_zwFragmentUrl + 缓存条目）+ 子窗异步 trusted hashchange；
+  // oldUrlHint 由 hash 写侧传写前地址，父遍历路径省略（钩子读槽——更新前读即旧值）。
+  globalThis.__zwApplyIframeHashEntry = function (frameKey, url, oldUrlHint) {
+    var entry = null;
+    try { entry = _iframeDocCache[frameKey] || null; } catch (_eJf) { return; }
+    if (!entry || !entry.doc) return;
+    var d = entry.doc;
+    var oldHref = oldUrlHint != null ? String(oldUrlHint) : (d._zwURL ? String(d._zwURL) : 'about:blank');
+    try { d._zwURL = url; } catch (_eJf1) {}
+    try { d._zwFragmentUrl = url; } catch (_eJf2) {}
+    try { entry.url = url; } catch (_eJf3) {}
+    var w = null;
+    try { w = d.defaultView || null; } catch (_eJf4) {}
+    _defer(function () {
+      try {
+        var hev = new HashChangeEvent('hashchange', { oldURL: oldHref, newURL: String(url), __zwTrusted: true });
+        hev.target = w || d;
+        if (w && typeof w.onhashchange === 'function') w.onhashchange(hev);
+      } catch (_eJf5) {}
+    });
+  };
+  function _hist_applyTopTraversal(delta, ctrl, atEnd, info) {
     var target = _hist_cursor + delta;
     if (target < 0 || target > _hist_entries.length - 1) {
       // 越界：history.back/forward 静默 no-op（R3004）；navigation.back/forward reject
@@ -6599,6 +6733,8 @@
   globalThis.__zw_reset_history = function () {
     _hist_entries = [{ state: null, url: '', scrollRestoration: 'auto' }];
     _hist_cursor = 0;
+    _hist_jointSeq = null; // M3-S3：跨文档导航清联合序（新文档重新惰性播种）
+    _hist_jointCursor = 0;
     _hist_pendingTraversals = []; // M2-S3：清跨文档残留 traverse 队列（新文档不复现旧页 go()）
     _histRateStamps = []; // M2-S4P：速率窗随文档重置
     if (typeof _navReset === 'function') _navReset(); // M2-S4：同步重置 Navigation API entry list
@@ -7639,6 +7775,7 @@
     _hist_entries = _hist_entries.slice(0, _hist_cursor + 1);
     _hist_entries.push({ state: null, url: newHref, scrollRestoration: _zwSR });
     _hist_cursor = _hist_entries.length - 1;
+    if (_hist_jointSeq) _jointPushTop(_hist_cursor); // M3-S3：joint 镜像追加顶层标记
     _histTrimOldest();
     // M2-S4P3：本函数为锚/href/assign 共享 push 通道（部分调用方后续 host 交接）——
     // page_url 同步在自应用调用点（_setLocationHash 等）做，不在此处（见 _zwSyncDocUrl 注记）。

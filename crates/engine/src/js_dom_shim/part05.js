@@ -3744,8 +3744,13 @@
           var cur = href();
           var next = cur.split('#')[0] + (frag === '#' ? '' : frag);
           if (next === cur) return; // hash 未变 → no-op（spec 不派事件）
-          var oldUrl = cur;
-          iframeSetCurrentHistoryUrl(next);
+          // M3-S3：URL 槽 + 异步 trusted hashchange 统一经联合史落地钩子（父窗联合
+          // 遍历落地同路径——part02 __zwApplyIframeHashEntry；oldUrlHint 保证 oldURL
+          // 取写前地址）。
+          if (typeof globalThis.__zwApplyIframeHashEntry === 'function') {
+            globalThis.__zwApplyIframeHashEntry(frameKey, next, cur);
+          }
+          // 子窗自身会话条目 push（子窗 back/forward 面维持；spec session history）。
           var w = null;
           try { w = doc.defaultView || null; } catch (_eHashWin) {}
           try {
@@ -3756,13 +3761,11 @@
             }
           } catch (_eHashHist) {}
           // FIXME(popstate): spec 片段导航还同步派 popstate（子窗 popstate 事件面未建）。
-          _defer(function () {
-            try {
-              var hev = new HashChangeEvent('hashchange', { oldURL: oldUrl, newURL: next, __zwTrusted: true });
-              hev.target = w || doc;
-              if (w && typeof w.onhashchange === 'function') w.onhashchange(hev);
-            } catch (_eHashFire) {}
-          });
+          // M3-S3：登记进联合 session history（part02 惰性播种 + 追加；父窗
+          // _hist_entries/Navigation records 不膨胀——独立序列）。
+          if (typeof globalThis.__zwPushJointHistoryEntry === 'function') {
+            try { globalThis.__zwPushJointHistoryEntry(frameKey, next); } catch (_eJointPush) {}
+          }
         },
         get origin() { var u = parsed(); return u ? u.origin : 'null'; },
         assign: function (v) {
