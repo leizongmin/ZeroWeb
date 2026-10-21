@@ -214,6 +214,30 @@ pub struct RendererJsWorker {
     execution_count: Arc<AtomicU64>,
 }
 
+/// M3-S1a：优先队列 fire-and-forget 提交器——[`RendererJsWorker::priority_submitter`]
+/// 产出，worker 宿主线程（`worker_host.rs`）持一只，把 worker 事件派发脚本提交进
+/// 页面优先队列。语义同 `submit_script_priority`（reply 即刻丢弃，入队即返回；
+/// 主线程阻塞期命令天然排队 = worker 事件任务粒度延迟投递的固有语义）。
+/// `Clone` 廉价（`Sender` + `Arc`）。
+#[derive(Clone)]
+pub struct PrioritySubmitter {
+    prio_tx: Sender<JsWorkerCommand>,
+    cmd_seq: Arc<AtomicU64>,
+}
+
+impl PrioritySubmitter {
+    /// fire-and-forget 提交脚本；通道关闭（worker 退出/导航复位）静默丢弃。
+    pub fn submit(&self, script: &str) {
+        let (reply_tx, reply_rx) = mpsc::channel();
+        drop(reply_rx);
+        let _ = self.prio_tx.send(JsWorkerCommand::Execute {
+            script: script.to_string(),
+            reply: reply_tx,
+            seq: self.cmd_seq.fetch_add(1, Ordering::Relaxed),
+        });
+    }
+}
+
 impl RendererJsWorker {
     /// 启动 JS 专用线程。
     #[allow(dead_code)] // 独立 worker 测试使用本地 owner；生产 renderer 注入 browser IPC handler。
@@ -486,6 +510,16 @@ impl RendererJsWorker {
             Ok(result) => Ok(result),
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => Err(reply_rx),
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => Ok(Err("js worker dropped reply".to_string())),
+        }
+    }
+
+    /// M3-S1a：优先队列 fire-and-forget 提交器（worker 宿主事件派发用，见
+    /// [`PrioritySubmitter`]）——克隆发送端 + 代际序号源，供 worker_host 宿主线程
+    /// 持有（`&RendererJsWorker` 借用不可跨线程常驻）。
+    pub fn priority_submitter(&self) -> PrioritySubmitter {
+        PrioritySubmitter {
+            prio_tx: self.prio_tx.clone(),
+            cmd_seq: Arc::clone(&self.cmd_seq),
         }
     }
 

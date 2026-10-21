@@ -18,6 +18,8 @@ mod sandbox;
 mod script_prefetch;
 mod service_worker_host;
 mod text_metrics;
+// M3-S1a：页面真线程 worker 宿主（ZW_THREADED_WORKERS flag 门控装填）。
+mod worker_host;
 
 pub use runtime::{parse_renderer_launch, run_desktop_role};
 // 生产编码入口导出：集成测试钉住「renderer 编码 → IPC 图元快照 → browser 解码」

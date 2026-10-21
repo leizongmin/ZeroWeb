@@ -7394,6 +7394,7 @@ dependencies = [
  "zero-net",
  "zero-product-version",
  "zero-render-foundation",
+ "zero-runtime-config",
  "zero-script-sandbox",
  "zero-security",
  "zero-style-system",

@@ -730,6 +730,13 @@ impl RendererRuntime {
             // 命中路径零注入，FR-9 同款）。
             crate::query_overrides::register_hit_provider();
         }
+        // M3-S1a：真线程 worker 宿主装填（ZW_THREADED_WORKERS flag 开时；query_overrides
+        // 同点）。装填 = engine 桥槽（`__zw_worker_host_op` 回调注册的前提）+ 宿主线程；
+        // flag 关不装填——shim `typeof` 守卫回落 same-realm worker（零行为，
+        // workers-compat 钉住）。
+        if zero_runtime_config::enabled_when_true("ZW_THREADED_WORKERS") {
+            crate::worker_host::install(js_worker.priority_submitter());
+        }
         // M2c 后续（镜像 browser tab_worker）：播放器注册表注入 js_worker——
         // `__zwVideoBridge` 宿主桥（多进程路径媒体播放真值面；async_load settle 写入
         // 与桥读取同一 Arc 实例）。

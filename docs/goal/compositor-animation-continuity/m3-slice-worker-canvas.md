@@ -38,14 +38,15 @@ flag on（`ZW_THREADED_WORKERS=1` + 呈现 flag）真实窗口/headless 双向�
 
 ### 2.1 真线程 worker 执行面（S1a）
 
-**renderer 进程内 `WorkerRuntime` 宿主（`service_worker_host.rs` 同构），页面 Worker 构造器 flag 分流**：
+**renderer 进程内 `WorkerRuntime` 宿主（`service_worker_host.rs` 同构），页面 Worker 构造器 flag 分流**（2026-10-22 实现批落定，推演差异以此为准）：
 
-- renderer 新增 `worker_host.rs`：`HashMap<u64, WorkerRuntime>`（键 = 宿主侧 worker id）+ spawn/terminate/postMessage 入口 + `try_recv` 事件泵。`WorkerRuntime::new(script, config)` 的 script 源由页面侧取：flag on 时 shim `new Worker(url)` 走既有取源路径（workers-compat 的 fetch/同源校验面不动，含 blob/data URL 语义），取得源文本后经宿主桥 op `__zw_worker_host_op(op, argsJson) -> String` 交 renderer spawn——**同源校验与 URL 解析仍在主线程 shim（信任边界不移位），宿主只收已校验的源文本**。
-- 事件回流：宿主泵把 `WorkerEvent::Message/Error/Closed` 转宿主桥回调进页面任务队列，`setTimeout(0)` 派发 `message`/`error` 事件（对齐既有 shim 投递语义与 task source 注释）；`Closed` 触发宿主 map 清理。
-- 页面侧代理对象：flag on 的 `Worker` 实例把 `postMessage`/`terminate` 转宿主桥 op；`onmessage`/`onerror` 挂接事件派发位。structuredClone 序列化沿用既有 shim 面（跨线程边界传字符串载荷，与 `WorkerRuntime::post_message(&str)` 契约一致）。
-- flag off 零行为：shim 路径一字不动（workers-compat 语料钉住）；env `ZW_THREADED_WORKERS` 解析同 `compositor_animations_enabled()` 惯例（默认关，非法值关）。
-- 引擎无关：宿主只引用 `script_sandbox::WorkerRuntime` 同名类型（v8/quickjs feature 对齐页面引擎，lib.rs 既有 cfg 纪律），宿主代码不写引擎分支。
-- 看门狗：页面 worker 用无脚本超时的 `SandboxConfig`（timeout 面关闭，`terminate()` 强制中断仍可用）——页面 worker 生命周期由页面控制，不预设脚本时长上限；`terminate_execution` 死循环兜底保留（核对 `service_worker_host` 的 config 取值后对齐，实施推演点）。
+- renderer 新增 `worker_host.rs`：专用宿主线程持 `HashMap<u64, WorkerRuntime>` + spawn/terminate/postMessage 命令 + 事件泵（8ms 轮询）。`WorkerRuntime::new(script, config)` 的 script 源由页面侧取：flag on 时 shim `new Worker(url)` 走既有取源路径（workers-compat 的 fetch/同源校验面不动，含 blob/data URL 语义），取得源文本后经宿主桥 op `__zw_worker_host_op(op, …) -> String`（op ∈ `spawn(<init脚本>)`/`post(<id>,<载荷>)`/`terminate(<id>)`，位置字符串实参）交 renderer spawn——**同源校验与 URL 解析仍在 js_worker 脚本线程 shim（信任边界不移位），宿主只收已校验的源文本**。
+- spawn 同步回执：shim 构造器在 `__zw_worker_host_op('spawn')` 内同步等 id（回 `err:…` 即回落 same-realm 逐字节不变路径）；命令通道直达宿主线程不经主循环（learning #24 同款死锁规避），5s 超时兜底防宿主线程死亡悬挂脚本线程。
+- 事件回流：宿主泵把 `WorkerEvent::Message/Error/Closed` 经 `PrioritySubmitter`（js_worker 优先队列，fire-and-forget）以脚本 `typeof __zw_worker_host_dispatch==='function'&&__zw_worker_host_dispatch(id, type, payload)` 派发回页面（payload 以 JSON 表达式内嵌）；shim 侧 handler 查注册表（宿主 id → Worker 实例）后 `setTimeout(0)` task 派发 `message`/`error` 事件（对齐既有 shim 投递语义——页面 promise 链可在两条消息间改挂 onmessage）；`Closed` 触发宿主 map 摘除 + `closed` 面置位。主线程阻塞期事件在 js_worker 队列排队 = worker 事件任务粒度投递的固有语义。
+- 页面侧代理对象：flag on 的 `Worker` 实例把 `postMessage`/`terminate` 转宿主桥 op（`_zwHostId` 判空分流，same-realm 回落实例零路由）；`onmessage`/`onerror` 挂接事件派发位；宿主派发函数 `__zw_worker_host_dispatch` 于首个 spawn 成功时惰性定义（shim 加载期回调未注册，加载期守卫不成立）。跨线程载荷类型保真：`undefined`/字符串经 `__zwUndef`/`__zwStr` 标记（worker 侧 prologue 包裹 + shim 解包；bootstrap 队列以字符串为载体）；JSON 子集裁剪——函数/symbol 载荷 `JSON.stringify` 返 undefined 抛 DataCloneError（spec 对齐），MessagePort/transfer 静默丢弃（§1 裁剪记档）。
+- flag off 零行为：shim 分流点在 scriptSrc 取得之后（同源校验/取源/parse-error 语义不位移），桥缺席或 spawn 失败回落路径逐字节不变（workers-compat 语料钉住；engine part64 三测试钉 flag 关零面/flag on 路由/err 回落）；env `ZW_THREADED_WORKERS` 经 `zero_runtime_config::enabled_when_true` 注册期每次读取（R3858 惯例），默认关。
+- 引擎无关：宿主只引用 `script_sandbox::WorkerRuntime` 同名类型（v8/quickjs feature 对齐页面引擎），宿主代码不写引擎分支；worker 定时器族与错误捕获已并入 bootstrap（bcf29d5fd：`setTimeout`/`setInterval`/`clear*`/`close` 经 `_workerTimerOps` 记操作、Rust 侧 `recv_timeout` 命令循环间隙服务到期定时器；v8 TryCatch / quickjs `ctx.catch()` → `WorkerEvent::Error`，worker 不退出；线程退出 `Closed` 单出口）——验收 (a) 的定时器驱动面与 (d) 错误路径面已具备。
+- 看门狗：页面 worker 用 `SandboxConfig::default()`（`timeout_ms = 0` 即无脚本超时，看门狗线程不启动）——浏览器语义：worker 常驻至 `terminate()`/`close()`/导航清理（S1d），不预设脚本时长上限；`terminate()` 强制中断保留（死循环兜底）。
 
 ### 2.2 worker canvas 桥（S1b）
 
@@ -78,7 +79,7 @@ flag on（`ZW_THREADED_WORKERS=1` + 呈现 flag）真实窗口/headless 双向�
 
 | 步 | 触点 | 新增 IPC |
 |---|---|---|
-| S1a | renderer `worker_host.rs`（新）+ `runtime.rs`（宿主桥 op 注册 + 事件泵挂点）；shim `part05.js`（flag 分流 Worker 构造器 + 宿主桥 op）；protocol 穷举清单（宿主桥走既有 host 回调通道则零新消息——实施推演核对 `__zw_*` op 面通道） | 视宿主桥通道而定，倾向零新消息 |
+| S1a | renderer `worker_host.rs`（新）+ `runtime.rs`（flag 门控宿主装填）；engine `worker_bridge.rs`（新，进程槽）+ callbacks 注册；shim `part05.js`（flag 分流 Worker 构造器 + postMessage/terminate 路由 + `__zw_worker_host_dispatch` 惰性派发）；js_worker `PrioritySubmitter` | 零（已核实：宿主桥走既有 host 回调通道） |
 | S1b | engine `canvas_context_op` 零改动；shim OffscreenCanvas/transferControlToOffscreen flag 分支；renderer 宿主绑定表 | 零（绑定走宿主桥 op） |
 | S1c | protocol `message.rs` 末尾追加 patch 三消息 + 穷举清单；renderer `worker_host.rs`（SharedWriter 数据面 + 控制面主线程双通道）；browser demux/中继 + compositor 存储/合成/清理 | patch 三消息（末尾追加，Android 通配安全） |
 | S1d | 生命周期清理（宿主/compositor/epoch）+ fixture/observe/analyze + 证据目录 | 零 |
@@ -89,14 +90,14 @@ flag on（`ZW_THREADED_WORKERS=1` + 呈现 flag）真实窗口/headless 双向�
 
 | 项 | 性质 | 说明 |
 |---|---|---|
-| `WorkerRuntime` 宿主桥走既有 host 回调通道（`__zw_*` op 面）可行，零新 IPC | Assumption | spawn/postMessage/terminate 为页面→renderer 主线程同步/异步入站（主线程活着时才发起）；事件回流走宿主回调注册位。实施推演核对 `service_worker_host` 的 evaluate 命令面后定通道，若需新消息按 FR-11 末尾追加 |
-| 页面 worker `SandboxConfig` 无脚本超时 + `terminate_execution` 兜底 | Assumption（实施推演点） | 对齐 `service_worker_host` config 取值；看门狗线程每 worker 一条的成本（fixture 尺度个位数 worker）记档 |
-| 真 worker 内 `importScripts`/嵌套 Worker 不支持（worker 体自包含） | Open（S1 范围裁剪） | 主线程预处理抓取（取源时展开 import 链）可后补；workers-compat 语义面在该路径不承诺 |
+| `WorkerRuntime` 宿主桥走既有 host 回调通道可行，零新 IPC | **已核实成立（S1a 实现批）** | 通道落定 `__zw_worker_host_op(op, …) -> String`（engine 进程槽 `worker_bridge` + flag 门控回调注册，hit_provider 槽模式）；spawn/postMessage/terminate 经 js_worker 脚本线程同步/即返闭包直达宿主线程，事件回流经 `PrioritySubmitter` 优先脚本派发（§2.1）。零新协议消息确认 |
+| 页面 worker `SandboxConfig` 无脚本超时 | **已核实（S1a 实现批）** | `SandboxConfig::default()` 即 `timeout_ms = 0`：无脚本超时、看门狗线程不启动；`terminate()` 强制中断（v8 `terminate_execution` / quickjs 中断标志）为死循环兜底。页面 worker 线程成本 = 每 worker 一 isolate 线程 + 宿主线程一条（fixture 尺度个位数 worker） |
+| 真 worker 内 `importScripts`/嵌套 Worker 不支持（worker 体自包含） | Open（S1 范围裁剪） | host 分支 init 脚本无 shim helper，`importScripts` 调用报错；嵌套 Worker 无构造器（bootstrap 不提供 `Worker`，spec 对齐）。主线程预处理抓取（取源时展开 import 链）可后补；workers-compat 语义面在该路径不承诺 |
 | 位图 Vec<u8> 全帧口径的背压与带宽 | Open | fixture 尺度（48²×4B×更新率）无压力；真实大画布需 dirty-rect/shm（§4 预留）+ browser 中继背压策略 |
 | patch 合成 z 序（canvas 元素与兄弟内容交叠） | Open | S1 断言面限定互不重叠（fixture 设计约束）；z 序组合需合成器层序信息，独立小切片 |
 | 逐 op present vs 宏任务边界 present vs 显式 commit | Open | S1 定宏任务边界（spec OffscreenCanvas 无隐式每 op 上屏承诺；commit 面如需对齐 spec `commit()` 另议） |
 | `transferControlToOffscreen` 迁移后主线程 2d ctx 失效面 | Assumption | flag on 面内对齐 HTML spec §transferred-canvas（InvalidStateError）；flag off 现行语义不动（R3313 共享 handle 面不变） |
-| WPT 钉住面 | 待核对（S1a 批执行） | workers-compat 语料（worker 构造/postMessage/error/importScripts 面）flag 关零回归必须同批核对；flag on 面内新增行为不回流 shim |
+| WPT 钉住面 | **flag 关零回归已核对（S1a 实现批）** | engine part61 52 个 worker 测试双引擎（v8/quickjs）全绿（分流点在 scriptSrc 取得之后 + 桥 err 回落路径逐字节不变）；part64 新增 3 测试钉 flag 关零面/flag on 路由/err 回落；renderer worker_host 4 测试（含真 WorkerRuntime + 真 js_worker 全链路回显）。flag on 面内新增行为不回流 shim |
 
 ## 4. 与后续切片的契约预留
 

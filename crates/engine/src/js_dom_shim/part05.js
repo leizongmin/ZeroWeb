@@ -15254,6 +15254,10 @@
     out += src.slice(last);
     return out;
   }
+  // M3-S1a（compositor-animation-continuity RFC §2.1）：宿主真线程 worker 实例注册表
+  //（宿主 id → Worker 实例）——`__zw_worker_host_dispatch` 派发查找用。文档生命周期内
+  // 存活（shim 每次 load 重 Eval 时重置；宿主侧残留 id 派发 miss 即忽略，导航清理归 S1d）。
+  var _zwHostWorkers = {};
   function Worker(url, options, baseUrl) {
     if (!(this instanceof Worker)) return new Worker(url, options, baseUrl);
     // WebIDL 构造器分型（Worker-constructor 面）：url 缺参 TypeError；URL 解析失败
@@ -15931,6 +15935,41 @@
       }
     }
     if (scriptSrc) {
+      // M3-S1a（compositor-animation-continuity RFC §2.1）：真线程 worker 分流——
+      // `__zw_worker_host_op` 已注册（ZW_THREADED_WORKERS flag 开 + renderer 宿主装填）
+      // 时 spawn 进 renderer 宿主线程（WorkerRuntime 事件泵）。init 脚本 = prologue +
+      // 脚本体：prologue 补 postMessage 字符串标记（`__zwStr` 保类型）与
+      // `_dispatchMessage` JSON.parse（页面→worker 载荷还原）——真线程 worker 的
+      // bootstrap 队列以字符串为载体，无补丁则对象/字符串类型失真。spawn 失败/桥
+      // 缺席/flag 关回落 same-realm 路径（逐字节不变，workers-compat 钉住）。分流点
+      // 在 scriptSrc 取得之后——同源校验/取源/parse-error 语义不位移。importScripts
+      // 内联不适用于宿主分支（真线程 worker 无 shim helper，RFC §1 裁剪——调用报错）。
+      var _zwHostId = null;
+      if (typeof __zw_worker_host_op === 'function') {
+        var _zwSpawnScript = '(function(){var _zwPm=postMessage;postMessage=function(data){'
+          + '_zwPm(data===undefined?{__zwUndef:1}:typeof data==="string"?{__zwStr:1,v:data}:data);};'
+          + 'var _zwDm=_dispatchMessage;_dispatchMessage=function(raw){'
+          + 'raw=typeof raw==="string"?JSON.parse(raw):raw;'
+          + '_zwDm(raw&&raw.__zwUndef?undefined:raw);};})();\n'
+          + scriptSrc;
+        try {
+          var _zwSpawnResult = __zw_worker_host_op('spawn', _zwSpawnScript);
+          if (typeof _zwSpawnResult === 'string' && _zwSpawnResult.indexOf('err:') !== 0) {
+            var _zwSpawnId = parseInt(_zwSpawnResult, 10);
+            if (_zwSpawnId >= 1) _zwHostId = _zwSpawnId;
+          }
+        } catch (_eSpawn) {}
+      }
+      if (_zwHostId !== null) {
+        main._zwHostId = _zwHostId;
+        _zwHostWorkers[_zwHostId] = main;
+        // 宿主派发函数惰性定义（首个 spawn 成功时）：shim 加载期 `__zw_worker_host_op`
+        // 尚未注册（回调注册在 shim 执行后），加载期 typeof 守卫恒 false 不成立。
+        if (typeof globalThis.__zw_worker_host_dispatch !== 'function') {
+          globalThis.__zw_worker_host_dispatch = _zwMakeHostDispatch();
+        }
+        return;
+      }
       // M2（workers-compat DC-2）：importScripts 调用位内联（语义见
       // _zwInlineImportScripts 注记——三相 spec 语义 + direct eval 同作用域定义共享，
       // 替代旧「顶部提升 + 正则剥行」实现）。字面量/常量参数调用重写；其余形态
@@ -16032,6 +16071,20 @@
     var ports = Object.freeze(_zwConsumeTransferList(transferList, null, _xfer));
     _zwDetachTransferables(transferList);
     var target = this;
+    // M3-S1a：宿主分支——transfer 校验/clone 错误面与 same-realm 共用（上方），载荷
+    // JSON 序列化（undefined 包 `__zwUndef`、字符串包 `__zwStr` 保类型）经
+    // `__zw_worker_host_op('post', id, json)` 投递；worker 侧 prologue 解包还原。
+    // 序列化失败（函数/symbol 等非 JSON 面）抛 DataCloneError 同 same-realm clone
+    // 失败语义；转移的 MessagePort 静默丢弃（真线程 worker 无 port 面——RFC §1 裁剪）。
+    if (target._zwHostId != null && typeof __zw_worker_host_op === 'function') {
+      var _zwJson = JSON.stringify(
+        data === undefined ? { __zwUndef: 1 } : typeof data === 'string' ? { __zwStr: 1, v: data } : data);
+      if (_zwJson === undefined) {
+        throw new (globalThis.DOMException || DOMException)("Failed to execute 'postMessage' on 'Worker': could not be cloned.", 'DataCloneError');
+      }
+      try { __zw_worker_host_op('post', String(target._zwHostId), _zwJson); } catch (_eHostPost) {}
+      return;
+    }
     // workers-compat M3：投递载体 **task**（spec「queue a global task on the posted
     // message task source」——MessagePort ④ 同款 setTimeout）。此前 queueMicrotask 使
     // 相邻两条 worker 消息背靠背派发、页面 promise `.then`（微任务）无法在其间改挂
@@ -16064,6 +16117,13 @@
   // terminate()——终止 worker：后续派发跳过（_terminated 标记）。
   Worker.prototype.terminate = function () {
     this._terminated = true;
+    // M3-S1a：宿主分支——真线程终止（host 摘表 + 强制中断 + bounded join），随后
+    // Closed 事件回派发仅置 _closed（无页面可见事件，spec terminate 无 close 事件）。
+    if (this._zwHostId != null && typeof __zw_worker_host_op === 'function') {
+      try { __zw_worker_host_op('terminate', String(this._zwHostId)); } catch (_eHostTerm) {}
+      delete _zwHostWorkers[this._zwHostId];
+      this._zwHostId = null;
+    }
   };
   Object.defineProperty(Worker.prototype, 'onmessage', {
     configurable: true,
@@ -16094,6 +16154,45 @@
     },
   });
   globalThis.Worker = globalThis.Worker || Worker;
+
+  // M3-S1a：宿主 worker 事件派发工厂（renderer worker_host 经优先脚本调用，事件形态
+  // message/error/closed）。构造器首个 spawn 成功时经 `_zwMakeHostDispatch()` 惰性
+  // 赋 `globalThis.__zw_worker_host_dispatch`——flag 关（无 spawn）不定义，零行为。
+  // message 派发查 _terminated 不查 _closed（spec close 不拦 worker→page 出站投递，
+  // wctx.postMessage 同款；close 后同任务 postMessage 仍达）；error/closed 查双标记。
+  // 派发载体 setTimeout(0) task（同 prototype.postMessage task 语义——页面 promise
+  // 链可在两条 worker 消息间改挂 onmessage）。payload 解包 `__zwUndef`/`__zwStr`
+  // 类型标记（spawn prologue 对应包裹，见构造器宿主分支注记）。
+  // https://html.spec.whatwg.org/multipage/workers.html#dom-workerglobalscope-close
+  function _zwMakeHostDispatch() {
+    return function (id, type, payload) {
+      var w = _zwHostWorkers[id];
+      if (!w) return;
+      if (type === 'message') {
+        var data = payload;
+        if (data && typeof data === 'object') {
+          if (data.__zwUndef) data = undefined;
+          else if (data.__zwStr) data = data.v;
+        }
+        setTimeout(function () {
+          if (w._terminated) return;
+          w.dispatchEvent(new MessageEvent('message', { data: data, origin: '', ports: [] }));
+        }, 0);
+      } else if (type === 'error') {
+        setTimeout(function () {
+          if (w._terminated || w._closed) return;
+          w.dispatchEvent(new ErrorEvent('error', {
+            message: String(payload == null ? '' : payload),
+            filename: w._resolvedScriptUrl || '',
+            cancelable: true,
+          }));
+        }, 0);
+      } else if (type === 'closed') {
+        w._closed = true;
+        delete _zwHostWorkers[id];
+      }
+    };
+  }
 
   // matchMedia——window.matchMedia(query) 响应式设计 / viewport 查询（modern 站点高频，shim 曾缺失）。
   // 委托 host `__zw_match_media(query, w, h)`（spec-correct via zero_css_parser::media_query）。返

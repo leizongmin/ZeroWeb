@@ -2867,6 +2867,21 @@ pub fn register_dom_callbacks(
             canvas_context_op(&mut reg, handle, op, rest)
         }),
     );
+
+    // M3-S1a（compositor-animation-continuity RFC §2.1/§3）：真线程 worker 宿主命令
+    // 通道 `__zw_worker_host_op(op, ...args)`。ZW_THREADED_WORKERS flag **注册期**读取
+    //（R3858：本函数每次 execute 重入，测试可 set_var 后重注册；进程内 flag 翻转随
+    // 下次注册生效），flag 关或桥未装填（worker_bridge 槽空）都不注册 → shim
+    // `typeof` 守卫回落 same-realm worker（零行为，workers-compat 钉住）。桥本体见
+    // `worker_bridge` 模块（renderer worker_host 装填）。
+    if zero_runtime_config::enabled_when_true("ZW_THREADED_WORKERS")
+        && let Some(op) = crate::worker_bridge::worker_host_op()
+    {
+        sandbox.register_callback(
+            "__zw_worker_host_op",
+            Box::new(move |args: &[String]| -> String { op(args) }),
+        );
+    }
 }
 
 thread_local! {

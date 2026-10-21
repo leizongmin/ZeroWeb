@@ -62,6 +62,9 @@ pub mod text_metrics;
 #[cfg(feature = "script-runtime")]
 pub mod timer_bridge;
 pub mod transition;
+// M3-S1a：页面 worker 宿主命令桥槽（renderer 装填，__zw_worker_host_op 回调消费；
+// 进程级槽同 hit_provider 模式）。
+pub mod worker_bridge;
 // t8k：WebSocket 页面 API 宿主桥（复用 __zw_pending Promise 通道；形态对齐 fetch_bridge）。
 #[cfg(feature = "script-runtime")]
 pub mod ws_bridge;
@@ -95,6 +98,7 @@ pub use text_metrics::{
 };
 #[cfg(feature = "script-runtime")]
 pub use timer_bridge::*;
+pub use worker_bridge::set_worker_host_op;
 #[cfg(feature = "script-runtime")]
 pub use ws_bridge::*;
 /// 渲染媒体类型（DC-12 @media print/screen；R1992 webview 生产接线）。

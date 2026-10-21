@@ -13,6 +13,7 @@ quickjs = ["script-runtime", "zero-script-sandbox/quickjs", "dep:rquickjs"]
 
 [dependencies]
 zero-product-version = { workspace = true }
+zero-runtime-config = { workspace = true }
 zero-dom = { workspace = true }
 zero-css-parser = { workspace = true }
 zero-style-system = { workspace = true }
