@@ -55,6 +55,8 @@ macro_rules! v8_try_catch_message {
         }
     }};
 }
+// worker.rs 的 Error 事件提取复用同一宏（macro_rules 文本作用域，须显式 re-export）。
+pub(crate) use v8_try_catch_message;
 
 /// 宿主注入的扁平字符串回调类型（JS-DOM-bridge：JS shim 经 __zw_* 回调操作宿主状态）。
 ///

@@ -9,11 +9,27 @@
 //! 使得脚本状态在多次执行间保持一致。
 
 use crate::threaded_runtime::ThreadedRuntimeCore;
-use crate::{SandboxConfig, ScriptError};
+use crate::{SandboxConfig, ScriptError, WORKER_BOOTSTRAP_JS};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
+
+/// Rust 侧定时器轮条目（bootstrap `setTimeout`/`setInterval` 家族 arm 时登记）。
+struct WorkerTimer {
+    /// 下次到期时刻。
+    due: std::time::Instant,
+    /// 重复周期毫秒数；`None` 为一次性定时器（setTimeout），到期即摘除。
+    period_ms: Option<u64>,
+}
+
+/// 定时器最小间隔 1ms：0 延迟与 0 周期的 `setInterval` 若零等待重臂会让命令循环忙转。
+/// HTML 定时器按 nesting level 的 ≥4ms 钳制未实现。
+// FIXME(spec): https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#timer-initialisation-steps
+fn worker_timer_delay(ms: u64) -> std::time::Duration {
+    std::time::Duration::from_millis(ms.max(1))
+}
 
 /// Worker 线程接收的命令。
 enum WorkerCommand {
@@ -350,23 +366,38 @@ impl Drop for WorkerWatchdogGuard<'_> {
 /// `$ctx` 为 [`WorkerExecCtx`]（隔离 handle + 看门狗发送端 + timeout_ms + 终止标志）：
 /// timeout_ms > 0 时 Arm 看门狗，`script.run` 返回（含被 terminate_execution 中断）后
 /// guard Drop 时 Disarm。
+///
+/// S1a（DC-4 场景 d）：`$report` 为 true 时，page-supplied 代码异常（编译错/运行时抛出）
+/// 经 TryCatch 提取消息发 `WorkerEvent::Error`——worker 不因此退出（每次执行独立）；
+/// 看门狗 terminate_execution 的终止异常不是页面错误，不报（同 `v8_runtime` 判定顺序）。
 macro_rules! v8_exec {
-    ($scope:expr, $code:expr, $ctx:expr) => {{
+    ($scope:expr, $code:expr, $ctx:expr, $sender:expr, $report:expr) => {{
         let scope = &mut $scope;
         let ctx = &mut $ctx;
         // R3399：终止标志置位时（terminate() 已调）直接跳过执行，让 worker 回 recv 循环。
         if ctx.terminate_flag.load(std::sync::atomic::Ordering::Acquire) {
             return;
         }
-        let Some(v8_code) = v8::String::new(scope, $code) else {
+        v8::tc_scope!(let try_catch, scope);
+        let Some(v8_code) = v8::String::new(try_catch, $code) else {
             return;
         };
-        let Some(script) = v8::Script::compile(scope, v8_code, None) else {
+        let script = v8::Script::compile(try_catch, v8_code, None);
+        if try_catch.has_caught() || script.is_none() {
+            if $report {
+                let msg = crate::v8_try_catch_message!(try_catch);
+                let _ = $sender.send(WorkerEvent::Error(msg));
+            }
             return;
-        };
+        }
         // R3399：看门狗 Arm（timeout_ms > 0 时）。guard Drop 时 Disarm（seq 匹配才撤）。
         let _wd_guard = ctx.arm();
-        let _ = script.run(scope);
+        let _ = script.unwrap().run(try_catch);
+        drop(_wd_guard);
+        if $report && try_catch.has_caught() && !try_catch.has_terminated() {
+            let msg = crate::v8_try_catch_message!(try_catch);
+            let _ = $sender.send(WorkerEvent::Error(msg));
+        }
     }};
 }
 
@@ -416,7 +447,105 @@ macro_rules! v8_drain {
     }};
 }
 
-/// Worker 线程的主函数。
+/// 排空 bootstrap 定时器操作队列 `_workerTimerOps`（arm/cancel/close，保持提交序），
+/// 填充 Rust 定时器轮。元素以 `String(op)` 序列化（`"arm,1,50,50"` 形态）读回。
+/// 返回是否遇到 `close()`（bootstrap close 语义：worker 退出，调用方发 Closed）。
+macro_rules! v8_drain_timer_ops {
+    ($scope:expr, $timers:expr) => {{
+        let scope = &mut $scope;
+        let timers = $timers;
+        let mut close_requested = false;
+        let Some(len_code) = v8::String::new(scope, "_workerTimerOps.length") else {
+            return;
+        };
+        let Some(len_script) = v8::Script::compile(scope, len_code, None) else {
+            return;
+        };
+        let Some(len_result) = len_script.run(scope) else {
+            return;
+        };
+        let Some(len_str) = len_result.to_string(scope) else {
+            return;
+        };
+        let Ok(count) = len_str.to_rust_string_lossy(scope).parse::<usize>() else {
+            return;
+        };
+        for i in 0..count {
+            let get_code = format!("String(_workerTimerOps[{i}])");
+            let Some(v8_code) = v8::String::new(scope, &get_code) else {
+                continue;
+            };
+            let Some(script) = v8::Script::compile(scope, v8_code, None) else {
+                continue;
+            };
+            let Some(result) = script.run(scope) else {
+                continue;
+            };
+            let Some(str_val) = result.to_string(scope) else {
+                continue;
+            };
+            let raw = str_val.to_rust_string_lossy(scope);
+            let parts: Vec<&str> = raw.split(',').collect();
+            match parts.as_slice() {
+                ["arm", id, delay, period] => {
+                    if let Ok(id) = id.parse::<u64>() {
+                        // 延迟/周期按 f64 截断（页面常写 `1000 / 60` 这类分数周期）。
+                        let delay = delay.parse::<f64>().unwrap_or(0.0).max(0.0) as u64;
+                        let period = period.parse::<f64>().unwrap_or(0.0).max(0.0) as u64;
+                        let due = std::time::Instant::now() + worker_timer_delay(delay);
+                        let period_ms = (period > 0).then_some(period);
+                        timers.insert(id, WorkerTimer { due, period_ms });
+                    }
+                }
+                ["cancel", id, ..] => {
+                    if let Ok(id) = id.parse::<u64>() {
+                        timers.remove(&id);
+                    }
+                }
+                ["close", ..] => {
+                    close_requested = true;
+                }
+                _ => {}
+            }
+        }
+        if let Some(clear_code) = v8::String::new(scope, "_workerTimerOps = []") {
+            if let Some(clear_script) = v8::Script::compile(scope, clear_code, None) {
+                let _ = clear_script.run(scope);
+            }
+        }
+        close_requested
+    }};
+}
+
+/// Worker 线程入口：body 退出（正常/terminate/`close()`/执行中断）后发 [`WorkerEvent::Closed`]。
+///
+/// S1a：Closed 收敛到唯一出口——body 内所有早退路径（含 [`v8_exec!`] 失败路径）不再各自
+/// 补发，避免遗漏（旧实现 page-supplied 脚本编译错会静默杀死线程且无任何事件）。
+#[allow(clippy::too_many_arguments)] // 线程入口：命令/事件通道 + R3399 中断/看门狗/标志
+fn worker_thread_fn(
+    init_script: String,
+    config: SandboxConfig,
+    cmd_receiver: Receiver<WorkerCommand>,
+    event_sender: Sender<WorkerEvent>,
+    handle_tx: Sender<v8::IsolateHandle>,
+    wd_tx: Sender<WorkerWatchdogMsg>,
+    timeout_ms: u64,
+    terminate_flag: Arc<AtomicBool>,
+) {
+    worker_thread_body(
+        init_script,
+        config,
+        cmd_receiver,
+        event_sender.clone(),
+        handle_tx,
+        wd_tx,
+        timeout_ms,
+        terminate_flag,
+    );
+    let _ = event_sender.send(WorkerEvent::Closed);
+}
+
+/// Worker 线程主循环。
 ///
 /// 使用持久化的 V8 Context，使得脚本状态在多次执行间保持一致。
 ///
@@ -424,7 +553,7 @@ macro_rules! v8_drain {
 /// 中断）；`wd_tx` + `timeout_ms` 构建看门狗上下文，每次 `script.run` 经
 /// [`v8_exec!`] Arm/Disarm；`terminate_flag` 供宏查询 terminate() 是否已发。
 #[allow(clippy::too_many_arguments)] // 线程入口：命令/事件通道 + R3399 中断/看门狗/标志
-fn worker_thread_fn(
+fn worker_thread_body(
     init_script: String,
     config: SandboxConfig,
     cmd_receiver: Receiver<WorkerCommand>,
@@ -454,19 +583,8 @@ fn worker_thread_fn(
     let context = v8::Context::new(scope, Default::default());
     let mut scope = v8::ContextScope::new(scope, context);
 
-    // 注入 Worker 全局环境
-    let bootstrap = r#"
-        var _workerMessageQueue = [];
-        var onmessage = null;
-        var postMessage = function(data) {
-            _workerMessageQueue.push(typeof data === 'string' ? data : JSON.stringify(data));
-        };
-        var _dispatchMessage = function(data) {
-            if (typeof onmessage === 'function') {
-                onmessage({ data: data });
-            }
-        };
-    "#;
+    // 注入 Worker 全局环境（消息队列 + 定时器 + close，V8/QuickJS 共享）
+    let bootstrap = WORKER_BOOTSTRAP_JS;
 
     // R3399：执行上下文（看门狗 + 终止标志）。与主线程 terminate_flag 共享同一 Arc。
     let mut exec_ctx = WorkerExecCtx {
@@ -477,36 +595,92 @@ fn worker_thread_fn(
         terminate_flag,
     };
 
-    // 执行 bootstrap
-    v8_exec!(scope, bootstrap, exec_ctx);
+    // 执行 bootstrap（宿主供给代码，异常不上报 Error 事件）
+    v8_exec!(scope, bootstrap, exec_ctx, event_sender, false);
 
-    // 执行初始化脚本
+    // 执行初始化脚本（page-supplied worker body，异常上报 Error 事件）
     if !init_script.trim().is_empty() {
-        v8_exec!(scope, &init_script, exec_ctx);
+        v8_exec!(scope, &init_script, exec_ctx, event_sender, true);
     }
 
-    // 排空初始化消息
+    // 排空初始化消息与定时器操作
     v8_drain!(scope, event_sender);
+    let mut timers: HashMap<u64, WorkerTimer> = HashMap::new();
+    if v8_drain_timer_ops!(scope, &mut timers) {
+        return; // bootstrap close()：wrapper 发 Closed
+    }
 
-    // 命令循环
-    while let Ok(cmd) = cmd_receiver.recv() {
+    // 命令循环 + 定时器轮：到期定时器在命令循环间隙服务（isolate 无事件循环，
+    // 纯 JS 不可自举定时器）；无定时器时退化为阻塞 recv（与旧实现同语义）。
+    loop {
+        let now = std::time::Instant::now();
+        let due_ids: Vec<u64> = timers
+            .iter()
+            .filter(|(_, timer)| timer.due <= now)
+            .map(|(id, _)| *id)
+            .collect();
+        for id in due_ids {
+            let period_ms = timers.get(&id).and_then(|timer| timer.period_ms);
+            let fire_code = format!("_workerTimerFire({id})");
+            v8_exec!(scope, &fire_code, exec_ctx, event_sender, true);
+            v8_drain!(scope, event_sender);
+            let close_requested = v8_drain_timer_ops!(scope, &mut timers);
+            // interval 重臂（one-shot 摘除；callback 内 clear 已移除条目则不重臂）。
+            match period_ms {
+                Some(period_ms) => {
+                    if let Some(timer) = timers.get_mut(&id) {
+                        timer.due = std::time::Instant::now() + worker_timer_delay(period_ms);
+                    }
+                }
+                None => {
+                    timers.remove(&id);
+                }
+            }
+            if close_requested {
+                return; // wrapper 发 Closed
+            }
+        }
+
+        let next_due = timers.values().map(|timer| timer.due).min();
+        let cmd = match next_due {
+            Some(due) => {
+                let now = std::time::Instant::now();
+                if due <= now {
+                    continue;
+                }
+                match cmd_receiver.recv_timeout(due - now) {
+                    Ok(cmd) => cmd,
+                    Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                }
+            }
+            None => match cmd_receiver.recv() {
+                Ok(cmd) => cmd,
+                Err(_) => break,
+            },
+        };
+
         match cmd {
             WorkerCommand::Execute(code) => {
-                v8_exec!(scope, &code, exec_ctx);
+                v8_exec!(scope, &code, exec_ctx, event_sender, true);
                 v8_drain!(scope, event_sender);
+                if v8_drain_timer_ops!(scope, &mut timers) {
+                    return; // wrapper 发 Closed
+                }
             }
             WorkerCommand::PostMessage(msg) => {
                 let dispatch_code = format!("_dispatchMessage({})", json_safe_arg(&msg));
-                v8_exec!(scope, &dispatch_code, exec_ctx);
+                v8_exec!(scope, &dispatch_code, exec_ctx, event_sender, true);
                 v8_drain!(scope, event_sender);
+                if v8_drain_timer_ops!(scope, &mut timers) {
+                    return; // wrapper 发 Closed
+                }
             }
             WorkerCommand::Terminate => {
                 break;
             }
         }
     }
-
-    let _ = event_sender.send(WorkerEvent::Closed);
 }
 
 /// 将字符串转换为 JS 安全的参数（作为带引号的 JS 字符串字面量）。
@@ -849,5 +1023,141 @@ mod tests {
             start.elapsed() < Duration::from_secs(4),
             "恢复后的 worker terminate() 挂死，R3399 回归"
         );
+    }
+
+    // ── S1a：worker 定时器（setTimeout/setInterval/clear*，命令循环间隙服务） ──
+
+    #[test]
+    fn test_worker_set_timeout_fires() {
+        let mut worker = WorkerRuntime::new(
+            "setTimeout(function() { postMessage('timeout-fired'); }, 50);",
+            SandboxConfig::default(),
+        )
+        .unwrap();
+        let event = worker.recv_timeout(Duration::from_secs(5)).unwrap();
+        match event {
+            WorkerEvent::Message(msg) => assert_eq!(msg, "timeout-fired"),
+            other => panic!("Expected Message, got: {other:?}"),
+        }
+        worker.terminate();
+    }
+
+    #[test]
+    fn test_worker_set_interval_repeats_until_cleared() {
+        let mut worker = WorkerRuntime::new(
+            "var n = 0; var id = setInterval(function() { n++; postMessage('tick' + n); }, 50);",
+            SandboxConfig::default(),
+        )
+        .unwrap();
+        for i in 1..=3 {
+            let event = worker.recv_timeout(Duration::from_secs(5)).unwrap();
+            match event {
+                WorkerEvent::Message(msg) => assert_eq!(msg, format!("tick{i}")),
+                other => panic!("tick {i}: Expected Message, got: {other:?}"),
+            }
+        }
+        worker.execute_script("clearInterval(id);").unwrap();
+        // 已到期的 tick 可能仍在事件通道，先排空再观察静默窗。
+        std::thread::sleep(Duration::from_millis(250));
+        while let Some(WorkerEvent::Message(_)) = worker.try_recv() {}
+        assert!(worker.try_recv().is_none(), "clearInterval 后定时器仍触发");
+        worker.terminate();
+    }
+
+    #[test]
+    fn test_worker_clear_timeout_prevents_fire() {
+        let mut worker = WorkerRuntime::new(
+            "var t = setTimeout(function() { postMessage('fired'); }, 500);
+             onmessage = function(e) { postMessage('echo:' + e.data); };",
+            SandboxConfig::default(),
+        )
+        .unwrap();
+        std::thread::sleep(Duration::from_millis(200));
+        worker.execute_script("clearTimeout(t);").unwrap();
+        // 越过原 500ms 到期点：若清除未生效，此处必然收到 'fired'。
+        std::thread::sleep(Duration::from_millis(400));
+        worker.post_message("probe").unwrap();
+        let event = worker.recv_timeout(Duration::from_secs(5)).unwrap();
+        match event {
+            WorkerEvent::Message(msg) => assert_eq!(msg, "echo:probe"),
+            other => panic!("Expected echo Message, got: {other:?}"),
+        }
+        assert!(worker.try_recv().is_none(), "clearTimeout 后定时器仍触发");
+        worker.terminate();
+    }
+
+    #[test]
+    fn test_worker_timer_callback_error_keeps_interval() {
+        let mut worker = WorkerRuntime::new(
+            "var n = 0; setInterval(function() { n++; if (n === 1) { throw new Error('tick-boom'); } postMessage('tick' + n); }, 50);",
+            SandboxConfig::default(),
+        )
+        .unwrap();
+        // 第一次 tick 抛错 → Error 事件。
+        let event = worker.recv_timeout(Duration::from_secs(5)).unwrap();
+        match event {
+            WorkerEvent::Error(msg) => assert!(msg.contains("tick-boom"), "Error 消息: {msg}"),
+            other => panic!("Expected Error, got: {other:?}"),
+        }
+        // interval 不因回调异常中断：后续 tick 正常。
+        let event = worker.recv_timeout(Duration::from_secs(5)).unwrap();
+        match event {
+            WorkerEvent::Message(msg) => assert_eq!(msg, "tick2"),
+            other => panic!("Expected Message after error, got: {other:?}"),
+        }
+        worker.terminate();
+    }
+
+    #[test]
+    fn test_worker_close_emits_closed() {
+        let mut worker = WorkerRuntime::new("var x = 1;", SandboxConfig::default()).unwrap();
+        std::thread::sleep(Duration::from_millis(200));
+        worker.execute_script("close();").unwrap();
+        let event = worker.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(matches!(event, WorkerEvent::Closed), "Expected Closed, got: {event:?}");
+    }
+
+    // ── S1a：page-supplied 脚本异常 → Error 事件（DC-4 场景 d），worker 不因此退出 ──
+
+    #[test]
+    fn test_worker_script_error_emits_error_and_stays_alive() {
+        let mut worker = WorkerRuntime::new(
+            "onmessage = function(e) { postMessage('echo:' + e.data); };",
+            SandboxConfig::default(),
+        )
+        .unwrap();
+        std::thread::sleep(Duration::from_millis(200));
+        worker.execute_script("throw new Error('boom');").unwrap();
+        let event = worker.recv_timeout(Duration::from_secs(5)).unwrap();
+        match event {
+            WorkerEvent::Error(msg) => assert!(msg.contains("boom"), "Error 消息: {msg}"),
+            other => panic!("Expected Error, got: {other:?}"),
+        }
+        // 抛错后 worker 仍存活：消息处理继续工作。
+        worker.post_message("probe").unwrap();
+        let event = worker.recv_timeout(Duration::from_secs(5)).unwrap();
+        match event {
+            WorkerEvent::Message(msg) => assert_eq!(msg, "echo:probe"),
+            other => panic!("Expected Message after error, got: {other:?}"),
+        }
+        worker.terminate();
+    }
+
+    #[test]
+    fn test_worker_init_script_compile_error_emits_error_and_closed() {
+        // 初始化脚本语法错：Error 事件 + 线程退出（Closed），不再静默死亡。
+        let worker = WorkerRuntime::new("function broken( {", SandboxConfig::default()).unwrap();
+        let mut saw_error = false;
+        let mut saw_closed = false;
+        for _ in 0..2 {
+            match worker.recv_timeout(Duration::from_secs(5)) {
+                Ok(WorkerEvent::Error(msg)) => saw_error = msg.contains("broken") || !msg.is_empty(),
+                Ok(WorkerEvent::Closed) => saw_closed = true,
+                Ok(other) => panic!("Unexpected event: {other:?}"),
+                Err(e) => panic!("recv failed: {e}"),
+            }
+        }
+        assert!(saw_error, "初始化编译错未报 Error 事件");
+        assert!(saw_closed, "初始化编译错后未发 Closed");
     }
 }

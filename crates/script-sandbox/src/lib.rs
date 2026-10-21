@@ -159,6 +159,61 @@ pub(crate) fn v8_heap_limits(config: &SandboxConfig) -> Option<(usize, usize)> {
     Some((initial, max))
 }
 
+/// Worker bootstrap（V8/QuickJS worker 共享，注入 worker 全局环境）。
+///
+/// 三块 JS 面（Rust 侧经排空协议消费，见 worker.rs / quickjs_worker.rs）：
+/// - 消息：`postMessage` 入 `_workerMessageQueue`，`_dispatchMessage` 派发给 `onmessage`。
+/// - 定时器：`setTimeout`/`setInterval`/`clearTimeout`/`clearInterval` 只把操作（arm/cancel）
+///   记入 `_workerTimerOps`，到期在 worker 线程命令循环间隙由 Rust 轮驱动 `_workerTimerFire`。
+///   isolate 无事件循环，纯 JS 不可自举定时器。
+/// - 关闭：`close()` 记 `close` 操作，Rust 侧发 `WorkerEvent::Closed` 并退出线程
+///   （https://html.spec.whatwg.org/multipage/workers.html#dom-dedicatedworkerglobalscope-close）。
+pub(crate) const WORKER_BOOTSTRAP_JS: &str = r#"
+    var _workerMessageQueue = [];
+    var onmessage = null;
+    var postMessage = function(data) {
+        _workerMessageQueue.push(typeof data === 'string' ? data : JSON.stringify(data));
+    };
+    var _dispatchMessage = function(data) {
+        if (typeof onmessage === 'function') {
+            onmessage({ data: data });
+        }
+    };
+    var _workerTimers = {};
+    var _workerTimerSeq = 0;
+    var _workerTimerOps = [];
+    var _workerTimerSet = function(callback, delay, period) {
+        if (typeof callback !== 'function') {
+            return 0;
+        }
+        var id = ++_workerTimerSeq;
+        _workerTimers[id] = callback;
+        _workerTimerOps.push(['arm', id, typeof delay === 'number' && delay > 0 ? delay : 0, period]);
+        return id;
+    };
+    var setTimeout = function(callback, delay) {
+        return _workerTimerSet(callback, delay, 0);
+    };
+    var setInterval = function(callback, delay) {
+        return _workerTimerSet(callback, delay, delay);
+    };
+    var clearTimeout = function(id) {
+        _workerTimerOps.push(['cancel', typeof id === 'number' ? id : 0, 0, 0]);
+    };
+    var clearInterval = function(id) {
+        _workerTimerOps.push(['cancel', typeof id === 'number' ? id : 0, 0, 0]);
+    };
+    var _workerTimerFire = function(id) {
+        var callback = _workerTimers[id];
+        if (typeof callback === 'function') {
+            callback();
+        }
+    };
+    var close = function() {
+        _workerTimerOps.push(['close', 0, 0, 0]);
+    };
+"#;
+
 /// 脚本沙箱抽象 trait — `V8Sandbox` 和 `QuickJSSandbox` 都实现。
 ///
 /// 调用方用 `Box<dyn Sandbox>` 持有引擎无关的沙箱实例（cfg 选 V8/QuickJS）。
