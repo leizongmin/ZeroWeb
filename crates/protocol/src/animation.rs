@@ -139,6 +139,12 @@ pub struct CompositorAnimationDeclaration {
     pub timing: AnimationTiming,
     /// 键帧端点列（已排序、已补界）。
     pub keyframes: Vec<AnimationKeyframe>,
+    /// M2-S3b：暂停冻结的活跃时长（秒；CSS Animations §play-state，暂停不计入
+    /// 活跃时长）——`Some(p)` 时采样活跃时长恒为 p（延迟期/已结束边界沿用 fill
+    /// 既有分支），墙钟推进不影响输出。None = running。renderer 暂停状态机置位，
+    /// 未暂停声明恒 None；FR-11 末尾字段纪律（serde default，Android 通配安全）。
+    #[serde(default)]
+    pub frozen_phase_s: Option<f64>,
 }
 
 /// 动画作用域的属性通道。
@@ -234,7 +240,15 @@ pub fn sample_declaration(declaration: &CompositorAnimationDeclaration, now_mono
     let start_s = declaration.start_monotonic_ns as f64 / 1e9;
     let now_s = now_monotonic_ns as f64 / 1e9;
     let elapsed = now_s - start_s;
-    let active_elapsed = elapsed - timing.delay_ms / 1000.0;
+    // M2-S3b：暂停冻结——`Some(p)` 时活跃时长恒为 p（墙钟不推进；CSS Animations
+    // §play-state：暂停不计入活跃时长）。延迟期/已结束边界沿用下方既有 fill 分支
+    // （延迟期暂停 → backwards 或 None；结束后暂停 → finished + fill，不复活）。
+    // 三消费者（compositor 像素、renderer 查询覆盖、S2b 终结判定）同函数自动一致；
+    // 冻结值逐帧不变 → 声明字节稳定，renderer sent 判等零 churn。
+    let active_elapsed = match declaration.frozen_phase_s {
+        Some(frozen) => frozen,
+        None => elapsed - timing.delay_ms / 1000.0,
+    };
 
     // 延迟期：backwards/both 用首帧值，否则无覆盖（engine tick :986-1000）。
     if active_elapsed < 0.0 {
@@ -583,6 +597,7 @@ mod tests {
                     easing: None,
                 },
             ],
+            frozen_phase_s: None,
         }
     }
 
@@ -668,6 +683,7 @@ mod tests {
                     easing: None,
                 },
             ],
+            frozen_phase_s: None,
         };
         let sample = sample_declaration(&decl, 500_000_000).value;
         let Some(AnimationPropertyValue::Transform(functions)) = sample else {
@@ -703,6 +719,81 @@ mod tests {
             Some(AnimationPropertyValue::Opacity(0.0))
         );
         // 注意：start_monotonic_ns=1e9，这里 t=1.4s → 进度 0.4 → step-end → 0。
+    }
+
+    #[test]
+    fn frozen_phase_holds_value_and_edge_semantics() {
+        // M2-S3b：暂停冻结——活跃相位恒为冻结值（墙钟任意推进不变，finished 恒
+        // false 不触发终结判定）；冻结值 0 → 首帧。
+        let mut decl = linear_opacity_decl(1000.0, 1.0, 0.0);
+        decl.frozen_phase_s = Some(0.25);
+        assert_eq!(
+            sample_declaration(&decl, 1_000_000_001).value,
+            Some(AnimationPropertyValue::Opacity(0.75))
+        );
+        assert_eq!(
+            sample_declaration(&decl, 5_000_000_000).value,
+            Some(AnimationPropertyValue::Opacity(0.75)),
+            "墙钟推进不影响冻结值"
+        );
+        assert!(!sample_declaration(&decl, 5_000_000_000).finished);
+        decl.frozen_phase_s = Some(0.0);
+        assert_eq!(
+            sample_declaration(&decl, 1_000_000_000).value,
+            Some(AnimationPropertyValue::Opacity(1.0))
+        );
+
+        // 延迟期暂停（冻结活跃时长为负）：无 fill → None；backwards → 首帧（
+        // RFC §3 Assumption：delay 期暂停沿用既有 fill 分支）。
+        let mut delayed = linear_opacity_decl(1000.0, 1.0, 0.0);
+        delayed.timing.delay_ms = 500.0;
+        delayed.frozen_phase_s = Some(-0.25);
+        assert_eq!(sample_declaration(&delayed, 9_000_000_000).value, None);
+        delayed.timing.fill = AnimationFillMode::Backwards;
+        assert_eq!(
+            sample_declaration(&delayed, 9_000_000_000).value,
+            Some(AnimationPropertyValue::Opacity(1.0))
+        );
+
+        // 已结束后暂停（冻结值越过末轮）：不复活——finished + fill 语义照旧
+        // （RFC §3 Assumption：finished 语义不受扰动）。
+        let mut ended = linear_opacity_decl(1000.0, 1.0, 0.0);
+        ended.frozen_phase_s = Some(2.0);
+        let sample = sample_declaration(&ended, 9_000_000_000);
+        assert!(sample.finished);
+        assert_eq!(sample.value, None);
+        ended.timing.fill = AnimationFillMode::Forwards;
+        assert_eq!(
+            sample_declaration(&ended, 9_000_000_000).value,
+            Some(AnimationPropertyValue::Opacity(0.0))
+        );
+    }
+
+    #[test]
+    fn frozen_phase_serializes_roundtrip() {
+        // FR-11：尾字段 serde default——Some 值经消息 roundtrip 保真（bincode 对
+        // Option 恒编码，default 语义覆盖旧类型新字段缺省）。
+        let mut declaration = linear_opacity_decl(1000.0, 1.0, 0.0);
+        declaration.frozen_phase_s = Some(0.375);
+        let params = CompositorAnimationStateParams {
+            surface_id: 7,
+            navigation_epoch: 2,
+            generation: 9,
+            declarations: vec![declaration],
+            finished: vec![],
+        };
+        let bytes = crate::serialize::serialize(&crate::message::IpcMessage {
+            id: 1,
+            kind: crate::message::IpcMessageKind::CompositorAnimationState(params.clone()),
+        })
+        .expect("序列化失败");
+        let decoded = crate::serialize::deserialize(&bytes).expect("反序列化失败");
+        match decoded.kind {
+            crate::message::IpcMessageKind::CompositorAnimationState(out) => {
+                assert_eq!(out.declarations[0].frozen_phase_s, Some(0.375));
+            }
+            other => panic!("消息类型不符: {other:?}"),
+        }
     }
 
     #[test]

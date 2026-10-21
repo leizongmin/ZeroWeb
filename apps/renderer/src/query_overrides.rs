@@ -234,6 +234,7 @@ mod tests {
                     easing: None,
                 },
             ],
+            frozen_phase_s: None,
         }
     }
 
