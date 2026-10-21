@@ -61,6 +61,11 @@ flag 开真实窗口（autostart 自驱动 + env 门控点击注入）：
 - hit_test 应用点：`hit_test.rs` 候选节点矩形包含测试前，若节点 element_key 命中 provider → 以逆矩阵映射查询点再测基线 rect（点变换 O(1)，不改 rect 缓存结构；矩阵奇异即跳过 provider 回落基线，单测钉住）；命中选择器/文本/图片三路同源受益。flag 关未注册 provider → 零行为变化（FR-9 同款）。静态 transform 不经此路径（无 provider 键），维持现状并记缺口。
 - 「真实输入」注入器：browser env 门控 `ZW_INJECT_CLICKS="x,y@t[;…]"`（导航完成后相对秒），到点走既有 winit 输入入口组装 `MouseEventParams::Click` 下发 renderer（`app_input` 既有路径，非 renderer 直派）——复用全链路命中管线；env 缺省零行为。观察脚本 dc3-observe 增传该 env。
 
+**S3c 实现修正记录**（2026-10-22，三批 commits ed15c8903/c3c2f0bf7/17b4c85b7，以当前为准）：
+① provider 返回值精化为**含 transform-origin 折叠的全仿射** `T(o)·A·T(−o)`（本节首条原措辞「折叠 2D 仿射」未言明 origin——仅返 A 会使逆映射绕错原点旋转，几何错误；origin 取自最近发布快照 `transforms[scope.transform_index]`，与 compositor R3833 改写矩阵同式同源值）。
+② 注入器时基与路径修正为：**活跃 tab 页面 load 完成后相对毫秒**；到期点直接走 `handle_mouse_move`/`handle_mouse_click`（`app_input` 与真实输入同一入口，语义与原设计「非 renderer 直派、复用全链路命中管线」一致）。
+③ 嵌套动画 transform（父子同通道）不组合逆映射，单层简化记档（DC-3 fixture 单层）。
+
 ### 2.4 触面清单
 
 | 步 | 触点 | 新增 IPC |
