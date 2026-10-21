@@ -5,8 +5,10 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（170）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（172）
 
+- 2026-10-22 [窗口模式注入点击两坑：chrome 高 91px 坐标换算与空白区点击静默丢弃](bugs/2026-10/2026-10-22-windowed-click-injection-calibration.md) — browser,renderer
+- 2026-10-20 [WHATWG prescan 共享 position 游标：skip 落点必须回写再进属性循环](bugs/2026-10/2026-10-20-prescan-position-cursor.md) — engine
 - 2026-10-19 [基建缺口修复会暴露 vacuous-pass 断言，需同轮把被钉行为真值化](bugs/2026-10/2026-10-19-vacuous-pass-exposed-by-named-access.md) — engine
 - 2026-10-19 [配对型 reftest 单侧门控无法恢复双侧一致](bugs/2026-10/2026-10-19-reftest-pair-single-side-gate-futile.md) — engine
 - 2026-10-19 [even-odd 填充串联内外多边形不切 keyhole 会撕出桥隙](bugs/2026-10/2026-10-19-evenodd-ring-keyhole-cut.md) — engine

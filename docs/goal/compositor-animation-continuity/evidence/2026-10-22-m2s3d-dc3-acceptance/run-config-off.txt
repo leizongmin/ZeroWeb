@@ -1,0 +1,1 @@
+mode=off flag=ZW_COMPOSITOR_ANIMATIONS=0 wall=14s fixture=comp03-hit-test-pause-cancel.html

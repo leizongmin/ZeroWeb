@@ -1,6 +1,6 @@
 # M2-S3 切片：暂停/取消/命中测试一致性（DC-3）RFC
 
-状态：Active ｜ 日期：2026-10-21 ｜ 上游：[目标契约](../compositor-animation-continuity.md) DC-3 / [控制面](master.md)
+状态：Done（S3a/S3b/S3c 落地 + S3d DC-3 验收成立，2026-10-22）｜ 日期：2026-10-21 ｜ 上游：[目标契约](../compositor-animation-continuity.md) DC-3 / [控制面](master.md)
 前置：S1（采样链路，commits 72183d732/77d4db07f）与 S2（查询一致性 + 结束事件，[RFC](m2-slice-query-consistency.md)）已落地；flag 默认仍关。
 
 ## 0. 执行摘要
@@ -65,6 +65,7 @@ flag 开真实窗口（autostart 自驱动 + env 门控点击注入）：
 ① provider 返回值精化为**含 transform-origin 折叠的全仿射** `T(o)·A·T(−o)`（本节首条原措辞「折叠 2D 仿射」未言明 origin——仅返 A 会使逆映射绕错原点旋转，几何错误；origin 取自最近发布快照 `transforms[scope.transform_index]`，与 compositor R3833 改写矩阵同式同源值）。
 ② 注入器时基与路径修正为：**活跃 tab 页面 load 完成后相对毫秒**；到期点直接走 `handle_mouse_move`/`handle_mouse_click`（`app_input` 与真实输入同一入口，语义与原设计「非 renderer 直派、复用全链路命中管线」一致）。
 ③ 嵌套动画 transform（父子同通道）不组合逆映射，单层简化记档（DC-3 fixture 单层）。
+④ 注入坐标为**窗口物理像素、扣 chrome 高 ~91px**（`TOOLBAR_HEIGHT=90`，scale=1 实测 doc = win − 91；初版 ~40px 假设致三击全落空，ui_driver 对照 + 三点插桩定位后标定，见 S3d 证据 README §坐标换算）；排查中同时定位**空白区点击静默不派发**预存在缺口（selector=None 且 renderer hit None 无 html/body 兜底，记 master 缺口表），fixture 落点全部瞄准元素。S3d 时间线定版：pause@1.5s / cancel@3.5s / resume@4.5s / 判定@5.5s + 忙窗 3.4s+250ms、4.4s+200ms，全部落入 frame_dump 512 帧窗；注入锚 Δ（tab loaded 较页面 load 提前 0~2.5s）由「点击 2 恒在暂停窗内、点击 3 旋转绕中心任意相位命中」设计吸收，OFF 对照判别签名 = hit-a 占位失配红。
 
 ### 2.4 触面清单
 

@@ -1,0 +1,179 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>COMP-03 hit test / pause / cancel (autostart)</title>
+<style>
+  /* COMP-03 fixture（compositor-animation-continuity DC-3 / S3d）：命中当前几何 +
+     暂停冻结 + 取消恰一次 + 恢复续走，断言全部外显为固定坐标色格/条带，由
+     scripts/compositor-animation-dc3-analyze.py 从 frame_dump 逐帧提取。
+     场景（S3 RFC §2.3，时间 t = 页面 load 起算 ms；注入点击由 dc3-observe 以
+     ZW_INJECT_CLICKS 在 tab loaded 事件后 3.0/7.0/9.0s 发出——该锚点为 title 级
+     loaded，较页面 load 提前 0~2.5s（记 Δ），点击窗口按 Δ 全区间校准；窗口
+     物理坐标换算扣 chrome 高 ~91px，落点见 observe 脚本注释）：
+     (a) 注入 1（页面 t∈[0.5,3.0]s）点击 #hit-box：盒宽 400px，落点 x=436 在
+         基线右缘（424）外、且位移 ≥12px（t≥0.4s）后视觉盒内——flag 开应命中
+         （逆映射查询点）；flag 关命中缓存无位移 → 落空，renderer 对空白区
+         落空点击不派发（预存在缺口），回执格由后续点击顺延占位染红；
+     (b) t=1500 #pause-box 切 paused（位移冻结 45px，盒 x 69..189）→ 注入 2
+         （页面 t∈[2.0,4.5]s 恒在暂停窗内）点击冻结位置 (170,385)：flag 开命中
+         冻结几何，flag 关落空（基线右缘 144 外 26px）；像素冻结段由分析侧按
+         bbox 恒定段识别；
+     (c) t=3500 JS 移除 #cancel-box 的 animation-name → animationcancel 恰一次
+         且 elapsedTime=活跃时长，注入 3（页面 t∈[3.0,5.5]s）点击基线中心
+         (548,368) 应命中（旋转绕中心，中心点任意相位均在盒内——Δ 摆动下
+         先于取消命中同样成立，本点击为取消回落基线的回归守卫）；
+     (d) t=4500 #pause-box 恢复 running → 相位从冻结值续走（页内对比冻结末值
+         与恢复后首值，|Δ|≤8px 判合格；跳回 from=重启特征判不合格）。 */
+  body { margin: 0; background: #ffffff; }
+  /* (a) 命中盒：translateX 0→240px / 8s 线性往返（30px/s）。400px 宽盒让
+     x=436 的落点在「位移 ≥15px」的全部注入窗口内（基线右缘 424 外）。 */
+  #hit-box {
+    position: absolute; left: 24px; top: 180px;
+    width: 400px; height: 110px;
+    background: rgb(30, 90, 220);
+    animation: comp03-slide-a 8s linear infinite alternate;
+  }
+  /* (b)/(d) 暂停盒：同款平移动画，JS 在 t=1500/4500 切 paused/running。
+     基线盒 x: 24..144，y: 330..440；冻结位移 45px → 盒 x 69..189。 */
+  #pause-box {
+    position: absolute; left: 24px; top: 330px;
+    width: 120px; height: 110px;
+    background: rgb(20, 170, 140);
+    animation: comp03-slide-b 8s linear infinite alternate;
+  }
+  /* (c) 取消盒：rotate 0→90deg / 8s，JS 在 t=5000 移除动画。基线盒
+     x: 500..596, y: 320..416（中心 548,368）——与 pause-box 满位移右缘
+     （24+240+120=384）不相交。 */
+  #cancel-box {
+    position: absolute; left: 500px; top: 320px;
+    width: 96px; height: 96px;
+    background: rgb(230, 140, 20);
+    animation: comp03-spin 8s linear infinite;
+  }
+  @keyframes comp03-slide-a {
+    from { transform: translateX(0px); }
+    to { transform: translateX(240px); }
+  }
+  @keyframes comp03-slide-b {
+    from { transform: translateX(0px); }
+    to { transform: translateX(240px); }
+  }
+  @keyframes comp03-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(90deg); }
+  }
+  /* (d) 相位条带：每 50ms 采样 getComputedStyle(#pause-box).transform，
+     灰度 = 位移 px 编码（0px=白 255，240px=黑 15），冻结段恒定、恢复段续走，
+     分析侧与页内 phase-resume 格互为兜底。 */
+  #q-strip {
+    position: absolute; left: 24px; top: 470px;
+    width: 128px; height: 16px;
+    background: rgb(0, 0, 0);
+  }
+  /* 点击/事件/恢复回执格：白=未发生，绿=合格，红=重复或不合格。 */
+  .cell {
+    position: absolute; top: 508px;
+    width: 64px; height: 16px;
+    background: #ffffff;
+  }
+  #hit-a   { left: 24px; }
+  #hit-b   { left: 112px; }
+  #hit-c   { left: 200px; }
+  #ev-cancel { left: 288px; }
+  #phase-resume { left: 376px; }
+</style>
+</head>
+<body>
+  <div id="hit-box"></div>
+  <div id="pause-box"></div>
+  <div id="cancel-box"></div>
+  <div id="q-strip"></div>
+  <div id="hit-a" class="cell"></div>
+  <div id="hit-b" class="cell"></div>
+  <div id="hit-c" class="cell"></div>
+  <div id="ev-cancel" class="cell"></div>
+  <div id="phase-resume" class="cell"></div>
+  <script>
+    // 有界忙循环（信任边界：ms 由调用方钳制到 [0, 5000]），与 comp01/02 同款。
+    window.__zwBusy = function (ms) {
+      var budget = Math.max(0, Math.min(5000, Number(ms) || 0));
+      var t0 = performance.now();
+      while (performance.now() - t0 < budget) { Math.sqrt(12345.678); }
+      return Math.round(performance.now() - t0);
+    };
+    // 点击回执：真实输入（ZW_INJECT_CLICKS 注入）路径全链路命中结果。
+    // host 侧 click 组合派发按 press 命中元素 selector 定位（坐标字段不携带
+    // 落点），故按到达序号依次占用 hit-a/hit-b/hit-c 三格：绿 = target 是该
+    // 场景预期元素（命中当前几何），红 = target 不符；序号外 click 忽略。
+    var clickSeq = 0;
+    var clickExpect = ['hit-box', 'pause-box', 'cancel-box'];
+    var clickCells = ['hit-a', 'hit-b', 'hit-c'];
+    document.addEventListener('click', function (e) {
+      if (clickSeq >= 3) { return; }
+      var id = e.target ? e.target.id : '';
+      document.getElementById(clickCells[clickSeq]).style.background =
+        id === clickExpect[clickSeq] ? 'rgb(0, 200, 0)' : 'rgb(220, 40, 40)';
+      clickSeq++;
+    }, true);
+    // (c) animationcancel 恰一次 + elapsedTime = 活跃时长（delay 0 → ≈3.5s，
+    // 调度误差 ±0.5s）。flag 关无导出 → 无 cancel 派发 → 格保持白。
+    (function () {
+      var box = document.getElementById('cancel-box');
+      var seen = 0;
+      box.addEventListener('animationcancel', function (e) {
+        seen++;
+        var ok = seen === 1
+          && e.animationName === 'comp03-spin'
+          && Math.abs(e.elapsedTime - 3.5) <= 0.5;
+        document.getElementById('ev-cancel').style.background =
+          ok ? 'rgb(0, 200, 0)' : 'rgb(220, 40, 40)';
+      });
+    })();
+    // (b)/(d) 暂停与恢复编排 + 相位连续性判定。恢复合格 = 冻结末值与恢复后
+    // 首采样 |Δ| ≤ 8px（续走）；跳回 <4px（重启到 from）或 >8px（跳相）判不合格。
+    window.addEventListener('load', function () {
+      var box = document.getElementById('pause-box');
+      var strip = document.getElementById('q-strip');
+      var samples = []; // (t, translateX px)
+      function readShift() {
+        // gCS transform 返函数列表（"translateX(Npx)" 形态），提取像素位移。
+        var raw = getComputedStyle(box).transform;
+        var m = /translateX\((-?[\d.]+)px\)/.exec(raw);
+        return m ? parseFloat(m[1]) : NaN;
+      }
+      setInterval(function () {
+        var s = readShift();
+        if (isNaN(s)) { strip.style.background = 'rgb(230, 0, 230)'; return; }
+        var level = 255 - Math.round(s / 240 * 240);
+        strip.style.background = 'rgb(' + level + ', ' + level + ', ' + level + ')';
+        samples.push([performance.now(), s]);
+      }, 50);
+      setTimeout(function () { box.style.animationPlayState = 'paused'; }, 1500);
+      // (d) 忙窗跨越取消/恢复时点（场景 d）：主线程 jank 使样式变更定时器顺延
+      // ~250/200ms——验证 jank 过后事件/像素均为新状态、无旧代声明回放
+      // （cancel elapsedTime 随顺延 ~3.65s，仍在 ±0.5 容差内）。
+      setTimeout(function () { window.__zwBusy(250); }, 3400);
+      // (c) 取消：移除 animation-name → 声明从导出域消失 → renderer 代际差分
+      // 派发 animationcancel（S3a），compositor 作用域随代际消失回落基线。
+      setTimeout(function () { document.getElementById('cancel-box').style.animationName = 'none'; }, 3500);
+      setTimeout(function () { window.__zwBusy(200); }, 4400);
+      setTimeout(function () { box.style.animationPlayState = 'running'; }, 4500);
+      // t=5500 判定恢复连续性：取冻结段（paused 期间）末值与恢复后首个采样
+      // （50ms 粒度 → 续走 |Δ|≤2px；重启特征 resumed≈0 → |Δ|≈45 判不合格）。
+      // 时刻须在 frame_dump 512 帧窗（~8.2s@55fps）内，染色持久后续帧可见。
+      setTimeout(function () {
+        var frozen = null, resumed = null;
+        for (var i = 0; i < samples.length; i++) {
+          if (samples[i][0] < 4500) { frozen = samples[i][1]; }
+          else if (resumed === null) { resumed = samples[i][1]; }
+        }
+        var ok = frozen !== null && resumed !== null
+          && Math.abs(resumed - frozen) <= 8;
+        document.getElementById('phase-resume').style.background =
+          ok ? 'rgb(0, 200, 0)' : 'rgb(220, 40, 40)';
+      }, 7800);
+    });
+  </script>
+</body>
+</html>

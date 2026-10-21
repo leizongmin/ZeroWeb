@@ -1,0 +1,95 @@
+frames=87
+seq frame_id wall_ms dt_ms sha12 hit_cx pause_cx cancel_bbox strip_px cells(hit-a/hit-b/hit-c/ev-cancel/phase-resume)
+0 2 0 0 37eabcedfe0e 224 84 500..595x320..415 250 | none/none/none/none/none
+1 23 2191 2191 e3bb029769f5 224 84 500..595x320..415 250 | none/none/none/none/none
+2 24 2242 51 e3bb029769f5 224 84 500..595x320..415 250 | none/none/none/none/none
+3 39 3478 1236 e3bb029769f5 224 84 500..595x320..415 250 | none/none/none/none/none
+4 42 3854 376 e3bb029769f5 224 84 500..595x320..415 250 | none/none/none/none/none
+5 44 4052 198 e3bb029769f5 224 84 500..595x320..415 250 | none/none/none/none/none
+6 45 4155 103 e3bb029769f5 224 84 500..595x320..415 250 | none/none/none/none/none
+7 47 4360 205 e3bb029769f5 224 84 500..595x320..415 250 | none/none/none/none/none
+8 49 4747 387 e3bb029769f5 224 84 500..595x320..415 250 | none/none/none/none/none
+9 50 4778 31 e3bb029769f5 224 84 500..595x320..415 250 | none/none/none/none/none
+10 51 4814 36 e3bb029769f5 224 84 500..595x320..415 250 | none/none/none/none/none
+11 53 5012 198 e3bb029769f5 224 84 500..595x320..415 250 | none/none/none/none/none
+12 55 5216 204 e3bb029769f5 224 84 500..595x320..415 250 | none/none/none/none/none
+13 56 5318 102 e3bb029769f5 224 84 500..595x320..415 250 | none/none/none/none/none
+14 58 5530 212 e3bb029769f5 224 84 500..595x320..415 250 | none/none/none/none/none
+15 59 5622 92 e3bb029769f5 224 84 500..595x320..415 250 | none/none/none/none/none
+16 61 5824 202 e3bb029769f5 224 84 500..595x320..415 250 | none/none/none/none/none
+17 64 6123 299 e3bb029769f5 224 84 500..595x320..415 250 | none/none/none/none/none
+18 67 6426 303 e3bb029769f5 224 84 500..595x320..415 250 | none/none/none/none/none
+19 68 6532 106 e3bb029769f5 224 84 500..595x320..415 250 | none/none/none/none/none
+20 69 6641 109 e3bb029769f5 224 84 500..595x320..415 250 | none/none/none/none/none
+21 70 6734 93 e3bb029769f5 224 84 500..595x320..415 250 | none/none/none/none/none
+22 71 6839 105 e3bb029769f5 224 84 500..595x320..415 250 | none/none/none/none/none
+23 73 7039 200 e3bb029769f5 224 84 500..595x320..415 250 | none/none/none/none/none
+24 74 7046 7 e3bb029769f5 224 84 500..595x320..415 250 | none/none/none/none/none
+25 75 7142 96 e3bb029769f5 224 84 500..595x320..415 250 | none/none/none/none/none
+26 76 7252 110 e3bb029769f5 224 84 500..595x320..415 250 | none/none/none/none/none
+27 77 7347 95 e3bb029769f5 224 84 500..595x320..415 250 | none/none/none/none/none
+28 78 7448 101 e3bb029769f5 224 84 500..595x320..415 250 | none/none/none/none/none
+29 79 7546 98 e3bb029769f5 224 84 500..595x320..415 250 | none/none/none/none/none
+30 80 7553 7 e3bb029769f5 224 84 500..595x320..415 250 | none/none/none/none/none
+31 81 7647 94 e3bb029769f5 224 84 500..595x320..415 250 | none/none/none/none/none
+32 82 7726 79 573033fddad8 224 84 500..595x320..415 250 | fail/none/none/none/none
+33 83 7766 40 573033fddad8 224 84 500..595x320..415 250 | fail/none/none/none/none
+34 85 7961 195 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+35 86 8076 115 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+36 87 8166 90 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+37 88 8267 101 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+38 89 8373 106 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+39 91 8569 196 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+40 92 8693 124 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+41 94 8888 195 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+42 95 8996 108 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+43 96 9103 107 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+44 97 9215 112 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+45 98 9306 91 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+46 99 9408 102 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+47 100 9512 104 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+48 101 9603 91 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+49 102 9705 102 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+50 103 9818 113 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+51 104 9909 91 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+52 105 10013 104 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+53 106 10115 102 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+54 107 10211 96 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+55 108 10332 121 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+56 109 10424 92 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+57 110 10526 102 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+58 111 10650 124 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+59 112 10742 92 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+60 113 10845 103 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+61 115 11042 197 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+62 117 11171 129 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+63 118 11258 87 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+64 120 11367 109 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+65 121 11462 95 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+66 123 11564 102 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+67 125 11785 221 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+68 127 11981 196 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+69 128 12093 112 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+70 129 12194 101 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+71 130 12288 94 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+72 131 12389 101 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+73 132 12497 108 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+74 133 12594 97 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+75 134 12696 102 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+76 135 12788 92 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+77 136 12890 102 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+78 137 12986 96 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+79 138 12992 6 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+80 139 13090 98 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+81 140 13217 127 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+82 141 13315 98 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+83 142 13416 101 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+84 143 13508 92 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+85 144 13610 102 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+86 145 13718 108 1bc19c9a785f 224 84 500..595x320..415 250 | fail/none/none/none/fail
+distinct_frame_hashes=4
+cell hit-a fail first_seen_ms=7726
+cell phase-resume fail first_seen_ms=7961
+hit_center_min=224 max=224 frames_beyond_baseline=0
+pause_frozen_longest_run_ms=13718 window=(0,13718)
+strip_resume_delta=unavailable

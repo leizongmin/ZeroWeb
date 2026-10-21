@@ -1,0 +1,4 @@
+[renderer-1] [2m2026-10-21T18:54:44.048953Z[0m [32m INFO[0m renderer: animationcancel dispatched selector=#cancel-box name=comp03-spin elapsed=3.589s
+[2m2026-10-21T18:54:45.528759Z[0m [32m INFO[0m [2mzero_browser::app[0m[2m:[0m click_injector: 注入点击 x=436 y=311
+[2m2026-10-21T18:54:47.018236Z[0m [32m INFO[0m [2mzero_browser::app[0m[2m:[0m click_injector: 注入点击 x=170 y=476
+[2m2026-10-21T18:54:48.018937Z[0m [32m INFO[0m [2mzero_browser::app[0m[2m:[0m click_injector: 注入点击 x=548 y=459
