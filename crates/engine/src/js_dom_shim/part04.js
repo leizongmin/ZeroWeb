@@ -3288,6 +3288,13 @@
                 _zwIframeNavigationConnected(sel, handle)) {
               globalThis.__zw_reload_iframe(proxy, undefined, {});
             }
+            // svg-compat M3 S3：SVG script 的 href/xlink:href/type 写入触发延迟
+            // 「maybe start load」检查（门与语义见 _zwSvgScriptMaybeStart 注记；
+            // 非 SVG script 元素在 helper 快门零成本返回）。
+            if ((n === 'href' || n === 'xlink:href' || n === 'type')
+                && typeof _zwSvgScriptMaybeStart === 'function') {
+              _zwSvgScriptMaybeStart(sel, handle);
+            }
             if (_r3901OldTy != null) _zwApplyInputTypeChange(key, sel, handle, _r3901OldTy, v);
             // uievents-compat 尾簇 9：悬停元素自身的属性变异（coords/width/style 等可
             // 改几何）或 img 的 image-map 绑定/尺寸属性（usemap/coords/shape/width/
@@ -3760,6 +3767,12 @@
               if (handle && typeof __zw_set_attr_handle === 'function') __zw_set_attr_handle(handle, qn, String(value));
               else if (typeof __zw_set_attr === 'function') __zw_set_attr(sel, qn, String(value == null ? '' : value));
               else proxy.setAttribute(qn, value);
+            }
+            // svg-compat M3 S3：setAttributeNS 写 href/type 到 SVG script 同触发
+            // （xlink:href 即 local 'href'；门与语义见 _zwSvgScriptMaybeStart 注记）。
+            if ((local === 'href' || local === 'type')
+                && typeof _zwSvgScriptMaybeStart === 'function') {
+              _zwSvgScriptMaybeStart(sel, handle);
             }
             // 直写 host 回调（不经 proxy.setAttribute——那条路径自带无 namespace 的 notify，会双发）。
             _mo_notify(sel, handle, {

@@ -2783,6 +2783,111 @@
       });
     }
   })();
+  // svg-compat M3 S3：SVG script 外部脚本加载（spec SVG2
+  // https://svgwg.org/svg2-draft/interact.html#ScriptElementProcessing 的
+  // dynamically-inserted 面——初文档标记面的加载走提取管线 R5005，不经此
+  // 路径）。触发点：运行期 setAttribute/setAttributeNS 写 href（或 legacy
+  // xlink:href）/type 到 SVG script 元素（part04 set trap 方法分支尾部
+  // 同 iframe reload 钩子形态）。每次触发 per-element 单次延迟「maybe start
+  // load」检查（HTML #prepare-the-script-element 的 SVG 裁剪面）：type 可执行
+  // 判定（缺省 = 可执行；JS MIME essence——镜像提取管线
+  // script_type_is_javascript）+ URL href 优先 xlink:href 回落（S2 href 反射
+  // 同优先级）+ per-element loaded 旗标（已 load 后再改 href/xlink:href 不
+  // 重载——WPT linking/scripted/href-script-element 三子定谳）。取源两通道：
+  // data: URL shim 侧直解（同 worker 解码器 + mimesniff scripty 门），其余经
+  // host `__zw_fetch_script`（同 Worker importScripts 通道）；执行用间接
+  // eval——经典脚本顶层函数声明必须落全局（new Function 体声明是局部的，
+  // externalScript1.js 的 `function loadedScript(){}` 须成 global；strict
+  // payload 的 script 级 strict 不阻全局声明，间接 eval 的 eval 级 strict
+  // 会 scope 局部——本仓 WPT payload 均 sloppy，strict 载荷面挂账）。执行
+  // 成功置旗标后派发 load（bubbles:false——SVG2 script load 不冒泡，WPT
+  // waitEvent 以元素自身 listener 消费）；取源失败派 error（重试留待后续
+  // 触发，不置旗标）。
+  // FIXME: in-document 连接态门未做（spec prepare 步骤要求元素已连接——WPT
+  // 面均先 append 后设属性，detached 设 href 即加载的多余面后续补）；
+  // module 型 type 不走经典 eval（SMIL/M4 面）；append 前已带 href 的动态
+  // 插入不触发（attrs-dict 形态经 setAttribute 触发后延迟检查兜住，纯
+  // insertBefore/replaceChild 带属插入未覆盖）。
+  var _zwSvgScriptPending = {};
+  var _zwSvgScriptLoaded = {};
+  var _zwSvgScriptMaybeStart = function (sel, handle) {
+    // 快门：非 SVG script 元素零成本返回（HTML input type= 等高频写入不排定时器）。
+    try {
+      if (_realTag(sel, handle) !== 'SCRIPT' || !_zwIsSvgNsEl(sel, handle)) return;
+    } catch (_eGate) { return; }
+    var key = _elKey(sel, handle);
+    if (!key || _zwSvgScriptPending[key] || _zwSvgScriptLoaded[key]) return;
+    _zwSvgScriptPending[key] = true;
+    setTimeout(function () {
+      delete _zwSvgScriptPending[key];
+      try {
+        if (_realTag(sel, handle) !== 'SCRIPT' || !_zwIsSvgNsEl(sel, handle)) return;
+        if (_zwSvgScriptLoaded[key]) return;
+        var ty = '';
+        try {
+          ty = handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type');
+        } catch (_eTy) {}
+        ty = String(ty == null ? '' : ty).trim().toLowerCase();
+        if (ty !== '' && ty.indexOf('javascript') < 0 && ty.indexOf('ecmascript') < 0) return;
+        var raw = '';
+        try {
+          raw = handle ? __zw_get_attr_handle(handle, 'href') : __zw_get_attr(sel, 'href');
+        } catch (_eH1) {}
+        if (raw == null || String(raw).trim() === '') {
+          try {
+            raw = handle ? __zw_get_attr_handle(handle, 'xlink:href') : __zw_get_attr(sel, 'xlink:href');
+          } catch (_eH2) {}
+        }
+        if (raw == null || String(raw).trim() === '') return;
+        var code = null;
+        var _dsData = String(raw).indexOf('data:') === 0;
+        if (_dsData) {
+          // data: 源 shim 侧直解（复用 worker 通道解码器）。URL spec：bare '#'
+          // 起 fragment 不入 body——WPT script-load-error-events 的 data:
+          // payload '# comment' body 即空串，空脚本编译成功照常 load；MIME
+          // scripty 门同 worker importScripts（mimesniff #javascript-mime-type）。
+          // 解码成功空体 ≠ 失败（'' 直进 eval——空脚本 load 面）。
+          var _ds = String(raw);
+          var _hash = _ds.indexOf('#', _ds.indexOf(',') + 1);
+          code = _zwDecodeWorkerScript(_hash < 0 ? _ds : _ds.slice(0, _hash));
+          if (code == null) {
+            _dispatchWithBubble(key, sel, handle,
+              _makeEvent('error', { bubbles: false, cancelable: false }));
+            return;
+          }
+        } else if (typeof globalThis.__zw_fetch_script === 'function') {
+          try {
+            code = globalThis.__zw_fetch_script(
+              String((globalThis.location && globalThis.location.href) || ''), String(raw));
+          } catch (_eF) {}
+          // host 通道 null/'' 一律按取源失败（`|| null` 通道无法区分空体与
+          // 失败——runner/webview 对 Err 与 miss 均 unwrap_or_default 成 ''，
+          // 旧版 ''→eval 空脚本会把 miss 当成功 load，load/error 语义颠倒：
+          // WPT script-load-error-events non-existing 期望 error）。
+          if (code == null || String(code) === '') {
+            _dispatchWithBubble(key, sel, handle,
+              _makeEvent('error', { bubbles: false, cancelable: false }));
+            return;
+          }
+        } else {
+          return;
+        }
+        // FIXME: 编译失败与运行时抛错未区分（HTML spec 仅 fetch/编译失败派元素
+        // error——运行时异常归全局 onerror 面；间接 eval 二者同栈，本面 WPT
+        // payload 均无运行时抛错，统一派 error）。
+        try {
+          (0, eval)(code);
+        } catch (_eEval) {
+          _dispatchWithBubble(key, sel, handle,
+            _makeEvent('error', { bubbles: false, cancelable: false }));
+          return;
+        }
+        _zwSvgScriptLoaded[key] = true;
+        _dispatchWithBubble(key, sel, handle,
+          _makeEvent('load', { bubbles: false, cancelable: false }));
+      } catch (_eKick) {}
+    }, 0);
+  };
   // SVGSVGElement.createSVGLength（spec SVGSVGElement 工厂族首项——detached
   // SVGLength 是单位模型族的测试载体；createSVGMatrix/Rect/Point 等 S2b/S3 补）。
   if (globalThis.SVGSVGElement && globalThis.SVGSVGElement.prototype

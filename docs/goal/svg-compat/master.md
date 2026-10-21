@@ -1,33 +1,31 @@
 # SVG 文档面兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../svg-compat.md](../svg-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-21（M3 S2 href 反射落地）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-21（M3 S3 script 外部脚本加载落地）
 
 ## 当前状态
 
-**M3 S2 完成——SVGURIReference href 反射（2026-10-21）**：linking/scripted
-20F+3T 定性划界后落地 href IDL 反射面（spec SVG2
-linking.html#InterfaceSVGURIReference）：10 接口 prototype accessor
-（SVGAnimationElement 一次覆盖动画五元素）+ live 读优先级（null-ns href 优先、
-legacy xlink:href 回落、缺省 ''）+ baseVal 写回当前 backed 属性（仅 xlink 案
-case 2/5 定谳）+ animVal 无 SMIL 恒同 baseVal + [SameObject] per-element
-缓存 + get trap A/AREA URL 分支 SVG ns 排除（SVGAElement 剥离泄漏的
-HTMLAnchorElement URL 反射）+ set trap readonly 静默门。discard 不落地——
-WPT historical 定谳 `window.SVGDiscardElement === undefined`（首轮 corpus
-对账揪出 Pass→Fail 回归后回退，探针改断言浏览器现实）。靶面
-xlink-href-compat **12/12 全绿**（基线全灭）；全 corpus 对账（S1 基线
-1201P/504F/41T = 68.8%）：原始 **1224P/487F/42T/1753 = 69.8%**，转移矩阵
-13 Fail→Pass（12 靶面 + href-script-markup 1 连带——反射断言是唯一阻碍）
-**零 Pass 回归零 DOWN**，Timeout 41→42 = href-script 文件挂 load 事件
-（S3 边界）；探针剔除同分母 68.0%→**68.8%**。DC-4：fmt EXIT=0 + 定向
-zero-engine 3373P/0F。划界：href-animate 4F 首断言 targetElement
-undefined（M4 SMIL 批）；href-script load 事件语义归 S3；a.ping + a.rel-*
-导航域挂账。下一步：M3 S3（外部脚本加载）→ M4。
+**M3 S3 完成——SVG script 外部脚本加载（2026-10-21）**：运行期（动态插入）
+SVG script 外部脚本加载语义落地（spec SVG2 interact.html
+#ScriptElementProcessing 动态面；初文档标记面已在提取管线 R5005）：触发点
+setAttribute/setAttributeNS 写 href/xlink:href/type（快门 SVG ns + SCRIPT
+门）+ per-element 单次 setTimeout(0)「maybe start load」检查（type 可执行
+判定缺省可执行 + JS MIME essence 面）+ URL href 优先 xlink:href 回落 + 取源
+二通道（data: shim 侧直解 fragment 剥离；其余 host `__zw_fetch_script`，
+null/'' 一律按失败派 error——runner 通道 Err/miss 均 `''` 无法区分空体，
+修出一轮 load/error 语义颠倒）+ 间接 eval 全局声明落地 + loaded 旗标
+（已 load 后切 href 不重载，WPT 三子定谳）+ load/error 派发
+（bubbles:false）。靶面 href-script-element **3/3 全绿**（S2 时为文件
+Timeout）；**连带解锁** script-load-error-events 整文件 Timeout → 3P/2F
+（2F = `.py` 动态端点，runner/infra 域挂账）。全 corpus 对账（S2 基线
+1224P/487F/42T/1753 = 69.8%）：原始 **1238P/489F/40T/1767 = 70.1%**，
+共同行转移矩阵 **零 Pass 回归零 DOWN**；探针剔除同分母 68.8%→**69.0%**。
+DC-4：fmt EXIT=0 + 定向 zero-engine **3377P/0F**。划界：`.py` 动态端点
+归 runner/infra；module 型 type 与编译/运行时错误区分挂账。下一步：M4
+（SMIL 分类账重跑 → 挂账定稿）。
 
-（M3 S1 命中测试记录见 evidence/2026-10-21-m3-s1-hittest-landing.md 与
-下方 S1 切片条目：corpus 68.8%，靶面四案 86/86，零 Pass 回归。M2 收口记录
-见 evidence/2026-10-21-m2-s4c-pathdata-landing.md：corpus 63.6%，path/
-interfaces 54P/2F，syncbase F(2)→T 分类移动机制已溯。）
+（M3 S2 href 反射、M3 S1 命中测试、M2 收口记录见 evidence/ 对应文件与
+下方切片条目：S2 后 corpus 69.8%，S1 后 68.8%，M2 收口 63.6%。）
 
 ## 缺口清单
 
@@ -35,7 +33,7 @@ interfaces 54P/2F，syncbase F(2)→T 分类移动机制已溯。）
 |---|------|------|
 | P1 | svg/ corpus 导入 + 基线 + 渲染断言面占比盘点 | ✅ M1（2026-10-21，8.8% 基线） |
 | P2 | SVG DOM 类层级 + SVGSVGElement viewBox/CTM 最小面 | ✅ M2（2026-10-21，S1–S4c 全切片 ✅，corpus 63.6%） |
-| P3 | SVGGeometryElement 几何接口 + 事件目标化 | ⏳ M3（S1 命中测试 ✅ + S2 href 反射 ✅ 69.8%，几何接口已随 M2 S4a 落地） |
+| P3 | SVGGeometryElement 几何接口 + 事件目标化 | ✅ M3（S1 命中测试 ✅ + S2 href 反射 ✅ + S3 script 加载 ✅ 70.1%，几何接口已随 M2 S4a 落地） |
 | P4 | SMIL 评估 + 渲染断言面挂账定稿 | ⏳ M4 |
 
 ## 已完成切片
@@ -129,19 +127,23 @@ interfaces 54P/2F，syncbase F(2)→T 分类移动机制已溯。）
   EXIT=0 + 定向 zero-engine 3373P/0F。划界：href-animate targetElement
   归 M4 SMIL 批；href-script load 语义归 S3；a.ping/a.rel-* 导航域挂账。
   证据：evidence/2026-10-21-m3-s2-href-reflection-landing.md。
+- **M3 S3（2026-10-21）**：SVG script 外部脚本加载（本 session 端到端
+  持有——S2 时 href-script 文件 T 回收定性、触发点/延迟检查/二通道取源/
+  间接 eval/loaded 旗标实现、r1 后修出 host 通道空体-失败语义颠倒、r2
+  定稿对账）。靶面 href-script-element 3/3 全绿 + script-load-error-events
+  整文件 T→3P/2F 连带解锁（data: 源 + error 语义正确面；2F = `.py` 动态
+  端点归 runner/infra）；全 corpus 原始 1238P/489F/40T/1767 = 70.1%
+  （共同行零 Pass 回归零 DOWN）；探针剔除同分母 68.8%→69.0%。DC-4：fmt
+  EXIT=0 + 定向 zero-engine 3377P/0F。证据：
+  evidence/2026-10-21-m3-s3-script-load-landing.md。
 
 ## 下一步计划
 
-1. **M3 S3（边界已划）**：SVG script 外部脚本加载语义——href-script-element
-   3 子已因 S2 反射修复转文件 Timeout（首断言 href.baseVal 过、挂 load 事件
-   等待），S3 落 load 事件派发 + dummyScript 等待语义后回收；a.ping 2F
-   （observe_entry ReferenceError + ping 请求管线）与 a.rel-noopener/
-   noreferrer 2T（window.open policy 导航域）挂导航域不进本 goal。
-2. **M4 SMIL 分类账重跑**：S3 脚手架已释放时序面（seeking-events 族 F→T、
+1. **M4 SMIL 分类账重跑**：S3 脚手架已释放时序面（seeking-events 族 F→T、
    invalid-value 族平凡全绿），M4 SMIL 评估须以 S3 后口径重跑分类（见
    evidence/2026-10-21-m4-smil-assessment-prep.md + S3 landing 排片对位）；
    S4c 后 syncbase-escaped-dots F(2)→T、S2 后 href-mpath F(1)→T 与
-   href-script F(3)→T 移动一并归口（href-animate 4F 首断言
+   href-script F(3)→T（S3 已回收）移动一并归口（href-animate 4F 首断言
    targetElement undefined 属 SVGAnimationElement 目标解析面，随 SMIL 批）。
 4. **上下文换算补面（S2a FIXME）**：SVGLength 关联元素的 em/ex/percentage
    上下文（SVGLength-viewport 8F / percentage-directionality 6F）——与
@@ -152,7 +154,8 @@ interfaces 54P/2F，syncbase F(2)→T 分类移动机制已溯。）
    getComputedTextLength 族 + text-hittest 3 子，字形度量依赖）；image
    内在尺寸（-03 image1/2 + svg-image-intrinsic-size 族，图片加载态依赖）；
    CSS cascade 命中面（pe-bbox 19 子 + border-radius 1 子，style-system
-   协同）。
+   协同）；script-load-error-events `.py` 动态端点 2F（runner/infra 域，
+   wptserve 动态资源执行——本 goal shim 面已按正确语义收口）。
 
 **跨流碰头信号（2026-10-21，run-rules §9/§10）——已解除**：workspace fmt
 红于 comp-anim 流 `apps/compositor/src/frame_dump.rs`（9799e6435 引入，
