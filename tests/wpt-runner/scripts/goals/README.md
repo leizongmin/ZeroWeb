@@ -40,7 +40,7 @@ goal 入口文档 `docs/goal/<goal>.md` DC-1。
 | 50 | [uievents-compat](../../../../docs/goal/archive/uievents-compat.md) | uievents; pointerevents |  **已收口**（2026-10-07 M4；M5 巡检 2026-10-20 收口 1805P/166F/95TO，已归档）；IME 挂账 |
 | 60 | [navigation-compat](../../../../docs/goal/navigation-compat.md) | history; navigation-api; html/browsers | M2 轻面推进中；**M3 iframe 切片用户门控** |
 | 70 | [workers-compat](../../../../docs/goal/archive/workers-compat.md) | workers; dedicated-workers | **已收口**（2026-10-21 M4，693/714 = 97.1%，基线 45.6%，已归档）；残余 21 挂账 runner 基建/isolate 化/功能缺口 |
-| 80 | [svg-compat](../../../../docs/goal/svg-compat.md) | svg | 推进中；渲染面归 rendering-compat |
+| 80 | [svg-compat](../../../../docs/goal/archive/svg-compat.md) | svg | **已收口**（2026-10-22 M4，corpus 70.3%，基线 8.8%，已归档）；SMIL 时钟等七项挂账归口他域；渲染面归 rendering-compat |
 | 90 | [security-hardening](../../../../docs/goal/archive/security-hardening.md) | content-security-policy; mixed-content; secure-contexts | **已收口**（2026-09-27） |
 | 92 | [web-api-batch2](../../../../docs/goal/archive/web-api-batch2.md) | clipboard-apis; fullscreen | **已收口**（2026-10-04） |
 | 99 | [webgl-compat](../../../../docs/goal/webgl-compat.md) | webgl | **远期门控**（M2+ 全门控，M1 盘点为唯一自主切片） |

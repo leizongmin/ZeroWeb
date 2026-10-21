@@ -1,8 +1,10 @@
 # SVG 文档面兼容 — svg/
 
+> **整体归档（模式 A，2026-10-22）**：M4 收口判定 DC-1~4 全满足；控制面与证据随入口归档，SMIL 时钟等七项挂账的重入归口保留（见 [master.md](svg-compat/master.md) 下一步计划）。对应 Rally 启动脚本已删除。
+
 **版本**: v1.0
 **日期**: 2026-09-12
-**状态**: Active（已立项，未启动——启动顺序由用户点名）
+**状态**: ✅ Completed——2026-10-22 M4 收口终验，DC-1~4 全 ✅，WPT svg/ corpus 8.8%→1245P/487F/40T = 70.3%（零 Pass 回归零 DOWN），DC-4 门禁 make test 76 suites 22346P/0F + clippy -D warnings + fmt + reftest 712/712；判定见 [evidence/2026-10-21-m4-smil-ledger-and-closeout.md](svg-compat/evidence/2026-10-21-m4-smil-ledger-and-closeout.md)，控制面见 [master.md](svg-compat/master.md)
 **执行模式**: WPT 驱动（上游 svg/ corpus 为验收标尺）+ 语义修齐；
 **SVG-as-渲染面归 rendering-compat**，本 goal 只做 SVG 文档模型/交互 JS 面
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——SVG 文档面）

@@ -4,7 +4,7 @@
 //! 先例），经 `pub(crate)` 复用其执行底座（`run_testharness_html_inner` /
 //! `corpus_case_timeout`）。目标面是 **SVG 文档模型 JS API**（SVGElement 类层级 /
 //! SVGSVGElement viewBox/CTM / SVGGeometryElement 几何 / 事件目标化——goal
-//! 契约 docs/goal/svg-compat.md）；SVG 呈现正确性归 rendering-compat，本通道
+//! 契约 docs/goal/archive/svg-compat.md）；SVG 呈现正确性归 rendering-compat，本通道
 //! 不含渲染断言面。
 //!
 //! 用例由 `scripts/goals/80-svg-compat.sh`（GOAL_FETCH_DEEP=1 git trees 深挖，
