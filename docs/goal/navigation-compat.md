@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-09-12
-**状态**: Active（M2 收口——S1~S12 落地，全量 20.9%→**91.8%**（437/476，全量 NotRun 清零；location-interface 100% / traversal 93.3% / history-interface 98.2% / navigation-api 95.0%）；M4 收口评估 DC-1/2/4 满足；**M3 启动授权已获批（2026-10-21 用户批复「批准 M3 最小面」，未豁免 DC-3）**；bfcache/fission 挂账定稿；控制面见 [master.md](navigation-compat/master.md)）
+**状态**: Active（M2 收口——S1~S12 落地，全量 20.9%→**91.8%**（437/476，全量 NotRun 清零；location-interface 100% / traversal 93.3% / history-interface 98.2% / navigation-api 95.0%）；M4 收口评估 DC-1/2/4 满足；**M3 启动授权已获批（2026-10-21 用户批复「批准 M3 最小面」，未豁免 DC-3）**；M3 S1~S6 落地（472P/69F/43T，584 案行）；bfcache/fission 挂账定稿；控制面见 [master.md](navigation-compat/master.md)）
 **执行模式**: WPT 驱动（上游导航面 corpus 为验收标尺）+ 语义修齐；
 iframe 浏览上下文为**用户门控深结构切片**（先例：R1043 vertical-mode / Phase A IFC）
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——导航与浏览上下文面）

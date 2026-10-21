@@ -1777,11 +1777,12 @@
       // navigation-compat M3-S4：history 入形参表——replace-before-load 族注入代码
       // `history.pushState(...)` 裸标识符此前误解析父窗 history（pushState 落父窗
       // 账本、子窗 URL 不变）。
-      // navigation-compat M3-S5：onmessage 赋值面——子文档 onmessage 处理器须落
-      // **子窗**（with(window) 使裸赋值绑定 win 属性；否则非严格裸赋值落父窗
-      // globalThis.onmessage——R2932 setter 误注册父窗监听，父窗 message 派发
-      // 回环）。仅包合 onmessage 在场的子文档（其余 corpus 面逐字节不变）。
-      var _omWrapped = /(^|[^\w.$])onmessage\s*=[^=]/.test(combined206)
+      // navigation-compat M3-S5/S6：on* 裸赋值面——子文档 onmessage/onpopstate
+      // 处理器须落**子窗**（with(window) 使裸赋值绑定 win 属性；否则非严格裸
+      // 赋值落父窗 globalThis.on*——R2932 setter 误注册父窗监听，父窗 message
+      // 派发回环 / 子窗局部遍历事件无人收）。仅包合命中子文档（其余 corpus 面
+      // 逐字节不变）。
+      var _omWrapped = /(^|[^\w.$])on(message|popstate)\s*=[^=]/.test(combined206)
         ? 'with(window){' + combined206 + exportSuffix206 + '\n}'
         : combined206 + exportSuffix206;
       var fn = new Function(
@@ -1903,6 +1904,10 @@
       entry.win.history._cursor = entry.win.history._entries.length
         ? entry.win.history._entries.length - 1
         : 0;
+      // navigation-compat M3-S6：跨文档重载同步后重置文档代基线——新 Document
+      // 代从当前顶开始（此前条目属先前文档，子窗遍历走 iframeReload 重载路径；
+      // 字面量构造期的基线会被本同步整体覆盖，故此处必须一并刷新）。
+      entry.win.history._zwDocBase = entry.win.history._cursor;
     } catch (_eIframeHistorySyncWin) {}
   }
   globalThis.__zw_reload_iframe = globalThis.__zw_reload_iframe || function(frame, rawSrc, flags) {

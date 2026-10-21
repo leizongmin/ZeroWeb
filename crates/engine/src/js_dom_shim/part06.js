@@ -5295,6 +5295,7 @@
     // `eventListenerGlobalObject.Object` 引用是 5F 直接根因。load 前一次性物化，
     // 后续读走已注册值（幂等，重复派发 no-op）。
     if (event && event.type === 'load' && typeof globalThis.__zwRegisterNamedIframes === 'function') {
+      try { globalThis.__zwStartParserIframes(); } catch (_eS6p) {}
       try { globalThis.__zwRegisterNamedIframes(); } catch (_e139r) {}
     }
     // M2-S4M（navigation-compat）：window 'load' 派发 = 文档 completely loaded 标记——

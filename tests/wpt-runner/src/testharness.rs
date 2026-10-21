@@ -4426,8 +4426,13 @@ fn navigation_case_skipped(relative: &str, source: &str) -> bool {
     // cross-origin-to-whom 的 grandchild DOM 写与 frame/embed/object 元素面）。
     // srcdoc/sandbox/frames/parent/top/load 语义最小面照常执行。
     if relative.contains("the-iframe-element") {
+        // navigation-compat M3-S6：iframe_sandbox_navigate_history_ 三案解锁——
+        // 子窗局部 history 面（back/forward 越界 no-op + pushState 后子窗局部
+        // popstate）。ancestor/descendants/itself/other_frame_popup 维持记账
+        //（data: URL 文档合成 + 跨帧 location 写 + 三层嵌套 = 后续切片）。
         return relative.contains("iframe_sandbox_popups_")
-            || relative.contains("iframe_sandbox_navigate_")
+            || (relative.contains("iframe_sandbox_navigate_")
+                && !relative.contains("iframe_sandbox_navigate_history_"))
             || relative.contains("iframe_sandbox_allow_top_navigation")
             || relative.contains("iframe_navigate_ancestor")
             || relative.contains("change_parentage")

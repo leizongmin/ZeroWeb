@@ -366,6 +366,191 @@ fn m3s4_parent_back_falls_back_to_frame_local_history() {
     );
 }
 
+/// M3-S6 子窗局部 history 遍历（spec
+/// https://html.spec.whatwg.org/multipage/nav-history-apis.html#session-history
+/// ——子文档 pushState 后 back 落同文档条目 = 子窗异步 trusted popstate +
+/// state 还原，父窗零 popstate；越界 back/forward = no-op（
+/// iframe_sandbox_navigate_history_go_back/-forward 断言面：sandbox 子窗
+/// 无局部可达条目时不触父窗账本）；子文档裸 `onpopstate =` 落子窗）。
+#[test]
+fn m3s6_child_local_history_traversal_pops_child_only() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = m3s2_sandbox(
+        "https://wpt.test/html/semantics/embedded-content/the-iframe-element/sandbox-nav-history.html",
+        "<html><body><iframe src=\"support/child-history.html\"></iframe></body></html>",
+    );
+    sandbox
+        .register_callback(
+            "__zw_fetch",
+            Box::new(|args| {
+                let url = args.get(2).cloned().unwrap_or_default();
+                let body = if url.contains("child-history") {
+                    "<script>onpopstate = function (e) {\
+                     parent.postMessage('popped:' + JSON.stringify(e.state) + ':' + (e.isTrusted === true), '*'); };\n\
+                     onmessage = function (e) {\
+                     if (e.data === 'go') { history.pushState({n: 1}, ''); history.back(); } }</script>"
+                } else {
+                    "<p>t</p>"
+                };
+                format!("__zwfr:200\x1fOK\x1fcontent-type\x1etext/html\x1e\x1f{body}")
+            }),
+        );
+    sandbox
+        .execute(
+            "var iframe = document.querySelector('iframe');\
+             var w = iframe.contentWindow;\
+             globalThis.__r = { got: [], parentPops: 0 };\
+             window.addEventListener('message', function (e) { __r.got.push('' + e.data); });\
+             window.onpopstate = function () { __r.parentPops++; };",
+        )
+        .unwrap();
+    for _ in 0..8 {
+        sandbox.execute("0").unwrap();
+    }
+    // 子 pushState + back：子窗局部同文档遍历——子窗收 trusted popstate（state
+    // 还原 {n:1}），父窗零 popstate。
+    sandbox.execute("w.postMessage('go', '*');").unwrap();
+    for _ in 0..10 {
+        sandbox.execute("0").unwrap();
+    }
+    assert_eq!(
+        sandbox
+            .execute("JSON.stringify(globalThis.__r.got)")
+            .unwrap()
+            .value,
+        r#"["popped:null:true"]"#,
+        "子窗局部 back 落初始条目 = 子窗 trusted popstate（e.state 为目标条目 null）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("globalThis.__r.parentPops + '/' + history.state")
+            .unwrap()
+            .value,
+        "0/null",
+        "父窗零 popstate、父 history.state 不受子遍历影响"
+    );
+    assert_eq!(
+        sandbox
+            .execute("w.history.state + '/' + w.history.length")
+            .unwrap()
+            .value,
+        "null/2",
+        "子窗 back 后 state 落初始条目（null）、局部长度 2"
+    );
+    // forward 重入 pushState 条目（state {n:1}）；再 forward 越界 no-op；back 仍在界内。
+    sandbox.execute("w.history.forward();").unwrap();
+    for _ in 0..10 {
+        sandbox.execute("0").unwrap();
+    }
+    assert_eq!(
+        sandbox
+            .execute("JSON.stringify(globalThis.__r.got)")
+            .unwrap()
+            .value,
+        r#"["popped:null:true","popped:{\"n\":1}:true"]"#,
+        "子窗 forward 重入 pushState 条目（e.state = {{n:1}}）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("JSON.stringify(w.history.state)")
+            .unwrap()
+            .value,
+        r#"{"n":1}"#,
+        "遍历后子窗 history.state 随游标还原"
+    );
+    // 越界 forward（游标已顶）= no-op（无第三次 popstate）。
+    sandbox.execute("w.history.forward();").unwrap();
+    for _ in 0..10 {
+        sandbox.execute("0").unwrap();
+    }
+    assert_eq!(
+        sandbox
+            .execute("JSON.stringify(globalThis.__r.got)")
+            .unwrap()
+            .value,
+        r#"["popped:null:true","popped:{\"n\":1}:true"]"#,
+        "越界 forward no-op（游标已顶，无局部可达条目）"
+    );
+}
+
+/// M3-S6 parser 期 src iframe 自主载入 + 元素 load 双断言面（spec
+/// https://html.spec.whatwg.org/multipage/iframe-embed-object.html#the-iframe-element
+/// ——解析期带的 iframe 无人读 contentWindow 也须取资源并派 trusted 元素 load：
+/// `<iframe src="…" onload="doNavigation()">` 内联处理器与 onload property 双通道，
+/// iframe_sandbox_navigate_history_go_back/-forward 载体）。loading=lazy 不补启。
+#[test]
+fn m3s6_parser_src_iframe_autoload_fires_element_load() {
+    use std::sync::{Arc, Mutex};
+    let mut sandbox = m3s2_sandbox(
+        "https://wpt.test/html/semantics/embedded-content/the-iframe-element/parser-iframe-load.html",
+        "<html><body>\
+         <iframe id=\"a\" src=\"support/child.html\" onload=\"globalThis.__attrLoad = (globalThis.__attrLoad || 0) + 1\"></iframe>\
+         <iframe id=\"b\" src=\"support/lazy.html\" loading=\"lazy\"></iframe>\
+         <iframe id=\"c\" src=\"support/child.html\"></iframe>\
+         <iframe id=\"d\" src=\"support/scripted-child.html\" sandbox=\"allow-same-origin\"></iframe>\
+         </body></html>",
+    );
+    let fetches: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let fetch_log = fetches.clone();
+    sandbox
+        .register_callback(
+            "__zw_fetch",
+            Box::new(move |args| {
+                let url = args.get(2).cloned().unwrap_or_default();
+                fetch_log.lock().unwrap().push(url.clone());
+                let body = if url.contains("scripted-child.html") {
+                    "<p>s</p><script>parent.postMessage('ran', '*');</script>"
+                } else {
+                    "<p>child</p>"
+                };
+                format!("__zwfr:200\x1fOK\x1fcontent-type\x1etext/html\x1e\x1f{body}")
+            }),
+        );
+    sandbox
+        .execute(
+            "globalThis.__propLoad = 0;\
+             globalThis.__msgLog = [];\
+             window.addEventListener('message', function (e) { globalThis.__msgLog.push('' + e.data); });\
+             var c = document.querySelector('#c');\
+             c.onload = function (e) { globalThis.__propLoad += (e.isTrusted === true) ? 1 : 0; };",
+        )
+        .unwrap();
+    // window load 派发触发补启扫描（part06 load 分支）；此前零 contentWindow 读。
+    sandbox
+        .execute("globalThis.dispatchEvent(new Event('load'));")
+        .unwrap();
+    for _ in 0..8 {
+        sandbox.execute("0").unwrap();
+    }
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__msgLog)").unwrap().value,
+        "[]",
+        "sandbox 无 allow-scripts：子文档脚本禁跑（spec attr-iframe-sandbox——\
+         defer 通道 __zwRunInlineScripts 与 _zwRunIframeScripts 同门，\
+         iframe_sandbox_allow_script 首消息时序断言面）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__attrLoad").unwrap().value,
+        "1",
+        "parser iframe 内联 onload 属性处理器触发（元素 load 派发面）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__propLoad").unwrap().value,
+        "1",
+        "parser iframe onload property 触发（IDL handler 面，trusted）"
+    );
+    let fetched = fetches.lock().unwrap().join("|");
+    assert!(
+        fetched.contains("child.html"),
+        "子文档 fetch 已自发结算（无人预读 contentWindow 也自主载入）：{fetched}"
+    );
+    assert!(
+        !fetched.contains("lazy.html"),
+        "loading=lazy 不补启（spec 延迟至接近视口）：{fetched}"
+    );
+}
+
 /// M3-S5 父→子 postMessage 跨窗口投递 + 子文档 onmessage（spec
 /// https://html.spec.whatwg.org/multipage/web-messaging.html#dom-window-postmessage
 /// ——targetOrigin 校验按目标窗 origin，'*' 放行；子文档裸 onmessage 赋值落

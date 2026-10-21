@@ -898,6 +898,30 @@
             }
           } catch (_e139i) {}
         };
+        // navigation-compat M3-S6：parser 期 src/srcdoc iframe 的自主载入收尾——
+        // _zwStartConnectedIframe 仅由连接变更路径（动态插入）调用，解析期带的
+        // iframe 无人启航：子文档 fetch 恒挂起（corpus Timeout pending:1 根因）+
+        // 元素 load 恒不派（`<iframe onload="doNavigation()">` 内联处理器与
+        // onload property 双断言面）。window load 派发前一次性补启（幂等——
+        // _zwFrameElementLoadQueued 门）；R139 同款扫描位。
+        globalThis.__zwStartParserIframes = globalThis.__zwStartParserIframes || function () {
+          try {
+            var frames = document.querySelectorAll('iframe');
+            for (var i = 0; i < frames.length; i++) {
+              var f = frames[i];
+              // loading=lazy 不补启（spec
+              // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#attr-iframe-loading
+              // ——lazy 延迟到接近视口；headless 近似维持既有惰性记账面）。
+              var loadingS6 = '';
+              try { loadingS6 = String(f.getAttribute('loading') || '').toLowerCase(); } catch (_eS6l) {}
+              if (loadingS6 === 'lazy') continue;
+              var hasSrc = false;
+              try { hasSrc = !!f.getAttribute('src') || f.hasAttribute('srcdoc'); } catch (_eS6a) {}
+              if (!hasSrc) continue;
+              _zwStartConnectedIframe(f, true);
+            }
+          } catch (_eS6sweep) {}
+        };
         // media-audio M3 第十八批补（2026-09-04）：createElementNS(HTMLNS,'iframe')
         // 形态的 iframe——host tag store 对 ns handle 为空（CreateElementNS 不入
         // _realTag 读的 tag 表，探针实证 __zw_get_tag_handle 返 ''）→ 恒 gate miss

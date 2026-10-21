@@ -3903,6 +3903,18 @@
     }
     function runInlineScripts() {
       if (win._zwScriptsRan) return;
+      // navigation-compat M3-S6：sandbox 指令集无 allow-scripts → 子文档脚本禁跑
+      //（spec
+      // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#attr-iframe-sandbox
+      // ——与 _zwRunIframeScripts 门同源；defer 通道 __zwRunInlineScripts 此前无门，
+      // parser iframe 自发载入臂（M3-S6 补启）先于父窗 sandbox 改写执行子脚本，
+      // iframe_sandbox_allow_script 首消息时序断言暴露）。按 frameKey 现读元素
+      // sandbox 指令——属性改写后 reload 的新值随新指令生效。
+      try {
+        var _zwSbFlags6 = typeof _zwIframeSandboxFlags === 'function'
+          ? _zwIframeSandboxFlags(frameKey) : null;
+        if (_zwSbFlags6 && _zwSbFlags6.sandboxed && !_zwSbFlags6.allowScripts) return;
+      } catch (_eS6SbGate) {}
       win._zwScriptsRan = true;
       var markup = doc && doc._zwMarkup ? String(doc._zwMarkup) : '';
       if (!markup) return;
@@ -3969,14 +3981,20 @@
       location: iframeLocation(),
       // navigation-compat M3-S5：onmessage 槽位——with(window){ onmessage = fn }
       // 裸赋值仅在属性**已在场**时落 with 对象（否则穿透落父窗 global），预置
-      // null 槽使子文档处理器绑定子窗（R2932 误注册面防回环）。
+      // null 槽使子文档处理器绑定子窗（R2932 误注册面防回环）。M3-S6 增
+      // onpopstate 槽（同款穿透面——iframe-tried-to-be-navigated-by-history
+      // 子文档裸 `onpopstate =` 须落子窗才收局部遍历事件）。
       onmessage: null,
+      onpopstate: null,
       history: {
         // https://html.spec.whatwg.org/multipage/nav-history-apis.html#session-history
         // A same iframe element keeps its session history when a navigation creates a
         // replacement Window object.
         _entries: initialHistoryEntries,
         _cursor: initialHistoryEntries.length ? initialHistoryEntries.length - 1 : 0,
+        // navigation-compat M3-S6：当前文档代基线（合成时游标位——该位及之后条目
+        // 与当前 Document 共享；之前的条目属先前文档，遍历走重载路径）。
+        _zwDocBase: initialHistoryEntries.length ? initialHistoryEntries.length - 1 : 0,
         get length() { return this._entries.length; },
         get state() { return this._entries[this._cursor] ? this._entries[this._cursor].state : null; },
         get scrollRestoration() { return 'auto'; },
@@ -4000,12 +4018,32 @@
           iframeSetCurrentHistoryUrl(current.url);
           iframeSyncHistoryEntries(this);
         },
+        // navigation-compat M3-S6：子窗局部会话遍历——当前文档代内（_zwDocBase
+        // 起，pushState/replaceState 创建的条目与当代载入条目共享 Document）遍历
+        // = 异步 trusted popstate（不重载）；跨文档代回退维持 iframeReload 旧路
+        // 径；越界 = no-op（iframe_sandbox_navigate_history_go_back/-forward 簇：
+        // sandbox 子窗 back/forward 无局部可达条目时不触父窗账本——祖先遍历阻断
+        // 在局部模型下自然涌现）。
         go: function(delta) {
           var d = (delta == null) ? -1 : (delta | 0);
-          if (d === -1) iframeReload({ history: true });
+          var target = this._cursor + d;
+          if (target < 0 || target > this._entries.length - 1) return;
+          if (target < this._zwDocBase) {
+            iframeReload({ history: true });
+            return;
+          }
+          this._cursor = target;
+          var entry = this._entries[target];
+          if (entry && entry.url) iframeSetCurrentHistoryUrl(entry.url);
+          _defer(function () {
+            try {
+              var ev = new PopStateEvent('popstate', { state: entry ? entry.state : null, __zwTrusted: true });
+              win.dispatchEvent(ev);
+            } catch (_eHistPop) {}
+          });
         },
-        back: function() { iframeReload({ history: true }); },
-        forward: function() {}
+        back: function() { this.go(-1); },
+        forward: function() { this.go(1); }
       },
       navigator: { serviceWorker: serviceWorker },
       // R3254-E2 切片 6（editing goal，2026-09-07）：**per-iframe Selection 面**——
