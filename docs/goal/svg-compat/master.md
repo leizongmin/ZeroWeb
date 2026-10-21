@@ -1,34 +1,37 @@
 # SVG 文档面兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../svg-compat.md](../svg-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-21（M2 S4c 落地，M2 收口）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-21（M3 S1 命中测试落地）
 
 ## 当前状态
 
-**M2 S4c 完成——M2 全部切片收口（2026-10-21）**：pathData API——
-getPathData（`{type,values}` 普通对象序列每调用重建、隐式重复组逐组拆段
-（M 后续组为 lineto 大小写随 moveto）、malformed d 合法前缀截断、
-`{normalize:true}` 绝对 M/L/C/Z 缩减：H/V→L、相对→绝对、S/T 平滑反射、
-Q/T 升阶、A 按 F.6.5/F.6.6 端点→中心参数化分解 cubic 多段等分）+
-setPathData（sequence\<PathDataSegment\> iterable 承接、逐段 dictionary
-校验（type 单字符 ∈ MLHVCSQTAZ、精确 arity、数值有限）、段级错误合法前缀
-截断、前缀空或首段非 moveto 移除 d、写走 setAttribute/removeAttribute
-联动 MutationObserver）+ SVGAnimationElement begin/end 控制面 stub
-（SMIL 时钟未接入 FIXME(svg-compat M4)）+ `_zwSvgPathParse` Z 尾数死循环
-根修（S4a 期潜伏：cnt undefined 消费不推进挂死 runner，修复后 parsing
-116P/0F 零回归实证）。attribute base value 语义：CSS d property/SMIL/
-Web Animations 动画态均不入 getPathData。全 corpus 对账（S4b-2 基线
-1046P/650F/40T = 60.3%）：原始全量 **1104P/590F/41T/0NR = 63.6%**
-（+58P/-60F，其中 54 属 path/interfaces 靶面 0P/56F→**54P/2F**；4 属
-时序敏感案抖动——单案复跑 F/P 抖动实证，不记归因），探针剔除同分母
-**1070P/590F/41T = 62.9%**（基线 59.5%）；逐子测试零 Pass 回归零 DOWN。
-Timeout 40→41：syncbase-escaped-dots F(2)→T(1) 分类移动（beginElement
-stub 存在→等 beginEvent 不至，pre/post 单案对照机制已溯，SMIL 挂账面
-预期移动）。path/interfaces 唯二 F = setPathData-css-d.tentative（CSS
-域协同挂账）。DC-4：fmt EXIT=0 + 定向 zero-engine（test-guard 4G/8G/
-3000s）**3372P/0F EXIT=0**。卡点①：M2 CSV 行回填未做。卡点②：fo5
-零盒机制溯源未闭环（行为两侧对齐 Chrome，机制未溯，探针待跑，不阻塞，
-继承）。下一步：M2 CSV 行回填 → M4 SMIL 分类账重跑与挂账定稿。
+**M3 S1 完成——SVG 形状命中测试（2026-10-21）**：runner headless 无宿主
+HitTestCache（elementFromPoint host-only 恒 null、形状 gBCR 全零、computed
+fill 空串）是 hit-test 族全灭根因。part06.js 新增 `_zwSvgHitSel` 纯属性几何
+自建命中：fill 区域（rect 精确实心 / circle·ellipse 归一化半径² / path·
+polygon·polyline 逐子路径 nonzero 缠绕 + 未闭合隐式闭合 + 闭域边界点命中）+
+stroke 区域（rect 精确环带含 90° miter 角 / 轮廓采样距离 + 顶点 join 圆盘
+round 近似 / line 仅 stroke）+ pointer-events 关键字表（缺省
+visiblePainted，属性面继承回溯）+ visibility/display 门 + transform 链自根
+向叶左乘逆映射（最外层 svg 局部 = gBCR 平移——runner body 8px margin 实测
+取证；嵌套 svg = x/y 属性平移——shim gBCR 不含嵌套偏移实测不可用）+ 文档序
+逆序首中。集成两点：elementFromPoint 无宿主回落 + `_zwHitTestSel` SVG
+pass（host 路径后、gBCR 近似前）。修出三轮：root 判定方向 + 复合顺序、
+探针 client 坐标基准（8px margin）、fill 闭域边界点（winding 计 0）。
+靶面四案 **86/86 全绿**（rect-001 4 + rect-002 53 + ellipse 24 +
+small-big-path 5，基线全灭）。全 corpus 对账（S4c 基线 1104P/590F/41T =
+63.6%）：原始 **1201P/504F/41T/1746 = 68.8%**，转移矩阵 86 Fail→Pass
+**零 Pass 回归零 DOWN、Timeout 集合恒等**；探针剔除同分母 62.9%→**68.0%**；
++86P 聚类全部落靶面无归因悬案。DC-4：fmt EXIT=0 + 定向 zero-engine
+（见 evidence）。挂账：pointer-events-bbox 19 子（CSS cascade +
+bounding-box + text/image）、text-hittest 3 子（Ahem 字形格）、
+border-radius 1 子（style-system 协同）、祖先 paint 属性继承、miter join
+尖、viewBox/百分比/clip。下一步：M3 CSV/收尾 → M3 后续面（linking/scripted
+href 族、load-error events）→ M4。
+
+（M2 收口记录见 evidence/2026-10-21-m2-s4c-pathdata-landing.md 与下方
+S4c 切片条目：corpus 63.6%，path/interfaces 54P/2F，syncbase F(2)→T
+分类移动机制已溯，DC-4 定向 3372P/0F。）
 
 ## 缺口清单
 
@@ -36,7 +39,7 @@ stub 存在→等 beginEvent 不至，pre/post 单案对照机制已溯，SMIL �
 |---|------|------|
 | P1 | svg/ corpus 导入 + 基线 + 渲染断言面占比盘点 | ✅ M1（2026-10-21，8.8% 基线） |
 | P2 | SVG DOM 类层级 + SVGSVGElement viewBox/CTM 最小面 | ✅ M2（2026-10-21，S1–S4c 全切片 ✅，corpus 63.6%） |
-| P3 | SVGGeometryElement 几何接口 + 事件目标化 | ⏳ M3 |
+| P3 | SVGGeometryElement 几何接口 + 事件目标化 | ⏳ M3（S1 命中测试 ✅ 68.8%，几何接口已随 M2 S4a 落地） |
 | P4 | SMIL 评估 + 渲染断言面挂账定稿 | ⏳ M4 |
 
 ## 已完成切片
@@ -112,24 +115,36 @@ stub 存在→等 beginEvent 不至，pre/post 单案对照机制已溯，SMIL �
   syncbase F(2)→T 分类移动机制已溯（SMIL 挂账面预期移动）。
   **M2 至此全部切片完成**。证据：
   evidence/2026-10-21-m2-s4c-pathdata-landing.md。
+- **M3 S1（2026-10-21）**：SVG 形状命中测试（本 session 端到端持有——
+  根因定位、`_zwSvgHitSel` 几何自建 + 两集成点、诊断页取证三轮修出、
+  全量对账）。靶面四案 86/86 全绿（基线全灭）；全 corpus 原始
+  1201P/504F/41T = 68.8%（86 Fail→Pass 零 Pass 回归零 DOWN，+86P 全落
+  靶面）；探针剔除同分母 68.0%。DC-4：fmt EXIT=0 + 定向 zero-engine
+  3373P/0F。挂账：CSS cascade 命中面（pe-bbox 19 子 + border-radius）/
+  文本字形命中（text-hittest 3 子）/祖先 paint 属性继承/miter 尖/
+  viewBox/百分比/clip。证据：evidence/2026-10-21-m3-s1-hittest-landing.md。
 
 ## 下一步计划
 
-1. **M2 CSV 行回填**：docs/compat/trends/wpt-suites.csv 的 svg 行以 M2
-   完成口径更新数据行（原始 63.6% / 探针剔除 62.9%，S4c 证据列为来源），
-   M1 期 planned 行转数据行收尾。
-2. **M4 SMIL 分类账重跑**：S3 脚手架已释放时序面（seeking-events 族 F→T、
+1. **M3 S1 CSV 行**：docs/compat/trends/wpt-suites.csv 追加 M3 S1 数据行
+   （原始 68.8% / 探针剔除 68.0%，S1 证据列为来源）。
+2. **M3 后续面评估**：linking/scripted href 族（22F+3T）、script/image
+   load-error events（2T）——切片边界划定后推进；祖先 paint 属性继承
+   （fill/stroke/stroke-width）随命中面后续切片升级。
+3. **M4 SMIL 分类账重跑**：S3 脚手架已释放时序面（seeking-events 族 F→T、
    invalid-value 族平凡全绿），M4 SMIL 评估须以 S3 后口径重跑分类（见
    evidence/2026-10-21-m4-smil-assessment-prep.md + S3 landing 排片对位）；
    S4c 后新增 syncbase-escaped-dots F(2)→T 移动一并归口。
-3. **上下文换算补面（S2a FIXME）**：SVGLength 关联元素的 em/ex/percentage
+4. **上下文换算补面（S2a FIXME）**：SVGLength 关联元素的 em/ex/percentage
    上下文（SVGLength-viewport 8F / percentage-directionality 6F）——与
    getBBox 几何上下文同批评估。
-4. **rendering-compat 协同项**：getScreenCTM/getCTM 族（S3 划界，需 CSS
+5. **rendering-compat 协同项**：getScreenCTM/getCTM 族（S3 划界，需 CSS
    transform 感知布局合成）——与渲染域会话对齐后排期。
-5. **挂账面（M4 定稿归口）**：文本几何（-02 tspan + -05 text 三子 +
-   getComputedTextLength 族，字形度量依赖）；image 内在尺寸（-03 image1/2 +
-   svg-image-intrinsic-size 族，图片加载态依赖）。
+6. **挂账面（M4 定稿归口）**：文本几何（-02 tspan + -05 text 三子 +
+   getComputedTextLength 族 + text-hittest 3 子，字形度量依赖）；image
+   内在尺寸（-03 image1/2 + svg-image-intrinsic-size 族，图片加载态依赖）；
+   CSS cascade 命中面（pe-bbox 19 子 + border-radius 1 子，style-system
+   协同）。
 
 **跨流碰头信号（2026-10-21，run-rules §9/§10）——已解除**：workspace fmt
 红于 comp-anim 流 `apps/compositor/src/frame_dump.rs`（9799e6435 引入，

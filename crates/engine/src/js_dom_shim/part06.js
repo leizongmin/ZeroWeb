@@ -3256,9 +3256,17 @@
     },
     // R2924 elementFromPoint：`document.elementFromPoint(x, y)` → 视口 CSS 像素 (x,y) 命中的最深元素。
     // 经 host `__zw_elementFromPoint(x, y)`（renderer/browser render 后 swap 进 HitTestCache）求命中选择器
-    // → _wrapSelector。未注册（engine/reftest/polyfill 无渲染）/ 无命中 → null（spec）。
+    // → _wrapSelector。未注册（engine/reftest/polyfill 无渲染）时回落 SVG 形状命中
+    // （svg-compat M3 S1：headless runner 无 HitTestCache 且 gBCR 全零，SVG 形状在
+    // 渲染路径缺位——几何自建，spec SVG2 interact.html §hit-testing）；无命中 →
+    // null（spec）。
     elementFromPoint: function(x, y) {
-      if (typeof __zw_elementFromPoint !== 'function') return null;
+      if (typeof __zw_elementFromPoint !== 'function') {
+        try {
+          var sSel = (typeof _zwSvgHitSel === 'function') ? _zwSvgHitSel(Number(x) || 0, Number(y) || 0) : null;
+          return sSel ? _wrapSelector(sSel) : null;
+        } catch (_eEFPsvg) { return null; }
+      }
       var sel = __zw_elementFromPoint(String(x), String(y));
       return sel ? _wrapSelector(sel) : null;
     },
@@ -14163,6 +14171,280 @@
       }
     } catch (_eRaw19) {}
   })();
+  // ── svg-compat M3 S1：SVG 形状命中测试（spec SVG2 interact.html §hit-testing
+  // + §PointerEventsProp）——runner headless 无宿主 HitTestCache 且 gBCR 全零，
+  // 命中判定纯属性几何自建。轮廓采样复用 part03 `_zwSvgGeomLens`（path 走
+  // `_zwSvgPathParse`+flatten 同源）；fill 实心内含（nonzero 缠绕，逐子路径
+  // runStarts）；stroke ±sw/2 轮廓采样距离 + 数据顶点 join 圆盘（round 近似，
+  // miter 尖 FIXME(svg-compat M3)：slice-1 语料锐角 path stroke 未消费）；
+  // rect 走精确式——fill 实心矩形 + stroke 环带（外方内方，90° miter 角实定）。
+  // ancestor transform 链（transform 属性文法自析 + 嵌套 svg x/y 平移）逆映射
+  // 到元素用户空间。pointer-events 关键字表（SVG2）：none/visiblePainted（缺省）/
+  // visibleFill/visibleStroke/visible/painted/fill/stroke/all——继承属性就近祖
+  // 先回溯（CSS cascade 未及 FIXME(svg-compat M3)：pointer-events-bbox 案的
+  // class 规则面归 style-system 协同切片）；visibility 继承门 + display 属性门。
+  // 命中文档序逆序首中即最顶层（SVG 绘制序 = 文档序），svg 根视口作背景命中面。
+  // viewBox 缩放/百分比尺寸/clip/嵌套 svg 视口裁剪未及（FIXME(svg-compat M3)，
+  // slice-1 语料 rect/ellipse-hittest 族无 viewBox）。
+  var _zwSvgHitNum = function (el, attr, dflt) {
+    var v = null;
+    try { v = el.getAttribute(attr); } catch (_eHN) { return dflt; }
+    var n2 = v == null || v === '' ? NaN : Number(v);
+    return isFinite(n2) ? n2 : dflt;
+  };
+  // 继承属性最近值（pointer-events/visibility）——属性面就近祖先回溯。
+  var _zwSvgHitInherited = function (el, attr, dflt) {
+    var v = null, n2 = el;
+    while (n2) {
+      if (typeof n2.getAttribute === 'function') {
+        try { v = n2.getAttribute(attr); } catch (_eHI) { v = null; }
+        if (v != null && v !== '') return String(v);
+      }
+      n2 = (n2.parentNode && typeof n2.parentNode.getAttribute === 'function') ? n2.parentNode : null;
+    }
+    return dflt;
+  };
+  // transform 属性 → {a,b,c,d,e,f}（x' = a x + c y + e；y' = b x + d y + f）。
+  // 文法 per SVG2 §types：translate/rotate/scale/matrix/skewX/skewY，列表左到
+  // 右后乘；未知命令/括号失衡 → 已解析前缀截断（§PathData 错误处理同口径）。
+  var _zwSvgHitTransform = function (el) {
+    var s = '';
+    try { s = String(el.getAttribute('transform') || ''); } catch (_eHTa) { return null; }
+    if (!s) return null;
+    var m = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+    var i = 0, n2 = s.length;
+    var _scan = function () {
+      while (i < n2 && (s.charAt(i) === ' ' || s.charAt(i) === ',' || s.charAt(i) === '\t' || s.charAt(i) === '\n' || s.charAt(i) === '\r')) i++;
+    };
+    var _num = function () {
+      _scan();
+      var st = i;
+      if (i < n2 && (s.charAt(i) === '-' || s.charAt(i) === '+')) i++;
+      while (i < n2) {
+        var ch2 = s.charAt(i);
+        if ((ch2 >= '0' && ch2 <= '9') || ch2 === '.') i++;
+        else if ((ch2 === 'e' || ch2 === 'E') && i + 1 < n2 && (s.charAt(i + 1) === '-' || s.charAt(i + 1) === '+' || ((s.charAt(i + 1) >= '0' && s.charAt(i + 1) <= '9')))) i += 2;
+        else break;
+      }
+      return i === st ? NaN : Number(s.slice(st, i));
+    };
+    var _mul = function (m1, t) {
+      return { a: m1.a * t.a + m1.c * t.b, b: m1.b * t.a + m1.d * t.b,
+               c: m1.a * t.c + m1.c * t.d, d: m1.b * t.c + m1.d * t.d,
+               e: m1.a * t.e + m1.c * t.f + m1.e, f: m1.b * t.e + m1.d * t.f + m1.f };
+    };
+    while (i < n2) {
+      _scan();
+      if (i >= n2) break;
+      var ch = s.charAt(i), name = '';
+      if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z'))) break;
+      while (i < n2) { ch = s.charAt(i); if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')) { name += ch; i++; } else break; }
+      _scan();
+      if (s.charAt(i) !== '(') break;
+      i++;
+      var args = [];
+      while (true) {
+        _scan();
+        if (i < n2 && s.charAt(i) === ')') { i++; break; }
+        var v3 = _num();
+        if (!isFinite(v3)) break;
+        args.push(v3);
+      }
+      var t = null, D = Math.PI / 180;
+      if (name === 'translate') t = { a: 1, b: 0, c: 0, d: 1, e: args[0] || 0, f: args[1] || 0 };
+      else if (name === 'scale') { var sx = args.length ? args[0] : 1, sy = args.length > 1 ? args[1] : sx; t = { a: sx, b: 0, c: 0, d: sy, e: 0, f: 0 }; }
+      else if (name === 'rotate') {
+        var cs = Math.cos((args[0] || 0) * D), sn = Math.sin((args[0] || 0) * D);
+        if (args.length > 2) {
+          var cx = args[1], cy = args[2];
+          t = { a: cs, b: sn, c: -sn, d: cs, e: cx - cs * cx + sn * cy, f: cy - sn * cx - cs * cy };
+        } else t = { a: cs, b: sn, c: -sn, d: cs, e: 0, f: 0 };
+      } else if (name === 'matrix' && args.length >= 6) t = { a: args[0], b: args[1], c: args[2], d: args[3], e: args[4], f: args[5] };
+      else if (name === 'skewX') t = { a: 1, b: 0, c: Math.tan((args[0] || 0) * D), d: 1, e: 0, f: 0 };
+      else if (name === 'skewY') t = { a: 1, b: Math.tan((args[0] || 0) * D), c: 0, d: 1, e: 0, f: 0 };
+      else break;
+      m = _mul(m, t);
+    }
+    return m;
+  };
+  // 元素用户空间 ← 视口点：祖先链收集后自根向叶复合局部矩阵（M = L_外 · … · L_元
+  // 素，左乘）。最外层 svg（链中下标最小者）局部 = gBCR left/top 平移 ∘ transform
+  // 属性（runner 有 body 8px margin 偏移，gBCR 是唯一 client 基准源）；嵌套 svg
+  // 局部 = x/y 平移 ∘ transform 属性（shim gBCR 不含嵌套 x/y，不可用）；其余元素
+  // = transform 属性。返回逆映射参数或 null（奇异矩阵）。
+  var _zwSvgHitToUser = function (el) {
+    var chain = [], n2 = el;
+    while (n2 && typeof n2.getAttribute === 'function') {
+      var tg = '';
+      try { tg = String(n2.tagName || '').toLowerCase(); } catch (_eUT) {}
+      chain.unshift({ el: n2, svg: tg === 'svg' });
+      n2 = (n2.parentNode && typeof n2.parentNode.getAttribute === 'function') ? n2.parentNode : null;
+    }
+    var rootIdx = -1;
+    for (var si = 0; si < chain.length; si++) {
+      if (chain[si].svg) { rootIdx = si; break; }
+    }
+    var m = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+    for (var ci = 0; ci < chain.length; ci++) {
+      var node = chain[ci].el, isSvg = chain[ci].svg, L = null;
+      if (isSvg && ci === rootIdx) {
+        var gx = 0, gy = 0;
+        try {
+          var gr = node.getBoundingClientRect ? node.getBoundingClientRect() : null;
+          if (gr && isFinite(gr.left) && isFinite(gr.top)) { gx = gr.left; gy = gr.top; }
+        } catch (_eUTr) {}
+        L = { a: 1, b: 0, c: 0, d: 1, e: gx, f: gy };
+      } else if (isSvg) {  // 嵌套 svg：x/y 平移（viewBox 比例 FIXME(svg-compat M3)）
+        L = { a: 1, b: 0, c: 0, d: 1, e: _zwSvgHitNum(node, 'x', 0), f: _zwSvgHitNum(node, 'y', 0) };
+      }
+      var tr = _zwSvgHitTransform(node);
+      if (tr) L = L ? { a: L.a * tr.a + L.c * tr.b, b: L.b * tr.a + L.d * tr.b,
+                        c: L.a * tr.c + L.c * tr.d, d: L.b * tr.c + L.d * tr.d,
+                        e: L.a * tr.e + L.c * tr.f + L.e, f: L.b * tr.e + L.d * tr.f + L.f } : tr;
+      if (L) m = { a: m.a * L.a + m.c * L.b, b: m.b * L.a + m.d * L.b,
+                   c: m.a * L.c + m.c * L.d, d: m.b * L.c + m.d * L.d,
+                   e: m.a * L.e + m.c * L.f + m.e, f: m.b * L.e + m.d * L.f + m.f };
+    }
+    var det = m.a * m.d - m.b * m.c;
+    if (Math.abs(det) < 1e-12) return null;
+    return { ia: m.d / det, ic: -m.c / det, ib: -m.b / det, id: m.a / det,
+             ie: -(m.d * m.e - m.c * m.f) / det, if_: (m.b * m.e - m.a * m.f) / det };
+  };
+  // 逆矩阵应用 + 几何判定核：fill nonzero 缠绕（逐 run，runStarts 分段）+ stroke
+  // 轮廓采样距离（moveto 锚不连线）+ 数据顶点 join 圆盘（verts，round 近似）。
+  var _zwSvgHitApply = function (inv, x, y) {
+    return { x: inv.ia * x + inv.ic * y + inv.ie, y: inv.ib * x + inv.id * y + inv.if_ };
+  };
+  var _zwSvgHitFillRuns = function (lens, ux, uy) {
+    var pts = lens.pts, rs = lens.runStarts && lens.runStarts.length ? lens.runStarts : [0];
+    var wind = 0;
+    for (var ri = 0; ri < rs.length; ri++) {
+      var st = rs[ri], en = ri + 1 < rs.length ? rs[ri + 1] : pts.length;
+      // fill 对未闭合子路径隐式闭合（spec SVG2 §Painting geometry：fill 视
+      // 子路径自动闭合并），尾段回连 run 起点；Z 已闭合时回连段退化零长度
+      //（y2 === y1 恒不贡献穿越）。
+      for (var j = st; j < en; j++) {
+        var p2 = j + 1 < en ? pts[j + 1] : pts[st];
+        var x1 = pts[j][0], y1 = pts[j][1], x2 = p2[0], y2 = p2[1];
+        if (y1 <= uy) { if (y2 > uy && (x2 - x1) * (uy - y1) - (ux - x1) * (y2 - y1) > 0) wind++; }
+        else if (y2 <= uy && (x2 - x1) * (uy - y1) - (ux - x1) * (y2 - y1) < 0) wind--;
+      }
+    }
+    return wind !== 0;
+  };
+  var _zwSvgHitStrokeDist = function (lens, ux, uy) {
+    var pts = lens.pts, rs = lens.runStarts && lens.runStarts.length ? lens.runStarts : [0];
+    var best = Infinity;
+    for (var ri = 0; ri < rs.length; ri++) {
+      var st = rs[ri], en = ri + 1 < rs.length ? rs[ri + 1] : pts.length;
+      for (var j = st; j < en - 1; j++) {
+        var x1 = pts[j][0], y1 = pts[j][1], dx = pts[j + 1][0] - x1, dy = pts[j + 1][1] - y1;
+        var L2 = dx * dx + dy * dy, t = L2 ? ((ux - x1) * dx + (uy - y1) * dy) / L2 : 0;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        var ex = ux - (x1 + t * dx), ey = uy - (y1 + t * dy);
+        var d = Math.sqrt(ex * ex + ey * ey);
+        if (d < best) best = d;
+      }
+    }
+    return best;
+  };
+  // 单形状命中（用户空间点）：pointer-events 关键字表 + painted 门 + fill/stroke
+  // 区域（SVG2 interact.html §hit-testing 表；visible* 族要求 visibility:visible，
+  // 非 visible 族不要求）。返回 true/false。
+  var _zwSvgHitShape = function (el, tag, ux, uy) {
+    var pe = _zwSvgHitInherited(el, 'pointer-events', 'visiblePainted');
+    if (pe === 'none') return false;
+    try { var dsp = el.getAttribute('display'); if (dsp === 'none') return false; } catch (_eDS) {}
+    var vis = _zwSvgHitInherited(el, 'visibility', 'visible') !== 'hidden';
+    var needVis = pe === 'visiblePainted' || pe === 'visibleFill' || pe === 'visibleStroke' || pe === 'visible';
+    if (needVis && !vis) return false;
+    var fillV = null;
+    try { fillV = el.getAttribute('fill'); } catch (_eFV) {}
+    var fillPainted = fillV !== 'none';  // 缺省 black（painted）
+    var strokeV = null;
+    try { strokeV = el.getAttribute('stroke'); } catch (_eSV) {}
+    var strokePainted = strokeV != null && strokeV !== 'none';  // 缺省 none
+    var sw = _zwSvgHitNum(el, 'stroke-width', 1);
+    if (!(sw > 0)) sw = 1;
+    var half = sw / 2, EPS = 1e-6;
+    // fill/stroke 区域：rect 精确式（实心 + 环带含 90° miter 角）；其余轮廓采样。
+    var lens = (typeof _zwSvgGeomLens === 'function') ? _zwSvgGeomLens(el, tag) : null;
+    var fillHit = false, strokeHit = false;
+    if (tag === 'rect') {
+      var x = _zwSvgHitNum(el, 'x', 0), y = _zwSvgHitNum(el, 'y', 0);
+      var w = _zwSvgHitNum(el, 'width', 0), h = _zwSvgHitNum(el, 'height', 0);
+      if (w > 0 && h > 0) {
+        fillHit = ux >= x && ux <= x + w && uy >= y && uy <= y + h;
+        strokeHit = ux >= x - half && ux <= x + w + half && uy >= y - half && uy <= y + h + half &&
+          !(ux > x + half && ux < x + w - half && uy > y + half && uy < y + h - half);
+      }
+    } else if (tag === 'circle' || tag === 'ellipse') {
+      var rx = tag === 'circle' ? _zwSvgHitNum(el, 'r', 0) : _zwSvgHitNum(el, 'rx', 0);
+      var ry = tag === 'circle' ? rx : _zwSvgHitNum(el, 'ry', 0);
+      var cx = _zwSvgHitNum(el, 'cx', 0), cy = _zwSvgHitNum(el, 'cy', 0);
+      if (rx > 0 && ry > 0) {
+        var nq = (ux - cx) * (ux - cx) / (rx * rx) + (uy - cy) * (uy - cy) / (ry * ry);
+        fillHit = nq <= 1 + EPS;
+        strokeHit = lens && _zwSvgHitStrokeDist(lens, ux, uy) <= half + 0.05;
+      }
+    } else if (lens) {
+      var sd = _zwSvgHitStrokeDist(lens, ux, uy);
+      if (tag !== 'line') {
+        // fill 闭域含边界——轮廓上点（winding 可能计 0）按 fill 命中（svg-
+        // small-big-path (5,110) 顶点定谳面）。隐式闭合边（未闭合子路径回连
+        // 段）不在 sd 内——FIXME(svg-compat M3)：corpus 暂无消费者。
+        fillHit = _zwSvgHitFillRuns(lens, ux, uy) || sd <= 1e-9;
+      }
+      strokeHit = sd <= half + EPS;
+      if (!strokeHit && lens.verts) {  // 数据顶点 join 圆盘（round 近似）
+        for (var vi = 0; vi < lens.verts.length; vi++) {
+          var dvx = ux - lens.verts[vi][0], dvy = uy - lens.verts[vi][1];
+          if (dvx * dvx + dvy * dvy <= half * half + EPS) { strokeHit = true; break; }
+        }
+      }
+    }
+    var fillRegion = fillHit, strokeRegion = strokeHit;
+    if (pe === 'visiblePainted' || pe === 'painted') return (fillPainted && fillRegion) || (strokePainted && strokeRegion);
+    if (pe === 'visibleFill' || pe === 'fill') return fillRegion;
+    if (pe === 'visibleStroke' || pe === 'stroke') return strokeRegion;
+    if (pe === 'visible' || pe === 'all') return fillRegion || strokeRegion;
+    if (pe === 'bounding-box') return false;  // FIXME(svg-compat M3)：bbox 关键字归 style-system 协同切片
+    return (fillPainted && fillRegion) || (strokePainted && strokeRegion);  // 未知值回落缺省
+  };
+  // SVG 命中入口：视口点 → 文档序逆序首中形状/svg 根的选择器（最顶层；svg 根
+  // 视口为背景面）。无 SVG 文档/无命中 → null。
+  var _zwSvgHitSel = function (x, y) {
+    var list;
+    try {
+      if (typeof document === 'undefined' || !document.querySelectorAll) return null;
+      list = document.querySelectorAll('svg, svg rect, svg circle, svg ellipse, svg line, svg polyline, svg polygon, svg path');
+    } catch (_eHQ) { return null; }
+    for (var i = list.length - 1; i >= 0; i--) {
+      var el = list[i];
+      var tag = '';
+      try { tag = String(el.tagName || '').toLowerCase(); } catch (_eTG) {}
+      var inv = _zwSvgHitToUser(el);
+      if (!inv) continue;
+      var p = _zwSvgHitApply(inv, x, y);
+      var hit = false;
+      if (tag === 'svg') {
+        // svg 视口命中面在**自身用户空间** 0 基（链已含根 gBCR 平移/嵌套 svg x/y
+        // 平移——逆映射后视口原点即坐标原点，spec SVG2 §Coordinates
+        // §EstablishingANewViewport）。
+        var w = _zwSvgHitNum(el, 'width', NaN), h = _zwSvgHitNum(el, 'height', NaN);
+        if (!isFinite(w)) w = (typeof innerWidth === 'number') ? innerWidth : 0;
+        if (!isFinite(h)) h = (typeof innerHeight === 'number') ? innerHeight : 0;
+        hit = p.x >= 0 && p.x <= w && p.y >= 0 && p.y <= h &&
+          _zwSvgHitInherited(el, 'pointer-events', 'visiblePainted') !== 'none';
+      } else {
+        hit = _zwSvgHitShape(el, tag, p.x, p.y);
+      }
+      if (hit) {
+        try { return el.__zwSelector || null; } catch (_eHS) { return null; }
+      }
+    }
+    return null;
+  };
   // uievents-compat M3 尾簇（2026-10-04）：命中测试（视口 CSS 像素 → 选择器）——
   // host `__zw_elementFromPoint`（R2924 HitTestCache）优先；runner headless 无渲染
   // 缓存 → gBCR 几何近似（文档序逆序首个含点元素 ≈ 最深/topmost；proxy `__zwSelector`
@@ -14178,6 +14460,12 @@
         if (hit && hit !== skipHostSel) return hit;
       }
     } catch (_eHT1) {}
+    try {
+      // svg-compat M3 S1：SVG 形状命中（几何自建）优先于 gBCR 近似——runner
+      // headless gBCR 全零，SVG 形状在旧近似下不可见（恒 null）。
+      var sSel = (typeof _zwSvgHitSel === 'function') ? _zwSvgHitSel(x, y) : null;
+      if (sSel) return sSel;
+    } catch (_eHTsvg) {}
     try {
       if (typeof document === 'undefined' || !document.querySelectorAll) return null;
       var all = document.querySelectorAll('body, body *');
