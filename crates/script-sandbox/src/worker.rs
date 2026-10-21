@@ -746,6 +746,27 @@ mod tests {
     }
 
     #[test]
+    fn test_worker_self_global_alias() {
+        // worker 全局必须有 self（WorkerGlobalScope.self）——规范 worker 脚本以
+        // self.onmessage / self.postMessage 收发，缺失时脚本首行即抛 ReferenceError。
+        let mut worker = WorkerRuntime::new(
+            "self.onmessage = function(e) { self.postMessage('self: ' + e.data); };",
+            SandboxConfig::default(),
+        )
+        .unwrap();
+
+        std::thread::sleep(Duration::from_millis(200));
+        worker.post_message("hi").unwrap();
+
+        let event = worker.recv_timeout(Duration::from_secs(5)).unwrap();
+        match event {
+            WorkerEvent::Message(msg) => assert_eq!(msg, "self: hi"),
+            other => panic!("Expected Message, got: {other:?}"),
+        }
+        worker.terminate();
+    }
+
+    #[test]
     fn test_worker_stateful_counter() {
         let mut worker = WorkerRuntime::new(
             "var count = 0; onmessage = function(e) { count++; postMessage('count: ' + count); };",

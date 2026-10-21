@@ -71,7 +71,9 @@
     };
 
     // ── 模式分流：worker_host 宿主桥回调存在 = S1a 真线程执行面已落地 ──
-    window.__zwWorkerHost = (typeof __zw_worker_create === 'function');
+    //（桥名以 S1a 落地实现为准：engine callbacks flag 门控注册 `__zw_worker_host_op`，
+    // part05.js 构造器经它 spawn 进 renderer 宿主线程。）
+    window.__zwWorkerHost = (typeof __zw_worker_host_op === 'function');
     window.__zwMode = window.__zwWorkerHost ? 'threaded' : 'shim';
     document.getElementById('strip-mode').textContent = 'mode=' + window.__zwMode;
 

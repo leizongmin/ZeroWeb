@@ -11,6 +11,7 @@
 #               阻塞）+ transfer ctxOk + terminate 后零 beat 回流 + 错误路径回流
 #   呈现像素连续性不在本探针判定面：frame_dump 采集 + dc4-analyze.py 承载。
 # 用法：scripts/compositor-animation-comp04a-probe.sh [OUT_DIR]
+#   ZW_THREADED_WORKERS=1 前缀跑 threaded 腿（默认 0 = shim 对照腿，见下）。
 # 前置：make browser-build（本脚本不代跑长构建，缺二进制时退出 2）。
 set -eu
 
@@ -35,7 +36,9 @@ LOG="$OUT_DIR/headless.log"
 PORT=$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()')
 
 echo "comp04a-probe: launching headless browser on port $PORT (out: $OUT_DIR)"
-ZW_HEADLESS_GPU_SCREENSHOT=1 RUST_LOG=info \
+# worker 执行面 flag：调用方 export ZW_THREADED_WORKERS=1 跑 threaded 腿
+#（默认 0 = shim 对照腿）。经环境继承传给 browser→renderer 子进程。
+ZW_THREADED_WORKERS="${ZW_THREADED_WORKERS:-0}" ZW_HEADLESS_GPU_SCREENSHOT=1 RUST_LOG=info \
     "$BROWSER_BIN" --headless --remote-debugging-port="$PORT" \
     --viewport-width=480 --viewport-height=360 >"$LOG" 2>&1 &
 BROWSER_PID=$!

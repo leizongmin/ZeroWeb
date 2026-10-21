@@ -161,7 +161,8 @@ pub(crate) fn v8_heap_limits(config: &SandboxConfig) -> Option<(usize, usize)> {
 
 /// Worker bootstrap（V8/QuickJS worker 共享，注入 worker 全局环境）。
 ///
-/// 三块 JS 面（Rust 侧经排空协议消费，见 worker.rs / quickjs_worker.rs）：
+/// 四块 JS 面（Rust 侧经排空协议消费，见 worker.rs / quickjs_worker.rs）：
+/// - 全局别名：`self` = 全局对象（worker 脚本惯用 `self.onmessage`/`self.postMessage` 访问面）。
 /// - 消息：`postMessage` 入 `_workerMessageQueue`，`_dispatchMessage` 派发给 `onmessage`。
 /// - 定时器：`setTimeout`/`setInterval`/`clearTimeout`/`clearInterval` 只把操作（arm/cancel）
 ///   记入 `_workerTimerOps`，到期在 worker 线程命令循环间隙由 Rust 轮驱动 `_workerTimerFire`。
@@ -170,6 +171,9 @@ pub(crate) fn v8_heap_limits(config: &SandboxConfig) -> Option<(usize, usize)> {
 ///   （https://html.spec.whatwg.org/multipage/workers.html#dom-dedicatedworkerglobalscope-close）。
 pub(crate) const WORKER_BOOTSTRAP_JS: &str = r#"
     var _workerMessageQueue = [];
+    // self = worker 全局对象自身，脚本经 self.onmessage/self.postMessage 访问消息面
+    //（https://html.spec.whatwg.org/multipage/workers.html#dom-workerglobalscope-self）。
+    var self = globalThis;
     var onmessage = null;
     var postMessage = function(data) {
         _workerMessageQueue.push(typeof data === 'string' ? data : JSON.stringify(data));

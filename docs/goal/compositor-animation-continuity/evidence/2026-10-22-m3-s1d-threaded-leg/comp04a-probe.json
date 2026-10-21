@@ -1,0 +1,183 @@
+{
+  "fixture": "comp04a-worker-threaded-canvas.html",
+  "started_at_wall": "2026-10-21T22:48:47.078Z",
+  "samples": [
+    {
+      "name": "s0",
+      "t_wall_ms": 579,
+      "capture": {
+        "name": "s0",
+        "wall_ms": 74,
+        "png_sha256": "b7404a44482b5e296de8bb585a8ff55f5ce22abb2178172fb48bb6fd9ca03d36",
+        "png_bytes": 34026
+      },
+      "query": {
+        "wall_ms": 53,
+        "state": {
+          "mode": "threaded",
+          "workerHost": true,
+          "transfer": {
+            "state": "error:Failed to execute 'postMessage': Value at index 0 does not have a transferable type.",
+            "ctxOk": null
+          },
+          "beats": 9,
+          "wtGapMax": 51,
+          "atGapMax": 105,
+          "wtGapSpanLoad": 0,
+          "atGapSpanLoad": 0,
+          "loadWindow": null,
+          "drawsMain": null,
+          "term": null,
+          "beatsAfterTerm": 0,
+          "workerErr": "Error: dc4-expected\n    at <anonymous>:2:7",
+          "ctrl": "ctrl=off",
+          "pageNow": 933
+        }
+      }
+    },
+    {
+      "name": "s1",
+      "t_wall_ms": 1408,
+      "capture": {
+        "name": "s1",
+        "wall_ms": 6,
+        "png_sha256": "78be6096c4eba3f7ad281dd13a4671b39a52d4f7f7a5327486b96edc9d93d2aa",
+        "png_bytes": 34208
+      },
+      "query": {
+        "wall_ms": 15,
+        "state": {
+          "mode": "threaded",
+          "workerHost": true,
+          "transfer": {
+            "state": "error:Failed to execute 'postMessage': Value at index 0 does not have a transferable type.",
+            "ctxOk": null
+          },
+          "beats": 24,
+          "wtGapMax": 51,
+          "atGapMax": 105,
+          "wtGapSpanLoad": 0,
+          "atGapSpanLoad": 0,
+          "loadWindow": null,
+          "drawsMain": null,
+          "term": null,
+          "beatsAfterTerm": 0,
+          "workerErr": "Error: dc4-expected\n    at <anonymous>:2:7",
+          "ctrl": "ctrl=off",
+          "pageNow": 1657
+        }
+      }
+    },
+    {
+      "name": "s2",
+      "t_wall_ms": 7836,
+      "capture": {
+        "name": "s2",
+        "wall_ms": 7,
+        "png_sha256": "4443041cabcff7b951a3ea9146cc36297a28e91568aa848f024d18913129df29",
+        "png_bytes": 38056
+      },
+      "query": {
+        "wall_ms": 45,
+        "state": {
+          "mode": "threaded",
+          "workerHost": true,
+          "transfer": {
+            "state": "error:Failed to execute 'postMessage': Value at index 0 does not have a transferable type.",
+            "ctxOk": null
+          },
+          "beats": 129,
+          "wtGapMax": 903,
+          "atGapMax": 943,
+          "wtGapSpanLoad": 50,
+          "atGapSpanLoad": 943,
+          "loadWindow": {
+            "start": 3409,
+            "end": 4309
+          },
+          "drawsMain": null,
+          "term": {
+            "at": 6908,
+            "lastBeatN": 0
+          },
+          "beatsAfterTerm": 0,
+          "workerErr": "Error: dc4-expected\n    at <anonymous>:2:7",
+          "ctrl": "ctrl=off",
+          "pageNow": 8116
+        }
+      }
+    },
+    {
+      "name": "s3",
+      "t_wall_ms": 8244,
+      "capture": {
+        "name": "s3",
+        "wall_ms": 7,
+        "png_sha256": "fcada921a64e75c101b245e6532a262766e9c3cfc1e3cc2737d06ba3cba6cc61",
+        "png_bytes": 38099
+      },
+      "query": {
+        "wall_ms": 47,
+        "state": {
+          "mode": "threaded",
+          "workerHost": true,
+          "transfer": {
+            "state": "error:Failed to execute 'postMessage': Value at index 0 does not have a transferable type.",
+            "ctxOk": null
+          },
+          "beats": 129,
+          "wtGapMax": 903,
+          "atGapMax": 943,
+          "wtGapSpanLoad": 50,
+          "atGapSpanLoad": 943,
+          "loadWindow": {
+            "start": 3409,
+            "end": 4309
+          },
+          "drawsMain": null,
+          "term": {
+            "at": 6908,
+            "lastBeatN": 0
+          },
+          "beatsAfterTerm": 0,
+          "workerErr": "Error: dc4-expected\n    at <anonymous>:2:7",
+          "ctrl": "ctrl=on",
+          "pageNow": 8526
+        }
+      }
+    }
+  ],
+  "verdict": {
+    "mode": "threaded",
+    "worker_host_present": true,
+    "transfer_state": "error:Failed to execute 'postMessage': Value at index 0 does not have a transferable type.",
+    "transfer_ctx_ok": null,
+    "beats_total": 129,
+    "wt_gap_max_ms": 903,
+    "wt_gap_spanning_load_ms": 50,
+    "at_gap_max_ms": 943,
+    "at_gap_spanning_load_ms": 943,
+    "load_window": {
+      "start": 3409,
+      "end": 4309
+    },
+    "draws_main": null,
+    "term": {
+      "at": 6908,
+      "lastBeatN": 0
+    },
+    "beats_after_term": 0,
+    "worker_err": "Error: dc4-expected\n    at <anonymous>:2:7",
+    "canvas_idle": "ANIMATED",
+    "mutation_control": "OK",
+    "control_strip": "ctrl=off",
+    "gates": {
+      "wt_liveness": true,
+      "transfer_ctx": false,
+      "term_silent": true,
+      "err_reported": true,
+      "control": true
+    },
+    "state": "THREADED_PROBE_PARTIAL"
+  }
+}
