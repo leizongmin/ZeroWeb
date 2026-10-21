@@ -1,9 +1,9 @@
 # 合成动画连续性控制面
 
 **日期**：2026-10-21
-**状态**：Active；M1 进行中——headless 生产基线已实测（动画 FROZEN），真实窗口观察与 M2 切片未开始。
+**状态**：Active；M1 进行中——headless 生产基线已实测（动画 FROZEN）；真实窗口观察首跑 INCONCLUSIVE（会话恢复混淆，窗口多帧采样工具缺口确认）。
 **当前卡点**：生产 renderer 时钟泵（`tick_animation_clock`）无调用方，CSS 动画停在静态 t=0（R3882）；合成独立推进需 M2 切片设计（动画描述入 protocol + compositor 采样）。
-**下一步**：补真实窗口（compositor 进程模式）帧计数观察收口 M1；随后 M2 切片 RFC。
+**下一步**：M2 首切片：窗口模式多帧采样工具（补真实窗口基线）+ 动画描述入 protocol 的切片 RFC。
 **入口**：[目标契约](../compositor-animation-continuity.md) / [启动与证据协议](../ladybird-followups/README.md)
 
 ## 缺口与待决
@@ -20,8 +20,8 @@
 
 | 阶段 | 产物 | 状态 | 证据 |
 |---|---|---|---|
-| M1 | 真实窗口阻塞基线与支持矩阵 | IN_PROGRESS（headless 基线+支持矩阵已交；真实窗口观察待补） | [2026-10-21-m1-comp01-baseline](evidence/2026-10-21-m1-comp01-baseline/README.md) |
-| M2 | 合成动画、状态与输入一致切片 | NOT_STARTED | 无 |
+| M1 | 真实窗口阻塞基线与支持矩阵 | IN_PROGRESS（headless 基线+支持矩阵已交；真实窗口首跑 INCONCLUSIVE——窗口多帧采样工具缺口移入 M2） | [2026-10-21-m1-comp01-baseline](evidence/2026-10-21-m1-comp01-baseline/README.md) |
+| M2 | 合成动画、状态与输入一致切片 | NOT_STARTED（首切片含窗口多帧采样工具） | 无 |
 | M3 | Worker 2D 呈现与生命周期 | NOT_STARTED | 无 |
 | M4 | GPU/语义/资源与 DC 审计 | NOT_STARTED | 无 |
 

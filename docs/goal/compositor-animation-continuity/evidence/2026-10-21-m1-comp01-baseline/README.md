@@ -57,3 +57,12 @@
 
 - headless 截图读 `session.snapshot.last_render` 后 GPU 光栅——是生产渲染管线 + 生产 GPU 光栅，但**不是窗口合成器 vsync 帧序列**；DC-1 的完整验收（真实窗口、帧时间序列）仍 NOT_RUN，留待 M2 切片。
 - 物理适配器型号未采集（headless 路径不输出 adapter 名）；后续轮次补 GPU adapter 名采集再定 DC-1 证据口径。
+
+## 附：真实窗口（compositor 进程模式）观察——INCONCLUSIVE
+
+同日追加一次窗口模式观察（WSLg，`RUST_LOG=info` + `ZW_COMPOSITOR_BIN` 指向 release zero-compositor，fixture 经本机 HTTP 提供，`timeout 15` 墙钟）：
+
+- 合成器侧 surface 1 在 02:32:07.76–08.83（UTC）连发 6 帧（fills=1933 恒定）后静默 6.4s 至进程终止——**加载收敛后无连续产帧**，与 headless 判定方向一致。
+- 但**内容归因未证实**：会话恢复（上次 timeout 非干净退出）带回了默认主页标签（nodejs.org fetch 噪声入日志），surface 1 显示的是 fixture 还是恢复页无法从现有日志判别；末帧 fills 1933→461 跳变更无法解释。观察记 **INCONCLUSIVE**，不计为 M1 证据。
+- 缺口确认：窗口模式缺「动画连续性多帧采样」工具（product smoke 只采 newtab 单帧、正常模式无帧捕获通道）——列入 M2 首切片工具需求。
+- 清理残留：本次 kill 非干净退出，用户会话文件会弹「恢复标签」气泡（含本 fixture 标签）；未删除/改写任何用户状态。
