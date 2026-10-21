@@ -1,0 +1,3 @@
+fix=canvas registry shared Arc (webview config + js_worker_main param)
+validate=dc4-observe off 16s + comp04a-probe flag off + testharness-workers constructors/
+make test=EXIT 0; clippy -D warnings clean; fmt clean

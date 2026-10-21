@@ -244,20 +244,24 @@ impl RendererJsWorker {
     pub fn spawn(renderer_id: u64) -> Self {
         let indexed_db_handler =
             zero_page_runtime::indexed_db_handler(Arc::new(std::sync::Mutex::new(zero_storage::StorageManager::new())));
-        Self::spawn_with_indexed_db_handler(renderer_id, indexed_db_handler)
+        let canvas_registry =
+            std::sync::Arc::new(std::sync::Mutex::new(zero_engine::js_dom_bridge::CanvasRegistry::new()));
+        Self::spawn_with_indexed_db_handler(renderer_id, indexed_db_handler, canvas_registry)
     }
 
     pub(crate) fn spawn_with_indexed_db_handler(
         renderer_id: u64,
         indexed_db_handler: zero_engine::IndexedDbHandler,
+        canvas_registry: std::sync::Arc<std::sync::Mutex<zero_engine::js_dom_bridge::CanvasRegistry>>,
     ) -> Self {
-        Self::spawn_with_handlers(renderer_id, indexed_db_handler, None)
+        Self::spawn_with_handlers(renderer_id, indexed_db_handler, None, canvas_registry)
     }
 
     pub(crate) fn spawn_with_handlers(
         renderer_id: u64,
         indexed_db_handler: zero_engine::IndexedDbHandler,
         service_worker_client: Option<ServiceWorkerIpcClient>,
+        canvas_registry: std::sync::Arc<std::sync::Mutex<zero_engine::js_dom_bridge::CanvasRegistry>>,
     ) -> Self {
         let mutations: Arc<std::sync::Mutex<Vec<DomMutation>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
         let rect_snapshot = new_layout_rect_snapshot();
@@ -347,6 +351,7 @@ impl RendererJsWorker {
                     service_worker_client,
                     async_callbacks_ready_for_worker,
                     import_map_for_worker,
+                    canvas_registry,
                     #[cfg(test)]
                     execution_count_for_worker,
                 )
@@ -1187,6 +1192,10 @@ fn js_worker_main(
     service_worker_client: Option<ServiceWorkerIpcClient>,
     async_callbacks_ready: Arc<AtomicBool>,
     import_map: Arc<std::sync::Mutex<Option<ImportMap>>>,
+    // js-dom canvas 显示链路：与 WebView painter 共享的绘制侧 registry（runtime 构造期
+    // 单实例注入）。此前本线程自建孤儿实例，页面 `__zw_canvas_op` 绘制恒不可见
+    // （多进程路径 canvas 2D 位图从不进入绘制结果，2026-10-22 comp04a 脚手架批定位）。
+    canvas_registry: std::sync::Arc<std::sync::Mutex<zero_engine::js_dom_bridge::CanvasRegistry>>,
     #[cfg(test)] execution_count: Arc<AtomicU64>,
 ) {
     let js_config = SandboxConfig {
@@ -1204,8 +1213,6 @@ fn js_worker_main(
         Box::new(zero_script_sandbox::QuickJSSandbox::with_config(js_config).expect("QuickJS sandbox init"));
     let dom_html: Arc<std::sync::Mutex<String>> = Arc::new(std::sync::Mutex::new(String::new()));
     let page_url: Arc<std::sync::Mutex<String>> = Arc::new(std::sync::Mutex::new(String::from("about:blank")));
-    let canvas_registry: std::sync::Arc<std::sync::Mutex<zero_engine::js_dom_bridge::CanvasRegistry>> =
-        std::sync::Arc::new(std::sync::Mutex::new(zero_engine::js_dom_bridge::CanvasRegistry::new()));
     register_dom_callbacks(&mut *sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
     // js-dom R100/R145 identity 桥（renderer 侧）：`__zw_handle_for_selector` selector→handle
     // 反查——createElement/cloneNode 产物（__zwHandle 锚定 listener store）在宿主按 selector

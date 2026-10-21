@@ -653,8 +653,18 @@ impl RendererRuntime {
         set_hmtx_measure_fn(text_metrics::measure_text_hmtx);
         // R4376：回退链垂直度量回调（消费门禁 ZW_FALLBACK_LINE_METRICS，默认 on）。
         set_fallback_line_metrics_fn(text_metrics::fallback_line_metrics);
-        let js_worker =
-            RendererJsWorker::spawn_with_handlers(renderer_id, indexed_db_handler, Some(service_worker_client));
+        // js-dom canvas 显示链路：绘制侧 registry 单实例——页面 JS 线程（js_worker_main
+        // 的 `__zw_canvas_op`）与下方 WebView painter 共享同一 Arc。此前页面线程自建
+        // 孤儿 registry，多进程路径 canvas 2D 位图从不进入绘制结果（2026-10-22 comp04a
+        // 脚手架批定位；进程内路径不受影响）。参照 fetch_observed 单实例纪律。
+        let canvas_registry =
+            std::sync::Arc::new(std::sync::Mutex::new(zero_engine::js_dom_bridge::CanvasRegistry::new()));
+        let js_worker = RendererJsWorker::spawn_with_handlers(
+            renderer_id,
+            indexed_db_handler,
+            Some(service_worker_client),
+            Arc::clone(&canvas_registry),
+        );
         // S11：宿主媒体上下文与 js_worker 共享 cell（SetColorScheme/SetMediaType 更新，
         // worker `__zw_match_media` 求值消费）。
         let media_ctx = js_worker.media_ctx();
@@ -710,6 +720,7 @@ impl RendererRuntime {
             width: 1280,
             height: 800,
             external_script: Some(js_worker.executor()),
+            canvas_registry: Some(canvas_registry),
             ..Default::default()
         });
         webview.set_font_resolver(font_resolver);

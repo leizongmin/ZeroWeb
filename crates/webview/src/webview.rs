@@ -215,6 +215,16 @@ pub struct WebViewConfig {
     /// js_worker `SetWsHandler` 注入，与本字段互斥——`fetch_handler` 同款分野。CSP
     /// enforcement on 时宿主外套 connect-src 门（与 fetch/XHR/beacon/eventsource 同位）。
     pub ws_host_factory: Option<zero_engine::ws_bridge::WsHostFactory>,
+    /// js-dom canvas 显示链路：外部执行器路径与 painter 共享的 CanvasRegistry。
+    ///
+    /// 多进程宿主（renderer 进程）页面 JS 跑在独立线程（external_script 执行器），
+    /// 该线程 `__zw_canvas_op` 的绘制必须落入 painter 读取的同一 registry 实例，
+    /// 否则画布位图从不进入绘制结果（2026-10-22 双实例缺陷：页面线程孤儿 registry，
+    /// `reg_contexts=0`，应用路径 canvas 2D 全空白）。`None`（默认）自建实例——
+    /// 进程内路径（run_page_scripts/reftest/WPT）经 WebView 自身注册面共享同实例，
+    /// 无需注入。构造期绑定：无 post-construction 置换窗口，管道与页面线程自首个
+    /// 瞬间起共享同一实例。
+    pub canvas_registry: Option<std::sync::Arc<std::sync::Mutex<zero_engine::js_dom_bridge::CanvasRegistry>>>,
     // R384（js-dom M5 收尾）：kill-switch `native_dom` 字段已删——双引擎 default-on 后
     // 原生绑定是唯一生产路径（DC-1；用户 2026-08-19/30 批复）。原生 DOM 绑定安装见
     // `install_native_dom_bindings`（`engine::dom_bindings` / `quickjs_dom_bindings`，
@@ -279,6 +289,7 @@ impl Default for WebViewConfig {
             image_source_fetcher: None,
             fetch_handler: None,
             ws_host_factory: None,
+            canvas_registry: None,
             // R384（js-dom M5/M7 收尾）：kill-switch 字段已删，原生绑定无条件安装。
         }
     }
@@ -303,6 +314,7 @@ impl std::fmt::Debug for WebViewConfig {
             .field("image_source_fetcher", &self.image_source_fetcher.is_some())
             .field("fetch_handler", &self.fetch_handler.is_some())
             .field("ws_host_factory", &self.ws_host_factory.is_some())
+            .field("canvas_registry", &self.canvas_registry.is_some())
             .finish()
     }
 }
@@ -702,7 +714,10 @@ impl WebView {
     pub fn new_with_indexed_db_owner(config: WebViewConfig, indexed_db_owner: IndexedDbOwner) -> Self {
         let mut pipeline = RenderPipeline::new(config.width as f32, config.height as f32);
         let canvas_registry: std::sync::Arc<std::sync::Mutex<zero_engine::js_dom_bridge::CanvasRegistry>> =
-            std::sync::Arc::new(std::sync::Mutex::new(zero_engine::js_dom_bridge::CanvasRegistry::new()));
+            match config.canvas_registry.clone() {
+                Some(shared) => shared,
+                None => std::sync::Arc::new(std::sync::Mutex::new(zero_engine::js_dom_bridge::CanvasRegistry::new())),
+            };
         pipeline.set_canvas_registry(Some(canvas_registry.clone()));
         // R1996：调试属性指示器（border-collapse/border-spacing/break/overflow-wrap 等，
         // 绘制于元素边角的彩色标记）默认**跳过**——WebView 是生产嵌入 API，不应显示

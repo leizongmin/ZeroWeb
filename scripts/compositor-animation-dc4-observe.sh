@@ -4,13 +4,16 @@
 #
 # 用法：scripts/compositor-animation-dc4-observe.sh <out-dir> <on|off> [wall-seconds]
 #   on  —— ZW_THREADED_WORKERS=1：真线程 worker 执行面（S1a 落地后呈现连续性判定腿）
-#   off —— flag 关对照：现行同 realm 语义（comp04 基线签名：忙窗 canvas 区域冻结）
+#   off —— flag 关对照：现行同 realm 语义（canvas registry 共享修复后区域出图：
+#     忙窗外动画 + 忙窗期帧静默——主线程同载；修前基线区域恒定不出图见
+#     evidence/2026-10-22-m3-s1d-scaffold）
 # fixture 时间线（页内钟）：忙窗 @3000–3900ms；threaded 模式 terminate @6500ms、
 # 静默核查 @7500ms。frame_dump 512 帧（~8.2s @16ms）须覆盖忙窗与 terminate 点；
 # capture t0 = 浏览器启动，页面导航晚 0.5~2s，分析按区域哈希结构化识别、不依赖
 # 时间线常量（dc3-analyze 同纪律）。
-# 呈现连续性判据：canvas 区域（24,24)-(264,144) 逐帧哈希——off 预期忙窗出现
-# ≥800ms 冻结段；on 预期忙窗期连续变化 + terminate 后终末冻结段。
+# 呈现连续性判据：canvas 区域（24,24)-(264,144) 逐帧哈希——off 预期区域动画
+#（distinct>1 + mod-232 回绕周期复现）+ 忙窗覆盖的帧静默段；on 预期忙窗期连续
+# 变化 + terminate 后终末冻结段。
 #
 # 前置：make browser-build 已产出 target/release/{zero-browser,zero-compositor}。
 # 隔离与上界同 dc1/dc3-observe：一次性 XDG 配置、timeout 墙钟、systemd-run 内存
