@@ -205,6 +205,17 @@ pub(super) fn oof_inline_anchor() -> bool {
     selected(*VALUE, || default_on("ZW_OOF_INLINE_ANCHOR"))
 }
 
+/// R5216（CSS2 §9.5 rule 8「shortened line box」）：原子盒 fit 门断行产生的**新空行**
+/// 同样按 R4234 下绕 float——断行只保证原子盒离开前行 y 带，新行 y 带仍可能被 float
+/// 缩到放不下（floats-wrap-top-below-inline-002l/r：行 2 带 50..100 被 float 左缘/
+/// 右缘夹击 avail=0，span2 滞留前行右侧 (150,50)/(300,50) 与 float 重叠；chromium
+/// 下绕到 float 底 y=150 行首 (0,150)）。default-on；
+/// `ZW_ATOMIC_POSTBREAK_FLOAT_FIT=0` 回退仅入口空行下绕的旧行为。
+pub(super) fn atomic_postbreak_float_fit() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_ATOMIC_POSTBREAK_FLOAT_FIT"));
+    selected(*VALUE, || default_on("ZW_ATOMIC_POSTBREAK_FLOAT_FIT"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::select_value;

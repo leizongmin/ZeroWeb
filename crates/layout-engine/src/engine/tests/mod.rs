@@ -783,3 +783,5 @@ mod r5213_table_among_floats_interval_tests;
 mod r5214_float_earliest_fit_tests;
 /// R5215（CSS2 §9.2.1.1）原子 inline-level 子流参与者——002l 正反页几何锚点。
 mod r5215_atomic_flow_tests;
+/// R5216（CSS2 §9.5 rule 8）行盒避 float 下绕——inline-002l/r 断行新行几何锚点。
+mod r5216_line_float_fit_tests;

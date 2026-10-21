@@ -11,6 +11,48 @@ impl InlineFormattingContext {
         self.break_items_into_lines(items);
     }
 
+    /// R4234（CSS2 §9.5 rule 8「shortened line box」）：行首空行上的原子盒放不下
+    /// float 缩短后的可用宽时，行位逐步下移到最早结束的重叠 float 带底重算，直到
+    /// 放得下或不再与 float 重叠。返回 (下移后行 y, 新带左缘, 新带宽)。
+    ///
+    /// R5216：fit 门断行产生的新空行同走此径（`atomic_postbreak_float_fit`）。
+    fn shift_new_line_below_floats(
+        &self,
+        mut current_y: f32,
+        est_height: f32,
+        box_width: f32,
+    ) -> (f32, f32, f32) {
+        let mut left_offset;
+        let mut avail_width;
+        loop {
+            let next_y = self
+                .float_exclusions
+                .iter()
+                .filter(|e| e.y < current_y + est_height && e.y + e.height > current_y)
+                .map(|e| e.y + e.height)
+                .filter(|bottom| *bottom > current_y)
+                .fold(None::<f32>, |acc, b| match acc {
+                    Some(cur) if cur <= b => Some(cur),
+                    _ => Some(b),
+                });
+            let Some(next_y) = next_y else {
+                // 不再与 float 重叠：按当前带重算（入口带无重叠时 = 入口值）。
+                let (lo, aw) = self.effective_content_area(current_y, est_height);
+                left_offset = lo;
+                avail_width = aw;
+                break;
+            };
+            let (lo, aw) = self.effective_content_area(next_y, est_height);
+            current_y = next_y;
+            left_offset = lo;
+            avail_width = aw;
+            if box_width <= avail_width {
+                break;
+            }
+        }
+        (current_y, left_offset, avail_width)
+    }
+
     /// 将行内级条目按可用宽度分割成行盒。
     ///
     /// 支持 `InlineItem::Text`（按单词拆分行）、`InlineItem::InlineBlock`（原子盒，不可拆分）
@@ -820,26 +862,11 @@ impl InlineFormattingContext {
                         && !self.float_exclusions.is_empty()
                         && box_width > avail_width
                     {
-                        loop {
-                            let next_y = self
-                                .float_exclusions
-                                .iter()
-                                .filter(|e| e.y < current_y + est_height && e.y + e.height > current_y)
-                                .map(|e| e.y + e.height)
-                                .filter(|bottom| *bottom > current_y)
-                                .fold(None::<f32>, |acc, b| match acc {
-                                    Some(cur) if cur <= b => Some(cur),
-                                    _ => Some(b),
-                                });
-                            let Some(next_y) = next_y else { break };
-                            let (lo, aw) = self.effective_content_area(next_y, est_height);
-                            current_y = next_y;
-                            left_offset = lo;
-                            avail_width = aw;
-                            if box_width <= avail_width {
-                                break;
-                            }
-                        }
+                        let (new_y, lo, aw) =
+                            self.shift_new_line_below_floats(current_y, est_height, box_width);
+                        current_y = new_y;
+                        left_offset = lo;
+                        avail_width = aw;
                         // 行首 x = max(text-indent, 下移后带左缘)——FloatAnchor/断行可能
                         // 已把 current_x 预置到**旧 y 带**的 left_offset（200），下移后须
                         // 重算而非只调大（max 会保留 stale 值 → img 落回 float 右侧）。
@@ -872,6 +899,21 @@ impl InlineFormattingContext {
                         };
                         let (new_left, _) = self.effective_content_area(current_y, box_height);
                         current_x = new_left;
+                        // R5216（CSS2 §9.5 rule 8）：断行产生的新空行同样按 R4234 下绕——
+                        // 断行只保证原子盒离开前行 y 带，新行 y 带仍可能被 float 缩到放
+                        // 不下（floats-wrap-top-below-inline-002l/r：行 2 带 50..100 被
+                        // float 左缘 150/右缘 100 夹击 avail=0，span2 滞留 (150,50)/
+                        // (300,50) 与 float 重叠；chromium 下绕到 float 底 y=150 行首
+                        // (0,150)）。行首 x 同 R4234 须按新带重算（new_left 是旧带产物）。
+                        if runtime_flags::atomic_postbreak_float_fit()
+                            && !self.float_exclusions.is_empty()
+                            && box_width > self.effective_content_area(current_y, est_height).1
+                        {
+                            let (new_y, lo, _) =
+                                self.shift_new_line_below_floats(current_y, est_height, box_width);
+                            current_y = new_y;
+                            current_x = self.text_indent.max(lo);
+                        }
                     }
 
                     // inline-block 片段不使用 font_size，设为 0
