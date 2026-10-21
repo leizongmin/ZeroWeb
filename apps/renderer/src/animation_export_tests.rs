@@ -256,20 +256,20 @@ fn finish_drain_reports_each_animation_exactly_once() {
     state.advance(0, 0, std::slice::from_ref(&decl)).expect("首帧");
 
     // 活跃期（0.5s）→ 无事件。
-    assert!(state.drain_finished_events(500_000_000).is_empty());
+    assert!(state.drain_animation_events(500_000_000).is_empty());
     // 结束后（1.5s）→ 恰一条；selector 取候选首个（unique 形态）；elapsedTime =
     // duration × iterations（镜像 engine tick 结束分支）。
-    let events = state.drain_finished_events(1_500_000_000);
+    let events = state.drain_animation_events(1_500_000_000);
     assert_eq!(events.len(), 1);
     assert!(matches!(events[0].kind, zero_engine::AnimationEventKind::End));
     assert_eq!(events[0].selector, "div#box");
     assert_eq!(events[0].name, "fade");
     assert!((events[0].elapsed - 1.0).abs() < 1e-9);
     // 重复采样/重复唤醒 → 幂等零事件（FR-7 恰一次）。
-    assert!(state.drain_finished_events(2_500_000_000).is_empty());
+    assert!(state.drain_animation_events(2_500_000_000).is_empty());
     // deactivate 清空 sent 与 reported → 退出导出域零事件。
     assert!(state.deactivate());
-    assert!(state.drain_finished_events(3_500_000_000).is_empty());
+    assert!(state.drain_animation_events(3_500_000_000).is_empty());
 }
 
 #[test]
@@ -281,18 +281,96 @@ fn finish_drain_epoch_change_allows_same_id_to_fire_again() {
     decl.iterations = Some(1.0);
     decl.element_selectors = vec!["div#box".into()];
     state.advance(0, 0, std::slice::from_ref(&decl)).expect("首帧");
-    assert_eq!(state.drain_finished_events(1_500_000_000).len(), 1);
+    assert_eq!(state.drain_animation_events(1_500_000_000).len(), 1);
 
     // 换代（epoch 0→5）：reported/sent/anchors 全重置，同 id 重新导出（新锚点 900）。
     state.advance(5, 900, std::slice::from_ref(&decl)).expect("换代必发");
     assert_eq!(state.anchors[&7], 900);
     // 新动画活跃期（950ms < 1s）→ 无事件（旧 reported 不再压制新动画）。
-    assert!(state.drain_finished_events(950_000_000).is_empty());
+    assert!(state.drain_animation_events(950_000_000).is_empty());
     assert_eq!(
-        state.drain_finished_events(2_000_000_000).len(),
+        state.drain_animation_events(2_000_000_000).len(),
         1,
         "新动画终结合法派发"
     );
+}
+
+#[test]
+fn cancel_diff_fires_animationcancel_exactly_once() {
+    // M2-S3a：同代际导出集差分——infinite 动画（永不自然终结）声明消失 → 恰一条
+    // animationcancel，elapsedTime = 取消时刻活跃时长（延迟不计入，CSS Animations
+    // §animationcancel）；重复 advance/唤醒不重发（S3 场景 c 恰一次）。
+    let mut state = AnimationExportState::new(0);
+    let mut decl = opacity_decl(7, 0.0, 1.0);
+    decl.iterations = None;
+    decl.element_selectors = vec!["div#box".into()];
+    state.advance(0, 0, std::slice::from_ref(&decl)).expect("首帧");
+
+    // 活跃期声明仍在 → 无事件；声明消失（advance 发空集）→ 差分记取消事件。
+    assert!(state.drain_animation_events(500_000_000).is_empty());
+    state.advance(0, 800_000_000, &[]).expect("清理发送");
+    let events = state.drain_animation_events(800_000_000);
+    assert_eq!(events.len(), 1);
+    assert!(matches!(events[0].kind, zero_engine::AnimationEventKind::Cancel));
+    assert_eq!(events[0].selector, "div#box");
+    assert_eq!(events[0].name, "fade");
+    assert!((events[0].elapsed - 0.8).abs() < 1e-9, "活跃时长 0.8s");
+    // 集已剪除 + cancelled_reported 双重阻断 → 重复评估零重发。
+    assert!(state.advance(0, 900_000_000, &[]).is_none(), "稳态零消息");
+    assert!(state.drain_animation_events(900_000_000).is_empty());
+}
+
+#[test]
+fn cancel_diff_reports_end_when_removal_races_natural_finish() {
+    // M2-S3a：finish-precedence——有限动画样式移除与自然完成同帧（差分时采样上代
+    // 声明已 finished）→ 补发 animationend 而非 cancel（终态优先，elapsed 与 S2b
+    // 终结判定同口径 duration × iterations）。
+    let mut state = AnimationExportState::new(0);
+    let mut decl = opacity_decl(7, 0.0, 1.0);
+    decl.iterations = Some(1.0);
+    decl.element_selectors = vec!["div#box".into()];
+    state.advance(0, 0, std::slice::from_ref(&decl)).expect("首帧");
+
+    state.advance(0, 1_500_000_000, &[]).expect("清理发送");
+    let events = state.drain_animation_events(1_500_000_000);
+    assert_eq!(events.len(), 1);
+    assert!(
+        matches!(events[0].kind, zero_engine::AnimationEventKind::End),
+        "终态优先于取消"
+    );
+    assert!((events[0].elapsed - 1.0).abs() < 1e-9);
+    // 终态已报 → 后续不二次派发（End 或 Cancel 均不重发）。
+    assert!(state.drain_animation_events(2_500_000_000).is_empty());
+}
+
+#[test]
+fn cancel_diff_not_fired_across_epoch_change() {
+    // M2-S3a：导航换代 `Self::new` 整表重置（S2b 同款）——旧代活跃声明随换代消失
+    // 不派发 cancel（新页是干净世界，S3 场景 d「不跳旧世代」）。
+    let mut state = AnimationExportState::new(0);
+    let decl = opacity_decl(7, 0.0, 1.0);
+    state.advance(0, 0, std::slice::from_ref(&decl)).expect("首帧");
+
+    state.advance(5, 900, &[]).expect("换代后首帧（新页无该动画）");
+    assert!(state.pending_events.is_empty());
+    assert!(state.drain_animation_events(1_000_000_000).is_empty());
+}
+
+#[test]
+fn deactivate_drops_pending_cancel_events() {
+    // M2-S3a：域退出不发积压事件——导出面整体消失由 deactivate 空集清理承接，
+    // 不是页面级动画取消（RFC §2.1 明示简化）。
+    let mut state = AnimationExportState::new(0);
+    let mut decl = opacity_decl(7, 0.0, 1.0);
+    decl.iterations = None;
+    decl.element_selectors = vec!["div#box".into()];
+    state.advance(0, 0, std::slice::from_ref(&decl)).expect("首帧");
+    state.advance(0, 400_000_000, &[]).expect("清理发送");
+    assert!(!state.pending_events.is_empty(), "取消事件已积压");
+
+    assert!(state.deactivate());
+    assert!(state.pending_events.is_empty(), "域退出清空积压");
+    assert!(state.drain_animation_events(500_000_000).is_empty());
 }
 
 #[test]

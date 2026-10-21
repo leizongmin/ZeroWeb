@@ -182,7 +182,7 @@ struct PendingLoad {
 }
 
 /// M2-S1b（compositor-animation-continuity）：renderer 侧合成动画导出状态——
-/// 声明代际 + 已发送集合（变化检测）+ 单调钟锚点缓存 + S2b 终结判定面。
+/// 声明代际 + 已发送集合（变化检测）+ 单调钟锚点缓存 + S2b 终结判定面 + S3a 取消差分面。
 struct AnimationExportState {
     /// 声明所属导航世代（与 renderer `navigation_epoch` 对齐；换代即重置）。
     epoch: u64,
@@ -201,6 +201,13 @@ struct AnimationExportState {
     /// 导航换代经 `Self::new` 整表清空——epoch 是状态体单值域（换代整体重置），
     /// 无 (epoch, id) 复合键必要；旧代声明随 `sent` 替换消失，跨代重放被双重阻断。
     finished_reported: HashSet<u64>,
+    /// M2-S3a：已派发 animationcancel 的动画 id（exactly-once 去重，S3 场景 c；
+    /// `finished_reported` 同款换代清空纪律，跨代无 cancel 回放）。
+    cancelled_reported: HashSet<u64>,
+    /// M2-S3a：代际差分检出的取消/补发终结事件（`advance` 内产出，
+    /// [`Self::drain_animation_events`] 与惰性终结事件同点出队——事件派发时刻
+    /// 与 publish 解耦，与 S2b 唤醒时点复用）。
+    pending_events: Vec<zero_engine::AnimationEvent>,
 }
 
 impl AnimationExportState {
@@ -213,6 +220,8 @@ impl AnimationExportState {
             anchors: HashMap::new(),
             engine_decls: Vec::new(),
             finished_reported: HashSet::new(),
+            cancelled_reported: HashSet::new(),
+            pending_events: Vec::new(),
         }
     }
 
@@ -231,6 +240,77 @@ impl AnimationExportState {
     ) -> Option<Vec<CompositorAnimationDeclaration>> {
         if self.epoch != epoch {
             *self = Self::new(epoch);
+        }
+        // M2-S3a：同代际导出集差分（取消判定单一权威；S2b 惰性终结同构——真实
+        // renderer 走 `render_html`，引擎动画时钟冻结，engine 运行时对导出域动画的
+        // 完成与取消均不可见）。「上代有、本代无」按上一条协议声明的采样结果分型：
+        // 已终结 → 补发 animationend（样式移除与自然完成同帧时终态优先，不发 cancel）；
+        // 未终结 → animationcancel（声明消失即取消：name 移除 / display:none / 导出
+        // 规则拒绝，RFC §2.1 已知简化）。事件入 `pending_events` 恰一次去重，由
+        // `drain_animation_events` 出队派发；换代重置后上代集为空，天然无跨代回放。
+        let current_ids: HashSet<u64> = declarations.iter().map(|d| d.animation_id).collect();
+        for previous in &self.engine_decls {
+            if current_ids.contains(&previous.animation_id) {
+                continue;
+            }
+            let id = previous.animation_id;
+            if self.finished_reported.contains(&id) || self.cancelled_reported.contains(&id) {
+                continue;
+            }
+            // 采样基准 = 上代已发送声明（与 compositor 同一采样器）；转换失败未发送
+            // 过的消失声明无采样基准，按取消上报且 elapsedTime 取声明计时（R347 口径）。
+            let sent_declaration = self
+                .sent
+                .as_ref()
+                .and_then(|sent| sent.iter().find(|d| d.animation_id == id));
+            let (kind, elapsed) = match sent_declaration {
+                Some(declaration) => {
+                    let total = declaration
+                        .timing
+                        .iterations
+                        .map_or(f64::INFINITY, |it| it * declaration.timing.duration_ms / 1000.0);
+                    if zero_protocol::animation::sample_declaration(declaration, now).finished {
+                        // 有限动画必 Some（infinite 恒 finished=false）；防御 None 跳过。
+                        match declaration.timing.iterations {
+                            Some(iterations) => (
+                                zero_engine::AnimationEventKind::End,
+                                iterations * declaration.timing.duration_ms / 1000.0,
+                            ),
+                            None => continue,
+                        }
+                    } else {
+                        // 取消时刻的活跃时长（CSS Animations §animationcancel，延迟
+                        // 不计入；clamp 防声明时钟与采样钟的亚帧漂移出负/超总时长）。
+                        let active = (now as f64 - declaration.start_monotonic_ns as f64) / 1e9
+                            - declaration.timing.delay_ms / 1000.0;
+                        (zero_engine::AnimationEventKind::Cancel, active.clamp(0.0, total))
+                    }
+                }
+                None => {
+                    let iterations = previous.iterations.unwrap_or(1.0);
+                    (
+                        zero_engine::AnimationEventKind::Cancel,
+                        iterations * previous.duration_s,
+                    )
+                }
+            };
+            match kind {
+                zero_engine::AnimationEventKind::End => {
+                    self.finished_reported.insert(id);
+                }
+                _ => {
+                    self.cancelled_reported.insert(id);
+                }
+            }
+            let Some(selector) = previous.element_selectors.first() else {
+                continue;
+            };
+            self.pending_events.push(zero_engine::AnimationEvent {
+                kind,
+                selector: selector.clone(),
+                name: previous.name.clone(),
+                elapsed,
+            });
         }
         self.engine_decls = declarations.to_vec();
         let previous_anchors = std::mem::take(&mut self.anchors);
@@ -266,18 +346,23 @@ impl AnimationExportState {
         self.anchors.clear();
         self.engine_decls.clear();
         self.finished_reported.clear();
+        // M2-S3a：域退出（flag 关 / Legacy）不派发积压事件（导出面整体消失不等于
+        // 页面动画取消——compositor 侧回落基线由 deactivate 空集清理承接）。
+        self.cancelled_reported.clear();
+        self.pending_events.clear();
         true
     }
 
-    /// M2-S2b：惰性终结判定——对最近发送的声明集按共享单调钟采样（与 compositor
-    /// 同 `sample_declaration`），新终结（finished 且未 reported）产出 `animationend`
-    /// 事件并登记。重复调用/重复唤醒对同动画不重发（exactly-once，S2 FR-7）。
+    /// M2-S2b/S3a：惰性动画事件出队——先出 `advance` 代际差分积压的取消/补发终结
+    /// 事件，随后对最近发送的声明集按共享单调钟采样（与 compositor 同
+    /// `sample_declaration`），新终结（finished 且未 reported）产出 `animationend`
+    /// 并登记。重复调用/重复唤醒对同动画不重发（exactly-once，S2 FR-7 / S3 场景 c）。
     ///
     /// elapsedTime = duration × iterations（镜像 engine tick 结束分支，CSS Animations
     /// §animationend——延迟不计入，与派发时刻解耦，S2 FR-8）；selector 取声明选择器
     /// 候选首个（`unique_selector_for_node` 形态，与引擎既有事件选择器同函数）。
-    fn drain_finished_events(&mut self, now: u64) -> Vec<zero_engine::AnimationEvent> {
-        let mut events = Vec::new();
+    fn drain_animation_events(&mut self, now: u64) -> Vec<zero_engine::AnimationEvent> {
+        let mut events = std::mem::take(&mut self.pending_events);
         let Some(sent) = self.sent.as_ref() else {
             return events;
         };
@@ -1117,20 +1202,24 @@ impl RendererRuntime {
         self.send_regular(IpcMessageKind::CompositorAnimationState(params))
     }
 
-    /// M2-S2b：惰性终结检查——对已发送声明集采样，新终结动画派发 `animationend`
-    /// （复用既有 AnimationEvent 管线；恰一次去重在 [`AnimationExportState::drain_finished_events`]）。
-    /// 两个时点调用：每次 publish 组帧后（忙窗内/后自然覆盖）+ 浏览器
-    /// `NotifyAnimationsSettled` 唤醒（幂等——无新终结零派发）。
+    /// M2-S2b/S3a：惰性动画事件检查——新终结动画派发 `animationend`、代际差分检出
+    /// 的取消派发 `animationcancel`（复用既有 AnimationEvent 管线；恰一次去重在
+    /// [`AnimationExportState::drain_animation_events`]）。两个时点调用：每次 publish
+    /// 组帧后（忙窗内/后自然覆盖）+ 浏览器 `NotifyAnimationsSettled` 唤醒（幂等——
+    /// 无新事件零派发）。
     fn check_compositor_animation_finishures(&mut self) {
         if !self.compositor_animations_active() || !self.javascript_enabled {
             return;
         }
-        let events = self.animation_export.drain_finished_events(monotonic_now_ns());
+        let events = self.animation_export.drain_animation_events(monotonic_now_ns());
         for ev in &events {
-            // M2-S2c：renderer 真相通道——每条 animationend 落一行（exactly-once
-            // 计数与 elapsedTime 口径核对用；频率 = 动画终结数，可忽略）。
+            // M2-S2c/S3a：renderer 真相通道——每条终结/取消事件落一行（exactly-once
+            // 计数与 elapsedTime 口径核对用；频率 = 动画终结或取消数，可忽略）。
+            // `as_event_type()` 产出 animationend/animationcancel 串，S2c 证据的
+            // animationend grep 口径不变。
             tracing::info!(
-                "renderer: animationend dispatched selector={} name={} elapsed={:.3}s",
+                "renderer: {} dispatched selector={} name={} elapsed={:.3}s",
+                ev.kind.as_event_type(),
                 ev.selector,
                 ev.name,
                 ev.elapsed
