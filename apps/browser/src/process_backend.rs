@@ -544,6 +544,7 @@ impl ProcessTabBackend {
         snapshots: &mut HashMap<TabId, TabSnapshot>,
         snapshot_seq: &mut HashMap<TabId, u64>,
         pending_loaded: &mut Vec<(TabId, String, String)>,
+        pending_settled: &mut Vec<TabId>,
         browser_gpu_present: bool,
     ) -> bool {
         #[cfg(not(target_os = "linux"))]
@@ -696,6 +697,12 @@ impl ProcessTabBackend {
                     animations_active,
                     frame.frame_id
                 );
+                // M2-S2b：真→假翻转 = 全部合成动画落定——登记待唤醒（调用方
+                // `NotifyAnimationsSettled` 通知 renderer 复查派发 animationend；
+                // renderer 幂等；flag 关恒假无翻转零消息，S2 FR-9）。
+                if snap.compositor_animations_active && !animations_active {
+                    pending_settled.push(*tab_id);
+                }
             }
             snap.compositor_animations_active = animations_active;
             #[cfg(target_os = "linux")]
@@ -1935,12 +1942,18 @@ impl ProcessTabBackend {
         }
         changed |= self.observe_compositor_status(snapshots, snapshot_seq);
         if self.compositor_status == crate::compositor_client::CompositorStatus::Healthy {
+            let mut pending_settled = Vec::new();
             changed |= Self::poll_compositor_frames(
                 snapshots,
                 snapshot_seq,
                 &mut self.pending_loaded,
+                &mut pending_settled,
                 self.browser_gpu_present,
             );
+            // M2-S2b：动画落定唤醒 renderer（真→假翻转收集于 poll 内）。
+            for tab_id in pending_settled {
+                self.send_to_renderer(tab_id, IpcMessageKind::NotifyAnimationsSettled);
+            }
             changed |= Self::poll_compositor_present_frames(snapshots, snapshot_seq);
         }
         self.drain_service_worker_responses();

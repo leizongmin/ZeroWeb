@@ -229,6 +229,11 @@ fn test_roundtrip_all_message_kinds() {
                 finished: Vec::new(),
             }),
         },
+        // 合成动画落定通知（M2-S2b）：browser → renderer 无载荷追加消息（末尾追加纪律）。
+        IpcMessage {
+            id: 32,
+            kind: IpcMessageKind::NotifyAnimationsSettled,
+        },
     ];
 
     for msg in &messages {
@@ -237,7 +242,7 @@ fn test_roundtrip_all_message_kinds() {
         assert_eq!(out.id, msg.id, "id mismatch");
     }
 
-    assert_eq!(messages.len(), 31, "should test all listed message kinds");
+    assert_eq!(messages.len(), 32, "should test all listed message kinds");
 }
 
 /// 测试 StorageType::Session 变体也能序列化。

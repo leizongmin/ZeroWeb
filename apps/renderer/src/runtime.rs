@@ -182,7 +182,7 @@ struct PendingLoad {
 }
 
 /// M2-S1b（compositor-animation-continuity）：renderer 侧合成动画导出状态——
-/// 声明代际 + 已发送集合（变化检测）+ 单调钟锚点缓存。
+/// 声明代际 + 已发送集合（变化检测）+ 单调钟锚点缓存 + S2b 终结判定面。
 struct AnimationExportState {
     /// 声明所属导航世代（与 renderer `navigation_epoch` 对齐；换代即重置）。
     epoch: u64,
@@ -194,6 +194,13 @@ struct AnimationExportState {
     /// engine `start_time_s`*1e9，S1b 导出域 start 恒 0）。动画消失即剪除，重新
     /// 出现按重新开始记新锚点（CSS animation 重新触发语义）。
     anchors: HashMap<u64, u64>,
+    /// M2-S2b：最近导出的 engine 域声明（终结事件需要的 name/element_selectors
+    /// 不在协议声明上——按 animation_id 与 `sent` 配对）。
+    engine_decls: Vec<ExportedAnimationDeclaration>,
+    /// M2-S2b：已派发 animationend 的动画 id（exactly-once 去重，S2 FR-7）。
+    /// 导航换代经 `Self::new` 整表清空——epoch 是状态体单值域（换代整体重置），
+    /// 无 (epoch, id) 复合键必要；旧代声明随 `sent` 替换消失，跨代重放被双重阻断。
+    finished_reported: HashSet<u64>,
 }
 
 impl AnimationExportState {
@@ -204,6 +211,8 @@ impl AnimationExportState {
             generation: 0,
             sent: None,
             anchors: HashMap::new(),
+            engine_decls: Vec::new(),
+            finished_reported: HashSet::new(),
         }
     }
 
@@ -223,6 +232,7 @@ impl AnimationExportState {
         if self.epoch != epoch {
             *self = Self::new(epoch);
         }
+        self.engine_decls = declarations.to_vec();
         let previous_anchors = std::mem::take(&mut self.anchors);
         self.anchors = declarations
             .iter()
@@ -254,7 +264,53 @@ impl AnimationExportState {
         self.generation += 1;
         self.sent = None;
         self.anchors.clear();
+        self.engine_decls.clear();
+        self.finished_reported.clear();
         true
+    }
+
+    /// M2-S2b：惰性终结判定——对最近发送的声明集按共享单调钟采样（与 compositor
+    /// 同 `sample_declaration`），新终结（finished 且未 reported）产出 `animationend`
+    /// 事件并登记。重复调用/重复唤醒对同动画不重发（exactly-once，S2 FR-7）。
+    ///
+    /// elapsedTime = duration × iterations（镜像 engine tick 结束分支，CSS Animations
+    /// §animationend——延迟不计入，与派发时刻解耦，S2 FR-8）；selector 取声明选择器
+    /// 候选首个（`unique_selector_for_node` 形态，与引擎既有事件选择器同函数）。
+    fn drain_finished_events(&mut self, now: u64) -> Vec<zero_engine::AnimationEvent> {
+        let mut events = Vec::new();
+        let Some(sent) = self.sent.as_ref() else {
+            return events;
+        };
+        for declaration in sent {
+            if !zero_protocol::animation::sample_declaration(declaration, now).finished {
+                continue;
+            }
+            if !self.finished_reported.insert(declaration.animation_id) {
+                continue;
+            }
+            let Some(engine) = self
+                .engine_decls
+                .iter()
+                .find(|d| d.animation_id == declaration.animation_id)
+            else {
+                continue;
+            };
+            let Some(selector) = engine.element_selectors.first() else {
+                continue;
+            };
+            // 已终结（finite）声明 iterations 必为 Some（infinite 恒 finished=false）；
+            // 防御 None 跳过——不发错值事件。
+            let Some(iterations) = declaration.timing.iterations else {
+                continue;
+            };
+            events.push(zero_engine::AnimationEvent {
+                kind: zero_engine::AnimationEventKind::End,
+                selector: selector.clone(),
+                name: engine.name.clone(),
+                elapsed: iterations * declaration.timing.duration_ms / 1000.0,
+            });
+        }
+        events
     }
 }
 
@@ -1061,6 +1117,24 @@ impl RendererRuntime {
         self.send_regular(IpcMessageKind::CompositorAnimationState(params))
     }
 
+    /// M2-S2b：惰性终结检查——对已发送声明集采样，新终结动画派发 `animationend`
+    /// （复用既有 AnimationEvent 管线；恰一次去重在 [`AnimationExportState::drain_finished_events`]）。
+    /// 两个时点调用：每次 publish 组帧后（忙窗内/后自然覆盖）+ 浏览器
+    /// `NotifyAnimationsSettled` 唤醒（幂等——无新终结零派发）。
+    fn check_compositor_animation_finishures(&mut self) {
+        if !self.compositor_animations_active() || !self.javascript_enabled {
+            return;
+        }
+        let events = self.animation_export.drain_finished_events(monotonic_now_ns());
+        if !events.is_empty() {
+            tracing::debug!(
+                "renderer: animationend 派发 {} 条（compositor 声明集落定）",
+                events.len()
+            );
+            page_scripts::dispatch_animation_events(&self.js_worker, &events);
+        }
+    }
+
     /// 请求发布当前页面帧。输入事务内只累计失效，在最外层边界实际发送一次。
     fn publish_webview(&mut self, title: Option<String>, allow_network_fetch: bool) -> Result<(), String> {
         if self.frame_transaction.is_active() {
@@ -1280,6 +1354,8 @@ impl RendererRuntime {
         // 不构成正确性依赖：声明先到时 compositor 无新作用域即不采样（恒等基线），
         // 帧先到时作用域无声明同恒等——两侧收敛后同视觉，至多一 Get 的启动延迟。
         self.send_compositor_animation_state(animation_declarations)?;
+        // M2-S2b：publish 后惰性终结检查（时点 a）——忙窗后恢复帧提交时自然覆盖。
+        self.check_compositor_animation_finishures();
         resize_trace(format!(
             "publish {}x{} fills={} glyphs={} images={} in {}us",
             vw,
@@ -3581,6 +3657,12 @@ return JSON.stringify({{action:action,name:name,val:val}});\
                     self.sent_image_keys.clear();
                     self.publish_webview(None, true)?;
                 }
+                Ok(())
+            }
+            // M2-S2b：合成动画全部落定唤醒（browser 侧 animations_active 真→假翻转）——
+            // 惰性终结复查（时点 b），无新终结幂等空回。
+            IpcMessageKind::NotifyAnimationsSettled => {
+                self.check_compositor_animation_finishures();
                 Ok(())
             }
             IpcMessageKind::GoBack => self.handle_go_back(),

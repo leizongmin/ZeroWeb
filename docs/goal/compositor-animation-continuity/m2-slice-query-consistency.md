@@ -51,9 +51,9 @@ S1 建立了 compositor 采样：flag 开时合成视觉按共享单调钟推进
 
 **唤醒**：browser 在 `compositor_animations_active` 真→假翻转时（`process_backend` 已跟踪该翻转）经新追加消息 `NotifyAnimationsSettled`（`send_to_renderer` 既有通道）通知 renderer 复查；renderer 判定无新终结即幂等返回。flag 关下 `animations_active` 恒假、无翻转、无消息（FR-9）。
 
-**exactly-once**：`AnimationExportState` 增 `finished_reported: HashSet<(epoch, animation_id)>`——集合不变性由既有代际纪律保证；导航换代（epoch 重置）整表清空，跨导航重放被 epoch 键阻断（FR-7）。重复唤醒/多帧 ack 只会重复命中同一集合判等，无二次派发。
+**exactly-once**：`AnimationExportState` 增 `finished_reported: HashSet<animation_id>`（实现简化：epoch 是状态体单值域——换代经 `Self::new` 整体重置，复合键无必要；旧代声明随 `sent` 替换消失，跨导航重放被双重阻断，FR-7）。重复唤醒/多帧 ack 只会重复命中同一去重集，无二次派发。
 
-**派发**：复用既有 AnimationEvent 管线（`dispatch_animation_events` → `script_gen`），`elapsedTime` = 声明计时算术（delay + duration × iterations，按 fill/direction 语义取活动时长），与派发时刻解耦（FR-8）。取消路径（声明代际替换导致动画消失）按 S3 场景再验，本切片只做自然终结。
+**派发**：复用既有 AnimationEvent 管线（`dispatch_animation_events` → `script_gen`），`elapsedTime` = duration × iterations（镜像 engine tick 结束分支的活跃时长算术，CSS Animations §animationend；延迟不计入，与派发时刻解耦，FR-8）；selector 取声明选择器候选首个（`unique_selector_for_node` 形态，与引擎既有事件同函数）。取消路径（声明代际替换导致动画消失）按 S3 场景再验，本切片只做自然终结。
 
 ### 2.3 求值单一实现与验证口径（FR-6 断言）
 
@@ -64,7 +64,7 @@ S1 建立了 compositor 采样：flag 开时合成视觉按共享单调钟推进
 | 步 | 触点 | 新增 IPC |
 |---|---|---|
 | S2a | engine `js_dom_bridge/computed_style_cache.rs`（provider 槽）+ `callbacks.rs`（回调顶部咨询）+ `js_dom_bridge.rs`（`structural_path_selector` pub(crate)）+ `animation/compositor_export.rs`（声明加 `element_selectors` 双形态）；renderer 新 `query_overrides.rs`（表+采样+序列化）+ `runtime.rs`（发布/清空/注册接线） | 无 |
-| S2b | renderer `runtime.rs`/`page_scripts.rs`（终结检查+派发）；protocol `message.rs` 追加 `NotifyAnimationsSettled`；browser `process_backend.rs`（翻转→唤醒） | `NotifyAnimationsSettled { tab 序语义沿用现有路由 }`（末尾追加） |
+| S2b | renderer `runtime.rs`（`drain_finished_events` + `check_compositor_animation_finishures` 两时点）；protocol `message.rs` 末尾追加 `NotifyAnimationsSettled`（无载荷）；browser `process_backend.rs`（`poll_compositor_frames` 翻转收集 → 调用方发唤醒） | `NotifyAnimationsSettled`（末尾追加，无载荷；flag 关零消息） |
 | S2c | fixture COMP-02 + observe/analyze 扩展 + 证据目录 | 无 |
 
 **回滚切点**：S2a/S2b 各自成批、flag 门控；S2c 证据批。翻默认仍属后续独立决策（perf-gate 前置不变）。

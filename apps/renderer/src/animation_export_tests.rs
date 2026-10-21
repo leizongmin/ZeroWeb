@@ -244,6 +244,58 @@ fn export_state_deactivate_only_after_send() {
 }
 
 #[test]
+fn finish_drain_reports_each_animation_exactly_once() {
+    // M2-S2b：惰性终结判定——活跃期空、结束后一条 animationend、重复唤醒不重发。
+    let mut state = AnimationExportState::new(0);
+    let mut decl = opacity_decl(7, 0.0, 1.0);
+    decl.iterations = Some(1.0);
+    decl.element_selectors = vec![
+        "div#box".into(),
+        "html:nth-child(1) > body:nth-child(2) > div#box".into(),
+    ];
+    state.advance(0, 0, std::slice::from_ref(&decl)).expect("首帧");
+
+    // 活跃期（0.5s）→ 无事件。
+    assert!(state.drain_finished_events(500_000_000).is_empty());
+    // 结束后（1.5s）→ 恰一条；selector 取候选首个（unique 形态）；elapsedTime =
+    // duration × iterations（镜像 engine tick 结束分支）。
+    let events = state.drain_finished_events(1_500_000_000);
+    assert_eq!(events.len(), 1);
+    assert!(matches!(events[0].kind, zero_engine::AnimationEventKind::End));
+    assert_eq!(events[0].selector, "div#box");
+    assert_eq!(events[0].name, "fade");
+    assert!((events[0].elapsed - 1.0).abs() < 1e-9);
+    // 重复采样/重复唤醒 → 幂等零事件（FR-7 恰一次）。
+    assert!(state.drain_finished_events(2_500_000_000).is_empty());
+    // deactivate 清空 sent 与 reported → 退出导出域零事件。
+    assert!(state.deactivate());
+    assert!(state.drain_finished_events(3_500_000_000).is_empty());
+}
+
+#[test]
+fn finish_drain_epoch_change_allows_same_id_to_fire_again() {
+    // M2-S2b：导航换代整表清空——同 id 新页动画是**新动画**（合法再派发），
+    // 旧代声明随 sent 替换消失，跨代重放被双重阻断（FR-7 不重放）。
+    let mut state = AnimationExportState::new(0);
+    let mut decl = opacity_decl(7, 0.0, 1.0);
+    decl.iterations = Some(1.0);
+    decl.element_selectors = vec!["div#box".into()];
+    state.advance(0, 0, std::slice::from_ref(&decl)).expect("首帧");
+    assert_eq!(state.drain_finished_events(1_500_000_000).len(), 1);
+
+    // 换代（epoch 0→5）：reported/sent/anchors 全重置，同 id 重新导出（新锚点 900）。
+    state.advance(5, 900, std::slice::from_ref(&decl)).expect("换代必发");
+    assert_eq!(state.anchors[&7], 900);
+    // 新动画活跃期（950ms < 1s）→ 无事件（旧 reported 不再压制新动画）。
+    assert!(state.drain_finished_events(950_000_000).is_empty());
+    assert_eq!(
+        state.drain_finished_events(2_000_000_000).len(),
+        1,
+        "新动画终结合法派发"
+    );
+}
+
+#[test]
 fn legacy_mode_publish_never_sends_animation_state() {
     // Legacy 帧无 CompositorAnimationState 消费方；本测试与 ZW_COMPOSITOR_ANIMATIONS
     // 环境值无关（模式门独立于 flag 生效）。

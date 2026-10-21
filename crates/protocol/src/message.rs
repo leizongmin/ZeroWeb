@@ -312,6 +312,12 @@ pub enum IpcMessageKind {
     /// 以 generation 单调替换，旧代际丢弃。契约见 `crate::animation` 模块文档与
     /// goal 切片 RFC；`ZW_COMPOSITOR_ANIMATIONS` 关闭时不发送）。
     CompositorAnimationState(crate::animation::CompositorAnimationStateParams),
+    /// 合成动画全部落定通知（browser → renderer；M2-S2b）——browser 侧
+    /// `compositor_animations_active` 真→假翻转时（最新采纳帧应答报告无活跃动画）
+    /// 发出，renderer 据此对活跃声明集做惰性终结复查并派发 `animationend`（恰一次，
+    /// 幂等——无新终结时空回）。flag 关闭时 `animations_active` 恒假、无翻转、无消息
+    /// （S2 FR-9）。追加于枚举末尾（bincode 判别值按声明序，protocol 纪律 FR-11）。
+    NotifyAnimationsSettled,
 }
 
 /// 焦点变更信息（渲染→浏览器）。
