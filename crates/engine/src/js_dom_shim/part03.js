@@ -10348,16 +10348,24 @@
   // `_zwLabeledControl`（R4003——for 属性优先，无 for 取子树树序首个 labelable）。
   // 重入阻断：synthetic click 的 target 即控件本身（key 相等 → 跳过）——spec click
   // in progress 语义的等价面；label>meter 首子语料的 0<n<30 容忍带内（whatwg/html#5415）。
-  // 调用点：`_dispatchWithBubble` bubble 循环的 label 站（后代 target 面）。label
-  // 自身为 click 目标（label.click()）走 proxy click() 的 R155 既有转发，不在本钩子。
-  // FIXME: dispatchEvent 直接派发到 label 本体（非 click() API）当前不转发——spec
-  // 激活行为对任意 click 派发生效；无语料消费，留待有面时补 target 站挂钩。
+  // 调用点：`_dispatchWithBubble` bubble 循环的 label 站。R4008（M2 切片 19）：target
+  // 即 label 本体（宿主 Activate / dispatchEvent 派发落 label 自身——非 label.click()
+  // API）同样转发：spec 交互豁免只覆盖「interactive content **后代**为 target」，
+  // label 自身非自身后代；旧版此面不转发（FIXME 已闭——WPT
+  // proxy-modifier-click-to-associated-element 4F：testdriver click/Actions 链落
+  // label 本体全数断言根因）。
   // https://html.spec.whatwg.org/multipage/forms.html#the-label-element:activation-behaviour
   function _zwLabelActivationForward(lSel, lHnd, event) {
     var tgt = null;
     try { tgt = event && event.target; } catch (_eTg4004) { tgt = null; }
     if (!tgt || typeof tgt !== 'object') return;
-    if (_zwIsInteractiveContentEl(tgt)) return;
+    // R4008：target 即本站 label 本体时不豁免（_elKey 身份比较——链站与 dispatch
+    // 入口同身份族；嵌套 label 的内层为外层交互后代，外层站仍按交互豁免跳过）。
+    var tgtKey4008 = null, lblKey4008 = null;
+    try { tgtKey4008 = _elKey(tgt.__zwSelector, tgt.__zwHandle); } catch (_eK4008) { tgtKey4008 = null; }
+    try { lblKey4008 = _elKey(lSel, lHnd); } catch (_eK4008b) { lblKey4008 = null; }
+    var tgtIsLabel4008 = tgtKey4008 != null && lblKey4008 != null && tgtKey4008 === lblKey4008;
+    if (!tgtIsLabel4008 && _zwIsInteractiveContentEl(tgt)) return;
     var ctl = null;
     try { ctl = _zwLabeledControl(lSel, lHnd); } catch (_eCtl4004) { ctl = null; }
     if (!ctl || typeof ctl !== 'object' || typeof ctl.click !== 'function') return;
@@ -11099,9 +11107,21 @@
           // 事件三路双转——bubble 站挂钩先行转发时此处让位）。交互 target 豁免与
           // 挂钩同款（`_zwIsInteractiveContentEl`，spec §4.2.6.2——旧路径缺此检查，
           // audio[controls]/input text 等 target 被 spec 禁止的转发）。
+          // R4008：target 即 act 站（label）本体时不豁免（同挂钩——spec 豁免只覆盖
+          // 交互后代；dispatchEvent 非冒泡 click 落 label 本体只经本段转发，bubble
+          // 站挂钩不触发）。
           try {
+            var _r155Tgt8 = null;
+            try { _r155Tgt8 = event && event.target; } catch (_eTg8) { _r155Tgt8 = null; }
+            var _r155Self8 = false;
+            if (_r155Tgt8 && typeof _r155Tgt8 === 'object') {
+              var _r155Tk8 = null, _r155Ak8 = null;
+              try { _r155Tk8 = _elKey(_r155Tgt8.__zwSelector, _r155Tgt8.__zwHandle); } catch (_eTk8) { _r155Tk8 = null; }
+              try { _r155Ak8 = _elKey(_r112Act.sel, _r112Act.handle); } catch (_eTa8) { _r155Ak8 = null; }
+              _r155Self8 = _r155Tk8 != null && _r155Ak8 != null && _r155Tk8 === _r155Ak8;
+            }
             if (globalThis.__zwLblClickInProgress !== true && event.__zwLblFwd4004 !== true
-                && !_zwIsInteractiveContentEl(event && event.target)) {
+                && (_r155Self8 || !_zwIsInteractiveContentEl(_r155Tgt8))) {
               var _r155Ctl = null;
               try { _r155Ctl = _zwLabeledControl(_r112Act.sel, _r112Act.handle); } catch (_e155lc2) { _r155Ctl = null; }
               if (_r155Ctl && typeof _r155Ctl.click === 'function') {
@@ -11117,6 +11137,11 @@
           } catch (_e112) {}
         }
       }
+      // R4008（html-semantics M2 切片 19）：宿主 generic click 落 label 本体时 shim
+      // 侧不做激活转发——renderer 真实输入路径在 dispatch 后由 Rust 默认动作层
+      // 负责激活（activate_label_at），webview plan 路径（testdriver Activate）由
+      // user_actions 的 label 链负责；shim 再转发会对前者双激活（checkbox 翻转
+      // 两次）。JS MouseEvent/synthetic click 面仍由上方 R155 post 段转发。
     }
   }
 

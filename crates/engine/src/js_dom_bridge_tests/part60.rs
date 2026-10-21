@@ -965,3 +965,124 @@ fn test_label_form_r4007() {
         "W3：for= miss → null"
     );
 }
+
+// R4008（html-semantics M2 切片 19）：label 激活行为 target 本体面——click 落
+// label 自身（非 label.click() API）同样转发 labeled control。决策点：
+// ① 交互豁免改「target 即本站 label 本体时不豁免」（spec 交互豁免只覆盖
+// interactive content **后代**为 target；bubble 站挂钩 + R155 post 段同判）；
+// ② shim 不承接宿主 generic Event 的转发——renderer 真实输入路径由 Rust
+// 默认动作层激活（activate_label_at），webview plan 路径（testdriver）由
+// user_actions label 链激活；shim 再转发会对 renderer 路径双激活（W5 钉）。
+// WPT proxy-modifier-click-to-associated-element 4F 根因（plan 层链补齐）。
+#[test]
+fn test_label_self_target_dispatch_r4008() {
+    let mut sandbox = t59_sandbox_with_shim();
+    let mutations: std::sync::Arc<std::sync::Mutex<Vec<DomMutation>>> = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+    // 面板直接入 dom_html 快照（解析形态——与真实页面同构；`__zw_get_tag` 等
+    // sel 族宿主回调解析快照，JS createElement 面板只入 mutations 队列不进快照，
+    // 宿主 sel 形态派发解析不到）。for 关联 label（控件独立 button，排除子树
+    // 查找耦合）+ 交互后代 + 嵌套 label（内层 for 内层控件）。
+    let dom_html: std::sync::Arc<std::sync::Mutex<String>> = std::sync::Arc::new(std::sync::Mutex::new(
+        "<html><body>\
+         <label id='sLa' for='sBtnA'>text</label><button id='sBtnA'></button>\
+         <label id='sLb' for='sBtnB'><a id='sA2' href='#x'>link</a></label><button id='sBtnB'></button>\
+         <label id='sLo' for='sBtnO'><label id='sLi' for='sBtnI'>in</label></label>\
+         <button id='sBtnO'></button><button id='sBtnI'></button>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: std::sync::Arc<std::sync::Mutex<String>> = std::sync::Arc::new(std::sync::Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    crate::js_dom_bridge::register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 计数器 + 相位日志 + 派发助手（页面 proxy dispatchEvent 形态）。
+    sandbox
+        .execute(
+            "globalThis.__clk8 = {};\
+             globalThis.__log8 = []; globalThis.__phase8 = 'init';\
+             ['sBtnA','sBtnB','sBtnO','sBtnI'].forEach(function (id) {\
+               globalThis.__clk8[id] = 0;\
+               document.getElementById(id).addEventListener('click', function () { globalThis.__clk8[id]++; globalThis.__log8.push(id + '@' + globalThis.__phase8); });\
+             });\
+             globalThis.__fire8 = function (id, bubbles) {\
+               globalThis.__phase8 = id + (bubbles ? ':bub' : ':nobub');\
+               document.getElementById(id).dispatchEvent(new MouseEvent('click', { bubbles: !!bubbles }));\
+               globalThis.__phase8 = 'post';\
+             };",
+        )
+        .unwrap();
+
+    // W1：冒泡 click 落 label 本体 → 转发（修复前 0）；恰 1 次不多计。
+    sandbox
+        .execute("globalThis.__fire8('sLa', true); globalThis.__w1 = globalThis.__clk8.sBtnA;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__w1").unwrap().value,
+        "1",
+        "W1：冒泡 click 落 label 本体 → for 控件恰转发 1 次（修复前 0）"
+    );
+
+    // W2：非冒泡 click 落 label 本体 → 仅 R155 post 段转发（修复前 0；双闸防
+    // 与挂钩双转）。
+    sandbox
+        .execute("globalThis.__fire8('sLa', false); globalThis.__w2 = globalThis.__clk8.sBtnA;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__w2").unwrap().value,
+        "2",
+        "W2：非冒泡 click 落 label 本体 → post 段转发（累计 2，无双转）"
+    );
+
+    // W3：label 含交互后代 a[href]——click 落 label 本体照常转发（豁免只针对
+    // 后代 target）；click 落 a[href] 后代仍豁免（相位日志钉针：sBtnB 仅 sLb:bub
+    // 相位一次转发）。
+    sandbox
+        .execute("globalThis.__fire8('sLb', true); globalThis.__w3a = globalThis.__clk8.sBtnB;\
+                  globalThis.__fire8('sA2', true); globalThis.__w3b = globalThis.__clk8.sBtnB;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__w3a + ',' + globalThis.__w3b + ' log=' + globalThis.__log8.join(';')").unwrap().value,
+        "1,1 log=sBtnA@sLa:bub;sBtnA@sLa:nobub;sBtnB@sLb:bub",
+        "W3：label 本体转发 1 次（sLb:bub）；a[href] 后代豁免（sBtnB 计数不变仍为 1）"
+    );
+
+    // W4：嵌套 label——click 落内层 label 本体：内层转发 1；外层站按「内层 label
+    // 是交互后代」豁免，外层控件不转发（事件标记 __zwLblFwd4004 防双转）。
+    sandbox
+        .execute("globalThis.__fire8('sLi', true); globalThis.__w4 = globalThis.__clk8.sBtnI + ',' + globalThis.__clk8.sBtnO;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__w4").unwrap().value,
+        "1,0",
+        "W4：嵌套 label 内层本体转发 1 次；外层按交互后代豁免不转发"
+    );
+
+    // W5：宿主派发路径不分流——`__zw_dispatch_event`（generic Event，非
+    // MouseEvent）落 label 本体，shim 不转发（renderer 默认动作层与 plan 层
+    // label 链各自拥有宿主激活；shim 再转发 = renderer 真实点击双翻）。
+    // 计数维持 W1+W2 的 2。
+    sandbox
+        .execute("globalThis.__phase8 = 'host';\
+                  __zw_dispatch_event('#sLa', 'click', null);\
+                  globalThis.__w5 = globalThis.__clk8.sBtnA;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__w5").unwrap().value,
+        "2",
+        "W5：宿主 generic click 落 label 本体 → shim 不转发（激活归宿主层）"
+    );
+
+    // W6：宿主 generic click 落交互后代 a[href] 同样不转发；且宿主派发后 JS
+    // MouseEvent 面仍正常（R155 post 段路径不受影响）。
+    sandbox
+        .execute("__zw_dispatch_event('#sA2', 'click', null);\
+                  globalThis.__fire8('sLb', false);\
+                  globalThis.__w6 = globalThis.__clk8.sBtnB;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__w6").unwrap().value,
+        "2",
+        "W6：宿主 click 落交互后代不转发（仍 1）；后续 JS 非冒泡 click 照常转发（累计 2）"
+    );
+}
