@@ -17,6 +17,7 @@ use zero_render_foundation::font::{FontLoader, GlyphCache};
 use zero_render_foundation::rendering_thread::{RenderingThread, render_threading_enabled};
 
 mod font_resources;
+mod frame_dump;
 mod gpu_raster;
 mod present;
 mod rasterize;
@@ -146,6 +147,9 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
     sandbox::apply_landlock_after_init();
     let mut glyph_cache = GlyphCache::new(1024);
     let mut render_thread = render_threading_enabled().then(|| RenderingThread::spawn(Arc::clone(&font_loader), 1024));
+    // compositor-animation-continuity M1/M2：env 门控的已合成帧落盘（默认关闭），
+    // 供真实窗口观察帧生产节奏（证据工具，失败自降级，见 frame_dump 模块文档）。
+    let mut frame_dumper = frame_dump::FrameDumper::from_env();
 
     // C3 GPU 光栅化（Linux 默认开；`ZW_COMPOSITOR_GPU=0` 禁用）：headless wgpu 上下文在合成器
     // 进程内（对照 Ladybird GPU 隔离）；初始化失败/GPU 不可用 → 回退 CPU。
@@ -400,6 +404,16 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                 if std::env::var("ZERO_BROWSER_PRODUCT_SMOKE").as_deref() == Ok("1") {
                     tracing::info!(
                         "SMOKE_EVENT component=zero-compositor event=frame_committed surface={surface_id} epoch={navigation_epoch} frame={frame_id} width={w} height={h}"
+                    );
+                }
+                if let Some(dumper) = frame_dumper.as_mut() {
+                    dumper.dump(
+                        surface_id,
+                        navigation_epoch,
+                        frame_id,
+                        w,
+                        h,
+                        &surface.backing.front().data,
                     );
                 }
 

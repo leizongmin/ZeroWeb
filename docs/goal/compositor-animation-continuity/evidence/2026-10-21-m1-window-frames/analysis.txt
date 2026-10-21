@@ -1,0 +1,12 @@
+== 帧像素归因分析（python3 内联，2026-10-21）==
+
+$ sha256sum frames/*.bin
+746b4d0b3b85bf10567b39c09bbd4e9aae05087ec1892756ba1be4450c39041a  target/compositor-animation-m1-window/run-20261021b/frames/frame-s1-e2-f2.bin
+746b4d0b3b85bf10567b39c09bbd4e9aae05087ec1892756ba1be4450c39041a  target/compositor-animation-m1-window/run-20261021b/frames/frame-s1-e2-f3.bin
+
+$ 像素统计（near-red 200,30,30 / near-blue 30,90,220，容差 6）
+frame-s1-e2-f2.bin: 600x1092 red=16384 (2.50%) blue=9216 (1.41%)
+frame-s1-e2-f3.bin: 600x1092 red=16384 (2.50%) blue=9216 (1.41%)
+两帧逐字节相同: True
+wall_ms 差: 2189 ms
+注：red=16384=128x128（#opacity-box 满格）→ opacity=1（t=0）；blue=9216=96x96（#transform-box 满格）→ 初始 transform
