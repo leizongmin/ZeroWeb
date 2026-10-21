@@ -28,6 +28,22 @@ fn test_webview_new_default() {
 }
 
 #[test]
+fn test_webview_config_canvas_registry_shared_instance() {
+    // canvas registry config 注入：getter 返回**同一** Arc（宿主预建——painter 与
+    // 外部脚本线程共享实例，孤儿 registry 缺口修复面；默认 None 自建不在此钉）。
+    let shared: std::sync::Arc<std::sync::Mutex<zero_engine::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(zero_engine::js_dom_bridge::CanvasRegistry::new()));
+    let wv = WebView::new(WebViewConfig {
+        canvas_registry: Some(std::sync::Arc::clone(&shared)),
+        ..Default::default()
+    });
+    assert!(
+        std::sync::Arc::ptr_eq(&shared, &wv.canvas_registry()),
+        "config 注入的 registry 应原样共享（Arc::ptr_eq）"
+    );
+}
+
+#[test]
 fn test_webview_new_custom_config() {
     let config = WebViewConfig {
         width: 1024,

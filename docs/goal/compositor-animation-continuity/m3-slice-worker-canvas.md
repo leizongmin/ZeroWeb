@@ -48,12 +48,17 @@ flag on（`ZW_THREADED_WORKERS=1` + 呈现 flag）真实窗口/headless 双向�
 - 引擎无关：宿主只引用 `script_sandbox::WorkerRuntime` 同名类型（v8/quickjs feature 对齐页面引擎），宿主代码不写引擎分支；worker 定时器族与错误捕获已并入 bootstrap（bcf29d5fd：`setTimeout`/`setInterval`/`clear*`/`close` 经 `_workerTimerOps` 记操作、Rust 侧 `recv_timeout` 命令循环间隙服务到期定时器；v8 TryCatch / quickjs `ctx.catch()` → `WorkerEvent::Error`，worker 不退出；线程退出 `Closed` 单出口）——验收 (a) 的定时器驱动面与 (d) 错误路径面已具备。
 - 看门狗：页面 worker 用 `SandboxConfig::default()`（`timeout_ms = 0` 即无脚本超时，看门狗线程不启动）——浏览器语义：worker 常驻至 `terminate()`/`close()`/导航清理（S1d），不预设脚本时长上限；`terminate()` 强制中断保留（死循环兜底）。
 
+**生产 runtime 验证修正（2026-10-22 registry 批，两项实现级修订）**：
+
+- 回调注册时序：原设计「注册期读槽 + 快照 Arc」在真实 runtime 不成立——js_worker 线程启动即注册（runtime.rs spawn）而 `worker_host::install` 装槽在其后，注册期槽恒空 → 回调不注册 → S1a 分流全路径失效（进程内测试自装桥覆盖不到此路径）。修订为 flag 单门控注册 + 调用期动态读槽（槽空回 `err:host-unavailable` → shim 回落 same-realm）。执行面验收须过生产 runtime 构造器（probe 腿）——单测自装桥不构成 S1a 生效证据。
+- worker bootstrap `self`：script-sandbox `WORKER_BOOTSTRAP_JS` 补 `var self = globalThis`（threaded 脚本 `self.onmessage`/`self.postMessage` 定址；same-realm 路径 shim 包裹故不触发，`self` 缺失只在真线程暴露）。
+
 ### 2.2 worker canvas 桥（S1b）
 
 **worker 线程本地 `CanvasRegistry`，`canvas_context_op` 纯栅格核零改动复用**：
 
 - worker 体（真线程）内 `new OffscreenCanvas(w, h).getContext('2d')` → worker 线程本地 registry 注册 ctx handle，op 经同一 `canvas_context_op(reg, handle, op, args)` 求值（engine 侧纯 Rust 栅格，无宿主回调依赖）。本地 registry 无 paint 路径 = 修掉同 realm 幻影注册语义（像素只存 worker 本地）。
-- `transferControlToOffscreen()`（主线程，flag on）：返回 OffscreenCanvas 占位，宿主登记「元素 host handle ↔ 待绑定 patch 键」；该 OffscreenCanvas 经 `postMessage` transfer 到真线程 worker 时，宿主把绑定落成 worker 本地 registry 的 surface 键注册（`self.postMessage` 入站 transfer 分支截获）——HTML spec §transferred-canvas 语义近似：迁移后主线程对该 canvas 的 2d ctx 获取失效（flag on 面内抛 InvalidStateError 对齐 spec 措辞）。
+- `transferControlToOffscreen()`（主线程，flag on）：返回 OffscreenCanvas 占位，宿主登记「元素 host handle ↔ 待绑定 patch 键」；该 OffscreenCanvas 经 `postMessage` transfer 到真线程 worker 时，宿主把绑定落成 worker 本地 registry 的 surface 键注册（`self.postMessage` 入站 transfer 分支截获）——HTML spec §transferred-canvas 语义近似：迁移后主线程对该 canvas 的 2d ctx 获取失效（flag on 面内抛 InvalidStateError 对齐 spec 措辞）。现状缺口（2026-10-22 threaded 腿实测）：既有 R3313 返回普通 object（非 OffscreenCanvas 实例），`_zwValidateTransferList` 的 `instanceof OffscreenCanvas` 拒收 → transfer 即 DataCloneError（threaded 腿 `transfer=bridge-pending` 降级路径承接）——S1b 须升级返回值为真实例或 transfer 面特判，验收门 `transfer_ctx=true`。
 - 呈现触发：worker 宏任务边界自动 present 脏位图（任务尾查 dirty 位，脏则打包 patch 更新）；逐 op present 与显式 commit 面记 §3 待定。
 - 位图口径：`Vec<u8>` RGBA 全帧（fixture 尺度 48² 量级）；dirty-rect 与 shm 零拷贝记 §4 优化预留。
 

@@ -4,8 +4,10 @@
 //!
 //! engine 不引 renderer 依赖——桥闭包由 renderer 装填（js_worker 脚本线程经
 //! `__zw_worker_host_op` 回调进入本槽转发命令；spawn 同步等 worker id，post/
-//! terminate fire-and-forget）。未装填（renderer 未起 / 测试）时回调不注册，shim
-//! `typeof` 守卫回落 same-realm worker——flag 关零行为（workers-compat 钉住）。
+//! terminate fire-and-forget）。回调注册只看 flag；装填按调用期动态解析（见
+//! `callbacks.rs` 注册注释——注册早于 runtime 构造器 install，时序缺陷修复），
+//! 未装填（renderer 未起 / 测试）时回 `"err:host-unavailable"` → shim 回落
+//! same-realm worker——flag 关零行为（workers-compat 钉住）。
 //!
 //! 进程级槽模式与动画命中修正提供者槽（`animation/hit_provider.rs`）同型：
 //! renderer 线程写、js_worker 脚本线程读。

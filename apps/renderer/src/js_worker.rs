@@ -2328,6 +2328,30 @@ impl zero_page_runtime::JsExecutor for RendererJsWorker {
 mod tests {
     use super::*;
 
+    /// canvas registry 共享注入：宿主预建 Arc 经 spawn_with_handlers 下推，页面脚本
+    /// `getContext('2d')` 经 `__zw_canvas_op` 写入**同一**实例（多进程应用路径孤儿
+    /// registry 修复——修复前线程内自建，painter 持 webview 侧另一实例恒读空）。
+    #[test]
+    fn injected_canvas_registry_receives_page_context_registrations() {
+        let registry: std::sync::Arc<std::sync::Mutex<zero_engine::js_dom_bridge::CanvasRegistry>> =
+            std::sync::Arc::new(std::sync::Mutex::new(zero_engine::js_dom_bridge::CanvasRegistry::new()));
+        let worker = RendererJsWorker::spawn_with_handlers(
+            6144,
+            zero_page_runtime::indexed_db_handler(Arc::new(std::sync::Mutex::new(zero_storage::StorageManager::new()))),
+            None,
+            Arc::clone(&registry),
+        );
+        let result = worker
+            .execute_script_direct_bounded(
+                "String(document.createElement('canvas').getContext('2d') !== null);",
+                Duration::from_secs(5),
+            )
+            .expect("canvas context script should execute");
+        assert_eq!(result, "true", "getContext('2d') 应成功");
+        let contexts = registry.lock().unwrap().contexts.len();
+        assert!(contexts >= 1, "共享 registry 应收到 ctx 注册，got {contexts}");
+    }
+
     /// T66 回归钉：空闲 worker 上等待回复的优先脚本必须被 WakePrio 即时唤醒，
     /// 不能等满 WORKER_IDLE_POLL 轮询量子。键入路径每次优先脚本往返（插入原子脚本、
     /// 活值快照、选区同步）都走本通道；缺唤醒时每次往返固定叠加 ~50ms（ui_driver

@@ -152,18 +152,19 @@ fs.mkdirSync(outDir, { recursive: true });
 // span 系列取「送达对跨忙窗」的相邻对（忙窗内送达为 0 时即跨窗停顿）。
 const QUERY_STATE =
   "var b=window.__zwBeats||[],lw=window.__zwLoadWindow;" +
-  "var wtMax=0,atMax=0,wtSpan=0,atSpan=0;" +
+  "var wtMax=0,atMax=0,wtSpan=0,atSpan=0,wtPair=null;" +
   "for(var i=1;i<b.length;i++){" +
-  "var wg=b[i].wt-b[i-1].wt;if(wg>wtMax)wtMax=wg;" +
+  "var wg=b[i].wt-b[i-1].wt;if(wg>wtMax){wtMax=wg;wtPair=[i,b[i-1].wt,b[i].wt,b[i-1].at,b[i].at];}" +
   "var ag=b[i].at-b[i-1].at;if(ag>atMax)atMax=ag;" +
   "if(lw&&b[i].at>lw.start&&b[i-1].at<lw.end){if(wg>wtSpan)wtSpan=wg;if(ag>atSpan)atSpan=ag;}}" +
   "var dm=window.__zwDrawsMain;" +
   "return JSON.stringify({mode:window.__zwMode,workerHost:window.__zwWorkerHost," +
   "transfer:window.__zwTransfer,beats:b.length," +
-  "wtGapMax:Math.round(wtMax),atGapMax:Math.round(atMax)," +
+  "wtGapMax:Math.round(wtMax),atGapMax:Math.round(atMax),wtMaxPair:wtPair," +
   "wtGapSpanLoad:Math.round(wtSpan),atGapSpanLoad:Math.round(atSpan)," +
   "loadWindow:lw,drawsMain:(dm===undefined?null:dm)," +
   "term:window.__zwTerm,beatsAfterTerm:window.__zwBeatsAfterTerm," +
+  "spawn:window.__zwSpawnInfo||null," +
   "workerErr:window.__zwWorkerErr," +
   "ctrl:document.getElementById('strip-ctrl').textContent," +
   "pageNow:Math.round(performance.now())});";
@@ -314,6 +315,9 @@ try {
     // 生命周期面（threaded）：terminate 后零 beat 回流。
     term: s2 ? s2.term : null,
     beats_after_term: s2 ? s2.beatsAfterTerm : null,
+    // 分流落点：hostId 有值 = renderer 宿主线程；dispatchDefined = 页面派发接收器已装。
+    spawn_host_id: s2 && s2.spawn ? s2.spawn.hostId : null,
+    dispatch_defined: s2 && s2.spawn ? s2.spawn.dispatchDefined : null,
     // 错误路径面：worker 脚本抛错应回流页面 onerror（dc4-expected）。
     worker_err: s2 ? s2.workerErr : null,
     // 帧活性正控。
@@ -332,7 +336,14 @@ try {
         ? "SHIM_BASELINE_PASS"
         : "SHIM_BASELINE_FAIL";
   } else if (mode === "threaded") {
+    // 判定面分层（S1a/S1b 独立门，2026-10-22 registry 修复批定稿）：
+    //   s1a = 执行面（spawn 落宿主 + 派发接收器 + 跨忙窗线程活性 + terminate 静默
+    //         + 错误回流 + 正控）——S1a 批交付判据；
+    //   s1b = canvas 桥（transfer ctxOk）——S1b 批交付判据（S1a 阶段预期 false，
+    //         fixture 转移失败降级纯消息 init，transfer_state 前缀 bridge-pending）。
     const gates = {
+      spawn_hosted: /^\d+$/.test(String(verdict.spawn_host_id ?? "")),
+      dispatch_defined: verdict.dispatch_defined === true,
       wt_liveness: (verdict.wt_gap_spanning_load_ms ?? 1e9) <= 200,
       transfer_ctx: verdict.transfer_ctx_ok === true,
       term_silent: verdict.beats_after_term === 0,
@@ -340,8 +351,11 @@ try {
       control: verdict.mutation_control === "OK",
     };
     verdict.gates = gates;
-    verdict.state = Object.values(gates).every(Boolean)
-      ? "THREADED_PROBE_PASS"
+    const s1aOk = gates.spawn_hosted && gates.dispatch_defined && gates.wt_liveness &&
+      gates.term_silent && gates.err_reported && gates.control;
+    verdict.state =
+      s1aOk && gates.transfer_ctx ? "THREADED_PROBE_PASS"
+      : s1aOk ? "THREADED_S1A_PASS_S1B_PENDING"
       : "THREADED_PROBE_PARTIAL";
   } else {
     verdict.state = "UNKNOWN_MODE";

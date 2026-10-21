@@ -283,13 +283,13 @@ impl Default for WebViewConfig {
             // 保留——宿主可显式置 false，或环境 `ZW_MIXED_CONTENT_ENFORCEMENT=0`
             // 回退（A/B off 臂入口，照 `ZW_MO_HOST_TRIGGER` 先例）。
             mixed_content_enforcement: std::env::var("ZW_MIXED_CONTENT_ENFORCEMENT").as_deref() != Ok("0"),
+            canvas_registry: None,
             external_script: None,
             script_source_fetcher: None,
             service_worker_script_fetcher: None,
             image_source_fetcher: None,
             fetch_handler: None,
             ws_host_factory: None,
-            canvas_registry: None,
             // R384（js-dom M5/M7 收尾）：kill-switch 字段已删，原生绑定无条件安装。
         }
     }
@@ -1620,6 +1620,12 @@ impl WebView {
     /// 渲染泵 tick 消费；settle 侧经 async_load 写入）。
     pub fn video_players(&self) -> std::sync::Arc<std::sync::Mutex<crate::video_registry::VideoPlayerRegistry>> {
         std::sync::Arc::clone(&self.video_players)
+    }
+
+    /// canvas 注册表共享句柄（config 注入或自建实例——宿主下推脚本线程用；
+    /// 页面 JS 线程与 painter 同一注册表，见 `WebViewConfig::canvas_registry`）。
+    pub fn canvas_registry(&self) -> std::sync::Arc<std::sync::Mutex<zero_engine::js_dom_bridge::CanvasRegistry>> {
+        std::sync::Arc::clone(&self.canvas_registry)
     }
 
     /// media-audio M3 切片 2：Web Audio 注册表共享句柄（宿主桥回调注册 /

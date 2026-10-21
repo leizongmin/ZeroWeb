@@ -121,6 +121,8 @@
       "    } catch (e2) {",
       "      self.postMessage({ kind: 'ctx', ok: false, err: String(e2 && e2.message || e2) });",
       "    }",
+      "  } else if (d.kind === 'init') {",
+      "    self.postMessage({ kind: 'ctx', ok: false, err: 'canvas-bridge-pending' });",
       "  }",
       "};",
       "setInterval(function () {",
@@ -161,12 +163,22 @@
       if (window.__zwMode === 'threaded') {
         // DC-4 主场景：canvas 转 worker，主线程不再绘制（HTML spec transferred
         // canvas 语义；S1b 落地后 worker 绘制经 patch 呈现管线出图）。
-        var off = mainCanvas.transferControlToOffscreen();
-        window.__zwTransfer.state = 'transferred';
-        stripTransfer.textContent = 'transfer=transferred';
-        worker.postMessage({ kind: 'init', canvas: off }, [off]);
-        window.__zwTransfer.state = 'sent';
-        stripTransfer.textContent = 'transfer=sent';
+        try {
+          var off = mainCanvas.transferControlToOffscreen();
+          window.__zwTransfer.state = 'transferred';
+          stripTransfer.textContent = 'transfer=transferred';
+          worker.postMessage({ kind: 'init', canvas: off }, [off]);
+          window.__zwTransfer.state = 'sent';
+          stripTransfer.textContent = 'transfer=sent';
+        } catch (eXfer) {
+          // S1b 未落地：transferable 校验（_zwValidateTransferList instanceof
+          // OffscreenCanvas）拒收 R3313 普通 object 返回值 → DataCloneError。
+          // 降级纯消息 init——S1a 执行面（spawn/post/dispatch/terminate）与 S1b
+          // canvas 桥各自独立可验；worker 回 canvas-bridge-pending 标记钉住缺口。
+          window.__zwTransfer.state = 'bridge-pending: ' + String(eXfer && eXfer.message || eXfer);
+          stripTransfer.textContent = 'transfer=bridge-pending';
+          worker.postMessage({ kind: 'init' });
+        }
       } else {
         // flag 关对照：transfer API 只探存在性，不调用（R3313 共享 handle 语义不动）。
         window.__zwTransfer.state = 'probe-only';
@@ -176,6 +188,16 @@
       window.__zwTransfer.state = 'error:' + String(eSpawn && eSpawn.message || eSpawn);
       stripTransfer.textContent = 'transfer=' + window.__zwTransfer.state;
     }
+    // 分流落点可见性（S1a 判据面）：hostId 有值 = 走 renderer 宿主线程；无值 =
+    // 回落 same-realm（spawn err/桥缺席）。dispatchDefined = 页面侧派发接收器已
+    // 惰性定义（host 模式成立时才定义）。
+    window.__zwSpawnInfo = worker ? {
+      hostId: String(typeof worker._zwHostId === 'undefined' ? 'null' : worker._zwHostId),
+      dispatchDefined: (typeof __zw_worker_host_dispatch === 'function')
+    } : { hostId: 'no-worker', dispatchDefined: false };
+    document.getElementById('strip-mode').textContent = 'mode=' + window.__zwMode
+      + ' host=' + window.__zwSpawnInfo.hostId
+      + ' dispatch=' + (window.__zwSpawnInfo.dispatchDefined ? 'y' : 'n');
 
     // ── shim 模式主线程绘制环（flag 关对照腿：comp04 基线同款，setInterval 驱动
     // ——页面 rAF 为预算制同步 stub，连续动画只能选定时器族）──

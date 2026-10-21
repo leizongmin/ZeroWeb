@@ -1,0 +1,231 @@
+{
+  "fixture": "comp04a-worker-threaded-canvas.html",
+  "started_at_wall": "2026-10-21T22:30:48.982Z",
+  "samples": [
+    {
+      "name": "s0",
+      "t_wall_ms": 572,
+      "capture": {
+        "name": "s0",
+        "wall_ms": 84,
+        "png_sha256": "33b360b4a6e5eae63955571102614073f73551e3ddf2fcfd16097caa308af806",
+        "png_bytes": 34192
+      },
+      "query": {
+        "wall_ms": 15,
+        "state": {
+          "mode": "threaded",
+          "workerHost": true,
+          "transfer": {
+            "state": "bridge-pending: Failed to execute 'postMessage': Value at index 0 does not have a transferable type.",
+            "ctxOk": false
+          },
+          "beats": 8,
+          "wtGapMax": 51,
+          "atGapMax": 84,
+          "wtMaxPair": [
+            4,
+            1792621849350,
+            1792621849401,
+            564,
+            645
+          ],
+          "wtGapSpanLoad": 0,
+          "atGapSpanLoad": 0,
+          "loadWindow": null,
+          "drawsMain": null,
+          "term": null,
+          "beatsAfterTerm": 0,
+          "spawn": {
+            "hostId": "1",
+            "dispatchDefined": true
+          },
+          "workerErr": "Error: dc4-expected\n    at <anonymous>:2:7",
+          "ctrl": "ctrl=off",
+          "pageNow": 859
+        }
+      }
+    },
+    {
+      "name": "s1",
+      "t_wall_ms": 1372,
+      "capture": {
+        "name": "s1",
+        "wall_ms": 6,
+        "png_sha256": "1d1fe558448786de9db3a49b546fe4b02d27001f522be24debbf2acba0ea066f",
+        "png_bytes": 34374
+      },
+      "query": {
+        "wall_ms": 54,
+        "state": {
+          "mode": "threaded",
+          "workerHost": true,
+          "transfer": {
+            "state": "bridge-pending: Failed to execute 'postMessage': Value at index 0 does not have a transferable type.",
+            "ctxOk": false
+          },
+          "beats": 23,
+          "wtGapMax": 51,
+          "atGapMax": 84,
+          "wtMaxPair": [
+            4,
+            1792621849350,
+            1792621849401,
+            564,
+            645
+          ],
+          "wtGapSpanLoad": 0,
+          "atGapSpanLoad": 0,
+          "loadWindow": null,
+          "drawsMain": null,
+          "term": null,
+          "beatsAfterTerm": 0,
+          "spawn": {
+            "hostId": "1",
+            "dispatchDefined": true
+          },
+          "workerErr": "Error: dc4-expected\n    at <anonymous>:2:7",
+          "ctrl": "ctrl=off",
+          "pageNow": 1614
+        }
+      }
+    },
+    {
+      "name": "s2",
+      "t_wall_ms": 7450,
+      "capture": {
+        "name": "s2",
+        "wall_ms": 7,
+        "png_sha256": "b8b4ae7cc8e274efad9aefbcddb61ee4bf9e3542fd1e22b37ad569cd008f4ca8",
+        "png_bytes": 35384
+      },
+      "query": {
+        "wall_ms": 43,
+        "state": {
+          "mode": "threaded",
+          "workerHost": true,
+          "transfer": {
+            "state": "bridge-pending: Failed to execute 'postMessage': Value at index 0 does not have a transferable type.",
+            "ctxOk": false
+          },
+          "beats": 129,
+          "wtGapMax": 853,
+          "atGapMax": 907,
+          "wtMaxPair": [
+            61,
+            1792621852210,
+            1792621853063,
+            4280,
+            4280
+          ],
+          "wtGapSpanLoad": 50,
+          "atGapSpanLoad": 907,
+          "loadWindow": {
+            "start": 3373,
+            "end": 4273
+          },
+          "drawsMain": null,
+          "term": {
+            "at": 6868,
+            "lastBeatN": 0
+          },
+          "beatsAfterTerm": 0,
+          "spawn": {
+            "hostId": "1",
+            "dispatchDefined": true
+          },
+          "workerErr": "Error: dc4-expected\n    at <anonymous>:2:7",
+          "ctrl": "ctrl=off",
+          "pageNow": 7690
+        }
+      }
+    },
+    {
+      "name": "s3",
+      "t_wall_ms": 7860,
+      "capture": {
+        "name": "s3",
+        "wall_ms": 6,
+        "png_sha256": "4b07bc7948812e5b22ad3a8bab3ef87c56ba974c7bcc601971c4b932cd27c549",
+        "png_bytes": 37596
+      },
+      "query": {
+        "wall_ms": 37,
+        "state": {
+          "mode": "threaded",
+          "workerHost": true,
+          "transfer": {
+            "state": "bridge-pending: Failed to execute 'postMessage': Value at index 0 does not have a transferable type.",
+            "ctxOk": false
+          },
+          "beats": 129,
+          "wtGapMax": 853,
+          "atGapMax": 907,
+          "wtMaxPair": [
+            61,
+            1792621852210,
+            1792621853063,
+            4280,
+            4280
+          ],
+          "wtGapSpanLoad": 50,
+          "atGapSpanLoad": 907,
+          "loadWindow": {
+            "start": 3373,
+            "end": 4273
+          },
+          "drawsMain": null,
+          "term": {
+            "at": 6868,
+            "lastBeatN": 0
+          },
+          "beatsAfterTerm": 0,
+          "spawn": {
+            "hostId": "1",
+            "dispatchDefined": true
+          },
+          "workerErr": "Error: dc4-expected\n    at <anonymous>:2:7",
+          "ctrl": "ctrl=on",
+          "pageNow": 8091
+        }
+      }
+    }
+  ],
+  "verdict": {
+    "mode": "threaded",
+    "worker_host_present": true,
+    "transfer_state": "bridge-pending: Failed to execute 'postMessage': Value at index 0 does not have a transferable type.",
+    "transfer_ctx_ok": false,
+    "beats_total": 129,
+    "wt_gap_max_ms": 853,
+    "wt_gap_spanning_load_ms": 50,
+    "at_gap_max_ms": 907,
+    "at_gap_spanning_load_ms": 907,
+    "load_window": {
+      "start": 3373,
+      "end": 4273
+    },
+    "draws_main": null,
+    "term": {
+      "at": 6868,
+      "lastBeatN": 0
+    },
+    "beats_after_term": 0,
+    "spawn_host_id": "1",
+    "dispatch_defined": true,
+    "worker_err": "Error: dc4-expected\n    at <anonymous>:2:7",
+    "canvas_idle": "ANIMATED",
+    "mutation_control": "OK",
+    "control_strip": "ctrl=off",
+    "gates": {
+      "spawn_hosted": true,
+      "dispatch_defined": true,
+      "wt_liveness": true,
+      "transfer_ctx": false,
+      "term_silent": true,
+      "err_reported": true,
+      "control": true
+    },
+    "state": "THREADED_S1A_PASS_S1B_PENDING"
+  }
+}
