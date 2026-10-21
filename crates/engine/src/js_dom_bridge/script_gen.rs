@@ -429,7 +429,8 @@ else if({selected})o.setAttribute('selected','');else o.removeAttribute('selecte
     )
 }
 
-/// 构造 details/dialog open 状态更新脚本，不派发事件。
+/// 构造 details/dialog open 状态更新脚本。不直接派发事件；DETAILS 侧 toggle 事件
+/// 由 shim 的 toggle 任务队列按 spec 排程（R4009），DIALOG 侧无 toggle 语义（R3290）。
 pub fn script_set_open(selector: &str, open: bool) -> String {
     let selector = escape_js_string(selector);
     let open = if open { "true" } else { "false" };

@@ -3415,6 +3415,11 @@
             if (n === 'is' && typeof globalThis.__zwCeInvalidateEntry === 'function') {
               globalThis.__zwCeInvalidateEntry(key);
             }
+            // R4009：details open 属性写入 → toggle 事件队列（presence 真变迁面；
+            // `_rmExisted` 为写入前 presence 快照——spec binding-details 增删排程）。
+            if (n === 'open' && typeof _zwToggleQueueNotify4009 === 'function') {
+              _zwToggleQueueNotify4009(sel, handle, _rmExisted);
+            }
           };
         }
         if (prop === 'removeAttribute') {
@@ -3558,6 +3563,11 @@
             // WC-M1 切片 4：is 移除同样失效 CE entry 缓存。
             if (n === 'is' && typeof globalThis.__zwCeInvalidateEntry === 'function') {
               globalThis.__zwCeInvalidateEntry(key);
+            }
+            // R4009：details open 属性移除 → toggle 事件队列（同 setAttribute 尾钩；
+            // 已是 closed 时 presence 不变，notify 内比对后 no-op——t9 断言面）。
+            if (n === 'open' && typeof _zwToggleQueueNotify4009 === 'function') {
+              _zwToggleQueueNotify4009(sel, handle, _rmExisted);
             }
             if (ceEntry) _ce_dispatchAttrChange(ceEntry, proxy, n, ceOld, null);
           };
@@ -4881,6 +4891,16 @@
                     try { _r155Ctl.click(); } catch (_e155f) {} finally { globalThis.__zwLblClickInProgress = false; }
                   }
                 }
+              }
+              // R4009（html-semantics M2 切片 20）：SUMMARY 的 click default action——
+              // 本 summary 为父 details 首个 summary 元素子时翻转 open（spec
+              // the-summary-element activation behaviour）。翻转经 proxy `.open` setter
+              // 落 R4009 toggle 队列（异步合并派发——activation-behavior 语料的同步
+              // open 断言读 presence 立即生效，toggle 事件面异步）。summary 内交互
+              // 后代 target（a[href]/button…）不落本分支（_r154Tag 非 SUMMARY——
+              // 交互豁免由 bubble 站钩的 `_zwIsInteractiveContentEl` 承接）。
+              if (_r154Tag === 'SUMMARY' && typeof _zwSummaryActivate4009 === 'function') {
+                _zwSummaryActivate4009(sel, handle);
               }
             }
             return notPrevented;
@@ -11360,6 +11380,11 @@
           // spec：truthy → setAttribute('open', '')（presence）；falsy → removeAttribute('open')。
           // 模态 dialog 经 open setter 关闭（falsy）不派 close 事件（spec：close 事件仅 close() 派发，
           // 直接 removeAttribute 不派——real browser 一致）。getter 直读属性（无缓存 → 无 stale）。
+          // R4009（html-semantics M2 切片 20）：DETAILS 的 presence 真变迁排程 toggle
+          // 事件（spec binding-details queue an element task——同任务合并、oldState/
+          // newState 口径见 part03 队列块）。单一 choke point：页面 JS IDL setter 与
+          // plan 层 script_set_open（`e.open = bool`）同经本分支。
+          var _r4009PreOpen = (_realTag(sel, handle) === 'DETAILS') ? _zwDetailsHasOpen4009(sel, handle) : null;
           if (value) _zwSetAttr(key, sel, handle, 'open', '');
           else {
             _zwRemoveAttr(key, sel, handle, 'open');
@@ -11372,6 +11397,7 @@
               delete _zwTopLayer[key];
             }
           }
+          if (_r4009PreOpen !== null) _zwToggleQueueNotify4009(sel, handle, _r4009PreOpen);
         } else if (p === 'returnValue' && _realTag(sel, handle) === 'DIALOG') {
           // R3290：HTMLDialogElement.returnValue IDL setter。spec：存任意值为串（不反射内容属性——dialog 无
           // returnValue 内容属性）。R3999：WebIDL DOMString 转换——null → "null"、

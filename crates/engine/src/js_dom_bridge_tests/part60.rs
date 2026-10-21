@@ -1086,3 +1086,213 @@ fn test_label_self_target_dispatch_r4008() {
         "W6：宿主 click 落交互后代不转发（仍 1）；后续 JS 非冒泡 click 照常转发（累计 2）"
     );
 }
+
+// R4009（html-semantics M2 切片 20）：details/summary 激活深层面三件套——
+// ① toggle 事件任务队列（spec binding-details「queue an element task」：同任务
+//    多次开合合并单事件、oldState = 首个真变迁前 / newState = 任务运行时当下、
+//    同态写不排程、detached 也派发；trusted + ToggleEvent.prototype 身份）；
+// ② summary 激活行为（spec the-summary-element activation behaviour：首个
+//    summary 元素子翻转父 details——summary.click() API 面 + bubble 站后代
+//    target 面 + 交互豁免 a[href]，无 href a 非交互 → 翻转且不导航）；
+// ③ 宿主 generic click 不分流（同 R4008 W5 语义：宿主激活归 plan/renderer
+//    Rust 层，shim 面只承接 JS synthetic faces）。
+// WPT 语料：activation-behavior.html 7F / anchor-without-link.html 2F /
+// toggleEvent.html 簇 / details-keyboard-activation.html（plan 空格路由面）。
+#[test]
+fn test_details_summary_toggle_r4009() {
+    let mut sandbox = t59_sandbox_with_shim();
+    let mutations: std::sync::Arc<std::sync::Mutex<Vec<DomMutation>>> = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+    let dom_html: std::sync::Arc<std::sync::Mutex<String>> = std::sync::Arc::new(std::sync::Mutex::new(
+        "<html><body>\
+         <details id='dA'><summary id='smA'>S</summary><p>C</p></details>\
+         <details id='dB'><summary>S1</summary><summary id='smB2'>S2</summary><p>C</p></details>\
+         <details id='dC'><span><summary id='smC'>S</summary></span><p>C</p></details>\
+         <details id='dD'><span></span><summary id='smD'>S</summary><p>C</p></details>\
+         <details id='dE' open><summary id='smE'>S</summary></details>\
+         <details id='dF'><summary id='smF'><a id='ahF' href='#frag'>L</a></summary></details>\
+         <details id='dG'><summary id='smG'><a id='anG'>plain</a><i id='inG'>it</i></summary></details>\
+         <details id='dH'><summary id='smH'>S</summary></details>\
+         <details id='dI'><summary id='smI'>S</summary></details>\
+         <details id='dJ'><summary id='smJ'>S</summary></details>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: std::sync::Arc<std::sync::Mutex<String>> = std::sync::Arc::new(std::sync::Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    crate::js_dom_bridge::register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // toggle 描述符收集器（old>new/t/b/c/p 五断言位一次拼串）。
+    sandbox
+        .execute(
+            "globalThis.__tg = {};\
+             ['dA','dE','dH','dJ'].forEach(function (id) {\
+               globalThis.__tg[id] = [];\
+               document.getElementById(id).addEventListener('toggle', function (ev) {\
+                 globalThis.__tg[id].push(ev.oldState + '>' + ev.newState + '/t' + ev.isTrusted + '/b' + ev.bubbles\
+                   + '/c' + ev.cancelable + '/p' + (Object.getPrototypeOf(ev) === ToggleEvent.prototype));\
+               });\
+             });\
+             globalThis.__tgDet = [];",
+        )
+        .unwrap();
+
+    // T1：summary.click() 同步翻转 presence（activation-behavior 语料同步断言面）
+    // + toggle 异步恰一次（trusted / 非 bubble / 不可取消 / ToggleEvent 原型）。
+    sandbox
+        .execute("document.getElementById('smA').click(); globalThis.__pA = String(document.getElementById('dA').open);")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__pA").unwrap().value,
+        "true",
+        "T1：summary.click() → details.open 同步翻转"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__tg.dA.join('|')").unwrap().value,
+        "closed>open/ttrue/bfalse/cfalse/ptrue",
+        "T1：toggle 恰一次——oldState/newState + trusted + 非冒泡 + 不可取消 + ToggleEvent 原型"
+    );
+
+    // T2：同任务多次开合合并单 toggle（coalescing——activation-behavior
+    // toggle-tester 语料的同步 click 面同形；3 次同步 click = 3 次真变迁、1 事件、
+    // oldState 取首变迁前）。语料的 microtask 续 click 合并面依赖 runner 宿主
+    // macrotask timer（`__zw_test_setTimeout`）序——promise microtask 先于 timer
+    // task 合并进同一窗口；本沙箱无 host timer，setTimeout 落 `_defer` microtask
+    // fallback，两种通道同队不构成浏览器序，故此处只钉同步面。
+    sandbox
+        .execute(
+            "var smH = document.getElementById('smH');\
+             smH.click(); smH.click(); smH.click();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(document.getElementById('dH').open)").unwrap().value,
+        "true",
+        "T2：三次 click 后 presence open"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__tg.dH.join('|')").unwrap().value,
+        "closed>open/ttrue/bfalse/cfalse/ptrue",
+        "T2：同任务三次开合合并单 toggle（closed→open，oldState 取首变迁前）"
+    );
+
+    // T3：净零变迁（closed→…→closed）仍派发恰一次（toggleEvent.html t2 面）。
+    sandbox
+        .execute(
+            "var dJ = document.getElementById('dJ');\
+             dJ.open = true; dJ.open = false;\
+             globalThis.__pJ = String(dJ.open);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__pJ + '|' + globalThis.__tg.dJ.join('|')").unwrap().value,
+        "false|closed>closed/ttrue/bfalse/cfalse/ptrue",
+        "T3：净零变迁派发恰一次 toggle（closed→closed）"
+    );
+
+    // T4：同态写不排程（toggleEvent.html t9/t10 面）——flush 后 dJ 条目数不变。
+    sandbox
+        .execute(
+            "var dJ = document.getElementById('dJ');\
+             dJ.open = false; dJ.removeAttribute('open');\
+             globalThis.__n4 = globalThis.__tg.dJ.length;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tg.dJ.length)").unwrap().value,
+        "1",
+        "T4：closed details 同态写（IDL + removeAttribute）不派 toggle"
+    );
+
+    // T5：setAttribute('open','') 面派 toggle（toggleEvent.html t7 面）；同态
+    // setAttribute('open') 于已 open 元素 no-op（t9 面第二半）。
+    sandbox
+        .execute(
+            "document.getElementById('dJ').setAttribute('open', '');\
+             document.getElementById('dE').setAttribute('open', '');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__tg.dJ.join('|')").unwrap().value,
+        "closed>closed/ttrue/bfalse/cfalse/ptrue|closed>open/ttrue/bfalse/cfalse/ptrue",
+        "T5：setAttribute('open','') 新任务派一次（旧态接续 closed→open）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__tg.dE.length)").unwrap().value,
+        "0",
+        "T5：open details 上 setAttribute('open') 同态不派"
+    );
+    // T5b：removeAttribute('open') 面回 closed（t8 面第二半；独立任务 → 第二事件
+    // open→closed。同任务 set+remove 双写合并单事件面已由 T3 钉）。
+    sandbox
+        .execute("document.getElementById('dJ').removeAttribute('open');")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__tg.dJ.join('|')").unwrap().value,
+        "closed>closed/ttrue/bfalse/cfalse/ptrue|closed>open/ttrue/bfalse/cfalse/ptrue|open>closed/ttrue/bfalse/cfalse/ptrue",
+        "T5b：removeAttribute('open') 派 open→closed"
+    );
+
+    // T6：activation element 门——第二 summary / span 内 summary 不翻转；span
+    // 前置元素不挡首个 summary 元素子（activation-behavior has-* 语料四面）。
+    sandbox
+        .execute(
+            "document.getElementById('smB2').click();\
+             document.getElementById('smC').click();\
+             document.getElementById('smD').click();\
+             globalThis.__p6 = [document.getElementById('dB').open, document.getElementById('dC').open, document.getElementById('dD').open].join(',');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__p6").unwrap().value,
+        "false,false,true",
+        "T6：非首个 summary 元素子 no-op；span 前置不挡、span 内嵌 summary no-op"
+    );
+
+    // T7：anchor-without-link——无 href a 及其后代 i click() → details 开且
+    // location.hash 不动；有 href a 后代豁免（details 保持 closed）。
+    sandbox
+        .execute(
+            "globalThis.__h0 = String(location.hash);\
+             document.getElementById('inG').click();\
+             globalThis.__pG1 = String(document.getElementById('dG').open);\
+             globalThis.__h1 = String(location.hash);\
+             document.getElementById('ahF').click();\
+             globalThis.__pF = String(document.getElementById('dF').open);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__h0 + '|' + globalThis.__pG1 + '|' + globalThis.__h1 + '|' + globalThis.__pF").unwrap().value,
+        "|true||false",
+        "T7：无 href a 后代 click 开 details 且 hash 不动；a[href] 后代豁免不翻转"
+    );
+
+    // T8：宿主 generic click 落 summary 本体 → shim 不翻转（宿主激活归 plan/
+    // renderer Rust 层——R4008 W5 同款架构钉）。
+    sandbox
+        .execute("__zw_dispatch_event('#smI', 'click', null); globalThis.__pI = String(document.getElementById('dI').open);")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__pI").unwrap().value,
+        "false",
+        "T8：宿主 generic click 落 summary → shim 不翻转（宿主层拥有激活）"
+    );
+
+    // T9：detached details（createElement）同样排程 toggle（toggleEvent.html
+    // details5 面）。
+    sandbox
+        .execute(
+            "globalThis.__dd = document.createElement('details');\
+             globalThis.__dd.addEventListener('toggle', function (ev) {\
+               globalThis.__tgDet.push(ev.oldState + '>' + ev.newState + '/t' + ev.isTrusted\
+                 + '/p' + (Object.getPrototypeOf(ev) === ToggleEvent.prototype));\
+             });\
+             globalThis.__dd.open = true;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__tgDet.join('|')").unwrap().value,
+        "closed>open/ttrue/ptrue",
+        "T9：detached details 的 open 写照派 toggle（trusted + ToggleEvent 原型）"
+    );
+}

@@ -581,7 +581,12 @@ fn plan_summary(target: PageNodeRef, state: &SummaryActionState) -> HtmlActionPl
             target: state.details,
             open: !state.open,
         }],
-        followup_events: vec![PlannedEvent::simple(state.details, "toggle", false)],
+        // R4009（html-semantics M2 切片 20）：不再随 plan 派 toggle——open 内容属性
+        // 变更后由 shim 的 toggle 事件任务队列统一排程（spec binding-details「queue
+        // an element task」：ToggleEvent + trusted + oldState/newState 口径；旧 plan
+        // followup 是同步裸 Event 近似，与队列并存会双派）。取消面：SetOpen 落
+        // rollback 不执行 → 队列不排程 → 无 toggle（spec 一致）。
+        followup_events: vec![],
         effects: vec![],
         invalidation: InvalidationKind::Paint,
     }
@@ -1269,7 +1274,9 @@ mod tests {
                 open: true,
             }]
         );
-        assert_eq!(plan.followup_events[0].target, node(2));
+        // R4009：toggle 事件改由 shim 任务队列统一排程（spec binding-details），
+        // plan 不再自带 followup toggle。
+        assert!(plan.followup_events.is_empty());
         assert!(
             resolve_html_action(
                 plan,

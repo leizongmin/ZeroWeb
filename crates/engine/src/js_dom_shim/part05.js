@@ -13173,6 +13173,19 @@
   WheelEventCtor.DOM_DELTA_PIXEL = 0;
   WheelEventCtor.DOM_DELTA_LINE = 1;
   WheelEventCtor.DOM_DELTA_PAGE = 2;
+  // R4009（html-semantics M2 切片 20）：ToggleEvent（Event 子类）——details/summary 与
+  // popover 开合状态的 toggle 事件接口。oldState/newState 默认 ''（spec ToggleEventInit
+  // 缺省）、source 默认 null（popover invoking element 面；details toggle 恒 null——
+  // toggle-source 语料断言面）。原型身份：`Object.getPrototypeOf(evt) ===
+  // ToggleEvent.prototype`（toggleEvent.html testEvent 断言面）。part01 `_makeToggleEvent`
+  // 的 popover 同步派发面维持 plain 对象不动（本切片精准修改纪律；R3071 面语料不查
+  // 原型身份）。
+  // https://html.spec.whatwg.org/multipage/interactive-elements.html#toggleevent
+  _defineEventSubclass('ToggleEvent', 'Event', [
+    ['oldState', 'oldState', ''],
+    ['newState', 'newState', ''],
+    ['source', 'source', null],
+  ]);
   // js-dom M4 R110（WPT Event-init-while-dispatching）：legacy initXxxEvent 族补齐——
   // initUIEvent / initMouseEvent / initKeyboardEvent。共同语义（spec 各接口 init 方法步骤 1）：
   // ① **dispatch flag set → return**（派发中 no-op，用 R106 `_zwDispatching` 计数）；

@@ -243,12 +243,18 @@ impl WebView {
                 // Activate 请求（复用既有激活管线全流程——状态构建/click 派发/disabled
                 // 守卫/effects）。Enter 已由 Submit 臂覆盖（enclosing form / submit
                 // button→click→submit 语义）；此处闭合空格。
+                // R4009（html-semantics M2 切片 20）：SUMMARY 可聚焦（focus.rs
+                // FOCUSABLE_TAGS 既有）且空格为其激活键（spec the-summary-element
+                // activation behaviour）——递归 Activate 落既有 plan_summary 管线。
+                // details-keyboard-activation 语料 summary.focus()+send_keys(space)
+                // 断言面（open 翻转且不滚动）。
                 if let HtmlUserAction::InsertText { text } = &request.action
                     && text == " "
                 {
                     let tag = zero_engine::query_tag_from_html(&html, &selector);
                     let input_type = zero_engine::query_attr_from_html(&html, &selector, "type");
                     let buttonish = tag.eq_ignore_ascii_case("BUTTON")
+                        || tag.eq_ignore_ascii_case("SUMMARY")
                         || (tag.eq_ignore_ascii_case("INPUT")
                             && matches!(input_type.to_ascii_lowercase().as_str(), "button" | "submit" | "reset"));
                     if buttonish {

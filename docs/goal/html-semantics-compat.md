@@ -2,32 +2,36 @@
 
 **版本**: v2.0
 **日期**: 2026-10-21（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 19 收口（label 本体激活转发 R4008 +7P），下一步 M2 切片 20：details/summary 深层面（键盘激活 / toggle coalescing）或 forms 余 F 逐簇归因
+**状态**: Active——M2 切片 20 收口（details/summary 深层面 R4009 +18P），下一步 M2 切片 21：details name= 互斥簇（name-attribute.html 18F + file Timeout，interactive-elements 最大剩余杠杆）
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-21 M2 切片 19）**：label 本体激活转发（R4008，
-> rollover 双触发两会话同树协作合账，commit 88793f87d）。三层：shim 交互
-> 豁免身份比较（bubble 站挂钩 + R155 post 段——「target 即 label 本体时不
-> 豁免」，spec 豁免只覆盖 interactive content 后代）+ 宿主面上移（renderer
-> `activate_label_at` 既有 + webview user_actions plan 链新增：Activate 落
-> LABEL → `associated_label_control_selector` 解析（labelable 过滤防环）→
-> click 未取消时递归 control 完整激活管线、取消抑制、disabled noop）；shim
-> 不承接宿主 generic Event——renderer 路径双激活实证（checkbox 翻转两次，
-> 首发实现的 shim finally 段转发被集成测试证伪后重设计）。part60 W1–W6
-> 重写 + integration label_activation_forwards_to_labeled_control（for=/
-> 包裹/取消三面）。九域 4848→**4855P**（65.91%，账本条目口径），对 s18
-> 逐 subtest diff **净 +7P、回归 0**：proxy-modifier tentative 4F 全数翻绿
-> （主面）、label-forwarded-click-pointer-properties 未上报→2P/0F（isTrusted
-> trusted 面随宿主派发通道翻绿，label.click() not-trusted 面走 R155 保持）、
-> simulated-click-inert 翻绿。gates：zero-engine --lib 3355P/0F（合账复跑）、
-> webview lib 785P/0F、renderer activation OK、integration html_compat
-> 21P/0F、clippy/fmt 过、零新增依赖。
-> 账本见
-> [evidence/2026-10-21-m2s19-r4008.md](html-semantics-compat/evidence/2026-10-21-m2s19-r4008.md)。
-> **下一步**：M2 切片 20——details/summary 深层面（键盘激活 / summary
-> toggle coalescing，M1 起既有）或 forms 域余 F 逐簇归因后再定；parser
-> form element pointer 表规则 4F 同根维持单独立项征询不越界。
+> **▶ 当前状态（2026-10-21 M2 切片 20）**：details/summary 深层面（R4009，
+> rollover 接续——代码为上会话 429 中断遗留 WIP，本会话 rebase 后续推，
+> 宿主路径双 toggle 缺陷被集成测试证伪后重设计收口）。四层：toggle 事件
+> 任务队列（part03 `_zwDetailsToggleQ4009`——per-element 去重/同任务合并/
+> 净零仍派/同态不排程/detached 派发；单一 choke point 落 part04 `open`
+> IDL setter + attr 尾钩，页面 JS 与 plan script_set_open 同经；trusted +
+> ToggleEvent 原型身份）+ summary 激活行为（part03 bubble 站钩后代 target
+> 面 + part04 click() post 分支本体面，首个 summary 元素子身份比对，交互
+> 豁免含祖先面）+ ToggleEvent 接口（part05 `_defineEventSubclass`）+ 宿主
+> 空格路由（webview SUMMARY → plan_summary）。双 toggle 修复：plan_summary
+> 移除 followup toggle（page-runtime），发射权统一归队列——集成断言
+> `click:false,toggle:true,click:true` 维持不变，事件形状由同步裸 Event
+> 近似转正为 spec 口径。part60 T1–T9 契约。九域 4855→**4873P**（66.09%），
+> 对 s19 逐 subtest diff **净 +18P、回归 0**，全部落 interactive-elements
+> （77→95P）：toggleEvent.html 1P/2F+未上报→9P/0F、activation-behavior
+> 2P/7F→9P/0F、anchor-without-link 0P/2F→2P/0F、details-keyboard
+> -activation 0P/1F→1P/0F。gates：zero-engine --lib 3358P/0F、page-runtime
+> lib 136P/0F、webview lib 785P/0F、renderer activation 9P/0F、integration
+> html_compat 21P/0F、clippy workspace 过、fmt 本切片文件 clean、零新增
+> 依赖。账本见
+> [evidence/2026-10-21-m2s20-r4009.md](html-semantics-compat/evidence/2026-10-21-m2s20-r4009.md)。
+> **下一步**：M2 切片 21——details name= 属性互斥簇
+> （name-attribute.html 18F + file Timeout，单文件占 interactive-elements
+> 剩余 264F 的 19）；余挂账 toggleEvent 尾部 ontoggle 面、
+> ToggleEvent.source/commandfor、anchor-with-inline 导航缺口（导航域）、
+> parser form element pointer 4F 同根维持单独立项征询不越界。
 
 
 > **▶ 拆分动机（2026-10-08 预留编号立项，用户「候选 goal 也立项吧」）**：继
@@ -108,6 +112,25 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-21 M2 切片 20**：details/summary 深层面（R4009，rollover 接续
+  ——上会话 429 中断遗留 WIP 本会话续推收口）——toggle 事件任务队列
+  （part03：去重/合并/净零/同态不排程/detached；choke point part04 `open`
+  IDL setter + attr 尾钩）+ summary 激活行为（part03 bubble 站钩 + part04
+  post 分支，首个 summary 元素子 + 交互豁免含祖先面）+ ToggleEvent 接口
+  （part05）+ 宿主空格路由（webview SUMMARY → plan_summary）。**宿主双
+  toggle 缺陷重设计**：plan_summary followup toggle 与队列双派被集成测试
+  证伪（`toggle:true,toggle:true`），移除 followup 发射权归队列，断言
+  `click:false,toggle:true,click:true` 不变、事件形状转正。part60 T1–T9。
+  九域 4855→4873P（66.09%），对 s19 逐 subtest diff 净 +18P、回归 0，
+  全落 interactive-elements（77→95P）：toggleEvent 9P/0F、
+  activation-behavior 9P/0F、anchor-without-link 2P/0F、
+  details-keyboard-activation 1P/0F。zero-engine --lib 3358P/0F、
+  page-runtime 136P/0F、webview 785P/0F、renderer activation 9P/0F、
+  integration html_compat 21P/0F、clippy/fmt 过、零新增依赖。挂账：
+  details name= 互斥簇 18F+Timeout（下一切片首选）、toggleEvent 尾部
+  ontoggle 内容属性面、ToggleEvent.source/commandfor、anchor-with-inline
+  synthetic click 导航缺口（导航域）、parser form pointer 4F、
+  navigation-compat M3 项维持。
 - **2026-10-21 M2 切片 19**：label 本体激活转发（R4008，rollover 双触发
   两会话同树协作合账，commit 88793f87d）——shim 交互豁免身份比较（bubble
   站挂钩 + R155 post 段，target 即 label 本体不豁免）+ 宿主面上移（renderer

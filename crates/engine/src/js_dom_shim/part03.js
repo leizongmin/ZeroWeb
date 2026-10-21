@@ -12317,6 +12317,18 @@
               try { _r4004Stag = _realTag(_r114B.sel, _r114B.handle); } catch (_e4004st) { _r4004Stag = ''; }
               if (_r4004Stag === 'LABEL') _zwLabelActivationForward(_r114B.sel, _r114B.handle, event);
             }
+            // R4009（html-semantics M2 切片 20）：summary 激活行为后代 target 面——
+            // click 冒泡经 summary 站且未取消、target 非交互内容 → 翻转所属 details
+            //（spec the-summary-element activation behaviour；交互豁免与 label 同款
+            // `_zwIsInteractiveContentEl`——anchor-without-link 语料：无 href a 及
+            // 其后代 click() → details 开合，a[href] target 豁免）。summary 本身为
+            // click target 的面走 part04 click() post 分支（target 不进冒泡链）。
+            if (event.type === 'click' && !event._defaultPrevented
+                && typeof _zwSummaryActivationForward4009 === 'function') {
+              var _r4009Stag = '';
+              try { _r4009Stag = _realTag(_r114B.sel, _r114B.handle); } catch (_e4009st) { _r4009Stag = ''; }
+              if (_r4009Stag === 'SUMMARY') _zwSummaryActivationForward4009(_r114B.sel, _r114B.handle, event);
+            }
             if (bubbleStopped()) break;
           }
         }
@@ -12613,6 +12625,160 @@
     try { ev._zwUaDispatch = true; } catch (_e312u) {}
     return ev;
   };
+
+  // ── R4009（html-semantics M2 切片 20）：details toggle 事件任务队列 ──
+  //
+  // spec（interactive-elements.html#binding-details）：open 内容属性增删后「queue an
+  // element task given the details element to fire an event named toggle」——同任务内
+  // 多次开合**合并单事件**，oldState = 首个真变迁前状态、newState = 任务运行时当下
+  // 状态（净零变迁 closed→…→closed 仍派发——toggleEvent.html t2 断言面）；同态写
+  //（presence 不变）不排程（t9/t10 断言面）。per-element key 去重（已排程的元素仅
+  // 更新存在性，不重复入队）。导航经 `__zw_reset_form_state` 清空（per-page）。
+  // 触发点：part04 `p === 'open'` IDL setter（页面 JS + plan script_set_open 同经）、
+  // part04 setAttribute/removeAttribute 的 'open' 尾钩——写后读一律 latest-wins
+  //（同 execute 内 pending 面可见，与 `_zwReadPopover` 同惯例）。
+  // https://html.spec.whatwg.org/multipage/interactive-elements.html#binding-details
+  var _zwDetailsToggleQ4009 = {};
+  function _zwDetailsHasOpen4009(sel, handle) {
+    if (handle && typeof __zw_has_attr_handle === 'function') return __zw_has_attr_handle(handle, 'open') === '1';
+    if (typeof __zw_has_attr_lw === 'function') return __zw_has_attr_lw(sel, 'open') === '1';
+    return typeof __zw_has_attr === 'function' && __zw_has_attr(sel, 'open') === '1';
+  }
+  // R312 UA 通道 + ToggleEvent 接口双面：trusted（页面 Event 构造器恒 false）且
+  // `Object.getPrototypeOf(evt) === ToggleEvent.prototype`（toggleEvent.html 双断言）。
+  function _zwMakeTrustedToggleEvent4009(oldState, newState) {
+    var ev;
+    if (typeof globalThis.ToggleEvent === 'function') {
+      ev = new globalThis.ToggleEvent('toggle', { oldState: oldState, newState: newState, bubbles: false, cancelable: false });
+      try { ev.isTrusted = true; } catch (_eT4009) {}
+      try { ev._zwUaDispatch = true; } catch (_eT4009b) {}
+    } else {
+      ev = (typeof globalThis.__zwMakeTrustedEvent === 'function')
+        ? globalThis.__zwMakeTrustedEvent('toggle', {}) : _makeEvent('toggle', {});
+      ev.oldState = oldState;
+      ev.newState = newState;
+    }
+    return ev;
+  }
+  // prePresent：调用方写入前捕获的 presence（null = 调用方未判，内部自读）。写后读
+  //当下 presence 比对——真变迁才入队。`__zwMakeTrustedEvent` 旁落地（part04 复用）。
+  function _zwToggleQueueNotify4009(sel, handle, prePresent) {
+    var tag = '';
+    try { tag = _realTag(sel, handle); } catch (_eTag4009) { tag = ''; }
+    if (tag !== 'DETAILS') return; // dialog open setter 同面但无 toggle 语义（R3290）
+    var pre = (prePresent === null || prePresent === undefined)
+      ? _zwDetailsHasOpen4009(sel, handle) : !!prePresent;
+    var post = _zwDetailsHasOpen4009(sel, handle);
+    if (post === pre) return; // 同态写不排程（t9/t10）
+    var key = _elKey(sel, handle);
+    if (key == null) return;
+    if (_zwDetailsToggleQ4009[key]) return; // 已排程——同任务后续变迁仅更新存在性
+    var entry = _zwDetailsToggleQ4009[key] = { sel: sel, handle: handle, old: post ? 'closed' : 'open' };
+    var fire = function () {
+      if (_zwDetailsToggleQ4009[key] !== entry) return;
+      delete _zwDetailsToggleQ4009[key];
+      try {
+        var newState = _zwDetailsHasOpen4009(entry.sel, entry.handle) ? 'open' : 'closed';
+        var proxy = _makeProxy(entry.sel, entry.handle);
+        if (!proxy || typeof proxy.dispatchEvent !== 'function') return;
+        proxy.dispatchEvent(_zwMakeTrustedToggleEvent4009(entry.old, newState));
+      } catch (_eFire4009) {}
+    };
+    // 异步 task 排程——`_zwScheduleSelectEvent`（R3906）同款 timer 链模板。
+    if (typeof globalThis.setTimeout === 'function') globalThis.setTimeout(fire, 0);
+    else if (typeof queueMicrotask === 'function') queueMicrotask(fire);
+    else if (typeof Promise === 'function') Promise.resolve().then(fire);
+    else fire();
+  }
+
+  // ── R4009：summary 激活行为（spec the-summary-element activation behaviour）──
+  //
+  // 本 summary 为父 details 的**首个 summary 元素子**（activation element，spec
+  // the-details-element 定义）时翻转 details open——presence 写经 proxy `.open`
+  // setter 落 toggle 队列。父解析：handle 走 `_zwNodeParent`、sel 走 `__zw_parent`
+  // 一跳（`_zwPopoverTargetActivate` 祖先链同款惯例）；非 DETAILS 父或非首个
+  // summary 子 → no-op（has-preceding-summary / summary-nested 语料断言面）。
+  // https://html.spec.whatwg.org/multipage/interactive-elements.html#the-summary-element:activation-behaviour
+  function _zwSummaryOwningDetails4009(sSel, sHnd) {
+    var pSel = null, pHnd = null;
+    if (sHnd && typeof _zwNodeParent !== 'undefined' && _zwNodeParent && _zwNodeParent[sHnd]) {
+      pSel = _zwNodeParent[sHnd].parentSel || null;
+      pHnd = _zwNodeParent[sHnd].parentHandle || null;
+    }
+    if (!pSel && sSel && typeof __zw_parent === 'function') {
+      try { pSel = __zw_parent(sSel) || null; } catch (_ePar4009) { pSel = null; }
+    }
+    if (!pSel && !pHnd) return null;
+    var pTag = '';
+    try { pTag = _realTag(pSel, pHnd); } catch (_ePTag4009) { pTag = ''; }
+    if (pTag !== 'DETAILS') return null;
+    var pProxy = null;
+    try { pProxy = _makeProxy(pSel, pHnd); } catch (_ePP4009) { pProxy = null; }
+    if (!pProxy) return null;
+    var kids = null;
+    try { kids = pProxy.children; } catch (_eKid4009) { kids = null; }
+    if (!kids || typeof kids.length !== 'number') return null;
+    var sKey = null;
+    try { sKey = _elKey(sSel, sHnd); } catch (_eSK4009) { sKey = null; }
+    for (var i4009 = 0; i4009 < kids.length; i4009++) {
+      var kid = kids.item ? kids.item(i4009) : kids[i4009];
+      if (!kid || typeof kid !== 'object') continue;
+      var kTag = '';
+      try { kTag = _realTag(kid.__zwSelector, kid.__zwHandle); } catch (_eKTag4009) { kTag = ''; }
+      if (kTag !== 'SUMMARY') continue; // 元素子口径（children 已是 element 集合）
+      var kKey = null;
+      try { kKey = _elKey(kid.__zwSelector, kid.__zwHandle); } catch (_eKKey4009) { kKey = null; }
+      return (sKey != null && kKey != null && kKey === sKey) ? { sel: pSel, handle: pHnd } : null;
+    }
+    return null;
+  }
+  function _zwSummaryActivate4009(sSel, sHnd) {
+    var own = null;
+    try { own = _zwSummaryOwningDetails4009(sSel, sHnd); } catch (_eOwn4009) { own = null; }
+    if (!own) return;
+    var dProxy = null;
+    try { dProxy = _makeProxy(own.sel, own.handle); } catch (_eDP4009) { dProxy = null; }
+    if (!dProxy || typeof dProxy.dispatchEvent !== 'function') return;
+    try { dProxy.open = !_zwDetailsHasOpen4009(own.sel, own.handle); } catch (_eFlip4009) {}
+  }
+  // bubble 站钩（part04 R155 同位面）：click 冒泡经 summary 站且 target 非交互内容
+  //（`_zwIsInteractiveContentEl`——a[href]/button 等；无 href a 非交互，anchor-
+  // without-link 语料翻绿面）→ 激活。summary.click() API 面 target 即 summary、
+  // 不进冒泡链，本钩不触发（part04 post 分支承接，两面不重叠）。交互豁免含**祖先
+  // 面**：target 到 summary 站之间任一祖先为交互内容（a[href] 内 inline 元素——
+  // anchor-with-inline-element 语料形态）→ activation target 是该祖先非 summary，
+  // 不翻转（spec activation target 就近 activatable 祖先语义）。
+  function _zwHasInteractiveAncestorBefore4009(tgt, sSel, sHnd) {
+    var sKey = null;
+    try { sKey = _elKey(sSel, sHnd); } catch (_eSKb4009) { sKey = null; }
+    var cur = tgt, guard = 0;
+    while (cur && typeof cur === 'object' && guard++ < 32) {
+      var cKey = null;
+      try { cKey = _elKey(cur.__zwSelector, cur.__zwHandle); } catch (_eCK4009) { cKey = null; }
+      if (sKey != null && cKey != null && cKey === sKey) return false; // 到达 summary 站
+      if (_zwIsInteractiveContentEl(cur)) return true;
+      var cSel = cur.__zwSelector || null, cHnd = cur.__zwHandle || null;
+      var pSel = null, pHnd = null;
+      if (cHnd && typeof _zwNodeParent !== 'undefined' && _zwNodeParent && _zwNodeParent[cHnd]) {
+        pSel = _zwNodeParent[cHnd].parentSel || null;
+        pHnd = _zwNodeParent[cHnd].parentHandle || null;
+      }
+      if (!pSel && cSel && typeof __zw_parent === 'function') {
+        try { pSel = __zw_parent(cSel) || null; } catch (_ePb4009) { pSel = null; }
+      }
+      if (!pSel && !pHnd) return false;
+      try { cur = _makeProxy(pSel, pHnd); } catch (_eMPb4009) { return false; }
+    }
+    return false;
+  }
+  function _zwSummaryActivationForward4009(sSel, sHnd, event) {
+    var tgt = null;
+    try { tgt = event && event.target; } catch (_eTg4009) { tgt = null; }
+    if (!tgt || typeof tgt !== 'object') return;
+    if (_zwIsInteractiveContentEl(tgt)) return;
+    try { if (_zwHasInteractiveAncestorBefore4009(tgt, sSel, sHnd)) return; } catch (_eAnc4009) {}
+    _zwSummaryActivate4009(sSel, sHnd);
+  }
 
 
   function _tagFromSel(sel) {
