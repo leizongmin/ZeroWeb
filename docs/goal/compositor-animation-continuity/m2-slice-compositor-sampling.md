@@ -97,6 +97,8 @@ Get 帧且 flag 开启且 surface 有声明且存在 composable 动画未完成:
 | S1d | browser：`animations_active` 轮询保持 + 采纳置 `needs_redraw` | `apps/browser/src/{process_backend,app}.rs`、`crates/page-runtime` 契约同步 | 多进程集成（新鲜 peer 二进制，guidelines #12）：忙负载下帧持续更新 |
 | S1e | DC-1 验收：真实窗口 COMP-01+负载跑、flag 双向对照、证据落账 | 脚本复用 frame_dump + run-observe 模式 | §1 验收场景 |
 
+上表 S1a-S1e 全部完成（2026-10-21，S1e 判 DC-1 有条件成立：非忙窗 256 帧连续采样；忙窗 ~1s 空洞归因浏览器主线程 Wayland 耦合，属既有呈现路径，记缺口表）。状态与证据以 [控制面 master](master.md) 为准。
+
 **回滚切点**：每步独立可回退；flag 默认关贯穿 S1，翻默认属 S1e 后独立决策（需 perf-gate 证据）。
 
 **提交批次建议**：S1a 自成一批（纯追加零行为）；S1b/S1c 各自 flag 门控成批；S1d 随 S1c 或紧随；S1e 证据批。

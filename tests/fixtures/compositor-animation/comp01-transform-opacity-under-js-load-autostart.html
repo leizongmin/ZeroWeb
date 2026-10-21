@@ -1,0 +1,79 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>COMP-01 transform/opacity under bounded JS load (autostart)</title>
+<style>
+  /* COMP-01 autostart 变体（compositor-animation-continuity DC-1 / S1e）：
+     与 comp01-transform-opacity-under-js-load.html 同动画/负载，差别仅在
+     load 后 1.5s 自动触发 __zwStartLoad()——窗口模式无 automation 注入通道
+     （M1 window-frames README §局限），S1e 真实窗口验收用本变体承载负载时序。
+     动画通道时长互质（1.0s / 1.3s）使任意采样时刻两通道相位组合可区分。 */
+  body { margin: 0; background: #ffffff; }
+  #opacity-box {
+    position: absolute; left: 24px; top: 32px;
+    width: 128px; height: 128px;
+    background: rgb(200, 30, 30);
+    animation: comp01-fade 1s linear infinite alternate;
+  }
+  #transform-box {
+    position: absolute; left: 216px; top: 96px;
+    width: 96px; height: 96px;
+    background: rgb(30, 90, 220);
+    animation: comp01-spin 1.3s linear infinite alternate;
+  }
+  @keyframes comp01-fade {
+    from { opacity: 1; }
+    to { opacity: 0.05; }
+  }
+  @keyframes comp01-spin {
+    from { transform: rotate(0deg) translateX(36px); }
+    to { transform: rotate(180deg) translateX(0px); }
+  }
+  #load-marker {
+    position: absolute; left: 24px; top: 288px;
+    font: 14px monospace;
+    color: rgb(20, 20, 20);
+  }
+</style>
+</head>
+<body>
+  <div id="opacity-box"></div>
+  <div id="transform-box"></div>
+  <div id="load-marker">load=idle</div>
+  <script>
+    // 有界忙循环（信任边界：ms 由调用方钳制到 [0, 5000]）。
+    window.__zwBusy = function (ms) {
+      var budget = Math.max(0, Math.min(5000, Number(ms) || 0));
+      var t0 = performance.now();
+      while (performance.now() - t0 < budget) { Math.sqrt(12345.678); }
+      return Math.round(performance.now() - t0);
+    };
+    // 有界 JS 负载（DC-1「页面运行有界长 JS」）：4 片 × 220ms 忙循环，片间 80ms，
+    // 总忙 ~0.9s / 总墙钟 ~1.2s；每片更新 #load-marker 文本（负载推进可观测）。
+    window.__zwStartLoad = function () {
+      if (window.__zwLoadRunning) { return false; }
+      window.__zwLoadRunning = true;
+      var slices = 4, done = 0;
+      var marker = document.getElementById('load-marker');
+      function next() {
+        if (done >= slices) {
+          marker.textContent = 'load=done slices=4';
+          window.__zwLoadRunning = false;
+          return;
+        }
+        window.__zwBusy(220);
+        done++;
+        marker.textContent = 'load=slice ' + done + '/4';
+        setTimeout(next, 80);
+      }
+      setTimeout(next, 30);
+      return true;
+    };
+    // S1e：load 后延迟 1.5s 自动触发（首帧稳定落地在前，负载窗与静默窗可区分）。
+    window.addEventListener('load', function () {
+      setTimeout(function () { window.__zwStartLoad(); }, 1500);
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,1 @@
+mode=on flag=ZW_COMPOSITOR_ANIMATIONS=1 wall=14s fixture=comp01-transform-opacity-under-js-load-autostart.html
