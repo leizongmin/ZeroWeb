@@ -787,3 +787,5 @@ mod r5215_atomic_flow_tests;
 mod r5216_line_float_fit_tests;
 /// R5217（CSS2 §9.5 规则 2 × §10.3.3）BFC 旁置 float margin-aware 钉位解几何锚点。
 mod r5217_bfc_margin_pin_beside_tests;
+/// R5218（CSS2 §9.2.1 × §10.6.3）含 inline-flex/inline-grid 子的块容器行盒高合成锚点。
+mod r5218_atomic_inline_container_height_tests;

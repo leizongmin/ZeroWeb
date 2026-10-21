@@ -3040,6 +3040,24 @@ fn r5215_atomic_subtree_has_text(doc: &Document, root: NodeId) -> bool {
     false
 }
 
+/// R5218（CSS2 §9.2.1 行内级原子盒）：child 盒是否为 inline-flex/inline-grid 直判。
+/// engine.rs 的 `LayoutBox.is_block_level` 把 InlineFlex/InlineGrid 列为块级（taffy
+/// Flex/Grid 映射视角），但行内落排与容器高度合成语义上它们与 inline-block 同族
+///（行内级原子盒）——remeasure 的 inline-only 门须按本判定豁免，否则含这些子的块
+/// 容器不进 IFC 重测/高度收缩，高度保留 taffy 块堆叠累加值（with-margin 族 ref 页
+/// group 296px = 7×42 逐盒累加根因）。判据与 postprocess
+/// `adjust_inline_block_positions` 的 ib_indices 收集同源。
+/// 收窄不含 InlineTable：inline-table 有表格管线专道（`is_table_without_internals`
+/// 及 table sizing pass），并入 IFC 收缩与表格 sizing 打架（margin-applies-to-014
+/// 1.54% 回归实证），维持现状。
+fn is_atomic_inline_family_box(c: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> bool {
+    c.node_id.is_some_and(|id| {
+        styles
+            .get(&id)
+            .is_some_and(|s| matches!(s.display, DisplayValue::InlineFlex | DisplayValue::InlineGrid))
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn remeasure_inline_only_containers(
     box_node: &mut LayoutBox,
@@ -3103,10 +3121,12 @@ pub(crate) fn remeasure_inline_only_containers(
     // 检查此容器是否有 inline-level 子元素（is_block_level == false）
     // 且不包含 float 子元素（float 容器由 remeasure_text_with_float_exclusions 处理）
     let has_floats = box_node.children.iter().any(|c| !matches!(c.float, FloatValue::None));
+    // R5218：inline-flex/inline-grid 子（is_block_level=true）计入 inline 级——纯原子
+    // 族行容器也须进 IFC 重测合成行盒高。
     let has_inline_children = box_node
         .children
         .iter()
-        .any(|c| !c.is_block_level && !c.is_absolute && !c.is_fixed);
+        .any(|c| (!c.is_block_level || is_atomic_inline_family_box(c, styles)) && !c.is_absolute && !c.is_fixed);
     // R4108（CSS2 §9.2.1.1 块容器的匿名块序列 + §10.3.2 replaced inline）：容器**同时**有
     // 块级 in-flow 子与 inline 级子、且其 inline 级子**全部为 replaced 类标签**（svg/canvas/
     // img 等——converter 映射 taffy Block 按匿名块序列堆叠，几何已正确）时跳过本 remeasure：
@@ -3633,10 +3653,12 @@ pub(crate) fn remeasure_inline_only_containers(
             // 纯 inline-level 容器且非特殊布局容器：允许减小高度。
             // taffy 将 inline 元素映射为 Block，会错误地包含 inline 元素的垂直 margin，
             // 而 CSS 2.1 规定 inline 元素的 margin-top/margin-bottom 不影响行盒高度。
+            // R5218：inline-block 家族子（is_block_level=true 的 InlineFlex 族）不计入
+            // block_children——混合原子族行的容器高度同样收缩到 IFC 行盒高。
             let has_block_children = box_node
                 .children
                 .iter()
-                .any(|c| c.is_block_level && !c.is_absolute && !c.is_fixed);
+                .any(|c| c.is_block_level && !is_atomic_inline_family_box(c, styles) && !c.is_absolute && !c.is_fixed);
             let is_layout_container = matches!(
                 style.display,
                 DisplayValue::Flex
