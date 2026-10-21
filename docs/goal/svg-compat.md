@@ -68,9 +68,13 @@ XML 序列化底座共享（DOMParser），改动互核；与 uievents-compat �
 
 ## Done Criteria
 
-- [ ] **DC-1**：svg/ corpus 可执行子集导入（DOM 面清单优先）+ 分类基线 +
-      suites CSV 回填；渲染断言面占比盘点入档
-- [ ] **DC-2**：SVG DOM 类层级 + SVGSVGElement viewBox/CTM 最小面修齐
+- [x] **DC-1**：svg/ corpus 可执行子集导入（DOM 面清单优先）+ 分类基线 +
+      suites CSV 回填；渲染断言面占比盘点入档（2026-10-21 M1 收口——基线
+      8.8% + 渲染断言面 76.4% 入档 + CSV 行回填，见
+      evidence/2026-10-21-m1-baseline.md）
+- [x] **DC-2**：SVG DOM 类层级 + SVGSVGElement viewBox/CTM 最小面修齐
+      （2026-10-21 M2 S1–S4c 收口——corpus 63.6%，零 Pass 回归全切片，
+      见 evidence/2026-10-21-m2-s4c-pathdata-landing.md）
 - [ ] **DC-3**：SVGGeometryElement 几何接口 + 事件目标化修齐；SMIL 评估记账
 - [ ] **DC-4**：`make test` 全绿 + clippy `-D warnings` + fmt + reftest 零回归
 

@@ -1,46 +1,41 @@
 # SVG 文档面兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../svg-compat.md](../svg-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-21（M2 S4b-2 落地）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-21（M2 S4c 落地，M2 收口）
 
 ## 当前状态
 
-**M2 S4b-2 完成（2026-10-21）**：SVGBoundingBoxOptions paint 几何盒——
-stroke 面（`_zwSvgStrokeBbox` 公式盒 ±sw/2；line/poly/polyline/path 走
-`_zwSvgGeomLens`+`_zwSvgStrokeWalk`：逐样本法向 offset + run 内部样本
-sw/2 外逼近盘（曲线对称极值 chord 零欠冲根修）+ 数据顶点 join（round
-圆盘 / miter 尖含 1/sinHalf ≤ miterlimit 门槛）+ run 端 cap（butt 无延伸
-/ round 圆盘 / square）+ 命令性零长段 zeros（round/square 产点、butt 不
-产、moveto-only run 不产））+ markers 面（start/mid/end 顶点放置：
-markerUnits 缺省 strokeWidth、viewBox→markerWidth/Height、refX/refY 对
-位、orient 数值（auto FIXME→0）、任意 marker 盒并入 fill 盒）+ clipped
-面（clipPath 子级并集：circle∩circle 精确 lens 盒 + use 子解引用 + 子自
-身 clip 递归；objectBoundingBox 以 fill 盒为参照；SVG1.1 clip 属性
-rect(t,r,b,l) 相对元素原点；引用缺失/非 clipPath/空 clipPath 全裁零盒；
-严格相交——边点接触→EMPTY；查询元素为 use 时区域随 (x,y) 平移）。
-clip/marker 子树渲染判定走 skipTagGuard（defs 归属豁免）。text 定位点集
-重写（tspan 子定位点并集 + x/y 缺省 0）。全 corpus 486 案终值
-**1046P/650F/40T/0NR = 60.3%**（合并并行 navigation 流 M3-S5 后测量；
-对 S4b-1 997P/665F/40T：本流同分母归因恰 +15P/-15F——-05 +11、-09 +4，
-其余案零移动；另 +34P 属 navigation 流新增子测试全 Pass，分母
-1702→1736；Timeout 持平，合并树全绿案 140）。-05 4/15→**15/15**、
--09 20/24→**24/24**、getBBox 全量 146P/2F（唯二 F 既有挂账）；
-path/parsing 116P/0F 零回归。卡点①：S4c pathData API（path/interfaces
-0P/56F 未实现面）。卡点②：fo5 零盒机制溯源未闭环（行为两侧对齐
-Chrome，机制未溯，探针待跑，不阻塞）。fmt 门禁已绿（fa6ffacc9 修复
-comp-anim 流带入红，`cargo fmt --all --check` EXIT=0），跨流碰头解除；
-DC-4 全 workspace `make test` 复跑 **EXIT=0**（树基 c674eccb3；首跑唯一
-红 = cdp_focus_governance 6 子，TV-5 陈旧 bin 守卫——本切片 shim 改动使
-zero-renderer bin 落后 mtime，test-guard 内重编后 6/6 过，非语义回归）。
-下一步：S4c pathData
-API 评估 → S4 完成后 M2 CSV 行回填。
+**M2 S4c 完成——M2 全部切片收口（2026-10-21）**：pathData API——
+getPathData（`{type,values}` 普通对象序列每调用重建、隐式重复组逐组拆段
+（M 后续组为 lineto 大小写随 moveto）、malformed d 合法前缀截断、
+`{normalize:true}` 绝对 M/L/C/Z 缩减：H/V→L、相对→绝对、S/T 平滑反射、
+Q/T 升阶、A 按 F.6.5/F.6.6 端点→中心参数化分解 cubic 多段等分）+
+setPathData（sequence\<PathDataSegment\> iterable 承接、逐段 dictionary
+校验（type 单字符 ∈ MLHVCSQTAZ、精确 arity、数值有限）、段级错误合法前缀
+截断、前缀空或首段非 moveto 移除 d、写走 setAttribute/removeAttribute
+联动 MutationObserver）+ SVGAnimationElement begin/end 控制面 stub
+（SMIL 时钟未接入 FIXME(svg-compat M4)）+ `_zwSvgPathParse` Z 尾数死循环
+根修（S4a 期潜伏：cnt undefined 消费不推进挂死 runner，修复后 parsing
+116P/0F 零回归实证）。attribute base value 语义：CSS d property/SMIL/
+Web Animations 动画态均不入 getPathData。全 corpus 对账（S4b-2 基线
+1046P/650F/40T = 60.3%）：原始全量 **1104P/590F/41T/0NR = 63.6%**
+（+58P/-60F，其中 54 属 path/interfaces 靶面 0P/56F→**54P/2F**；4 属
+时序敏感案抖动——单案复跑 F/P 抖动实证，不记归因），探针剔除同分母
+**1070P/590F/41T = 62.9%**（基线 59.5%）；逐子测试零 Pass 回归零 DOWN。
+Timeout 40→41：syncbase-escaped-dots F(2)→T(1) 分类移动（beginElement
+stub 存在→等 beginEvent 不至，pre/post 单案对照机制已溯，SMIL 挂账面
+预期移动）。path/interfaces 唯二 F = setPathData-css-d.tentative（CSS
+域协同挂账）。DC-4：fmt EXIT=0 + 定向 zero-engine（test-guard 4G/8G/
+3000s）**3372P/0F EXIT=0**。卡点①：M2 CSV 行回填未做。卡点②：fo5
+零盒机制溯源未闭环（行为两侧对齐 Chrome，机制未溯，探针待跑，不阻塞，
+继承）。下一步：M2 CSV 行回填 → M4 SMIL 分类账重跑与挂账定稿。
 
 ## 缺口清单
 
 | # | 缺口 | 状态 |
 |---|------|------|
 | P1 | svg/ corpus 导入 + 基线 + 渲染断言面占比盘点 | ✅ M1（2026-10-21，8.8% 基线） |
-| P2 | SVG DOM 类层级 + SVGSVGElement viewBox/CTM 最小面 | ⏳ M2（S1 ✅ S2a ✅ S2b ✅ S2c ✅ S3 ✅ S4a ✅ S4b-1 ✅ S4b-2 ✅ 2026-10-21，S4c 进行中） |
+| P2 | SVG DOM 类层级 + SVGSVGElement viewBox/CTM 最小面 | ✅ M2（2026-10-21，S1–S4c 全切片 ✅，corpus 63.6%） |
 | P3 | SVGGeometryElement 几何接口 + 事件目标化 | ⏳ M3 |
 | P4 | SMIL 评估 + 渲染断言面挂账定稿 | ⏳ M4 |
 
@@ -96,26 +91,37 @@ API 评估 → S4 完成后 M2 CSV 行回填。
   session 端到端持有——stroke walk + markers 顶点放置 + clip 交集装配，
   三处根因修出：clip 子树 defs 豁免 skipTagGuard / run 内部样本外逼近盘 /
   `_zwSvgBboxIntersect` 严格相交，两轮修出后全量对账）。corpus 两段测量：
-  本流同分母 1012P/650F/40T/0NR = 59.5%（恰 +15P/-15F，全绿案 133→135，
-  零 DOWN 零子测试回归）；合并 navigation 流后终值 1046P/650F/40T/0NR =
-  60.3%（+34P 属对方新增子测试，分母 1702→1736）；-05 4/15→15/15、
+  探针剔除同分母 1012P/650F/40T/0NR = 59.5%（恰 +15P/-15F，全绿案
+  133→135，零 DOWN 零子测试回归）；原始全量 1046P/650F/40T/0NR = 60.3%
+  （+34P 为 5 个本地探针案断言 6+7+5+6+10，分母 1702→1736——初记
+  「属 navigation/对方新增」系误归因，逐文件核验后更正）；-05 4/15→15/15、
   -09 20/24→24/24。第七次会话重叠：并行看护 session 跑全量 corpus 对账
   并外部精修 evidence，本 session 互让等待后核验 runner 二进制含本切片
-  改动采其收尾数字，随后清杀孤儿 runner 以唯一日志名复跑取合并树终值；
+  改动采其收尾数字，随后清杀孤儿 runner 以唯一日志名复跑取原始全量口径；
   源码面/master.md 归本 session。fmt 门禁绿（fa6ffacc9 修复），定向
   zero-engine（test-guard）3358P/0F；DC-4 全 workspace `make test`
   复跑 EXIT=0（树基 c674eccb3；首跑唯一红 = cdp_focus_governance 6 子，
   TV-5 陈旧 bin 守卫由本切片 shim 改动触发，重编 zero-renderer 后 6/6
   过）。证据：evidence/2026-10-21-m2-s4b2-paint-geometry-landing.md。
+- **M2 S4c（2026-10-21）**：pathData API + SVGAnimationElement 控制面
+  stub + `_zwSvgPathParse` Z 尾数死循环根修（编码与定向验证在前一审
+  session 完成、5 小时限额中断，corpus 复跑/DC-4/对账由接续 session
+  补完收口）。path/interfaces 0P/56F→**54P/2F**；全 corpus 原始
+  1104P/590F/41T = 63.6%、探针剔除同分母 62.9%（对 S4b-2 基线恰
+  +58P/-60F 零 Pass 回归零 DOWN，54 属靶面、4 属时序案抖动不记归因）；
+  syncbase F(2)→T 分类移动机制已溯（SMIL 挂账面预期移动）。
+  **M2 至此全部切片完成**。证据：
+  evidence/2026-10-21-m2-s4c-pathdata-landing.md。
 
 ## 下一步计划
 
-1. **M2 S4c pathData API**（path/interfaces 0P/56F 未实现面）：getPathData/
-   setPathData（normalize 选项、malformed d 截断、detached 元素、SMIL/Web
-   Animations base value 域划界）评估切片边界 → S4 完成后 M2 CSV 行回填。
+1. **M2 CSV 行回填**：docs/compat/trends/wpt-suites.csv 的 svg 行以 M2
+   完成口径更新数据行（原始 63.6% / 探针剔除 62.9%，S4c 证据列为来源），
+   M1 期 planned 行转数据行收尾。
 2. **M4 SMIL 分类账重跑**：S3 脚手架已释放时序面（seeking-events 族 F→T、
    invalid-value 族平凡全绿），M4 SMIL 评估须以 S3 后口径重跑分类（见
-   evidence/2026-10-21-m4-smil-assessment-prep.md + S3 landing 排片对位）。
+   evidence/2026-10-21-m4-smil-assessment-prep.md + S3 landing 排片对位）；
+   S4c 后新增 syncbase-escaped-dots F(2)→T 移动一并归口。
 3. **上下文换算补面（S2a FIXME）**：SVGLength 关联元素的 em/ex/percentage
    上下文（SVGLength-viewport 8F / percentage-directionality 6F）——与
    getBBox 几何上下文同批评估。

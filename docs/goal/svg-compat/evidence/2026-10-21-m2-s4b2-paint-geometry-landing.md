@@ -82,11 +82,13 @@ collect paint 线程化 + text 定位点集重写 + S4b-2 子系统块 + getBBox
      59.5%**——对 S4b-1 997P/665F/40T 恰 **+15P/-15F**（-05 +11、-09 +4
      与分面实测吻合，其余案零移动），Timeout 40 持平，全绿案 133→135，
      逐案零 DOWN。
-  2. 合并 navigation 流 M3-S5 postMessage 面后终值（孤儿 runner 清杀后
-     唯一 runner 复跑，日志唯一名）：**1046P/650F/40T/0NR = 60.3%**——
-     分母 1736（+34 子测试全 Pass 属 navigation 流新增面，非本流），
-     F/T 持平，合并树全绿案 140（含 navigation 贡献）。本流归因仍以 ①
-     同分母 +15P/-15F 为准。
+  2. 原始全量口径（含 5 个本地探针案，分母 1736 断言/491 文件；孤儿
+     runner 清杀后唯一 runner 复跑，日志唯一名）：**1046P/650F/40T/0NR =
+     60.3%**——1736−1702 = +34P 全部为探针案断言（s2b/s2c/s3/s4a/s4b-probe
+     6+7+5+6+10，逐文件 uniq 核验；SVG corpus 文件宇宙无 navigation 流
+     新增，初记「属 navigation 流新增面」系误归因，本行更正）；F/T 持平，
+     全绿案 135（探针剔除）/140（含探针）。本流归因仍以 ① 同分母
+     +15P/-15F 为准。
   runner 二进制构建时间晚于 part03.js 末次修改，确认两次对账均含本切片
   全部改动。
 - DC-4 全 workspace `make test`（TIME_LIMIT=3000 守卫跑）：首跑唯一红 =

@@ -4422,6 +4422,32 @@
       });
     }
   }
+  // svg-compat M2 S4c 前置：SVGAnimationElement begin/end 控制面 stub（spec
+  // SVG2 animate.html §InterfaceSVGAnimationElement）。SMIL 时钟未接入
+  // （FIXME(svg-compat M4)）：begin/end 仅作控制面存在性（无渲染采样）——
+  // setPathData-during-animation 案只消费 beginElement 可调用性 + 属性 base
+  // 值读写，动画采样不在消费面（S3 pauseAnimations 控制面 stub 同口径）。
+  if (globalThis.SVGAnimationElement && globalThis.SVGAnimationElement.prototype) {
+    var _zwSvgAnimP = globalThis.SVGAnimationElement.prototype;
+    if (!_zwSvgAnimP.beginElement) {
+      _zwSvgAnimP.beginElement = function () {};
+    }
+    if (!_zwSvgAnimP.beginElementAt) {
+      _zwSvgAnimP.beginElementAt = function (offset) {
+        var n = Number(offset);
+        if (!isFinite(n)) throw new TypeError('The provided float value is non-finite');
+      };
+    }
+    if (!_zwSvgAnimP.endElement) {
+      _zwSvgAnimP.endElement = function () {};
+    }
+    if (!_zwSvgAnimP.endElementAt) {
+      _zwSvgAnimP.endElementAt = function (offset) {
+        var n = Number(offset);
+        if (!isFinite(n)) throw new TypeError('The provided float value is non-finite');
+      };
+    }
+  }
   // svg-compat M2 S4a：SVGGeometryElement 几何面（spec SVG2 paths.html
   // §PathDataBNF/§PathDataErrorHandling + types.html §InterfaceSVGGeometryElement；
   // 六形状 mixin）。语义要点（WPT path/parsing 11 案 + types 2 案对位）：
@@ -4515,6 +4541,7 @@
         cur.args.push(p1[0], p2[0], p3[0], f1, f2, p4[0], p5[0]);
       } else {
         var cnt = groupCnt[U], gok = true;
+        if (cnt === undefined) break;  // Z 后尾随数字 → 错误截断（无 arity 映射，防死循环）
         for (var g = 0; g < cnt; g++) {
           var pv = _zwSvgPathScanNum(s, i);
           if (!pv) { gok = false; break; }  // 组内缺数 → 完整组保留，尾组丢弃
@@ -4781,6 +4808,238 @@
              anchors: verts, drawn: pts.length,
              verts: verts, vAnchors: vAnchors, zeros: zeros, runStarts: runStarts };
   };
+  // ── svg-compat M2 S4c：pathData API helpers（spec SVG2 paths.html
+  // §InterfaceSVGPathData + §SVGPathDataSettings；SVG1.1 SVGPathSeg* 世界已
+  // 于 SVG2 移除、Chromium 兼容保有——getPathData/setPathData 走纯属性面，
+  // CSS d property 不入 getPathData（css-d-vs-attribute 定谳：attribute base
+  // value 语义，SMIL/Web Animations 动画态同取 base）。_zwSvgPathParse 产
+  // cmds（隐式重复组并入单 cmd args）→ 下列 helpers 拆组/归一/序列化。）
+  var _zwSvgPathSegArity = function (U) {
+    return U === 'H' || U === 'V' ? 1
+      : U === 'C' ? 6 : U === 'S' || U === 'Q' ? 4
+      : U === 'A' ? 7 : U === 'Z' ? 0 : 2;  // M/L/T
+  };
+  // d 属性 → PathDataSegment 序列（type 保留属性原文大小写；隐式重复组逐组
+  // 拆段——M 后续组为 lineto，大小写随 moveto，spec §PathDataBNF；部分尾组
+  // 丢弃、完整组保留（§PathDataErrorHandling）；字母无完整组（'M 10 20 L'）
+  // → 无段产出；路径须以 moveto 开头（bare 'Z' → 空序列）。每调用产新对象
+  // （fresh array 定谳面）。
+  var _zwSvgPathDataOf = function (d) {
+    var cmds = _zwSvgPathParse(d);
+    var segs = [];
+    for (var ci = 0; ci < cmds.length; ci++) {
+      var c = cmds[ci].c;
+      var U = c >= 'A' && c <= 'Z' ? c : String.fromCharCode(c.charCodeAt(0) - 32);
+      var args = cmds[ci].args;
+      if (U === 'Z') {
+        segs.push({ type: c, values: [] });
+        if (args.length) break;  // Z 后尾随数字 → 错误截断（Z 本身保留）
+        continue;
+      }
+      var ar = _zwSvgPathSegArity(U);
+      var full = Math.floor(args.length / ar);
+      for (var gi = 0; gi < full; gi++) {
+        var type = U === 'M' && gi > 0 ? (c === 'M' ? 'L' : 'l') : c;
+        var vals = [];
+        for (var vi = 0; vi < ar; vi++) vals.push(args[gi * ar + vi]);
+        if (U === 'A') { vals[3] = vals[3] ? 1 : 0; vals[4] = vals[4] ? 1 : 0; }
+        segs.push({ type: type, values: vals });
+      }
+      if (args.length % ar !== 0) break;  // 尾组不完整 → 后续同弃（前缀语义）
+    }
+    if (!segs.length || (segs[0].type !== 'M' && segs[0].type !== 'm')) return [];
+    return segs;
+  };
+  // A → C 分解（spec appendix §ImplementationNotes F.6.5/F.6.6）：端点→中心
+  // 参数化 + 半径缩放校正；span >90° 等分多段 cubic（Chromium 口径，大弧
+  // 测试对位）。返回绝对 [c1x,c1y,c2x,c2y,x,y] 数组；零半径 → 直线退化
+  // （F.6.6 radius zero → line）。
+  var _zwSvgArcToCubics = function (x1, y1, rx, ry, phiDeg, fa, fs, x2, y2) {
+    if (rx === 0 || ry === 0) return [[x1, y1, x2, y2, x2, y2]];
+    var phi = phiDeg * Math.PI / 180;
+    var cosP = Math.cos(phi), sinP = Math.sin(phi);
+    var dx2 = (x1 - x2) / 2, dy2 = (y1 - y2) / 2;
+    var x1p = cosP * dx2 + sinP * dy2;
+    var y1p = -sinP * dx2 + cosP * dy2;
+    var lam = x1p * x1p / (rx * rx) + y1p * y1p / (ry * ry);
+    if (lam > 1) {  // F.6.6 半径缩放校正
+      var sc = Math.sqrt(lam);
+      rx *= sc; ry *= sc;
+    }
+    var num = rx * rx * ry * ry - rx * rx * y1p * y1p - ry * ry * x1p * x1p;
+    var den = rx * rx * y1p * y1p + ry * ry * x1p * x1p;
+    var co = Math.sqrt(Math.max(0, num / den));
+    if (fa === fs) co = -co;
+    var cxp = co * rx * y1p / ry;
+    var cyp = -co * ry * x1p / rx;
+    var cx = cosP * cxp - sinP * cyp + (x1 + x2) / 2;
+    var cy = sinP * cxp + cosP * cyp + (y1 + y2) / 2;
+    var _ang = function (ux, uy, vx, vy) {
+      var dot = ux * vx + uy * vy;
+      var len = Math.sqrt((ux * ux + uy * uy) * (vx * vx + vy * vy));
+      var a = Math.acos(Math.max(-1, Math.min(1, len ? dot / len : 1)));
+      if (ux * vy - uy * vx < 0) a = -a;
+      return a;
+    };
+    var th1 = _ang(1, 0, (x1p - cxp) / rx, (y1p - cyp) / ry);
+    var dth = _ang((x1p - cxp) / rx, (y1p - cyp) / ry,
+                   (-x1p - cxp) / rx, (-y1p - cyp) / ry);
+    if (!fs && dth > 0) dth -= 2 * Math.PI;
+    if (fs && dth < 0) dth += 2 * Math.PI;
+    var nSpans = Math.max(1, Math.ceil(Math.abs(dth) / (Math.PI / 2) - 1e-9));
+    var step = dth / nSpans;
+    var k = 4 / 3 * Math.tan(step / 4);
+    var out = [];
+    for (var si = 0; si < nSpans; si++) {
+      var a0 = th1 + step * si, a1 = a0 + step;
+      var p0x = si === 0 ? x1 : cx + rx * Math.cos(a0) * cosP - ry * Math.sin(a0) * sinP;
+      var p0y = si === 0 ? y1 : cy + rx * Math.cos(a0) * sinP + ry * Math.sin(a0) * cosP;
+      var p1x = si === nSpans - 1 ? x2 : cx + rx * Math.cos(a1) * cosP - ry * Math.sin(a1) * sinP;
+      var p1y = si === nSpans - 1 ? y2 : cy + rx * Math.cos(a1) * sinP + ry * Math.sin(a1) * cosP;
+      var d0x = -rx * Math.sin(a0) * cosP - ry * Math.cos(a0) * sinP;
+      var d0y = -rx * Math.sin(a0) * sinP + ry * Math.cos(a0) * cosP;
+      var d1x = -rx * Math.sin(a1) * cosP - ry * Math.cos(a1) * sinP;
+      var d1y = -rx * Math.sin(a1) * sinP + ry * Math.cos(a1) * cosP;
+      out.push([p0x + k * d0x, p0y + k * d0y,
+                p1x - k * d1x, p1y - k * d1y, p1x, p1y]);
+    }
+    return out;
+  };
+  // {normalize:true} 归一：绝对 M/L/C/Z 缩减（spec §InterfaceSVGPathData
+  // SVGPathDataSettings.normalize）。H/V→L、相对→绝对、S/T 平滑反射（无前序
+  // C/Q 时控制点 = 当前点，S4a flatten 同口径）、Q/T 升阶 cubic（2/3 控制点
+  // 提取）、A 分解 cubic（_zwSvgArcToCubics）、Z 闭合复位。
+  var _zwSvgPathDataNormalize = function (segs) {
+    var out = [];
+    var cx = 0, cy = 0, sx = 0, sy = 0;
+    var pc2x = 0, pc2y = 0, hasC = false;  // 上一 cubic 二控（S 反射源）
+    var pqx = 0, pqy = 0, hasQ = false;    // 上一 quadratic 控（T 反射源）
+    var _C = function (a, b, c2, d2, e, f) {
+      out.push({ type: 'C', values: [a, b, c2, d2, e, f] });
+      cx = e; cy = f; pc2x = c2; pc2y = d2; hasC = true;
+    };
+    for (var i = 0; i < segs.length; i++) {
+      var v = segs[i].values, t0 = segs[i].type;
+      var U = t0 >= 'A' && t0 <= 'Z' ? t0 : String.fromCharCode(t0.charCodeAt(0) - 32);
+      var rel = U !== t0;
+      var ax = function (n) { return rel ? cx + n : n; };
+      var ay = function (n) { return rel ? cy + n : n; };
+      if (U === 'M') {
+        var mx = ax(v[0]), my = ay(v[1]);
+        out.push({ type: 'M', values: [mx, my] });
+        cx = mx; cy = my; sx = mx; sy = my; hasC = false; hasQ = false;
+      } else if (U === 'L') {
+        var lx = ax(v[0]), ly = ay(v[1]);
+        out.push({ type: 'L', values: [lx, ly] });
+        cx = lx; cy = ly;
+      } else if (U === 'H') {
+        var hx = rel ? cx + v[0] : v[0];
+        out.push({ type: 'L', values: [hx, cy] });
+        cx = hx;
+      } else if (U === 'V') {
+        var vy = rel ? cy + v[0] : v[0];
+        out.push({ type: 'L', values: [cx, vy] });
+        cy = vy;
+      } else if (U === 'C') {
+        _C(ax(v[0]), ay(v[1]), ax(v[2]), ay(v[3]), ax(v[4]), ay(v[5]));
+      } else if (U === 'S') {
+        var s1x = hasC ? 2 * cx - pc2x : cx, s1y = hasC ? 2 * cy - pc2y : cy;
+        _C(s1x, s1y, ax(v[0]), ay(v[1]), ax(v[2]), ay(v[3]));
+      } else if (U === 'Q') {
+        var qx = ax(v[0]), qy = ay(v[1]), qex = ax(v[2]), qey = ay(v[3]);
+        _C(cx + 2 / 3 * (qx - cx), cy + 2 / 3 * (qy - cy),
+           qex + 2 / 3 * (qx - qex), qey + 2 / 3 * (qy - qey), qex, qey);
+        pqx = qx; pqy = qy; hasQ = true;
+      } else if (U === 'T') {
+        var tx = ax(v[0]), ty = ay(v[1]);
+        var tcx = hasQ ? 2 * cx - pqx : cx, tcy = hasQ ? 2 * cy - pqy : cy;
+        _C(cx + 2 / 3 * (tcx - cx), cy + 2 / 3 * (tcy - cy),
+           tx + 2 / 3 * (tcx - tx), ty + 2 / 3 * (tcy - ty), tx, ty);
+        pqx = tcx; pqy = tcy; hasQ = true;
+      } else if (U === 'A') {
+        var arcs = _zwSvgArcToCubics(cx, cy, v[0], v[1], v[2], v[3], v[4],
+                                     rel ? cx + v[5] : v[5],
+                                     rel ? cy + v[6] : v[6]);
+        for (var ai = 0; ai < arcs.length; ai++) {
+          _C(arcs[ai][0], arcs[ai][1], arcs[ai][2], arcs[ai][3],
+             arcs[ai][4], arcs[ai][5]);
+        }
+      } else if (U === 'Z') {
+        out.push({ type: 'Z', values: [] });
+        cx = sx; cy = sy; hasC = false; hasQ = false;
+      }
+    }
+    return out;
+  };
+  // PathDataSegment 序列 → d 属性串：type 原文（Z/z 规范化为 'Z'）、值空格
+  // 连接、A 旗标位 ToBoolean（'2'/'5' → 1，false → 0——setPathData 定谳面）。
+  var _zwSvgPathDataSerialize = function (segs) {
+    var parts = [];
+    for (var i = 0; i < segs.length; i++) {
+      var t0 = String(segs[i].type);
+      var U = t0 >= 'A' && t0 <= 'Z' ? t0 : String.fromCharCode(t0.charCodeAt(0) - 32);
+      var vs = segs[i].values;
+      var s = U === 'Z' ? 'Z' : t0;
+      for (var vi = 0; vi < vs.length; vi++) {
+        var n = vs[vi];
+        if (U === 'A' && (vi === 3 || vi === 4)) n = n ? 1 : 0;
+        s += ' ' + n;
+      }
+      parts.push(s);
+    }
+    return parts.join(' ');
+  };
+  // setPathData 核心：sequence<PathDataSegment>（iterable 协议，Array.from
+  // 承接）+ 逐段 dictionary 校验——type 单字符且 ∈ MLHVCSQTAZ（多字符非已知
+  // 命令别名）、values 精确 arity（结构 API 不做隐式重复拆分）、数值 Number
+  // 收敛后须有限（NaN/Infinity 段无效）。段级错误 → 合法前缀截断（spec
+  // §PathDataErrorHandling）；前缀空或首段非 moveto → 移除 d 属性（leading
+  // 非 moveto / 空 sequence 定谳面）。写入走 setAttribute/removeAttribute
+  // （MutationObserver d 属性记录随之原生派发——mutation-observer 定谳面）。
+  var _zwSvgPathDataSet = function (el, data) {
+    var items;
+    try { items = Array.from(data); } catch (_eA) {
+      throw new TypeError('setPathData: the provided value is not a sequence');
+    }
+    var valid = [];
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      var seg = null;
+      if (item && typeof item === 'object') {
+        var t0 = '';
+        try { t0 = String(item.type); } catch (_eT) { t0 = ''; }
+        var U = t0.length === 1
+          ? (t0 >= 'A' && t0 <= 'Z' ? t0 : String.fromCharCode(t0.charCodeAt(0) - 32))
+          : '';
+        // U 空串须先排除（indexOf('') 恒 0 假命中——多字符 type 非别名）
+        if (U !== '' && 'MLHVCSQTAZ'.indexOf(U) >= 0) {
+          var ar = _zwSvgPathSegArity(U);
+          var arr = null;
+          try { arr = Array.from(item.values); } catch (_eV) { arr = null; }
+          if (arr && arr.length === ar) {  // 精确 arity（Z 须空 values；不拆隐式重复）
+            if (ar === 0) {
+              seg = { type: t0, values: [] };
+            } else {
+              var vals = [], ok = true;
+              for (var vi = 0; vi < ar; vi++) {
+                var n = Number(arr[vi]);
+                if (!isFinite(n)) { ok = false; break; }
+                vals.push(n);
+              }
+              if (ok) seg = { type: t0, values: vals };
+            }
+          }
+        }
+      }
+      if (!seg) break;  // 段级错误 → 前缀截断
+      valid.push(seg);
+    }
+    if (valid.length && valid[0].type !== 'M' && valid[0].type !== 'm') valid = [];
+    try {
+      if (!valid.length) el.removeAttribute('d');
+      else el.setAttribute('d', _zwSvgPathDataSerialize(valid));
+    } catch (_eS) {}
+  };
   if (globalThis.SVGGeometryElement && globalThis.SVGGeometryElement.prototype) {
     var _zwGeomP = globalThis.SVGGeometryElement.prototype;
     if (!_zwGeomP.getTotalLength) {
@@ -4815,6 +5074,25 @@
         p.x = x;
         p.y = y;
         return p;
+      };
+    }
+    // S4c：getPathData/setPathData（spec SVG2 paths.html §InterfaceSVGPathData，
+    // SVGGeometryElement mixin——SVGPathSeg* 已移除世界的替代 API）。segment
+    // 为普通 dictionary 对象（fresh，每调用重建）；形状元素 d 属性缺失 → 空
+    // 序列（FIXME(svg-compat)：rect/circle 等价路径展开未实现，corpus 暂无
+    // 消费者）。
+    if (!_zwGeomP.getPathData) {
+      _zwGeomP.getPathData = function (options) {
+        var o = (options && typeof options === 'object') ? options : {};
+        var d = null;
+        try { d = this.getAttribute('d'); } catch (_eD) {}
+        var segs = _zwSvgPathDataOf(d);
+        return o.normalize ? _zwSvgPathDataNormalize(segs) : segs;
+      };
+    }
+    if (!_zwGeomP.setPathData) {
+      _zwGeomP.setPathData = function (data) {
+        _zwSvgPathDataSet(this, data);
       };
     }
   }
