@@ -27,8 +27,8 @@ use std::sync::{Arc, RwLock};
 
 use zero_engine::animation::compositor_export::ExportedAnimationDeclaration;
 use zero_protocol::animation::{
-    AnimationPropertyKind, AnimationPropertyValue, CompositorAnimationDeclaration, TransformFunctionValue,
-    monotonic_now_ns, sample_declaration,
+    AnimationPropertyKind, AnimationPropertyValue, CompositorAnimationDeclaration, TransformFunctionValue, fold_affine,
+    monotonic_now_ns, multiply_affine, sample_declaration,
 };
 
 /// 单元素查询通道：每 (元素, 属性) 至多一条声明（engine 导出规则 5：单通道单动画）。
@@ -200,6 +200,95 @@ pub fn clear_overrides() {
     clear();
 }
 
+/// M2-S3c：命中修正表条目——transform 通道声明（可采样域）+ 元素 transform-origin
+/// （取自最近发布快照的 `TransformPrimitive`，与 compositor 改写矩阵同源值）。
+type HitEntry = (Arc<CompositorAnimationDeclaration>, (f32, f32));
+
+/// M2-S3c：命中修正表（element_key → 条目）。renderer 主线程写、命中测试线程
+/// 读（点击主线程 + elementFromPoint js worker 线程）；声明代际发布点整表替换，
+/// origin 随最近发布快照——布局变化不触发声明代际时容忍窗口内 stale（S2a 选择器
+/// 分叉容忍同型）。flag 关恒 `None`。
+static HIT_OVERRIDE_TABLE: RwLock<Option<Arc<HashMap<u64, HitEntry>>>> = RwLock::new(None);
+
+/// M2-S3c：发布命中修正表（声明代际变化 + 帧作用域可得的发布点）。仅 transform
+/// 通道注册（opacity 不影响命中几何）；缺 origin（transform_index 缺失/越界——不
+/// 含本特性的旧 peer）跳过该键，命中回落基线（与 compositor 同型防御）。scopes 用
+/// paint 形态（IPC 转换前同字段类型，与 `frame.animation_scopes` 直接对齐）。
+pub fn publish_hit_table(
+    engine: &[zero_engine::animation::compositor_export::ExportedAnimationDeclaration],
+    ipc: &[CompositorAnimationDeclaration],
+    scopes: &[zero_render_foundation::primitive::PaintAnimationScope],
+    transforms: &[zero_render_foundation::primitive::TransformPrimitive],
+) {
+    use zero_render_foundation::primitive::PaintAnimationProperty;
+    let by_id: HashMap<u64, &CompositorAnimationDeclaration> = ipc.iter().map(|d| (d.animation_id, d)).collect();
+    let origins: HashMap<u64, (f32, f32)> = scopes
+        .iter()
+        .filter_map(|scope| {
+            if scope.property != PaintAnimationProperty::Transform {
+                return None;
+            }
+            let transform = transforms.get(scope.transform_index? as usize)?;
+            Some((scope.animation_id, (transform.origin_x, transform.origin_y)))
+        })
+        .collect();
+    let mut table: HashMap<u64, HitEntry> = HashMap::new();
+    for declaration in engine {
+        let Some(ipc_declaration) = by_id.get(&declaration.animation_id) else {
+            continue;
+        };
+        if ipc_declaration.property != AnimationPropertyKind::Transform {
+            continue;
+        }
+        let Some(origin) = origins.get(&declaration.animation_id) else {
+            continue;
+        };
+        table.insert(declaration.element_key, (Arc::new((*ipc_declaration).clone()), *origin));
+    }
+    if let Ok(mut slot) = HIT_OVERRIDE_TABLE.write() {
+        *slot = Some(Arc::new(table));
+    }
+}
+
+/// M2-S3c：清命中修正表（退出导出域 / flag 关初始化）。清后命中全回落基线。
+pub fn clear_hit_overrides() {
+    if let Ok(mut slot) = HIT_OVERRIDE_TABLE.write() {
+        *slot = None;
+    }
+}
+
+/// M2-S3c：注册命中修正 provider 到 engine 全局槽（flag 开启时 renderer 初始化
+/// 调用一次）。provider = 表查 + `sample_declaration` + `fold_affine` + origin 折叠
+/// （与 compositor 像素改写同式同函数，FR-6 单一实现纪律）；输出**含 origin 的全
+/// 仿射**——像素实际经历的几何映射（S1c R3833 口径），hit_test 逆映射的目标。
+pub fn register_hit_provider() {
+    zero_engine::animation::hit_provider::set_animation_transform_provider(Some(Arc::new(move |element_key: u64| {
+        let table = HIT_OVERRIDE_TABLE.read().ok()?.clone()?;
+        let (declaration, origin) = table.get(&element_key)?;
+        sample_full_affine(declaration, *origin, monotonic_now_ns())
+    })));
+}
+
+/// M2-S3c：采样当刻 transform 声明并折叠为含 origin 的全仿射 `T(o)·A·T(−o)`
+/// （先应用右参数，protocol `multiply_affine` 单一实现组合）。采样无覆盖（延迟期
+/// 无 backwards fill / 已结束无 fill）返回 `None` → 命中回落基线，与 compositor
+/// 「无覆盖 = 基线像素」镜像。
+fn sample_full_affine(
+    declaration: &CompositorAnimationDeclaration,
+    origin: (f32, f32),
+    now_ns: u64,
+) -> Option<[f64; 6]> {
+    let AnimationPropertyValue::Transform(functions) = sample_declaration(declaration, now_ns).value? else {
+        return None;
+    };
+    let affine = fold_affine(&functions)?;
+    let (ox, oy) = (f64::from(origin.0), f64::from(origin.1));
+    Some(multiply_affine(
+        multiply_affine([1.0, 0.0, 0.0, 1.0, ox, oy], affine),
+        [1.0, 0.0, 0.0, 1.0, -ox, -oy],
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -207,6 +296,8 @@ mod tests {
         AnimationDirection, AnimationEasing, AnimationFillMode, AnimationKeyframe, AnimationPropertyKind,
         AnimationTiming,
     };
+    use zero_render_foundation::geometry::Rect;
+    use zero_render_foundation::primitive::{PaintAnimationProperty, PaintAnimationScope, TransformPrimitive};
 
     fn opacity_declaration(id: u64) -> CompositorAnimationDeclaration {
         CompositorAnimationDeclaration {
@@ -346,6 +437,151 @@ mod tests {
             };
             let parsed: f64 = text.parse().expect("opacity 序列化可解析");
             assert!((parsed - o).abs() < 1e-9, "t={t_ms}ms 查询 {text} 与采样器 {o} 不一致");
+        }
+    }
+
+    /// M2-S3c 表 join：engine×ipc 按 animation_id 配对、仅 transform 通道入表、origin
+    /// 取自 `transforms[scope.transform_index]`；opacity 通道与 transform_index 缺失
+    /// （旧 peer 不含本特性）的声明不进表。
+    #[test]
+    fn publish_hit_table_joins_and_filters() {
+        let ipc = vec![transform_declaration(7), opacity_declaration(8)];
+        let engine = vec![
+            engine_declaration(7, &["div:nth-child(1)"]),
+            engine_declaration(8, &["div:nth-child(2)"]),
+        ];
+        // id 7 有 origin（transform_index=0）；id 8 是 opacity 通道；id 9 无 origin。
+        let scopes = vec![
+            PaintAnimationScope {
+                animation_id: 7,
+                property: PaintAnimationProperty::Transform,
+                draw_begin: 0,
+                draw_end: 1,
+                rect: Rect::ZERO,
+                transform_index: Some(0),
+            },
+            PaintAnimationScope {
+                animation_id: 8,
+                property: PaintAnimationProperty::Opacity,
+                draw_begin: 1,
+                draw_end: 2,
+                rect: Rect::ZERO,
+                transform_index: None,
+            },
+            PaintAnimationScope {
+                animation_id: 9,
+                property: PaintAnimationProperty::Transform,
+                draw_begin: 2,
+                draw_end: 3,
+                rect: Rect::ZERO,
+                transform_index: Some(5), // 越界——transform 快照缺该下标
+            },
+        ];
+        let transforms = vec![TransformPrimitive {
+            rect: Rect::ZERO,
+            origin_x: 150.0,
+            origin_y: 100.0,
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            tx: 0.0,
+            ty: 0.0,
+        }];
+        publish_hit_table(&engine, &ipc, &scopes, &transforms);
+        let table = super::HIT_OVERRIDE_TABLE
+            .read()
+            .unwrap()
+            .clone()
+            .expect("flag 开启路径已发布");
+        // 仅 id 7（transform 通道 + origin 可得）入表，键 = element_key。
+        assert_eq!(table.len(), 1, "opacity 通道与越界 origin 均不入表：{table:?}");
+        let (declaration, origin) = table.get(&7).expect("id 7 element_key=7 入表");
+        assert_eq!(declaration.property, AnimationPropertyKind::Transform);
+        assert_eq!(*origin, (150.0, 100.0));
+        clear_hit_overrides();
+        assert!(super::HIT_OVERRIDE_TABLE.read().unwrap().is_none(), "清后无表");
+    }
+
+    /// M2-S3c 采样式：`sample_full_affine` 输出与 compositor `apply_transform_scope`
+    /// 的含 origin 全矩阵同式同值（T(o)·A·T(−o)，protocol `multiply_affine` 组合）。
+    /// 语义点核对：绕 origin(150,100) rotate(90deg)（顺时针）把基线点 (150,50)
+    /// （origin 正上方 50px）映到 (200,100)（origin 正右方 50px）。
+    #[test]
+    fn sample_full_affine_matches_compositor_formula() {
+        let mut declaration = transform_declaration(3);
+        declaration.timing.fill = AnimationFillMode::Forwards;
+        declaration.keyframes = vec![
+            AnimationKeyframe {
+                offset: 0.0,
+                value: AnimationPropertyValue::Transform(vec![TransformFunctionValue::Rotate(0.0)]),
+                easing: None,
+            },
+            AnimationKeyframe {
+                offset: 1.0,
+                value: AnimationPropertyValue::Transform(vec![TransformFunctionValue::Rotate(90.0)]),
+                easing: None,
+            },
+        ];
+        // t=1s（fill forwards 终帧保持）→ rotate(90deg)，origin (150, 100)。
+        let origin = (150.0_f32, 100.0_f32);
+        let full = sample_full_affine(&declaration, origin, 1_000_000_000).expect("forwards fill 有覆盖");
+        let affine = [0.0, 1.0, -1.0, 0.0, 0.0, 0.0];
+        let (ox, oy) = (f64::from(origin.0), f64::from(origin.1));
+        let expected = multiply_affine(
+            multiply_affine([1.0, 0.0, 0.0, 1.0, ox, oy], affine),
+            [1.0, 0.0, 0.0, 1.0, -ox, -oy],
+        );
+        for (got, want) in full.iter().zip(expected.iter()) {
+            assert!((got - want).abs() < 1e-12, "{full:?} != {expected:?}");
+        }
+        // 语义点：全矩阵作用于 (150,50) → (200,100)（先 T(−o) 平移、旋转、再 T(o)）。
+        let [a, b, c, d, tx, ty] = full;
+        let (px, py) = (a * 150.0 + c * 50.0 + tx, b * 150.0 + d * 50.0 + ty);
+        assert!(
+            (px - 200.0).abs() < 1e-9 && (py - 100.0).abs() < 1e-9,
+            "({px},{py}) != (200,100)"
+        );
+    }
+
+    /// M2-S3c 采样缺口：延迟期内无 backwards fill 时采样无覆盖 → None（命中回落
+    /// 基线，与 compositor「无覆盖 = 基线像素」镜像）。
+    #[test]
+    fn sample_full_affine_returns_none_before_delay_without_fill() {
+        let mut declaration = transform_declaration(3);
+        declaration.timing.delay_ms = 1000.0;
+        declaration.timing.fill = AnimationFillMode::None;
+        assert!(sample_full_affine(&declaration, (0.0, 0.0), 500_000_000).is_none());
+    }
+
+    /// 测试用 transform 通道声明（translate 关键帧，结构镜像 `opacity_declaration`）。
+    fn transform_declaration(id: u64) -> CompositorAnimationDeclaration {
+        CompositorAnimationDeclaration {
+            animation_id: id,
+            property: AnimationPropertyKind::Transform,
+            composable: true,
+            start_monotonic_ns: 0,
+            timing: AnimationTiming {
+                duration_ms: 1000.0,
+                delay_ms: 0.0,
+                iterations: Some(1.0),
+                direction: AnimationDirection::Normal,
+                fill: AnimationFillMode::None,
+                easing: AnimationEasing::Linear,
+            },
+            keyframes: vec![
+                AnimationKeyframe {
+                    offset: 0.0,
+                    value: AnimationPropertyValue::Transform(vec![TransformFunctionValue::Translate(0.0, 0.0)]),
+                    easing: None,
+                },
+                AnimationKeyframe {
+                    offset: 1.0,
+                    value: AnimationPropertyValue::Transform(vec![TransformFunctionValue::Translate(100.0, 0.0)]),
+                    easing: None,
+                },
+            ],
+            frozen_phase_s: None,
         }
     }
 }

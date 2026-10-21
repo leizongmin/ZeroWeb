@@ -726,6 +726,9 @@ impl RendererRuntime {
         // 查询路径零注入）。
         if compositor_animations_enabled() {
             crate::query_overrides::register_provider();
+            // M2-S3c：命中修正 provider 同点注册（flag 关不注册——hit_test 槽恒 None，
+            // 命中路径零注入，FR-9 同款）。
+            crate::query_overrides::register_hit_provider();
         }
         // M2c 后续（镜像 browser tab_worker）：播放器注册表注入 js_worker——
         // `__zwVideoBridge` 宿主桥（多进程路径媒体播放真值面；async_load settle 写入
@@ -1192,12 +1195,16 @@ impl RendererRuntime {
     fn send_compositor_animation_state(
         &mut self,
         declarations: Vec<ExportedAnimationDeclaration>,
+        scopes: &[zero_render_foundation::primitive::PaintAnimationScope],
+        transforms: &[zero_render_foundation::primitive::TransformPrimitive],
     ) -> Result<(), String> {
         // 退出导出域（flag 关 / Legacy 模式）：发过才需要清理，否则零消息。
         if !self.compositor_animations_active() {
             if self.animation_export.deactivate() {
                 // M2-S2a：退出导出域（flag 关 / Legacy 模式）同点清查询覆盖表。
                 crate::query_overrides::clear_overrides();
+                // M2-S3c：命中修正表同点清（provider 留驻——查空表恒 None，命中回落基线）。
+                crate::query_overrides::clear_hit_overrides();
                 tracing::debug!(
                     "renderer: animation state 清理发送（退出导出域）generation={}",
                     self.animation_export.generation
@@ -1223,6 +1230,9 @@ impl RendererRuntime {
         // RFC §2.1）。advance 判变才到达此处——表内容与已发送声明集恒一致；导航换代
         // 重置代际后新页声明在此发布，旧表被整表替换（路径键跨页残留不可能）。
         crate::query_overrides::publish_declarations(&declarations, &converted);
+        // M2-S3c：命中修正表随声明代际发布（element_key 键控，origin 取自本帧
+        // transform 快照——与 compositor 改写矩阵同源值）。
+        crate::query_overrides::publish_hit_table(&declarations, &converted, scopes, transforms);
         // M2-S1e：声明集每次变化都记 debug（含空集清理）——DC-1 负载窗 keep-alive
         // 断续归因的直接证据（S1b 边界：budget/泵路径不导出，集合 2→0 变化在此显形）。
         tracing::debug!(
@@ -1486,7 +1496,11 @@ impl RendererRuntime {
         // M2-S1b：帧上线后发动画声明状态（全量替换契约，集合未变则零消息）。顺序
         // 不构成正确性依赖：声明先到时 compositor 无新作用域即不采样（恒等基线），
         // 帧先到时作用域无声明同恒等——两侧收敛后同视觉，至多一 Get 的启动延迟。
-        self.send_compositor_animation_state(animation_declarations)?;
+        self.send_compositor_animation_state(
+            animation_declarations,
+            &frame.animation_scopes,
+            &frame.primitives.transforms,
+        )?;
         // M2-S2b：publish 后惰性终结检查（时点 a）——忙窗后恢复帧提交时自然覆盖。
         self.check_compositor_animation_finishures();
         resize_trace(format!(
