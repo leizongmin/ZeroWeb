@@ -65,7 +65,7 @@ S1 建立了 compositor 采样：flag 开时合成视觉按共享单调钟推进
 |---|---|---|
 | S2a | engine `js_dom_bridge/computed_style_cache.rs`（provider 槽）+ `callbacks.rs`（回调顶部咨询）+ `js_dom_bridge.rs`（`structural_path_selector` pub(crate)）+ `animation/compositor_export.rs`（声明加 `element_selectors` 双形态）；renderer 新 `query_overrides.rs`（表+采样+序列化）+ `runtime.rs`（发布/清空/注册接线） | 无 |
 | S2b | renderer `runtime.rs`（`drain_finished_events` + `check_compositor_animation_finishures` 两时点）；protocol `message.rs` 末尾追加 `NotifyAnimationsSettled`（无载荷）；browser `process_backend.rs`（`poll_compositor_frames` 翻转收集 → 调用方发唤醒） | `NotifyAnimationsSettled`（末尾追加，无载荷；flag 关零消息） |
-| S2c | fixture COMP-02 + observe/analyze 扩展 + 证据目录 | 无 |
+| S2c | fixture COMP-02（+ page2 换代页）+ dc2 observe/analyze 脚本 + 证据目录；顺手修复 browser Get 前台 key 漂移两段（demux Data 臂与 `CompletedFrameChannel::try_recv` 放宽到 (surface, epoch)，回归测试锁定）+ frame_dump 上限 256→512 | 无 |
 
 **回滚切点**：S2a/S2b 各自成批、flag 门控；S2c 证据批。翻默认仍属后续独立决策（perf-gate 前置不变）。
 
@@ -73,9 +73,9 @@ S1 建立了 compositor 采样：flag 开时合成视觉按共享单调钟推进
 
 | 项 | 性质 | 说明 |
 |---|---|---|
-| 查询时刻与最近合成帧的相位容差 | Assumption | 同钟同采样器下偏差 = Get 往返 + 调度抖动（实测中位 13-17ms 采样节奏）；COMP-02 断言用相位区间而非逐帧相等 |
+| 查询时刻与最近合成帧的相位容差 | **已核实（S2c 实测）** | COMP-02 稳态 median dphase 0.080（343 对，≤0.15 覆盖 221/343）；尾差全部归因条带像素只在内容帧提交时上屏（提交节奏 100-1300ms）——采样值在提交间隔内正确（ost 变化帧 dphase 立即回落至 ≤0.08），非查询错误；查询等价由单一采样器单测 + compositor 同函数消费结构性保证（evidence/2026-10-21-m2s2c-dc2-acceptance） |
 | engine 查询 provider 的元素标识可从 gCS 回调内部取得 | **已核实（S2a 落地）** | 回调收到的就是 shim `__zwSelector` 串（`unique_selector_for_node` 同源产物）；导出侧双形态选择器候选 + 表双键登记直查命中（§2.1 元素身份） |
-| `NotifyAnimationsSettled` 与 renderer 忙窗竞态 | Assumption | 消息在 IPC 队列排队，忙窗结束后被处理，与惰性检查幂等叠加 |
+| `NotifyAnimationsSettled` 与 renderer 忙窗竞态 | **已核实（S2b/S2c 实测）** | 忙窗内结束的动画在负载窗内拿到回执条 pass（COMP-02 bar-busy @负载窗 2256ms），消息排队 + 惰性检查幂等成立 |
 | cubic-bezier/steps 参数化 easing | Open | S1 枚举族沿用；COMP-02 fixture 用 linear/ease 族保持导出域内，参数化按需扩展 |
 | CSSAnimation 对象面（currentTime/playState/getAnimations 覆盖 CSS 动画） | Open（范围裁剪） | 新 API 面，独立切片评估；WAAPI shim 既有语义不动（WPT web-animations 套件钉住） |
 | 取消/暂停事件（animationcancel） | Open | 声明代际替换语义属 S3（DC-3 暂停/取消）场景，本切片只做自然终结 |

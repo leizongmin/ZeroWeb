@@ -1,0 +1,178 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>COMP-02 script state and end event (autostart + navigation)</title>
+<style>
+  /* COMP-02 fixture（compositor-animation-continuity DC-2 / S2c，autostart 变体）：
+     窗口模式无 automation 通道，断言结果全部外显为固定坐标的色块/条带，
+     由 scripts/compositor-animation-dc2-analyze.py 从 frame_dump 逐帧提取。
+     验收场景（S2 RFC §1）：(a) gCS(opacity) 条带 vs 红盒 alpha 同相位；
+     (b) 忙窗内/空闲期结束各恰一次 animationend 且 elapsedTime=1.0；
+     (c) flag 关对照：条带恒为级联值、零事件；(d) 导航换代后旧事件不重放。 */
+  body { margin: 0; background: #ffffff; }
+  /* (a) 持续通道：与 comp01 同款红/蓝盒（互质时长 1.0s/1.3s）。 */
+  #opacity-box {
+    position: absolute; left: 24px; top: 32px;
+    width: 128px; height: 128px;
+    background: rgb(200, 30, 30);
+    animation: comp02-fade 1s linear infinite alternate;
+  }
+  #transform-box {
+    position: absolute; left: 216px; top: 96px;
+    width: 96px; height: 96px;
+    background: rgb(30, 90, 220);
+    animation: comp02-spin 1.3s linear infinite alternate;
+  }
+  @keyframes comp02-fade {
+    from { opacity: 1; }
+    to { opacity: 0.05; }
+  }
+  @keyframes comp02-spin {
+    from { transform: rotate(0deg) translateX(36px); }
+    to { transform: rotate(180deg) translateX(0px); }
+  }
+  #load-marker {
+    position: absolute; left: 24px; top: 288px;
+    font: 14px monospace;
+    color: rgb(20, 20, 20);
+  }
+  /* (a) gCS 条带：每 50ms 采样 getComputedStyle(#opacity-box).opacity，
+     灰度 = 255 − round(opacity × 240)（查询值直接编码为像素，分析侧
+     与红盒同帧反解相位比对）。 */
+  #q-strip {
+    position: absolute; left: 24px; top: 340px;
+    width: 128px; height: 16px;
+    background: rgb(0, 0, 0);
+  }
+  /* (b)/(d) 事件回执条：白=未发生，绿=恰一次且 elapsedTime 合格，
+     红=重复/负载不合格。page1 只用前两格，后两格留给 page2（坐标跨导航不变）。 */
+  .bar {
+    position: absolute; top: 400px;
+    width: 64px; height: 16px;
+    background: #ffffff;
+  }
+  #bar-busy   { left: 24px; }
+  #bar-idle   { left: 112px; }
+  #bar-replay { left: 200px; }
+  #bar-own    { left: 288px; }
+  /* (b) 有限时长动画元素：忙窗内结束（delay 0.9s + 1s → t≈1.9s，负载窗
+     1.5s~2.7s 内）与空闲期结束（delay 4.0s + 1s → t≈5.0s）。fill none，
+     结束后回落底层不透明度 1。 */
+  #end-busy {
+    position: absolute; left: 24px; top: 440px;
+    width: 64px; height: 64px;
+    background: rgb(230, 140, 20);
+    animation-name: comp02-end-a;
+    animation-duration: 1s;
+    animation-timing-function: linear;
+    animation-delay: 0.9s;
+    animation-iteration-count: 1;
+    animation-fill-mode: none;
+  }
+  #end-idle {
+    position: absolute; left: 112px; top: 440px;
+    width: 64px; height: 64px;
+    background: rgb(20, 170, 140);
+    animation-name: comp02-end-b;
+    animation-duration: 1s;
+    animation-timing-function: linear;
+    animation-delay: 4s;
+    animation-iteration-count: 1;
+    animation-fill-mode: none;
+  }
+  @keyframes comp02-end-a {
+    from { opacity: 1; }
+    to { opacity: 0.1; }
+  }
+  @keyframes comp02-end-b {
+    from { opacity: 1; }
+    to { opacity: 0.1; }
+  }
+  #nav-marker {
+    position: absolute; left: 24px; top: 520px;
+    font: 14px monospace;
+    color: rgb(20, 20, 20);
+  }
+</style>
+</head>
+<body>
+  <div id="opacity-box"></div>
+  <div id="transform-box"></div>
+  <div id="load-marker">load=idle</div>
+  <div id="q-strip"></div>
+  <div id="bar-busy" class="bar"></div>
+  <div id="bar-idle" class="bar"></div>
+  <div id="bar-replay" class="bar"></div>
+  <div id="bar-own" class="bar"></div>
+  <div id="end-busy"></div>
+  <div id="end-idle"></div>
+  <div id="nav-marker">page=1</div>
+  <script>
+    // 有界忙循环（信任边界：ms 由调用方钳制到 [0, 5000]），与 comp01 同款。
+    window.__zwBusy = function (ms) {
+      var budget = Math.max(0, Math.min(5000, Number(ms) || 0));
+      var t0 = performance.now();
+      while (performance.now() - t0 < budget) { Math.sqrt(12345.678); }
+      return Math.round(performance.now() - t0);
+    };
+    // 有界 JS 负载（4 片 × 220ms，片间 80ms，总忙 ~0.9s），同 comp01 autostart；
+    // load 后 1.5s 自动触发——busy-end 动画在负载窗内结束（场景 b 前半）。
+    window.__zwStartLoad = function () {
+      if (window.__zwLoadRunning) { return false; }
+      window.__zwLoadRunning = true;
+      var slices = 4, done = 0;
+      var marker = document.getElementById('load-marker');
+      function next() {
+        if (done >= slices) {
+          marker.textContent = 'load=done slices=4';
+          window.__zwLoadRunning = false;
+          return;
+        }
+        window.__zwBusy(220);
+        done++;
+        marker.textContent = 'load=slice ' + done + '/4';
+        setTimeout(next, 80);
+      }
+      setTimeout(next, 30);
+      return true;
+    };
+    // (b) 事件回执：恰一次 + animationName/elapsedTime(=duration×iterations=1.0)
+    // 断言全在页内判定，结果编码为条带颜色（绿=合格，红=重复或不合格）。
+    function wireEnd(elementId, barId, expectedName) {
+      var el = document.getElementById(elementId);
+      var bar = document.getElementById(barId);
+      var seen = 0;
+      el.addEventListener('animationend', function (e) {
+        seen++;
+        var ok = seen === 1
+          && e.animationName === expectedName
+          && Math.abs(e.elapsedTime - 1.0) <= 0.05;
+        bar.style.background = ok ? 'rgb(0, 200, 0)' : 'rgb(220, 40, 40)';
+      });
+    }
+    wireEnd('end-busy', 'bar-busy', 'comp02-end-a');
+    wireEnd('end-idle', 'bar-idle', 'comp02-end-b');
+    // (a) gCS 条带采样：flag 开时查询命中 compositor 同源覆盖（S2a），
+    // flag 关时回落级联值 "1"（条带恒定，场景 c 对照面）。
+    setInterval(function () {
+      var el = document.getElementById('opacity-box');
+      var raw = getComputedStyle(el).opacity;
+      var o = parseFloat(raw);
+      var strip = document.getElementById('q-strip');
+      if (isNaN(o)) {
+        strip.style.background = 'rgb(230, 0, 230)';
+        return;
+      }
+      var level = 255 - Math.round(o * 240);
+      strip.style.background = 'rgb(' + level + ', ' + level + ', ' + level + ')';
+    }, 50);
+    window.addEventListener('load', function () {
+      setTimeout(function () { window.__zwStartLoad(); }, 1500);
+      // (d) 导航换代：page1 断言全部完成后（含空闲期结束回执 ~5.2s）跳转，
+      // page2 检测旧动画事件是否重放（见 comp02-page2.html）。
+      setTimeout(function () { location.href = 'comp02-page2.html'; }, 7000);
+    });
+  </script>
+</body>
+</html>

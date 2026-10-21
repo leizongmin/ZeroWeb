@@ -446,12 +446,17 @@ impl CompletedFrameChannel {
     }
 
     fn try_recv(&self, surface_id: u64, navigation_epoch: u64, frame_id: u64) -> Option<CompletedFrame> {
+        // M2-S2c：按 (surface, epoch) 取该 surface 最新完成帧——compositor Get 是
+        // 「拉最新 front」语义，响应 frame_id 以前台为准；内容帧推进滞后时可旧于
+        // 请求 key（busy 窗后 keep-alive Get(21) ↔ front 20 实测：旧 `>= frame_id`
+        // 匹配令漂移响应永远不可采纳，重采样像素滞留缓存，呈现静帧饥饿）。
+        // 缓存 send 侧本就 per-surface latest-wins 单条，请求 frame_id 只作 API
+        // 意图标注，不参与匹配。
+        let _ = frame_id;
         let mut frames = self.frames.lock().unwrap_or_else(|error| error.into_inner());
-        let index = frames.iter().position(|frame| {
-            frame.key.surface_id == surface_id
-                && frame.key.navigation_epoch == navigation_epoch
-                && frame.key.frame_id >= frame_id
-        })?;
+        let index = frames
+            .iter()
+            .position(|frame| frame.key.surface_id == surface_id && frame.key.navigation_epoch == navigation_epoch)?;
         frames.remove(index)
     }
 
@@ -864,6 +869,31 @@ enum ExpectedResponse {
     },
 }
 
+/// M2-S2c：断链诊断——期望响应的 variant 名（`mismatched compositor response id`
+/// 错误消息配对实收种类用；不引 `Debug` 全量格式化——帧载荷数 MB）。
+fn expected_tag(expected: &ExpectedResponse) -> &'static str {
+    match expected {
+        ExpectedResponse::Result(_) => "Result",
+        ExpectedResponse::Data(_) => "Data",
+        ExpectedResponse::Scroll(_) => "Scroll",
+        ExpectedResponse::ReleaseSurface => "ReleaseSurface",
+        ExpectedResponse::Batch => "Batch",
+        ExpectedResponse::PresentData { .. } => "PresentData",
+    }
+}
+
+/// M2-S2c：断链诊断——实收消息的种类名（高频种类枚举，其余归 other；零分配）。
+fn ipc_kind_tag(kind: &IpcMessageKind) -> &'static str {
+    match kind {
+        IpcMessageKind::CompositorFrameResult { .. } => "CompositorFrameResult",
+        IpcMessageKind::CompositorFrameData { .. } => "CompositorFrameData",
+        IpcMessageKind::GetCompositorFrame { .. } => "GetCompositorFrame",
+        IpcMessageKind::CompositorFrame { .. } => "CompositorFrame",
+        IpcMessageKind::Ok => "Ok",
+        _ => "other",
+    }
+}
+
 fn worker_main<F>(
     commands: Arc<CommandChannel>,
     completed: Arc<CompletedFrameChannel>,
@@ -1092,6 +1122,8 @@ fn process_batch(
                     .unwrap_or_else(|error| error.into_inner())
                     .progress(std::time::Instant::now());
             }
+            // M2-S2c：断链诊断标签（match 消耗所有权，先取 variant 名；零分配）。
+            let (etag, ktag) = (expected_tag(&expected), ipc_kind_tag(&response.kind));
             match (expected, response.kind) {
                 (
                     ExpectedResponse::Result(expected),
@@ -1147,13 +1179,13 @@ fn process_batch(
                         animations_active,
                         ..
                     },
-                ) if expected
-                    == (FrameKey {
-                        surface_id,
-                        navigation_epoch,
-                        frame_id,
-                    }) =>
-                {
+                ) if expected.surface_id == surface_id && expected.navigation_epoch == navigation_epoch => {
+                    // M2-S2c 修复：Get 是「拉最新 front」语义（compositor GetCompositorFrame
+                    // 处理只取 surface_id，回实际前台 key）——内容帧推进滞后时响应
+                    // frame_id 可旧于请求 key（busy 窗后 keep-alive 排队连发 Get(20)/Get(21)、
+                    // compositor 前台仍 20 实测断链）。按 (surface, epoch) 接受，frame_id
+                    // 以响应为准；完成帧缓存 send 侧 per-surface latest-wins、recv 侧按
+                    // (surface, epoch) 取出（见 CompletedFrameChannel::try_recv）。
                     frame_watchdog
                         .lock()
                         .unwrap_or_else(|error| error.into_inner())
@@ -1164,7 +1196,7 @@ fn process_batch(
                         rgba,
                         shm_name,
                         gpu_image,
-                        Some(expected.frame_id),
+                        Some(frame_id),
                     )?;
                     #[cfg(target_os = "linux")]
                     let (rgba, dmabuf) = match resolved_frame {
@@ -1199,15 +1231,19 @@ fn process_batch(
                     if std::env::var("ZERO_BROWSER_PRODUCT_SMOKE").as_deref() == Ok("1") {
                         tracing::info!(
                             "SMOKE_EVENT component=compositor_client event=frame_completed surface={} epoch={} frame={} width={} height={}",
-                            expected.surface_id,
-                            expected.navigation_epoch,
-                            expected.frame_id,
+                            surface_id,
+                            navigation_epoch,
+                            frame_id,
                             width,
                             height
                         );
                     }
                     completed.send(CompletedFrame {
-                        key: expected,
+                        key: FrameKey {
+                            surface_id,
+                            navigation_epoch,
+                            frame_id,
+                        },
                         width,
                         height,
                         rgba,
@@ -1240,9 +1276,12 @@ fn process_batch(
                 }
                 (ExpectedResponse::ReleaseSurface, IpcMessageKind::Ok) => {}
                 _ => {
+                    // M2-S2c：断链诊断——期望与实收消息种类一起落日志
+                    //（busy 窗后断链归因需要 (expected, got) 对，裸 id 不够；
+                    // etag/ktag 在 match 前取，零分配，帧热路径不受扰）。
                     return Err(ProtocolError::Channel(format!(
-                        "mismatched compositor response id {}",
-                        response.id
+                        "mismatched compositor response id {} (expected {}, got {})",
+                        response.id, etag, ktag
                     )));
                 }
             }
@@ -2022,6 +2061,51 @@ mod tests {
         assert!(frame_watchdog.lock().unwrap().last_progress.is_none());
         assert_eq!(completed.try_recv(10, 4, 1).unwrap().rgba[0], 11);
         assert_eq!(completed.try_recv(20, 7, 2).unwrap().rgba[0], 22);
+    }
+
+    #[test]
+    fn get_accepts_front_frame_id_drift_from_requested_key() {
+        // M2-S2c：Get 是「拉最新 front」语义——compositor 内容帧推进滞后时响应
+        // frame_id 可旧于请求 key（busy 窗后 keep-alive 排队连发 Get(20)/Get(21)、
+        // compositor 前台仍 20，实测按 key 全等断链）。(surface, epoch) 一致即接受，
+        // frame_id 以响应为准；陈旧帧由 CompletedFrameChannel latest-wins 丢弃。
+        let requested = FrameKey {
+            surface_id: 10,
+            navigation_epoch: 4,
+            frame_id: 21,
+        };
+        let front = FrameKey {
+            surface_id: 10,
+            navigation_epoch: 4,
+            frame_id: 20,
+        };
+        let sent = Arc::new(Mutex::new(Vec::new()));
+        let mut transport = LockstepTransport {
+            sent: Arc::clone(&sent),
+            responses: VecDeque::from([Ok(data(1, front, 33))]),
+            awaiting_response: false,
+        };
+        let completed = CompletedFrameChannel::new(4);
+        let present = PresentFrameChannel::new();
+        let mut next_message_id = 1;
+
+        process_batch(
+            &mut transport,
+            vec![WorkerCommand::GetFrame(requested)],
+            &completed,
+            &present,
+            &mut next_message_id,
+            &frame_watchdog(),
+        )
+        .expect("同 surface/epoch 的 front key 漂移不得断链");
+
+        assert!(matches!(
+            sent.lock().unwrap()[0].kind,
+            IpcMessageKind::GetCompositorFrame { .. }
+        ));
+        // 响应按实际前台 key 入缓存；请求的 frame_id=21 处无帧（未提交过）。
+        assert_eq!(completed.try_recv(10, 4, 20).unwrap().rgba[0], 33);
+        assert!(completed.try_recv(10, 4, 21).is_none());
     }
 
     struct BlockingTransport {

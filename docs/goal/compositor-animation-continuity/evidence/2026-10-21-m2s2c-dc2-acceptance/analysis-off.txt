@@ -1,0 +1,54 @@
+frames=40
+seq frame_id wall_ms dt_ms sha12 o_pixel o_strip dphase end_busy end_idle bars(busy/idle/replay/own) blue marker12 nav12
+0 2 0 0 08022d96dae3 1.000 1.050 0.050 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(216,96)-(311,191) | 6a8fb2d4480b 81d78e22b2c0
+1 24 2231 2231 142ec0121f33 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | 85c2996891d9 81d78e22b2c0
+2 31 3299 1068 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+3 32 3341 42 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+4 33 3432 91 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+5 34 3535 103 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+6 35 3640 105 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+7 37 3838 198 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+8 38 3940 102 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+9 40 4047 107 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+10 41 4140 93 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+11 43 4249 109 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+12 44 4349 100 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+13 46 4455 106 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+14 47 4550 95 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+15 48 4653 103 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+16 49 4755 102 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+17 51 4861 106 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+18 52 4954 93 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+19 53 5057 103 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+20 54 5164 107 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+21 56 5258 94 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+22 57 5361 103 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+23 58 5465 104 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+24 59 5564 99 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+25 60 5664 100 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+26 61 5769 105 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+27 62 5870 101 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+28 63 5971 101 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+29 64 6073 102 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+30 67 6376 303 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+31 68 6482 106 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+32 69 6589 107 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+33 70 6685 96 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+34 71 6788 103 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+35 72 6890 102 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+36 74 6996 106 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+37 75 7089 93 c19963e7bca6 1.000 1.000 0.000 rgb(230,140,20) rgb(20,170,140) none/none/none/none | count=9216 bbox=(252,96)-(347,191) | cfa14fb66f2e 81d78e22b2c0
+38 77 7237 148 f89667288928 0.000 0.000 0.000 rgb(150,60,200) rgb(255,255,255) none/none/none/none | count=0 | 0df99d83f9d3 3801df5ebd3e
+39 79 7383 146 f4d7f4790db7 0.000 0.000 0.000 rgb(150,60,200) rgb(255,255,255) none/none/pass/none | count=0 | 0df99d83f9d3 e9af2e5bbea9
+distinct_frame_hashes=5
+distinct_marker_signatures=4 distinct_nav_signatures=3
+marker 6a8fb2d4480b first_seen_ms=0
+marker 85c2996891d9 first_seen_ms=2231
+marker cfa14fb66f2e first_seen_ms=3299
+marker 0df99d83f9d3 first_seen_ms=7237
+nav 81d78e22b2c0 first_seen_ms=0
+nav 3801df5ebd3e first_seen_ms=7237
+nav e9af2e5bbea9 first_seen_ms=7383
+bar replay pass first_seen_ms=7383
+phase_pairs=40 median_dphase=0.000 max_dphase=0.050 within_0.15=40/40
+steady_pairs=2 median_dphase=0.000 max_dphase=0.000 within_0.15=2/2

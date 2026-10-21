@@ -5,7 +5,8 @@
 //! swap 后读 front buffer，写裸 RGBA + JSONL manifest（含 wall-clock 时间戳），
 //! PNG 转换由外部探针完成——本 crate 不引入图像编码依赖。
 //!
-//! 资源边界：帧数上限 `ZW_COMPOSITOR_FRAME_DUMP_MAX`（默认 32，钳到 1..=256）；
+//! 资源边界：帧数上限 `ZW_COMPOSITOR_FRAME_DUMP_MAX`（默认 32，钳到 1..=512，
+//! M2-S2c 放宽——DC-2 全时间线 12s×~40fps≈480 帧需越过长 fixture 的 256）；
 //! 任一写失败即永久停用并 warn 一次——诊断工具不得拖垮合成路径（run-rules
 //! 学习 #14：资源工具必须有降级出口）。
 
@@ -29,7 +30,7 @@ impl FrameDumper {
             .ok()
             .and_then(|v| v.parse::<u32>().ok())
             .unwrap_or(32)
-            .clamp(1, 256);
+            .clamp(1, 512);
         tracing::info!(
             "compositor: frame dump 已启用 dir={} max_frames={max_frames}",
             dir.display()

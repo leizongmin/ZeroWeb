@@ -1,0 +1,69 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>COMP-02 page2 (navigation successor)</title>
+<style>
+  /* COMP-02 page2（DC-2 / S2c 场景 d）：page1 于 load+7s 导航至此。
+     #bar-replay 绿 = page2 已活且未收到旧动画事件；红 = 收到 page1 的
+     comp02-end-a/end-b 事件（换代重放缺陷）。#bar-own 绿 = page2 自身
+     动画恰一次 animationend（换代后同状态机合法再派发）。坐标与 page1
+     条格一致，分析脚本跨导航用同一像素区域。 */
+  body { margin: 0; background: #ffffff; }
+  .bar {
+    position: absolute; top: 400px;
+    width: 64px; height: 16px;
+    background: #ffffff;
+  }
+  #bar-replay { left: 200px; }
+  #bar-own    { left: 288px; }
+  #own-end {
+    position: absolute; left: 24px; top: 440px;
+    width: 64px; height: 64px;
+    background: rgb(150, 60, 200);
+    animation-name: comp02-end-c;
+    animation-duration: 1s;
+    animation-timing-function: linear;
+    animation-delay: 0.5s;
+    animation-iteration-count: 1;
+    animation-fill-mode: none;
+  }
+  @keyframes comp02-end-c {
+    from { opacity: 1; }
+    to { opacity: 0.1; }
+  }
+  #page2-marker {
+    position: absolute; left: 24px; top: 520px;
+    font: 14px monospace;
+    color: rgb(20, 20, 20);
+  }
+</style>
+</head>
+<body>
+  <div id="bar-replay" class="bar"></div>
+  <div id="bar-own" class="bar"></div>
+  <div id="own-end"></div>
+  <div id="page2-marker">page=2</div>
+  <script>
+    var replayBar = document.getElementById('bar-replay');
+    // page2 已活：replay 条先置绿（导航换代完成的帧级标记）。
+    replayBar.style.background = 'rgb(0, 200, 0)';
+    // 旧动画事件重放检测：page1 的动画名出现在 page2 = 换代重放缺陷。
+    document.addEventListener('animationend', function (e) {
+      if (e.animationName === 'comp02-end-a' || e.animationName === 'comp02-end-b') {
+        replayBar.style.background = 'rgb(220, 40, 40)';
+      }
+    });
+    // 自身动画：恰一次 + elapsedTime=1.0 → own 条绿（换代后新动画合法终结）。
+    var ownSeen = 0;
+    document.getElementById('own-end').addEventListener('animationend', function (e) {
+      ownSeen++;
+      var ok = ownSeen === 1
+        && e.animationName === 'comp02-end-c'
+        && Math.abs(e.elapsedTime - 1.0) <= 0.05;
+      document.getElementById('bar-own').style.background =
+        ok ? 'rgb(0, 200, 0)' : 'rgb(220, 40, 40)';
+    });
+  </script>
+</body>
+</html>

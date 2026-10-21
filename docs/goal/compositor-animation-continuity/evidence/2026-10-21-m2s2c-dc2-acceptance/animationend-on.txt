@@ -1,0 +1,3 @@
+59:[renderer-1] 2026-10-21T14:28:56.818115Z  INFO renderer: animationend dispatched selector=#end-busy name=comp02-end-a elapsed=1.000s
+68:[renderer-1] 2026-10-21T14:28:59.849521Z  INFO renderer: animationend dispatched selector=#end-idle name=comp02-end-b elapsed=1.000s
+90:[renderer-1] 2026-10-21T14:29:03.498033Z  INFO renderer: animationend dispatched selector=#own-end name=comp02-end-c elapsed=1.000s

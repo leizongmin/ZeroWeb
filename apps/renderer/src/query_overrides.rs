@@ -167,14 +167,32 @@ fn clear() {
 pub fn register_provider() {
     zero_engine::js_dom_bridge::set_query_style_override_provider(Some(Arc::new(|selector: &str, property: &str| {
         let table = QUERY_OVERRIDE_TABLE.read().ok()?.clone()?;
-        table.sample(selector, property, monotonic_now_ns())
+        let sampled = table.sample(selector, property, monotonic_now_ns());
+        // M2-S2c：查询面诊断——动画通道查询的命中/miss 落一行（选择器 miss =
+        // 表键与 shim `__zwSelector` 形态分叉的直接证据；频率 = gCS 动画属性查询）。
+        if matches!(property, "opacity" | "transform") {
+            tracing::debug!(
+                "renderer: query override selector={} property={} hit={}",
+                selector,
+                property,
+                sampled.is_some()
+            );
+        }
+        sampled
     })));
 }
 
 /// 声明代际发布点（renderer 主线程，`send_compositor_animation_state` advance 成功后）：
 /// 由 engine 声明 + 协议声明构建并发布新表。
 pub fn publish_declarations(engine: &[ExportedAnimationDeclaration], ipc: &[CompositorAnimationDeclaration]) {
-    publish(QueryOverrideTable::build(engine, ipc));
+    let table = QueryOverrideTable::build(engine, ipc);
+    // M2-S2c：发布面诊断——表键集落一行（选择器双形态登记核对用）。
+    {
+        let mut keys = table.elements.keys().cloned().collect::<Vec<_>>();
+        keys.sort();
+        tracing::debug!("renderer: query override table published keys={keys:?}");
+    }
+    publish(table);
 }
 
 /// 退出导出域清理（deactivate 发空集清理同点）：清表。

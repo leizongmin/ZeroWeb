@@ -1126,11 +1126,17 @@ impl RendererRuntime {
             return;
         }
         let events = self.animation_export.drain_finished_events(monotonic_now_ns());
-        if !events.is_empty() {
-            tracing::debug!(
-                "renderer: animationend 派发 {} 条（compositor 声明集落定）",
-                events.len()
+        for ev in &events {
+            // M2-S2c：renderer 真相通道——每条 animationend 落一行（exactly-once
+            // 计数与 elapsedTime 口径核对用；频率 = 动画终结数，可忽略）。
+            tracing::info!(
+                "renderer: animationend dispatched selector={} name={} elapsed={:.3}s",
+                ev.selector,
+                ev.name,
+                ev.elapsed
             );
+        }
+        if !events.is_empty() {
             page_scripts::dispatch_animation_events(&self.js_worker, &events);
         }
     }

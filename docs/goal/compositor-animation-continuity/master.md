@@ -1,9 +1,9 @@
 # 合成动画连续性控制面
 
 **日期**：2026-10-21
-**状态**：Active；M1 ✅、M2-S1 全链路 ✅（DC-1 有条件成立）、M2-S2a ✅（查询覆盖 hook + renderer 采样 provider）、M2-S2b ✅（结束事件惰性判定 + browser 唤醒，flag 默认仍关）；S2c（COMP-02 验收）待做。
+**状态**：Active；M1 ✅、M2-S1 全链路 ✅（DC-1 有条件成立）、M2-S2 全链路 ✅（S2a 查询一致性 + S2b 结束事件 + S2c DC-2 验收有条件成立；flag 默认仍关）。
 **当前卡点**：无阻塞卡点。遗留缺口两项待排期：① 忙窗采样空洞（keep-alive tick 挂在 `wayland_client::conn::blocking_read`，呈现路径与 Wayland 解耦后消失）；② renderer 忙窗每文本更新全文档重解析（token 爆发 1:1 锁定忙片，放大主线程占空）。
-**下一步**：S2c COMP-02 验收——fixture（持续动画 + 结束断言脚本 + `__zwStartLoad()` 负载）+ observe/analyze 扩展 + 真实窗口 flag 双向对照证据落账（RFC §1 验收场景 a-d）。
+**下一步**：M2 收官段——S3（DC-3 COMP-03：暂停/取消/命中测试一致性）立项 RFC；DC-2 按范围裁剪记「有条件完成」（CSSAnimation 对象面未建，缺口表既定）。
 **入口**：[目标契约](../compositor-animation-continuity.md) / [启动与证据协议](../ladybird-followups/README.md)
 
 ## 缺口与待决
@@ -26,7 +26,7 @@
 | 阶段 | 产物 | 状态 | 证据 |
 |---|---|---|---|
 | M1 | 真实窗口阻塞基线与支持矩阵 | ✅ 完成（headless 基线 + 真实窗口帧序列 FROZEN，内容归因像素三重证实；窗口多帧采样工具 frame_dump 已入库） | [2026-10-21-m1-comp01-baseline](evidence/2026-10-21-m1-comp01-baseline/README.md) / [2026-10-21-m1-window-frames](evidence/2026-10-21-m1-window-frames/README.md) |
-| M2 | 合成动画、状态与输入一致切片 | IN_PROGRESS（S1 全链路 ✅ DC-1 有条件成立；S2a ✅ 查询一致性、S2b ✅ 结束事件，S2c COMP-02 验收待做；currentTime/playState 面范围裁剪记缺口） | [m2-slice-compositor-sampling](m2-slice-compositor-sampling.md) / [S2 RFC](m2-slice-query-consistency.md) / [S1e DC-1 证据](evidence/2026-10-21-m2s1e-dc1-acceptance/README.md) |
+| M2 | 合成动画、状态与输入一致切片 | IN_PROGRESS（S1 全链路 ✅ DC-1 有条件成立；S2 全链路 ✅ DC-2 有条件成立——查询一致性/结束事件/对照/换代四场景落证据；余 S3 状态与输入一致；currentTime/playState 面范围裁剪记缺口） | [m2-slice-compositor-sampling](m2-slice-compositor-sampling.md) / [S2 RFC](m2-slice-query-consistency.md) / [S1e DC-1 证据](evidence/2026-10-21-m2s1e-dc1-acceptance/README.md) / [S2c DC-2 证据](evidence/2026-10-21-m2s2c-dc2-acceptance/README.md) |
 | M3 | Worker 2D 呈现与生命周期 | NOT_STARTED | 无 |
 | M4 | GPU/语义/资源与 DC 审计 | NOT_STARTED | 无 |
 
@@ -35,7 +35,7 @@
 | 判据 | 场景 | 状态 | 证据 |
 |---|---|---|---|
 | DC-1 | COMP-01-transform-opacity-under-js-load | ✅ 有条件成立（ON：256 帧连续、dt 中位 13ms、哈希全异、红盒 alpha 连续扫描、蓝盒旋转包络；OFF：2 帧冻结对照。忙窗 ~1s 空洞已归因浏览器主线程 Wayland 耦合，非采样链路缺陷） | [S1e DC-1 证据](evidence/2026-10-21-m2s1e-dc1-acceptance/README.md) / [M1 基线](evidence/2026-10-21-m1-comp01-baseline/README.md) / [窗口帧序列](evidence/2026-10-21-m1-window-frames/README.md) |
-| DC-2 | COMP-02-script-state-and-end-event | NOT_RUN | 无 |
+| DC-2 | COMP-02-script-state-and-end-event | ✅ 有条件成立（ON：357 帧、3 条 animationend 恰一次且 elapsed 均 1.000s、回执四格全 pass 零 fail、换代旧事件不重放、稳态 median dphase 0.080；OFF：帧收敛冻结、条带恒级联值、零事件。相位逐帧容差受条带内容帧发布节奏 100-1300ms 约束——查询等价由单一采样器单测 + compositor 同函数消费保证，RFC §3 Assumption 已更新。CSSAnimation 对象面未建=条件项） | [S2c DC-2 证据](evidence/2026-10-21-m2s2c-dc2-acceptance/README.md) |
 | DC-3 | COMP-03-hit-test-pause-cancel | NOT_RUN | 无 |
 | DC-4 | COMP-04-worker-canvas-transfer | NOT_RUN | 无 |
 | DC-5 | 关闭/导航释放与支持审计 | NOT_RUN | 无 |
@@ -52,5 +52,6 @@
 2026-10-21 续轮（S1e，commits 48c1d7297 + 证据批）：DC-1 真实窗口验收——frame_dump 序号命名防重采样撞名 + Get 采样路径落盘；新增 observe 脚本（comp01 autostart fixture 14s 双 flag 对照）与分析脚本（sha256/红盒 opacity/蓝盒 transform/marker 行负载窗定位，零依赖）；ZW_LOG_LEVEL env（默认 INFO 零变化）+ 六文件诊断埋点（tick 心跳/keep-alive/Get 采样/声明收发）。实测：ON 256 帧连续（dt 中位 13ms、哈希全异、双通道像素归因、frame_id 冻结 5→8 期间 compositor 独立采样 251 帧）；OFF 2 帧冻结对照；忙窗 ~1s 空洞四重证据闭合（Get 静默 1.019s 互括空洞 985ms、窗内 keep-alive/心跳/Get 三零、gdb 主线程栈 wayland blocking_read、renderer 全文档重解析诱因）。DC-1 判有条件成立；证据落账 evidence/2026-10-21-m2s1e-dc1-acceptance/，空洞修复候选与 renderer 重解析放大记入缺口表。
 2026-10-21 续轮（S2a）：gCS 查询覆盖 hook + renderer 采样 provider（RFC §2.1，flag 关零注入）。engine `computed_style_cache.rs` 进程级 provider 槽（`Arc<dyn Fn>`，镜像 ACTIVE_ADOPTED_CSS 跨线程模式）+ `callbacks.rs` gCS 回调顶部咨询短路（命中整体替代、先于级联与缓存；未命中零干扰）；`compositor_export.rs` 声明加 `element_selectors` 双形态选择器候选（实现修正：shim `__zwSelector` 来自 `unique_selector_for_node` 非纯结构路径——unique 形态直查命中 + 结构路径兜底；transform 序列化亦修正为函数列表不折叠 matrix，镜像 engine gCS 惯例，RFC 已同步）。renderer 新 `query_overrides.rs`：结构路径→单通道声明表（engine 规则 5 保证每 (元素,属性) 至多一条）、`sample_declaration` 共享采样器就地求值（与 compositor 单一实现同钟同函数）、format_num/opacity 整数无小数点镜像、单参 scale/skew 归一；`runtime.rs` advance 判变成功后整表发布、deactivate 清表、flag 开注册 provider。单测 4+1 条（含 RFC §2.3 扫 t 等价断言：查询输出解析回数值 == 采样器输出）；workspace clippy -D warnings 干净、make test 全量绿（EXIT=0）。已知容忍窗口记档：两 doc 分叉窗口内选择器 miss 回落底层值（与 compositor 旧声明保留同型）；budget 路径不导出 → 查询回落基线（与合成侧同冻结自洽）。
 2026-10-21 续轮（S2b）：动画结束事件——renderer 惰性终结判定 + browser 落定唤醒（RFC §2.2，flag 关零消息）。protocol `message.rs` 末尾追加无载荷 `NotifyAnimationsSettled`（browser → renderer；穷举清单 +1=32）；renderer `AnimationExportState` 增 `engine_decls`（终结事件 name/selector 来源，按 animation_id 与 sent 配对）+ `finished_reported: HashSet<animation_id>`（exactly-once 去重；epoch 单值域简化——换代 Self::new 整表清空，旧代声明随 sent 替换消失双重阻断跨代重放，RFC 已同步）+ `drain_finished_events`（共享 `sample_declaration` 终结判定；elapsedTime = duration × iterations 镜像 engine tick 结束分支，selector 取候选首个 unique 形态）+ `check_compositor_animation_finishures` 两时点（publish 组帧后 + Settled 唤醒，复用 `dispatch_animation_events` 既有管线）；browser `poll_compositor_frames` 出参收集 `animations_active` 真→假翻转 tab（同 pending_loaded 先例），调用方发 `NotifyAnimationsSettled`（flag 关恒假无翻转零消息，FR-9）。单测 +2（恰一次派发/幂等重唤醒；换代同 id 合法再派发/活跃期不误发）；workspace clippy -D warnings 干净、make test 全量绿（EXIT=0，renderer 290）。取消路径（animationcancel）不在本切片（S3 场景）。
+2026-10-21 续轮（S2c）：DC-2 COMP-02 真实窗口验收——查询一致性 + 结束事件 + 导航换代四场景证据落账。fixture comp02-script-state-and-end-event.html（断言全外显：gCS 条带灰度编码 + 事件回执四格色条 + page2 换代页）+ dc2 observe/analyze 脚本。过程中发现并修复 browser Get 前台 key 漂移两段缺陷：① demux Data 臂按 key 全等 fatal 断链（compositor GetCompositorFrame 只取 surface_id 回实际前台 key，忙窗后 keep-alive 排队 Get(20)/Get(21) 前台 20 实测命中）→ 放宽到 (surface, epoch)；② 放宽后静默饥饿——`CompletedFrameChannel::try_recv` 的 `>= frame_id` 匹配令漂移响应永不可采纳（on3 实测 compositor 277 次 Get 全 now_active=true 而画面静止）→ 按 (surface, epoch) 取 per-surface 最新完成帧；回归测试 `get_accepts_front_frame_id_drift_from_requested_key` 锁定。frame_dump 上限 256→512（12s 全时间线覆盖）。实测（evidence/2026-10-21-m2s2c-dc2-acceptance/）：ON 357 帧、renderer 恰 3 行 animationend（elapsed 均 1.000s，间隔 3.031/3.649s 与 origin 相对预期一致）、回执 busy@2256（负载窗内=排队语义）/idle@5979/replay@7389/own@8956 全 pass 零 fail、nav @7232 换代旧事件不重放、稳态 median dphase 0.080；OFF 40 帧收敛冻结、条带恒级联值、零事件。相位尾差归因条带像素只在内容帧提交时上屏（16 个内容帧节奏 100-1300ms，ost 变化帧 dphase 立即回落）——查询等价由单一采样器单测 + compositor 同函数消费结构性保证，RFC §3 两行 Assumption 升级已核实。DC-2 判有条件成立（CSSAnimation 面未建=条件项）。
 
 复用资产：timing-animation（runner 泵/查询面）、workers-compat（worker 生命周期）；不重复实现。授权记录：2026-10-20 规划轮不授权提交/推送；2026-10-21 用户启动指令授权按仓库规则提交推送。生产 GPU 证据口径：headless GPU 光栅为生产渲染管线+生产 GPU 光栅路径，非窗口合成器 vsync 帧序列（局限见证据 README）。
