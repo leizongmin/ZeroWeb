@@ -1,0 +1,167 @@
+{
+  "fixture": "comp04a-worker-threaded-canvas.html",
+  "started_at_wall": "2026-10-21T21:02:02.880Z",
+  "samples": [
+    {
+      "name": "s0",
+      "t_wall_ms": 588,
+      "capture": {
+        "name": "s0",
+        "wall_ms": 95,
+        "png_sha256": "894b7afcde04b0536f06e3c2fbcbcccf62dfdfa61744a1d1b0873f2e57fd2489",
+        "png_bytes": 24531
+      },
+      "query": {
+        "wall_ms": 7,
+        "state": {
+          "mode": "shim",
+          "workerHost": false,
+          "transfer": {
+            "state": "probe-only",
+            "ctxOk": null
+          },
+          "beats": 9,
+          "wtGapMax": 53,
+          "atGapMax": 52,
+          "wtGapSpanLoad": 0,
+          "atGapSpanLoad": 0,
+          "loadWindow": null,
+          "drawsMain": 29,
+          "term": null,
+          "beatsAfterTerm": 0,
+          "workerErr": "Uncaught Error: dc4-expected",
+          "ctrl": "ctrl=off",
+          "pageNow": 919
+        }
+      }
+    },
+    {
+      "name": "s1",
+      "t_wall_ms": 1392,
+      "capture": {
+        "name": "s1",
+        "wall_ms": 5,
+        "png_sha256": "1b55f7eeebbade67e967592f26a8467cd269997a8a85043367bc6fcad1d8f547",
+        "png_bytes": 24801
+      },
+      "query": {
+        "wall_ms": 17,
+        "state": {
+          "mode": "shim",
+          "workerHost": false,
+          "transfer": {
+            "state": "probe-only",
+            "ctxOk": null
+          },
+          "beats": 24,
+          "wtGapMax": 53,
+          "atGapMax": 52,
+          "wtGapSpanLoad": 0,
+          "atGapSpanLoad": 0,
+          "loadWindow": null,
+          "drawsMain": 72,
+          "term": null,
+          "beatsAfterTerm": 0,
+          "workerErr": "Uncaught Error: dc4-expected",
+          "ctrl": "ctrl=off",
+          "pageNow": 1643
+        }
+      }
+    },
+    {
+      "name": "s2",
+      "t_wall_ms": 7933,
+      "capture": {
+        "name": "s2",
+        "wall_ms": 7,
+        "png_sha256": "79f32b618251dfe6a0f7f7f99dda9c30f6cf4dc7455e6bdde171b923f7908fc7",
+        "png_bytes": 26974
+      },
+      "query": {
+        "wall_ms": 9,
+        "state": {
+          "mode": "shim",
+          "workerHost": false,
+          "transfer": {
+            "state": "probe-only",
+            "ctxOk": null
+          },
+          "beats": 133,
+          "wtGapMax": 931,
+          "atGapMax": 932,
+          "wtGapSpanLoad": 931,
+          "atGapSpanLoad": 932,
+          "loadWindow": {
+            "start": 3419,
+            "end": 4319
+          },
+          "drawsMain": 383,
+          "term": null,
+          "beatsAfterTerm": 0,
+          "workerErr": "Uncaught Error: dc4-expected",
+          "ctrl": "ctrl=off",
+          "pageNow": 8179
+        }
+      }
+    },
+    {
+      "name": "s3",
+      "t_wall_ms": 8272,
+      "capture": {
+        "name": "s3",
+        "wall_ms": 6,
+        "png_sha256": "c2eb9de35f498e1dbc7f05cb355fa2d76383121608081b137ecc649f8d4a7cbd",
+        "png_bytes": 27239
+      },
+      "query": {
+        "wall_ms": 11,
+        "state": {
+          "mode": "shim",
+          "workerHost": false,
+          "transfer": {
+            "state": "probe-only",
+            "ctxOk": null
+          },
+          "beats": 140,
+          "wtGapMax": 931,
+          "atGapMax": 932,
+          "wtGapSpanLoad": 931,
+          "atGapSpanLoad": 932,
+          "loadWindow": {
+            "start": 3419,
+            "end": 4319
+          },
+          "drawsMain": 403,
+          "term": null,
+          "beatsAfterTerm": 0,
+          "workerErr": "Uncaught Error: dc4-expected",
+          "ctrl": "ctrl=on",
+          "pageNow": 8519
+        }
+      }
+    }
+  ],
+  "verdict": {
+    "mode": "shim",
+    "worker_host_present": false,
+    "transfer_state": "probe-only",
+    "transfer_ctx_ok": null,
+    "beats_total": 133,
+    "wt_gap_max_ms": 931,
+    "wt_gap_spanning_load_ms": 931,
+    "at_gap_max_ms": 932,
+    "at_gap_spanning_load_ms": 932,
+    "load_window": {
+      "start": 3419,
+      "end": 4319
+    },
+    "draws_main": 383,
+    "term": null,
+    "beats_after_term": 0,
+    "worker_err": "Uncaught Error: dc4-expected",
+    "canvas_idle": "ANIMATED",
+    "mutation_control": "OK",
+    "control_strip": "ctrl=off",
+    "state": "SHIM_BASELINE_PASS"
+  }
+}

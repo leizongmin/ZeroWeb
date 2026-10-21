@@ -1,0 +1,238 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>COMP-04a DC-4 threaded worker canvas</title>
+<style>
+  /* COMP-04a（compositor-animation-continuity DC-4 / S1d 场景 fixture，自冻结版
+     comp04 派生：几何与时间线常量保持一致，flag 关签名可与基线直接对读）。
+     判定面全部外显为文本条带 + window.__zw* 全局（headless query 与 frame_dump
+     区域分析同读）。模式分流：worker_host 回调存在（flag on，S1a 落地后）走
+     transferControlToOffscreen + 真线程 worker 绘制；否则维持 comp04 同款
+     同 realm shim 语义（主线程绘制 + shim worker beat 探针）作 flag 关对照。 */
+  body { margin: 0; background: #ffffff; }
+  #xfer-canvas {
+    position: absolute; left: 24px; top: 24px;
+    width: 240px; height: 120px;
+    background: rgb(238, 238, 238);
+  }
+  .strip {
+    position: absolute; left: 24px;
+    font: 13px monospace;
+    color: rgb(20, 20, 20);
+    white-space: pre;
+  }
+  #strip-mode { top: 160px; }
+  #strip-transfer { top: 180px; }
+  #strip-worker { top: 200px; }
+  #strip-beats { top: 220px; }
+  #strip-term { top: 240px; }
+  #strip-err { top: 260px; color: rgb(10, 100, 10); }
+  #strip-load { top: 280px; color: rgb(10, 100, 10); }
+  /* 正控条带：mutation 采样目标，位于 canvas 判定区域之外（分析区域 y<144）。 */
+  #strip-ctrl {
+    top: 320px; left: 24px;
+    width: 240px; height: 24px; line-height: 24px;
+    background: #ffffff;
+  }
+</style>
+</head>
+<body>
+  <canvas id="xfer-canvas" width="240" height="120"></canvas>
+  <div id="strip-mode" class="strip">mode=pending</div>
+  <div id="strip-transfer" class="strip">transfer=pending</div>
+  <div id="strip-worker" class="strip">worker=pending</div>
+  <div id="strip-beats" class="strip">beats=0</div>
+  <div id="strip-term" class="strip">term=pending</div>
+  <div id="strip-err" class="strip">err=none</div>
+  <div id="strip-load" class="strip">load=idle</div>
+  <div id="strip-ctrl" class="strip">ctrl=off</div>
+  <script>
+    // ── 有界忙循环与负载窗记录（与 comp04 同款：单片 900ms @ 页内 t≈3000ms）──
+    window.__zwLoadWindow = null;
+    window.__zwBusy = function (ms) {
+      var budget = Math.max(0, Math.min(5000, Number(ms) || 0));
+      var t0 = performance.now();
+      while (performance.now() - t0 < budget) { Math.sqrt(12345.678); }
+      return Math.round(performance.now() - t0);
+    };
+    window.__zwStartLoad = function () {
+      if (window.__zwLoadRunning) { return false; }
+      window.__zwLoadRunning = true;
+      var marker = document.getElementById('strip-load');
+      marker.textContent = 'load=busy';
+      var t0 = performance.now();
+      window.__zwBusy(900);
+      var t1 = performance.now();
+      window.__zwLoadWindow = { start: Math.round(t0), end: Math.round(t1) };
+      marker.textContent = 'load=done busy_ms=' + Math.round(t1 - t0);
+      window.__zwLoadRunning = false;
+      return true;
+    };
+
+    // ── 模式分流：worker_host 宿主桥回调存在 = S1a 真线程执行面已落地 ──
+    window.__zwWorkerHost = (typeof __zw_worker_create === 'function');
+    window.__zwMode = window.__zwWorkerHost ? 'threaded' : 'shim';
+    document.getElementById('strip-mode').textContent = 'mode=' + window.__zwMode;
+
+    // ── 共用判定常量：移动竖条图案（两模式像素一致，区域分析可同口径对读）──
+    // bar x = (seq*4) % 232，背景 rgb(238,238,238)，条 rgb(30,90,220) 8×104 @y8。
+    function paintFrame(ctx, seq) {
+      ctx.fillStyle = 'rgb(238, 238, 238)';
+      ctx.fillRect(0, 0, 240, 120);
+      ctx.fillStyle = 'rgb(30, 90, 220)';
+      ctx.fillRect((seq * 4) % 232, 8, 8, 104);
+    }
+
+    // ── beat 记录：wt = worker 侧 Date.now()（线程活性判据），at = 页面收到时刻
+    //（主线程投递判据）。terminate 后不再记（term 后静默核对面）。──
+    window.__zwBeats = [];
+    window.__zwBeatsAfterTerm = 0;
+    window.__zwRecordBeat = function (n, wt, seq) {
+      if (window.__zwTerm) { window.__zwBeatsAfterTerm++; return; }
+      if (window.__zwBeats.length < 800) {
+        window.__zwBeats.push({ n: n, wt: wt, at: Math.round(performance.now()), seq: seq });
+        document.getElementById('strip-beats').textContent = 'beats=' + window.__zwBeats.length;
+      }
+    };
+
+    // ── worker 源（两模式同构，模式差异只在宿主执行面）：beat 携带 worker 侧
+    // 时间戳与绘制进度；init 消息携带转移来的 OffscreenCanvas（threaded）。──
+    var WORKER_SRC = [
+      "var seq = 0;",
+      "var ctx = null;",
+      "function drawFrame() {",
+      "  if (!ctx) { return; }",
+      "  seq++;",
+      "  ctx.fillStyle = 'rgb(238, 238, 238)';",
+      "  ctx.fillRect(0, 0, 240, 120);",
+      "  ctx.fillStyle = 'rgb(30, 90, 220)';",
+      "  ctx.fillRect((seq * 4) % 232, 8, 8, 104);",
+      "}",
+      "self.onmessage = function (e) {",
+      "  var d = e.data || {};",
+      "  if (d.kind === 'init' && d.canvas) {",
+      "    try {",
+      "      ctx = d.canvas.getContext('2d');",
+      "      self.postMessage({ kind: 'ctx', ok: !!ctx });",
+      "      if (ctx) { setInterval(drawFrame, 16); }",
+      "    } catch (e2) {",
+      "      self.postMessage({ kind: 'ctx', ok: false, err: String(e2 && e2.message || e2) });",
+      "    }",
+      "  }",
+      "};",
+      "setInterval(function () {",
+      "  self.postMessage({ kind: 'beat', n: seq, wt: Date.now() });",
+      "}, 50);"
+    ].join('\n');
+
+    function makeWorkerUrl(src) {
+      // blob 优先，data URL 兜底（与 comp04 同款）。
+      try {
+        return URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+      } catch (eBlob) {
+        return 'data:text/javascript,' + encodeURIComponent(src);
+      }
+    }
+
+    // ── 主 worker：threaded 模式走 transfer + 绘制委托；shim 模式仅 beat 探针 ──
+    window.__zwTransfer = { state: 'skipped', ctxOk: null };
+    window.__zwTerm = null;
+    var mainCanvas = document.getElementById('xfer-canvas');
+    var worker = null;
+    var stripWorker = document.getElementById('strip-worker');
+    var stripTransfer = document.getElementById('strip-transfer');
+    try {
+      worker = new Worker(makeWorkerUrl(WORKER_SRC));
+      worker.onmessage = function (ev) {
+        var d = ev.data || {};
+        if (d.kind === 'beat') {
+          window.__zwRecordBeat(d.n, d.wt, d.seq);
+        } else if (d.kind === 'ctx') {
+          window.__zwTransfer.ctxOk = !!d.ok;
+          stripWorker.textContent = 'worker=ctx ' + (d.ok ? 'ok' : 'failed ' + (d.err || ''));
+        }
+      };
+      worker.onerror = function (ev) {
+        stripWorker.textContent = 'worker=error ' + String(ev && ev.message ? ev.message : '');
+      };
+      if (window.__zwMode === 'threaded') {
+        // DC-4 主场景：canvas 转 worker，主线程不再绘制（HTML spec transferred
+        // canvas 语义；S1b 落地后 worker 绘制经 patch 呈现管线出图）。
+        var off = mainCanvas.transferControlToOffscreen();
+        window.__zwTransfer.state = 'transferred';
+        stripTransfer.textContent = 'transfer=transferred';
+        worker.postMessage({ kind: 'init', canvas: off }, [off]);
+        window.__zwTransfer.state = 'sent';
+        stripTransfer.textContent = 'transfer=sent';
+      } else {
+        // flag 关对照：transfer API 只探存在性，不调用（R3313 共享 handle 语义不动）。
+        window.__zwTransfer.state = 'probe-only';
+        stripTransfer.textContent = 'transfer=' + typeof mainCanvas.transferControlToOffscreen;
+      }
+    } catch (eSpawn) {
+      window.__zwTransfer.state = 'error:' + String(eSpawn && eSpawn.message || eSpawn);
+      stripTransfer.textContent = 'transfer=' + window.__zwTransfer.state;
+    }
+
+    // ── shim 模式主线程绘制环（flag 关对照腿：comp04 基线同款，setInterval 驱动
+    // ——页面 rAF 为预算制同步 stub，连续动画只能选定时器族）──
+    if (window.__zwMode === 'shim') {
+      window.__zwDrawsMain = 0;
+      var ctx2d = mainCanvas.getContext('2d');
+      setInterval(function () {
+        window.__zwDrawsMain++;
+        paintFrame(ctx2d, window.__zwDrawsMain);
+      }, 16);
+    }
+
+    // ── 错误路径探针（DC-4 (d)）：worker 脚本即抛，onerror 应回流页面 ──
+    window.__zwWorkerErr = null;
+    (function () {
+      try {
+        var ew = new Worker(makeWorkerUrl("throw new Error('dc4-expected');"));
+        ew.onerror = function (ev) {
+          window.__zwWorkerErr = String(ev && ev.message ? ev.message : 'error-event');
+          document.getElementById('strip-err').textContent = 'err=' + window.__zwWorkerErr;
+        };
+      } catch (eSpawn) {
+        window.__zwWorkerErr = 'spawn:' + String(eSpawn && eSpawn.message || eSpawn);
+        document.getElementById('strip-err').textContent = 'err=' + window.__zwWorkerErr;
+      }
+    })();
+
+    // ── 时间线：忙窗 @3000ms；threaded 模式 @6500ms terminate（DC-4 (c)：
+    // 退出即冻结）；@7500ms 记 term 后静默核查点 ──
+    setTimeout(function () { window.__zwStartLoad(); }, 3000);
+    if (window.__zwMode === 'threaded') {
+      setTimeout(function () {
+        try {
+          worker.terminate();
+          var last = window.__zwBeats[window.__zwBeats.length - 1];
+          window.__zwTerm = {
+            at: Math.round(performance.now()),
+            lastBeatN: last ? last.n : null
+          };
+          document.getElementById('strip-term').textContent =
+            'term=done at=' + window.__zwTerm.at + ' lastBeatN=' + window.__zwTerm.lastBeatN;
+        } catch (eTerm) {
+          window.__zwTerm = { err: String(eTerm && eTerm.message || eTerm) };
+          document.getElementById('strip-term').textContent = 'term=error ' + window.__zwTerm.err;
+        }
+      }, 6500);
+      setTimeout(function () {
+        document.getElementById('strip-term').textContent +=
+          ' beatsAfter=' + window.__zwBeatsAfterTerm;
+      }, 7500);
+    }
+
+    // ── 正控：probe 在 s3 调用，条带换色（canvas 区域外，区域分析不受扰）──
+    window.__zwCtrlFire = function () {
+      var el = document.getElementById('strip-ctrl');
+      el.style.background = 'rgb(120, 120, 120)';
+      el.textContent = 'ctrl=on';
+      return true;
+    };
+  </script>
+</body>
+</html>

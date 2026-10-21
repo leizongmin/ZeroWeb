@@ -1,0 +1,20 @@
+[2m2026-10-21T21:02:02.601844Z[0m [32m INFO[0m [2mzero_browser[0m[2m:[0m ZeroBrowser starting...
+[2m2026-10-21T21:02:02.601885Z[0m [32m INFO[0m [2mzero_browser[0m[2m:[0m Tabs use zero-renderer child processes
+[2m2026-10-21T21:02:02.601887Z[0m [32m INFO[0m [2mzero_browser[0m[2m:[0m Renderer mode: auto
+[2m2026-10-21T21:02:02.601892Z[0m [32m INFO[0m [2mzero_browser[0m[2m:[0m Starting headless mode on port 60481, viewport: 480x360
+ZeroWeb headless server: ws://127.0.0.1:60481
+DevTools URL: http://127.0.0.1:60481
+[2m2026-10-21T21:02:02.601940Z[0m [32m INFO[0m [2mzero_browser::headless[0m[2m:[0m Headless protocol server listening on ws://127.0.0.1:60481
+[2m2026-10-21T21:02:02.602877Z[0m [32m INFO[0m [2mzero_render_foundation::font::system[0m[2m:[0m Loaded platform primary font [3mpath[0m[2m=[0m"/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf" [3mfont_id[0m[2m=[0m0
+[2m2026-10-21T21:02:02.603453Z[0m [32m INFO[0m [2mzero_render_foundation::font::system[0m[2m:[0m Loaded platform bold-regular font [3mpath[0m[2m=[0m"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf" [3mfont_id[0m[2m=[0m1
+[2m2026-10-21T21:02:02.604033Z[0m [32m INFO[0m [2mzero_render_foundation::font::system[0m[2m:[0m Loaded platform bold font [3mpath[0m[2m=[0m"/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" [3mfont_id[0m[2m=[0m2
+[2m2026-10-21T21:02:02.619290Z[0m [32m INFO[0m [2mzero_render_foundation::font::system[0m[2m:[0m Loaded platform fallback font [3mpath[0m[2m=[0m/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc [3mface_index[0m[2m=[0m2 [3mfont_id[0m[2m=[0m6
+[2m2026-10-21T21:02:02.625180Z[0m [32m INFO[0m [2mzero_render_foundation::font::system[0m[2m:[0m Loaded platform fallback font [3mpath[0m[2m=[0m/usr/share/fonts/truetype/wqy/wqy-microhei.ttc [3mface_index[0m[2m=[0m0 [3mfont_id[0m[2m=[0m8
+[2m2026-10-21T21:02:02.645708Z[0m [32m INFO[0m [2mzero_render_foundation::font::system[0m[2m:[0m Loaded platform fallback font [3mpath[0m[2m=[0m/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc [3mface_index[0m[2m=[0m0 [3mfont_id[0m[2m=[0m9
+[2m2026-10-21T21:02:02.884930Z[0m [32m INFO[0m [2mzero_browser::headless[0m[2m:[0m Connection from 127.0.0.1:36002
+[mux-debug] slow conn step 62ms peer 127.0.0.1:36002
+[2m2026-10-21T21:02:03.506090Z[0m [32m INFO[0m [2mwgpu_hal::vulkan::adapter[0m[2m:[0m Found 2 cooperative matrix configurations supported by wgpu
+[mux-debug] slow conn step 92ms peer 127.0.0.1:36002
+[mux-debug] slow conn step 905ms peer 127.0.0.1:36002
+[mux-debug] slow tick 905ms conns=1
+[2m2026-10-21T21:02:11.173379Z[0m [31mERROR[0m [2mzero_browser::headless[0m[2m:[0m WebSocket read error: WebSocket protocol error: Connection reset without closing handshake

@@ -1,0 +1,361 @@
+Running as unit: rally-dc4-diag4.scope; invocation ID: b51040c3a7774c8782c7e58c930c9795
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:25:58.338101Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:25:58.338104Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:25:58.338107Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=None
+ [33m WARN[0m dc4-diag: paint_canvas skip no-attr
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:25:58.482412Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:25:58.482415Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:25:58.482417Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:25:58.482420Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:25:58.525741Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:25:58.525744Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+ [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:25:58.525749Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:25:58.628963Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:25:58.628966Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:25:58.628968Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:25:58.628970Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:25:58.731199Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:25:58.731202Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:25:58.731204Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:25:58.731207Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:25:58.833942Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:25:58.833945Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:25:58.833947Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:25:58.833949Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:25:58.934979Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:25:58.934982Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+ [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:25:58.934986Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:25:59.036251Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:25:59.036254Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:25:59.036256Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:25:59.036258Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:25:59.137919Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:25:59.137922Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+ [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:25:59.137925Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:25:59.238976Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:25:59.238979Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:25:59.238981Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:25:59.238982Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:25:59.343010Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:25:59.343013Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:25:59.343015Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:25:59.343017Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:25:59.446165Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+ [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:25:59.446173Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:25:59.446175Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:25:59.548362Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:25:59.548365Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:25:59.548367Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:25:59.548369Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:25:59.651074Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+ [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:25:59.651082Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:25:59.651084Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:25:59.754214Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:25:59.754217Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:25:59.754219Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:25:59.754222Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:25:59.855908Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:25:59.855911Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:25:59.855913Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:25:59.855914Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:25:59.957603Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+ [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:25:59.957610Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:25:59.957612Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:00.058758Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+ [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:00.058764Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:00.058766Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:00.161284Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:00.161287Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:00.161290Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+ [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:00.264529Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:00.264532Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:00.264534Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:00.264537Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:00.366242Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+ [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:00.366250Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:00.366253Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:00.468724Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:00.468727Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+ [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:00.468733Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:00.570915Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+ [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:00.570922Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:00.570924Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:00.676328Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:00.676331Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:00.676333Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:00.676336Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:00.778188Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:00.778191Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+ [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:00.778197Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:00.881531Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:00.881534Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+ [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:00.881540Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:00.984373Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:00.984377Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:00.984379Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:00.984381Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:00.988155Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:00.988158Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:00.988160Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:00.988162Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:01.088390Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:01.088393Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:01.088395Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+ [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:01.189891Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:01.189894Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:01.189896Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:01.189898Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:01.291334Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:01.291337Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:01.291339Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:01.291340Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:01.393484Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:01.393488Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+ [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:01.393494Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:01.895040Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:01.895043Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:01.895045Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:01.895048Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:02.375761Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:02.375764Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:02.375766Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+ [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:02.480890Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:02.480894Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:02.480896Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:02.480899Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:02.584462Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:02.584465Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:02.584468Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:02.584470Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:02.688254Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:02.688257Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:02.688259Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+ [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:02.792780Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:02.792783Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:02.792787Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:02.792790Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:02.895924Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:02.895927Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:02.895930Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+ [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:02.998681Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+ [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:02.998688Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:02.998690Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:03.101437Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:03.101440Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+ [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:03.101445Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:03.203898Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:03.203901Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:03.203904Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+ [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:03.306727Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:03.306730Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:03.306733Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:03.306736Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:03.411742Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+ [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:03.411749Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:03.411752Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:03.519380Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+ [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:03.519387Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:03.519390Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:03.541184Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:03.541187Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+ [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:03.541192Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+ [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:03.628969Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:03.628972Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:03.628974Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:03.730312Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+ [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:03.730319Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:03.730322Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:03.831949Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:03.831952Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:03.831955Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+ [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:03.933521Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+ [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:03.933528Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:03.933531Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:04.035511Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+ [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:04.035517Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:04.035519Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:04.137663Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:04.137667Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:04.137669Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:04.137672Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:04.239603Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:04.239606Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:04.239608Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:04.239610Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:04.341476Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:04.341479Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:04.341482Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:04.341485Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:04.442918Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:04.442921Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:04.442923Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:04.442925Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:04.544454Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+ [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:04.544460Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:04.544462Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:04.646222Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:04.646225Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+ [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:04.646231Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:04.747751Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:04.747755Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:04.747757Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+ [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:04.850071Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:04.850074Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:04.850076Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+ [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:04.952329Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:04.952333Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:04.952335Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+ [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:05.053970Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:05.053974Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:05.053977Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:05.053979Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:05.155703Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:05.155706Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:05.155708Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+ [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:05.257597Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:05.257600Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:05.257602Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+ [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:05.359969Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+ [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:05.359976Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:05.359978Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:05.462118Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:05.462122Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:05.462124Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+ [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:05.564193Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+ [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:05.564199Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:05.564202Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:05.568520Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:05.568523Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:05.568526Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:05.568528Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:05.670968Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:05.670971Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:05.670974Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:05.670976Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:05.773603Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:05.773606Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:05.773609Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:05.773611Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:05.876942Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:05.876945Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:05.876948Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:05.876950Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:05.979310Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:05.979313Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:05.979316Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:05.979318Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
+ [33m WARN[0m dc4-diag: paint_node_inner canvas box_id=Some(NodeId(17v1))
+[2m2026-10-21T21:26:06.082835Z[0m [33m WARN[0m dc4-diag: inner walk reached specials for canvas
+[2m2026-10-21T21:26:06.082838Z[0m [33m WARN[0m dc4-diag: specials entered name=Some("canvas") doc=true hidden=false
+[2m2026-10-21T21:26:06.082840Z[0m [33m WARN[0m dc4-diag: paint_canvas entered ctx_attr=Some("1")
+[2m2026-10-21T21:26:06.082843Z[0m [33m WARN[0m dc4-diag: paint_canvas skip no-ctx-snapshot ctx=1 reg_contexts=0
