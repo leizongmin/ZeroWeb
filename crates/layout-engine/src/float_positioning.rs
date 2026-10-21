@@ -30,6 +30,11 @@ use crate::types::LayoutBox;
 static FLOAT_CLAMP_CONTENT_REL: std::sync::LazyLock<bool> =
     std::sync::LazyLock::new(|| std::env::var("ZW_FLOAT_CLAMP_CONTENT_REL").as_deref() != Ok("0"));
 
+/// R5215（CSS2 §9.2.1.1）：float walk 第二阶段把原子 inline-level 子（inline-block
+/// 族 / replaced）当作流参与者（匿名块盒占位）——`ZW_R5215_ATOMIC_FLOW=0` 回退。
+static R5215_ATOMIC_FLOW: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_R5215_ATOMIC_FLOW").as_deref() != Ok("0"));
+
 pub(crate) fn adjust_float_positions(
     box_node: &mut LayoutBox,
     doc: &zero_dom::Document,
@@ -2116,6 +2121,14 @@ pub(crate) fn adjust_float_positions_with_context(
     // 并被后面的容器高度 containment 计算（§8.3.1）读取，故声明在函数级。
     let mut flow_bottom = 0.0f32; // 上一个非 float 流内元素的 border-bottom（content-relative）
     let mut last_flow_mb = 0.0f32; // 上一个非 float 流内元素的 margin-bottom（折叠链）
+    // R5215（CSS2 §9.5.1）：float 钳制下界单独跟踪，仅 block-level 流内子推进——
+    // 原子 inline-level 子（匿名块盒）推进 flow_bottom（后继流内子按 §9.2.1.1 叠于
+    // 其下）但不推进本值：floats-placement-006/007/008（[inline-block, float-right,
+    // float-left]）chromium 实证 float 外顶与前置匿名块盒**顶边**齐平（§9.5.1 规则 4
+    // 「may not be higher than the outer top of any block … earlier」），不叠其底——
+    // 旧 flow_bottom 全量推进会把 float 推到匿名块盒之下（50→150 露红）。
+    let mut float_floor_bottom = 0.0f32;
+    let mut float_floor_last_mb = 0.0f32;
     // R1316：一旦本容器内任一 in-flow 子被应用了正 clearance，taffy 的布局
     // 即与正确流位置发散（taffy 不建模 clearance）。此后所有非 clear 块级
     // 兄弟须以 flow_bottom 为权威基准重定位，而非沿用 taffy 的（错误）位置。
@@ -2258,9 +2271,12 @@ pub(crate) fn adjust_float_positions_with_context(
                 // 无正 clearance 时 Phase 1 已按同式定位 → 本钳 no-op，爆炸半径限于
                 // clearance 后浮点链。kill-switch `ZW_FLOAT_PREV_MB_FLOOR=0` 回退。
                 let float_floor = if std::env::var("ZW_FLOAT_PREV_MB_FLOOR").as_deref() != Ok("0") {
-                    flow_bottom + last_flow_mb.max(0.0)
+                    // R5215：floor 用 block-only 跟踪值（float_floor_bottom/floor_last_mb），
+                    // 原子 inline-level 子的推进不入 floor（§9.5.1 规则 4 顶边语义，
+                    // floats-placement-006/007/008）。
+                    float_floor_bottom + float_floor_last_mb.max(0.0)
                 } else {
-                    flow_bottom
+                    float_floor_bottom
                 };
                 if child_hypothetical_y < float_floor {
                     child.y = if clamp_content_rel {
@@ -2318,7 +2334,33 @@ pub(crate) fn adjust_float_positions_with_context(
                             matches!(&n.kind, zero_dom::NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("br"))
                         })
                     });
-            if !child.is_block_level && !is_cleared_br_box {
+            // R5215（CSS2 §9.2.1.1）：原子 inline-level 子（inline-block 族 / replaced）
+            // 是块容器的流参与者——「When a block container box contains both block-level
+            // and inline-level boxes, anonymous block boxes are generated around the
+            // consecutive runs of inline-level boxes」，匿名块盒按正常流占位。taffy
+            // native float 已把此类子排在真实流位（floats-wrap-top-below-002l-ref：
+            // span 0/50/150 基线正确），本阶段 flow 重定位必须把其高度计入
+            // flow_bottom，否则后继 block 兄弟被重定位到原子盒之上（ref 页 div
+            // 50→0、span2 150→100）。此类子落入下方主路径（ClearValue::None 臂的
+            // correct_y 重定位 + flow 推进，clear 只认 None——clearance 不适用于
+            // inline-level，CSS 2.1 §13.5/clear-applies-to）；纯 inline / 文本叶维持
+            // 旧口径（R1277 ②：§9.5.1 float 顶边不受 inline 内容约束；其行盒几何由
+            // IFC 面自持）。kill-switch `ZW_R5215_ATOMIC_FLOW=0` 回退。
+            let child_display_inline_atomic = child.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+                matches!(
+                    s.display,
+                    DisplayValue::InlineBlock
+                        | DisplayValue::InlineTable
+                        | DisplayValue::InlineFlex
+                        | DisplayValue::InlineGrid
+                )
+            }) || child.is_replaced;
+            let is_atomic_inline_flow_child = *R5215_ATOMIC_FLOW
+                && !child.is_block_level
+                && matches!(child.float, FloatValue::None)
+                && matches!(child.clear, ClearValue::None)
+                && child_display_inline_atomic;
+            if !child.is_block_level && !is_atomic_inline_flow_child && !is_cleared_br_box {
                 // 非块级元素（如 inline）：扣除 float offset，不处理 clear
                 if float_y_offset > 0.0 {
                     child.y -= float_y_offset;
@@ -2637,6 +2679,12 @@ pub(crate) fn adjust_float_positions_with_context(
                     child.y - content_y_offset + child.height
                 };
                 last_flow_mb = child.margin_bottom;
+                // R5215：float 钳制 floor 只随 block-level 子推进（原子 inline-level
+                // 子按 §9.5.1 规则 4 只以顶边约束 float，见 float_floor_bottom 声明处）。
+                if child.is_block_level {
+                    float_floor_bottom = flow_bottom;
+                    float_floor_last_mb = last_flow_mb;
+                }
             }
 
             // R4240（css-sizing-4 §6.1 + csswg #4028）：块级 replaced 的 width:stretch —

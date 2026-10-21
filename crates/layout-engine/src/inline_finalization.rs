@@ -2722,14 +2722,30 @@ pub(crate) fn remeasure_text_with_float_exclusions(
             }
             inline_ctx.layout(doc, dom_id, styles);
 
+            // R5215（CSS2 §9.2.1.1）：混排容器（float 子 + 流内 block-level 子 + inline
+            // 内容并存）不入 IFC 消费面——本 IFC 行模型把全部 inline run 当**单一连续
+            // 行流**排布，无视中间的 block 兄弟（floats-wrap-top-below-002l-ref：body
+            // [float + inline-block span + block div + inline-block span] 的 span2 行叠在
+            // span1 之下 y=50，div 被无视；body 高被双向收敛到 span 行和 106，应 206）。
+            // 混排时原子子盒几何交由 taffy 基线 + R5215 流参与者重定位 + 终末
+            // apply_inline_block_float_avoidance 承担，行盒高/盒同步双双跳过。
+            // kill-switch 同 `ZW_R5215_ATOMIC_FLOW=0`。
+            let r5215_mixed_container = std::env::var("ZW_R5215_ATOMIC_FLOW").as_deref() != Ok("0")
+                && box_node
+                    .children
+                    .iter()
+                    .any(|c| c.is_block_level && !c.is_absolute && !c.is_fixed && matches!(c.float, FloatValue::None));
+
             // 存储 IFC 片段中各文本节点的 font_size，供 paint 系统计算基线偏移
             store_font_sizes_from_ifc(&inline_ctx, box_node, doc, styles);
-            sync_inline_child_boxes_from_ifc(box_node, &inline_ctx, styles);
-            // R4234：atomic inline（img / inline-block）子盒位置同步——排除感知 IFC 把
-            // 行首原子盒下推/缩排后，其 LayoutBox 若停在 taffy 块堆叠位（float-unaware）
-            // 会与 float 重叠（c414-flt-fit-001 的 br img 落在首行起点）。all-or-nothing
-            // 语义（任一 atomic 子缺 fragment 即整体不动）防半同步撕裂。
-            sync_inline_block_positions_from_ifc(box_node, &inline_ctx, doc, styles);
+            if !r5215_mixed_container {
+                sync_inline_child_boxes_from_ifc(box_node, &inline_ctx, styles);
+                // R4234：atomic inline（img / inline-block）子盒位置同步——排除感知 IFC 把
+                // 行首原子盒下推/缩排后，其 LayoutBox 若停在 taffy 块堆叠位（float-unaware）
+                // 会与 float 重叠（c414-flt-fit-001 的 br img 落在首行起点）。all-or-nothing
+                // 语义（任一 atomic 子缺 fragment 即整体不动）防半同步撕裂。
+                sync_inline_block_positions_from_ifc(box_node, &inline_ctx, doc, styles);
+            }
 
             // R3784：clamp 点后的 float 子隐藏（css-overflow-4 with-floats-003：「floats
             // after the clamp point are always hidden」）。锚行号 ≥ clamp cap = float 在
@@ -2834,7 +2850,9 @@ pub(crate) fn remeasure_text_with_float_exclusions(
             // R3785：双向收敛——compute_final 的 float-unaware IFC 先行设高（无 exclusion
             // 平坦行位），exclusion-aware px-cap extent 可大于**或小于**它（auto-015：
             // unaware 5 行 160 vs aware 4 行 128）；auto 高 float 容器直接置值。
-            if should_expand && (content_height - box_node.content_height).abs() > 0.5 {
+            // R5215：混排容器跳过——text_height 只含 inline 行流（block 子不计），
+            // 双向收敛会把容器压到 inline 部分（002l-ref 206→106）。
+            if !r5215_mixed_container && should_expand && (content_height - box_node.content_height).abs() > 0.5 {
                 box_node.height += content_height - box_node.content_height;
                 box_node.content_height = content_height;
             }
@@ -3007,6 +3025,21 @@ fn probe_inline_block_baselines(
     overrides
 }
 
+/// R5215：子树是否含非空白直接/后代文本（R5011 直接文本口径的子树版，trim 非空）。
+fn r5215_atomic_subtree_has_text(doc: &Document, root: NodeId) -> bool {
+    let mut stack = vec![root];
+    while let Some(id) = stack.pop() {
+        for child in doc.child_nodes(id) {
+            match doc.get(child).map(|n| &n.kind) {
+                Some(NodeKind::Text(t)) if !t.content.trim().is_empty() => return true,
+                Some(NodeKind::Element(_)) => stack.push(child),
+                _ => {}
+            }
+        }
+    }
+    false
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn remeasure_inline_only_containers(
     box_node: &mut LayoutBox,
@@ -3108,6 +3141,16 @@ pub(crate) fn remeasure_inline_only_containers(
         })
         .map(|c| !c.is_block_level)
         .unwrap_or(false);
+    // R5215（CSS2 §9.2.1.1）：原子 inline-level 子（inline-block 族）与 replaced 同属
+    // 「converter/taffy 按匿名块序列堆叠、几何已正确」——块级子 + 原子 inline 子交替、
+    // 无文本的混排容器，本 IFC 的单一连续行流是伪行（floats-wrap-top-below-002l-ref
+    // 最小形 [inline-block, div, inline-block]：尾 span 被同步到伪行 y=50，taffy 流位
+    // 150；随后 shift_siblings 重叠模型回推 + 父高 +100 → 容器 300）。inline-block 族
+    // 并入「全部原子」判定，整跳本 remeasure。收窄：原子子子树含**非空白文本**时保留
+    // 旧路径（content-height-002/003：body[p + 3 个含文本 inline-block div] 整跳后原子
+    // 盒失 IFC 行装配，蓝矩形断列）——行盒基线来自真实行内容，IFC 装配仍权威。
+    // kill-switch 同 `ZW_R5215_ATOMIC_FLOW=0`。
+    let r5215_atomic_flow = std::env::var("ZW_R5215_ATOMIC_FLOW").as_deref() != Ok("0");
     let mixed_all_replaced_inline = has_block_level_child
         && last_in_flow_is_inline_replaced
         && in_flow_children.iter().any(|c| !c.is_block_level)
@@ -3122,9 +3165,31 @@ pub(crate) fn remeasure_inline_only_containers(
                     .is_some_and(|id| doc.get(id).is_some_and(|n| matches!(n.kind, NodeKind::Element(_))))
             })
             .all(|c| {
-                c.node_id
-                    .is_some_and(|id| crate::inline_block_split::is_replaced_element(&id, doc))
+                c.node_id.is_some_and(|id| {
+                    crate::inline_block_split::is_replaced_element(&id, doc)
+                        || (r5215_atomic_flow
+                            && styles.get(&id).is_some_and(|s| {
+                                matches!(
+                                    s.display,
+                                    DisplayValue::InlineBlock
+                                        | DisplayValue::InlineFlex
+                                        | DisplayValue::InlineGrid
+                                        | DisplayValue::InlineTable
+                                )
+                            }))
+                })
             })
+        && !(r5215_atomic_flow
+            && in_flow_children.iter().filter(|c| !c.is_block_level).any(|c| {
+                c.node_id.is_some_and(|id| {
+                    // 仅**非 replaced** 原子子（inline-block 族）的子树文本计入——replaced
+                    // 元素（svg/canvas/img）自绘内容，其子树文本（svg-feimage-004：defs 内
+                    // tspan「FAIL」）不参与行装配，计入会把 R4108 应整跳的 body>p+svg 形态
+                    // 重新拖回 IFC 同步（svg 被伪行覆写回容器原点，与 p 重叠 0→20314）。
+                    !crate::inline_block_split::is_replaced_element(&id, doc)
+                        && r5215_atomic_subtree_has_text(doc, id)
+                })
+            }))
         // R5011 收窄：容器有**非空白直接文本**时保留 IFC 重测——真实行盒存在，原子
         // inline 的 baseline 对齐依赖 IFC 同步（inline-block-alignment/inline-table-
         // alignment 族回退实证）；纯「块级子 + 原子控件交替、无文本」的容器才整跳

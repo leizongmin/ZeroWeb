@@ -781,3 +781,5 @@ mod r5213_table_among_floats_interval_tests;
 /// R5214 float 摆放 earliest-fit（§9.5.1 规则 5 as high as possible，带步进替代行推进）
 /// + R5070 table 内部盒载体豁免（floats-wrap-bfc-004 双 right float 锚点）。
 mod r5214_float_earliest_fit_tests;
+/// R5215（CSS2 §9.2.1.1）原子 inline-level 子流参与者——002l 正反页几何锚点。
+mod r5215_atomic_flow_tests;

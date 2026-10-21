@@ -424,21 +424,70 @@ pub(super) fn adjust_inline_block_positions(
         .any(|c| c.is_block_level && !c.is_absolute && !c.is_fixed && matches!(c.float, FloatValue::None));
     // 垂直书写模式块轴为 X（box-offsets-rel-pos-vrl-002 谱系）：y 锚定仅水平模式。
     let is_vertical_wm = root.writing_mode.is_vertical_block_flow();
-    let block_offset_y = if has_non_ws_dom_text || !has_block_child || is_vertical_wm {
-        0.0
-    } else {
-        ib_indices
-            .iter()
-            .find_map(|idx| {
+    let anchor_path = !has_non_ws_dom_text && has_block_child && !is_vertical_wm;
+    // R5215（CSS2 §9.2.1.1）：锚定按 **IFC 行盒**分组。旧实现取**首个**原子 inline 的
+    // (taffy y − fragment y) 作全容器单一偏移——混排容器（块级子把 inline 内容分成
+    // 多段）的后继伪行沿用首行偏移，行 y 停在 IFC 单一连续行流的伪位（floats-wrap-
+    // top-below-002l-ref：span2 被定到 50 而非流位 150；随后 shift_siblings 的重叠
+    // 模型把它推回 150 的同时给父高 +100 → 容器 306）。改为每个行盒独立锚定：行内
+    // DOM 首个原子的 taffy 流位 − 该行 fragment y；同行原子保持 IFC 行内相对几何
+    //（va 对齐不受影响——分组键用 LineBox.y 而非 fragment.y，同 va 行内各原子
+    // fragment y 不同，后者会把 va 偏移误判成新行），跨行各取各的流位。单原子/单行
+    // 容器与旧首行锚定等价（transform-input-001 谱系不变）。
+    // 收窄（R5215）：分段者须为**块级 display 的元素子**。不能用盒的 is_block_level
+    // 标志判定——inline-table 的盒包装带 block 标志（border-image-repeat-round-003
+    // REF：[inline-table, inline-table, br, inline-table] 四子三个 block=true），而
+    // `<br>` 载体盒反是 inline 级（§9.2.1.1 匿名块不因 br 分段，行盒仍由 IFC 权威
+    // 装配）。仅 br/原子 inline 子的容器没有真分段：per-line 锚自引用（行内唯一原子
+    // 以自身 taffy 位为锚 → div3 停在 taffy 伪堆叠位 448 而非 IFC 行流位 240），
+    // 单一首行锚定才是对的。kill-switch `ZW_R5215_ATOMIC_FLOW=0` 回退旧单一锚定。
+    let has_real_block_element_child = root.children.iter().any(|c| {
+        !c.is_absolute
+            && !c.is_fixed
+            && matches!(c.float, FloatValue::None)
+            && c.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+                matches!(
+                    s.display,
+                    DisplayValue::Block
+                        | DisplayValue::FlowRoot
+                        | DisplayValue::ListItem
+                        | DisplayValue::Table
+                        | DisplayValue::Flex
+                        | DisplayValue::Grid
+                )
+            })
+    });
+    let r5215_per_line_anchor =
+        std::env::var("ZW_R5215_ATOMIC_FLOW").as_deref() != Ok("0") && has_real_block_element_child;
+    let mut line_anchor: Vec<f32> = Vec::new();
+    let mut node_line: HashMap<NodeId, usize> = HashMap::new();
+    if anchor_path {
+        // 原子 run（font_size==0 且非零宽）→ 所属行盒号（首次出现）。
+        for (li, line) in inline_ctx.lines.iter().enumerate() {
+            for run in &line.runs {
+                if run.font_size == 0.0 && run.width > 0.0 {
+                    node_line.entry(run.node_id).or_insert(li);
+                }
+            }
+        }
+        line_anchor = Vec::with_capacity(inline_ctx.lines.len());
+        for line in &inline_ctx.lines {
+            // 行内 DOM 首个原子作该行锚。
+            let anchor = ib_indices.iter().find_map(|idx| {
                 let child = &root.children[*idx];
                 let child_node_id = child.node_id?;
-                let fragment = fragments
+                let run = line
+                    .runs
                     .iter()
-                    .find(|f| f.node_id == child_node_id && f.font_size == 0.0 && f.width > 0.0)?;
-                Some(child.y - fragment.y)
-            })
-            .unwrap_or(0.0)
-    };
+                    .find(|r| r.node_id == child_node_id && r.font_size == 0.0 && r.width > 0.0)?;
+                // fragment y = run.y + line.y（与 all_fragments_with_line_y 同式）。
+                Some(child.y - (run.y + line.y))
+            });
+            line_anchor.push(anchor.unwrap_or(0.0));
+        }
+    }
+    // 旧口径（R5011）：首行偏移作用于全容器——kill-switch 回退路径保留。
+    let block_offset_y = line_anchor.first().copied().unwrap_or(0.0);
 
     for idx in &ib_indices {
         let child = &mut root.children[*idx];
@@ -452,7 +501,12 @@ pub(super) fn adjust_inline_block_positions(
             .find(|f| f.node_id == child_node_id && f.font_size == 0.0 && f.width > 0.0)
         {
             child.x = fragment.x;
-            child.y = fragment.y + block_offset_y;
+            child.y = if r5215_per_line_anchor && anchor_path {
+                let li = node_line.get(&child_node_id).copied().unwrap_or(0);
+                fragment.y + line_anchor.get(li).copied().unwrap_or(0.0)
+            } else {
+                fragment.y + block_offset_y
+            };
         }
     }
 }
