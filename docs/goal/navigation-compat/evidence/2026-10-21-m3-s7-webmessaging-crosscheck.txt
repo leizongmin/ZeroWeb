@@ -1,0 +1,165 @@
+bash tests/wpt-runner/scripts/goals/17-webmessaging-compat.sh
+== fetch 语料（pin 315976933，FORCE=0）==
+  webmessaging: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+curl: (28) Connection timed out after 8001 milliseconds
+curl: (28) Connection timed out after 8002 milliseconds
+curl: (28) Connection timed out after 8002 milliseconds
+curl: (28) Connection timed out after 8002 milliseconds
+  webmessaging/message-channels/close-event: API 列目录失败（限流/网络）——跳过，稍后重跑续拉
+  webmessaging/message-channels/resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  webmessaging/broadcastchannel/resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+== 语料盘点（wpt-data 本地 .html，含子目录）==
+  webmessaging                    91 案
+  webmessaging/message-channels/close-event     0 案
+  webmessaging/message-channels/resources     2 案
+  webmessaging/broadcastchannel/resources     4 案
+== M1 下一步（rally 轮，契约见 docs/goal/webmessaging-compat.md DC-1）==
+  1. runner 通道：zero-wpt-runner 新增 testharness 子命令 + per-dir skip 规则
+  2. Makefile：fetch-wpt / testharness target（test-guard 包裹，照 testharness-fs 先例）
+  3. 基线：分类通过率（文本 + JSON）落 docs/goal/webmessaging-compat/evidence/
+  4. 回填：docs/compat/trends/wpt-suites.csv planned 行转数据行（evidence 列给来源）
+rustc -O scripts/test-guard.rs -o target/test-guard
+cargo build --release --bin zero-wpt-runner
+    Finished `release` profile [optimized] target(s) in 0.26s
+./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 1200 -- ./target/release/zero-wpt-runner testharness-webmessaging 
+Fail webmessaging/Channel_postMessage_Blob.any.js :: load support /common/gc.js
+  No such file or directory (os error 2)
+Pass webmessaging/Channel_postMessage_DataCloneErr.any.js :: Throw a DataCloneError when a host object (e.g. a DOM node) is used with postMessage.
+Pass webmessaging/Channel_postMessage_clone_port.any.js :: Data sent through remote port is received by the new cloned port
+Pass webmessaging/Channel_postMessage_clone_port.any.js :: Test Description: Test Description: When the user agent is to clone a port original port, with the clone being owned by owner, it must return a new MessagePort object
+Pass webmessaging/Channel_postMessage_clone_port_error.any.js :: Test Description: Throw a DataCloneError if transfer array in postMessage contains source port.
+Pass webmessaging/Channel_postMessage_event_properties.any.js :: Test Description: The postMessage() method - Create an event that uses the MessageEvent interface, with the name message, which does not bubble and is not cancelable.
+Pass webmessaging/Channel_postMessage_ports_readonly_array.any.js :: Test Description: The postMessage() method - Make new ports into a read only array.
+Pass webmessaging/Channel_postMessage_target_source.any.js :: Test Description: The postMessage() method - Let target port be the port with which source port is entangled, if any.
+Pass webmessaging/Channel_postMessage_with_transfer_entangled.any.js :: An entangled port transferred to the same origin receives messages in order
+Pass webmessaging/Channel_postMessage_with_transfer_incoming_messages.any.js :: When transferring a non-enabled port mutiple times,
+    incoming messages sent at various transfer steps are received in order upon enablement.
+Pass webmessaging/Channel_postMessage_with_transfer_outgoing_messages.any.js :: When transferring a port,
+    outgoing messages sent at each transfer step are received in order by the entangled port.
+Pass webmessaging/MessageEvent-trusted.window.js :: With window
+Pass webmessaging/MessageEvent.any.js :: mozInitMessageEvent on the prototype
+Pass webmessaging/MessageEvent.any.js :: mozInitMessageEvent on the instance
+Pass webmessaging/MessageEvent.any.js :: msInitMessageEvent on the prototype
+Pass webmessaging/MessageEvent.any.js :: msInitMessageEvent on the instance
+Pass webmessaging/MessageEvent.any.js :: oInitMessageEvent on the prototype
+Pass webmessaging/MessageEvent.any.js :: oInitMessageEvent on the instance
+Pass webmessaging/MessageEvent.any.js :: webkitInitMessageEvent on the prototype
+Pass webmessaging/MessageEvent.any.js :: webkitInitMessageEvent on the instance
+Pass webmessaging/MessageEvent.any.js :: initMessageEvent with no arguments
+Pass webmessaging/MessageEvent_onmessage_postMessage_infinite_loop.html :: onmessage calling source postMessage
+Pass webmessaging/MessagePort_initial_disabled.any.js :: MessagePort_initial_disabled
+Pass webmessaging/MessagePort_onmessage_start.any.js :: MessagePort_onmessage_start
+Pass webmessaging/broadcastchannel/basics.any.js :: BroadcastChannel constructor called as normal function
+Pass webmessaging/broadcastchannel/basics.any.js :: postMessage results in correct event
+Pass webmessaging/broadcastchannel/basics.any.js :: messages are delivered in port creation order
+Pass webmessaging/broadcastchannel/basics.any.js :: messages aren't delivered to a closed port
+Pass webmessaging/broadcastchannel/basics.any.js :: messages aren't delivered to a port closed after calling postMessage.
+Pass webmessaging/broadcastchannel/basics.any.js :: Closing a channel in onmessage prevents already queued tasks from firing onmessage events
+Pass webmessaging/broadcastchannel/basics.any.js :: closing and creating channels during message delivery works correctly
+Pass webmessaging/broadcastchannel/interface.any.js :: Should throw if no name is provided
+Pass webmessaging/broadcastchannel/interface.any.js :: Null name should not throw
+Pass webmessaging/broadcastchannel/interface.any.js :: Undefined name should not throw
+Pass webmessaging/broadcastchannel/interface.any.js :: Non-empty name should not throw
+Pass webmessaging/broadcastchannel/interface.any.js :: Non-string name should not throw
+Pass webmessaging/broadcastchannel/interface.any.js :: postMessage without parameters should throw
+Pass webmessaging/broadcastchannel/interface.any.js :: postMessage with null should not throw
+Pass webmessaging/broadcastchannel/interface.any.js :: close should not throw
+Pass webmessaging/broadcastchannel/interface.any.js :: close should not throw when called multiple times
+Pass webmessaging/broadcastchannel/interface.any.js :: postMessage after close should throw
+Pass webmessaging/broadcastchannel/interface.any.js :: BroadcastChannel should have an onmessage event
+Pass webmessaging/broadcastchannel/interface.any.js :: postMessage should throw with uncloneable data
+Pass webmessaging/broadcastchannel/interface.any.js :: postMessage should throw InvalidStateError after close, even with uncloneable data
+Pass webmessaging/message-channels/basics.any.js :: basics
+Fail webmessaging/message-channels/close-event/garbage-collected.tentative.any.js :: load support /common/gc.js
+  No such file or directory (os error 2)
+Pass webmessaging/message-channels/close.any.js :: close() detaches a MessagePort (but not the one its entangled with)
+Pass webmessaging/message-channels/close.any.js :: Inflight messages should be delivered even when sending port is closed afterwards.
+Pass webmessaging/message-channels/close.any.js :: Close in onmessage should not cancel inflight messages.
+Pass webmessaging/message-channels/close.any.js :: Message sent to closed port should not arrive.
+Pass webmessaging/message-channels/close.any.js :: Message sent from closed port should not arrive.
+Pass webmessaging/message-channels/close.any.js :: Message sent to closed port from transferred port should not arrive.
+Pass webmessaging/message-channels/dictionary-transferrable.any.js :: dictionary-transferrable
+Pass webmessaging/message-channels/implied-start.any.js :: implied-start
+Pass webmessaging/message-channels/no-start.any.js :: no-start
+Fail webmessaging/message-channels/user-activation.tentative.any.js :: user-activation
+  Cannot read properties of undefined (reading 'isActive')
+Pass webmessaging/messageerror.html :: The default value of onmessageerror is null
+Pass webmessaging/messageerror.html :: The onmessageerror content attribute must be compiled into the onmessageerror property
+Pass webmessaging/messageerror.html :: The onmessageerror content attribute must execute when an event is dispatched on the window
+Pass webmessaging/with-options/broken-origin.html :: resolving broken url
+Pass webmessaging/with-options/host-specific-origin.html :: resolving url with stuff in host-specific
+Pass webmessaging/with-options/message-channel-transferable.html :: MessageChannel's ports as MessagePort objects
+Pass webmessaging/with-options/no-target-origin.html :: no targetOrigin
+Pass webmessaging/with-options/null-transfer.html :: null transfer
+Pass webmessaging/with-options/one-arg.html :: just one argument
+Pass webmessaging/with-options/slash-origin.html :: special value '/'
+Pass webmessaging/with-options/undefined-transferable.html :: undefined as transferable
+Pass webmessaging/with-options/unknown-parameter.html :: unknown parameter
+Pass webmessaging/with-ports/001.html :: resolving broken url
+Pass webmessaging/with-ports/002.html :: resolving url with stuff in host-specific
+Pass webmessaging/with-ports/003.html :: resolving 'example.org'
+Pass webmessaging/with-ports/004.html :: special value '/'
+Pass webmessaging/with-ports/005.html :: resolving a same origin targetOrigin
+Pass webmessaging/with-ports/006.html :: resolving a same origin targetOrigin with trailing slash
+Pass webmessaging/with-ports/007.html :: targetOrigin '*'
+Pass webmessaging/with-ports/010.html :: undefined
+Pass webmessaging/with-ports/010.html :: null
+Pass webmessaging/with-ports/010.html :: false
+Pass webmessaging/with-ports/010.html :: true
+Pass webmessaging/with-ports/010.html :: 1
+Pass webmessaging/with-ports/010.html :: NaN
+Pass webmessaging/with-ports/010.html :: Infinity
+Pass webmessaging/with-ports/010.html :: string
+Pass webmessaging/with-ports/010.html :: date
+Pass webmessaging/with-ports/010.html :: regex
+Pass webmessaging/with-ports/010.html :: self
+Pass webmessaging/with-ports/010.html :: array
+Pass webmessaging/with-ports/010.html :: object
+Pass webmessaging/with-ports/010.html :: error
+Pass webmessaging/with-ports/010.html :: unreached
+Pass webmessaging/with-ports/011.html :: posting an imagedata (from a cloned canvas) in an array
+Pass webmessaging/with-ports/012.html :: loop in array in structured clone
+Pass webmessaging/with-ports/013.html :: loop in object in structured clone
+Pass webmessaging/with-ports/014.html :: structured clone vs reference
+Pass webmessaging/with-ports/015.html :: different origin
+Pass webmessaging/with-ports/023.html :: null ports
+Pass webmessaging/with-ports/024.html :: undefined as ports
+Pass webmessaging/with-ports/025.html :: 1 as ports
+Pass webmessaging/with-ports/026.html :: object with length as transferable
+Pass webmessaging/with-ports/027.html :: Old-style array objects
+Pass webmessaging/with-ports/027.html :: MessageChannel's ports as MessagePort objects
+Pass webmessaging/without-ports/001.html :: resolving broken url
+Pass webmessaging/without-ports/002.html :: resolving url with stuff in host-specific
+Pass webmessaging/without-ports/003.html :: resolving 'example.org'
+Pass webmessaging/without-ports/004.html :: special value '/'
+Pass webmessaging/without-ports/005.html :: resolving a same origin targetOrigin
+Pass webmessaging/without-ports/006.html :: resolving a same origin targetOrigin with trailing slash
+Pass webmessaging/without-ports/007.html :: targetOrigin '*'
+Pass webmessaging/without-ports/009.html :: zero arguments
+Pass webmessaging/without-ports/010.html :: undefined
+Pass webmessaging/without-ports/010.html :: null
+Pass webmessaging/without-ports/010.html :: false
+Pass webmessaging/without-ports/010.html :: true
+Pass webmessaging/without-ports/010.html :: 1
+Pass webmessaging/without-ports/010.html :: NaN
+Pass webmessaging/without-ports/010.html :: Infinity
+Pass webmessaging/without-ports/010.html :: string
+Pass webmessaging/without-ports/010.html :: date
+Pass webmessaging/without-ports/010.html :: regex
+Pass webmessaging/without-ports/010.html :: self
+Pass webmessaging/without-ports/010.html :: array
+Pass webmessaging/without-ports/010.html :: object
+Pass webmessaging/without-ports/010.html :: error
+Pass webmessaging/without-ports/010.html :: unreached
+Pass webmessaging/without-ports/011.html :: posting an imagedata (from a cloned canvas) in an array
+Pass webmessaging/without-ports/012.html :: loop in array in structured clone
+Pass webmessaging/without-ports/013.html :: loop in object in structured clone
+Pass webmessaging/without-ports/014.html :: structured clone vs reference
+Pass webmessaging/without-ports/015.html :: different origin
+Pass webmessaging/without-ports/023.html :: Object cloning: own properties only, don't follow prototype
+Pass webmessaging/without-ports/024.html :: Object cloning: throw an exception if function values encountered
+Pass webmessaging/without-ports/026.html :: Cloning objects with getter properties
+Pass webmessaging/without-ports/027.html :: Cloning objects, preserving sharing
+Pass webmessaging/without-ports/028.html :: Cloning objects, preserving sharing #2
+Pass webmessaging/without-ports/029.html :: Check that getters don't linger after deletion wrt cloning
+make: *** [Makefile:678：testharness-webmessaging] 错误 1

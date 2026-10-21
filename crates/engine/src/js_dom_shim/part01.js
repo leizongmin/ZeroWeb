@@ -1464,6 +1464,15 @@
       // R160：fragment URL 槽（`:target` 判定——WPT :target 簇的
       // iframe 子文档 src 带 #target，doc 查询传 host 侧 set_url）。
       try { entry.doc._zwFragmentUrl = url; } catch (_e160f) {}
+      // navigation-compat M3-S7：文档解析完成即导航其子 iframe（spec
+      // #process-the-iframe-attributes 递归步；load 派发前——子文档嵌套 iframe
+      // 与同级资源同批就绪）。深度界由 _zwNestedDepth 印传递（主文档 entry 无印
+      // = 0）。
+      try {
+        if ((entry._zwNestedDepth | 0) < 5) {
+          _zwStartNestedIframeLoads(entry, frameKey, effectiveUrl, (entry._zwNestedDepth | 0) + 1);
+        }
+      } catch (_eS7sweep) {}
       var previousWin = entry.win || null;
       entry.win = _zwMakeIframeWin(entry.doc, frameKey, entry.flags || {}, previousWin);
       try { if (entry.doc.__r115SetWin) entry.doc.__r115SetWin(entry.win); } catch (_eW) {}
@@ -1899,6 +1908,95 @@
       _r115Entry.doc = _zwMakeIframeDoc('html', '');
     }
     return _r115Entry;
+  }
+  // navigation-compat M3-S7：嵌套 iframe src 按**所在文档** URL 解析（spec
+  // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#process-the-iframe-attributes
+  // ——parse a url against the iframe element's node document；主文档版
+  // _zwResolveIframeSrc 恒 globalThis.location base，子文档 base 不同）。
+  function _zwResolveNestedSrc(rawSrc, baseUrl) {
+    var out = String(rawSrc || '');
+    if (!out) return '';
+    if (/^https?:\/\//i.test(out) || out.indexOf('data:') === 0 || out.indexOf('about:') === 0) return out;
+    if (out.indexOf('/') === 0) {
+      var rootM = /^(https?:\/\/[^/?#]+)/i.exec(String(baseUrl || ''));
+      return (rootM ? rootM[1] : 'https://wpt.test') + out;
+    }
+    if (out.indexOf('./') === 0 || out.indexOf('../') === 0 || /^[?#]/.test(out) || !/^[\w+.-]*:/.test(out)) {
+      var base = String(baseUrl || '').replace(/[?#].*$/, '');
+      if (!base) return _zwResolveIframeSrc(out);
+      var dir = base.slice(0, base.lastIndexOf('/') + 1);
+      for (;;) {
+        var m = /^(\.\.\/)(.*)$/.exec(out);
+        if (!m) break;
+        dir = dir.replace(/[^/]*\/$/, '');
+        out = m[2];
+      }
+      return dir + out.replace(/^\.\//, '');
+    }
+    return out;
+  }
+  // navigation-compat M3-S7：子文档合成树内 iframe 的自主载入——spec
+  // #process-the-iframe-attributes 对文档内每个 iframe 递归成立；此前仅主文档层
+  // 有启航路径（S6 __zwStartParserIframes / 动态插入），子文档树内 iframe 恒不载
+  //（WPT iframe-loading-lazy-in-script-disabled-iframe 断言链第 2/3 层不可达）。
+  // 扫描位 = _zwFinishIframeEntry 内（文档解析完成、load 派发前）——srcdoc 与
+  // fetch 两形态共用。lazy 门按 spec
+  // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#attr-iframe-loading
+  // ——lazy loading 仅 script-enabled 文档适用（节点文档 sandbox 无 allow-scripts
+  // → 不按 lazy 处理，加载立即发起）；script-enabled 链维持惰性记账面。
+  // 嵌套 entry 走共享 finish 管线（doc/win/scripts/history/load 全链 + 递归扫描
+  // ——孙代文档内的 iframe 同轮成立）；sandbox 旗标整链继承（spec：sandbox flags
+  // propagate to all descendant browsing contexts），脚本门随 entry.flags 生效。
+  // 深度界 5（corpus 最深 3 层）；合成 frameKey（'::n' 序号）不入宿主注册表。
+  var _zwNestedIframeSeq = 0;
+  function _zwStartNestedIframeLoads(entry, frameKey, baseUrl, depth) {
+    if (!entry || !entry.doc || typeof entry.doc.querySelectorAll !== 'function') return;
+    var nestedFlags = entry.flags || {};
+    var scriptEnabled = !(nestedFlags.sandboxed && !nestedFlags.allowScripts);
+    var frames;
+    try { frames = entry.doc.querySelectorAll('iframe'); } catch (_eS7q) { return; }
+    for (var i = 0; i < frames.length; i++) {
+      var f = frames[i];
+      if (!f || String(f.tagName || '').toUpperCase() !== 'IFRAME') continue;
+      var loadingS7 = '';
+      try { loadingS7 = String(f.getAttribute('loading') || '').toLowerCase(); } catch (_eS7l) {}
+      if (loadingS7 === 'lazy' && scriptEnabled) continue;
+      var srcdocS7 = null, srcS7 = '';
+      try { srcdocS7 = f.getAttribute('srcdoc'); } catch (_eS7sd) {}
+      try { srcS7 = String(f.getAttribute('src') || ''); } catch (_eS7s) {}
+      if (srcdocS7 == null && !srcS7) continue;
+      var nestedKey = frameKey + '::n' + (++_zwNestedIframeSeq);
+      var nestedEntry = { doc: null, win: null, state: 'loading', history: [], flags: nestedFlags,
+        _zwNestedDepth: depth | 0 };
+      _iframeDocCache[nestedKey] = nestedEntry;
+      try { f.__zwNestedEntry = nestedEntry; } catch (_eS7stamp) {}
+      if (srcdocS7 != null) {
+        _zwFinishIframeEntry(nestedEntry, nestedKey, 'about:srcdoc',
+          '200\x1fOK\x1fcontent-type\x1etext/html\x1e\x1f' + String(srcdocS7));
+      } else if (srcS7.indexOf('javascript:') !== 0 && typeof __zw_fetch === 'function') {
+        var nestedUrl = _zwResolveNestedSrc(srcS7, baseUrl);
+        try {
+          var pendingIdS7 = 'niframe:' + nestedKey + ':' + (++_zwIframeFetchSeq);
+          nestedEntry.url = nestedUrl;
+          var wireS7 = String(__zw_fetch(
+            pendingIdS7, 'GET', nestedUrl, '', '', '', '', '', '', '', 'iframe:' + nestedKey) || '');
+          if (wireS7) {
+            _zwFinishIframeEntry(nestedEntry, nestedKey, nestedUrl, wireS7);
+          } else {
+            nestedEntry.pendingId = pendingIdS7;
+            globalThis.__zw_pending[pendingIdS7] = function (raw) {
+              delete globalThis.__zw_pending[pendingIdS7];
+              _zwFinishIframeEntry(nestedEntry, nestedKey, nestedUrl, raw);
+            };
+          }
+        } catch (_eS7f) {
+          nestedEntry.state = 'error';
+        }
+      } else {
+        nestedEntry.state = 'no-src';
+        try { nestedEntry.doc = _zwMakeIframeDoc('html', ''); } catch (_eS7ns) {}
+      }
+    }
   }
   function _zwSyncIframeWindowHistory(entry) {
     if (!entry || !entry.win || !entry.win.history || !entry.history || !entry.history.length) return;

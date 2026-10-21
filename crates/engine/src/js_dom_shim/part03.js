@@ -14687,6 +14687,34 @@
       });
     }
     node.hasAttribute = function (n) { return node.getAttribute(n) !== null; };
+    // navigation-compat M3-S7：子文档合成树 IFRAME 元素的 contentDocument/
+    // contentWindow 面（spec
+    // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#dom-iframe-contentdocument
+    // ——嵌套浏览上下文的活跃 Document/WindowProxy）。轻量解析节点无
+    // sel/handle，入口 = S7 嵌套载入扫描盖的 __zwNestedEntry 印；未扫描/未载
+    // → null（R115「未加载完成 contentDocument 可为 null」同语义）。跨源门同
+    // R115：沙箱链无 allow-same-origin（opaque origin）或 data: URL 文档 → null。
+    if (tag === 'iframe') {
+      try {
+        Object.defineProperty(node, 'contentDocument', {
+          configurable: true,
+          get: function () {
+            var e7 = node.__zwNestedEntry;
+            if (!e7) return null;
+            if (e7.flags && e7.flags.sandboxed && !e7.flags.allowSameOrigin) return null;
+            if (typeof e7.url === 'string' && e7.url.indexOf('data:') === 0) return null;
+            return e7.servedDoc || e7.doc;
+          },
+        });
+        Object.defineProperty(node, 'contentWindow', {
+          configurable: true,
+          get: function () {
+            var e7 = node.__zwNestedEntry;
+            return e7 ? (e7.win || null) : null;
+          },
+        });
+      } catch (_eS7face) {}
+    }
     // R5000 片 b（html-syntax-compat）：HTMLElement 全局反射字符串三元组（spec
     // `the-title-attribute`/`the-lang-and-xml:lang-attributes`/`the-dir-attribute`
     // ——title/lang/dir IDL 反射 content attribute）。innerHTML 赋值同 turn 读

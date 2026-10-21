@@ -551,6 +551,82 @@ fn m3s6_parser_src_iframe_autoload_fires_element_load() {
     );
 }
 
+/// M3-S7 子文档嵌套 iframe 自主载入 + 子文档合成树 contentDocument 面（spec
+/// https://html.spec.whatwg.org/multipage/iframe-embed-object.html#process-the-iframe-attributes
+/// 递归步 + #attr-iframe-loading——lazy 仅 script-enabled 文档适用）。三层断言链
+/// 对齐 WPT iframe-loading-lazy-in-script-disabled-iframe：sandbox 无 allow-scripts
+/// 文档的 lazy 子 iframe 仍加载；script-enabled 链 lazy 维持惰性；无 loading 嵌套
+/// 常载；跨层 src 按所在文档 URL 解析。
+#[test]
+fn m3s7_nested_iframe_loads_and_content_document_face() {
+    use std::sync::{Arc, Mutex};
+    let mut sandbox = m3s2_sandbox(
+        "https://wpt.test/html/semantics/embedded-content/the-iframe-element/m3s7.html",
+        "<html><body>\
+         <iframe id=\"scriptless\" sandbox=\"allow-same-origin\" src=\"support/lazy-inner.html\"></iframe>\
+         <iframe id=\"eager\" src=\"support/lazy-inner.html\"></iframe>\
+         <iframe id=\"plain\" src=\"support/plain-inner.html\"></iframe>\
+         </body></html>",
+    );
+    let fetches: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let fetch_log = fetches.clone();
+    sandbox
+        .register_callback(
+            "__zw_fetch",
+            Box::new(move |args| {
+                let url = args.get(2).cloned().unwrap_or_default();
+                fetch_log.lock().unwrap().push(url.clone());
+                let body = if url.contains("lazy-inner.html") {
+                    "<iframe id=\"sub\" loading=\"lazy\" src=\"subframe.html\"></iframe>"
+                } else if url.contains("plain-inner.html") {
+                    "<iframe id=\"sub\" src=\"subframe.html\"></iframe>"
+                } else {
+                    "<!DOCTYPE html><body>\
+                     <p>Subframe</p>\
+                     </body>"
+                };
+                format!("__zwfr:200\x1fOK\x1fcontent-type\x1etext/html\x1e\x1f{body}")
+            }),
+        );
+    // window load 派发触发主文档补启（S6）；子文档嵌套链随 finish 管线同步成立。
+    sandbox
+        .execute("globalThis.dispatchEvent(new Event('load'));")
+        .unwrap();
+    for _ in 0..8 {
+        sandbox.execute("0").unwrap();
+    }
+    sandbox
+        .execute(
+            "var s = document.querySelector('#scriptless');\
+             var si = s.contentDocument.querySelector('iframe');\
+             globalThis.__r = {\
+               sub: si.contentDocument.body.textContent.trim(),\
+               eager: document.querySelector('#eager').contentDocument.querySelector('iframe').contentDocument,\
+               plain: document.querySelector('#plain').contentDocument.querySelector('iframe').contentDocument.body.textContent.trim()\
+             };",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("JSON.stringify(globalThis.__r)")
+            .unwrap()
+            .value,
+        r#"{"sub":"Subframe","eager":null,"plain":"Subframe"}"#,
+        "三层链：script-disabled 文档 lazy 不豁免（子 iframe 已载、body 文本可达）\
+         + script-enabled 链 lazy 维持惰性（contentDocument null）+ 无 loading 常载"
+    );
+    let fetched = fetches.lock().unwrap().join("|");
+    assert!(
+        fetched.contains("subframe.html"),
+        "嵌套子 iframe fetch 已结算（跨层 src 按所在文档 URL 解析）：{fetched}"
+    );
+    assert_eq!(
+        fetched.matches("subframe.html").count(),
+        2,
+        "subframe 恰两载（scriptless 链 lazy 照载 + plain 链常载；eager 链 lazy 未载）"
+    );
+}
+
 /// M3-S5 父→子 postMessage 跨窗口投递 + 子文档 onmessage（spec
 /// https://html.spec.whatwg.org/multipage/web-messaging.html#dom-window-postmessage
 /// ——targetOrigin 校验按目标窗 origin，'*' 放行；子文档裸 onmessage 赋值落
