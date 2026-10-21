@@ -1,34 +1,34 @@
 # SVG 文档面兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../svg-compat.md](../svg-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-21（M2 S2c 落地）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-21（M2 S3 落地）
 
 ## 当前状态
 
-**M2 S2c 完成（2026-10-21）**：List/Transform 批落地——值列表引擎
-（SVG{Length,Number,Point,String}List：parse-invalid-clears/条目混合态
-live+快照回落/变更面全表/IndexSizeError 域/写透序列化）+ SVGTransform
-（type/matrix SameObject 就地更新 + set* 族）+ SVGTransformList（live 对象
-存储 + 所有权语义：无主收编/已属插副本 + consolidate 归并）+ 反射挂点
-（SVGTextPositioningElement x/y/dx/dy/rotate、polygon/polyline
-points/animatedPoints、SVGTests requiredExtensions/systemLanguage、
-SVGGraphicsElement.transform、pattern/gradientTransform、
-createSVGTransform 工厂）。types 子面 **491P/191F/0T**（S2b 399P/208F，
-+92P/-17F）；全 corpus 486 案 **681P/965F/32T/18NR = 40.2%**（含 NR 口径，
-+127P/-41F，Timeout 32 持平，全绿案 63→76，逐案零真回归；分母
-1610→1696 为 SameObject-identity 早崩释放披露面）；S2c 靶面 13 案全绿
-（**SameObject-identity 81/81**——S2a 挂账 41 断言死点随 transform 反射
-解除、TransformList.list-01 14/14、systemLanguage-parsing 13/13、LengthList
-四案等）。机制探针 7/7。卡点：无。下一步：M2 S3——SVGSVGElement 面
-（pauseAnimations 族 stub + currentTranslate 真对象复核 + CTM；盘点见
-evidence/2026-10-21-m2-s3-svgsvgelement-prep.md）。
+**M2 S3 完成（2026-10-21）**：SVGSVGElement 面落地——动画控制状态机 stub
+（pauseAnimations/unpauseAnimations/getCurrentTime/setCurrentTime，per-element
+状态，M4 SMIL 时钟接入后合流共享 timeline）+ currentTranslate（[SameObject]
+只读 SVGPoint，SameObject-identity 的 DOMPointReadOnly 断言假绿转真绿）+
+currentScale（outermost 判定：直接父不在 SVG ns；嵌套 getter 恒 1/setter
+no-op）+ deselectAll（清文档 selection）+ viewBox 负维度→零矩形（WebKit
+tentative）。实现期发现并修复引擎缺口：元素 proxy set trap 无原型 setter 派发
+（R98 仅 CE 门控）——S3 名称门控分支（setter 调用/getter-only 静默拒绝不落
+expando）。全 corpus 486 案 **734P/928F/40T/0NR = 43.1%**（含 NR 口径，S2c
+681P/965F/32T/18NR = 40.2% 以来 **+53P/-37F**，全绿案 76→110，逐案零 DOWN）；
+S3 靶面 4 案全绿 + 动画面脚手架释放 30 案翻绿（smil-clock 18NR→11P/7F +
+invalid-value 族 29 案平凡满足全绿，M4 复核面）；**Timeout 32→40**：seeking-
+events 族 9 案 F→T（SMIL 时钟缺，挂账面分类移动非 Pass 损失，M4 输入）。
+机制探针 5/5。全 workspace `make test` EXIT=0（2026-10-21 S3 轮）。
+卡点：无。下一步：M2 S4 几何面（S4a getTotalLength/
+getPointAtLength → S4b getBBox → S4c pathData 评估；盘点见
+evidence/2026-10-21-m2-s4-geometry-prep.md）。
 
 ## 缺口清单
 
 | # | 缺口 | 状态 |
 |---|------|------|
 | P1 | svg/ corpus 导入 + 基线 + 渲染断言面占比盘点 | ✅ M1（2026-10-21，8.8% 基线） |
-| P2 | SVG DOM 类层级 + SVGSVGElement viewBox/CTM 最小面 | ⏳ M2（S1 ✅ S2a ✅ S2b ✅ S2c ✅ 2026-10-21，S3→S4 进行中） |
+| P2 | SVG DOM 类层级 + SVGSVGElement viewBox/CTM 最小面 | ⏳ M2（S1 ✅ S2a ✅ S2b ✅ S2c ✅ S3 ✅ 2026-10-21，S4 进行中） |
 | P3 | SVGGeometryElement 几何接口 + 事件目标化 | ⏳ M3 |
 | P4 | SMIL 评估 + 渲染断言面挂账定稿 | ⏳ M4 |
 
@@ -57,23 +57,29 @@ evidence/2026-10-21-m2-s3-svgsvgelement-prep.md）。
   681P/965F/32T/18NR = 40.2%（+127P，全绿案 63→76，零真回归）；S2c 靶面
   13 案全绿（SameObject-identity 81/81 解锁）。证据：
   evidence/2026-10-21-m2-s2c-list-transform-landing.md。
+- **M2 S3（2026-10-21）**：SVGSVGElement 面（本 session 端到端持有——
+  WPT 靶案断言精读、S3 块 + set trap 派发缺口修复、探针一轮修正、全量
+  对账）。corpus 734P/928F/40T/0NR = 43.1%（+53P，全绿案 76→110，零
+  DOWN；Timeout 32→40 为 F→T 挂账面分类移动）；S3 靶面 4 案全绿 +
+  动画面脚手架释放 30 案翻绿；SameObject-identity currentTranslate 假绿
+  转真绿。getScreenCTM 划界 rendering-compat 协同。证据：
+  evidence/2026-10-21-m2-s3-svgsvgelement-landing.md。
 
 ## 下一步计划
 
-1. **M2 S3 SVGSVGElement 面**：动画控制 stub（pauseAnimations 族，释放
-   动画面 275 案脚手架）+ 工厂族剩余 + currentTranslate 反射（S2c 后
-   SameObject-identity 的 DOMPointReadOnly 断言系 undefined 恒等假绿，
-   S3 须落真对象复核）+ CTM（盘点见
-   evidence/2026-10-21-m2-s3-svgsvgelement-prep.md）；S3 落地后
-   M4 SMIL 分类账须重跑（当前时序面被脚手架遮蔽，见
-   evidence/2026-10-21-m4-smil-assessment-prep.md）。
-2. **M2 S4 几何面**：S4a getTotalLength/getPointAtLength 纯路径数学 →
+1. **M2 S4 几何面**：S4a getTotalLength/getPointAtLength 纯路径数学 →
    S4b getBBox 形状属性级 bbox（S2c 残余 svgtransformlist-replaceitem
    卡点即 getBBox）→ S4c pathData API 评估；文本几何 ~55F 挂账候选
-   （盘点见 evidence/2026-10-21-m2-s4-geometry-prep.md）。
+   （盘点见 evidence/2026-10-21-m2-s4-geometry-prep.md）。S4 完成后
+   M2 CSV 行回填。
+2. **M4 SMIL 分类账重跑**：S3 脚手架已释放时序面（seeking-events 族 F→T、
+   invalid-value 族平凡全绿），M4 SMIL 评估须以 S3 后口径重跑分类（见
+   evidence/2026-10-21-m4-smil-assessment-prep.md + S3 landing 排片对位）。
 3. **上下文换算补面（S2a FIXME）**：SVGLength 关联元素的 em/ex/percentage
    上下文（SVGLength-viewport 8F / percentage-directionality 6F）——与 S4b
    getBBox 的几何上下文同批评估。
+4. **rendering-compat 协同项**：getScreenCTM/getCTM 族（S3 划界，需 CSS
+   transform 感知布局合成）——与渲染域会话对齐后排期。
 
 **待用户决策清单**：（空）
 

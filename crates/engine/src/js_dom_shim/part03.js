@@ -3239,6 +3239,10 @@
           var n = Number(ps[i]);
           if (!isNaN(n)) out[keys[i]] = n;
         }
+        // 负维度 viewBox 是语法错误（spec coords.html §ViewBoxAttribute）→
+        // 零矩形（WPT viewBox-invalid-attribute-baseval.tentative 期望
+        // {0,0,0,0}，WebKit 行为；Gecko/Blink 留原值，跨引擎 pending）。
+        if (out.width < 0 || out.height < 0) return { x: 0, y: 0, width: 0, height: 0 };
       }
       return out;
     };
@@ -4325,6 +4329,98 @@
     globalThis.SVGSVGElement.prototype.createSVGTransform = function () {
       return _zwMakeSVGTransform();
     };
+  }
+  // svg-compat M2 S3：SVGSVGElement 面——动画控制状态机 + currentTranslate/
+  // currentScale + deselectAll（spec SVG2 struct.html §InterfaceSVGSVGElement）。
+  // 语义要点（WPT 对位）：
+  // - 动画控制（pauseAnimations/unpauseAnimations/getCurrentTime/
+  //   setCurrentTime）：per-element 状态 {t, paused}——spec 的 document timeline
+  //   应同文档所有 svg 片段共享且由 SMIL 时钟驱动，本实现是控制面 stub
+  //   （FIXME(svg-compat M4)：SMIL 时钟接入后合流共享 timeline；共享语义
+  //   corpus 暂无消费者）。setCurrentTime float 校验（WebIDL float）。
+  // - currentTranslate：[SameObject] 只读 SVGPoint（WPT
+  //   currentTranslate-SameObject：连读同身份 + 变更可观察 + 赋值静默忽略
+  //   ——getter-only accessor sloppy 赋值 no-op）。
+  // - currentScale：outermost svg（直接父不在 SVG ns——body 子/fo 内/无父
+  //   均算，WPT currentScale-outermost）可往返；嵌套 svg getter 恒 1、
+  //   setter no-op（inert）。
+  // - deselectAll：清文档 selection（selection removeAllRanges——part05
+  //   R3254-E2 面；无 browsing context/异常静默，WPT deselectAll 无选区
+  //   调用不抛）。
+  var _zwSvgSvgCtlState = function (el) {
+    var k = _zwSvgAnimKey(el, '_zwSvgCtl');
+    if (k && _zwSvgAnimCache[k]) return _zwSvgAnimCache[k];
+    var st = { t: 0, paused: false, scale: 1 };
+    if (k) _zwSvgAnimCache[k] = st;
+    return st;
+  };
+  var _zwSvgIsOutermost = function (el) {
+    var pn = null;
+    try { pn = el.parentNode; } catch (_eP) { return true; }
+    if (!pn || !pn.localName) return true;
+    if (String(pn.localName).toLowerCase() !== 'svg') return true;
+    var ns = '';
+    try { ns = pn.namespaceURI == null ? '' : String(pn.namespaceURI); } catch (_eN) {}
+    return ns !== '' && ns !== 'http://www.w3.org/2000/svg';
+  };
+  if (globalThis.SVGSVGElement && globalThis.SVGSVGElement.prototype) {
+    var _zwSvgSvgP = globalThis.SVGSVGElement.prototype;
+    if (!_zwSvgSvgP.pauseAnimations) {
+      _zwSvgSvgP.pauseAnimations = function () { _zwSvgSvgCtlState(this).paused = true; };
+    }
+    if (!_zwSvgSvgP.unpauseAnimations) {
+      _zwSvgSvgP.unpauseAnimations = function () { _zwSvgSvgCtlState(this).paused = false; };
+    }
+    if (!_zwSvgSvgP.getCurrentTime) {
+      _zwSvgSvgP.getCurrentTime = function () { return _zwSvgSvgCtlState(this).t; };
+    }
+    if (!_zwSvgSvgP.setCurrentTime) {
+      _zwSvgSvgP.setCurrentTime = function (seconds) {
+        var n = Number(seconds);
+        if (!isFinite(n)) throw new TypeError('The provided float value is non-finite');
+        _zwSvgSvgCtlState(this).t = n;
+      };
+    }
+    if (!_zwSvgSvgP.deselectAll) {
+      _zwSvgSvgP.deselectAll = function () {
+        var sel = null;
+        try {
+          var doc = this.ownerDocument;
+          var w = doc && doc.defaultView;
+          sel = (w && w.getSelection && w.getSelection())
+            || (doc && doc.getSelection && doc.getSelection())
+            || (globalThis.getSelection ? globalThis.getSelection() : null);
+        } catch (_eSel) { return; }
+        try { if (sel && sel.removeAllRanges) sel.removeAllRanges(); } catch (_eRm) {}
+      };
+    }
+    if (!Object.prototype.hasOwnProperty.call(_zwSvgSvgP, 'currentTranslate')) {
+      Object.defineProperty(_zwSvgSvgP, 'currentTranslate', {
+        configurable: true,
+        get: function () {
+          var k = _zwSvgAnimKey(this, '_zwTranslate');
+          if (k && _zwSvgAnimCache[k]) return _zwSvgAnimCache[k];
+          var pt = _zwMakeSVGPoint();
+          if (k) _zwSvgAnimCache[k] = pt;
+          return pt;
+        },
+      });
+    }
+    if (!Object.prototype.hasOwnProperty.call(_zwSvgSvgP, 'currentScale')) {
+      Object.defineProperty(_zwSvgSvgP, 'currentScale', {
+        configurable: true,
+        get: function () {
+          if (!_zwSvgIsOutermost(this)) return 1;
+          return _zwSvgSvgCtlState(this).scale;
+        },
+        set: function (v) {
+          if (!_zwSvgIsOutermost(this)) return;  // 嵌套 inert（WPT setter no-op）
+          var n = Number(v);
+          if (!isFinite(n)) throw new TypeError('The provided float value is non-finite');
+          _zwSvgSvgCtlState(this).scale = n;
+        },
+      });
+    }
   }
   // WC-M1 切片 4（spec create-a-native-element / interface object [[Call]]）：
   // 接口构造器被 **custom element 的 super() 调用**且无升级在途（`new klass()` 形态，

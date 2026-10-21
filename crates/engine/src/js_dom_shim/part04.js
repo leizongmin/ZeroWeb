@@ -10502,6 +10502,33 @@
             }
           }
         }
+        // svg-compat M2 S3：SVGSVGElement currentScale/currentTranslate 原型
+        // accessor set 派发（R98 同款走查、名称门控——接口 accessor 挂
+        // SVGSVGElement.prototype，get 经 R93 尾部回落可达，set 无此分支则恒落
+        // expando：currentScale 嵌套 inert 失效、currentTranslate 只读赋值写
+        // expando 遮蔽 get 回落破坏 [SameObject] 身份——WPT
+        // currentTranslate-SameObject/currentScale-outermost 对位）。有 setter →
+        // 以 proxy 为 this 调用（异常传播语义同 R98 adoptedStyleSheets——float
+        // 校验 TypeError 须可达）；getter-only → sloppy 静默拒绝（不落 expando）。
+        if (p === 'currentScale' || p === 'currentTranslate') {
+          var _s3Chain = null;
+          try { _s3Chain = Object.getPrototypeOf(_makeProxy(sel, handle)); } catch (_eS3c) { _s3Chain = null; }
+          var _s3Guard = 0;
+          while (_s3Chain && _s3Guard < 8) {
+            var _s3Desc = null;
+            try { _s3Desc = Object.getOwnPropertyDescriptor(_s3Chain, p); } catch (_eS3d) { _s3Desc = null; }
+            if (_s3Desc) {
+              if (typeof _s3Desc.set === 'function') {
+                _s3Desc.set.call(_makeProxy(sel, handle), value);
+                return true;
+              }
+              if (_s3Desc.get) return true;  // getter-only：静默拒绝，不写 expando
+              break;  // data property → 交回常规分支（expando 语义）
+            }
+            _s3Chain = Object.getPrototypeOf(_s3Chain);
+            _s3Guard++;
+          }
+        }
         var moAttr = null;
         // js-dom M4 R45：MutationObserver attributeOldValue——IDL 反射 setter（el.id=/className=/title= 等）的
         // old 值须在**写入前**捕获（写后读即新值）。旧实现 part05 末尾 notify 不带 oldValue（恒 null，WPT
