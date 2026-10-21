@@ -1,5 +1,5 @@
 #!/bin/sh
-# 桌面浏览器 M1 真窗口主链路演示流（docs/goal/desktop-browser.md M1）。
+# 桌面浏览器 M1 真窗口主链路演示流（docs/goal/archive/desktop-browser.md M1）。
 #
 # 在 Linux 真实窗口（X11/Wayland；无人值守时经 xvfb-run 提供 display）内端到端
 # 验收：启动 → 加载 URL → 渲染 → 输入交互（滚动 / 缩放 / 刷新），三腿覆盖：

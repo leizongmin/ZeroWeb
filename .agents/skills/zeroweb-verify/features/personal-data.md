@@ -36,7 +36,7 @@ DATA_SMOKE 每步成功、书签目标增删可见、历史清空、主页 URL �
 
 ## 来源与证据
 
-[M4 数据面](../../../../docs/goal/desktop-browser/evidence/M4-data-plane.md)、
+[M4 数据面](../../../../docs/goal/archive/desktop-browser/evidence/M4-data-plane.md)、
 [profile 实现](../../../../crates/browser-shell/src/profile.rs)、
 [地图](index.md)。版本环境见 [初始化记录](../initialization.md)；
 2026-10-14 本轮 F03 所有入口 `NOT_RUN`。

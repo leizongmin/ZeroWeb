@@ -39,7 +39,7 @@ M2 不自动证明会话恢复。
 
 ## 导航与状态
 
-[M2 既有验收](../../../../docs/goal/desktop-browser/evidence/M2-tabs-navigation.md)、
+[M2 既有验收](../../../../docs/goal/archive/desktop-browser/evidence/M2-tabs-navigation.md)、
 [会话实现](../../../../crates/browser-shell/src/session.rs)、
 [地图](index.md)。2026-10-14 初始化基准环境见 [记录](../initialization.md)；
 F01/F02 全部 `NOT_RUN`，这里提供复用路径，不宣称本轮 GUI/会话通过。

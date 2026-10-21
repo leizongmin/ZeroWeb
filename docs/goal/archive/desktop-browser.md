@@ -1,8 +1,10 @@
 # 桌面浏览器应用产品化 — browser-shell 真窗口验收（M11）
 
+> **整体归档（模式 A，2026-10-21）**：按原目标约定范围收口；控制面与证据随入口归档，原有排除项、残差和重入条件保留。对应 Rally 启动脚本已删除。
+
 **版本**: v1.0
 **日期**: 2026-09-12
-**状态**: Done（2026-09-27 M5 收口，DC-1~5 全 ✅——真窗口主链路（Linux 演示流 + GPU 合成 + 三平台 CI 启动冒烟）+ 导航/标签 + 下载/右键菜单/缩放/页面查找内容工具 + 收藏/历史/设置/主页数据面（profile 隔离）；守成门 = make test + `scripts/desktop-browser-m1~m4-smoke.sh` 四演示流；控制面见 [master.md](desktop-browser/master.md)）
+**状态**: ✅ Completed（2026-09-27 M5 收口，DC-1~5 全 ✅——真窗口主链路（Linux 演示流 + GPU 合成 + 三平台 CI 启动冒烟）+ 导航/标签 + 下载/右键菜单/缩放/页面查找内容工具 + 收藏/历史/设置/主页数据面（profile 隔离）；守成门 = make test + `scripts/desktop-browser-m1~m4-smoke.sh` 四演示流；控制面见 [master.md](desktop-browser/master.md)；2026-10-21 模式 A 整树归档）
 **执行模式**: 演示流驱动（每功能一条可脚本重放的验收流）；遇深结构（GPU surface 平台
 差异、engine 文本搜索 API 缺位）→ 记「待用户决策」→ 跳过 → 继续其他功能面
 **父目标**: `docs/goal/zero-web.md`（M11 浏览器应用 + DC-2「浏览器日常可用」主路径）

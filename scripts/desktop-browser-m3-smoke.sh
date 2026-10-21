@@ -1,5 +1,5 @@
 #!/bin/sh
-# 桌面浏览器 M3 下载管理器真实窗口演示流（docs/goal/desktop-browser.md M3）。
+# 桌面浏览器 M3 下载管理器真实窗口演示流（docs/goal/archive/desktop-browser.md M3）。
 #
 # 真实窗口（X11/Wayland；无人值守时经 xvfb-run 提供 display）内经真实输入路径驱动：
 #   页面链接点击 → attachment 响应拦截 → 文件落盘 + 下载管理器记账（Pending →

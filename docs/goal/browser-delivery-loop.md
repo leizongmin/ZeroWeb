@@ -16,7 +16,7 @@
 
 范围：现有桌面平台安装/卸载、可追溯版本与构建信息、更新校验与中断回滚、本地崩溃报告、用户同意后导出反馈、会话恢复。
 
-边界：复用 [desktop-browser](desktop-browser.md)、[Android 历史交付](archive/android-browser/master.md)和现有验证工具，不改变支持平台承诺。渠道、签名证书、更新源、报告服务和保留策略在 M1/M2 记录待定；没有对应授权只做本地模拟，不自动购买、发布、上传或发送消息。
+边界：复用 [desktop-browser](archive/desktop-browser.md)、[Android 历史交付](archive/android-browser/master.md)和现有验证工具，不改变支持平台承诺。渠道、签名证书、更新源、报告服务和保留策略在 M1/M2 记录待定；没有对应授权只做本地模拟，不自动购买、发布、上传或发送消息。
 
 碰撞：按 [run-rules §9–11](../rally/run-rules.md)协调 packaging/browser/profile/storage 和既有发布流；只修改本 goal 控制面，安装使用隔离目录与 profile。
 

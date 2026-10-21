@@ -1,5 +1,5 @@
 #!/bin/sh
-# 桌面浏览器 M2 标签族/导航控制真实窗口演示流（docs/goal/desktop-browser.md M2）。
+# 桌面浏览器 M2 标签族/导航控制真实窗口演示流（docs/goal/archive/desktop-browser.md M2）。
 #
 # 真实窗口（X11/Wayland；无人值守时经 xvfb-run 提供 display）内经真实输入路径驱动：
 #   Ctrl+T 新标签 → 第二标签导航 → Ctrl+Tab 切回 → Alt+Left 后退 → Alt+Right 前进

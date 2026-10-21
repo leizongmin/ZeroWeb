@@ -1,6 +1,6 @@
 # M3 扩批过程记录归档（event_* 族 ~ 第 XVIII 批）（只追加不修改）
 
-**入口文档**: [../media-elements.md](../media-elements.md) | **控制面**: [../master.md](../master.md)
+**入口文档**: [../media-elements.md](../../media-elements.md) | **控制面**: [../master.md](../master.md)
 **归档日期**: 2026-09-04（治理切片——master.md 当前状态块的批次明细移入本档：2026-09-01 扩批族（event_*/第二批/III~X）+ 2026-09-02 批（XI~XV）+ 2026-09-03 批（XVI~XVIII）。第 XIX~XXXIX 批明细在 master.md 头链（最新态）；每批证据 JSON 在 evidence/ 不动；累计口径 603P/0F/24PF = 96.17%）
 
 ---

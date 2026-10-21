@@ -47,7 +47,7 @@ Android 下载通知/SAF 路径见 [移动端](android.md)，不与桌面文件�
 
 ## 来源与证据
 
-[M3 下载](../../../../docs/goal/desktop-browser/evidence/M3-download-manager.md)、
-[M3 查找](../../../../docs/goal/desktop-browser/evidence/M3-page-find.md)、
-[M3 菜单缩放](../../../../docs/goal/desktop-browser/evidence/M3-context-menu-zoom.md)。
+[M3 下载](../../../../docs/goal/archive/desktop-browser/evidence/M3-download-manager.md)、
+[M3 查找](../../../../docs/goal/archive/desktop-browser/evidence/M3-page-find.md)、
+[M3 菜单缩放](../../../../docs/goal/archive/desktop-browser/evidence/M3-context-menu-zoom.md)。
 2026-10-14 本轮 F04/F05 全部 `NOT_RUN`，版本环境见 [初始化记录](../initialization.md)。

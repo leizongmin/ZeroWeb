@@ -188,10 +188,10 @@ goal Done Criteria 全满足。**
   （`apt install libdav1d-dev` 或 `apt install meson ninja`），按 run-rules 须用户
   批准；三平台 CI 构建矩阵成本同 RFC §6 风险面 | ✅ 获批选 A（2026-09-01，
   GB-20260901 批复）——`libdav1d-dev 1.5.1-1` 已装，pkg-config 发现 dav1d 1.5.1；
-  apt 清单已记入 [docs/development/linux-macos.md](../../development/linux-macos.md)（不阻塞 M3 其余面——
+  apt 清单已记入 [docs/development/linux-macos.md](../../../development/linux-macos.md)（不阻塞 M3 其余面——
   WPT 子集导入可先行） |
 | D3 | **H.264/AAC 增量立项批复（D-RFC-3a/3b/3c）**——立项 RFC 已起草
-  （[h264-increment-project-spec-rfc.md](../../specs/h264-increment-project-spec-rfc.md)，
+  （[h264-increment-project-spec-rfc.md](../../../specs/h264-increment-project-spec-rfc.md)，
   2026-09-02 Proposed）：推荐路线 A（Cisco OpenH264 `openh264 0.9` 安全 Rust 绑定 +
   symphonia aac feature 扩展；本机探针实证 48/48 帧解码）；三决策点：
   **3a** 专利授权链是否接受（核心门禁——MPEG-LA/Via 池面，Cisco AVC Patent Trust
@@ -204,7 +204,7 @@ goal Done Criteria 全满足。**
   批准实施**（接受 Cisco 授权链 + Via AAC 池风险面；**前置条件：任何二进制分发/发布
   前须完成法务复核**，实施与分发解耦可回退）；3b=**构建期源码编译**；3c=**AAC 随本期**。
   RFC 已转 Approved、源码冻结解除（见
-  [h264-increment-project-spec-rfc.md](../../specs/h264-increment-project-spec-rfc.md)
+  [h264-increment-project-spec-rfc.md](../../../specs/h264-increment-project-spec-rfc.md)
   §5 决议记录）。征询凭据：msg `om_x100b664d8a6f44b0dee3398474de92b` +
   `om_x100b669923cd64a4c3e335615ed3d9f`；批复来源：session 对话（GB-20260904
   待决策征询跟进）。**2026-09-05 切片 1 落地**：mp4_h264 模块（symphonia isomp4
@@ -235,7 +235,7 @@ goal Done Criteria 全满足。**
 
 1. **M3 多格式收尾**（当前首选）：~~AV1~~ ✅ 2026-09-02 落地（解码切片 +
    codec 自路由 + fixture 48 帧全解——见当前状态）；**H.264 立项 RFC 已起草
-   （2026-09-02，[h264-increment-project-spec-rfc.md](../../specs/h264-increment-project-spec-rfc.md)
+   （2026-09-02，[h264-increment-project-spec-rfc.md](../../../specs/h264-increment-project-spec-rfc.md)
    ——Proposed 态，D-RFC-3a（专利授权链）/3b（OpenH264 分发形态）/3c（AAC 随期）
    三决策点待用户批复，批准前不动源码）**；上游 WPT 可执行子集导入。
    **M3 预备资产已落库（2026-09-01）**——

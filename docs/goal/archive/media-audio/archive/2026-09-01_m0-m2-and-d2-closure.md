@@ -42,6 +42,6 @@
 
 - `<audio>` 纯音频播放全路径 e2e 常驻（settle → 桥 play → 泵推进写 sink）。
 - Web Audio 最小面可行性 RFC 成文（2026-09-01，
-  [docs/specs/web-audio-audiocontext-minimal-face-spec-rfc.md](../../../specs/web-audio-audiocontext-minimal-face-spec-rfc.md)）：
+  [docs/specs/web-audio-audiocontext-minimal-face-spec-rfc.md](../../../../specs/web-audio-audiocontext-minimal-face-spec-rfc.md)）：
   最小面可行（底座零新增依赖，1~2 切片）；实施与否待用户批准（D-WA-1/2）——
   不批准不影响本 goal DONE。

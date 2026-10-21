@@ -1,6 +1,6 @@
 # WPT webaudio 批次过程记录归档（第 1~17 批明细）（只追加不修改）
 
-**入口文档**: [../media-audio.md](../media-audio.md) | **控制面**: [../master.md](../master.md)
+**入口文档**: [../media-audio.md](../../media-audio.md) | **控制面**: [../master.md](../master.md)
 **归档日期**: 2026-09-04（治理切片——master.md 头链与当前状态块的批次明细按治理规则「持续演进、不无限增长」移入本档；最新批次（18）与累计口径保留在 master.md；证据 JSON 序列在 evidence/ 不动）
 
 ---
@@ -142,10 +142,10 @@ connect 链式 + AudioParam 最小值面）+ webview `WebAudioRegistry` + `__zwW
 `webaudio_bridge_nullsink_observable_chain`）。此前 2026-09-01：**D1 获批（D-WA-1
 批准 + D-WA-2 选先 NullSink）**——
 Web Audio AudioContext 最小面实施开工（切片 1+2，NullSink 设备面挂真出声切片），
-RFC 见 [../../specs/web-audio-audiocontext-minimal-face-spec-rfc.md](../../specs/web-audio-audiocontext-minimal-face-spec-rfc.md)。
+RFC 见 [../../specs/web-audio-audiocontext-minimal-face-spec-rfc.md](../../../../specs/web-audio-audiocontext-minimal-face-spec-rfc.md)。
 此前：D2 获批项闭环——libasound2-dev 在位，cpal 编译 + 39 测全绿 +
 **CpalSink 真设备流冒烟通过**（Ok 分支：构造/start/write/pause/resume 全链——
-[evidence](evidence/2026-09-01-cpalsink-device-smoke.md)）；M2 A/V 同步主体
+[evidence](../evidence/2026-09-01-cpalsink-device-smoke.md)）；M2 A/V 同步主体
 由 media-playback 流切片 D+E 兑现；opus 解码面转正。本档余：Mixer 接线（挂真出声
 切片，可选））
 
@@ -323,5 +323,5 @@ inline `_nsHandles` HTML-ns localName 回落（ASCII 大写比对；helper 提�
 `evidence/2026-09-04-webaudio-detached-offline-batch18.json`。
 
 （**第 1~17 批过程记录**——每批 shim 面明细/单测/排除注记——已归档至
-  [archive/2026-09-04_wpt-webaudio-batches.md](archive/2026-09-04_wpt-webaudio-batches.md)，
+  [archive/2026-09-04_wpt-webaudio-batches.md](2026-09-04_wpt-webaudio-batches.md)，
   证据 JSON 序列见验证基线；累计口径 39 用例 874P/0F = 100%。）

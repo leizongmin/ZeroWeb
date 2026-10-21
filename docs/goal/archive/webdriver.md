@@ -2,7 +2,7 @@
 
 **版本**: v1.1
 **日期**: 2026-09-07（v1.1 2026-09-09——screenshot 挂账项拍板方案①，新 goal 接管）
-**状态**: ✅ Completed（2026-09-08 归档至 [archive/webdriver/](archive/webdriver/)；DC-4
+**状态**: ✅ Completed（2026-09-08 归档至 [archive/webdriver/](webdriver/)；DC-4
 终验通过（2026-09-09）——此前唯一遗留跨流红灯 `test_css_container_query_style_integration`
 已由 rendering-compat 流 R4149 修复落地（commit `64160932e`，测试断言对齐 R4124 规范语义
 + 加 container-type:size 定宽容器正例/变宽反例）；组合态实测 `make test` 66 套件

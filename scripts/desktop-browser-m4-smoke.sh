@@ -1,5 +1,5 @@
 #!/bin/sh
-# 桌面浏览器 M4 数据面真实窗口演示流（docs/goal/desktop-browser.md M4）。
+# 桌面浏览器 M4 数据面真实窗口演示流（docs/goal/archive/desktop-browser.md M4）。
 #
 # 真实窗口（X11/Wayland；无人值守时经 xvfb-run 提供 display）内经真实输入路径驱动：
 #   书签栏开关（内部设置 URL）→ 工具栏菜单点击「添加书签」→ 书签栏条目点击打开

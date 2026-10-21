@@ -1055,7 +1055,7 @@ make test 常驻覆盖观察；若再现，按 master.md 记录的架构方向�
   [SW fetch throw after respondWith guard](evidence/2026-08-22-m2-fetch-throw-after-respond-with.md)
 - storage-cache-api shared Cache response type readback：CacheStorage 专属 `__zwcr:` wire、
   page `Response.type` / `clone().type` 保真与 host type validation 见
-  [M2 Cache Response Type Readback](../../storage-cache-api/evidence/2026-08-22-m2-cache-response-type-readback.md)
+  [M2 Cache Response Type Readback](../storage-cache-api/evidence/2026-08-22-m2-cache-response-type-readback.md)
 - storage-cache-api CacheStorage window WPT 扩面：37 case / 439 subtest 全绿，并校正
   `Response.error()` 可作为 CacheStorage 条目保存/读回、FetchEvent 响应结算仍拒绝 status 0
   的共享边界，以及 `Cache.match()` 对 `Response.url`、fetched MIME、cross-host fixture 和
@@ -1065,10 +1065,10 @@ make test 常驻覆盖观察；若再现，按 master.md 记录的架构方向�
   Worker/nested Dedicated Worker 共享 CacheStorage owner、filtered response 类型矩阵、
   sandboxed iframe CacheStorage 安全边界与 top-level credentialed request URL cache key
   的页面侧语义，见
-  [M2 CacheStorage Window WPT Expansion](../../storage-cache-api/evidence/2026-08-22-m2-cache-window-expansion.md)
-  、[M2 Cache.add WPT Expansion](../../storage-cache-api/evidence/2026-08-22-m2-cache-add-wpt-expansion.md)
-  、[M2 CacheStorage Worker Sharing WPT Expansion](../../storage-cache-api/evidence/2026-08-22-m2-cache-worker-sharing-wpt-expansion.md)
-  和 [M2 CacheStorage Nested Worker WPT Expansion](../../storage-cache-api/evidence/2026-08-22-m2-cache-nested-worker-wpt-expansion.md)
+  [M2 CacheStorage Window WPT Expansion](../storage-cache-api/evidence/2026-08-22-m2-cache-window-expansion.md)
+  、[M2 Cache.add WPT Expansion](../storage-cache-api/evidence/2026-08-22-m2-cache-add-wpt-expansion.md)
+  、[M2 CacheStorage Worker Sharing WPT Expansion](../storage-cache-api/evidence/2026-08-22-m2-cache-worker-sharing-wpt-expansion.md)
+  和 [M2 CacheStorage Nested Worker WPT Expansion](../storage-cache-api/evidence/2026-08-22-m2-cache-nested-worker-wpt-expansion.md)
 - M2-37 fetch invalid-header baseline：
   [Service Worker Fetch WPT Baseline](evidence/2026-08-31-m2-fetch-invalid-header-baseline.md)
 - M2-37 fetch invalid-header 定向验证：

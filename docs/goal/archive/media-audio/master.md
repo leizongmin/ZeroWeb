@@ -231,7 +231,7 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
 
 | # | 事项 | 状态 |
 |---|------|------|
-| D1 | AudioContext（Web Audio）最小面可行性 RFC → 是否实施 | ✅ 获批（2026-09-01，GB-20260901 批复）——D-WA-1 批准切片 1+2；D-WA-2 选**先 NullSink**（设备面挂 media-audio M1 CpalSink 真出声切片）。RFC：[../../specs/web-audio-audiocontext-minimal-face-spec-rfc.md](../../specs/web-audio-audiocontext-minimal-face-spec-rfc.md) |
+| D1 | AudioContext（Web Audio）最小面可行性 RFC → 是否实施 | ✅ 获批（2026-09-01，GB-20260901 批复）——D-WA-1 批准切片 1+2；D-WA-2 选**先 NullSink**（设备面挂 media-audio M1 CpalSink 真出声切片）。RFC：[../../specs/web-audio-audiocontext-minimal-face-spec-rfc.md](../../../specs/web-audio-audiocontext-minimal-face-spec-rfc.md) |
 | D2 | 安装 `libasound2-dev`（系统级 apt 变更）以解锁 cpal 编译验证 | ✅ 获批（2026-09-01）——装包后补 cpal 编译实测 |
 | D3 | **OfflineAudioContext.startRendering 渲染量化面（RFC §0 扩界申请）**——接口语义族已 18 批 874P/0F 吃尽（2026-09-04），余下上游用例（osc-basic-waveform / gain.html / periodicWave / ctor-iirfilter 渲染对比 / audioparam-method-chaining / convolver DSP 卷积等 ~15 件）全部卡在 startRendering 渲染断言。**实施基础已在**：zero-media `WebAudioContext` 振荡器四型合成 + 图推进（切片 1 落地，NullSink 可观测）；缺的是 offline 渲染路径（长度采样离线合成 → AudioBuffer 产物 → promise resolve）+ shim↔宿主桥扩展。为何需用户：主 RFC §0 显式排除「渲染量化面（不做清单）」——扩界属 Mission 级范围变更（run-rules rule 11），agent 不可代判；不批准亦请明示「维持排除」以便归档 | ✅ **获批（2026-09-05，窄授权）**——批准 **仅 offline 路径**（长度采样离线合成 → AudioBuffer → promise resolve + shim↔宿主桥扩展）；RFC §0 的**实时设备输出量化面维持排除**（本批复未解除）。解锁余下 ~15 件 startRendering 卡点用例的导入评估。征询凭据：msg `om_x100b669923cd64a4c3e335615ed3d9f`（GB-20260904 巡检合并征询）；批复来源：session 对话（GB-20260904 待决策征询跟进） |
 
@@ -346,7 +346,7 @@ DONE 阻塞**；Mixer/重采样接线随设备切片可选推进）。
   指标集完全轮换（零交集）+ 全部失败指标隔离复测 1.5~3.3× 余量回预算内 + 本轮
   变更不触达失败 crate 敏感路径（shim 仅 V8 执行期注入）→ 判 ZRG 负载噪声签名
   （ZRG-2026-08-22/23/24-01 同族），不动基线不 relax——判据沉淀
-  [docs/learnings/performance/2026-09/2026-09-03-bench-gate-rotating-fail-noise-signature.md](../../learnings/performance/2026-09/2026-09-03-bench-gate-rotating-fail-noise-signature.md)
+  [docs/learnings/performance/2026-09/2026-09-03-bench-gate-rotating-fail-noise-signature.md](../../../learnings/performance/2026-09/2026-09-03-bench-gate-rotating-fail-noise-signature.md)
 - evidence：[evidence/2026-09-01-m0-environment-probe.md](evidence/2026-09-01-m0-environment-probe.md)
 
 ## 归档

@@ -173,7 +173,7 @@ crates/protocol/ apps/renderer/` 核对 event-loop-spec 流活跃面（apps/rend
 
 | 项 | 状态 | 说明 |
 |----|------|------|
-| screenshot 链路 | ✅ 已拍板（2026-09-09，方案①） | M3 摸底结论：技术可行（ViewPainted 图元 + render_full_scene + PNG），但 IPC→图元转换层在 apps/browser 域（paint_ipc.rs），复用需抽公共库或允许 webdriver 依赖 zero-browser lib——深结构改动须拍板。**2026-09-09 用户拍板方案①（抽公共截图转换层 crate），新 goal [`webdriver-screenshot`](../../webdriver-screenshot.md) 接管，见文末「挂账项接管」条目**。原征询：GB-20260908 巡检飞书 msg `om_x100b6535d918a8acc121a65238fec1b`（三方案：①抽公共截图转换层 crate【推荐】/②webdriver 依赖 zero-browser lib/③维持不做） |
+| screenshot 链路 | ✅ 已拍板（2026-09-09，方案①） | M3 摸底结论：技术可行（ViewPainted 图元 + render_full_scene + PNG），但 IPC→图元转换层在 apps/browser 域（paint_ipc.rs），复用需抽公共库或允许 webdriver 依赖 zero-browser lib——深结构改动须拍板。**2026-09-09 用户拍板方案①（抽公共截图转换层 crate），新 goal [`webdriver-screenshot`](../webdriver-screenshot.md) 接管，见文末「挂账项接管」条目**。原征询：GB-20260908 巡检飞书 msg `om_x100b6535d918a8acc121a65238fec1b`（三方案：①抽公共截图转换层 crate【推荐】/②webdriver 依赖 zero-browser lib/③维持不做） |
 | alert 全族 / print | ⬜ 排除 | 依赖 host 对话框/打印能力 |
 | actions 完整语义 | ⬜ 排除 | 依赖输入管线深化；keyboard 够用子集先做 |
 | renderer back/forward 不 bump document_generation | ⬜ 待决策（跨流告知已发） | 本层 history_epoch 守卫已兜底（保守 stale）；若要 renderer 侧根治需碰 runtime.rs（event-loop-spec 活跃域），记待决策不阻塞。**GB-20260908 巡检按 rule 10 跨流留档告知（随 screenshot 征询同批 msg `om_x100b6535d918a8acc121a65238fec1b`）——event-loop-spec 流后续动 runtime.rs 时可顺手根治** |

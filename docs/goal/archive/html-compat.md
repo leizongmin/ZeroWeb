@@ -4,10 +4,10 @@
 
 权威文档：
 
-- [Spec + RFC](../specs/html-behavior-compatibility-spec-rfc.md)
+- [Spec + RFC](../../specs/html-behavior-compatibility-spec-rfc.md)
 - [主控面板](html-compat/master.md)
 - [测试矩阵](html-compat/test-matrix.md)
-- [前期调研](../research/research-html-compat-parallel-track-2026-08-12.md)
-- [ZeroUI 机制调研](../research/research-zeroui-lessons-for-html-compat-2026-08-12.md)
+- [前期调研](../../research/research-html-compat-parallel-track-2026-08-12.md)
+- [ZeroUI 机制调研](../../research/research-zeroui-lessons-for-html-compat-2026-08-12.md)
 
 当前阶段：M0，固化 `examples/forms/form-interaction-test.html` 的完整仓内验收。

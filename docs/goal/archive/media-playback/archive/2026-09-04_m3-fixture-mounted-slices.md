@@ -1,6 +1,6 @@
 # M3 fixture-mounted runner 播放面切片与 M1/M2 早期切片过程记录归档（只追加不修改）
 
-**入口文档**: [../media-playback.md](../media-playback.md) | **控制面**: [../master.md](../master.md)
+**入口文档**: [../media-playback.md](../../media-playback.md) | **控制面**: [../master.md](../master.md)
 **归档日期**: 2026-09-04（治理切片——master.md 下一步计划的切片 1~11 落地明细与当前状态块 M1a~M2b 历史过程段移入本档；头链保留切片 5~12 摘要（最新态）；每片证据/单测在各自 commit 与 evidence/ 不动；DC 审计/缺口清单/决策表不动）
 
 ---
@@ -410,7 +410,7 @@ cue 调度钩子；webm A_OPUS 解码切片（WebmOpusAudioTrack + registry code
 canPlayType webm-opus 扩表）；media-elements 529P/0F 零回归。此前同日：**M3 AV1
 解码切片落地 + H.264 立项 RFC 起草**——
 AV1：dav1d 绑定 feature `decode-av1` + VideoCodec 自路由 + fixture 48 帧全解
-（ffmpeg 参照 ±15 窗）；H.264：[h264-increment-project-spec-rfc.md](../../specs/h264-increment-project-spec-rfc.md)
+（ffmpeg 参照 ±15 窗）；H.264：[h264-increment-project-spec-rfc.md](../../../../specs/h264-increment-project-spec-rfc.md)
 Proposed 态——D-RFC-3a 专利授权链 / 3b OpenH264 分发形态 / 3c AAC 随期 三决策
 点**待用户批复**（D-RFC-3「单独立项」决议的立项评估文档，批准前不动源码）。
 此前 2026-09-01：D2 获批（选 A：libdav1d-dev 1.5.1 在位，pkg-config 发现，

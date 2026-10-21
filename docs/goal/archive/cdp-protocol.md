@@ -4,7 +4,7 @@
 
 **版本**: v1.0
 **日期**: 2026-09-12
-**状态**: Done（2026-09-16 M5 分支 B 定稿收口——DC-2 口径经用户批复「挂账剔除定稿，goal 先行 DONE」；运行时控制面见 [cdp-protocol/master.md](cdp-protocol/master.md)）
+**状态**: ✅ Completed（2026-09-16 M5 分支 B 定稿收口——DC-2 口径经用户批复「挂账剔除定稿，goal 先行 DONE」；运行时控制面见 [cdp-protocol/master.md](cdp-protocol/master.md)）
 **执行模式**: WPT/webdriver-goal 同款「协议逐域收敛 + 真实客户端 E2E 账本」模式；遇深结构
 （多进程 Target 路由重构、V8 对象句柄桥）→ 记「待用户决策」→ 跳过 → 继续其他域
 **父目标**: `docs/goal/zero-web.md`（M10 WebView API 与自动化基础延伸 + M11/M14 自动化验收基建）
