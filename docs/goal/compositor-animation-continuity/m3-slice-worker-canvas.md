@@ -103,3 +103,13 @@ flag on（`ZW_THREADED_WORKERS=1` + 呈现 flag）真实窗口/headless 双向�
 - patch 消息（surface_id, navigation_epoch, rect, rgba）是 M3 内稳定契约；DC-5 资源审计（关闭/导航无残留）直接消费 Destroy + epoch 清理语义，不新增消息。
 - 性能优化预留位：Update 载荷 `rgba: Vec<u8>` 后续可切 `frame_shm` key（`crates/protocol/src/frame_shm.rs` 零拷贝面）或 dirty-rect 字段——仅在真实消费者出现时追加（S2 RFC §4 同款纪律），消息结构留 `#[serde(default)]` 尾部扩展位。
 - 静态 transform 命中一致性缺口（S3 RFC §3）与本切片无交集；M4 GPU/语义/资源审计消费本切片的 flag 双向证据与 patch 消息计数（资源门禁口径：宿主 map 长度、patch 存活数随导航归零）。
+
+## 5. 碰撞合并补记（2026-10-22）
+
+本 RFC 与并行流同日独立起草的 `m3-slice-worker-canvas-presentation.md`（commit 01dc5f92b，未推）碰撞。按 run-rules §9 让位：本文为 S1 唯一定稿，另稿弃合入（存本地 tag keep/m3-slice-rfc-draft），其经两路源码核查证实的事实并入本节，不改变本文设计决策：
+
+- **`WorkerRuntime` isolate 无定时器、无 host 回调**（worker.rs bootstrap 仅 postMessage 队列）——本文验收 (a)「worker 定时器驱动 canvas 位图持续更新」与 §2.2 宏任务边界 present 依赖定时器族：S1a 实施需给 worker bootstrap 补最小 setTimeout/setInterval/clear*，到期定时器在 worker 线程命令循环间隙服务（ServiceWorkerRuntime 事件等待同型）；isolate 无事件循环，纯 JS 不可自举定时器。
+- **isolate 内 host 回调注册先例已核实**：`ServiceWorkerRuntime` 在 worker isolate 内注册 `__zw*` 回调（事件外发 + 共享 `Mutex<Receiver>` 阻塞等待，service_worker.rs:3624+）；页面侧 `__zw_*` 回调族注册于 renderer-js 沙盒线程；webview.rs:6521 另有无调用方的 worker 宿主 API（HashMap<u64, WorkerRuntime> + create/post/poll/terminate），与 §2.1 宿主形态同形——§3 首行 Assumption（宿主桥走既有 `__zw_*` op 通道）成立面扩大。
+- **`CanvasContext` 已核实 Send**（无 Rc/Cell/RefCell；`Arc<Mutex<CanvasRegistry>>` 已被 painter 跨线程持有）——§2.2 worker 线程本地 registry 的线程面成立；`snapshot_rgba(&self)` 全量克隆可行（fixture 尺度）。
+- **备选呈现路径**：painter `paint_canvas_element` 每次 paint 从 registry 现读快照、image_key=ctx_id，compositor `insert_image_payloads` 支持无帧注入（pending_image_batches 现仅帧到达 drain）——若 §2.3 patch 面实施遇矩形/z 序阻力，共享 registry + 既有 image-payload 通道 + Get 臂重采样（anim_dirty 同型，协议增量一种像素消息 + 一个活跃布尔）为已核实备选，切换决策另记 master.md。
+- 两稿差异面（呈现案 patch surface vs image-payload/Get 重采样；registry worker 本地 vs 主线程共享；flag 名 ZW_THREADED_WORKERS vs ZW_REAL_WORKERS）以 git 历史为准，不重复展开。
