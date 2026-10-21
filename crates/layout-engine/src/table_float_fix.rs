@@ -43,18 +43,71 @@ pub(crate) fn fix_table_among_floats(
     if std::env::var("ZW_TABLE_FLOAT_ITER_V2").as_deref() == Ok("0") {
         return;
     }
-    let mut grown_cell_ids: Vec<NodeId> = Vec::new();
-    fix_inner(root, doc, styles, &mut grown_cell_ids, inline_fonts);
-    // R1723 eval：D 步扩高的 td（cell）需把增量传到外层 table 行高，否则下推的 table 溢出
-    // 被后续块覆盖（floats-wrap-bfc-005）。曾尝试 height-only reflow（reflow_tables_with_grown_cells），
-    // 但 bfc-004 是「假通过」案——test table 与 ref purple 经 R1612 line-advance 都落在 y=20，
-    // 但 ref 容器 height:20（definite，不增长）vs test 外层 table auto-height；reflow 让 test
-    // 外层 table 长高 → 与 ref 不再匹配 → bfc-004 0.42%→8.31% 回归（bfc-005 0.09% flip，net 0）。
-    // bfc-005（ref height:40，须长高）与 bfc-004（ref height:20，不须长高）对外层 table 高度
-    // 需求相反，R1612 line-advance 又把两者 table 都放到 y=20 → reflow 无法区分 → 暂搁置，
-    // 待 R1612 line-advance 改 min-bottom 步进（须重核 floats-placement 簇）或外层 table 高度
-    // 传播与 line-advance 解耦后再做。grown_cell_ids 收集保留供未来 reflow 复用。
-    let _ = grown_cell_ids;
+    let mut grown_cells: HashMap<NodeId, f32> = HashMap::new();
+    fix_inner(root, doc, styles, &mut grown_cells, inline_fonts);
+    // R5213（CSS2 §17.5.2 行高 = max(cell 底边) + §10.6.3 auto 高）：D 步扩高的 cell 高度
+    // 须上传行/行组/表并位移块域后继兄弟——此前 R1723 搁置（bfc-004 ref definite 20 被
+    // 误增长回归）。bfc-006 推下形态 cell 76/68/76/69 须上传（外层表高原停 60，chromium
+    // 76/68/76/69 CDP 实测）；上传基线取 root.height 非 content_height（tr/tbody 的
+    // content_height 为 0，逐层放大会把 60 放大到 196，见 propagate 内注释）。
+    if !grown_cells.is_empty() {
+        propagate_grown_cell_heights(root, &grown_cells, styles);
+    }
+}
+
+/// R5213：把 D 步扩高的 cell（`grown_cells`: node_id → 高度增量）沿
+/// cell → row → row-group → table 上传（祖先高 = max(in-flow 子盒底边)，只增不减），
+/// 并在纵向堆叠语境把后继兄弟整体下移（row 内 cell 横排，不位移同级 cell）。
+/// 返回 root 自身高度增量。
+fn propagate_grown_cell_heights(
+    root: &mut LayoutBox,
+    grown_cells: &HashMap<NodeId, f32>,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> f32 {
+    let mut max_child_delta = 0.0f32;
+    // row 的子（cell）横排——cell 增高不位移同级 cell，仅上传行高。
+    let root_is_row = root
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .is_some_and(|s| s.display == DisplayValue::TableRow);
+    for i in 0..root.children.len() {
+        let d = propagate_grown_cell_heights(&mut root.children[i], grown_cells, styles);
+        if d > max_child_delta {
+            max_child_delta = d;
+        }
+        if d > 0.01 && !root_is_row {
+            for c in &mut root.children[i + 1..] {
+                c.y += d;
+            }
+        }
+    }
+    if max_child_delta > 0.01 {
+        // 有子增长 → 按 in-flow 子底边最大值只增不减（float/abs/fixed 子不计入
+        // CSS auto 高；原高更大时维持原值，不收缩）。
+        let extent = root
+            .children
+            .iter()
+            .filter(|c| !c.is_absolute && !c.is_fixed && matches!(c.float, FloatValue::None))
+            .map(|c| c.y + c.height)
+            .fold(0.0f32, f32::max);
+        // 以 height 为基线：中间层 tr/tbody 的 content_height 可能为 0（表管线
+        // 只填 leaf 内容高），用 content_height 会把 extent 全额当增量逐层放大
+        // （bfc-006 外层表 60→196）。
+        let g = (extent - root.height).max(0.0);
+        if g > 0.01 {
+            root.content_height += g;
+            root.height += g;
+            return g;
+        }
+        return 0.0;
+    }
+    // 基例：自身是 D 步扩高的 cell，返回记录增量。
+    if let Some(id) = root.node_id
+        && let Some(d) = grown_cells.get(&id)
+    {
+        return *d;
+    }
+    0.0
 }
 
 fn is_table_box(b: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> bool {
@@ -102,12 +155,12 @@ fn fix_inner(
     root: &mut LayoutBox,
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
-    grown_cell_ids: &mut Vec<NodeId>,
+    grown_cells: &mut HashMap<NodeId, f32>,
     inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
 ) {
     // post-order：先修子容器（嵌套结构）
     for child in &mut root.children {
-        fix_inner(child, doc, styles, grown_cell_ids, inline_fonts);
+        fix_inner(child, doc, styles, grown_cells, inline_fonts);
     }
     // 仅「同时含 float 子 + table 子」的容器介入（scoping 关键）
     let has_float = root.children.iter().any(is_float);
@@ -218,99 +271,93 @@ fn fix_inner(
     // 触发条件 = avoidance_x > 0.5（natural_y 处有重叠 float 须避开）；table 已在正确位置则
     // diff 检查不移动（守 blocks-025 等 float 不重叠案）。
     let mut pushed = false;
-    // R1721：float:right avoidance —— table 避到 float 左侧（mirror of 既有 float:left 右避）。
-    // 既有 C 算法仅 float:left（table 放 float 右侧 content_width-max_right）；float:right 的
-    // right_edge≈content_width → 右侧无空间 → table 错误推 below（应 beside 左 x=0 w=float.left）。
-    // 仅纯右 float（natural_y 处有重叠右 float 且无重叠左 float）触发；混合 fall through 左 float 逻辑。
-    // kill-switch ZW_TABLE_FLOAT_RIGHT_AVOID=0 关闭（default-on）。
-    // R4227：right_float_left 预读已上移至 B2 shrink 臂前（两者共用重叠判定）。
-    let has_left_overlap = root
-        .children
-        .iter()
-        .any(|c| matches!(c.float, FloatValue::Left) && natural_y < c.y + c.height && natural_y + table_h > c.y);
-    // target = (nx, ny, fill_w)：fill_w = table 应填的 avoidance 宽度（beside 时填，below 时仅 clamp）
-    let right_target: Option<(f32, f32, f32)> =
-        if std::env::var("ZW_TABLE_FLOAT_RIGHT_AVOID").as_deref() != Ok("0") && !is_cleared && !has_left_overlap {
-            // 纯右 float：table beside 左侧 x=0 y=natural_y，填到右 float 左边。
-            // R1723：仅当 table 放得进左可用宽（right_float_left）时 beside；definite-width table
-            // 声明宽 > 可用宽（floats-wrap-bfc-005 子案 2：150 > 100）→ 不 beside，fall through 到
-            // 下方 left-float 算法推下（mirror 子案 1）。
-            // R4227：auto-width 表已在 B2 臂按约束收缩（effective_w ≤ rl），此处放行 beside。
-            right_float_left.and_then(|rl| {
-                if effective_w <= rl + 0.5 {
-                    Some((0.0, natural_y, rl))
-                } else {
-                    None
-                }
-            })
-        } else {
-            None
-        };
-    let target: Option<(f32, f32, f32)> = if right_target.is_some() {
-        right_target
-    } else if !is_cleared && avoidance_x > 0.5 {
-        // 既有 float:left 算法（target (placed_x, y)），fill_w = content_width - placed_x。
-        let frects: Vec<(f32, f32, f32)> = root
-            .children
-            .iter()
-            .filter(|c| is_float(c))
-            .map(|f| (f.x + f.width + f.margin_right, f.y, f.y + f.height))
-            .collect();
+    // R5213：区间化 band-step（左右 float 分离，吸收 R1721 纯右 float right_target 臂）——
+    // 左 float 群右缘 max 给左界 left_edge，右 float 群左缘 min 给右界 right_edge；table
+    // 整高 [y,y+h] 放得进 [left_edge, right_edge] 即 beside 于 x=left_edge、填 gap 宽。
+    // 无右 float 时 right_edge=content_width，退化为既有单侧 max_right 算法；纯右 float
+    // 时 left_edge=0，等价旧 right_target。右 float 不再以右缘充当左界阻挡物（旧
+    // max_right 语义会把混合 float 场景的可用区间误判为 0）。
+    // kill-switch ZW_TABLE_FLOAT_RIGHT_AVOID=0：右 float 退回旧 max_right 语义（仅作
+    // 阻挡物参与推下，不给区间右界）。R4227：right_float_left 预读仍供 B2 shrink 臂。
+    // target = (nx, ny, fill_w)：fill_w = beside 可用区间宽（填），below 时 = 全宽（仅 clamp）。
+    let right_avoid_off = std::env::var("ZW_TABLE_FLOAT_RIGHT_AVOID").as_deref() == Ok("0");
+    let target: Option<(f32, f32, f32)> = if !is_cleared && avoidance_x > 0.5 {
+        // 左 float 群 (右 margin 缘, 顶, 底)；右 float 群 (左缘, 顶, 底)
+        let mut lefts: Vec<(f32, f32, f32)> = Vec::new();
+        let mut rights: Vec<(f32, f32, f32)> = Vec::new();
+        for f in root.children.iter().filter(|c| is_float(c)) {
+            if matches!(f.float, FloatValue::Right) && !right_avoid_off {
+                rights.push((f.x, f.y, f.y + f.height));
+            } else {
+                lefts.push((f.x + f.width + f.margin_right, f.y, f.y + f.height));
+            }
+        }
         let mut y = natural_y;
-        let mut placed_x = 0.0;
+        let mut placed_x = 0.0f32;
+        let mut avail_w = content_width;
         let mut found = false;
-        for _ in 0..64 {
-            let max_right = frects
+        // band-step：每轮 y 严格推进到下一 float 底边（单调收敛），上界 = float 数 + 2。
+        for _ in 0..(lefts.len() + rights.len() + 2) {
+            let left_edge = lefts
                 .iter()
                 .filter(|(_, ft, fb)| *ft < y + table_h && y < *fb)
                 .map(|(r, _, _)| *r)
-                .fold(0.0f32, |mx, r| mx.max(r));
-            if effective_w <= (content_width - max_right).max(0.0) + 0.5 {
-                placed_x = max_right;
+                .fold(0.0f32, f32::max);
+            let right_edge = rights
+                .iter()
+                .filter(|(_, ft, fb)| *ft < y + table_h && y < *fb)
+                .map(|(l, _, _)| *l)
+                .fold(content_width, f32::min);
+            let gap = (right_edge - left_edge).max(0.0);
+            if effective_w <= gap + 0.5 {
+                placed_x = left_edge;
+                avail_w = gap;
                 found = true;
                 break;
             }
-            // 放不下 → 推到「同行」float 中最晚结束的 bottom（MAX-bottom，仅 top<=y 的 float）。
-            // R1612：匹配 float_positioning 的 line-advance——float 不 fit 当前行时整行下移到
-            // 当前行 max float bottom（非 strict-CSS 最早 beside-fit y）。R1611 root-cause：ref 用
-            // float_positioning（line-advance），block1 purple 在 blue(底20)+silver(底6) 同行
-            // → max-bottom 20，故 purple y=20（abs 28）非 silver 底 6。「同行」filter（top<=y）
-            // 排除 clear 致的后继行 float（如 float2 clear:left top=10 在 y=0 行不算）→ table
-            // 推到 float1 底后在 float2 行 beside-fit，匹配 float_positioning。
-            let max_bottom = frects
+            // 放不下 → y 推进到仍与 [y, y+h] 重叠的 float 中**最近**的底边（per-y band，
+            // earliest-fit）。R5213 定谳（chromium CDP 探针，取代 R1612 line-advance）：
+            // chromium 的 float 与 BFC 盒均落最近 float 底旁（bfc-004 S1 表 (100,6) 实测），
+            // 非行底 line-advance；且 D 步扩高上传（propagate_grown_cell_heights）以
+            // earliest-fit 落位为前提——line-advance 把表推到行底后扩高上传使外层表
+            // 20→30 节节下移级联爆炸（004 8.19%/006 16.17% 实测回退），两臂必须配套。
+            // 已知代价：ref 侧由 ZW float 模型渲染（150 宽 float 掉行底被后节背景覆盖，
+            // 扫描线实证），表单边 earliest-fit 使 004 test 可见而 ref 不可见（0.92%→2.17%）
+            // ——根因在 float 摆放仍 line-advance，earliest-fit 化为下一轮独立切片，到位后
+            // 004 摘红（chromium 两侧均 earliest-fit，test/ref 将同模型一致）。
+            let next_band = lefts
                 .iter()
-                .filter(|(_, ft, fb)| *ft <= y + 0.5 && *ft < y + table_h && y < *fb)
+                .chain(rights.iter())
+                .filter(|(_, ft, fb)| *ft < y + table_h && y < *fb && *fb > y + 0.5)
                 .map(|(_, _, fb)| *fb)
-                .fold(0.0f32, |mx, fb| mx.max(fb));
-            if max_bottom > y {
-                y = max_bottom;
+                .fold(f32::INFINITY, f32::min);
+            if next_band.is_finite() {
+                y = next_band;
             } else {
                 placed_x = 0.0;
+                avail_w = content_width;
                 found = true;
                 break;
             }
         }
-        if found {
-            Some((placed_x, y, (content_width - placed_x).max(0.0)))
-        } else {
-            None
-        }
+        if found { Some((placed_x, y, avail_w)) } else { None }
     } else {
         None
     };
     if let Some((nx, ny, fill_w)) = target {
         let table = &mut root.children[tidx];
-        let mw = fill_w;
         // beside float：auto-width BFC table 填可用 avoidance 宽度（非 shrink-to-fit 内容宽）
         // ——floats-wrap-bfc-002-left-table（float:left，nx>0，mw=content_width-nx）/ R1721 -right-table
         //（float:right，nx=0，mw=right_float.left）auto table 应 200 非 150，匹配 ref 显式 width:200。
-        // below floats（nx=0 且 fill_w≈content_width）：保持 shrink-to-fit，仅 clamp 不溢出。须在
-        // 「位置变 OR 宽度变」时介入（即使位置已正确，beside 宽度仍须填，故 width_change 独立于 pos_change）。
         // R1721：beside 判定加 `fill_w < content_width` 捕获 float:right（nx=0 但填部分宽）。
         let beside = nx > 0.5 || fill_w < content_width - 0.5;
         let pos_change = (nx - table.x).abs() > 0.5 || (ny - table.y).abs() > 0.5;
-        // R5207：匿名表根 beside 不填可用宽（保 shrink-to-fit，理由同 B 步 gate——填宽臂是
-        // floats-wrap-bfc-002 真表判例）；仅 below 溢出 clamp 仍适用。
+        // R5213：beside 宽语义待 §10.3.5 shrink-to-fit pref 信号（cell intrinsic 现读
+        // 子盒 laid-out 宽、多 inline-block 兄弟行的 max-content 未建模，克隆探针实测
+        // 回读窄化值 150 非真 pref 300，独立切片）。本沿 R1613 beside 填 gap 语义。
+        // 须在「位置变 OR 宽度变」时介入（即使位置已正确，beside 宽度仍须填，故
+        // width_change 独立于 pos_change）。
+        let mw = fill_w;
         let width_change = if is_anon_root {
             !beside && table.width > mw + 0.5
         } else if beside {
@@ -372,12 +419,13 @@ fn fix_inner(
                     root.content_height, new_content_h, float_bottom, in_flow_bottom
                 );
             }
+            let old_content_height = root.content_height;
             root.content_height = new_content_h;
             root.height = new_content_h + pb;
-            // R1723：记录被 D 步扩高的容器 node_id（常为 td/cell），供后续
-            // reflow_tables_with_grown_cells 重算其外层 table 行高。
+            // R5213：记录被 D 步扩高的容器（常为 td/cell）高度增量，供
+            // propagate_grown_cell_heights 上传行/行组/表高并位移后继兄弟。
             if let Some(id) = root.node_id {
-                grown_cell_ids.push(id);
+                grown_cells.insert(id, root.content_height - old_content_height);
             }
         }
     }

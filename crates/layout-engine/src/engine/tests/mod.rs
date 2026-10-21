@@ -774,3 +774,7 @@ mod r5211_float_child_collapse_through_tests;
 /// R5212 direct-float forced clearance 邻接吸收（§9.5.2 × §8.3.1，
 /// adjoining-float-nested-forced-clearance / adjoining-float-new-fc 锚点）。
 mod r5212_forced_clear_absorb_tests;
+/// R5213 table-among-floats 区间化 fit（左右 float 夹缝 beside）+ D 步扩高上传基线
+/// root.height + 浮动 caption x 豁免（floats-wrap-bfc-002/004/006、
+/// float-applies-to-015 锚点）。
+mod r5213_table_among_floats_interval_tests;

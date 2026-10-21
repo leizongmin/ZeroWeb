@@ -2284,25 +2284,25 @@ fn position_cells(
     // R5202（CSS2 §17.4.1）：匿名 table 包装盒（node_id=None）的高度须含
     // caption-side:bottom caption 的占位——包装盒是外层流父（div 边框盒）的收缩
     // 适应子，漏计致 caption 内容溢出容器（caption-position-001 ②：cat 图溢出
-    // div 边框实证）。真表维持既有口径（caption 悬于表盒外、表高不含 caption，
-    // caption-side-applies-to-* 全绿面）。
-    let bottom_caption_extent = if table_box.node_id.is_none() {
-        table_box
-            .children
-            .iter()
-            .filter(|c| {
-                c.node_id.is_some_and(|id| {
-                    styles.get(&id).is_some_and(|s| {
-                        s.display == DisplayValue::TableCaption
-                            && s.caption_side == zero_style_system::property::CaptionSideValue::Bottom
-                    })
+    // div 边框实证）。
+    // R5213：真表同样计入（CSS2 §17.4.1 caption 附于 table box 上下、占 wrapper
+    // 流内空间）。此前真表高不含 bottom caption（caption 悬于表盒外），下游流父
+    // extent 漏计致后继块上漂覆盖 caption 区（bfc-006 B3/B4：外层表高 30 vs 期望
+    // 76，块起点累计上漂 70px）。painter 侧 R1672 按高含 caption 口径裁 bg，两处
+    // 口径必须一致（高含 caption + 裁双行；高不含 + 只裁 top 行）。
+    let bottom_caption_extent = table_box
+        .children
+        .iter()
+        .filter(|c| {
+            c.node_id.is_some_and(|id| {
+                styles.get(&id).is_some_and(|s| {
+                    s.display == DisplayValue::TableCaption
+                        && s.caption_side == zero_style_system::property::CaptionSideValue::Bottom
                 })
             })
-            .map(|c| c.height)
-            .sum::<f32>()
-    } else {
-        0.0
-    };
+        })
+        .map(|c| c.height)
+        .sum::<f32>();
     // 后处理：应用 min-height/max-height/min-width/max-width 约束
     apply_table_size_constraints(
         table_box,
@@ -2340,8 +2340,22 @@ fn position_cells(
             continue;
         }
         if child_style.caption_side == zero_style_system::property::CaptionSideValue::Bottom {
+            // R5213（CSS2 §17.4.1）：caption 盒水平位 = table content 缘 + 自身 margin-left。
+            // caption 是 wrapper 的 taffy 子，可能被 wrapper 浮动上下文推开（taffy 把
+            // caption 当块子避让 float——floats-wrap-bfc-006 B1/B3：caption rel x 被推到
+            // 150），与表盒最终 §9.5 落位无关，随 y 归位一并校正。
+            // **仅非浮动 caption**：float:right 的浮动 caption（float-applies-to-015）其 x
+            // 是合法 float 落位，归位臂会把它从右缘拉回左缘（0.00→3.84% 实证）。
+            if matches!(child_style.float, zero_css_parser::values::FloatValue::None) {
+                child.x = child.margin_left;
+            }
             child.y = row_y;
         } else {
+            // R5213：x 归位同 bottom 臂（CSS2 §17.4.1 content 缘 + margin-left）；浮动
+            // caption 同样豁免（见 bottom 臂注释，float-applies-to-015 族）。
+            if matches!(child_style.float, zero_css_parser::values::FloatValue::None) {
+                child.x = child.margin_left;
+            }
             child.y = top_caption_y;
             if first_top_caption_mt.is_none() {
                 first_top_caption_mt = resolve_table_used_length(&child_style.margin_top, child_style);
@@ -2461,6 +2475,22 @@ fn apply_table_size_constraints(
 
     let total_col_width: f32 = col_widths.iter().sum();
     let intrinsic_height = total_row_height;
+    // R5213（CSS2 §17.4.1）：表盒宽 = max(表自身宽, 各 caption 边框盒宽)——caption 不被
+    // build_grid 消费（R5159），宽由 caption 驱动的表（floats-wrap-bfc-006 B2/B4：
+    // caption 190/192 > cell 100）此前收缩到 grid 宽，下游 table-among-floats C 步以
+    // 窄宽 beside-fit 误判可行落错位（150,0）。仅取显式 Px 宽 caption 作下界——auto
+    // caption 的 taffy 拉伸宽是陈旧分配值，作下界会钉死 shrink-to-fit 收缩不采。
+    let caption_definite_width = table_box
+        .children
+        .iter()
+        .filter(|c| {
+            c.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+                s.display == DisplayValue::TableCaption
+                    && matches!(s.width, zero_css_parser::values::LengthValue::Px(v) if v.is_finite())
+            })
+        })
+        .map(|c| c.width)
+        .fold(0.0_f32, f32::max);
 
     let (intrinsic_width, is_border_box, padding_border_w, padding_border_h, border_collapse) = match style {
         Some(style) => {
@@ -2479,7 +2509,7 @@ fn apply_table_size_constraints(
             } else {
                 0.0
             };
-            let intrinsic_width = total_col_width + spacing_total_x + 2.0 * perimeter_x;
+            let intrinsic_width = (total_col_width + spacing_total_x + 2.0 * perimeter_x).max(caption_definite_width);
             let is_border_box = matches!(style.box_sizing, zero_css_parser::values::BoxSizingValue::BorderBox);
             let padding_border_w =
                 table_box.padding_left + table_box.padding_right + table_box.border_left + table_box.border_right;
@@ -2494,7 +2524,7 @@ fn apply_table_size_constraints(
             )
         }
         None => (
-            total_col_width,
+            total_col_width.max(caption_definite_width),
             false,
             0.0,
             0.0,
