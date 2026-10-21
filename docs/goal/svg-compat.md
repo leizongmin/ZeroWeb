@@ -75,8 +75,13 @@ XML 序列化底座共享（DOMParser），改动互核；与 uievents-compat �
 - [x] **DC-2**：SVG DOM 类层级 + SVGSVGElement viewBox/CTM 最小面修齐
       （2026-10-21 M2 S1–S4c 收口——corpus 63.6%，零 Pass 回归全切片，
       见 evidence/2026-10-21-m2-s4c-pathdata-landing.md）
-- [ ] **DC-3**：SVGGeometryElement 几何接口 + 事件目标化修齐；SMIL 评估记账
-- [ ] **DC-4**：`make test` 全绿 + clippy `-D warnings` + fmt + reftest 零回归
+- [x] **DC-3**：SVGGeometryElement 几何接口 + 事件目标化修齐；SMIL 评估记账
+      （2026-10-21 M3 收口——几何接口随 M2 S4a + 命中测试 S1 + href 反射
+      S2 + script 加载 S3；SMIL 分类账定稿随 M4，见
+      evidence/2026-10-21-m4-smil-ledger-and-closeout.md）
+- [x] **DC-4**：`make test` 全绿 + clippy `-D warnings` + fmt + reftest 零回归
+      （2026-10-22 M4 终验——make test 76 suites 22346P/0F EXIT=0 +
+      clippy EXIT=0 + fmt EXIT=0 + reftest 712/712 EXIT=0）
 
 ## 活跃里程碑
 

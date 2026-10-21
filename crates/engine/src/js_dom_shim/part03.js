@@ -4623,6 +4623,26 @@
         if (!isFinite(n)) throw new TypeError('The provided float value is non-finite');
       };
     }
+    // svg-compat M4：getStartTime/getSimpleDuration 异常语义（spec SMIL
+    // Animation §getStartTime/§getSimpleDuration；WPT
+    // animations/scripted/SVGAnimationElement-exceptions 两子定谳）——当前无
+    // active interval → InvalidStateError；simple duration 未定义（无 dur/
+    // indefinite）→ NotSupportedError。SMIL 时钟未接入（FIXME(svg-compat)），
+    // interval 恒 unresolved 且 dur 恒未解析 → 恒抛（时钟接入后按 interval
+    // 解析/dur 值返回；SVGAnimationElement-getStartTime 的 interval 切换断言
+    // 面即 SMIL 时钟挂账量化底稿）。
+    if (!_zwSvgAnimP.getStartTime) {
+      _zwSvgAnimP.getStartTime = function () {
+        throw _zwDomException(
+          'getStartTime: the current interval is unresolved.', 'InvalidStateError');
+      };
+    }
+    if (!_zwSvgAnimP.getSimpleDuration) {
+      _zwSvgAnimP.getSimpleDuration = function () {
+        throw _zwDomException(
+          'getSimpleDuration: the simple duration is undefined.', 'NotSupportedError');
+      };
+    }
   }
   // svg-compat M2 S4a：SVGGeometryElement 几何面（spec SVG2 paths.html
   // §PathDataBNF/§PathDataErrorHandling + types.html §InterfaceSVGGeometryElement；

@@ -1,31 +1,32 @@
 # SVG 文档面兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../svg-compat.md](../svg-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-21（M3 S3 script 外部脚本加载落地）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-21（M4 收口——SMIL 分类账定稿 + 挂账归口）
 
 ## 当前状态
 
-**M3 S3 完成——SVG script 外部脚本加载（2026-10-21）**：运行期（动态插入）
-SVG script 外部脚本加载语义落地（spec SVG2 interact.html
-#ScriptElementProcessing 动态面；初文档标记面已在提取管线 R5005）：触发点
-setAttribute/setAttributeNS 写 href/xlink:href/type（快门 SVG ns + SCRIPT
-门）+ per-element 单次 setTimeout(0)「maybe start load」检查（type 可执行
-判定缺省可执行 + JS MIME essence 面）+ URL href 优先 xlink:href 回落 + 取源
-二通道（data: shim 侧直解 fragment 剥离；其余 host `__zw_fetch_script`，
-null/'' 一律按失败派 error——runner 通道 Err/miss 均 `''` 无法区分空体，
-修出一轮 load/error 语义颠倒）+ 间接 eval 全局声明落地 + loaded 旗标
-（已 load 后切 href 不重载，WPT 三子定谳）+ load/error 派发
-（bubbles:false）。靶面 href-script-element **3/3 全绿**（S2 时为文件
-Timeout）；**连带解锁** script-load-error-events 整文件 Timeout → 3P/2F
-（2F = `.py` 动态端点，runner/infra 域挂账）。全 corpus 对账（S2 基线
-1224P/487F/42T/1753 = 69.8%）：原始 **1238P/489F/40T/1767 = 70.1%**，
-共同行转移矩阵 **零 Pass 回归零 DOWN**；探针剔除同分母 68.8%→**69.0%**。
-DC-4：fmt EXIT=0 + 定向 zero-engine **3377P/0F**。划界：`.py` 动态端点
-归 runner/infra；module 型 type 与编译/运行时错误区分挂账。下一步：M4
-（SMIL 分类账重跑 → 挂账定稿）。
+**M4 完成——SMIL 分类账定稿 + goal 收口（2026-10-21）**：以 S3 后口径重跑
+animations/ 分类账（prep 重跑承诺兑现）：Pass 4 子→**48 子**（脚手架释放，
+「is not a function」接口缺失死面 0 残留）；Fail 228 子五桶归口——SMIL
+时序/值断言 155 + path d 插值 33 + clock 文法 7 + interval 杂项 4 =
+**199 子 SMIL 时钟挂账**（goal 契约排除面，量化底稿入档）；getCTM 载体
+22 子归 rendering-compat 协同；SVGLength 上下文单位 7 子归 S2a FIXME 批；
+Timeout 32 案六桶归口（seeking 8/eventbase 6/interval 7/syncbase 5/采样
+3/渲染交互 3）。可收面已收：SVGAnimationElement
+getStartTime/getSimpleDuration 异常语义 stub（无 interval →
+InvalidStateError、无 dur → NotSupportedError）——靶面
+SVGAnimationElement-exceptions **2/2 全绿**（基线 Fail），探针 m4-probe
+5/5。全 corpus 对账（S3 基线 1238P/489F/40T/1767 = 70.1%）：原始
+**1245P/487F/40T/1772 = 70.3%**，转移矩阵 2 Fail→Pass **零 Pass 回归零
+DOWN**；探针剔除同分母 69.0%→**69.1%**。DC-4 四项门禁全绿：fmt EXIT=0 +
+workspace clippy -D warnings EXIT=0 + reftest EXIT=0（Layout 508/508 +
+Text 204/204）+ `make test` 全 workspace **EXIT=0（76 suites / 22346P /
+0F）**。挂账定稿清单（七项）见
+evidence/2026-10-21-m4-smil-ledger-and-closeout.md。**goal 完成——四
+里程碑 M1-M4 全部完成，DC-1~4 全满足 + 挂账定稿（2026-10-22 终验）。**
 
-（M3 S2 href 反射、M3 S1 命中测试、M2 收口记录见 evidence/ 对应文件与
-下方切片条目：S2 后 corpus 69.8%，S1 后 68.8%，M2 收口 63.6%。）
+（M3 三切片（S1 命中测试 68.8% / S2 href 反射 69.8% / S3 script 加载
+70.1%）与 M2 收口记录见 evidence/ 对应文件与下方切片条目。）
 
 ## 缺口清单
 
@@ -34,7 +35,7 @@ DC-4：fmt EXIT=0 + 定向 zero-engine **3377P/0F**。划界：`.py` 动态端�
 | P1 | svg/ corpus 导入 + 基线 + 渲染断言面占比盘点 | ✅ M1（2026-10-21，8.8% 基线） |
 | P2 | SVG DOM 类层级 + SVGSVGElement viewBox/CTM 最小面 | ✅ M2（2026-10-21，S1–S4c 全切片 ✅，corpus 63.6%） |
 | P3 | SVGGeometryElement 几何接口 + 事件目标化 | ✅ M3（S1 命中测试 ✅ + S2 href 反射 ✅ + S3 script 加载 ✅ 70.1%，几何接口已随 M2 S4a 落地） |
-| P4 | SMIL 评估 + 渲染断言面挂账定稿 | ⏳ M4 |
+| P4 | SMIL 评估 + 渲染断言面挂账定稿 | ✅ M4（2026-10-21，分类账定稿 + 七项挂账归口，corpus 70.3%） |
 
 ## 已完成切片
 
@@ -136,26 +137,30 @@ DC-4：fmt EXIT=0 + 定向 zero-engine **3377P/0F**。划界：`.py` 动态端�
   （共同行零 Pass 回归零 DOWN）；探针剔除同分母 68.8%→69.0%。DC-4：fmt
   EXIT=0 + 定向 zero-engine 3377P/0F。证据：
   evidence/2026-10-21-m3-s3-script-load-landing.md。
+- **M4（2026-10-21/22）**：SMIL 分类账定稿 + 挂账归口 + goal 收口（本
+  session 端到端持有——prep 重跑承诺兑现：animations/ S3 后口径重分类
+  （Pass 4→48 子脚手架释放、Fail 228 子五桶归口、Timeout 32 案六桶
+  定性）+ SVGAnimationElement getStartTime/getSimpleDuration 异常语义
+  stub（靶面 exceptions 2/2 回收）+ 七项挂账定稿清单）。全 corpus 原始
+  1245P/487F/40T/1772 = 70.3%（2 Fail→Pass 零 Pass 回归零 DOWN）；探针
+  剔除同分母 69.0%→69.1%。DC-4 四项门禁全绿（fmt / clippy -D warnings /
+  reftest 712/712 / make test 76 suites 22346P/0F）。证据：
+  evidence/2026-10-21-m4-smil-ledger-and-closeout.md。
 
 ## 下一步计划
 
-1. **M4 SMIL 分类账重跑**：S3 脚手架已释放时序面（seeking-events 族 F→T、
-   invalid-value 族平凡全绿），M4 SMIL 评估须以 S3 后口径重跑分类（见
-   evidence/2026-10-21-m4-smil-assessment-prep.md + S3 landing 排片对位）；
-   S4c 后 syncbase-escaped-dots F(2)→T、S2 后 href-mpath F(1)→T 与
-   href-script F(3)→T（S3 已回收）移动一并归口（href-animate 4F 首断言
-   targetElement undefined 属 SVGAnimationElement 目标解析面，随 SMIL 批）。
-4. **上下文换算补面（S2a FIXME）**：SVGLength 关联元素的 em/ex/percentage
-   上下文（SVGLength-viewport 8F / percentage-directionality 6F）——与
-   getBBox 几何上下文同批评估。
-5. **rendering-compat 协同项**：getScreenCTM/getCTM 族（S3 划界，需 CSS
-   transform 感知布局合成）——与渲染域会话对齐后排期。
-6. **挂账面（M4 定稿归口）**：文本几何（-02 tspan + -05 text 三子 +
-   getComputedTextLength 族 + text-hittest 3 子，字形度量依赖）；image
-   内在尺寸（-03 image1/2 + svg-image-intrinsic-size 族，图片加载态依赖）；
-   CSS cascade 命中面（pe-bbox 19 子 + border-radius 1 子，style-system
-   协同）；script-load-error-events `.py` 动态端点 2F（runner/infra 域，
-   wptserve 动态资源执行——本 goal shim 面已按正确语义收口）。
+**goal 收口**：M1-M4 全部完成。后续推进不属本 goal 控制面，归口如下
+（详见 evidence/2026-10-21-m4-smil-ledger-and-closeout.md 挂账定稿清单）：
+
+1. **SMIL 时钟模型**（199 子 Fail + 29 案 Timeout）——独立立项面，本
+   goal 契约排除；分类账即量化底稿。
+2. **getCTM/getScreenCTM 族**（22 子）——rendering-compat 协同排期。
+3. **SVGLength 上下文单位**（cap/ch/ic/lh/rlh + viewport/percentage 族）
+   ——S2a FIXME 批，与 getBBox 几何上下文同批评估。
+4. **文本几何 / image 内在尺寸 / CSS cascade 命中面 / CSS d property**
+   ——既有挂账（style-system/rendering 协同）。
+5. **`.py` 动态端点**（script-load-error-events 2F）——runner/infra 域。
+6. **a.ping / a.rel-\***——导航域。
 
 **跨流碰头信号（2026-10-21，run-rules §9/§10）——已解除**：workspace fmt
 红于 comp-anim 流 `apps/compositor/src/frame_dump.rs`（9799e6435 引入，
