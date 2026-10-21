@@ -46,6 +46,8 @@ impl BrowserPaintSnapshot {
             primitives,
             dirty_rects: Vec::new(),
             timings: Default::default(),
+            animation_declarations: Vec::new(),
+            animation_scopes: Vec::new(),
         });
         if self.loading {
             self.loading = false;
@@ -110,6 +112,8 @@ fn blue_render() -> WebViewRenderResult {
         },
         dirty_rects: Vec::new(),
         timings: Default::default(),
+        animation_declarations: Vec::new(),
+        animation_scopes: Vec::new(),
     }
 }
 

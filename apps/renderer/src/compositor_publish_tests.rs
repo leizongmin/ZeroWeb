@@ -9,7 +9,7 @@ use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::{FillPrimitive, RenderPrimitives};
 
 #[derive(Clone)]
-struct SharedBuf(Arc<Mutex<Vec<u8>>>);
+pub(super) struct SharedBuf(pub(super) Arc<Mutex<Vec<u8>>>);
 
 impl Write for SharedBuf {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
@@ -22,7 +22,7 @@ impl Write for SharedBuf {
     }
 }
 
-fn drain_messages(bytes: &[u8]) -> Vec<IpcMessage> {
+pub(super) fn drain_messages(bytes: &[u8]) -> Vec<IpcMessage> {
     let mut transport = PipeTransport::new(std::io::Cursor::new(bytes), std::io::empty());
     let mut messages = Vec::new();
     while let Ok(message) = transport.recv() {
@@ -44,6 +44,7 @@ fn sample_frame() -> zero_page_runtime::FrameModel {
             ..RenderPrimitives::new()
         },
         dirty_rects: vec![(0.0, 0.0, 800.0, 600.0)],
+        animation_scopes: Vec::new(),
         hit_test: Some(HitTestCache::from_snapshot(HitTestCacheSnapshot {
             doc_root: root_id,
             layout_root: HitTestLayoutSnapshot {

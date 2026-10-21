@@ -188,6 +188,30 @@ pub struct CompositorAnimationStateParams {
 
 // ── 采样数学（单一实现） ────────────────────────────────────────────────
 
+/// 读系统单调钟（Linux/Android `CLOCK_MONOTONIC`，ns）——renderer 声明导出与
+/// compositor Get 采样的共享时基（同机同域，OS 保证可比；RFC §2.1）。
+/// 非 Unix 平台为进程相对过渡实现，跨进程采样语义待 Windows QPC 换算切片
+///（RFC §3 假设表：S1 先 Linux 落地）。
+pub fn monotonic_now_ns() -> u64 {
+    #[cfg(unix)]
+    {
+        let mut ts = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+        // SAFETY: 指针指向栈上合法 timespec；CLOCK_MONOTONIC 时钟 clock_gettime 不返回错误。
+        unsafe {
+            libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts);
+        }
+        ts.tv_sec as u64 * 1_000_000_000 + ts.tv_nsec as u64
+    }
+    #[cfg(not(unix))]
+    {
+        // FIXME(m2-s1-windows): 进程相对域，跨进程与 Unix 系统域不同基；Windows
+        // 采样路径落定前不得在非 Unix 平台开启 ZW_COMPOSITOR_ANIMATIONS。
+        use std::sync::OnceLock;
+        static EPOCH: OnceLock<std::time::Instant> = OnceLock::new();
+        EPOCH.get_or_init(std::time::Instant::now).elapsed().as_nanos() as u64
+    }
+}
+
 /// 一次采样的结果。
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnimationSample {

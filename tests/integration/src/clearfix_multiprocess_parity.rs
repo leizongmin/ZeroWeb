@@ -90,8 +90,9 @@ fn ipc_paint_snapshot_roundtrip_preserves_clearfix_layout() {
         &[],
         Vec::new(),
         None,
-        1, // navigation_epoch
-        1, // document_generation
+        1,   // navigation_epoch
+        1,   // document_generation
+        &[], // M2-S1b：动画作用域（本测试无动画，恒空）
     );
     let p2 = to_render_primitives(snapshot);
 

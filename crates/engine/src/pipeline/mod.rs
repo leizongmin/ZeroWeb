@@ -13,11 +13,12 @@ use zero_layout_engine::{LayoutEngine, LayoutResult};
 use zero_render_foundation::color::Color;
 use zero_render_foundation::display_list::DisplayList;
 use zero_render_foundation::geometry::Rect;
-use zero_render_foundation::primitive::{RenderPrimitives, RenderStats};
+use zero_render_foundation::primitive::{PaintAnimationScope, RenderPrimitives, RenderStats};
 use zero_style_system::ComputedStyle;
 use zero_style_system::StyleSystem;
 
 use crate::animation::AnimationClock;
+use crate::animation::compositor_export::{ExportedAnimationDeclaration, ExportedAnimationSet};
 use crate::dirty::DirtyTracker;
 use crate::hit_test;
 use crate::paint::Painter;
@@ -212,6 +213,16 @@ pub struct RenderPipeline {
     /// 是否跳过属性指示器（默认跳过：指示器是调试标记，不属于网页内容；
     /// reftest 像素对比与生产渲染均保持关闭，仅指示器专项测试显式开启）。
     pub(crate) skip_indicators: bool,
+    /// M2-S1b（compositor-animation-continuity）：合成动画采样 flag——开启时 render_html
+    /// 在 R3882 静态求值前导出可合成声明（`compositor_export`）、paint 发射动画作用域、
+    /// 静态路径跳写已导出属性（renderer 按 `ZW_COMPOSITOR_ANIMATIONS` × FramePublishMode
+    /// 计算后注入，见 [`Self::set_compositor_animations`]）。默认关，flag 关零行为变化。
+    pub(crate) compositor_animations: bool,
+    /// M2-S1b：最近一次全量渲染（render_html）的导出声明 + 已修复作用域。增量臂
+    ///（paint-only / 表单值 / resize 重绘）不重导出，原样携带——几何不变的增量帧上
+    /// 作用域仍有效，且 renderer 侧声明集稳定不触发虚假代际清理。None = flag 关或
+    /// 最近全量帧无导出。
+    pub(crate) compositor_export_cache: Option<(Vec<ExportedAnimationDeclaration>, Vec<PaintAnimationScope>)>,
     /// 图像固有尺寸缓存（image_key hash → (width, height)）。
     pub(crate) image_sizes: HashMap<u64, (f32, f32)>,
     /// R4553：图像纯色缓存（url_hash → RGBA，ImageData::solid_color）——clip:text url
@@ -305,6 +316,11 @@ pub struct RenderResult {
     /// R3268 canvas 显示链路：本帧 canvas 像素快照（ctx_id, w, h, rgba），
     /// 调用方在渲染前注入 ImageCache（图元 image_key = ctx_id）。
     pub canvas_images: Vec<(u64, u32, u32, Vec<u8>)>,
+    /// M2-S1b：本帧可合成动画声明集（flag 关闭恒空；renderer 换算协议
+    /// `CompositorAnimationState` 并维护单调钟锚点）。
+    pub animation_declarations: Vec<ExportedAnimationDeclaration>,
+    /// M2-S1b：本帧 paint 动画作用域（已过视口剔除区间修复；flag 关闭恒空）。
+    pub animation_scopes: Vec<PaintAnimationScope>,
 }
 
 impl RenderResult {
@@ -322,6 +338,8 @@ pub(crate) fn make_render_result(
     timings: PipelineTimings,
     mut stats: RenderStats,
     canvas_images: Vec<(u64, u32, u32, Vec<u8>)>,
+    animation_declarations: Vec<ExportedAnimationDeclaration>,
+    animation_scopes: Vec<PaintAnimationScope>,
 ) -> RenderResult {
     let display_list = DisplayList::new(primitives, dirty_rects.clone());
     display_list.apply_stats_dirty_rects(&mut stats);
@@ -331,6 +349,8 @@ pub(crate) fn make_render_result(
         timings,
         stats,
         canvas_images,
+        animation_declarations,
+        animation_scopes,
     }
 }
 
@@ -455,6 +475,8 @@ impl RenderPipeline {
             cached_css_text: None,
             cached_stylesheets: Vec::new(),
             skip_indicators: true,
+            compositor_animations: false,
+            compositor_export_cache: None,
             image_sizes: HashMap::new(),
             image_solid_colors: HashMap::new(),
             image_natural_sizes: HashMap::new(),
@@ -497,6 +519,13 @@ impl RenderPipeline {
     /// 调试可视化或指示器专项测试可调 `set_skip_indicators(false)` 显式开启。
     pub fn set_skip_indicators(&mut self, skip: bool) {
         self.skip_indicators = skip;
+    }
+
+    /// M2-S1b：设置合成动画采样 flag（renderer 由 `compositor_animations_enabled()`
+    /// × `FramePublishMode::Compositor` 计算；仅影响 render_html 导出/作用域路径，
+    /// flag 关闭时渲染输出逐字节不变）。
+    pub fn set_compositor_animations(&mut self, enabled: bool) {
+        self.compositor_animations = enabled;
     }
 
     /// 设置图像固有尺寸缓存。
@@ -1040,7 +1069,7 @@ impl RenderPipeline {
 
         // 5. 启动动画并应用插值覆盖（事件 → pending 缓冲，宿主取用派发）。
         for (nid, kind, name, elapsed) in
-            apply_animation_overrides(&mut self.animation_clock, &mut styles, current_time)
+            apply_animation_overrides(&mut self.animation_clock, &mut styles, current_time, None)
         {
             if let Some(sel) = crate::js_dom_bridge::unique_selector_for_node(doc, nid) {
                 self.pending_animation_events.push(AnimationEvent {
@@ -1287,6 +1316,10 @@ impl RenderPipeline {
             },
             stats,
             canvas_images,
+            // M2-S1b：动画泵路径（runner 真时间轴）不导出——合成采样域只挂静态
+            // 渲染路径（render_html，compositor 发布源）。
+            Vec::new(),
+            Vec::new(),
         )
     }
 
@@ -1494,14 +1527,28 @@ impl RenderPipeline {
         // 状态不受污染，`tick_animation_clock`（webview 泵，真实时间轴）仍是唯一状态
         // 权威；keyframes 注册是纯注册（无动画状态），先在主时钟注册再 clone。
         // driving: at-supports-content-003 / at-media-content-003、css-backgrounds/animations 族。
+        // M2-S1b：可合成动画导出集（flag 开启且页面有动画声明时为 Some；声明出协议、
+        // 作用域随 paint 收集）。
+        let mut export_set: Option<ExportedAnimationSet> = None;
         if styles
             .values()
             .any(|s| s.animation_name.iter().any(|n| !n.is_empty() && n != "none"))
         {
             self.animation_clock
                 .register_from_stylesheets(&stylesheets, &self.media_context());
+            // M2-S1b：flag 开启时在 t=0 叠加前导出（underlying 快照 = 此处 styles；
+            // 已导出属性的叠加由 apply_animation_overrides 跳写，compositor 在干净
+            // 基线上采样）。
+            if self.compositor_animations {
+                export_set = Some(crate::animation::compositor_export::export_composable_animations(
+                    &self.animation_clock,
+                    &styles,
+                ));
+            }
             let mut static_clock = self.animation_clock.clone();
-            for (nid, kind, _name, _elapsed) in apply_animation_overrides(&mut static_clock, &mut styles, 0.0) {
+            for (nid, kind, _name, _elapsed) in
+                apply_animation_overrides(&mut static_clock, &mut styles, 0.0, export_set.as_ref())
+            {
                 // 事件丢弃（t=0 求值是渲染近似，非真实时间轴事件）；
                 // 只保留插值对 styles 的叠加。
                 let _ = (nid, kind);
@@ -1555,11 +1602,18 @@ impl RenderPipeline {
         painter.paint_skip_nodes = layout_result.paint_skip_node_ids.clone();
         // R4276：渲染侧 loader 可用性门控 painter 的 isolate 收集（未设置 = 旁路）。
         painter.set_font_loader_ready(self.font_loader.is_some());
+        // M2-S1b：导出通道表注入 painter（空表 = flag 关，paint 行为不变）。
+        if let Some(set) = &export_set {
+            painter.set_compositor_animation_channels(set.channels.clone());
+        }
         painter.paint(&layout_result.root, &styles, Some(&doc));
         let mut canvas_images = painter.canvas_images.clone();
         // R4276：filter url() 非常量链 isolate 应用（离屏栅格化 + resvg 链 + 回注
         // canvas_images 占位 key）。
         self.apply_filter_isolates(&mut painter, &doc, &mut canvas_images);
+        // M2-S1b：取走 paint 期收集的动画作用域（url() filter isolate 不在导出域——
+        // 导出门要求 filter 干净，作用域区间不受 isolate 追加图元影响）。
+        let mut animation_scopes = painter.take_animation_scopes();
         let mut primitives = painter.into_primitives();
         if std::env::var("ZW_URL_CHAIN_DEBUG").as_deref() == Ok("1") {
             for img in &primitives.images {
@@ -1577,8 +1631,11 @@ impl RenderPipeline {
         }
         // 视口剔除 — 移除视口外的图元（高度取文档布局范围，供浏览器滚动消费）
         let viewport = paint_cull_viewport(self.viewport_width, self.viewport_height, &layout_result.root);
-        // S7b：cull_invisible 原位剔除（primitives 变量即结果，不再返回新对象）
-        let stats = primitives.cull_invisible(viewport);
+        // S7b：cull_invisible 原位剔除（primitives 变量即结果，不再返回新对象）。
+        // M2-S1b：flag 开启时同点修复动画作用域的 draw 区间/transform 槽位
+        //（cull 重建 draw_order/transforms 后 paint 期原索引失效）。
+        let stats =
+            primitives.cull_invisible_with_scopes(viewport, export_set.is_some().then_some(&mut animation_scopes));
         let dirty_rects = vec![(0.0, 0.0, viewport.size.width, viewport.size.height)];
         // 对填充图元进行批处理优化（S7：draw_order 路径跳过——纯 clone no-op）
         let mut primitives = if primitives.draw_order.is_empty() {
@@ -1603,6 +1660,14 @@ impl RenderPipeline {
         self.cached_doc = Some(Rc::new(RefCell::new(doc)));
         // R100：doc 全量重建（slotmap 换代）——旧 handle→NodeId 全部失效。
         self.persistent_handle_nodes.clear();
+        // M2-S1b：缓存本次导出（声明 + 已修复作用域）供增量臂携带；flag 关恒 None。
+        self.compositor_export_cache = if self.compositor_animations {
+            export_set
+                .as_ref()
+                .map(|set| (set.declarations.clone(), animation_scopes.clone()))
+        } else {
+            None
+        };
         self.cached_styles = styles;
         // R342：缓存 stylesheets——runner 的动画时钟泵（tick_animation_clock）依赖
         // 此缓存对 cached_doc 重算样式（与 render_with_dom_mutations_persistent 对齐）。
@@ -1636,6 +1701,9 @@ impl RenderPipeline {
             },
             stats,
             canvas_images,
+            // M2-S1b：声明集与作用域随帧出引擎（flag 关恒空）。
+            export_set.map(|set| set.declarations).unwrap_or_default(),
+            animation_scopes,
         )
     }
 
@@ -1730,7 +1798,11 @@ impl RenderPipeline {
         doc: &Document,
         stylesheets: &[Stylesheet],
         dirty_rect: Rect,
-    ) -> Option<(RenderPrimitives, Vec<(u64, u32, u32, Vec<u8>)>)> {
+    ) -> Option<(
+        RenderPrimitives,
+        Vec<(u64, u32, u32, Vec<u8>)>,
+        Vec<PaintAnimationScope>,
+    )> {
         // 计算样式（全量——本路径无变更节点上下文；存 cached_styles 供 mutation
         // 增量路径作 base）
         self.style_system
@@ -1774,9 +1846,17 @@ impl RenderPipeline {
         painter.viewport_w = self.viewport_width;
         painter.viewport_h = self.viewport_height;
         painter.paint_skip_nodes = layout_result.paint_skip_node_ids.clone();
+        // M2-S1b：增量臂复用最近全量帧的导出通道表（不重跑分类），painter 照常
+        // 发射作用域——本帧 draw_order 全新，缓存作用域区间不可跨帧复用。
+        if self.compositor_animations
+            && let Some((declarations, _)) = &self.compositor_export_cache
+        {
+            painter.set_compositor_animation_channels(ExportedAnimationSet::channels_from_declarations(declarations));
+        }
         painter.paint_in_rect(&layout_result.root, &styles, &dirty_rect, Some(doc));
         let canvas_images = painter.canvas_images.clone();
-        Some((painter.into_primitives(), canvas_images))
+        let animation_scopes = painter.take_animation_scopes();
+        Some((painter.into_primitives(), canvas_images, animation_scopes))
     }
 
     /// 在已有 DOM 缓存上重绘整个视口（resize 等场景，走 `incremental_paint`）。
@@ -1803,7 +1883,7 @@ impl RenderPipeline {
         self.layout_engine.set_print_page_width(page_w);
         self.layout_engine.set_print_page_margins(m_top, m_bottom);
         self.layout_engine.set_print_horizontal_margins(m_left, m_right);
-        let (primitives, canvas_images) = {
+        let (primitives, canvas_images, animation_scopes) = {
             let doc = doc_rc.borrow();
             self.incremental_paint(&doc, &stylesheets, dirty)?
         };
@@ -1817,6 +1897,13 @@ impl RenderPipeline {
             paint_skip_node_ids: layout_ref.paint_skip_node_ids.clone(),
         };
         let dirty_rects = vec![(0.0, 0.0, self.viewport_width, self.viewport_height)];
+        // M2-S1b：声明携带最近全量帧导出（本路径不重导出；None → 空）；作用域为
+        // 本帧 paint 期新发射（draw 区间锚本帧 draw_order，不可跨帧复用）。
+        let export_decls = self
+            .compositor_export_cache
+            .as_ref()
+            .map(|(d, _)| d.clone())
+            .unwrap_or_default();
         Some(make_render_result(
             primitives,
             dirty_rects,
@@ -1830,6 +1917,8 @@ impl RenderPipeline {
             },
             RenderStats::default(),
             canvas_images,
+            export_decls,
+            animation_scopes,
         ))
     }
 
@@ -2160,8 +2249,15 @@ impl RenderPipeline {
         painter.viewport_w = self.viewport_width;
         painter.viewport_h = self.viewport_height;
         painter.paint_skip_nodes = layout.paint_skip_node_ids.clone();
+        // M2-S1b：增量臂复用最近全量帧的导出通道表（同 incremental_paint 注释）。
+        if self.compositor_animations
+            && let Some((declarations, _)) = &self.compositor_export_cache
+        {
+            painter.set_compositor_animation_channels(ExportedAnimationSet::channels_from_declarations(declarations));
+        }
         painter.paint(&layout.root, &self.cached_styles, Some(doc));
         let canvas_images = painter.canvas_images.clone();
+        let animation_scopes = painter.take_animation_scopes();
         let primitives = painter.into_primitives();
         let paint_ms = paint_start.elapsed().as_secs_f64() * 1000.0;
         let dirty_rects =
@@ -2183,6 +2279,12 @@ impl RenderPipeline {
             },
             RenderStats::default(),
             canvas_images,
+            // M2-S1b：声明携带最近全量帧导出；作用域为本帧新发射。
+            self.compositor_export_cache
+                .as_ref()
+                .map(|(d, _)| d.clone())
+                .unwrap_or_default(),
+            animation_scopes,
         ))
     }
 
@@ -2284,8 +2386,15 @@ impl RenderPipeline {
         painter.set_document_url(self.document_url.as_deref());
         painter.viewport_w = self.viewport_width;
         painter.viewport_h = self.viewport_height;
+        // M2-S1b：增量臂复用最近全量帧的导出通道表（同 incremental_paint 注释）。
+        if self.compositor_animations
+            && let Some((declarations, _)) = &self.compositor_export_cache
+        {
+            painter.set_compositor_animation_channels(ExportedAnimationSet::channels_from_declarations(declarations));
+        }
         painter.paint(&layout.root, &self.cached_styles, Some(doc));
         let canvas_images = painter.canvas_images.clone();
+        let animation_scopes = painter.take_animation_scopes();
         let primitives = painter.into_primitives();
         let dirty_rects =
             layout_dirty_rects_for_nodes(&layout.root, &changed, self.viewport_width, self.viewport_height);
@@ -2305,6 +2414,12 @@ impl RenderPipeline {
             },
             RenderStats::default(),
             canvas_images,
+            // M2-S1b：声明携带最近全量帧导出；作用域为本帧新发射。
+            self.compositor_export_cache
+                .as_ref()
+                .map(|(d, _)| d.clone())
+                .unwrap_or_default(),
+            animation_scopes,
         ))
     }
 
@@ -3361,6 +3476,9 @@ fn apply_animation_overrides(
     clock: &mut AnimationClock,
     styles: &mut HashMap<NodeId, ComputedStyle>,
     current_time: f64,
+    // M2-S1b：已导出合成通道集——命中的插值属性不写样式（compositor 在干净基线上
+    // 采样）；None = 非导出路径（动画泵真时间轴），行为不变。
+    compositor_export: Option<&ExportedAnimationSet>,
 ) -> Vec<(NodeId, AnimationEventKind, String, f64)> {
     // 收集有动画名称的元素 ID
     let animated_ids: Vec<(u64, NodeId)> = styles
@@ -3395,7 +3513,12 @@ fn apply_animation_overrides(
         }
 
         // 推进时钟并获取插值属性
-        let props = clock.tick(elem_key, current_time);
+        let mut props = clock.tick(elem_key, current_time);
+        // M2-S1b：已导出通道的插值不落样式——paint 中性化基线 + compositor 采样
+        // 承担该属性的可见值（RFC §2.3-1/3）。
+        if let Some(set) = compositor_export {
+            props.retain(|p| !set.skips_property(elem_key, &p.name));
+        }
 
         if !props.is_empty() {
             // 将插值属性叠加到 ComputedStyle

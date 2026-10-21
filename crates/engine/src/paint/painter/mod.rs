@@ -12,6 +12,7 @@ mod text_image;
 
 use std::collections::{HashMap, HashSet};
 
+use slotmap::Key;
 use zero_css_parser::values::{
     ColorValue, FloatValue, LengthValue, TransformFunction, TransformValue, VisibilityValue,
 };
@@ -20,7 +21,9 @@ use zero_layout_engine::LayoutBox;
 use zero_layout_engine::types::{NestedSpannerSegKind, OverflowClip};
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
-use zero_render_foundation::primitive::{RenderPrimitives, RoundedRectPrimitive};
+use zero_render_foundation::primitive::{
+    PaintAnimationProperty, PaintAnimationScope, RenderPrimitives, RoundedRectPrimitive, TransformPrimitive,
+};
 use zero_style_system::property::types::DisplayValue;
 use zero_style_system::{
     AccentColorComputedValue, AppearanceComputedValue, BackgroundAttachmentComputedValue, BackgroundClipComputedValue,
@@ -37,6 +40,8 @@ use self::effects::ShadowPhase;
 pub(crate) use self::effects::{LayerPaintAreas, border_area_ring_strips, clip_rect_for_layer};
 use super::color::resolve_color_current;
 use super::helpers::{PrimitiveCounts, apply_opacity_to_new_primitives, circle_to_polygon, ellipse_to_polygon};
+use super::transform::transform_origin_point;
+use crate::animation::compositor_export::{ExportedChannel, ExportedProperty};
 
 /// R5174：`perspective` 属性祖先上下文（paint_node 栈帧，css-transforms-2 §18-21）。
 #[derive(Clone, Copy)]
@@ -266,6 +271,13 @@ pub struct Painter {
     /// `_textSelection` 同语义）。
     pub(crate) pending_text_selections: Vec<(String, usize, usize)>,
     pub(crate) text_selections: HashMap<NodeId, (usize, usize)>,
+    /// M2-S1b（compositor-animation-continuity）：元素 → 已导出动画通道（flag 开启时
+    /// 由 pipeline 注入；paint 期查表决定 opacity 中性化 / transform 恒等 TP 发射）。
+    /// flag 关闭时恒空表，paint 路径仅多一次空表查询。
+    pub(crate) compositor_channels: HashMap<u64, Vec<ExportedChannel>>,
+    /// M2-S1b：本帧收集的 paint 动画作用域（draw 区间为 paint 期原值；`cull_invisible`
+    /// 视口剔除的区间/槽位修复由调用方经 `cull_invisible_with_scopes` 完成）。
+    pub(crate) animation_scopes: Vec<PaintAnimationScope>,
 }
 
 fn is_positioned_child(box_node: &LayoutBox) -> bool {
@@ -901,7 +913,19 @@ impl Painter {
             scroll_offsets: HashMap::new(),
             pending_text_selections: Vec::new(),
             text_selections: HashMap::new(),
+            compositor_channels: HashMap::new(),
+            animation_scopes: Vec::new(),
         }
+    }
+
+    /// M2-S1b：注入已导出动画通道表（空表 = flag 关闭，paint 路径行为不变）。
+    pub fn set_compositor_animation_channels(&mut self, channels: HashMap<u64, Vec<ExportedChannel>>) {
+        self.compositor_channels = channels;
+    }
+
+    /// M2-S1b：取走本帧收集的动画作用域（调用方在视口剔除时做区间修复）。
+    pub fn take_animation_scopes(&mut self) -> Vec<PaintAnimationScope> {
+        std::mem::take(&mut self.animation_scopes)
     }
 
     /// 设置当前文档 URL。
@@ -2866,6 +2890,9 @@ impl Painter {
         // 获取该节点对应的计算样式
         // 记录绘制前的图元数量，用于 opacity 应用
         let counts_before = PrimitiveCounts::snapshot(&self.primitives);
+        // M2-S1b：动画作用域的 draw_order 区间起点（与 counts_before 同语义的
+        // draw_order 域基准；导出通道元素的子树绘制都落在此基准之后）。
+        let draw_before = self.primitives.draw_order.len() as u32;
         // R5006：filters/blend_modes 不在 PrimitiveCounts 内（backdrop-filter 等区域
         // 效果图元），CSS transform 发射点的「子树零可见图元」判定需一并快照。
         let filters_before = self.primitives.filters.len();
@@ -4259,6 +4286,20 @@ impl Painter {
                         && filters_before == self.primitives.filters.len()
                         && blend_modes_before == self.primitives.blend_modes.len()
                         && self.primitives.fills[counts_before.fills].rect == rect;
+                    // M2-S1b（compositor-animation-continuity）：导出 transform 通道分支——
+                    // 元素已导出 transform 动画时，paint 在干净 underlying 基线（无变换
+                    // 声明）上恒发一个恒等 TP 并记录作用域，compositor 采样后就地改写矩阵
+                    //（RFC §2.3-2）。既有分路（R5085 直绘 / R3901 平移）在干净基线下均为
+                    // no-op，不需旁路；透视祖先（R5174）的折叠缩放不可被采样矩阵表达，
+                    // 不在 S1 采样域——保持既有路径（动画冻结，基线静态差 RFC 记档）。
+                    let compositor_transform = match (box_node.node_id, parent_perspective) {
+                        (Some(node_id), None) => self
+                            .compositor_channels
+                            .get(&node_id.data().as_ffi())
+                            .and_then(|cs| cs.iter().find(|c| c.property == ExportedProperty::Transform))
+                            .map(|c| c.animation_id),
+                        _ => None,
+                    };
                     let mut direct_filled = false;
                     if solid_leaf_fill
                         && let Some(mut tp) =
@@ -4285,22 +4326,52 @@ impl Painter {
                         direct_filled = true;
                     }
                     if !direct_filled {
-                        // R5174：TP 路径同折叠（与直绘共用 compose，改路不拆对）；
-                        // 自身矩阵 None（transform:none / 纯 translateZ 列表 identity
-                        // 早退）但透视缩放 ≠ 1 时合成「绕 origin 缩放」TP——
-                        // perspective-origin 族：子元素仅 translateZ(±z)，投影缩放是
-                        // 唯一视觉载体（s = d/(d−z)，translateZ(t) ≡ translate3d(0,0,t)）。
-                        match super::helpers::compute_transform_matrix_with_ref_box(style, &rect, ref_box.as_ref()) {
-                            Some(mut tp) => {
-                                if let Some((ox, oy, s)) = parent_perspective {
-                                    super::transform::compose_perspective_scale(&mut tp, ox, oy, s, &rect);
+                        if let Some(anim_id) = compositor_transform {
+                            // 恒等基线 TP：origin 与既有矩阵路径同源（R4107 参考框感知），
+                            // compositor 以 fold(采样函数列表) 改写矩阵，TP 语义
+                            //（origin 附近的区域逆映射重采样）不变。
+                            let font_size_px = resolve_paint_font_size(&style.font_size) as f64;
+                            let (origin_x, origin_y) =
+                                transform_origin_point(style, ref_box.as_ref().unwrap_or(&rect), font_size_px);
+                            let transform_index = self.primitives.transforms.len() as u32;
+                            self.primitives.add_transform(TransformPrimitive {
+                                rect,
+                                origin_x,
+                                origin_y,
+                                a: 1.0,
+                                b: 0.0,
+                                c: 0.0,
+                                d: 1.0,
+                                tx: 0.0,
+                                ty: 0.0,
+                            });
+                            self.animation_scopes.push(PaintAnimationScope {
+                                animation_id: anim_id,
+                                property: PaintAnimationProperty::Transform,
+                                draw_begin: draw_before,
+                                draw_end: self.primitives.draw_order.len() as u32,
+                                rect,
+                                transform_index: Some(transform_index),
+                            });
+                        } else {
+                            // R5174：TP 路径同折叠（与直绘共用 compose，改路不拆对）；
+                            // 自身矩阵 None（transform:none / 纯 translateZ 列表 identity
+                            // 早退）但透视缩放 ≠ 1 时合成「绕 origin 缩放」TP——
+                            // perspective-origin 族：子元素仅 translateZ(±z)，投影缩放是
+                            // 唯一视觉载体（s = d/(d−z)，translateZ(t) ≡ translate3d(0,0,t)）。
+                            match super::helpers::compute_transform_matrix_with_ref_box(style, &rect, ref_box.as_ref())
+                            {
+                                Some(mut tp) => {
+                                    if let Some((ox, oy, s)) = parent_perspective {
+                                        super::transform::compose_perspective_scale(&mut tp, ox, oy, s, &rect);
+                                    }
+                                    self.primitives.add_transform(tp);
                                 }
-                                self.primitives.add_transform(tp);
-                            }
-                            None => {
-                                if let Some((ox, oy, s)) = parent_perspective {
-                                    self.primitives
-                                        .add_transform(super::transform::perspective_scale_tp(&rect, ox, oy, s));
+                                None => {
+                                    if let Some((ox, oy, s)) = parent_perspective {
+                                        self.primitives
+                                            .add_transform(super::transform::perspective_scale_tp(&rect, ox, oy, s));
+                                    }
                                 }
                             }
                         }
@@ -4321,25 +4392,44 @@ impl Painter {
         // 应用 opacity（对当前节点及其子节点产生的所有图元进行 alpha 衰减）
         if let Some(node_id) = box_node.node_id
             && let Some(style) = styles.get(&node_id)
-            && style.opacity < 1.0
         {
-            let opacity = style.opacity as f32;
-            // R4550（css-backgrounds-4 §background-clip:text + csswg-drafts#9563）：
-            // clip:text 恒色上下文中的后代 SC（opacity 即建 SC）字形仍贡献字形 mask，
-            // 但 opacity 不得 dim 露出的背景——已染色 glyph 跳过 alpha 衰减（alpha 原值
-            // 备份回写）。opacity:0 的全透明 SC 仍正常衰减 = 不贡献 mask（spec 同款边
-            // 界）；非 glyph 图元（元素自身 bg/边框等）照常衰减。
-            let clip_text_glyph_exempt = !self.bg_clip_text_color.is_empty() && opacity > 0.0;
-            let glyph_alphas = clip_text_glyph_exempt.then(|| {
-                self.primitives.glyphs[counts_before.glyphs..]
-                    .iter()
-                    .map(|g| g.color.a)
-                    .collect::<Vec<u8>>()
-            });
-            apply_opacity_to_new_primitives(&mut self.primitives, &counts_before, opacity);
-            if let Some(alphas) = glyph_alphas {
-                for (glyph, a) in self.primitives.glyphs[counts_before.glyphs..].iter_mut().zip(alphas) {
-                    glyph.color.a = a;
+            // M2-S1b（compositor-animation-continuity）：导出 opacity 通道——中性化：
+            // 不烘焙动画 alpha（导出门保证 underlying ≥ 1），记录作用域区间交
+            // compositor 按采样值缩放（RFC §2.3-3）。作用域与 t=0 采样值无关恒发
+            //（动画扫全值域，不能以当前值省略）。
+            let compositor_opacity = self
+                .compositor_channels
+                .get(&node_id.data().as_ffi())
+                .and_then(|cs| cs.iter().find(|c| c.property == ExportedProperty::Opacity))
+                .map(|c| c.animation_id);
+            if let Some(anim_id) = compositor_opacity {
+                self.animation_scopes.push(PaintAnimationScope {
+                    animation_id: anim_id,
+                    property: PaintAnimationProperty::Opacity,
+                    draw_begin: draw_before,
+                    draw_end: self.primitives.draw_order.len() as u32,
+                    rect: Rect::new(abs_x, abs_y, box_node.width, box_node.height),
+                    transform_index: None,
+                });
+            } else if style.opacity < 1.0 {
+                let opacity = style.opacity as f32;
+                // R4550（css-backgrounds-4 §background-clip:text + csswg-drafts#9563）：
+                // clip:text 恒色上下文中的后代 SC（opacity 即建 SC）字形仍贡献字形 mask，
+                // 但 opacity 不得 dim 露出的背景——已染色 glyph 跳过 alpha 衰减（alpha 原值
+                // 备份回写）。opacity:0 的全透明 SC 仍正常衰减 = 不贡献 mask（spec 同款边
+                // 界）；非 glyph 图元（元素自身 bg/边框等）照常衰减。
+                let clip_text_glyph_exempt = !self.bg_clip_text_color.is_empty() && opacity > 0.0;
+                let glyph_alphas = clip_text_glyph_exempt.then(|| {
+                    self.primitives.glyphs[counts_before.glyphs..]
+                        .iter()
+                        .map(|g| g.color.a)
+                        .collect::<Vec<u8>>()
+                });
+                apply_opacity_to_new_primitives(&mut self.primitives, &counts_before, opacity);
+                if let Some(alphas) = glyph_alphas {
+                    for (glyph, a) in self.primitives.glyphs[counts_before.glyphs..].iter_mut().zip(alphas) {
+                        glyph.color.a = a;
+                    }
                 }
             }
         }

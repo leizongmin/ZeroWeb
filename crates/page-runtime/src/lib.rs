@@ -46,7 +46,7 @@ pub use service_worker_registration::{
 };
 
 use zero_engine::{DomMutation, HitTestCache, RenderResult};
-use zero_render_foundation::primitive::RenderPrimitives;
+use zero_render_foundation::primitive::{PaintAnimationScope, RenderPrimitives};
 
 /// 异步抓取宿主：发起网络抓取并返回可轮询的接收器。
 ///
@@ -148,6 +148,9 @@ pub struct FrameModel {
     pub dirty_rects: Vec<(f32, f32, f32, f32)>,
     /// 主线程 hit-test 缓存（可选）。
     pub hit_test: Option<HitTestCache>,
+    /// M2-S1b（compositor-animation-continuity）：本帧 paint 动画作用域（engine 域；
+    /// renderer 发布时换算 protocol `IpcAnimationScope`）。flag 关闭恒空。
+    pub animation_scopes: Vec<PaintAnimationScope>,
 }
 
 /// 统一脚本执行器契约（T4）——renderer（`RendererJsWorker`）与 tabworker（`TabJsWorkerHandle`）

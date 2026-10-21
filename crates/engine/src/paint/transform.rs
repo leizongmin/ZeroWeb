@@ -135,6 +135,18 @@ pub fn transform_shows_backface(style: &ComputedStyle) -> bool {
     net < 0.0
 }
 
+/// M2-S1b（compositor-animation-continuity）：transform-origin 绝对坐标解析——
+/// [`compute_transform_matrix_with_ref_box`] 与导出动画恒等 TP（painter 作用域分支）
+/// 的单点实现（guidelines #6：compositor 改写矩阵须复用同一 origin 基准）。
+pub(crate) fn transform_origin_point(style: &ComputedStyle, origin_base: &Rect, font_size_px: f64) -> (f32, f32) {
+    (
+        origin_base.origin.x
+            + resolve_transform_origin_length(&style.transform_origin_x, origin_base.size.width, font_size_px),
+        origin_base.origin.y
+            + resolve_transform_origin_length(&style.transform_origin_y, origin_base.size.height, font_size_px),
+    )
+}
+
 /// 将 `style.transform` 函数列表合成为 2D 仿射变换图元（含 transform-origin）。
 ///
 /// 仅 translate 的列表返回 `None`（由 offset 路径处理）。
@@ -205,10 +217,7 @@ pub fn compute_transform_matrix_with_ref_box(
     // R4107：声明 transform-box: content-box/fill-box 时基点/尺寸取参考框（内容盒）。
     let origin_base = ref_rect.unwrap_or(rect);
     let font_size_px = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
-    let origin_x = origin_base.origin.x
-        + resolve_transform_origin_length(&style.transform_origin_x, origin_base.size.width, font_size_px);
-    let origin_y = origin_base.origin.y
-        + resolve_transform_origin_length(&style.transform_origin_y, origin_base.size.height, font_size_px);
+    let (origin_x, origin_y) = transform_origin_point(style, origin_base, font_size_px);
 
     // 构建累积变换矩阵（3x3 仿射，存储为 [a, b, c, d, tx, ty]）
     // | a  c  tx |

@@ -6,6 +6,7 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc;
 
+use zero_engine::animation::compositor_export::ExportedAnimationDeclaration;
 use zero_engine::{
     BudgetAdvance, BudgetedRenderSession, DomEventDetail, DomMutation, MediaType, PipelineTimings,
     PrefersColorSchemeValue, RenderPipeline, RenderResult, extract_css_image_urls, extract_html_style_text,
@@ -29,7 +30,7 @@ use zero_page_runtime::{
     ServiceWorkerImportedScript, ServiceWorkerManager, ServiceWorkerManagerEvent, ServiceWorkerRegistrationKey,
     ServiceWorkerVersionSlots, validate_service_worker_registration_for_document,
 };
-use zero_render_foundation::primitive::RenderPrimitives;
+use zero_render_foundation::primitive::{PaintAnimationScope, RenderPrimitives};
 use zero_script_sandbox::{
     SandboxConfig, ServiceWorkerFetchRequest, ServiceWorkerFetchResponse, ServiceWorkerMessagePorts, WorkerEvent,
     WorkerRuntime,
@@ -315,6 +316,11 @@ pub struct WebViewRenderResult {
     pub dirty_rects: Vec<(f32, f32, f32, f32)>,
     /// 管线耗时。
     pub timings: PipelineTimings,
+    /// M2-S1b（compositor-animation-continuity）：本帧可合成动画声明集（engine 域；
+    /// renderer 换算 protocol 并维护单调钟锚点）。flag 关闭恒空。
+    pub animation_declarations: Vec<ExportedAnimationDeclaration>,
+    /// M2-S1b：本帧 paint 动画作用域（已过视口剔除区间修复）。flag 关闭恒空。
+    pub animation_scopes: Vec<PaintAnimationScope>,
 }
 
 impl WebViewRenderResult {
@@ -341,6 +347,8 @@ fn render_result_to_webview(result: &RenderResult) -> WebViewRenderResult {
         primitives: result.display_list.primitives.clone(),
         dirty_rects: result.display_list.dirty_rects.clone(),
         timings: result.timings.clone(),
+        animation_declarations: result.animation_declarations.clone(),
+        animation_scopes: result.animation_scopes.clone(),
     }
 }
 
@@ -673,6 +681,10 @@ pub struct WebView {
     /// 是否跳过调试属性指示器（R1996）。默认 true：指示器不属于网页内容。
     /// 持久化到字段，resize 重建 pipeline 后按下推，避免设置丢失。
     skip_indicators: bool,
+    /// M2-S1b（compositor-animation-continuity）：合成动画导出开关。默认 false =
+    /// 零行为变更；开启后全量渲染帧导出可合成动画声明与 paint 作用域
+    /// （镜像 `set_media_type` 的持久化 + 即时下推模式）。
+    compositor_animations: bool,
     /// 安全上下文（HSTS + 混合内容 + CSP）。
     security_context: SecurityContext,
 }
@@ -811,6 +823,7 @@ impl WebView {
             media_type: MediaType::Screen,
             print_page_setup: None,
             skip_indicators: true,
+            compositor_animations: false,
             security_context: SecurityContext::new(),
         }
     }
@@ -2194,6 +2207,18 @@ impl WebView {
     pub fn set_media_type(&mut self, media_type: MediaType) {
         self.media_type = media_type;
         self.pipeline.set_media_type(media_type);
+    }
+
+    /// M2-S1b（compositor-animation-continuity）：设置合成动画导出开关。
+    ///
+    /// 默认 false = 零行为变更；true 时全量渲染帧（`render()` 等 render_html 路径）
+    /// 额外导出可合成动画声明（`WebViewRenderResult::animation_declarations`）与
+    /// paint 动画作用域（`animation_scopes`），供 renderer 换算 protocol 后经
+    /// CompositorAnimationState 发往合成器。镜像 `set_media_type`：持久化字段 +
+    /// 即时下推 pipeline，后续 render 入口重放。
+    pub fn set_compositor_animations(&mut self, enabled: bool) {
+        self.compositor_animations = enabled;
+        self.pipeline.set_compositor_animations(enabled);
     }
 
     /// 设置用户打印页面设置（T61 打印预览：方向 + 页边距；`None` 清除回默认链）。

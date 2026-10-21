@@ -663,6 +663,38 @@ pub enum DrawOp {
     Clip(usize),
 }
 
+/// paint 动画作用域属性通道（M2-S1，goal：compositor-animation-continuity）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PaintAnimationProperty {
+    /// opacity：区间内图元颜色 alpha 按采样值缩放。
+    Opacity,
+    /// transform：`transform_index` 指向的矩阵按采样折叠仿射就地改写。
+    Transform,
+}
+
+/// paint 动画作用域 —— 一段 `draw_order` 半开区间 + transform 槽位，把
+/// 「动画元素的」图元与动画声明绑定（paint 图元无元素身份，作用域是 painter
+/// 子树边界导出的唯一绑定通道；契约见 protocol `IpcAnimationScope`）。
+///
+/// 索引为 paint 期原值；`cull_invisible` 视口剔除重建 `draw_order`/`transforms`
+/// 后由 `cull_invisible_with_scopes` 重映射（区间端点或 transform 槽被剔除的
+/// 作用域整体丢弃——元素不可见即无采样面）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct PaintAnimationScope {
+    /// 绑定的动画声明 id（renderer 分配，随 `CompositorAnimationState` 发送）。
+    pub animation_id: u64,
+    /// 属性通道。
+    pub property: PaintAnimationProperty,
+    /// `draw_order` 半开区间起点（含）。
+    pub draw_begin: u32,
+    /// `draw_order` 半开区间终点（不含）。
+    pub draw_end: u32,
+    /// 作用域矩形（transform 通道 = 恒等仿射 TP 的作用区域；opacity 通道为元素 border box）。
+    pub rect: Rect,
+    /// transform 通道：`transforms` Vec 下标（恒等基线，compositor 就地改写）。
+    pub transform_index: Option<u32>,
+}
+
 impl RenderPrimitives {
     /// 创建空的图元列表
     pub fn new() -> Self {

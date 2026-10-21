@@ -224,6 +224,10 @@ impl RenderPipeline {
                         session.timings.clone(),
                         stats,
                         canvas_images,
+                        // 预算路径（AsyncPageLoad 分步渲染）不进合成导出域——load 帧
+                        // 无声明，稳定后 render() 全量帧接手（M2-S1b 记档缺口）。
+                        Vec::new(),
+                        Vec::new(),
                     ));
                     return BudgetAdvance::Complete;
                 }
@@ -326,6 +330,9 @@ impl RenderPipeline {
             },
             zero_render_foundation::primitive::RenderStats::default(),
             canvas_images,
+            // 预算路径不进合成导出域（同上，M2-S1b 记档缺口）。
+            Vec::new(),
+            Vec::new(),
         )
     }
 }

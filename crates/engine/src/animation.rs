@@ -15,6 +15,8 @@ use std::collections::HashMap;
 
 // R5191：transform 函数列表插值（css-transforms-1 §13.2 unmatrix + 2D 函数逐参数）。
 mod transform_interp;
+// M2-S1b：可合成动画声明导出（compositor-animation-continuity，renderer → compositor 采样域）。
+pub mod compositor_export;
 
 use zero_css_parser::ast::{KeyframeBlock, KeyframeSelector, KeyframesRule};
 use zero_css_parser::values::{

@@ -358,6 +358,18 @@ impl RenderPrimitives {
     ///
     /// 返回剔除后的新 `RenderPrimitives` 和统计信息。
     pub fn cull_invisible(&mut self, viewport: Rect) -> RenderStats {
+        self.cull_invisible_with_scopes(viewport, None)
+    }
+
+    /// [`Self::cull_invisible`] 的动画作用域重映射变体（M2-S1）：`scopes` 内的
+    /// `draw_order` 区间与 `transforms` 下标按剔除后的新索引重写；区间端点或
+    /// transform 槽位被剔除的作用域整体丢弃（元素不可见即无采样面）。
+    /// `scopes` 传 `None`/空表时不做 draw_order 旧→新记账，与无作用域路径零差异。
+    pub fn cull_invisible_with_scopes(
+        &mut self,
+        viewport: Rect,
+        scopes: Option<&mut Vec<PaintAnimationScope>>,
+    ) -> RenderStats {
         let original_len = self.len();
 
         // 性能门禁优化 S7b（2026-08-08）：原位剔除——旧实现每类型 clone 全部存活
@@ -501,30 +513,142 @@ impl RenderPrimitives {
         // 重建 draw_order：把每个旧 DrawOp 索引按重映射更新到新 typed Vec 索引；
         // 被剔除的图元（remap=None）从 draw_order 中移除。clips/glyphs/blend_modes
         // 全保留（索引不变），其 DrawOp 直接保留。
+        // M2-S1：携带动画作用域时同步记录旧 draw_order 位点→新位点映射，供区间重写。
+        let mut draw_remap = scopes.is_some().then(|| vec![None; self.draw_order.len()]);
+        let mut new_draw_i = 0usize;
         self.draw_order = self
             .draw_order
             .iter()
-            .filter_map(|op| match op {
-                DrawOp::Fill(i) => fills_remap.get(*i).copied().flatten().map(DrawOp::Fill),
-                DrawOp::RoundedRect(i) => rounded_remap.get(*i).copied().flatten().map(DrawOp::RoundedRect),
-                DrawOp::PathFill(i) => path_fills_remap.get(*i).copied().flatten().map(DrawOp::PathFill),
-                DrawOp::PathStroke(i) => path_strokes_remap.get(*i).copied().flatten().map(DrawOp::PathStroke),
-                DrawOp::Stroke(i) => strokes_remap.get(*i).copied().flatten().map(DrawOp::Stroke),
-                DrawOp::Gradient(i) => gradients_remap.get(*i).copied().flatten().map(DrawOp::Gradient),
-                DrawOp::Shadow(i) => shadows_remap.get(*i).copied().flatten().map(DrawOp::Shadow),
-                DrawOp::Image(i) => images_remap.get(*i).copied().flatten().map(DrawOp::Image),
-                DrawOp::Filter(i) => filters_remap.get(*i).copied().flatten().map(DrawOp::Filter),
-                DrawOp::Transform(i) => transforms_remap.get(*i).copied().flatten().map(DrawOp::Transform),
-                // clips/glyphs/blend_modes 全保留，索引不变
-                DrawOp::Glyph(i) => Some(DrawOp::Glyph(*i)),
-                DrawOp::BlendMode(i) => Some(DrawOp::BlendMode(*i)),
-                DrawOp::Clip(i) => Some(DrawOp::Clip(*i)),
+            .enumerate()
+            .filter_map(|(old_i, op)| {
+                let mapped = match op {
+                    DrawOp::Fill(i) => fills_remap.get(*i).copied().flatten().map(DrawOp::Fill),
+                    DrawOp::RoundedRect(i) => rounded_remap.get(*i).copied().flatten().map(DrawOp::RoundedRect),
+                    DrawOp::PathFill(i) => path_fills_remap.get(*i).copied().flatten().map(DrawOp::PathFill),
+                    DrawOp::PathStroke(i) => path_strokes_remap.get(*i).copied().flatten().map(DrawOp::PathStroke),
+                    DrawOp::Stroke(i) => strokes_remap.get(*i).copied().flatten().map(DrawOp::Stroke),
+                    DrawOp::Gradient(i) => gradients_remap.get(*i).copied().flatten().map(DrawOp::Gradient),
+                    DrawOp::Shadow(i) => shadows_remap.get(*i).copied().flatten().map(DrawOp::Shadow),
+                    DrawOp::Image(i) => images_remap.get(*i).copied().flatten().map(DrawOp::Image),
+                    DrawOp::Filter(i) => filters_remap.get(*i).copied().flatten().map(DrawOp::Filter),
+                    DrawOp::Transform(i) => transforms_remap.get(*i).copied().flatten().map(DrawOp::Transform),
+                    // clips/glyphs/blend_modes 全保留，索引不变
+                    DrawOp::Glyph(i) => Some(DrawOp::Glyph(*i)),
+                    DrawOp::BlendMode(i) => Some(DrawOp::BlendMode(*i)),
+                    DrawOp::Clip(i) => Some(DrawOp::Clip(*i)),
+                };
+                if mapped.is_some() {
+                    if let Some(map) = draw_remap.as_mut() {
+                        map[old_i] = Some(new_draw_i as u32);
+                    }
+                    new_draw_i += 1;
+                }
+                mapped
             })
             .collect();
+
+        // M2-S1：作用域索引按剔除后位点重写；端点/槽位被剔除的作用域丢弃
+        //（区间内图元保留顺序不变，端点存续即新区间 = 存续子集的紧凑覆盖）。
+        if let Some(scopes) = scopes {
+            scopes.retain_mut(|scope| {
+                if let Some(idx) = scope.transform_index {
+                    scope.transform_index = transforms_remap.get(idx as usize).copied().flatten().map(|i| i as u32);
+                    if scope.transform_index.is_none() {
+                        return false;
+                    }
+                }
+                let Some(map) = &draw_remap else {
+                    return true;
+                };
+                let Some(begin) = map.get(scope.draw_begin as usize).copied().flatten() else {
+                    return false;
+                };
+                let Some(end) = scope.draw_end.checked_sub(1) else {
+                    return false;
+                };
+                let Some(last) = map.get(end as usize).copied().flatten() else {
+                    return false;
+                };
+                scope.draw_begin = begin;
+                scope.draw_end = last + 1;
+                true
+            });
+        }
 
         let culled_count = original_len - self.len();
         let mut stats = self.stats();
         stats.culled_count = culled_count;
         stats
+    }
+}
+
+#[cfg(test)]
+mod scope_remap_tests {
+    use super::*;
+
+    fn fill(x: f32, y: f32) -> FillPrimitive {
+        FillPrimitive {
+            rect: Rect::new(x, y, 10.0, 10.0),
+            color: Color::rgb(255, 0, 0),
+        }
+    }
+
+    fn identity_tp(x: f32, y: f32) -> TransformPrimitive {
+        TransformPrimitive {
+            rect: Rect::new(x, y, 10.0, 10.0),
+            origin_x: x + 5.0,
+            origin_y: y + 5.0,
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            tx: 0.0,
+            ty: 0.0,
+        }
+    }
+
+    fn scope(id: u64, begin: u32, end: u32, transform_index: Option<u32>) -> PaintAnimationScope {
+        PaintAnimationScope {
+            animation_id: id,
+            property: super::PaintAnimationProperty::Transform,
+            draw_begin: begin,
+            draw_end: end,
+            rect: Rect::ZERO,
+            transform_index,
+        }
+    }
+
+    /// M2-S1：剔除压缩 draw_order 后作用域区间按「旧位点→新位点」重写；
+    /// 区间内被剔除图元的幸存同胞紧凑覆盖（子树区间内图元保序）。
+    #[test]
+    fn scope_interval_remaps_through_cull() {
+        let mut prims = RenderPrimitives::new();
+        prims.fills = vec![fill(0.0, 0.0), fill(5000.0, 5000.0), fill(20.0, 0.0)];
+        prims.draw_order = vec![DrawOp::Fill(0), DrawOp::Fill(1), DrawOp::Fill(2)];
+        let viewport = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let mut scopes = vec![scope(1, 0, 3, None), scope(2, 1, 2, None)];
+        prims.cull_invisible_with_scopes(viewport, Some(&mut scopes));
+        // 中间 fill 被剔除：幸存 fill 旧 0→新 0、旧 2→新 1；全区间 [0,3) → [0,2)；
+        // 只含被剔除 fill 的 [1,2) 整体丢弃。
+        assert_eq!(prims.draw_order, vec![DrawOp::Fill(0), DrawOp::Fill(1)]);
+        assert_eq!(scopes.len(), 1);
+        assert_eq!((scopes[0].draw_begin, scopes[0].draw_end), (0, 2));
+    }
+
+    /// transform 槽位按剔除后下标重写；槽位图元被剔除的作用域整体丢弃
+    ///（元素不可见即无采样面）。
+    #[test]
+    fn scope_transform_slot_remaps_and_drops_culled() {
+        let mut prims = RenderPrimitives::new();
+        prims.fills = vec![fill(0.0, 0.0)];
+        // tp0 视口外（槽位剔除面）、tp1 视口内。
+        prims.transforms = vec![identity_tp(5000.0, 5000.0), identity_tp(0.0, 0.0)];
+        prims.draw_order = vec![DrawOp::Fill(0), DrawOp::Transform(1)];
+        let viewport = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let mut scopes = vec![scope(1, 0, 2, Some(1)), scope(2, 0, 2, Some(0))];
+        prims.cull_invisible_with_scopes(viewport, Some(&mut scopes));
+        assert_eq!(scopes.len(), 1, "槽位被剔除的作用域丢弃");
+        assert_eq!(scopes[0].animation_id, 1);
+        assert_eq!(scopes[0].transform_index, Some(0), "旧下标 1 → 新下标 0");
     }
 }

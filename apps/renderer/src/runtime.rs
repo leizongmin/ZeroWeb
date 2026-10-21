@@ -26,6 +26,7 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use std::io;
+use zero_engine::animation::compositor_export::ExportedAnimationDeclaration;
 use zero_engine::{
     DomEventDetail, MediaType, PrefersColorSchemeValue, query_text_from_html, script_set_ready_state,
     selector_from_element_hit, set_char_measure_fn, set_fallback_line_metrics_fn, set_hmtx_measure_fn,
@@ -43,7 +44,10 @@ use zero_protocol::message::{
     SetPrintPageSetupParams, SetViewportParams, StorageOpParams, TabNavigateRequestParams,
 };
 use zero_protocol::transport::PipeTransport;
-use zero_protocol::{ProcessRole, is_disconnected_channel_message};
+use zero_protocol::{
+    CompositorAnimationDeclaration, CompositorAnimationStateParams, ProcessRole, compositor_animations_enabled,
+    is_disconnected_channel_message, monotonic_now_ns,
+};
 
 /// 渲染进程 → 浏览器 IPC 发送端（stdout）。
 type IpcOutbound = PipeTransport<io::Empty, Box<dyn io::Write + Send>>;
@@ -177,6 +181,83 @@ struct PendingLoad {
     dcl_sent: bool,
 }
 
+/// M2-S1b（compositor-animation-continuity）：renderer 侧合成动画导出状态——
+/// 声明代际 + 已发送集合（变化检测）+ 单调钟锚点缓存。
+struct AnimationExportState {
+    /// 声明所属导航世代（与 renderer `navigation_epoch` 对齐；换代即重置）。
+    epoch: u64,
+    /// 已发送声明代际（同一 (surface, epoch) 内单调递增；声明集变化时 +1）。
+    generation: u64,
+    /// 最近一次发送的声明全集（`None` = 未发送过；协议契约全量替换，比较判变）。
+    sent: Option<Vec<CompositorAnimationDeclaration>>,
+    /// animation_id → 首次导出时刻（共享单调钟 ns；`start_monotonic_ns` = 锚点 +
+    /// engine `start_time_s`*1e9，S1b 导出域 start 恒 0）。动画消失即剪除，重新
+    /// 出现按重新开始记新锚点（CSS animation 重新触发语义）。
+    anchors: HashMap<u64, u64>,
+}
+
+impl AnimationExportState {
+    /// 指定导航世代的新状态。
+    fn new(epoch: u64) -> Self {
+        Self {
+            epoch,
+            generation: 0,
+            sent: None,
+            anchors: HashMap::new(),
+        }
+    }
+
+    /// 推进导出状态，返回本帧需发送的 protocol 声明全集（`None` = 与最近一次发送
+    /// 相同，零消息）。
+    ///
+    /// `epoch` 换代重置代际与锚点（声明随 epoch 携带，compositor 按 (surface, epoch)
+    /// 对齐丢弃旧代）；锚点按本帧声明集重建——保留既有 id 原锚点，新 id 记 `now`，
+    /// 消失 id 剪除（重现按重新开始，CSS animation 重新触发语义）。换算失败的声明
+    /// 整条丢弃（不发送部分声明）。
+    fn advance(
+        &mut self,
+        epoch: u64,
+        now: u64,
+        declarations: &[ExportedAnimationDeclaration],
+    ) -> Option<Vec<CompositorAnimationDeclaration>> {
+        if self.epoch != epoch {
+            *self = Self::new(epoch);
+        }
+        let previous_anchors = std::mem::take(&mut self.anchors);
+        self.anchors = declarations
+            .iter()
+            .map(|declaration| {
+                let anchor = previous_anchors.get(&declaration.animation_id).copied().unwrap_or(now);
+                (declaration.animation_id, anchor)
+            })
+            .collect();
+        let converted: Vec<CompositorAnimationDeclaration> = declarations
+            .iter()
+            .filter_map(|declaration| paint_export::animation_declaration_to_ipc(declaration, &self.anchors))
+            .collect();
+        // 集合判等：声明列按 animation_id 排序跨帧稳定（engine 导出契约），
+        // Vec 逐元素判等即集合判等。
+        if self.sent.as_ref() == Some(&converted) {
+            return None;
+        }
+        self.generation += 1;
+        self.sent = Some(converted.clone());
+        Some(converted)
+    }
+
+    /// 退出导出域（flag 关 / Legacy 模式）的清理：发过声明才需要发空集（compositor
+    /// 最新生效全量替换语义）。返回是否需要发送。
+    fn deactivate(&mut self) -> bool {
+        if self.sent.is_none() {
+            return false;
+        }
+        self.generation += 1;
+        self.sent = None;
+        self.anchors.clear();
+        true
+    }
+}
+
 /// 渲染进程运行时状态。
 pub(crate) struct RendererRuntime {
     /// 向浏览器写入 IPC（stdout）。
@@ -231,6 +312,8 @@ pub(crate) struct RendererRuntime {
     pending_automation_replies: Vec<automation::PendingAutomationReply>,
     /// RFC 4.1：compositor 帧 IPC 异步发布线程（默认启用，`=0` 可诊断性禁用）。
     compositor_publish: Option<compositor_publish_thread::CompositorPublishThread>,
+    /// M2-S1b：合成动画导出状态（声明代际/锚点；随导航与发布模式维护）。
+    animation_export: AnimationExportState,
     /// 当前页面 HTML（脚本执行后同步更新）。
     cached_html: String,
     /// 当前页面附加 CSS。
@@ -454,6 +537,11 @@ impl RendererRuntime {
         // R2202 U1b-wiring 生产接通：注入 per-family 行度量（env-gated ZW_PERFONT_LINEHEIGHT=1，
         // 默认 dormant 零回归；激活后 line-height:normal 走真实 ascent−descent+line_gap）。
         webview.set_font_metric_map(font_loader.build_line_metric_map());
+        // M2-S1b：合成动画导出开关 = flag × Compositor 发布模式（构造期定值；模式
+        // 切换经 SetFramePublishMode 重同步）。flag 关 = webview 不导出 = 零行为变更。
+        webview.set_compositor_animations(
+            compositor_animations_enabled() && frame_publish_mode == FramePublishMode::Compositor,
+        );
         // M2c 后续（镜像 browser tab_worker）：播放器注册表注入 js_worker——
         // `__zwVideoBridge` 宿主桥（多进程路径媒体播放真值面；async_load settle 写入
         // 与桥读取同一 Arc 实例）。
@@ -493,6 +581,7 @@ impl RendererRuntime {
             deferred_inbound: VecDeque::new(),
             pending_automation_replies: Vec::new(),
             compositor_publish,
+            animation_export: AnimationExportState::new(0),
             cached_html: String::new(),
             cached_css: String::new(),
             pump_epoch,
@@ -903,6 +992,52 @@ impl RendererRuntime {
         Ok(())
     }
 
+    /// M2-S1b：合成动画导出是否活跃（flag × Compositor 发布模式；Legacy 帧无
+    /// CompositorAnimationState 消费方，不导出）。
+    fn compositor_animations_active(&self) -> bool {
+        compositor_animations_enabled() && self.frame_publish.mode == FramePublishMode::Compositor
+    }
+
+    /// M2-S1b：发送合成器动画声明状态（`CompositorAnimationState`，全量替换契约）。
+    ///
+    /// 发送判据：声明集与最近一次发送不同（含首帧必发、退出导出域发空集清理）。
+    /// 锚点维护随发送进行：新动画记首次导出时刻，消失动画剪除（重现按重新开始）。
+    /// 导航换代重置代际与锚点（声明随 epoch 携带，compositor 按 (surface, epoch)
+    /// 对齐丢弃旧代）。
+    fn send_compositor_animation_state(
+        &mut self,
+        declarations: Vec<ExportedAnimationDeclaration>,
+    ) -> Result<(), String> {
+        // 退出导出域（flag 关 / Legacy 模式）：发过才需要清理，否则零消息。
+        if !self.compositor_animations_active() {
+            if self.animation_export.deactivate() {
+                let params = CompositorAnimationStateParams {
+                    surface_id: self.frame_publish.surface_id,
+                    navigation_epoch: self.navigation_epoch,
+                    generation: self.animation_export.generation,
+                    declarations: Vec::new(),
+                    finished: Vec::new(),
+                };
+                return self.send_regular(IpcMessageKind::CompositorAnimationState(params));
+            }
+            return Ok(());
+        }
+        let Some(declarations) =
+            self.animation_export
+                .advance(self.navigation_epoch, monotonic_now_ns(), &declarations)
+        else {
+            return Ok(());
+        };
+        let params = CompositorAnimationStateParams {
+            surface_id: self.frame_publish.surface_id,
+            navigation_epoch: self.navigation_epoch,
+            generation: self.animation_export.generation,
+            declarations,
+            finished: Vec::new(),
+        };
+        self.send_regular(IpcMessageKind::CompositorAnimationState(params))
+    }
+
     /// 请求发布当前页面帧。输入事务内只累计失效，在最外层边界实际发送一次。
     fn publish_webview(&mut self, title: Option<String>, allow_network_fetch: bool) -> Result<(), String> {
         if self.frame_transaction.is_active() {
@@ -969,7 +1104,17 @@ impl RendererRuntime {
             Some(current_title)
         };
         let url = self.current_url.clone().unwrap_or_else(|| "about:blank".into());
-        let (vw, vh, document_height, primitives, dirty_rects, hit_test, mut image_cache) = {
+        let (
+            vw,
+            vh,
+            document_height,
+            primitives,
+            dirty_rects,
+            hit_test,
+            mut image_cache,
+            animation_declarations,
+            animation_scopes,
+        ) = {
             let wv = self.webview.as_ref().expect("webview");
             let render = wv.last_render().ok_or_else(|| "WebView 无渲染结果".to_string())?;
             (
@@ -980,6 +1125,9 @@ impl RendererRuntime {
                 render.dirty_rects.clone(),
                 wv.build_hit_test_cache(),
                 wv.snapshot_image_cache(),
+                // M2-S1b：flag 关闭时恒空（空集发送经 sent 判等跳过，零消息）。
+                render.animation_declarations.clone(),
+                render.animation_scopes.clone(),
             )
         };
         // P1a gBCR：render 后用最新 layout 填 rect snapshot——js_worker 的 RectBridge handler
@@ -1079,6 +1227,7 @@ impl RendererRuntime {
             primitives,
             dirty_rects,
             hit_test,
+            animation_scopes,
         };
         if *RESIZE_TRACE {
             resize_trace(format!(
@@ -1104,6 +1253,10 @@ impl RendererRuntime {
             self.document_generation,
             crate::font_payloads::for_primitives(&self.font_loader, &self.downloaded_font_ids, &frame.primitives)?,
         )?;
+        // M2-S1b：帧上线后发动画声明状态（全量替换契约，集合未变则零消息）。顺序
+        // 不构成正确性依赖：声明先到时 compositor 无新作用域即不采样（恒等基线），
+        // 帧先到时作用域无声明同恒等——两侧收敛后同视觉，至多一 Get 的启动延迟。
+        self.send_compositor_animation_state(animation_declarations)?;
         resize_trace(format!(
             "publish {}x{} fills={} glyphs={} images={} in {}us",
             vw,
@@ -3388,6 +3541,12 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             }
             IpcMessageKind::SetFramePublishMode(mode) => {
                 self.frame_publish.set_mode(mode);
+                // M2-S1b：模式切换同步导出开关（Compositor→Legacy 退出导出域，下帧
+                // publish 发空集清理 compositor 残留声明）。
+                let active = self.compositor_animations_active();
+                if let Some(webview) = self.webview.as_mut() {
+                    webview.set_compositor_animations(active);
+                }
                 Ok(())
             }
             IpcMessageKind::RequestFrame => {
@@ -3712,6 +3871,8 @@ fn publish_render_with_layout(
         frame.hit_test.clone(),
         navigation_epoch,
         document_generation,
+        // M2-S1b：paint 动画作用域随帧发布（flag 关恒空）。
+        &frame.animation_scopes,
     );
     paint.font_payloads = font_payloads;
     let frame_id = publish_state.next_frame_id;
@@ -4088,6 +4249,9 @@ pub fn run_android_role(renderer_id: u64, fd: std::os::unix::io::RawFd) -> Resul
 #[cfg(test)]
 #[path = "activation_tests.rs"]
 mod activation_tests;
+#[cfg(test)]
+#[path = "animation_export_tests.rs"]
+mod animation_export_tests;
 #[cfg(test)]
 #[path = "compositor_publish_tests.rs"]
 mod compositor_publish_tests;

@@ -2,22 +2,28 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use zero_css_parser::values::{
+    AnimationDirectionValue, AnimationFillModeValue, TimingFunctionValue, TransformFunction,
+};
+use zero_engine::animation::compositor_export::{ExportedAnimationDeclaration, ExportedAnimationValue};
 use zero_engine::{HitTestCache, HitTestLayoutSnapshot, node_id_to_u64};
 use zero_engine::{extract_img_srcs, image_resource_key, resolve_document_url};
 use zero_protocol::{
-    IpcBlendMode, IpcBlendModePrimitive, IpcClip, IpcColor, IpcDrawOp, IpcFill, IpcFilter, IpcFilterKind,
-    IpcFontVariation, IpcGlyph, IpcGlyphSource, IpcGlyphTextRun, IpcGradient, IpcGradientColorSpace,
-    IpcGradientInterpolation, IpcGradientKind, IpcGradientStop, IpcHitTestCache, IpcHitTestLayoutNode,
-    IpcHitTestNodeMeta, IpcHueMethod, IpcImage, IpcImagePayload, IpcLineCap, IpcLineStyle, IpcPathFill, IpcPathStroke,
-    IpcRect, IpcRoundedRect, IpcShadow, IpcStroke, IpcTextControlBoundary, IpcTransform, PaintSnapshotParams,
+    AnimationDirection, AnimationEasing, AnimationFillMode, AnimationKeyframe, AnimationPropertyKind,
+    AnimationPropertyValue, AnimationTiming, CompositorAnimationDeclaration, IpcAnimationScope, IpcBlendMode,
+    IpcBlendModePrimitive, IpcClip, IpcColor, IpcDrawOp, IpcFill, IpcFilter, IpcFilterKind, IpcFontVariation, IpcGlyph,
+    IpcGlyphSource, IpcGlyphTextRun, IpcGradient, IpcGradientColorSpace, IpcGradientInterpolation, IpcGradientKind,
+    IpcGradientStop, IpcHitTestCache, IpcHitTestLayoutNode, IpcHitTestNodeMeta, IpcHueMethod, IpcImage,
+    IpcImagePayload, IpcLineCap, IpcLineStyle, IpcPathFill, IpcPathStroke, IpcRect, IpcRoundedRect, IpcShadow,
+    IpcStroke, IpcTextControlBoundary, IpcTransform, PaintSnapshotParams, TransformFunctionValue,
 };
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::{decode_data_uri, decode_image_bytes};
 use zero_render_foundation::primitive::{
     BlendMode, BlendModePrimitive, ClipPrimitive, DrawOp, FilterKind, FilterPrimitive, GlyphSource, GradientColorSpace,
-    GradientKind, GradientPrimitive, HueMethod, LineCap, LineStyle, PathFillPrimitive, PathStrokePrimitive,
-    RenderPrimitives, ShadowPrimitive, StrokePrimitive, TransformPrimitive,
+    GradientKind, GradientPrimitive, HueMethod, LineCap, LineStyle, PaintAnimationProperty, PaintAnimationScope,
+    PathFillPrimitive, PathStrokePrimitive, RenderPrimitives, ShadowPrimitive, StrokePrimitive, TransformPrimitive,
 };
 
 fn rect_to_ipc(r: &Rect) -> IpcRect {
@@ -260,6 +266,139 @@ pub fn split_image_payload_batches(
     (batches, skipped_keys)
 }
 
+// ── M2-S1b：合成动画导出换算（engine 域 → protocol 域） ─────────────────
+
+/// engine timing → protocol easing。engine `Steps(n, pos)` 的 pos 在应用侧本就不
+/// 参与进度映射（`apply_timing_function` 只取 n），协议侧同语义折叠为 `Steps(n)`。
+fn animation_easing_to_ipc(value: &TimingFunctionValue) -> AnimationEasing {
+    match value {
+        TimingFunctionValue::Ease => AnimationEasing::Ease,
+        TimingFunctionValue::Linear => AnimationEasing::Linear,
+        TimingFunctionValue::EaseIn => AnimationEasing::EaseIn,
+        TimingFunctionValue::EaseOut => AnimationEasing::EaseOut,
+        TimingFunctionValue::EaseInOut => AnimationEasing::EaseInOut,
+        TimingFunctionValue::CubicBezier(x1, y1, x2, y2) => AnimationEasing::CubicBezier(*x1, *y1, *x2, *y2),
+        TimingFunctionValue::StepStart => AnimationEasing::StepStart,
+        TimingFunctionValue::StepEnd => AnimationEasing::StepEnd,
+        TimingFunctionValue::Steps(n, _) => AnimationEasing::Steps((*n).max(1) as u32),
+    }
+}
+
+fn animation_direction_to_ipc(value: &AnimationDirectionValue) -> AnimationDirection {
+    match value {
+        AnimationDirectionValue::Normal => AnimationDirection::Normal,
+        AnimationDirectionValue::Reverse => AnimationDirection::Reverse,
+        AnimationDirectionValue::Alternate => AnimationDirection::Alternate,
+        AnimationDirectionValue::AlternateReverse => AnimationDirection::AlternateReverse,
+    }
+}
+
+fn animation_fill_to_ipc(value: &AnimationFillModeValue) -> AnimationFillMode {
+    match value {
+        AnimationFillModeValue::None => AnimationFillMode::None,
+        AnimationFillModeValue::Forwards => AnimationFillMode::Forwards,
+        AnimationFillModeValue::Backwards => AnimationFillMode::Backwards,
+        AnimationFillModeValue::Both => AnimationFillMode::Both,
+    }
+}
+
+/// engine transform 函数 → protocol 采样域值。导出分类（规则 2）已限定 2D px/deg
+/// 子集，此处遇子集外变体返回 `None`（调用方整条丢弃——防御性，正常不可达）。
+fn transform_function_to_ipc(value: &TransformFunction) -> Option<TransformFunctionValue> {
+    Some(match value {
+        TransformFunction::Translate(tx, ty) => TransformFunctionValue::Translate(*tx, *ty),
+        TransformFunction::TranslateX(x) => TransformFunctionValue::TranslateX(*x),
+        TransformFunction::TranslateY(y) => TransformFunctionValue::TranslateY(*y),
+        TransformFunction::Rotate(a) | TransformFunction::RotateZ(a) => TransformFunctionValue::Rotate(*a),
+        TransformFunction::Scale(sx, Some(sy)) => TransformFunctionValue::Scale(*sx, *sy),
+        TransformFunction::Scale(sx, None) => TransformFunctionValue::Scale(*sx, *sx),
+        TransformFunction::ScaleX(x) => TransformFunctionValue::ScaleX(*x),
+        TransformFunction::ScaleY(y) => TransformFunctionValue::ScaleY(*y),
+        TransformFunction::Skew(ax, Some(ay)) => TransformFunctionValue::Skew(*ax, *ay),
+        TransformFunction::Skew(ax, None) => TransformFunctionValue::Skew(*ax, 0.0),
+        _ => return None,
+    })
+}
+
+fn animation_property_to_ipc(value: PaintAnimationProperty) -> AnimationPropertyKind {
+    match value {
+        PaintAnimationProperty::Opacity => AnimationPropertyKind::Opacity,
+        PaintAnimationProperty::Transform => AnimationPropertyKind::Transform,
+    }
+}
+
+/// engine paint 作用域 → protocol 作用域（字段一一对应；rect 展开 `[x,y,w,h]`）。
+fn animation_scope_to_ipc(scope: &PaintAnimationScope) -> IpcAnimationScope {
+    IpcAnimationScope {
+        animation_id: scope.animation_id,
+        property: animation_property_to_ipc(scope.property),
+        draw_begin: scope.draw_begin,
+        draw_end: scope.draw_end,
+        rect: [
+            scope.rect.origin.x,
+            scope.rect.origin.y,
+            scope.rect.size.width,
+            scope.rect.size.height,
+        ],
+        transform_index: scope.transform_index,
+    }
+}
+
+/// engine 声明 → protocol 声明（时间单位秒 → 毫秒；`start_monotonic_ns` = 该动画
+/// 首次导出的共享单调钟锚点 + engine 时钟域 start——S1b 导出域 `start_time_s` 恒
+/// 0.0，公式保留通用形供后续切片复用）。键帧端点含子集外 transform 变体或锚点
+/// 缺失时返回 `None`，调用方整条丢弃（不发送部分声明）。
+pub fn animation_declaration_to_ipc(
+    declaration: &ExportedAnimationDeclaration,
+    anchors: &HashMap<u64, u64>,
+) -> Option<CompositorAnimationDeclaration> {
+    // 属性通道取首帧值变体（导出规则 1 保证端点均质，不会出现混合通道声明）。
+    let property = match declaration.keyframes.first().map(|kf| &kf.value) {
+        Some(ExportedAnimationValue::Opacity(_)) => AnimationPropertyKind::Opacity,
+        Some(ExportedAnimationValue::Transform(_)) => AnimationPropertyKind::Transform,
+        None => return None,
+    };
+    let keyframes = declaration
+        .keyframes
+        .iter()
+        .map(|kf| -> Option<AnimationKeyframe> {
+            let value = match &kf.value {
+                ExportedAnimationValue::Opacity(o) => AnimationPropertyValue::Opacity(*o),
+                ExportedAnimationValue::Transform(fns) => {
+                    let mut converted = Vec::with_capacity(fns.len());
+                    for f in fns {
+                        converted.push(transform_function_to_ipc(f)?);
+                    }
+                    AnimationPropertyValue::Transform(converted)
+                }
+            };
+            Some(AnimationKeyframe {
+                offset: kf.offset,
+                value,
+                easing: kf.easing.as_ref().map(animation_easing_to_ipc),
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let anchor = anchors.get(&declaration.animation_id).copied()?;
+    Some(CompositorAnimationDeclaration {
+        animation_id: declaration.animation_id,
+        // 导出分类已剔除不可采样成分，到达此处的声明全可合成（协议字段保留给
+        // 未来放宽导出面时的降级标记）。
+        composable: true,
+        start_monotonic_ns: anchor.saturating_add((declaration.start_time_s * 1e9) as u64),
+        timing: AnimationTiming {
+            duration_ms: declaration.duration_s * 1000.0,
+            delay_ms: declaration.delay_s * 1000.0,
+            iterations: declaration.iterations,
+            direction: animation_direction_to_ipc(&declaration.direction),
+            fill: animation_fill_to_ipc(&declaration.fill),
+            easing: animation_easing_to_ipc(&declaration.easing),
+        },
+        keyframes,
+        property,
+    })
+}
+
 /// 从渲染图元构建 IPC 绘制快照。
 #[allow(clippy::too_many_arguments)] // 构造器：图元快照字段多，逐参数透传 PaintSnapshotParams
 pub fn paint_snapshot_from_primitives(
@@ -273,6 +412,7 @@ pub fn paint_snapshot_from_primitives(
     hit_test: Option<HitTestCache>,
     navigation_epoch: u64,
     document_generation: u64,
+    animation_scopes: &[PaintAnimationScope],
 ) -> PaintSnapshotParams {
     let mut glyph_source_ids = HashMap::new();
     let mut glyph_text_runs = Vec::new();
@@ -497,8 +637,8 @@ pub fn paint_snapshot_from_primitives(
                 height: boundary.height,
             })
             .collect(),
-        // M2-S1：动画作用域由声明导出路径填充（S1b 接线）；当前恒空 = 现状行为。
-        animation_scopes: Vec::new(),
+        // M2-S1b：paint 动画作用域随帧发布（engine 域换算 protocol；flag 关恒空）。
+        animation_scopes: animation_scopes.iter().map(animation_scope_to_ipc).collect(),
     }
 }
 
@@ -597,7 +737,7 @@ mod tests {
             synthetic_italic: true,
         });
 
-        let snapshot = paint_snapshot_from_primitives(10, 10, 1.0, 10.0, &primitives, &[], vec![], None, 1, 2);
+        let snapshot = paint_snapshot_from_primitives(10, 10, 1.0, 10.0, &primitives, &[], vec![], None, 1, 2, &[]);
         assert!(snapshot.glyphs[0].synthetic_italic);
         assert_eq!(snapshot.glyphs[0].font_variation_id, Some(0));
         assert_eq!(snapshot.font_variations[0][0].tag, *b"wdth");
