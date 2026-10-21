@@ -109,6 +109,9 @@ pub struct TabSnapshot {
     pub compositor_present: Option<CompositorFrame>,
     /// compositor 回读的滚动偏移（RFC 4.2；异步滚动默认开时用于显示）。
     pub compositor_scroll: Option<(f32, f32)>,
+    /// M2-S1d：最近采纳 compositor 帧报告的动画活跃标志——为真时帧轮询每 tick
+    /// 主动发 Get 采样（renderer 主线程被阻塞期间合成器仍持续出帧）。
+    pub compositor_animations_active: bool,
     /// Linux：待 Browser GPU 导入的 compositor dma-buf。
     #[cfg(target_os = "linux")]
     pub compositor_dmabuf: Option<CompositorDmabufPending>,
@@ -151,6 +154,7 @@ impl TabSnapshot {
             compositor_frame: None,
             compositor_present: None,
             compositor_scroll: None,
+            compositor_animations_active: false,
             #[cfg(target_os = "linux")]
             compositor_dmabuf: None,
         }
@@ -175,6 +179,7 @@ impl TabSnapshot {
         self.compositor_frame = None;
         self.compositor_present = None;
         self.compositor_scroll = None;
+        self.compositor_animations_active = false;
         self.document_height = None;
         self.document_width = None;
         self.hit_test = None;

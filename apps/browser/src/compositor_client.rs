@@ -29,6 +29,8 @@ pub struct CompositorFrameResult {
     pub rgba: Vec<u8>,
     pub scroll_x: f32,
     pub scroll_y: f32,
+    /// M2-S1d：该 surface 是否仍有未完成可合成动画（驱动帧轮询保持）。
+    pub animations_active: bool,
     #[cfg(target_os = "linux")]
     pub dmabuf: Option<CompositorDmabufResult>,
 }
@@ -147,6 +149,10 @@ enum WorkerCommand {
     /// 排队、仅同类同 surface 原地替换（协议「最新生效全量替换」契约）；发送方
     /// fire-and-forget，compositor 静默消费不回执。
     AnimationState(zero_protocol::animation::CompositorAnimationStateParams),
+    /// M2-S1d：动画活跃期间的主动采样拉取（浏览器 16ms 轮询驱动，compositor
+    /// 对已存 paint 重采样出帧）。与帧/批/声明独立排队、仅同类同 surface 原地
+    /// 替换——替换待提交帧会丢画面。
+    GetFrame(FrameKey),
     UiFrame {
         surface_id: u64,
         width: u32,
@@ -173,6 +179,7 @@ impl WorkerCommand {
             Self::FetchPresent { page_surface_id, .. } => *page_surface_id,
             Self::ImagePayloadBatch { surface_id, .. } => *surface_id,
             Self::AnimationState(state) => state.surface_id,
+            Self::GetFrame(key) => key.surface_id,
         }
     }
 }
@@ -240,6 +247,11 @@ impl CommandChannel {
         self.send(WorkerCommand::AnimationState(state))
     }
 
+    /// M2-S1d：主动采样 Get 入队（同 surface 最新请求替换）。
+    fn send_get_frame(&self, key: FrameKey) -> bool {
+        self.send(WorkerCommand::GetFrame(key))
+    }
+
     fn release_surface(&self, surface_id: u64) -> bool {
         self.send(WorkerCommand::ReleaseSurface(surface_id))
     }
@@ -294,6 +306,16 @@ impl CommandChannel {
                 .position(|pending| matches!(pending, WorkerCommand::Frame(_)))
         };
         let surface_id = command.surface_id();
+        // M2-S1c/S1d：声明状态与主动 Get 同属「仅同类替换」 club——与帧/批互不
+        // 替换（帧吞声明/Get 会让 compositor 停在旧代际或丢采样，反向吞帧会丢
+        // 画面），同类同 surface 才原地替换（最新生效/最新请求，不增队列长度）。
+        let same_kind = |a: &WorkerCommand, b: &WorkerCommand| {
+            matches!(
+                (a, b),
+                (WorkerCommand::AnimationState(_), WorkerCommand::AnimationState(_))
+                    | (WorkerCommand::GetFrame(_), WorkerCommand::GetFrame(_))
+            )
+        };
         if matches!(command, WorkerCommand::ImagePayloadBatch { .. }) {
             // P100 返修（F1）：批不可合并也不可被替换——像素丢弃后 renderer
             // 不会重发（key 已标记 sent），必须与同 surface 帧各自独立排队，
@@ -305,23 +327,20 @@ impl CommandChannel {
                 });
                 state.pending.remove(index);
             }
-        } else if matches!(command, WorkerCommand::AnimationState(_))
-            && let Some(index) = state.pending.iter().position(|pending| {
-                matches!(pending, WorkerCommand::AnimationState(existing) if existing.surface_id == surface_id)
-            })
-        {
-            // M2-S1c：声明状态与帧/批互不替换（帧吞声明会让 compositor 停在旧
-            // 代际、声明吞帧会丢画面），仅同类同 surface 原地替换（最新生效契约，
-            // 不增队列长度）。
-            state.pending[index] = command;
-            self.ready.notify_one();
-            return true;
-        } else if matches!(command, WorkerCommand::AnimationState(_)) {
-            // 新 surface 的声明状态独立入队、不替换其他命令；满时与批同款优先
-            // 逐出最旧帧。
+        } else if matches!(command, WorkerCommand::AnimationState(_) | WorkerCommand::GetFrame(_)) {
+            if let Some(index) = state
+                .pending
+                .iter()
+                .position(|pending| pending.surface_id() == surface_id && same_kind(pending, &command))
+            {
+                state.pending[index] = command;
+                self.ready.notify_one();
+                return true;
+            }
+            // 新条目独立入队、不替换其他命令；满时与批同款优先逐出最旧帧。
             if state.pending.len() == self.capacity {
                 let index = oldest_frame_index(&state).unwrap_or_else(|| {
-                    tracing::warn!("compositor 命令队列满且无帧可逐：丢弃最旧动画声明（下代际声明自愈）");
+                    tracing::warn!("compositor 命令队列满且无帧可逐：丢弃最旧动画命令（下代际自愈）");
                     0
                 });
                 state.pending.remove(index);
@@ -330,7 +349,9 @@ impl CommandChannel {
             pending.surface_id() == surface_id
                 && !matches!(
                     pending,
-                    WorkerCommand::ImagePayloadBatch { .. } | WorkerCommand::AnimationState(_)
+                    WorkerCommand::ImagePayloadBatch { .. }
+                        | WorkerCommand::AnimationState(_)
+                        | WorkerCommand::GetFrame(_)
                 )
         }) {
             state.pending.remove(index);
@@ -378,6 +399,8 @@ struct CompletedFrame {
     rgba: Vec<u8>,
     scroll_x: f32,
     scroll_y: f32,
+    /// M2-S1d：compositor 采样判定（响应透传，驱动帧轮询保持）。
+    animations_active: bool,
     #[cfg(target_os = "linux")]
     dmabuf: Option<CompletedDmabufFrame>,
 }
@@ -604,6 +627,14 @@ impl Client {
         let _ = self.commands.send_animation_state(state);
     }
 
+    /// M2-S1d：主动采样 Get（动画活跃期间由帧轮询每 tick 驱动）。
+    fn request_sampled_frame(&self, key: FrameKey) {
+        if self.status.load() == CompositorStatus::Disconnected {
+            return;
+        }
+        let _ = self.commands.send_get_frame(key);
+    }
+
     fn release_surface(&self, surface_id: u64) {
         if self.status.load() != CompositorStatus::Disconnected {
             let _ = self.commands.release_surface(surface_id);
@@ -655,6 +686,7 @@ impl Client {
             rgba: frame.rgba,
             scroll_x: frame.scroll_x,
             scroll_y: frame.scroll_y,
+            animations_active: frame.animations_active,
             #[cfg(target_os = "linux")]
             dmabuf: frame.dmabuf.map(|d| CompositorDmabufResult {
                 fd: d.fd,
@@ -948,6 +980,19 @@ fn process_batch(
                     kind: IpcMessageKind::CompositorAnimationState(state),
                 })?;
             }
+            WorkerCommand::GetFrame(key) => {
+                // M2-S1d：主动采样 Get（同帧提交 ack 后的联动 Get 同型；响应走
+                // Data 分支入完成帧缓存）。
+                transport.send(IpcMessage {
+                    id: message_id,
+                    kind: IpcMessageKind::GetCompositorFrame {
+                        surface_id: key.surface_id,
+                        navigation_epoch: key.navigation_epoch,
+                        frame_id: key.frame_id,
+                    },
+                })?;
+                outstanding.insert(message_id, ExpectedResponse::Data(key));
+            }
             WorkerCommand::SetScroll {
                 surface_id,
                 navigation_epoch,
@@ -1091,6 +1136,7 @@ fn process_batch(
                         scroll_x,
                         scroll_y,
                         gpu_image,
+                        animations_active,
                         ..
                     },
                 ) if expected
@@ -1159,6 +1205,7 @@ fn process_batch(
                         rgba,
                         scroll_x,
                         scroll_y,
+                        animations_active,
                         #[cfg(target_os = "linux")]
                         dmabuf,
                     });
@@ -1262,6 +1309,20 @@ pub fn forward_image_batch(
 pub fn forward_animation_state(state: zero_protocol::animation::CompositorAnimationStateParams) {
     let mut client = CLIENT.lock().unwrap_or_else(|error| error.into_inner());
     client.get_or_insert_with(Client::start).send_animation_state(state);
+}
+
+/// M2-S1d（compositor-animation-continuity）：主动请求 compositor 对指定 surface
+/// 重采样出帧（动画活跃期间帧轮询每 tick 调用；响应经完成帧缓存被下一轮
+/// `poll_compositor_frames` 采纳）。同 surface 待处理 Get 原地替换，不吞帧。
+pub fn request_frame(surface_id: u64, navigation_epoch: u64, frame_id: u64) {
+    let mut client = CLIENT.lock().unwrap_or_else(|error| error.into_inner());
+    client
+        .get_or_insert_with(Client::start)
+        .request_sampled_frame(FrameKey {
+            surface_id,
+            navigation_epoch,
+            frame_id,
+        });
 }
 
 /// 非阻塞读取指定 surface 的最新完成位图。
@@ -1730,6 +1791,69 @@ mod tests {
         assert!(matches!(sent[1].kind, IpcMessageKind::ReleaseCompositorSurface { .. }));
     }
 
+    /// M2-S1d：主动采样 Get 应答携带动画活跃标志入完成帧缓存（轮询采纳依据）。
+    #[test]
+    fn get_frame_command_delivers_sampled_frame_with_animation_flag() {
+        let key = FrameKey {
+            surface_id: 9,
+            navigation_epoch: 2,
+            frame_id: 5,
+        };
+        let sent = Arc::new(Mutex::new(Vec::new()));
+        let mut response = data(1, key, 7);
+        if let IpcMessageKind::CompositorFrameData { animations_active, .. } = &mut response.kind {
+            *animations_active = true;
+        }
+        let mut transport = ScriptedTransport {
+            sent: Arc::clone(&sent),
+            responses: VecDeque::from([Ok(response)]),
+        };
+        let completed = CompletedFrameChannel::new(1);
+        let mut next_message_id = 1;
+        process_batch(
+            &mut transport,
+            vec![WorkerCommand::GetFrame(key)],
+            &completed,
+            &PresentFrameChannel::new(),
+            &mut next_message_id,
+            &frame_watchdog(),
+        )
+        .unwrap();
+
+        assert!(matches!(
+            &sent.lock().unwrap()[0].kind,
+            IpcMessageKind::GetCompositorFrame { .. }
+        ));
+        let frame = completed
+            .try_recv(key.surface_id, key.navigation_epoch, key.frame_id)
+            .expect("采样帧入缓存");
+        assert!(frame.animations_active, "动画活跃标志透传");
+    }
+
+    /// M2-S1d：主动 Get 与帧互不替换、同类同 surface 原地替换（不吞帧不丢采样）。
+    #[test]
+    fn get_frame_commands_coalesce_per_surface_without_swallowing_frames() {
+        let commands = CommandChannel::new(4);
+        assert!(commands.send_get_frame(FrameKey {
+            surface_id: 7,
+            navigation_epoch: 1,
+            frame_id: 1,
+        }));
+        assert!(commands.send_frame(pending(7, 1, 2)));
+        assert!(commands.send_get_frame(FrameKey {
+            surface_id: 7,
+            navigation_epoch: 1,
+            frame_id: 2,
+        }));
+        let drained = commands.recv().unwrap();
+        assert_eq!(drained.len(), 2);
+        assert!(
+            matches!(&drained[0], WorkerCommand::GetFrame(key) if key.frame_id == 2),
+            "旧 Get 被新 Get 原地替换"
+        );
+        assert!(matches!(&drained[1], WorkerCommand::Frame(frame) if frame.frame_id == 2));
+    }
+
     #[test]
     fn release_surface_replaces_pending_frame_and_sends_control_message() {
         let commands = CommandChannel::new(2);
@@ -1835,6 +1959,7 @@ mod tests {
                 rgba: vec![0; 4],
                 scroll_x: 0.0,
                 scroll_y: 0.0,
+                animations_active: false,
                 #[cfg(target_os = "linux")]
                 dmabuf: None,
             });
@@ -1975,6 +2100,7 @@ mod tests {
             rgba: vec![0; 4],
             scroll_x: 0.0,
             scroll_y: 0.0,
+            animations_active: false,
             #[cfg(target_os = "linux")]
             dmabuf: None,
         });

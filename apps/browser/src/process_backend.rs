@@ -554,6 +554,16 @@ impl ProcessTabBackend {
             let Some(submission) = snap.compositor_submission else {
                 continue;
             };
+            // M2-S1d：动画活跃期间每 tick 主动请求 compositor 重采样出帧
+            //（renderer 主线程被阻塞时无新提交，靠该 Get 保持帧推进）；响应
+            // 经完成帧缓存下一 tick 采纳，待处理 Get 同 surface 原地替换不堆积。
+            if snap.compositor_animations_active {
+                crate::compositor_client::request_frame(
+                    submission.surface_id,
+                    submission.navigation_epoch,
+                    submission.frame_id,
+                );
+            }
             let Some(frame) = crate::compositor_client::get_frame(
                 submission.surface_id,
                 submission.navigation_epoch,
@@ -575,6 +585,7 @@ impl ProcessTabBackend {
                 navigation_epoch: frame.navigation_epoch,
                 frame_id: frame.frame_id,
             };
+            let animations_active = frame.animations_active;
             #[cfg(target_os = "linux")]
             let committed = if let Some(dmabuf) = frame.dmabuf {
                 let use_gpu_import = zero_protocol::browser_gpu_dmabuf_import_enabled() && browser_gpu_present;
@@ -667,6 +678,8 @@ impl ProcessTabBackend {
                 continue;
             }
             *snapshot_seq.entry(*tab_id).or_insert(0) += 1;
+            // M2-S1d：帧轮询保持开关跟随最新采纳帧（全部动画结束后回落事件驱动）。
+            snap.compositor_animations_active = animations_active;
             #[cfg(target_os = "linux")]
             if std::env::var("ZERO_BROWSER_PRODUCT_SMOKE").as_deref() == Ok("1") {
                 let gpu_direct = snap.compositor_frame.as_ref().is_some_and(|f| f.gpu_direct);
