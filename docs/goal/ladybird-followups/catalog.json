@@ -24,7 +24,7 @@
       "priority": "P0",
       "title": "后台页面与重复导航资源生命周期",
       "sources": ["apps/browser/src/process_backend.rs", "apps/renderer/src/runtime.rs", "crates/page-runtime/src/lib.rs", "crates/engine/src/animation.rs"],
-      "reuse": ["docs/goal/archive/page-state-compat.md", "docs/goal/navigation-compat.md", ".agents/skills/zeroweb-regression-guard/SKILL.md"],
+      "reuse": ["docs/goal/archive/page-state-compat.md", "docs/goal/archive/navigation-compat.md", ".agents/skills/zeroweb-regression-guard/SKILL.md"],
       "scenarios": ["BG-01-nested-and-hidden-timers", "BG-02-offscreen-and-idle-present", "BG-03-repeat-navigation-stalled-resource", "BG-04-close-and-resume"],
       "first_step": "用隔离 profile 与本地 fixture 建立后台 timer、视口外动画、重复导航及不结束子资源的资源观测基线。"
     },

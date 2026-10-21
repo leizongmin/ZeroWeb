@@ -1,8 +1,12 @@
 # 导航与浏览上下文兼容 — history / navigation / iframe
 
+> **整体归档（模式 A，2026-10-22）**：M3 收口判定 DC-1~4 全满足（DC-3 按获批最小面
+> 口径）；控制面与证据随入口归档，残余超口径记账池与 bfcache/fission 挂账重入条件
+> 保留。对应 Rally 启动脚本已删除。
+
 **版本**: v1.0
 **日期**: 2026-09-12
-**状态**: Done-candidate（DC-1/2/3/4 全部满足，见 [M3 收口评估](navigation-compat/evidence/2026-10-21-m3-closeout-assessment.md)——M2 收口 437/476 **91.8%**；M3 最小面 S1~S7 落地（获批口径 2026-10-21「批准 M3 最小面」，未豁免 DC-3），全量 **473P**/68F/43T（584 案行），七切片逐路径零 Pass 回归；门禁 make test 22,327P/0F + reftest 712/712 + clippy/fmt 全绿；残余超口径记账池（replace-before-load 深缺口 / lazy 动态翻转族 / 嵌套导航控制余案 4T / popup 管理）；bfcache/fission 挂账定稿；控制面见 [master.md](navigation-compat/master.md)）
+**状态**: ✅ Completed——2026-10-21 M3 收口，DC-1~4 全 ✅（DC-3 按获批最小面口径），M2 437/476 = **91.8%**、M3 全量 **473P**/68F/43T（584 案行），reftest 712/712 零回归；判定见 [evidence/2026-10-21-m3-closeout-assessment.md](navigation-compat/evidence/2026-10-21-m3-closeout-assessment.md)，控制面见 [master.md](navigation-compat/master.md)
 **执行模式**: WPT 驱动（上游导航面 corpus 为验收标尺）+ 语义修齐；
 iframe 浏览上下文为**用户门控深结构切片**（先例：R1043 vertical-mode / Phase A IFC）
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——导航与浏览上下文面）

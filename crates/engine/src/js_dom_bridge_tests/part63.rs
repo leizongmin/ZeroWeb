@@ -1,5 +1,5 @@
 // part63 — navigation-compat M3-S2 切片：子文档 location 合流 + hash 写侧 + 合成树
-// innerText 单测。契约：docs/goal/navigation-compat.md DC-3（M3 最小面续——
+// innerText 单测。契约：docs/goal/archive/navigation-compat.md DC-3（M3 最小面续——
 // contentDocument.location 与 contentWindow.location 同一对象（spec
 // #dom-document-location）、子窗 location.hash 写侧同文档片段导航、detached/iframe
 // 文档 body.innerText 合成树近似）。WPT 案面 srcdoc_process_attributes /

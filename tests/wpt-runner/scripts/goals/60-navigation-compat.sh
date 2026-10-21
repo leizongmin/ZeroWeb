@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Goal: navigation-compat（编号 60——推进顺序见同目录 README.md）
-# M3 iframe 切片用户门控
+# 已收口归档（2026-10-21 M3 最小面收口；corpus 拉取脚本保留供按需重拉）
 # M1 资产预置：fetch navigation-api + 会话历史/导航遍历 + iframe 元素属性 corpus 子集；
 # 基线运行（runner 通道 + Makefile target + skip 规则）= 各 goal M1 rally 轮落地，
-# 契约见 docs/goal/navigation-compat.md DC-1。
+# 契约见 docs/goal/archive/navigation-compat.md DC-1。
 #
 # 目录取舍（2026-10-07 M1 实测，WPT_REV pin 下无顶层 history/——会话历史 corpus 实际
 # 落在 html/browsers/history/** 四叶目录）：

@@ -4332,7 +4332,7 @@ pub fn run_html_syntax_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(Stri
     run_any_js_corpus_subdirs(wpt_root, HTML_SYNTAX_CORPUS_SUBDIRS, filter, html_syntax_case_skipped)
 }
 
-// ── navigation-compat goal（docs/goal/navigation-compat.md M1 / DC-1）：导航面
+// ── navigation-compat goal（docs/goal/archive/navigation-compat.md M1 / DC-1）：导航面
 // corpus window 可执行子集（navigation-api / 会话历史 / 导航遍历 / iframe 元素属性）。
 // 拉取面 = tests/wpt-runner/scripts/goals/60-navigation-compat.sh（DIRS 与本表同域
 // 双保险）。顶层 history/ 在 WPT_REV pin 下不存在——会话历史 corpus 实际落在

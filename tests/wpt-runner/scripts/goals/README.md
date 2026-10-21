@@ -38,7 +38,7 @@ goal 入口文档 `docs/goal/<goal>.md` DC-1。
 | 30 | [encoding-compat](../../../../docs/goal/archive/encoding-compat.md) | encoding | **已收口**（2026-10-04） |
 | 40 | [html-syntax-compat](../../../../docs/goal/archive/html-syntax-compat.md) | html/syntax; html/dom | **已收口**（2026-10-04） |
 | 50 | [uievents-compat](../../../../docs/goal/archive/uievents-compat.md) | uievents; pointerevents |  **已收口**（2026-10-07 M4；M5 巡检 2026-10-20 收口 1805P/166F/95TO，已归档）；IME 挂账 |
-| 60 | [navigation-compat](../../../../docs/goal/navigation-compat.md) | history; navigation-api; html/browsers | M2 轻面推进中；**M3 iframe 切片用户门控** |
+| 60 | [navigation-compat](../../../../docs/goal/archive/navigation-compat.md) | history; navigation-api; html/browsers | **已收口**（2026-10-21 M3 收口，M2 437/476 = 91.8%、全量 473P/584 案行，已归档）；残余超口径记账池挂账 |
 | 70 | [workers-compat](../../../../docs/goal/archive/workers-compat.md) | workers; dedicated-workers | **已收口**（2026-10-21 M4，693/714 = 97.1%，基线 45.6%，已归档）；残余 21 挂账 runner 基建/isolate 化/功能缺口 |
 | 80 | [svg-compat](../../../../docs/goal/archive/svg-compat.md) | svg | **已收口**（2026-10-22 M4，corpus 70.3%，基线 8.8%，已归档）；SMIL 时钟等七项挂账归口他域；渲染面归 rendering-compat |
 | 90 | [security-hardening](../../../../docs/goal/archive/security-hardening.md) | content-security-policy; mixed-content; secure-contexts | **已收口**（2026-09-27） |

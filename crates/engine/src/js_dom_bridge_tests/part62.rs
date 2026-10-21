@@ -1,5 +1,5 @@
 // part62 — navigation-compat M3-S1 切片：iframe 浏览上下文最小面单测。
-// 契约：docs/goal/navigation-compat.md DC-3（M3 最小面——contentWindow/contentDocument/
+// 契约：docs/goal/archive/navigation-compat.md DC-3（M3 最小面——contentWindow/contentDocument/
 // frames/parent/top + iframe 元素属性语义）；WPT 案面 the-iframe-element/
 // {sandbox-ascii-case-insensitive, iframe-load-event, content_document_changes_only_
 // after_load_matures, document-getters-return-null-for-cross-origin, iframe-network-
