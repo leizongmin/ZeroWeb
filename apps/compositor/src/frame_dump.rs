@@ -76,22 +76,28 @@ impl FrameDumper {
             .map(|d| d.as_millis())
             .unwrap_or_default();
         std::fs::create_dir_all(&self.dir)?;
-        let file_name = format!("frame-s{surface_id}-e{navigation_epoch}-f{frame_id}.bin");
+        // M2-S1e：文件名带采集序号——动画采样路径同一 renderer frame_id 会多次
+        // 重采样出帧，仅按 frame_id 命名会 create_new 撞名（写失败即永久停用）。
+        let file_name = format!(
+            "frame-n{:04}-s{surface_id}-e{navigation_epoch}-f{frame_id}.bin",
+            self.written
+        );
         let mut file = std::fs::File::options()
             .write(true)
             .create_new(true)
             .open(self.dir.join(&file_name))?;
         file.write_all(rgba)?;
         file.sync_all()?;
-        // manifest 追加写：采样清单与像素一一对应（文件名含 frame_id 天然去重）。
+        // manifest 追加写：采样清单与像素一一对应（序号唯一，含 wall-clock 时间戳）。
         let mut manifest = std::fs::File::options()
             .create(true)
             .append(true)
             .open(self.dir.join("manifest.jsonl"))?;
         writeln!(
             manifest,
-            "{{\"file\":\"{file_name}\",\"surface_id\":{surface_id},\"epoch\":{navigation_epoch},\
+            "{{\"file\":\"{file_name}\",\"seq\":{},\"surface_id\":{surface_id},\"epoch\":{navigation_epoch},\
              \"frame_id\":{frame_id},\"width\":{width},\"height\":{height},\"bytes\":{},\"wall_ms\":{wall_ms}}}",
+            self.written,
             rgba.len()
         )?;
         manifest.sync_all()?;
@@ -122,15 +128,19 @@ mod tests {
             disabled: false,
         };
         dumper.dump(7, 1, 10, 2, 2, &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
-        dumper.dump(7, 1, 11, 2, 2, &[16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]);
+        // 同 frame_id 重复落盘（动画重采样常态）：序号命名不撞名。
+        dumper.dump(7, 1, 10, 2, 2, &[16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]);
         // 超上限：不写第三帧。
         dumper.dump(7, 1, 12, 2, 2, &[0; 16]);
         assert_eq!(dumper.written, 2);
         let content = std::fs::read_to_string(dir.join("manifest.jsonl")).unwrap();
         let lines: Vec<&str> = content.lines().collect();
         assert_eq!(lines.len(), 2);
-        assert!(lines[0].contains("\"frame_id\":10") && lines[0].contains("\"bytes\":16"));
-        let pixels = std::fs::read(dir.join("frame-s7-e1-f10.bin")).unwrap();
+        assert!(
+            lines[0].contains("\"seq\":0") && lines[0].contains("\"frame_id\":10") && lines[0].contains("\"bytes\":16")
+        );
+        assert!(lines[1].contains("\"seq\":1") && lines[1].contains("\"frame_id\":10"));
+        let pixels = std::fs::read(dir.join("frame-n0000-s7-e1-f10.bin")).unwrap();
         assert_eq!(pixels.len(), 16);
         let _ = std::fs::remove_dir_all(&dir);
     }

@@ -574,6 +574,19 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                                 surface.rasterized_scroll_x = surface.scroll_x;
                                 surface.rasterized_scroll_y = surface.scroll_y;
                                 surface.front_cpu_resampled = true;
+                                // M2-S1e：Get 采样路径同样落盘——动画重采样帧是
+                                // DC-1「负载下帧连续」的直接证据（帧提交臂已有
+                                // 同款 dump；序号命名见 frame_dump 模块文档）。
+                                if let Some(dumper) = frame_dumper.as_mut() {
+                                    dumper.dump(
+                                        surface_id,
+                                        surface.navigation_epoch,
+                                        surface.frame_id,
+                                        surface.backing.front().width,
+                                        surface.backing.front().height,
+                                        &surface.backing.front().data,
+                                    );
+                                }
                             }
                             surface.animations_active = now_active;
                             response_animations_active = now_active;
