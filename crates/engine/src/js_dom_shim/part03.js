@@ -4422,6 +4422,353 @@
       });
     }
   }
+  // svg-compat M2 S4a：SVGGeometryElement 几何面（spec SVG2 paths.html
+  // §PathDataBNF/§PathDataErrorHandling + types.html §InterfaceSVGGeometryElement；
+  // 六形状 mixin）。语义要点（WPT path/parsing 11 案 + types 2 案对位）：
+  // - 路径数字文法：符号/小数点前后数字可省（'5.5.5' → 5.5,.5、'-10-5'、
+  //   '.5'、'1e2'）；**尾随小数点非法**（WPT number-error-trailing-decimal：
+  //   '23.' → 错误截断，小数点后须至少一位数字——断言面反 SVG2 BNF 字面的
+  //   digit-sequence "." 分支）；命令后参数组隐式重复（m 后续对 = 隐式相对
+  //   lineto）。
+  // - 多子路径（WPT moveto-absolute/relative）：moveto 无长度——锚点入折线但
+  //   不与前点连线计长（getPointAtLength 距离跨子路径连续，gap 不消耗）。
+  // - 错误前缀语义（spec §PathDataErrorHandling）：非法命令字母/参数缺数 →
+  //   保留已完整解析前缀；**参数组内**不完整尾组丢弃、此前完整组保留（'L a,b
+  //   c,d e' 渲染前两组）；不完整组首命令（'C' 仅 4 参数）整命令跳过；arc
+  //   旗标严格单字符 [01]（'2' → 该组丢弃，spec flag 文法）。
+  // - 弧长取样：直线精确；C 64 细分/Q 48 细分弦长逼近（assert_approx_equals
+  //   tolerance 0.1 内）；A 端点→中心参数化（spec appendix §ImplementationNotes）
+  //   + 半径缩放校正 + 角度 ≤π/32 细分；T/S 平滑控制点反射，无前序 Q/C 时
+  //   控制点 = 当前点（退化为直线，getTotalLength-01 的 'M 0 0 t 0 100'）。
+  // - getTotalLength：空/缺失 d → 0；display:none 无关（属性级计算零布局）。
+  //   形状 mixin：rect 2(w+h)（零/负维度 → 0）、circle 2πr、ellipse Ramanujan
+  //   近似、line 勾股、polygon 闭合环、polyline 开环（points 解析复用路径数字
+  //   文法，奇数尾坐标截断）。
+  // - getPointAtLength：dist float 校验后截断 [0,total]，累积弦长二分 + 线性
+  //   插值；无有效路径数据 → (0,0)。
+  // - CSS d property（getTotalLength-01 path2/path3 子测试）：引擎 CSS 未实现
+  //   d property → 仅内容属性面（FIXME(svg-compat)：CSS d 落地后接
+  //   computed style 回落，2 子测试挂账）。
+  var _zwSvgPathScanNum = function (s, i) {
+    // 返回 [值, 新位置] 或 null（数字文法见上；ASCII whitespace/逗号前置跳过）。
+    var n = s.length;
+    while (i < n && (s[i] === ' ' || s[i] === '\t' || s[i] === '\n' || s[i] === '\f' || s[i] === '\r' || s[i] === ',')) i++;
+    var st = i;
+    if (i < n && (s[i] === '+' || s[i] === '-')) i++;
+    var dig = 0;
+    while (i < n && s[i] >= '0' && s[i] <= '9') { i++; dig++; }
+    if (i < n && s[i] === '.') {
+      // 尾随小数点非法（'23.' → 错误截断）：小数点后须至少一位数字，否则
+      // 本 token 不成数、从错误点停（WPT number-error-trailing-decimal——
+      // 断言面反 SVG2 BNF 字面的 digit-sequence "." 分支）。
+      if (!(i + 1 < n && s[i + 1] >= '0' && s[i + 1] <= '9')) return null;
+      i++;
+      while (i < n && s[i] >= '0' && s[i] <= '9') { i++; dig++; }
+    }
+    if (dig === 0) return null;
+    if (i < n && (s[i] === 'e' || s[i] === 'E')) {
+      var e2 = i + 1;
+      if (e2 < n && (s[e2] === '+' || s[e2] === '-')) e2++;
+      var ed = 0;
+      while (e2 < n && s[e2] >= '0' && s[e2] <= '9') { e2++; ed++; }
+      if (ed > 0) i = e2;
+    }
+    var v = Number(s.slice(st, i));
+    return isFinite(v) ? [v, i] : null;
+  };
+  var _zwSvgPathParse = function (d) {
+    var s = String(d == null ? '' : d);
+    var i = 0, n = s.length;
+    var cmds = [], cur = null;
+    var _skip = function () {
+      while (i < n && (s[i] === ' ' || s[i] === '\t' || s[i] === '\n' || s[i] === '\f' || s[i] === '\r' || s[i] === ',')) i++;
+    };
+    var _flag = function () {
+      _skip();
+      if (i < n && (s[i] === '0' || s[i] === '1')) { var f = s[i] === '1'; i++; return f; }
+      return null;
+    };
+    var groupCnt = { M: 2, L: 2, H: 1, V: 1, C: 6, S: 4, Q: 4, T: 2 };
+    while (true) {
+      _skip();
+      if (i >= n) break;
+      var ch = s[i];
+      var isU = ch >= 'A' && ch <= 'Z', isL = ch >= 'a' && ch <= 'z';
+      if (isU || isL) {
+        var U0 = isU ? ch : String.fromCharCode(ch.charCodeAt(0) - 32);
+        if (!(U0 in groupCnt) && U0 !== 'A' && U0 !== 'Z') break;  // 非法命令 → 前缀保留
+        i++;
+        cur = { c: ch, args: [] };
+        cmds.push(cur);
+        continue;
+      }
+      if (!cur) break;  // 无命令先导数字 → 空
+      var U = cur.c >= 'A' && cur.c <= 'Z' ? cur.c : String.fromCharCode(cur.c.charCodeAt(0) - 32);
+      if (U === 'A') {
+        var p1 = _zwSvgPathScanNum(s, i); if (!p1) break; i = p1[1];
+        var p2 = _zwSvgPathScanNum(s, i); if (!p2) break; i = p2[1];
+        var p3 = _zwSvgPathScanNum(s, i); if (!p3) break; i = p3[1];
+        var f1 = _flag(); if (f1 === null) break;
+        var f2 = _flag(); if (f2 === null) break;
+        var p4 = _zwSvgPathScanNum(s, i); if (!p4) break; i = p4[1];
+        var p5 = _zwSvgPathScanNum(s, i); if (!p5) break; i = p5[1];
+        cur.args.push(p1[0], p2[0], p3[0], f1, f2, p4[0], p5[0]);
+      } else {
+        var cnt = groupCnt[U], gok = true;
+        for (var g = 0; g < cnt; g++) {
+          var pv = _zwSvgPathScanNum(s, i);
+          if (!pv) { gok = false; break; }  // 组内缺数 → 完整组保留，尾组丢弃
+          i = pv[1];
+          cur.args.push(pv[0]);
+        }
+        if (!gok) break;
+      }
+    }
+    return cmds;
+  };
+  var _zwSvgPathFlatten = function (cmds) {
+    var px = 0, py = 0, sx = 0, sy = 0;
+    var lc = null, lq = null;  // 上一 C 二控/Q 控（绝对坐标，S/T 反射源）
+    var pts = [], cum = [];  // cum[i] = pts[i] 处累积弧长（首点 0）
+    var _emit = function (x, y) {
+      var last = pts.length ? pts[pts.length - 1] : null;
+      if (!last) {
+        pts.push([x, y]);
+        cum.push(0);
+        return;
+      }
+      var dx = x - last[0], dy = y - last[1];
+      var d = Math.sqrt(dx * dx + dy * dy);
+      if (d === 0) return;  // 零长段不产点
+      pts.push([x, y]);
+      cum.push(cum[cum.length - 1] + d);
+    };
+    // 子路径锚点（moveto）：入折线但**不与前点连线计长**（moveto 无长度——
+    // getPointAtLength 距离跨子路径连续，gap 不消耗；等 cum 值二分自然落
+    // 锚点后段）。
+    var _anchor = function (x, y) {
+      pts.push([x, y]);
+      cum.push(pts.length === 1 ? 0 : cum[cum.length - 1]);
+    };
+    var _line = function (x, y) { _emit(x, y); px = x; py = y; };
+    var _cubic = function (x1, y1, x2, y2, x3, y3) {
+      var x0 = px, y0 = py;
+      for (var k = 1; k <= 64; k++) {
+        var t = k / 64, mt = 1 - t;
+        var a = mt * mt * mt, b = 3 * mt * mt * t, c2 = 3 * mt * t * t, e = t * t * t;
+        _emit(a * x0 + b * x1 + c2 * x2 + e * x3, a * y0 + b * y1 + c2 * y2 + e * y3);
+      }
+      px = x3; py = y3;
+    };
+    var _quad = function (x1, y1, x2, y2) {
+      var x0 = px, y0 = py;
+      for (var k = 1; k <= 48; k++) {
+        var t = k / 48, mt = 1 - t;
+        _emit(mt * mt * x0 + 2 * mt * t * x1 + t * t * x2, mt * mt * y0 + 2 * mt * t * y1 + t * t * y2);
+      }
+      px = x2; py = y2;
+    };
+    var _arc = function (rx, ry, xrot, laf, sf, x2, y2) {
+      var x1 = px, y1 = py;
+      rx = Math.abs(rx); ry = Math.abs(ry);
+      if (rx === 0 || ry === 0) { _line(x2, y2); return; }  // 零半径 → 直线（spec）
+      var phi = xrot * Math.PI / 180, cp = Math.cos(phi), sp = Math.sin(phi);
+      var dx2 = (x1 - x2) / 2, dy2 = (y1 - y2) / 2;
+      var x1p = cp * dx2 + sp * dy2, y1p = -sp * dx2 + cp * dy2;
+      var lam = x1p * x1p / (rx * rx) + y1p * y1p / (ry * ry);
+      if (lam > 1) { var sq = Math.sqrt(lam); rx *= sq; ry *= sq; }  // 半径缩放校正
+      var num = rx * rx * ry * ry - rx * rx * y1p * y1p - ry * ry * x1p * x1p;
+      var den = rx * rx * y1p * y1p + ry * ry * x1p * x1p;
+      var co = Math.sqrt(Math.max(0, den > 0 ? num / den : 0)) * ((laf === sf) ? -1 : 1);
+      var cxp = co * rx * y1p / ry, cyp = -co * ry * x1p / rx;
+      var cx = cp * cxp - sp * cyp + (x1 + x2) / 2, cy = sp * cxp + cp * cyp + (y1 + y2) / 2;
+      var _ang = function (ux, uy, vx, vy) {
+        var dot = ux * vx + uy * vy;
+        var len = Math.sqrt((ux * ux + uy * uy) * (vx * vx + vy * vy));
+        var a = Math.acos(Math.min(1, Math.max(-1, len > 0 ? dot / len : 0)));
+        if (ux * vy - uy * vx < 0) a = -a;
+        return a;
+      };
+      var th1 = _ang(1, 0, (x1p - cxp) / rx, (y1p - cyp) / ry);
+      var dth = _ang((x1p - cxp) / rx, (y1p - cyp) / ry, (-x1p - cxp) / rx, (-y1p - cyp) / ry);
+      if (!sf && dth > 0) dth -= 2 * Math.PI;
+      if (sf && dth < 0) dth += 2 * Math.PI;
+      var steps = Math.max(2, Math.ceil(Math.abs(dth) / (Math.PI / 32)));
+      for (var k = 1; k <= steps; k++) {
+        var t = th1 + dth * k / steps;
+        _emit(cx + rx * Math.cos(t) * cp - ry * Math.sin(t) * sp,
+              cy + rx * Math.cos(t) * sp + ry * Math.sin(t) * cp);
+      }
+      px = x2; py = y2;
+    };
+    for (var ci = 0; ci < cmds.length; ci++) {
+      var cmd = cmds[ci], cc = cmd.c, aa = cmd.args;
+      var rel = cc >= 'a' && cc <= 'z';
+      var U = rel ? String.fromCharCode(cc.charCodeAt(0) - 32) : cc;
+      if (U !== 'Z' && aa.length === 0) continue;  // 不完整首组命令跳过
+      var k, x, y;
+      if (U === 'M') {
+        for (k = 0; k + 1 < aa.length; k += 2) {
+          if (k === 0) {
+            x = rel ? px + aa[0] : aa[0]; y = rel ? py + aa[1] : aa[1];
+            px = x; py = y; sx = x; sy = y;
+            _anchor(x, y);  // moveto 锚点（不计长，getPointAtLength(0) 起点）
+            lc = null; lq = null;
+          } else {
+            _line(rel ? px + aa[k] : aa[k], rel ? py + aa[k + 1] : aa[k + 1]);
+          }
+        }
+      } else if (U === 'L') {
+        for (k = 0; k + 1 < aa.length; k += 2) _line(rel ? px + aa[k] : aa[k], rel ? py + aa[k + 1] : aa[k + 1]);
+      } else if (U === 'H') {
+        for (k = 0; k < aa.length; k++) _line(rel ? px + aa[k] : aa[k], py);
+      } else if (U === 'V') {
+        for (k = 0; k < aa.length; k++) _line(px, rel ? py + aa[k] : aa[k]);
+      } else if (U === 'C') {
+        for (k = 0; k + 5 < aa.length; k += 6) {
+          var x1 = rel ? px + aa[k] : aa[k], y1 = rel ? py + aa[k + 1] : aa[k + 1];
+          var x2 = rel ? px + aa[k + 2] : aa[k + 2], y2 = rel ? py + aa[k + 3] : aa[k + 3];
+          var x3 = rel ? px + aa[k + 4] : aa[k + 4], y3 = rel ? py + aa[k + 5] : aa[k + 5];
+          _cubic(x1, y1, x2, y2, x3, y3);
+          lc = [x2, y2];
+        }
+      } else if (U === 'S') {
+        for (k = 0; k + 3 < aa.length; k += 4) {
+          var s1x = lc ? 2 * px - lc[0] : px, s1y = lc ? 2 * py - lc[1] : py;
+          var s2x = rel ? px + aa[k] : aa[k], s2y = rel ? py + aa[k + 1] : aa[k + 1];
+          var s3x = rel ? px + aa[k + 2] : aa[k + 2], s3y = rel ? py + aa[k + 3] : aa[k + 3];
+          _cubic(s1x, s1y, s2x, s2y, s3x, s3y);
+          lc = [s2x, s2y];
+        }
+      } else if (U === 'Q') {
+        for (k = 0; k + 3 < aa.length; k += 4) {
+          var qx = rel ? px + aa[k] : aa[k], qy = rel ? py + aa[k + 1] : aa[k + 1];
+          var qx2 = rel ? px + aa[k + 2] : aa[k + 2], qy2 = rel ? py + aa[k + 3] : aa[k + 3];
+          _quad(qx, qy, qx2, qy2);
+          lq = [qx, qy];
+        }
+      } else if (U === 'T') {
+        for (k = 0; k + 1 < aa.length; k += 2) {
+          var tx = lq ? 2 * px - lq[0] : px, ty = lq ? 2 * py - lq[1] : py;
+          var tex = rel ? px + aa[k] : aa[k], tey = rel ? py + aa[k + 1] : aa[k + 1];
+          _quad(tx, ty, tex, tey);
+          lq = [tx, ty];
+        }
+      } else if (U === 'A') {
+        for (k = 0; k + 6 < aa.length; k += 7) {
+          _arc(aa[k], aa[k + 1], aa[k + 2], aa[k + 3], aa[k + 4],
+               rel ? px + aa[k + 5] : aa[k + 5], rel ? py + aa[k + 6] : aa[k + 6]);
+        }
+      } else if (U === 'Z') {
+        _line(sx, sy);
+        px = sx; py = sy;
+        lc = null; lq = null;
+      }
+    }
+    return { pts: pts, cum: cum, total: cum.length ? cum[cum.length - 1] : 0 };
+  };
+  // 形状 ring（SVGGeometryElement 六形状）→ 同款 {pts, cum, total} 机制。
+  var _zwSvgGeomLens = function (el, tag) {
+    if (tag === 'path') {
+      var d = null;
+      try { d = el.getAttribute('d'); } catch (_eD) { return null; }
+      return _zwSvgPathFlatten(_zwSvgPathParse(d));
+    }
+    var pts = [];
+    var _num = function (a) {
+      var v = null;
+      try { v = el.getAttribute(a); } catch (_eA) { return 0; }
+      var nn = v == null ? NaN : Number(v);
+      return isFinite(nn) ? nn : 0;
+    };
+    if (tag === 'rect') {
+      var x = _num('x'), y = _num('y'), w = _num('width'), h = _num('height');
+      if (w <= 0 || h <= 0) return { pts: [], cum: [0], total: 0 };  // 零/负维度禁渲染
+      pts = [[x, y], [x + w, y], [x + w, y + h], [x, y + h], [x, y]];
+    } else if (tag === 'circle') {
+      var r = _num('r');
+      if (r <= 0) return { pts: [], cum: [0], total: 0 };
+      for (var k = 0; k <= 96; k++) {
+        var a = 2 * Math.PI * k / 96;
+        pts.push([_num('cx') + r * Math.cos(a), _num('cy') + r * Math.sin(a)]);
+      }
+    } else if (tag === 'ellipse') {
+      var rx = _num('rx'), ry = _num('ry');
+      if (rx <= 0 || ry <= 0) return { pts: [], cum: [0], total: 0 };
+      for (var k2 = 0; k2 <= 96; k2++) {
+        var a2 = 2 * Math.PI * k2 / 96;
+        pts.push([_num('cx') + rx * Math.cos(a2), _num('cy') + ry * Math.sin(a2)]);
+      }
+    } else if (tag === 'line') {
+      pts = [[_num('x1'), _num('y1')], [_num('x2'), _num('y2')]];
+    } else if (tag === 'polygon' || tag === 'polyline') {
+      var ps = '';
+      try { ps = String(el.getAttribute('points') || ''); } catch (_eP) {}
+      var i = 0;
+      var pair = [];
+      while (true) {
+        var pv = _zwSvgPathScanNum(ps, i);
+        if (!pv) break;
+        i = pv[1];
+        pair.push(pv[0]);
+        if (pair.length === 2) { pts.push([pair[0], pair[1]]); pair = []; }
+      }  // 奇数尾坐标截断（S2c PointList 同语义）
+      if (tag === 'polygon' && pts.length > 2) pts.push([pts[0][0], pts[0][1]]);
+    } else {
+      return null;
+    }
+    var cum = [0];
+    for (var j = 1; j < pts.length; j++) {
+      var dx = pts[j][0] - pts[j - 1][0], dy = pts[j][1] - pts[j - 1][1];
+      cum.push(cum[j - 1] + Math.sqrt(dx * dx + dy * dy));
+    }
+    return { pts: pts, cum: cum, total: cum.length ? cum[cum.length - 1] : 0 };
+  };
+  if (globalThis.SVGGeometryElement && globalThis.SVGGeometryElement.prototype) {
+    var _zwGeomP = globalThis.SVGGeometryElement.prototype;
+    if (!_zwGeomP.getTotalLength) {
+      _zwGeomP.getTotalLength = function () {
+        var tag = '';
+        try { tag = String(this.localName || '').toLowerCase(); } catch (_eL) {}
+        var lens = _zwSvgGeomLens(this, tag);
+        return lens ? lens.total : 0;
+      };
+    }
+    if (!_zwGeomP.getPointAtLength) {
+      _zwGeomP.getPointAtLength = function (dist) {
+        var n = Number(dist);
+        if (!isFinite(n)) throw new TypeError('The provided float value is non-finite');
+        var p = _zwMakeSVGPoint();
+        var tag = '';
+        try { tag = String(this.localName || '').toLowerCase(); } catch (_eL2) {}
+        var lens = _zwSvgGeomLens(this, tag);
+        var x = 0, y = 0;
+        if (lens && lens.pts.length) {
+          if (n < 0) n = 0; else if (n > lens.total) n = lens.total;
+          var lo = 0, hi = lens.cum.length - 1;
+          while (lo + 1 < hi) {
+            var mid = (lo + hi) >> 1;
+            if (lens.cum[mid] <= n) lo = mid; else hi = mid;
+          }
+          var seg = lens.cum[hi] - lens.cum[lo];
+          var t = seg > 0 ? (n - lens.cum[lo]) / seg : 0;
+          x = lens.pts[lo][0] + (lens.pts[hi][0] - lens.pts[lo][0]) * t;
+          y = lens.pts[lo][1] + (lens.pts[hi][1] - lens.pts[lo][1]) * t;
+        }
+        p.x = x;
+        p.y = y;
+        return p;
+      };
+    }
+  }
+  // getNumberOfChars（spec SVG2 text.html §InterfaceSVGTextContentElement）：
+  // 纯文本内容长度（UTF-16 码元）——文本几何族唯一无布局依赖成员。
+  if (globalThis.SVGTextContentElement && globalThis.SVGTextContentElement.prototype
+      && !globalThis.SVGTextContentElement.prototype.getNumberOfChars) {
+    globalThis.SVGTextContentElement.prototype.getNumberOfChars = function () {
+      try { return String(this.textContent || '').length; } catch (_eC) { return 0; }
+    };
+  }
   // WC-M1 切片 4（spec create-a-native-element / interface object [[Call]]）：
   // 接口构造器被 **custom element 的 super() 调用**且无升级在途（`new klass()` 形态，
   // spec customized built-in constructor：new klass() 产生真实元素，localName = 接口

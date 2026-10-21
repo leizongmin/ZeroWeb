@@ -1,34 +1,28 @@
 # SVG 文档面兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../svg-compat.md](../svg-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-21（M2 S3 落地）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-21（M2 S4a 落地）
 
 ## 当前状态
 
-**M2 S3 完成（2026-10-21）**：SVGSVGElement 面落地——动画控制状态机 stub
-（pauseAnimations/unpauseAnimations/getCurrentTime/setCurrentTime，per-element
-状态，M4 SMIL 时钟接入后合流共享 timeline）+ currentTranslate（[SameObject]
-只读 SVGPoint，SameObject-identity 的 DOMPointReadOnly 断言假绿转真绿）+
-currentScale（outermost 判定：直接父不在 SVG ns；嵌套 getter 恒 1/setter
-no-op）+ deselectAll（清文档 selection）+ viewBox 负维度→零矩形（WebKit
-tentative）。实现期发现并修复引擎缺口：元素 proxy set trap 无原型 setter 派发
-（R98 仅 CE 门控）——S3 名称门控分支（setter 调用/getter-only 静默拒绝不落
-expando）。全 corpus 486 案 **734P/928F/40T/0NR = 43.1%**（含 NR 口径，S2c
-681P/965F/32T/18NR = 40.2% 以来 **+53P/-37F**，全绿案 76→110，逐案零 DOWN）；
-S3 靶面 4 案全绿 + 动画面脚手架释放 30 案翻绿（smil-clock 18NR→11P/7F +
-invalid-value 族 29 案平凡满足全绿，M4 复核面）；**Timeout 32→40**：seeking-
-events 族 9 案 F→T（SMIL 时钟缺，挂账面分类移动非 Pass 损失，M4 输入）。
-机制探针 5/5。全 workspace `make test` EXIT=0（2026-10-21 S3 轮）。
-卡点：无。下一步：M2 S4 几何面（S4a getTotalLength/
-getPointAtLength → S4b getBBox → S4c pathData 评估；盘点见
-evidence/2026-10-21-m2-s4-geometry-prep.md）。
+**M2 S4a 完成（2026-10-21）**：SVGGeometryElement 几何面落地——路径数字
+文法 + 解析器（错误前缀语义/参数组隐式重复/尾随小数点错误截断/arc 旗标严格
+校验）+ 弧长取样（C/Q 弦长逼近、A 端点→中心参数化、T/S 控制点反射、多子
+路径 moveto 锚点不计 gap）+ getTotalLength/getPointAtLength（六形状 mixin
++ 纯路径数学零布局依赖）+ getNumberOfChars。全 corpus 486 案
+**858P/804F/40T/0NR = 50.4%**（含 NR 口径，S3 734P/928F = 43.1% 以来
+**+124P/-124F**，Timeout 40 持平，全绿案 110→125，逐案零 DOWN，分母稳定）；
+**通过率跨过半数线**。path/parsing 11 案 126 子测试全绿；types +2、
+getnumberofchars +4、historical +2。机制探针 6/6。卡点：CSS d property
+（引擎 CSS 域缺口，2+5 子测试挂账协同）。下一步：S4b getBBox 形状属性级
+bbox（183F 靶面）→ S4c pathData API 评估。
 
 ## 缺口清单
 
 | # | 缺口 | 状态 |
 |---|------|------|
 | P1 | svg/ corpus 导入 + 基线 + 渲染断言面占比盘点 | ✅ M1（2026-10-21，8.8% 基线） |
-| P2 | SVG DOM 类层级 + SVGSVGElement viewBox/CTM 最小面 | ⏳ M2（S1 ✅ S2a ✅ S2b ✅ S2c ✅ S3 ✅ 2026-10-21，S4 进行中） |
+| P2 | SVG DOM 类层级 + SVGSVGElement viewBox/CTM 最小面 | ⏳ M2（S1 ✅ S2a ✅ S2b ✅ S2c ✅ S3 ✅ S4a ✅ 2026-10-21，S4b→S4c 进行中） |
 | P3 | SVGGeometryElement 几何接口 + 事件目标化 | ⏳ M3 |
 | P4 | SMIL 评估 + 渲染断言面挂账定稿 | ⏳ M4 |
 
@@ -64,6 +58,13 @@ evidence/2026-10-21-m2-s4-geometry-prep.md）。
   动画面脚手架释放 30 案翻绿；SameObject-identity currentTranslate 假绿
   转真绿。getScreenCTM 划界 rendering-compat 协同。证据：
   evidence/2026-10-21-m2-s3-svgsvgelement-landing.md。
+- **M2 S4a（2026-10-21）**：SVGGeometryElement 几何面（本 session 端到端
+  持有——路径数字文法 + 解析器 + 弧长取样 + 六形状 mixin + getNumberOfChars，
+  探针三轮修正，全量对账）。corpus 858P/804F/40T/0NR = 50.4%（+124P/-124F，
+  全绿案 110→125，零 DOWN，Timeout 持平）——**通过率跨过半数线**；
+  path/parsing 11 案 126 子全绿。全 workspace `make test` DC-4 门禁
+  EXIT=0（TIME_LIMIT=3000 守卫跑）。CSS d property 2+5 子挂账 CSS 域协同。
+  证据：evidence/2026-10-21-m2-s4a-geometry-landing.md。
 
 ## 下一步计划
 
