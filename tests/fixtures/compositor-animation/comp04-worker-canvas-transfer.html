@@ -1,0 +1,155 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>COMP-04 worker canvas transfer baseline</title>
+<style>
+  /* COMP-04（compositor-animation-continuity DC-4 基线）：主线程 canvas 动画 + 同 realm
+     worker 探针。判定面全部外显为文本条带（headless query 与窗口观察同读）。 */
+  body { margin: 0; background: #ffffff; }
+  #main-canvas {
+    position: absolute; left: 24px; top: 24px;
+    width: 240px; height: 120px;
+    background: rgb(238, 238, 238);
+  }
+  .strip {
+    position: absolute; left: 24px;
+    font: 13px monospace;
+    color: rgb(20, 20, 20);
+    white-space: pre;
+  }
+  #strip-moc { top: 160px; }
+  #strip-transfer { top: 180px; }
+  #strip-worker { top: 200px; }
+  #strip-beats { top: 220px; }
+  #strip-draws { top: 240px; }
+  #strip-load { top: 260px; color: rgb(10, 100, 10); }
+</style>
+</head>
+<body>
+  <canvas id="main-canvas" width="240" height="120"></canvas>
+  <div id="strip-moc" class="strip">moc=pending</div>
+  <div id="strip-transfer" class="strip">transfer=pending</div>
+  <div id="strip-worker" class="strip">worker=pending</div>
+  <div id="strip-beats" class="strip">beats=0</div>
+  <div id="strip-draws" class="strip">draws=0</div>
+  <div id="strip-load" class="strip">load=idle</div>
+  <script>
+    // ── 有界忙循环（信任边界：ms 钳制 [0, 5000]）与负载窗记录 ──
+    // 单片 900ms 忙窗（区别于 comp01 的 4×220ms 分片——单片给出无歧义的停顿签名，
+    // 供 worker beat 间隔与绘制时间戳的窗内统计使用）。
+    window.__zwLoadWindow = null;
+    window.__zwBusy = function (ms) {
+      var budget = Math.max(0, Math.min(5000, Number(ms) || 0));
+      var t0 = performance.now();
+      while (performance.now() - t0 < budget) { Math.sqrt(12345.678); }
+      return Math.round(performance.now() - t0);
+    };
+    window.__zwStartLoad = function () {
+      if (window.__zwLoadRunning) { return false; }
+      window.__zwLoadRunning = true;
+      var marker = document.getElementById('strip-load');
+      marker.textContent = 'load=busy';
+      var t0 = performance.now();
+      window.__zwBusy(900);
+      var t1 = performance.now();
+      window.__zwLoadWindow = { start: Math.round(t0), end: Math.round(t1) };
+      marker.textContent = 'load=done busy_ms=' + Math.round(t1 - t0);
+      window.__zwLoadRunning = false;
+      return true;
+    };
+
+    // ── 主线程 OffscreenCanvas 2D 支持子集（对照通道：主线程绘制可用）──
+    window.__zwMoc = 'fail';
+    (function () {
+      try {
+        var c = new OffscreenCanvas(64, 64);
+        var ctx = c.getContext('2d');
+        if (!ctx) { window.__zwMoc = 'ctx-null'; return; }
+        ctx.fillStyle = 'rgb(200, 30, 30)';
+        ctx.fillRect(16, 16, 32, 32);
+        var px = ctx.getImageData(20, 20, 1, 1).data;
+        window.__zwMoc = (px[0] > 150 && px[3] > 200) ? 'pass' : ('bad-' + px[0] + ',' + px[1] + ',' + px[2] + ',' + px[3]);
+      } catch (e) {
+        window.__zwMoc = 'error:' + String(e && e.message || e);
+      }
+      document.getElementById('strip-moc').textContent = 'moc=' + window.__zwMoc;
+    })();
+
+    // ── transferControlToOffscreen 存在性（DC-4「Canvas 转 worker」入口 API）──
+    var mainCanvas = document.getElementById('main-canvas');
+    var transferKind = typeof mainCanvas.transferControlToOffscreen;
+    document.getElementById('strip-transfer').textContent = 'transfer=' + transferKind;
+    window.__zwTransfer = transferKind;
+
+    // ── 主线程 canvas 绘制环：rAF 驱动移动竖条，时间戳入 __zwDrawLog ──
+    // 稀疏采样（每 16 帧记一次）防日志封顶早于负载窗使「窗内绘制=0」变 vacuous
+    //（learnings #17：断言必须确认分母覆盖目标窗）。
+    window.__zwDrawLog = [];
+    var drawCount = 0;
+    var ctx2d = mainCanvas.getContext('2d');
+    function drawFrame() {
+      drawCount++;
+      var x = (drawCount * 4) % 232;
+      ctx2d.fillStyle = 'rgb(238, 238, 238)';
+      ctx2d.fillRect(0, 0, 240, 120);
+      ctx2d.fillStyle = 'rgb(30, 90, 220)';
+      ctx2d.fillRect(x, 8, 8, 104);
+      if (drawCount % 16 === 0 && window.__zwDrawLog.length < 600) {
+        window.__zwDrawLog.push(Math.round(performance.now()));
+      }
+      document.getElementById('strip-draws').textContent = 'draws=' + drawCount;
+    }
+    // 持续绘制驱动用 setInterval：页面 rAF 是 reftest 边界同步 stub（单次脚本执行
+    // 预算内立即跑、预算耗尽静默停——part01.js _rafBudget），非连续帧驱动。
+    setInterval(drawFrame, 16);
+
+    // ── 同 realm worker 探针：blob 脚本 + OffscreenCanvas 尝试 + 50ms beat ──
+    window.__zwWorkerProbe = null;
+    window.__zwBeats = [];
+    var WORKER_SRC =
+      'var probe = { hasOffscreen: (typeof OffscreenCanvas !== "undefined"), ctx: "unreachable", draw: null, err: null };' +
+      'try {' +
+      '  var c = new OffscreenCanvas(48, 48);' +
+      '  var x = c.getContext("2d");' +
+      '  probe.ctx = (x ? "object" : "null");' +
+      '  if (x) { x.fillStyle = "#008000"; x.fillRect(0, 0, 12, 12); probe.draw = "ok"; }' +
+      '} catch (e) { probe.err = String(e && e.name ? e.name + ": " + e.message : e); }' +
+      'var n = 0;' +
+      'setInterval(function () { n++; self.postMessage({ kind: "beat", n: n }); }, 50);' +
+      'self.postMessage({ kind: "probe", probe: probe });';
+    var workerUrl = '';
+    try {
+      workerUrl = URL.createObjectURL(new Blob([WORKER_SRC], { type: 'text/javascript' }));
+    } catch (eBlob) {
+      workerUrl = '';
+    }
+    if (!workerUrl) {
+      workerUrl = 'data:text/javascript,' + encodeURIComponent(WORKER_SRC);
+    }
+    var stripWorker = document.getElementById('strip-worker');
+    try {
+      var w = new Worker(workerUrl);
+      w.onmessage = function (ev) {
+        var d = ev.data || {};
+        if (d.kind === 'probe') {
+          window.__zwWorkerProbe = d.probe;
+          stripWorker.textContent = 'worker=spawned hasOffscreen=' + d.probe.hasOffscreen +
+            ' ctx=' + d.probe.ctx + ' draw=' + d.probe.draw +
+            (d.probe.err ? ' err=' + d.probe.err : '');
+        } else if (d.kind === 'beat') {
+          if (window.__zwBeats.length < 400) {
+            window.__zwBeats.push(Math.round(performance.now()));
+            document.getElementById('strip-beats').textContent = 'beats=' + window.__zwBeats.length;
+          }
+        }
+      };
+      w.onerror = function (ev) {
+        stripWorker.textContent = 'worker=error ' + String(ev && ev.message ? ev.message : '');
+      };
+    } catch (eSpawn) {
+      stripWorker.textContent = 'worker=spawn-failed ' + String(eSpawn && eSpawn.message || eSpawn);
+    }
+  </script>
+</body>
+</html>

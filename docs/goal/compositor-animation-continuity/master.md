@@ -3,7 +3,7 @@
 **日期**：2026-10-22
 **状态**：Active；M1 ✅、M2-S1 全链路 ✅（DC-1 有条件成立）、M2-S2 全链路 ✅（S2a 查询一致性 + S2b 结束事件 + S2c DC-2 验收有条件成立）、M2-S3 全链路 ✅（S3a 取消 + S3b 暂停 + S3c 命中面 + S3d DC-3 验收成立；flag 默认仍关）。
 **当前卡点**：无阻塞卡点。遗留缺口两项待排期：① 忙窗采样空洞（keep-alive tick 挂在 `wayland_client::conn::blocking_read`，呈现路径与 Wayland 解耦后消失）；② renderer 忙窗每文本更新全文档重解析（token 爆发 1:1 锁定忙片，放大主线程占空）。
-**下一步**：M3 Worker 2D 呈现与生命周期（DC-4）——OffscreenCanvas 转移、worker 退出和 context lost fixture。
+**下一步**：M3-S1 切片 RFC——真线程 worker 执行面（flag 门控，复用 script-sandbox WorkerRuntime）+ worker canvas 桥（`canvas_context_op` 契约复用）+ 脱离主线程的呈现管线设计（browser 中继 → compositor patch surface）。
 **入口**：[目标契约](../compositor-animation-continuity.md) / [启动与证据协议](../ladybird-followups/README.md)
 
 ## 缺口与待决
@@ -12,7 +12,7 @@
 |---|---|---|
 | 动画是否独立推进及实际支持子集 | COMP-01 基线探针已跑：GPU 截图 3 帧全同 + 查询恒定（见 M1 证据） | BASELINE_FROZEN（2026-10-21） |
 | 时间/状态/命中几何共享契约 | 暂停、取消、结束、命中面均落（S2b/S3a/S3b/S3c）；DC-3 联合验收成立（S3d） | ✅ 完成（2026-10-22） |
-| Worker OffscreenCanvas 2D 呈现与释放 | 转移、worker 退出和 context lost fixture | NOT_STARTED |
+| Worker OffscreenCanvas 2D 呈现与释放 | 基线已冻结：worker canvas 绘制为同 realm 泄漏（页面全局 `__zw_canvas_op` 泄入 worker 函数体，写入主线程 CanvasRegistry），beat 忙窗停顿 949ms vs 51ms；`transferControlToOffscreen` 已存在（R3313 主线程）；真线程 worker + 独立呈现管线两项缺口定版 | BASELINE_FROZEN（2026-10-22，[基线证据](evidence/2026-10-22-m3-comp04-baseline/README.md)） |
 | WebGL 依赖与扩展属性 | 遵守 webgl-compat 门控，独立记录未支持项 | 待核查 |
 | headless 阻塞面备忘：同步 evaluate 占用 mux 主循环（1100ms 截图等待实测） | M2 切片设计时核对 #24/#15 学习 | 已记录（M1 证据 README §结论 4） |
 | 窗口模式无 automation 通道：负载时序无法在窗口观察中触发（首跑已记） | DC-1 完整验收走 M2 切片（compositor 采样工具+headless 负载通道证据组合） | 已解决（S1e autostart fixture + frame_dump 观察到负载窗，见 DC-1 证据） |
@@ -28,7 +28,7 @@
 |---|---|---|---|
 | M1 | 真实窗口阻塞基线与支持矩阵 | ✅ 完成（headless 基线 + 真实窗口帧序列 FROZEN，内容归因像素三重证实；窗口多帧采样工具 frame_dump 已入库） | [2026-10-21-m1-comp01-baseline](evidence/2026-10-21-m1-comp01-baseline/README.md) / [2026-10-21-m1-window-frames](evidence/2026-10-21-m1-window-frames/README.md) |
 | M2 | 合成动画、状态与输入一致切片 | ✅ 完成（S1 全链路 ✅ DC-1 有条件成立；S2 全链路 ✅ DC-2 有条件成立；S3a 取消 ✅、S3b 暂停 ✅、S3c 命中面 ✅、S3d DC-3 验收成立——命中/暂停/取消/恢复四场景真实窗口双向证据；currentTime/playState 面范围裁剪记缺口；flag 默认关，翻默认属后续独立决策 perf-gate 前置） | [m2-slice-compositor-sampling](m2-slice-compositor-sampling.md) / [S2 RFC](m2-slice-query-consistency.md) / [S3 RFC](m2-slice-state-input-consistency.md) / [S1e DC-1 证据](evidence/2026-10-21-m2s1e-dc1-acceptance/README.md) / [S2c DC-2 证据](evidence/2026-10-21-m2s2c-dc2-acceptance/README.md) / [S3d DC-3 证据](evidence/2026-10-22-m2s3d-dc3-acceptance/README.md) |
-| M3 | Worker 2D 呈现与生命周期 | NOT_STARTED | 无 |
+| M3 | Worker 2D 呈现与生命周期 | IN_PROGRESS（COMP-04 基线 FROZEN——worker canvas 同 realm 泄漏实测 + 真线程/呈现管线缺口定版；切片 RFC 下一步） | [2026-10-22-m3-comp04-baseline](evidence/2026-10-22-m3-comp04-baseline/README.md) |
 | M4 | GPU/语义/资源与 DC 审计 | NOT_STARTED | 无 |
 
 ## 验证基线
@@ -38,7 +38,7 @@
 | DC-1 | COMP-01-transform-opacity-under-js-load | ✅ 有条件成立（ON：256 帧连续、dt 中位 13ms、哈希全异、红盒 alpha 连续扫描、蓝盒旋转包络；OFF：2 帧冻结对照。忙窗 ~1s 空洞已归因浏览器主线程 Wayland 耦合，非采样链路缺陷） | [S1e DC-1 证据](evidence/2026-10-21-m2s1e-dc1-acceptance/README.md) / [M1 基线](evidence/2026-10-21-m1-comp01-baseline/README.md) / [窗口帧序列](evidence/2026-10-21-m1-window-frames/README.md) |
 | DC-2 | COMP-02-script-state-and-end-event | ✅ 有条件成立（ON：357 帧、3 条 animationend 恰一次且 elapsed 均 1.000s、回执四格全 pass 零 fail、换代旧事件不重放、稳态 median dphase 0.080；OFF：帧收敛冻结、条带恒级联值、零事件。相位逐帧容差受条带内容帧发布节奏 100-1300ms 约束——查询等价由单一采样器单测 + compositor 同函数消费保证，RFC §3 Assumption 已更新。CSSAnimation 对象面未建=条件项） | [S2c DC-2 证据](evidence/2026-10-21-m2s2c-dc2-acceptance/README.md) |
 | DC-3 | COMP-03-hit-test-pause-cancel | ✅ 成立（ON 五回执全 pass：位移中/冻结几何注入点击经逆映射命中（hit-a/hit-b）、取消恰一次 elapsed=3.589s（忙窗顺延 ±0.5s 内）、bbox 回落基线、恢复续走 Δ=0、忙窗跨取消/恢复无旧代回放、hit 位移 224→430px 17 帧越基线；OFF 对照：87 帧收敛 4 distinct、零越基线、零动画事件、hit-a 占位失配红判别签名。命中面仅导出域动画通道，静态 transform 记缺口） | [S3d DC-3 证据](evidence/2026-10-22-m2s3d-dc3-acceptance/README.md) |
-| DC-4 | COMP-04-worker-canvas-transfer | NOT_RUN | 无 |
+| DC-4 | COMP-04-worker-canvas-transfer | BASELINE_FROZEN（worker 内 OffscreenCanvas 表面可用实为同 realm 泄漏：`__zw_canvas_op` 经页面全局作用域链泄入 worker 函数体写入主线程 CanvasRegistry，无 paint 路径；忙窗 beat 停顿 949ms vs 51ms、绘制停摆 draws_in_load=0 非空真；主线程 2D 子集 pass；页面 rAF 为预算制同步 stub 记档——连续绘制须定时器驱动。「持续呈现」缺口=真线程 worker + 脱离主线程呈现管线） | [M3 基线](evidence/2026-10-22-m3-comp04-baseline/README.md) |
 | DC-5 | 关闭/导航释放与支持审计 | NOT_RUN | 无 |
 
 ## 碰撞与执行记录
@@ -62,5 +62,6 @@
 2026-10-22 续轮（S3c 三批，commits ed15c8903 + c3c2f0bf7 + 17b4c85b7，rebase 后哈希）：命中面三批独立提交（engine → renderer → browser）。**批 1 engine**（ed15c8903）：`animation/hit_provider.rs` 进程级 provider 槽（`Arc<dyn Fn(u64) -> Option<[f64;6]>>`，镜像 gCS 槽模式，engine 不引 protocol）+ `invert_affine`/`apply_affine`（奇异 |det|<1e-12 → None）；hit_test `HitWalk.animated_affine` 字段 + `baseline_point()` 逆映射（deepest_node_at/collect_nodes_at 包含判定前把查询点送回基线坐标，任一环节 None 回落基线），9 个构造点接线。**批 2 renderer**（c3c2f0bf7）：`HIT_OVERRIDE_TABLE`（element_key → (transform 声明, origin)，engine×ipc 按 animation_id join，仅 transform 通道，origin 取 `transforms[scope.transform_index]` 与 compositor 同源值，index 缺失/越界跳过）+ `register_hit_provider`（flag 开注册：表查 + sample_declaration + fold_affine + origin 折叠）+ deactivate 同点清表；`send_compositor_animation_state` 增 scopes/transforms 参数（paint 形态 `PaintAnimationScope`，IPC 转换前同字段）。**批 3 browser**（17b4c85b7）：`app_click_injector.rs` env `ZW_INJECT_CLICKS="x,y@t[;…]"` 门控定时左键注入（非法整体禁用 fail-closed；armed 期 needs_redraw 自续同 smooth_scroll 机制），load 完成武装，到期点走真实输入同路径 handle_mouse_move/click。设计精化两处记档：① provider 输出为**含 transform-origin 折叠的全仿射** T(o)·A·T(−o)（RFC §2.3 原措辞「折叠仿射」未言明 origin——仅返 A 会使逆映射绕错原点，几何错误；与 compositor R3833 改写矩阵同式同源）；② 嵌套动画 transform（父子同通道）不组合逆映射，单层简化（DC-3 fixture 单层）。测试：hit_provider 3 + hit_test 37 + renderer query_overrides 7（含与 compositor 公式数值一致断言）+ browser 注入器 3；make test 全量 EXIT=0（76 套件，首轮 fmt 门禁拦截已修）、clippy -D warnings 干净；并行流（webgl-compat 文档、engine dialog 元素）pull rebase 无冲突。
 
 2026-10-22 续轮（S3d，证据批）：DC-3 COMP-03 真实窗口验收——fixture comp03（三动画元素 + 回执五格按点击到达序号占位 + q-strip 灰度相位条带 + 忙窗跨取消/恢复）+ dc3 observe/analyze 脚本（ZW_INJECT_CLICKS 三击 3000/4500/5500ms，analyze 冻结段结构化识别不依赖时间线常量）。排查定位两项输入链路事实：① **窗口→文档坐标须扣 chrome 高 ~91px**（layout.rs TOOLBAR_HEIGHT=90，实测 doc = win − 91）——初版按 ~40px 假设，三击在 doc 空间偏高 ~50px 全落空；经 ui_driver 对照实验（基线静态点击同样不达）+ 临时插桩（browser dispatch / renderer recv / dispatch_at 三点 debug 行）定位后标定，插桩已回退；② **空白区点击静默不派发**（browser selector=None + renderer hit_test None → 事件消失，无 html/body 兜底）——预存在缺口记入缺口表，fixture 落点全部瞄准元素规避。时间线定版：pause@1.5s 冻结 45px（理论值，实测条带 46px）、cancel@3.5s、resume@4.5s、判定@5.5s，全部落入 frame_dump 512 帧采集窗（~8.2s），注入锚 tab loaded 较页面 load 提前 0~2.5s 的 Δ 由「点击 2 恒在暂停窗内、点击 3 旋转绕中心任意相位命中」设计吸收。实测（evidence/2026-10-22-m2s3d-dc3-acceptance/）：ON 512 帧 distinct 504、五回执全 pass（hit-a@5515/hit-b@6792/hit-c@7790/ev-cancel@3873/phase-resume@7957）、renderer 恰 1 行 animationcancel elapsed=3.589s、hit 位移 224→430px 17 帧越基线、条带冻结 46px 恢复 Δ=0；OFF 87 帧收敛 4 distinct、零越基线、零动画事件、hit-a 占位失配红（判别签名）。DC-3 判成立；M2 全链路收官，下一步 M3（Worker 2D 呈现与生命周期，DC-4）。
+2026-10-22 续轮（M3 基线，证据批）：DC-4 COMP-04 基线探针——fixture comp04（主线程 canvas 移动条 + blob worker 探针 + 50ms beat + 900ms 单片忙窗）+ comp04 probe sh/mjs（s0–s3 四采样：空闲×2→忙窗后→mutation 正控）。三重证据钉死 worker canvas 同 realm 泄漏：worker 内 `new OffscreenCanvas().getContext('2d')` 表面成功（ctx=object draw=ok），实为 worker 函数体（`new Function('self',body).call(wctx,wctx)`）沿页面全局作用域链解析到主线程 `__zw_canvas_op` host 回调、写入 renderer 主线程 CanvasRegistry（无 paint 路径，幻影注册表项）；beat 忙窗停顿 949ms vs 忙窗前 51ms；忙窗内 canvas 绘制停摆（draws_in_load=0，16 帧稀疏日志 spans 守卫非空真）。两笔源码事实修正：`transferControlToOffscreen` 已存在（R3313 主线程共享 handle，part05.js:7595 过时注释）；页面 rAF 为预算制同步 stub（`_rafBudget` 耗尽静默停，初版 rAF 自续环 ~513 次后确定性停摆——改 setInterval，连续 canvas 动画驱动器只能选定时器族）。DC-4 缺口定版：真线程 worker 执行面 + 脱离 renderer 主线程呈现管线；切片方向记档（WorkerRuntime 复用 / canvas_context_op 契约复用 / browser 中继 + compositor patch surface），详细 RFC 下一步。证据落账 evidence/2026-10-22-m3-comp04-baseline/（本轮零 engine/protocol/renderer/compositor 源码改动，仅 fixture + 脚本 + 文档）。
 
 复用资产：timing-animation（runner 泵/查询面）、workers-compat（worker 生命周期）；不重复实现。授权记录：2026-10-20 规划轮不授权提交/推送；2026-10-21 用户启动指令授权按仓库规则提交推送。生产 GPU 证据口径：headless GPU 光栅为生产渲染管线+生产 GPU 光栅路径，非窗口合成器 vsync 帧序列（局限见证据 README）。

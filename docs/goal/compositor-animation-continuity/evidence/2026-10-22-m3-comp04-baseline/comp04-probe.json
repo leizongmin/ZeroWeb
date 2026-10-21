@@ -1,0 +1,140 @@
+{
+  "fixture": "comp04-worker-canvas-transfer.html",
+  "started_at_wall": "2026-10-21T20:13:30.160Z",
+  "samples": [
+    {
+      "name": "s0",
+      "t_wall_ms": 545,
+      "capture": {
+        "name": "s0",
+        "wall_ms": 67,
+        "png_sha256": "4ee618b76224ceb9e73df1d011701624c92919ffded3f51d112daf30e408f5da",
+        "png_bytes": 23075
+      },
+      "query": {
+        "wall_ms": 15,
+        "state": {
+          "transfer": "function",
+          "worker": "worker=spawned hasOffscreen=true ctx=object draw=ok",
+          "moc": "pass",
+          "beats": 9,
+          "maxGapAll": 51,
+          "gapSpanLoad": 0,
+          "beatsInLoad": 0,
+          "drawsInLoad": 0,
+          "drawLogSpans": false,
+          "drawLogN": 1,
+          "loadWindow": null,
+          "loadMarker": "load=idle"
+        }
+      }
+    },
+    {
+      "name": "s1",
+      "t_wall_ms": 1530,
+      "capture": {
+        "name": "s1",
+        "wall_ms": 5,
+        "png_sha256": "bcdff573446a899e214f0b646f37c3144c9cf482fb23d7c225813cefbc926783",
+        "png_bytes": 23401
+      },
+      "query": {
+        "wall_ms": 10,
+        "state": {
+          "transfer": "function",
+          "worker": "worker=spawned hasOffscreen=true ctx=object draw=ok",
+          "moc": "pass",
+          "beats": 27,
+          "maxGapAll": 51,
+          "gapSpanLoad": 0,
+          "beatsInLoad": 0,
+          "drawsInLoad": 0,
+          "drawLogSpans": false,
+          "drawLogN": 5,
+          "loadWindow": null,
+          "loadMarker": "load=idle"
+        }
+      }
+    },
+    {
+      "name": "s2",
+      "t_wall_ms": 2769,
+      "capture": {
+        "name": "s2",
+        "wall_ms": 5,
+        "png_sha256": "6566d4240218b072ace66e632c04b38d3917bd9f399cfc7e7e76d511c67a8750",
+        "png_bytes": 25491
+      },
+      "query": {
+        "wall_ms": 17,
+        "state": {
+          "transfer": "function",
+          "worker": "worker=spawned hasOffscreen=true ctx=object draw=ok",
+          "moc": "pass",
+          "beats": 34,
+          "maxGapAll": 949,
+          "gapSpanLoad": 949,
+          "beatsInLoad": 0,
+          "drawsInLoad": 0,
+          "drawLogSpans": true,
+          "drawLogN": 6,
+          "loadWindow": {
+            "start": 1797,
+            "end": 2697
+          },
+          "loadMarker": "load=done busy_ms=900"
+        }
+      }
+    },
+    {
+      "name": "s3",
+      "t_wall_ms": 3113,
+      "capture": {
+        "name": "s3",
+        "wall_ms": 3,
+        "png_sha256": "7d6d35a02f6d778b3ca2f624c181fe9e47c6c627c0c7ac64903cc2d2babc6081",
+        "png_bytes": 24769
+      },
+      "query": {
+        "wall_ms": 18,
+        "state": {
+          "transfer": "function",
+          "worker": "worker=spawned hasOffscreen=true ctx=object draw=ok",
+          "moc": "pass",
+          "beats": 41,
+          "maxGapAll": 949,
+          "gapSpanLoad": 949,
+          "beatsInLoad": 0,
+          "drawsInLoad": 0,
+          "drawLogSpans": true,
+          "drawLogN": 7,
+          "loadWindow": {
+            "start": 1797,
+            "end": 2697
+          },
+          "loadMarker": "load=done busy_ms=900 control=mutated"
+        }
+      }
+    }
+  ],
+  "verdict": {
+    "worker_probe": "worker=spawned hasOffscreen=true ctx=object draw=ok",
+    "transfer_control_api": "function",
+    "main_offscreen_2d_subset": "pass",
+    "load_wall_ms": 923,
+    "load_window": {
+      "start": 1797,
+      "end": 2697
+    },
+    "beat_gap_spanning_load_ms": 949,
+    "beat_gap_pre_load_ms": 51,
+    "beats_in_load": 0,
+    "draws_in_load": 0,
+    "draw_log_spans_load": true,
+    "draw_log_samples": 6,
+    "beats_total": 34,
+    "canvas_idle": "ANIMATED",
+    "mutation_control": "OK",
+    "load_completed": true
+  }
+}
