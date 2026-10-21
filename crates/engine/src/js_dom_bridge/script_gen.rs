@@ -1544,3 +1544,27 @@ pub fn script_scroll_key_default(selector: &str, key: &str) -> String {
     let esc_key = escape_js_string(key);
     format!("__zw_scroll_key_default && __zw_scroll_key_default('{esc_sel}', '{esc_key}')")
 }
+
+/// 构造「键事件派发到当前焦点元素」的宿主脚本（R4300，html-semantics M2 切片 23）。
+///
+/// shim `__zw_dispatch_key_at_active(type, detail_json)`：keydown/keyup 派发到
+/// `document.activeElement`（无 sel 形态回落 body），保留页面既有焦点态——ESC 等
+/// close-request 键语义上派发给焦点元素（dialog-canceling：焦点 input keydown
+/// preventDefault 吞 ESC，dialog 不收 cancel）。返回 `'ok'`/`'prevented'`（约定同
+/// `script_dispatch_dom_event`）。
+pub fn script_dispatch_key_at_active(event_type: &str, detail_json: &str) -> String {
+    let esc_ty = escape_js_string(event_type);
+    let esc_json = escape_js_string(detail_json);
+    format!("__zw_dispatch_key_at_active && __zw_dispatch_key_at_active('{esc_ty}', '{esc_json}')")
+}
+
+/// 构造「dialog light dismiss 检查」的宿主脚本（R4300，html-semantics M2 切片 23）。
+///
+/// shim `__zw_dialog_light_dismiss_check(target_sel)`：pointerdown 落点在任何
+/// open+closedby=any dialog 的包含链外 → 对其发 close request（cancel 可取消 + close
+/// 异步收尾）。runner click 命令前步调用（spec light dismiss 序先于 click 语义）；
+/// 产品指针管线经 `__zw_pointer_down_sequence` 头部钩共享同一实现。
+pub fn script_dialog_light_dismiss_check(selector: &str) -> String {
+    let esc_sel = escape_js_string(selector);
+    format!("__zw_dialog_light_dismiss_check && __zw_dialog_light_dismiss_check('{esc_sel}')")
+}

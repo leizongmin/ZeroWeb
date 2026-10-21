@@ -8941,8 +8941,9 @@ fn inject_harness_script_before_page_scripts(source: &str, harness: &str) -> Str
 ///
 /// `extract_page_scripts` 不加载外部 `<script src>`，故用例引用的同目录 .js（如 attributes.js、
 /// Document-createProcessingInstruction.js）或相对路径（../constants.js）不会执行 → `attr_is`/
-/// 测试体 not defined。本函数扫描剩余的 `<script src="...">`（相对路径，非 /resources/、非 http），
-/// 从 wpt-data 读文件内容内联为 inline `<script>`；文件缺失则移除该标签（best-effort，不注入空）。
+/// 测试体 not defined。本函数扫描剩余的 `<script src="...">`（相对路径与 `/` 根路径——
+/// R4300 起根路径按 wpt_root 解析；非 `//`、非 http），从 wpt-data 读文件内容内联为
+/// inline `<script>`；文件缺失则移除该标签（best-effort，不注入空）。
 ///
 /// `case_path` 形如 "dom/nodes/attributes.html"；相对 src 解析为相对该 case 所在目录。
 fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str) -> String {
@@ -8964,16 +8965,24 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str) -> String 
         // 提取 src="..."（仅相对路径 .js）。
         let src = extract_script_src(open);
         let resolved = src.and_then(|s| {
-            // 仅相对路径（不以 / 开头、非 http(s):、非 // ）。
-            if s.starts_with('/') || s.starts_with("http://") || s.starts_with("https://") || s.starts_with("//") {
+            // R4300（html-semantics M2 切片 23）：`/` 根路径（非 `//`、非 http(s):）
+            // 解析为 wpt_root 相对——dialog closedby/canceling 语料以
+            // `/common/top-layer.js`、`/close-watcher/resources/helpers.js` 根路径引用
+            // 域外助资产，旧版按绝对路径拒绝 → 标签被移除 → helper ReferenceError 全批
+            // 假 Fail。`//`（协议相对）与显式 http(s) 维持外部面不内联。
+            if s.starts_with("//") || s.starts_with("http://") || s.starts_with("https://") {
                 return None;
             }
-            // 规范化 "./" 前缀 + 相对 case_dir 解析（含 ../ 上溯）。
-            let rel = s.strip_prefix("./").unwrap_or(s);
-            let combined = if case_dir.is_empty() {
-                rel.to_string()
+            let combined = if let Some(root_rel) = s.strip_prefix('/') {
+                normalize_relative(root_rel)
             } else {
-                normalize_relative(&format!("{case_dir}/{rel}"))
+                // 规范化 "./" 前缀 + 相对 case_dir 解析（含 ../ 上溯）。
+                let rel = s.strip_prefix("./").unwrap_or(s);
+                if case_dir.is_empty() {
+                    rel.to_string()
+                } else {
+                    normalize_relative(&format!("{case_dir}/{rel}"))
+                }
             };
             std::fs::read_to_string(wpt_root.join(&combined)).ok().map(|c| {
                 // net-api M5-S1：`.sub.js` 服务端替换（上游 wptserve 语义；与
@@ -9452,6 +9461,12 @@ fn apply_testdriver_command(
             None
         }
         "click" => {
+            // R4300（html-semantics M2 切片 23，2026-10-22）：light dismiss 前步——落点在
+            // open+closedby=any dialog 包含链外 → 先发 close request（spec dialog light
+            // dismiss：pointerdown 触发、序在 focus/激活语义之前）。Actions down/up 链由
+            // shim `__zw_pointer_down_sequence` 头部钩覆盖；本命令路径无 down 步，前置补齐。
+            let ld_script = zero_engine::script_dialog_light_dismiss_check(&selector);
+            let _ = webview.execute_script(&ld_script);
             // 主键 → 既有 Activate 路径（focus 步骤 + 全序列 + 连击 dblclick）——
             // move-only 链的尾随合成 click（R142 先例）与无 down/up 的链走此路径；
             // 带 down/up 步的 Actions 链已改逐步重放（M3 pointer_down/pointer_up）。
@@ -9747,6 +9762,30 @@ fn apply_testdriver_command(
                         let _ = webview.execute_script(&scroll_script);
                     }
                     dispatch_key_event_script(webview, &selector, "keyup", &scroll_detail);
+                    continue;
+                }
+                // R4300（html-semantics M2 切片 23，2026-10-22）：Escape（WebDriver uE00C，
+                // 旧版落 PUA 拒绝分支——dialog-canceling / non-modal-canceling /
+                // dialog-closedby 全簇 sendEscKey Unhandled rejection）。keydown/keyup 派发
+                // 到**当前焦点元素**（`__zw_dispatch_key_at_active`——不自聚焦：send_keys
+                // 目标 body 不夺页面焦点，dialog-canceling 断言面——焦点 input keydown
+                // preventDefault 吞 ESC，dialog 不收 cancel）。keydown 未被取消 → dialog
+                // close request 默认动作（R3254-K3 `__zw_esc_dialog_cancel`——R4300 加
+                // closedby 资格门 + 模态栈序）。
+                // https://html.spec.whatwg.org/multipage/interactive-elements.html#dialog-cancelation
+                if character == '\u{E00C}' {
+                    let esc_detail_json = "{\"key\":\"Escape\",\"code\":\"Escape\"}";
+                    let keydown_script = zero_engine::script_dispatch_key_at_active("keydown", esc_detail_json);
+                    let keydown_result = webview
+                        .execute_script(&keydown_script)
+                        .map(|v| v.trim() == "prevented")
+                        .unwrap_or(false);
+                    if !keydown_result {
+                        let esc_script = zero_engine::script_esc_dialog_cancel();
+                        let _ = webview.execute_script(&esc_script);
+                    }
+                    let keyup_script = zero_engine::script_dispatch_key_at_active("keyup", esc_detail_json);
+                    let _ = webview.execute_script(&keyup_script);
                     continue;
                 }
                 let action = match character {

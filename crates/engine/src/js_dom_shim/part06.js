@@ -2524,33 +2524,116 @@
 
   // R3254-K3（keyboard-default-actions goal M2 切片 2，2026-09-07）：Esc 默认动作——
   // dialog cancel/close（spec「dialog cancelation」）。宿主在 keydown Esc 默认动作阶段
-  // 调 `__zw_esc_dialog_cancel()`：模态 dialog 优先（_zwDialogModal 印记），其次文档序
-  // 首个 open dialog；派 cancelable 'cancel'（未被 preventDefault → _zwDialogClose——
-  // reason=cancel 不设 returnValue + 'close' 事件）；无 open dialog → no-op（返 false）。
-  // top-level 注册（shim 装载即生效——get-trap 注册依赖 prop 访问序，不可靠）。
+  // 调 `__zw_esc_dialog_cancel()`。R4300（M2 切片 23，2026-10-22）改造：①closedby
+  // 资格门——仅 auto 派生 closerequest（模态默认）或显式 any/closerequest 响应 close
+  // request（closedby=none / 非模态默认 dialog 不被 ESC 关——non-modal-canceling 断言
+  // 面）；②close watcher 组栈序——show()/showModal() 各压一组，命中栈顶**首个 open
+  // 组**即停：组内派生 none → 请求被组挡住不下探（show-stacked 内层 none 挡板断言面）；
+  // ③关闭走 _zwDialogRequestClose（cancel 同步可取消 trusted + close-the-dialog 异步
+  // 收尾，R4200 请求态语义）。无命中 → no-op（返 false）。top-level 注册（shim 装载
+  // 即生效——get-trap 注册依赖 prop 访问序，不可靠）。
   // https://html.spec.whatwg.org/multipage/interactive-elements.html#dialog-cancelation
+  // https://html.spec.whatwg.org/multipage/interactive-elements.html#attr-dialog-closedby
   globalThis.__zw_esc_dialog_cancel = function () {
     // open 属性经 __zw_set_attr 异步入队（host 快照滞后）——querySelectorAll('dialog[open]')
     // 不可达同 turn 的 showModal；改查全部 dialog + _zwDialogHasOpen（latest-wins 感知）。
     var dialogs = document.querySelectorAll('dialog');
     if (!dialogs || !dialogs.length) return false;
+    var byKey = {};
+    var i, d, ds, dh, dk;
+    for (i = 0; i < dialogs.length; i++) {
+      d = dialogs[i];
+      ds = d.__zwSelector || null;
+      dh = d.__zwHandle || null;
+      dk = _elKey(ds, dh);
+      byKey[dk] = { d: d, sel: ds, handle: dh, key: dk };
+    }
     var pick = null;
-    var pickKey = null, pickSel = null, pickHandle = null;
-    for (var i = 0; i < dialogs.length; i++) {
-      var d = dialogs[i];
-      var ds = d.__zwSelector || null;
-      var dh = d.__zwHandle || null;
-      var dk = _elKey(ds, dh);
+    // R4300 惰性补登记：markup `open` / IDL open 直写面不经 show()/showModal() 入栈，
+    // 但 spec 同为 open dialog（watcher 随开建——start-open 断言面）。文档序补在栈尾
+    //（优先级低于已 show 组——先命中最上组语义不变）。
+    for (i = 0; i < dialogs.length; i++) {
+      d = dialogs[i];
+      ds = d.__zwSelector || null;
+      dh = d.__zwHandle || null;
+      dk = _elKey(ds, dh);
+      if (_zwDialogModalStack.indexOf(dk) !== -1) continue;
       if (!_zwDialogHasOpen(ds, dh)) continue;
-      if (dk && _zwDialogModal[dk]) { pick = d; pickKey = dk; pickSel = ds; pickHandle = dh; break; }
-      if (!pick) { pick = d; pickKey = dk; pickSel = ds; pickHandle = dh; }
+      _zwDialogModalStack.push(dk);
+    }
+    // R4300 组栈扫描：尾→头找首个 open 组即停——组内 dialog closedby 派生 none（显式
+    // none / auto 非模态）→ 无 close watcher → 请求被组挡住，不下探（show-stacked
+    // 「inner none 挡板」断言面）。已关/失连组（querySelectorAll 不可达 = watcher 已销毁）
+    // 顺栈清出并下探。
+    for (i = _zwDialogModalStack.length - 1; i >= 0; i--) {
+      var entry = byKey[_zwDialogModalStack[i]];
+      if (!entry || !_zwDialogHasOpen(entry.sel, entry.handle)) {
+        _zwDialogModalStack.splice(i, 1);
+        continue;
+      }
+      if (_zwDialogClosedByState(entry.sel, entry.handle, entry.key) === 'none') return false;
+      pick = entry;
+      break;
     }
     if (!pick) return false;
-    // _dispatchWithBubble 返 false = preventDefault（同 dispatchEvent===false 惯例）——
-    // false 才跳过 close；true/undefined（未取消）→ close。
-    var notPrevented = _dispatchWithBubble(pickKey, pickSel, pickHandle, _makeEvent('cancel', { bubbles: false, cancelable: true }));
-    if (notPrevented !== false) _zwDialogClose(pickKey, pickSel, pickHandle, undefined);
+    _zwDialogRequestClose(pick.key, pick.sel, pick.handle, undefined);
     return true;
+  };
+
+  // R4300（M2 切片 23，2026-10-22）：send_keys 键事件派发到**当前焦点元素**——ESC 等
+  // close-request 键语义上派发给焦点元素而非 send_keys 目标（dialog-canceling 断言面：
+  // 焦点 input 的 keydown preventDefault 吞 ESC，dialog 不收 cancel；runner 不自聚焦，
+  // 保留页面既有焦点态）。activeElement 缺 __zwSelector（解析节点焦点形态）→ body
+  // 兜底；无 body → 不派发（返 ''）。返回值沿用 __zw_dispatch_event 约定：'ok'/'prevented'。
+  // type 当前 keydown/keyup 两面；detail JSON 透传（key/code/修饰位）。
+  globalThis.__zw_dispatch_key_at_active = function (type, detailJson) {
+    var detail = {};
+    try { detail = JSON.parse(detailJson || '{}') || {}; } catch (_eDkP) { detail = {}; }
+    var el = null;
+    try { el = document.activeElement || null; } catch (_eDkA) { el = null; }
+    var sel = (el && el.__zwSelector) ? el.__zwSelector : null;
+    // getElementById 形态 proxy 无 __zwSelector（sel 形态仅 querySelector 产物携带，
+    // dialog-canceling 语料 getElementById().focus() 面）——_proxyCache 反查身份键
+    // （activeElement getter 同源缓存；命中键即 listener store 锚），走既有 trusted
+    // KeyboardEvent 派发机制。
+    if (!sel && el) {
+      try {
+        for (var k in _proxyCache) {
+          if (_proxyCache[k] === el) { sel = k; break; }
+        }
+      } catch (_eDkR) {}
+    }
+    // R148 解析节点（wrapper）形态——不在 _proxyCache（非 proxy），listener 注册在
+    // 节点自身：构造 KeyboardEvent 直派 wrapper（trusted 印记同 R312/R145 UA 通道——
+    // 宿主派发语义）。detail.key 缺失 → 泛型键事件（调用方传 key 语义）。
+    if (!sel && el && typeof el.dispatchEvent === 'function') {
+      try {
+        var ev = new KeyboardEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          key: (detail ? (detail.key || '') : ''),
+          code: (detail ? (detail.code || detail.key || '') : ''),
+          shiftKey: !!(detail && detail.shiftKey),
+          ctrlKey: !!(detail && detail.ctrlKey),
+          altKey: !!(detail && detail.altKey),
+          metaKey: !!(detail && detail.metaKey)
+        });
+        if (!ev.isTrusted) {
+          Object.defineProperty(ev, 'isTrusted', { value: true, writable: true, configurable: true, enumerable: true });
+          ev._zwUaDispatch = true;
+        }
+        var ok = el.dispatchEvent(ev);
+        return ok ? 'ok' : 'prevented';
+      } catch (_eDkW) { /* 构造/派发失败 → 落 body 回落 */ }
+    }
+    if (!sel) {
+      try {
+        var body = document.body;
+        sel = (body && body.__zwSelector) ? body.__zwSelector : null;
+      } catch (_eDkB) { sel = null; }
+    }
+    if (!sel) return '';
+    return __zw_dispatch_event(sel, type, detail);
   };
 
   // R3254-K5（keyboard-default-actions goal M3 切片 1，2026-09-07）：select 键盘导航。
@@ -15218,6 +15301,14 @@
   // 目标即 pending 捕获目标（spec §9.3 direct manipulation 设备隐式捕获；WPT
   // pointerevent_element_haspointercapture ?touch expected_default_capture 面）。
   globalThis.__zw_pointer_down_sequence = function (sel, x, y, pointerType, button) {
+    // R4300（M2 切片 23，2026-10-22）：light dismiss 前步——pointerdown 落点在任何
+    // open+closedby=any dialog 的包含链外 → 先发 close request（spec dialog light
+    // dismiss：pointerdown 触发、序在 click 语义之前）。产品指针管线与 runner click
+    // 命令共用本全局；non-any 态（默认模态 closerequest / none）不受影响。
+    // https://html.spec.whatwg.org/multipage/interactive-elements.html#dialog-light-dismiss
+    try {
+      if (typeof __zw_dialog_light_dismiss_check === 'function') __zw_dialog_light_dismiss_check(sel);
+    } catch (_eLdPd) {}
     var st = _zwPtrState;
     var _dragSel0 = sel; // 拖选 sel 键回落锚（retarget 前的 origin 元素）
     button = button | 0;

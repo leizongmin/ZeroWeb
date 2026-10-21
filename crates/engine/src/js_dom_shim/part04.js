@@ -4364,6 +4364,12 @@
         // https://html.spec.whatwg.org/multipage/interactive-elements.html#dom-dialog-open
         // https://html.spec.whatwg.org/multipage/interactive-elements.html#dom-details-open
         if (prop === 'open') return _zwDialogHasOpen(sel, handle);
+        // R4300（M2 切片 23，2026-10-22）：HTMLDialogElement.closedBy——closedby 内容属性
+        // 反射。枚举关键字 any/closerequest/none 小写返回（大小写不敏感）；缺失/非法 →
+        // auto 派生（模态开 'closerequest'，否则 'none'——dialog-closedby getDefaultExpectations
+        // 断言面）。推导在 part01 `_zwDialogClosedByState`（ESC/light-dismiss 资格门共用）。
+        // https://html.spec.whatwg.org/multipage/interactive-elements.html#dom-dialog-closedby
+        if (prop === 'closedBy' && _realTag(sel, handle) === 'DIALOG') return _zwDialogClosedByState(sel, handle, key);
         // R3290：HTMLDialogElement.returnValue——串属性。close(rv) 设值；非 undefined → 存 _expando[key::returnValue]；
         // getter 返存储值（默认 ''，spec 空 dialog returnValue 为 ''）。直接 setAttribute 不可达（IDL 属性 setter
         // 不反射内容属性——dialog 无 returnValue 内容属性，仅 IDL），故存 _expando。setter 任意值 → 串。
@@ -11527,6 +11533,8 @@
             if (_realTag(sel, handle) === 'DIALOG') {
               delete _zwDialogModal[key];
               delete _zwTopLayer[key];
+              var _msI2 = _zwDialogModalStack.indexOf(key);
+              if (_msI2 !== -1) _zwDialogModalStack.splice(_msI2, 1);
             }
           }
           if (_r4009PreOpen !== null) {
@@ -11537,6 +11545,18 @@
             if (value && !_r4009PreOpen && typeof globalThis.__zwDetailsExclusivity4100 === 'function') {
               globalThis.__zwDetailsExclusivity4100(sel, handle, 'others');
             }
+          }
+        } else if (p === 'closedBy' && _realTag(sel, handle) === 'DIALOG') {
+          // R4300：closedBy IDL setter——反射 closedby 内容属性。spec 枚举反射 setter：
+          // null → removeAttribute（清除显式态、回落 auto 派生）；余 → setAttribute(串)。
+          // 值大小写不敏感（getter 侧小写化），此处存原串（real browser 属性面保留原文）。
+          // moAttr 记录 MutationObserver 属性变更（open setter 同口径）。
+          if (value === null) {
+            _zwRemoveAttr(key, sel, handle, 'closedby');
+            moAttr = 'closedby';
+          } else {
+            _zwSetAttr(key, sel, handle, 'closedby', String(value));
+            moAttr = 'closedby';
           }
         } else if (p === 'returnValue' && _realTag(sel, handle) === 'DIALOG') {
           // R3290：HTMLDialogElement.returnValue IDL setter。spec：存任意值为串（不反射内容属性——dialog 无

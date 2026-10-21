@@ -137,6 +137,18 @@ DIRS=(
   "html/semantics/links"
 )
 
+# ③ 跨目录助资产（R4300）：the-dialog-element/the-details-element 语料以相对或
+# `/` 根路径引用域外 resources——fetch_dir_html 只拉目录内文件，缺资产时相对
+# 路径 script 标签被移除（inline_local_scripts 缺文件即删）→ clickOn/sendEscKey/
+# blessTopLayer/createToggleEventSourceTest/waitUntilStableAutofocusState
+# ReferenceError 假 Fail。清单=dialog closedby/canceling/toggle-source/autofocus
+# 语料实际引用面。
+fetch_raw "common/top-layer.js"
+fetch_raw "close-watcher/resources/helpers.js"
+fetch_raw "html/interaction/focus/the-autofocus-attribute/resources/utils.js"
+fetch_raw "html/semantics/popovers/resources/popover-utils.js"
+fetch_raw "html/semantics/popovers/resources/toggle-event-source-test.js"
+
 goals_fetch_all
 goals_inventory
 goals_next_steps "${GOAL}"

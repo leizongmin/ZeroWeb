@@ -2,39 +2,46 @@
 
 **版本**: v2.0
 **日期**: 2026-10-21（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 22 收口（dialog 元素簇 R4200 +93P，66.29%→67.54%），下一步 M2 切片 23：runner testharness helper 缺口盘点（closedby 簇 ~85F ReferenceError，interactive-elements 剩余最大块）
+**状态**: Active——M2 切片 23 收口（dialog closedby 簇 R4300 +28P，67.45%→68.02%，口径 P/(P+F+T)），下一步 M2 切片 24：ToggleEvent.source/commandfor 面（toggle-source 簇 8F 真断言，helper 面已通）+ corner-cases hang 排查（detach 窗口身份链）
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-22 M2 切片 22）**：dialog 元素簇（R4200）两段推
-> 进。①dialog 语义主体重构（part01）：toggle 事件任务队列（R4009 同款
-> per-element 去重合并，oldState 取调用方写前捕获）+ close 事件排队异步
-> （spec queue an element task；trusted 通道）+ show/showModal 请求态语义
-> （modal 上 show() 抛、非模态上 showModal() 抛，旧实现静默切态与 spec
-> 相悖）+ beforetoggle 同步可取消 + 写后重查（防处理器内二次写）+
-> close-the-dialog 核心（close/requestClose 共用）+ `_zwDialogRequestClose`
-> 新方法（cancel 同步可取消 trusted + 重入 busy 守卫）。②共享基建尾段：
-> `Promise.withResolvers` polyfill（ES2024，requestclose 全批挂起主根因）
-> + `_insertAdjacentVariadic` sel 项支持（prepend(parsedEl) 产物静默丢失）
-> + matches 裸属性选择器 lw + addEventListener `{signal}`（testharness
-> cleanup listener 泄漏）+ dialog open 内部写 MO record（dialog 调用点发，
-> 避 aria helper 双计）+ `_realTag` sel 印章 `_zwSelSeenTag`（detach 窗口
-> tag miss 门方法失效）。part60 T1–T8 新契约 + part14/part59 契约同步。
-> 九域 4887→**4980P**（67.54%），对 s21 逐 subtest diff **净 +93P、回归
-> 0**，全部落 interactive-elements（109→202P，235→142F）：
-> requestclose 0→75P、toggle-events 0→12P、close/close-event-async/
-> requestclose-2/-recurse/-closedby/submit-dialog-close-event 各 +1，
-> 余 74 文件 0 变化。gates：zero-engine --lib 3378P/0F、page-runtime
-> 136P/0F、webview 785P/0F、integration html_compat 21P/0F（包名
-> zero-integration-tests，旧口径补正）、clippy 过、fmt clean、零新增依
-> 赖。账本见
-> [evidence/2026-10-22-m2s22-r4200.md](html-semantics-compat/evidence/2026-10-22-m2s22-r4200.md)。
-> **下一步**：M2 切片 23——runner testharness helper 缺口盘点（closedby
-> 簇 ~85F：blessTopLayer/sendEscKey/createToggleEventSource ReferenceError，
-> 上游 helper 资源未随 runner 服务，非产品缺口）；余挂账 inert 计算态
-> ~15F、focusing steps ~15F（含 wrong global realm 面）、abspos/layout
-> ~10F（rendering 域）、impl-doc wrapper requestClose、toggleEvent 尾部
-> ontoggle（document-parse 面）、ToggleEvent.source/commandfor、
+> **▶ 当前状态（2026-10-22 M2 切片 23）**：dialog closedby 簇（R4300，
+> rollover 接续——上会话实现+契约被 429 中断，本会话核验收口）两段推
+> 进。①runner 通道（testharness.rs）：`inline_local_scripts` `/` 根路
+> 径按 wpt_root 解析内联（dialog closedby/canceling 语料以
+> `/common/top-layer.js`、`/close-watcher/resources/helpers.js` 引域外
+> 助资产，旧版拒绝 → helper ReferenceError 全批假 Fail；harness 本体在
+> 此步前已被 replace_script_source 消费，无双 harness 面）+ send_keys
+> Escape 臂（uE00C 旧落 PUA 拒绝分支；keydown/keyup 派发**当前焦点元
+> 素** `__zw_dispatch_key_at_active`，未取消 → close request 默认动作）
+> + click 命令 light dismiss 前步；goal 脚本 +5 助资产 fetch。②产品语
+> 义（shim）：closedBy IDL（枚举小写化 + auto 派生 + 反射 setter）+
+> `_zwDialogClosedByState` 推导 + close watcher 组栈
+> `_zwDialogModalStack`（show/showModal 压栈、组栈扫描首个 open 组即
+> 停、组内 none 挡住不下探）+ `__zw_esc_dialog_cancel` 重写（closedby
+> 资格门 + 组栈序 + `_zwDialogRequestClose`）+
+> `__zw_dialog_light_dismiss_check`（pointerdown 落点在任何 open+any
+> dialog 包含链外 → close request；产品指针管线与 runner click 共享）。
+> part60 R1–R5 新契约。九域 4980→**5008P**（68.02%），对 s22 逐
+> subtest diff **净 +28P、回归 1**：interactive-elements 202→227P
+> （canceling 全族 ReferenceError/Timeout 假 Fail 转真断言，ESC 主断
+> 言、组栈 none 挡板、light dismiss 内外落点、cancel-events/
+> preventDefault/keydown-preventDefault/cancel-with-input 各 1P、
+> bounds-clicking +9、show-stacked +4）+ scripting-1 166→169P（SVG
+> script scheduler 3 案意外翻绿，机制未定位，观察账）；余七域 0 变
+> 化。回归 1（bounds-clicking (1,1) inside-bounds：dialog UA abspos
+> 布局/hit test 缺口派生，归 rendering 域）。gates：zero-engine --lib
+> 3386P/0F、page-runtime 136P/0F、webview 785P/0F、integration
+> html_compat 21P/0F、clippy 过（systemd scope 不可达改 test-guard
+> 20G 包裹）、fmt clean、零新增依赖。账本见
+> [evidence/2026-10-22-m2s23-r4300.md](html-semantics-compat/evidence/2026-10-22-m2s23-r4300.md)。
+> **下一步**：M2 切片 24——ToggleEvent.source/commandfor 面
+> （toggle-source 簇 8F 真断言，helper 已通，含 dialog/details 两面 +
+> commandfor invoker）；corner-cases hang 排查（focusin remove+reinsert
+> 后 showModal → ESC close 不达，detach 窗口身份链，余 ~28 案被 file
+> Timeout 吞没）；余挂账 inert 计算态 ~15F、focusing steps ~15F、
+> abspos/layout ~10F（rendering 域）、impl-doc wrapper requestClose、
 > anchor-with-inline 导航缺口、parser form element pointer 4F。
 
 
@@ -116,6 +123,37 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-22 M2 切片 23**：dialog closedby 簇（R4300，rollover 接续
+  ——上会话 429 中断遗留实现+契约 WIP，本会话核验收口）——两段推进：
+  ①runner 通道：inline_local_scripts 根路径按 wpt_root 内联（域外助资
+  产 `/common/top-layer.js`、`/close-watcher/resources/helpers.js` 等
+  可达，harness 本体先前已被 replace_script_source 消费无双注入）+
+  send_keys uE00C Escape 臂（`__zw_dispatch_key_at_active` 焦点元素三
+  形态派发：`__zwSelector`/`_proxyCache` 反查/wrapper 直派；未取消 →
+  `__zw_esc_dialog_cancel` 默认动作）+ click 命令 light dismiss 前步 +
+  goal 脚本 5 助资产 fetch；②产品语义：closedBy IDL（小写化 + auto 派
+  生 + 反射）+ `_zwDialogClosedByState` + close watcher 组栈
+  `_zwDialogModalStack`（show/showModal 压组、首个 open 组即停、组内
+  none 挡下探、markup/IDL open 惰性补登记、stale 顺栈清出）+
+  `__zw_esc_dialog_cancel` 重写（closedby 资格门 + 组栈序 +
+  `_zwDialogRequestClose`）+ `__zw_dialog_light_dismiss_check`（任何
+  open+any dialog 包含链外落点 → close request；`__zw_pointer_down_
+  sequence` 头部钩与 runner click 共享）+ `__zw_reset_form_state` 清
+  栈。part60 R1–R5 契约。九域 4980→5008P（68.02%），对 s22 逐 subtest
+  diff 净 +28P、回归 1：interactive-elements 202→227P（canceling 族假
+  Fail 转真断言：ESC 主断言/组栈 none 挡板 4P/light dismiss 9P/
+  cancel-events 族新上报 4P/closedby 逐案 7P/non-modal-canceling 1P）
+  + scripting-1 +3（SVG script scheduler 意外翻绿稳定，机制未定位观
+  察账），余七域 0 变化；回归 1（bounds-clicking (1,1)：dialog UA
+  abspos 布局/hit test 缺口，归 rendering 域）。zero-engine --lib
+  3386P/0F、page-runtime 136P/0F、webview 785P/0F、integration
+  html_compat 21P/0F、clippy（test-guard 20G 包裹）/fmt 过、零新增依
+  赖。挂账：corner-cases ~28 案 file Timeout（focusin remove+reinsert
+  → showModal → ESC close 不达，detach 窗口身份链）、ToggleEvent
+  .source/commandfor 8F 真断言（下一切片）、ESC 组栈惰性补登记边缘乱
+  序（保守）、非模态 close 不出栈（读侧 purge 兜）、bounds-clicking
+  (1,1)（rendering 域）、余 s22 挂账维持。账本
+  [evidence/2026-10-22-m2s23-r4300.md](html-semantics-compat/evidence/2026-10-22-m2s23-r4300.md)。
 - **2026-10-22 M2 切片 22**：dialog 元素簇（R4200，跨午夜会话）——两段
   推进：①part01 dialog 语义主体重构：toggle 事件任务队列（R4009 同款
   per-element 去重合并、preOpen 调用方写前捕获）+ close 事件排队异步

@@ -479,6 +479,13 @@
   // __zw_reset_form_state 清空（per-page）。
   // https://html.spec.whatwg.org/multipage/interactive-elements.html#the-dialog-element
   var _zwDialogModal = {};
+  // R4300（M2 切片 23，2026-10-22）：close watcher 组栈——show()/showModal() 各压一组
+  //（一 dialog 一组），close-the-dialog / open IDL falsy 移除。ESC close request 命中
+  // 栈顶**首个 open 组**即停（组内 closedby 派生 none → 无 watcher → 请求被组挡住不
+  // 下探——show-stacked 内层 none 挡板断言面；spec close watcher 组栈语义）。读侧
+  // purge stale（close 走核心时移除，remove 路径读时按 open+connected 跳过）。
+  // __zw_reset_form_state 同步清空（per-page）。
+  var _zwDialogModalStack = [];
   // R3071：Popover 事件派发中用。构造 ToggleEvent 数据对象（type + newState/oldState + bubbles/cancelable/composed）。
   // spec ToggleEvent extends Event，直接属性 newState/oldState（非 CustomEvent.detail）。headless 同步派发（spec 队列
   // task，近似——documented 限制）；beforetoggle cancelable（可 preventDefault 阻止显隐）+ 非 bubble；toggle 非 cancelable。
@@ -651,6 +658,9 @@
     // ——aria 路径亦经此 helper，故记录在 dialog 调用点发而非 helper 内，避免 aria
     // 面 moAttr 尾钩双计）。toggle-events「should not double-set」计数断言面。
     try { _mo_notify(sel, handle, { type: 'attributes', attributeName: 'open', oldValue: null }); } catch (_eDgMo) {}
+    // R4300：非模态 show 也压 watcher 组栈（一 dialog 一组）——show-stacked 断言面：
+    // 内层 closedby=none 的组挡住 ESC 下探（外层 closerequest 不收 close request）。
+    _zwDialogModalStack.push(key);
     _zwDialogToggleQueueNotify4200(key, sel, handle, false);
   }
   // R3290 + R4200：HTMLDialogElement.showModal()——模态打开。spec「show a modal
@@ -677,6 +687,7 @@
     try { _mo_notify(sel, handle, { type: 'attributes', attributeName: 'open', oldValue: null }); } catch (_eDgMo2) {}
     _zwTopLayer[key] = true;
     _zwDialogModal[key] = true;
+    _zwDialogModalStack.push(key);
     _zwDialogToggleQueueNotify4200(key, sel, handle, false);
   }
   // R3290 + R4200：close-the-dialog 核心（close()/requestClose() 共用）。beforetoggle
@@ -691,7 +702,13 @@
     // R4200：open 属性内部移除 MO record（close-the-dialog 核心——close()/requestClose()
     // 共用；「Should have removed open once」计数断言面，与 show 侧同口径）。
     try { _mo_notify(sel, handle, { type: 'attributes', attributeName: 'open', oldValue: null }); } catch (_eDgMo3) {}
-    if (_zwDialogModal[key]) { delete _zwDialogModal[key]; delete _zwTopLayer[key]; }
+    if (_zwDialogModal[key]) {
+      delete _zwDialogModal[key];
+      delete _zwTopLayer[key];
+      // R4300：模态栈同步出栈（_zwIdxOf 兜底——嵌套 close 后 stale 项由读侧 purge 兜）。
+      var _msI = _zwDialogModalStack.indexOf(key);
+      if (_msI !== -1) _zwDialogModalStack.splice(_msI, 1);
+    }
     if (returnValue !== undefined) _expando[key + '::returnValue'] = String(returnValue);
     _zwDialogQueueCloseEvent4200(key, sel, handle);
     _zwDialogToggleQueueNotify4200(key, sel, handle, true);
@@ -748,6 +765,54 @@
       ? __zw_has_attr_lw(sel, 'open')
       : (typeof __zw_has_attr === 'function' ? __zw_has_attr(sel, 'open') : '0')) === '1';
   }
+  // R4300（M2 切片 23，2026-10-22）：dialog closedby 状态推导。spec 枚举关键字
+  // any/closerequest/none（大小写不敏感）；缺失/非法 → auto 态——模态（open +
+  // showModal 印记）→ closerequest 行为，否则 none。dialog-closedby 语料反射面
+  //（auto+modal → getter 'closerequest'；auto+非模态/未开 → 'none'）与 ESC/
+  // light-dismiss 资格门共用本推导。
+  // https://html.spec.whatwg.org/multipage/interactive-elements.html#attr-dialog-closedby
+  function _zwDialogClosedByState(sel, handle, key) {
+    var raw = '';
+    if (handle) {
+      try { raw = __zw_get_attr_handle(handle, 'closedby') || ''; } catch (_eCbH) { raw = ''; }
+    } else if (typeof __zw_get_attr_lw === 'function') {
+      raw = __zw_get_attr_lw(sel, 'closedby') || '';
+    } else if (typeof __zw_get_attr === 'function') {
+      try { raw = __zw_get_attr(sel, 'closedby') || ''; } catch (_eCbG) { raw = ''; }
+    }
+    var state = String(raw).toLowerCase();
+    if (state === 'any' || state === 'closerequest' || state === 'none') return state;
+    // auto 派生：模态开 → closerequest；否则 none。
+    return (_zwDialogHasOpen(sel, handle) && !!_zwDialogModal[key]) ? 'closerequest' : 'none';
+  }
+  // R4300：dialog light dismiss——pointerdown 落点 target 在任何 open+closedby=any
+  // dialog 的包含链外 → 对该 dialog 发 close request（走 _zwDialogRequestClose，
+  // cancel 可取消 + close 异步收尾）。产品指针管线与 runner click 命令前步共用
+  //（spec dialog light dismiss：pointerdown 触发、close request 序先于 click 语义）。
+  // targetSel 为 null/空（无命中元素）→ 视为落点在全部 any 态 dialog 外。
+  // https://html.spec.whatwg.org/multipage/interactive-elements.html#dialog-light-dismiss
+  globalThis.__zw_dialog_light_dismiss_check = function (targetSel) {
+    if (typeof document === 'undefined' || !document.querySelectorAll) return;
+    var dialogs;
+    try { dialogs = document.querySelectorAll('dialog'); } catch (_eLdQ) { return; }
+    if (!dialogs || !dialogs.length) return;
+    var target = null;
+    if (targetSel) {
+      try { target = document.querySelector(targetSel); } catch (_eLdT) { target = null; }
+    }
+    for (var i = 0; i < dialogs.length; i++) {
+      var d = dialogs[i];
+      var ds = d.__zwSelector || null;
+      var dh = d.__zwHandle || null;
+      var dk = _elKey(ds, dh);
+      if (!_zwDialogHasOpen(ds, dh)) continue;
+      if (_zwDialogClosedByState(ds, dh, dk) !== 'any') continue;
+      var contains = false;
+      try { contains = d.contains ? !!d.contains(target) : false; } catch (_eLdC) { contains = false; }
+      if (target && (target === d || contains)) continue;
+      _zwDialogRequestClose(dk, ds, dh, undefined);
+    }
+  };
   // R3290：统一 set/remove 内容属性 helper（sel/handle 双路径 + latest-wins 读一致性依赖 host 侧 latest-wins 变体，
   // 写走常规 __zw_set_attr/__zw_remove_attr 入队）。dialog open 属性专用，与 popover setter 同模式。
   function _zwSetAttr(key, sel, handle, name, value) {
@@ -6405,7 +6470,7 @@
   // M2 RFC s1（FR-10）：锁态/激活 per-page 清理——_pl*（含 _plUnadjusted）+ _fs*（fullscreen
   // 同族跨导航泄漏，用户 2026-10-19 确认随修）+ 瞬态激活双旗。导航后新文档无锁、无激活；
   // 清零不派事件（文档已替换，无监听面意义）。
-  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputValuesSet = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _checkedDirtyState = {}; _optSelectedDirty = {}; _optSelectedClean = {}; _inputFiles = {}; _classCache = {}; _customValidity = {}; _userEdited = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _resourceStates = {}; _textareaDefault = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; if (typeof _zwDetailsToggleQ4009 !== 'undefined') _zwDetailsToggleQ4009 = {}; _plKey = null; _plSel = null; _plHandle = null; _plTarget = null; _plUnadjusted = false; _fsKey = null; _fsSel = null; _fsHandle = null; _zwTransientActive = false; _zwActiveEver = false; if (typeof globalThis.__zw_pointer_reset === 'function') globalThis.__zw_pointer_reset(); };
+  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputValuesSet = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _checkedDirtyState = {}; _optSelectedDirty = {}; _optSelectedClean = {}; _inputFiles = {}; _classCache = {}; _customValidity = {}; _userEdited = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _resourceStates = {}; _textareaDefault = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; _zwDialogModalStack = []; if (typeof _zwDetailsToggleQ4009 !== 'undefined') _zwDetailsToggleQ4009 = {}; _plKey = null; _plSel = null; _plHandle = null; _plTarget = null; _plUnadjusted = false; _fsKey = null; _fsSel = null; _fsHandle = null; _zwTransientActive = false; _zwActiveEver = false; if (typeof globalThis.__zw_pointer_reset === 'function') globalThis.__zw_pointer_reset(); };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF

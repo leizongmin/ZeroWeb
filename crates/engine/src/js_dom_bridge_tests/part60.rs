@@ -1649,4 +1649,123 @@ fn test_dialog_close_side_r4200() {
     );
 }
 
+/// R4300（M2 切片 23，2026-10-22）：dialog closedby 面——closedBy IDL 反射（枚举
+/// 小写化 + auto 派生 + setter）、ESC close request 资格门（`__zw_esc_dialog_cancel`
+/// closedby 门 + 模态栈序）、light dismiss（`__zw_dialog_light_dismiss_check`）。
+/// 驱动路径：runner send_keys Escape 臂 + click 命令前步 / 产品指针管线 pointerdown 钩。
+#[test]
+fn test_dialog_closedby_light_dismiss_r4300() {
+    let mut sandbox = t59_sandbox_with_shim();
+    let mutations: std::sync::Arc<std::sync::Mutex<Vec<DomMutation>>> = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+    let dom_html: std::sync::Arc<std::sync::Mutex<String>> = std::sync::Arc::new(std::sync::Mutex::new(
+        "<html><body></body></html>".to_string(),
+    ));
+    let page_url: std::sync::Arc<std::sync::Mutex<String>> = std::sync::Arc::new(std::sync::Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    crate::js_dom_bridge::register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // R1：closedBy 反射——缺失 → auto 派生（非模态未开 'none'；modal 开 'closerequest'）；
+    // 大小写不敏感小写返回；非法值 → auto；显式 'none' 原样；setter 反射内容属性、
+    // null → 移除（回落 auto）。对齐 dialog-closedby getDefaultExpectations 断言面。
+    sandbox
+        .execute(
+            "globalThis.__ds = [];             for (var _i = 0; _i < 6; _i++) {               var _el = document.createElement('dialog');               document.body.appendChild(_el);               globalThis.__ds.push(_el);             }             var a = globalThis.__ds[0];             var b = globalThis.__ds[1];             var c = globalThis.__ds[2];             var e = globalThis.__ds[4];             b.setAttribute('closedby', 'ANY');             c.setAttribute('closedby', 'bogus');             e.setAttribute('closedby', 'none');             globalThis.__r1a = a.closedBy;             globalThis.__r1b = b.closedBy;             globalThis.__r1c = c.closedBy;             globalThis.__r1e = e.closedBy;             a.showModal();             globalThis.__r1a2 = a.closedBy;             a.close();             globalThis.__r1a3 = a.closedBy;             var f = globalThis.__ds[5];             f.closedBy = 'closerequest';             globalThis.__r1f = f.getAttribute('closedby') + ',' + f.closedBy;             f.closedBy = null;             globalThis.__r1f2 = String(f.hasAttribute('closedby')) + ',' + f.closedBy;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r1a + '|' + globalThis.__r1a2 + '|' + globalThis.__r1a3").unwrap().value,
+        "none|closerequest|none",
+        "R1：auto 派生——未开 none / modal 开 closerequest / 关后回 none"
+    );
+    assert_eq!(
+        sandbox
+            .execute("globalThis.__r1b + '|' + globalThis.__r1c + '|' + globalThis.__r1e")
+            .unwrap()
+            .value,
+        "any|none|none",
+        "R1：'ANY' 小写化；'bogus' → auto（未开派生 none）；显式 none 原样"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r1f + '|' + globalThis.__r1f2").unwrap().value,
+        "closerequest,closerequest|false,none",
+        "R1：setter 反射 closedby 内容属性；null → 移除回落 auto"
+    );
+
+    // R2：ESC 资格门——非模态默认（auto→none）不关；closedby=none 模态不关；
+    // closedby=any 非模态关。对齐 non-modal-canceling 双面 + dialog-closedby
+    // respondsToEsc 矩阵。
+    sandbox
+        .execute(
+            "var n1 = globalThis.__ds[0];             n1.show();             globalThis.__r2a = __zw_esc_dialog_cancel() + ',' + Number(n1.open);             var n2 = globalThis.__ds[4];             n2.showModal();             globalThis.__r2b = __zw_esc_dialog_cancel() + ',' + Number(n2.open);             var n3 = globalThis.__ds[1];             n3.closedBy = 'any';             n3.show();             globalThis.__r2c = __zw_esc_dialog_cancel() + ',' + Number(n3.open);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("globalThis.__r2a + '|' + globalThis.__r2b + '|' + globalThis.__r2c")
+            .unwrap()
+            .value,
+        "false,1|false,1|true,0",
+        "R2：auto 非模态 / none 模态不响应 ESC；any 非模态响应且关闭"
+    );
+
+    // R3：模态栈序——bottom/top 双 showModal，首次 ESC 关栈顶 top（非文档序首个），
+    // 二次 ESC 关 bottom。cancel/close 事件序逐层对齐 dialog-canceling 期望序。
+    sandbox
+        .execute(
+            "var bt = document.createElement('dialog');             var tp = document.createElement('dialog');             document.body.appendChild(bt);             document.body.appendChild(tp);             globalThis.__btD = bt; globalThis.__tpD = tp;             globalThis.__seq = [];             bt.addEventListener('cancel', function () { globalThis.__seq.push('cancel:bottom'); });             tp.addEventListener('cancel', function () { globalThis.__seq.push('cancel:top'); });             bt.addEventListener('close', function () { globalThis.__seq.push('close:bottom'); });             tp.addEventListener('close', function () { globalThis.__seq.push('close:top'); });             bt.showModal();             tp.showModal();             globalThis.__r3a = __zw_esc_dialog_cancel() + ',' + Number(tp.open) + ',' + Number(bt.open);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r3a").unwrap().value,
+        "true,0,1",
+        "R3：首次 ESC 命中栈顶 top（同步移 open），bottom 保持"
+    );
+    sandbox
+        .execute(
+            "globalThis.__r3b = __zw_esc_dialog_cancel() + ',' + Number(globalThis.__btD.open);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("globalThis.__r3b + '|' + globalThis.__seq.join('|')")
+            .unwrap()
+            .value,
+        "true,0|cancel:top|close:top|cancel:bottom|close:bottom",
+        "R3：二次 ESC 关 bottom；cancel/close 序逐层 top→bottom"
+    );
+
+    // R4：light dismiss——closedby=any 模态开 + 落点在 dialog 外（body）→ 关；
+    // 落点在 dialog 内 → 保持；默认模态（auto→closerequest）落点外不关。
+    sandbox
+        .execute(
+            "var l1 = document.createElement('dialog');             l1.closedBy = 'any';             l1.innerHTML = '<button id=inner>b</button>';             document.body.appendChild(l1);             globalThis.__l1D = l1;             l1.showModal();             __zw_dialog_light_dismiss_check(l1.querySelector('button').__zwSelector || 'button');             globalThis.__r4a = Number(l1.open);             __zw_dialog_light_dismiss_check('body');             globalThis.__r4b = Number(l1.open);             var l2 = document.createElement('dialog');             document.body.appendChild(l2);             globalThis.__l2D = l2;             l2.showModal();             __zw_dialog_light_dismiss_check('body');             globalThis.__r4c = Number(l2.open);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("globalThis.__r4a + '|' + globalThis.__r4b + '|' + globalThis.__r4c")
+            .unwrap()
+            .value,
+        "1|0|1",
+        "R4：any 态 dialog 内落点保持、外落点关；默认模态（closerequest）不 light dismiss"
+    );
+
+    // R5：`__zw_dispatch_key_at_active`——keydown 派发到当前焦点元素（非 send_keys
+    // 目标）；焦点元素 keydown preventDefault → 返 'prevented'（runner 据此跳过
+    // dialog close request 默认动作——dialog-canceling swallow-input 面）。两面覆盖：
+    // querySelector 产物（__zwSelector 直取）与 getElementById 产物（无 sel → id 属性
+    // 选择器回落——语料 getElementById().focus() 真实形状）。
+    sandbox
+        .execute(
+            "document.body.insertAdjacentHTML('beforeend', '<input id=kw5><input id=kw5b>');             globalThis.__kdT = '';             var mk = function (q) {               var inp = q === '#' ? document.querySelector('#kw5') : document.getElementById('kw5b');               inp.addEventListener('keydown', function (e) {                 globalThis.__kdT += e.key + '@' + inp.id + ';';                 e.preventDefault();               });               inp.focus();               return String(__zw_dispatch_key_at_active('keydown', '{\"key\":\"Escape\",\"code\":\"Escape\"}'));             };             globalThis.__r5a = mk('#') + ',' + mk('g');             globalThis.__r5b = globalThis.__kdT;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r5a + '|' + globalThis.__r5b").unwrap().value,
+        "prevented,prevented|Escape@kw5;Escape@kw5b;",
+        "R5：keydown 落焦点元素（sel/id 双形态）且 preventDefault → 'prevented' 返标记"
+    );
+}
+
 
