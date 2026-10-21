@@ -558,6 +558,13 @@ impl ProcessTabBackend {
             //（renderer 主线程被阻塞时无新提交，靠该 Get 保持帧推进）；响应
             // 经完成帧缓存下一 tick 采纳，待处理 Get 同 surface 原地替换不堆积。
             if snap.compositor_animations_active {
+                // M2-S1e：keep-alive 触发记 debug——空洞期「有心跳无此行」=tick 活而
+                // flag 假；「有心跳有此行无 compositor Get」=worker 未排空。
+                tracing::debug!(
+                    "browser: tab {} keep-alive GetFrame frame={}",
+                    tab_id.0,
+                    submission.frame_id
+                );
                 crate::compositor_client::request_frame(
                     submission.surface_id,
                     submission.navigation_epoch,
@@ -679,6 +686,17 @@ impl ProcessTabBackend {
             }
             *snapshot_seq.entry(*tab_id).or_insert(0) += 1;
             // M2-S1d：帧轮询保持开关跟随最新采纳帧（全部动画结束后回落事件驱动）。
+            // M2-S1e：翻转时刻记 debug——false 翻转会停 16ms keep-alive，是负载窗
+            // 帧断续的浏览器侧信号（上游原因见 renderer 声明清理/compositor 采样日志）。
+            if snap.compositor_animations_active != animations_active {
+                tracing::debug!(
+                    "browser: tab {} compositor_animations_active {} -> {}（frame {}）",
+                    tab_id.0,
+                    snap.compositor_animations_active,
+                    animations_active,
+                    frame.frame_id
+                );
+            }
             snap.compositor_animations_active = animations_active;
             #[cfg(target_os = "linux")]
             if std::env::var("ZERO_BROWSER_PRODUCT_SMOKE").as_deref() == Ok("1") {

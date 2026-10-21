@@ -4,9 +4,18 @@
 
 use std::io;
 
+/// 日志级别 env 覆盖（`ZW_LOG_LEVEL`，默认 INFO）——诊断期临时提级（如动画采样
+/// debug 观测），生产零变化。
+fn configured_log_level() -> tracing::Level {
+    std::env::var("ZW_LOG_LEVEL")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(tracing::Level::INFO)
+}
+
 fn main() {
     tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
+        .with_max_level(configured_log_level())
         .with_writer(io::stderr)
         .init();
 

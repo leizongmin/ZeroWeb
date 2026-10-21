@@ -156,6 +156,15 @@ fn store_animation_state(
             );
         }
         _ => {
+            // M2-S1e：接受路径记 debug——空集清理（declarations=0）会终止 Get 侧
+            // 采样与浏览器 keep-alive，是负载窗断续归因的关键事件。
+            tracing::debug!(
+                "compositor: 接受动画声明 surface {} epoch/gen {}/{} declarations={}",
+                params.surface_id,
+                params.navigation_epoch,
+                params.generation,
+                params.declarations.len()
+            );
             states.insert(params.surface_id, params);
         }
     }
@@ -519,6 +528,16 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                                 animation_overrides::has_active_animations(&state.declarations, now_monotonic_ns)
                             });
                             let anim_dirty = now_active || surface.animations_active;
+                            // M2-S1e：采样判定 debug——now_active 翻 false 的时刻对齐
+                            // renderer 声明清理发送（空集/换代），负载窗断续归因用。
+                            tracing::debug!(
+                                "compositor: Get surface {} 有声明={} now_active={} anim_dirty={} frame_id={}",
+                                surface_id,
+                                animation_state.is_some(),
+                                now_active,
+                                anim_dirty,
+                                surface.frame_id
+                            );
                             let scroll_dirty = zero_protocol::compositor_scroll_transform_enabled()
                                 && (surface.rasterized_scroll_x != surface.scroll_x
                                     || surface.rasterized_scroll_y != surface.scroll_y);

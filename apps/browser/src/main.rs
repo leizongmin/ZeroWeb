@@ -966,33 +966,55 @@ impl<W: Write> Write for TeeLogWriter<W> {
     }
 }
 
+/// 日志级别 env 覆盖（`ZW_LOG_LEVEL`，默认 INFO）——诊断期临时提级，生产零变化。
+fn configured_log_level() -> tracing::Level {
+    std::env::var("ZW_LOG_LEVEL")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(tracing::Level::INFO)
+}
+
 fn init_logging() {
+    let level = configured_log_level();
     let Some(path) = browser_log_path() else {
         // t2-pb1 fix#17：日志写 stderr 不写 stdout。fmt() 默认 writer 是 stdout，
         // 而宿主以管道 spawn zero-browser 时 stdout 常无读取者（playwright/CDP 自动化
         // 只读 stderr）：64KB 管道缓冲写满后所有打日志的 browser 线程阻塞在 write，
         // 导航/CDP 派发全部停摆（bilibili 实测 goto 必超时， Example 页日志量小才幸存）。
         // Chromium 日志同样走 stderr；stdout 留给程序输出（如 --version）。
-        tracing_subscriber::fmt().with_writer(io::stderr).init();
+        tracing_subscriber::fmt()
+            .with_max_level(level)
+            .with_writer(io::stderr)
+            .init();
         return;
     };
     let Some(parent) = path.parent() else {
-        tracing_subscriber::fmt().with_writer(io::stderr).init();
+        tracing_subscriber::fmt()
+            .with_max_level(level)
+            .with_writer(io::stderr)
+            .init();
         return;
     };
     if let Err(error) = fs::create_dir_all(parent) {
         eprintln!("无法创建浏览器日志目录: {error}");
-        tracing_subscriber::fmt().with_writer(io::stderr).init();
+        tracing_subscriber::fmt()
+            .with_max_level(level)
+            .with_writer(io::stderr)
+            .init();
         return;
     }
     match RollingLogWriter::open(path.clone(), BROWSER_LOG_MAX_BYTES, BROWSER_LOG_BACKUP_COUNT) {
         Ok(file) => tracing_subscriber::fmt()
+            .with_max_level(level)
             .with_ansi(false)
             .with_writer(std::sync::Mutex::new(TeeLogWriter::new(file, io::stderr())))
             .init(),
         Err(error) => {
             eprintln!("无法打开浏览器日志文件 {}: {error}", path.display());
-            tracing_subscriber::fmt().with_writer(io::stderr).init();
+            tracing_subscriber::fmt()
+                .with_max_level(level)
+                .with_writer(io::stderr)
+                .init();
         }
     }
 }

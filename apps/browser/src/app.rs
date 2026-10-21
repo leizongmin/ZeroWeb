@@ -1,6 +1,7 @@
 //! 浏览器应用核心状态和事件处理
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use zero_browser_shell::{
@@ -515,6 +516,13 @@ impl BrowserApp {
 
     /// 轮询 Tab worker / IPC 并处理页面事件。
     pub fn poll_tab_fetch(&mut self) {
+        // M2-S1e：窗口轮询 tick 心跳（每 64 tick ~1s 一条 debug）——负载窗帧空洞
+        // 归因：心跳在 = 主循环活着，心跳停 = tick 被卡（renderer/mux 同步耦合）。
+        static POLL_TICK: AtomicU64 = AtomicU64::new(0);
+        let tick = POLL_TICK.fetch_add(1, Ordering::Relaxed);
+        if tick.is_multiple_of(64) {
+            tracing::debug!("browser: poll tick #{} 心跳", tick);
+        }
         if self.favicon_fetch.poll(&mut self.font_loader) {
             self.needs_redraw = true;
         }

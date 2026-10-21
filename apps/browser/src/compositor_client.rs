@@ -983,6 +983,14 @@ fn process_batch(
             WorkerCommand::GetFrame(key) => {
                 // M2-S1d：主动采样 Get（同帧提交 ack 后的联动 Get 同型；响应走
                 // Data 分支入完成帧缓存）。
+                // M2-S1e：发送时刻记 debug——空洞归因（tick 未请求 vs worker 未排空
+                // vs compositor 未处理）以此与 compositor Get 日志对时。
+                tracing::debug!(
+                    "browser: worker 发送 GetFrame surface={} epoch={} frame={}",
+                    key.surface_id,
+                    key.navigation_epoch,
+                    key.frame_id
+                );
                 transport.send(IpcMessage {
                     id: message_id,
                     kind: IpcMessageKind::GetCompositorFrame {

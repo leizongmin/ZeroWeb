@@ -1011,6 +1011,10 @@ impl RendererRuntime {
         // 退出导出域（flag 关 / Legacy 模式）：发过才需要清理，否则零消息。
         if !self.compositor_animations_active() {
             if self.animation_export.deactivate() {
+                tracing::debug!(
+                    "renderer: animation state 清理发送（退出导出域）generation={}",
+                    self.animation_export.generation
+                );
                 let params = CompositorAnimationStateParams {
                     surface_id: self.frame_publish.surface_id,
                     navigation_epoch: self.navigation_epoch,
@@ -1028,6 +1032,13 @@ impl RendererRuntime {
         else {
             return Ok(());
         };
+        // M2-S1e：声明集每次变化都记 debug（含空集清理）——DC-1 负载窗 keep-alive
+        // 断续归因的直接证据（S1b 边界：budget/泵路径不导出，集合 2→0 变化在此显形）。
+        tracing::debug!(
+            "renderer: animation state 发送 declarations={} generation={}",
+            declarations.len(),
+            self.animation_export.generation
+        );
         let params = CompositorAnimationStateParams {
             surface_id: self.frame_publish.surface_id,
             navigation_epoch: self.navigation_epoch,
