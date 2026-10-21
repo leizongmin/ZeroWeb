@@ -5,10 +5,10 @@
 //! 负 margin 扩张盒子（w = cb − ml − mr，border box 左 = ml）。
 //! zero-width-floats.html 依赖此语义（两个 0 宽 float 夹 overflow:hidden 负 margin BFC）。
 //!
-//! 钉位语义（chromium FloatAvoider 把受约束 BFC border box 钉在 float-free band [L, R]）
-//! 实测存在：但套用会回归 floats-wrap-bfc-with-margin-006（ZW 与 chromium 的 float 垂直
-//! 堆叠 y 模型不同——ZW 中 BFC 与 float 同行垂直重叠时旧 shrink 臂已是 reftest 正解），
-//! 按净变更≥0 纪律不落。第三案锁定该范围（真约束右 float 不改变既有 shrink 行为）。
+//! R5217 起，真约束 float 旁的 BFC 改用 chromium FloatAvoider 钉位语义（68 行几何探针
+//! 实证，见 `r5217_bfc_margin_pin_beside_tests.rs`）：受约束 BFC border box 钉在
+//! float-free band [L, R] 内（rf ml=−50 @ gap=75 → x=0 w=75，探针实证；旧 shrink 的
+//! [−50,125] 形状 chromium 不产生）。
 
 use super::*;
 use zero_css_parser::values::{DisplayValue, FloatValue, LengthValue, OverflowValue};
@@ -75,11 +75,12 @@ fn r3807_zero_shift_floats_bfc_keeps_plain_flow_negative_margin_geometry() {
     );
 }
 
-/// 真约束右 float（可发生垂直重叠）保持既有 shrink 语义：border box 左 = ml（负 margin
-/// 不被钳到 band 左缘）、右缘收缩到 float 左缘。锁定 R3807 修复范围——零位移 guard 之外
-/// 的回避臂不动（floats-wrap-bfc-with-margin-006 依赖，net≥0 纪律）。
+/// 真约束右 float（可发生垂直重叠）下负 margin BFC 走 R5217 钉位语义：border box 左被钳
+/// 到 band 左缘 0、右缘钉 float 左缘 75 → w=75。chromium 探针实证（2026-10-22，
+/// `/tmp/r5217_r3807_probe.mjs`：rf ml=−50 → x=0 w=75 y=0；旧 shrink 的 x=−50 w=125
+/// chromium 不产生）。零位移 guard（上一测试）不受影响。
 #[test]
-fn r3807_constrained_right_float_keeps_existing_shrink_semantics() {
+fn r3807_constrained_right_float_pins_negative_margin_bfc_into_band() {
     let (mut doc, body) = make_doc_with_body();
     let container = doc.create_element("div");
     doc.append_child(body, container).unwrap();
@@ -113,16 +114,16 @@ fn r3807_constrained_right_float_keeps_existing_shrink_semantics() {
     let result = engine.compute(&doc, &styles);
 
     let bfc_box = find_child_by_node_id(&result.root, bfc_div).expect("bfc div found");
-    // 既有几何（taffy band 求解 + 回避臂右缘恰触 float 时跳过）：左缘 = ml = −50，
-    // 右缘 = float 左缘 75 → w = 125。R3807 不改变此形状（006 reftest 依赖）。
+    // R5217 钉位：band = [0, float mb 左缘 75]（gap=75，margin_h=−50 阈内），左缘钳 0、
+    // 右缘钉 75 → w=75（chromium 探针同值）。
     assert!(
-        (bfc_box.x - (-50.0)).abs() < 0.5,
-        "负 margin BFC 左缘应保持 ml=−50（不被钉位），实际 {}",
+        (bfc_box.x - 0.0).abs() < 0.5,
+        "负 margin BFC 左缘应被钳到 band 左缘 0，实际 {}",
         bfc_box.x
     );
     assert!(
-        (bfc_box.width - 125.0).abs() < 0.5,
-        "右缘应抵 float 左缘（w=125 = 75−(−50)），实际 {}",
+        (bfc_box.width - 75.0).abs() < 0.5,
+        "右缘应钉 float 左缘（w=75），实际 {}",
         bfc_box.width
     );
 }

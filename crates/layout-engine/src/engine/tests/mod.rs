@@ -785,3 +785,5 @@ mod r5214_float_earliest_fit_tests;
 mod r5215_atomic_flow_tests;
 /// R5216（CSS2 §9.5 rule 8）行盒避 float 下绕——inline-002l/r 断行新行几何锚点。
 mod r5216_line_float_fit_tests;
+/// R5217（CSS2 §9.5 规则 2 × §10.3.3）BFC 旁置 float margin-aware 钉位解几何锚点。
+mod r5217_bfc_margin_pin_beside_tests;

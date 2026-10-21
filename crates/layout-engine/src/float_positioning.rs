@@ -227,7 +227,7 @@ pub(crate) fn apply_inline_block_float_avoidance(box_node: &mut LayoutBox, style
 
 /// 浮动几何元组：(dir, x, y, width, height+margin_bottom, margin_right)。
 /// 坐标相对「持有该浮动的容器的 border-box 原点」。供 BFC 排斥 + 嵌套透传共用。
-type FloatGeom = (FloatValue, f32, f32, f32, f32, f32);
+type FloatGeom = (FloatValue, f32, f32, f32, f32, f32, f32);
 
 /// R1623：BFC 被 float 排斥收缩 width 后，同步收缩 content_width（= width - frame）。
 /// 否则内层 adjust_float_positions 递归用旧（大）content_width 做 container_width，
@@ -235,6 +235,50 @@ type FloatGeom = (FloatValue, f32, f32, f32, f32, f32);
 fn shrink_bfc_content_width(child: &mut LayoutBox) {
     let frame = child.border_left + child.border_right + child.padding_left + child.padding_right;
     child.content_width = (child.width - frame).max(0.0);
+}
+
+/// R5217（CSS2 §9.5 规则 2 × §10.3.3）：width:auto BFC 旁置 float 的 margin-aware
+/// 钉位解（chromium FloatAvoider 语义，floats-wrap-bfc-with-margin 族 68 行几何探针实证）。
+///
+/// flow 盒（§10.3.3 全 CB 解）为 `[ml, CB − mr]`；float 旁带为 `[band_left, band_right]`
+/// （左 float = [float margin-box 右缘, CB]，右 float = [0, float margin-box 左缘]）。
+/// 旁置钉位：left = max(ml, band_left)、right = min(CB − mr, band_right)——面向侧正
+/// margin 被钉位吃掉（lf ml=5 → x=band_left w=gap，而非 x=band_left+ml）、背侧 margin
+/// 收窄宽（rf ml=5 → x=5 w=70 @ CB=100 gap=75）。左右镜像不对称（chromium 实测）：
+/// 左 float 对 right 取 `max(left + frame)` 下限再夹回 band，钉后永不因正 margin 下绕
+/// （lf mr=15/22/28 全旁置 [14,2]）；右 float 钉后宽 < frame 则下绕（rf ml=15 → 下绕）。
+/// 下绕几何（两 float 一致）= x=ml、w=CB − margin_h、y 到 float 底。触发条件：
+/// ① 负 margin 阈 `margin_h < −(gap + 0.5)`（gap=16：−17 下绕、−16 旁置，WebKit bug
+/// 239976 非互操作带取 chromium 阈）；② 仅右 float：钉后宽不足 frame（003 的
+/// rf ml=15/22/28）。小负 margin（−gap ≤ margin_h < 0）由钉位自然落 `x=band_left、
+/// w=gap`（同 margin:0，002-ref flex mock 不设 margin）。
+/// 返回 (旁置 x, 旁置 border-box 宽, 是否下绕)。
+fn solve_auto_bfc_margin_beside(
+    is_left_float: bool,
+    ml: f32,
+    mr: f32,
+    frame: f32,
+    band_left: f32,
+    band_right: f32,
+    container_width: f32,
+) -> (f32, f32, bool) {
+    let margin_h = ml + mr;
+    let gap = (band_right - band_left).max(0.0);
+    let mut wrap = margin_h < -(gap + 0.5);
+    let left = ml.max(band_left);
+    let right = (container_width - mr).min(band_right);
+    let right = if is_left_float {
+        // 左 float：band 钉 border-box 左缘，right 取 frame 下限后夹回 band。
+        right.max(left + frame).min(band_right)
+    } else {
+        // 右 float：右缘钉 float margin-box 左缘，钉后宽不足 frame → 下绕。
+        if !wrap && right - left < frame {
+            wrap = true;
+        }
+        right
+    };
+    let width = if wrap { 0.0 } else { (right - left).max(0.0) };
+    (left, width, wrap)
 }
 
 /// 纯文本 float shrink-to-fit（CSS §10.3.5）预补 pass。
@@ -2170,6 +2214,7 @@ pub(crate) fn adjust_float_positions_with_context(
                 c.width,
                 c.height + c.margin_bottom,
                 c.margin_right,
+                c.margin_left,
             )
         })
         .collect();
@@ -2177,6 +2222,8 @@ pub(crate) fn adjust_float_positions_with_context(
     //（块内）与递归透传（块外）使用——使嵌套在非 BFC 后代内的 BFC 能避开祖先 float。
     // env ZW_NESTED_BFC_FLOAT_AVOID=0 关闭（kill-switch，default-on）。
     let nested_avoid_on = std::env::var("ZW_NESTED_BFC_FLOAT_AVOID").as_deref() != Ok("0");
+    // R5217 margin-aware 钉位总开关，循环外取一次（热路径逐对 env 查询有可测开销）。
+    let margin_solve_on = std::env::var("ZW_BFC_MARGIN_SOLVE").as_deref() != Ok("0");
     let all_floats: Vec<FloatGeom> = if nested_avoid_on && !inherited_floats.is_empty() {
         inherited_floats
             .iter()
@@ -2703,7 +2750,7 @@ pub(crate) fn adjust_float_positions_with_context(
                 let mut x_lo = if child.margin_left_auto { 0.0 } else { child.margin_left };
                 let mut overlapped = false;
                 for g in &float_geometries {
-                    let (fd, fx, fy, fw, fh, fmr) = g;
+                    let (fd, fx, fy, fw, fh, fmr, _fml) = g;
                     let fbottom = *fy + *fh;
                     if child_top < fbottom && child_bottom > *fy {
                         if matches!(fd, FloatValue::Left) {
@@ -2767,7 +2814,7 @@ pub(crate) fn adjust_float_positions_with_context(
                             if float_order_gate && float_child_indices[*j] >= idx {
                                 return false;
                             }
-                            let (_, _, fy, _, fh, _) = g;
+                            let (_, _, fy, _, fh, _, _) = g;
                             let fbottom = *fy + *fh;
                             child_top < fbottom && child_bottom > *fy
                         })
@@ -2779,7 +2826,7 @@ pub(crate) fn adjust_float_positions_with_context(
                         // 候选 y：自然 y + 各重叠 float bottom（> 自然 y），升序去重。
                         let mut y_candidates: Vec<f32> = vec![child.y];
                         for g in &overlapping {
-                            let (_, _, fy, _, fh, _) = g;
+                            let (_, _, fy, _, fh, _, _) = g;
                             let fb = *fy + *fh;
                             if fb > child.y + 0.5 {
                                 y_candidates.push(fb);
@@ -2796,7 +2843,7 @@ pub(crate) fn adjust_float_positions_with_context(
                             let mut x_lo = if child.margin_left_auto { 0.0 } else { child.margin_left };
                             let mut x_hi = (container_width - w).max(child.margin_left);
                             for g in &overlapping {
-                                let (fd, fx, fy, fwidth, fh, fmargin_r) = g;
+                                let (fd, fx, fy, fwidth, fh, fmargin_r, _fmargin_l) = g;
                                 let fbottom = *fy + *fh;
                                 if !(cand_y < fbottom && cand_y + h > *fy) {
                                     continue;
@@ -2833,7 +2880,7 @@ pub(crate) fn adjust_float_positions_with_context(
                             let max_bottom = overlapping
                                 .iter()
                                 .map(|g| {
-                                    let (_, _, fy, _, fh, _) = g;
+                                    let (_, _, fy, _, fh, _, _) = g;
                                     *fy + *fh
                                 })
                                 .fold(child.y, f32::max);
@@ -2849,7 +2896,7 @@ pub(crate) fn adjust_float_positions_with_context(
                 }
 
                 if !coord_handled {
-                    for (gi, (float_dir, float_x, float_y, float_border_w, float_h, float_margin_r)) in
+                    for (gi, (float_dir, float_x, float_y, float_border_w, float_h, float_margin_r, float_margin_l)) in
                         float_geometries.iter().enumerate()
                     {
                         // R5160：仅文档顺序在前的 float 参与排斥（见 float_geometries 注）。
@@ -2907,7 +2954,57 @@ pub(crate) fn adjust_float_positions_with_context(
                                         && is_definite_width
                                         && !child.declared_width_auto
                                         && !fits_beside);
-                                if is_definite_width && !has_following_block_sibling[idx] && must_pushdown {
+                                // R5217（CSS2 §9.5 规则 2 × §10.3.3）：width:auto BFC 且水平
+                                // margin 非零时 margin-aware 钉位解——flow 盒 [ml, CB − mr] 被
+                                // band [avoidance_x, CB] 钉位：面向侧正 margin 被吃掉
+                                //（lf ml=5 → x=avoidance w=gap）、背侧 margin 收窄、frame 下限
+                                // 防塌缩；margin_h < −(gap+0.5) 下绕 float 底全 CB 重解。
+                                // kill-switch `ZW_BFC_MARGIN_SOLVE=0` 回退旧「填满 gap」臂。
+                                let ml = if child.margin_left_auto { 0.0 } else { child.margin_left };
+                                let mr = if child.margin_right_auto {
+                                    0.0
+                                } else {
+                                    child.margin_right
+                                };
+                                let margin_h = ml + mr;
+                                let frame =
+                                    child.border_left + child.border_right + child.padding_left + child.padding_right;
+                                let margin_aware = margin_solve_on
+                                    && child.declared_width_auto
+                                    && margin_h.abs() > 0.5
+                                    // 有后续 block 同胞时多 float 纵向堆叠语义未定（007 实测
+                                    // 钉位/下绕都偏离 ref）——整体回退旧臂，保持基线行为。
+                                    && !has_following_block_sibling[idx];
+                                // 入门：margin-aware 即行动——钉位解与 §10.3.3 flow 盒在无
+                                // 钳制时相等（幂等覆写），而 ml ≥ avoidance 时 taffy 自身
+                                // float 收缩可能已把宽塌到 0（lf ml=85 探针：taffy w=0，
+                                // chromium 15），必须由钉位解覆写回 flow 几何。
+                                let margin_enter = margin_aware;
+                                if margin_enter {
+                                    let (beside_x, beside_w, wrap) = solve_auto_bfc_margin_beside(
+                                        true,
+                                        ml,
+                                        mr,
+                                        frame,
+                                        avoidance_x,
+                                        container_width,
+                                        container_width,
+                                    );
+                                    if wrap {
+                                        // 下绕：float 约束解除 → 全 CB 重解宽、x 回流位。
+                                        if float_bottom > child.y {
+                                            child.y = float_bottom;
+                                        }
+                                        child.x = ml;
+                                        child.width = (container_width - margin_h).max(0.0);
+                                        shrink_bfc_content_width(child);
+                                    } else {
+                                        // 旁置钉位（含小负 margin 落 x=avoidance、w=gap）。
+                                        child.x = beside_x;
+                                        child.width = beside_w;
+                                        shrink_bfc_content_width(child);
+                                    }
+                                } else if is_definite_width && !has_following_block_sibling[idx] && must_pushdown {
                                     if float_bottom > child.y {
                                         child.y = float_bottom;
                                     }
@@ -2931,7 +3028,36 @@ pub(crate) fn adjust_float_positions_with_context(
                             }
                             FloatValue::Right => {
                                 let declared_or_layout_width = child.declared_width_px.unwrap_or(child.width);
-                                if child.x + declared_or_layout_width <= *float_x {
+                                // R1722：float:right definite-width BFC 放不下 float 左侧可用宽
+                                //（child.x + width > float_x）→ 推到 float 下方（mirror of R1369 左
+                                // float overflows 推下，CSS §9.5：BFC border-box 不重叠 float；definite
+                                // 宽度保持不 shrink）。仅 definite-width + 无后续 in-flow block 同胞时推下，
+                                // 否则保持 shrink-to-fit（原行为）。kill-switch ZW_BFC_RIGHT_PUSHBELOW=0。
+                                // R5217：width:auto BFC 水平 margin 非零 → margin-aware
+                                // 钉位解（镜像左 float 臂；band = [0, float margin-box 左缘]，
+                                // 右缘钉位 + 钉后宽 < frame 下绕，003 rf ml=15/22/28 实证）。
+                                // 门置于「右缘不达 float → continue」之前：taffy 按 §10.3.3
+                                // 全 CB 求解的 border-box 右（= CB − mr）在大正 mr 时可能已
+                                // 不达 float_x（001 margin-right=14：右缘 16 < float_x 18，
+                                // 旧门漏触发，宽停在 CB 解 16 应 2）。kill-switch
+                                // `ZW_BFC_MARGIN_SOLVE=0` 回退旧「缩到 float 左缘」臂。
+                                let ml = if child.margin_left_auto { 0.0 } else { child.margin_left };
+                                let mr = if child.margin_right_auto {
+                                    0.0
+                                } else {
+                                    child.margin_right
+                                };
+                                let margin_h = ml + mr;
+                                let frame =
+                                    child.border_left + child.border_right + child.padding_left + child.padding_right;
+                                let margin_aware = margin_solve_on
+                                    && child.declared_width_auto
+                                    && margin_h.abs() > 0.5
+                                    // 镜像左 float 臂：有后续 block 同胞回退旧臂（007）。
+                                    && !has_following_block_sibling[idx];
+                                let is_definite_width =
+                                    child.declared_width_px.is_some() || child.width < container_width - 0.5;
+                                if !margin_aware && child.x + declared_or_layout_width <= *float_x {
                                     continue;
                                 }
                                 // R3807：零位移右 float（float_x ≥ 容器宽）不构成 BFC 回避约束
@@ -2942,14 +3068,32 @@ pub(crate) fn adjust_float_positions_with_context(
                                 if *float_x >= container_width - 0.5 {
                                     continue;
                                 }
-                                // R1722：float:right definite-width BFC 放不下 float 左侧可用宽
-                                //（child.x + width > float_x）→ 推到 float 下方（mirror of R1369 左
-                                // float overflows 推下，CSS §9.5：BFC border-box 不重叠 float；definite
-                                // 宽度保持不 shrink）。仅 definite-width + 无后续 in-flow block 同胞时推下，
-                                // 否则保持 shrink-to-fit（原行为）。kill-switch ZW_BFC_RIGHT_PUSHBELOW=0。
-                                let is_definite_width =
-                                    child.declared_width_px.is_some() || child.width < container_width - 0.5;
-                                if std::env::var("ZW_BFC_RIGHT_PUSHBELOW").as_deref() != Ok("0")
+                                if margin_aware {
+                                    let band_right = (*float_x - *float_margin_l).max(0.0);
+                                    let (beside_x, beside_w, wrap) = solve_auto_bfc_margin_beside(
+                                        false,
+                                        ml,
+                                        mr,
+                                        frame,
+                                        0.0,
+                                        band_right,
+                                        container_width,
+                                    );
+                                    if wrap {
+                                        // 下绕：全 CB 重解宽、x 回流位。
+                                        if float_bottom > child.y {
+                                            child.y = float_bottom;
+                                        }
+                                        child.x = ml;
+                                        child.width = (container_width - margin_h).max(0.0);
+                                        shrink_bfc_content_width(child);
+                                    } else {
+                                        // 旁置钉位（含小负 margin 落 x=0、w=gap）。
+                                        child.x = beside_x;
+                                        child.width = beside_w;
+                                        shrink_bfc_content_width(child);
+                                    }
+                                } else if std::env::var("ZW_BFC_RIGHT_PUSHBELOW").as_deref() != Ok("0")
                                     && is_definite_width
                                     && !has_following_block_sibling[idx]
                                     && !child.is_layout_container
@@ -2963,8 +3107,11 @@ pub(crate) fn adjust_float_positions_with_context(
                                     }
                                     child.x = child.margin_left;
                                 } else {
-                                    // 右浮动：缩小 BFC 元素宽度以不重叠 float 的 margin-box
-                                    let new_width = float_x - child.x;
+                                    // 右浮动：缩小 BFC 元素宽度以不重叠 float 的 margin-box。
+                                    // R5217：float_x 是 float border-box 左缘，§9.5 约束边是
+                                    // margin-box 左缘（001/002 v=0 cells 实证 ref 宽 16 =
+                                    // float_x − margin_l，旧算式给 18 多留 float 左 margin）。
+                                    let new_width = float_x - *float_margin_l - child.x;
                                     child.width = new_width.max(0.0);
                                     shrink_bfc_content_width(child);
                                 }
@@ -2988,7 +3135,7 @@ pub(crate) fn adjust_float_positions_with_context(
                 {
                     let ctop = child.y;
                     let cbottom = child.y + child.height;
-                    for (fdir, fx, fy, fbw, fh, fmr) in inherited_floats.iter() {
+                    for (fdir, fx, fy, fbw, fh, fmr, _fml) in inherited_floats.iter() {
                         let fbottom = fy + fh;
                         // 垂直重叠
                         if !(ctop < fbottom && cbottom > *fy) {
@@ -3279,7 +3426,7 @@ pub(crate) fn adjust_float_positions_with_context(
                 let (cx, cy) = (child.x, child.y);
                 all_floats
                     .iter()
-                    .map(|(d, fx, fy, w, h, mr)| (d.clone(), fx - cx, fy - cy, *w, *h, *mr))
+                    .map(|(d, fx, fy, w, h, mr, fml)| (d.clone(), fx - cx, fy - cy, *w, *h, *mr, *fml))
                     .collect()
             } else {
                 Vec::new()
