@@ -11,6 +11,7 @@ pub mod js_worker;
 mod macos_app;
 mod page_scripts;
 mod paint_export;
+mod query_overrides;
 #[path = "runtime.rs"]
 mod runtime;
 mod sandbox;

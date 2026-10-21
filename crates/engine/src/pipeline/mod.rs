@@ -1542,6 +1542,7 @@ impl RenderPipeline {
             if self.compositor_animations {
                 export_set = Some(crate::animation::compositor_export::export_composable_animations(
                     &self.animation_clock,
+                    &doc,
                     &styles,
                 ));
             }

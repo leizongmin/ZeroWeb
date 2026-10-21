@@ -22,6 +22,8 @@ fn opacity_decl(id: u64, from: f64, to: f64) -> ExportedAnimationDeclaration {
     ExportedAnimationDeclaration {
         animation_id: id,
         element_key: 1,
+        // M2-S2a：换算测试不涉及查询覆盖，选择器候选空（build 侧跳过）。
+        element_selectors: Vec::new(),
         name: "fade".into(),
         duration_s: 1.0,
         delay_s: 0.0,

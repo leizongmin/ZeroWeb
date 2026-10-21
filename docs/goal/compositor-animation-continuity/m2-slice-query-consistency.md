@@ -35,13 +35,15 @@ S1 建立了 compositor 采样：flag 开时合成视觉按共享单调钟推进
 
 ### 2.1 查询一致性（S2a）
 
-**真相源**：renderer `AnimationExportState` 的已发送声明集 + `monotonic_now_ns()`。查询时刻在 renderer 进程内就地求值 `sample_declaration`——与 compositor 同函数（FR-6 等价断言的单一实现）、同钟域，无 IPC。
+**真相源**：renderer `AnimationExportState` 的已发送声明集 + `monotonic_now_ns()`。查询时刻在 renderer 进程内就地求值 `sample_declaration`——与 compositor 同函数（FR-6 等价断言的单一实现）、同钟域，无 IPC。表载体：renderer 进程级 `RwLock<Option<Arc<QueryOverrideTable>>>`（选择器 → 单通道声明，engine 导出规则 5 保证每 (元素, 属性) 至多一条），主线程在 `send_compositor_animation_state` advance 判变成功后整表替换发布，deactivate 同点清空；js worker 线程只读，O(1) 哈希 + 采样。
 
-**挂接点**：engine 定义查询覆盖提供者（engine 域 trait，输入元素标识 + 属性，输出 engine 域可选值；不引 zero-protocol 依赖，类型转换留 renderer——与 S1b「导出面 engine 产出、renderer 转 IPC」的分层一致）。`serialize_computed_property` 对 opacity/transform 先查覆盖，命中则**整体替代**（FR-10：与 compositor「干净基线上采样」镜像，禁止与底层值混合）；未命中走既有级联。
+**挂接点**：engine 定义查询覆盖提供者（进程级 `Arc<dyn Fn(&str, &str) -> Option<String>>` 槽，镜像 `ACTIVE_ADOPTED_CSS` 跨线程模式；输入元素选择器 + 属性名，输出**整体替代**的序列化 CSS 值；不引 zero-protocol 依赖，类型转换留 renderer——与 S1b「导出面 engine 产出、renderer 转 IPC」的分层一致）。`__zw_get_computed_style` 回调顶部先咨询覆盖（命中即返回，先于级联与缓存机制——动画属性零底层计算、缓存不加时间项）；未命中（flag 关 / 属性未导出）回落既有级联路径零干扰（FR-9）。
 
-**transform 计算值口径**：采样值经 `fold_affine` 折叠后序列化为 `matrix(a, b, c, d, e, f)`——查询返回「合成后的实际仿射」，与采样视觉直接对齐；底层非动画路径维持既有函数列表序列化不动（engine `transform_to_css` 与 Chromium resolved matrix 的既有 diverge 不在本切片扩大）。
+**元素身份（实现修正）**：shim 元素代理 `__zwSelector` 来自 `node_entry_json` 的 `unique_selector_for_node`（优先 `#id`/`tag.class`/`tag`，歧义才回落结构路径）——**非纯结构路径**。导出声明携带**双形态选择器候选**（`unique_selector_for_node` + `structural_path_selector` 各一，同串去重），renderer 查询表双键登记、按 gCS 回调传入串直查。跨文档 NodeId 不可比的前提不变；两 doc（renderer 渲染树 / js worker html+mutation 重放视图）分叉窗口内可能 miss → 回落底层值（自洽失败模式，与 compositor 保留旧声明到新帧提交的容忍同型）。
 
-**缓存语义**：gCS 缓存（键 = html/drain_gen/style_version/CSS）继续缓存**底层级联**；覆盖在缓存命中之后、返回之前施加，缓存键不加时间项——非动画属性的缓存行为零变化，动画属性天然每次现算。已知容忍窗口：JS 改动画属性到新声明代际发布之间，查询按旧声明采样（与 compositor 保留旧声明到新帧提交的容忍一致，如实记录）。
+**transform 计算值口径（实现修正）**：采样值（同构函数列表，逐函数插值产物）**直接序列化为函数列表**，不折叠 matrix——engine `transform_to_css` 对非 none transform 返函数列表（spec-correct，已知 Chromium resolved matrix diverge 不扩大），查询覆盖与底层 gCS 惯例一致；compositor 侧的仿射折叠发生在像素应用（`fold_affine`），查询侧不折叠。数字格式镜像 engine `format_num`（3 位舍入、整数无小数点、px/deg 后缀）；opacity 整数无小数点。已知序列化近似：协议 `Scale(sx, None)→(sx, sx)`、`Skew(ax, None)→(ax, 0)` 丢失元数——sx==sy / ay==0 时返单参形（CSS 语义等价，视觉无差）。
+
+**缓存语义**：gCS 缓存（键 = html/drain_gen/style_version/CSS）继续缓存**底层级联**；覆盖咨询在缓存查找**之前**（回调顶部短路），缓存键不加时间项——非动画属性的缓存行为零变化，动画属性天然每次现算。已知容忍窗口：JS 改动画属性到新声明代际发布之间，查询按旧声明采样（与 compositor 保留旧声明到新帧提交的容忍一致，如实记录）。
 
 ### 2.2 结束事件（S2b）
 
@@ -61,7 +63,7 @@ S1 建立了 compositor 采样：flag 开时合成视觉按共享单调钟推进
 
 | 步 | 触点 | 新增 IPC |
 |---|---|---|
-| S2a | engine `js_dom_bridge/computed_style{,_cache}.rs` + 查询 provider trait；renderer `runtime.rs`（AnimationExportState 查询面）+ provider 实现 | 无 |
+| S2a | engine `js_dom_bridge/computed_style_cache.rs`（provider 槽）+ `callbacks.rs`（回调顶部咨询）+ `js_dom_bridge.rs`（`structural_path_selector` pub(crate)）+ `animation/compositor_export.rs`（声明加 `element_selectors` 双形态）；renderer 新 `query_overrides.rs`（表+采样+序列化）+ `runtime.rs`（发布/清空/注册接线） | 无 |
 | S2b | renderer `runtime.rs`/`page_scripts.rs`（终结检查+派发）；protocol `message.rs` 追加 `NotifyAnimationsSettled`；browser `process_backend.rs`（翻转→唤醒） | `NotifyAnimationsSettled { tab 序语义沿用现有路由 }`（末尾追加） |
 | S2c | fixture COMP-02 + observe/analyze 扩展 + 证据目录 | 无 |
 
@@ -72,7 +74,7 @@ S1 建立了 compositor 采样：flag 开时合成视觉按共享单调钟推进
 | 项 | 性质 | 说明 |
 |---|---|---|
 | 查询时刻与最近合成帧的相位容差 | Assumption | 同钟同采样器下偏差 = Get 往返 + 调度抖动（实测中位 13-17ms 采样节奏）；COMP-02 断言用相位区间而非逐帧相等 |
-| engine 查询 provider 的元素标识可从 gCS 回调内部取得 | Assumption（源码线索） | 回调按 selector 解析后引擎内部有元素身份（inline-override 链路已按元素回放）；S2a 落地时核实 selector→多元素命中的覆盖语义（首命中即文档序首个，与级联一致） |
+| engine 查询 provider 的元素标识可从 gCS 回调内部取得 | **已核实（S2a 落地）** | 回调收到的就是 shim `__zwSelector` 串（`unique_selector_for_node` 同源产物）；导出侧双形态选择器候选 + 表双键登记直查命中（§2.1 元素身份） |
 | `NotifyAnimationsSettled` 与 renderer 忙窗竞态 | Assumption | 消息在 IPC 队列排队，忙窗结束后被处理，与惰性检查幂等叠加 |
 | cubic-bezier/steps 参数化 easing | Open | S1 枚举族沿用；COMP-02 fixture 用 linear/ease 族保持导出域内，参数化按需扩展 |
 | CSSAnimation 对象面（currentTime/playState/getAnimations 覆盖 CSS 动画） | Open（范围裁剪） | 新 API 面，独立切片评估；WAAPI shim 既有语义不动（WPT web-animations 套件钉住） |

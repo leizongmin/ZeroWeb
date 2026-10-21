@@ -1594,6 +1594,12 @@ pub fn register_dom_callbacks(
             }
             let sel = &args[0];
             let prop = &args[1];
+            // M2-S2a：动画查询覆盖先于级联与缓存（整体替代——与 compositor「干净基线上
+            // 采样」镜像，RFC §2.1）。命中即返回采样值（动画属性零底层计算）；未命中
+            // （flag 关 / 属性未导出）回落既有级联路径零干扰。
+            if let Some(value) = super::computed_style_cache::query_style_override(sel, prop) {
+                return value;
+            }
             let snap = html.lock().unwrap_or_else(|e| e.into_inner());
             // R3030：style_version = mutations.len()（脚本内单调递增，单调反映 inline style 变更）。
             // 与快照一同作 cache key：任一变化 → 重算时把 inline style mutation 子集顺序 apply 到

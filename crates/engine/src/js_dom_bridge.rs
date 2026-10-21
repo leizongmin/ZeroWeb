@@ -653,7 +653,8 @@ fn element_child_index(doc: &Document, parent: NodeId, node: NodeId) -> Option<u
 /// 构造 nth-child 结构路径选择器：node→root 每层 `tag:nth-child(pos)`，用 `>` 连接。
 /// 始终唯一（每层 pin 一个具体 sibling 位置）。根元素（`<html>`）用 `:nth-child(1)`
 /// （与 `compute_element_position` 对根置 child_index=1 一致）。
-fn structural_path_selector(doc: &Document, node: NodeId) -> Option<String> {
+/// M2-S2a 起导出侧复用（`compositor_export` 元素路径），跨 crate 可见。
+pub(crate) fn structural_path_selector(doc: &Document, node: NodeId) -> Option<String> {
     let mut segments: Vec<String> = Vec::new();
     let mut cur = node;
     loop {

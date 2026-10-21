@@ -145,6 +145,33 @@ pub(crate) fn active_adopted_css() -> Arc<str> {
         .unwrap_or_else(|_| Arc::from(""))
 }
 
+/// M2-S2a 查询覆盖提供者槽（goal compositor-animation-continuity，RFC
+/// `docs/goal/compositor-animation-continuity/m2-slice-query-consistency.md` §2.1）：
+/// flag 开启且动画经 compositor 采样时，`getComputedStyle` 对已导出通道返回与合成
+/// 视觉一致的采样值。engine 不引 zero-protocol 依赖——提供者由 renderer 以
+/// `Arc<dyn Fn>` 注册（输入元素结构路径 + 属性名，输出**整体替代**的序列化 CSS 值；
+/// 与 compositor「干净基线上采样」镜像，禁止与底层级联混合）。未注册（flag 关）
+/// 时查询路径行为与现状逐字节一致（S2 FR-9 回滚纪律）。
+type QueryStyleOverrideFn = dyn Fn(&str, &str) -> Option<String> + Send + Sync;
+
+static QUERY_STYLE_OVERRIDE: LazyLock<RwLock<Option<Arc<QueryStyleOverrideFn>>>> = LazyLock::new(|| RwLock::new(None));
+
+/// renderer 侧装填/撤除查询覆盖提供者（`None` = 撤除：deactivate、导航换代清表、
+/// flag 关初始化）。进程级槽——renderer 线程写、js worker gCS 回调线程读，
+/// 与 [`ACTIVE_ADOPTED_CSS`] 同型跨线程可见模式。
+pub fn set_query_style_override_provider(provider: Option<Arc<QueryStyleOverrideFn>>) {
+    if let Ok(mut slot) = QUERY_STYLE_OVERRIDE.write() {
+        *slot = provider;
+    }
+}
+
+/// gCS 回调顶部咨询：命中返回采样值（先于级联与缓存机制——动画属性零底层计算），
+/// 未命中 `None` 回落既有级联路径零干扰。
+pub(crate) fn query_style_override(selector: &str, property: &str) -> Option<String> {
+    let provider = QUERY_STYLE_OVERRIDE.read().ok().and_then(|slot| slot.clone())?;
+    provider(selector, property)
+}
+
 /// gCS 合成源消费点读取当前代外部 CSS。`Arc` 克隆——持有跨 collect 过程，避免
 /// 借用跨 re-entrant 调用（collect 内部无回流，防御性约束与代际槽 `f` 契约同向）。
 pub(crate) fn active_external_css() -> Arc<str> {

@@ -37,7 +37,7 @@ use zero_css_parser::values::{
     AnimationDirectionValue, AnimationFillModeValue, TimingFunctionValue, TransformFunction, TransformValue,
     parse_transform,
 };
-use zero_dom::NodeId;
+use zero_dom::{Document, NodeId};
 use zero_style_system::{ComputedStyle, MixBlendModeComputedValue};
 
 use super::{AnimationClock, AnimationConfig, KeyframePoint};
@@ -80,6 +80,13 @@ pub struct ExportedAnimationDeclaration {
     pub animation_id: u64,
     /// 元素 key（NodeId::as_ffi，诊断用）。
     pub element_key: u64,
+    /// M2-S2a：元素选择器候选（gCS 查询覆盖的元素身份——跨文档 NodeId 不可比，
+    /// renderer 查询侧按选择器串哈希查表）。**双形态**：`unique_selector_for_node`
+    /// 产出（`#id`/`tag.class`/`tag`/结构路径回落——shim 元素代理 `__zwSelector`
+    /// 即此函数同源产物，gCS 回调传入串直查命中）+ `structural_path_selector`
+    /// 产出（恒唯一的结构路径，兜 proxy 持捕获期位置路径的读取面）。导出时 doc
+    /// 已知非空；空 Vec 仅为测试构造便利保留。
+    pub element_selectors: Vec<String>,
     /// @keyframes 名称。
     pub name: String,
     /// 单次迭代时长（秒，engine `AnimationState.duration` 已 clamp ≥ 0.001）。
@@ -191,9 +198,10 @@ fn animation_id(element_key: u64, name: &str, property: ExportedProperty) -> u64
 /// `clock` 只读 @keyframes 注册表（边界补齐镜像 `start_animation_with_underlying`
 /// 的 clone+resolve 序列，不启动动画——启动仍由静态求值在 clone 时钟上进行）。
 /// 同名 animation-name 重复声明只分类一次（引擎 `start_from_computed_style`
-/// 已活跃跳过的同帧镜像）。
+/// 已活跃跳过的同帧镜像）。`doc` 供 M2-S2a 元素结构路径计算（gCS 查询覆盖身份）。
 pub fn export_composable_animations(
     clock: &AnimationClock,
+    doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
 ) -> ExportedAnimationSet {
     let mut set = ExportedAnimationSet::default();
@@ -202,6 +210,7 @@ pub fn export_composable_animations(
             continue;
         }
         let element_key = node_id.data().as_ffi();
+        let element_selectors = element_selectors(doc, *node_id);
         let mut seen = HashSet::new();
         for (idx, name) in style.animation_name.iter().enumerate() {
             if name.is_empty() || name == "none" || !seen.insert(name.clone()) {
@@ -231,12 +240,27 @@ pub fn export_composable_animations(
                 // t=0 求值域：导出声明的时钟域 start 恒 0（`start_time_s`）。
                 current_time: 0.0,
             };
-            export_one(&mut set, clock, style, element_key, &config);
+            export_one(&mut set, clock, style, element_key, element_selectors.clone(), &config);
         }
     }
     // 跨帧稳定序（renderer 代际比较按 Vec 相等；HashMap 遍历序不定）。
     set.declarations.sort_by_key(|d| d.animation_id);
     set
+}
+
+/// 元素选择器候选（双形态，见 [`ExportedAnimationDeclaration::element_selectors`]）：
+/// unique 形态在前，结构路径兜底；同串去重（unique 回落即结构路径时单键）。
+fn element_selectors(doc: &Document, node: NodeId) -> Vec<String> {
+    let mut out = Vec::with_capacity(2);
+    if let Some(sel) = crate::js_dom_bridge::unique_selector_for_node(doc, node) {
+        out.push(sel);
+    }
+    if let Some(path) = crate::js_dom_bridge::structural_path_selector(doc, node)
+        && out.last() != Some(&path)
+    {
+        out.push(path);
+    }
+    out
 }
 
 /// 单动画分类导出（规则 1-6；任一规则不过即放弃，不留半导出状态）。
@@ -245,6 +269,7 @@ fn export_one(
     clock: &AnimationClock,
     style: &ComputedStyle,
     element_key: u64,
+    element_selectors: Vec<String>,
     config: &AnimationConfig,
 ) {
     // 规则 6：t=0 已结束（负 delay 越过末轮；engine tick 结束分支烘焙终帧，不走合成域）。
@@ -311,6 +336,7 @@ fn export_one(
         set.declarations.push(ExportedAnimationDeclaration {
             animation_id: id,
             element_key,
+            element_selectors: element_selectors.clone(),
             name: config.name.clone(),
             duration_s: config.duration.max(0.001),
             delay_s: config.delay,
@@ -487,7 +513,7 @@ mod tests {
         let element_key = nid.data().as_ffi();
         let mut styles = HashMap::new();
         styles.insert(nid, style.clone());
-        (export_composable_animations(clock, &styles), element_key)
+        (export_composable_animations(clock, &doc, &styles), element_key)
     }
 
     fn style_with_animation(name: &str, duration: f64, delay: f64) -> ComputedStyle {
@@ -530,6 +556,30 @@ mod tests {
         assert!(set.skips_property(key, "opacity"));
         assert!(!set.skips_property(key, "transform"));
         assert!(!set.skips_property(key, "translate"));
+    }
+
+    #[test]
+    fn exported_declaration_carries_dual_form_element_selectors() {
+        // M2-S2a：元素选择器候选双形态——unique 形态（`#id`，shim `__zwSelector`
+        // 主形态，gCS 回调传入串直查命中）+ 结构路径兜底（恒唯一）。
+        let clock = registry_clock(vec![(
+            "fade",
+            vec![(0.0, &[("opacity", "0.0")]), (1.0, &[("opacity", "1.0")])],
+        )]);
+        let doc = parse_html("<html><body><div id=\"box\"></div></body></html>");
+        let nid = doc.query_selector(doc.root(), "#box").expect("box in fixture");
+        let mut styles = HashMap::new();
+        let style = style_with_animation("fade", 1.0, 0.0);
+        styles.insert(nid, style);
+        let set = export_composable_animations(&clock, &doc, &styles);
+        assert_eq!(set.declarations.len(), 1);
+        assert_eq!(
+            set.declarations[0].element_selectors,
+            vec![
+                "#box".to_string(),
+                "html:nth-child(1) > body:nth-child(2) > div:nth-child(1)".to_string(),
+            ]
+        );
     }
 
     #[test]

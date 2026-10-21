@@ -542,6 +542,12 @@ impl RendererRuntime {
         webview.set_compositor_animations(
             compositor_animations_enabled() && frame_publish_mode == FramePublishMode::Compositor,
         );
+        // M2-S2a：flag 开启时注册 gCS 查询覆盖 provider（进程级一次性；表随声明代际
+        // 发布，未发布/清空时 provider 恒 None → 查询零干扰）。flag 关不注册（FR-9：
+        // 查询路径零注入）。
+        if compositor_animations_enabled() {
+            crate::query_overrides::register_provider();
+        }
         // M2c 后续（镜像 browser tab_worker）：播放器注册表注入 js_worker——
         // `__zwVideoBridge` 宿主桥（多进程路径媒体播放真值面；async_load settle 写入
         // 与桥读取同一 Arc 实例）。
@@ -1011,6 +1017,8 @@ impl RendererRuntime {
         // 退出导出域（flag 关 / Legacy 模式）：发过才需要清理，否则零消息。
         if !self.compositor_animations_active() {
             if self.animation_export.deactivate() {
+                // M2-S2a：退出导出域（flag 关 / Legacy 模式）同点清查询覆盖表。
+                crate::query_overrides::clear_overrides();
                 tracing::debug!(
                     "renderer: animation state 清理发送（退出导出域）generation={}",
                     self.animation_export.generation
@@ -1026,24 +1034,28 @@ impl RendererRuntime {
             }
             return Ok(());
         }
-        let Some(declarations) =
-            self.animation_export
-                .advance(self.navigation_epoch, monotonic_now_ns(), &declarations)
+        let Some(converted) = self
+            .animation_export
+            .advance(self.navigation_epoch, monotonic_now_ns(), &declarations)
         else {
             return Ok(());
         };
+        // M2-S2a：查询覆盖表随声明代际发布（gCS 采样真相源 = 本声明集 + 共享单调钟，
+        // RFC §2.1）。advance 判变才到达此处——表内容与已发送声明集恒一致；导航换代
+        // 重置代际后新页声明在此发布，旧表被整表替换（路径键跨页残留不可能）。
+        crate::query_overrides::publish_declarations(&declarations, &converted);
         // M2-S1e：声明集每次变化都记 debug（含空集清理）——DC-1 负载窗 keep-alive
         // 断续归因的直接证据（S1b 边界：budget/泵路径不导出，集合 2→0 变化在此显形）。
         tracing::debug!(
             "renderer: animation state 发送 declarations={} generation={}",
-            declarations.len(),
+            converted.len(),
             self.animation_export.generation
         );
         let params = CompositorAnimationStateParams {
             surface_id: self.frame_publish.surface_id,
             navigation_epoch: self.navigation_epoch,
             generation: self.animation_export.generation,
-            declarations,
+            declarations: converted,
             finished: Vec::new(),
         };
         self.send_regular(IpcMessageKind::CompositorAnimationState(params))
