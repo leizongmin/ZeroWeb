@@ -143,6 +143,10 @@ enum WorkerCommand {
         navigation_epoch: u64,
         payloads: Vec<zero_protocol::paint_snapshot::IpcImagePayload>,
     },
+    /// M2-S1c（compositor-animation-continuity）：动画声明状态中继。与帧/批独立
+    /// 排队、仅同类同 surface 原地替换（协议「最新生效全量替换」契约）；发送方
+    /// fire-and-forget，compositor 静默消费不回执。
+    AnimationState(zero_protocol::animation::CompositorAnimationStateParams),
     UiFrame {
         surface_id: u64,
         width: u32,
@@ -168,6 +172,7 @@ impl WorkerCommand {
             Self::UiFrame { surface_id, .. } => *surface_id,
             Self::FetchPresent { page_surface_id, .. } => *page_surface_id,
             Self::ImagePayloadBatch { surface_id, .. } => *surface_id,
+            Self::AnimationState(state) => state.surface_id,
         }
     }
 }
@@ -228,6 +233,11 @@ impl CommandChannel {
             navigation_epoch,
             payloads,
         })
+    }
+
+    /// M2-S1c：动画声明状态入队（同 surface 最新生效替换，普通命令语义）。
+    fn send_animation_state(&self, state: zero_protocol::animation::CompositorAnimationStateParams) -> bool {
+        self.send(WorkerCommand::AnimationState(state))
     }
 
     fn release_surface(&self, surface_id: u64) -> bool {
@@ -295,8 +305,33 @@ impl CommandChannel {
                 });
                 state.pending.remove(index);
             }
+        } else if matches!(command, WorkerCommand::AnimationState(_))
+            && let Some(index) = state.pending.iter().position(|pending| {
+                matches!(pending, WorkerCommand::AnimationState(existing) if existing.surface_id == surface_id)
+            })
+        {
+            // M2-S1c：声明状态与帧/批互不替换（帧吞声明会让 compositor 停在旧
+            // 代际、声明吞帧会丢画面），仅同类同 surface 原地替换（最新生效契约，
+            // 不增队列长度）。
+            state.pending[index] = command;
+            self.ready.notify_one();
+            return true;
+        } else if matches!(command, WorkerCommand::AnimationState(_)) {
+            // 新 surface 的声明状态独立入队、不替换其他命令；满时与批同款优先
+            // 逐出最旧帧。
+            if state.pending.len() == self.capacity {
+                let index = oldest_frame_index(&state).unwrap_or_else(|| {
+                    tracing::warn!("compositor 命令队列满且无帧可逐：丢弃最旧动画声明（下代际声明自愈）");
+                    0
+                });
+                state.pending.remove(index);
+            }
         } else if let Some(index) = state.pending.iter().position(|pending| {
-            pending.surface_id() == surface_id && !matches!(pending, WorkerCommand::ImagePayloadBatch { .. })
+            pending.surface_id() == surface_id
+                && !matches!(
+                    pending,
+                    WorkerCommand::ImagePayloadBatch { .. } | WorkerCommand::AnimationState(_)
+                )
         }) {
             state.pending.remove(index);
         } else if state.pending.len() == self.capacity {
@@ -559,6 +594,14 @@ impl Client {
             return;
         }
         let _ = self.commands.send_image_batch(surface_id, navigation_epoch, payloads);
+    }
+
+    /// M2-S1c：动画声明状态中继（fire-and-forget，compositor 不回执）。
+    fn send_animation_state(&self, state: zero_protocol::animation::CompositorAnimationStateParams) {
+        if self.status.load() == CompositorStatus::Disconnected {
+            return;
+        }
+        let _ = self.commands.send_animation_state(state);
     }
 
     fn release_surface(&self, surface_id: u64) {
@@ -896,6 +939,15 @@ fn process_batch(
                 })?;
                 outstanding.insert(message_id, ExpectedResponse::Batch);
             }
+            WorkerCommand::AnimationState(state) => {
+                // M2-S1c：声明状态中继 fire-and-forget——compositor 静默消费不回执，
+                // 不入 outstanding（任何回执都会被判响应 id 错位断链）。消息体小，
+                // 不受「双向大帧背压」约束（见循环尾注）。
+                transport.send(IpcMessage {
+                    id: message_id,
+                    kind: IpcMessageKind::CompositorAnimationState(state),
+                })?;
+            }
             WorkerCommand::SetScroll {
                 surface_id,
                 navigation_epoch,
@@ -1204,6 +1256,14 @@ pub fn forward_image_batch(
         .send_image_batch(surface_id, navigation_epoch, payloads);
 }
 
+/// M2-S1c（compositor-animation-continuity）：把 renderer 的动画声明状态中继给
+/// compositor 进程。与帧/批走同一命令通道 FIFO；fire-and-forget——compositor
+/// 静默消费不回执，等待回执会因响应 id 错位断链。
+pub fn forward_animation_state(state: zero_protocol::animation::CompositorAnimationStateParams) {
+    let mut client = CLIENT.lock().unwrap_or_else(|error| error.into_inner());
+    client.get_or_insert_with(Client::start).send_animation_state(state);
+}
+
 /// 非阻塞读取指定 surface 的最新完成位图。
 ///
 /// 仅返回相同 `navigation_epoch` 且帧序号不小于 `frame_id` 的缓存，结果格式为
@@ -1435,6 +1495,7 @@ mod tests {
                 scroll_y: 0.0,
                 gpu_image: None,
                 present_authoritative: false,
+                animations_active: false,
             },
         }
     }
@@ -1599,6 +1660,74 @@ mod tests {
             &drained[1],
             WorkerCommand::Frame(frame) if frame.surface_id == 3
         ));
+    }
+
+    fn animation_state(surface_id: u64, generation: u64) -> zero_protocol::animation::CompositorAnimationStateParams {
+        zero_protocol::animation::CompositorAnimationStateParams {
+            surface_id,
+            navigation_epoch: 1,
+            generation,
+            declarations: Vec::new(),
+            finished: Vec::new(),
+        }
+    }
+
+    /// M2-S1c：动画声明状态同类同 surface 最新生效原地替换（协议契约）；与帧
+    /// 互不替换、保持 FIFO。
+    #[test]
+    fn animation_state_is_latest_wins_per_surface_and_fifo_with_frames() {
+        let commands = CommandChannel::new(4);
+        assert!(commands.send_animation_state(animation_state(7, 1)));
+        assert!(commands.send_frame(pending(7, 1, 1)));
+        assert!(commands.send_animation_state(animation_state(7, 2)));
+        let drained = commands.recv().unwrap();
+        assert_eq!(drained.len(), 2);
+        assert!(
+            matches!(&drained[0], WorkerCommand::AnimationState(state) if state.generation == 2),
+            "旧代际被新代际原地替换"
+        );
+        assert!(matches!(&drained[1], WorkerCommand::Frame(frame) if frame.frame_id == 1));
+
+        // 反向：帧不被声明替换（跨类互吞会让 compositor 停在旧代际 / 丢画面）。
+        assert!(commands.send_frame(pending(7, 1, 2)));
+        assert!(commands.send_animation_state(animation_state(7, 4)));
+        let drained = commands.recv().unwrap();
+        assert_eq!(drained.len(), 2);
+        assert!(matches!(&drained[0], WorkerCommand::Frame(frame) if frame.frame_id == 2));
+        assert!(matches!(&drained[1], WorkerCommand::AnimationState(state) if state.generation == 4));
+    }
+
+    /// M2-S1c：声明状态中继 fire-and-forget——compositor 静默消费不回执；同批
+    /// 后续命令的响应仍按 id 正确匹配，不因无回执消息错位断链。
+    #[test]
+    fn animation_state_relay_is_fire_and_forget() {
+        let sent = Arc::new(Mutex::new(Vec::new()));
+        let mut transport = ScriptedTransport {
+            sent: Arc::clone(&sent),
+            // 唯一响应属于 ReleaseSurface（id 2）；若 AnimationState 等回执会在此错位。
+            responses: VecDeque::from([Ok(IpcMessage {
+                id: 2,
+                kind: IpcMessageKind::Ok,
+            })]),
+        };
+        let mut next_message_id = 1;
+        process_batch(
+            &mut transport,
+            vec![
+                WorkerCommand::AnimationState(animation_state(7, 3)),
+                WorkerCommand::ReleaseSurface(7),
+            ],
+            &CompletedFrameChannel::new(1),
+            &PresentFrameChannel::new(),
+            &mut next_message_id,
+            &frame_watchdog(),
+        )
+        .expect("fire-and-forget 中继不得断链");
+
+        let sent = sent.lock().unwrap();
+        assert_eq!(sent.len(), 2);
+        assert!(matches!(&sent[0].kind, IpcMessageKind::CompositorAnimationState(_)));
+        assert!(matches!(sent[1].kind, IpcMessageKind::ReleaseCompositorSurface { .. }));
     }
 
     #[test]

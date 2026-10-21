@@ -230,6 +230,11 @@ pub enum IpcMessageKind {
         /// present 帧是否为 compositor 权威输出（RFC 4.4-S4）。
         #[serde(default)]
         present_authoritative: bool,
+        /// M2-S1c（compositor-animation-continuity）：该 surface 是否仍有未完成的
+        /// 可合成动画（flag 关/无声明/全部结束为 false）。浏览器据此保持 Get 轮询
+        /// 节奏（S1d）；旧 peer 反序列化缺省 false，行为不变。
+        #[serde(default)]
+        animations_active: bool,
     },
 
     // ── 存储请求（渲染→浏览器→存储）──

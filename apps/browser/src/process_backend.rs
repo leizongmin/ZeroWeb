@@ -531,6 +531,11 @@ impl ProcessTabBackend {
                 crate::paint_ipc::apply_paint_snapshot(snap, (*paint).clone());
                 crate::compositor_client::forward_frame(surface_id, navigation_epoch, frame_id, *paint);
             }
+            IpcMessageKind::CompositorAnimationState(params) => {
+                // M2-S1c：动画声明状态中继给 compositor（fire-and-forget，无回执；
+                // stale epoch / 代际由 compositor 最新生效语义裁决）。
+                crate::compositor_client::forward_animation_state(params);
+            }
             _ => {}
         }
     }

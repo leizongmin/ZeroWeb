@@ -16,6 +16,7 @@ use zero_render_foundation::display_list::DisplayList;
 use zero_render_foundation::font::{FontLoader, GlyphCache};
 use zero_render_foundation::rendering_thread::{RenderingThread, render_threading_enabled};
 
+mod animation_overrides;
 mod font_resources;
 mod frame_dump;
 mod gpu_raster;
@@ -61,6 +62,13 @@ struct SurfaceState {
     /// dma-buf 导出仅在此时允许：预热窗口内的 CPU 帧之后，收编完成的 wgpu 上下文
     /// 纹理仍是未渲染的 1x1 空白，无此门控会以该帧 frame_id 冒充导出空白帧（t9 F1）。
     frame_gpu_rasterized: bool,
+    /// Get 路径 CPU 重采样（滚动/动画）后 front 缓冲比最近一次 GPU 提交新——
+    /// GPU 纹理仍是提交时基线，dma-buf 导出会以过期纹理冒充当前帧；置位期间
+    /// 回落 Rgba/shm 交付，提交时清除。
+    front_cpu_resampled: bool,
+    /// M2-S1c：上一次 Get 采样判定的动画活跃标志。全部动画在两次 Get 之间结束时，
+    /// 仍须再走一次基线重光栅（fill none 结束态 = 基线），之后停止。
+    animations_active: bool,
 }
 
 struct UiSurfaceState {
@@ -126,6 +134,48 @@ fn drain_pending_image_batches(
     }
 }
 
+/// M2-S1c：动画声明状态最新生效存储（协议契约：每 (surface, epoch) 以 generation
+/// 单调替换；旧 epoch / 旧代际丢弃；surface 释放随清，epoch 推进在帧提交处清理）。
+/// 独立于 `SurfaceState`：声明可能先于其首个帧到达（帧惰性建 surface），Get 时
+/// 再按 `navigation_epoch` 与 surface 对齐。
+fn store_animation_state(
+    states: &mut HashMap<u64, zero_protocol::animation::CompositorAnimationStateParams>,
+    params: zero_protocol::animation::CompositorAnimationStateParams,
+) {
+    match states.get(&params.surface_id) {
+        Some(existing)
+            if (existing.navigation_epoch, existing.generation) >= (params.navigation_epoch, params.generation) =>
+        {
+            tracing::debug!(
+                "compositor: 丢弃 stale 动画声明 surface {} epoch/gen {}/{} ≤ 当前 {}/{}",
+                params.surface_id,
+                params.navigation_epoch,
+                params.generation,
+                existing.navigation_epoch,
+                existing.generation
+            );
+        }
+        _ => {
+            states.insert(params.surface_id, params);
+        }
+    }
+}
+
+/// M2-S1c：帧提交推进 epoch 后清理跨代声明（同 `surface.paint` 生命周期；新
+/// epoch 的声明由 renderer 状态消息随后重发，Get 侧另有同 epoch 校验兜底）。
+fn cleanup_stale_animation_state(
+    states: &mut HashMap<u64, zero_protocol::animation::CompositorAnimationStateParams>,
+    surface_id: u64,
+    navigation_epoch: u64,
+) {
+    if states
+        .get(&surface_id)
+        .is_some_and(|state| state.navigation_epoch != navigation_epoch)
+    {
+        states.remove(&surface_id);
+    }
+}
+
 /// Runs the compositor role until its IPC peer disconnects.
 ///
 /// The platform bootstrap owns logging and selects a transport. Desktop uses
@@ -139,6 +189,9 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
     // 队列独立于 SurfaceState 按 surface_id 收批；帧到达时按 epoch 注入后清空。
     let mut pending_image_batches: HashMap<u64, Vec<(u64, Vec<zero_protocol::paint_snapshot::IpcImagePayload>)>> =
         HashMap::new();
+    // M2-S1c：surface 动画声明最新状态（renderer → browser → compositor，同一
+    // FIFO 到达；最新生效全量替换，见 store_animation_state / 生命周期注释）。
+    let mut animation_states: HashMap<u64, zero_protocol::animation::CompositorAnimationStateParams> = HashMap::new();
     let mut ui_surfaces: HashMap<u64, UiSurfaceState> = HashMap::new();
     let mut window_surface: Option<zero_protocol::CompositorWindowSurfaceInfo> = None;
     let base_fonts = Arc::new(load_compositor_fonts());
@@ -271,6 +324,8 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                     image_cache: zero_render_foundation::image_cache::ImageCache::new(2048, 256 * 1024 * 1024),
                     fonts: zero_paint_convert::fonts::PaintFonts::new(base_fonts.clone()),
                     frame_gpu_rasterized: false,
+                    front_cpu_resampled: false,
+                    animations_active: false,
                 });
                 if surface.navigation_epoch != navigation_epoch {
                     surface.image_cache.clear();
@@ -393,6 +448,12 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                 surface.navigation_epoch = navigation_epoch;
                 surface.frame_id = frame_id;
                 surface.frame_gpu_rasterized = gpu_rasterized;
+                // front 已被本次提交刷新（GPU 纹理同步渲染），Get 路径的 CPU 重采样
+                // 过期标志随之解除。
+                surface.front_cpu_resampled = false;
+                // M2-S1c：epoch 变更清旧声明（同 surface.paint 生命周期；新 epoch 的
+                // 声明由 renderer 状态消息随后重发）。Get 侧另有同 epoch 校验兜底。
+                cleanup_stale_animation_state(&mut animation_states, surface_id, navigation_epoch);
                 surface.rasterized_scroll_x = surface.scroll_x;
                 surface.rasterized_scroll_y = surface.scroll_y;
                 surface.paint = Some(*paint);
@@ -435,20 +496,52 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                 // dma-buf 导出（RFC 4.3-S5）仅 Linux；非 Linux 上无此通道
                 #[cfg(target_os = "linux")]
                 let mut fd_publish: Option<zero_protocol::CompositorFrameDelivery> = None;
+                // M2-S1c：本 surface 是否仍有未完成可合成动画（响应 animations_active，
+                // 浏览器 S1d 据此保持 Get 轮询）。
+                let mut response_animations_active = false;
                 let (response_epoch, response_frame, width, height, rgba, shm_name, scroll_x, scroll_y, gpu_image) =
                     match surfaces.get_mut(&surface_id) {
                         Some(surface) => {
-                            if zero_protocol::compositor_scroll_transform_enabled()
+                            // M2-S1c：动画采样判定（flag 开 + 同 epoch 声明 + 未完成动画；
+                            // 上次 Get 活跃也计入——全部动画在两次 Get 之间结束时，仍须
+                            // 一次基线重光栅恢复 fill none 结束态，之后停止）。
+                            let now_monotonic_ns = zero_protocol::monotonic_now_ns();
+                            // RFC §2.4：flag 开启才采样（FR-3 flag 关零行为变化；renderer
+                            // 导出侧同 flag 门控，正常无声明到达，此处兜底双保险）。
+                            let animation_state = if zero_protocol::compositor_animations_enabled() {
+                                animation_states.get(&surface_id).filter(|state| {
+                                    state.navigation_epoch == surface.navigation_epoch && !state.declarations.is_empty()
+                                })
+                            } else {
+                                None
+                            };
+                            let now_active = animation_state.is_some_and(|state| {
+                                animation_overrides::has_active_animations(&state.declarations, now_monotonic_ns)
+                            });
+                            let anim_dirty = now_active || surface.animations_active;
+                            let scroll_dirty = zero_protocol::compositor_scroll_transform_enabled()
                                 && (surface.rasterized_scroll_x != surface.scroll_x
-                                    || surface.rasterized_scroll_y != surface.scroll_y)
+                                    || surface.rasterized_scroll_y != surface.scroll_y);
+                            if (scroll_dirty || anim_dirty)
                                 && let Some(paint) = surface.paint.clone()
                             {
-                                let scale = rasterize::device_scale_factor(&paint);
-                                let mut viewport_paint = scroll_transform::paint_for_viewport(
-                                    &paint,
-                                    surface.scroll_x / scale,
-                                    surface.scroll_y / scale,
-                                );
+                                // RFC §2.4：先动画后滚动，均在同一 clone 上；采样只改
+                                // clone，surface.paint 基线不动。
+                                let mut viewport_paint = if anim_dirty && let Some(state) = animation_state {
+                                    let mut sampled = paint;
+                                    animation_overrides::apply(&mut sampled, &state.declarations, now_monotonic_ns);
+                                    sampled
+                                } else {
+                                    paint
+                                };
+                                if scroll_dirty {
+                                    let scale = rasterize::device_scale_factor(&viewport_paint);
+                                    viewport_paint = scroll_transform::paint_for_viewport(
+                                        &viewport_paint,
+                                        surface.scroll_x / scale,
+                                        surface.scroll_y / scale,
+                                    );
+                                }
                                 let namespace = surface.fonts.has_downloaded_fonts().then_some((
                                     surface_id,
                                     surface.navigation_epoch,
@@ -465,7 +558,8 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                                 );
                                 surface.fonts.remap(&mut viewport_paint);
                                 let primitives = zero_paint_convert::to_render_primitives(viewport_paint.clone());
-                                // 滚动后的可见区与旧 back buffer 没有可复用的坐标关系；全量重绘。
+                                // 重采样视区与旧 back buffer 没有可复用的坐标关系；全量重绘
+                                //（动画/滚动 clone 均携带全视口脏区，走 is_full_viewport 全量）。
                                 rasterize::rasterize_into_back(
                                     &viewport_paint,
                                     &primitives,
@@ -479,7 +573,10 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                                 surface.backing.swap();
                                 surface.rasterized_scroll_x = surface.scroll_x;
                                 surface.rasterized_scroll_y = surface.scroll_y;
+                                surface.front_cpu_resampled = true;
                             }
+                            surface.animations_active = now_active;
+                            response_animations_active = now_active;
                             let front = surface.backing.front();
                             // 返回此位图已烘焙的文档偏移。Browser 用它计算仍在
                             // 飞行中的本地滚动差值，避免滚动条和页面像素脱节。
@@ -497,6 +594,9 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                                     // GPU 纹理可能仍是未渲染的 1x1 空白（最近一帧走了 CPU），
                                     // 此时回落 Rgba 交付，不得以旧 frame_id 冒充导出。
                                     && surface.frame_gpu_rasterized
+                                    // M2-S1c：Get 路径 CPU 重采样（滚动/动画）后 front 比
+                                    // GPU 纹理新（仍是提交时基线），同样不得冒充导出。
+                                    && !surface.front_cpu_resampled
                                     && let Some(gpu) = gpu_renderer.as_ref()
                                     && let Ok(exported) = zero_render_foundation::gpu::try_export_headless(gpu)
                                 {
@@ -571,6 +671,7 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                         scroll_y,
                         gpu_image,
                         present_authoritative: false,
+                        animations_active: response_animations_active,
                     },
                 };
                 if let Err(e) = transport.send(resp) {
@@ -620,9 +721,16 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                     payloads.len()
                 );
             }
+            IpcMessageKind::CompositorAnimationState(params) => {
+                // M2-S1c：动画声明状态（renderer → browser → compositor 中继）。
+                // 静默消费、**不回执**——浏览器侧该命令 fire-and-forget、无响应
+                // 匹配项，任何回执都会作为下一条命令的响应被判 id 错位致链路断连。
+                store_animation_state(&mut animation_states, params);
+            }
             IpcMessageKind::ReleaseCompositorSurface { surface_id } => {
                 // 挂起批随 surface 一起清理，避免 tab 关闭后像素滞留。
                 pending_image_batches.remove(&surface_id);
+                animation_states.remove(&surface_id);
                 if font_namespace.is_some_and(|(id, _, _)| id == surface_id) {
                     font_resources::activate(
                         None,
@@ -788,6 +896,7 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                         scroll_y: 0.0,
                         gpu_image,
                         present_authoritative: false,
+                        animations_active: false,
                     },
                 };
                 if let Err(e) = transport.send(resp) {
@@ -846,6 +955,7 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                         scroll_y: 0.0,
                         gpu_image,
                         present_authoritative: window_surface.is_some(),
+                        animations_active: false,
                     },
                 };
                 if let Err(e) = transport.send(resp) {
@@ -910,6 +1020,8 @@ mod tests {
             image_cache: zero_render_foundation::image_cache::ImageCache::new(16, 1024 * 1024),
             fonts: zero_paint_convert::fonts::PaintFonts::new(std::sync::Arc::new(load_compositor_fonts())),
             frame_gpu_rasterized: false,
+            front_cpu_resampled: false,
+            animations_active: false,
         }
     }
 
@@ -954,5 +1066,53 @@ mod tests {
                 .get(&zero_render_foundation::image_cache::ImageKey::new(42))
                 .is_none()
         );
+    }
+
+    fn animation_state(
+        surface_id: u64,
+        navigation_epoch: u64,
+        generation: u64,
+    ) -> zero_protocol::animation::CompositorAnimationStateParams {
+        zero_protocol::animation::CompositorAnimationStateParams {
+            surface_id,
+            navigation_epoch,
+            generation,
+            declarations: Vec::new(),
+            finished: Vec::new(),
+        }
+    }
+
+    /// M2-S1c：声明最新生效——同 epoch 新代际替换、旧代际丢弃；跨 epoch 前进替换
+    ///（导航换代的 generation 重置不构成回退）。
+    #[test]
+    fn animation_state_latest_wins_by_epoch_and_generation() {
+        let mut states = HashMap::new();
+        store_animation_state(&mut states, animation_state(7, 2, 5));
+        // 同 epoch 旧代际：丢弃。
+        store_animation_state(&mut states, animation_state(7, 2, 4));
+        assert_eq!(states.get(&7).map(|s| s.generation), Some(5));
+        // 同 epoch 新代际：替换。
+        store_animation_state(&mut states, animation_state(7, 2, 6));
+        assert_eq!(states.get(&7).map(|s| s.generation), Some(6));
+        // 新 epoch（导航换代，generation 重置为 1）：替换。
+        store_animation_state(&mut states, animation_state(7, 3, 1));
+        let state = states.get(&7).expect("新 epoch 应替换");
+        assert_eq!((state.navigation_epoch, state.generation), (3, 1));
+        // 旧 epoch 迟到消息：丢弃。
+        store_animation_state(&mut states, animation_state(7, 2, 99));
+        assert_eq!(states.get(&7).map(|s| s.navigation_epoch), Some(3));
+    }
+
+    /// M2-S1c：帧提交推进 epoch 后跨代声明失效；同 epoch 帧重复提交不清理。
+    #[test]
+    fn animation_state_cleared_when_surface_epoch_advances() {
+        let mut states = HashMap::new();
+        store_animation_state(&mut states, animation_state(7, 2, 1));
+        // 同 epoch 帧提交：声明保留。
+        cleanup_stale_animation_state(&mut states, 7, 2);
+        assert!(states.contains_key(&7));
+        // epoch 推进：旧声明清除（新声明待 renderer 重发）。
+        cleanup_stale_animation_state(&mut states, 7, 3);
+        assert!(!states.contains_key(&7));
     }
 }

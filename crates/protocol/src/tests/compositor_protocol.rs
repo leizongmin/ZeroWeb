@@ -62,6 +62,7 @@ fn compositor_messages_serialize_identifiers() {
             scroll_y: 0.0,
             gpu_image: None,
             present_authoritative: false,
+            animations_active: false,
         },
     ];
 
