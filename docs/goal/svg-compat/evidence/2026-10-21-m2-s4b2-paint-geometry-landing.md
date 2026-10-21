@@ -77,11 +77,25 @@ collect paint 线程化 + text 定位点集重写 + S4b-2 子系统块 + getBBox
   2. path1 stroke 高度 82.578≠83：Q 曲线对称顶点（t=0.5）邻样本重合 →
      chord 切向零 → 法向 offset 欠冲 0.42。修正：run 内部样本补 sw/2 外
      逼近盘（run 端不放——butt cap 无延伸面）。
-- 全 corpus（486 案，探针剔除）对账：**1012P/650F/40T/0NR = 59.5%**——
-  同分母 1702 断言对 S4b-1 997P/665F/40T 恰 **+15P/-15F**（-05 +11、-09 +4
-  与分面实测吻合，其余案零移动），Timeout 40 持平，全绿案 133→135，逐案
-  零 DOWN。runner 二进制构建时间晚于 part03.js 末次修改，确认本次对账
-  含本切片全部改动。
+- 全 corpus（486 案，探针剔除）对账，两段测量：
+  1. 本流独立分母（1702 断言，同 S4b-1 分母）：**1012P/650F/40T/0NR =
+     59.5%**——对 S4b-1 997P/665F/40T 恰 **+15P/-15F**（-05 +11、-09 +4
+     与分面实测吻合，其余案零移动），Timeout 40 持平，全绿案 133→135，
+     逐案零 DOWN。
+  2. 合并 navigation 流 M3-S5 postMessage 面后终值（孤儿 runner 清杀后
+     唯一 runner 复跑，日志唯一名）：**1046P/650F/40T/0NR = 60.3%**——
+     分母 1736（+34 子测试全 Pass 属 navigation 流新增面，非本流），
+     F/T 持平，合并树全绿案 140（含 navigation 贡献）。本流归因仍以 ①
+     同分母 +15P/-15F 为准。
+  runner 二进制构建时间晚于 part03.js 末次修改，确认两次对账均含本切片
+  全部改动。
+- DC-4 全 workspace `make test`（TIME_LIMIT=3000 守卫跑）：首跑唯一红 =
+  `apps/browser` cdp_focus_governance 6 子全挂——根因 TV-5 陈旧 bin 守卫
+  （shim mtime 新于 `target/debug/zero-renderer`，本切片 part03.js 改动
+  触发，行为断言未跑），非语义回归；test-guard 内重编 zero-renderer 后
+  该套件 6/6 过（焦点治理零影响实证），全量复跑 **EXIT=0**（树基
+  c674eccb3；同期 origin 侧 95ea05ab4 compositor 流提交不在此树，其门禁
+  归对方流）。
 
 ## 卡点与划界
 

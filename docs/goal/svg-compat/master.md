@@ -19,15 +19,20 @@ markerUnits 缺省 strokeWidth、viewBox→markerWidth/Height、refX/refY 对
 rect(t,r,b,l) 相对元素原点；引用缺失/非 clipPath/空 clipPath 全裁零盒；
 严格相交——边点接触→EMPTY；查询元素为 use 时区域随 (x,y) 平移）。
 clip/marker 子树渲染判定走 skipTagGuard（defs 归属豁免）。text 定位点集
-重写（tspan 子定位点并集 + x/y 缺省 0）。全 corpus 486 案
-**1012P/650F/40T/0NR = 59.5%**（S4b-1 997P/665F 同分母 +15P/-15F，Timeout
-持平，全绿案 133→135，逐案零 DOWN）。-05 4/15→**15/15**、-09 20/24→
-**24/24**、getBBox 全量 146P/2F（唯二 F 既有挂账）；path/parsing 116P/0F
-零回归。卡点①：S4c pathData API（path/interfaces 0P/56F 未实现面）。
-卡点②：fo5 零盒机制溯源未闭环（行为两侧对齐 Chrome，机制未溯，探针待
-跑，不阻塞）。fmt 门禁已绿（fa6ffacc9 修复 comp-anim 流带入红，
-`cargo fmt --all --check` EXIT=0），跨流碰头解除；定向
-`cargo test -p zero-engine`（test-guard）3358P/0F。下一步：S4c pathData
+重写（tspan 子定位点并集 + x/y 缺省 0）。全 corpus 486 案终值
+**1046P/650F/40T/0NR = 60.3%**（合并并行 navigation 流 M3-S5 后测量；
+对 S4b-1 997P/665F/40T：本流同分母归因恰 +15P/-15F——-05 +11、-09 +4，
+其余案零移动；另 +34P 属 navigation 流新增子测试全 Pass，分母
+1702→1736；Timeout 持平，合并树全绿案 140）。-05 4/15→**15/15**、
+-09 20/24→**24/24**、getBBox 全量 146P/2F（唯二 F 既有挂账）；
+path/parsing 116P/0F 零回归。卡点①：S4c pathData API（path/interfaces
+0P/56F 未实现面）。卡点②：fo5 零盒机制溯源未闭环（行为两侧对齐
+Chrome，机制未溯，探针待跑，不阻塞）。fmt 门禁已绿（fa6ffacc9 修复
+comp-anim 流带入红，`cargo fmt --all --check` EXIT=0），跨流碰头解除；
+DC-4 全 workspace `make test` 复跑 **EXIT=0**（树基 c674eccb3；首跑唯一
+红 = cdp_focus_governance 6 子，TV-5 陈旧 bin 守卫——本切片 shim 改动使
+zero-renderer bin 落后 mtime，test-guard 内重编后 6/6 过，非语义回归）。
+下一步：S4c pathData
 API 评估 → S4 完成后 M2 CSV 行回填。
 
 ## 缺口清单
@@ -90,13 +95,18 @@ API 评估 → S4 完成后 M2 CSV 行回填。
 - **M2 S4b-2（2026-10-21）**：SVGBoundingBoxOptions paint 几何盒（本
   session 端到端持有——stroke walk + markers 顶点放置 + clip 交集装配，
   三处根因修出：clip 子树 defs 豁免 skipTagGuard / run 内部样本外逼近盘 /
-  `_zwSvgBboxIntersect` 严格相交，两轮修出后全量对账）。corpus
-  1012P/650F/40T/0NR = 59.5%（+15P/-15F，全绿案 133→135，零 DOWN 零子
-  测试回归）；-05 4/15→15/15、-09 20/24→24/24。第七次会话重叠：并行
-  看护 session 跑全量 corpus 对账并外部精修 evidence，本 session 互让等待
-  后核验 runner 二进制含本切片改动采其收尾数字；源码面/master.md 归本
-  session。fmt 门禁绿（fa6ffacc9 修复），定向 zero-engine（test-guard）
-  3358P/0F。证据：evidence/2026-10-21-m2-s4b2-paint-geometry-landing.md。
+  `_zwSvgBboxIntersect` 严格相交，两轮修出后全量对账）。corpus 两段测量：
+  本流同分母 1012P/650F/40T/0NR = 59.5%（恰 +15P/-15F，全绿案 133→135，
+  零 DOWN 零子测试回归）；合并 navigation 流后终值 1046P/650F/40T/0NR =
+  60.3%（+34P 属对方新增子测试，分母 1702→1736）；-05 4/15→15/15、
+  -09 20/24→24/24。第七次会话重叠：并行看护 session 跑全量 corpus 对账
+  并外部精修 evidence，本 session 互让等待后核验 runner 二进制含本切片
+  改动采其收尾数字，随后清杀孤儿 runner 以唯一日志名复跑取合并树终值；
+  源码面/master.md 归本 session。fmt 门禁绿（fa6ffacc9 修复），定向
+  zero-engine（test-guard）3358P/0F；DC-4 全 workspace `make test`
+  复跑 EXIT=0（树基 c674eccb3；首跑唯一红 = cdp_focus_governance 6 子，
+  TV-5 陈旧 bin 守卫由本切片 shim 改动触发，重编 zero-renderer 后 6/6
+  过）。证据：evidence/2026-10-21-m2-s4b2-paint-geometry-landing.md。
 
 ## 下一步计划
 
