@@ -1,21 +1,27 @@
 # SVG 文档面兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../svg-compat.md](../svg-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-21（M2 S4a 落地）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-21（M2 S4b-1 落地）
 
 ## 当前状态
 
-**M2 S4a 完成（2026-10-21）**：SVGGeometryElement 几何面落地——路径数字
-文法 + 解析器（错误前缀语义/参数组隐式重复/尾随小数点错误截断/arc 旗标严格
-校验）+ 弧长取样（C/Q 弦长逼近、A 端点→中心参数化、T/S 控制点反射、多子
-路径 moveto 锚点不计 gap）+ getTotalLength/getPointAtLength（六形状 mixin
-+ 纯路径数学零布局依赖）+ getNumberOfChars。全 corpus 486 案
-**858P/804F/40T/0NR = 50.4%**（含 NR 口径，S3 734P/928F = 43.1% 以来
-**+124P/-124F**，Timeout 40 持平，全绿案 110→125，逐案零 DOWN，分母稳定）；
-**通过率跨过半数线**。path/parsing 11 案 126 子测试全绿；types +2、
-getnumberofchars +4、historical +2。机制探针 6/6。卡点：CSS d property
-（引擎 CSS 域缺口，2+5 子测试挂账协同）。下一步：S4b getBBox 形状属性级
-bbox（183F 靶面）→ S4c pathData API 评估。
+**M2 S4b-1 完成（2026-10-21）**：SVGGraphicsElement.getBBox 属性级面——
+非渲染零盒（#1018：display:none 祖先链 + defs/symbol/clipPath/mask/marker/
+pattern 子树三源判定）+ 形状公式盒（rect/circle/ellipse；ellipse 负半径取
+另轴）+ 点集盒（line/polygon/polyline/path；零面积保留定位、path 无产线段
+取末 moveto 锚点）+ 容器并集（子 transform 右先合成、空盒跳过、自身
+transform 不参与）+ use 解引用影子树（defs 内容照常渲染）+ text 定位零
+面积（字形度量挂账）+ SVGBoundingBoxOptions fill:false 全关零盒。flatten
+三处退化修正（arc 端点重合省略 / cubic·quad 全重合不采样 / anchors·drawn
+追踪）。全 corpus 486 案 **997P/665F/40T/0NR = 58.6%**（含 NR 口径，S4a
+858P/804F = 50.4% 以来 **+139P/-139F**，Timeout 40 持平，全绿案 125→133，
+逐案零 DOWN 子测试级零回归）。getBBox 八案全绿（-01 19/19、-04、-06、
+-07 49/49、-08、-10、replaceitem 1/1、transform-dynamic 1/1）；-03 11/12、
+-05 4/15、-09 20/24 分面实收。机制探针 10/10。卡点①：S4b-2 stroke/markers/
+clip 扩展（-05 11F + -09 4F，paint 几盒子系统）。卡点②：全 workspace
+`make test` fmt 门禁红于并行 comp-anim 流 frame_dump.rs（9799e6435，
+origin/main 同红，非本流文件；本切片经 test-guard 定向 zero-engine 验证，
+见 evidence）。下一步：S4b-2 → S4c pathData API 评估。
 
 ## 缺口清单
 
@@ -65,22 +71,39 @@ bbox（183F 靶面）→ S4c pathData API 评估。
   path/parsing 11 案 126 子全绿。全 workspace `make test` DC-4 门禁
   EXIT=0（TIME_LIMIT=3000 守卫跑）。CSS d property 2+5 子挂账 CSS 域协同。
   证据：evidence/2026-10-21-m2-s4a-geometry-landing.md。
+- **M2 S4b-1（2026-10-21）**：SVGGraphicsElement.getBBox 属性级面（本
+  session 端到端持有——断言面精读、递归收集 + 公式盒 + 容器并集 + use
+  影子树 + #1018 非渲染判定，探针两轮修出 transform 列表右先序，全量对
+  账）。corpus 997P/665F/40T/0NR = 58.6%（+139P/-139F，全绿案 125→133，
+  零 DOWN 零子测试回归）；getBBox 八案全绿；S2c 残余 replaceitem 卡点
+  解锁翻绿。第六次会话重叠：并行看护 session 侦察在途退避（零改对方面，
+  见 watchdog 第六次记录）。workspace make test fmt 门禁红于并行 comp-anim
+  流（9799e6435 非本流文件），本切片经 test-guard 定向 zero-engine
+  3355P/0F 验证。证据：evidence/2026-10-21-m2-s4b1-getbbox-landing.md。
 
 ## 下一步计划
 
-1. **M2 S4 几何面**：S4a getTotalLength/getPointAtLength 纯路径数学 →
-   S4b getBBox 形状属性级 bbox（S2c 残余 svgtransformlist-replaceitem
-   卡点即 getBBox）→ S4c pathData API 评估；文本几何 ~55F 挂账候选
-   （盘点见 evidence/2026-10-21-m2-s4-geometry-prep.md）。S4 完成后
-   M2 CSV 行回填。
+1. **M2 S4b-2 SVGBoundingBoxOptions 扩展**（-05 11F + -09 4F）：stroke 外扩
+   （miter/bevel/round join + butt/round cap，flatten 折线复用）、markers
+   （markerUnits/markerWidth·Height/viewBox/refX·refY/orient 顶点放置）、
+   clip（clipPath 三单位制 + 嵌套 clip-on-clip + use-in-clipPath + 空表
+   零盒 + 非法引用不裁）→ S4c pathData API 评估。S4 完成后 M2 CSV 行回填。
 2. **M4 SMIL 分类账重跑**：S3 脚手架已释放时序面（seeking-events 族 F→T、
    invalid-value 族平凡全绿），M4 SMIL 评估须以 S3 后口径重跑分类（见
    evidence/2026-10-21-m4-smil-assessment-prep.md + S3 landing 排片对位）。
 3. **上下文换算补面（S2a FIXME）**：SVGLength 关联元素的 em/ex/percentage
-   上下文（SVGLength-viewport 8F / percentage-directionality 6F）——与 S4b
-   getBBox 的几何上下文同批评估。
+   上下文（SVGLength-viewport 8F / percentage-directionality 6F）——与
+   getBBox 几何上下文同批评估。
 4. **rendering-compat 协同项**：getScreenCTM/getCTM 族（S3 划界，需 CSS
    transform 感知布局合成）——与渲染域会话对齐后排期。
+5. **挂账面（M4 定稿归口）**：文本几何（-02 tspan + -05 text 三子 +
+   getComputedTextLength 族，字形度量依赖）；image 内在尺寸（-03 image1/2 +
+   svg-image-intrinsic-size 族，图片加载态依赖）。
+
+**跨流碰头信号（2026-10-21，run-rules §9/§10）**：workspace `make test`
+第一步 `cargo fmt --check` 红于并行 comp-anim 流
+`apps/compositor/src/frame_dump.rs`（9799e6435 引入，origin/main 同红）。
+非本流文件未动，待该流或合流轮次修复后全 workspace 门禁复核。
 
 **待用户决策清单**：（空）
 

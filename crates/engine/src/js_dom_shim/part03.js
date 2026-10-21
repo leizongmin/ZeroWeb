@@ -4530,11 +4530,13 @@
     var px = 0, py = 0, sx = 0, sy = 0;
     var lc = null, lq = null;  // 上一 C 二控/Q 控（绝对坐标，S/T 反射源）
     var pts = [], cum = [];  // cum[i] = pts[i] 处累积弧长（首点 0）
+    var anchors = [], drawn = 0;  // bbox 用：锚点集 + 实际产线段点数（见 S4b 注）
     var _emit = function (x, y) {
       var last = pts.length ? pts[pts.length - 1] : null;
       if (!last) {
         pts.push([x, y]);
         cum.push(0);
+        drawn++;
         return;
       }
       var dx = x - last[0], dy = y - last[1];
@@ -4542,6 +4544,7 @@
       if (d === 0) return;  // 零长段不产点
       pts.push([x, y]);
       cum.push(cum[cum.length - 1] + d);
+      drawn++;
     };
     // 子路径锚点（moveto）：入折线但**不与前点连线计长**（moveto 无长度——
     // getPointAtLength 距离跨子路径连续，gap 不消耗；等 cum 值二分自然落
@@ -4549,10 +4552,15 @@
     var _anchor = function (x, y) {
       pts.push([x, y]);
       cum.push(pts.length === 1 ? 0 : cum[cum.length - 1]);
+      anchors.push([x, y]);
     };
     var _line = function (x, y) { _emit(x, y); px = x; py = y; };
     var _cubic = function (x1, y1, x2, y2, x3, y3) {
       var x0 = px, y0 = py;
+      if (x0 === x1 && y0 === y1 && x1 === x2 && y1 === y2 && x2 === x3 && y2 === y3) {
+        return;  // 全控制点重合退化：采样浮点误差会产 9.999… 幻影偏移
+                 // （WPT getBBox-07 path_degen_quad assert_equals 定谳）——不产点。
+      }
       for (var k = 1; k <= 64; k++) {
         var t = k / 64, mt = 1 - t;
         var a = mt * mt * mt, b = 3 * mt * mt * t, c2 = 3 * mt * t * t, e = t * t * t;
@@ -4562,6 +4570,7 @@
     };
     var _quad = function (x1, y1, x2, y2) {
       var x0 = px, y0 = py;
+      if (x0 === x1 && y0 === y1 && x1 === x2 && y1 === y2) return;  // 同上退化分支
       for (var k = 1; k <= 48; k++) {
         var t = k / 48, mt = 1 - t;
         _emit(mt * mt * x0 + 2 * mt * t * x1 + t * t * x2, mt * mt * y0 + 2 * mt * t * y1 + t * t * y2);
@@ -4570,6 +4579,10 @@
     };
     var _arc = function (rx, ry, xrot, laf, sf, x2, y2) {
       var x1 = px, y1 = py;
+      if (x1 === x2 && y1 === y2) return;  // 端点重合 → 弧省略不产点（spec appendix
+                                           // F.6.2 端点参数化退化分支；WPT getBBox-07
+                                           // path_arc_same_point (10,20,0,0) 定谳——
+                                           // 否则中心退化公式产幻影弧点）。
       rx = Math.abs(rx); ry = Math.abs(ry);
       if (rx === 0 || ry === 0) { _line(x2, y2); return; }  // 零半径 → 直线（spec）
       var phi = xrot * Math.PI / 180, cp = Math.cos(phi), sp = Math.sin(phi);
@@ -4665,7 +4678,8 @@
         lc = null; lq = null;
       }
     }
-    return { pts: pts, cum: cum, total: cum.length ? cum[cum.length - 1] : 0 };
+    return { pts: pts, cum: cum, total: cum.length ? cum[cum.length - 1] : 0,
+             anchors: anchors, drawn: drawn };
   };
   // 形状 ring（SVGGeometryElement 六形状）→ 同款 {pts, cum, total} 机制。
   var _zwSvgGeomLens = function (el, tag) {
@@ -4767,6 +4781,261 @@
       && !globalThis.SVGTextContentElement.prototype.getNumberOfChars) {
     globalThis.SVGTextContentElement.prototype.getNumberOfChars = function () {
       try { return String(this.textContent || '').length; } catch (_eC) { return 0; }
+    };
+  }
+  // svg-compat M2 S4b：SVGGraphicsElement.getBBox（spec SVG2 types.html
+  // §InterfaceSVGGraphicsElement + coords.html §BoundingBoxes；WPT
+  // types/scripted getBBox-01..10 + coordinate-systems svgtransformlist-replaceitem
+  // + text/scripted transform-dynamic-update 对位）。语义要点（全 #1018 决议口径）：
+  // - **非渲染 → 零 bbox**（issue #1018：display:none 自身或任一祖先、defs/symbol/
+  //   clipPath/mask/marker/pattern 子树 → (0,0,0,0)，不抛 InvalidStateError）；
+  //   visibility:hidden / opacity:0 **仍算渲染**（正常 bbox）。computed style 缺口
+  //   回落 presentation 属性 + style 内联（与 _zwCheckVisibility 同口径）。
+  // - **形状**：rect w/h≤0（缺省 auto→0）、circle r≤0、ellipse 负半径替换另轴
+  //   （geometry.html §Sizing：rx<0 取 ry）后 ≤0 → 非渲染 (0,0,0,0)；渲染则公式盒
+  //   （rect (x,y,w,h) / circle·ellipse (c±r)）。line/polygon/polyline/path：点集
+  //   min/max 盒——**零面积盒保留定位**（path 'M40 20h0' → (40,20,0,0)）；path 无
+  //   产线段点时取**最后一个 moveto 锚点**（WPT getBBox-07 path_multi_moveto
+  //   (30,40,0,0) 定谳）；无任何点 → (0,0,0,0)。
+  // - **容器**（g/a/svg/switch + use）：渲染子元素盒并集，子元素 transform 属性
+  //   合成映射入容器用户空间；空盒（非渲染/无几何）子元素跳过（getBBox-08
+  //   zero-dim child does not affect bbox）；查询元素**自身** transform 不参与
+  //   （bbox 在元素自身坐标系，getBBox-08 H 面定谳）。svg 根 bbox = 子并集非
+  //   viewport 属性盒（nested empty svg → (0,0,0,0)）。
+  // - **image/foreignObject**：渲染且 w/h>0 → 属性盒 (x,y,w,h)；零/缺省/负维度
+  //   → (0,0,0,0)。**FIXME(svg-compat)**：负值→auto→intrinsic ratio 面（getBBox-03
+  //   image1/image2）需图片固有尺寸（加载态）——挂账 image-loading 协同。
+  // - **text 族**：定位零面积盒 (x,y,0,0)（空内容 w/h=0 满足 getBBox-09 J；两案
+  //   dynamic-transform 对比值面按一致函数通过）。**FIXME(svg-compat)**：字形度量
+  //   盒（getBBox-02 tspan Ahem 精确值、-05 text 面）挂账文本几何（与
+  //   getComputedTextLength 同归口，M4 定稿）。
+  // - **use**：href 解引用（ownerDocument.getElementById）递归引用内容盒 + (x,y)
+  //   平移（spec use = shadow 树 translate(x,y)）；未解析/引用空盒 → (0,0,0,0)
+  //   （getBBox-07 use_unresolved/use_zero_ref）。深度 32 + 访问集防引用环。
+  // - SVGBoundingBoxOptions {fill,stroke,markers,clip}：本切片仅 fill 几何面，
+  //   **FIXME(svg-compat)**：stroke 外扩/markers/clip 交集（getBBox-05 全 15 子 +
+  //   -09 I 面 12 子）→ S4b-2。
+  var _ZW_SVG_BBOX_EMPTY = { x: 0, y: 0, width: 0, height: 0, empty: true };
+  var _zwSvgLenNum = function (el, a) {
+    // 长度属性宽松解析：缺省 → NaN（auto），'px' 后缀剥离（-05 clipPath 形用 px）。
+    var v = null;
+    try { v = el.getAttribute(a); } catch (_eG) { return NaN; }
+    if (v == null) return NaN;
+    var s = String(v).replace(/px\s*$/i, '');
+    var n = Number(s);
+    return isFinite(n) ? n : NaN;
+  };
+  var _zwSvgBboxFromPts = function (pts) {
+    if (!pts || !pts.length) return _ZW_SVG_BBOX_EMPTY;
+    var mnx = pts[0][0], mny = pts[0][1], mxx = mnx, mxy = mny;
+    for (var i = 1; i < pts.length; i++) {
+      if (pts[i][0] < mnx) mnx = pts[i][0];
+      if (pts[i][0] > mxx) mxx = pts[i][0];
+      if (pts[i][1] < mny) mny = pts[i][1];
+      if (pts[i][1] > mxy) mxy = pts[i][1];
+    }
+    return { x: mnx, y: mny, width: mxx - mnx, height: mxy - mny, empty: false };
+  };
+  // 形状 fill 盒（六形状 + 非渲染零盒规则见块注）。非形状 tag → null。
+  var _zwSvgShapeBbox = function (el, tag) {
+    if (tag === 'rect') {
+      var w = _zwSvgLenNum(el, 'width'), h = _zwSvgLenNum(el, 'height');
+      if (!(w > 0) || !(h > 0)) return _ZW_SVG_BBOX_EMPTY;  // 零/负/缺省 auto→0 非渲染
+      return { x: _zwSvgLenNum(el, 'x') || 0, y: _zwSvgLenNum(el, 'y') || 0,
+               width: w, height: h, empty: false };
+    }
+    if (tag === 'circle') {
+      var r = _zwSvgLenNum(el, 'r');
+      if (!(r > 0)) return _ZW_SVG_BBOX_EMPTY;
+      var cx = _zwSvgLenNum(el, 'cx') || 0, cy = _zwSvgLenNum(el, 'cy') || 0;
+      return { x: cx - r, y: cy - r, width: 2 * r, height: 2 * r, empty: false };
+    }
+    if (tag === 'ellipse') {
+      var rx = _zwSvgLenNum(el, 'rx'), ry = _zwSvgLenNum(el, 'ry');
+      if (isNaN(rx) && !isNaN(ry)) rx = ry;  // 负/缺省替换另轴（geometry.html §Sizing）
+      if (isNaN(ry) && !isNaN(rx)) ry = rx;
+      if (rx < 0) rx = ry;
+      if (ry < 0) ry = rx;
+      if (!(rx > 0) || !(ry > 0)) return _ZW_SVG_BBOX_EMPTY;
+      var ecx = _zwSvgLenNum(el, 'cx') || 0, ecy = _zwSvgLenNum(el, 'cy') || 0;
+      return { x: ecx - rx, y: ecy - ry, width: 2 * rx, height: 2 * ry, empty: false };
+    }
+    if (tag === 'line' || tag === 'polygon' || tag === 'polyline') {
+      var pts;
+      if (tag === 'line') {
+        pts = [[_zwSvgLenNum(el, 'x1') || 0, _zwSvgLenNum(el, 'y1') || 0],
+               [_zwSvgLenNum(el, 'x2') || 0, _zwSvgLenNum(el, 'y2') || 0]];
+      } else {
+        pts = [];
+        try {
+          var ps = String(el.getAttribute('points') || '');
+          var pair = [], pi = 0;
+          while (true) {
+            var pv = _zwSvgPathScanNum(ps, pi);
+            if (!pv) break;
+            pi = pv[1];
+            pair.push(pv[0]);
+            if (pair.length === 2) { pts.push(pair); pair = []; }
+          }  // 奇数尾坐标截断（S2c PointList 同语义）
+        } catch (_eP) { return _ZW_SVG_BBOX_EMPTY; }
+      }
+      return _zwSvgBboxFromPts(pts);
+    }
+    if (tag === 'path') {
+      var d = null;
+      try { d = el.getAttribute('d'); } catch (_eD) { return _ZW_SVG_BBOX_EMPTY; }
+      var lens = _zwSvgPathFlatten(_zwSvgPathParse(d));
+      // 无产线段点（纯 moveto/零长段）→ 最后锚点定位盒（-07 path_multi_moveto）；
+      // 有产线段点 → 全点集（锚点 + 线段点）。
+      if (lens.drawn > 0) return _zwSvgBboxFromPts(lens.pts);
+      if (lens.anchors.length) {
+        var la = lens.anchors[lens.anchors.length - 1];
+        return { x: la[0], y: la[1], width: 0, height: 0, empty: false };
+      }
+      return _ZW_SVG_BBOX_EMPTY;
+    }
+    return null;
+  };
+  // 渲染判定（#1018 口径，块注）：display:none 自身/祖先 + 非渲染容器 tag 子树。
+  // computed / presentation 属性 / style 内联三源**任一 none 即非渲染**（runner
+  // computed 可能不反射 presentation 属性，不可单源定谳）。skipTagGuard：use 影子
+  // 树面——defs/symbol 等**容器 tag 归属不阻断**（use 引用 defs 内容照常渲染，
+  // WPT getBBox-05 use with fill），display:none 阻断保留。
+  var _zwSvgTagRendered = function (el, skipTagGuard) {
+    var tag = '';
+    try { tag = String(el.localName || '').toLowerCase(); } catch (_eT) {}
+    // defs/symbol/clipPath/mask/marker/pattern 子树永不渲染（symbol 自身查询同零盒，
+    // getBBox-06）。
+    if (!skipTagGuard
+        && (tag === 'defs' || tag === 'symbol' || tag === 'clippath' || tag === 'mask'
+        || tag === 'marker' || tag === 'pattern')) return false;
+    if (typeof __zw_get_computed_style === 'function') {
+      var disp = null;
+      try { disp = __zw_get_computed_style(el, 'display'); } catch (_eD) {}
+      if (disp === 'none') return false;
+    }
+    try {
+      if (el.getAttribute && el.getAttribute('display') === 'none') return false;
+      var st = el.getAttribute && el.getAttribute('style');
+      if (st && /display\s*:\s*none/i.test(st)) return false;
+    } catch (_eA) {}
+    return true;
+  };
+  var _zwSvgElRendered = function (el, skipTagGuard) {
+    var cur = el;
+    for (var i = 0; cur && i < 64; i++) {
+      if (!_zwSvgTagRendered(cur, skipTagGuard)) return false;
+      try { cur = cur.parentNode; } catch (_eP) { return true; }
+    }
+    return true;
+  };
+  // 递归收集盒（深度 32 防引用环——use 链/深嵌套；访问集不可靠因 shim 代理性
+  // 身份不保证，深度帽为主 guard）。返回值 empty 标志区分「零盒」与「无几何」
+  // ——容器并集跳过空盒（语义：非渲染/无几何子不参与父盒）。viaUse：use 解引用
+  // 后的影子子树（tag 归属守卫豁免，见 _zwSvgTagRendered）。
+  var _zwSvgCollectBbox = function (el, depth, viaUse) {
+    if (!el || depth > 32) return _ZW_SVG_BBOX_EMPTY;
+    if (!_zwSvgElRendered(el, viaUse)) return _ZW_SVG_BBOX_EMPTY;
+    var tag = '';
+    try { tag = String(el.localName || '').toLowerCase(); } catch (_eL) {}
+    var shape = _zwSvgShapeBbox(el, tag);
+    if (shape) return shape;
+    var i, x, y;
+    if (tag === 'image' || tag === 'foreignobject') {
+      var w = _zwSvgLenNum(el, 'width'), h = _zwSvgLenNum(el, 'height');
+      if (!(w > 0) || !(h > 0)) return _ZW_SVG_BBOX_EMPTY;  // 负维度→auto 见 FIXME
+      x = _zwSvgLenNum(el, 'x') || 0;
+      y = _zwSvgLenNum(el, 'y') || 0;
+      return { x: x, y: y, width: w, height: h, empty: false };
+    }
+    if (tag === 'use') {
+      // href 解引用（含 xlink:href 旧形态）→ 引用内容盒 + (x,y) 平移。
+      var href = null;
+      try { href = el.getAttribute('href') || el.getAttribute('xlink:href'); } catch (_eH) {}
+      var refEl = null;
+      if (href && href.charAt(0) === '#') {
+        try {
+          var doc = el.ownerDocument;
+          if (doc && doc.getElementById) refEl = doc.getElementById(href.slice(1));
+        } catch (_eR) {}
+      }
+      if (!refEl) return _ZW_SVG_BBOX_EMPTY;
+      var sub = _zwSvgCollectBbox(refEl, depth + 1, true);
+      if (sub.empty) return _ZW_SVG_BBOX_EMPTY;
+      x = _zwSvgLenNum(el, 'x') || 0;
+      y = _zwSvgLenNum(el, 'y') || 0;
+      return { x: sub.x + x, y: sub.y + y, width: sub.width, height: sub.height,
+               empty: false };
+    }
+    if (tag === 'text' || tag === 'tspan' || tag === 'textpath') {
+      // 定位零面积盒（字形度量挂账——FIXME(svg-compat) 块注 text 面）。
+      var tx = null, ty = null;
+      try {
+        var tvx = _zwSvgPathScanNum(String(el.getAttribute('x') || ''), 0);
+        var tvy = _zwSvgPathScanNum(String(el.getAttribute('y') || ''), 0);
+        tx = tvx ? tvx[0] : 0;
+        ty = tvy ? tvy[0] : 0;
+      } catch (_eTx) { tx = 0; ty = 0; }
+      return { x: tx, y: ty, width: 0, height: 0, empty: false };
+    }
+    // 容器（g/a/svg/switch + 兜底任意元素）：渲染子元素盒并集。子 transform 属性
+    // 合成映射；查询元素自身 transform 不参与（块注）。
+    var mnx = Infinity, mny = Infinity, mxx = -Infinity, mxy = -Infinity, any = false;
+    var kids = null;
+    try { kids = el.children; } catch (_eC) {}
+    if (kids) {
+      for (i = 0; i < kids.length; i++) {
+        var c = kids[i];
+        var cb;
+        try { cb = _zwSvgCollectBbox(c, depth + 1, viaUse); } catch (_eR2) { cb = _ZW_SVG_BBOX_EMPTY; }
+        if (cb.empty) continue;
+        // 子 transform 属性 → 2×3 合成（S2c _zwSvgTransformParse 态机复用）。
+        var tattr = null;
+        try { tattr = c.getAttribute('transform'); } catch (_eT2) {}
+        var mats = tattr ? _zwSvgTransformParse(tattr) : [];
+        var corners = [[cb.x, cb.y], [cb.x + cb.width, cb.y],
+                       [cb.x, cb.y + cb.height], [cb.x + cb.width, cb.y + cb.height]];
+        for (var k = 0; k < corners.length; k++) {
+          var px2 = corners[k][0], py2 = corners[k][1];
+          // transform 列表右先（'translate(5,7) scale(2)' 对点先 scale 后
+          // translate——spec transform matrix 乘法链 p' = M1·M2·p）。
+          for (var mi = mats.length - 1; mi >= 0; mi--) {
+            var m = mats[mi];
+            var nx = m.a * px2 + m.c * py2 + m.e;
+            var ny = m.b * px2 + m.d * py2 + m.f;
+            px2 = nx; py2 = ny;
+          }
+          if (px2 < mnx) mnx = px2;
+          if (px2 > mxx) mxx = px2;
+          if (py2 < mny) mny = py2;
+          if (py2 > mxy) mxy = py2;
+          any = true;
+        }
+      }
+    }
+    if (!any) return _ZW_SVG_BBOX_EMPTY;
+    return { x: mnx, y: mny, width: mxx - mnx, height: mxy - mny, empty: false };
+  };
+  if (globalThis.SVGGraphicsElement && globalThis.SVGGraphicsElement.prototype
+      && !globalThis.SVGGraphicsElement.prototype.getBBox) {
+    globalThis.SVGGraphicsElement.prototype.getBBox = function (options) {
+      // SVGBoundingBoxOptions（spec types.html §SVGBoundingBoxOptions）分旗语义：
+      // 盒 = 各请求绘制面的并集，缺省仅 fill。fill:false 且无 stroke/markers/
+      // clipped 请求 → 全 paint 关闭 → (0,0,0,0)（WPT getBBox-09 fill:false
+      // stroke:false empty bbox 定谳）。stroke/markers/clipped 扩展面未实现 →
+      // 回落 fill 盒近似（FIXME(svg-compat)：S4b-2——zero-length stroke 与 fill
+      // 同盒的断言子在该回落下成立，几何外扩子挂账）。
+      var wantFill = true, anyExtra = false;
+      if (options && typeof options === 'object') {
+        wantFill = options.fill !== false;
+        anyExtra = !!(options.stroke || options.markers || options.clipped);
+      }
+      if (!wantFill && !anyExtra) {
+        return new globalThis.DOMRect(0, 0, 0, 0);
+      }
+      var b = _ZW_SVG_BBOX_EMPTY;
+      try { b = _zwSvgCollectBbox(this, 0, false); } catch (_eB) {}
+      return new globalThis.DOMRect(b.x, b.y, b.width, b.height);
     };
   }
   // WC-M1 切片 4（spec create-a-native-element / interface object [[Call]]）：
