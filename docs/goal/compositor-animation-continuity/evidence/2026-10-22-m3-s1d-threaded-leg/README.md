@@ -58,6 +58,7 @@ beat n 字段承载绘制进度，transfer 不可达则无 ctx 恒 0，S1b 后�
 |---|---|
 | cargo test -p zero-script-sandbox | 343 passed（含新增 self 别名回归） |
 | cargo fmt / clippy -D warnings（script-sandbox） | 干净 |
-| make test（guard 包裹全量） | 见 master.md 本批条目 |
+| make test（guard 包裹全量） | EXIT=0 |
+| testharness-workers 全量（part61 语料） | 693 Pass / 12 Fail——12 项名称级逐一比对均为 workers-compat 归档 slice3 基线（29F，本批前状态）既有失败，**零新增**；`unexpected-self-properties.worker.js`（self 属性存在性簇）全 Pass——bootstrap 增行对 runner 同 realm 路径零影响实证 |
 | comp04a-probe flag on | THREADED_PROBE_PARTIAL（本 README 表） |
 | comp04a-probe flag 关（回归，[comp04a-probe-flag-off-regress.json](comp04a-probe-flag-off-regress.json)） | SHIM_BASELINE_PASS；wt 跨忙窗 936ms（同 realm 基线语义维持）、draws_main=372——bootstrap 增行对 shim 腿零影响 |
