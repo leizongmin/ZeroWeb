@@ -537,6 +537,25 @@ impl BrowserApp {
         self.address_bar.set_text(url);
     }
 
+    /// M2-S3c：env 注入点击 tick（`ZW_INJECT_CLICKS`，DC-3 命中面触发器）。到点
+    /// 即走与真实输入同一的 move + 左键 press/release 路径；未武装/计划耗尽零行为。
+    /// 武装期内保持连续帧（needs_redraw），与 tick_smooth_scroll 同款自续机制。
+    pub fn tick_click_injector(&mut self) {
+        if !self.click_injector.armed() {
+            return;
+        }
+        if let Some((x, y)) = self.click_injector.due(Instant::now()) {
+            tracing::info!("click_injector: 注入点击 x={x} y={y}");
+            self.handle_mouse_move(x, y);
+            self.handle_mouse_click(x, y, true, "Left");
+            self.handle_mouse_click(x, y, false, "Left");
+            self.needs_redraw = true;
+        }
+        if self.click_injector.armed() {
+            self.needs_redraw = true;
+        }
+    }
+
     /// 处理鼠标移动
     pub fn handle_mouse_move(&mut self, x: f64, y: f64) {
         let old_pos = self.mouse_pos;

@@ -24,6 +24,7 @@
 
 mod addressbar_smoke;
 mod app;
+mod app_click_injector;
 mod clipboard;
 mod colors;
 mod compositor_client;
@@ -1251,6 +1252,8 @@ fn main() {
         app.expire_scrollbar_overlay();
         // T26：推进滚轮平滑滚动动画（动画期间置 needs_redraw → 下方 request_redraw 连续成帧）。
         app.tick_smooth_scroll();
+        // M2-S3c：推进 env 门控点击注入（armed 期置 needs_redraw 同款自续；禁用零行为）。
+        app.tick_click_injector();
         #[cfg(target_os = "windows")]
         app.sync_windows_caption_hover();
         match event {

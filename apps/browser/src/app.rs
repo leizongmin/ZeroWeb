@@ -172,6 +172,9 @@ pub struct BrowserApp {
     scroll: HashMap<TabId, TabScrollState>,
     /// T26：进行中的滚轮平滑滚动动画（每帧由 `tick_smooth_scroll` 推进）。
     scroll_anim: HashMap<TabId, page_scroll::ScrollAnimation>,
+    /// M2-S3c：env 门控点击注入器（`ZW_INJECT_CLICKS`，DC-3 命中面触发器；
+    /// env 未设 = 禁用零行为）。
+    click_injector: crate::app_click_injector::ClickInjector,
     /// 保留帧缓冲 + 滚动 blit 缓存（性能门禁优化 S1，2026-08-08）：
     /// 纯滚动帧平移上一帧内容像素 + 只重绘新露条带，避免全量光栅。
     /// `fb_cache_epoch` = (快照序号, 宽, 高, 缩放)——任一变化即失效走全量渲染。
@@ -403,6 +406,7 @@ impl BrowserApp {
             context_menu_suppress_left_up: false,
             scroll: HashMap::new(),
             scroll_anim: HashMap::new(),
+            click_injector: crate::app_click_injector::ClickInjector::from_env(),
             retained_fb: None,
             fb_cache_scroll: (0.0, 0.0),
             fb_cache_epoch: (0, 0, 0, 0.0),
@@ -606,6 +610,8 @@ impl BrowserApp {
                     tab.set_loading(false);
                 }
                 self.shell.set_tab_needs_attention(tab_id, false);
+                // M2-S3c：页面 load 完成即武装注入时钟（禁用态零行为）。
+                self.click_injector.arm();
             } else {
                 self.shell.set_tab_needs_attention(tab_id, true);
             }
