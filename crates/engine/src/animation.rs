@@ -17,6 +17,8 @@ use std::collections::HashMap;
 mod transform_interp;
 // M2-S1b：可合成动画声明导出（compositor-animation-continuity，renderer → compositor 采样域）。
 pub mod compositor_export;
+// M2-S3c：动画 transform 命中修正提供者槽（renderer 注册全仿射，hit_test 逆映射点测）。
+pub mod hit_provider;
 
 use zero_css_parser::ast::{KeyframeBlock, KeyframeSelector, KeyframesRule};
 use zero_css_parser::values::{

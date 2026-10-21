@@ -12,6 +12,8 @@ use zero_layout_engine::LayoutBox;
 use zero_style_system::ComputedStyle;
 use zero_style_system::property::types::{PointerEventsValue, VisibilityValue};
 
+use crate::animation::hit_provider;
+
 /// slice15（R4384）：inline 命中面 kill-switch（默认开，"0" 回退布局树行盒几何）。
 /// 关断后命中遍历忽略 `inline_reported_rect`，恢复 slice13 返修语义（行盒几何命中面）。
 /// 进程级稳定开关，公开边界读一次（LazyLock 快照），不进逐节点热路径。
@@ -76,6 +78,25 @@ struct HitWalk<'a> {
     is_hidden: &'a dyn Fn(NodeId) -> bool,
     /// 盒 node_id → 是否 `pointer-events: none`（同构语义，见 struct 文档）。
     is_pe_none: &'a dyn Fn(NodeId) -> bool,
+    /// M2-S3c：动画 transform 命中修正提供者（flag 开注册；`None` = flag 关/未导出，
+    /// 基线命中零干扰）。构建时读进程槽一次（Arc 克隆），逐节点只查表。
+    animated_affine: Option<hit_provider::AnimationTransformProvider>,
+}
+
+impl HitWalk<'_> {
+    /// M2-S3c：查询点的基线坐标——节点命中提供者时以声明全仿射的**逆映射**送回
+    /// 基线坐标再测包含（compositor 像素 = 基线几何经 T(o)·A·T(−o)，S1c R3833 口径；
+    /// RFC §2.3）。未注册/未导出/采样无覆盖（`None`）与矩阵奇异同回落原始点。
+    fn baseline_point(&self, node_id: Option<NodeId>) -> (f32, f32) {
+        let Some(inverse) = node_id
+            .and_then(|n| self.animated_affine.as_ref().and_then(|p| p(node_id_to_u64(n))))
+            .and_then(hit_provider::invert_affine)
+        else {
+            return (self.point_x, self.point_y);
+        };
+        let (x, y) = hit_provider::apply_affine(inverse, f64::from(self.point_x), f64::from(self.point_y));
+        (x as f32, y as f32)
+    }
 }
 
 /// 主线程只读命中测试快照（由 tab worker 在推送快照时构建）。
@@ -157,6 +178,7 @@ impl HitTestCache {
             point_y: y,
             is_hidden: &|n| self.hidden.contains(&n),
             is_pe_none: &|n| self.pe_none.contains(&n),
+            animated_affine: hit_provider::animation_transform_provider(),
         };
         let mut best = (0, self.doc_root);
         deepest_node_at(&self.layout_root, 0.0, 0.0, 0, &mut best, &walk);
@@ -174,6 +196,7 @@ impl HitTestCache {
             point_y: y,
             is_hidden: &|n| self.hidden.contains(&n),
             is_pe_none: &|n| self.pe_none.contains(&n),
+            animated_affine: hit_provider::animation_transform_provider(),
         };
         let mut best = (0, self.doc_root);
         deepest_node_at(&self.layout_root, 0.0, 0.0, 0, &mut best, &walk);
@@ -187,6 +210,7 @@ impl HitTestCache {
             point_y: y,
             is_hidden: &|n| self.hidden.contains(&n),
             is_pe_none: &|n| self.pe_none.contains(&n),
+            animated_affine: hit_provider::animation_transform_provider(),
         };
         let mut best = (0, self.doc_root);
         deepest_node_at(&self.layout_root, 0.0, 0.0, 0, &mut best, &walk);
@@ -200,6 +224,7 @@ impl HitTestCache {
             point_y: y,
             is_hidden: &|n| self.hidden.contains(&n),
             is_pe_none: &|n| self.pe_none.contains(&n),
+            animated_affine: hit_provider::animation_transform_provider(),
         };
         let mut best = (0, self.doc_root);
         deepest_node_at(&self.layout_root, 0.0, 0.0, 0, &mut best, &walk);
@@ -218,6 +243,7 @@ impl HitTestCache {
             point_y: y,
             is_hidden: &|n| self.hidden.contains(&n),
             is_pe_none: &|n| self.pe_none.contains(&n),
+            animated_affine: hit_provider::animation_transform_provider(),
         };
         let mut hits: Vec<(usize, NodeId)> = Vec::new();
         collect_nodes_at(&self.layout_root, 0.0, 0.0, 0, &mut hits, &walk);
@@ -643,10 +669,9 @@ fn deepest_node_at(
     // 同款——子盒 y 存于布局坐标系，命中面覆写只作用于本盒）。
     let (hit_y, hit_h) = hit_extent(layout);
     let hit_top = abs_y + hit_y;
-    let contains = walk.point_x >= box_x
-        && walk.point_y >= hit_top
-        && walk.point_x < box_x + layout.width
-        && walk.point_y < hit_top + hit_h;
+    let (point_x, point_y) = walk.baseline_point(layout.node_id);
+    let contains =
+        point_x >= box_x && point_y >= hit_top && point_x < box_x + layout.width && point_y < hit_top + hit_h;
 
     // S12（cdp-protocol hit-target）：**不按祖先包含剪枝**——祖先盒不包含点仍继续下探，
     // 只把「盒包含点」的节点记入候选。祖先盒可能小于溢出的子内容（实测：body 高 6px、
@@ -687,10 +712,9 @@ fn collect_nodes_at(
     // 子盒累积走布局树 y。
     let (hit_y, hit_h) = hit_extent(layout);
     let hit_top = abs_y + hit_y;
-    let contains = walk.point_x >= box_x
-        && walk.point_y >= hit_top
-        && walk.point_x < box_x + layout.width
-        && walk.point_y < hit_top + hit_h;
+    let (point_x, point_y) = walk.baseline_point(layout.node_id);
+    let contains =
+        point_x >= box_x && point_y >= hit_top && point_x < box_x + layout.width && point_y < hit_top + hit_h;
 
     // S12：同 deepest_node_at——不按祖先包含剪枝（溢出子内容可命中），仅记录包含点
     // 的盒（elementsAtPoint 序列语义不变）；hidden/collapse 盒剥夺候选资格。
@@ -919,6 +943,7 @@ pub fn hit_test_link(
         point_y: y,
         is_hidden: &|n| is_hidden_style(styles, n),
         is_pe_none: &|n| is_pe_none_style(styles, n),
+        animated_affine: hit_provider::animation_transform_provider(),
     };
     let mut best = (0, doc.root());
     deepest_node_at(layout, 0.0, 0.0, 0, &mut best, &walk);
@@ -938,6 +963,7 @@ pub fn hit_test_image(
         point_y: y,
         is_hidden: &|n| is_hidden_style(styles, n),
         is_pe_none: &|n| is_pe_none_style(styles, n),
+        animated_affine: hit_provider::animation_transform_provider(),
     };
     let mut best = (0, doc.root());
     deepest_node_at(layout, 0.0, 0.0, 0, &mut best, &walk);
@@ -957,6 +983,7 @@ pub fn hit_test_element(
         point_y: y,
         is_hidden: &|n| is_hidden_style(styles, n),
         is_pe_none: &|n| is_pe_none_style(styles, n),
+        animated_affine: hit_provider::animation_transform_provider(),
     };
     let mut best = (0, doc.root());
     deepest_node_at(layout, 0.0, 0.0, 0, &mut best, &walk);
@@ -1709,6 +1736,7 @@ mod tests {
             point_y: 10.0,
             is_hidden: &|n| is_hidden_style(&styles, n),
             is_pe_none: &|n| is_pe_none_style(&styles, n),
+            animated_affine: hit_provider::animation_transform_provider(),
         };
         let mut best = (0usize, doc.root());
         deepest_node_at(&layout.root, 0.0, 0.0, 0, &mut best, &walk);
@@ -2032,5 +2060,75 @@ mod tests {
         let ce = hit_test_element(&doc, &layout.root, &styles, 240.0, 20.0).expect("hit ce");
         assert_eq!(ce.id.as_deref(), Some("ce"));
         assert!(ce.drag_source.is_none(), "编辑宿主为手势屏障");
+    }
+
+    /// M2-S3c：动画 transform 命中修正——provider 注册旋转全矩阵后，视觉位置
+    /// （旋转后覆盖、基线盒外）命中元素，基线盒内但视觉已离开的位置不再命中；
+    /// 奇异矩阵与未命中键回落基线；测试收尾撤除 provider（进程级槽不残留）。
+    #[test]
+    fn animated_transform_provider_inverse_maps_hit_point() {
+        fn mul(a: [f64; 6], b: [f64; 6]) -> [f64; 6] {
+            [
+                a[0] * b[0] + a[2] * b[1],
+                a[1] * b[0] + a[3] * b[1],
+                a[0] * b[2] + a[2] * b[3],
+                a[1] * b[2] + a[3] * b[3],
+                a[0] * b[4] + a[2] * b[5] + a[4],
+                a[1] * b[4] + a[3] * b[5] + a[5],
+            ]
+        }
+        let doc = zero_dom::parse_html(r#"<body><div id="box"></div></body>"#);
+        let body = doc.get_elements_by_tag_name("body")[0];
+        let div = doc.get_element_by_id("box").expect("box");
+        let box_layout = LayoutBox {
+            node_id: Some(div),
+            x: 100.0,
+            y: 100.0,
+            width: 100.0,
+            height: 100.0,
+            ..LayoutBox::default()
+        };
+        let root = LayoutBox {
+            node_id: Some(body),
+            width: 800.0,
+            height: 600.0,
+            children: vec![box_layout],
+            ..LayoutBox::default()
+        };
+        let styles = HashMap::new();
+        let key = node_id_to_u64(div);
+        // 基线（无 provider）：盒内命中、盒外不命中。
+        let inside = hit_test_element(&doc, &root, &styles, 110.0, 110.0).expect("基线盒内命中");
+        assert_eq!(inside.id.as_deref(), Some("box"));
+        let above = hit_test_element(&doc, &root, &styles, 150.0, 85.0).expect("回落 body");
+        assert_ne!(above.id.as_deref(), Some("box"), "盒外不命中");
+
+        // 注册绕中心 rotate(45deg) 全矩阵（T(o)·A·T(−o)，o = 盒中心 (150,150)）：
+        // 视觉为外接菱形，顶点越过基线盒上缘至 y ≈ 79.3。
+        let (sin, cos) = (std::f64::consts::FRAC_1_SQRT_2, std::f64::consts::FRAC_1_SQRT_2);
+        let rotate45 = [cos, sin, -sin, cos, 0.0, 0.0];
+        let (ox, oy) = (150.0_f64, 150.0_f64);
+        let full = mul(
+            [1.0, 0.0, 0.0, 1.0, ox, oy],
+            mul(rotate45, [1.0, 0.0, 0.0, 1.0, -ox, -oy]),
+        );
+        hit_provider::set_animation_transform_provider(Some(std::sync::Arc::new(move |k: u64| {
+            (k == key).then_some(full)
+        })));
+        // 视觉位置（菱形内、基线盒外）→ 逆映射回基线命中。
+        let visual = hit_test_element(&doc, &root, &styles, 150.0, 85.0).expect("视觉位置命中");
+        assert_eq!(visual.id.as_deref(), Some("box"), "逆映射后命中动画元素");
+        // 基线盒内但视觉已离开（逆映射落到盒外）→ 不再命中该元素。
+        let gone = hit_test_element(&doc, &root, &styles, 110.0, 110.0).expect("回落 body");
+        assert_ne!(gone.id.as_deref(), Some("box"), "视觉已离开的位置不命中");
+
+        // 奇异矩阵（scale(1,0) 单轴压扁）→ 跳过 provider 回落基线命中。
+        hit_provider::set_animation_transform_provider(Some(std::sync::Arc::new(move |k: u64| {
+            (k == key).then_some([1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        })));
+        let fallback = hit_test_element(&doc, &root, &styles, 110.0, 110.0).expect("奇异回落基线");
+        assert_eq!(fallback.id.as_deref(), Some("box"), "奇异矩阵回落基线命中");
+
+        hit_provider::set_animation_transform_provider(None);
     }
 }
