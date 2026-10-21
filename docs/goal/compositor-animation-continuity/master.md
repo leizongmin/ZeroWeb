@@ -1,9 +1,9 @@
 # 合成动画连续性控制面
 
-**日期**：2026-10-21
-**状态**：Active；M1 ✅、M2-S1 全链路 ✅（DC-1 有条件成立）、M2-S2 全链路 ✅（S2a 查询一致性 + S2b 结束事件 + S2c DC-2 验收有条件成立；flag 默认仍关）。
+**日期**：2026-10-22
+**状态**：Active；M1 ✅、M2-S1 全链路 ✅（DC-1 有条件成立）、M2-S2 全链路 ✅（S2a 查询一致性 + S2b 结束事件 + S2c DC-2 验收有条件成立）、M2-S3a 取消面 ✅ + S3b 暂停面 ✅（flag 默认仍关）。
 **当前卡点**：无阻塞卡点。遗留缺口两项待排期：① 忙窗采样空洞（keep-alive tick 挂在 `wayland_client::conn::blocking_read`，呈现路径与 Wayland 解耦后消失）；② renderer 忙窗每文本更新全文档重解析（token 爆发 1:1 锁定忙片，放大主线程占空）。
-**下一步**：S3 实现——按 [S3 RFC](m2-slice-state-input-consistency.md) 步推进：S3a 取消面 ✅（renderer 导出代际差分 + animationcancel 恰一次派发，commit 0adb8751b）→ S3b 暂停面（play-state 运行时语义 + frozen_phase_s 协议承载）→ S3c 命中面（transform provider 槽 + hit_test 逆映射 + 点击注入器）→ S3d COMP-03 证据批。
+**下一步**：S3 实现——按 [S3 RFC](m2-slice-state-input-consistency.md) 步推进：S3a 取消面 ✅（renderer 导出代际差分 + animationcancel 恰一次派发，commit 0adb8751b）→ S3b 暂停面 ✅（协议 frozen_phase_s 1e0803bed + engine play-state 运行时 5ff047724 + renderer 暂停态机 0763a5ec2）→ S3c 命中面（transform provider 槽 + hit_test 逆映射 + 点击注入器）→ S3d COMP-03 证据批。
 **入口**：[目标契约](../compositor-animation-continuity.md) / [启动与证据协议](../ladybird-followups/README.md)
 
 ## 缺口与待决
@@ -11,7 +11,7 @@
 | 缺口/选择 | 首步 | 状态 |
 |---|---|---|
 | 动画是否独立推进及实际支持子集 | COMP-01 基线探针已跑：GPU 截图 3 帧全同 + 查询恒定（见 M1 证据） | BASELINE_FROZEN（2026-10-21） |
-| 时间/状态/命中几何共享契约 | 暂停、取消、结束和后台恢复联合验证 | NOT_STARTED |
+| 时间/状态/命中几何共享契约 | 暂停、取消、结束已落（S2b/S3a/S3b），余命中面 S3c；联合验证随 DC-3 | IN_PROGRESS |
 | Worker OffscreenCanvas 2D 呈现与释放 | 转移、worker 退出和 context lost fixture | NOT_STARTED |
 | WebGL 依赖与扩展属性 | 遵守 webgl-compat 门控，独立记录未支持项 | 待核查 |
 | headless 阻塞面备忘：同步 evaluate 占用 mux 主循环（1100ms 截图等待实测） | M2 切片设计时核对 #24/#15 学习 | 已记录（M1 证据 README §结论 4） |
@@ -26,7 +26,7 @@
 | 阶段 | 产物 | 状态 | 证据 |
 |---|---|---|---|
 | M1 | 真实窗口阻塞基线与支持矩阵 | ✅ 完成（headless 基线 + 真实窗口帧序列 FROZEN，内容归因像素三重证实；窗口多帧采样工具 frame_dump 已入库） | [2026-10-21-m1-comp01-baseline](evidence/2026-10-21-m1-comp01-baseline/README.md) / [2026-10-21-m1-window-frames](evidence/2026-10-21-m1-window-frames/README.md) |
-| M2 | 合成动画、状态与输入一致切片 | IN_PROGRESS（S1 全链路 ✅ DC-1 有条件成立；S2 全链路 ✅ DC-2 有条件成立——查询一致性/结束事件/对照/换代四场景落证据；余 S3 状态与输入一致；currentTime/playState 面范围裁剪记缺口） | [m2-slice-compositor-sampling](m2-slice-compositor-sampling.md) / [S2 RFC](m2-slice-query-consistency.md) / [S1e DC-1 证据](evidence/2026-10-21-m2s1e-dc1-acceptance/README.md) / [S2c DC-2 证据](evidence/2026-10-21-m2s2c-dc2-acceptance/README.md) |
+| M2 | 合成动画、状态与输入一致切片 | IN_PROGRESS（S1 全链路 ✅ DC-1 有条件成立；S2 全链路 ✅ DC-2 有条件成立——查询一致性/结束事件/对照/换代四场景落证据；S3a 取消 ✅、S3b 暂停 ✅，余 S3c 命中面 + S3d DC-3 证据；currentTime/playState 面范围裁剪记缺口） | [m2-slice-compositor-sampling](m2-slice-compositor-sampling.md) / [S2 RFC](m2-slice-query-consistency.md) / [S1e DC-1 证据](evidence/2026-10-21-m2s1e-dc1-acceptance/README.md) / [S2c DC-2 证据](evidence/2026-10-21-m2s2c-dc2-acceptance/README.md) |
 | M3 | Worker 2D 呈现与生命周期 | NOT_STARTED | 无 |
 | M4 | GPU/语义/资源与 DC 审计 | NOT_STARTED | 无 |
 
@@ -55,5 +55,8 @@
 2026-10-21 续轮（S2c）：DC-2 COMP-02 真实窗口验收——查询一致性 + 结束事件 + 导航换代四场景证据落账。fixture comp02-script-state-and-end-event.html（断言全外显：gCS 条带灰度编码 + 事件回执四格色条 + page2 换代页）+ dc2 observe/analyze 脚本。过程中发现并修复 browser Get 前台 key 漂移两段缺陷：① demux Data 臂按 key 全等 fatal 断链（compositor GetCompositorFrame 只取 surface_id 回实际前台 key，忙窗后 keep-alive 排队 Get(20)/Get(21) 前台 20 实测命中）→ 放宽到 (surface, epoch)；② 放宽后静默饥饿——`CompletedFrameChannel::try_recv` 的 `>= frame_id` 匹配令漂移响应永不可采纳（on3 实测 compositor 277 次 Get 全 now_active=true 而画面静止）→ 按 (surface, epoch) 取 per-surface 最新完成帧；回归测试 `get_accepts_front_frame_id_drift_from_requested_key` 锁定。frame_dump 上限 256→512（12s 全时间线覆盖）。实测（evidence/2026-10-21-m2s2c-dc2-acceptance/）：ON 357 帧、renderer 恰 3 行 animationend（elapsed 均 1.000s，间隔 3.031/3.649s 与 origin 相对预期一致）、回执 busy@2256（负载窗内=排队语义）/idle@5979/replay@7389/own@8956 全 pass 零 fail、nav @7232 换代旧事件不重放、稳态 median dphase 0.080；OFF 40 帧收敛冻结、条带恒级联值、零事件。相位尾差归因条带像素只在内容帧提交时上屏（16 个内容帧节奏 100-1300ms，ost 变化帧 dphase 立即回落）——查询等价由单一采样器单测 + compositor 同函数消费结构性保证，RFC §3 两行 Assumption 升级已核实。DC-2 判有条件成立（CSSAnimation 面未建=条件项）。
 2026-10-21 续轮（S3 立项）：DC-3 切片 RFC 定稿——[m2-slice-state-input-consistency.md](m2-slice-state-input-consistency.md)。源码核查定现状：命中测试对 CSS transform 零感知（hit_test.rs 全无 transform，click 走 webview.hit_test_element → layout 基线几何）——compositor 采样让视觉动起来后命中与视觉分叉为该路径新引入不一致；`animation-play-state` 解析 + gCS 序列化但运行时无暂停语义（预存在缺口，flag 关同样照跑）；`animationcancel` 仅 display:none（R347）。设计定案：取消以 engine 运行时为单一权威（drain_cancelled 镜像 drain_just_finished，扩展到 animation-name 对账消失），暂停落 engine paused_at 记账/冻结/重基 + 导出侧 start 重映射（协议零新增），命中走 engine 进程级 provider 槽（element_key → 折叠仿射，renderer 用 sample_declaration + fold_affine 同源注册）+ hit_test 逆矩阵点测；「真实输入」断言经 env 门控 `ZW_INJECT_CLICKS` 走 winit 输入入口（窗口模式无 xdotool，OS 级遮挡记局限，切后台子句以忙窗暂停-恢复承载）。协议零新增消息；范围裁剪：静态 transform 命中、getBoundingClientRect 几何查询面记缺口/待定。（该两条设计随后经实现推演修正，见 RFC §0 与下条记录。）
 2026-10-21 续轮（S3a，commit 0adb8751b）：animationcancel 导出代际差分派发（RFC §2.1 修正后设计：取消权威 = renderer 代际差分——真实 renderer 走 render_html 不调 tick_animation_styles，引擎时钟冻结，engine 运行时对导出域完成/取消均不可见）。renderer `AnimationExportState` 增 `cancelled_reported`（exactly-once 去重，换代 Self::new 整表清空防跨代回放）+ `pending_events`（差分事件缓冲）；advance 同代际差分「上代有、本代无」按上代 sent 声明采样分型——finished 补发 animationend（样式移除与自然完成同帧终态优先），未终结发 animationcancel（elapsed=活跃时长 clamp [0, 总时长]，延迟不计入，CSS Animations §animationcancel）；未发送过的消失声明按取消上报（elapsed 取声明计时，R347 口径）；deactivate 清新字段（域退出不发积压事件）；drain_finished_events 扩为 drain_animation_events 双类出队，check 日志按 as_event_type 分型（animationend grep 口径不变，S2c 证据可复现）。dispatch 管线 kind-generic 零改动。单测 +4（恰一次取消/移除竞速自然完成发 End/换代不派发旧代 cancel/域退出清积压）；zero-renderer animation 15 全绿、guard clippy -D warnings 干净、make test 全量 EXIT=0。WPT 钉住面：本批零 engine 行为变化（R347 保持现状），钉住核对随 S3b 引擎暂停语义批执行（RFC §3 待定行同步收窄）。
+2026-10-22 续轮（S3b-1，commit 1e0803bed）：协议显式承载冻结相位（RFC §2.2 修正定案：start 重映射方案否决——墙钟采样冻结一次后相位仍推进；显式 `frozen_phase_s` 才能让采样逐帧恒定）。`CompositorAnimationDeclaration` 尾字段 `frozen_phase_s: Option<f64>`（serde default，FR-11 追加式纪律，bincode Option 恒编码无破坏）；`sample_declaration` 分支 `active_elapsed = frozen.unwrap_or(墙钟差)`——compositor 像素/renderer gCS 查询覆盖/S2b 终结判定三消费者同函数自动一致。边界语义（CSS Animations §play-state）：延迟期暂停（负冻结值）走 backwards/None fill 分支、结束后暂停（越过末轮）finished + fill 不复活、暂停中 finished 恒 false。单测 +2（冻结值边界语义/序列化往返），5 个构造点补 `frozen_phase_s: None`；make test 全量绿。
+2026-10-22 续轮（S3b-2，commit 5ff047724）：engine animation-play-state 运行时暂停语义（预存在缺口「解析 + gCS 序列化但无运行时语义」本批补齐，flag 关同样受益）。`AnimationState.paused_at` 冻结点：tick 以 `paused_at.unwrap_or(now)` 求值（输出冻结、迭代推进与终态判定停走）；新增 `reconcile_play_state`——暂停记冻结点、恢复重基 `start_time += now − paused_at` 并清空冻结点（首版缺陷：恢复只重基未清点，tick 仍按冻结时刻求值致 elapsed 负值进 delay 分支，新测试捕获即修），finished 动画不对账。pipeline `apply_animation_overrides` 逐动画读 `style.animation_play_state` 驱动对账；导出声明 `ExportedAnimationDeclaration` 增 `paused` 布尔供 renderer 暂停态机消费。单测 +2（暂停冻结/恢复重基、暂停推迟 finish 事件）。WPT 钉住核对（RFC §3）：release runner 重建后跑本地 web-animations 语料（上游 fetch 503 跳过，guard 资源约束不变），前后 fail 集逐条一致 503 Pass/438 Fail——零回归。
+2026-10-22 续轮（S3b-3，commit 0763a5ec2）：renderer 导出暂停态机（engine paused 布尔 → 协议冻结相位）。`AnimationExportState` 增 `paused_frozen: HashMap<u64, f64>`：paused 翻 true 冻结当刻活跃相位进声明 `frozen_phase_s`（墙钟无关 → 声明字节稳定，发送闸门零 churn）；翻 false 重基锚点 `now − delay − frozen`（暂停不计入活跃时长；重基先于换算——换算 start 取自锚点，冻结附着后于换算），采样自冻结相位续走。消失剪除镜像 anchors，换代/域退出清空。S3a 取消分支同步修正：暂停中取消 elapsedTime 取冻结相位而非墙钟差（墙钟差把整段暂停错记活跃）。单测 +2（暂停冻结零 churn 与恢复重基续走、暂停不触发终结且取消取冻结值）；clippy -D warnings 干净、make test 全量 EXIT=0（76 套件）。
 
 复用资产：timing-animation（runner 泵/查询面）、workers-compat（worker 生命周期）；不重复实现。授权记录：2026-10-20 规划轮不授权提交/推送；2026-10-21 用户启动指令授权按仓库规则提交推送。生产 GPU 证据口径：headless GPU 光栅为生产渲染管线+生产 GPU 光栅路径，非窗口合成器 vsync 帧序列（局限见证据 README）。

@@ -82,7 +82,7 @@ flag 开真实窗口（autostart 自驱动 + env 门控点击注入）：
 | 取消即时性上限 | Assumption | = 一次样式对账 + 内容帧提交 + 声明消息往返；场景 (c) 以「帧序列收敛到基线 + 事件恰一次」验收，不逐帧断言延迟 |
 | OS 级遮挡/最小化的「切后台」证据 | Open（环境受限） | WSLg 无窗口自动化工具；如后续环境具备 xdotool/wmctrl 再补遮挡证据，当前以忙窗暂停-恢复承载恢复语义 |
 | `getBoundingClientRect`/`RectBridge` 几何查询面的动画一致性 | Open | 本切片只覆盖点击命中；几何查询面扩展按需另立小切片（S2 RFC §2.1 gCS 覆盖不含几何 API，同理） |
-| WPT 钉住面 | 待办（S3b 实现批；S3a 已落——renderer 侧零 engine 行为变化，无需钉住） | CSS Animations 既有 WPT（animationcancel/play-state 相关）回归必须同批核对，行为修复不得翻绿为红 |
+| WPT 钉住面 | ✅ S3b-2 已核对（2026-10-22）：release runner 重建后跑本地 web-animations 语料（上游 fetch 503，按 Makefile 原命令 guard 直跑跳过 fetch），前后 fail 集逐条一致 503 Pass / 438 Fail，零翻绿为红 | CSS Animations 既有 WPT（animationcancel/play-state 相关）回归必须同批核对，行为修复不得翻绿为红 |
 
 ## 4. 与后续切片的契约预留
 
