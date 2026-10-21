@@ -24,6 +24,10 @@ GPU 管线深依赖——**除 M1 资产切片外全部用户门控**（先例�
 > - canvas getContext 面存在（2d 已用）——'webgl' 上下文类型缺
 > - **WPT corpora**：`webgl/`（Khronos conformance 移植，体量大；dehydrated
 >     形态 + 渲染断言——runner 形态支持启动时评估）
+>     **▶ 2026-10-22 M1 实测修正**：pin rev 处 `webgl/` 为 10 文件平铺目录
+>     （7 个 testharness 错误语义案约 15 subtests + 1 手工 crash 页 +
+>     1 idlharness），dehydrated 与渲染断言均 **0 案**；Khronos 全量套件
+>     不在 WPT 仓。见 [M1 盘点](webgl-compat/evidence/2026-10-22-m1-import-inventory.md)
 
 ---
 
@@ -67,8 +71,9 @@ zero-protocol 契约；触 GPU 进程边界即 BLOCK 上报。
 
 ## Done Criteria
 
-- [ ] **DC-1**：webgl/ corpus 导入 + 用例分布盘点（dehydrated/渲染断言占比）+
+- [x] **DC-1**（2026-10-22）：webgl/ corpus 导入 + 用例分布盘点（dehydrated/渲染断言占比）+
       首批收敛子集建议书提交用户 + suites CSV 回填
+      （[M1 盘点](webgl-compat/evidence/2026-10-22-m1-import-inventory.md)）
 - [ ] **DC-2**（门控）：WebGL 1.0 最小上下文（创建/clear/draw）WPT 子集收敛
 - [ ] **DC-3**（门控）：缓冲/纹理/shader 程序管线逐簇收敛（切片边界用户确认）
 - [ ] **DC-4**：`make test` 全绿 + clippy `-D warnings` + fmt + reftest 零回归
@@ -76,7 +81,7 @@ zero-protocol 契约；触 GPU 进程边界即 BLOCK 上报。
 
 ## 活跃里程碑
 
-**M1** 导入盘点（唯一自主切片；corpus fetch 用编号脚本 `tests/wpt-runner/scripts/goals/99-webgl-compat.sh`（索引 README；幂等续拉，GitHub API 限流时部分目录跳过属预期））→ **M2-M3**（门控切片，边界用户定）→
+**M1** 导入盘点（唯一自主切片；corpus fetch 用编号脚本 `tests/wpt-runner/scripts/goals/99-webgl-compat.sh`（索引 README；幂等续拉，GitHub API 限流时部分目录跳过属预期）——**2026-10-22 完成**，见 [M1 盘点](webgl-compat/evidence/2026-10-22-m1-import-inventory.md)）→ **M2-M3**（门控切片，边界用户定；批次选项见 M1 建议书）→
 **M4** 收口（WebGL2/WebGPU 挂账定稿）。
 
 ## Final Output Protocol

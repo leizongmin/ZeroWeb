@@ -13,6 +13,11 @@ source "${SCRIPT_DIR}/lib.sh"
 GOAL="webgl-compat"
 DIRS=( "webgl"  )
 
+# pin rev 处 webgl/ 为 12 文件平铺目录（8 .html 回归用例 + idlharness.any.js +
+# common.js + 2 元数据，无子目录）；.any.js 为 WebGL 接口面（idlharness）唯一
+# 形态，按 lib.sh opt-in 拉取。
+GOAL_PULL_ANY_JS=1
+
 goals_fetch_all
 goals_inventory
 goals_next_steps "${GOAL}"
