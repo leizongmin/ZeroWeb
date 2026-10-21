@@ -1,0 +1,161 @@
+{
+  "fixture": "comp01-transform-opacity-under-js-load.html",
+  "started_at_wall": "2026-10-21T02:19:28.529Z",
+  "samples": [
+    {
+      "name": "s0",
+      "t_wall_ms": 350,
+      "capture": {
+        "name": "s0",
+        "wall_ms": 71,
+        "png_sha256": "f4d45d9cf87b3dd3f6be0624b3205390a34a119bad12d80da762713a9d4a1218",
+        "png_bytes": 9382
+      },
+      "query": {
+        "wall_ms": 41,
+        "state": {
+          "opacity": "1",
+          "transform": "none",
+          "marker": "load=idle",
+          "anims": 0,
+          "pageNow": 690
+        }
+      }
+    },
+    {
+      "name": "s1",
+      "t_wall_ms": 1465,
+      "capture": {
+        "name": "s1",
+        "wall_ms": 4,
+        "png_sha256": "f4d45d9cf87b3dd3f6be0624b3205390a34a119bad12d80da762713a9d4a1218",
+        "png_bytes": 9382
+      },
+      "query": {
+        "wall_ms": 47,
+        "state": {
+          "opacity": "1",
+          "transform": "none",
+          "marker": "load=idle",
+          "anims": 0,
+          "pageNow": 1744
+        }
+      }
+    },
+    {
+      "name": "s2",
+      "t_wall_ms": 2718,
+      "capture": {
+        "name": "s2",
+        "wall_ms": 5,
+        "png_sha256": "f4d45d9cf87b3dd3f6be0624b3205390a34a119bad12d80da762713a9d4a1218",
+        "png_bytes": 9382
+      },
+      "query": {
+        "wall_ms": 49,
+        "state": {
+          "opacity": "1",
+          "transform": "none",
+          "marker": "load=idle",
+          "anims": 0,
+          "pageNow": 2998
+        }
+      }
+    },
+    {
+      "name": "s3",
+      "t_wall_ms": 2975,
+      "capture": {
+        "name": "s3",
+        "wall_ms": 4,
+        "png_sha256": "f4d45d9cf87b3dd3f6be0624b3205390a34a119bad12d80da762713a9d4a1218",
+        "png_bytes": 9382
+      },
+      "query": {
+        "wall_ms": 101,
+        "state": {
+          "opacity": "1",
+          "transform": "none",
+          "marker": "load=slice 1/4",
+          "anims": 0,
+          "pageNow": 3306
+        }
+      }
+    },
+    {
+      "name": "s4",
+      "t_wall_ms": 3581,
+      "capture": {
+        "name": "s4",
+        "wall_ms": 5,
+        "png_sha256": "cf85d929e6f5824fda63ddc915ff397911666fd7f96898e0ce72a1c6ccab24f6",
+        "png_bytes": 10150
+      },
+      "query": {
+        "wall_ms": 95,
+        "state": {
+          "opacity": "1",
+          "transform": "none",
+          "marker": "load=slice 3/4",
+          "anims": 0,
+          "pageNow": 3908
+        }
+      }
+    },
+    {
+      "name": "s5",
+      "t_wall_ms": 5483,
+      "capture": {
+        "name": "s5",
+        "wall_ms": 4,
+        "png_sha256": "6912a151273b1b9ec57e1631da3868ea0c5740a058d23a8098d1fbe78eda1a90",
+        "png_bytes": 10924
+      },
+      "query": {
+        "wall_ms": 44,
+        "state": {
+          "opacity": "1",
+          "transform": "none",
+          "marker": "load=done slices=4",
+          "anims": 0,
+          "pageNow": 5759
+        }
+      }
+    },
+    {
+      "name": "s6",
+      "t_wall_ms": 5886,
+      "capture": {
+        "name": "s6",
+        "wall_ms": 5,
+        "png_sha256": "7a94d71c3aa820365bc39a5e86fa94397c7b5d2607e18a428e1396d0b15adcfd",
+        "png_bytes": 9780
+      },
+      "query": {
+        "wall_ms": 49,
+        "state": {
+          "opacity": "1",
+          "transform": "none",
+          "marker": "control=mutated",
+          "anims": 0,
+          "pageNow": 6167
+        }
+      }
+    }
+  ],
+  "verdict": {
+    "anim_idle": "FROZEN",
+    "anim_after_load": "MUTATION_ATTRIBUTED",
+    "mutation_control": "OK",
+    "load_completed": true,
+    "busy_reply": {
+      "wall_ms": 1252,
+      "value": "{\"Number\":1200.0}"
+    },
+    "blocked_capture": {
+      "served": true,
+      "waited_ms": 1100,
+      "png_sha256": "6912a151273b1b9ec57e1631da3868ea0c5740a058d23a8098d1fbe78eda1a90"
+    }
+  }
+}
