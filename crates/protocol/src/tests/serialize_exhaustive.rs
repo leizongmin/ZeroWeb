@@ -218,6 +218,17 @@ fn test_roundtrip_all_message_kinds() {
                 result: Ok(AutomationResult::Elements(Vec::new())),
             }),
         },
+        // 合成器动画声明（M2-S1）：带 serde default 字段的载荷 roundtrip。
+        IpcMessage {
+            id: 31,
+            kind: IpcMessageKind::CompositorAnimationState(CompositorAnimationStateParams {
+                surface_id: 1,
+                navigation_epoch: 2,
+                generation: 1,
+                declarations: Vec::new(),
+                finished: Vec::new(),
+            }),
+        },
     ];
 
     for msg in &messages {
@@ -226,7 +237,7 @@ fn test_roundtrip_all_message_kinds() {
         assert_eq!(out.id, msg.id, "id mismatch");
     }
 
-    assert_eq!(messages.len(), 30, "should test all listed message kinds");
+    assert_eq!(messages.len(), 31, "should test all listed message kinds");
 }
 
 /// 测试 StorageType::Session 变体也能序列化。

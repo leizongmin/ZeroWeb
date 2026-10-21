@@ -3487,6 +3487,8 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             | IpcMessageKind::ServiceWorkerHostEvent(_)
             | IpcMessageKind::NavigationStarted(_)
             | IpcMessageKind::NavigationCommitted(_)
+            // 合成器动画声明是 renderer 的发送方向（M2-S1），不接收。
+            | IpcMessageKind::CompositorAnimationState(_)
             | IpcMessageKind::CrashNotification(_) => {
                 tracing::warn!("渲染进程收到非预期消息类型（应从渲染进程发出）");
                 Ok(())

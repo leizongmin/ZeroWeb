@@ -497,6 +497,8 @@ pub fn paint_snapshot_from_primitives(
                 height: boundary.height,
             })
             .collect(),
+        // M2-S1：动画作用域由声明导出路径填充（S1b 接线）；当前恒空 = 现状行为。
+        animation_scopes: Vec::new(),
     }
 }
 

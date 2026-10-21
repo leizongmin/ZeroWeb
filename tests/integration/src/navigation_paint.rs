@@ -95,6 +95,7 @@ fn red_paint_snapshot(epoch: u64) -> PaintSnapshotParams {
         dirty_rects: vec![],
         hit_test: None,
         text_control_boundaries: vec![],
+        animation_scopes: vec![],
     }
 }
 

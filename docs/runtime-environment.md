@@ -35,6 +35,7 @@ switch there before consuming it in an application or library crate.
 | `ZW_COMPOSITOR_SHM` | `0`/`false` disables | enabled on Linux | Linux POSIX shared-memory frame transport. |
 | `ZW_COMPOSITOR_GPU_ZERO_COPY` | `0`/`false` disables | enabled on Linux | Linux shared-image mmap zero-copy consumption. |
 | `ZW_COMPOSITOR_SCROLL_TRANSFORM` | `0`/`false` disables | enabled | Re-rasterize the current document viewport in compositor when scrolling. |
+| `ZW_COMPOSITOR_ANIMATIONS` | `1`/`true` enables | disabled | Compositor-side CSS animation sampling (renderer exports animation declarations; compositor re-rasterizes sampled paint at frame pull). |
 | `ZW_RENDERER_SECCOMP` | `0`/`false` disables | enabled | Enable renderer seccomp sandbox hook. |
 | `ZW_COMPOSITOR_SANDBOX` | `0`/`false` disables | enabled | Enable compositor environment sanitization. |
 | `ZW_COMPOSITOR_SECCOMP` | `0`/`false` disables | enabled | Enable compositor seccomp filtering on Linux. |

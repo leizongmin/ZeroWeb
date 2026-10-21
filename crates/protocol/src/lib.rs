@@ -8,6 +8,7 @@
 #![allow(clippy::approx_constant)]
 #![allow(clippy::useless_vec)]
 
+pub mod animation;
 pub mod channel;
 pub mod compositor_types;
 pub mod frame_shm;
@@ -24,6 +25,7 @@ pub mod fd_socket_linux;
 #[cfg(windows)]
 pub mod job;
 
+pub use animation::*;
 pub use channel::*;
 pub use compositor_types::*;
 pub use frame_shm::*;

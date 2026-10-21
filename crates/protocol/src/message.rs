@@ -303,6 +303,10 @@ pub enum IpcMessageKind {
     /// 生命周期重发事件源，cdp-protocol S16——PW page.setContent 在 console tag 后等待
     /// 新 load 生命周期）。
     DocumentWriteSettled(crate::message::DocumentWriteSettledParams),
+    /// 合成器动画声明全集（renderer → compositor；M2-S1 最新生效：每 (surface, epoch)
+    /// 以 generation 单调替换，旧代际丢弃。契约见 `crate::animation` 模块文档与
+    /// goal 切片 RFC；`ZW_COMPOSITOR_ANIMATIONS` 关闭时不发送）。
+    CompositorAnimationState(crate::animation::CompositorAnimationStateParams),
 }
 
 /// 焦点变更信息（渲染→浏览器）。

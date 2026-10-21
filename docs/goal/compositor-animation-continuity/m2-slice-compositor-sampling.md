@@ -37,7 +37,7 @@
 
 | 类型 | 形状 | 语义 |
 |---|---|---|
-| `AnimationPropertyValue` | enum：`Opacity(f64)` / `Affine2d([f64; 6])` | 采样域的强类型值；renderer 出口把 engine 字符串域求值结果折叠到此域（opacity 直接 f64；transform 经既有 `compute_transform_matrix` 同源折叠，不可折叠 → 动画标 `composable: false`） |
+| `AnimationPropertyValue` | enum：`Opacity(f64)` / `Transform(Vec<TransformFunctionValue>)` | 采样域的强类型值。transform **按 2D 函数列表传输**（translate/rotate/scale/skew/matrix，px/deg/无量纲），采样器内先逐函数插值再折叠仿射——若导出时预折叠为仿射再插值，旋转中间矩阵会偏离 engine 逐函数插值路径（guidelines #6），故折叠必须发生在采样之后；3D/异构端点在导出侧标 `composable: false` |
 | `AnimationKeyframe` | `{ offset: f64, value: AnimationPropertyValue }` | 已按 engine `KeyframePoint` 排序补界的端点列 |
 | `AnimationTiming` | `{ duration_ms: f64, delay_ms: f64, iterations: Option<f64>, direction: u8 映射, fill: u8 映射, easing: u8 映射 + 参数 }` | 与 engine `AnimationState` 字段对应；easing 先限 linear/ease 族枚举，step/cubic-bezier 参数随 S2 需求扩展 |
 | `CompositorAnimationDeclaration` | `{ animation_id: u64, composable: bool, start_monotonic_ns: u64, timing, keyframes: Vec<AnimationKeyframe>, property: enum {Opacity, Transform} }` | `animation_id` 由 renderer 分配（`(NodeId::as_ffi(), name)` 哈希），paint 作用域与声明以它绑定 |

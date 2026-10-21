@@ -2189,6 +2189,7 @@ mod navigation_contract_tests {
             dirty_rects: vec![],
             hit_test: None,
             text_control_boundaries: vec![],
+            animation_scopes: vec![],
         }
     }
 

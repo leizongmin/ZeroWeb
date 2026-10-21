@@ -610,6 +610,10 @@ pub struct PaintSnapshotParams {
     /// 文本控件 caret 边界缓存。
     #[serde(default)]
     pub text_control_boundaries: Vec<IpcTextControlBoundary>,
+    /// paint 动画作用域（M2-S1；`ZW_COMPOSITOR_ANIMATIONS` 开启时 renderer 导出，
+    /// compositor 据此把采样值应用到动画元素的图元区间。契约见 `crate::animation`）。
+    #[serde(default)]
+    pub animation_scopes: Vec<crate::animation::IpcAnimationScope>,
 }
 
 /// IPC 命中测试布局节点（仅几何 + node id）。
@@ -713,6 +717,7 @@ impl Default for PaintSnapshotParams {
             navigation_epoch: 0,
             document_generation: 0,
             text_control_boundaries: Vec::new(),
+            animation_scopes: Vec::new(),
         }
     }
 }

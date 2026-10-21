@@ -42,6 +42,15 @@ pub fn compositor_scroll_transform_enabled() -> bool {
     zero_runtime_config::enabled_by_default("ZW_COMPOSITOR_SCROLL_TRANSFORM")
 }
 
+/// 是否启用合成器动画采样（M2-S1 切片；默认关，`ZW_COMPOSITOR_ANIMATIONS=1` 开启）。
+///
+/// 开启时 renderer 导出动画声明与 paint 作用域，compositor 在 Get 帧时对已存
+/// paint 按共享单调钟采样重光栅（复用 scroll transform 的 Get 路径先例）。
+/// flag 默认关保证全链路行为与现状一致；翻默认需 perf-gate 证据（goal 切片 RFC）。
+pub fn compositor_animations_enabled() -> bool {
+    zero_runtime_config::enabled_when_true("ZW_COMPOSITOR_ANIMATIONS")
+}
+
 /// 是否启用 GPU shared image 元数据通道（RFC 4.3-S2；Linux 默认开；`ZW_COMPOSITOR_GPU_IMAGE=0` 禁用）。
 ///
 /// mailbox 当前复用 POSIX shm 后端；S4 头含 sync_token fence；真 GPU 纹理为后续。
