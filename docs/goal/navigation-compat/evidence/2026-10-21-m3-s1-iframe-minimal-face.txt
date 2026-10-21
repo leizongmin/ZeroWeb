@@ -1,0 +1,247 @@
+bash tests/wpt-runner/scripts/goals/60-navigation-compat.sh
+== fetch 语料（pin 315976933，FORCE=0）==
+  navigation-api/currententrychange-event: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/focus-reset: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigate-event: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigation-activation: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigation-history-entry: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigation-methods: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/ordering-and-transition: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/per-entry-events: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/precommit-handler: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/scroll-behavior: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/state: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/updateCurrentEntry-method: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigation-methods/return-value: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigation-methods/resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigation-history-entry/resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/ordering-and-transition/resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigate-event/resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  navigation-api/navigation-activation/resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+curl: (22) The requested URL returned error: 404
+  navigation-api/per-entry-events/resources: API 列目录失败（限流/网络）——跳过，稍后重跑续拉
+  html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/browsing-the-web/navigating-across-documents/initial-empty-document/resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/browsing-the-web/navigating-across-documents/resources: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/history/the-history-interface: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/history/the-location-interface: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/history/the-session-history-of-browsing-contexts: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/history/joint-session-history: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/browsing-the-web/history-traversal: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/browsing-the-web/navigating-across-documents: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/browsing-the-web/scroll-to-fragid: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/browsers/browsing-the-web/unloading-documents: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+  html/semantics/embedded-content/the-iframe-element: 已含 .html 用例，跳过 API 列目录（FORCE=1 可强制重列）
+== 语料盘点（wpt-data 本地 .html，含子目录）==
+  navigation-api                 439 案
+  navigation-api/navigation-methods/return-value    73 案
+  navigation-api/navigation-methods/resources     5 案
+  navigation-api/navigation-history-entry/resources     5 案
+  navigation-api/state/resources     0 案
+  navigation-api/precommit-handler/resources     0 案
+  navigation-api/focus-reset/resources     0 案
+  navigation-api/ordering-and-transition/resources     1 案
+  navigation-api/navigate-event/resources     9 案
+  navigation-api/navigation-activation/resources     1 案
+  navigation-api/per-entry-events/resources     0 案
+  html/browsers/browsing-the-web/navigating-across-documents/replace-before-load/resources     4 案
+  html/browsers/browsing-the-web/navigating-across-documents/initial-empty-document/resources     1 案
+  html/browsers/browsing-the-web/navigating-across-documents/multiple-globals/resources     0 案
+  html/browsers/browsing-the-web/navigating-across-documents/resources    24 案
+  html/browsers/history/the-history-interface   111 案
+  html/browsers/history/the-location-interface    98 案
+  html/browsers/history/the-session-history-of-browsing-contexts     5 案
+  html/browsers/history/joint-session-history     8 案
+  html/browsers/browsing-the-web/history-traversal    79 案
+  html/browsers/browsing-the-web/navigating-across-documents   127 案
+  html/browsers/browsing-the-web/scroll-to-fragid    24 案
+  html/browsers/browsing-the-web/unloading-documents    83 案
+  html/semantics/embedded-content/the-iframe-element   161 案
+== M1 下一步（rally 轮，契约见 docs/goal/navigation-compat.md DC-1）==
+  1. runner 通道：zero-wpt-runner 新增 testharness 子命令 + per-dir skip 规则
+  2. Makefile：fetch-wpt / testharness target（test-guard 包裹，照 testharness-fs 先例）
+  3. 基线：分类通过率（文本 + JSON）落 docs/goal/navigation-compat/evidence/
+  4. 回填：docs/compat/trends/wpt-suites.csv planned 行转数据行（evidence 列给来源）
+rustc -O scripts/test-guard.rs -o target/test-guard
+cargo build --release --bin zero-wpt-runner
+   Compiling zero-engine v0.1.0 (/lzcapp/document/work/ZeroWeb-3/crates/engine)
+   Compiling zero-page-runtime v0.1.0 (/lzcapp/document/work/ZeroWeb-3/crates/page-runtime)
+   Compiling zero-webview v0.1.0 (/lzcapp/document/work/ZeroWeb-3/crates/webview)
+   Compiling zero-wpt-runner v0.1.0 (/lzcapp/document/work/ZeroWeb-3/tests/wpt-runner)
+    Finished `release` profile [optimized] target(s) in 33.86s
+./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 2700 -- ./target/release/zero-wpt-runner testharness-navigation the-iframe-element
+Fail html/semantics/embedded-content/the-iframe-element/content_document_changes_only_after_load_matures.html :: contentDocument should only change after a load matures.
+  assert_true: expected true got false
+Pass html/semantics/embedded-content/the-iframe-element/document-getters-return-null-for-cross-origin.html :: HTMLIFrameElement.contentDocument for cross-origin document
+Pass html/semantics/embedded-content/the-iframe-element/document-getters-return-null-for-cross-origin.html :: HTMLIFrameElement.getSVGDocument() for cross-origin document
+Pass html/semantics/embedded-content/the-iframe-element/historical.html :: iframe.seamless should not be supported
+Pass html/semantics/embedded-content/the-iframe-element/historical.html :: iframe.allowPaymentRequest should not be supported
+Timeout html/semantics/embedded-content/the-iframe-element/iframe-allow.html :: html/semantics/embedded-content/the-iframe-element/iframe-allow.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 3125], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Fail html/semantics/embedded-content/the-iframe-element/iframe-allowfullscreen.html :: iframe-noload-noallowfullscreen
+  assert_true: Fullscreen should still be enabled in same-origin document without allowfullscreen attribute expected true got undefined
+Fail html/semantics/embedded-content/the-iframe-element/iframe-allowfullscreen.html :: iframe-noload-allowfullscreen
+  assert_true: Fullscreen should be enabled with allowfullscreen attribute expected true got undefined
+Fail html/semantics/embedded-content/the-iframe-element/iframe-allowfullscreen.html :: iframe-same-origin-allowfullscreen
+  assert_true: Document inside same-origin iframe without allowfullscreen attribute should still have fullscreen enabled flag set expected true got undefined
+Timeout html/semantics/embedded-content/the-iframe-element/iframe-allowfullscreen.html :: html/semantics/embedded-content/the-iframe-element/iframe-allowfullscreen.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 4040], state={"loaded":true,"pending":1,"phase":4,"tests":4}, test_wait=false)
+Fail html/semantics/embedded-content/the-iframe-element/iframe-append-to-child-document.html :: Append iframe element to its own child document
+  assert_equals: expected null but got object "[object Window]"
+Pass html/semantics/embedded-content/the-iframe-element/iframe-display-none-with-object.html :: Load event triggered on window
+Pass html/semantics/embedded-content/the-iframe-element/iframe-first-load-canceled-second-load-blank.html :: about:blank navigation is asynchronous, even if the initial one is canceled.
+Pass html/semantics/embedded-content/the-iframe-element/iframe-load-event.html :: load event of blob URL
+Pass html/semantics/embedded-content/the-iframe-element/iframe-load-event.html :: load event of initial about:blank
+Fail html/semantics/embedded-content/the-iframe-element/iframe-loading-eager.html :: Test that iframes with loading='eager' load immediately regardless of their position with respect to the viewport.
+  assert_true: The in_viewport element should have loaded before window.load(). expected true got false
+Pass html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-adopt-lazy-iframe-from-script-disabled-document.html :: Test lazy loading iframe remains lazy loading originally createdin a script-disabled document, then got adopted to a regular document
+Fail html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-base-url-2.html :: html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-base-url-2.html
+  page script threw (declared tests: 0): Script error: page script: ReferenceError: ElementLoadPromise is not defined
+    at eval (eval at <anonymous> (unknown source), <anonymous>:1:31)
+    at eval (<anonymous>)
+    at <anonymous>:3:38
+Fail html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-base-url-3.html :: html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-base-url-3.html
+  page script threw (declared tests: 0): Script error: page script: ReferenceError: ElementLoadPromise is not defined
+    at eval (eval at <anonymous> (unknown source), <anonymous>:1:31)
+    at eval (<anonymous>)
+    at <anonymous>:3:38
+Fail html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-base-url.html :: html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-base-url.html
+  page script threw (declared tests: 0): Script error: page script: ReferenceError: ElementLoadPromise is not defined
+    at eval (eval at <anonymous> (unknown source), <anonymous>:1:31)
+    at eval (<anonymous>)
+    at <anonymous>:3:38
+Timeout html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-history-pushState.html :: html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-history-pushState.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[532, 201856, 375], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Timeout html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-history-replaceState.html :: html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-history-replaceState.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[544, 201856, 387], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Timeout html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-in-script-disabled-iframe.html :: html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-in-script-disabled-iframe.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 340], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Pass html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-in-scroller-far.html :: Test that lazy-loaded iframes do not load when far from viewport.
+Pass html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-in-scroller-horizontal-far.html :: Test that lazy-loaded iframes do not load when far from viewport.
+Fail html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-in-scroller-horizontal.html :: Test that lazy-loaded iframes load when near viewport.
+  assert_unreached: Timed out while waiting for iframe to load. Reached unreachable code
+Fail html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-in-scroller-nested-2.html :: Test that lazy-loaded iframes load when near viewport.
+  assert_unreached: Timed out while waiting for iframe to load. Reached unreachable code
+Fail html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-in-scroller-nested-3.html :: Test that lazy-loaded iframes load when near viewport.
+  assert_unreached: Timed out while waiting for iframe to load. Reached unreachable code
+Fail html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-in-scroller-nested-4.html :: Test that lazy-loaded iframes load when near viewport.
+  assert_unreached: Timed out while waiting for iframe to load. Reached unreachable code
+Fail html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-in-scroller-nested-5.html :: Test that lazy-loaded images load when near viewport.
+  assert_unreached: Timed out while waiting for iframe to load. Reached unreachable code
+Fail html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-in-scroller-nested.html :: Test that lazy-loaded iframes load when near viewport.
+  assert_unreached: Timed out while waiting for iframe to load. Reached unreachable code
+Fail html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-in-scroller.html :: Test that lazy-loaded iframes load when near viewport.
+  assert_unreached: Timed out while waiting for iframe to load. Reached unreachable code
+Timeout html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-load-event.html :: html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-load-event.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 0, 850], state={"loaded":true,"pending":2,"phase":4,"tests":2}, test_wait=false)
+Pass html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-multiple-queued-navigations.html :: Multiple queued lazy load navigations do not crash the page
+Timeout html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-multiple-times.html :: html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-multiple-times.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 1720], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Timeout html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-nav-form-submit.html :: html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-nav-form-submit.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[208, 201856, 418], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Timeout html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-nav-link-click-fragment.html :: html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-nav-link-click-fragment.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[198, 201856, 253], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Timeout html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-nav-link-click.html :: html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-nav-link-click.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[198, 201856, 283], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Timeout html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-nav-location-assign.html :: html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-nav-location-assign.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[206, 201856, 283], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Timeout html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-nav-location-replace-cross-origin.html :: html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-nav-location-replace-cross-origin.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[0, 366, 201856, 424], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Pass html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-nav-location-replace-set-src.html :: Navigating iframe loading='lazy' and then setting src: location.replace
+Timeout html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-nav-location-replace.html :: html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-nav-location-replace.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[207, 201856, 283], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Fail html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-nav-meta-refresh.optional.html :: html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-nav-meta-refresh.optional.html
+  page script threw (declared tests: 0): Script error: page script: TypeError: iframe.contentDocument.head.append is not a function
+    at eval (eval at <anonymous> (unknown source), <anonymous>:8:29)
+    at eval (<anonymous>)
+    at <anonymous>:3:38
+Fail html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-nav-navigation-navigate.html :: html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-nav-navigation-navigate.html
+  page script threw (declared tests: 0): Script error: page script: TypeError: Cannot read properties of undefined (reading 'navigate')
+    at eval (eval at <anonymous> (unknown source), <anonymous>:5:33)
+    at eval (<anonymous>)
+    at <anonymous>:3:38
+Fail html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-referrerpolicy-change.sub.html :: html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-referrerpolicy-change.sub.html
+  page script threw (declared tests: 0): Script error: page script: ReferenceError: ElementLoadPromise is not defined
+    at eval (eval at <anonymous> (unknown source), <anonymous>:1:31)
+    at eval (<anonymous>)
+    at <anonymous>:3:38
+Pass html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-reload-location-reload.html :: Reloading iframe loading='lazy' before it is loaded: location.reload
+Fail html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-reload-navigation-reload.html :: html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-reload-navigation-reload.html
+  page script threw (declared tests: 0): Script error: page script: TypeError: Cannot read properties of undefined (reading 'reload')
+    at eval (eval at <anonymous> (unknown source), <anonymous>:6:33)
+    at eval (<anonymous>)
+    at <anonymous>:3:38
+Timeout html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-to-eager-srcdoc.html :: html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-to-eager-srcdoc.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 1918], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Timeout html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-to-eager.html :: html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy-to-eager.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 1323], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Pass html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy.html :: Below-viewport blob url iframes load lazily
+Timeout html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy.html :: html/semantics/embedded-content/the-iframe-element/iframe-loading-lazy.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 2654, 0], state={"loaded":true,"pending":4,"phase":4,"tests":5}, test_wait=false)
+Pass html/semantics/embedded-content/the-iframe-element/iframe-network-error.sub.html :: new iframe: nonexistent host
+Pass html/semantics/embedded-content/the-iframe-element/iframe-network-error.sub.html :: new iframe: X-Frame-Options prevents embedding
+Pass html/semantics/embedded-content/the-iframe-element/iframe-network-error.sub.html :: navigating an existing iframe: nonexistent host
+Pass html/semantics/embedded-content/the-iframe-element/iframe-network-error.sub.html :: navigating an existing iframe: X-Frame-Options prevents embedding
+Pass html/semantics/embedded-content/the-iframe-element/iframe-nosrc.html :: iframe.contentDocument should not be changed
+Pass html/semantics/embedded-content/the-iframe-element/iframe-nosrc.html :: load event of iframe should not be fired after processing the element
+Fail html/semantics/embedded-content/the-iframe-element/iframe-src-encoding.html :: iframe src URL is parsed using document encoding
+  assert_equals: expected "?%DF" but got "?%C3%9F"
+Timeout html/semantics/embedded-content/the-iframe-element/iframe-synchronously-discard.html :: html/semantics/embedded-content/the-iframe-element/iframe-synchronously-discard.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 1262], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Fail html/semantics/embedded-content/the-iframe-element/iframe_javascript_url_form_submission.html :: javascript: URL in form submission, initial src is not about:blank
+  assert_true: iframeLoaded expected true got false
+Fail html/semantics/embedded-content/the-iframe-element/iframe_javascript_url_initial_insertion.html :: javascript: URL in iframe src, initial insertion check
+  assert_true: iframeLoaded expected true got false
+Fail html/semantics/embedded-content/the-iframe-element/iframe_javascript_url_not_about_blank.html :: javascript: URL in iframe src, initial src is not about:blank
+  assert_true: iframeLoaded expected true got false
+Fail html/semantics/embedded-content/the-iframe-element/iframe_javascript_url_remove_srcdoc.html :: javascript: URL in iframe src, removing srcdoc
+  assert_true: iframeLoaded expected true got false
+Fail html/semantics/embedded-content/the-iframe-element/iframe_javascript_url_xhr.html :: Image load should not trigger load event for non-initial javascript URL load
+  assert_true: iframeLoaded expected true got false
+Timeout html/semantics/embedded-content/the-iframe-element/iframe_javascript_url_xhr.html :: Load event for initial javascript URL load should be fired after script execution
+  Test timed out
+Fail html/semantics/embedded-content/the-iframe-element/iframe_remove_src.html :: Test that removing the src attribute of an iframe loads about:blank
+  instead of whatever was loaded previously.
+  assert_equals: Should have loaded the blob expected (string) "blob:" but got (undefined) undefined
+Pass html/semantics/embedded-content/the-iframe-element/iframe_sandbox_allow_script.html :: iframe_sandbox_allow_scripts
+Timeout html/semantics/embedded-content/the-iframe-element/iframe_sandbox_block_modals-1.html :: html/semantics/embedded-content/the-iframe-element/iframe_sandbox_block_modals-1.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 1122, 28], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Timeout html/semantics/embedded-content/the-iframe-element/iframe_sandbox_block_modals-2.html :: html/semantics/embedded-content/the-iframe-element/iframe_sandbox_block_modals-2.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 1122, 26], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Timeout html/semantics/embedded-content/the-iframe-element/iframe_sandbox_block_modals-3.html :: html/semantics/embedded-content/the-iframe-element/iframe_sandbox_block_modals-3.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 1122, 24], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Timeout html/semantics/embedded-content/the-iframe-element/iframe_sandbox_block_modals-4.html :: html/semantics/embedded-content/the-iframe-element/iframe_sandbox_block_modals-4.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 1122, 28], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Timeout html/semantics/embedded-content/the-iframe-element/move-node-local-root-events-still-fire.html :: html/semantics/embedded-content/the-iframe-element/move-node-local-root-events-still-fire.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 23873, 0, 2548], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Timeout html/semantics/embedded-content/the-iframe-element/move-node-local-root.html :: html/semantics/embedded-content/the-iframe-element/move-node-local-root.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 0, 2364], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Timeout html/semantics/embedded-content/the-iframe-element/move_iframe_in_dom_01.html :: html/semantics/embedded-content/the-iframe-element/move_iframe_in_dom_01.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 450], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Fail html/semantics/embedded-content/the-iframe-element/move_iframe_in_dom_02.html :: moving modified IFRAME in document (original page about:blank, document.write modification)
+  ifr.contentDocument.open is not a function
+Timeout html/semantics/embedded-content/the-iframe-element/move_iframe_in_dom_03.html :: html/semantics/embedded-content/the-iframe-element/move_iframe_in_dom_03.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[201856, 450], state={"loaded":true,"pending":1,"phase":4,"tests":1}, test_wait=false)
+Fail html/semantics/embedded-content/the-iframe-element/move_iframe_in_dom_04.html :: moving modified IFRAME in document (original page from server, document.write modification)
+  ifr.contentDocument.open is not a function
+Pass html/semantics/embedded-content/the-iframe-element/same-origin-contextual-fragment.html :: 
+      HTML5 Sandbox: an iframe with same-origin and no allow-scripts does not
+      run scripts from a contextual fragment.
+    
+Pass html/semantics/embedded-content/the-iframe-element/sandbox-ascii-case-insensitive.html :: iframe 'sandbox' ASCII case insensitive, allow-same-orİgin
+Fail html/semantics/embedded-content/the-iframe-element/sandbox-ascii-case-insensitive.html :: iframe 'sandbox' ASCII case insensitive, allow-ſcripts
+  assert_unreached: no scripts should run in the iframe Reached unreachable code
+Timeout html/semantics/embedded-content/the-iframe-element/src-repeated-in-ancestor.html :: html/semantics/embedded-content/the-iframe-element/src-repeated-in-ancestor.html
+  testharness completion callback was not called (test=function, hook=function, scripts=[121, 201856, 4125], state={"loaded":true,"pending":4,"phase":4,"tests":4}, test_wait=false)
+Fail html/semantics/embedded-content/the-iframe-element/srcdoc-anchor.html :: Verify srcdoc content loads when src is about:srcdoc#foo.
+  assert_equals: iframe contains srcdoc content expected (string) "srcdoc_text" but got (undefined) undefined
+Fail html/semantics/embedded-content/the-iframe-element/srcdoc-attribute-reset.html :: Verify that the frame reloads with empty body after we remove srcdoc.
+  assert_equals: iframe contains srcdoc content expected (string) "srcdoc_text" but got (undefined) undefined
+Fail html/semantics/embedded-content/the-iframe-element/srcdoc_change_hash.html :: same-document navigation inside an srcdoc iframe using location.hash
+  assert_equals: expected (string) "srcdoc document" but got (undefined) undefined
+Fail html/semantics/embedded-content/the-iframe-element/srcdoc_process_attributes.html :: Adding `srcdoc` attribute triggers attributes processing
+  assert_equals: expected (string) "blob:" but got (undefined) undefined
+Pass html/semantics/embedded-content/the-iframe-element/srcdoc_process_attributes.html :: Setting `srcdoc` (via property) triggers attributes processing
+Fail html/semantics/embedded-content/the-iframe-element/srcdoc_process_attributes.html :: Removing `srcdoc` attribute triggers attributes processing
+  assert_equals: expected (string) "blob:" but got (undefined) undefined
+make: *** [Makefile:452：testharness-navigation] 错误 1

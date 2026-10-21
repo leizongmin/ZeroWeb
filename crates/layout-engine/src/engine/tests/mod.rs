@@ -767,3 +767,7 @@ mod r5208_blocks_divide_tables_tests;
 mod r5209_row_group_stray_text_tests;
 /// R5210 float 重定位链值 mt 归位（clear-on-child-with-margins-2 锚点）。
 mod r5210_clear_chain_mt_refold_tests;
+/// R5211 float 子不阻断父盒 collapse-through + 塌穿链分离点断链门
+///（margin-collapse-114 / adjoining-float-before-clearance /
+/// no-clearance-due-to-large-margin 锚点）。
+mod r5211_float_child_collapse_through_tests;

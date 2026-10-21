@@ -4392,9 +4392,13 @@ pub const NAVIGATION_CORPUS_SUBDIRS: &[&str] = &[
 ///   族 window.open 多页链、joint-session-history 多页序、navigating-across-documents
 ///   legacy 表单页）依赖跨文档导航链，单文档 runner 通道无法建立测试前提
 ///   （html-syntax 先例）
-/// - iframe 依赖面（runner 无多 frame 文档管道，net-api/encoding 先例）——含
-///   the-iframe-element 全域：contentWindow/contentDocument 断言即 M3 门控深结构面
-///   （frame tree），实现侧维持挂起，基线零执行记账、M3 落地后重评
+/// - iframe 依赖面（runner 无多 frame 文档管道，net-api/encoding 先例）——
+///   navigation-compat M3 起 **the-iframe-element 域例外**（用户门控 2026-10-21
+///   批复「批准 M3 最小面」后解锁执行）：contentWindow/contentDocument/frames/
+///   parent/top 最小面 + iframe 元素属性语义即本域断言面，shim iframe 机制
+///   （R115/R177 缓存 + contentWindow lazy fetch）已可用；html/browsers 载体域与
+///   navigation-api sentinel 域维持跳过（依赖子文档 session history replace 语义，
+///   M3 后续切片再评）
 /// - 多窗口/popup 依赖面（window.open/openner 链——runner 单文档无窗口管理）
 /// - worker 执行面（net-api 先例）
 fn navigation_case_skipped(relative: &str, source: &str) -> bool {
@@ -4412,6 +4416,28 @@ fn navigation_case_skipped(relative: &str, source: &str) -> bool {
     }
     if !source.contains("testharness.js") {
         return true;
+    }
+    // M3 解锁域：iframe 内容规则不跳过（popup/worker/serviceWorker 面照常筛）。
+    // 运行形态/深结构子域维持记账跳过（M3 后续切片）：服务端 stash 协议
+    //（iframe_harness.js get/send_test_results → wptserve stash.py，runner 无该端点——
+    // parentage 族 + download tentative 族）、子发起嵌套导航控制（iframe_sandbox_navigate_*
+    // 的 child→ancestor/descendant 面）、popup 窗口管理（iframe_sandbox_popups_* /
+    // allow_top_navigation 的 open() 链 + 用户手势）、三层嵌套 bc（change_parentage /
+    // cross-origin-to-whom 的 grandchild DOM 写与 frame/embed/object 元素面）。
+    // srcdoc/sandbox/frames/parent/top/load 语义最小面照常执行。
+    if relative.contains("the-iframe-element") {
+        return relative.contains("iframe_sandbox_popups_")
+            || relative.contains("iframe_sandbox_navigate_")
+            || relative.contains("iframe_sandbox_allow_top_navigation")
+            || relative.contains("iframe_navigate_ancestor")
+            || relative.contains("change_parentage")
+            || relative.contains("cross-origin-to-whom")
+            || source.contains("stash.py")
+            || source.contains("iframe_harness.js")
+            || source.contains("window.open(")
+            || source.contains("new Worker(")
+            || source.contains("SharedWorker(")
+            || source.contains("navigator.serviceWorker");
     }
     source.contains("<iframe")
         || source.contains("createElement('iframe')")

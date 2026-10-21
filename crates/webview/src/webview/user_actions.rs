@@ -184,6 +184,22 @@ impl WebView {
         if zero_engine::is_effectively_disabled(&html, &selector) {
             return Ok(WebViewUserActionResult::noop(ActionNoopReason::DisabledTarget));
         }
+        // R4008（html-semantics M2 切片 19）：label 本体激活的宿主转发探测。spec
+        // the-label-element activation behavior——click 落 label 自身（或非交互后代）
+        // → 派发完成后激活 labeled control。shim 不承接宿主 generic Event 的转发
+        //（renderer 真实输入路径由 Rust 默认动作层 activate_label_at 负责，shim 再
+        // 转发会双激活），plan 路径（testdriver）的转发在本层：label 自身照常走
+        // Generic plan 派发 click（页面 label 监听器先收到事件），未取消时对 control
+        // 递归 Activate（合成 click 激活步骤）。解析器过滤 labelable（label 非
+        // labelable）——递归不可能回到 label，无自引用环。
+        // https://html.spec.whatwg.org/multipage/forms.html#the-label-element
+        let label_control_selector = if matches!(request.action, HtmlUserAction::Activate)
+            && zero_engine::query_tag_from_html(&html, &selector).eq_ignore_ascii_case("LABEL")
+        {
+            zero_engine::associated_label_control_selector(&html, &selector)
+        } else {
+            None
+        };
         let state = match &request.action {
             // 尾簇 31：ForwardDelete 同走 text-control 探测，但 **CE 宿主不分流**——
             // `__zw_ce_delete` 是 Backward 语义（caret 前退），ForwardDelete 复用会删错
@@ -625,6 +641,27 @@ impl WebView {
                     }
                 }
             }
+        }
+        // R4008：label 激活行为在派发完成后执行（click 未取消 = 默认动作允许）。
+        // 递归走 control 的完整激活管线（状态构建/click 派发/disabled 守卫/effects，
+        // 同空格→button 递归先例）；控件 disabled → 递归 DisabledTarget noop 即
+        // spec 语义（label 激活不越过 disabled 控件），noop_reason 不上抛。
+        if !outcome.canceled
+            && let Some(control_selector) = label_control_selector.as_ref()
+            && let Some(control_target) = self.page_node_ref_for_selector(control_selector)
+        {
+            let control_result = self.dispatch_user_action_impl(
+                executor,
+                javascript_enabled,
+                false,
+                HtmlActionRequest {
+                    target: control_target,
+                    action: HtmlUserAction::Activate,
+                    shift: request.shift,
+                },
+            )?;
+            changed |= control_result.changed;
+            effects.extend(control_result.effects);
         }
         Ok(WebViewUserActionResult {
             changed,

@@ -16,7 +16,7 @@
 
 范围：合成 opacity/transform、动画查询/结束/暂停/取消、命中测试；worker OffscreenCanvas 2D 的转移/呈现。background-color/filter 扩展按实测支持与单独切片评估。
 
-边界：复用 [timing-animation 历史成果](archive/timing-animation-compat/master.md)与 [workers-compat](workers-compat.md)，不重复事件循环或 worker 生命周期。WebGL/WebGL2 依赖 [webgl-compat](webgl-compat.md)既有门控，此 goal不能替代其授权；缺能力记录依赖，不宣称全 Canvas 已实现。
+边界：复用 [timing-animation 历史成果](archive/timing-animation-compat/master.md)与 [workers-compat](archive/workers-compat.md)，不重复事件循环或 worker 生命周期。WebGL/WebGL2 依赖 [webgl-compat](webgl-compat.md)既有门控，此 goal不能替代其授权；缺能力记录依赖，不宣称全 Canvas 已实现。
 
 碰撞：按 [run-rules §9–11](../rally/run-rules.md)协调 engine/protocol/compositor/workers 与 rendering-compat；协议字段改动同步双方和 Android 消费者。
 

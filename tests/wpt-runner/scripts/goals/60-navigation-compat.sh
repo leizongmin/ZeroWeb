@@ -76,5 +76,10 @@ fetch_raw "navigation-api/ordering-and-transition/resources/helpers.mjs"
 # navigate-anchor-cross-origin）引用 /common/get-host-info.sub.js——27-page-state
 # 先例单文件补拉（wpt-data 重建后 common/ 子集不含它，缺之则 get_host_info 未定义）。
 fetch_raw "common/get-host-info.sub.js"
+# M3（2026-10-21）：the-iframe-element 解锁域初载子页面——iframe-network-error.sub 的
+# /common/blank.html 与 ../resources/not-embeddable.html（存在即可跑通 load 语义；
+# X-Frame-Options 域内不强制，runner fetch handler 无 .headers 解析，记账 net 域）。
+fetch_raw "common/blank.html"
+fetch_raw "html/semantics/embedded-content/resources/not-embeddable.html"
 goals_inventory
 goals_next_steps "${GOAL}"

@@ -4225,7 +4225,10 @@
   // 元素联合转换（Blob or BufferSource or USVString）——序即 WebIDL union 序。
   function _zw_blob_part(p) {
     if (typeof p === 'string') return p;
-    if (p instanceof Blob) return p;
+    // workers-compat M3：经装载期快照判 Blob（globalThis.Blob 被 delete 后构造路径
+    // 仍可达——battery「interface deleted from the global must still deserialize」
+    // 克隆 new Blob(parts) 即触发；快照定义见 Blob 段尾）。
+    if (_zwBlobCtorSnap !== null && p instanceof _zwBlobCtorSnap) return p;
     if (p instanceof ArrayBuffer || ArrayBuffer.isView(p)) return p;
     // 沙箱边界兜底：宿主桥路径（response.blob() 的 _zwConsumeBodyBytes 产出等）的字节
     // 视图可能以 Proxy 包装——isView/instanceof 探测不到内部槽；沿用 _partSize/_partText
@@ -4401,6 +4404,11 @@
   // class string '[object Blob]'（assert_class_string / String(blob) 断言面）——挂在
   // prototype 字面量赋值之后，避免被整体替换。
   Object.defineProperty(globalThis.Blob.prototype, Symbol.toStringTag, { value: 'Blob', configurable: true });
+  // workers-compat M3：Blob 构造器装载期快照——克隆分支据此判定/重建（battery
+  // 「interface deleted from the global must still deserialize」在克隆期间
+  // `delete globalThis.Blob`——global 查找失效而快照跨删除稳定；spec 反序列化走
+  // realm 内部接口注册表，delete 不触及，快照即该语义的同 realm 近似）。
+  var _zwBlobCtorSnap = globalThis.Blob || null;
 
   // File——Blob 子类 + 文件名/时间戳（`<input type=file>` / 文件上传构造高频）。完成 Blob→File→
   // FileReader→FormData 文件处理簇。constructor 复用 `Blob.call(this, parts, options)`（File 实例
@@ -5875,7 +5883,7 @@
       _zwNonCloneableProtos.push(proto);
     }
   };
-  function _zw_structured_clone(val, seen) {
+  function _zw_structured_clone(val, seen, xfer) {
     if (val === null) return val;
     var t = typeof val;
     // R9/R382 wrong-global 先例：globalThis 构造器优先（页面 instanceof 比对的是已发布全局）。
@@ -5890,25 +5898,115 @@
         throw new _cloneDE('The provided value is a platform object and could not be cloned.', 'DataCloneError');
       }
     }
+    // workers-compat M3（DC-3）：消息内 MessagePort 须在 transfer 列表（spec
+    // serialize「val is a MessagePort object」步——未转移项 DataCloneError）；已转移项
+    // 序列化为**同一转移体**（spec serialize-with-transfer map 语义——battery
+    // 「structuredClone(port2, [port2]) 后 copy 可与 port1 通信」面）。转移体惰性创建
+    // （首个引用位完成配对改挂/队列随迁/原 port 脱离——此时点 = spec serialize 成功
+    // 后的 transfer 步副作用近似）。_zwTransferPort 在 part05 顶层（拼接同作用域）。
+    if (_zwIsMessagePort(val)) {
+      if (xfer) {
+        var _pxi = xfer.orig.indexOf(val);
+        if (_pxi >= 0) {
+          if (!xfer.clones[_pxi]) xfer.clones[_pxi] = _zwTransferPort(val);
+          return xfer.clones[_pxi];
+        }
+      }
+      throw new _cloneDE('MessagePort could not be cloned.', 'DataCloneError');
+    }
     if (val instanceof Date) { var d = new Date(val.getTime()); seen.set(val, d); return d; }
     if (val instanceof RegExp) { var r = new RegExp(val.source, val.flags); seen.set(val, r); return r; }
+    // workers-compat M3：Boolean/Number/String 包装对象克隆保持类型（spec
+    // serialize Boolean/Number/String object 情形——克隆为同类型包装实例；
+    // structured-clone battery compare_Boolean「instanceof Boolean」面）。
+    if (val instanceof Boolean) { var _cb = new Boolean(val.valueOf()); seen.set(val, _cb); return _cb; }
+    if (val instanceof Number) { var _cn = new Number(val.valueOf()); seen.set(val, _cn); return _cn; }
+    if (val instanceof String) { var _cs = new String(val.valueOf()); seen.set(val, _cs); return _cs; }
+    // workers-compat M3：BigInt 包装对象克隆（spec serialize BigInt object 情形——
+    // BigInt 无构造器，经 Object(bigint) 建包装；battery「BigInt -9007199254740994n」
+    // compare_obj「instanceof BigInt」面）。
+    if (val instanceof BigInt) { var _cbi = Object(val.valueOf()); seen.set(val, _cbi); return _cbi; }
     if (val instanceof Map) {
       var m = new Map(); seen.set(val, m);
-      val.forEach(function (v, k) { m.set(_zw_structured_clone(k, seen), _zw_structured_clone(v, seen)); });
+      val.forEach(function (v, k) { m.set(_zw_structured_clone(k, seen, xfer), _zw_structured_clone(v, seen, xfer)); });
       return m;
     }
     if (val instanceof Set) {
       var st = new Set(); seen.set(val, st);
-      val.forEach(function (v) { st.add(_zw_structured_clone(v, seen)); });
+      val.forEach(function (v) { st.add(_zw_structured_clone(v, seen, xfer)); });
       return st;
     }
     if (val instanceof ArrayBuffer) {
-      var ab = new ArrayBuffer(val.byteLength); new Uint8Array(ab).set(new Uint8Array(val));
+      // workers-compat M3：resizable 身份保真（spec serialize ArrayBuffer 情形——
+      // maxByteLength 随迁；battery「Resizable ArrayBuffer」maxByteLength 面）。
+      var ab = (val.resizable === true)
+        ? new ArrayBuffer(val.byteLength, { maxByteLength: val.maxByteLength })
+        : new ArrayBuffer(val.byteLength);
+      new Uint8Array(ab).set(new Uint8Array(val));
       seen.set(val, ab); return ab;
     }
     if (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView(val)) {
-      var ta = new val.constructor(val); // TypedArray/DataView 拷贝构造
+      var ta;
+      try {
+        if (val.buffer && val.buffer.resizable === true) {
+          // workers-compat M3：TypedArray OOB 判定经 resize 往返探针取创建期几何——
+          // 引擎按 spec 把 OOB 视图 TypedArray getter clamp 为 0（DataView getter 则
+          // 抛 TypeError → 下方 catch 兜成 DataCloneError），当前值无法区分「真 0」
+          // 与「clamp 0」；resize 到 maxByteLength 时视图恢复真实 offset，量毕缩回
+          // （同步窗口无用户代码，其他视图 getter 惰性求值，往返不可观察）。offset
+          // 越过当前长即 OOB → spec serialize 步 DataCloneError（battery
+          // 「Serializing/Transferring OOB TypedArray throws」面）。
+          // FIXME: 部分跨度 fixed 视图（offset ≤ 当前长但 offset+span 越界）未检出
+          // ——需 tracking/fixed 分类探针，battery 无此形态。
+          if (val.BYTES_PER_ELEMENT !== undefined) {
+            var _vCur = val.buffer.byteLength;
+            val.buffer.resize(val.buffer.maxByteLength);
+            var _vOff = val.byteOffset;
+            val.buffer.resize(_vCur);
+            if (_vOff > _vCur) {
+              throw new _cloneDE('Object could not be cloned.', 'DataCloneError');
+            }
+          }
+          // resizable buffer 身份保真（spec 序列化携带 buffer 的 maxByteLength；
+          // battery「Length-tracking TypedArray/DataView is transferable」
+          // maxByteLength/resize 面）。fresh buffer + 拷贝 = 转移语义近似（同几何
+          // 独立 buffer；spec 为所有权迁移，battery 不查源身份）。
+          var _vbuf = new ArrayBuffer(val.buffer.byteLength, { maxByteLength: val.buffer.maxByteLength });
+          new Uint8Array(_vbuf).set(new Uint8Array(val.buffer, val.byteOffset, val.byteLength));
+          if (val.BYTES_PER_ELEMENT === undefined) {
+            // length-tracking 近似：offset 0 且全长覆盖的 DataView 克隆为 tracking
+            //（fixed 视图克隆保持显式三元组——克隆后 resize 行为与源一致的唯一形态）。
+            ta = (val.byteOffset === 0 && val.byteLength === val.buffer.byteLength)
+              ? new DataView(_vbuf)
+              : new DataView(_vbuf, val.byteOffset, val.byteLength);
+          } else {
+            ta = (val.byteOffset === 0 && val.length * val.BYTES_PER_ELEMENT === val.buffer.byteLength)
+              ? new val.constructor(_vbuf, 0)
+              : new val.constructor(_vbuf, val.byteOffset, val.length);
+          }
+        } else if (val.BYTES_PER_ELEMENT === undefined) {
+          // DataView 无拷贝构造（首参必须是 buffer）——fresh buffer 全量拷贝后
+          // 重建视图（battery「Length-tracking DataView」compare 断 buffer 非同一）。
+          var _dbuf = new ArrayBuffer(val.byteLength);
+          new Uint8Array(_dbuf).set(new Uint8Array(val.buffer, val.byteOffset, val.byteLength));
+          var _dvC = (typeof DataView === 'function') ? DataView : Object.getPrototypeOf(val).constructor;
+          ta = new _dvC(_dbuf, 0, val.byteLength);
+        } else {
+          ta = new val.constructor(val); // TypedArray 拷贝构造
+        }
+      } catch (_eView) {
+        // 源 buffer resize/transfer 后视图 OOB 不可物化——spec serialize typed array
+        // / DataView 步抛 DataCloneError（battery「Serializing/Transferring OOB
+        // TypedArray/DataView throws」面；此前透传运行时 TypeError）。
+        throw new _cloneDE('Object could not be cloned.', 'DataCloneError');
+      }
       seen.set(val, ta); return ta;
+    }
+    // workers-compat M3：SharedArrayBuffer 拒绝克隆（spec serialize SAB 情形——
+    // 非 cross-origin isolated 环境抛 DataCloneError；battery「Growable SharedArrayBuffer」
+    // catch 面 assert_false(self.crossOriginIsolated)。沙箱无 COI 面，恒走拒绝路径）。
+    if (typeof SharedArrayBuffer === 'function' && val instanceof SharedArrayBuffer) {
+      throw new _cloneDE('SharedArrayBuffer could not be cloned.', 'DataCloneError');
     }
     // webmessaging-compat M2-P1：平台对象克隆保持类型（spec StructuredSerialize platform-object
     // 情形——Blob/File 克隆为同类型实例，Channel_postMessage_Blob「Messages can contain
@@ -5917,22 +6015,115 @@
       var fc = new File([val], val.name, { type: val.type, lastModified: val.lastModified });
       seen.set(val, fc); return fc;
     }
-    if (typeof Blob === 'function' && val instanceof Blob) {
-      var bc = new Blob([val], { type: val.type });
+    if (_zwBlobCtorSnap !== null && val instanceof _zwBlobCtorSnap) {
+      var bc = new _zwBlobCtorSnap([val], { type: val.type });
       seen.set(val, bc); return bc;
+    }
+    // workers-compat M3：FileList 克隆保持类型（spec serialize platform-object 情形
+    // 近似——FileList 可序列化；battery「FileList empty」三案「instanceof FileList」
+    // 面）。文件项逐个递归克隆（File is-a Blob 走上方分支）。
+    if (typeof FileList === 'function' && val instanceof FileList) {
+      var _flc = new FileList();
+      var _flSrc = val._zwFiles || [];
+      for (var _fli = 0; _fli < _flSrc.length; _fli++) {
+        _flc._zwFiles.push(_zw_structured_clone(_flSrc[_fli], seen, xfer));
+      }
+      seen.set(val, _flc); return _flc;
+    }
+    // workers-compat M3（DC-3）：ImageData 克隆保持类型（spec StructuredSerialize
+    // platform-object 情形——ImageData 可序列化，克隆为同类型实例；
+    // structured-clone-imagedata「''+e.data === '[object ImageData]'」面）。data 经
+    // TypedArray 拷贝构造——克隆体与原图像不共享像素缓冲（worker 改 data[0] 不回写）。
+    // ImageData 构造器在 part05（本文件执行时尚未定义）——经 globalThis 调用期取。
+    if (typeof globalThis.ImageData === 'function' && val instanceof globalThis.ImageData) {
+      var _idData = new val.data.constructor(val.data);
+      var _idc = new globalThis.ImageData(_idData, val.width, val.height,
+        { pixelFormat: val.pixelFormat, colorSpace: val.colorSpace });
+      seen.set(val, _idc); return _idc;
+    }
+    // workers-compat M3：ImageBitmap 克隆保持类型（spec serialize ImageBitmap 情形——
+    // 位图内容复制为独立实例；battery 三案「instanceof ImageBitmap」+ transfer 面同参）。
+    // wire 串复制即像素快照复制（wire 为不可变编码）。
+    if (typeof ImageBitmap === 'function' && val instanceof ImageBitmap) {
+      var _ibc = new ImageBitmap(val._zwBitmapWire || '');
+      seen.set(val, _ibc); return _ibc;
+    }
+    // workers-compat M3：OffscreenCanvas 克隆保持类型（spec serialize OffscreenCanvas
+    // 情形——迁移位图所有权；battery transfer 面只查 width/height）。
+    // FIXME: 位图像素未随迁（重建为空白画布，仅尺寸保真）——需 host 侧 canvas 快照
+    // 通道（drawImage wire 复制）后补内容拷贝。
+    if (typeof OffscreenCanvas === 'function' && val instanceof OffscreenCanvas) {
+      var _occ = new OffscreenCanvas(val.width, val.height);
+      seen.set(val, _occ); return _occ;
+    }
+    // workers-compat M3：Error 克隆保持类型（spec serialize Error object 情形——
+    // name/message/cause 序列化，自定义 own 属性不迁；battery compare_Error
+    // 「constructor/name/message hasOwnProperty/cause/foo undefined」五面）。
+    // message/cause 仅在原对象 own 时安装（`new Error()` 的 message 非 own 面同保）。
+    if (val instanceof Error) {
+      var _eCtor = (val.constructor && typeof val.constructor === 'function') ? val.constructor : Error;
+      var _eArgs = [];
+      if (val.hasOwnProperty('message')) _eArgs.push(val.message);
+      if (val.hasOwnProperty('cause')) {
+        while (_eArgs.length < 1) _eArgs.push(undefined);
+        _eArgs.push({ cause: _zw_structured_clone(val.cause, seen, xfer) });
+      }
+      var _ec = _eArgs.length === 0 ? new _eCtor()
+        : _eArgs.length === 1 ? new _eCtor(_eArgs[0])
+        : new _eCtor(_eArgs[0], _eArgs[1]);
+      if (val.hasOwnProperty('name') && typeof val.name === 'string') {
+        try { Object.defineProperty(_ec, 'name', { value: val.name, writable: true, enumerable: false, configurable: true }); } catch (_eEn) {}
+      }
+      seen.set(val, _ec); return _ec;
     }
     // webmessaging-compat M2-P1（2026-10-12）：非特殊对象克隆为**普通对象**（Object.prototype，
     // spec StructuredSerialize ordinary-object 情形）——旧版保留原原型致原型链属性随读可见
     //（without-ports/023「own properties only, don't follow prototype」钉 cloned.c ≠ 原型值）；
     // class 实例同此（真实浏览器一致，方法不随克隆存活）。
-    var out = Array.isArray(val) ? [] : {};
+    if (Array.isArray(val)) {
+      // workers-compat M3：数组洞保持（spec 逐 index 判 item present——Object.keys 跳洞
+      // 会把稀疏数组稠密化成 undefined；battery「Array sparse」length 面及嵌套元素比较）。
+      // 非索引 own 属性同迁（「Array with non-index property」既有面）。
+      var _arr = [];
+      seen.set(val, _arr);
+      // 尾部洞需显式定长（仅赋 index 不补长——battery「Array sparse」new Array(10)
+      // length 10 面；spec 数组序列化携带 length）。
+      _arr.length = val.length;
+      for (var _ai = 0; _ai < val.length; _ai++) {
+        if (_ai in val) _arr[_ai] = _zw_structured_clone(val[_ai], seen, xfer);
+      }
+      var _aKeys = Object.keys(val);
+      for (var _aki = 0; _aki < _aKeys.length; _aki++) {
+        var _ak = _aKeys[_aki];
+        var _isIdx = /^(0|[1-9][0-9]*)$/.test(_ak) && String(_ak >>> 0) === _ak && _ak !== '4294967295';
+        if (_isIdx) continue;
+        _arr[_ak] = _zw_structured_clone(val[_ak], seen, xfer);
+      }
+      return _arr;
+    }
+    var out = {};
     seen.set(val, out); // 先记忆，再递归子属性（解循环）
     var keys = Object.keys(val);
-    for (var i = 0; i < keys.length; i++) out[keys[i]] = _zw_structured_clone(val[keys[i]], seen);
+    for (var i = 0; i < keys.length; i++) out[keys[i]] = _zw_structured_clone(val[keys[i]], seen, xfer);
     return out;
   }
-  globalThis.structuredClone = globalThis.structuredClone || function structuredClone(value) {
-    return _zw_structured_clone(value, typeof WeakMap !== 'undefined' ? new WeakMap() : new Map());
+  // workers-compat M3：options 面——公开 `structuredClone(value, {transfer})`（spec
+  // StructuredSerializeOptions，transfer 项转移/脱离副作用与 postMessage 同 helper）；
+  // 内部 `__zwXfer` 供 postMessage 路径注入转移映射（payload 内 port 引用转义为转移体）。
+  globalThis.structuredClone = globalThis.structuredClone || function structuredClone(value, options) {
+    var _sXfer = (options && typeof options === 'object' && options.__zwXfer) ? options.__zwXfer : null;
+    var _sList = null;
+    if (_sXfer === null && options && typeof options === 'object' && options.transfer !== undefined) {
+      _sList = _zwConvertTransferSequence(options.transfer);
+      _zwValidateTransferList(_sList, null);
+      _sXfer = { orig: [], clones: [] };
+    }
+    var _sOut = _zw_structured_clone(value, typeof WeakMap !== 'undefined' ? new WeakMap() : new Map(), _sXfer);
+    if (_sList !== null) {
+      _zwConsumeTransferList(_sList, null, _sXfer);
+      _zwDetachTransferables(_sList);
+    }
+    return _sOut;
   };
 
   // history（session history，R2814）——SPA 路由核心（react-router / vue-router / @reach 等）。原为全 stub
@@ -5964,6 +6155,19 @@
   }
   var _hist_cursor = 0;
   function _hist_current() { return _hist_entries[_hist_cursor]; }
+  // navigation-compat M3-S3：联合 iframe session history 最小面（spec
+  // https://html.spec.whatwg.org/multipage/nav-history-apis.html#joint-session-history
+  // ——顶层遍历序含子 browsing context 的会话条目）。`_hist_jointSeq` 为独立序列
+  //（null = 无子同文档条目，全部路径与既有行为逐字节相同——M2 收口面零漂移的
+  // 关键约束；顶层 `_hist_entries`/Navigation records **不膨胀**——Navigation
+  // API entries() 只覆盖顶层自身条目）。标记两形：`{top: <_hist_entries 索引>}`
+  //（replaceState 等原地变更天然跟随）与 `{frameKey, url}`（子同文档 hash 条目，
+  // 应用经 part05 `__zwApplyIframeHashEntry` 路由——URL 槽 + 子窗 hashchange，
+  // 父窗不派 navigate/popstate——spec：事件派在条目所属 context）。
+  // FIXME(history.length): joint 在场时 history.length 仍报顶层长度（spec 为
+  // joint 长度）——M2 长度断言面（session-history 50 上限族）零回归优先。
+  var _hist_jointSeq = null;
+  var _hist_jointCursor = 0;
   function _hist_dispatchPopState(oldHrefBefore, skipScroll) {
     // spec：back/forward/go 触发 popstate（pushState/replaceState 不触发），异步派发。
     // R3007：跨 hash 变更的导航同时派 hashchange（spec：hash 变更导航派 popstate + hashchange）。
@@ -6096,6 +6300,16 @@
     if (_hist_entries.length <= 50) return;
     var oldHe = _hist_entries.shift();
     _hist_cursor--;
+    // M3-S3：joint 序列镜像最旧条目出列——顶层标记索引同步前移（先改标记再 shift，
+    // 出列的恰是被 shift 掉的那个；jointSeq[0] 恒镜像顶层首位直到自身被裁）。
+    if (_hist_jointSeq) {
+      for (var _jti = 0; _jti < _hist_jointSeq.length; _jti++) {
+        var _jtm = _hist_jointSeq[_jti];
+        if (_jtm && _jtm.top !== undefined) _jtm.top--;
+      }
+      _hist_jointSeq.shift();
+      _hist_jointCursor--;
+    }
     var rec = _navFindRecord(oldHe);
     if (rec) {
       var di = _navDetached.indexOf(rec);
@@ -6154,6 +6368,8 @@
     var _zwHe = { state: state, url: newUrl2, scrollRestoration: _zwSR };
     _hist_entries.push(_zwHe);
     _hist_cursor = _hist_entries.length - 1;
+    // M3-S3：joint 序列在场时镜像追加顶层标记（前向截断 + 当前位随移到新尾）。
+    if (_hist_jointSeq) _jointPushTop(_hist_cursor);
     if (newUrl2 !== null) _zwSyncDocUrl(newUrl2, true);
     var freshP = _navPushCurrent(_zwHe);
     if (bind) bind.rec = freshP;
@@ -6167,10 +6383,13 @@
   function _hist_queueTraversal(delta, ctrl, info) {
     // M2-S4P3：入队时目标可达性快照——执行前被 push 截断剪除的 traverse 走 AbortError
     // abort（非入队即越界的 InvalidStateError）。
-    var _qtTarget = _hist_cursor + delta;
+    // M3-S3：joint 序列在场时按联合序界做可达性快照（子同文档条目计入 back/forward
+    // 面——spec joint session history；顶层长度面不动）。
+    var _qtTarget = _hist_jointSeq ? _hist_jointCursor + delta : _hist_cursor + delta;
+    var _qtLen = _hist_jointSeq ? _hist_jointSeq.length : _hist_entries.length;
     _hist_pendingTraversals.push({
       delta: delta, ctrl: ctrl || null,
-      atEnd: _qtTarget >= 0 && _qtTarget <= _hist_entries.length - 1,
+      atEnd: _qtTarget >= 0 && _qtTarget <= _qtLen - 1,
       info: info,
     });
     if (typeof setTimeout === 'function') {
@@ -6185,7 +6404,113 @@
       _hist_applyTraversal(item.delta, item.ctrl, item.atEnd, item.info);
     }
   }
+  // ===== M3-S3（navigation-compat）：联合 iframe session history 最小面 =====
+  // joint 序列镜像 + 遍历（声明见 _hist_cursor 旁）。顶层落地复用
+  // _hist_applyTopTraversal（navigate/popstate/滚动恢复面全保留）；frame 落地走
+  // __zwApplyIframeHashEntry（URL 槽 + 子窗异步 trusted hashchange；父窗不派
+  // navigate/popstate——spec：hashchange 派条目所属 browsing context，
+  // https://html.spec.whatwg.org/multipage/nav-history-apis.html#joint-session-history）。
+  // joint 在场（首个子同文档 push 播种后）才改路由——缺席时零行为漂移。
+  function _jointPushTop(idx) {
+    _hist_jointSeq = _hist_jointSeq.slice(0, _hist_jointCursor + 1);
+    _hist_jointSeq.push({ top: idx });
+    _hist_jointCursor = _hist_jointSeq.length - 1;
+  }
   function _hist_applyTraversal(delta, ctrl, atEnd, info) {
+    // M3-S3：joint 在场 → 联合路由；否则原顶层面（函数体未动，更名 _hist_applyTopTraversal）。
+    if (_hist_jointSeq) return _hist_applyJointTraversal(delta, ctrl, atEnd, info);
+    return _hist_applyTopTraversal(delta, ctrl, atEnd, info);
+  }
+  function _hist_applyJointTraversal(delta, ctrl, atEnd, info) {
+    var target = _hist_jointCursor + delta;
+    if (target < 0 || target > _hist_jointSeq.length - 1) {
+      // 越界面镜像 _hist_applyTopTraversal（atEnd 快照已按联合序界计算）。
+      if (ctrl) {
+        var jpe;
+        if (atEnd) {
+          jpe = _navNavAbortError();
+          ctrl.reject(jpe);
+          ctrl.finishedSettle(jpe, true);
+        } else {
+          jpe = new (globalThis.DOMException || DOMException)('Cannot go back or forward.', 'InvalidStateError');
+          ctrl.reject(jpe);
+          ctrl.finishedSettle(jpe, true);
+        }
+      }
+      return;
+    }
+    if (target === _hist_jointCursor) {
+      if (ctrl) {
+        _defer(function () {
+          if (ctrl.resolve) ctrl.resolve(_navPub(_navCurrent()));
+          if (ctrl.finishedSettle) ctrl.finishedSettle(null, false, _navPub(_navCurrent()));
+        });
+      }
+      return;
+    }
+    var marker = _hist_jointSeq[target];
+    _hist_jointCursor = target;
+    if (marker && marker.frameKey !== undefined) {
+      // frame 落地：无 navigate 事件可拦截/抢占——提交（joint cursor 已动）后按顶层
+      // 非 intercept 面结算 ctrl，再交 part05 钩子应用子文档。
+      if (ctrl) {
+        if (ctrl.resolve) ctrl.resolve(_navPub(_navCurrent()));
+        _defer(function () {
+          if (ctrl.finishedSettle) ctrl.finishedSettle(null, false, _navPub(_navCurrent()));
+          _navDispatchAny(new Event('navigatesuccess'));
+        });
+      }
+      if (typeof globalThis.__zwApplyIframeHashEntry === 'function') {
+        try { globalThis.__zwApplyIframeHashEntry(marker.frameKey, marker.url); } catch (_eJFrame) {}
+      }
+      // FIXME(joint-popstate): spec 联合遍历还会在父窗派 popstate（真实浏览器行为）——
+      // 最小面暂不派（父窗 popstate 面未验证的联动，避免 M2 收口面回归）。
+      return;
+    }
+    // 顶层标记：同步顶层 cursor 后复用既有顶层面（step 按 delta 传，目标界已验）。
+    // FIXME(joint): 顶层面内 preventDefault/抢占时顶层 cursor 不动而 jointCursor 已前移
+    // ——取消路径的联合序回滚未建模（最小面）。
+    _hist_applyTopTraversal(marker.top - _hist_cursor, ctrl, true, info);
+  }
+  // M3-S3：子同文档条目登记钩子（part05 子窗 hash 写侧调用）。惰性播种——首个子条目
+  // push 时 1:1 镜像当期顶层列表，cursor 对齐；此后前向截断 + 追加 + 当前位随移。
+  // 顶层 `_hist_entries`/Navigation records 不膨胀（Navigation entries() 只覆盖顶层
+  // 自身条目——父窗面零漂移约束）。
+  globalThis.__zwPushJointHistoryEntry = function (frameKey, url) {
+    if (!_hist_jointSeq) {
+      _hist_jointSeq = [];
+      for (var _jsi = 0; _jsi < _hist_entries.length; _jsi++) {
+        _hist_jointSeq.push({ top: _jsi });
+      }
+      _hist_jointCursor = _hist_cursor;
+    }
+    _hist_jointSeq = _hist_jointSeq.slice(0, _hist_jointCursor + 1);
+    _hist_jointSeq.push({ frameKey: frameKey, url: url });
+    _hist_jointCursor = _hist_jointSeq.length - 1;
+  };
+  // M3-S3：frame 标记落地钩子（part05 子窗 hash 写侧与父窗联合遍历共用派发路径）。
+  // URL 槽（doc._zwURL/_zwFragmentUrl + 缓存条目）+ 子窗异步 trusted hashchange；
+  // oldUrlHint 由 hash 写侧传写前地址，父遍历路径省略（钩子读槽——更新前读即旧值）。
+  globalThis.__zwApplyIframeHashEntry = function (frameKey, url, oldUrlHint) {
+    var entry = null;
+    try { entry = _iframeDocCache[frameKey] || null; } catch (_eJf) { return; }
+    if (!entry || !entry.doc) return;
+    var d = entry.doc;
+    var oldHref = oldUrlHint != null ? String(oldUrlHint) : (d._zwURL ? String(d._zwURL) : 'about:blank');
+    try { d._zwURL = url; } catch (_eJf1) {}
+    try { d._zwFragmentUrl = url; } catch (_eJf2) {}
+    try { entry.url = url; } catch (_eJf3) {}
+    var w = null;
+    try { w = d.defaultView || null; } catch (_eJf4) {}
+    _defer(function () {
+      try {
+        var hev = new HashChangeEvent('hashchange', { oldURL: oldHref, newURL: String(url), __zwTrusted: true });
+        hev.target = w || d;
+        if (w && typeof w.onhashchange === 'function') w.onhashchange(hev);
+      } catch (_eJf5) {}
+    });
+  };
+  function _hist_applyTopTraversal(delta, ctrl, atEnd, info) {
     var target = _hist_cursor + delta;
     if (target < 0 || target > _hist_entries.length - 1) {
       // 越界：history.back/forward 静默 no-op（R3004）；navigation.back/forward reject
@@ -6408,6 +6733,8 @@
   globalThis.__zw_reset_history = function () {
     _hist_entries = [{ state: null, url: '', scrollRestoration: 'auto' }];
     _hist_cursor = 0;
+    _hist_jointSeq = null; // M3-S3：跨文档导航清联合序（新文档重新惰性播种）
+    _hist_jointCursor = 0;
     _hist_pendingTraversals = []; // M2-S3：清跨文档残留 traverse 队列（新文档不复现旧页 go()）
     _histRateStamps = []; // M2-S4P：速率窗随文档重置
     if (typeof _navReset === 'function') _navReset(); // M2-S4：同步重置 Navigation API entry list
@@ -7448,6 +7775,7 @@
     _hist_entries = _hist_entries.slice(0, _hist_cursor + 1);
     _hist_entries.push({ state: null, url: newHref, scrollRestoration: _zwSR });
     _hist_cursor = _hist_entries.length - 1;
+    if (_hist_jointSeq) _jointPushTop(_hist_cursor); // M3-S3：joint 镜像追加顶层标记
     _histTrimOldest();
     // M2-S4P3：本函数为锚/href/assign 共享 push 通道（部分调用方后续 host 交接）——
     // page_url 同步在自应用调用点（_setLocationHash 等）做，不在此处（见 _zwSyncDocUrl 注记）。

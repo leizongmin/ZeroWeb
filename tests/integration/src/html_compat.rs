@@ -520,6 +520,70 @@ fn disabled_fieldset_blocks_interaction_and_submission() {
 }
 
 #[test]
+fn label_activation_forwards_to_labeled_control() {
+    // R4008（html-semantics M2 切片 19）：label 本体激活的 plan 层转发——Activate 落
+    // label → label 自身照常派发 click（label 监听器先收到事件），未取消时对 labeled
+    // control 递归完整激活管线（checkbox 翻转 + control click）。取消 label 的 click
+    // 抑制转发（默认动作语义）；for= 与包裹式（首个 labelable 后代）两关联面。
+    // shim 不承接宿主 generic Event 的转发（renderer 默认动作层拥有真实输入路径）。
+    // https://html.spec.whatwg.org/multipage/forms.html#the-label-element
+    const SCRIPT: &str = r#"
+globalThis.__labelClicks=0;
+globalThis.__controlClicks=0;
+document.querySelector('#lbl').addEventListener('click',function(event){
+  globalThis.__labelClicks++;
+  if(globalThis.__preventLabel)event.preventDefault();
+});
+document.querySelector('#check').addEventListener('click',function(){globalThis.__controlClicks++;});
+document.querySelector('#wcheck').addEventListener('click',function(){globalThis.__controlClicks++;});
+"#;
+    fn run(control_sel: &str, prevent: bool) -> (String, bool, bool) {
+        let html = format!(
+            r#"<html><body>
+            <label id="lbl" for="check">Toggle</label>
+            <input id="check" type="checkbox">
+            <label id="wrap">Wrapped<input id="wcheck" type="checkbox"></label>
+            <script>globalThis.__preventLabel={prevent};{SCRIPT}</script>
+            </body></html>"#
+        );
+        let mut webview = WebView::new(WebViewConfig::default());
+        webview.prepare_document_state("https://zero.test/label");
+        webview.load_html(&html, None);
+        let label = webview
+            .page_node_ref_for_selector(if control_sel == "#check" { "#lbl" } else { "#wrap" })
+            .expect("label");
+        let result = dispatch(&mut webview, None, label, HtmlUserAction::Activate);
+        let counts = webview
+            .execute_script("globalThis.__labelClicks+','+globalThis.__controlClicks")
+            .expect("read click counts");
+        (
+            counts,
+            zero_engine::has_attribute(webview.html_content(), control_sel, "checked"),
+            result.canceled,
+        )
+    }
+
+    // for= 关联：label click 派发 1 次 + control 转发激活 1 次（checkbox 翻转）。
+    let (counts, checked, canceled) = run("#check", false);
+    assert_eq!(counts, "1,1", "label 与 control 各恰 1 次 click");
+    assert!(checked, "转发激活翻转 checkbox");
+    assert!(!canceled);
+
+    // 包裹式关联（无 for，首个 labelable 后代）：同语义转发到 #wcheck。计数监听器
+    // 只在 #lbl——本面断言转发激活本身（control click 恰 1 次 + 翻转）。
+    let (counts, checked, canceled) = run("#wcheck", false);
+    assert_eq!(counts, "0,1", "包裹式 label 转发激活 control 恰 1 次");
+    assert!(checked, "包裹式转发翻转 checkbox");
+    assert!(!canceled);
+
+    // 取消 label 的 click（未取消时才执行激活行为）→ 不转发、不翻转。
+    let (counts, checked, canceled) = run("#check", true);
+    assert_eq!(counts, "1,0", "取消后 label 自身 click 仍派发，control 零转发");
+    assert!(!checked, "取消抑制 checkbox 翻转");
+    assert!(canceled);
+}
+
+#[test]
 fn option_activation_conformance_across_hosts() {
     // https://html.spec.whatwg.org/multipage/form-elements.html#concept-option-selectedness
     const SCRIPT: &str = r#"

@@ -1,8 +1,11 @@
-// part61 — workers-compat M2 切片：importScripts 三相语义与 worker 全局最小面。
+// part61 — workers-compat M2 切片：importScripts 三相语义与 worker 全局最小面；
+// M3 切片补充：postMessage transfer/ports + structured-clone 语义（DC-3）；
+// P7 后半补充：importScripts 错误归因 + worker rAF/WorkerLocation.search 环境值面。
 // 本文件经 js_dom_bridge_tests.rs 的 include! 并入同一模块（part31 先例——
-// part21 4071 行超 2000 行上限后新工作落新文件）。契约：docs/goal/workers-compat.md
-// DC-2；WPT 案面 workers/interfaces/WorkerUtils/importScripts/{002-012}、
-// WorkerNavigator.any.js、semantics/interface-objects/001.worker.js。
+// part21 4071 行超 2000 行上限后新工作落新文件）。契约：docs/goal/archive/workers-compat.md
+// DC-2/DC-3；WPT 案面 workers/interfaces/WorkerUtils/importScripts/{002-012}、
+// WorkerNavigator.any.js、semantics/interface-objects/001.worker.js、
+// semantics/structured-clone/dedicated.html battery、Worker-multi-port。
 // 沙盒模式沿用 part21 嵌套 worker 先例：persistent_context + __zw_fetch_script
 // 注册 + microtask 泵（重复 execute 触发 postMessage 投递）。
 
@@ -762,5 +765,459 @@ fn test_worker_close_page_flow() {
         sandbox.execute("JSON.stringify(globalThis.__msgs)").unwrap().value,
         r#"["pong","Should be delivered"]"#,
         "close 后 worker→page 投递仍达；close 入队后的 ping 不被处理（无二次 pong）"
+    );
+}
+
+/// M3（DC-3）：结构化克隆包装对象面——Boolean/Number/String/BigInt 包装实例克隆保持
+/// 类型（spec serialize Boolean/Number/String/BigInt object 情形；battery
+/// compare_Boolean/compare_obj「instanceof」面）+ 稀疏数组洞保持（spec 逐 index 判
+/// item present；battery「Array sparse」length 面）。
+#[test]
+fn test_m3_structured_clone_wrappers_and_sparse_array() {
+    let mut sandbox = worker_m2_sandbox("https://wpt.test/m3/clone-wrap.html", |_page, _src| String::new());
+    sandbox
+        .execute(
+            "globalThis.__r = [];\
+             __r.push(structuredClone(Object(true)) instanceof Boolean);\
+             __r.push(structuredClone(Object(42)) instanceof Number);\
+             __r.push(structuredClone(Object('x')) instanceof String);\
+             __r.push(structuredClone(Object(10n)) instanceof BigInt);\
+             var sp = structuredClone(new Array(10));\
+             __r.push(sp.length === 10 && !(0 in sp) && !(9 in sp));\
+             var nested = structuredClone([{}, [1, 2]]);\
+             __r.push(Array.isArray(nested) && nested[1][1] === 2 && typeof nested[0] === 'object');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__r)").unwrap().value,
+        r#"[true,true,true,true,true,true]"#,
+        "包装对象克隆保持类型 + 稀疏数组 length/洞保持"
+    );
+}
+
+/// M3（DC-3）：Error 克隆三相——constructor/name/message 保持、cause 递归克隆、
+/// 非 own message 不安装、自定义 own 属性不迁（battery compare_Error 五面）。
+#[test]
+fn test_m3_structured_clone_error_face() {
+    let mut sandbox = worker_m2_sandbox("https://wpt.test/m3/clone-err.html", |_page, _src| String::new());
+    sandbox
+        .execute(
+            "globalThis.__r = [];\
+             var e = new TypeError('m1'); e.cause = new RangeError('c');\
+             var c = structuredClone(e);\
+             __r.push(c instanceof TypeError && c.message === 'm1' && c.name === 'TypeError');\
+             __r.push(c.cause instanceof RangeError && c.cause.message === 'c');\
+             var c2 = structuredClone(new Error());\
+             __r.push(!c2.hasOwnProperty('message'));\
+             var e3 = new TypeError('x'); e3.foo = 1;\
+             __r.push(structuredClone(e3).foo === undefined);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__r)").unwrap().value,
+        r#"[true,true,true,true]"#,
+        "Error 克隆保持构造器/message/cause，自定义属性不迁"
+    );
+}
+
+/// M3（DC-3）：视图克隆面——DataView 经 fresh buffer 三元组重建（buffer 非同一）；
+/// resizable buffer 身份保真（maxByteLength/resizable 随迁）；OOB DataView 序列化抛
+/// DataCloneError；SharedArrayBuffer 非 COI 拒绝克隆（battery catch 面）。
+#[test]
+fn test_m3_structured_clone_view_faces() {
+    let mut sandbox = worker_m2_sandbox("https://wpt.test/m3/clone-view.html", |_page, _src| String::new());
+    sandbox
+        .execute(
+            "globalThis.__r = [];\
+             var dv = new DataView(new ArrayBuffer(8)); dv.setUint8(0, 7);\
+             var dc = structuredClone(dv);\
+             __r.push(dc instanceof DataView && dc.buffer !== dv.buffer && dc.getUint8(0) === 7);\
+             var rab = new ArrayBuffer(16, { maxByteLength: 1024 });\
+             var tc = structuredClone(new Uint8Array(rab));\
+             __r.push(tc.buffer.maxByteLength === 1024 && tc.buffer.resizable === true);\
+             var f = new Uint8Array([1, 2, 3]);\
+             var fc = structuredClone(f);\
+             __r.push(fc instanceof Uint8Array && fc[0] === 1 && fc.buffer !== f.buffer);\
+             var ab2 = new ArrayBuffer(16, { maxByteLength: 1024 });\
+             var dv2 = new DataView(ab2, 8); ab2.resize(0);\
+             try { structuredClone(dv2); __r.push('oob-no-throw'); } catch (e) { __r.push(e.name === 'DataCloneError' && e.code === 25); }\
+             try { structuredClone(new SharedArrayBuffer(8)); __r.push('sab-no-throw'); } catch (e) { __r.push(e.name === 'DataCloneError'); }",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__r)").unwrap().value,
+        r#"[true,true,true,true,true]"#,
+        "DataView 重建 + resizable 保真 + OOB/SAB DataCloneError 面"
+    );
+}
+
+/// M3（DC-3）：FileList 克隆保持类型 + Blob 在 global 构造器被 delete 后仍克隆为
+/// Blob 实例（spec 反序列化走 realm 注册表，delete 不触及——battery「interface
+/// deleted from the global must still deserialize」面）。
+#[test]
+fn test_m3_structured_clone_filelist_and_deleted_blob_global() {
+    let mut sandbox = worker_m2_sandbox("https://wpt.test/m3/clone-del.html", |_page, _src| String::new());
+    sandbox
+        .execute(
+            "globalThis.__r = [];\
+             var fl = new FileList();\
+             var fc = structuredClone(fl);\
+             __r.push(fc instanceof FileList && fc !== fl && fc.length === 0);\
+             var b = new Blob(['x']);\
+             var BC = globalThis.Blob;\
+             delete globalThis.Blob;\
+             var cb = structuredClone(b);\
+             __r.push(cb instanceof BC && cb.size === 1);\
+             globalThis.Blob = BC;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__r)").unwrap().value,
+        r#"[true,true]"#,
+        "FileList instanceof 保持 + delete 后 Blob 仍克隆为 Blob"
+    );
+}
+
+/// M3（DC-3）：ImageBitmap 全局接口面——非法构造 TypeError、wire 几何解析、克隆保持
+/// 类型与内容、toStringTag、close() 释放、transfer 副作用（源 close）。
+#[test]
+fn test_m3_imagebitmap_faces() {
+    let mut sandbox = worker_m2_sandbox("https://wpt.test/m3/bitmap.html", |_page, _src| String::new());
+    sandbox
+        .execute(
+            "globalThis.__r = [];\
+             try { new ImageBitmap(); __r.push('ctor-no-throw'); } catch (e) { __r.push(e instanceof TypeError); }\
+             var bm = new ImageBitmap('2:1;,1,2,3,4,5,6,7,8');\
+             __r.push(bm instanceof ImageBitmap && bm.width === 2 && bm.height === 1);\
+             var bc = structuredClone(bm);\
+             __r.push(bc instanceof ImageBitmap && bc !== bm && bc.width === 2 && bc._zwBitmapWire === bm._zwBitmapWire);\
+             __r.push(Object.prototype.toString.call(bc) === '[object ImageBitmap]');\
+             bm.close();\
+             __r.push(bm._closed === true && bm.width === 0);\
+             var bm2 = new ImageBitmap('1:1;,1,2,3,4');\
+             structuredClone(bm2, { transfer: [bm2] });\
+             __r.push(bm2._closed === true);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__r)").unwrap().value,
+        r#"[true,true,true,true,true,true]"#,
+        "ImageBitmap 接口/克隆/close/transfer 面"
+    );
+}
+
+/// M3（DC-3）：detached buffer transfer 面——首转移后源 byteLength 0（真 detach）+
+/// 再转移抛 DataCloneError（battery「A detached ArrayBuffer cannot be transferred」）；
+/// OffscreenCanvas 克隆保持类型与尺寸（battery transfer 面同参）。
+#[test]
+fn test_m3_transfer_detached_buffer_and_offscreen_canvas() {
+    let mut sandbox = worker_m2_sandbox("https://wpt.test/m3/detach.html", |_page, _src| String::new());
+    sandbox
+        .execute(
+            "globalThis.__r = [];\
+             var ab = new ArrayBuffer(8);\
+             structuredClone(ab, { transfer: [ab] });\
+             __r.push(ab.byteLength === 0);\
+             try { structuredClone(ab, { transfer: [ab] }); __r.push('re-no-throw'); } catch (e) { __r.push(e.name === 'DataCloneError' && e.code === 25); }\
+             var oc = new OffscreenCanvas(10, 10);\
+             var occ = structuredClone(oc);\
+             __r.push(occ instanceof OffscreenCanvas && occ.width === 10 && occ.height === 10 && occ !== oc);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__r)").unwrap().value,
+        r#"[true,true,true]"#,
+        "detached buffer 再转移拒绝 + OffscreenCanvas 克隆尺寸面"
+    );
+}
+
+/// M3（DC-3）：MessagePort 转移错误面——closed/source port、payload port 无列表、
+/// 不可转移项、null 元素（TypeError）各形态（spec serialize-with-transfer 校验序 +
+/// Worker-multi-port「failed postMessage 后重发仍可用」面）。
+#[test]
+fn test_m3_port_transfer_errors() {
+    let mut sandbox = worker_m2_sandbox("https://wpt.test/m3/port-err.html", |_page, _src| String::new());
+    sandbox
+        .execute(
+            "globalThis.__r = [];\
+             var ch = new MessageChannel();\
+             var ch2 = new MessageChannel(); ch2.port2.close();\
+             try { ch.port1.postMessage(1, [ch2.port2]); __r.push('closed-no-throw'); } catch (e) { __r.push(e.name === 'DataCloneError'); }\
+             try { ch.port1.postMessage(ch.port2); __r.push('payload-no-throw'); } catch (e) { __r.push(e.name === 'DataCloneError'); }\
+             try { ch.port1.postMessage(1, [{}]); __r.push('nt-no-throw'); } catch (e) { __r.push(e.name === 'DataCloneError'); }\
+             try { ch.port1.postMessage(1, [null]); __r.push('null-no-throw'); } catch (e) { __r.push(e instanceof TypeError); }\
+             try { ch.port1.postMessage(1, [ch.port1]); __r.push('self-no-throw'); } catch (e) { __r.push(e.name === 'DataCloneError'); }\
+             ch.port1.postMessage('still-ok');\
+             __r.push(true);",
+        )
+        .unwrap();
+    worker_m2_pump(&mut sandbox, 3);
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__r)").unwrap().value,
+        r#"[true,true,true,true,true,true]"#,
+        "port 转移五错误形态 + 失败 postMessage 后源 port 仍可用"
+    );
+}
+
+/// M3（DC-3）：payload port + transfer 列表同一转移体（battery transfer「MessagePort」
+/// 面）——page→worker 转移 port2，worker echo 回 page，转移体与 port1 通信可达。
+#[test]
+fn test_m3_port_transfer_same_clone_reaches_peer() {
+    let mut sandbox = worker_m2_sandbox("https://wpt.test/m3/port-flow.html", |_page, src| {
+        if src == "echo-worker.js" {
+            "onmessage = ev => postMessage(ev.data, ev.data.transfer);".to_string()
+        } else {
+            String::new()
+        }
+    });
+    sandbox
+        .execute(
+            "globalThis.__msgs = [];\
+             var ch = new MessageChannel();\
+             globalThis.__ch = ch;\
+             var worker = new Worker('echo-worker.js');\
+             worker.onmessage = function (ev) {\
+               globalThis.__port = ev.data.data;\
+               globalThis.__msgs.push('echo');\
+             };\
+             worker.postMessage({ data: ch.port2, transfer: [ch.port2] }, [ch.port2]);",
+        )
+        .unwrap();
+    worker_m2_pump(&mut sandbox, 6);
+    sandbox
+        .execute(
+            "globalThis.__ch.port1.onmessage = function (ev) { globalThis.__msgs.push(ev.data); };\
+             globalThis.__port.postMessage('ohai');",
+        )
+        .unwrap();
+    worker_m2_pump(&mut sandbox, 6);
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__msgs)").unwrap().value,
+        r#"["echo","ohai"]"#,
+        "转移体克隆与原配对 port 通信可达（serialize-with-transfer 同一转移体语义）"
+    );
+}
+
+/// M3（DC-3）：postMessage 第二参联合形态——null → 字典分支缺省（second-argument-null
+/// 面）、options 字典 {transfer} 形态、[null] 元素 TypeError。
+#[test]
+fn test_m3_postmessage_union_second_arg() {
+    let mut sandbox = worker_m2_sandbox("https://wpt.test/m3/union.html", |_page, src| {
+        if src == "echo-worker.js" {
+            "onmessage = ev => postMessage(ev.data, ev.data.transfer);".to_string()
+        } else {
+            String::new()
+        }
+    });
+    sandbox
+        .execute(
+            "globalThis.__m = [];\
+             var w = new Worker('echo-worker.js');\
+             w.onmessage = function (ev) { globalThis.__m.push(ev.data); };\
+             w.postMessage(1, null);\
+             w.postMessage(2, { transfer: [] });\
+             w.postMessage(3, undefined);\
+             try { w.postMessage(4, [null]); } catch (e) { globalThis.__m.push(e instanceof TypeError); }",
+        )
+        .unwrap();
+    worker_m2_pump(&mut sandbox, 6);
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__m)").unwrap().value,
+        r#"[true,1,2,3]"#,
+        "[null] 元素 TypeError 同步抛（先入）；null/字典/undefined 三形态经 task 送达"
+    );
+}
+
+
+/// P7 后半（report-error 面）：非字面量实参的 importScripts 运行时调用——构造期
+/// 标识符改写为 __zwImportTracked，fetch 失败 NetworkError 的 filename/lineno 指向
+/// 调用位（worker 脚本内第 2 行调用位）。
+#[test]
+fn test_p7_import_runtime_call_site_attribution() {
+    use zero_script_sandbox::Sandbox;
+    let mut sandbox = worker_m2_sandbox("https://wpt.test/p7/call.html", |_page, src| {
+        if src == "call-worker.js" {
+            "function doImportScripts(u) {\n  importScripts(u);\n}\ndoImportScripts('missing.js');"
+                .to_string()
+        } else {
+            String::new()
+        }
+    });
+    sandbox
+        .execute(
+            "globalThis.__err = null;\
+             var worker = new Worker('call-worker.js');\
+             worker.onerror = function (event) { globalThis.__err = { filename: event.filename, lineno: event.lineno }; };",
+        )
+        .unwrap();
+    worker_m2_pump(&mut sandbox, 6);
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__err)").unwrap().value,
+        r#"{"filename":"https://wpt.test/p7/call-worker.js","lineno":2}"#,
+        "运行时调用 fetch 失败归因调用位：filename=worker 脚本、lineno=调用行"
+    );
+}
+
+/// P7 后半：被导入脚本解析错（内联 eval 包装）——filename 指向被导入脚本、
+/// lineno 报 1（解析错栈无编译位坐标，单行语料面），SyntaxError 透传。
+#[test]
+fn test_p7_import_parse_error_script_attribution() {
+    use zero_script_sandbox::Sandbox;
+    let mut sandbox = worker_m2_sandbox("https://wpt.test/p7/parse.html", |_page, src| {
+        if src == "parse-worker.js" {
+            "importScripts('bad.js');".to_string()
+        } else if src == "bad.js" {
+            " + ;".to_string()
+        } else {
+            String::new()
+        }
+    });
+    sandbox
+        .execute(
+            "globalThis.__err = null;\
+             var worker = new Worker('parse-worker.js');\
+             worker.onerror = function (event) { globalThis.__err = { filename: event.filename, lineno: event.lineno, message: String(event.message).slice(0, 30) }; };",
+        )
+        .unwrap();
+    worker_m2_pump(&mut sandbox, 6);
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__err)").unwrap().value,
+        r#"{"filename":"https://wpt.test/p7/bad.js","lineno":1,"message":"Uncaught SyntaxError: Unexpect"}"#,
+        "解析错归因被导入脚本：filename=bad.js、lineno=1、SyntaxError 透传"
+    );
+}
+
+/// P7 后半：嵌套 importScripts 解析错——内层脚本先标 _zwScriptUrl、外层透传，
+/// 归因内层（Worker-nested-importScripts-error 面）。
+#[test]
+fn test_p7_import_nested_innermost_wins() {
+    use zero_script_sandbox::Sandbox;
+    let mut sandbox = worker_m2_sandbox("https://wpt.test/p7/nested.html", |_page, src| {
+        if src == "outer-worker.js" {
+            "importScripts('outer.js');".to_string()
+        } else if src == "outer.js" {
+            "importScripts('inner.js');".to_string()
+        } else if src == "inner.js" {
+            "SELECT * FROM TABLE;".to_string()
+        } else {
+            String::new()
+        }
+    });
+    sandbox
+        .execute(
+            "globalThis.__err = null;\
+             var worker = new Worker('outer-worker.js');\
+             worker.onerror = function (event) { globalThis.__err = { filename: event.filename, lineno: event.lineno }; };",
+        )
+        .unwrap();
+    worker_m2_pump(&mut sandbox, 6);
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__err)").unwrap().value,
+        r#"{"filename":"https://wpt.test/p7/inner.js","lineno":1}"#,
+        "嵌套链解析错归因内层 inner.js"
+    );
+}
+
+/// P7 后半（cross-origin report-error 面同构）：经内联 helper 的运行时调用——
+/// helper 内 doImportScripts 的 importScripts 调用（非字面量实参）构造期改写，
+/// fetch 失败 filename/lineno 指向 helper.js 的调用位（第 2 行）。
+#[test]
+fn test_p7_import_helper_runtime_call_attribution() {
+    use zero_script_sandbox::Sandbox;
+    let mut sandbox = worker_m2_sandbox("https://wpt.test/p7/helper.html", |_page, src| {
+        if src == "helper-main.js" {
+            "importScripts('helper.js');\nrun();".to_string()
+        } else if src == "helper.js" {
+            "function doImportScripts(u) {\n  importScripts(u);\n}\nfunction run() { doImportScripts('gone.js'); }".to_string()
+        } else {
+            String::new()
+        }
+    });
+    sandbox
+        .execute(
+            "globalThis.__err = null;\
+             var worker = new Worker('helper-main.js');\
+             worker.onerror = function (event) { globalThis.__err = { filename: event.filename, lineno: event.lineno }; };",
+        )
+        .unwrap();
+    worker_m2_pump(&mut sandbox, 6);
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__err)").unwrap().value,
+        r#"{"filename":"https://wpt.test/p7/helper.js","lineno":2}"#,
+        "内联 helper 运行时调用归因 helper.js 调用位（cross-origin report-error 面同构）"
+    );
+}
+
+/// worker rAF 面（WorkerGlobalScope_requestAnimationFrame.worker.js）：三次嵌套回调
+/// 时间戳为数值且严格递增——worker 专属实现经 setTimeout(0) 逐回调派发（worker 无
+/// 渲染帧，spec 近似「每回调一帧」）+ performance.now() 数值时间戳；页面 part01 同步
+/// stub 为 string/恒值，不满足本面。
+#[test]
+fn test_p7_worker_raf_numeric_strictly_increasing_timestamps() {
+    use zero_script_sandbox::Sandbox;
+    let mut sandbox = worker_m2_sandbox("https://wpt.test/p7/raf.html", |_page, src| {
+        if src == "raf-worker.js" {
+            "var res = [];\nfunction step(t) {\n  res.push(t);\n  if (res.length < 3) { requestAnimationFrame(step); } else { postMessage(res); }\n}\nrequestAnimationFrame(step);".to_string()
+        } else {
+            String::new()
+        }
+    });
+    sandbox
+        .execute(
+            "globalThis.__raf = null;\
+             var worker = new Worker('raf-worker.js');\
+             worker.onmessage = function (event) { globalThis.__raf = event.data; };",
+        )
+        .unwrap();
+    worker_m2_pump(&mut sandbox, 8);
+    assert_eq!(
+        sandbox
+            .execute("JSON.stringify([typeof globalThis.__raf, globalThis.__raf && globalThis.__raf.length])")
+            .unwrap()
+            .value,
+        r#"["object",3]"#,
+        "三次嵌套 rAF 回调全部派发并回传"
+    );
+    assert_eq!(
+        sandbox
+            .execute(
+                "globalThis.__raf.every(function (t) { return typeof t === 'number'; }) && \
+                 globalThis.__raf[0] < globalThis.__raf[1] && globalThis.__raf[1] < globalThis.__raf[2]"
+            )
+            .unwrap()
+            .value,
+        "true",
+        "时间戳数值型且跨回调严格递增"
+    );
+}
+
+/// WorkerLocation.search 空 query 面（WorkerLocation_search_empty.htm）：裸尾 `?` 的
+/// search 为空串（URL spec §search getter——query 为 null 或空串均返空串）；根因修在
+/// 共享序列化器 js_dom_bridge::serialize_url（页面 URL 对象同路径）。
+#[test]
+fn test_p7_worker_location_search_empty_query() {
+    use zero_script_sandbox::Sandbox;
+    let mut sandbox = worker_m2_sandbox("https://wpt.test/p7/search-empty.html", |_page, src| {
+        if src == "search-worker.js?" {
+            "postMessage(self.location.search);".to_string()
+        } else {
+            String::new()
+        }
+    });
+    sandbox
+        .execute(
+            "globalThis.__search = 'pending';\
+             var worker = new Worker('search-worker.js?');\
+             worker.onmessage = function (event) { globalThis.__search = event.data; };",
+        )
+        .unwrap();
+    worker_m2_pump(&mut sandbox, 6);
+    assert_eq!(
+        sandbox
+            .execute("JSON.stringify(globalThis.__search)")
+            .unwrap()
+            .value,
+        r#""""#,
+        "裸尾 ? 的 WorkerLocation.search 为空串"
     );
 }

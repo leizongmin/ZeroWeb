@@ -739,3 +739,350 @@ fn test_label_activation_r4004() {
         "W4：SVG 命名空间 details 非交互 → label[for=cBtnA] 照常转发"
     );
 }
+
+// R4005/R4006（html-semantics M2 切片 17）：form owner 动态关联 + getElementById
+// pending 窗口同 id 树序。修复面：
+// ① `.form` getter 祖先上行改 JS 视图 parentNode（handle `_zwNodeParent` 反链 /
+//    R334 pending 槽 / sel host 链三族）——旧 `_ancestorChain`（host 链）对 handle-only
+//    子恒空、对异步 wire 窗口的 sel 子读旧树；
+// ② form attr 关联查控件所在树（detached form 仍是 owner）+ OBJECT 入 gate；
+// ③ R52 消零 purge 后 `_makeProxy` WeakRef 复活（同 turn append+remove 后页面仍持有
+//    的原 proxy 不重铸——identity 断修复）；
+// ④ getElementById pending 候选池树序取首（insertBefore 前插/改名重登记）+ 改名条目
+//    `_r125Overridden` 门。sel 面的 latest-wins 属性读由语料 parser-inserted 用例覆盖。
+#[test]
+fn test_form_owner_dynamic_r4005() {
+    let mut sandbox = t59_sandbox_with_shim();
+    let mutations: std::sync::Arc<std::sync::Mutex<Vec<DomMutation>>> = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+    let dom_html: std::sync::Arc<std::sync::Mutex<String>> =
+        std::sync::Arc::new(std::sync::Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: std::sync::Arc<std::sync::Mutex<String>> = std::sync::Arc::new(std::sync::Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    crate::js_dom_bridge::register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // W1：handle-only 子的祖先上行（JS 视图反链）+ reparent 同步跟随。修复前
+    // `_ancestorChain` 无 sel 恒空 → basic 关联 null；reparent 后 host 链滞后旧 form。
+    sandbox
+        .execute(
+            "var f1 = document.createElement('form'); f1.id = 'rF1'; document.body.appendChild(f1);\
+             var c1 = document.createElement('button'); f1.appendChild(c1);\
+             var f2 = document.createElement('form'); f2.id = 'rF2'; document.body.appendChild(f2);\
+             globalThis.__w1a = String(c1.form === f1);\
+             f2.appendChild(c1);\
+             globalThis.__w1b = String(c1.form === f2);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__w1a").unwrap().value,
+        "true",
+        "W1：handle 子 append 后 `.form` 即关联祖先 form（JS 视图反链上行，修复前 null）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w1b").unwrap().value,
+        "true",
+        "W1：reparent 后 `.form` 同步跟到新父 form（修复前滞留旧树）"
+    );
+
+    // W2：form attr 关联的查找域 = 控件所在树 + R52 purge 身份。控件随 form 出文档
+    // （detached 树）后 detached form 仍是 owner，且 === 页面持有对象（修复前 gEBI/
+    // wrapHandle 重铸第二 wrapper → assert_equals 身份断失败）。
+    sandbox
+        .execute(
+            "var f3 = document.createElement('form'); f3.id = 'rF3'; document.body.appendChild(f3);\
+             var c2 = document.createElement('button'); c2.setAttribute('form', 'rF3');\
+             f3.appendChild(c2);\
+             document.body.removeChild(f3);\
+             globalThis.__w2 = String(c2.form === f3);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__w2").unwrap().value,
+        "true",
+        "W2：detached 树内 form attr 仍关联（同树查找）且 === 原 proxy（WeakRef 复活，修复前身份断）"
+    );
+
+    // W3：同 id 树序（R4006 候选池）——改名进来的 duplicate id 候选按树序取首；
+    // 移除后回落次序；尾部重插回到树序；改名走远的条目不误命中。
+    sandbox
+        .execute(
+            "var f4 = document.createElement('form'); f4.id = 'rF4'; document.body.appendChild(f4);\
+             var f5 = document.createElement('form'); f5.id = 'rF5'; document.body.appendChild(f5);\
+             var c3 = document.createElement('button'); c3.setAttribute('form', 'rF4');\
+             f4.appendChild(c3);\
+             f5.id = 'rF4';\
+             f5.parentNode.insertBefore(f5, f4);\
+             globalThis.__w3a = String(document.getElementById('rF4') === f5);\
+             globalThis.__w3b = String(c3.form === f5);\
+             f5.parentNode.removeChild(f5);\
+             globalThis.__w3c = String(c3.form === f4);\
+             f5.id = 'rF5';\
+             f4.parentNode.appendChild(f5);\
+             globalThis.__w3d = String(c3.form === f4);\
+             f4.id = 'rF9';\
+             globalThis.__w3e = String(document.getElementById('rF4') === null\
+               && document.getElementById('rF9') === f4);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__w3a").unwrap().value,
+        "true",
+        "W3：getElementById 同 id 多候选树序取首（insertBefore 前插的 f5 胜出插入序首位）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w3b").unwrap().value,
+        "true",
+        "W3：form owner 跟随树序首个 id 匹配（=f5）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w3c").unwrap().value,
+        "true",
+        "W3：f5 移除后回落 f4（pending-removed 门 + 候选池过滤）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w3d").unwrap().value,
+        "true",
+        "W3：f5 尾部重插后树序首回到 f4（form2 保 duplicate id 场景）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__w3e").unwrap().value,
+        "true",
+        "W3：f4 改名后旧 id 不误命中（null）且新 id 可查（=f4）——pending 条目改名摘旧键登新键"
+    );
+
+    // W4：OBJECT 入 form-associated gate（R4005 补面——修复前 `.form` getter 不认
+    // object，13 案全灭）。
+    sandbox
+        .execute(
+            "var ob = document.createElement('object');\
+             var f6 = document.createElement('form'); f6.id = 'rF6'; document.body.appendChild(f6);\
+             f6.appendChild(ob);\
+             globalThis.__w4 = String(ob.form === f6);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__w4").unwrap().value,
+        "true",
+        "W4：object 元素 `.form` 关联祖先 form（gate 补 OBJECT）"
+    );
+}
+
+// R4007（html-semantics M2 切片 18）：HTMLLabelElement.form——labeled control 的
+// form owner（无 labeled control → null）。修复面：`.form` getter 补 LABEL 分支，
+// 经 `_zwLabeledControl`（for 优先 + 子树树序 DFS，R4003/R4004 既有）委托控件的
+// `.form`（R4005 关联面）；label 自身 form content attribute 不参与（label 非
+// form-associated——form.html label-form 语料期望 null）。`.control` 本体 R4003
+// 已在 part04 分发区，本契约只钉 `.form` 委托链。
+#[test]
+fn test_label_form_r4007() {
+    let mut sandbox = t59_sandbox_with_shim();
+    let mutations: std::sync::Arc<std::sync::Mutex<Vec<DomMutation>>> = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+    let dom_html: std::sync::Arc<std::sync::Mutex<String>> =
+        std::sync::Arc::new(std::sync::Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: std::sync::Arc<std::sync::Mutex<String>> = std::sync::Arc::new(std::sync::Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    crate::js_dom_bridge::register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // W1：无 labeled control → null（裸 label / form 属性不参与——label 非
+    // form-associated）。
+    sandbox
+        .execute(
+            "var f1 = document.createElement('form'); f1.id = 'lF1'; document.body.appendChild(f1);\
+             var lb1 = document.createElement('label'); lb1.id = 'lLb1'; document.body.appendChild(lb1);\
+             var lb2 = document.createElement('label'); lb2.id = 'lLb2'; lb2.setAttribute('form', 'lF1');\
+             document.body.appendChild(lb2);\
+             globalThis.__l1a = String(lb1.form === null);\
+             globalThis.__l1b = String(lb2.form === null);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__l1a").unwrap().value,
+        "true",
+        "W1：裸 label `.form` null（修复前 undefined）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__l1b").unwrap().value,
+        "true",
+        "W1：label 自身 form 属性不参与关联（期望 null 非 form）"
+    );
+
+    // W2：包绕控件 → 控件的 form owner（祖先 form）；for= 指向 → 目标控件的
+    // form owner；reparent 后同步跟随（委托 R4005 面不重复钉树序细节）。
+    sandbox
+        .execute(
+            "var c1 = document.createElement('input');\
+             var lb3 = document.createElement('label'); lb3.appendChild(c1);\
+             f1.appendChild(lb3);\
+             globalThis.__l2a = String(lb3.form === f1);\
+             var c2 = document.createElement('input'); c2.id = 'lC2'; f1.appendChild(c2);\
+             var lb4 = document.createElement('label'); lb4.setAttribute('for', 'lC2');\
+             document.body.appendChild(lb4);\
+             globalThis.__l2b = String(lb4.form === f1);\
+             var f2 = document.createElement('form'); f2.id = 'lF2'; document.body.appendChild(f2);\
+             f2.appendChild(c2);\
+             globalThis.__l2c = String(lb4.form === f2 && lb4.control.form === f2);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__l2a").unwrap().value,
+        "true",
+        "W2：包绕控件 label `.form` = 控件祖先 form"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__l2b").unwrap().value,
+        "true",
+        "W2：for= label `.form` = 目标控件 form owner"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__l2c").unwrap().value,
+        "true",
+        "W2：控件 reparent 后 label.form 同步跟随新 owner（委托 R4005 面）"
+    );
+
+    // W3：for= 指向带 form 属性的控件 → 控件 form attr 关联面（R4005）；for=
+    // miss（非 labelable 或无此 id）→ null。
+    sandbox
+        .execute(
+            "var c3 = document.createElement('input'); c3.id = 'lC3'; c3.setAttribute('form', 'lF1');\
+             f1.appendChild(c3);\
+             var lb5 = document.createElement('label'); lb5.setAttribute('for', 'lC3');\
+             document.body.appendChild(lb5);\
+             globalThis.__l3a = String(lb5.form === f1);\
+             var lb6 = document.createElement('label'); lb6.setAttribute('for', 'nope');\
+             document.body.appendChild(lb6);\
+             globalThis.__l3b = String(lb6.form === null);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__l3a").unwrap().value,
+        "true",
+        "W3：for= 控件带 form 属性 → form attr 关联（委托 R4005）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__l3b").unwrap().value,
+        "true",
+        "W3：for= miss → null"
+    );
+}
+
+// R4008（html-semantics M2 切片 19）：label 激活行为 target 本体面——click 落
+// label 自身（非 label.click() API）同样转发 labeled control。决策点：
+// ① 交互豁免改「target 即本站 label 本体时不豁免」（spec 交互豁免只覆盖
+// interactive content **后代**为 target；bubble 站挂钩 + R155 post 段同判）；
+// ② shim 不承接宿主 generic Event 的转发——renderer 真实输入路径由 Rust
+// 默认动作层激活（activate_label_at），webview plan 路径（testdriver）由
+// user_actions label 链激活；shim 再转发会对 renderer 路径双激活（W5 钉）。
+// WPT proxy-modifier-click-to-associated-element 4F 根因（plan 层链补齐）。
+#[test]
+fn test_label_self_target_dispatch_r4008() {
+    let mut sandbox = t59_sandbox_with_shim();
+    let mutations: std::sync::Arc<std::sync::Mutex<Vec<DomMutation>>> = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+    // 面板直接入 dom_html 快照（解析形态——与真实页面同构；`__zw_get_tag` 等
+    // sel 族宿主回调解析快照，JS createElement 面板只入 mutations 队列不进快照，
+    // 宿主 sel 形态派发解析不到）。for 关联 label（控件独立 button，排除子树
+    // 查找耦合）+ 交互后代 + 嵌套 label（内层 for 内层控件）。
+    let dom_html: std::sync::Arc<std::sync::Mutex<String>> = std::sync::Arc::new(std::sync::Mutex::new(
+        "<html><body>\
+         <label id='sLa' for='sBtnA'>text</label><button id='sBtnA'></button>\
+         <label id='sLb' for='sBtnB'><a id='sA2' href='#x'>link</a></label><button id='sBtnB'></button>\
+         <label id='sLo' for='sBtnO'><label id='sLi' for='sBtnI'>in</label></label>\
+         <button id='sBtnO'></button><button id='sBtnI'></button>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: std::sync::Arc<std::sync::Mutex<String>> = std::sync::Arc::new(std::sync::Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    crate::js_dom_bridge::register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 计数器 + 相位日志 + 派发助手（页面 proxy dispatchEvent 形态）。
+    sandbox
+        .execute(
+            "globalThis.__clk8 = {};\
+             globalThis.__log8 = []; globalThis.__phase8 = 'init';\
+             ['sBtnA','sBtnB','sBtnO','sBtnI'].forEach(function (id) {\
+               globalThis.__clk8[id] = 0;\
+               document.getElementById(id).addEventListener('click', function () { globalThis.__clk8[id]++; globalThis.__log8.push(id + '@' + globalThis.__phase8); });\
+             });\
+             globalThis.__fire8 = function (id, bubbles) {\
+               globalThis.__phase8 = id + (bubbles ? ':bub' : ':nobub');\
+               document.getElementById(id).dispatchEvent(new MouseEvent('click', { bubbles: !!bubbles }));\
+               globalThis.__phase8 = 'post';\
+             };",
+        )
+        .unwrap();
+
+    // W1：冒泡 click 落 label 本体 → 转发（修复前 0）；恰 1 次不多计。
+    sandbox
+        .execute("globalThis.__fire8('sLa', true); globalThis.__w1 = globalThis.__clk8.sBtnA;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__w1").unwrap().value,
+        "1",
+        "W1：冒泡 click 落 label 本体 → for 控件恰转发 1 次（修复前 0）"
+    );
+
+    // W2：非冒泡 click 落 label 本体 → 仅 R155 post 段转发（修复前 0；双闸防
+    // 与挂钩双转）。
+    sandbox
+        .execute("globalThis.__fire8('sLa', false); globalThis.__w2 = globalThis.__clk8.sBtnA;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__w2").unwrap().value,
+        "2",
+        "W2：非冒泡 click 落 label 本体 → post 段转发（累计 2，无双转）"
+    );
+
+    // W3：label 含交互后代 a[href]——click 落 label 本体照常转发（豁免只针对
+    // 后代 target）；click 落 a[href] 后代仍豁免（相位日志钉针：sBtnB 仅 sLb:bub
+    // 相位一次转发）。
+    sandbox
+        .execute("globalThis.__fire8('sLb', true); globalThis.__w3a = globalThis.__clk8.sBtnB;\
+                  globalThis.__fire8('sA2', true); globalThis.__w3b = globalThis.__clk8.sBtnB;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__w3a + ',' + globalThis.__w3b + ' log=' + globalThis.__log8.join(';')").unwrap().value,
+        "1,1 log=sBtnA@sLa:bub;sBtnA@sLa:nobub;sBtnB@sLb:bub",
+        "W3：label 本体转发 1 次（sLb:bub）；a[href] 后代豁免（sBtnB 计数不变仍为 1）"
+    );
+
+    // W4：嵌套 label——click 落内层 label 本体：内层转发 1；外层站按「内层 label
+    // 是交互后代」豁免，外层控件不转发（事件标记 __zwLblFwd4004 防双转）。
+    sandbox
+        .execute("globalThis.__fire8('sLi', true); globalThis.__w4 = globalThis.__clk8.sBtnI + ',' + globalThis.__clk8.sBtnO;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__w4").unwrap().value,
+        "1,0",
+        "W4：嵌套 label 内层本体转发 1 次；外层按交互后代豁免不转发"
+    );
+
+    // W5：宿主派发路径不分流——`__zw_dispatch_event`（generic Event，非
+    // MouseEvent）落 label 本体，shim 不转发（renderer 默认动作层与 plan 层
+    // label 链各自拥有宿主激活；shim 再转发 = renderer 真实点击双翻）。
+    // 计数维持 W1+W2 的 2。
+    sandbox
+        .execute("globalThis.__phase8 = 'host';\
+                  __zw_dispatch_event('#sLa', 'click', null);\
+                  globalThis.__w5 = globalThis.__clk8.sBtnA;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__w5").unwrap().value,
+        "2",
+        "W5：宿主 generic click 落 label 本体 → shim 不转发（激活归宿主层）"
+    );
+
+    // W6：宿主 generic click 落交互后代 a[href] 同样不转发；且宿主派发后 JS
+    // MouseEvent 面仍正常（R155 post 段路径不受影响）。
+    sandbox
+        .execute("__zw_dispatch_event('#sA2', 'click', null);\
+                  globalThis.__fire8('sLb', false);\
+                  globalThis.__w6 = globalThis.__clk8.sBtnB;")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__w6").unwrap().value,
+        "2",
+        "W6：宿主 click 落交互后代不转发（仍 1）；后续 JS 非冒泡 click 照常转发（累计 2）"
+    );
+}

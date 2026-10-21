@@ -4076,7 +4076,13 @@ fn serialize_url(url: &url::Url) -> String {
             json_str(&host),
             json_str(&url.origin().ascii_serialization()),
             json_str(url.path()),
-            json_str(&url.query().map(|q| format!("?{q}")).unwrap_or_default()),
+            // URL spec §search getter：「query 为 null 或空串返空串，否则 "?" + query」——
+            // 裸尾 `?` 被 url crate 解析为 Some("")，须与 null 同归空串（WorkerLocation_
+            // search_empty 面）。
+            json_str(&match url.query() {
+                Some("") | None => String::new(),
+                Some(q) => format!("?{q}"),
+            }),
             json_str(&url.fragment().map(|f| format!("#{f}")).unwrap_or_default()),
             json_str(url.as_str()),
         )

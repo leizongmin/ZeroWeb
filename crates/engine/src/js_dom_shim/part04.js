@@ -914,7 +914,7 @@
           if (_zwNsColon >= 0) _zwNsLocal = _zwNsLocal.slice(_zwNsColon + 1);
           if (_zwNsLocal.toUpperCase() === 'IFRAME') _zwIframeTag = 'IFRAME';
         }
-        if ((prop === 'contentDocument' || prop === 'contentWindow') && _zwIframeTag === 'IFRAME') {
+        if ((prop === 'contentDocument' || prop === 'contentWindow' || prop === 'getSVGDocument') && _zwIframeTag === 'IFRAME') {
           var _r115Entry = _iframeDocCache[key];
           if (!_r115Entry) {
             var _r115Src = '';
@@ -970,7 +970,29 @@
             } catch (_e139f) {}
             return _r115FbWin;
           }
-          return _r115Entry.doc; // loading 期 null（spec：未加载完成 contentDocument 可为 null）
+          // navigation-compat M3：legacy `getSVGDocument()`——与 contentDocument 同语义
+          //（spec HTMLIFrameElement.getSVGDocument：同源返活跃 Document、跨源 null）。
+          // 调用时点现查（test 于 onload 期调用，initial 期物化前也须正确）。
+          if (prop === 'getSVGDocument') {
+            return function () {
+              var _r115EntryG = _iframeDocCache[key];
+              if (!_r115EntryG) return null;
+              var _r115CoG = (_r115EntryG.flags && _r115EntryG.flags.sandboxed && !_r115EntryG.flags.allowSameOrigin) ||
+                (typeof _r115EntryG.url === 'string' && _r115EntryG.url.indexOf('data:') === 0);
+              return _r115CoG ? null : (_r115EntryG.servedDoc || _r115EntryG.doc);
+            };
+          }
+          // navigation-compat M3：跨源 → contentDocument 返 null（spec
+          // #dom-iframe-contentdocument 的跨源 access-check；沙箱无 allow-same-origin =
+          // opaque origin 同判——document-getters-return-null-for-cross-origin +
+          // sandbox-ascii-case-insensitive subtest 1 断言面）。data: URL 文档源 opaque
+          //（fetch/origin spec）；blob: 继承创建者 origin（同源，不在此列）。
+          // servedDoc 槽：跨文档导航新文档成熟前服务旧 Document（part01 reload 置位/
+          // 成熟翻转；spec #process-the-iframe-attributes 前置文档保持步）。
+          var _r115Co = (_r115Entry.flags && _r115Entry.flags.sandboxed && !_r115Entry.flags.allowSameOrigin) ||
+            (typeof _r115Entry.url === 'string' && _r115Entry.url.indexOf('data:') === 0);
+          if (_r115Co) return null;
+          return _r115Entry.servedDoc || _r115Entry.doc; // loading 期 null（spec：未加载完成 contentDocument 可为 null）
         }
         // R2926 Shadow DOM：`element.attachShadow(init)` / `element.shadowRoot`。host 元素专用（非
         // fragment/comment/text/shadow）。attachShadow 建 shadow root（复用 DocumentFragment handle 容器）；
@@ -1625,7 +1647,17 @@
             return _classListProxy(sel, handle, 'rel');
           }
           if (prop === 'sandbox' && _r374isHtmlNs && _r374clTag === 'iframe') {
-            return _classListProxy(sel, handle, 'sandbox');
+            // navigation-compat M3：supported tokens = spec 沙箱化指令关键字全集
+            //（https://html.spec.whatwg.org/multipage/iframe-embed-object.html#attr-iframe-sandbox
+            // ——sandbox-ascii-case-insensitive「supports the allow-same-origin token」
+            // 断言面；supports 按 token 精确匹配，与 attr 当前值无关）。
+            return _classListProxy(sel, handle, 'sandbox', [
+              'allow-downloads', 'allow-forms', 'allow-modals', 'allow-orientation-lock',
+              'allow-pointer-lock', 'allow-popups', 'allow-popups-to-escape-sandbox',
+              'allow-presentation', 'allow-same-origin', 'allow-scripts',
+              'allow-storage-access-by-user-activation', 'allow-top-navigation',
+              'allow-top-navigation-by-user-activation', 'allow-top-navigation-to-custom-protocols',
+            ]);
           }
           if (prop === 'sizes' && _r374isHtmlNs && _r374clTag === 'link') {
             return _classListProxy(sel, handle, 'sizes');
@@ -3222,6 +3254,16 @@
               ? _reflectedTypeEnum(sel, handle) : null;
             if (handle) __zw_set_attr_handle(handle, n, v);
             else __zw_set_attr(sel, n, v);
+            // navigation-compat M3：setAttribute('src'/'srcdoc') 入已连接 iframe →
+            // 重新处理 iframe 属性（spec #process-the-iframe-attributes 的内容属性
+            // 路径——IDL setter 路径在 part05 set trap 有同款钩子；目标优先级
+            // srcdoc > src 在 _zwLoadIframeEntry 入口统一判定）。
+            if ((n === 'src' || n === 'srcdoc') && _realTag(sel, handle) === 'IFRAME' &&
+                typeof globalThis.__zw_reload_iframe === 'function' &&
+                typeof _zwIframeNavigationConnected === 'function' &&
+                _zwIframeNavigationConnected(sel, handle)) {
+              globalThis.__zw_reload_iframe(proxy, undefined, {});
+            }
             if (_r3901OldTy != null) _zwApplyInputTypeChange(key, sel, handle, _r3901OldTy, v);
             // uievents-compat 尾簇 9：悬停元素自身的属性变异（coords/width/style 等可
             // 改几何）或 img 的 image-map 绑定/尺寸属性（usemap/coords/shape/width/
@@ -3476,6 +3518,15 @@
             else if (handle) __zw_set_attr_handle(handle, n, '');
             else if (typeof __zw_remove_attr === 'function') __zw_remove_attr(sel, n);
             else __zw_set_attr(sel, n, '');
+            // navigation-compat M3：src/srcdoc 移除 → 重新处理 iframe 属性（srcdoc
+            // 移除回落 src（srcdoc_process_attributes ③）；src 移除落 about:blank
+            //（iframe_remove_src）。与 setAttribute 钩子对称。
+            if ((n === 'src' || n === 'srcdoc') && targetTag === 'IFRAME' &&
+                typeof globalThis.__zw_reload_iframe === 'function' &&
+                typeof _zwIframeNavigationConnected === 'function' &&
+                _zwIframeNavigationConnected(sel, handle)) {
+              globalThis.__zw_reload_iframe(proxy, undefined, {});
+            }
             // R125：id 移除登记覆盖表（null = absent——sel-based 元素旧 id 查询剔除）。
             if (n === 'id' && !handle && globalThis._zwIdOverrideSet) globalThis._zwIdOverrideSet(key, null);
             // R297：id 移除清 JS 原值缓存（回落 host 读——attr 已 absent）。
@@ -10215,9 +10266,26 @@
         //（spec reflected string 缺省空串，非 null/undefined）。
         // R5009 片 d：`name` 先走 tag 门（form 关联族反射、余 undefined——WPT
         // name-content-attribute-and-property doesNotReflect 全族）。
+        // svg-compat M2 S2a：width/height 对 **SVG ns 元素** 放行 R3037（FLAT 串读是
+        // HTML 面反射——SVG 的 width/height 是 SVGAnimatedLength 接口 reflection，
+        // accessor 在接口 prototype 上经 R93 原型链回落派发；spec SVG2 types.html
+        // §InterfaceSVGAnimatedLength）。ns 判定经 _zwIsSvgNsEl（handle _nsHandles +
+        // sel R5000 epoch memo），HTML 元素路径不变。
+        // svg-compat M2 S2b：type/method 同款放行——SVG 的 type 是枚举反射面
+        //（feTurbulence/feColorMatrix/feFuncX.type、textPath.method 是
+        // SVGAnimatedEnumeration，spec SVG2 types.html
+        // §InterfaceSVGAnimatedEnumeration）；HTML 元素（input.type/form.method）不变。
+        // 例外：svg style/script 的 type 是 **reflected string**（HTMLStyleElement
+        // 同款语义，WPT svg/styling attr-style-type 断言缺省 '' + IDL round-trip），
+        // tag 门控保留 FLAT 串读。
+        var _rsSvgGate = (prop === 'width' || prop === 'height'
+          || ((prop === 'type' || prop === 'method')
+            && _realTag(sel, handle) !== 'STYLE' && _realTag(sel, handle) !== 'SCRIPT'));
         var _rsAttr = (prop === 'name')
           ? _reflectedNameAttr(_realTag(sel, handle), prop)
-          : _reflectedStringAttr(prop);
+          : (_rsSvgGate && _zwIsSvgNsEl(sel, handle))
+            ? null
+            : _reflectedStringAttr(prop);
         if (_rsAttr) {
           if (handle) return __zw_get_attr_handle(handle, _rsAttr) || '';
           if (typeof __zw_get_attr_lw === 'function') return __zw_get_attr_lw(sel, _rsAttr) || '';
@@ -10432,6 +10500,33 @@
               _r98Chain = Object.getPrototypeOf(_r98Chain);
               _r98Guard++;
             }
+          }
+        }
+        // svg-compat M2 S3：SVGSVGElement currentScale/currentTranslate 原型
+        // accessor set 派发（R98 同款走查、名称门控——接口 accessor 挂
+        // SVGSVGElement.prototype，get 经 R93 尾部回落可达，set 无此分支则恒落
+        // expando：currentScale 嵌套 inert 失效、currentTranslate 只读赋值写
+        // expando 遮蔽 get 回落破坏 [SameObject] 身份——WPT
+        // currentTranslate-SameObject/currentScale-outermost 对位）。有 setter →
+        // 以 proxy 为 this 调用（异常传播语义同 R98 adoptedStyleSheets——float
+        // 校验 TypeError 须可达）；getter-only → sloppy 静默拒绝（不落 expando）。
+        if (p === 'currentScale' || p === 'currentTranslate') {
+          var _s3Chain = null;
+          try { _s3Chain = Object.getPrototypeOf(_makeProxy(sel, handle)); } catch (_eS3c) { _s3Chain = null; }
+          var _s3Guard = 0;
+          while (_s3Chain && _s3Guard < 8) {
+            var _s3Desc = null;
+            try { _s3Desc = Object.getOwnPropertyDescriptor(_s3Chain, p); } catch (_eS3d) { _s3Desc = null; }
+            if (_s3Desc) {
+              if (typeof _s3Desc.set === 'function') {
+                _s3Desc.set.call(_makeProxy(sel, handle), value);
+                return true;
+              }
+              if (_s3Desc.get) return true;  // getter-only：静默拒绝，不写 expando
+              break;  // data property → 交回常规分支（expando 语义）
+            }
+            _s3Chain = Object.getPrototypeOf(_s3Chain);
+            _s3Guard++;
           }
         }
         var moAttr = null;

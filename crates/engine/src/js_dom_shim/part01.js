@@ -62,6 +62,14 @@
   // 精修目标，但纯 JS Proxy 缓存即可达成，无需 rusty_v8 对象绑定）。proxy 无状态（仅委托
   // host 回调），缓存安全；key 复用 `_elKey`（@handle / sel），与 _listenerStore 同生命周期。
   var _proxyCache = {};
+  // R4005（html-semantics M2 切片 17）：消零 purge 复活旁表（key → WeakRef(proxy)）。
+  // R52 的 `_proxyCache` 定点清理（内存泄漏修复）使同 turn append+remove 节点的强
+  // 缓存条目消失；页面仍持有的原 proxy 之后经 `_wrapHandle`/`_parentNodeFor` 重铸出
+  // 第二 wrapper（同 handle 双对象，identity 断——WPT form_attribute
+  // "not in the document" 族 `assert_equals(this.form, form1)` 期望原对象）。
+  // WeakRef 不保活：页面弃持后 deref() 为 undefined，`_makeProxy` miss 自清条目，
+  // R52 泄漏口径不变。写入点仅 R52 purge（part05），读取点 `_makeProxy` miss（part03）。
+  var _zwProxyWeakResurrect = new Map();
   // R128（js-dom M4）：用户原型存储（`Object.setPrototypeOf(elementProxy, proto)` ——WPT
   // Node-cloneNode "Node with custom prototype"：setPrototypeOf 在 proxy 上默认落 target
   // 且 getPrototypeOf trap 不读 target → 用户原型被静默丢弃。存储后 getPrototypeOf 优先
@@ -1460,7 +1468,7 @@
       _zwSyncIframeWindowHistory(entry);
       _zwObserveIframeWindowClient(entry, frameKey, url);
       try { entry.win.__r206State = entry.state; } catch (_eR206m) {}
-      try { _zwRunIframeScripts(entry.win, entry.doc, body, url); } catch (_eR206s) {}
+      try { _zwRunIframeScripts(entry.win, entry.doc, body, url, entry.flags); } catch (_eR206s) {}
       try {
         if (entry.win && typeof entry.win.dispatchEvent === 'function') {
           entry.win.dispatchEvent(new Event('load'));
@@ -1651,19 +1659,53 @@
     if (present) {
       out.sandbox = String(raw);
       out.sandboxed = true;
-      out.allowSameOrigin = /(^|[\t\n\f\r ])allow-same-origin(?=$|[\t\n\f\r ])/.test(out.sandbox);
+      // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#parse-a-sandboxing-directive
+      // token 先 ASCII 小写再匹配（sandbox-ascii-case-insensitive：非 ASCII 形近字
+      // İ/ſ 不经 ASCII 小写变化 → 不命中 allow-same-origin/allow-scripts——JS
+      // toLowerCase() 是 Unicode 语义会把 'İ' 折成 'i̇'，须 ASCII-only 替换）。
+      var sbLower = String(raw).replace(/[A-Z]/g, function (c) {
+        return String.fromCharCode(c.charCodeAt(0) + 32);
+      });
+      out.allowSameOrigin = /(^|[\t\n\f\r ])allow-same-origin(?=$|[\t\n\f\r ])/.test(sbLower);
+      out.allowScripts = /(^|[\t\n\f\r ])allow-scripts(?=$|[\t\n\f\r ])/.test(sbLower);
     }
     return out;
+  }
+  // navigation-compat M3：按 frameKey 读 iframe 元素内容属性（presence 区分 null/''——
+  // srcdoc 处理按「属性在场」判定，空串值也是合法 srcdoc 文档）。查表路径与
+  // _zwIframeSandboxFlags 同源（_proxyCache 的 handle/selector 双形态）。
+  function _zwIframeAttrFromKey(frameKey, name) {
+    try {
+      var frame = _proxyCache[frameKey] || null;
+      if (frame && frame.__zwHandle && typeof __zw_has_attr_handle === 'function') {
+        if (__zw_has_attr_handle(frame.__zwHandle, name) !== '1') return null;
+        return __zw_get_attr_handle(frame.__zwHandle, name) || '';
+      }
+      if (frame && frame.__zwSelector) {
+        var hasV = typeof __zw_has_attr_lw === 'function'
+          ? __zw_has_attr_lw(frame.__zwSelector, name)
+          : __zw_has_attr(frame.__zwSelector, name);
+        if (hasV !== '1') return null;
+        return (typeof __zw_get_attr_lw === 'function'
+          ? __zw_get_attr_lw(frame.__zwSelector, name)
+          : __zw_get_attr(frame.__zwSelector, name)) || '';
+      }
+    } catch (_eIframeAttrKey) {}
+    return null;
   }
   // R206（js-dom M4）：iframe 子文档脚本执行——提取 `<script src>`/`<script>` 源，
   // 外链经 `__zw_fetch_script(pageUrl, src)` 取（相对 page URL 解析），全部按序拼接
   // 进单个 Function（共享变量环境：common.js var 与 inline 脚本 eval 同链），形参
   // window/self/parent/top/document/location 绑 iframe win/doc。末尾执行
   // `<body onload=...>` 的处理器名（若 win 上已定义）。
-  function _zwRunIframeScripts(win, doc, body, pageUrl) {
+  function _zwRunIframeScripts(win, doc, body, pageUrl, flags) {
     try {
       if (win && win._zwScriptsRan) return;
     } catch (_eR206once) {}
+    // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#attr-iframe-sandbox
+    // sandbox 指令集无 allow-scripts → 子文档脚本禁跑（sandbox-ascii-case-insensitive
+    // subtest 2「no scripts should run in the iframe」断言面——child postMessage 不得发生）。
+    if (flags && flags.sandboxed && !flags.allowScripts) return;
     var parts = [];
     var re = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
     var m;
@@ -1758,6 +1800,17 @@
     var _r115Entry = { doc: null, win: null, state: 'loading', history: [], flags: flags };
     _iframeDocCache[frameKey] = _r115Entry;
     var _r115Src = String(rawSrc || '');
+    // navigation-compat M3：srcdoc 属性在场 → 导航到 srcdoc 文档（spec
+    // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#process-the-iframe-attributes
+    // ——srcdoc 优先于 src；URL about:srcdoc，base/origin 继承父文档）。经既有
+    // finish 管线复用 doc/win/scripts/history/load 全链——合成 text/html wire
+    //（_zwFinishIframeEntry 的 Content-Type 动态判 HTML 面，R-panel 同款）。
+    var _zwSdVal = (flags && flags.viaNavigation) ? null : _zwIframeAttrFromKey(frameKey, 'srcdoc');
+    if (_zwSdVal != null) {
+      _zwFinishIframeEntry(_r115Entry, frameKey, 'about:srcdoc',
+        '200\x1fOK\x1fcontent-type\x1etext/html\x1e\x1f' + _zwSdVal);
+      return _r115Entry;
+    }
     if (_r115Src && _r115Src.indexOf('javascript:') !== 0 && typeof __zw_fetch === 'function') {
       // R115：同步加载——headless/testharness 宿主的 `__zw_fetch` 是**同步契约**
       //（webview.rs 直接返 wire；app 层异步版返空串经 resolver 回投——空串时此路径
@@ -1810,6 +1863,14 @@
       // run child scripts when their host result resolves.
     } else {
       _r115Entry.state = 'no-src';
+      // navigation-compat M3：无 fetch 通道但 src 在场（data: URL 等）——entry.url
+      // 仍须记账（contentDocument 的跨源 null 门读 entry.url 判 data:；spec
+      // #dom-iframe-contentdocument 的 opaque origin 面
+      // document-getters-return-null-for-cross-origin）。javascript: 不记（其导航
+      // 语义是执行后 about:blank，iframe_javascript_url_* 族单列）。
+      if (_r115Src && _r115Src.indexOf('javascript:') !== 0) {
+        try { _r115Entry.url = _zwResolveIframeSrc(_r115Src); } catch (_e115nsU) {}
+      }
       // R130（js-dom M4）：无 src iframe 的 contentDocument —— spec：iframe 初始导航
       // 到 about:blank，contentDocument 是空 Document（非 null）。WPT
       // createHTMLDocument-with-saved-implementation / -with-null-browsing-context-crash
@@ -1846,6 +1907,14 @@
     // is observed as a fresh client and can pick up the active controller.
     _zwRemoveIframeWindowClient(frameKey);
     var entry = _zwLoadIframeEntry(frameKey, nextSrc, flags || {});
+    // navigation-compat M3（spec #process-the-iframe-attributes 前置文档保持步 +
+    // nav-history-apis WindowProxy 面）：cache **立即**换新 entry——contentWindow
+    // 即时反映替换 Window（R388 跨文档导航 same12:false 断言面，js-dom M4 既有
+    // 语义）；contentDocument 经 entry.servedDoc 槽在**新文档成熟前**继续服务旧
+    // Document（content_document_changes_only_after_load_matures 的同步断言面
+    // ——成熟翻转与元素 load 派发同批次延后，见下 settle）。
+    var _zwPrevServed = previous && previous !== entry;
+    if (_zwPrevServed && previous.doc) entry.servedDoc = previous.doc;
     entry.history = previous && previous.history ? previous.history.slice() : [];
     if (flags && flags.history && entry.history.length > 1) {
       entry.history.pop();
@@ -1866,10 +1935,27 @@
     // 超长 IndexSizeError）。`_defer`（microtask）在当前脚本任务末尾派发，
     // 此时 onload handler 已赋值、referenceDoc 已填充。R288 实测：insertNode/
     // surroundContents 16,x 46F×2 全解。
+    // navigation-compat M3：swap（新 entry 转正）也入同批次——同步 fetch 契约下
+    // `iframe.src = url` 语句后、微任务边界前的 contentDocument 读仍见旧文档
+    //（微任务 FIFO：本 defer 先于下方 settle 注册的 dispatch defer……本 defer 就在
+    // settle 回调体内注册，sync 路径 settle 同步执行，注册序 = swap 先、load 后）。
     try {
       entry._zwFrameElementLoadQueued = true;
       _zwWhenIframeEntrySettled(frameKey, entry, function() {
-        _defer(function() { try { frame.dispatchEvent(new globalThis.Event('load')); } catch (_eL2) {} });
+        _defer(function() {
+          // 成熟翻转：servedDoc 槽指向自身 doc（fetch/srcdoc 管线 'done'、无 fetch
+          // 通道回落 'no-src'——同为终态文档）。error 态 doc 为 null，翻转即回归
+          // 既有「contentDocument null」语义。
+          if (_zwPrevServed) entry.servedDoc = entry.doc;
+          // navigation-compat M3：UA 派发的 iframe 元素 load 是 trusted event
+          //（iframe-load-event「e.isTrusted」断言面）——R312 `__zwMakeTrustedEvent`
+          // 出口（dispatch guard 对无 _zwUaDispatch 印记的事件翻 isTrusted=false）。
+          try {
+            frame.dispatchEvent(typeof globalThis.__zwMakeTrustedEvent === 'function'
+              ? globalThis.__zwMakeTrustedEvent('load')
+              : new globalThis.Event('load', { __zwTrusted: true }));
+          } catch (_eL2) {}
+        });
       });
     } catch (_eLoad) {}
     return entry;
@@ -1900,7 +1986,11 @@
             _zwIframeWin.__zwRunInlineScripts();
           }
         } catch (_eIframeScript) {}
-        try { frame.dispatchEvent(new globalThis.Event('load')); } catch (_eIframeLoad) {}
+        try {
+          frame.dispatchEvent(typeof globalThis.__zwMakeTrustedEvent === 'function'
+            ? globalThis.__zwMakeTrustedEvent('load')
+            : new globalThis.Event('load', { __zwTrusted: true }));
+        } catch (_eIframeLoad) {}
       });
     });
   }
@@ -6449,6 +6539,18 @@
         if (typeof prop === 'string' && /^\d+$/.test(prop)) {
           var idx177 = parseInt(prop, 10);
           return idx177 < wins.length ? wins[idx177] : undefined;
+        }
+        // navigation-compat M3：named access——`frames.<name>` 按 iframe 的 name 内容
+        // 属性解析到其 contentWindow（HTML「window named access」的 frames 别名面；
+        // iframe-network-error「frames.existingIframe1.location.href」断言入口）。
+        if (typeof prop === 'string' && prop !== 'then') {
+          try {
+            var ifrNamed = globalThis.document.querySelectorAll('iframe');
+            for (var nIdx = 0; nIdx < ifrNamed.length; nIdx++) {
+              var nm177 = String(ifrNamed[nIdx].getAttribute('name') || '');
+              if (nm177 === prop) return ifrNamed[nIdx].contentWindow;
+            }
+          } catch (_e177n) {}
         }
         return undefined;
       },

@@ -960,7 +960,10 @@
           }
           if (handle) __zw_set_attr_handle(handle, _refAttr, _refVal);
           else __zw_set_attr(sel, _refAttr, _refVal);
-          if (_refAttr === 'src' && _realTag(sel, handle) === 'IFRAME' &&
+          // navigation-compat M3：srcdoc 与 src 同为 process-the-iframe-attributes 触发
+          // 属性（spec #the-iframe-element：set/changed/removed 任一都重新处理；目标
+          // 优先级 srcdoc > src 在 _zwLoadIframeEntry 入口统一判定）。
+          if ((_refAttr === 'src' || _refAttr === 'srcdoc') && _realTag(sel, handle) === 'IFRAME' &&
               typeof globalThis.__zw_reload_iframe === 'function' &&
               typeof _zwIframeNavigationConnected === 'function' &&
               _zwIframeNavigationConnected(sel, handle)) {
@@ -1146,6 +1149,22 @@
         if (handle && _nsHandles[handle]) {
           var _nsgp = _nsHandles[handle].namespace;
           if (_nsgp !== 'http://www.w3.org/1999/xhtml' && _gp.Element && _gp.Element.prototype) {
+            // svg-compat M2 S1：createElementNS 产物按 ns 路由——SVG ns 查
+            // __zwSvgTagIface（表键全小写；qualifiedName 冒号后 localName），miss →
+            // SVGElement.prototype（spec HTML element interface 表：SVG ns 表外元素
+            // 接口 SVGElement）；MathML ns → MathMLElement.prototype；其余 ns 保持
+            // Element.prototype 回落（R80 零回归）。
+            if (_nsgp === 'http://www.w3.org/2000/svg' && _gp.SVGElement && _gp.SVGElement.prototype) {
+              var _svgQ = String(_nsHandles[handle].qualifiedName || '');
+              var _svgC = _svgQ.indexOf(':');
+              var _svgL = (_svgC >= 0 ? _svgQ.slice(_svgC + 1) : _svgQ).toLowerCase();
+              var _svgI = _gp.__zwSvgTagIface && _gp.__zwSvgTagIface[_svgL];
+              if (_svgI && _gp[_svgI] && _gp[_svgI].prototype) return _gp[_svgI].prototype;
+              return _gp.SVGElement.prototype;
+            }
+            if (_nsgp === 'http://www.w3.org/1998/Math/MathML' && _gp.MathMLElement && _gp.MathMLElement.prototype) {
+              return _gp.MathMLElement.prototype;
+            }
             return _gp.Element.prototype;
           }
         }
@@ -1197,6 +1216,29 @@
             _ifaceTag = _nsc >= 0 ? _nsl.slice(_nsc + 1) : _nsl;
           } else {
             _ifaceTag = _realTag(sel, handle).toLowerCase();
+          }
+          // svg-compat M2 S1：解析产物（sel 型 proxy）SVG/MathML 元素路由——spec
+          // interface-by-namespace（HTML 解析 foreign content：`<svg>` 子树产物
+          // SVG ns，`document.querySelector('svg') instanceof SVGSVGElement` 应
+          // true；旧路径落 HTMLUnknownElement/HTMLElement 面全错）。**词表门控**：
+          // tag 仅在 SVG/MathML 词表命中才付 `_zwSelNs` ns 探测往返（代缓存；#26
+          // 热路径成本——getPrototypeOf 在逐属性读被触发，HTML 页零新增宿主调用，
+          // SVG tag 才一次探测）。HTML ns 的双词表 tag（a/script/style/title——
+          // `document.createElement('a')` 是 HTMLAnchorElement 非 SVGAElement）
+          // 探测非 SVG/MathML ns 时落回既有 HTML 表路径，行为不变。
+          if (_gp.__zwSvgTagIface && _gp.__zwSvgTagIface[_ifaceTag] && _gp.SVGElement && _gp.SVGElement.prototype) {
+            if (_zwIsSvgNsEl(sel, handle)) {
+              var _psvgI = _gp.__zwSvgTagIface[_ifaceTag];
+              if (_gp[_psvgI] && _gp[_psvgI].prototype) return _gp[_psvgI].prototype;
+              return _gp.SVGElement.prototype;
+            }
+          } else if (_gp.__zwMathTagIface && _gp.__zwMathTagIface[_ifaceTag] && _gp.MathMLElement && _gp.MathMLElement.prototype) {
+            var _mathNsV = (handle && typeof _nsHandles !== 'undefined' && _nsHandles[handle])
+              ? _nsHandles[handle].namespace
+              : _zwSelNs(sel, handle);
+            if (_mathNsV === 'http://www.w3.org/1998/Math/MathML') {
+              return _gp.MathMLElement.prototype;
+            }
           }
           var _iface = _gp.__zwHtmlTagIface && _gp.__zwHtmlTagIface[_ifaceTag];
           if (_iface && _gp[_iface] && _gp[_iface].prototype) return _gp[_iface].prototype;
@@ -1607,6 +1649,57 @@
     var _r115WinRef = null; // defaultView 槽（_zwMakeIframeWin 建后回填）
     doc._zwMarkup = String(markup || '');
     doc.__r115SetWin = function (w) { _r115WinRef = w; };
+    // navigation-compat M3：iframe 子文档的 doc.location——browsing context 内文档
+    // 的 location 非空（spec html.spec.whatwg.org/multipage/nav-history-apis.html
+    // #dom-document-location；content_document_changes_only_after_load_matures 在
+    // 成熟度门前就读 `contentDocument.location.toString() === "about:blank"`，win
+    // 尚未物化也须可用）。detached 工厂的 null getter（_makeDetachedDocument）只
+    // 适用非浏览上下文文档（createHTMLDocument 面不改）。doc-anchored 单例读
+    // `_zwURL` 槽（finish 路径写 effectiveUrl，R360），无槽回 about:blank；
+    // win 物化后 win.location 与之同源（href 同读该槽）。
+    var _zwDocLoc = (function () {
+      function dHref() {
+        try { return doc._zwURL ? String(doc._zwURL) : 'about:blank'; } catch (_eDocLoc) { return 'about:blank'; }
+      }
+      function dParsed() {
+        try {
+          if (typeof globalThis.URL === 'function') return new globalThis.URL(dHref(), dHref());
+        } catch (_eDocLocUrl) {}
+        return null;
+      }
+      return {
+        get href() { return dHref(); },
+        // navigation-compat M3-S2：全 URL 解析读面（spec
+        // https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-document-location
+        // ——WPT srcdoc_process_attributes / iframe_remove_src 只经
+        // contentDocument.location.protocol 断言，不触 contentWindow——win 物化前
+        // 也须可用；srcdoc 档案 'about:'、blob: 档案 'blob:'）。
+        get protocol() { var u = dParsed(); return u ? u.protocol : ''; },
+        get host() { var u = dParsed(); return u ? u.host : ''; },
+        get hostname() { var u = dParsed(); return u ? u.hostname : ''; },
+        get pathname() { var u = dParsed(); return u ? u.pathname : ''; },
+        get search() { var u = dParsed(); return u ? u.search : ''; },
+        get hash() { var u = dParsed(); return u ? u.hash : ''; },
+        get origin() { var u = dParsed(); return u ? u.origin : 'null'; },
+        toString: function () { return this.href; },
+      };
+    })();
+    // navigation-compat M3-S2：spec dom-document-location——browsing context 内
+    // document.location 与 window.location 返回**同一** Location 对象。win 物化后
+    // 惰性切到 win.location（iframeLocation 全面含 hash 写侧）；物化前 _zwDocLoc
+    // 服务成熟度门前读（content_document_changes_only_after_load_matures 的
+    // toString 面维持）与只读 contentDocument 案面。
+    try {
+      Object.defineProperty(doc, 'location', {
+        configurable: true,
+        get: function () {
+          var w = null;
+          try { w = doc.defaultView || null; } catch (_eDocLocDv) {}
+          if (w && w.location) return w.location;
+          return _zwDocLoc;
+        },
+      });
+    } catch (_eDocLocDef) {}
     // R141（js-dom M4）：`<meta charset>` → 文档编码归一化（WPT
     // Document-characterSet-normalization-1/2 654 subtest——iframe 子文档的
     // characterSet/inputEncoding/charset 期望 WHATWG encoding label 表归一化后的
@@ -3621,15 +3714,66 @@
       }
       return {
         get href() { return href(); },
+        // navigation-compat M3：子文档 location.href 写侧 → iframe 重导航（相对 URL
+        // 按当前文档地址解析；iframe-network-error「frames.existingIframe1.location.
+        // href = 不可达主机」断言入口——错误页仍派 load）。
+        set href(v) {
+          var frame = null;
+          try { frame = _proxyCache[frameKey] || null; } catch (_eLocHref) {}
+          if (frame && typeof globalThis.__zw_reload_iframe === 'function') {
+            // viaNavigation：子发起导航不经「process the iframe attributes」，即使
+            // srcdoc 属性仍在场也按 URL 取资源（about:srcdoc 只由属性处理路径服务）。
+            globalThis.__zw_reload_iframe(frame, iframeResolveHistoryUrl(v), { viaNavigation: true });
+          }
+        },
         get protocol() { var u = parsed(); return u ? u.protocol : ''; },
         get host() { var u = parsed(); return u ? u.host : ''; },
         get hostname() { var u = parsed(); return u ? u.hostname : ''; },
         get pathname() { var u = parsed(); return u ? u.pathname : ''; },
         get search() { var u = parsed(); return u ? u.search : ''; },
         get hash() { var u = parsed(); return u ? u.hash : ''; },
+        // navigation-compat M3-S2：hash 写侧——同文档片段导航（spec
+        // https://html.spec.whatwg.org/multipage/nav-history-apis.html#the-location-interface
+        // location.hash setter：更新 URL（'#' 前缀可省、空值剥 hash）+ push 会话
+        // 条目 + 异步派 hashchange；同值 no-op 不派）。子窗无 Navigation API 面，
+        // 不走父窗 _setLocationHash（那系 host history/navigation 记账——part02）。
+        // srcdoc_change_hash 前两步断言面。
+        set hash(v) {
+          var raw = String(v);
+          var frag = raw.charAt(0) === '#' ? raw : '#' + raw;
+          var cur = href();
+          var next = cur.split('#')[0] + (frag === '#' ? '' : frag);
+          if (next === cur) return; // hash 未变 → no-op（spec 不派事件）
+          // M3-S3：URL 槽 + 异步 trusted hashchange 统一经联合史落地钩子（父窗联合
+          // 遍历落地同路径——part02 __zwApplyIframeHashEntry；oldUrlHint 保证 oldURL
+          // 取写前地址）。
+          if (typeof globalThis.__zwApplyIframeHashEntry === 'function') {
+            globalThis.__zwApplyIframeHashEntry(frameKey, next, cur);
+          }
+          // 子窗自身会话条目 push（子窗 back/forward 面维持；spec session history）。
+          var w = null;
+          try { w = doc.defaultView || null; } catch (_eHashWin) {}
+          try {
+            if (w && w.history && w.history._entries) {
+              w.history._entries = w.history._entries.slice(0, (w.history._cursor || 0) + 1);
+              w.history._entries.push({ state: null, url: next });
+              w.history._cursor = w.history._entries.length - 1;
+            }
+          } catch (_eHashHist) {}
+          // FIXME(popstate): spec 片段导航还同步派 popstate（子窗 popstate 事件面未建）。
+          // M3-S3：登记进联合 session history（part02 惰性播种 + 追加；父窗
+          // _hist_entries/Navigation records 不膨胀——独立序列）。
+          if (typeof globalThis.__zwPushJointHistoryEntry === 'function') {
+            try { globalThis.__zwPushJointHistoryEntry(frameKey, next); } catch (_eJointPush) {}
+          }
+        },
         get origin() { var u = parsed(); return u ? u.origin : 'null'; },
-        assign: function () {},
-        replace: function () {},
+        assign: function (v) {
+          this.href = v;
+        },
+        replace: function (v) {
+          this.href = v;
+        },
         reload: function () { iframeReload({ reload: true }); },
         toString: function () { return href(); }
       };
@@ -6179,6 +6323,9 @@
     Object.defineProperty(this, 'data', { value: data, writable: false, enumerable: true, configurable: false });
   }
   globalThis.ImageData = globalThis.ImageData || ImageData;
+  // workers-compat M3：原型 toStringTag（structured-clone-imagedata「''+e.data ===
+  // '[object ImageData]'」面——Object.prototype.toString 无 toStringTag 落 [object Object]）。
+  try { if (typeof Symbol === 'function' && Symbol.toStringTag) Object.defineProperty(globalThis.ImageData.prototype, Symbol.toStringTag, { value: 'ImageData' }); } catch (_e5000id) {}
 
 
   // canvas 元素 + 2d 上下文 proxy（R2795，canvas slice 1）。host 持 CanvasContext 注册表，JS 经
@@ -7121,13 +7268,31 @@
   // ② ImageBitmap source（clone，罕见）；③ 无 options（sx/sy/sw/sh/dw/dh 裁剪 + imageOrientation/premultiplyAlpha，spec 罕见，defer）；
   // ④ width/height 从 wire 解析（spec ImageBitmap 只读 width/height）。
   // https://html.spec.whatwg.org/multipage/imagebitmap-and-animations.html#dom-createimagebitmap
-  function _zwMakeImageBitmap(wire) {
-    // wire "w:h;..." 解析 width/height（失败 → 0×0，调用方 reject）。
+  // workers-compat M3：ImageBitmap 升级为全局接口类（此前为裸对象——battery
+  // 「instanceof ImageBitmap」ReferenceError；HTML spec ImageBitmap 可序列化且
+  // 不可构造（无 constructor WebIDL 面），wire 内参仅内部工厂使用）。
+  function ImageBitmap(wire) {
+    if (typeof wire !== 'string') {
+      throw new TypeError("Failed to construct 'ImageBitmap': Illegal constructor.");
+    }
     var dim = String(wire).split(';')[0] || '';
     var parts = dim.split(':');
-    var bw = parseInt(parts[0], 10) || 0;
-    var bh = parseInt(parts[1], 10) || 0;
-    return { _zwBitmapWire: String(wire), width: bw, height: bh, _closed: false };
+    this._zwBitmapWire = String(wire);
+    this.width = parseInt(parts[0], 10) || 0;
+    this.height = parseInt(parts[1], 10) || 0;
+    this._closed = false;
+  }
+  globalThis.ImageBitmap = globalThis.ImageBitmap || ImageBitmap;
+  ImageBitmap.prototype.close = function () {
+    // spec close()：位图释放，width/height 归零（只读属性经置 0 近似——数据属性面）。
+    this._closed = true;
+    this.width = 0;
+    this.height = 0;
+    this._zwBitmapWire = '';
+  };
+  try { if (typeof Symbol === 'function' && Symbol.toStringTag) Object.defineProperty(ImageBitmap.prototype, Symbol.toStringTag, { value: 'ImageBitmap' }); } catch (_e5000ib) {}
+  function _zwMakeImageBitmap(wire) {
+    return new ImageBitmap(String(wire));
   }
   // R3310：source → wire 串（同步）。返 null 表 source 不可识别/解码失败（调用方 reject）。
   // 三 source 分发：Blob（host 解码）/ ImageData（JS 直接编码）/ HTMLCanvasElement（getImageData 取 wire）。
@@ -10727,6 +10892,12 @@
         // 二次（GR3 探针 tc/apc/ib 三段同涨的根源）。仅 handle 键（'@h'）可安全清：同 handle
         // 不会再被访问（节点已消零）；sel 键保留（快照节点 identity 稳定语义）。
         if (_rv && _rv.__zwHandle) {
+          // R4005：purge 前 stash WeakRef 复活条目（页面弃持后 deref 自清——泄漏
+          // 口径不变；仍持有时 `_makeProxy` miss 恢复原对象，identity 断修复）。
+          if (typeof WeakRef === 'function' && typeof _zwProxyWeakResurrect !== 'undefined'
+              && _zwProxyWeakResurrect && typeof _zwProxyWeakResurrect.set === 'function') {
+            try { _zwProxyWeakResurrect.set('@' + _rv.__zwHandle, new WeakRef(_rv)); } catch (_e4005wr) {}
+          }
           // R52：消零节点的 proxy/expando 缓存清理（强引用泄漏 → V8 堆涨）。**仅清不参与子树
           // 遍历的表**——`_handleChildren`/`_zwNodeParent` 保留（invalidate 后的 CE 断连传播
           //（_ceApplyConn 子树展开）仍依赖它们，R2994 测试实证提前清破坏 disconnectedCallback）。
@@ -14873,20 +15044,47 @@
     }
     return names;
   }
-  function _zwInlineImportScripts(src, baseHref) {
+  // callerUrl：当前被扫描脚本的 URL（P7 后半——未内联调用改写为
+  // __zwImportTracked 时携带；内联生成的 resolve/fetch 失败 throw 与 eval 包装
+  // 同样绑定调用点/被导入脚本归因）。改写不插入换行——主脚本错误行号不偏移。
+  function _zwInlineImportScripts(src, baseHref, callerUrl) {
     var calls = _zwScanImportCalls(src);
     if (calls === null || calls.length === 0) return src;
+    if (callerUrl === undefined) callerUrl = '';
     var out = '';
     var last = 0;
+    // 调用点行/列（P7 后半——扫描期由字节偏移换算，运行期拿不到：
+    // V8 栈首帧落 shim 内部而非调用位）。
+    function _zwCallPos(pos) {
+      var line = 1, lineStart = -1;
+      for (var i = 0; i < pos; i++) {
+        if (src.charAt(i) === '\n') { line++; lineStart = i; }
+      }
+      return { line: line, col: pos - lineStart };
+    }
+    function _zwCallerLiteral(pos) {
+      var loc = _zwCallPos(pos);
+      return '{url:' + JSON.stringify(callerUrl) + ',line:' + loc.line + ',col:' + loc.col + '}';
+    }
     for (var ci = 0; ci < calls.length; ci++) {
       var call = calls[ci];
       var p = call.start - 1;
       while (p >= 0 && /\s/.test(src.charAt(p))) p--;
       // 语句位：源首/`;`/块尾 `}`/块首 `{`（try/if 块内首语句——003/006 案）/`)`
       //（if(cond) 单语句）/`:`（label/case 子句）。
-      if (p >= 0 && ';}{):'.indexOf(src.charAt(p)) < 0) continue;
-      var args = _zwParseImportArgs(src, call.open + 1, call.close);
-      if (args === null) continue;
+      var stmtPos = p < 0 || ';}{):'.indexOf(src.charAt(p)) >= 0;
+      var args = stmtPos ? _zwParseImportArgs(src, call.open + 1, call.close) : null;
+      if (!stmtPos || args === null) {
+        // P7 后半：非语句位/实参非字面量的调用——标识符改写为 __zwImportTracked
+        //（实参表原样，调用语义同 self.importScripts；语料无 importScripts
+        // 重定义面）。last 越过 `(`，原实参表与闭括号原样保留。
+        out += src.slice(last, call.start);
+        out += '__zwImportTracked(' + JSON.stringify(callerUrl) + ',';
+        var _loc = _zwCallPos(call.start);
+        out += _loc.line + ',' + _loc.col + ',';
+        last = call.open + 1;
+        continue;
+      }
       var resolved = [];
       var resolveFailed = false;
       for (var ri = 0; ri < args.length; ri++) {
@@ -14899,7 +15097,9 @@
       if (resolveFailed) {
         // 原生构造器优先（R384 wrong-global 先例）：with(self) 内词法 `DOMException`
         // 落 shim 闭包构造器，与用例断言的 globalThis.DOMException 恒不同一。
-        out += 'throw new (globalThis.DOMException || DOMException)("Failed to resolve importScripts URL.", "SyntaxError");';
+        // P7 后半：错误打 _zwCaller 标记（filename/lineno 指向调用位）。
+        out += 'var _zwIE=new (globalThis.DOMException || DOMException)("Failed to resolve importScripts URL.", "SyntaxError");'
+          + '_zwIE._zwCaller=' + _zwCallerLiteral(call.start) + ';throw _zwIE;';
         last = call.close + 1;
         continue;
       }
@@ -14911,12 +15111,22 @@
         sources.push(s);
       }
       if (fetchFailed) {
-        out += 'throw new (globalThis.DOMException || DOMException)("Failed to fetch importScripts.", "NetworkError");';
+        out += 'var _zwIE=new (globalThis.DOMException || DOMException)("Failed to fetch importScripts.", "NetworkError");'
+          + '_zwIE._zwCaller=' + _zwCallerLiteral(call.start) + ';throw _zwIE;';
         last = call.close + 1;
         continue;
       }
       for (var si = 0; si < sources.length; si++) {
-        out += 'eval(' + JSON.stringify(sources[si]) + ');';
+        // P7 后半：内联源先递归过内联器（内层未内联形态调用同样改写为
+        // __zwImportTracked——report-error helper 的 doImportScripts 调用位归因），
+        // 再 eval 包装——错误打 _zwScriptUrl（解析错 instanceof SyntaxError 判
+        // _zwParseError；行号 1 兜底由 _reportError 消费）。
+        var _inner = _zwInlineImportScripts(sources[si], baseHref, resolved[si]);
+        out += 'try{eval(' + JSON.stringify(_inner) + ');}catch(_zwEE){'
+          + 'if(_zwEE&&typeof _zwEE==="object"&&_zwEE._zwScriptUrl===undefined){'
+          + '_zwEE._zwScriptUrl=' + JSON.stringify(resolved[si]) + ';'
+          + 'if(_zwEE instanceof SyntaxError){try{_zwEE._zwParseError=true;}catch(_zwET){}}'
+          + '}throw _zwEE;}';
       }
       last = call.close + 1;
     }
@@ -14956,6 +15166,9 @@
     this._closed = false; // WorkerGlobalScope.close()（spec closing 标记——与 terminate 分立，见 wctx.close 注记）
     this._timerIds = []; // worker 作用域定时器注册表（close 清空——wctx.close 注记）
     this._closedTimerSeq = 0; // close 后定时器序号（不排程但返回值仍自增——005 面）
+    this._zwRafSeq = 0; // worker rAF 句柄序号（cancelAnimationFrame 表键）
+    this._zwRafLast = 0; // 上一帧时间戳（跨回调严格递增下限——rAF「res[0]<res[1]<res[2]」面）
+    this._zwRafPending = {}; // rAF 句柄 → 宿主定时器 id（cancel 派发映射）
     this._onmessage = null;
     this._onerror = null;
     this._scriptUrl = _zwUrlStr;
@@ -14963,6 +15176,68 @@
     this._handler = null; // worker 的 onmessage（脚本执行时经 wctx.onmessage setter 注入）
     this._context = null;
     var main = this; // Worker 实例（worker→main 派发 MessageEvent 到此）
+    // P7 后半：被导入脚本/调用点错误归因（report-error-* 13F）。共享三相实现——
+    // `caller` 为构造期改写位传入的调用点 {url,line,col}：resolve/fetch 相失败错误
+    // 打 `_zwCaller` 标记（filename/lineno 指向 importScripts 调用位——上游对
+    // cross-origin/redirect 变体「指向调用方」的浏览器惯例面，spec 未强行约定）；
+    // 执行相错误打 `_zwScriptUrl`（+`_zwParseError` 解析错 / `_zwScriptColAdj` 行 1
+    // 列修正量），内层脚本先标、外层见已标即透传（嵌套链内层胜——
+    // Worker-nested-importScripts-error 面）。栈解析拿不到解析错坐标（V8 首帧落
+    // shim 内部），解析错行号报 1（语料面单行脚本：syntax-error.js/invalidScript.js）。
+    // https://html.spec.whatwg.org/multipage/workers.html#dom-workerglobalscope-importscripts
+    var _zwImportBodyPrefix = 'var postMessage=self.postMessage.bind(self);'
+      + 'var importScripts=self.importScripts;'
+      + 'var location=self.location;'
+      + 'var Worker=self.Worker;'
+      + 'var onmessage;'
+      + 'with(self){';
+    var _zwImportRun = function (args, caller) {
+      var base = String(wctx.location && wctx.location.href ? wctx.location.href : '');
+      var de = globalThis.DOMException || DOMException;
+      var sources = [];
+      for (var ai = 0; ai < args.length; ai++) {
+        var raw = _zwImportArgString(args[ai]);
+        var resolvedUrl = null;
+        try { resolvedUrl = new URL(raw, base).href; } catch (_eImportResolve) {}
+        if (resolvedUrl === null) {
+          var _re = new de("Failed to resolve importScripts URL '" + raw + "'.", 'SyntaxError');
+          if (caller) { try { _re._zwCaller = caller; } catch (_eT1) {} }
+          throw _re;
+        }
+        var src = _zwWorkerImportSource(base, raw, resolvedUrl);
+        if (src === null) {
+          var _fe = new de("Failed to fetch importScripts '" + raw + "'.", 'NetworkError');
+          if (caller) { try { _fe._zwCaller = caller; } catch (_eT2) {} }
+          throw _fe;
+        }
+        sources.push({ src: src, url: resolvedUrl });
+      }
+      for (var ei = 0; ei < sources.length; ei++) {
+        var body = _zwImportBodyPrefix + sources[ei].src + '\n;}'
+          + '\n;if(typeof onmessage==="function")self.onmessage=onmessage;';
+        // this 传 wctx——worker 顶层 this === self（spec #the-global-scope，
+        // 与主脚本执行路径同款）。
+        var fn = null;
+        try {
+          fn = new Function('self', body);
+        } catch (_eImportParse) {
+          if (_eImportParse && typeof _eImportParse === 'object' && _eImportParse._zwScriptUrl === undefined) {
+            _eImportParse._zwScriptUrl = sources[ei].url;
+            try { _eImportParse._zwParseError = true; } catch (_eT3) {}
+          }
+          throw _eImportParse;
+        }
+        try {
+          fn.call(wctx, wctx);
+        } catch (_eImportRun) {
+          if (_eImportRun && typeof _eImportRun === 'object' && _eImportRun._zwScriptUrl === undefined) {
+            _eImportRun._zwScriptUrl = sources[ei].url;
+            try { _eImportRun._zwScriptColAdj = _zwImportBodyPrefix.length; } catch (_eT4) {}
+          }
+          throw _eImportRun;
+        }
+      }
+    };
     // worker self 上下文（DedicatedWorkerGlobalScope 近似）。postMessage 经 microtask 派发到主 Worker 实例。
     var wctx = {
       // worker→main：structuredClone + queueMicrotask 派发 'message' 到 Worker 实例（对称 MessagePort R2779）。
@@ -14970,15 +15245,35 @@
       // WorkerGlobalScope-close「close 后 postMessage('Should be delivered') 仍达」面；
       // 拦的是入站投递——Worker.prototype.postMessage 投递位查 _closed）；terminate
       // 全拦（入口 + 投递位查 _terminated）。
-      postMessage: function (msg) {
-        if (main._terminated) return;
-        var data = typeof structuredClone === 'function' ? structuredClone(msg) : msg;
-        if (typeof queueMicrotask === 'function') {
-          queueMicrotask(function () {
-            if (main._terminated) return;
-            main.dispatchEvent(new MessageEvent('message', { data: data, origin: '' }));
-          });
+      postMessage: function (msg, transfer) {
+        // 0 参 TypeError（WebIDL message 必参——Worker-thread-multi-port
+        // 「postMessage() threw exception」worker 侧面）。
+        if (arguments.length < 1) {
+          throw new TypeError("Failed to execute 'postMessage' on 'DedicatedWorkerGlobalScope': 1 argument required, but only 0 present.");
         }
+        if (main._terminated) return;
+        // workers-compat M3（DC-3）：transfer 面同 Worker.postMessage（①②③ 共用；
+        // 错误同步抛调用位——second-argument-null-in-array worker 侧 catch 面）。
+        // 第二参联合（sequence<object> or StructuredSerializeOptions）同 MessagePort
+        // M2-P1 双形态——null → 字典分支缺省（second-argument-null
+        // 「postMessage(1, null) 送达 1」面）。
+        var transferList = _zwConvertTransferSequence(
+          (transfer !== undefined && transfer !== null && typeof transfer === 'object' &&
+            !(typeof Symbol === 'function' && Symbol.iterator &&
+              typeof transfer[Symbol.iterator] === 'function'))
+            ? transfer.transfer
+            : (transfer === null ? undefined : transfer));
+        _zwValidateTransferList(transferList, null);
+        var _xfer = { orig: transferList.filter(_zwIsMessagePort), clones: [] };
+        var data = typeof structuredClone === 'function' ? structuredClone(msg, { __zwXfer: _xfer }) : msg;
+        var ports = Object.freeze(_zwConsumeTransferList(transferList, null, _xfer));
+        _zwDetachTransferables(transferList);
+        // 投递载体 task（Worker.postMessage 反向同款——posted message task source；
+        // queueMicrotask 的背靠背派发会吞页面 promise 链中改挂的 onmessage）。
+        setTimeout(function () {
+          if (main._terminated) return;
+          main.dispatchEvent(new MessageEvent('message', { data: data, origin: '', ports: ports }));
+        }, 0);
       },
       // M2（workers-compat DC-2）：importScripts 运行时路径（非字面量参数兜底）——
       // spec 三相：全参 URL 解析（失败 SyntaxError DOMException，不执行任何脚本）
@@ -14988,35 +15283,24 @@
       // Function 隔离执行——顶层定义不泄漏到调用作用域（字面量/常量参数走构造期
       // 内联路径：direct eval 同 var-env；此限制记账 master.md P4）。
       // https://html.spec.whatwg.org/multipage/workers.html#dom-workerglobalscope-importscripts
+      // M2（workers-compat DC-2）：importScripts 运行时路径（非字面量参数兜底）——
+      // spec 三相：全参 URL 解析（失败 SyntaxError DOMException，不执行任何脚本）
+      // → 全参 fetch（失败 NetworkError，不执行）→ 顺序执行（异常透传并中止后续）。
+      // DOMException 取 globalThis 优先（R384 wrong-global 先例——词法 `DOMException`
+      // 落 shim 闭包内构造器，与用例经 wctx 镜像到的原生构造器恒不同一）。
+      // Function 隔离执行——顶层定义不泄漏到调用作用域（字面量/常量参数走构造期
+      // 内联路径：direct eval 同 var-env；此限制记账 master.md P4）。
+      // 实现移 _zwImportRun（P7 后半调用点归因共享）。
+      // https://html.spec.whatwg.org/multipage/workers.html#dom-workerglobalscope-importscripts
       importScripts: function () {
-        var base = String(wctx.location && wctx.location.href ? wctx.location.href : '');
-        var de = globalThis.DOMException || DOMException;
-        var sources = [];
-        for (var ai = 0; ai < arguments.length; ai++) {
-          var raw = _zwImportArgString(arguments[ai]);
-          var resolvedUrl = null;
-          try { resolvedUrl = new URL(raw, base).href; } catch (_eImportResolve) {}
-          if (resolvedUrl === null) {
-            throw new de("Failed to resolve importScripts URL '" + raw + "'.", 'SyntaxError');
-          }
-          var src = _zwWorkerImportSource(base, raw, resolvedUrl);
-          if (src === null) {
-            throw new de("Failed to fetch importScripts '" + raw + "'.", 'NetworkError');
-          }
-          sources.push(src);
-        }
-        for (var ei = 0; ei < sources.length; ei++) {
-          var body = 'var postMessage=self.postMessage.bind(self);'
-            + 'var importScripts=self.importScripts;'
-            + 'var location=self.location;'
-            + 'var Worker=self.Worker;'
-            + 'var onmessage;'
-            + 'with(self){' + sources[ei] + '\n;}'
-            + '\n;if(typeof onmessage==="function")self.onmessage=onmessage;';
-          // this 传 wctx——worker 顶层 this === self（spec #the-global-scope，
-          // 与主脚本执行路径 15426 同款）。
-          new Function('self', body).call(wctx, wctx);
-        }
+        _zwImportRun(Array.prototype.slice.call(arguments), null);
+      },
+      // P7 后半：调用点追踪形态——构造期把未内联的 importScripts 调用标识符改写为
+      // 本函数（实参表原样、调用语义同 self.importScripts），前置调用点归因三元组。
+      // 语料无 importScripts 重定义面（2026-10-21 记账），标识符替换安全。
+      __zwImportTracked: function (callerUrl, callerLine, callerCol) {
+        _zwImportRun(Array.prototype.slice.call(arguments, 3),
+          { url: String(callerUrl), line: callerLine | 0, col: callerCol | 0 });
       },
       // close()——WorkerGlobalScope 生命周期收口（spec #dom-workerglobalscope-close）：
       // 置独立 closing 标记（非 terminate 的 _terminated）——worker→page 出站投递
@@ -15081,6 +15365,33 @@
       },
       clearTimeout: function (id) { return globalThis.clearTimeout(id); },
       clearInterval: function (id) { return globalThis.clearInterval(id); },
+      // worker 作用域 rAF（WorkerGlobalScope_requestAnimationFrame.worker.js：三次嵌套
+      // 回调时间戳为数值且严格递增）。页面 part01 stub 是同步派发 + 原始 host 串时间戳
+      //（string、三次同值），不满足 worker 面；此处 setTimeout(0) 逐回调派发（worker 无
+      // 渲染帧，spec 近似「每回调一帧」，requestAnimationFrame spec §rendering opportunity）
+      // 并取 performance.now() 数值型时间戳，max 下限保证跨回调严格递增。terse：
+      // https://html.spec.whatwg.org/multipage/imagebitmap-and-animations.html#animation-frames
+      requestAnimationFrame: function (fn) {
+        if (main._closed) return ++main._closedTimerSeq; // close 后不排程（同 setTimeout 语义）
+        var id = ++main._zwRafSeq;
+        var hid = globalThis.setTimeout(function () {
+          delete main._zwRafPending[id];
+          if (main._terminated || main._closed) return;
+          var ts = wctx.performance.now();
+          if (!(ts > main._zwRafLast)) ts = main._zwRafLast + 0.0001; // 同毫秒粒度钟强制递增
+          main._zwRafLast = ts;
+          try { fn(ts); } catch (e) { main._reportError(e); }
+        }, 0);
+        main._zwRafPending[id] = hid;
+        return id;
+      },
+      cancelAnimationFrame: function (id) {
+        var hid = main._zwRafPending[id];
+        if (hid !== undefined) {
+          delete main._zwRafPending[id];
+          globalThis.clearTimeout(hid);
+        }
+      },
     };
     // self 只读（spec DedicatedWorkerGlobalScope.self readonly——Worker-replace-self/
     // self.any.js「self = 1 不变原文」面；getter-only accessor 赋值静默忽略，不抛）。
@@ -15326,10 +15637,13 @@
     // 错误定位抽取（P7 运行时簇）：err.lineNumber/columnNumber（引擎直供）优先，
     // 兜底 V8 栈首帧 `<anon>:LINE:COL`。bodyOffset 为该错误编译体的 with(self) 前导
     // 行数（主脚本体=2：影子声明行 + with(self) 与源首行同行故源行 N=栈行 N−2；
-    // 定时器包装体=0）；源首行（解析后行 1）与 `with(self){` 同行，列再减其长度 10。
-    // 拿不到坐标报 0/0（typeof number 断言面仍过；精确 call-site 溯源记账 P7）。
-    var _zwWorkerErrorLocation = function (err, bodyOffset) {
+    // 定时器包装体=0）；源首行（解析后行 1）与 with(self){ 同行，列再减 colAdj
+    //（默认 10 = with(self){ 长度；importScripts 体前缀更长，由 _zwScriptColAdj
+    // 传入真实前缀长——P7 后半被导入脚本归因）。
+    // 拿不到坐标报 0/0（typeof number 断言面仍过）。
+    var _zwWorkerErrorLocation = function (err, bodyOffset, colAdj) {
       var line = 0, col = 0;
+      if (colAdj === undefined) colAdj = 10;
       if (!err || typeof err !== 'object') return { line: 0, col: 0 };
       if (typeof err.lineNumber === 'number' && err.lineNumber > 0) line = err.lineNumber;
       if (typeof err.columnNumber === 'number' && err.columnNumber > 0) col = err.columnNumber;
@@ -15341,14 +15655,14 @@
         }
       }
       line = line > bodyOffset ? line - bodyOffset : 0;
-      if (line === 1 && col > 10) col -= 10; // with(self){ 前缀仅与源首行同行
+      if (line === 1 && col > colAdj) col -= colAdj; // with(self){ 前缀仅与源首行同行
       if (line < 1) { line = 0; col = 0; }
       return { line: line, col: col };
     };
-    var _zwReportToOwner = function (e, loc) {
+    var _zwReportToOwner = function (e, loc, filename) {
       if (typeof queueMicrotask !== 'function') return;
       var message = _zwFormatWorkerErrorMessage(e);
-      var filename = String(main._resolvedScriptUrl || '');
+      if (filename === undefined) filename = String(main._resolvedScriptUrl || '');
       var lineno = loc ? loc.line : 0;
       var colno = loc ? loc.col : 0;
       queueMicrotask(function () {
@@ -15368,10 +15682,40 @@
         }
       });
     };
+    // P7 后半：错误归因优先级——错误对象携带标记时覆盖 worker 脚本 URL 兜底：
+    // `_zwCaller`（importScripts resolve/fetch 相失败）→ 调用点 {url,line,col}
+    //（优先于 _zwScriptUrl：失败穿透内联 eval 包装/外层脚本执行 catch 时调用点
+    // 归因不被遮蔽）；`_zwScriptUrl`+`_zwParseError`（被导入脚本解析错）→ 该脚本
+    // URL + 行 1（V8 解析错栈无编译位坐标，语料面单行脚本）；`_zwScriptUrl` 运行
+    // 时错 → 该脚本 URL + 栈坐标（行 1 列减 `_zwScriptColAdj` 体前缀长）。
+    // 无标记走原路径。
     main._reportError = function (err, bodyOffset) {
-      var loc = _zwWorkerErrorLocation(err, bodyOffset === undefined ? 2 : bodyOffset);
+      var origin = (err && typeof err === 'object')
+        ? (err._zwCaller
+          ? { filename: String(err._zwCaller.url),
+              line: typeof err._zwCaller.line === 'number' ? err._zwCaller.line : 0,
+              col: typeof err._zwCaller.col === 'number' ? err._zwCaller.col : 0 }
+          : (err._zwScriptUrl !== undefined
+            ? { filename: String(err._zwScriptUrl), parse: err._zwParseError === true,
+                colAdj: typeof err._zwScriptColAdj === 'number' ? err._zwScriptColAdj : 10 }
+            : null))
+        : null;
+      var loc;
+      var filename;
+      if (origin && origin.parse) {
+        loc = { line: 1, col: 1 };
+        filename = origin.filename;
+      } else if (origin && origin.line !== undefined) {
+        loc = { line: origin.line, col: origin.col };
+        filename = origin.filename;
+      } else if (origin) {
+        loc = _zwWorkerErrorLocation(err, 0, origin.colAdj);
+        filename = origin.filename;
+      } else {
+        loc = _zwWorkerErrorLocation(err, bodyOffset === undefined ? 2 : bodyOffset);
+        filename = String(main._resolvedScriptUrl || '');
+      }
       var message = _zwFormatWorkerErrorMessage(err);
-      var filename = String(main._resolvedScriptUrl || '');
       // ① worker 全局作用域 error 事件（listeners + preventDefault 面）。
       var workerEv = new ErrorEvent('error', {
         message: message, filename: filename, lineno: loc.line, colno: loc.col,
@@ -15401,11 +15745,11 @@
       }
       if (internalThrew !== null) {
         // ② 内部再抛：原错与再抛错各上报一次（顺序保持），不回环 worker 全局。
-        _zwReportToOwner(err, loc);
+        _zwReportToOwner(err, loc, filename);
         _zwReportToOwner(internalThrew, _zwWorkerErrorLocation(internalThrew, bodyOffset === undefined ? 2 : bodyOffset));
         return;
       }
-      if (!handled) _zwReportToOwner(err, loc);
+      if (!handled) _zwReportToOwner(err, loc, filename);
     };
     function _zwWorkerExposeBareGlobalCode() {
       return "var __zwWorkerBindings='';"
@@ -15470,7 +15814,7 @@
       // _zwInlineImportScripts 注记——三相 spec 语义 + direct eval 同作用域定义共享，
       // 替代旧「顶部提升 + 正则剥行」实现）。字面量/常量参数调用重写；其余形态
       // 保留原调用走运行时 wctx.importScripts。
-      scriptSrc = _zwInlineImportScripts(scriptSrc, String(main._resolvedScriptUrl || ''));
+      scriptSrc = _zwInlineImportScripts(scriptSrc, String(main._resolvedScriptUrl || ''), String(main._resolvedScriptUrl || ''));
       // workers-compat M2：worker 顶层级 function 声明暴露到 self（Timer.js 面型——
       // 顶层级 `function X(){}` 在 with(self){} 内按 Annex B 落函数作用域，延迟求值
       // 的 setTimeout 字符串回调（独立编译体）取不到 →  ReferenceError。扫描语句位
@@ -15480,6 +15824,7 @@
       var body = _zwWorkerExposeBareGlobalCode()
         + 'var postMessage=self.postMessage.bind(self);'
         + 'var importScripts=self.importScripts;'
+        + 'var __zwImportTracked=self.__zwImportTracked;'
         + 'var location=self.location;'
         + 'var Worker=self.Worker;'
         + 'var fetch=self.fetch.bind(self);'
@@ -15540,15 +15885,42 @@
   //（listeners + onmessage handler 同一事件对象；handler/listener 抛 → 未捕获错误管线）。
   // onmessage 为 WebIDL EventHandler：callable 直调；对象经 handleEvent 分派（onmessage.worker.js
   // 「Setting onmessage to an object」面——set 存对象，投递位 handleEvent 调用）。
-  Worker.prototype.postMessage = function (message, _transfer) {
+  Worker.prototype.postMessage = function (message, transfer) {
+    // workers-compat M3（DC-3）：0 参 TypeError（WebIDL message 必参——Worker-multi-port
+    // 「empty postMessage throws TypeError」面）。
+    if (arguments.length < 1) {
+      throw new TypeError("Failed to execute 'postMessage' on 'Worker': 1 argument required, but only 0 present.");
+    }
     if (this._terminated || this._closed) return;
-    var data = typeof structuredClone === 'function' ? structuredClone(message) : message;
+    // transfer 面与 MessagePort.postMessage 同构（①②③ helper 共用）：错误（序列转换
+    // TypeError / 不可转移 DataCloneError）同步抛在调用位（Worker-multi-port 同步
+    // assert_throws 面）；校验先于序列化（clone 期 port 转移副作用只在全表合法后发生）；
+    // 序列化先于列表消费（P4 序），payload 内 port 引用经 __zwXfer 转义为同一转移体。
+    // 第二参联合（sequence<object> or StructuredSerializeOptions）同 MessagePort M2-P1
+    // 双形态——null → 字典分支缺省（second-argument-null「worker 内 postMessage(1, null)
+    // 送达 1」面；window 3-arg legacy 序列位 null 仍 TypeError——with-ports/023 钉）。
+    var transferList = _zwConvertTransferSequence(
+      (transfer !== undefined && transfer !== null && typeof transfer === 'object' &&
+        !(typeof Symbol === 'function' && Symbol.iterator &&
+          typeof transfer[Symbol.iterator] === 'function'))
+        ? transfer.transfer
+        : (transfer === null ? undefined : transfer));
+    _zwValidateTransferList(transferList, null);
+    var _xfer = { orig: transferList.filter(_zwIsMessagePort), clones: [] };
+    var data = typeof structuredClone === 'function' ? structuredClone(message, { __zwXfer: _xfer }) : message;
+    var ports = Object.freeze(_zwConsumeTransferList(transferList, null, _xfer));
+    _zwDetachTransferables(transferList);
     var target = this;
-    if (typeof queueMicrotask === 'function') {
-      queueMicrotask(function () {
+    // workers-compat M3：投递载体 **task**（spec「queue a global task on the posted
+    // message task source」——MessagePort ④ 同款 setTimeout）。此前 queueMicrotask 使
+    // 相邻两条 worker 消息背靠背派发、页面 promise `.then`（微任务）无法在其间改挂
+    // onmessage——第二条落在已结算的 resolve 上被吞（Worker-structure-message 双发
+    // 页面流 Timeout 实证）。沙箱无 host 时 shim setTimeout 回落微任务（④ 同）。
+    {
+      setTimeout(function () {
         if (target._terminated || target._closed) return;
         if (!target._context || typeof target._context.dispatchEvent !== 'function') return;
-        var ev = new MessageEvent('message', { data: data, origin: '' });
+        var ev = new MessageEvent('message', { data: data, origin: '', ports: ports });
         // 派发期暂隐 _handler——wctx.onmessage getter 返 handler 时 shim generic
         // dispatch 的 R114 on* 调用位已调一次，下方显式 _handler 调用会双重派发
         //（close 页面流「二次 pong」实测）；wctx 无 dispatchEvent 的宿主形态走
@@ -15565,10 +15937,10 @@
           }
           catch (e) { if (typeof target._reportError === 'function') target._reportError(e); }
         }
-      });
+      }, 0);
     }
   };
-  // terminate()——终止 worker：后续 microtask 派发跳过（_terminated 标记）。
+  // terminate()——终止 worker：后续派发跳过（_terminated 标记）。
   Worker.prototype.terminate = function () {
     this._terminated = true;
   };
@@ -15748,14 +16120,23 @@
       } catch (_eSeq) {
         throw new TypeError("Failed to execute 'postMessage': The provided value cannot be converted to a sequence.");
       }
-      return out;
-    }
-    // old-style sequence：length + item 函数（{length:1} 无 item → TypeError）。
-    if (typeof value.length === 'number' && typeof value.item === 'function') {
+    } else {
+      // old-style sequence：length + item 函数（{length:1} 无 item → TypeError）。
+      if (!(typeof value.length === 'number' && typeof value.item === 'function')) {
+        throw new TypeError("Failed to execute 'postMessage': The provided value cannot be converted to a sequence.");
+      }
       for (var i = 0; i < value.length; i++) out.push(value.item(i));
-      return out;
     }
-    throw new TypeError("Failed to execute 'postMessage': The provided value cannot be converted to a sequence.");
+    // workers-compat M3（DC-3）：sequence<object> 元素转换（WebIDL es-sequence 逐元素
+    // object 型判定）——null/原始类型元素 → TypeError（Worker-multi-port
+    // 「[port1, null, port2] throws TypeError」/ second-argument-null-in-array
+    // 「postMessage(false, [null]) 抛 TypeError」面）。
+    for (var ei = 0; ei < out.length; ei++) {
+      if (out[ei] === null || typeof out[ei] !== 'object') {
+        throw new TypeError("Failed to execute 'postMessage': The provided value cannot be converted to a sequence.");
+      }
+    }
+    return out;
   }
   // ② transfer 列表消费：MessagePort 转移 = **克隆**——新 port 对象接管原 port 的配对
   //（对端改挂 clone，Channel_postMessage_clone_port 钉「clone ≠ 原对象且 clone 可收对端
@@ -15766,24 +16147,81 @@
   // 方在 MessageEvent 构造期 freeze——此处仅返回数组）。
   // ArrayBuffer 等非 port 项交 ③ detach；**调用序 = spec serialize-with-transfer**：
   // 先 structuredClone 消息（fileapi-compat P4 序——克隆不得碰已 detach buffer），后消费列表。
-  function _zwConsumeTransferList(list, sourcePort) {
-    var ports = [];
+  // workers-compat M3（DC-3）：单 port 转移体创建（配对改挂 + 队列随迁 + 原 port 脱离）
+  // ——自 consume 抽出供 `_zw_structured_clone` 的 port 引用转义位复用（part02 拼接同
+  // 作用域；serialize-with-transfer map 的「同一转移体」语义依赖两处共享同一 clone）。
+  function _zwTransferPort(item) {
+    // global 构造器被 delete 时经原型 constructor 仍可达（battery「interface deleted
+    // from the global object must still be received」转移面——delete 不改原型链）。
+    var _mpC = (typeof MessagePort === 'function') ? MessagePort
+      : ((item && Object.getPrototypeOf(item) && Object.getPrototypeOf(item).constructor) || MessagePort);
+    var clone = new _mpC();
+    clone._other = item._other;
+    if (item._other) item._other._other = clone;
+    clone._zwQueue = item._zwQueue;
+    clone._zwStarted = item._zwStarted;
+    item._other = null;
+    item._zwQueue = [];
+    item._zwDetached = true;
+    return clone;
+  }
+  // 整表校验（spec serialize-with-transfer 任一项不可转移即 DataCloneError，且**不产生
+  // 部分转移副作用**——Worker-multi-port「failed postMessage 后同 port 重发仍可用」面：
+  // 中途抛会留下已改挂的半转移态；postMessage 路径在 clone 前先行调用本函数，clone 期
+  // 的 port 转移副作用因此只可能发生在全表合法之后）。
+  function _zwValidateTransferList(list, sourcePort) {
     var _cloneDE = globalThis.DOMException || DOMException;
+    for (var vi = 0; vi < list.length; vi++) {
+      var vitem = list[vi];
+      var vIsPort = _zwIsMessagePort(vitem);
+      var vIsBuf = typeof ArrayBuffer === 'function' && vitem instanceof ArrayBuffer;
+      // workers-compat M3：ImageBitmap/OffscreenCanvas 为 transferable（HTML spec
+      // transferable 接口表——structured-clone battery transfer 面「ImageBitmap/
+      // OffscreenCanvas」成功转移 + 「non-transferable platform object」对 Blob 拒绝）。
+      var vIsBmp = typeof ImageBitmap === 'function' && vitem instanceof ImageBitmap;
+      var vIsOc = typeof OffscreenCanvas === 'function' && vitem instanceof OffscreenCanvas;
+      if (!vitem || typeof vitem !== 'object' || (!vIsPort && !vIsBuf && !vIsBmp && !vIsOc)) {
+        throw new _cloneDE('Failed to execute \'postMessage\': Value at index ' + vi + ' does not have a transferable type.', 'DataCloneError');
+      }
+      if (vIsPort && (vitem === sourcePort || vitem._closed || vitem._zwDetached)) {
+        throw new _cloneDE('Failed to execute \'postMessage\': ' +
+          (vitem === sourcePort ? 'Source port cannot be transferred.' : 'MessagePort at index ' + vi + ' is closed or detached.'), 'DataCloneError');
+      }
+      // 已 close 的位图不可再转移（spec transfer 步 detached check 近似）。
+      if (vIsBmp && vitem._closed) {
+        throw new _cloneDE('Failed to execute \'postMessage\': ImageBitmap at index ' + vi + ' is closed or detached.', 'DataCloneError');
+      }
+      // workers-compat M3：detached buffer 再转移拒绝（spec transfer 步 is-detached
+      // check 抛 DataCloneError；battery「A detached ArrayBuffer cannot be transferred」
+      // 面——运行时无 isDetached 探针，以零长视图构造可行为近似：detach 后构造即抛）。
+      if (vIsBuf) {
+        try { new Uint8Array(vitem, 0, 0); } catch (_eDet) {
+          throw new _cloneDE('Failed to execute \'postMessage\': ArrayBuffer at index ' + vi + ' is detached.', 'DataCloneError');
+        }
+      }
+    }
+  }
+  function _zwConsumeTransferList(list, sourcePort, xfer) {
+    // **不再内联校验**：所有调用方（worker/wctx/MessagePort.postMessage、公开
+    // structuredClone）都在 clone 前先行 _zwValidateTransferList（validate-then-consume，
+    // spec serialize-with-transfer 步序）。payload 含转移体时 clone 期的 port 引用转义
+    // 已完成配对改挂并置原 port _zwDetached——此处再校验会对**合法转移**误抛
+    // 「closed or detached」（battery transfer 三案失败根因，2026-10-21 修正）。
+    var ports = [];
     for (var i = 0; i < list.length; i++) {
       var item = list[i];
-      if (item && typeof item === 'object' && typeof MessagePort === 'function' && item instanceof MessagePort) {
-        if (item === sourcePort || item._closed || item._zwDetached) {
-          throw new _cloneDE('Failed to execute \'postMessage\' on \'MessagePort\': ' +
-            (item === sourcePort ? 'Source port cannot be transferred.' : 'MessagePort in transfer list is closed or detached.'), 'DataCloneError');
+      if (_zwIsMessagePort(item)) {
+        // xfer 复用：payload 克隆期已转义的项取同一转移体（「同一转移体」语义——
+        // battery MessagePort「copy.postMessage 可达对端」面）。
+        var clone = null;
+        if (xfer) {
+          var xi = xfer.orig.indexOf(item);
+          if (xi >= 0) {
+            clone = xfer.clones[xi];
+            if (!clone) { clone = _zwTransferPort(item); xfer.clones[xi] = clone; }
+          }
         }
-        var clone = new MessagePort();
-        clone._other = item._other;
-        if (item._other) item._other._other = clone;
-        clone._zwQueue = item._zwQueue;
-        clone._zwStarted = item._zwStarted;
-        item._other = null;
-        item._zwQueue = [];
-        item._zwDetached = true;
+        if (!clone) clone = _zwTransferPort(item);
         ports.push(clone);
       }
     }
@@ -15795,7 +16233,9 @@
     for (var i = 0; i < list.length; i++) {
       var item = list[i];
       if (item && typeof item === 'object') {
-        if (typeof MessagePort === 'function' && item instanceof MessagePort) continue;
+        if (_zwIsMessagePort(item)) continue;
+        // 位图转移后关闭源（spec transfer 步 neuter 近似——原 bitmap 不可再转移）。
+        if (typeof ImageBitmap === 'function' && item instanceof ImageBitmap) { item._closed = true; continue; }
         if (item instanceof ArrayBuffer && typeof item.transfer === 'function') {
           item.transfer();
         } else {
@@ -15842,9 +16282,22 @@
     // 消息永久丢失，站点 loader（baidu ESL 通道等待）超时重试 → 无限循环。
     this._zwQueue = [];
     this._zwStarted = false; // spec "port is enabled"：start() 或 onmessage setter 置位
+    // workers-compat M3：port 品牌印记（不可枚举 own——不进 Object.keys/for-in 面）。
+    // 转移路径以它判 port（battery「interface deleted from the global」在 postMessage
+    // 期间 delete globalThis.MessagePort——global 构造器 instanceof 判定随之失效，
+    // 品牌印记跨删除稳定；spec 系内部 slot brand check 的同 realm 近似）。
+    try { Object.defineProperty(this, '_zwPortBrand', { value: true, enumerable: false }); } catch (_e5000mpb) {}
+  }
+  // workers-compat M3：port 判定（品牌印记优先，global 构造器 instanceof 兜底——
+  // 兜底覆盖 shim 前升级留下的无印记旧实例不存在，仅为防御式宽进）。
+  function _zwIsMessagePort(v) {
+    return !!v && typeof v === 'object' && v._zwPortBrand === true;
   }
   MessagePort.prototype = Object.create(EventTarget.prototype);
   MessagePort.prototype.constructor = MessagePort;
+  // workers-compat M3：原型 toStringTag（Worker-messageport「String(evt.ports) ===
+  // '[object MessagePort]'」面——Array join 逐项 String(port) 走 Object.prototype.toString）。
+  try { if (typeof Symbol === 'function' && Symbol.toStringTag) Object.defineProperty(MessagePort.prototype, Symbol.toStringTag, { value: 'MessagePort' }); } catch (_e5000mp) {}
   MessagePort.prototype.postMessage = function (message, transfer) {
     // spec port post message steps（#dom-messageport-postmessage）：message 必参（TypeError）。
     if (arguments.length < 1) {
@@ -15874,10 +16327,15 @@
     // 顺序）——旧序先 detach 再 structuredClone，克隆碰到 detached buffer 抛
     // 「Cannot perform Construct on a detached ArrayBuffer」
     //（Blob-constructor-detached-buffer.detachBuffer 首行即炸）。
-    var data = typeof structuredClone === 'function' ? structuredClone(message) : message;
+    // workers-compat M3：校验先于序列化（同 Worker.postMessage 序——clone 期 port 转移
+    // 副作用只在全表合法后发生）；payload 内 port 引用经 __zwXfer 转义为同一转移体
+    //（port 在 payload 且在列表 → 别名转移体；仅 payload → DataCloneError）。
+    _zwValidateTransferList(transferList, this);
+    var _mpXfer = { orig: transferList.filter(_zwIsMessagePort), clones: [] };
+    var data = typeof structuredClone === 'function' ? structuredClone(message, { __zwXfer: _mpXfer }) : message;
     // M2-P1：port 转移（②——closed/source port → DataCloneError；克隆-改挂 + 队列随迁），
     // 再 R56h 非 port transferable detach（③）。
-    var ports = Object.freeze(_zwConsumeTransferList(transferList, this));
+    var ports = Object.freeze(_zwConsumeTransferList(transferList, this, _mpXfer));
     _zwDetachTransferables(transferList);
     var other = this._other;
     var ev = _zwMakeMessageEvent('message', { data: data, origin: '', ports: ports }, data);
