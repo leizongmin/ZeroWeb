@@ -778,3 +778,6 @@ mod r5212_forced_clear_absorb_tests;
 /// root.height + 浮动 caption x 豁免（floats-wrap-bfc-002/004/006、
 /// float-applies-to-015 锚点）。
 mod r5213_table_among_floats_interval_tests;
+/// R5214 float 摆放 earliest-fit（§9.5.1 规则 5 as high as possible，带步进替代行推进）
+/// + R5070 table 内部盒载体豁免（floats-wrap-bfc-004 双 right float 锚点）。
+mod r5214_float_earliest_fit_tests;

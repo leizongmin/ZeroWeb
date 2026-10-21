@@ -1545,6 +1545,15 @@ static CLEAR_CHAIN_MT_REFOLD: std::sync::LazyLock<bool> =
 static FORCED_CLEAR_ABSORB: std::sync::LazyLock<bool> =
     std::sync::LazyLock::new(|| std::env::var("ZW_FORCED_CLEAR_ABSORB").as_deref() != Ok("0"));
 
+/// R5214：float 摆放 earliest-fit（CSS 2.1 §9.5.1 规则 5「as high as possible」）——
+/// float 放不进当前可用区间时下移到与其纵向带相交 float 的**最近**底边逐带试探，
+/// 替代旧行推进（整行下移到当前行 max float 底）。chromium CDP 探针（R5213）定谳
+/// float 与 BFC 盒同用 earliest-fit；floats-wrap-bfc-004 ref 侧 purple float 期望
+/// (100,6)（silver 底 6 带 beside blue，非行底 20）。kill-switch
+/// `ZW_FLOAT_EARLIEST_FIT=0` 回退行推进。
+static FLOAT_EARLIEST_FIT: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_FLOAT_EARLIEST_FIT").as_deref() != Ok("0"));
+
 pub(crate) fn adjust_float_positions_with_context(
     box_node: &mut LayoutBox,
     box_content_abs_y: f32,
@@ -1675,6 +1684,9 @@ pub(crate) fn adjust_float_positions_with_context(
 
     // 记录每个 float 子元素在 taffy 布局中的 Y 和高度，用于后续偏移修正
     let mut float_taffy_y: Vec<(usize, f32, f32)> = Vec::new(); // (index, taffy_y, outer_height)
+    // R5214：已放置 float 的 margin-box 带记录（is_right, margin 左缘, margin 右缘,
+    // 带顶, 带底），earliest-fit 带试探用。kill-switch 关闭时不 push，仅空 Vec。
+    let mut placed_bands: Vec<(bool, f32, f32, f32, f32)> = Vec::new();
 
     for (idx, child) in box_node.children.iter_mut().enumerate() {
         // 跳过绝对定位和 fixed 元素
@@ -1910,41 +1922,131 @@ pub(crate) fn adjust_float_positions_with_context(
             ClearValue::None | ClearValue::InlineStart | ClearValue::InlineEnd => {}
         }
 
-        // 检查当前行是否有足够空间放置此浮动元素
-        let available_width = container_width - left_used_width - right_used_width;
-        if child_outer_width > available_width && line_max_height > 0.0 {
-            line_y += line_max_height;
-            left_used_width = 0.0;
-            right_used_width = 0.0;
-            line_max_height = 0.0;
-        }
-
-        match child.float {
-            FloatValue::Left => {
-                child.x = left_used_width + child.margin_left;
-                child.y = if clamp_content_rel {
-                    line_y + child.margin_top
-                } else {
-                    content_y_offset + line_y + child.margin_top
-                };
-
-                left_used_width += child_outer_width;
-                let new_bottom = line_y + child_outer_height;
-                left_float_bottom = left_float_bottom.max(new_bottom);
+        // R5214（CSS 2.1 §9.5.1 规则 5「as high as possible」）：earliest-fit 带试探——
+        // 从单调 floor（line_y，已含 min_float_y 与 clear 抬升）起，放不进
+        // [左系 float 右缘, 右系 float 左缘] 区间就下移到与 [y, y+h) 相交 float 的
+        // 最近底边重试，替旧行推进（整行下移到当前行 max float 底，R1612 表 C 步
+        // 曾对齐本模型；R5213 表 C 步已改 earliest-fit，本处补齐 float 侧同模型）。
+        // chromium CDP 探针定谳两侧同模型（R5213；floats-wrap-bfc-004 ref purple
+        // float 期望 (100,6)：silver 底 6 带 beside blue，非行底 20）。
+        // 带记录 = margin-box（x−ml, x+w+mr, top, bottom）；零高度 float 带底==带顶
+        // 恒不相交、不约束后续（旧行模型消耗行宽，差异记 corpus 仲裁）。
+        let earliest_fit = if *FLOAT_EARLIEST_FIT {
+            let mut band_y = line_y;
+            let mut resolved: Option<(f32, f32)> = None; // (左缘, 右缘)
+            for _ in 0..(placed_bands.len() + 2) {
+                let mut left_edge = 0.0f32;
+                let mut right_edge = container_width;
+                for b in &placed_bands {
+                    if b.3 < band_y + child_outer_height && band_y < b.4 {
+                        if b.0 {
+                            // 右系 float：其 margin 左缘（b.1）收紧区间右界。
+                            right_edge = right_edge.min(b.1);
+                        } else {
+                            // 左系 float：其 margin 右缘（b.2）收紧区间左界。
+                            left_edge = left_edge.max(b.2);
+                        }
+                    }
+                }
+                if child_outer_width <= (right_edge - left_edge).max(0.0) + 0.5 {
+                    resolved = Some((left_edge, right_edge));
+                    break;
+                }
+                // 放不下 → 推进到相交 float 的最近底边（earliest-fit）。相交条件
+                // 保证各相交 band 底 > band_y，最小值必存在；band_y 严格单调推进，
+                // 迭代数以 float 数为上界（+2 余量）。
+                let next_band = placed_bands
+                    .iter()
+                    .filter(|b| b.3 < band_y + child_outer_height && band_y < b.4)
+                    .map(|b| b.4)
+                    .fold(f32::INFINITY, f32::min);
+                if !next_band.is_finite() {
+                    // 无相交 float 仍放不下（宽超容器）：原位贴边放置（旧行模型
+                    // line_max_height==0 同语义，§9.5.1 左/右外缘贴包含块边）。
+                    resolved = Some((left_edge, right_edge));
+                    break;
+                }
+                band_y = next_band;
             }
-            FloatValue::Right => {
-                right_used_width += child_outer_width;
-                child.x = container_width - right_used_width + child.margin_left;
-                child.y = if clamp_content_rel {
-                    line_y + child.margin_top
-                } else {
-                    content_y_offset + line_y + child.margin_top
+            resolved.map(|(left_edge, right_edge)| {
+                let x = match child.float {
+                    FloatValue::Left => left_edge + child.margin_left,
+                    FloatValue::Right => right_edge - child_outer_width + child.margin_left,
+                    _ => child.x,
                 };
+                (x, band_y)
+            })
+        } else {
+            None
+        };
 
-                let new_bottom = line_y + child_outer_height;
-                right_float_bottom = right_float_bottom.max(new_bottom);
+        if let Some((placed_x, band_y)) = earliest_fit {
+            if matches!(child.float, FloatValue::Left | FloatValue::Right) {
+                child.x = placed_x;
+                child.y = if clamp_content_rel {
+                    band_y + child.margin_top
+                } else {
+                    content_y_offset + band_y + child.margin_top
+                };
+                // 规则 4：后继 float 外顶不得高于更早 float 外顶——floor 单调取本
+                // float 落位顶（行推进模型同性质，line_y 单调不降）。
+                line_y = band_y;
+                match child.float {
+                    FloatValue::Left => {
+                        let new_bottom = band_y + child_outer_height;
+                        left_float_bottom = left_float_bottom.max(new_bottom);
+                    }
+                    FloatValue::Right => {
+                        let new_bottom = band_y + child_outer_height;
+                        right_float_bottom = right_float_bottom.max(new_bottom);
+                    }
+                    _ => {}
+                }
+                placed_bands.push((
+                    matches!(child.float, FloatValue::Right),
+                    child.x - child.margin_left,
+                    child.x + child.width + child.margin_right,
+                    band_y,
+                    band_y + child_outer_height,
+                ));
             }
-            FloatValue::InlineStart | FloatValue::InlineEnd | FloatValue::None => {}
+        } else {
+            // 检查当前行是否有足够空间放置此浮动元素
+            let available_width = container_width - left_used_width - right_used_width;
+            if child_outer_width > available_width && line_max_height > 0.0 {
+                line_y += line_max_height;
+                left_used_width = 0.0;
+                right_used_width = 0.0;
+                line_max_height = 0.0;
+            }
+
+            match child.float {
+                FloatValue::Left => {
+                    child.x = left_used_width + child.margin_left;
+                    child.y = if clamp_content_rel {
+                        line_y + child.margin_top
+                    } else {
+                        content_y_offset + line_y + child.margin_top
+                    };
+
+                    left_used_width += child_outer_width;
+                    let new_bottom = line_y + child_outer_height;
+                    left_float_bottom = left_float_bottom.max(new_bottom);
+                }
+                FloatValue::Right => {
+                    right_used_width += child_outer_width;
+                    child.x = container_width - right_used_width + child.margin_left;
+                    child.y = if clamp_content_rel {
+                        line_y + child.margin_top
+                    } else {
+                        content_y_offset + line_y + child.margin_top
+                    };
+
+                    let new_bottom = line_y + child_outer_height;
+                    right_float_bottom = right_float_bottom.max(new_bottom);
+                }
+                FloatValue::InlineStart | FloatValue::InlineEnd | FloatValue::None => {}
+            }
         }
 
         // CSS 2.1 §9.5.1：零高度浮动元素（margin-box 高度为 0）不推进 line_y。
@@ -3292,19 +3394,39 @@ pub(crate) fn fix_inline_carrier_right_float_abs(
     box_node: &mut LayoutBox,
     parent_content_abs_x: f32,
     cb_content_right_abs: Option<f32>,
+    styles: &HashMap<NodeId, ComputedStyle>,
 ) {
     if std::env::var("ZW_FLOAT_CB_BLOCK").as_deref() == Ok("0") {
         return;
     }
     let content_left_abs =
         parent_content_abs_x + box_node.x + box_node.margin_left + box_node.border_left + box_node.padding_left;
+    // R5214：table 内部盒（row-group/row/cell 等）既非 block_level 亦非 flow_root，旧
+    // 判定误作 inline 载体——cell 内 right float 被「重定」到表右缘覆盖先落位的 float
+    //（floats-wrap-bfc-004 S4/S8：silver 期望 x=100 被 300−100=200 覆盖）。CSS 2.1 §10.1
+    // float 包含块 = 最近 block-level / **table-cell** / table-caption 祖先 content box：
+    // table 内部盒按 CB 边界处理（升级 cb_right），其直接 float 子由摆放 pass 定位、
+    // 载体修正不重写。
+    let is_table_internal = box_node.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+        matches!(
+            s.display,
+            DisplayValue::TableRow
+                | DisplayValue::TableRowGroup
+                | DisplayValue::TableHeaderGroup
+                | DisplayValue::TableFooterGroup
+                | DisplayValue::TableCell
+                | DisplayValue::TableColumn
+                | DisplayValue::TableColumnGroup
+        )
+    });
     // 本盒块级（BFC flow root 亦构成 float 包含块）→ 升级为最近块级 CB；inline 载体继承。
-    let cb_right = if box_node.is_block_level || box_node.is_flow_root || cb_content_right_abs.is_none() {
-        Some(content_left_abs + box_node.content_width)
-    } else {
-        cb_content_right_abs
-    };
-    let is_inline_carrier = !box_node.is_block_level && !box_node.is_flow_root;
+    let cb_right =
+        if box_node.is_block_level || box_node.is_flow_root || is_table_internal || cb_content_right_abs.is_none() {
+            Some(content_left_abs + box_node.content_width)
+        } else {
+            cb_content_right_abs
+        };
+    let is_inline_carrier = !box_node.is_block_level && !box_node.is_flow_root && !is_table_internal;
     for child in &mut box_node.children {
         if child.is_absolute || child.is_fixed {
             continue;
@@ -3322,6 +3444,6 @@ pub(crate) fn fix_inline_carrier_right_float_abs(
                 + child.padding_right;
             child.x = cr - outer_w - content_left_abs;
         }
-        fix_inline_carrier_right_float_abs(child, content_left_abs, cb_right);
+        fix_inline_carrier_right_float_abs(child, content_left_abs, cb_right, styles);
     }
 }
