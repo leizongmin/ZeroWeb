@@ -2,38 +2,40 @@
 
 **版本**: v2.0
 **日期**: 2026-10-21（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 21 收口（details name= 互斥簇 R4100 +14P），下一步 M2 切片 22：dialog 元素簇（the-dialog-element ~180F，interactive-elements 剩余最大杠杆）
+**状态**: Active——M2 切片 22 收口（dialog 元素簇 R4200 +93P，66.29%→67.54%），下一步 M2 切片 23：runner testharness helper 缺口盘点（closedby 簇 ~85F ReferenceError，interactive-elements 剩余最大块）
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-21 M2 切片 21）**：details name= 互斥簇（R4100）。
-> spec exclusive accordions 两 prong（others=开写面关其他 open；given=插入/
-> name 变更面自身让位）+ 组口径（同树根 + 同名非空 name + DETAILS）。核心
-> 结构发现：innerHTML-into-sel 解析产物是 `_zwMEl` plain wrapper（无 sel/
-> handle 身份），与 t8r 物化 identity 元素混合同树——统一 node-based 核心
-> `__zwDetailsExclusivityNode4100`（childNodes DFS 组枚举弃 querySelectorAll，
-> 身份态 `_elKey` 比对/包装态对象身份）+ R4009 队列第 4 参 plainNode 通道
-> + 解析扫描顺序插入模拟（树序第一 open 胜出——第 k 元素只看片内在前 live
-> open + 片外既存 open；CeAttach 整批一次扫描，逐 root 扫描会把兄弟判片外）
-> + 六挂接面（identity 四处 + wrapper setAttribute/removeAttribute 尾钩 +
-> 解析面三处：CeAttach 尾/_ihMat 物化尾/wrapper 本地 innerHTML R181 尾）。
-> part01 `_REFLECTED_NAME_TAGS` details + part03 原型 name accessor。
-> 关键取舍：解析面排程 toggle（spec attribute change steps 字面）与 test 3
-> 期望序互斥——取 spec 口径，test 3 维持 F，净 +13P 且清 name-attribute
-> file Timeout。part60 T1–T8 契约。九域 4873→**4887P**（66.29%），对 s20
-> 逐 subtest diff **净 +14P、回归 0**，全部落 interactive-elements（95→
-> 109P，264→235F）：name-attribute 2P/14F+Timeout→15P/3F（12 翻绿 + 2 案
-> Timeout 吞没转上报即 P）、details-name-exclusivity-fragment-insertion
-> 0P/1F→1P/0F。gates：zero-engine --lib 3374P/0F、page-runtime+webview
-> 785P/0F、integration html_compat 21P/0F、clippy 过、fmt clean、零新增
-> 依赖。账本见
-> [evidence/2026-10-21-m2s21-r4100.md](html-semantics-compat/evidence/2026-10-21-m2s21-r4100.md)。
-> **下一步**：M2 切片 22——dialog 元素簇（the-dialog-element ~180F：
-> requestClose 75F、closedby corner-cases 30F、inert 14F、toggle-events
-> 12F、closedby-bounds 10F 等，interactive-elements 剩余最大杠杆）；余挂账
-> toggleEvent 尾部 ontoggle（document-parse 面，需 init-order 调查）、
-> ToggleEvent.source/commandfor、anchor-with-inline 导航缺口（导航域）、
-> parser form element pointer 4F 同根维持单独立项征询不越界。
+> **▶ 当前状态（2026-10-22 M2 切片 22）**：dialog 元素簇（R4200）两段推
+> 进。①dialog 语义主体重构（part01）：toggle 事件任务队列（R4009 同款
+> per-element 去重合并，oldState 取调用方写前捕获）+ close 事件排队异步
+> （spec queue an element task；trusted 通道）+ show/showModal 请求态语义
+> （modal 上 show() 抛、非模态上 showModal() 抛，旧实现静默切态与 spec
+> 相悖）+ beforetoggle 同步可取消 + 写后重查（防处理器内二次写）+
+> close-the-dialog 核心（close/requestClose 共用）+ `_zwDialogRequestClose`
+> 新方法（cancel 同步可取消 trusted + 重入 busy 守卫）。②共享基建尾段：
+> `Promise.withResolvers` polyfill（ES2024，requestclose 全批挂起主根因）
+> + `_insertAdjacentVariadic` sel 项支持（prepend(parsedEl) 产物静默丢失）
+> + matches 裸属性选择器 lw + addEventListener `{signal}`（testharness
+> cleanup listener 泄漏）+ dialog open 内部写 MO record（dialog 调用点发，
+> 避 aria helper 双计）+ `_realTag` sel 印章 `_zwSelSeenTag`（detach 窗口
+> tag miss 门方法失效）。part60 T1–T8 新契约 + part14/part59 契约同步。
+> 九域 4887→**4980P**（67.54%），对 s21 逐 subtest diff **净 +93P、回归
+> 0**，全部落 interactive-elements（109→202P，235→142F）：
+> requestclose 0→75P、toggle-events 0→12P、close/close-event-async/
+> requestclose-2/-recurse/-closedby/submit-dialog-close-event 各 +1，
+> 余 74 文件 0 变化。gates：zero-engine --lib 3378P/0F、page-runtime
+> 136P/0F、webview 785P/0F、integration html_compat 21P/0F（包名
+> zero-integration-tests，旧口径补正）、clippy 过、fmt clean、零新增依
+> 赖。账本见
+> [evidence/2026-10-22-m2s22-r4200.md](html-semantics-compat/evidence/2026-10-22-m2s22-r4200.md)。
+> **下一步**：M2 切片 23——runner testharness helper 缺口盘点（closedby
+> 簇 ~85F：blessTopLayer/sendEscKey/createToggleEventSource ReferenceError，
+> 上游 helper 资源未随 runner 服务，非产品缺口）；余挂账 inert 计算态
+> ~15F、focusing steps ~15F（含 wrong global realm 面）、abspos/layout
+> ~10F（rendering 域）、impl-doc wrapper requestClose、toggleEvent 尾部
+> ontoggle（document-parse 面）、ToggleEvent.source/commandfor、
+> anchor-with-inline 导航缺口、parser form element pointer 4F。
 
 
 > **▶ 拆分动机（2026-10-08 预留编号立项，用户「候选 goal 也立项吧」）**：继
@@ -114,6 +116,49 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-22 M2 切片 22**：dialog 元素簇（R4200，跨午夜会话）——两段
+  推进：①part01 dialog 语义主体重构：toggle 事件任务队列（R4009 同款
+  per-element 去重合并、preOpen 调用方写前捕获）+ close 事件排队异步
+  （spec queue an element task，trusted 通道，旧同步派发 onclose 早于后
+  续脚本）+ show/showModal 请求态语义（modal 上 show 抛/非模态上
+  showModal 抛，旧静默切态）+ beforetoggle 同步可取消 + 写后重查 +
+  close-the-dialog 核心共用 + `_zwDialogRequestClose`（cancel 可取消 +
+  重入 busy 守卫，part04 DIALOG tag 门分发）；②共享基建：part03
+  Promise.withResolvers polyfill + `_realTag` sel 印章（detach 窗口）、
+  part05 `_insertAdjacentVariadic` sel 项（prepend(parsedEl) 丢失）、
+  part04 matches 裸属性 lw + addEventListener `{signal}` per-record +
+  set trap open moAttr 尾钩、part01 show/showModal/close 调用点 MO
+  record（aria helper 共用防双计）。part60 T1–T8 新契约 +
+  part14 ④⑧/part59 W3 契约同步（close 排队断言）。九域 4887→4980P
+  （67.54%），对 s21 逐 subtest diff 净 +93P、回归 0，全落
+  interactive-elements（109→202P）：requestclose 0→75P、toggle-events
+  0→12P、close/close-event-async/requestclose-2/-recurse/-closedby/
+  submit-dialog-close-event 各 +1。zero-engine --lib 3378P/0F、
+  page-runtime 136P/0F、webview 785P/0F、integration html_compat 21P/0F
+  （包名 zero-integration-tests 口径补正）、clippy/fmt 过、零新增依赖。
+  挂账：closedby 簇 ~85F runner testharness helper 缺口（下一切片）、
+  inert 计算态 ~15F、focusing steps ~15F（wrong global realm 面）、
+  abspos/layout ~10F（rendering 域）、impl-doc wrapper requestClose、
+  MO 内部写仅覆盖 dialog open（保守面）、`_zwSelSeenTag` 幽灵 sel 误
+  服务（保守已知）、其余 s21 挂账维持。
+- **2026-10-21 M2 切片 21**：details name= 互斥簇（R4100）——spec
+  exclusive accordions 双 prong（others 开写面关其他 open / given 插入与
+  name 变更面自身让位）+ 组口径（同树根 + 同名非空 name + DETAILS）。
+  核心结构发现：innerHTML-into-sel 解析产物 `_zwMEl` plain wrapper 与
+  t8r 物化 identity 元素混合同树——统一 node-based 核心
+  `__zwDetailsExclusivityNode4100`（childNodes DFS 组枚举、`_elKey`/对象
+  身份双态）+ R4009 队列第 4 参 plainNode 通道 + 解析扫描顺序插入模拟
+  （树序第一 open 胜出，CeAttach 整批一次扫描）+ 六挂接面 + 解析面三处。
+  part01 `_REFLECTED_NAME_TAGS` details + part03 原型 name accessor。
+  取舍：解析面排程 toggle（spec 字面）与 test 3 期望序互斥，取 spec 口
+  径维持 test 3 F。part60 T1–T8 契约。九域 4873→4887P（66.29%），对 s20
+  逐 subtest diff 净 +14P、回归 0，全落 interactive-elements（95→109P）：
+  name-attribute 2P/14F+Timeout→15P/3F、fragment-insertion 1P/0F。
+  zero-engine --lib 3374P/0F、page-runtime+webview 785P/0F、integration
+  html_compat 21P/0F、clippy/fmt 过、零新增依赖。挂账：toggleEvent 尾部
+  ontoggle（document-parse 面）、name-attribute test 3 期望序互斥观察、
+  xhr/template setup error、dialog 元素簇（下一切片）。账本
+  [evidence/2026-10-21-m2s21-r4100.md](html-semantics-compat/evidence/2026-10-21-m2s21-r4100.md)。
 - **2026-10-21 M2 切片 20**：details/summary 深层面（R4009，rollover 接续
   ——上会话 429 中断遗留 WIP 本会话续推收口）——toggle 事件任务队列
   （part03：去重/合并/净零/同态不排程/detached；choke point part04 `open`

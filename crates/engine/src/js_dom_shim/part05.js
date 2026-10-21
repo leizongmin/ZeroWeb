@@ -11871,6 +11871,7 @@
     // + 上下文自身跳过（before.call(el, el, ...) 的 self 参数 no-op——spec「node 是 context
     // object 则跳过该参数」）。
     var seenHandles = {};
+    var seenSels4200 = {};
     var deduped = [];
     for (var k0 = 0; k0 < items.length; k0++) {
       var it0 = items[k0];
@@ -11879,6 +11880,14 @@
         if (seenHandles[it0.__zwHandle]) continue;
         seenHandles[it0.__zwHandle] = true;
         _zwDetachFromRegistry(it0);
+      }
+      // R4200（html-semantics M2-S22）：sel 项（静态页面元素，有 __zwSelector 无
+      // __zwHandle）同款去重/self 跳过——此前仅 handle 项去重，sel 项重复参数会重复
+      // wire（下方分支新增后的对齐面；无 handle registry，无 _zwDetachFromRegistry）。
+      if (typeof it0 === 'object' && it0 && it0.__zwSelector && !it0.__zwHandle) {
+        if (it0.__zwSelector === sel) continue; // self（sel 上下文）
+        if (seenSels4200[it0.__zwSelector]) continue;
+        seenSels4200[it0.__zwSelector] = true;
       }
       deduped.push(it0);
     }
@@ -11900,6 +11909,14 @@
             if (!_r321c) continue;
             if (_r321c.__zwHandle) {
               __zw_insert_adjacent_element(sel, position, _r321c.__zwHandle);
+              // R4200：重插清同步移除标记（appendChild/insertBefore 移动尾钩同款——
+              // 否则 body.prepend(x) 后 x 的 removed 标记残留，_zwIsConnected 恒 false，
+              // dialog show/showModal 全族「not connected」误抛；toggle-events cleanup
+              // prepend 链断言面）。
+              try {
+                if (typeof _zwUnmarkRemovedHandle === 'function') _zwUnmarkRemovedHandle(_r321c.__zwHandle);
+                if (_r321c.__zwSelector && typeof _zwUnmarkRemoved === 'function') _zwUnmarkRemoved(_r321c.__zwSelector);
+              } catch (_e4200um) {}
               // R321：JS 侧反链记账（appendChild 的 R51 同款——host wire 不写 JS 注册表，
               // 不记则 childNodes 融合视图的 overlay / live collection 并入的 _zwMutationInDoc
               // 上行判 detached 而跳过）。
@@ -11919,9 +11936,37 @@
         }
         if (item && typeof item === 'object' && item.__zwHandle) {
           __zw_insert_adjacent_element(sel, position, item.__zwHandle);
+          // R4200：重插清同步移除标记（fragment 展开路径同款——prepend/append/before/
+          // after 共用本函数，标记残留使后续 show/showModal「not connected」误抛）。
+          try {
+            if (typeof _zwUnmarkRemovedHandle === 'function') _zwUnmarkRemovedHandle(item.__zwHandle);
+            if (item.__zwSelector && typeof _zwUnmarkRemoved === 'function') _zwUnmarkRemoved(item.__zwSelector);
+          } catch (_e4200um2) {}
           ceInserted.push(item);
           // R377：插入期脚本执行（直接 script 项路径）。
           _r377runScript(item.__zwHandle);
+        } else if (item && typeof item === 'object' && item.__zwSelector
+            && typeof __zw_insert_adjacent_sel_element === 'function') {
+          // R4200（html-semantics M2-S22）：**sel 项**（静态页面元素，有 __zwSelector 无
+          // __zwHandle）——此前掉进下方文本分支（`String(item)` = '[object Element]'），
+          // `body.prepend(mydialog)` 完全不插（toggle-events "removes"/cleanup 的
+          // remove→prepend 恢复链断，后续案 "still in the document" 级联失败）。走
+          // R334 同款 sel wire（host `insert_nodes_at_position` 自带 reparent 移动
+          // 语义；appendChild 的 R334 分支即 'beforeend' 特例）。
+          __zw_insert_adjacent_sel_element(sel, position, item.__zwSelector);
+          // R4200：清同步移除标记（handle 项同款——remove() 后 prepend 重插，标记
+          // 残留使 isConnected/parentNode getter 恒 disconnected/null）。
+          try {
+            if (typeof _zwUnmarkRemoved === 'function') _zwUnmarkRemoved(item.__zwSelector);
+          } catch (_e4200um3) {}
+          // R334 同款同步可见性：pending 父槽（parentNode getter 在 host 异步 apply
+          // 前即返新父）+ 重解析索引（getElementById 同 turn 可见）+ 兄弟基缓存失效。
+          try {
+            item._zwSelPendingParent = { parentSel: sel, nextSibling: null };
+            if (typeof globalThis.__zwPendReselAdd === 'function') globalThis.__zwPendReselAdd(item.__zwSelector, item);
+            if (globalThis._zwSiblingBaseInvalidateAll) globalThis._zwSiblingBaseInvalidateAll();
+          } catch (_e4200sv) {}
+          ceInserted.push(item);
         } else {
           // R117：null/undefined → WebIDL DOMString（'null'/'undefined' 文本节点）。
           __zw_insert_adjacent_text(sel, position, String(item));

@@ -584,31 +584,121 @@
     delete _zwTopLayer[key];
     _dispatchWithBubble(key, sel, handle, _makeToggleEvent('toggle', 'open', 'closed', false));
   }
-  // R3290：HTMLDialogElement.show()——非模态打开。spec「show the dialog」：未连接则抛 InvalidStateError；
-  // 已 open 时 no-op，否则设置 open 内容属性。headless 无真
-  // top-layer paint / ::backdrop / focus 陷阱 / inert backdrop（rendering 流域 defer）——仅 JS-observable 状态（open 属性 +
-  // 模态态）。
+  // R4200（html-semantics M2 切片 22）：dialog toggle 事件任务队列——R4009 details
+  // 同款 per-element key 去重合并（同任务多次开合单事件，oldState = 本任务首个真
+  // 变迁前状态、newState = 任务运行时当下状态；净零变迁仍派发）。preOpen 由调用方
+  // 写入前捕获（show/showModal 加 open 属性前、close 移除前——入队点在写后，纯读
+  // 会把 entry.old 记成写后态）。导航经 `__zw_reset_form_state` 同款 per-page 语义
+  //（fire 侧 _dispatchWithBubble try/catch 兜底，stale key 派发静默）。
+  // spec：the-dialog-element「queue an element task given the dialog to fire an
+  // event named toggle」。
+  // https://html.spec.whatwg.org/multipage/interactive-elements.html#the-dialog-element
+  var _zwDialogToggleQ4200 = {};
+  function _zwDialogToggleQueueNotify4200(key, sel, handle, preOpen) {
+    if (_zwDialogToggleQ4200[key]) return; // 已排程——同任务后续变迁仅合并不重排
+    var entry = _zwDialogToggleQ4200[key] = { sel: sel, handle: handle, old: preOpen ? 'open' : 'closed' };
+    var fire = function () {
+      if (_zwDialogToggleQ4200[key] !== entry) return;
+      delete _zwDialogToggleQ4200[key];
+      try {
+        var newState = _zwDialogHasOpen(entry.sel, entry.handle) ? 'open' : 'closed';
+        _dispatchWithBubble(key, entry.sel, entry.handle, _zwMakeTrustedToggleEvent4009(entry.old, newState));
+      } catch (_eDgT4200) {}
+    };
+    // 异步 task 排程——R4009 同款 timer 链模板（setTimeout 落 microtask、execute 间排空）。
+    if (typeof globalThis.setTimeout === 'function') globalThis.setTimeout(fire, 0);
+    else if (typeof queueMicrotask === 'function') queueMicrotask(fire);
+    else if (typeof Promise === 'function') Promise.resolve().then(fire);
+    else fire();
+  }
+  // R4200：close 事件排队派发（spec close-the-dialog「queue an element task … fire an
+  // event named close」——旧同步派发使用例内 onclose 早于后续脚本运行，dialog-close t4 /
+  // dialog-close-event-async 的「close 事件须晚于当前脚本」断言面 F）。trusted 通道
+  //（R312 `__zwMakeTrustedEvent`）——isTrusted 断言面。
+  function _zwDialogQueueCloseEvent4200(key, sel, handle) {
+    var fire = function () {
+      try {
+        var ev = (typeof globalThis.__zwMakeTrustedEvent === 'function')
+          ? globalThis.__zwMakeTrustedEvent('close', { bubbles: false, cancelable: false })
+          : _makeEvent('close', { bubbles: false, cancelable: false });
+        _dispatchWithBubble(key, sel, handle, ev);
+      } catch (_eDgC4200) {}
+    };
+    if (typeof globalThis.setTimeout === 'function') globalThis.setTimeout(fire, 0);
+    else if (typeof queueMicrotask === 'function') queueMicrotask(fire);
+    else if (typeof Promise === 'function') Promise.resolve().then(fire);
+    else fire();
+  }
+  // R3290 + R4200：HTMLDialogElement.show()——非模态打开。spec「show」：已 open →
+  // 非模态 no-op / 模态抛 InvalidStateError（「已在请求态」请求语义，
+  // dialog-no-throw-requested-state 断言面）；未连接抛 InvalidStateError；派
+  // beforetoggle（同步、可取消——preventDefault 中止不开，toggle-events 断言面）；
+  // 写后重查 open（beforetoggle 处理器内已开 → 不二次写，MutationObserver 计数 1 面）；
+  // 加 open 属性 + 排程 toggle（合并队列）。headless 无真 top-layer paint / ::backdrop /
+  // focus 陷阱 / inert backdrop（rendering 流域 defer）——仅 JS-observable 状态。
   // https://html.spec.whatwg.org/multipage/interactive-elements.html#dom-dialog-show
   function _zwDialogShow(key, sel, handle) {
+    if (_zwDialogHasOpen(sel, handle)) {
+      if (_zwDialogModal[key]) throw new DOMException('show: dialog is already open (modal)', 'InvalidStateError');
+      return;
+    }
     if (!_zwIsConnected(sel, handle)) throw new DOMException('show: dialog is not connected', 'InvalidStateError');
-    if (_zwDialogHasOpen(sel, handle) || _zwDialogModal[key]) return;
+    if (!_dispatchWithBubble(key, sel, handle, _makeToggleEvent('beforetoggle', 'closed', 'open', true))) return;
+    if (_zwDialogHasOpen(sel, handle)) return; // beforetoggle 处理器内已开
     _zwSetAttr(key, sel, handle, 'open', '');
+    // R4200（html-semantics M2 切片 22）：open 属性内部写同步发 MutationObserver
+    // attributes record（`_zwSetAttr` 为 show/showModal/IDL setter 共用 choke point
+    // ——aria 路径亦经此 helper，故记录在 dialog 调用点发而非 helper 内，避免 aria
+    // 面 moAttr 尾钩双计）。toggle-events「should not double-set」计数断言面。
+    try { _mo_notify(sel, handle, { type: 'attributes', attributeName: 'open', oldValue: null }); } catch (_eDgMo) {}
+    _zwDialogToggleQueueNotify4200(key, sel, handle, false);
   }
-  // R3290：HTMLDialogElement.showModal()——模态打开。spec「show a modal dialog」：已打开（open 属性 present）→
-  // 抛 InvalidStateError；否则设 open 属性 + 加 top-layer + 标模态态。headless 简化（无 backdrop / focus / inert）。
+  // R3290 + R4200：HTMLDialogElement.showModal()——模态打开。spec「show a modal
+  // dialog」：已 open → 非模态抛 InvalidStateError / 模态 no-op（请求态，dialog-no-throw
+  // 尾行断言面）；未连接抛；beforetoggle（可取消）；写后重查——未连接 / top-layer 被
+  // 占（beforetoggle 内 showPopover 同元素 → showing → 中止不开，toggle-events「not
+  // open if beforetoggle calls showPopover」modal 臂断言面）/ 已 open；加 open 属性 +
+  // top-layer + 标模态 + 排程 toggle。headless 简化（无 backdrop / focus / inert）。
   // https://html.spec.whatwg.org/multipage/interactive-elements.html#dom-dialog-showmodal
   function _zwDialogShowModal(key, sel, handle) {
+    if (_zwDialogHasOpen(sel, handle)) {
+      if (!_zwDialogModal[key]) throw new DOMException('showModal: dialog already open (non-modal)', 'InvalidStateError');
+      return;
+    }
     if (!_zwIsConnected(sel, handle)) throw new DOMException('showModal: dialog is not connected', 'InvalidStateError');
-    if (_zwDialogHasOpen(sel, handle) || _zwDialogModal[key]) throw new DOMException('showModal: dialog already open', 'InvalidStateError');
+    if (!_dispatchWithBubble(key, sel, handle, _makeToggleEvent('beforetoggle', 'closed', 'open', true))) return;
+    if (!_zwIsConnected(sel, handle)) return; // beforetoggle 内被移除 → 中止（不开、无 toggle）
+    if (_zwTopLayer[key]) return; // beforetoggle 内 showPopover → showing → 中止
+    if (_zwDialogHasOpen(sel, handle)) return;
     // Event Timing：模态对话框是 duration 度量的替代终点（part01b emit 消费）。
     if (typeof _perfNow === 'function') { try { _zwEvtModalAt = _perfNow(); } catch (_e) {} }
     _zwSetAttr(key, sel, handle, 'open', '');
+    // R4200：open 属性内部写 MO record（show 同款，见 _zwDialogShow 注记）。
+    try { _mo_notify(sel, handle, { type: 'attributes', attributeName: 'open', oldValue: null }); } catch (_eDgMo2) {}
     _zwTopLayer[key] = true;
     _zwDialogModal[key] = true;
+    _zwDialogToggleQueueNotify4200(key, sel, handle, false);
   }
-  // R3290：HTMLDialogElement.close(returnValue)——关闭。spec「close the dialog」：未 open（无 open 属性且非模态态）
-  // → no-op（返 false，不抛）；否则移 open 属性 + 模态态移 top-layer + 清模态态；returnValue 非 undefined → 存；
-  // 排队 'close' 事件（headless 同步派发，spec task 近似——documented）。return true（已关）。
+  // R3290 + R4200：close-the-dialog 核心（close()/requestClose() 共用）。beforetoggle
+  //（open→closed，同步、不可取消——请求态取消走 requestClose 的 cancel 面，commit 后
+  // 不可逆）；写后重查（beforetoggle 处理器内嵌套 close 已完成 → 不二次移除/排队，
+  // MutationObserver 属性变更计数 1 断言面）；移 open 属性 + 模态态移 top-layer +
+  // returnValue 非 undefined 存（R3910 口径）；close 事件与 toggle 各自排队异步派发。
+  function _zwDialogCloseTheDialog4200(key, sel, handle, returnValue) {
+    _dispatchWithBubble(key, sel, handle, _makeToggleEvent('beforetoggle', 'open', 'closed', false));
+    if (!_zwDialogHasOpen(sel, handle) && !_zwDialogModal[key]) return; // 嵌套 close 已关
+    _zwRemoveAttr(key, sel, handle, 'open');
+    // R4200：open 属性内部移除 MO record（close-the-dialog 核心——close()/requestClose()
+    // 共用；「Should have removed open once」计数断言面，与 show 侧同口径）。
+    try { _mo_notify(sel, handle, { type: 'attributes', attributeName: 'open', oldValue: null }); } catch (_eDgMo3) {}
+    if (_zwDialogModal[key]) { delete _zwDialogModal[key]; delete _zwTopLayer[key]; }
+    if (returnValue !== undefined) _expando[key + '::returnValue'] = String(returnValue);
+    _zwDialogQueueCloseEvent4200(key, sel, handle);
+    _zwDialogToggleQueueNotify4200(key, sel, handle, true);
+  }
+  // R3290 + R4200：HTMLDialogElement.close(returnValue)——关闭。spec「close the
+  // dialog」：未 open（无 open 属性且非模态态）→ no-op（返 false，不抛）；否则走
+  // close-the-dialog 核心。return wasOpen（已关）。
   // https://html.spec.whatwg.org/multipage/interactive-elements.html#dom-dialog-close
   function _zwDialogClose(key, sel, handle, returnValue) {
     var wasOpen = _zwDialogHasOpen(sel, handle) || !!_zwDialogModal[key];
@@ -618,11 +708,34 @@
     // dialog-close「doesn't have an open attribute aborts the steps」+ dialog-return-value
     // 「no-op close()」断言面；dialog 提交分支「closing the dialog while submitting」同面）。
     if (!wasOpen) return false;
-    _zwRemoveAttr(key, sel, handle, 'open');
-    if (_zwDialogModal[key]) { delete _zwDialogModal[key]; delete _zwTopLayer[key]; }
-    if (returnValue !== undefined) _expando[key + '::returnValue'] = String(returnValue);
-    _dispatchWithBubble(key, sel, handle, _makeEvent('close', { bubbles: false, cancelable: false }));
+    _zwDialogCloseTheDialog4200(key, sel, handle, returnValue);
     return wasOpen;
+  }
+  // R4200：HTMLDialogElement.requestClose(returnValue)——请求关闭。spec：
+  // ① 无 open 属性 → no-op；② close watcher 非活跃（未连接 / 非活跃文档）→ no-op
+  //（dialog-requestclose-2/-3 断言面）；③ 派 cancel（同步、可取消，trusted 通道）——
+  // preventDefault → 保持 open 不变 returnValue（「requestClose can be cancelled」
+  // 断言面）；cancel 派发中重入 requestClose → 不二次 cancel（dialog-requestclose-recurse
+  // 「cancel 只一次」断言面）；④ 否则走 close-the-dialog 核心（returnValue 透传，
+  // close 事件异步排队）。
+  // https://html.spec.whatwg.org/multipage/interactive-elements.html#dom-dialog-requestclose
+  function _zwDialogRequestClose(key, sel, handle, returnValue) {
+    var wasOpen = _zwDialogHasOpen(sel, handle) || !!_zwDialogModal[key];
+    if (!wasOpen) return;
+    if (!_zwIsConnected(sel, handle)) return;
+    if (_expando[key + '::dialogRcBusy4200']) return;
+    _expando[key + '::dialogRcBusy4200'] = true;
+    var proceed;
+    try {
+      var ev = (typeof globalThis.__zwMakeTrustedEvent === 'function')
+        ? globalThis.__zwMakeTrustedEvent('cancel', { bubbles: false, cancelable: true })
+        : _makeEvent('cancel', { bubbles: false, cancelable: true });
+      proceed = _dispatchWithBubble(key, sel, handle, ev);
+    } finally {
+      _expando[key + '::dialogRcBusy4200'] = false;
+    }
+    if (proceed === false) return; // preventDefault → 保持 open、不变 returnValue
+    _zwDialogCloseTheDialog4200(key, sel, handle, returnValue);
   }
   // R3290：dialog open 内容属性是否 present（boolean 属性，presence 判定）。latest-wins 反映同 execute 内
   // pending set/remove（show/close 经 __zw_set_attr/__zw_remove_attr 异步入队，纯快照读 stale）。供 showModal

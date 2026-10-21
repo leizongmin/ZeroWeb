@@ -2680,21 +2680,25 @@ fn test_html_dialog_element_api_r3290() {
     assert_eq!(sandbox.execute("globalThis.__errShown").unwrap().value, "InvalidStateError", "已 open 的 dialog showModal → InvalidStateError");
     assert_eq!(sandbox.execute("globalThis.__d2Open").unwrap().value, "true", "showModal() → open=true");
 
-    // ④ close(returnValue)：移 open 属性 + 设 returnValue + 派 'close' 事件。d2 模态关闭。
+    // ④ close(returnValue)：移 open 属性 + 设 returnValue + 排队 'close' 事件。
+    // R4200：close 事件改排队异步派发（spec queue an element task；WPT dialog-close
+    // 「close event should be queued」断言面）——同 execute 内计数 0，execute 间排空
+    // 后到位。d2 模态关闭。
     sandbox.execute(
         "var d2 = document.getElementById('d2');\
-         var closed = 0;\
-         d2.addEventListener('close', function(){ closed++; });\
+         globalThis.__d2Closed = 0;\
+         d2.addEventListener('close', function(){ globalThis.__d2Closed++; });\
          var ret = d2.close('confirmed');\
          globalThis.__closeRet = String(ret);\
-         globalThis.__closed = String(closed);\
+         globalThis.__closed = String(globalThis.__d2Closed);\
          globalThis.__d2OpenAfter = String(d2.open);\
          globalThis.__d2Rv = d2.returnValue;",
     ).unwrap();
     assert_eq!(sandbox.execute("globalThis.__closeRet").unwrap().value, "true", "close() 返 true（was open）");
-    assert_eq!(sandbox.execute("globalThis.__closed").unwrap().value, "1", "close() 派发 'close' 事件一次");
+    assert_eq!(sandbox.execute("globalThis.__closed").unwrap().value, "0", "close() 事件排队——同 execute 未同步派发（R4200）");
     assert_eq!(sandbox.execute("globalThis.__d2OpenAfter").unwrap().value, "false", "close() → open=false（移属性）");
     assert_eq!(sandbox.execute("globalThis.__d2Rv").unwrap().value, "confirmed", "close('confirmed') → returnValue='confirmed'");
+    assert_eq!(sandbox.execute("String(globalThis.__d2Closed)").unwrap().value, "1", "execute 间排空后 close 事件到达一次");
 
     // ⑤ close() 未 open dialog → no-op（返 false，不派 close，不抛）。
     sandbox.execute(
@@ -2737,23 +2741,25 @@ fn test_html_dialog_element_api_r3290() {
     assert_eq!(sandbox.execute("globalThis.__rvXyz").unwrap().value, "xyz", "returnValue setter 存串值");
     assert_eq!(sandbox.execute("globalThis.__rvNull").unwrap().value, r#""null""#, "returnValue=null setter → 'null'（R3999 spec 修正）");
 
-    // ⑧ show → showModal 互斥：show 后 showModal 关前非模态态再开模态（不抛，因 show 后 d1 仍 open——
-    //    实际 spec：showModal 已 open 抛。验证 d1 经 ②show() 后 showModal 抛 InvalidStateError（同 ③）已隐含）。
-    //    反向：showModal 后 show() 切非模态（清模态态，open 属性保持）。
+    // ⑧ show/showModal 互斥（R4200 请求态语义）：modal open 上 show() 抛
+    //    InvalidStateError（spec show 步骤「已 open 且 modal → 抛」，WPT
+    //    dialog-no-throw-requested-state 断言面；旧实现静默 return 与 spec 相悖）。
+    //    close() 照常关闭，close 事件排队异步（execute 间排空到位）。
     sandbox.execute(
         "var d2 = document.getElementById('d2');\
          d2.showModal();\
          globalThis.__d2Modal1 = String(d2.open);\
-         d2.show();\
+         globalThis.__d2ShowErr = '';\
+         try { d2.show(); } catch (e) { globalThis.__d2ShowErr = e.name; }\
          globalThis.__d2AfterShow = String(d2.open);\
-         var c2 = 0;\
-         d2.addEventListener('close', function(){ c2++; });\
-         d2.close();\
-         globalThis.__d2Closed = String(c2);",
+         globalThis.__d2Closed8 = 0;\
+         d2.addEventListener('close', function(){ globalThis.__d2Closed8++; });\
+         d2.close();",
     ).unwrap();
     assert_eq!(sandbox.execute("globalThis.__d2Modal1").unwrap().value, "true", "showModal() → open=true");
-    assert_eq!(sandbox.execute("globalThis.__d2AfterShow").unwrap().value, "true", "show() 后 open 保持 true（切非模态）");
-    assert_eq!(sandbox.execute("globalThis.__d2Closed").unwrap().value, "1", "切非模态后 close() 仍派 close 事件");
+    assert_eq!(sandbox.execute("globalThis.__d2ShowErr").unwrap().value, "InvalidStateError", "modal open 上 show() 抛 InvalidStateError（R4200）");
+    assert_eq!(sandbox.execute("globalThis.__d2AfterShow").unwrap().value, "true", "show() 抛后 open 保持 true（modal 态不变）");
+    assert_eq!(sandbox.execute("String(globalThis.__d2Closed8)").unwrap().value, "1", "close() 关闭 modal 且 close 事件排空后到达一次");
 }
 
 #[test]

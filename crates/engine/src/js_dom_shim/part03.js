@@ -13125,6 +13125,19 @@
     return ev;
   };
 
+  // R4200（html-semantics M2 切片 22）：Promise.withResolvers（ES2024,
+  // proposal-promise-with-resolvers）——dialog-requestclose / dialog-closedby-* 语料
+  // 高频（`const {promise, resolve} = Promise.withResolvers()`）。缺失 → 脚本早期
+  // TypeError → promise_test 全批挂起（requestclose 75F 主簇根因之一）。
+  // https://tc39.es/proposal-promise-with-resolvers/
+  if (typeof Promise === 'function' && typeof Promise.withResolvers !== 'function') {
+    Promise.withResolvers = function () {
+      var resolve, reject;
+      var promise = new Promise(function (res, rej) { resolve = res; reject = rej; });
+      return { promise: promise, resolve: resolve, reject: reject };
+    };
+  }
+
   // ── R4009（html-semantics M2 切片 20）：details toggle 事件任务队列 ──
   //
   // spec（interactive-elements.html#binding-details）：open 内容属性增删后「queue an
@@ -13656,7 +13669,24 @@
       } catch (_eTagCache) {}
     }
     if (sel && typeof __zw_get_tag === 'function') {
-      try { var t = __zw_get_tag(sel); if (t) return _zwAsciiUpper(t); } catch (_e) {}
+      try {
+        var t = __zw_get_tag(sel);
+        if (t) {
+          // R4200（html-semantics M2 切片 22）：sel tag 印章——host 命中顺带存档，
+          // miss 时兜底（下方尾分支）。remove 已 apply、reinsert（R361 stash/跨批
+          // 片段重解析）未 apply 的 detach 窗口内 `__zw_get_tag` miss → tag 门方法
+          //（DIALOG show/close 族等）整面失效（"el.close is not a function"，
+          // toggle-events "removes" cleanup 链 prepend→close 断言面）。spec tagName
+          // 不可变（https://dom.spec.whatwg.org/#dom-element-tagname）；sel 重解析
+          // 换 tag 的窗口 host 必命中（新树在档），印章只在 miss 服务——误服务面
+          // 收敛到「元素真离档」的幽灵 sel（已移除元素的方法门，语义本就 JS 态
+          // 主导）。t8f `_zwHandleCreateTag` 同款跨 execute 持久（换代不清）。
+          var _r4200sk = String(sel);
+          var _r4200st = globalThis._zwSelSeenTag || (globalThis._zwSelSeenTag = {});
+          if (!_r4200st[_r4200sk]) _r4200st[_r4200sk] = String(t);
+          return _zwAsciiUpper(t);
+        }
+      } catch (_e) {}
     }
     if (handle && typeof __zw_get_tag_handle === 'function') {
       try { var ht = __zw_get_tag_handle(handle); if (ht) return _zwAsciiUpper(ht); } catch (_e) {}
@@ -13694,6 +13724,13 @@
         var _hct = globalThis._zwHandleCreateTag[String(handle)];
         if (_hct) return _zwAsciiUpper(String(_hct));
       } catch (_eHct) {}
+    }
+    // R4200：sel tag 印章兜底（上方 host 命中点存档；detach 窗口 miss 服务，见注记）。
+    if (sel && globalThis._zwSelSeenTag) {
+      try {
+        var _sst4200 = globalThis._zwSelSeenTag[String(sel)];
+        if (_sst4200) return _zwAsciiUpper(String(_sst4200));
+      } catch (_eSst4200) {}
     }
     return _tagFromSel(sel);
   }

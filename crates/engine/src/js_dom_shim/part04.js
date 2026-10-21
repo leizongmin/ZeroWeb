@@ -2232,6 +2232,11 @@
         //   后仍报 false（少见 `textNode.isConnected` 检查，documented）。Document 节点恒 connected（见 literal）。
         if (prop === 'isConnected') {
           if (sel) {
+            // R4200：同步移除标记优先（`_zwIsConnected` part01 同款门）——脚本内
+            // remove() 后（host mutation 尚未应用）isConnected 立即为 false（spec
+            // dom-node-isconnected：连接态即时反映；toggle-events「beforetoggle
+            // removes」isConnected 断言面。此前纯 host 快照查含 → 移除后仍 true）。
+            if (typeof _zwIsRemoved === 'function' && _zwIsRemoved(sel)) return false;
             if (typeof __zw_contains === 'function') {
               try { return __zw_contains('html', sel) === '1'; } catch (_e) { return true; }
             }
@@ -4325,14 +4330,13 @@
         if (prop === 'close' && _realTag(sel, handle) === 'DIALOG') {
           return function (returnValue) { return _zwDialogClose(key, sel, handle, returnValue); };
         }
-        if (prop === 'show' && _realTag(sel, handle) === 'DIALOG') {
-          return function () { _zwDialogShow(key, sel, handle); };
-        }
-        if (prop === 'showModal' && _realTag(sel, handle) === 'DIALOG') {
-          return function () { _zwDialogShowModal(key, sel, handle); };
-        }
-        if (prop === 'close' && _realTag(sel, handle) === 'DIALOG') {
-          return function (returnValue) { return _zwDialogClose(key, sel, handle, returnValue); };
+        // R4200：HTMLDialogElement.requestClose(returnValue)——请求关闭（cancel 同步
+        // 可取消 + close-the-dialog 异步收尾），状态机在 part01 `_zwDialogRequestClose`。
+        // 与 show/showModal/close 同面（仅 DIALOG proxy 暴露；既有 4 份重复块不清理，
+        // 本方法只挂首块）。
+        // https://html.spec.whatwg.org/multipage/interactive-elements.html#dom-dialog-requestclose
+        if (prop === 'requestClose' && _realTag(sel, handle) === 'DIALOG') {
+          return function (returnValue) { _zwDialogRequestClose(key, sel, handle, returnValue); };
         }
         if (prop === 'show' && _realTag(sel, handle) === 'DIALOG') {
           return function () { _zwDialogShow(key, sel, handle); };
@@ -4573,6 +4577,37 @@
             if (q === ':focus-visible') {
               return _activeElKey === key && _zwFocusVisibleMod === true && proxy.isConnected !== false;
             }
+            // R4200（html-semantics M2 切片 22）：`:modal` 伪类——modal 态 dialog
+            //（showModal 打开、top-layer 成员；close/requestClose 后模态态清除不再
+            // 命中，show()/open 属性打开不命中）。HTML 标准 JS-observable 面（WPT
+            // dialog-requestclose / dialog-close-via-attribute 断言面）；host 选择器
+            // 引擎无该伪类（:focus 同款 JS 侧特判设计）。
+            // https://html.spec.whatwg.org/multipage/interactive-elements.html#modal-dialogs
+            if (q === ':modal') return _realTag(sel, handle) === 'DIALOG' && !!_zwDialogModal[key];
+            // R4200（html-semantics M2 切片 22）：裸属性选择器（`[name]` / `[name=value]`）——
+            // sel 元素经 latest-wins 读（pending set/remove 同步可见）。host `__zw_matches`
+            // 读已 apply 快照——JS 侧异步属性写（dialog open 经 `__zw_set_attr` 入队）在
+            // 同 turn 的 matches 查询不可见（`_zwDialogHasOpen` 的 lw 同款口径）；WPT
+            // dialog-requestclose openDialog 的 `matches('[open]')` 同 turn 断言 75 案
+            // 全簇卡点。带操作符（~=^=$=*=|）与 `i` 标记回落 host 匹配零变化；handle-only
+            // 不入本分支（handle 属性表本就同步读，无 stale 面）。
+            // https://www.w3.org/TR/selectors-4/#attribute-selectors
+            if (sel && q.charAt(0) === '[') {
+              var _r4200am = /^\[\s*([A-Za-z_:][-A-Za-z0-9_:.]*)\s*(?:=\s*(?:"([^"]*)"|'([^']*)'|([^\]\s]+))\s*)?\]$/.exec(q);
+              if (_r4200am) {
+                var _r4200an = _r4200am[1].toLowerCase();
+                var _r4200present = (typeof __zw_has_attr_lw === 'function'
+                  ? __zw_has_attr_lw(sel, _r4200an) === '1'
+                  : (typeof __zw_has_attr === 'function' && __zw_has_attr(sel, _r4200an) === '1'));
+                if (_r4200am[2] === undefined && _r4200am[3] === undefined && _r4200am[4] === undefined) return _r4200present;
+                if (!_r4200present) return false;
+                var _r4200av = (typeof __zw_get_attr_lw === 'function')
+                  ? __zw_get_attr_lw(sel, _r4200an) : __zw_get_attr(sel, _r4200an);
+                var _r4200want = _r4200am[2] !== undefined ? _r4200am[2]
+                  : (_r4200am[3] !== undefined ? _r4200am[3] : _r4200am[4]);
+                return String(_r4200av) === _r4200want;
+              }
+            }
             // R134（js-dom M4）：handle-only 元素（createElement/createElementNS 的
             // detached 节点，ns 元数据在 JS 侧——`urn:ns|h` 的 ns|type 匹配由
             // _r134MatchTypeSelector 承担）**先于** R156 语法校验：`ns|type` 形态
@@ -4706,7 +4741,29 @@
             // body 四类）——`body`/`html` 的 touch/wheel 族未显式 passive 时默认
             // true；其他元素默认 false。
             var _p105 = _listenerPassiveDefault(type, opts, sel === 'body' || sel === 'html');
-            _listenerStore[key][type].push({ fn: fn, capture: _r143Cap, once: _optOnce(opts), passive: _p105 });
+            // R4200（html-semantics M2 切片 22）：`{ signal }` 选项——spec「event
+            // listener record」的 signal 成员：signal 已 aborted → 不注册；否则 abort
+            // 时移除该 listener（dom §add an event listener
+            // https://dom.spec.whatwg.org/#concept-event-listener-add）。此前静默忽略
+            // → testharness `t.get_signal()` cleanup 的 `{signal}` listener 永不移除，
+            // 跨用例泄漏（dialog-requestclose "avoids abuse" 的无条件
+            // preventDefault cancel listener 泄漏 → 后续全部 requestClose 被取消，
+            // 53 案级联失败的根因）。abort 钩按 record 身份精确移除（同 fn 后续以
+            // 新 signal 重注册不受旧 signal abort 影响——spec per-record 语义）。
+            var _r4200sig = (opts && typeof opts === 'object') ? opts.signal : null;
+            if (_r4200sig && typeof _r4200sig === 'object' && _r4200sig.aborted) return;
+            var _r4200rec = { fn: fn, capture: _r143Cap, once: _optOnce(opts), passive: _p105, signal: _r4200sig || undefined };
+            _listenerStore[key][type].push(_r4200rec);
+            if (_r4200sig && typeof _r4200sig === 'object' && typeof _r4200sig.addEventListener === 'function') {
+              try {
+                _r4200sig.addEventListener('abort', function () {
+                  var _r4200lst = _listenerStore[key] && _listenerStore[key][type];
+                  if (!_r4200lst) return;
+                  var _r4200i = _r4200lst.indexOf(_r4200rec);
+                  if (_r4200i >= 0) _r4200lst.splice(_r4200i, 1);
+                });
+              } catch (_e4200sig) {}
+            }
           };
         }
         if (prop === 'removeEventListener') {
@@ -11456,9 +11513,13 @@
           // newState 口径见 part03 队列块）。单一 choke point：页面 JS IDL setter 与
           // plan 层 script_set_open（`e.open = bool`）同经本分支。
           var _r4009PreOpen = (_realTag(sel, handle) === 'DETAILS') ? _zwDetailsHasOpen4009(sel, handle) : null;
-          if (value) _zwSetAttr(key, sel, handle, 'open', '');
+          // R4200（html-semantics M2 切片 22）：open 属性 IDL 写面发 MutationObserver
+          // attributes record（moAttr 尾钩同其余反射 setter——R45 汇流点）。dialog/show
+          // 内部写走 part01 调用点直发（helper 为 aria 共用，不在 helper 内发）。
+          if (value) { _zwSetAttr(key, sel, handle, 'open', ''); moAttr = 'open'; }
           else {
             _zwRemoveAttr(key, sel, handle, 'open');
+            moAttr = 'open';
             // R5009 片 d（M4 片 d）：R122 实例层同步（setAttribute('open') 的 upsert
             // 残留曾使 hasAttribute 短路恒 true——WPT reflection-misc
             // 'details.open/dialog.open IDL set falsy' hasAttribute 期望 false 簇）。

@@ -119,21 +119,24 @@ customElements.define('mdn-search-button', MDNSearchButton);
         "R5181：点击 → 搜索弹层打开（dialog open 属性就位；修复前 showModal 抛 InvalidStateError）"
     );
 
-    // spec 状态机保持：已 open 的 dialog 再 showModal 抛 InvalidStateError（R3290 语义不受反链遍历影响）。
+    // spec 状态机保持（R4200 起请求态语义）：已 open 的 modal dialog 再 showModal
+    // no-op（「已在请求态」——WPT dialog-no-throw-requested-state 尾行断言面）；已
+    // open 的 modal dialog 再 show 抛 InvalidStateError（show 状态机面不受反链遍历影响）。
     assert_eq!(
         sandbox
             .execute(
                 r#"(function () {
-  try {
-    document.querySelector('#mdn-search').shadowRoot.querySelector('dialog').showModal();
-    return 'no-throw';
-  } catch (e) { return e.name; }
+  var dlg = document.querySelector('#mdn-search').shadowRoot.querySelector('dialog');
+  var out = '';
+  try { dlg.showModal(); out += 'no-throw'; } catch (e) { out += e.name; }
+  try { dlg.show(); out += '|no-throw'; } catch (e) { out += '|' + e.name; }
+  return out;
 })()"#
             )
             .unwrap()
             .value,
-        "InvalidStateError",
-        "R5181：已打开 dialog 再 showModal 恒抛 InvalidStateError（spec show a modal dialog 步骤）"
+        "no-throw|InvalidStateError",
+        "R5181：modal open 上 showModal no-op（请求态）；show 抛 InvalidStateError（状态机保持）"
     );
 }
 
@@ -1468,3 +1471,182 @@ fn test_details_name_exclusivity_r4100() {
         "T8：details.name IDL 反射 round-trip + 原型成员存在性"
     );
 }
+
+// R4200（html-semantics M2 切片 22）：dialog close-side 语义簇契约——requestClose
+//（cancel 同步可取消 + close 异步排队 + 重入保护 + disconnected no-op）、close-the-dialog
+//（beforetoggle 同步 + close/toggle 事件排队）、show/showModal 请求态语义、`:modal`
+// 伪类、Promise.withResolvers、close(rv) 不触发 JS 定义的 returnValue setter。
+// 对齐 WPT dialog-requestclose / dialog-close / dialog-close-event-async /
+// toggle-events / dialog-no-throw-requested-state 断言面。元素用 createElement+
+// appendChild 构造（handle 路径 tag 经 pending CreateElement 记录可得——innerHTML
+// 物化元素 pre-apply 无 host tag，`_realTag` DIALOG 门不命中），跨 execute 经
+// globalThis.__dN 引用。
+#[test]
+fn test_dialog_close_side_r4200() {
+    let mut sandbox = t59_sandbox_with_shim();
+    let mutations: std::sync::Arc<std::sync::Mutex<Vec<DomMutation>>> = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+    let dom_html: std::sync::Arc<std::sync::Mutex<String>> = std::sync::Arc::new(std::sync::Mutex::new(
+        "<html><body></body></html>".to_string(),
+    ));
+    let page_url: std::sync::Arc<std::sync::Mutex<String>> = std::sync::Arc::new(std::sync::Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    crate::js_dom_bridge::register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // T1：requestClose 基本面——open 属性同步移除；cancel 同步派发、close 排队
+    // 异步（execute 间排空后到位）。对齐 dialog-requestclose「fires both cancel and
+    // close」+ dialog-close-event-async「close is scheduled」。
+    sandbox
+        .execute(
+            "globalThis.__d = [];             for (var _i = 0; _i < 7; _i++) {               var _el = document.createElement('dialog');               document.body.appendChild(_el);               globalThis.__d.push(_el);             }             var d = globalThis.__d[0];             globalThis.__ev = [];             d.addEventListener('cancel', function () { globalThis.__ev.push('cancel'); });             d.addEventListener('close', function () { globalThis.__ev.push('close'); });             d.show();             d.requestClose();             globalThis.__s1 = Number(d.open) + ',' + globalThis.__ev.join('|');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__s1").unwrap().value,
+        "0,cancel",
+        "T1：requestClose 同步移 open + cancel 同步；close 尚未派发（排队面）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__ev.join('|')").unwrap().value,
+        "cancel|close",
+        "T1：execute 间排空后 close 到位——事件序 cancel→close"
+    );
+
+    // T2：cancel preventDefault → 保持 open、returnValue 不变；第二次（不阻止）
+    // 照关 + returnValue 透传。对齐「requestClose can be cancelled」+「passes along
+    // the return value」。
+    sandbox
+        .execute(
+            "var d2 = globalThis.__d[1];             d2.show();             d2.returnValue = 'keep';             var once2 = true;             d2.addEventListener('cancel', function (e) { if (once2) { once2 = false; e.preventDefault(); } });             d2.requestClose('nope');             globalThis.__s2 = Number(d2.open) + ',' + d2.returnValue;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__s2").unwrap().value,
+        "1,keep",
+        "T2：cancel 被阻止 → open 保持 + returnValue 不被改写"
+    );
+    sandbox
+        .execute(
+            "var d2 = globalThis.__d[1];             d2.requestClose('done');             globalThis.__s2b = Number(d2.open) + ',' + d2.returnValue;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__s2b").unwrap().value,
+        "0,done",
+        "T2：未阻止的 requestClose(rv) → 关闭 + returnValue 透传"
+    );
+
+    // T3：close() 同步面（属性移除 + returnValue 存储）与异步 close 事件解耦；
+    // isTrusted/非 bubble/不可取消；未 open 的 close() 不存值（R3910 面）。
+    sandbox
+        .execute(
+            "var d3 = globalThis.__d[2];             globalThis.__cc = 0;             d3.addEventListener('close', function (e) {               globalThis.__cc++;               globalThis.__evinfo = e.isTrusted + ',' + e.bubbles + ',' + e.cancelable;             });             d3.show();             d3.close('rv3');             globalThis.__s3 = Number(d3.open) + ',' + globalThis.__cc + ',' + d3.returnValue;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__s3").unwrap().value,
+        "0,0,rv3",
+        "T3：close() 属性/returnValue 同步生效、close 事件未同步派发"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__cc + ',' + globalThis.__evinfo").unwrap().value,
+        "1,true,false,false",
+        "T3：close 事件排队到达，trusted、不 bubble、不可取消"
+    );
+    sandbox
+        .execute(
+            "var d3 = globalThis.__d[2];             d3.close('late');             globalThis.__s3c = d3.returnValue + ',' + globalThis.__cc;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__s3c").unwrap().value,
+        "rv3,1",
+        "T3：未 open 的 close() 不改 returnValue、不派事件（R3910）"
+    );
+
+    // T4：beforetoggle 同步（open 属性写入前）、toggle 异步；同任务 open+close 合并
+    // 单事件 net-zero（closed>closed）。对齐 toggle-events「fire beforetoggle and
+    // toggle」+「coalesce asynchronous toggle events」。
+    sandbox
+        .execute(
+            "var d4 = globalThis.__d[3];             globalThis.__bt = [];             globalThis.__tg = [];             d4.addEventListener('beforetoggle', function (e) {               globalThis.__bt.push(e.oldState + '>' + e.newState + ':' + Number(d4.hasAttribute('open')));             });             d4.addEventListener('toggle', function (e) { globalThis.__tg.push(e.oldState + '>' + e.newState); });             d4.show();             globalThis.__s4 = globalThis.__bt.join('|') + '#' + globalThis.__tg.length + ',' + Number(d4.open);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__s4").unwrap().value,
+        "closed>open:0#0,1",
+        "T4：show beforetoggle 同步且先于 open 属性写入；toggle 异步未到"
+    );
+    sandbox
+        .execute("var d4 = globalThis.__d[3]; d4.close();")
+        .unwrap();
+    sandbox
+        .execute("var d4 = globalThis.__d[3]; d4.show(); d4.close();")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__tg.join('|')").unwrap().value,
+        "closed>open|open>closed|closed>closed",
+        "T4：toggle 逐任务到位；同任务 open+close 合并 net-zero 单事件"
+    );
+
+    // T5：showModal 请求态语义——show 后 showModal 抛 InvalidStateError；showModal
+    // 后 showModal no-op、show 抛；`:modal` 命中面（modal 开 true / show 开 false）。
+    // 对齐 dialog-no-throw-requested-state + dialog-requestclose openDialog :modal 断言。
+    sandbox
+        .execute(
+            "var d5 = globalThis.__d[4];             d5.show();             var e1 = '';             try { d5.showModal(); } catch (err) { e1 = err.name; }             globalThis.__s5a = e1 + ',' + Number(d5.open) + ',' + d5.matches(':modal');             d5.close();             d5.showModal();             var e2 = '';             try { d5.show(); } catch (err) { e2 = err.name; }             var e3 = 'noop';             try { d5.showModal(); } catch (err) { e3 = err.name; }             var e4 = 'noop';             try { d5.show(); } catch (err) { e4 = err.name; }             globalThis.__s5b = Number(d5.open) + ',' + d5.matches(':modal') + ',' + e2 + ',' + e3 + ',' + e4;             d5.close();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__s5a").unwrap().value,
+        "InvalidStateError,1,false",
+        "T5：非模态 open 上 showModal 抛 InvalidStateError；show 打开不命中 :modal"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__s5b").unwrap().value,
+        "1,true,InvalidStateError,noop,InvalidStateError",
+        "T5：modal 上 :modal 命中；show 抛；showModal/show 请求态 no-op 语义（show 于 modal 抛）"
+    );
+
+    // T6：disconnected requestClose no-op（close watcher 非活跃）。对齐
+    // dialog-requestclose-2。
+    sandbox
+        .execute(
+            "var d6 = document.createElement('dialog');             d6.setAttribute('open', '');             d6.requestClose();             globalThis.__s6 = Number(d6.open);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__s6").unwrap().value,
+        "1",
+        "T6：未连接 dialog requestClose 不关闭"
+    );
+
+    // T7：cancel 处理器内重入 requestClose → 不二次 cancel，照常关闭。对齐
+    // dialog-requestclose-recurse。
+    sandbox
+        .execute(
+            "var d7 = globalThis.__d[5];             d7.show();             var cc7 = 0;             d7.addEventListener('cancel', function () {               cc7++;               if (cc7 === 1) d7.requestClose();             });             d7.requestClose();             globalThis.__s7 = cc7 + ',' + Number(d7.open);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__s7").unwrap().value,
+        "1,0",
+        "T7：cancel 恰派发一次（重入保护）+ close-the-dialog 照常执行"
+    );
+
+    // T8：Promise.withResolvers 可用；close(rv) 存 IDL 值但不触发页面 JS 定义的
+    // returnValue setter。对齐 dialog-close「set the returnValue IDL attribute but
+    // not the JS property」。
+    sandbox
+        .execute(
+            "globalThis.__wr = typeof Promise.withResolvers === 'function';             var d8 = globalThis.__d[6];             globalThis.__jsSet = false;             Object.defineProperty(d8, 'returnValue', {               set: function () { globalThis.__jsSet = true; },               get: function () { return ''; },               configurable: true             });             d8.show();             d8.close('foo');             globalThis.__s8 = globalThis.__wr + ',' + globalThis.__jsSet + ',' + (d8.returnValue === 'foo');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__s8").unwrap().value,
+        "true,false,true",
+        "T8：withResolvers 已注入；close(rv) 不走 JS setter 且 IDL 读回 'foo'"
+    );
+}
+
+

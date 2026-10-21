@@ -1216,8 +1216,8 @@ globalThis.__r3 = dg.open + '/' + dg.returnValue + '/' + __closeN;
         .unwrap();
     assert_eq!(
         sandbox.execute("globalThis.__r1").unwrap().value,
-        "false/rv1/1",
-        "W3①：value 属性 → 关闭 + returnValue=rv1 + close 事件 1 次"
+        "false/rv1/0",
+        "W3①：value 属性 → 关闭 + returnValue=rv1；close 事件排队未同步派发（R4200）"
     );
     assert_eq!(
         sandbox.execute("globalThis.__r2").unwrap().value,
@@ -1226,8 +1226,14 @@ globalThis.__r3 = dg.open + '/' + dg.returnValue + '/' + __closeN;
     );
     assert_eq!(
         sandbox.execute("globalThis.__r3").unwrap().value,
-        "false//3",
-        "W3③：空串 value 属性 → returnValue 设空串（'false//3' 中段为空串）"
+        "false//0",
+        "W3③：空串 value 属性 → returnValue 设空串（'false//0' 中段为空串）"
+    );
+    // R4200：三次提交的 close 事件排队异步——execute 间排空后全部到位。
+    assert_eq!(
+        sandbox.execute("String(__closeN)").unwrap().value,
+        "3",
+        "W3：execute 间排空后 3 次 close 事件全部到达"
     );
 }
 
