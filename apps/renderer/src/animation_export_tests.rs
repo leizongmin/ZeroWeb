@@ -32,6 +32,7 @@ fn opacity_decl(id: u64, from: f64, to: f64) -> ExportedAnimationDeclaration {
         fill: AnimationFillModeValue::None,
         easing: TimingFunctionValue::Linear,
         start_time_s: 0.0,
+        paused: false,
         keyframes: vec![
             ExportedAnimationKeyframe {
                 offset: 0.0,

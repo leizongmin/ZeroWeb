@@ -34,8 +34,8 @@ use std::collections::{HashMap, HashSet};
 
 use slotmap::Key;
 use zero_css_parser::values::{
-    AnimationDirectionValue, AnimationFillModeValue, TimingFunctionValue, TransformFunction, TransformValue,
-    parse_transform,
+    AnimationDirectionValue, AnimationFillModeValue, AnimationPlayStateValue, TimingFunctionValue, TransformFunction,
+    TransformValue, parse_transform,
 };
 use zero_dom::{Document, NodeId};
 use zero_style_system::{ComputedStyle, MixBlendModeComputedValue};
@@ -104,6 +104,10 @@ pub struct ExportedAnimationDeclaration {
     /// engine 时钟域 start（`AnimationState.start_time`；renderer 锚点换算输入，
     /// t=0 求值域恒 0.0）。
     pub start_time_s: f64,
+    /// M2-S3b：computed style `animation-play-state` 对账产物（分类时已知；引擎
+    /// 时钟冻结不影响该布尔）。renderer 发布状态机据此翻转冻结相位（S3 RFC §2.2：
+    /// false→true 冻结当刻相位入 `frozen_phase_s`，true→false 重基锚点）。
+    pub paused: bool,
     /// 键帧端点列（已排序、已补界）。
     pub keyframes: Vec<ExportedAnimationKeyframe>,
 }
@@ -217,6 +221,10 @@ pub fn export_composable_animations(
                 continue;
             }
             // 与 start_from_computed_style 同序取 per-animation 计时字段。
+            let paused = matches!(
+                style.animation_play_state.get(idx),
+                Some(AnimationPlayStateValue::Paused)
+            );
             let config = AnimationConfig {
                 name: name.clone(),
                 duration: style.animation_duration.get(idx).copied().unwrap_or(0.0),
@@ -240,7 +248,15 @@ pub fn export_composable_animations(
                 // t=0 求值域：导出声明的时钟域 start 恒 0（`start_time_s`）。
                 current_time: 0.0,
             };
-            export_one(&mut set, clock, style, element_key, element_selectors.clone(), &config);
+            export_one(
+                &mut set,
+                clock,
+                style,
+                element_key,
+                element_selectors.clone(),
+                &config,
+                paused,
+            );
         }
     }
     // 跨帧稳定序（renderer 代际比较按 Vec 相等；HashMap 遍历序不定）。
@@ -271,6 +287,7 @@ fn export_one(
     element_key: u64,
     element_selectors: Vec<String>,
     config: &AnimationConfig,
+    paused: bool,
 ) {
     // 规则 6：t=0 已结束（负 delay 越过末轮；engine tick 结束分支烘焙终帧，不走合成域）。
     if finished_at_t0(config.duration, config.delay, config.iteration_count) {
@@ -345,6 +362,7 @@ fn export_one(
             fill: config.fill_mode.clone(),
             easing: config.timing_function.clone(),
             start_time_s: config.current_time,
+            paused,
             keyframes,
         });
     }

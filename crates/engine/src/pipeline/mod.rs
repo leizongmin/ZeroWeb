@@ -3511,6 +3511,13 @@ fn apply_animation_overrides(
             if let Some(delay) = style.animation_delay.get(i) {
                 clock.refresh_delay(elem_key, name, *delay);
             }
+            // M2-S3b（CSS Animations §play-state）：暂停/恢复对账——此前 play-state
+            // 仅解析无运行时语义（预存在缺口），此处逐动画对账后 tick 冻结/重基。
+            let paused = matches!(
+                style.animation_play_state.get(i),
+                Some(zero_css_parser::values::AnimationPlayStateValue::Paused)
+            );
+            clock.reconcile_play_state(elem_key, name, paused, current_time);
         }
 
         // 推进时钟并获取插值属性

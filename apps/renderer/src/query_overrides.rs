@@ -251,6 +251,7 @@ mod tests {
             fill: zero_css_parser::values::AnimationFillModeValue::None,
             easing: zero_css_parser::values::TimingFunctionValue::Linear,
             start_time_s: 0.0,
+            paused: false,
             keyframes: Vec::new(),
         }
     }

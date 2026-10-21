@@ -64,6 +64,11 @@ pub struct AnimationState {
     /// 是否已进入活跃态（R3251，CSS Animations §animationstart）——首次跨过 animation-delay 进入活跃
     /// 间隔的帧由 false→true，供 `tick()` 推入 `just_started` 派发 animationstart（elapsedTime=0）。
     pub started: bool,
+    /// M2-S3b：暂停时刻（时钟域秒）——Some = `animation-play-state: paused` 冻结中
+    /// （tick 以 paused_at 求值，输出冻结于暂停时刻插值，迭代/终态判定停走）；None =
+    /// running。恢复时由 `reconcile_play_state` 重基 `start_time`（暂停时长不计入活跃
+    /// 时长，CSS Animations §play-state）。
+    pub paused_at: Option<f64>,
 }
 
 /// 动画启动配置。
@@ -878,10 +883,34 @@ impl AnimationClock {
             finished: false,
             iteration: 0,
             started: false,
+            paused_at: None,
         };
 
         self.active_animations.entry(element_id).or_default().push(state);
         true
+    }
+
+    /// M2-S3b（CSS Animations §play-state）：暂停/恢复对账——`paused=true` 且未冻结
+    /// 时记 `paused_at = now`（下一 tick 起输出冻结于该时刻）；恢复（`paused=false`
+    /// 且冻结中）重基 `start_time += now − paused_at`（暂停时长不计入活跃时长）。
+    /// finished 动画不对账（恢复不复活已终动画，fill 语义照旧）。
+    pub fn reconcile_play_state(&mut self, element_id: u64, name: &str, paused: bool, now: f64) {
+        let Some(animations) = self.active_animations.get_mut(&element_id) else {
+            return;
+        };
+        for anim in animations.iter_mut() {
+            if anim.name != name || anim.finished {
+                continue;
+            }
+            match anim.paused_at {
+                None if paused => anim.paused_at = Some(now),
+                Some(paused_at) if !paused => {
+                    anim.start_time += now - paused_at;
+                    anim.paused_at = None;
+                }
+                _ => {}
+            }
+        }
     }
 
     /// R342：animation-delay 变更的 seek 语义（css-animations §animations—样式变更
@@ -981,7 +1010,10 @@ impl AnimationClock {
                 continue;
             }
 
-            let elapsed = current_time - anim.start_time;
+            // M2-S3b：暂停中的动画以 paused_at 求值——输出冻结于暂停时刻插值，
+            // 迭代边界与终态判定停走（CSS Animations §play-state）。
+            let now = anim.paused_at.unwrap_or(current_time);
+            let elapsed = now - anim.start_time;
             let active_elapsed = elapsed - anim.delay;
 
             // 延迟期间
@@ -1913,6 +1945,90 @@ mod tests {
         let props = clock.tick(1, 1.0);
         let opacity = props.iter().find(|p| p.name == "opacity").unwrap();
         assert!((opacity.value.parse::<f64>().unwrap()).abs() < 0.05);
+    }
+
+    #[test]
+    fn test_play_state_pause_freezes_and_resume_rebases() {
+        // M2-S3b（CSS Animations §play-state）：暂停冻结 tick 输出于暂停时刻插值，
+        // 恢复重基 start（暂停时长不计入活跃时长，从冻结相位继续）。
+        let mut clock = AnimationClock::new();
+        let rule = make_keyframes(
+            "fade",
+            vec![(0.0, vec![("opacity", "1.0")]), (100.0, vec![("opacity", "0.0")])],
+        );
+        clock.register_keyframes(&rule);
+        start_anim(
+            &mut clock,
+            1,
+            "fade",
+            1.0,
+            0.0,
+            TimingFunctionValue::Linear,
+            Some(1.0),
+            AnimationDirectionValue::Normal,
+            AnimationFillModeValue::None,
+            0.0,
+        );
+
+        // 活跃至 0.4；0.5 暂停。
+        clock.tick(1, 0.4);
+        clock.reconcile_play_state(1, "fade", true, 0.5);
+        // 暂停中墙钟推进到 0.9：输出仍冻结于 0.5s 时刻插值（opacity 0.5）。
+        let props = clock.tick(1, 0.9);
+        let opacity = props.iter().find(|p| p.name == "opacity").unwrap();
+        assert!(
+            (opacity.value.parse::<f64>().unwrap() - 0.5).abs() < 0.05,
+            "暂停冻结于 0.5s 相位"
+        );
+
+        // 1.5 恢复 → start 重基 0→1.0；t=1.2 的活跃时长 = 0.2 → opacity 0.8。
+        clock.reconcile_play_state(1, "fade", false, 1.5);
+        let props = clock.tick(1, 1.2);
+        let opacity = props.iter().find(|p| p.name == "opacity").unwrap();
+        assert!(
+            (opacity.value.parse::<f64>().unwrap() - 0.8).abs() < 0.05,
+            "恢复从冻结相位继续"
+        );
+    }
+
+    #[test]
+    fn test_play_state_pause_defers_finish_event() {
+        // M2-S3b：暂停中终态判定停走（墙钟越过原定结束时刻也不派 animationend）；
+        // 恢复后结束时刻平移，elapsedTime 仍 = 迭代 × duration（不含暂停时长）。
+        let mut clock = AnimationClock::new();
+        let rule = make_keyframes(
+            "fade",
+            vec![(0.0, vec![("opacity", "1.0")]), (100.0, vec![("opacity", "0.0")])],
+        );
+        clock.register_keyframes(&rule);
+        start_anim(
+            &mut clock,
+            1,
+            "fade",
+            1.0,
+            0.0,
+            TimingFunctionValue::Linear,
+            Some(1.0),
+            AnimationDirectionValue::Normal,
+            AnimationFillModeValue::None,
+            0.0,
+        );
+
+        clock.tick(1, 0.3);
+        clock.reconcile_play_state(1, "fade", true, 0.3);
+        // 暂停期间墙钟越过原定结束（1.0s）→ 无 animationend。
+        let _ = clock.tick(1, 5.0);
+        assert!(clock.drain_just_finished().is_empty(), "暂停中不派 animationend");
+
+        // 5.0 恢复（暂停 4.7s）→ start 重基 4.7；t=5.5 活跃 0.8s 未完成。
+        clock.reconcile_play_state(1, "fade", false, 5.0);
+        let _ = clock.tick(1, 5.5);
+        assert!(clock.drain_just_finished().is_empty());
+        // t=5.8 活跃 1.1s ≥ 1.0 → 完成，elapsedTime = 1 × 1.0。
+        let _ = clock.tick(1, 5.8);
+        let finished = clock.drain_just_finished();
+        assert_eq!(finished.len(), 1);
+        assert!((finished[0].duration - 1.0).abs() < 1e-9, "elapsedTime 不含暂停时长");
     }
 
     #[test]
