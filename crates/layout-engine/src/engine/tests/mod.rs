@@ -771,3 +771,6 @@ mod r5210_clear_chain_mt_refold_tests;
 ///（margin-collapse-114 / adjoining-float-before-clearance /
 /// no-clearance-due-to-large-margin 锚点）。
 mod r5211_float_child_collapse_through_tests;
+/// R5212 direct-float forced clearance 邻接吸收（§9.5.2 × §8.3.1，
+/// adjoining-float-nested-forced-clearance / adjoining-float-new-fc 锚点）。
+mod r5212_forced_clear_absorb_tests;

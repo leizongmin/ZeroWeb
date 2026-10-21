@@ -357,6 +357,11 @@ pub struct LayoutBox {
     /// test/td 内容高多出 16/64px 露红底）。`shift_siblings_after_clearance_containment`
     /// 消费本值（后序上浮：后续兄弟上移 + 祖先缩高），消费后清零防重入双计。
     pub clearance_extent_reduction: f32,
+    /// R5212 §9.5.2 forced clearance：本盒（clear 盒）的邻接 top-margin 链被
+    /// clearance 吸收（direct-float 或 R1393 nested 变体，盒顶贴 float 底）。
+    /// 折入该链的首流内子（R5210 链值折叠语义）其字段 mt 已随整链上折吸收，
+    /// 本级重放须抑制——供 float 重定位 walk 的 `ClearValue::None` 臂门控。
+    pub clearance_chain_absorbed: bool,
     /// R5205：跨块 clamp 容器的净收缩量（位置差口径，含末子 bottom margin 吸收差额）
     /// ——`apply_cross_block_line_clamp` walk 尾收缩容器高后，布局期定位的后续兄弟 y
     /// 与祖先高仍是收缩前值（line-clamp-023 的 Following content 下移 = 2 隐藏行高）。
@@ -746,6 +751,7 @@ impl Default for LayoutBox {
             has_size_containment: false,
             clearance_active: false,
             clearance_extent_reduction: 0.0,
+            clearance_chain_absorbed: false,
             clamp_shrink_delta: 0.0,
             is_anon_table_root: false,
             is_anon_table_cell: false,

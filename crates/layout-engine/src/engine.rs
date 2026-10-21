@@ -2592,6 +2592,7 @@ impl LayoutEngine {
             had_clearance: false,
             clearance_active: false,
             clearance_extent_reduction: 0.0,
+            clearance_chain_absorbed: false,
             clamp_shrink_delta: 0.0,
             is_anon_table_root: false,
             is_anon_table_cell: false,

@@ -1540,6 +1540,10 @@ fn chain_clear_break_fold(box_node: &LayoutBox) -> Option<(f32, f32)> {
 /// bench-gate 微基准超预算）。
 static CLEAR_CHAIN_MT_REFOLD: std::sync::LazyLock<bool> =
     std::sync::LazyLock::new(|| std::env::var("ZW_CLEAR_CHAIN_MT_REFOLD").as_deref() != Ok("0"));
+/// R5212（CSS2 §9.5.2 forced clearance）：direct-float 邻接吸收 kill-switch，
+/// default-on，`ZW_FORCED_CLEAR_ABSORB=0` 回退。
+static FORCED_CLEAR_ABSORB: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_FORCED_CLEAR_ABSORB").as_deref() != Ok("0"));
 
 pub(crate) fn adjust_float_positions_with_context(
     box_node: &mut LayoutBox,
@@ -2428,7 +2432,23 @@ pub(crate) fn adjust_float_positions_with_context(
                         let adjoining = std::env::var("ZW_ADJOINING_FLOAT_CLEARANCE").as_deref() != Ok("0")
                             && nested_for_side > 0.0
                             && (clear_bottom - nested_for_side).abs() < 0.5;
-                        if adjoining {
+                        // R5212（CSS2 §9.5.2 forced clearance × §8.3.1）：direct-float
+                        // 邻接变体。clear 盒为本帧首流内子时，其邻接 top-margin 链
+                        //（塌穿链 + 自身 mt，含 R5210 折入链值）经帧顶上折、在帧上方
+                        // 物化——帧内 float 连同链顶盒被整体下拉（链与 float adjoining，
+                        // Chromium adjoining-float-* 测试族互操作语义：「No matter how
+                        // large the margin is, it should still be just below the
+                        // float」）——引入 forced clearance：float 保持原位，clear 盒
+                        // border edge 贴 float 底，整条邻接链吸收。非首流内子时链与
+                        // 前驱兄弟折叠（float 置于自身 DOM 点、不被后续兄弟 margin
+                        // 拉动，tests_10 empty-cleared 形态），帧顶有 border/padding
+                        // 时链不出帧（content_y_offset>0，同 R3808 首门），均不吸收。
+                        // kill-switch `ZW_FORCED_CLEAR_ABSORB=0` 关闭（default-on）。
+                        let forced_absorb = *FORCED_CLEAR_ABSORB
+                            && is_first_in_flow[idx]
+                            && content_y_offset == 0.0
+                            && clear_bottom > flow_bottom + 0.01;
+                        if adjoining || forced_absorb {
                             child.y = if clamp_content_rel {
                                 clear_bottom
                             } else {
@@ -2436,6 +2456,8 @@ pub(crate) fn adjust_float_positions_with_context(
                             };
                             clearance_applied = true;
                             ran_adjoining_clearance = true;
+                            // R5212：标记邻接链已吸收——首流内子的本级重放抑制门。
+                            child.clearance_chain_absorbed = true;
                         } else {
                             // 普通情形：margin 正常折叠，clear 留在 hypothetical。
                             child.y = if clamp_content_rel {
@@ -2461,11 +2483,24 @@ pub(crate) fn adjust_float_positions_with_context(
                     // 若本容器此前出现过正 clearance（had_clearance），taffy 对本
                     // 子的定位同样不可信 —— 须以 flow_bottom 重定位。
                     if float_y_offset > 0.0 || had_clearance {
+                        // R5212：吸收链首子重放抑制。box_node（clear 盒）被 forced/
+                        // nested clearance 吸收邻接链落 float 底后，首流内子的字段 mt
+                        // 已随整链折入 box_node 的吸收 margin（§8.3.1 parent-child
+                        // 折叠），本级重放须归零——否则在 B 内以折叠链值重放（
+                        // adjoining-float-nested-forced-clearance：G 在 B 内重放 100，
+                        // 盒树双重下移）。膨胀签名（字段 mt > 声明 mt）同 R3808。
+                        let replay_mt = if box_node.clearance_chain_absorbed
+                            && is_first_in_flow[idx]
+                            && box_node.margin_top > box_node.declared_margin_top + 0.01
+                        {
+                            0.0
+                        } else {
+                            child_placement_mt
+                        };
                         // CSS 2.1：非 clear 元素的位置 = 正常流位置（假设 float 不存在）
                         // R5210：mt 用链值归位后的本级值（已上折的首子链 margin 不在
                         // 本级重放——旧字段值使 B1/B2/CL 逐级堆叠 +16px）。
-                        let collapsed_margin =
-                            crate::margin_collapse::collapse_two_margins(last_flow_mb, child_placement_mt);
+                        let collapsed_margin = crate::margin_collapse::collapse_two_margins(last_flow_mb, replay_mt);
                         let correct_y = flow_bottom + collapsed_margin;
                         child.y = if clamp_content_rel {
                             correct_y
