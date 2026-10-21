@@ -208,6 +208,11 @@ struct AnimationExportState {
     /// [`Self::drain_animation_events`] 与惰性终结事件同点出队——事件派发时刻
     /// 与 publish 解耦，与 S2b 唤醒时点复用）。
     pending_events: Vec<zero_engine::AnimationEvent>,
+    /// M2-S3b：暂停冻结态——animation_id → 冻结时刻的活跃时长（秒；键存在 = 暂停中）。
+    /// play-state paused 翻转时冻结当刻活跃相位进声明 `frozen_phase_s`（墙钟无关 →
+    /// 声明字节稳定零 churn，RFC §2.2 start 重映射否决案的协议承载）；恢复时重基
+    /// 锚点（暂停时长不计入活跃时长）。消失剪除镜像 `anchors`，换代/域退出清空。
+    paused_frozen: HashMap<u64, f64>,
 }
 
 impl AnimationExportState {
@@ -222,6 +227,7 @@ impl AnimationExportState {
             finished_reported: HashSet::new(),
             cancelled_reported: HashSet::new(),
             pending_events: Vec::new(),
+            paused_frozen: HashMap::new(),
         }
     }
 
@@ -281,8 +287,12 @@ impl AnimationExportState {
                     } else {
                         // 取消时刻的活跃时长（CSS Animations §animationcancel，延迟
                         // 不计入；clamp 防声明时钟与采样钟的亚帧漂移出负/超总时长）。
-                        let active = (now as f64 - declaration.start_monotonic_ns as f64) / 1e9
-                            - declaration.timing.delay_ms / 1000.0;
+                        // M2-S3b：暂停中的取消取冻结相位——暂停时长不计入活跃时长，
+                        // 墙钟差会把整段暂停错记为活跃。
+                        let active = declaration.frozen_phase_s.unwrap_or_else(|| {
+                            (now as f64 - declaration.start_monotonic_ns as f64) / 1e9
+                                - declaration.timing.delay_ms / 1000.0
+                        });
                         (zero_engine::AnimationEventKind::Cancel, active.clamp(0.0, total))
                     }
                 }
@@ -321,10 +331,37 @@ impl AnimationExportState {
                 (declaration.animation_id, anchor)
             })
             .collect();
-        let converted: Vec<CompositorAnimationDeclaration> = declarations
+        // M2-S3b：暂停态机（RFC §2.2，协议显式承载冻结相位）。false→true 翻转冻结
+        // 当刻活跃相位（`frozen_phase_s` 恒定 → 声明字节稳定，发送闸门零 churn）；
+        // true→false 重基锚点使采样自冻结相位继续且暂停时长不计入活跃时长。重基须
+        // 先于换算（换算的 start 取自锚点），冻结附着后于换算。
+        for declaration in declarations {
+            let Some(anchor) = self.anchors.get(&declaration.animation_id).copied() else {
+                continue;
+            };
+            if declaration.paused {
+                let delay_s = declaration.delay_s;
+                self.paused_frozen
+                    .entry(declaration.animation_id)
+                    .or_insert_with(|| (now as f64 - anchor as f64) / 1e9 - delay_s);
+            } else if let Some(frozen) = self.paused_frozen.remove(&declaration.animation_id) {
+                let rebased = now as f64 - declaration.delay_s * 1e9 - frozen * 1e9;
+                self.anchors.insert(declaration.animation_id, rebased.max(0.0) as u64);
+            }
+        }
+        // 消失剪除镜像 `anchors`（暂停中声明消失走 S3a 差分取消，冻结值随剪除回收）。
+        self.paused_frozen.retain(|id, _| self.anchors.contains_key(id));
+        let mut converted: Vec<CompositorAnimationDeclaration> = declarations
             .iter()
             .filter_map(|declaration| paint_export::animation_declaration_to_ipc(declaration, &self.anchors))
             .collect();
+        // M2-S3b：冻结相位附着——暂停中的声明墙钟无关（采样器读 `frozen_phase_s`），
+        // 后续帧集合判等稳定零消息；恢复帧 frozen 已移除，声明回落墙钟采样。
+        for declaration in &mut converted {
+            if let Some(frozen) = self.paused_frozen.get(&declaration.animation_id) {
+                declaration.frozen_phase_s = Some(*frozen);
+            }
+        }
         // 集合判等：声明列按 animation_id 排序跨帧稳定（engine 导出契约），
         // Vec 逐元素判等即集合判等。
         if self.sent.as_ref() == Some(&converted) {
@@ -350,6 +387,7 @@ impl AnimationExportState {
         // 页面动画取消——compositor 侧回落基线由 deactivate 空集清理承接）。
         self.cancelled_reported.clear();
         self.pending_events.clear();
+        self.paused_frozen.clear();
         true
     }
 

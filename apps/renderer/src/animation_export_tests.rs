@@ -375,6 +375,69 @@ fn deactivate_drops_pending_cancel_events() {
 }
 
 #[test]
+fn pause_freezes_declaration_and_resume_rebases_anchor() {
+    // M2-S3b：play-state 翻转驱动 renderer 暂停态机——冻结相位随声明上行后字节
+    // 稳定零 churn（发送闸门），恢复重基锚点使活跃时长续自冻结值（暂停不计入）。
+    let mut state = AnimationExportState::new(0);
+    let mut decl = opacity_decl(7, 0.0, 1.0);
+    decl.iterations = Some(1.0);
+    state.advance(0, 0, std::slice::from_ref(&decl)).expect("首帧");
+
+    // 暂停翻转：冻结当刻活跃相位 0.8s（内容变化 → 必发）。
+    decl.paused = true;
+    let paused = state
+        .advance(0, 800_000_000, std::slice::from_ref(&decl))
+        .expect("暂停翻转必发");
+    assert_eq!(paused[0].frozen_phase_s, Some(0.8));
+
+    // 暂停中墙钟推进：冻结值恒定 → 声明字节稳定，零消息（洪泛闸门）。
+    assert!(
+        state.advance(0, 2_500_000_000, std::slice::from_ref(&decl)).is_none(),
+        "暂停中零 churn"
+    );
+
+    // 恢复：锚点重基 = now − delay − frozen（3.0 − 0.8 = 2.2s），冻结清除。
+    decl.paused = false;
+    let resumed = state
+        .advance(0, 3_000_000_000, std::slice::from_ref(&decl))
+        .expect("恢复必发");
+    assert_eq!(resumed[0].frozen_phase_s, None);
+    assert_eq!(state.anchors[&7], 2_200_000_000, "重基 = 3.0s − 0.8s 冻结");
+    // 恢复后 0.1s 墙钟 = 活跃 0.1 + 冻结 0.8 = 0.9 → 线性渐变 0.9（采样自冻结相位续走）。
+    let sample = zero_protocol::animation::sample_declaration(&resumed[0], 3_100_000_000);
+    match sample.value {
+        Some(AnimationPropertyValue::Opacity(o)) => assert!((o - 0.9).abs() < 1e-9, "自冻结相位续走"),
+        _ => panic!("恢复后活跃期应有采样值"),
+    }
+}
+
+#[test]
+fn paused_declaration_no_finish_and_cancel_uses_frozen_elapsed() {
+    // M2-S3b：暂停声明不触发 S2b 终结（冻结相位在活跃窗内 → finished 恒 false，
+    // 墙钟越过原定结束也不派 animationend）；暂停中取消的 elapsedTime = 冻结相位
+    // 而非墙钟差（暂停不计入活跃时长，CSS Animations §animationcancel）。
+    let mut state = AnimationExportState::new(0);
+    let mut decl = opacity_decl(7, 0.0, 1.0);
+    decl.iterations = Some(1.0);
+    decl.element_selectors = vec!["div#box".into()];
+    state.advance(0, 0, std::slice::from_ref(&decl)).expect("首帧");
+
+    // 0.1s 处暂停，墙钟推进到 5s（远超原定 1s 结束）→ 无 animationend。
+    decl.paused = true;
+    state
+        .advance(0, 100_000_000, std::slice::from_ref(&decl))
+        .expect("暂停翻转必发");
+    assert!(state.drain_animation_events(5_000_000_000).is_empty(), "暂停不终结");
+
+    // 暂停中声明消失 → animationcancel，elapsedTime = 冻结相位 0.1s（非墙钟 5s）。
+    state.advance(0, 5_500_000_000, &[]).expect("清理发送");
+    let events = state.drain_animation_events(5_500_000_000);
+    assert_eq!(events.len(), 1);
+    assert!(matches!(events[0].kind, zero_engine::AnimationEventKind::Cancel));
+    assert!((events[0].elapsed - 0.1).abs() < 1e-9, "elapsed = 冻结相位");
+}
+
+#[test]
 fn legacy_mode_publish_never_sends_animation_state() {
     // Legacy 帧无 CompositorAnimationState 消费方；本测试与 ZW_COMPOSITOR_ANIMATIONS
     // 环境值无关（模式门独立于 flag 生效）。

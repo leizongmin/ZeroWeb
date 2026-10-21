@@ -396,8 +396,8 @@ pub fn animation_declaration_to_ipc(
         },
         keyframes,
         property,
-        // M2-S3b：冻结相位由 renderer 暂停状态机在 advance 后处理置位（发布点
-        // 检测 paused 翻转），纯换算恒 None。
+        // M2-S3b：冻结相位由 `advance` 暂停态机在换算后附着（runtime
+        // `AnimationExportState`，paused 翻转驱动），纯换算恒 None。
         frozen_phase_s: None,
     })
 }
