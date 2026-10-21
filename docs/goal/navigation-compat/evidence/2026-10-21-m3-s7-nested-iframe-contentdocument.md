@@ -65,8 +65,9 @@ runner skip 规则零改动（案本就运行——S6 位移后的 Fail）。
 - 跨套件回归臂：`make testharness-webmessaging` **132P/3F** 对 S6 账本
   135 行逐行恒等。
 - fmt 干净；clippy workspace --all-targets -D warnings 零 warning。
-- reftest 未跑：变更面（嵌套 iframe 载入时机 + 子文档元素属性面）零布局/
-  绘制触达（S1~S6 同理由）。
+- reftest：切片内未跑（变更面零布局/绘制触达，S1~S6 同理由）；M3 收口
+  复验全量补跑 **712/712 零不一致**（见
+  [M3 收口评估](2026-10-21-m3-closeout-assessment.md)）。
 
 原始输出：[2026-10-21-m3-s7-nested-iframe-contentdocument-family.txt](2026-10-21-m3-s7-nested-iframe-contentdocument-family.txt)
 （关键行）、[2026-10-21-m3-s7-nested-iframe-contentdocument-full.txt](2026-10-21-m3-s7-nested-iframe-contentdocument-full.txt)

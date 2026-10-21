@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-09-12
-**状态**: Active（M2 收口——S1~S12 落地，全量 20.9%→**91.8%**（437/476，全量 NotRun 清零；location-interface 100% / traversal 93.3% / history-interface 98.2% / navigation-api 95.0%）；M4 收口评估 DC-1/2/4 满足；**M3 启动授权已获批（2026-10-21 用户批复「批准 M3 最小面」，未豁免 DC-3）**；M3 S1~S7 落地（473P/68F/43T，584 案行）；bfcache/fission 挂账定稿；控制面见 [master.md](navigation-compat/master.md)）
+**状态**: Done-candidate（DC-1/2/3/4 全部满足，见 [M3 收口评估](navigation-compat/evidence/2026-10-21-m3-closeout-assessment.md)——M2 收口 437/476 **91.8%**；M3 最小面 S1~S7 落地（获批口径 2026-10-21「批准 M3 最小面」，未豁免 DC-3），全量 **473P**/68F/43T（584 案行），七切片逐路径零 Pass 回归；门禁 make test 22,327P/0F + reftest 712/712 + clippy/fmt 全绿；残余超口径记账池（replace-before-load 深缺口 / lazy 动态翻转族 / 嵌套导航控制余案 4T / popup 管理）；bfcache/fission 挂账定稿；控制面见 [master.md](navigation-compat/master.md)）
 **执行模式**: WPT 驱动（上游导航面 corpus 为验收标尺）+ 语义修齐；
 iframe 浏览上下文为**用户门控深结构切片**（先例：R1043 vertical-mode / Phase A IFC）
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——导航与浏览上下文面）
@@ -88,25 +88,26 @@ iframe 浏览上下文为**用户门控深结构切片**（先例：R1043 vertic
 
 ### DC-1: WPT 导入与基线
 
-- [ ] html/browsers + history + navigation-api + iframe corpus window 可执行子集导入
-- [ ] 分类通过率基线落 evidence/，并回填 docs/compat/trends/wpt-suites.csv planned 行
+- [x] html/browsers + history + navigation-api + iframe corpus window 可执行子集导入
+- [x] 分类通过率基线落 evidence/，并回填 docs/compat/trends/wpt-suites.csv planned 行
 
 ### DC-2: 会话历史与导航事件收敛（轻面）
 
-- [ ] history pushState/replaceState/state/length/back/forward/go 语义修齐
-- [ ] popstate/hashchange 事件序 + location 写侧导航语义修齐
+- [x] history pushState/replaceState/state/length/back/forward/go 语义修齐
+- [x] popstate/hashchange 事件序 + location 写侧导航语义修齐
 
 ### DC-3: iframe 浏览上下文（深面，用户门控）
 
-- [ ] 门控获批后：嵌套 browsing context 最小面（contentWindow/contentDocument/
-      frames/parent/top）+ iframe 元素属性语义
+- [x] 门控获批后：嵌套 browsing context 最小面（contentWindow/contentDocument/
+      frames/parent/top）+ iframe 元素属性语义——S1~S7 完成面逐项对照判据，
+      见 [M3 收口评估](navigation-compat/evidence/2026-10-21-m3-closeout-assessment.md)
 - [x] 门控已获批（2026-10-21 用户批复「批准 M3 最小面」，未豁免 DC-3——
       完成面随 M3 实施结果判定）
 
 ### DC-4: 测试与质量不可退让
 
-- [ ] `make test` 全绿零失败 + clippy `-D warnings` + fmt 干净
-- [ ] 每语义切片带单测/集成测试；`make reftest` 零回归
+- [x] `make test` 全绿零失败 + clippy `-D warnings` + fmt 干净
+- [x] 每语义切片带单测/集成测试；`make reftest` 零回归（收口复验 712/712 零不一致）
 
 ---
 
@@ -123,11 +124,14 @@ iframe 浏览上下文为**用户门控深结构切片**（先例：R1043 vertic
 ### M3 — iframe 浏览上下文（用户门控）
 
 **目标**：frame tree 最小面 + iframe 属性语义；门控**已批准**（2026-10-21
-用户批复「批准 M3 最小面」），转入执行。
+用户批复「批准 M3 最小面」）。**已完成**（S1~S7 七切片，域内 16P→37P，
+七轮逐路径零 Pass 回归；判定见 [M3 收口评估](navigation-compat/evidence/2026-10-21-m3-closeout-assessment.md)）。
 
 ### M4 — 收口
 
 **目标**：DC 逐项判定（DC-3 未获批时如实标注 pending）+ bfcache/fission 挂账定稿。
+**已完成**（2026-10-09 首评 DC-1/2/4；2026-10-21 复核 DC-3 按获批最小面口径满足，
+DC 全项满足，见 [M3 收口评估](navigation-compat/evidence/2026-10-21-m3-closeout-assessment.md)）。
 
 ---
 
