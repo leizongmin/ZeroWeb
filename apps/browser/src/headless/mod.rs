@@ -108,11 +108,15 @@ pub struct HeadlessServer {
     /// 优雅关停请求（CDP `Browser.close` 置位）；复用循环与 SIGINT flag 一并消费，
     /// 命中后退出循环并经 session Drop 回收 renderer 子进程（G4）。
     shutdown_requested: std::sync::atomic::AtomicBool,
+    /// CLI 位置参数启动 URL（G5）：会话创建后作为初始 tab 导航加载；
+    /// None 维持既有 about:blank 起点。GUI 模式的 CDP 辅助会话恒为 None
+    ///（启动 URL 归 GUI 窗口消费，避免同 URL 双加载）。
+    startup_url: Option<String>,
 }
 
 impl HeadlessServer {
     /// 创建无头协议服务器。
-    pub fn new(port: u16, viewport_width: f32, viewport_height: f32) -> Self {
+    pub fn new(port: u16, viewport_width: f32, viewport_height: f32, startup_url: Option<String>) -> Self {
         let addr = SocketAddr::from(([127, 0, 0, 1], port));
         Self {
             addr: std::sync::Mutex::new(addr),
@@ -124,6 +128,7 @@ impl HeadlessServer {
             devtools_frontend_dir: zero_runtime_config::optional_path("ZW_DEVTOOLS_FRONTEND_DIR"),
             devtools_node_selectors: std::sync::Mutex::new(std::collections::HashMap::new()),
             shutdown_requested: std::sync::atomic::AtomicBool::new(false),
+            startup_url,
         }
     }
 
@@ -245,6 +250,29 @@ impl HeadlessServer {
         // HTTP 发现枚举与 WS 会话共享同一浏览器状态）。
         let (viewport_width, viewport_height) = self.viewport_size();
         let mut session = HeadlessSession::new(viewport_width, viewport_height);
+
+        // G5：消费 CLI 位置参数 <url> 作为初始 tab（此前恒 about:blank，M1 记档
+        // 缺口）。与 CDP browsingContext.navigate 同一管线（shell 导航 + renderer
+        // 拉取 + wait_for_load）；scheme 启发式与 GUI 地址栏同一 normalize_url。
+        // 启动导航失败不阻断 server：保持可附接调试，错误由页面错误面呈现。
+        if let Some(raw_url) = self.startup_url.as_deref() {
+            let url = crate::app::normalize_url(raw_url, &session.shell);
+            tracing::info!("Headless startup navigation: {url}");
+            session.shell.navigate(&url);
+            #[cfg(test)]
+            let render_result = session.webview.fetch_url(&url).map(|_| ());
+            #[cfg(not(test))]
+            let render_result = session.navigate_renderer(&url);
+            if let Err(error) = &render_result {
+                tracing::warn!("Headless startup navigation failed: {error}");
+            }
+            let title = if render_result.is_ok() {
+                url.clone()
+            } else {
+                "Error loading page".to_string()
+            };
+            session.shell.on_page_loaded(&title);
+        }
 
         let mut conns: Vec<ConnState> = Vec::new();
         loop {

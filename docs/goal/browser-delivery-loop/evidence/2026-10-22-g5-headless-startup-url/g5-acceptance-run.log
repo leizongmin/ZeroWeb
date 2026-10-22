@@ -1,0 +1,19 @@
+Running as unit: run-p2381168-i6577796.scope; invocation ID: 96b7563b5d6041db910066136a9d765e
+[G5] leg A: startup URL is fetched and becomes the initial tab
+[G5] PASS: legA server up on :57621
+[G5] PASS: legA /json/list target url = startup URL
+[G5] PASS: legA fixture server received GET /index.html (real network load)
+[G5] PASS: legA startup navigation log present
+[G5] PASS: legA no navigation failure warn
+[G5] PASS: legA SIGINT exit code 0 (G4 graceful path intact)
+[G5] PASS: legA no orphan renderer
+[G5] leg B: no positional URL keeps about:blank default
+[G5] PASS: legB server up
+[G5] PASS: legB default initial tab is still about:blank
+[G5] PASS: legB clean exit
+[G5] leg C: bare host normalization + unreachable URL does not block server
+[G5] PASS: legC server up despite unreachable startup URL
+[G5] PASS: legC bare host:port normalized to http:// (address-bar parity)
+[G5] PASS: legC navigation failure warn present (non-fatal)
+[G5] PASS: legC clean exit after failed startup nav
+[G5] summary: PASS=14 FAIL=0

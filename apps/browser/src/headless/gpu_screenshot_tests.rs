@@ -9,7 +9,7 @@ use serde_json::Value;
 #[test]
 fn gpu_screenshot_matches_cpu_for_supported_scene() {
     let _gpu_lock = super::GPU_SCREENSHOT_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let server = HeadlessServer::new(0, 64.0, 64.0);
+    let server = HeadlessServer::new(0, 64.0, 64.0, None);
     let mut session = HeadlessSession::new(64.0, 64.0);
     // 先渲染一帧（页面内容进入 webview）
     session.webview.load_html(

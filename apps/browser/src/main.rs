@@ -718,7 +718,8 @@ fn print_usage() {
 
 Arguments:
   <url>                          Navigate to this URL once the window is ready
-                                 (normalized like address bar input)
+                                 (headless: loaded as the initial tab);
+                                 normalized like address bar input
 
 Options:
   --renderer=<mode>              Choose rendering backend ({})
@@ -1051,6 +1052,7 @@ fn run_headless(cli: CliArgs) {
         port,
         cli.viewport_width,
         cli.viewport_height,
+        cli.startup_url.clone(),
     ));
     let actual_addr = server.addr();
 
@@ -1430,6 +1432,8 @@ fn main() {
             cli.remote_debugging_port,
             cli.viewport_width,
             cli.viewport_height,
+            // 启动 URL 归 GUI 窗口消费；辅助会话不带（避免同 URL 双加载）。
+            None,
         ));
         println!(
             "ZeroWeb CDP server (GUI mode, auxiliary session): ws://{}",

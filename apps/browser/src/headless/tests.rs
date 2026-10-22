@@ -9,7 +9,7 @@ use super::session::PendingNavigation;
 
 #[test]
 fn test_server_new() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     assert!(server.addr().port() == 0);
 }
 
@@ -21,7 +21,7 @@ fn test_session_new() {
 
 #[test]
 fn test_dispatch_session_status() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let result = server.dispatch(&mut session, "session.status", Value::Null).unwrap();
     assert_eq!(result["ready"], true);
@@ -29,7 +29,7 @@ fn test_dispatch_session_status() {
 
 #[test]
 fn test_dispatch_unknown_method() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let result = server.dispatch(&mut session, "unknown.method", Value::Null);
     assert!(result.is_err());
@@ -38,7 +38,7 @@ fn test_dispatch_unknown_method() {
 
 #[test]
 fn test_dispatch_navigate_missing_url() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let result = server.dispatch(&mut session, "browsingContext.navigate", Value::Null);
     assert!(result.is_err());
@@ -47,7 +47,7 @@ fn test_dispatch_navigate_missing_url() {
 
 #[test]
 fn test_dispatch_script_evaluate() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let params = serde_json::json!({ "expression": "1 + 1" });
     let result = server.dispatch(&mut session, "script.evaluate", params).unwrap();
@@ -56,7 +56,7 @@ fn test_dispatch_script_evaluate() {
 
 #[test]
 fn test_dispatch_capture_screenshot() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let result = server
         .dispatch(&mut session, "browsingContext.captureScreenshot", Value::Null)
@@ -67,7 +67,7 @@ fn test_dispatch_capture_screenshot() {
 
 #[test]
 fn test_dispatch_get_dom_snapshot() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let result = server
         .dispatch(&mut session, "browsingContext.getDOMSnapshot", Value::Null)
@@ -77,7 +77,7 @@ fn test_dispatch_get_dom_snapshot() {
 
 #[test]
 fn test_dispatch_session_new() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let result = server.dispatch(&mut session, "session.new", Value::Null).unwrap();
     assert_eq!(result["capabilities"]["browserName"], "ZeroWeb");
@@ -85,7 +85,7 @@ fn test_dispatch_session_new() {
 
 #[test]
 fn test_dispatch_browser_close() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     // G4：Browser.close 不再是空壳——除响应形状不变外须置位优雅关停，
     // 复用循环消费后退出并经 session Drop 回收 renderer。
@@ -145,7 +145,7 @@ fn test_server_response_error() {
 
 #[test]
 fn test_dispatch_browsing_context_create() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let params = serde_json::json!({ "url": "https://example.com" });
     let result = server.dispatch(&mut session, "browsingContext.create", params).unwrap();
@@ -155,7 +155,7 @@ fn test_dispatch_browsing_context_create() {
 
 #[test]
 fn test_dispatch_browsing_context_get_tree() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let result = server
         .dispatch(&mut session, "browsingContext.getTree", Value::Null)
@@ -166,7 +166,7 @@ fn test_dispatch_browsing_context_get_tree() {
 
 #[test]
 fn test_dispatch_browsing_context_close() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     // 创建第二个标签页并获取其 ID
     let new_tab_id = session.shell.new_tab(None);
@@ -179,7 +179,7 @@ fn test_dispatch_browsing_context_close() {
 
 #[test]
 fn test_dispatch_browsing_context_close_missing_context() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let result = server.dispatch(&mut session, "browsingContext.close", Value::Null);
     assert!(result.is_err());
@@ -188,7 +188,7 @@ fn test_dispatch_browsing_context_close_missing_context() {
 
 #[test]
 fn test_dispatch_browsing_context_reload() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let result = server
         .dispatch(&mut session, "browsingContext.reload", Value::Null)
@@ -198,7 +198,7 @@ fn test_dispatch_browsing_context_reload() {
 
 #[test]
 fn test_dispatch_script_call_function() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let params = serde_json::json!({
         "functionDeclaration": "function() { return 1 + 1; }",
@@ -209,7 +209,7 @@ fn test_dispatch_script_call_function() {
 
 #[test]
 fn test_dispatch_script_call_function_with_args() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let params = serde_json::json!({
         "functionDeclaration": "function(a, b) { return a + b; }",
@@ -221,7 +221,7 @@ fn test_dispatch_script_call_function_with_args() {
 
 #[test]
 fn test_dispatch_script_call_function_missing_declaration() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let result = server.dispatch(&mut session, "script.callFunction", Value::Null);
     assert!(result.is_err());
@@ -279,7 +279,7 @@ fn test_server_event_serialize() {
 
 #[test]
 fn test_dispatch_with_events_navigate() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let params = serde_json::json!({ "url": "https://example.com" });
     let (result, events) = server.dispatch_with_events(&mut session, "browsingContext.navigate", params);
@@ -292,7 +292,7 @@ fn test_dispatch_with_events_navigate() {
 
 #[test]
 fn test_dispatch_with_events_reload() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let (result, events) = server.dispatch_with_events(&mut session, "browsingContext.reload", Value::Null);
     assert!(result.is_ok());
@@ -302,7 +302,7 @@ fn test_dispatch_with_events_reload() {
 
 #[test]
 fn test_dispatch_with_events_create() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let params = serde_json::json!({});
     let (result, events) = server.dispatch_with_events(&mut session, "browsingContext.create", params);
@@ -313,7 +313,7 @@ fn test_dispatch_with_events_create() {
 
 #[test]
 fn test_dispatch_with_events_close() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let new_tab_id = session.shell.new_tab(None);
     let params = serde_json::json!({ "context": new_tab_id.0 });
@@ -325,7 +325,7 @@ fn test_dispatch_with_events_close() {
 
 #[test]
 fn test_dispatch_with_events_no_events_for_status() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let (result, events) = server.dispatch_with_events(&mut session, "session.status", Value::Null);
     assert!(result.is_ok());
@@ -334,7 +334,7 @@ fn test_dispatch_with_events_no_events_for_status() {
 
 #[test]
 fn test_dispatch_cdp_page_navigate() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let params = serde_json::json!({ "url": "https://example.com" });
     let (result, events) = server.dispatch_with_events(&mut session, "Page.navigate", params);
@@ -344,7 +344,7 @@ fn test_dispatch_cdp_page_navigate() {
 
 #[test]
 fn test_dispatch_cdp_runtime_evaluate() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let params = serde_json::json!({ "expression": "1 + 1" });
     let (result, events) = server.dispatch_with_events(&mut session, "Runtime.evaluate", params);
@@ -357,7 +357,7 @@ fn test_dispatch_cdp_runtime_evaluate() {
 
 #[test]
 fn test_cdp_runtime_evaluate_return_by_value_false_goes_handle_bridge() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let params = serde_json::json!({ "expression": "({a: 1})", "returnByValue": false });
     let (result, _) = server.dispatch_with_events(&mut session, "Runtime.evaluate", params);
@@ -371,7 +371,7 @@ fn test_cdp_runtime_evaluate_return_by_value_false_goes_handle_bridge() {
 
 #[test]
 fn test_cdp_runtime_call_function_on_invalid_object_id_is_invalid_params() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let params = serde_json::json!({
         "functionDeclaration": "(function(){})",
@@ -384,7 +384,7 @@ fn test_cdp_runtime_call_function_on_invalid_object_id_is_invalid_params() {
 
 #[test]
 fn test_cdp_runtime_call_function_on_object_id_routes_handle_bridge() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let params = serde_json::json!({
         "functionDeclaration": "(function(){ return 1; })",
@@ -407,7 +407,7 @@ fn test_cdp_runtime_call_function_on_object_id_routes_handle_bridge() {
 
 #[test]
 fn test_cdp_runtime_release_object_validates_object_id() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
 
     let result = server.dispatch(&mut session, "Runtime.releaseObject", Value::Null);
@@ -433,7 +433,7 @@ fn test_cdp_runtime_release_object_validates_object_id() {
 
 #[test]
 fn test_cdp_runtime_release_object_group_validates_group() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
 
     let result = server.dispatch(&mut session, "Runtime.releaseObjectGroup", Value::Null);
@@ -451,7 +451,7 @@ fn test_cdp_runtime_release_object_group_validates_group() {
 
 #[test]
 fn test_cdp_target_attach_to_browser_target_registers_session() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
 
     // 浏览器级调用（无 sessionId）→ 返回新 sessionId
@@ -470,7 +470,7 @@ fn test_cdp_target_attach_to_browser_target_registers_session() {
 
 #[test]
 fn test_cdp_target_attach_to_target_and_detach_event_stamped() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let tab_id = session.shell.active_tab_id().expect("default tab");
     let target_id = format!("zeroweb-tab-{}", tab_id.0);
@@ -533,7 +533,7 @@ fn test_cdp_object_id_wire_format_roundtrip() {
 
 #[test]
 fn test_dispatch_cdp_network_enable() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let (result, events) = server.dispatch_with_events(&mut session, "Network.enable", Value::Null);
     assert!(result.is_ok());
@@ -636,7 +636,7 @@ fn test_dom_get_document_probe_conversion() {
 
 #[test]
 fn test_session_id_echoed_in_response() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     server.attach_session("test-session-1", "zeroweb-tab-1");
     let raw = r#"{"id":7,"method":"session.status","params":{},"sessionId":"test-session-1"}"#;
@@ -647,7 +647,7 @@ fn test_session_id_echoed_in_response() {
 
 #[test]
 fn test_unknown_session_id_rejected() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let raw = r#"{"id":8,"method":"session.status","params":{},"sessionId":"ghost"}"#;
     let (response, _) = server.handle_message_with_events(&mut session, raw);
@@ -660,7 +660,7 @@ fn test_unknown_session_id_rejected() {
 
 #[test]
 fn test_json_targets_enumerates_real_tabs() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     // 枚举前新建一个标签页并给活跃页导航，验证 url 取自 shell 模型
     //（BrowserShell::new 自带 1 个默认 tab，故用增量断言而非绝对数）。
@@ -696,7 +696,7 @@ fn test_json_targets_enumerates_real_tabs() {
 
 #[test]
 fn test_storage_cookies_roundtrip() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let empty = server
         .dispatch(&mut session, "Storage.getCookies", Value::Null)
@@ -729,7 +729,7 @@ fn test_storage_cookies_roundtrip() {
 
 #[test]
 fn test_storage_set_cookies_with_url_scopes_to_host() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let set = serde_json::json!({
         "cookies": [{ "name": "scoped", "value": "abc", "url": "https://example.com/page" }],
@@ -746,7 +746,7 @@ fn test_storage_set_cookies_with_url_scopes_to_host() {
 
 #[test]
 fn test_set_user_agent_override_stored() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     assert!(session.user_agent_override.is_none());
     let params = serde_json::json!({ "userAgent": "test-ua/1.0" });
@@ -760,7 +760,7 @@ fn test_set_user_agent_override_stored() {
 
 #[test]
 fn test_set_user_agent_override_missing_rejected() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let result = server.dispatch(&mut session, "Emulation.setUserAgentOverride", Value::Null);
     assert_eq!(result.unwrap_err().code, -32602);
@@ -768,7 +768,7 @@ fn test_set_user_agent_override_missing_rejected() {
 
 #[test]
 fn test_network_enable_disable_gates_flag() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     assert!(!session.network_enabled);
     assert!(server.dispatch(&mut session, "Network.enable", Value::Null).is_ok());
@@ -781,7 +781,7 @@ fn test_network_enable_disable_gates_flag() {
 
 #[test]
 fn test_emulation_set_device_metrics_updates_state_and_emits_resize() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let params = serde_json::json!({
         "width": 500, "height": 400, "deviceScaleFactor": 1, "mobile": false,
@@ -802,7 +802,7 @@ fn test_emulation_set_device_metrics_updates_state_and_emits_resize() {
 
 #[test]
 fn test_emulation_set_device_metrics_same_size_no_event() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let params = serde_json::json!({ "width": 800, "height": 600, "deviceScaleFactor": 1, "mobile": false });
     let (result, events) = server.dispatch_with_events(&mut session, "Emulation.setDeviceMetricsOverride", params);
@@ -812,7 +812,7 @@ fn test_emulation_set_device_metrics_same_size_no_event() {
 
 #[test]
 fn test_emulation_set_emulated_media_ok() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let params = serde_json::json!({
         "media": "",
@@ -836,7 +836,7 @@ fn test_emulation_set_emulated_media_ok() {
 
 #[test]
 fn test_capture_screenshot_clip_crops() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let _ = session.webview.load_html(
         r#"<html><body style="margin:0"><div style="width:800px;height:600px;background:#0f0;"></div></body></html>"#,
@@ -860,7 +860,7 @@ fn test_capture_screenshot_clip_crops() {
 
 #[test]
 fn test_capture_screenshot_clip_out_of_bounds_rejected() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let params = serde_json::json!({
         "clip": { "x": 700, "y": 500, "width": 200, "height": 200, "scale": 1 },
@@ -873,7 +873,7 @@ fn test_capture_screenshot_clip_out_of_bounds_rejected() {
 
 #[test]
 fn test_navigation_event_family_sequence() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     server.set_auto_attach(true);
     let (result, events) = server.dispatch_with_events(&mut session, "Target.createTarget", serde_json::json!({}));
@@ -915,7 +915,7 @@ fn test_navigation_event_family_sequence() {
 fn test_frame_detached_on_document_swap() {
     // 文档换代：上一文档的子帧记录先 detach（reason=frameRemoved）、记录清空。
     // （记录由 frameAttached 探测填充；此处手工预置以脱离 renderer 依赖。）
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     session.active_child_frames.insert(
         "zeroweb-tab-1".into(),
@@ -949,7 +949,7 @@ fn test_page_navigate_success_path_via_load_html_page() {
     // 成功路径的事件族由 Playwright goto 冒烟验收；此处断言注入脚本登记存储面，以及
     // 默认门（ZW_CDP_PREDOC_SCRIPTS 未设）下导航事件族不再重放——新文档预注入已由
     // renderer `PreDocumentScripts` 路径接管（页面脚本前执行），重复重放会二次执行。
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let (result, _events) = server.dispatch_with_events(
         &mut session,
@@ -1004,7 +1004,7 @@ fn test_predoc_registration_sends_renderer_ipc() {
     // 尾部发送调用点 → 记录器保持 None → 本钉红。两态皆绿属预期（守卫钉，
     // 非 RED/GREEN 判别钉——base 无该 IPC 面，无从构造 RED 态）。
     super::session::LAST_PREDOC_SEND.with(|slot| *slot.borrow_mut() = None);
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     server
         .dispatch(
@@ -1028,7 +1028,7 @@ fn test_predoc_registration_sends_renderer_ipc() {
 
 #[test]
 fn test_page_get_layout_metrics_shape() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let result = server
         .dispatch(&mut session, "Page.getLayoutMetrics", Value::Null)
@@ -1041,7 +1041,7 @@ fn test_page_get_layout_metrics_shape() {
 
 #[test]
 fn test_input_dispatch_key_event_ok() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let params = serde_json::json!({
         "type": "keyDown", "key": "a", "code": "KeyA",
@@ -1053,7 +1053,7 @@ fn test_input_dispatch_key_event_ok() {
 
 #[test]
 fn test_input_dispatch_key_event_char_type() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let params = serde_json::json!({ "type": "char", "key": "a", "text": "a" });
     assert!(server.dispatch(&mut session, "Input.dispatchKeyEvent", params).is_ok());
@@ -1061,7 +1061,7 @@ fn test_input_dispatch_key_event_char_type() {
 
 #[test]
 fn test_input_dispatch_mouse_unknown_type_rejected() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let params = serde_json::json!({ "type": "bogus", "x": 1, "y": 2 });
     let result = server.dispatch(&mut session, "Input.dispatchMouseEvent", params);
@@ -1070,7 +1070,7 @@ fn test_input_dispatch_mouse_unknown_type_rejected() {
 
 #[test]
 fn test_input_mouse_press_release_ok() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let press = serde_json::json!({ "type": "mousePressed", "x": 10, "y": 20, "button": "left", "clickCount": 1 });
     let release = serde_json::json!({ "type": "mouseReleased", "x": 10, "y": 20, "button": "left", "clickCount": 1 });
@@ -1084,7 +1084,7 @@ fn test_input_mouse_press_release_ok() {
 
 #[test]
 fn test_input_insert_text_ok() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let params = serde_json::json!({ "text": "hello" });
     assert!(server.dispatch(&mut session, "Input.insertText", params).is_ok());
@@ -1092,7 +1092,7 @@ fn test_input_insert_text_ok() {
 
 #[test]
 fn test_input_missing_text_rejected() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let result = server.dispatch(&mut session, "Input.insertText", Value::Null);
     assert_eq!(result.unwrap_err().code, -32602);
@@ -1102,7 +1102,7 @@ fn test_input_missing_text_rejected() {
 
 #[test]
 fn test_browser_get_version() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let result = server
         .dispatch(&mut session, "Browser.getVersion", Value::Null)
@@ -1115,7 +1115,7 @@ fn test_browser_get_version() {
 
 #[test]
 fn test_target_set_auto_attach_emits_attached_to_target() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let tab_count = session.shell.tab_count();
     let params = serde_json::json!({ "autoAttach": true, "waitForDebuggerOnStart": false, "flatten": true });
@@ -1140,7 +1140,7 @@ fn test_target_set_auto_attach_emits_attached_to_target() {
 
 #[test]
 fn test_target_get_target_info_browser_level() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let result = server
         .dispatch(&mut session, "Target.getTargetInfo", Value::Null)
@@ -1151,7 +1151,7 @@ fn test_target_get_target_info_browser_level() {
 
 #[test]
 fn test_target_create_and_close_target_lifecycle() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     server.set_auto_attach(true);
     let tabs_before = session.shell.tab_count();
@@ -1190,7 +1190,7 @@ fn test_target_create_and_close_target_lifecycle() {
 /// PW pages 各多一页，e1-zero B 阶段「新页 url()=about:blank」的一半根因）。
 #[test]
 fn test_session_starts_with_single_page_target() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let session = HeadlessSession::new(800.0, 600.0);
     assert_eq!(session.shell.tab_count(), 1, "no ghost about:blank target");
     let targets = super::discovery::http_targets_json(&session, server.addr(), false);
@@ -1204,7 +1204,7 @@ fn test_session_starts_with_single_page_target() {
 /// shell Tab/事件流——不回写则 target=_blank 点击后 target url 停留旧值（e1-zero）。
 #[test]
 fn test_navigation_commit_updates_target_url() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let url = "https://news.qq.com/rain/a/20261016A0CZ0100";
 
@@ -1459,7 +1459,7 @@ fn test_redirect_commit_replaces_client_history_entry() {
 /// URL 用不可达本地端口：cmd_navigate 的载入失败不阻历史记账（success=false 同路径）。
 #[test]
 fn test_get_navigation_history_reports_shell_history() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let urls = ["http://127.0.0.1:9/a", "http://127.0.0.1:9/b", "http://127.0.0.1:9/c"];
     for url in urls {
@@ -1490,7 +1490,7 @@ fn test_get_navigation_history_reports_shell_history() {
 /// → 本命令载入（t4 遗留：命令此前未实现，-32601）。
 #[test]
 fn test_navigate_to_history_entry_jumps_and_emits_events() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let a = "http://127.0.0.1:9/a";
     let b = "http://127.0.0.1:9/b";
@@ -1595,7 +1595,7 @@ fn test_navigation_started_staging_semantics() {
 
 #[test]
 fn test_target_detach_from_target() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     server.set_auto_attach(true);
     let (result, events) = server.dispatch_with_events(&mut session, "Target.createTarget", serde_json::json!({}));
@@ -1618,7 +1618,7 @@ fn test_target_detach_from_target() {
 
 #[test]
 fn test_runtime_enable_emits_execution_context() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let (result, events) = server.dispatch_with_events(&mut session, "Runtime.enable", Value::Null);
     assert!(result.is_ok());
@@ -1629,7 +1629,7 @@ fn test_runtime_enable_emits_execution_context() {
 
 #[test]
 fn test_runtime_run_if_waiting_for_debugger_ok() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let result = server
         .dispatch(&mut session, "Runtime.runIfWaitingForDebugger", Value::Null)
@@ -1639,7 +1639,7 @@ fn test_runtime_run_if_waiting_for_debugger_ok() {
 
 #[test]
 fn test_dispatch_cdp_target_get_targets() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let (result, events) = server.dispatch_with_events(&mut session, "Target.getTargets", Value::Null);
     assert!(result.is_ok());
@@ -1649,7 +1649,7 @@ fn test_dispatch_cdp_target_get_targets() {
 
 #[test]
 fn test_dispatch_cdp_page_capture_screenshot() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     let (result, events) = server.dispatch_with_events(&mut session, "Page.captureScreenshot", Value::Null);
     assert!(result.is_ok());
@@ -1740,7 +1740,7 @@ struct ProtocolTestRunner {
 impl ProtocolTestRunner {
     fn new() -> Self {
         Self {
-            server: HeadlessServer::new(0, 800.0, 600.0),
+            server: HeadlessServer::new(0, 800.0, 600.0, None),
             session: HeadlessSession::new(800.0, 600.0),
             next_id: 1,
             event_log: Vec::new(),
@@ -2237,15 +2237,15 @@ fn test_extract_origin_header() {
 
 #[test]
 fn test_server_with_security_config() {
-    let server =
-        HeadlessServer::new(0, 800.0, 600.0).with_security(HeadlessSecurityConfig::new().with_token("test-token"));
+    let server = HeadlessServer::new(0, 800.0, 600.0, None)
+        .with_security(HeadlessSecurityConfig::new().with_token("test-token"));
     assert!(server.security.verify_token(Some("test-token")));
     assert!(!server.security.verify_token(None));
 }
 
 #[test]
 fn test_server_binds_to_localhost_only() {
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     assert_eq!(server.addr().ip(), std::net::IpAddr::from([127, 0, 0, 1]));
 }
 #[test]
@@ -2253,7 +2253,7 @@ fn test_frame_probe_tolerates_script_failure() {
     // 探测容错：查询脚本失败（测试进程内 webview 缺 querySelectorAll 宿主绑定）
     // → 零 attach、事件族完整不阻塞。生产路径（renderer 完整 shim）的 attach 面
     // 由 cdp-e2e 门 frames.access 验证。
-    let server = HeadlessServer::new(0, 800.0, 600.0);
+    let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let mut session = HeadlessSession::new(800.0, 600.0);
     session.webview.load_html(
         r#"<html><body><iframe id="a" src="x.html"></iframe><iframe id="b"></iframe></body></html>"#,
@@ -2398,7 +2398,7 @@ fn test_partial_request_does_not_wedge_mux() {
     use std::sync::Arc;
     use std::time::{Duration, Instant};
 
-    let server = Arc::new(HeadlessServer::new(0, 800.0, 600.0));
+    let server = Arc::new(HeadlessServer::new(0, 800.0, 600.0, None));
     let srv = Arc::clone(&server);
     // run() 不返回；分离线程随测试进程退出回收（泄漏端口在本测试二进制内存续期无害）。
     std::thread::spawn(move || {
@@ -2451,7 +2451,7 @@ fn test_lowercase_ws_upgrade_handshake_t1() {
     use std::sync::Arc;
     use std::time::{Duration, Instant};
 
-    let server = Arc::new(HeadlessServer::new(0, 800.0, 600.0));
+    let server = Arc::new(HeadlessServer::new(0, 800.0, 600.0, None));
     let srv = Arc::clone(&server);
     std::thread::spawn(move || {
         let _ = srv.run();
