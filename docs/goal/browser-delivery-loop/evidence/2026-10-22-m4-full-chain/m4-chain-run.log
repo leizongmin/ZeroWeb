@@ -1,0 +1,42 @@
+Running as unit: zw-m4-chain2.scope; invocation ID: 99b06e7d0eeb41a09184b45061abe301
+[M4] leg1: install v26.10.22 (dpkg-deb -x prefix isolation)
+[M4] PASS: leg1 deb extracted, zero-browser executable
+[M4] PASS: leg1 payload: renderer/compositor/image-decoder present
+[M4] PASS: leg1 desktop entry present
+[M4] PASS: leg1 current -> releases/26.10.22 (relative)
+[M4] leg2: --version traceability from installed prefix
+[M4] PASS: leg2 installed --version: ZeroBrowser 26.10.22 (commit 9ce652d88b13)
+[M4] leg3: apply update to v26.10.23 via installed binary (default install-root derivation)
+[M4] PASS: leg3 update applied: UPDATE_APPLIED 26.10.23 (previous 26.10.22)
+[M4] PASS: leg3 current flipped to releases/26.10.23
+[M4] PASS: leg3 rollback -> releases/26.10.22
+[M4] PASS: leg3 post-update --version: ZeroBrowser 26.10.23 (commit 9ce652d88b13) (commit unchanged)
+[M4] PASS: leg3 no staging residue
+[M4] leg4: crash report from installed v26.10.23 (renderer SIGKILL)
+[M4] PASS: leg4 installed browser up (pid=2002861, renderer pid=2002883)
+[M4] PASS: leg4 renderer report landed: crash-1792674928-renderer.json
+[M4] PASS: leg4 report fields: schema/role/version=v2/commit + privacy clean
+[M4] PASS: leg4 crash #1: session crash_count=1 persisted
+[M4] leg5: crash-loop guard across restart (threshold 2 -> restore skip -> window reset)
+[M4] PASS: leg5 crash #2: session crash_count=2 persisted
+[M4] PASS: leg5 SIGINT: clean_exit=true
+[M4] leg5 restarting installed browser (auto-restore path)
+[M4] PASS: leg5 restore: crash-loop tab auto-load skipped
+[M4] PASS: leg5 observation window: crash_count reset to 0 after ~10s
+[M4] PASS: leg5 second SIGINT: clean_exit=true (repeatable)
+[M4] leg6: feedback export from installed v26.10.23 (consent / IF-4 layout)
+[M4] PASS: leg6 --list-crash-reports: 2 well-formed lines
+[M4] PASS: leg6 export: zeroweb-feedback-26.10.23-20261022
+[M4] PASS: leg6 IF-4: reports byte-identical + env(version=v2/commit) + summary w/o URLs + privacy clean
+[M4] PASS: leg6 duplicate export rejected without clobber
+[M4] leg7: uninstall (remove install root) keeps user data intact
+[M4] PASS: leg7 install face removed (binary path gone)
+[M4] PASS: leg7 user session intact (clean_exit=true, 1 tab)
+[M4] PASS: leg7 crash reports survive uninstall (2 files)
+[M4] PASS: leg7 exported package survives uninstall
+[M4] leg8: cleanup audit (no residue processes / staging / real-config writes / repo dirt)
+[M4] PASS: leg8 no staging residue
+[M4] PASS: leg8 no residual browser/renderer processes from this run
+[M4] PASS: leg8 real ~/.config/zeroweb untouched (0 files newer than chain start)
+[M4] PASS: leg8 repo tracked tree clean (no tracked file modified)
+[M4] summary: PASS=31 FAIL=0
