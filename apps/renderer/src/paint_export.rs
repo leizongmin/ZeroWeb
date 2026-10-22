@@ -351,10 +351,20 @@ fn animation_scope_to_ipc(scope: &PaintAnimationScope) -> IpcAnimationScope {
 /// 与 keep-alive 呈现链不对不可见动画空转（M3 证据 offscreen 腿 0.5 cores）；元素
 /// 回视口后下一帧作用域重现，声明经集合差分恢复（advance 锚点「消失剪除/重现重新
 /// 开始」语义）。filter 在 `advance` 输入侧——差分/锚点/发送闸门都按可见集运转。
+///
+/// M4 GUI 腿补 `page_hidden` 维度（同语义延伸）：tab 隐藏页无采样面——声明清空
+/// 使 `animations_active` 回落，browser keep-alive 停对不可见 surface 的常态 Get
+/// 重光栅（GUI 判别腿实测 hidden tab compositor 0.59 cores 空转）；恢复可见后
+/// 首帧集合差分重现。gCS 覆盖缺失/终结事件丢失/时间轴重启边界与 offscreen 维度
+/// 一致。
 pub(crate) fn visible_declarations(
     declarations: &[ExportedAnimationDeclaration],
     scopes: &[PaintAnimationScope],
+    page_hidden: bool,
 ) -> Vec<ExportedAnimationDeclaration> {
+    if page_hidden {
+        return Vec::new();
+    }
     let visible_ids: std::collections::HashSet<u64> = scopes.iter().map(|scope| scope.animation_id).collect();
     declarations
         .iter()

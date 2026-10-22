@@ -1,0 +1,13 @@
+{"op":"wait_idle","ms":8000}
+{"op":"log","msg":"phase1-foreground-start"}
+{"op":"wait_ms","ms":10000}
+{"op":"key","key":"t","mods":["ctrl"]}
+{"op":"assert_addressbar_focus","focused":true}
+{"op":"type","text":"http://127.0.0.1:43941/bg02-static.html"}
+{"op":"key","key":"Enter"}
+{"op":"log","msg":"phase2-background-start"}
+{"op":"wait_ms","ms":15000}
+{"op":"key","key":"Tab","mods":["ctrl"]}
+{"op":"log","msg":"phase3-restore-start"}
+{"op":"wait_ms","ms":10000}
+{"op":"shot","name":"final.png"}

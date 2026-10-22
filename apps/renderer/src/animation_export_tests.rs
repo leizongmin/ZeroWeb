@@ -477,20 +477,26 @@ fn opacity_scope(id: u64) -> PaintAnimationScope {
 
 #[test]
 fn visible_declarations_filters_by_surviving_scopes() {
-    // 门控过滤语义：匹配保留、不匹配剔除、空 scopes 全剔、同 id 多 scope 不重复。
+    // 门控过滤语义：匹配保留、不匹配剔除、空 scopes 全剔、同 id 多 scope 不重复、
+    // 页面隐藏全剔（M4：hidden tab 无采样面，作用域存活也清空）。
     let declarations = vec![opacity_decl(1, 0.0, 1.0), opacity_decl(2, 1.0, 0.0)];
 
-    let visible = paint_export::visible_declarations(&declarations, &[opacity_scope(2)]);
+    let visible = paint_export::visible_declarations(&declarations, &[opacity_scope(2)], false);
     assert_eq!(visible.iter().map(|d| d.animation_id).collect::<Vec<_>>(), vec![2]);
 
     assert!(
-        paint_export::visible_declarations(&declarations, &[]).is_empty(),
+        paint_export::visible_declarations(&declarations, &[], false).is_empty(),
         "全部作用域被剔 → 空集（offscreen 页声明不进 compositor 状态）"
     );
 
-    let duplicated = paint_export::visible_declarations(&declarations, &[opacity_scope(1), opacity_scope(1)]);
+    let duplicated = paint_export::visible_declarations(&declarations, &[opacity_scope(1), opacity_scope(1)], false);
     assert_eq!(duplicated.len(), 1, "同 id 多 scope 声明不重复");
     assert_eq!(duplicated[0].animation_id, 1);
+
+    assert!(
+        paint_export::visible_declarations(&declarations, &[opacity_scope(1)], true).is_empty(),
+        "page_hidden → 空集（hidden tab 呈现链空转收口）"
+    );
 }
 
 /// flag 开 + Compositor 模式的 runtime（renderer 测试腿串行，set_var 无竞态；
@@ -589,5 +595,37 @@ fn compositor_state_recovers_declarations_when_scope_returns() {
     assert_eq!(states[1].declarations.len(), 1);
     assert_eq!(states[1].declarations[0].animation_id, 1);
     assert!(states[1].generation > offscreen_generation, "恢复代际递增");
+    unsafe { std::env::remove_var("ZW_COMPOSITOR_ANIMATIONS") };
+}
+
+#[test]
+fn compositor_state_clears_declarations_while_page_hidden() {
+    // M4 GUI 判别腿缺口收口：tab 隐藏（SetVisibility → page_hidden）后声明清空 →
+    // compositor animations_active 回落 → keep-alive 停对不可见 surface 的常态 Get
+    // 重光栅；恢复可见首帧集合差分重现。
+    let buf = SharedBuf(Arc::new(Mutex::new(Vec::new())));
+    let mut runtime = compositor_runtime(204, &buf);
+    let declarations = vec![opacity_decl(1, 0.0, 1.0)];
+    runtime
+        .send_compositor_animation_state(declarations.clone(), &[opacity_scope(1)], &[])
+        .expect("发送");
+    let states = wait_compositor_states(&buf, 1);
+    assert_eq!(states[0].declarations.len(), 1, "可见：声明照发");
+
+    runtime.page_hidden = true;
+    runtime
+        .send_compositor_animation_state(declarations.clone(), &[opacity_scope(1)], &[])
+        .expect("发送");
+    let states = wait_compositor_states(&buf, 2);
+    assert_eq!(states[1].declarations.len(), 0, "隐藏：声明清空（作用域存活也不发）");
+    let hidden_generation = states[1].generation;
+
+    runtime.page_hidden = false;
+    runtime
+        .send_compositor_animation_state(declarations, &[opacity_scope(1)], &[])
+        .expect("发送");
+    let states = wait_compositor_states(&buf, 3);
+    assert_eq!(states[2].declarations.len(), 1);
+    assert!(states[2].generation > hidden_generation, "恢复代际递增");
     unsafe { std::env::remove_var("ZW_COMPOSITOR_ANIMATIONS") };
 }

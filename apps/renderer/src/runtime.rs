@@ -1272,7 +1272,7 @@ impl RendererRuntime {
         let Some(converted) = self.animation_export.advance(
             self.navigation_epoch,
             monotonic_now_ns(),
-            &paint_export::visible_declarations(&declarations, scopes),
+            &paint_export::visible_declarations(&declarations, scopes, self.page_hidden),
         ) else {
             return Ok(());
         };
@@ -3257,6 +3257,9 @@ return JSON.stringify({{action:action,name:name,val:val}});\
     /// 不重发，本侧不再去重。
     fn handle_set_visibility(&mut self, hidden: bool) -> Result<(), String> {
         self.page_hidden = hidden;
+        // M4 GUI 生产腿观测面：可见性翻转低频（poll 差分保证同态不重发），一行日志
+        // 即「tab 切换 → SetVisibility 到达 renderer」链路激活的直接证据。
+        tracing::info!("renderer: page visibility -> hidden={hidden}");
         if !self.javascript_enabled {
             return Ok(());
         }

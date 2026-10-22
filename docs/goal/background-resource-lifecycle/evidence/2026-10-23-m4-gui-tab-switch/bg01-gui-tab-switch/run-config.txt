@@ -1,0 +1,1 @@
+scenario=bg01-timer start_url=bg01-interval-timer.html ZW_COMPOSITOR_ANIMATIONS=0 frame_dump=0 display=:20 port=48491
