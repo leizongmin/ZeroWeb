@@ -792,3 +792,6 @@ mod r5218_atomic_inline_container_height_tests;
 /// R5219（css-sizing-3 #max-content）fit-content/max-content 真空子树塌 0 + 盲区回退
 /// 保持锚点。
 mod r5219_vacuum_fitcontent_collapse_tests;
+/// R5220（CSS2 §8.4 × css-sizing-3 #fit-content-size）% padding 解析基准——塌 0 真实
+/// CB 传真值 0 锚点。
+mod r5220_pct_padding_collapse_tests;

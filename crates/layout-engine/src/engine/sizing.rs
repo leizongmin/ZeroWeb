@@ -2703,9 +2703,22 @@ impl LayoutEngine {
             let style = b.node_id.and_then(|id| styles.get(&id));
 
             // 本元素提供给子元素的「内容宽度」（百分比 padding 的解析基准）。
-            // taffy 第一趟已算出 content_width（b.content_width）；匿名盒透传父级宽度。
+            // taffy 第一趟已算出 content_width（b.content_width）。
+            // R5220（css-sizing-3 #fit-content-size + CSS2 §8.4）：content_width=0 两义——
+            // 匿名盒与 inline 级盒不构成独立包含块（inline 的子的 CB 是最近块级祖先），
+            // 透传父级基准；真实块级/原子容器（Block/Flex/Grid/inline-block 族）塌 0 是
+            // **真值 0**（fit-content 真空塌 0 R5219 / width:0），子元素 padding 百分比按
+            // §8.4 应解析 0——透传非零父宽会把 padding-top:100% 解析成祖先宽（探针实证
+            // fit-content 塌 0 后子 pt=300=外层宽；float-clearance-with-margin-collapse-
+            // and-fit-content-and-padding-percentage-001~004 主导残差）。
+            let is_real_block_cb = b
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(|s| !matches!(s.display, DisplayValue::Inline));
             let my_content_width = if b.content_width > 0.0 {
                 b.content_width
+            } else if is_real_block_cb {
+                0.0
             } else {
                 parent_content_width
             };
