@@ -289,7 +289,12 @@
 
     // —— 对象族 ——
     createShader: function (state, args) {
-      return _zwGlNewObject('WebGLShader');
+      // §5.14.9——type 仅 VERTEX_SHADER/FRAGMENT_SHADER，否则 INVALID_ENUM + null。
+      var type = +args[0];
+      if (type !== 0x8B31 && type !== 0x8B30) { _zwGlSetError(state, 0x0500); return null; }
+      var sh = _zwGlNewObject('WebGLShader');
+      sh._zwType = type;
+      return sh;
     },
     isContextLost: function (state, args) { return !!state._lost; },
     getContextAttributes: function (state, args) {
@@ -548,21 +553,92 @@
       }
     },
 
-    // —— program / uniform（corpus uniformMatrixNfv.html）——
+    // —— program / uniform 管线（M3-S2；corpus uniformMatrixNfv.html 的
+    // null location no-throw 面保持：未链接 program 恒 INVALID_OPERATION + null，
+    // null location 静默）——
     getUniformLocation: function (state, args) {
       var program = args[0];
-      if (!program || !program._zwGlObj || program._zwGlIface !== 'WebGLProgram') {
-        throw new TypeError('parameter 1 is not of type WebGLProgram');
+      _zwGlBrandCheck(program, 'WebGLProgram', 1);
+      if (!program._zwLinkOk) { // 未成功链接 → INVALID_OPERATION + null（§5.14.9）
+        _zwGlSetError(state, 0x0502);
+        return null;
       }
-      // 未成功链接的 program → INVALID_OPERATION + null（spec 5.14.9；M2 无
-      // shader 编译管线——所有 program 恒未链接，uniform* 调用经 null location
-      // 静默忽略路径，corpus uniformMatrixNfv 的 no-throw 断言依赖此链）。
-      _zwGlSetError(state, 0x0502);
-      return null;
+      var name = args.length > 1 ? String(args[1]) : 'null';
+      var link = program._zwLink;
+      var ent = link.uniformMap[name];
+      if (!ent) {
+        // 数组元素形 'u[N]'：基名为数组 uniform 且 N < size → 基址 + N；
+        // 其余未知名 → null 无错误（§5.14.9）。
+        var m = _ZW_ARRAY_LOC_RE.exec(name);
+        if (m) {
+          var base = link.uniformMap[m[1]];
+          if (base && base.size > 1 && +m[2] < base.size) {
+            return _zwGlUniformLocation(program, base, name, base.index + +m[2]);
+          }
+        }
+        return null;
+      }
+      return _zwGlUniformLocation(program, ent, name, ent.index);
     },
-    uniformMatrix2fv: _zwGlUniformImpl,
-    uniformMatrix3fv: _zwGlUniformImpl,
-    uniformMatrix4fv: _zwGlUniformImpl,
+    bindAttribLocation: function (state, args) {
+      // GLES2 §2.10.3：index ≥ MAX_VERTEX_ATTRIBS → INVALID_VALUE；gl_ 前缀 →
+      // INVALID_OPERATION（§3.7 保留前缀）；绑定在下次 linkProgram 生效。
+      var program = args[0];
+      _zwGlBrandCheck(program, 'WebGLProgram', 1);
+      var index = _zwGlToInteger(args[1]);
+      var name = String(args[2]);
+      if (index < 0 || index >= _ZW_MAX_VERTEX_ATTRIBS) { _zwGlSetError(state, 0x0501); return; }
+      if (name.slice(0, 3) === 'gl_') { _zwGlSetError(state, 0x0502); return; }
+      var binds = program._zwAttribBinds || (program._zwAttribBinds = {});
+      binds[name] = index;
+    },
+    uniform1f: function (state, args) { _zwGlUniformLoad(state, args, 1, false, false, false); },
+    uniform2f: function (state, args) { _zwGlUniformLoad(state, args, 2, false, false, false); },
+    uniform3f: function (state, args) { _zwGlUniformLoad(state, args, 3, false, false, false); },
+    uniform4f: function (state, args) { _zwGlUniformLoad(state, args, 4, false, false, false); },
+    uniform1i: function (state, args) { _zwGlUniformLoad(state, args, 1, true, false, false); },
+    uniform2i: function (state, args) { _zwGlUniformLoad(state, args, 2, true, false, false); },
+    uniform3i: function (state, args) { _zwGlUniformLoad(state, args, 3, true, false, false); },
+    uniform4i: function (state, args) { _zwGlUniformLoad(state, args, 4, true, false, false); },
+    uniform1fv: function (state, args) { _zwGlUniformLoad(state, args, 1, false, false, true); },
+    uniform2fv: function (state, args) { _zwGlUniformLoad(state, args, 2, false, false, true); },
+    uniform3fv: function (state, args) { _zwGlUniformLoad(state, args, 3, false, false, true); },
+    uniform4fv: function (state, args) { _zwGlUniformLoad(state, args, 4, false, false, true); },
+    uniform1iv: function (state, args) { _zwGlUniformLoad(state, args, 1, true, false, true); },
+    uniform2iv: function (state, args) { _zwGlUniformLoad(state, args, 2, true, false, true); },
+    uniform3iv: function (state, args) { _zwGlUniformLoad(state, args, 3, true, false, true); },
+    uniform4iv: function (state, args) { _zwGlUniformLoad(state, args, 4, true, false, true); },
+    uniformMatrix2fv: function (state, args) { _zwGlUniformLoad(state, args, 4, false, true, true); },
+    uniformMatrix3fv: function (state, args) { _zwGlUniformLoad(state, args, 9, false, true, true); },
+    uniformMatrix4fv: function (state, args) { _zwGlUniformLoad(state, args, 16, false, true, true); },
+    getUniform: function (state, args) {
+      var program = args[0], loc = args[1];
+      _zwGlBrandCheck(program, 'WebGLProgram', 1);
+      _zwGlBrandCheck(loc, 'WebGLUniformLocation', 2);
+      // location 不属该 program / 已失效（重链）→ INVALID_OPERATION + null。
+      if (!program._zwLinkOk || loc._zwProgram !== program ||
+        loc._zwStamp !== program._zwStamp) {
+        _zwGlSetError(state, 0x0502);
+        return null;
+      }
+      var ent = loc._zwEnt;
+      var comps = _zwGlTypeComponents(ent.type) || 1;
+      var run = program._zwLink.uniformRuns[ent.index];
+      var arr = run.arr;
+      if (!arr) { // 未上传 → 规范初值全 0（GLES2 §2.10.4）
+        arr = run.arr = _zwGlIsIntFamily(ent.type)
+          ? new Int32Array(ent.size * comps)
+          : new Float32Array(ent.size * comps);
+      }
+      var off = (loc._zwIndex - ent.index) * comps;
+      if (comps === 1) {
+        var v0 = arr[off];
+        return ent.type === 0x8B56 ? !!v0 : v0; // BOOL uniform → boolean（§5.14.9 表）
+      }
+      var out = _zwGlIsIntFamily(ent.type) ? new Int32Array(comps) : new Float32Array(comps);
+      for (var i = 0; i < comps; i++) out[i] = arr[off + i];
+      return out;
+    },
 
     // —— 绘制状态机（corpus 无直接案；draw 状态语义为 M2 Mission 面）——
     drawArrays: function (state, args) {
@@ -570,7 +646,7 @@
       if (!_ZW_BEGIN_MODES[mode]) { _zwGlSetError(state, 0x0500); return; }
       // 无合法 program → INVALID_OPERATION（GL spec；M2 program 恒未链接）。
       if (!state._program) { _zwGlSetError(state, 0x0502); return; }
-      _zwGlSetError(state, 0x0502); // FIXME(M3 draw 簇)：真实绘制管线。
+      _zwGlSetError(state, 0x0502); // FIXME(M3-S4 draw 光栅化)：真实绘制管线。
     },
     drawElements: function (state, args) {
       var mode = +args[0];
@@ -578,7 +654,7 @@
       var type = +args[2];
       if (type !== 0x1401 && type !== 0x1403) { _zwGlSetError(state, 0x0500); return; } // UNSIGNED_BYTE/SHORT
       if (!state._program) { _zwGlSetError(state, 0x0502); return; }
-      _zwGlSetError(state, 0x0502); // FIXME(M3 draw 簇)。
+      _zwGlSetError(state, 0x0502); // FIXME(M3-S4 draw 光栅化)。
     },
     clearColor: function (state, args) {
       state._clearColor[0] = +args[0] || 0;
@@ -851,7 +927,7 @@
       state._pixelStore[String(pname)] = _zwGlToInteger(args[1]);
     },
 
-    // —— shader/program 管线（M2 状态记录面；编译链接 FIXME(M3 shader 簇)）——
+    // —— shader/program 管线（M3-S2：GLSL ES 1.0 编译 + 链接 + 反射面）——
     shaderSource: function (state, args) {
       var sh = args[0];
       if (!sh || !sh._zwGlObj || sh._zwGlIface !== 'WebGLShader') {
@@ -859,10 +935,48 @@
       }
       sh._zwSource = args.length > 1 ? String(args[1]) : '';
     },
-    compileShader: function (state, args) { /* FIXME(M3)：GLSL 编译管线缺席——恒不编译。 */ },
-    attachShader: function (state, args) { /* FIXME(M3)。 */ },
-    detachShader: function (state, args) { /* FIXME(M3)。 */ },
-    linkProgram: function (state, args) { /* FIXME(M3)：链接管线缺席——恒未链接。 */ },
+    compileShader: function (state, args) {
+      var sh = args[0];
+      _zwGlBrandCheck(sh, 'WebGLShader', 1);
+      // GLSL ES 1.0 前端编译（part08b 单点 _zwGlCompileGlsl——校验 + 活跃声明
+      // 提取）。编译失败不产生 GL 错误：COMPILE_STATUS false + infoLog 非空
+      //（WebGL 1.0 §5.14.9）。
+      var res = globalThis._zwGlCompileGlsl(sh._zwSource || '', sh._zwType === 0x8B31);
+      sh._zwCompileOk = !!res.ok;
+      sh._zwInfoLog = res.infoLog || '';
+      sh._zwAttribs = res.attributes || [];
+      sh._zwUniforms = res.uniforms || [];
+    },
+    attachShader: function (state, args) {
+      // GLES2 §2.10.3：同一 shader 重复挂接同一 program → INVALID_OPERATION。
+      var program = args[0], sh = args[1];
+      _zwGlBrandCheck(program, 'WebGLProgram', 1);
+      _zwGlBrandCheck(sh, 'WebGLShader', 2);
+      var list = program._zwShaders || (program._zwShaders = []);
+      for (var i = 0; i < list.length; i++) {
+        if (list[i] === sh) { _zwGlSetError(state, 0x0502); return; }
+      }
+      list.push(sh);
+    },
+    detachShader: function (state, args) {
+      // 未挂接 → INVALID_OPERATION（§2.10.3）。
+      var program = args[0], sh = args[1];
+      _zwGlBrandCheck(program, 'WebGLProgram', 1);
+      _zwGlBrandCheck(sh, 'WebGLShader', 2);
+      var list = program._zwShaders || [];
+      for (var i = 0; i < list.length; i++) {
+        if (list[i] === sh) {
+          list.splice(i, 1);
+          return;
+        }
+      }
+      _zwGlSetError(state, 0x0502);
+    },
+    linkProgram: function (state, args) {
+      var program = args[0];
+      _zwGlBrandCheck(program, 'WebGLProgram', 1);
+      _zwGlLinkProgram(program);
+    },
     useProgram: function (state, args) {
       var p = args[0];
       if (p !== null && p !== undefined &&
@@ -872,58 +986,298 @@
       state._program = p || null;
     },
     getShaderParameter: function (state, args) {
+      var sh = args[0];
+      _zwGlBrandCheck(sh, 'WebGLShader', 1);
       var pname = args.length > 1 ? +args[1] : 0;
-      if (pname === 0x8B81) return false; // COMPILE_STATUS——编译管线缺席恒 false
-      if (pname === 0x8B80) return !!(args[0] && args[0]._zwDeleted); // DELETE_STATUS
-      _zwGlSetError(state, 0x0500);
-      return null;
+      switch (pname) {
+        case 0x8B81: return !!sh._zwCompileOk;    // COMPILE_STATUS
+        case 0x8B80: return !!sh._zwDeleted;      // DELETE_STATUS
+        case 0x8B4F: return sh._zwType || 0;      // SHADER_TYPE
+        default: _zwGlSetError(state, 0x0500); return null;
+      }
     },
     getProgramParameter: function (state, args) {
+      var prog = args[0];
+      _zwGlBrandCheck(prog, 'WebGLProgram', 1);
       var pname = args.length > 1 ? +args[1] : 0;
-      if (pname === 0x8B82) return false; // LINK_STATUS——链接管线缺席恒 false
-      if (pname === 0x8B83) return false; // VALIDATE_STATUS
-      if (pname === 0x8B80) return false; // DELETE_STATUS
-      _zwGlSetError(state, 0x0500);
-      return null;
+      switch (pname) {
+        case 0x8B82: return !!prog._zwLinkOk;     // LINK_STATUS
+        case 0x8B83: return false;                // VALIDATE_STATUS FIXME(S4)：validateProgram 真语义随 draw 簇
+        case 0x8B80: return !!prog._zwDeleted;    // DELETE_STATUS
+        case 0x8B85: return prog._zwShaders ? prog._zwShaders.length : 0; // ATTACHED_SHADERS
+        case 0x8B86: return prog._zwLinkOk ? prog._zwLink.uniformList.length : 0; // ACTIVE_UNIFORMS
+        case 0x8B89: return prog._zwLinkOk ? prog._zwLink.attribList.length : 0;  // ACTIVE_ATTRIBUTES
+        default: _zwGlSetError(state, 0x0500); return null;
+      }
     },
-    getShaderInfoLog: function (state, args) { return ''; },
-    getProgramInfoLog: function (state, args) { return ''; },
+    getShaderInfoLog: function (state, args) {
+      var sh = args[0];
+      _zwGlBrandCheck(sh, 'WebGLShader', 1);
+      return sh._zwInfoLog || '';
+    },
+    getProgramInfoLog: function (state, args) {
+      var prog = args[0];
+      _zwGlBrandCheck(prog, 'WebGLProgram', 1);
+      return prog._zwLinkLog || '';
+    },
     getAttribLocation: function (state, args) {
-      // 未链接 program → INVALID_OPERATION + -1（getUniformLocation 同语义族）。
-      _zwGlSetError(state, 0x0502);
-      return -1;
+      var program = args[0];
+      _zwGlBrandCheck(program, 'WebGLProgram', 1);
+      if (!program._zwLinkOk) { // 未链接 → INVALID_OPERATION + -1（M2 面保持）
+        _zwGlSetError(state, 0x0502);
+        return -1;
+      }
+      var name = args.length > 1 ? String(args[1]) : 'null';
+      var ent = program._zwLink.attribMap[name];
+      return ent ? ent.index : -1; // 未知名 → -1 无错误（§5.14.9）
     },
     getActiveAttrib: function (state, args) {
-      _zwGlSetError(state, 0x0502);
-      return null;
+      var program = args[0];
+      _zwGlBrandCheck(program, 'WebGLProgram', 1);
+      if (!program._zwLinkOk) { _zwGlSetError(state, 0x0502); return null; }
+      var index = _zwGlToInteger(args[1]);
+      var list = program._zwLink.attribList;
+      if (index < 0 || index >= list.length) { _zwGlSetError(state, 0x0501); return null; }
+      var ent = list[index];
+      var info = _zwGlNewObject('WebGLActiveInfo');
+      info._name = ent.name; info._size = ent.size; info._type = ent.type;
+      return info;
     },
     getActiveUniform: function (state, args) {
-      _zwGlSetError(state, 0x0502);
-      return null;
+      var program = args[0];
+      _zwGlBrandCheck(program, 'WebGLProgram', 1);
+      if (!program._zwLinkOk) { _zwGlSetError(state, 0x0502); return null; }
+      var index = _zwGlToInteger(args[1]);
+      var list = program._zwLink.uniformList;
+      if (index < 0 || index >= list.length) { _zwGlSetError(state, 0x0501); return null; }
+      var ent = list[index];
+      var info = _zwGlNewObject('WebGLActiveInfo');
+      // 数组 uniform 的 name 面为 'u[0]'（WebGL 1.0 §5.14.10）。
+      info._name = ent.isArray ? ent.name + '[0]' : ent.name;
+      info._size = ent.size; info._type = ent.type;
+      return info;
     }
   };
 
-  // uniform* 通用实现：location null → 静默忽略不产生错误（spec 5.14.9——
-  // corpus uniformMatrixNfv 的 no-throw 断言面）；transpose 按 WebIDL boolean
-  // 转换（ToBoolean 不触 valueOf——{valueOf: throw} 对象期望不抛）；value 序列
-  // 转换校验 Array/TypedArray。 FIXME(M3 shader 簇)：真实 uniform 上传。
-  function _zwGlUniformImpl(state, args) {
+  // ── shader/program 管线共享机械（M3-S2）────────────────────────────────
+  function _zwGlBrandCheck(obj, iface, paramNo) {
+    if (!obj || !obj._zwGlObj || obj._zwGlIface !== iface) {
+      throw new TypeError('parameter ' + paramNo + ' is not of type ' + iface);
+    }
+  }
+
+  var _ZW_MAX_VERTEX_ATTRIBS = 16; // WebGL §6.4 最小上限（getParameter 同源）
+  var _ZW_ARRAY_LOC_RE = /^(.+)\[(\d+)\]$/;
+
+  // GLSL 类型 → 分量数（GLES2 Table 6.14——uniform 加载族匹配面）。
+  function _zwGlTypeComponents(t) {
+    switch (t) {
+      case 0x1406: case 0x1404: case 0x8B56: return 1; // FLOAT/INT/BOOL
+      case 0x8B50: case 0x8B53: case 0x8B57: return 2; // *_VEC2
+      case 0x8B51: case 0x8B54: case 0x8B58: return 3; // *_VEC3
+      case 0x8B52: case 0x8B55: case 0x8B59: return 4; // *_VEC4
+      case 0x8B5A: return 4;                            // MAT2
+      case 0x8B5B: return 9;                            // MAT3
+      case 0x8B5C: return 16;                           // MAT4
+      default: return 0;                                // 采样器按标量处理
+    }
+  }
+  function _zwGlIsSampler(t) { return t === 0x8B5E || t === 0x8B60; }
+  // getUniform 返回 Int32Array/整数的类型面（int/bool 族 + 采样器）。
+  function _zwGlIsIntFamily(t) {
+    return t === 0x1404 || t === 0x8B56 || t === 0x8B53 || t === 0x8B54 ||
+      t === 0x8B55 || t === 0x8B57 || t === 0x8B58 || t === 0x8B59 || _zwGlIsSampler(t);
+  }
+
+  // linkProgram（GLES2 §2.10.5 / WebGL 1.0 §5.14.9）：链接失败**不产生 GL 错误**
+  // ——LINK_STATUS false + infoLog 非空。active uniform 跨阶段合并（同名必同型
+  // 同长）；location 声明序分配（顶点阶段在前、片元独有续后，数组每元素一槽）；
+  // active attribute 先应用 bindAttribLocation 再自动分配（冲突 → 失败）。
+  // 链接使全部旧 location 失效（stamp 递增——§5.14.9 重链失效面）。
+  function _zwGlLinkProgram(program) {
+    program._zwStamp = (program._zwStamp || 0) + 1;
+    function fail(log) {
+      program._zwLinkOk = false;
+      program._zwLinkLog = log;
+      program._zwLink = { ok: false, uniformMap: {}, uniformList: [],
+        attribMap: {}, attribList: [], uniformRuns: {}, locCache: {} };
+    }
+    var attached = program._zwShaders || [];
+    var vs = null, fs = null, vsCount = 0, fsCount = 0, i, j;
+    for (i = 0; i < attached.length; i++) {
+      if (attached[i]._zwType === 0x8B31) { vsCount++; vs = attached[i]; }
+      else if (attached[i]._zwType === 0x8B30) { fsCount++; fs = attached[i]; }
+    }
+    if (vsCount !== 1) {
+      return fail(vsCount === 0 ? 'no vertex shader attached' : 'multiple vertex shaders attached');
+    }
+    if (fsCount !== 1) {
+      return fail(fsCount === 0 ? 'no fragment shader attached' : 'multiple fragment shaders attached');
+    }
+    if (!vs._zwCompileOk) return fail('vertex shader has not been compiled successfully');
+    if (!fs._zwCompileOk) return fail('fragment shader has not been compiled successfully');
+
+    // active uniform 合并：顶点阶段声明序在前，片元独有续后；同名必同型同长。
+    var uniformMap = {}, uniformList = [], uniformRuns = {}, locCache = {};
+    var stages = [vs._zwUniforms, fs._zwUniforms];
+    for (i = 0; i < stages.length; i++) {
+      for (j = 0; j < stages[i].length; j++) {
+        var u = stages[i][j];
+        if (uniformMap[u.name]) {
+          var prev = uniformMap[u.name];
+          if (prev.type !== u.type || prev.size !== u.size) {
+            return fail('uniform ' + u.name +
+              ' declared with different type or size in vertex and fragment shaders');
+          }
+          continue;
+        }
+        var ent = { name: u.name, type: u.type, size: u.size, isArray: u.size > 1 };
+        uniformMap[u.name] = ent;
+        if (ent.isArray) uniformMap[u.name + '[0]'] = ent; // 'u' 与 'u[0]' 同址查询面
+        uniformList.push(ent);
+      }
+    }
+    var next = 0;
+    for (i = 0; i < uniformList.length; i++) {
+      uniformList[i].index = next;
+      uniformRuns[next] = { comps: _zwGlTypeComponents(uniformList[i].type) || 1, arr: null };
+      next += uniformList[i].size;
+    }
+
+    // active attribute：bindAttribLocation 先行（冲突 → 失败），其余自动分配。
+    var attribMap = {}, attribList = [], used = {};
+    var binds = program._zwAttribBinds || {};
+    var vattrs = vs._zwAttribs;
+    for (i = 0; i < vattrs.length; i++) {
+      var a = vattrs[i];
+      var bindIdx = binds[a.name];
+      if (bindIdx !== undefined) {
+        if (used[bindIdx]) {
+          return fail('two active attributes bound to the same index ' + bindIdx);
+        }
+        used[bindIdx] = true;
+        attribMap[a.name] = { name: a.name, type: a.type, size: a.size, index: bindIdx };
+      } else {
+        attribList.push(a); // 待自动分配（保持声明序）
+      }
+    }
+    var autoIdx = 0;
+    for (i = 0; i < attribList.length; i++) {
+      while (used[autoIdx]) autoIdx++;
+      if (autoIdx >= _ZW_MAX_VERTEX_ATTRIBS) {
+        return fail('out of vertex attribute indices');
+      }
+      used[autoIdx] = true;
+      attribMap[attribList[i].name] = {
+        name: attribList[i].name, type: attribList[i].type,
+        size: attribList[i].size, index: autoIdx
+      };
+      autoIdx++;
+    }
+    var ordered = [];
+    for (i = 0; i < vattrs.length; i++) ordered.push(attribMap[vattrs[i].name]);
+
+    program._zwLinkOk = true;
+    program._zwLinkLog = '';
+    program._zwLink = { ok: true, uniformMap: uniformMap, uniformList: uniformList,
+      attribMap: attribMap, attribList: ordered, uniformRuns: uniformRuns, locCache: locCache };
+  }
+
+  // location 工厂：同 program 同名同 stamp 返回同一对象（§5.14.9 对象同一性面）；
+  // 缓存挂 link 状态——重链后缓存重建，旧对象经 stamp 失配自然失效。
+  function _zwGlUniformLocation(program, ent, name, index) {
+    var cache = program._zwLink.locCache;
+    if (cache[name]) return cache[name];
+    var loc = _zwGlNewObject('WebGLUniformLocation');
+    loc._zwProgram = program;
+    loc._zwStamp = program._zwStamp;
+    loc._zwIndex = index;
+    loc._zwEnt = ent;
+    cache[name] = loc;
+    return loc;
+  }
+
+  // uniform* 通用加载（GLES2 §2.10.4 + WebGL §6.20）：location null → 静默
+  //（corpus uniformMatrixNfv no-throw 面）；品牌 → TypeError；不属当前 program/
+  // 重链失效 → INVALID_OPERATION。transpose ToBoolean（不触 valueOf——corpus
+  // {valueOf: throw} 转换面），WebGL 1.0 仅接受 false。float 值 NaN/±Inf →
+  // INVALID_VALUE（§6.20）。类型匹配：标量 setter 仅标量 uniform；向量 setter
+  // 按分量数；矩阵 setter 仅同阶矩阵；采样器仅 uniform1i/1iv。值按 uniform
+  // 类型族存储（Float32Array/Int32Array），偏移 = (location 槽 - 基槽) × 分量。
+  function _zwGlUniformLoad(state, args, comps, isInt, isMatrix, seq) {
     var loc = args[0];
     if (loc !== null && loc !== undefined &&
       (!loc._zwGlObj || loc._zwGlIface !== 'WebGLUniformLocation')) {
       throw new TypeError('parameter 1 is not of type WebGLUniformLocation');
     }
     if (loc === null || loc === undefined) return;
-    var v = args[2];
-    if (!Array.isArray(v) && !(typeof v === 'object' && v && typeof v.length === 'number')) {
-      throw new TypeError('parameter 3 is not of type sequence');
+    if (isMatrix && !!args[1]) { // WebGL 1.0——transpose 必须为 false
+      _zwGlSetError(state, 0x0501);
+      return;
     }
+    var program = state._program;
+    if (!program || loc._zwProgram !== program ||
+      loc._zwStamp !== program._zwStamp || !program._zwLinkOk) {
+      _zwGlSetError(state, 0x0502);
+      return;
+    }
+    // 值读取：v 形取 sequence（长度须为分量数整数倍且 ≤ uniform 元素容量）；
+    // 分量形逐参取 args[1..comps]。
+    var values = [], nv = 0, v, i;
+    if (seq) {
+      v = args[isMatrix ? 2 : 1];
+      if (!Array.isArray(v) && !(typeof v === 'object' && v && typeof v.length === 'number')) {
+        throw new TypeError('parameter ' + (isMatrix ? 3 : 2) + ' is not of type sequence');
+      }
+      nv = v.length >>> 0;
+      if (nv === 0 || nv % comps !== 0) { _zwGlSetError(state, 0x0502); return; }
+      for (i = 0; i < nv; i++) {
+        var num = +v[i];
+        if (!isInt && !isFinite(num)) { _zwGlSetError(state, 0x0501); return; } // §6.20
+        values.push(isInt ? _zwGlToInteger(num) : num);
+      }
+    } else {
+      for (i = 0; i < comps; i++) {
+        var num2 = +args[1 + i];
+        if (!isInt && !isFinite(num2)) { _zwGlSetError(state, 0x0501); return; }
+        values.push(isInt ? _zwGlToInteger(num2) : num2);
+      }
+      nv = comps;
+    }
+    var ent = loc._zwEnt;
+    var t = ent.type;
+    if (isMatrix) {
+      if (t !== (comps === 4 ? 0x8B5A : comps === 9 ? 0x8B5B : 0x8B5C)) {
+        _zwGlSetError(state, 0x0502);
+        return;
+      }
+    } else if (_zwGlIsSampler(t)) {
+      if (!isInt || comps !== 1) { _zwGlSetError(state, 0x0502); return; } // 采样器仅 1i/1iv
+    } else {
+      var uc = _zwGlTypeComponents(t);
+      if ((comps === 1 && uc !== 1) || (comps > 1 && uc !== comps)) {
+        _zwGlSetError(state, 0x0502);
+        return;
+      }
+    }
+    var count = nv / comps;
+    if (ent.size > 1 ? count > ent.size : count !== 1) {
+      _zwGlSetError(state, 0x0502); // 容量越界（数组）/ 非单元素（标量）
+      return;
+    }
+    var run = program._zwLink.uniformRuns[ent.index];
+    if (!run.arr) {
+      run.arr = _zwGlIsIntFamily(t) ? new Int32Array(ent.size * comps) : new Float32Array(ent.size * comps);
+    }
+    var off = (loc._zwIndex - ent.index) * comps;
+    for (i = 0; i < nv; i++) run.arr[off + i] = values[i];
   }
 
   // create*/delete*/is* 族共享机械。
   (function () {
     var name;
     for (name in _ZW_CREATE_TAGS) {
+      if (_zwGlOps[name]) continue; // 特化实现优先——通用机械不覆盖（createShader 类型域校验）
       (function (tag) {
         _zwGlOps[name] = function (state, args) { return _zwGlNewObject(tag); };
       })(_ZW_CREATE_TAGS[name]);

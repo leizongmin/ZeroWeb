@@ -1,11 +1,27 @@
 # WebGL 兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../webgl-compat.md](../webgl-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-22（M3-S1 查询与事件面落地——基线保持 2112/2115）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-22（M3-S2 shader 编译管线落地——基线保持 2112/2115）
 
 ## 当前状态
 
-**M3-S1 查询与事件面已落地（2026-10-22）**：getParameter 全表
+**M3-S2 shader 编译管线已落地（2026-10-22）**：GLSL ES 1.0 前端子集
+（新 part08b.js 573 行——词法/语法/语义校验 + §7 内建变量 + `gl_` 保留 +
+活跃声明精确记账 + infoLog 行号面；发布单点 `globalThis._zwGlCompileGlsl`，
+compileShader 运行时调用无加载期耦合）+ part08.js op 面（+356 行）：
+createShader 类型域校验（共享机械循环改特化优先守卫）、attach/detach
+INVALID_OPERATION 域、linkProgram（双阶段齐备 + 编译前置 + active uniform
+跨阶段合并 + location 声明序分配 + bindAttribLocation 融合/冲突检测 + 重链
+stamp 失效）、反射面（getActiveAttrib/getActiveUniform WebGLActiveInfo +
+数组 `u[0]` 命名 + ACTIVE_* 计数）、uniform 加载族全量（16 setter +
+getUniformLocation 对象同一性 + getUniform 值/初值面 + 类型失配/采样器
+1i-only/NaN/transpose false-only/容量域校验）。基线 **2112 Pass / 3 Fail
+不变**（3 Fail 同 M2 上游 IDL 判据）；引擎常驻测试 part69 新增 5 组
+（86 断言）+ part67/68 回归 9 例全绿；`make test` 76/76、clippy/fmt 零告警、
+`make reftest` 714/714。详见
+[evidence/2026-10-22-m3-s2-shader-pipeline.md](evidence/2026-10-22-m3-s2-shader-pipeline.md)。
+
+**M3-S1 查询与事件面（2026-10-22）**：getParameter 全表
 （字符串身份/位面/最小上限/状态初值/压缩格式表/WebGL 专有像素参数）+
 getContextAttributes + enable/disable/isEnabled cap 校验 + 状态设置族
 （域校验/clamp/NaN 语义）+ getShaderPrecisionFormat（GLES2 §6.2 最低档）+
@@ -54,7 +70,7 @@ M2 evidence §7。
 | P1 | webgl/ corpus 导入 + 用例分布盘点 | ✅ 2026-10-22（M1） |
 | P2 | 首批收敛子集建议书提交用户 | ✅ 2026-10-22（裁决：批次 B） |
 | P3 | WebGL 1.0 最小上下文（创建/clear/draw） | ✅ 2026-10-22（M2，基线 2112/2115） |
-| P4 | 缓冲/纹理/shader 程序管线 | ▶ M3（S1 查询/事件面 ✅ 2026-10-22；余：shader 管线→对象真存储→draw 光栅） |
+| P4 | 缓冲/纹理/shader 程序管线 | ▶ M3（S1 查询/事件面 ✅、S2 shader 管线 ✅ 2026-10-22；余：对象真存储→draw 光栅） |
 | P5 | WebGL2/WebGPU 挂账定稿 | ▶ M4（挂账文档交用户签收） |
 | P6 | canvas 内容桥 × CSS transform（位图不随元素 transform，2d 同复现） | 移交渲染流（2026-10-22 A/B 归因，M2 evidence §7；非本 goal 面） |
 
@@ -77,6 +93,12 @@ M2 evidence §7。
   （可取消丢失事件/抑制恢复/丢失态旁路）+ GL 对象实例原型链接（共享路径修复）。
   基线 2112/2115 不变；part68 常驻 4 例（part67 沙盒加第二 canvas）。evidence：
   [2026-10-22-m3-s1-query-events.md](evidence/2026-10-22-m3-s1-query-events.md)。
+- **M3-S2 shader 编译管线**（2026-10-22）：GLSL ES 1.0 前端子集（part08b.js
+  发布单点 `_zwGlCompileGlsl`）+ compileShader 真编译 + linkProgram（双阶段/
+  合并/冲突/stamp 失效）+ 反射面（ActiveInfo/数组命名/ACTIVE_* 计数）+
+  uniform 加载族 16 setter + getUniformLocation/getUniform。
+  基线 2112/2115 不变；part69 常驻 5 组 86 断言。evidence：
+  [2026-10-22-m3-s2-shader-pipeline.md](evidence/2026-10-22-m3-s2-shader-pipeline.md)。
 
 ## 下一步计划
 
