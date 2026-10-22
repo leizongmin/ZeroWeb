@@ -1109,6 +1109,14 @@ fn init_logging() {
 }
 
 fn main() {
+    // FR-4：browser 进程 panic 时写本地白名单崩溃报告（必须在一切初始化前
+    // 安装，覆盖启动期 panic）；写报告失败不阻断退出，原钩子行为保持。
+    zero_browser_shell::install_browser_panic_hook(
+        zero_browser_shell::crash_reports_dir(),
+        zero_product_version::VERSION,
+        zero_product_version::BUILD_COMMIT,
+    );
+
     init_logging();
 
     // 注册 Ctrl+C handler：把信号转成 flag，事件循环检测到后走

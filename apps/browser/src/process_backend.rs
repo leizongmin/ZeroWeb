@@ -1528,6 +1528,19 @@ impl ProcessTabBackend {
         snapshots: &mut HashMap<TabId, TabSnapshot>,
         reason: &str,
     ) {
+        // FR-4：renderer 异常退出写本地白名单报告。报告落在单一收口（本路径
+        // 同时覆盖 check_crashes 与 poll IPC 断开两条检测路径）；仅取 OS 状态
+        // 段，reason 内的 stderr 尾巴可能含页面串，不进报告；失败只记日志不
+        // 阻断重生。
+        let report = zero_browser_shell::CrashReport::new(
+            zero_browser_shell::CrashRole::Renderer,
+            zero_product_version::VERSION,
+            zero_product_version::BUILD_COMMIT,
+        )
+        .with_exit_status(reason);
+        if let Err(error) = zero_browser_shell::write_report(&zero_browser_shell::crash_reports_dir(), &report) {
+            tracing::warn!("renderer crash report write failed: {error}");
+        }
         if self.tab_to_renderer.get(&tab_id) == Some(&rid) {
             self.tab_to_renderer.remove(&tab_id);
         }
