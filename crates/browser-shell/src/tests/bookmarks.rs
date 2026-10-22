@@ -276,8 +276,20 @@ fn test_bookmarks_default() {
     assert!(bm.folders().is_empty());
 }
 
+// 三测试共用的计数器窗口互斥（见 roundtrip 测试头部说明）。
+static BOOKMARK_ID_COUNTER_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// BookmarkId 计数器（bookmarks.rs `COUNTER`）是进程级单例，cargo test 并行共享：
+/// 下方两个 R3363 溢出测试加载 u64::MAX id 后 `sync_counter` 把计数器顶到 u64::MAX，
+/// 此后任意 `next()` 经 fetch_add 回绕到 0——与本测试早先持有的 folder_id 跨窗口
+/// 比较即假红（`next_id.0 > folder_id.0` 失败）。三测试互斥串行隔离污染窗口；
+/// 生产侧 saturating 语义维持 R3363 决议不动。
 #[test]
 fn test_bookmarks_save_load_roundtrip() {
+    let _counter_guard = BOOKMARK_ID_COUNTER_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    // 预热一笔：若前序溢出测试刚释放锁且计数器停在 u64::MAX，本笔触发 fetch_add
+    // 回绕到 0，后续本测试内 ID 恢复单调低位；计数器健康时仅多耗一个 ID（无副作用）。
+    let _warmup = Bookmarks::new().add("counter-warmup", "about:blank", None);
     let dir = std::env::temp_dir().join(format!("zeroweb_test_bookmarks-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let path = dir.join("bookmarks.json");
@@ -307,6 +319,9 @@ fn test_bookmarks_save_load_roundtrip() {
 // 本地信任边界文件（~/.config/zeroweb/bookmarks.json）解析须 fail-safe 不 crash 浏览器。
 #[test]
 fn test_bookmarks_load_max_u64_id_no_overflow_r3363() {
+    // 加载 u64::MAX id 会把全局计数器顶到 u64::MAX（污染窗口起点），须与 roundtrip
+    // 等跨窗口比较 ID 的测试互斥（见 roundtrip 测试头部说明）。
+    let _counter_guard = BOOKMARK_ID_COUNTER_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let dir = std::env::temp_dir().join(format!("zeroweb_test_bookmarks_ovf-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let path = dir.join("bookmarks.json");
@@ -335,6 +350,8 @@ fn test_bookmarks_load_max_u64_id_no_overflow_r3363() {
 // R3363：folder id 为 u64::MAX 时同样不 panic（from_snapshot 的 max_id 经 folder_id 分支也取 max）。
 #[test]
 fn test_bookmarks_load_max_u64_folder_id_no_overflow_r3363() {
+    // 同上：u64::MAX folder id 同样顶满全局计数器，须与 roundtrip 互斥。
+    let _counter_guard = BOOKMARK_ID_COUNTER_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let dir = std::env::temp_dir().join(format!("zeroweb_test_bookmarks_fovf-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let path = dir.join("bookmarks.json");
