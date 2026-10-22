@@ -346,7 +346,22 @@ impl LayoutEngine {
             // 容器或 aspect-ratio block 子 box_content 无法度量）时，回退 Auto（fill）而非留 0 塌缩
             // ——converter 已把 MaxContent width 映射 0，gate 测不出则元素归零（intrinsic-size-005
             // multicol + aspect-ratio 子回归）。fill（父宽）比 collapse 更接近 fit-content 语义。
+            // R5219（css-sizing-3 #max-content + #valdef-width-fit-content）：测量 ≤1 有两义——
+            // 真空子树的真实 max-content（规范解 0：fit-content ≡ fit-content(max-content) =
+            // min(W_max=0, …) = 0）与测量盲区退化 0。仅盲区回退；真空子树保持 converter
+            // length(0) 塌缩——float-clearance-with-margin-collapse-and-fit-content-and-
+            // padding-percentage-001~004 的 fit-content 空盒被 fill 成 CB 满（w=784/800）即
+            // 混淆两义，padding-top:% / margin 塌穿 / clearance 链整体位移。盲区信号 =
+            // 子树任一 in-flow 元素、非空白文本、replaced 或 aspect-ratio（DOM 直读递归，
+            // subtree_may_contribute_intrinsic_width）。min-content（mincontent_block）退化臂
+            // 不收窄：R1304 近似口径独立（overestimate 安全向），0 塌缩担忧语义不同源。
             if intrinsic <= 1.0 {
+                if is_block
+                    && matches!(s.width, LengthValue::MaxContent)
+                    && !crate::intrinsic_sizing::subtree_may_contribute_intrinsic_width(b.node_id, doc, styles)
+                {
+                    continue;
+                }
                 if is_block
                     && (matches!(s.width, LengthValue::MaxContent) || mincontent_block)
                     && let Some(&taffy_id) = dom_to_taffy.get(&id)

@@ -789,3 +789,6 @@ mod r5216_line_float_fit_tests;
 mod r5217_bfc_margin_pin_beside_tests;
 /// R5218（CSS2 §9.2.1 × §10.6.3）含 inline-flex/inline-grid 子的块容器行盒高合成锚点。
 mod r5218_atomic_inline_container_height_tests;
+/// R5219（css-sizing-3 #max-content）fit-content/max-content 真空子树塌 0 + 盲区回退
+/// 保持锚点。
+mod r5219_vacuum_fitcontent_collapse_tests;

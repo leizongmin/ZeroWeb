@@ -18,7 +18,7 @@ use zero_css_parser::values::{
 };
 use zero_dom::{Document, NodeId};
 use zero_style_system::ComputedStyle;
-use zero_style_system::property::types::{ColumnSpanComputedValue, FlexBasisValue, WhiteSpaceValue};
+use zero_style_system::property::types::{ColumnSpanComputedValue, FlexBasisValue, PositionValue, WhiteSpaceValue};
 
 use crate::types::LayoutBox;
 
@@ -735,6 +735,63 @@ pub(crate) fn block_max_content_width(
     styles: &HashMap<NodeId, ComputedStyle>,
 ) -> f32 {
     block_intrinsic_width(box_node, doc, styles, false)
+}
+
+/// R5219（css-sizing-3 #max-content）：子树是否含任何可贡献非零 intrinsic 宽的信号
+/// ——in-flow 元素、非空白文本（white-space 保留时空白文本也算，CSS2 §16.6.1）、
+/// replaced 元素（无子也有默认 object size，与 R4000 svg 同源）或 aspect-ratio
+///（transferred 尺寸依赖交叉轴测量，max-content 趟可能测 0——intrinsic-size-005
+/// 回退臂驱动形态）。DOM 直读递归：第一趟盒树不含裸文本盒（R4355），纯盒树判定
+/// 会漏文本。display:none / absolute / fixed 子树 out-of-flow 不贡献。
+///
+/// 判定方向安全：调用方以「判无信号 → 保持 0 塌缩」消费——误判有信号仅维持现状
+/// 回退（fill），误判无信号才是回归源，故无样式信息的元素保守判有信号。
+pub(crate) fn subtree_may_contribute_intrinsic_width(
+    node_id: Option<NodeId>,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> bool {
+    let Some(id) = node_id else { return false };
+    // replaced（tree.rs 构盒同表）与表单控件边界形态（R4490 追加表）。
+    if crate::tree::is_replaced_element_tag(doc, id) {
+        return true;
+    }
+    let Some(node) = doc.get(id) else { return false };
+    if let zero_dom::NodeKind::Element(elem) = &node.kind
+        && matches!(elem.local_name(), "input" | "select" | "textarea" | "button")
+    {
+        return true;
+    }
+    if styles.get(&id).is_some_and(|cs| cs.aspect_ratio.is_some()) {
+        return true;
+    }
+    let ws_preserved = styles
+        .get(&id)
+        .is_some_and(|cs| matches!(cs.white_space, WhiteSpaceValue::Pre | WhiteSpaceValue::PreWrap));
+    for &child in &node.children {
+        let Some(cn) = doc.get(child) else { continue };
+        match &cn.kind {
+            zero_dom::NodeKind::Text(t) => {
+                if !t.content.trim().is_empty() || (ws_preserved && !t.content.is_empty()) {
+                    return true;
+                }
+            }
+            zero_dom::NodeKind::Element(_) => {
+                let Some(cs) = styles.get(&child) else { return true };
+                if matches!(cs.display, DisplayValue::None) {
+                    continue;
+                }
+                if matches!(cs.position, PositionValue::Absolute | PositionValue::Fixed) {
+                    continue;
+                }
+                if subtree_may_contribute_intrinsic_width(Some(child), doc, styles) {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    false
 }
 
 /// R5036（css-sizing-3 §min-content）：block 容器的 min-content 内容宽——软换行
