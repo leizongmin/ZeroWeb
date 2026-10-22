@@ -2,7 +2,8 @@ use super::{
     ComputedStyle, FinalInlineContext, InlineFontContext, InlineFormattingContext, LayoutBox, TextAlign,
     TextGroupAlign, compute_final_inline_layouts, extract_inline_visual_metrics, measure_text_content,
     resolve_text_align, resolve_text_align_last, resolve_text_group_align, resolve_text_indent,
-    sync_inline_block_positions_from_ifc, sync_inline_child_boxes_from_ifc, vertical_decoration_free_with_mode,
+    sync_inline_block_positions_from_ifc, sync_inline_child_boxes_from_ifc_with_ancestors,
+    vertical_decoration_free_with_mode,
 };
 use std::collections::HashMap;
 use zero_css_parser::values::{DisplayValue, LengthValue};
@@ -552,7 +553,7 @@ fn r4297_wrapped_inline_child_anchors_to_first_fragment_line() {
         }],
         ..LayoutBox::default()
     };
-    sync_inline_child_boxes_from_ifc(&mut root, &context, &styles);
+    sync_inline_child_boxes_from_ifc_with_ancestors(&mut root, &context, &styles, &HashMap::new());
     let child = &root.children[0];
     let span_line_y = context
         .lines
@@ -609,7 +610,7 @@ fn r4297_preceded_by_text_sibling_takes_fragment_x() {
         }],
         ..LayoutBox::default()
     };
-    sync_inline_child_boxes_from_ifc(&mut root, &context, &styles);
+    sync_inline_child_boxes_from_ifc_with_ancestors(&mut root, &context, &styles, &HashMap::new());
     assert!(
         (root.children[0].x - frag_x).abs() < 0.5,
         "span 盒 x 应取 fragment 位 {}（taffy 块堆叠位 = 行首 0 会覆盖前驱「AB」），实际 {}",
@@ -653,7 +654,7 @@ fn r4297_vertical_padding_baked_into_height_and_replaced_skipped() {
         }],
         ..LayoutBox::default()
     };
-    sync_inline_child_boxes_from_ifc(&mut root, &context, &styles);
+    sync_inline_child_boxes_from_ifc_with_ancestors(&mut root, &context, &styles, &HashMap::new());
     assert_eq!(root.children[0].y, 7.0, "替换元素不走文本路径：y 不动");
     assert_eq!(root.children[0].width, 30.0, "替换元素：宽不动");
 
@@ -670,7 +671,7 @@ fn r4297_vertical_padding_baked_into_height_and_replaced_skipped() {
         }],
         ..LayoutBox::default()
     };
-    sync_inline_child_boxes_from_ifc(&mut root2, &context, &styles);
+    sync_inline_child_boxes_from_ifc_with_ancestors(&mut root2, &context, &styles, &HashMap::new());
     let child = &root2.children[0];
     let line_y = context.lines[0].y;
     let frag_h = context.all_fragments_with_line_y()[0].height;
@@ -731,7 +732,7 @@ fn slice13_inline_rect_is_content_area_not_line_box() {
         }],
         ..LayoutBox::default()
     };
-    sync_inline_child_boxes_from_ifc(&mut root, &context, &styles);
+    sync_inline_child_boxes_from_ifc_with_ancestors(&mut root, &context, &styles, &HashMap::new());
     let child = &root.children[0];
     let (line_y, baseline_y) = (context.lines[0].y, context.lines[0].baseline_y);
     // 树回归守卫：布局树保持行盒几何（流 bookkeeping 不变——pivot 语义核心）。
@@ -792,7 +793,7 @@ fn slice13_inline_rect_normal_line_height_height_preserved() {
         }],
         ..LayoutBox::default()
     };
-    sync_inline_child_boxes_from_ifc(&mut root, &context, &styles);
+    sync_inline_child_boxes_from_ifc_with_ancestors(&mut root, &context, &styles, &HashMap::new());
     let child = &root.children[0];
     let (line_y, baseline_y) = (context.lines[0].y, context.lines[0].baseline_y);
     let reported = child
@@ -846,7 +847,7 @@ fn slice13_inline_rect_ahem_uses_ahem_ratios() {
         }],
         ..LayoutBox::default()
     };
-    sync_inline_child_boxes_from_ifc(&mut root, &context, &styles);
+    sync_inline_child_boxes_from_ifc_with_ancestors(&mut root, &context, &styles, &HashMap::new());
     let child = &root.children[0];
     let (line_y, baseline_y) = (context.lines[0].y, context.lines[0].baseline_y);
     let reported = child.inline_reported_rect.expect("Ahem 单行 inline 应记录上报矩形");
@@ -920,7 +921,7 @@ fn slice13_same_line_nested_font_sizes_anchor_content_area() {
         ],
         ..LayoutBox::default()
     };
-    sync_inline_child_boxes_from_ifc(&mut root, &context, &styles);
+    sync_inline_child_boxes_from_ifc_with_ancestors(&mut root, &context, &styles, &HashMap::new());
     let (line_y, baseline_y) = (context.lines[0].y, context.lines[0].baseline_y);
     let span_child = &root.children[0];
     let span_reported = span_child.inline_reported_rect.expect("同线嵌套 span 应记录上报矩形");
@@ -957,7 +958,7 @@ fn slice13_same_line_nested_font_sizes_anchor_content_area() {
         }],
         ..LayoutBox::default()
     };
-    sync_inline_child_boxes_from_ifc(&mut span_root, &span_ctx, &styles);
+    sync_inline_child_boxes_from_ifc_with_ancestors(&mut span_root, &span_ctx, &styles, &HashMap::new());
     let b_reported = span_root.children[0].inline_reported_rect.expect("b 应记录上报矩形");
     let b_line = &span_ctx.lines[0];
     assert!(
@@ -1010,7 +1011,7 @@ fn slice13_multiline_wrapped_inline_keeps_union_path() {
         }],
         ..LayoutBox::default()
     };
-    sync_inline_child_boxes_from_ifc(&mut root, &context, &styles);
+    sync_inline_child_boxes_from_ifc_with_ancestors(&mut root, &context, &styles, &HashMap::new());
     let child = &root.children[0];
     assert!(
         child.inline_reported_rect.is_none(),
@@ -1100,7 +1101,7 @@ fn slice13rw_provider_single_line_multi_run_keeps_union_tree() {
         }],
         ..LayoutBox::default()
     };
-    sync_inline_child_boxes_from_ifc(&mut root, &context, &styles);
+    sync_inline_child_boxes_from_ifc_with_ancestors(&mut root, &context, &styles, &HashMap::new());
     let child = &root.children[0];
     let (line_y, baseline_y) = (context.lines[0].y, context.lines[0].baseline_y);
     // 树 = union 行盒几何（provider 度量 0.6/−0.1 的锚定 y = baseline−0.6fs、
@@ -1171,7 +1172,7 @@ fn slice13rw_provider_count1_anchor_in_tree_preserved() {
         }],
         ..LayoutBox::default()
     };
-    sync_inline_child_boxes_from_ifc(&mut root, &context, &styles);
+    sync_inline_child_boxes_from_ifc_with_ancestors(&mut root, &context, &styles, &HashMap::new());
     let child = &root.children[0];
     let (line_y, baseline_y) = (context.lines[0].y, context.lines[0].baseline_y);
     // count==1 + provider：锚定**入树**（y = baseline − 0.6fs，h = 0.7fs = 9.1，
@@ -1236,7 +1237,7 @@ fn slice13rw_reported_rect_is_border_box_with_padding_border() {
         }],
         ..LayoutBox::default()
     };
-    sync_inline_child_boxes_from_ifc(&mut root, &context, &styles);
+    sync_inline_child_boxes_from_ifc_with_ancestors(&mut root, &context, &styles, &HashMap::new());
     let child = &root.children[0];
     let (line_y, baseline_y) = (context.lines[0].y, context.lines[0].baseline_y);
     let reported = child
@@ -1308,7 +1309,7 @@ fn slice13rw_excluded_inline_reports_none_and_keeps_geometry() {
     // relative 臂：child.is_relative = true → 分支跳过。
     let mut root_rel = make_root();
     root_rel.children[0].is_relative = true;
-    sync_inline_child_boxes_from_ifc(&mut root_rel, &context, &styles);
+    sync_inline_child_boxes_from_ifc_with_ancestors(&mut root_rel, &context, &styles, &HashMap::new());
     let child = &root_rel.children[0];
     assert!(child.inline_reported_rect.is_none(), "relative inline 不记录上报矩形");
     assert_eq!(
@@ -1322,7 +1323,7 @@ fn slice13rw_excluded_inline_reports_none_and_keeps_geometry() {
     context_v.layout(&doc, container, &styles);
     context_v.vertical = true;
     let mut root_v = make_root();
-    sync_inline_child_boxes_from_ifc(&mut root_v, &context_v, &styles);
+    sync_inline_child_boxes_from_ifc_with_ancestors(&mut root_v, &context_v, &styles, &HashMap::new());
     let child = &root_v.children[0];
     assert!(child.inline_reported_rect.is_none(), "vertical inline 不记录上报矩形");
     assert_eq!(
@@ -1371,7 +1372,7 @@ fn slice16_va_middle_pins_own_baseline_anchor() {
         }],
         ..LayoutBox::default()
     };
-    sync_inline_child_boxes_from_ifc(&mut root, &context, &styles);
+    sync_inline_child_boxes_from_ifc_with_ancestors(&mut root, &context, &styles, &HashMap::new());
     let child = &root.children[0];
     let line_y = context.lines[0].y;
     let reported = child
@@ -1444,7 +1445,7 @@ fn slice16_provider_arm_va_middle_pins_own_baseline_anchor() {
         }],
         ..LayoutBox::default()
     };
-    sync_inline_child_boxes_from_ifc(&mut root, &context, &styles);
+    sync_inline_child_boxes_from_ifc_with_ancestors(&mut root, &context, &styles, &HashMap::new());
     let child = &root.children[0];
     let line_y = context.lines[0].y;
     let frag = &context.lines[0].runs[0];
@@ -1525,7 +1526,7 @@ fn slice16_va_sub_super_shift_own_baseline_by_03em() {
                 }],
                 ..LayoutBox::default()
             };
-            sync_inline_child_boxes_from_ifc(&mut root, &context, &styles);
+            sync_inline_child_boxes_from_ifc_with_ancestors(&mut root, &context, &styles, &HashMap::new());
             root.children[0]
                 .inline_reported_rect
                 .expect("单行 inline 应记录上报矩形")
@@ -1588,7 +1589,7 @@ fn slice16_va_top_bottom_texttop_textbottom_anchor_own_baseline() {
             }],
             ..LayoutBox::default()
         };
-        sync_inline_child_boxes_from_ifc(&mut root, &context, &styles);
+        sync_inline_child_boxes_from_ifc_with_ancestors(&mut root, &context, &styles, &HashMap::new());
         let child = &root.children[0];
         let line_y = context.lines[0].y;
         let frag = &context.lines[0].runs[0];
@@ -1643,7 +1644,7 @@ fn slice16_va_baseline_arm_pins_line_baseline_anchor_unchanged() {
         }],
         ..LayoutBox::default()
     };
-    sync_inline_child_boxes_from_ifc(&mut root, &context, &styles);
+    sync_inline_child_boxes_from_ifc_with_ancestors(&mut root, &context, &styles, &HashMap::new());
     let child = &root.children[0];
     let (line_y, baseline_y) = (context.lines[0].y, context.lines[0].baseline_y);
     let reported = child.inline_reported_rect.expect("单行 inline 应记录上报矩形");
@@ -1742,7 +1743,7 @@ fn slice16_va_length_percentage_unparsed_falls_back_to_baseline() {
             }],
             ..LayoutBox::default()
         };
-        sync_inline_child_boxes_from_ifc(&mut root, &context, &styles);
+        sync_inline_child_boxes_from_ifc_with_ancestors(&mut root, &context, &styles, &HashMap::new());
         let reported = root.children[0]
             .inline_reported_rect
             .expect("单行 inline 应记录上报矩形");
@@ -1761,5 +1762,136 @@ fn slice16_va_length_percentage_unparsed_falls_back_to_baseline() {
         "3px 与 50% 均回落 baseline：两案偏移应同值，实际 {} vs {}",
         anchor_ys[0],
         anchor_ys[1]
+    );
+}
+
+/// R5232：`build_inline_owner_ancestor_map` 链序与覆盖——文本节点与元素（R5177
+/// 独立归因 owner）均入映射，链自内向外（[最近 inline 祖先, …, 容器直接子]），
+/// 不含 owner 自身；原子/块级子树不入链。
+#[test]
+fn test_build_inline_owner_ancestor_map_chain_order_and_coverage() {
+    let mut doc = Document::new();
+    let container = doc.create_element("div");
+    let outer = doc.create_element("span");
+    let inner1 = doc.create_element("span");
+    let t1 = doc.create_text_node("aaaaaa");
+    let gap = doc.create_text_node("\u{00a0}\u{00a0}\u{00a0}\u{00a0}\u{00a0}\u{00a0}");
+    let inner2 = doc.create_element("span");
+    let t2 = doc.create_text_node("aaaaaa");
+    doc.append_child(container, outer).unwrap();
+    doc.append_child(outer, inner1).unwrap();
+    doc.append_child(inner1, t1).unwrap();
+    doc.append_child(outer, gap).unwrap();
+    doc.append_child(outer, inner2).unwrap();
+    doc.append_child(inner2, t2).unwrap();
+    // 块级子树不入链（属其他 IFC）。
+    let block_child = doc.create_element("div");
+    let block_text = doc.create_text_node("bb");
+    doc.append_child(container, block_child).unwrap();
+    doc.append_child(block_child, block_text).unwrap();
+
+    let mut styles = HashMap::new();
+    styles.insert(container, ComputedStyle::default());
+    for id in [outer, inner1, inner2, block_child] {
+        let mut s = ComputedStyle::default();
+        s.display = if id == block_child {
+            DisplayValue::Block
+        } else {
+            DisplayValue::Inline
+        };
+        styles.insert(id, s);
+    }
+
+    let map = super::build_inline_owner_ancestor_map(&doc, container, &styles);
+    // 文本 owner：链自内向外。
+    assert_eq!(
+        map.get(&t1),
+        Some(&vec![inner1, outer]),
+        "inner1 文本链 = [inner1, outer]"
+    );
+    assert_eq!(map.get(&gap), Some(&vec![outer]), "外层直接文本链 = [outer]");
+    assert_eq!(
+        map.get(&t2),
+        Some(&vec![inner2, outer]),
+        "inner2 文本链 = [inner2, outer]"
+    );
+    // 元素 owner（R5177 独立归因形态）：链不含自身。
+    assert_eq!(map.get(&inner1), Some(&vec![outer]), "inner1 元素链 = [outer]");
+    // 容器直接子 inline：空链（自身即链尾，消费端零迭代无害）。
+    assert_eq!(map.get(&outer), Some(&Vec::new()), "outer = 容器直接子，空链");
+    // 块级子树不入链。
+    assert!(!map.contains_key(&block_text), "块级子文本不入行内流映射");
+}
+
+/// R5232：嵌套 inline 盒 x 收紧到子孙内容首缘——外层盒自身名下 fragments 仅含
+/// 折回文本段（R4300c），首内容属子孙（R5177 分歧独立归因）时 min_x 推导右移
+/// （position-relative-033-ref 蓝框右移 6em 形态）；传映射后外盒 x = 子孙首缘 −
+/// 自身 (ml+pl+bl)。空映射维持自身推导（旧行为锚）。
+#[test]
+fn test_sync_inline_box_x_tightens_to_descendant_first_edge() {
+    let mut doc = Document::new();
+    let container = doc.create_element("div");
+    let outer = doc.create_element("span");
+    let inner1 = doc.create_element("span");
+    let t1 = doc.create_text_node("aaaaaa");
+    let gap = doc.create_text_node("\u{00a0}\u{00a0}\u{00a0}\u{00a0}\u{00a0}\u{00a0}");
+    let inner2 = doc.create_element("span");
+    let t2 = doc.create_text_node("aaaaaa");
+    doc.append_child(container, outer).unwrap();
+    doc.append_child(outer, inner1).unwrap();
+    doc.append_child(inner1, t1).unwrap();
+    doc.append_child(outer, gap).unwrap();
+    doc.append_child(outer, inner2).unwrap();
+    doc.append_child(inner2, t2).unwrap();
+
+    let mut styles = HashMap::new();
+    styles.insert(container, ComputedStyle::default());
+    let mut outer_style = ComputedStyle::default();
+    outer_style.display = DisplayValue::Inline;
+    // 左边框 2px 验证候选扣减（extract_inline_visual_metrics border 抑制语义：
+    // 须配 Solid 样式，none 计 0）。
+    outer_style.border_left_width = LengthValue::Px(2.0);
+    outer_style.border_left_style = BorderStyleValue::Solid;
+    styles.insert(outer, outer_style);
+    for id in [inner1, inner2] {
+        let mut s = ComputedStyle::default();
+        s.display = DisplayValue::Inline;
+        // R5177：color 分歧 → 子自身独立归因（外层默认色）。
+        s.color = zero_css_parser::values::ColorValue::Rgba(255, 0, 0, 255);
+        styles.insert(id, s);
+    }
+
+    // 宽容器单行：inner1 fragment 落行首 x=0。
+    let mut context = InlineFormattingContext::new(1000.0);
+    context.layout(&doc, container, &styles);
+
+    let mut root = LayoutBox {
+        node_id: Some(container),
+        children: vec![LayoutBox {
+            node_id: Some(outer),
+            x: 0.0,
+            y: 0.0,
+            width: 200.0,
+            height: 20.0,
+            ..LayoutBox::default()
+        }],
+        ..LayoutBox::default()
+    };
+
+    // 旧行为锚：空映射 → 盒 x = 自身名下（折回 nbsp 段）min_x − bl 2 > 0。
+    sync_inline_child_boxes_from_ifc_with_ancestors(&mut root, &context, &styles, &HashMap::new());
+    let x_legacy = root.children[0].x;
+    assert!(
+        x_legacy > 0.0,
+        "空映射（旧行为）：外盒 x 应右移到折回段首缘，实际 {x_legacy}"
+    );
+
+    // R5232：真实映射 → 外盒 x 收紧到 inner1 首缘 0 − 自身 bl 2 = −2。
+    let map = super::build_inline_owner_ancestor_map(&doc, container, &styles);
+    sync_inline_child_boxes_from_ifc_with_ancestors(&mut root, &context, &styles, &map);
+    let x_tightened = root.children[0].x;
+    assert!(
+        (x_tightened - (-2.0)).abs() < 0.01,
+        "映射收紧：外盒 x 应 = 子孙首缘 0 − bl 2 = −2，实际 {x_tightened}（旧行为 {x_legacy}）"
     );
 }

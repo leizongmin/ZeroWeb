@@ -734,6 +734,62 @@ pub(crate) fn collect_vertical_central_baselines(
     map
 }
 
+/// R5232：行内归因节点 → 其 IFC 内 inline 祖先链（自内向外，截至容器直接子 inline）。
+///
+/// collect 面的祖先吸收（R4300c 纯文本壳折回归因外层）与 R5177 color 分歧独立归因
+/// 组合下，文本 fragment 的归因节点 ≠ 其全部布局 inline 祖先——外层 inline 盒自身
+/// 名下 fragments 可能不含子孙内容首缘（position-relative-033-ref 实证）。仅遍历
+/// 本 IFC 行内流（inline 元素与文本节点；原子/块级子树属其他 IFC，不入链）。
+/// 供 [`sync_inline_child_boxes_from_ifc_with_ancestors`] 把盒 x 收紧到子孙首缘。
+pub(crate) fn build_inline_owner_ancestor_map(
+    doc: &Document,
+    container_id: NodeId,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> HashMap<NodeId, Vec<NodeId>> {
+    fn walk(
+        doc: &Document,
+        id: NodeId,
+        chain: &mut Vec<NodeId>,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        map: &mut HashMap<NodeId, Vec<NodeId>>,
+    ) {
+        let Some(node) = doc.get(id) else { return };
+        match &node.kind {
+            zero_dom::NodeKind::Text(_) => {
+                // walk 的 chain 是 push 序（外→内）；消费端按「自内向外」逐段扣减——
+                // 此处反转。
+                if !chain.is_empty() {
+                    map.insert(id, chain.iter().rev().copied().collect());
+                }
+            }
+            zero_dom::NodeKind::Element(_) => {
+                let is_inline = styles
+                    .get(&id)
+                    .is_some_and(|s| matches!(s.display, DisplayValue::Inline));
+                if is_inline {
+                    chain.push(id);
+                    // R5177 color 分歧独立归因的元素自身也是 owner（fragment 归因
+                    // 元素 id）——其祖先链 = 已 push 链去掉自身后反转（自内向外）。
+                    map.insert(id, chain[..chain.len() - 1].iter().rev().copied().collect());
+                }
+                for child in doc.child_nodes(id) {
+                    walk(doc, child, chain, styles, map);
+                }
+                if is_inline {
+                    chain.pop();
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut map: HashMap<NodeId, Vec<NodeId>> = HashMap::new();
+    let mut chain = Vec::new();
+    for child in doc.child_nodes(container_id) {
+        walk(doc, child, &mut chain, styles, &mut map);
+    }
+    map
+}
+
 /// 重写路径（行为不变）。kill-switch `ZW_INLINE_FRAG_POS=0`（LazyLock 构造期单读，
 /// R3858 热路径零 env 查询教训）。
 ///
@@ -742,10 +798,15 @@ pub(crate) fn collect_vertical_central_baselines(
 /// `all_fragments_with_line_y()` 全量 clone fragment 文本串（逐容器热路径分配，
 /// bench first_paint +35% 实证后重构）——直接遍历 `lines`/`runs` 零 clone；y 合成与
 /// 该函数同口径（水平 run.y + line.y；垂直仅 run.y，R1456）。
-pub(crate) fn sync_inline_child_boxes_from_ifc(
+///
+/// R5232：盒 x 由「自身名下 fragments min_x 推导」收紧为 min(自身推导, 子孙内容
+/// 首缘推导)——`owner_ancestors` = [`build_inline_owner_ancestor_map`] 产物；传空
+/// 映射 = 维持自身推导（R5232 前行为，供单测/诊断）。
+pub(crate) fn sync_inline_child_boxes_from_ifc_with_ancestors(
     box_node: &mut LayoutBox,
     inline_ctx: &InlineFormattingContext,
     styles: &HashMap<NodeId, ComputedStyle>,
+    owner_ancestors: &HashMap<NodeId, Vec<NodeId>>,
 ) {
     static FRAG_POS_ON: std::sync::LazyLock<bool> =
         std::sync::LazyLock::new(|| std::env::var("ZW_INLINE_FRAG_POS").as_deref() != Ok("0"));
@@ -814,6 +875,42 @@ pub(crate) fn sync_inline_child_boxes_from_ifc(
         }
     }
 
+    // R5232：子孙内容首缘收紧表。CSS2 §9.2.1：inline 盒的内容含其全部子孙 inline 盒
+    // 的 border 盒——盒 x 应 = 全部生成内容首缘 − 自身 (ml+pl+bl)。collect 面的祖先
+    // 吸收（R4300c 纯文本壳折回归因外层）与 R5177 color 分歧独立归因组合下，文本
+    // fragment 的归因节点 ≠ 全部布局 inline 祖先：外层盒名下 fragments 可能不含
+    // 子孙首缘（position-relative-033-ref：外 span 名下仅 nbsp 段 x=128，推导盒
+    // x=126，应 6 = 子孙 yellow-stripe 首缘 8 − 自身 bl 2）。此处按映射对每个祖先
+    // 聚「以它为 inline 祖先」的 owner min_x 推导候选 x，主臂取 min 收紧（只收紧
+    // 不放松；映射为空或 `ZW_INLINE_BOX_X_ANCESTORS=0` 时逐字节旧行为）。
+    static X_ANCESTORS_ON: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| std::env::var("ZW_INLINE_BOX_X_ANCESTORS").as_deref() != Ok("0"));
+    let mut min_inherited_x: HashMap<NodeId, f32> = HashMap::new();
+    if frag_pos_on && *X_ANCESTORS_ON {
+        for (owner, chain) in owner_ancestors {
+            let Some(owner_agg) = aggs.get(owner) else {
+                continue;
+            };
+            // 链自内向外（[最近 inline 祖先, …, 容器直接子]）。deducted = 已过的
+            // 中间段 (ml+pl+bl) 累计：owner fragment x 是 owner 内容区起点（其自身
+            // ml/pl/bl 已在行内推进时扣除），祖先盒起点 = 沿链逐段再扣该段 frame。
+            let mut deducted = 0.0_f32;
+            for anc in chain {
+                let anc_border_left = styles
+                    .get(anc)
+                    .map(|s| extract_inline_visual_metrics(s).border_left)
+                    .unwrap_or(0.0);
+                // 有 frame 的段必有归因 fragment（collect R4300e spacer 零宽 run），
+                // ml/pl 取其首 fragment 记录；无 frame 段自然为 0。
+                let (anc_ml, anc_pl) = aggs.get(anc).map(|a| (a.first_ml, a.first_pl)).unwrap_or((0.0, 0.0));
+                let cand = owner_agg.min_x - deducted - anc_ml - anc_pl - anc_border_left;
+                let entry = min_inherited_x.entry(*anc).or_insert(f32::INFINITY);
+                *entry = entry.min(cand);
+                deducted += anc_ml + anc_pl + anc_border_left;
+            }
+        }
+    }
+
     for child in &mut box_node.children {
         if child.is_block_level || child.is_absolute || child.is_fixed {
             continue;
@@ -839,6 +936,10 @@ pub(crate) fn sync_inline_child_boxes_from_ifc(
             if !child.is_replaced && frag_pos_on && pure_inline_container && !vertical && !child.is_relative {
                 let metrics = extract_inline_visual_metrics(style);
                 child.x = agg.min_x - agg.first_ml - agg.first_pl - metrics.border_left;
+                // R5232：子孙首缘候选更小（首内容属子孙）时收紧——只收紧不放松。
+                if let Some(cand) = min_inherited_x.get(&child_id) {
+                    child.x = child.x.min(*cand);
+                }
                 // R4379/R4383：inline 的盒垂直锚 = **primary 字体 content area 锚行基线**
                 // （CSS2 §10.6.2：inline 非替换盒的 content area = 元素自身字体的
                 // A+D——**与 line-height 无关**，半 leading 属行盒不属 inline 盒）。
@@ -2759,7 +2860,9 @@ pub(crate) fn remeasure_text_with_float_exclusions(
             // 存储 IFC 片段中各文本节点的 font_size，供 paint 系统计算基线偏移
             store_font_sizes_from_ifc(&inline_ctx, box_node, doc, styles);
             if !r5215_mixed_container {
-                sync_inline_child_boxes_from_ifc(box_node, &inline_ctx, styles);
+                // R5232：归因节点祖先链映射供盒 x 收紧到子孙内容首缘。
+                let owner_ancestors = build_inline_owner_ancestor_map(doc, box_node.node_id.unwrap_or(dom_id), styles);
+                sync_inline_child_boxes_from_ifc_with_ancestors(box_node, &inline_ctx, styles, &owner_ancestors);
                 // R4234：atomic inline（img / inline-block）子盒位置同步——排除感知 IFC 把
                 // 行首原子盒下推/缩排后，其 LayoutBox 若停在 taffy 块堆叠位（float-unaware）
                 // 会与 float 重叠（c414-flt-fit-001 的 br img 落在首行起点）。all-or-nothing
@@ -3599,7 +3702,9 @@ pub(crate) fn remeasure_inline_only_containers(
 
         // 存储 IFC 片段中各文本节点的 font_size，供 paint 系统计算基线偏移
         store_font_sizes_from_ifc(&inline_ctx, box_node, doc, styles);
-        sync_inline_child_boxes_from_ifc(box_node, &inline_ctx, styles);
+        // R5232：归因节点祖先链映射供盒 x 收紧到子孙内容首缘。
+        let owner_ancestors = build_inline_owner_ancestor_map(doc, box_node.node_id.unwrap_or(dom_id), styles);
+        sync_inline_child_boxes_from_ifc_with_ancestors(box_node, &inline_ctx, styles, &owner_ancestors);
 
         // R4428 viv：vertical 的物理高（行内轴 extent）= **最深列深**（max run.y+run.height）；
         // total_height()（Σ line.height = Σ 列宽）是**块轴**跨度，属物理宽。
