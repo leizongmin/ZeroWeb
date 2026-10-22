@@ -1,0 +1,2481 @@
+{
+ "meta": {
+  "slice": "M2 切片 33（s33）",
+  "date": "2026-10-23",
+  "command": "./target/test-guard --per-proc-mem 8 --total-mem 16 --time-limit 3000 -- ./target/release/zero-wpt-runner testharness-html-semantics dialog --json",
+  "files": 82,
+  "subtests": 411,
+  "pass": 337,
+  "fail": 73,
+  "timeout": 1,
+  "baseline": "s32 (2026-10-23-m2s32-popover-open-semantics.json)：同 key 411 diff REG 0 / GAIN 16",
+  "gain_keys": "closedby-complex：clicking dialogA(5) / outside all(6) / popoverA(5)，normal+shadow 混合"
+ },
+ "results": [
+  [
+   "html/semantics/forms/the-select-element/customizable-select/select-dialog-mode-focus.optional.html",
+   [
+    {
+     "name": "In dialog mode the first focusable element should get focus.",
+     "status": "Fail",
+     "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: ':open' is not a valid selector.\""
+    },
+    {
+     "name": "In dialog mode tab should not close the picker.",
+     "status": "Fail",
+     "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: ':open' is not a valid selector.\""
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/abspos-dialog-layout.html",
+   [
+    {
+     "name": "showModal() should center in the viewport",
+     "status": "Fail",
+     "message": "assert_approx_equals: expected 300 +/- 1 but got 0"
+    },
+    {
+     "name": "Dialog should be recentered if showModal() is called after close()",
+     "status": "Fail",
+     "message": "assert_approx_equals: expected 300 +/- 1 but got 0"
+    },
+    {
+     "name": "Dialog should not recenter on relayout.",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "A tall dialog should be positioned at the top of the viewport.",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "The dialog should be centered regardless of the presence of a horizontal scrollbar.",
+     "status": "Fail",
+     "message": "assert_approx_equals: expected 300 +/- 1 but got 0"
+    },
+    {
+     "name": "Centering should work when dialog is inside positioned containers.",
+     "status": "Fail",
+     "message": "assert_approx_equals: expected 300 +/- 1 but got 0"
+    },
+    {
+     "name": "A centered dialog's position should survive becoming display:none temporarily.",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Dialog should not still be centered when removed, and re-added to the document.",
+     "status": "Fail",
+     "message": "assert_approx_equals: expected 300 +/- 1 but got 0"
+    },
+    {
+     "name": "Dialog's specified position should survive after close() and showModal().",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Dialog should be recentered if showModal() is called after removing 'open'.",
+     "status": "Fail",
+     "message": "assert_approx_equals: expected 300 +/- 1 but got 0"
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/backdrop-receives-element-events.html",
+   [
+    {
+     "name": "Test that ::backdrop receives events for the associated element",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/child-sequential-focus.html",
+   [
+    {
+     "name": "dialog element with autofocus should get initial focus.",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Only keyboard-focusable elements should get dialog initial focus.",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Autofocus takes precedence over keyboard-focusable requirement.",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Only keyboard-focusable elements should get dialog initial focus including in subtrees.",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Only keyboard-focusable elements should get dialog initial focus including in nested buttons.",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/closed-dialog-does-not-block-mouse-events.html",
+   [
+    {
+     "name": "Ensure that closed dialogs do not block mouse events. To test manually, click the red box. The test succeeds if the red box turns green.",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/default-color.html",
+   [
+    {
+     "name": "<dialog> color and background match default",
+     "status": "Fail",
+     "message": "assert_equals: Dialog background should match Canvas expected \"rgb(255, 255, 255)\" but got \"rgba(0, 0, 0, 0)\""
+    },
+    {
+     "name": "<dialog> colors react to dark mode",
+     "status": "Fail",
+     "message": "assert_not_equals: Dialog color should react to color-scheme got disallowed value \"rgb(0, 0, 0)\""
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-active-document.html",
+   [
+    {
+     "name": "showModal should throw when the document isn't active",
+     "status": "Fail",
+     "message": "assert_throws_dom: function \"() => dialog.showModal()\" threw object \"TypeError: dialog.showModal is not a function\" that is not a DOMException InvalidStateError: property \"code\" is equal to undefined, expected 11"
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-autofocus-just-once.html",
+   [
+    {
+     "name": "An autofocus element in a dialog element should not try to get focus twice.",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-autofocus-multiple-times.html",
+   [
+    {
+     "name": "autofocus is run every time a dialog is opened",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-autofocus.html",
+   [
+    {
+     "name": "autofocus when a modal dialog is opened",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-cancel-events.html",
+   [
+    {
+     "name": "Test cancel event is fired when the dialog is closed by user close requests",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-cancel-preventDefault.html",
+   [
+    {
+     "name": "Test cancel event with preventDefault on cancel event for dialog element",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-cancel-with-input.html",
+   [
+    {
+     "name": "Test dialog modal is closed by escape key with input focused",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-cancel-with-select.html",
+   [
+    {
+     "name": "Test dialog modal is closed by escape key with select focused",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-canceling.html",
+   [
+    {
+     "name": "Modal dialogs should close when the escape key is pressed.",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-close-event-async.html",
+   [
+    {
+     "name": "close() fires a close event",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-close-event.html",
+   [
+    {
+     "name": "Test that dialog receives a close event upon closing.",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-close-via-attribute.tentative.html",
+   [
+    {
+     "name": "Removing the open attribute from an open modal dialog should run the closing algorithm.",
+     "status": "Fail",
+     "message": "assert_true: The close event should be fired when removing the open attribute. expected true got false"
+    },
+    {
+     "name": "Removing the open attribute from an open non-modal dialog should fire a close event.",
+     "status": "Fail",
+     "message": "assert_true: The close event should be fired when removing the open attribute. expected true got false"
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-close.html",
+   [
+    {
+     "name": "close() on a <dialog> that doesn't have an open attribute aborts the steps",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "close() removes the open attribute and set the returnValue to the first argument",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "close() without argument removes the open attribute and there's no returnValue",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "close() should set the returnValue IDL attribute but not the JS property",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "close() fires a close event",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-closedby-bounds-clicking.html",
+   [
+    {
+     "name": "Dialog show will not light dismiss if clicked inside of the dialog bounds",
+     "status": "Fail",
+     "message": "assert_true: Dialog should be open after clicking 1px-1px expected true got false"
+    },
+    {
+     "name": "Dialog show will not light dismiss if clicked inside of the dialog bounds (bottom right)",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Dialog show will not light dismiss if clicked inside the overflowing div bounds (center)",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Dialog show will not light dismiss if clicked inside the overflowing div bounds (bottom right)",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Dialog show light dismisses when clicked outside of the bounds of both the dialog and the div",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Dialog show light dismisses when clicked outside of the bounds of the dialog - where the Y direction is in-line with the div still",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Dialog show light dismisses when clicked outside of the bounds of the dialog - where the X direction is in-line with the div still",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Dialog showModal will not light dismiss if clicked inside of the dialog bounds",
+     "status": "Fail",
+     "message": "assert_true: Dialog should be open after clicking 1px-1px expected true got false"
+    },
+    {
+     "name": "Dialog showModal will not light dismiss if clicked inside of the dialog bounds (bottom right)",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Dialog showModal will not light dismiss if clicked inside the overflowing div bounds (center)",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Dialog showModal will not light dismiss if clicked inside the overflowing div bounds (bottom right)",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Dialog showModal light dismisses when clicked outside of the bounds of both the dialog and the div",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Dialog showModal light dismisses when clicked outside of the bounds of the dialog - where the Y direction is in-line with the div still",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Dialog showModal light dismisses when clicked outside of the bounds of the dialog - where the X direction is in-line with the div still",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-closedby-corner-cases.html",
+   [
+    {
+     "name": "Pressing escape, when focusin removes and reinserts, modeless",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Clicking outside, when focusin removes and reinserts, modeless",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Pressing escape, when focusin closes dialog, modeless",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Clicking outside, when focusin closes dialog, modeless",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Pressing escape, when focusin calls showModal, modeless",
+     "status": "Fail",
+     "message": "assert_equals: Dialog should respond to ESC expected true but got false"
+    },
+    {
+     "name": "Clicking outside, when focusin calls showModal, modeless",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Pressing escape, when beforetoggle closes dialog, modeless",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Clicking outside, when beforetoggle closes dialog, modeless",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Pressing escape, when beforetoggle calls showModal, modeless",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Clicking outside, when beforetoggle calls showModal, modeless",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Pressing escape, when focusin removes and reinserts, modal",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Clicking outside, when focusin removes and reinserts, modal",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Pressing escape, when focusin closes dialog, modal",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Clicking outside, when focusin closes dialog, modal",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Pressing escape, when focusin calls showModal, modal",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Clicking outside, when focusin calls showModal, modal",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Pressing escape, when beforetoggle closes dialog, modal",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Clicking outside, when beforetoggle closes dialog, modal",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Pressing escape, when beforetoggle calls showModal, modal",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Clicking outside, when beforetoggle calls showModal, modal",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Pressing escape, when focusin removes and reinserts, open",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Clicking outside, when focusin removes and reinserts, open",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Pressing escape, when focusin closes dialog, open",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Clicking outside, when focusin closes dialog, open",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Pressing escape, when focusin calls showModal, open",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Clicking outside, when focusin calls showModal, open",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Pressing escape, when beforetoggle closes dialog, open",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Clicking outside, when beforetoggle closes dialog, open",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Pressing escape, when beforetoggle calls showModal, open",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Clicking outside, when beforetoggle calls showModal, open",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-closedby-show-stacked.html",
+   [
+    {
+     "name": "With an inner closedby=none, the outer & inner dialogs stays open when Esc is pressed",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "With an inner closedby=none, the outer & inner dialogs stays open when clicked outside",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "With an inner closedby=any, the outer dialog stays open but the inner dialogs should close, when Esc is pressed",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "With an inner closedby=any, the outer dialog stays open but the inner dialogs should close, when clicked outside",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-closedby-start-open.html",
+   [
+    {
+     "name": "Dialogs that start open and have closedby should still function",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Opening and closing a dialog during the dialog focus fixup should still leave closedby functional",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-closedby.html",
+   [
+    {
+     "name": "closedby=any, modeless",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby=any, modal",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby=any, open",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby=closerequest, modeless",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby=closerequest, modal",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby=closerequest, open",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby=none, modeless",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby=none, modal",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby=none, open",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby=AnY, modeless",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby=AnY, modal",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby=AnY, open",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby=ClOsErEqUeSt, modeless",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby=ClOsErEqUeSt, modal",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby=ClOsErEqUeSt, open",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby=NoNe, modeless",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby=NoNe, modal",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby=NoNe, open",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby=invalid, modeless",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby=invalid, modal",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby=invalid, open",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby=, modeless",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby=, modal",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby=, open",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby=null, modeless",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby=null, modal",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby=null, open",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-enabled.html",
+   [
+    {
+     "name": "The DIALOG element should be recognized",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-focus-previous-outside.html",
+   [
+    {
+     "name": "Focus should not be restored if the currently focused element is not inside the dialog.",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Focus restore should not occur when the focused element is in a shadowroot outside of the dialog.",
+     "status": "Fail",
+     "message": "Cannot read properties of null (reading 'querySelector')"
+    },
+    {
+     "name": "Focus restore should occur when the focused element is in a shadowroot inside the dialog.",
+     "status": "Fail",
+     "message": "Cannot read properties of null (reading 'querySelector')"
+    },
+    {
+     "name": "Focus restore should occur when the focused element is slotted into a dialog.",
+     "status": "Fail",
+     "message": "Cannot read properties of null (reading 'querySelector')"
+    },
+    {
+     "name": "Focus restore should always occur for modal dialogs.",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Focus restore should work when the dialog itself is focused.",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-focus-shadow-double-nested.html",
+   [
+    {
+     "name": "show()",
+     "status": "Fail",
+     "message": "assert_equals: shadowHostOuter.shadowRoot.activeElement expected null but got object \"[object Object]\""
+    },
+    {
+     "name": "showModal()",
+     "status": "Fail",
+     "message": "assert_equals: shadowHostOuter.shadowRoot.activeElement expected null but got object \"[object Object]\""
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-focus-shadow.html",
+   [
+    {
+     "name": "show: No autofocus, no delegatesFocus, no siblings",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: No autofocus, no delegatesFocus, no siblings",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: No autofocus, no delegatesFocus, sibling before",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: No autofocus, no delegatesFocus, sibling before",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: No autofocus, no delegatesFocus, sibling after",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: No autofocus, no delegatesFocus, sibling after",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: No autofocus, yes delegatesFocus, no siblings",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: No autofocus, yes delegatesFocus, no siblings",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: No autofocus, yes delegatesFocus, sibling before",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: No autofocus, yes delegatesFocus, sibling before",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: No autofocus, yes delegatesFocus, sibling after",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: No autofocus, yes delegatesFocus, sibling after",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Autofocus before, no delegatesFocus",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Autofocus before, no delegatesFocus",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Autofocus before, yes delegatesFocus",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Autofocus before, yes delegatesFocus",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Autofocus after, no delegatesFocus",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Autofocus after, no delegatesFocus",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Autofocus after, yes delegatesFocus",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Autofocus after, yes delegatesFocus",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Autofocus on shadow host, yes delegatesFocus, no siblings",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Autofocus on shadow host, yes delegatesFocus, no siblings",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Autofocus on shadow host, yes delegatesFocus, sibling before",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Autofocus on shadow host, yes delegatesFocus, sibling before",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Autofocus on shadow host, yes delegatesFocus, sibling after",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Autofocus on shadow host, yes delegatesFocus, sibling after",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Autofocus on shadow host, no delegatesFocus, no siblings",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Autofocus on shadow host, no delegatesFocus, no siblings",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Autofocus on shadow host, no delegatesFocus, sibling before",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Autofocus on shadow host, no delegatesFocus, sibling before",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Autofocus on shadow host, no delegatesFocus, sibling after",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Autofocus on shadow host, no delegatesFocus, sibling after",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Autofocus inside shadow tree, yes delegatesFocus, no siblings",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Autofocus inside shadow tree, yes delegatesFocus, no siblings",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Autofocus inside shadow tree, yes delegatesFocus, sibling before",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Autofocus inside shadow tree, yes delegatesFocus, sibling before",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Autofocus inside shadow tree, yes delegatesFocus, sibling after",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Autofocus inside shadow tree, yes delegatesFocus, sibling after",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Autofocus inside shadow tree, no delegatesFocus, no siblings",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Autofocus inside shadow tree, no delegatesFocus, no siblings",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Autofocus inside shadow tree, no delegatesFocus, sibling before",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Autofocus inside shadow tree, no delegatesFocus, sibling before",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Autofocus inside shadow tree, no delegatesFocus, sibling after",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Autofocus inside shadow tree, no delegatesFocus, sibling after",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Two shadow trees, both delegatesFocus, first tree doesn't have autofocus element, second does",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Two shadow trees, both delegatesFocus, first tree doesn't have autofocus element, second does",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: No autofocus, no delegatesFocus, slotted target",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: No autofocus, no delegatesFocus, slotted target",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Shadowroot on child, no autofocus, no delegatesFocus",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Shadowroot on child, no autofocus, no delegatesFocus",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-focusability.html",
+   [
+    {
+     "name": "The dialog element itself should not be keyboard focusable.",
+     "status": "Fail",
+     "message": "assert_equals: Focus order mismatch at step 9/11 expected Element node <dialog contenteditable=\"true\" id=\"dialog4\" open=\"\">\n  <b... but got Element node <button id=\"within4\">button</button>"
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-focusing-steps-disconnected.html",
+   [
+    {
+     "name": "dialog.show(): focusing steps should not change focus on disconnected <dialog>",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "dialog.showModal() should throw on disconnected <dialog>",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-focusing-steps-inert.html",
+   [
+    {
+     "name": "dialog.show(): focusing steps should not change focus when dialog is inert",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "dialog.showModal(): focusing steps should apply focus fixup rule when dialog is inert",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-focusing-steps-prevent-autofocus.html",
+   [
+    {
+     "name": "After showing a dialog, non-dialog autofocus processing won't work.",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-form-submission-unusual.html",
+   [
+    {
+     "name": "A form's action and rel=noopener are ignored during submission",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "A form's action and rel=noopener are ignored during submission, part 2",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-form-submission.html",
+   [
+    {
+     "name": "click the form submission button should close the dialog",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "form submission should return correct value",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "returnValue doesn't update when there's no value attribute.",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "returnValue does update when there's an empty value attribute.",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "input image button should return the coordinates",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "formmethod attribute should use dialog form submission",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closing the dialog while submitting should stop the submission",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "calling form.submit() in click handler of submit button should start the submission synchronously",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-inert.html",
+   [
+    {
+     "name": "dialog-inert",
+     "status": "Fail",
+     "message": "assert_equals: Dialog is hittable by default expected Element node <dialog id=\"dialog\" open=\"\">Something</dialog> but got null"
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-keydown-preventDefault.html",
+   [
+    {
+     "name": "Test cancel event with preventDefault on keydown event for dialog element",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-light-dismiss-drag.html",
+   [
+    {
+     "name": "Dialog should not light dismiss when clicking inside the dialog and dragging outside of it.",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-light-dismiss-pointer-capture.html",
+   [
+    {
+     "name": "Light dismiss on dialog with touch input with pointer capture.",
+     "status": "Fail",
+     "message": "assert_true: dialog should not light dismiss when pointer capture is being used. expected true got false"
+    },
+    {
+     "name": "Light dismiss on dialog with mouse input with pointer capture.",
+     "status": "Fail",
+     "message": "assert_true: dialog should not light dismiss when pointer capture is being used. expected true got false"
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-light-dismiss-touch.html",
+   [
+    {
+     "name": "Dialog light dismiss should work with touch and not trigger a click event.",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-no-throw-requested-state.html",
+   [
+    {
+     "name": "dialog-no-throw-requested-state",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-open-2.html",
+   [
+    {
+     "name": "Tests that dialog is visible after show() is called and not visible after close() is called.",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-open-movebefore-setup.html",
+   [
+    {
+     "name": "reparenting a dialog should not cause it to move in the open dialogs list",
+     "status": "Fail",
+     "message": "promise_test: Unhandled rejection with value: object \"TypeError: new_parent.moveBefore is not a function\""
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-open.html",
+   [
+    {
+     "name": "On getting, the IDL open attribute must return true if the content open attribute is set, and false if it is absent.",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "On setting, the content open attribute must be removed if the IDL open attribute is set to false, and must be present if the IDL open attribute is set to true.",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "On setting it to false, the close event should not be fired",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-overlay.html",
+   [
+    {
+     "name": "dialog computed overlay initially 'none'",
+     "status": "Fail",
+     "message": "assert_equals: Computed overlay expected \"none\" but got \"\""
+    },
+    {
+     "name": "Opening and closing a modal dialog changes computed overlay to 'auto' and back to 'none'",
+     "status": "Fail",
+     "message": "assert_equals: Computed overlay on open dialog expected \"auto\" but got \"\""
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-popover-closedby-complex.html",
+   [
+    {
+     "name": "clicking outside all with modeless dialogA and modeless dialogB, normal DOM nesting",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "clicking popoverB with modeless dialogA and modeless dialogB, normal DOM nesting",
+     "status": "Fail",
+     "message": "assert_equals: popoverA should be open expected true but got false"
+    },
+    {
+     "name": "clicking dialogB with modeless dialogA and modeless dialogB, normal DOM nesting",
+     "status": "Fail",
+     "message": "assert_equals: popoverA should be open expected true but got false"
+    },
+    {
+     "name": "clicking popoverA with modeless dialogA and modeless dialogB, normal DOM nesting",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "clicking dialogA with modeless dialogA and modeless dialogB, normal DOM nesting",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "clicking outside all with modeless dialogA and modal dialogB, normal DOM nesting",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "clicking popoverB with modeless dialogA and modal dialogB, normal DOM nesting",
+     "status": "Fail",
+     "message": "assert_equals: dialogB should be open expected true but got false"
+    },
+    {
+     "name": "clicking dialogB with modeless dialogA and modal dialogB, normal DOM nesting",
+     "status": "Fail",
+     "message": "assert_equals: dialogB should be open expected true but got false"
+    },
+    {
+     "name": "clicking popoverA with modeless dialogA and modal dialogB, normal DOM nesting",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "clicking dialogA with modeless dialogA and modal dialogB, normal DOM nesting",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "clicking outside all with modal dialogA and modeless dialogB, normal DOM nesting",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "clicking popoverB with modal dialogA and modeless dialogB, normal DOM nesting",
+     "status": "Fail",
+     "message": "assert_equals: popoverA should be open expected true but got false"
+    },
+    {
+     "name": "clicking dialogB with modal dialogA and modeless dialogB, normal DOM nesting",
+     "status": "Fail",
+     "message": "assert_equals: popoverA should be open expected true but got false"
+    },
+    {
+     "name": "clicking popoverA with modal dialogA and modeless dialogB, normal DOM nesting",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "clicking dialogA with modal dialogA and modeless dialogB, normal DOM nesting",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "clicking outside all with modal dialogA and modal dialogB, normal DOM nesting",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "clicking popoverB with modal dialogA and modal dialogB, normal DOM nesting",
+     "status": "Fail",
+     "message": "assert_equals: dialogB should be open expected true but got false"
+    },
+    {
+     "name": "clicking dialogB with modal dialogA and modal dialogB, normal DOM nesting",
+     "status": "Fail",
+     "message": "assert_equals: dialogB should be open expected true but got false"
+    },
+    {
+     "name": "clicking popoverA with modal dialogA and modal dialogB, normal DOM nesting",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "clicking dialogA with modal dialogA and modal dialogB, normal DOM nesting",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "clicking outside all with modeless dialogA and modeless dialogB, same structure, but with shadow DOM slots",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "clicking popoverB with modeless dialogA and modeless dialogB, same structure, but with shadow DOM slots",
+     "status": "Fail",
+     "message": "assert_equals: dialogB should be open expected true but got false"
+    },
+    {
+     "name": "clicking dialogB with modeless dialogA and modeless dialogB, same structure, but with shadow DOM slots",
+     "status": "Fail",
+     "message": "assert_equals: popoverA should be open expected true but got false"
+    },
+    {
+     "name": "clicking popoverA with modeless dialogA and modeless dialogB, same structure, but with shadow DOM slots",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "clicking dialogA with modeless dialogA and modeless dialogB, same structure, but with shadow DOM slots",
+     "status": "Fail",
+     "message": "assert_equals: dialogA should be open expected true but got false"
+    },
+    {
+     "name": "clicking outside all with modeless dialogA and modal dialogB, same structure, but with shadow DOM slots",
+     "status": "Fail",
+     "message": "assert_equals: popoverA should be open expected true but got false"
+    },
+    {
+     "name": "clicking popoverB with modeless dialogA and modal dialogB, same structure, but with shadow DOM slots",
+     "status": "Fail",
+     "message": "assert_equals: popoverA should be open expected true but got false"
+    },
+    {
+     "name": "clicking dialogB with modeless dialogA and modal dialogB, same structure, but with shadow DOM slots",
+     "status": "Fail",
+     "message": "assert_equals: popoverA should be open expected true but got false"
+    },
+    {
+     "name": "clicking popoverA with modeless dialogA and modal dialogB, same structure, but with shadow DOM slots",
+     "status": "Fail",
+     "message": "assert_equals: popoverA should be open expected true but got false"
+    },
+    {
+     "name": "clicking dialogA with modeless dialogA and modal dialogB, same structure, but with shadow DOM slots",
+     "status": "Fail",
+     "message": "assert_equals: popoverA should be open expected true but got false"
+    },
+    {
+     "name": "clicking outside all with modal dialogA and modeless dialogB, same structure, but with shadow DOM slots",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "clicking popoverB with modal dialogA and modeless dialogB, same structure, but with shadow DOM slots",
+     "status": "Fail",
+     "message": "assert_equals: popoverA should be open expected true but got false"
+    },
+    {
+     "name": "clicking dialogB with modal dialogA and modeless dialogB, same structure, but with shadow DOM slots",
+     "status": "Fail",
+     "message": "assert_equals: popoverA should be open expected true but got false"
+    },
+    {
+     "name": "clicking popoverA with modal dialogA and modeless dialogB, same structure, but with shadow DOM slots",
+     "status": "Fail",
+     "message": "assert_equals: popoverA should be open expected true but got false"
+    },
+    {
+     "name": "clicking dialogA with modal dialogA and modeless dialogB, same structure, but with shadow DOM slots",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "clicking outside all with modal dialogA and modal dialogB, same structure, but with shadow DOM slots",
+     "status": "Fail",
+     "message": "assert_equals: popoverA should be open expected true but got false"
+    },
+    {
+     "name": "clicking popoverB with modal dialogA and modal dialogB, same structure, but with shadow DOM slots",
+     "status": "Fail",
+     "message": "assert_equals: popoverA should be open expected true but got false"
+    },
+    {
+     "name": "clicking dialogB with modal dialogA and modal dialogB, same structure, but with shadow DOM slots",
+     "status": "Fail",
+     "message": "assert_equals: popoverA should be open expected true but got false"
+    },
+    {
+     "name": "clicking popoverA with modal dialogA and modal dialogB, same structure, but with shadow DOM slots",
+     "status": "Fail",
+     "message": "assert_equals: popoverA should be open expected true but got false"
+    },
+    {
+     "name": "clicking dialogA with modal dialogA and modal dialogB, same structure, but with shadow DOM slots",
+     "status": "Fail",
+     "message": "assert_equals: popoverA should be open expected true but got false"
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-popover-closedby-simple.html",
+   [
+    {
+     "name": "Dialog closedby=any parent, popover child",
+     "status": "Fail",
+     "message": "assert_true: clicking on popover should always leave everything open expected true got false"
+    },
+    {
+     "name": "Dialog closedby=closerequest parent, popover child",
+     "status": "Fail",
+     "message": "assert_true: clicking on popover should always leave everything open expected true got false"
+    },
+    {
+     "name": "Dialog closedby=none parent, popover child",
+     "status": "Fail",
+     "message": "assert_false: popover should close after first ESC expected false got true"
+    },
+    {
+     "name": "Popover parent, dialog closedby=any child",
+     "status": "Fail",
+     "message": "assert_true: clicking on dialog should always leave everything open expected true got false"
+    },
+    {
+     "name": "Popover parent, dialog closedby=closerequest child",
+     "status": "Fail",
+     "message": "assert_equals: popover should close on second ESC, unless inner dialog prevents with closedby==none expected false but got true"
+    },
+    {
+     "name": "Popover parent, dialog closedby=none child",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-requestclose-2.html",
+   [
+    {
+     "name": "requestClose() should not close the dialog when disconnected",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-requestclose-3.html",
+   [
+    {
+     "name": "requestClose() should not close the dialog when is in inactive document",
+     "status": "Fail",
+     "message": "dialog.requestClose is not a function"
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-requestclose-closedby.tentative.html",
+   [
+    {
+     "name": "requestClose() should close the dialog even when computed closedby becomes none",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-requestclose-recurse.html",
+   [
+    {
+     "name": "Calling requestClose inside of cancel event handler doesn't trigger another cancel event",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-requestclose.html",
+   [
+    {
+     "name": "requestClose basic behavior for modeless dialog with closedby=null",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose fires both cancel and close for modeless dialog with closedby=null",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby has no effect on dialog.requestClose() for modeless dialog with closedby=null",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose can be cancelled for modeless dialog with closedby=null",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose avoids abuse prevention logic for modeless dialog with closedby=null",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose(returnValue) passes along the return value for modeless dialog with closedby=null",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose(returnValue) doesn't change returnvalue when cancelled for modeless dialog with closedby=null",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose basic behavior for modeless dialog with closedby=any",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose fires both cancel and close for modeless dialog with closedby=any",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby has no effect on dialog.requestClose() for modeless dialog with closedby=any",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose can be cancelled for modeless dialog with closedby=any",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose avoids abuse prevention logic for modeless dialog with closedby=any",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose(returnValue) passes along the return value for modeless dialog with closedby=any",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose(returnValue) doesn't change returnvalue when cancelled for modeless dialog with closedby=any",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose basic behavior for modeless dialog with closedby=closedrequest",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose fires both cancel and close for modeless dialog with closedby=closedrequest",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby has no effect on dialog.requestClose() for modeless dialog with closedby=closedrequest",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose can be cancelled for modeless dialog with closedby=closedrequest",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose avoids abuse prevention logic for modeless dialog with closedby=closedrequest",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose(returnValue) passes along the return value for modeless dialog with closedby=closedrequest",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose(returnValue) doesn't change returnvalue when cancelled for modeless dialog with closedby=closedrequest",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose basic behavior for modeless dialog with closedby=none",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose fires both cancel and close for modeless dialog with closedby=none",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby has no effect on dialog.requestClose() for modeless dialog with closedby=none",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose basic behavior for modal dialog with closedby=null",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose fires both cancel and close for modal dialog with closedby=null",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby has no effect on dialog.requestClose() for modal dialog with closedby=null",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose can be cancelled for modal dialog with closedby=null",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose avoids abuse prevention logic for modal dialog with closedby=null",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose(returnValue) passes along the return value for modal dialog with closedby=null",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose(returnValue) doesn't change returnvalue when cancelled for modal dialog with closedby=null",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose basic behavior for modal dialog with closedby=any",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose fires both cancel and close for modal dialog with closedby=any",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby has no effect on dialog.requestClose() for modal dialog with closedby=any",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose can be cancelled for modal dialog with closedby=any",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose avoids abuse prevention logic for modal dialog with closedby=any",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose(returnValue) passes along the return value for modal dialog with closedby=any",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose(returnValue) doesn't change returnvalue when cancelled for modal dialog with closedby=any",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose basic behavior for modal dialog with closedby=closedrequest",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose fires both cancel and close for modal dialog with closedby=closedrequest",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby has no effect on dialog.requestClose() for modal dialog with closedby=closedrequest",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose can be cancelled for modal dialog with closedby=closedrequest",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose avoids abuse prevention logic for modal dialog with closedby=closedrequest",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose(returnValue) passes along the return value for modal dialog with closedby=closedrequest",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose(returnValue) doesn't change returnvalue when cancelled for modal dialog with closedby=closedrequest",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose basic behavior for modal dialog with closedby=none",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose fires both cancel and close for modal dialog with closedby=none",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby has no effect on dialog.requestClose() for modal dialog with closedby=none",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose basic behavior for open dialog with closedby=null",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose fires both cancel and close for open dialog with closedby=null",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby has no effect on dialog.requestClose() for open dialog with closedby=null",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose can be cancelled for open dialog with closedby=null",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose avoids abuse prevention logic for open dialog with closedby=null",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose(returnValue) passes along the return value for open dialog with closedby=null",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose(returnValue) doesn't change returnvalue when cancelled for open dialog with closedby=null",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose basic behavior for open dialog with closedby=any",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose fires both cancel and close for open dialog with closedby=any",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby has no effect on dialog.requestClose() for open dialog with closedby=any",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose can be cancelled for open dialog with closedby=any",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose avoids abuse prevention logic for open dialog with closedby=any",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose(returnValue) passes along the return value for open dialog with closedby=any",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose(returnValue) doesn't change returnvalue when cancelled for open dialog with closedby=any",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose basic behavior for open dialog with closedby=closedrequest",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose fires both cancel and close for open dialog with closedby=closedrequest",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby has no effect on dialog.requestClose() for open dialog with closedby=closedrequest",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose can be cancelled for open dialog with closedby=closedrequest",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose avoids abuse prevention logic for open dialog with closedby=closedrequest",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose(returnValue) passes along the return value for open dialog with closedby=closedrequest",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose(returnValue) doesn't change returnvalue when cancelled for open dialog with closedby=closedrequest",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose basic behavior for open dialog with closedby=none",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose fires both cancel and close for open dialog with closedby=none",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "closedby has no effect on dialog.requestClose() for open dialog with closedby=none",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose basic behavior when dialog is open via attribute",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose fires cancel and close when dialog is open via attribute",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "requestClose(returnValue) passes along the return value when dialog is open via attribute",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-return-value.html",
+   [
+    {
+     "name": "Tests dialog.returnValue is settable and returns the last value set.",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-showModal-remove.html",
+   [
+    {
+     "name": "dialog element: removing from document after showModal()",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-showModal.html",
+   [
+    {
+     "name": "dialog element: showModal()",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal() on a <dialog> that already has an open attribute throws an InvalidStateError exception",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal() on a <dialog> after initial showModal() and removing the open attribute",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal() on a <dialog> not in a Document throws an InvalidStateError exception",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "when opening multiple dialogs, only the newest one is non-inert",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "opening dialog without focusable children",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "opening dialog with multiple focusable children",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "opening dialog with multiple focusable children, one having the autofocus attribute",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "when opening multiple dialogs, the most recently opened is rendered on top",
+     "status": "Fail",
+     "message": "assert_equals: expected Element node <dialog id=\"d11\" open=\"\"></dialog> but got null"
+    },
+    {
+     "name": "When the document is not attached to any pages, showModal() should throw.",
+     "status": "Fail",
+     "message": "assert_throws_dom: function \"() => d11.showModal()\" did not throw"
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-synthetic-keydown.html",
+   [
+    {
+     "name": "close via synthesized Esc key must not work",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-toggle-source.html",
+   [
+    {
+     "name": "ToggleEvent.source on <dialog> elements: dialog.showModal().",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "ToggleEvent.source on <dialog> elements: command button.",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "ToggleEvent.source on <dialog> elements: open with showModal, close with button.",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "ToggleEvent.soruce on <dialog> elements: open with button, close with dialog.close().",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "ToggleEvent.source on <dialog> elements: open with showModal, close with request-close button.",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "ToggleEvent.source on <dialog> elements: open with button, close with light dismiss.",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/focus-after-close.html",
+   [
+    {
+     "name": "Focus should be moved to the previously focused element (Simple dialog usage)",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Focus should be moved to the previously focused element even if it has moved in between show/close",
+     "status": "Fail",
+     "message": "assert_not_equals: Element should have moved got disallowed value Element node <dialog open=\"\">\n    <button id=\"button1\">This is a butto..."
+    },
+    {
+     "name": "Focus should be moved to the previously focused element even if it has moved to shadow DOM root in between show/close",
+     "status": "Fail",
+     "message": "assert_not_equals: Element should have moved got disallowed value Element node <dialog open=\"\">\n    <button id=\"button1\">This is a butto..."
+    },
+    {
+     "name": "Focus should be moved to the body if the previously focused element is removed",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Focus should be moved to the shadow DOM host if the previouly focused element is a shadow DOM node",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Focus should be moved to the previously focused element (Complex dialog usage)",
+     "status": "Fail",
+     "message": "assert_equals: expected Element node <input></input> but got Element node <div></div>"
+    },
+    {
+     "name": "html/semantics/interactive-elements/the-dialog-element/focus-after-close.html",
+     "status": "Timeout",
+     "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201856, 23873, 6850], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":7}, test_wait=false)"
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/form-submit-dialog-shadow.html",
+   [
+    {
+     "name": "<form method=dialog> should not submit across shadow boundaries.",
+     "status": "Fail",
+     "message": "Cannot read properties of null (reading 'querySelector')"
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/inert-does-not-match-disabled-selector.html",
+   [
+    {
+     "name": "Tests inert elements do not match the :disabled selector.",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/inert-inlines.html",
+   [
+    {
+     "name": "Tests that inert inlines do not receive mouse events.",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/inert-label-focus.html",
+   [
+    {
+     "name": "Tests focusing of an inert label for a non-inert target.",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/inert-node-is-uneditable.html",
+   [
+    {
+     "name": "Test that inert nodes cannot be edited. The test passes if the only text you can edit is in the dialog.",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/inert-node-is-unfocusable.html",
+   [
+    {
+     "name": "#html is not  focusable",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "#body is not  focusable",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "#top-dialog is  focusable",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "#top-dialog-button is  focusable",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "#bottom-dialog is not  focusable",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "#bottom-dialog-button is not  focusable",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "#container is not  focusable",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "#text is not  focusable",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "#datetime is not  focusable",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "#color is not  focusable",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "#select is not  focusable",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "#optgroup is not  focusable",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "#option is not  focusable",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "#contenteditable-div is not  focusable",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "#tabindex-span is not  focusable",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/inert-node-is-unselectable.html",
+   [
+    {
+     "name": "Test that inert nodes cannot be selected. The test passes if the only text you can select is inside the dialog.",
+     "status": "Fail",
+     "message": "assert_equals: expected \"I'm selectable.\" but got \"\""
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/inert-svg-hittest.html",
+   [
+    {
+     "name": "Hit-testing doesn't reach contents of an inert SVG",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Hit-testing can reach contents of a no longer inert SVG",
+     "status": "Fail",
+     "message": "assert_true: target is active expected true got false"
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/modal-dialog-ancestor-is-inert.html",
+   [
+    {
+     "name": "Test that ancestors of modal dialog are inert.",
+     "status": "Fail",
+     "message": "assert_false: Clicking on ancestor. expected false got true"
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/modal-dialog-blocks-mouse-events.html",
+   [
+    {
+     "name": "Ensure that mouse events are not dispatched to an inert node.",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/modal-dialog-in-visibility-hidden.html",
+   [
+    {
+     "name": "Non-modal dialog should let parent visibility inherit",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Modal dialog should have visibility: visible by default in UA sheet",
+     "status": "Fail",
+     "message": "assert_equals: expected \"visible\" but got \"hidden\""
+    },
+    {
+     "name": "Modal dialog visibility should be overridable",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/modal-dialog-scroll-height.html",
+   [
+    {
+     "name": "dialogs should be centered before computing overflow.",
+     "status": "Fail",
+     "message": "assert_equals: expected 600 but got 500"
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/modal-dialog-selection.html",
+   [
+    {
+     "name": "By default, text inside a modal dialog can be selected",
+     "status": "Fail",
+     "message": "assert_equals: expected \"345678\" but got \"\""
+    },
+    {
+     "name": "Clicking on backdrop doesn't select text",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "'user-select: none' prevents text from being selected",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/multiple-centered-dialogs.html",
+   [
+    {
+     "name": "Test that multiple dialogs are centered properly.",
+     "status": "Fail",
+     "message": "assert_approx_equals: top-dialog expected 300 +/- 0.05 but got 0"
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/non-modal-canceling.html",
+   [
+    {
+     "name": "Non-modal dialogs should not be cancelable via ESC",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/non-modal-dialog-does-not-block-mouse-events.html",
+   [
+    {
+     "name": "Ensure that non-modal dialogs do not block mouse events.",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/non-modal-dialog-layout.html",
+   [
+    {
+     "name": "Tests layout of non-modal dialogs.",
+     "status": "Fail",
+     "message": "assert_equals: Absolute position. expected 870 but got 0"
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/popover-dialog-does-not-block-mouse-events.html",
+   [
+    {
+     "name": "Ensure that popover dialogs do not block mouse events. To test manually, click the red box. The test succeeds if the red box turns green.",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/remove-dialog-should-unblock-document.html",
+   [
+    {
+     "name": "Test that removing dialog unblocks the document.",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/show-modal-focusing-steps.html",
+   [
+    {
+     "name": "focus when a modal dialog is opened",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/simulated-click-inert.html",
+   [
+    {
+     "name": "Ensure that simulated click is still dispatched to an inert node.",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/submit-dialog-close-event.html",
+   [
+    {
+     "name": "Tests submitting a dialog on a close event triggered by a previous submission.",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/synthetic-click-inert.html",
+   [
+    {
+     "name": "Test that inert nodes still get programmatic click events",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/toggle-events.html",
+   [
+    {
+     "name": "dialog.show() should fire beforetoggle and toggle events.",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "dialog.show() should fire cancelable beforetoggle which does not open dialog if canceled",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "dialog.show() should coalesce asynchronous toggle events.",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "dialog.show() should not double-set open/close if beforetoggle re-opens",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "dialog.show() should not open if beforetoggle removes",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "dialog.show() should not open if beforetoggle calls showPopover",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "dialog.showModal() should fire beforetoggle and toggle events.",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "dialog.showModal() should fire cancelable beforetoggle which does not open dialog if canceled",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "dialog.showModal() should coalesce asynchronous toggle events.",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "dialog.showModal() should not double-set open/close if beforetoggle re-opens",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "dialog.showModal() should not open if beforetoggle removes",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "dialog.showModal() should not open if beforetoggle calls showPopover",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/top-layer-position.html",
+   [
+    {
+     "name": "Verifies that position:static and position:relative computed to position:absolute in the top layer.",
+     "status": "Fail",
+     "message": "assert_equals: expected \"static\" but got \"\""
+    }
+   ]
+  ]
+ ]
+}

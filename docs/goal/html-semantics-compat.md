@@ -2,11 +2,37 @@
 
 **版本**: v2.0
 **日期**: 2026-10-21（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 32 收口（popover 有效性语义：`:popover-open` matches 特判 + hidePopover lenient 化，closedby-simple 文件级 Timeout 解体 +1 绿，complex 40F 红因迁移为 light-dismiss 行为缺口并钉定 popover light dismiss/链停两缺口），下一步按挂账序推进
+**状态**: Active——M2 切片 33 收口（light dismiss 两遍模型：auto popover 关闭 + dialog 链停，closedby-complex +16 绿 REG 0；帧驱动快照实验 +8 实证挂账），下一步按挂账序推进
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-23 M2 切片 32 收口）**：popover 有效性语义。
+> **▶ 当前状态（2026-10-23 M2 切片 33 收口）**：light dismiss 两遍模型
+>（挂账 E 第一刀）。**落地（R5234）**：`__zw_dialog_light_dismiss_check`
+> 两遍重写——①popover pass（`_zwTopLayer` 反走自顶向下，stale/摘属性/
+> 断连跳过，contains 即级联停，否则 `_zwHidePopover`）；②dialog pass
+>（反文档序首个 open+any 一锤定音：backdrop 命中自身 → requestClose；
+> contains → break 内层挡外层；否则 requestClose——一次 pointerdown 至
+> 多关一个 dialog）；③shadow 守卫（targetSel 解析不到 → 保守跳过）。
+> **集群**：82 files 411 subtest **337P/73F/1T**，同 key 411 对 s32 逐位
+> diff **REG 0 / GAIN 16**（closedby-complex 的 dialogA/outside-all/
+> popoverA 面）。**探针钉定零盒根因 = 快照滞后**：`waitForRender`（双
+> rAF）在 shim OFF 模式是同步 stub 不驱动 render，测试体内 gBCR 永远读
+> 上一拍快照；`ZW_TESTHARNESS_RAF_FRAME_DRIVEN=1`（R2713a 既有开关）
+> 实验实证 closedby 46 子测全出 **25P/21F** 对 OFF 同 key **回归 0
+> 增益 +8**（normal dialogB/popoverB 全绿）——未默认启用（全集群对账
+> 独立切片，挂账 F）。**新挂账**：F 帧驱动快照新鲜化（runner）、G
+> runner modal retarget 多模态规则（下层 modal 盒内点击误 retarget
+> 栈顶）、H shadow 影域 light dismiss（shadow slots 16F，target 解析
+> 穿 shadow）、E 余项 ESC 栈序维持（simple 5F）。gates：zero-engine lib
+> **3429P/0F**、clippy -D warnings、fmt clean、零新增依赖。账本见
+> [evidence/2026-10-23-m2s33-light-dismiss-two-pass.md](html-semantics-compat/evidence/2026-10-23-m2s33-light-dismiss-two-pass.md)。
+> **下一步**：挂账 F（帧驱动快照新鲜化 + 全集群对账，解锁 normal
+> dialogB/popoverB 8 案与 simple Timeout 面已实证）或按挂账序 G/H、
+> impl-doc wrapper requestClose、anchor-with-inline 导航缺口、parser
+> form element pointer 4F、custom command `--` 前缀 CommandEvent defer、
+> ESC 组栈边缘乱序、非模态 close 不出组栈、R371 模板残留。
+>
+> **▶ 上轮状态（2026-10-23 M2 切片 32 收口）**：popover 有效性语义。
 > **红因链破案**：closedby-complex 40F 统一死于 `matches(':popover-open')`
 > SyntaxError（host 引擎无该伪类 → promise_test 未处理拒绝全红）；
 > closedby-simple 1F = `resetDialogOuterTest` 前置 `hidePopover()` 过度

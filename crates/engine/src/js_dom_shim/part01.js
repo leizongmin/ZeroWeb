@@ -1209,18 +1209,26 @@
     // auto 派生：模态开 → closerequest；否则 none。
     return (_zwDialogHasOpen(sel, handle) && !!_zwDialogModal[key]) ? 'closerequest' : 'none';
   }
-  // R4300：dialog light dismiss——pointerdown 落点 target 在任何 open+closedby=any
-  // dialog 的包含链外 → 对该 dialog 发 close request（走 _zwDialogRequestClose，
-  // cancel 可取消 + close 异步收尾）。产品指针管线与 runner click 命令前步共用
-  //（spec dialog light dismiss：pointerdown 触发、close request 序先于 click 语义）。
-  // targetSel 为 null/空（无命中元素）→ 视为落点在全部 any 态 dialog 外。
+  // R4300：dialog light dismiss——pointerdown 落点在 open+closedby=any dialog 包含
+  // 链外 → close request（走 _zwDialogRequestClose，cancel 可取消 + close 异步收
+  // 尾）。产品指针管线与 runner click 命令前步共用（spec：pointerdown 触发、序先
+  // 于 click 语义）。
   // s30（2026-10-23）px/py：宿主 hit-test 把模态外落点 retarget 成栈顶模态
   // dialog（::backdrop 无布局盒的近似）——target=dialog 本身且落点在其盒外 =
-  // 点击 ::backdrop：light dismiss 判定吃命中真实目标而非 retarget 派发面
-  //（Chromium 同款 md:dialog 且关闭），→ 盒外落点对 any/closerequest 态 dialog
-  // 发 close request；盒内（dialog 内容区）走常规包含链不 dismiss。px/py 缺省
-  //（click 命令前步）保持原判定。
+  // 点击 ::backdrop（判定吃命中真实目标而非 retarget 派发面）。
+  // R5234（M2 切片 33，2026-10-23）：两遍模型收口（spec 一次 pointerdown 至多关
+  // 一个 dialog + popover light dismiss 回填，R3071 defer 撤销）：
+  // ① popover pass：showing popover 自顶向下（top-layer 后显先判）逐个判包含
+  //   （target === P || P.contains(target)），首个包含者停；不包含则逐个隐
+  //   （_zwHidePopover 状态机，beforetoggle 可取消）——spec hide all popovers
+  //   until 链上全隐（closedby-simple/complex popover light dismiss 断言面）。
+  // ② dialog pass：open+any dialog 按文档序反走（内层先）只看第一个：
+  //   backdrop 属主（backdropHit）→ close + 停（backdrop 点击对属主为「外」、
+  //   对祖先链为「内」——complex modalB 面落地即靠 popover pass 的 contains 停）；
+  //   target 在包含链内 → 停不关（内层 any 挡外层——complex「一次 click 只关
+  //   最内层链」断言面，旧实现全量关闭为 dialogA 误关红因）；盒外 → close + 停。
   // https://html.spec.whatwg.org/multipage/interactive-elements.html#dialog-light-dismiss
+  // https://html.spec.whatwg.org/multipage/popover.html#popover-light-dismiss
   globalThis.__zw_dialog_light_dismiss_check = function (targetSel, px, py) {
     if (typeof document === 'undefined' || !document.querySelectorAll) return;
     var dialogs;
@@ -1230,6 +1238,10 @@
     if (targetSel) {
       try { target = document.querySelector(targetSel); } catch (_eLdT) { target = null; }
     }
+    // R5234：targetSel 非空但解析不到（shadow 内元素 sel 不在文档树 / stale）→
+    // 保守跳过 light dismiss（shadow 内点击占比面大——complex 影域 testcase 全部
+    // clickOn 落 shadow 元素；真空区点击 targetSel 为空照常 dismiss）。
+    if (targetSel && !target) return;
     var backdropHit = false;
     if (px != null && py != null && targetSel) {
       try {
@@ -1240,18 +1252,41 @@
         }
       } catch (_eLdBd) {}
     }
-    for (var i = 0; i < dialogs.length; i++) {
+    // ① popover pass（R5234）：_zwTopLayer 插入序即显序，反走为自顶向下。
+    try {
+      var _ldKeys = Object.keys(_zwTopLayer);
+      for (var _ldP = _ldKeys.length - 1; _ldP >= 0; _ldP--) {
+        var _ldK = _ldKeys[_ldP];
+        if (!_zwTopLayer[_ldK]) continue; // stale 键（hide 后残留不预期，防御）
+        var _ldPp = _proxyCache ? _proxyCache[_ldK] : null;
+        if (!_ldPp) continue;
+        var _ldPs = _ldPp.__zwSelector || null;
+        var _ldPh = _ldPp.__zwHandle || null;
+        if (_zwReadPopover(_ldPs, _ldPh) === null) continue; // 属性已摘 → 非 popover
+        try { if (!_ldPp.isConnected) continue; } catch (_eLdPi) { continue; }
+        var _ldPin = false;
+        try { _ldPin = !!target && (target === _ldPp || (_ldPp.contains ? !!_ldPp.contains(target) : false)); } catch (_eLdPc) { _ldPin = false; }
+        if (_ldPin) break; // 包含点 → 级联停（其下全保持）
+        try { _zwHidePopover(_ldK, _ldPs, _ldPh); } catch (_eLdPh) {}
+      }
+    } catch (_eLdPass) {}
+    // ② dialog pass（R5234）：反文档序首个 open+any dialog 一锤定音。
+    for (var i = dialogs.length - 1; i >= 0; i--) {
       var d = dialogs[i];
       var ds = d.__zwSelector || null;
       var dh = d.__zwHandle || null;
       var dk = _elKey(ds, dh);
       if (!_zwDialogHasOpen(ds, dh)) continue;
       if (_zwDialogClosedByState(ds, dh, dk) !== 'any') continue;
-      if (backdropHit) { _zwDialogRequestClose(dk, ds, dh, undefined); continue; }
+      if (backdropHit && ds && targetSel === ds) {
+        _zwDialogRequestClose(dk, ds, dh, undefined);
+        break;
+      }
       var contains = false;
-      try { contains = d.contains ? !!d.contains(target) : false; } catch (_eLdC) { contains = false; }
-      if (target && (target === d || contains)) continue;
+      try { contains = !!target && (target === d || (d.contains ? !!d.contains(target) : false)); } catch (_eLdC) { contains = false; }
+      if (contains) break; // 内层 any 挡外层
       _zwDialogRequestClose(dk, ds, dh, undefined);
+      break;
     }
   };
   // R3290：统一 set/remove 内容属性 helper（sel/handle 双路径 + latest-wins 读一致性依赖 host 侧 latest-wins 变体，
