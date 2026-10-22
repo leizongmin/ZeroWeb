@@ -1053,6 +1053,113 @@ fn test_collect_table_col_backgrounds() {
     );
 }
 
+/// §17.6.1 周界 spacing：separated 模式下首列与 table 内容边缘之间有一个
+/// border-spacing，col/colgroup 背景列几何起点须与 position_cells 的 cell_x
+/// 起点（perimeter_x）一致——fixed-table-layout-022/023：漏加致 col 背景
+/// 整体左移一个 spacing。collapse 模式 perimeter 为 0，维持 x=0 起。
+#[test]
+fn test_collect_table_col_backgrounds_perimeter_spacing() {
+    use zero_css_parser::values::ColorValue;
+    use zero_style_system::property::types::BorderCollapseValue;
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let table_id = doc.create_element("table");
+    let col1_id = doc.create_element("col");
+    let col2_id = doc.create_element("col");
+    let _ = doc.append_child(root, table_id);
+
+    let mk_style = |display: DisplayValue, collapse: BorderCollapseValue| {
+        let mut s = ComputedStyle::default();
+        s.display = display;
+        s.border_collapse = collapse;
+        s
+    };
+    let mk_col = |_id, collapse| {
+        let mut s = mk_style(DisplayValue::TableColumn, collapse);
+        s.background_color = ColorValue::Rgba(255, 0, 0, 255);
+        s
+    };
+
+    let grid = TableGrid {
+        rows: Vec::new(),
+        col_count: 2,
+        collapsed_cols: vec![false, false],
+        collapsed_rows: Vec::new(),
+    };
+    let col_widths = [65.0f32, 160.0];
+
+    // separated：perimeter_x = spacing_x(15)，首列 x 从 15 起、列间再加 15
+    let mut styles = HashMap::new();
+    styles.insert(table_id, mk_style(DisplayValue::Table, BorderCollapseValue::Separate));
+    styles.insert(col1_id, mk_col(col1_id, BorderCollapseValue::Separate));
+    styles.insert(col2_id, mk_col(col2_id, BorderCollapseValue::Separate));
+    let mut table_box = LayoutBox {
+        node_id: Some(table_id),
+        children: vec![
+            LayoutBox {
+                node_id: Some(col1_id),
+                ..Default::default()
+            },
+            LayoutBox {
+                node_id: Some(col2_id),
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    };
+    collect_table_col_backgrounds(&mut table_box, &grid, &col_widths, 15.0, &styles, &doc);
+    let entries = &table_box.table_col_backgrounds;
+    assert_eq!(entries.len(), 2, "both separated cols collected");
+    assert!(
+        (entries[0].1 - 15.0).abs() < 0.01 && (entries[0].2 - 65.0).abs() < 0.01,
+        "separated col1 x=15 (perimeter) w=65, got x={} w={}",
+        entries[0].1,
+        entries[0].2
+    );
+    assert!(
+        (entries[1].1 - 95.0).abs() < 0.01 && (entries[1].2 - 160.0).abs() < 0.01,
+        "separated col2 x=95 (15+65+15) w=160, got x={} w={}",
+        entries[1].1,
+        entries[1].2
+    );
+
+    // collapse：perimeter 为 0，维持 x=0 起；列间 spacing 参数与 position_cells
+    // 的 cell 推进同口径（§17.6.1 collapse 模式应忽略 border-spacing 为既有
+    // 全域口径，cell 推进亦不判模式，不在本锚范围）。
+    let mut styles = HashMap::new();
+    styles.insert(table_id, mk_style(DisplayValue::Table, BorderCollapseValue::Collapse));
+    styles.insert(col1_id, mk_col(col1_id, BorderCollapseValue::Collapse));
+    styles.insert(col2_id, mk_col(col2_id, BorderCollapseValue::Collapse));
+    let mut table_box = LayoutBox {
+        node_id: Some(table_id),
+        children: vec![
+            LayoutBox {
+                node_id: Some(col1_id),
+                ..Default::default()
+            },
+            LayoutBox {
+                node_id: Some(col2_id),
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    };
+    collect_table_col_backgrounds(&mut table_box, &grid, &col_widths, 15.0, &styles, &doc);
+    let entries = &table_box.table_col_backgrounds;
+    assert_eq!(entries.len(), 2, "both collapse-mode cols collected");
+    assert!(
+        (entries[0].1 - 0.0).abs() < 0.01,
+        "collapse col1 x=0 (no perimeter), got x={}",
+        entries[0].1
+    );
+    assert!(
+        (entries[1].1 - 80.0).abs() < 0.01,
+        "collapse col2 x=80 (65+spacing, mirrors cell advance), got x={}",
+        entries[1].1
+    );
+}
+
 /// CSS Tables §17.5.2.1：table-layout:fixed + 显式 width 时，内容列宽和若超出 width，
 /// 应按比例收缩列到 width（内容溢出 cell 由 cell 的 overflow 裁剪），而非让内容撑宽表格。
 /// 回归 table-cell-overflow-auto-scrolled（fixed 表 width:100px 含 200px 内容 div）。

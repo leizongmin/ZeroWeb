@@ -755,9 +755,21 @@ fn collect_table_col_backgrounds(
 
     // 预计算每列 (left, width) —— 镜像 position_cells 的 spacing 累积
     let col_count = grid.col_count;
+    // §17.6.1 周界 spacing：separated 模式下首列与 table 内容边缘之间也有一个
+    // border-spacing（position_cells 的 cell_x 起点 perimeter_x 同源），漏加致
+    // col/colgroup 背景整体左移一个 spacing（fixed-table-layout-022/023）。
+    let perimeter_x = if table_box
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .is_some_and(|s| matches!(s.border_collapse, zero_style_system::BorderCollapseValue::Separate))
+    {
+        spacing_x
+    } else {
+        0.0
+    };
     let mut col_geo: Vec<(f32, f32)> = vec![(0.0, 0.0); col_count];
     {
-        let mut x = 0.0f32;
+        let mut x = perimeter_x;
         let mut nc_count = 0usize; // 已放置的非折叠列数
         for (i, geo) in col_geo.iter_mut().enumerate() {
             let collapsed = grid.collapsed_cols.get(i).copied().unwrap_or(false);
