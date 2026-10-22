@@ -686,7 +686,7 @@ impl RendererRuntime {
             let fetch_observed = js_worker.fetch_observed_queue();
             let fetch_observed = Arc::clone(&fetch_observed);
             let fetch_seq = Arc::new(std::sync::atomic::AtomicU64::new(0));
-            let inner = crate::js_worker::default_fetch_handler();
+            let inner = crate::js_worker::default_fetch_handler(js_worker.page_fetch_inflight_registry());
             let observer: zero_engine::FetchHandler = Arc::new(move |req: &zero_engine::FetchRequest| {
                 let seq = fetch_seq.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
                 if let Ok(mut q) = fetch_observed.lock() {
@@ -4552,6 +4552,9 @@ mod animation_export_tests;
 #[cfg(test)]
 #[path = "compositor_publish_tests.rs"]
 mod compositor_publish_tests;
+#[cfg(test)]
+#[path = "fetch_cancel_on_reset_tests.rs"]
+mod fetch_cancel_on_reset_tests;
 #[cfg(test)]
 #[path = "keyboard_input_tests.rs"]
 mod keyboard_input_tests;

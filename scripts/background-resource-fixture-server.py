@@ -19,6 +19,8 @@ from __future__ import annotations
 import argparse
 import functools
 import json
+import select
+import socket
 import threading
 import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -104,7 +106,17 @@ class Handler(SimpleHTTPRequestHandler):
                 self.wfile.flush()
                 deadline = time.monotonic() + ms / 1000.0
                 while time.monotonic() < deadline:
-                    time.sleep(min(0.5, max(0.0, deadline - time.monotonic())))
+                    # 轮询对端关闭（客户端取消 fetch → TCP FIN）：读到 EOF 记入
+                    # stall_closed_by_peer 并立即收尾，让「导航放弃挂起 fetch 后
+                    # 连接是否关闭」在服务端直接可观测（M2-S1 验收信号）。
+                    readable, _, _ = select.select([self.connection], [], [], 0.5)
+                    if readable:
+                        if self.connection.recv(1, socket.MSG_PEEK) == b"":
+                            with COUNTERS.lock:
+                                COUNTERS.stall_closed_by_peer += 1
+                            self.close_connection = True
+                            return
+                    time.sleep(0)
             except (BrokenPipeError, ConnectionResetError):
                 with COUNTERS.lock:
                     COUNTERS.stall_closed_by_peer += 1

@@ -178,6 +178,10 @@ pub struct RendererJsWorker {
     media_ctx: Arc<std::sync::Mutex<zero_css_parser::media_query::MediaContext>>,
     /// S14：renderer fetch 观测队列（worker 观测 handler 推入，runtime drain）。
     fetch_observed: Arc<std::sync::Mutex<Vec<FetchObservedRecord>>>,
+    /// BG-03 M2-S1：挂起 page fetch 的 URL 登记（fetch 观测包装进出时增减计数；
+    /// ResetDocumentState 臂 drain 后逐 URL 触发网络层取消，连接不再滞留至 client
+    /// 超时）。计数形态：同 URL 并发 fetch 共享一条登记，最后一个完成者移除。
+    page_fetch_inflight: Arc<std::sync::Mutex<HashMap<String, usize>>>,
     join: Option<JoinHandle<()>>,
     executor: ScriptFn,
     /// t2-pb1 fix#5：优先执行器——页面生命周期派发（`execute_script_direct_priority`）
@@ -293,6 +297,10 @@ impl RendererJsWorker {
         // spawn 内创建**，worker 侧观测 handler 推入、runtime 经 accessor 持同 Arc drain
         // → browser/headless（`Network.*` 事件源）。S13 教训：双实例 Arc 错接致事件丢失。
         let fetch_observed: Arc<std::sync::Mutex<Vec<FetchObservedRecord>>> = Arc::default();
+        // BG-03 M2-S1：page fetch 在途登记——唯一实例在本 spawn 内创建，fetch 观测
+        // 包装（runtime 注入）增减、worker Reset 臂 drain（S13 双实例错接教训同款约束）。
+        let page_fetch_inflight: Arc<std::sync::Mutex<HashMap<String, usize>>> = Arc::default();
+        let page_fetch_inflight_for_worker = Arc::clone(&page_fetch_inflight);
         // S16（cdp-protocol page.setContent）：document.write 写周期落定队列——worker 侧
         // `__zw_document_write_settled` 回调推入，runtime 主循环 drain → browser/headless
         // （`Page.loadEventFired` 族重发事件源）。
@@ -359,6 +367,7 @@ impl RendererJsWorker {
                     async_callbacks_ready_for_worker,
                     import_map_for_worker,
                     dom_html_for_worker,
+                    page_fetch_inflight_for_worker,
                     canvas_registry,
                     #[cfg(test)]
                     execution_count_for_worker,
@@ -426,6 +435,7 @@ impl RendererJsWorker {
             doc_write_settled,
             media_ctx,
             fetch_observed,
+            page_fetch_inflight,
             mutations,
             rect_snapshot,
             dom_html,
@@ -552,6 +562,11 @@ impl RendererJsWorker {
     /// S14：fetch 观测队列句柄（runtime 持同 Arc；观测 handler 包装经此推入）。
     pub fn fetch_observed_queue(&self) -> Arc<std::sync::Mutex<Vec<FetchObservedRecord>>> {
         Arc::clone(&self.fetch_observed)
+    }
+
+    /// BG-03 M2-S1：page fetch 在途登记句柄（fetch 观测包装进出时增减；Reset 臂 drain）。
+    pub fn page_fetch_inflight_registry(&self) -> Arc<std::sync::Mutex<HashMap<String, usize>>> {
+        Arc::clone(&self.page_fetch_inflight)
     }
 
     /// S14：原子取出 fetch 观测记录（`(phase, seq, url, method, status)`），供 runtime 主
@@ -1214,6 +1229,8 @@ fn js_worker_main(
     import_map: Arc<std::sync::Mutex<Option<ImportMap>>>,
     // M3-S1c：DOM 快照共享槽（spawn 期创建传入——宿主 rect handler 与本线程桥共享）。
     dom_html: Arc<std::sync::Mutex<String>>,
+    // BG-03 M2-S1：page fetch 在途登记（fetch 观测包装增减，本线程 Reset 臂 drain）。
+    page_fetch_inflight: Arc<std::sync::Mutex<HashMap<String, usize>>>,
     // js-dom canvas 显示链路：与 WebView painter 共享的绘制侧 registry（runtime 构造期
     // 单实例注入）。此前本线程自建孤儿实例，页面 `__zw_canvas_op` 绘制恒不可见
     // （多进程路径 canvas 2D 位图从不进入绘制结果，2026-10-22 comp04a 脚手架批定位）。
@@ -1918,6 +1935,23 @@ fn js_worker_main(
                         retained_after_reset.push_back(cmd);
                     }
                 }
+                // BG-03 M2-S1：旧文档放弃的挂起 page fetch 逐 URL 触发网络层取消（排队
+                // 回错、在途断连）——连接不再滞留至 client 级超时占用 per-origin 槽位与
+                // launch 名额。置于 context 重建前：此后新文档的登记不受本次复位影响。
+                // 已提交未 launch 的极小窗口仍逃逸（launch 线程异步登记），best-effort，
+                // 30s client 超时兜底。
+                let abandoned_fetches: Vec<String> = page_fetch_inflight
+                    .lock()
+                    .map(|mut inflight| std::mem::take(&mut *inflight))
+                    .unwrap_or_default()
+                    .into_keys()
+                    .collect();
+                for url in abandoned_fetches {
+                    let cancelled = ResourceLoader::shared().cancel_inflight_url(&url);
+                    if cancelled > 0 {
+                        tracing::debug!(url = %url, cancelled, "cancelled page fetch on document reset");
+                    }
+                }
                 // https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate
                 // A cross-document navigation creates a new global object. Keeping the
                 // renderer worker is an implementation detail, not page-visible state.
@@ -2076,12 +2110,17 @@ fn media_source_provider_with_fetcher(
 /// R2923 fetch 完整化：生产 fetch handler——经 `zero_net::ResourceLoader` 发起真实 HTTP 请求，
 /// 支持全方法（GET/POST/PUT/DELETE/PATCH/HEAD/OPTIONS）、请求头、请求体，返 [`FetchResponse`]（status/
 /// status_text/headers/body）。renderer 进程直接联网（与 browser `tab_js_worker::default_fetch_handler`
-/// 同实现）。GET 行为零回归（method 默认 GET、body=None）。
+/// 同实现；BG-03 M2-S1 后本侧多出 URL 登记参数，browser 单进程侧跟进见控制面）。GET 行为零回归
+///（method 默认 GET、body=None）。
+///
+/// BG-03 M2-S1：`page_fetch_inflight` 为本 worker 的挂起 fetch URL 登记（同 URL 并发
+/// fetch 共享计数）——提交前增计、返回后减计；文档卸载时 ResetDocumentState 臂 drain
+/// 后逐 URL 触发网络层取消。
 ///
 /// `FetchBridge::register` 在**子线程**调本 handler（等待加载器结果时阻塞子线程，非 JS worker），故 JS worker
 /// 不在 fetch 期间冻结。Response 对象 spec-compliance 由 shim `_makeResponseFromWire` 在 JS 侧包装。
-pub fn default_fetch_handler() -> FetchHandler {
-    Arc::new(|req: &FetchRequest| {
+pub fn default_fetch_handler(page_fetch_inflight: Arc<std::sync::Mutex<HashMap<String, usize>>>) -> FetchHandler {
+    Arc::new(move |req: &FetchRequest| {
         let method = match req.method.to_ascii_uppercase().as_str() {
             "POST" => HttpMethod::Post,
             "PUT" => HttpMethod::Put,
@@ -2101,9 +2140,22 @@ pub fn default_fetch_handler() -> FetchHandler {
                 .clone()
                 .or_else(|| req.body.as_ref().map(|b| b.as_bytes().to_vec())),
         };
-        let resp = ResourceLoader::shared()
+        // 登记先于 submit：任务一旦进入调度器即可被文档卸载取消。
+        if let Ok(mut inflight) = page_fetch_inflight.lock() {
+            *inflight.entry(req.url.clone()).or_insert(0) += 1;
+        }
+        let submitted = ResourceLoader::shared()
             .submit_http(http_req, FetchPriority::MEDIUM)
-            .recv()
+            .recv();
+        if let Ok(mut inflight) = page_fetch_inflight.lock()
+            && let Some(count) = inflight.get_mut(&req.url)
+        {
+            *count -= 1;
+            if *count == 0 {
+                inflight.remove(&req.url);
+            }
+        }
+        let resp = submitted
             .map_err(|_| "fetch loader worker exited".to_string())?
             .map_err(|e| format!("fetch send: {e}"))?;
         Ok(FetchResponse {
@@ -3799,7 +3851,7 @@ mod tests {
         });
         let mut worker = RendererJsWorker::spawn(6);
         worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
-        worker.set_fetch_handler(default_fetch_handler());
+        worker.set_fetch_handler(default_fetch_handler(worker.page_fetch_inflight_registry()));
         let url = format!("http://127.0.0.1:{port}/data");
         worker
             .execute_script_direct(&format!(

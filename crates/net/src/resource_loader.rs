@@ -422,6 +422,15 @@ impl ResourceLoader {
             .invalidate(url);
     }
 
+    /// 取消指定 URL 的全部挂起加载（排队回错、在途断连），返回取消的任务数。
+    ///
+    /// BG-03 M2-S1：文档卸载放弃挂起子资源时调用——不取消则连接滞留至 client 级
+    /// 超时，期间持续占用 per-origin 槽位与 FetchBridge launch 名额，队头阻塞同源
+    /// 后续请求。同 URL 的缓存合并订阅者一并收到取消错误（合并语义下无法区分发起方）。
+    pub fn cancel_inflight_url(&self, url: &str) -> usize {
+        self.scheduler.lock().expect("fetch scheduler lock").cancel_by_url(url)
+    }
+
     fn submit_network(
         &self,
         cache: Arc<Mutex<HttpCache>>,

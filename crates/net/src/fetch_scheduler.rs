@@ -12,6 +12,9 @@ use crate::resource_policy::{max_connections_per_origin, max_connections_total, 
 /// HTTP GET 任务结果。
 pub type FetchJobResult = Result<crate::HttpResponse, String>;
 
+/// 取消错误文本：[`PerOriginFetchScheduler::cancel_by_url`] 打断的请求以此回错。
+pub const FETCH_CANCELLED: &str = "fetch cancelled";
+
 /// 单个网络事务的匿名时序数据。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FetchTelemetry {
@@ -52,6 +55,10 @@ pub struct PerOriginFetchScheduler {
     queue: Vec<QueuedJob>,
     /// 在途/排队请求身份的订阅者；完成时广播结果。
     pending: HashMap<String, Vec<Sender<FetchJobResult>>>,
+    /// 在途任务的取消信号（fragment 归一化 URL → [(身份键, 信号)]；仅 shared 任务登记，
+    /// 非 shared 旧 API 无收尾锁入口，登记会滞留）。BG-03 M2-S1：文档卸载放弃挂起
+    /// fetch 时经 `cancel_by_url` 触发，底层连接随网络 future drop 一并关闭。
+    running_cancels: HashMap<String, Vec<(String, Arc<tokio::sync::Notify>)>>,
     /// 同优先级队列上一次获选的 origin；用于按 origin 轮转而非 FIFO 偏置。
     last_queued_origin: Option<String>,
     /// `submit_shared` 安装后，排队 job 启动时也能自动 `on_complete`。
@@ -74,6 +81,7 @@ impl PerOriginFetchScheduler {
             in_flight_total: 0,
             queue: Vec::new(),
             pending: HashMap::new(),
+            running_cancels: HashMap::new(),
             last_queued_origin: None,
             self_hook: None,
         }
@@ -274,6 +282,18 @@ impl PerOriginFetchScheduler {
         let submitted_at = job.submitted_at;
         let telemetry_tx = job.telemetry_tx;
         let timeout_secs = job.timeout_secs;
+        // 取消登记仅 shared 任务（有收尾锁入口可自移除）；非 shared 旧 API 无取消支持。
+        let normalized = crate::cache_key::strip_url_fragment(&url);
+        let cancel_notify = if shared {
+            let notify = Arc::new(tokio::sync::Notify::new());
+            self.running_cancels
+                .entry(normalized.clone())
+                .or_default()
+                .push((key.clone(), Arc::clone(&notify)));
+            Some(notify)
+        } else {
+            None
+        };
         async_runtime().spawn(async move {
             let network_started = Instant::now();
             let mut req = crate::HttpRequest::get(&url);
@@ -290,9 +310,20 @@ impl PerOriginFetchScheduler {
             {
                 req = req.header("Priority", priority.rfc9218_header_value());
             }
-            let (result, protocol) = match HttpClient::send_async_with_timeout_and_protocol(timeout_secs, req).await {
-                Ok((response, protocol)) => (Ok(response), protocol),
-                Err(error) => (Err(error.to_string()), "unknown".to_string()),
+            // BG-03 M2-S1：取消信号打断网络 await——future drop 时 hyper 连同半读
+            // 连接一并丢弃（TCP 关闭），不再滞留至 client 级超时。晚到的取消信号
+            // （任务已完成、登记已移除）落空为 best-effort，超时仍兜底。
+            let (result, protocol) = tokio::select! {
+                res = HttpClient::send_async_with_timeout_and_protocol(timeout_secs, req) => match res {
+                    Ok((response, protocol)) => (Ok(response), protocol),
+                    Err(error) => (Err(error.to_string()), "unknown".to_string()),
+                },
+                _ = async {
+                    match cancel_notify.as_ref() {
+                        Some(notify) => notify.notified().await,
+                        None => std::future::pending::<()>().await,
+                    }
+                } => (Err(FETCH_CANCELLED.to_string()), "cancelled".to_string()),
             };
             match &result {
                 Ok(resp) => tracing::info!(
@@ -304,14 +335,26 @@ impl PerOriginFetchScheduler {
                 Err(e) => tracing::warn!(url = %url, error = %e, "HTTP fetch failed"),
             }
             let coalesced_subscriber_count = if shared {
-                // S6 合并路径：广播给全部订阅者后移除 pending 条目
+                // S6 合并路径：广播给全部订阅者后移除 pending 条目（取消时本臂也
+                // 走此处——订阅者统一收到取消错误，无需取消路径单独广播）。
                 if let Some(sched) = hook.as_ref()
                     && let Ok(mut s) = sched.lock()
-                    && let Some(subscribers) = s.pending.remove(&key)
                 {
-                    let count = subscribers.len();
-                    for tx in subscribers {
-                        let _ = tx.send(result.clone());
+                    let count = match s.pending.remove(&key) {
+                        Some(subscribers) => {
+                            let count = subscribers.len();
+                            for tx in subscribers {
+                                let _ = tx.send(result.clone());
+                            }
+                            count
+                        }
+                        None => 0,
+                    };
+                    if let Some(list) = s.running_cancels.get_mut(&normalized) {
+                        list.retain(|(k, _)| *k != key);
+                        if list.is_empty() {
+                            s.running_cancels.remove(&normalized);
+                        }
                     }
                     count
                 } else {
@@ -339,6 +382,44 @@ impl PerOriginFetchScheduler {
                 s.on_complete(&origin);
             }
         });
+    }
+
+    /// 取消指定 URL（fragment 归一化后匹配）的全部排队与在途任务，返回取消数。
+    ///
+    /// 用于文档卸载放弃挂起子资源（BG-03 M2-S1）：排队任务立即回错并清理订阅者；
+    /// 在途任务收到取消信号后由收尾臂广播 [`FETCH_CANCELLED`] 并释放槽位，底层
+    /// 连接随网络 future drop 关闭。同 URL 的其他文档合并订阅会被一并取消（合并
+    /// 语义下无法区分发起方）。
+    pub fn cancel_by_url(&mut self, url: &str) -> usize {
+        let normalized = crate::cache_key::strip_url_fragment(url);
+        let mut cancelled = 0usize;
+        // 排队任务：移除并回错（shared 的订阅者经 pending 清理，非 shared 直发）。
+        let mut i = 0;
+        while i < self.queue.len() {
+            if crate::cache_key::strip_url_fragment(&self.queue[i].url) == normalized {
+                let job = self.queue.remove(i);
+                cancelled += 1;
+                if job.shared {
+                    if let Some(subscribers) = self.pending.remove(&job.key) {
+                        for tx in subscribers {
+                            let _ = tx.send(Err(FETCH_CANCELLED.to_string()));
+                        }
+                    }
+                } else {
+                    let _ = job.reply_tx.send(Err(FETCH_CANCELLED.to_string()));
+                }
+            } else {
+                i += 1;
+            }
+        }
+        // 在途任务：触发取消信号；收尾臂负责广播 + on_complete + 移除登记。
+        if let Some(list) = self.running_cancels.remove(&normalized) {
+            cancelled += list.len();
+            for (_, notify) in list {
+                notify.notify_one();
+            }
+        }
+        cancelled
     }
 
     fn pump_queue(&mut self) {
@@ -513,6 +594,7 @@ mod tests {
             in_flight_total: 0,
             queue: Vec::new(),
             pending: HashMap::new(),
+            running_cancels: HashMap::new(),
             last_queued_origin: None,
             self_hook: None,
         };
@@ -536,6 +618,7 @@ mod tests {
             in_flight_total: 0,
             queue: Vec::new(),
             pending: HashMap::new(),
+            running_cancels: HashMap::new(),
             last_queued_origin: None,
             self_hook: None,
         };
@@ -560,6 +643,7 @@ mod tests {
             in_flight_total: 0,
             queue: Vec::new(),
             pending: HashMap::new(),
+            running_cancels: HashMap::new(),
             last_queued_origin: None,
             self_hook: None,
         };
@@ -581,6 +665,7 @@ mod tests {
             in_flight_total: 0,
             queue: Vec::new(),
             pending: HashMap::new(),
+            running_cancels: HashMap::new(),
             last_queued_origin: None,
             self_hook: None,
         };
@@ -600,6 +685,7 @@ mod tests {
             in_flight_total: 0,
             queue: Vec::new(),
             pending: HashMap::new(),
+            running_cancels: HashMap::new(),
             last_queued_origin: None,
             self_hook: None,
         };
@@ -619,6 +705,7 @@ mod tests {
             in_flight_total: 0,
             queue: Vec::new(),
             pending: HashMap::new(),
+            running_cancels: HashMap::new(),
             last_queued_origin: None,
             self_hook: None,
         };
@@ -678,6 +765,95 @@ mod tests {
         let _r1 = sched.submit("not-a-valid-url");
         let _r2 = sched.submit("not-a-valid-url");
         assert_eq!(sched.queued_count_for_test(), 1);
+    }
+
+    #[test]
+    fn cancel_by_url_errors_queued_job_without_starting_it() {
+        use std::time::Duration;
+        // 挂起服务端占满 per-origin 槽位，第二个同源请求排队；取消排队项应立即
+        // 回错且不再发起网络连接（服务端只收到 1 个连接）。
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind hanging server");
+        let port = listener.local_addr().expect("local addr").port();
+        std::thread::spawn(move || {
+            let mut held: Vec<std::net::TcpStream> = Vec::new();
+            while let Ok((stream, _)) = listener.accept() {
+                held.push(stream);
+            }
+        });
+        let sched = PerOriginFetchScheduler::new_shared();
+        sched.lock().unwrap().set_max_per_origin_for_test(1);
+        let origin = format!("http://127.0.0.1:{port}");
+        let _running = PerOriginFetchScheduler::submit_shared(&sched, format!("{origin}/stalled"));
+        let queued_url = format!("{origin}/queued");
+        let rx = PerOriginFetchScheduler::submit_shared(&sched, &queued_url);
+        assert_eq!(sched.lock().unwrap().queued_count_for_test(), 1);
+
+        let cancelled = sched.lock().unwrap().cancel_by_url(&queued_url);
+        assert_eq!(cancelled, 1, "one queued job cancelled");
+        assert_eq!(sched.lock().unwrap().queued_count_for_test(), 0);
+        let outcome = rx.recv_timeout(Duration::from_secs(5)).expect("cancelled reply");
+        assert!(matches!(outcome, Err(error) if error == FETCH_CANCELLED));
+    }
+
+    #[test]
+    fn cancel_by_url_aborts_in_flight_shared_job_and_frees_slot() {
+        use std::time::Duration;
+        // 挂起服务端让任务阻塞在响应读取；请求字节上线后才取消（保证取消落在
+        // 「在途等响应」而非连接前置阶段），取消后底层连接应对端观测到关闭
+        // （EOF），订阅者收到取消错误，per-origin 槽位随 on_complete 释放。
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind hanging server");
+        let port = listener.local_addr().expect("local addr").port();
+        let (request_seen_tx, request_seen_rx) = std::sync::mpsc::channel();
+        let (closed_tx, closed_rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept stalled request");
+            let mut buf = [0_u8; 4096];
+            stream
+                .set_read_timeout(Some(Duration::from_secs(60)))
+                .expect("set read timeout");
+            let n = stream.read(&mut buf).expect("read request headers");
+            assert!(n > 0, "request bytes must arrive before cancel");
+            request_seen_tx.send(()).expect("signal request arrival");
+            // 取消后网络 future 被 drop——hyper 关闭 h1 连接；此处应读到 EOF
+            //（Ok(0)），读超时（Err WouldBlock）或 reset 都说明连接未随取消关闭。
+            let outcome = stream.read(&mut buf);
+            closed_tx.send(outcome).expect("report connection close");
+        });
+        let sched = PerOriginFetchScheduler::new_shared();
+        let origin = format!("http://127.0.0.1:{port}");
+        let url = format!("{origin}/stall-me");
+        let rx = PerOriginFetchScheduler::submit_shared(&sched, &url);
+        // 等请求字节真正上线再取消（登记在 start 内同步插入，必然已存在）。
+        request_seen_rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("request reaches local server");
+
+        let cancelled = sched.lock().unwrap().cancel_by_url(&url);
+        assert_eq!(cancelled, 1, "one in-flight task cancelled");
+        let outcome = rx.recv_timeout(Duration::from_secs(5)).expect("cancelled reply");
+        assert!(matches!(outcome, Err(error) if error == FETCH_CANCELLED));
+        let observed = closed_rx
+            .recv_timeout(Duration::from_secs(45))
+            .expect("server observes connection close after cancel");
+        assert_eq!(
+            observed.map_err(|error| error.to_string()),
+            Ok(0usize),
+            "server must observe clean EOF after cancel"
+        );
+
+        // on_complete 已把 per-origin 槽位归零释放（计数到 0 时条目被移除）。
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            let count = sched.lock().unwrap().in_flight.get(&origin).copied();
+            if count.is_none() {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "origin slot not released after cancel: {count:?}"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
     }
 }
 

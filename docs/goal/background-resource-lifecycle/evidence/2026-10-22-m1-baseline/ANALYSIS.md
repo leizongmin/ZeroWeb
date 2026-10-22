@@ -44,7 +44,7 @@ browser 进程各腿 RSS 稳定（~34–48MB；GUI 腿含窗口栈升至 ~250MB 
 ### DC-3 / BG-03 重复导航与停滞资源——**导航功能正常；连接与内存随导航积累**
 
 - 30 次 source/target 交替导航全部成功（nav_ok 30/30，document.title 就绪），文档替换功能面正常。
-- **挂起 fetch 的 HTTP 连接不随导航关闭**：fixture server 观测 `stall_active` 1→6 线性积累（每次回到 source 页新增 1 条 24h stall 连接），`stall_closed_by_peer` 全程为 0。旧文档替换后未完成子资源的底层连接持续滞留至超时（本 fixture 为 24h）。候选 owner：renderer fetch scheduler / zero-net 连接栈（导航时 `inflight_fetches.clear()` 只 drop Receiver 端，不断开 TCP）。
+- **挂起 fetch 的 HTTP 连接不随导航取消**：fixture server 观测 `stall_active` 1→6（后段恒 6），`stall_closed_by_peer` 观测窗内为 0。M2 归因（调用链核对）修正解读：连接滞留至 **reqwest client 级 30s 总超时**（`crates/net/src/client.rs:60`，含 body 阶段；`ResourceRequest::get` 默认 timeout_secs=30），到期后 hyper 丢弃半读连接；6 条封顶是 per-origin 并发帽（`resource_policy.rs:18`，DEFAULT_MAX_CONNECTIONS_PER_ORIGIN=6）所致，首批连接的超时点恰在 45s 观测窗尾部，故 peer 关闭未及观测。真实缺陷是**无取消路径**：`fetch_scheduler` spawn 的 task 无句柄留存、无 CancellationToken，导航时 `inflight_fetches.clear()` 只 drop 应答端点——被放弃的 fetch 继续占用 FetchBridge launch 线程名额（gate 64，`fetch_bridge.rs:102`）与 per-origin 槽位直至超时，队头阻塞同源后续请求；页面 fetch() 路径全程无登记（`InflightIpcFetches` 只覆盖 IPC 子资源路径）。
 - **renderer RSS 随导航近线性增长**：44MB → 268MB（四分位 44/165/198/216/268），30 次导航 +224MB。候选来源（待 M2 归因）：① 超长 timer（2^31-1ms）heap entry 滞留——TimerBridge 协调线程为 per-worker 单例，导航不清队列，entry 滞留至 expiry；② stall fetch 上下文与连接缓冲；③ 其他文档替换残留。**本基线不判定根因。**
 - browser 进程 RSS 稳定（~36MB）——增长集中于 renderer。
 
@@ -68,8 +68,8 @@ run ID/profile/PID/viewport/墙钟/采样间隔均固定并落 `run-config.txt` 
 
 ## M2 候选增长源（按证据强度排序）
 
-1. **stall fetch 连接滞留**（BG-03，server 侧直接观测）——owner：renderer fetch scheduler / zero-net。
-2. **重复导航 renderer RSS 线性增长 +224MB**（BG-03）与 **tab 开关 +163MB 不回落**（BG-04）——owner：page-runtime/renderer 文档替换与 tab 生命周期。
+1. **挂起 fetch 无取消路径**（BG-03，已归因）：`fetch_scheduler.rs:277-341` spawn 的 task 无句柄、无 CancellationToken；修复切片 = 调度器任务句柄表 + `cancel_key`（~30 行）→ FetchBridge 登记 `id → 取消句柄` + `ResetDocumentState` 臂触发（页面 fetch 覆盖）→ runtime 三处 `clear()` 扩展（IPC 子资源覆盖）。基于 reply channel 断开检测不可行（调度器持有 Sender 克隆，channel 永不 Disconnected）。
+2. **重复导航 renderer RSS 线性增长 +224MB**（BG-03）与 **tab 开关 +163MB 不回落**（BG-04）——owner：page-runtime/renderer 文档替换与 tab 生命周期。超长 timer heap entry 滞留已核对为真实但量级小（entry = expiry+seq+id 字符串，滞留至 expiry，回调被 `__zw_pending` 缺失语义兜底 no-op；无按代际清队机制），非 RSS 增长主因，待进一步归因。
 3. **高频 timer 页 RSS 增长 ~200-326MB**（BG-01）——owner：js_worker/引擎堆，伴生现象待归因。
 
 ## NOT_RUN 清单

@@ -143,15 +143,38 @@ impl TabFetchProxy {
     }
 
     /// 取消 Tab 当前 pending fetch。
+    ///
+    /// BG-03 M2-S1：除丢弃 IPC 应答端点外，按 URL 取消底层在途网络任务（排队回错、
+    /// 在途断连）——此前被导航放弃的加载继续占用 per-origin 槽位直至 client 级超时。
+    /// 同 URL 的其他 Tab 合并订阅会被一并取消（调度器合并语义无法区分发起方，见
+    /// [`PerOriginFetchScheduler::cancel_by_url`]）；流式图片路径无取消句柄（任务自跑
+    /// 至完成），不在本覆盖内。
     pub fn cancel_tab(&mut self, tab_id: TabId) {
         let epoch = self.tab_epochs.entry(tab_id).or_insert(0);
         *epoch += 1;
         let before = self.pending.len();
-        self.pending.retain(|p| p.tab_id != tab_id);
+        let mut cancelled_urls: Vec<String> = Vec::new();
+        self.pending.retain(|p| {
+            if p.tab_id == tab_id {
+                if !cancelled_urls.contains(&p.url) {
+                    cancelled_urls.push(p.url.clone());
+                }
+                false
+            } else {
+                true
+            }
+        });
         self.stream_pending.retain(|(pending_tab, _)| *pending_tab != tab_id);
         let dropped = before.saturating_sub(self.pending.len());
-        if dropped > 0 {
-            tracing::info!("fetch cancel tab {} dropped {dropped} pending IPC fetches", tab_id.0);
+        let mut cancelled = 0usize;
+        for url in &cancelled_urls {
+            cancelled += self.loader_for(tab_id).cancel_inflight_url(url);
+        }
+        if dropped > 0 || cancelled > 0 {
+            tracing::info!(
+                "fetch cancel tab {} dropped {dropped} pending IPC fetches, cancelled {cancelled} network tasks",
+                tab_id.0
+            );
         }
     }
 
@@ -883,6 +906,48 @@ mod tests {
         proxy.cancel_tab(TabId(1));
         assert_eq!(proxy.pending_count(), 0);
         assert!(proxy.drain().is_empty());
+    }
+
+    #[test]
+    fn cancel_tab_closes_in_flight_subresource_connection() {
+        // BG-03 M2-S1 回归钉：挂起服务端让 IPC 子资源阻塞在等响应；cancel_tab（导航
+        // 时 on_navigate 触发）后底层连接应对端观测到干净 EOF。旧行为只丢应答端点，
+        // 连接滞留至 client 级 30s 超时（M1 基线 §DC-3）。
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind hanging server");
+        let port = listener.local_addr().expect("local addr").port();
+        let (request_seen_tx, request_seen_rx) = channel();
+        let (closed_tx, closed_rx) = channel();
+        std::thread::spawn(move || {
+            let Ok((mut stream, _)) = listener.accept() else {
+                return;
+            };
+            stream
+                .set_read_timeout(Some(Duration::from_secs(60)))
+                .expect("set read timeout");
+            let mut buf = [0_u8; 4096];
+            if let Ok(n) = stream.read(&mut buf)
+                && n > 0
+            {
+                let _ = request_seen_tx.send(());
+                let _ = closed_tx.send(stream.read(&mut buf));
+            }
+        });
+        let mut proxy = TabFetchProxy::new();
+        proxy.enqueue(TabId(7), &params(1, &format!("http://127.0.0.1:{port}/stall.css")));
+        request_seen_rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("request bytes reach hanging server");
+
+        proxy.cancel_tab(TabId(7));
+        assert_eq!(proxy.pending_count(), 0);
+        let observed = closed_rx
+            .recv_timeout(Duration::from_secs(15))
+            .expect("server observes connection close after cancel_tab");
+        assert_eq!(
+            observed.map_err(|error| error.to_string()),
+            Ok(0usize),
+            "in-flight IPC subresource connection must close on cancel_tab"
+        );
     }
 
     #[test]
