@@ -1,0 +1,8 @@
+{"event": "server_start", "port": 33183, "dir": "/lzcapp/document/work/ZeroWeb-3/tests/fixtures/background-resource", "t_ms": 1792707766969}
+{"path": "/stall?ms=86400000&tag=bg03-nav-1792707768264", "client": "127.0.0.1:49248", "stall": true, "ms": 86400000, "tag": "bg03-nav-1792707768264", "t_ms": 1792707768268}
+{"path": "/stall?ms=86400000&tag=bg03-nav-1792707791965", "client": "127.0.0.1:34970", "stall": true, "ms": 86400000, "tag": "bg03-nav-1792707791965", "t_ms": 1792707791966}
+{"path": "/stall?ms=86400000&tag=bg03-nav-1792707802761", "client": "127.0.0.1:56974", "stall": true, "ms": 86400000, "tag": "bg03-nav-1792707802761", "t_ms": 1792707802762}
+{"path": "/stall?ms=86400000&tag=bg03-nav-1792707813785", "client": "127.0.0.1:46040", "stall": true, "ms": 86400000, "tag": "bg03-nav-1792707813785", "t_ms": 1792707813788}
+{"path": "/stall?ms=86400000&tag=bg03-nav-1792707824569", "client": "127.0.0.1:40044", "stall": true, "ms": 86400000, "tag": "bg03-nav-1792707824569", "t_ms": 1792707824571}
+{"path": "/stall?ms=86400000&tag=bg03-nav-1792707835357", "client": "127.0.0.1:49480", "stall": true, "ms": 86400000, "tag": "bg03-nav-1792707835357", "t_ms": 1792707835359}
+{"path": "/stall?ms=86400000&tag=bg03-nav-1792707846193", "client": "127.0.0.1:39370", "stall": true, "ms": 86400000, "tag": "bg03-nav-1792707846193", "t_ms": 1792707846195}

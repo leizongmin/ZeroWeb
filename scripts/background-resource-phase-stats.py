@@ -2,9 +2,9 @@
 """M4 GUI tab 切换腿分段 CPU 统计。
 
 输入 sampler 全程采样（samples.jsonl）+ browser.log 的 UI_DRIVER_STEP log 段锚点
-（phaseN-<name>），按锚点把墙钟切成段，统计各段各进程 CPU（jiffies 增量 → cores）。
-多 renderer 实例按 sampler 首现顺序编号 renderer-1/2（与 browser.log [renderer-N]
-前缀的启动序对应）。
+（phaseN-<name>），按锚点把墙钟切成段，统计各段各进程 CPU（jiffies 增量 → cores）
+与 RSS（段内首末 + 高水位，MiB）。多 renderer 实例按 sampler 首现顺序编号
+renderer-1/2（与 browser.log [renderer-N] 前缀的启动序对应）。
 
 用法：background-resource-phase-stats.py <samples.jsonl> <browser.log> [anchors.txt]
   anchors.txt（xdotool 形态）：每行 `<epoch_ms> <phase-name>`；缺省从 browser.log
@@ -76,13 +76,17 @@ def main(samples_path: str, log_path: str, anchors_path: str | None = None) -> N
     def in_phase(t_ms: int, start: int, end: int) -> bool:
         return start <= t_ms < end
 
-    print(f"{'phase':28} {'proc':14} {'dur_s':>6} {'cpu_s':>7} {'cores':>7} {'n':>4}")
+    print(f"{'phase':28} {'proc':14} {'dur_s':>6} {'cpu_s':>7} {'cores':>7} "
+          f"{'rss_1st':>8} {'rss_last':>8} {'hwm':>8} {'n':>4}")
     for name, start_ms, end_ms in phases:
         if end_ms <= start_ms:
             continue
         # 段内首末 jiffies 差分（进程 jiffies 单调累积；段内任一样本缺失按 0 起算）。
         first: dict[int, int] = {}
         last: dict[int, int] = {}
+        rss_first: dict[int, int] = {}
+        rss_last: dict[int, int] = {}
+        hwm_max: dict[int, int] = {}
         n = 0
         for row in samples:
             if not in_phase(row["t_ms"], start_ms, end_ms):
@@ -94,6 +98,11 @@ def main(samples_path: str, log_path: str, anchors_path: str | None = None) -> N
                 if p["pid"] not in first:
                     first[p["pid"]] = p["cpu_jiffies"]
                 last[p["pid"]] = p["cpu_jiffies"]
+                if p.get("rss_kib") is not None:
+                    rss_first.setdefault(p["pid"], p["rss_kib"])
+                    rss_last[p["pid"]] = p["rss_kib"]
+                if p.get("hwm_kib") is not None:
+                    hwm_max[p["pid"]] = max(hwm_max.get(p["pid"], 0), p["hwm_kib"])
             for pid in first:
                 if pid not in seen:
                     last[pid] = last.get(pid, first[pid])
@@ -103,7 +112,13 @@ def main(samples_path: str, log_path: str, anchors_path: str | None = None) -> N
             user_hz = 100
             cpu_s = delta / user_hz
             cores = cpu_s / dur_s if dur_s else 0
-            print(f"{name:28} {labels[pid]:14} {dur_s:6.1f} {cpu_s:7.2f} {cores:7.3f} {n:4}")
+            rss_a = rss_first.get(pid)
+            rss_b = rss_last.get(pid)
+            rss_a_s = f"{rss_a / 1024:.1f}" if rss_a is not None else "-"
+            rss_b_s = f"{rss_b / 1024:.1f}" if rss_b is not None else "-"
+            hwm_s = f"{hwm_max[pid] / 1024:.1f}" if pid in hwm_max else "-"
+            print(f"{name:28} {labels[pid]:14} {dur_s:6.1f} {cpu_s:7.2f} {cores:7.3f} "
+                  f"{rss_a_s:>8} {rss_b_s:>8} {hwm_s:>8} {n:4}")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,1 @@
+scenario=bg04-close-gui start_url=bg02-onscreen-anim.html ZW_COMPOSITOR_ANIMATIONS=1 frame_dump=1 display=:20 port=49653

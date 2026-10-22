@@ -1300,6 +1300,32 @@ impl RendererRuntime {
         self.send_regular(IpcMessageKind::CompositorAnimationState(params))
     }
 
+    /// 可见性翻转即刷新 compositor 动画声明采样意图（M4 GUI 腿轮缺口收口）。
+    ///
+    /// `visible_declarations` 的 page_hidden 维度只在发布路径消费（publish 末尾的
+    /// 发送单点），而空闲 hidden 页翻转后无 rAF（泵按 hidden 门控停）、无 timer、
+    /// 无输入——不会再有 publish，空声明集永远发不出去，`animations_active` 保持
+    /// 置位，browser keep-alive 对不可见 surface 全速率空转（tab 切换与 close/
+    /// reopen 两形态生产腿实测 ~5/0.6 cores 恒定带）。翻转时用最近一次渲染的声明
+    /// 缓存走发送单点：advance 判变（hidden 发空集清理、恢复集合差分重现且
+    /// generation 递增），不触发帧事务、无重渲染。恢复方向同样必要——隐藏期间
+    /// compositor 声明已清空，无焦点事件的恢复（无 publish 源）否则动画冻结到
+    /// 下一次输入。无渲染结果（未装载页面）无声明可刷新，直接跳过。
+    fn refresh_compositor_animation_state(&mut self) -> Result<(), String> {
+        let Some((declarations, scopes, transforms)) =
+            self.webview.as_ref().and_then(|wv| wv.last_render()).map(|render| {
+                (
+                    render.animation_declarations.clone(),
+                    render.animation_scopes.clone(),
+                    render.primitives.transforms.clone(),
+                )
+            })
+        else {
+            return Ok(());
+        };
+        self.send_compositor_animation_state(declarations, &scopes, &transforms)
+    }
+
     /// M2-S2b/S3a：惰性动画事件检查——新终结动画派发 `animationend`、代际差分检出
     /// 的取消派发 `animationcancel`（复用既有 AnimationEvent 管线；恰一次去重在
     /// [`AnimationExportState::drain_animation_events`]）。两个时点调用：每次 publish
@@ -3260,6 +3286,9 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         // M4 GUI 生产腿观测面：可见性翻转低频（poll 差分保证同态不重发），一行日志
         // 即「tab 切换 → SetVisibility 到达 renderer」链路激活的直接证据。
         tracing::info!("renderer: page visibility -> hidden={hidden}");
+        // page_hidden 声明维度的消费点在发布路径，空闲 hidden 页翻转后不再有
+        // publish——采样意图必须在翻转边界即刷新（JS 关闭同样生效，置于 JS 门控前）。
+        self.refresh_compositor_animation_state()?;
         if !self.javascript_enabled {
             return Ok(());
         }

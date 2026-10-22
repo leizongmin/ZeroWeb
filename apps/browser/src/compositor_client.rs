@@ -1470,6 +1470,20 @@ fn process_batch(
                     });
                 }
                 (ExpectedResponse::ReleaseSurface, IpcMessageKind::Ok) => {}
+                // 新 tab 竞态 / surface 已释放：compositor Get handler 对未注册
+                // surface 回 epoch=0 空帧（None 臂），tab 切换 busy 窗也可能对
+                // Get 回非请求 (surface, epoch) 的前台帧——都是合法的「非该帧」
+                // 协议响应，不是通道损坏。丢弃本响应（请求/响应 FIFO 仍一一
+                // 配对，Get 方下轮重拉），不断链。DC-4 GUI close/reopen 腿实测：
+                // cycle-02 新 tab surface 注册前的 Get 命中空响应曾被上面的
+                // (surface, epoch) 守卫失败引入此致命臂——全会话断链、compositor
+                // 退出且无重启，前台动画呈现恢复失败。
+                (ExpectedResponse::Data(_), IpcMessageKind::CompositorFrameData { .. }) => {
+                    frame_watchdog
+                        .lock()
+                        .unwrap_or_else(|error| error.into_inner())
+                        .progress(std::time::Instant::now());
+                }
                 _ => {
                     // M2-S2c：断链诊断——期望与实收消息种类一起落日志
                     //（busy 窗后断链归因需要 (expected, got) 对，裸 id 不够；
@@ -1855,6 +1869,77 @@ mod tests {
 
     fn frame_watchdog() -> Arc<Mutex<FrameWatchdog>> {
         Arc::new(Mutex::new(FrameWatchdog::default()))
+    }
+
+    #[test]
+    fn get_response_for_unknown_surface_is_dropped_not_fatal() {
+        // DC-4 GUI close/reopen 腿实测（2026-10-23）：新 tab surface 注册前的
+        // Get 命中 compositor None 臂的 epoch=0 空帧响应，曾被 (surface, epoch)
+        // 守卫失败判为致命通道错误——全会话断链、compositor 退出且无重启。
+        // 「非该帧」的合法响应必须丢弃并保持通道存活。
+        let mut transport = ScriptedTransport {
+            sent: Arc::new(Mutex::new(Vec::new())),
+            responses: VecDeque::new(),
+        };
+        // Get(surface 7, epoch 2, frame 9)：compositor 未注册 surface 7 →
+        // 回 (surface 7, epoch 0, frame 0) 空帧。
+        transport.responses.push_back(Ok(data(
+            1,
+            FrameKey {
+                surface_id: 7,
+                navigation_epoch: 0,
+                frame_id: 0,
+            },
+            0,
+        )));
+        let watchdog = frame_watchdog();
+        watchdog.lock().unwrap().begin(std::time::Instant::now());
+
+        let result = process_batch(
+            &mut transport,
+            vec![WorkerCommand::GetFrame(FrameKey {
+                surface_id: 7,
+                navigation_epoch: 2,
+                frame_id: 9,
+            })],
+            &Arc::new(CompletedFrameChannel::new(1)),
+            &Arc::new(PresentFrameChannel::new()),
+            &mut 1,
+            &watchdog,
+        );
+
+        assert!(
+            result.is_ok(),
+            "unknown-surface Get response must not kill the channel: {result:?}"
+        );
+    }
+
+    #[test]
+    fn unexpected_response_kind_still_fails_the_channel() {
+        // 负例对照：Get 期望 Data 却收到 Ok（真实协议损坏）仍须判错断链。
+        let mut transport = ScriptedTransport {
+            sent: Arc::new(Mutex::new(Vec::new())),
+            responses: VecDeque::new(),
+        };
+        transport.responses.push_back(Ok(IpcMessage {
+            id: 1,
+            kind: IpcMessageKind::Ok,
+        }));
+
+        let result = process_batch(
+            &mut transport,
+            vec![WorkerCommand::GetFrame(FrameKey {
+                surface_id: 7,
+                navigation_epoch: 2,
+                frame_id: 9,
+            })],
+            &Arc::new(CompletedFrameChannel::new(1)),
+            &Arc::new(PresentFrameChannel::new()),
+            &mut 1,
+            &frame_watchdog(),
+        );
+
+        assert!(result.is_err(), "protocol corruption must still fail the channel");
     }
 
     #[test]

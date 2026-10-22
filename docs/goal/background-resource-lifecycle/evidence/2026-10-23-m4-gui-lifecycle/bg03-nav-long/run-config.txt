@@ -1,0 +1,1 @@
+scenario=bg03-nav-gui start_url=bg03-nav-source.html ZW_COMPOSITOR_ANIMATIONS=0 frame_dump=0 display=:20 port=36241

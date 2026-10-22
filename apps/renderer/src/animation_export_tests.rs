@@ -499,8 +499,21 @@ fn visible_declarations_filters_by_surviving_scopes() {
     );
 }
 
-/// flag 开 + Compositor 模式的 runtime（renderer 测试腿串行，set_var 无竞态；
-/// 每测尾恢复 env，不污染后续测试）。
+/// env 编排串行化：`ZW_COMPOSITOR_ANIMATIONS` 是进程级环境值，cargo 测试并行
+/// 线程下本模块的 set/remove 与其他测试的构造（with_io 读 env 下推 webview）、
+/// 发送（`compositor_animations_active` 每次调用读 env）互踩——两个
+/// compositor_state 测试负载下随机假红（2026-10-23 DC-4 腿轮实测）。依赖 env
+/// 的测试首行持锁，覆盖构造→断言→恢复全程。
+fn env_guard() -> std::sync::MutexGuard<'static, ()> {
+    use std::sync::OnceLock;
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+}
+
+/// flag 开 + Compositor 模式的 runtime（调用方先取 [`env_guard`]；每测尾恢复
+/// env，不污染后续测试）。
 fn compositor_runtime(id: u64, buf: &SharedBuf) -> RendererRuntime {
     unsafe { std::env::set_var("ZW_COMPOSITOR_ANIMATIONS", "1") };
     let (_inbound_tx, inbound_rx) = std::sync::mpsc::channel();
@@ -536,6 +549,7 @@ fn wait_compositor_states(buf: &SharedBuf, min: usize) -> Vec<zero_protocol::Com
 #[test]
 fn compositor_state_sends_declarations_with_surviving_scope() {
     let buf = SharedBuf(Arc::new(Mutex::new(Vec::new())));
+    let _env = env_guard();
     let mut runtime = compositor_runtime(201, &buf);
     let declarations = vec![opacity_decl(1, 0.0, 1.0)];
     runtime
@@ -550,6 +564,7 @@ fn compositor_state_sends_declarations_with_surviving_scope() {
 
 #[test]
 fn compositor_state_sends_empty_set_when_all_scopes_culled() {
+    let _env = env_guard();
     let buf = SharedBuf(Arc::new(Mutex::new(Vec::new())));
     let mut runtime = compositor_runtime(202, &buf);
     // 声明存在但全部作用域被视口剔除（offscreen 动画页）→ 空集发送（首帧必发），
@@ -566,6 +581,7 @@ fn compositor_state_sends_empty_set_when_all_scopes_culled() {
 
 #[test]
 fn compositor_state_recovers_declarations_when_scope_returns() {
+    let _env = env_guard();
     let buf = SharedBuf(Arc::new(Mutex::new(Vec::new())));
     let mut runtime = compositor_runtime(203, &buf);
     let declarations = vec![opacity_decl(1, 0.0, 1.0)];
@@ -603,6 +619,7 @@ fn compositor_state_clears_declarations_while_page_hidden() {
     // M4 GUI 判别腿缺口收口：tab 隐藏（SetVisibility → page_hidden）后声明清空 →
     // compositor animations_active 回落 → keep-alive 停对不可见 surface 的常态 Get
     // 重光栅；恢复可见首帧集合差分重现。
+    let _env = env_guard();
     let buf = SharedBuf(Arc::new(Mutex::new(Vec::new())));
     let mut runtime = compositor_runtime(204, &buf);
     let declarations = vec![opacity_decl(1, 0.0, 1.0)];
@@ -626,6 +643,76 @@ fn compositor_state_clears_declarations_while_page_hidden() {
         .expect("发送");
     let states = wait_compositor_states(&buf, 3);
     assert_eq!(states[2].declarations.len(), 1);
+    assert!(states[2].generation > hidden_generation, "恢复代际递增");
+    unsafe { std::env::remove_var("ZW_COMPOSITOR_ANIMATIONS") };
+}
+
+#[test]
+fn set_visibility_refreshes_compositor_animation_declarations_without_publish() {
+    // M4 GUI 腿轮缺口收口（DC-4 close/reopen 与 tab 切换双形态生产腿实测）：
+    // page_hidden 声明维度只在 publish 末尾消费，空闲 hidden 页翻转后无 rAF
+    // （泵按 hidden 门控停）、无 timer、无输入——空集永远发不出去，
+    // animations_active 恒真、browser keep-alive 对不可见 surface 全速率空转。
+    // 锁定：SetVisibility 翻转边界即刷新（hidden 发空集清理、恢复集合差分重现
+    // generation 递增），全程无帧事务、无重渲染（真渲染缓存 + 真 IPC 链）。
+    let _env = env_guard();
+    let buf = SharedBuf(Arc::new(Mutex::new(Vec::new())));
+    let mut runtime = compositor_runtime(205, &buf);
+    let html = r#"<html><head><style>
+        @keyframes fade { from { opacity: 0.2; } to { opacity: 0.8; } }
+        .box { animation: fade 1s linear infinite; width: 40px; height: 40px; background: #36f; }
+    </style></head><body><div class="box"></div></body></html>"#;
+    runtime.current_url = Some("https://zero.test/vis-anim".to_string());
+    runtime.cached_html = html.to_string();
+    runtime.webview.as_mut().unwrap().load_html(html, None);
+    let (declarations, scopes, transforms) = {
+        let webview = runtime.webview.as_mut().unwrap();
+        webview.render();
+        let render = webview.last_render().expect("渲染结果");
+        (
+            render.animation_declarations.clone(),
+            render.animation_scopes.clone(),
+            render.primitives.transforms.clone(),
+        )
+    };
+    assert_eq!(declarations.len(), 1, "渲染应导出视口内动画声明（构造期开关已下推）");
+    // 生产初态：首帧 publish 已发过非空声明（last-sent 基线非空）。
+    runtime
+        .send_compositor_animation_state(declarations, &scopes, &transforms)
+        .expect("发送");
+    let states = wait_compositor_states(&buf, 1);
+    assert_eq!(states.len(), 1);
+    assert_eq!(states[0].declarations.len(), 1, "可见：声明照发");
+
+    // 翻转隐藏：无 publish 源，刷新必须即发空集（作用域缓存存活也清空）。
+    runtime
+        .dispatch_message(IpcMessage {
+            id: 0,
+            kind: IpcMessageKind::SetVisibility(zero_protocol::message::SetVisibilityParams { hidden: true }),
+        })
+        .unwrap();
+    let states = wait_compositor_states(&buf, 2);
+    assert_eq!(states.len(), 2);
+    assert!(
+        states[1].declarations.is_empty(),
+        "隐藏翻转即发空集——不等下一次 publish"
+    );
+    let hidden_generation = states[1].generation;
+
+    // 翻转恢复：集合差分重现，generation 递增（动画时间轴重启为既有已知边界）。
+    runtime
+        .dispatch_message(IpcMessage {
+            id: 0,
+            kind: IpcMessageKind::SetVisibility(zero_protocol::message::SetVisibilityParams { hidden: false }),
+        })
+        .unwrap();
+    let states = wait_compositor_states(&buf, 3);
+    assert_eq!(states.len(), 3);
+    assert_eq!(
+        states[2].declarations.len(),
+        1,
+        "恢复翻转即重现声明——不等焦点事件 publish"
+    );
     assert!(states[2].generation > hidden_generation, "恢复代际递增");
     unsafe { std::env::remove_var("ZW_COMPOSITOR_ANIMATIONS") };
 }

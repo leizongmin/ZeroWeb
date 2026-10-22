@@ -541,6 +541,21 @@ impl ProcessTabBackend {
             IpcMessageKind::CompositorAnimationState(params) => {
                 // M2-S1c：动画声明状态中继给 compositor（fire-and-forget，无回执；
                 // stale epoch / 代际由 compositor 最新生效语义裁决）。
+                // M4 GUI 腿轮：可见性恢复方向的声明重现不产生新 frame 代（renderer
+                // 翻转边界刷新走发送单点、无帧事务）——snapshot flag 已落 false 时
+                // keep-alive 探测以「每新提交 frame 代一次」为前置不会自发再开，
+                // 重新活跃的声明无 Get 采样源（M3 自举死锁第二变体：恢复段动画链
+                // 不重建）。非空声明到达即重臂探测一次；flag 仍以 Get 响应采样为
+                // 唯一产生源，此处只重开探测机会，语义不变。
+                if !params.declarations.is_empty()
+                    && !snap.compositor_animations_active
+                    && snap
+                        .compositor_submission
+                        .as_ref()
+                        .is_some_and(|submission| submission.surface_id == params.surface_id)
+                {
+                    snap.compositor_anim_probe_frame = None;
+                }
                 crate::compositor_client::forward_animation_state(params);
             }
             IpcMessageKind::CompositorPatchRegister {
@@ -2296,6 +2311,8 @@ mod navigation_contract_tests {
     use zero_browser_shell::TabId;
     use zero_protocol::message::IpcMessageKind;
     use zero_protocol::{
+        AnimationDirection, AnimationEasing, AnimationFillMode, AnimationKeyframe, AnimationPropertyKind,
+        AnimationPropertyValue, AnimationTiming, CompositorAnimationDeclaration, CompositorAnimationStateParams,
         IpcColor, IpcFill, IpcHitTestCache, IpcHitTestLayoutNode, IpcHitTestNodeMeta, IpcImagePayload, IpcRect,
         PaintSnapshotParams,
     };
@@ -2419,6 +2436,95 @@ mod navigation_contract_tests {
         assert_eq!(fill.color.g, 0);
         assert_eq!(pending_loaded.len(), 1);
         assert!(pending_errors.is_empty());
+    }
+
+    /// M4 GUI 腿轮：恢复方向声明重现不产生新 frame 代（renderer 翻转边界刷新走
+    /// 发送单点、无帧事务）——snapshot flag 已落 false 时 keep-alive 探测以「每新
+    /// 提交 frame 代一次」为前置不会自发再开，重新活跃的声明无 Get 采样源（M3
+    /// 自举死锁第二变体，close/reopen 腿实测恢复段 0.000/0.003 cores）。非空声明
+    /// 到达即重臂探测；flag 仍以 Get 响应采样为唯一产生源。空集（隐藏方向清理）
+    /// 不重臂——flag 应回落 false，keep-alive 保持停。
+    #[test]
+    fn animation_state_rearms_anim_probe_on_nonempty_declarations() {
+        let declaration = CompositorAnimationDeclaration {
+            animation_id: 1,
+            property: AnimationPropertyKind::Opacity,
+            composable: true,
+            start_monotonic_ns: 0,
+            timing: AnimationTiming {
+                duration_ms: 1000.0,
+                delay_ms: 0.0,
+                iterations: None,
+                direction: AnimationDirection::Normal,
+                fill: AnimationFillMode::None,
+                easing: AnimationEasing::Linear,
+            },
+            keyframes: vec![
+                AnimationKeyframe {
+                    offset: 0.0,
+                    value: AnimationPropertyValue::Opacity(0.2),
+                    easing: None,
+                },
+                AnimationKeyframe {
+                    offset: 1.0,
+                    value: AnimationPropertyValue::Opacity(0.8),
+                    easing: None,
+                },
+            ],
+            frozen_phase_s: None,
+        };
+        let tab_id = TabId(1);
+        let mut snap = TabSnapshot::default();
+        snap.begin_navigation("https://example.com".into());
+        let epoch = snap.navigation_epoch;
+        // 隐藏窗后状态：flag 已落 false，本 frame 代的探测已消费。
+        snap.compositor_animations_active = false;
+        snap.compositor_anim_probe_frame = Some(7);
+        snap.compositor_submission = Some(CompositorSubmission {
+            surface_id: 3,
+            navigation_epoch: epoch,
+            frame_id: 7,
+        });
+        let mut snapshot_seq = std::collections::HashMap::new();
+        let mut pending_loaded = Vec::new();
+        let mut pending_errors = Vec::new();
+        let mut pending_tab_navigates = Vec::new();
+        let send = |declarations: Vec<CompositorAnimationDeclaration>| {
+            IpcMessageKind::CompositorAnimationState(CompositorAnimationStateParams {
+                surface_id: 3,
+                navigation_epoch: epoch,
+                generation: 2,
+                declarations,
+                finished: Vec::new(),
+            })
+        };
+
+        ProcessTabBackend::apply_inbound_message(
+            tab_id,
+            &mut snap,
+            send(vec![declaration]),
+            &mut snapshot_seq,
+            &mut pending_loaded,
+            &mut pending_errors,
+            &mut pending_tab_navigates,
+        );
+        assert_eq!(
+            snap.compositor_anim_probe_frame, None,
+            "非空声明重臂探测——恢复方向 flag 需重新采样"
+        );
+
+        // 隐藏方向空集清理：不重臂（flag 应回落 false，keep-alive 保持停）。
+        snap.compositor_anim_probe_frame = Some(7);
+        ProcessTabBackend::apply_inbound_message(
+            tab_id,
+            &mut snap,
+            send(Vec::new()),
+            &mut snapshot_seq,
+            &mut pending_loaded,
+            &mut pending_errors,
+            &mut pending_tab_navigates,
+        );
+        assert_eq!(snap.compositor_anim_probe_frame, Some(7), "空集不重臂");
     }
 
     /// P100：拆批图片像素注入 TabSnapshot.image_cache，重复批幂等。
