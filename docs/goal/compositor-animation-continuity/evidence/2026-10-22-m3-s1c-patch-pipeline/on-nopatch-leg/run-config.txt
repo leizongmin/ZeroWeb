@@ -1,0 +1,1 @@
+mode=on flag=ZW_THREADED_WORKERS=1 ZW_WORKER_CANVAS_PATCH=0 wall=16s fixture=comp04a-worker-threaded-canvas.html

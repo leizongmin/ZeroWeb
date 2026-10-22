@@ -1,0 +1,3 @@
+# 帧位图体积大（每腿 73-458MB、每帧 2.6MB），不入库；manifest.jsonl 保留
+# seq→wall_ms 映射与文件名（可按 README 复现命令重跑产出）。
+frames/

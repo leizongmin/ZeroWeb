@@ -1,0 +1,5 @@
+frames=205 bar_dumps=168 page_span=(52,7706)
+dumps in busy(3000-3900): 0
+straddle_from to elapsed_ms bar_x_from bar_x_to ticks_unwrapped ms_per_tick
+2278 4020 1742 32 212 103 16.9
+6725 7706 981 140 140 58 16.9 same-x:frozen-or-wrap

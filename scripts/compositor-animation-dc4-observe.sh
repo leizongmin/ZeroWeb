@@ -7,13 +7,18 @@
 #   off —— flag 关对照：现行同 realm 语义（canvas registry 共享修复后区域出图：
 #     忙窗外动画 + 忙窗期帧静默——主线程同载；修前基线区域恒定不出图见
 #     evidence/2026-10-22-m3-s1d-scaffold）
+#   S1c patch 呈现面：env `ZW_WORKER_CANVAS_PATCH=1` 叠加（on 判定腿 = 双 flag；
+#   on 无 patch = S1b 中间对照——worker 绘制不达显示面，区域自 transfer 起恒定）。
 # fixture 时间线（页内钟）：忙窗 @3000–3900ms；threaded 模式 terminate @6500ms、
 # 静默核查 @7500ms。frame_dump 512 帧（~8.2s @16ms）须覆盖忙窗与 terminate 点；
 # capture t0 = 浏览器启动，页面导航晚 0.5~2s，分析按区域哈希结构化识别、不依赖
 # 时间线常量（dc3-analyze 同纪律）。
 # 呈现连续性判据：canvas 区域（24,24)-(264,144) 逐帧哈希——off 预期区域动画
 #（distinct>1 + mod-232 回绕周期复现）+ 忙窗覆盖的帧静默段；on 预期忙窗期连续
-# 变化 + terminate 后终末冻结段。
+# 变化 + terminate 后终末冻结段。忙窗期呈现采样受既有 OPEN 缺口影响（keep-alive
+# Get 挂 Wayland 阻塞读）可能有空洞，数据面连续性用 dc4-bar-unwrap 条带解卷跨洞
+# 判定（≈16-17ms/tick 即 worker 持续绘制）；终末冻结在轮询停止后呈「采样停止 +
+# 末条带恒定」形态，analyzer terminal_freeze 探测不到，按 unwrap same-x 行判读。
 #
 # 前置：make browser-build 已产出 target/release/{zero-browser,zero-compositor}。
 # 隔离与上界同 dc1/dc3-observe：一次性 XDG 配置、timeout 墙钟、systemd-run 内存
@@ -44,10 +49,13 @@ if [ "$MODE" = "on" ]; then
 else
     WORKER_FLAG=0
 fi
-echo "mode=$MODE flag=ZW_THREADED_WORKERS=$WORKER_FLAG wall=${WALL}s fixture=$FIXTURE" >"$OUT/run-config.txt"
+# S1c patch 呈现面 flag：调用方 env 传入（默认 0）；run-config 记录保证证据可复现。
+PATCH_FLAG="${ZW_WORKER_CANVAS_PATCH:-0}"
+echo "mode=$MODE flag=ZW_THREADED_WORKERS=$WORKER_FLAG ZW_WORKER_CANVAS_PATCH=$PATCH_FLAG wall=${WALL}s fixture=$FIXTURE" >"$OUT/run-config.txt"
 
 XDG_CONFIG_HOME="$OUT/profile" \
 ZW_THREADED_WORKERS="$WORKER_FLAG" \
+ZW_WORKER_CANVAS_PATCH="$PATCH_FLAG" \
 ZW_COMPOSITOR_BIN="$ROOT/target/release/zero-compositor" \
 ZW_COMPOSITOR_FRAME_DUMP_DIR="$OUT/frames" \
 ZW_COMPOSITOR_FRAME_DUMP_MAX=512 \

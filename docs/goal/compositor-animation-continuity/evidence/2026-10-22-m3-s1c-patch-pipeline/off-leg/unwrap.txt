@@ -1,0 +1,5 @@
+frames=113 bar_dumps=112 page_span=(51,15654)
+dumps in busy(3000-3900): 1
+straddle_from to elapsed_ms bar_x_from bar_x_to ticks_unwrapped ms_per_tick
+2301 3599 1298 36 16 53 24.5 ambiguous
+3599 4083 484 16 20 59 8.2 ambiguous

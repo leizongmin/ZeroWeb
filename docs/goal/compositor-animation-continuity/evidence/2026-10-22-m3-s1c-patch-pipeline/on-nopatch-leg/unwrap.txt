@@ -1,0 +1,3 @@
+frames=29 bar_dumps=0 page_span=(37,7671)
+dumps in busy(3000-3900): 0
+straddle_from to elapsed_ms bar_x_from bar_x_to ticks_unwrapped ms_per_tick
