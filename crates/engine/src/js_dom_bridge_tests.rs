@@ -68,3 +68,4 @@ include!("js_dom_bridge_tests/part67.rs");
 include!("js_dom_bridge_tests/part68.rs");
 include!("js_dom_bridge_tests/part69.rs");
 include!("js_dom_bridge_tests/part70.rs");
+include!("js_dom_bridge_tests/part71.rs");

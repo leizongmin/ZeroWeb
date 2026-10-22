@@ -571,3 +571,15 @@ globalThis._zwGlCompileGlsl = function (source, isVertex) {
   }
   return { ok: true, infoLog: '', attributes: attributes, uniforms: uniforms };
 };
+
+// ── 词法/类型表共享交接（part08d 绘制求值器消费；part01 globalThis 单点先例）──
+// 校验器本体保持单遍无 AST（infoLog 错误面字节钉死，part69 测试锚定）；求值
+// 侧复用同一词法器与类型/内建/保留字表，经此单点交接（用后即清，防加载期
+// 耦合——仅要求 include 顺序 part08b → part08d）。
+globalThis._zwGlslShared = {
+  tokenize: _zwGlslTokenize,
+  types: _ZW_GLSL_TYPES,
+  builtins: _ZW_GLSL_BUILTINS,
+  reserved: _ZW_GLSL_RESERVED,
+  tVoid: _ZW_GLSL_T_VOID
+};

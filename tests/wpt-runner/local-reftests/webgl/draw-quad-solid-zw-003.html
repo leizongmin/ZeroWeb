@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="match" href="draw-quad-solid-zw-003-ref.html">
+<title>WebGL drawElements solid quad</title>
+<!-- 本地自建 reftest（2026-10-23 webgl-compat goal M3-S4）：getContext('webgl')
+     + GLSL program（VS a_pos 直通 clip，FS uniform 纯色）+ drawElements
+     UNSIGNED_SHORT 两三角形全幅四边形 → 实心蓝 drawing buffer，经 host 2d
+     位图桥出页面图元。缺陷态：索引取数/图元装配/重心光栅/putImageData 呈现
+     任一环缺席或错位 → 与 ref 像素不等。
+     spec：https://www.khronos.org/registry/webgl/specs/latest/1.0/#5.14.3
+     （drawElements）/ #6.24（Range Checking）。
+     账本：tests/wpt-runner/imported-tests.txt；wpt-data 为独立 repo
+     （gitignored），重拉后按主仓 tests/wpt-runner/local-reftests/ 同路径文件
+     恢复并重跑 make import-wpt 重建 manifest。本页另有内联孪生（make reftest
+     常驻集）：tests/wpt-runner/src/reftest_data/webgl.rs
+     id webgl/draw-quad-solid-zw-003——两处需同步维护。 -->
+</head>
+<body style="margin:0">
+<canvas id="cv" width="100" height="50" style="display:block"></canvas>
+<script>
+var gl = document.getElementById('cv').getContext('webgl');
+var vs = gl.createShader(gl.VERTEX_SHADER);
+gl.shaderSource(vs, 'attribute vec2 a_pos; void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }');
+gl.compileShader(vs);
+var fs = gl.createShader(gl.FRAGMENT_SHADER);
+gl.shaderSource(fs, 'precision mediump float; uniform vec4 u_color; void main() { gl_FragColor = u_color; }');
+gl.compileShader(fs);
+var p = gl.createProgram();
+gl.attachShader(p, vs); gl.attachShader(p, fs); gl.linkProgram(p); gl.useProgram(p);
+var vb = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, vb);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+var loc = gl.getAttribLocation(p, 'a_pos');
+gl.enableVertexAttribArray(loc);
+gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+gl.uniform4f(gl.getUniformLocation(p, 'u_color'), 0, 0, 1, 1);
+var eb = gl.createBuffer();
+gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, eb);
+gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array([0, 1, 2, 2, 1, 3]), gl.STATIC_DRAW);
+gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+</script>
+</body>
+</html>

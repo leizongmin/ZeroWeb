@@ -4343,6 +4343,10 @@ pub fn generate_js_dom_shim() -> &'static str {
         // 提取）——经 globalThis._zwGlCompileGlsl 发布，part08 compileShader 运行时
         // 调用（无加载期耦合）。
         s.push_str(include_str!("js_dom_shim/part08b.js"));
+        // part08d（2026-10-23 M3-S4）：GLSL 绘制求值器 + draw 光栅化后端——消费
+        // part08b 的 _zwGlslShared 词法/类型表交接（用后即清），发布
+        // _zwGlDrawBackend 供 part08 draw op 调用期查表；必须后于 part08b。
+        s.push_str(include_str!("js_dom_shim/part08d.js"));
         s.replace("__ZERO_BUILD_VERSION__", zero_product_version::VERSION)
     })
 }

@@ -236,6 +236,41 @@
   var _ZW_MAX_BUFFER_BYTES = 0x4000000;
   var _ZW_BEGIN_MODES = { 0: 1, 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1 };
   var _ZW_CLEAR_MASKS = 0x4100; // DEPTH|STENCIL|COLOR_BUFFER_BIT
+  // vertexAttribPointer 数据类型 → 字节尺寸（GLES2 §2.8 表：BYTE/UNSIGNED_BYTE/
+  // SHORT/UNSIGNED_SHORT/FIXED/FLOAT 六型——INT/UNSIGNED_INT 不在表内）。
+  var _ZW_VATTR_TYPE_SIZES = {
+    0x1400: 1, 0x1401: 1, 0x1402: 2, 0x1403: 2, 0x140C: 4, 0x1406: 4
+  };
+  // 顶点属性状态惰性落位（GLES2 §2.7 当前值初始 (0,0,0,1)；数组面初始
+  // DISABLED/size 4/FLOAT/stride 0/offset 0/无缓冲——Table 6.7）。
+  function _zwGlVertexAttrib(state, i) {
+    var va = state._vertexAttribs[i];
+    if (!va) {
+      va = state._vertexAttribs[i] = {
+        enabled: false, size: 4, type: 0x1406, normalized: false,
+        stride: 0, offset: 0, buffer: null, cur: [0, 0, 0, 1]
+      };
+    }
+    return va;
+  }
+  function _zwGlVertexAttribNf(state, args, n) { // 标量形：缺省分量补 (0,0,1)（§2.7）
+    var i = _zwGlToInteger(args[0]);
+    if (i < 0 || i >= _ZW_MAX_VERTEX_ATTRIBS) { _zwGlSetError(state, 0x0501); return; }
+    var c = [0, 0, 0, 1];
+    for (var k = 0; k < n; k++) c[k] = +args[k + 1] || 0; // NaN 分量按 0（§6.20 同款）
+    _zwGlVertexAttrib(state, i).cur = c;
+  }
+  function _zwGlVertexAttribV(state, args, n) {
+    var i = _zwGlToInteger(args[0]);
+    if (i < 0 || i >= _ZW_MAX_VERTEX_ATTRIBS) { _zwGlSetError(state, 0x0501); return; }
+    var src = args[1];
+    if (!src || typeof src.length !== 'number' || src.length < n) {
+      _zwGlSetError(state, 0x0501); return; // 序列过短 → INVALID_VALUE（WebGL §5.14.9）
+    }
+    var c = [0, 0, 0, 1];
+    for (var k = 0; k < n; k++) c[k] = +src[k] || 0;
+    _zwGlVertexAttrib(state, i).cur = c;
+  }
   // enable/disable/isEnabled 的合法 cap 集（GLES2 2.0.25 Table 6.10——WebGL 1.0
   // §5.14.3：cap 非法 → INVALID_ENUM）。
   var _ZW_CAPS = {
@@ -466,21 +501,157 @@
       return out;
     },
 
-    // —— 绘制状态机（corpus 无直接案；draw 状态语义为 M2 Mission 面）——
+    // —— 绘制状态机（GLES2 §2.8 + WebGL §5.14.11；光栅化后端在 part08d）——
+    // 前置域校验留在本文件（corpus 首错序已钉：mode INVALID_ENUM → 负参
+    // INVALID_VALUE → program null INVALID_OPERATION），后端经
+    // globalThis._zwGlDrawBackend 调用期查表（part01 单点先例；加载期无耦合，
+    // include 顺序 part08b → part08d）。
     drawArrays: function (state, args) {
       var mode = +args[0];
       if (!_ZW_BEGIN_MODES[mode]) { _zwGlSetError(state, 0x0500); return; }
-      // 无合法 program → INVALID_OPERATION（GL spec；M2 program 恒未链接）。
+      var first = _zwGlToInteger(args[1]);
+      var count = _zwGlToInteger(args[2]);
+      if (first < 0 || count < 0) { _zwGlSetError(state, 0x0501); return; } // WebGL §5.14.11
       if (!state._program) { _zwGlSetError(state, 0x0502); return; }
-      _zwGlSetError(state, 0x0502); // FIXME(M3-S4 draw 光栅化)：真实绘制管线。
+      var be = globalThis._zwGlDrawBackend;
+      var err = be ? be.drawArrays(state, mode, first, count) : 0x0502;
+      if (err) _zwGlSetError(state, err);
     },
     drawElements: function (state, args) {
       var mode = +args[0];
       if (!_ZW_BEGIN_MODES[mode]) { _zwGlSetError(state, 0x0500); return; }
       var type = +args[2];
-      if (type !== 0x1401 && type !== 0x1403) { _zwGlSetError(state, 0x0500); return; } // UNSIGNED_BYTE/SHORT
+      if (type !== 0x1401 && type !== 0x1403) { _zwGlSetError(state, 0x0500); return; } // UNSIGNED_BYTE/SHORT（UNSIGNED_INT 须 OES_element_index_uint——未开放）
+      var count = _zwGlToInteger(args[1]);
+      var offset = _zwGlToInteger(args[3]);
+      if (count < 0 || offset < 0) { _zwGlSetError(state, 0x0501); return; }
+      // offset 须为索引类型尺寸整数倍（WebGL "Buffer Offset and Stride
+      // Requirements"，GLES2 2.0.25 p24 对齐要求）。
+      var isz = type === 0x1403 ? 2 : 1;
+      if (offset % isz !== 0) { _zwGlSetError(state, 0x0502); return; }
+      // count>0 须有 ELEMENT_ARRAY_BUFFER 绑定（WebGL §5.14.11）。
+      if (count > 0 && !state._bindings[0x8893]) { _zwGlSetError(state, 0x0502); return; }
       if (!state._program) { _zwGlSetError(state, 0x0502); return; }
-      _zwGlSetError(state, 0x0502); // FIXME(M3-S4 draw 光栅化)。
+      var be = globalThis._zwGlDrawBackend;
+      var err = be ? be.drawElements(state, mode, count, type, offset,
+        state._bindings[0x8893]) : 0x0502;
+      if (err) _zwGlSetError(state, err);
+    },
+
+    // —— 顶点属性数组（GLES2 §2.8 + WebGL §5.14.9/§5.14.10）——
+    // 数据面存 state._vertexAttribs（工厂预置 16 项）；enabled 数组的缓冲绑定
+    // 在 pointer 调用时落位（改绑/重分配不回溯——GL 语义）。
+    enableVertexAttribArray: function (state, args) {
+      var i = _zwGlToInteger(args[0]);
+      if (i < 0 || i >= _ZW_MAX_VERTEX_ATTRIBS) { _zwGlSetError(state, 0x0501); return; }
+      _zwGlVertexAttrib(state, i).enabled = true;
+    },
+    disableVertexAttribArray: function (state, args) {
+      var i = _zwGlToInteger(args[0]);
+      if (i < 0 || i >= _ZW_MAX_VERTEX_ATTRIBS) { _zwGlSetError(state, 0x0501); return; }
+      _zwGlVertexAttrib(state, i).enabled = false;
+    },
+    vertexAttribPointer: function (state, args) {
+      var i = _zwGlToInteger(args[0]);
+      var size = _zwGlToInteger(args[1]);
+      var type = +args[2];
+      var stride = _zwGlToInteger(args[4]);
+      var offset = _zwGlToInteger(args[5]);
+      if (i < 0 || i >= _ZW_MAX_VERTEX_ATTRIBS) { _zwGlSetError(state, 0x0501); return; }
+      if (size < 1 || size > 4) { _zwGlSetError(state, 0x0501); return; } // GLES2 §2.8
+      var ts = _ZW_VATTR_TYPE_SIZES[type];
+      if (!ts) { _zwGlSetError(state, 0x0500); return; } // 域外类型（INT/UNSIGNED_INT 非 §2.8 表）
+      if (stride < 0 || offset < 0 || stride > 255) {
+        _zwGlSetError(state, 0x0501); return; // >255：WebGL "Vertex Attribute Data Stride"
+      }
+      // offset/stride 须为类型尺寸整数倍（WebGL "Buffer Offset and Stride
+      // Requirements"）。
+      if (offset % ts !== 0 || stride % ts !== 0) { _zwGlSetError(state, 0x0502); return; }
+      var buf = state._bindings[0x8892]; // ARRAY_BUFFER
+      if (!buf && offset !== 0) { _zwGlSetError(state, 0x0502); return; } // 无绑定且 offset≠0（WebGL §5.14.10）
+      var va = _zwGlVertexAttrib(state, i);
+      va.size = size; va.type = type;
+      va.normalized = !!args[3];
+      va.stride = stride; va.offset = offset;
+      va.buffer = buf || null;
+    },
+    vertexAttrib1f: function (state, args) { _zwGlVertexAttribNf(state, args, 1); },
+    vertexAttrib2f: function (state, args) { _zwGlVertexAttribNf(state, args, 2); },
+    vertexAttrib3f: function (state, args) { _zwGlVertexAttribNf(state, args, 3); },
+    vertexAttrib4f: function (state, args) { _zwGlVertexAttribNf(state, args, 4); },
+    vertexAttrib1fv: function (state, args) { _zwGlVertexAttribV(state, args, 1); },
+    vertexAttrib2fv: function (state, args) { _zwGlVertexAttribV(state, args, 2); },
+    vertexAttrib3fv: function (state, args) { _zwGlVertexAttribV(state, args, 3); },
+    vertexAttrib4fv: function (state, args) { _zwGlVertexAttribV(state, args, 4); },
+    getVertexAttrib: function (state, args) {
+      var i = _zwGlToInteger(args[0]);
+      var pname = args.length > 1 ? +args[1] : 0;
+      if (i < 0 || i >= _ZW_MAX_VERTEX_ATTRIBS) { _zwGlSetError(state, 0x0501); return null; }
+      var va = _zwGlVertexAttrib(state, i);
+      switch (pname) {
+        case 0x8626: return va.cur.slice(); // CURRENT_VERTEX_ATTRIB → 4 分量序列（WebGL §5.14.9 表）
+        case 0x8622: return va.enabled;     // VERTEX_ATTRIB_ARRAY_ENABLED
+        case 0x8623: return va.size;        // VERTEX_ATTRIB_ARRAY_SIZE
+        case 0x8624: return va.stride;      // VERTEX_ATTRIB_ARRAY_STRIDE
+        case 0x8625: return va.type;        // VERTEX_ATTRIB_ARRAY_TYPE
+        case 0x886A: return va.normalized;  // VERTEX_ATTRIB_ARRAY_NORMALIZED
+        case 0x8645: return va.offset;      // VERTEX_ATTRIB_ARRAY_POINTER
+        case 0x889F: return va.buffer;      // VERTEX_ATTRIB_ARRAY_BUFFER_BINDING
+        default:
+          _zwGlSetError(state, 0x0500);
+          return null;
+      }
+    },
+
+    // —— readPixels（GLES2 §4.3.1 + WebGL §5.14.12/§6.16 "Reading Pixels
+    //     Outside the Framebuffer"）——
+    // 仅 RGBA/UNSIGNED_BYTE（第二组合为实现自选——shim 未开放）；null →
+    // INVALID_VALUE；视图类型失配/容量不足 → INVALID_OPERATION；区域越界部分
+    // 静默不动对应目标区间（无错误）；行序翻转（GL 底上 ← host wire 顶上）。
+    readPixels: function (state, args) {
+      var x = _zwGlToInteger(args[0]);
+      var y = _zwGlToInteger(args[1]);
+      var w = _zwGlToInteger(args[2]);
+      var h = _zwGlToInteger(args[3]);
+      var fmt = args.length > 4 ? +args[4] : 0;
+      var type = args.length > 5 ? +args[5] : 0;
+      var px = args.length > 6 ? args[6] : null;
+      if (fmt !== 0x1908 || type !== 0x1401) { _zwGlSetError(state, 0x0502); return; }
+      if (w < 0 || h < 0) { _zwGlSetError(state, 0x0501); return; } // GLES2 §4.3.1
+      if (px === null || px === undefined) { _zwGlSetError(state, 0x0501); return; }
+      if (!(px instanceof Uint8Array || px instanceof Uint8ClampedArray)) {
+        _zwGlSetError(state, 0x0502); return; // 类型失配（须 Uint8Array/Clamped——§5.14.12）
+      }
+      if (px.byteLength < w * h * 4) { _zwGlSetError(state, 0x0502); return; } // 容量不足
+      if (state._bindings[0x8D40]) { _zwGlSetError(state, 0x0502); return; } // FBO 读回未实现（FIXME render-to-texture）
+      if (w === 0 || h === 0) return;
+      var W = state._drawingBufferWidth;
+      var H = state._drawingBufferHeight;
+      if (W <= 0 || H <= 0) return;
+      if (typeof globalThis.__zw_canvas_op !== 'function' || !state._handle) return;
+      var wire = globalThis.__zw_canvas_op(state._handle, 'getImageData',
+        '0', '0', String(W), String(H));
+      if (typeof wire !== 'string') return;
+      var sc = wire.indexOf(';');
+      if (sc <= 0) return;
+      var dims = wire.slice(0, sc).split(':');
+      if (+dims[0] !== W || +dims[1] !== H) return;
+      var vals = wire.slice(sc + 1).split(',');
+      for (var j = 0; j < h; j++) {
+        var gy = y + j; // GL 底上目标行
+        if (gy < 0 || gy >= H) continue; // 区域越界 → 对应目标区间不动（§6.16）
+        var row = H - 1 - gy; // host 顶上行
+        for (var i = 0; i < w; i++) {
+          var gx = x + i;
+          if (gx < 0 || gx >= W) continue;
+          var src = (row * W + gx) * 4;
+          var dst = (j * w + i) * 4;
+          px[dst] = +vals[src];
+          px[dst + 1] = +vals[src + 1];
+          px[dst + 2] = +vals[src + 2];
+          px[dst + 3] = +vals[src + 3];
+        }
+      }
     },
     clearColor: function (state, args) {
       state._clearColor[0] = +args[0] || 0;
@@ -924,6 +1095,7 @@
   // 链接使全部旧 location 失效（stamp 递增——§5.14.9 重链失效面）。
   function _zwGlLinkProgram(program) {
     program._zwStamp = (program._zwStamp || 0) + 1;
+    program._zwDrawProg = null; // 绘制求值 AST 缓存随重链失效（part08d 消费面）
     function fail(log) {
       program._zwLinkOk = false;
       program._zwLinkLog = log;
@@ -1175,6 +1347,7 @@
       _bindings: {},          // ARRAY_BUFFER / ELEMENT_ARRAY_BUFFER
       _texBindings: {},       // TEXTURE_2D / TEXTURE_CUBE_MAP
       _program: null,
+      _vertexAttribs: [],     // 顶点属性状态（16 项惰性落位——GLES2 §2.7/Table 6.7）
       _clearColor: [0, 0, 0, 0],
       _colorMask: [true, true, true, true],
       // GLES2 初始 scissor box = (0,0,首绑绘图缓冲尺寸)（GLES2 2.0.25 §2.8.1——

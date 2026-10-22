@@ -1,9 +1,27 @@
 # WebGL 兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../webgl-compat.md](../webgl-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-22（M3-S3 对象真存储落地——基线保持 2112/2115）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-23（M3-S4 draw 光栅化管线落地——基线保持 2112/2115）
 
 ## 当前状态
+
+**M3-S4 draw 光栅化管线已落地（2026-10-23）**：新 part08d.js（~1390 行）GLSL
+绘制求值器（递归下降、程序级 AST 缓存重链失效；值模型标量/vec/mat 列主序/
+uniform 数组；++/--、复合赋值、swizzle 读写（写通道互异）、三元、discard/
+break/continue；步数预算 4e6 + for 65536 上限；求值异常 draw 静默跳过——spec
+禁止对合法 GLSL 报错）+ 顶点取数（GLES2 §2.8 六类型 DataView 小端、normalized
+归一、FIXED /65536、禁用属性取 current、声明类型失配收敛）+ 光栅化（7 模式
+图元装配、w≤0 丢图元 FIXME 完整裁剪、像素中心 edge-function 重心、透视校正
+varying 插值、scissor/colorMask、替换写 FIXME blend 因子、FS gl_FragColor/
+FragCoord/PointCoord）。part08.js drawArrays/drawElements 桩换 §6.24 Range
+Checking 全校验序 + 后端委派；vertexAttrib 操作族（pointer 校验链/1f-4f/*v
+current/getVertexAttrib 7 pname）；readPixels 域语义（仅 RGBA/UNSIGNED_BYTE、
+行翻转、§6.16 越界区域不动无错误）。part08b 尾部发布 `_zwGlslShared` 交接包
+（用后即清）。基线 **2112 Pass / 3 Fail 不变**；part71 常驻 7 组（校验序 +
+真位图像素断言）+ part67-70 回归全绿；`make test` exit 0、clippy/fmt 零告警、
+`make reftest` 716/716（新增 draw 标尺孪生 2 例：draw-quad-solid-zw-003 /
+draw-scissor-zw-004）。详见
+[evidence/2026-10-23-m3-s4-draw-raster.md](evidence/2026-10-23-m3-s4-draw-raster.md)。
 
 **M3-S3 对象真存储已落地（2026-10-22）**：part08.js（+270/−59）buffer 真字节
 存储（bufferData 三形/重分配弃旧/无 store INVALID_OPERATION/getBufferParameter）
@@ -66,10 +84,10 @@ M2 evidence §7。
    （✅ 2026-10-22）；
 ③ ~~buffer/texture/framebuffer 对象真存储 + texImage2D 上传链路~~
    （✅ 2026-10-22）；
-④ drawArrays/drawElements 真光栅化（开工前置 ✅ 2026-10-22：part08 已按职责
-   拆分——GL 对象存储簇独立 part08c（592 行，_zwGlStorageHandoff 单点交接），
-   part08 留状态机/查询/program 簇 1443 行；基线 2112/3 与 reftest 714/714
-   不变）。
+④ ~~drawArrays/drawElements 真光栅化~~（✅ 2026-10-23：part08d.js 绘制求值器 +
+   光栅化后端；开工前置同日完成——part08 按职责拆分，GL 对象存储簇独立
+   part08c（592 行，_zwGlStorageHandoff 单点交接），part08 留状态机/查询/
+   program 簇）。
 每簇落账 + 常驻测试 + 飞书通知，DC-4 门禁不放松。
 
 **历史**：M1 导入盘点（2026-10-22）——pin rev `webgl/` 为 10 文件平铺目录；
@@ -86,7 +104,7 @@ M2 evidence §7。
 | P1 | webgl/ corpus 导入 + 用例分布盘点 | ✅ 2026-10-22（M1） |
 | P2 | 首批收敛子集建议书提交用户 | ✅ 2026-10-22（裁决：批次 B） |
 | P3 | WebGL 1.0 最小上下文（创建/clear/draw） | ✅ 2026-10-22（M2，基线 2112/2115） |
-| P4 | 缓冲/纹理/shader 程序管线 | ▶ M3（S1 查询/事件面 ✅、S2 shader 管线 ✅、S3 对象真存储 ✅ 2026-10-22；余：draw 光栅） |
+| P4 | 缓冲/纹理/shader 程序管线 | ✅ 2026-10-23（M3 四簇全收：S1 查询/事件、S2 shader 管线、S3 对象真存储、S4 draw 光栅） |
 | P5 | WebGL2/WebGPU 挂账定稿 | ▶ M4（挂账文档交用户签收） |
 | P6 | canvas 内容桥 × CSS transform（位图不随元素 transform，2d 同复现） | 移交渲染流（2026-10-22 A/B 归因，M2 evidence §7；非本 goal 面） |
 
@@ -120,12 +138,16 @@ M2 evidence §7。
   framebuffer/renderbuffer 附件骨架（completeness 四态 + 删除解挂）。
   M2 usage 表缺陷修正；基线 2112/2115 不变；part70 常驻 3 组 74 断言。
   evidence：[2026-10-22-m3-s3-object-storage.md](evidence/2026-10-22-m3-s3-object-storage.md)。
+- **M3-S4 draw 光栅化管线**（2026-10-23）：part08d.js 绘制求值器 + 顶点取数 +
+  光栅化（图元装配/重心/透视校正/scissor/colorMask/putImageData 呈现）+
+  part08.js draw 校验序与 vertexAttrib/readPixels op 面 + reftest draw 标尺
+  孪生 2 例。基线 2112/2115 不变；part71 常驻 7 组；make reftest 716/716。
+  evidence：[2026-10-23-m3-s4-draw-raster.md](evidence/2026-10-23-m3-s4-draw-raster.md)。
 
 ## 下一步计划
 
-1. **M3 逐簇（自主）**：按当前状态节切分序推进，逐簇 evidence + 常驻测试 +
-   suites CSV 回填 + 飞书通知；性能关键路径变更跑 bench-gate（规则 12）。
-2. **M4 收口（自主）**：WebGL2/WebGPU 挂账定稿文档 → 交用户签收。
+1. **M4 收口（自主）**：WebGL2/WebGPU 挂账定稿文档 → 交用户签收；3 个上游
+   IDL Fail 在 pin rev 前移时复查。
 
 **已裁决清单（2026-10-22 用户当面敲定）**：
 - [x] M2 启动授权 + 批次 → 批次 B 全量一次收（已完成，见 M2 evidence）；
