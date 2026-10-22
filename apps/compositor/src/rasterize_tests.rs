@@ -523,4 +523,113 @@ mod tests {
         );
         assert_eq!(px(8, 4), [255, 127, 127], "脏区内：白底一次混合值");
     }
+
+    /// M3-c 多脏区串区防护：scratch 跨脏区复用时，前一脏区渲染的越界残留不得
+    /// 落入后一脏区的拷回列——无逐像素裁剪的全视口圆角矩形在脏区 A 渲染时把墨迹
+    /// 铺满整个 scratch（含脏区 B 的列），若不复铺白底，脏区 B 渲染再叠加即二次
+    /// 混合（(255,127,127)→(255,63,63)）。逐脏区重铺白底后 partial==full 逐位一致。
+    #[test]
+    fn partial_dirty_multi_rect_straddling_matches_full_render() {
+        let w = 20u32;
+        let h = 10u32;
+        let loader = FontLoader::new();
+        let mut glyph_cache = GlyphCache::new(64);
+        let mut image_cache = ImageCache::new(8, 1 << 20);
+
+        // 全视口半透明圆角矩形：与任何局部脏区都跨界（无裁剪整绘越界）。
+        let paint_full = PaintSnapshotParams {
+            viewport_width: w,
+            viewport_height: h,
+            document_height: h as f32,
+            rounded_rects: vec![zero_protocol::paint_snapshot::IpcRoundedRect {
+                rect: IpcRect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: w as f32,
+                    height: h as f32,
+                },
+                color: zero_protocol::paint_snapshot::IpcColor {
+                    r: 255,
+                    g: 0,
+                    b: 0,
+                    a: 128,
+                },
+                top_left_radius: 3.0,
+                top_right_radius: 3.0,
+                bottom_right_radius: 3.0,
+                bottom_left_radius: 3.0,
+            }],
+            dirty_rects: Vec::new(),
+            ..Default::default()
+        };
+        let primitives = zero_paint_convert::to_render_primitives(paint_full.clone());
+
+        unsafe {
+            std::env::set_var("ZW_RENDER_THREAD", "0");
+        }
+        // 帧 1：全量渲染（白底一次混合）——既是上一帧，也是期望结果。
+        let mut expected = FrameBuffer::new(w, h);
+        rasterize::rasterize_into_back(
+            &paint_full,
+            &primitives,
+            &loader,
+            &mut glyph_cache,
+            None,
+            &mut image_cache,
+            &mut expected,
+            false,
+        );
+
+        // 帧 2：copy_front_to_back 后按两个不相交脏区 partial 重绘——脏区 A 先渲染，
+        // 其越界墨迹覆盖脏区 B 的 scratch 列，恰构成串区向量。
+        // A (1,1,6,4) → 归一化 [0,8)×[0,6)；B (11,5,6,4) → 归一化 [10,18)×[4,10)。
+        let mut back = FrameBuffer::new(w, h);
+        back.data.copy_from_slice(&expected.data);
+        let mut paint_partial = paint_full.clone();
+        paint_partial.dirty_rects = vec![
+            IpcRect {
+                x: 1.0,
+                y: 1.0,
+                width: 6.0,
+                height: 4.0,
+            },
+            IpcRect {
+                x: 11.0,
+                y: 5.0,
+                width: 6.0,
+                height: 4.0,
+            },
+        ];
+        rasterize::rasterize_into_back(
+            &paint_partial,
+            &primitives,
+            &loader,
+            &mut glyph_cache,
+            None,
+            &mut image_cache,
+            &mut back,
+            true,
+        );
+        unsafe {
+            std::env::remove_var("ZW_RENDER_THREAD");
+        }
+
+        assert_eq!(
+            back.data, expected.data,
+            "多脏区 partial 重绘必须与全量逐位一致（后一脏区不得混入前一脏区的 scratch 残留）"
+        );
+        let px = |x: u32, y: u32| -> [u8; 3] {
+            let off = ((y * w + x) * 4) as usize;
+            [back.data[off], back.data[off + 1], back.data[off + 2]]
+        };
+        // 脏区 B 内：若串区未防，此处为 A 残留 + B 墨迹二次混合 (255,63,63)。
+        assert_eq!(
+            px(14, 7),
+            [255, 127, 127],
+            "后一脏区内：必须为白底一次混合值（不得含前一脏区残留）"
+        );
+        assert_eq!(px(4, 3), [255, 127, 127], "前一脏区内：白底一次混合值");
+        // 两脏区外且在圆角矩形墨迹带内（(19,0) 落在半径 3 圆角削去区，不取）。
+        assert_eq!(px(19, 7), [255, 127, 127], "两脏区外：保留上一帧像素不变");
+    }
 }
