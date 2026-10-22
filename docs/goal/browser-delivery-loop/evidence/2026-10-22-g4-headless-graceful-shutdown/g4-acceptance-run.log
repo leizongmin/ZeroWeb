@@ -1,0 +1,15 @@
+Running as unit: zw-g4-accept.scope; invocation ID: c5f3298a99504e40a1d54a93a008a9ee
+[G4] leg A: SIGINT graceful shutdown
+[G4] PASS: legA server up on :46631 (/json/version answers)
+[G4] PASS: legA renderer child spawned (1 live)
+[G4] PASS: legA exit code 0 within 10s
+[G4] PASS: legA graceful shutdown log present
+[G4] PASS: legA no orphan renderer (reaped via session Drop)
+[G4] PASS: legA no session.json written (headless leaves GUI session semantics alone)
+[G4] leg B: CDP Browser.close stops the server
+[G4] PASS: legB server up on :54137
+[G4] PASS: legB WS response carries closing result: {"id":1,"result":{"result":"closing"}}
+[G4] PASS: legB exit code 0 within 10s
+[G4] PASS: legB graceful shutdown log present
+[G4] PASS: legB no orphan renderer
+[G4] summary: PASS=11 FAIL=0
