@@ -21,7 +21,11 @@ fn webgl_sandbox() -> (
     sandbox.execute(generate_js_dom_shim()).unwrap();
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
-        "<html><body><canvas id='cv' width='8' height='6'></canvas></body></html>".to_string(),
+        // 第二 canvas（cv2）供 M3 丢失/恢复事件面用第二上下文（同型每元素一上下文，
+        // 抑制恢复后原上下文按 §5.15.3 永不复原）。
+        "<html><body><canvas id='cv' width='8' height='6'></canvas>"
+        .to_string()
+            + "<canvas id='cv2' width='4' height='4'></canvas></body></html>",
     ));
     let page: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/webgl/m2.html".to_string()));
     let canvas_registry: Arc<Mutex<crate::js_dom_bridge::CanvasRegistry>> =

@@ -1,19 +1,28 @@
 # WebGL 兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../webgl-compat.md](../webgl-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-22（M2 全量切片落地——基线 2112/2115 + clear/draw 标尺常驻）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-22（M3-S1 查询与事件面落地——基线保持 2112/2115）
 
 ## 当前状态
 
-**M2 全量切片已落地（2026-10-22，本轮复核验证）**：runner 通道
-`make testharness-webgl`（idlharness 资产补拉，裁决③）+ 上下文对象面
-（engine js_dom_shim/part08.js——18 接口 WebIDL 断言面对齐 + getContext
-'webgl' 实例 + getError 状态机 + buffer/texture 错误语义）+ clear() 光栅化
-（经既有 host 2d 位图，scissor/colorMask 生效）+ 本地 reftest 标尺
-（inline 2 例 + local-reftests 孪生 4 文件，裁决② 标尺①）。
-基线 **2112 Pass / 3 Fail**（3 Fail = pin rev IDL 同 mixin 同长重载判据，
-上游语料问题，挂 M4 随 pin 前移观察）；引擎常驻测试 part66 5 例；
-`make reftest` 714/714；`make test` 全绿待本轮终验（落地后首跑）。
+**M3-S1 查询与事件面已落地（2026-10-22）**：getParameter 全表
+（字符串身份/位面/最小上限/状态初值/压缩格式表/WebGL 专有像素参数）+
+getContextAttributes + enable/disable/isEnabled cap 校验 + 状态设置族
+（域校验/clamp/NaN 语义）+ getShaderPrecisionFormat（GLES2 §6.2 最低档）+
+WEBGL_lose_context（可取消 webglcontextlost → preventDefault 抑制 →
+restoreContext 链 + 丢失态方法旁路 + CONTEXT_LOST_WEBGL 首查）+
+**GL 对象实例原型链接**（共享路径修复——_zwGlNewObject 单点接接口原型，
+buf.label 等属性访问器修通）。基线 **2112 Pass / 3 Fail 不变**（3 Fail 同
+M2 上游 IDL 判据）；引擎常驻测试 part68 新增 4 例 + part67 M2 5 例回归全绿；
+clippy/fmt 零告警。详见
+[evidence/2026-10-22-m3-s1-query-events.md](evidence/2026-10-22-m3-s1-query-events.md)。
+
+**M2 全量切片（2026-10-22 已收）**：runner 通道 `make testharness-webgl`
+（idlharness 资产补拉，裁决③）+ 上下文对象面（engine js_dom_shim/part08.js
+——18 接口 WebIDL 断言面对齐 + getContext 'webgl' 实例 + getError 状态机 +
+buffer/texture 错误语义）+ clear() 光栅化（经既有 host 2d 位图，scissor/
+colorMask 生效）+ 本地 reftest 标尺（inline 2 例 + local-reftests 孪生 4 文件，
+裁决② 标尺①）；引擎常驻 part66 5 例（后续因远端 R4600 撞名改 part67）。
 详见 [evidence/2026-10-22-m2-context-slice.md](evidence/2026-10-22-m2-context-slice.md)。
 
 **跨流发现（本轮 A/B 归因）**：reftest-upstream 929→930（+1）——上游案
@@ -23,7 +32,8 @@ canvas 内容桥 × CSS transform 缺口（2d canvas 同样复现，非 webgl �
 M2 evidence §7。
 
 **下一里程碑 M3（授权内自主）**：切片边界自划——候选簇按依赖序：
-① getContextAttributes/getParameter 参数查询补全 + 上下文丢失/恢复事件面；
+① ~~getContextAttributes/getParameter 参数查询补全 + 上下文丢失/恢复事件面~~
+   （✅ 2026-10-22）；
 ② GLSL ES 1.0 shader 编译管线（WGSL 后端评估，依托 render-foundation）+
    program link/uniform/attribute；
 ③ buffer/texture/framebuffer 对象真存储（M2 仅状态记录）+
@@ -44,7 +54,7 @@ M2 evidence §7。
 | P1 | webgl/ corpus 导入 + 用例分布盘点 | ✅ 2026-10-22（M1） |
 | P2 | 首批收敛子集建议书提交用户 | ✅ 2026-10-22（裁决：批次 B） |
 | P3 | WebGL 1.0 最小上下文（创建/clear/draw） | ✅ 2026-10-22（M2，基线 2112/2115） |
-| P4 | 缓冲/纹理/shader 程序管线 | ▶ M3（切片边界自划：状态面→shader 管线→对象真存储→draw 光栅） |
+| P4 | 缓冲/纹理/shader 程序管线 | ▶ M3（S1 查询/事件面 ✅ 2026-10-22；余：shader 管线→对象真存储→draw 光栅） |
 | P5 | WebGL2/WebGPU 挂账定稿 | ▶ M4（挂账文档交用户签收） |
 | P6 | canvas 内容桥 × CSS transform（位图不随元素 transform，2d 同复现） | 移交渲染流（2026-10-22 A/B 归因，M2 evidence §7；非本 goal 面） |
 
@@ -62,6 +72,11 @@ M2 evidence §7。
   基线 2112/2115（3 Fail 上游 IDL 重载判据，M4 观察）；part66 常驻 5 例；
   make reftest 714/714。evidence：
   [2026-10-22-m2-context-slice.md](evidence/2026-10-22-m2-context-slice.md)。
+- **M3-S1 查询与事件面**（2026-10-22）：getParameter 全表 + getContextAttributes +
+  cap/状态设置族域校验 + getShaderPrecisionFormat + WEBGL_lose_context
+  （可取消丢失事件/抑制恢复/丢失态旁路）+ GL 对象实例原型链接（共享路径修复）。
+  基线 2112/2115 不变；part68 常驻 4 例（part67 沙盒加第二 canvas）。evidence：
+  [2026-10-22-m3-s1-query-events.md](evidence/2026-10-22-m3-s1-query-events.md)。
 
 ## 下一步计划
 

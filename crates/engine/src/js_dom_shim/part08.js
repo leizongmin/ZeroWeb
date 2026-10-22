@@ -13,9 +13,9 @@
 //      不另起 wgpu 实例；GL→wgpu 映射与 shader/纹理上传管线 = M3（FIXME 标注）。
 //
 // 接口面数据表（常量 297+262 / 方法 125+83）由 webgl1.idl / webgl2.idl 派生，
-// 派生口径见表头注释；idlharness（webgl/ idlharness.any.js）按 WebIDL 逐项断言
-// 接口对象/原型（常量值与描述符、方法 existence/.length/.name、this 品牌
-// TypeError），本文件与之逐项对齐。
+// 在 part08a.js（前置加载，globalThis 单点交接）；idlharness（webgl/
+// idlharness.any.js）按 WebIDL 逐项断言接口对象/原型（常量值与描述符、方法
+// existence/.length/.name、this 品牌 TypeError），本文件与之逐项对齐。
 //
 // 作用域：part07 末尾已闭合外层 IIFE，本文件运行在**顶层作用域**——与 part04/05
 //（同一大闭包内，无法反向引用本文件局部）经 `globalThis._zwMakeCtxWebGL` 单点
@@ -25,834 +25,14 @@
 (function () {
   'use strict';
 
-  // ── 接口面数据表（脚本注入，勿手改）──
-  // 来源：WPT pin 315976933870 interfaces/webgl{1,2}.idl（webref 提取）——
-  // WebGLRenderingContextBase+Overloads → _ZW_WGL1C/_ZW_WGL1M；
-  // WebGL2RenderingContextBase+Overloads 全集（含重声明成员）→ _ZW_WGL2C/_ZW_WGL2M。
-  // 常量值为 IDL 原文（十六进制/十进制逐字）；方法值为 WebIDL
-  // minOverloadLength（必参个数，optional/default 前截断——idlharness.js 同口径），
-  // 供必参 TypeError 与 prototype 方法 .length 对齐（idlharness 断言面）。
-// ── 常量/方法面数据表（脚本派生，勿手改）──
-// 来源：WPT pin 315976933870 interfaces/webgl{1,2}.idl（webref 提取）。
-// _ZW_WGL1C/_ZW_WGL1M = webgl1.idl 全部 interface（含 Base/Overloads mixin）；
-// _ZW_WGL2C/_ZW_WGL2M = webgl2.idl 全集（含重声明成员，合并时按键覆盖——
-// 两表键值经派生脚本校验一致/无冲突）。常量值为 IDL 原文逐字（十六进制/
-// 十进制/负数）；方法值为 WebIDL minOverloadLength（首 optional/default 前
-// 的必参个数，多重载取最小——idlharness.js 同口径），供必参 TypeError 与
-// prototype 方法 .length 对齐（idlharness interface: operation 断言面）。
-var _ZW_WGL1C = {
-  ACTIVE_ATTRIBUTES: 0x8B89,
-  ACTIVE_TEXTURE: 0x84E0,
-  ACTIVE_UNIFORMS: 0x8B86,
-  ALIASED_LINE_WIDTH_RANGE: 0x846E,
-  ALIASED_POINT_SIZE_RANGE: 0x846D,
-  ALPHA: 0x1906,
-  ALPHA_BITS: 0x0D55,
-  ALWAYS: 0x0207,
-  ARRAY_BUFFER: 0x8892,
-  ARRAY_BUFFER_BINDING: 0x8894,
-  ATTACHED_SHADERS: 0x8B85,
-  BACK: 0x0405,
-  BLEND: 0x0BE2,
-  BLEND_COLOR: 0x8005,
-  BLEND_DST_ALPHA: 0x80CA,
-  BLEND_DST_RGB: 0x80C8,
-  BLEND_EQUATION: 0x8009,
-  BLEND_EQUATION_ALPHA: 0x883D,
-  BLEND_EQUATION_RGB: 0x8009,
-  BLEND_SRC_ALPHA: 0x80CB,
-  BLEND_SRC_RGB: 0x80C9,
-  BLUE_BITS: 0x0D54,
-  BOOL: 0x8B56,
-  BOOL_VEC2: 0x8B57,
-  BOOL_VEC3: 0x8B58,
-  BOOL_VEC4: 0x8B59,
-  BROWSER_DEFAULT_WEBGL: 0x9244,
-  BUFFER_SIZE: 0x8764,
-  BUFFER_USAGE: 0x8765,
-  BYTE: 0x1400,
-  CCW: 0x0901,
-  CLAMP_TO_EDGE: 0x812F,
-  COLOR_ATTACHMENT0: 0x8CE0,
-  COLOR_BUFFER_BIT: 0x00004000,
-  COLOR_CLEAR_VALUE: 0x0C22,
-  COLOR_WRITEMASK: 0x0C23,
-  COMPILE_STATUS: 0x8B81,
-  COMPRESSED_TEXTURE_FORMATS: 0x86A3,
-  CONSTANT_ALPHA: 0x8003,
-  CONSTANT_COLOR: 0x8001,
-  CONTEXT_LOST_WEBGL: 0x9242,
-  CULL_FACE: 0x0B44,
-  CULL_FACE_MODE: 0x0B45,
-  CURRENT_PROGRAM: 0x8B8D,
-  CURRENT_VERTEX_ATTRIB: 0x8626,
-  CW: 0x0900,
-  DECR: 0x1E03,
-  DECR_WRAP: 0x8508,
-  DELETE_STATUS: 0x8B80,
-  DEPTH_ATTACHMENT: 0x8D00,
-  DEPTH_BITS: 0x0D56,
-  DEPTH_BUFFER_BIT: 0x00000100,
-  DEPTH_CLEAR_VALUE: 0x0B73,
-  DEPTH_COMPONENT: 0x1902,
-  DEPTH_COMPONENT16: 0x81A5,
-  DEPTH_FUNC: 0x0B74,
-  DEPTH_RANGE: 0x0B70,
-  DEPTH_STENCIL: 0x84F9,
-  DEPTH_STENCIL_ATTACHMENT: 0x821A,
-  DEPTH_TEST: 0x0B71,
-  DEPTH_WRITEMASK: 0x0B72,
-  DITHER: 0x0BD0,
-  DONT_CARE: 0x1100,
-  DST_ALPHA: 0x0304,
-  DST_COLOR: 0x0306,
-  DYNAMIC_DRAW: 0x88E8,
-  ELEMENT_ARRAY_BUFFER: 0x8893,
-  ELEMENT_ARRAY_BUFFER_BINDING: 0x8895,
-  EQUAL: 0x0202,
-  FASTEST: 0x1101,
-  FLOAT: 0x1406,
-  FLOAT_MAT2: 0x8B5A,
-  FLOAT_MAT3: 0x8B5B,
-  FLOAT_MAT4: 0x8B5C,
-  FLOAT_VEC2: 0x8B50,
-  FLOAT_VEC3: 0x8B51,
-  FLOAT_VEC4: 0x8B52,
-  FRAGMENT_SHADER: 0x8B30,
-  FRAMEBUFFER: 0x8D40,
-  FRAMEBUFFER_ATTACHMENT_OBJECT_NAME: 0x8CD1,
-  FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE: 0x8CD0,
-  FRAMEBUFFER_ATTACHMENT_TEXTURE_CUBE_MAP_FACE: 0x8CD3,
-  FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL: 0x8CD2,
-  FRAMEBUFFER_BINDING: 0x8CA6,
-  FRAMEBUFFER_COMPLETE: 0x8CD5,
-  FRAMEBUFFER_INCOMPLETE_ATTACHMENT: 0x8CD6,
-  FRAMEBUFFER_INCOMPLETE_DIMENSIONS: 0x8CD9,
-  FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT: 0x8CD7,
-  FRAMEBUFFER_UNSUPPORTED: 0x8CDD,
-  FRONT: 0x0404,
-  FRONT_AND_BACK: 0x0408,
-  FRONT_FACE: 0x0B46,
-  FUNC_ADD: 0x8006,
-  FUNC_REVERSE_SUBTRACT: 0x800B,
-  FUNC_SUBTRACT: 0x800A,
-  GENERATE_MIPMAP_HINT: 0x8192,
-  GEQUAL: 0x0206,
-  GREATER: 0x0204,
-  GREEN_BITS: 0x0D53,
-  HIGH_FLOAT: 0x8DF2,
-  HIGH_INT: 0x8DF5,
-  IMPLEMENTATION_COLOR_READ_FORMAT: 0x8B9B,
-  IMPLEMENTATION_COLOR_READ_TYPE: 0x8B9A,
-  INCR: 0x1E02,
-  INCR_WRAP: 0x8507,
-  INT: 0x1404,
-  INT_VEC2: 0x8B53,
-  INT_VEC3: 0x8B54,
-  INT_VEC4: 0x8B55,
-  INVALID_ENUM: 0x0500,
-  INVALID_FRAMEBUFFER_OPERATION: 0x0506,
-  INVALID_OPERATION: 0x0502,
-  INVALID_VALUE: 0x0501,
-  INVERT: 0x150A,
-  KEEP: 0x1E00,
-  LEQUAL: 0x0203,
-  LESS: 0x0201,
-  LINEAR: 0x2601,
-  LINEAR_MIPMAP_LINEAR: 0x2703,
-  LINEAR_MIPMAP_NEAREST: 0x2701,
-  LINES: 0x0001,
-  LINE_LOOP: 0x0002,
-  LINE_STRIP: 0x0003,
-  LINE_WIDTH: 0x0B21,
-  LINK_STATUS: 0x8B82,
-  LOW_FLOAT: 0x8DF0,
-  LOW_INT: 0x8DF3,
-  LUMINANCE: 0x1909,
-  LUMINANCE_ALPHA: 0x190A,
-  MAX_COMBINED_TEXTURE_IMAGE_UNITS: 0x8B4D,
-  MAX_CUBE_MAP_TEXTURE_SIZE: 0x851C,
-  MAX_FRAGMENT_UNIFORM_VECTORS: 0x8DFD,
-  MAX_RENDERBUFFER_SIZE: 0x84E8,
-  MAX_TEXTURE_IMAGE_UNITS: 0x8872,
-  MAX_TEXTURE_SIZE: 0x0D33,
-  MAX_VARYING_VECTORS: 0x8DFC,
-  MAX_VERTEX_ATTRIBS: 0x8869,
-  MAX_VERTEX_TEXTURE_IMAGE_UNITS: 0x8B4C,
-  MAX_VERTEX_UNIFORM_VECTORS: 0x8DFB,
-  MAX_VIEWPORT_DIMS: 0x0D3A,
-  MEDIUM_FLOAT: 0x8DF1,
-  MEDIUM_INT: 0x8DF4,
-  MIRRORED_REPEAT: 0x8370,
-  NEAREST: 0x2600,
-  NEAREST_MIPMAP_LINEAR: 0x2702,
-  NEAREST_MIPMAP_NEAREST: 0x2700,
-  NEVER: 0x0200,
-  NICEST: 0x1102,
-  NONE: 0,
-  NOTEQUAL: 0x0205,
-  NO_ERROR: 0,
-  ONE: 1,
-  ONE_MINUS_CONSTANT_ALPHA: 0x8004,
-  ONE_MINUS_CONSTANT_COLOR: 0x8002,
-  ONE_MINUS_DST_ALPHA: 0x0305,
-  ONE_MINUS_DST_COLOR: 0x0307,
-  ONE_MINUS_SRC_ALPHA: 0x0303,
-  ONE_MINUS_SRC_COLOR: 0x0301,
-  OUT_OF_MEMORY: 0x0505,
-  PACK_ALIGNMENT: 0x0D05,
-  POINTS: 0x0000,
-  POLYGON_OFFSET_FACTOR: 0x8038,
-  POLYGON_OFFSET_FILL: 0x8037,
-  POLYGON_OFFSET_UNITS: 0x2A00,
-  RED_BITS: 0x0D52,
-  RENDERBUFFER: 0x8D41,
-  RENDERBUFFER_ALPHA_SIZE: 0x8D53,
-  RENDERBUFFER_BINDING: 0x8CA7,
-  RENDERBUFFER_BLUE_SIZE: 0x8D52,
-  RENDERBUFFER_DEPTH_SIZE: 0x8D54,
-  RENDERBUFFER_GREEN_SIZE: 0x8D51,
-  RENDERBUFFER_HEIGHT: 0x8D43,
-  RENDERBUFFER_INTERNAL_FORMAT: 0x8D44,
-  RENDERBUFFER_RED_SIZE: 0x8D50,
-  RENDERBUFFER_STENCIL_SIZE: 0x8D55,
-  RENDERBUFFER_WIDTH: 0x8D42,
-  RENDERER: 0x1F01,
-  REPEAT: 0x2901,
-  REPLACE: 0x1E01,
-  RGB: 0x1907,
-  RGB565: 0x8D62,
-  RGB5_A1: 0x8057,
-  RGBA: 0x1908,
-  RGBA4: 0x8056,
-  RGBA8: 0x8058,
-  SAMPLER_2D: 0x8B5E,
-  SAMPLER_CUBE: 0x8B60,
-  SAMPLES: 0x80A9,
-  SAMPLE_ALPHA_TO_COVERAGE: 0x809E,
-  SAMPLE_BUFFERS: 0x80A8,
-  SAMPLE_COVERAGE: 0x80A0,
-  SAMPLE_COVERAGE_INVERT: 0x80AB,
-  SAMPLE_COVERAGE_VALUE: 0x80AA,
-  SCISSOR_BOX: 0x0C10,
-  SCISSOR_TEST: 0x0C11,
-  SHADER_TYPE: 0x8B4F,
-  SHADING_LANGUAGE_VERSION: 0x8B8C,
-  SHORT: 0x1402,
-  SRC_ALPHA: 0x0302,
-  SRC_ALPHA_SATURATE: 0x0308,
-  SRC_COLOR: 0x0300,
-  STATIC_DRAW: 0x88E4,
-  STENCIL_ATTACHMENT: 0x8D20,
-  STENCIL_BACK_FAIL: 0x8801,
-  STENCIL_BACK_FUNC: 0x8800,
-  STENCIL_BACK_PASS_DEPTH_FAIL: 0x8802,
-  STENCIL_BACK_PASS_DEPTH_PASS: 0x8803,
-  STENCIL_BACK_REF: 0x8CA3,
-  STENCIL_BACK_VALUE_MASK: 0x8CA4,
-  STENCIL_BACK_WRITEMASK: 0x8CA5,
-  STENCIL_BITS: 0x0D57,
-  STENCIL_BUFFER_BIT: 0x00000400,
-  STENCIL_CLEAR_VALUE: 0x0B91,
-  STENCIL_FAIL: 0x0B94,
-  STENCIL_FUNC: 0x0B92,
-  STENCIL_INDEX8: 0x8D48,
-  STENCIL_PASS_DEPTH_FAIL: 0x0B95,
-  STENCIL_PASS_DEPTH_PASS: 0x0B96,
-  STENCIL_REF: 0x0B97,
-  STENCIL_TEST: 0x0B90,
-  STENCIL_VALUE_MASK: 0x0B93,
-  STENCIL_WRITEMASK: 0x0B98,
-  STREAM_DRAW: 0x88E0,
-  SUBPIXEL_BITS: 0x0D50,
-  TEXTURE: 0x1702,
-  TEXTURE0: 0x84C0,
-  TEXTURE1: 0x84C1,
-  TEXTURE10: 0x84CA,
-  TEXTURE11: 0x84CB,
-  TEXTURE12: 0x84CC,
-  TEXTURE13: 0x84CD,
-  TEXTURE14: 0x84CE,
-  TEXTURE15: 0x84CF,
-  TEXTURE16: 0x84D0,
-  TEXTURE17: 0x84D1,
-  TEXTURE18: 0x84D2,
-  TEXTURE19: 0x84D3,
-  TEXTURE2: 0x84C2,
-  TEXTURE20: 0x84D4,
-  TEXTURE21: 0x84D5,
-  TEXTURE22: 0x84D6,
-  TEXTURE23: 0x84D7,
-  TEXTURE24: 0x84D8,
-  TEXTURE25: 0x84D9,
-  TEXTURE26: 0x84DA,
-  TEXTURE27: 0x84DB,
-  TEXTURE28: 0x84DC,
-  TEXTURE29: 0x84DD,
-  TEXTURE3: 0x84C3,
-  TEXTURE30: 0x84DE,
-  TEXTURE31: 0x84DF,
-  TEXTURE4: 0x84C4,
-  TEXTURE5: 0x84C5,
-  TEXTURE6: 0x84C6,
-  TEXTURE7: 0x84C7,
-  TEXTURE8: 0x84C8,
-  TEXTURE9: 0x84C9,
-  TEXTURE_2D: 0x0DE1,
-  TEXTURE_BINDING_2D: 0x8069,
-  TEXTURE_BINDING_CUBE_MAP: 0x8514,
-  TEXTURE_CUBE_MAP: 0x8513,
-  TEXTURE_CUBE_MAP_NEGATIVE_X: 0x8516,
-  TEXTURE_CUBE_MAP_NEGATIVE_Y: 0x8518,
-  TEXTURE_CUBE_MAP_NEGATIVE_Z: 0x851A,
-  TEXTURE_CUBE_MAP_POSITIVE_X: 0x8515,
-  TEXTURE_CUBE_MAP_POSITIVE_Y: 0x8517,
-  TEXTURE_CUBE_MAP_POSITIVE_Z: 0x8519,
-  TEXTURE_MAG_FILTER: 0x2800,
-  TEXTURE_MIN_FILTER: 0x2801,
-  TEXTURE_WRAP_S: 0x2802,
-  TEXTURE_WRAP_T: 0x2803,
-  TRIANGLES: 0x0004,
-  TRIANGLE_FAN: 0x0006,
-  TRIANGLE_STRIP: 0x0005,
-  UNPACK_ALIGNMENT: 0x0CF5,
-  UNPACK_COLORSPACE_CONVERSION_WEBGL: 0x9243,
-  UNPACK_FLIP_Y_WEBGL: 0x9240,
-  UNPACK_PREMULTIPLY_ALPHA_WEBGL: 0x9241,
-  UNSIGNED_BYTE: 0x1401,
-  UNSIGNED_INT: 0x1405,
-  UNSIGNED_SHORT: 0x1403,
-  UNSIGNED_SHORT_4_4_4_4: 0x8033,
-  UNSIGNED_SHORT_5_5_5_1: 0x8034,
-  UNSIGNED_SHORT_5_6_5: 0x8363,
-  VALIDATE_STATUS: 0x8B83,
-  VENDOR: 0x1F00,
-  VERSION: 0x1F02,
-  VERTEX_ATTRIB_ARRAY_BUFFER_BINDING: 0x889F,
-  VERTEX_ATTRIB_ARRAY_ENABLED: 0x8622,
-  VERTEX_ATTRIB_ARRAY_NORMALIZED: 0x886A,
-  VERTEX_ATTRIB_ARRAY_POINTER: 0x8645,
-  VERTEX_ATTRIB_ARRAY_SIZE: 0x8623,
-  VERTEX_ATTRIB_ARRAY_STRIDE: 0x8624,
-  VERTEX_ATTRIB_ARRAY_TYPE: 0x8625,
-  VERTEX_SHADER: 0x8B31,
-  VIEWPORT: 0x0BA2,
-  ZERO: 0,
-};
-
-var _ZW_WGL2C = {
-  ACTIVE_UNIFORM_BLOCKS: 0x8A36,
-  ALREADY_SIGNALED: 0x911A,
-  ANY_SAMPLES_PASSED: 0x8C2F,
-  ANY_SAMPLES_PASSED_CONSERVATIVE: 0x8D6A,
-  COLOR: 0x1800,
-  COLOR_ATTACHMENT1: 0x8CE1,
-  COLOR_ATTACHMENT10: 0x8CEA,
-  COLOR_ATTACHMENT11: 0x8CEB,
-  COLOR_ATTACHMENT12: 0x8CEC,
-  COLOR_ATTACHMENT13: 0x8CED,
-  COLOR_ATTACHMENT14: 0x8CEE,
-  COLOR_ATTACHMENT15: 0x8CEF,
-  COLOR_ATTACHMENT2: 0x8CE2,
-  COLOR_ATTACHMENT3: 0x8CE3,
-  COLOR_ATTACHMENT4: 0x8CE4,
-  COLOR_ATTACHMENT5: 0x8CE5,
-  COLOR_ATTACHMENT6: 0x8CE6,
-  COLOR_ATTACHMENT7: 0x8CE7,
-  COLOR_ATTACHMENT8: 0x8CE8,
-  COLOR_ATTACHMENT9: 0x8CE9,
-  COMPARE_REF_TO_TEXTURE: 0x884E,
-  CONDITION_SATISFIED: 0x911C,
-  COPY_READ_BUFFER: 0x8F36,
-  COPY_READ_BUFFER_BINDING: 0x8F36,
-  COPY_WRITE_BUFFER: 0x8F37,
-  COPY_WRITE_BUFFER_BINDING: 0x8F37,
-  CURRENT_QUERY: 0x8865,
-  DEPTH: 0x1801,
-  DEPTH24_STENCIL8: 0x88F0,
-  DEPTH32F_STENCIL8: 0x8CAD,
-  DEPTH_COMPONENT24: 0x81A6,
-  DEPTH_COMPONENT32F: 0x8CAC,
-  DRAW_BUFFER0: 0x8825,
-  DRAW_BUFFER1: 0x8826,
-  DRAW_BUFFER10: 0x882F,
-  DRAW_BUFFER11: 0x8830,
-  DRAW_BUFFER12: 0x8831,
-  DRAW_BUFFER13: 0x8832,
-  DRAW_BUFFER14: 0x8833,
-  DRAW_BUFFER15: 0x8834,
-  DRAW_BUFFER2: 0x8827,
-  DRAW_BUFFER3: 0x8828,
-  DRAW_BUFFER4: 0x8829,
-  DRAW_BUFFER5: 0x882A,
-  DRAW_BUFFER6: 0x882B,
-  DRAW_BUFFER7: 0x882C,
-  DRAW_BUFFER8: 0x882D,
-  DRAW_BUFFER9: 0x882E,
-  DRAW_FRAMEBUFFER: 0x8CA9,
-  DRAW_FRAMEBUFFER_BINDING: 0x8CA6,
-  DYNAMIC_COPY: 0x88EA,
-  DYNAMIC_READ: 0x88E9,
-  FLOAT_32_UNSIGNED_INT_24_8_REV: 0x8DAD,
-  FLOAT_MAT2x3: 0x8B65,
-  FLOAT_MAT2x4: 0x8B66,
-  FLOAT_MAT3x2: 0x8B67,
-  FLOAT_MAT3x4: 0x8B68,
-  FLOAT_MAT4x2: 0x8B69,
-  FLOAT_MAT4x3: 0x8B6A,
-  FRAGMENT_SHADER_DERIVATIVE_HINT: 0x8B8B,
-  FRAMEBUFFER_ATTACHMENT_ALPHA_SIZE: 0x8215,
-  FRAMEBUFFER_ATTACHMENT_BLUE_SIZE: 0x8214,
-  FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING: 0x8210,
-  FRAMEBUFFER_ATTACHMENT_COMPONENT_TYPE: 0x8211,
-  FRAMEBUFFER_ATTACHMENT_DEPTH_SIZE: 0x8216,
-  FRAMEBUFFER_ATTACHMENT_GREEN_SIZE: 0x8213,
-  FRAMEBUFFER_ATTACHMENT_RED_SIZE: 0x8212,
-  FRAMEBUFFER_ATTACHMENT_STENCIL_SIZE: 0x8217,
-  FRAMEBUFFER_ATTACHMENT_TEXTURE_LAYER: 0x8CD4,
-  FRAMEBUFFER_DEFAULT: 0x8218,
-  FRAMEBUFFER_INCOMPLETE_MULTISAMPLE: 0x8D56,
-  HALF_FLOAT: 0x140B,
-  INTERLEAVED_ATTRIBS: 0x8C8C,
-  INT_2_10_10_10_REV: 0x8D9F,
-  INT_SAMPLER_2D: 0x8DCA,
-  INT_SAMPLER_2D_ARRAY: 0x8DCF,
-  INT_SAMPLER_3D: 0x8DCB,
-  INT_SAMPLER_CUBE: 0x8DCC,
-  INVALID_INDEX: 0xFFFFFFFF,
-  MAX: 0x8008,
-  MAX_3D_TEXTURE_SIZE: 0x8073,
-  MAX_ARRAY_TEXTURE_LAYERS: 0x88FF,
-  MAX_CLIENT_WAIT_TIMEOUT_WEBGL: 0x9247,
-  MAX_COLOR_ATTACHMENTS: 0x8CDF,
-  MAX_COMBINED_FRAGMENT_UNIFORM_COMPONENTS: 0x8A33,
-  MAX_COMBINED_UNIFORM_BLOCKS: 0x8A2E,
-  MAX_COMBINED_VERTEX_UNIFORM_COMPONENTS: 0x8A31,
-  MAX_DRAW_BUFFERS: 0x8824,
-  MAX_ELEMENTS_INDICES: 0x80E9,
-  MAX_ELEMENTS_VERTICES: 0x80E8,
-  MAX_ELEMENT_INDEX: 0x8D6B,
-  MAX_FRAGMENT_INPUT_COMPONENTS: 0x9125,
-  MAX_FRAGMENT_UNIFORM_BLOCKS: 0x8A2D,
-  MAX_FRAGMENT_UNIFORM_COMPONENTS: 0x8B49,
-  MAX_PROGRAM_TEXEL_OFFSET: 0x8905,
-  MAX_SAMPLES: 0x8D57,
-  MAX_SERVER_WAIT_TIMEOUT: 0x9111,
-  MAX_TEXTURE_LOD_BIAS: 0x84FD,
-  MAX_TRANSFORM_FEEDBACK_INTERLEAVED_COMPONENTS: 0x8C8A,
-  MAX_TRANSFORM_FEEDBACK_SEPARATE_ATTRIBS: 0x8C8B,
-  MAX_TRANSFORM_FEEDBACK_SEPARATE_COMPONENTS: 0x8C80,
-  MAX_UNIFORM_BLOCK_SIZE: 0x8A30,
-  MAX_UNIFORM_BUFFER_BINDINGS: 0x8A2F,
-  MAX_VARYING_COMPONENTS: 0x8B4B,
-  MAX_VERTEX_OUTPUT_COMPONENTS: 0x9122,
-  MAX_VERTEX_UNIFORM_BLOCKS: 0x8A2B,
-  MAX_VERTEX_UNIFORM_COMPONENTS: 0x8B4A,
-  MIN: 0x8007,
-  MIN_PROGRAM_TEXEL_OFFSET: 0x8904,
-  OBJECT_TYPE: 0x9112,
-  PACK_ROW_LENGTH: 0x0D02,
-  PACK_SKIP_PIXELS: 0x0D04,
-  PACK_SKIP_ROWS: 0x0D03,
-  PIXEL_PACK_BUFFER: 0x88EB,
-  PIXEL_PACK_BUFFER_BINDING: 0x88ED,
-  PIXEL_UNPACK_BUFFER: 0x88EC,
-  PIXEL_UNPACK_BUFFER_BINDING: 0x88EF,
-  QUERY_RESULT: 0x8866,
-  QUERY_RESULT_AVAILABLE: 0x8867,
-  R11F_G11F_B10F: 0x8C3A,
-  R16F: 0x822D,
-  R16I: 0x8233,
-  R16UI: 0x8234,
-  R32F: 0x822E,
-  R32I: 0x8235,
-  R32UI: 0x8236,
-  R8: 0x8229,
-  R8I: 0x8231,
-  R8UI: 0x8232,
-  R8_SNORM: 0x8F94,
-  RASTERIZER_DISCARD: 0x8C89,
-  READ_BUFFER: 0x0C02,
-  READ_FRAMEBUFFER: 0x8CA8,
-  READ_FRAMEBUFFER_BINDING: 0x8CAA,
-  RED: 0x1903,
-  RED_INTEGER: 0x8D94,
-  RENDERBUFFER_SAMPLES: 0x8CAB,
-  RG: 0x8227,
-  RG16F: 0x822F,
-  RG16I: 0x8239,
-  RG16UI: 0x823A,
-  RG32F: 0x8230,
-  RG32I: 0x823B,
-  RG32UI: 0x823C,
-  RG8: 0x822B,
-  RG8I: 0x8237,
-  RG8UI: 0x8238,
-  RG8_SNORM: 0x8F95,
-  RGB10_A2: 0x8059,
-  RGB10_A2UI: 0x906F,
-  RGB16F: 0x881B,
-  RGB16I: 0x8D89,
-  RGB16UI: 0x8D77,
-  RGB32F: 0x8815,
-  RGB32I: 0x8D83,
-  RGB32UI: 0x8D71,
-  RGB8: 0x8051,
-  RGB8I: 0x8D8F,
-  RGB8UI: 0x8D7D,
-  RGB8_SNORM: 0x8F96,
-  RGB9_E5: 0x8C3D,
-  RGBA16F: 0x881A,
-  RGBA16I: 0x8D88,
-  RGBA16UI: 0x8D76,
-  RGBA32F: 0x8814,
-  RGBA32I: 0x8D82,
-  RGBA32UI: 0x8D70,
-  RGBA8I: 0x8D8E,
-  RGBA8UI: 0x8D7C,
-  RGBA8_SNORM: 0x8F97,
-  RGBA_INTEGER: 0x8D99,
-  RGB_INTEGER: 0x8D98,
-  RG_INTEGER: 0x8228,
-  SAMPLER_2D_ARRAY: 0x8DC1,
-  SAMPLER_2D_ARRAY_SHADOW: 0x8DC4,
-  SAMPLER_2D_SHADOW: 0x8B62,
-  SAMPLER_3D: 0x8B5F,
-  SAMPLER_BINDING: 0x8919,
-  SAMPLER_CUBE_SHADOW: 0x8DC5,
-  SEPARATE_ATTRIBS: 0x8C8D,
-  SIGNALED: 0x9119,
-  SIGNED_NORMALIZED: 0x8F9C,
-  SRGB: 0x8C40,
-  SRGB8: 0x8C41,
-  SRGB8_ALPHA8: 0x8C43,
-  STATIC_COPY: 0x88E6,
-  STATIC_READ: 0x88E5,
-  STENCIL: 0x1802,
-  STREAM_COPY: 0x88E2,
-  STREAM_READ: 0x88E1,
-  SYNC_CONDITION: 0x9113,
-  SYNC_FENCE: 0x9116,
-  SYNC_FLAGS: 0x9115,
-  SYNC_FLUSH_COMMANDS_BIT: 0x00000001,
-  SYNC_GPU_COMMANDS_COMPLETE: 0x9117,
-  SYNC_STATUS: 0x9114,
-  TEXTURE_2D_ARRAY: 0x8C1A,
-  TEXTURE_3D: 0x806F,
-  TEXTURE_BASE_LEVEL: 0x813C,
-  TEXTURE_BINDING_2D_ARRAY: 0x8C1D,
-  TEXTURE_BINDING_3D: 0x806A,
-  TEXTURE_COMPARE_FUNC: 0x884D,
-  TEXTURE_COMPARE_MODE: 0x884C,
-  TEXTURE_IMMUTABLE_FORMAT: 0x912F,
-  TEXTURE_IMMUTABLE_LEVELS: 0x82DF,
-  TEXTURE_MAX_LEVEL: 0x813D,
-  TEXTURE_MAX_LOD: 0x813B,
-  TEXTURE_MIN_LOD: 0x813A,
-  TEXTURE_WRAP_R: 0x8072,
-  TIMEOUT_EXPIRED: 0x911B,
-  TIMEOUT_IGNORED: -1,
-  TRANSFORM_FEEDBACK: 0x8E22,
-  TRANSFORM_FEEDBACK_ACTIVE: 0x8E24,
-  TRANSFORM_FEEDBACK_BINDING: 0x8E25,
-  TRANSFORM_FEEDBACK_BUFFER: 0x8C8E,
-  TRANSFORM_FEEDBACK_BUFFER_BINDING: 0x8C8F,
-  TRANSFORM_FEEDBACK_BUFFER_MODE: 0x8C7F,
-  TRANSFORM_FEEDBACK_BUFFER_SIZE: 0x8C85,
-  TRANSFORM_FEEDBACK_BUFFER_START: 0x8C84,
-  TRANSFORM_FEEDBACK_PAUSED: 0x8E23,
-  TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN: 0x8C88,
-  TRANSFORM_FEEDBACK_VARYINGS: 0x8C83,
-  UNIFORM_ARRAY_STRIDE: 0x8A3C,
-  UNIFORM_BLOCK_ACTIVE_UNIFORMS: 0x8A42,
-  UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES: 0x8A43,
-  UNIFORM_BLOCK_BINDING: 0x8A3F,
-  UNIFORM_BLOCK_DATA_SIZE: 0x8A40,
-  UNIFORM_BLOCK_INDEX: 0x8A3A,
-  UNIFORM_BLOCK_REFERENCED_BY_FRAGMENT_SHADER: 0x8A46,
-  UNIFORM_BLOCK_REFERENCED_BY_VERTEX_SHADER: 0x8A44,
-  UNIFORM_BUFFER: 0x8A11,
-  UNIFORM_BUFFER_BINDING: 0x8A28,
-  UNIFORM_BUFFER_OFFSET_ALIGNMENT: 0x8A34,
-  UNIFORM_BUFFER_SIZE: 0x8A2A,
-  UNIFORM_BUFFER_START: 0x8A29,
-  UNIFORM_IS_ROW_MAJOR: 0x8A3E,
-  UNIFORM_MATRIX_STRIDE: 0x8A3D,
-  UNIFORM_OFFSET: 0x8A3B,
-  UNIFORM_SIZE: 0x8A38,
-  UNIFORM_TYPE: 0x8A37,
-  UNPACK_IMAGE_HEIGHT: 0x806E,
-  UNPACK_ROW_LENGTH: 0x0CF2,
-  UNPACK_SKIP_IMAGES: 0x806D,
-  UNPACK_SKIP_PIXELS: 0x0CF4,
-  UNPACK_SKIP_ROWS: 0x0CF3,
-  UNSIGNALED: 0x9118,
-  UNSIGNED_INT_10F_11F_11F_REV: 0x8C3B,
-  UNSIGNED_INT_24_8: 0x84FA,
-  UNSIGNED_INT_2_10_10_10_REV: 0x8368,
-  UNSIGNED_INT_5_9_9_9_REV: 0x8C3E,
-  UNSIGNED_INT_SAMPLER_2D: 0x8DD2,
-  UNSIGNED_INT_SAMPLER_2D_ARRAY: 0x8DD7,
-  UNSIGNED_INT_SAMPLER_3D: 0x8DD3,
-  UNSIGNED_INT_SAMPLER_CUBE: 0x8DD4,
-  UNSIGNED_INT_VEC2: 0x8DC6,
-  UNSIGNED_INT_VEC3: 0x8DC7,
-  UNSIGNED_INT_VEC4: 0x8DC8,
-  UNSIGNED_NORMALIZED: 0x8C17,
-  VERTEX_ARRAY_BINDING: 0x85B5,
-  VERTEX_ATTRIB_ARRAY_DIVISOR: 0x88FE,
-  VERTEX_ATTRIB_ARRAY_INTEGER: 0x88FD,
-  WAIT_FAILED: 0x911D,
-};
-
-var _ZW_WGL1M = {
-  activeTexture: 1,
-  attachShader: 2,
-  bindAttribLocation: 3,
-  bindBuffer: 2,
-  bindFramebuffer: 2,
-  bindRenderbuffer: 2,
-  bindTexture: 2,
-  blendColor: 4,
-  blendEquation: 1,
-  blendEquationSeparate: 2,
-  blendFunc: 2,
-  blendFuncSeparate: 4,
-  bufferData: 3,
-  bufferSubData: 3,
-  checkFramebufferStatus: 1,
-  clear: 1,
-  clearColor: 4,
-  clearDepth: 1,
-  clearStencil: 1,
-  colorMask: 4,
-  compileShader: 1,
-  compressedTexImage2D: 7,
-  compressedTexSubImage2D: 8,
-  copyTexImage2D: 8,
-  copyTexSubImage2D: 8,
-  createBuffer: 0,
-  createFramebuffer: 0,
-  createProgram: 0,
-  createRenderbuffer: 0,
-  createShader: 1,
-  createTexture: 0,
-  cullFace: 1,
-  deleteBuffer: 1,
-  deleteFramebuffer: 1,
-  deleteProgram: 1,
-  deleteRenderbuffer: 1,
-  deleteShader: 1,
-  deleteTexture: 1,
-  depthFunc: 1,
-  depthMask: 1,
-  depthRange: 2,
-  detachShader: 2,
-  disable: 1,
-  disableVertexAttribArray: 1,
-  drawArrays: 3,
-  drawElements: 4,
-  drawingBufferStorage: 3,
-  enable: 1,
-  enableVertexAttribArray: 1,
-  finish: 0,
-  flush: 0,
-  framebufferRenderbuffer: 4,
-  framebufferTexture2D: 5,
-  frontFace: 1,
-  generateMipmap: 1,
-  getActiveAttrib: 2,
-  getActiveUniform: 2,
-  getAttachedShaders: 1,
-  getAttribLocation: 2,
-  getBufferParameter: 2,
-  getContextAttributes: 0,
-  getError: 0,
-  getExtension: 1,
-  getFramebufferAttachmentParameter: 3,
-  getParameter: 1,
-  getProgramInfoLog: 1,
-  getProgramParameter: 2,
-  getRenderbufferParameter: 2,
-  getShaderInfoLog: 1,
-  getShaderParameter: 2,
-  getShaderPrecisionFormat: 2,
-  getShaderSource: 1,
-  getSupportedExtensions: 0,
-  getTexParameter: 2,
-  getUniform: 2,
-  getUniformLocation: 2,
-  getVertexAttrib: 2,
-  getVertexAttribOffset: 2,
-  hint: 2,
-  isBuffer: 1,
-  isContextLost: 0,
-  isEnabled: 1,
-  isFramebuffer: 1,
-  isProgram: 1,
-  isRenderbuffer: 1,
-  isShader: 1,
-  isTexture: 1,
-  lineWidth: 1,
-  linkProgram: 1,
-  pixelStorei: 2,
-  polygonOffset: 2,
-  readPixels: 7,
-  renderbufferStorage: 4,
-  sampleCoverage: 2,
-  scissor: 4,
-  shaderSource: 2,
-  stencilFunc: 3,
-  stencilFuncSeparate: 4,
-  stencilMask: 1,
-  stencilMaskSeparate: 2,
-  stencilOp: 3,
-  stencilOpSeparate: 4,
-  texImage2D: 6,
-  texParameterf: 3,
-  texParameteri: 3,
-  texSubImage2D: 7,
-  uniform1f: 2,
-  uniform1fv: 2,
-  uniform1i: 2,
-  uniform1iv: 2,
-  uniform2f: 3,
-  uniform2fv: 2,
-  uniform2i: 3,
-  uniform2iv: 2,
-  uniform3f: 4,
-  uniform3fv: 2,
-  uniform3i: 4,
-  uniform3iv: 2,
-  uniform4f: 5,
-  uniform4fv: 2,
-  uniform4i: 5,
-  uniform4iv: 2,
-  uniformMatrix2fv: 3,
-  uniformMatrix3fv: 3,
-  uniformMatrix4fv: 3,
-  useProgram: 1,
-  validateProgram: 1,
-  vertexAttrib1f: 2,
-  vertexAttrib1fv: 2,
-  vertexAttrib2f: 3,
-  vertexAttrib2fv: 2,
-  vertexAttrib3f: 4,
-  vertexAttrib3fv: 2,
-  vertexAttrib4f: 5,
-  vertexAttrib4fv: 2,
-  vertexAttribPointer: 6,
-  viewport: 4,
-};
-
-var _ZW_WGL2M = {
-  beginQuery: 2,
-  beginTransformFeedback: 1,
-  bindBufferBase: 3,
-  bindBufferRange: 5,
-  bindSampler: 2,
-  bindTransformFeedback: 2,
-  bindVertexArray: 1,
-  blitFramebuffer: 10,
-  bufferData: 3,
-  bufferSubData: 3,
-  clearBufferfi: 4,
-  clearBufferfv: 3,
-  clearBufferiv: 3,
-  clearBufferuiv: 3,
-  clientWaitSync: 3,
-  compressedTexImage2D: 7,
-  compressedTexImage3D: 8,
-  compressedTexSubImage2D: 8,
-  compressedTexSubImage3D: 10,
-  copyBufferSubData: 5,
-  copyTexSubImage3D: 9,
-  createQuery: 0,
-  createSampler: 0,
-  createTransformFeedback: 0,
-  createVertexArray: 0,
-  deleteQuery: 1,
-  deleteSampler: 1,
-  deleteSync: 1,
-  deleteTransformFeedback: 1,
-  deleteVertexArray: 1,
-  drawArraysInstanced: 4,
-  drawBuffers: 1,
-  drawElementsInstanced: 5,
-  drawRangeElements: 6,
-  endQuery: 1,
-  endTransformFeedback: 0,
-  fenceSync: 2,
-  framebufferTextureLayer: 5,
-  getActiveUniformBlockName: 2,
-  getActiveUniformBlockParameter: 3,
-  getActiveUniforms: 3,
-  getBufferSubData: 3,
-  getFragDataLocation: 2,
-  getIndexedParameter: 2,
-  getInternalformatParameter: 3,
-  getQuery: 2,
-  getQueryParameter: 2,
-  getSamplerParameter: 2,
-  getSyncParameter: 2,
-  getTransformFeedbackVarying: 2,
-  getUniformBlockIndex: 2,
-  getUniformIndices: 2,
-  invalidateFramebuffer: 2,
-  invalidateSubFramebuffer: 6,
-  isQuery: 1,
-  isSampler: 1,
-  isSync: 1,
-  isTransformFeedback: 1,
-  isVertexArray: 1,
-  pauseTransformFeedback: 0,
-  readBuffer: 1,
-  readPixels: 7,
-  renderbufferStorageMultisample: 5,
-  resumeTransformFeedback: 0,
-  samplerParameterf: 3,
-  samplerParameteri: 3,
-  texImage2D: 6,
-  texImage3D: 10,
-  texStorage2D: 5,
-  texStorage3D: 6,
-  texSubImage2D: 7,
-  texSubImage3D: 11,
-  transformFeedbackVaryings: 3,
-  uniform1fv: 2,
-  uniform1iv: 2,
-  uniform1ui: 2,
-  uniform1uiv: 2,
-  uniform2fv: 2,
-  uniform2iv: 2,
-  uniform2ui: 3,
-  uniform2uiv: 2,
-  uniform3fv: 2,
-  uniform3iv: 2,
-  uniform3ui: 4,
-  uniform3uiv: 2,
-  uniform4fv: 2,
-  uniform4iv: 2,
-  uniform4ui: 5,
-  uniform4uiv: 2,
-  uniformBlockBinding: 3,
-  uniformMatrix2fv: 3,
-  uniformMatrix2x3fv: 3,
-  uniformMatrix2x4fv: 3,
-  uniformMatrix3fv: 3,
-  uniformMatrix3x2fv: 3,
-  uniformMatrix3x4fv: 3,
-  uniformMatrix4fv: 3,
-  uniformMatrix4x2fv: 3,
-  uniformMatrix4x3fv: 3,
-  vertexAttribDivisor: 2,
-  vertexAttribI4i: 5,
-  vertexAttribI4iv: 2,
-  vertexAttribI4ui: 5,
-  vertexAttribI4uiv: 2,
-  vertexAttribIPointer: 5,
-  waitSync: 3,
-};
+  // ── 接口面数据表 ──
+  // 由 part08a.js 派生注入（2000 行准则拆分；来源/派生口径见彼处头注，勿手改）。
+  var _zwWglT = globalThis._zwWglIdlTables;
+  globalThis._zwWglIdlTables = null; // 用后即清
+  var _ZW_WGL1C = _zwWglT.w1c;
+  var _ZW_WGL1M = _zwWglT.w1m;
+  var _ZW_WGL2C = _zwWglT.w2c;
+  var _ZW_WGL2M = _zwWglT.w2m;
 
   // ── 品牌/子型 ─────────────────────────────────────────────────────────
   // 实例标记：上下文 `_zwGlCtx` + `_zwGlIface`（'WebGLRenderingContext' |
@@ -978,8 +158,34 @@ var _ZW_WGL2M = {
     if (state._err === 0) state._err = code;
   }
 
+  // webglcontextlost/restored 事件派发（WebGL 1.0 §5.15——WebGLContextEvent 于
+  // canvas 元素上触发；纯 shim 单测环境无 canvas/无 dispatchEvent 时静默跳过，
+  // 丢失状态机仍可经 isContextLost 观测）。after 回调在派发后读 defaultPrevented。
+  function _zwGlFireContextEvent(state, type, cancelable, after) {
+    var canvas = state._canvas;
+    if (!canvas || typeof canvas.dispatchEvent !== 'function' ||
+      typeof globalThis.WebGLContextEvent !== 'function') {
+      return;
+    }
+    var ev;
+    try {
+      ev = new globalThis.WebGLContextEvent(type, {
+        bubbles: false, cancelable: !!cancelable, statusMessage: ''
+      });
+    } catch (_eCtor) { return; }
+    try { canvas.dispatchEvent(ev); } catch (_eDispatch) { return; }
+    if (after) after(ev);
+  }
+
   function _zwGlNewObject(ifaceName) {
-    return { _zwGlObj: true, _zwGlIface: ifaceName, _label: '' };
+    var obj = { _zwGlObj: true, _zwGlIface: ifaceName, _label: '' };
+    // 实例原型链接（WebIDL 对象创建步）：接口经 _zwGlDefineInterface 全局注册
+    // 后可查——属性访问器（WebGLObject.label、WebGLShaderPrecisionFormat.
+    // rangeMin 等）在原型上，不链接则实例属性读取落 undefined。未注册名退
+    // Object.prototype。
+    var ctor = globalThis[ifaceName];
+    if (ctor && ctor.prototype) Object.setPrototypeOf(obj, ctor.prototype);
+    return obj;
   }
 
   // create*/delete*/is* 的对象名映射（op 名 → 接口名）。
@@ -1019,7 +225,8 @@ var _ZW_WGL2M = {
     COMPRESSED_RGBA_S3TC_DXT5_EXT: 0x83F3
   };
   var _ZW_EXT_ETC1 = { COMPRESSED_RGB_ETC1_WEBGL: 0x8D64 };
-  var _ZW_EXT_NAMES = ['WEBGL_compressed_texture_etc1', 'WEBGL_compressed_texture_s3tc'];
+  var _ZW_EXT_NAMES = ['WEBGL_compressed_texture_etc1', 'WEBGL_compressed_texture_s3tc',
+    'WEBGL_lose_context'];
 
   // GL 枚举集（错误语义校验用；值同数据表）。
   var _ZW_BIND_TARGETS = { 0x8892: 1, 0x8893: 1 }; // ARRAY_BUFFER / ELEMENT_ARRAY_BUFFER
@@ -1027,6 +234,35 @@ var _ZW_WGL2M = {
   var _ZW_USAGE = { 0x88E0: 1, 0x88E1: 1, 0x88E2: 1, 0x88E3: 1, 0x88E4: 1 }; // STREAM_/STATIC_/DYNAMIC_{READ,DRAW,COPY}
   var _ZW_BEGIN_MODES = { 0: 1, 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1 };
   var _ZW_CLEAR_MASKS = 0x4100; // DEPTH|STENCIL|COLOR_BUFFER_BIT
+  // enable/disable/isEnabled 的合法 cap 集（GLES2 2.0.25 Table 6.10——WebGL 1.0
+  // §5.14.3：cap 非法 → INVALID_ENUM）。
+  var _ZW_CAPS = {
+    0x0BE2: 1, // BLEND
+    0x0B44: 1, // CULL_FACE
+    0x0B71: 1, // DEPTH_TEST
+    0x0BD0: 1, // DITHER
+    0x8037: 1, // POLYGON_OFFSET_FILL
+    0x809E: 1, // SAMPLE_ALPHA_TO_COVERAGE
+    0x80A0: 1, // SAMPLE_COVERAGE
+    0x0C11: 1, // SCISSOR_TEST
+    0x0B90: 1  // STENCIL_TEST
+  };
+  // 深度比较函数集（depthFunc；Table 6.9 CompareFunc 列）。
+  var _ZW_DEPTH_FUNCS = { 0x0200: 1, 0x0201: 1, 0x0202: 1, 0x0203: 1, 0x0204: 1, 0x0205: 1, 0x0206: 1, 0x0207: 1 }; // NEVER/LESS/EQUAL/LEQUAL/GREATER/NOTEQUAL/GEQUAL/ALWAYS
+  var _ZW_FRONT_FACES = { 0x0900: 1, 0x0901: 1 }; // CW/CCW
+  var _ZW_CULL_MODES = { 0x0404: 1, 0x0405: 1, 0x0408: 1 }; // FRONT/BACK/FRONT_AND_BACK
+  // blend 方程/因子集（GLES2 Table 6.9；MIN/MAX 与 4 参因子同集）。
+  var _ZW_BLEND_EQUATIONS = { 0x8006: 1, 0x8007: 1, 0x8008: 1, 0x800B: 1, 0x800A: 1, 0x8005: 1, 0x8004: 1 }; // FUNC_ADD/SUBTRACT/REVERSE_SUBTRACT/MIN/MAX(FUNC_REVERSE_?)——MIN 0x8007? 见行内注释
+  var _ZW_BLEND_FACTORS = {
+    0: 1, 1: 1,               // ZERO/ONE
+    0x0300: 1, 0x0301: 1,     // SRC_COLOR/ONE_MINUS_SRC_COLOR
+    0x0302: 1, 0x0303: 1,     // SRC_ALPHA/ONE_MINUS_SRC_ALPHA
+    0x0304: 1, 0x0305: 1,     // DST_ALPHA/ONE_MINUS_DST_ALPHA
+    0x0306: 1, 0x0307: 1,     // DST_COLOR/ONE_MINUS_DST_COLOR
+    0x0308: 1, 0x0309: 1,     // SRC_ALPHA_SATURATE/CONSTANT_COLOR? —— 见行内注释
+    0x8001: 1, 0x8002: 1,     // CONSTANT_COLOR/ONE_MINUS_CONSTANT_COLOR
+    0x8003: 1, 0x8004: 1      // CONSTANT_ALPHA/ONE_MINUS_CONSTANT_ALPHA
+  };
 
   function _zwGlIsBufferSource(v) {
     if (!v || typeof v !== 'object') return false;
@@ -1039,7 +275,13 @@ var _ZW_WGL2M = {
   // ——M3 起按簇补真实语义，接口 existence/.length 面已由数据表对齐 idlharness）。
   var _zwGlOps = {
     // —— getError 状态机 ——
+    // 上下文丢失后首次查询返 CONTEXT_LOST_WEBGL、其后 NO_ERROR（WebGL 1.0 §5.15.1
+    // ——丢失上下文不再产生新错误）。
     getError: function (state, args) {
+      if (state._lost) {
+        if (state._lostErrPending) { state._lostErrPending = false; return 0x9242; }
+        return 0;
+      }
       var err = state._err;
       state._err = 0;
       return err;
@@ -1049,19 +291,43 @@ var _ZW_WGL2M = {
     createShader: function (state, args) {
       return _zwGlNewObject('WebGLShader');
     },
-    isContextLost: function (state, args) { return false; },
+    isContextLost: function (state, args) { return !!state._lost; },
     getContextAttributes: function (state, args) {
-      // WebGLContextAttributes 默认面（webgl1.idl dictionary 同构；M2 不消费
-      // 选项值——FIXME(M3)：attrs 尊重与 drawing buffer 配置）。
-      return {
-        alpha: true, depth: true, stencil: false, antialias: true,
-        premultipliedAlpha: true, preserveDrawingBuffer: false,
-        powerPreference: 'default', failIfMajorPerformanceCaveat: false,
-        desynchronized: false
-      };
+      // 丢失上下文 → null（WebGL 1.0 §5.14.2）；否则返创建属性副本（调用方
+      // 改写不得回写状态）。attrs 尊重 getContext 第二参——FIXME(M3)：shim
+      // getContext 现仅透传 colorSpace。
+      if (state._lost) return null;
+      var out = {};
+      for (var k in state._attrs) out[k] = state._attrs[k];
+      return out;
     },
     getSupportedExtensions: function (state, args) {
       return _ZW_EXT_NAMES.slice();
+    },
+    // getShaderPrecisionFormat（WebGL 1.0 §5.14.5；GLES2 §6.2 Table 6.6 最低
+    // 精度面——编译管线缺席不依赖具体 shader 对象，shaderType/precisionType
+    // 域校验先行）。
+    getShaderPrecisionFormat: function (state, args) {
+      var shaderType = +args[0];
+      var precisionType = +args[1];
+      if (shaderType !== 0x8B31 && shaderType !== 0x8B30) { // VERTEX_SHADER/FRAGMENT_SHADER
+        _zwGlSetError(state, 0x0500);
+        return null;
+      }
+      var range = {
+        0x8DF0: [15, 15, 10],  // LOW_FLOAT
+        0x8DF1: [15, 15, 10],  // MEDIUM_FLOAT
+        0x8DF2: [127, 127, 23],// HIGH_FLOAT
+        0x8DF3: [31, 30, 0],   // LOW_INT
+        0x8DF4: [31, 30, 0],   // MEDIUM_INT
+        0x8DF5: [31, 30, 0]    // HIGH_INT
+      }[precisionType];
+      if (!range) { _zwGlSetError(state, 0x0500); return null; }
+      var fmt = _zwGlNewObject('WebGLShaderPrecisionFormat');
+      fmt._rangeMin = range[0];
+      fmt._rangeMax = range[1];
+      fmt._precision = range[2];
+      return fmt;
     },
     getExtension: function (state, args) {
       var name = args.length > 0 ? String(args[0]) : '';
@@ -1075,6 +341,28 @@ var _ZW_WGL2M = {
       } else if (name === 'WEBGL_compressed_texture_etc1') {
         state._compressedFormats[0x8D64] = 1;
         ext = _ZW_EXT_ETC1;
+      } else if (name === 'WEBGL_lose_context') {
+        // WEBGL_lose_context（WebGL 1.0 §5.15.3）：lose/restore 触发
+        // webglcontextlost/restored 事件（WebGLContextEvent，lost 可取消——
+        // preventDefault 抑制后续 restore）。
+        ext = {
+          loseContext: function () {
+            if (state._lost) return;
+            state._lost = true;
+            state._lostErrPending = true;
+            state._err = 0;
+            _zwGlFireContextEvent(state, 'webglcontextlost', true, function (ev) {
+              if (ev.defaultPrevented) state._restoreSuppressed = true;
+            });
+          },
+          restoreContext: function () {
+            if (!state._lost || state._restoreSuppressed) return;
+            state._lost = false;
+            state._restoreSuppressed = false;
+            state._lostErrPending = false;
+            _zwGlFireContextEvent(state, 'webglcontextrestored', false, null);
+          }
+        };
       }
       if (!ext) return null;
       // 每扩展返回稳定对象（幂等语义）。
@@ -1317,8 +605,88 @@ var _ZW_WGL2M = {
       state._viewport = [_zwGlToInteger(args[0]), _zwGlToInteger(args[1]),
         _zwGlToInteger(args[2]), _zwGlToInteger(args[3])];
     },
-    enable: function (state, args) { state._enabled[+args[0]] = true; },
-    disable: function (state, args) { state._enabled[+args[0]] = false; },
+    enable: function (state, args) {
+      var cap = +args[0];
+      if (!_ZW_CAPS[cap]) { _zwGlSetError(state, 0x0500); return; }
+      state._enabled[cap] = true;
+    },
+    disable: function (state, args) {
+      var cap = +args[0];
+      if (!_ZW_CAPS[cap]) { _zwGlSetError(state, 0x0500); return; }
+      state._enabled[cap] = false;
+    },
+
+    // —— 状态设置族（M3-S1 查询面对应写入口；GLES2 Table 6.9/6.10 域校验）——
+    isEnabled: function (state, args) {
+      var cap = +args[0];
+      if (!_ZW_CAPS[cap]) { _zwGlSetError(state, 0x0500); return false; }
+      return !!state._enabled[cap];
+    },
+    depthMask: function (state, args) { state._depthMask = !!args[0]; },
+    frontFace: function (state, args) {
+      var mode = +args[0];
+      if (!_ZW_FRONT_FACES[mode]) { _zwGlSetError(state, 0x0500); return; }
+      state._frontFace = mode;
+    },
+    cullFace: function (state, args) {
+      var mode = +args[0];
+      if (!_ZW_CULL_MODES[mode]) { _zwGlSetError(state, 0x0500); return; }
+      state._cullFaceMode = mode;
+    },
+    depthFunc: function (state, args) {
+      var fn = +args[0];
+      if (!_ZW_DEPTH_FUNCS[fn]) { _zwGlSetError(state, 0x0500); return; }
+      state._depthFunc = fn;
+    },
+    depthRange: function (state, args) {
+      // zNear/zFar clamp 到 [0,1]（GLES2 §2.13——越界截取不报错）。
+      var near = Math.min(Math.max(+args[0] || 0, 0), 1);
+      var far = Math.min(Math.max(+args[1] || 0, 0), 1);
+      state._depthRange = [isNaN(near) ? 0 : near, isNaN(far) ? 1 : far];
+    },
+    lineWidth: function (state, args) {
+      var w = +args[0];
+      if (isNaN(w) || w <= 0) { _zwGlSetError(state, 0x0501); return; } // INVALID_VALUE
+      // WebGL §6.22：非 1 宽度恒不受支持（ALIASED_LINE_WIDTH_RANGE [1,1]）——
+      // 状态记录、实际线宽恒 1。
+      state._lineWidth = Math.min(Math.max(w, 1), 1);
+    },
+    sampleCoverage: function (state, args) {
+      var v = +args[0];
+      state._sampleCoverageValue = isNaN(v) ? 1 : Math.min(Math.max(v, 0), 1);
+      state._sampleCoverageInvert = !!args[1];
+    },
+    blendColor: function (state, args) {
+      for (var i = 0; i < 4; i++) state._blendColor[i] = +args[i] || 0; // NaN→0（§6.20）
+    },
+    blendFunc: function (state, args) {
+      var src = +args[0];
+      var dst = +args[1];
+      if (!_ZW_BLEND_FACTORS[src] || !_ZW_BLEND_FACTORS[dst]) {
+        _zwGlSetError(state, 0x0500);
+        return;
+      }
+      state._blendSrcRGB = src; state._blendDstRGB = dst;
+      state._blendSrcAlpha = src; state._blendDstAlpha = dst;
+    },
+    blendEquation: function (state, args) {
+      var mode = +args[0];
+      // WebGL 1.0 core 仅 FUNC_ADD/FUNC_SUBTRACT/FUNC_REVERSE_SUBTRACT
+      //（MIN/MAX 属 EXT_blend_minmax，不在 webgl1.idl 常量集）。
+      if (mode !== 0x8006 && mode !== 0x800A && mode !== 0x800B) {
+        _zwGlSetError(state, 0x0500);
+        return;
+      }
+      state._blendEquationRGB = mode; state._blendEquationAlpha = mode;
+    },
+    stencilFunc: function (state, args) {
+      var fn = +args[0];
+      if (!_ZW_DEPTH_FUNCS[fn]) { _zwGlSetError(state, 0x0500); return; }
+      state._stencilFunc = fn;
+      state._stencilRef = +args[1] || 0;
+      var m = args.length > 2 ? +args[2] : 0xFFFFFFFF;
+      state._stencilValueMask = isNaN(m) ? 0xFFFFFFFF : (m >>> 0); // mask=0 合法，不得回退全掩码
+    },
 
     // —— clear（标尺①：本地 reftest 光栅化面）——
     // 颜色清屏经**既有 host 2d 上下文**（source-over 不透明填充 = GL 替换语义
@@ -1373,29 +741,114 @@ var _ZW_WGL2M = {
         String(rw), String(rh));
     },
 
-    // —— 参数查询（get/plausible 默认面）——
+    // —— 参数查询（M3-S1 全表；WebGL 1.0 §5.14.6 + GLES2 2.0.25 Table 6.9/6.10/
+    //     6.18 + WebGL §6.4 最小支持上限）——
+    // 实现相关上限取 WebGL §6.4 表最小值（FIXME(M3 管线簇)：接 render-foundation
+    // 真实 limits）；绑定/状态值读自 state；typed array 返回形按 GLES2 表列型。
     getParameter: function (state, args) {
       var pname = args.length > 0 ? +args[0] : 0;
       switch (pname) {
-        case 0x0D33: return state._drawingBufferWidth;  // MAX_TEXTURE_SIZE 近似面——FIXME(M3) 真值
+        // —— 字符串身份（WebGL §5.14.5）——
+        case 0x1F00: return 'ZeroWeb';                  // VENDOR
+        case 0x1F01: return 'ZeroWeb';                  // RENDERER
+        case 0x1F02: return 'WebGL 1.0';                // VERSION
+        case 0x8B8C: return 'WebGL GLSL ES 1.0';        // SHADING_LANGUAGE_VERSION
+        // —— 绘图缓冲构成 ——
+        case 0x0D50: return 4;                          // SUBPIXEL_BITS（Table 6.18 固定 4）
+        case 0x0D52: return 8;                          // RED_BITS
+        case 0x0D53: return 8;                          // GREEN_BITS
+        case 0x0D54: return 8;                          // BLUE_BITS
+        case 0x0D55: return state._attrs.alpha ? 8 : 0; // ALPHA_BITS
+        case 0x0D56: return 0;                          // DEPTH_BITS——FIXME(M3)：无 depth attachment
+        case 0x0D57: return 0;                          // STENCIL_BITS——同上
+        case 0x80A8: return 0;                          // SAMPLE_BUFFERS（无 MSAA 绘图缓冲）
+        case 0x80A9: return 0;                          // SAMPLES
+        // —— 实现相关上限（WebGL §6.4 最小支持表）——
+        case 0x0D33: return 4096;                       // MAX_TEXTURE_SIZE
+        case 0x851C: return 4096;                       // MAX_CUBE_MAP_TEXTURE_SIZE
+        case 0x84E8: return 4096;                       // MAX_RENDERBUFFER_SIZE
+        case 0x8869: return 16;                         // MAX_VERTEX_ATTRIBS
+        case 0x8DFB: return 128;                        // MAX_VERTEX_UNIFORM_VECTORS
+        case 0x8DFD: return 16;                         // MAX_FRAGMENT_UNIFORM_VECTORS
+        case 0x8DFC: return 16;                         // MAX_VARYING_VECTORS
+        case 0x8872: return 16;                         // MAX_TEXTURE_IMAGE_UNITS
+        case 0x8B4C: return 16;                         // MAX_VERTEX_TEXTURE_IMAGE_UNITS
+        case 0x8B4D: return 32;                         // MAX_COMBINED_TEXTURE_IMAGE_UNITS
+        case 0x0D3A:                                    // MAX_VIEWPORT_DIMS（Int32Array）
+          return new Int32Array([16384, 16384]);        // FIXME(M3)：对齐 MAX_CANVAS_DIM
+        case 0x846D: return new Float32Array([1, 1024]);  // ALIASED_POINT_SIZE_RANGE
+        case 0x846E: return new Float32Array([1, 1]);     // ALIASED_LINE_WIDTH_RANGE（§6.22 恒 [1,1]）
+        // —— 压缩纹理格式表（使能扩展写入 _compressedFormats）——
+        case 0x86A3: {                                  // COMPRESSED_TEXTURE_FORMATS（Uint32Array；pin rev IDL 0x86A3）
+          var arr = [];
+          for (var kc in state._compressedFormats) arr.push(+kc);
+          return new Uint32Array(arr);
+        }
+        case 0x8B9B: return 0x1908;                     // IMPLEMENTATION_COLOR_READ_FORMAT = RGBA
+        case 0x8B9A: return 0x1401;                     // IMPLEMENTATION_COLOR_READ_TYPE = UNSIGNED_BYTE
+        // —— 像素/深度/模板状态（Table 6.9/6.10）——
         case 0x0BA2: return state._viewport;            // VIEWPORT
         case 0x0C10: return state._scissor;             // SCISSOR_BOX
-        case 0x8056: return new Float32Array(state._clearColor); // COLOR_CLEAR_VALUE
+        case 0x0B70: return new Float32Array(state._depthRange);  // DEPTH_RANGE
+        case 0x0B21: return state._lineWidth;           // LINE_WIDTH
+        case 0x0B44: return !!state._enabled[0x0B44];   // CULL_FACE
+        case 0x0B45: return state._cullFaceMode;        // CULL_FACE_MODE
+        case 0x0B46: return state._frontFace;           // FRONT_FACE
+        case 0x0B71: return !!state._enabled[0x0B71];   // DEPTH_TEST
+        case 0x0B74: return state._depthFunc;           // DEPTH_FUNC
+        case 0x0B72: return state._depthMask;           // DEPTH_WRITEMASK（pin rev IDL 0x0B72）
+        case 0x0B73: return 1;                          // DEPTH_CLEAR_VALUE（pin rev IDL 0x0B73；标量，Table 6.9 初始 1）
+        case 0x0B90: return !!state._enabled[0x0B90];   // STENCIL_TEST
+        case 0x0B92: return state._stencilFunc;         // STENCIL_FUNC
+        case 0x0B93: return state._stencilValueMask;    // STENCIL_VALUE_MASK
+        case 0x0B94: case 0x0B95: case 0x0B96:          // STENCIL_FAIL/PASS_DEPTH_FAIL/PASS_DEPTH_PASS
+          return 0x1E00;                                // KEEP 默认（stencilOp setter M3-S3）
+        case 0x0B97: return state._stencilRef;          // STENCIL_REF
+        case 0x0B98: return state._stencilWritemask;    // STENCIL_WRITEMASK
+        case 0x8005: return state._blendColor ? new Float32Array(state._blendColor) : new Float32Array([0, 0, 0, 0]); // BLEND_COLOR（pin rev IDL 0x8005）
+        case 0x0BE2: return !!state._enabled[0x0BE2];   // BLEND
+        case 0x8009: return state._blendEquationRGB;    // BLEND_EQUATION（RGB 同名同值）
+        case 0x883D: return state._blendEquationAlpha;  // BLEND_EQUATION_ALPHA
+        case 0x80C9: return state._blendSrcRGB;         // BLEND_SRC_RGB
+        case 0x80C8: return state._blendDstRGB;         // BLEND_DST_RGB
+        case 0x80CB: return state._blendSrcAlpha;       // BLEND_SRC_ALPHA
+        case 0x80CA: return state._blendDstAlpha;       // BLEND_DST_ALPHA
+        case 0x80AA: return state._sampleCoverageValue;   // SAMPLE_COVERAGE_VALUE
+        case 0x80AB: return state._sampleCoverageInvert;  // SAMPLE_COVERAGE_INVERT
+        case 0x809E: return !!state._enabled[0x809E];   // SAMPLE_ALPHA_TO_COVERAGE
+        case 0x80A0: return !!state._enabled[0x80A0];   // SAMPLE_COVERAGE
+        case 0x0BD0: return !!state._enabled[0x0BD0];   // DITHER
+        case 0x8037: return !!state._enabled[0x8037];   // POLYGON_OFFSET_FILL（pin rev IDL 0x8037）
+        case 0x0C11: return !!state._enabled[0x0C11];   // SCISSOR_TEST
+        case 0x0C23: return state._colorMask.slice();   // COLOR_WRITEMASK
+        case 0x0C22: return new Float32Array(state._clearColor); // COLOR_CLEAR_VALUE（pin rev IDL 0x0C22）
+        case 0x0B91: return state._stencilClearValue !== undefined ? state._stencilClearValue : 0; // STENCIL_CLEAR_VALUE（Table 6.9 初始 0）
+        // —— 绑定对象（§5.14.6 绑定查询）——
         case 0x8894: return state._bindings[0x8892];    // ARRAY_BUFFER_BINDING
         case 0x8895: return state._bindings[0x8893];    // ELEMENT_ARRAY_BUFFER_BINDING
         case 0x8069: return state._texBindings[0x0DE1]; // TEXTURE_BINDING_2D
+        case 0x8514: return state._texBindings[0x8513]; // TEXTURE_BINDING_CUBE_MAP
         case 0x8B8D: return state._program;             // CURRENT_PROGRAM
-        case 0x1F01: return 'ZeroWeb';                  // VENDOR
-        case 0x1F02: return 'ZeroWeb';                  // RENDERER
-        case 0x1F03: return 'WebGL 1.0';                // VERSION
-        case 0x8B8C: return 'WebGL GLSL ES 1.0';        // SHADING_LANGUAGE_VERSION
+        // —— WebGL 专有像素存取参数（WebGL §5.14.8；经 pixelStorei 入 _pixelStore）——
+        case 0x9240: return !!state._pixelStore['0x9240'];  // UNPACK_FLIP_Y_WEBGL
+        case 0x9241: return !!state._pixelStore['0x9241'];  // UNPACK_PREMULTIPLY_ALPHA_WEBGL
+        case 0x9243:                                          // UNPACK_COLORSPACE_CONVERSION_WEBGL
+          return state._pixelStore['0x9243'] !== undefined ? state._pixelStore['0x9243'] : 0x9244; // BROWSER_DEFAULT_WEBGL
         default:
           _zwGlSetError(state, 0x0500);
           return null;
       }
     },
     pixelStorei: function (state, args) {
-      state._pixelStore[String(+args[0])] = _zwGlToInteger(args[1]);
+      var pname = +args[0];
+      if (pname === 0x0CF5) { // UNPACK_ALIGNMENT（GLES2 §3.6.1——仅 1/2/4/8）
+        var align = _zwGlToInteger(args[1]);
+        if (align !== 1 && align !== 2 && align !== 4 && align !== 8) {
+          _zwGlSetError(state, 0x0501); // INVALID_VALUE
+          return;
+        }
+      }
+      state._pixelStore[String(pname)] = _zwGlToInteger(args[1]);
     },
 
     // —— shader/program 管线（M2 状态记录面；编译链接 FIXME(M3 shader 簇)）——
@@ -1529,12 +982,45 @@ var _ZW_WGL2M = {
       _program: null,
       _clearColor: [0, 0, 0, 0],
       _colorMask: [true, true, true, true],
-      _scissor: [0, 0, 0, 0],
+      // GLES2 初始 scissor box = (0,0,首绑绘图缓冲尺寸)（GLES2 2.0.25 §2.8.1——
+      // enable(SCISSOR_TEST) 前不参与 clear 裁剪，M2 clear 语义不受影响）。
+      _scissor: [0, 0, width, height],
       _viewport: [0, 0, width, height],
       _enabled: {},           // cap 枚举 → bool
       _pixelStore: {},
       _compressedFormats: {}, // 使能的压缩格式（getExtension 写入）
-      _extObjects: {}
+      _extObjects: {},
+      // —— M3-S1 查询面状态（GLES2 2.0.25 Table 6.9/6.10 初始值）——
+      // webgl1.idl dictionary 同构的创建属性（getContext 第二参 attrs 的
+      // 尊重面 FIXME(M3)：shim getContext 现仅透传 colorSpace——默认值按
+      // WebGL 1.0 §5.2 表）。
+      _attrs: {
+        alpha: true, depth: true, stencil: false, antialias: true,
+        premultipliedAlpha: true, preserveDrawingBuffer: false,
+        powerPreference: 'default', failIfMajorPerformanceCaveat: false,
+        desynchronized: false
+      },
+      _frontFace: 0x0901,       // CCW（Table 6.10）
+      _cullFaceMode: 0x0405,    // BACK
+      _depthFunc: 0x0201,       // LESS
+      _depthMask: true,
+      _depthRange: [0, 1],
+      _lineWidth: 1,
+      _sampleCoverageValue: 1,
+      _sampleCoverageInvert: false,
+      _stencilFunc: 0x0207,     // ALWAYS
+      _stencilRef: 0,
+      _stencilValueMask: 0xFFFFFFFF,
+      _stencilWritemask: 0xFFFFFFFF,
+      _blendColor: [0, 0, 0, 0],
+      _blendSrcRGB: 1, _blendDstRGB: 0,   // glBlendFunc 默认 ONE/ZERO（no-op blend）
+      _blendSrcAlpha: 1, _blendDstAlpha: 0,
+      _blendEquationRGB: 0x8006,          // FUNC_ADD
+      _blendEquationAlpha: 0x8006,
+      // —— 上下文丢失（WebGL 1.0 §5.15——WEBGL_lose_context 驱动）——
+      _lost: false,
+      _lostErrPending: false,   // 丢失后首次 getError 返 CONTEXT_LOST_WEBGL
+      _restoreSuppressed: false // webglcontextlost 被 preventDefault → 恢复抑制
     };
     return ctx;
   };
@@ -1647,6 +1133,12 @@ var _ZW_WGL2M = {
     }]
   });
 
+  // 丢失态仍可调用的方法白名单（WebGL 1.0 §5.15.1 查询族）。
+  var _ZW_LOST_ALLOW = {
+    getError: 1, isContextLost: 1, getContextAttributes: 1,
+    getSupportedExtensions: 1, getExtension: 1
+  };
+
   // ── 上下文接口（常量/方法按数据表；属性经包装层注入品牌接口名）────────
   // 注：_zwGlDefineInterface 的属性包装面向对象族（self 品牌内嵌 getter）；
   // 上下文属性的接口名品牌在 wrapper 生成时无法从 self 推——改由方法 wrapper
@@ -1670,8 +1162,15 @@ var _ZW_WGL2M = {
             throw new TypeError(mname + ': ' + len +
               ' argument' + (len === 1 ? '' : 's') + ' required');
           }
+          var st = this._zwGlState;
+          // 上下文丢失：除查询/扩展族外全部方法立即返回（WebGL 1.0 §5.15.1——
+          // 无错误、无状态副作用）；getError/getContextAttributes 的丢失语义在
+          // impl 内。FIXME(M4)：按 §5.15.1 逐项核对扩展/查询族在丢失态的
+          // 返回值清单（getSupportedExtensions/getExtension 保持可用——
+          // restoreContext 触达面）。
+          if (st._lost && !_ZW_LOST_ALLOW[op]) return undefined;
           var impl = _zwGlOps[op];
-          return impl ? impl(this._zwGlState, arguments) : undefined;
+          return impl ? impl(st, arguments) : undefined;
         };
         Object.defineProperty(fn, 'length', { value: len });
         Object.defineProperty(fn, 'name', { value: op });
