@@ -6054,6 +6054,10 @@
     // 通道（drawImage wire 复制）后补内容拷贝。
     if (typeof OffscreenCanvas === 'function' && val instanceof OffscreenCanvas) {
       var _occ = new OffscreenCanvas(val.width, val.height);
+      // M3-S1b：transferControlToOffscreen 占位的 surface 键随迁（postMessage 宿主
+      // 分支 replacer 据键发 `__zwXferCanvas` 标记——克隆体丢键则合法转移误抛；
+      // 普通画布无键不受影响）。
+      if (val._zwXferKey) { _occ._zwXferKey = val._zwXferKey; }
       seen.set(val, _occ); return _occ;
     }
     // workers-compat M3：Error 克隆保持类型（spec serialize Error object 情形——

@@ -70,13 +70,31 @@ impl WorkerRuntime {
     ///
     /// Worker 在独立线程中创建自己的 QuickJS Runtime + Context 并执行初始化脚本。
     pub fn new(script: &str, config: SandboxConfig) -> Result<Self, ScriptError> {
+        Self::new_with_canvas_drain(script, config, None)
+    }
+
+    /// 创建 Dedicated Worker 并挂 canvas 操作排空回调（S1b canvas 桥，同 worker.rs
+    /// v8 侧语义）：回调在命令循环间隙收 `JSON.stringify(_workerCanvasOps)` 原文。
+    /// `None` 时操作读回即丢弃（无桥路径不累积）。
+    pub fn new_with_canvas_drain(
+        script: &str,
+        config: SandboxConfig,
+        canvas_drain: Option<crate::WorkerCanvasDrainHandle>,
+    ) -> Result<Self, ScriptError> {
         let script = script.to_string();
 
         let core = ThreadedRuntimeCore::spawn(
             "zero-quickjs-worker",
             "worker",
             move |cmd_receiver, event_sender, worker_terminate_flag| {
-                quickjs_worker_thread_fn(script, config, cmd_receiver, event_sender, worker_terminate_flag);
+                quickjs_worker_thread_fn(
+                    script,
+                    config,
+                    cmd_receiver,
+                    event_sender,
+                    worker_terminate_flag,
+                    canvas_drain,
+                );
             },
         )?;
 
@@ -171,8 +189,16 @@ fn quickjs_worker_thread_fn(
     cmd_receiver: Receiver<WorkerCommand>,
     event_sender: Sender<WorkerEvent>,
     terminate_flag: Arc<AtomicBool>,
+    canvas_drain: Option<crate::WorkerCanvasDrainHandle>,
 ) {
-    quickjs_worker_thread_body(init_script, config, cmd_receiver, event_sender.clone(), terminate_flag);
+    quickjs_worker_thread_body(
+        init_script,
+        config,
+        cmd_receiver,
+        event_sender.clone(),
+        terminate_flag,
+        canvas_drain,
+    );
     let _ = event_sender.send(WorkerEvent::Closed);
 }
 
@@ -190,6 +216,7 @@ fn quickjs_worker_thread_body(
     cmd_receiver: Receiver<WorkerCommand>,
     event_sender: Sender<WorkerEvent>,
     terminate_flag: Arc<AtomicBool>,
+    canvas_drain: Option<crate::WorkerCanvasDrainHandle>,
 ) {
     let runtime = match rquickjs::Runtime::new() {
         Ok(r) => r,
@@ -229,6 +256,7 @@ fn quickjs_worker_thread_body(
         }
         quickjs_drain(&mut ctx, &event_sender);
         init_close = quickjs_drain_timer_ops(&mut ctx, &mut timers);
+        quickjs_drain_canvas_ops(&mut ctx, &canvas_drain);
     });
     if init_close {
         return; // bootstrap close()：wrapper 发 Closed
@@ -255,6 +283,7 @@ fn quickjs_worker_thread_body(
                 );
                 quickjs_drain(&mut ctx, &event_sender);
                 close_requested = quickjs_drain_timer_ops(&mut ctx, &mut timers);
+                quickjs_drain_canvas_ops(&mut ctx, &canvas_drain);
             });
             // interval 重臂（one-shot 摘除；callback 内 clear 已移除条目则不重臂）。
             match period_ms {
@@ -298,6 +327,7 @@ fn quickjs_worker_thread_body(
                     quickjs_exec(&mut ctx, &code, &event_sender, &terminate_flag, true);
                     quickjs_drain(&mut ctx, &event_sender);
                     close_requested = quickjs_drain_timer_ops(&mut ctx, &mut timers);
+                    quickjs_drain_canvas_ops(&mut ctx, &canvas_drain);
                 });
                 if close_requested {
                     return; // wrapper 发 Closed
@@ -310,6 +340,7 @@ fn quickjs_worker_thread_body(
                     quickjs_exec(&mut ctx, &dispatch, &event_sender, &terminate_flag, true);
                     quickjs_drain(&mut ctx, &event_sender);
                     close_requested = quickjs_drain_timer_ops(&mut ctx, &mut timers);
+                    quickjs_drain_canvas_ops(&mut ctx, &canvas_drain);
                 });
                 if close_requested {
                     return; // wrapper 发 Closed
@@ -400,6 +431,21 @@ fn quickjs_drain_timer_ops(ctx: &mut rquickjs::Ctx, timers: &mut HashMap<u64, Wo
     }
     let _ = ctx.eval::<rquickjs::Value, _>("_workerTimerOps = []".to_string());
     close_requested
+}
+
+/// 排空 bootstrap canvas 操作队列 `_workerCanvasOps`（S1b canvas 桥，同 worker.rs
+/// v8 侧语义）：整体 `JSON.stringify` 读回交宿主排空回调；无回调时读回即丢弃。
+fn quickjs_drain_canvas_ops(ctx: &mut rquickjs::Ctx, drain: &Option<crate::WorkerCanvasDrainHandle>) {
+    let json: String = ctx
+        .eval::<String, _>("JSON.stringify(_workerCanvasOps)".to_string())
+        .unwrap_or_default();
+    if json.len() > 2
+        && let Some(d) = drain.as_ref()
+        && let Ok(mut guard) = d.lock()
+    {
+        guard(&json);
+    }
+    let _ = ctx.eval::<rquickjs::Value, _>("_workerCanvasOps = []".to_string());
 }
 
 /// 排空 Worker 消息队列，发送到主线程。
@@ -564,6 +610,117 @@ mod tests {
             elapsed < Duration::from_secs(4),
             "QuickJS worker Drop 挂死（耗时 {:?}），R3399 回归",
             elapsed
+        );
+    }
+
+    // ── S1b：worker canvas 排空（对称 V8 worker 测试——bootstrap `_workerCanvasOps`
+    // → Rust drain 回调，QuickJS 命令循环间隙排空）。
+
+    /// 收集 drain 批次直到出现 `needle`（超时 panic——命令循环间隙排空，延迟毫秒级）。
+    fn wait_canvas_drain(drained: &std::sync::Arc<std::sync::Mutex<Vec<String>>>, needle: &str) -> String {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            let all = drained.lock().unwrap().join("");
+            if all.contains(needle) {
+                return all;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "canvas drain 未出现 {needle}，got: {all}"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    #[test]
+    fn test_quickjs_worker_canvas_ops_drain_constructor_path() {
+        let drained: std::sync::Arc<std::sync::Mutex<Vec<String>>> = Default::default();
+        let sink = drained.clone();
+        let drain: crate::WorkerCanvasDrain = Box::new(move |json: &str| {
+            sink.lock().unwrap().push(json.to_string());
+        });
+        let mut worker = WorkerRuntime::new_with_canvas_drain(
+            "var oc = new OffscreenCanvas(64, 32);\
+             var ctx = oc.getContext('2d');\
+             ctx.fillStyle = '#ff0000';\
+             ctx.fillRect(0, 0, 64, 32);\
+             postMessage('drawn');",
+            SandboxConfig::default(),
+            Some(std::sync::Arc::new(std::sync::Mutex::new(drain))),
+        )
+        .unwrap();
+        // 先等 drain 回调（init 排空点晚于消息事件入队——先 recv 再 terminate 会
+        // 打断排空序列，drain 丢批）。
+        let all = wait_canvas_drain(&drained, "fillRect");
+        let event = worker.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(
+            matches!(&event, WorkerEvent::Message(m) if m == "drawn"),
+            "got: {event:?}"
+        );
+        worker.terminate();
+        assert!(all.contains("\"newCtx\""), "构造路径应排空 newCtx，got: {all}");
+        assert!(all.contains("setFillStyle"), "样式 setter 应记 op，got: {all}");
+    }
+
+    #[test]
+    fn test_quickjs_worker_canvas_ops_drain_transfer_revive_binds_surface_key() {
+        let drained: std::sync::Arc<std::sync::Mutex<Vec<String>>> = Default::default();
+        let sink = drained.clone();
+        let drain: crate::WorkerCanvasDrain = Box::new(move |json: &str| {
+            sink.lock().unwrap().push(json.to_string());
+        });
+        let mut worker = WorkerRuntime::new_with_canvas_drain(
+            // 模拟 shim spawn prologue 的 `_dispatchMessage` JSON.parse 补丁（真线程\
+            // 流水线：宿主 post JSON 字符串 → prologue 解析 → bootstrap `_zwDm` 复活\
+            // `__zwXferCanvas` 标记 → onmessage）——裸 WorkerRuntime 消息面以字符串\
+            // 为载体，无补丁则 revive 不达。\
+            "var _zwDm = _dispatchMessage;\
+             _dispatchMessage = function (raw) { _zwDm(typeof raw === 'string' ? JSON.parse(raw) : raw); };\
+             onmessage = function (e) {\
+               var ctx = e.data.getContext('2d');\
+               ctx.fillRect(0, 0, 64, 32);\
+               postMessage('bound:' + e.data.width + 'x' + e.data.height + ':'\
+                 + (e.data instanceof OffscreenCanvas));\
+             };",
+            SandboxConfig::default(),
+            Some(std::sync::Arc::new(std::sync::Mutex::new(drain))),
+        )
+        .unwrap();
+        std::thread::sleep(Duration::from_millis(200));
+        worker
+            .post_message(r#"{"__zwXferCanvas":{"key":"xfer-9","w":64,"h":32}}"#)
+            .unwrap();
+        // 先等 drain 回调（PostMessage 排空点晚于消息事件入队——同上竞态规避）。
+        let all = wait_canvas_drain(&drained, "\"bind\"");
+        let event = worker.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(
+            matches!(&event, WorkerEvent::Message(m) if m == "bound:64x32:true"),
+            "复活对象应为本地 OffscreenCanvas（尺寸保真），got: {event:?}"
+        );
+        worker.terminate();
+        // bind 与 newCtx/fillRect 应共享同一复活 cid（宿主排空侧 prov 映射闭环——
+        // 复活路径 getContext 也记 newCtx）。
+        let ops: Vec<serde_json::Value> = drained
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|b| serde_json::from_str::<Vec<serde_json::Value>>(b).ok())
+            .flatten()
+            .collect();
+        let bind_cid = ops
+            .iter()
+            .find(|op| op[0] == "bind" && op[2] == "xfer-9")
+            .map(|op| op[1].as_u64().unwrap())
+            .expect("复活应记 bind op");
+        assert!(
+            ops.iter()
+                .any(|op| op[0] == "newCtx" && op[1].as_u64() == Some(bind_cid)),
+            "复活路径 getContext 应记同 cid newCtx，ops: {all}"
+        );
+        assert!(
+            ops.iter()
+                .any(|op| op[0] == "op" && op[1].as_u64() == Some(bind_cid) && op[2] == "fillRect"),
+            "绘制 op 应引用复活 cid，ops: {all}"
         );
     }
 }

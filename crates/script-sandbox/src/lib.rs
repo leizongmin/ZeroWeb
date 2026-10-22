@@ -159,14 +159,26 @@ pub(crate) fn v8_heap_limits(config: &SandboxConfig) -> Option<(usize, usize)> {
     Some((initial, max))
 }
 
+/// S1b canvas 桥：worker canvas 操作排空回调——收 `JSON.stringify(_workerCanvasOps)`
+/// 原文（newCtx/op/resize/bind 条目数组），由宿主侧求值进 worker 线程本地
+/// CanvasRegistry（renderer worker_host 经 `canvas_context_op` 纯栅格核）。
+pub type WorkerCanvasDrain = Box<dyn FnMut(&str) + Send>;
+
+/// 线程共享句柄形态（worker 线程命令循环间隙调用）。
+pub type WorkerCanvasDrainHandle = std::sync::Arc<std::sync::Mutex<WorkerCanvasDrain>>;
+
 /// Worker bootstrap（V8/QuickJS worker 共享，注入 worker 全局环境）。
 ///
-/// 四块 JS 面（Rust 侧经排空协议消费，见 worker.rs / quickjs_worker.rs）：
+/// 五块 JS 面（Rust 侧经排空协议消费，见 worker.rs / quickjs_worker.rs）：
 /// - 全局别名：`self` = 全局对象（worker 脚本惯用 `self.onmessage`/`self.postMessage` 访问面）。
-/// - 消息：`postMessage` 入 `_workerMessageQueue`，`_dispatchMessage` 派发给 `onmessage`。
+/// - 消息：`postMessage` 入 `_workerMessageQueue`，`_dispatchMessage` 派发给 `onmessage`；
+///   入站 `__zwXferCanvas` 标记复活为 worker 本地 OffscreenCanvas（S1b canvas 桥）。
 /// - 定时器：`setTimeout`/`setInterval`/`clearTimeout`/`clearInterval` 只把操作（arm/cancel）
 ///   记入 `_workerTimerOps`，到期在 worker 线程命令循环间隙由 Rust 轮驱动 `_workerTimerFire`。
 ///   isolate 无事件循环，纯 JS 不可自举定时器。
+/// - canvas：`OffscreenCanvas` 2D 写路径只把操作记入 `_workerCanvasOps`
+///   （newCtx/op/resize/bind，S1b 排空协议），宿主侧经 `canvas_context_op` 求值进
+///   worker 线程本地 registry；读路径（getImageData 等）排空模型不可同步返回暂缺。
 /// - 关闭：`close()` 记 `close` 操作，Rust 侧发 `WorkerEvent::Closed` 并退出线程
 ///   （https://html.spec.whatwg.org/multipage/workers.html#dom-dedicatedworkerglobalscope-close）。
 pub(crate) const WORKER_BOOTSTRAP_JS: &str = r#"
@@ -178,13 +190,118 @@ pub(crate) const WORKER_BOOTSTRAP_JS: &str = r#"
     var postMessage = function(data) {
         _workerMessageQueue.push(typeof data === 'string' ? data : JSON.stringify(data));
     };
+    var _workerCanvasOps = [];
+    var _workerCanvasSeq = 0;
+    var _workerTimerSeq = 0;
+    // ── worker 2D ctx 代理（S1b）：写路径记 op，样式 setter 记 set-* op 并存 JS 镜像；
+    // 读路径（measureText/getImageData 等）排空模型不可同步返回暂缺（FIXME(S1c)：呈现
+    // 管线落地后按需补读路径）。方法名与 canvas_context_op op 名 1:1（同主线程 shim）。
+    var _zwWorkerMakeCtx2d = function(cid) {
+        var target = {};
+        var pushOp = function(name) {
+            return function() {
+                var args = [];
+                for (var i = 0; i < arguments.length; i++) { args.push(arguments[i]); }
+                _workerCanvasOps.push(['op', cid, name, args]);
+            };
+        };
+        var drawOps = ['beginPath', 'closePath', 'moveTo', 'lineTo', 'arc', 'fill', 'stroke',
+            'fillText', 'strokeText', 'fillRect', 'strokeRect', 'clearRect',
+            'quadraticCurveTo', 'bezierCurveTo', 'ellipse', 'arcTo', 'roundRect', 'rect',
+            'clip', 'save', 'restore', 'translate', 'rotate', 'scale',
+            'setTransform', 'transform', 'resetTransform', 'reset'];
+        for (var di = 0; di < drawOps.length; di++) {
+            target[drawOps[di]] = pushOp(drawOps[di]);
+        }
+        var styleProps = { fillStyle: 'setFillStyle', strokeStyle: 'setStrokeStyle',
+            globalAlpha: 'setGlobalAlpha', lineWidth: 'setLineWidth',
+            lineJoin: 'setLineJoin', lineCap: 'setLineCap',
+            shadowColor: 'setShadowColor', shadowBlur: 'setShadowBlur',
+            shadowOffsetX: 'setShadowOffsetX', shadowOffsetY: 'setShadowOffsetY',
+            globalCompositeOperation: 'setCompositeOperation' };
+        for (var sp in styleProps) {
+            Object.defineProperty(target, sp, { set: pushOp(styleProps[sp]), enumerable: true, configurable: true });
+        }
+        return target;
+    };
+    var _zwOffscreenInit = function(oc, w, h, presetCid) {
+        var ctx = null;
+        var cid = presetCid;
+        oc._zwCid = 0;
+        Object.defineProperty(oc, 'width', {
+            get: function() { return w; },
+            set: function(v) {
+                if (typeof v !== 'number' || !isFinite(v) || v < 0) { return; }
+                w = v | 0;
+                if (ctx) { _workerCanvasOps.push(['resize', cid, w, h]); }
+            },
+            enumerable: true, configurable: true
+        });
+        Object.defineProperty(oc, 'height', {
+            get: function() { return h; },
+            set: function(v) {
+                if (typeof v !== 'number' || !isFinite(v) || v < 0) { return; }
+                h = v | 0;
+                if (ctx) { _workerCanvasOps.push(['resize', cid, w, h]); }
+            },
+            enumerable: true, configurable: true
+        });
+        oc.getContext = function(type) {
+            if (String(type) !== '2d') { return null; }
+            if (ctx) { return ctx; }
+            // worker 本地 registry 侧 ctx 尚不存在——无论构造还是复活路径，首个
+            // getContext 都要记 newCtx（宿主排空侧分配真 id 并建 prov 映射）。
+            if (!cid) { cid = ++_workerCanvasSeq; }
+            _workerCanvasOps.push(['newCtx', cid, w, h]);
+            oc._zwCid = cid;
+            ctx = _zwWorkerMakeCtx2d(cid);
+            return ctx;
+        };
+        oc.transferToImageBitmap = function() {
+            // 排空模型读路径不可同步返回（FIXME(S1c)：呈现管线落地后按需补）。
+            throw new Error('transferToImageBitmap: not supported in threaded worker canvas bridge');
+        };
+        return oc;
+    };
+    // OffscreenCanvas（https://html.spec.whatwg.org/multipage/canvas.html#the-offscreencanvas-interface）
+    // ——worker 侧像素只存 worker 线程本地 registry（无 paint 路径，呈现面属 S1c patch 管线）。
+    var OffscreenCanvas = function(width, height) {
+        if (!(this instanceof OffscreenCanvas)) { return new OffscreenCanvas(width, height); }
+        _zwOffscreenInit(this,
+            (typeof width === 'number' && width >= 0) ? (width | 0) : 300,
+            (typeof height === 'number' && height >= 0) ? (height | 0) : 150, 0);
+    };
+    // 入站 transfer 复活（S1b）：页面宿主分支 postMessage 把转移的 OffscreenCanvas 序列化为
+    // `__zwXferCanvas` 标记（{key, w, h}），这里深走 payload 复活为本地 OffscreenCanvas 并记
+    // bind op（宿主绑定表：surface 键 → worker 本地 ctx——S1c patch 呈现消费）。
+    var _zwWorkerReviveXfer = function(v) {
+        if (!v || typeof v !== 'object') { return v; }
+        if (Array.isArray(v)) {
+            for (var ai = 0; ai < v.length; ai++) { v[ai] = _zwWorkerReviveXfer(v[ai]); }
+            return v;
+        }
+        var marker = v.__zwXferCanvas;
+        if (marker) {
+            var cid = ++_workerCanvasSeq;
+            var oc = _zwOffscreenInit(Object.create(OffscreenCanvas.prototype),
+                (typeof marker.w === 'number' && marker.w >= 0) ? (marker.w | 0) : 300,
+                (typeof marker.h === 'number' && marker.h >= 0) ? (marker.h | 0) : 150, cid);
+            oc._zwXferKey = String(marker.key || '');
+            _workerCanvasOps.push(['bind', cid, oc._zwXferKey]);
+            return oc;
+        }
+        for (var k in v) {
+            if (k === '__zwXferCanvas') { continue; }
+            v[k] = _zwWorkerReviveXfer(v[k]);
+        }
+        return v;
+    };
     var _dispatchMessage = function(data) {
         if (typeof onmessage === 'function') {
-            onmessage({ data: data });
+            onmessage({ data: _zwWorkerReviveXfer(data) });
         }
     };
     var _workerTimers = {};
-    var _workerTimerSeq = 0;
     var _workerTimerOps = [];
     var _workerTimerSet = function(callback, delay, period) {
         if (typeof callback !== 'function') {

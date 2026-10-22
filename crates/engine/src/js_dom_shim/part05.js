@@ -16077,8 +16077,35 @@
     // 序列化失败（函数/symbol 等非 JSON 面）抛 DataCloneError 同 same-realm clone
     // 失败语义；转移的 MessagePort 静默丢弃（真线程 worker 无 port 面——RFC §1 裁剪）。
     if (target._zwHostId != null && typeof __zw_worker_host_op === 'function') {
+      // M3-S1b：OffscreenCanvas transfer（spec：OffscreenCanvas transferable 而非
+      // Serializable——载荷出现必须在转移列表内，否则 DataCloneError；S1b 占位还需
+      // `_zwXferKey` surface 键——flag off 的 R3313 平面对象不具该键，宿主分支不可达）。
+      // 校验扫**原载荷** `message`（克隆体非同—对象，identity 对不上 transferList）；
+      // FIXME: 抛点位晚于 structuredClone/transfer 消费（spec 校验应先于全部副作用）。
+      var _zwOcSeen = [];
+      (function _zwScanOc(node) {
+        if (!node || typeof node !== 'object') return;
+        if (typeof OffscreenCanvas === 'function' && node instanceof OffscreenCanvas) { _zwOcSeen.push(node); return; }
+        if (Array.isArray(node)) { for (var _si = 0; _si < node.length; _si++) _zwScanOc(node[_si]); return; }
+        for (var _sk in node) _zwScanOc(node[_sk]);
+      })(message);
+      var _cloneDE4 = globalThis.DOMException || DOMException;
+      for (var _oi = 0; _oi < _zwOcSeen.length; _oi++) {
+        if (!_zwOcSeen[_oi]._zwXferKey || transferList.indexOf(_zwOcSeen[_oi]) < 0) {
+          throw new _cloneDE4('Failed to execute \'postMessage\' on \'Worker\': OffscreenCanvas could not be cloned.', 'DataCloneError');
+        }
+      }
       var _zwJson = JSON.stringify(
-        data === undefined ? { __zwUndef: 1 } : typeof data === 'string' ? { __zwStr: 1, v: data } : data);
+        data === undefined ? { __zwUndef: 1 } : typeof data === 'string' ? { __zwStr: 1, v: data } : data,
+        function (_k, v) {
+          // OffscreenCanvas → `__zwXferCanvas` 标记（克隆体 `_zwXferKey` 已随迁——
+          // part02 clone；worker 侧 bootstrap 复活为本地 OffscreenCanvas + bind op
+          // ——宿主绑定表 surface 键，S1c patch 呈现消费）。
+          if (typeof OffscreenCanvas === 'function' && v instanceof OffscreenCanvas) {
+            return { __zwXferCanvas: { key: v._zwXferKey, w: v.width, h: v.height } };
+          }
+          return v;
+        });
       if (_zwJson === undefined) {
         throw new (globalThis.DOMException || DOMException)("Failed to execute 'postMessage' on 'Worker': could not be cloned.", 'DataCloneError');
       }
@@ -16402,6 +16429,12 @@
       var vIsOc = typeof OffscreenCanvas === 'function' && vitem instanceof OffscreenCanvas;
       if (!vitem || typeof vitem !== 'object' || (!vIsPort && !vIsBuf && !vIsBmp && !vIsOc)) {
         throw new _cloneDE('Failed to execute \'postMessage\': Value at index ' + vi + ' does not have a transferable type.', 'DataCloneError');
+      }
+      // M3-S1b：OffscreenCanvas 已 detach 再转移拒绝（spec transfer 步 is-detached
+      // check 抛 DataCloneError——校验先于本调用 postMessage 的 detach 步，故此处
+      // _detached 只可能来自更早的转移）。
+      if (vIsOc && vitem._detached) {
+        throw new _cloneDE('Failed to execute \'postMessage\': OffscreenCanvas at index ' + vi + ' is detached.', 'DataCloneError');
       }
       if (vIsPort && (vitem === sourcePort || vitem._closed || vitem._zwDetached)) {
         throw new _cloneDE('Failed to execute \'postMessage\': ' +

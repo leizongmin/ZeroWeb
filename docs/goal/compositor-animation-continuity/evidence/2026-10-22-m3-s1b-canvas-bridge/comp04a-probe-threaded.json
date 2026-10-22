@@ -1,0 +1,183 @@
+{
+  "fixture": "comp04a-worker-threaded-canvas.html",
+  "started_at_wall": "2026-10-22T00:18:01.715Z",
+  "samples": [
+    {
+      "name": "s0",
+      "t_wall_ms": 561,
+      "capture": {
+        "name": "s0",
+        "wall_ms": 210,
+        "png_sha256": "0d307da0ebcb31eafcf238cd786762b8b8c8b785834bb7e9540ee3b8926040a8",
+        "png_bytes": 24808
+      },
+      "query": {
+        "wall_ms": 40,
+        "state": {
+          "mode": "threaded",
+          "workerHost": true,
+          "transfer": {
+            "state": "sent",
+            "ctxOk": true
+          },
+          "beats": 11,
+          "wtGapMax": 51,
+          "atGapMax": 76,
+          "wtGapSpanLoad": 0,
+          "atGapSpanLoad": 0,
+          "loadWindow": null,
+          "drawsMain": null,
+          "term": null,
+          "beatsAfterTerm": 0,
+          "workerErr": "Error: dc4-expected\n    at <anonymous>:2:7",
+          "ctrl": "ctrl=off",
+          "pageNow": 1034
+        }
+      }
+    },
+    {
+      "name": "s1",
+      "t_wall_ms": 1513,
+      "capture": {
+        "name": "s1",
+        "wall_ms": 6,
+        "png_sha256": "6b491cc3e58860ebaf9adfa5ffdd555a46830c3dd25543ae123a61b937e54dd7",
+        "png_bytes": 24974
+      },
+      "query": {
+        "wall_ms": 10,
+        "state": {
+          "mode": "threaded",
+          "workerHost": true,
+          "transfer": {
+            "state": "sent",
+            "ctxOk": true
+          },
+          "beats": 26,
+          "wtGapMax": 51,
+          "atGapMax": 88,
+          "wtGapSpanLoad": 0,
+          "atGapSpanLoad": 0,
+          "loadWindow": null,
+          "drawsMain": null,
+          "term": null,
+          "beatsAfterTerm": 0,
+          "workerErr": "Error: dc4-expected\n    at <anonymous>:2:7",
+          "ctrl": "ctrl=off",
+          "pageNow": 1749
+        }
+      }
+    },
+    {
+      "name": "s2",
+      "t_wall_ms": 7607,
+      "capture": {
+        "name": "s2",
+        "wall_ms": 7,
+        "png_sha256": "b5d32334decadc707265c46ea8164cabec549ad8722fb7e632b7fc378f11e6fd",
+        "png_bytes": 29141
+      },
+      "query": {
+        "wall_ms": 45,
+        "state": {
+          "mode": "threaded",
+          "workerHost": true,
+          "transfer": {
+            "state": "sent",
+            "ctxOk": true
+          },
+          "beats": 129,
+          "wtGapMax": 902,
+          "atGapMax": 951,
+          "wtGapSpanLoad": 51,
+          "atGapSpanLoad": 951,
+          "loadWindow": {
+            "start": 3400,
+            "end": 4300
+          },
+          "drawsMain": null,
+          "term": {
+            "at": 6899,
+            "lastBeatN": 387
+          },
+          "beatsAfterTerm": 0,
+          "workerErr": "Error: dc4-expected\n    at <anonymous>:2:7",
+          "ctrl": "ctrl=off",
+          "pageNow": 7881
+        }
+      }
+    },
+    {
+      "name": "s3",
+      "t_wall_ms": 7981,
+      "capture": {
+        "name": "s3",
+        "wall_ms": 7,
+        "png_sha256": "cbe674a3b7c595672e37d7f49e1c75f50798e19912db0e29f11b6939f70df54e",
+        "png_bytes": 31382
+      },
+      "query": {
+        "wall_ms": 51,
+        "state": {
+          "mode": "threaded",
+          "workerHost": true,
+          "transfer": {
+            "state": "sent",
+            "ctxOk": true
+          },
+          "beats": 129,
+          "wtGapMax": 902,
+          "atGapMax": 951,
+          "wtGapSpanLoad": 51,
+          "atGapSpanLoad": 951,
+          "loadWindow": {
+            "start": 3400,
+            "end": 4300
+          },
+          "drawsMain": null,
+          "term": {
+            "at": 6899,
+            "lastBeatN": 387
+          },
+          "beatsAfterTerm": 0,
+          "workerErr": "Error: dc4-expected\n    at <anonymous>:2:7",
+          "ctrl": "ctrl=on",
+          "pageNow": 8260
+        }
+      }
+    }
+  ],
+  "verdict": {
+    "mode": "threaded",
+    "worker_host_present": true,
+    "transfer_state": "sent",
+    "transfer_ctx_ok": true,
+    "beats_total": 129,
+    "wt_gap_max_ms": 902,
+    "wt_gap_spanning_load_ms": 51,
+    "at_gap_max_ms": 951,
+    "at_gap_spanning_load_ms": 951,
+    "load_window": {
+      "start": 3400,
+      "end": 4300
+    },
+    "draws_main": null,
+    "term": {
+      "at": 6899,
+      "lastBeatN": 387
+    },
+    "beats_after_term": 0,
+    "worker_err": "Error: dc4-expected\n    at <anonymous>:2:7",
+    "canvas_idle": "ANIMATED",
+    "mutation_control": "OK",
+    "control_strip": "ctrl=off",
+    "gates": {
+      "wt_liveness": true,
+      "transfer_ctx": true,
+      "term_silent": true,
+      "err_reported": true,
+      "control": true
+    },
+    "state": "THREADED_PROBE_PASS"
+  }
+}

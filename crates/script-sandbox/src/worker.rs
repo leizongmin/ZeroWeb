@@ -154,6 +154,26 @@ impl WorkerRuntime {
     /// - `script` — Worker 初始化时执行的脚本代码
     /// - `config` — V8 沙箱配置（堆限制等）
     pub fn new(script: &str, config: SandboxConfig) -> Result<Self, ScriptError> {
+        Self::new_with_canvas_drain(script, config, None)
+    }
+
+    /// 创建 Dedicated Worker 并挂 canvas 操作排空回调（S1b canvas 桥）。
+    ///
+    /// 回调在 worker 线程命令循环间隙收到 `JSON.stringify(_workerCanvasOps)`
+    /// 原文（newCtx/op/resize/bind 条目），由宿主侧求值进 worker 线程本地
+    /// CanvasRegistry（renderer worker_host 经 `canvas_context_op` 纯栅格核）。
+    /// `None` 时操作读回即丢弃（service worker 等无桥路径不累积）。
+    ///
+    /// # 参数
+    ///
+    /// - `script` — Worker 初始化时执行的脚本代码
+    /// - `config` — V8 沙箱配置（堆限制等）
+    /// - `canvas_drain` — canvas 操作排空回调（S1b；无桥路径传 None）
+    pub fn new_with_canvas_drain(
+        script: &str,
+        config: SandboxConfig,
+        canvas_drain: Option<crate::WorkerCanvasDrainHandle>,
+    ) -> Result<Self, ScriptError> {
         // R3399：worker 线程创建 isolate 后回传其 thread-safe handle，供主线程
         // `terminate()` 跨线程 `terminate_execution` 强制中断死循环。
         #[cfg(feature = "v8")]
@@ -192,6 +212,7 @@ impl WorkerRuntime {
                     wd_tx_worker,
                     timeout_ms,
                     worker_terminate_flag,
+                    canvas_drain,
                 );
             },
         )?;
@@ -517,11 +538,43 @@ macro_rules! v8_drain_timer_ops {
     }};
 }
 
+/// 排空 bootstrap canvas 操作队列 `_workerCanvasOps`（S1b canvas 桥）：整体
+/// `JSON.stringify` 读回交宿主排空回调（renderer worker_host 求值进 worker 线程本地
+/// CanvasRegistry，条目 newCtx/op/resize/bind）；无回调（`None`，如 service worker
+/// 等无桥路径）时读回即丢弃防累积。调用位与定时器排空同点（命令循环间隙）。
+macro_rules! v8_drain_canvas_ops {
+    ($scope:expr, $drain:expr) => {{
+        let scope = &mut $scope;
+        let mut json = String::new();
+        if let Some(code) = v8::String::new(scope, "JSON.stringify(_workerCanvasOps)") {
+            if let Some(script) = v8::Script::compile(scope, code, None) {
+                if let Some(result) = script.run(scope) {
+                    if let Some(s) = result.to_string(scope) {
+                        json = s.to_rust_string_lossy(scope);
+                    }
+                }
+            }
+        }
+        if json.len() > 2 {
+            if let Some(drain) = $drain.as_ref() {
+                if let Ok(mut d) = drain.lock() {
+                    d(&json);
+                }
+            }
+        }
+        if let Some(clear_code) = v8::String::new(scope, "_workerCanvasOps = []") {
+            if let Some(clear_script) = v8::Script::compile(scope, clear_code, None) {
+                let _ = clear_script.run(scope);
+            }
+        }
+    }};
+}
+
 /// Worker 线程入口：body 退出（正常/terminate/`close()`/执行中断）后发 [`WorkerEvent::Closed`]。
 ///
 /// S1a：Closed 收敛到唯一出口——body 内所有早退路径（含 [`v8_exec!`] 失败路径）不再各自
 /// 补发，避免遗漏（旧实现 page-supplied 脚本编译错会静默杀死线程且无任何事件）。
-#[allow(clippy::too_many_arguments)] // 线程入口：命令/事件通道 + R3399 中断/看门狗/标志
+#[allow(clippy::too_many_arguments)] // 线程入口：命令/事件通道 + R3399 中断/看门狗/标志 + S1b canvas 排空
 fn worker_thread_fn(
     init_script: String,
     config: SandboxConfig,
@@ -531,6 +584,7 @@ fn worker_thread_fn(
     wd_tx: Sender<WorkerWatchdogMsg>,
     timeout_ms: u64,
     terminate_flag: Arc<AtomicBool>,
+    canvas_drain: Option<crate::WorkerCanvasDrainHandle>,
 ) {
     worker_thread_body(
         init_script,
@@ -541,6 +595,7 @@ fn worker_thread_fn(
         wd_tx,
         timeout_ms,
         terminate_flag,
+        canvas_drain,
     );
     let _ = event_sender.send(WorkerEvent::Closed);
 }
@@ -552,7 +607,7 @@ fn worker_thread_fn(
 /// R3399：`handle_tx` 在 isolate 创建后立即回传 thread-safe handle（主线程据此强制
 /// 中断）；`wd_tx` + `timeout_ms` 构建看门狗上下文，每次 `script.run` 经
 /// [`v8_exec!`] Arm/Disarm；`terminate_flag` 供宏查询 terminate() 是否已发。
-#[allow(clippy::too_many_arguments)] // 线程入口：命令/事件通道 + R3399 中断/看门狗/标志
+#[allow(clippy::too_many_arguments)] // 线程入口：命令/事件通道 + R3399 中断/看门狗/标志 + S1b canvas 排空
 fn worker_thread_body(
     init_script: String,
     config: SandboxConfig,
@@ -562,6 +617,7 @@ fn worker_thread_body(
     wd_tx: Sender<WorkerWatchdogMsg>,
     timeout_ms: u64,
     terminate_flag: Arc<AtomicBool>,
+    canvas_drain: Option<crate::WorkerCanvasDrainHandle>,
 ) {
     // 确保 V8 已初始化
     crate::v8_runtime::V8Sandbox::new().ok();
@@ -609,6 +665,7 @@ fn worker_thread_body(
     if v8_drain_timer_ops!(scope, &mut timers) {
         return; // bootstrap close()：wrapper 发 Closed
     }
+    v8_drain_canvas_ops!(scope, canvas_drain);
 
     // 命令循环 + 定时器轮：到期定时器在命令循环间隙服务（isolate 无事件循环，
     // 纯 JS 不可自举定时器）；无定时器时退化为阻塞 recv（与旧实现同语义）。
@@ -625,6 +682,7 @@ fn worker_thread_body(
             v8_exec!(scope, &fire_code, exec_ctx, event_sender, true);
             v8_drain!(scope, event_sender);
             let close_requested = v8_drain_timer_ops!(scope, &mut timers);
+            v8_drain_canvas_ops!(scope, canvas_drain);
             // interval 重臂（one-shot 摘除；callback 内 clear 已移除条目则不重臂）。
             match period_ms {
                 Some(period_ms) => {
@@ -667,6 +725,7 @@ fn worker_thread_body(
                 if v8_drain_timer_ops!(scope, &mut timers) {
                     return; // wrapper 发 Closed
                 }
+                v8_drain_canvas_ops!(scope, canvas_drain);
             }
             WorkerCommand::PostMessage(msg) => {
                 let dispatch_code = format!("_dispatchMessage({})", json_safe_arg(&msg));
@@ -675,6 +734,7 @@ fn worker_thread_body(
                 if v8_drain_timer_ops!(scope, &mut timers) {
                     return; // wrapper 发 Closed
                 }
+                v8_drain_canvas_ops!(scope, canvas_drain);
             }
             WorkerCommand::Terminate => {
                 break;
@@ -1180,5 +1240,133 @@ mod tests {
         }
         assert!(saw_error, "初始化编译错未报 Error 事件");
         assert!(saw_closed, "初始化编译错后未发 Closed");
+    }
+
+    // ── S1b：worker canvas 排空（bootstrap `_workerCanvasOps` → Rust drain 回调） ──
+
+    /// 收集 drain 批次直到出现 `needle`（超时 panic——命令循环间隙排空，延迟毫秒级）。
+    fn wait_canvas_drain(drained: &std::sync::Arc<std::sync::Mutex<Vec<String>>>, needle: &str) -> String {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            let all = drained.lock().unwrap().join("");
+            if all.contains(needle) {
+                return all;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "canvas drain 未出现 {needle}，got: {all}"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    #[test]
+    fn test_worker_canvas_ops_drain_constructor_path() {
+        let drained: std::sync::Arc<std::sync::Mutex<Vec<String>>> = Default::default();
+        let sink = drained.clone();
+        let drain: crate::WorkerCanvasDrain = Box::new(move |json: &str| {
+            sink.lock().unwrap().push(json.to_string());
+        });
+        let mut worker = WorkerRuntime::new_with_canvas_drain(
+            "var oc = new OffscreenCanvas(64, 32);\
+             var ctx = oc.getContext('2d');\
+             ctx.fillStyle = '#ff0000';\
+             ctx.fillRect(0, 0, 64, 32);\
+             postMessage('drawn');",
+            SandboxConfig::default(),
+            Some(std::sync::Arc::new(std::sync::Mutex::new(drain))),
+        )
+        .unwrap();
+        // 先等 drain 回调（init 排空点晚于消息事件入队——先 recv 再 terminate 会
+        // 用 terminate_execution 打断排空序列，drain 丢批）。
+        let all = wait_canvas_drain(&drained, "fillRect");
+        let event = worker.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(
+            matches!(&event, WorkerEvent::Message(m) if m == "drawn"),
+            "got: {event:?}"
+        );
+        worker.terminate();
+        assert!(all.contains("\"newCtx\""), "构造路径应排空 newCtx，got: {all}");
+        assert!(all.contains("setFillStyle"), "样式 setter 应记 op，got: {all}");
+    }
+
+    #[test]
+    fn test_worker_canvas_ops_drain_transfer_revive_binds_surface_key() {
+        let drained: std::sync::Arc<std::sync::Mutex<Vec<String>>> = Default::default();
+        let sink = drained.clone();
+        let drain: crate::WorkerCanvasDrain = Box::new(move |json: &str| {
+            sink.lock().unwrap().push(json.to_string());
+        });
+        let mut worker = WorkerRuntime::new_with_canvas_drain(
+            // 模拟 shim spawn prologue 的 `_dispatchMessage` JSON.parse 补丁（真线程\
+            // 流水线：宿主 post JSON 字符串 → prologue 解析 → bootstrap `_zwDm` 复活\
+            // `__zwXferCanvas` 标记 → onmessage）——裸 WorkerRuntime 消息面以字符串\
+            // 为载体，无补丁则 revive 不达。\
+            "var _zwDm = _dispatchMessage;\
+             _dispatchMessage = function (raw) { _zwDm(typeof raw === 'string' ? JSON.parse(raw) : raw); };\
+             onmessage = function (e) {\
+               var ctx = e.data.getContext('2d');\
+               ctx.fillRect(0, 0, 64, 32);\
+               postMessage('bound:' + e.data.width + 'x' + e.data.height + ':'\
+                 + (e.data instanceof OffscreenCanvas));\
+             };",
+            SandboxConfig::default(),
+            Some(std::sync::Arc::new(std::sync::Mutex::new(drain))),
+        )
+        .unwrap();
+        std::thread::sleep(Duration::from_millis(200));
+        worker
+            .post_message(r#"{"__zwXferCanvas":{"key":"xfer-9","w":64,"h":32}}"#)
+            .unwrap();
+        // 先等 drain 回调（PostMessage 排空点晚于消息事件入队——同上竞态规避）。
+        let all = wait_canvas_drain(&drained, "\"bind\"");
+        let event = worker.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(
+            matches!(&event, WorkerEvent::Message(m) if m == "bound:64x32:true"),
+            "复活对象应为本地 OffscreenCanvas（尺寸保真），got: {event:?}"
+        );
+        worker.terminate();
+        // bind 与 newCtx/fillRect 应共享同一复活 cid（宿主排空侧 prov 映射闭环——
+        // 复活路径 getContext 也记 newCtx）。
+        let ops: Vec<serde_json::Value> = drained
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|b| serde_json::from_str::<Vec<serde_json::Value>>(b).ok())
+            .flatten()
+            .collect();
+        let bind_cid = ops
+            .iter()
+            .find(|op| op[0] == "bind" && op[2] == "xfer-9")
+            .map(|op| op[1].as_u64().unwrap())
+            .expect("复活应记 bind op");
+        assert!(
+            ops.iter()
+                .any(|op| op[0] == "newCtx" && op[1].as_u64() == Some(bind_cid)),
+            "复活路径 getContext 应记同 cid newCtx，ops: {all}"
+        );
+        assert!(
+            ops.iter()
+                .any(|op| op[0] == "op" && op[1].as_u64() == Some(bind_cid) && op[2] == "fillRect"),
+            "绘制 op 应引用复活 cid，ops: {all}"
+        );
+    }
+
+    #[test]
+    fn test_worker_canvas_ops_without_drain_discarded() {
+        // None drain：canvas op 读后即弃（service worker 等无宿主排空面不堆积）。
+        let mut worker = WorkerRuntime::new(
+            "var oc = new OffscreenCanvas(8, 8);\
+             oc.getContext('2d').fillRect(0, 0, 8, 8);\
+             postMessage('ok');",
+            SandboxConfig::default(),
+        )
+        .unwrap();
+        let event = worker.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(
+            matches!(&event, WorkerEvent::Message(m) if m == "ok"),
+            "无 drain 时 canvas op 不应阻塞脚本，got: {event:?}"
+        );
+        worker.terminate();
     }
 }

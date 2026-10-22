@@ -822,6 +822,31 @@
           // 标记 _transferred → 返 offscreen 对象持同一 handle。offscreen.transferToImageBitmap 复用 R3312 路径。
           if (prop === 'transferControlToOffscreen') {
             return function () {
+              // M3-S1b：flag on（宿主桥在）→ 占位 OffscreenCanvas + surface 键——经
+              // postMessage transfer 到真线程 worker（worker 线程本地 registry，像素
+              // 只存 worker 侧；呈现面属 S1c patch 管线，RFC §2.2）。占位 getContext/
+              // transferToImageBitmap 抛 InvalidStateError——HTML spec §transferred-canvas
+              //（https://html.spec.whatwg.org/multipage/canvas.html#concept-canvas-transferred），
+              // control 已移交 worker。flag off 走下方 R3313 共享 handle 路径逐字节不变。
+              if (typeof __zw_worker_host_op === 'function') {
+                var drcX = _reflectedAttrs[key] || (_reflectedAttrs[key] = {});
+                if (drcX._transferred) {
+                  throw new TypeError('transferControlToOffscreen: canvas control already transferred');
+                }
+                drcX._transferred = true;
+                var cwX = _zwCanvasDim(sel, handle, 'width', 300);
+                var chX = _zwCanvasDim(sel, handle, 'height', 150);
+                var ocX = new OffscreenCanvas(cwX, chX);
+                ocX._zwXferKey = 'xfer-' + (globalThis.__zwXferSeq = (globalThis.__zwXferSeq || 0) + 1);
+                ocX.getContext = function (type) {
+                  if (String(type) !== '2d') return null;
+                  throw new (globalThis.DOMException || DOMException)("Failed to execute 'getContext' on 'OffscreenCanvas': canvas control has been transferred.", 'InvalidStateError');
+                };
+                ocX.transferToImageBitmap = function () {
+                  throw new (globalThis.DOMException || DOMException)("Failed to execute 'transferToImageBitmap' on 'OffscreenCanvas': canvas control has been transferred.", 'InvalidStateError');
+                };
+                return ocX;
+              }
               if (typeof __zw_canvas_op !== 'function') return null;
               // spec：已 transferred → 抛 InvalidStateError（同 canvas 二次 transfer）。
               var drc = _reflectedAttrs[key] || (_reflectedAttrs[key] = {});

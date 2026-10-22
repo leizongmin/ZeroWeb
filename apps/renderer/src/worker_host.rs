@@ -15,12 +15,13 @@
 //! terminate）归 S1d 生命周期批（master.md 批次切分）。
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use zero_script_sandbox::{SandboxConfig, WorkerEvent, WorkerRuntime};
+use zero_engine::js_dom_bridge::{CanvasRegistry, canvas_context_op};
+use zero_script_sandbox::{SandboxConfig, WorkerCanvasDrain, WorkerCanvasDrainHandle, WorkerEvent, WorkerRuntime};
 
 use crate::js_worker::PrioritySubmitter;
 
@@ -31,6 +32,117 @@ const COMMAND_POLL_INTERVAL: Duration = Duration::from_millis(8);
 /// 内——WorkerRuntime::new 含 isolate 初始化毫秒级返回；兜底防宿主线程死亡悬挂
 /// 脚本线程，超时 shim 回落 same-realm worker）。
 const SPAWN_REPLY_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// S1b canvas 桥（RFC §2.2）：worker 线程本地 registry 排空态。
+///
+/// 每个 worker 一份（闭包内 `Arc` 持有，drain 回调在 worker 命令循环间隙执行）：
+/// 像素只存 worker 本地 registry（无 paint 路径——同 realm 幻影注册语义修除，
+/// 呈现面属 S1c patch 管线）；`prov` 为 bootstrap 侧临时 ctx id → registry 实际
+/// ctx id 映射（`newCtx` 分配时机在排空侧，JS 侧先以自增 id 记 op）。
+#[derive(Default)]
+struct WorkerCanvasState {
+    registry: CanvasRegistry,
+    prov: HashMap<u64, u64>,
+}
+
+/// 宿主绑定表值：surface 键 → worker 本地 ctx 临时 id（页面 `transferControlToOffscreen`
+/// 占位的 `_zwXferKey`；S1c patch 注册按此把呈现面接到元素矩形）。
+type CanvasBindings = Arc<Mutex<HashMap<String, u64>>>;
+
+/// 构造 worker canvas 排空回调（spawn 时每 worker 一份）：
+/// 返回 (回调句柄, 共享态——测试/S1c 观测用)。
+fn make_canvas_drain() -> (WorkerCanvasDrainHandle, Arc<Mutex<WorkerCanvasState>>, CanvasBindings) {
+    let state = Arc::new(Mutex::new(WorkerCanvasState::default()));
+    let bindings: CanvasBindings = Arc::new(Mutex::new(HashMap::new()));
+    let drain_state = state.clone();
+    let drain_bindings = bindings.clone();
+    let drain: WorkerCanvasDrain = Box::new(move |json: &str| {
+        // 回调跑在 worker 命令循环线程；锁仅在单批操作求值期持有（页面主线程
+        // 不触 worker 本地 registry——S1c patch 数据面亦从 worker 线程读取）。
+        if let Ok(mut st) = drain_state.lock() {
+            apply_worker_canvas_ops(&mut st, &drain_bindings, json);
+        }
+    });
+    (Arc::new(Mutex::new(drain)), state, bindings)
+}
+
+/// 求值 bootstrap canvas 操作 JSON（`[[op, …], …]`）进 worker 本地 registry。
+/// 条目：`["newCtx", cid, w, h]`（分配 registry ctx 并记 prov 映射）、
+/// `["op", cid, opName, args…]`（translate 后走 `canvas_context_op`——engine 纯栅格核
+/// 零改动复用）、`["resize", cid, w, h]`、`["bind", cid, key]`（宿主绑定表）。
+fn apply_worker_canvas_ops(state: &mut WorkerCanvasState, bindings: &CanvasBindings, json: &str) {
+    let Ok(ops) = serde_json::from_str::<Vec<serde_json::Value>>(json) else {
+        return;
+    };
+    for op in ops {
+        let Some(parts) = op.as_array() else { continue };
+        let kind = parts.first().and_then(|v| v.as_str()).unwrap_or("");
+        let cid = parts.get(1).and_then(|v| v.as_u64());
+        match kind {
+            "newCtx" => {
+                let (Some(cid), Some(w), Some(h)) = (cid, parts.get(2), parts.get(3)) else {
+                    continue;
+                };
+                let real = canvas_context_op(
+                    &mut state.registry,
+                    "0",
+                    "getContext2d",
+                    &[json_arg_str(w), json_arg_str(h)],
+                );
+                if let Ok(real_id) = real.trim().parse::<u64>() {
+                    state.prov.insert(cid, real_id);
+                }
+            }
+            "resize" => {
+                let (Some(cid), Some(w), Some(h)) = (cid, parts.get(2), parts.get(3)) else {
+                    continue;
+                };
+                if let Some(real) = state.prov.get(&cid) {
+                    canvas_context_op(
+                        &mut state.registry,
+                        &real.to_string(),
+                        "resizeContext",
+                        &[json_arg_str(w), json_arg_str(h)],
+                    );
+                }
+            }
+            "op" => {
+                let Some(cid) = cid else { continue };
+                let Some(name) = parts.get(2).and_then(|v| v.as_str()) else {
+                    continue;
+                };
+                let args: Vec<String> = parts
+                    .get(3)
+                    .and_then(|v| v.as_array())
+                    .map(|a| a.iter().map(json_arg_str).collect())
+                    .unwrap_or_default();
+                if let Some(real) = state.prov.get(&cid) {
+                    canvas_context_op(&mut state.registry, &real.to_string(), name, &args);
+                }
+            }
+            "bind" => {
+                let Some(key) = parts.get(2).and_then(|v| v.as_str()) else {
+                    continue;
+                };
+                if let (Ok(mut table), Some(cid)) = (bindings.lock(), cid) {
+                    table.insert(key.to_string(), cid);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// JSON 值 → `canvas_context_op` 串参（字符串去引号，数字原样——与主线程 shim
+/// `__zw_canvas_op` 串参形态一致）。
+fn json_arg_str(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::Bool(b) => b.to_string(),
+        other => other.to_string(),
+    }
+}
 
 /// 宿主线程命令（js_worker 脚本线程经桥槽闭包投递）。
 enum HostCommand {
@@ -109,11 +221,13 @@ fn host_op_dispatch(command_tx: &Sender<HostCommand>, args: &[String]) -> String
     }
 }
 
-/// 宿主线程状态：worker 表 + id 分配源 + 事件派发提交器。
+/// 宿主线程状态：worker 表 + id 分配源 + 事件派发提交器 + S1b 绑定表（worker id →
+/// surface 键 → 本地 ctx 临时 id）。
 struct HostThread {
     runtimes: HashMap<u64, WorkerRuntime>,
     next_id: u64,
     submitter: PrioritySubmitter,
+    canvas_bindings: HashMap<u64, CanvasBindings>,
 }
 
 impl HostThread {
@@ -122,6 +236,7 @@ impl HostThread {
             runtimes: HashMap::new(),
             next_id: 1,
             submitter,
+            canvas_bindings: HashMap::new(),
         };
         loop {
             while let Ok(cmd) = receiver.try_recv() {
@@ -138,12 +253,19 @@ impl HostThread {
                 // 页面 worker 看门狗关闭（SandboxConfig 默认 timeout_ms = 0）：浏览器
                 // 语义——worker 常驻至 terminate()/close()/导航清理（S1d），不在
                 // config 层设脚本超时；异常 worker 由页面 terminate() 或 close() 收口。
-                let result = WorkerRuntime::new(&script, SandboxConfig::default()).map(|runtime| {
-                    let id = self.next_id;
-                    self.next_id += 1;
-                    self.runtimes.insert(id, runtime);
-                    id
-                });
+                // S1b：每 worker 一份 canvas 排空回调（worker 线程本地 registry）+
+                // 宿主绑定表登记（terminate/Closed 随摘）。
+                let (canvas_drain, _state, bindings) = make_canvas_drain();
+                let result =
+                    WorkerRuntime::new_with_canvas_drain(&script, SandboxConfig::default(), Some(canvas_drain)).map(
+                        |runtime| {
+                            let id = self.next_id;
+                            self.next_id += 1;
+                            self.runtimes.insert(id, runtime);
+                            self.canvas_bindings.insert(id, bindings);
+                            id
+                        },
+                    );
                 let _ = reply.send(result.map_err(|e| e.to_string()));
             }
             HostCommand::PostMessage { id, message } => {
@@ -157,6 +279,7 @@ impl HostThread {
                 if let Some(mut runtime) = self.runtimes.remove(&id) {
                     runtime.terminate();
                 }
+                self.canvas_bindings.remove(&id);
             }
         }
     }
@@ -179,6 +302,7 @@ impl HostThread {
             }
             if closed {
                 self.runtimes.remove(&id);
+                self.canvas_bindings.remove(&id);
                 self.dispatch(id, "closed", "");
                 continue;
             }
@@ -286,5 +410,51 @@ mod tests {
         // 非 JSON 文本兜底为字符串字面量（worker 侧 prologue 缺位的防御面）。
         let raw = dispatch_script(4, "error", "plain text");
         assert!(raw.contains("\"plain text\""));
+    }
+
+    // ── S1b canvas 桥：排空协议求值（bootstrap `_workerCanvasOps` JSON → worker 本地
+    // registry + 宿主绑定表，经 engine `canvas_context_op` 纯栅格核零改动复用）。
+
+    /// newCtx 分配真 ctx（prov 映射）→ op 落 worker 本地 registry（像素读回验证）→
+    /// bind 记宿主绑定表；读回用 `canvas_context_op` getImageData（wire `w:h;r,g,b,a`）。
+    #[test]
+    fn apply_worker_canvas_ops_allocates_context_and_binds_surface_key() {
+        let state = Arc::new(Mutex::new(WorkerCanvasState::default()));
+        let bindings: CanvasBindings = Arc::new(Mutex::new(HashMap::new()));
+        apply_worker_canvas_ops(
+            &mut state.lock().unwrap(),
+            &bindings,
+            r##"[["newCtx",1,64,32],["op",1,"setFillStyle",["#ff0000"]],["op",1,"fillRect",[0,0,64,32]],["bind",1,"xfer-1"]]"##,
+        );
+        let mut st = state.lock().unwrap();
+        let real = st.prov.get(&1).copied().expect("newCtx 应建 prov 映射");
+        let wire = canvas_context_op(
+            &mut st.registry,
+            &real.to_string(),
+            "getImageData",
+            &["0".into(), "0".into(), "1".into(), "1".into()],
+        );
+        assert_eq!(wire, "1:1;255,0,0,255", "fillRect 像素应落 worker 本地 registry");
+        drop(st);
+        assert_eq!(
+            bindings.lock().unwrap().get("xfer-1"),
+            Some(&1),
+            "bind 应记宿主绑定表（surface 键 → 复活临时 cid）"
+        );
+    }
+
+    /// 防御面：未知临时 cid 的 op / resize 静默丢弃（复活前 op 不落 registry）、
+    /// 畸形 JSON 与非数组条目忽略不 panic。
+    #[test]
+    fn apply_worker_canvas_ops_drops_unknown_cid_and_malformed_json() {
+        let state = Arc::new(Mutex::new(WorkerCanvasState::default()));
+        let bindings: CanvasBindings = Arc::new(Mutex::new(HashMap::new()));
+        apply_worker_canvas_ops(
+            &mut state.lock().unwrap(),
+            &bindings,
+            r#"[["op",7,"fillRect",[0,0,1,1]],["resize",7,10,10],"not-array",[123],{"x":1}]"#,
+        );
+        let st = state.lock().unwrap();
+        assert!(st.prov.is_empty(), "未知 cid 不应建映射，got: {:?}", st.prov);
     }
 }
