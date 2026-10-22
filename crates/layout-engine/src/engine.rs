@@ -1146,6 +1146,10 @@ impl LayoutEngine {
         // 10.5 后处理：修正垂直书写模式下绝对定位元素的静态位置
         fix_vertical_mode_abs_pos(&mut root_box, doc, styles);
 
+        // R5223：水平书写模式静态位 abspos 子盒绘制度量存储（垂直臂同构，
+        // abspos 盒此阶段已挂入 children）。
+        fix_horizontal_static_abspos_metrics(&mut root_box, doc, styles);
+
         // 10.6 后处理：对 flex/grid 容器的子元素按 CSS order 排序
         // taffy 0.7 不支持 CSS order 属性，因此需要在后处理中排序。
         sort_children_by_css_order(&mut root_box, styles);

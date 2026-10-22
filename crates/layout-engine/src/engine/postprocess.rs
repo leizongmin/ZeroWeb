@@ -779,6 +779,101 @@ pub(super) fn fix_vertical_mode_abs_pos(root: &mut LayoutBox, doc: &Document, st
     }
 }
 
+/// R5223（CSS2 §10.3.7）：水平书写模式静态位（全 inset auto）abspos 子盒的绘制度量存储
+/// ——R1548 垂直臂的度量半臂同构。abspos 盒在 Final Inline Pass 时尚未挂入 children
+/// （后处理链附加），其内部 IFC 度量无处存储；且水平 IFC collect 期 OOF 子被跳过
+///（collect_items skip_oof 臂，vertical 例外），垂直臂的「CB IFC 片段回查」在水平域
+/// 无片段可用。本臂直接以子盒布局结果（abspos shrink-to-fit 已按真实 styles 定尺寸，
+/// vertical-align-sub/super-001 dump 实证 h=111 w=408 = 96px 真值）+ 子自身 computed
+/// style 合成度量，按子盒直接文本节点存入 maps：paint Path B（空 styles）借此拿到
+/// 继承字号（案面 "Filler Text" 1in→16px 实证）；非空 text_node_font_sizes 同时使
+/// painter abspos_self_paint（R1548/R1549 安全类）放开去重。仅全 inset auto：非 auto
+/// inset 盒 taffy inset 解已定位不干预（R4425 轴分工同则）。kill-switch
+/// `ZW_STATIC_ABSPOS_METRICS=0`。
+static STATIC_ABSPOS_METRICS_DISABLED: OnceLock<bool> = OnceLock::new();
+
+pub(super) fn fix_horizontal_static_abspos_metrics(
+    root: &mut LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
+    // R5108 教训：kill-switch 进程级单读，不做每盒 env::var（热路径 O(n) 次系统调用级读）。
+    if *STATIC_ABSPOS_METRICS_DISABLED.get_or_init(|| std::env::var("ZW_STATIC_ABSPOS_METRICS").as_deref() == Ok("0")) {
+        return;
+    }
+    fix_horizontal_static_abspos_metrics_inner(root, doc, styles);
+}
+
+fn fix_horizontal_static_abspos_metrics_inner(
+    root: &mut LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
+    // 先递归处理子元素（与垂直臂同构）
+    for child in &mut root.children {
+        fix_horizontal_static_abspos_metrics_inner(child, doc, styles);
+    }
+
+    // 垂直书写模式由 fix_vertical_mode_abs_pos 管（避免双跑同臂）
+    if root.writing_mode.is_vertical_block_flow() {
+        return;
+    }
+
+    for child in &mut root.children {
+        if !child.is_absolute {
+            continue;
+        }
+        let Some(child_node_id) = child.node_id else {
+            continue;
+        };
+        let Some(cs) = styles.get(&child_node_id) else {
+            continue;
+        };
+        // 全 inset auto = 静态位盒；任一 non-auto 时 taffy inset 解已定位，不干预
+        if !matches!(cs.top, LengthValue::Auto)
+            || !matches!(cs.right, LengthValue::Auto)
+            || !matches!(cs.bottom, LengthValue::Auto)
+            || !matches!(cs.left, LengthValue::Auto)
+        {
+            continue;
+        }
+        // 度量真值 = 子盒自身 computed style（font_size 计算值已绝对化）+ 布局盒高
+        //（单行文本盒高 = 行盒高；多行时与垂直臂 fragment.height 同粒度）。
+        let font_size = match &cs.font_size {
+            LengthValue::Px(v) => *v as f32,
+            other => zero_style_system::computed::resolve_length(other, 16.0, None, None) as f32,
+        };
+        let is_ahem = cs
+            .font_family
+            .iter()
+            .any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"));
+        let letter_spacing = match &cs.letter_spacing {
+            zero_style_system::property::types::LengthValue::Px(v) => *v as f32,
+            zero_style_system::property::types::LengthValue::Percentage(p) => font_size * (*p as f32 / 100.0),
+            other => zero_style_system::computed::resolve_length(other, font_size as f64, None, None) as f32,
+        };
+        let word_spacing = match &cs.word_spacing {
+            zero_style_system::property::types::LengthValue::Px(v) => *v as f32,
+            zero_style_system::property::types::LengthValue::Percentage(p) => font_size * (*p as f32 / 100.0),
+            other => zero_style_system::computed::resolve_length(other, font_size as f64, None, None) as f32,
+        };
+        for tn in doc.child_nodes(child_node_id) {
+            if doc
+                .get(tn)
+                .is_some_and(|n| matches!(n.kind, zero_dom::NodeKind::Text(_)))
+            {
+                child.text_node_font_sizes.insert(tn, font_size);
+                child.text_node_line_heights.insert(tn, child.height);
+                child.text_node_is_ahem.insert(tn, is_ahem);
+                child.text_node_letter_spacing.insert(tn, letter_spacing);
+                child.text_node_word_spacing.insert(tn, word_spacing);
+                child.text_node_font_families.insert(tn, cs.font_family.clone());
+                child.text_node_font_size_adjust.insert(tn, cs.font_size_adjust);
+            }
+        }
+    }
+}
+
 /// R1548/R1550：把 CB IFC 已测量的 fragment font metrics（font_size / line-height=height /
 /// is_ahem / letter_spacing）按 abspos 子盒的直接文本节点重新键化存入子盒；font_family 取
 /// 子盒自身 computed style。供子盒 paint_text 重跑 IFC（Path B 空 styles）时使用，避免默认

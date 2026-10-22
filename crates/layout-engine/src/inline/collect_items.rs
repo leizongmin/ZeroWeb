@@ -457,9 +457,23 @@ impl InlineFormattingContext {
                                     constant_normal_line_height(DEFAULT_FONT_SIZE, NORMAL_LINE_HEIGHT_RATIO),
                                 ))
                             };
-                            let vertical_align = style
-                                .map(|s| s.vertical_align.clone())
-                                .unwrap_or(VerticalAlignValue::Baseline);
+                            // R5223（CSS2 §9.7 × §10.8）：out-of-flow 容器（abspos/fixed）
+                            // 计算display 块化 → block-level 盒，其自身 vertical-align 对
+                            // 内部根行无语义；根级文本 run（父=IFC 容器）不得继承容器 va
+                            //（vertical-align-sub/super-001：abspos span va=super 泄入根
+                            // run，行盒被 0.3·fs 撑高 111→140，红绿覆盖层错位）。嵌套
+                            // inline 祖先的 va（父≠容器）照常适用（§10.8.1 行内对齐）。
+                            let vertical_align = if parent_id == Some(container)
+                                && styles
+                                    .get(&container)
+                                    .is_some_and(|s| matches!(s.position, PositionValue::Absolute | PositionValue::Fixed))
+                            {
+                                VerticalAlignValue::Baseline
+                            } else {
+                                style
+                                    .map(|s| s.vertical_align.clone())
+                                    .unwrap_or(VerticalAlignValue::Baseline)
+                            };
                             let letter_spacing = style
                                 .map(|s| Self::resolve_letter_spacing(&s.letter_spacing, font_size))
                                 .unwrap_or_else(|| {
