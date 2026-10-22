@@ -338,4 +338,92 @@ mod tests {
         );
         assert_eq!(px(0, 0), [255, 127, 127], "脏区外：应保留上一帧像素不变");
     }
+
+    /// M3-c HiDPI 变体：device_scale_factor=2 下 partial 必须与全量逐位一致——
+    /// 覆盖白底重铺边界（逻辑脏区 ×scale = 物理矩形）与 region 渲染的物理像素
+    /// 契约（fill 裁剪此前按 CSS 逻辑与物理 region 直接求交，scale≠1 错位；
+    /// 2 的幂 scale 换算逐位精确，可作逐位断言）。
+    #[test]
+    fn partial_dirty_semi_transparent_matches_full_at_scale_2() {
+        let logical_w = 20u32;
+        let logical_h = 10u32;
+        let (w, h) = (40u32, 20u32); // 物理视口
+        let loader = FontLoader::new();
+        let mut glyph_cache = GlyphCache::new(64);
+        let mut image_cache = ImageCache::new(8, 1 << 20);
+
+        let paint_full = PaintSnapshotParams {
+            viewport_width: logical_w,
+            viewport_height: logical_h,
+            document_height: logical_h as f32,
+            device_scale_factor: 2.0,
+            fills: vec![zero_protocol::paint_snapshot::IpcFill {
+                rect: IpcRect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: logical_w as f32,
+                    height: logical_h as f32,
+                },
+                color: zero_protocol::paint_snapshot::IpcColor {
+                    r: 255,
+                    g: 0,
+                    b: 0,
+                    a: 128,
+                },
+            }],
+            dirty_rects: Vec::new(),
+            ..Default::default()
+        };
+        let primitives = zero_paint_convert::to_render_primitives(paint_full.clone());
+
+        unsafe {
+            std::env::set_var("ZW_RENDER_THREAD", "0");
+        }
+        let mut expected = FrameBuffer::new(w, h);
+        rasterize::rasterize_into_back(
+            &paint_full,
+            &primitives,
+            &loader,
+            &mut glyph_cache,
+            None,
+            &mut image_cache,
+            &mut expected,
+            false,
+        );
+
+        let mut back = FrameBuffer::new(w, h);
+        back.data.copy_from_slice(&expected.data);
+        let mut paint_partial = paint_full.clone();
+        paint_partial.dirty_rects = vec![IpcRect {
+            x: 5.0,
+            y: 2.0,
+            width: 8.0,
+            height: 6.0,
+        }];
+        rasterize::rasterize_into_back(
+            &paint_partial,
+            &primitives,
+            &loader,
+            &mut glyph_cache,
+            None,
+            &mut image_cache,
+            &mut back,
+            true,
+        );
+        unsafe {
+            std::env::remove_var("ZW_RENDER_THREAD");
+        }
+
+        assert_eq!(
+            back.data, expected.data,
+            "scale=2 partial 重绘相同内容必须与全量逐位一致（重铺边界与 region 契约按物理像素对齐）"
+        );
+        let px = |x: u32, y: u32| -> [u8; 3] {
+            let off = ((y * w + x) * 4) as usize;
+            [back.data[off], back.data[off + 1], back.data[off + 2]]
+        };
+        // 物理 (16,8) = 逻辑 (8,4)，在归一化脏区的物理投影 [8,28)×[2,18) 内。
+        assert_eq!(px(16, 8), [255, 127, 127], "脏区内（物理坐标）：白底一次混合值");
+        assert_eq!(px(0, 0), [255, 127, 127], "脏区外（物理坐标）：保留上一帧");
+    }
 }

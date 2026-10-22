@@ -2674,6 +2674,104 @@ fn region_matches_full_with_semi_transparent_fills() {
     }
 }
 
+/// S3 region 契约统一（物理像素）：scale=2（2 的幂，换算逐位精确）下 region
+/// 渲染与全量在 region 内逐位一致，且不向 region 外越界绘制——此前 fill 裁剪
+/// 按 CSS 逻辑直接与物理 region 求交（单位错配），跨界/全视口 fill 按错误边界
+/// 越界绘制（scale=1 时逻辑/物理重合，既有测试构造性不可达）。
+#[test]
+fn region_matches_full_and_clips_at_scale_2() {
+    const LATO_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Lato-Medium.ttf");
+    let mut font_loader = FontLoader::new();
+    let font_id = font_loader.load_font(LATO_TTF).expect("load Lato");
+    let mut primitives = RenderPrimitives::new();
+    // 半透明全视口底（CSS 200×100 → 物理 400×200）：单位错配时按整缓冲越界。
+    primitives.fills.push(FillPrimitive {
+        rect: Rect::new(0.0, 0.0, 200.0, 100.0),
+        color: Color::rgba(255, 0, 0, 128),
+    });
+    // 跨 region 边界（逻辑 x=100）的半透明 fill：物理投影 x∈[160,280)。
+    primitives.fills.push(FillPrimitive {
+        rect: Rect::new(80.0, 80.0, 60.0, 60.0),
+        color: Color::rgba(0, 0, 255, 128),
+    });
+    // region 内字形：门控换算（CSS 包围盒 ×scale vs 物理 region）路径覆盖。
+    primitives.add_glyph(GlyphPrimitive {
+        x: 20.0,
+        y: 30.0,
+        font_size: 24.0,
+        color: Color::BLACK,
+        glyph_id: 'A' as u32,
+        font_glyph_index: None,
+        source: None,
+        font_id: FontId(font_id),
+        font_variation_id: None,
+        bitmap_width: None,
+        bitmap_height: None,
+        rotation: 0.0,
+        synthetic_italic: false,
+    });
+    // 手工构造完整 draw_order（渲染走生产 draw_order 分支）：push 系列辅助只登记
+    // 图元、不填 draw_order，缺了会整体跳过 fills（等价断言空转——两种缓冲都只剩
+    // 白底+字形，cull_invisible 对手工图元同样只重建出 glyph op）。
+    primitives.draw_order.push(DrawOp::Fill(0));
+    primitives.draw_order.push(DrawOp::Fill(1));
+    primitives.draw_order.push(DrawOp::Glyph(0));
+
+    let mut glyph_cache = GlyphCache::new(8);
+    let full = render_full_scene(
+        400,
+        200,
+        2.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    // 逻辑 region (0,0,100,100) → 物理 (0,0,200,200)。
+    let region = render_full_scene_region(
+        400,
+        200,
+        2.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+        Some(Rect::new(0.0, 0.0, 200.0, 200.0)),
+    );
+
+    // region 内（物理 x∈[0,200), y∈[0,200)）与全量逐位一致。
+    for y in 0..200usize {
+        for x in 0..200usize {
+            let i = (y * 400 + x) * 4;
+            assert_eq!(
+                region.data[i..i + 4],
+                full.data[i..i + 4],
+                "scale=2 region 内应与全量逐位一致 @ ({x},{y})"
+            );
+        }
+    }
+    // region 外保持新缓冲白底：跨界 fill 右侧（物理 x∈[200,280)）与全视口底
+    // 越界部分都不得绘制（分配式包装的契约：region 外 = 未触碰的打底色）。
+    for y in 0..200usize {
+        for x in 200..400usize {
+            let i = (y * 400 + x) * 4;
+            assert_eq!(
+                &region.data[i..i + 3],
+                &[255, 255, 255],
+                "region 外不得越界绘制 @ ({x},{y})"
+            );
+        }
+    }
+}
+
 /// S3 region 门控：region 外的路径描边不得绘制（与 PathFill 门控对齐，含线宽
 /// 外扩余量）。
 #[test]

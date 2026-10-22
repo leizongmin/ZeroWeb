@@ -177,10 +177,11 @@ pub fn render_full_scene(
     fb
 }
 
-/// 区域光栅化（S3 增量重绘）——只绘制与 `region`（CSS 逻辑像素）相交的图元。
+/// 区域光栅化（S3 增量重绘）——只绘制与 `region`（**物理像素**，device pixel）
+/// 相交的图元。
 ///
 /// `region=None` 时与 `render_full_scene` 完全一致（全量）。增量消费方
-///（RFC S3）把 RenderStats.dirty_rects 传入，跳过区域外图元的光栅化。
+///（RFC S3）把 dirty_rects 经 scale 换算为物理矩形传入，跳过区域外图元的光栅化。
 #[allow(clippy::too_many_arguments)] // 光栅化全参数（文件内多处同款）
 pub fn render_full_scene_region(
     width: u32,
@@ -351,7 +352,9 @@ fn matte_to_straight_alpha(white: &FrameBuffer, black: &FrameBuffer) -> FrameBuf
 /// 与 [`render_full_scene_region`] 的差异：① 不清全帧（保留已平移的内容像素）；
 /// ② `ui_glyphs` 按 region 过滤——条带渲染只重画条带内的文字，其余保持平移结果；
 /// ③ overlay 层**不**过滤（滚动条/查找栏为每帧重画正确位置的 chrome 静态层，
-/// 覆盖在已平移内容上即正确）。`scale` 为已归一化的物理缩放。
+/// 覆盖在已平移内容上即正确）。`scale` 为已归一化的物理缩放；`region` 契约为
+/// **物理像素**——图元 CSS 矩形经 `scale` 换算后参与门控/裁剪（此前 fill 裁剪
+/// 按逻辑像素直接与 region 求交，scale≠1 时错位，2026-10-23 契约统一）。
 #[allow(clippy::too_many_arguments)] // 光栅化全参数（文件内多处同款）
 pub fn render_full_scene_region_into(
     fb: &mut FrameBuffer,
@@ -430,8 +433,20 @@ fn render_typed_buckets(
     // borders (strokes/path_fills/path_strokes) → content (glyphs) →
     // overlay → filters → blend_modes
 
-    // S3 区域裁剪：图元矩形与 region 不相交则跳过（region=None 全量）
-    let in_region = |rect: Rect| region.is_none_or(|r| r.intersects(&rect));
+    // S3 区域裁剪：图元矩形与 region 不相交则跳过（region=None 全量）。
+    // region 契约为物理像素；图元 rect 为 CSS 逻辑——闭包内统一 ×scale 换算
+    // （乘法逐位精确；此前 rect 直接与 region 求交，scale≠1 时单位错配，
+    // scale<1 时会漏画区域内图元）。
+    let in_region = |rect: Rect| {
+        region.is_none_or(|r| {
+            r.intersects(&Rect::new(
+                rect.origin.x * scale,
+                rect.origin.y * scale,
+                rect.size.width * scale,
+                rect.size.height * scale,
+            ))
+        })
+    };
 
     // 1. 阴影（绘制在最底层）
     for shadow in &primitives.shadows {
@@ -584,8 +599,19 @@ fn render_draw_order(
     mut image_cache: Option<&mut ImageCache>,
     region: Option<Rect>,
 ) {
-    // S3 区域裁剪：图元矩形与 region 不相交则跳过（region=None 全量）
-    let in_region = |rect: Rect| region.is_none_or(|r| r.intersects(&rect));
+    // S3 区域裁剪：图元矩形与 region 不相交则跳过（region=None 全量）。
+    // region 契约为物理像素；图元 rect 为 CSS 逻辑——闭包内统一 ×scale 换算
+    // （同 render_typed_buckets，scale≠1 时单位错配修复）。
+    let in_region = |rect: Rect| {
+        region.is_none_or(|r| {
+            r.intersects(&Rect::new(
+                rect.origin.x * scale,
+                rect.origin.y * scale,
+                rect.size.width * scale,
+                rect.size.height * scale,
+            ))
+        })
+    };
 
     // P2-7 mix-blend-mode：painter 在元素图元之前 push DrawOp::BlendMode 标记，
     // 标记之后的图元画到独立源缓冲（元素层），循环结束后按 blend rect 与
@@ -668,18 +694,19 @@ fn render_draw_order(
                 if let Some(p) = primitives.path_strokes.get(*i)
                     // 描边墨迹外扩线宽（端帽/斜接），按外扩包围盒做 region 跳过——
                     // 此前无门控，region 渲染会重画全文档路径描边（区外旧帧上二次叠加）。
-                    // is_none 短路在前：全量路径（region=None）不做包围盒计算。
+                    // is_none 短路在前：全量路径（region=None）不做包围盒计算；
+                    // in_region 内统一做 CSS→物理换算。
                     && (region.is_none()
-                        || region.is_some_and(|r| {
+                        || {
                             let hull = path_vertices_rect(&p.vertices);
                             let lw = p.line_width.max(1.0);
-                            r.intersects(&Rect::new(
+                            in_region(Rect::new(
                                 hull.origin.x - lw,
                                 hull.origin.y - lw,
                                 hull.size.width + lw * 2.0,
                                 hull.size.height + lw * 2.0,
                             ))
-                        }))
+                        })
                 {
                     stroke::render_path_stroke(target, p, scale);
                 }
@@ -688,9 +715,9 @@ fn render_draw_order(
                 if let Some(p) = primitives.glyphs.get(*i)
                     // region 门控（宁多勿少）：此前无门控，region 渲染每帧重画全部
                     // 字形——区外 AA 边在旧帧上逐帧二次叠加变深。跨界字形不裁剪。
-                    // is_none 短路在前：全量路径（region=None）不做包围盒计算。
-                    && (region.is_none()
-                        || region.is_some_and(|r| r.intersects(&glyph_primitive_bounds(p))))
+                    // is_none 短路在前：全量路径（region=None）不做包围盒计算；
+                    // in_region 内统一做 CSS→物理换算。
+                    && (region.is_none() || in_region(glyph_primitive_bounds(p)))
                 {
                     draw_glyph_primitive(
                         target,
@@ -782,12 +809,24 @@ pub fn render_scene_to_framebuffer(
 // ─── 基础图元渲染 ───
 
 /// S3：有 `region` 时将 fill 裁剪到脏区再绘制，避免全视口背景污染区外像素。
+///
+/// region 契约为物理像素，fill.rect 为 CSS 逻辑：region ÷scale 换算回 CSS 后求交，
+/// 交给 [`fill_rect`] 统一缩放。scale=1 与 2 的幂逐位精确；非 2 的幂 scale 除法
+/// 有亚像素舍入，仅影响裁剪边界像素归属（floor/ceil 外扩语义不丢区内内容）。
 fn fill_rect_for_region(fb: &mut FrameBuffer, fill: &FillPrimitive, scale: f32, region: Option<Rect>) {
     let rect = match region {
-        Some(r) => match fill.rect.intersection(&r) {
-            Some(inter) => inter,
-            None => return,
-        },
+        Some(r) => {
+            let r_css = Rect::new(
+                r.origin.x / scale,
+                r.origin.y / scale,
+                r.size.width / scale,
+                r.size.height / scale,
+            );
+            match fill.rect.intersection(&r_css) {
+                Some(inter) => inter,
+                None => return,
+            }
+        }
         None => fill.rect,
     };
     fill_rect(

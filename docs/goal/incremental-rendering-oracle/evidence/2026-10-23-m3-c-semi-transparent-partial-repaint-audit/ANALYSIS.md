@@ -74,3 +74,20 @@
 **残留定性更新（切片 2「跨界越界族」影响面收窄）**：re-base 落地后，主案例（全视口半透明 fill）经 `fill_rect_for_region` 逐像素裁剪不越界，**完全修复**；残留仅「未逐像素裁剪族（RoundedRect/Shadow/Gradient/Image/Stroke/PathFill）跨界 + 区域内已重铺白底」组合下的区域边界有界伪影——且消费方若改 temp-buffer 方案（渲染到 scratch 再拷回）则该族无需手术。列观察项，不单独修。
 
 **契约瑕疵记录（本轮不修，列 render-foundation 契约清理待办）**：`render_full_scene_region_into` 的 region 参数内部单位不一致——glyph 过滤按**物理像素**（cpu/mod.rs:387 `glyph.x * scale` 后与 region 比较），fill 裁剪按 **CSS 逻辑**（cpu/mod.rs:787 `fill.rect` 与 region 直接求交）。scale=1 时两义重合无影响；scale≠1 且调用方传物理坐标时 fill 裁剪错位。现网可达性：browser 条带两处调用均传 scale=1.0（app_platform.rs，构造性安全）、compositor partial 默认关闭 → **潜伏**。后续与 GPU clip 逻辑坐标契约（T34 已修 GPU 侧同族问题）对齐时一并收口。
+
+## M3-c 后续（同日切片 4）：region 契约统一为物理像素（render-foundation，收口切片 3 记录的契约瑕疵）
+
+**跨流红灯复绿确认**：`html_compat::dialog_popover_invalid_targets_leave_no_top_layer_state` 通过（7fd3ed736 把集成测试期望同步到 s32 lenient 语义）；html_compat 全模块 21/21 绿，挂约 4 轮的跨流红灯族清除。
+
+**契约统一落地**：region 参数定约**物理像素**（与全部调用方现状一致——compositor rasterize/worker patch 传 `x*scale`、browser 条带传 scale=1.0、ui_glyphs 过滤本按物理）：
+
+1. 两处 `in_region` 闭包（`render_typed_buckets`/`render_draw_order`）：图元 CSS rect 闭包内统一 ×scale 后与 region 求交（乘法逐位精确）。修前 CSS rect 直接与物理 region 比较，scale>1 过度包含（保守无害），**scale<1 会漏画区域内图元**（stale 像素，真实缺陷）。
+2. `fill_rect_for_region`：region ÷scale 换算回 CSS 后与 `fill.rect` 求交（scale=1 与 2 的幂逐位精确；非 2 的幂除法亚像素舍入仅影响裁剪边界像素归属）。修前混合单位求交，scale≠1 时跨界 fill 按错误边界越界绘制。
+3. 切片 2 的 Glyph/PathStroke 内联门控改走统一 `in_region`（保留 is_none 短路惰性）。
+4. 文档修正：`render_full_scene_region`/`_into` 的 region 单位声明（原写「CSS 逻辑像素」与 glyph 过滤实现自相矛盾）。
+
+**测试与 fail-first**：新增 `region_matches_full_and_clips_at_scale_2`（半透明全视口底 + 跨界半透明 fill + region 内字形，逻辑 region (0,0,100,100) → 物理 (0,0,200,200)；断言 region 内与全量逐位一致 + region 外保持白底）+ compositor `partial_dirty_semi_transparent_matches_full_at_scale_2`（HiDPI 端到端 partial==full）。**fail-first 已验证**：撤修复后 render-foundation 测试恰在 (200,0) 泄漏 (255,127,127) FAILED，恢复后 PASS。
+
+**过程教训（已沉淀 [learning](../../../../../docs/learnings/bugs/2026/10/2026-10-23-manual-primitives-draw-order-vacuous-equivalence.md)）**：首版测试 fail-first 不红——手工 `RenderPrimitives` 构造的 `add_glyph` 只登记 glyph op，fills 不进 draw_order，渲染走 draw_order 分支时 fills 整体跳过，双缓冲全白等价断言空转；`cull_invisible` 对手工图元同样只重建出 glyph op。修正为手工 push 完整 `DrawOp` 序列后 fail-first 才成立。教训：等价类断言的绿灯不能区分「验证了修复」与「两边都没画」，fail-first 是唯一可靠检测。
+
+**验证**：zero-render-foundation 726/726、zero-compositor 72/72、clippy/fmt 0 警告、定向 bench-gate PASS（render_bench 1/1 绝对预算过；硬件基线失配 WARN 为既有事实）。
