@@ -200,6 +200,11 @@ pub struct RenderPipeline {
     defer_render: bool,
     /// 宿主维护的页面焦点所有者 selector。
     focused_selector: Option<String>,
+    /// R-s31：运行时模态 dialog selector 列表（宿主/runner 经 shim
+    /// `_zwDialogModalAllSels()` 轮询注入）。`:modal` 判定与 `dialog:modal` UA 定位
+    /// 的真相源——render 每帧 fresh-parse 不携带模态性（只在 shim JS 栈），parse 后
+    /// `inject_modal_state` 显式注入（镜像 `focused_selector`/`inject_focus_state`）。
+    modal_dialog_selectors: Vec<String>,
     /// 当前焦点是否来自键盘导航（Tab/Shift+Tab）——UA 默认键盘焦点环的绘制条件
     ///（点击/JS 聚焦不画环，对齐 Chrome :focus-visible 键盘启发式的保守替代）。
     focused_from_keyboard: bool,
@@ -397,6 +402,14 @@ impl RenderPipeline {
         self.focused_selector = selector.map(str::to_string);
     }
 
+    /// R-s31：注入运行时模态 dialog selector 列表（runner 探测环/host 经 shim
+    /// `_zwDialogModalAllSels()` 轮询——模态性只在 shim JS 栈，DOM 序列化不携带）。
+    /// CSS `:modal` 判定与 `dialog:modal` UA `position:fixed` 定位共用本真相源
+    ///（HTML 渲染规范 #modal-dialogs + Selectors L4 `:modal-pseudo`）。
+    pub fn set_modal_dialog_selectors(&mut self, selectors: Vec<String>) {
+        self.modal_dialog_selectors = selectors;
+    }
+
     /// 设置当前焦点是否来自键盘导航（Tab/Shift+Tab）。仅键盘焦点绘制 UA 默认
     /// 焦点环（点击/JS 聚焦不画，对齐 Chrome :focus-visible 行为）。
     pub fn set_focused_from_keyboard(&mut self, from_keyboard: bool) {
@@ -429,6 +442,25 @@ impl RenderPipeline {
             && let Some(id) = doc.query_selector(doc.root(), selector)
         {
             doc.set_focus_element(Some(id));
+        }
+    }
+
+    /// R-s31：模态 dialog 状态注入 render Document（`:modal` 样式判定 + `dialog:modal`
+    /// UA `position:fixed` 定位开关）。render 路径的 Document 每帧从 HTML 重建，模态性
+    /// 只在 shim JS 栈（DOM 序列化不携带）→ parse 后从 `modal_dialog_selectors` 显式
+    /// 注入（镜像 `inject_focus_state`；Selectors L4 `:modal-pseudo` + 渲染规范
+    /// #modal-dialogs）。selector 解析失败的项跳过（dialog 已移除的 stale 残留）。
+    fn inject_modal_state(&self, doc: &mut zero_dom::Document) {
+        if self.modal_dialog_selectors.is_empty() {
+            return;
+        }
+        let ids: Vec<NodeId> = self
+            .modal_dialog_selectors
+            .iter()
+            .filter_map(|selector| doc.query_selector(doc.root(), selector))
+            .collect();
+        if !ids.is_empty() {
+            doc.set_modal_dialogs(ids);
         }
     }
 
@@ -467,6 +499,7 @@ impl RenderPipeline {
             form_control_compositions: HashMap::new(),
             defer_render: false,
             focused_selector: None,
+            modal_dialog_selectors: Vec::new(),
             focused_from_keyboard: false,
             scroll_offsets: Vec::new(),
             text_selections: Vec::new(),
@@ -1205,6 +1238,7 @@ impl RenderPipeline {
         let parse_start = Instant::now();
         let mut doc = zero_dom::parse_html(html);
         self.inject_focus_state(&mut doc);
+        self.inject_modal_state(&mut doc);
         let parse_ms = parse_start.elapsed().as_secs_f64() * 1000.0;
 
         // 2. 解析 CSS → Stylesheets
@@ -1502,6 +1536,7 @@ impl RenderPipeline {
         let parse_start = Instant::now();
         let mut doc = zero_dom::parse_html(html);
         self.inject_focus_state(&mut doc);
+        self.inject_modal_state(&mut doc);
         let parse_ms = parse_start.elapsed().as_secs_f64() * 1000.0;
 
         // 2. 解析 CSS → Stylesheets（外部 CSS + HTML 内 `<style>`）

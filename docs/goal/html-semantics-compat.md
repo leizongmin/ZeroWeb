@@ -2,11 +2,43 @@
 
 **版本**: v2.0
 **日期**: 2026-10-21（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 30 收口（模态 hit-test/事件派发 inert 排除 + backdrop 命中面，modal-dialog-blocks-mouse-events 收口 + backdrop-receives-element-events 3T 基线 Timeout→Pass，dialog 集群 82 files 320P/85F/2T 同 key 回归 0），下一步按挂账序推进
+**状态**: Active——M2 切片 31 收口（dialog `:modal` 状态通道落地 + UA 定位注入实验定性：回归 0 纪律下不注入，布局 abspos 收缩/fit-content 为回填前置；gBCR 同 turn stale 红因破案，强制同步布局冲刷立切片），下一步按挂账序推进
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-23 M2 切片 30 收口）**：rendering inert 域第一
+> **▶ 当前状态（2026-10-23 M2 切片 31 收口）**：dialog showModal 布局
+> 域。**谜题破案**：s30「dialog[open] computed block 但 gBCR 全零」是探
+> 针伪象——gBCR 读 renderer 上一帧 rect 快照（rect_bridge），open 同 tick
+> 读拿到旧布局；等帧后全部有盒。探测环刷新顺序（flush→timers→刷新）钉
+> 死 stale 窗口：abspos-dialog-layout 9 案中 6 案红因 = showModal 同 turn
+> 测量双侧 stale（expected 300/got 0），**挂账 A（本流）：强制同步布局
+> 冲刷**（gBCR/offset* 读前冲刷 + 重排，CSSOM view 语义）。**`:modal`
+> 通道落地**：模态性只在 shim JS 栈、DOM 序列化不携带 → 镜像 :focus 注
+> 入通道（R4241）建全链——dom `Document.modal_dialogs`/`is_modal_dialog`
+> + pipeline `inject_modal_state`（fresh-parse 后注入）+ webview 转发 +
+> runner 探测环轮询 `_zwDialogModalAllSels()`（shim 全量导出，栈序、嵌
+> 套模态皆匹配）+ matcher `:modal` 臂——作者 `dialog:modal` 规则自此真
+> 实匹配。**UA 定位注入实验矩阵**（回归 0 纪律定性）：规范照抄（inset
+> 0 + margin auto）= 9 回归（布局对 inset 指定 + size auto 走满视口拉
+> 伸，light-dismiss 盒外点击全族失效）；inset auto 近似 = 3 回归（出流
+> 重叠、selection/editing 点击几何漂移）；不注入 = **0 回归 0 增益**
+>（320P/85F/2T 与 s30 逐位打平）→ 终态不注入。**挂账 B（渲染流）：
+> abspos 收缩/fit-content 语义补齐**，UA 规则随该切片按规范回填（A 形
+> 态实验已端到端验证轮询链）；s30「ancestor-is-inert 红因 = UA
+> position:absolute 缺失」修正为「注入受布局收缩缺口阻断」。挂账 D：
+> getComputedStyle 路径 `:modal` 注入（低优）。gates：zero-dom lib
+> **863P/0F**、zero-engine lib **3428P/0F**（+1）、zero-style-system lib
+> **2446P/0F**（+1）、clippy -D warnings、fmt clean、零新增依赖；渲染/
+> UA 样式净变化为零免 product-smoke。账本见
+> [evidence/2026-10-23-m2s31-dialog-modal-channel.md](html-semantics-compat/evidence/2026-10-23-m2s31-dialog-modal-channel.md)。
+> **下一步**：挂账 A（强制同步布局冲刷，解锁 abspos/non-modal 布局语
+> 料同 turn 断言面）或按挂账序 popover 有效性语义（`:popover-open` 选择
+> 器 + hidePopover not-showing 抛 + popover-simple 余 hang）、impl-doc
+> wrapper requestClose、anchor-with-inline 导航缺口、parser form element
+> pointer 4F、custom command `--` 前缀 CommandEvent defer、ESC 组栈边缘
+> 乱序、非模态 close 不出组栈、R371 模板残留。
+>
+> **▶ 上轮状态（2026-10-23 M2 切片 30 收口）**：rendering inert 域第一
 > 刀——hit-test 切面收口。宿主指针命中（runner `resolve_pointer_target`
 > 候选循环）不排除模态 inert 子树，点击模态外元素照常命中。修复三件：
 > ① 命中候选循环接 inert 排除（跳过 `!_zwDialogModalFocusGateOk(e)`——

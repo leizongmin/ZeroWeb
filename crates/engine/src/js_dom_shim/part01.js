@@ -1141,6 +1141,30 @@
     return '';
   }
   globalThis._zwDialogModalTopSel = _zwDialogModalTopSel;
+  // 模态 dialog selector 全量列表（s31，2026-10-23）：runner 探测环轮询注入
+  // 管线（`:modal` 判定 + `dialog:modal` UA position:fixed 定位的真相源）。
+  // 模态性只在 shim JS 栈（DOM 序列化不携带），镜像 _zwDialogModalTopSel 的
+  // 过滤语义（stale 栈项跳过），但不过滤栈顶——嵌套模态全部匹配 `:modal`
+  //（Selectors L4 :modal-pseudo：top layer 内模态 dialog 皆匹配）。栈序导出
+  //（外层先）。
+  function _zwDialogModalAllSels() {
+    try {
+      var _maN = _zwDialogModalStack ? _zwDialogModalStack.length : 0;
+      var _maOut = [];
+      for (var _maI = 0; _maI < _maN; _maI++) {
+        var _maK = _zwDialogModalStack[_maI];
+        if (!_zwDialogModal[_maK] || !_zwTopLayer[_maK]) continue; // stale 栈项
+        var _maP = _proxyCache[_maK];
+        if (!_maP || !_maP.hasAttribute || !_maP.hasAttribute('open')) continue;
+        try { if (!_maP.isConnected) continue; } catch (_eMaIc) { continue; }
+        var _maS = _maP.__zwSelector;
+        if (_maS) _maOut.push(_maS);
+      }
+      return _maOut.join(',');
+    } catch (_eMa) {}
+    return '';
+  }
+  globalThis._zwDialogModalAllSels = _zwDialogModalAllSels;
   // 宿主 hit-test 谓词入口（runner resolve_pointer_target 页面域调用；shim 内
   // 部消费者走词法绑定不经此）。
   globalThis._zwDialogModalFocusGateOk = _zwDialogModalFocusGateOk;

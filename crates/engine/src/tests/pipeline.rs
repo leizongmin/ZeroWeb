@@ -216,6 +216,34 @@ fn focused_native_control_uses_state_accent_color() {
     );
 }
 
+/// R-s31：`:modal` 状态通道——管线注入 retained 模态 selector 后，作者 `dialog:modal`
+/// 规则真实匹配（Selectors L4 `:modal-pseudo`；模态性只在 shim JS 栈，DOM 序列化不
+/// 携带 → render fresh-parse 后 `inject_modal_state` 显式注入，镜像 :focus 通道）。
+#[test]
+fn test_modal_pseudo_injected_state_matches_author_rule() {
+    use zero_render_foundation::color::Color;
+    let html = r#"<html><body><dialog id="d" open>hi</dialog></body></html>"#;
+    let css = r#"dialog:modal { background-color: rgb(12, 34, 56); }"#;
+    let mut pipeline = RenderPipeline::new(200.0, 100.0);
+    let marker = Color::rgba(12, 34, 56, 255);
+
+    // 未注入模态态：:modal 不匹配，无该色填充。
+    let plain = pipeline.render_html(html, css);
+    assert!(
+        !plain.primitives().fills.iter().any(|f| f.color == marker),
+        "未注入模态态时 :modal 规则不应匹配"
+    );
+
+    // 注入模态 selector（runner 探测环轮询 shim _zwDialogModalAllSels 的同款入口）：
+    // 重渲染后 :modal 规则命中 dialog。
+    pipeline.set_modal_dialog_selectors(vec!["#d".to_string()]);
+    let modal = pipeline.render_html(html, css);
+    assert!(
+        modal.primitives().fills.iter().any(|f| f.color == marker),
+        "注入模态态后 :modal 规则应命中 dialog"
+    );
+}
+
 /// R639：跨多行的 inline span 背景应按行片段（per-fragment）绘制，而非单一 bounding-box
 /// rect。窄视口强制 span 文本换行；若按 box-level 仅 1 个 blue fill，按 per-fragment 则
 /// 行数个。此测试守护 R639 per-fragment inline bg 行为不退化为 box-level（同时验证

@@ -2139,6 +2139,14 @@ impl WebView {
         self.pipeline.set_focused_from_keyboard(from_keyboard);
     }
 
+    /// R-s31：同步运行时模态 dialog selector 列表（runner 探测环轮询 shim
+    /// `_zwDialogModalAllSels()`）——`:modal` 判定与 `dialog:modal` UA 定位的
+    /// render 注入源（pipeline `set_modal_dialog_selectors` 透传）。
+    #[doc(hidden)]
+    pub fn set_modal_dialog_selectors(&mut self, selectors: Vec<String>) {
+        self.pipeline.set_modal_dialog_selectors(selectors);
+    }
+
     /// R4353：脚本化滚动偏移（reftest harness scrollTop/scrollLeft 记录回流）。
     pub fn set_scroll_offsets(&mut self, offsets: Vec<(String, f32, f32)>) {
         self.pipeline.set_scroll_offsets(offsets);

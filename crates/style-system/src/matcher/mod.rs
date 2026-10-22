@@ -321,6 +321,11 @@ fn matches_pseudo_class(doc: &Document, element: NodeId, pc: &PseudoClassSelecto
             // 同源）。:focus-visible 留 `_ => false`——键盘 vs 鼠标启发式无运行时交互信号。
             "focus" => doc.is_focus_element(element),
             "focus-within" => doc.has_focus_within(element),
+            // `:modal`：运行时模态 dialog 状态（Selectors L4 `:modal-pseudo`；HTML
+            // 渲染规范 #modal-dialogs——showModal 进入 top layer 的 dialog）。模态性
+            // 只在 engine shim JS 栈，由管线逐帧注入 Document（镜像 :focus 通道），
+            // 委派 `is_modal_dialog` 权威判定（与 `dialog:modal` UA 定位同源）。
+            "modal" => doc.is_modal_dialog(element),
             // 约束校验伪类（HTML §4.10.20 + CSS Selectors L4）：候选校验元素的约束状态。
             // 委派 Document 权威方法（R3284 与 DOM 选择器同源，逻辑在 dom/document/validation.rs）。
             "valid" => doc.is_valid_element(element),
@@ -1276,6 +1281,7 @@ const SUPPORTED_SIMPLE_PSEUDO_CLASSES: &[&str] = &[
     "link",
     "last-child",
     "last-of-type",
+    "modal",
     "only-child",
     "only-of-type",
     "optional",

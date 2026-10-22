@@ -9,6 +9,7 @@ use slotmap::SlotMap;
 mod focus;
 mod form_state;
 mod lang_dir;
+mod modal;
 mod shadow;
 mod stats;
 mod target;
@@ -99,6 +100,11 @@ pub struct Document {
     /// `:focus-within` 判定源）。解析不携带（焦点是运行时状态），由 engine JS 桥注入；
     /// CSS matcher 与 DOM `querySelector` 复评共享同一权威（`:target` 的 URL 同模式）。
     focus_element: Option<NodeId>,
+    /// 运行时模态 dialog 集合（`showModal()`/`close()` 时由管线注入；Selectors L4
+    /// `:modal` 判定源 + 渲染规范 `dialog:modal` UA 定位开关）。解析不携带（模态性
+    /// 只存在于 engine shim JS 栈，DOM 序列化不携带），镜像 `focus_element` 注入通道；
+    /// CSS matcher 共享同一权威。判定面见 `modal` 子模块（`is_modal_dialog`）。
+    modal_dialogs: Vec<NodeId>,
 }
 
 impl Document {
@@ -125,6 +131,7 @@ impl Document {
             template_contents_map: HashMap::new(),
             slot_assignments: HashMap::new(),
             focus_element: None,
+            modal_dialogs: Vec::new(),
         }
     }
 
@@ -151,6 +158,7 @@ impl Document {
             shadow_roots: HashMap::new(),
             slot_assignments: HashMap::new(),
             focus_element: None,
+            modal_dialogs: Vec::new(),
         };
         // 重建 id 索引（builder 的 TreeSink 不维护 id_map；成本与旧实现（builder 的 TreeSink 不维护 id_map；成本与旧实现
         // create_element_with_qname 注册相同——O(E) 遍历 + 哈希插入）
@@ -1273,6 +1281,13 @@ impl Document {
     /// 判定面见 `focus` 子模块（`is_focus_element`/`has_focus_within`）。
     pub fn set_focus_element(&mut self, id: Option<NodeId>) {
         self.focus_element = id;
+    }
+
+    /// 注入运行时模态 dialog 集合（engine 管线 render 后 fresh-parse 时从 retained
+    /// 模态 selector 列表注入，镜像 `set_focus_element` 通道）。判定面见 `modal`
+    /// 子模块（`is_modal_dialog`）。
+    pub fn set_modal_dialogs(&mut self, ids: Vec<NodeId>) {
+        self.modal_dialogs = ids;
     }
 
     /// 获取文档 referrer（`document.referrer` 读，spec `dom-document-referrer`）。

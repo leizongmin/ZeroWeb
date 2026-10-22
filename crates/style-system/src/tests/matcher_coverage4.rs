@@ -816,6 +816,36 @@ fn test_focus_pseudo_document_state() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// matcher/mod.rs — :modal（Document 模态 dialog 状态，Selectors L4 :modal-pseudo）
+// ═══════════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_modal_pseudo_document_state() {
+    // 模态性由 engine 管线逐帧注入 Document（镜像 :focus 通道——模态性只在 shim JS
+    // 栈，render fresh-parse 不携带）；matcher 读注入状态真实匹配。driving:
+    // WPT html/semantics/interactive-elements/the-dialog-element（:modal UA/作者定位面）。
+    let mut doc = Document::new();
+    let root = doc.root();
+    let dialog = doc.create_element("dialog");
+    doc.append_child(root, dialog).unwrap();
+    let plain = doc.create_element("div");
+    doc.append_child(root, plain).unwrap();
+
+    // 未注入：:modal 不匹配（静态解析路径同款——模态性是运行时状态）。
+    assert!(!matches_selector(&doc, dialog, &make_pseudo_selector("modal")));
+    assert!(!matches_selector(&doc, plain, &make_pseudo_selector("modal")));
+
+    // 注入模态集合：仅集合内 dialog 匹配，非 dialog 元素不匹配。
+    doc.set_modal_dialogs(vec![dialog]);
+    assert!(matches_selector(&doc, dialog, &make_pseudo_selector("modal")));
+    assert!(!matches_selector(&doc, plain, &make_pseudo_selector("modal")));
+
+    // 集合清空（全 close）随动。
+    doc.set_modal_dialogs(Vec::new());
+    assert!(!matches_selector(&doc, dialog, &make_pseudo_selector("modal")));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // Helper functions
 // ═══════════════════════════════════════════════════════════════════════
 

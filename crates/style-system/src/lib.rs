@@ -1475,6 +1475,15 @@ impl StyleSystem {
         if tag_name.as_deref() == Some("dialog") && doc.get_attribute(element, "open").is_some() {
             ua_decl_inputs.push(("display".to_string(), "block".to_string(), false, (0, 0, 0), None));
         }
+        // R-s31 备注：dialog UA **定位**（`dialog { position: absolute; inset-inline: 0;
+        // margin: auto }` + `dialog:modal { position: fixed; inset-block: 0 }`，
+        // rendering.html#the-dialog-element-2/#modal-dialogs）本轮实验后**不注入**——
+        // 依赖 abspos 指定偏移下的 shrink-to-fit/fit-content 布局求值：规范形态注入实测
+        // 满视口拉伸盒（light-dismiss 盒外点击 9 回归）、inset auto 近似注入实测出流
+        // 重叠（selection/editing 点击几何 3 回归）；`:modal` 状态通道与 matcher 判定已
+        // 落地（`Document::is_modal_dialog`，镜像 :focus 注入通道），UA 规则待布局侧
+        // abspos 收缩/fit-content 语义补齐后按规范回填（挂账渲染流）。
+        // https://html.spec.whatwg.org/multipage/rendering.html#the-dialog-element-2
 
         // R4174（CSS Overflow 3 §3.1 + SVG2 §7.2）：`<svg>` 根元素 UA `overflow: hidden`
         //（chromium UA 样式表同——SVG 视口默认裁剪溢出内容）。CSS 初始值 visible 使 ZW

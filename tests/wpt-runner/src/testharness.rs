@@ -9256,6 +9256,24 @@ fn take_probe(webview: &mut WebView, last_refresh_ver: &mut u64) -> Result<Harne
     // 见（此前管线布局停留在导航时点——after_target_removed 族断言面）。
     // mutation 代际门控：无 mutation 批 → 零成本跳过（探测环 ~1ms/拍，无门控的逐拍
     // 百 KB 级 outerHTML 序列化曾跑穿 test-guard time-limit）。
+    // dialog-s31：模态态轮询先于刷新——showModal/close 的模态性只在 shim JS 栈
+    //（_zwDialogModalAllSels），DOM 序列化不携带；render 每帧 fresh-parse 后由管线
+    // `inject_modal_state` 注入（镜像 :focus 通道），下一行刷新的 render 才能带上
+    // `:modal` UA position:fixed（rendering.html#modal-dialogs）。逐拍一次微脚本
+    //（返回空串零成本），无需 mutation 门控。
+    let modal_sels = webview
+        .execute_script(
+            "typeof globalThis._zwDialogModalAllSels === 'function' ? globalThis._zwDialogModalAllSels() : ''",
+        )
+        .unwrap_or_default();
+    webview.set_modal_dialog_selectors(
+        modal_sels
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect(),
+    );
     let ver = zero_engine::js_dom_bridge::mutation_version();
     if ver != *last_refresh_ver {
         let shim_html = webview
