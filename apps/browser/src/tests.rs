@@ -7121,3 +7121,32 @@ fn restore_skips_tabs_that_reached_crash_loop_threshold() {
         "计数进入观察窗由 sweep 清零，恢复跳过本身不改计数"
     );
 }
+
+#[test]
+fn install_root_derives_from_nearest_releases_ancestor() {
+    // /proc/self/exe 会解析掉 current 符号链接，真实布局恒为
+    // <root>/releases/<版本>/usr/bin/zero-browser；回归：M4 串测发现
+    // 固定上溯三级把安装根算成 <root>/releases（更新应用到错误目录）。
+    let exe = Path::new("/opt/zeroweb/releases/26.10.23/usr/bin/zero-browser");
+    assert_eq!(super::install_root_from_exe(exe), Some(PathBuf::from("/opt/zeroweb")));
+    // 安装根路径自身含 releases 命名目录时取最近祖先（内层才是安装布局）。
+    let nested = Path::new("/srv/releases/pool/releases/26.10.23/usr/bin/zero-browser");
+    assert_eq!(
+        super::install_root_from_exe(nested),
+        Some(PathBuf::from("/srv/releases/pool"))
+    );
+}
+
+#[test]
+fn install_root_is_none_without_releases_ancestor() {
+    // 平铺前缀（无 releases 布局）不支持更新流：返回 None 走
+    // UPDATE_REJECTED INSTALL_ROOT_UNKNOWN，而不是静默选错根。
+    assert_eq!(
+        super::install_root_from_exe(Path::new("/usr/local/bin/zero-browser")),
+        None
+    );
+    assert_eq!(
+        super::install_root_from_exe(Path::new("/opt/zeroweb/bin/zero-browser")),
+        None
+    );
+}

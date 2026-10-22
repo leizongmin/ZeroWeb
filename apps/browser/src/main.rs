@@ -821,15 +821,28 @@ mod tests;
 
 // --- 无头模式入口 ---
 
-/// 解析更新操作安装根：默认从 `current_exe` 推导（`<root>/current/usr/bin/zero-browser`
-/// 上溯三级），可用 `ZERO_UPDATE_INSTALL_ROOT` 覆盖（隔离验收用）。
+/// 解析更新操作安装根：默认从 `current_exe` 推导。安装布局为
+/// `<root>/releases/<版本>/usr/bin/zero-browser`，`current` 链接只是启动入口，
+/// `/proc/self/exe` 恒解析到 releases 内的真实路径，故向上找最近的 `releases`
+/// 祖先目录，其父即安装根；平铺前缀（无 `releases` 祖先）返回 None。
+/// 可用 `ZERO_UPDATE_INSTALL_ROOT` 覆盖（隔离验收用）。
 fn update_install_root() -> Option<PathBuf> {
     match std::env::var("ZERO_UPDATE_INSTALL_ROOT") {
         Ok(value) if !value.is_empty() => Some(PathBuf::from(value)),
-        _ => std::env::current_exe()
-            .ok()
-            .and_then(|exe| exe.ancestors().nth(3).map(Path::to_path_buf)),
+        _ => std::env::current_exe().ok().as_deref().and_then(install_root_from_exe),
     }
+}
+
+/// 从已解析的 exe 路径推导安装根（[`update_install_root`] 的纯路径部分）。
+///
+/// 取最近的 `releases` 祖先而非固定层数：M4 串测发现固定「上溯三级」在
+/// `/proc/self/exe` 解析掉 `current` 符号链接后会把安装根算成 `<root>/releases`，
+/// 更新被应用到错误目录（UPDATE_APPLIED 但 current 不翻转）。
+fn install_root_from_exe(exe: &Path) -> Option<PathBuf> {
+    exe.ancestors()
+        .find(|dir| dir.file_name().is_some_and(|name| name == "releases"))
+        .and_then(|releases| releases.parent())
+        .map(Path::to_path_buf)
 }
 
 /// 执行本地源更新检查与应用（交付闭环 RFC FR-2/FR-7）。stdout 输出单行机器
