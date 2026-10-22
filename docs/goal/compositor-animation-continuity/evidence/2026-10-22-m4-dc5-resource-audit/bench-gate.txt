@@ -1,0 +1,48 @@
+# make bench-gate 实测（M4 默认路径性能门禁）
+
+运行：`timeout 3500 systemd-run --user --scope -p MemoryMax=12G make bench-gate`
+日期：2026-10-22 12:39 CST；commit 8ebb86cad（工作区仅含本 evidence 目录未入库文件，tracked 无改动）
+报告：tests/benchmarks/results/benchmark_20261022_123933.json（+ 同名 .txt 人读摘要）
+
+输出（执行日志节录）：
+
+```
+=== ZeroWeb Benchmarks ===
+Date: Thu Oct 22 12:39:33 CST 2026
+Commit: 8ebb86cad (dirty=false)
+Platform: linux-x86_64
+Crates: 16 | Pages: welcome,medium,morning
+Config hash: a3bd66703cd27bd2…
+
+--- pre-build (batched) ---
+（16 crate bench 逐一执行：browser-shell/canvas/css/dom/engine/host-runtime/layout/
+ net/protocol/render-foundation/script-sandbox/security/storage/style-system/
+ wasm-sandbox/webview，全部完成）
+--- page scenarios ---
+  welcome: total p95 7.762074ms, medium: total p95 220.50045ms, morning: total p95 75.166074ms
+  resource: peak_rss=177.421875MB startup=53.921037999999996ms
+--- retained form input ---
+  p95=0.015189ms jank=0.0
+
+=== Summary ===
+Passed: 16 / 16 (microbenches)
+form-input-perf-gate: PASS - linux-x86_64 hard budgets passed; no fixed-platform baseline yet
+perf-gate: report=benchmark_20261022_123933.json platform=linux-x86_64
+perf-gate: WARN — baseline hardware mismatch; relative metrics are not comparable
+  report:   AMD Ryzen 7 9700X 8-Core Processor (16 cores)
+  baseline: 13th Gen Intel(R) Core(TM) i5-13500H (16 cores)
+perf-gate: absolute page-total and retained-form budgets passed; capture a hardware-specific baseline to enable relative gates
+```
+
+## 判定
+
+- **门禁 exit 0（PASS）**：16/16 microbench 通过；页面级绝对预算（page-total）与
+  retained-form 硬预算通过；peak_rss 177.4MB、startup 53.9ms、welcome total p95
+  7.76ms 均在预算内。
+- **WARN（如实记录，非本 goal 引入）**：基线 docs/perf/baselines/linux-x86_64.json
+  采自 i5-13500H，本机为 9700X，perf-gate 按硬件指纹不匹配自动禁用相对门禁——
+  「相对基线零回归」在本机不可判定。缓解：本 goal 全部行为变化双 flag 门控默认关
+  （flag 关零注册/零消息/零参与，各批 SHIM_BASELINE_PASS 钉住），默认路径源码面
+  仅新增 flag 读取与空分支；flag 翻默认前本就规划 perf-gate 前置（DC-4 条件项 2）。
+  补采硬件专属基线属测量体系维护动作，超出本批范围，未执行（不为过门禁临时改
+  测量配置）。

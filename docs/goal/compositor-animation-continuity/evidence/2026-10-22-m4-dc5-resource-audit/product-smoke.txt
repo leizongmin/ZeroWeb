@@ -1,0 +1,22 @@
+# make product-smoke 实测（M4 生产 parity 门禁，DC-13）
+
+运行：`timeout 3500 systemd-run --user --scope -p MemoryMax=12G make product-smoke`
+日期：2026-10-22（bench-gate 之后串行执行，避免计时污染）；commit 8ebb86cad
+（target-disk-guard 先行清理增量缓存 17GB，分级清理后 34GB 继续执行）。
+
+## 判定：PASS（exit 0）
+
+| 腿 | 结果 |
+|---|---|
+| welcome@800 vs chromium oracle | **diff 15.50%**（74383/480000 px ≤ 20%）+ struct-check PASS（0 issues + sibling-overlap + count[.card=4,.shortcut=6,.link-tile=4,.footer=1] + lines[.title=1,.tagline=2]） |
+| morning article@800 | struct-check PASS（0 issues + count[.article=1,.item-tag=3,.lang-bash=1]） |
+| welcome@375 | struct-check PASS（count[.card=4]） |
+| welcome@320 | struct-check PASS（count[.card=4]） |
+| morning article@375 | struct-check PASS（count[.article=1]） |
+| morning article@320 | struct-check PASS（count[.article=1]，R1502/R1503 守门腿） |
+| form-input-perf-gate（前置） | PASS——linux-x86_64 硬预算过（p95=0.015ms jank=0.0） |
+
+说明：morning 腿的 gtag 外联脚本加载失败日志为离线语料预期行为（外部域不落盘），
+非门禁项。本 goal 未触渲染/布局语义（全部改动 flag 门控且默认关），本门禁为 M4
+「现有生产 parity 不回退」审计面补跑实测——与 2026-10-22 registry-S1a 批记录的
+product-smoke PASS 同判（同口径同阈值，见 master.md 执行记录）。
