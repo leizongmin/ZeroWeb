@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-09-12
-**状态**: Active（**远期门控 goal**——已立项但所有实现切片须用户点名启动）
+**状态**: Active（**自主推进中**——2026-10-22 用户全量授权至 DONE，裁决记录见 master.md）
 **执行模式**: WPT 驱动（上游 webgl/ conformance corpus 为验收标尺）；
 GPU 管线深依赖——**除 M1 资产切片外全部用户门控**（先例：R1043/Phase A IFC）
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——GPU 图形面）
@@ -12,6 +12,9 @@ GPU 管线深依赖——**除 M1 资产切片外全部用户门控**（先例�
 > 底座，工程量在四批 goal 中最大（GL 状态机 + shader 编译管线 + 上下文管理）。
 > 本 goal 立项即声明：**M1（corpus 导入基线）可自主推进，M2 起每一切片须用户点名**，
 > 避免无人值守循环在深结构上空转（8 轮净负回退教训）。
+>
+> **▶ 门控解除（2026-10-22 用户裁决）**：M2/M3/M4 全授权自主至 DONE，
+> 四项裁决内容见 [master.md](webgl-compat/master.md) 已裁决清单。
 >
 > **▶ 拆分动机（2026-09-12 用户决策，第二批立项）**：① 真实可用性图谱完整性
 > 要求该面有明确归属与挂账位置；② render-foundation 已有 wgpu+WGSL 管线底座
@@ -38,11 +41,13 @@ GPU 管线深依赖——**除 M1 资产切片外全部用户门控**（先例�
 最终使基础 WebGL 场景可渲染。
 
 **关键约束**：
-1. **M1 之外全部用户门控**：每切片启动前用户点名；无人值守循环遇 M2+ 边界输出
-   `BLOCK: 等待用户门控` 立即停（原定 `CONTINUE` 在单 goal run 无他面可转时
-   会 ~15s/轮自旋——2026-10-22 实证 8 轮零状态空转，见 master.md）
+1. **自主推进至 DONE（2026-10-22 用户全量授权）**：M2/M3/M4 全授权，切片边界
+   Agent 按盘点与基线自划，每切片落账 + 常驻测试 + 飞书通知；`BLOCK` 仅用于
+   真实阻塞（GPU 进程边界触线、DC-4 不可修复回归、资源门禁触发、无自主工作），
+   禁止用 `CONTINUE` 表达等待——会逐轮自旋（2026-10-22 实证 8 轮零状态空转）
 2. **GPU 栈依托 render-foundation**：不另起 wgpu 实例；CPU 回退路径评估记账
-3. **conformance 体量分级**：M1 盘点用例分布后与用户确认首批收敛子集
+3. **conformance 体量分级**：首批收敛已裁决（2026-10-22：批次 B 全量一次收，
+   7 案 15 subtests）
 
 覆盖范围（远期视图，全部门控）：上下文创建/类型 / clear/draw 状态机 /
 buffer/texture/framebuffer 对象 / shader 编译链接 / uniform/attribute / GLSL 翻译
@@ -60,7 +65,7 @@ buffer/texture/framebuffer 对象 / shader 编译链接 / uniform/attribute / GL
 
 | 领域 | 具体内容 | 说明 |
 |------|----------|------|
-| engine shim | getContext('webgl') 上下文对象面 | 门控切片 |
+| engine shim | getContext('webgl') 上下文对象面 | 实现切片（M2） |
 | render-foundation | GL 状态机→wgpu 映射层 | **依托既有 GPU 栈，不另起实例** |
 | WPT 资产 | webgl/ 子集导入与盘点（M1 唯一自主切片） | fetch 脚本 + 账本 |
 
@@ -75,21 +80,24 @@ zero-protocol 契约；触 GPU 进程边界即 BLOCK 上报。
 - [x] **DC-1**（2026-10-22）：webgl/ corpus 导入 + 用例分布盘点（dehydrated/渲染断言占比）+
       首批收敛子集建议书提交用户 + suites CSV 回填
       （[M1 盘点](webgl-compat/evidence/2026-10-22-m1-import-inventory.md)）
-- [ ] **DC-2**（门控）：WebGL 1.0 最小上下文（创建/clear/draw）WPT 子集收敛
-- [ ] **DC-3**（门控）：缓冲/纹理/shader 程序管线逐簇收敛（切片边界用户确认）
+- [ ] **DC-2**（2026-10-22 授权）：WebGL 1.0 最小上下文（创建/clear/draw）WPT 子集收敛
+- [ ] **DC-3**（2026-10-22 授权）：缓冲/纹理/shader 程序管线逐簇收敛（切片边界
+      Agent 自划，逐簇落账）
 - [ ] **DC-4**：`make test` 全绿 + clippy `-D warnings` + fmt + reftest 零回归
       + GPU/CPU 双路径差异记账
 
 ## 活跃里程碑
 
-**M1** 导入盘点（唯一自主切片；corpus fetch 用编号脚本 `tests/wpt-runner/scripts/goals/99-webgl-compat.sh`（索引 README；幂等续拉，GitHub API 限流时部分目录跳过属预期）——**2026-10-22 完成**，见 [M1 盘点](webgl-compat/evidence/2026-10-22-m1-import-inventory.md)）→ **M2-M3**（门控切片，边界用户定；批次选项见 M1 建议书）→
+**M1** 导入盘点（唯一自主切片；corpus fetch 用编号脚本 `tests/wpt-runner/scripts/goals/99-webgl-compat.sh`（索引 README；幂等续拉，GitHub API 限流时部分目录跳过属预期）——**2026-10-22 完成**，见 [M1 盘点](webgl-compat/evidence/2026-10-22-m1-import-inventory.md)）→ **M2-M3**（自主切片：M2 批次 B 全量一次收 + clear/draw 标尺 ①+②；M3 边界
+Agent 自划——均 2026-10-22 裁决）→
 **M4** 收口（WebGL2/WebGPU 挂账定稿）。
 
 ## Final Output Protocol
 
 `DONE`（DC-1~4 全满足或用户豁免 DC-2/3 并定稿挂账）/ `CONTINUE: <下一步>`（仅当
-本轮有实质推进）/ `BLOCK: <原因>`（M2+ 未获门控时输出 `BLOCK: 等待用户门控`，
-rally 立即停——`CONTINUE` 无自主工作时逐轮自旋）。
+本轮有实质推进）/ `BLOCK: <原因>`（真实阻塞即输出——GPU 进程边界触线、DC-4
+不可修复回归、资源门禁触发、无自主工作可做；rally 立即停。无工作时禁止
+`CONTINUE`，防逐轮自旋——2026-10-22 八轮空转教训）。
 
 ## Document Control / Archive Policy
 
