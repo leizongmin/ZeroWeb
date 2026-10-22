@@ -165,6 +165,31 @@ enum WorkerCommand {
         width: u32,
         height: u32,
     },
+    /// M3-S1c（compositor-animation-continuity）：worker canvas patch 三消息中继。
+    /// fire-and-forget（compositor 静默消费不回执）；Update 同 (surface, patch) 原地
+    /// 替换（latest-wins），Register/Destroy 独立入队不替换（时序语义不可吞）。
+    PatchRegister {
+        surface_id: u64,
+        navigation_epoch: u64,
+        patch_id: u64,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+    },
+    PatchUpdate {
+        surface_id: u64,
+        navigation_epoch: u64,
+        patch_id: u64,
+        width: u32,
+        height: u32,
+        rgba: Vec<u8>,
+    },
+    PatchDestroy {
+        surface_id: u64,
+        navigation_epoch: u64,
+        patch_id: u64,
+    },
 }
 
 impl WorkerCommand {
@@ -180,6 +205,9 @@ impl WorkerCommand {
             Self::ImagePayloadBatch { surface_id, .. } => *surface_id,
             Self::AnimationState(state) => state.surface_id,
             Self::GetFrame(key) => key.surface_id,
+            Self::PatchRegister { surface_id, .. }
+            | Self::PatchUpdate { surface_id, .. }
+            | Self::PatchDestroy { surface_id, .. } => *surface_id,
         }
     }
 }
@@ -316,6 +344,51 @@ impl CommandChannel {
                     | (WorkerCommand::GetFrame(_), WorkerCommand::GetFrame(_))
             )
         };
+        // M3-S1c：patch Update 另按 (surface, patch_id) 键原地替换（多 patch 并存，
+        // 逐贴片 latest-wins）；Register/Destroy 时序语义不可吞，走独立入队臂。
+        let same_patch_update = |pending: &WorkerCommand, command: &WorkerCommand| match (pending, command) {
+            (
+                WorkerCommand::PatchUpdate {
+                    surface_id: ps,
+                    patch_id: pp,
+                    ..
+                },
+                WorkerCommand::PatchUpdate {
+                    surface_id: cs,
+                    patch_id: cp,
+                    ..
+                },
+            ) => ps == cs && pp == cp,
+            _ => false,
+        };
+        if matches!(
+            command,
+            WorkerCommand::PatchRegister { .. } | WorkerCommand::PatchDestroy { .. }
+        ) {
+            // Register/Destroy 不可替换：先于其后的 Update 排队（FIFO 保序，
+            // compositor 侧注册先于更新、撤除后更新的语义依赖到达序）。
+            if state.pending.len() == self.capacity
+                && let Some(index) = oldest_frame_index(&state)
+            {
+                state.pending.remove(index);
+            } else if state.pending.len() == self.capacity {
+                tracing::warn!("compositor 命令队列满且无帧可逐：丢弃最旧命令");
+                state.pending.remove(0);
+            }
+            state.pending.push_back(command);
+            self.ready.notify_one();
+            return true;
+        }
+        if matches!(command, WorkerCommand::PatchUpdate { .. })
+            && let Some(index) = state
+                .pending
+                .iter()
+                .position(|pending| same_patch_update(pending, &command))
+        {
+            state.pending[index] = command;
+            self.ready.notify_one();
+            return true;
+        }
         if matches!(command, WorkerCommand::ImagePayloadBatch { .. }) {
             // P100 返修（F1）：批不可合并也不可被替换——像素丢弃后 renderer
             // 不会重发（key 已标记 sent），必须与同 surface 帧各自独立排队，
@@ -327,7 +400,10 @@ impl CommandChannel {
                 });
                 state.pending.remove(index);
             }
-        } else if matches!(command, WorkerCommand::AnimationState(_) | WorkerCommand::GetFrame(_)) {
+        } else if matches!(
+            command,
+            WorkerCommand::AnimationState(_) | WorkerCommand::GetFrame(_) | WorkerCommand::PatchUpdate { .. }
+        ) {
             if let Some(index) = state
                 .pending
                 .iter()
@@ -352,6 +428,9 @@ impl CommandChannel {
                     WorkerCommand::ImagePayloadBatch { .. }
                         | WorkerCommand::AnimationState(_)
                         | WorkerCommand::GetFrame(_)
+                        | WorkerCommand::PatchRegister { .. }
+                        | WorkerCommand::PatchUpdate { .. }
+                        | WorkerCommand::PatchDestroy { .. }
                 )
         }) {
             state.pending.remove(index);
@@ -630,6 +709,65 @@ impl Client {
             return;
         }
         let _ = self.commands.send_animation_state(state);
+    }
+
+    /// M3-S1c：worker patch 三消息中继（fire-and-forget，compositor 不回执）。
+    #[allow(clippy::too_many_arguments)] // 8 参 = wire 字段直传（Register 四元矩形），与 IpcMessageKind 一一对应
+    fn send_patch_register(
+        &self,
+        surface_id: u64,
+        navigation_epoch: u64,
+        patch_id: u64,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+    ) {
+        if self.status.load() == CompositorStatus::Disconnected {
+            return;
+        }
+        let _ = self.commands.send(WorkerCommand::PatchRegister {
+            surface_id,
+            navigation_epoch,
+            patch_id,
+            x,
+            y,
+            width,
+            height,
+        });
+    }
+
+    fn send_patch_update(
+        &self,
+        surface_id: u64,
+        navigation_epoch: u64,
+        patch_id: u64,
+        width: u32,
+        height: u32,
+        rgba: Vec<u8>,
+    ) {
+        if self.status.load() == CompositorStatus::Disconnected {
+            return;
+        }
+        let _ = self.commands.send(WorkerCommand::PatchUpdate {
+            surface_id,
+            navigation_epoch,
+            patch_id,
+            width,
+            height,
+            rgba,
+        });
+    }
+
+    fn send_patch_destroy(&self, surface_id: u64, navigation_epoch: u64, patch_id: u64) {
+        if self.status.load() == CompositorStatus::Disconnected {
+            return;
+        }
+        let _ = self.commands.send(WorkerCommand::PatchDestroy {
+            surface_id,
+            navigation_epoch,
+            patch_id,
+        });
     }
 
     /// M2-S1d：主动采样 Get（动画活跃期间由帧轮询每 tick 驱动）。
@@ -1010,6 +1148,63 @@ fn process_batch(
                     kind: IpcMessageKind::CompositorAnimationState(state),
                 })?;
             }
+            WorkerCommand::PatchRegister {
+                surface_id,
+                navigation_epoch,
+                patch_id,
+                x,
+                y,
+                width,
+                height,
+            } => {
+                // M3-S1c：worker patch 注册中继（fire-and-forget 不回执，同声明中继）。
+                transport.send(IpcMessage {
+                    id: message_id,
+                    kind: IpcMessageKind::CompositorPatchRegister {
+                        surface_id,
+                        navigation_epoch,
+                        patch_id,
+                        x,
+                        y,
+                        width,
+                        height,
+                    },
+                })?;
+            }
+            WorkerCommand::PatchUpdate {
+                surface_id,
+                navigation_epoch,
+                patch_id,
+                width,
+                height,
+                rgba,
+            } => {
+                transport.send(IpcMessage {
+                    id: message_id,
+                    kind: IpcMessageKind::CompositorPatchUpdate {
+                        surface_id,
+                        navigation_epoch,
+                        patch_id,
+                        width,
+                        height,
+                        rgba,
+                    },
+                })?;
+            }
+            WorkerCommand::PatchDestroy {
+                surface_id,
+                navigation_epoch,
+                patch_id,
+            } => {
+                transport.send(IpcMessage {
+                    id: message_id,
+                    kind: IpcMessageKind::CompositorPatchDestroy {
+                        surface_id,
+                        navigation_epoch,
+                        patch_id,
+                    },
+                })?;
+            }
             WorkerCommand::GetFrame(key) => {
                 // M2-S1d：主动采样 Get（同帧提交 ack 后的联动 Get 同型；响应走
                 // Data 分支入完成帧缓存）。
@@ -1356,6 +1551,56 @@ pub fn forward_image_batch(
 pub fn forward_animation_state(state: zero_protocol::animation::CompositorAnimationStateParams) {
     let mut client = CLIENT.lock().unwrap_or_else(|error| error.into_inner());
     client.get_or_insert_with(Client::start).send_animation_state(state);
+}
+
+/// M3-S1c（compositor-animation-continuity）：把 renderer worker 线程的 canvas patch
+/// 三消息中继给 compositor 进程。fire-and-forget（同声明中继——等待回执会因响应 id
+/// 错位断链）。
+pub fn forward_patch_register(
+    surface_id: u64,
+    navigation_epoch: u64,
+    patch_id: u64,
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+) {
+    let mut client = CLIENT.lock().unwrap_or_else(|error| error.into_inner());
+    client.get_or_insert_with(Client::start).send_patch_register(
+        surface_id,
+        navigation_epoch,
+        patch_id,
+        x,
+        y,
+        width,
+        height,
+    );
+}
+
+pub fn forward_patch_update(
+    surface_id: u64,
+    navigation_epoch: u64,
+    patch_id: u64,
+    width: u32,
+    height: u32,
+    rgba: Vec<u8>,
+) {
+    let mut client = CLIENT.lock().unwrap_or_else(|error| error.into_inner());
+    client.get_or_insert_with(Client::start).send_patch_update(
+        surface_id,
+        navigation_epoch,
+        patch_id,
+        width,
+        height,
+        rgba,
+    );
+}
+
+pub fn forward_patch_destroy(surface_id: u64, navigation_epoch: u64, patch_id: u64) {
+    let mut client = CLIENT.lock().unwrap_or_else(|error| error.into_inner());
+    client
+        .get_or_insert_with(Client::start)
+        .send_patch_destroy(surface_id, navigation_epoch, patch_id);
 }
 
 /// M2-S1d（compositor-animation-continuity）：主动请求 compositor 对指定 surface
@@ -1875,6 +2120,131 @@ mod tests {
             .try_recv(key.surface_id, key.navigation_epoch, key.frame_id)
             .expect("采样帧入缓存");
         assert!(frame.animations_active, "动画活跃标志透传");
+    }
+
+    /// M3-S1c：patch Update 同 (surface, patch_id) 原地替换、多 patch 并存；
+    /// Register/Destroy 不可替换保序；帧不得吞 patch 命令。
+    #[test]
+    fn patch_commands_coalesce_per_patch_without_swallowing_frames() {
+        let commands = CommandChannel::new(8);
+        assert!(commands.send(WorkerCommand::PatchRegister {
+            surface_id: 7,
+            navigation_epoch: 1,
+            patch_id: 1,
+            x: 10.0,
+            y: 20.0,
+            width: 100.0,
+            height: 50.0,
+        }));
+        assert!(commands.send_frame(pending(7, 1, 1)));
+        // 同 (surface, patch) Update 原地替换。
+        assert!(commands.send(WorkerCommand::PatchUpdate {
+            surface_id: 7,
+            navigation_epoch: 1,
+            patch_id: 1,
+            width: 4,
+            height: 4,
+            rgba: vec![0; 64],
+        }));
+        assert!(commands.send(WorkerCommand::PatchUpdate {
+            surface_id: 7,
+            navigation_epoch: 1,
+            patch_id: 1,
+            width: 4,
+            height: 4,
+            rgba: vec![1; 64],
+        }));
+        // 另一 patch 的 Update 并存不互吞。
+        assert!(commands.send(WorkerCommand::PatchUpdate {
+            surface_id: 7,
+            navigation_epoch: 1,
+            patch_id: 2,
+            width: 2,
+            height: 2,
+            rgba: vec![2; 16],
+        }));
+        let drained = commands.recv().unwrap();
+        assert_eq!(drained.len(), 4, "register+frame+update+update 应各占一条");
+        assert!(matches!(&drained[0], WorkerCommand::PatchRegister { patch_id: 1, .. }));
+        assert!(matches!(&drained[1], WorkerCommand::Frame(frame) if frame.frame_id == 1));
+        assert!(
+            matches!(&drained[2], WorkerCommand::PatchUpdate { patch_id: 1, rgba, .. } if rgba[0] == 1),
+            "同键旧 Update 被新 Update 原地替换"
+        );
+        assert!(matches!(&drained[3], WorkerCommand::PatchUpdate { patch_id: 2, .. }));
+        // Destroy 入队不被后续 Update 吞。
+        assert!(commands.send(WorkerCommand::PatchDestroy {
+            surface_id: 7,
+            navigation_epoch: 1,
+            patch_id: 1,
+        }));
+        assert!(commands.send(WorkerCommand::PatchUpdate {
+            surface_id: 7,
+            navigation_epoch: 1,
+            patch_id: 1,
+            width: 4,
+            height: 4,
+            rgba: vec![3; 64],
+        }));
+        let drained = commands.recv().unwrap();
+        assert_eq!(drained.len(), 2, "Destroy 与其后 Update 都不可吞");
+        assert!(matches!(&drained[0], WorkerCommand::PatchDestroy { patch_id: 1, .. }));
+        assert!(matches!(&drained[1], WorkerCommand::PatchUpdate { rgba, .. } if rgba[0] == 3));
+    }
+
+    /// M3-S1c：patch 三消息中继 fire-and-forget——compositor 静默消费不回执，
+    /// 同批后续命令响应不因无回执消息错位断链。
+    #[test]
+    fn patch_relay_is_fire_and_forget() {
+        let sent = Arc::new(Mutex::new(Vec::new()));
+        let mut transport = ScriptedTransport {
+            sent: Arc::clone(&sent),
+            responses: VecDeque::from([Ok(IpcMessage {
+                id: 4,
+                kind: IpcMessageKind::Ok,
+            })]),
+        };
+        let mut next_message_id = 1;
+        process_batch(
+            &mut transport,
+            vec![
+                WorkerCommand::PatchRegister {
+                    surface_id: 7,
+                    navigation_epoch: 1,
+                    patch_id: 1,
+                    x: 0.0,
+                    y: 0.0,
+                    width: 10.0,
+                    height: 10.0,
+                },
+                WorkerCommand::PatchUpdate {
+                    surface_id: 7,
+                    navigation_epoch: 1,
+                    patch_id: 1,
+                    width: 2,
+                    height: 2,
+                    rgba: vec![0; 16],
+                },
+                WorkerCommand::PatchDestroy {
+                    surface_id: 7,
+                    navigation_epoch: 1,
+                    patch_id: 1,
+                },
+                WorkerCommand::ReleaseSurface(7),
+            ],
+            &CompletedFrameChannel::new(1),
+            &PresentFrameChannel::new(),
+            &mut next_message_id,
+            &frame_watchdog(),
+        )
+        .expect("fire-and-forget 中继不得断链");
+
+        let sent = sent.lock().unwrap();
+        assert_eq!(sent.len(), 4);
+        assert!(matches!(&sent[0].kind, IpcMessageKind::CompositorPatchRegister { .. }));
+        assert!(matches!(&sent[1].kind, IpcMessageKind::CompositorPatchUpdate { .. }));
+        assert!(matches!(&sent[2].kind, IpcMessageKind::CompositorPatchDestroy { .. }));
+        assert!(matches!(sent[3].kind, IpcMessageKind::ReleaseCompositorSurface { .. }));
     }
 
     /// M2-S1d：主动 Get 与帧互不替换、同类同 surface 原地替换（不吞帧不丢采样）。

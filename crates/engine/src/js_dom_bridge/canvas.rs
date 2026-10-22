@@ -423,6 +423,27 @@ fn encode_image_wire(pixels: &[u8], width: u32, height: u32) -> String {
     out
 }
 
+/// M3-S1c patch 呈现数据面：canvas 全幅 RGBA 读回（行主序 u8）。复用 toDataURL 的
+/// pixel_buffer 读法（`width().max(1)` 兜底 0 尺寸画布）+ getImageData 语义；f16 画布经
+/// `get_image_data_f32` ×255 量化 clamp（patch rgba 是 u8 wire，越界值截断——与 getImageData
+/// wire 保越界不同）。ctx 不存在返 None（调用方跳过本次 Update）。
+pub fn canvas_context_full_rgba(reg: &CanvasRegistry, ctx_id: u64) -> Option<(u32, u32, Vec<u8>)> {
+    let ctx = reg.contexts.get(&ctx_id)?;
+    let w = ctx.width().max(1);
+    let h = ctx.height().max(1);
+    if zero_canvas::CanvasContext::is_float16_of(ctx) {
+        let (w2, h2, f32data) = ctx.get_image_data_f32(0, 0, w as i32, h as i32);
+        let data = f32data
+            .iter()
+            .map(|v| (v * 255.0).round().clamp(0.0, 255.0) as u8)
+            .collect();
+        Some((w2, h2, data))
+    } else {
+        let img = ctx.get_image_data(0, 0, w as i32, h as i32);
+        Some((img.width, img.height, img.data))
+    }
+}
+
 /// `HTMLCanvasElement.getContext('2d')` 派发（R2795，canvas slice 1）。host 持 `CanvasRegistry`
 ///（`Arc<Mutex<CanvasRegistry>>`，上下文表 + 渐变表），JS 经 `__zw_canvas_op(handle, op, ...args)`
 /// 串参派发（避免 JSON/serde 依赖）。**关键**：zero-canvas `fill_rect`/`stroke_rect` 便捷法**不写

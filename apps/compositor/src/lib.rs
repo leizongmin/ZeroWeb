@@ -69,6 +69,9 @@ struct SurfaceState {
     /// M2-S1c：上一次 Get 采样判定的动画活跃标志。全部动画在两次 Get 之间结束时，
     /// 仍须再走一次基线重光栅（fill none 结束态 = 基线），之后停止。
     animations_active: bool,
+    /// M3-S1c：front buffer 需重贴 worker patch（Update 到达或基线被重光栅/新帧
+    /// 整体覆盖后置位；Get 响应前贴片并清除）。
+    patches_dirty: bool,
 }
 
 struct UiSurfaceState {
@@ -185,6 +188,170 @@ fn cleanup_stale_animation_state(
     }
 }
 
+/// M3-S1c：worker canvas patch 贴片段落（RFC `m3-slice-worker-canvas.md` §2.3）。
+/// 独立于 `SurfaceState`（patch 可先于其首个帧到达——帧惰性建 surface，声明存储
+/// 同款）；Get 期贴到冻结期基线帧之上的注册矩形。
+struct PatchState {
+    navigation_epoch: u64,
+    /// 目标矩形（文档空间 CSS px，Register 锚定；冻结期布局恒定——M1 前提）。
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+    /// 最新位图（RGBA8，Update 全量替换）。
+    bitmap_w: u32,
+    bitmap_h: u32,
+    rgba: Vec<u8>,
+    /// worker 已终止：定格最后位图、拒绝后续 Update（HTML spec canvas 保留位图
+    /// 语义——Detach 后仍参与贴片，呈现不回退空白）。
+    detached: bool,
+}
+
+/// patch 注册（stale epoch 丢弃；同 (surface, patch) 同 epoch 重注册覆盖矩形——
+/// epoch 回退的重复 Register 不复活 detached 态）。
+#[allow(clippy::too_many_arguments)] // 8 参 = surface/patch 双键 + epoch + 元素矩形四元，与 wire 字段一一对应
+fn store_patch_register(
+    patches: &mut HashMap<u64, HashMap<u64, PatchState>>,
+    surface_id: u64,
+    navigation_epoch: u64,
+    patch_id: u64,
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+) {
+    let entry = patches.entry(surface_id).or_default();
+    if let Some(existing) = entry.get(&patch_id)
+        && existing.navigation_epoch > navigation_epoch
+    {
+        tracing::debug!(
+            "compositor: 丢弃 stale patch 注册 surface {surface_id} patch {patch_id} epoch {navigation_epoch} < {}",
+            existing.navigation_epoch
+        );
+        return;
+    }
+    entry.insert(
+        patch_id,
+        PatchState {
+            navigation_epoch,
+            x,
+            y,
+            width,
+            height,
+            bitmap_w: 0,
+            bitmap_h: 0,
+            rgba: Vec::new(),
+            detached: false,
+        },
+    );
+}
+
+/// patch 位图更新（仅已注册、同 epoch、未 detached 接受）。返回是否接受（调用方
+/// 据此置 surface 重贴标志）。
+fn store_patch_update(
+    patches: &mut HashMap<u64, HashMap<u64, PatchState>>,
+    surface_id: u64,
+    navigation_epoch: u64,
+    patch_id: u64,
+    bitmap_w: u32,
+    bitmap_h: u32,
+    rgba: Vec<u8>,
+) -> bool {
+    let Some(patch) = patches.get_mut(&surface_id).and_then(|entry| entry.get_mut(&patch_id)) else {
+        tracing::debug!("compositor: 丢弃未注册 patch 更新 surface {surface_id} patch {patch_id}");
+        return false;
+    };
+    if patch.navigation_epoch != navigation_epoch || patch.detached {
+        tracing::debug!("compositor: 丢弃 patch 更新 surface {surface_id} patch {patch_id}（epoch 不符或已 detached）");
+        return false;
+    }
+    patch.bitmap_w = bitmap_w;
+    patch.bitmap_h = bitmap_h;
+    patch.rgba = rgba;
+    true
+}
+
+/// patch 撤除（terminate/close）：转 detached 定格——位图保留参与贴片，Update 拒收。
+fn store_patch_destroy(
+    patches: &mut HashMap<u64, HashMap<u64, PatchState>>,
+    surface_id: u64,
+    navigation_epoch: u64,
+    patch_id: u64,
+) {
+    if let Some(patch) = patches.get_mut(&surface_id).and_then(|entry| entry.get_mut(&patch_id))
+        && patch.navigation_epoch == navigation_epoch
+    {
+        patch.detached = true;
+    }
+}
+
+/// 帧提交推进 epoch 后清理跨代 patch（同 `cleanup_stale_animation_state` 语义；
+/// 全部清空时移除 surface 条目）。
+fn cleanup_stale_patches(patches: &mut HashMap<u64, HashMap<u64, PatchState>>, surface_id: u64, navigation_epoch: u64) {
+    if let Some(entry) = patches.get_mut(&surface_id) {
+        entry.retain(|_, patch| patch.navigation_epoch == navigation_epoch);
+        if entry.is_empty() {
+            patches.remove(&surface_id);
+        }
+    }
+}
+
+/// 把 patch 位图贴到 front buffer 注册矩形（src-over 混合——canvas 未绘制像素
+/// 透明，不盖基线；矩形出视口裁剪；CSS px → 设备 px 按 scale，nearest 采样拉伸）。
+fn paste_patches(
+    patches: &HashMap<u64, PatchState>,
+    front: &mut zero_render_foundation::surface::FrameBuffer,
+    scale: f32,
+    scroll_x: f32,
+    scroll_y: f32,
+) {
+    for patch in patches.values() {
+        if patch.rgba.is_empty() || patch.bitmap_w == 0 || patch.bitmap_h == 0 {
+            continue;
+        }
+        let px = ((patch.x - scroll_x) * scale).round() as i64;
+        let py = ((patch.y - scroll_y) * scale).round() as i64;
+        // 注册矩形（CSS px × scale）即目标区域；位图拉伸填满（CSS 尺寸 ≠ 位图尺寸时
+        // nearest 采样，同 canvas 元素位图缩放语义）。
+        let pw = ((patch.width * scale).round() as i64).max(1);
+        let ph = ((patch.height * scale).round() as i64).max(1);
+        let (fw, fh) = (front.width as i64, front.height as i64);
+        let x0 = px.max(0);
+        let y0 = py.max(0);
+        let x1 = (px + pw).min(fw);
+        let y1 = (py + ph).min(fh);
+        if x1 <= x0 || y1 <= y0 {
+            continue;
+        }
+        for dy in y0..y1 {
+            // 目标行 → 位图行（nearest；pw 已钳到位图宽时恒 1:1 直取）。
+            let src_y = (((dy - py) * patch.bitmap_h as i64 / ph)
+                .max(0)
+                .min(patch.bitmap_h as i64 - 1)) as usize;
+            let row_base = src_y * patch.bitmap_w as usize * 4;
+            let dst_base = (dy as usize * fw as usize + x0 as usize) * 4;
+            for dx in x0..x1 {
+                let src_x = (((dx - px) * patch.bitmap_w as i64 / pw)
+                    .max(0)
+                    .min(patch.bitmap_w as i64 - 1)) as usize;
+                let s = row_base + src_x * 4;
+                let d = dst_base + (dx - x0) as usize * 4;
+                let alpha = patch.rgba[s + 3] as u32;
+                if alpha == 255 {
+                    front.data[d..d + 4].copy_from_slice(&patch.rgba[s..s + 4]);
+                } else if alpha > 0 {
+                    // src-over：canvas 默认透明底，半透明像素与基线混合。
+                    let inv = 255 - alpha;
+                    for c in 0..3 {
+                        front.data[d + c] =
+                            ((patch.rgba[s + c] as u32 * alpha + front.data[d + c] as u32 * inv) / 255) as u8;
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Runs the compositor role until its IPC peer disconnects.
 ///
 /// The platform bootstrap owns logging and selects a transport. Desktop uses
@@ -201,6 +368,9 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
     // M2-S1c：surface 动画声明最新状态（renderer → browser → compositor，同一
     // FIFO 到达；最新生效全量替换，见 store_animation_state / 生命周期注释）。
     let mut animation_states: HashMap<u64, zero_protocol::animation::CompositorAnimationStateParams> = HashMap::new();
+    // M3-S1c：worker canvas patch 贴片表（surface_id → patch_id → 态；独立于
+    // SurfaceState——patch 可先于其首个帧到达）。
+    let mut patch_surfaces: HashMap<u64, HashMap<u64, PatchState>> = HashMap::new();
     let mut ui_surfaces: HashMap<u64, UiSurfaceState> = HashMap::new();
     let mut window_surface: Option<zero_protocol::CompositorWindowSurfaceInfo> = None;
     let base_fonts = Arc::new(load_compositor_fonts());
@@ -335,6 +505,7 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                     frame_gpu_rasterized: false,
                     front_cpu_resampled: false,
                     animations_active: false,
+                    patches_dirty: false,
                 });
                 if surface.navigation_epoch != navigation_epoch {
                     surface.image_cache.clear();
@@ -463,6 +634,10 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                 // M2-S1c：epoch 变更清旧声明（同 surface.paint 生命周期；新 epoch 的
                 // 声明由 renderer 状态消息随后重发）。Get 侧另有同 epoch 校验兜底。
                 cleanup_stale_animation_state(&mut animation_states, surface_id, navigation_epoch);
+                // M3-S1c：epoch 变更清旧 patch（同声明）；front 已被本次提交整体
+                // 刷新——已有 patch 下次 Get 重贴（贴片不随帧提交，Get 期贴 front）。
+                cleanup_stale_patches(&mut patch_surfaces, surface_id, navigation_epoch);
+                surface.patches_dirty = true;
                 surface.rasterized_scroll_x = surface.scroll_x;
                 surface.rasterized_scroll_y = surface.scroll_y;
                 surface.paint = Some(*paint);
@@ -593,6 +768,8 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                                 surface.rasterized_scroll_x = surface.scroll_x;
                                 surface.rasterized_scroll_y = surface.scroll_y;
                                 surface.front_cpu_resampled = true;
+                                // M3-S1c：front 被重采样整体覆盖——patch 下次 Get 重贴。
+                                surface.patches_dirty = true;
                                 // M2-S1e：Get 采样路径同样落盘——动画重采样帧是
                                 // DC-1「负载下帧连续」的直接证据（帧提交臂已有
                                 // 同款 dump；序号命名见 frame_dump 模块文档）。
@@ -609,6 +786,42 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                             }
                             surface.animations_active = now_active;
                             response_animations_active = now_active;
+                            // M3-S1c：worker patch 贴片（Update 到达或 front 被重光栅/
+                            // 新帧覆盖后重贴；detached patch 定格位图仍参与——呈现不
+                            // 回退空白）。贴片不推进 frame_id（Get 拉 front 语义，完成
+                            // 帧缓存按 (surface, epoch) 采纳）。
+                            let has_live_patches = patch_surfaces
+                                .get(&surface_id)
+                                .is_some_and(|patches| !patches.is_empty());
+                            if surface.patches_dirty && has_live_patches {
+                                let scale = surface
+                                    .paint
+                                    .as_ref()
+                                    .map(rasterize::device_scale_factor)
+                                    .unwrap_or(1.0);
+                                if let Some(patches) = patch_surfaces.get(&surface_id) {
+                                    paste_patches(
+                                        patches,
+                                        surface.backing.front_mut(),
+                                        scale,
+                                        surface.rasterized_scroll_x,
+                                        surface.rasterized_scroll_y,
+                                    );
+                                    // 贴片结果同落帧 dump（dc4 observe 的区域像素证据面）。
+                                    if let Some(dumper) = frame_dumper.as_mut() {
+                                        let front = surface.backing.front();
+                                        dumper.dump(
+                                            surface_id,
+                                            surface.navigation_epoch,
+                                            surface.frame_id,
+                                            front.width,
+                                            front.height,
+                                            &front.data,
+                                        );
+                                    }
+                                }
+                            }
+                            surface.patches_dirty = false;
                             let front = surface.backing.front();
                             // 返回此位图已烘焙的文档偏移。Browser 用它计算仍在
                             // 飞行中的本地滚动差值，避免滚动条和页面像素脱节。
@@ -759,10 +972,62 @@ pub fn run_role<C: IpcChannel>(transport: &mut C) {
                 // 匹配项，任何回执都会作为下一条命令的响应被判 id 错位致链路断连。
                 store_animation_state(&mut animation_states, params);
             }
+            IpcMessageKind::CompositorPatchRegister {
+                surface_id,
+                navigation_epoch,
+                patch_id,
+                x,
+                y,
+                width,
+                height,
+            } => {
+                // M3-S1c：worker patch 注册（静默消费不回执——同声明中继语义）。
+                store_patch_register(
+                    &mut patch_surfaces,
+                    surface_id,
+                    navigation_epoch,
+                    patch_id,
+                    x,
+                    y,
+                    width,
+                    height,
+                );
+            }
+            IpcMessageKind::CompositorPatchUpdate {
+                surface_id,
+                navigation_epoch,
+                patch_id,
+                width,
+                height,
+                rgba,
+            } => {
+                if store_patch_update(
+                    &mut patch_surfaces,
+                    surface_id,
+                    navigation_epoch,
+                    patch_id,
+                    width,
+                    height,
+                    rgba,
+                ) && let Some(surface) = surfaces.get_mut(&surface_id)
+                {
+                    // 下次 Get 前贴片（front 须刷新）。
+                    surface.patches_dirty = true;
+                }
+            }
+            IpcMessageKind::CompositorPatchDestroy {
+                surface_id,
+                navigation_epoch,
+                patch_id,
+            } => {
+                // terminate/close：patch 转 detached 定格（位图保留、Update 拒收）。
+                store_patch_destroy(&mut patch_surfaces, surface_id, navigation_epoch, patch_id);
+            }
             IpcMessageKind::ReleaseCompositorSurface { surface_id } => {
                 // 挂起批随 surface 一起清理，避免 tab 关闭后像素滞留。
                 pending_image_batches.remove(&surface_id);
                 animation_states.remove(&surface_id);
+                patch_surfaces.remove(&surface_id);
                 if font_namespace.is_some_and(|(id, _, _)| id == surface_id) {
                     font_resources::activate(
                         None,
@@ -1054,6 +1319,7 @@ mod tests {
             frame_gpu_rasterized: false,
             front_cpu_resampled: false,
             animations_active: false,
+            patches_dirty: false,
         }
     }
 
@@ -1146,5 +1412,120 @@ mod tests {
         // epoch 推进：旧声明清除（新声明待 renderer 重发）。
         cleanup_stale_animation_state(&mut states, 7, 3);
         assert!(!states.contains_key(&7));
+    }
+
+    // ── M3-S1c：worker patch 存储 + 贴片 ──
+
+    #[test]
+    fn patch_register_latest_wins_and_stale_epoch_dropped() {
+        let mut patches: HashMap<u64, HashMap<u64, PatchState>> = HashMap::new();
+        store_patch_register(&mut patches, 1, 2, 9, 10.0, 20.0, 100.0, 50.0);
+        // stale epoch 注册丢弃（epoch 1 < 当前 2）。
+        store_patch_register(&mut patches, 1, 1, 9, 0.0, 0.0, 1.0, 1.0);
+        let patch = &patches[&1][&9];
+        assert_eq!(patch.navigation_epoch, 2);
+        assert_eq!((patch.x, patch.y, patch.width, patch.height), (10.0, 20.0, 100.0, 50.0));
+        // 同 epoch 重注册覆盖矩形。
+        store_patch_register(&mut patches, 1, 2, 9, 30.0, 40.0, 5.0, 5.0);
+        assert_eq!(patches[&1][&9].x, 30.0);
+    }
+
+    #[test]
+    fn patch_update_requires_registration_same_epoch_and_not_detached() {
+        let mut patches: HashMap<u64, HashMap<u64, PatchState>> = HashMap::new();
+        // 未注册更新拒收。
+        assert!(!store_patch_update(&mut patches, 1, 2, 9, 1, 1, vec![0, 0, 0, 255]));
+        store_patch_register(&mut patches, 1, 2, 9, 0.0, 0.0, 10.0, 10.0);
+        assert!(store_patch_update(
+            &mut patches,
+            1,
+            2,
+            9,
+            2,
+            2,
+            vec![1, 2, 3, 255, 1, 2, 3, 255]
+        ));
+        assert_eq!(patches[&1][&9].rgba.len(), 8);
+        // stale epoch 更新丢弃。
+        assert!(!store_patch_update(&mut patches, 1, 1, 9, 1, 1, vec![9, 9, 9, 255]));
+        assert_eq!(patches[&1][&9].rgba.len(), 8);
+    }
+
+    #[test]
+    fn patch_destroy_detaches_and_stale_destroy_is_noop() {
+        let mut patches: HashMap<u64, HashMap<u64, PatchState>> = HashMap::new();
+        store_patch_register(&mut patches, 1, 2, 9, 0.0, 0.0, 10.0, 10.0);
+        store_patch_destroy(&mut patches, 1, 2, 9);
+        assert!(patches[&1][&9].detached);
+        // detached 后更新拒收（定格最后位图）。
+        assert!(!store_patch_update(&mut patches, 1, 2, 9, 1, 1, vec![1, 1, 1, 255]));
+        // 新 epoch 重注册复活（导航换代后同 patch_id 复用）。
+        store_patch_register(&mut patches, 1, 3, 9, 0.0, 0.0, 10.0, 10.0);
+        assert!(!patches[&1][&9].detached);
+        // 旧 epoch destroy 不动新代 patch。
+        store_patch_destroy(&mut patches, 1, 2, 9);
+        assert!(!patches[&1][&9].detached);
+    }
+
+    #[test]
+    fn patch_cleanup_removes_stale_epoch_and_empty_entries() {
+        let mut patches: HashMap<u64, HashMap<u64, PatchState>> = HashMap::new();
+        store_patch_register(&mut patches, 1, 1, 9, 0.0, 0.0, 1.0, 1.0);
+        store_patch_register(&mut patches, 1, 2, 9, 0.0, 0.0, 1.0, 1.0);
+        store_patch_register(&mut patches, 1, 2, 10, 0.0, 0.0, 1.0, 1.0);
+        cleanup_stale_patches(&mut patches, 1, 2);
+        let entry = patches.get(&1).expect("epoch 2 patch 保留");
+        assert!(entry.contains_key(&9) && entry.contains_key(&10));
+        cleanup_stale_patches(&mut patches, 1, 3);
+        assert!(!patches.contains_key(&1), "全清后条目移除");
+    }
+
+    /// 贴片像素面：矩形外基线不动；不透明直贴；半透明与基线 src-over 混合。
+    #[test]
+    fn paste_patches_blends_and_clips_to_rect() {
+        let mut front = zero_render_foundation::surface::FrameBuffer::new(4, 4);
+        front.data.fill(255);
+        let mut patches: HashMap<u64, HashMap<u64, PatchState>> = HashMap::new();
+        store_patch_register(&mut patches, 1, 1, 9, 1.0, 1.0, 2.0, 2.0);
+        // 位图 2×2：红（不透明）+ 绿（半透明）；未更新前贴片跳过（rgba 空）。
+        paste_patches(patches.get(&1).unwrap(), &mut front, 1.0, 0.0, 0.0);
+        assert_eq!(front.data[0], 255, "未更新位图不贴");
+        // 位图 2×2：行 0 = 红/红（不透明），行 1 = 半透明绿/半透明绿。
+        store_patch_update(
+            &mut patches,
+            1,
+            1,
+            9,
+            2,
+            2,
+            vec![255, 0, 0, 255, 255, 0, 0, 255, 0, 255, 0, 128, 0, 255, 0, 128],
+        );
+        paste_patches(patches.get(&1).unwrap(), &mut front, 1.0, 0.0, 0.0);
+        let px = |x: usize, y: usize, c: usize| front.data[(y * 4 + x) * 4 + c];
+        assert_eq!((px(0, 0, 0), px(1, 0, 0)), (255, 255), "矩形外基线不动");
+        assert_eq!((px(1, 1, 0), px(1, 1, 1), px(1, 1, 2)), (255, 0, 0), "不透明像素直贴");
+        // 半透明绿(0,255,0,128) × 白基线：R 通道 0*128 + 255*127 ≈ 127（G 通道恒 255）。
+        let r = px(2, 2, 0);
+        assert!(r > 100 && r < 200, "半透明绿与白基线 src-over 混合，got R={r}");
+        assert_eq!(px(2, 2, 1), 255, "G 通道绿+白恒 255");
+        assert_eq!((px(2, 1, 0), px(2, 1, 1)), (255, 0), "行 0 不透明红直贴");
+        assert_eq!(px(0, 3, 0), 255, "矩形外基线不动");
+    }
+
+    /// 贴片坐标面：位图拉伸填满注册矩形；CSS px → 设备 px 按 scale、滚动偏移相减。
+    #[test]
+    fn paste_patches_stretches_and_maps_viewport_space() {
+        let mut front = zero_render_foundation::surface::FrameBuffer::new(8, 8);
+        front.data.fill(255);
+        let mut patches: HashMap<u64, HashMap<u64, PatchState>> = HashMap::new();
+        // 文档 rect (2,0) 2×2，scroll_x=1，scale=2 → 设备 (2,0) 4×4；位图 1×1 红。
+        store_patch_register(&mut patches, 1, 1, 9, 2.0, 0.0, 2.0, 2.0);
+        store_patch_update(&mut patches, 1, 1, 9, 1, 1, vec![255, 0, 0, 255]);
+        paste_patches(patches.get(&1).unwrap(), &mut front, 2.0, 1.0, 0.0);
+        let px = |x: usize, y: usize, c: usize| front.data[(y * 8 + x) * 4 + c];
+        assert_eq!((px(2, 0, 0), px(5, 3, 0)), (255, 255), "拉伸区全红");
+        assert_eq!(px(1, 0, 0), 255, "区外基线");
+        assert_eq!(px(6, 0, 0), 255, "区外基线");
+        assert_eq!(px(2, 4, 0), 255, "区外基线");
     }
 }

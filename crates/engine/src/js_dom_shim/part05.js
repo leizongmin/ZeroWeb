@@ -16102,7 +16102,7 @@
           // part02 clone；worker 侧 bootstrap 复活为本地 OffscreenCanvas + bind op
           // ——宿主绑定表 surface 键，S1c patch 呈现消费）。
           if (typeof OffscreenCanvas === 'function' && v instanceof OffscreenCanvas) {
-            return { __zwXferCanvas: { key: v._zwXferKey, w: v.width, h: v.height } };
+            return { __zwXferCanvas: { key: v._zwXferKey, sel: v._zwSrcSel, w: v.width, h: v.height } };
           }
           return v;
         });

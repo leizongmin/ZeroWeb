@@ -508,6 +508,9 @@ pub(crate) struct RendererRuntime {
     focus_from_keyboard: bool,
     /// 与浏览器 TabSnapshot 对齐的导航世代。
     navigation_epoch: u64,
+    /// M3-S1c patch Register：导航世代共享槽（worker patch 发送器 lazy 首拍读取；
+    /// handle_navigate/handle_load_html 与本地 `navigation_epoch` 同步 store）。
+    navigation_epoch_shared: Arc<std::sync::atomic::AtomicU64>,
     /// 当前导航内的 Document 世代；新建 Document 时递增。
     document_generation: u64,
     /// 已发送图片 key（S8）：browser 端 ImageCache 已存则不再重传像素；navigation 重置。
@@ -643,10 +646,16 @@ impl RendererRuntime {
             compositor_publish_thread::SharedWriter::from_arc(Arc::clone(&writer)),
             indexed_db_responses,
         );
+        // M3-S1c patch 呈现面：writer Arc 在 service worker 客户端 move 前克隆（同
+        // 一 stdout 锁——patch 帧原子性契约同 publish 线程）。
+        let patch_writer = compositor_publish_thread::SharedWriter::from_arc(Arc::clone(&writer));
         let service_worker_client = ServiceWorkerIpcClient::new(
             compositor_publish_thread::SharedWriter::from_arc(writer),
             service_worker_responses,
         );
+        // M3-S1c：导航世代共享槽——导航路径 store，worker patch Register lazy 首拍读取
+        //（renderer 本地 `navigation_epoch` 的共享镜像；详见 handle_navigate/handle_load_html）。
+        let navigation_epoch_shared = Arc::new(std::sync::atomic::AtomicU64::new(0));
         let (font_loader, font_id, font_resolver) = load_system_fonts();
         set_char_measure_fn(text_metrics::measure_char);
         set_text_shape_fn(text_metrics::shape_text);
@@ -746,7 +755,13 @@ impl RendererRuntime {
         // flag 关不装填——shim `typeof` 守卫回落 same-realm worker（零行为，
         // workers-compat 钉住）。
         if zero_runtime_config::enabled_when_true("ZW_THREADED_WORKERS") {
-            crate::worker_host::install(js_worker.priority_submitter());
+            crate::worker_host::install(
+                js_worker.priority_submitter(),
+                patch_writer,
+                renderer_id,
+                Arc::clone(&navigation_epoch_shared),
+                js_worker.rect_lookup_handler(),
+            );
         }
         // M2c 后续（镜像 browser tab_worker）：播放器注册表注入 js_worker——
         // `__zwVideoBridge` 宿主桥（多进程路径媒体播放真值面；async_load settle 写入
@@ -797,6 +812,7 @@ impl RendererRuntime {
             interaction: PageInteractionState::new(),
             focus_from_keyboard: false,
             navigation_epoch: 0,
+            navigation_epoch_shared,
             document_generation: 0,
             // 性能门禁优化 S8（2026-08-08）：已发送图片 key——browser 端 ImageCache
             // 已存则不再重传像素（DOM 变更 publish 的 ViewPainted 体积大头）。navigation 重置。
@@ -3097,6 +3113,9 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         self.interaction.clear();
 
         self.navigation_epoch = params.navigation_epoch;
+        // M3-S1c：共享槽同步（worker patch Register 世代快照源）。
+        self.navigation_epoch_shared
+            .store(self.navigation_epoch, std::sync::atomic::Ordering::Relaxed);
         self.document_generation = self.document_generation.wrapping_add(1).max(1);
         let page_url = params.url.clone();
         self.webview
@@ -3132,6 +3151,9 @@ return JSON.stringify({{action:action,name:name,val:val}});\
 
     fn handle_load_html(&mut self, params: LoadHtmlParams) -> Result<(), String> {
         self.navigation_epoch = params.navigation_epoch;
+        // M3-S1c：共享槽同步（同 handle_navigate）。
+        self.navigation_epoch_shared
+            .store(self.navigation_epoch, std::sync::atomic::Ordering::Relaxed);
         self.document_generation = self.document_generation.wrapping_add(1).max(1);
         self.last_published_title = None;
         // P1a change-on-blur：加载新 HTML 清焦点状态。
@@ -3783,6 +3805,11 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             IpcMessageKind::DocumentWriteSettled(_) => Ok(()),
             // 图片像素批是 renderer → browser 单向事件（P100），本进程不消费。
             IpcMessageKind::ImagePayloadBatch { .. } => Ok(()),
+            // Compositor patch 三消息是 renderer worker → browser 单向（M3-S1c，
+            // browser 转发 compositor），本进程不消费。
+            IpcMessageKind::CompositorPatchRegister { .. }
+            | IpcMessageKind::CompositorPatchUpdate { .. }
+            | IpcMessageKind::CompositorPatchDestroy { .. } => Ok(()),
             IpcMessageKind::Navigate(params) => self.handle_navigate(params),
             IpcMessageKind::LoadHtml(params) => self.handle_load_html(params),
             IpcMessageKind::SetViewport(params) => self.handle_set_viewport(params),

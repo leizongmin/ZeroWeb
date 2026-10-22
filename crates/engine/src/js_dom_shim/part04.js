@@ -838,6 +838,9 @@
                 var chX = _zwCanvasDim(sel, handle, 'height', 150);
                 var ocX = new OffscreenCanvas(cwX, chX);
                 ocX._zwXferKey = 'xfer-' + (globalThis.__zwXferSeq = (globalThis.__zwXferSeq || 0) + 1);
+                // M3-S1c patch 呈现：源选择器随键同迁（patch Register 需元素矩形，renderer
+                // 侧 lazy 首拍查询布局快照；克隆/传输链只透传 _zwXferKey/_zwSrcSel）。
+                ocX._zwSrcSel = String(sel || handle || '');
                 ocX.getContext = function (type) {
                   if (String(type) !== '2d') return null;
                   throw new (globalThis.DOMException || DOMException)("Failed to execute 'getContext' on 'OffscreenCanvas': canvas control has been transferred.", 'InvalidStateError');

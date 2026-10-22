@@ -146,8 +146,10 @@ fn test_worker_post_message_transfer_offscreen_marker_and_errors() {
         .clone();
     let payload = post.split('\u{1f}').nth(2).expect("post 载荷三段式");
     assert!(
-        payload.contains(r#"{"bmp":{"__zwXferCanvas":{"key":"#) && payload.contains(r#""w":64,"h":32}}"#),
-        "post 载荷应把占位序列化为 __zwXferCanvas 标记（键 + 尺寸），got: {payload}"
+        payload.contains(r#"{"bmp":{"__zwXferCanvas":{"key":"#)
+            && payload.contains(r#""sel":"#)
+            && payload.contains(r#""w":64,"h":32}}"#),
+        "post 载荷应把占位序列化为 __zwXferCanvas 标记（键 + 源选择器 + 尺寸），got: {payload}"
     );
 
     // 未列入转移列表 → DataCloneError（spec：OffscreenCanvas transferable 非

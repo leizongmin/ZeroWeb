@@ -318,6 +318,60 @@ pub enum IpcMessageKind {
     /// 幂等——无新终结时空回）。flag 关闭时 `animations_active` 恒假、无翻转、无消息
     /// （S2 FR-9）。追加于枚举末尾（bincode 判别值按声明序，protocol 纪律 FR-11）。
     NotifyAnimationsSettled,
+
+    // ── Worker canvas patch（renderer worker 线程 → browser → compositor；M3-S1c）──
+    // 三消息族（RFC `m3-slice-worker-canvas.md` §2.3）：worker 数据面经 SharedWriter
+    // 直写 stdout（主线程阻塞期仍通——DC-4 (a) 结构性保证），browser 独立排队中继，
+    // compositor 贴到注册矩形（冻结期基线帧之上）。fire-and-forget，compositor 静默
+    // 消费不回执（声明中继同款——任何回执都会被判响应 id 错位断链）。
+    // `ZW_WORKER_CANVAS_PATCH` 关闭时不发送。追加于枚举末尾（bincode 判别值按声明序，
+    // protocol 纪律 FR-11；Android 通配安全）。
+    /// patch 注册：登记贴片目标矩形（元素布局 rect，文档空间 CSS px）。矩形以注册
+    /// 时刻为锚（冻结期布局恒定，M1 前提）；epoch 沿用注册时刻值，后续 Update/Destroy
+    /// 同值（stale epoch 由 compositor 丢弃）。
+    CompositorPatchRegister {
+        /// 页面 surface 的稳定标识。
+        surface_id: u64,
+        /// 注册所属导航世代（换代清理语义同动画声明）。
+        navigation_epoch: u64,
+        /// patch 标识（shim `_zwXferKey` 序号——`transferControlToOffscreen` 一次一键）。
+        patch_id: u64,
+        /// 目标矩形：x（文档空间 CSS px）。
+        x: f32,
+        /// 目标矩形：y。
+        y: f32,
+        /// 目标矩形：宽。
+        width: f32,
+        /// 目标矩形：高。
+        height: f32,
+    },
+    /// patch 位图更新：同 (surface, patch) 键最新生效（RGBA8 直传）。帧原子性契约：
+    /// 发送侧单次锁持有内写完整帧（SharedWriter flush 语义），禁止跨锁分段——否则与
+    /// 发布线程并发交错撕帧。
+    CompositorPatchUpdate {
+        /// 页面 surface 的稳定标识。
+        surface_id: u64,
+        /// 所属导航世代（与注册一致；stale 丢弃）。
+        navigation_epoch: u64,
+        /// patch 标识。
+        patch_id: u64,
+        /// 位图宽（像素）。
+        width: u32,
+        /// 位图高（像素）。
+        height: u32,
+        /// RGBA 像素（width × height × 4）。
+        rgba: Vec<u8>,
+    },
+    /// patch 撤除（worker terminate/close）：compositor patch 转 detached——定格最后
+    /// 位图、拒绝后续 Update（HTML spec canvas 保留位图语义）；导航换代/Release 随清。
+    CompositorPatchDestroy {
+        /// 页面 surface 的稳定标识。
+        surface_id: u64,
+        /// 所属导航世代（与注册一致）。
+        navigation_epoch: u64,
+        /// patch 标识。
+        patch_id: u64,
+    },
 }
 
 /// 焦点变更信息（渲染→浏览器）。

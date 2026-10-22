@@ -287,7 +287,9 @@ pub(crate) const WORKER_BOOTSTRAP_JS: &str = r#"
                 (typeof marker.w === 'number' && marker.w >= 0) ? (marker.w | 0) : 300,
                 (typeof marker.h === 'number' && marker.h >= 0) ? (marker.h | 0) : 150, cid);
             oc._zwXferKey = String(marker.key || '');
-            _workerCanvasOps.push(['bind', cid, oc._zwXferKey]);
+            oc._zwSel = String(marker.sel || '');
+            // S1c：bind 第 4 元携带源选择器（patch Register lazy 首拍查元素矩形）。
+            _workerCanvasOps.push(['bind', cid, oc._zwXferKey, oc._zwSel]);
             return oc;
         }
         for (var k in v) {

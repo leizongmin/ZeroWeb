@@ -188,6 +188,10 @@ pub struct RendererJsWorker {
     /// P1a gBCR：共享 layout-rect snapshot——renderer 主循环 render 后填充，
     /// js_worker 的 RectBridge handler 读取（经 identity→NodeId 解析后查 rect）。
     rect_snapshot: LayoutRectSnapshot,
+    /// M3-S1c patch Register：worker 侧 DOM 快照共享槽（js_worker `install_worker_native_dom_bindings`
+    /// 写入；patch 面经 `rect_lookup_handler` fresh-parse 查元素矩形）。原在 js_worker_main
+    /// 内创建，提升到 spawn 供宿主侧 handler 与 worker 桥共享同一真相源。
+    dom_html: Arc<std::sync::Mutex<String>>,
     /// P1a gBCR path A：持久 handle→唯一选择器映射——生产 apply 路径（`apply_recorded_mutations`）
     /// merge 进此 map，js_worker 的 RectBridge handler 读它解析 handle-identity（`__n{n}`）。
     handle_selector_map: HandleSelectorMap,
@@ -318,6 +322,9 @@ impl RendererJsWorker {
         let cmd_for_worker = cmd_tx.clone();
         let mutations_for_worker = Arc::clone(&mutations);
         let rect_snapshot_for_worker = Arc::clone(&rect_snapshot);
+        // M3-S1c patch Register：dom_html 提升到 spawn（worker 桥与宿主 rect handler 共享）。
+        let dom_html = Arc::new(std::sync::Mutex::new(String::new()));
+        let dom_html_for_worker = Arc::clone(&dom_html);
         let handle_selector_map_for_worker = Arc::clone(&handle_selector_map);
         let element_from_point_cache_for_worker = Arc::clone(&element_from_point_cache);
         let async_callbacks_ready_for_worker = Arc::clone(&async_callbacks_ready);
@@ -351,6 +358,7 @@ impl RendererJsWorker {
                     service_worker_client,
                     async_callbacks_ready_for_worker,
                     import_map_for_worker,
+                    dom_html_for_worker,
                     canvas_registry,
                     #[cfg(test)]
                     execution_count_for_worker,
@@ -420,6 +428,7 @@ impl RendererJsWorker {
             fetch_observed,
             mutations,
             rect_snapshot,
+            dom_html,
             handle_selector_map,
             element_from_point_cache,
             font_loads,
@@ -773,6 +782,17 @@ impl RendererJsWorker {
     /// `fill_layout_rect_snapshot` 填充，js_worker 的 RectBridge handler 读取。
     pub fn rect_snapshot(&self) -> LayoutRectSnapshot {
         Arc::clone(&self.rect_snapshot)
+    }
+
+    /// M3-S1c patch Register lazy rect 查询句柄——与 js_worker RectBridge 同一真相源
+    ///（fresh-parse `dom_html` → NodeId → 查 `rect_snapshot`；`make_dom_html_rect_handler`
+    /// 同款语义）。每次调用构造新 handler（三 Arc clone，轻量）。
+    pub fn rect_lookup_handler(&self) -> zero_engine::RectLookupHandler {
+        zero_engine::make_dom_html_rect_handler(
+            Arc::clone(&self.dom_html),
+            Arc::clone(&self.rect_snapshot),
+            Arc::clone(&self.handle_selector_map),
+        )
     }
 
     /// P1a gBCR path A：持久 handle→唯一选择器映射句柄——生产 apply 路径
@@ -1192,6 +1212,8 @@ fn js_worker_main(
     service_worker_client: Option<ServiceWorkerIpcClient>,
     async_callbacks_ready: Arc<AtomicBool>,
     import_map: Arc<std::sync::Mutex<Option<ImportMap>>>,
+    // M3-S1c：DOM 快照共享槽（spawn 期创建传入——宿主 rect handler 与本线程桥共享）。
+    dom_html: Arc<std::sync::Mutex<String>>,
     // js-dom canvas 显示链路：与 WebView painter 共享的绘制侧 registry（runtime 构造期
     // 单实例注入）。此前本线程自建孤儿实例，页面 `__zw_canvas_op` 绘制恒不可见
     // （多进程路径 canvas 2D 位图从不进入绘制结果，2026-10-22 comp04a 脚手架批定位）。
@@ -1211,7 +1233,6 @@ fn js_worker_main(
     #[cfg(all(feature = "quickjs", not(feature = "v8")))]
     let mut sandbox: Box<dyn zero_script_sandbox::Sandbox> =
         Box::new(zero_script_sandbox::QuickJSSandbox::with_config(js_config).expect("QuickJS sandbox init"));
-    let dom_html: Arc<std::sync::Mutex<String>> = Arc::new(std::sync::Mutex::new(String::new()));
     let page_url: Arc<std::sync::Mutex<String>> = Arc::new(std::sync::Mutex::new(String::from("about:blank")));
     register_dom_callbacks(&mut *sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
     // js-dom R100/R145 identity 桥（renderer 侧）：`__zw_handle_for_selector` selector→handle

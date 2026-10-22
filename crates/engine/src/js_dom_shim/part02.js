@@ -6058,6 +6058,8 @@
       // 分支 replacer 据键发 `__zwXferCanvas` 标记——克隆体丢键则合法转移误抛；
       // 普通画布无键不受影响）。
       if (val._zwXferKey) { _occ._zwXferKey = val._zwXferKey; }
+      // M3-S1c：源选择器随键同迁（patch Register lazy 首拍查询元素矩形用）。
+      if (val._zwSrcSel) { _occ._zwSrcSel = val._zwSrcSel; }
       seen.set(val, _occ); return _occ;
     }
     // workers-compat M3：Error 克隆保持类型（spec serialize Error object 情形——

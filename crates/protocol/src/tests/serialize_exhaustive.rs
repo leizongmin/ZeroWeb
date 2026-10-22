@@ -234,6 +234,39 @@ fn test_roundtrip_all_message_kinds() {
             id: 32,
             kind: IpcMessageKind::NotifyAnimationsSettled,
         },
+        // Worker canvas patch 三消息族（M3-S1c）：renderer worker 线程 → browser →
+        // compositor（末尾追加纪律；fire-and-forget 无回执）。
+        IpcMessage {
+            id: 33,
+            kind: IpcMessageKind::CompositorPatchRegister {
+                surface_id: 1,
+                navigation_epoch: 2,
+                patch_id: 3,
+                x: 24.0,
+                y: 24.0,
+                width: 240.0,
+                height: 120.0,
+            },
+        },
+        IpcMessage {
+            id: 34,
+            kind: IpcMessageKind::CompositorPatchUpdate {
+                surface_id: 1,
+                navigation_epoch: 2,
+                patch_id: 3,
+                width: 240,
+                height: 120,
+                rgba: vec![0, 0, 0, 255],
+            },
+        },
+        IpcMessage {
+            id: 35,
+            kind: IpcMessageKind::CompositorPatchDestroy {
+                surface_id: 1,
+                navigation_epoch: 2,
+                patch_id: 3,
+            },
+        },
     ];
 
     for msg in &messages {
@@ -242,7 +275,7 @@ fn test_roundtrip_all_message_kinds() {
         assert_eq!(out.id, msg.id, "id mismatch");
     }
 
-    assert_eq!(messages.len(), 32, "should test all listed message kinds");
+    assert_eq!(messages.len(), 35, "should test all listed message kinds");
 }
 
 /// 测试 StorageType::Session 变体也能序列化。

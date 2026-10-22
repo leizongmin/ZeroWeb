@@ -112,6 +112,9 @@ pub struct TabSnapshot {
     /// M2-S1d：最近采纳 compositor 帧报告的动画活跃标志——为真时帧轮询每 tick
     /// 主动发 Get 采样（renderer 主线程被阻塞期间合成器仍持续出帧）。
     pub compositor_animations_active: bool,
+    /// M3-S1c：worker canvas patch 存活标志——Register 中继置位、Destroy 清除，
+    /// 为真时帧轮询每 tick 主动发 Get（主线程阻塞期贴片持续呈现的拉取驱动）。
+    pub compositor_patches_active: bool,
     /// Linux：待 Browser GPU 导入的 compositor dma-buf。
     #[cfg(target_os = "linux")]
     pub compositor_dmabuf: Option<CompositorDmabufPending>,
@@ -155,6 +158,7 @@ impl TabSnapshot {
             compositor_present: None,
             compositor_scroll: None,
             compositor_animations_active: false,
+            compositor_patches_active: false,
             #[cfg(target_os = "linux")]
             compositor_dmabuf: None,
         }
@@ -180,6 +184,7 @@ impl TabSnapshot {
         self.compositor_present = None;
         self.compositor_scroll = None;
         self.compositor_animations_active = false;
+        self.compositor_patches_active = false;
         self.document_height = None;
         self.document_width = None;
         self.hit_test = None;

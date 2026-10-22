@@ -536,6 +536,54 @@ impl ProcessTabBackend {
                 // stale epoch / 代际由 compositor 最新生效语义裁决）。
                 crate::compositor_client::forward_animation_state(params);
             }
+            IpcMessageKind::CompositorPatchRegister {
+                surface_id,
+                navigation_epoch,
+                patch_id,
+                x,
+                y,
+                width,
+                height,
+            } => {
+                // M3-S1c：worker patch 注册中继（fire-and-forget）；置 patch 存活
+                // 标志驱动帧轮询（主线程阻塞期无新帧，靠 Get 拉贴片呈现）。
+                crate::compositor_client::forward_patch_register(
+                    surface_id,
+                    navigation_epoch,
+                    patch_id,
+                    x,
+                    y,
+                    width,
+                    height,
+                );
+                snap.compositor_patches_active = true;
+            }
+            IpcMessageKind::CompositorPatchUpdate {
+                surface_id,
+                navigation_epoch,
+                patch_id,
+                width,
+                height,
+                rgba,
+            } => {
+                crate::compositor_client::forward_patch_update(
+                    surface_id,
+                    navigation_epoch,
+                    patch_id,
+                    width,
+                    height,
+                    rgba,
+                );
+            }
+            IpcMessageKind::CompositorPatchDestroy {
+                surface_id,
+                navigation_epoch,
+                patch_id,
+            } => {
+                // terminate/close：patch 定格（compositor detached）——轮询可停。
+                crate::compositor_client::forward_patch_destroy(surface_id, navigation_epoch, patch_id);
+                snap.compositor_patches_active = false;
+            }
             _ => {}
         }
     }
@@ -558,7 +606,7 @@ impl ProcessTabBackend {
             // M2-S1d：动画活跃期间每 tick 主动请求 compositor 重采样出帧
             //（renderer 主线程被阻塞时无新提交，靠该 Get 保持帧推进）；响应
             // 经完成帧缓存下一 tick 采纳，待处理 Get 同 surface 原地替换不堆积。
-            if snap.compositor_animations_active {
+            if snap.compositor_animations_active || snap.compositor_patches_active {
                 // M2-S1e：keep-alive 触发记 debug——空洞期「有心跳无此行」=tick 活而
                 // flag 假；「有心跳有此行无 compositor Get」=worker 未排空。
                 tracing::debug!(

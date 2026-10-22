@@ -723,4 +723,39 @@ mod tests {
             "绘制 op 应引用复活 cid，ops: {all}"
         );
     }
+
+    /// S1c：`__zwXferCanvas` 标记 `sel` 字段随复活进 bind 第 4 元（patch Register
+    /// lazy 首拍查源元素矩形的数据源；旧 3 元标记兼容——sel 空串）。
+    #[test]
+    fn test_worker_canvas_xfer_revive_carries_source_selector() {
+        let drained: std::sync::Arc<std::sync::Mutex<Vec<String>>> = Default::default();
+        let sink = drained.clone();
+        let drain: crate::WorkerCanvasDrain = Box::new(move |json: &str| {
+            sink.lock().unwrap().push(json.to_string());
+        });
+        let mut worker = WorkerRuntime::new_with_canvas_drain(
+            "var _zwDm = _dispatchMessage;\
+             _dispatchMessage = function (raw) { _zwDm(typeof raw === 'string' ? JSON.parse(raw) : raw); };\
+             onmessage = function (e) { postMessage('ok'); };",
+            SandboxConfig::default(),
+            Some(std::sync::Arc::new(std::sync::Mutex::new(drain))),
+        )
+        .unwrap();
+        std::thread::sleep(Duration::from_millis(200));
+        worker
+            .post_message(r##"{"__zwXferCanvas":{"key":"xfer-4","sel":"#cv","w":8,"h":8}}"##)
+            .unwrap();
+        let _ = wait_canvas_drain(&drained, "\"bind\"");
+        worker.terminate();
+        let ops: Vec<serde_json::Value> = drained
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|b| serde_json::from_str::<Vec<serde_json::Value>>(b).ok())
+            .flatten()
+            .collect();
+        let bind = ops.iter().find(|op| op[0] == "bind").expect("复活应记 bind op");
+        assert_eq!(bind.as_array().unwrap().len(), 4, "bind 应含 sel 第 4 元: {bind}");
+        assert_eq!(bind[3].as_str(), Some("#cv"));
+    }
 }

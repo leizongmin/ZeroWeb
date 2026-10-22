@@ -39,6 +39,12 @@ impl BackingStoreManager {
         &self.front
     }
 
+    /// front buffer 可变访问（M3-S1c worker patch 贴片——合成期在基线帧之上贴
+    /// worker 位图，Get 响应前写入）。
+    pub fn front_mut(&mut self) -> &mut FrameBuffer {
+        &mut self.front
+    }
+
     /// 交换前后缓冲（渲染完成提交时调用）。
     pub fn swap(&mut self) {
         std::mem::swap(&mut self.front, &mut self.back);
