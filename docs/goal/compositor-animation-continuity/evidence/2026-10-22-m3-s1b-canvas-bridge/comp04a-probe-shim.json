@@ -1,18 +1,18 @@
 {
   "fixture": "comp04a-worker-threaded-canvas.html",
-  "started_at_wall": "2026-10-22T00:18:50.421Z",
+  "started_at_wall": "2026-10-22T00:59:53.143Z",
   "samples": [
     {
       "name": "s0",
-      "t_wall_ms": 559,
+      "t_wall_ms": 568,
       "capture": {
         "name": "s0",
         "wall_ms": 74,
-        "png_sha256": "2c3c62bdd50aa3b366995f43d66611219dad5e7ed751e4aef3b1ea8616af3365",
-        "png_bytes": 25831
+        "png_sha256": "e64896032115a6a99f11d3684986ac0255ab67ebb5b37d61bc2d662b5cec67e0",
+        "png_bytes": 29262
       },
       "query": {
-        "wall_ms": 12,
+        "wall_ms": 11,
         "state": {
           "mode": "shim",
           "workerHost": false,
@@ -23,26 +23,37 @@
           "beats": 9,
           "wtGapMax": 52,
           "atGapMax": 52,
+          "wtMaxPair": [
+            8,
+            1792630793708,
+            1792630793760,
+            796,
+            847
+          ],
           "wtGapSpanLoad": 0,
           "atGapSpanLoad": 0,
           "loadWindow": null,
           "drawsMain": 28,
           "term": null,
           "beatsAfterTerm": 0,
+          "spawn": {
+            "hostId": "null",
+            "dispatchDefined": false
+          },
           "workerErr": "Uncaught Error: dc4-expected",
           "ctrl": "ctrl=off",
-          "pageNow": 876
+          "pageNow": 882
         }
       }
     },
     {
       "name": "s1",
-      "t_wall_ms": 1348,
+      "t_wall_ms": 1355,
       "capture": {
         "name": "s1",
-        "wall_ms": 3,
-        "png_sha256": "2484e58367fa8b36f452fc91f5b02d898b286d04a92eed685b9f571b1e48ec93",
-        "png_bytes": 25997
+        "wall_ms": 6,
+        "png_sha256": "2b87b8e16ed45ae64ef252f5458116c73a759e5b1aa952a36ca2b1a341aba40d",
+        "png_bytes": 29428
       },
       "query": {
         "wall_ms": 13,
@@ -56,29 +67,40 @@
           "beats": 23,
           "wtGapMax": 52,
           "atGapMax": 52,
+          "wtMaxPair": [
+            8,
+            1792630793708,
+            1792630793760,
+            796,
+            847
+          ],
           "wtGapSpanLoad": 0,
           "atGapSpanLoad": 0,
           "loadWindow": null,
           "drawsMain": 71,
           "term": null,
           "beatsAfterTerm": 0,
+          "spawn": {
+            "hostId": "null",
+            "dispatchDefined": false
+          },
           "workerErr": "Uncaught Error: dc4-expected",
           "ctrl": "ctrl=off",
-          "pageNow": 1595
+          "pageNow": 1603
         }
       }
     },
     {
       "name": "s2",
-      "t_wall_ms": 7661,
+      "t_wall_ms": 7748,
       "capture": {
         "name": "s2",
         "wall_ms": 6,
-        "png_sha256": "34c4ed7ee894e78bd9211b389d05ce968467152ff7ed16667503e4b3b126ceaf",
-        "png_bytes": 28307
+        "png_sha256": "594e09c7380fefd00edc6ca0943a5ac09178502bcc0c0ce4db0dcb3fd018f7ce",
+        "png_bytes": 31711
       },
       "query": {
-        "wall_ms": 13,
+        "wall_ms": 11,
         "state": {
           "mode": "shim",
           "workerHost": false,
@@ -86,35 +108,46 @@
             "state": "probe-only",
             "ctxOk": null
           },
-          "beats": 128,
-          "wtGapMax": 938,
-          "atGapMax": 940,
-          "wtGapSpanLoad": 938,
-          "atGapSpanLoad": 940,
+          "beats": 129,
+          "wtGapMax": 941,
+          "atGapMax": 944,
+          "wtMaxPair": [
+            58,
+            1792630796277,
+            1792630797218,
+            3364,
+            4308
+          ],
+          "wtGapSpanLoad": 941,
+          "atGapSpanLoad": 944,
           "loadWindow": {
-            "start": 3393,
-            "end": 4293
+            "start": 3401,
+            "end": 4302
           },
-          "drawsMain": 372,
+          "drawsMain": 375,
           "term": null,
           "beatsAfterTerm": 0,
+          "spawn": {
+            "hostId": "null",
+            "dispatchDefined": false
+          },
           "workerErr": "Uncaught Error: dc4-expected",
           "ctrl": "ctrl=off",
-          "pageNow": 7910
+          "pageNow": 7994
         }
       }
     },
     {
       "name": "s3",
-      "t_wall_ms": 7996,
+      "t_wall_ms": 8074,
       "capture": {
         "name": "s3",
-        "wall_ms": 4,
-        "png_sha256": "cc2a9a6a96c8031952f5a8890a7e2898c8b026312f53988af487855ff3877979",
-        "png_bytes": 28418
+        "wall_ms": 5,
+        "png_sha256": "f530633250e20582a12e891067ff8581fa21bbf21ca569773dbf8bf959356a7e",
+        "png_bytes": 31808
       },
       "query": {
-        "wall_ms": 15,
+        "wall_ms": 5,
         "state": {
           "mode": "shim",
           "workerHost": false,
@@ -122,21 +155,32 @@
             "state": "probe-only",
             "ctxOk": null
           },
-          "beats": 135,
-          "wtGapMax": 938,
-          "atGapMax": 940,
-          "wtGapSpanLoad": 938,
-          "atGapSpanLoad": 940,
+          "beats": 136,
+          "wtGapMax": 941,
+          "atGapMax": 944,
+          "wtMaxPair": [
+            58,
+            1792630796277,
+            1792630797218,
+            3364,
+            4308
+          ],
+          "wtGapSpanLoad": 941,
+          "atGapSpanLoad": 944,
           "loadWindow": {
-            "start": 3393,
-            "end": 4293
+            "start": 3401,
+            "end": 4302
           },
-          "drawsMain": 392,
+          "drawsMain": 395,
           "term": null,
           "beatsAfterTerm": 0,
+          "spawn": {
+            "hostId": "null",
+            "dispatchDefined": false
+          },
           "workerErr": "Uncaught Error: dc4-expected",
           "ctrl": "ctrl=on",
-          "pageNow": 8247
+          "pageNow": 8314
         }
       }
     }
@@ -146,18 +190,20 @@
     "worker_host_present": false,
     "transfer_state": "probe-only",
     "transfer_ctx_ok": null,
-    "beats_total": 128,
-    "wt_gap_max_ms": 938,
-    "wt_gap_spanning_load_ms": 938,
-    "at_gap_max_ms": 940,
-    "at_gap_spanning_load_ms": 940,
+    "beats_total": 129,
+    "wt_gap_max_ms": 941,
+    "wt_gap_spanning_load_ms": 941,
+    "at_gap_max_ms": 944,
+    "at_gap_spanning_load_ms": 944,
     "load_window": {
-      "start": 3393,
-      "end": 4293
+      "start": 3401,
+      "end": 4302
     },
-    "draws_main": 372,
+    "draws_main": 375,
     "term": null,
     "beats_after_term": 0,
+    "spawn_host_id": "null",
+    "dispatch_defined": false,
     "worker_err": "Uncaught Error: dc4-expected",
     "canvas_idle": "ANIMATED",
     "mutation_control": "OK",

@@ -1,18 +1,18 @@
 {
   "fixture": "comp04a-worker-threaded-canvas.html",
-  "started_at_wall": "2026-10-22T00:18:01.715Z",
+  "started_at_wall": "2026-10-22T00:59:07.185Z",
   "samples": [
     {
       "name": "s0",
-      "t_wall_ms": 561,
+      "t_wall_ms": 612,
       "capture": {
         "name": "s0",
-        "wall_ms": 210,
-        "png_sha256": "0d307da0ebcb31eafcf238cd786762b8b8c8b785834bb7e9540ee3b8926040a8",
-        "png_bytes": 24808
+        "wall_ms": 213,
+        "png_sha256": "5414cd2a51bbdeabd14c38165580887b224adb8e5834dc40a233b0218df27280",
+        "png_bytes": 27641
       },
       "query": {
-        "wall_ms": 40,
+        "wall_ms": 36,
         "state": {
           "mode": "threaded",
           "workerHost": true,
@@ -22,30 +22,41 @@
           },
           "beats": 11,
           "wtGapMax": 51,
-          "atGapMax": 76,
+          "atGapMax": 86,
+          "wtMaxPair": [
+            1,
+            1792630747440,
+            1792630747491,
+            522,
+            591
+          ],
           "wtGapSpanLoad": 0,
           "atGapSpanLoad": 0,
           "loadWindow": null,
           "drawsMain": null,
           "term": null,
           "beatsAfterTerm": 0,
+          "spawn": {
+            "hostId": "1",
+            "dispatchDefined": true
+          },
           "workerErr": "Error: dc4-expected\n    at <anonymous>:2:7",
           "ctrl": "ctrl=off",
-          "pageNow": 1034
+          "pageNow": 1100
         }
       }
     },
     {
       "name": "s1",
-      "t_wall_ms": 1513,
+      "t_wall_ms": 1563,
       "capture": {
         "name": "s1",
-        "wall_ms": 6,
-        "png_sha256": "6b491cc3e58860ebaf9adfa5ffdd555a46830c3dd25543ae123a61b937e54dd7",
-        "png_bytes": 24974
+        "wall_ms": 7,
+        "png_sha256": "3d97c0b8ecd63d75c2a70a2f25a6b5990d08e43ac985d6f943ea0ebebba1d3bb",
+        "png_bytes": 27851
       },
       "query": {
-        "wall_ms": 10,
+        "wall_ms": 46,
         "state": {
           "mode": "threaded",
           "workerHost": true,
@@ -55,30 +66,41 @@
           },
           "beats": 26,
           "wtGapMax": 51,
-          "atGapMax": 88,
+          "atGapMax": 86,
+          "wtMaxPair": [
+            1,
+            1792630747440,
+            1792630747491,
+            522,
+            591
+          ],
           "wtGapSpanLoad": 0,
           "atGapSpanLoad": 0,
           "loadWindow": null,
           "drawsMain": null,
           "term": null,
           "beatsAfterTerm": 0,
+          "spawn": {
+            "hostId": "1",
+            "dispatchDefined": true
+          },
           "workerErr": "Error: dc4-expected\n    at <anonymous>:2:7",
           "ctrl": "ctrl=off",
-          "pageNow": 1749
+          "pageNow": 1854
         }
       }
     },
     {
       "name": "s2",
-      "t_wall_ms": 7607,
+      "t_wall_ms": 8285,
       "capture": {
         "name": "s2",
-        "wall_ms": 7,
-        "png_sha256": "b5d32334decadc707265c46ea8164cabec549ad8722fb7e632b7fc378f11e6fd",
-        "png_bytes": 29141
+        "wall_ms": 6,
+        "png_sha256": "fbf6af01b7f54df0075478d22b38a2e7334d89f4b47ae9bd60416dbde95062c6",
+        "png_bytes": 32074
       },
       "query": {
-        "wall_ms": 45,
+        "wall_ms": 47,
         "state": {
           "mode": "threaded",
           "workerHost": true,
@@ -86,35 +108,46 @@
             "state": "sent",
             "ctxOk": true
           },
-          "beats": 129,
+          "beats": 128,
           "wtGapMax": 902,
           "atGapMax": 951,
-          "wtGapSpanLoad": 51,
+          "wtMaxPair": [
+            60,
+            1792630750398,
+            1792630751300,
+            4365,
+            4365
+          ],
+          "wtGapSpanLoad": 50,
           "atGapSpanLoad": 951,
           "loadWindow": {
-            "start": 3400,
-            "end": 4300
+            "start": 3457,
+            "end": 4357
           },
           "drawsMain": null,
           "term": {
-            "at": 6899,
-            "lastBeatN": 387
+            "at": 6956,
+            "lastBeatN": 384
           },
           "beatsAfterTerm": 0,
+          "spawn": {
+            "hostId": "1",
+            "dispatchDefined": true
+          },
           "workerErr": "Error: dc4-expected\n    at <anonymous>:2:7",
           "ctrl": "ctrl=off",
-          "pageNow": 7881
+          "pageNow": 8575
         }
       }
     },
     {
       "name": "s3",
-      "t_wall_ms": 7981,
+      "t_wall_ms": 8692,
       "capture": {
         "name": "s3",
-        "wall_ms": 7,
-        "png_sha256": "cbe674a3b7c595672e37d7f49e1c75f50798e19912db0e29f11b6939f70df54e",
-        "png_bytes": 31382
+        "wall_ms": 4,
+        "png_sha256": "b28196a278b6957551efa0ced21cc0cfc1175647334e14f4ce1992b9fb046f47",
+        "png_bytes": 32117
       },
       "query": {
         "wall_ms": 51,
@@ -125,24 +158,35 @@
             "state": "sent",
             "ctxOk": true
           },
-          "beats": 129,
+          "beats": 128,
           "wtGapMax": 902,
           "atGapMax": 951,
-          "wtGapSpanLoad": 51,
+          "wtMaxPair": [
+            60,
+            1792630750398,
+            1792630751300,
+            4365,
+            4365
+          ],
+          "wtGapSpanLoad": 50,
           "atGapSpanLoad": 951,
           "loadWindow": {
-            "start": 3400,
-            "end": 4300
+            "start": 3457,
+            "end": 4357
           },
           "drawsMain": null,
           "term": {
-            "at": 6899,
-            "lastBeatN": 387
+            "at": 6956,
+            "lastBeatN": 384
           },
           "beatsAfterTerm": 0,
+          "spawn": {
+            "hostId": "1",
+            "dispatchDefined": true
+          },
           "workerErr": "Error: dc4-expected\n    at <anonymous>:2:7",
           "ctrl": "ctrl=on",
-          "pageNow": 8260
+          "pageNow": 8985
         }
       }
     }
@@ -152,26 +196,30 @@
     "worker_host_present": true,
     "transfer_state": "sent",
     "transfer_ctx_ok": true,
-    "beats_total": 129,
+    "beats_total": 128,
     "wt_gap_max_ms": 902,
-    "wt_gap_spanning_load_ms": 51,
+    "wt_gap_spanning_load_ms": 50,
     "at_gap_max_ms": 951,
     "at_gap_spanning_load_ms": 951,
     "load_window": {
-      "start": 3400,
-      "end": 4300
+      "start": 3457,
+      "end": 4357
     },
     "draws_main": null,
     "term": {
-      "at": 6899,
-      "lastBeatN": 387
+      "at": 6956,
+      "lastBeatN": 384
     },
     "beats_after_term": 0,
+    "spawn_host_id": "1",
+    "dispatch_defined": true,
     "worker_err": "Error: dc4-expected\n    at <anonymous>:2:7",
     "canvas_idle": "ANIMATED",
     "mutation_control": "OK",
     "control_strip": "ctrl=off",
     "gates": {
+      "spawn_hosted": true,
+      "dispatch_defined": true,
       "wt_liveness": true,
       "transfer_ctx": true,
       "term_silent": true,

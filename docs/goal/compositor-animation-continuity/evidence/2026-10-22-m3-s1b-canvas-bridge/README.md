@@ -6,16 +6,19 @@
 
 ## 判定
 
-**comp04a probe flag on 腿 THREADED_PROBE_PASS（5/5 判定门 TRUE，S1d 的 PARTIAL 升
+**comp04a probe flag on 腿 THREADED_PROBE_PASS（7/7 判定门 TRUE，S1d 的 PARTIAL 升
 PASS）**；flag 关对照 SHIM_BASELINE_PASS 保持（shim 腿零行为漂移）。
 
-[threaded 腿](comp04a-probe-threaded.json)：`transfer_ctx=TRUE`（transferControlToOffscreen
-→ postMessage transfer → worker 侧 ctx ok）、`wt_gap_spanning_load_ms=51`（忙窗
-3400→4300ms 内 worker 侧时钟间隔，线程隔离维持）、`lastBeatN=387`（S1d 为 0——worker
-drawFrame 真实推进，`setInterval(drawFrame, 16)` 逐拍绘制进 worker 本地 registry）、
-`term_silent`/`err_reported`/`control` 维持 TRUE；s2 采样条带见
+[threaded 腿](comp04a-probe-threaded.json)（**合流后复跑——与推进流 5aa5d0da0 S1a
+注册时序修复同树**，rebase 碰撞仅 master.md 账面，代码面零交集自动合并）：verdict
+**THREADED_PROBE_PASS（7/7 判定门 TRUE**，含其批新增 spawn_hosted/dispatch_defined
+两执行面门）：`transfer_ctx=TRUE`（transferControlToOffscreen → postMessage transfer →
+worker 侧 ctx ok）、`wt_gap_spanning_load_ms=50`（忙窗 3457→4357ms 内 worker 侧时钟
+间隔，线程隔离维持）、`lastBeatN=384`（S1d 为 0——worker drawFrame 真实推进，
+`setInterval(drawFrame, 16)` 逐拍绘制进 worker 本地 registry）、`term_silent`/
+`err_reported`/`control` 维持 TRUE；s2 采样条带见
 [comp04a-s2-threaded.png](comp04a-s2-threaded.png)（strip-worker=ctx ok、strip-transfer=sent）。
-[shim 对照腿](comp04a-probe-shim.json)：wt 跨忙窗 938ms（基线 936–949ms 带内）、
+[shim 对照腿](comp04a-probe-shim.json)：wt 跨忙窗 941ms（基线 936–949ms 带内）、
 transfer probe-only、正控 OK。
 
 ## 实现（RFC §2.2 四触点，零新 IPC）
@@ -68,8 +71,8 @@ transfer probe-only、正控 OK。
 
 | 门 | 结果 |
 |---|---|
-| comp04a probe flag on | THREADED_PROBE_PASS（5/5 门，见上） |
-| comp04a probe flag off | SHIM_BASELINE_PASS（wt 938ms 基线带内） |
+| comp04a probe flag on | THREADED_PROBE_PASS（7/7 门，见上） |
+| comp04a probe flag off | SHIM_BASELINE_PASS（wt 941ms 基线带内） |
 | cargo test（script-sandbox v8/quickjs 双 feature 组合、engine、renderer 相关面） | 绿（分项见上） |
 | make test 全量 | EXIT=0 |
 | testharness-workers 全量 | 693P/12F——与 S1d 批完全同数，12 项失败文件均为归档 slice3 基线既有失败，零新增 |
