@@ -5,9 +5,10 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（172）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（173）
 
 - 2026-10-22 [窗口模式注入点击两坑：chrome 高 91px 坐标换算与空白区点击静默丢弃](bugs/2026-10/2026-10-22-windowed-click-injection-calibration.md) — browser,renderer
+- 2026-10-22 [shim void 方法返回值泄漏 → WPT cleanup abort → 整文件 Timeout 吞案](bugs/2026-10/2026-10-22-void-method-return-leaks-abort-wpt-file.md) — engine
 - 2026-10-20 [WHATWG prescan 共享 position 游标：skip 落点必须回写再进属性循环](bugs/2026-10/2026-10-20-prescan-position-cursor.md) — engine
 - 2026-10-19 [基建缺口修复会暴露 vacuous-pass 断言，需同轮把被钉行为真值化](bugs/2026-10/2026-10-19-vacuous-pass-exposed-by-named-access.md) — engine
 - 2026-10-19 [配对型 reftest 单侧门控无法恢复双侧一致](bugs/2026-10/2026-10-19-reftest-pair-single-side-gate-futile.md) — engine
@@ -180,8 +181,9 @@
 - 2026-07-29 [reftest-upstream 大目录触发 test-guard OOM 杀进程（fail-list 捕获空致误判）](bugs/2026-07/2026-07-29-reftest-upstream-large-dir-testguard-oom.md) — tests/wpt-runner（cmd_reftest_upstream）, scripts/test-guard.rs（OOM 包裹器）
 - 2026-07-25 [product-smoke 输出 PNG 路径陷阱（stale 文件致假 bug 误判）](bugs/2026-07/2026-07-25-product-smoke-png-stale-trap.md) — tests/wpt-runner（cmd_product_smoke）, legacy/product smoke 诊断流程
 
-## Patterns — 可复用代码模式与最佳实践（23）
+## Patterns — 可复用代码模式与最佳实践（24）
 
+- 2026-10-23 [真 Chrome 仲裁：WPT 语料在本地 Chromium 的基线跑法](patterns/2026-10/2026-10-23-real-chrome-wpt-arbitration.md) — wpt-runner, engine
 - 2026-10-19 [spec 字面与 WPT 语料分歧时：先查真实引擎结果，语料是验收标尺](patterns/2026-10/2026-10-19-spec-literal-vs-corpus-pin.md) — engine
 - 2026-10-19 [shim 新 API 需 trap 分支 + 原型回落双层，否则克隆树/实例域元素静默缺方法](patterns/2026-10/2026-10-19-shim-new-api-dual-domain-trap-and-prototype.md) — js_dom_shim
 - 2026-10-09 [final_acceptance 派发与回执契约速查](patterns/2026-10/2026-10-09-final-acceptance-dispatch-contract.md) — .agents/skills/zeroweb-site-optimizer

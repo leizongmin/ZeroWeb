@@ -2,11 +2,43 @@
 
 **版本**: v2.0
 **日期**: 2026-10-21（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 27 收口（R4620 批内 selector 时序：corner-cases 1P/29F→28P/2F，dialog 集群 82 files +30P/同 key 回归 0），下一步 corner-cases 余 2F（re-entrant showModal 边缘）或按挂账序推进
+**状态**: Active——M2 切片 28 收口（corner-cases 28P/2F→29P/1F，真 Chrome 基准 29/30 同态：余 1F 为 Chrome 同款上游失败；click-modal 案修复＝模态 inertness 焦点切面门，dialog 集群 82 files 303P/101F/3T 同 key 回归 0），下一步按挂账序推进
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-23 M2 切片 27 收口）**：corner-cases 毒化链根因
+> **▶ 当前状态（2026-10-23 M2 切片 28 收口）**：corner-cases 余 2F 收口
+> ——先建真 Chrome 基准仲裁（playwright-core + chromium-1243，CDP 真实
+> 输入层驱动语料：light dismiss/ESC close watcher/mousedown 焦点全真实；
+> test_driver 桥接补 ButtonType/特殊键映射），语料基线 **29/30，唯一
+> 失败＝esc-modeless**。两案定性：案 A（esc-modeless）**非 bug**——真
+> Chrome 事件流与引擎逐条一致（modeless show() 自聚焦 + close restore
+> 重开 modal，`dialog-focus-previous-outside` 末案独立钉死 Chrome 同款
+> 语义），上游期望 closed 在 Chrome 自身即失败，记账为 Chrome parity 非
+> gap；案 B（click-modal）**引擎分歧**——真 Chrome mousedown 命中
+> dialog（模态外 inert，hit-test 跳过、焦点不出 top-layer）→ light
+> dismiss 关闭 → restore 交还焦点 → fc:button → 处理器 re-entrant
+> showModal 重开 → 端态 open ✓；引擎 runner pre-focus 步先把焦点漏给
+> button（真浏览器不可能）→ restore no-op → 端态 closed。修复＝模态
+> inertness 焦点切面：`part01 _zwDialogModalFocusGateOk`（栈顶 open+模态
+> dialog 子树外非 focusable area，stale 栈项跳过，stacked modal 仅栈顶
+> 生效）+ `part06 _zwIsFocusableSel` 接入（宿主 pre-focus 步与 mousedown
+> 默认动作共用门；页面直调 focus() 随 rendering inert 挂账一并接入）。
+> 契约 `js_dom_bridge_tests::test_dialog_modal_focus_gate_s28`（G1–G4，
+> 修复前红后绿；测试面元素须落初始 dom_html——变更追加节点 selector 串
+> 解析回退 DIV 非本切片面）。dialog 集群 82 files **303P/101F/3T**（s27
+> 同集 302P/102F/3T），逐 subtest diff 同 key 回归 **0**、增益 1
+> （click-modal F→P）；corner-cases **29P/1F == 真 Chrome 29/30**；3T
+> 全为 s26 基线既有。gates：engine lib **3426P/0F**（含新契约）、clippy
+> -D warnings、fmt clean、零新增依赖。账本见
+> [evidence/2026-10-23-m2s28-modal-focus-gate.md](html-semantics-compat/evidence/2026-10-23-m2s28-modal-focus-gate.md)。
+> **下一步**：按挂账序推进 inert 计算态 13F、abspos/layout ~10F
+>（rendering 域）、popover 有效性语义（`:popover-open` 选择器 +
+> hidePopover not-showing 抛 + popover-simple 余 hang）、impl-doc
+> wrapper requestClose、anchor-with-inline 导航缺口、parser form element
+> pointer 4F、custom command `--` 前缀 CommandEvent defer、ESC 组栈边缘
+> 乱序、非模态 close 不出组栈、R371 模板残留。
+>
+> **▶ 上轮状态（2026-10-23 M2 切片 27 收口）**：corner-cases 毒化链根因
 > 收口（R4620 批内 selector 时序）——根因在宿主共享 apply 路径而非调用方：
 > JS 侧同 dispatch 的 op 引用批开始时的树态（spec insertBefore 的 ref 节点
 > 对象不因前序 remove 失效），而 drain 顺序重放时前序 Remove 摘除 dialog →

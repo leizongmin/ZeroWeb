@@ -16060,6 +16060,10 @@
     try {
       var el = (typeof _makeProxy === 'function') ? _makeProxy(sel, null) : null;
       if (!el || el.nodeType !== 1) return false;
+      // 模态 inertness 焦点切面（part01 _zwDialogModalFocusGateOk）：栈顶模态
+      // dialog 子树外元素不可聚焦——宿主 pre-focus 步与 mousedown 默认动作共用
+      // 本谓词（spec 模态 dialog inertness，focusable-area 切片）。
+      if (typeof _zwDialogModalFocusGateOk === 'function' && !_zwDialogModalFocusGateOk(el)) return false;
       var tag = String(el.tagName || '').toUpperCase();
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON'
           || tag === 'IFRAME' || tag === 'SUMMARY') return true;

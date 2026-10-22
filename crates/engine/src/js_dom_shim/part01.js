@@ -748,9 +748,9 @@
     }
     if (returnValue !== undefined) _expando[key + '::returnValue'] = String(returnValue);
     // R4600（html-semantics M2 切片 26）：焦点恢复（spec close-the-dialog
-    // previously focused element 尾步——dialog-closedby corner-cases 余 2F 根因面：
-    // closing steps 内 focus fixup 触发 focusin → 处理器再 showModal → 保持 modal 开；
-    // focus-after-close 恢复断言面）。同步执行，先于 close 事件排队（spec 顺序）。
+    // previously focused element 尾步——dialog-closedby corner-cases focusin-showModal
+    // 案根因面：closing steps 内 focus fixup 触发 focusin → 处理器再 showModal →
+    // 保持 modal 开；focus-after-close 恢复断言面）。同步执行，先于 close 事件排队（spec 顺序）。
     try { _zwDialogRestoreFocusR4600(key, sel, handle, _wasModalR4600); } catch (_eDgRf) {}
     _zwDialogQueueCloseEvent4200(key, sel, handle);
     _zwDialogToggleQueueNotify4200(key, sel, handle, true, invokerSrc);
@@ -1031,6 +1031,34 @@
     }
     if (!anchorOk) return;
     _zwDialogRunFocusingStepsR4600(pf);
+  }
+  // 模态 inertness 焦点切面（s28，2026-10-23）：栈顶 open+模态 dialog 的
+  // shadow-including 子树外元素非 focusable area。spec 模态 dialog inertness 的
+  // focusable-area 切片（rendering inert 整体仍是挂账，此处只钉焦点门）——宿主
+  // 驱动焦点迁移（runner click/pointer_down 的 pre-focus 步、mousedown 默认动作，
+  // 均经 _zwIsFocusableSel）必须拒之：真 Chrome 模态下 hit-test 跳过模态外元素、
+  // 焦点不出 top-layer，dialog-closedby-corner-cases「focusin calls showModal,
+  // modal」light dismiss 案（closing steps 内 restore 把焦点交还外部元素 →
+  // focusin → 处理器 re-entrant showModal 重开，WPT 期望与 Chrome 实测一致）根因
+  // 即 pre-focus 抢跑把焦点提前漏到模态外。仅栈顶模态生效：stacked modal 时内层
+  // 模态子树仍可聚焦（Chromium 同款）；stale 栈项（open/modal 态已清）跳过。
+  // 页面直调 el.focus() 路径（part04 proxy focus）不在本门内——其 inertness 门控
+  // 随 rendering inert 一并接入。
+  // https://html.spec.whatwg.org/multipage/interactive-elements.html#modal-dialogs
+  function _zwDialogModalFocusGateOk(el) {
+    try {
+      var _mgN = _zwDialogModalStack ? _zwDialogModalStack.length : 0;
+      if (!_mgN || !el) return true;
+      for (var _mgI = _mgN - 1; _mgI >= 0; _mgI--) {
+        var _mgK = _zwDialogModalStack[_mgI];
+        if (!_zwDialogModal[_mgK] || !_zwTopLayer[_mgK]) continue; // stale 栈项
+        var _mgDp = _proxyCache[_mgK];
+        if (!_mgDp || !_mgDp.hasAttribute || !_mgDp.hasAttribute('open')) continue;
+        try { if (!_mgDp.isConnected) continue; } catch (_eMgIc) { continue; }
+        return !!_mgDp.contains(el);
+      }
+    } catch (_eMg) {}
+    return true;
   }
   // ---------- R4600 dialog focusing steps 家族 end ----------
   // R3290：dialog open 内容属性是否 present（boolean 属性，presence 判定）。latest-wins 反映同 execute 内

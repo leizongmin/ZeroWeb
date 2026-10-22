@@ -274,3 +274,117 @@ fn test_dialog_focusing_steps_r4600() {
         "R13：断开 dialog show() 焦点不变"
     );
 }
+
+// s28（2026-10-23）——模态 inertness 焦点切面契约：栈顶 open+模态 dialog 的
+// shadow-including 子树外元素经 _zwIsFocusableSel 拒焦（宿主 pre-focus 步与
+// mousedown 默认动作共用的焦点门）。dialog-closedby-corner-cases「focusin calls
+// showModal, modal」light dismiss 案根因面：pre-focus 抢跑把焦点漏到模态外 →
+// closing steps restore no-op → 无 focusin → 处理器 re-entrant showModal 不触发
+// → 端态 closed。真 Chrome 基准 29/30（runner 修复后同 29/30，唯余 esc-modeless
+// 上游失败，Chrome 实测同款）。仅栈顶模态生效（stacked modal 内层子树可聚焦）。
+// 元素全部落在初始 dom_html（变更追加节点的 selector 串解析不在本契约面内）。
+// https://html.spec.whatwg.org/multipage/interactive-elements.html#modal-dialogs
+#[test]
+fn test_dialog_modal_focus_gate_s28() {
+    let mut sandbox = t59_sandbox_with_shim();
+    let mutations: std::sync::Arc<std::sync::Mutex<Vec<DomMutation>>> = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+    let dom_html: std::sync::Arc<std::sync::Mutex<String>> = std::sync::Arc::new(std::sync::Mutex::new(
+        "<html><body>\
+          <button id='g1b'></button>\
+          <dialog id='g1d'><button id='g2b'></button><button id='g2c'></button></dialog>\
+          <button id='g4x'></button>\
+          <dialog id='g4o'></dialog>\
+          <dialog id='g4i'><button id='g4b'></button><button id='g4c'></button></dialog>\
+        </body></html>"
+            .to_string(),
+    ));
+    let page_url: std::sync::Arc<std::sync::Mutex<String>> = std::sync::Arc::new(std::sync::Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    crate::js_dom_bridge::register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // G1：模态开 → 模态外按钮 _zwFocusSel 拒焦（焦点保持在模态子树内；真 Chrome
+    // mousedown hit-test 跳过模态外元素的同源行为，focusable-area 切片）。
+    // showModal 后 dialog 无 autofocus → 首个 focusable 后代 g2b 获焦。
+    sandbox
+        .execute(
+            "var g1d = document.querySelector('#g1d'); \
+             var g1b = document.querySelector('#g1b'); \
+             var g2b = document.querySelector('#g2b'); \
+             g1d.showModal(); \
+             globalThis.__g1pre = document.activeElement === g2b ? 'g2b' : 'other'; \
+             globalThis._zwFocusSel('#g1b'); \
+             globalThis.__g1 = document.activeElement === g1b ? 'leak' : 'kept';",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__g1pre").unwrap().value,
+        "g2b",
+        "G1 前置：showModal 聚焦首个 focusable 后代"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__g1").unwrap().value,
+        "kept",
+        "G1：模态子树外 pre-focus 被门拒"
+    );
+
+    // G2：模态子树内元素仍可聚焦（focusable area 不受本门影响）。
+    sandbox
+        .execute(
+            "globalThis._zwFocusSel('#g2c'); \
+             globalThis.__g2 = document.activeElement === document.querySelector('#g2c') ? 'in' : 'blocked';",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__g2").unwrap().value,
+        "in",
+        "G2：模态子树内可聚焦"
+    );
+
+    // G3：close 后模态外恢复可聚焦（closing steps restore 把焦点交还外部元素的
+    // 依赖面——corner-cases click-modal 案的 fc:button 触发前提）。
+    sandbox
+        .execute(
+            "g1d.close(); \
+             globalThis._zwFocusSel('#g1b'); \
+             globalThis.__g3 = document.activeElement === g1b ? 'restored' : 'stuck';",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__g3").unwrap().value,
+        "restored",
+        "G3：模态关闭后模态外恢复可聚焦"
+    );
+
+    // G4：stacked modal——仅栈顶模态生效：外层模态外的元素拒焦，栈顶（内层）
+    // 模态子树内仍可聚焦（Chromium 同款）。
+    sandbox
+        .execute(
+            "var g4o = document.querySelector('#g4o'); \
+             var g4i = document.querySelector('#g4i'); \
+             var g4b = document.querySelector('#g4b'); \
+             g4o.showModal(); g4i.showModal(); \
+             globalThis.__g4pre = document.activeElement === g4b ? 'g4b' : 'other'; \
+             globalThis._zwFocusSel('#g4x'); \
+             globalThis.__g4a = document.activeElement === document.querySelector('#g4x') ? 'leak' : 'kept'; \
+             globalThis._zwFocusSel('#g4c'); \
+             globalThis.__g4b = document.activeElement === document.querySelector('#g4c') ? 'in' : 'blocked';",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__g4pre").unwrap().value,
+        "g4b",
+        "G4 前置：栈顶模态 focusing steps 聚焦其后代"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__g4a").unwrap().value,
+        "kept",
+        "G4a：栈顶模态子树外拒焦"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__g4b").unwrap().value,
+        "in",
+        "G4b：栈顶模态子树内可聚焦"
+    );
+    sandbox.execute("g4i.close(); g4o.close();").unwrap();
+}
