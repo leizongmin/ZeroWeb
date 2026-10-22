@@ -795,3 +795,5 @@ mod r5219_vacuum_fitcontent_collapse_tests;
 /// R5220（CSS2 §8.4 × css-sizing-3 #fit-content-size）% padding 解析基准——塌 0 真实
 /// CB 传真值 0 锚点。
 mod r5220_pct_padding_collapse_tests;
+/// R5221（CSS2 §9.5 × §10.3.3）多 float 纵向堆叠下绕流游标修正锚点。
+mod r5221_wrap_floor_multi_float_tests;

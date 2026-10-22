@@ -2200,7 +2200,7 @@ pub(crate) fn adjust_float_positions_with_context(
     // `ZW_BFC_FLOAT_ORDER_GATE=0` 回退无序消费。
     let float_order_gate = std::env::var("ZW_BFC_FLOAT_ORDER_GATE").as_deref() != Ok("0");
     let mut float_child_indices: Vec<usize> = Vec::new();
-    let float_geometries: Vec<FloatGeom> = box_node
+    let mut float_geometries: Vec<FloatGeom> = box_node
         .children
         .iter()
         .enumerate()
@@ -2233,6 +2233,14 @@ pub(crate) fn adjust_float_positions_with_context(
     } else {
         float_geometries.clone()
     };
+    // R5221：下绕 BFC 的流游标修正（chromium 交错布局语义，007 探针定谳）。Phase 1
+    // 用 BFC 避让**前**的流位放置后继 float 与兄弟预位；auto 宽 BFC 在 Phase 2 下绕
+    // 到 float 底后其真实底边下移，后继 float 的流位置 ≥ 该底（007：float2 从
+    // 50 抬到 100）、后续 BFC 兄弟预位同步抬底才能读到抬升后的 float 带进入正确
+    // 避让臂（bfc2 预位 50→100 后按 float2 新带 100..150 下推 150）。记录
+    //（生效子索引, 新底）：float 子在循环顶应用；BFC 子在避让块前应用（定位臂
+    // 可能覆写）；float_geometries 快照就地抬升供后续子排斥消费。
+    let mut wrap_floors: Vec<(usize, f32)> = Vec::new();
 
     if has_active_float_context {
         let mut float_y_offset = 0.0f32;
@@ -2282,6 +2290,16 @@ pub(crate) fn adjust_float_positions_with_context(
             }
 
             if !matches!(child.float, FloatValue::None) {
+                // R5221：前序下绕 BFC 的流游标底——float 的流位置 ≥ 该底（007：
+                // float2 预位 50 抬到 bfc1 新底 100；§9.5.1 float 顶不低于假设流位）。
+                let cursor_floor = wrap_floors
+                    .iter()
+                    .filter(|(from, _)| *from <= idx)
+                    .map(|(_, b)| *b)
+                    .fold(f32::NEG_INFINITY, f32::max);
+                if cursor_floor.is_finite() && child.y < cursor_floor {
+                    child.y = cursor_floor;
+                }
                 // float 元素：将其 taffy 高度加入 offset
                 // CSS 2.1：零高度浮动元素不占据垂直空间
 
@@ -2734,6 +2752,21 @@ pub(crate) fn adjust_float_positions_with_context(
                 }
             }
 
+            // R5221：BFC 子避让前预位再抬——clearance/flow 重放臂可能覆写 loop 顶
+            // floor（bfc2 预位被 FloatValue::None 臂重放回 50），避让重叠检查前回
+            // 本帧权威底（仅 establishes_bfc 子，普通块流位语义未探不入；float 子
+            // 已在分支 continue，不达此处）。
+            if !wrap_floors.is_empty() && crate::margin_collapse::establishes_bfc(child) {
+                let cursor_floor = wrap_floors
+                    .iter()
+                    .filter(|(from, _)| *from <= idx)
+                    .map(|(_, b)| *b)
+                    .fold(f32::NEG_INFINITY, f32::max);
+                if cursor_floor.is_finite() && child.y < cursor_floor {
+                    child.y = cursor_floor;
+                }
+            }
+
             // R4240（css-sizing-4 §6.1 + csswg #4028）：块级 replaced 的 width:stretch —
             // stretch size respects float avoidance：与垂直重叠 float 并置时，box 放
             // float 右缘、宽取剩余可用宽（replaced-next-to-float-1：canvas
@@ -2895,6 +2928,9 @@ pub(crate) fn adjust_float_positions_with_context(
                     }
                 }
 
+                // R5221：下绕触发的快照抬升——per-float 循环借用 float_geometries，
+                // 延后到循环后应用（后继 float 带抬到下绕 BFC 新底）。
+                let mut pending_geom_bump: Option<f32> = None;
                 if !coord_handled {
                     for (gi, (float_dir, float_x, float_y, float_border_w, float_h, float_margin_r, float_margin_l)) in
                         float_geometries.iter().enumerate()
@@ -2969,12 +3005,15 @@ pub(crate) fn adjust_float_positions_with_context(
                                 let margin_h = ml + mr;
                                 let frame =
                                     child.border_left + child.border_right + child.padding_left + child.padding_right;
-                                let margin_aware = margin_solve_on
-                                    && child.declared_width_auto
-                                    && margin_h.abs() > 0.5
-                                    // 有后续 block 同胞时多 float 纵向堆叠语义未定（007 实测
-                                    // 钉位/下绕都偏离 ref）——整体回退旧臂，保持基线行为。
-                                    && !has_following_block_sibling[idx];
+                                let margin_aware = margin_solve_on && child.declared_width_auto && margin_h.abs() > 0.5;
+                                // R5221：sibling 门移除——007 chromium 探针定谳多 float 纵向堆叠
+                                // 语义：auto 宽 BFC 的 beside fit 用 margin box（w−|负 margin|）
+                                // 对 beside 带判定，装不下即下绕（floats-wrap-bfc-with-margin-007：
+                                // bfc1 w=CB−mr=100、margin box 50 > 带 25 → 下绕 y=float 底
+                                // x=0 w=100；float2/bfc2 顺序下移一行），与本钉位解 wrap 分支
+                                //（margin_h < −(gap+0.5)）一致。旧臂（taffy 用 beside 带解
+                                // §10.3.3 → w=75、x=float 右缘）偏离 chromium。
+                                // 右 float 镜像门未同步开（无 rf 侧多 float 探针，挂账）。
                                 // 入门：margin-aware 即行动——钉位解与 §10.3.3 flow 盒在无
                                 // 钳制时相等（幂等覆写），而 ml ≥ avoidance 时 taffy 自身
                                 // float 收缩可能已把宽塌到 0（lf ml=85 探针：taffy w=0，
@@ -2998,6 +3037,11 @@ pub(crate) fn adjust_float_positions_with_context(
                                         child.x = ml;
                                         child.width = (container_width - margin_h).max(0.0);
                                         shrink_bfc_content_width(child);
+                                        // R5221：下绕后本盒真实底边下移——记流游标底，
+                                        // 后续兄弟（float 带与 BFC 预位）在各自处理点抬升。
+                                        let new_bottom = child.y + child.height;
+                                        wrap_floors.push((idx + 1, new_bottom));
+                                        pending_geom_bump = Some(new_bottom);
                                     } else {
                                         // 旁置钉位（含小负 margin 落 x=avoidance、w=gap）。
                                         child.x = beside_x;
@@ -3120,6 +3164,17 @@ pub(crate) fn adjust_float_positions_with_context(
                         }
                     }
                 } // end if !coord_handled（R1730 Slice 5：coord_handled 时跳过 per-float 循环）
+
+                // R5221：应用快照抬升——float 子索引在本盒之后的 float 带底抬到
+                // 下绕 BFC 新底（007：float2 带 50..100 → 100..150，bfc2 避让据此
+                // 下推 150）。
+                if let Some(nb) = pending_geom_bump {
+                    for (gi2, &ci) in float_child_indices.iter().enumerate() {
+                        if ci > idx && float_geometries[gi2].2 < nb {
+                            float_geometries[gi2].2 = nb;
+                        }
+                    }
+                }
 
                 // R1619 Slice 2（嵌套 BFC 祖先 float 下沉）：直接同胞 float 由上方 float_geometries
                 // 循环（R1369 左 / 右 shrink）处理；此处处理**祖先 float**（经 inherited_floats 透传，
