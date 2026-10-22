@@ -91,3 +91,19 @@
 **过程教训（已沉淀 [learning](../../../../../docs/learnings/bugs/2026/10/2026-10-23-manual-primitives-draw-order-vacuous-equivalence.md)）**：首版测试 fail-first 不红——手工 `RenderPrimitives` 构造的 `add_glyph` 只登记 glyph op，fills 不进 draw_order，渲染走 draw_order 分支时 fills 整体跳过，双缓冲全白等价断言空转；`cull_invisible` 对手工图元同样只重建出 glyph op。修正为手工 push 完整 `DrawOp` 序列后 fail-first 才成立。教训：等价类断言的绿灯不能区分「验证了修复」与「两边都没画」，fail-first 是唯一可靠检测。
 
 **验证**：zero-render-foundation 726/726、zero-compositor 72/72、clippy/fmt 0 警告、定向 bench-gate PASS（render_bench 1/1 绝对预算过；硬件基线失配 WARN 为既有事实）。
+
+## M3-c 终章（同日切片 5）：compositor 直绘臂溢出隔离（scratch + blit）——残留族清零
+
+切片 3 re-base 落地后，M3-c 残留收窄为「跨界未裁剪族（RoundedRect/Shadow/Gradient/Image/Stroke/PathFill/跨界字形）越界写入叠上区外旧帧」的有界伪影（切片 2 定性：7 光栅器 loop-clamp 手术成本高，消费方 temp-buffer 方案可替代）。本切片在 compositor 消费面落地 temp-buffer 方案，残留族清零：
+
+**修复**（apps/compositor/src/rasterize.rs，CPU partial 直绘臂）：
+
+- 直绘臂改为**白底 scratch 整帧渲染 + `blit_region` 精确列拷回**（懒分配、跨脏区复用、逐脏区重铺白底防串区）。越界写入落在 scratch 被丢弃；与 worker patch 臂（`rasterize_sync` 白底整帧 + blit，本已隔离）及 browser 条带（scratch + 拷行，app_platform.rs 既有模式）同款。
+- 切片 3 的 `clear_rect` 白底前置**被 scratch 白底语义包含**（区内像素 = 白底 + region 绘制，逐位一致），前置循环移除；`FrameBuffer::clear_rect` API 因孤立一并移除（surface.rs）。
+- GPU 臂与 worker 臂无恙不改。
+
+**回归测试**（`partial_dirty_straddling_rounded_rect_matches_full_render`）：全视口半透明圆角矩形（无逐像素裁剪、与任何局部脏区跨界）+ 局部脏区 partial 重绘，断言 partial==full 逐位 + 区外投影带探针。**fail-first 已验证**：撤修复后区外投影带恰为二次混合值 (255,63,63)（期望一次混合 (255,127,127)）FAILED，恢复后 PASS。
+
+**验证**：zero-compositor 73/73（含新测试）、zero-render-foundation 726/726（clear_rect 移除后无回归）、clippy/fmt 0 警告、定向 bench-gate PASS（render_bench 1/1 绝对预算过）。
+
+**M3-c 收口状态**：本流四个面全部闭环——region 裁剪补全（切片 2，render-foundation）→ CPU partial re-base（切片 3，compositor）→ region 契约统一物理像素（切片 4，render-foundation）→ 溢出隔离（本切片，compositor）。半透明 partial==full 逐位等价在三组常驻测试钉住（不透明跨界/半透明 fill/半透明跨界 rr × scale 1/2）。剩余消费面仅 browser 条带路径（app_platform scratch 模式本已隔离越界，stale-base AA 加深为 chrome 半透明图元观察项，zero-web 面协调）与 engine 面运行时对照（跨流协调）。

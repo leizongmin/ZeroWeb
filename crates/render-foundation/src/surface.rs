@@ -98,26 +98,6 @@ impl FrameBuffer {
         }
     }
 
-    /// 清除物理像素矩形（闭开界 `[x0,x1) × [y0,y1)`，越界钳位）为指定颜色。
-    ///
-    /// 供增量重绘消费方在脏区重铺打底色：语义与整帧 [`Self::clear`] 一致，仅范围受限。
-    pub fn clear_rect(&mut self, x0: u32, y0: u32, x1: u32, y1: u32, rgba: [u8; 4]) {
-        let x0 = x0.min(self.width);
-        let x1 = x1.clamp(x0, self.width);
-        let y0 = y0.min(self.height);
-        let y1 = y1.clamp(y0, self.height);
-        let row_bytes = self.width as usize * 4;
-        for y in y0..y1 {
-            let row = y as usize * row_bytes;
-            for chunk in self.data[row + x0 as usize * 4..row + x1 as usize * 4]
-                .as_chunks_mut::<4>()
-                .0
-            {
-                *chunk = rgba;
-            }
-        }
-    }
-
     /// 尺寸
     pub fn size(&self) -> Size {
         Size::new(self.width as f32, self.height as f32)

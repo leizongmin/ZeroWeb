@@ -426,4 +426,101 @@ mod tests {
         assert_eq!(px(16, 8), [255, 127, 127], "脏区内（物理坐标）：白底一次混合值");
         assert_eq!(px(0, 0), [255, 127, 127], "脏区外（物理坐标）：保留上一帧");
     }
+
+    /// M3-c 残留族收口：跨界图元（rounded_rect 无逐像素裁剪）在 partial 重绘时
+    /// 整绘越界——直绘臂的区外写入叠上旧帧，半透明逐帧二次混合漂移（脏区边界
+    /// 外圈 (255,127,127)→(255,63,63)）。scratch 白底渲染 + blit_region 精确列
+    /// 拷回后越界写入被丢弃，partial==full 逐位一致。
+    #[test]
+    fn partial_dirty_straddling_rounded_rect_matches_full_render() {
+        let w = 20u32;
+        let h = 10u32;
+        let loader = FontLoader::new();
+        let mut glyph_cache = GlyphCache::new(64);
+        let mut image_cache = ImageCache::new(8, 1 << 20);
+
+        // 全视口半透明圆角矩形：与任何局部脏区都跨界（无裁剪整绘越界）。
+        let paint_full = PaintSnapshotParams {
+            viewport_width: w,
+            viewport_height: h,
+            document_height: h as f32,
+            rounded_rects: vec![zero_protocol::paint_snapshot::IpcRoundedRect {
+                rect: IpcRect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: w as f32,
+                    height: h as f32,
+                },
+                color: zero_protocol::paint_snapshot::IpcColor {
+                    r: 255,
+                    g: 0,
+                    b: 0,
+                    a: 128,
+                },
+                top_left_radius: 3.0,
+                top_right_radius: 3.0,
+                bottom_right_radius: 3.0,
+                bottom_left_radius: 3.0,
+            }],
+            dirty_rects: Vec::new(),
+            ..Default::default()
+        };
+        let primitives = zero_paint_convert::to_render_primitives(paint_full.clone());
+
+        unsafe {
+            std::env::set_var("ZW_RENDER_THREAD", "0");
+        }
+        // 帧 1：全量渲染（白底一次混合）——既是上一帧，也是期望结果。
+        let mut expected = FrameBuffer::new(w, h);
+        rasterize::rasterize_into_back(
+            &paint_full,
+            &primitives,
+            &loader,
+            &mut glyph_cache,
+            None,
+            &mut image_cache,
+            &mut expected,
+            false,
+        );
+
+        // 帧 2：copy_front_to_back 后按局部脏区 partial 重绘。
+        let mut back = FrameBuffer::new(w, h);
+        back.data.copy_from_slice(&expected.data);
+        let mut paint_partial = paint_full.clone();
+        paint_partial.dirty_rects = vec![IpcRect {
+            x: 5.0,
+            y: 2.0,
+            width: 8.0,
+            height: 6.0,
+        }];
+        rasterize::rasterize_into_back(
+            &paint_partial,
+            &primitives,
+            &loader,
+            &mut glyph_cache,
+            None,
+            &mut image_cache,
+            &mut back,
+            true,
+        );
+        unsafe {
+            std::env::remove_var("ZW_RENDER_THREAD");
+        }
+
+        assert_eq!(
+            back.data, expected.data,
+            "partial 重绘跨界图元必须与全量逐位一致（越界写入不得叠上区外旧帧）"
+        );
+        let px = |x: u32, y: u32| -> [u8; 3] {
+            let off = ((y * w + x) * 4) as usize;
+            [back.data[off], back.data[off + 1], back.data[off + 2]]
+        };
+        // 归一化脏区 [4,14)×[1,9) 外的右下角：修前直绘越界二次混合为 (255,63,63)。
+        assert_eq!(
+            px(17, 9),
+            [255, 127, 127],
+            "脏区外（跨界图元投影带内）：必须保留上一帧一次混合值"
+        );
+        assert_eq!(px(8, 4), [255, 127, 127], "脏区内：白底一次混合值");
+    }
 }

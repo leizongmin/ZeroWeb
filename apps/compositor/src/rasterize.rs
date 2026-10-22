@@ -99,25 +99,21 @@ pub fn rasterize_into_back(
     }
 
     if copy_front {
-        // caller 已 copy_front_to_back：脏区内先重铺白底再重绘，与全量路径 memset
-        // 白底语义对齐。部分重绘若直接在旧帧上叠画，半透明图元会与自身上一帧的
-        // 渲染结果二次 src-over 混合、逐帧向饱和漂移（goal M3-c：rgba 背景
-        // (255,127,127)→(255,63,63)）。区外保留旧帧（未变内容）。
-        // GPU 臂无此问题：主 pass `LoadOp::Clear(WHITE)` 已清整个目标再按 scissor 绘制。
-        for (x, y, rw, rh) in &display_list.dirty_rects {
-            if *rw <= 0.0 || *rh <= 0.0 {
-                continue;
-            }
-            // 物理像素边界（floor/ceil 外扩 + 视口钳位），与下方 region 构造及 blit_region 拷回范围一致。
-            let x0 = (x * scale).floor().max(0.0) as u32;
-            let y0 = (y * scale).floor().max(0.0) as u32;
-            let x1 = ((x + rw) * scale).ceil().min(w as f32) as u32;
-            let y1 = ((y + rh) * scale).ceil().min(h as f32) as u32;
-            back.clear_rect(x0, y0, x1, y1, [255, 255, 255, 255]);
-        }
+        // caller 已 copy_front_to_back：区外保留旧帧（未变内容）；区内重铺白底
+        // 语义由下方两臂的「白底 patch 渲染 + blit_region 精确列拷回」承载（部分
+        // 重绘若直接在旧帧上叠画，半透明图元会与自身上一帧渲染结果二次 src-over
+        // 混合、逐帧漂移，goal M3-c）。GPU 臂同语义：主 pass `LoadOp::Clear(WHITE)`
+        // 全目标清白后按 scissor 绘制。
     } else {
         back.clear(255, 255, 255, 255);
     }
+
+    // 白底 scratch（懒分配、跨脏区复用）：直绘臂若在 back 上 region 渲染，跨界
+    // 图元（圆角/阴影/渐变/图片/描边/路径/跨界字形，均无逐像素裁剪）的区外越界
+    // 写入会叠上旧帧（半透明/AA 逐帧漂移，M3-c 残留族）。改为白底 scratch 渲染
+    // 后按 region 精确列拷回——越界写入落在 scratch 被丢弃；与 worker patch 臂
+    // （rasterize_sync 白底整帧）及 browser 条带（scratch + 拷行）同款隔离。
+    let mut scratch: Option<FrameBuffer> = None;
 
     for (x, y, rw, rh) in &display_list.dirty_rects {
         if *rw <= 0.0 || *rh <= 0.0 {
@@ -142,8 +138,11 @@ pub fn rasterize_into_back(
             blit_region(back, &patch, w, h, region);
             continue;
         }
+        let buf = scratch.get_or_insert_with(|| FrameBuffer::new_filled(w, h, 255, 255, 255, 255));
+        // 上一脏区的越界残留不得串区（blit 只拷 region 列，scratch 其余部分弃用）。
+        buf.clear(255, 255, 255, 255);
         render_full_scene_region_into(
-            back,
+            buf,
             primitives,
             font_loader,
             glyph_cache,
@@ -155,6 +154,7 @@ pub fn rasterize_into_back(
             Some(region),
             scale,
         );
+        blit_region(back, buf, w, h, region);
     }
 }
 
