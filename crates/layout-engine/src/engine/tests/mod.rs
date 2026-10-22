@@ -80,6 +80,7 @@ mod coverage;
 mod downloaded_font_metrics;
 mod incremental_parity_experiment;
 mod intrinsic_two_pass_tests;
+mod layout_incremental_oracle;
 mod r1001_table_cell_direct_text_tests;
 mod r109_backfill_tests;
 mod r1153_table_cell_nested_explicit_width_tests;
