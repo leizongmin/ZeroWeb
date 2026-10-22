@@ -1,0 +1,88 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>COMP-04c DC-4 worker error paths</title>
+<style>
+  /* COMP-04c（S1d (d) 错误路径 patch 面观察腿）：worker 定时器绘制环 + 两段错误
+     面事件——@2500ms（worker 钟）drawFrame 单次 throw（bootstrap TryCatch 捕获 →
+     WorkerEvent::Error → 页面 onerror；定时器环继续，错误不清 patch 呈现），
+     @5000ms worker 内 close()（单出口 Closed → 宿主终末 destroy → compositor
+     detached 定格最后位图）。判定面：err 条带出现后蓝条仍推进（错误路径不静默
+     杀呈现），close 后区域恒定（终末冻结）且浏览器存活到采样墙末。几何与
+     comp04a/b 对齐（canvas 240×120 @(24,24)、蓝条 rgb(30,90,220) 8×104 @y8、
+     x=(seq*4)%232），dc4-bar-unwrap 同口径可用。 */
+  body { margin: 0; background: #ffffff; }
+  #xfer-canvas {
+    position: absolute; left: 24px; top: 24px;
+    width: 240px; height: 120px;
+    background: rgb(238, 238, 238);
+  }
+  .strip {
+    position: absolute; left: 24px;
+    font: 13px monospace;
+    color: rgb(20, 20, 20);
+    white-space: pre;
+  }
+  #strip-err { top: 160px; }
+</style>
+</head>
+<body>
+  <canvas id="xfer-canvas" width="240" height="120"></canvas>
+  <div id="strip-err" class="strip">err=none</div>
+  <script>
+    // ── worker：comp04a 同构绘制环 + 错误面时间线（单次 throw / close()）。──
+    var WORKER_SRC = [
+      "var seq = 0;",
+      "var ctx = null;",
+      "var t0 = Date.now();",
+      "var threw = false;",
+      "function drawFrame() {",
+      "  if (!ctx) { return; }",
+      "  seq++;",
+      "  ctx.fillStyle = 'rgb(238, 238, 238)';",
+      "  ctx.fillRect(0, 0, 240, 120);",
+      "  ctx.fillStyle = 'rgb(30, 90, 220)';",
+      "  ctx.fillRect((seq * 4) % 232, 8, 8, 104);",
+      "  if (!threw && Date.now() - t0 >= 2500) {",
+      "    threw = true;",
+      "    throw new Error('comp04c-probe-error');",
+      "  }",
+      "  if (Date.now() - t0 >= 5000) { close(); return; }",
+      "}",
+      "self.onmessage = function (e) {",
+      "  var d = e.data || {};",
+      "  if (d.kind === 'init' && d.canvas) {",
+      "    try {",
+      "      ctx = d.canvas.getContext('2d');",
+      "      if (ctx) { setInterval(drawFrame, 16); }",
+      "    } catch (e2) { /* ctx 失败静默：本腿不核对面 */ }",
+      "  }",
+      "};"
+    ].join('\n');
+
+    function makeWorkerUrl(src) {
+      try {
+        return URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+      } catch (eBlob) {
+        return 'data:text/javascript,' + encodeURIComponent(src);
+      }
+    }
+
+    if (typeof __zw_worker_host_op === 'function') {
+      try {
+        var off = document.getElementById('xfer-canvas').transferControlToOffscreen();
+        var worker = new Worker(makeWorkerUrl(WORKER_SRC));
+        worker.onerror = function (e) {
+          // 单次 throw → Error 事件恰一拍；条带像素化供帧序列交叉核对。
+          document.getElementById('strip-err').textContent =
+            'err=' + String(e && e.message || e) + ' at=' + Math.round(performance.now());
+        };
+        worker.postMessage({ kind: 'init', canvas: off }, [off]);
+      } catch (eXfer) {
+        document.getElementById('strip-err').textContent = 'err=xfer ' + String(eXfer && eXfer.message || eXfer);
+      }
+    }
+  </script>
+</body>
+</html>

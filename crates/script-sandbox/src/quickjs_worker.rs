@@ -167,6 +167,12 @@ impl WorkerRuntime {
     pub fn is_running(&self) -> bool {
         !self.core.is_terminated()
     }
+
+    /// 工作线程是否已退出（含 panic——panic 绕过单出口 `Closed` 发送）。宿主据此
+    /// 探测异常退出补错误上报（S1d），不静默悬挂。
+    pub fn thread_finished(&self) -> bool {
+        self.core.is_thread_finished()
+    }
 }
 
 impl Drop for WorkerRuntime {

@@ -1,0 +1,11 @@
+# strip-err 条带翻转扫描（页面 error 事件送达的像素证据）
+# 条带 #strip-err @(24,160) 13px monospace → 带 y[160,178) x[24,500) 逐帧行哈希。
+# 命令（evidence 根为仓库根）：
+#   python3 - <<'PY'  （帧目录 <RUN>/frames，manifest.jsonl 同 dc4-analyze 口径）
+#   对每帧按行取带内 RGBA 拼接 sha256[:12]，输出哈希变化帧。
+# 结果：
+# seq 0   t_ms    0    3c4fc9f93f0d   初始「err=none」
+# seq 5   t_ms 3265    1fd8320d760a   错误文本（err=Uncaught Error: comp04c-probe-error）
+# 之后 0 次翻转——Error 事件恰一拍送达页面（throw 单次守卫），条带保持错误文本
+# 至采集末。错误触发点（worker 钟 t0+2500ms ≈ capture 2500）落在加载窗采样空洞
+# （2276→3265）内，3265 为洞后首帧。

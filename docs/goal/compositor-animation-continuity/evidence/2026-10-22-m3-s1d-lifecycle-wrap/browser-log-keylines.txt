@@ -1,0 +1,8 @@
+# browser.log 关键行（运行 /tmp/dc4-comp04c-leg；完整 log 含本机端口不入库）
+2026-10-22T04:14:38.275820Z INFO zero_browser::app: Navigating to: GET http://127.0.0.1:38639/comp04c-worker-error-paths.html
+[renderer-1] 2026-10-22T04:14:38.386418Z INFO 导航换代清理 worker 宿主全表 workers=0 patch_sinks=0
+[renderer-1] 2026-10-22T04:14:38.424784Z INFO 页面渲染完成: http://127.0.0.1:38639/comp04c-worker-error-paths.html
+# 判读：
+# - 初始导航即触发 S1d 世代守卫（workers=0 patch_sinks=0 空表清扫，无害路径在位）。
+# - 全 log 零 panic/abort/ERROR；浏览器存活至 14s 墙钟 TERM（帧采集止于 close 冻结，
+#   非 host 退出）。

@@ -12,7 +12,8 @@
 //! 任务粒度投递的固有语义（与同 realm shim 的 setTimeout(0) task 派发一致）。
 //!
 //! S1a 范围：spawn/postMessage/terminate/事件派发/Closed 收尾；S1d 补导航清理
-//! （世代共享槽推进 → 全表 terminate + patch 终末 destroy，`teardown_for_navigation`）。
+//! （世代共享槽推进 → 全表 terminate + patch 终末 destroy，`teardown_for_navigation`）
+//! 与异常退出探测（队列排空后线程已退出无 Closed → 补 error 派发 + 终末 destroy）。
 
 use std::collections::HashMap;
 use std::io;
@@ -624,13 +625,7 @@ impl HostThread {
                 }
             }
             if closed {
-                self.runtimes.remove(&id);
-                self.canvas_bindings.remove(&id);
-                // M3-S1c：worker 退出终末 Destroy（Terminate 臂同款）。
-                if let Some(sink) = self.worker_patch_sinks.remove(&id) {
-                    sink.destroy_all();
-                }
-                self.dispatch(id, "closed", "");
+                self.finish_worker(id, "closed", "");
                 continue;
             }
             for event in events {
@@ -640,7 +635,25 @@ impl HostThread {
                     WorkerEvent::Closed => unreachable!("closed handled above"),
                 }
             }
+            // S1d (d) 异常退出探测：队列排空后线程已退出但未见 Closed = 异常退出
+            // （如 worker 体内宿主回调 panic 绕过线程入口单出口 Closed 发送）——补
+            // error 派发 + 终末 destroy，不静默悬挂（RFC §2.4）。正常退出 Closed 先于
+            // 线程退出入队（send happens-before 线程返回），排空必见——此处判定无竞态。
+            if self.runtimes.get(&id).is_some_and(|runtime| runtime.thread_finished()) {
+                self.finish_worker(id, "error", "worker thread exited unexpectedly");
+            }
         }
+    }
+
+    /// worker 终末收尾（正常 Closed 与异常退出共用）：全表摘除 + 已注册 patch 终末
+    /// Destroy（Terminate 臂同款）+ 页面派发。
+    fn finish_worker(&mut self, id: u64, event_type: &str, payload: &str) {
+        self.runtimes.remove(&id);
+        self.canvas_bindings.remove(&id);
+        if let Some(sink) = self.worker_patch_sinks.remove(&id) {
+            sink.destroy_all();
+        }
+        self.dispatch(id, event_type, payload);
     }
 
     /// 事件派发回页面：`__zw_worker_host_dispatch(id, type, payload)` 优先脚本
@@ -1018,6 +1031,78 @@ mod tests {
             sink.flush_updates(&touched, &st.registry, &st.prov, &bindings);
         }
         assert_eq!(parse_frames(&buf).len(), 0, "终末栅栏后 flush 静默");
+    }
+
+    /// S1d (d) 异常退出探测：worker 线程 panic 绕过单出口 Closed（事件通道断连，
+    /// `try_recv` Empty/Disconnected 同归 None）——事件泵在队列排空 + 线程 finished
+    /// 时补终末收尾：全表摘除 + 已注册 patch Destroy + error 派发，不静默悬挂
+    /// （RFC §2.4「宿主运行时异常 → patch 冻结 + 页面 error 事件」）。
+    #[test]
+    fn abnormal_thread_exit_reports_error_and_destroys_patches() {
+        let js_worker = crate::js_worker::RendererJsWorker::spawn(2);
+        let mut host = HostThread {
+            runtimes: HashMap::new(),
+            next_id: 1,
+            submitter: js_worker.priority_submitter(),
+            canvas_bindings: HashMap::new(),
+            patch_face: None,
+            worker_patch_sinks: HashMap::new(),
+            last_seen_epoch: 1,
+            navigation_epoch: Arc::new(AtomicU64::new(1)),
+        };
+
+        // 注册态 sink（bind + 矩形就绪 flush → Register + Update）入宿主表。
+        let state = Arc::new(Mutex::new(WorkerCanvasState::default()));
+        let bindings: CanvasBindings = Arc::new(Mutex::new(HashMap::new()));
+        let rect = Arc::new(Mutex::new(Some((0.0, 0.0, 30.0, 30.0))));
+        let (sink, buf) = test_sink(rect, 1);
+        let sink = Arc::new(sink);
+        let touched = {
+            let mut st = state.lock().unwrap();
+            apply_worker_canvas_ops(
+                &mut st,
+                &bindings,
+                Some(&sink),
+                r##"[["bind",1,"xfer-4","#cv"],["newCtx",1,1,1],["op",1,"setFillStyle",["#ff0000"]],["op",1,"fillRect",[0,0,1,1]]]"##,
+            )
+        };
+        {
+            let st = state.lock().unwrap();
+            sink.flush_updates(&touched, &st.registry, &st.prov, &bindings);
+        }
+        assert_eq!(parse_frames(&buf).len(), 2, "注册拍：Register + Update");
+        host.worker_patch_sinks.insert(11, Arc::clone(&sink));
+        host.canvas_bindings.insert(11, Arc::clone(&bindings));
+
+        // 真线程 runtime：init 脚本记一条 canvas op，drain 回调 panic（drain 仅在
+        // op 批非空时触发）——线程体内展开，绕过 worker_thread_fn 尾部单出口 Closed。
+        let drain: WorkerCanvasDrain = Box::new(|_json: &str| panic!("expected: drain panic probe"));
+        host.runtimes.insert(
+            11,
+            WorkerRuntime::new_with_canvas_drain(
+                "var oc = new OffscreenCanvas(8, 8); oc.getContext('2d').fillRect(0, 0, 8, 8);",
+                SandboxConfig::default(),
+                Some(Arc::new(Mutex::new(drain))),
+            )
+            .expect("test runtime"),
+        );
+
+        // 泵至异常退出被收尾（panic 展开毫秒级；上界防挂）。
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !host.runtimes.is_empty() {
+            assert!(std::time::Instant::now() < deadline, "异常退出未被事件泵收尾");
+            host.pump_events();
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(host.canvas_bindings.is_empty(), "绑定表随异常退出摘除");
+        assert!(host.worker_patch_sinks.is_empty(), "patch 发送器随异常退出摘除");
+        let frames = parse_frames(&buf);
+        assert_eq!(frames.len(), 1, "异常退出追加 Destroy（注册拍 2 帧已先排空）");
+        assert!(
+            matches!(&frames[0].kind, IpcMessageKind::CompositorPatchDestroy { .. }),
+            "应为 Destroy，got {:?}",
+            frames[0].kind
+        );
     }
 
     /// 防御面：未知临时 cid 的 op / resize 静默丢弃（复活前 op 不落 registry）、

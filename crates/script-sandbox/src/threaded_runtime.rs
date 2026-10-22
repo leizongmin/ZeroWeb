@@ -78,6 +78,13 @@ where
     pub(crate) fn is_terminated(&self) -> bool {
         self.terminated
     }
+
+    /// 工作线程是否已退出（正常/terminate/panic 均真）。宿主侧异常退出探测（S1d）：
+    /// panic 绕过线程入口的单出口 `Closed` 发送，队列排空后线程 finished 且无事件
+    /// 即异常退出——调用方据此补错误上报，不静默悬挂。
+    pub(crate) fn is_thread_finished(&self) -> bool {
+        self.thread_handle.as_ref().is_some_and(JoinHandle::is_finished)
+    }
 }
 
 fn join_bounded_or_detach(handle: JoinHandle<()>) {

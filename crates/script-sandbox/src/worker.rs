@@ -311,6 +311,12 @@ impl WorkerRuntime {
     pub fn is_running(&self) -> bool {
         !self.core.is_terminated()
     }
+
+    /// 工作线程是否已退出（含 panic——panic 绕过单出口 `Closed` 发送）。宿主据此
+    /// 探测异常退出补错误上报（S1d），不静默悬挂。
+    pub fn thread_finished(&self) -> bool {
+        self.core.is_thread_finished()
+    }
 }
 
 impl Drop for WorkerRuntime {
@@ -1403,5 +1409,35 @@ mod tests {
             "无 drain 时 canvas op 不应阻塞脚本，got: {event:?}"
         );
         worker.terminate();
+    }
+
+    #[test]
+    fn test_worker_thread_finished_detects_panic_bypassing_closed() {
+        // S1d 异常退出探测：drain 回调 panic 在工作线程体内展开——绕过线程入口的
+        // 单出口 `Closed` 发送（`worker_thread_fn` 尾部），事件通道断连。宿主侧
+        // `try_recv()` 对 Empty/Disconnected 同归 None（ThreadedRuntimeCore::try_recv
+        // `.ok()` 折叠），`thread_finished()` 是唯一的异常退出判据——宿主据此补
+        // 错误上报，不静默悬挂（renderer worker_host pump_events 消费）。
+        let drain: crate::WorkerCanvasDrain = Box::new(|_json: &str| {
+            panic!("expected: drain panic probe");
+        });
+        let worker = WorkerRuntime::new_with_canvas_drain(
+            // init 脚本记一条 canvas op——drain 仅在 op 批非空时回调（`json.len() > 2`），
+            // 空批不触发则 panic 探针永不达。
+            "var oc = new OffscreenCanvas(8, 8); oc.getContext('2d').fillRect(0, 0, 8, 8);",
+            SandboxConfig::default(),
+            Some(std::sync::Arc::new(std::sync::Mutex::new(drain))),
+        )
+        .unwrap();
+        // init 排空点触发 panic（isolate handle 先于脚本执行回传，构造器不阻塞）。
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !worker.thread_finished() {
+            assert!(std::time::Instant::now() < deadline, "panic 线程未被探测为 finished");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(
+            worker.try_recv().is_none(),
+            "异常退出无 Closed 事件（否则非单出口绕过）"
+        );
     }
 }
