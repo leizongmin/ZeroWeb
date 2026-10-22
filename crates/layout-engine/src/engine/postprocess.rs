@@ -938,18 +938,24 @@ pub(super) fn apply_relative_offsets_inline(root: &mut LayoutBox, styles: &HashM
         // 仅对真正的 inline-level 元素应用偏移
         // block-level 元素的 relative offset 已由 taffy 处理
         // table 内部元素（row-group/row/cell 等）由 table 布局算法处理
-        let is_inline_level = root.node_id.is_some_and(|id| {
-            styles
-                .get(&id)
-                .is_some_and(|s| matches!(s.display, DisplayValue::Inline | DisplayValue::InlineBlock))
-        });
+        let style = root.node_id.and_then(|id| styles.get(&id));
+        let is_inline_level =
+            style.is_some_and(|s| matches!(s.display, DisplayValue::Inline | DisplayValue::InlineBlock));
         if is_inline_level {
             // R5054：display:inline-block 的 relative 偏移以本臂为唯一施加点——converter
             // 已对其 Relative 清空 taffy inset（converter 把 inline-block 映射 taffy
             // Block，taffy 施加 + 本臂再施加 = 双重计数，highlight-z-index-001 位移
             // 2×60px 实证）。display:inline 保持 taffy 口径：split inline（R109）族按
             // taffy 单次施加，本臂照旧跳过（inline-box-002 守卫不变）。
-            if !root.is_r109_split {
+            //
+            // R5225（css-position-3 §relative-positioning）：display:inline 非替换盒的
+            // inset 同样由 taffy 单次施加（converter 保留 inset），本臂再施加 = 双重计数
+            // （abspos-inline-008 实测 span 位移 2×−100px；文本形态由 compute_final
+            // 存储版 IFC 重写 x 遮蔽）。替换元素（img 等）由 inline layout 定位、taffy
+            // inset 不被消费，仍以本臂为唯一施加点（R5054 撤臂 32 案翻红同一机理）。
+            let needs_arm_apply =
+                root.is_replaced || style.is_some_and(|s| matches!(s.display, DisplayValue::InlineBlock));
+            if needs_arm_apply && !root.is_r109_split {
                 let (dx, dy) = resolve_relative_inset(root, styles);
                 if dx != 0.0 || dy != 0.0 {
                     root.x += dx;

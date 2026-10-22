@@ -801,3 +801,5 @@ mod r5221_wrap_floor_multi_float_tests;
 mod r5223_static_abspos_ifc_store_tests;
 /// R5224（CSS2 §10.3.7 × css-position-3 §4.1）rtl 行首 inline abspos 静态位镜像锚点。
 mod r5224_rtl_inline_abspos_static_tests;
+/// R5225（css-position-3 §relative-positioning）display:inline 非替换盒 relative inset 单次施加锚点。
+mod r5225_rel_inline_offset_tests;
