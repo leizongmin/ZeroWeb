@@ -422,12 +422,11 @@ fn inc01_sibling_invalidation_gap_detected() {
     );
 }
 
-/// 反例 B（生产增量臂可达）：祖先链单节点重算走
-/// `compute_element_style_internal`，不含伪元素计算——含 `::before` 规则的
-/// 祖先（如 body）在每次增量后丢失伪样式。FIXME(oracle)：修复祖先链伪元素
-/// 计算后改为 Equal。
+/// 反例 B 修复回归（原失效缺口，2026-10-23 修复）：祖先链单节点重算与全量
+/// 递归共用 `attach_pseudo_elements`——伪样式在链走后保留，且 CSSOM 同帧
+/// 变更时同步重算（不沿用旧值）。
 #[test]
-fn inc01_ancestor_pseudo_loss_on_chain_recompute_detected() {
+fn inc01_ancestor_pseudo_preserved_on_chain_recompute() {
     let (doc, elements, f) = build_main_fixture();
     let mut run = DualPathRun::new(
         doc,
@@ -441,6 +440,42 @@ fn inc01_ancestor_pseudo_loss_on_chain_recompute_detected() {
             d.set_attribute(f.p1, "style", "color: navy");
             vec![f.p1]
         },
-        Expectation::Divergent,
+        Expectation::Equal,
+    );
+    run.apply(
+        "移除 body::before 规则（CSSOM 同帧变更，祖先伪样式须消失）",
+        Some("body { color: black; }\np.text { color: blue; }\n"),
+        |_| vec![f.p2],
+        Expectation::Equal,
+    );
+}
+
+/// 反例 C 修复回归（原失效缺口，2026-10-23 修复）：增量链走自根向下压入
+/// 祖先容器条目（含 style-only 容器），祖先与变更子树的 @container 条件按
+/// 真实祖先容器求值；CSSOM 同帧收窄容器时同步失效。
+#[test]
+fn inc01_container_context_preserved_on_chain_recompute() {
+    let (doc, elements, f) = build_main_fixture();
+    let mut run = DualPathRun::new(
+        doc,
+        elements,
+        "body { color: black; }\n.card { container-type: inline-size; width: 400px; }\n@container (min-width: 300px) { p { color: green; } }\n",
+    );
+    run.apply(
+        "p1 inline margin 变更触发链走（@container 应按 .card 求值，p1 保持 green）",
+        None,
+        |d| {
+            d.set_attribute(f.p1, "style", "margin-top: 4px");
+            vec![f.p1]
+        },
+        Expectation::Equal,
+    );
+    // changed 集按 API 契约补全：CSS 变更影响所有匹配 `p` 的兄弟（反例 A 同族
+    // 契约——调用方须把受影响节点全部纳入 changed）。
+    run.apply(
+        "CSS 同帧收窄 .card 至 100px（@container 不再成立，p1/p2 变 black）",
+        Some("body { color: black; }\n.card { container-type: inline-size; width: 100px; }\n@container (min-width: 300px) { p { color: green; } }\n"),
+        |_| vec![f.p1, f.p2],
+        Expectation::Equal,
     );
 }

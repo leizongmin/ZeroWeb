@@ -496,24 +496,55 @@ impl StyleSystem {
             chain.reverse();
             let mut parent_style: Option<ComputedStyle> = None;
             let mut parent_custom: CustomProperties = ComputedStyle::empty_custom_properties();
+            // 链走自根向下压入的容器条目数——本 changed 项结束后弹回，
+            // 下一 changed 项从干净链开始（≡ 全量递归的平衡 push/pop）。
+            let mut pushed_containers = 0usize;
             for &cid in &chain {
-                if matches!(doc.get(cid).map(|n| &n.kind), Some(NodeKind::Element(_))) {
-                    let s = *self.compute_element_style_internal(
-                        doc,
-                        cid,
-                        stylesheets,
-                        &rule_index,
-                        parent_style.as_ref(),
-                        &parent_custom,
-                        quirks_mode,
-                        None,
-                    );
-                    parent_custom = self.custom_properties.clone();
-                    parent_style = Some(s.clone());
-                    styles.insert(cid, s);
+                let Some(node_data) = doc.get(cid) else { continue };
+                if !matches!(&node_data.kind, NodeKind::Element(_)) {
+                    continue;
                 }
+                let mut s = *self.compute_element_style_internal(
+                    doc,
+                    cid,
+                    stylesheets,
+                    &rule_index,
+                    parent_style.as_ref(),
+                    &parent_custom,
+                    quirks_mode,
+                    None,
+                );
+                // 反例 B 修复：祖先链重算与全量递归同源——伪元素就地挂载，
+                // 防 ::before/::after 等伪样式被无伪样式结果覆盖（含 CSSOM
+                // 同帧变更时的重算，而非沿用旧值）。
+                self.attach_pseudo_elements(
+                    doc,
+                    cid,
+                    node_data,
+                    stylesheets,
+                    &rule_index,
+                    parent_style.as_ref(),
+                    &mut s,
+                    quirks_mode,
+                    has_pseudo_rules,
+                    has_scroll_button_rules,
+                    has_selection_rules,
+                );
+                parent_custom = self.custom_properties.clone();
+                // 反例 C 修复：≡ 全量递归下行语义（R4124/R4582）——本元素是
+                // 查询容器（含 style-only）则压链，更深祖先与变更子树的
+                // @container / cq 单位按真实祖先容器求值。
+                let is_size = !matches!(s.container_type, property::types::ContainerType::Normal);
+                if is_size || s.container_name.is_some() {
+                    self.container_chain
+                        .push(container_entry_for(&s, Some(std::sync::Arc::clone(&parent_custom))));
+                    pushed_containers += 1;
+                }
+                parent_style = Some(s.clone());
+                styles.insert(cid, s);
             }
-            // 变更节点 + 子树重算（含伪元素与既有递归完整逻辑）。
+            // 变更节点 + 子树重算（含伪元素与既有递归完整逻辑）。递归内部按
+            // 下行语义自行压/弹变更节点自身条目，这里先弹回链走压入的部分。
             self.compute_styles_recursive(
                 doc,
                 nid,
@@ -532,6 +563,9 @@ impl StyleSystem {
                 None,
                 0, // R4322：增量起点祖先链指纹空（局部 style_cache）
             );
+            for _ in 0..pushed_containers {
+                self.container_chain.pop();
+            }
         }
     }
 
@@ -557,6 +591,404 @@ impl StyleSystem {
             }
         }
         h
+    }
+
+    /// 伪元素计算与挂载（::before/::after/::marker/::placeholder/::selection/
+    /// scroll-marker 族/::first-letter）——全量递归与增量祖先链恢复共用的
+    /// 唯一实现（incremental-rendering-oracle 反例 B：链走丢伪样式）。
+    ///
+    /// `computed` 为本元素已算好的元素样式，伪样式就地挂载。进入时
+    /// `self.custom_properties` 为父链继承态，返回时已恢复（块内 save/restore）；
+    /// 伪元素求值期本元素是查询容器时临时自链（R4127），返回时弹出。
+    /// R3867 帧体量纪律：块内大局部（before/after/marker 等）留在本 helper 帧，
+    /// 不占 [`Self::compute_styles_recursive`] 递归帧。
+    #[allow(clippy::too_many_arguments)]
+    fn attach_pseudo_elements(
+        &mut self,
+        doc: &Document,
+        node: NodeId,
+        node_data: &zero_dom::NodeData,
+        stylesheets: &[Stylesheet],
+        rule_index: &matcher::StylesheetIndex,
+        parent_style: Option<&ComputedStyle>,
+        computed: &mut ComputedStyle,
+        quirks_mode: QuirksMode,
+        has_pseudo_rules: bool,
+        has_scroll_button_rules: bool,
+        has_selection_rules: bool,
+    ) {
+        let is_q = matches!(
+            &node_data.kind,
+            NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("q")
+        );
+        let q_quotes = if is_q {
+            // R2856：`<q>` 自动引号按**父元素**的内容语言解析（CSS spec quotes-030：quotes
+            // based on the parent language, not the element's own lang——`<q lang="ja">` 在
+            // 英语父级中仍用英语 depth-1 单引号，自身 lang 仅影响其子级）；depth = `<q>` 祖先数。
+            let depth = count_q_ancestors(doc, node);
+            let lang = doc.parent_node(node).and_then(|p| effective_lang(doc, p));
+            resolve_q_quotes(&computed.quotes, lang.as_deref(), depth)
+        } else {
+            None
+        };
+        if has_pseudo_rules || is_q {
+            let saved_custom = self.custom_properties.clone();
+            let elem_style = computed.clone();
+            // R4127（css-conditional-5 §container-queries + css-pseudo-4）：伪元素
+            // 的查询容器 = originating element 的最近查询容器**含其自身**——伪元素
+            // 不是元素，向上找 container-type 祖先时 originating element 计入
+            //（driving: pseudo-elements-002b `#c5::first-letter` @container
+            // max-width:300 按 c5 自身 300px 求值，ref 全 green）。元素自身样式的
+            // @container 不含自身（R4124 语义，已按父链顶算完），此处为伪元素
+            // 求值临时把自身入链，完毕弹出。
+            // R4582：style-only 容器（container-name 非空）同样为自身伪元素 style
+            // 查询入链；custom 快照在伪元素求值期不可得（elem 自身声明已并入
+            // saved_custom 之后的 map 状态不确定）→ None（style 条件 unknown →
+            // false，保守正确）。
+            let self_is_container = !matches!(elem_style.container_type, property::types::ContainerType::Normal)
+                || elem_style.container_name.is_some();
+            if self_is_container {
+                self.container_chain.push(container_entry_for(&elem_style, None));
+            }
+            let before = *self.compute_element_style_internal(
+                doc,
+                node,
+                stylesheets,
+                rule_index,
+                Some(&elem_style),
+                &saved_custom,
+                quirks_mode,
+                Some("before"),
+            );
+            let after = *self.compute_element_style_internal(
+                doc,
+                node,
+                stylesheets,
+                rule_index,
+                Some(&elem_style),
+                &saved_custom,
+                quirks_mode,
+                Some("after"),
+            );
+            // ::marker 伪元素（CSS Lists 3）：仅 `<li>` 计算（paint_list_marker 同 gate；
+            // ZW 以 tag 名 `li` 判定 list-item，非 display:list-item）。继承自本元素 → 默认
+            // color 等同本元素；仅当 ::marker 实际改变 content 或 color 时存储（省内存 +
+            // paint 仅在 Some 时走覆盖路径，默认 marker 零行为变更）。
+            let is_li = matches!(
+                &node_data.kind,
+                NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("li")
+            );
+            if is_li {
+                // R3867 帧体量纪律（R4261 深嵌套页测试实证临界）：持 Box 指针不解引用——
+                // `*compute` 会把 3.3KB ComputedStyle 落回本递归帧。
+                let marker = self.compute_element_style_internal(
+                    doc,
+                    node,
+                    stylesheets,
+                    rule_index,
+                    Some(&elem_style),
+                    &saved_custom,
+                    quirks_mode,
+                    Some("marker"),
+                );
+                // R3911：letter-spacing/word-spacing 等 ::marker 支持的文本属性也触发存储
+                //（css-pseudo-4 #content-properties；driving: marker-letter-spacing 显式臂）。
+                if !matches!(marker.content, property::types::ContentComputedValue::Normal)
+                    || marker.color != elem_style.color
+                    || marker.letter_spacing != elem_style.letter_spacing
+                {
+                    computed.marker_pseudo = Some(marker);
+                }
+            }
+            // R5051（css-pseudo-4 §4 placeholder-pseudo）：`::placeholder` 伪样式——
+            // 占位文本 paint 默认 UA 灰（engine 兜底），作者 color 需经 owner 存储
+            // 传递（≡ R3867 ::marker 模式）。门：带非空 placeholder 属性的文本类
+            // input/textarea（≡ R1659 `_` 臂类型集 + textarea）；仅 color 与元素
+            // 不同时存储（本切片 paint 只消费 color，未消费属性不入账）。
+            let is_placeholder_host = |kind: &NodeKind| -> bool {
+                let NodeKind::Element(e) = kind else { return false };
+                let tag = e.local_name();
+                if tag != "input" && tag != "textarea" {
+                    return false;
+                }
+                if !doc.get_attribute(node, "placeholder").is_some_and(|p| !p.is_empty()) {
+                    return false;
+                }
+                // input 类型集门（≡ R1659 `_` 臂 + 排除不可见/非文本类型）
+                if tag == "input" {
+                    let itype = doc.get_attribute(node, "type").unwrap_or_default().to_lowercase();
+                    !matches!(
+                        itype.as_str(),
+                        "checkbox"
+                            | "radio"
+                            | "color"
+                            | "submit"
+                            | "reset"
+                            | "button"
+                            | "image"
+                            | "hidden"
+                            | "file"
+                            | "range"
+                    )
+                } else {
+                    true
+                }
+            };
+            let is_placeholder_host = is_placeholder_host(&node_data.kind);
+            if is_placeholder_host {
+                let ph = self.compute_element_style_internal(
+                    doc,
+                    node,
+                    stylesheets,
+                    rule_index,
+                    Some(&elem_style),
+                    &saved_custom,
+                    quirks_mode,
+                    Some("placeholder"),
+                );
+                if ph.color != elem_style.color {
+                    computed.placeholder_pseudo = Some(ph);
+                }
+            }
+            // R5052（css-pseudo-4 §highlight-selectors）：`::selection` 伪样式——
+            // 脚本化选区（reftest harness 回流，照 R4241 focus 模式）的选中行高亮
+            // 与字形色需经 owner 存储传递（≡ R5051 ::placeholder 模式）。门：文本类
+            // input/textarea（≡ placeholder 宿主类型集再排除 password——paint 侧
+            // bullet 逐字符映射选区歧义）；R5054 扩：页面含 `::selection` 规则
+            //（has_selection_rules 零成本前置门）时通用元素同存——paint_text 已
+            // owner 泛化消费（R5053），display:none/contents 不产盒跳过；存储判据
+            // = 作者规则改了 color，或设了非 transparent 背景（不能比 elem_style
+            // ——UA 表单默认值是非继承属性，无规则时 pseudo 计算回落 initial 值即
+            // 与元素 UA 背景相异，误存）。UA 默认高亮色未实现（FIXME）：无作者
+            // 规则不存储，paint 无高亮（零新红——老页面选区渲染零变化）。
+            let is_selection_host = |kind: &NodeKind| -> bool {
+                let NodeKind::Element(e) = kind else { return false };
+                let tag = e.local_name();
+                if tag == "textarea" {
+                    return true;
+                }
+                if tag == "input" {
+                    let itype = doc.get_attribute(node, "type").unwrap_or_default().to_lowercase();
+                    return !matches!(
+                        itype.as_str(),
+                        "checkbox"
+                            | "radio"
+                            | "color"
+                            | "submit"
+                            | "reset"
+                            | "button"
+                            | "image"
+                            | "hidden"
+                            | "file"
+                            | "range"
+                            | "password"
+                    );
+                }
+                // R5054：通用元素（div/span 等）——仅页面含 ::selection 规则时到达
+                //（has_selection_rules 前置）；无盒形态跳过。
+                if !has_selection_rules {
+                    return false;
+                }
+                !matches!(elem_style.display, DisplayValue::None | DisplayValue::Contents)
+            };
+            if is_selection_host(&node_data.kind) {
+                let sel = self.compute_element_style_internal(
+                    doc,
+                    node,
+                    stylesheets,
+                    rule_index,
+                    Some(&elem_style),
+                    &saved_custom,
+                    quirks_mode,
+                    Some("selection"),
+                );
+                // R5065（css-pseudo-4 §highlight-styling）：UA 默认高亮表面——
+                // ::selection 规则改动了非 bg/color 高亮属性（text-decoration 族）
+                // 而未声明 bg/color 时，未指定面按 UA 默认取 Highlight 背景 +
+                // HighlightText 前景（active-selection-014 型）。判据全部后值比较：
+                // 作者声明 bg/color（含显式 transparent/同值——011/003/currentcolor
+                // 族）→ 不种子；规则无有效声明（invalid/empty——051/053/054 族，
+                // 旧模型锁定绿）→ 不种子。kill-switch
+                // `ZW_SELECTION_HIGHLIGHT_DEFAULT=0` 回退。
+                let highlight_default = std::env::var("ZW_SELECTION_HIGHLIGHT_DEFAULT").as_deref() != Ok("0")
+                    && matches!(sel.background_color, ColorValue::Transparent)
+                    && sel.color == elem_style.color
+                    && (sel.text_decoration_line != elem_style.text_decoration_line
+                        || sel.text_decoration_color != elem_style.text_decoration_color
+                        || sel.text_decoration_style != elem_style.text_decoration_style);
+                let mut sel = sel;
+                if highlight_default {
+                    if let Some(bg) = zero_css_parser::values::parse_named_color("highlight") {
+                        sel.background_color = bg;
+                    }
+                    if let Some(fg) = zero_css_parser::values::parse_named_color("highlighttext") {
+                        sel.color = fg;
+                    }
+                }
+                if sel.color != elem_style.color || !matches!(sel.background_color, ColorValue::Transparent) {
+                    computed.selection_pseudo = Some(sel);
+                }
+            }
+            // R4257（CSS Overflow 5 §scroll-marker-group）：`::scroll-marker-group`
+            // 伪元素——元素声明 `scroll-marker-group` 非 none 时计算并存储。组盒的
+            // 布局生成（tree.rs before/after 滚动内容）与绘制（paint 伪样式覆盖）
+            // 均消费本样式；与 ::marker 同型的「伪样式存 owner ComputedStyle」路径。
+            if let Some(pseudo) = &mut computed.scroll_marker_group {
+                pseudo.style = self.compute_element_style_internal(
+                    doc,
+                    node,
+                    stylesheets,
+                    rule_index,
+                    Some(&elem_style),
+                    &saved_custom,
+                    quirks_mode,
+                    Some("scroll-marker-group"),
+                );
+            }
+            // R4261（CSS Overflow 5 §scroll-marker）：`::scroll-marker` per-item 伪元素——
+            // 生成主体是 scroll 容器的**子元素**（组盒 per-item 伪盒，group-015 型
+            // `#scroller>*::scroll-marker`），故 gate = 父元素声明 scroll-marker-group 非
+            // none（本元素自身的组盒声明在上方相位已补齐伪样式，子元素此时可见）。
+            // 与 ::marker 同型 owner-存储；仅 content 非 normal 时存储（伪盒无 IFC 文本
+            // 语义，仅背景/边框参与布局与绘制——零行为面）。
+            // R3867 帧体量纪律：持有 Box 指针不解引用（`*compute` 会把 3.3KB
+            // ComputedStyle 落回本递归帧，深嵌套页测试栈顶实证）。
+            if parent_style.is_some_and(|p| p.scroll_marker_group.is_some()) {
+                let marker = self.compute_element_style_internal(
+                    doc,
+                    node,
+                    stylesheets,
+                    rule_index,
+                    Some(&elem_style),
+                    &saved_custom,
+                    quirks_mode,
+                    Some("scroll-marker"),
+                );
+                if !matches!(marker.content, property::types::ContentComputedValue::Normal) {
+                    computed.scroll_marker_pseudo = Some(marker);
+                }
+            }
+            // R4262（CSS Overflow 5 §scroll-buttons）：`::scroll-button(<direction>)`
+            // per-direction 伪样式——先以裸键 `"scroll-button"` 探针（特异性/普通键 +
+            // `*` 通配均命中）判定本元素是否有按钮规则，非空才按 4 个 canonical 方向
+            // 各自完整级联（`"scroll-button(<dir>)"` 检索键，`*` 规则经 matcher 通配
+            // 并入）。仅 content 非 normal 的方向生成按钮盒（零默认行为面）。Box 直持
+            // 不解引用（R3867 帧体量纪律）。探针上下文与 compute_element_style_internal
+            // 同构（媒体/容器链顶），@media/@container 内按钮规则不漏探。
+            let scroll_button_probe = {
+                let media_ctx = match (self.viewport_width, self.viewport_height) {
+                    (Some(w), Some(h)) => {
+                        let mut ctx = zero_css_parser::media_query::MediaContext::new(w, h);
+                        ctx.prefers_color_scheme = self.prefers_color_scheme;
+                        ctx.media_type = self.media_type;
+                        Some(ctx)
+                    }
+                    _ => None,
+                };
+                let container_ctx = container_context_from_chain(&self.container_chain);
+                !matcher::collect_pseudo_declarations_with_media(
+                    doc,
+                    node,
+                    stylesheets,
+                    rule_index,
+                    media_ctx.as_ref(),
+                    container_ctx.as_ref(),
+                    "scroll-button",
+                )
+                .is_empty()
+            };
+            if has_scroll_button_rules && scroll_button_probe {
+                const SCROLL_BUTTON_DIRECTIONS: [&str; 4] = ["block-start", "block-end", "inline-start", "inline-end"];
+                let mut buttons = Vec::new();
+                for (slot, dir) in SCROLL_BUTTON_DIRECTIONS.iter().enumerate() {
+                    let style = self.compute_element_style_internal(
+                        doc,
+                        node,
+                        stylesheets,
+                        rule_index,
+                        Some(&elem_style),
+                        &saved_custom,
+                        quirks_mode,
+                        Some(&format!("scroll-button({dir})")),
+                    );
+                    if !matches!(style.content, property::types::ContentComputedValue::Normal) {
+                        buttons.push((slot as u8, style));
+                    }
+                }
+                if !buttons.is_empty() {
+                    computed.scroll_buttons = Some(Box::new(property::types::ScrollButtonsPseudo { buttons }));
+                    SCROLL_PSEUDO_PRESENT.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
+            }
+            // ::first-letter 伪元素（CSS2 §5.12.2）：样式作用于块容器首个格式化行的首字母
+            //（穿透嵌套 inline，first-letter-nested-001..007 族）。compute_element_style_internal
+            // 的伪元素收集对 first-letter 通用（PseudoElementSelector::Standard 路由已存在）。
+            // 先廉价探测是否有 `::first-letter` 声明匹配——compute 内部对空匹配返回
+            // ComputedStyle::default()（color 黑），无法与「真实声明把 color 设为黑」之外的
+            // 无匹配路径区分（background-image-first-line 回归：同页 ::first-line 规则使
+            // has_pseudo_rules 为真 → 对 color:transparent 元素存了 default 黑 → 首字符变黑）。
+            // 探测为空直接跳过（零存储零 paint 影响）；非空才走完整级联（届时 compute 重复
+            // 收集一次——仅 ::first-letter 真实使用的页面，罕见路径）。
+            // 存储 gate = color ≠ 元素 color（paint 侧当前切片只应用 color；font/metrics 类
+            // 需 IFC 分词切片改几何，FIXME 挂账不存储）。
+            // **帧体量纪律（R3867）**：本块抽为独立 helper——compute_styles_recursive 的 debug
+            // 栈帧已 ~90KB（20 层嵌套即触 2MB 测试线程栈顶），帧内任何新增大局部（哪怕位于
+            // 运行时不可达分支）都会把 test_pipeline_deeply_nested_html 推过临界。helper 的
+            // 局部进 helper 自己的帧。
+            if let Some(fl) = self.compute_first_letter_pseudo(
+                doc,
+                node,
+                stylesheets,
+                rule_index,
+                &elem_style,
+                &saved_custom,
+                quirks_mode,
+            ) {
+                computed.first_letter_pseudo = Some(fl);
+            }
+            self.custom_properties = saved_custom;
+
+            // R3806：Url（content:url() 图片）也保留——pipeline inject_pseudo_text_nodes
+            // 据此注入 <img>（R1988 机制），旧 gate 漏 Url 致 ::before/::after content:url()
+            // 整体失配（content-004 族 driving）。
+            if matches!(
+                before.content,
+                property::types::ContentComputedValue::String(_)
+                    | property::types::ContentComputedValue::Attr(_)
+                    | property::types::ContentComputedValue::Counter { .. }
+                    | property::types::ContentComputedValue::List(_)
+                    | property::types::ContentComputedValue::Url(_)
+            ) {
+                computed.before_pseudo = Some(Box::new(before));
+            } else if is_q
+                && matches!(before.content, property::types::ContentComputedValue::Normal)
+                && let Some((open, _)) = &q_quotes
+            {
+                let mut b = before.clone();
+                b.content = property::types::ContentComputedValue::String(open.clone());
+                computed.before_pseudo = Some(Box::new(b));
+            }
+            if matches!(
+                after.content,
+                property::types::ContentComputedValue::String(_)
+                    | property::types::ContentComputedValue::Attr(_)
+                    | property::types::ContentComputedValue::Counter { .. }
+                    | property::types::ContentComputedValue::List(_)
+                    | property::types::ContentComputedValue::Url(_)
+            ) {
+                computed.after_pseudo = Some(Box::new(after));
+            } else if is_q
+                && matches!(after.content, property::types::ContentComputedValue::Normal)
+                && let Some((_, close)) = &q_quotes
+            {
+                let mut a = after.clone();
+                a.content = property::types::ContentComputedValue::String(close.clone());
+                computed.after_pseudo = Some(Box::new(a));
+            }
+            if self_is_container {
+                self.container_chain.pop();
+            }
+        } // if has_pseudo_rules || is_q（S10）
     }
 
     /// 递归计算样式。
@@ -647,379 +1079,22 @@ impl StyleSystem {
             // 计算恒为默认值——直接跳过整块（每元素省 2 次全规则扫描）。`<q>` 元素
             // 的自动引号注入依赖 before/after 默认对象（content:Normal 时注入），
             // 故 q 元素保留原路径。
-            let is_q = matches!(
-                &node_data.kind,
-                NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("q")
+            // 伪元素计算与挂载抽为共享 helper（延续 R3867 帧体量纪律：大局部进
+            // helper 自身帧）；增量祖先链恢复走同一段代码——两条路径必须产出
+            // 一致的伪样式与容器上下文（incremental-rendering-oracle 反例 B）。
+            self.attach_pseudo_elements(
+                doc,
+                node,
+                node_data,
+                stylesheets,
+                rule_index,
+                parent_style,
+                &mut computed,
+                quirks_mode,
+                has_pseudo_rules,
+                has_scroll_button_rules,
+                has_selection_rules,
             );
-            let q_quotes = if is_q {
-                // R2856：`<q>` 自动引号按**父元素**的内容语言解析（CSS spec quotes-030：quotes
-                // based on the parent language, not the element's own lang——`<q lang="ja">` 在
-                // 英语父级中仍用英语 depth-1 单引号，自身 lang 仅影响其子级）；depth = `<q>` 祖先数。
-                let depth = count_q_ancestors(doc, node);
-                let lang = doc.parent_node(node).and_then(|p| effective_lang(doc, p));
-                resolve_q_quotes(&computed.quotes, lang.as_deref(), depth)
-            } else {
-                None
-            };
-            if has_pseudo_rules || is_q {
-                let saved_custom = self.custom_properties.clone();
-                let elem_style = computed.clone();
-                // R4127（css-conditional-5 §container-queries + css-pseudo-4）：伪元素
-                // 的查询容器 = originating element 的最近查询容器**含其自身**——伪元素
-                // 不是元素，向上找 container-type 祖先时 originating element 计入
-                //（driving: pseudo-elements-002b `#c5::first-letter` @container
-                // max-width:300 按 c5 自身 300px 求值，ref 全 green）。元素自身样式的
-                // @container 不含自身（R4124 语义，已按父链顶算完），此处为伪元素
-                // 求值临时把自身入链，完毕弹出。
-                // R4582：style-only 容器（container-name 非空）同样为自身伪元素 style
-                // 查询入链；custom 快照在伪元素求值期不可得（elem 自身声明已并入
-                // saved_custom 之后的 map 状态不确定）→ None（style 条件 unknown →
-                // false，保守正确）。
-                let self_is_container = !matches!(elem_style.container_type, property::types::ContainerType::Normal)
-                    || elem_style.container_name.is_some();
-                if self_is_container {
-                    self.container_chain.push(container_entry_for(&elem_style, None));
-                }
-                let before = *self.compute_element_style_internal(
-                    doc,
-                    node,
-                    stylesheets,
-                    rule_index,
-                    Some(&elem_style),
-                    &saved_custom,
-                    quirks_mode,
-                    Some("before"),
-                );
-                let after = *self.compute_element_style_internal(
-                    doc,
-                    node,
-                    stylesheets,
-                    rule_index,
-                    Some(&elem_style),
-                    &saved_custom,
-                    quirks_mode,
-                    Some("after"),
-                );
-                // ::marker 伪元素（CSS Lists 3）：仅 `<li>` 计算（paint_list_marker 同 gate；
-                // ZW 以 tag 名 `li` 判定 list-item，非 display:list-item）。继承自本元素 → 默认
-                // color 等同本元素；仅当 ::marker 实际改变 content 或 color 时存储（省内存 +
-                // paint 仅在 Some 时走覆盖路径，默认 marker 零行为变更）。
-                let is_li = matches!(
-                    &node_data.kind,
-                    NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("li")
-                );
-                if is_li {
-                    // R3867 帧体量纪律（R4261 深嵌套页测试实证临界）：持 Box 指针不解引用——
-                    // `*compute` 会把 3.3KB ComputedStyle 落回本递归帧。
-                    let marker = self.compute_element_style_internal(
-                        doc,
-                        node,
-                        stylesheets,
-                        rule_index,
-                        Some(&elem_style),
-                        &saved_custom,
-                        quirks_mode,
-                        Some("marker"),
-                    );
-                    // R3911：letter-spacing/word-spacing 等 ::marker 支持的文本属性也触发存储
-                    //（css-pseudo-4 #content-properties；driving: marker-letter-spacing 显式臂）。
-                    if !matches!(marker.content, property::types::ContentComputedValue::Normal)
-                        || marker.color != elem_style.color
-                        || marker.letter_spacing != elem_style.letter_spacing
-                    {
-                        computed.marker_pseudo = Some(marker);
-                    }
-                }
-                // R5051（css-pseudo-4 §4 placeholder-pseudo）：`::placeholder` 伪样式——
-                // 占位文本 paint 默认 UA 灰（engine 兜底），作者 color 需经 owner 存储
-                // 传递（≡ R3867 ::marker 模式）。门：带非空 placeholder 属性的文本类
-                // input/textarea（≡ R1659 `_` 臂类型集 + textarea）；仅 color 与元素
-                // 不同时存储（本切片 paint 只消费 color，未消费属性不入账）。
-                let is_placeholder_host = |kind: &NodeKind| -> bool {
-                    let NodeKind::Element(e) = kind else { return false };
-                    let tag = e.local_name();
-                    if tag != "input" && tag != "textarea" {
-                        return false;
-                    }
-                    if !doc.get_attribute(node, "placeholder").is_some_and(|p| !p.is_empty()) {
-                        return false;
-                    }
-                    // input 类型集门（≡ R1659 `_` 臂 + 排除不可见/非文本类型）
-                    if tag == "input" {
-                        let itype = doc.get_attribute(node, "type").unwrap_or_default().to_lowercase();
-                        !matches!(
-                            itype.as_str(),
-                            "checkbox"
-                                | "radio"
-                                | "color"
-                                | "submit"
-                                | "reset"
-                                | "button"
-                                | "image"
-                                | "hidden"
-                                | "file"
-                                | "range"
-                        )
-                    } else {
-                        true
-                    }
-                };
-                let is_placeholder_host = is_placeholder_host(&node_data.kind);
-                if is_placeholder_host {
-                    let ph = self.compute_element_style_internal(
-                        doc,
-                        node,
-                        stylesheets,
-                        rule_index,
-                        Some(&elem_style),
-                        &saved_custom,
-                        quirks_mode,
-                        Some("placeholder"),
-                    );
-                    if ph.color != elem_style.color {
-                        computed.placeholder_pseudo = Some(ph);
-                    }
-                }
-                // R5052（css-pseudo-4 §highlight-selectors）：`::selection` 伪样式——
-                // 脚本化选区（reftest harness 回流，照 R4241 focus 模式）的选中行高亮
-                // 与字形色需经 owner 存储传递（≡ R5051 ::placeholder 模式）。门：文本类
-                // input/textarea（≡ placeholder 宿主类型集再排除 password——paint 侧
-                // bullet 逐字符映射选区歧义）；R5054 扩：页面含 `::selection` 规则
-                //（has_selection_rules 零成本前置门）时通用元素同存——paint_text 已
-                // owner 泛化消费（R5053），display:none/contents 不产盒跳过；存储判据
-                // = 作者规则改了 color，或设了非 transparent 背景（不能比 elem_style
-                // ——UA 表单默认值是非继承属性，无规则时 pseudo 计算回落 initial 值即
-                // 与元素 UA 背景相异，误存）。UA 默认高亮色未实现（FIXME）：无作者
-                // 规则不存储，paint 无高亮（零新红——老页面选区渲染零变化）。
-                let is_selection_host = |kind: &NodeKind| -> bool {
-                    let NodeKind::Element(e) = kind else { return false };
-                    let tag = e.local_name();
-                    if tag == "textarea" {
-                        return true;
-                    }
-                    if tag == "input" {
-                        let itype = doc.get_attribute(node, "type").unwrap_or_default().to_lowercase();
-                        return !matches!(
-                            itype.as_str(),
-                            "checkbox"
-                                | "radio"
-                                | "color"
-                                | "submit"
-                                | "reset"
-                                | "button"
-                                | "image"
-                                | "hidden"
-                                | "file"
-                                | "range"
-                                | "password"
-                        );
-                    }
-                    // R5054：通用元素（div/span 等）——仅页面含 ::selection 规则时到达
-                    //（has_selection_rules 前置）；无盒形态跳过。
-                    if !has_selection_rules {
-                        return false;
-                    }
-                    !matches!(elem_style.display, DisplayValue::None | DisplayValue::Contents)
-                };
-                if is_selection_host(&node_data.kind) {
-                    let sel = self.compute_element_style_internal(
-                        doc,
-                        node,
-                        stylesheets,
-                        rule_index,
-                        Some(&elem_style),
-                        &saved_custom,
-                        quirks_mode,
-                        Some("selection"),
-                    );
-                    // R5065（css-pseudo-4 §highlight-styling）：UA 默认高亮表面——
-                    // ::selection 规则改动了非 bg/color 高亮属性（text-decoration 族）
-                    // 而未声明 bg/color 时，未指定面按 UA 默认取 Highlight 背景 +
-                    // HighlightText 前景（active-selection-014 型）。判据全部后值比较：
-                    // 作者声明 bg/color（含显式 transparent/同值——011/003/currentcolor
-                    // 族）→ 不种子；规则无有效声明（invalid/empty——051/053/054 族，
-                    // 旧模型锁定绿）→ 不种子。kill-switch
-                    // `ZW_SELECTION_HIGHLIGHT_DEFAULT=0` 回退。
-                    let highlight_default = std::env::var("ZW_SELECTION_HIGHLIGHT_DEFAULT").as_deref() != Ok("0")
-                        && matches!(sel.background_color, ColorValue::Transparent)
-                        && sel.color == elem_style.color
-                        && (sel.text_decoration_line != elem_style.text_decoration_line
-                            || sel.text_decoration_color != elem_style.text_decoration_color
-                            || sel.text_decoration_style != elem_style.text_decoration_style);
-                    let mut sel = sel;
-                    if highlight_default {
-                        if let Some(bg) = zero_css_parser::values::parse_named_color("highlight") {
-                            sel.background_color = bg;
-                        }
-                        if let Some(fg) = zero_css_parser::values::parse_named_color("highlighttext") {
-                            sel.color = fg;
-                        }
-                    }
-                    if sel.color != elem_style.color || !matches!(sel.background_color, ColorValue::Transparent) {
-                        computed.selection_pseudo = Some(sel);
-                    }
-                }
-                // R4257（CSS Overflow 5 §scroll-marker-group）：`::scroll-marker-group`
-                // 伪元素——元素声明 `scroll-marker-group` 非 none 时计算并存储。组盒的
-                // 布局生成（tree.rs before/after 滚动内容）与绘制（paint 伪样式覆盖）
-                // 均消费本样式；与 ::marker 同型的「伪样式存 owner ComputedStyle」路径。
-                if let Some(pseudo) = &mut computed.scroll_marker_group {
-                    pseudo.style = self.compute_element_style_internal(
-                        doc,
-                        node,
-                        stylesheets,
-                        rule_index,
-                        Some(&elem_style),
-                        &saved_custom,
-                        quirks_mode,
-                        Some("scroll-marker-group"),
-                    );
-                }
-                // R4261（CSS Overflow 5 §scroll-marker）：`::scroll-marker` per-item 伪元素——
-                // 生成主体是 scroll 容器的**子元素**（组盒 per-item 伪盒，group-015 型
-                // `#scroller>*::scroll-marker`），故 gate = 父元素声明 scroll-marker-group 非
-                // none（本元素自身的组盒声明在上方相位已补齐伪样式，子元素此时可见）。
-                // 与 ::marker 同型 owner-存储；仅 content 非 normal 时存储（伪盒无 IFC 文本
-                // 语义，仅背景/边框参与布局与绘制——零行为面）。
-                // R3867 帧体量纪律：持有 Box 指针不解引用（`*compute` 会把 3.3KB
-                // ComputedStyle 落回本递归帧，深嵌套页测试栈顶实证）。
-                if parent_style.is_some_and(|p| p.scroll_marker_group.is_some()) {
-                    let marker = self.compute_element_style_internal(
-                        doc,
-                        node,
-                        stylesheets,
-                        rule_index,
-                        Some(&elem_style),
-                        &saved_custom,
-                        quirks_mode,
-                        Some("scroll-marker"),
-                    );
-                    if !matches!(marker.content, property::types::ContentComputedValue::Normal) {
-                        computed.scroll_marker_pseudo = Some(marker);
-                    }
-                }
-                // R4262（CSS Overflow 5 §scroll-buttons）：`::scroll-button(<direction>)`
-                // per-direction 伪样式——先以裸键 `"scroll-button"` 探针（特异性/普通键 +
-                // `*` 通配均命中）判定本元素是否有按钮规则，非空才按 4 个 canonical 方向
-                // 各自完整级联（`"scroll-button(<dir>)"` 检索键，`*` 规则经 matcher 通配
-                // 并入）。仅 content 非 normal 的方向生成按钮盒（零默认行为面）。Box 直持
-                // 不解引用（R3867 帧体量纪律）。探针上下文与 compute_element_style_internal
-                // 同构（媒体/容器链顶），@media/@container 内按钮规则不漏探。
-                let scroll_button_probe = {
-                    let media_ctx = match (self.viewport_width, self.viewport_height) {
-                        (Some(w), Some(h)) => {
-                            let mut ctx = zero_css_parser::media_query::MediaContext::new(w, h);
-                            ctx.prefers_color_scheme = self.prefers_color_scheme;
-                            ctx.media_type = self.media_type;
-                            Some(ctx)
-                        }
-                        _ => None,
-                    };
-                    let container_ctx = container_context_from_chain(&self.container_chain);
-                    !matcher::collect_pseudo_declarations_with_media(
-                        doc,
-                        node,
-                        stylesheets,
-                        rule_index,
-                        media_ctx.as_ref(),
-                        container_ctx.as_ref(),
-                        "scroll-button",
-                    )
-                    .is_empty()
-                };
-                if has_scroll_button_rules && scroll_button_probe {
-                    const SCROLL_BUTTON_DIRECTIONS: [&str; 4] =
-                        ["block-start", "block-end", "inline-start", "inline-end"];
-                    let mut buttons = Vec::new();
-                    for (slot, dir) in SCROLL_BUTTON_DIRECTIONS.iter().enumerate() {
-                        let style = self.compute_element_style_internal(
-                            doc,
-                            node,
-                            stylesheets,
-                            rule_index,
-                            Some(&elem_style),
-                            &saved_custom,
-                            quirks_mode,
-                            Some(&format!("scroll-button({dir})")),
-                        );
-                        if !matches!(style.content, property::types::ContentComputedValue::Normal) {
-                            buttons.push((slot as u8, style));
-                        }
-                    }
-                    if !buttons.is_empty() {
-                        computed.scroll_buttons = Some(Box::new(property::types::ScrollButtonsPseudo { buttons }));
-                        SCROLL_PSEUDO_PRESENT.store(true, std::sync::atomic::Ordering::Relaxed);
-                    }
-                }
-                // ::first-letter 伪元素（CSS2 §5.12.2）：样式作用于块容器首个格式化行的首字母
-                //（穿透嵌套 inline，first-letter-nested-001..007 族）。compute_element_style_internal
-                // 的伪元素收集对 first-letter 通用（PseudoElementSelector::Standard 路由已存在）。
-                // 先廉价探测是否有 `::first-letter` 声明匹配——compute 内部对空匹配返回
-                // ComputedStyle::default()（color 黑），无法与「真实声明把 color 设为黑」之外的
-                // 无匹配路径区分（background-image-first-line 回归：同页 ::first-line 规则使
-                // has_pseudo_rules 为真 → 对 color:transparent 元素存了 default 黑 → 首字符变黑）。
-                // 探测为空直接跳过（零存储零 paint 影响）；非空才走完整级联（届时 compute 重复
-                // 收集一次——仅 ::first-letter 真实使用的页面，罕见路径）。
-                // 存储 gate = color ≠ 元素 color（paint 侧当前切片只应用 color；font/metrics 类
-                // 需 IFC 分词切片改几何，FIXME 挂账不存储）。
-                // **帧体量纪律（R3867）**：本块抽为独立 helper——compute_styles_recursive 的 debug
-                // 栈帧已 ~90KB（20 层嵌套即触 2MB 测试线程栈顶），帧内任何新增大局部（哪怕位于
-                // 运行时不可达分支）都会把 test_pipeline_deeply_nested_html 推过临界。helper 的
-                // 局部进 helper 自己的帧。
-                if let Some(fl) = self.compute_first_letter_pseudo(
-                    doc,
-                    node,
-                    stylesheets,
-                    rule_index,
-                    &elem_style,
-                    &saved_custom,
-                    quirks_mode,
-                ) {
-                    computed.first_letter_pseudo = Some(fl);
-                }
-                self.custom_properties = saved_custom;
-
-                // R3806：Url（content:url() 图片）也保留——pipeline inject_pseudo_text_nodes
-                // 据此注入 <img>（R1988 机制），旧 gate 漏 Url 致 ::before/::after content:url()
-                // 整体失配（content-004 族 driving）。
-                if matches!(
-                    before.content,
-                    property::types::ContentComputedValue::String(_)
-                        | property::types::ContentComputedValue::Attr(_)
-                        | property::types::ContentComputedValue::Counter { .. }
-                        | property::types::ContentComputedValue::List(_)
-                        | property::types::ContentComputedValue::Url(_)
-                ) {
-                    computed.before_pseudo = Some(Box::new(before));
-                } else if is_q
-                    && matches!(before.content, property::types::ContentComputedValue::Normal)
-                    && let Some((open, _)) = &q_quotes
-                {
-                    let mut b = before.clone();
-                    b.content = property::types::ContentComputedValue::String(open.clone());
-                    computed.before_pseudo = Some(Box::new(b));
-                }
-                if matches!(
-                    after.content,
-                    property::types::ContentComputedValue::String(_)
-                        | property::types::ContentComputedValue::Attr(_)
-                        | property::types::ContentComputedValue::Counter { .. }
-                        | property::types::ContentComputedValue::List(_)
-                        | property::types::ContentComputedValue::Url(_)
-                ) {
-                    computed.after_pseudo = Some(Box::new(after));
-                } else if is_q
-                    && matches!(after.content, property::types::ContentComputedValue::Normal)
-                    && let Some((_, close)) = &q_quotes
-                {
-                    let mut a = after.clone();
-                    a.content = property::types::ContentComputedValue::String(close.clone());
-                    computed.after_pseudo = Some(Box::new(a));
-                }
-                if self_is_container {
-                    self.container_chain.pop();
-                }
-            } // if has_pseudo_rules || is_q（S10）
             if delay_parent_insert {
                 delayed_style = Some(Box::new(computed));
             } else {
