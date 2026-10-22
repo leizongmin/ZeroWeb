@@ -344,6 +344,25 @@ fn animation_scope_to_ipc(scope: &PaintAnimationScope) -> IpcAnimationScope {
     }
 }
 
+/// DC-2 offscreen 声明级门控（后台资源生命周期 M3）：按本帧存活作用域过滤声明——
+/// 视口剔除后无采样面（`cull_invisible_with_scopes` 丢弃区间端点/transform 槽被剔的
+/// 作用域）的动画不进 compositor 状态，即「声明活跃 = 存在可见采样面」。全部被剔
+/// （视口外动画页）即空集 → compositor `animations_active` 不置位/回落，采样重光栅
+/// 与 keep-alive 呈现链不对不可见动画空转（M3 证据 offscreen 腿 0.5 cores）；元素
+/// 回视口后下一帧作用域重现，声明经集合差分恢复（advance 锚点「消失剪除/重现重新
+/// 开始」语义）。filter 在 `advance` 输入侧——差分/锚点/发送闸门都按可见集运转。
+pub(crate) fn visible_declarations(
+    declarations: &[ExportedAnimationDeclaration],
+    scopes: &[PaintAnimationScope],
+) -> Vec<ExportedAnimationDeclaration> {
+    let visible_ids: std::collections::HashSet<u64> = scopes.iter().map(|scope| scope.animation_id).collect();
+    declarations
+        .iter()
+        .filter(|declaration| visible_ids.contains(&declaration.animation_id))
+        .cloned()
+        .collect()
+}
+
 /// engine 声明 → protocol 声明（时间单位秒 → 毫秒；`start_monotonic_ns` = 该动画
 /// 首次导出的共享单调钟锚点 + engine 时钟域 start——S1b 导出域 `start_time_s` 恒
 /// 0.0，公式保留通用形供后续切片复用）。键帧端点含子集外 transform 变体或锚点

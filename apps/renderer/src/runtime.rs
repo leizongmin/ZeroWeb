@@ -1269,10 +1269,11 @@ impl RendererRuntime {
             }
             return Ok(());
         }
-        let Some(converted) = self
-            .animation_export
-            .advance(self.navigation_epoch, monotonic_now_ns(), &declarations)
-        else {
+        let Some(converted) = self.animation_export.advance(
+            self.navigation_epoch,
+            monotonic_now_ns(),
+            &paint_export::visible_declarations(&declarations, scopes),
+        ) else {
             return Ok(());
         };
         // M2-S2a：查询覆盖表随声明代际发布（gCS 采样真相源 = 本声明集 + 共享单调钟，

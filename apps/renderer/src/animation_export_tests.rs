@@ -460,3 +460,134 @@ fn legacy_mode_publish_never_sends_animation_state() {
         "Legacy 模式不发动画状态"
     );
 }
+
+// ── DC-2 offscreen 声明级门控（后台资源生命周期 M3）────────────────────────
+
+/// opacity 作用域 fixture（几何占位——门控只消费 animation_id）。
+fn opacity_scope(id: u64) -> PaintAnimationScope {
+    PaintAnimationScope {
+        animation_id: id,
+        property: PaintAnimationProperty::Opacity,
+        draw_begin: 0,
+        draw_end: 1,
+        rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+        transform_index: None,
+    }
+}
+
+#[test]
+fn visible_declarations_filters_by_surviving_scopes() {
+    // 门控过滤语义：匹配保留、不匹配剔除、空 scopes 全剔、同 id 多 scope 不重复。
+    let declarations = vec![opacity_decl(1, 0.0, 1.0), opacity_decl(2, 1.0, 0.0)];
+
+    let visible = paint_export::visible_declarations(&declarations, &[opacity_scope(2)]);
+    assert_eq!(visible.iter().map(|d| d.animation_id).collect::<Vec<_>>(), vec![2]);
+
+    assert!(
+        paint_export::visible_declarations(&declarations, &[]).is_empty(),
+        "全部作用域被剔 → 空集（offscreen 页声明不进 compositor 状态）"
+    );
+
+    let duplicated = paint_export::visible_declarations(&declarations, &[opacity_scope(1), opacity_scope(1)]);
+    assert_eq!(duplicated.len(), 1, "同 id 多 scope 声明不重复");
+    assert_eq!(duplicated[0].animation_id, 1);
+}
+
+/// flag 开 + Compositor 模式的 runtime（renderer 测试腿串行，set_var 无竞态；
+/// 每测尾恢复 env，不污染后续测试）。
+fn compositor_runtime(id: u64, buf: &SharedBuf) -> RendererRuntime {
+    unsafe { std::env::set_var("ZW_COMPOSITOR_ANIMATIONS", "1") };
+    let (_inbound_tx, inbound_rx) = std::sync::mpsc::channel();
+    let mut runtime = RendererRuntime::with_io(id, FramePublishMode::Compositor, Box::new(buf.clone()), inbound_rx);
+    runtime.stub_network = true;
+    runtime
+}
+
+fn compositor_animation_states(buf: &SharedBuf) -> Vec<zero_protocol::CompositorAnimationStateParams> {
+    drain_messages(&buf.0.lock().unwrap())
+        .into_iter()
+        .filter_map(|m| match m.kind {
+            IpcMessageKind::CompositorAnimationState(params) => Some(params),
+            _ => None,
+        })
+        .collect()
+}
+
+/// 发布线程异步写出（`send_regular` 经 enqueue_regular 入队）——轮询直到 buf
+/// 全量快照消息数 ≥ min 或超时；drain 是从头解析的全量快照（非增量消费），
+/// 每轮独立取，不做跨轮累计。本进程无其他写者，快照即本 runtime 发送量。
+fn wait_compositor_states(buf: &SharedBuf, min: usize) -> Vec<zero_protocol::CompositorAnimationStateParams> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        let states = compositor_animation_states(buf);
+        if states.len() >= min || std::time::Instant::now() >= deadline {
+            return states;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+}
+
+#[test]
+fn compositor_state_sends_declarations_with_surviving_scope() {
+    let buf = SharedBuf(Arc::new(Mutex::new(Vec::new())));
+    let mut runtime = compositor_runtime(201, &buf);
+    let declarations = vec![opacity_decl(1, 0.0, 1.0)];
+    runtime
+        .send_compositor_animation_state(declarations, &[opacity_scope(1)], &[])
+        .expect("发送");
+    let states = wait_compositor_states(&buf, 1);
+    assert_eq!(states.len(), 1, "首帧必发（sent 无先前值判变）");
+    assert_eq!(states[0].declarations.len(), 1);
+    assert_eq!(states[0].declarations[0].animation_id, 1);
+    unsafe { std::env::remove_var("ZW_COMPOSITOR_ANIMATIONS") };
+}
+
+#[test]
+fn compositor_state_sends_empty_set_when_all_scopes_culled() {
+    let buf = SharedBuf(Arc::new(Mutex::new(Vec::new())));
+    let mut runtime = compositor_runtime(202, &buf);
+    // 声明存在但全部作用域被视口剔除（offscreen 动画页）→ 空集发送（首帧必发），
+    // compositor animations_active 不置位。
+    let declarations = vec![opacity_decl(1, 0.0, 1.0)];
+    runtime
+        .send_compositor_animation_state(declarations, &[], &[])
+        .expect("发送");
+    let states = wait_compositor_states(&buf, 1);
+    assert_eq!(states.len(), 1);
+    assert!(states[0].declarations.is_empty(), "无可见采样面 → 空集");
+    unsafe { std::env::remove_var("ZW_COMPOSITOR_ANIMATIONS") };
+}
+
+#[test]
+fn compositor_state_recovers_declarations_when_scope_returns() {
+    let buf = SharedBuf(Arc::new(Mutex::new(Vec::new())));
+    let mut runtime = compositor_runtime(203, &buf);
+    let declarations = vec![opacity_decl(1, 0.0, 1.0)];
+    // offscreen：空集代际。
+    runtime
+        .send_compositor_animation_state(declarations.clone(), &[], &[])
+        .expect("发送");
+    let states = wait_compositor_states(&buf, 1);
+    assert_eq!(states.len(), 1);
+    assert!(states[0].declarations.is_empty());
+    let offscreen_generation = states[0].generation;
+
+    // 稳定空集：集合判等零消息（空转消除的机制核心——不重复发空集）。等待窗口
+    // 内无新增即为稳定（失败方向 = 假红，不掩盖回归）。
+    runtime
+        .send_compositor_animation_state(declarations.clone(), &[], &[])
+        .expect("发送");
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    assert_eq!(wait_compositor_states(&buf, 0).len(), 1, "稳定空集不重发");
+
+    // 恢复沿：元素回视口下一帧作用域重现 → 声明经集合差分恢复，generation 翻转。
+    runtime
+        .send_compositor_animation_state(declarations, &[opacity_scope(1)], &[])
+        .expect("发送");
+    let states = wait_compositor_states(&buf, 2);
+    assert_eq!(states.len(), 2);
+    assert_eq!(states[1].declarations.len(), 1);
+    assert_eq!(states[1].declarations[0].animation_id, 1);
+    assert!(states[1].generation > offscreen_generation, "恢复代际递增");
+    unsafe { std::env::remove_var("ZW_COMPOSITOR_ANIMATIONS") };
+}
