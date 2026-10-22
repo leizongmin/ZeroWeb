@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-09-12
-**状态**: Active（**自主推进中**——2026-10-22 用户全量授权至 DONE，裁决记录见 master.md）
+**状态**: Archived（✅ 2026-10-23 M4 收口 Completed——DC-1~4 全满足，用户签收 §5 三项后归档；终态与挂账见 master.md 及 M4 收口 evidence）
 **执行模式**: WPT 驱动（上游 webgl/ conformance corpus 为验收标尺）；
 GPU 管线深依赖——**除 M1 资产切片外全部用户门控**（先例：R1043/Phase A IFC）
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——GPU 图形面）

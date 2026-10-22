@@ -1,7 +1,7 @@
 # WebGL 兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../webgl-compat.md](../webgl-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-23（M4 收口定稿交付——DC-1~4 全满足，待用户签收）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-23（用户签收 §5 三项——goal Completed 归档）
 
 ## 当前状态
 
@@ -14,6 +14,11 @@ S1~S4、DC-4 门禁全绿 + 记账入 M4 文档 §2）；基线 2112 Pass / 3 Fa
 716/716。签收项见 [evidence/2026-10-23-m4-closeout-deferral.md](evidence/2026-10-23-m4-closeout-deferral.md)
 §5；签收前挂账结论即当前有效边界。本 goal 至此无自主工作余量，等待签收或
 新裁决。
+
+**已签收归档（2026-10-23）**：用户签收 M4 收口 §5 三项（① WebGL2/WebGPU
+挂账定稿与重开条件 ② GPU/CPU 记账维持 CPU 路径 ③ 上游 3 Fail 接受为基线），
+goal 按 Archive Policy 移入 `docs/goal/archive/`（本目录）。账本封存；
+重开入口见 [M4 收口文档](evidence/2026-10-23-m4-closeout-deferral.md) §1。
 
 **M3-S4 draw 光栅化管线已落地（2026-10-23）**：新 part08d.js（~1390 行）GLSL
 绘制求值器（递归下降、程序级 AST 缓存重链失效；值模型标量/vec/mat 列主序/
