@@ -17,8 +17,10 @@
 //! - Windows：`SetConsoleCtrlHandler` 捕获 `CTRL_C_EVENT` / `CTRL_BREAK_EVENT` 等，
 //!   对 C/BREAK 返回 TRUE 阻止默认 TerminateProcess；CLOSE/LOGOFF/SHUTDOWN 返回 FALSE
 //!   （系统会强制结束，但已先置 flag 给事件循环最后一次机会）。
-//! - 非 Windows：当前为 no-op（Unix 开发场景下默认 SIGINT 终止 + Job Object 等价物
-//!   由 process.rs 的 Drop 路径覆盖）。
+//! - 非 Windows：`libc::signal(SIGINT, ...)` 把信号转成同一 atomic flag。此前为
+//!   no-op，默认 SIGINT 直接终止进程会跳过 `persist_user_data`（会话 clean_exit
+//!   丢失）并留下孤儿 renderer，与 Windows 侧动机相同。代价：事件循环卡死时
+//!   Ctrl+C 不再强杀（Windows 侧已接受同一取舍）；SIGTERM 保持默认强杀语义。
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -50,10 +52,20 @@ pub fn install() {
 
     #[cfg(not(windows))]
     {
-        // 非 Windows 暂未注册 handler：Unix 下默认 SIGINT 终止进程，
-        // Rust main 正常 unwind 会触发 RendererHandle::Drop → child.kill()。
-        // 若后续需要在 Unix 也做 graceful shutdown，可在此挂 libc::signal(SIGINT, ...)。
+        // Unix：SIGINT → atomic flag，事件循环检测后走 graceful 路径（见模块头）。
+        // SAFETY: main 早期单线程安装；handler 只做 atomic store（async-signal-safe：
+        // 无分配、无锁、不调用非重入函数）。
+        unsafe {
+            let handler = handle_sigint as extern "C" fn(libc::c_int) as libc::sighandler_t;
+            libc::signal(libc::SIGINT, handler);
+        }
     }
+}
+
+/// Unix SIGINT handler：仅置位 shutdown flag（async-signal-safe）。
+#[cfg(not(windows))]
+extern "C" fn handle_sigint(_sig: libc::c_int) {
+    SHUTDOWN_REQUESTED.store(true, Ordering::SeqCst);
 }
 
 #[cfg(windows)]

@@ -7053,3 +7053,71 @@ fn bookmarks_import_error_message_escapes_path() {
     assert!(!html.contains(r#"<img src=x"#), "错误文案不得包含未转义 HTML: {html}");
     assert!(html.contains("&lt;img"), "错误文案应含转义后的路径: {html}");
 }
+
+/// FR-6（DC-4）：恢复会话时达到崩溃循环阈值的 tab 不再自动加载崩溃页，
+/// 置空 about:blank；未达阈值的 tab 照常恢复其 URL。
+#[test]
+fn restore_skips_tabs_that_reached_crash_loop_threshold() {
+    use zero_browser_shell::{NavigationSnapshot, SessionState, TabInfo, TabSnapshot};
+
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    let crash_url = "https://crash.example/loop";
+    let normal_url = "https://example.com/normal";
+    let session = SessionState {
+        tabs: vec![
+            TabSnapshot {
+                url: Some(crash_url.to_string()),
+                title: Some("loop".to_string()),
+                history: vec![NavigationSnapshot {
+                    url: crash_url.to_string(),
+                    title: Some("loop".to_string()),
+                }],
+                history_index: 0,
+                crash_count: zero_browser_shell::CRASH_LOOP_SKIPPED_THRESHOLD,
+            },
+            TabSnapshot {
+                url: Some(normal_url.to_string()),
+                title: Some("normal".to_string()),
+                history: vec![NavigationSnapshot {
+                    url: normal_url.to_string(),
+                    title: Some("normal".to_string()),
+                }],
+                history_index: 0,
+                crash_count: 0,
+            },
+        ],
+        active_tab_index: Some(0),
+        clean_exit: false,
+    };
+
+    app.restore_session_for_test(session);
+
+    let restored: Vec<(zero_browser_shell::TabId, String)> = app
+        .shell
+        .tabs()
+        .map(|tab| (tab.id(), app.page_url_for_test(tab.id()).unwrap_or_default()))
+        .collect();
+    assert_eq!(restored.len(), 2, "两个 tab 都应重建: {restored:?}");
+    let skipped = restored
+        .iter()
+        .find(|(_, url)| url == "about:blank")
+        .expect("达到阈值的 tab 应被置空 about:blank");
+    let restored_url = restored
+        .iter()
+        .map(|(_, url)| url)
+        .find(|url| **url != "about:blank")
+        .unwrap();
+    assert_eq!(restored_url, normal_url, "未达阈值的 tab 应照常自动加载");
+    // 置空 tab 的 shell 侧 URL 保留崩溃页地址（供用户手动重载参考），仅内容不自动加载。
+    let skipped_shell_url = app
+        .shell
+        .tabs()
+        .find(|tab| app.page_url_for_test(tab.id()).as_deref() == Some("about:blank"))
+        .and_then(|tab| tab.url().map(str::to_string));
+    assert_eq!(skipped_shell_url.as_deref(), Some(crash_url));
+    assert_eq!(
+        app.shell.tab_crash_count(skipped.0),
+        zero_browser_shell::CRASH_LOOP_SKIPPED_THRESHOLD,
+        "计数进入观察窗由 sweep 清零，恢复跳过本身不改计数"
+    );
+}

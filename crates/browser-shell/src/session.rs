@@ -13,6 +13,12 @@ const MAX_TABS: usize = 10_000;
 const MAX_HISTORY_PER_TAB: usize = 10_000;
 const MAX_TEXT_BYTES: usize = 16 * 1024;
 
+/// FR-6 崩溃循环守卫：同一 tab 累计崩溃达到该次数后，下次恢复不再自动加载
+/// 该 tab 的崩溃页（置空 about:blank）。RFC P5 待决终值，集中定义便于调整。
+pub const CRASH_LOOP_SKIPPED_THRESHOLD: u32 = 2;
+/// FR-6 观察窗：崩溃或跳过恢复后 tab 存活该时长且无新崩溃，计数清零。
+pub const CRASH_LOOP_OBSERVATION_WINDOW_SECS: u64 = 10;
+
 /// 可序列化的浏览器会话快照。
 ///
 /// 包含关闭时的所有标签页状态，用于下次启动时恢复。
@@ -46,6 +52,17 @@ pub struct TabSnapshot {
     pub history: Vec<NavigationSnapshot>,
     /// 导航历史中的当前位置索引。
     pub history_index: usize,
+    /// FR-6 崩溃循环守卫：该 tab 的累计崩溃次数（本轮运行内自增，恢复跳过
+    /// 判定用）。缺省 0：旧 session.json 无此字段照常加载。
+    #[serde(default)]
+    pub crash_count: u32,
+}
+
+impl TabSnapshot {
+    /// 该 tab 是否达到崩溃循环阈值、恢复时应跳过自动加载。
+    pub fn is_crash_loop_skipped(&self) -> bool {
+        self.crash_count >= CRASH_LOOP_SKIPPED_THRESHOLD
+    }
 }
 
 /// 导航历史条目快照。
@@ -79,6 +96,7 @@ impl SessionState {
                     title: t.title,
                     history: t.history,
                     history_index: t.history_index,
+                    crash_count: t.crash_count,
                 })
                 .collect(),
             active_tab_index,
@@ -165,6 +183,8 @@ pub struct TabInfo {
     pub history: Vec<NavigationSnapshot>,
     /// 导航历史中的当前位置索引。
     pub history_index: usize,
+    /// 崩溃循环守卫计数（见 [`TabSnapshot::crash_count`]）。
+    pub crash_count: u32,
 }
 
 #[cfg(test)]
@@ -207,6 +227,7 @@ mod tests {
                     title: Some("Example".to_string()),
                 }],
                 history_index: 0,
+                crash_count: 0,
             },
             TabInfo {
                 url: Some("https://github.com".to_string()),
@@ -216,6 +237,7 @@ mod tests {
                     title: Some("GitHub".to_string()),
                 }],
                 history_index: 0,
+                crash_count: 0,
             },
         ];
         let session = SessionState::from_tabs(tabs.into_iter(), Some(1));
@@ -236,6 +258,7 @@ mod tests {
                     title: Some("Example".to_string()),
                 }],
                 history_index: 0,
+                crash_count: 0,
             }],
             active_tab_index: Some(0),
             clean_exit: false,
@@ -263,6 +286,7 @@ mod tests {
                         title: Some("Example".to_string()),
                     }],
                     history_index: 0,
+                    crash_count: 0,
                 },
                 TabSnapshot {
                     url: Some("https://github.com".to_string()),
@@ -272,6 +296,7 @@ mod tests {
                         title: None,
                     }],
                     history_index: 0,
+                    crash_count: 0,
                 },
             ],
             active_tab_index: Some(1),
@@ -339,6 +364,7 @@ mod tests {
                     },
                 ],
                 history_index: 2,
+                crash_count: 0,
             }],
             active_tab_index: Some(0),
             clean_exit: false,
@@ -368,6 +394,45 @@ mod tests {
     }
 
     #[test]
+    fn session_without_crash_count_field_loads_with_zero() {
+        // FR-6：旧 session.json 无 crash_count 字段照常加载，缺省 0。
+        let dir = std::env::temp_dir().join(format!("zeroweb_test_session_legacy-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("session.json");
+        std::fs::write(
+            &path,
+            r#"{"tabs":[{"url":"https://example.com/","title":null,"history":[],"history_index":0}],"active_tab_index":0,"clean_exit":true}"#,
+        )
+        .unwrap();
+        let session = SessionState::load(&path).expect("legacy session should load");
+        assert_eq!(session.tabs[0].crash_count, 0);
+        assert!(!session.tabs[0].is_crash_loop_skipped());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn crash_count_round_trips_and_reaches_skip_threshold() {
+        let tabs = vec![TabInfo {
+            url: Some("https://crash.example/".to_string()),
+            title: None,
+            history: vec![],
+            history_index: 0,
+            crash_count: CRASH_LOOP_SKIPPED_THRESHOLD,
+        }];
+        let session = SessionState::from_tabs(tabs.into_iter(), Some(0));
+        assert!(session.tabs[0].is_crash_loop_skipped());
+        let dir = std::env::temp_dir().join(format!("zeroweb_test_session_crashcount-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("session.json");
+        session.save(&path).expect("save should succeed");
+        let loaded = SessionState::load(&path).expect("load should succeed");
+        assert_eq!(loaded.tabs[0].crash_count, CRASH_LOOP_SKIPPED_THRESHOLD);
+        assert!(loaded.tabs[0].is_crash_loop_skipped());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn test_session_active_index_beyond_tabs() {
         // active_tab_index 不在有效范围时不应 panic
         let session = SessionState {
@@ -376,6 +441,7 @@ mod tests {
                 title: None,
                 history: vec![],
                 history_index: 0,
+                crash_count: 0,
             }],
             active_tab_index: Some(5), // 超出范围
             clean_exit: false,

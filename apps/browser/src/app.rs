@@ -301,6 +301,8 @@ pub struct BrowserApp {
     session_restore_prompt_visible: bool,
     /// T20：启动会话恢复检查只执行一次（`ensure_startup_tab` 可能多次调用）。
     session_startup_handled: bool,
+    /// FR-6 崩溃循环守卫：观察窗到期时刻（tab 存活且无新崩溃即清零计数）。
+    crash_reset_deadlines: Vec<(TabId, Instant)>,
     #[cfg(test)]
     compositor_status_override: Option<crate::compositor_client::CompositorStatus>,
 }
@@ -462,6 +464,7 @@ impl BrowserApp {
             pending_session_restore: None,
             session_restore_prompt_visible: false,
             session_startup_handled: false,
+            crash_reset_deadlines: Vec::new(),
             permissions: zero_security::permission::PermissionManager::new(),
             #[cfg(test)]
             compositor_status_override: None,
@@ -629,6 +632,16 @@ impl BrowserApp {
                 tab.set_loading(false);
             }
         }
+        // FR-6 崩溃循环守卫：崩溃 tab 计数递增并即时落盘（浏览器可能随后即死），
+        // 并重排观察窗到期时刻——存活一个观察窗且无新崩溃即清零。
+        for tab_id in self.tabs.take_renderer_crash_events() {
+            if let Some(count) = self.shell.increment_tab_crash_count(tab_id) {
+                tracing::info!(tab_id = tab_id.0, count, "tab renderer crash counted");
+                self.persist_running_session();
+            }
+            self.schedule_crash_reset(tab_id);
+        }
+        self.sweep_crash_reset_deadlines();
         for download in self.tabs.take_pending_downloads() {
             self.save_attachment_download(download);
         }
@@ -2660,10 +2673,57 @@ impl BrowserApp {
                 self.needs_redraw = true;
             }
         }
+        self.persist_running_session();
+    }
+
+    /// 将当前会话以运行中标记（`clean_exit=false`）落到默认路径。
+    ///
+    /// 启动检查、崩溃计数递增与观察窗清零共用：崩溃随时可能到来，计数变更
+    /// 必须即时持久化，不能等退出路径。
+    fn persist_running_session(&self) {
+        let path = SessionState::default_session_path();
         let mut running = self.shell.save_session();
         running.clean_exit = false;
         if let Err(err) = running.save(&path) {
             tracing::warn!(%err, "failed to write session running marker");
+        }
+    }
+
+    /// FR-6：为 tab 安排崩溃计数观察窗（到期清零；再次崩溃则重排）。
+    fn schedule_crash_reset(&mut self, tab_id: TabId) {
+        let deadline = Instant::now() + Duration::from_secs(zero_browser_shell::CRASH_LOOP_OBSERVATION_WINDOW_SECS);
+        if let Some(entry) = self.crash_reset_deadlines.iter_mut().find(|(id, _)| *id == tab_id) {
+            entry.1 = deadline;
+        } else {
+            self.crash_reset_deadlines.push((tab_id, deadline));
+        }
+    }
+
+    /// FR-6：观察窗到期——tab 存活且无新崩溃，崩溃计数清零并落盘。
+    fn sweep_crash_reset_deadlines(&mut self) {
+        if self.crash_reset_deadlines.is_empty() {
+            return;
+        }
+        let now = Instant::now();
+        let expired: Vec<TabId> = self
+            .crash_reset_deadlines
+            .iter()
+            .filter(|(_, deadline)| *deadline <= now)
+            .map(|(tab_id, _)| *tab_id)
+            .collect();
+        if expired.is_empty() {
+            return;
+        }
+        self.crash_reset_deadlines.retain(|(_, deadline)| *deadline > now);
+        let mut changed = false;
+        for tab_id in expired {
+            if self.shell.reset_tab_crash_count(tab_id) {
+                tracing::info!(tab_id = tab_id.0, "tab crash count reset after observation window");
+                changed = true;
+            }
+        }
+        if changed {
+            self.persist_running_session();
         }
     }
 
@@ -2686,7 +2746,18 @@ impl BrowserApp {
         for (tab_id, url) in restored {
             self.tabs.ensure_tab(tab_id);
             self.scroll.insert(tab_id, TabScrollState::default());
+            // FR-6 崩溃循环守卫：恢复的 tab 带非零崩溃计数即进入观察窗，存活
+            // 一个窗口即清零（跳过加载的 tab 同样适用，跳过只此一次）。
+            if self.shell.tab_crash_count(tab_id) > 0 {
+                self.schedule_crash_reset(tab_id);
+            }
             let Some(url) = url else { continue };
+            // FR-6：达到崩溃循环阈值的 tab 不再自动加载崩溃页，置空 about:blank。
+            if self.shell.tab_crash_count(tab_id) >= zero_browser_shell::CRASH_LOOP_SKIPPED_THRESHOLD {
+                tracing::info!(tab_id = tab_id.0, %url, "skipping auto-load of crash-loop tab");
+                self.tabs.load_html(tab_id, "", None, Some("about:blank"));
+                continue;
+            }
             // T24：仅活动标签恢复按站点缩放（set_zoom 作用于活动标签）。
             if Some(tab_id) == active_id {
                 self.restore_zoom_for_url(&url);
@@ -2720,6 +2791,13 @@ impl BrowserApp {
         self.pending_session_restore = None;
         self.session_restore_prompt_visible = false;
         self.needs_redraw = true;
+    }
+
+    /// FR-6 测试钩子：注入崩溃恢复候选会话并执行恢复（等价气泡「恢复标签」）。
+    #[cfg(test)]
+    pub(crate) fn restore_session_for_test(&mut self, session: SessionState) {
+        self.pending_session_restore = Some(session);
+        self.restore_pending_session();
     }
 
     /// T20：崩溃恢复气泡矩形（内容区左上角浮层；渲染与命中测试同源）。

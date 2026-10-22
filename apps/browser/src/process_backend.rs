@@ -194,6 +194,8 @@ pub struct ProcessTabBackend {
     indexed_db_init_error: Option<String>,
     pending_loaded: Vec<(TabId, String, String)>,
     pending_errors: Vec<(TabId, String)>,
+    /// FR-6：renderer 异常退出的 tab 事件（app 侧递增崩溃计数并落盘）。
+    pending_renderer_crashes: Vec<TabId>,
     pending_tab_navigates: Vec<(TabId, TabNavigateRequestParams)>,
     fetch_proxy: TabFetchProxy,
     service_worker_owner: BrowserServiceWorkerOwner,
@@ -307,6 +309,7 @@ impl ProcessTabBackend {
             indexed_db_init_error: storage_error,
             pending_loaded: Vec::new(),
             pending_errors: Vec::new(),
+            pending_renderer_crashes: Vec::new(),
             pending_tab_navigates: Vec::new(),
             fetch_proxy: TabFetchProxy::new(),
             service_worker_owner,
@@ -1541,6 +1544,8 @@ impl ProcessTabBackend {
         if let Err(error) = zero_browser_shell::write_report(&zero_browser_shell::crash_reports_dir(), &report) {
             tracing::warn!("renderer crash report write failed: {error}");
         }
+        // FR-6：通知 app 侧递增该 tab 的崩溃计数（观察窗清零与恢复跳过判定）。
+        self.pending_renderer_crashes.push(tab_id);
         if self.tab_to_renderer.get(&tab_id) == Some(&rid) {
             self.tab_to_renderer.remove(&tab_id);
         }
@@ -1613,6 +1618,11 @@ impl ProcessTabBackend {
     /// 取出待处理的加载失败事件。
     pub fn take_page_error_events(&mut self) -> Vec<(TabId, String)> {
         std::mem::take(&mut self.pending_errors)
+    }
+
+    /// FR-6：取出本轮发生过 renderer 异常退出的 tab。
+    pub fn take_renderer_crash_events(&mut self) -> Vec<TabId> {
+        std::mem::take(&mut self.pending_renderer_crashes)
     }
 
     /// 取出渲染端 zero:// 导航装载请求（T62-D1）。

@@ -47,6 +47,14 @@ pub enum CrashRole {
 }
 
 impl CrashRole {
+    /// 全部角色（文件名解析与枚举校验用）。
+    pub const ALL: &'static [CrashRole] = &[
+        CrashRole::Browser,
+        CrashRole::Renderer,
+        CrashRole::Compositor,
+        CrashRole::ImageDecoder,
+    ];
+
     /// 报告文件名与 JSON `role` 字段使用的稳定名称。
     pub fn as_str(self) -> &'static str {
         match self {

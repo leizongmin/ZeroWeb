@@ -432,6 +432,29 @@ impl BrowserShell {
         }
     }
 
+    /// FR-6：递增标签页崩溃计数，返回递增后的值（标签页不存在时为 `None`）。
+    pub fn increment_tab_crash_count(&mut self, id: TabId) -> Option<u32> {
+        let tab = self.tabs.get_tab_mut(id)?;
+        Some(tab.increment_crash_count())
+    }
+
+    /// FR-6：观察窗内无新崩溃，崩溃计数清零；返回是否确实清了一个非零计数。
+    pub fn reset_tab_crash_count(&mut self, id: TabId) -> bool {
+        let Some(tab) = self.tabs.get_tab_mut(id) else {
+            return false;
+        };
+        if tab.crash_count() == 0 {
+            return false;
+        }
+        tab.reset_crash_count();
+        true
+    }
+
+    /// FR-6：读取标签页崩溃计数（标签页不存在时为 0）。
+    pub fn tab_crash_count(&self, id: TabId) -> u32 {
+        self.tab(id).map_or(0, crate::tab::Tab::crash_count)
+    }
+
     /// 设置标签页需要关注状态。
     pub fn set_tab_needs_attention(&mut self, id: TabId, needs_attention: bool) {
         if let Some(tab) = self.tabs.get_tab_mut(id) {
@@ -862,6 +885,7 @@ impl BrowserShell {
                 title: tab.title().map(|s| s.to_string()),
                 history: tab.navigation_history().iter().map(nav_to_snapshot).collect(),
                 history_index: tab.history_index(),
+                crash_count: tab.crash_count(),
             });
         }
         let mut session = SessionState::from_tabs(tabs.into_iter(), active_tab_index);
@@ -902,6 +926,11 @@ impl BrowserShell {
                 && let Some(tab) = self.tabs.get_tab_mut(new_id)
             {
                 tab.set_title(title);
+            }
+
+            // FR-6：恢复崩溃循环守卫计数（恢复跳过判定依据）。
+            if let Some(tab) = self.tabs.get_tab_mut(new_id) {
+                tab.set_crash_count(tab_snap.crash_count);
             }
 
             // 恢复导航历史（如果快照中有多条记录）

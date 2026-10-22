@@ -61,6 +61,8 @@ pub struct TabManager {
     /// 待落盘的附件下载（backend 拦截，BrowserApp 消费落盘 + 记账）。
     pending_downloads: Vec<crate::process_backend::PendingAttachmentDownload>,
     pending_errors: Vec<(TabId, String)>,
+    /// FR-6：renderer 异常退出的 tab 事件（自 process_backend 汇聚，app 消费）。
+    pending_renderer_crashes: Vec<TabId>,
     poll_tick: u64,
     /// 是否允许 Tab worker 执行页面 JavaScript。
     javascript_enabled: bool,
@@ -114,6 +116,7 @@ impl TabManager {
             pending_loaded: Vec::new(),
             pending_downloads: Vec::new(),
             pending_errors: Vec::new(),
+            pending_renderer_crashes: Vec::new(),
             poll_tick: 0,
             javascript_enabled: true,
             event_targets: HashMap::new(),
@@ -389,6 +392,8 @@ impl TabManager {
             changed |= backend.poll(&mut self.snapshots, &mut self.snapshot_seq, active_tab, poll_background);
             self.pending_loaded.extend(backend.take_page_loaded_events());
             self.pending_errors.extend(backend.take_page_error_events());
+            self.pending_renderer_crashes
+                .extend(backend.take_renderer_crash_events());
             self.pending_downloads.extend(backend.take_pending_downloads());
             self.pending_renderer_navigations
                 .extend(backend.take_tab_navigate_requests());
@@ -1167,6 +1172,11 @@ impl TabManager {
     /// 取出待处理的页面加载失败事件。
     pub fn take_page_error_events(&mut self) -> Vec<(TabId, String)> {
         std::mem::take(&mut self.pending_errors)
+    }
+
+    /// FR-6：取出本轮发生过 renderer 异常退出的 tab。
+    pub fn take_renderer_crash_events(&mut self) -> Vec<TabId> {
+        std::mem::take(&mut self.pending_renderer_crashes)
     }
 
     /// R3254-M10：取出单进程表单提交导航请求（(TabId, url, method, body)）。

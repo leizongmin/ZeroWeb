@@ -127,6 +127,18 @@ struct CliArgs {
     check_updates: Option<PathBuf>,
     /// 显式回滚到上一版本（交付闭环 RFC FR-3）。
     rollback_update: bool,
+    /// FR-5：列举本地崩溃报告（预览面），然后退出。
+    list_crash_reports: bool,
+    /// FR-5：删除指定崩溃报告，然后退出。
+    delete_crash_report: Option<String>,
+    /// FR-5/FR-6：导出反馈包（IF-4 目录形态）到指定目录，然后退出。
+    export_feedback: Option<PathBuf>,
+    /// 导出勾选的报告文件名（可重复；缺省导出全部）。
+    feedback_reports: Vec<String>,
+    /// 导出附带会话摘要（tab 计数，不含 URL）。
+    include_session_summary: bool,
+    /// 会话摘要含各 tab URL（隐含 `--include-session-summary`；NFR-1 须显式勾选）。
+    include_session_urls: bool,
 }
 
 fn parse_args() -> Result<CliArgs, String> {
@@ -176,6 +188,12 @@ fn parse_args_from(
     let mut parity_output_dir = None;
     let mut startup_url: Option<String> = None;
     let mut check_updates: Option<PathBuf> = None;
+    let mut list_crash_reports = false;
+    let mut delete_crash_report: Option<String> = None;
+    let mut export_feedback: Option<PathBuf> = None;
+    let mut feedback_reports: Vec<String> = Vec::new();
+    let mut include_session_summary = false;
+    let mut include_session_urls = false;
     let mut rollback_update = false;
 
     while let Some(arg) = args.next() {
@@ -242,6 +260,39 @@ fn parse_args_from(
 
         if arg == "--rollback-update" {
             rollback_update = true;
+        }
+
+        if arg == "--list-crash-reports" {
+            list_crash_reports = true;
+        }
+
+        if let Some(value) = arg.strip_prefix("--delete-crash-report=") {
+            if value.is_empty() {
+                return Err("--delete-crash-report requires a report file name".to_string());
+            }
+            delete_crash_report = Some(value.to_string());
+        }
+
+        if let Some(value) = arg.strip_prefix("--export-feedback=") {
+            if value.is_empty() {
+                return Err("--export-feedback requires a target directory".to_string());
+            }
+            export_feedback = Some(PathBuf::from(value));
+        }
+
+        if let Some(value) = arg.strip_prefix("--feedback-report=") {
+            if value.is_empty() {
+                return Err("--feedback-report requires a report file name".to_string());
+            }
+            feedback_reports.push(value.to_string());
+        }
+
+        if arg == "--include-session-summary" {
+            include_session_summary = true;
+        }
+
+        if arg == "--include-session-urls" {
+            include_session_urls = true;
         }
 
         if let Some(value) = arg.strip_prefix("--viewport-width=") {
@@ -613,6 +664,12 @@ fn parse_args_from(
         startup_url,
         check_updates,
         rollback_update,
+        list_crash_reports,
+        delete_crash_report,
+        export_feedback,
+        feedback_reports,
+        include_session_summary,
+        include_session_urls,
     })
 }
 
@@ -657,6 +714,15 @@ Options:
   --check-updates=<dir>          Check and apply an update from a local source
                                  directory (manifest.json + .deb), then exit
   --rollback-update              Roll back to the previous release, then exit
+  --list-crash-reports           List local crash reports (name/role/time/size),
+                                 then exit
+  --delete-crash-report=<file>   Delete one local crash report, then exit
+  --export-feedback=<dir>        Export a feedback package (directory with
+                                 selected reports + environment.json), then exit
+  --feedback-report=<file>       Export only this report (repeatable; default: all)
+  --include-session-summary      Attach session summary (tab counts, no URLs)
+  --include-session-urls         Include tab URLs in the session summary
+                                 (implies --include-session-summary)
   --help, -h                     Show this help
 
 Environment: {}={}",
@@ -815,6 +881,102 @@ fn run_rollback_update() -> i32 {
         }
     }
     0
+}
+
+/// FR-5：列举本地崩溃报告（预览面）。stdout 每行
+/// `REPORT <文件名> <角色> <unix秒> <字节数>`；无报告输出 `NO_REPORTS`。
+fn run_list_crash_reports() -> i32 {
+    let entries = zero_browser_shell::list_reports(&zero_browser_shell::crash_reports_dir());
+    if entries.is_empty() {
+        println!("NO_REPORTS");
+        return 0;
+    }
+    for entry in &entries {
+        println!(
+            "REPORT {} {} {} {}",
+            entry.file_name, entry.role, entry.timestamp, entry.size_bytes
+        );
+    }
+    0
+}
+
+/// FR-5：删除单份报告。stdout 单行 `REPORT_DELETED <文件名>`，
+/// 失败 `REPORT_DELETE_REJECTED <原因>`。
+fn run_delete_crash_report(file_name: &str) -> i32 {
+    match zero_browser_shell::delete_report(&zero_browser_shell::crash_reports_dir(), file_name) {
+        Ok(()) => {
+            println!("REPORT_DELETED {file_name}");
+            0
+        }
+        Err(error) => {
+            eprintln!("REPORT_DELETE_REJECTED {error}");
+            1
+        }
+    }
+}
+
+/// FR-5/FR-6：导出反馈包（IF-4 目录形态）。stdout 单行
+/// `FEEDBACK_EXPORTED <路径>` 或 `FEEDBACK_REJECTED <原因>`。
+///
+/// 勾选列表缺省取全部现存报告（用户显式传 flag 即显式动作）；会话摘要与
+/// URL 各需显式开关，默认不含任何页面数据（NFR-1）。
+fn run_export_feedback(
+    target_dir: &Path,
+    selected: &[String],
+    include_session_summary: bool,
+    include_session_urls: bool,
+) -> i32 {
+    let reports_dir = zero_browser_shell::crash_reports_dir();
+    let selected: Vec<String> = if selected.is_empty() {
+        let all: Vec<String> = zero_browser_shell::list_reports(&reports_dir)
+            .into_iter()
+            .map(|entry| entry.file_name)
+            .collect();
+        if all.is_empty() {
+            // FR-5：无报告可导出即拒绝，不产生空包。
+            eprintln!("FEEDBACK_REJECTED NO_REPORTS");
+            return 1;
+        }
+        all
+    } else {
+        selected.to_vec()
+    };
+    let session_summary = if include_session_summary || include_session_urls {
+        zero_browser_shell::SessionState::load_default().map(|session| {
+            let urls = include_session_urls.then(|| {
+                session
+                    .tabs
+                    .iter()
+                    .filter_map(|tab| tab.url.clone())
+                    .collect::<Vec<_>>()
+            });
+            zero_browser_shell::SessionSummary {
+                tab_count: session.tabs.len(),
+                crash_loop_skipped_tabs: session.tabs.iter().filter(|tab| tab.is_crash_loop_skipped()).count(),
+                urls,
+            }
+        })
+    } else {
+        None
+    };
+    let options = zero_browser_shell::FeedbackExportOptions { session_summary };
+    match zero_browser_shell::export_feedback(
+        &reports_dir,
+        target_dir,
+        zero_product_version::VERSION,
+        zero_product_version::BUILD_COMMIT,
+        &selected,
+        &options,
+    ) {
+        Ok(path) => {
+            println!("FEEDBACK_EXPORTED {}", path.display());
+            0
+        }
+        Err(error) => {
+            eprintln!("FEEDBACK_REJECTED {error}");
+            1
+        }
+    }
 }
 
 fn run_headless(cli: CliArgs) {
@@ -1171,6 +1333,24 @@ fn main() {
 
     if cli.rollback_update {
         let code = run_rollback_update();
+        std::process::exit(code);
+    }
+
+    if cli.list_crash_reports {
+        std::process::exit(run_list_crash_reports());
+    }
+
+    if let Some(file_name) = cli.delete_crash_report.clone() {
+        std::process::exit(run_delete_crash_report(&file_name));
+    }
+
+    if let Some(target_dir) = cli.export_feedback.clone() {
+        let code = run_export_feedback(
+            &target_dir,
+            &cli.feedback_reports,
+            cli.include_session_summary,
+            cli.include_session_urls,
+        );
         std::process::exit(code);
     }
 

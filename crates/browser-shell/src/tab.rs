@@ -37,6 +37,8 @@ pub struct Tab {
     muted: bool,
     /// 是否崩溃。
     crashed: bool,
+    /// FR-6 崩溃循环守卫：累计崩溃次数（会话快照持久化，见 session.rs）。
+    crash_count: u32,
     /// 是否需要用户注意（例如完成通知）。
     needs_attention: bool,
     /// 该标签页的缩放级别（1.0 = 100%）。
@@ -78,6 +80,7 @@ impl Tab {
             pinned: false,
             muted: false,
             crashed: false,
+            crash_count: 0,
             needs_attention: false,
             zoom: 1.0,
         };
@@ -112,6 +115,7 @@ impl Tab {
             pinned: false,
             muted: false,
             crashed: false,
+            crash_count: 0,
             needs_attention: false,
             zoom: 1.0,
         }
@@ -130,6 +134,7 @@ impl Tab {
             pinned: self.pinned,
             muted: self.muted,
             crashed: false,
+            crash_count: 0,
             needs_attention: false,
             zoom: self.zoom,
         }
@@ -163,6 +168,27 @@ impl Tab {
     /// 是否崩溃。
     pub fn is_crashed(&self) -> bool {
         self.crashed
+    }
+
+    /// FR-6 崩溃循环守卫：当前累计崩溃次数。
+    pub fn crash_count(&self) -> u32 {
+        self.crash_count
+    }
+
+    /// 递增崩溃计数，返回递增后的值。
+    pub fn increment_crash_count(&mut self) -> u32 {
+        self.crash_count = self.crash_count.saturating_add(1);
+        self.crash_count
+    }
+
+    /// 崩溃计数清零（观察窗内存活无新崩溃，或恢复跳过后由守卫策略调用）。
+    pub fn reset_crash_count(&mut self) {
+        self.crash_count = 0;
+    }
+
+    /// 直接设置崩溃计数（会话恢复时回放快照值）。
+    pub fn set_crash_count(&mut self, count: u32) {
+        self.crash_count = count;
     }
 
     /// 设置崩溃状态。
