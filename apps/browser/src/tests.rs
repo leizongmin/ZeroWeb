@@ -7193,3 +7193,79 @@ fn profile_applies_isolated_env_layout_over_absolute_root() {
         std::env::remove_var("ZERO_CACHE_DIR");
     }
 }
+
+/// FR-5 GUI 导出入口（`zero://feedback`）：页面列表渲染、单条删除、导出动作经
+/// 下载管线落盘（与 CLI `--export-format=zip` 同一 `build_feedback_zip_bytes`
+/// 管线）。报告目录经 `ZERO_CONFIG_DIR` 隔离到临时目录（G3 先例的进程级 env
+/// 写入模式）。
+#[test]
+fn feedback_page_lists_reports_deletes_and_exports_zip_via_download() {
+    let dir = std::env::temp_dir().join(format!("zw-feedback-gui-{}", std::process::id()));
+    let reports_dir = dir.join("zeroweb").join("crash-reports");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&reports_dir).expect("create isolated reports dir");
+    let report_name = "crash-0000000001-renderer.json";
+    std::fs::write(reports_dir.join(report_name), r#"{"role":"renderer"}"#).expect("seed report");
+    // SAFETY: 测试进程内独占消费（同 profile_applies_isolated_env_layout 先例），
+    // BrowserApp::new 加载 profile 前置位，测试尾清理。
+    unsafe {
+        std::env::set_var("ZERO_CONFIG_DIR", &dir);
+    }
+
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    // 导出落盘走下载目录：指向独立临时目录，不触真实 Downloads。
+    let download_dir = std::env::temp_dir().join(format!("zw-feedback-dl-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&download_dir);
+    app.shell
+        .apply_settings(|s| s.download_directory = download_dir.display().to_string());
+
+    // 页面打开：地址栏 URL 与列表渲染（含报告名与动作链接）。
+    app.navigate_from_ui("zero://feedback");
+    assert_eq!(app.address_bar_text(), "zero://feedback");
+    let tab_id = app.shell.active_tab_id().expect("active tab");
+    app.wait_for_tab_content_ready(tab_id);
+    let html = app.page_html_for_test(tab_id).unwrap_or_default();
+    assert!(html.contains(report_name), "报告应出现在列表");
+    assert!(html.contains(&format!("zero://feedback/remove/{report_name}")));
+    assert!(html.contains(r#"href="zero://feedback/export""#));
+
+    // 导出动作：经下载管线落盘到下载目录，zip 内容与 CLI 同管线可解析。
+    assert!(app.try_apply_feedback_url("zero://feedback/export"));
+    let entries: Vec<String> = std::fs::read_dir(&download_dir)
+        .expect("download dir created")
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .collect();
+    assert_eq!(entries.len(), 1, "应恰好落盘一个反馈包: {entries:?}");
+    assert!(entries[0].starts_with("zeroweb-feedback-"), "包名形态: {}", entries[0]);
+    assert!(entries[0].ends_with(".zip"));
+    let zip_bytes = std::fs::read(download_dir.join(&entries[0])).expect("read zip");
+    assert_eq!(&zip_bytes[..4], b"PK\x03\x04", "应为 ZIP local header 签名");
+    let completed = app
+        .smoke_downloads()
+        .iter()
+        .any(|(_, name, state, _, _)| *name == entries[0] && state == "Completed");
+    assert!(completed, "下载管理器应记 Completed: {}", entries[0]);
+
+    // 删除动作：报告文件消失且列表回空态。
+    assert!(app.try_apply_feedback_url(&format!("zero://feedback/remove/{report_name}")));
+    assert!(!reports_dir.join(report_name).exists(), "报告应被删除");
+    // 穿越文件名：动作 URL 仍被消费（防外跳，同内部动作链接语义），但
+    // `delete_report` 信任校验拒绝——reports 目录外无任何文件被删。
+    assert!(app.try_apply_feedback_url("zero://feedback/remove/../../etc/passwd"));
+    let survivors: Vec<String> = std::fs::read_dir(&reports_dir)
+        .map(|rd| {
+            rd.filter_map(|e| e.ok())
+                .map(|e| e.file_name().to_string_lossy().to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+    assert!(survivors.is_empty(), "穿越删除不得误伤目录内文件: {survivors:?}");
+
+    // SAFETY: 测试尾恢复环境（同先例），临时目录清理。
+    unsafe {
+        std::env::remove_var("ZERO_CONFIG_DIR");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&download_dir);
+}

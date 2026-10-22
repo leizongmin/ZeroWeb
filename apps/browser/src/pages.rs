@@ -624,6 +624,17 @@ pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) ->
         history_link = action_link("zero://settings/clear/history", clear_history_label),
         cookies_link = action_link("zero://settings/clear/cookies", clear_cookies_label),
     );
+    // 崩溃报告与反馈（zero://feedback）：FR-5 GUI 导出入口——列表/删除/导出。
+    let (feedback_label, feedback_open_label) = match lang {
+        UiLanguage::ZhCn => ("崩溃报告", "查看与导出"),
+        UiLanguage::EnUs => ("Crash reports", "View & export"),
+    };
+    let feedback_row = format!(
+        r#"<div style="display:flex;justify-content:space-between;align-items:center;min-height:32px;font-size:14px;color:#3c4043;">
+  <span>{feedback_label}</span>
+  <span style="display:flex;align-items:center;"><a href="zero://feedback" style="color:#1a73e8;text-decoration:none;font-size:13px;">{feedback_open_label}</a></span>
+</div>"#,
+    );
     let bookmarks_row = toggle_link(
         "show_bookmarks_bar",
         if matches!(lang, UiLanguage::ZhCn) {
@@ -678,7 +689,7 @@ pub fn generate_settings_html(settings: &zero_browser_shell::BrowserSettings) ->
     );
     let privacy_card = section_card(
         section_privacy,
-        &format!("{js_row}{cookies_row}{block_3p_row}{dnt_row}{clear_data_row}"),
+        &format!("{js_row}{cookies_row}{block_3p_row}{dnt_row}{clear_data_row}{feedback_row}"),
     );
     let appearance_card = section_card(
         section_appearance,
@@ -1089,6 +1100,74 @@ pub fn generate_downloads_html(downloads: &zero_browser_shell::DownloadManager) 
         format!("<ul style=\"list-style:none;padding:0;\">{rows}</ul>")
     };
     internal_page_shell(title, &body)
+}
+
+/// 生成崩溃报告与反馈页面 HTML（`zero://feedback`，FR-5 GUI 导出入口）。
+///
+/// 列出本地崩溃报告（文件名/角色/相对时间/大小），每条附删除链接
+///（`zero://feedback/remove/<file>`）；导出动作（`zero://feedback/export`）生成
+/// zip 反馈包并经下载管线落盘到下载目录。RFC §4.4 的最小 GUI 面：本页导出仅含
+/// 报告与 environment.json，不含会话摘要与 URL——URL 属隐私红线（NFR-1），
+/// 会话摘要与 URL 导出仍走 CLI 显式勾选（页面注明）。
+pub fn generate_feedback_html(reports: &[zero_browser_shell::CrashReportEntry]) -> String {
+    use zero_browser_shell::UiLanguage;
+    let lang = UiLanguage::detect_from_env();
+    let (title, empty, export_label, delete_label, privacy_note, export_note) = match lang {
+        UiLanguage::ZhCn => (
+            "崩溃报告与反馈 — ZeroBrowser",
+            "暂无崩溃报告。",
+            "导出反馈包 (zip)",
+            "删除",
+            "反馈包仅含崩溃报告与环境信息，不含浏览记录、URL 或页面内容。",
+            "会话摘要与 URL 导出请使用命令行 --export-feedback（--include-session-summary / --include-session-urls）。",
+        ),
+        UiLanguage::EnUs => (
+            "Crash Reports & Feedback — ZeroBrowser",
+            "No crash reports.",
+            "Export feedback package (zip)",
+            "Delete",
+            "The feedback package contains crash reports and environment info only — no browsing history, URLs, or page content.",
+            "For session summary and URL export, use the CLI --export-feedback (--include-session-summary / --include-session-urls).",
+        ),
+    };
+    let now = unix_seconds_now();
+    if reports.is_empty() {
+        return internal_page_shell(title, &format!("<p style=\"color:#666;\">{empty}</p>"));
+    }
+    let mut rows = String::new();
+    for entry in reports {
+        let visited = history_relative_time(entry.timestamp, now, lang).unwrap_or_default();
+        rows.push_str(&format!(
+            r#"<li style="margin:8px 0;padding:10px 12px;background:white;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08);"><code style="font-size:13px;">{name}</code><span style="font-size:12px;color:#555;margin-left:10px;">{role}</span><span style="font-size:12px;color:#9aa0a6;margin-left:8px;">{visited}</span><span style="font-size:12px;color:#80868b;margin-left:8px;">{size}</span> <a href="zero://feedback/remove/{encoded}" style="font-size:12px;color:#d93025;text-decoration:none;margin-left:8px;">{delete_label}</a></li>"#,
+            name = html_escape(&entry.file_name),
+            role = html_escape(&entry.role),
+            visited = visited,
+            size = format_byte_size(entry.size_bytes),
+            encoded = percent_encode_query_value(&entry.file_name),
+        ));
+    }
+    let body = format!(
+        r#"<ul style="list-style:none;padding:0;">{rows}</ul>
+<p style="margin:16px 0 8px;"><a href="zero://feedback/export" style="display:inline-block;background:#1a73e8;color:#fff;font-size:14px;padding:9px 22px;border-radius:4px;text-decoration:none;">{export_label}</a></p>
+<p style="font-size:12px;color:#5f6368;margin:8px 0 0;">{privacy_note}</p>
+<p style="font-size:12px;color:#9aa0a6;margin:4px 0 0;">{export_note}</p>"#,
+        rows = rows,
+        export_label = export_label,
+        privacy_note = privacy_note,
+        export_note = export_note,
+    );
+    internal_page_shell(title, &body)
+}
+
+/// 字节数的人类可读形式（B/KB/MB，下载页与历史页同款小字风格）。
+fn format_byte_size(bytes: u64) -> String {
+    if bytes < 1024 {
+        format!("{bytes} B")
+    } else if bytes < 1024 * 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    }
 }
 
 /// 生成书签管理页面 HTML。
@@ -2039,6 +2118,56 @@ mod tests {
             "http%3A%2F%2F127.0.0.1%3A9%2Fpage%3Fa%3D1%26b%3D2"
         );
         assert_eq!(percent_encode_query_value("safe-._~"), "safe-._~");
+    }
+
+    fn feedback_entry(name: &str, role: &str, timestamp: u64, size: u64) -> zero_browser_shell::CrashReportEntry {
+        zero_browser_shell::CrashReportEntry {
+            file_name: name.to_string(),
+            role: role.to_string(),
+            timestamp,
+            size_bytes: size,
+        }
+    }
+
+    #[test]
+    fn generate_feedback_html_lists_reports_with_actions() {
+        let reports = vec![
+            feedback_entry("crash-1792668836-renderer.json", "renderer", 1_792_668_836, 2048),
+            feedback_entry("crash-1792668837-browser.json", "browser", 1_792_668_837, 512),
+        ];
+        let html = generate_feedback_html(&reports);
+        // 文件名（转义原样）+ 每条删除链接 + 导出动作 + 隐私说明。
+        assert!(html.contains("crash-1792668836-renderer.json"));
+        assert!(html.contains("crash-1792668837-browser.json"));
+        assert!(html.contains(r#"href="zero://feedback/remove/crash-1792668836-renderer.json""#));
+        assert!(html.contains(r#"href="zero://feedback/export""#));
+        assert!(html.contains("2.0 KB"));
+        // 隐私说明（双语，随运行环境语言呈现其一）。
+        assert!(
+            html.contains("不含浏览记录、URL 或页面内容")
+                || html.contains("no browsing history, URLs, or page content"),
+            "privacy note must appear"
+        );
+    }
+
+    #[test]
+    fn generate_feedback_html_empty_state_has_no_export() {
+        let html = generate_feedback_html(&[]);
+        assert!(html.contains("暂无崩溃报告。") || html.contains("No crash reports."));
+        assert!(
+            !html.contains(r#"href="zero://feedback/export""#),
+            "空态不应出现导出动作"
+        );
+        assert!(!html.contains("zero://feedback/remove/"), "空态不应出现删除链接");
+    }
+
+    #[test]
+    fn generate_feedback_html_escapes_hostile_file_names() {
+        // 文件名来自文件系统列表，按不可信输入转义。
+        let reports = vec![feedback_entry("crash-1-<script>&.json", "renderer", 1, 1)];
+        let html = generate_feedback_html(&reports);
+        assert!(!html.contains("<script>"), "文件名必须 HTML 转义");
+        assert!(html.contains("&lt;script&gt;&amp;"));
     }
 
     #[test]

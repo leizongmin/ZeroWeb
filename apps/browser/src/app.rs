@@ -2288,6 +2288,9 @@ impl BrowserApp {
                 self.open_bookmarks_import_page(None);
             }
             "zero://shortcuts" => self.open_shortcuts_page(),
+            // 反馈页（F5 刷新走这里而非 try_apply_internal_url，同历史页模式）；
+            // remove/export 为一次性动作 URL，执行后立即回列表页。
+            "zero://feedback" => self.open_feedback_page(),
             u if u.starts_with("zero://") => self.load_welcome_page(tab_id),
             _ => self.tabs.navigate(tab_id, url.to_string()),
         }
@@ -3458,6 +3461,14 @@ impl BrowserApp {
         self.open_internal_list_page("zero://shortcuts", pages::generate_shortcuts_html(), "快捷键");
     }
 
+    /// 打开崩溃报告与反馈页（`zero://feedback`，FR-5 GUI 导出入口）。
+    ///
+    /// 报告目录不存在（从未崩溃）时 `list_reports` 返回空，页面走空态。
+    pub fn open_feedback_page(&mut self) {
+        let reports = zero_browser_shell::list_reports(&zero_browser_shell::crash_reports_dir());
+        self.open_internal_list_page("zero://feedback", pages::generate_feedback_html(&reports), "崩溃报告");
+    }
+
     /// 打开历史记录页面。
     pub fn open_history_page(&mut self) {
         self.open_history_page_filtered(None);
@@ -3866,6 +3877,9 @@ impl BrowserApp {
         if self.try_apply_settings_url(url) {
             return true;
         }
+        if self.try_apply_feedback_url(url) {
+            return true;
+        }
         if self.try_apply_bookmarks_url(url) {
             return true;
         }
@@ -3895,6 +3909,68 @@ impl BrowserApp {
             }
             _ => false,
         }
+    }
+
+    /// 处理反馈页内部链接（列表回跳 / 单条删除 / 导出），成功时返回 `true`。
+    ///
+    /// 删除走 `delete_report`（文件名信任校验在其中）；导出与 CLI zip 形态同一
+    /// 管线（`build_feedback_zip_bytes`），经附件下载落盘到下载目录（同名去重
+    /// 归下载层，对齐书签导出先例）。GUI 面不提供会话摘要与 URL 导出（NFR-1，
+    /// 页面注明走 CLI）。
+    pub(crate) fn try_apply_feedback_url(&mut self, url: &str) -> bool {
+        if url == "zero://feedback" {
+            self.open_feedback_page();
+            return true;
+        }
+        if let Some(file_name) = url.strip_prefix("zero://feedback/remove/") {
+            let dir = zero_browser_shell::crash_reports_dir();
+            if let Err(error) = zero_browser_shell::delete_report(&dir, file_name) {
+                tracing::debug!("feedback report delete rejected: {error}");
+            }
+            self.open_feedback_page();
+            return true;
+        }
+        if url == "zero://feedback/export" {
+            self.apply_feedback_export();
+            return true;
+        }
+        false
+    }
+
+    /// 导出反馈包动作（`zero://feedback/export`）：全部现存报告 → zip 字节 →
+    /// 下载管线落盘。无报告时不产生下载，仅回列表页（页面无导出按钮的兜底）。
+    fn apply_feedback_export(&mut self) {
+        let reports_dir = zero_browser_shell::crash_reports_dir();
+        let reports = zero_browser_shell::list_reports(&reports_dir);
+        if reports.is_empty() {
+            self.open_feedback_page();
+            return;
+        }
+        let selected: Vec<String> = reports.iter().map(|entry| entry.file_name.clone()).collect();
+        let payload = zero_browser_shell::build_feedback_zip_bytes(
+            &reports_dir,
+            zero_product_version::VERSION,
+            zero_product_version::BUILD_COMMIT,
+            &selected,
+            &zero_browser_shell::FeedbackExportOptions { session_summary: None },
+        );
+        let payload = match payload {
+            Ok(payload) => payload,
+            Err(error) => {
+                tracing::warn!("feedback export failed: {error}");
+                return;
+            }
+        };
+        let Some(tab_id) = self.shell.active_tab_id() else {
+            tracing::debug!("feedback export ignored: no active tab");
+            return;
+        };
+        self.save_attachment_download(crate::process_backend::PendingAttachmentDownload {
+            tab_id,
+            url: "zero://feedback/export".to_string(),
+            filename: payload.file_name,
+            body: payload.bytes,
+        });
     }
 
     /// 处理设置页内部链接（toggle / cycle / set），成功时返回 `true`。

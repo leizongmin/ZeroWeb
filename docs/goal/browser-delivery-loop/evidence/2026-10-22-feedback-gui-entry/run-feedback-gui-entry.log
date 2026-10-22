@@ -1,0 +1,10 @@
+Running as unit: run-p2671103-i6867802.scope; invocation ID: f13475b34e3943af9e13490e9f110bc0
+[GUI] product identity: ZeroBrowser 26.10.22 (commit ca2bbbf7b65a)
+[GUI] leg A: GUI process loads new feedback code paths, crash report lands
+[GUI] PASS: legA live renderer pid=2671141
+[GUI] PASS: legA real crash report: crash-1792684451-renderer.json
+[GUI] PASS: legA GUI exited cleanly after SIGINT (no startup/exit regression)
+[GUI] leg B: shared build_feedback_zip_bytes pipeline verified via CLI export
+[GUI] PASS: legB zip export: FEEDBACK_EXPORTED /tmp/zeroweb-gui-fb/out/zeroweb-feedback-26.10.22-20261022.zip
+[GUI] PASS: legB deep check (CRC/members byte-identity/version-commit): deep-check OK: 1 report member(s)
+[GUI] summary: PASS=5 FAIL=0

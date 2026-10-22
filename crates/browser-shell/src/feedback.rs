@@ -232,13 +232,41 @@ pub fn export_feedback(
     Ok(feedback_dir)
 }
 
-/// 导出反馈包（zip 形态，RFC §4.4 首选/IF-4 原始形态），返回创建的 zip 路径。
+/// 待落盘的反馈包 zip：建议文件名（含 `.zip`）+ 归档字节。
+///
+/// GUI 导出经下载管线落盘（同名去重归下载层），CLI 导出直接写目标目录
+/// （已存在拒绝），两者共用 `build_feedback_zip_bytes`。
+pub struct FeedbackZipPayload {
+    /// 建议文件名：`zeroweb-feedback-<版本>-<日期>.zip`。
+    pub file_name: String,
+    /// 完整归档字节（stored ZIP）。
+    pub bytes: Vec<u8>,
+}
+
+/// 在内存中构建反馈包 zip（GUI 导出入口用）。
 ///
 /// 归档为 **stored（不压缩）ZIP**：崩溃报告本身是 ≤64KiB 的 JSON 小文件，压缩
 /// 收益有限；不引入 zip/压缩依赖（依赖图约束与 S4 目录形态同源，§3 实现来源
 /// "优先 zip crate 若依赖图已有"——没有，且根 Cargo.lock 是并行流共享面）。
-/// 成员与目录形态逐字节一致。目标目录下已存在同名 zip 时拒绝（不覆盖）；
-/// 失败时尽力清理半成品文件。
+/// 成员与目录形态逐字节一致。
+pub fn build_feedback_zip_bytes(
+    reports_dir: &Path,
+    version: &str,
+    git_commit: &str,
+    selected: &[String],
+    options: &FeedbackExportOptions,
+) -> Result<FeedbackZipPayload, String> {
+    let payload = prepare_feedback_payload(reports_dir, version, git_commit, selected, options)?;
+    let bytes = zip_store_bytes(&payload.members).map_err(|error| format!("zip build failed: {error}"))?;
+    Ok(FeedbackZipPayload {
+        file_name: format!("{}.zip", payload.stem),
+        bytes,
+    })
+}
+
+/// 导出反馈包（zip 形态，RFC §4.4 首选/IF-4 原始形态），返回创建的 zip 路径。
+///
+/// 目标目录下已存在同名 zip 时拒绝（不覆盖）；失败时尽力清理半成品文件。
 pub fn export_feedback_zip(
     reports_dir: &Path,
     target_dir: &Path,
@@ -247,15 +275,14 @@ pub fn export_feedback_zip(
     selected: &[String],
     options: &FeedbackExportOptions,
 ) -> Result<PathBuf, String> {
-    let payload = prepare_feedback_payload(reports_dir, version, git_commit, selected, options)?;
-    let zip_path = target_dir.join(format!("{}.zip", payload.stem));
+    let payload = build_feedback_zip_bytes(reports_dir, version, git_commit, selected, options)?;
+    let zip_path = target_dir.join(&payload.file_name);
     if zip_path.exists() {
         return Err(format!("feedback package already exists: {}", zip_path.display()));
     }
-    let bytes = zip_store_bytes(&payload.members).map_err(|error| format!("zip build failed: {error}"))?;
     // 目录形态经 create_dir_all 连带创建 target 父目录；zip 形态显式对齐
     // 同一语义（用户给尚不存在的目标目录是常态）。
-    if let Err(error) = fs::create_dir_all(target_dir).and_then(|()| fs::write(&zip_path, bytes)) {
+    if let Err(error) = fs::create_dir_all(target_dir).and_then(|()| fs::write(&zip_path, payload.bytes)) {
         let _ = fs::remove_file(&zip_path);
         return Err(error.to_string());
     }
@@ -593,6 +620,37 @@ mod tests {
         // 2026-10-22 的 unix 秒（S3 验收期间的真实时间戳）。
         assert_eq!(format_date_ymd(1_792_668_836), "20261022");
         assert_eq!(format_date_ymd(951_782_400), "20000229");
+    }
+
+    #[test]
+    fn build_feedback_zip_bytes_matches_export_feedback_zip_output() {
+        let root = temp_root("zip-build");
+        let reports = root.join("crash-reports");
+        fs::create_dir_all(&reports).unwrap();
+        fs::write(reports.join("crash-0000000001-browser.json"), r#"{"role":"browser"}"#).unwrap();
+        let options = FeedbackExportOptions::default();
+        let selected = ["crash-0000000001-browser.json".to_string()];
+        // GUI 导出（内存字节）与 CLI 导出（落盘文件）同管线。两次调用各自取
+        // now()，跨秒边界时 DOS 时间字段会不同——按成员名+内容比对，文件名
+        // 各自匹配命名模式。
+        let built = build_feedback_zip_bytes(&reports, "26.10.22", "beef", &selected, &options).unwrap();
+        assert!(built.file_name.starts_with("zeroweb-feedback-26.10.22-"));
+        assert!(built.file_name.ends_with(".zip"));
+        let on_disk =
+            export_feedback_zip(&reports, &root.join("out"), "26.10.22", "beef", &selected, &options).unwrap();
+        let disk_name = on_disk.file_name().unwrap().to_str().unwrap();
+        assert!(disk_name.starts_with("zeroweb-feedback-26.10.22-") && disk_name.ends_with(".zip"));
+        let disk_bytes = fs::read(&on_disk).unwrap();
+        let report_bytes: &[u8] = b"{\"role\":\"browser\"}";
+        assert!(
+            contains_member(&built.bytes, "reports/crash-0000000001-browser.json", report_bytes),
+            "built zip missing report member"
+        );
+        assert!(
+            contains_member(&disk_bytes, "reports/crash-0000000001-browser.json", report_bytes),
+            "disk zip missing report member"
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
