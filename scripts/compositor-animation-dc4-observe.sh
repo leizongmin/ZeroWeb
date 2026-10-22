@@ -34,7 +34,8 @@ esac
 MODE="${2:-off}"
 WALL="${3:-16}"
 FIXDIR="$ROOT/tests/fixtures/compositor-animation"
-FIXTURE="comp04a-worker-threaded-canvas.html"
+# fixture 可 env 覆盖（S1d nav 腿 comp04b-worker-nav-teardown.html）；默认 comp04a。
+FIXTURE="${DC4_FIXTURE:-comp04a-worker-threaded-canvas.html}"
 HTTP_PORT=$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()')
 
 mkdir -p "$OUT/profile" "$OUT/frames"

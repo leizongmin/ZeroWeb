@@ -11,8 +11,8 @@
 //! ——shim 侧 handler 派发）。主线程阻塞期事件在 js_worker 队列排队 = worker 事件
 //! 任务粒度投递的固有语义（与同 realm shim 的 setTimeout(0) task 派发一致）。
 //!
-//! S1a 范围：spawn/postMessage/terminate/事件派发/Closed 收尾；导航清理（全表
-//! terminate）归 S1d 生命周期批（master.md 批次切分）。
+//! S1a 范围：spawn/postMessage/terminate/事件派发/Closed 收尾；S1d 补导航清理
+//! （世代共享槽推进 → 全表 terminate + patch 终末 destroy，`teardown_for_navigation`）。
 
 use std::collections::HashMap;
 use std::io;
@@ -101,12 +101,16 @@ struct PatchSink {
 struct PatchSinkState {
     next_msg_id: u64,
     patches: HashMap<String, PatchBinding>,
+    /// 终末栅栏（S1d）：destroy_all 置位后 flush 不再发送——宿主导航清理与 worker
+    /// 线程 drain 并发时，滞后 Update 不得复活已 Destroy 的贴片（新世代帧的
+    /// cleanup_stale_patches 不清同世代项，栅栏是唯一确定收口）。
+    torn_down: bool,
 }
 
 /// 单 patch 簿记。`registered` = compositor 侧已建贴片（首个 Update 时 lazy
 /// Register——bind 时序在页面脚本期先于首帧渲染，彼时布局快照未冻结，矩形查询
 /// 必空）；`epoch` = Register 时导航世代快照（后续 Update 携带同世代——导航换代
-/// 后 compositor epoch 校验拒收，摘除归 S1d 生命周期批）。
+/// 后宿主导航清理发 Destroy，compositor 帧推进侧另有 cleanup_stale_patches 兜底）。
 struct PatchBinding {
     patch_id: u64,
     sel: String,
@@ -159,6 +163,9 @@ impl PatchSink {
         bindings: &CanvasBindings,
     ) {
         let Ok(mut st) = self.state.lock() else { return };
+        if st.torn_down {
+            return;
+        }
         let Ok(table) = bindings.lock() else { return };
         for (key, &cid) in table.iter() {
             if !touched_cids.contains(&cid) {
@@ -214,11 +221,13 @@ impl PatchSink {
         }
     }
 
-    /// worker 终末（Terminate/Closed）：全部已注册 patch 发 Destroy（compositor
-    /// 冻结位图贴片摘除）。未注册 binding 无 compositor 侧状态——跳过。
+    /// worker 终末（Terminate/Closed/导航清理）：全部已注册 patch 发 Destroy
+    /// （compositor 冻结位图贴片摘除）并置终末栅栏（滞后 flush 静默）。未注册
+    /// binding 无 compositor 侧状态——跳过。
     fn destroy_all(&self) {
         let pending = {
             let Ok(mut st) = self.state.lock() else { return };
+            st.torn_down = true;
             let pending: Vec<(u64, u64)> = st
                 .patches
                 .values()
@@ -420,7 +429,7 @@ pub fn install(
     let patch_face = zero_runtime_config::enabled_when_true("ZW_WORKER_CANVAS_PATCH").then(|| PatchFace {
         writer,
         surface_id,
-        navigation_epoch,
+        navigation_epoch: Arc::clone(&navigation_epoch),
         rect_handler,
     });
     let (command_tx, command_rx) = mpsc::channel::<HostCommand>();
@@ -430,7 +439,7 @@ pub fn install(
     })));
     thread::Builder::new()
         .name("worker-runtime-host".into())
-        .spawn(move || HostThread::run(command_rx, submitter, patch_face))
+        .spawn(move || HostThread::run(command_rx, submitter, patch_face, navigation_epoch))
         .expect("spawn worker runtime host thread");
 }
 
@@ -491,10 +500,19 @@ struct HostThread {
     patch_face: Option<PatchFace>,
     /// 每 worker patch 发送器（spawn 时实例化；Terminate/Closed 终末 destroy）。
     worker_patch_sinks: HashMap<u64, Arc<PatchSink>>,
+    /// 导航世代共享槽（S1d：宿主观察世代推进做全表清理；与 PatchFace 同源）。
+    navigation_epoch: Arc<AtomicU64>,
+    /// 宿主已见世代（推进即触发一次导航清理）。
+    last_seen_epoch: u64,
 }
 
 impl HostThread {
-    fn run(receiver: Receiver<HostCommand>, submitter: PrioritySubmitter, patch_face: Option<PatchFace>) {
+    fn run(
+        receiver: Receiver<HostCommand>,
+        submitter: PrioritySubmitter,
+        patch_face: Option<PatchFace>,
+        navigation_epoch: Arc<AtomicU64>,
+    ) {
         let mut host = Self {
             runtimes: HashMap::new(),
             next_id: 1,
@@ -502,14 +520,46 @@ impl HostThread {
             canvas_bindings: HashMap::new(),
             patch_face,
             worker_patch_sinks: HashMap::new(),
+            last_seen_epoch: navigation_epoch.load(Ordering::Relaxed),
+            navigation_epoch,
         };
         loop {
+            host.maybe_teardown_on_epoch_change();
             while let Ok(cmd) = receiver.try_recv() {
                 host.handle_command(cmd);
             }
             host.pump_events();
             thread::sleep(COMMAND_POLL_INTERVAL);
         }
+    }
+
+    /// S1d 导航清理守卫：世代槽推进（navigate/load_html store 点）即全表终结——
+    /// 文档卸载其 workers（HTML spec worker lifetime tied to document），滞留
+    /// worker 的 patch 数据面随之终末 destroy（否则旧页 worker 可把新世代 patch
+    /// 注册到新文档呈现面）。返回是否触发了清理（测试观察面）。
+    fn maybe_teardown_on_epoch_change(&mut self) -> bool {
+        let epoch = self.navigation_epoch.load(Ordering::Relaxed);
+        if epoch == self.last_seen_epoch {
+            return false;
+        }
+        self.last_seen_epoch = epoch;
+        self.teardown_for_navigation();
+        true
+    }
+
+    /// 导航换代全表清理：terminate 全部 worker、摘绑定表与 patch 发送器（已注册
+    /// patch 发 Destroy）。不派发 `closed` 事件——所属文档正在卸载，页面侧无接收面。
+    fn teardown_for_navigation(&mut self) {
+        let runtimes = self.runtimes.len();
+        let sinks = self.worker_patch_sinks.len();
+        for (_, mut runtime) in self.runtimes.drain() {
+            runtime.terminate();
+        }
+        self.canvas_bindings.clear();
+        for (_, sink) in self.worker_patch_sinks.drain() {
+            sink.destroy_all();
+        }
+        tracing::info!(workers = runtimes, patch_sinks = sinks, "导航换代清理 worker 宿主全表");
     }
 
     fn handle_command(&mut self, cmd: HostCommand) {
@@ -626,7 +676,7 @@ mod tests {
         let submitter = js_worker.priority_submitter();
         thread::Builder::new()
             .name("worker-host-test".into())
-            .spawn(move || HostThread::run(command_rx, submitter, None))
+            .spawn(move || HostThread::run(command_rx, submitter, None, Arc::new(AtomicU64::new(0))))
             .unwrap();
 
         let id = host_op_dispatch(
@@ -894,6 +944,80 @@ mod tests {
         // 簿已清空：再 destroy 零发送。
         sink.destroy_all();
         assert!(parse_frames(&buf).is_empty());
+    }
+
+    // ── S1d 生命周期：导航换代全表清理（epoch 守卫 + 终末 Destroy + 滞后 flush 栅栏）。
+
+    /// 世代槽推进触发一次导航清理、同代不触发；清理清空全表并对已注册 patch 发
+    /// Destroy（携 Register 世代快照）；清理后滞后 flush 静默（torn_down 栅栏——
+    /// 宿主清理与 worker 线程 drain 并发时滞后 Update 不得复活已 Destroy 贴片）。
+    #[test]
+    fn teardown_for_navigation_clears_tables_and_fences_late_flush() {
+        let js_worker = crate::js_worker::RendererJsWorker::spawn(2);
+        let mut host = HostThread {
+            runtimes: HashMap::new(),
+            next_id: 1,
+            submitter: js_worker.priority_submitter(),
+            canvas_bindings: HashMap::new(),
+            patch_face: None,
+            worker_patch_sinks: HashMap::new(),
+            last_seen_epoch: 1,
+            navigation_epoch: Arc::new(AtomicU64::new(1)),
+        };
+        assert!(!host.maybe_teardown_on_epoch_change(), "同代不清理");
+
+        // 注册态 sink（bind + 矩形就绪 flush → Register + Update）入宿主表。
+        let state = Arc::new(Mutex::new(WorkerCanvasState::default()));
+        let bindings: CanvasBindings = Arc::new(Mutex::new(HashMap::new()));
+        let rect = Arc::new(Mutex::new(Some((0.0, 0.0, 30.0, 30.0))));
+        let (sink, buf) = test_sink(rect, 1);
+        let sink = Arc::new(sink);
+        let touched = {
+            let mut st = state.lock().unwrap();
+            apply_worker_canvas_ops(
+                &mut st,
+                &bindings,
+                Some(&sink),
+                r##"[["bind",1,"xfer-4","#cv"],["newCtx",1,1,1],["op",1,"setFillStyle",["#ff0000"]],["op",1,"fillRect",[0,0,1,1]]]"##,
+            )
+        };
+        {
+            let st = state.lock().unwrap();
+            sink.flush_updates(&touched, &st.registry, &st.prov, &bindings);
+        }
+        assert_eq!(parse_frames(&buf).len(), 2, "注册拍：Register + Update");
+        host.worker_patch_sinks.insert(11, Arc::clone(&sink));
+        host.canvas_bindings.insert(11, Arc::clone(&bindings));
+        host.runtimes.insert(
+            11,
+            WorkerRuntime::new("onmessage = function () {};", SandboxConfig::default()).expect("test runtime"),
+        );
+
+        // 世代推进 → 清理：全表摘除 + Destroy（Register 世代快照 epoch=1）。
+        host.navigation_epoch.store(2, Ordering::Relaxed);
+        assert!(host.maybe_teardown_on_epoch_change(), "世代推进应触发清理");
+        assert!(!host.maybe_teardown_on_epoch_change(), "同代二次检查不重复清理");
+        assert!(host.runtimes.is_empty(), "worker 表清空");
+        assert!(host.canvas_bindings.is_empty(), "绑定表清空");
+        assert!(host.worker_patch_sinks.is_empty(), "patch 发送器表清空");
+        let frames = parse_frames(&buf);
+        assert_eq!(frames.len(), 1, "清理追加 Destroy（注册拍 2 帧已先排空）");
+        let IpcMessageKind::CompositorPatchDestroy {
+            surface_id,
+            navigation_epoch,
+            patch_id,
+        } = frames[0].kind
+        else {
+            panic!("应为 Destroy，got {:?}", frames[0].kind);
+        };
+        assert_eq!((surface_id, navigation_epoch, patch_id), (7, 1, 4));
+
+        // 滞后 flush（worker 线程与清理并发窗口）：栅栏后零发送。
+        {
+            let st = state.lock().unwrap();
+            sink.flush_updates(&touched, &st.registry, &st.prov, &bindings);
+        }
+        assert_eq!(parse_frames(&buf).len(), 0, "终末栅栏后 flush 静默");
     }
 
     /// 防御面：未知临时 cid 的 op / resize 静默丢弃（复活前 op 不落 registry）、

@@ -1,0 +1,54 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>COMP-04b target</title>
+<style>
+  /* COMP-04b 导航目标页：判定区域 (24,24)-(264,144) 常驻绿盒（本页自有 patch——
+     导航后其 Register/Update 使呈现轮询恢复，frame_dump 可继续出图）。泄漏判定：
+     区域若混入蓝条（rgb(30,90,220) 竖条，旧页 worker 图案）即旧页 patch 跨代
+     残留；恒定绿盒 = teardown 成立。 */
+  body { margin: 0; background: #ffffff; }
+  #target-canvas {
+    position: absolute; left: 24px; top: 24px;
+    width: 240px; height: 120px;
+    background: rgb(238, 238, 238);
+  }
+</style>
+</head>
+<body>
+  <canvas id="target-canvas" width="240" height="120"></canvas>
+  <script>
+    var WORKER_SRC = [
+      "var ctx = null;",
+      "function paint() {",
+      "  if (!ctx) { return; }",
+      "  ctx.fillStyle = 'rgb(30, 160, 60)';",
+      "  ctx.fillRect(0, 0, 240, 120);",
+      "}",
+      "self.onmessage = function (e) {",
+      "  var d = e.data || {};",
+      "  if (d.kind === 'init' && d.canvas) {",
+      "    try { ctx = d.canvas.getContext('2d'); if (ctx) { setInterval(paint, 50); } } catch (e2) {}",
+      "  }",
+      "};"
+    ].join('\n');
+
+    function makeWorkerUrl(src) {
+      try {
+        return URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+      } catch (eBlob) {
+        return 'data:text/javascript,' + encodeURIComponent(src);
+      }
+    }
+
+    if (typeof __zw_worker_host_op === 'function') {
+      try {
+        var off = document.getElementById('target-canvas').transferControlToOffscreen();
+        var worker = new Worker(makeWorkerUrl(WORKER_SRC));
+        worker.postMessage({ kind: 'init', canvas: off }, [off]);
+      } catch (eXfer) { /* 目标页 patch 失败不阻塞判定面 */ }
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+# 关键日志行摘录（时间为 UTC wall）：
+# 53.364 初始导航换代清理（空表——宿主启动先于首帧，last_seen=0）；
+# 57.584 comp04b @4000ms 导航触发清理：workers=1 patch_sinks=1（ Destroy 直发）。
+# 帧序列分类（unwrap/分析器对读）：t 2227-4117 BAR（旧页 patch），t=4367 起 GREEN
+#（目标页内容）恒定至采集结束 9381ms——零蓝条跨代残留。
+[renderer-1] 2026-10-22T03:30:53.363994Z  INFO 导航换代清理 worker 宿主全表 workers=0 patch_sinks=0
+[renderer-1] 2026-10-22T03:30:57.584573Z  INFO 导航换代清理 worker 宿主全表 workers=1 patch_sinks=1

@@ -1,0 +1,3 @@
+# 帧位图体积大（240 帧 × 2.6MB），不入库；manifest.jsonl 保留 seq→wall_ms 映射
+# （README 复现命令可重跑产出）。
+frames/

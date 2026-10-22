@@ -1,0 +1,82 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>COMP-04b DC-4 worker nav teardown</title>
+<style>
+  /* COMP-04b（S1d 生命周期 (c) 导航换代 fixture）：worker patch 出图后 @4000ms
+     导航换页——旧页 worker 应随文档卸载终结、patch 随 Destroy/世代清理摘除，
+     新页（comp04b-target.html）判定区域呈现静态红盒、无蓝条残留（无 teardown
+     时滞留 worker 会把新世代 patch 注册到新文档呈现面——蓝条跨代残留即泄漏签名）。
+     几何与 comp04a 对齐（canvas 240×120 @(24,24)），区域分析同口径。 */
+  body { margin: 0; background: #ffffff; }
+  #xfer-canvas {
+    position: absolute; left: 24px; top: 24px;
+    width: 240px; height: 120px;
+    background: rgb(238, 238, 238);
+  }
+  .strip {
+    position: absolute; left: 24px;
+    font: 13px monospace;
+    color: rgb(20, 20, 20);
+    white-space: pre;
+  }
+  #strip-nav { top: 160px; }
+</style>
+</head>
+<body>
+  <canvas id="xfer-canvas" width="240" height="120"></canvas>
+  <div id="strip-nav" class="strip">nav=pending</div>
+  <script>
+    // ── worker：与 comp04a 同构绘制环（bar x=(seq*4)%232，16ms tick），无忙窗/
+    // 无 terminate——唯一事件是 @4000ms 导航换页。──
+    var WORKER_SRC = [
+      "var seq = 0;",
+      "var ctx = null;",
+      "function drawFrame() {",
+      "  if (!ctx) { return; }",
+      "  seq++;",
+      "  ctx.fillStyle = 'rgb(238, 238, 238)';",
+      "  ctx.fillRect(0, 0, 240, 120);",
+      "  ctx.fillStyle = 'rgb(30, 90, 220)';",
+      "  ctx.fillRect((seq * 4) % 232, 8, 8, 104);",
+      "}",
+      "self.onmessage = function (e) {",
+      "  var d = e.data || {};",
+      "  if (d.kind === 'init' && d.canvas) {",
+      "    try {",
+      "      ctx = d.canvas.getContext('2d');",
+      "      if (ctx) { setInterval(drawFrame, 16); }",
+      "    } catch (e2) { /* ctx 失败静默：nav 腿不核对面 */ }",
+      "  }",
+      "};"
+    ].join('\n');
+
+    function makeWorkerUrl(src) {
+      try {
+        return URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+      } catch (eBlob) {
+        return 'data:text/javascript,' + encodeURIComponent(src);
+      }
+    }
+
+    var mainCanvas = document.getElementById('xfer-canvas');
+    if (typeof __zw_worker_host_op === 'function') {
+      try {
+        var off = mainCanvas.transferControlToOffscreen();
+        var worker = new Worker(makeWorkerUrl(WORKER_SRC));
+        worker.postMessage({ kind: 'init', canvas: off }, [off]);
+      } catch (eXfer) {
+        document.getElementById('strip-nav').textContent = 'nav=xfer-error ' + String(eXfer && eXfer.message || eXfer);
+      }
+    }
+
+    // ── 时间线：@4000ms 导航换页（DC-4 (c) 导航换代——worker 全表终结 + patch
+    // 摘除；新页判定区域应无蓝条）。──
+    setTimeout(function () {
+      document.getElementById('strip-nav').textContent = 'nav=assign at=' + Math.round(performance.now());
+      location.href = 'comp04b-target.html';
+    }, 4000);
+  </script>
+</body>
+</html>
