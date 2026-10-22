@@ -9475,8 +9475,15 @@ fn apply_testdriver_command(
             // target 为点击元素）。element.focus() 经 shim 的 R3247 focus 派发
             //（focusout(旧) → focus(新) → focusin(新)），click 随后由 Activate 计划派发。
             // focus 失败不阻断 click（不可聚焦目标真实浏览器也派发 click）。
+            // R4600（html-semantics M2 切片 26）：focus 步骤经 shim 焦点门
+            // `globalThis._zwFocusSel`（内含 `_zwIsFocusableSel` 焦点性判定，与 Actions
+            // down/up 链 mousedown 默认动作同款门，part06）——点击 html/body 等非
+            // tabindex 目标不再偷焦点（dialog-autofocus / show-modal-focusing-steps
+            // `waitUntilLoadedAndAutofocused` 断言面：test_driver.click(documentElement)
+            // 不得吃掉 load autofocus 的 focusin；focus-after-close complex usage 仍
+            // 聚焦可聚焦 button）。门缺失（旧 shim 拼接序）回落旧无条件行为。
             let focus_script = format!(
-                "(function(){{var el=document.querySelector({sel});try{{if(el&&el.focus)el.focus();}}catch(_e){{}}}})();",
+                "(function(){{var el=document.querySelector({sel});try{{if(globalThis._zwFocusSel){{globalThis._zwFocusSel({sel});}}else if(el&&el.focus)el.focus();}}catch(_e){{}}}})();",
                 sel = serde_json::to_string(&selector).unwrap_or_else(|_| "null".into())
             );
             let _ = webview.execute_script(&focus_script);
@@ -9518,8 +9525,11 @@ fn apply_testdriver_command(
             mut_hover_settle_if_dirty(webview, last_pointer, td_refresh_ver);
             let (hit_sel, px, py) = resolve_pointer_target(webview, &selector, off_x, off_y, absolute, td_refresh_ver);
             *last_pointer = Some((px, py));
+            // R4600：down 步前置 focus 同过 `globalThis._zwFocusSel` 门（click 命令
+            // 同款；mousedown 默认动作门在 sequence 头已二次把关，双门幂等——不可
+            // 聚焦落点两处都跳，dialog-autofocus waitUntilLoadedAndAutofocused 断言面）。
             let focus_script = format!(
-                "(function(){{var el=document.querySelector({sel});try{{if(el&&el.focus)el.focus();}}catch(_e){{}}}})();",
+                "(function(){{var el=document.querySelector({sel});try{{if(globalThis._zwFocusSel){{globalThis._zwFocusSel({sel});}}else if(el&&el.focus)el.focus();}}catch(_e){{}}}})();",
                 sel = serde_json::to_string(&hit_sel).unwrap_or_else(|_| "null".into())
             );
             let _ = webview.execute_script(&focus_script);

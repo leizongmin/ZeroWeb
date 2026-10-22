@@ -2,11 +2,40 @@
 
 **版本**: v2.0
 **日期**: 2026-10-21（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 25 收口（corner-cases hang 根因＝shim close() 返回值泄漏→WPT cleanup abort，九域 5016→5070P 同 key 回归 0），下一步 focusing-steps 家族（focus fixup/autofocus/activeElement，corner-cases 余 2F + focus-shadow 50F 新上报）
+**状态**: Active——M2 切片 26 收口（dialog focusing steps 家族 R4600：focus fixup 派 focusin + autofocus 委派 + activeElement 语义 + R4600b replaceWith 空白锚点，focus-shadow 50F→0），下一步 corner-cases 毒化链（R334 重插 wire 完整性 + ESC 派发锚点 + 组栈 purge 三层缝隙）
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-22 M2 切片 25）**：corner-cases hang 收口（R4500）
+> **▶ 当前状态（2026-10-22 M2 切片 26）**：dialog focusing steps 家族收口
+> （R4600）——spec show/showModal step 的 run the dialog focusing steps、
+> close-the-dialog 的焦点恢复落地：`_zwDialogFocusingStepsR4600`（autofocus
+> 委派 → focusable area 递归判定（tag 表 + disabled/hidden/inert 子树传播/
+> closed dialog 排除/delegatesFocus）→ focus 派 focusin）+
+> `_zwDialogRestoreFocusR4600`（previously focused 捕获与恢复）+
+> activeElement JS-observable（part06 focus chain retargeting：shadow 树内
+> 沿 parentNode 上行解析焦点锚）。R4600b：focus-shadow 余 4F 根因＝R371
+> replaceWith 重键的 `_r371Next` 后继快照取到**换行空白文本节点**（nodeType
+> 3 无 selector），元素级 QSA R322 归并锚点只认 sel 字符串 → 恒尾插 → 焦点
+> 扫描先命中后随兄弟；修复＝快照经 `_childNodeList(父sel)` 元素扫描推进到
+> 最近后随**元素**兄弟。testdriver click/down focus 步骤经 `_zwFocusSel` 门。
+> part66 `test_dialog_focusing_steps_r4600` R1–R13 新契约。九域对账
+> TODO-LEDGER。corner-cases **1P/29F**（s25 28P/2F）：R4600 使 focusin 真实
+> 触发音量 handler（remove+reinsert 共享 dialog），test#0 通过但毒化共享
+> dialog → 后续 setup 全部 closedBy=none/conn=false——**新暴露**非新引入
+> （s25 缺口休眠因 focusing steps 无操作），毒组合＝[reinsert#1+show+drain+
+> ESC#1+focus+reinsert#2]，E1-E8 单因子全过；三层缝隙移交下轮：①R334 重
+> 插 wire 完整性 ②ESC 派发锚 activeElement 反查 miss ③`_zw_esc_dialog_cancel`
+> QSA-miss 顺栈 purge。另发现未修：R371 rekey 时 dst 桶不存在 → 被替换
+> template 不入父桶 removed 合并视图残留（对扫描无害，spec 违例候选下轮）。
+> **下一步**：corner-cases 毒化链三层缝隙（R334 重插 wire 完整性/ESC 派发
+> 锚点/组栈 purge）；余挂账 inert 计算态 13F、abspos/layout ~10F（rendering
+> 域）、popover 有效性语义（`:popover-open` 选择器 + hidePopover not-showing
+> 抛 + popover-simple 余 hang）、impl-doc wrapper requestClose、
+> anchor-with-inline 导航缺口、parser form element pointer 4F、custom
+> command `--` 前缀 CommandEvent defer、ESC 组栈边缘乱序、非模态 close 不
+> 出组栈、R371 模板残留。
+>
+> **▶ 上轮状态（2026-10-22 M2 切片 25）**：corner-cases hang 收口（R4500）
 > ——真根因横切两层：①shim `close()` IDL 包装透传 helper 的 wasOpen
 > boolean（spec void）；②语料 testharness `is_valid_cleanup_result` 对
 > cleanup 返非 undefined **及** `on_error` 对 cleanup 抛错均 `tests.abort()`

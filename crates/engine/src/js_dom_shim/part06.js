@@ -5215,12 +5215,74 @@
     // change-focus-then-remove「Removing the element reset focus」）。惰性校验（读时判
     // isConnected），不派 body focus 事件（测试断言 onfocus 不发）。
     get activeElement() {
-      if (globalThis._zwMElFocused) return globalThis._zwMElFocused;
+      // R4600（html-semantics M2 切片 26）：焦点在 shadow 树内 → focus chain retargeting，
+      // activeElement 读最外层 shadow host（spec focus chain——焦点链向上穿 shadow 边界，
+      // 文档域只见 host；shadowRoot.activeElement 在 part04 wrapper 内各自读取内层锚）。
+      // 解析节点域单跳（__zwFragHostHandle → meta host）；handle 域沿 _zwNodeParent
+      // .parentHandle 上行，遇 _shadowHandles 边界换 meta.hostHandle 继续到 light 树止。
+      // https://html.spec.whatwg.org/multipage/interaction.html#focus-chain
+      if (globalThis._zwMElFocused) {
+        var _aeM = globalThis._zwMElFocused;
+        // R4600 续：解析节点焦点锚沿 parentNode 上行（R4600 _appendVariadic adoption 的
+        // canonical 反链——template.content 展平子 __zwFragHostHandle 仍指原解析 fragment，
+        // 单跳判 host 失准，focus chain retargeting 须对象域上行，末记 = 最外层 host）。
+        var _aeMHasShadow = false;
+        for (var _aeMsk in _shadowHandles) { _aeMHasShadow = true; break; }
+        if (_aeMHasShadow) {
+          var _aeMCur = _aeM, _aeMOuter = null, _aeMG = 0;
+          while (_aeMCur && _aeMG++ < 64) {
+            var _aeMPar = null;
+            try { _aeMPar = _aeMCur.parentNode || null; } catch (_eAeMPn) {}
+            var _aeMParH = null;
+            try { _aeMParH = (_aeMPar && _aeMPar.__zwHandle != null) ? _aeMPar.__zwHandle : null; } catch (_eAeMPh) {}
+            if (_aeMParH != null && _shadowHandles[_aeMParH]) {
+              var _aeMMeta = _shadowHandleMeta[_aeMParH];
+              if (!_aeMMeta) break;
+              _aeMOuter = _aeMMeta;
+              try { _aeMCur = _aeMPar.host || null; } catch (_eAeMHst) { _aeMCur = null; }
+              continue;
+            }
+            break; // light 父 / 链尽头 → 上行止
+          }
+          if (_aeMOuter) return _makeProxy(_aeMOuter.hostSel, _aeMOuter.hostHandle);
+        }
+        if (_aeM.__zwFragHostHandle != null && _shadowHandles[_aeM.__zwFragHostHandle]) {
+          var _aeMH = _shadowHandleMeta[_aeM.__zwFragHostHandle];
+          if (_aeMH) return _makeProxy(_aeMH.hostSel, _aeMH.hostHandle);
+        }
+        return _aeM;
+      }
       var _aeP = (_activeElKey && _proxyCache[_activeElKey]) || null;
       if (_aeP) {
         var _aeCn = true;
         try { _aeCn = _aeP.isConnected !== false; } catch (_eAeCn) {}
         if (!_aeCn) { try { _activeElKey = null; } catch (_eAeK2) {} _aeP = null; }
+      }
+      if (_aeP) {
+        // R4600 续：proxy 焦点锚 parentNode 上行（探针 P2：移入 shadow 树的 sel 域节点
+        // 焦点身份保持——上行必须对象域而非 handle 反链）。零 shadow root 文档一步
+        // for-in 探测即出（无迭代，activeElement 高频读热路径成本守恒，trap 域成本
+        // 不变式 #26）；有 shadow 时遇边界 root 记 meta 换 host 继续——末记即最外层
+        // host（focus chain retargeting，双层嵌套 dialog-focus-shadow-double-nested
+        // document.activeElement = 外层 host 断言面）。
+        var _aeHasShadow = false;
+        for (var _aeSk in _shadowHandles) { _aeHasShadow = true; break; }
+        var _aeCur = _aeP, _aeOuter = null, _aeG = 0;
+        while (_aeHasShadow && _aeCur && _aeG++ < 64) {
+          var _aePar = null;
+          try { _aePar = _aeCur.parentNode || null; } catch (_eAePn) {}
+          var _aeParH = null;
+          try { _aeParH = (_aePar && _aePar.__zwHandle != null) ? _aePar.__zwHandle : null; } catch (_eAePh) {}
+          if (_aeParH != null && _shadowHandles[_aeParH]) {
+            var _aeMeta = _shadowHandleMeta[_aeParH];
+            if (!_aeMeta) break;
+            _aeOuter = _aeMeta;
+            try { _aeCur = _aePar.host || null; } catch (_eAeHst) { _aeCur = null; }
+            continue;
+          }
+          break; // light 树父或链尽头 → 上行止
+        }
+        if (_aeOuter) return _makeProxy(_aeOuter.hostSel, _aeOuter.hostHandle);
       }
       if (_aeP) return _aeP;
       return globalThis.document.body;

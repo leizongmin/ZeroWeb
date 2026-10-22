@@ -2547,6 +2547,65 @@
           var _smm = _shadowHandleMeta[handle];
           return _smm ? _smm.mode : 'open';
         }
+        // R4600（html-semantics M2 切片 26）：ShadowRoot.delegatesFocus IDL 布尔读
+        //（spec attach a shadow root 步——attachShadow init dict 记入 meta；dialog
+        // focusing steps focus delegate 委派链 + 用例直读断言面）。
+        // https://dom.spec.whatwg.org/#dom-shadowroot-delegatesfocus
+        if (isShadow && prop === 'delegatesFocus') {
+          var _smDF = _shadowHandleMeta[handle];
+          return !(!_smDF || !_smDF.delegatesFocus);
+        }
+        // R4600：ShadowRoot.activeElement（spec focus chain 在该 root 视角的活跃元素
+        // ——焦点在本 root 直接子级 → 自身；焦点在嵌套 shadow 树 → 该树 host；焦点
+        // 不在本 root 子树 → null。双域：解析节点 _zwMElFocused __zwFragHostHandle
+        // 单跳（R148 同款）；proxy 键域焦点锚沿 parentNode 上行（探针 P1/G：移入
+        // shadow 树的 sel 域节点 proxy 身份保持 + parentNode 返回 root wrapper），
+        // 遇边界 root 非本 root → 穿 host 继续（双层嵌套 shadowRoot.activeElement
+        // = 内层 host 断言面），走出（light 父/尽头）→ null。identity 恒等：返回
+        // 焦点锚对象自身（_proxyCache 键缓存 + wrapper 缓存保证 corpus
+        // assert_equals(shadowRoot.activeElement, 已存引用) 成立）。
+        // https://html.spec.whatwg.org/multipage/interaction.html#focus-chain
+        if (isShadow && prop === 'activeElement') {
+          var _sraeMEl = globalThis._zwMElFocused || null;
+          if (_sraeMEl) {
+            // R4600：解析节点焦点锚沿 parentNode 上行判归属（adoption 子 __zwFragHostHandle
+            // 仍指原解析 fragment——template.content 展平入 shadow 后单跳失准）；上行不出
+            // 本 root 时落旧 __zwFragHostHandle 单跳兜底（innerHTML= 直解析面）。
+            var _sraeMCur = _sraeMEl, _sraeMG = 0;
+            while (_sraeMCur && _sraeMG++ < 64) {
+              var _sraeMPar = null;
+              try { _sraeMPar = _sraeMCur.parentNode || null; } catch (_eAeMPn0) {}
+              var _sraeMParH = null;
+              try { _sraeMParH = (_sraeMPar && _sraeMPar.__zwHandle != null) ? _sraeMPar.__zwHandle : null; } catch (_eAeMPh0) {}
+              if (_sraeMParH != null && typeof _shadowHandles !== 'undefined' && _shadowHandles[_sraeMParH]) {
+                if (_sraeMParH === handle) return _sraeMCur;
+                try { _sraeMCur = _sraeMPar.host || null; } catch (_eAeMHst0) { _sraeMCur = null; }
+                continue;
+              }
+              break; // light 父 / 链尽头 → 不在本 root
+            }
+            var _sraeMFh = null;
+            try { _sraeMFh = _sraeMEl.__zwFragHostHandle; } catch (_eMelFh) {}
+            return (_sraeMFh != null && _sraeMFh === handle) ? _sraeMEl : null;
+          }
+          var _sraeCur = (_activeElKey && _proxyCache[_activeElKey]) || null;
+          if (!_sraeCur) return null;
+          try { if (_sraeCur.isConnected === false) return null; } catch (_eAeCn2) {}
+          var _sraeG = 0;
+          while (_sraeCur && _sraeG++ < 64) {
+            var _sraePar = null;
+            try { _sraePar = _sraeCur.parentNode || null; } catch (_eAePn) {}
+            var _sraeParH = null;
+            try { _sraeParH = (_sraePar && _sraePar.__zwHandle != null) ? _sraePar.__zwHandle : null; } catch (_eAePh) {}
+            if (_sraeParH != null && typeof _shadowHandles !== 'undefined' && _shadowHandles[_sraeParH]) {
+              if (_sraeParH === handle) return _sraeCur;
+              try { _sraeCur = _sraePar.host || null; } catch (_eAeHst) { _sraeCur = null; }
+              continue;
+            }
+            return null; // light 树父 / 反链尽头 → 焦点不在本 root 子树
+          }
+          return null;
+        }
         // pointerlock-compat M3 s4（FR-7，spec
         // https://w3c.github.io/pointerlock/#widl-DocumentOrShadowRoot-pointerlockelement）：
         // shadow root 视图的锁元素 = 锁目标祖先链中以本 root 为父的节点（目标在
@@ -7118,6 +7177,12 @@
                 if (_r334bTarget) __zw_insert_adjacent_sel_element(_r334bTarget, _r334bPos, _r334bChildSel);
                 else __zw_insert_adjacent_sel_element(sel, 'beforeend', _r334bChildSel);
               } catch (_e334bw) {}
+              // R4600（html-semantics s26）：重插清同步移除标记（R334 appendChild /
+              // R4200 variadic 同款，带位变体此前漏配）——remove→insertBefore 重插后
+              // removed 标记残留使 _zwIsConnected 恒 false，closedby/getAttribute 活读
+              // 随连接视图丢失（corner-cases focusin removes-and-reinserts 臂：R4600
+              // focusing steps 让 focusin 真实触发后暴露的面）。
+              try { if (typeof _zwUnmarkRemoved === 'function') _zwUnmarkRemoved(_r334bChildSel); } catch (_e334bum) {}
               try {
                 var _r334bOldSel = null;
                 try {
@@ -8163,6 +8228,31 @@
               // 后把桶 added 项与本轮插入的反链重键到父 sel。
               var _r371ParentSel = null;
               try { if (typeof __zw_parent === 'function') _r371ParentSel = __zw_parent(sel) || null; } catch (_e371p) {}
+              // R4600：被替换者的原后继快照——插入反链 nextSibling 指向本 sel，随后本 sel
+              // 移除，重键须把后继改指原后继（否则 overlay 合并按 ref 找位 miss → 尾插，
+              // 树序倒转，dialog-focus-shadow「sibling」臂扫描序依赖面）。
+              // R4600b：快照推进到最近的后随**元素**兄弟——模板与后继元素间的空白文本节点
+              // 作 ref 时，查询面 R322 树序归并以扁平元素表的 sel 串定位锚点，文本 ref
+              // 不可表达 → 恒尾插（dialog-focus-shadow「sibling after」df 臂 4F 根因：
+              // corpus `</template>\n  <button>` 换行形态）。经父元素子列表扫定位（wire
+              // 文本快照条目无 selector，文本 proxy 的 .nextSibling 链不可依赖），仅跨
+              // 相邻非元素节点，元素相对序不变。
+              var _r371Next = null;
+              try {
+                var _r371kids = (typeof _childNodeList === 'function' && _r371ParentSel)
+                  ? _childNodeList(_r371ParentSel) : null;
+                if (_r371kids && _r371kids.length) {
+                  var _r371ki = -1;
+                  for (var _r371k = 0; _r371k < _r371kids.length; _r371k++) {
+                    if (_r371kids[_r371k] && _r371kids[_r371k].__zwSelector === sel) { _r371ki = _r371k; break; }
+                  }
+                  for (var _r371k2 = _r371ki + 1; _r371ki >= 0 && _r371k2 < _r371kids.length; _r371k2++) {
+                    var _r371kc = _r371kids[_r371k2];
+                    if (_r371kc && _r371kc.nodeType === 1) { _r371Next = _r371kc; break; }
+                  }
+                }
+                if (!_r371Next) _r371Next = _makeProxy(sel, handle).nextSibling || null;
+              } catch (_e371nx) {}
               _insertAdjacentVariadic(sel, 'beforebegin', arguments, false);
               _zwRemoveIframeWindowClientForNode(_makeProxy(sel, handle));
               if (handle) { __zw_remove_handle(handle); if (typeof _zwMarkRemovedHandle === 'function') _zwMarkRemovedHandle(handle); }
@@ -8193,6 +8283,13 @@
                         if (_r371m && _r371m.__zwHandle && _zwNodeParent[_r371m.__zwHandle]
                             && _zwNodeParent[_r371m.__zwHandle].parentSel === sel) {
                           _zwNodeParent[_r371m.__zwHandle].parentSel = _r371ParentSel;
+                          // R4600：后继改指被替换者的原后继（见上 _r371Next 快照注）。
+                          _zwNodeParent[_r371m.__zwHandle].nextSibling = _r371Next || null;
+                        }
+                        if (_r371m && !_r371m.__zwHandle && _r371m._zwSelPendingParent
+                            && _r371m._zwSelPendingParent.parentSel === sel) {
+                          _r371m._zwSelPendingParent.parentSel = _r371ParentSel;
+                          _r371m._zwSelPendingParent.nextSibling = _r371Next || null;
                         }
                       }
                     }

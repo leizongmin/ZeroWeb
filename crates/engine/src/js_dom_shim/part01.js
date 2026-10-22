@@ -654,19 +654,22 @@
   }
   // R3290 + R4200：HTMLDialogElement.show()——非模态打开。spec「show」：已 open →
   // 非模态 no-op / 模态抛 InvalidStateError（「已在请求态」请求语义，
-  // dialog-no-throw-requested-state 断言面）；未连接抛 InvalidStateError；派
-  // beforetoggle（同步、可取消——preventDefault 中止不开，toggle-events 断言面）；
-  // 写后重查 open（beforetoggle 处理器内已开 → 不二次写，MutationObserver 计数 1 面）；
-  // 加 open 属性 + 排程 toggle（合并队列）。headless 无真 top-layer paint / ::backdrop /
-  // focus 陷阱 / inert backdrop（rendering 流域 defer）——仅 JS-observable 状态。
+  // dialog-no-throw-requested-state 断言面）；未连接**不抛**（R4600：spec show 步
+  // 无「未连接抛」检查——toggle-events「disconnected show()」断言面：断开 dialog
+  // show() 照常加 open + 派 toggle）；派 beforetoggle（同步、可取消——preventDefault
+  // 中止不开，toggle-events 断言面）；写后重查 open（beforetoggle 处理器内已开 →
+  // 不二次写，MutationObserver 计数 1 面）；加 open 属性 + previously focused 捕获 +
+  // dialog focusing steps（R4600）+ 排程 toggle（合并队列）。headless 无真 top-layer
+  // paint / ::backdrop / inert backdrop（rendering 流域 defer）——focus 面经
+  // R4600 dialog focusing steps 落 JS-observable activeElement。
   // https://html.spec.whatwg.org/multipage/interactive-elements.html#dom-dialog-show
   function _zwDialogShow(key, sel, handle) {
     var invokerSrc = _zwDialogTakeInvokerSourceR4400(key);
     if (_zwDialogHasOpen(sel, handle)) {
-      if (_zwDialogModal[key]) throw new DOMException('show: dialog is already open (modal)', 'InvalidStateError');
+      if (_zwDialogModal[key]) throw new globalThis.DOMException('show: dialog is already open (modal)', 'InvalidStateError');
       return;
     }
-    if (!_zwIsConnected(sel, handle)) throw new DOMException('show: dialog is not connected', 'InvalidStateError');
+    // R4600：show() 不检查连接（spec show 步列表无该检查；showModal 才有）。
     if (!_dispatchWithBubble(key, sel, handle, _makeToggleEvent('beforetoggle', 'closed', 'open', true, invokerSrc))) return;
     if (_zwDialogHasOpen(sel, handle)) return; // beforetoggle 处理器内已开
     _zwSetAttr(key, sel, handle, 'open', '');
@@ -675,6 +678,11 @@
     // ——aria 路径亦经此 helper，故记录在 dialog 调用点发而非 helper 内，避免 aria
     // 面 moAttr 尾钩双计）。toggle-events「should not double-set」计数断言面。
     try { _mo_notify(sel, handle, { type: 'attributes', attributeName: 'open', oldValue: null }); } catch (_eDgMo) {}
+    // R4600（html-semantics M2 切片 26）：Set previously focused element = focused
+    // element → run the dialog focusing steps（spec show 步尾两步，focusing steps
+    // 家族——activeElement 断言面）。已 open 属性写入后、toggle 任务排程前。
+    try { _expando[key + '::prevFocusedR4600'] = _zwDialogFocusedElR4600(); } catch (_eDgPf) {}
+    try { _zwDialogFocusingStepsR4600(sel, handle, false); } catch (_eDgFs) {}
     // R4300：非模态 show 也压 watcher 组栈（一 dialog 一组）——show-stacked 断言面：
     // 内层 closedby=none 的组挡住 ESC 下探（外层 closerequest 不收 close request）。
     _zwDialogModalStack.push(key);
@@ -685,15 +693,19 @@
   // 尾行断言面）；未连接抛；beforetoggle（可取消）；写后重查——未连接 / top-layer 被
   // 占（beforetoggle 内 showPopover 同元素 → showing → 中止不开，toggle-events「not
   // open if beforetoggle calls showPopover」modal 臂断言面）/ 已 open；加 open 属性 +
-  // top-layer + 标模态 + 排程 toggle。headless 简化（无 backdrop / focus / inert）。
+  // top-layer + 标模态 + previously focused 捕获 + dialog focusing steps（R4600）+
+  // 排程 toggle。headless 无 backdrop / inert（rendering defer），focus 面走 focusing
+  // steps。DOMException 用页面 global 构造（R4600：assert_throws_dom 核对
+  // `e.constructor === DOMException`——shim polyfill 与 native 构造器不互认，
+  // dialog-focusing-steps-disconnected「wrong global」断言面）。
   // https://html.spec.whatwg.org/multipage/interactive-elements.html#dom-dialog-showmodal
   function _zwDialogShowModal(key, sel, handle) {
     var invokerSrc = _zwDialogTakeInvokerSourceR4400(key);
     if (_zwDialogHasOpen(sel, handle)) {
-      if (!_zwDialogModal[key]) throw new DOMException('showModal: dialog already open (non-modal)', 'InvalidStateError');
+      if (!_zwDialogModal[key]) throw new globalThis.DOMException('showModal: dialog already open (non-modal)', 'InvalidStateError');
       return;
     }
-    if (!_zwIsConnected(sel, handle)) throw new DOMException('showModal: dialog is not connected', 'InvalidStateError');
+    if (!_zwIsConnected(sel, handle)) throw new globalThis.DOMException('showModal: dialog is not connected', 'InvalidStateError');
     if (!_dispatchWithBubble(key, sel, handle, _makeToggleEvent('beforetoggle', 'closed', 'open', true, invokerSrc))) return;
     if (!_zwIsConnected(sel, handle)) return; // beforetoggle 内被移除 → 中止（不开、无 toggle）
     if (_zwTopLayer[key]) return; // beforetoggle 内 showPopover → showing → 中止
@@ -705,6 +717,10 @@
     try { _mo_notify(sel, handle, { type: 'attributes', attributeName: 'open', oldValue: null }); } catch (_eDgMo2) {}
     _zwTopLayer[key] = true;
     _zwDialogModal[key] = true;
+    // R4600：Set previously focused element = focused element → run the dialog
+    // focusing steps（spec show a modal dialog 步——标模态后、toggle 排程前）。
+    try { _expando[key + '::prevFocusedR4600'] = _zwDialogFocusedElR4600(); } catch (_eDgPf2) {}
+    try { _zwDialogFocusingStepsR4600(sel, handle, true); } catch (_eDgFs2) {}
     _zwDialogModalStack.push(key);
     _zwDialogToggleQueueNotify4200(key, sel, handle, false, invokerSrc);
   }
@@ -721,6 +737,8 @@
     // R4200：open 属性内部移除 MO record（close-the-dialog 核心——close()/requestClose()
     // 共用；「Should have removed open once」计数断言面，与 show 侧同口径）。
     try { _mo_notify(sel, handle, { type: 'attributes', attributeName: 'open', oldValue: null }); } catch (_eDgMo3) {}
+    // R4600：wasModal 须在模态态清除前取（下方 if 内 delete）。
+    var _wasModalR4600 = !!_zwDialogModal[key];
     if (_zwDialogModal[key]) {
       delete _zwDialogModal[key];
       delete _zwTopLayer[key];
@@ -729,6 +747,11 @@
       if (_msI !== -1) _zwDialogModalStack.splice(_msI, 1);
     }
     if (returnValue !== undefined) _expando[key + '::returnValue'] = String(returnValue);
+    // R4600（html-semantics M2 切片 26）：焦点恢复（spec close-the-dialog
+    // previously focused element 尾步——dialog-closedby corner-cases 余 2F 根因面：
+    // closing steps 内 focus fixup 触发 focusin → 处理器再 showModal → 保持 modal 开；
+    // focus-after-close 恢复断言面）。同步执行，先于 close 事件排队（spec 顺序）。
+    try { _zwDialogRestoreFocusR4600(key, sel, handle, _wasModalR4600); } catch (_eDgRf) {}
     _zwDialogQueueCloseEvent4200(key, sel, handle);
     _zwDialogToggleQueueNotify4200(key, sel, handle, true, invokerSrc);
   }
@@ -782,6 +805,225 @@
     }
     _zwDialogCloseTheDialog4200(key, sel, handle, returnValue);
   }
+  // ---------- R4600（html-semantics M2 切片 26，2026-10-22）dialog focusing steps 家族 ----------
+  // spec：dialog focusing steps（https://html.spec.whatwg.org/multipage/interactive-elements.html
+  // #dialog-focusing-steps）——allow focus 门（headless 恒允许；FIXME: rendering 域
+  // 文档失焦策略 defer）→ control = subject 有 autofocus 属性 ? subject : focus delegate
+  // ?? subject → 对 control 跑 focusing steps（proxy.focus() 复用 R3247 focus/blur 事件
+  // 面与 _activeElKey 所有权）。focus delegate（https://html.spec.whatwg.org/multipage/
+  // interaction.html#focus-delegate）——shadow host 且 shadow root delegatesFocus false →
+  // null；autofocus delegate 优先；树序后代扫描（dialog 目标 → sequentially focusable，
+  // 跳 tabindex=-1——child-sequential-focus 断言面；非 dialog → focusable area；否则
+  // get-the-focusable-area 递归——delegatesFocus shadow host 才下探 shadow 树）。
+  // 全部双域（sel 键域解析节点 + handle 域 createElement 子 + MEl 解析节点）经 proxy
+  // 对象自身 API（hasAttribute/querySelectorAll/parentNode/shadowRoot/delegatesFocus）
+  // 走，不用 wire 键推导。
+
+  // 当前焦点元素——与 part06 document.activeElement getter 同源（MEl 解析节点优先，
+  // proxy 键域次之；连接性回落由 getter 处理，此处直读）。
+  function _zwDialogFocusedElR4600() {
+    if (globalThis._zwMElFocused) return globalThis._zwMElFocused;
+    var p = (_activeElKey && _proxyCache[_activeElKey]) || null;
+    return p || null;
+  }
+  function _zwDialogTagR4600(el) {
+    try { return String((el && el.tagName) || '').toLowerCase(); } catch (_eTg) { return ''; }
+  }
+  // closed dialog 祖先（含自身）——closed dialog 子树非渲染 → 全员非 focusable area
+  //（dialog-autofocus 嵌套 closed dialog 内 [autofocus] 按钮跳过 + show-modal-focusing-steps
+  // 外层 dialog 扫描不落内层 closed dialog 断言面）。
+  function _zwDialogInClosedDialogR4600(el) {
+    var cur = el, g = 0;
+    while (cur && g++ < 64) {
+      if (_zwDialogTagR4600(cur) === 'dialog') {
+        var open = true;
+        try { open = cur.hasAttribute('open'); } catch (_eOp) { open = true; }
+        if (!open) return true;
+      }
+      var p = null;
+      try { p = cur.parentNode || null; } catch (_ePn) { p = null; }
+      cur = (p && p.nodeType === 1) ? p : null; // ShadowRoot(11)/document(9) 边界止——closed 判定限于同树
+    }
+    return false;
+  }
+  // focusable area 近似（JS-observable 面）：渲染（hidden/closed dialog 排除）+ 非
+  // disabled + 非 type=hidden + 非 inert +（默认可聚焦 tag 或 tabindex present）。
+  // spec focusable area（https://html.spec.whatwg.org/multipage/interaction.html#focusable-area）。
+  function _zwDialogFocusableAreaR4600(el) {
+    if (!el) return false;
+    var tag = _zwDialogTagR4600(el);
+    if (!tag) return false;
+    if (_zwDialogInClosedDialogR4600(el)) return false;
+    try { if (el.hasAttribute('hidden')) return false; } catch (_eHd) {}
+    // R4600b：inert 子树传播——自身或祖先 inert → 非 focusable area（spec focusable
+    // area 不在 inert 子树；dialog-focusing-steps-inert 候选面 + subject 门候选侧兜底）。
+    try {
+      var _r4600ci = el, _r4600cg = 0;
+      while (_r4600ci && _r4600cg++ < 64) {
+        if (_r4600ci.nodeType === 1 && _r4600ci.hasAttribute('inert')) return false;
+        var _r4600cp = _r4600ci.parentNode;
+        _r4600ci = (_r4600cp && _r4600cp.nodeType === 1) ? _r4600cp : null;
+      }
+    } catch (_eIn) {}
+    var disabled = false;
+    try {
+      if (tag === 'button' || tag === 'input' || tag === 'select' || tag === 'textarea' || tag === 'optgroup' || tag === 'option') {
+        disabled = el.disabled === true || el.hasAttribute('disabled');
+      } else if (tag === 'fieldset') {
+        disabled = el.hasAttribute('disabled'); // fieldset 子控件禁用传播（首 legend 例外）defer
+      }
+    } catch (_eDs) {}
+    if (disabled) return false;
+    try { if (tag === 'input' && String(el.getAttribute('type') || '').toLowerCase() === 'hidden') return false; } catch (_eTy) {}
+    var ti = null;
+    try {
+      var tiv = el.getAttribute('tabindex');
+      if (tiv != null) { ti = parseInt(tiv, 10); if (isNaN(ti)) ti = 0; }
+    } catch (_eTi) {}
+    var defFocusable = tag === 'button' || tag === 'input' || tag === 'select' || tag === 'textarea'
+      || tag === 'iframe' || tag === 'summary' || tag === 'object' || tag === 'embed'
+      || ((tag === 'a' || tag === 'area') && (function () { try { return el.hasAttribute('href'); } catch (_eHr) { return false; } })())
+      || ((tag === 'audio' || tag === 'video') && (function () { try { return el.hasAttribute('controls'); } catch (_eCt) { return false; } })());
+    var focusable = defFocusable || ti != null;
+    if (tag === 'dialog') {
+      // 连接的 dialog 兜底可聚焦（dialog focusing steps 注「user agent decided that
+      // dialog elements were not generally focusable」——UA 选择 open dialog 可聚焦）；
+      // closed 已在 closed 祖先门排除。
+      try { focusable = el.hasAttribute('open'); } catch (_eDl) {}
+    }
+    return focusable;
+  }
+  // sequentially focusable——focusable area 且 tabindex != -1（spec sequential focus
+  // navigation；tabindex=-1 可聚焦但非 keyboard-focusable——child-sequential-focus
+  // 「Only keyboard-focusable elements」断言面）。
+  function _zwDialogSeqFocusableR4600(el) {
+    if (!_zwDialogFocusableAreaR4600(el)) return false;
+    try {
+      var tiv = el.getAttribute('tabindex');
+      if (tiv != null && parseInt(tiv, 10) === -1) return false;
+    } catch (_eSq) {}
+    return true;
+  }
+  // autofocus delegate——whereToLook 树序扫 [autofocus]，首个 focusable area 胜
+  //（tabindex=-1 + autofocus 也胜——autofocuswithoutkeyboarddialog 断言面）；
+  // 非 focusable area 的候选走 get-the-focusable-area 递归（delegatesFocus host 面）。
+  // https://html.spec.whatwg.org/multipage/interaction.html#autofocus-delegate
+  function _zwDialogAutofocusDelegateR4600(whereToLook) {
+    var cands = [];
+    try { cands = whereToLook.querySelectorAll('*') || []; } catch (_eQa) { cands = []; }
+    for (var i = 0; i < cands.length; i++) {
+      var d = cands[i];
+      var hasAf = false;
+      try { hasAf = d.hasAttribute('autofocus'); } catch (_eAf) {}
+      if (!hasAf) continue;
+      var area = _zwDialogFocusableAreaR4600(d) ? d : _zwDialogGetFocusableAreaR4600(d);
+      if (area) return area;
+    }
+    return null;
+  }
+  // get-the-focusable-area 近似：自身 focusable → 自身；delegatesFocus shadow host →
+  // focus delegate 递归；否则 null（delegatesFocus false host 亦 null——focus-after-close
+  // 无委派面）。https://html.spec.whatwg.org/multipage/interaction.html#get-the-focusable-area
+  function _zwDialogGetFocusableAreaR4600(el) {
+    if (!el) return null;
+    if (_zwDialogFocusableAreaR4600(el)) return el;
+    try {
+      var sr = el.shadowRoot;
+      if (sr && sr.delegatesFocus) return _zwDialogFocusDelegateR4600(el);
+    } catch (_eSr) {}
+    return null;
+  }
+  // focus delegate（https://html.spec.whatwg.org/multipage/interaction.html#focus-delegate）。
+  function _zwDialogFocusDelegateR4600(subject) {
+    var sr = null, dfFalse = false;
+    try {
+      sr = subject.shadowRoot || null;
+      if (sr && sr.delegatesFocus === false) dfFalse = true;
+    } catch (_eSd) {}
+    if (dfFalse) return null;
+    var wtl = sr || subject;
+    var ad = _zwDialogAutofocusDelegateR4600(wtl);
+    if (ad) return ad;
+    var isDlg = _zwDialogTagR4600(subject) === 'dialog';
+    var cands = [];
+    try { cands = wtl.querySelectorAll('*') || []; } catch (_eQd) { cands = []; }
+    for (var i = 0; i < cands.length; i++) {
+      var d = cands[i];
+      var area = null;
+      if (isDlg) {
+        if (_zwDialogSeqFocusableR4600(d)) area = d;
+        else if (!_zwDialogFocusableAreaR4600(d)) area = _zwDialogGetFocusableAreaR4600(d);
+        // tabindex=-1（focusable 而非 sequential）→ 跳过（child-sequential-focus 断言面）
+      } else if (_zwDialogFocusableAreaR4600(d)) {
+        area = d;
+      }
+      if (area) return area;
+    }
+    return null;
+  }
+  // run the focusing steps 近似——proxy.focus()（R3247 focus/blur 事件 + 所有权互斥
+  // 已备；inert 拒绝走 DOM anchor inert 门——spec focusing steps 步 4，corpus 面经
+  // candidate 过滤已挡，DOM anchor 复核 defer rendering 域）。
+  function _zwDialogRunFocusingStepsR4600(target) {
+    if (!target) return;
+    try { target.focus(); } catch (_eFc) {}
+  }
+  // dialog focusing steps 本体。
+  function _zwDialogFocusingStepsR4600(sel, handle, modal) {
+    var dlg = null;
+    try { dlg = _makeProxy(sel, handle); } catch (_eMp) { return; }
+    // R4600a：subject 未连接 → 跳过（spec「If subject is not connected, then return」
+    // ——dialog-focusing-steps-disconnected show() 臂焦点不变断言面；showModal 未连接
+    // 已在 _zwDialogShowModal 入口抛 InvalidStateError）。
+    try { if (!_zwIsConnected(sel, handle)) return; } catch (_eCn) {}
+    // R4600b：subject（自身或祖先）inert → 非 focusable area：非模态直接返回（焦点
+    // 不变——dialog-focusing-steps-inert show() 臂）；模态全文档 inert → focus fixup
+    // rule 落 body（同文件 showModal 臂 activeElement===body 断言面）。
+    // https://html.spec.whatwg.org/multipage/interaction.html#focus-fixup-rule
+    var _r4600inert = false;
+    try {
+      var _r4600cur = dlg, _r4600g = 0;
+      while (_r4600cur && _r4600g++ < 64) {
+        if (_r4600cur.nodeType === 1 && _r4600cur.hasAttribute('inert')) { _r4600inert = true; break; }
+        var _r4600p = _r4600cur.parentNode;
+        _r4600cur = (_r4600p && _r4600p.nodeType === 1) ? _r4600p : null;
+      }
+    } catch (_eIn0) {}
+    if (_r4600inert) {
+      if (modal) {
+        try { if (globalThis.document && globalThis.document.body && globalThis.document.body.focus) globalThis.document.body.focus(); } catch (_eFx) {}
+      }
+      return;
+    }
+    var control = null;
+    try {
+      if (dlg.hasAttribute('autofocus')) control = dlg;
+      if (!control) control = _zwDialogFocusDelegateR4600(dlg);
+      if (!control) control = dlg; // 兜底聚焦 dialog（连接 open dialog 可聚焦面）
+    } catch (_eCt) { control = dlg; }
+    _zwDialogRunFocusingStepsR4600(control);
+  }
+  // close-the-dialog 焦点恢复尾步：previously focused 非空且（当前焦点锚是 subject
+  // shadow-including inclusive 后代 或 wasModal）→ 对 prevFocused 跑 focusing steps；
+  // prevFocused 不可聚焦（已移除）→ focusing steps no-op → 焦点不动（getter 连接性
+  // 回落 body）。恢复后清 prevFocused（dialog 重开重捕获——dialog-autofocus reopen 面）。
+  // https://html.spec.whatwg.org/multipage/interactive-elements.html#close-the-dialog
+  function _zwDialogRestoreFocusR4600(key, sel, handle, wasModal) {
+    var pf = _expando[key + '::prevFocusedR4600'];
+    delete _expando[key + '::prevFocusedR4600'];
+    if (!pf) return;
+    var anchorOk = !!wasModal;
+    if (!anchorOk) {
+      try {
+        var dlg = _makeProxy(sel, handle);
+        var cur = _zwDialogFocusedElR4600();
+        anchorOk = !!(cur && dlg && (cur === dlg || dlg.contains(cur)));
+      } catch (_eAn) { anchorOk = false; }
+    }
+    if (!anchorOk) return;
+    _zwDialogRunFocusingStepsR4600(pf);
+  }
+  // ---------- R4600 dialog focusing steps 家族 end ----------
   // R3290：dialog open 内容属性是否 present（boolean 属性，presence 判定）。latest-wins 反映同 execute 内
   // pending set/remove（show/close 经 __zw_set_attr/__zw_remove_attr 异步入队，纯快照读 stale）。供 showModal
   // 校验 + close wasOpen 判定共用。

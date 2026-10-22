@@ -4666,7 +4666,12 @@
     // + _shadowHandles（shadow-root 身份：'#shadow-root' / host / mode）。
     _fragmentHandles[rootHandle] = true;
     _shadowHandles[rootHandle] = true;
-    _shadowHandleMeta[rootHandle] = { hostSel: sel, hostHandle: handle, mode: mode, slotAssignment: slotAssignment };
+    // R4600（html-semantics M2 切片 26）：ShadowRootInit.delegatesFocus（spec attach
+    // a shadow root——delegates focus 焦点委派标记；dialog focusing steps 的 focus
+    // delegate 递归 + ShadowRoot 委派读面消费）。
+    // https://dom.spec.whatwg.org/#dom-shadowrootinit-delegatesfocus
+    var delegatesFocus = !!init.delegatesFocus;
+    _shadowHandleMeta[rootHandle] = { hostSel: sel, hostHandle: handle, mode: mode, slotAssignment: slotAssignment, delegatesFocus: delegatesFocus };
     _shadowRoots[key] = { handle: rootHandle, mode: mode };
     return _wrapHandle(rootHandle);
   }
@@ -11892,6 +11897,17 @@
       deduped.push(it0);
     }
     items = deduped;
+    // R4600：per-item 后继定位（overlay 合并 _zwOverlayPendingChildNodes 按 link.nextSibling
+    // identity 找 ref 插位，null = 尾插）——beforebegin 项 i 后继 = 项 i+1、末项 = 目标本尊
+    //（replaceWith/before 的位序保持；dialog-focus-shadow「sibling」臂扫描树序依赖面）。
+    // 其余位型保持 null（beforeend/afterend 尾插天然序；afterbegin 头插序由 wire 语义近似）。
+    var _r4600nxtFor = null;
+    if (position === 'beforebegin') {
+      _r4600nxtFor = [];
+      for (var _r4600nb = 0; _r4600nb < items.length; _r4600nb++) {
+        _r4600nxtFor.push(_r4600nb + 1 < items.length ? items[_r4600nb + 1] : _makeProxy(sel, null));
+      }
+    }
     for (var k = 0; k < items.length; k++) {
       var item = items[k];
       try {
@@ -11922,7 +11938,9 @@
               // 上行判 detached 而跳过）。
               try {
                 if (typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
-                  _zwNodeParent[_r321c.__zwHandle] = { parentSel: sel, parentHandle: null, nextSibling: null };
+                  _zwNodeParent[_r321c.__zwHandle] = { parentSel: sel, parentHandle: null,
+                    nextSibling: (position === 'beforebegin' && _r321f + 1 < _r321fk.length) ? _r321fk[_r321f + 1]
+                      : ((_r4600nxtFor && _r4600nxtFor[k]) || null) };
                 }
               } catch (_e321pl) {}
               ceInserted.push(_r321c);
@@ -11942,6 +11960,17 @@
             if (typeof _zwUnmarkRemovedHandle === 'function') _zwUnmarkRemovedHandle(item.__zwHandle);
             if (item.__zwSelector && typeof _zwUnmarkRemoved === 'function') _zwUnmarkRemoved(item.__zwSelector);
           } catch (_e4200um2) {}
+          // R4600（html-semantics s26）：JS 侧反链记账（fragment 展开分支 R321 同款）
+          // ——直接 handle 项（createElement 节点）经 before/after/replaceWith 入 sel
+          // 父后缺 _zwNodeParent 反链，childNodes 融合视图 overlay / live 并入判
+          // detached 跳过 → replaceWith 后容器查询找不到该子（dialog-focus-shadow 家族
+          // turnIntoShadowTree 的 template.replaceWith(div) → querySelector('div') null
+          // 根因；appendChild 路径 R51 反链齐全故同场景可见）。R371 桶重键同读本反链。
+          try {
+            if (typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
+              _zwNodeParent[item.__zwHandle] = { parentSel: sel, parentHandle: null, nextSibling: (_r4600nxtFor && _r4600nxtFor[k]) || null };
+            }
+          } catch (_e4600np) {}
           ceInserted.push(item);
           // R377：插入期脚本执行（直接 script 项路径）。
           _r377runScript(item.__zwHandle);
@@ -11962,7 +11991,7 @@
           // R334 同款同步可见性：pending 父槽（parentNode getter 在 host 异步 apply
           // 前即返新父）+ 重解析索引（getElementById 同 turn 可见）+ 兄弟基缓存失效。
           try {
-            item._zwSelPendingParent = { parentSel: sel, nextSibling: null };
+            item._zwSelPendingParent = { parentSel: sel, nextSibling: (_r4600nxtFor && _r4600nxtFor[k]) || null };
             if (typeof globalThis.__zwPendReselAdd === 'function') globalThis.__zwPendReselAdd(item.__zwSelector, item);
             if (globalThis._zwSiblingBaseInvalidateAll) globalThis._zwSiblingBaseInvalidateAll();
           } catch (_e4200sv) {}
@@ -12090,6 +12119,27 @@
           _recordHandleChild(handle, item);
         } else {
           __zw_append_child(sel, item.__zwHandle);
+        }
+        added.push(item);
+      } else if (item && typeof item === 'object' && item.nodeType === 11 && item.childNodes && handle) {
+        // R4600（html-semantics s26）：MEl fragment 参数展平（R321 _insertAdjacentVariadic /
+        // R97 appendChild fragment 分支同款）——template.content 为无 handle 的解析视图
+        //（_zwFragmentAdded 产物），旧版掉下方文本分支：sr.append(template.content) 变
+        // "[object DocumentFragment]" 文本节点，shadow 树恒空（dialog-focus-shadow
+        // turnIntoShadowTree 家族根因，探针 sr5 首子 nodeType=3 实证）。
+        var _r4600fk = [];
+        try { _r4600fk = Array.prototype.slice.call(item.childNodes); } catch (_e4600fk) {}
+        if (!_handleChildren[handle]) _handleChildren[handle] = [];
+        for (var _r4600i = 0; _r4600i < _r4600fk.length; _r4600i++) {
+          var _r4600c = _r4600fk[_r4600i];
+          if (!_r4600c) continue;
+          if (_r4600c.__zwHandle) _recordHandleChild(handle, _r4600c);
+          else if (_r4600c.nodeType) {
+            _handleChildren[handle].push(_r4600c);
+            // WC-M3 切片 8：plain 子 parentNode 反链指 canonical 容器 wrapper（R97 同款
+            // ——shadow root 站 listener key 对上位）。
+            try { if (typeof _zwForceParentLink === 'function' && typeof _makeProxy === 'function') _zwForceParentLink(_r4600c, _makeProxy(null, handle)); } catch (_e4600pl) {}
+          }
         }
         added.push(item);
       } else {

@@ -1738,13 +1738,15 @@ globalThis.__r321p = out.join('|');
         )
         .unwrap();
     let out = sandbox.execute("globalThis.__r321p").unwrap().value;
-    // R321 修复面：fragment 展开分支已接线（host wire + pending 桶 + 反链）；但 sel 父的
-    // **融合视图对展开子仍不可见**（kids=DIV.B）——归 L2 深水区（identity 双源：host 快照
-    // 查询/视图与 JS registry 的普通 append 归一，querySelector-mixed-case 同域备档）。
-    // 本测试锁定 cloneNode 保子数 + 当前事实域，展开子的视图可见性随 L2 翻转。
+    // R321 修复面：fragment 展开分支已接线（host wire + pending 桶 + 反链）。R4600 起
+    // 展开子补 JS 侧反链记账（part05 `_insertAdjacentVariadic` R321 同款），融合视图
+    // overlay 已按树序并入展开子（kids=DIV.SPAN.SCRIPT.SPAN.B，展开子报 element 身份、
+    // 落位 B 前）；前导 DIV 为宿主快照对被替换 target 的残留（旧锁一致——identity 双源
+    // 归一仍归 L2 深水区，querySelector-mixed-case 同域备档）。
+    // 本测试锁定 cloneNode 保子数 + 当前事实域。
     assert!(
-        out.contains("kids=DIV.B") && out.contains("ck=3"),
-        "R321 replaceWith fragment facts (view visibility pending L2), got: {out}"
+        out.contains("kids=DIV.SPAN.SCRIPT.SPAN.B") && out.contains("ck=3"),
+        "R321 replaceWith fragment facts (expanded kids merged, host residue pending L2), got: {out}"
     );
 }
 

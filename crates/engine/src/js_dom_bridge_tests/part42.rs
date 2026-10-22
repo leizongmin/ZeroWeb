@@ -247,7 +247,10 @@ fn named_access_dead_handle_proxy_entry_boundary_s42() {
 /// 机器无关——扫描实现若回退为向登记表注册集合的形态，此断言先于墙钟报警；
 /// 双审查红→绿实验实证回退态泄漏 436 集合/400 次命名查找）。修复前同形态约
 /// 8s 量级（二次方 + 每对 1 个新集合的失效遍历）；修复后线性，进程内毫秒级。
-/// 绝对阈值给足裕量（<2000ms），避免 CI 机器噪声误报。
+/// 绝对阈值给足裕量，避免 CI 机器噪声误报：<2000ms 起步，R4600 起 4000ms——
+/// 全量套件并行负载下边缘 2.0-2.3s（s9 起墙钟观察账；A/B 2026-10-22：线性
+/// 基线隔离跑 0.7-0.8s HEAD/WIP 无差，套件增重后并行窗口越线），二次方表现
+/// 十秒级到分钟级，阈值仍留 5x+ 余量。
 #[test]
 fn test_t8g_npo_iframe_scan_no_collection_leak() {
     use std::sync::{Arc, Mutex};
@@ -302,8 +305,8 @@ fn test_t8g_npo_iframe_scan_no_collection_leak() {
         "循环内命名查找不得向 _zwLiveCollections 泄漏注册任何集合（扫描应零注册）"
     );
     assert!(
-        elapsed.as_millis() < 2000,
-        "600 对 append/remove 应线性完成（实测 {:?}；二次方回归时为秒级到分钟级）",
+        elapsed.as_millis() < 4000,
+        "600 对 append/remove 应线性完成（实测 {:?}；二次方回归时为十秒级到分钟级）",
         elapsed
     );
 }

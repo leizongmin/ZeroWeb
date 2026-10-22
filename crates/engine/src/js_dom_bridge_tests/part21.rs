@@ -1409,6 +1409,9 @@ fn test_cache_api_page_shim_rejects_without_host_bridge() {
 /// R148：焦点所有权统一（proxy `_activeElKey` 与解析节点 `_zwMElFocused` 互斥）+
 /// focus 事件 relatedTarget 的 shadow retargeting（旧焦点在 shadow 树内 → 泄露边界外
 /// 以 shadow host 为 relatedTarget；WPT shadow-relatedTarget 两 subtest）。
+/// R4600 起焦点链 retargeting 落地：document.activeElement 按焦点链返回最外层 shadow
+/// host（spec focus chain，旧断言 `document.activeElement === shadowInput` 锁的是
+/// 泄露面，随 R4600 更正）；shadow 树内锚经 ShadowRoot.activeElement 观察。
 #[test]
 fn test_focus_ownership_and_related_target_r148() {
     use std::sync::{Arc, Mutex};
@@ -1436,7 +1439,8 @@ fn test_focus_ownership_and_related_target_r148() {
              var shadowInput = root.getElementById('shadowInput');\
              parts.push('shadowInput:' + (shadowInput ? 'y' : 'n'));\
              shadowInput.focus();\
-             parts.push('activeIsShadow:' + (document.activeElement === shadowInput));\
+             parts.push('activeHost:' + (document.activeElement === host));\
+             parts.push('rootActive:' + (root.activeElement === shadowInput));\
              var lightInput = document.getElementById('lightInput');\
              var related = 'unset';\
              lightInput.addEventListener('focus', function(e) {\
@@ -1452,8 +1456,8 @@ fn test_focus_ownership_and_related_target_r148() {
         .value;
     assert_eq!(
         out,
-        "shadowInput:y|activeIsShadow:true|related:host|activeIsLight:true|mElCleared:true",
-        "R148 焦点所有权互斥 + relatedTarget shadow retargeting（host 泄露边界）"
+        "shadowInput:y|activeHost:true|rootActive:true|related:host|activeIsLight:true|mElCleared:true",
+        "R148 焦点所有权互斥 + relatedTarget shadow retargeting + R4600 焦点链 host retargeting"
     );
 }
 
