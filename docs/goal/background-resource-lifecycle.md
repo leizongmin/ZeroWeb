@@ -1,7 +1,7 @@
 # 后台页面与重复导航资源生命周期
 
-**版本**：v1.4 / 2026-10-22
-**状态**：Active（M1 基线 + M2 三步全 DONE：fetch 取消修复、RSS 有界平台判定、文档残留计数生产验证——三个增长源候选全部收口；DC-1/DC-2 修复面未开始，GUI 腿归 M4）
+**版本**：v1.5 / 2026-10-22
+**状态**：Active（M1 基线 + M2 三步全 DONE：fetch 取消修复、RSS 有界平台判定、文档残留计数生产验证；DC-1 页面 timer 嵌套 4ms 钳制修复 + 生产复测 DONE——~237 iter/s vs 修前 ~20 万，CPU 1.46→0.05 cores；worker/SW 面钳制待补，DC-2 修复面与 GUI 腿未开始）
 **父目标**：[zero-web](zero-web.md) / **控制面**：[master](background-resource-lifecycle/master.md)
 
 ## 0. 执行摘要与 Mission
@@ -14,7 +14,7 @@
 
 静态基线：`apps/browser/src/process_backend.rs` 存在 `renderer_poll_order_prioritizes_active_tab_and_throttles_background_tabs`；renderer 运行入口为 `apps/renderer/src/runtime.rs`，页面共享入口在 `crates/page-runtime/src/lib.rs`。轮询节流不证明 timer/动画/合成器已停无效工作。
 
-生产资源基线：M1 已建立（2026-10-22，12 腿，headless CDP + GUI X :20 双口径），见 [M1 基线](background-resource-lifecycle/evidence/2026-10-22-m1-baseline/ANALYSIS.md)。要点：嵌套零延迟 timer ~20 万 iter/s 无钳制；前后台 tab CPU 无差异（后台无策略）；CSS 动画不驱动持续呈现（视口内外一致，呈现链未激活）；重复导航 renderer RSS +224MB 且 stall fetch 连接随导航滞留；tab 开关 renderer 进程复用、内存不回落。M2-S1（2026-10-22）修复挂起 fetch 无取消路径——调度器 `cancel_by_url` + renderer 页面 fetch 登记 + browser `cancel_tab` 扩展，生产复测连接随导航关闭（61 次 create/cancel 零失手），见 [M2-S1](background-resource-lifecycle/evidence/2026-10-22-m2-s1-fetch-cancel/ANALYSIS.md)。M2-S2（2026-10-22）双腿 120 次导航判定 RSS 为爬坡+有界平台（非无界增长，M1 线性读数为窗口假象），见 [M2-S2](background-resource-lifecycle/evidence/2026-10-22-m2-s2-rss-attribution/ANALYSIS.md)。M2-S3（2026-10-22）补 DC-3 文档残留计数（`TimerBridge::pending_stats` + 复位诊断日志行）并生产验证：fetch 15/15 复位放弃、命令零残留、timer entry 有界滞留（24.8d expiry 上界）且回调已释放；BG-01 高频 interval timer 120s 腿同为爬坡+有界平台——M1 三个增长源候选全部收口，见 [M2-S3](background-resource-lifecycle/evidence/2026-10-22-m2-s3-timer-form/ANALYSIS.md)。观测资产：`scripts/background-resource-{observe.sh,probe.mjs,sampler.py,fixture-server.py}` + `tests/fixtures/background-resource/`。
+生产资源基线：M1 已建立（2026-10-22，12 腿，headless CDP + GUI X :20 双口径），见 [M1 基线](background-resource-lifecycle/evidence/2026-10-22-m1-baseline/ANALYSIS.md)。要点：嵌套零延迟 timer ~20 万 iter/s 无钳制；前后台 tab CPU 无差异（后台无策略）；CSS 动画不驱动持续呈现（视口内外一致，呈现链未激活）；重复导航 renderer RSS +224MB 且 stall fetch 连接随导航滞留；tab 开关 renderer 进程复用、内存不回落。M2-S1（2026-10-22）修复挂起 fetch 无取消路径——调度器 `cancel_by_url` + renderer 页面 fetch 登记 + browser `cancel_tab` 扩展，生产复测连接随导航关闭（61 次 create/cancel 零失手），见 [M2-S1](background-resource-lifecycle/evidence/2026-10-22-m2-s1-fetch-cancel/ANALYSIS.md)。M2-S2（2026-10-22）双腿 120 次导航判定 RSS 为爬坡+有界平台（非无界增长，M1 线性读数为窗口假象），见 [M2-S2](background-resource-lifecycle/evidence/2026-10-22-m2-s2-rss-attribution/ANALYSIS.md)。M2-S3（2026-10-22）补 DC-3 文档残留计数（`TimerBridge::pending_stats` + 复位诊断日志行）并生产验证：fetch 15/15 复位放弃、命令零残留、timer entry 有界滞留（24.8d expiry 上界）且回调已释放；BG-01 高频 interval timer 120s 腿同为爬坡+有界平台——M1 三个增长源候选全部收口，见 [M2-S3](background-resource-lifecycle/evidence/2026-10-22-m2-s3-timer-form/ANALYSIS.md)。DC-1 轮（2026-10-22）修复页面 timer 嵌套 4ms 钳制——shim 任务链 nesting（创建闭包携带 level、fire 绝对赋值 level+1），单测钉住第 7 代边界，生产复测 ~237 iter/s（修前 ~20 万，~840× 降）、renderer CPU 1.46→0.05 cores；worker/SW 面与 promise 续体欠钳为已知缺口，见 [DC-1 钳制](background-resource-lifecycle/evidence/2026-10-22-dc1-nested-clamp/ANALYSIS.md)。观测资产：`scripts/background-resource-{observe.sh,probe.mjs,sampler.py,fixture-server.py}` + `tests/fixtures/background-resource/`。
 
 范围：各进程 CPU、RSS 趋势、旧文档/回调/连接/队列与呈现次数；前后台切换、重复导航和关闭后恢复。
 

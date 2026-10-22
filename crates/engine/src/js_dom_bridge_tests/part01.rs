@@ -2470,3 +2470,159 @@ fn test_timer_clear_interchange_stops_both_families_dn1() {
         "第 2 tick：无任何复活/重放"
     );
 }
+
+#[test]
+fn test_timer_nesting_clamp_zero_delay_chain_dc1() {
+    // DC-1（background-resource-lifecycle goal，2026-10-22）：嵌套零延迟 timer 链必须按
+    // spec 钳制最小延迟——M1 基线实测无钳制 ~20 万 iter/s 忙转（BG-01 主张）。
+    // spec：nesting level 取当前运行 timer task 的 timer nesting level（否则 0）；
+    // nesting level > 5 且 timeout < 4 → timeout = 4。第 7 代（nesting 6 > 5）首个被钳，
+    // 顶层与前 5 代不受影响。
+    // https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#timer-initialisation-steps
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    // 记录式 host stub：armed 以 id 记 delay；__zw_fire_one 经真实 __zwResolveCallback
+    // （先 delete 后调用时序）驱动一代，回调内同步创建下一代。
+    sandbox
+        .execute(
+            "globalThis.__zw_pending = {};\
+             globalThis.__zw_armed = {};\
+             globalThis.__zw_setTimeout = function(id, delay) {\
+               globalThis.__zw_armed[id] = delay; };\
+             globalThis.__zw_armed_delay = function() {\
+               var ks = Object.keys(globalThis.__zw_armed);\
+               return ks.length ? String(globalThis.__zw_armed[ks[0]]) : 'none'; };\
+             globalThis.__zw_fire_one = function() {\
+               var ks = Object.keys(globalThis.__zw_armed);\
+               if (!ks.length) return;\
+               delete globalThis.__zw_armed[ks[0]];\
+               globalThis.__zwResolveCallback(ks[0], ''); };",
+        )
+        .unwrap();
+    sandbox
+        .execute(
+            "globalThis.__gens = 0;\
+             globalThis.__step = function() {\
+               globalThis.__gens++;\
+               if (globalThis.__gens < 8) { setTimeout(globalThis.__step, 0); } };\
+             setTimeout(globalThis.__step, 0);",
+        )
+        .unwrap();
+    // 逐代校验创建时传 host 的 delay：第 1 代顶层（nesting 0）与第 2–6 代（nesting 1–5）
+    // 不钳；第 7/8 代（nesting 6/7 > 5）钳到 4。
+    for level in 1..=8 {
+        let expected = if level >= 7 { "4" } else { "0" };
+        if level > 1 {
+            sandbox.execute("globalThis.__zw_fire_one();").unwrap();
+        }
+        assert_eq!(
+            sandbox
+                .execute("globalThis.__zw_armed_delay()")
+                .unwrap()
+                .value,
+            expected,
+            "第 {level} 代嵌套 setTimeout(…, 0) 传 host 的 delay"
+        );
+    }
+    sandbox.execute("globalThis.__zw_fire_one();").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__gens").unwrap().value,
+        "8",
+        "链执行 8 代后按 gens<8 终止"
+    );
+}
+
+#[test]
+fn test_timer_nesting_clamp_interval_rearm_dc1() {
+    // DC-1：setInterval 重复分支——spec 重复 timer 在 task 内重跑 initialisation，re-arm
+    // 钳制按本代 nesting level 判定：0ms interval 前 5 tick 续 0ms，第 6 tick 起 ≥4ms；
+    // ≥4ms 周期不受影响（对照）。同 spec 锚。
+    // https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#timer-initialisation-steps
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    // 记录式 host stub（同链式测试：armed 以 id 记 delay，__zw_fire 驱动指定 id）。
+    sandbox
+        .execute(
+            "globalThis.__zw_pending = {};\
+             globalThis.__zw_armed = {};\
+             globalThis.__zw_setTimeout = function(id, delay) {\
+               globalThis.__zw_armed[id] = delay; };\
+             globalThis.__zw_armed_delay = function(key) {\
+               return (key in globalThis.__zw_armed) ? String(globalThis.__zw_armed[key]) : 'none'; };\
+             globalThis.__zw_fire = function(key) {\
+               delete globalThis.__zw_armed[key];\
+               globalThis.__zwResolveCallback(key, ''); };",
+        )
+        .unwrap();
+    sandbox
+        .execute(
+            "globalThis.__t = [];\
+             globalThis.__iv = setInterval(function () {\
+               globalThis.__t.push('tick'); }, 0);\
+             globalThis.__iv2 = setInterval(function () {\
+               globalThis.__t.push('slow'); }, 10);\
+             globalThis.__ivKey = '__zwint:' + globalThis.__iv;\
+             globalThis.__iv2Key = '__zwint:' + globalThis.__iv2;",
+        )
+        .unwrap();
+    // 创建：0ms interval 顶层 arm（nesting 0）不钳；10ms 对照原样。
+    assert_eq!(
+        sandbox
+            .execute("globalThis.__zw_armed_delay(globalThis.__ivKey)")
+            .unwrap()
+            .value,
+        "0",
+        "0ms interval 创建时 nesting 0 → 不钳"
+    );
+    assert_eq!(
+        sandbox
+            .execute("globalThis.__zw_armed_delay(globalThis.__iv2Key)")
+            .unwrap()
+            .value,
+        "10",
+        "10ms interval 创建时不钳（≥4ms 不在钳制域）"
+    );
+    // 逐 tick 驱动：第 1–5 tick re-arm 于 nesting 1–5 → 仍 0ms；第 6/7 tick 于 nesting
+    // 6/7 > 5 → 钳到 4。
+    for tick in 1..=7 {
+        sandbox
+            .execute("globalThis.__zw_fire(globalThis.__ivKey);")
+            .unwrap();
+        let expected = if tick >= 6 { "4" } else { "0" };
+        assert_eq!(
+            sandbox
+                .execute("globalThis.__zw_armed_delay(globalThis.__ivKey)")
+                .unwrap()
+                .value,
+            expected,
+            "0ms interval 第 {tick} tick 后 re-arm 的 delay"
+        );
+    }
+    // 对照 interval 单独 tick：≥4ms 周期 re-arm 原样，钳制不影响合法间隔。
+    sandbox
+        .execute("globalThis.__zw_fire(globalThis.__iv2Key);")
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("globalThis.__zw_armed_delay(globalThis.__iv2Key)")
+            .unwrap()
+            .value,
+        "10",
+        "10ms interval re-arm 原样（钳制不影响 ≥4ms 周期）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__t.join(',')").unwrap().value,
+        "tick,tick,tick,tick,tick,tick,tick,slow",
+        "两 interval 各按驱动次数触发"
+    );
+}

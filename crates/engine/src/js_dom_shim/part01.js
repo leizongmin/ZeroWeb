@@ -5125,21 +5125,41 @@
     if (typeof globalThis.__zw_setTimeout === 'function') return globalThis.__zw_setTimeout;
     return null;
   }
+  // DC-1（2026-10-22，background-resource-lifecycle goal）：嵌套 timer 最小延迟钳制。
+  // spec timer initialisation steps——nesting level：当前运行 task 为本算法创建的 timer
+  // task 时取其 timer nesting level，否则 0；nesting level > 5 且 timeout < 4 →
+  // timeout = 4。nesting level 是**任务链属性**：嵌套 N 时创建的定时器任务 level = N+1，
+  // 故创建时以闭包携带 level，fire 时计数绝对赋值为 level+1、结束恢复现场（host 每到期
+  // 一次独立 execute，计数不随代际漂移）；setTimeout 创建与 setInterval re-arm（spec
+  // 重复分支在 task 内重跑 initialisation，同 nesting 口径）都经此钳制。
+  // FIXME: 计数在 wrapper 同步段结束即恢复——fn 的 promise 续体（同 task 的 microtask
+  // checkpoint 内）再创建的零延迟 timer 见恢复后现场，不累计嵌套；与 Chromium 的
+  // task 级 tracking 相比欠钳。如需对齐须 host 侧提供 task-end 钩子。
+  // M1 基线实测嵌套零延迟链无钳制 ~20 万 iter/s 忙转（BG-01）。
+  // https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#timer-initialisation-steps
+  var _zwTimerNesting = 0;
+  function _zwClampDelay(ms) {
+    return (_zwTimerNesting > 5 && ms < 4) ? 4 : ms;
+  }
   globalThis.setTimeout = function(fn, delay) {
     var handle = _timerId++;
     if (typeof fn !== 'function') return handle;
     var id = _timerIdKey(handle);
+    var level = _zwTimerNesting;
     globalThis.__zw_pending[id] = function() {
+      var outer = _zwTimerNesting;
+      _zwTimerNesting = level + 1;
       try {
         if (typeof globalThis.__zwBeforeTimerTask === 'function') {
           globalThis.__zwBeforeTimerTask();
         }
         fn();
       } catch (_e) {}
+      _zwTimerNesting = outer;
     };
     var hostSt = _zwHostSetTimeout();
     if (hostSt) {
-      try { hostSt(id, delay | 0); return handle; }
+      try { hostSt(id, _zwClampDelay(delay | 0)); return handle; }
       catch (_e) { delete globalThis.__zw_pending[id]; }
     }
     // fallback：无 host → microtask 同步触发（旧行为）。
@@ -5164,20 +5184,26 @@
       // 重新占位（resolve 已删本项），fn 返回后项仍是本 wrapper 才续 arm；被清（undefined）
       // 或被替换（站点接管）则终止。回调异常不取消 interval（catch 后项仍在，照常续）。
       var arm = function() {
+        var level = _zwTimerNesting;
         var wrapper = function() {
           globalThis.__zw_pending[id] = wrapper;
+          var outer = _zwTimerNesting;
+          _zwTimerNesting = level + 1;
           try {
             if (typeof globalThis.__zwBeforeTimerTask === 'function') {
               globalThis.__zwBeforeTimerTask();
             }
             fn();
           } catch (_e) {}
+          // 计数恢复须在 arm() 之后——re-arm（spec 重复分支在 task 内重跑
+          // initialisation）按本代 nesting 判定钳制，并逐代 +1 传入下个 arm。
           if (globalThis.__zw_pending[id] === wrapper) {
             arm();
           }
+          _zwTimerNesting = outer;
         };
         globalThis.__zw_pending[id] = wrapper;
-        try { hostSt(id, ms); }
+        try { hostSt(id, _zwClampDelay(ms)); }
         catch (_e) { delete globalThis.__zw_pending[id]; }
       };
       arm();

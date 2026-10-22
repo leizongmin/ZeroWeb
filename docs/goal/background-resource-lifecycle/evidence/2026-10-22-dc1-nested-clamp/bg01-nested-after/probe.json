@@ -1,0 +1,46 @@
+{
+ "scenario": "bg01-foreground",
+ "started": "2026-10-22T13:21:20.905Z",
+ "wall_ms": 30000,
+ "events_session": [],
+ "errors": [],
+ "targets": [
+  {
+   "targetId": "zeroweb-tab-1",
+   "url": "about:blank",
+   "sessionId": "zeroweb-session-1"
+  }
+ ],
+ "start_nav": {
+  "ok": true,
+  "title": "BG-01 nested zero-delay timer"
+ },
+ "samples": [
+  {
+   "t_ms": 1792675286790,
+   "label": "bg01-foreground",
+   "value": 1263
+  },
+  {
+   "t_ms": 1792675291799,
+   "label": "bg01-foreground",
+   "value": 2451
+  },
+  {
+   "t_ms": 1792675296808,
+   "label": "bg01-foreground",
+   "value": 3636
+  },
+  {
+   "t_ms": 1792675301917,
+   "label": "bg01-foreground",
+   "value": 4818
+  },
+  {
+   "t_ms": 1792675306925,
+   "label": "bg01-foreground",
+   "value": 6004
+  }
+ ],
+ "finished": "2026-10-22T13:21:51.789Z"
+}
