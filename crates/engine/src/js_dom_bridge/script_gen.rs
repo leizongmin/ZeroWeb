@@ -171,6 +171,25 @@ pub fn script_transition_ready_state(state: &str) -> String {
     )
 }
 
+/// 构造「设置页面可见性状态」的裸赋值脚本（后台资源生命周期 M3，HTML Page Visibility API）。
+/// 仅写全局态 `globalThis.__ZW_HIDDEN`（shim hidden/visibilityState getter 的数据源），
+/// 不派发事件——跨导航重注入场景（新文档初态）无可见性过渡语义（spec：visibilitychange
+/// 只在 state 变化时 fire at the Document，导航产生的是新 Document）。
+pub fn script_set_visibility_state(hidden: bool) -> String {
+    format!("try{{globalThis.__ZW_HIDDEN={hidden};}}catch(_e){{}}")
+}
+
+/// 构造「可见性过渡 + visibilitychange 派发」的原子单提交脚本。赋值与派发在同一脚本串内
+/// 顺序完成，保证 handler 内读到的 hidden/visibilityState 与过渡值一致、事件恰一次；
+/// visibilitychange 不冒泡不可取消（HTML spec：fire at the Document），由 shim 全局钩子
+/// `__zw_dispatch_visibilitychange` 派发（part06.js，形态同 `_firePointerLockEvent`）。
+pub fn script_set_visibility(hidden: bool) -> String {
+    format!(
+        "{};if(typeof __zw_dispatch_visibilitychange==='function')try{{__zw_dispatch_visibilitychange();}}catch(_e2){{}}",
+        script_set_visibility_state(hidden)
+    )
+}
+
 /// 构造「派发过渡事件」的脚本（R3248 transitionend + R3252 transitionrun/transitionstart，CSS Transitions）。
 /// 宿主在过渡创建/启动/完成帧（`TransitionClock::drain_just_run` / `drain_just_started` /
 /// `drain_just_finished` → pipeline `take_pending_transition_events`）执行：`querySelector(selector)` 取唯一

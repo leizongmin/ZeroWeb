@@ -18,7 +18,7 @@ use zero_protocol::message::{
     IpcColorScheme, IpcMediaType, IpcMessage, IpcMessageKind, IpcPrintOrientation, LoadHtmlParams,
     NavigationCommittedParams, NavigationStartedParams, PointerLockChangedParams, PointerLockInputParams,
     ScrollEventParams, ServiceWorkerOperation, ServiceWorkerRequestParams, SetColorSchemeParams, SetMediaTypeParams,
-    SetPrintPageSetupParams, SetViewportParams, StorageOpParams, StorageOperation, StorageType,
+    SetPrintPageSetupParams, SetViewportParams, SetVisibilityParams, StorageOpParams, StorageOperation, StorageType,
     TabNavigateRequestParams,
 };
 use zero_protocol::process::{ProcessManager, RendererHandle};
@@ -218,6 +218,9 @@ pub struct ProcessTabBackend {
     /// Content-Type 拦截；由 TabManager 转交 BrowserApp 消费——backend 不持有
     /// shell/settings）。
     pending_downloads: Vec<PendingAttachmentDownload>,
+    /// 后台资源生命周期 M3：上次已通知可见性的前台 tab（poll 前后台差分基线）。None =
+    /// 尚未通知任何 tab 可见（首 poll 对 active_tab 发 hidden=false）。
+    visible_tab: Option<TabId>,
 }
 
 /// 拦截到的附件下载（应用层落盘 + 下载管理器记账的输入）。
@@ -321,6 +324,7 @@ impl ProcessTabBackend {
             compositor_status: crate::compositor_client::status(),
             browser_gpu_present: false,
             pending_downloads: Vec::new(),
+            visible_tab: None,
         }
     }
 
@@ -1830,6 +1834,12 @@ impl ProcessTabBackend {
         }
     }
 
+    /// 通知单个渲染进程页面可见性差分（后台资源生命周期 M3，HTML Page Visibility
+    /// 宿主驱动面）。renderer 不 live（tab 刚关闭）时 `send_to_renderer` 自然丢弃。
+    fn set_tab_visibility(&mut self, tab_id: TabId, hidden: bool) {
+        self.send_to_renderer(tab_id, IpcMessageKind::SetVisibility(SetVisibilityParams { hidden }));
+    }
+
     /// 广播渲染媒体类型到所有 live 渲染进程（DC-12 @media print；R1993）。
     pub fn set_media_type(&mut self, media_type: zero_engine::MediaType) {
         let ipc_media = match media_type {
@@ -1898,6 +1908,20 @@ impl ProcessTabBackend {
         poll_background: bool,
     ) -> bool {
         self.service_worker_owner.set_focused_tab(active_tab);
+        // 后台资源生命周期 M3：前后台 tab 可见性差分——前台 tab 变化时旧前台发
+        // hidden=true、新前台发 hidden=false（renderer 侧更新 document.hidden/
+        // visibilityState + 派 visibilitychange）。差分基线保证同态不重发；首 poll
+        // （visible_tab=None）对 active_tab 发一次 hidden=false（headless 单 tab 恒
+        // active → 全生命周期仅此一次）。
+        if self.visible_tab != active_tab {
+            if let Some(old_tab) = self.visible_tab {
+                self.set_tab_visibility(old_tab, true);
+            }
+            if let Some(new_tab) = active_tab {
+                self.set_tab_visibility(new_tab, false);
+            }
+            self.visible_tab = active_tab;
+        }
         self.drain_pending_fetches();
         self.drain_service_worker_responses();
         self.drain_service_worker_host_commands();
@@ -2736,6 +2760,7 @@ mod compositor_fallback_tests {
     use super::{ProcessTabBackend, take_test_renderer_outbound};
     use crate::compositor_client::CompositorStatus;
     use crate::tab_snapshot::{CompositorFrame, CompositorSubmission, TabSnapshot};
+    use std::collections::HashMap;
     use std::path::PathBuf;
     use zero_browser_shell::TabId;
     use zero_protocol::message::{FramePublishMode, IpcMessageKind};
@@ -2823,6 +2848,42 @@ mod compositor_fallback_tests {
                 .iter()
                 .any(|(dx, dy, cx, cy)| *dx == 0.0 && *dy == 120.0 && *cx == 320.0 && *cy == 480.0),
             "send_user_scroll 应发 ScrollEvent(delta=0,120, cursor=320,480) IPC，实得出站 ScrollEvent: {scroll_msgs:?}"
+        );
+    }
+
+    /// 后台资源生命周期 M3：poll 前后台 tab 可见性差分——首个 active tab poll 发一次
+    /// `SetVisibility(hidden=false)`，同态复 poll 不重发，前台切换沿发（旧前台
+    /// hidden=true / 新前台 hidden=false）。经 `TEST_RENDERER_OUTBOUND` 捕获出站 IPC
+    /// （记录 kind 不含 tab，断言按序值序列）。
+    #[test]
+    #[serial_test::serial]
+    fn poll_diffs_set_visibility_on_active_tab_change() {
+        let _multiprocess_guard = lock_multiprocess_tests();
+        let _ = take_test_renderer_outbound(); // 清前序测试残留
+        let mut backend = ProcessTabBackend::with_renderer_bin(PathBuf::from("unused-renderer"));
+        let tab_a = TabId(41);
+        let tab_b = TabId(42);
+        backend.tab_to_renderer.insert(tab_a, 71);
+        backend.tab_to_renderer.insert(tab_b, 72);
+        let mut snapshots = HashMap::new();
+        let mut snapshot_seq = HashMap::new();
+
+        backend.poll(&mut snapshots, &mut snapshot_seq, Some(tab_a), false);
+        backend.poll(&mut snapshots, &mut snapshot_seq, Some(tab_a), false);
+        backend.poll(&mut snapshots, &mut snapshot_seq, Some(tab_b), false);
+
+        let outbound = take_test_renderer_outbound();
+        let vis_seq: Vec<bool> = outbound
+            .iter()
+            .filter_map(|k| match k {
+                IpcMessageKind::SetVisibility(p) => Some(p.hidden),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            vis_seq,
+            vec![false, true, false],
+            "应按差分依次发 a 可见 / a 隐藏 / b 可见，实得 SetVisibility 序: {vis_seq:?}"
         );
     }
 

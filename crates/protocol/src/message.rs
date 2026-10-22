@@ -372,6 +372,18 @@ pub enum IpcMessageKind {
         /// patch 标识。
         patch_id: u64,
     },
+    /// 页面可见性差分通知（browser → renderer；后台资源生命周期 M3）。browser poll
+    /// 前后台 tab 差分时发送，renderer 更新 `document.hidden`/`visibilityState` 并派发
+    /// `visibilitychange`（HTML `Page visibility` API 的宿主驱动面；页面隐藏时 rAF 泵
+    /// 门控停止泵帧）。追加于枚举末尾（bincode 判别值按声明序，protocol 纪律 FR-11）。
+    SetVisibility(crate::message::SetVisibilityParams),
+}
+
+/// 页面可见性差分通知参数（浏览器→渲染）。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct SetVisibilityParams {
+    /// true = 页面隐藏（tab 切到后台）；false = 恢复可见。
+    pub hidden: bool,
 }
 
 /// 焦点变更信息（渲染→浏览器）。

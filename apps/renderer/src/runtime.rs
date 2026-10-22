@@ -29,8 +29,8 @@ use std::io;
 use zero_engine::animation::compositor_export::ExportedAnimationDeclaration;
 use zero_engine::{
     DomEventDetail, MediaType, PrefersColorSchemeValue, query_text_from_html, script_set_ready_state,
-    selector_from_element_hit, set_char_measure_fn, set_fallback_line_metrics_fn, set_hmtx_measure_fn,
-    set_text_shape_fn,
+    script_set_visibility, script_set_visibility_state, selector_from_element_hit, set_char_measure_fn,
+    set_fallback_line_metrics_fn, set_hmtx_measure_fn, set_text_shape_fn,
 };
 use zero_protocol::IpcChannel;
 use zero_protocol::message::{
@@ -561,6 +561,10 @@ pub(crate) struct RendererRuntime {
     /// 其后完成的 load 迟到事件在 drain 点立即派发，不再滞留 stash 永不派发。
     /// 新文档脚本阶段起点复位（收尾未跑即 false，维持既有 stash→finish 派发序）。
     page_load_finish_dispatched: bool,
+    /// 后台资源生命周期 M3：宿主可见性差分态（browser poll 前后台 tab 差分经 SetVisibility
+    /// IPC 更新）。true = 页面隐藏（后台 tab）——rAF 泵门控停泵；跨导航经裸 state 脚本
+    /// 重注入（新文档全局初态可见，无事件）。缺省 false（单 tab 恒前台语义）。
+    page_hidden: bool,
     /// SW runtime 托管：browser 命令由 IPC reader 线程直接投递托管线程（求值/派发/
     /// 停止在独立线程执行，事件由托管线程直接回传——不经主循环，避免与同步
     /// automation 请求互等死锁）。本字段仅持有托管句柄的生命周期（Drop 时停线程）。
@@ -833,6 +837,7 @@ impl RendererRuntime {
             pending_link_events: Vec::new(),
             pending_font_events: Vec::new(),
             page_load_finish_dispatched: false,
+            page_hidden: false,
             service_worker_host: sw_runtime_host,
         }
     }
@@ -940,6 +945,16 @@ impl RendererRuntime {
             let script = script_set_ready_state("loading");
             if let Err(e) = self.js_worker.execute_script_direct_priority(&script) {
                 tracing::warn!("set readyState loading: {e}");
+            }
+            // M3 可见性：跨导航重注入宿主可见性态——shim 全局初态可见，后台 tab 导航后
+            // 上一文档的 hidden 值不会自动带过来；裸 state 脚本补写（同 readyState 宿主
+            // 驱动先例）。无事件：导航产生新 Document，无可见性过渡语义（spec 只在
+            // state 变化时 fire visibilitychange at the Document）。
+            if self.page_hidden {
+                let script = script_set_visibility_state(true);
+                if let Err(e) = self.js_worker.execute_script_direct_priority(&script) {
+                    tracing::warn!("reinject visibility state: {e}");
+                }
             }
         }
         // 预注入先于本阶段（P-B1 让路中止时注册表跨文档持久，新文档会再次执行）。
@@ -3234,6 +3249,28 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         result
     }
 
+    /// 后台资源生命周期 M3：browser 前后台 tab 差分可见性通知（HTML Page Visibility API
+    /// <https://html.spec.whatwg.org/multipage/interaction.html#visibility-statens>）——
+    /// 记宿主态（rAF 泵门控 + 跨导航重注入数据源）并提交「赋值 + visibilitychange 派发」
+    /// 原子脚本（handler 内读到新值，事件恰一次）。差分发送方（browser poll）保证同态
+    /// 不重发，本侧不再去重。
+    fn handle_set_visibility(&mut self, hidden: bool) -> Result<(), String> {
+        self.page_hidden = hidden;
+        if !self.javascript_enabled {
+            return Ok(());
+        }
+        // 有界（宿主驱动 UI 态，同 handle_set_viewport resize 派发 t11 风暴面同族）。
+        let script = script_set_visibility(hidden);
+        if let Err(e) = zero_page_runtime::JsExecutor::execute_script_priority_bounded(
+            &self.js_worker,
+            &script,
+            zero_page_runtime::USER_ACTION_SCRIPT_TIMEOUT,
+        ) {
+            tracing::warn!("dispatch visibilitychange: {e}");
+        }
+        Ok(())
+    }
+
     /// resize 后的重发布：优先增量渲染（保留 DOM/CSS 解析缓存，免整页重解析——
     /// t11 resize "幻灯片"主根因之一），无缓存（首帧/导航中）时回退全量。
     fn try_republish_after_resize(&mut self) -> Result<(), String> {
@@ -3857,6 +3894,9 @@ return JSON.stringify({{action:action,name:name,val:val}});\
                 self.check_compositor_animation_finishures();
                 Ok(())
             }
+            // 后台资源生命周期 M3：browser 前后台 tab 差分可见性通知——更新宿主态 +
+            // 派 visibilitychange（HTML Page Visibility 宿主驱动面）。
+            IpcMessageKind::SetVisibility(params) => self.handle_set_visibility(params.hidden),
             IpcMessageKind::GoBack => self.handle_go_back(),
             IpcMessageKind::GoForward => self.handle_go_forward(),
             IpcMessageKind::StopLoading => {
@@ -4073,7 +4113,10 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             // SetDomSnapshot/observer tick——该重形态实测 6.7 cores，纯 rAF 页不可承受）。
             // 回调 mutation 由主循环既有 drain_pending_script_mutations 通道下一拍
             // apply+渲染+发布；回调链停止重注册挂起数归 0 泵自停，静态页零开销。
-            if self.javascript_enabled && self.js_worker.raf_interest() {
+            // M3 可见性门控：页面隐藏（SetVisibility 后台态）停泵——后台 tab 的 rAF
+            // 面本就不应驱动（spec rAF「when rendering opportunities」随可见性暂停）；
+            // 恢复可见自动续泵（挂起数仍在）。
+            if self.javascript_enabled && !self.page_hidden && self.js_worker.raf_interest() {
                 let _ = self.js_worker.submit_script_priority(
                     "if(globalThis.__zw_raf_tick)globalThis.__zw_raf_tick(globalThis.performance?performance.now():0);",
                 );
@@ -4582,6 +4625,9 @@ mod predoc_script_tests;
 #[cfg(test)]
 #[path = "tick_per_task_tests.rs"]
 mod tick_per_task_tests;
+#[cfg(test)]
+#[path = "visibility_tests.rs"]
+mod visibility_tests;
 
 #[cfg(test)]
 mod runtime_smoke {

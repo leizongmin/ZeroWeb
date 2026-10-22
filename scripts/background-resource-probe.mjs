@@ -282,6 +282,9 @@ async function run(conn) {
       await sleep(wallMs);
     }
     result.samples = samples;
+    // 可见性终态（后台资源生命周期 M3）：headless 单 tab 恒 [object HTMLDocument] visible；
+    // 后台节流切片的回归面基线（页面侧 document.hidden 真值）。
+    result.visibility_state = await evaluate(conn, page.sessionId, "[String(document.hidden), document.visibilityState].join(',')", 5000);
   } else if (scenario === "bg01-background") {
     await attachAll(conn);
     const sessions = attachedSessions();
@@ -296,6 +299,10 @@ async function run(conn) {
     const samples = [];
     await sampleLoop(conn, timerPage.sessionId, "window.__zw_iters", wallMs, 5000, samples, "bg01-background");
     result.samples = samples;
+    // 可见性终态（后台资源生命周期 M3）：preemptor 抢占前台后 timerPage 应 hidden、
+    // preemptor 自身 visible（browser poll 前后台差分 → SetVisibility 链生产证据）。
+    result.visibility_state = await evaluate(conn, timerPage.sessionId, "[String(document.hidden), document.visibilityState].join(',')", 5000);
+    result.preemptor_visibility_state = await evaluate(conn, preemptor.sessionId, "[String(document.hidden), document.visibilityState].join(',')", 5000);
   } else if (scenario === "bg03-nav") {
     await attachAll(conn);
     const sessions = attachedSessions();

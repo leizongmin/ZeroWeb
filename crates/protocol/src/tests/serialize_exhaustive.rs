@@ -267,6 +267,12 @@ fn test_roundtrip_all_message_kinds() {
                 patch_id: 3,
             },
         },
+        // 页面可见性差分通知（后台资源生命周期 M3）：browser → renderer 单 bool 载荷
+        // （末尾追加纪律）。
+        IpcMessage {
+            id: 36,
+            kind: IpcMessageKind::SetVisibility(SetVisibilityParams { hidden: true }),
+        },
     ];
 
     for msg in &messages {
@@ -275,7 +281,7 @@ fn test_roundtrip_all_message_kinds() {
         assert_eq!(out.id, msg.id, "id mismatch");
     }
 
-    assert_eq!(messages.len(), 35, "should test all listed message kinds");
+    assert_eq!(messages.len(), 36, "should test all listed message kinds");
 }
 
 /// 测试 StorageType::Session 变体也能序列化。

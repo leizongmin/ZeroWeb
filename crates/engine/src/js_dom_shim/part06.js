@@ -570,6 +570,26 @@
     } catch (_e) {}
   }
 
+  // Page Visibility（后台资源生命周期 M3，HTML Page Visibility API §visibilitychange）：
+  // 宿主可见性过渡（SetVisibility IPC → script_set_visibility 原子脚本）在赋值后调本钩子
+  // 派 'visibilitychange'——fire at the Document、不冒泡不可取消（spec），照
+  // _firePointerLockEvent document 级派发形态（document/window listener 与 on* IDL 同
+  // key 触达）。handler 内读 document.hidden/visibilityState 已是新值（赋值先行，同串）。
+  // 挂 globalThis（宿主命令经 typeof 探测调用，同 __zw_dispatch_link_event 等钩子先例；
+  // 闭包内普通函数声明宿主不可见）。
+  globalThis.__zw_dispatch_visibilitychange = function () {
+    var ev;
+    try {
+      ev = new globalThis.Event('visibilitychange', { bubbles: false, cancelable: false, __zwTrusted: true });
+    } catch (_eC) {
+      ev = _makeEvent('visibilitychange', { bubbles: false, cancelable: false, __zwTrusted: true });
+    }
+    try { ev.target = globalThis.document; ev.srcElement = globalThis.document; } catch (_eT) {}
+    try {
+      _dispatchToListeners(_elKey('html', null), ev, 'all', globalThis.document);
+    } catch (_e) {}
+  }
+
   // M2 RFC s1（FR-6 shim 侧）：节点移除对指针锁联动（spec「锁定目标脱离文档 → 解锁」，
   // WPT pointerlock_remove_target 案面）——移除子树包含锁定元素（本节点或祖先链命中，
   // 照 _fsOnNodeRemoved parentNode 上行比对，parent 链读移除前视图）→ pointerLockElement
@@ -5287,15 +5307,17 @@
       if (_aeP) return _aeP;
       return globalThis.document.body;
     },
-    // Page Visibility + 焦点状态（R2824）——headless 页面恒「可见 + 已聚焦」。hidden=false /
-    // visibilityState='visible' / hasFocus()=true（analytics/RUM 高频：GA 读 visibilityState/hidden，
-    // hasFocus gate 操作；visibilitychange 事件 addEventListener 注册有效但永不触发——headless 无
-    // 可见性变化源，documented）。webkit 前缀（legacy analytics / 旧 GA / jQuery 插件 feature-detect
-    // `document.webkitHidden || document.hidden`）。
-    get hidden() { return false; },
-    get visibilityState() { return 'visible'; },
-    webkitHidden: false,
-    webkitVisibilityState: 'visible',
+    // Page Visibility + 焦点状态（R2824）——headless 页面默认「可见 + 已聚焦」。hidden 读
+    // 宿主可见性态 `globalThis.__ZW_HIDDEN`（后台资源生命周期 M3：browser tab 前后台差分经
+    // SetVisibility IPC → script_set_visibility 写入并派 visibilitychange；缺省/未设置恒
+    // visible，语义与旧硬编码一致）。visibilityState 按 spec 映射（HTML Page Visibility
+    // §dom-document-visibilitystate，本引擎仅 visible/hidden 两态）。hasFocus()=true（焦点
+    // 无宿主驱动源，documented）。webkit 前缀（legacy analytics / 旧 GA / jQuery 插件
+    // feature-detect `document.webkitHidden || document.hidden`）。
+    get hidden() { return globalThis.__ZW_HIDDEN === true; },
+    get visibilityState() { return globalThis.__ZW_HIDDEN === true ? 'hidden' : 'visible'; },
+    get webkitHidden() { return globalThis.__ZW_HIDDEN === true; },
+    get webkitVisibilityState() { return globalThis.__ZW_HIDDEN === true ? 'hidden' : 'visible'; },
     hasFocus: function () { return true; },
     // document.currentScript（R3258，HTML §4.11.3.1）——classic 脚本执行期间指向当前 <script> 元素；
     // 非脚本执行期 / module 脚本执行期返 null（spec：module currentScript 恒 null）。宿主在每个 classic
@@ -5672,7 +5694,9 @@
   // https://html.spec.whatwg.org/multipage/webappapis.html#handler-onreadystatechange ）——
   // setter 经 document.addEventListener 落 doc 槽位，与 __zw_dispatch_event
   // targetSlot='doc' 派发同链路可触（`document.onreadystatechange = fn` 随过渡各触发 1 次）。
-  ['fullscreenchange', 'fullscreenerror', 'pointerlockchange', 'pointerlockerror', 'DOMContentLoaded', 'readystatechange'].forEach(_defineDocOnHandler);
+  // visibilitychange（后台资源生命周期 M3，HTML Page Visibility IDL onvisibilitychange）：
+  // `document.onvisibilitychange = fn` 经同链路可触（宿主 __zw_dispatch_visibilitychange 派发）。
+  ['fullscreenchange', 'fullscreenerror', 'pointerlockchange', 'pointerlockerror', 'DOMContentLoaded', 'readystatechange', 'visibilitychange'].forEach(_defineDocOnHandler);
 
   // R2947 CSS Font Loading API：`document.fonts` FontFaceSet——@font-face 字体加载事件的 JS 入口。
   // 常见用法：`document.fonts.ready.then(重排/重测)`（字体加载库 / icon font / FOUT 处理）、
