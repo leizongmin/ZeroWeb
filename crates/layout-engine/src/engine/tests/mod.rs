@@ -803,3 +803,5 @@ mod r5223_static_abspos_ifc_store_tests;
 mod r5224_rtl_inline_abspos_static_tests;
 /// R5225（css-position-3 §relative-positioning）display:inline 非替换盒 relative inset 单次施加锚点。
 mod r5225_rel_inline_offset_tests;
+/// R5226（CSS2 §9.2.1.1 + CSS Text §3）nbsp-only inline 内容推进块流锚点。
+mod r5226_nbsp_flow_anon_block_tests;

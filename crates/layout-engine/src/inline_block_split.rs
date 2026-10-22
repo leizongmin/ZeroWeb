@@ -140,7 +140,11 @@ pub(crate) fn block_container_has_mixed_content(
             continue;
         };
         match &node.kind {
-            NodeKind::Text(text) if !text.content.trim().is_empty() => {
+            // R5226：nbsp 等 preserved 空白也算 inline 内容（与下方 R4489 inline 元素
+            // 口径对齐）——`<div>&nbsp;<div>block</div></div>` 须触发 §9.2.1.1 拆分，
+            // nbsp 行盒才成为推进后继块的匿名块（trim() 口径下容器误判纯 block，
+            // 走 plain 路径时 nbsp 行零流高）。可折叠空白（源码缩进/换行）仍不算。
+            NodeKind::Text(text) if crate::inline::has_preserved_content(&text.content) => {
                 has_text = true;
             }
             NodeKind::Element(_) => {
@@ -267,10 +271,16 @@ fn compute_child_split_impl(
 ///
 /// 若一个 Inline 片段所有 Text 节点均为空白，且无 Element 子节点，
 /// 则该片段为「空」，在 block 容器中可跳过匿名块生成（保 collapse-through 语义）。
+///
+/// R5226（CSS2 §9.2.1.1 + CSS Text §3）：空白判定用可折叠白空间集合（排除
+/// U+00A0 nbsp/U+3000）——`trim()` 按 Unicode White_Space 剔除 nbsp，把仅含
+/// `&nbsp;` 的片段误判为「空」而跳过匿名块生成；nbsp 是 preserved 内容
+/// （永不折叠，§9.2.1.1 只豁免「will subsequently be collapsed away」的白空间），
+/// 须生成匿名块盒推进流（`<div>&nbsp;<div>` 后继块应落在 nbsp 行之下）。
 pub(crate) fn is_whitespace_only_inline_segment(doc: &Document, item_node_ids: &[NodeId]) -> bool {
     item_node_ids.iter().all(|&nid| {
         doc.get(nid).is_some_and(|n| match &n.kind {
-            NodeKind::Text(t) => t.content.trim().is_empty(),
+            NodeKind::Text(t) => !crate::inline::has_preserved_content(&t.content),
             NodeKind::Element(_) => false, // element 使片段非空
             _ => true,                     // 未知类型算空
         })
@@ -362,8 +372,15 @@ pub fn block_flow_contents_unbox_on(
         return false;
     }
     let has_direct_text_child = doc.child_nodes(container_id).iter().any(|&c| {
-        doc.get(c)
-            .is_some_and(|n| matches!(&n.kind, NodeKind::Text(t) if !t.content.trim().is_empty()))
+        doc.get(c).is_some_and(|n| {
+            // R5226：与上方 block_container_has_mixed_content 的文本口径同源（nbsp =
+            // preserved 内容）——R3847 要求 tree/IFC/paint 三处「容器有无文本」判定
+            // 一致（paint 侧 R5055 已修），分叉 = 双绘或丢绘。
+            matches!(
+                &n.kind,
+                NodeKind::Text(t) if crate::inline::has_preserved_content(&t.content)
+            )
+        })
     });
     if has_direct_text_child {
         return false;
