@@ -3,7 +3,7 @@
 **日期**：2026-10-23
 **状态**：Active。M1/M2 DONE；M3-a 完成（后处理敏感路径冷温一致 + 溢出枚举入快照，oracle 9/9，`make product-smoke` exit 0）+ M3-b 完成（多次导航缓存释放只读静态审计：文档派生缓存换代全部替换/清空/清零，无旧文档保留路径，[m3-b](evidence/2026-10-23-m3-b-navigation-cache-retention-audit/ANALYSIS.md)）+ M3-c 完成（半透明帧复用审计发现 S3 partial 二次混合分歧，四切片闭环：region 裁剪补全 + CPU partial re-base + region 契约统一物理像素 + 直绘臂溢出隔离 scratch+blit——残留跨界越界族清零，半透明 partial==full 逐位等价三组常驻测试钉住，compositor 73/73、render-foundation 726/726，[m3-c](evidence/2026-10-23-m3-c-semi-transparent-partial-repaint-audit/ANALYSIS.md)）；M4 本流部分 DONE（五 DC 审计汇总 + DC-5 收口 + 规范回归审计边界，[m4-a](evidence/2026-10-23-m4-dc-audit-dc5-cost/ANALYSIS.md)）。剩余余项在 engine pipeline/paint 面的运行时对照。
 **当前卡点**：多次导航运行时对照、命中/像素在 engine pipeline/paint（zero-web 流 s 系列——最新 s33 light dismiss——与 background-resource-lifecycle bg02 活跃占用）；browser 条带 chrome 半透明图元 AA 加深为运行时观察项（app_platform scratch 模式本已隔离越界，zero-web 面协调）；反例 A 保持开放（生产不可达）。
-**下一步**：engine 面解封信号 = html-semantics-compat goal 挂账清空或其控制面宣告切片间隙（s33 收口后仍挂 F/G/H，仅「远端有新提交」不构成解封——新提交很可能就是挂账 engine 工作）；解封则做多次导航运行时对照（A→B→A′ 输出比较）+ 命中对照 + 像素容差契约的运行时应用（契约已定案：自对照逐位相等）。未解封则本流收敛（DC-1/DC-2/DC-5 DONE，DC-3/DC-4 布局面+光栅消费面完成），等待并行流释放或用户决策。
+**下一步**：engine 面解封信号 = html-semantics-compat goal 挂账清空或其控制面宣告切片间隙**且** bg02 流 engine 面工作收口（s33 后挂账 F/G 在 runner 面、H/E 余项在 engine 面，仅「远端有新提交」或「s 系列跑 runner 切片」不构成解封）；解封则做多次导航运行时对照（A→B→A′ 输出比较）+ 命中对照 + 像素容差契约的运行时应用（契约已定案：自对照逐位相等）。未解封则本流收敛（DC-1/DC-2/DC-5 DONE，DC-3/DC-4 布局面+光栅消费面完成），等待并行流释放或用户决策。
 **入口**：[目标契约](../incremental-rendering-oracle.md) / [启动与证据协议](../ladybird-followups/README.md)
 
 ## 缺口与待决
