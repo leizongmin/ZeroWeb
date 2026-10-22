@@ -1485,6 +1485,64 @@ fn test_apply_detached_stash_move_semantics_r361() {
     assert!(moved.is_some(), "R361 target 应已在 #other 子树内（移动语义落地）");
 }
 
+/// R4620（html-semantics s27）：批内 selector 时序——同一 dispatch 的 JS op 全部引用
+/// 批开始时的树态（spec：insertBefore 的 ref 节点对象不因前序 remove 失效）。同批
+/// [Remove(x), INS(ref, beforebegin, x), SetAttr(x, open)] 顺序重放时，Remove 摘除 x
+/// 使 ref 的 `:nth-child` 索引漂移（button,dialog,script → 摘 dialog 后 script 从
+/// nth-child(3) 变 2）→ INS target 失配 warn+skip → x 永久 detached、同批 SetAttr
+/// 连锁失配（页面形态镜像 WPT dialog-closedby-corner-cases 29F 毒化链：记录毁灭后
+/// closedBy 读 none，setup/ESC 面全灭）。修复 = 批前预解析 insert-adjacent 族 target
+/// 为 NodeId（不随树态漂移），apply 失配查表兜底。
+/// https://dom.spec.whatwg.org/#concept-node-pre-insert
+#[test]
+fn test_apply_ins_target_pre_remove_index_drift_r4620() {
+    use crate::js_dom_bridge::{DomMutation, apply_dom_mutations_full, find_by_selector};
+    let html = "<html><body>\
+                <button id='outside'>O</button>\
+                <dialog id='dialog' closedby='any'></dialog>\
+                <script>var x = 1;</script>\
+                </body></html>";
+    let mutations = vec![
+        // ① focusin listener: dialog.remove()
+        DomMutation::Remove {
+            selector: "#dialog".to_string(),
+        },
+        // ② document.body.insertBefore(dialog, position)（R334b wire：ref = dialog 的
+        //    后随兄弟 script，selector 按 remove 前树态 = button(1),dialog(2),script(3)）
+        DomMutation::InsertAdjacentSelElement {
+            selector: "html:nth-child(1) > body:nth-child(2) > script:nth-child(3)".to_string(),
+            position: "beforebegin".to_string(),
+            child_selector: "#dialog".to_string(),
+        },
+        // ③ dialog.show() 的 open 属性写入（修复后应随 ② 落地，不连锁失配）
+        DomMutation::SetAttr {
+            selector: "#dialog".to_string(),
+            name: "open".to_string(),
+            value: "".to_string(),
+        },
+    ];
+    let mut doc = zero_dom::parse_html(html);
+    let result = apply_dom_mutations_full(&mut doc, &mutations, None, None, None);
+    assert!(result.is_ok(), "R4620 批应用应成功: {:?}", result.err());
+    // dialog 应回到文档（移动语义净效果），open 属性写入。
+    let dlg = find_by_selector(&doc, "#dialog");
+    assert!(dlg.is_some(), "R4620 dialog 不得因批内 nth-child 索引漂移永久 detached");
+    let dlg = dlg.unwrap();
+    assert_eq!(
+        doc.get_attribute(dlg, "open").map(|_| ()),
+        Some(()),
+        "R4620 同批 SETA(#dialog,open) 不得连锁失配"
+    );
+    // 序保持：dialog 仍在 script 之前（beforebegin 语义）。
+    let body_html = doc.outer_html(doc.root());
+    assert!(
+        body_html
+            .find("<dialog")
+            .is_some_and(|d| body_html.find("<script").is_some_and(|s| d < s)),
+        "R4620 dialog 应保持在 script 之前（beforebegin）: {body_html}"
+    );
+}
+
 /// siteopt t4（2026-10-01）P19：批内单记录 selector 失配不再中止整批——html5test.co
 /// showResults 的内容 mutation 批（innerHTML/createElement/attr 混合）一条失配即旧
 /// `?` 硬错 Err 中止，drain 已消费不可重放（调用方整批丢弃），页面永卡空结果（实站

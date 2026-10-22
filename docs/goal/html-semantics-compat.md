@@ -2,11 +2,42 @@
 
 **版本**: v2.0
 **日期**: 2026-10-21（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 26 收口（R4600 家族 + rollover R4600c/d 挂死修复：focus-shadow 50F→0，九域 5070→5116P / 68.32%），下一步 corner-cases 毒化链（R334 重插 wire 完整性 + ESC 派发锚点 + 组栈 purge 三层缝隙）
+**状态**: Active——M2 切片 27 收口（R4620 批内 selector 时序：corner-cases 1P/29F→28P/2F，dialog 集群 82 files +30P/同 key 回归 0），下一步 corner-cases 余 2F（re-entrant showModal 边缘）或按挂账序推进
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-22/23 M2 切片 26 收口）**：dialog focusing steps 家族
+> **▶ 当前状态（2026-10-23 M2 切片 27 收口）**：corner-cases 毒化链根因
+> 收口（R4620 批内 selector 时序）——根因在宿主共享 apply 路径而非调用方：
+> JS 侧同 dispatch 的 op 引用批开始时的树态（spec insertBefore 的 ref 节点
+> 对象不因前序 remove 失效），而 drain 顺序重放时前序 Remove 摘除 dialog →
+> ref script 的 `:nth-child` 索引漂移（3→2）→ INS target 失配 warn+skip →
+> dialog 永久 detached、同批 SetAttr 连锁失配（remove_child 已清 id_map）→
+> 记录毁灭后 29 案 setup 全部 closedBy=none、ESC close request 找不到
+> dialog（探针宿主 warn 实锤，R361 stash 走不到——target 先失败）。修复＝
+> `apply_dom_mutations_full` 批前预解析 insert-adjacent 族四变体
+> （Html/Text/Element/SelElement，同构失配语义）target 为 NodeId（不随树
+> 态漂移）+ 四臂失配查表兜底（ref 被批内摘除时维持 skip，语义对齐 JS 抛错
+> 面）。契约 `dom_bridge_tests::test_apply_ins_target_pre_remove_index_drift_r4620`
+> （修复前红/修复后绿）。dialog 集群 82 files **302P/102F/3T**（s26 同集
+> 272P/135F，+30P/−33F），逐 subtest 对 s26 账本 diff 同 key 回归 **0**、
+> 同 key 增益 27（全落 corner-cases 毒化案）；corner-cases **1P/29F→28P/2F**，
+> 3T 全为 s26 基线既有；focus-shadow 50P/0F、closedby 27/27、requestclose
+> 75P 维持；九域全量留待下轮刷新（本轮证据＝集群逐 subtest diff）。gates：
+> engine lib **3416P/0F**（含新契约）、clippy -D warnings、fmt clean、零新
+> 增依赖。账本见
+> [evidence/2026-10-23-m2s27-r4620.md](html-semantics-compat/evidence/2026-10-23-m2s27-r4620.md)。
+> 余 2F＝`focusin calls showModal` 变体（focusin handler 内 re-entrant
+> showModal 的 ESC/light-dismiss 判定边缘；clicking/modal 键 s25 同 key
+> 既有）。
+> **下一步**：corner-cases 余 2F（re-entrant showModal 边缘，同域小残差）
+> 或按挂账序推进 inert 计算态 13F、abspos/layout ~10F（rendering 域）、
+> popover 有效性语义（`:popover-open` 选择器 + hidePopover not-showing
+> 抛 + popover-simple 余 hang）、impl-doc wrapper requestClose、
+> anchor-with-inline 导航缺口、parser form element pointer 4F、custom
+> command `--` 前缀 CommandEvent defer、ESC 组栈边缘乱序、非模态 close 不
+> 出组栈、R371 模板残留。
+>
+> **▶ 上轮状态（2026-10-22/23 M2 切片 26 收口）**：dialog focusing steps 家族
 > 收口（R4600 + rollover 挂死修复 R4600c/d）——spec show/showModal step 的
 > run the dialog focusing steps、
 > close-the-dialog 的焦点恢复落地：`_zwDialogFocusingStepsR4600`（autofocus
@@ -72,42 +103,6 @@
 > hidePopover not-showing 抛，popover-simple 余 hang）、impl-doc wrapper
 > requestClose、anchor-with-inline 导航缺口、parser form element pointer
 > 4F、custom command `--` 前缀 CommandEvent defer、ESC 组栈边缘乱序、
-> 非模态 close 不出组栈。
->
-> **▶ 上轮状态（2026-10-22 M2 切片 24）**：ToggleEvent.source/
-> commandfor 簇（R4400）收口——toggle-source 三文件 3/10→10/10。①
-> ToggleEvent.source 接线（shim）：dialog/details 双面 source store
-> （激活入口存 target-key、show/showModal/close-the-dialog/R4009 队列
-> 入口 take）→ beforetoggle/toggle 携带 invoker proxy，直接 IDL 调用
-> null。②Invoker Commands API：button 祖先链 commandfor/command（auto
-> → dialog showModal / details toggle）→ dialog 四命令/details 三命
-> 令；触发定位 sel 祖先链优先、handle 先 `__zw_selector_for_handle`
-> 反解（parsed 元素 commandfor 只在快照 sel 面）。③click 默认动作补
-> 面（part03 `_dispatchWithBubble` **finally 内** R4400 块——try 体末
-> return 后 finally 外语句不可达，首版误置死代码为定位最大弯路）：
-> 泛型 click + `_zwUaDispatch` 印记 + 非 MouseEvent/synthetic 四重门
-> → act:button invoker / act:details summary-less 翻转。④签名修正
-> `_zwInvokerCommandActivate(key,sel,handle)`→`(sel,handle)`（key 未
-> 用，错位曾静默 no-trigger）。⑤横切根因一（user_actions.rs plan 通
-> 道批回灌）：None 分支私有批 apply 后共享队列全史失明 → 前序用例
-> stale RemoveAttr 压过新 SetAttr（R4200 fire newState 误算 closed，
-> case 6 实证链 R4400LW/PUB/NB 三桩）→ apply 后回灌 + `applied_mu-
-> tations` 游标同步。⑥横切根因二（bug#2）：prevented request-close
-> 丢弃 invoker source store（残留使 light dismiss close 误携 stale
-> invoker）。part60 `test_invoker_command_toggle_source_r4400` R1–R6
-> 新契约。九域 5008→**5016P**（68.13%），对 s23 逐 subtest diff 净
-> +8P、回归 0、新增/消失 0（8 案全在本簇：dialog-toggle-source
-> 0/6→6/6、details-toggle-source-commandfor 0/1→1/1、details-toggle-
-> source 2/3→3/3）。gates：engine lib 3390P/0F、webview 785P/0F、
-> page-runtime 136P/0F、integration html_compat 21P/0F、clippy
-> workspace all-targets -D warnings 过、fmt clean、零新增依赖。账本
-> 见 [evidence/2026-10-22-m2s24-r4400.md](html-semantics-compat/evidence/2026-10-22-m2s24-r4400.md)。
-> **下一步**：corner-cases hang 排查（focusin remove+reinsert 后
-> showModal → ESC close 不达，detach 窗口身份链，余 ~28 案被 file
-> Timeout 吞没）；余挂账 inert 计算态 ~15F、focusing steps ~15F、
-> abspos/layout ~10F（rendering 域）、impl-doc wrapper requestClose、
-> anchor-with-inline 导航缺口、parser form element pointer 4F、
-> custom command `--` 前缀 CommandEvent defer、ESC 组栈边缘乱序、
 > 非模态 close 不出组栈。
 
 
@@ -189,6 +184,24 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-23 M2 切片 27**：corner-cases 毒化链根因收口（R4620 批内
+  selector 时序）——根因在宿主共享 apply 路径：drain 顺序重放时前序
+  Remove 摘除移动语义节点 → 后续 INS ref 的 `:nth-child` 索引漂移 →
+  target 失配 warn+skip → dialog 永久 detached + 同批 SetAttr 连锁失配
+  （JS 侧 op 引用批开始时树态，spec insertBefore 的 ref 不因前序 remove
+  失效）。修复＝`apply_dom_mutations_full` 批前预解析 insert-adjacent
+  族四变体 target 为 NodeId + 四臂失配查表兜底；契约
+  `test_apply_ins_target_pre_remove_index_drift_r4620`（前红后绿）。
+  dialog 集群 82 files 272P→**302P**（−33F），同 key 回归 **0**、增益 27
+  （corner-cases 1P/29F→**28P/2F**，余 2F＝re-entrant showModal 边缘）；
+  3T 全为 s26 基线既有；九域全量留待下轮刷新。gates：engine lib
+  3416P/0F、clippy/fmt 过、零新增依赖。账本
+  [evidence/2026-10-23-m2s27-r4620.md](html-semantics-compat/evidence/2026-10-23-m2s27-r4620.md)。
+  挂账：corner-cases 余 2F（re-entrant showModal）、inert 计算态 13F、
+  abspos/layout ~10F（rendering 域）、popover 有效性语义、impl-doc
+  wrapper requestClose、anchor-with-inline 导航缺口、parser form element
+  pointer 4F、custom command `--` 前缀、ESC 组栈边缘乱序、非模态 close
+  不出组栈、R371 模板残留。
 - **2026-10-22/23 M2 切片 26**：dialog focusing steps 家族（R4600）+
   rollover 挂死修复（R4600c/d）——show/showModal 跑 spec dialog
   focusing steps（autofocus 委派 → focusable area 递归判定 → focus 派

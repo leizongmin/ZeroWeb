@@ -859,6 +859,28 @@ pub fn apply_dom_mutations_full(
     // 片段跨宿主管线全量重建有效）时，Remove/RemoveChildAt 同步记账片段——remove 落
     // listener turn、re-append 落后续 turn 的 cleanup/水合面（批间可含重建）。
     let mut detached_stash: std::collections::HashMap<String, NodeId> = std::collections::HashMap::new();
+    // R4620（html-semantics s27）：批内 selector 时序对齐——同一 dispatch 的 JS op 全部
+    // 引用批开始时的树态（spec：insertBefore 的 ref 节点对象不因前序 remove 失效，
+    // https://dom.spec.whatwg.org/#concept-node-pre-insert）。顺序重放时前序 Remove 摘除
+    // 节点会改变后续 op 的 ref `:nth-child` 索引（button,dialog,script 摘 dialog 后
+    // script:nth-child(3) 漂移为 2）→ insert-adjacent 族 target 失配 warn+skip → 移动
+    // 语义节点永久 detached（WPT dialog-closedby-corner-cases 29F 毒化链根因：记录毁灭
+    // 后 closedBy 读 none，setup/ESC 面全灭）。批前预解析 insert-adjacent 族 target 为
+    // NodeId（不随树态漂移），apply 失配时查表兜底；target 已被批内摘除（无父）时维持
+    // skip——语义对齐 JS（ref 已脱离，insertBefore 本应抛错）。
+    let mut ins_targets: std::collections::HashMap<String, NodeId> = std::collections::HashMap::new();
+    for mutation in mutations {
+        let selector = match mutation {
+            DomMutation::InsertAdjacentHtml { selector, .. }
+            | DomMutation::InsertAdjacentText { selector, .. }
+            | DomMutation::InsertAdjacentElement { selector, .. }
+            | DomMutation::InsertAdjacentSelElement { selector, .. } => selector,
+            _ => continue,
+        };
+        if let Some(id) = find_by_selector(doc, selector) {
+            ins_targets.insert(selector.clone(), id);
+        }
+    }
     while let Some(mutation) = pending.pop_front() {
         // js-dom M3 R100：handle 变体在 ephemeral map 未命中时，先经持久表翻译成
         // selector 变体（重新入队；翻译产物走 selector 分支的常规校验路径）。命中
@@ -1375,7 +1397,14 @@ pub fn apply_dom_mutations_full(
                 html,
             } => {
                 // siteopt t4 P19：失配 lenient warn+跳过（不变式见 SetAttr arm）。
-                let Some(node) = find_by_selector(doc, &selector) else {
+                let Some(node) = find_by_selector(doc, &selector).or_else(|| {
+                    // R4620：批前预解析兜底——同批前序 Remove 改变 ref :nth-child 索引时
+                    // 按批开始时树态的 NodeId 命中（ref 已被批内摘除则维持 skip）。
+                    ins_targets
+                        .get(&selector)
+                        .copied()
+                        .filter(|id| doc.get(*id).and_then(|n| n.parent).is_some())
+                }) else {
                     tracing::warn!("apply DOM mutations: insert_adjacent_html selector no match, skipped: {selector}");
                     continue;
                 };
@@ -1387,7 +1416,13 @@ pub fn apply_dom_mutations_full(
                 text,
             } => {
                 // siteopt t4 P19：失配 lenient warn+跳过（不变式见 SetAttr arm）。
-                let Some(node) = find_by_selector(doc, &selector) else {
+                let Some(node) = find_by_selector(doc, &selector).or_else(|| {
+                    // R4620：批前预解析兜底（同款，见批前注释）。
+                    ins_targets
+                        .get(&selector)
+                        .copied()
+                        .filter(|id| doc.get(*id).and_then(|n| n.parent).is_some())
+                }) else {
                     tracing::warn!("apply DOM mutations: insert_adjacent_text selector no match, skipped: {selector}");
                     continue;
                 };
@@ -1402,7 +1437,13 @@ pub fn apply_dom_mutations_full(
             } => {
                 // siteopt t4 P19：失配 lenient warn+跳过（不变式见 SetAttr arm）；
                 // child 悬垂 handle 仍硬错。
-                let Some(node) = find_by_selector(doc, &selector) else {
+                let Some(node) = find_by_selector(doc, &selector).or_else(|| {
+                    // R4620：批前预解析兜底（同款，见批前注释）。
+                    ins_targets
+                        .get(&selector)
+                        .copied()
+                        .filter(|id| doc.get(*id).and_then(|n| n.parent).is_some())
+                }) else {
                     tracing::warn!(
                         "apply DOM mutations: insert_adjacent_element selector no match, skipped: {selector}"
                     );
@@ -1424,7 +1465,14 @@ pub fn apply_dom_mutations_full(
                 child_selector,
             } => {
                 // siteopt t4 P19：失配 lenient warn+跳过（不变式见 SetAttr arm）。
-                let Some(node) = find_by_selector(doc, &selector) else {
+                let Some(node) = find_by_selector(doc, &selector).or_else(|| {
+                    // R4620：批前预解析兜底——同批前序 Remove 摘除移动语义节点后 ref
+                    // :nth-child 索引漂移（corner-cases 29F 根因），按批开始时树态命中。
+                    ins_targets
+                        .get(&selector)
+                        .copied()
+                        .filter(|id| doc.get(*id).and_then(|n| n.parent).is_some())
+                }) else {
                     tracing::warn!(
                         "apply DOM mutations: insert_adjacent_sel_element selector no match, skipped: {selector}"
                     );
