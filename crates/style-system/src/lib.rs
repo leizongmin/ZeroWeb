@@ -308,6 +308,10 @@ pub struct StyleSystem {
     /// push/pop）。每项 = 最近 container-type ≠ normal 祖先的 name + content-box
     /// 尺寸（静态可推时），@container 条件按链顶求值。
     container_chain: Vec<matcher::ContainerEntry>,
+    /// 增量入口因 `:has()` 退化为全量的次数（DC-2"全量回退有计数"审计，
+    /// incremental-rendering-oracle goal）。实例字段而非进程级 static：测试
+    /// 并行下互不污染，oracle 可精确断言。
+    incremental_has_fallbacks: u64,
 }
 
 impl StyleSystem {
@@ -328,7 +332,13 @@ impl StyleSystem {
             prefers_color_scheme: PrefersColorSchemeValue::Light,
             media_type: MediaType::Screen,
             container_chain: Vec::new(),
+            incremental_has_fallbacks: 0,
         }
+    }
+
+    /// 增量入口因 `:has()` 退化为全量的累计次数（DC-2 审计，只增不减）。
+    pub fn incremental_has_fallback_count(&self) -> u64 {
+        self.incremental_has_fallbacks
     }
 
     /// 设置视口尺寸。
@@ -469,6 +479,7 @@ impl StyleSystem {
         styles: &mut HashMap<NodeId, ComputedStyle>,
     ) {
         if stylesheets.iter().any(|s| stylesheet_has_has_selector(&s.rules)) {
+            self.incremental_has_fallbacks += 1;
             *styles = self.compute_styles(doc, stylesheets);
             return;
         }

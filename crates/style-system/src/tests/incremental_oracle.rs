@@ -51,6 +51,7 @@ const CSS_WITH_HAS: &str = "body { color: black; }\n.card { padding: 8px; }\np.t
 
 /// 主 fixture 句柄。
 struct Fixture {
+    html: NodeId,
     card_a: NodeId,
     sec_b: NodeId,
     p1: NodeId,
@@ -90,6 +91,7 @@ fn build_main_fixture() -> (Document, Vec<NodeId>, Fixture) {
         doc,
         elements,
         Fixture {
+            html,
             card_a,
             sec_b,
             p1,
@@ -358,21 +360,155 @@ fn inc02_inherited_font_change_consistent() {
     );
 }
 
-/// INC-02b：样式表含 `:has()` 时增量入口按契约退化全量——结果与全量一致。
+/// INC-02b：样式表含 `:has()` 时增量入口按契约退化全量——结果与全量一致，
+/// 且回退有计数（DC-2"全量回退有计数"：实例计数器只在真实退化时递增，
+/// 无 `:has` 的步保持不变；oracle 据此断言回退确实发生而非静默走错路径）。
 #[test]
 fn inc02_has_selector_fallback_matches_full() {
     let (doc, elements, f) = build_main_fixture();
     let mut run = DualPathRun::new(doc, elements, CSS_WITH_HAS);
+    assert_eq!(
+        run.inc_sys.incremental_has_fallback_count(),
+        0,
+        "首帧两路径同为全量，不应有回退"
+    );
     run.apply(
         "移除 :has 规则（CSSOM 变更，changed=p1）",
         Some(BASE_CSS),
         |_| vec![f.p1],
         Expectation::Equal,
     );
+    assert_eq!(
+        run.inc_sys.incremental_has_fallback_count(),
+        0,
+        "无 :has 规则的步走真增量，不回退"
+    );
     run.apply(
         "恢复 :has 规则（changed=s1）",
         Some(CSS_WITH_HAS),
         |_| vec![f.s1],
+        Expectation::Equal,
+    );
+    assert_eq!(
+        run.inc_sys.incremental_has_fallback_count(),
+        1,
+        ":has 规则在页时增量入口退化全量并计数（DC-2）"
+    );
+}
+
+/// INC-02c：Shadow DOM 子树内的最小变更序列——双路径一致。
+///
+/// `attach_shadow` 把 ShadowRoot 节点挂进 host 的 children（shadow.rs：parent 指回
+/// host），故全量 DFS 下探 shadow 子树；增量链走自 shadow 内元素向上穿过
+/// ShadowRoot（非 Element，跳过）达 host。本序列按内部等价基线固化（Equal）：
+/// 两路径对同一 Document 的遍历语义必须一致；shadow 封装/插槽分配的规范正确性
+/// 属 rendering-compat 范围，不在本对照断言。
+#[test]
+fn inc02_shadow_tree_mutations_consistent() {
+    // html > body > div#host > (shadow) > p#inner.s-inner
+    let mut doc = Document::new();
+    let root = doc.root();
+    let html = doc.create_element("html");
+    doc.append_child(root, html).unwrap();
+    let body = doc.create_element("body");
+    doc.append_child(html, body).unwrap();
+    let host = doc.create_element("div");
+    doc.set_attribute(host, "id", "host");
+    doc.append_child(body, host).unwrap();
+    let shadow = doc.attach_shadow(host, zero_dom::ShadowRootMode::Open).unwrap();
+    let inner = doc.create_element("p");
+    doc.set_attribute(inner, "id", "inner");
+    doc.set_attribute(inner, "class", "s-inner");
+    doc.append_child(shadow, inner).unwrap();
+    let elements = vec![html, body, host, inner];
+
+    let mut run = DualPathRun::new(doc, elements, "body { color: black; }\n.s-inner { color: purple; }\n");
+    run.apply(
+        "shadow 内元素 class 追加 hot（链走自 shadow 穿出达 host）",
+        Some("body { color: black; }\n.s-inner { color: purple; }\n.hot { color: red; }\n"),
+        |d| {
+            d.set_attribute(inner, "class", "s-inner hot");
+            vec![inner]
+        },
+        Expectation::Equal,
+    );
+    run.apply(
+        "host 属性变更（变更子树递归下探 shadow 重算 inner）",
+        None,
+        |d| {
+            d.set_attribute(host, "data-x", "1");
+            vec![host]
+        },
+        Expectation::Equal,
+    );
+    run.apply(
+        "CSS 同帧改 .s-inner 色值（shadow 内元素重算不沿用旧值）",
+        Some("body { color: black; }\n.s-inner { color: olive; }\n.hot { color: red; }\n"),
+        |_| vec![inner],
+        Expectation::Equal,
+    );
+}
+
+/// INC-02d：`lang` 属性变更传播到 `<q>` 自动引号——双路径一致。
+///
+/// R2856：`quotes: auto` 按父元素有效内容语言解析引号对（`effective_lang` 现读
+/// Document、无实例状态）。changed=[html] 时链走重算 html，变更子树递归覆盖 q
+/// ——两路径都按新 lang 重解析（en " " → ja 「 」）。
+#[test]
+fn inc02_lang_change_propagates_to_quotes() {
+    // html(lang=en) > body > q#quote
+    let mut doc = Document::new();
+    let root = doc.root();
+    let html = doc.create_element("html");
+    doc.set_attribute(html, "lang", "en");
+    doc.append_child(root, html).unwrap();
+    let body = doc.create_element("body");
+    doc.append_child(html, body).unwrap();
+    let quote = doc.create_element("q");
+    doc.set_attribute(quote, "id", "quote");
+    doc.append_child(body, quote).unwrap();
+    let elements = vec![html, body, quote];
+
+    let mut run = DualPathRun::new(doc, elements, "body { color: black; }\n");
+    run.apply(
+        "html lang en→ja（q 自动引号按新语言重解析）",
+        None,
+        |d| {
+            d.set_attribute(html, "lang", "ja");
+            vec![html]
+        },
+        Expectation::Equal,
+    );
+    run.apply(
+        "html lang 置空（空 lang = 无语言，回落英语 root 引号）",
+        None,
+        |d| {
+            d.set_attribute(html, "lang", "");
+            vec![html]
+        },
+        Expectation::Equal,
+    );
+}
+
+/// INC-02e：根字号度量随 html font-size 变更刷新——根相对单位双路径一致。
+///
+/// 根度量（root_x_height 等）是 StyleSystem 实例状态：全量入口先 reset、根元素
+/// （parent_style=None）计算时回填；增量路径不 reset，靠链走重算 html 回填新值
+/// 且先于变更子树递归。`rex` 等根相对单位按该度量解析（rem 恒按常量
+/// ROOT_FONT_SIZE，不随 html font-size 变化），故用 `line-height: Nrex` 钉住
+/// 度量刷新时序。
+#[test]
+fn inc02_root_metric_units_refresh_on_html_font_change() {
+    let (doc, elements, f) = build_main_fixture();
+    let mut run = DualPathRun::new(
+        doc,
+        elements,
+        "body { color: black; }\nhtml { font-size: 16px; }\np { line-height: 10rex; }\n",
+    );
+    run.apply(
+        "html font-size 16→24px（链走回填根度量，p 的 rex 按新值解析）",
+        Some("body { color: black; }\nhtml { font-size: 24px; }\np { line-height: 10rex; }\n"),
+        |_| vec![f.html],
         Expectation::Equal,
     );
 }
