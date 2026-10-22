@@ -555,6 +555,21 @@ fn path_vertices_rect(vertices: &[f32]) -> Rect {
     Rect::new(min_x, min_y, max_x - min_x, max_y - min_y)
 }
 
+/// GlyphPrimitive 相交测试的保守包围盒（宁多勿少，与 ui_glyphs 条带过滤同精神）。
+///
+/// 只用于 region 模式的跳过判定，不做逐像素裁剪：与 region 相交的字形保持完整
+/// 绘制（条带边界不切字）；包围盒宽松覆盖 ascent/descent、位图宽、旋转与合成
+/// 斜体的墨迹外溢，漏判方向安全。
+fn glyph_primitive_bounds(g: &crate::primitive::GlyphPrimitive) -> Rect {
+    let w = g
+        .bitmap_width
+        .map(|w| w as f32)
+        .unwrap_or(g.font_size * 0.8)
+        .max(g.font_size * 0.3);
+    let pad = g.font_size * 0.5;
+    Rect::new(g.x - pad, g.y - g.font_size * 1.5, w + pad * 2.0, g.font_size * 3.0)
+}
+
 /// 按插入顺序渲染（DC-10 默认路径，满足 CSS painting order）。
 ///
 /// 按 `draw_order` 记录的真实插入顺序逐个渲染图元。背景、边框、子内容、
@@ -651,11 +666,26 @@ fn render_draw_order(
             }
             DrawOp::PathStroke(i) => {
                 if let Some(p) = primitives.path_strokes.get(*i) {
-                    stroke::render_path_stroke(target, p, scale);
+                    // 描边墨迹外扩线宽（端帽/斜接），按外扩包围盒做 region 跳过——
+                    // 此前无门控，region 渲染会重画全文档路径描边（区外旧帧上二次叠加）。
+                    let hull = path_vertices_rect(&p.vertices);
+                    let lw = p.line_width.max(1.0);
+                    if in_region(Rect::new(
+                        hull.origin.x - lw,
+                        hull.origin.y - lw,
+                        hull.size.width + lw * 2.0,
+                        hull.size.height + lw * 2.0,
+                    )) {
+                        stroke::render_path_stroke(target, p, scale);
+                    }
                 }
             }
             DrawOp::Glyph(i) => {
-                if let Some(p) = primitives.glyphs.get(*i) {
+                if let Some(p) = primitives.glyphs.get(*i)
+                    && in_region(glyph_primitive_bounds(p))
+                {
+                    // region 门控（宁多勿少）：此前无门控，region 渲染每帧重画全部
+                    // 字形——区外 AA 边在旧帧上逐帧二次叠加变深。跨界字形不裁剪。
                     draw_glyph_primitive(
                         target,
                         p,

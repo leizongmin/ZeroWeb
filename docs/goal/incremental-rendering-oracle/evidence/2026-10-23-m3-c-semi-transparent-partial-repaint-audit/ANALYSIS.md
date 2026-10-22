@@ -39,3 +39,20 @@
 ## 余项（控制面维持）
 
 多次导航**运行时**对照（A→B→A′）与命中/像素在 engine 面（跨流协调）；本分歧修复在 compositor 面（跨流协调）；修复落地时应附「半透明 partial == 全量」常驻等价测试（rasterize_tests 同文件）。
+
+## M3-c 追加（同日切片 2）：region 裁剪补全（render-foundation，本流域）
+
+深入核对发现 S3 region 模式的裁剪**只完成了一半**——`render_draw_order` 中仅 Fill 有逐像素裁剪（`fill_rect_for_region`，cpu/mod.rs:749）：
+
+| 图元 | 修复前 | 后果（region 消费方） |
+|---|---|---|
+| Glyph（页面文字） | **完全无门控**（cpu/mod.rs:648 原） | 每帧 region 渲染重画**全文档字形**；区外 AA 边在旧帧上逐帧二次叠加变深 |
+| PathStroke | **完全无门控**（:638 原） | 同上（半透明描边整帧二次叠加） |
+| RoundedRect/Shadow/Gradient/Image/Stroke/PathFill | 相交跳过、无逐像素裁剪 | 跨界图元整绘，越界部分叠上区外旧帧（不透明写同值无害；半透明/AA 漂移） |
+| Filter/Transform/Clip | 无门控 | 同族 |
+
+**本切片落地（render-foundation，725/725 全绿 + clippy/fmt PASS + compositor 70/70）**：Glyph 按保守包围盒门控（`glyph_primitive_bounds`，宁多勿少，跨界字形不裁剪防条带切字）+ PathStroke 按顶点 hull 外扩线宽门控（与 PathFill 对齐）；4 个新测试钉住：区外字形跳过（整盒扫描防镂空假通过）、跨界字形 region 内墨迹与全量逐位一致、**半透明 fill region==full 逐位等价**（DC-4 光栅级契约，既有等价测试只覆盖不透明）、区外 PathStroke 跳过。零默认路径变更（region=None 全量不受影响）。
+
+**残留（未实施，列协调/后续）**：跨界图元越界叠加族——逐像素裁剪需对 7 个光栅器做 loop-clamp 手术（rounded rect 不能用「裁 rect 再画」——圆角相对原 rect，需 clamp 循环界），且消费方 stale-base（不清底）不除则区内二次混合仍在；与 compositor re-base 修复（上文候选）**必须配套落地**，拆开修任何一半都剩另一半的漂移。
+
+**消费面修正**：上文「默认生产配置不可达」仅指 **compositor partial 路径**（`is_partial` 被 scroll-transform 默认开钉死）。核对发现 **apps/browser 条带复用路径**（app_platform.rs:638-647 `can_reuse`，`ZERO_SCROLL_BLIT` 默认开）也是 region-into 消费方且**默认活跃**：加载动画期每帧只重绘 chrome 条带（不清全帧）——同 stale-base 家族，底色不透明时表现为条带内 AA 边（spinner 弧线等）逐帧加深；chrome 半透明图元清单未逐项核查（列运行时观察项）。该文件属 zero-web 产品面且近期有提交（10-18），re-base 修复列跨流协调。

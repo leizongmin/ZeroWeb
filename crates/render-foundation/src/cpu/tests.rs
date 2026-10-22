@@ -2497,6 +2497,220 @@ fn render_full_scene_region_into_clips_full_viewport_fill() {
     assert_eq!(back.data[outside + 2], 255);
 }
 
+/// S3 region 门控：region 外的字形不得绘制（此前 Glyph 无门控，region 渲染每帧
+/// 重画全文档字形，区外 AA 边在旧帧上二次叠加变深）。
+#[test]
+fn region_skips_glyph_outside_region() {
+    const LATO_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Lato-Medium.ttf");
+    let mut font_loader = FontLoader::new();
+    let font_id = font_loader.load_font(LATO_TTF).expect("load Lato");
+    let mut primitives = RenderPrimitives::new();
+    primitives.add_glyph(GlyphPrimitive {
+        x: 10.0,
+        y: 20.0,
+        font_size: 24.0,
+        color: Color::BLACK,
+        glyph_id: 'A' as u32,
+        font_glyph_index: None,
+        source: None,
+        font_id: FontId(font_id),
+        font_variation_id: None,
+        bitmap_width: None,
+        bitmap_height: None,
+        rotation: 0.0,
+        synthetic_italic: false,
+    });
+
+    let mut glyph_cache = GlyphCache::new(8);
+    // region 覆盖右下角，与字形（x≈10±12, y≈2..38）不相交。
+    let region = render_full_scene_region(
+        64,
+        64,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+        Some(Rect::new(48.0, 48.0, 16.0, 16.0)),
+    );
+    // 字形包围盒（x∈[0,30), y∈[0,40)）逐像素必须保持白底：若被绘制，'A' 的
+    // 笔画必然产生非白像素（整盒扫描防单像素落在镂空处形成假通过）。
+    for y in 0..40usize {
+        for x in 0..30usize {
+            let i = (y * 64 + x) * 4;
+            assert_eq!(
+                &region.data[i..i + 3],
+                &[255, 255, 255],
+                "region 外字形必须跳过，不得画入新缓冲 @ ({x},{y})"
+            );
+        }
+    }
+}
+
+/// S3 region 门控：与 region 相交的字形保持完整绘制（不裁剪），region 内墨迹
+/// 与全量渲染逐位一致（跨界不切字——条带/脏区边界字形完整性契约）。
+#[test]
+fn straddling_glyph_paints_full_ink_inside_region() {
+    const LATO_TTF: &[u8] = include_bytes!("../../../../tests/wpt-runner/fonts/Lato-Medium.ttf");
+    let mut font_loader = FontLoader::new();
+    let font_id = font_loader.load_font(LATO_TTF).expect("load Lato");
+    let mut primitives = RenderPrimitives::new();
+    primitives.add_glyph(GlyphPrimitive {
+        x: 20.0,
+        y: 30.0,
+        font_size: 24.0,
+        color: Color::BLACK,
+        glyph_id: 'A' as u32,
+        font_glyph_index: None,
+        source: None,
+        font_id: FontId(font_id),
+        font_variation_id: None,
+        bitmap_width: None,
+        bitmap_height: None,
+        rotation: 0.0,
+        synthetic_italic: false,
+    });
+
+    let mut glyph_cache = GlyphCache::new(8);
+    let full = render_full_scene(
+        64,
+        64,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    // region 从 y=16 起：字形（y≈9..39）跨界。
+    let region = render_full_scene_region(
+        64,
+        64,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+        Some(Rect::new(0.0, 16.0, 64.0, 48.0)),
+    );
+    // region 内（y ≥ 16）逐位一致：跨界字形 region 侧墨迹与全量相同。
+    for y in 16..64usize {
+        for x in 0..64usize {
+            let i = (y * 64 + x) * 4;
+            assert_eq!(
+                region.data[i..i + 4],
+                full.data[i..i + 4],
+                "跨界字形 region 内墨迹应与全量一致 @ ({x},{y})"
+            );
+        }
+    }
+}
+
+/// S3 region 等价补全：半透明 fill 与全量渲染在 region 内逐位一致（既有等价
+/// 测试只覆盖不透明 fill；DC-4 半透明帧复用的光栅级契约）。
+#[test]
+fn region_matches_full_with_semi_transparent_fills() {
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(8);
+    let mut primitives = RenderPrimitives::new();
+    // 半透明全视口底 + region 内半透明前景。
+    primitives.fills.push(FillPrimitive {
+        rect: Rect::new(0.0, 0.0, 200.0, 100.0),
+        color: Color::rgba(255, 0, 0, 128),
+    });
+    primitives.fills.push(FillPrimitive {
+        rect: Rect::new(10.0, 10.0, 60.0, 60.0),
+        color: Color::rgba(0, 0, 255, 128),
+    });
+
+    let full = render_full_scene(
+        200,
+        100,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    let region = render_full_scene_region(
+        200,
+        100,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+        Some(Rect::new(0.0, 0.0, 100.0, 100.0)),
+    );
+    // 逻辑 region（x∈[0,100), y∈[0,100)）逐像素比较——缓冲 200 宽行主序，
+    // 不能用连续区间（会跨进 region 外列）。
+    for y in 0..100usize {
+        for x in 0..100usize {
+            let i = (y * 200 + x) * 4;
+            assert_eq!(
+                region.data[i], full.data[i],
+                "半透明内容 region 内像素应与全量逐位一致 @ ({x},{y})"
+            );
+        }
+    }
+}
+
+/// S3 region 门控：region 外的路径描边不得绘制（与 PathFill 门控对齐，含线宽
+/// 外扩余量）。
+#[test]
+fn region_skips_path_stroke_outside_region() {
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(8);
+    let mut primitives = RenderPrimitives::new();
+    primitives.path_strokes.push(PathStrokePrimitive {
+        vertices: vec![150.0, 10.0, 190.0, 50.0],
+        color: Color::BLACK,
+        line_width: 4.0,
+        closed: false,
+    });
+
+    let region = render_full_scene_region(
+        200,
+        100,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+        Some(Rect::new(0.0, 0.0, 100.0, 100.0)),
+    );
+    // 描边中点 (170,30)：若被绘制则非白。
+    let mid = ((30 * 200 + 170) * 4) as usize;
+    assert_eq!(
+        &region.data[mid..mid + 3],
+        &[255, 255, 255],
+        "region 外路径描边必须跳过"
+    );
+}
+
 /// S2：`render_full_scene_threaded`（Browser scope 线程路径）与直连逐像素一致。
 #[test]
 fn render_full_scene_threaded_matches_direct() {
