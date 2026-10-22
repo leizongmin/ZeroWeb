@@ -1,7 +1,7 @@
 # G4：headless 优雅关停（SIGINT + CDP Browser.close）
 
 **日期**：2026-10-22
-**提交**：`696ddeba6`（fix(browser): headless 优雅关停）
+**提交**：`f424cf7c6`（fix(browser): headless 优雅关停；rebase 前为 `696ddeba6`）
 **对应**：[M1 证据 §4](../2026-10-22-m1-inventory-baseline/README.md) 缺口 G4、[S2 证据 §5](../2026-10-22-m3-s2-update-rollback/README.md) 挂账（重启语义）、M4 挂账清单
 **产物与脚本**：[run-g4-headless-shutdown.sh](run-g4-headless-shutdown.sh) / [ws-browser-close.js](ws-browser-close.js)（裸 RFC6455 驱动，环境无 python WS 库）/ 原始输出 [g4-acceptance-run.log](g4-acceptance-run.log)（**11 断言全 PASS**）
 
