@@ -2,41 +2,56 @@
 
 **版本**: v2.0
 **日期**: 2026-10-21（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 28 收口（corner-cases 28P/2F→29P/1F，真 Chrome 基准 29/30 同态：余 1F 为 Chrome 同款上游失败；click-modal 案修复＝模态 inertness 焦点切面门，dialog 集群 82 files 303P/101F/3T 同 key 回归 0），下一步按挂账序推进
+**状态**: Active——M2 切片 29 收口（模态焦点门接页面 focus() + shadow 包含判定，inert-node-is-unfocusable 13F 全清，dialog 集群 82 files 407 subtest 317P/87F/3T 同 key 回归 0、增益 14），下一步按挂账序推进
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-23 M2 切片 28 收口）**：corner-cases 余 2F 收口
+> **▶ 当前状态（2026-10-23 M2 切片 29 收口）**：模态焦点门接页面
+> focus()——s28 门只覆盖宿主驱动路径（pre-focus 步、mousedown 默认动
+> 作），页面直调 `el.focus()` 不在门内，inert-node-is-unfocusable 13F。
+> 修复四件：① `part04 focus()` trap 接门（已聚焦 no-op 之后、失连臂之
+> 前；失连元素门内跳过保 R114/T55 detached 契约）；② 门位在 R4003b
+> label 前递**之后**——前递源（label 本就非 focusable area）不受模态
+> inert 门，inert 语义作用在焦点落点，前递目标经递归 focus() 再入 trap
+> 自行过门（inert-label-focus 断言面钉次序：门前置时该案 PASS→FAIL，
+> 移位后归位）；③ showModal 栈推进移到 focusing steps 之前（嵌套模态
+> 子树 focusing steps 过门）；④ R4600b inert 分支 focus fixup 落 body
+> 走 `__zwModalGateBypass`（fixup 是 UA 级焦点回落非 focusing steps，
+> Chromium 同款 activeElement===body）。门包含判定补 shadow-including：
+> `proxy.contains` 只覆盖 light DOM，既有契约 R4600 R8（delegatesFocus
+> 影子树内锚）暴露缺口——新增 part01 `_zwDialogShadowInclContains`
+>（parentNode 上行遇 shadow root（`__zwHandle` 命中 `_shadowHandles`）
+> 换 host 继续、frag 容器经 `_shadowHandleMeta` 跳 host，路数同 part06
+> activeElement retarget，64 步 guard 防反链环）。契约
+> `test_dialog_modal_focus_gate_s28` 增 G5/G6（页面 focus() 拒焦／失连
+> 归解析节点所有权）。dialog 集群 82 files 407 subtest **317P/87F/3T**
+>（s28 同集 303P/101F/3T），逐 subtest diff 同 key 回归 **0**、增益
+> **14**（inert-node-is-unfocusable 13F 全清 15/15 +
+> remove-dialog-should-unblock-document 连带 F→P）；gates：engine lib
+> **3426P/0F**（含 G5/G6）。账本见
+> [evidence/2026-10-23-m2s29-page-focus-gate.md](html-semantics-compat/evidence/2026-10-23-m2s29-page-focus-gate.md)。
+> **下一步**：按挂账序推进 inert 计算态余量（rendering inert 整体：hit
+> -test/编辑/选中面）、abspos/layout ~10F（rendering 域）、popover 有效
+> 性语义（`:popover-open` 选择器 + hidePopover not-showing 抛 +
+> popover-simple 余 hang）、impl-doc wrapper requestClose、
+> anchor-with-inline 导航缺口、parser form element pointer 4F、custom
+> command `--` 前缀 CommandEvent defer、ESC 组栈边缘乱序、非模态 close
+> 不出组栈、R371 模板残留。
+>
+> **▶ 上轮状态（2026-10-23 M2 切片 28 收口）**：corner-cases 余 2F 收口
 > ——先建真 Chrome 基准仲裁（playwright-core + chromium-1243，CDP 真实
-> 输入层驱动语料：light dismiss/ESC close watcher/mousedown 焦点全真实；
-> test_driver 桥接补 ButtonType/特殊键映射），语料基线 **29/30，唯一
-> 失败＝esc-modeless**。两案定性：案 A（esc-modeless）**非 bug**——真
-> Chrome 事件流与引擎逐条一致（modeless show() 自聚焦 + close restore
-> 重开 modal，`dialog-focus-previous-outside` 末案独立钉死 Chrome 同款
-> 语义），上游期望 closed 在 Chrome 自身即失败，记账为 Chrome parity 非
-> gap；案 B（click-modal）**引擎分歧**——真 Chrome mousedown 命中
-> dialog（模态外 inert，hit-test 跳过、焦点不出 top-layer）→ light
-> dismiss 关闭 → restore 交还焦点 → fc:button → 处理器 re-entrant
-> showModal 重开 → 端态 open ✓；引擎 runner pre-focus 步先把焦点漏给
-> button（真浏览器不可能）→ restore no-op → 端态 closed。修复＝模态
-> inertness 焦点切面：`part01 _zwDialogModalFocusGateOk`（栈顶 open+模态
-> dialog 子树外非 focusable area，stale 栈项跳过，stacked modal 仅栈顶
-> 生效）+ `part06 _zwIsFocusableSel` 接入（宿主 pre-focus 步与 mousedown
-> 默认动作共用门；页面直调 focus() 随 rendering inert 挂账一并接入）。
-> 契约 `js_dom_bridge_tests::test_dialog_modal_focus_gate_s28`（G1–G4，
-> 修复前红后绿；测试面元素须落初始 dom_html——变更追加节点 selector 串
-> 解析回退 DIV 非本切片面）。dialog 集群 82 files **303P/101F/3T**（s27
-> 同集 302P/102F/3T），逐 subtest diff 同 key 回归 **0**、增益 1
-> （click-modal F→P）；corner-cases **29P/1F == 真 Chrome 29/30**；3T
-> 全为 s26 基线既有。gates：engine lib **3426P/0F**（含新契约）、clippy
-> -D warnings、fmt clean、零新增依赖。账本见
+> 输入层；test_driver 桥接补 ButtonType/特殊键映射），语料基线 29/30
+> 唯一失败＝esc-modeless。两案定性：esc-modeless 非 bug（真 Chrome 事件
+> 流与引擎逐条一致，上游期望 closed 在 Chrome 自身即失败，记账 Chrome
+> parity 非 gap）；click-modal 引擎分歧（真浏览器不可能聚焦模态外元素，
+> runner pre-focus 步泄焦）→ 修复＝模态 inertness 焦点切面：`part01
+> _zwDialogModalFocusGateOk`（栈顶 open+模态 dialog 子树外非 focusable
+> area，stale 栈项跳过，stacked modal 仅栈顶生效）+ `part06
+> _zwIsFocusableSel` 接入（宿主 pre-focus 步与 mousedown 默认动作共用
+> 门）。契约 `test_dialog_modal_focus_gate_s28` G1–G4。集群 **303P/101F
+> /3T**，回归 0 增益 1（corner-cases **29P/1F == 真 Chrome 29/30**）。
+> 账本见
 > [evidence/2026-10-23-m2s28-modal-focus-gate.md](html-semantics-compat/evidence/2026-10-23-m2s28-modal-focus-gate.md)。
-> **下一步**：按挂账序推进 inert 计算态 13F、abspos/layout ~10F
->（rendering 域）、popover 有效性语义（`:popover-open` 选择器 +
-> hidePopover not-showing 抛 + popover-simple 余 hang）、impl-doc
-> wrapper requestClose、anchor-with-inline 导航缺口、parser form element
-> pointer 4F、custom command `--` 前缀 CommandEvent defer、ESC 组栈边缘
-> 乱序、非模态 close 不出组栈、R371 模板残留。
 >
 > **▶ 上轮状态（2026-10-23 M2 切片 27 收口）**：corner-cases 毒化链根因
 > 收口（R4620 批内 selector 时序）——根因在宿主共享 apply 路径而非调用方：

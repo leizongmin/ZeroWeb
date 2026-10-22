@@ -4083,6 +4083,20 @@
                 if (_lblCtl) return _makeProxy(_lblCtl.__zwSelector, _lblCtl.__zwHandle).focus();
               }
             }
+            // s29（html-semantics M2 切片 29）：模态 inertness 焦点切面接入页面
+            // 直调 focus()——栈顶 open+模态 dialog 的 shadow-including 子树外连接
+            // 元素 no-op（spec 模态 dialog inertness 的 focusable-area 切片；
+            // inert-node-is-unfocusable 断言面）。门在 R4003b label 前递**之后**
+            //：前递源（label 本就非 focusable area）不受模态 inert 门——inert
+            // 语义作用在焦点落点上，inert-label-focus 断言面（模态外 inert label
+            // 前递进模态内非 inert target 应前递）；前递目标经递归 focus() 再入
+            // 本 trap 自行过门。失连元素门内跳过（R114/T55 detached focus 契约
+            // 保持，走下方 R114 臂）；focus fixup 落 body 走 __zwModalGateBypass
+            //（part01 R4600b 模态臂）。
+            // https://html.spec.whatwg.org/multipage/interaction.html#blocked-by-a-modal-dialog
+            if (globalThis.__zwModalGateBypass !== true
+                && typeof _zwDialogModalFocusGateOk === 'function'
+                && !_zwDialogModalFocusGateOk(proxy)) return;
             // T55（R114/R148 失连面）：未连接元素（createElement 未挂载等）的 focus()
             // 归解析节点所有权（_zwMElFocused，activeElement getter 直读）——M2-S4E
             //（b5e0b5874，2026-10-08）给 getter 加的惰性 isConnected 校验会把

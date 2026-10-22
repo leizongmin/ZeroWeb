@@ -717,11 +717,16 @@
     try { _mo_notify(sel, handle, { type: 'attributes', attributeName: 'open', oldValue: null }); } catch (_eDgMo2) {}
     _zwTopLayer[key] = true;
     _zwDialogModal[key] = true;
+    // s29：栈推进在 focusing steps 之前——嵌套 showModal 时新 dialog 已是栈顶模态，
+    // 其子树 focusing steps 过模态门（_zwDialogModalFocusGateOk）不被外层模态拒
+    //（spec show a modal dialog：先入 top layer 再 run the dialog focusing steps；
+    // Chromium 同款）。focusing steps 派发的 focus/focusin 监听器同栈内可见，但
+    // close/showModal 重入均不经栈序判定，观测序不变。
+    _zwDialogModalStack.push(key);
     // R4600：Set previously focused element = focused element → run the dialog
     // focusing steps（spec show a modal dialog 步——标模态后、toggle 排程前）。
     try { _expando[key + '::prevFocusedR4600'] = _zwDialogFocusedElR4600(); } catch (_eDgPf2) {}
     try { _zwDialogFocusingStepsR4600(sel, handle, true); } catch (_eDgFs2) {}
-    _zwDialogModalStack.push(key);
     _zwDialogToggleQueueNotify4200(key, sel, handle, false, invokerSrc);
   }
   // R3290 + R4200：close-the-dialog 核心（close()/requestClose() 共用）。beforetoggle
@@ -1000,7 +1005,13 @@
     } catch (_eIn0) {}
     if (_r4600inert) {
       if (modal) {
+        // focus fixup rule 落 body 绕过模态门：fixup 是 UA 级焦点回落（spec
+        // interaction.html#focus-fixup-rule——无 focusable area 时 body 成为焦点
+        // 区），不是常规 focusing 操作；body 本身被模态 inert 不阻断 fixup
+        //（Chromium 同款：inert modal dialog showModal 后 activeElement===body）。
+        try { globalThis.__zwModalGateBypass = true; } catch (_eBp1) {}
         try { if (globalThis.document && globalThis.document.body && globalThis.document.body.focus) globalThis.document.body.focus(); } catch (_eFx) {}
+        try { globalThis.__zwModalGateBypass = false; } catch (_eBp2) {}
       }
       return;
     }
@@ -1047,6 +1058,10 @@
   // https://html.spec.whatwg.org/multipage/interactive-elements.html#modal-dialogs
   function _zwDialogModalFocusGateOk(el) {
     try {
+      if (!el) return true;
+      // 失连元素不属渲染树、不受模态 inert 门限（R114/T55 detached focus 契约保持
+      // ——spec focusable area 要求 being rendered，inert 只作用于渲染内容）。
+      try { if (el.isConnected === false) return true; } catch (_eMgDc) {}
       var _mgN = _zwDialogModalStack ? _zwDialogModalStack.length : 0;
       if (!_mgN || !el) return true;
       for (var _mgI = _mgN - 1; _mgI >= 0; _mgI--) {
@@ -1055,10 +1070,54 @@
         var _mgDp = _proxyCache[_mgK];
         if (!_mgDp || !_mgDp.hasAttribute || !_mgDp.hasAttribute('open')) continue;
         try { if (!_mgDp.isConnected) continue; } catch (_eMgIc) { continue; }
-        return !!_mgDp.contains(el);
+        return _zwDialogShadowInclContains(_mgDp, el);
       }
     } catch (_eMg) {}
     return true;
+  }
+  // shadow-including inclusive descendant 判定（s29，2026-10-23）：proxy.contains 只
+  // 覆盖 light DOM——delegatesFocus 影子树内锚（R4600 R8 断言面）被误拒，spec 模态
+  // inert 的包含语义是 shadow-including。路数同 part06 activeElement host retarget：
+  // parentNode 上行遇 shadow root（__zwHandle 命中 _shadowHandles）换 host 继续；
+  // parentNode 尽头而节点自身是 shadow/frag 容器（__zwHandle / __zwFragHostHandle）
+  // 经 _shadowHandleMeta 跳 host。64 步 guard 防反链环。
+  // https://html.spec.whatwg.org/multipage/interaction.html#blocked-by-a-modal-dialog
+  function _zwDialogShadowInclContains(dp, el) {
+    try {
+      if (!dp || !el) return false;
+      if (dp === el) return true;
+      try { if (dp.contains(el)) return true; } catch (_eCt) {}
+      var _siCur = el, _siG = 0;
+      while (_siCur && _siG++ < 64) {
+        if (_siCur === dp) return true;
+        var _siPar = null;
+        try { _siPar = _siCur.parentNode || null; } catch (_ePn) { _siPar = null; }
+        if (_siPar) {
+          if (_siPar === dp) return true;
+          var _siPh = null;
+          try { _siPh = (_siPar.__zwHandle != null) ? _siPar.__zwHandle : null; } catch (_ePh) {}
+          if (_siPh != null && _shadowHandles[_siPh]) {
+            try { _siCur = _siPar.host || null; } catch (_eHst) { _siCur = null; }
+            continue;
+          }
+          _siCur = _siPar;
+          continue;
+        }
+        var _siMh = null;
+        try { _siMh = (_siCur.__zwHandle != null) ? _siCur.__zwHandle : null; } catch (_eMh) {}
+        if (_siMh == null || !_shadowHandles[_siMh]) {
+          try { _siMh = (_siCur.__zwFragHostHandle != null) ? _siCur.__zwFragHostHandle : null; } catch (_eFh) {}
+        }
+        if (_siMh != null && _shadowHandles[_siMh]) {
+          var _siMeta = _shadowHandleMeta[_siMh];
+          if (!_siMeta) return false;
+          try { _siCur = _makeProxy(_siMeta.hostSel, _siMeta.hostHandle); } catch (_eMp) { _siCur = null; }
+          continue;
+        }
+        return false;
+      }
+    } catch (_eSi) {}
+    return false;
   }
   // ---------- R4600 dialog focusing steps 家族 end ----------
   // R3290：dialog open 内容属性是否 present（boolean 属性，presence 判定）。latest-wins 反映同 execute 内

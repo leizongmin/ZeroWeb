@@ -387,4 +387,58 @@ fn test_dialog_modal_focus_gate_s28() {
         "G4b：栈顶模态子树内可聚焦"
     );
     sandbox.execute("g4i.close(); g4o.close();").unwrap();
+
+    // G5（s29）：页面直调 focus() 同受门限——模态外元素 focus() no-op（无 focus
+    // 事件、activeElement 不变）；模态子树内 focus() 正常。inert-node-is-unfocusable
+    // 断言面（element.focus() + focus 事件 sentinel）。
+    sandbox
+        .execute(
+            "var g5d = document.querySelector('#g1d'); \
+             var g1b5 = document.querySelector('#g1b'); \
+             var g2b5 = document.querySelector('#g2b'); \
+             var g5Events = []; \
+             g1b5.addEventListener('focus', function() { g5Events.push('g1b'); }); \
+             g5d.showModal(); \
+             document.querySelector('#g2c').focus(); \
+             g1b5.focus(); \
+             globalThis.__g5a = g5Events.length === 0 ? 'noevent' : 'fired'; \
+             globalThis.__g5b = document.activeElement === document.querySelector('#g2c') ? 'kept' : 'moved'; \
+             document.querySelector('#g2b').focus(); \
+             globalThis.__g5c = document.activeElement === g2b5 ? 'in' : 'blocked'; \
+             g5d.close();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__g5a").unwrap().value,
+        "noevent",
+        "G5a：模态外 focus() 不派 focus 事件"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__g5b").unwrap().value,
+        "kept",
+        "G5b：模态外 focus() 焦点不动"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__g5c").unwrap().value,
+        "in",
+        "G5c：模态子树内 focus() 正常"
+    );
+
+    // G6（s29）：失连元素 focus() 不受模态门限（R114/T55 detached focus 契约——
+    // inert 只作用于渲染内容）。
+    sandbox
+        .execute(
+            "var g5d2 = document.querySelector('#g1d'); \
+             g5d2.showModal(); \
+             var g6d = document.createElement('input'); \
+             g6d.focus(); \
+             globalThis.__g6 = globalThis._zwMElFocused === g6d ? 'owned' : 'blocked'; \
+             g5d2.close();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__g6").unwrap().value,
+        "owned",
+        "G6：失连元素 focus() 保持 R114 所有权语义"
+    );
 }
