@@ -265,8 +265,14 @@ impl InlineFormattingContext {
                             // 词间纯空白 run / run 前导可折叠空格的 advance 同样计 ls
                             //（与 R4232 词尾空格同语义；旧实现漏计 → c542-letter-sp-001
                             // 行 6 span 后空格 advance 多 15px，词右移）。
+                            // R5229（css-text-3 §8 word-separator）：空格 advance 同样计
+                            // word_spacing——与 paint 侧 per-char 口径（text.rs
+                            // is_word_separator(ch) += frag_word_spacing）及下方词尾空格
+                            // 臂同模型；旧实现漏计 → c541-word-sp-001 div5 span 前空格
+                            // 25 应 0（ws -1em）。
                             current_x += self.advance_of(' ', run.font_id, run.font_size, run.is_ahem_font)
-                                + run.letter_spacing;
+                                + run.letter_spacing
+                                + run.word_spacing;
                             last_was_collapsible_ws = true;
                             last_content_owner = Some(run.node_id);
                             last_ended_collapsible_ws = true;
@@ -275,8 +281,12 @@ impl InlineFormattingContext {
                         continue;
                     }
                     if has_leading_collapsible_space && !current_line.runs.is_empty() && !last_was_collapsible_ws {
+                        // R5229：run 首可折叠空格 advance 计 word_spacing（同上 §8 口径，
+                        // paint 侧 per-char 同源）；c541-word-sp-001 div5 ` xx` 前导空格
+                        // 25 应 0（ws -1em）。
                         current_x += self.advance_of(' ', run.font_id, run.font_size, run.is_ahem_font)
-                            + run.letter_spacing;
+                            + run.letter_spacing
+                            + run.word_spacing;
                     }
                     last_was_collapsible_ws = false;
 
@@ -319,9 +329,16 @@ impl InlineFormattingContext {
                             // R4232（css-text-4 #letter-spacing）：空格亦为字符单元——每个空格
                             // 字符后的 ls 计入词间 advance（旧实现漏计 → 词间间距逐词短 30，
                             // c542-letter-sp-000 行 4-7 各词对依次左移 30/60/90）。
+                            // R5229（css-text-3 §8 word-separator）：空格 advance 同样计
+                            // word_spacing——跨 run 边界空格（前 run 尾词 + span 首词
+                            // word_idx==0 无 lead_gap）此前整段丢 ws：c541-word-sp-001
+                            // div4 .eight span 前空格 25 应 50（ws 25px，chromium 探针
+                            // SP w=50.02）。同 run 词间由下方 lead_gap 携带 ws 的旧口径
+                            // 一并撤销（本臂承接，避免双计），净 advance 不变。
                             let space_w = self.advance_of(' ', run.font_id, run.font_size, run.is_ahem_font)
                                 * space_count as f32
-                                + run.letter_spacing * space_count as f32;
+                                + run.letter_spacing * space_count as f32
+                                + run.word_spacing * space_count as f32;
                             (trimmed, space_w)
                         } else {
                             (word.as_str(), 0.0f32)
@@ -529,6 +546,10 @@ impl InlineFormattingContext {
                         // /numeric 类别边界额外插 0.125em 前导 gap（CSS Text 4 §8）。
                         // R4231：adjacent_ls 补偿撤销——R1450 count-1 语义下词尾 ls 丢失需前导
                         // 补回；count 语义下词尾 ls 已含于上一词 word_width，此处再补即双计。
+                        // R5229：word-spacing 项撤销——ws 改由词尾空格 advance 臂（css-text-3
+                        // §8 word-separator 自身 advance）承载，同 run 词间净 advance 不变、
+                        // 跨 run 边界不再丢失；无分隔符的相邻词（CJK per-char 裸词）本就
+                        // 不应施 ws（§8 只作用于 word-separator 字符）。
                         let (autospace_gap, adjacent_ls) = if word_idx > 0 && !current_line.runs.is_empty() {
                             let prev_last = words.get(word_idx - 1).and_then(|w| w.chars().last());
                             let curr_first = content_word.chars().next();
@@ -543,7 +564,7 @@ impl InlineFormattingContext {
                             (0.0, 0.0)
                         };
                         let mut lead_gap = if word_idx > 0 && !current_line.runs.is_empty() {
-                            run.word_spacing + autospace_gap + adjacent_ls
+                            autospace_gap + adjacent_ls
                         } else {
                             0.0
                         };
