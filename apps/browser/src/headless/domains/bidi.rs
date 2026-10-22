@@ -34,6 +34,9 @@ impl HeadlessServer {
     }
 
     pub(super) fn cmd_browser_close(&self) -> Result<Value, ProtocolError> {
+        // G4：置位优雅关停，复用循环下一 tick 消费（此前为空壳 stub：只回
+        // closing 不关停，自动化标准停止路径失效）。
+        self.shutdown_requested.store(true, Ordering::SeqCst);
         Ok(serde_json::json!({ "result": "closing" }))
     }
 

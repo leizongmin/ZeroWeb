@@ -105,6 +105,9 @@ pub struct HeadlessServer {
     /// DevTools 面板 nodeId → shim `__zwSelector` 映射（`DOM.getDocument` 时重建；
     /// CSS.getComputedStyle/getMatchedStylesForNode 按 nodeId 解析节点用）。
     pub(super) devtools_node_selectors: std::sync::Mutex<std::collections::HashMap<u64, String>>,
+    /// 优雅关停请求（CDP `Browser.close` 置位）；复用循环与 SIGINT flag 一并消费，
+    /// 命中后退出循环并经 session Drop 回收 renderer 子进程（G4）。
+    shutdown_requested: std::sync::atomic::AtomicBool,
 }
 
 impl HeadlessServer {
@@ -120,6 +123,7 @@ impl HeadlessServer {
             auto_attach: std::sync::atomic::AtomicBool::new(false),
             devtools_frontend_dir: zero_runtime_config::optional_path("ZW_DEVTOOLS_FRONTEND_DIR"),
             devtools_node_selectors: std::sync::Mutex::new(std::collections::HashMap::new()),
+            shutdown_requested: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -214,7 +218,7 @@ impl HeadlessServer {
         *self.addr.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// 启动无头协议服务器，阻塞运行直到进程终止。
+    /// 启动无头协议服务器，阻塞运行直到 SIGINT 或 `Browser.close` 优雅退出。
     ///
     /// 支持 HTTP 发现请求（/json/version、/json）和 WebSocket 协议连接。
     /// 连接模型（devtools goal M1-S1.5）：**单线程 socket 多路复用**——DevTools
@@ -244,6 +248,16 @@ impl HeadlessServer {
 
         let mut conns: Vec<ConnState> = Vec::new();
         loop {
+            // G4：优雅关停——SIGINT flag（Ctrl+C / `kill -INT`，shutdown_signal
+            // 全局置位）或 CDP `Browser.close` 任一命中即退出复用循环。`session`
+            // 随作用域 Drop 经 `RendererHandle::drop` 回收 renderer 子进程；
+            // 不落 session.json：headless target 是自动化临时面，写 clean_exit=true
+            // 反会吞掉 GUI 侧待恢复的崩溃提示（会话语义仍归 GUI 生命周期管）。
+            if crate::shutdown_signal::is_set() || self.shutdown_requested.load(std::sync::atomic::Ordering::SeqCst) {
+                tracing::info!("Headless server shutting down (SIGINT or Browser.close)");
+                break;
+            }
+
             // 1. 接受新连接（非阻塞，一次收干）
             while let Ok((stream, peer)) = listener.accept() {
                 tracing::info!("Connection from {peer}");
@@ -291,6 +305,10 @@ impl HeadlessServer {
 
             std::thread::sleep(std::time::Duration::from_millis(3));
         }
+
+        // 循环退出即优雅关停完成：连接随 `conns` Drop 关闭，renderer 经
+        // `session` Drop 回收（G4）。
+        Ok(())
     }
 
     /// 推进单条连接一个非阻塞步骤。Network 域事件不直接写本连接，而是汇入

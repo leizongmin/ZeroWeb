@@ -87,8 +87,12 @@ fn test_dispatch_session_new() {
 fn test_dispatch_browser_close() {
     let server = HeadlessServer::new(0, 800.0, 600.0);
     let mut session = HeadlessSession::new(800.0, 600.0);
+    // G4：Browser.close 不再是空壳——除响应形状不变外须置位优雅关停，
+    // 复用循环消费后退出并经 session Drop 回收 renderer。
+    assert!(!server.shutdown_requested.load(std::sync::atomic::Ordering::SeqCst));
     let result = server.dispatch(&mut session, "browser.close", Value::Null).unwrap();
     assert_eq!(result["result"], "closing");
+    assert!(server.shutdown_requested.load(std::sync::atomic::Ordering::SeqCst));
 }
 
 #[test]
