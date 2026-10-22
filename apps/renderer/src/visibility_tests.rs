@@ -65,3 +65,73 @@ fn set_visibility_records_host_state_with_js_disabled() {
         .unwrap();
     assert!(runtime.page_hidden, "JS 关闭仍记录宿主态（泵门控不依赖 JS 开关）");
 }
+
+/// DC-1 后台策略面端到端（真 SetVisibility IPC 臂 + 真 shim interval 链）：隐藏页
+/// interval 钳到 1s 节奏（恢复自动回原延迟——re-arm 每代重读 `__ZW_HIDDEN`，无需显式
+/// 恢复动作）。钳制面在 shim 公共 timer API 入口（`_zwClampDelay`），本测经 IPC 注入
+/// 隐藏态走完整链。窗口余量：可见 ~4ms/拍（shim nesting 钳制下限）→ 500ms 窗 ≥10 拍；
+/// 隐藏 1s/拍 → 2200ms 窗 ≤3 拍；恢复首拍 ≤1s 到位后回 4ms 节奏 → 2200ms 窗 ≥10 拍。
+/// 翻转后先静置 100ms 再清零——翻转前 arm 的 4ms 残留 entry（≤2 拍）排空后才起测窗，
+/// 防计入残留拍。
+#[test]
+fn background_timer_policy_throttles_interval_and_recovers() {
+    let mut runtime = runtime_with_sink(9403);
+    runtime.stub_network = true;
+    runtime
+        .js_worker
+        .set_dom_snapshot("<html><body></body></html>", "about:blank");
+    let tick = |runtime: &RendererRuntime| {
+        runtime
+            .js_worker
+            .execute_script_direct("globalThis.__n = (globalThis.__n || 0) + 1; String(globalThis.__n)")
+            .unwrap()
+            .parse::<u64>()
+            .unwrap()
+    };
+    runtime
+        .js_worker
+        .execute_script_direct(
+            "globalThis.__n = 0; setInterval(function () { globalThis.__n = globalThis.__n + 1; }, 0);",
+        )
+        .unwrap();
+
+    // 可见基线：~4ms/拍。
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    let visible_ticks = tick(&runtime);
+    assert!(
+        visible_ticks >= 10,
+        "可见页 interval 应按 shim 钳制节奏（~4ms/拍）触发，500ms 窗实得 {visible_ticks} 拍"
+    );
+
+    // 隐藏：钳到 1s/拍（先静置排空翻转前 arm 的 4ms 残留）。
+    runtime
+        .dispatch_message(IpcMessage {
+            id: 0,
+            kind: IpcMessageKind::SetVisibility(SetVisibilityParams { hidden: true }),
+        })
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    runtime.js_worker.execute_script_direct("globalThis.__n = 0;").unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(2200));
+    let hidden_ticks = tick(&runtime);
+    assert!(
+        hidden_ticks <= 3,
+        "隐藏页 interval 应钳到 1s/拍（2200ms 窗 ≤3 拍），实得 {hidden_ticks} 拍——后台节流失效"
+    );
+
+    // 恢复可见：re-arm 时点判定，新 arm 回 ~4ms/拍（首拍 ≤1s 后节奏恢复）。
+    runtime
+        .dispatch_message(IpcMessage {
+            id: 0,
+            kind: IpcMessageKind::SetVisibility(SetVisibilityParams { hidden: false }),
+        })
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    runtime.js_worker.execute_script_direct("globalThis.__n = 0;").unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(2200));
+    let restored_ticks = tick(&runtime);
+    assert!(
+        restored_ticks >= 10,
+        "恢复可见后新 arm 应回原节奏（2200ms 窗 ≥10 拍），实得 {restored_ticks} 拍——恢复语义失效"
+    );
+}

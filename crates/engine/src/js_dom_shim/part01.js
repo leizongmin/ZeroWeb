@@ -5276,8 +5276,36 @@
   // M1 基线实测嵌套零延迟链无钳制 ~20 万 iter/s 忙转（BG-01）。
   // https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#timer-initialisation-steps
   var _zwTimerNesting = 0;
+  // DC-1 后台策略面（background-resource-lifecycle goal，2026-10-23）：隐藏页 arm 的
+  // timer 最短 1s——钳制只落**页面 timer API 入口**（setTimeout / setInterval re-arm /
+  // requestIdleCallback 三族都经本函数单口），shim 内部任务派发（IDB 事务推进等，见
+  // _zwInternalTask）是 event-loop task 而非 timer task，不受此钳制。隐藏态读宿主注入的
+  // `globalThis.__ZW_HIDDEN`（SetVisibility 链，part06 同源语义）；与 nesting 4ms 钳制
+  // 叠加取 max。恢复自动回原延迟：re-arm 每代重读本态，已入队 entry 不重排（恢复后首个
+  // entry 至多迟到 1s）。语义锚：HTML spec 不强制后台节流数值；1s 对齐 Chromium
+  // hidden-page timer clamp 同族策略（https://chromestatus.com/feature/4710315958996992）。
   function _zwClampDelay(ms) {
-    return (_zwTimerNesting > 5 && ms < 4) ? 4 : ms;
+    if (_zwTimerNesting > 5 && ms < 4) ms = 4;
+    if (globalThis.__ZW_HIDDEN === true && ms < 1000) ms = 1000;
+    return ms;
+  }
+  // shim 内部任务派发——IDB 事务推进/完成轮询等机制续体。spec 中这些回调派发走
+  // event-loop task 队列而非 timer API（IDB 事务推进不受 hidden-page timer 节流，
+  // https://w3c.github.io/IndexedDB/#transaction-scheduling），故绕开公共 setTimeout
+  // 直接 arm host（0ms 原样入队，不经理 _zwClampDelay）；无 host 时回落 _defer。
+  // fire-once：`__zwResolveCallback` 先 delete 后调用，pending 项即焚；`__zwtask:` 键
+  // 前缀与 timer/interval/rIC 键空间隔离，clearTimeout 双删不会误伤。
+  function _zwTaskIdKey(handle) { return '__zwtask:' + handle; }
+  function _zwInternalTask(fn) {
+    var handle = _timerId++;
+    var id = _zwTaskIdKey(handle);
+    var hostSt = _zwHostSetTimeout();
+    if (hostSt) {
+      globalThis.__zw_pending[id] = fn;
+      try { hostSt(id, 0); return; }
+      catch (_e) { delete globalThis.__zw_pending[id]; }
+    }
+    _defer(fn);
   }
   globalThis.setTimeout = function(fn, delay) {
     var handle = _timerId++;
@@ -5376,7 +5404,7 @@
     var id = _ricIdKey(handle);
     globalThis.__zw_pending[id] = function() { try { fn(deadline); } catch (_e) {} };
     if (typeof __zw_setTimeout === 'function') {
-      try { __zw_setTimeout(id, (options && options.timeout) | 0); return handle; }
+      try { __zw_setTimeout(id, _zwClampDelay((options && options.timeout) | 0)); return handle; }
       catch (_e) { delete globalThis.__zw_pending[id]; }
     }
     // fallback（无 host）：微任务同步触发（同 setTimeout fallback）。

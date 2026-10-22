@@ -10886,9 +10886,9 @@
           )
         );
       }
-      setTimeout(poll, 0);
+      _zwInternalTask(poll);
     };
-    setTimeout(poll, 0);
+    _zwInternalTask(poll);
   }
 
   globalThis.__zw_idb_connection_event = function (connectionId, oldVersion, newVersion) {
@@ -11741,8 +11741,7 @@
         }
       });
     };
-    if (typeof setTimeout === 'function') setTimeout(fire, 0);
-    else fire();
+    _zwInternalTask(fire);
   }
 
   // https://w3c.github.io/IndexedDB/#dom-idbdatabase-objectstorenames
@@ -12524,14 +12523,14 @@
       }, this);
       if (conflict) {
         var transaction = this.transaction;
-        setTimeout(function () {
+        _zwInternalTask(function () {
           if (transaction._aborted || transaction._finished) return;
           transaction._requestError = new globalThis.DOMException(
             'The unique index contains duplicate values.',
             'ConstraintError'
           );
           transaction.abort();
-        }, 0);
+        });
       }
     }
     var index = new _zwIDBIndex(this, name, metadata);
@@ -13339,7 +13338,7 @@
       _zwIDBFailTransactionStart(transaction, error);
       return;
     }
-    setTimeout(function () { _zwIDBPollTransactionStart(transaction); }, 0);
+    _zwInternalTask(function () { _zwIDBPollTransactionStart(transaction); });
   }
 
   // https://w3c.github.io/IndexedDB/#transaction-scheduling
@@ -13363,7 +13362,7 @@
       return;
     }
     transaction._hostStartRequest = status.request;
-    setTimeout(function () { _zwIDBPollTransactionStart(transaction); }, 0);
+    _zwInternalTask(function () { _zwIDBPollTransactionStart(transaction); });
   }
 
   function _zwIDBStartEligibleTransactions(state) {
@@ -13420,7 +13419,7 @@
         || transaction._deferCompletion
         || transaction._completionCheckScheduled) return;
     transaction._completionCheckScheduled = true;
-    setTimeout(function () { _zwIDBRunTransactionCompletion(transaction); }, 0);
+    _zwInternalTask(function () { _zwIDBRunTransactionCompletion(transaction); });
   }
 
   function _zwIDBTransaction(db, names, mode, deferCompletion, durability) {
@@ -13741,7 +13740,7 @@
       return;
     }
     _zwIDBNotifyConnections(state, oldVersion, newVersion);
-    setTimeout(function () {
+    _zwInternalTask(function () {
       if (!remaining()) {
         proceed();
         return;
@@ -13761,7 +13760,7 @@
           proceed();
         }
       };
-    }, 0);
+    });
   }
 
   function _zwIDBCloneStores(stores) {
@@ -13855,8 +13854,7 @@
       var retry = function () {
         _zwIDBFinishUpgrade(req, db, transaction, state, snapshot, created, done);
       };
-      if (typeof setTimeout === 'function') setTimeout(retry, 0);
-      else retry();
+      _zwInternalTask(retry);
       return;
     }
     if (!transaction._aborted) {
@@ -14092,7 +14090,7 @@
             refreshErrorEvent.bubbles = true;
             refreshErrorEvent.cancelable = true;
             _zwIDBDispatch(req, 'error', undefined, refreshErrorEvent);
-            setTimeout(done, 0);
+            _zwInternalTask(done);
             return;
           }
         }
@@ -14109,7 +14107,7 @@
             hostErrorEvent.bubbles = true;
             hostErrorEvent.cancelable = true;
             _zwIDBDispatch(req, 'error', undefined, hostErrorEvent);
-            setTimeout(done, 0);
+            _zwInternalTask(done);
             return;
           }
         }
@@ -14125,7 +14123,7 @@
           errorEvent.bubbles = true;
           errorEvent.cancelable = true;
           _zwIDBDispatch(req, 'error', undefined, errorEvent);
-          setTimeout(done, 0);
+          _zwInternalTask(done);
           return;
         }
         if (!state) {
@@ -14178,8 +14176,7 @@
                   done
                 );
               };
-              if (typeof setTimeout === 'function') setTimeout(finish, 0);
-              else finish();
+              _zwInternalTask(finish);
             };
             if (typeof queueMicrotask === 'function') queueMicrotask(upgrade);
             else upgrade();
@@ -14233,11 +14230,11 @@
             hostErrorEvent.bubbles = true;
             hostErrorEvent.cancelable = true;
             _zwIDBDispatch(req, 'error', undefined, hostErrorEvent);
-            setTimeout(done, 0);
+            _zwInternalTask(done);
             return;
           }
           delete _idb_databases[name];
-          setTimeout(function () {
+          _zwInternalTask(function () {
             req.readyState = 'done';
             req.result = undefined;
             _zwIDBEmit(
@@ -14246,7 +14243,7 @@
               _zwIDBVersionEvent('success', req, oldVersion, null)
             );
             done();
-          }, 0);
+          });
         };
         // https://w3c.github.io/IndexedDB/#deleting-a-database——删除前置步骤失败（host 不可达时
         // capabilities 探测同步抛 DOMException）→ error 事件送达 request，而非异常逃逸致请求无事件。
@@ -14274,7 +14271,7 @@
           setupErrorEvent.bubbles = true;
           setupErrorEvent.cancelable = true;
           _zwIDBDispatch(req, 'error', undefined, setupErrorEvent);
-          setTimeout(done, 0);
+          _zwInternalTask(done);
         }
       });
       return req;

@@ -2626,3 +2626,89 @@ fn test_timer_nesting_clamp_interval_rearm_dc1() {
         "两 interval 各按驱动次数触发"
     );
 }
+
+#[test]
+fn test_background_timer_clamp_hidden_page_dc1() {
+    // DC-1 后台策略面（background-resource-lifecycle goal，2026-10-23）：隐藏页 arm 的
+    // timer 最短 1s——钳制只落**页面 timer API 入口**（_zwClampDelay 单口：setTimeout /
+    // setInterval re-arm / requestIdleCallback），与 nesting 4ms 钳制叠加取 max；长 delay
+    // 不动。恢复自动回原延迟（re-arm 每代重读 __ZW_HIDDEN，已入队 entry 不重排）。
+    // shim 内部任务派发免钳（_zwInternalTask——IDB 事务推进等 event-loop task 不受
+    // hidden timer 节流）由 browser 多进程集成测
+    // cross_renderer_transactions_wait_for_conflicting_scope 端到端钉住（本测试脚本
+    // 在 shim 闭包外，不可直呼内部函数）。语义锚：HTML spec 不强制后台节流数值；1s
+    // 对齐 Chromium hidden-page timer clamp 同族策略。
+    // https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#timer-initialisation-steps
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    // 记录式 host stub（同嵌套链测试：armed 以 id 记 delay；清空后读首键取最近一次 arm）。
+    sandbox
+        .execute(
+            "globalThis.__zw_pending = {};\
+             globalThis.__zw_armed = {};\
+             globalThis.__zw_setTimeout = function(id, delay) {\
+               globalThis.__zw_armed[id] = delay; };\
+             globalThis.__zw_armed_delay = function() {\
+               var ks = Object.keys(globalThis.__zw_armed);\
+               return ks.length ? String(globalThis.__zw_armed[ks[0]]) : 'none'; };",
+        )
+        .unwrap();
+    let arm = |sandbox: &mut V8Sandbox, script: &str| {
+        sandbox.execute("globalThis.__zw_armed = {};").unwrap();
+        sandbox.execute(script).unwrap();
+        sandbox.execute("globalThis.__zw_armed_delay()").unwrap().value
+    };
+
+    // 可见基线：短延迟原样。
+    assert_eq!(
+        arm(&mut sandbox, "setTimeout(function(){}, 5);"),
+        "5",
+        "可见页 setTimeout(…, 5) 原样入队"
+    );
+
+    // 隐藏态：短延迟抬 1s、长 delay 不动；rIC 与 interval 同口。
+    sandbox.execute("globalThis.__ZW_HIDDEN = true;").unwrap();
+    assert_eq!(
+        arm(&mut sandbox, "setTimeout(function(){}, 5);"),
+        "1000",
+        "隐藏页 setTimeout(…, 5) 抬到 1s"
+    );
+    assert_eq!(
+        arm(&mut sandbox, "setTimeout(function(){}, 0);"),
+        "1000",
+        "隐藏页零延迟 setTimeout 抬到 1s"
+    );
+    assert_eq!(
+        arm(&mut sandbox, "setTimeout(function(){}, 5000);"),
+        "5000",
+        "隐藏页长 delay 不动（钳制只抬下限）"
+    );
+    assert_eq!(
+        arm(&mut sandbox, "requestIdleCallback(function(){});"),
+        "1000",
+        "隐藏页 requestIdleCallback 同口抬 1s"
+    );
+    assert_eq!(
+        arm(&mut sandbox, "setInterval(function(){}, 0);"),
+        "1000",
+        "隐藏页 0ms interval 创建 arm 抬 1s"
+    );
+
+    // 恢复可见：re-arm 每代重读——新 arm 回原延迟（interval re-arm 亦回 0ms）。
+    sandbox.execute("globalThis.__ZW_HIDDEN = false;").unwrap();
+    assert_eq!(
+        arm(&mut sandbox, "setTimeout(function(){}, 5);"),
+        "5",
+        "恢复可见后 setTimeout(…, 5) 回原延迟"
+    );
+    assert_eq!(
+        arm(&mut sandbox, "setInterval(function(){}, 0);"),
+        "0",
+        "恢复可见后 interval re-arm 回原周期"
+    );
+}
