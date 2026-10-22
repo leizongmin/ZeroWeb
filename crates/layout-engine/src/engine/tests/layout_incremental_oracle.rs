@@ -416,14 +416,8 @@ fn layout_postprocess_fixtures_are_layout_effective() {
         sys.set_viewport(800.0, 600.0);
         let mut e1 = LayoutEngine::new(800.0, 600.0);
         let mut e2 = LayoutEngine::new(800.0, 600.0);
-        let g1 = geometry_of(&e1.compute(
-            &doc,
-            &sys.compute_styles(&doc, &[CssParser::parse_stylesheet(css1)]),
-        ));
-        let g2 = geometry_of(&e2.compute(
-            &doc,
-            &sys.compute_styles(&doc, &[CssParser::parse_stylesheet(css2)]),
-        ));
+        let g1 = geometry_of(&e1.compute(&doc, &sys.compute_styles(&doc, &[CssParser::parse_stylesheet(css1)])));
+        let g2 = geometry_of(&e2.compute(&doc, &sys.compute_styles(&doc, &[CssParser::parse_stylesheet(css2)])));
         assert_ne!(
             g1, g2,
             "后处理序列「{name}」的 CSS 变更对未改变全量输出——序列空转，须修 fixture"
@@ -550,5 +544,38 @@ fn layout_incremental_arm_style_change_diverges_boundary() {
         divs.is_some(),
         "撤用增量臂在样式变更后应保留旧 taffy style 几何（已知边界），但与全量一致——\
          若为修复请更新 incremental_parity_experiment 头注与本断言"
+    );
+}
+
+// ── INC-03（DC-3）"失效或保留"的保留半边 ─────────────────────────────
+
+/// DC-3"按真实输入失效或保留"的保留半边：布局无关属性（color）变更必须不扰动
+/// 几何（保留）。有效性跨层自检先行——color 声明确实改变 p1 的计算样式，否则
+/// 后续 Equal 是"双路径一致但都陈旧"的空转（同 m3-a fixture 有效性自检的教训）。
+#[test]
+fn layout_paint_only_style_change_preserves_geometry() {
+    let preserved_css: &str = &BASE_CSS.replace(
+        "p.text { font-size: 14px; line-height: 1.5; margin: 4px 0; }",
+        "p.text { font-size: 14px; line-height: 1.5; margin: 4px 0; color: #0a0; }",
+    );
+    {
+        let (doc, _elements, f) = build_main_fixture();
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let base = sys.compute_styles(&doc, &[CssParser::parse_stylesheet(BASE_CSS)]);
+        let preserved = sys.compute_styles(&doc, &[CssParser::parse_stylesheet(preserved_css)]);
+        assert_ne!(
+            base.get(&f.p1),
+            preserved.get(&f.p1),
+            "color 变更未到达 p1 计算样式（fixture 无效，Equal 将空转）"
+        );
+    }
+    let (doc, elements, f) = build_main_fixture();
+    let mut run = DualLayoutRun::new(doc, elements, BASE_CSS);
+    run.apply(
+        "p.text color 变更（changed=p1,p2）——布局无关，几何必须保留",
+        Some(preserved_css),
+        |_| vec![f.p1, f.p2],
+        Expectation::Equal,
     );
 }
