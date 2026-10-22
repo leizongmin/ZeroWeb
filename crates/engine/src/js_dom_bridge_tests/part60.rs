@@ -1914,3 +1914,63 @@ fn test_invoker_command_toggle_source_r4400() {
 
 
 
+
+/// R4500（html-semantics M2 切片 25，2026-10-22）：DOM void 方法返回值面。spec
+/// close()/show()/showModal()/requestClose() 及 cleanup 高频方法（remove/focus/
+/// blur/select/reset/showPopover/hidePopover）均为 void（返 undefined）。此前
+/// close() IDL 包装透传 helper 的 wasOpen boolean：WPT cleanup
+/// `t.add_cleanup(() => dialog.close())` 返 false → testharness
+/// is_valid_cleanup_result 判 invalid → tests.abort() → 整文件余案被 file
+/// Timeout 吞没（dialog-closedby / dialog-closedby-corner-cases 首案过后
+/// 续全灭、各余 ~28-29 案的根因）。
+/// https://html.spec.whatwg.org/multipage/interactive-elements.html#dom-dialog-close
+#[test]
+fn test_dialog_void_return_r4500() {
+    let mut sandbox = t59_sandbox_with_shim();
+    let mutations: std::sync::Arc<std::sync::Mutex<Vec<DomMutation>>> = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+    let dom_html: std::sync::Arc<std::sync::Mutex<String>> = std::sync::Arc::new(std::sync::Mutex::new(
+        "<html><body></body></html>".to_string(),
+    ));
+    let page_url: std::sync::Arc<std::sync::Mutex<String>> = std::sync::Arc::new(std::sync::Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    crate::js_dom_bridge::register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // R1：dialog 四方法全生命周期态全 undefined（未开 no-op / 非模态开 / 已开 no-op /
+    // 关 / 模态开 / 已模态 no-op / 关 / 非模态开 / requestClose 关 / 已关 no-op）。
+    sandbox
+        .execute(
+            "var d = document.createElement('dialog'); document.body.appendChild(d);             globalThis.__r1 = String(d.close()) + ',' + String(d.show()) + ',' + String(d.show())             + ',' + String(d.close()) + ',' + String(d.showModal()) + ',' + String(d.showModal())             + ',' + String(d.close()) + ',' + String(d.show()) + ',' + String(d.requestClose())             + ',' + String(d.requestClose());",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r1").unwrap().value,
+        "undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined",
+        "R1：dialog show/showModal/close/requestClose 各态返 undefined（void）"
+    );
+
+    // R2：cleanup 高频同族 void 审计——remove/focus/blur/select/reset/showPopover/
+    // hidePopover 返回 undefined。
+    sandbox
+        .execute(
+            "var el = document.createElement('div'); document.body.appendChild(el);             var inp = document.createElement('input'); inp.value = 'x'; document.body.appendChild(inp);             var pop = document.createElement('div'); pop.setAttribute('popover', ''); document.body.appendChild(pop);             var fm = document.createElement('form'); document.body.appendChild(fm);             globalThis.__r2 = String(el.remove()) + ',' + String(el.focus()) + ',' + String(el.blur())             + ',' + String(inp.select()) + ',' + String(fm.reset())             + ',' + String(pop.showPopover()) + ',' + String(pop.hidePopover());",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r2").unwrap().value,
+        "undefined,undefined,undefined,undefined,undefined,undefined,undefined",
+        "R2：remove/focus/blur/select/reset/showPopover/hidePopover 全 undefined"
+    );
+
+    // R3：void 化不破事件语义——close() 后 close 事件仍派发（异步排队跨 execute 到达）。
+    sandbox
+        .execute(
+            "var d3 = document.createElement('dialog'); document.body.appendChild(d3);             globalThis.__r3 = [];             d3.addEventListener('close', function () { globalThis.__r3.push('close'); });             d3.show();             d3.close();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r3.join('|')").unwrap().value,
+        "close",
+        "R3：close() 返 undefined 且 close 事件照常派发"
+    );
+}

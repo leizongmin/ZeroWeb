@@ -2,11 +2,38 @@
 
 **版本**: v2.0
 **日期**: 2026-10-21（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 24 收口（ToggleEvent.source/commandfor 簇 R4400 +8P，68.02%→68.13%，口径 P/(P+F+T)），下一步 corner-cases hang 排查（focusin remove+reinsert 后 showModal → ESC close 不达，detach 窗口身份链）
+**状态**: Active——M2 切片 25 收口（corner-cases hang 根因＝shim close() 返回值泄漏→WPT cleanup abort，九域 5016→5070P 同 key 回归 0），下一步 focusing-steps 家族（focus fixup/autofocus/activeElement，corner-cases 余 2F + focus-shadow 50F 新上报）
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-22 M2 切片 24）**：ToggleEvent.source/
+> **▶ 当前状态（2026-10-22 M2 切片 25）**：corner-cases hang 收口（R4500）
+> ——真根因横切两层：①shim `close()` IDL 包装透传 helper 的 wasOpen
+> boolean（spec void）；②语料 testharness `is_valid_cleanup_result` 对
+> cleanup 返非 undefined **及** `on_error` 对 cleanup 抛错均 `tests.abort()`
+> → 完成回调不达 → file Timeout 吞全文件。`t.add_cleanup(() =>
+> dialog.close())` 返 false 一个值吞 27-29 案；s23「detach 窗口身份链」
+> 归因作废（hang 案实为前一案 cleanup abort，探针五文件 DA/DB 对照 +
+> partial-flush 形态学定位）。修复：part04 三处 close 包装 void 化 +
+> part14 R3290 两处旧断言更正 + part60 `test_dialog_void_return_r4500`
+> （四方法全生命周期 + 八方法 void 族审计无第二 offender）。九域
+> 5016→**5070P**，同 key 回归 **0**、翻转 **0**；Timeout 180→173（7 文件
+> 解除吞没：closedby 1P→27/27、corner-cases 1P→28P/2F、focus-shadow
+> 50F 新上报等），+55F 为新上报真断言非回归（分母 +102 漂移，百分比口径
+> 不可比）。余 1 hang：popover-closedby-simple（cleanup `hidePopover()`
+> 抛 not-showing → abort 同族——病根 popover 有效性语义，popover 域挂
+> 账）。corner-cases 余 2F＝closing steps 内 focus fixup 不派 focusin
+> （focusing steps 家族）。
+> **下一步**：focusing-steps 家族（focus fixup→closing steps 派 focusin、
+> autofocus 委派、activeElement 语义——corner-cases 2F + focus-shadow
+> 50F + focusing-steps/activeElement 原挂账 ~15F 同域合并攻）；余挂账
+> inert 计算态（inert-node-is-unfocusable 13F 精化）、abspos/layout
+> ~10F（rendering 域）、popover 有效性语义（`:popover-open` 选择器 +
+> hidePopover not-showing 抛，popover-simple 余 hang）、impl-doc wrapper
+> requestClose、anchor-with-inline 导航缺口、parser form element pointer
+> 4F、custom command `--` 前缀 CommandEvent defer、ESC 组栈边缘乱序、
+> 非模态 close 不出组栈。
+>
+> **▶ 上轮状态（2026-10-22 M2 切片 24）**：ToggleEvent.source/
 > commandfor 簇（R4400）收口——toggle-source 三文件 3/10→10/10。①
 > ToggleEvent.source 接线（shim）：dialog/details 双面 source store
 > （激活入口存 target-key、show/showModal/close-the-dialog/R4009 队列
@@ -121,6 +148,25 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-22 M2 切片 25**：corner-cases hang 排查（R4500）——横切根因
+  收口：shim `close()` void 违约（透传 wasOpen boolean）× 语料
+  testharness cleanup abort 语义（返非 undefined / 抛错均
+  `tests.abort()`）→ file Timeout 吞全文件；s23「detach 窗口身份链」
+  归因作废。修复 part04 三处 close 包装 + part14 两处旧断言更正 +
+  part60 void 族契约 `test_dialog_void_return_r4500`（R1-R3）。九域
+  5016→5070P（同 key 回归 0、翻转 0），Timeout 180→173（closedby
+  1P→27/27、corner-cases 1P→28P/2F 等 7 文件解除吞没），+55F 为新上报
+  真断言非回归。余 popover-closedby-simple 1 hang（cleanup hidePopover
+  抛 not-showing → abort 同族，popover 域挂账）。gates：engine lib
+  3394P/0F、webview 785→786P/0F、page-runtime 136P/0F、integration lib
+  787P/0F、clippy/fmt 过、零新增依赖；中途 stash→rebase→pop 并入远端
+  共享面提交（floats + workers 呈现管线，同动 part04.js 无冲突）。证据
+  见 [evidence/2026-10-22-m2s25-r4500.md](html-semantics-compat/evidence/2026-10-22-m2s25-r4500.md)。
+- **2026-10-22 M2 切片 24**：ToggleEvent.source / commandfor 簇
+  （R4400）——toggle-source 三文件 3/10→10/10，九域 5008→5016P（+8 回归
+  0）。含横切修复：user_actions.rs plan 通道私有批回灌共享队列全史 +
+  prevented request-close 丢弃 invoker source。证据见
+  [evidence/2026-10-22-m2s24-r4400.md](html-semantics-compat/evidence/2026-10-22-m2s24-r4400.md)。
 - **2026-10-22 M2 切片 23**：dialog closedby 簇（R4300，rollover 接续
   ——上会话 429 中断遗留实现+契约 WIP，本会话核验收口）——两段推进：
   ①runner 通道：inline_local_scripts 根路径按 wpt_root 内联（域外助资

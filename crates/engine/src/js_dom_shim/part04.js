@@ -4356,7 +4356,13 @@
           return function () { _zwDialogShowModal(key, sel, handle); };
         }
         if (prop === 'close' && _realTag(sel, handle) === 'DIALOG') {
-          return function (returnValue) { return _zwDialogClose(key, sel, handle, returnValue); };
+          // R4500（html-semantics M2 切片 25，2026-10-22）：spec close(returnValue) 为
+          // void（返 undefined）——此前透传 helper 的 wasOpen boolean，WPT cleanup
+          // `t.add_cleanup(() => dialog.close())` 返 false 被 testharness
+          // is_valid_cleanup_result 判 invalid → tests.abort() → 整文件余案被 file
+          // Timeout 吞没（dialog-closedby/-corner-cases 首案过后续全灭的根因）。
+          // https://html.spec.whatwg.org/multipage/interactive-elements.html#dom-dialog-close
+          return function (returnValue) { _zwDialogClose(key, sel, handle, returnValue); };
         }
         // R4200：HTMLDialogElement.requestClose(returnValue)——请求关闭（cancel 同步
         // 可取消 + close-the-dialog 异步收尾），状态机在 part01 `_zwDialogRequestClose`。
@@ -4373,7 +4379,13 @@
           return function () { _zwDialogShowModal(key, sel, handle); };
         }
         if (prop === 'close' && _realTag(sel, handle) === 'DIALOG') {
-          return function (returnValue) { return _zwDialogClose(key, sel, handle, returnValue); };
+          // R4500（html-semantics M2 切片 25，2026-10-22）：spec close(returnValue) 为
+          // void（返 undefined）——此前透传 helper 的 wasOpen boolean，WPT cleanup
+          // `t.add_cleanup(() => dialog.close())` 返 false 被 testharness
+          // is_valid_cleanup_result 判 invalid → tests.abort() → 整文件余案被 file
+          // Timeout 吞没（dialog-closedby/-corner-cases 首案过后续全灭的根因）。
+          // https://html.spec.whatwg.org/multipage/interactive-elements.html#dom-dialog-close
+          return function (returnValue) { _zwDialogClose(key, sel, handle, returnValue); };
         }
         if (prop === 'show' && _realTag(sel, handle) === 'DIALOG') {
           return function () { _zwDialogShow(key, sel, handle); };
@@ -4382,7 +4394,13 @@
           return function () { _zwDialogShowModal(key, sel, handle); };
         }
         if (prop === 'close' && _realTag(sel, handle) === 'DIALOG') {
-          return function (returnValue) { return _zwDialogClose(key, sel, handle, returnValue); };
+          // R4500（html-semantics M2 切片 25，2026-10-22）：spec close(returnValue) 为
+          // void（返 undefined）——此前透传 helper 的 wasOpen boolean，WPT cleanup
+          // `t.add_cleanup(() => dialog.close())` 返 false 被 testharness
+          // is_valid_cleanup_result 判 invalid → tests.abort() → 整文件余案被 file
+          // Timeout 吞没（dialog-closedby/-corner-cases 首案过后续全灭的根因）。
+          // https://html.spec.whatwg.org/multipage/interactive-elements.html#dom-dialog-close
+          return function (returnValue) { _zwDialogClose(key, sel, handle, returnValue); };
         }
         // R3290：HTMLDialogElement.open / HTMLDetailsElement.open ——boolean 反射 open 内容属性。
         // spec `<details>` 与 `<dialog>` 均有 open IDL 布尔属性（presence-based）。此前仅作原始内容属性（getAttribute），

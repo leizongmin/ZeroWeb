@@ -2694,13 +2694,18 @@ fn test_html_dialog_element_api_r3290() {
          globalThis.__d2OpenAfter = String(d2.open);\
          globalThis.__d2Rv = d2.returnValue;",
     ).unwrap();
-    assert_eq!(sandbox.execute("globalThis.__closeRet").unwrap().value, "true", "close() 返 true（was open）");
+    // R4500（html-semantics M2 切片 25）：spec close(returnValue) 为 void（返
+    // undefined）——旧断言「返 true」钉定了透传 wasOpen 的错误行为，WPT cleanup
+    // `() => dialog.close()` 返 boolean 被 testharness is_valid_cleanup_result 判
+    // invalid → tests.abort() → 整文件余案 file Timeout 吞没。
+    // https://html.spec.whatwg.org/multipage/interactive-elements.html#dom-dialog-close
+    assert_eq!(sandbox.execute("globalThis.__closeRet").unwrap().value, "undefined", "close() 返 undefined（spec void；R4500）");
     assert_eq!(sandbox.execute("globalThis.__closed").unwrap().value, "0", "close() 事件排队——同 execute 未同步派发（R4200）");
     assert_eq!(sandbox.execute("globalThis.__d2OpenAfter").unwrap().value, "false", "close() → open=false（移属性）");
     assert_eq!(sandbox.execute("globalThis.__d2Rv").unwrap().value, "confirmed", "close('confirmed') → returnValue='confirmed'");
     assert_eq!(sandbox.execute("String(globalThis.__d2Closed)").unwrap().value, "1", "execute 间排空后 close 事件到达一次");
 
-    // ⑤ close() 未 open dialog → no-op（返 false，不派 close，不抛）。
+    // ⑤ close() 未 open dialog → no-op（返 undefined——spec void；R4500，不派 close，不抛）。
     sandbox.execute(
         "var d4 = document.getElementById('d4');\
          var d4Closed = 0;\
@@ -2709,7 +2714,7 @@ fn test_html_dialog_element_api_r3290() {
          globalThis.__closedNoop = String(ret);\
          globalThis.__d4Closed = String(d4Closed);",
     ).unwrap();
-    assert_eq!(sandbox.execute("globalThis.__closedNoop").unwrap().value, "false", "未 open 的 dialog close() 返 false（no-op）");
+    assert_eq!(sandbox.execute("globalThis.__closedNoop").unwrap().value, "undefined", "未 open 的 dialog close() 返 undefined（spec void no-op；R4500）");
     assert_eq!(sandbox.execute("globalThis.__d4Closed").unwrap().value, "0", "未 open 的 dialog close() 不派 close 事件");
 
     // ⑥ open 反射 setter（details + dialog 共用）：truthy→setAttribute('open','')，falsy→removeAttribute。
