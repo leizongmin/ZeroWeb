@@ -73,7 +73,7 @@ mod windows_titlebar;
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
@@ -123,6 +123,10 @@ struct CliArgs {
     ui_driver: Option<ui_driver::UiDriverConfig>,
     /// CLI 位置参数：启动 URL（对齐 Chrome `zero-browser <url>` 启动行为）。
     startup_url: Option<String>,
+    /// 显式触发本地源更新检查与应用（交付闭环 RFC FR-7；值为更新源目录）。
+    check_updates: Option<PathBuf>,
+    /// 显式回滚到上一版本（交付闭环 RFC FR-3）。
+    rollback_update: bool,
 }
 
 fn parse_args() -> Result<CliArgs, String> {
@@ -171,6 +175,8 @@ fn parse_args_from(
     let mut parity_scenario = None;
     let mut parity_output_dir = None;
     let mut startup_url: Option<String> = None;
+    let mut check_updates: Option<PathBuf> = None;
+    let mut rollback_update = false;
 
     while let Some(arg) = args.next() {
         if arg == "--single-process" || arg == "--multi-process" {
@@ -225,6 +231,17 @@ fn parse_args_from(
 
         if arg == "--wpt-parity" {
             wpt_parity = true;
+        }
+
+        if let Some(value) = arg.strip_prefix("--check-updates=") {
+            if value.is_empty() {
+                return Err("--check-updates requires a local source directory".to_string());
+            }
+            check_updates = Some(PathBuf::from(value));
+        }
+
+        if arg == "--rollback-update" {
+            rollback_update = true;
         }
 
         if let Some(value) = arg.strip_prefix("--viewport-width=") {
@@ -594,6 +611,8 @@ fn parse_args_from(
         data_smoke,
         ui_driver,
         startup_url,
+        check_updates,
+        rollback_update,
     })
 }
 
@@ -635,6 +654,9 @@ Options:
   --parity-scenario=<json>       Run a real-window Chrome parity interaction scenario
   --parity-output-dir=<dir>      Write ZeroWeb parity evidence into this directory
   --version                      Print version and build commit, then exit
+  --check-updates=<dir>          Check and apply an update from a local source
+                                 directory (manifest.json + .deb), then exit
+  --rollback-update              Roll back to the previous release, then exit
   --help, -h                     Show this help
 
 Environment: {}={}",
@@ -733,7 +755,68 @@ mod tests;
 
 // --- 无头模式入口 ---
 
-/// 无头模式：启动远程调试服务器，不接受窗口事件。
+/// 解析更新操作安装根：默认从 `current_exe` 推导（`<root>/current/usr/bin/zero-browser`
+/// 上溯三级），可用 `ZERO_UPDATE_INSTALL_ROOT` 覆盖（隔离验收用）。
+fn update_install_root() -> Option<PathBuf> {
+    match std::env::var("ZERO_UPDATE_INSTALL_ROOT") {
+        Ok(value) if !value.is_empty() => Some(PathBuf::from(value)),
+        _ => std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.ancestors().nth(3).map(Path::to_path_buf)),
+    }
+}
+
+/// 执行本地源更新检查与应用（交付闭环 RFC FR-2/FR-7）。stdout 输出单行机器
+/// 可读结果（`UPDATE_APPLIED <版本> (previous <旧版本|none>)` 或
+/// `UPDATE_REJECTED <原因码>`）；应用成功退出 0，拒绝/失败退出 1。
+fn run_check_updates(source_dir: &Path) -> i32 {
+    let Some(install_root) = update_install_root() else {
+        eprintln!("UPDATE_REJECTED INSTALL_ROOT_UNKNOWN");
+        return 1;
+    };
+    let root = zero_browser_shell::InstallRoot::new(install_root);
+    let current_version = zero_product_version::VERSION;
+    tracing::info!(
+        "checking updates: source={} current={current_version}",
+        source_dir.display()
+    );
+    match zero_browser_shell::apply_update(
+        source_dir,
+        &root,
+        current_version,
+        &zero_browser_shell::dpkg_deb_extract,
+        &zero_browser_shell::probe_prefix_version,
+    ) {
+        Ok(applied) => match applied.previous_version {
+            Some(previous) => println!("UPDATE_APPLIED {} (previous {previous})", applied.version),
+            None => println!("UPDATE_APPLIED {} (previous none)", applied.version),
+        },
+        Err(error) => {
+            println!("UPDATE_REJECTED {}", error.as_str());
+            return 1;
+        }
+    }
+    0
+}
+
+/// 执行显式回滚（交付闭环 RFC FR-3）。stdout 输出单行机器可读结果
+/// （`UPDATE_ROLLBACK <版本>` 或 `UPDATE_REJECTED <原因码>`）；成功退出 0。
+fn run_rollback_update() -> i32 {
+    let Some(install_root) = update_install_root() else {
+        eprintln!("UPDATE_REJECTED INSTALL_ROOT_UNKNOWN");
+        return 1;
+    };
+    let root = zero_browser_shell::InstallRoot::new(install_root);
+    match zero_browser_shell::rollback(&root, &zero_browser_shell::probe_prefix_version) {
+        Ok(version) => println!("UPDATE_ROLLBACK {version}"),
+        Err(error) => {
+            println!("UPDATE_REJECTED {}", error.as_str());
+            return 1;
+        }
+    }
+    0
+}
+
 fn run_headless(cli: CliArgs) {
     let port = if cli.remote_debugging_port > 0 {
         cli.remote_debugging_port
@@ -1071,6 +1154,16 @@ fn main() {
             .or_else(|| cli.parity_smoke.as_ref().map(parity_smoke::ParitySmokeConfig::url))
             .unwrap_or("zero://newtab");
         tracing::info!("SMOKE_EVENT component=browser event=enabled fixture={fixture}");
+    }
+
+    if let Some(source_dir) = cli.check_updates.clone() {
+        let code = run_check_updates(&source_dir);
+        std::process::exit(code);
+    }
+
+    if cli.rollback_update {
+        let code = run_rollback_update();
+        std::process::exit(code);
     }
 
     if cli.headless {

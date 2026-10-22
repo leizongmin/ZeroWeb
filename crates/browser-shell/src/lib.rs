@@ -21,6 +21,7 @@ mod profile;
 mod session;
 mod settings;
 mod tab;
+mod update;
 
 pub use autocomplete::*;
 pub use bookmarks::*;
@@ -32,6 +33,7 @@ pub use profile::*;
 pub use session::*;
 pub use settings::*;
 pub use tab::*;
+pub use update::*;
 
 #[cfg(test)]
 mod tests;

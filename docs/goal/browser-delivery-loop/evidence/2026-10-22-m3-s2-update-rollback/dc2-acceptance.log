@@ -1,0 +1,25 @@
+Running as unit: run-p904600-i5101031.scope; invocation ID: 91e02e8c2853464cab884ce0bb30a80b
+[DC2] PASS: active version = 26.10.22
+[DC2] PASS: leg1 applied: UPDATE_APPLIED 26.10.23 (previous 26.10.22)
+[DC2] PASS: active version = 26.10.23
+[DC2] PASS: leg1 current link flipped
+[DC2] PASS: leg1 rollback set
+[DC2] PASS: leg1b rollback: UPDATE_ROLLBACK 26.10.22
+[DC2] PASS: active version = 26.10.22
+[DC2] PASS: leg2 corrupted rejected
+[DC2] PASS: active version = 26.10.22
+[DC2] PASS: leg2 staging cleaned
+[DC2] PASS: leg3 downgrade rejected
+[DC2] PASS: active version = 26.10.22
+[DC2] PASS: leg4 self-check rejected
+[DC2] PASS: active version = 26.10.22
+[DC2] PASS: leg5 killed during copy (iterations=0)
+[DC2] PASS: active version = 26.10.22
+[DC2] PASS: leg5 retry applied
+[DC2] PASS: active version = 26.10.23
+[DC2] PASS: leg6 killed during extract (iterations=4)
+[DC2] PASS: active version = 26.10.22
+[DC2] PASS: leg6 retry applied
+[DC2] PASS: active version = 26.10.23
+[DC2] ================================
+[DC2] PASS=22 FAIL=0
