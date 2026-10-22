@@ -5,8 +5,9 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（173）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（174）
 
+- 2026-10-23 [reftest 渲染分诊：1x 全图目测不可靠——定量 ink + ≥4x 裁剪 + 删盒二分](bugs/2026-10/2026-10-23-reftest-render-forensics-crop-ink-bisect.md) — layout-engine, wpt-runner, engine
 - 2026-10-22 [窗口模式注入点击两坑：chrome 高 91px 坐标换算与空白区点击静默丢弃](bugs/2026-10/2026-10-22-windowed-click-injection-calibration.md) — browser,renderer
 - 2026-10-22 [shim void 方法返回值泄漏 → WPT cleanup abort → 整文件 Timeout 吞案](bugs/2026-10/2026-10-22-void-method-return-leaks-abort-wpt-file.md) — engine
 - 2026-10-20 [WHATWG prescan 共享 position 游标：skip 落点必须回写再进属性循环](bugs/2026-10/2026-10-20-prescan-position-cursor.md) — engine

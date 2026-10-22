@@ -9,6 +9,16 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5234 分诊轮（before-after-positioned-001 三缺陷叠层定谳——零代码改动转挂账）**（2026-10-23）
+>
+> - **择案**（R5233 下一步①）：CSS2 (1.0,2.0) 带 before-after-positioned-001（✗1.12%，generated-content 定位点）。REFTEST_DUMP + LAYOUT_DUMP + 五级最小探针链定谳为**三独立缺陷叠层**，无单点窄修面，本轮零代码改动转挂账；复跑 ✗1.12% 与 corpus 账面一致。
+> - **D1 rel span 内联 img advance 丢失**（layout-engine 域）：`<span style="position:relative">PRE<img>POST</span>Inner` 形态 img 后文本 run 左移一个图宽与方框叠盖（"PRE□TInner" 糟粕形态）；裸 img 无 span 包裹 advance 正确（探针 "PRE□POST" 全对）→ 面 pin 在 R2156 原子提升路径（span 含原子后代 → img 升容器 taffy 子、span 无自身盒、文本留 IFC）的 finalize/paint 消费段；ZW_DEBUG_IFC 证 items 流完整（text=3+inline_block=1 一行）→ collect 无恙。
+> - **D2 abspos shrink-to-fit 取 min-content**（layout-engine + taffy-local 域）：含已加载 replaced 子树的 abspos auto 宽 taffy 解析为 min-content（32px=img 宽，窄列逐词换行），CSS2 §10.3.8 应 ≈max-content（110px，img 未加载 0×0 时反而正确）；sizing.rs `apply_abspos_shrink_to_fit_width` 仅救 taffy 恒 0（width_collapsed 门）不入此景 → 面在 taffy abspos auto 宽解析或 converter 样式映射；全域 abspos 波及面须专项轮 + corpus A/B。
+> - **D3 文档级失败形态翻转**（面未定位，跨流候选）：完整 ref 文档盒3/4 rel span 子树整体不绘制（仅 "Inner" 画在线首）；同标记单独成文档或删盒1（ICB CB 的 abs span 所在 div）后变 D1 叠盖形态——首个 ICB 包含块 abs span 的存在翻转后续盒 inline 绘制，疑 engine paint 或 finalization 全局序。
+> - **方法论教训**（已沉淀 learning）：① 1x 全图目测连错两次（布局 dump 心理预置）——定量 ink + ≥4x 裁剪定谳；② --base-dir 决定 img 加载态并全局翻转 abs 宽度形态（32 vs 110px），探针必须固定该变量；③ 同 binary 同输入不同失败形态 → 逐级删盒二分定位上下文依赖；④ 布局几何全对 ≠ 绘制无恙（img x=22/226 正确落位、绘制全丢）。证据：[r5234](rendering-compat/evidence/r5234-before-after-positioned-triage-2026-10-23.md)。
+> - **挂账**：新增——⑤ before-after-positioned-001 三缺陷域（D1 advance 丢失【R5235 首选：单测先定谳行装配 vs paint 再窄修】、D2 taffy abspos shrink-to-fit min-content【专项轮】、D3 文档级形态翻转【跨流候选，D1 修复后重测】）。调整——该案从 R5233 挂账④ CSS2 带留池清单移出入⑤。维持——R5233 ①②（col 背景垂直区域、bs-rowgroup 分段，均跨流）+ ③（dialog_popover 兄弟流红）+ ④其余留池案。
+> - **下一步**：R5235 ① D1 窄修轮（layout-engine：单测先建 rel span + 内联 img 行装配断言，定位 advance 丢失点，修复 + corpus A/B 全链）② D2/D3 视 D1 修复后该案残余再分诊 ③ 红带续扫维持（CSS2 带留池案池）。
+
 > **▶ R5233 实现轮（col/colgroup 背景列几何补 §17.6.1 周界 spacing——fixed-table-layout-022/023 双翻绿，corpus FIXED=2 REGRESSED=0）**（2026-10-23）
 >
 > - **红带分诊**（R5232 下一步①，CSS2 域 (1.0,2.0) 带 48 案）：goal 点名候选 abspos-007/block-in-inline-insert-009/floats-wrap-bfc-006 经账本核对均既有挂账（R5225 深域/R5229 分叉对），跳过；候选集中 tables 域。择定 **fixed-table-layout-022（✗1.32%）+023（✗1.45%）同根修复**；table-backgrounds-bs-rowgroup-001（1.45%，tbody 背景连续覆盖 vs ref 按 cell union 分段）定谳跨流碰头挂账；border-collapse-empty-row（1.32%，collapse 网格线形态）留池；其余带内案（three-block-in-inlines 1.33%/floats-132/bidi-005/006/css1 c42-c44 族/s-11-1-1b-005/content-174/rtl-linebreak 等 ~15 案）本轮未展开留池。
