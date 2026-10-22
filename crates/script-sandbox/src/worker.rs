@@ -9,7 +9,7 @@
 //! 使得脚本状态在多次执行间保持一致。
 
 use crate::threaded_runtime::ThreadedRuntimeCore;
-use crate::{SandboxConfig, ScriptError, WORKER_BOOTSTRAP_JS};
+use crate::{SandboxConfig, ScriptError, WORKER_BOOTSTRAP_JS, worker_timer_period_at};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -22,11 +22,15 @@ struct WorkerTimer {
     due: std::time::Instant,
     /// 重复周期毫秒数；`None` 为一次性定时器（setTimeout），到期即摘除。
     period_ms: Option<u64>,
+    /// 创建时 nesting level（bootstrap arm op 第 5 元）；interval 重臂钳制按
+    /// `nesting + 已重臂代数` 逐代判定（spec 重复分支在 task 内重跑 initialisation）。
+    nesting: u64,
 }
 
 /// 定时器最小间隔 1ms：0 延迟与 0 周期的 `setInterval` 若零等待重臂会让命令循环忙转。
-/// HTML 定时器按 nesting level 的 ≥4ms 钳制未实现。
-// FIXME(spec): https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#timer-initialisation-steps
+/// 嵌套钳制（DC-1，2026-10-22）：创建 delay 由 bootstrap JS 按创建 nesting 钳；interval
+/// 重臂按 [`crate::worker_timer_period_at`] 逐代钳——1ms floor 保留为忙转底线。
+// https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#timer-initialisation-steps
 fn worker_timer_delay(ms: u64) -> std::time::Duration {
     std::time::Duration::from_millis(ms.max(1))
 }
@@ -514,14 +518,22 @@ macro_rules! v8_drain_timer_ops {
             let raw = str_val.to_rust_string_lossy(scope);
             let parts: Vec<&str> = raw.split(',').collect();
             match parts.as_slice() {
-                ["arm", id, delay, period] => {
+                ["arm", id, delay, period, level] => {
                     if let Ok(id) = id.parse::<u64>() {
                         // 延迟/周期按 f64 截断（页面常写 `1000 / 60` 这类分数周期）。
                         let delay = delay.parse::<f64>().unwrap_or(0.0).max(0.0) as u64;
                         let period = period.parse::<f64>().unwrap_or(0.0).max(0.0) as u64;
+                        let nesting = level.parse::<u64>().unwrap_or(0);
                         let due = std::time::Instant::now() + worker_timer_delay(delay);
                         let period_ms = (period > 0).then_some(period);
-                        timers.insert(id, WorkerTimer { due, period_ms });
+                        timers.insert(
+                            id,
+                            WorkerTimer {
+                                due,
+                                period_ms,
+                                nesting,
+                            },
+                        );
                     }
                 }
                 ["cancel", id, ..] => {
@@ -690,10 +702,14 @@ fn worker_thread_body(
             let close_requested = v8_drain_timer_ops!(scope, &mut timers);
             v8_drain_canvas_ops!(scope, canvas_drain);
             // interval 重臂（one-shot 摘除；callback 内 clear 已移除条目则不重臂）。
+            // 重臂钳制按创建 nesting + 代数逐代判定（本 tick task 内 re-arm，spec 同口
+            // 径）；`nesting += 1` 后即下次重臂的 level 基数。
             match period_ms {
                 Some(period_ms) => {
                     if let Some(timer) = timers.get_mut(&id) {
-                        timer.due = std::time::Instant::now() + worker_timer_delay(period_ms);
+                        timer.nesting += 1;
+                        let period = worker_timer_period_at(timer.nesting, period_ms);
+                        timer.due = std::time::Instant::now() + worker_timer_delay(period);
                     }
                 }
                 None => {
@@ -1439,5 +1455,82 @@ mod tests {
             worker.try_recv().is_none(),
             "异常退出无 Closed 事件（否则非单出口绕过）"
         );
+    }
+
+    // ── DC-1（2026-10-22，background-resource-lifecycle goal）：嵌套 timer 4ms 钳制 ──
+
+    #[test]
+    fn test_worker_timer_period_at_rearm_clamp_dc1() {
+        // interval 重臂逐代钳制边界：创建 nesting + 已 tick 代数 > 5 且周期 < 4 → 4；
+        // 浅嵌套与 ≥4ms 周期不受影响。
+        // https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#timer-initialisation-steps
+        assert_eq!(worker_timer_period_at(0, 0), 0, "顶层 0 周期不钳（1ms floor 兜底）");
+        assert_eq!(worker_timer_period_at(5, 0), 0, "nesting 5 不钳（spec：> 5 才钳）");
+        assert_eq!(worker_timer_period_at(6, 0), 4, "nesting 6 首个钳点 → 4");
+        assert_eq!(worker_timer_period_at(9, 3), 4, "深嵌套 3ms 周期钳到 4");
+        assert_eq!(worker_timer_period_at(6, 10), 10, "≥4ms 周期不受钳制");
+    }
+
+    #[test]
+    fn test_worker_bootstrap_timer_nesting_clamp_dc1() {
+        // bootstrap JS 层：创建时闭包携带 level、arm op 第 5 元携带 level、创建 delay
+        // 按嵌套钳（nesting > 5 且 <4ms → 4）。bootstrap 以 `var` 声明不跨 execute 存活
+        // （V8Sandbox execute 作用域包装），故 bootstrap + 链驱动 + op 收集合并单次
+        // execute；wrapper 手动驱动与宿主 `_workerTimerFire(id)` 同一取用路径（表内取
+        // 函数调用）。
+        use crate::V8Sandbox;
+        let mut sb = V8Sandbox::with_config(SandboxConfig::default()).unwrap();
+        let out = sb
+            .execute(&format!(
+                "{WORKER_BOOTSTRAP_JS}\n\
+                 var __topOp = (_workerTimerOps = [], setTimeout(function(){{}}, 0), _workerTimerOps[0].join(','));\n\
+                 globalThis.__gens = 0;\n\
+                 globalThis.__step = function() {{\n\
+                   globalThis.__gens++;\n\
+                   if (globalThis.__gens < 8) {{ globalThis.__next = setTimeout(globalThis.__step, 0); }} }};\n\
+                 globalThis.__next = setTimeout(globalThis.__step, 0);\n\
+                 for (var __i = 0; __i < 7; __i++) {{ _workerTimers[globalThis.__next](); }}\n\
+                 var __out = [__topOp];\n\
+                 for (var __j = 1; __j <= 8; __j++) {{ __out.push(_workerTimerOps[__j].join(',')); }}\n\
+                 _workerTimerOps = [];\n\
+                 setInterval(function(){{}}, 0);\n\
+                 __out.push(_workerTimerOps[0].join(','));\n\
+                 __out.join('|')"
+            ))
+            .unwrap()
+            .value;
+        assert_eq!(
+            out,
+            "arm,1,0,0,0|arm,2,0,0,0|arm,3,0,0,1|arm,4,0,0,2|arm,5,0,0,3|arm,6,0,0,4|arm,7,0,0,5|arm,8,4,0,6|arm,9,4,0,7|arm,10,0,0,0",
+            "顶层不钳；嵌套链第 1–6 代 delay=0（level 0–5），第 7/8 代（level 6/7）钳到 4；\
+             链后顶层 setInterval(0) 首臂不钳（重复分支钳制在 Rust 重臂逐代判定）"
+        );
+    }
+
+    #[test]
+    fn test_worker_nested_timer_chain_clamped_and_completes_dc1() {
+        // 端到端（V8 真线程）：10 代零延迟嵌套链在钳制下完成，且第 7 代起每代 ≥4ms
+        // （墙钟下限断言——调度负载只会虚高不会虚低；修前每代 1ms floor，10 代 ~10ms）。
+        let mut worker = WorkerRuntime::new(
+            "globalThis.__gens = 0;\
+             globalThis.__t0 = Date.now();\
+             globalThis.__step = function() {\
+               globalThis.__gens++;\
+               if (globalThis.__gens < 10) { setTimeout(globalThis.__step, 0); }\
+               else { postMessage('gens:' + __gens + ',ms:' + (Date.now() - __t0)); } };\
+             setTimeout(globalThis.__step, 0);",
+            SandboxConfig::default(),
+        )
+        .unwrap();
+        let event = worker.recv_timeout(Duration::from_secs(5)).unwrap();
+        match event {
+            WorkerEvent::Message(msg) => {
+                assert!(msg.starts_with("gens:10"), "钳制下 10 代链须完成: {msg}");
+                let ms: u64 = msg.split("ms:").nth(1).unwrap_or("0").parse().unwrap_or(0);
+                assert!(ms >= 14, "第 7 代起 ≥4ms 钳制生效（修前 ~10×1ms）: {msg}");
+            }
+            other => panic!("Expected Message, got: {other:?}"),
+        }
+        worker.terminate();
     }
 }

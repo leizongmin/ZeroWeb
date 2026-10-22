@@ -305,13 +305,28 @@ pub(crate) const WORKER_BOOTSTRAP_JS: &str = r#"
     };
     var _workerTimers = {};
     var _workerTimerOps = [];
+    // DC-1（2026-10-22，background-resource-lifecycle goal）：嵌套 timer 最小延迟钳制，
+    // 与页面 shim 同款任务链模型——创建时闭包携带 level（nesting level），fire 时计数
+    // 绝对赋值 level+1（每次 fire 独立 execute，绝对赋值天然自洽）；创建时按 level 钳
+    // delay（>5 且 <4 → 4）。interval 重复分支的重臂在宿主 Rust 轮（重臂钳制按
+    // 创建 level + 已 tick 代数逐代判定，见 worker_timer_period_at）。
+    // https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#timer-initialisation-steps
+    var _workerTimerNesting = 0;
     var _workerTimerSet = function(callback, delay, period) {
         if (typeof callback !== 'function') {
             return 0;
         }
         var id = ++_workerTimerSeq;
-        _workerTimers[id] = callback;
-        _workerTimerOps.push(['arm', id, typeof delay === 'number' && delay > 0 ? delay : 0, period]);
+        var level = _workerTimerNesting;
+        if (level > 5 && typeof delay === 'number' && delay < 4) {
+            delay = 4;
+        }
+        _workerTimers[id] = function() {
+            _workerTimerNesting = level + 1;
+            callback();
+            _workerTimerNesting = 0;
+        };
+        _workerTimerOps.push(['arm', id, typeof delay === 'number' && delay > 0 ? delay : 0, period, level]);
         return id;
     };
     var setTimeout = function(callback, delay) {
@@ -336,6 +351,15 @@ pub(crate) const WORKER_BOOTSTRAP_JS: &str = r#"
         _workerTimerOps.push(['close', 0, 0, 0]);
     };
 "#;
+
+/// interval 重臂钳制（DC-1，2026-10-22；spec timer initialisation steps 重复分支）：
+/// re-arm 发生于本 tick task 内，nesting level = 创建 level + 已 tick 代数；
+/// level > 5 且周期 < 4 → 4。与页面 shim 第 6 tick 起 ≥4ms 同语义。
+/// V8/QuickJS worker 轮共用（两模块 feature 互斥，放无门控层）。
+// https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#timer-initialisation-steps
+pub(crate) fn worker_timer_period_at(nesting: u64, period_ms: u64) -> u64 {
+    if nesting > 5 && period_ms < 4 { 4 } else { period_ms }
+}
 
 /// 脚本沙箱抽象 trait — `V8Sandbox` 和 `QuickJSSandbox` 都实现。
 ///

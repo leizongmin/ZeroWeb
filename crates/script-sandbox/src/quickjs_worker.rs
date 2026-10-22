@@ -18,10 +18,15 @@ struct WorkerTimer {
     due: std::time::Instant,
     /// 重复周期毫秒数；`None` 为一次性定时器（setTimeout），到期即摘除。
     period_ms: Option<u64>,
+    /// 创建时 nesting level（bootstrap arm op 第 5 元）；interval 重臂钳制按
+    /// `nesting + 已重臂代数` 逐代判定（spec 重复分支在 task 内重跑 initialisation）。
+    nesting: u64,
 }
 
 /// 定时器最小间隔 1ms（同 worker.rs：0 周期 setInterval 防命令循环忙转）。
-// FIXME(spec): https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#timer-initialisation-steps
+/// 嵌套钳制（DC-1）：创建 delay 由 bootstrap JS 按创建 nesting 钳；interval 重臂按
+/// [`worker::worker_timer_period_at`] 逐代钳——floor 保留为钳制未覆盖场景的忙转底线。
+// https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#timer-initialisation-steps
 fn worker_timer_delay(ms: u64) -> std::time::Duration {
     std::time::Duration::from_millis(ms.max(1))
 }
@@ -292,10 +297,13 @@ fn quickjs_worker_thread_body(
                 quickjs_drain_canvas_ops(&mut ctx, &canvas_drain);
             });
             // interval 重臂（one-shot 摘除；callback 内 clear 已移除条目则不重臂）。
+            // 重臂钳制按创建 nesting + 代数逐代判定（同 worker.rs，spec 同口径）。
             match period_ms {
                 Some(period_ms) => {
                     if let Some(timer) = timers.get_mut(&id) {
-                        timer.due = std::time::Instant::now() + worker_timer_delay(period_ms);
+                        timer.nesting += 1;
+                        let period = crate::worker_timer_period_at(timer.nesting, period_ms);
+                        timer.due = std::time::Instant::now() + worker_timer_delay(period);
                     }
                 }
                 None => {
@@ -414,14 +422,22 @@ fn quickjs_drain_timer_ops(ctx: &mut rquickjs::Ctx, timers: &mut HashMap<u64, Wo
             .unwrap_or_default();
         let parts: Vec<&str> = raw.split(',').collect();
         match parts.as_slice() {
-            ["arm", id, delay, period] => {
+            ["arm", id, delay, period, level] => {
                 if let Ok(id) = id.parse::<u64>() {
                     // 延迟/周期按 f64 截断（页面常写 `1000 / 60` 这类分数周期）。
                     let delay = delay.parse::<f64>().unwrap_or(0.0).max(0.0) as u64;
                     let period = period.parse::<f64>().unwrap_or(0.0).max(0.0) as u64;
+                    let nesting = level.parse::<u64>().unwrap_or(0);
                     let due = std::time::Instant::now() + worker_timer_delay(delay);
                     let period_ms = (period > 0).then_some(period);
-                    timers.insert(id, WorkerTimer { due, period_ms });
+                    timers.insert(
+                        id,
+                        WorkerTimer {
+                            due,
+                            period_ms,
+                            nesting,
+                        },
+                    );
                 }
             }
             ["cancel", id, ..] => {
@@ -763,5 +779,32 @@ mod tests {
         let bind = ops.iter().find(|op| op[0] == "bind").expect("复活应记 bind op");
         assert_eq!(bind.as_array().unwrap().len(), 4, "bind 应含 sel 第 4 元: {bind}");
         assert_eq!(bind[3].as_str(), Some("#cv"));
+    }
+
+    #[test]
+    fn test_quickjs_worker_nested_timer_chain_clamped_and_completes_dc1() {
+        // DC-1 端到端（QuickJS 真线程，对称 V8 worker 测试）：10 代零延迟嵌套链在钳制下
+        // 完成，第 7 代起每代 ≥4ms（墙钟下限断言——修前每代 1ms floor，10 代 ~10ms）。
+        let mut worker = WorkerRuntime::new(
+            "globalThis.__gens = 0;\
+             globalThis.__t0 = Date.now();\
+             globalThis.__step = function() {\
+               globalThis.__gens++;\
+               if (globalThis.__gens < 10) { setTimeout(globalThis.__step, 0); }\
+               else { postMessage('gens:' + __gens + ',ms:' + (Date.now() - __t0)); } };\
+             setTimeout(globalThis.__step, 0);",
+            SandboxConfig::default(),
+        )
+        .unwrap();
+        let event = worker.recv_timeout(Duration::from_secs(5)).unwrap();
+        match event {
+            WorkerEvent::Message(msg) => {
+                assert!(msg.starts_with("gens:10"), "钳制下 10 代链须完成: {msg}");
+                let ms: u64 = msg.split("ms:").nth(1).unwrap_or("0").parse().unwrap_or(0);
+                assert!(ms >= 14, "第 7 代起 ≥4ms 钳制生效（修前 ~10×1ms）: {msg}");
+            }
+            other => panic!("Expected Message, got: {other:?}"),
+        }
+        worker.terminate();
     }
 }
