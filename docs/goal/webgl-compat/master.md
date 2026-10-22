@@ -1,9 +1,21 @@
 # WebGL 兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../webgl-compat.md](../webgl-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-22（M3-S2 shader 编译管线落地——基线保持 2112/2115）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-22（M3-S3 对象真存储落地——基线保持 2112/2115）
 
 ## 当前状态
+
+**M3-S3 对象真存储已落地（2026-10-22）**：part08.js（+270/−59）buffer 真字节
+存储（bufferData 三形/重分配弃旧/无 store INVALID_OPERATION/getBufferParameter）
++ 纹理参数面（texParameteri/f 精确匹配 + getTexParameter Table 6.9 初始值 +
+跨 target 改绑拒绝）+ texImage2D/texSubImage2D 校验链与 level 元数据/像素
+存储（Table 3.2 组合 + internalformat≡format + 容量域 + 区域字节写）+
+framebuffer/renderbuffer 附件骨架（completeness 四态 + 附件参数四 pname +
+删除解挂当前绑定 FBO）。**M2 usage 枚举表缺陷修正**（幻值 0x88E3/漏
+DYNAMIC_DRAW——详见 evidence §3）。基线 **2112 Pass / 3 Fail 不变**；part70
+常驻 3 组 74 断言 + part66-69 回归 14 例全绿；`make test` exit 0、clippy/fmt
+零告警、`make reftest` 714/714。详见
+[evidence/2026-10-22-m3-s3-object-storage.md](evidence/2026-10-22-m3-s3-object-storage.md)。
 
 **M3-S2 shader 编译管线已落地（2026-10-22）**：GLSL ES 1.0 前端子集
 （新 part08b.js 573 行——词法/语法/语义校验 + §7 内建变量 + `gl_` 保留 +
@@ -50,10 +62,12 @@ M2 evidence §7。
 **下一里程碑 M3（授权内自主）**：切片边界自划——候选簇按依赖序：
 ① ~~getContextAttributes/getParameter 参数查询补全 + 上下文丢失/恢复事件面~~
    （✅ 2026-10-22）；
-② GLSL ES 1.0 shader 编译管线（WGSL 后端评估，依托 render-foundation）+
-   program link/uniform/attribute；
-③ buffer/texture/framebuffer 对象真存储（M2 仅状态记录）+
-   texImage2D 上传链路；④ drawArrays/drawElements 真光栅化。
+② ~~GLSL ES 1.0 shader 编译管线 + program link/uniform/attribute~~
+   （✅ 2026-10-22）；
+③ ~~buffer/texture/framebuffer 对象真存储 + texImage2D 上传链路~~
+   （✅ 2026-10-22）；
+④ drawArrays/drawElements 真光栅化（开工前按职责拆分 part08——现 1981 行
+   逼近上限）。
 每簇落账 + 常驻测试 + 飞书通知，DC-4 门禁不放松。
 
 **历史**：M1 导入盘点（2026-10-22）——pin rev `webgl/` 为 10 文件平铺目录；
@@ -70,7 +84,7 @@ M2 evidence §7。
 | P1 | webgl/ corpus 导入 + 用例分布盘点 | ✅ 2026-10-22（M1） |
 | P2 | 首批收敛子集建议书提交用户 | ✅ 2026-10-22（裁决：批次 B） |
 | P3 | WebGL 1.0 最小上下文（创建/clear/draw） | ✅ 2026-10-22（M2，基线 2112/2115） |
-| P4 | 缓冲/纹理/shader 程序管线 | ▶ M3（S1 查询/事件面 ✅、S2 shader 管线 ✅ 2026-10-22；余：对象真存储→draw 光栅） |
+| P4 | 缓冲/纹理/shader 程序管线 | ▶ M3（S1 查询/事件面 ✅、S2 shader 管线 ✅、S3 对象真存储 ✅ 2026-10-22；余：draw 光栅） |
 | P5 | WebGL2/WebGPU 挂账定稿 | ▶ M4（挂账文档交用户签收） |
 | P6 | canvas 内容桥 × CSS transform（位图不随元素 transform，2d 同复现） | 移交渲染流（2026-10-22 A/B 归因，M2 evidence §7；非本 goal 面） |
 
@@ -99,6 +113,11 @@ M2 evidence §7。
   uniform 加载族 16 setter + getUniformLocation/getUniform。
   基线 2112/2115 不变；part69 常驻 5 组 86 断言。evidence：
   [2026-10-22-m3-s2-shader-pipeline.md](evidence/2026-10-22-m3-s2-shader-pipeline.md)。
+- **M3-S3 对象真存储**（2026-10-22）：buffer 字节存储三形 + 纹理参数/
+  上传校验链（Table 3.2 组合 + internalformat≡format + 区域写）+
+  framebuffer/renderbuffer 附件骨架（completeness 四态 + 删除解挂）。
+  M2 usage 表缺陷修正；基线 2112/2115 不变；part70 常驻 3 组 74 断言。
+  evidence：[2026-10-22-m3-s3-object-storage.md](evidence/2026-10-22-m3-s3-object-storage.md)。
 
 ## 下一步计划
 
