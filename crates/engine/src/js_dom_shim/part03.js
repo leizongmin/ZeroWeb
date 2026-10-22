@@ -12965,10 +12965,47 @@
               }
             }
           } catch (_e155a) {}
+        } else if (_r112Act.type === 'act:details' && event._zwUaDispatch === true) {
+          // R4400（html-semantics M2 切片 24，2026-10-22）：UA 通道坐标点击落
+          // summary-less DETAILS——激活翻转（spec the-details-element activation
+          // behaviour）。`_zwUaDispatch` 门三通道互斥：`.click()` 面由 part04 内联段
+          // 承接（本段 skip 防双翻）；plan 面（test_driver.click(summary-less
+          // details) 分类 Generic 纯 click）无翻转，本段为唯一激活；SUMMARY 不入
+          // 本段——plan_summary 已有 plan 级 SetOpen，双翻先例（R4009 注记）。
+          try { _zwDetailsActivateR4400(_r112Act.sel, _r112Act.handle); } catch (_e4400d) {}
+        } else if (_r112Act.type === 'act:button' && event._zwUaDispatch === true) {
+          // R4400：UA 通道坐标点击落 commandfor 按钮——invoker 命令激活（spec
+          // invoker command activation behavior；dialog-toggle-source light
+          // dismiss 案 test_driver.click(showmodalbutton) 断言面）。submit/reset
+          // 仍不落本段——runner click 命令 S4J submit_script 承接，本段只补 invoker。
+          try { _zwInvokerCommandActivate(_r112Act.sel, _r112Act.handle); } catch (_e4400b) {}
         } else {
           try {
             _zwFireInputChange(_r112Act.sel, _r112Act.handle);
           } catch (_e112) {}
+        }
+      }
+      // R4400（html-semantics M2 切片 24，2026-10-22）：宿主计划通道 click 的 invoker/
+      // details 激活补面。`script_dispatch_dom_event` 的 click 保持**泛型 Event**（上方
+      // R108 分支注记——改 MouseEvent 会与 plan 层 checked 翻转双翻转），故 `_r112Act`
+      // 未定位、上方 R112 post 不可达。本段门四重：泛型（排除 MouseEvent/Pointer 与
+      // `.click()` synthetic——两通道已各有承接）+ `_zwUaDispatch` 印记（仅宿主通道，
+      // R312 派发后才清，finally 内仍 true）+ 顶层派发 + 未取消。**须置于 finally 内**：
+      // try 体末 return 后 try/finally 之外的函数体语句不可达（本段首版误置 finally
+      // 外死代码，探针 DBG 全空的教训）。plan 层已承载 checkbox/radio/summary/anchor
+      // 分类动作，只补无 plan 分类的两面：act:button → invoker 命令（dialog-toggle-
+      // source light dismiss 案 test_driver.click(showmodalbutton)）、act:details →
+      // summary-less 翻转（details-toggle-source「click details」同通道案）。
+      if (event.type === 'click' && event._zwUaDispatch === true
+          && !(globalThis.MouseEvent && event instanceof globalThis.MouseEvent)
+          && event._zwSyntheticClick !== true && event._zwDispatching === 0
+          && !(event.cancelable && event._defaultPrevented)) {
+        var _r4400Act = null;
+        try { _r4400Act = _zwFindClickActivation(targetSel, targetHandle, false); } catch (_e4400a) { _r4400Act = null; }
+        if (_r4400Act && _r4400Act.type === 'act:button') {
+          try { _zwInvokerCommandActivate(_r4400Act.sel, _r4400Act.handle); } catch (_e4400b) {}
+        } else if (_r4400Act && _r4400Act.type === 'act:details') {
+          try { _zwDetailsActivateR4400(_r4400Act.sel, _r4400Act.handle); } catch (_e4400d) {}
         }
       }
       // R4008（html-semantics M2 切片 19）：宿主 generic click 落 label 本体时 shim
@@ -13151,6 +13188,16 @@
   //（同 execute 内 pending 面可见，与 `_zwReadPopover` 同惯例）。
   // https://html.spec.whatwg.org/multipage/interactive-elements.html#binding-details
   var _zwDetailsToggleQ4009 = {};
+  // R4400（M2 切片 24，2026-10-22）：invoker 命令激活源 store——commandfor 按钮触发
+  // details 开合时，part01 `_zwInvokerCommandActivate` 先以目标 key 存 invoker proxy，
+  // part04 `open` IDL setter 入口 take（读+删）传 `_zwToggleQueueNotify4009`（toggle
+  // 事件 source）。直接 open 写无条目 → null；take 语义防泄漏到后续写。
+  var _zwDetailsToggleSourceR4400 = {};
+  function _zwDetailsTakeInvokerSourceR4400(key) {
+    var src = _zwDetailsToggleSourceR4400[key];
+    delete _zwDetailsToggleSourceR4400[key];
+    return src == null ? null : src;
+  }
   function _zwDetailsHasOpen4009(sel, handle) {
     if (handle && typeof __zw_has_attr_handle === 'function') return __zw_has_attr_handle(handle, 'open') === '1';
     if (typeof __zw_has_attr_lw === 'function') return __zw_has_attr_lw(sel, 'open') === '1';
@@ -13158,10 +13205,13 @@
   }
   // R312 UA 通道 + ToggleEvent 接口双面：trusted（页面 Event 构造器恒 false）且
   // `Object.getPrototypeOf(evt) === ToggleEvent.prototype`（toggleEvent.html 双断言）。
-  function _zwMakeTrustedToggleEvent4009(oldState, newState) {
+  // R4400（M2 切片 24，2026-10-22）：第 3 参 `source`（可选）——invoker command 触发
+  // 的开合携带激活按钮元素（toggle-event-source-test 断言 `event.source === invoker`）；
+  // 缺省 null（spec ToggleEventInit.source default null）。
+  function _zwMakeTrustedToggleEvent4009(oldState, newState, source) {
     var ev;
     if (typeof globalThis.ToggleEvent === 'function') {
-      ev = new globalThis.ToggleEvent('toggle', { oldState: oldState, newState: newState, bubbles: false, cancelable: false });
+      ev = new globalThis.ToggleEvent('toggle', { oldState: oldState, newState: newState, source: source == null ? null : source, bubbles: false, cancelable: false });
       try { ev.isTrusted = true; } catch (_eT4009) {}
       try { ev._zwUaDispatch = true; } catch (_eT4009b) {}
     } else {
@@ -13169,6 +13219,7 @@
         ? globalThis.__zwMakeTrustedEvent('toggle', {}) : _makeEvent('toggle', {});
       ev.oldState = oldState;
       ev.newState = newState;
+      ev.source = source == null ? null : source;
     }
     return ev;
   }
@@ -13178,7 +13229,9 @@
   // 对象（innerHTML-into-plain 容器解析产物，无 sel/handle 身份）走同队列：presence
   // 直读包装对象 attrs、key 用 `_zwPlainDetailsKey4100` 对象身份戳、派发用包装对象
   // 自身 dispatchEvent（R167 本地面）。缺省时身份元素路径零变化。
-  function _zwToggleQueueNotify4009(sel, handle, prePresent, plainNode) {
+  // R4400（M2 切片 24，2026-10-22）：第 5 参 `source`（可选）——invoker 触发时
+  // entry 携带激活元素，fire 传入 factory（缺省 null）。
+  function _zwToggleQueueNotify4009(sel, handle, prePresent, plainNode, source) {
     var isPlain = plainNode != null;
     var tag = '';
     if (isPlain) {
@@ -13203,7 +13256,7 @@
     var key = isPlain ? _zwPlainDetailsKey4100(plainNode) : _elKey(sel, handle);
     if (key == null) return;
     if (_zwDetailsToggleQ4009[key]) return; // 已排程——同任务后续变迁仅更新存在性
-    var entry = _zwDetailsToggleQ4009[key] = { sel: sel, handle: handle, old: post ? 'closed' : 'open', plain: isPlain ? plainNode : null };
+    var entry = _zwDetailsToggleQ4009[key] = { sel: sel, handle: handle, old: post ? 'closed' : 'open', plain: isPlain ? plainNode : null, source: source == null ? null : source };
     var fire = function () {
       if (_zwDetailsToggleQ4009[key] !== entry) return;
       delete _zwDetailsToggleQ4009[key];
@@ -13217,7 +13270,7 @@
           target = _makeProxy(entry.sel, entry.handle);
         }
         if (!target || typeof target.dispatchEvent !== 'function') return;
-        target.dispatchEvent(_zwMakeTrustedToggleEvent4009(entry.old, newState));
+        target.dispatchEvent(_zwMakeTrustedToggleEvent4009(entry.old, newState, entry.source));
       } catch (_eFire4009) {}
     };
     // 异步 task 排程——`_zwScheduleSelectEvent`（R3906）同款 timer 链模板。
@@ -13526,6 +13579,23 @@
     if (_zwIsInteractiveContentEl(tgt)) return;
     try { if (_zwHasInteractiveAncestorBefore4009(tgt, sSel, sHnd)) return; } catch (_eAnc4009) {}
     _zwSummaryActivate4009(sSel, sHnd);
+  }
+  // R4400（html-semantics M2 切片 24，2026-10-22）：summary-less DETAILS 激活翻转——
+  // spec the-details-element activation behaviour「has no summary element child」门槛；
+  // 本实现取子树含 summary 近似（嵌套 details 持 summary 的病态形态 corpus 无消费面）。
+  // part04 `.click()` 内联段与 part03 UA post 段（`act:details`）共用；翻转经 proxy
+  // `.open` setter 落 R4009 队列（source null——点击路径不携带 invoker，take 清残留）。
+  function _zwDetailsActivateR4400(sel, handle) {
+    var p;
+    try { p = _makeProxy(sel, handle); } catch (_eDetP4400) { return; }
+    if (!p) return;
+    var hasSum = false;
+    try { hasSum = !!p.querySelector('summary'); } catch (_eDetS4400) {}
+    if (hasSum) return;
+    if (typeof _zwDetailsTakeInvokerSourceR4400 === 'function') {
+      _zwDetailsTakeInvokerSourceR4400(_elKey(sel, handle));
+    }
+    try { p.open = !p.open; } catch (_eDetF4400) {}
   }
 
 

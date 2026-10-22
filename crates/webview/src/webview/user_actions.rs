@@ -850,7 +850,24 @@ impl WebView {
             .map_err(|error| WebViewError::Script(error.to_string()))?
             .value;
         let recorded = mutations.lock().unwrap_or_else(|error| error.into_inner()).clone();
-        let result = self.apply_dom_script_result(value, recorded)?;
+        let result = self.apply_dom_script_result(value, recorded.clone())?;
+        // R4400（html-semantics M2 切片 24，2026-10-22）：plan 通道私有批**回灌共享队列
+        // 全史**。共享 append-only 队列的服务对象是读回调的 latest-wins 全史扫描
+        //（`sel_attr_override` 等——基座钉定在加载时 html，队列即「加载以来全部写史」）；
+        // 本函数私有队列的批 apply 后即弃，共享队列历史对这批写**失明**——此后任意
+        // 页面脚本 execute 的同元素读会命中更早的 stale 覆盖（WPT
+        // dialog-toggle-source「open with button, close with light dismiss」实证：
+        // plan click → invoker showModal 的 SetAttr(open) 落私有批，共享队列仍以
+        // 前序用例的 RemoveAttr(open) 为 latest → R4200 toggle 队列 fire 时
+        // newState 误算 closed）。回灌 + 游标同步推进（已应用，泵不得重放）。
+        // https://html.spec.whatwg.org/multipage/interactive-elements.html#the-dialog-element
+        if !recorded.is_empty() {
+            {
+                let mut shared = self.shared_mutations.lock().unwrap_or_else(|error| error.into_inner());
+                shared.extend(recorded.iter().cloned());
+            }
+            self.applied_mutations += recorded.len();
+        }
         *dom_html.lock().unwrap_or_else(|error| error.into_inner()) = self.cached_html.clone();
         // R358/R3243：快照就地刷新 → bump 宿主视图缓存代际（同 count 查询防 stale 视图）。
         zero_engine::js_dom_bridge::bump_dom_view_gen();

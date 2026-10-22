@@ -486,13 +486,27 @@
   // purge stale（close 走核心时移除，remove 路径读时按 open+connected 跳过）。
   // __zw_reset_form_state 同步清空（per-page）。
   var _zwDialogModalStack = [];
+  // R4400（M2 切片 24，2026-10-22）：invoker 命令激活源 store——commandfor 按钮触发
+  // dialog 开合时，激活入口先以目标 key 存 invoker 元素 proxy，show/showModal/
+  // close-the-dialog 核心入口 take（读+删）传入 beforetoggle/toggle 的 source（spec
+  // invoker command 激活「以 invoker 为 source 派 ToggleEvent」）。直接 IDL 调用无
+  // 条目 → null。take 语义防 source 泄漏到后续直接调用；__zw_reset_form_state 清空。
+  var _zwDialogInvokerSourceR4400 = {};
+  function _zwDialogTakeInvokerSourceR4400(key) {
+    var src = _zwDialogInvokerSourceR4400[key];
+    delete _zwDialogInvokerSourceR4400[key];
+    return src == null ? null : src;
+  }
   // R3071：Popover 事件派发中用。构造 ToggleEvent 数据对象（type + newState/oldState + bubbles/cancelable/composed）。
   // spec ToggleEvent extends Event，直接属性 newState/oldState（非 CustomEvent.detail）。headless 同步派发（spec 队列
   // task，近似——documented 限制）；beforetoggle cancelable（可 preventDefault 阻止显隐）+ 非 bubble；toggle 非 cancelable。
-  function _makeToggleEvent(type, oldState, newState, cancelable) {
+  // R4400（M2 切片 24，2026-10-22）：第 5 参 `source`（可选）——invoker 命令触发的
+  // 开合携带激活元素，缺省 null（spec ToggleEventInit.source default null）。
+  function _makeToggleEvent(type, oldState, newState, cancelable, source) {
     var ev = _makeEvent(type, { bubbles: false, cancelable: !!cancelable });
     ev.oldState = oldState;
     ev.newState = newState;
+    ev.source = source == null ? null : source;
     return ev;
   }
   // R3071：读 popover 内容属性的枚举值。spec enumerated attribute：missing value default = no popover（无属性 → null）；
@@ -600,16 +614,18 @@
   // spec：the-dialog-element「queue an element task given the dialog to fire an
   // event named toggle」。
   // https://html.spec.whatwg.org/multipage/interactive-elements.html#the-dialog-element
+  // R4400（M2 切片 24，2026-10-22）：第 5 参 `source`（可选）——invoker 触发时
+  // entry 携带激活元素，fire 传入 factory（缺省 null）。
   var _zwDialogToggleQ4200 = {};
-  function _zwDialogToggleQueueNotify4200(key, sel, handle, preOpen) {
+  function _zwDialogToggleQueueNotify4200(key, sel, handle, preOpen, source) {
     if (_zwDialogToggleQ4200[key]) return; // 已排程——同任务后续变迁仅合并不重排
-    var entry = _zwDialogToggleQ4200[key] = { sel: sel, handle: handle, old: preOpen ? 'open' : 'closed' };
+    var entry = _zwDialogToggleQ4200[key] = { sel: sel, handle: handle, old: preOpen ? 'open' : 'closed', source: source == null ? null : source };
     var fire = function () {
       if (_zwDialogToggleQ4200[key] !== entry) return;
       delete _zwDialogToggleQ4200[key];
       try {
         var newState = _zwDialogHasOpen(entry.sel, entry.handle) ? 'open' : 'closed';
-        _dispatchWithBubble(key, entry.sel, entry.handle, _zwMakeTrustedToggleEvent4009(entry.old, newState));
+        _dispatchWithBubble(key, entry.sel, entry.handle, _zwMakeTrustedToggleEvent4009(entry.old, newState, entry.source));
       } catch (_eDgT4200) {}
     };
     // 异步 task 排程——R4009 同款 timer 链模板（setTimeout 落 microtask、execute 间排空）。
@@ -645,12 +661,13 @@
   // focus 陷阱 / inert backdrop（rendering 流域 defer）——仅 JS-observable 状态。
   // https://html.spec.whatwg.org/multipage/interactive-elements.html#dom-dialog-show
   function _zwDialogShow(key, sel, handle) {
+    var invokerSrc = _zwDialogTakeInvokerSourceR4400(key);
     if (_zwDialogHasOpen(sel, handle)) {
       if (_zwDialogModal[key]) throw new DOMException('show: dialog is already open (modal)', 'InvalidStateError');
       return;
     }
     if (!_zwIsConnected(sel, handle)) throw new DOMException('show: dialog is not connected', 'InvalidStateError');
-    if (!_dispatchWithBubble(key, sel, handle, _makeToggleEvent('beforetoggle', 'closed', 'open', true))) return;
+    if (!_dispatchWithBubble(key, sel, handle, _makeToggleEvent('beforetoggle', 'closed', 'open', true, invokerSrc))) return;
     if (_zwDialogHasOpen(sel, handle)) return; // beforetoggle 处理器内已开
     _zwSetAttr(key, sel, handle, 'open', '');
     // R4200（html-semantics M2 切片 22）：open 属性内部写同步发 MutationObserver
@@ -661,7 +678,7 @@
     // R4300：非模态 show 也压 watcher 组栈（一 dialog 一组）——show-stacked 断言面：
     // 内层 closedby=none 的组挡住 ESC 下探（外层 closerequest 不收 close request）。
     _zwDialogModalStack.push(key);
-    _zwDialogToggleQueueNotify4200(key, sel, handle, false);
+    _zwDialogToggleQueueNotify4200(key, sel, handle, false, invokerSrc);
   }
   // R3290 + R4200：HTMLDialogElement.showModal()——模态打开。spec「show a modal
   // dialog」：已 open → 非模态抛 InvalidStateError / 模态 no-op（请求态，dialog-no-throw
@@ -671,12 +688,13 @@
   // top-layer + 标模态 + 排程 toggle。headless 简化（无 backdrop / focus / inert）。
   // https://html.spec.whatwg.org/multipage/interactive-elements.html#dom-dialog-showmodal
   function _zwDialogShowModal(key, sel, handle) {
+    var invokerSrc = _zwDialogTakeInvokerSourceR4400(key);
     if (_zwDialogHasOpen(sel, handle)) {
       if (!_zwDialogModal[key]) throw new DOMException('showModal: dialog already open (non-modal)', 'InvalidStateError');
       return;
     }
     if (!_zwIsConnected(sel, handle)) throw new DOMException('showModal: dialog is not connected', 'InvalidStateError');
-    if (!_dispatchWithBubble(key, sel, handle, _makeToggleEvent('beforetoggle', 'closed', 'open', true))) return;
+    if (!_dispatchWithBubble(key, sel, handle, _makeToggleEvent('beforetoggle', 'closed', 'open', true, invokerSrc))) return;
     if (!_zwIsConnected(sel, handle)) return; // beforetoggle 内被移除 → 中止（不开、无 toggle）
     if (_zwTopLayer[key]) return; // beforetoggle 内 showPopover → showing → 中止
     if (_zwDialogHasOpen(sel, handle)) return;
@@ -688,7 +706,7 @@
     _zwTopLayer[key] = true;
     _zwDialogModal[key] = true;
     _zwDialogModalStack.push(key);
-    _zwDialogToggleQueueNotify4200(key, sel, handle, false);
+    _zwDialogToggleQueueNotify4200(key, sel, handle, false, invokerSrc);
   }
   // R3290 + R4200：close-the-dialog 核心（close()/requestClose() 共用）。beforetoggle
   //（open→closed，同步、不可取消——请求态取消走 requestClose 的 cancel 面，commit 后
@@ -696,7 +714,8 @@
   // MutationObserver 属性变更计数 1 断言面）；移 open 属性 + 模态态移 top-layer +
   // returnValue 非 undefined 存（R3910 口径）；close 事件与 toggle 各自排队异步派发。
   function _zwDialogCloseTheDialog4200(key, sel, handle, returnValue) {
-    _dispatchWithBubble(key, sel, handle, _makeToggleEvent('beforetoggle', 'open', 'closed', false));
+    var invokerSrc = _zwDialogTakeInvokerSourceR4400(key);
+    _dispatchWithBubble(key, sel, handle, _makeToggleEvent('beforetoggle', 'open', 'closed', false, invokerSrc));
     if (!_zwDialogHasOpen(sel, handle) && !_zwDialogModal[key]) return; // 嵌套 close 已关
     _zwRemoveAttr(key, sel, handle, 'open');
     // R4200：open 属性内部移除 MO record（close-the-dialog 核心——close()/requestClose()
@@ -711,7 +730,7 @@
     }
     if (returnValue !== undefined) _expando[key + '::returnValue'] = String(returnValue);
     _zwDialogQueueCloseEvent4200(key, sel, handle);
-    _zwDialogToggleQueueNotify4200(key, sel, handle, true);
+    _zwDialogToggleQueueNotify4200(key, sel, handle, true, invokerSrc);
   }
   // R3290 + R4200：HTMLDialogElement.close(returnValue)——关闭。spec「close the
   // dialog」：未 open（无 open 属性且非模态态）→ no-op（返 false，不抛）；否则走
@@ -751,7 +770,16 @@
     } finally {
       _expando[key + '::dialogRcBusy4200'] = false;
     }
-    if (proceed === false) return; // preventDefault → 保持 open、不变 returnValue
+    if (proceed === false) {
+      // R4400：取消的 request-close 丢弃激活入口存的 invoker source——本命令的
+      // 事件序到此终结（cancel 非 ToggleEvent、无 source 面），残留会让后续无关
+      // 关闭（light dismiss 等）误携 stale invoker（dialog-toggle-source case 6
+      // closeFunc：prevented request-close 后 light dismiss 的 close source 应为
+      // null）。spec invoker command 激活步骤 source 只随本命令派发的事件出。
+      // https://html.spec.whatwg.org/multipage/interaction.html#invoker-commands
+      delete _zwDialogInvokerSourceR4400[key];
+      return; // preventDefault → 保持 open、不变 returnValue
+    }
     _zwDialogCloseTheDialog4200(key, sel, handle, returnValue);
   }
   // R3290：dialog open 内容属性是否 present（boolean 属性，presence 判定）。latest-wins 反映同 execute 内
@@ -862,6 +890,99 @@
       else if (action === 'hide') popoverEl.hidePopover();
       else popoverEl.togglePopover();
     } catch (_e) {} // InvalidStateError（已 showing show / 未 showing hide / target 非 popover）spec no-op
+  }
+  // R4400（M2 切片 24，2026-10-22）：Invoker Commands API——click 默认动作（popovertarget
+  // 同位、紧随其后）。button 祖先链（含自身）commandfor(id) 关联目标元素 + command 关键字
+  //（缺省/非法 → auto 态）：show-modal/show/close/request-close → dialog（showModal/show/
+  // close/requestClose）；toggle/show/hide → details（open 翻转/置位/清除）；auto →
+  // dialog showModal / details 翻转。激活前以目标 key 存 invoker proxy（dialog/details
+  // source store）——ToggleEvent.source 断言面（event.source === invoker；无变迁分支不落
+  // store，防泄漏到后续直接调用）。custom 命令（`--` 前缀 CommandEvent 派发）与
+  // hide-all-popovers 前步 defer（headless 无 popover 栈面）。InvalidStateError 吞（spec
+  // 激活行为不外抛）。
+  // https://html.spec.whatwg.org/multipage/form-elements.html#attr-button-commandfor
+  function _zwInvokerCommandActivate(sel, handle) {
+    // trigger 定位双形态（`__zw_dispatch_key_at_active` 同精神）：sel 祖先链
+    //（`__zw_parent` 上行——runner 解析页）优先；sel 缺失走 handle `_zwNodeParent`
+    // 反链上行（createElement/detached 面，`__zw_has_attr_handle` 读）。含自身。
+    // R4400：宿主通道（UA 计划/指针管线）dispatch target 以 handle 权威（sel=null）
+    // 时先经 `__zw_selector_for_handle` 反解——parsed 元素的 commandfor/command 只在
+    // HTML 快照（sel 面），`__zw_has_attr_handle`/`__zw_get_attr_handle` 仅见 mutation
+    //（slice48 注），handle 走链对解析页属性恒 miss。反解成功走 sel 面；失败（无快照
+    // 身份或宿主未注册 identity bridge——契约沙箱）落回 handle 走链（mutation 面可读）。
+    if (!sel && handle && typeof __zw_selector_for_handle === 'function') {
+      var _r4400Sel = '';
+      try { _r4400Sel = String(__zw_selector_for_handle(handle) || ''); } catch (_e4400rs) { _r4400Sel = ''; }
+      if (_r4400Sel) sel = _r4400Sel;
+    }
+    var triggerSel = null, triggerHnd = null;
+    if (sel) {
+      var cur = sel;
+      while (cur) {
+        var has = typeof __zw_has_attr_lw === 'function'
+          ? __zw_has_attr_lw(cur, 'commandfor')
+          : (typeof __zw_has_attr === 'function' ? __zw_has_attr(cur, 'commandfor') : '0');
+        if (has === '1') { triggerSel = cur; break; }
+        try { cur = __zw_parent(cur); } catch (_e) { cur = ''; }
+        if (!cur) break;
+      }
+    } else if (handle && typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
+      var curH = handle;
+      var walk = 0;
+      while (curH && walk++ < 64) {
+        if (typeof __zw_has_attr_handle === 'function' && __zw_has_attr_handle(curH, 'commandfor') === '1') { triggerHnd = curH; break; }
+        var link = _zwNodeParent[curH];
+        curH = link ? (link.parentHandle || null) : null;
+      }
+    }
+    if (!triggerSel && !triggerHnd) return;
+    var id = triggerHnd
+      ? (typeof __zw_get_attr_handle === 'function' ? __zw_get_attr_handle(triggerHnd, 'commandfor') : '')
+      : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(triggerSel, 'commandfor') : __zw_get_attr(triggerSel, 'commandfor'));
+    if (!id) return;
+    var target = document.getElementById(id);
+    if (!target) return;
+    var cmdRaw = triggerHnd
+      ? (typeof __zw_get_attr_handle === 'function' ? __zw_get_attr_handle(triggerHnd, 'command') : '')
+      : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(triggerSel, 'command') : __zw_get_attr(triggerSel, 'command'));
+    var cmd = String(cmdRaw == null ? '' : cmdRaw).trim().toLowerCase();
+    var isCustomCmd = cmd.slice(0, 2) === '--';
+    // 缺失/非法（非 custom 关键字）→ auto 态（spec invalid value default）；custom
+    //（`--` 前缀 CommandEvent 派发）defer——不映射 auto、直落 no-op。
+    if (!cmd || (!isCustomCmd && cmd !== 'show-modal' && cmd !== 'show' && cmd !== 'hide' && cmd !== 'close' && cmd !== 'request-close' && cmd !== 'toggle')) cmd = 'auto';
+    var tSel = target.__zwSelector || null;
+    var tHnd = target.__zwHandle || null;
+    var tKey = _elKey(tSel, tHnd);
+    var tTag = '';
+    try { tTag = String(target.tagName || '').toUpperCase(); } catch (_eInvTag) { return; }
+    var invokerProxy = _makeProxy(triggerSel, triggerHnd);
+    try {
+      if (tTag === 'DIALOG') {
+        var dlgCmd = (cmd === 'auto') ? 'show-modal' : cmd;
+        if (dlgCmd !== 'show-modal' && dlgCmd !== 'show' && dlgCmd !== 'close' && dlgCmd !== 'request-close') return;
+        _zwDialogInvokerSourceR4400[tKey] = invokerProxy;
+        if (dlgCmd === 'show-modal') target.showModal();
+        else if (dlgCmd === 'show') target.show();
+        else if (dlgCmd === 'close') target.close();
+        else target.requestClose();
+      } else if (tTag === 'DETAILS') {
+        var detCmd = (cmd === 'auto') ? 'toggle' : cmd;
+        if (detCmd !== 'toggle' && detCmd !== 'show' && detCmd !== 'hide') return;
+        var curOpen;
+        try { curOpen = target.hasAttribute('open'); } catch (_eInvOpen) { curOpen = false; }
+        var doSet;
+        if (detCmd === 'show') doSet = curOpen ? null : true;
+        else if (detCmd === 'hide') doSet = curOpen ? false : null;
+        else doSet = !curOpen;
+        if (doSet === null) return; // show 已开 / hide 已关 → 无变迁、不落 source
+        _zwDetailsToggleSourceR4400[tKey] = invokerProxy;
+        target.open = doSet; // IDL setter → R4009 队列（setter 入口 take source）
+      }
+    } catch (_eInv) {
+      // InvalidStateError 等吞（spec 激活行为不外抛）；take-at-entry 已消费 store，兜底清理。
+      delete _zwDialogInvokerSourceR4400[tKey];
+      delete _zwDetailsToggleSourceR4400[tKey];
+    }
   }
   // R3074：Element.checkVisibility(options)——元素是否「being rendered」+ 可选 opacity/visibility 检查。
   // https://drafts.csswg.org/cssom-view-1/#dom-element-checkvisibility
@@ -6470,7 +6591,7 @@
   // M2 RFC s1（FR-10）：锁态/激活 per-page 清理——_pl*（含 _plUnadjusted）+ _fs*（fullscreen
   // 同族跨导航泄漏，用户 2026-10-19 确认随修）+ 瞬态激活双旗。导航后新文档无锁、无激活；
   // 清零不派事件（文档已替换，无监听面意义）。
-  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputValuesSet = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _checkedDirtyState = {}; _optSelectedDirty = {}; _optSelectedClean = {}; _inputFiles = {}; _classCache = {}; _customValidity = {}; _userEdited = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _resourceStates = {}; _textareaDefault = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; _zwDialogModalStack = []; if (typeof _zwDetailsToggleQ4009 !== 'undefined') _zwDetailsToggleQ4009 = {}; _plKey = null; _plSel = null; _plHandle = null; _plTarget = null; _plUnadjusted = false; _fsKey = null; _fsSel = null; _fsHandle = null; _zwTransientActive = false; _zwActiveEver = false; if (typeof globalThis.__zw_pointer_reset === 'function') globalThis.__zw_pointer_reset(); };
+  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputValuesSet = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _checkedDirtyState = {}; _optSelectedDirty = {}; _optSelectedClean = {}; _inputFiles = {}; _classCache = {}; _customValidity = {}; _userEdited = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _resourceStates = {}; _textareaDefault = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; _zwDialogModalStack = []; _zwDialogInvokerSourceR4400 = {}; if (typeof _zwDetailsToggleQ4009 !== 'undefined') _zwDetailsToggleQ4009 = {}; if (typeof _zwDetailsToggleSourceR4400 !== 'undefined') _zwDetailsToggleSourceR4400 = {}; _plKey = null; _plSel = null; _plHandle = null; _plTarget = null; _plUnadjusted = false; _fsKey = null; _fsSel = null; _fsHandle = null; _zwTransientActive = false; _zwActiveEver = false; if (typeof globalThis.__zw_pointer_reset === 'function') globalThis.__zw_pointer_reset(); };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF

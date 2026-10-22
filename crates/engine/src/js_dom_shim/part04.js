@@ -4981,6 +4981,9 @@
               // R3072：popovertarget 声明式触发——click default action（未 preventDefault 时）。找最近含 popovertarget
               // 祖先 → 按 popovertargetaction 触发目标 popover show/hide/toggle。无 popovertarget 时 no-op（零回归）。
               _zwPopoverTargetActivate(key, sel, handle);
+              // R4400（html-semantics M2 切片 24）：commandfor/command invoker 命令——
+              // click default action（popovertarget 同位）。无 commandfor 时 no-op（零回归）。
+              _zwInvokerCommandActivate(sel, handle);
               // R154（js-dom M4）：A/AREA[href^="#"] 的 click default action——同文档片段
               // 导航（spec the-a-element activation behavior：fragment 导航 = location.hash
               // 更新 + 异步 hashchange；与 node.click() 本地版 A/AREA 分支同源）。WPT
@@ -5038,6 +5041,14 @@
               // 交互豁免由 bubble 站钩的 `_zwIsInteractiveContentEl` 承接）。
               if (_r154Tag === 'SUMMARY' && typeof _zwSummaryActivate4009 === 'function') {
                 _zwSummaryActivate4009(sel, handle);
+              }
+              // R4400（html-semantics M2 切片 24）：DETAILS 无 summary 后代时激活归属
+              // details 自身、点击翻转 open（spec the-details-element activation
+              // behaviour——「has no summary element child」门槛）。有 summary 时激活归
+              // SUMMARY 分支（点击 summary 时 nearest 激活元素是 SUMMARY，不落本分支）。
+              // 翻转经共享 helper（part03 `_zwDetailsActivateR4400`，UA post 段同用）。
+              if (_r154Tag === 'DETAILS' && typeof _zwDetailsActivateR4400 === 'function') {
+                _zwDetailsActivateR4400(sel, handle);
               }
             }
             return notPrevented;
@@ -11543,7 +11554,11 @@
           // 事件（spec binding-details queue an element task——同任务合并、oldState/
           // newState 口径见 part03 队列块）。单一 choke point：页面 JS IDL setter 与
           // plan 层 script_set_open（`e.open = bool`）同经本分支。
-          var _r4009PreOpen = (_realTag(sel, handle) === 'DETAILS') ? _zwDetailsHasOpen4009(sel, handle) : null;
+          // R4400（M2 切片 24）：invoker 命令落点——DETAILS 入口 take invoker source
+          //（读+删；无条目 null），真变迁传入队列；同态写 take 即丢（不残留）。
+          var _r4009IsDetails = _realTag(sel, handle) === 'DETAILS';
+          var _r4009PreOpen = _r4009IsDetails ? _zwDetailsHasOpen4009(sel, handle) : null;
+          var _r4009Src = _r4009IsDetails ? _zwDetailsTakeInvokerSourceR4400(key) : null;
           // R4200（html-semantics M2 切片 22）：open 属性 IDL 写面发 MutationObserver
           // attributes record（moAttr 尾钩同其余反射 setter——R45 汇流点）。dialog/show
           // 内部写走 part01 调用点直发（helper 为 aria 共用，不在 helper 内发）。
@@ -11563,7 +11578,7 @@
             }
           }
           if (_r4009PreOpen !== null) {
-            _zwToggleQueueNotify4009(sel, handle, _r4009PreOpen);
+            _zwToggleQueueNotify4009(sel, handle, _r4009PreOpen, null, _r4009Src);
             // R4100（html-semantics M2 切片 21）：open IDL 写面（真开变迁）→
             // others-prong 互斥（同 setAttribute('open') 尾钩口径——`value && 写前
             // 未 open` 门；页面 JS 与 plan 层 script_set_open 同经本分支）。

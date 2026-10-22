@@ -1768,4 +1768,149 @@ fn test_dialog_closedby_light_dismiss_r4300() {
     );
 }
 
+/// R4400（M2 切片 24，2026-10-22）：Invoker Commands API + ToggleEvent.source——
+/// commandfor/command click 默认动作（show-modal/show/close/request-close → dialog、
+/// toggle/show/hide → details、缺失/非法 → auto 派生）与 ToggleEvent source 三面：
+/// invoker 触发 = 激活元素 proxy（beforetoggle 同步 + toggle 队列双事件一致）、直接
+/// IDL/summary 点击/light dismiss = null、summary-less DETAILS 点击激活 + 有 summary
+/// 时 details 直击不翻转。
+#[test]
+fn test_invoker_command_toggle_source_r4400() {
+    let mut sandbox = t59_sandbox_with_shim();
+    let mutations: std::sync::Arc<std::sync::Mutex<Vec<DomMutation>>> = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+    let dom_html: std::sync::Arc<std::sync::Mutex<String>> = std::sync::Arc::new(std::sync::Mutex::new(
+        "<html><body></body></html>".to_string(),
+    ));
+    let page_url: std::sync::Arc<std::sync::Mutex<String>> = std::sync::Arc::new(std::sync::Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    crate::js_dom_bridge::register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // R1：dialog invoker——command=show-modal 按钮 click 开（beforetoggle 同步
+    // source=invoker、toggle 队列 source=invoker、newState 'open'）；command=close
+    // 按钮关（source 仍 invoker）。对齐 dialog-toggle-source 按钮面 +
+    // toggle-event-source-test `event.source === invoker` 身份断言。
+    sandbox
+        .execute(
+            "var d = document.createElement('dialog'); d.id = 'tgtD'; document.body.appendChild(d); var b = document.createElement('button'); b.setAttribute('commandfor', 'tgtD'); b.setAttribute('command', 'show-modal'); document.body.appendChild(b); globalThis.__eB = b; globalThis.__eD = d; globalThis.__r1 = []; d.addEventListener('beforetoggle', function (e) { globalThis.__r1.push('bt:' + (e.source === b)); }); d.addEventListener('toggle', function (e) { globalThis.__r1.push('tg:' + (e.source === b) + ',' + e.newState); }); b.click();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r1.join('|') + ',' + Number(globalThis.__eD.hasAttribute('open'))").unwrap().value,
+        "bt:true|tg:true,open,1",
+        "R1：show-modal 按钮——beforetoggle/toggle 双事件 source=invoker，open 生效"
+    );
+    sandbox
+        .execute(
+            "globalThis.__eB.setAttribute('command', 'close'); globalThis.__eB.click();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r1.slice(2).join('|') + ',' + Number(globalThis.__eD.hasAttribute('open'))").unwrap().value,
+        "bt:true|tg:true,closed,0",
+        "R1：close 按钮——close 侧双事件 source=invoker，open 移除"
+    );
+
+    // R2：直接 IDL 调用 source null（show/showModal/close 无 invoker 条目——store
+    // take 语义不残留）。对齐 toggle-event-source-test 直接调用臂。
+    sandbox
+        .execute(
+            "var d2 = globalThis.__eD; globalThis.__r2 = []; d2.addEventListener('beforetoggle', function (e) { globalThis.__r2.push('bt:' + (e.source === null)); }); d2.addEventListener('toggle', function (e) { globalThis.__r2.push('tg:' + (e.source === null)); }); d2.show();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r2.join('|')").unwrap().value,
+        "bt:true|tg:true",
+        "R2：直接 show()——双事件 source=null（非 undefined）"
+    );
+
+    // R3：details invoker——auto（缺省 command）toggle、show 已开无变迁无事件、hide
+    // 关、非法值回落 auto toggle。对齐 details-toggle-source-commandfor tentative 面。
+    // 变迁逐 execute 分步（R4009 同任务 toggle 合并——corpus helper await next
+    // toggle 同形；同 execute 连发会合并单事件）。
+    sandbox
+        .execute(
+            "var dt = document.createElement('details'); dt.id = 'tgtDet'; document.body.appendChild(dt); var b2 = document.createElement('button'); b2.setAttribute('commandfor', 'tgtDet'); document.body.appendChild(b2); globalThis.__eB2 = b2; globalThis.__eDet = dt; globalThis.__r3 = []; dt.addEventListener('toggle', function (e) { globalThis.__r3.push('tg:' + (e.source === b2) + ',' + e.newState); }); b2.click();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r3.join('|') + ',' + Number(globalThis.__eDet.hasAttribute('open'))").unwrap().value,
+        "tg:true,open,1",
+        "R3：缺省 command → auto → toggle 开，source=invoker"
+    );
+    sandbox
+        .execute(
+            "globalThis.__eB2.setAttribute('command', 'show'); globalThis.__eB2.click(); globalThis.__r3n = globalThis.__r3.length;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r3n + ',' + Number(globalThis.__eDet.hasAttribute('open'))").unwrap().value,
+        "1,1",
+        "R3：show 已开——无变迁、无新事件"
+    );
+    sandbox
+        .execute(
+            "globalThis.__eB2.setAttribute('command', 'hide'); globalThis.__eB2.click();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r3.join('|') + ',' + Number(globalThis.__eDet.hasAttribute('open'))").unwrap().value,
+        "tg:true,open|tg:true,closed,0",
+        "R3：hide 命令关——toggle source=invoker、presence 清除"
+    );
+    sandbox
+        .execute(
+            "globalThis.__eB2.setAttribute('command', 'bogus'); globalThis.__eB2.click();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r3.join('|') + ',' + Number(globalThis.__eDet.hasAttribute('open'))").unwrap().value,
+        "tg:true,open|tg:true,closed|tg:true,open,1",
+        "R3：非法 command → invalid value default auto → toggle 再开"
+    );
+
+    // R4：details 直接 open setter——toggle 照排、source 非 invoker（null 面）。
+    sandbox
+        .execute(
+            "globalThis.__eDet.open = false;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r3[3] + ',' + Number(globalThis.__eDet.hasAttribute('open'))").unwrap().value,
+        "tg:false,closed,0",
+        "R4：直接 open=false——toggle source≠invoker（null），presence 清除"
+    );
+
+    // R5：summary-less DETAILS 点击激活（spec activation behaviour 无 summary 门）
+    // + toggle source null；有 summary 的 details 直击不翻转（激活归 SUMMARY）。
+    sandbox
+        .execute(
+            "var dts = document.createElement('details'); document.body.appendChild(dts); globalThis.__r5a = []; dts.addEventListener('toggle', function (e) { globalThis.__r5a.push(String(e.source === null)); }); dts.click(); globalThis.__r5s = Number(dts.hasAttribute('open')); var dtw = document.createElement('details'); dtw.innerHTML = '<summary>sum</summary>text'; document.body.appendChild(dtw); globalThis.__r5w = []; dtw.addEventListener('toggle', function (e) { globalThis.__r5w.push(String(e.source === null)); }); dtw.click(); globalThis.__r5ws = Number(dtw.hasAttribute('open')); dtw.querySelector('summary').click(); globalThis.__r5ws2 = Number(dtw.hasAttribute('open'));",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r5s + '|' + globalThis.__r5a.join('|')").unwrap().value,
+        "1|true",
+        "R5：summary-less details 点击翻转 + toggle source=null"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__r5ws + '|' + globalThis.__r5ws2 + '|' + globalThis.__r5w.join('|')").unwrap().value,
+        "0|1|true",
+        "R5：有 summary 直击不翻转；summary 点击翻转且 source=null"
+    );
+
+    // R6：light dismiss 收的 close request → toggle source null（无 invoker 条目）。
+    sandbox
+        .execute(
+            "var ld = document.createElement('dialog'); ld.closedBy = 'any'; document.body.appendChild(ld); ld.show(); globalThis.__r6 = []; ld.addEventListener('toggle', function (e) { globalThis.__r6.push(String(e.source === null)); }); __zw_dialog_light_dismiss_check('body'); globalThis.__r6s = Number(ld.hasAttribute('open'));",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__r6s + '|' + globalThis.__r6.join('|')").unwrap().value,
+        "0|true",
+        "R6：light dismiss 关闭——toggle source=null"
+    );
+}
+
+
 

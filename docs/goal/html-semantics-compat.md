@@ -2,47 +2,45 @@
 
 **版本**: v2.0
 **日期**: 2026-10-21（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 23 收口（dialog closedby 簇 R4300 +28P，67.45%→68.02%，口径 P/(P+F+T)），下一步 M2 切片 24：ToggleEvent.source/commandfor 面（toggle-source 簇 8F 真断言，helper 面已通）+ corner-cases hang 排查（detach 窗口身份链）
+**状态**: Active——M2 切片 24 收口（ToggleEvent.source/commandfor 簇 R4400 +8P，68.02%→68.13%，口径 P/(P+F+T)），下一步 corner-cases hang 排查（focusin remove+reinsert 后 showModal → ESC close 不达，detach 窗口身份链）
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-22 M2 切片 23）**：dialog closedby 簇（R4300，
-> rollover 接续——上会话实现+契约被 429 中断，本会话核验收口）两段推
-> 进。①runner 通道（testharness.rs）：`inline_local_scripts` `/` 根路
-> 径按 wpt_root 解析内联（dialog closedby/canceling 语料以
-> `/common/top-layer.js`、`/close-watcher/resources/helpers.js` 引域外
-> 助资产，旧版拒绝 → helper ReferenceError 全批假 Fail；harness 本体在
-> 此步前已被 replace_script_source 消费，无双 harness 面）+ send_keys
-> Escape 臂（uE00C 旧落 PUA 拒绝分支；keydown/keyup 派发**当前焦点元
-> 素** `__zw_dispatch_key_at_active`，未取消 → close request 默认动作）
-> + click 命令 light dismiss 前步；goal 脚本 +5 助资产 fetch。②产品语
-> 义（shim）：closedBy IDL（枚举小写化 + auto 派生 + 反射 setter）+
-> `_zwDialogClosedByState` 推导 + close watcher 组栈
-> `_zwDialogModalStack`（show/showModal 压栈、组栈扫描首个 open 组即
-> 停、组内 none 挡住不下探）+ `__zw_esc_dialog_cancel` 重写（closedby
-> 资格门 + 组栈序 + `_zwDialogRequestClose`）+
-> `__zw_dialog_light_dismiss_check`（pointerdown 落点在任何 open+any
-> dialog 包含链外 → close request；产品指针管线与 runner click 共享）。
-> part60 R1–R5 新契约。九域 4980→**5008P**（68.02%），对 s22 逐
-> subtest diff **净 +28P、回归 1**：interactive-elements 202→227P
-> （canceling 全族 ReferenceError/Timeout 假 Fail 转真断言，ESC 主断
-> 言、组栈 none 挡板、light dismiss 内外落点、cancel-events/
-> preventDefault/keydown-preventDefault/cancel-with-input 各 1P、
-> bounds-clicking +9、show-stacked +4）+ scripting-1 166→169P（SVG
-> script scheduler 3 案意外翻绿，机制未定位，观察账）；余七域 0 变
-> 化。回归 1（bounds-clicking (1,1) inside-bounds：dialog UA abspos
-> 布局/hit test 缺口派生，归 rendering 域）。gates：zero-engine --lib
-> 3386P/0F、page-runtime 136P/0F、webview 785P/0F、integration
-> html_compat 21P/0F、clippy 过（systemd scope 不可达改 test-guard
-> 20G 包裹）、fmt clean、零新增依赖。账本见
-> [evidence/2026-10-22-m2s23-r4300.md](html-semantics-compat/evidence/2026-10-22-m2s23-r4300.md)。
-> **下一步**：M2 切片 24——ToggleEvent.source/commandfor 面
-> （toggle-source 簇 8F 真断言，helper 已通，含 dialog/details 两面 +
-> commandfor invoker）；corner-cases hang 排查（focusin remove+reinsert
-> 后 showModal → ESC close 不达，detach 窗口身份链，余 ~28 案被 file
+> **▶ 当前状态（2026-10-22 M2 切片 24）**：ToggleEvent.source/
+> commandfor 簇（R4400）收口——toggle-source 三文件 3/10→10/10。①
+> ToggleEvent.source 接线（shim）：dialog/details 双面 source store
+> （激活入口存 target-key、show/showModal/close-the-dialog/R4009 队列
+> 入口 take）→ beforetoggle/toggle 携带 invoker proxy，直接 IDL 调用
+> null。②Invoker Commands API：button 祖先链 commandfor/command（auto
+> → dialog showModal / details toggle）→ dialog 四命令/details 三命
+> 令；触发定位 sel 祖先链优先、handle 先 `__zw_selector_for_handle`
+> 反解（parsed 元素 commandfor 只在快照 sel 面）。③click 默认动作补
+> 面（part03 `_dispatchWithBubble` **finally 内** R4400 块——try 体末
+> return 后 finally 外语句不可达，首版误置死代码为定位最大弯路）：
+> 泛型 click + `_zwUaDispatch` 印记 + 非 MouseEvent/synthetic 四重门
+> → act:button invoker / act:details summary-less 翻转。④签名修正
+> `_zwInvokerCommandActivate(key,sel,handle)`→`(sel,handle)`（key 未
+> 用，错位曾静默 no-trigger）。⑤横切根因一（user_actions.rs plan 通
+> 道批回灌）：None 分支私有批 apply 后共享队列全史失明 → 前序用例
+> stale RemoveAttr 压过新 SetAttr（R4200 fire newState 误算 closed，
+> case 6 实证链 R4400LW/PUB/NB 三桩）→ apply 后回灌 + `applied_mu-
+> tations` 游标同步。⑥横切根因二（bug#2）：prevented request-close
+> 丢弃 invoker source store（残留使 light dismiss close 误携 stale
+> invoker）。part60 `test_invoker_command_toggle_source_r4400` R1–R6
+> 新契约。九域 5008→**5016P**（68.13%），对 s23 逐 subtest diff 净
+> +8P、回归 0、新增/消失 0（8 案全在本簇：dialog-toggle-source
+> 0/6→6/6、details-toggle-source-commandfor 0/1→1/1、details-toggle-
+> source 2/3→3/3）。gates：engine lib 3390P/0F、webview 785P/0F、
+> page-runtime 136P/0F、integration html_compat 21P/0F、clippy
+> workspace all-targets -D warnings 过、fmt clean、零新增依赖。账本
+> 见 [evidence/2026-10-22-m2s24-r4400.md](html-semantics-compat/evidence/2026-10-22-m2s24-r4400.md)。
+> **下一步**：corner-cases hang 排查（focusin remove+reinsert 后
+> showModal → ESC close 不达，detach 窗口身份链，余 ~28 案被 file
 > Timeout 吞没）；余挂账 inert 计算态 ~15F、focusing steps ~15F、
 > abspos/layout ~10F（rendering 域）、impl-doc wrapper requestClose、
-> anchor-with-inline 导航缺口、parser form element pointer 4F。
+> anchor-with-inline 导航缺口、parser form element pointer 4F、
+> custom command `--` 前缀 CommandEvent defer、ESC 组栈边缘乱序、
+> 非模态 close 不出组栈。
 
 
 > **▶ 拆分动机（2026-10-08 预留编号立项，用户「候选 goal 也立项吧」）**：继
