@@ -1,6 +1,6 @@
 # Ladybird 建议：ZeroWeb 后续目标与启动入口
 
-**日期**：2026-10-20。7 个 goal 与 Shell 入口已准备；本轮只交付规划资产，未启动产品开发、基准、安装或发布。各目标处于 Active 启动门控，运行基线全部 **NOT_RUN**。
+**日期**：2026-10-20。7 个 goal 与 Shell 入口已准备；本轮只交付规划资产，未启动产品开发、基准、安装或发布。各目标处于 Active 启动门控，运行基线全部 **NOT_RUN**（2026-10-22 更新：P2 合成动画与 Worker Canvas 已完成收口并归档，见下表）。
 
 依据：[Ladybird 近期进展调研](../../research/research-ladybird-progress-2026-10-20.md)。这些目标是参考方向，不表示 ZeroWeb 已存在同样缺陷。源码与复用资产索引见 [catalog.json](catalog.json)；目标契约决定范围，master 是唯一执行状态控制面。
 
@@ -13,7 +13,7 @@
 | P0 | [后台资源生命周期](../background-resource-lifecycle.md) | [master](../background-resource-lifecycle/master.md) | [rally-goal-background-resource-lifecycle.sh](../../../scripts/rally-goal-background-resource-lifecycle.sh) |
 | P1 | [DOM 操作基准](../dom-operation-bench.md) | [master](../dom-operation-bench/master.md) | [rally-goal-dom-operation-bench.sh](../../../scripts/rally-goal-dom-operation-bench.sh) |
 | P1-release | [安装更新与崩溃反馈](../browser-delivery-loop.md) | [master](../browser-delivery-loop/master.md) | [rally-goal-browser-delivery-loop.sh](../../../scripts/rally-goal-browser-delivery-loop.sh) |
-| P2 | [合成动画与 Worker Canvas](../compositor-animation-continuity.md) | [master](../compositor-animation-continuity/master.md) | [rally-goal-compositor-animation-continuity.sh](../../../scripts/rally-goal-compositor-animation-continuity.sh) |
+| P2 | [合成动画与 Worker Canvas](../compositor-animation-continuity/archive/compositor-animation-continuity-goal-v1-2026-10-22.md)——✅ 已完成（2026-10-22，模式 B 归档；控制面原地保留） | [master](../compositor-animation-continuity/master.md) | [rally-goal-compositor-animation-continuity.sh](../../../scripts/rally-goal-compositor-animation-continuity.sh)（goal 已完成，脚本留档） |
 | P2 | [平台媒体解码与隔离](../media-runtime-isolation.md) | [master](../media-runtime-isolation/master.md) | [rally-goal-media-runtime-isolation.sh](../../../scripts/rally-goal-media-runtime-isolation.sh) |
 
 建议先推进三个 P0；DOM 基准可为渲染优化提供配对数据。交付闭环可在核心稳定后启动。动画、媒体先建立生产证据，再投入架构切片。优先级不代表同时启动，共享源码面需先协调。

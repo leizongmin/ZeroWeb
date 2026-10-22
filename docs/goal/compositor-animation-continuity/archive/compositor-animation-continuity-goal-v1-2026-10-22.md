@@ -1,7 +1,13 @@
 # 主线程阻塞时的合成动画与 Worker Canvas
 
+> **已归档（模式 B，2026-10-22）**：goal DONE 判立——M1–M4 全链路完成，DC-1–DC-5
+> 判定落账（成立/有条件成立，条件项归范围外既有缺口）。本入口移入自身 archive/
+> （只追加不修改）；运行时状态见 [`../master.md`](../master.md)，验证证据见
+> [`../evidence/`](../evidence/)，切片 RFC（m2-\*/m3-\*.md）与过程记录保留于
+> [控制面目录](../)。
+
 **版本**：v1.0 / 2026-10-20
-**状态**：Active（启动门控：本轮只立项和准备脚本；等待后续明确启动）
+**状态**：✅ Completed（2026-10-22——goal 收口，DC-1–DC-5 判定落账 + 适用门禁有证；运行时状态见 [../master.md](../master.md)）
 **父目标**：[zero-web](zero-web.md) / **控制面**：[master](compositor-animation-continuity/master.md)
 
 ## 0. 执行摘要与 Mission
