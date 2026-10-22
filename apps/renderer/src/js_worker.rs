@@ -182,6 +182,10 @@ pub struct RendererJsWorker {
     /// ResetDocumentState 臂 drain 后逐 URL 触发网络层取消，连接不再滞留至 client
     /// 超时）。计数形态：同 URL 并发 fetch 共享一条登记，最后一个完成者移除。
     page_fetch_inflight: Arc<std::sync::Mutex<HashMap<String, usize>>>,
+    /// DC-2/M3：帧驱动 rAF 挂起数——shim `__zw_raf_interest` 回调回报（注册/取消/tick 末
+    /// 三点），renderer 主循环节拍泵据此决定是否派发 `__zw_raf_tick`（镜像媒体泵门控；
+    /// 无注册 rAF 时恒 0，泵零开销）。
+    raf_interest: Arc<AtomicU64>,
     join: Option<JoinHandle<()>>,
     executor: ScriptFn,
     /// t2-pb1 fix#5：优先执行器——页面生命周期派发（`execute_script_direct_priority`）
@@ -301,6 +305,9 @@ impl RendererJsWorker {
         // 包装（runtime 注入）增减、worker Reset 臂 drain（S13 双实例错接教训同款约束）。
         let page_fetch_inflight: Arc<std::sync::Mutex<HashMap<String, usize>>> = Arc::default();
         let page_fetch_inflight_for_worker = Arc::clone(&page_fetch_inflight);
+        // DC-2/M3：帧驱动 rAF 兴趣挂起数——worker 回调回报，runtime 主循环泵读。
+        let raf_interest = Arc::new(AtomicU64::new(0));
+        let raf_interest_for_worker = Arc::clone(&raf_interest);
         // S16（cdp-protocol page.setContent）：document.write 写周期落定队列——worker 侧
         // `__zw_document_write_settled` 回调推入，runtime 主循环 drain → browser/headless
         // （`Page.loadEventFired` 族重发事件源）。
@@ -368,6 +375,7 @@ impl RendererJsWorker {
                     import_map_for_worker,
                     dom_html_for_worker,
                     page_fetch_inflight_for_worker,
+                    raf_interest_for_worker,
                     canvas_registry,
                     #[cfg(test)]
                     execution_count_for_worker,
@@ -436,6 +444,7 @@ impl RendererJsWorker {
             media_ctx,
             fetch_observed,
             page_fetch_inflight,
+            raf_interest,
             mutations,
             rect_snapshot,
             dom_html,
@@ -567,6 +576,12 @@ impl RendererJsWorker {
     /// BG-03 M2-S1：page fetch 在途登记句柄（fetch 观测包装进出时增减；Reset 臂 drain）。
     pub fn page_fetch_inflight_registry(&self) -> Arc<std::sync::Mutex<HashMap<String, usize>>> {
         Arc::clone(&self.page_fetch_inflight)
+    }
+
+    /// DC-2/M3：帧驱动 rAF 是否有挂起回调（shim `__zw_raf_interest` 回报；主循环节拍泵门控，
+    /// 无注册 rAF 恒 false）。
+    pub fn raf_interest(&self) -> bool {
+        self.raf_interest.load(Ordering::Relaxed) > 0
     }
 
     /// S14：原子取出 fetch 观测记录（`(phase, seq, url, method, status)`），供 runtime 主
@@ -1231,6 +1246,8 @@ fn js_worker_main(
     dom_html: Arc<std::sync::Mutex<String>>,
     // BG-03 M2-S1：page fetch 在途登记（fetch 观测包装增减，本线程 Reset 臂 drain）。
     page_fetch_inflight: Arc<std::sync::Mutex<HashMap<String, usize>>>,
+    // DC-2/M3：帧驱动 rAF 挂起数（shim `__zw_raf_interest` 回报，本线程 Reset 臂清零）。
+    raf_interest: Arc<AtomicU64>,
     // js-dom canvas 显示链路：与 WebView painter 共享的绘制侧 registry（runtime 构造期
     // 单实例注入）。此前本线程自建孤儿实例，页面 `__zw_canvas_op` 绘制恒不可见
     // （多进程路径 canvas 2D 位图从不进入绘制结果，2026-10-22 comp04a 脚手架批定位）。
@@ -1417,6 +1434,20 @@ fn js_worker_main(
     // （子线程 sleep + resolver.resolve → __zwResolveCallback 调用 JS 回调）。
     let timer_bridge = TimerBridge::new(resolver);
     timer_bridge.register(&mut *sandbox);
+    // DC-2/M3：帧驱动 rAF 兴趣登记——shim 在 rAF 注册/取消/tick 末回报挂起数（参数 0 =
+    // 无挂起）。无条件注册（开关在 shim `__ZW_RAF_FRAME_DRIVEN` 分支，OFF 模式不调用
+    // 零开销；同 TimerBridge 先例），使测试可 JS 侧注 flag 直驱（env set_var 并行竞态规避，
+    // renderer_js_worker_raf_tick_fires_frame_driven_callbacks 同款）。主循环节拍泵读
+    // 同一 Arc（spawn 期创建）决定是否派发 `__zw_raf_tick`。
+    let raf_interest_for_cb = Arc::clone(&raf_interest);
+    sandbox.register_callback(
+        "__zw_raf_interest",
+        Box::new(move |args: &[String]| -> String {
+            let n: u64 = args.first().and_then(|s| s.parse().ok()).unwrap_or(0);
+            raf_interest_for_cb.store(n, Ordering::Relaxed);
+            String::new()
+        }),
+    );
     // R2713b：帧驱动 rAF kill-switch——execute shim 前注入 globalThis.__ZW_RAF_FRAME_DRIVEN
     //（shim 据此分支 rAF 同步 stub / 帧驱动）。默认 OFF 不注入 → shim `|| false` → 同步 stub。
     if raf_frame_driven_enabled() {
@@ -1992,6 +2023,9 @@ fn js_worker_main(
                 if let Ok(mut pending) = mutations.lock() {
                     pending.clear();
                 }
+                // DC-2/M3：跨导航清 rAF 兴趣——旧文档挂起回调随 global object 销毁
+                // （同上方 mutations 清队语义）；不清则计数残留使泵对新文档空转 tick。
+                raf_interest.store(0, Ordering::Relaxed);
                 // js-dom R386：QuickJS context 丢弃即释放其对象——绑定线程局部
                 // （NODE_OBJECTS 等 Persistent）持已释放对象引用（webview Drop R3334/R74
                 // 同族悬垂），须随 context 重建清空；下一快照换代全量重 install。
@@ -5678,6 +5712,49 @@ mod tests {
             "2",
             "tick 后按注册序 fire 两个回调"
         );
+        worker.shutdown();
+    }
+
+    #[test]
+    fn renderer_js_worker_raf_interest_reports_and_converges() {
+        // DC-2/M3：帧驱动 rAF 兴趣桥契约——注册置位、tick 无重注册归零（泵自停）、
+        // tick 内重注册维持（泵续下一帧）、取消最后挂起归零。env set_var 并行竞态规避
+        //（同 raf_tick_fires 测试）：host 回调无条件注册，JS 侧注 flag 即全链生效。
+        let mut worker = RendererJsWorker::spawn(48);
+        worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "globalThis.__ZW_RAF_FRAME_DRIVEN = true;\
+                 requestAnimationFrame(function(){});",
+            )
+            .unwrap();
+        assert!(worker.raf_interest(), "注册即置兴趣（host 泵据此刻画派发）");
+        worker
+            .execute_script_direct("if(globalThis.__zw_raf_tick)globalThis.__zw_raf_tick(0);")
+            .unwrap();
+        assert!(!worker.raf_interest(), "tick 末无重注册应归零（泵自停）");
+        worker
+            .execute_script_direct(
+                "globalThis.__h = requestAnimationFrame(function(){ requestAnimationFrame(function(){}); });",
+            )
+            .unwrap();
+        assert!(worker.raf_interest());
+        worker
+            .execute_script_direct("if(globalThis.__zw_raf_tick)globalThis.__zw_raf_tick(0);")
+            .unwrap();
+        assert!(worker.raf_interest(), "tick 内重注册应维持兴趣（泵继续下一帧）");
+        worker
+            .execute_script_direct("if(globalThis.__zw_raf_tick)globalThis.__zw_raf_tick(0);")
+            .unwrap();
+        assert!(!worker.raf_interest(), "回调链停止重注册后归零（泵自停）");
+        worker
+            .execute_script_direct("globalThis.__c = requestAnimationFrame(function(){});")
+            .unwrap();
+        assert!(worker.raf_interest());
+        worker
+            .execute_script_direct("cancelAnimationFrame(globalThis.__c);")
+            .unwrap();
+        assert!(!worker.raf_interest(), "取消最后挂起回调应归零");
         worker.shutdown();
     }
 

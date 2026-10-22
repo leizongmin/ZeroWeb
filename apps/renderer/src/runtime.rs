@@ -4064,6 +4064,21 @@ return JSON.stringify({{action:action,name:name,val:val}});\
                 }
             }
 
+            // DC-2/M3（帧驱动 rAF 泵——镜像媒体泵「事件循环节拍，否决独立泵线程」）：
+            // rAF 派发原本只挂帧发布末尾（publish_webview_now → tick_observers），纯 rAF
+            // 循环不改 DOM 即无失效无发布，回调永久饥饿（M1 实测 30s 仅 2 tick）。shim
+            // 在 rAF 注册/取消/tick 末经 `__zw_raf_interest` 回报挂起数（js_worker 无条件
+            // 注册回调；OFF 模式 shim 不调用零开销），此处按挂起数门控提交裸
+            // `__zw_raf_tick` 脚本（同 tick_observers_with 的派发脚本；不带每拍全量
+            // SetDomSnapshot/observer tick——该重形态实测 6.7 cores，纯 rAF 页不可承受）。
+            // 回调 mutation 由主循环既有 drain_pending_script_mutations 通道下一拍
+            // apply+渲染+发布；回调链停止重注册挂起数归 0 泵自停，静态页零开销。
+            if self.javascript_enabled && self.js_worker.raf_interest() {
+                let _ = self.js_worker.submit_script_priority(
+                    "if(globalThis.__zw_raf_tick)globalThis.__zw_raf_tick(globalThis.performance?performance.now():0);",
+                );
+            }
+
             // t2-pb1 fix#15：补答挂起的自动化 Evaluate（优先队列中脚本完成或被导航
             // 复位清队后）；空表零开销。
             if !self.pending_automation_replies.is_empty()

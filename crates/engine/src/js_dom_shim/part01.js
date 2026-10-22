@@ -6885,6 +6885,9 @@
     if (globalThis.__ZW_RAF_FRAME_DRIVEN) {
       // 帧驱动（R2713a）：延后到 host render 后的 __zw_raf_tick 派发（spec rAF 语义）。
       if (typeof fn === 'function') _rafPending[id] = fn;
+      // DC-2/M3：兴趣回报（挂起数）——host 主循环节拍泵据此派发 __zw_raf_tick；
+      // 无 host 注册（browser 单进程路径等）时 no-op。
+      if (typeof __zw_raf_interest === 'function') __zw_raf_interest(Object.keys(_rafPending).length);
     } else if (typeof fn === 'function' && _rafBudget > 0) {
       // 同步 stub（reftest 兼容，默认路径）：预算内立即执行，让 double-rAF setup mutation
       // 进入最终 HTML 被 harness 单渲染捕获。时间戳取真实时钟（spec DOMHighResTimeStamp——
@@ -6901,7 +6904,11 @@
     return id;
   };
   globalThis.cancelAnimationFrame = function(id) {
-    if (globalThis.__ZW_RAF_FRAME_DRIVEN) delete _rafPending[id];
+    if (globalThis.__ZW_RAF_FRAME_DRIVEN) {
+      delete _rafPending[id];
+      // DC-2/M3：取消即回报余量——被取消的回调不再维持泵。
+      if (typeof __zw_raf_interest === 'function') __zw_raf_interest(Object.keys(_rafPending).length);
+    }
     // OFF 路径 no-op（旧行为）。
   };
   // host 在 render 后调用（renderer tick_observers；OFF 时早返零开销）。ts = DOMHighResTimeStamp（ms）。
@@ -6911,6 +6918,8 @@
     if (typeof __zw_mut_hover_sync_settle === 'function') { try { __zw_mut_hover_sync_settle(); } catch (_eMhs8b) {} }
     var cbs = _rafPending; _rafPending = {}; // 本帧快照、清空（rAF 内重注册入下一帧队列）
     for (var id in cbs) { try { cbs[id](ts); } catch (_e) {} }
+    // DC-2/M3：tick 末回报余量（rAF 内重注册计入）——回调链停止重注册即归 0，泵自停。
+    if (typeof __zw_raf_interest === 'function') __zw_raf_interest(Object.keys(_rafPending).length);
   };
   globalThis.webkitRequestAnimationFrame = globalThis.requestAnimationFrame;
   globalThis.mozRequestAnimationFrame = globalThis.requestAnimationFrame;

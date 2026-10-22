@@ -1,0 +1,2 @@
+scenario=bg02-onscreen-compgui wall=30s cdp=127.0.0.1:50539 http=127.0.0.1:38145
+start_url=bg02-onscreen-anim.html ZW_RAF_FRAME_DRIVEN=1 ZW_COMPOSITOR_ANIMATIONS=1 gui=1 viewport=800x600 display=:20
