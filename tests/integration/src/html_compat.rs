@@ -1023,7 +1023,10 @@ globalThis.__topLayerResult=[
     assert_eq!(renderer_result, webview_result);
     assert_eq!(
         renderer_result,
-        "undefined|custom|InvalidStateError|InvalidStateError|true|true|InvalidStateError|InvalidStateError"
+        // 第 7 段 hiddenError：对已 hidden 的 popover 再 hidePopover——541e7d228 按
+        // spec hide popover 算法（hidden 态静默 no-op）lenient 化 shim 后同步为空，
+        // part09 契约测试同轮已翻转同款期望。
+        "undefined|custom|InvalidStateError|InvalidStateError|true|true||InvalidStateError"
     );
 }
 
