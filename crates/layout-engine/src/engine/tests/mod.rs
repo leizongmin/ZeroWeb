@@ -799,3 +799,5 @@ mod r5220_pct_padding_collapse_tests;
 mod r5221_wrap_floor_multi_float_tests;
 /// R5223（CSS2 §10.3.7 × §10.8）静态位 abspos 容器 IFC 存储 + 根级 run 不继承容器 va 锚点。
 mod r5223_static_abspos_ifc_store_tests;
+/// R5224（CSS2 §10.3.7 × css-position-3 §4.1）rtl 行首 inline abspos 静态位镜像锚点。
+mod r5224_rtl_inline_abspos_static_tests;

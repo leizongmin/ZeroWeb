@@ -1300,7 +1300,26 @@ fn fix_abspos_inline_static_position_walk(
             {
                 if x_all_auto {
                     let ml = resolve_abspos_real_length(&style.margin_left, &style.font_size, 0.0, 0.0).unwrap_or(0.0);
-                    child.x = ax - dx + ml;
+                    // R5224（CSS2 §10.3.7 static position × css-position-3 §4.1）：rtl 容器
+                    // 行首锚镜像——锚 x 是行构建期 LTR 物理光标（行内镜像/对齐前推进值），
+                    // rtl 行首的假想盒 inline-start 贴**行右缘**、向 inline-end 延伸
+                    //（chromium 探针 a1/a3：盒右缘 = 行右缘，margin-box 右缘对齐）。
+                    // 仅镜像「锚容器即本盒」（dx=0、content 宽直取）的行首锚
+                    //（ax≈容器内容左缘）；行中锚的物理映射需最终行几何（原始光标≠物理位，
+                    // chromium a2 自身即非单点映射），维持旧行为。
+                    let rtl_line_start = Some(anchor_container) == box_node.node_id
+                        && styles.get(&anchor_container).is_some_and(|s| {
+                            matches!(s.direction, zero_style_system::property::types::DirectionValue::Rtl)
+                                && matches!(s.writing_mode, zero_style_system::WritingModeValue::HorizontalTb)
+                        })
+                        && (ax - dx).abs() <= 0.5;
+                    if rtl_line_start {
+                        let mr =
+                            resolve_abspos_real_length(&style.margin_right, &style.font_size, 0.0, 0.0).unwrap_or(0.0);
+                        child.x = box_node.content_width - mr - child.width;
+                    } else {
+                        child.x = ax - dx + ml;
+                    }
                 }
                 if y_all_auto
                     && resolve_abspos_real_length(&style.margin_top, &style.font_size, 0.0, 0.0).unwrap_or(0.0) <= 0.5
