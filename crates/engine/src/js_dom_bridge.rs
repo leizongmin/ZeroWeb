@@ -4334,6 +4334,11 @@ pub fn generate_js_dom_shim() -> &'static str {
         // 运行（part07 闭合外层 IIFE），经 globalThis._zwMakeCtxWebGL 与 part04/05
         // 的 getContext 分支单点对接；IIFE 顶部消费 part08a 数据表。
         s.push_str(include_str!("js_dom_shim/part08.js"));
+        // part08c（2026-10-22 M3-S3 拆分）：GL 对象存储簇（buffer 真字节存储 +
+        // 纹理参数/上传校验链 + framebuffer/renderbuffer 骨架）——2000 行准则
+        // 自 part08 拆出，消费其末尾 _zwGlStorageHandoff 单点并把 op 表合并回
+        // part08 的 _zwGlOps（调用期查表，无加载期耦合）；必须后于 part08。
+        s.push_str(include_str!("js_dom_shim/part08c.js"));
         // part08b（2026-10-22 M3-S2）：GLSL ES 1.0 前端子集（编译校验 + 活跃声明
         // 提取）——经 globalThis._zwGlCompileGlsl 发布，part08 compileShader 运行时
         // 调用（无加载期耦合）。

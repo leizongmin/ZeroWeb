@@ -66,8 +66,10 @@ M2 evidence §7。
    （✅ 2026-10-22）；
 ③ ~~buffer/texture/framebuffer 对象真存储 + texImage2D 上传链路~~
    （✅ 2026-10-22）；
-④ drawArrays/drawElements 真光栅化（开工前按职责拆分 part08——现 1981 行
-   逼近上限）。
+④ drawArrays/drawElements 真光栅化（开工前置 ✅ 2026-10-22：part08 已按职责
+   拆分——GL 对象存储簇独立 part08c（592 行，_zwGlStorageHandoff 单点交接），
+   part08 留状态机/查询/program 簇 1443 行；基线 2112/3 与 reftest 714/714
+   不变）。
 每簇落账 + 常驻测试 + 飞书通知，DC-4 门禁不放松。
 
 **历史**：M1 导入盘点（2026-10-22）——pin rev `webgl/` 为 10 文件平铺目录；
