@@ -106,10 +106,10 @@ impl SessionState {
 
     /// 返回会话文件的默认路径。
     ///
-    /// 遵循 XDG 规范：`~/.config/zeroweb/session.json`
+    /// 遵循 XDG 规范：`~/.config/zeroweb/session.json`；`ZERO_CONFIG_DIR`
+    /// （`--profile`）优先。
     pub fn default_session_path() -> PathBuf {
-        let config_dir = dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join("zeroweb");
-        config_dir.join("session.json")
+        crate::config_base_dir().join("zeroweb").join("session.json")
     }
 
     /// 从 JSON 文件加载会话状态。

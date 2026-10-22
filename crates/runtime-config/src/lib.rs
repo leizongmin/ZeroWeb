@@ -44,6 +44,11 @@ pub const ENVIRONMENT_VARIABLES: &[EnvironmentVariable] = &[
         description: "IndexedDB data directory",
     },
     EnvironmentVariable {
+        name: "ZERO_CONFIG_DIR",
+        default: "platform config directory",
+        description: "用户配置根目录（--profile 注入）：会话/书签/设置/崩溃报告位于其 zeroweb 子目录",
+    },
+    EnvironmentVariable {
         name: "ZERO_HTTP2",
         default: "enabled",
         description: "HTTP/2",

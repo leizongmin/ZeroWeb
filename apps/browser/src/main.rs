@@ -139,6 +139,26 @@ struct CliArgs {
     include_session_summary: bool,
     /// 会话摘要含各 tab URL（隐含 `--include-session-summary`；NFR-1 须显式勾选）。
     include_session_urls: bool,
+    /// 独立 profile 根目录：配置/存储/缓存收敛其下，覆盖同名 ZERO_* 环境变量。
+    profile: Option<PathBuf>,
+}
+
+/// 把 `--profile` 目录落实为隔离环境变量，返回绝对化的 profile 根。
+///
+/// 布局契约：配置=根（`zeroweb` 子目录）、存储=根/`storage`、缓存=根/`cache`。
+/// CLI 显式给出 profile 即覆盖既有 ZERO_* 环境变量（与 Chrome `--user-data-dir`
+/// 语义一致）；相对路径按当前工作目录绝对化，避免相对值被平台层静默忽略后
+/// 回落真实用户目录。renderer 子进程经 env 继承同一隔离。
+fn apply_profile(profile: &Path) -> Result<PathBuf, String> {
+    let root = std::path::absolute(profile)
+        .map_err(|error| format!("--profile {}: cannot resolve path: {error}", profile.display()))?;
+    // SAFETY: main 启动期单线程点，先于任何线程与 renderer 子进程创建。
+    unsafe {
+        std::env::set_var("ZERO_CONFIG_DIR", &root);
+        std::env::set_var("ZERO_STORAGE_DIR", root.join("storage"));
+        std::env::set_var("ZERO_CACHE_DIR", root.join("cache"));
+    }
+    Ok(root)
 }
 
 fn parse_args() -> Result<CliArgs, String> {
@@ -195,6 +215,7 @@ fn parse_args_from(
     let mut include_session_summary = false;
     let mut include_session_urls = false;
     let mut rollback_update = false;
+    let mut profile = None;
 
     while let Some(arg) = args.next() {
         if arg == "--single-process" || arg == "--multi-process" {
@@ -260,6 +281,23 @@ fn parse_args_from(
 
         if arg == "--rollback-update" {
             rollback_update = true;
+        }
+
+        if let Some(value) = arg.strip_prefix("--profile=") {
+            if value.is_empty() {
+                return Err("--profile requires a directory".to_string());
+            }
+            profile = Some(PathBuf::from(value));
+        }
+
+        if arg == "--profile" {
+            let value = args
+                .next()
+                .ok_or_else(|| "--profile requires a directory".to_string())?;
+            if value.is_empty() {
+                return Err("--profile requires a directory".to_string());
+            }
+            profile = Some(PathBuf::from(value));
         }
 
         if arg == "--list-crash-reports" {
@@ -670,6 +708,7 @@ fn parse_args_from(
         feedback_reports,
         include_session_summary,
         include_session_urls,
+        profile,
     })
 }
 
@@ -711,6 +750,8 @@ Options:
   --parity-scenario=<json>       Run a real-window Chrome parity interaction scenario
   --parity-output-dir=<dir>      Write ZeroWeb parity evidence into this directory
   --version                      Print version and build commit, then exit
+  --profile=<dir>                Use an isolated profile: config, storage, and
+                                 cache live under <dir> (overrides ZERO_* env)
   --check-updates=<dir>          Check and apply an update from a local source
                                  directory (manifest.json + .deb), then exit
   --rollback-update              Roll back to the previous release, then exit
@@ -1284,6 +1325,23 @@ fn init_logging() {
 }
 
 fn main() {
+    // 解析提前于 panic hook：`--profile` 注入的环境变量须先生效，崩溃报告
+    // 目录才随 profile（含启动期 panic）；解析本身是纯字符串操作。
+    let cli = match parse_args() {
+        Ok(args) => args,
+        Err(err) => {
+            eprintln!("{err}");
+            print_usage();
+            std::process::exit(2);
+        }
+    };
+    if let Some(profile) = cli.profile.as_deref() {
+        if let Err(err) = apply_profile(profile) {
+            eprintln!("{err}");
+            std::process::exit(2);
+        }
+    }
+
     // FR-4：browser 进程 panic 时写本地白名单崩溃报告（必须在一切初始化前
     // 安装，覆盖启动期 panic）；写报告失败不阻断退出，原钩子行为保持。
     zero_browser_shell::install_browser_panic_hook(
@@ -1302,15 +1360,6 @@ fn main() {
     detect_and_set_platform_scale();
 
     tracing::info!("ZeroBrowser starting...");
-
-    let cli = match parse_args() {
-        Ok(args) => args,
-        Err(err) => {
-            eprintln!("{err}");
-            print_usage();
-            std::process::exit(2);
-        }
-    };
     tracing::info!("Tabs use zero-renderer child processes");
     if cli.wpt_parity {
         tracing::info!("WPT parity mode: CPU renderer, scale 1.0 (aligned with product-smoke / reftest)");

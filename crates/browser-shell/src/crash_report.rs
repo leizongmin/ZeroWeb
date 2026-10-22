@@ -147,12 +147,10 @@ impl CrashReport {
     }
 }
 
-/// 崩溃报告目录：`<配置目录>/zeroweb/crash-reports/`（随 `HOME`/XDG 隔离）。
+/// 崩溃报告目录：`<配置目录>/zeroweb/crash-reports/`（随 `HOME`/XDG 隔离；
+/// `ZERO_CONFIG_DIR`（`--profile`）优先）。
 pub fn crash_reports_dir() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("zeroweb")
-        .join("crash-reports")
+    crate::config_base_dir().join("zeroweb").join("crash-reports")
 }
 
 /// 写入一份崩溃报告（原子替换 + 写前滚动删除），返回报告路径。

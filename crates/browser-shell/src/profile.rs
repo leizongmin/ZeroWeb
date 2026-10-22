@@ -7,6 +7,15 @@ use std::path::{Path, PathBuf};
 /// 单个 profile JSON 文件允许的最大字节数。
 pub const MAX_PROFILE_FILE_BYTES: u64 = 1024 * 1024;
 
+/// 宿主配置根目录：`ZERO_CONFIG_DIR` 优先（`--profile` 注入），否则平台配置目录。
+///
+/// 会话/书签/历史/设置/崩溃报告固定落在其 `zeroweb` 子目录；`--profile` 模式下
+/// 由宿主把存储/缓存环境变量一并指向同一 profile 根（见 apps/browser `apply_profile`）。
+pub fn config_base_dir() -> PathBuf {
+    zero_runtime_config::optional_path("ZERO_CONFIG_DIR")
+        .unwrap_or_else(|| dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")))
+}
+
 /// 一个浏览器 profile 内各类状态文件的路径。
 #[derive(Debug, Clone)]
 pub struct ProfilePaths {

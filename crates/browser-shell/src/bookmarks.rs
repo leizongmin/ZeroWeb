@@ -263,10 +263,10 @@ impl Bookmarks {
 
     /// 返回书签文件的默认路径。
     ///
-    /// 遵循 XDG 规范：`~/.config/zeroweb/bookmarks.json`
+    /// 遵循 XDG 规范：`~/.config/zeroweb/bookmarks.json`；`ZERO_CONFIG_DIR`
+    /// （`--profile`）优先。
     pub fn default_path() -> PathBuf {
-        let config_dir = dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join("zeroweb");
-        config_dir.join("bookmarks.json")
+        crate::config_base_dir().join("zeroweb").join("bookmarks.json")
     }
 
     /// 从 JSON 文件加载书签。

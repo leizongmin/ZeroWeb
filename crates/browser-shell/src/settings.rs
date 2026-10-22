@@ -211,10 +211,10 @@ impl BrowserSettings {
 
     /// 返回设置文件的默认路径。
     ///
-    /// 遵循 XDG 规范：`~/.config/zeroweb/settings.json`
+    /// 遵循 XDG 规范：`~/.config/zeroweb/settings.json`；`ZERO_CONFIG_DIR`
+    /// （`--profile`）优先。
     pub fn default_config_path() -> PathBuf {
-        let config_dir = dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join("zeroweb");
-        config_dir.join("settings.json")
+        crate::config_base_dir().join("zeroweb").join("settings.json")
     }
 
     /// 从 JSON 文件加载设置。

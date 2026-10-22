@@ -14,6 +14,7 @@ switch there before consuming it in an application or library crate.
 | `ZERO_PRIVATE` | `1`/`true` enables | disabled | Do not write the HTTP disk cache, IndexedDB, or CacheStorage. |
 | `ZERO_CACHE_DIR` | directory path | platform cache directory | Override the HTTP disk-cache directory. |
 | `ZERO_STORAGE_DIR` | directory path | platform data directory | Override the persistent storage base. For compatibility, IndexedDB uses this path directly; CacheStorage and Service Worker state use child paths. |
+| `ZERO_CONFIG_DIR` | directory path | platform config directory | Override the user config root (session, bookmarks, settings, and crash reports live under its `zeroweb` child). Injected by `--profile` together with `ZERO_STORAGE_DIR`/`ZERO_CACHE_DIR`. |
 | `ZERO_HTTP2` | `0`/`false` disables | enabled | Force HTTP/1.1 and omit HTTP/2 priority behaviour. |
 | `ZERO_NOPROXY` | `1`/`true` enables | disabled | Bypass system and `HTTP[S]_PROXY` environment proxies. |
 | `ZERO_MAX_CONNECTIONS_PER_ORIGIN` | positive integer | `6` | Per-origin connection limit. |

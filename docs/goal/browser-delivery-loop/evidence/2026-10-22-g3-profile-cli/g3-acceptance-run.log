@@ -1,0 +1,22 @@
+Running as unit: run-p2198701-i6395305.scope; invocation ID: 0ef178a4ddd646f183a2e3cfceefc31d
+[G3] product identity: ZeroBrowser 26.10.22 (commit 6067f280c794)
+[G3] leg A: --profile overrides ambient ZERO_* env (GUI)
+[G3] PASS: legA GUI up on :37855 (/json/version answers)
+[G3] PASS: legA live renderer pid=2198720
+[G3] PASS: legA renderer inherits ZERO_STORAGE_DIR=<profile>/storage
+[G3] PASS: legA renderer inherits ZERO_CACHE_DIR=<profile>/cache
+[G3] PASS: legA exit code 0 within 10s
+[G3] PASS: legA session.json under <profile>/zeroweb
+[G3] PASS: legA scratch XDG got zero session writes (override wins)
+[G3] leg B: crash report lands under profile (renderer SIGKILL)
+[G3] PASS: legB live renderer pid=2198802
+[G3] legB SIGKILL delivered to renderer 2198802
+[G3] PASS: legB crash report under <profile>/zeroweb/crash-reports: crash-1792678025-renderer.json
+[G3] PASS: legB --list-crash-reports --profile lists the report
+[G3] PASS: legB without --profile, scratch XDG lists NO_REPORTS (isolation)
+[G3] PASS: legB report version matches --version (26.10.22)
+[G3] PASS: legB report git_commit matches --version (6067f280c794)
+[G3] PASS: legB browser exited cleanly after SIGINT (1 crash < loop-guard threshold)
+[G3] leg C: relative --profile resolves against cwd
+[G3] PASS: legC relative --profile=p2 from cwd=/tmp/zw-g3-acc2 lists the same report
+[G3] summary: PASS=15 FAIL=0

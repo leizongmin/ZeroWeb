@@ -7150,3 +7150,46 @@ fn install_root_is_none_without_releases_ancestor() {
         None
     );
 }
+
+#[test]
+fn profile_cli_accepts_equals_and_space_forms() {
+    let parsed = super::parse_args_from(["--profile=target/prof-a"].into_iter().map(str::to_string), None).unwrap();
+    assert_eq!(parsed.profile.as_deref(), Some(Path::new("target/prof-a")));
+
+    let parsed = super::parse_args_from(["--profile", "target/prof-b"].into_iter().map(str::to_string), None).unwrap();
+    assert_eq!(parsed.profile.as_deref(), Some(Path::new("target/prof-b")));
+}
+
+#[test]
+fn profile_cli_rejects_missing_or_empty_value() {
+    assert!(super::parse_args_from(["--profile"].into_iter().map(str::to_string), None).is_err());
+    assert!(super::parse_args_from(["--profile="].into_iter().map(str::to_string), None).is_err());
+}
+
+#[test]
+fn profile_applies_isolated_env_layout_over_absolute_root() {
+    // 进程级 env 写入：仓内其余单测不消费这三个变量，串行影响可忽略；
+    // 结束时清理，避免泄漏到同进程后续测试。
+    let resolved =
+        super::apply_profile(Path::new("target/g3-profile-ut")).expect("relative profile resolves against cwd");
+    assert!(resolved.is_absolute());
+    assert!(resolved.ends_with(Path::new("target/g3-profile-ut")));
+    assert_eq!(
+        std::env::var_os("ZERO_CONFIG_DIR").as_deref(),
+        Some(resolved.as_os_str())
+    );
+    assert_eq!(
+        std::env::var_os("ZERO_STORAGE_DIR").as_deref(),
+        Some(resolved.join("storage").as_os_str())
+    );
+    assert_eq!(
+        std::env::var_os("ZERO_CACHE_DIR").as_deref(),
+        Some(resolved.join("cache").as_os_str())
+    );
+    // SAFETY: 同上，测试进程内独占消费，测试尾清理。
+    unsafe {
+        std::env::remove_var("ZERO_CONFIG_DIR");
+        std::env::remove_var("ZERO_STORAGE_DIR");
+        std::env::remove_var("ZERO_CACHE_DIR");
+    }
+}
