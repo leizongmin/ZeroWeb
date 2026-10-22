@@ -165,7 +165,7 @@ pub struct ReftestConfig {
     pub category: ReftestCategory,
     /// Per-test fuzzy 容差覆盖（来自 WPT MANIFEST.json）。
     pub fuzzy_override: Option<FuzzyMeta>,
-    /// mismatch 模式的最小差异率阈值（默认 0.0001 = 0.01%，48px @ 800×600）。
+    /// mismatch 模式的最小差异率阈值（默认 0.00005 = 0.005%，24px @ 800×600）。
     /// 差异率超过此值才认为是不匹配通过。
     ///
     /// R3866：旧值 0.005（0.5%）严于上游语义——WPT mismatch 只要求两页渲染
@@ -175,8 +175,12 @@ pub struct ReftestConfig {
     /// rotate 文本位移 236px ≈ 0.05%、transform-origin 平移等）。通道噪声已由
     /// `compare_pixels_labeled` 的 max_channel_diff（5/8/15）过滤——实测 63 翻绿案
     /// subpixel-dominated（channel==1 占比 >50%）为 0，全为结构性像素差（maxch=255）。
-    /// 新值 0.0001（48px）保留绝对下限防 ch>8 的 AA 聚类伪差；对 match 模式零影响
-    ///（阈值只作用于 mismatch 判定，严格单调 fail→pass，零回归风险）。
+    ///
+    /// R5231：0.0001（48px）仍误判真结构差——empty-string-symbol 缺 "1." marker
+    /// 墨迹 33px（maxch=255）被判 match。corpus 43 mismatch fail 实测 42 案 diff
+    /// 恰为 0（同引擎双渲染确定性，无 AA 聚类伪差），非零差仅此 33px 一案；
+    /// 下调至 0.00005（24px）翻转集全 corpus 恰 1 案，仍保多像素结构差下限
+    /// 防 1px 级光栅漂移假通过。对 match 模式零影响（严格单调 fail→pass）。
     pub min_mismatch_ratio: f64,
     /// 渲染媒体类型（DC-12 @media print/screen 级联过滤；R1991）。默认 `Screen` = 零行为变更。
     pub media_type: zero_css_parser::media_query::MediaType,
@@ -197,7 +201,7 @@ impl Default for ReftestConfig {
             category: ReftestCategory::Unknown,
             wpt_root: None,
             fuzzy_override: None,
-            min_mismatch_ratio: 0.0001,
+            min_mismatch_ratio: 0.00005,
             media_type: zero_css_parser::media_query::MediaType::Screen,
         }
     }

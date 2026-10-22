@@ -142,6 +142,44 @@ fn test_reftest_mismatch_mode() {
     );
 }
 
+/// R5231：mismatch 地板 0.0001→0.00005（48px→24px @ 800×600）——小面积真结构差
+/// （如 empty-string-symbol 缺 "1." marker 墨迹 33px，maxch=255）应判不匹配通过；
+/// 仍低于地板的近零差（<24px）维持 fail。两侧边界各锚一例。
+#[test]
+fn test_mismatch_small_structural_diff_boundary() {
+    // 6×6 实心红方块 = 36px ∈ (24, 48]——旧地板下误判 fail、新地板应通过。
+    let small_diff = ReftestCase {
+            id: "test/mismatch-small-structural".into(),
+            test_html: "<html><body style=\"margin:0\"><div style=\"position:absolute;width:6px;height:6px;background:red\"></div></body></html>".into(),
+            ref_html: "<html><body style=\"margin:0\"></body></html>".into(),
+            css: String::new(),
+            is_match: false,
+            ref_base_dir: None,
+        };
+    let result = run_reftest(&small_diff, &ReftestConfig::default());
+    assert!(
+        result.passed,
+        "36px structural diff should pass mismatch (floor 24px): {}",
+        result.message
+    );
+
+    // 2×2 = 4px（AA 边缘至多 ~12px）仍低于 24px 地板 → 维持 fail。
+    let tiny_diff = ReftestCase {
+            id: "test/mismatch-tiny".into(),
+            test_html: "<html><body style=\"margin:0\"><div style=\"position:absolute;width:2px;height:2px;background:red\"></div></body></html>".into(),
+            ref_html: "<html><body style=\"margin:0\"></body></html>".into(),
+            css: String::new(),
+            is_match: false,
+            ref_base_dir: None,
+        };
+    let result = run_reftest(&tiny_diff, &ReftestConfig::default());
+    assert!(
+        !result.passed,
+        "Sub-floor diff should not pass mismatch: {}",
+        result.message
+    );
+}
+
 /// R1991：`--media print` 端到端接线验证（DC-12 @media print 级联）。
 ///
 /// 同一页面声明 `@media screen { body: blue } @media print { body: red }`：
