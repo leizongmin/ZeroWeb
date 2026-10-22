@@ -21,13 +21,25 @@
 
 use super::*;
 use crate::dirty::LayoutDirtyTracker;
-use crate::types::{LayoutBox, LayoutResult};
+use crate::types::{LayoutBox, LayoutResult, OverflowClip};
 use zero_css_parser::Parser as CssParser;
 use zero_dom::{Document, NodeId, parse_html};
 use zero_style_system::{ComputedStyle, StyleSystem};
 
-/// 单盒几何快照：x/y（相对父内容区）、边框盒宽高、内容盒宽高。
-type Geo = (f32, f32, f32, f32, f32, f32);
+/// 单盒最终输出快照：几何（x/y 相对父内容区、边框盒、内容盒）+ 溢出处理枚举
+///（M3 拆面扩张：DC-4"溢出符合预期"的布局面可观察量；scroll_x/scroll_y 布局期
+/// 恒 0 不入快照，滚动范围由盒树几何蕴含）。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct GeoSnapshot {
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    cw: f32,
+    ch: f32,
+    overflow_x: OverflowClip,
+    overflow_y: OverflowClip,
+}
 
 /// 每步期望结果（冷温双路径序列只承载一致基线；撤用增量臂的已知分歧边界
 /// 由独立测试直接断言，不经本 harness）。
@@ -98,20 +110,22 @@ fn describe_node(doc: &Document, id: NodeId) -> String {
     }
 }
 
-/// pre-order 收集 node-keyed 盒几何（匿名盒无 node_id，跳过——其错位会体现在
-/// 兄弟盒几何上，被间接检出）。
-fn collect_geometry(box_tree: &LayoutBox, out: &mut Vec<(NodeId, Geo)>) {
+/// pre-order 收集 node-keyed 盒最终输出快照（匿名盒无 node_id，跳过——其错位会体现
+/// 在兄弟盒几何上，被间接检出）。
+fn collect_geometry(box_tree: &LayoutBox, out: &mut Vec<(NodeId, GeoSnapshot)>) {
     if let Some(id) = box_tree.node_id {
         out.push((
             id,
-            (
-                box_tree.x,
-                box_tree.y,
-                box_tree.width,
-                box_tree.height,
-                box_tree.content_width,
-                box_tree.content_height,
-            ),
+            GeoSnapshot {
+                x: box_tree.x,
+                y: box_tree.y,
+                w: box_tree.width,
+                h: box_tree.height,
+                cw: box_tree.content_width,
+                ch: box_tree.content_height,
+                overflow_x: box_tree.overflow_x,
+                overflow_y: box_tree.overflow_y,
+            },
         ));
     }
     for child in &box_tree.children {
@@ -119,8 +133,12 @@ fn collect_geometry(box_tree: &LayoutBox, out: &mut Vec<(NodeId, Geo)>) {
     }
 }
 
-/// 首个几何分歧的描述；无分歧返 None。序列按序逐盒比较（条目数/顺序/逐字段精确相等）。
-fn first_geometry_divergence(doc: &Document, a: &[(NodeId, Geo)], b: &[(NodeId, Geo)]) -> Option<String> {
+/// 首个最终输出快照分歧的描述；无分歧返 None。序列按序逐盒比较（条目数/顺序/逐字段精确相等）。
+fn first_geometry_divergence(
+    doc: &Document,
+    a: &[(NodeId, GeoSnapshot)],
+    b: &[(NodeId, GeoSnapshot)],
+) -> Option<String> {
     if a.len() != b.len() {
         return Some(format!(
             "盒序列长度不一致：冷 {} vs 温 {}（首差处：{}）",
@@ -143,7 +161,7 @@ fn first_geometry_divergence(doc: &Document, a: &[(NodeId, Geo)], b: &[(NodeId, 
         }
         if ga != gb {
             return Some(format!(
-                "{} 几何不一致（x, y, w, h, cw, ch）：冷 {:?} vs 温 {:?}",
+                "{} 最终输出快照不一致（x, y, w, h, cw, ch, ox, oy）：冷 {:?} vs 温 {:?}",
                 describe_node(doc, *ida),
                 ga,
                 gb
@@ -242,7 +260,7 @@ impl DualLayoutRun {
     }
 }
 
-fn geometry_of(result: &LayoutResult) -> Vec<(NodeId, Geo)> {
+fn geometry_of(result: &LayoutResult) -> Vec<(NodeId, GeoSnapshot)> {
     let mut out = Vec::new();
     collect_geometry(&result.root, &mut out);
     out
@@ -350,6 +368,143 @@ fn layout_viewport_change_rebuild_consistent() {
     assert!(
         first_geometry_divergence(&run.doc, &geometry_of(&cold_layout), &geometry_of(&warm_layout)).is_none(),
         "视口变更后冷温几何分歧"
+    );
+}
+
+// ── M3 拆面（DC-4 布局面）：后处理敏感路径的冷温最终输出一致 ───────────
+//
+// slice14 撤用增量臂的根因是"复用 taffy 缓存、不跑全量后处理族"。本节在
+// 后处理最敏感的路径（margin 折叠、float 避让、overflow 滚动容器）上钉住
+// 冷温全量一致——未来任何"全量里跳过/重复某后处理 pass"的改动都会被检出。
+
+/// 后处理序列共用：独立 fixture 的 (doc, ids)，ids = [html, body, #a, #b]。
+fn postprocess_fixture(html: &str) -> (Document, Vec<NodeId>) {
+    let doc = parse_html(html);
+    let mut ids = Vec::new();
+    for sel in ["html", "body", "#a", "#b"] {
+        ids.push(doc.query_selector(doc.root(), sel).expect(sel));
+    }
+    (doc, ids)
+}
+
+/// fixture 有效性自检：三个后处理序列的 CSS 变更对确实改变全量输出——防
+/// "双路径一致但都陈旧"的空转基线（对照器对无效果变更同样无感，故序列
+/// fixture 须独立证明 layout-effective，同 style oracle 的检测器灵敏度哲学）。
+#[test]
+fn layout_postprocess_fixtures_are_layout_effective() {
+    let cases: [(&str, &str, &str); 3] = [
+        (
+            "collapse",
+            r#"<html><body><div id="a" class="gap-a">top</div><div id="b" class="gap-b">bottom</div></body></html>"#,
+            "body { margin: 0; }\n.gap-a { margin-bottom: 30px; }\n.gap-b { margin-top: 20px; }\n|body { margin: 0; }\n.gap-a { margin-bottom: 15px; }\n.gap-b { margin-top: 20px; }\n",
+        ),
+        (
+            "float",
+            r#"<html><body><div id="a" class="fl">F</div><div id="b" class="bfc">flow content beside float</div></body></html>"#,
+            "body { margin: 0; }\n.fl { float: left; width: 100px; height: 40px; }\n.bfc { display: flow-root; }\n|body { margin: 0; }\n.fl { float: left; width: 250px; height: 40px; }\n.bfc { display: flow-root; }\n",
+        ),
+        (
+            "overflow",
+            r#"<html><body><div id="a" class="scroll"><div id="b" class="tall">tall content</div></div></body></html>"#,
+            "body { margin: 0; }\n.scroll { overflow: scroll; width: 200px; height: 50px; }\n.tall { height: 200px; }\n|body { margin: 0; }\n.scroll { overflow: visible; width: 200px; height: 50px; }\n.tall { height: 300px; }\n",
+        ),
+    ];
+    for (name, html, pair) in cases {
+        let (css1, css2) = pair.split_once('|').expect("CSS 对");
+        let (doc, _ids) = postprocess_fixture(html);
+        let mut sys = StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let mut e1 = LayoutEngine::new(800.0, 600.0);
+        let mut e2 = LayoutEngine::new(800.0, 600.0);
+        let g1 = geometry_of(&e1.compute(
+            &doc,
+            &sys.compute_styles(&doc, &[CssParser::parse_stylesheet(css1)]),
+        ));
+        let g2 = geometry_of(&e2.compute(
+            &doc,
+            &sys.compute_styles(&doc, &[CssParser::parse_stylesheet(css2)]),
+        ));
+        assert_ne!(
+            g1, g2,
+            "后处理序列「{name}」的 CSS 变更对未改变全量输出——序列空转，须修 fixture"
+        );
+    }
+}
+
+/// M3-a：相邻兄弟 margin 折叠（折叠逃逸 + 兄弟位移后处理敏感路径）——
+/// 折叠量随 CSS 变更时冷温最终输出一致（折叠本身的规范正确性属 rendering-compat，
+/// 本序列只钉双路径一致性）。
+#[test]
+fn layout_margin_collapse_postprocess_consistent() {
+    let (doc, ids) = postprocess_fixture(
+        r#"<html><body><div id="a" class="gap-a">top</div><div id="b" class="gap-b">bottom</div></body></html>"#,
+    );
+    let a = ids[2];
+    let mut run = DualLayoutRun::new(
+        doc,
+        ids,
+        "body { margin: 0; }\n.gap-a { margin-bottom: 30px; }\n.gap-b { margin-top: 20px; }\n",
+    );
+    run.apply(
+        ".gap-a 下边距 30→15（折叠值变 max(15,20)=20，#b 上移）",
+        Some("body { margin: 0; }\n.gap-a { margin-bottom: 15px; }\n.gap-b { margin-top: 20px; }\n"),
+        move |_| vec![a],
+        Expectation::Equal,
+    );
+}
+
+/// M3-b：float 避让（float 收缩/BFC 修正后处理敏感路径）——float 宽高变更时
+/// 后续 BFC 块的几何冷温一致。
+#[test]
+fn layout_float_avoidance_postprocess_consistent() {
+    let (doc, ids) = postprocess_fixture(
+        r#"<html><body><div id="a" class="fl">F</div><div id="b" class="bfc">flow content beside float</div></body></html>"#,
+    );
+    let a = ids[2];
+    let mut run = DualLayoutRun::new(
+        doc,
+        ids,
+        "body { margin: 0; }\n.fl { float: left; width: 100px; height: 40px; }\n.bfc { display: flow-root; }\n",
+    );
+    run.apply(
+        "float 加宽 100→250（BFC 块可用宽度收缩，changed=#a）",
+        Some("body { margin: 0; }\n.fl { float: left; width: 250px; height: 40px; }\n.bfc { display: flow-root; }\n"),
+        move |_| vec![a],
+        Expectation::Equal,
+    );
+    run.apply(
+        "float 改高 40→120（changed=#a）",
+        Some("body { margin: 0; }\n.fl { float: left; width: 250px; height: 120px; }\n.bfc { display: flow-root; }\n"),
+        move |_| vec![a],
+        Expectation::Equal,
+    );
+}
+
+/// M3-c：overflow 滚动容器（溢出枚举 + 内容几何）——内容增高与溢出模式切换
+/// 冷温一致；溢出枚举入快照（DC-4"溢出符合预期"布局面）。
+#[test]
+fn layout_overflow_scroll_extent_consistent() {
+    let (doc, ids) = postprocess_fixture(
+        r#"<html><body><div id="a" class="scroll"><div id="b" class="tall">tall content</div></div></body></html>"#,
+    );
+    let a = ids[2];
+    let b = ids[3];
+    let mut run = DualLayoutRun::new(
+        doc,
+        ids,
+        "body { margin: 0; }\n.scroll { overflow: scroll; width: 200px; height: 50px; }\n.tall { height: 200px; }\n",
+    );
+    run.apply(
+        "内容增高 200→300（滚动范围变化，changed=#b）",
+        Some("body { margin: 0; }\n.scroll { overflow: scroll; width: 200px; height: 50px; }\n.tall { height: 300px; }\n"),
+        move |_| vec![b],
+        Expectation::Equal,
+    );
+    run.apply(
+        "溢出模式 scroll→visible（溢出枚举变更 + 容器高度不再钳制，changed=#a）",
+        Some("body { margin: 0; }\n.scroll { overflow: visible; width: 200px; height: 50px; }\n.tall { height: 300px; }\n"),
+        move |_| vec![a],
+        Expectation::Equal,
     );
 }
 
