@@ -1,0 +1,2 @@
+scenario=bg03-nav wall=45s cdp=127.0.0.1:41451 http=127.0.0.1:38551
+start_url=bg03-nav-source.html ZW_RAF_FRAME_DRIVEN=0 ZW_COMPOSITOR_ANIMATIONS=0 gui=0 viewport=800x600 display=none

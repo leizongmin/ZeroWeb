@@ -1946,12 +1946,25 @@ fn js_worker_main(
                     .unwrap_or_default()
                     .into_keys()
                     .collect();
-                for url in abandoned_fetches {
-                    let cancelled = ResourceLoader::shared().cancel_inflight_url(&url);
+                for url in &abandoned_fetches {
+                    let cancelled = ResourceLoader::shared().cancel_inflight_url(url);
                     if cancelled > 0 {
                         tracing::debug!(url = %url, cancelled, "cancelled page fetch on document reset");
                     }
                 }
+                // BG-03 M2-S3 文档残留计数：复位收口后记录各代际残留注册表规模——
+                // timer 堆（per-worker 单例，不清队，entry 滞留至 expiry）、放弃的挂起
+                // page fetch、按代际保留的命令。观测腿经 browser.log 验证旧文档回调/
+                // 资源释放面：fetch 应归零、retained 应有界、timer 应受 expiry 上界。
+                let (timer_pending, timer_nearest_ms) = timer_bridge.pending_stats();
+                tracing::info!(
+                    seq = reset_seq,
+                    timers_pending = timer_pending,
+                    timer_nearest_expiry_ms = timer_nearest_ms,
+                    fetch_abandoned = abandoned_fetches.len(),
+                    commands_retained = retained_after_reset.len(),
+                    "document reset residue stats"
+                );
                 // https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate
                 // A cross-document navigation creates a new global object. Keeping the
                 // renderer worker is an implementation detail, not page-visible state.

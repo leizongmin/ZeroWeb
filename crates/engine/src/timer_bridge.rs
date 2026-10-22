@@ -117,6 +117,22 @@ impl TimerBridge {
             }),
         );
     }
+
+    /// 挂起定时器诊断计数：`(条数, 距最近到期的毫秒数)`。
+    ///
+    /// BG-03 M2-S3 文档残留计数入口——TimerBridge 协调线程为 per-worker 单例，
+    /// 导航（`ResetDocumentState`）不清队列，entry 滞留至 expiry（回调由 shim 侧
+    /// `__zw_pending` 缺失语义兜底 no-op）。文档卸载时经本入口记录残留规模与
+    /// 最近到期，供观测腿验证「随文档滞留的回调」是否被 expiry 上界约束。
+    pub fn pending_stats(&self) -> (usize, Option<u64>) {
+        let (m, _) = &*self.inner;
+        let guard = m.lock().expect("timer coord lock");
+        let nearest = guard
+            .queue
+            .peek()
+            .map(|entry| entry.expiry.saturating_duration_since(Instant::now()).as_millis() as u64);
+        (guard.queue.len(), nearest)
+    }
 }
 
 impl Drop for TimerBridge {
@@ -169,5 +185,65 @@ fn coordinator_loop(inner: Arc<(Mutex<CoordInner>, Condvar)>, resolver: AsyncRes
             .unwrap_or_else(|| Duration::from_secs(3600));
         let (g, _) = c.wait_timeout(guard, wait).expect("timer coord wait");
         guard = g;
+    }
+}
+
+#[cfg(test)]
+mod pending_stats_tests {
+    use super::*;
+
+    // BG-03 M2-S3：诊断计数入口契约——经 `__zw_setTimeout` 注册即计数、最近到期
+    // 可见；到期触发与 clear 的 shim 侧兜底语义不在本面。
+
+    /// 捕获 `register` 安装的回调的沙箱替身（同 fetch_bridge::tests::CaptureCb 模式）。
+    struct CaptureCb {
+        cb: std::sync::Mutex<Option<Box<dyn Fn(&[String]) -> String + Send + Sync>>>,
+    }
+    impl zero_script_sandbox::Sandbox for CaptureCb {
+        fn execute(&mut self, _: &str) -> Result<zero_script_sandbox::ScriptResult, zero_script_sandbox::ScriptError> {
+            unreachable!()
+        }
+        fn execute_json(
+            &mut self,
+            _: &str,
+        ) -> Result<zero_script_sandbox::ScriptResult, zero_script_sandbox::ScriptError> {
+            unreachable!()
+        }
+        fn register_callback(&mut self, _name: &str, callback: Box<dyn Fn(&[String]) -> String + Send + Sync>) {
+            *self.cb.lock().unwrap() = Some(callback);
+        }
+        fn set_timeout_ms(&mut self, _: u64) {}
+        fn reset_context(&mut self) {}
+        fn config(&self) -> &zero_script_sandbox::SandboxConfig {
+            unreachable!()
+        }
+    }
+
+    #[test]
+    fn pending_stats_counts_registered_timers_and_reports_nearest_expiry() {
+        let bridge = TimerBridge::new(AsyncResolver::new(|_, _| {}));
+        assert_eq!(bridge.pending_stats(), (0, None), "empty without registrations");
+
+        let mut sandbox = CaptureCb {
+            cb: std::sync::Mutex::new(None),
+        };
+        bridge.register(&mut sandbox);
+        let register_timer = sandbox
+            .cb
+            .lock()
+            .unwrap()
+            .take()
+            .expect("__zw_setTimeout callback captured");
+        // 页面形态两条：短 timer（500ms）+ 长滞留 timer（24.8 天，BG-03 fixture 同款）。
+        assert_eq!(register_timer(&["t1".into(), "500".into()]), "");
+        assert_eq!(register_timer(&["t2".into(), "2147483647".into()]), "");
+
+        let (count, nearest) = bridge.pending_stats();
+        assert_eq!(count, 2, "two registered timers pending");
+        let nearest = nearest.expect("nearest expiry visible");
+        assert!(
+            nearest <= 500,
+            "nearest expiry should track the 500ms timer, got {nearest}ms"
+        );
     }
 }

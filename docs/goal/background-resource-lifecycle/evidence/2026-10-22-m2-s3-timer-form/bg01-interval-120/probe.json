@@ -1,0 +1,136 @@
+{
+ "scenario": "bg01-interval",
+ "started": "2026-10-22T12:07:40.540Z",
+ "wall_ms": 120000,
+ "events_session": [],
+ "errors": [],
+ "targets": [
+  {
+   "targetId": "zeroweb-tab-1",
+   "url": "about:blank",
+   "sessionId": "zeroweb-session-1"
+  }
+ ],
+ "start_nav": {
+  "ok": true,
+  "title": "BG-01 single-level interval timer"
+ },
+ "samples": [
+  {
+   "t_ms": 1792670866428,
+   "label": "bg01-interval",
+   "value": 4814
+  },
+  {
+   "t_ms": 1792670871435,
+   "label": "bg01-interval",
+   "value": 9335
+  },
+  {
+   "t_ms": 1792670876443,
+   "label": "bg01-interval",
+   "value": 13813
+  },
+  {
+   "t_ms": 1792670881460,
+   "label": "bg01-interval",
+   "value": 18044
+  },
+  {
+   "t_ms": 1792670886468,
+   "label": "bg01-interval",
+   "value": 22247
+  },
+  {
+   "t_ms": 1792670891530,
+   "label": "bg01-interval",
+   "value": 26252
+  },
+  {
+   "t_ms": 1792670896535,
+   "label": "bg01-interval",
+   "value": 30547
+  },
+  {
+   "t_ms": 1792670901547,
+   "label": "bg01-interval",
+   "value": 34826
+  },
+  {
+   "t_ms": 1792670906551,
+   "label": "bg01-interval",
+   "value": 39089
+  },
+  {
+   "t_ms": 1792670911554,
+   "label": "bg01-interval",
+   "value": 43559
+  },
+  {
+   "t_ms": 1792670916562,
+   "label": "bg01-interval",
+   "value": 47913
+  },
+  {
+   "t_ms": 1792670921577,
+   "label": "bg01-interval",
+   "value": 51879
+  },
+  {
+   "t_ms": 1792670926585,
+   "label": "bg01-interval",
+   "value": 55937
+  },
+  {
+   "t_ms": 1792670931602,
+   "label": "bg01-interval",
+   "value": 60175
+  },
+  {
+   "t_ms": 1792670936614,
+   "label": "bg01-interval",
+   "value": 64370
+  },
+  {
+   "t_ms": 1792670941622,
+   "label": "bg01-interval",
+   "value": 68717
+  },
+  {
+   "t_ms": 1792670946628,
+   "label": "bg01-interval",
+   "value": 72969
+  },
+  {
+   "t_ms": 1792670951634,
+   "label": "bg01-interval",
+   "value": 77393
+  },
+  {
+   "t_ms": 1792670956638,
+   "label": "bg01-interval",
+   "value": 81941
+  },
+  {
+   "t_ms": 1792670961644,
+   "label": "bg01-interval",
+   "value": 86456
+  },
+  {
+   "t_ms": 1792670966649,
+   "label": "bg01-interval",
+   "value": 91003
+  },
+  {
+   "t_ms": 1792670971653,
+   "label": "bg01-interval",
+   "value": 95482
+  },
+  {
+   "t_ms": 1792670976659,
+   "label": "bg01-interval",
+   "value": 99974
+  }
+ ],
+ "finished": "2026-10-22T12:09:41.423Z"
+}

@@ -1,0 +1,434 @@
+{
+ "scenario": "bg03-nav",
+ "started": "2026-10-22T12:15:16.269Z",
+ "wall_ms": 45000,
+ "events_session": [],
+ "errors": [],
+ "start_nav": {
+  "ok": true,
+  "title": "BG-03 nav source"
+ },
+ "nav_series": [
+  {
+   "cycle": 1,
+   "navigated_to": "http://127.0.0.1:38551/bg03-nav-target.html",
+   "nav_ok": true,
+   "nav_error": null,
+   "title": "BG-03 nav target",
+   "stats": {
+    "requests": 4,
+    "stall_active": 0,
+    "stall_total": 1,
+    "stall_closed_by_peer": 1
+   },
+   "nav_ms": 541
+  },
+  {
+   "cycle": 2,
+   "navigated_to": "http://127.0.0.1:38551/bg03-nav-source.html",
+   "nav_ok": true,
+   "nav_error": null,
+   "title": "BG-03 nav source",
+   "stats": {
+    "requests": 7,
+    "stall_active": 1,
+    "stall_total": 2,
+    "stall_closed_by_peer": 1
+   },
+   "nav_ms": 639
+  },
+  {
+   "cycle": 3,
+   "navigated_to": "http://127.0.0.1:38551/bg03-nav-target.html",
+   "nav_ok": true,
+   "nav_error": null,
+   "title": "BG-03 nav target",
+   "stats": {
+    "requests": 9,
+    "stall_active": 0,
+    "stall_total": 2,
+    "stall_closed_by_peer": 2
+   },
+   "nav_ms": 539
+  },
+  {
+   "cycle": 4,
+   "navigated_to": "http://127.0.0.1:38551/bg03-nav-source.html",
+   "nav_ok": true,
+   "nav_error": null,
+   "title": "BG-03 nav source",
+   "stats": {
+    "requests": 12,
+    "stall_active": 1,
+    "stall_total": 3,
+    "stall_closed_by_peer": 2
+   },
+   "nav_ms": 634
+  },
+  {
+   "cycle": 5,
+   "navigated_to": "http://127.0.0.1:38551/bg03-nav-target.html",
+   "nav_ok": true,
+   "nav_error": null,
+   "title": "BG-03 nav target",
+   "stats": {
+    "requests": 14,
+    "stall_active": 0,
+    "stall_total": 3,
+    "stall_closed_by_peer": 3
+   },
+   "nav_ms": 530
+  },
+  {
+   "cycle": 6,
+   "navigated_to": "http://127.0.0.1:38551/bg03-nav-source.html",
+   "nav_ok": true,
+   "nav_error": null,
+   "title": "BG-03 nav source",
+   "stats": {
+    "requests": 17,
+    "stall_active": 1,
+    "stall_total": 4,
+    "stall_closed_by_peer": 3
+   },
+   "nav_ms": 654
+  },
+  {
+   "cycle": 7,
+   "navigated_to": "http://127.0.0.1:38551/bg03-nav-target.html",
+   "nav_ok": true,
+   "nav_error": null,
+   "title": "BG-03 nav target",
+   "stats": {
+    "requests": 19,
+    "stall_active": 0,
+    "stall_total": 4,
+    "stall_closed_by_peer": 4
+   },
+   "nav_ms": 531
+  },
+  {
+   "cycle": 8,
+   "navigated_to": "http://127.0.0.1:38551/bg03-nav-source.html",
+   "nav_ok": true,
+   "nav_error": null,
+   "title": "BG-03 nav source",
+   "stats": {
+    "requests": 22,
+    "stall_active": 1,
+    "stall_total": 5,
+    "stall_closed_by_peer": 4
+   },
+   "nav_ms": 640
+  },
+  {
+   "cycle": 9,
+   "navigated_to": "http://127.0.0.1:38551/bg03-nav-target.html",
+   "nav_ok": true,
+   "nav_error": null,
+   "title": "BG-03 nav target",
+   "stats": {
+    "requests": 24,
+    "stall_active": 0,
+    "stall_total": 5,
+    "stall_closed_by_peer": 5
+   },
+   "nav_ms": 531
+  },
+  {
+   "cycle": 10,
+   "navigated_to": "http://127.0.0.1:38551/bg03-nav-source.html",
+   "nav_ok": true,
+   "nav_error": null,
+   "title": "BG-03 nav source",
+   "stats": {
+    "requests": 27,
+    "stall_active": 1,
+    "stall_total": 6,
+    "stall_closed_by_peer": 5
+   },
+   "nav_ms": 636
+  },
+  {
+   "cycle": 11,
+   "navigated_to": "http://127.0.0.1:38551/bg03-nav-target.html",
+   "nav_ok": true,
+   "nav_error": null,
+   "title": "BG-03 nav target",
+   "stats": {
+    "requests": 29,
+    "stall_active": 0,
+    "stall_total": 6,
+    "stall_closed_by_peer": 6
+   },
+   "nav_ms": 532
+  },
+  {
+   "cycle": 12,
+   "navigated_to": "http://127.0.0.1:38551/bg03-nav-source.html",
+   "nav_ok": true,
+   "nav_error": null,
+   "title": "BG-03 nav source",
+   "stats": {
+    "requests": 32,
+    "stall_active": 1,
+    "stall_total": 7,
+    "stall_closed_by_peer": 6
+   },
+   "nav_ms": 641
+  },
+  {
+   "cycle": 13,
+   "navigated_to": "http://127.0.0.1:38551/bg03-nav-target.html",
+   "nav_ok": true,
+   "nav_error": null,
+   "title": "BG-03 nav target",
+   "stats": {
+    "requests": 34,
+    "stall_active": 0,
+    "stall_total": 7,
+    "stall_closed_by_peer": 7
+   },
+   "nav_ms": 534
+  },
+  {
+   "cycle": 14,
+   "navigated_to": "http://127.0.0.1:38551/bg03-nav-source.html",
+   "nav_ok": true,
+   "nav_error": null,
+   "title": "BG-03 nav source",
+   "stats": {
+    "requests": 37,
+    "stall_active": 1,
+    "stall_total": 8,
+    "stall_closed_by_peer": 7
+   },
+   "nav_ms": 592
+  },
+  {
+   "cycle": 15,
+   "navigated_to": "http://127.0.0.1:38551/bg03-nav-target.html",
+   "nav_ok": true,
+   "nav_error": null,
+   "title": "BG-03 nav target",
+   "stats": {
+    "requests": 39,
+    "stall_active": 0,
+    "stall_total": 8,
+    "stall_closed_by_peer": 8
+   },
+   "nav_ms": 533
+  },
+  {
+   "cycle": 16,
+   "navigated_to": "http://127.0.0.1:38551/bg03-nav-source.html",
+   "nav_ok": true,
+   "nav_error": null,
+   "title": "BG-03 nav source",
+   "stats": {
+    "requests": 42,
+    "stall_active": 1,
+    "stall_total": 9,
+    "stall_closed_by_peer": 8
+   },
+   "nav_ms": 633
+  },
+  {
+   "cycle": 17,
+   "navigated_to": "http://127.0.0.1:38551/bg03-nav-target.html",
+   "nav_ok": true,
+   "nav_error": null,
+   "title": "BG-03 nav target",
+   "stats": {
+    "requests": 44,
+    "stall_active": 0,
+    "stall_total": 9,
+    "stall_closed_by_peer": 9
+   },
+   "nav_ms": 527
+  },
+  {
+   "cycle": 18,
+   "navigated_to": "http://127.0.0.1:38551/bg03-nav-source.html",
+   "nav_ok": true,
+   "nav_error": null,
+   "title": "BG-03 nav source",
+   "stats": {
+    "requests": 47,
+    "stall_active": 1,
+    "stall_total": 10,
+    "stall_closed_by_peer": 9
+   },
+   "nav_ms": 634
+  },
+  {
+   "cycle": 19,
+   "navigated_to": "http://127.0.0.1:38551/bg03-nav-target.html",
+   "nav_ok": true,
+   "nav_error": null,
+   "title": "BG-03 nav target",
+   "stats": {
+    "requests": 49,
+    "stall_active": 0,
+    "stall_total": 10,
+    "stall_closed_by_peer": 10
+   },
+   "nav_ms": 526
+  },
+  {
+   "cycle": 20,
+   "navigated_to": "http://127.0.0.1:38551/bg03-nav-source.html",
+   "nav_ok": true,
+   "nav_error": null,
+   "title": "BG-03 nav source",
+   "stats": {
+    "requests": 52,
+    "stall_active": 1,
+    "stall_total": 11,
+    "stall_closed_by_peer": 10
+   },
+   "nav_ms": 635
+  },
+  {
+   "cycle": 21,
+   "navigated_to": "http://127.0.0.1:38551/bg03-nav-target.html",
+   "nav_ok": true,
+   "nav_error": null,
+   "title": "BG-03 nav target",
+   "stats": {
+    "requests": 54,
+    "stall_active": 0,
+    "stall_total": 11,
+    "stall_closed_by_peer": 11
+   },
+   "nav_ms": 532
+  },
+  {
+   "cycle": 22,
+   "navigated_to": "http://127.0.0.1:38551/bg03-nav-source.html",
+   "nav_ok": true,
+   "nav_error": null,
+   "title": "BG-03 nav source",
+   "stats": {
+    "requests": 57,
+    "stall_active": 1,
+    "stall_total": 12,
+    "stall_closed_by_peer": 11
+   },
+   "nav_ms": 631
+  },
+  {
+   "cycle": 23,
+   "navigated_to": "http://127.0.0.1:38551/bg03-nav-target.html",
+   "nav_ok": true,
+   "nav_error": null,
+   "title": "BG-03 nav target",
+   "stats": {
+    "requests": 59,
+    "stall_active": 0,
+    "stall_total": 12,
+    "stall_closed_by_peer": 12
+   },
+   "nav_ms": 531
+  },
+  {
+   "cycle": 24,
+   "navigated_to": "http://127.0.0.1:38551/bg03-nav-source.html",
+   "nav_ok": true,
+   "nav_error": null,
+   "title": "BG-03 nav source",
+   "stats": {
+    "requests": 62,
+    "stall_active": 1,
+    "stall_total": 13,
+    "stall_closed_by_peer": 12
+   },
+   "nav_ms": 635
+  },
+  {
+   "cycle": 25,
+   "navigated_to": "http://127.0.0.1:38551/bg03-nav-target.html",
+   "nav_ok": true,
+   "nav_error": null,
+   "title": "BG-03 nav target",
+   "stats": {
+    "requests": 64,
+    "stall_active": 0,
+    "stall_total": 13,
+    "stall_closed_by_peer": 13
+   },
+   "nav_ms": 527
+  },
+  {
+   "cycle": 26,
+   "navigated_to": "http://127.0.0.1:38551/bg03-nav-source.html",
+   "nav_ok": true,
+   "nav_error": null,
+   "title": "BG-03 nav source",
+   "stats": {
+    "requests": 67,
+    "stall_active": 1,
+    "stall_total": 14,
+    "stall_closed_by_peer": 13
+   },
+   "nav_ms": 632
+  },
+  {
+   "cycle": 27,
+   "navigated_to": "http://127.0.0.1:38551/bg03-nav-target.html",
+   "nav_ok": true,
+   "nav_error": null,
+   "title": "BG-03 nav target",
+   "stats": {
+    "requests": 69,
+    "stall_active": 0,
+    "stall_total": 14,
+    "stall_closed_by_peer": 14
+   },
+   "nav_ms": 528
+  },
+  {
+   "cycle": 28,
+   "navigated_to": "http://127.0.0.1:38551/bg03-nav-source.html",
+   "nav_ok": true,
+   "nav_error": null,
+   "title": "BG-03 nav source",
+   "stats": {
+    "requests": 72,
+    "stall_active": 1,
+    "stall_total": 15,
+    "stall_closed_by_peer": 14
+   },
+   "nav_ms": 641
+  },
+  {
+   "cycle": 29,
+   "navigated_to": "http://127.0.0.1:38551/bg03-nav-target.html",
+   "nav_ok": true,
+   "nav_error": null,
+   "title": "BG-03 nav target",
+   "stats": {
+    "requests": 74,
+    "stall_active": 0,
+    "stall_total": 15,
+    "stall_closed_by_peer": 15
+   },
+   "nav_ms": 527
+  },
+  {
+   "cycle": 30,
+   "navigated_to": "http://127.0.0.1:38551/bg03-nav-source.html",
+   "nav_ok": true,
+   "nav_error": null,
+   "title": "BG-03 nav source",
+   "stats": {
+    "requests": 77,
+    "stall_active": 1,
+    "stall_total": 16,
+    "stall_closed_by_peer": 15
+   },
+   "nav_ms": 633
+  }
+ ],
+ "finished": "2026-10-22T12:15:34.788Z"
+}
