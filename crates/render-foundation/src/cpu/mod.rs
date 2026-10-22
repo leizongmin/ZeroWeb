@@ -665,27 +665,33 @@ fn render_draw_order(
                 }
             }
             DrawOp::PathStroke(i) => {
-                if let Some(p) = primitives.path_strokes.get(*i) {
+                if let Some(p) = primitives.path_strokes.get(*i)
                     // 描边墨迹外扩线宽（端帽/斜接），按外扩包围盒做 region 跳过——
                     // 此前无门控，region 渲染会重画全文档路径描边（区外旧帧上二次叠加）。
-                    let hull = path_vertices_rect(&p.vertices);
-                    let lw = p.line_width.max(1.0);
-                    if in_region(Rect::new(
-                        hull.origin.x - lw,
-                        hull.origin.y - lw,
-                        hull.size.width + lw * 2.0,
-                        hull.size.height + lw * 2.0,
-                    )) {
-                        stroke::render_path_stroke(target, p, scale);
-                    }
+                    // is_none 短路在前：全量路径（region=None）不做包围盒计算。
+                    && (region.is_none()
+                        || region.is_some_and(|r| {
+                            let hull = path_vertices_rect(&p.vertices);
+                            let lw = p.line_width.max(1.0);
+                            r.intersects(&Rect::new(
+                                hull.origin.x - lw,
+                                hull.origin.y - lw,
+                                hull.size.width + lw * 2.0,
+                                hull.size.height + lw * 2.0,
+                            ))
+                        }))
+                {
+                    stroke::render_path_stroke(target, p, scale);
                 }
             }
             DrawOp::Glyph(i) => {
                 if let Some(p) = primitives.glyphs.get(*i)
-                    && in_region(glyph_primitive_bounds(p))
-                {
                     // region 门控（宁多勿少）：此前无门控，region 渲染每帧重画全部
                     // 字形——区外 AA 边在旧帧上逐帧二次叠加变深。跨界字形不裁剪。
+                    // is_none 短路在前：全量路径（region=None）不做包围盒计算。
+                    && (region.is_none()
+                        || region.is_some_and(|r| r.intersects(&glyph_primitive_bounds(p))))
+                {
                     draw_glyph_primitive(
                         target,
                         p,
