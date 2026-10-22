@@ -5449,6 +5449,55 @@
     // location-api 载入前 replace 面）。
     if (event && event.type === 'load') {
       try { globalThis.__zwDocCompletelyLoaded = true; } catch (_eS4M) {}
+      // R4600c（html-semantics s26 续，2026-10-22）：flush autofocus candidates——
+      // spec https://html.spec.whatwg.org/multipage/interaction.html#flushing-autofocus-candidates
+      // 文档退出 loading 态 → autofocus processed flag 置位 + 首个候选跑 focusing
+      // steps。候选 = 树序首个 [autofocus] 且为 focusable area（R4600 判定族复用：
+      // closed dialog 排除/disabled/hidden/inert；headless 无 viewport 语义，
+      // document 全域树序首个近似 top-most candidate）。processed 旗标防 load 重
+      // 派发双 focus（spec 同名 flag 语义）。focusin 事件面（R3247 focus 路径）——
+      // dialog-autofocus 家族 waitUntilLoadedAndAutofocused 断言面。
+      try {
+        if (!globalThis._zwAutofocusProcessedR4600c &&
+            typeof _zwDialogFocusableAreaR4600 === 'function' &&
+            typeof document !== 'undefined' && document.querySelectorAll) {
+          globalThis._zwAutofocusProcessedR4600c = true;
+          var _r4600cCands = document.querySelectorAll('[autofocus]');
+          var _r4600cPick = null;
+          for (var _r4600ci = 0; _r4600ci < _r4600cCands.length; _r4600ci++) {
+            var _r4600cc = _r4600cCands[_r4600ci];
+            if (_r4600cc && _r4600cc.nodeType === 1 && _zwDialogFocusableAreaR4600(_r4600cc)) {
+              _r4600cPick = _r4600cc;
+              break;
+            }
+          }
+          // spec flush 是独立 task（非 load 派发内联步）——defer 到 task 队列。
+          // 已聚焦面（runner 预脚本 autofocus 注入先落 activeElement 态，其 focusing
+          // steps 事件相位派发在页面监听器注册前——zz-debug 探针 T8/T9 实证 ae 落位
+          // 而页内 focusin 零达）：focusing steps 对已聚焦元素本不重派（spec no-op），
+          // 页可观察面将永远缺一次 focusin——真实浏览器 flush 事件恰在监听器就绪后
+          // 派发一次，此处补发 focus/focusin 即该语义的 runner 模型等价位（identity
+          // 判定：activeElement getter 与 QSA 同源 _makeProxy 缓存）。
+          if (_r4600cPick && typeof _defer === 'function') {
+            _defer(function () {
+              try {
+                if (document.activeElement === _r4600cPick) {
+                  var _r4600cK = _r4600cPick.__zwSelector != null || _r4600cPick.__zwHandle != null
+                    ? _elKey(_r4600cPick.__zwSelector, _r4600cPick.__zwHandle) : null;
+                  var _r4600cFE = _makeEvent('focus', { bubbles: false, cancelable: false });
+                  _dispatchWithBubble(_r4600cK, _r4600cPick.__zwSelector, _r4600cPick.__zwHandle, _r4600cFE);
+                  var _r4600cFI = _makeEvent('focusin', { bubbles: true, cancelable: false });
+                  _dispatchWithBubble(_r4600cK, _r4600cPick.__zwSelector, _r4600cPick.__zwHandle, _r4600cFI);
+                  return;
+                }
+              } catch (_e4600ce) {}
+              try { _r4600cPick.focus(); } catch (_e4600cf) {}
+            });
+          } else if (_r4600cPick) {
+            try { _r4600cPick.focus(); } catch (_e4600cf) {}
+          }
+        }
+      } catch (_e4600c) {}
     }
     return _dispatchWithBubble(_elKey('html', null), 'html', null, event, 'win');
   };

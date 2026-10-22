@@ -851,6 +851,15 @@
   // spec focusable area（https://html.spec.whatwg.org/multipage/interaction.html#focusable-area）。
   function _zwDialogFocusableAreaR4600(el) {
     if (!el) return false;
+    // R4600d（html-semantics s26 续，2026-10-22）：pending-removed 门——同步
+    // removeChild 后 host mutation drain 前的窗口内，元素作用域 QSA（原生树扫描）
+    // 仍返回已摘子（document 级 QSA 有 pending-removed overlay，元素级没有——
+    // zz-debug 探针 T11 实证 contains/connected 已 false 而 dialog QSA 仍命中）。
+    // 移除标记（R125 `_zwMarkRemoved` / pa2a 补偿态）未清 = shim 视图未连接 →
+    // 非 focusable area（spec：focusable area 限定 connected；show-modal-focusing-
+    // steps 摘 autofocus 候选后重开，delegate 须回落首焦点元素）。重插面由既有
+    // `_zwUnmarkRemoved`（part04 R334b）清标记，无误伤。
+    try { if (typeof _zwIsRemovedNode === 'function' && _zwIsRemovedNode(el)) return false; } catch (_eRm4600d) {}
     var tag = _zwDialogTagR4600(el);
     if (!tag) return false;
     if (_zwDialogInClosedDialogR4600(el)) return false;

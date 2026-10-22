@@ -2,12 +2,13 @@
 
 **版本**: v2.0
 **日期**: 2026-10-21（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 26 收口（dialog focusing steps 家族 R4600：focus fixup 派 focusin + autofocus 委派 + activeElement 语义 + R4600b replaceWith 空白锚点，focus-shadow 50F→0），下一步 corner-cases 毒化链（R334 重插 wire 完整性 + ESC 派发锚点 + 组栈 purge 三层缝隙）
+**状态**: Active——M2 切片 26 收口（R4600 家族 + rollover R4600c/d 挂死修复：focus-shadow 50F→0，九域 5070→5116P / 68.32%），下一步 corner-cases 毒化链（R334 重插 wire 完整性 + ESC 派发锚点 + 组栈 purge 三层缝隙）
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-22 M2 切片 26）**：dialog focusing steps 家族收口
-> （R4600）——spec show/showModal step 的 run the dialog focusing steps、
+> **▶ 当前状态（2026-10-22/23 M2 切片 26 收口）**：dialog focusing steps 家族
+> 收口（R4600 + rollover 挂死修复 R4600c/d）——spec show/showModal step 的
+> run the dialog focusing steps、
 > close-the-dialog 的焦点恢复落地：`_zwDialogFocusingStepsR4600`（autofocus
 > 委派 → focusable area 递归判定（tag 表 + disabled/hidden/inert 子树传播/
 > closed dialog 排除/delegatesFocus）→ focus 派 focusin）+
@@ -17,9 +18,20 @@
 > replaceWith 重键的 `_r371Next` 后继快照取到**换行空白文本节点**（nodeType
 > 3 无 selector），元素级 QSA R322 归并锚点只认 sel 字符串 → 恒尾插 → 焦点
 > 扫描先命中后随兄弟；修复＝快照经 `_childNodeList(父sel)` 元素扫描推进到
-> 最近后随**元素**兄弟。testdriver click/down focus 步骤经 `_zwFocusSel` 门。
+> 最近后随**元素**兄弟。rollover 会话 R4600c/d 修 s26 树全量暴露的 3 文件
+> 确定性整文件挂死（dialog-autofocus 族，load+focusin 双到齐缺 focusin
+> ——runner 预注入 autofocus 先于页脚本，focusing steps 事件相位派发时
+> 页监听器未注册且对已聚焦元素不重派）：part06 load 分支补 spec
+> flushing-autofocus-candidates（processed flag + 首个合格候选 defer
+> task，已聚焦态补发事件相位）+ part01 focusable area 补 pending-removed
+> 门（元素级 QSA 无 overlay，同步摘除后仍命中）。testdriver click/down
+> focus 步骤经 `_zwFocusSel` 门。
 > part66 `test_dialog_focusing_steps_r4600` R1–R13 新契约。九域对账
-> TODO-LEDGER。corner-cases **1P/29F**（s25 28P/2F）：R4600 使 focusin 真实
+> 5070→**5116P**（68.32%，Timeout 173 持平、subtests 7488 不变）：
+> R4600c/d 隔离对照 **+3P/0 回归**（dialog-autofocus 族 3 挂死文件转
+> Pass）；余 +43P 为 R4600 主体（focus-shadow 50F→0、closedby 27/27
+> 维持）；同 key 回归 27 全落 corner-cases 毒化链（下述，s26 树已
+> 同态）。corner-cases **1P/29F**（s25 28P/2F）：R4600 使 focusin 真实
 > 触发音量 handler（remove+reinsert 共享 dialog），test#0 通过但毒化共享
 > dialog → 后续 setup 全部 closedBy=none/conn=false——**新暴露**非新引入
 > （s25 缺口休眠因 focusing steps 无操作），毒组合＝[reinsert#1+show+drain+
@@ -177,6 +189,23 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-22/23 M2 切片 26**：dialog focusing steps 家族（R4600）+
+  rollover 挂死修复（R4600c/d）——show/showModal 跑 spec dialog
+  focusing steps（autofocus 委派 → focusable area 递归判定 → focus 派
+  focusin）+ close-the-dialog 焦点恢复 + activeElement 焦点链
+  retargeting + R4600b replaceWith 空白锚点（focus-shadow 50F→0）；
+  rollover 会话修 3 文件确定性整文件挂死：part06 load 分支补 spec
+  flushing-autofocus-candidates + part01 focusable area 补
+  pending-removed 门。九域 5070→**5116P**（68.32%），Timeout 173 持平，
+  R4600c/d 隔离对照 +3P/0 回归；同 key 回归 27 全落 corner-cases
+  毒化链（R4600 激活 focusin → 毒化共享 dialog，新暴露非新引入）。
+  make test 76 腿全绿、clippy/fmt 不涉（纯 .js）、零新增依赖。账本
+  [evidence/2026-10-22-m2s26-r4600.md](html-semantics-compat/evidence/2026-10-22-m2s26-r4600.md)。
+  挂账：corner-cases 毒化链三层缝隙（下一切片首选）、inert 计算态
+  13F、abspos/layout ~10F（rendering 域）、popover 有效性语义、
+  impl-doc wrapper requestClose、anchor-with-inline 导航缺口、parser
+  form element pointer 4F、custom command `--` 前缀、ESC 组栈边缘
+  乱序、非模态 close 不出组栈、R371 模板残留。
 - **2026-10-22 M2 切片 25**：corner-cases hang 排查（R4500）——横切根因
   收口：shim `close()` void 违约（透传 wasOpen boolean）× 语料
   testharness cleanup abort 语义（返非 undefined / 抛错均
