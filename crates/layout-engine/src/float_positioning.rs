@@ -3094,11 +3094,12 @@ pub(crate) fn adjust_float_positions_with_context(
                                 let margin_h = ml + mr;
                                 let frame =
                                     child.border_left + child.border_right + child.padding_left + child.padding_right;
-                                let margin_aware = margin_solve_on
-                                    && child.declared_width_auto
-                                    && margin_h.abs() > 0.5
-                                    // 镜像左 float 臂：有后续 block 同胞回退旧臂（007）。
-                                    && !has_following_block_sibling[idx];
+                                let margin_aware = margin_solve_on && child.declared_width_auto && margin_h.abs() > 0.5;
+                                // R5222：sibling 门移除——rf 镜像探针定谳（/tmp/r5222_007rf_probe.mjs，
+                                // float:right + clear:right + ml=−50 镜像 007）：bfc1 下绕 y=50
+                                // x=ml=−50 w=100、float2 y=100（流游标级联同左）、bfc2 y=150 w=75
+                                // x=−50、wrapper h=200——与左 float 侧完全对称，R5217 阈值模型
+                                //（margin_h < −(gap+0.5)）rf 侧同成立。
                                 let is_definite_width =
                                     child.declared_width_px.is_some() || child.width < container_width - 0.5;
                                 if !margin_aware && child.x + declared_or_layout_width <= *float_x {
@@ -3131,6 +3132,11 @@ pub(crate) fn adjust_float_positions_with_context(
                                         child.x = ml;
                                         child.width = (container_width - margin_h).max(0.0);
                                         shrink_bfc_content_width(child);
+                                        // R5222：rf 镜像同左——下绕后记流游标底与快照抬升
+                                        //（探针 float2 y=100 级联实证，机制与左侧共用）。
+                                        let new_bottom = child.y + child.height;
+                                        wrap_floors.push((idx + 1, new_bottom));
+                                        pending_geom_bump = Some(new_bottom);
                                     } else {
                                         // 旁置钉位（含小负 margin 落 x=0、w=gap）。
                                         child.x = beside_x;

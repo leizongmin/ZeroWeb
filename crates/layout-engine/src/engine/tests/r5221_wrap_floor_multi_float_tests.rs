@@ -97,3 +97,84 @@ fn r5221_multifloat_wrap_floor_cascade() {
         f1.y
     );
 }
+
+/// R5222：rf 镜像（float:right + clear:right + ml=−50）与左完全对称——chromium 探针
+///（/tmp/r5222_007rf_probe.mjs）：bfc1 下绕 y=50 x=ml=−50 w=100、float2 y=100、
+/// bfc2 y=150 w=75 x=−50、容器 h=200。
+#[test]
+fn r5222_rf_mirror_wrap_floor_cascade() {
+    let (mut doc, body) = make_doc_with_body();
+    let container = doc.create_element("div");
+    doc.append_child(body, container).unwrap();
+    let float1 = doc.create_element("div");
+    doc.append_child(container, float1).unwrap();
+    let bfc1 = doc.create_element("div");
+    doc.append_child(container, bfc1).unwrap();
+    let float2 = doc.create_element("div");
+    doc.append_child(container, float2).unwrap();
+    let bfc2 = doc.create_element("div");
+    doc.append_child(container, bfc2).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut cont = ComputedStyle::default();
+    cont.display = DisplayValue::Block;
+    cont.width = LengthValue::Px(50.0);
+    styles.insert(container, cont);
+
+    let mut fl = ComputedStyle::default();
+    fl.display = DisplayValue::Block;
+    fl.float = FloatValue::Right;
+    fl.clear = ClearValue::Right;
+    fl.width = LengthValue::Px(25.0);
+    fl.height = LengthValue::Px(50.0);
+    styles.insert(float1, fl.clone());
+    styles.insert(float2, fl);
+
+    let mut b1 = ComputedStyle::default();
+    b1.display = DisplayValue::Block;
+    b1.overflow_x = OverflowValue::Hidden;
+    b1.overflow_y = OverflowValue::Hidden;
+    b1.margin_left = LengthValue::Px(-50.0); // §10.3.3：w = CB − ml = 100，下绕 x=ml
+    b1.height = LengthValue::Px(50.0);
+    styles.insert(bfc1, b1);
+
+    let mut b2 = ComputedStyle::default();
+    b2.display = DisplayValue::Block;
+    b2.overflow_x = OverflowValue::Hidden;
+    b2.overflow_y = OverflowValue::Hidden;
+    b2.width = LengthValue::Px(75.0);
+    b2.height = LengthValue::Px(50.0);
+    styles.insert(bfc2, b2);
+
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let b1_box = find_child_by_node_id(&result.root, bfc1).expect("bfc1 found");
+    let f2 = find_child_by_node_id(&result.root, float2).expect("float2 found");
+    let b2_box = find_child_by_node_id(&result.root, bfc2).expect("bfc2 found");
+    let cont_box = find_child_by_node_id(&result.root, container).expect("container found");
+
+    assert!(
+        (b1_box.y - 50.0).abs() < 0.5 && (b1_box.x - (-50.0)).abs() < 0.5 && (b1_box.width - 100.0).abs() < 0.5,
+        "rf bfc1 应下绕 y=50 x=-50 w=100（chromium 镜像形态），实际 y={} x={} w={}",
+        b1_box.y,
+        b1_box.x,
+        b1_box.width
+    );
+    assert!(
+        (f2.y - 100.0).abs() < 0.5,
+        "rf float2 应落 bfc1 底 y=100，实际 {}",
+        f2.y
+    );
+    assert!(
+        (b2_box.y - 150.0).abs() < 0.5 && (b2_box.width - 75.0).abs() < 0.5,
+        "rf bfc2 应 y=150 w=75，实际 y={} w={}",
+        b2_box.y,
+        b2_box.width
+    );
+    assert!(
+        (cont_box.height - 200.0).abs() < 0.5,
+        "rf 容器 h 应 200，实际 {}",
+        cont_box.height
+    );
+}
