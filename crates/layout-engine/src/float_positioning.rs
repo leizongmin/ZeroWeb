@@ -35,6 +35,11 @@ static FLOAT_CLAMP_CONTENT_REL: std::sync::LazyLock<bool> =
 static R5215_ATOMIC_FLOW: std::sync::LazyLock<bool> =
     std::sync::LazyLock::new(|| std::env::var("ZW_R5215_ATOMIC_FLOW").as_deref() != Ok("0"));
 
+/// R5228（CSS2 §8.3.1 × §9.5.1）：float 前置容器的首流内子重放不再重放已与父折叠的
+/// margin-top——`ZW_FLOAT_REPLAY_FIRST_MT=0` 回退。
+static FLOAT_REPLAY_FIRST_MT: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_FLOAT_REPLAY_FIRST_MT").as_deref() != Ok("0"));
+
 pub(crate) fn adjust_float_positions(
     box_node: &mut LayoutBox,
     doc: &zero_dom::Document,
@@ -2720,6 +2725,22 @@ pub(crate) fn adjust_float_positions_with_context(
                             && is_first_in_flow[idx]
                             && box_node.margin_top > box_node.declared_margin_top + 0.01
                         {
+                            0.0
+                        } else if is_first_in_flow[idx]
+                            && content_y_offset == 0.0
+                            && box_node.margin_top > box_node.declared_margin_top + 0.01
+                            && *FLOAT_REPLAY_FIRST_MT
+                        {
+                            // R5228：首流内子的 mt 已被父容器吸收折叠（§8.3.1；膨胀签名
+                            // 同 R5212 门：box_node.margin_top > declared——engine 折叠
+                            // pass 把 max(parent_mt, 链顶 mt) 折进容器 margin，子盒应位于
+                            // content 原点）。taffy 把前序 float 当 block 排列致
+                            // float_y_offset>0 触发本重放时，再以字段 mt 重放 = 双计
+                            //（border-right-width-095-ref [float,p,float]：p +16、
+                            // flow_bottom 快照污染 → 后继 float floor 36→52、square
+                            // 52→68）。签名不成立时不归零：BFC/有 padding-top 容器的链顶
+                            // 值 16 合法留本级（R5210 既有语义，不重解析）。
+                            // kill-switch `ZW_FLOAT_REPLAY_FIRST_MT=0` 回退。
                             0.0
                         } else {
                             child_placement_mt

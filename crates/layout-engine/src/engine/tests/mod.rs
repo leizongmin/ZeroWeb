@@ -807,3 +807,5 @@ mod r5225_rel_inline_offset_tests;
 mod r5226_nbsp_flow_anon_block_tests;
 /// R5227（CSS2 §9.2.1.1 × §9.5.1 × §10.3.7）OOF 静态位/float 行顶锚参与 preserved 行锚点。
 mod r5227_oof_static_below_preserved_line_tests;
+/// R5228（CSS2 §8.3.1 × §9.5.1）float 前置容器首流内子重放不重放已折叠 margin。
+mod r5228_float_first_margin_replay_tests;
