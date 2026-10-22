@@ -2,7 +2,7 @@
 
 **日期**：2026-10-23
 **状态**：Active。M1/M2 DONE；M3-a 完成（后处理敏感路径冷温一致 + 溢出枚举入快照，oracle 9/9，`make product-smoke` exit 0）+ M3-b 完成（多次导航缓存释放只读静态审计：文档派生缓存换代全部替换/清空/清零，无旧文档保留路径，[m3-b](evidence/2026-10-23-m3-b-navigation-cache-retention-audit/ANALYSIS.md)）；M4 本流部分 DONE（五 DC 审计汇总 + DC-5 收口 + 规范回归审计边界，[m4-a](evidence/2026-10-23-m4-dc-audit-dc5-cost/ANALYSIS.md)）。剩余余项在 engine pipeline/paint 面的运行时对照。
-**当前卡点**：多次导航运行时对照、半透明帧复用、命中/像素在 engine pipeline/paint（并行流活跃工作面，s31/s32 切片连续推进中），按 run-rules §9 跨流协调待办；反例 A 保持开放（生产不可达）。
+**当前卡点**：多次导航运行时对照、半透明帧复用、命中/像素在 engine pipeline/paint（zero-web 流 html-semantics-compat s 系列与 background-resource-lifecycle bg02 双流活跃占用），按 run-rules §9 跨流协调待办；反例 A 保持开放（生产不可达）。
 **下一步**：评估 M3 engine 面（跨流协调）是否解封：解封则做多次导航运行时对照（A→B→A′ 输出比较）/帧复用/命中对照与像素容差契约；未解封则本流收敛（DC-1/DC-2/DC-5 DONE，DC-3/DC-4 布局面+静态保留审计完成），等待并行流释放或用户决策。
 **入口**：[目标契约](../incremental-rendering-oracle.md) / [启动与证据协议](../ladybird-followups/README.md)
 
@@ -50,3 +50,4 @@
 - 2026-10-23：M3-b 切片（只读静态审计，零代码变更、未触碰 engine 文件）：多次导航缓存释放审计——`render_html` 尾部 cached_styles/stylesheets/layout/doc 整体替换 + persistent_handle_nodes/cached_css_text 清零（pipeline/mod.rs:1694-1721）+ taffy cached_state 每 compute 整体重建（engine.rs:1482）+ bridge 换代纪律（computed_style_cache.rs:522）+ keyframes 同名覆盖（animation.rs:817）；结论：无旧文档保留路径。dirty_tracker 残留为过失效方向（安全）；animation 泵/canvas registry 列跨流协调。DC-4 保留子项静态收口，运行时导航对照留 engine 面。
 - 2026-10-23：M3-b 追加（测试切片，仅 layout oracle 文件）：DC-3"失效或保留"保留半边——paint-only 变更（color）几何必须不扰动，含跨层有效性自检（color 声明确实到达计算样式，防空转 Equal）；oracle 10/10、layout-engine 2081/2081；顺带 rustfmt 对 m3-a 段两处换行的机械重排（工具链格式，无语义变化）。
 - 2026-10-23：跨流红灯归因（run-rules §10）：组合 main `make test` 红——`html_compat::dialog_popover_invalid_targets_leave_no_top_layer_state`（tests/integration/src/html_compat.rs:1024，第 7 槽 InvalidStateError 变空）。上次全绿在 f99fbc50a（含 s31）；其后唯一 engine 行为提交为 541e7d228（s32 "hidePopover lenient 化"），归因 zero-web 流切片与本流无关（本流仅 layout oracle 测试文件 + goal 文档，layout-engine 2081 全绿）。按 §9 不修对方活跃面，待对方流修复；下轮开工先核该测试是否复绿。
+- 2026-10-23：红灯复测与归因强化：HEAD 8ac073f36 定向复跑（test-guard）仍红同签名；html_compat.rs 自 f99fbc50a 零改动，归因不变。ebe3ee839（bg02）声称全量 22623/0 绿系其 rebase 前组合树结果（测试树未含 s32，DAG 祖先关系为 push 前 rebase 产物）——对方流暂不可见该红灯，待其在组合树上跑全量时自行浮现；本流仍不进入 engine 面。另核查命中测试实现全部在 crates/engine/src/hit_test.rs（layout-engine 侧仅注释引用），DC-3 命中断言只能随 engine 面解封。
