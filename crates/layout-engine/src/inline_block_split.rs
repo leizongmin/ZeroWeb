@@ -103,6 +103,14 @@ pub(crate) fn inline_has_block_child(
 /// block 子并存时两套几何互不感知（span 行在容器顶连续堆叠、block 子独立堆叠，重叠；
 /// insert-inline-in-blocks-n-inlines-* 9 案实证）。inline-level **元素**同样构成
 /// inline 内容，一并对齐 spec。kill-switch `ZW_R109_ELEM_MIXED=0` 回退旧口径。
+/// R5227 kill-switch 读取（进程级缓存，同 [`mc_contain_size_fix_enabled`] 模式）：
+/// `ZW_R109_ABSPOS_BLOCK=0` 回退逐 OOF 提升（R4489「恰好一个整段转 Block」旧口径）。
+/// 热路径不耐受 `std::env::var` 线性扫描（R5152：block_layout_1000 微基准 +60%）。
+pub(crate) fn r5227_abspos_block_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_R109_ABSPOS_BLOCK").as_deref() != Ok("0"))
+}
+
 pub(crate) fn block_container_has_mixed_content(
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
@@ -151,7 +159,15 @@ pub(crate) fn block_container_has_mixed_content(
                 let Some(style) = styles.get(&child) else {
                     continue;
                 };
-                if matches!(style.display, DisplayValue::None | DisplayValue::Contents) || is_out_of_flow(style) {
+                if matches!(style.display, DisplayValue::None | DisplayValue::Contents) {
+                    continue;
+                }
+                if is_out_of_flow(style) {
+                    // OOF 子（abspos/fixed/float）不触发 §9.2.1.1 匿名块拆分：out-of-flow
+                    // 盒不参与正常流，inline 内容维持容器自身 IFC（chromium 探针
+                    // inline-non-replaced-height-002/all-prop-002 实证拆分会改变行盒宿主
+                    // 几何与绘制层序）。OOF 的垂直静态位由 abspos 静态位臂收口
+                    //（abspos.rs R4017/R5227 行底锚）。
                     continue;
                 }
                 if is_block_level_display(&style.display) {
@@ -213,6 +229,9 @@ pub(crate) fn block_container_has_mixed_content(
 /// 遍历父元素 DOM 子节点，按 block-level 子元素切分：
 /// - 文本节点 + inline-level 元素 → 累入当前 Inline 片段
 /// - block-level 子元素 → 关闭当前 Inline 片段（非空才发出），发出 Block 片段
+///
+/// out-of-flow（abspos/fixed/float）子不触发拆分——归入当前 inline 片段（保留为
+/// 子节点，由 converter 定位路径处理；position-absolute-in-inline-* 保护）。
 ///
 /// 返回 `None` 表示无需拆分（无 block 子元素，仅 inline 内容）。
 fn compute_child_split_impl(
@@ -314,38 +333,60 @@ pub(crate) fn compute_block_container_split(
     if !block_container_has_mixed_content(doc, styles, container_id) {
         return None;
     }
-    let mut segments = compute_child_split_impl(doc, styles, container_id)?;
+    let segments = compute_child_split_impl(doc, styles, container_id)?;
     // R4489：纯 out-of-flow 元素片段 → Block 片段。compute_child_split_impl 把
     // out-of-flow 子归入当前 inline 片段（split-INLINE 语义：随片段 IFC 保留）；块容器
     // 拆分下这会为 abspos/float 子生成**占流行空间**的匿名块（line-height-applies-to-
     // 008：div1 内 abspos div3 被包进 anon 块 → 容器 192→288）。转 Block 片段后经
     // build_subtree 走 converter 的 abspos/float 定位路径，与未拆分时同构。
-    // 守卫：恰好一个 ooflow 元素、其余项全为空白文本（源码换行缩进会并入片段）；
-    // 混有非空白 inline 内容的多元素片段保守维持 Inline，最小行为变更半径。
-    for seg in &mut segments {
-        if let InlineBlockSegment::Inline { item_node_ids } = seg {
-            let mut ooflow_elem: Option<NodeId> = None;
-            let mut pure = true;
-            for &nid in item_node_ids.iter() {
-                match doc.get(nid).map(|n| &n.kind) {
-                    Some(NodeKind::Text(t)) if t.content.trim().is_empty() => {}
-                    Some(NodeKind::Element(_))
-                        if styles.get(&nid).is_some_and(is_out_of_flow) && ooflow_elem.is_none() =>
-                    {
-                        ooflow_elem = Some(nid);
-                    }
-                    _ => {
-                        pure = false;
-                        break;
+    // 守卫：其余项全为空白文本（源码换行缩进会并入片段）；混有非空白 inline 内容
+    // 的多元素片段保守维持 Inline，最小行为变更半径。
+    // R5227：OOF 元素**逐个**提升为独立 Block 片段（原「恰好一个」整段转 Block 在
+    // nbsp+abspos+float 形态下不 pure → abspos/float 被包进占位 anon 块，008 同型）。
+    // 空白文本项留在 Inline 片段按源序穿插——可折叠空白被 tree 侧 whitespace-only
+    // 跳过（塌穿不变），nbsp 等 preserved 空白经 R5226 口径生成匿名行（chromium
+    // 探针 r5227：nbsp+abspos 容器 nbsp 行存在、abspos rel_y=20）。
+    let r5227_on = r5227_abspos_block_enabled();
+    let mut converted: Vec<InlineBlockSegment> = Vec::with_capacity(segments.len());
+    for seg in segments {
+        match seg {
+            seg @ InlineBlockSegment::Block { .. } => converted.push(seg),
+            InlineBlockSegment::Inline { item_node_ids } => {
+                let mut blanks: Vec<NodeId> = Vec::new();
+                let mut lifted: Vec<InlineBlockSegment> = Vec::new();
+                let mut conservative = !r5227_on;
+                for &nid in item_node_ids.iter() {
+                    match doc.get(nid).map(|n| &n.kind) {
+                        Some(NodeKind::Text(t)) if t.content.trim().is_empty() => {
+                            blanks.push(nid);
+                        }
+                        Some(NodeKind::Element(_)) if styles.get(&nid).is_some_and(is_out_of_flow) => {
+                            if !blanks.is_empty() {
+                                lifted.push(InlineBlockSegment::Inline {
+                                    item_node_ids: std::mem::take(&mut blanks),
+                                });
+                            }
+                            lifted.push(InlineBlockSegment::Block { node_id: nid });
+                        }
+                        _ => {
+                            // 非空白文本或 in-flow 元素：整段保守维持 Inline（R4489 口径）。
+                            conservative = true;
+                            break;
+                        }
                     }
                 }
-            }
-            if pure && let Some(node_id) = ooflow_elem {
-                *seg = InlineBlockSegment::Block { node_id };
+                if conservative {
+                    converted.push(InlineBlockSegment::Inline { item_node_ids });
+                } else {
+                    if !blanks.is_empty() {
+                        lifted.push(InlineBlockSegment::Inline { item_node_ids: blanks });
+                    }
+                    converted.extend(lifted);
+                }
             }
         }
     }
-    Some(segments)
+    Some(converted)
 }
 
 /// R3847：block 流容器对 `display: contents` 子元素的「穿透（unbox）」判定——
@@ -684,14 +725,19 @@ mod tests {
 
     #[test]
     fn test_block_container_out_of_flow_ignored() {
-        // abspos 子元素不触发混合检测
+        // abspos 子元素不触发混合检测——OOF 盒不参与正常流，inline 内容维持容器
+        // 自身 IFC（§9.2.1.1 匿名块只为 in-flow block-level 盒生成；chromium 探针
+        // inline-non-replaced-height-002/all-prop-002 实证拆分会扰动行盒宿主几何
+        // 与绘制层序）。OOF 垂直静态位由 abspos.rs R5227 行底锚 pass 收口。
         let html = r#"<html><body>
           <div id="b">text<div style="position:absolute">abs</div></div>
+          <div id="b2"><div style="position:absolute">abs</div></div>
         </body></html>"#;
         assert!(
             !has_mixed(html, "b"),
-            "out-of-flow-only child should not trigger mixed detection"
+            "out-of-flow child should not trigger mixed detection"
         );
+        assert!(!has_mixed(html, "b2"), "OOF-only container should not be mixed");
     }
 
     #[test]
@@ -716,9 +762,10 @@ mod tests {
 
     #[test]
     fn test_ooflow_only_segment_becomes_block_segment() {
-        // R4489：line-height-applies-to-008 形态——block 容器内 abspos 子位于末位，
-        // 纯 ooflow Inline 片段应转 Block 片段（不生成占流空间匿名块）。
-        // 含源码换行缩进空白（与页面真实形态一致，空白并入片段）。
+        // R4489 + R5227：line-height-applies-to-008 形态——block 容器内 block-level
+        // abspos 子在拆分时直接产出独立 Block 片段（R5227 lift，不生成占流空间
+        // 匿名块；R4489「整段 Inline 包裹」口径由此不再需要事后转换块级 abspos）。
+        // 含源码换行缩进空白（与页面真实形态一致，空白留 Inline 片段塌穿）。
         let html = r#"<html><body>
           <div id="b">
             <div class="box">a</div>
@@ -728,10 +775,13 @@ mod tests {
           </div>
         </body></html>"#;
         let segs = split_block(html, "b").expect("should split");
-        let last = segs.last().unwrap();
-        assert!(
-            matches!(last, InlineBlockSegment::Block { .. }),
-            "pure-ooflow trailing segment should be Block, got {:?}",
+        let block_count = segs
+            .iter()
+            .filter(|s| matches!(s, InlineBlockSegment::Block { .. }))
+            .count();
+        assert_eq!(
+            block_count, 3,
+            "block-level abspos child should lift to its own Block segment, got {:?}",
             segs
         );
     }

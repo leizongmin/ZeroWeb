@@ -1726,6 +1726,16 @@ pub(crate) fn adjust_float_positions_with_context(
     // 我们通过累加正常流元素的高度 + margin 折叠来独立追踪 flow_bottom。
     let mut flow_bottom = 0.0f32; // 上一个正常流元素的 border-bottom（相对于容器 content area）
     let mut last_flow_mb = 0.0f32; // 上一个正常流元素的 margin-bottom
+    // R5227：尾随匿名片段不计入 float 行游标的 (flow_bottom, last_flow_mb) 快照——
+    // R109 纯 inline 匿名块盒（fragment_node_ids 记账，tree/extract 强制
+    // is_block_level=true）语义上是原子 inline-level 内容（§9.2.1.1），§9.5.1 float
+    // 外顶与其前置行盒**顶边**齐平（R5215 floats-placement-006/007/008 同模型；
+    // chromium 探针 between-float-and-text float rel_y = anon_top + mt = 20）。
+    // 片段推进前重拍（float 落该行顶）；非片段流内子推进后重拍为推进后状态
+    // （[文本行, 块, float] 的 float 仍取块后流游标 = 50，R5226
+    // r5226_float_after_block_cursor_anchor 同值）。无片段史时与
+    // (flow_bottom, last_flow_mb) 恒等，既有锚零扰动。
+    let mut flow_snap: (f32, f32) = (0.0, 0.0);
     // 第一个流内子元素的 margin-top 会与无 border-top/padding-top 的父容器折叠
     //（CSS §8.3.1），此时子元素位于容器 content 原点，其 margin-top 不应计入 flow_bottom，
     // 否则后续 float 的 min_float_y 会把该 margin-top 双重计入，使 float 偏低。
@@ -1753,6 +1763,10 @@ pub(crate) fn adjust_float_positions_with_context(
             // R1277 ②：inline 级子（is_block_level=false）不推进 flow_bottom——
             // CSS §9.5.1 仅 block-level 前置内容约束 float 的 outer top。
             if !lift_inline || child.is_block_level {
+                // R5227：匿名片段推进前先拍快照（float 的行顶锚基准，见 flow_snap 注释）。
+                if child.fragment_node_ids.is_some() {
+                    flow_snap = (flow_bottom, last_flow_mb);
+                }
                 // 独立计算正常流位置：使用 margin 折叠
                 if crate::margin_collapse::is_empty_block(child) {
                     let collapsed_self_margin =
@@ -1768,6 +1782,9 @@ pub(crate) fn adjust_float_positions_with_context(
                     let child_border_bottom = child_y + child.height;
                     flow_bottom = child_border_bottom;
                     last_flow_mb = child.margin_bottom;
+                }
+                if child.fragment_node_ids.is_none() {
+                    flow_snap = (flow_bottom, last_flow_mb);
                 }
             }
             // 处理非 float 元素的 clear 属性（延迟到第二阶段）
@@ -1933,7 +1950,8 @@ pub(crate) fn adjust_float_positions_with_context(
         // 这里的 `line_y` / `child.y` 都追踪的是 border-box 顶边，因此用于
         // 约束 float 最小垂直位置时，不能再次把当前元素的 margin-top 加进去，
         // 否则后续 `child.y = line_y + margin_top` 会双计 margin-top。
-        let min_float_y = flow_bottom + last_flow_mb;
+        // R5227：min_float_y 取快照（尾随匿名片段不推进 float 行游标，见 flow_snap 注释）。
+        let min_float_y = flow_snap.0 + flow_snap.1;
         if min_float_y > line_y {
             line_y = min_float_y;
             left_used_width = 0.0;
@@ -2746,7 +2764,11 @@ pub(crate) fn adjust_float_positions_with_context(
                 last_flow_mb = child.margin_bottom;
                 // R5215：float 钳制 floor 只随 block-level 子推进（原子 inline-level
                 // 子按 §9.5.1 规则 4 只以顶边约束 float，见 float_floor_bottom 声明处）。
-                if child.is_block_level {
+                // R5227：R109 匿名片段盒同语义——taffy/extract 强制 is_block_level=true
+                // 但内容是原子 inline-level（§9.2.1.1），float 外顶与其顶边齐平、不以其
+                // 底抬 floor（between-float-and-text：floor 不入 → Phase 1 行顶锚 20
+                // 不被钳到 40）。
+                if child.is_block_level && child.fragment_node_ids.is_none() {
                     float_floor_bottom = flow_bottom;
                     float_floor_last_mb = last_flow_mb;
                 }

@@ -1626,6 +1626,26 @@ pub(crate) fn compute_final_inline_layouts(
             .oof_static_positions
             .extend(inline_ctx.oof_static_positions.iter().map(|(k, v)| (*k, *v)));
     }
+    // R5227（CSS2 §10.3.7 × §9.2.1.1）：宿 block-level absolute 子（top/bottom 全 auto
+    // 静态位域）的水平流文本容器记录 IFC 末行底，供 abspos.rs
+    // fix_abspos_static_after_inline_content 行底静态位锚消费。**只存标量、不落
+    // inline_layout**——那会翻转 paint use_stored 路径（line-breaking-018/019
+    // stored/Path B glyph 分歧实证）。须在 store-gate return 之前（非 stored 容器
+    // 同样有效）；竖排流行进轴为水平，行底语义不适用不入。kill-switch 随
+    // ZW_R109_ABSPOS_BLOCK 总闸（OnceLock 缓存，热路径不耐受 env 线性扫描——R5152）。
+    if crate::inline_block_split::r5227_abspos_block_enabled()
+        && !root.writing_mode.is_vertical_block_flow()
+        && root
+            .children
+            .iter()
+            .any(|c| c.is_absolute && c.is_block_level && !c.is_fixed && !c.oof_static_mapped)
+    {
+        root.oof_static_line_bottom = inline_ctx
+            .lines
+            .iter()
+            .map(|l| l.y + l.height)
+            .fold(None::<f32>, |acc, v| Some(acc.map_or(v, |a| a.max(v))));
+    }
     // R2467 line-clamp slice 2：镜像 IFC `clamped` 到 LayoutBox，让 paint stored 路径
     //（pure-Ahem，inline_layout 已被 cap 到 n 行）能据此补 ellipsis——stored 路径下
     // paint 看到的行数 ≤ n，旧 `line_ys.len() > max` 判定无法独立触发 ellipsis。

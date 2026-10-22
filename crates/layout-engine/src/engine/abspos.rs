@@ -1343,3 +1343,114 @@ fn fix_abspos_inline_static_position_walk(
         fix_abspos_inline_static_position_walk(child, styles, anchors, anchor_containers, child_frame);
     }
 }
+
+/// R5227（CSS2 §10.3.7 static position × §9.2.1.1）：块容器行内内容之后的块级
+/// abspos 垂直静态位。
+///
+/// OOF 子不触发 §9.2.1.1 匿名块拆分（chromium 探针
+/// inline-non-replaced-height-002 / all-prop-002 实证：拆分会改变行盒宿主几何
+/// 与绘制层序），容器维持单 IFC——此时 top/bottom 全 auto 的 block-level abspos
+/// 子的静态位 = 前驱 in-flow 内容之后（css-position-3 §static-position）；前驱
+/// 为行内内容时即容器 IFC 末行底（chromium 探针 between-float-and-text /
+/// divD 形态：nbsp/X 行高 20 → abspos rel_y=20）。
+///
+/// R4017（`fix_abspos_static_position_y`）的块级前驱臂已覆盖「前驱为 in-flow
+/// block 兄弟盒」域；本 pass 只收其不碰的行内前驱域——无前 in-flow block 级
+/// 兄弟盒 + 容器记录了 IFC 末行底 + DOM 序存在在流前驱。须在 compute_final
+/// 之后跑（标量由 finalization 记录；不读 `inline_layout`——存储门会拒存非
+/// pure-Ahem 无 float 容器，且扩门会翻转 paint use_stored 路径）。
+///
+/// gate（全部满足才写 y）：
+/// - absolute 且非 fixed、非 R5139 列流映射（同 R5166 门）；
+/// - top+bottom 全 auto；margin_top ≤ 0.5（镜像 R4017/R5166 保守门）；
+/// - 无前 in-flow block-level 兄弟盒（有则属 R4017 域，不重复写）；
+/// - DOM 前驱含在流内容：preserved 文本（可折叠空白不算——源码缩进不产生
+///   行盒）或 in-flow 元素；OOF 前驱不算（不产生流内容）。
+///
+/// 坐标系：标量 `oof_static_line_bottom` 为容器内容盒坐标，absolute 子
+/// LayoutBox y 同基（R4017 同款写入口径），直接写 `child.y = 末行底`。
+pub(super) fn fix_abspos_static_after_inline_content(
+    root: &mut LayoutBox,
+    doc: &zero_dom::Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
+    fix_abspos_static_after_inline_content_walk(root, doc, styles);
+}
+
+fn fix_abspos_static_after_inline_content_walk(
+    box_node: &mut LayoutBox,
+    doc: &zero_dom::Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
+    use zero_css_parser::values::LengthValue;
+
+    // IFC 末行底（容器内容坐标，compute_final 期随宿 abspos 容器记录的标量，
+    // 不依赖 inline_layout 存储——paint 路径零扰动）。None = 容器无行盒，本 pass 不适用。
+    let line_bottom = box_node.oof_static_line_bottom;
+    if let Some(line_bottom) = line_bottom {
+        // 两阶段收集/写回（同 R4017：避免 children 借用冲突）。
+        let mut fixes: Vec<(usize, f32)> = Vec::new();
+        for (idx, child) in box_node.children.iter().enumerate() {
+            if !child.is_absolute || child.is_fixed || child.oof_static_mapped {
+                continue;
+            }
+            // 仅 block-level abspos（§10.3.7 假想块盒域）。inline-level abspos 的行内
+            // 静态位 = 行内光标锚（R5166 域，行顶语义），行底锚不得越界覆写。
+            if !child.is_block_level {
+                continue;
+            }
+            // 竖排块流行进轴为水平（行底语义不适用 y 写入），维持 R5166/竖排既有链。
+            if box_node.writing_mode.is_vertical_block_flow() {
+                continue;
+            }
+            let Some(style) = child.node_id.and_then(|id| styles.get(&id)) else {
+                continue;
+            };
+            if !matches!(style.top, LengthValue::Auto) || !matches!(style.bottom, LengthValue::Auto) {
+                continue;
+            }
+            if resolve_abspos_real_length(&style.margin_top, &style.font_size, 0.0, 0.0).unwrap_or(0.0) > 0.5 {
+                continue;
+            }
+            // 有前 in-flow block-level 兄弟盒 → R4017 域（前驱盒 margin-box 底）。
+            if box_node.children[..idx]
+                .iter()
+                .any(|c| c.is_block_level && !c.is_absolute && !c.is_fixed)
+            {
+                continue;
+            }
+            // DOM 序在流前驱判定（preserved 文本或 in-flow 元素）。abspos 节点须
+            // 真挂在本容器 DOM 下（拆分/匿名包装树的错挂保守跳过）。
+            let Some(container_id) = box_node.node_id else {
+                continue;
+            };
+            let Some(abs_id) = child.node_id else {
+                continue;
+            };
+            let has_in_flow_pred = doc
+                .child_nodes(container_id)
+                .iter()
+                .take_while(|&&sib| sib != abs_id)
+                .any(|&sib| match doc.get(sib).map(|n| &n.kind) {
+                    Some(zero_dom::NodeKind::Text(t)) => crate::inline::has_preserved_content(&t.content),
+                    Some(zero_dom::NodeKind::Element(_)) => styles.get(&sib).is_some_and(|s| {
+                        !matches!(
+                            s.display,
+                            zero_css_parser::values::DisplayValue::None
+                                | zero_css_parser::values::DisplayValue::Contents
+                        ) && !crate::inline_block_split::is_out_of_flow(s)
+                    }),
+                    _ => false,
+                });
+            if has_in_flow_pred {
+                fixes.push((idx, line_bottom));
+            }
+        }
+        for (idx, y) in fixes {
+            box_node.children[idx].y = y;
+        }
+    }
+    for child in box_node.children.iter_mut() {
+        fix_abspos_static_after_inline_content_walk(child, doc, styles);
+    }
+}

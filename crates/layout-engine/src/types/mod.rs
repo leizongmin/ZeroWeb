@@ -595,6 +595,14 @@ pub struct LayoutBox {
     /// 据此只收集该片段的 inline 内容（IFC.fragment_node_ids），而非 inline
     /// 元素的全部子节点。`None` = 正常盒（非匿名块片段）。
     pub fragment_node_ids: Option<Vec<NodeId>>,
+    /// R5227（CSS2 §10.3.7 × §9.2.1.1）：容器 IFC 末行底（容器内容坐标）。
+    ///
+    /// compute_final 期为「宿 block-level absolute 子（top/bottom 全 auto 域）」的
+    /// 文本容器记录，供 `abspos.rs fix_abspos_static_after_inline_content` 行底
+    /// 静态位锚消费。**不落 `inline_layout`**——那会翻转 paint use_stored 路径
+    ///（line-breaking-018/019 stored/Path B 分歧实证），本字段是布局侧标量，
+    /// paint 零扰动。`None` = 不适用（无 abspos 静态位 pending 或无行盒）。
+    pub oof_static_line_bottom: Option<f32>,
     /// R109 §9.2.1.1：此 inline 盒被 in-flow block-level 子元素拆分（生产端接线标记）。
     ///
     /// 当为 true 时，此盒自身的 paint IFC 应跳过——其直接文本已由其匿名块片段
@@ -793,6 +801,7 @@ impl Default for LayoutBox {
             taffy_baseline: None,
             inline_block_baseline: None,
             fragment_node_ids: None,
+            oof_static_line_bottom: None,
             is_r109_split: false,
             is_r109_block_mixed: false,
             is_multicol_region_fragment: false,

@@ -1314,6 +1314,12 @@ impl LayoutEngine {
         // 为空（collect 期未发条目），本 pass 空转。
         abspos::fix_abspos_inline_static_position(&mut root_box, styles, &final_inline_context.oof_static_positions);
 
+        // R5227（CSS2 §10.3.7 × §9.2.1.1）：块容器行内内容之后的块级 abspos 垂直
+        // 静态位——OOF 不触发匿名块拆分（行盒宿主几何/绘制层序维持容器 IFC），
+        // 行内前驱域的静态位在此收口（须在 compute_final 之后读 stored 行盒；
+        // 无前 in-flow block 兄弟盒域，R4017 块级臂之外）。
+        abspos::fix_abspos_static_after_inline_content(&mut root_box, doc, styles);
+
         // 最终 IFC 会确定多列内文本的实际行数；在它之前回写高度会被覆盖，令父块背景
         // 过早结束。故在最终行盒确定后重测并重分列，随后由下方的祖先回填/兄弟位移统一传播。
         // https://drafts.csswg.org/css-multicol/#column-height
@@ -2612,6 +2618,7 @@ impl LayoutEngine {
             css_order: computed.as_ref().map(|s| s.order).unwrap_or(0),
             column_span_offsets: Vec::new(),
             oof_static_mapped: false,
+            oof_static_line_bottom: None,
             inline_layout: None,
             inline_layout_width: 0.0,
             line_clamp_clamped: false,
