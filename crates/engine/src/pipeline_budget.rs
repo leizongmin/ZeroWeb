@@ -11,9 +11,11 @@ use zero_layout_engine::LayoutResult;
 use zero_render_foundation::geometry::Rect;
 use zero_style_system::ComputedStyle;
 
+use crate::animation::compositor_export::{ExportedAnimationSet, export_composable_animations};
 use crate::paint::Painter;
 use crate::pipeline::{
-    PipelineTimings, RenderPipeline, RenderResult, collect_stylesheets, inject_pseudo_text_nodes, paint_cull_viewport,
+    PipelineTimings, RenderPipeline, RenderResult, apply_animation_overrides, collect_stylesheets,
+    inject_pseudo_text_nodes, paint_cull_viewport,
 };
 
 /// 预算渲染会话的当前步骤。
@@ -50,6 +52,8 @@ pub struct BudgetedRenderSession {
     doc: Option<Document>,
     stylesheets: Vec<Stylesheet>,
     styles: HashMap<NodeId, ComputedStyle>,
+    /// M2-S1b 缺口收口：Style 步导出的合成动画集（flag 关恒 None），Paint 步消费。
+    export_set: Option<ExportedAnimationSet>,
     layout_result: Option<LayoutResult>,
     timings: PipelineTimings,
     result: Option<RenderResult>,
@@ -65,6 +69,7 @@ impl BudgetedRenderSession {
             doc: None,
             stylesheets: Vec::new(),
             styles: HashMap::new(),
+            export_set: None,
             layout_result: None,
             timings: PipelineTimings::default(),
             result: None,
@@ -123,6 +128,38 @@ impl RenderPipeline {
                     if let Some(doc_mut) = session.doc.as_mut() {
                         inject_pseudo_text_nodes(doc_mut, &mut session.styles, &session.stylesheets);
                     }
+                    // M2-S1b 缺口收口（DC-2/M3）：预算路径与 render_html 同源导出。
+                    // 生产导航帧全部经本路径（AsyncPageLoad 分步渲染），此前恒不导出
+                    // （原「稳定后 render() 全量帧接手」的记档假设在生产无调用方——
+                    // 声明永不达 compositor，keep-alive 自举死锁）。导出在 t=0 叠加
+                    // 前取 underlying 快照，与 render_html 同序。
+                    if session
+                        .styles
+                        .values()
+                        .any(|s| s.animation_name.iter().any(|n| !n.is_empty() && n != "none"))
+                    {
+                        self.animation_clock
+                            .register_from_stylesheets(&session.stylesheets, &self.media_context());
+                        if self.compositor_animations {
+                            let doc = session.doc.as_ref().expect("parse must run before style");
+                            session.export_set = Some(export_composable_animations(
+                                &self.animation_clock,
+                                doc,
+                                &session.styles,
+                            ));
+                        }
+                        // t=0 求值是渲染近似非真实时间轴——事件丢弃，只保留插值叠加
+                        //（已导出属性跳写，compositor 在干净基线上采样）。
+                        let mut static_clock = self.animation_clock.clone();
+                        for (nid, kind, _name, _elapsed) in apply_animation_overrides(
+                            &mut static_clock,
+                            &mut session.styles,
+                            0.0,
+                            session.export_set.as_ref(),
+                        ) {
+                            let _ = (nid, kind);
+                        }
+                    }
                     session.timings.style_ms = start.elapsed().as_secs_f64() * 1000.0;
                     session.step = BudgetStep::Layout;
                 }
@@ -161,12 +198,22 @@ impl RenderPipeline {
                     painter.viewport_w = self.viewport_width;
                     painter.viewport_h = self.viewport_height;
                     painter.paint_skip_nodes = layout.paint_skip_node_ids.clone();
+                    // M2-S1b 缺口收口：导出通道表注入 painter（空表 = flag 关/无导出，
+                    // paint 行为不变），paint 期收集动画作用域。
+                    if let Some(set) = &session.export_set {
+                        painter.set_compositor_animation_channels(set.channels.clone());
+                    }
                     painter.paint(&layout.root, &session.styles, Some(doc));
                     let canvas_images = painter.canvas_images.clone();
+                    let mut animation_scopes = painter.take_animation_scopes();
                     let mut primitives = painter.into_primitives();
                     let viewport = paint_cull_viewport(self.viewport_width, self.viewport_height, &layout.root);
-                    // S7b：cull_invisible 原位剔除
-                    let stats = primitives.cull_invisible(viewport);
+                    // S7b：cull_invisible 原位剔除；导出域开启时同点修复动画作用域的
+                    // draw 区间/transform 槽位（与 render_html 同款）。
+                    let stats = primitives.cull_invisible_with_scopes(
+                        viewport,
+                        session.export_set.is_some().then_some(&mut animation_scopes),
+                    );
                     // S7：draw_order 路径跳过 batch_fills（纯 clone no-op）
                     let primitives = if primitives.draw_order.is_empty() {
                         primitives.batch_fills()
@@ -217,6 +264,21 @@ impl RenderPipeline {
                     });
 
                     let dirty_rects = vec![(0.0, 0.0, self.viewport_width, self.viewport_height)];
+                    // M2-S1b 缺口收口：缓存本次导出（声明 + 已修复作用域）供增量臂
+                    // 携带；flag 关恒 None（与 render_html 尾部同语义）。
+                    self.compositor_export_cache = if self.compositor_animations {
+                        session
+                            .export_set
+                            .as_ref()
+                            .map(|set| (set.declarations.clone(), animation_scopes.clone()))
+                    } else {
+                        None
+                    };
+                    let export_decls = session
+                        .export_set
+                        .as_ref()
+                        .map(|set| set.declarations.clone())
+                        .unwrap_or_default();
                     session.result = Some(crate::pipeline::make_render_result(
                         primitives,
                         dirty_rects,
@@ -224,10 +286,8 @@ impl RenderPipeline {
                         session.timings.clone(),
                         stats,
                         canvas_images,
-                        // 预算路径（AsyncPageLoad 分步渲染）不进合成导出域——load 帧
-                        // 无声明，稳定后 render() 全量帧接手（M2-S1b 记档缺口）。
-                        Vec::new(),
-                        Vec::new(),
+                        export_decls,
+                        animation_scopes,
                     ));
                     return BudgetAdvance::Complete;
                 }

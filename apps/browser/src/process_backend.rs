@@ -609,7 +609,19 @@ impl ProcessTabBackend {
             // M2-S1d：动画活跃期间每 tick 主动请求 compositor 重采样出帧
             //（renderer 主线程被阻塞时无新提交，靠该 Get 保持帧推进）；响应
             // 经完成帧缓存下一 tick 采纳，待处理 Get 同 surface 原地替换不堆积。
-            if snap.compositor_animations_active || snap.compositor_patches_active {
+            // DC-2/M3：animations_active 的唯一产生源是 Get 响应采样，而常态 Get
+            // 的唯一发起方 keep-alive 又以该标志为前置——自举死锁（M1 基线 compgui
+            // 腿 30s 恒 2 帧）。每个新提交 frame 代探测一次：响应 active=true 由
+            // 既有 keep-alive 接管持续采样，false 则本代止步、下一提交代重开。
+            // flag 关（renderer 导出侧同门控）零探测；静态页每发布代至多一 Get，
+            // 无动画时 compositor 不重光栅仅回元数据。
+            let anim_probe = zero_protocol::compositor_animations_enabled()
+                && !snap.compositor_animations_active
+                && snap.compositor_anim_probe_frame != Some(submission.frame_id);
+            if snap.compositor_animations_active || snap.compositor_patches_active || anim_probe {
+                if anim_probe {
+                    snap.compositor_anim_probe_frame = Some(submission.frame_id);
+                }
                 // M2-S1e：keep-alive 触发记 debug——空洞期「有心跳无此行」=tick 活而
                 // flag 假；「有心跳有此行无 compositor Get」=worker 未排空。
                 tracing::debug!(

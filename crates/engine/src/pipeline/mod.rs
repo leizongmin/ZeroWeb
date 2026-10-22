@@ -154,7 +154,7 @@ pub struct RenderPipeline {
     /// 脏区域追踪器。
     dirty_tracker: DirtyTracker,
     /// CSS 动画时钟。
-    animation_clock: AnimationClock,
+    pub(crate) animation_clock: AnimationClock,
     /// CSS 过渡时钟。
     transition_clock: TransitionClock,
     /// R342：宿主（webview 泵 / run_page_scripts 两步 apply）预置的过渡检测基线——
@@ -3473,7 +3473,7 @@ pub(crate) fn extract_print_page_geometry(
 /// 返回「本轮新产生」的动画事件（R3249 animationend + R3250 animationiteration + R3251 animationstart）——
 /// `(NodeId, kind, animationName, elapsedTime)` 列表（animated_ids 持 elem_key↔NodeId 双键，故直接返 NodeId，
 /// 调用方免往返）。调用方据此映射 selector 后存 pending 待宿主派发。
-fn apply_animation_overrides(
+pub(crate) fn apply_animation_overrides(
     clock: &mut AnimationClock,
     styles: &mut HashMap<NodeId, ComputedStyle>,
     current_time: f64,

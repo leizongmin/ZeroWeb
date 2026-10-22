@@ -115,6 +115,10 @@ pub struct TabSnapshot {
     /// M3-S1c：worker canvas patch 存活标志——Register 中继置位、Destroy 清除，
     /// 为真时帧轮询每 tick 主动发 Get（主线程阻塞期贴片持续呈现的拉取驱动）。
     pub compositor_patches_active: bool,
+    /// DC-2/M3：动画 keep-alive 自举探测已覆盖的提交 frame 代。`animations_active`
+    /// 的唯一产生源是 Get 响应采样，而常态 Get 的唯一发起方 keep-alive 又以该标志
+    /// 为前置（自举死锁），故每个新提交代探测一次 Get 启动采样链。
+    pub compositor_anim_probe_frame: Option<u64>,
     /// Linux：待 Browser GPU 导入的 compositor dma-buf。
     #[cfg(target_os = "linux")]
     pub compositor_dmabuf: Option<CompositorDmabufPending>,
@@ -159,6 +163,7 @@ impl TabSnapshot {
             compositor_scroll: None,
             compositor_animations_active: false,
             compositor_patches_active: false,
+            compositor_anim_probe_frame: None,
             #[cfg(target_os = "linux")]
             compositor_dmabuf: None,
         }
@@ -185,6 +190,7 @@ impl TabSnapshot {
         self.compositor_scroll = None;
         self.compositor_animations_active = false;
         self.compositor_patches_active = false;
+        self.compositor_anim_probe_frame = None;
         self.document_height = None;
         self.document_width = None;
         self.hit_test = None;
@@ -416,6 +422,10 @@ mod tests {
         snap.clear_paint();
         assert!(snap.last_render.is_none());
         assert_eq!(snap.url.as_deref(), Some("https://example.com"));
+        // DC-2/M3：导航清 paint 时自举探测标记一并复位，新页面从首提交重新探测。
+        snap.compositor_anim_probe_frame = Some(9);
+        snap.clear_paint();
+        assert_eq!(snap.compositor_anim_probe_frame, None);
     }
 
     #[test]

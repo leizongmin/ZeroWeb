@@ -1000,6 +1000,61 @@ fn test_render_html_animated_no_panic() {
     assert!(pipeline.layout().is_some());
 }
 
+/// M3/DC-2：生产导出链钉——flag 开启时 render_html（全量路径）导出 transform
+/// 声明（bg02 fixture 同款 `translateX` from/to）。compgui 腿 declarations=0 的
+/// 生产断点回归钉。
+#[test]
+fn test_render_html_exports_composable_transform_declaration() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    pipeline.set_compositor_animations(true);
+    let html = r#"<html><body><div class="box">Hello</div></body></html>"#;
+    let css = r#"
+        @keyframes bg02-slide {
+            from { transform: translateX(0); }
+            to { transform: translateX(300px); }
+        }
+        .box { animation: bg02-slide 1s linear infinite; width: 100px; height: 50px; }
+    "#;
+    let result = pipeline.render_html(html, css);
+    assert!(
+        !result.animation_declarations.is_empty(),
+        "flag 开启时应导出 transform 声明"
+    );
+}
+
+/// M3/DC-2：生产路径钉——预算渲染会话（AsyncPageLoad 分步渲染，生产导航帧全部
+/// 经此）flag 开启时同样导出 transform 声明与 paint 作用域。此前预算路径恒发空
+/// 声明（记档缺口），声明永不达 compositor，keep-alive 自举死锁。
+#[test]
+fn test_advance_budgeted_render_exports_composable_transform_declaration() {
+    use crate::pipeline_budget::{BudgetAdvance, BudgetedRenderSession};
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    pipeline.set_compositor_animations(true);
+    let html = r#"<html><body><div class="box">Hello</div></body></html>"#;
+    let css = r#"
+        @keyframes bg02-slide {
+            from { transform: translateX(0); }
+            to { transform: translateX(300px); }
+        }
+        .box { animation: bg02-slide 1s linear infinite; width: 100px; height: 50px; }
+    "#;
+    let mut session = BudgetedRenderSession::new(html, css);
+    for _ in 0..16 {
+        if pipeline.advance_budgeted_render(&mut session, 1000.0) == BudgetAdvance::Complete {
+            break;
+        }
+    }
+    let result = session.take_result().expect("预算会话应完成");
+    assert!(
+        !result.animation_declarations.is_empty(),
+        "预算路径应导出 transform 声明"
+    );
+    assert!(
+        !result.animation_scopes.is_empty(),
+        "paint 期应发射动画作用域（compositor 采样改写锚点）"
+    );
+}
+
 /// 测试带动画的渲染管线在不同时间点产生不同的 opacity。
 #[test]
 fn test_animated_opacity_changes_over_time() {
