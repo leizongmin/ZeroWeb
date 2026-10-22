@@ -2,11 +2,39 @@
 
 **版本**: v2.0
 **日期**: 2026-10-21（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 31 收口（dialog `:modal` 状态通道落地 + UA 定位注入实验定性：回归 0 纪律下不注入，布局 abspos 收缩/fit-content 为回填前置；gBCR 同 turn stale 红因破案，强制同步布局冲刷立切片），下一步按挂账序推进
+**状态**: Active——M2 切片 32 收口（popover 有效性语义：`:popover-open` matches 特判 + hidePopover lenient 化，closedby-simple 文件级 Timeout 解体 +1 绿，complex 40F 红因迁移为 light-dismiss 行为缺口并钉定 popover light dismiss/链停两缺口），下一步按挂账序推进
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-23 M2 切片 31 收口）**：dialog showModal 布局
+> **▶ 当前状态（2026-10-23 M2 切片 32 收口）**：popover 有效性语义。
+> **红因链破案**：closedby-complex 40F 统一死于 `matches(':popover-open')`
+> SyntaxError（host 引擎无该伪类 → promise_test 未处理拒绝全红）；
+> closedby-simple 1F = `resetDialogOuterTest` 前置 `hidePopover()` 过度
+> 抛出，文件级 Timeout = replica promise_test 不接体 rejection、其余 5
+> 体同点 reject 挂死 completion callback（`pending:5 tests:6` 实测吻合）。
+> **spec 钉定**：hide popover 算法仅在 validityResult 为 DOMException 时
+> 抛——hidden/disconnected 态不匹配返 false 布尔 → hidePopover 静默
+> no-op（popover-utils「should not throw」语料权威）。**落地三件**
+>（R5233）：shim `_zwHidePopover` lenient 化（非 popover
+> NotSupportedError / showing+断连 InvalidStateError / 其余静默）+
+> matches 陷阱 `:popover-open` 裸伪类特判（:focus/:modal 同款 JS 侧特判）
+> + part09 契约测试翻转与三态断言。**集群**：82 files 411 subtest
+> **321P/89F/1T**，同 key 406 对 s31 逐位 diff **REG 0 / GAIN 0**；
+> closedby-simple Timeout 解体 → 6 子测收敛 5F+1P；complex 40F 红因迁移
+> 为统一行为缺口。**探针钉定两缺口**（一次 outside click → dA/dB 全关、
+> pA/pB 不关）：**挂账 E（下一切片主目标）popover light dismiss 未建**
+>（R3071 defer 至今）+ **dialog light dismiss 链停**（一次 click 应只关
+> topmost clicked dialog 链）；simple 第二 ESC 断言面（ESC 栈序）同挂。
+> focus-after-close.html Timeout 既有挂账维持。gates：zero-engine lib
+> **3429P/0F**、clippy -D warnings、fmt clean、零新增依赖。账本见
+> [evidence/2026-10-23-m2s32-popover-open-semantics.md](html-semantics-compat/evidence/2026-10-23-m2s32-popover-open-semantics.md)。
+> **下一步**：挂账 E（popover light dismiss + 链停语义，engine click 路
+> 径）或按挂账序挂账 A（强制同步布局冲刷）、impl-doc wrapper
+> requestClose、anchor-with-inline 导航缺口、parser form element
+> pointer 4F、custom command `--` 前缀 CommandEvent defer、ESC 组栈边缘
+> 乱序、非模态 close 不出组栈、R371 模板残留。
+>
+> **▶ 上轮状态（2026-10-23 M2 切片 31 收口）**：dialog showModal 布局
 > 域。**谜题破案**：s30「dialog[open] computed block 但 gBCR 全零」是探
 > 针伪象——gBCR 读 renderer 上一帧 rect 快照（rect_bridge），open 同 tick
 > 读拿到旧布局；等帧后全部有盒。探测环刷新顺序（flush→timers→刷新）钉

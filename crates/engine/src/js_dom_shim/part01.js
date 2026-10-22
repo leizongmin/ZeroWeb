@@ -459,8 +459,9 @@
   // NotFoundError defer；releasePointerCapture 未捕获不抛 InvalidStateError，lenient 防破库）。
   var _pointerCapture = {};
   // R3071：Popover API top-layer 成员集（elKey → true）。showPopover 加入、hidePopover 移除；成员即「showing」态。
-  // headless 无真 top-layer paint / 渲染层级 / :popover-open 伪类（rendering 流域 defer），本集仅追踪 JS-observable
-  // 状态（showPopover→态 open / 派发 beforetoggle+toggle / hidePopover→态 closed）。UI 库（tooltip/menu/modal）feature-detect
+  // headless 无真 top-layer paint / 渲染层级（rendering 流域 defer），本集仅追踪 JS-observable
+  // 状态（showPopover→态 open / 派发 beforetoggle+toggle / hidePopover→态 closed；:popover-open
+  // 伪类 JS 侧匹配经 element proxy matches 特判——R5233）。UI 库（tooltip/menu/modal）feature-detect
   // + 调 showPopover/hidePopover/togglePopover + 监听 toggle 事件不中断。导航经 __zw_reset_form_state 清空（per-page）。
   // https://html.spec.whatwg.org/multipage/popover.html
   var _zwTopLayer = {};
@@ -597,10 +598,18 @@
     _zwTopLayer[key] = true;
     _dispatchWithBubble(key, sel, handle, _makeToggleEvent('toggle', 'closed', 'open', false));
   }
-  // R3071：hidePopover 状态机。未 showing → InvalidStateError；派发 beforetoggle(cancelable, open→closed)，
-  // preventDefault → 中止不隐；移 top-layer；派发 toggle(open→closed)。
+  // R3071：hidePopover 状态机。R5233（html-semantics M2 切片 32）spec 对齐收紧：hide popover 算法
+  // step 2「validityResult 非 true 且为 DOMException 才抛」——check popover validity 对「有 popover
+  // 属性但显隐态不匹配」（hidden / disconnected-not-showing）返回 false 布尔而非异常 → hidePopover
+  // 静默 no-op 不抛（popover-utils assertIsFunctionalPopover「should not throw」断言语义；
+  // dialog-popover-closedby-simple resetDialogOuterTest/cleanup 前置 hidePopover 断言面）。仅非 popover
+  // 元素 → NotSupportedError、showing 但已断连 → InvalidStateError；正常隐走派发
+  // beforetoggle(cancelable, open→closed)（preventDefault → 中止不隐）→ 移 top-layer → toggle(open→closed)。
+  // https://html.spec.whatwg.org/multipage/popover.html#dom-hidepopover
   function _zwHidePopover(key, sel, handle) {
-    if (!_zwTopLayer[key]) throw new DOMException('hidePopover: not showing', 'InvalidStateError');
+    if (_zwReadPopover(sel, handle) === null) throw new DOMException('hidePopover: not a popover element', 'NotSupportedError');
+    if (!_zwTopLayer[key]) return;
+    if (!_zwIsConnected(sel, handle)) throw new DOMException('hidePopover: element is not connected', 'InvalidStateError');
     if (!_dispatchWithBubble(key, sel, handle, _makeToggleEvent('beforetoggle', 'open', 'closed', true))) return;
     delete _zwTopLayer[key];
     _dispatchWithBubble(key, sel, handle, _makeToggleEvent('toggle', 'open', 'closed', false));

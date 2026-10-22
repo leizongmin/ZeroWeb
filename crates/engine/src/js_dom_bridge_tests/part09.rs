@@ -796,8 +796,8 @@ fn test_anchor_url_component_setters_r3070() {
 #[test]
 fn test_popover_api_r3071() {
     // R3071：Popover API 核心 DOM 面（showPopover/hidePopover/togglePopover + popover enumerated 属性 +
-    // beforetoggle/toggle 事件 + top-layer 状态机）。headless 无真 top-layer paint / :popover-open（rendering defer），
-    // 本切片验证 JS-observable 状态 + 事件。每子测用独立元素避免 addEventListener 累积。
+    // beforetoggle/toggle 事件 + top-layer 状态机）。headless 无真 top-layer paint（rendering defer），
+    // 本切片验证 JS-observable 状态 + 事件（:popover-open 伪类 JS 侧 matches 特判 R5233）。每子测用独立元素避免 addEventListener 累积。
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
     let config = zero_script_sandbox::SandboxConfig {
@@ -891,24 +891,44 @@ fn test_popover_api_r3071() {
         "已 showing 再 showPopover → InvalidStateError"
     );
 
-    // ④ hidePopover：未 showing → InvalidStateError；派发 beforetoggle(open→closed)+toggle(open→closed)。
+    // ④ hidePopover：未 showing → 静默 no-op（R5233：spec check popover validity 态不匹配返回
+    // false 布尔而非 DOMException，hide popover 算法仅在 validityResult 为异常时抛）；派发
+    // beforetoggle(open→closed)+toggle(open→closed)；:popover-open matches 特判随 showing 翻转。
     sandbox
         .execute(
             "globalThis.__errHidden = '';\
              try { document.getElementById('m2').hidePopover(); } catch(e){ globalThis.__errHidden = e.name; }\
              var m2 = document.getElementById('m2');\
+             globalThis.__m2PoBefore = m2.matches(':popover-open');\
              m2.showPopover();\
+             globalThis.__m2PoShown = m2.matches(':popover-open');\
              var log2 = [];\
              m2.addEventListener('beforetoggle', function(e){ log2.push('bt:'+e.oldState+'->'+e.newState); });\
              m2.addEventListener('toggle', function(e){ log2.push('tg:'+e.oldState+'->'+e.newState); });\
              m2.hidePopover();\
+             globalThis.__m2PoAfter = m2.matches(':popover-open');\
              globalThis.__afterHide = JSON.stringify(log2);",
         )
         .unwrap();
     assert_eq!(
         sandbox.execute("globalThis.__errHidden").unwrap().value,
-        "InvalidStateError",
-        "未 showing hidePopover → InvalidStateError"
+        "",
+        "未 showing hidePopover → 静默 no-op 不抛（R5233）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__m2PoBefore").unwrap().value,
+        "false",
+        "未 showing 不匹配 :popover-open（R5233）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__m2PoShown").unwrap().value,
+        "true",
+        "showPopover 后匹配 :popover-open（R5233）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__m2PoAfter").unwrap().value,
+        "false",
+        "hidePopover 后不再匹配 :popover-open（R5233）"
     );
     assert_eq!(
         sandbox.execute("globalThis.__afterHide").unwrap().value,

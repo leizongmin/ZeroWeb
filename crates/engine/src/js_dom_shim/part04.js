@@ -4735,6 +4735,16 @@
             // 引擎无该伪类（:focus 同款 JS 侧特判设计）。
             // https://html.spec.whatwg.org/multipage/interactive-elements.html#modal-dialogs
             if (q === ':modal') return _realTag(sel, handle) === 'DIALOG' && !!_zwDialogModal[key];
+            // R5233（html-semantics M2 切片 32）：`:popover-open` 伪类——popover 显示态判定
+            //（showing = top-layer 成员（R3071 `_zwTopLayer`）+ 仍带 popover 属性 + connected）。
+            // dialog-popover-closedby complex/simple 的 assertStates/reset 断言面（40F 红因：
+            // host 选择器引擎无该伪类 → `.matches(':popover-open')` SyntaxError → promise_test
+            // 未处理拒绝全红；:focus/:modal 同款 JS 侧特判设计）。`dialog[popover]` 经 showModal
+            // 入 top-layer 但 popover 显隐态未 open——近似差（本集群无交集面）。
+            // https://html.spec.whatwg.org/multipage/popover.html#the-popover-open-pseudo-class
+            if (q === ':popover-open') {
+              return !!_zwTopLayer[key] && _zwReadPopover(sel, handle) !== null && _zwIsConnected(sel, handle);
+            }
             // R4200（html-semantics M2 切片 22）：裸属性选择器（`[name]` / `[name=value]`）——
             // sel 元素经 latest-wins 读（pending set/remove 同步可见）。host `__zw_matches`
             // 读已 apply 快照——JS 侧异步属性写（dialog open 经 `__zw_set_attr` 入队）在
