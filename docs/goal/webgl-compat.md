@@ -55,7 +55,8 @@ buffer/texture/framebuffer 对象 / shader 编译链接 / uniform/attribute / GL
 
 ### 排除（明确不在范围内）
 
-- **WebGL2 / WebGPU** —— 远期挂账（WebGL1 收口后评估）
+- **WebGL2 / WebGPU** —— 远期挂账，已定稿（2026-10-23，含重开条件：
+  [M4 收口](webgl-compat/evidence/2026-10-23-m4-closeout-deferral.md)）
 - **canvas 2d 渲染面** —— canvas-2d goal 已归档收口
 - **GPU 进程架构** —— compositor/renderer 多进程面归 protocol 域
 
@@ -85,16 +86,22 @@ zero-protocol 契约；触 GPU 进程边界即 BLOCK 上报。
       基线 2112/2115（3 Fail = 上游 IDL 重载判据）；draw 真光栅化归 M3 程序管线簇
       （corpus 批 B 无渲染断言案，draw 面即错误语义）
       （[M2 切片](webgl-compat/evidence/2026-10-22-m2-context-slice.md)）
-- [ ] **DC-3**（2026-10-22 授权）：缓冲/纹理/shader 程序管线逐簇收敛（切片边界
-      Agent 自划，逐簇落账）
-- [ ] **DC-4**：`make test` 全绿 + clippy `-D warnings` + fmt + reftest 零回归
-      + GPU/CPU 双路径差异记账
+- [x] **DC-3**（2026-10-23）：缓冲/纹理/shader 程序管线逐簇收敛（切片边界
+      Agent 自划，逐簇落账）——S1 查询/事件、S2 shader 管线、S3 对象真存储、
+      S4 draw 光栅四簇（2026-10-22~23）
+      （[M3-S1](webgl-compat/evidence/2026-10-22-m3-s1-query-events.md)、
+      [S2](webgl-compat/evidence/2026-10-22-m3-s2-shader-pipeline.md)、
+      [S3](webgl-compat/evidence/2026-10-22-m3-s3-object-storage.md)、
+      [S4](webgl-compat/evidence/2026-10-23-m3-s4-draw-raster.md)）
+- [x] **DC-4**（2026-10-23）：`make test` 全绿 + clippy `-D warnings` + fmt +
+      reftest 零回归（716/716）+ GPU/CPU 双路径差异记账（CPU 路径维持，差异
+      面零失败证据）
+      （[M4 收口](webgl-compat/evidence/2026-10-23-m4-closeout-deferral.md)）
 
 ## 活跃里程碑
 
-**M1** 导入盘点（唯一自主切片；corpus fetch 用编号脚本 `tests/wpt-runner/scripts/goals/99-webgl-compat.sh`（索引 README；幂等续拉，GitHub API 限流时部分目录跳过属预期）——**2026-10-22 完成**，见 [M1 盘点](webgl-compat/evidence/2026-10-22-m1-import-inventory.md)）→ **M2** 批次 B 全量一次收 + clear/draw 标尺 ①+②（**2026-10-22 完成**——通道 + 上下文对象面 + 错误语义 + clear 光栅化 + reftest 标尺，基线 2112/2115，见 [M2 切片](webgl-compat/evidence/2026-10-22-m2-context-slice.md)）→ **M3** 程序管线逐簇（边界
-Agent 自划——2026-10-22 裁决）→
-**M4** 收口（WebGL2/WebGPU 挂账定稿）。
+**M1** 导入盘点（唯一自主切片；corpus fetch 用编号脚本 `tests/wpt-runner/scripts/goals/99-webgl-compat.sh`（索引 README；幂等续拉，GitHub API 限流时部分目录跳过属预期）——**2026-10-22 完成**，见 [M1 盘点](webgl-compat/evidence/2026-10-22-m1-import-inventory.md)）→ **M2** 批次 B 全量一次收 + clear/draw 标尺 ①+②（**2026-10-22 完成**——通道 + 上下文对象面 + 错误语义 + clear 光栅化 + reftest 标尺，基线 2112/2115，见 [M2 切片](webgl-compat/evidence/2026-10-22-m2-context-slice.md)）→ **M3** 程序管线逐簇（**2026-10-23 完成**——S1~S4 四簇，见 master.md）→
+**M4** 收口（**2026-10-23 定稿交付，待签收**——WebGL2/WebGPU 挂账 + GPU/CPU 差异记账，见 [M4 收口](webgl-compat/evidence/2026-10-23-m4-closeout-deferral.md)）。
 
 ## Final Output Protocol
 

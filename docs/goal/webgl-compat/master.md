@@ -1,9 +1,19 @@
 # WebGL 兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../webgl-compat.md](../webgl-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-23（M3-S4 draw 光栅化管线落地——基线保持 2112/2115）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-23（M4 收口定稿交付——DC-1~4 全满足，待用户签收）
 
 ## 当前状态
+
+**M4 收口定稿已交付（2026-10-23，待签收）**：WebGL2/WebGPU 挂账定稿（重开
+条件：WebGL2 需 GLSL ES 3.00 前端 + VAO/实例化对象模型 + webgl2 通道；
+WebGPU 归 GPU 栈流域须独立立项）+ GPU/CPU 双路径差异记账（现状 100% CPU
+shim 光栅，差异面全落 corpus 批 B 无渲染断言区间，零失败证据，不阻塞收口）
++ 上游 3 Fail 接受为基线（pin rev 前移时复查）。**DC-1~4 全满足**（DC-3 四簇
+S1~S4、DC-4 门禁全绿 + 记账入 M4 文档 §2）；基线 2112 Pass / 3 Fail、reftest
+716/716。签收项见 [evidence/2026-10-23-m4-closeout-deferral.md](evidence/2026-10-23-m4-closeout-deferral.md)
+§5；签收前挂账结论即当前有效边界。本 goal 至此无自主工作余量，等待签收或
+新裁决。
 
 **M3-S4 draw 光栅化管线已落地（2026-10-23）**：新 part08d.js（~1390 行）GLSL
 绘制求值器（递归下降、程序级 AST 缓存重链失效；值模型标量/vec/mat 列主序/
@@ -105,7 +115,7 @@ M2 evidence §7。
 | P2 | 首批收敛子集建议书提交用户 | ✅ 2026-10-22（裁决：批次 B） |
 | P3 | WebGL 1.0 最小上下文（创建/clear/draw） | ✅ 2026-10-22（M2，基线 2112/2115） |
 | P4 | 缓冲/纹理/shader 程序管线 | ✅ 2026-10-23（M3 四簇全收：S1 查询/事件、S2 shader 管线、S3 对象真存储、S4 draw 光栅） |
-| P5 | WebGL2/WebGPU 挂账定稿 | ▶ M4（挂账文档交用户签收） |
+| P5 | WebGL2/WebGPU 挂账定稿 | ✅ 2026-10-23（[M4 收口](evidence/2026-10-23-m4-closeout-deferral.md)已交付，待签收） |
 | P6 | canvas 内容桥 × CSS transform（位图不随元素 transform，2d 同复现） | 移交渲染流（2026-10-22 A/B 归因，M2 evidence §7；非本 goal 面） |
 
 ## 已完成切片
@@ -146,8 +156,10 @@ M2 evidence §7。
 
 ## 下一步计划
 
-1. **M4 收口（自主）**：WebGL2/WebGPU 挂账定稿文档 → 交用户签收；3 个上游
-   IDL Fail 在 pin rev 前移时复查。
+1. **等待用户签收** M4 挂账定稿（evidence/2026-10-23-m4-closeout-deferral.md
+   §5 三项）；签收即 DONE 收档，任一项推翻按新裁决重开。
+2. 无其他自主工作余量（DC-1~4 全满足）；3 个上游 IDL Fail 于 pin rev 前移时
+   复查（上游语料侧，非本仓工单）。
 
 **已裁决清单（2026-10-22 用户当面敲定）**：
 - [x] M2 启动授权 + 批次 → 批次 B 全量一次收（已完成，见 M2 evidence）；
