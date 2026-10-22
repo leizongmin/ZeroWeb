@@ -1,7 +1,7 @@
 # 安装更新与崩溃反馈交付闭环
 
 **版本**：v1.0 / 2026-10-20
-**状态**：Active（2026-10-22 Rally 运行解锁启动门控，M1 完成；进度见 [master](browser-delivery-loop/master.md)）
+**状态**：挂起（2026-10-23 用户裁定 P4 不授权、goal 挂起搁置；恢复条件=授权 P1/P4；进度见 [master](browser-delivery-loop/master.md)）
 **父目标**：[zero-web](zero-web.md) / **控制面**：[master](browser-delivery-loop/master.md)
 
 ## 0. 执行摘要与 Mission
