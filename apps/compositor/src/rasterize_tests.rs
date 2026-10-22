@@ -243,4 +243,99 @@ mod tests {
         assert_eq!(pixel(5, 5), (0, 0, 255), "归一区域外应保留旧帧");
         assert_eq!(pixel(31, 27), (0, 0, 255), "归一区域外应保留旧帧");
     }
+
+    // ── M3-c：半透明 partial 必须与全量逐位一致（src-over 二次混合回归）──
+
+    /// M3-c 回归：partial 脏区重绘在旧帧上叠画半透明图元会二次 src-over 混合
+    /// （rgba(255,0,0,0.5) 逐帧 (255,127,127)→(255,63,63)）。修复：copy_front
+    /// 分支先按归一化脏区重铺白底再重绘。本测以相同图元模拟 paint-only 变更，
+    /// 断言 partial 帧与全量帧逐位一致——修复前脏区内变深，测试失败。
+    #[test]
+    fn partial_dirty_semi_transparent_matches_full_render() {
+        let w = 20u32;
+        let h = 10u32;
+        let loader = FontLoader::new();
+        let mut glyph_cache = GlyphCache::new(64);
+        let mut image_cache = ImageCache::new(8, 1 << 20);
+
+        // 全视口半透明红 fill；paint-only 变更 = 图元不变、仅脏区收窄到局部。
+        let paint_full = PaintSnapshotParams {
+            viewport_width: w,
+            viewport_height: h,
+            document_height: h as f32,
+            fills: vec![zero_protocol::paint_snapshot::IpcFill {
+                rect: IpcRect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: w as f32,
+                    height: h as f32,
+                },
+                color: zero_protocol::paint_snapshot::IpcColor {
+                    r: 255,
+                    g: 0,
+                    b: 0,
+                    a: 128,
+                },
+            }],
+            dirty_rects: Vec::new(),
+            ..Default::default()
+        };
+        let primitives = zero_paint_convert::to_render_primitives(paint_full.clone());
+
+        unsafe {
+            std::env::set_var("ZW_RENDER_THREAD", "0");
+        }
+        // 帧 1：全量渲染（白底上一次混合）——既是上一帧，也是期望结果。
+        let mut expected = FrameBuffer::new(w, h);
+        rasterize::rasterize_into_back(
+            &paint_full,
+            &primitives,
+            &loader,
+            &mut glyph_cache,
+            None,
+            &mut image_cache,
+            &mut expected,
+            false,
+        );
+
+        // 帧 2：copy_front_to_back 后按局部脏区 partial 重绘。
+        let mut back = FrameBuffer::new(w, h);
+        back.data.copy_from_slice(&expected.data);
+        let mut paint_partial = paint_full.clone();
+        paint_partial.dirty_rects = vec![IpcRect {
+            x: 5.0,
+            y: 2.0,
+            width: 8.0,
+            height: 6.0,
+        }];
+        rasterize::rasterize_into_back(
+            &paint_partial,
+            &primitives,
+            &loader,
+            &mut glyph_cache,
+            None,
+            &mut image_cache,
+            &mut back,
+            true,
+        );
+        unsafe {
+            std::env::remove_var("ZW_RENDER_THREAD");
+        }
+
+        // 半透明背景：白底一次混合应为 (255,127,127)；修复前脏区内二次混合为 (255,63,63)。
+        assert_eq!(
+            back.data, expected.data,
+            "partial 重绘相同内容必须与全量逐位一致（脏区内不得二次混合）"
+        );
+        let px = |x: u32, y: u32| -> [u8; 3] {
+            let off = ((y * w + x) * 4) as usize;
+            [back.data[off], back.data[off + 1], back.data[off + 2]]
+        };
+        assert_eq!(
+            px(8, 4),
+            [255, 127, 127],
+            "脏区内：应为白底一次混合值（修复前此处为二次混合 (255,63,63)）"
+        );
+        assert_eq!(px(0, 0), [255, 127, 127], "脏区外：应保留上一帧像素不变");
+    }
 }

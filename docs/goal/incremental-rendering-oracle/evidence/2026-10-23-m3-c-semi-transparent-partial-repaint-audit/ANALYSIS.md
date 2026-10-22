@@ -56,3 +56,21 @@
 **残留（未实施，列协调/后续）**：跨界图元越界叠加族——逐像素裁剪需对 7 个光栅器做 loop-clamp 手术（rounded rect 不能用「裁 rect 再画」——圆角相对原 rect，需 clamp 循环界），且消费方 stale-base（不清底）不除则区内二次混合仍在；与 compositor re-base 修复（上文候选）**必须配套落地**，拆开修任何一半都剩另一半的漂移。
 
 **消费面修正**：上文「默认生产配置不可达」仅指 **compositor partial 路径**（`is_partial` 被 scroll-transform 默认开钉死）。核对发现 **apps/browser 条带复用路径**（app_platform.rs:638-647 `can_reuse`，`ZERO_SCROLL_BLIT` 默认开）也是 region-into 消费方且**默认活跃**：加载动画期每帧只重绘 chrome 条带（不清全帧）——同 stale-base 家族，底色不透明时表现为条带内 AA 边（spinner 弧线等）逐帧加深；chrome 半透明图元清单未逐项核查（列运行时观察项）。该文件属 zero-web 产品面且近期有提交（10-18），re-base 修复列跨流协调。
+
+## M3-c 落地（同日切片 3）：compositor CPU partial 臂 re-base 修复
+
+**协调门解除依据**：compositor-animation-continuity goal 2026-10-22 收口 DONE，apps/compositor 面空闲；bg02 流当日活跃面在 engine shim/protocol/renderer，与本切片（compositor rasterize + render-foundation surface）不重叠（run-rules §9）。goal M3 范围本含 compositor 消费者，本流承接。
+
+**修复内容**：
+
+1. `crates/render-foundation/src/surface.rs`：新增 `FrameBuffer::clear_rect(x0, y0, x1, y1, rgba)`——物理像素闭开区间、越界钳位、行主序按行填充；语义与整帧 `clear` 一致仅范围受限。
+2. `apps/compositor/src/rasterize.rs` `rasterize_into_back` 的 `copy_front=true` 分支：渲染循环前对每个归一化脏区重铺白底（floor/ceil 外扩 + 视口钳位，与下方 region 构造及 blit_region 拷回范围一致）——CPU partial 路径与全量 memset 白底语义精确对齐；脏区外保留旧帧（未变内容）。
+3. GPU 臂不改：主 pass `LoadOp::Clear(WHITE)` 已清整个目标再按 scissor 绘制（gpu/renderer/mod.rs:1109/:1132），无 stale-base，本行仅在注释中注明。
+
+**回归测试**（rasterize_tests.rs `partial_dirty_semi_transparent_matches_full_render`）：帧 1 全量渲染半透明全视口红 fill（a=128）作为上一帧与期望结果；帧 2 `copy_front_to_back` 后以相同图元、局部脏区 partial 重绘（模拟 paint-only 变更）；断言 partial 帧与全量帧**逐位一致** + 脏区内探针 (255,127,127)（修复前二次混合为 (255,63,63)）+ 脏区外保留。**fail-first 已验证**：stash 修复后单测 FAILED（复现二次混合），恢复后 PASS。
+
+**验证**：zero-compositor 71/71（含新测试）、zero-render-foundation 725/725、`cargo clippy --all-targets` 0 警告、rustfmt 干净。
+
+**残留定性更新（切片 2「跨界越界族」影响面收窄）**：re-base 落地后，主案例（全视口半透明 fill）经 `fill_rect_for_region` 逐像素裁剪不越界，**完全修复**；残留仅「未逐像素裁剪族（RoundedRect/Shadow/Gradient/Image/Stroke/PathFill）跨界 + 区域内已重铺白底」组合下的区域边界有界伪影——且消费方若改 temp-buffer 方案（渲染到 scratch 再拷回）则该族无需手术。列观察项，不单独修。
+
+**契约瑕疵记录（本轮不修，列 render-foundation 契约清理待办）**：`render_full_scene_region_into` 的 region 参数内部单位不一致——glyph 过滤按**物理像素**（cpu/mod.rs:387 `glyph.x * scale` 后与 region 比较），fill 裁剪按 **CSS 逻辑**（cpu/mod.rs:787 `fill.rect` 与 region 直接求交）。scale=1 时两义重合无影响；scale≠1 且调用方传物理坐标时 fill 裁剪错位。现网可达性：browser 条带两处调用均传 scale=1.0（app_platform.rs，构造性安全）、compositor partial 默认关闭 → **潜伏**。后续与 GPU clip 逻辑坐标契约（T34 已修 GPU 侧同族问题）对齐时一并收口。

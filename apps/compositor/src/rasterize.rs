@@ -99,7 +99,22 @@ pub fn rasterize_into_back(
     }
 
     if copy_front {
-        // caller 已 copy_front_to_back；若未复制则清底
+        // caller 已 copy_front_to_back：脏区内先重铺白底再重绘，与全量路径 memset
+        // 白底语义对齐。部分重绘若直接在旧帧上叠画，半透明图元会与自身上一帧的
+        // 渲染结果二次 src-over 混合、逐帧向饱和漂移（goal M3-c：rgba 背景
+        // (255,127,127)→(255,63,63)）。区外保留旧帧（未变内容）。
+        // GPU 臂无此问题：主 pass `LoadOp::Clear(WHITE)` 已清整个目标再按 scissor 绘制。
+        for (x, y, rw, rh) in &display_list.dirty_rects {
+            if *rw <= 0.0 || *rh <= 0.0 {
+                continue;
+            }
+            // 物理像素边界（floor/ceil 外扩 + 视口钳位），与下方 region 构造及 blit_region 拷回范围一致。
+            let x0 = (x * scale).floor().max(0.0) as u32;
+            let y0 = (y * scale).floor().max(0.0) as u32;
+            let x1 = ((x + rw) * scale).ceil().min(w as f32) as u32;
+            let y1 = ((y + rh) * scale).ceil().min(h as f32) as u32;
+            back.clear_rect(x0, y0, x1, y1, [255, 255, 255, 255]);
+        }
     } else {
         back.clear(255, 255, 255, 255);
     }
