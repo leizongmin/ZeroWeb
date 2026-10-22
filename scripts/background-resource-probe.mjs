@@ -300,8 +300,10 @@ async function run(conn) {
     await attachAll(conn);
     const sessions = attachedSessions();
     const page = sessions[sessions.length - 1];
-    const src = `http://127.0.0.1:${httpPort}/bg03-nav-source.html`;
-    const dst = `http://127.0.0.1:${httpPort}/bg03-nav-target.html`;
+    // --nav-src/--nav-dst 覆盖：M2-S2 隔离腿（纯文本页互导）复用同一编排，
+    // 默认仍为 source（fetch+timer 持有形态）/ target（轻量后继页）。
+    const src = `http://127.0.0.1:${httpPort}/${argOf("--nav-src", "bg03-nav-source.html")}`;
+    const dst = `http://127.0.0.1:${httpPort}/${argOf("--nav-dst", "bg03-nav-target.html")}`;
     const nav0 = await navigateAndWait(conn, page.sessionId, src);
     if (!nav0.ok) throw new Error(`initial navigateAndWait failed: ${nav0.error}`);
     result.start_nav = nav0;

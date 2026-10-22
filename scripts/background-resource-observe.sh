@@ -43,7 +43,7 @@ case "$SCENARIO" in
     bg02-static-gui) START_URL="bg02-static.html";        RAF_DRIVEN=1; GUI=1 ;;
     bg02-anim-compgui) START_URL="bg02-offscreen-anim.html"; RAF_DRIVEN=1; GUI=1; COMP_ANIM=1 ;;
     bg02-onscreen-compgui) START_URL="bg02-onscreen-anim.html"; RAF_DRIVEN=1; GUI=1; COMP_ANIM=1 ;;
-    bg03-nav)        START_URL="bg03-nav-source.html";    RAF_DRIVEN=0; WALL=45 ;;
+    bg03-nav)        START_URL="bg03-nav-source.html";    RAF_DRIVEN=0; WALL="${3:-45}" ;;
     bg04-cycle)      START_URL="bg02-static.html";        RAF_DRIVEN=0; WALL=40 ;;
     *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;;
 esac
@@ -121,6 +121,8 @@ EOF
     if node "$ROOT/scripts/background-resource-probe.mjs" \
         --scenario "$PROBE_SCENARIO" --cdp-port "$CDP_PORT" --http-port "$HTTP_PORT" \
         --start-url "http://127.0.0.1:$HTTP_PORT/$START_URL" \
+        ${BG_NAV_SRC:+--nav-src "$BG_NAV_SRC"} ${BG_NAV_DST:+--nav-dst "$BG_NAV_DST"} \
+        ${BG_NAV_CYCLES:+--nav-cycles "$BG_NAV_CYCLES"} \
         --wall-ms "$((WALL * 1000))" --out "$OUT/probe.json"; then
         PROBE_OK=1
     fi

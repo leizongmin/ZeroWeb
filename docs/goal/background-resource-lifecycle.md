@@ -1,7 +1,7 @@
 # 后台页面与重复导航资源生命周期
 
-**版本**：v1.2 / 2026-10-22
-**状态**：Active（M1 资源基线已建立；M2-S1 挂起 fetch 取消路径已修复并生产复测通过；RSS 增长归因 S2 未开始）
+**版本**：v1.3 / 2026-10-22
+**状态**：Active（M1 基线 + M2-S1 fetch 取消修复复测通过 + M2-S2 RSS 有界平台判定；文档存活计数与 DC-1/DC-2 修复面未开始）
 **父目标**：[zero-web](zero-web.md) / **控制面**：[master](background-resource-lifecycle/master.md)
 
 ## 0. 执行摘要与 Mission
@@ -14,7 +14,7 @@
 
 静态基线：`apps/browser/src/process_backend.rs` 存在 `renderer_poll_order_prioritizes_active_tab_and_throttles_background_tabs`；renderer 运行入口为 `apps/renderer/src/runtime.rs`，页面共享入口在 `crates/page-runtime/src/lib.rs`。轮询节流不证明 timer/动画/合成器已停无效工作。
 
-生产资源基线：M1 已建立（2026-10-22，12 腿，headless CDP + GUI X :20 双口径），见 [M1 基线](background-resource-lifecycle/evidence/2026-10-22-m1-baseline/ANALYSIS.md)。要点：嵌套零延迟 timer ~20 万 iter/s 无钳制；前后台 tab CPU 无差异（后台无策略）；CSS 动画不驱动持续呈现（视口内外一致，呈现链未激活）；重复导航 renderer RSS +224MB 且 stall fetch 连接随导航滞留；tab 开关 renderer 进程复用、内存不回落。M2-S1（2026-10-22）修复挂起 fetch 无取消路径——调度器 `cancel_by_url` + renderer 页面 fetch 登记 + browser `cancel_tab` 扩展，生产复测连接随导航关闭（stall 封顶 6→16 逐次新建、peer 关闭 0→15），RSS 增长面不变待 S2 归因，见 [M2-S1](background-resource-lifecycle/evidence/2026-10-22-m2-s1-fetch-cancel/ANALYSIS.md)。观测资产：`scripts/background-resource-{observe.sh,probe.mjs,sampler.py,fixture-server.py}` + `tests/fixtures/background-resource/`。
+生产资源基线：M1 已建立（2026-10-22，12 腿，headless CDP + GUI X :20 双口径），见 [M1 基线](background-resource-lifecycle/evidence/2026-10-22-m1-baseline/ANALYSIS.md)。要点：嵌套零延迟 timer ~20 万 iter/s 无钳制；前后台 tab CPU 无差异（后台无策略）；CSS 动画不驱动持续呈现（视口内外一致，呈现链未激活）；重复导航 renderer RSS +224MB 且 stall fetch 连接随导航滞留；tab 开关 renderer 进程复用、内存不回落。M2-S1（2026-10-22）修复挂起 fetch 无取消路径——调度器 `cancel_by_url` + renderer 页面 fetch 登记 + browser `cancel_tab` 扩展，生产复测连接随导航关闭（61 次 create/cancel 零失手），见 [M2-S1](background-resource-lifecycle/evidence/2026-10-22-m2-s1-fetch-cancel/ANALYSIS.md)。M2-S2（2026-10-22）双腿 120 次导航判定 RSS 为爬坡+有界平台（非无界增长，M1 线性读数为窗口假象），文档存活计数待建，见 [M2-S2](background-resource-lifecycle/evidence/2026-10-22-m2-s2-rss-attribution/ANALYSIS.md)。观测资产：`scripts/background-resource-{observe.sh,probe.mjs,sampler.py,fixture-server.py}` + `tests/fixtures/background-resource/`。
 
 范围：各进程 CPU、RSS 趋势、旧文档/回调/连接/队列与呈现次数；前后台切换、重复导航和关闭后恢复。
 
