@@ -1119,6 +1119,31 @@
     } catch (_eSi) {}
     return false;
   }
+  // 模态 backdrop 命中面（s30，2026-10-23）：宿主 hit-test（runner
+  // resolve_pointer_target）对模态外落点取栈顶 open+模态 dialog 为事件
+  // target——::backdrop 几何覆盖视口，命中 backdrop 的事件 target 即其
+  // dialog（spec top-layer ::backdrop 事件派发语义）；引擎 backdrop 无布局
+  // 盒，以栈顶模态近似，仅模态存在时生效（非模态 show 不拦截）。与
+  // _zwDialogModalFocusGateOk 同一栈语义（stale 栈项跳过、仅栈顶）。
+  // https://html.spec.whatwg.org/multipage/interaction.html#modal-dialogs
+  function _zwDialogModalTopSel() {
+    try {
+      var _mtN = _zwDialogModalStack ? _zwDialogModalStack.length : 0;
+      for (var _mtI = _mtN - 1; _mtI >= 0; _mtI--) {
+        var _mtK = _zwDialogModalStack[_mtI];
+        if (!_zwDialogModal[_mtK] || !_zwTopLayer[_mtK]) continue; // stale 栈项
+        var _mtP = _proxyCache[_mtK];
+        if (!_mtP || !_mtP.hasAttribute || !_mtP.hasAttribute('open')) continue;
+        try { if (!_mtP.isConnected) continue; } catch (_eMtIc) { continue; }
+        return _mtP.__zwSelector || '';
+      }
+    } catch (_eMt) {}
+    return '';
+  }
+  globalThis._zwDialogModalTopSel = _zwDialogModalTopSel;
+  // 宿主 hit-test 谓词入口（runner resolve_pointer_target 页面域调用；shim 内
+  // 部消费者走词法绑定不经此）。
+  globalThis._zwDialogModalFocusGateOk = _zwDialogModalFocusGateOk;
   // ---------- R4600 dialog focusing steps 家族 end ----------
   // R3290：dialog open 内容属性是否 present（boolean 属性，presence 判定）。latest-wins 反映同 execute 内
   // pending set/remove（show/close 经 __zw_set_attr/__zw_remove_attr 异步入队，纯快照读 stale）。供 showModal
@@ -1156,8 +1181,14 @@
   // cancel 可取消 + close 异步收尾）。产品指针管线与 runner click 命令前步共用
   //（spec dialog light dismiss：pointerdown 触发、close request 序先于 click 语义）。
   // targetSel 为 null/空（无命中元素）→ 视为落点在全部 any 态 dialog 外。
+  // s30（2026-10-23）px/py：宿主 hit-test 把模态外落点 retarget 成栈顶模态
+  // dialog（::backdrop 无布局盒的近似）——target=dialog 本身且落点在其盒外 =
+  // 点击 ::backdrop：light dismiss 判定吃命中真实目标而非 retarget 派发面
+  //（Chromium 同款 md:dialog 且关闭），→ 盒外落点对 any/closerequest 态 dialog
+  // 发 close request；盒内（dialog 内容区）走常规包含链不 dismiss。px/py 缺省
+  //（click 命令前步）保持原判定。
   // https://html.spec.whatwg.org/multipage/interactive-elements.html#dialog-light-dismiss
-  globalThis.__zw_dialog_light_dismiss_check = function (targetSel) {
+  globalThis.__zw_dialog_light_dismiss_check = function (targetSel, px, py) {
     if (typeof document === 'undefined' || !document.querySelectorAll) return;
     var dialogs;
     try { dialogs = document.querySelectorAll('dialog'); } catch (_eLdQ) { return; }
@@ -1166,6 +1197,16 @@
     if (targetSel) {
       try { target = document.querySelector(targetSel); } catch (_eLdT) { target = null; }
     }
+    var backdropHit = false;
+    if (px != null && py != null && targetSel) {
+      try {
+        var bdTop = _zwDialogModalTopSel();
+        if (bdTop && bdTop === targetSel && target && target.getBoundingClientRect) {
+          var bdR = target.getBoundingClientRect();
+          backdropHit = !bdR || px < bdR.left || px > bdR.right || py < bdR.top || py > bdR.bottom;
+        }
+      } catch (_eLdBd) {}
+    }
     for (var i = 0; i < dialogs.length; i++) {
       var d = dialogs[i];
       var ds = d.__zwSelector || null;
@@ -1173,6 +1214,7 @@
       var dk = _elKey(ds, dh);
       if (!_zwDialogHasOpen(ds, dh)) continue;
       if (_zwDialogClosedByState(ds, dh, dk) !== 'any') continue;
+      if (backdropHit) { _zwDialogRequestClose(dk, ds, dh, undefined); continue; }
       var contains = false;
       try { contains = d.contains ? !!d.contains(target) : false; } catch (_eLdC) { contains = false; }
       if (target && (target === d || contains)) continue;

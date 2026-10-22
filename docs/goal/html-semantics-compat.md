@@ -2,11 +2,46 @@
 
 **版本**: v2.0
 **日期**: 2026-10-21（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 29 收口（模态焦点门接页面 focus() + shadow 包含判定，inert-node-is-unfocusable 13F 全清，dialog 集群 82 files 407 subtest 317P/87F/3T 同 key 回归 0、增益 14），下一步按挂账序推进
+**状态**: Active——M2 切片 30 收口（模态 hit-test/事件派发 inert 排除 + backdrop 命中面，modal-dialog-blocks-mouse-events 收口 + backdrop-receives-element-events 3T 基线 Timeout→Pass，dialog 集群 82 files 320P/85F/2T 同 key 回归 0），下一步按挂账序推进
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-23 M2 切片 29 收口）**：模态焦点门接页面
+> **▶ 当前状态（2026-10-23 M2 切片 30 收口）**：rendering inert 域第一
+> 刀——hit-test 切面收口。宿主指针命中（runner `resolve_pointer_target`
+> 候选循环）不排除模态 inert 子树，点击模态外元素照常命中。修复三件：
+> ① 命中候选循环接 inert 排除（跳过 `!_zwDialogModalFocusGateOk(e)`——
+> s29 门语义与 hit-test inert 排除同源直接复用，门补 globalThis 导出供
+> 页面域调用，缺省回落原行为）；② backdrop 命中回落：候选全排除且栈顶
+> 模态存在 → target=栈顶模态 dialog（新增 part01 `_zwDialogModalTopSel`；
+> ::backdrop 无布局盒的近似）——真 Chrome 仲裁（ancestor 语料独立探针）
+> 实测「点击 inert 区域 target=HTML」（backdrop 被 display:none 不渲染、
+> 穿透到根），回落读 styleSheets 文本扫 `::backdrop{...display:none}`
+> 命中则 target=documentElement；③ light dismiss backdrop 臂
+>（`__zw_dialog_light_dismiss_check` 加 px/py）：backdrop 回落 target=
+> dialog 曾压制 dismiss——target=栈顶模态 dialog 本身且落点在 gBCR 外 =
+> 点击 backdrop → 照发 close request（真 Chrome md:dialog 且关闭）。
+> 账本：dialog 集群 82 files **320P/85F/2T**（s29 同集 317P/87F/3T），
+> 同 key 回归 **0**、增益 2（blocks-mouse-events F→P、light-dismiss-
+> touch F→P 连带）+ backdrop-receives-element-events **Timeout→Pass**
+>（3T 基线之一收口，backdrop 命中面直接语料）。gates：engine lib
+> **3427P/0F**、clippy -D warnings、fmt clean、零新增依赖。账本见
+> [evidence/2026-10-23-m2s30-modal-hit-test.md](html-semantics-compat/evidence/2026-10-23-m2s30-modal-hit-test.md)。
+> **本轮钉定的相邻归因**：ancestor-is-inert 红因已换——dialog showModal
+> 后 UA `position:absolute` 缺失（探针 pos=static、盒 (101,201,50x50)
+> 落进父 div 内容区），归 abspos/layout 账（与「showModal 居中」同根），
+> 本轮命中面修复已为该案铺平；inert-svg-hittest `:active` 断言引擎恒
+> false（matcher 运行时伪类臂缺 active/hover），归交互态伪类账；
+> selection 两案依赖指针拖选→Selection 链路，挂账；dialog-inert 依赖
+> 居中布局，归 abspos 账。
+> **下一步**：dialog UA showModal 布局（absolute + inset:0 + margin:auto
+> 居中——abspos-dialog-layout ~10F 与 ancestor-is-inert/dialog-inert 同
+> 根）或按挂账序 popover 有效性语义（`:popover-open` 选择器 +
+> hidePopover not-showing 抛 + popover-simple 余 hang）、impl-doc
+> wrapper requestClose、anchor-with-inline 导航缺口、parser form element
+> pointer 4F、custom command `--` 前缀 CommandEvent defer、ESC 组栈边缘
+> 乱序、非模态 close 不出组栈、R371 模板残留。
+>
+> **▶ 上轮状态（2026-10-23 M2 切片 29 收口）**：模态焦点门接页面
 > focus()——s28 门只覆盖宿主驱动路径（pre-focus 步、mousedown 默认动
 > 作），页面直调 `el.focus()` 不在门内，inert-node-is-unfocusable 13F。
 > 修复四件：① `part04 focus()` trap 接门（已聚焦 no-op 之后、失连臂之
@@ -30,13 +65,6 @@
 > remove-dialog-should-unblock-document 连带 F→P）；gates：engine lib
 > **3426P/0F**（含 G5/G6）。账本见
 > [evidence/2026-10-23-m2s29-page-focus-gate.md](html-semantics-compat/evidence/2026-10-23-m2s29-page-focus-gate.md)。
-> **下一步**：按挂账序推进 inert 计算态余量（rendering inert 整体：hit
-> -test/编辑/选中面）、abspos/layout ~10F（rendering 域）、popover 有效
-> 性语义（`:popover-open` 选择器 + hidePopover not-showing 抛 +
-> popover-simple 余 hang）、impl-doc wrapper requestClose、
-> anchor-with-inline 导航缺口、parser form element pointer 4F、custom
-> command `--` 前缀 CommandEvent defer、ESC 组栈边缘乱序、非模态 close
-> 不出组栈、R371 模板残留。
 >
 > **▶ 上轮状态（2026-10-23 M2 切片 28 收口）**：corner-cases 余 2F 收口
 > ——先建真 Chrome 基准仲裁（playwright-core + chromium-1243，CDP 真实

@@ -9406,7 +9406,9 @@ var best=null,bestArea=Infinity;\
 var all=document.querySelectorAll('body, body *');\
 for(var i=0;i<all.length;i++){{var e=all[i];if(!e.getBoundingClientRect)continue;\
 var r=e.getBoundingClientRect();\
-if(r&&r.width>0&&r.height>0&&px>=r.left&&px<=r.right&&py>=r.top&&py<=r.bottom){{var a=r.width*r.height;if(a<=bestArea){{bestArea=a;best=e;}}}}}}\
+if(r&&r.width>0&&r.height>0&&px>=r.left&&px<=r.right&&py>=r.top&&py<=r.bottom){{\
+if(globalThis._zwDialogModalFocusGateOk&&!globalThis._zwDialogModalFocusGateOk(e))continue;\
+var a=r.width*r.height;if(a<=bestArea){{bestArea=a;best=e;}}}}}}\
 var imgs=document.querySelectorAll('img[usemap]');\
 for(var mi=imgs.length-1;mi>=0;mi--){{var im=imgs[mi];var rim=im.getBoundingClientRect();\
 if(!(rim&&rim.width>0&&rim.height>0&&px>=rim.left&&px<=rim.right&&py>=rim.top&&py<=rim.bottom))continue;\
@@ -9423,7 +9425,10 @@ else if(sh==='poly'&&cs.length>=6){{var inn=false,jj=0,kk=cs.length/2-1;for(;jj<
 if(inside){{best=a;break;}}}}\
 if(best&&best.tagName&&String(best.tagName).toLowerCase()==='area')break;}}\
 if(best&&String(best.tagName).toUpperCase()==='IFRAME'){{return '@zwframe:'+((best.__zwSelector||(best.id?'#'+best.id:''))||'')+'|'+px+'|'+py;}}\
-return (best?((best.__zwSelector||(best.id?'#'+best.id:''))||''):'')+'|'+px+'|'+py;}})()",
+var msel=(globalThis._zwDialogModalTopSel?globalThis._zwDialogModalTopSel():'');\
+if(msel){{try{{var st='';var ss=document.styleSheets;for(var si=0;si<ss.length;si++){{var on=ss[si].ownerNode;if(on&&on.textContent)st+=on.textContent;}}\
+if(/::backdrop\\s*\\{{[^}}]*display\\s*:\\s*none/i.test(st))msel='html';}}catch(_eMh){{}}}}\
+return (best?((best.__zwSelector||(best.id?'#'+best.id:''))||''):msel)+'|'+px+'|'+py;}})()",
         sel = sel_js,
         ox = off_x,
         oy = off_y,

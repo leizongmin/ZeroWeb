@@ -15442,7 +15442,7 @@
     // 命令共用本全局；non-any 态（默认模态 closerequest / none）不受影响。
     // https://html.spec.whatwg.org/multipage/interactive-elements.html#dialog-light-dismiss
     try {
-      if (typeof __zw_dialog_light_dismiss_check === 'function') __zw_dialog_light_dismiss_check(sel);
+      if (typeof __zw_dialog_light_dismiss_check === 'function') __zw_dialog_light_dismiss_check(sel, x, y);
     } catch (_eLdPd) {}
     var st = _zwPtrState;
     var _dragSel0 = sel; // 拖选 sel 键回落锚（retarget 前的 origin 元素）
