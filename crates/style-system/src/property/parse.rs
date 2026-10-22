@@ -1254,11 +1254,12 @@ pub fn parse_font_family(value: &str) -> Vec<String> {
             result.push(format!("\"{inner}\""));
             continue;
         }
-        // 未引号的名称必须仅包含 CSS 标识符字符（字母、数字、连字符、下划线、空格）
-        // 包含 !@#$% 等无效字符的名称应使整个声明无效（CSS 规范 § 3.1）
-        if s.chars()
-            .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == ' ')
-        {
+        // 未引号的名称是 custom-ident 序列（css-fonts-4 §family-name-value）：每个
+        // ident 须满足 CSS ident 语法——数字开头（`5testfoo`/`5_0`）或 '-' 后跟数字
+        //（`-5testfoo`）非法 → 整个声明无效（R5230：font-family-valid-characters-002
+        // 此前被字符集检查误接受 → fallback serif 渲染出可读 "Fail"，应忽略声明
+        // 继承 Ahem）。含 !@#$% 等无效字符同样整条无效（CSS 规范 § 3.1）。
+        if s.split_ascii_whitespace().all(is_css_ident) {
             result.push(s.to_string());
         } else {
             // 无效字符 → 整个声明无效
@@ -1266,6 +1267,28 @@ pub fn parse_font_family(value: &str) -> Vec<String> {
         }
     }
     result
+}
+
+/// CSS ident 语法最小校验（css-syntax-3 §4）：首字符为字母/`_`/≥U+0080，或 `-`
+///（`-` 后不得为数字或结尾；`--` 前缀合法）；后续字符加数字与 `-`。
+/// 不处理 escape（含 `\` 的名字走 invalid 分支，与既有字符集检查口径一致）。
+fn is_css_ident(s: &str) -> bool {
+    let ident_start = |c: char| c.is_ascii_alphabetic() || c == '_' || (c as u32) >= 0x80;
+    let ident_part = |c: char| ident_start(c) || c.is_ascii_digit() || c == '-';
+    let mut chars = s.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if first == '-' {
+        match chars.next() {
+            // '--' 前缀（custom-property 风格）与 '-a' 形态合法
+            Some(second) if ident_start(second) || second == '-' => {}
+            _ => return false,
+        }
+    } else if !ident_start(first) {
+        return false;
+    }
+    chars.all(ident_part)
 }
 
 fn split_font_family_list(value: &str) -> Option<Vec<&str>> {

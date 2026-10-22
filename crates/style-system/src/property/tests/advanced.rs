@@ -458,6 +458,32 @@ fn test_parse_font_family_single() {
     assert_eq!(families, vec!["monospace"]);
 }
 
+/// R5230（css-fonts-4 §family-name-value）：unquoted 族名的 ident 须满足 CSS ident
+/// 语法——数字开头（`5testfoo`/`5_0`/`5-0`/`5foo`）或 '-' 后跟数字（`-5testfoo`/
+/// `-5bar`/`-5`）非法 → 整条声明无效（空 Vec）。font-family-valid-characters-002
+/// 此前误接受 → fallback serif 渲染出可读 "Fail"。
+#[test]
+fn test_parse_font_family_invalid_ident_starts_invalid() {
+    // 数字开头
+    assert_eq!(parse_font_family("5testfoo, serif"), Vec::<String>::new());
+    assert_eq!(parse_font_family("testfoo 5-0, serif"), Vec::<String>::new());
+    assert_eq!(parse_font_family("test 5foo, serif"), Vec::<String>::new());
+    assert_eq!(parse_font_family("testfoo 5_0, serif"), Vec::<String>::new());
+    assert_eq!(parse_font_family("-5testfoo, serif"), Vec::<String>::new());
+    // '-' 后跟数字
+    assert_eq!(parse_font_family("testfoo -5, serif"), Vec::<String>::new());
+    assert_eq!(parse_font_family("testfoo -5bar, serif"), Vec::<String>::new());
+}
+
+/// R5230 合法形态守卫：`_` 开头、多词 ident 序列、`--` 前缀保持接受。
+#[test]
+fn test_parse_font_family_valid_ident_forms_kept() {
+    assert_eq!(parse_font_family("testfoo _5, Ahem"), vec!["testfoo _5", "Ahem"]);
+    assert_eq!(parse_font_family("_5testfoo, Ahem"), vec!["_5testfoo", "Ahem"]);
+    assert_eq!(parse_font_family("Times New Roman"), vec!["Times New Roman"]);
+    assert_eq!(parse_font_family("--custom, serif"), vec!["--custom", "serif"]);
+}
+
 #[test]
 /// parse_line_height 无单位零
 fn test_parse_line_height_zero() {
