@@ -39,7 +39,8 @@ GPU 管线深依赖——**除 M1 资产切片外全部用户门控**（先例�
 
 **关键约束**：
 1. **M1 之外全部用户门控**：每切片启动前用户点名；无人值守循环遇 M2+ 边界输出
-   `CONTINUE: 等待用户门控` 并转其他面
+   `BLOCK: 等待用户门控` 立即停（原定 `CONTINUE` 在单 goal run 无他面可转时
+   会 ~15s/轮自旋——2026-10-22 实证 8 轮零状态空转，见 master.md）
 2. **GPU 栈依托 render-foundation**：不另起 wgpu 实例；CPU 回退路径评估记账
 3. **conformance 体量分级**：M1 盘点用例分布后与用户确认首批收敛子集
 
@@ -86,8 +87,9 @@ zero-protocol 契约；触 GPU 进程边界即 BLOCK 上报。
 
 ## Final Output Protocol
 
-`DONE`（DC-1~4 全满足或用户豁免 DC-2/3 并定稿挂账）/ `CONTINUE: <下一步>`（默认；
-M2+ 未获门控时输出 `CONTINUE: 等待用户门控` 并转其他面）/ `BLOCK: <原因>`。
+`DONE`（DC-1~4 全满足或用户豁免 DC-2/3 并定稿挂账）/ `CONTINUE: <下一步>`（仅当
+本轮有实质推进）/ `BLOCK: <原因>`（M2+ 未获门控时输出 `BLOCK: 等待用户门控`，
+rally 立即停——`CONTINUE` 无自主工作时逐轮自旋）。
 
 ## Document Control / Archive Policy
 

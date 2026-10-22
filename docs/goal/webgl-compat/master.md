@@ -1,7 +1,7 @@
 # WebGL 兼容 — 运行时控制面板（master.md）
 
 **入口文档**: [../webgl-compat.md](../webgl-compat.md)
-**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-22（M1 建议书飞书通知登记）
+**创建日期**: 2026-09-12（goal 立项） | **最后更新**: 2026-10-22（Rally 循环停 + 门控等待态契约修正）
 
 ## 当前状态
 
@@ -11,6 +11,13 @@
 无 GL 语义层现状不变，GPU 栈依托 render-foundation，不另起 wgpu 实例。
 M1 盘点与首批收敛子集建议书见
 [evidence/2026-10-22-m1-import-inventory.md](evidence/2026-10-22-m1-import-inventory.md)。
+
+**Rally 循环已停（2026-10-22 用户指示 park）**。当日 09:05–09:07 无人值守
+单 goal run 在 M1 完成后依原契约输出 `CONTINUE: 等待用户门控`，rally 协议视
+CONTINUE 为继续下一轮，~15s/轮自旋 8 轮零状态空转。契约已修：门控等待态改
+输出 `BLOCK: 等待用户门控`（rally 立即停），见 [../webgl-compat.md](../webgl-compat.md)
+约束 #1 与输出协议。重启 run 须用户点名
+（`bash scripts/rally-goal-99-webgl-compat.sh`），重启前仍待下方三项裁决。
 
 ## 缺口清单
 
