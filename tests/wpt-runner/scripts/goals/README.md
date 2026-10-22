@@ -43,7 +43,7 @@ goal 入口文档 `docs/goal/<goal>.md` DC-1。
 | 80 | [svg-compat](../../../../docs/goal/archive/svg-compat.md) | svg | **已收口**（2026-10-22 M4，corpus 70.3%，基线 8.8%，已归档）；SMIL 时钟等七项挂账归口他域；渲染面归 rendering-compat |
 | 90 | [security-hardening](../../../../docs/goal/archive/security-hardening.md) | content-security-policy; mixed-content; secure-contexts | **已收口**（2026-09-27） |
 | 92 | [web-api-batch2](../../../../docs/goal/archive/web-api-batch2.md) | clipboard-apis; fullscreen | **已收口**（2026-10-04） |
-| 99 | [webgl-compat](../../../../docs/goal/webgl-compat.md) | webgl | **远期门控**（M2+ 全门控）；M1 盘点完成 2026-10-22（pin 处 10 文件平铺，0 渲染断言——立项假设修正），待 M2 门控 |
+| 99 | [webgl-compat](../../../../docs/goal/webgl-compat.md) | webgl | **M4 收口定稿交付**（2026-10-23，DC-1~4 全满足，待用户签收）；基线 2112P/3F（3F 为上游 IDL 重载判据）、reftest 716/716；WebGL2/WebGPU 挂账定稿见 M4 evidence，签收前挂账结论即有效边界 |
 
 **预留与协调面（2026-10-08 更新）**：上表 10-29 槽位已全部立项。未拆候选：
 cssom-view / geometry-1（渲染 API 面，与 rendering-compat 工作面重叠，立项前先按
