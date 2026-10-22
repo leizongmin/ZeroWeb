@@ -38,9 +38,35 @@ pub fn resolve() -> Result<ProductVersion, String> {
 /// 导出产品版本，并在显式版本或可复现时间戳变化时让 Cargo 重新构建。
 pub fn emit_cargo_env() {
     let version = resolve().unwrap_or_else(|error| panic!("invalid product version: {error}"));
+    let commit = resolve_commit();
     println!("cargo:rustc-env=ZERO_BUILD_VERSION={}", version.text);
+    println!("cargo:rustc-env=ZERO_BUILD_COMMIT={commit}");
     println!("cargo:rerun-if-env-changed=ZERO_BUILD_VERSION");
     println!("cargo:rerun-if-env-changed=SOURCE_DATE_EPOCH");
+    println!("cargo:rerun-if-env-changed=ZERO_BUILD_COMMIT");
+    // git 短 hash 尽力跟随 HEAD 变化；打包脚本显式传 ZERO_BUILD_COMMIT 保证产物确定性。
+    println!("cargo:rerun-if-changed=../../.git/HEAD");
+    println!("cargo:rerun-if-changed=../../.git/logs/HEAD");
+}
+
+/// 解析构建 commit：显式 `ZERO_BUILD_COMMIT` 优先，其次仓库 git 短 hash，均不可得用 `unknown`。
+pub fn resolve_commit() -> String {
+    if let Ok(value) = std::env::var("ZERO_BUILD_COMMIT") {
+        let value = value.trim().to_string();
+        if !value.is_empty() {
+            return value;
+        }
+    }
+
+    Command::new("git")
+        .args(["rev-parse", "--short=12", "HEAD"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "unknown".to_string())
 }
 
 /// 从 Unix 时间戳生成 UTC 日期版本。

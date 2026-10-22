@@ -131,6 +131,10 @@ fn parse_args() -> Result<CliArgs, String> {
         print_usage();
         std::process::exit(0);
     }
+    if args.iter().any(|arg| arg == "--version") {
+        println!("{}", zero_product_version::version_string());
+        std::process::exit(0);
+    }
     parse_args_from(args, RenderMode::from_env()?)
 }
 
@@ -630,6 +634,7 @@ Options:
   --gui-smoke-dir=<dir>          Write GUI smoke step screenshots into this directory
   --parity-scenario=<json>       Run a real-window Chrome parity interaction scenario
   --parity-output-dir=<dir>      Write ZeroWeb parity evidence into this directory
+  --version                      Print version and build commit, then exit
   --help, -h                     Show this help
 
 Environment: {}={}",

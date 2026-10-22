@@ -69,6 +69,18 @@ try {
 }
 $env:ZERO_BUILD_VERSION = $Version
 
+# 构建 commit 注入二进制 --version（无 git 环境回退 unknown，与 product-version 一致）
+$Commit = $env:ZERO_BUILD_COMMIT
+if (-not $Commit) {
+    try {
+        $Commit = (& git -C $ProjectRoot rev-parse --short=12 HEAD 2>$null)
+        if ($LASTEXITCODE -ne 0 -or -not $Commit) { $Commit = "unknown" }
+    } catch {
+        $Commit = "unknown"
+    }
+}
+$env:ZERO_BUILD_COMMIT = "$Commit"
+
 Write-Host "[INFO] ZeroBrowser v$Version Windows 打包" -ForegroundColor Green
 
 # 编译（browser、renderer 与 compositor 须在同一输出目录，供多进程 spawn）

@@ -35,6 +35,12 @@ IFS=. read -r version_year version_month version_day <<< "$APP_VERSION"
     || { echo "[ERROR] version contains an invalid date: $APP_VERSION" >&2; exit 1; }
 export ZERO_BUILD_VERSION="$APP_VERSION"
 
+# 构建 commit 注入二进制 --version（无 git 环境回退 unknown，与 product-version 一致）
+if [[ -z "${ZERO_BUILD_COMMIT:-}" ]]; then
+    ZERO_BUILD_COMMIT="$(git -C "$PROJECT_ROOT" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
+fi
+export ZERO_BUILD_COMMIT
+
 # 颜色输出
 RED='\033[0;31m'
 GREEN='\033[0;32m'
