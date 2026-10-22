@@ -5,7 +5,11 @@
 use super::types::*;
 
 /// 计算样式结构体，包含所有 Tier 1 CSS 属性。
-#[derive(Debug, Clone)]
+///
+/// `PartialEq` 是增量对照（incremental-rendering-oracle）的输出契约：全部字段
+/// 均为可观察 CSS 值，结构相等即双路径（全量/增量）可观察样式一致；
+/// `CustomProperties` 为 `Arc<HashMap>`，相等比较按内容、与插入顺序无关。
+#[derive(Debug, Clone, PartialEq)]
 pub struct ComputedStyle {
     // ── 盒模型 ──
     /// display 属性。

@@ -11,6 +11,7 @@ mod edge;
 mod first_letter;
 mod font_feature_values;
 mod helpers;
+mod incremental_oracle;
 mod inline_style;
 mod matcher_coverage;
 mod matcher_coverage2;

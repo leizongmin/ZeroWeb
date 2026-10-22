@@ -1036,7 +1036,7 @@ pub enum ScrollMarkerGroupComputedValue {
 /// R4257：`::scroll-marker-group` 伪样式载荷——Box 化（R3867 帧体量纪律：ComputedStyle
 /// 内联增长会推破深嵌套页递归栈顶），`scroll_marker_group` 单指针字段承载
 /// 位置（side）+ 伪样式（style）。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ScrollMarkerGroupPseudo {
     /// before / after 滚动内容。
     pub side: ScrollMarkerGroupComputedValue,
@@ -1046,7 +1046,7 @@ pub struct ScrollMarkerGroupPseudo {
 
 /// R4262（CSS Overflow 5 §scroll-buttons）：`::scroll-button(<direction>)` per-direction
 /// 伪样式载荷——Box 化单指针承载（R3867 同上）。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ScrollButtonsPseudo {
     /// 已生成按钮（canonical 方向 + 该方向计算样式）。方向编码：
     /// 0=block-start 1=block-end 2=inline-start 3=inline-end。

@@ -1,7 +1,7 @@
 # 增量样式布局与完整计算对照
 
 **版本**：v1.0 / 2026-10-20
-**状态**：Active（启动门控：本轮规划与脚本已授权，产品开发等待后续明确启动）
+**状态**：Active（2026-10-23 Rally 运行解除启动门控，开发进行中；执行状态见 [master](incremental-rendering-oracle/master.md)）
 **父目标**：[zero-web](zero-web.md) / **控制面**：[master](incremental-rendering-oracle/master.md)
 
 ## 0. 执行摘要与 Mission
