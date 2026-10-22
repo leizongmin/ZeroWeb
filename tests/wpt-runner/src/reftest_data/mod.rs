@@ -18,6 +18,7 @@ mod css_text;
 mod css_text_decor;
 mod css_values;
 mod css_writing_modes;
+mod webgl;
 
 use crate::manifest::ReftestReference;
 use crate::reftest::{ReftestCase, ReftestCategory, ReftestConfig};
@@ -92,5 +93,6 @@ fn all_reftests() -> Vec<&'static InlineReftestDef> {
     all.extend(css_values::reftests().iter());
     all.extend(css_writing_modes::reftests().iter());
     all.extend(css_cssom::reftests().iter());
+    all.extend(webgl::reftests().iter());
     all
 }

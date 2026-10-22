@@ -80,7 +80,11 @@ zero-protocol 契约；触 GPU 进程边界即 BLOCK 上报。
 - [x] **DC-1**（2026-10-22）：webgl/ corpus 导入 + 用例分布盘点（dehydrated/渲染断言占比）+
       首批收敛子集建议书提交用户 + suites CSV 回填
       （[M1 盘点](webgl-compat/evidence/2026-10-22-m1-import-inventory.md)）
-- [ ] **DC-2**（2026-10-22 授权）：WebGL 1.0 最小上下文（创建/clear/draw）WPT 子集收敛
+- [x] **DC-2**（2026-10-22）：批次 B 全量收敛——上下文对象面 + WebIDL idlharness +
+      buffer/texture 错误语义 + getError 状态机 + clear() 光栅化（reftest 标尺①）；
+      基线 2112/2115（3 Fail = 上游 IDL 重载判据）；draw 真光栅化归 M3 程序管线簇
+      （corpus 批 B 无渲染断言案，draw 面即错误语义）
+      （[M2 切片](webgl-compat/evidence/2026-10-22-m2-context-slice.md)）
 - [ ] **DC-3**（2026-10-22 授权）：缓冲/纹理/shader 程序管线逐簇收敛（切片边界
       Agent 自划，逐簇落账）
 - [ ] **DC-4**：`make test` 全绿 + clippy `-D warnings` + fmt + reftest 零回归
@@ -88,8 +92,8 @@ zero-protocol 契约；触 GPU 进程边界即 BLOCK 上报。
 
 ## 活跃里程碑
 
-**M1** 导入盘点（唯一自主切片；corpus fetch 用编号脚本 `tests/wpt-runner/scripts/goals/99-webgl-compat.sh`（索引 README；幂等续拉，GitHub API 限流时部分目录跳过属预期）——**2026-10-22 完成**，见 [M1 盘点](webgl-compat/evidence/2026-10-22-m1-import-inventory.md)）→ **M2-M3**（自主切片：M2 批次 B 全量一次收 + clear/draw 标尺 ①+②；M3 边界
-Agent 自划——均 2026-10-22 裁决）→
+**M1** 导入盘点（唯一自主切片；corpus fetch 用编号脚本 `tests/wpt-runner/scripts/goals/99-webgl-compat.sh`（索引 README；幂等续拉，GitHub API 限流时部分目录跳过属预期）——**2026-10-22 完成**，见 [M1 盘点](webgl-compat/evidence/2026-10-22-m1-import-inventory.md)）→ **M2** 批次 B 全量一次收 + clear/draw 标尺 ①+②（**2026-10-22 完成**——通道 + 上下文对象面 + 错误语义 + clear 光栅化 + reftest 标尺，基线 2112/2115，见 [M2 切片](webgl-compat/evidence/2026-10-22-m2-context-slice.md)）→ **M3** 程序管线逐簇（边界
+Agent 自划——2026-10-22 裁决）→
 **M4** 收口（WebGL2/WebGPU 挂账定稿）。
 
 ## Final Output Protocol

@@ -339,6 +339,7 @@ fn main() {
         "testharness-webstorage" => cmd_testharness_webstorage(&options, filter.as_deref()),
         "testharness-compression" => cmd_testharness_compression(&options, filter.as_deref()),
         "testharness-webcrypto" => cmd_testharness_webcrypto(&options, filter.as_deref()),
+        "testharness-webgl" => cmd_testharness_webgl(&options, filter.as_deref()),
         "testharness-html-semantics" => cmd_testharness_html_semantics(&options, filter.as_deref()),
         "testharness-page-state" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
             testharness_page_state::run_page_state_cases(wpt_root, filter)
@@ -1166,6 +1167,50 @@ fn cmd_testharness_compression(options: &CliOptions, filter: Option<&str>) {
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| std::path::PathBuf::from("tests/wpt-runner/wpt-data"));
     let cases = testharness::run_compression_cases(&wpt_root, filter);
+    let failed = cases.iter().any(|(_, results)| {
+        results
+            .iter()
+            .any(|result| result.status != testharness::HarnessStatus::Pass)
+    });
+
+    match options.format {
+        OutputFormat::Json => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&cases).unwrap_or_else(|_| "[]".into())
+            );
+        }
+        OutputFormat::Text | OutputFormat::Tap => {
+            for (case, results) in &cases {
+                for result in results {
+                    println!("{:?} {case} :: {}", result.status, result.name);
+                    if let Some(message) = &result.message {
+                        println!("  {message}");
+                    }
+                }
+            }
+        }
+    }
+    if failed || cases.is_empty() {
+        std::process::exit(1);
+    }
+}
+
+/// `testharness-webgl` 子命令 — 跑导入的上游 `webgl/` corpus（webgl-compat goal
+/// M2——getContext 上下文对象面 + buffer/texture 错误语义 + idlharness 接口面）。
+///
+/// 用例由 `scripts/goals/99-webgl-compat.sh` 拉到 `wpt-data/webgl/`（gitignored；
+/// idlharness 资产按 2026-10-22 裁决③补拉）；扫描根见 `testharness::run_webgl_cases`
+///（无 skip 记账排除）。退出码：有用例非 Pass 或用例集为空 → 1（与
+/// testharness-compression 一致）。filter 按路径子串透传：
+/// `make testharness-webgl FILTER=bufferSubData`。
+fn cmd_testharness_webgl(options: &CliOptions, filter: Option<&str>) {
+    let wpt_root = options
+        .wpt_data
+        .as_deref()
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("tests/wpt-runner/wpt-data"));
+    let cases = testharness::run_webgl_cases(&wpt_root, filter);
     let failed = cases.iter().any(|(_, results)| {
         results
             .iter()

@@ -6911,8 +6911,31 @@
       // R34xx：缺参 → TypeError（WebIDL 必参——2d.canvas.context.invalid.args 的
       // canvas.getContext()）。
       if (arguments.length === 0) throw new TypeError('getContext: missing contextType');
-      if (String(type) !== '2d') return null; // 仅 2d；webgl/webgl2 defer
-      if (el._ctx) return el._ctx;
+      // M2（2026-10-22 webgl-compat goal）：'webgl'/'experimental-webgl' 经 part08
+      // globalThis._zwMakeCtxWebGL 建 WebGL 上下文（同一 host 2d 位图作 drawing
+      // buffer）；'webgl2' 实例面 M4 挂账 → null（接口对象已注册）。
+      var t = String(type);
+      if (t === 'webgl' || t === 'experimental-webgl') {
+        // HTML spec canvas.getContext：上下文类型冲突（已持 2d）→ null；同类型复用。
+        if (el._ctx) return el._ctx._zwCtxType === 'webgl' ? el._ctx : null;
+        if (typeof globalThis._zwMakeCtxWebGL !== 'function' ||
+            typeof __zw_canvas_op !== 'function') return null;
+        var idG = __zw_canvas_op('0', 'getContext2d', String(el.width), String(el.height),
+          'srgb', 'unorm8');
+        if (!idG || String(idG).charAt(0) === '!') return null;
+        var wctx = globalThis._zwMakeCtxWebGL(String(idG),
+          Math.min(el.width | 0, 16384), Math.min(el.height | 0, 16384), el); // MAX_CANVAS_DIM（canvas.rs）对齐
+        wctx._zwCtxType = 'webgl';
+        el._ctx = wctx;
+        // R57 painter 桥（part04 DOM canvas 同语义）：clear() 光栅化落同一 host
+        // 位图，经 data-zw-canvas-ctx 出页面图元。
+        if (_handle && typeof __zw_set_attr_handle === 'function') {
+          __zw_set_attr_handle(_handle, 'data-zw-canvas-ctx', String(idG));
+        }
+        return wctx;
+      }
+      if (t !== '2d') return null; // 仅 2d/webgl；其余类型（webgl2/bitmaprenderer 等）defer
+      if (el._ctx) return el._ctx._zwCtxType === 'webgl' ? null : el._ctx;
       if (typeof __zw_canvas_op !== 'function') return null;
       var id = __zw_canvas_op('0', 'getContext2d', String(el.width), String(el.height),
         (arguments.length > 1 && arguments[1] && typeof arguments[1] === 'object' && typeof arguments[1].colorSpace === 'string')

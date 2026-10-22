@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="match" href="clear-scissor-zw-002-ref.html">
+<title>WebGL clear with scissor rect (bottom-left origin)</title>
+<!-- 本地自建 reftest（2026-10-22 webgl-compat goal M2，用户裁决② 标尺①）：
+     全清蓝后 enable(SCISSOR_TEST) + scissor(0,0,50,25) 清红。GL 窗口坐标原点
+     在左下 → 位图上半全蓝、左下红、右下蓝。
+     缺陷态：scissor 未生效（全红/全蓝）/ 原点未换算（左上红——top-left 谬误）→
+     与 ref 像素不等。
+     spec：https://www.khronos.org/registry/webgl/specs/latest/1.0/#5.14.11
+     （clear 仅写 scissor 矩形）、#5.14.4（scissor——GL 窗口坐标左下原点）。
+     账本：tests/wpt-runner/imported-tests.txt；wpt-data 为独立 repo（gitignored），
+     重拉后按主仓 tests/wpt-runner/local-reftests/ 同路径文件恢复并重跑
+     make import-wpt 重建 manifest。本页另有内联孪生（make reftest 常驻集）：
+     tests/wpt-runner/src/reftest_data/webgl.rs
+     id webgl/clear-scissor-zw-002——两处需同步维护。 -->
+</head>
+<body style="margin:0">
+<canvas id="cv" width="100" height="50" style="display:block"></canvas>
+<script>
+var gl = document.getElementById('cv').getContext('webgl');
+gl.clearColor(0, 0, 1, 1);
+gl.clear(gl.COLOR_BUFFER_BIT);
+gl.enable(gl.SCISSOR_TEST);
+gl.scissor(0, 0, 50, 25);
+gl.clearColor(1, 0, 0, 1);
+gl.clear(gl.COLOR_BUFFER_BIT);
+</script>
+</body>
+</html>

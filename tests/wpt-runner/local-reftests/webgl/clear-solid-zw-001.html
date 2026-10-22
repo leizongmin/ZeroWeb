@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="match" href="clear-solid-zw-001-ref.html">
+<title>WebGL clear fills the drawing buffer</title>
+<!-- 本地自建 reftest（2026-10-22 webgl-compat goal M2，用户裁决② 标尺①）：
+     getContext('webgl') + clearColor + clear(COLOR_BUFFER_BIT) → drawing buffer
+     全绿，经 data-zw-canvas-ctx 桥接出页面图元。
+     缺陷态：上下文缺席（getContext null）/ clear 不落位图 / 像素色值偏差 →
+     与 ref 像素不等。
+     spec：https://www.khronos.org/registry/webgl/specs/latest/1.0/#5.14.11 。
+     账本：tests/wpt-runner/imported-tests.txt；wpt-data 为独立 repo（gitignored），
+     重拉后按主仓 tests/wpt-runner/local-reftests/ 同路径文件恢复并重跑
+     make import-wpt 重建 manifest。本页另有内联孪生（make reftest 常驻集）：
+     tests/wpt-runner/src/reftest_data/webgl.rs
+     id webgl/clear-solid-zw-001——两处需同步维护。 -->
+</head>
+<body style="margin:0">
+<canvas id="cv" width="100" height="50" style="display:block"></canvas>
+<script>
+var gl = document.getElementById('cv').getContext('webgl');
+gl.clearColor(0, 0.502, 0, 1);
+gl.clear(gl.COLOR_BUFFER_BIT);
+</script>
+</body>
+</html>

@@ -690,8 +690,34 @@
             return function (type) {
               // R34xx：缺参 → TypeError（WebIDL 必参——2d.canvas.context.invalid.args）。
               if (arguments.length === 0) throw new TypeError('getContext: missing contextType');
-              if (String(type) !== '2d') return null; // 仅 2d；webgl/webgl2 defer
-              if (_zwCanvasCtx[key]) return _zwCanvasCtx[key];
+              // M2（2026-10-22 webgl-compat goal）：'webgl'/'experimental-webgl' 经
+              // part08 globalThis._zwMakeCtxWebGL 建 WebGL 上下文（同一 host 2d
+              // 位图作 drawing buffer，clear() 光栅化/painter 桥/toDataURL 共链路）；
+              // 'webgl2' 实例面 M4 挂账 → null（接口对象已注册）。
+              var t = String(type);
+              if (t === 'webgl' || t === 'experimental-webgl') {
+                // HTML spec canvas.getContext：上下文类型冲突（已持 2d）→ null；
+                // 同类型复用（per-element 缓存语义同 2d）。
+                var cur = _zwCanvasCtx[key];
+                if (cur) return cur._zwCtxType === 'webgl' ? cur : null;
+                if (typeof globalThis._zwMakeCtxWebGL !== 'function' ||
+                    typeof __zw_canvas_op !== 'function') return null;
+                var cwG = _zwCanvasDim(sel, handle, 'width', 300);
+                var chG = _zwCanvasDim(sel, handle, 'height', 150);
+                var idG = __zw_canvas_op('0', 'getContext2d', String(cwG), String(chG), 'srgb', 'unorm8');
+                if (!idG || String(idG).charAt(0) === '!') return null;
+                var wctx = globalThis._zwMakeCtxWebGL(String(idG),
+                  Math.min(cwG | 0, 16384), Math.min(chG | 0, 16384), // MAX_CANVAS_DIM（canvas.rs）对齐
+                  sel ? _makeProxy(sel, null) : _makeProxy(null, handle));
+                wctx._zwCtxType = 'webgl';
+                _zwCanvasCtx[key] = wctx;
+                if (handle) __zw_set_attr_handle(handle, 'data-zw-canvas-ctx', String(idG));
+                else __zw_set_attr(sel, 'data-zw-canvas-ctx', String(idG));
+                return wctx;
+              }
+              if (t !== '2d') return null; // 仅 2d/webgl；其余类型（webgl2/bitmaprenderer 等）defer
+              var cur2d = _zwCanvasCtx[key];
+              if (cur2d) return cur2d._zwCtxType === 'webgl' ? null : cur2d;
               if (typeof __zw_canvas_op !== 'function') return null;
               var cw = _zwCanvasDim(sel, handle, 'width', 300);
               var ch = _zwCanvasDim(sel, handle, 'height', 150);

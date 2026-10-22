@@ -4326,6 +4326,10 @@ pub fn generate_js_dom_shim() -> &'static str {
         s.push_str(include_str!("js_dom_shim/part05.js"));
         s.push_str(include_str!("js_dom_shim/part06.js"));
         s.push_str(include_str!("js_dom_shim/part07.js"));
+        // part08（2026-10-22）：WebGL 接口面（webgl-compat goal M2）——顶层作用域
+        // 运行（part07 闭合外层 IIFE），经 globalThis._zwMakeCtxWebGL 与 part04/05
+        // 的 getContext 分支单点对接。
+        s.push_str(include_str!("js_dom_shim/part08.js"));
         s.replace("__ZERO_BUILD_VERSION__", zero_product_version::VERSION)
     })
 }

@@ -3029,6 +3029,111 @@ pub fn run_webcrypto_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String
     cases
 }
 
+/// webgl-compat goal（99 / M2）corpus 目录——fetch 脚本
+/// `scripts/goals/99-webgl-compat.sh`（同 WPT_REV pin，`GOAL_PULL_ANY_JS` opt-in +
+/// idlharness 资产补拉）拉取到 `wpt-data/webgl/`（gitignored）。pin rev 处为
+/// 平铺目录（7 testharness 错误语义案 + 1 手工 crash 页 + idlharness.any.js +
+/// common.js 支撑 + 元数据），扫描按目录递归保持形态鲁棒。
+const WEBGL_TEST_DIR: &str = "webgl";
+
+/// Run the pinned upstream webgl/ corpus（webgl-compat goal M2——getContext 上下文
+/// 对象面 + buffer/texture 错误语义 + idlharness 接口面基线）。
+///
+/// `.html` 用例直接作为 testharness 页运行；`idlharness.any.js` 经
+/// [`any_js_window_wrapper`] 包窗（META scripts：WebIDLParser/idlharness/webgl
+/// common.js——idlharness 资产已按 2026-10-22 用户裁决③补拉，无 skip 记账排除）。
+/// `idl_test` 运行期经 fetch('/interfaces/*.idl') 取 IDL，由 page fetch 处理的
+/// 静态文件回退路径供给。退出码契约由调用方（`testharness-webgl` 子命令）执行：
+/// 有用例非 Pass 或用例集为空 → 1。
+pub fn run_webgl_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+        Ok(source) => source,
+        Err(error) => {
+            return vec![(
+                format!("{WEBGL_TEST_DIR}/"),
+                vec![HarnessSubtestResult {
+                    name: "load testharness.js".into(),
+                    status: HarnessStatus::Fail,
+                    message: Some(error.to_string()),
+                }],
+            )];
+        }
+    };
+    let mut case_paths = Vec::new();
+    let mut stack = vec![wpt_root.join(WEBGL_TEST_DIR)];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.ends_with(".html") || name.ends_with(".any.js") {
+                case_paths.push(path);
+            }
+        }
+    }
+    case_paths.sort();
+    let mut cases = Vec::new();
+    for path in case_paths {
+        let relative = match path.strip_prefix(wpt_root) {
+            Ok(relative) => relative.to_string_lossy().to_string(),
+            Err(_) => continue,
+        };
+        if filter.is_some_and(|filter| !relative.contains(filter)) {
+            continue;
+        }
+        let Ok(case_source) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        // .html 用例（testharness 页）直接运行；.any.js（idlharness）包窗。
+        if !relative.ends_with(".any.js") {
+            let results = run_testharness_html(wpt_root, &relative, &case_source, &harness_source, CASE_TIMEOUT);
+            cases.push((relative, results));
+            continue;
+        }
+        let case_dir = Path::new(&relative).parent().unwrap_or_else(|| Path::new(""));
+        let mut support_sources = Vec::new();
+        let mut support_failed = false;
+        for script in wpt_meta_scripts(&relative, &case_source) {
+            let support_path = match script.strip_prefix('/') {
+                Some(root_relative) => wpt_root.join(root_relative),
+                None => wpt_root.join(case_dir).join(&script),
+            };
+            match std::fs::read_to_string(support_path) {
+                Ok(source) => support_sources.push((script, source)),
+                Err(error) => {
+                    cases.push((
+                        relative.clone(),
+                        vec![HarnessSubtestResult {
+                            name: format!("load webgl support {script}"),
+                            status: HarnessStatus::Fail,
+                            message: Some(error.to_string()),
+                        }],
+                    ));
+                    support_failed = true;
+                    break;
+                }
+            }
+        }
+        if support_failed {
+            continue;
+        }
+        let support_refs = support_sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        let html = any_js_window_wrapper(&relative, &support_refs, &case_source);
+        let results = run_testharness_html(wpt_root, &relative, &html, &harness_source, CASE_TIMEOUT);
+        cases.push((relative, results));
+    }
+    cases
+}
+
 /// Web Components goal（web-components M1 / DC-1）pinned upstream subset——三个目录的
 /// 递归 .html 用例清单。Cases are fetched by `fetch-web-components-subset.sh`（WPT
 /// 315976933870b34d6ea30e3f6643403edae678ba）into `wpt-data/`（gitignored）.

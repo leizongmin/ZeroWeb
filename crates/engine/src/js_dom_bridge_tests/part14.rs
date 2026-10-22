@@ -226,7 +226,7 @@ fn test_canvas_dom_get_context_r3077() {
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
     register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
-    // ① getContext('2d') 返 ctx2d（非 null），webgl 返 null（仅 2d defer）。
+    // ① getContext('2d') 返 ctx2d（非 null），webgl 返 null（已持 2d——HTML spec 上下文类型冲突）。
     // ② fillRect 不抛（ctx2d 方法可用）。
     // ③ width/height 反射内容属性（100/50）。
     // ④ toDataURL 返 'data:image/png;base64,...'（PNG 编码）。
@@ -248,7 +248,7 @@ fn test_canvas_dom_get_context_r3077() {
         )
         .unwrap();
     assert_eq!(sandbox.execute("globalThis.__hasCtx").unwrap().value, "true", "getContext('2d') 返 ctx2d（非 null）");
-    assert_eq!(sandbox.execute("globalThis.__webglNull").unwrap().value, "true", "getContext('webgl') 返 null（仅 2d，webgl defer）");
+    assert_eq!(sandbox.execute("globalThis.__webglNull").unwrap().value, "true", "getContext('webgl') 返 null（已持 2d——HTML spec 上下文类型冲突）");
     assert_eq!(sandbox.execute("globalThis.__fillOk").unwrap().value, "ok", "ctx.fillRect 不抛（ctx2d 方法可用）");
     assert_eq!(sandbox.execute("globalThis.__w").unwrap().value, "100", "canvas.width 反射内容属性 100");
     assert_eq!(sandbox.execute("globalThis.__h").unwrap().value, "50", "canvas.height 反射内容属性 50");

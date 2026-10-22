@@ -615,6 +615,16 @@ fetch-wpt-webcrypto:
 testharness-webcrypto: target-disk-guard fetch-wpt-webcrypto target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),1800) -- ./target/release/zero-wpt-runner testharness-webcrypto $(if $(FILTER),$(FILTER),)
 
+# WebGL goal M2（docs/goal/webgl-compat.md）：webgl/ 语料 fetch 走 goals/99 预置
+# 脚本（GOAL_PULL_ANY_JS + idlharness 资产补拉——2026-10-22 裁决③）；runner 通道
+# 无 skip 记账排除（idlharness 全量收）。语料 10 文件平铺，跑窗小：
+# make testharness-webgl FILTER=bufferSubData。
+fetch-wpt-webgl:
+	bash tests/wpt-runner/scripts/goals/99-webgl-compat.sh
+
+testharness-webgl: target-disk-guard fetch-wpt-webgl target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),900) -- ./target/release/zero-wpt-runner testharness-webgl $(if $(FILTER),$(FILTER),)
+
 # Cookies goal M1 / DC-1（docs/goal/cookies-compat.md）：语料 fetch 走 goals/18
 # 预置脚本（webstorage 先例）；runner 可执行子集 skip 域见
 # testharness_cookies.rs cookies_case_skipped 文档。HTTP 头驱动面（cookie.py

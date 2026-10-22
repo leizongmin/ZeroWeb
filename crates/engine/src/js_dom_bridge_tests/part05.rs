@@ -1603,11 +1603,19 @@ fn test_canvas_get_context_r2795() {
             .value,
         "true"
     );
-    // 自定义尺寸 + getContext('webgl') → null（仅 2d）。
+    // M2（webgl-compat goal）：fresh canvas 'webgl' → WebGL 上下文（part66 详测）；
+    // 已持 2d 后 'webgl' → null（HTML spec 上下文类型冲突）；'webgl2' → null（实例面 M4 挂账）。
     sandbox.execute("__c.width = 4; __c.height = 4;").unwrap();
     assert_eq!(
         sandbox
-            .execute("String(document.createElement('canvas').getContext('webgl') === null)")
+            .execute("String((function(){var c=document.createElement('canvas');c.getContext('2d');return c.getContext('webgl')===null;})())")
+            .unwrap()
+            .value,
+        "true"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(document.createElement('canvas').getContext('webgl2') === null)")
             .unwrap()
             .value,
         "true"
