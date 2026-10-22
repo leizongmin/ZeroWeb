@@ -1,9 +1,9 @@
 # 浏览器交付闭环控制面
 
 **日期**：2026-10-22
-**状态**：Active；M1 完成（能力矩阵 + Linux 隔离基线落账，[证据](evidence/2026-10-22-m1-inventory-baseline/README.md)）；M2–M4 未启动；安装/更新/发布 NOT_RUN（本 goal 未做真实系统安装，M3/M4 切片按排期）。
-**当前卡点**：M2 待做——渠道、签名、更新可信来源与隐私/保留策略未定（RFC 输入已备：盘点缺口 G1–G5）。
-**下一步**：M2 交付 RFC：渠道（Linux .deb 本地源为默认候选）、签名语义（无证书渠道下"未签名本地模拟"限定验收）、更新可信来源与回滚决策（本地源 + 原子替换）、崩溃报告隐私/保留策略；外部配置列待决。
+**状态**：Active；M1 ✅（能力矩阵 + Linux 隔离基线，[证据](evidence/2026-10-22-m1-inventory-baseline/README.md)）；M2 ✅（交付 RFC 定版 D1–D5，[m2-delivery-rfc](m2-delivery-rfc.md)）；M3–M4 未启动；安装/更新/发布 NOT_RUN（未做真实系统安装，M3/M4 按排期）。
+**当前卡点**：无阻塞卡点。外部授权待决 P1–P5（签名证书/公开源/上传服务/系统安装/保留终值）已列 RFC §8，不阻塞 M3 机制层实现。
+**下一步**：M3-S1 版本追溯切片——`ZERO_BUILD_COMMIT` 构建注入 + `--version`（RFC FR-1/IF-1），随后 S2 更新/回滚 ∥ S3 崩溃报告 → S4 反馈导出+循环守卫（RFC §7 交接）。
 **入口**：[目标契约](../browser-delivery-loop.md) / [启动与证据协议](../ladybird-followups/README.md)
 
 ## 缺口与待决
@@ -21,7 +21,7 @@
 | 阶段 | 产物 | 状态 | 证据 |
 |---|---|---|---|
 | M1 | 交付能力矩阵与隔离基线 | ✅ 完成（2026-10-22：三平台打包/安装/卸载/版本/签名/更新/崩溃/恢复/隔离九维矩阵；Linux 定首个平台候选；.deb 从 HEAD 构建哈希在账、解包前缀隔离启动 + `/json/version` 版本查询 PASS、隔离边界核验 PASS；G1–G5 缺口定版） | [2026-10-22-m1-inventory-baseline](evidence/2026-10-22-m1-inventory-baseline/README.md) |
-| M2 | 渠道/信任/隐私/回滚 RFC | NOT_STARTED | 无 |
+| M2 | 渠道/信任/隐私/回滚 RFC | ✅ 完成（2026-10-22：D1 Linux .deb 本地源、D2 未签名本地渠道验收语义、D3 dpkg-deb 暂存+symlink 翻转+回滚、D4 白名单崩溃报告本地保留、D5 会话基座复用+循环守卫；FR-1..7/IF-1..4/NFR-1..4 与 M3 四切片交接；待决 P1–P5 列档；[RFC](m2-delivery-rfc.md)） | [m2-delivery-rfc](m2-delivery-rfc.md) |
 | M3 | 单平台安装、更新、报告与恢复 | NOT_STARTED | 无 |
 | M4 | 真实产物、故障、完整性与清理审计 | NOT_STARTED | 无 |
 
