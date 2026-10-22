@@ -84,7 +84,7 @@ M1 盘点结论（细节与 file:line 见 [M1 证据](evidence/2026-10-22-m1-inv
 | 前缀翻转原子性 | POSIX `rename(2)`（std `fs::rename`） |
 | 崩溃捕获 | std `panic::set_hook`（browser 进程）+ `process_backend` 既有 renderer 崩溃检测点 |
 | 会话崩溃计数 | 扩展 `browser-shell/session.rs` `TabSnapshot`（新增可选字段，向后兼容旧 session.json） |
-| zip 导出 | 实现时定：优先 `zip` crate 若依赖图已有；否则 tar+目录结构（IF-4 调整为目录） |
+| zip 导出 | 已定（2026-10-22）：依赖图无 zip crate 且 Cargo.lock 为共享碰撞面，不引新依赖——自实现 stored（不压缩）ZIP writer（`browser-shell/feedback.rs`，PKWARE APPNOTE §4.3 手写头+EOCD，CRC-32/ISO-HDLC），`--export-format=zip` 显式 opt-in；目录形态保持缺省（S4/M4 证据可复现） |
 
 ## 4. 技术设计（RFC）
 

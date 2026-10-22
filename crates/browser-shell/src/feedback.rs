@@ -110,10 +110,10 @@ pub fn delete_report(dir: &Path, file_name: &str) -> Result<(), String> {
     fs::remove_file(&path).map_err(|e| format!("failed to delete {}: {e}", path.display()))
 }
 
-/// unix 秒 → `YYYYMMDD`（UTC）。
+/// unix 秒 → `(年, 月, 日)`（UTC）。
 ///
 /// 依赖图无 chrono，按 civil-from-days（Howard Hinnant 算法）换算。
-pub fn format_date_ymd(unix_secs: u64) -> String {
+fn civil_from_unix(unix_secs: u64) -> (i64, u32, u32) {
     let days = unix_secs / 86_400;
     let z = days as i64 + 719_468;
     let era = z.div_euclid(146_097);
@@ -124,24 +124,36 @@ pub fn format_date_ymd(unix_secs: u64) -> String {
     let mp = (5 * doy + 2) / 153;
     let d = doy - (153 * mp + 2) / 5 + 1;
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
+    let year = if m <= 2 { y + 1 } else { y };
+    (year, m as u32, d as u32)
+}
+
+/// unix 秒 → `YYYYMMDD`（UTC）。
+pub fn format_date_ymd(unix_secs: u64) -> String {
+    let (y, m, d) = civil_from_unix(unix_secs);
     format!("{y:04}{m:02}{d:02}")
 }
 
-/// 导出反馈包（目录形态），返回创建的目录路径。
+/// 两种形态共用的导出载荷：成员字节 + 元数据。目录/ZIP 写出前一次性备齐，
+/// 保证两形态内容逐字节一致（同一 environment.json、同一报告拷贝）。
+struct FeedbackPayload {
+    /// 包名主干（不含扩展名）：`zeroweb-feedback-<版本>-<日期>`。
+    stem: String,
+    /// 各成员 `(归档内路径, 字节)`；归档内路径已含 `reports/` 前缀。
+    members: Vec<(String, Vec<u8>)>,
+}
+
+/// 校验勾选项并备齐两种形态共用的成员字节。
 ///
-/// `selected` 为用户勾选的报告文件名列表；目标目录下已存在同名反馈包时拒绝
-/// （不覆盖、不合并，显式语义）。任一步失败时尽力清理已创建的目录，不留残缺
-/// 包。调用前不创建任何文件——拒绝/不操作即无副作用。
-pub fn export_feedback(
+/// 信任边界：任何非法文件名在触碰文件系统前拒绝；报告读取失败（导出竞态下
+/// 报告被删）也在此拒绝，不产出残缺包。
+fn prepare_feedback_payload(
     reports_dir: &Path,
-    target_dir: &Path,
     version: &str,
     git_commit: &str,
     selected: &[String],
     options: &FeedbackExportOptions,
-) -> Result<PathBuf, String> {
-    // 信任边界：先全量校验勾选项，任何非法文件名在触碰文件系统前拒绝。
+) -> Result<FeedbackPayload, String> {
     let mut selected_entries = Vec::with_capacity(selected.len());
     let all = list_reports(reports_dir);
     for name in selected {
@@ -159,31 +171,56 @@ pub fn export_feedback(
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let feedback_dir = target_dir.join(format!("{FEEDBACK_DIR_PREFIX}{version}-{}", format_date_ymd(now_secs)));
+    let mut members = Vec::with_capacity(selected_entries.len() + 2);
+    for entry in &selected_entries {
+        let bytes = fs::read(reports_dir.join(&entry.file_name))
+            .map_err(|e| format!("read {} failed: {e}", entry.file_name))?;
+        members.push((format!("reports/{}", entry.file_name), bytes));
+    }
+    let environment = FeedbackEnvironment {
+        schema_version: FEEDBACK_SCHEMA_VERSION,
+        version,
+        git_commit,
+        os: std::env::consts::OS,
+        arch: std::env::consts::ARCH,
+        generated_at: now_secs,
+        reports: selected_entries,
+    };
+    let json = serde_json::to_string_pretty(&environment).map_err(|e| e.to_string())?;
+    members.push(("environment.json".to_string(), json.into_bytes()));
+    if let Some(summary) = &options.session_summary {
+        let json = summary.to_json()?;
+        members.push(("session-summary.json".to_string(), json.into_bytes()));
+    }
+    Ok(FeedbackPayload {
+        stem: format!("{FEEDBACK_DIR_PREFIX}{version}-{}", format_date_ymd(now_secs)),
+        members,
+    })
+}
+
+/// 导出反馈包（目录形态，IF-4 调整），返回创建的目录路径。
+///
+/// `selected` 为用户勾选的报告文件名列表；目标目录下已存在同名反馈包时拒绝
+/// （不覆盖、不合并，显式语义）。任一步失败时尽力清理已创建的目录，不留残缺
+/// 包。调用前不创建任何文件——拒绝/不操作即无副作用。
+pub fn export_feedback(
+    reports_dir: &Path,
+    target_dir: &Path,
+    version: &str,
+    git_commit: &str,
+    selected: &[String],
+    options: &FeedbackExportOptions,
+) -> Result<PathBuf, String> {
+    let payload = prepare_feedback_payload(reports_dir, version, git_commit, selected, options)?;
+    let feedback_dir = target_dir.join(&payload.stem);
     if feedback_dir.exists() {
         return Err(format!("feedback package already exists: {}", feedback_dir.display()));
     }
     let export = || -> Result<(), String> {
+        // 目录形态恒建 reports/ 子目录（空勾选的空包也保持既有布局）。
         fs::create_dir_all(feedback_dir.join("reports")).map_err(|e| e.to_string())?;
-        for entry in &selected_entries {
-            let source = reports_dir.join(&entry.file_name);
-            let dest = feedback_dir.join("reports").join(&entry.file_name);
-            fs::copy(&source, &dest).map_err(|e| format!("copy {} failed: {e}", entry.file_name))?;
-        }
-        let environment = FeedbackEnvironment {
-            schema_version: FEEDBACK_SCHEMA_VERSION,
-            version,
-            git_commit,
-            os: std::env::consts::OS,
-            arch: std::env::consts::ARCH,
-            generated_at: now_secs,
-            reports: selected_entries.clone(),
-        };
-        let json = serde_json::to_string_pretty(&environment).map_err(|e| e.to_string())?;
-        fs::write(feedback_dir.join("environment.json"), json).map_err(|e| e.to_string())?;
-        if let Some(summary) = &options.session_summary {
-            let json = summary.to_json()?;
-            fs::write(feedback_dir.join("session-summary.json"), json).map_err(|e| e.to_string())?;
+        for (relative, bytes) in &payload.members {
+            fs::write(feedback_dir.join(relative), bytes).map_err(|e| e.to_string())?;
         }
         Ok(())
     };
@@ -193,6 +230,141 @@ pub fn export_feedback(
         return Err(error);
     }
     Ok(feedback_dir)
+}
+
+/// 导出反馈包（zip 形态，RFC §4.4 首选/IF-4 原始形态），返回创建的 zip 路径。
+///
+/// 归档为 **stored（不压缩）ZIP**：崩溃报告本身是 ≤64KiB 的 JSON 小文件，压缩
+/// 收益有限；不引入 zip/压缩依赖（依赖图约束与 S4 目录形态同源，§3 实现来源
+/// "优先 zip crate 若依赖图已有"——没有，且根 Cargo.lock 是并行流共享面）。
+/// 成员与目录形态逐字节一致。目标目录下已存在同名 zip 时拒绝（不覆盖）；
+/// 失败时尽力清理半成品文件。
+pub fn export_feedback_zip(
+    reports_dir: &Path,
+    target_dir: &Path,
+    version: &str,
+    git_commit: &str,
+    selected: &[String],
+    options: &FeedbackExportOptions,
+) -> Result<PathBuf, String> {
+    let payload = prepare_feedback_payload(reports_dir, version, git_commit, selected, options)?;
+    let zip_path = target_dir.join(format!("{}.zip", payload.stem));
+    if zip_path.exists() {
+        return Err(format!("feedback package already exists: {}", zip_path.display()));
+    }
+    let bytes = zip_store_bytes(&payload.members).map_err(|error| format!("zip build failed: {error}"))?;
+    // 目录形态经 create_dir_all 连带创建 target 父目录；zip 形态显式对齐
+    // 同一语义（用户给尚不存在的目标目录是常态）。
+    if let Err(error) = fs::create_dir_all(target_dir).and_then(|()| fs::write(&zip_path, bytes)) {
+        let _ = fs::remove_file(&zip_path);
+        return Err(error.to_string());
+    }
+    Ok(zip_path)
+}
+
+/// 组装 stored（不压缩、无 zip64）ZIP 归档字节。
+///
+/// 布局：每成员 local file header + 数据，随后 central directory 与 EOCD
+/// （PKWARE APPNOTE.TXT §4.3）。成员名均为 ASCII（`reports/*.json` 等），
+/// 无需 UTF-8 标志位；总成员数与体积远低于 zip64 阈值。
+fn zip_store_bytes(members: &[(String, Vec<u8>)]) -> Result<Vec<u8>, String> {
+    let (seconds, minutes, hours, day, month, year) = dos_date_time_parts();
+    // DOS 字段宽 5/6/5 与 7/4/5 位（APPNOTE §4.1.5）；年份上限 2107。
+    let dos_time = ((hours as u16) << 11) | ((minutes as u16) << 5) | (seconds / 2) as u16;
+    let dos_date = ((year.clamp(1980, 2107) as u16 - 1980) << 9) | ((month as u16) << 5) | day as u16;
+
+    let mut out = Vec::new();
+    let mut central = Vec::new();
+    for (name, data) in members {
+        let name_bytes = name.as_bytes();
+        if name_bytes.len() > u16::MAX as usize || data.len() > u32::MAX as usize {
+            return Err(format!("member too large for stored zip: {name}"));
+        }
+        let offset = out.len() as u32;
+        let crc = crc32_ieee(data);
+        // Local file header：sig、版本 2.0、无标志位、method 0（stored）。
+        out.extend_from_slice(&0x0403_4b50_u32.to_le_bytes());
+        out.extend_from_slice(&20_u16.to_le_bytes());
+        out.extend_from_slice(&0_u16.to_le_bytes());
+        out.extend_from_slice(&0_u16.to_le_bytes());
+        out.extend_from_slice(&dos_time.to_le_bytes());
+        out.extend_from_slice(&dos_date.to_le_bytes());
+        out.extend_from_slice(&crc.to_le_bytes());
+        out.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        out.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        out.extend_from_slice(&(name_bytes.len() as u16).to_le_bytes());
+        out.extend_from_slice(&0_u16.to_le_bytes());
+        out.extend_from_slice(name_bytes);
+        out.extend_from_slice(data);
+        // Central directory header：同字段 + 固定盘号/注释长度 0。
+        central.extend_from_slice(&0x0201_4b50_u32.to_le_bytes());
+        central.extend_from_slice(&20_u16.to_le_bytes());
+        central.extend_from_slice(&20_u16.to_le_bytes());
+        central.extend_from_slice(&0_u16.to_le_bytes());
+        central.extend_from_slice(&0_u16.to_le_bytes());
+        central.extend_from_slice(&dos_time.to_le_bytes());
+        central.extend_from_slice(&dos_date.to_le_bytes());
+        central.extend_from_slice(&crc.to_le_bytes());
+        central.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        central.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        central.extend_from_slice(&(name_bytes.len() as u16).to_le_bytes());
+        central.extend_from_slice(&0_u16.to_le_bytes());
+        central.extend_from_slice(&0_u16.to_le_bytes());
+        central.extend_from_slice(&0_u16.to_le_bytes());
+        central.extend_from_slice(&0_u16.to_le_bytes());
+        central.extend_from_slice(&0_u32.to_le_bytes());
+        central.extend_from_slice(&offset.to_le_bytes());
+        central.extend_from_slice(name_bytes);
+    }
+
+    let entries = members.len() as u16;
+    let central_offset = out.len() as u32;
+    let central_size = central.len() as u32;
+    out.extend_from_slice(&central);
+    // EOCD。
+    out.extend_from_slice(&0x0605_4b50_u32.to_le_bytes());
+    out.extend_from_slice(&0_u16.to_le_bytes());
+    out.extend_from_slice(&0_u16.to_le_bytes());
+    out.extend_from_slice(&entries.to_le_bytes());
+    out.extend_from_slice(&entries.to_le_bytes());
+    out.extend_from_slice(&central_size.to_le_bytes());
+    out.extend_from_slice(&central_offset.to_le_bytes());
+    out.extend_from_slice(&0_u16.to_le_bytes());
+    Ok(out)
+}
+
+/// 当前 UTC 时刻的时间字段分量 `(秒, 分, 时, 日, 月, 公元年)`。
+///
+/// 拆出独立函数便于单测；DOS 年份基点 1980 的换算由 `zip_store_bytes` 做。
+fn dos_date_time_parts() -> (u32, u32, u32, u32, u32, i64) {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let (year, month, day) = civil_from_unix(secs);
+    let daytime = secs % 86_400;
+    (
+        (daytime % 60) as u32,
+        (daytime / 60 % 60) as u32,
+        (daytime / 3600) as u32,
+        day,
+        month,
+        year,
+    )
+}
+
+/// CRC-32/ISO-HDLC（IEEE 802.3，多项式 0xEDB88320 反射），ZIP 规定算法。
+fn crc32_ieee(data: &[u8]) -> u32 {
+    // 成员总量上限为保留上限（10×64KiB），逐位实现足够且免建表状态。
+    let mut crc = 0xFFFF_FFFF_u32;
+    for &byte in data {
+        crc ^= byte as u32;
+        for _ in 0..8 {
+            let mask = (crc & 1).wrapping_neg();
+            crc = (crc >> 1) ^ (0xEDB8_8320 & mask);
+        }
+    }
+    !crc
 }
 
 /// environment.json 结构（IF-4：版本/hash/os/arch/报告清单）。
@@ -421,5 +593,155 @@ mod tests {
         // 2026-10-22 的 unix 秒（S3 验收期间的真实时间戳）。
         assert_eq!(format_date_ymd(1_792_668_836), "20261022");
         assert_eq!(format_date_ymd(951_782_400), "20000229");
+    }
+
+    #[test]
+    fn export_zip_creates_missing_target_directory() {
+        let root = temp_root("zip-mkdir");
+        let reports = root.join("crash-reports");
+        fs::create_dir_all(&reports).unwrap();
+        fs::write(reports.join("crash-0000000001-browser.json"), "{}").unwrap();
+        let options = FeedbackExportOptions::default();
+        // 目标目录整体不存在（含父链）：与目录形态同语义，递归创建。
+        let target = root.join("nested/target");
+        let zip_path = export_feedback_zip(
+            &reports,
+            &target,
+            "1",
+            "c",
+            &["crash-0000000001-browser.json".to_string()],
+            &options,
+        )
+        .unwrap();
+        assert!(zip_path.is_file());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn crc32_ieee_matches_known_vectors() {
+        // CRC-32/ISO-HDLC 标准校验向量。
+        assert_eq!(crc32_ieee(b""), 0);
+        assert_eq!(crc32_ieee(b"123456789"), 0xCBF4_3926);
+        assert_eq!(crc32_ieee(b"The quick brown fox jumps over the lazy dog"), 0x414F_A339);
+    }
+
+    #[test]
+    fn zip_store_bytes_produces_parseable_archive_with_exact_members() {
+        let members = vec![
+            (
+                "reports/crash-0000000001-browser.json".to_string(),
+                b"{\"a\":1}".to_vec(),
+            ),
+            ("environment.json".to_string(), b"{}".to_vec()),
+        ];
+        let zip = zip_store_bytes(&members).unwrap();
+        // 起始 local header 签名与 EOCD 签名。
+        assert_eq!(&zip[..4], &0x0403_4b50_u32.to_le_bytes());
+        assert_eq!(&zip[zip.len() - 22..zip.len() - 18], &0x0605_4b50_u32.to_le_bytes());
+        // central directory 计数 == 成员数（EOCD 偏移 10 处的 entries 字段）。
+        let eocd = &zip[zip.len() - 22..];
+        let entries = u16::from_le_bytes([eocd[10], eocd[11]]);
+        assert_eq!(entries as usize, members.len());
+        let central_count = zip.windows(4).filter(|w| *w == 0x0201_4b50_u32.to_le_bytes()).count();
+        assert_eq!(central_count, members.len());
+        // stored：method 字段为 0，compressed == uncompressed 尺寸。
+        let local = &zip[..];
+        let method = u16::from_le_bytes([local[8], local[9]]);
+        assert_eq!(method, 0);
+        let size = u32::from_le_bytes([local[18], local[19], local[20], local[21]]);
+        assert_eq!(size as usize, members[0].1.len());
+    }
+
+    #[test]
+    fn export_zip_mirrors_directory_members_and_rejects_duplicates() {
+        let root = temp_root("zip");
+        let reports = root.join("crash-reports");
+        fs::create_dir_all(&reports).unwrap();
+        fs::write(reports.join("crash-0000000001-browser.json"), r#"{"role":"browser"}"#).unwrap();
+        let options = FeedbackExportOptions {
+            session_summary: Some(SessionSummary {
+                tab_count: 2,
+                crash_loop_skipped_tabs: 0,
+                urls: None,
+            }),
+        };
+        let selected = ["crash-0000000001-browser.json".to_string()];
+
+        // 与目录形态同参数导出：成员逐字节一致（路径与内容）。
+        let dir = export_feedback(&reports, &root.join("out"), "26.10.22", "beef", &selected, &options).unwrap();
+        let zip_path =
+            export_feedback_zip(&reports, &root.join("out"), "26.10.22", "beef", &selected, &options).unwrap();
+        assert!(
+            zip_path
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .starts_with("zeroweb-feedback-26.10.22-")
+        );
+        assert!(zip_path.to_str().unwrap().ends_with(".zip"));
+        let zip_bytes = fs::read(&zip_path).unwrap();
+        for entry in walk_members(&dir) {
+            // 目录形态的每个文件都应能在 zip 中按相对路径找到，内容一致。
+            assert!(
+                contains_member(&zip_bytes, &entry.0, &entry.1),
+                "zip member {} missing or differs",
+                entry.0
+            );
+        }
+
+        // 已存在同名 zip：拒绝且不覆盖（内容不变）。
+        let before = fs::read(&zip_path).unwrap();
+        assert!(export_feedback_zip(&reports, &root.join("out"), "26.10.22", "beef", &selected, &options).is_err());
+        assert_eq!(fs::read(&zip_path).unwrap(), before);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// 收集目录形态包内全部文件的 `(相对路径, 内容)`。
+    fn walk_members(dir: &Path) -> Vec<(String, Vec<u8>)> {
+        let mut out = Vec::new();
+        for entry in fs::read_dir(dir).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            if path.is_dir() {
+                let relative = path.strip_prefix(dir).unwrap().to_string_lossy().to_string();
+                for sub in walk_members(&path) {
+                    out.push((format!("{relative}/{}", sub.0), sub.1));
+                }
+            } else {
+                out.push((
+                    path.strip_prefix(dir).unwrap().to_string_lossy().to_string(),
+                    fs::read(&path).unwrap(),
+                ));
+            }
+        }
+        out.sort();
+        out
+    }
+
+    /// 在 stored zip 字节中按成员名查找并逐字节比对内容（仅本地验收用，
+    /// 不做通用解析；归档由本 crate 自产，布局见 `zip_store_bytes`）。
+    fn contains_member(zip: &[u8], name: &str, data: &[u8]) -> bool {
+        let name_bytes = name.as_bytes();
+        let mut cursor = 0;
+        while let Some(pos) = zip[cursor..]
+            .windows(4)
+            .position(|w| w == 0x0403_4b50_u32.to_le_bytes())
+        {
+            let header = cursor + pos;
+            let name_len = u16::from_le_bytes([zip[header + 26], zip[header + 27]]) as usize;
+            let size =
+                u32::from_le_bytes([zip[header + 22], zip[header + 23], zip[header + 24], zip[header + 25]]) as usize;
+            let name_start = header + 30;
+            let data_start = name_start + name_len;
+            if &zip[name_start..data_start] == name_bytes && &zip[data_start..data_start + size] == data {
+                return true;
+            }
+            cursor = data_start + size;
+            if cursor >= zip.len() {
+                break;
+            }
+        }
+        false
     }
 }

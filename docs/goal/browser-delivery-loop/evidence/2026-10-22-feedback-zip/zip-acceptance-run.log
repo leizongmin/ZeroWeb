@@ -1,0 +1,26 @@
+Running as unit: run-p2530157-i6726817.scope; invocation ID: f58db1d39bcd4dfab984652b557593b8
+[ZIP] product identity: ZeroBrowser 26.10.22 (commit 5c1ba767797a)
+[ZIP] leg A: real crash report exported as zip, deep-checked
+[ZIP] PASS: legA live renderer pid=2530195
+[ZIP] legA SIGKILL delivered to renderer 2530195
+[ZIP] PASS: legA real crash report: crash-1792682248-renderer.json
+[ZIP] PASS: legA browser exited cleanly after SIGINT
+[ZIP] PASS: legA --export-format=zip exports: FEEDBACK_EXPORTED /tmp/zeroweb-zip-accept2/out/zeroweb-feedback-26.10.22-20261022.zip
+[ZIP] PASS: legA zip file on disk
+[ZIP] PASS: legA zip name follows <version>-<date>: zeroweb-feedback-26.10.22-20261022.zip
+[ZIP] PASS: legA deep check (CRC/members/byte-identity/version-commit/summary-gated): deep-check OK: 1 report member(s), summary=False
+[ZIP] PASS: legA privacy scan: privacy scan OK: 0 hits
+[ZIP] PASS: legA summary opt-in export passes deep check (session-summary.json present)
+[ZIP] PASS: legA duplicate export rejected: [2m2026-10-22T15:17:28.714409Z[0m [32m INFO[0m [2mzero_browser[0m[2m:[0m ZeroBrowser starting...
+[ZIP] PASS: legA existing zip untouched after rejection
+[ZIP] leg B: default export stays directory form; members match zip
+[ZIP] PASS: legB default (no --export-format) exports directory: FEEDBACK_EXPORTED /tmp/zeroweb-zip-accept2/out-dir/zeroweb-feedback-26.10.22-20261022
+[ZIP] PASS: legB exported path is a directory
+[ZIP] PASS: legB zip members byte-identical to directory package: members identical: 2 file(s)
+[ZIP] leg C: negatives — no reports, bad format, missing report
+[ZIP] PASS: legC NO_REPORTS rejected on empty profile
+[ZIP] PASS: legC zero files produced on rejection
+[ZIP] PASS: legC invalid --export-format rejected with usage
+[ZIP] PASS: legC selected missing report rejected: [2m2026-10-22T15:17:28.753214Z[0m [32m INFO[0m [2mzero_browser[0m[2m:[0m ZeroBrowser starting...
+[ZIP] PASS: legC no package on rejected selection
+[ZIP] summary: PASS=19 FAIL=0

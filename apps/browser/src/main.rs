@@ -131,8 +131,10 @@ struct CliArgs {
     list_crash_reports: bool,
     /// FR-5：删除指定崩溃报告，然后退出。
     delete_crash_report: Option<String>,
-    /// FR-5/FR-6：导出反馈包（IF-4 目录形态）到指定目录，然后退出。
+    /// FR-5/FR-6：导出反馈包（IF-4）到指定目录，然后退出。
     export_feedback: Option<PathBuf>,
+    /// 反馈包形态（RFC §4.4）：zip 为 IF-4 原始形态，dir 为 S4 回退缺省。
+    export_format: ExportFormat,
     /// 导出勾选的报告文件名（可重复；缺省导出全部）。
     feedback_reports: Vec<String>,
     /// 导出附带会话摘要（tab 计数，不含 URL）。
@@ -141,6 +143,24 @@ struct CliArgs {
     include_session_urls: bool,
     /// 独立 profile 根目录：配置/存储/缓存收敛其下，覆盖同名 ZERO_* 环境变量。
     profile: Option<PathBuf>,
+}
+
+/// 反馈包导出形态（RFC §4.4）：缺省目录形态保持 S4/M4 证据可复现，zip 为
+/// IF-4 原始形态（stored 不压缩，零新依赖）的显式 opt-in。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ExportFormat {
+    Dir,
+    Zip,
+}
+
+impl ExportFormat {
+    fn parse(value: &str) -> Result<Self, String> {
+        match value {
+            "dir" => Ok(Self::Dir),
+            "zip" => Ok(Self::Zip),
+            _ => Err(format!("--export-format must be dir or zip, got: {value}")),
+        }
+    }
 }
 
 /// 把 `--profile` 目录落实为隔离环境变量，返回绝对化的 profile 根。
@@ -211,6 +231,7 @@ fn parse_args_from(
     let mut list_crash_reports = false;
     let mut delete_crash_report: Option<String> = None;
     let mut export_feedback: Option<PathBuf> = None;
+    let mut export_format = ExportFormat::Dir;
     let mut feedback_reports: Vec<String> = Vec::new();
     let mut include_session_summary = false;
     let mut include_session_urls = false;
@@ -316,6 +337,10 @@ fn parse_args_from(
                 return Err("--export-feedback requires a target directory".to_string());
             }
             export_feedback = Some(PathBuf::from(value));
+        }
+
+        if let Some(value) = arg.strip_prefix("--export-format=") {
+            export_format = ExportFormat::parse(value)?;
         }
 
         if let Some(value) = arg.strip_prefix("--feedback-report=") {
@@ -705,6 +730,7 @@ fn parse_args_from(
         list_crash_reports,
         delete_crash_report,
         export_feedback,
+        export_format,
         feedback_reports,
         include_session_summary,
         include_session_urls,
@@ -761,6 +787,8 @@ Options:
   --delete-crash-report=<file>   Delete one local crash report, then exit
   --export-feedback=<dir>        Export a feedback package (directory with
                                  selected reports + environment.json), then exit
+  --export-format=<dir|zip>      Feedback package layout: dir (default) or zip
+                                 (stored, uncompressed per RFC §4.4)
   --feedback-report=<file>       Export only this report (repeatable; default: all)
   --include-session-summary      Attach session summary (tab counts, no URLs)
   --include-session-urls         Include tab URLs in the session summary
@@ -970,13 +998,14 @@ fn run_delete_crash_report(file_name: &str) -> i32 {
     }
 }
 
-/// FR-5/FR-6：导出反馈包（IF-4 目录形态）。stdout 单行
+/// FR-5/FR-6：导出反馈包（IF-4，目录或 zip 形态）。stdout 单行
 /// `FEEDBACK_EXPORTED <路径>` 或 `FEEDBACK_REJECTED <原因>`。
 ///
 /// 勾选列表缺省取全部现存报告（用户显式传 flag 即显式动作）；会话摘要与
 /// URL 各需显式开关，默认不含任何页面数据（NFR-1）。
 fn run_export_feedback(
     target_dir: &Path,
+    format: ExportFormat,
     selected: &[String],
     include_session_summary: bool,
     include_session_urls: bool,
@@ -1015,14 +1044,25 @@ fn run_export_feedback(
         None
     };
     let options = zero_browser_shell::FeedbackExportOptions { session_summary };
-    match zero_browser_shell::export_feedback(
-        &reports_dir,
-        target_dir,
-        zero_product_version::VERSION,
-        zero_product_version::BUILD_COMMIT,
-        &selected,
-        &options,
-    ) {
+    let export = match format {
+        ExportFormat::Dir => zero_browser_shell::export_feedback(
+            &reports_dir,
+            target_dir,
+            zero_product_version::VERSION,
+            zero_product_version::BUILD_COMMIT,
+            &selected,
+            &options,
+        ),
+        ExportFormat::Zip => zero_browser_shell::export_feedback_zip(
+            &reports_dir,
+            target_dir,
+            zero_product_version::VERSION,
+            zero_product_version::BUILD_COMMIT,
+            &selected,
+            &options,
+        ),
+    };
+    match export {
         Ok(path) => {
             println!("FEEDBACK_EXPORTED {}", path.display());
             0
@@ -1411,6 +1451,7 @@ fn main() {
     if let Some(target_dir) = cli.export_feedback.clone() {
         let code = run_export_feedback(
             &target_dir,
+            cli.export_format,
             &cli.feedback_reports,
             cli.include_session_summary,
             cli.include_session_urls,
