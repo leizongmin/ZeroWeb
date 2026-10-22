@@ -1,0 +1,12 @@
+<!doctype html>
+<title>BG-03 nav source</title>
+<!-- BG-03 重复导航源页：两个旧文档资源持有形态——
+     1) 超长 timer（2^31-1 ms ≈ 24.8 天）：TimerBridge 协调线程 min-heap 是
+        per-worker 单例，导航不清队列，entry 滞留至 expiry——重复导航累积；
+     2) 不结束子资源 fetch('/stall')：导航时 inflight_fetches.clear() drop
+        Receiver，底层 HTTP 连接是否释放由 fixture-server 连接计数观测。 -->
+<script>
+setTimeout(function () {}, 2147483647);
+fetch("/stall?ms=86400000&tag=bg03-nav-" + Date.now()).then(function () {}, function () {});
+document.body.textContent = "BG-03 source " + Date.now();
+</script>

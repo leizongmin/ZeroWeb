@@ -1,0 +1,36 @@
+{
+ "scenario": "bg01-interval",
+ "started": "2026-10-22T07:47:02.214Z",
+ "wall_ms": 20000,
+ "events_session": [],
+ "errors": [],
+ "targets": [
+  {
+   "targetId": "zeroweb-tab-1",
+   "url": "about:blank",
+   "sessionId": "zeroweb-session-1"
+  }
+ ],
+ "start_nav": {
+  "ok": true,
+  "title": "BG-01 single-level interval timer"
+ },
+ "samples": [
+  {
+   "t_ms": 1792655228108,
+   "label": "bg01-interval",
+   "value": 4835
+  },
+  {
+   "t_ms": 1792655233116,
+   "label": "bg01-interval",
+   "value": 9374
+  },
+  {
+   "t_ms": 1792655238123,
+   "label": "bg01-interval",
+   "value": 13899
+  }
+ ],
+ "finished": "2026-10-22T07:47:23.106Z"
+}

@@ -1,0 +1,10 @@
+<!doctype html>
+<title>BG-01 single-level interval timer</title>
+<!-- BG-01 对照腿：单层 setInterval(1ms)——无嵌套放大，用于区分「嵌套零延迟
+     循环」与「普通高频定时器」的 CPU 差异。 -->
+<script>
+window.__zw_iters = 0;
+setInterval(function () {
+  window.__zw_iters++;
+}, 1);
+</script>

@@ -1,0 +1,30 @@
+<!doctype html>
+<title>BG-02 offscreen animation</title>
+<!-- BG-02 视口外动画呈现观测页：动画元素位于视口外（top: 200%），CSS 动画
+     infinite + rAF 帧驱动循环（需 ZW_RAF_FRAME_DRIVEN=1，默认为同步 stub）。
+     __zw_raf 计数供 CDP 采样；呈现次数由 compositor frame_dump 承载。 -->
+<style>
+  #off {
+    position: absolute;
+    top: 200%;
+    left: 0;
+    width: 100px;
+    height: 100px;
+    background: #46f;
+    animation: bg02-slide 1s linear infinite;
+  }
+  @keyframes bg02-slide {
+    from { transform: translateX(0); }
+    to { transform: translateX(300px); }
+  }
+</style>
+<div id="off"></div>
+<script>
+window.__zw_raf = 0;
+if (window.requestAnimationFrame) {
+  (function raf() {
+    window.__zw_raf++;
+    requestAnimationFrame(raf);
+  })();
+}
+</script>

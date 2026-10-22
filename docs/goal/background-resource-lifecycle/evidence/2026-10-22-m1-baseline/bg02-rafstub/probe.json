@@ -1,0 +1,31 @@
+{
+ "scenario": "bg02-rafstub",
+ "started": "2026-10-22T07:49:47.146Z",
+ "wall_ms": 15000,
+ "events_session": [],
+ "errors": [],
+ "targets": [
+  {
+   "targetId": "zeroweb-tab-1",
+   "url": "about:blank",
+   "sessionId": "zeroweb-session-1"
+  }
+ ],
+ "start_nav": {
+  "ok": true,
+  "title": "BG-02 offscreen animation"
+ },
+ "samples": [
+  {
+   "t_ms": 1792655393187,
+   "label": "bg02-rafstub",
+   "value": 513
+  },
+  {
+   "t_ms": 1792655398201,
+   "label": "bg02-rafstub",
+   "value": 513
+  }
+ ],
+ "finished": "2026-10-22T07:50:03.176Z"
+}

@@ -1,0 +1,2 @@
+scenario=bg02-static-gui wall=30s cdp=127.0.0.1:51193 http=127.0.0.1:35679
+start_url=bg02-static.html ZW_RAF_FRAME_DRIVEN=1 viewport=800x600 headless=CDP

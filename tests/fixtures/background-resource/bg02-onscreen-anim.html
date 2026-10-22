@@ -1,0 +1,30 @@
+<!doctype html>
+<title>BG-02 onscreen animation</title>
+<!-- BG-02 视口内对照腿：与 bg02-offscreen-anim 同款动画但元素在视口内——
+     区分「视口外动画被跳过」与「动画呈现路径整体未驱动呈现」。
+     __zw_raf 计数供 CDP 采样；呈现次数由 compositor frame_dump 承载。 -->
+<style>
+  #on {
+    position: absolute;
+    top: 20px;
+    left: 0;
+    width: 100px;
+    height: 100px;
+    background: #46f;
+    animation: bg02-slide 1s linear infinite;
+  }
+  @keyframes bg02-slide {
+    from { transform: translateX(0); }
+    to { transform: translateX(300px); }
+  }
+</style>
+<div id="on"></div>
+<script>
+window.__zw_raf = 0;
+if (window.requestAnimationFrame) {
+  (function raf() {
+    window.__zw_raf++;
+    requestAnimationFrame(raf);
+  })();
+}
+</script>

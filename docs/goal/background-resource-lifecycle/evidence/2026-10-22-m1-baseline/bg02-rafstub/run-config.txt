@@ -1,0 +1,2 @@
+scenario=bg02-rafstub wall=15s cdp=127.0.0.1:52939 http=127.0.0.1:57327
+start_url=bg02-offscreen-anim.html ZW_RAF_FRAME_DRIVEN=0 viewport=800x600 headless=CDP

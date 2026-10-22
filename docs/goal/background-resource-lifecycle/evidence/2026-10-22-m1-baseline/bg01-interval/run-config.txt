@@ -1,0 +1,2 @@
+scenario=bg01-interval wall=20s cdp=127.0.0.1:53291 http=127.0.0.1:49477
+start_url=bg01-interval-timer.html ZW_RAF_FRAME_DRIVEN=0 viewport=800x600 headless=CDP

@@ -1,7 +1,7 @@
 # 后台页面与重复导航资源生命周期
 
-**版本**：v1.0 / 2026-10-20
-**状态**：Active（启动门控：本轮只创建文档与 scripts，等待后续启动）
+**版本**：v1.1 / 2026-10-22
+**状态**：Active（M1 资源基线已建立；M2 增长源归因未开始）
 **父目标**：[zero-web](zero-web.md) / **控制面**：[master](background-resource-lifecycle/master.md)
 
 ## 0. 执行摘要与 Mission
@@ -12,7 +12,9 @@
 
 ## 基线与 Support Envelope
 
-静态基线：`apps/browser/src/process_backend.rs` 存在 `renderer_poll_order_prioritizes_active_tab_and_throttles_background_tabs`；renderer 运行入口为 `apps/renderer/src/runtime.rs`，页面共享入口在 `crates/page-runtime/src/lib.rs`。轮询节流不证明 timer/动画/合成器已停无效工作。生产资源基线 **NOT_RUN**。
+静态基线：`apps/browser/src/process_backend.rs` 存在 `renderer_poll_order_prioritizes_active_tab_and_throttles_background_tabs`；renderer 运行入口为 `apps/renderer/src/runtime.rs`，页面共享入口在 `crates/page-runtime/src/lib.rs`。轮询节流不证明 timer/动画/合成器已停无效工作。
+
+生产资源基线：M1 已建立（2026-10-22，12 腿，headless CDP + GUI X :20 双口径），见 [M1 基线](background-resource-lifecycle/evidence/2026-10-22-m1-baseline/ANALYSIS.md)。要点：嵌套零延迟 timer ~20 万 iter/s 无钳制；前后台 tab CPU 无差异（后台无策略）；CSS 动画不驱动持续呈现（视口内外一致，呈现链未激活）；重复导航 renderer RSS +224MB 且 stall fetch 连接随导航滞留；tab 开关 renderer 进程复用、内存不回落。观测资产：`scripts/background-resource-{observe.sh,probe.mjs,sampler.py,fixture-server.py}` + `tests/fixtures/background-resource/`。
 
 范围：各进程 CPU、RSS 趋势、旧文档/回调/连接/队列与呈现次数；前后台切换、重复导航和关闭后恢复。
 

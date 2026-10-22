@@ -1,0 +1,13 @@
+<!doctype html>
+<title>BG-01 nested zero-delay timer</title>
+<!-- BG-01 前台/后台 timer CPU 观测页：零延迟嵌套 setTimeout 无限循环。
+     spec 要求嵌套 ≥5 层后最小 4ms（timers-and-user-prompts）；ZeroWeb 主线程
+     timer 路径无 nesting level 钳制（M1 静态事实），本页用于实测生产 CPU 代价。
+     __zw_iters 供 CDP Runtime.evaluate 周期采样迭代速率。 -->
+<script>
+window.__zw_iters = 0;
+(function loop() {
+  window.__zw_iters++;
+  setTimeout(loop, 0);
+})();
+</script>
