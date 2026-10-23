@@ -1,9 +1,9 @@
 # DOM 操作基准控制面
 
 **日期**：2026-10-20
-**状态**：Active（启动门控）；规划已创建，基准开发与运行 NOT_RUN。
+**状态**：Active（**M1 已解锁**——2026-10-23 用户决策，无人值守可启动；共享 engine/dom/script-sandbox 面与 html-semantics 流，启动前按 run-rules §9–11 错峰核对）；规划已创建，基准开发与运行 NOT_RUN。
 **当前卡点**：没有统一 fixture、采样协议和语义断言。
-**下一步**：明确启动后先固定 style/geometry 两类负载并复用自动化入口。
+**下一步**：执行 M1——先固定 style/geometry 两类负载并复用自动化入口。
 **入口**：[目标契约](../dom-operation-bench.md) / [启动与证据协议](../ladybird-followups/README.md)
 
 ## 缺口与待决

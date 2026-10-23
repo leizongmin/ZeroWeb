@@ -358,12 +358,27 @@ pub(crate) fn shrink_pure_text_floats(
         }
         return;
     }
+    // R4920 Σ 臂开关在本臂前段（R5242 inline-table 早退门）也要消费，提前读一次。
+    let float_inline_sum_on = std::env::var("ZW_FLOAT_INLINE_SUM").as_deref() != Ok("0");
     // 已有 block 级 / replaced 子元素的 float 由 adjust_float_positions 收缩分支处理，
     // 此处不重复（避免双重 shrink / 与 block 子宽度冲突）。
-    let has_block_or_replaced = box_node
-        .children
-        .iter()
-        .any(|c| !c.is_absolute && !c.is_fixed && (c.is_block_level || c.is_replaced));
+    // R5242（CSS2 §9.2.2/§10.3.5）：inline-table 是行内级原子，其 LayoutBox 的
+    // is_block_level 旗标是块叠装配的既有简化（postprocess.rs R5011 注在案）——float
+    // shrink-to-fit 语义不认：definite 宽 inline-table 子不算 block-level，不早退，
+    // 落入下方 R4920 Σ 臂（inline_children_non_text_width 的 InlineTable 分支按
+    // width+margin 计盒外尺寸），preferred = 行内级内容 Σ 而非块叠 max
+    //（table-vertical-align-baseline-008：wrapper 收缩 50 应 100 实证）。auto 宽
+    // inline-table 不豁免（float_sigma_eligible_inline_table 谓词文档）；本豁免随
+    // ZW_FLOAT_INLINE_SUM 一同关断（OFF 时 Σ 臂不可达，维持旧早退）。
+    let has_block_or_replaced = box_node.children.iter().any(|c| {
+        !c.is_absolute
+            && !c.is_fixed
+            && (c.is_block_level || c.is_replaced)
+            && !(float_inline_sum_on
+                && c.node_id
+                    .and_then(|id| styles.get(&id))
+                    .is_some_and(crate::intrinsic_sizing::float_sigma_eligible_inline_table))
+    });
     if has_block_or_replaced {
         return;
     }
@@ -403,7 +418,7 @@ pub(crate) fn shrink_pure_text_floats(
     // kill-switch `ZW_FLOAT_INLINE_SUM=0` = R4920 逐字节回退：Σ 不计入（收缩阈值还原为
     // text_max_w+frame）且扩臂关（R4921 gate 不受本开关影响，其归因用
     // `ZW_INTRINSIC_ATOMIC_GATE`）。
-    let non_text_w = if adjusted_text_max_w.is_none() && std::env::var("ZW_FLOAT_INLINE_SUM").as_deref() != Ok("0") {
+    let non_text_w = if adjusted_text_max_w.is_none() && float_inline_sum_on {
         crate::intrinsic_sizing::inline_children_non_text_width(dom_id, doc, styles)
     } else {
         0.0
@@ -1851,10 +1866,24 @@ pub(crate) fn adjust_float_positions_with_context(
             // float 撑满全宽，img 无法覆盖 div 背景（max-width-110，red 68400px 外露）。
             // replaced 的 used width 已解析（含 max-width 等约束），无需 IFC 测量。
             // 纯文本 float（无 block 级、无 replaced 子元素）仍保持 taffy 宽度（需 IFC，留后续）。
+            // R5242（与 shrink_pure_text_floats 同口径）：definite 宽 inline-table 子是
+            // 行内级原子，其 preferred 宽已由 5a.1 的 R4920 Σ 臂先行落定——不入块叠 max
+            //（块叠 max 会把 Σ 结果重收缩回 max(子)，撤掉行内求和；008 实证 100→50）。
+            // auto 宽 inline-table 不豁免（float_sigma_eligible_inline_table 谓词文档），
+            // ZW_FLOAT_INLINE_SUM=0 时两处豁免同关（维持旧块叠语义）。
+            let float_inline_sum_on = std::env::var("ZW_FLOAT_INLINE_SUM").as_deref() != Ok("0");
             let content_child_widths: Vec<f32> = child
                 .children
                 .iter()
-                .filter(|c| !c.is_absolute && !c.is_fixed && (c.is_block_level || c.is_replaced))
+                .filter(|c| {
+                    !c.is_absolute
+                        && !c.is_fixed
+                        && (c.is_block_level || c.is_replaced)
+                        && !(float_inline_sum_on
+                            && c.node_id
+                                .and_then(|id| styles.get(&id))
+                                .is_some_and(crate::intrinsic_sizing::float_sigma_eligible_inline_table))
+                })
                 .map(|c| c.width)
                 .collect();
             let content_max_w = content_child_widths.iter().copied().fold(0.0f32, f32::max);

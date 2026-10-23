@@ -3580,14 +3580,23 @@ pub(crate) fn remeasure_inline_only_containers(
         let preserve = measure_preserve_on && resolve_preserve_for_ifc_measure(styles.get(&dom_id));
         let break_at_newline = measure_preserve_on && resolve_break_at_newline_for_ifc_measure(styles.get(&dom_id));
         // 收集 inline-block 子元素的 LayoutBox 尺寸，供 IFC 解析百分比宽度。
+        // R5242：InlineTable 并入——行内级原子（CSS2 §9.2.2）的行盒贡献与 inline-block
+        // 同语义；缺席时主 IFC 对表原子降级零宽 run（collect_items w>0&&h>0 门），行高
+        // 不含表高（008：wrapper 收缩臂 IFC 行高 100 恰含 100 表/200 块叠差 100 实证，
+        // 表更高形态会过缩）。与 step 10 adjust_inline_block_positions 的 ib_indices
+        // 口径（含 InlineTable）对齐。kill-switch `ZW_INLINE_TABLE_IB_SIZING=0`（与下方
+        // has_block_children 豁免同开关，OFF 合 ZW_FLOAT_INLINE_SUM=0 = R5242 逐字节回退）。
+        static INLINE_TABLE_IB_SIZING: std::sync::LazyLock<bool> =
+            std::sync::LazyLock::new(|| std::env::var("ZW_INLINE_TABLE_IB_SIZING").as_deref() != Ok("0"));
         let ib_sizes: HashMap<NodeId, (f32, f32)> = box_node
             .children
             .iter()
             .filter(|c| {
                 c.node_id.is_some_and(|id| {
-                    styles
-                        .get(&id)
-                        .is_some_and(|s| matches!(s.display, DisplayValue::InlineBlock))
+                    styles.get(&id).is_some_and(|s| {
+                        matches!(s.display, DisplayValue::InlineBlock)
+                            || (*INLINE_TABLE_IB_SIZING && matches!(s.display, DisplayValue::InlineTable))
+                    })
                 })
             })
             .filter_map(|c| {
@@ -3780,10 +3789,21 @@ pub(crate) fn remeasure_inline_only_containers(
             // 而 CSS 2.1 规定 inline 元素的 margin-top/margin-bottom 不影响行盒高度。
             // R5218：inline-block 家族子（is_block_level=true 的 InlineFlex 族）不计入
             // block_children——混合原子族行的容器高度同样收缩到 IFC 行盒高。
-            let has_block_children = box_node
-                .children
-                .iter()
-                .any(|c| c.is_block_level && !is_atomic_inline_family_box(c, styles) && !c.is_absolute && !c.is_fixed);
+            let has_block_children = box_node.children.iter().any(|c| {
+                c.is_block_level
+                        && !is_atomic_inline_family_box(c, styles)
+                        // R5242：definite 宽 inline-table 子是行内级原子（R5242 同口径，
+                        // 见 float_sigma_eligible_inline_table 文档）——高度已并入本 IFC
+                        // 行盒（ib_sizes R5242 扩展），不构成「块级子」阻止容器高收缩到
+                        // 行盒高（008：wrapper 200 应 100）。auto 宽维持旧块叠语义。
+                        // kill-switch 同上 `ZW_INLINE_TABLE_IB_SIZING=0`。
+                        && !(*INLINE_TABLE_IB_SIZING
+                            && c.node_id
+                                .and_then(|id| styles.get(&id))
+                                .is_some_and(crate::intrinsic_sizing::float_sigma_eligible_inline_table))
+                        && !c.is_absolute
+                        && !c.is_fixed
+            });
             let is_layout_container = matches!(
                 style.display,
                 DisplayValue::Flex
