@@ -2895,6 +2895,17 @@ pub fn register_dom_callbacks(
             }),
         );
     }
+
+    // R5254（html-semantics M2 切片 50，2026-10-24）：主文档初始 HTML 的 details
+    // parser-open toggle 补偿两段式。spec attribute change steps 随 parser 逐元素
+    // 运行——解析器添加 `open` 也排 toggle task；innerHTML/createElement-HTML/包装
+    // 世界解析面已在各自解析点调 `__zwDetailsScan4100(…, true)`，唯主文档初始属性
+    // 由 host 解析直建、不经任何 JS 写路径。注册期（页面脚本前）标记初始 open 身份
+    // 集 + DOMContentLoaded（解析完成点，页面脚本必已跑完）只对「初始 open 且当前
+    // 仍 open」补派——单段直扫的两难见 part03 函数注记。
+    let _ = sandbox.execute(
+        "try { if (typeof __zwDetailsInitOpenMark5254 === 'function') __zwDetailsInitOpenMark5254(); if (typeof document !== 'undefined' && document && typeof document.addEventListener === 'function') document.addEventListener('DOMContentLoaded', function () { try { if (typeof __zwDetailsInitOpenFire5254 === 'function') __zwDetailsInitOpenFire5254(); } catch (_eR5254d) {} }, true); } catch (_eR5254) {}",
+    );
 }
 
 thread_local! {

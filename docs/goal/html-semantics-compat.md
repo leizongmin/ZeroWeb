@@ -2,9 +2,49 @@
 
 **版本**: v2.0
 **日期**: 2026-10-24（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 49 收口（B 族 5F 挂账定性——bounds 2F 渲染流面 + pointer-capture 2F 指针管线深水（R5252 试错回退）+ corner 1F 既有；F 族分诊；R5253 fragment 导航 details 展开收口 auto-expand，全域 426P/54F/2T REG 0 / GAIN 1），下一步按挂账序 A 族 closedby×slot 16F 或 H 前置 declarative shadow 联合切片；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 50 收口（toggleEvent 1T 文件级 Timeout 收口——分诊定位 parser 初始 open details 无 toggle 事件，R5254 两段式补偿（注册期 mark 初始 open 集 + DCL fire「初始 open 且仍 open」派发）+ DOMParser 身份键 handler 表，全域 428P/54F/1T REG 0 / GAIN 2），下一步按挂账序 A 族 closedby×slot 16F 或 H 前置 declarative shadow 联合切片；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-24 M2 切片 49 收口）**：B 族 light dismiss 5F 全挂账
+> **▶ 当前状态（2026-10-24 M2 切片 50 收口）**：toggleEvent 1T 收口
+> （R5254 parser 初始 open details toggle 补偿两段式）。**分诊**：
+> toggleEvent.html 文件级 Timeout——11 async_test 中 9 Pass、pending: 2
+> 永挂（t9 依赖 inline ontoggle 在 parser 声明 open 时 resolve promise；
+> 末案 DOMParser 产物 ontoggle）。根因：R4009 toggle 队列只挂写路径尾钩
+>（IDL setter / setAttribute / removeAttribute），parser 初始 open 由
+> host 解析直建不经 JS 写路径；innerHTML / createElement-HTML / 包装
+> 世界三解析面已接 R4100 扫描，**唯主文档初始 HTML 与 DOMParser 快照面
+> 缺**。**两段式**（单段直扫两难均实证：注册期直扫 task 派发早于页面
+> 脚本——runner 面 arm 到真线程 timer，t9 resolver 未就位永挂；DCL 直
+> 扫分不清 parser open 与运行时 open——activation-behavior coalesced 案
+> toggle 计数 2≠1 回归）：注册期 mark（`__zwDetailsInitOpenMark5254`，
+> 页面脚本前文档纯 parser 态，open 者身份 key 入集）+ DCL fire
+>（`__zwDetailsInitOpenFire5254`，capture listener，只对「初始 open 且
+> 当前仍 open」走既有 `_zwToggleQueueNotify4009` 入队，标记集一次性消
+> 费）；`__zw_reset_form_state` 尾清集重标记（跨导航）。**刀二
+> DOMParser**：快照架构死穴——扫描快照 ≠ 用户 querySelector 手持快照，
+> 实例属性 handler 不可达（首版直调计数 0 实证）；改 parseFromString
+> 返回前扫 `details[open]`（打 open IDL getter + setTimeout task）+
+> `_zwParseEl.prototype` ontoggle accessor 按身份键（`_zwEvKey`，同源
+> 重解析稳定）登记 `_zwParsedToggleH` 全局表，task 经身份键寻址派发。
+> **契约**（part81）：(a) 主文档初始 open 恰好一次 toggle（closed→open
+> + target.open 真值）+ 同态写不重派（t9 断言面）；(b) 初始 closed 不
+> 派；(c) DOMParser 产物收到 toggle + target.open 真值；(c2) 无 open
+> details 零 task。时序模拟：记录式 `__zw_setTimeout` stub + 手动
+> `__zw_fire` + 手动派 DCL。**验证**：toggleEvent.html **Timeout → 11
+> 子测试全 Pass**；activation-behavior coalesced 案两段式回绿；全域
+> 98 files **483 subtest 428P/54F/1T 对 s49 逐位 REG 0 / GAIN 2**
+>（fail 集逐位一致，子测试总数 482→483 为 Timeout 不再吞 2 案）；
+> zero-engine lib 3446P/0F（+契约 part81）；fmt/clippy clean
+>（test-guard 包裹）；release runner 含 R5254 锚点（grep 实证）。
+> 账本见
+> [evidence/2026-10-24-m2s50-parser-open-toggle.md](html-semantics-compat/evidence/2026-10-24-m2s50-parser-open-toggle.md)。
+> **下一步**：按挂账序候选 A 族 closedby×slot 16F（Chrome-parity 同红
+> 钉住，slot 分配 shim 面）或 H 前置 4F（declarative shadow parser +
+> 渲染流联合切片）；F 族 name-attribute 3F 与 DOMParser 快照架构
+>（live 文档面）维持挂账。**切片间隙**：本切片为 engine shim 面
+>（part01/02/03 + callbacks.rs 注册尾），下一挂账 A/H 均预期跨
+> parser/shim/渲染流，间隙开放，开工前查 oracle master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 49 收口）**：B 族 light dismiss 5F 全挂账
 > 零净变更 + F 族分诊 + R5253 收口 details auto-expand 1F。**B 族定性**：
 > bounds-clicking 2F——探针实证 elementFromPoint 对 dialog 自身盒命中返
 > null（modal+modeless 同断、后代正常），渲染流命中缺口并 C 族记账；

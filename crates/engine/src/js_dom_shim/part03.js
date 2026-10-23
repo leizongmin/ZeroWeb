@@ -13556,6 +13556,59 @@
     } catch (_e4s4100) {}
   };
 
+  // ── R5254（html-semantics M2 切片 50，2026-10-24）：主文档初始 open details 的
+  // toggle 补偿两段式——「注册期标记 + DOMContentLoaded 派发」。注册期（页面脚本
+  // 前）文档还是 parser 初始态，标记初始 open 的身份 key；DCL（解析完成点）页面
+  // 脚本已跑完、运行时开合已走既有写路径队列——只对「初始 open 且当前仍 open」
+  // 补派 parser toggle（toggleEvent.html t9 inline ontoggle promise 依赖）。单段
+  // 直扫的两难：注册期直扫 task 派发早于页面脚本（runner 实证 resolver 未就位）；
+  // DCL 直扫分不清 parser open 与运行时 open（activation-behavior coalesced 案
+  // toggle 计数 +1 实证）。跨导航由 __zw_reset_form_state 重标记（同 sandbox 复用，
+  // 新文档重新标记初始态）。
+  // https://html.spec.whatwg.org/multipage/interactive-elements.html#the-details-element
+  globalThis.__zwDetailsInitOpenMark5254 = function () {
+    try {
+      if (typeof _zwDetailsCollect4100 !== 'function') return;
+      var root = typeof document !== 'undefined' ? document : null;
+      if (!root) return;
+      var all = _zwDetailsCollect4100(root);
+      var set = {};
+      for (var i = 0; i < all.length; i++) {
+        var el = all[i];
+        try {
+          if (!_zwDetailsIsOpen4100(el)) continue;
+          var idt = _zwDetailsNodeId4100(el);
+          if (!idt.identified) continue;
+          var k = _elKey(idt.sel, idt.hnd);
+          if (k != null) set[k] = true;
+        } catch (_eR254m) {}
+      }
+      globalThis.__zwDetailsInitOpen5254 = set;
+    } catch (_eR254m2) {}
+  };
+  globalThis.__zwDetailsInitOpenFire5254 = function () {
+    try {
+      var set = globalThis.__zwDetailsInitOpen5254;
+      if (!set) return;
+      globalThis.__zwDetailsInitOpen5254 = {};
+      if (typeof _zwDetailsCollect4100 !== 'function' || typeof _zwToggleQueueNotify4009 !== 'function') return;
+      var root = typeof document !== 'undefined' ? document : null;
+      if (!root) return;
+      var all = _zwDetailsCollect4100(root);
+      for (var i = 0; i < all.length; i++) {
+        var el = all[i];
+        try {
+          if (!_zwDetailsIsOpen4100(el)) continue;
+          var idt = _zwDetailsNodeId4100(el);
+          if (!idt.identified) continue;
+          var k = _elKey(idt.sel, idt.hnd);
+          if (k == null || !set[k]) continue;
+          _zwToggleQueueNotify4009(idt.sel, idt.hnd, false);
+        } catch (_eR254f5) {}
+      }
+    } catch (_eR254f6) {}
+  };
+
   // ── R4009：summary 激活行为（spec the-summary-element activation behaviour）──
   //
   // 本 summary 为父 details 的**首个 summary 元素子**（activation element，spec
