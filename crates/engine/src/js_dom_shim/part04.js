@@ -1994,6 +1994,50 @@
             }
             return null;
           }
+          // R5240（html-semantics M2 切片 38）：pending 重插窗口的兄弟读补偿——R334
+          // appendChild/insertBefore 的结构 wire 异步 drain，同 turn
+          // `__zw_element_siblings` 读 host 旧树（focus-after-close「moved in between」
+          // 案：body.appendChild(input) 移位后 nextElementSibling 恒读旧兄弟 dialog，
+          // assert_not_equals 红；「moved to shadow root」案：sel 子挂 shadow 容器后
+          // host 无该树，读恒旧 body 位）。补偿镜像 parentNode getter（M3 扩批 XLV）
+          // 的槽位双读：①sel 父槽 `_zwSelPendingParent` → 新父融合元素子列表定位
+          // （R317 视图源，含 R182 重定位「旧位剔除+新位插入」语义）；②handle 容器
+          // 记账 `_zwAriaSyncParent[sel]`（R5009 片 e）→ 容器 registry 元素定位。
+          // spec dom-nondocumenttypechildnode-nextelementsibling 树序语义按当前树
+          // （pre-insert 步骤 4「remove」同步生效），pending 视图即 JS 侧权威树。
+          if (sel) {
+            var _r5240GateKids = null;
+            try {
+              var _r5240Ex = _expando[key];
+              var _r5240Slot = (_r5240Ex && _r5240Ex._zwSelPendingParent) ? _r5240Ex._zwSelPendingParent : null;
+              if (!_r5240Slot) { try { _r5240Slot = this._zwSelPendingParent || null; } catch (_e5240t) {} }
+              if (_r5240Slot && _r5240Slot.parentSel) {
+                _r5240GateKids = _childNodeList(_r5240Slot.parentSel, null);
+              } else if (typeof _zwAriaSyncParent !== 'undefined' && _zwAriaSyncParent) {
+                var _r5240Sync = _zwAriaSyncParent[String(sel)];
+                if (_r5240Sync && _r5240Sync.parentHandle && !_r5240Sync.parentSel) {
+                  _r5240GateKids = _handleChildren[_r5240Sync.parentHandle] || [];
+                }
+              }
+            } catch (_e5240g) { _r5240GateKids = null; }
+            if (_r5240GateKids) {
+              var _r5240Els = [], _r5240Idx = -1;
+              var _r5240Self = _makeProxy(sel, handle);
+              var _r5240Resel = (typeof globalThis.__zwPendReselGet === 'function') ? globalThis.__zwPendReselGet(sel) : null;
+              for (var _r5240i = 0; _r5240i < _r5240GateKids.length; _r5240i++) {
+                var _r5240c = _r5240GateKids[_r5240i];
+                if (!_r5240c || _r5240c.nodeType !== 1) continue;
+                if (_r5240Idx < 0 && (_r5240c === _r5240Self || _r5240c === _r5240Resel
+                    || (_r5240c.__zwSelector && String(_r5240c.__zwSelector) === String(sel)
+                      && !_r5240c.__zwHandle))) {
+                  _r5240Idx = _r5240Els.length;
+                }
+                _r5240Els.push(_r5240c);
+              }
+              if (prop === 'previousElementSibling') return _r5240Idx > 0 ? _r5240Els[_r5240Idx - 1] : null;
+              return _r5240Idx >= 0 && _r5240Idx < _r5240Els.length - 1 ? _r5240Els[_r5240Idx + 1] : null;
+            }
+          }
           if (!sel || typeof __zw_element_siblings !== 'function') return null;
           try {
             var parts = __zw_element_siblings(sel).split('|');
@@ -6146,9 +6190,16 @@
             // R5009 片 e（M4 片 e）：sel 子挂 handle 容器（shadow/fragment/handle 元素）
             // 同步父记录——`_recordHandleChild` 早退于无 handle 子，R334 槽仅覆盖 sel 父；
             // ARIA 树链 walker 在 host mutation apply 前消费（`_zwAriaSyncParent`）。
+            // R5240（html-semantics M2 切片 38）：**同步覆写 sel 槽**——子此前经 R334
+            // sel 父路径移动过时 `_zwSelPendingParent` 残留旧 parentSel（focus-after-close
+            // 「moved to shadow root」案：先 appendChild/insertBefore 移动再挂 shadow 容器，
+            // 槽仍指 body → 兄弟读 gate 命中 stale 槽读 body 视图）。dual-form 槽
+            // （parentSel: null + parentHandle，R97 noWire 同款形状）让槽消费面按容器
+            // 树取值；parentSel 空值时既有消费面回落 host 读，行为不变。
             if (handle && child && child.__zwSelector && !child.__zwHandle
                 && typeof _zwAriaSyncParent !== 'undefined') {
               _zwAriaSyncParent[String(child.__zwSelector)] = { parentSel: null, parentHandle: handle };
+              try { child._zwSelPendingParent = { parentSel: null, parentHandle: handle, nextSibling: null }; } catch (_e5240cs) {}
             }
             if (child && !child.__zwHandle && handle && child.nodeType) {
               if (!_handleChildren[handle]) _handleChildren[handle] = [];

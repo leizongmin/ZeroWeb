@@ -2,11 +2,38 @@
 
 **版本**: v2.0
 **日期**: 2026-10-21（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 37 收口（挂账 anchor-with-inline 导航缺口：nearest activation 执行补面，语料 Timeout 全红 → 5P/0F，REG 0），下一步按挂账序推进
+**状态**: Active——M2 切片 38 收口（挂账 appendChild move 后兄弟读 stale：兄弟读 pending gate + 共享视图插位修正，focus-after-close 3F → 2F，REG 0），下一步按挂账序推进
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-23 M2 切片 37 收口）**：挂账 anchor-with-inline
+> **▶ 当前状态（2026-10-23 M2 切片 38 收口）**：挂账 appendChild move
+> 后兄弟读 stale 收口。**探针钉定**（zz-probe 两迭代，验证后已删）：
+> R334 appendChild/insertBefore wire 异步 drain，兄弟读无 pending 补偿
+> （parentNode 有槽位补偿、兄弟没有）；两遍调用序列进一步钉出**共享视
+> 图插位缺陷**——R182 重定位 pos 在旧位剔除前计算，剔除后未同步，
+> cleanup `insertBefore(input, dialog)` 形态视图成 [dialog, input,
+> script]（真树 [input, dialog, script]）；shadow 容器案露第三层——
+> 上一子测试 stale parentSel 槽未覆写。**落地（R5240 三刀）**：①part04
+> 兄弟 trap pending gate（sel 槽→融合视图定位 / 容器 ariaSync→
+> registry 定位）；②part05 overlay 旧位剔除 pos 同步（**共享路径**，
+> childNodes/children 全消费面受益）；③容器挂载路径 dual-form 槽覆写
+> （R97 noWire 同款形状）。**集群**：focus-after-close **3F+1T →
+> 2F+1T**（moved-in-between 案全绿）；interactive-elements 全域 98
+> files 416P/64F/2T 对 s37 账本 **REG 0 / GAIN 1**；forms 域 4627
+> subtest 逐位一致（REG 0）。**已知边界**：moved-to-shadow-root 案兄
+> 弟断言过、红点推进到 `shadowRoot.activeElement`（focus-in-shadow 跨
+> 流缺口，与 dialog-focus-previous-outside 同族，新挂账）。gates：lib
+> **3430P/0F**（+1 为渲染流新增）、clippy/fmt clean、零新增依赖。账本
+> 见 [evidence/2026-10-23-m2s38-pending-move-sibling.md](html-semantics-compat/evidence/2026-10-23-m2s38-pending-move-sibling.md)。
+> **下一步**：按挂账序 parser form element pointer 4F（用户决策门禁，
+> 单独立项征询）、custom command `--` 前缀 CommandEvent defer、ESC 组
+> 栈边缘乱序、非模态 close 不出组栈、R371 模板残留、summary-less
+> details 内非激活后代翻转（s37）、focus-in-shadow
+> shadowRoot.activeElement + focusing steps 跨 shadow 恢复（s38 新，与
+> dialog-focus 族跨流缺口同族）；declarative shadow DOM（H 定性后）待
+> parser/渲染流联合切片。
+>
+> **▶ 上轮状态（2026-10-23 M2 切片 37 收口）**：挂账 anchor-with-inline
 > 导航缺口收口。**探针钉定**（单案隔离；多案探针 onhashchange 竞争污
 > 染作废）：裸 a 后代 click 也不导航——R112 post 段 nearest activation
 > 无 act:a 分支（落 input-change 兜底）；svg 案露出第二根因——summary
@@ -27,7 +54,7 @@
 > 栈、R371 模板残留、summary-less details 内非激活后代翻转（s37 新）；
 > declarative shadow DOM（H 定性后）待 parser/渲染流联合切片。
 >
-> **▶ 上轮状态（2026-10-23 M2 切片 36 收口）**：挂账 impl-doc wrapper
+> **▶ 上上轮状态（2026-10-23 M2 切片 36 收口）**：挂账 impl-doc wrapper
 > requestClose 收口。**探针钉定**：dialog-requestclose 面 5 files 78P/1F，
 > 唯一红正是挂账项；合成 doc（`_zwMEl` 产物）dialog 四方法全缺，R125
 > 原型链已接 HTMLDialogElement.prototype 但 prototype 空占位。**落地

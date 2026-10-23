@@ -9971,9 +9971,19 @@
       }
       // sel 子旧位剔除：移动语义（旧父可能就是同一父——快照基底已含本节点），
       // 先删旧位再按 nextSibling 插新位。
+      // R5240（html-semantics M2 切片 38）：旧位在插位**前**时剔除使 res 左移一位，
+      // pos 须同步递减——否则 splice 把节点插到 ref **后**一位（body.appendChild(input)
+      // → body.insertBefore(input, dialog) 形态：pos 按剔前索引指 dialog，剔后该索引
+      // 已是 dialog 的后继，view 序成 [dialog, input, script] 而真树是
+      // [input, dialog, script]——focus-after-close「moved in between」第二遍调用的
+      // 首断言 input.nextElementSibling 恒 script 的根因）。
       if (isSelChild182) {
         for (var d0 = res.length - 1; d0 >= 0; d0--) {
-          if (res[d0] === nd) { res.splice(d0, 1); break; }
+          if (res[d0] === nd) {
+            res.splice(d0, 1);
+            if (d0 < pos) pos--;
+            break;
+          }
         }
         if (pos > res.length) pos = res.length;
       }
