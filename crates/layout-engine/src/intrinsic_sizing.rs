@@ -1557,6 +1557,16 @@ pub(crate) fn inline_children_non_text_width(
     sum
 }
 
+/// R5242（CSS2 §9.2.2/§10.3.5）：float 收缩两处早退/块叠口径（shrink_pure_text_floats
+/// 的 `has_block_or_replaced` 门 + adjust_float_positions 的 `content_child_widths` 过滤）
+/// 对 inline-table 子的豁免谓词——**CSS width definite** 的 inline-table 才按行内级原子
+/// 豁免（交 R4920 Σ 臂按 width+margin 计盒外尺寸）；auto 宽的 Σ 贡献是 0（上方 R4921
+/// 已知局限），豁免会让 float 同时失去块叠与 Σ 两个收缩来源（塌全宽/塌 0 双向失真），
+/// 维持旧块叠语义。 FIXME(R5242 后继)：auto 宽 inline-table 的 intrinsic 真测量对接后放开。
+pub(crate) fn float_sigma_eligible_inline_table(cs: &ComputedStyle) -> bool {
+    matches!(cs.display, DisplayValue::InlineTable) && resolve_intrinsic_real_length(&cs.width, cs).is_some()
+}
+
 /// R4416（CSS Text 3 §4.1.3）：tab 度量对 (unit, space_advance)——unit = 下一 tab stop
 /// 的名义距离（Number(n) = n×space，Length = max(px, space)），与行内 break_lines 的
 /// tab_unit 公式同源（相同 max 钳制）；preserve 臂 intrinsic 测量与 ruby 悬挂容量共用。

@@ -814,3 +814,6 @@ mod r5228_float_first_margin_replay_tests;
 mod r5235_rel_span_atomic_advance_tests;
 /// R5236 D2（CSS2 §10.3.8）：含 replaced 原子后代的 auto 宽 abspos shrink-to-fit 诊断锚。
 mod r5236_abspos_stf_replaced_child_tests;
+/// R5242（CSS2 §9.2.2 × §10.3.5）float 收缩对 definite 宽 inline-table 子按行内级
+/// Σ 求和锚点。
+mod r5242_inline_table_float_anchor;
