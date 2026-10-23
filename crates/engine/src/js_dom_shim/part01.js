@@ -979,6 +979,17 @@
         // tabindex=-1（focusable 而非 sequential）→ 跳过（child-sequential-focus 断言面）
       } else if (_zwDialogFocusableAreaR4600(d)) {
         area = d;
+      } else {
+        // R5242（html-semantics M2 切片 39）：spec focus delegate 步 4 对**每个**后代跑
+        // get-the-focusable-area（https://html.spec.whatwg.org/multipage/interaction.html
+        // #focus-delegate——非 focusable 后代若持 delegatesFocus shadow，递归 focus
+        // delegate 取其 autofocus 锚）。旧非 dialog 分支只认「后代自身 focusable」，
+        // 嵌套 shadow host（div 无 tabindex + delegatesFocus）被跳过后落树序后一个
+        // focusable（dialog-focus-shadow-double-nested：焦点落外层 x 按钮而非内层
+        // [autofocus] 锚，activeElement 断言链 2F）。与上方 autofocus delegate 循环
+        // （942 行同款三元）形状对齐；dialog 分支的 seq-focusable 优先序是
+        // child-sequential-focus 断言面，不动。
+        area = _zwDialogGetFocusableAreaR4600(d);
       }
       if (area) return area;
     }

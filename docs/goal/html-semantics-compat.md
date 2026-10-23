@@ -2,11 +2,44 @@
 
 **版本**: v2.0
 **日期**: 2026-10-21（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 38 收口（挂账 appendChild move 后兄弟读 stale：兄弟读 pending gate + 共享视图插位修正，focus-after-close 3F → 2F，REG 0），下一步按挂账序推进
+**状态**: Active——M2 切片 39 收口（挂账 focus-in-shadow 跨流：content 视图活缓存 + replaceWith 补插入半边 + focus delegate 递归，double-nested 2F→2P、focus-after-close 2F→1F，REG 0），下一步按挂账序推进
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-23 M2 切片 38 收口）**：挂账 appendChild move
+> **▶ 当前状态（2026-10-23 M2 切片 39 收口）**：挂账 focus-in-shadow
+> 跨流收口（focus-after-close「moved to shadow root」案 +
+> dialog-focus-shadow-double-nested）。**探针钉定**（zz-probe 五迭代，
+> 验证后已删）四层根因：①sel 模板 content 子列表 per-read 重建，跨读
+> mutation 落空（spec content getter 恒返同一 fragment）；②content
+> 条目 parentNode 指模板 wrapper，replaceWith 落错列表（探针 D
+> `pidIsView=false`）；③`_zwMEl.replaceWith` 只有 remove 半边，替换者
+> 落空；④focus delegate 非 dialog 分支缺 get-the-focusable-area 递归，
+> 嵌套 shadow host 被跳过后焦点落树序后一 focusable（探针 E
+> `osraeTag=BUTTON`≠autofocus 锚）。**落地（R5241 四刀 + R5242 一刀 +
+> 收尾失效）**：①part04 content 子列表首读物化缓存（缓存数组即活
+> 树）；②parentNode/parentElement getter 槽位消费补 parentHandle 分支
+> （focus chain 上行达 shadow 边界）；③`_tcParent = _tplContent`（条
+> 目父 = 视图本体）；④part03 replaceWith 补插入半边（plain 父门控，
+> host proxy 面零变化）；⑤part01 focus delegate 递归（dialog 分支
+> seq-focusable 优先序不动）；⑥innerHTML= setter sel 模板缓存失效
+> （R5196 lib 红面收口，视图身份不动）。**集群**：
+> double-nested **2F → 2P 全绿**；focus-after-close **2F+1T → 1F+1T**；
+> interactive-elements 全域 98 files 419P/61F/2T 对 s38 账本
+> **REG 0 / GAIN 3**；forms 域 401 files 3902P/707F/20T/1U
+> **REG 0 / GAIN 3**（GAIN 为 label 文件尾 3 案 s38 跑时截断未注册，
+> 共同 48 案逐位一致）。**已知边界**：focus-after-close 余 1F
+> （Complex dialog usage focus 恢复，既有）；content 缓存不回灌非
+> innerHTML= 的宿主侧子树变化。gates：lib **3431P/0F**、clippy/fmt
+> clean、零新增依赖。账本见
+> [evidence/2026-10-23-m2s39-focus-in-shadow.md](html-semantics-compat/evidence/2026-10-23-m2s39-focus-in-shadow.md)。
+> **下一步**：按挂账序 parser form element pointer 4F（用户决策门禁，
+> 单独立项征询）、custom command `--` 前缀 CommandEvent defer、ESC 组
+> 栈边缘乱序、非模态 close 不出组栈、R371 模板残留、summary-less
+> details 内非激活后代翻转（s37）、focus-after-close Complex dialog
+> usage focus 恢复深层（s39 剩余 1F）；declarative shadow DOM（H 定性
+> 后）待 parser/渲染流联合切片。
+>
+> **▶ 上轮状态（2026-10-23 M2 切片 38 收口）**：挂账 appendChild move
 > 后兄弟读 stale 收口。**探针钉定**（zz-probe 两迭代，验证后已删）：
 > R334 appendChild/insertBefore wire 异步 drain，兄弟读无 pending 补偿
 > （parentNode 有槽位补偿、兄弟没有）；两遍调用序列进一步钉出**共享视
@@ -33,7 +66,7 @@
 > dialog-focus 族跨流缺口同族）；declarative shadow DOM（H 定性后）待
 > parser/渲染流联合切片。
 >
-> **▶ 上轮状态（2026-10-23 M2 切片 37 收口）**：挂账 anchor-with-inline
+> **▶ 上上轮状态（2026-10-23 M2 切片 37 收口）**：挂账 anchor-with-inline
 > 导航缺口收口。**探针钉定**（单案隔离；多案探针 onhashchange 竞争污
 > 染作废）：裸 a 后代 click 也不导航——R112 post 段 nearest activation
 > 无 act:a 分支（落 input-change 兜底）；svg 案露出第二根因——summary
@@ -54,7 +87,7 @@
 > 栈、R371 模板残留、summary-less details 内非激活后代翻转（s37 新）；
 > declarative shadow DOM（H 定性后）待 parser/渲染流联合切片。
 >
-> **▶ 上上轮状态（2026-10-23 M2 切片 36 收口）**：挂账 impl-doc wrapper
+> **▶ 上轮状态（2026-10-23 M2 切片 36 收口）**：挂账 impl-doc wrapper
 > requestClose 收口。**探针钉定**：dialog-requestclose 面 5 files 78P/1F，
 > 唯一红正是挂账项；合成 doc（`_zwMEl` 产物）dialog 四方法全缺，R125
 > 原型链已接 HTMLDialogElement.prototype 但 prototype 空占位。**落地

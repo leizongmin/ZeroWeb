@@ -1,0 +1,421 @@
+{
+ "meta": {
+  "slice": "M2 s39",
+  "date": "2026-10-23",
+  "R": "R5241 (+R5242)",
+  "command": "ZW_TESTHARNESS_RAF_FRAME_DRIVEN=1 ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit N -- ./target/release/zero-wpt-runner testharness-html-semantics <filter> --json",
+  "baseline": "s38: interactive-elements 98f 482t 416P/64F/2T; forms 401f 4627t 3899P/707F/20T(/1U)",
+  "summary": {
+   "dialog_focus_shadow_double_nested": "2F -> 2P (GAIN 2)",
+   "focus_after_close": "2F+1T -> 1F+1T (moved-to-shadow-root GAIN)",
+   "interactive_elements": "98f 482t 419P/61F/2T, REG 0 / GAIN 3",
+   "forms": "401f 4630t 3902P/707F/20T/1U, REG 0 / GAIN 3 (label 文件尾 3 案 s38 截断未注册, 共同 48 案逐位一致)",
+   "engine_lib": "3431P/0F"
+  },
+  "fixes": [
+   "part04 _r145SelKids first-materialization cache (R5241)",
+   "part04 parentNode/parentElement getter parentHandle slot consumption (R5241)",
+   "part04 _tcParent = content view object (R5241)",
+   "part03 _zwMEl.replaceWith insert half, plain-parent gated (R5241)",
+   "part01 focus delegate get-the-focusable-area recursion, non-dialog branch (R5242)",
+   "part04 innerHTML= sel-template content-kids cache invalidation (R5241 closure)"
+  ]
+ },
+ "results": [
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-focus-previous-outside.html",
+   [
+    {
+     "name": "Focus should not be restored if the currently focused element is not inside the dialog.",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Focus restore should not occur when the focused element is in a shadowroot outside of the dialog.",
+     "status": "Fail",
+     "message": "Cannot read properties of null (reading 'querySelector')"
+    },
+    {
+     "name": "Focus restore should occur when the focused element is in a shadowroot inside the dialog.",
+     "status": "Fail",
+     "message": "Cannot read properties of null (reading 'querySelector')"
+    },
+    {
+     "name": "Focus restore should occur when the focused element is slotted into a dialog.",
+     "status": "Fail",
+     "message": "Cannot read properties of null (reading 'querySelector')"
+    },
+    {
+     "name": "Focus restore should always occur for modal dialogs.",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Focus restore should work when the dialog itself is focused.",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-focus-shadow-double-nested.html",
+   [
+    {
+     "name": "show()",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal()",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-focus-shadow.html",
+   [
+    {
+     "name": "show: No autofocus, no delegatesFocus, no siblings",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: No autofocus, no delegatesFocus, no siblings",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: No autofocus, no delegatesFocus, sibling before",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: No autofocus, no delegatesFocus, sibling before",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: No autofocus, no delegatesFocus, sibling after",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: No autofocus, no delegatesFocus, sibling after",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: No autofocus, yes delegatesFocus, no siblings",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: No autofocus, yes delegatesFocus, no siblings",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: No autofocus, yes delegatesFocus, sibling before",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: No autofocus, yes delegatesFocus, sibling before",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: No autofocus, yes delegatesFocus, sibling after",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: No autofocus, yes delegatesFocus, sibling after",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Autofocus before, no delegatesFocus",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Autofocus before, no delegatesFocus",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Autofocus before, yes delegatesFocus",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Autofocus before, yes delegatesFocus",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Autofocus after, no delegatesFocus",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Autofocus after, no delegatesFocus",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Autofocus after, yes delegatesFocus",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Autofocus after, yes delegatesFocus",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Autofocus on shadow host, yes delegatesFocus, no siblings",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Autofocus on shadow host, yes delegatesFocus, no siblings",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Autofocus on shadow host, yes delegatesFocus, sibling before",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Autofocus on shadow host, yes delegatesFocus, sibling before",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Autofocus on shadow host, yes delegatesFocus, sibling after",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Autofocus on shadow host, yes delegatesFocus, sibling after",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Autofocus on shadow host, no delegatesFocus, no siblings",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Autofocus on shadow host, no delegatesFocus, no siblings",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Autofocus on shadow host, no delegatesFocus, sibling before",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Autofocus on shadow host, no delegatesFocus, sibling before",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Autofocus on shadow host, no delegatesFocus, sibling after",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Autofocus on shadow host, no delegatesFocus, sibling after",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Autofocus inside shadow tree, yes delegatesFocus, no siblings",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Autofocus inside shadow tree, yes delegatesFocus, no siblings",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Autofocus inside shadow tree, yes delegatesFocus, sibling before",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Autofocus inside shadow tree, yes delegatesFocus, sibling before",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Autofocus inside shadow tree, yes delegatesFocus, sibling after",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Autofocus inside shadow tree, yes delegatesFocus, sibling after",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Autofocus inside shadow tree, no delegatesFocus, no siblings",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Autofocus inside shadow tree, no delegatesFocus, no siblings",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Autofocus inside shadow tree, no delegatesFocus, sibling before",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Autofocus inside shadow tree, no delegatesFocus, sibling before",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Autofocus inside shadow tree, no delegatesFocus, sibling after",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Autofocus inside shadow tree, no delegatesFocus, sibling after",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Two shadow trees, both delegatesFocus, first tree doesn't have autofocus element, second does",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Two shadow trees, both delegatesFocus, first tree doesn't have autofocus element, second does",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: No autofocus, no delegatesFocus, slotted target",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: No autofocus, no delegatesFocus, slotted target",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "show: Shadowroot on child, no autofocus, no delegatesFocus",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "showModal: Shadowroot on child, no autofocus, no delegatesFocus",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-focusability.html",
+   [
+    {
+     "name": "The dialog element itself should not be keyboard focusable.",
+     "status": "Fail",
+     "message": "assert_equals: Focus order mismatch at step 9/11 expected Element node <dialog contenteditable=\"true\" id=\"dialog4\" open=\"\">\n  <b... but got Element node <button id=\"within4\">button</button>"
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-focusing-steps-disconnected.html",
+   [
+    {
+     "name": "dialog.show(): focusing steps should not change focus on disconnected <dialog>",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "dialog.showModal() should throw on disconnected <dialog>",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-focusing-steps-inert.html",
+   [
+    {
+     "name": "dialog.show(): focusing steps should not change focus when dialog is inert",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "dialog.showModal(): focusing steps should apply focus fixup rule when dialog is inert",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/dialog-focusing-steps-prevent-autofocus.html",
+   [
+    {
+     "name": "After showing a dialog, non-dialog autofocus processing won't work.",
+     "status": "Pass",
+     "message": null
+    }
+   ]
+  ],
+  [
+   "html/semantics/interactive-elements/the-dialog-element/focus-after-close.html",
+   [
+    {
+     "name": "Focus should be moved to the previously focused element (Simple dialog usage)",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Focus should be moved to the previously focused element even if it has moved in between show/close",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Focus should be moved to the previously focused element even if it has moved to shadow DOM root in between show/close",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Focus should be moved to the body if the previously focused element is removed",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Focus should be moved to the shadow DOM host if the previouly focused element is a shadow DOM node",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Focus should be moved to the previously focused element (Complex dialog usage)",
+     "status": "Fail",
+     "message": "assert_equals: expected Element node <input></input> but got Element node <div></div>"
+    },
+    {
+     "name": "html/semantics/interactive-elements/the-dialog-element/focus-after-close.html",
+     "status": "Timeout",
+     "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201856, 23873, 6850], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":7}, test_wait=false)"
+    }
+   ]
+  ]
+ ]
+}

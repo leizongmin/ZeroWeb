@@ -16082,8 +16082,35 @@
       for (var g = 0; g < arguments.length; g++) _r117MVal(arguments[g]); };
     node.replaceWith = function () {
       for (var h = 0; h < arguments.length; h++) _r117MVal(arguments[h]);
-      if (node.parentNode && node.parentNode.removeChild) {
-        try { node.parentNode.removeChild(node); } catch (_eR117) {}
+      var _r5241P = node.parentNode;
+      if (!_r5241P) return;
+      // R5241（html-semantics M2 s39）：spec ChildNode.replaceWith = concept-node-replace
+      // （https://dom.spec.whatwg.org/#concept-node-replace——pre-insert 群到 node 前，
+      // 再 remove node）。旧实现仅 remove 半边，plain 树（_zwMEl 解析产物 + template
+      // content 视图活数组）的 replaceWith 替换者落空——dialog-focus-shadow-double-nested
+      // turnIntoShadowTree `template.replaceWith(host)` 后 content 数组缺 host，shadow
+      // 链断。**plain 父才走本地 splice**（childNodes 为活数组）；host proxy 父
+      // （__zwHandle/__zwSelector）的融合 childNodes 每读重建、splice 无效，保持
+      // remove-only 旧行为（host wire 的 replaceWith 由 proxy trap 面负责）。
+      var _r5241Plain = !_r5241P.__zwHandle && !_r5241P.__zwSelector;
+      var _r5241Kids = null;
+      var _r5241Idx = -1;
+      if (_r5241Plain) {
+        try { _r5241Kids = _r5241P.childNodes; } catch (_e5241k) {}
+        if (Array.isArray(_r5241Kids)) {
+          for (var i5241 = 0; i5241 < _r5241Kids.length; i5241++) {
+            if (_r5241Kids[i5241] === node) { _r5241Idx = i5241; break; }
+          }
+        }
+      }
+      if (_r5241P.removeChild) { try { _r5241P.removeChild(node); } catch (_eR117) {} }
+      if (_r5241Idx >= 0) {
+        for (var h5241 = 0; h5241 < arguments.length; h5241++) {
+          var nw5241 = arguments[h5241];
+          if (nw5241 && typeof nw5241 === 'object') { nw5241.parentNode = _r5241P; }
+          else { nw5241 = { nodeType: 3, nodeName: '#text', data: String(nw5241), parentNode: _r5241P, get textContent() { return this.data; } }; }
+          _r5241Kids.splice(_r5241Idx + h5241, 0, nw5241);
+        }
       }
     };
     node.remove = function () {
