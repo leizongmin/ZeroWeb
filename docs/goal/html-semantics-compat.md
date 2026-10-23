@@ -28,6 +28,12 @@
 > （2026-10-23 用户决策：与 declarative shadow DOM（H）打捆 parser
 > 批次、M2 收口后尾段单独立项）；declarative shadow DOM 同打捆待触发。
 >
+> **切片间隙宣告义务（2026-10-23 用户决策，配合
+> [oracle 流解封协议](incremental-rendering-oracle/master.md)）**：每个
+> shim 面切片 push 后，若下一挂账不触 engine 生产面（余下挂账均为 shim
+> 面），在「当前状态」宣告切片间隙开放；开工下一切片前先查 oracle
+> master 碰撞记录有无占用标记，有则等待或改排其他 shim 挂账。
+>
 > **▶ 上轮状态（2026-10-23 M2 切片 41 收口）**：挂账「ESC 组栈边缘乱序」
 > 定性收口（非代码轮）。**探针钉定**（zz-probe-s41，验证后已删）：
 > corner-cases「focusin calls showModal, modeless」ESC 案事件序 =
