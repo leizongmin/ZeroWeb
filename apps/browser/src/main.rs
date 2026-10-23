@@ -1467,7 +1467,7 @@ fn main() {
     // M3（devtools goal DC-3）：GUI 模式 CDP server 可开关——CLI 显式传
     // `--remote-debugging-port` 才开启（默认关）。会话形态 = 独立 headless 会话
     //（自带 renderer 子进程，附接流程与 `--headless` 完全一致）；GUI 标签页桥接
-    // 属深结构碰头协调项（挂账 docs/goal/devtools/master.md）。端口仅绑 loopback。
+    // 属深结构碰头协调项（挂账 docs/goal/archive/devtools/master.md）。端口仅绑 loopback。
     if cli.remote_debugging_port > 0 {
         let cdp_server = Arc::new(headless::HeadlessServer::new(
             cli.remote_debugging_port,
