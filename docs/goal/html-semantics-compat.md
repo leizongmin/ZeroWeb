@@ -2,9 +2,32 @@
 
 **版本**: v2.0
 **日期**: 2026-10-24（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 52 收口（R5257 focus 滚动进视口 + 视口 scroll document 级派发——focus-after-close 文件级 Timeout 收口；R5258 Element.moveBefore——movebefore-setup 1F 收口；全域 433P/50F/0T REG 0 / GAIN 3，Timeout 清零），下一步 declarative shadow 联合切片待决策或续 C 族渲染流/B 族指针/F 族 name-attribute 挂账序；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 53 收口（零代码轮：corner-cases「focusin calls showModal, modeless」ESC 1F 复审定性 spec 一致行为/测试期望分歧，四重证据 + wpt.fyi 双引擎绿反证矛盾坐实 wptrunner 环境层，全域 433P/50F/0T 维持），下一步 F 族 name-attribute 3F 分诊或续 B/C 挂账序；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-24 M2 切片 52 收口）**：R5257 focus 滚动进视口
+> **▶ 当前状态（2026-10-24 M2 切片 53 收口，零代码轮）**：corner-cases
+> 「focusin calls showModal, modeless」ESC 1F 复审定性——**spec 一致行为，
+> 测试期望分歧**。四重证据同向（ESC 后 dialog 重开 open=true）：live
+> spec close-the-dialog 恢复门（anchor 后代 OR wasModal → focusing steps
+> → focusin → 处理器 showModal；showModal 前置守卫无一命中、无重入门）；
+> Chromium main 源码（Close() 焦点恢复在 is_closing_ 释放后、showModal
+> 无守卫）；直探 Chromium 151 与 **Chrome for Testing 158.0.8118.0
+>（wpt.fyi 同 build）**真 ESC——皆重开；我方 runner 探针序列与直探逐步
+> 同构。**反证与矛盾**：wpt.fyi 同 revision（c645564b0e，2026-10-23
+> run）chrome-158 + firefox-161 summary 双双 30/30 绿（压缩格式已验证
+> c=[passes,total]）——与同 build 直探矛盾只能落 wptrunner 环境层（页面
+> 可见语义内构造不出 closed 读点世界）；s41 依据「Chrome-parity 同红」
+>（crbug 417571176，2026-04）已被双引擎绿取代（该 crbug 的 CL 即 wpt
+> #58337 断言形式修复）。**收口**：1F 保留标 spec-consistent known
+> divergence，不弯就（s41 R5244 试错实测 REG 4 + 违背 spec/直探）；
+> 全域 433P/50F/0T 零变化。账本见
+> [evidence/2026-10-24-m2s53-corner-cases-esc-divergence.md](html-semantics-compat/evidence/2026-10-24-m2s53-corner-cases-esc-divergence.md)。
+> **下一步**：F 族 name-attribute 3F 分诊（mutation events / XHR 解析 /
+> template 附着底座缺失——评 shim 可收口面 vs 底座缺口）；B 族
+> pointer-capture 2F（s49 定性指针管线深水）、C 族渲染流 20F 维持跨流
+> 挂账；declarative shadow 联合切片待用户点名。**切片间隙**：本轮零代码
+> 未触 engine 生产面，间隙维持开放，开工前查 oracle master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 52 收口）**：R5257 focus 滚动进视口
 > + R5258 moveBefore——**interactive-elements 文件级 Timeout 清零**（50F
 > 全为明确 Fail）。**分诊**（本轮刀前）：shim 面红名单三案——
 > focus-after-close 文件级 Timeout（6/7 Pass 悬挂末腿）、
