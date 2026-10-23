@@ -522,6 +522,22 @@ impl RendererJsWorker {
             .map_err(|e| e.to_string())
     }
 
+    /// P105：普通队列 fire-and-forget 提交器（与 [`Self::submit_script_priority`]
+    /// 同形，走 `cmd_tx`）。批量资源事件派发（link 分片等站点 handler 计算型负载）
+    /// 由此入普通通道——prio 让给 automation eval 等交互请求，避免 30s 看门狗臂
+    /// 垄断期饿死 prio FIFO 后续者；普通通道内 FIFO 原序不变。
+    pub fn submit_script(&self, script: &str) -> Result<(), String> {
+        let (reply_tx, reply_rx) = mpsc::channel();
+        drop(reply_rx);
+        self.cmd_tx
+            .send(JsWorkerCommand::Execute {
+                script: script.to_string(),
+                reply: reply_tx,
+                seq: self.cmd_seq.fetch_add(1, Ordering::Relaxed),
+            })
+            .map_err(|e| e.to_string())
+    }
+
     /// t2-pb1 fix#15：优先通道执行 + 有界等待，超时把 reply 通道交还调用方挂起续答。
     /// 脚本已入优先队列照常执行（结果晚至）；worker 忙于长臂（bilibili timer 回调
     /// 28-30s）时调用方主循环至多等 `timeout` 即可放行导航等 IPC，回复由调用方轮询
@@ -1087,6 +1103,16 @@ struct WorkerCensus {
     buckets: HashMap<&'static str, (u64, u128, u128)>,
 }
 
+// P105 诊断：ZW_EXEC_TIMING 侧信道（ZW_MAINLOOP_TRACE 同型）——Execute 臂
+// 分段耗时（exec / 收尾），≥1s 落一行。30s 看门狗臂定位用（详见臂内 FIXME 注释）。
+static EXEC_TIMING_FILE: std::sync::LazyLock<std::sync::Mutex<Option<std::fs::File>>> =
+    std::sync::LazyLock::new(|| match std::env::var("ZW_EXEC_TIMING") {
+        Ok(path) if path != "1" => {
+            std::sync::Mutex::new(std::fs::OpenOptions::new().create(true).append(true).open(path).ok())
+        }
+        _ => std::sync::Mutex::new(None),
+    });
+
 impl WorkerCensus {
     fn new() -> Self {
         let value = zero_runtime_config::optional_string("ZW_JS_WORKER_CENSUS");
@@ -1612,6 +1638,12 @@ fn js_worker_main(
                 }
                 // R-baidu2/P3：未捕获脚本错误统一在此汇出（页面脚本/定时器/事件回调
                 // 的异常都经某次 execute 的 Err 冒出）→ `Runtime.exceptionThrown`。
+                // P105 诊断：臂内分段计时——census 只见臂总耗时 30s，而
+                // ZW_HOST_CALL_TRACE 无慢宿主调用、tracing::warn 进 renderer stderr
+                // tail 缓冲不可见。execute / 收尾分段落盘 ZW_EXEC_TIMING，把 30s
+                // 归因到 execute 内还是臂内收尾段。
+                let exec_ms = exec_started.elapsed().as_millis() as u64;
+                let tail_started = std::time::Instant::now();
                 if let Err(ref message) = result {
                     let source = page_url.lock().map(|mut g| std::mem::take(&mut *g)).unwrap_or_default();
                     if let Ok(mut q) = script_errors_for_worker.lock() {
@@ -1636,6 +1668,27 @@ fn js_worker_main(
                     }
                 }
                 let _ = reply.send(result);
+                // P105 诊断：分段落盘（见上注释）——≥1s 才写行，epoch 毫秒对齐。
+                {
+                    let tail_ms = tail_started.elapsed().as_millis() as u64;
+                    if exec_ms >= 1000 || tail_ms >= 1000 {
+                        let now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_millis())
+                            .unwrap_or_default();
+                        let line = format!(
+                            "[exec-timing] t={now} exec={exec_ms}ms tail={tail_ms}ms len={} head={}\n",
+                            script.len(),
+                            script.chars().take(60).collect::<String>()
+                        );
+                        if let Ok(mut guard) = EXEC_TIMING_FILE.lock()
+                            && let Some(file) = guard.as_mut()
+                        {
+                            use std::io::Write;
+                            let _ = file.write_all(line.as_bytes());
+                        }
+                    }
+                }
             }
             JsWorkerCommand::ExecuteModule {
                 source,

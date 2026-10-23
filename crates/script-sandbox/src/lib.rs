@@ -64,6 +64,72 @@ mod quickjs_runtime;
 #[cfg(feature = "quickjs")]
 pub use quickjs_runtime::*;
 
+// P105 诊断：ZW_HOST_CALL_TRACE 诊断仪器（与 renderer ZW_MAINLOOP_TRACE 同型）——
+// 宿主回调逐次计时，≥100ms 落一行「名称+耗时+参数头」。用于把 link 事件分片臂的
+// 30s 看门狗臂归因到具体 __zw_* 宿主调用（census 只能定位到臂级）。定义在 lib.rs：
+// v8/quickjs feature 并集构建下两 runtime 共用一份静态。仪器零成本：env 未设时仅一次
+// LazyLock 布尔判断。
+pub(crate) static HOST_CALL_TRACE: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_HOST_CALL_TRACE").is_ok());
+
+pub(crate) static HOST_CALL_TRACE_FILE: std::sync::LazyLock<std::sync::Mutex<Option<std::fs::File>>> =
+    std::sync::LazyLock::new(|| match std::env::var("ZW_HOST_CALL_TRACE") {
+        Ok(path) if path != "1" => {
+            std::sync::Mutex::new(std::fs::OpenOptions::new().create(true).append(true).open(path).ok())
+        }
+        _ => std::sync::Mutex::new(None),
+    });
+
+/// 单次宿主调用计时守卫：Drop 时 ≥阈值落一行（epoch 毫秒与 renderer/browser trace 对齐）。
+/// 阈值经 ZW_HOST_CALL_TRACE_MS 调（默认 100）；P105 round6 用 1ms 抓 ms 级调用 convoy
+/// （千次 × 1-10ms = 30s 墙钟 @ ~0.5% CPU 的臂内形态）。
+pub(crate) struct HostCallTraceGuard {
+    name: String,
+    head: String,
+    started: std::time::Instant,
+}
+
+static HOST_CALL_TRACE_MS: std::sync::LazyLock<u128> = std::sync::LazyLock::new(|| {
+    std::env::var("ZW_HOST_CALL_TRACE_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(100)
+});
+
+impl HostCallTraceGuard {
+    /// 装载：ZW_HOST_CALL_TRACE 未设时返回 None（零开销路径）。
+    pub(crate) fn arm(name: &str, args: &[String]) -> Option<Self> {
+        if !*HOST_CALL_TRACE {
+            return None;
+        }
+        Some(Self {
+            name: name.to_string(),
+            head: args.first().map(|a| a.chars().take(80).collect()).unwrap_or_default(),
+            started: std::time::Instant::now(),
+        })
+    }
+}
+
+impl Drop for HostCallTraceGuard {
+    fn drop(&mut self) {
+        let ms = self.started.elapsed().as_millis();
+        if ms < *HOST_CALL_TRACE_MS {
+            return;
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or_default();
+        let line = format!("[host-call] t={now} {} {}ms head={}\n", self.name, ms, self.head);
+        if let Ok(mut guard) = HOST_CALL_TRACE_FILE.lock()
+            && let Some(file) = guard.as_mut()
+        {
+            use std::io::Write;
+            let _ = file.write_all(line.as_bytes());
+        }
+    }
+}
+
 /// 脚本执行错误类型。
 #[derive(Debug, thiserror::Error)]
 pub enum ScriptError {

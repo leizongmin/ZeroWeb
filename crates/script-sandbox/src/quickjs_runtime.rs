@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use crate::{SandboxConfig, ScriptError, ScriptResult};
+use crate::{HostCallTraceGuard, SandboxConfig, ScriptError, ScriptResult};
 
 /// 宿主回调类型（与 V8Sandbox 的 HostCallback 一致）。
 type HostCallback = Arc<dyn Fn(&[String]) -> String + Send + Sync>;
@@ -453,6 +453,7 @@ impl QuickJSSandbox {
         let globals = ctx.globals();
         for (name, cb) in &self.callbacks {
             let cb = Arc::clone(cb);
+            let trace_name = name.clone();
             // 参数用 Coerced<String>（JS ToString 语义）——旧 Rest<String> 对数字参数
             // 报 "Error converting from js 'int' into type 'string'"（shim 调 __zw_setTimeout
             // 传 `delay|0` 数字），2026-08-08 修复（V8 侧自动 String 化无此问题）。
@@ -460,6 +461,8 @@ impl QuickJSSandbox {
                 ctx.clone(),
                 move |args: rquickjs::function::Rest<rquickjs::Coerced<String>>| -> String {
                     let strs: Vec<String> = args.0.iter().map(|c| c.0.clone()).collect();
+                    // P105 诊断：慢宿主调用归因（见 HOST_CALL_TRACE 注释）。
+                    let _trace = HostCallTraceGuard::arm(&trace_name, &strs);
                     cb(&strs)
                 },
             );
