@@ -1,7 +1,7 @@
 # 后台页面与重复导航资源生命周期
 
-**版本**：v2.3 / 2026-10-23
-**状态**：Active（M1 基线 + M2 三步全 DONE；DC-1 页面+worker 面钳制 DONE + 后台 timer 策略面 DONE；M3 DC-2 呈现链/rAF 饥饿/可见性消息/offscreen 声明门控 DONE；M4 GUI 生产腿首轮 + GUI 生命周期轮 DONE——DC-3/DC-4 GUI 双面收口、compositor 会话断链修复、page_hidden 启用缺口双修复；M4 收尾轮 DONE——资源门禁阈值基线 v1 落地（gate 脚本三模式 + 7 场景配对导出，正 8 fresh 腿 PASS / 负 3 条 M1 修复前腿各中目标指标 FAIL），DC-2 音视频补证定性（video 显式 play 链路通；audio/autoplay 播放时钟缺口三处定位——autoplay 绕桥 / march 死钩子 / audio load 时桥武装未命中，归 media-playback 面修复））
+**版本**：v2.4 / 2026-10-23
+**状态**：**DONE**（2026-10-23 收尾审计收敛，[审计](background-resource-lifecycle/evidence/2026-10-23-m4-closing-audit/ANALYSIS.md)）。五类场景验收范围内全交付：M1 基线（12 腿双口径）→ M2 三步修复（fetch 取消 / RSS 有界判定 / 残留计数）→ DC-1 双面钳制 + 隐藏页 1s 下限策略（三层测试 + GUI 端到端）→ M3 DC-2 四切片（呈现链双断点 / rAF 泵 / 可见性消息 / offscreen 声明门控，offscreen 空转消除且 onscreen 同带）→ M4 GUI 双轮（DC-3/DC-4 GUI 收口 + compositor 会话断链与 page_hidden 两修复）+ 资源门禁（gate 脚本 + 7 场景阈值基线 v1，正 8 fresh 腿 PASS / 负 3 条 M1 修复前腿各中目标指标 FAIL）。DC-2 附唯一 INCONCLUSIVE 子项：audio/autoplay「不误停」依赖媒体播放时钟三缺口（autoplay 绕桥 / march 死钩子 / audio 桥武装，归 media-playback 面修复），按契约「缺指标标 INCONCLUSIVE」记档；goal 重开条件唯一 = 修复后回补 bg02-media 媒体时钟下界（基线 v2）。
 **父目标**：[zero-web](zero-web.md) / **控制面**：[master](background-resource-lifecycle/master.md)
 
 ## 0. 执行摘要与 Mission
