@@ -48,6 +48,7 @@ class Counters:
 COUNTERS = Counters()
 LOG_LOCK = threading.Lock()
 LOG_FILE = None
+MEDIA_DIR = None  # --media-dir（可选）：/media/<file> 的服务根
 
 
 def log_line(obj: dict) -> None:
@@ -62,6 +63,19 @@ def log_line(obj: dict) -> None:
 
 class Handler(SimpleHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+
+    # /media/<file> 映射到共享媒体 fixture 目录（tests/fixtures/media，本目录
+    # 不复制二进制媒体文件）；其余路径落在 --dir。
+    def translate_path(self, path: str) -> str:
+        media_dir = MEDIA_DIR
+        if media_dir and urlparse(path).path.startswith("/media/"):
+            import urllib.parse
+
+            rest = urllib.parse.unquote(urlparse(path).path[len("/media/"):])
+            import os
+
+            return os.path.join(media_dir, rest)
+        return super().translate_path(path)
 
     def log_message(self, fmt: str, *args) -> None:  # 静默默认 stderr 访问日志
         pass
@@ -135,10 +149,12 @@ def main() -> None:
     ap.add_argument("--dir", required=True)
     ap.add_argument("--port", type=int, required=True)
     ap.add_argument("--log", required=True)
+    ap.add_argument("--media-dir", default=None, help="/media/<file> 额外静态根（共享媒体 fixture）")
     args = ap.parse_args()
 
-    global LOG_FILE
+    global LOG_FILE, MEDIA_DIR
     LOG_FILE = open(args.log, "w", encoding="utf-8")
+    MEDIA_DIR = args.media_dir
 
     server = ThreadingHTTPServer(("127.0.0.1", args.port), functools.partial(Handler, directory=args.dir))
     server.daemon_threads = True

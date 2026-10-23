@@ -4,7 +4,7 @@
 #
 # 用法：scripts/background-resource-observe.sh <scenario> <out-dir> [wall-seconds]
 #   scenario ∈ bg01-foreground | bg01-background | bg01-interval |
-#              bg02-anim | bg02-static | bg02-rafstub |
+#              bg02-anim | bg02-static | bg02-rafstub | bg02-media |
 #              bg03-nav | bg04-cycle
 #
 # 产物（out-dir）：run-config.txt、browser.log、http.log、samples.jsonl、
@@ -43,6 +43,7 @@ case "$SCENARIO" in
     bg02-static-gui) START_URL="bg02-static.html";        RAF_DRIVEN=1; GUI=1 ;;
     bg02-anim-compgui) START_URL="bg02-offscreen-anim.html"; RAF_DRIVEN=1; GUI=1; COMP_ANIM=1 ;;
     bg02-onscreen-compgui) START_URL="bg02-onscreen-anim.html"; RAF_DRIVEN=1; GUI=1; COMP_ANIM=1 ;;
+    bg02-media)      START_URL="bg02-media.html";         RAF_DRIVEN=0 ;;
     bg03-nav)        START_URL="bg03-nav-source.html";    RAF_DRIVEN=0; WALL="${3:-45}" ;;
     bg04-cycle)      START_URL="bg02-static.html";        RAF_DRIVEN=0; WALL=40 ;;
     *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;;
@@ -59,6 +60,7 @@ echo "start_url=$START_URL ZW_RAF_FRAME_DRIVEN=$RAF_DRIVEN ZW_COMPOSITOR_ANIMATI
 # 1) fixture server
 python3 "$ROOT/scripts/background-resource-fixture-server.py" \
     --dir "$FIXDIR" --port "$HTTP_PORT" --log "$OUT/http.jsonl" \
+    --media-dir "$ROOT/tests/fixtures/media" \
     >"$OUT/http.log" 2>&1 &
 HTTP_PID=$!
 sleep 1

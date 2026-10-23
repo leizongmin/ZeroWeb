@@ -1,0 +1,181 @@
+{
+ "scenario": "bg04-cycle",
+ "started": "2026-10-23T00:07:29.663Z",
+ "wall_ms": 40000,
+ "events_session": [],
+ "errors": [],
+ "final_targets": [
+  {
+   "attached": true,
+   "browserContextId": "zeroweb-default",
+   "canAccessOpener": false,
+   "targetId": "zeroweb-tab-1",
+   "title": "http://127.0.0.1:42739/bg02-static.html",
+   "type": "page",
+   "url": "http://127.0.0.1:42739/bg02-static.html"
+  }
+ ],
+ "reopen_series": [
+  {
+   "cycle": 1,
+   "target_id": "zeroweb-tab-2",
+   "open_ms": 1,
+   "close_error": null,
+   "destroyed_event": true,
+   "cycle_ms": 1543
+  },
+  {
+   "cycle": 2,
+   "target_id": "zeroweb-tab-3",
+   "open_ms": 3,
+   "close_error": null,
+   "destroyed_event": true,
+   "cycle_ms": 1533
+  },
+  {
+   "cycle": 3,
+   "target_id": "zeroweb-tab-4",
+   "open_ms": 3,
+   "close_error": null,
+   "destroyed_event": true,
+   "cycle_ms": 1533
+  },
+  {
+   "cycle": 4,
+   "target_id": "zeroweb-tab-5",
+   "open_ms": 3,
+   "close_error": null,
+   "destroyed_event": true,
+   "cycle_ms": 1532
+  },
+  {
+   "cycle": 5,
+   "target_id": "zeroweb-tab-6",
+   "open_ms": 3,
+   "close_error": null,
+   "destroyed_event": true,
+   "cycle_ms": 1529
+  },
+  {
+   "cycle": 6,
+   "target_id": "zeroweb-tab-7",
+   "open_ms": 3,
+   "close_error": null,
+   "destroyed_event": true,
+   "cycle_ms": 1529
+  },
+  {
+   "cycle": 7,
+   "target_id": "zeroweb-tab-8",
+   "open_ms": 3,
+   "close_error": null,
+   "destroyed_event": true,
+   "cycle_ms": 1528
+  },
+  {
+   "cycle": 8,
+   "target_id": "zeroweb-tab-9",
+   "open_ms": 4,
+   "close_error": null,
+   "destroyed_event": true,
+   "cycle_ms": 1530
+  },
+  {
+   "cycle": 9,
+   "target_id": "zeroweb-tab-10",
+   "open_ms": 3,
+   "close_error": null,
+   "destroyed_event": true,
+   "cycle_ms": 1532
+  },
+  {
+   "cycle": 10,
+   "target_id": "zeroweb-tab-11",
+   "open_ms": 3,
+   "close_error": null,
+   "destroyed_event": true,
+   "cycle_ms": 1533
+  },
+  {
+   "cycle": 11,
+   "target_id": "zeroweb-tab-12",
+   "open_ms": 3,
+   "close_error": null,
+   "destroyed_event": true,
+   "cycle_ms": 1529
+  },
+  {
+   "cycle": 12,
+   "target_id": "zeroweb-tab-13",
+   "open_ms": 3,
+   "close_error": null,
+   "destroyed_event": true,
+   "cycle_ms": 1530
+  },
+  {
+   "cycle": 13,
+   "target_id": "zeroweb-tab-14",
+   "open_ms": 3,
+   "close_error": null,
+   "destroyed_event": true,
+   "cycle_ms": 1536
+  },
+  {
+   "cycle": 14,
+   "target_id": "zeroweb-tab-15",
+   "open_ms": 3,
+   "close_error": null,
+   "destroyed_event": true,
+   "cycle_ms": 1534
+  },
+  {
+   "cycle": 15,
+   "target_id": "zeroweb-tab-16",
+   "open_ms": 3,
+   "close_error": null,
+   "destroyed_event": true,
+   "cycle_ms": 1532
+  },
+  {
+   "cycle": 16,
+   "target_id": "zeroweb-tab-17",
+   "open_ms": 4,
+   "close_error": null,
+   "destroyed_event": true,
+   "cycle_ms": 1529
+  },
+  {
+   "cycle": 17,
+   "target_id": "zeroweb-tab-18",
+   "open_ms": 3,
+   "close_error": null,
+   "destroyed_event": true,
+   "cycle_ms": 1532
+  },
+  {
+   "cycle": 18,
+   "target_id": "zeroweb-tab-19",
+   "open_ms": 3,
+   "close_error": null,
+   "destroyed_event": true,
+   "cycle_ms": 1529
+  },
+  {
+   "cycle": 19,
+   "target_id": "zeroweb-tab-20",
+   "open_ms": 3,
+   "close_error": null,
+   "destroyed_event": true,
+   "cycle_ms": 1533
+  },
+  {
+   "cycle": 20,
+   "target_id": "zeroweb-tab-21",
+   "open_ms": 2,
+   "close_error": null,
+   "destroyed_event": true,
+   "cycle_ms": 1529
+  }
+ ],
+ "finished": "2026-10-23T00:08:00.704Z"
+}

@@ -1,0 +1,2 @@
+scenario=bg04-cycle wall=40s cdp=127.0.0.1:43675 http=127.0.0.1:42739
+start_url=bg02-static.html ZW_RAF_FRAME_DRIVEN=0 ZW_COMPOSITOR_ANIMATIONS=0 gui=0 viewport=800x600 display=:20

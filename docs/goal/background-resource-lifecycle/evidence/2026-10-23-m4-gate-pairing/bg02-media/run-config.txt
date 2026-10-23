@@ -1,0 +1,2 @@
+scenario=bg02-media wall=30s cdp=127.0.0.1:43653 http=127.0.0.1:54391
+start_url=bg02-media.html ZW_RAF_FRAME_DRIVEN=0 ZW_COMPOSITOR_ANIMATIONS=0 gui=0 viewport=800x600 display=:20

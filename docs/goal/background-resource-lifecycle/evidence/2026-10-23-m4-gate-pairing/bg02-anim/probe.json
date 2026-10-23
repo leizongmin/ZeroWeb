@@ -1,0 +1,49 @@
+{
+ "scenario": "bg02-anim",
+ "started": "2026-10-23T00:06:05.204Z",
+ "wall_ms": 30000,
+ "events_session": [],
+ "errors": [],
+ "targets": [
+  {
+   "targetId": "zeroweb-tab-1",
+   "url": "http://127.0.0.1:56169/bg02-offscreen-anim.html",
+   "sessionId": "zeroweb-session-1"
+  }
+ ],
+ "start_nav": {
+  "ok": true,
+  "title": "BG-02 offscreen animation"
+ },
+ "samples": [
+  {
+   "t_ms": 1792713971183,
+   "label": "bg02-anim",
+   "value": 332
+  },
+  {
+   "t_ms": 1792713976207,
+   "label": "bg02-anim",
+   "value": 643
+  },
+  {
+   "t_ms": 1792713981227,
+   "label": "bg02-anim",
+   "value": 954
+  },
+  {
+   "t_ms": 1792713986273,
+   "label": "bg02-anim",
+   "value": 1265
+  },
+  {
+   "t_ms": 1792713991286,
+   "label": "bg02-anim",
+   "value": 1576
+  }
+ ],
+ "visibility_state": {
+  "value": "false,visible"
+ },
+ "finished": "2026-10-23T00:06:36.176Z"
+}

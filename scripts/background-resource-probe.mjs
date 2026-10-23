@@ -7,6 +7,8 @@
 //   bg01-interval    现有 tab（bg01-interval-timer）周期采样 __zw_iters
 //   bg02-anim        现有 tab（bg02-offscreen-anim，ZW_RAF_FRAME_DRIVEN=1）采样 __zw_raf
 //   bg02-static      现有 tab（bg02-static）静置（CPU/呈现本底腿，无页面采样）
+//   bg02-media       现有 tab（bg02-media，audio + offscreen video 持续播放）采样
+//                    __zw_media_ticks（播放态存活计数），终态读时钟水位/暂停态
 //   bg03-nav         Page.navigate source/target 交替 ×N，周期拉 fixture-server
 //                    /__stats（stall 连接计数）+ evaluate 活性
 //   bg04-cycle       Target.createTarget → closeTarget ×N，记录 target 事件与销毁回执
@@ -350,6 +352,45 @@ async function run(conn) {
     const list = await call(conn, "Target.getTargets", {});
     result.final_targets = list.result ? list.result.targetInfos : null;
     result.reopen_series = series;
+  } else if (scenario === "bg02-media") {
+    // DC-2「合法工作不误停」媒体腿：offscreen video + audio 持续播放，采样
+    // 播放态存活计数（ticks，数值序列），结束后读时钟水位与暂停终态。
+    await attachAll(conn);
+    const sessions = attachedSessions();
+    if (sessions.length === 0) throw new Error("no attached page target");
+    const page = sessions[sessions.length - 1];
+    const nav = await navigateAndWait(conn, page.sessionId, startUrl);
+    if (!nav.ok) throw new Error(`navigateAndWait failed: ${nav.error}`);
+    result.targets = sessions;
+    result.start_nav = nav;
+    const samples = [];
+    await sampleLoop(conn, page.sessionId,
+        "window.__zw_media_ticks === undefined ? null : window.__zw_media_ticks",
+        wallMs, 5000, samples, "bg02-media-ticks");
+    result.samples = samples;
+    result.media_final = await evaluate(conn, page.sessionId,
+        "(function(){ var b = globalThis.__zwVideoBridge;"
+        + " function d(el){ var s = el.src; return [el.currentTime.toFixed(2), String(el.paused), el.readyState,"
+        + "   b ? String(b.currentTime(s)) : 'nobridge', b ? b.isPlaying(s) : 'nobridge'].join(','); }"
+        + " return 'a=' + d(document.getElementById('a')) + ';v=' + d(document.getElementById('v'))"
+        + " + ';pos=' + window.__zw_media_pos.toFixed(2); })()", 5000);
+    // 终末桥探测（诊断用，leg 已结束、状态读取完毕后执行）：显式 play 一次看桥
+    // 接受面（"1"/"0"——登记/解码命中判定），1.5s 后再读 cursor——区分「桥拒收
+    // （登记/解码失败）」与「桥收下但泵不推进」两类缺口。
+    result.media_bridge_probe = await evaluate(conn, page.sessionId,
+        "(function(){ var b = globalThis.__zwVideoBridge; var a = document.getElementById('a');"
+        + " return String(b.play(a.src, 0)); })()", 5000);
+    await sleep(1500);
+    result.media_bridge_after = await evaluate(conn, page.sessionId,
+        "(function(){ var b = globalThis.__zwVideoBridge; var a = document.getElementById('a');"
+        + " return [a.currentTime.toFixed(2), String(b.currentTime(a.src))].join(','); })()", 5000);
+    // 第三读（再 +2.5s，跨 mp3 流末 ~2s）：cursor 回绕 → loop 曾置位（load 时命中
+    // 路径跑过 setLoop）；cursor 冻在流末 → loop 未置位（load 时桥 play 未命中）。
+    await sleep(2500);
+    result.media_bridge_after2 = await evaluate(conn, page.sessionId,
+        "(function(){ var b = globalThis.__zwVideoBridge; var a = document.getElementById('a');"
+        + " return [a.currentTime.toFixed(2), String(b.currentTime(a.src)), String(a.paused)].join(','); })()", 5000);
+    result.visibility_state = await evaluate(conn, page.sessionId, "[String(document.hidden), document.visibilityState].join(',')", 5000);
   } else {
     throw new Error(`unknown scenario: ${scenario}`);
   }

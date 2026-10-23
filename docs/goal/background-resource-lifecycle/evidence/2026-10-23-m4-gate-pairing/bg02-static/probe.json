@@ -1,0 +1,23 @@
+{
+ "scenario": "bg02-static",
+ "started": "2026-10-23T00:06:37.528Z",
+ "wall_ms": 30000,
+ "events_session": [],
+ "errors": [],
+ "targets": [
+  {
+   "targetId": "zeroweb-tab-1",
+   "url": "http://127.0.0.1:51107/bg02-static.html",
+   "sessionId": "zeroweb-session-1"
+  }
+ ],
+ "start_nav": {
+  "ok": true,
+  "title": "BG-02 static idle page"
+ },
+ "samples": [],
+ "visibility_state": {
+  "value": "false,visible"
+ },
+ "finished": "2026-10-23T00:07:08.473Z"
+}

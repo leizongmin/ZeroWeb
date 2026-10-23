@@ -1,0 +1,2 @@
+scenario=bg01-foreground wall=30s cdp=127.0.0.1:47207 http=127.0.0.1:60321
+start_url=bg01-nested-timer.html ZW_RAF_FRAME_DRIVEN=0 ZW_COMPOSITOR_ANIMATIONS=0 gui=0 viewport=800x600 display=:20

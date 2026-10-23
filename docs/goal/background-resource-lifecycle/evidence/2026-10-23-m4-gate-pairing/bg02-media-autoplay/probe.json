@@ -1,0 +1,52 @@
+{
+ "scenario": "bg02-media",
+ "started": "2026-10-23T00:09:35.940Z",
+ "wall_ms": 30000,
+ "events_session": [],
+ "errors": [],
+ "targets": [
+  {
+   "targetId": "zeroweb-tab-1",
+   "url": "http://127.0.0.1:43843/bg02-media.html",
+   "sessionId": "zeroweb-session-1"
+  }
+ ],
+ "start_nav": {
+  "ok": true,
+  "title": "BG-02 media playback"
+ },
+ "samples": [
+  {
+   "t_ms": 1792714181586,
+   "label": "bg02-media-ticks",
+   "value": 21
+  },
+  {
+   "t_ms": 1792714186601,
+   "label": "bg02-media-ticks",
+   "value": 41
+  },
+  {
+   "t_ms": 1792714191625,
+   "label": "bg02-media-ticks",
+   "value": 61
+  },
+  {
+   "t_ms": 1792714196633,
+   "label": "bg02-media-ticks",
+   "value": 81
+  },
+  {
+   "t_ms": 1792714201686,
+   "label": "bg02-media-ticks",
+   "value": 102
+  }
+ ],
+ "media_final": {
+  "value": "0.00|0.00|false|false|0.00"
+ },
+ "visibility_state": {
+  "value": "false,visible"
+ },
+ "finished": "2026-10-23T00:10:06.616Z"
+}

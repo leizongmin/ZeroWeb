@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>BG-02 media playback</title>
+</head>
+<body>
+<!-- DC-2「合法工作不误停」媒体腿 fixture：audio + offscreen video，load 后显式
+     play()（spec autoplay 语义 = 就绪后隐式 play()，此处显式调用走桥武装路径——
+     autoplay 属性路径不经桥，见 bg02-media-autoplay 腿证据）。
+     两个页面侧信号（0.5s interval 维护，可见页不受隐藏钳制影响）：
+       __zw_media_ticks  播放态存活计数——!paused 时递增，媒体被误停后转平
+       __zw_media_pos    currentTime 高水位——时钟推进的上界标记，回绕安全 -->
+<audio id="a" src="/media/sample-mp3.mp3" loop></audio>
+<video id="v" src="/media/sample-mp4-h264.mp4" loop muted playsinline
+       style="position:absolute;left:-9999px;top:0;width:160px;height:90px"></video>
+<script>
+window.__zw_media_ticks = 0;
+window.__zw_media_pos = 0;
+setInterval(function () {
+  var a = document.getElementById('a');
+  var v = document.getElementById('v');
+  if ((a && !a.paused) || (v && !v.paused)) window.__zw_media_ticks++;
+  var pos = (a ? a.currentTime : 0) + (v ? v.currentTime : 0);
+  if (pos > window.__zw_media_pos) window.__zw_media_pos = pos;
+}, 500);
+window.addEventListener('load', function () {
+  var a = document.getElementById('a');
+  var v = document.getElementById('v');
+  try { var pa = a.play(); if (pa && pa.catch) pa.catch(function () {}); } catch (e) {}
+  try { var pv = v.play(); if (pv && pv.catch) pv.catch(function () {}); } catch (e) {}
+});
+</script>
+</body>
+</html>
