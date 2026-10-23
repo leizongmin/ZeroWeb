@@ -11,7 +11,7 @@ description: 从 docs/learnings 提炼 ZeroWeb 工程不变式。在本仓编写
 
 - 触发后整个编码任务期间持续生效，不因多轮对话或任务切换遗忘；仅当用户明确说「跳过准则」时暂停，恢复编码后自动重新生效。
 - 动代码前按改动选择主题，CR 时对照触碰到的条目；先核对适用条件，不把局部经验扩展为无条件禁令。
-- **权衡**：这些不变式倾向谨慎而非速度。小改动不必全量过 32 条，自行判断。
+- **权衡**：这些不变式倾向谨慎而非速度。小改动不必全量过 34 条，自行判断。
 - 本 skill 是领域层，叠加在 AGENTS.md 编码准则 / `lei-code-guidelines`（行为层）之上，不复述其行为规则。
 
 | 改动入口 | 必读条目 |
@@ -19,7 +19,7 @@ description: 从 docs/learnings 提炼 ZeroWeb 工程不变式。在本仓编写
 | CSS parser / shorthand | #1–2、#10、#21；触碰热路径加 #23 |
 | 字体 / shaping / 缓存 | #3–5、#8；性能改动加 #11 |
 | 绘制 / 合成 / 帧复用 | #6–8、#12–14、#17 |
-| 布局 / 后处理 pass | #18、#29 |
+| 布局 / 后处理 pass | #18、#29、#34 |
 | IPC / 同步脚本 / 宿主桥 | #12–15、#24–25、#30、#32 |
 | 存储 / 并发缓存 | #16、#19、#22 |
 | 性能 / 测试工具 | #9–11、#17–20、#23、#27–28、#31、#33；shim 循环加 #26 |
@@ -32,7 +32,7 @@ ZeroWeb 中一切来自网页的输入（HTML/CSS/JS 传值）都是**不可信�
 
 以下场景可临时放宽（合入 main 前必须恢复，放宽结束自动恢复全部）：
 
-- 原型 / spike：#7 像素等价、#11 性能三件套、#23 定向性能门禁、#26 trap 域成本模型、#27 产物目录隔离、#28 执行体证据核验、#29 pass 归因与臂覆盖审计、#33 双侧影响预核对可先单跑看方向，合入前补全验证
+- 原型 / spike：#7 像素等价、#11 性能三件套、#23 定向性能门禁、#26 trap 域成本模型、#27 产物目录隔离、#28 执行体证据核验、#29 pass 归因与臂覆盖审计、#33 双侧影响预核对、#34 Path B 信号镜像臂可先单跑看方向，合入前补全验证
 - 紧急热修复且用户确认：#11 可先单跑，事后补同条件配对对照
 
 任何场景下不可放宽：#1、#2、#16、#21、#31（信任边界与数据丢失）。
@@ -209,3 +209,9 @@ js_dom_shim 里「同一 DOM 节点 = 同一个 JS 对象」不成立，且多�
 corpus 的 test/ref 两页均由本引擎渲染，判定是两页像素差而非单页绝对正确性：双侧同错的自洽 PASS 会长期掩盖共享渲染缺陷（新功能与旧功能在 ref 页混搭时，旧功能缺口以新案形式冒头；probe 时两侧行为差先归因「渲染路径不自洽」，不直接归因 ZW vs chromium）。修共享缺陷前先画两侧预期渲染对照，确认方案下「双侧一致」不变式仍成立——只让 test 侧回退的单侧门控必然失配（ref 侧无该属性、门永不触发，两侧朝相反方向变化），可行方向只有双侧同修到一致或整体回退。
 
 依据：[border-radius 弧带缺失被 corpus 自洽掩盖](../../../docs/learnings/bugs/2026-10/2026-10-18-border-radius-band-sharp-strips.md)、[配对型 reftest 单侧门控无法恢复双侧一致](../../../docs/learnings/bugs/2026-10/2026-10-19-reftest-pair-single-side-gate-futile.md)。
+
+### 34. collect 期 styles 依赖判定必须触发即记录，paint 空 styles 重跑走信号集镜像
+
+layout 与 paint 复用同一 collect 逻辑却是两条通道：存储容器（Path A）持真实 styles，非存储容器 paint 走 Path B 以空 styles 重跑 IFC（R72 裁决，不可改为传真实 styles）。collect/finalize 新增任何 `styles.get(&id)` 依赖分叉，Path B 查表恒空、判定必然塌向固定侧——layout 趟正确、paint 趟劈叉，症状是 `inline_layout` 单测全绿而真实页面绘制错位。正确形态：判定为真**即记录**进 `NodeIdSet`（触发即记录天然覆盖所有门控组合，优于信号侧重扫 DOM），容器收尾存进 `LayoutBox`（store-gate return 之前——Path B 容器恰是非存储容器），分叉改双通道 `styles.get(&id).map(直判).unwrap_or_else(|| 信号集.contains(&id))`，paint 经既有 builder 通道注入同一信号集逐位镜像；嵌套递归 clone 子 ctx 时子层触发 merge-back 回容器 ctx。给该面写断言前先查 store-gate：纯 Ahem 存储路径单测绿不证明 Path B 正确，需另建空 styles + 注入信号的镜像臂断言。
+
+依据：[IFC collect styles 依赖判定的存储信号镜像](../../../docs/learnings/patterns/2026-10/2026-10-23-ifc-collect-styles-dependent-branch-needs-stored-signal.md)——同一失败形态此前已四度独立修复（R4310 vertical_walk_nodes、R4312 block_child_walk_nodes、R5177 color_divergent、R5235 nested_atomic）而规则未成文，本条为第五例成文收敛。

@@ -5,11 +5,12 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（180）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（181）
 
 - 2026-10-23 [UBA 重排产物必须剥除 bidi 控制码——visual_runs 保留控制码索引位，逐位 push 会带进视觉流](bugs/2026-10/2026-10-23-uba-reorder-output-must-strip-bidi-controls.md) — layout-engine
 - 2026-10-23 [taffy branch 节点对 IFC 文本不可见——原子提升后 abspos auto 宽塌最宽原子子](bugs/2026-10/2026-10-23-taffy-branch-ifc-text-invisible-abspos-auto-width.md) — layout-engine/engine, taffy-local
 - 2026-10-23 [reftest 渲染分诊：1x 全图目测不可靠——定量 ink + ≥4x 裁剪 + 删盒二分](bugs/2026-10/2026-10-23-reftest-render-forensics-crop-ink-bisect.md) — layout-engine, wpt-runner, engine
+- 2026-10-23 [手工构造 RenderPrimitives 的 region/等价测试：draw_order 不完整导致断言空转](bugs/2026-10/2026-10-23-manual-primitives-draw-order-vacuous-equivalence.md) — render-foundation
 - 2026-10-23 [flatten 单 run 的 run_ws 表达不了混合 white-space——R5081「文本自身条目优先」不可推广到 inline flatten](bugs/2026-10/2026-10-23-flatten-run-single-ws-cannot-express-mixed-white-space.md) — layout-engine, engine
 - 2026-10-23 [「行首内容不折行」豁免门的隐含假设在 float 缩短带下失效——下绕必须覆盖词/原子盒/断行新行三臂](bugs/2026-10/2026-10-23-first-content-line-exemption-breaks-beside-floats.md) — layout-engine
 - 2026-10-23 [CSS token 序列化必须转义 string 值——裸串化使含引号声明整条丢失](bugs/2026-10/2026-10-23-css-token-string-serialize-must-escape.md) — css-parser, engine
