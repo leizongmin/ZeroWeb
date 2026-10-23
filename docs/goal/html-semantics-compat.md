@@ -2,11 +2,32 @@
 
 **版本**: v2.0
 **日期**: 2026-10-21（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 35 收口（挂账 E 余项：ESC 统一 top-layer 序，closedby-simple 5F 全解文件 6/6 绿，REG 0），下一步按挂账序推进
+**状态**: Active——M2 切片 36 收口（挂账 impl-doc wrapper requestClose：合成 doc dialog 元素方法面，requestclose 面 79P/0F 全绿 REG 0），下一步按挂账序推进
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-23 M2 切片 35 收口）**：挂账 E 余项 ESC 栈序
+> **▶ 当前状态（2026-10-23 M2 切片 36 收口）**：挂账 impl-doc wrapper
+> requestClose 收口。**探针钉定**：dialog-requestclose 面 5 files 78P/1F，
+> 唯一红正是挂账项；合成 doc（`_zwMEl` 产物）dialog 四方法全缺，R125
+> 原型链已接 HTMLDialogElement.prototype 但 prototype 空占位。**落地
+>（R5238）**：`HTMLDialogElement.prototype.requestClose`（R4100
+> details.name 同款 plain 世界供给惯例）——spec「request to close」
+> 步骤照抄：open 缺 return、ownerDocument ≠ 主文档（非 fully active）
+> return；trap 世界走 part04 R4200 版先于原型命中，双世界不重叠。
+> **集群**：requestclose 面 **78P/1F → 79P/0F**（EXIT 1→0）、dialog
+> 集群 82 files 对 s35 账本 **REG 0 / GAIN 1**（351P/59F/1T）、forms 域
+> 4627 subtest 对 s34 基线计数逐位一致。**已知边界**：detached doc
+> dialog 的 close/show/showModal 三方法仍缺（挂账范围外，探针 3F
+> 实证）。R5237 撞渲染流，改 R5238。gates：lib **3429P/0F**、clippy/
+> fmt clean、零新增依赖。账本见
+> [evidence/2026-10-23-m2s36-wrapper-requestclose.md](html-semantics-compat/evidence/2026-10-23-m2s36-wrapper-requestclose.md)。
+> **下一步**：按挂账序 anchor-with-inline 导航缺口、parser form element
+> pointer 4F、custom command `--` 前缀 CommandEvent defer、ESC 组栈边
+> 缘乱序、非模态 close 不出组栈、R371 模板残留；detached doc dialog
+> close/show/showModal 三方法（新）；declarative shadow DOM（H 定性
+> 后）待 parser/渲染流联合切片。
+>
+> **▶ 上轮状态（2026-10-23 M2 切片 35 收口）**：挂账 E 余项 ESC 栈序
 > 收口，**closedby 双语料面全清**（simple 6/6 + complex normal 面 s34
 > 已绿）。**落地（R5236）**：`__zw_esc_dialog_cancel` 两段式——①
 > `_zwTopLayer`（showModal+showPopover 共享插入序）反走，栈顶 popover
@@ -19,10 +40,11 @@
 > 统一扫描破 part60 R2（lib test 抓住），两段式恢复。gates：zero-engine
 > lib **3429P/0F**、clippy -D warnings、fmt clean、零新增依赖。账本见
 > [evidence/2026-10-23-m2s35-esc-unified-toplayer.md](html-semantics-compat/evidence/2026-10-23-m2s35-esc-unified-toplayer.md)。
-> **下一步**：按挂账序 impl-doc wrapper requestClose、anchor-with-inline
-> 导航缺口、parser form element pointer 4F、custom command `--` 前缀
-> CommandEvent defer、ESC 组栈边缘乱序、非模态 close 不出组栈、R371 模
-> 板残留；declarative shadow DOM（H 定性后）待 parser/渲染流联合切片。
+> **下一步**：按挂账序 impl-doc wrapper requestClose（s36 已收口）、
+> anchor-with-inline 导航缺口、parser form element pointer 4F、custom
+> command `--` 前缀 CommandEvent defer、ESC 组栈边缘乱序、非模态 close
+> 不出组栈、R371 模板残留；declarative shadow DOM（H 定性后）待
+> parser/渲染流联合切片。
 >
 > **▶ 上轮状态（2026-10-23 M2 切片 34 收口）**：挂账 F 帧驱动快照新鲜
 > 化。**落地（R5235）**：Makefile `testharness-html-semantics` 入口默认

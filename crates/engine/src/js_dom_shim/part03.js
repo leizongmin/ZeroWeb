@@ -6268,6 +6268,40 @@
       }
     }
   })();
+  // R5238（html-semantics M2 切片 36）：HTMLDialogElement.prototype.requestClose——
+  // plain 世界供给（_zwMEl 产物原型链 R125 已接本 prototype，detached/XML doc 的
+  // dialog 元素此前四方法全缺——dialog-requestclose-3 断言面）。trap 世界 proxy 的
+  // get trap 走 part04 prop 特判（R4200 完整语义版），先于原型命中——本方法只服务
+  // plain 世界，不与其重叠可达。spec「request to close the dialog」步骤：无 open →
+  // return；not connected 或 node document 非 fully active → return。plain 世界树
+  // 节点只出自 detached/XML doc 工厂（主 doc createElement 恒 proxy），ownerDocument
+  // 恒非 globalThis.document（无 browsing context → 非 fully active）——两 return
+  // 条件对 plain 世界全覆盖（detached doc 挂树节点 spec connected 为 true，落
+  // not-fully-active 支；未挂树落 not-connected 支，ownerDocument 判定同覆盖）。
+  // close watcher 机制只在 trap 世界存在——plain 世界无 watcher 可请求，条件判毕恒
+  // no-op，open 保持（dialog-requestclose-3 "should not close ... inactive
+  // document" 断言面）。
+  // https://html.spec.whatwg.org/multipage/interactive-elements.html#request-to-close-the-dialog-element
+  try {
+    if (globalThis.HTMLDialogElement && globalThis.HTMLDialogElement.prototype
+        && !Object.prototype.hasOwnProperty.call(globalThis.HTMLDialogElement.prototype, 'requestClose')) {
+      Object.defineProperty(globalThis.HTMLDialogElement.prototype, 'requestClose', {
+        value: function (returnValue) {
+          try {
+            if (typeof this.getAttribute !== 'function' || this.getAttribute('open') === null) return;
+            // detached 树节点经 R167 ownerDocument accessor 读源 doc；≠ 主文档即
+            // 非 fully active（spec 步骤 2 not-connected 支在 plain 世界同被此判覆盖）。
+            if (this.ownerDocument !== globalThis.document) return;
+            // 主 doc plain 元素（本环境不存在）：无 close watcher → no-op。returnValue
+            // 按 spec 步骤 1 归一但不落任何状态——与 trap 世界 R4200 语义面互不影响。
+            void returnValue;
+          } catch (_e5238rc) {}
+        },
+        writable: true, enumerable: false, // 同 R4100/preservesPitch 惯例，for-in 面零变化
+        configurable: true,
+      });
+    }
+  } catch (_e5238mount) {}
   // R4100（html-semantics M2 切片 21）：HTMLDetailsElement.prototype.name accessor
   //（spec exclusive accordions——details.name IDL 反射 name 内容属性；`'name' in
   // HTMLDetailsElement.prototype` 判定面——WPT name-content-attribute-and-property
