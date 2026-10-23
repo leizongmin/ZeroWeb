@@ -2593,10 +2593,17 @@ impl InlineFormattingContext {
 
         // 默认模式（normal）：CJK 字符每个单独作为"单词"以允许任意断行点。
         // 非 CJK 字符按空白分割保持原有行为。
+        // FIXME(R5246)：normal 模式的 U+2028/U+2029 属 segment break transformation
+        // 域（css-text-3 §4.1.3 折叠/空格语义），本刀不触。
+        let forced_breaks = if crate::inline::runtime_flags::forced_break_ls_ps_enabled() {
+            text.split(['\n', '\u{2028}', '\u{2029}']).collect::<Vec<_>>()
+        } else {
+            text.split('\n').collect::<Vec<_>>()
+        };
         if preserve_whitespace {
             // 保留空白字符序列：不折叠空格，保留换行符作为强制换行点
             let mut result = Vec::new();
-            for (i, segment) in text.split('\n').enumerate() {
+            for (i, segment) in forced_breaks.iter().enumerate() {
                 if i > 0 {
                     // 换行符处产生强制换行标记（空字符串表示换行）
                     result.push(String::new());
@@ -2669,7 +2676,7 @@ impl InlineFormattingContext {
             // 旧实现 PreLine 派生 preserve_whitespace=false → 走 normal 分支 text.split(is_collapsible_ws)
             // 把 `\n` 当普通词界折叠，丢断行 identity（content-white-space-001 簇）。
             let mut result = Vec::new();
-            for (i, segment) in text.split('\n').enumerate() {
+            for (i, segment) in forced_breaks.iter().enumerate() {
                 if i > 0 {
                     // 段间强制断行标记（空串，语义同 preserve_whitespace 分支）
                     result.push(String::new());
