@@ -3317,7 +3317,20 @@ pub(crate) fn inject_pseudo_text_nodes(
                     && !text_blank
                     && !parent_is_ruby_family
                     && std::env::var("ZW_PSEUDO_OOF_TEXT_BOX").as_deref() != Ok("0"))
-                || (pseudo_style.display != DisplayValue::Inline && has_decoration && !parent_is_ruby_family));
+                || (pseudo_style.display != DisplayValue::Inline && has_decoration && !parent_is_ruby_family)
+                // R5238（CSS2 §12.1）：inline-static 伪元素带装饰（背景/边框）+ 真文本
+                // → element 盒化。text-node 路径只绘字形——伪元素自身的 background/
+                // color/white-space 挂在文本节点条目上，flatten 归因 owner 后背景无处
+                // 落地、color/white-space 读 owner 继承（content-174：inline span 宿主
+                // ::before 绿底白字 nowrap 单行全丢，✗1.72%）。盒化后伪元素=真实 inline
+                // 元素，装饰与行内语义走既有元素路径（ref 文档即 <div display:inline>
+                // 直书同形态）。ruby 族排除同 R3928 臂（inlinize 未落地）。kill-switch
+                // ZW_PSEUDO_INLINE_DECORATED_BOX=0。
+                || (pseudo_style.display == DisplayValue::Inline
+                    && has_decoration
+                    && !text_blank
+                    && !parent_is_ruby_family
+                    && std::env::var("ZW_PSEUDO_INLINE_DECORATED_BOX").as_deref() != Ok("0")));
         let new_id = if needs_box {
             let el = doc.create_element("zw-pseudo");
             if !text_blank {
@@ -4089,6 +4102,102 @@ mod pseudo_tests {
         match &doc.get(first_child).unwrap().kind {
             zero_dom::NodeKind::Text(t) => assert_eq!(t.content, "a"),
             other => panic!("R4581: ruby 宿主伪元素应维持 text-node 路径，实际 {other:?}"),
+        }
+    }
+
+    /// R5238：inline-static 伪元素带装饰+真文本 → ELEMENT 盒化（单测试函数顺序执行——
+    /// kill-switch 相会临时改设 ZW_PSEUDO_INLINE_DECORATED_BOX 进程级 env，与其余读该
+    /// 变量的注入相并行会竞态，故全部读者收敛到本函数内）：
+    /// ① inline + background + 真文本 → zw-pseudo ELEMENT（content-174 形态：装饰与
+    ///    字形同绘，white-space/color/background 挂伪元素自身样式走元素路径）；
+    /// ② inline 无装饰（仅 color）→ 维持 text-node 路径（门不扩无装饰域）；
+    /// ③ kill-switch=0 → 盒化门关闭，同形态回 text-node 路径。
+    #[test]
+    fn inject_inline_decorated_text_pseudo_as_element_node_r5238() {
+        use zero_css_parser::values::{ColorValue, DisplayValue};
+        // ---- 相①：inline + 装饰 + 真文本 → ELEMENT ----
+        {
+            let html = r#"<html><body><div><span>x</span></div></body></html>"#;
+            let mut doc = zero_dom::parse_html(html);
+            let span = find_element(&doc, doc.root(), "span").expect("span 存在");
+            let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
+            let mut span_style = ComputedStyle::default();
+            span_style.before_pseudo = Some(Box::new(ComputedStyle {
+                content: ContentComputedValue::String("T".to_string()),
+                display: DisplayValue::Inline,
+                background_color: ColorValue::Rgba(0, 128, 0, 255),
+                ..ComputedStyle::default()
+            }));
+            styles.insert(span, span_style);
+
+            inject_pseudo_text_nodes(&mut doc, &mut styles, &[]);
+
+            let first_child = doc
+                .get(span)
+                .and_then(|n| n.children.first().copied())
+                .expect("有子节点");
+            match &doc.get(first_child).unwrap().kind {
+                zero_dom::NodeKind::Element(_) => {}
+                other => panic!("R5238: inline 装饰真文本伪元素应为 ELEMENT 节点，实际 {other:?}"),
+            }
+            let has_text_child = doc
+                .child_nodes(first_child)
+                .iter()
+                .any(|c| matches!(doc.get(*c).map(|n| &n.kind), Some(zero_dom::NodeKind::Text(_))));
+            assert!(has_text_child, "真文本须携带为 zw-pseudo 子节点");
+        }
+        // ---- 相②：inline 无装饰 → 维持 text-node ----
+        {
+            let html = r#"<html><body><div><span>x</span></div></body></html>"#;
+            let mut doc = zero_dom::parse_html(html);
+            let span = find_element(&doc, doc.root(), "span").expect("span 存在");
+            let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
+            let mut span_style = ComputedStyle::default();
+            span_style.before_pseudo = Some(Box::new(ComputedStyle {
+                content: ContentComputedValue::String("T".to_string()),
+                display: DisplayValue::Inline,
+                ..ComputedStyle::default()
+            }));
+            styles.insert(span, span_style);
+
+            inject_pseudo_text_nodes(&mut doc, &mut styles, &[]);
+
+            let first_child = doc
+                .get(span)
+                .and_then(|n| n.children.first().copied())
+                .expect("有子节点");
+            match &doc.get(first_child).unwrap().kind {
+                zero_dom::NodeKind::Text(t) => assert_eq!(t.content, "T"),
+                other => panic!("R5238: inline 无装饰伪元素应维持 text-node 路径，实际 {other:?}"),
+            }
+        }
+        // ---- 相③：kill-switch=0 → 回 text-node ----
+        {
+            let html = r#"<html><body><div><span>x</span></div></body></html>"#;
+            let mut doc = zero_dom::parse_html(html);
+            let span = find_element(&doc, doc.root(), "span").expect("span 存在");
+            let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
+            let mut span_style = ComputedStyle::default();
+            span_style.before_pseudo = Some(Box::new(ComputedStyle {
+                content: ContentComputedValue::String("T".to_string()),
+                display: DisplayValue::Inline,
+                background_color: ColorValue::Rgba(0, 128, 0, 255),
+                ..ComputedStyle::default()
+            }));
+            styles.insert(span, span_style);
+
+            unsafe { std::env::set_var("ZW_PSEUDO_INLINE_DECORATED_BOX", "0") };
+            inject_pseudo_text_nodes(&mut doc, &mut styles, &[]);
+            unsafe { std::env::remove_var("ZW_PSEUDO_INLINE_DECORATED_BOX") };
+
+            let first_child = doc
+                .get(span)
+                .and_then(|n| n.children.first().copied())
+                .expect("有子节点");
+            match &doc.get(first_child).unwrap().kind {
+                zero_dom::NodeKind::Text(t) => assert_eq!(t.content, "T"),
+                other => panic!("R5238: kill-switch=0 应回 text-node 路径，实际 {other:?}"),
+            }
         }
     }
 
