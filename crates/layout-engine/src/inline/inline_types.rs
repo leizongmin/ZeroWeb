@@ -507,6 +507,14 @@ pub(crate) fn collapse_whitespace_mark_segment_breaks(text: &str) -> (String, Ve
     (result, break_slots)
 }
 
+/// R5246：white-space 强制断行字符类——`\n` 之外补 U+2028 LINE SEPARATOR /
+/// U+2029 PARAGRAPH SEPARATOR（css-writing-modes-3 §2.2 / css-text-3 §5.2：两类
+/// 控制符在 pre/pre-line 下与 `\n` 同为强制断行点，本体不可见不渲染）。normal
+/// 模式的 segment break transformation（U+2028 折叠等）不在此域。
+pub(crate) fn is_forced_line_break(ch: char) -> bool {
+    ch == '\n' || ch == '\u{2028}' || ch == '\u{2029}'
+}
+
 /// R4398（css-text-3 §4.1.2 + §white-space-phase-1）：pre-line 语境的**换行保留式**
 /// 白空格折叠——连续可折叠空白折叠为单个空格，但 `\n` 原样保留（强制断行 identity，
 /// 供 `split_into_words_with_ws` 的 break_at_newline 分支切段产出空词标记）。
@@ -515,11 +523,14 @@ pub(crate) fn collapse_whitespace_mark_segment_breaks(text: &str) -> (String, Ve
 /// marker 永不产出、两行并排一行实证）。段内折叠由 split 的 break_at_newline 分支
 /// 按段完成（对已折叠文本幂等）。
 pub(crate) fn collapse_whitespace_keep_newlines(text: &str) -> String {
+    // R5246 kill-switch：`ZW_FORCED_BREAK_LS_PS=0` 回退——PS/LS 不进强制断行类，
+    // 按既有行为走 is_collapsible_ws 折叠为空格（仅 `\n` 保留 identity）。
+    let ls_ps_enabled = super::runtime_flags::forced_break_ls_ps_enabled();
     let mut result = String::with_capacity(text.len());
     let mut last_was_space = false;
     for ch in text.chars() {
-        if ch == '\n' {
-            result.push('\n');
+        if is_forced_line_break(ch) && (ch == '\n' || ls_ps_enabled) {
+            result.push(ch);
             last_was_space = false;
         } else if is_collapsible_ws(ch) {
             if !last_was_space {
@@ -698,6 +709,20 @@ mod tests {
         for s in ["", " ", "a b  c", "\u{00A0}x"] {
             assert_eq!(collapse_whitespace_keep_newlines(s), collapse_whitespace(s));
         }
+    }
+
+    /// R5246：pre-line 语境 U+2028 LS / U+2029 PS 与 `\n` 同保强制断行 identity
+    ///（修前走 is_collapsible_ws 被折叠为空格，断行 marker 在 collect 即丢失）。
+    #[test]
+    fn r5246_keep_newlines_preserves_ls_ps_identity() {
+        assert_eq!(collapse_whitespace_keep_newlines("a\u{2028}b"), "a\u{2028}b");
+        assert_eq!(collapse_whitespace_keep_newlines("a\u{2029}b"), "a\u{2029}b");
+        assert_eq!(
+            collapse_whitespace_keep_newlines(" \u{2029}\u{2028} "),
+            " \u{2029}\u{2028} "
+        );
+        // LS/PS 邻接的可折叠空白照常折叠（强制断行类自身不折叠、不吞邻空格）。
+        assert_eq!(collapse_whitespace_keep_newlines("a  \u{2028}  b"), "a \u{2028} b");
     }
 
     /// R5119：段断行标记 = 折叠空格 + 位置旁路（弃用 U+000B 字符哨兵）。

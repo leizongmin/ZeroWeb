@@ -2111,10 +2111,20 @@ pub(crate) fn try_measure_fragment_segment(
     if std::env::var("ZW_FRAGMENT_MEASURE").as_deref() == Ok("0") {
         return None;
     }
-    // 仅 Definite 宽参与（intrinsic 测量维持旧快捷路径，避免 intrinsic 面行为变更）。
+    // R5245：intrinsic 查询也按片段 IFC 测量（旧仅 Definite 宽参与，intrinsic 落回
+    // measure_text_content 文本节点臂——其整串 shaped 测量对混排文本系统性偏窄
+    //（bidi-breaking-001 set 4「א + - × ÷」59.4 应 ~107）且多节点片段只测首个文本子，
+    // float 宿主 shrink-to-fit 据此收缩过窄、片段多折行）。查询宽度映射同
+    // measure_text_content R428 惯例：MaxContent = INFINITY（最宽行）、MinContent = 0
+    //（最宽不可拆单元独占一行）。
+    let is_intrinsic_query = matches!(
+        available_space.width,
+        AvailableSpace::MaxContent | AvailableSpace::MinContent
+    );
     let width = known_dimensions.width.or(match available_space.width {
         AvailableSpace::Definite(w) => Some(w),
-        _ => None,
+        AvailableSpace::MaxContent => Some(f32::INFINITY),
+        AvailableSpace::MinContent => Some(0.0),
     })?;
     if item_node_ids.is_empty() {
         return None;
@@ -2126,8 +2136,19 @@ pub(crate) fn try_measure_fragment_segment(
     inline_ctx.set_fragment_node_ids(item_node_ids.to_vec());
     inline_ctx = configure_inline_fonts(inline_ctx, inline_fonts, false);
     inline_ctx.layout(doc, host_id, styles);
+    // intrinsic 查询回报内容固有宽（片段最右缘，同 measure_text_content 的
+    // measured_width 口径）；Definite 维持透传（taffy 以已知宽消费）。
+    let out_width = if is_intrinsic_query {
+        inline_ctx
+            .all_fragments()
+            .iter()
+            .map(|fragment| fragment.x + fragment.width)
+            .fold(0.0_f32, f32::max)
+    } else {
+        width
+    };
     Some(Size {
-        width,
+        width: out_width,
         height: inline_ctx.total_height(),
     })
 }

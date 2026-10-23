@@ -5314,6 +5314,31 @@
         if (!_aeCn) { try { _activeElKey = null; } catch (_eAeK2) {} _aeP = null; }
       }
       if (_aeP) {
+        // R5247（html-semantics M2 切片 44）：焦点链 retarget 语义前提——锚身处
+        // shadow 树（HTML §focusing steps focus chain retargeting：仅当焦点元素
+        // 在 shadow 树内才穿边界读 host；light 锚无边界可穿）。判据复用 part04
+        // getter R5247 同款同一性核验：锚 handle 宿主反查 selector 回查文档命中
+        // 同一 handle 且宿主树在档 → 锚在 light 树，直返锚。focus-after-close
+        // Complex 案：跨 testdriver 命令换代重物化的 parentNode 解析成 runner
+        // 投影容器形（_shadowHandles 跨执行残留注册），误 retarget 回吐投影
+        // host；shadow 树内锚宿主扁平 selector 命中别元素（handle 不合）→ 门
+        // 开，shadow 双案 + R4600 dialog-focus-shadow 嵌套 retarget 面不受影响。
+        var _aeLightR5247 = false;
+        try {
+          if (typeof __zw_selector_for_handle === 'function' && _aeP.__zwHandle != null) {
+            var _aeSelR5247 = __zw_selector_for_handle(String(_aeP.__zwHandle));
+            if (_aeSelR5247) {
+              var _aeElR5247 = null;
+              try { _aeElR5247 = globalThis.document.querySelector(_aeSelR5247); } catch (_e5247aq) {}
+              if (_aeElR5247 && String(_aeElR5247.__zwHandle) === String(_aeP.__zwHandle)
+                  && typeof __zw_contains === 'function'
+                  && __zw_contains('html', _aeSelR5247) === '1') {
+                _aeLightR5247 = true;
+              }
+            }
+          }
+        } catch (_e5247al) {}
+        if (_aeLightR5247) return _aeP;
         // R4600 续：proxy 焦点锚 parentNode 上行（探针 P2：移入 shadow 树的 sel 域节点
         // 焦点身份保持——上行必须对象域而非 handle 反链）。零 shadow root 文档一步
         // for-in 探测即出（无迭代，activeElement 高频读热路径成本守恒，trap 域成本
@@ -5337,7 +5362,12 @@
           }
           break; // light 树父或链尽头 → 上行止
         }
-        if (_aeOuter) return _makeProxy(_aeOuter.hostSel, _aeOuter.hostHandle);
+        if (_aeOuter) {
+          // R5247：host 解析兜底——换代空壳（tagName 不可读）不回吐，落回原锚。
+          var _aeHost = null;
+          try { _aeHost = _makeProxy(_aeOuter.hostSel, _aeOuter.hostHandle); } catch (_e5247hh) {}
+          if (_aeHost && _aeHost.tagName) return _aeHost;
+        }
       }
       if (_aeP) return _aeP;
       return globalThis.document.body;

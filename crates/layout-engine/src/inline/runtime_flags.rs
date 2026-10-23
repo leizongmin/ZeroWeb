@@ -98,6 +98,14 @@ pub(super) fn bidi_fragment_source() -> bool {
     selected(*VALUE, || default_on("ZW_BIDI_FRAGMENT_SOURCE"))
 }
 
+/// R5246：U+2028 LS / U+2029 PS 进 white-space 强制断行字符类（pre/pre-line 下与
+/// `\n` 同为强制断行点，本体不渲染；css-writing-modes-3 §2.2 / css-text-3 §5.2）。
+/// default-on，`ZW_FORCED_BREAK_LS_PS=0` 回退既有折叠为空格行为。
+pub(super) fn forced_break_ls_ps_enabled() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_FORCED_BREAK_LS_PS"));
+    selected(*VALUE, || default_on("ZW_FORCED_BREAK_LS_PS"))
+}
+
 pub(super) fn bidi_mirroring() -> bool {
     static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_BIDI_MIRRORING"));
     selected(*VALUE, || default_on("ZW_BIDI_MIRRORING"))

@@ -566,6 +566,31 @@
         }
         _icLink = _icParent ? _zwNodeParent[_icParent] : null;
       }
+      // 反链走尽未证明在档：先经宿主持久 handle→selector 反查复核（R5247，
+      // html-semantics M2 切片 44）——apply 换代重注册清 _zwNodeParent 反链后，
+      // 旧 handle 形 proxy（静态树物化产物）链断假阴性 disconnected
+      //（focus-after-close「Complex dialog usage」：show 时捕获的 prevFocused
+      // input proxy 孤儿化 → pf.focus() 误入 R114 detached 臂 → activeElement
+      // 回落撞换代空壳节点）。反查表不随换代清（viaHnd 实证），命中且宿主树
+      // __zw_contains 真值在档 → true。误活象限全保持：显式 remove 已在函数头
+      // _zwRemovedHandles 挡（不达此处）；未挂载 createElement 宿主树游离 →
+      // contains false；反查 miss 落下方 rect 探测原兜底。
+      if (typeof __zw_selector_for_handle === 'function') {
+        try {
+          var _icSelR5247 = __zw_selector_for_handle(String(handle));
+          // 同一性核验（part04 getter R5247 同款）：反查 selector 回查文档命中同
+          // handle 才认在档——shadow 树内元素宿主扁平 selector 命中别元素不复核，
+          // R5181 反链 shadow 穿越判定权威保持；兼消多实例 selector 歧义。
+          if (_icSelR5247) {
+            var _icElR5247 = null;
+            try { _icElR5247 = globalThis.document.querySelector(_icSelR5247); } catch (_e5247q2) {}
+            if (_icElR5247 && String(_icElR5247.__zwHandle) === String(handle)
+                && typeof __zw_contains === 'function') {
+              return __zw_contains('html', _icSelR5247) === '1';
+            }
+          }
+        } catch (_eICR5247) {}
+      }
       // 反链走尽未证明在档：回落 rect 探测（getter 同款——append 已应用且在布局树的
       // 元素命中；getBoundingClientRect 缺失或空 → disconnected）。
       if (typeof __zw_getBoundingClientRect === 'function') {
@@ -715,6 +740,26 @@
       return;
     }
     if (!_zwIsConnected(sel, handle)) throw new globalThis.DOMException('showModal: dialog is not connected', 'InvalidStateError');
+    // R5250（html-semantics M2 切片 47）：spec「show a modal dialog」步 3——subject 的
+    // node document 非 fully active → 抛。dialog-showModal「not attached to any pages」
+    // 第二断言面：detached dialog 被 `doc.body.appendChild` 移入 implementation.
+    // createHTMLDocument 文档后连接门失效——M3 扩批 XLIII 的 `_zwUnmarkRemoved`（新父
+    // 即脱离 removed 态）+ host 快照滞后 `__zw_contains` 恒 1，双信号都判连接。owner
+    // doc 经收养章读：handle 形态走既有 `__zwAdoptDocByHandle`（R327/R191 落表），
+    // sel 形态走 `__zwAdoptDocBySel`（part03 `_r191adoptBody` 落表；主文档 append 族
+    // `_zwUnmarkAdoptDocSel` 对称清除）。重插主文档后章已删 → 判 fully active 不抛。
+    // 已知边界：iframe 文档元素同样被 R191/R327 盖章 → 本门会抛——spec 中 rendered
+    // iframe 文档是 fully active（FIXME: 浏览上下文树 active 判定；corpus 无 iframe 内
+    // showModal 面，暂按 not-active 收窄）。
+    // https://html.spec.whatwg.org/multipage/interactive-elements.html#dom-dialog-showmodal
+    var _r5250OwnDoc = null;
+    try {
+      if (handle && globalThis.__zwAdoptDocByHandle) _r5250OwnDoc = globalThis.__zwAdoptDocByHandle[String(handle)];
+      else if (sel && globalThis.__zwAdoptDocBySel) _r5250OwnDoc = globalThis.__zwAdoptDocBySel[sel];
+    } catch (_e5250o) {}
+    if (_r5250OwnDoc && _r5250OwnDoc !== globalThis.document) {
+      throw new globalThis.DOMException('showModal: document is not fully active', 'InvalidStateError');
+    }
     if (!_dispatchWithBubble(key, sel, handle, _makeToggleEvent('beforetoggle', 'closed', 'open', true, invokerSrc))) return;
     if (!_zwIsConnected(sel, handle)) return; // beforetoggle 内被移除 → 中止（不开、无 toggle）
     if (_zwTopLayer[key]) return; // beforetoggle 内 showPopover → showing → 中止

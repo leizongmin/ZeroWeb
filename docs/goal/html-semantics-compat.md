@@ -1,12 +1,150 @@
 # HTML Semantics 兼容 — html/semantics 语义面（主攻大域）
 
 **版本**: v2.0
-**日期**: 2026-10-23（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 43 收口（挂账收口：replaceWith self-removal 父桶记账——R5246 补 removed identity 入桶，合并视图残留终结，全域 REG 0 / GAIN 0），下一步按挂账序推进；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**日期**: 2026-10-24（v1.0 立项 2026-10-08）
+**状态**: Active——M2 切片 47 收口（E 族重分诊 5F→1F + showModal fully-active 门（R5250），全域 424P/56F/2T REG 0 / GAIN 1），下一步按分诊地图 D 族推进；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-23 M2 切片 43 收口）**：挂账「replaceWith
+> **▶ 当前状态（2026-10-24 M2 切片 47 收口）**：E 族 dialog API 语义 5F
+> 逐项核证后重分诊收窄为 1F 收口（R5250 showModal fully-active 门）。**重
+> 分诊**：close-via-attribute 2F → **挂账（Chrome-parity 同红）**——现行
+> spec（2026-09 版）dialog attribute change steps 明文「The `close` event
+> will not be fired」，whatwg/html#5802 至今 open、测试 2024-05 移 tentative
+> 即提案未落地，实现即背离真实浏览器；dialog-active-document 1F → **挂账
+>（接口面缺口）**——createHTMLDocument 产物文档 createElement 是 R3018
+> `_zwMEl` 本地节点（无接口 IDL），`showModal` 方法不存在，修复属
+> detached-doc 元素模型工程；movebefore 1F → **改判 A/B 族**——依赖
+> moveBefore + closedby + userActivation 特性栈。**根因**（showModal
+> 「not attached to any pages」第二断言面）：detached dialog 经
+> `doc.body.appendChild` 移入 createHTMLDocument 文档后，M3 扩批 XLIII 的
+> `_zwUnmarkRemoved`（新父即脱离 removed 态）+ host 快照滞后
+> `__zw_contains` 恒 1，连接门双信号均判连接 → showModal 误开；spec 步 3
+> 「node document 非 fully active → 抛」缺失，而 JS 侧唯一信号是收养章
+>（handle 形态已有 `__zwAdoptDocByHandle`，sel 形态只盖代理对象、
+> showModal 持三元组不可达）。**落地（R5250 四刀）**：part03
+> `_zwUnmarkAdoptDocSel` helper + `_r191adoptBody` 落 sel 键控收养章
+> `__zwAdoptDocBySel`；part01 showModal 连接门后加 fully-active 门（章
+> 非空且 ≠ active document → 抛 InvalidStateError）；part04 主文档
+> append 族**五处**对称删章（R334 两分支/R334b/R86/R87——首版漏
+> XLV/R86 分支被契约 (c) 回插臂红 + 探针反查补齐）。**验证**：
+> dialog-showModal 单案目标子测试 **Fail → Pass**；interactive-elements
+> 全域 98 files 482 subtest **424P/56F/2T 对 s46 逐位 REG 0 / GAIN 1**；
+> lib **3443P/0F**（+契约 part79）；契约翻转力实证（门条件短路 → 钉 (b)
+> 红）。**已知边界**：iframe 文档元素同被收养章盖 → 门会抛（spec rendered
+> iframe 是 fully active，FIXME 浏览上下文树判定，corpus 无观测面）；
+> handle 形态章主文档重插无对称清除（既有机制面貌）。gates：clippy
+> --workspace -D warnings（test-guard 包裹）/fmt clean、零新增依赖、
+> release runner 含 R5250 符号。账本见
+> [evidence/2026-10-24-m2s47-showmodal-fully-active-gate.md](html-semantics-compat/evidence/2026-10-24-m2s47-showmodal-fully-active-gate.md)。
+> **下一步**：按分诊地图 D 族 focus/inert 10F（focus-previous-outside
+> 3F 既有挂账为首靶，focusability/inert/inert-svg-hittest 等跟 进）；
+> parser form element pointer 4F **已缓行**（2026-10-23 用户决策：与
+> declarative shadow DOM（H）打捆 parser 批次、M2 收口后尾段单独立项）。
+> **切片间隙**：本切片为 shim 面（part01/03/04），下一挂账 D 族亦 shim
+> 面——间隙开放，开工前查 oracle master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-23 M2 切片 46 收口）**：余 60F 归因分诊落档（六族
+> 地图——A closedby×slot 交叉 16F（crbug 417571176 Chrome-parity 同红）、
+> B light dismiss 5F、C top-layer/UA 布局 15F（渲染流面）、D focus/inert
+> 10F、E dialog API 语义 5F（可 shim 收口候选）、F details 零散 4F/1T +
+> G 历史 menu 面 3F）+ 族 G 顺手收口（R5249）。**根因**（三半边「IDL 名
+> 无 tag 门」同模式）：①part05 has trap track IDL 列 label/kind/srclang/
+> default（media 切片 3 加）无条件命中——历史 menu/menuitem（menuitem 已
+> 删为 HTMLUnknownElement）`'label' in el` 假阳性；②set trap R3069 臂
+> FLAT 表 type 无 tag 排除——`menu.type=` 误写内容属性；③同臂 label 显式
+> 列（R3069-fix）无 tag 门。**落地（R5249 双刀）**：has trap kind/srclang
+> 收 TRACK 门、label/default 收 TRACK+OPTION 门（HTMLOptionElement 读侧
+> R3069-fix 对称）；R3069 臂条件首项 MENU/MENUITEM 负门——赋值落 expando、
+> 内容属性不变，name 臂自带门与 FLAT 其余名零变化。**验证**：
+> contextmenu-historical 单案 **11/11 Pass**；interactive-elements 全域
+> 98 files 482 subtest **423P/57F/2T 对 s45 逐位 REG 0 / GAIN 3**（GAIN
+> 即三案）；lib **3442P/0F**（+2 契约 part78）；契约翻转力实证（tag 读恒
+> TRACK → 钉 1(a) 红；负门短路 → 钉 1(c) 红）。**已知边界**：menu.type/
+> label 读侧 FLAT 读仍返内容属性值（真浏览器 undefined，测试无此面）；
+> track 接口其余成员 in 仍无条件（corpus 无 menu 面观测）。gates：clippy
+> --workspace -D warnings（test-guard 包裹）/fmt clean、零新增依赖。账本
+> 见 [evidence/2026-10-23-m2s46-historical-menu-idl-gate.md](html-semantics-compat/evidence/2026-10-23-m2s46-historical-menu-idl-gate.md)。
+> **下一步**：按挂账序 E 族 dialog API 语义 5F（close-via-attribute 移除
+> open 属性触发 closing/close 事件 2F 为首靶，active-document/showModal
+> throw/movebefore 跟进）；parser form element pointer 4F **已缓行**
+>（2026-10-23 用户决策：与 declarative shadow DOM（H）打捆 parser 批次、
+> M2 收口后尾段单独立项）；declarative shadow DOM 同打捆待触发。**切片
+> 间隙**：本切片为 shim 面，下一挂账 E 族亦 shim 面——间隙开放，开工前查
+> oracle master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-23 M2 切片 45 收口）**：s37 已知边界「点击
+> summary-less details 内非激活后代不翻转」收口（2026-10-23 重新定性：
+> spec 无 summary 翻转是 UA affordance 非 MUST，corpus 无观测面——性质
+> 同 s42/s43：spec 正确性收口 + 契约钉住）。**根因**（通道分裂）：details
+> 激活面两条通道各断半边——①`.click()` 合成通道 part04 click 默认动作段
+> 只处理 receiver 自身三站（LABEL/SUMMARY/DETAILS），非激活后代无 nearest
+> 上溯；②JS dispatch 通道 part03 R112 post act:details 门
+> `_zwUaDispatch === true` 挡 `new MouseEvent`（无 UA 印记、无 synthetic
+> 标）。**落地（R5248 双刀）**：part04 nearest 上溯分支——receiver 非
+> 三站且 `_zwFindClickActivation` 命中 act:details 时
+> `_zwDetailsActivateR4400` 翻转（spec the-details-element activation
+> behaviour + legacy-pre-activation nearest ancestor (or self) with
+> activation behavior；notPrevented 门内；receiver 三站让位防双翻；交互
+> 后代 act:button/act:a/act:summary/checkbox 命中时 type 豁免自然不落）；
+> part03 门放宽 `(_zwUaDispatch === true || _zwSyntheticClick !== true)`
+> ——JS dispatch 进同款翻转，`.click()` 合成标保持不进（单翻互斥），
+> preventDefault/connected 门由消费块入口守卫继承；hasSum 门槛让位不变
+> （summary 站优先，R4009 面不回归）。**验证**：探针七案修后全翻且单翻
+> 互斥成立；interactive-elements 全域 98 files 482 subtest **420P/60F/2T
+> 对 s44 逐位 REG 0 / GAIN 0**（R4400 既有面无回归，corpus 无观测面无
+> GAIN）；lib **3440P/0F**（+2 契约 part77）；契约翻转力实证（nearest
+> 分支短路 → 钉 1(a) 红；门收紧 → 钉 1(c) 红）。**已知边界**：corpus 无
+> 观测面（无 GAIN）；detached details 后代点击不翻转（R112 connected
+> 门，spec 无条件但 corpus 无观测面）维持现状。gates：clippy --workspace
+> -D warnings（test-guard 包裹）/fmt clean、零新增依赖。账本见
+> [evidence/2026-10-23-m2s45-summaryless-details-descendant-activation.md](html-semantics-compat/evidence/2026-10-23-m2s45-summaryless-details-descendant-activation.md)。
+> **下一步**：按挂账序其余余案归因；parser form element pointer 4F
+> **已缓行**（2026-10-23 用户决策：与 declarative shadow DOM（H）打捆
+> parser 批次、M2 收口后尾段单独立项）；declarative shadow DOM 同打捆
+> 待触发。**切片间隙**：本切片为 shim 面，下一挂账开工前查 oracle
+> master 碰撞记录（间隙开放）。
+>
+> **▶ 上轮状态（2026-10-23 M2 切片 44 收口）**：s39 剩余 1F「focus-after-close
+> Complex dialog usage focus 恢复红（activeElement 得 div）」收口。**根因**
+> （六层钻透）：Complex 案跨 testdriver 多命令 execute_script，宿主 apply
+> 换代发生在 show 与 close 之间——①静态树节点 handle 形 proxy 无
+> `_zwNodeParent` 反链记账（R91 只记 JS 动态操作）→ ②isConnected 反链
+> miss + rect 探测兜底空 → 双假阴性 disconnected → ③R114 detached 臂误入
+> → ④activeElement getter 的 R4600 focus-chain retarget 上行解析出
+> **runner 投影容器形**——BND dump 实证 `_shadowHandles` 跨执行残留注册
+> （`__n1/__n3/__n5/__n8`，meta hostSel:null、hostHandle 指向换代后复用的
+> 活 handle）→ 误穿边界回吐投影 host DIV；⑤host tagName 防线被复用活
+> handle 绕过、⑥`hostSel==null` 判据亦不成立（页面自建 shadow 的动态 host
+> meta.hostSel 同为 null）——均不可判据。**落地（R5247，判据回归 spec）**：
+> part04 getter + part01 `_zwIsConnected` 前置复核——`__zw_selector_for_handle`
+> 宿主持久反查（不随换代清）+ querySelector 同一性核验（命中同 handle 且
+> `__zw_contains` 在档才短路 true；`_zwRemovedHandles` 守门保持 remove 语义；
+> shadow 树内锚宿主扁平 selector 命中别元素不短路——R91 反链 shadow 穿越
+> 权威判定保持；part04 复核须前置——反链循环含中途 return 后置不可达）；
+> part06 activeElement getter retarget 语义前提门——锚经同一性核验确认
+> light 树直返锚（spec 焦点链 retargeting 仅当锚身处 shadow 树才穿边界；
+> 判据与 stale 注册形态解耦），host 解析空壳兜底回落原锚。**验证**：
+> focus-after-close 单案 **6/6 Pass**（Complex + shadow 双案同时翻绿）；
+> interactive-elements 全域 98 files 482 subtest **420P/60F/2T 对 s43 逐位
+> REG 0 / GAIN 1**（Fail 清单 diff 仅 Complex 案一行）；lib **3437P/0F**
+>（+2 契约 part76）；契约翻转力实证（撤前置复核 → 钉 1(a) 红；light 门
+> 无条件短路 → 钉 2(b) 红）。**已知边界**：focus-after-close 文件级
+> Timeout（dont_scroll：focus 不滚 viewport → scroll 永不发 → promise
+> 永挂）维持 s39 既有独立挂账；dialog-focus-previous-outside 3F 既有挂账。
+> gates：clippy --workspace -D warnings（test-guard 包裹）/fmt clean、零
+> 新增依赖。账本见
+> [evidence/2026-10-23-m2s44-orphan-isconnected-retarget.md](html-semantics-compat/evidence/2026-10-23-m2s44-orphan-isconnected-retarget.md)。
+> **下一步**：按挂账序 summary-less details 内非激活后代翻转（s37 邻近
+> 缺口，真浏览器会翻转；2026-10-23 重新定性：spec 无 summary 翻转是 UA
+> affordance 非 MUST，corpus 无观测面，优先级维持挂账序）；parser form
+> element pointer 4F **已缓行**（2026-10-23 用户决策：与 declarative
+> shadow DOM（H）打捆 parser 批次、M2 收口后尾段单独立项）；declarative
+> shadow DOM 同打捆待触发。**切片间隙**：本切片为 shim 面，下一挂账
+> summary-less 翻转亦 shim 面——间隙开放，开工前查 oracle master 碰撞
+> 记录。
+>
+> **▶ 上轮状态（2026-10-23 M2 切片 43 收口）**：挂账「replaceWith
 > self-removal 父桶记账」收口（s26 既有挂账，R371 模板残留）。**根因**：
 > replaceWith sel 臂 remove 步只覆盖 apply 面（Remove/RemoveHandle
 > mutation）与 sel/handle 字符串标记表（parentNode/isConnected 读），合并
@@ -32,28 +170,6 @@
 > 缺口，真浏览器会翻转）、focus-after-close Complex dialog usage focus
 > 恢复深层（s39 剩余 1F）；parser form element pointer 4F **已缓行**
 >（2026-10-23 用户决策：与 declarative shadow DOM（H）打捆 parser
-> 批次、M2 收口后尾段单独立项）；declarative shadow DOM 同打捆待触发。
->
-> **▶ 上轮状态（2026-10-23 M2 切片 42 收口）**：挂账「非模态 close 不出
-> 组栈」收口（s23 R4300 已知保守项）。**根因**：`_zwDialogCloseTheDialog4200`
-> 的组栈出栈 splice 在模态臂内——modeless close()/requestClose()/ESC/
-> light dismiss 全链残留 stale 项，show()/close() 循环重复项无限增长
-> （读侧 purge 仅 ESC 扫描顺带清，行为面无观测差异）。**落地（R5245
-> 一刀）**：splice 移出模态臂，模态/非模态一律同步出栈（spec close
-> watcher 随关闭销毁、其组离栈）；show()/showModal() 无条件 push 与
-> part06 读侧 purge 维持（markup open 直写面兜底不变）。**验证**：契约
-> test_dialog_group_stack_hygiene_r5245（part74 新文件，R1–R4：三循环
-> 重开 ESC 命中尾组 / 双 modeless 栈序 / 全关 no-op / 模态臂保持——栈
-> 内部态无 JS 观测面，契约钉行为不变量）；interactive-elements 全域
-> 98 files **419P/61F/2T 对 s41 逐位 REG 0 / GAIN 0**；lib **3433P/0F**。
-> **已知边界**：markup removeAttribute('open') 直写面不经 close 核心，
-> stale 项靠读侧 purge 兜底（R4300 既有设计维持）。gates：clippy/fmt
-> 无 Rust 变化、零新增依赖。账本见
-> [evidence/2026-10-23-m2s42-nonmodal-close-stack.md](html-semantics-compat/evidence/2026-10-23-m2s42-nonmodal-close-stack.md)。
-> **下一步**：按挂账序 R371 模板残留、summary-less details 内非激活
-> 后代翻转（s37）、focus-after-close Complex dialog usage focus 恢复
-> 深层（s39 剩余 1F）；parser form element pointer 4F **已缓行**
-> （2026-10-23 用户决策：与 declarative shadow DOM（H）打捆 parser
 > 批次、M2 收口后尾段单独立项）；declarative shadow DOM 同打捆待触发。
 >
 > **切片间隙宣告义务（2026-10-23 用户决策，配合
@@ -607,6 +723,37 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-23 M2 切片 46**：余 60F 归因分诊六族地图落档（A–G，含
+  Chrome-parity 同红族 A/B 与可 shim 收口候选 E）+ 历史 menu 面 IDL 归属
+  收口（R5249 双刀，shim part04/part05）——has trap track IDL 列
+  kind/srclang/label/default tag 门（TRACK 与 TRACK+OPTION）+ R3069 写臂
+  MENU/MENUITEM 负门（FLAT type 与显式 label 列无 tag 门致 menu.type=/
+  menu.label= 误写内容属性）。契约 part78 两钉（menu 排除五臂 + track/
+  option/FLAT 面四臂不回归）+ 翻转力实证。contextmenu-historical
+  **11/11 Pass**；interactive-elements 全域 98 files **423P/57F/2T 对 s45
+  逐位 REG 0 / GAIN 3**；lib **3442P/0F**（+2 契约）；零新增依赖。账本
+  [evidence/2026-10-23-m2s46-historical-menu-idl-gate.md](html-semantics-compat/evidence/2026-10-23-m2s46-historical-menu-idl-gate.md)。
+- **2026-10-23 M2 切片 45**：s37 已知边界「点击 summary-less details 内
+  非激活后代不翻转」收口（R5248 双刀，shim part03/part04）——part04
+  click 默认动作段 nearest activation 上溯分支（`.click()` 合成半边，
+  receiver 三站让位 + 交互后代 type 豁免 + notPrevented 门继承）+
+  part03 R112 post act:details 门放宽至 JS dispatch 通道
+  （`_zwSyntheticClick` 标互斥防双翻，preventDefault/connected 门由入口
+  守卫继承）。契约 part77 两钉（翻转/互斥六臂 + 让位/豁免三臂）+ 翻转力
+  实证。interactive-elements 全域 98 files **420P/60F/2T 对 s44 逐位
+  REG 0 / GAIN 0**（corpus 无观测面）；lib **3440P/0F**（+2 契约）；零
+  新增依赖。账本
+  [evidence/2026-10-23-m2s45-summaryless-details-descendant-activation.md](html-semantics-compat/evidence/2026-10-23-m2s45-summaryless-details-descendant-activation.md)。
+- **2026-10-23 M2 切片 44**：s39 剩余 1F focus-after-close Complex 案收口
+  （R5247，shim part01/part04/part06 三处）——跨代 handle proxy 孤儿
+  isConnected 假阴性修正（宿主持久反查 + querySelector 同一性核验前置
+  复核）+ activeElement 焦点链 retarget light 锚误穿收口（light 锚直返
+  门，判据与 stale `_shadowHandles` 投影注册形态解耦）。契约 part76 两钉
+  （孤儿 isConnected / light-shadow retarget 双向）+ 翻转力实证。
+  focus-after-close 单案 **6/6 Pass**；interactive-elements 全域 98 files
+  **420P/60F/2T 对 s43 逐位 REG 0 / GAIN 1**；lib **3437P/0F**（+2 契约）；
+  零新增依赖。账本
+  [evidence/2026-10-23-m2s44-orphan-isconnected-retarget.md](html-semantics-compat/evidence/2026-10-23-m2s44-orphan-isconnected-retarget.md)。
 - **2026-10-23 M2 切片 43**：replaceWith self-removal 父桶记账收口（R5246
   一刀，s26 既有挂账「R371 rekey 时 dst 桶不存在，不记父桶 removed」）——
   sel 臂 remove 步补 `_zwHCLiveInvalidate` 直调（父桶 removed identity +

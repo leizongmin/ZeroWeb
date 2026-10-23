@@ -170,6 +170,13 @@ use postprocess::*;
 // 无需 glob import。纯移动，零行为变化。
 mod sizing;
 
+/// R5245 kill-switch 读取：`ZW_R109_ANON_NOFLOAT=0` 回退 R109 匿名块片段的 float 旗标
+/// 清除（pre-R5245：匿名块按映射宿主样式继承 float）。
+fn r109_anon_nofloat_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_R109_ANON_NOFLOAT").as_deref() != Ok("0"))
+}
+
 /// 缓存的 taffy 布局状态 — 用于增量重算。
 ///
 /// 保存 taffy 树、根节点和映射关系，避免每次全量重建。
@@ -1894,6 +1901,18 @@ impl LayoutEngine {
                 resolve_float_physical(&s.float, matches!(s.direction, DirectionValue::Rtl))
             }
         });
+        // R5245（CSS2 §9.2.1.1）：R109 匿名块片段是 block 容器混排时生成的**流内**匿名盒，
+        // 自身不浮动。其 taffy→dom 映射指向宿主（tree.rs `taffy_to_dom.insert(anon, host)`），
+        // 上面按宿主样式解析出 float——float 宿主（bidi-breaking-001 set 4）的匿名块误带
+        // float=Left → adjust_float_positions 把匿名块当真 float 并排放置并按 Σ 收缩宿主宽、
+        // remeasure_text_with_float_exclusions 误建伪排除带重测宿主文本 → float 盒
+        // 133×55 塌陷为 250×15、文本逸出盒外。匿名块 float 强制 None（宿主盒自身旗标不动）。
+        // kill-switch `ZW_R109_ANON_NOFLOAT=0` 回退。
+        let float = if is_anon_fragment && r109_anon_nofloat_enabled() {
+            FloatValue::None
+        } else {
+            float
+        };
         let clear = computed.map_or(ClearValue::None, |s| {
             // CSS 2.1 §9.10：`clear` 仅适用于 block-level 元素。internal table 元素（row/cell/column/
             // column-group/row-group/header/footer/caption）与 inline-level（inline-table）非 block-level，

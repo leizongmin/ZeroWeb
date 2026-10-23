@@ -2365,6 +2365,38 @@
         //   的同一 execute 内可能暂报 false（layout-dependent probe）；text/comment 节点无布局 rect → append
         //   后仍报 false（少见 `textNode.isConnected` 检查，documented）。Document 节点恒 connected（见 literal）。
         if (prop === 'isConnected') {
+          // R5247（html-semantics M2 切片 44）：handle 形换代孤儿前置复核——apply
+          // 换代重注册清 _zwNodeParent 反链后，旧 handle 形 proxy（静态树物化产物）
+          // 反链上行断 + rect 探测空 → 双假阴性 disconnected
+          //（focus-after-close「Complex dialog usage」：show 时捕获的 prevFocused
+          // input proxy 孤儿化 → pf.focus() 误入 R114 detached 臂 → activeElement
+          // 回落撞换代空壳节点）。宿主持久 handle→selector 反查（不随换代清）+
+          // __zw_contains 宿主树真值在档 → true 短路（本块反链循环含 R91 host
+          // rect 等中途 return，后置复核不可达——真值短路须前置）。false/miss 落
+          // 原全路径：同步窗口 append（宿主 contains 未反映、反链 parentSel 记账
+          // 在）反链真值优先不受损；显式 remove（_zwRemovedHandles 记账）与未挂载
+          // createElement（反查 miss）语义原样。
+          if (!sel && handle
+              && !(typeof _zwRemovedHandles !== 'undefined' && _zwRemovedHandles && _zwRemovedHandles[handle])
+              && typeof __zw_selector_for_handle === 'function') {
+            try {
+              var _icSelR5247c = __zw_selector_for_handle(String(handle));
+              // 同一性核验：反查 selector 回查文档须命中**同 handle**——shadow 树内
+              // 元素（detached shadowRoot，反链 R91 权威判定）的宿主扁平 selector 在
+              // 文档查询空间命中的是**别元素**，handle 不合 → 不短路、落反链原路径
+              //（focus-after-close「moved to shadow root」/「shadow DOM host」回归
+              // 面）；同时消多实例文档 selector 歧义。
+              if (_icSelR5247c) {
+                var _icElR5247 = null;
+                try { _icElR5247 = globalThis.document.querySelector(_icSelR5247c); } catch (_e5247q) {}
+                if (_icElR5247 && String(_icElR5247.__zwHandle) === String(handle)
+                    && typeof __zw_contains === 'function'
+                    && __zw_contains('html', _icSelR5247c) === '1') {
+                  return true;
+                }
+              }
+            } catch (_eICR5247c) {}
+          }
           if (sel) {
             // R4200：同步移除标记优先（`_zwIsConnected` part01 同款门）——脚本内
             // remove() 后（host mutation 尚未应用）isConnected 立即为 false（spec
@@ -5260,6 +5292,26 @@
               if (_r154Tag === 'DETAILS' && typeof _zwDetailsActivateR4400 === 'function') {
                 _zwDetailsActivateR4400(sel, handle);
               }
+              // R5248（html-semantics M2 切片 45）：target 非激活站时 nearest 上溯——
+              // summary-less details 内非激活后代 `.click()` 翻转所属 details（s37
+              // 已知边界「点击 summary-less details 内非激活后代不翻转」的 click()
+              // 半边；spec the-details-element activation behaviour + concept-event-
+              // dispatch legacy-pre-activation「nearest ancestor (or self) with
+              // activation behavior」——DETAILS 无 summary 子时其 activation behavior
+              // 覆盖全部非交互后代）。receiver 自身三站让位（LABEL 转发/SUMMARY/
+              // DETAILS 分支已执行，DETAILS 自身再跑 nearest 会双翻）；nearest 命中
+              // 交互后代（act:button/act:a/act:summary/checkbox）时不落 act:details
+              // 自然豁免。`_zwSyntheticClick` 标使 R112 post act:details 门（R5248
+              // 放宽版）跳过本通道——单翻互斥。
+              if (_r154Tag !== 'LABEL' && _r154Tag !== 'SUMMARY' && _r154Tag !== 'DETAILS'
+                  && typeof _zwFindClickActivation === 'function') {
+                var _r5248Act = null;
+                try { _r5248Act = _zwFindClickActivation(sel, handle, true); } catch (_e5248a) { _r5248Act = null; }
+                if (_r5248Act && _r5248Act.type === 'act:details'
+                    && typeof _zwDetailsActivateR4400 === 'function') {
+                  try { _zwDetailsActivateR4400(_r5248Act.sel, _r5248Act.handle); } catch (_e5248d) {}
+                }
+              }
             }
             return notPrevented;
           };
@@ -6183,6 +6235,8 @@
               // 短路返 null）恒 null、removal-pause tick 误判（track-remove-insert-
               // ready-state 的 host 通道缺口根因之一）。
               try { if (typeof _zwUnmarkRemoved === 'function') _zwUnmarkRemoved(_r334ChildSel); } catch (_e334um) {}
+              // R5250：sel 子重插清除收养章（XLV 同款对称面——showModal fully-active 门）。
+              try { if (typeof _zwUnmarkAdoptDocSel === 'function') _zwUnmarkAdoptDocSel(_r334ChildSel); } catch (_e5250um2) {}
               try {
                 // （_r334OldSel 已在 wire 前读取——XLV）
                 // R334：removed record 的兄弟字段——wire 前的兄弟 getter 快照。
@@ -6217,6 +6271,10 @@
             // R34xx：重新插入清除移除标记（append 后元素回到文档）。
             if (sel) _zwUnmarkRemoved(sel);
             if (child && child.__zwSelector) _zwUnmarkRemoved(child.__zwSelector);
+            // R5250：重插主文档树清除 sel 收养章（showModal fully-active 门对称面——
+            // 回插后 node document 恢复 active document）。
+            if (sel) _zwUnmarkAdoptDocSel(sel);
+            if (child && child.__zwSelector) _zwUnmarkAdoptDocSel(child.__zwSelector);
             // js-dom M4 R81：无 handle 的轻量节点（CDATASection 等 plain object）——append 到
             // handle 父时入 registry（host 无对应 mutation 类型；WPT Node-properties
             // testDiv.textContent 期望 CDATA "1234"+"5678" 计入拼接）。
@@ -6499,6 +6557,8 @@
                   var ca86 = ceAdded[ci86];
                   if (ca86 && ca86.__zwHandle) _zwUnmarkRemovedHandle(ca86.__zwHandle);
                   if (ca86 && ca86.__zwSelector && typeof _zwUnmarkRemoved === 'function') _zwUnmarkRemoved(ca86.__zwSelector);
+                  // R5250：append 重插清除 sel 收养章（fully-active 门对称面）。
+                  if (ca86 && ca86.__zwSelector && typeof _zwUnmarkAdoptDocSel === 'function') _zwUnmarkAdoptDocSel(ca86.__zwSelector);
                 }
               }
               // R2994 connectedCallback：子树按父连接态传播（父连入 → 子树连入；未观察/非 custom 仅传播）。
@@ -7320,6 +7380,8 @@
               // 随连接视图丢失（corner-cases focusin removes-and-reinserts 臂：R4600
               // focusing steps 让 focusin 真实触发后暴露的面）。
               try { if (typeof _zwUnmarkRemoved === 'function') _zwUnmarkRemoved(_r334bChildSel); } catch (_e334bum) {}
+              // R5250：带位变体重插清除 sel 收养章（R334 appendChild 同款对称面）。
+              try { if (typeof _zwUnmarkAdoptDocSel === 'function') _zwUnmarkAdoptDocSel(_r334bChildSel); } catch (_e5250um) {}
               try {
                 var _r334bOldSel = null;
                 try {
@@ -7847,6 +7909,8 @@
                   var ia87 = _ibAdd[ci87];
                   if (ia87 && ia87.__zwHandle) _zwUnmarkRemovedHandle(ia87.__zwHandle);
                   if (ia87 && ia87.__zwSelector && typeof _zwUnmarkRemoved === 'function') _zwUnmarkRemoved(ia87.__zwSelector);
+                  // R5250：insertBefore 重插清除 sel 收养章（R87 恢复段对称面）。
+                  if (ia87 && ia87.__zwSelector && typeof _zwUnmarkAdoptDocSel === 'function') _zwUnmarkAdoptDocSel(ia87.__zwSelector);
                 }
               }
               // R2994 connectedCallback：子树按父连接态传播。
@@ -10987,6 +11051,9 @@
           }
         }
         var moAttr = null;
+        // R5249（html-semantics M2 切片 46）：声明前置（R3069 reflected 臂条件内
+        // 赋值复用——历史 menu 面 tag 门，见 part05.js R3069 分支注记）。
+        var _r5249Tag;
         // js-dom M4 R45：MutationObserver attributeOldValue——IDL 反射 setter（el.id=/className=/title= 等）的
         // old 值须在**写入前**捕获（写后读即新值）。旧实现 part05 末尾 notify 不带 oldValue（恒 null，WPT
         // MutationObserver-attributes "oldValue didn't match" 全族 fail）。此处按 IDL 名预判目标内容属性名，

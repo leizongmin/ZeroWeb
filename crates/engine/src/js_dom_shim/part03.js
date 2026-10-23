@@ -12999,13 +12999,22 @@
               }
             }
           } catch (_e155a) {}
-        } else if (_r112Act.type === 'act:details' && event._zwUaDispatch === true) {
+        } else if (_r112Act.type === 'act:details'
+            && (event._zwUaDispatch === true || event._zwSyntheticClick !== true)) {
           // R4400（html-semantics M2 切片 24，2026-10-22）：UA 通道坐标点击落
           // summary-less DETAILS——激活翻转（spec the-details-element activation
           // behaviour）。`_zwUaDispatch` 门三通道互斥：`.click()` 面由 part04 内联段
           // 承接（本段 skip 防双翻）；plan 面（test_driver.click(summary-less
           // details) 分类 Generic 纯 click）无翻转，本段为唯一激活；SUMMARY 不入
           // 本段——plan_summary 已有 plan 级 SetOpen，双翻先例（R4009 注记）。
+          // R5248（html-semantics M2 切片 45）：门放宽至 JS `new MouseEvent`
+          // dispatch 通道（无 synthetic 标、无 UA 印记）——s37 已知边界「点击
+          // summary-less details 内非激活后代不翻转」的 dispatch 半边：nearest
+          // 上溯（`_zwFindClickActivation`）命中 DETAILS 站返回 act:details，
+          // 而合成 dispatch 无任何翻转点（part04 内联段是 click() proxy 专属、
+          // finally 补面有 `_zwUaDispatch` 门）。`.click()` 合成（`_zwSyntheticClick`
+          // 标）保持不进——part04 内联段 R5248 nearest 分支承接，防双翻互斥
+          // 不变；anchor act:a 分支无门同款先例（R5239）。
           try { _zwDetailsActivateR4400(_r112Act.sel, _r112Act.handle); } catch (_e4400d) {}
         } else if (_r112Act.type === 'act:button' && event._zwUaDispatch === true) {
           // R4400：UA 通道坐标点击落 commandfor 按钮——invoker 命令激活（spec
@@ -14454,6 +14463,13 @@
     }
   }
   function _zwUnmarkRemoved(sel) { if (sel) delete _zwRemovedSels[sel]; }
+  // R5250（html-semantics M2 切片 47）：sel 键控收养章清除——元素重插主文档树即脱离
+  // 收养文档（spec concept-node-adopt 对称面；showModal fully-active 门消费，见
+  // part01 `_zwDialogShowModal` R5250 注记）。与 `_zwUnmarkRemoved` 同款 append 族
+  // 挂点（part04 appendChild/insertAdjacent/insertBefore 三处同步调用）。
+  function _zwUnmarkAdoptDocSel(sel) {
+    if (sel && globalThis.__zwAdoptDocBySel) delete globalThis.__zwAdoptDocBySel[sel];
+  }
   function _zwIsRemoved(sel) { return !!(sel && _zwRemovedSels[sel]); }
   // js-dom M4 R86：handle 移除标记（sel 版同款语义）——removeChild/remove 的 handle 节点
   // 标记已移除，NodeIterator/TreeWalker 的 order 快照扫描跳过（spec：迭代集合是 live 的，
@@ -18821,6 +18837,16 @@
         try {
           (function _r191adoptBody(n2) {
             if (!n2 || typeof n2 !== 'object') return;
+            // R5250：sel 形态收养章（proxy 携 `__zwSelector`；handle 形态走上方既有表）——
+            // showModal fully-active 门（part01 R5250）的 owner doc 数据源。detached 文档
+            // 收养后 `_zwUnmarkRemoved` 使连接门失效（host 快照滞后 contains=1），本表是
+            // 「node document ≠ active document」的唯一 JS 侧信号。
+            try {
+              if (n2.__zwSelector) {
+                if (!globalThis.__zwAdoptDocBySel) globalThis.__zwAdoptDocBySel = {};
+                globalThis.__zwAdoptDocBySel[String(n2.__zwSelector)] = doc;
+              }
+            } catch (_e5250st) {}
             if (n2.__zwHandle) {
               if (!globalThis.__zwAdoptDocByHandle) globalThis.__zwAdoptDocByHandle = {};
               globalThis.__zwAdoptDocByHandle[String(n2.__zwHandle)] = doc;
