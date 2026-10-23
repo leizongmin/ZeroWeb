@@ -614,6 +614,31 @@
           self.response = new _zwParsedDoc(docText);
           if (docCharset) self.response._zwEncoding = docCharset;
           self.responseXML = self.response;
+          // R5262（F 族 xhr-response 收口）：response.body 换 wrapper-world 实体
+          // 节点——`_zwParseEl` 快照 body 无接口原型（`instanceof HTMLBodyElement`
+          // 失败）、innerHTML 是 ctor own data property（赋值仅覆写字符串不触发
+          // 解析）、open IDL 缺失；WPT name-attribute「exclusivity enforcement with
+          // attachment scenario connected-in-xhr-response」经 body 装配 + qSA +
+          // open toggle 需实体树面。配方复用 R3019 mutTree 桥
+          //（`_zwParseEl._ensureMutTree`——`__zw_parse_html_child_nodes` +
+          // `_zwMBuildNode`，inert 印章同盖）；旧 body 读面（firstChild 等）本就
+          // 惰性经同一 mtree，读语义零变化。根节点补 R125 接口原型接线（body →
+          // HTMLBodyElement.prototype——`_zwMEl` 裸构造不接线，接线在
+          // `_zwMBuildNode` 仅覆盖解析子）；head/documentElement 保持快照面
+          //（场景不触及，DOMParser 语料零波及——本 graft 仅 XHR HTML 文档分支）。
+          try {
+            var _xhrBodyPe = self.response.body;
+            if (_xhrBodyPe && typeof _xhrBodyPe._ensureMutTree === 'function') {
+              var _xhrBodyNode = _xhrBodyPe._ensureMutTree();
+              var _xhrBIface = globalThis.__zwHtmlTagIface && globalThis.__zwHtmlTagIface.body;
+              var _xhrBProto = (_xhrBIface && globalThis[_xhrBIface] && globalThis[_xhrBIface].prototype)
+                || (globalThis.HTMLBodyElement && globalThis.HTMLBodyElement.prototype) || null;
+              if (_xhrBProto && _xhrBodyNode.nodeType === 1) {
+                try { Object.setPrototypeOf(_xhrBodyNode, _xhrBProto); } catch (_eXhrBodyProto) {}
+                self.response.body = _xhrBodyNode;
+              }
+            }
+          } catch (_eXhrBodyGraft) {}
         } else if (_zwXhrIsXmlMime(docMime) && typeof _zwXmlParseDoc === 'function') {
           self.responseXML = _zwXmlParseDoc(text);
           self.response = self.responseXML;

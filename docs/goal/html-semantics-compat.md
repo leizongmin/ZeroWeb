@@ -2,9 +2,37 @@
 
 **版本**: v2.0
 **日期**: 2026-10-24（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 54 收口（name-attribute 3F 分诊轮：R5260 toggle 任务重排队 + R5261 template content 元素族收口 2F，xhr-response 1F 定性 parse-world 底座缺口挂账，全域 **435P/48F/0T** GAIN 2 / REG 0），下一步 parse-world 写面切片排期或续 B/C 挂账序；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 55 收口（s54 挂账 xhr-response 1F 以 R5262 XHR 文档 body graft 窄域收口，F 族 name-attribute **18P/0F 全绿**，全域 **436P/47F/0T** GAIN 1 / REG 0），下一步续挂账序 B 族 pointer-capture 2F 分诊或 C 族渲染流协调；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-24 M2 切片 54 收口，name-attribute 3F 分诊轮）**：
+> **▶ 当前状态（2026-10-24 M2 切片 55 收口，xhr-response graft 轮）**：
+> s54 分诊轮挂账的 xhr-response 1F **窄域收口**（R5262），F 族
+> name-attribute.html 三案全清（**18P/0F**），全域 435P/48F/0T →
+> **436P/47F/0T**（GAIN 1 / REG 0）。**方案取舍**：s54 定性 parse-world
+> 基面三件套升级（波及 DOMParser/XHR/responseXML 全语料）vs 底座挂账；
+> 本轮复核出第三条窄域路线——场景需求全落 `xhr.response.body` 单节点，
+> 而 `_zwParseEl` 的 R3019 mutTree 桥（`_ensureMutTree`）本就把该节点惰性
+> 物化为 wrapper-world `_zwMEl` 实体子树，仅差物化时机（惰性→主动）、
+> 接口原型接线（裸 `_zwMEl` 不接线，R125 在 `_zwMBuildNode` 只覆盖解析
+> 子）、`doc.body` 指向（仍是快照壳）。**修复**（part03 XHR HTML 文档
+> 分支）：body `_ensureMutTree()` 主动物化 + R125 配方接线
+>（`__zwHtmlTagIface.body` → `HTMLBodyElement.prototype`）+ `doc.body`
+> 换实体节点。读语义零变化（旧 firstChild 等读面本就惰性经同一 mtree）；
+> DOMParser 语料零波及（graft 仅 XHR `responseType='document'` HTML MIME
+> 分支，`_zwParsedDoc` 工厂与 `_zwParseEl` 基面未动）；head/documentElement
+> 保持快照面（场景不触及）。wrapper-world 实体面经 s54 探针全链验证
+>（innerHTML 写解析接 R4100、qSA 返真实 parentNode 链完整节点、open IDL
+> + toggle 队列全通）。**验证**：name-attribute 17P/1F → **18P/0F**；
+> xhr 语料 stash 前后双侧同跑 net-api xhr 切片 **580P/14F/21T 逐位一致**
+>（基线二进制 R5262 锚点 0 / graft 后 1 双验）；escaping.html
+>（html-syntax，XHR document 读面消费方）4 子测试全 Pass；zero-engine
+> lib 3448P/0F；探针页已删。账本见
+> [evidence/2026-10-24-m2s55-xhr-body-graft.md](html-semantics-compat/evidence/2026-10-24-m2s55-xhr-body-graft.md)。
+> **下一步**：F 族清空，续挂账序——B 族 pointer-capture 2F 分诊（s49
+> 定性指针管线深水）或 C 族渲染流 20F 跨流协调；declarative shadow
+> 联合切片待用户点名。**切片间隙**：本切片为 engine shim 面（part03），
+> 下一挂账开工前查 oracle master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 54 收口，name-attribute 3F 分诊轮）**：
 > F 族 name-attribute.html 三案分诊完成——**2F shim 收口 + 1F 底座缺口
 > 挂账**，全域 433P/50F/0T → **435P/48F/0T**（GAIN 2 / REG 0）。
 > **R5260**（mutation event and toggle event order → Pass）：R4009 toggle
