@@ -52,6 +52,18 @@ fn table_rtl_col_order_enabled() -> bool {
     *TABLE_RTL_COL_ORDER_ON
 }
 
+/// R5241（CSS2 §17.5.2.1/§17.6.2.1 边框中心间距模型补全）：collapse 模式行高贡献
+/// = cell border-box − ½(bt+bb)（与列宽 R4027/R4028 半 border 分摊同构；外缘 cell
+/// 边框胜出时表 border-box 加 ½ 外缘 border）。border-conflict-element-001a 族：
+/// 20px 全边框空 cell 行高 40→20、表 80×160→100×100（chromium 一致）。
+/// default-on；`ZW_TABLE_COLLAPSE_HALF_EXTENT=0` 回退整 border 行高 + 无外缘尺寸。
+static TABLE_COLLAPSE_HALF_EXTENT_ON: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_TABLE_COLLAPSE_HALF_EXTENT").as_deref() != Ok("0"));
+
+fn collapse_half_extent_enabled() -> bool {
+    *TABLE_COLLAPSE_HALF_EXTENT_ON
+}
+
 /// 对 LayoutBox 树执行 table 布局后处理。
 ///
 /// 遍历所有 `display: table` 或 `display: inline-table` 的容器，
@@ -1048,6 +1060,16 @@ fn compute_column_widths_inner(
             } else {
                 intrinsic
             };
+            // R5241：floor 是 border-box 口径（含整边框）——collapse 下与 R4027/R4028
+            // 的半 border 列宽（边框中心距）同源化需扣 ½(bl+br)，否则 border 大的
+            // 显式宽 cell floor 反超 base，列宽回到整 border 形态，与外缘半 border
+            // 加法双重计入（collapsing-border-model-007/008：td width 110 + border-left
+            // 110 → 列 220+外半 55=275，chromium 165+55=220）。
+            let floor_intrinsic = if is_collapsed_border && collapse_half_extent_enabled() {
+                (floor_intrinsic - (cell_box.border_left + cell_box.border_right) / 2.0).max(0.0)
+            } else {
+                floor_intrinsic
+            };
             base.max(floor_intrinsic)
         };
         // R583：cell min-width/max-width 约束其对列的宽度贡献（CSS Tables §17.5.3：
@@ -1879,6 +1901,11 @@ fn position_cells(
     // 与 inline_finalization 同名 env 对齐，供 corpus ON/OFF 归因。
     let r5167_enabled = std::env::var("ZW_CELL_IFC_STORE").as_deref() != Ok("0");
 
+    // R5241（CSS2 §17.5.2.1 行高 = 边框中心间距）：collapse 模式行高贡献 =
+    // cell border-box − ½(bt+bb)，与列宽半 border 分摊（R4027/R4028）同构。
+    // cell 盒自身保持整 border-box 高不回写：相邻行 cell 带 ±½ 重叠，paint 端
+    // 内绘边框带恰落边框中心（只有行推进与表高消费分摊值）。
+    let collapse_half = !separated && collapse_half_extent_enabled();
     for (row_idx, row) in grid.rows.iter().enumerate() {
         // 检测行组切换，记录新行组的起始 row_y
         let rg_key = row.row_group_index;
@@ -1938,6 +1965,12 @@ fn position_cells(
                     let aware = cell_float_aware_content_height(cell_box, styles);
                     row_height = if has_nested_table {
                         row_height.max(aware + cell_box.border_bottom + cell_box.padding_bottom)
+                    } else if collapse_half {
+                        // R5241：见循环前注释。R4495 嵌套表例外臂不参与（嵌套表
+                        // cell 高度口径独立，collapse+嵌套+边框形态无实证案）。
+                        row_height
+                            .max(cell_box.height - (cell_box.border_top + cell_box.border_bottom) / 2.0)
+                            .max(aware)
                     } else {
                         row_height.max(cell_box.height).max(aware)
                     };
@@ -2168,7 +2201,18 @@ fn position_cells(
             // 注意：正常流子元素是垂直堆叠的，应使用 sum 而非 max。
             // R1390：BFC 包含浮动后的内容高度（见 cell_float_aware_content_height）。
             let cell_content_height: f32 = cell_float_aware_content_height(cell_box, styles);
-            let cell_height = row_height.max(cell_content_height);
+            // R5241：collapse 半分摊行高（边框中心间距）可小于 cell 自身 border-box
+            // 高（border-conflict-element-001a：行 20 < cell 40）——cell 盒不得缩到
+            // 自己的边框盒以下（cell 只增不裁，CSS 2.1 §17.5.3；相邻行 cell 带 ±½
+            // 重叠，paint 端内绘边框带恰落边框中心）。只在 collapse_half 臂下加此
+            // guard：其余模式 row_height 由 max(cell_box.height) 累积而来（嵌套表
+            // 例外臂无此保证，separate 表必须保持原口径——margin-collapse-121 族
+            // OFF 反证归因）。
+            let cell_height = if collapse_half {
+                row_height.max(cell_content_height).max(cell_box.height)
+            } else {
+                row_height.max(cell_content_height)
+            };
             cell_box.height = cell_height;
             // 同步更新 content_height，确保 overflow 裁剪使用增长后的高度
             let cell_content_h = (cell_height
@@ -2606,6 +2650,16 @@ fn apply_table_size_constraints(
     // 高扣 (顶 cell.bt + 底 cell.bb)——分别匹配列宽半 border / 行高整 border 的算法。
     let mut edge_w = 0.0_f32;
     let mut edge_h = 0.0_f32;
+    // R5241：cell 边框胜出（> table 自身边框）的边缘，胜出边框的外半伸出到
+    // 边框中心距（content box）之外，计入表 border-box（CSS2 §17.6.2.1 折叠
+    // 语义：表外缘 = 胜出边框外缘）。**每缘独立**取最大值（四缘是四条平行带：
+    // 同缘各行的边缘 cell 边框带平行铺开不叠加——border-collapse-dynamic-row-001
+    // 三行 ×10px 左缘外半仍是 5 不是 15；1×1 表同一 cell 同胜四缘、各缘各计半），
+    // 整值入账，落尺寸时各缘取半相加。
+    let mut outer_l = 0.0_f32;
+    let mut outer_r = 0.0_f32;
+    let mut outer_t = 0.0_f32;
+    let mut outer_b = 0.0_f32;
     if matches!(border_collapse, zero_style_system::BorderCollapseValue::Collapse) && !grid.rows.is_empty() {
         let last_col = grid.col_count;
         // 左/右边缘 cell（col_start==0 / col_end==col_count）的 border_left/right
@@ -2620,12 +2674,21 @@ fn apply_table_size_constraints(
                     continue;
                 }
                 let Some(cb) = get_cell_box(rb, cell) else { continue };
-                // table border 胜出（>=）时 cell border 被覆盖，才扣；否则 cell 胜出保留
-                if is_left && table_box.border_left >= cb.border_left {
-                    edge_w += cb.border_left;
+                // table border 胜出（>=）时 cell border 被覆盖，才扣；否则 cell 胜出
+                // 保留，其外半作表外缘（R5241）
+                if is_left {
+                    if table_box.border_left >= cb.border_left {
+                        edge_w += cb.border_left;
+                    } else {
+                        outer_l = outer_l.max(cb.border_left);
+                    }
                 }
-                if is_right && table_box.border_right >= cb.border_right {
-                    edge_w += cb.border_right;
+                if is_right {
+                    if table_box.border_right >= cb.border_right {
+                        edge_w += cb.border_right;
+                    } else {
+                        outer_r = outer_r.max(cb.border_right);
+                    }
                 }
             }
         }
@@ -2641,23 +2704,44 @@ fn apply_table_size_constraints(
             };
             for cell in &row.cells {
                 let Some(cb) = get_cell_box(rb, cell) else { continue };
-                if is_top && table_box.border_top >= cb.border_top {
-                    edge_h += cb.border_top;
+                if is_top {
+                    if table_box.border_top >= cb.border_top {
+                        edge_h += cb.border_top;
+                    } else {
+                        outer_t = outer_t.max(cb.border_top);
+                    }
                 }
-                if is_bottom && table_box.border_bottom >= cb.border_bottom {
-                    edge_h += cb.border_bottom;
+                if is_bottom {
+                    if table_box.border_bottom >= cb.border_bottom {
+                        edge_h += cb.border_bottom;
+                    } else {
+                        outer_b = outer_b.max(cb.border_bottom);
+                    }
                 }
             }
         }
     }
     let width_correct = (edge_w / 2.0).min(final_width.max(0.0));
-    let height_correct = edge_h.min(final_height.max(0.0));
+    // R5241：行高改边框中心间距（position_cells 半分摊）后，行和内嵌的是 ½
+    // edge border——扣除口径镜像宽侧取半。代数上与旧模型等价：Σ(整扣, 整
+    // border 行高) ≡ Σ(半扣, 半 border 行高)；kill-switch off 时保留整扣
+    //（对应未分摊行高）。
+    let height_correct = if collapse_half_extent_enabled() {
+        (edge_h / 2.0).min(final_height.max(0.0))
+    } else {
+        edge_h.min(final_height.max(0.0))
+    };
+    let (outer_half_w, outer_half_h) = if collapse_half_extent_enabled() {
+        ((outer_l + outer_r) / 2.0, (outer_t + outer_b) / 2.0)
+    } else {
+        (0.0, 0.0)
+    };
 
     let old_border_width = table_box.width;
     table_box.content_width = (final_width - width_correct).max(0.0);
-    table_box.width = table_box.content_width + padding_border_w;
+    table_box.width = table_box.content_width + padding_border_w + outer_half_w;
     table_box.content_height = (final_height - height_correct).max(0.0);
-    table_box.height = table_box.content_height + padding_border_h;
+    table_box.height = table_box.content_height + padding_border_h + outer_half_h;
 
     // R3817：CSS §10.3.7 / §17.5.2——width:auto 的 abspos display:table（left+right
     // 确定 + margin-left/right auto）收缩到列宽和后，over-constrained 方程的 leftover
