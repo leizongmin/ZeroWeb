@@ -2552,9 +2552,44 @@
   // ③关闭走 _zwDialogRequestClose（cancel 同步可取消 trusted + close-the-dialog 异步
   // 收尾，R4200 请求态语义）。无命中 → no-op（返 false）。top-level 注册（shim 装载
   // 即生效——get-trap 注册依赖 prop 访问序，不可靠）。
+  // R5236（M2 切片 35，2026-10-23）：ESC 统一 top-layer 序——popover（auto）与 dialog
+  // 同注册 close watcher（spec close watcher 组栈：请求关闭作用于栈顶 watcher；none
+  // dialog 无 watcher 但其组挡「再往下」不挡「更晚注册」）。两段式：①`_zwTopLayer`
+  // （showModal+showPopover 共享插入序）反走——栈顶 popover 命中即 hidePopover return
+  // true；先碰 open dialog 即切组栈（dialog 裁决全权归 R4300 组栈）；②组栈原逻辑
+  // （惰性补登记 markup/IDL open 直写面 + none 挡板 + 尾→头首个 open 组）不动。
+  // closedby-simple ESC 断言面：dialog_outer > popover_inner 第一次 ESC 关 popover、
+  // 第二次关 dialog；popover_outer > dialog_inner 第一次关 dialog、第二次关 popover。
   // https://html.spec.whatwg.org/multipage/interactive-elements.html#dialog-cancelation
   // https://html.spec.whatwg.org/multipage/interactive-elements.html#attr-dialog-closedby
+  // https://html.spec.whatwg.org/multipage/popover.html#dom-showpopover
   globalThis.__zw_esc_dialog_cancel = function () {
+    // R5236 第一段：_zwTopLayer 反走自顶向下找栈顶 popover watcher——popovershow/
+    // showModal 都入 _zwTopLayer（插入序即注册序），反走先碰到的若是 showing
+    // popover 即栈顶 watcher（其上无更晚注册项）→ hidePopover（beforetoggle/toggle
+    // 既有流）return true；先碰到 open dialog → 栈顶 watcher 面是 dialog 组 → break
+    // 切组栈裁决（第二段保 R4300 全语义：惰性补登记 + none 挡板 + 尾→头首个 open
+    // 组——none 组挡「再往下」不挡「更晚注册」，part60 R2 any 非模态关 + show-
+    // stacked inner-none 挡板两面同保）；stale（已隐/已关/断连）continue。
+    try {
+      var _escKeys = Object.keys(_zwTopLayer);
+      for (var _escI = _escKeys.length - 1; _escI >= 0; _escI--) {
+        var _escK = _escKeys[_escI];
+        if (!_zwTopLayer[_escK]) continue; // stale 键
+        var _escP = _proxyCache ? _proxyCache[_escK] : null;
+        if (!_escP) continue;
+        var _escS = _escP.__zwSelector || null;
+        var _escH = _escP.__zwHandle || null;
+        if (_zwReadPopover(_escS, _escH) !== null) {
+          try { if (!_escP.isConnected) continue; } catch (_escIcP) { continue; }
+          _zwHidePopover(_escK, _escS, _escH);
+          return true;
+        }
+        // dialog 项：open → 切组栈裁决；不 open（close 后残留）→ continue。
+        if (_zwDialogHasOpen(_escS, _escH)) break;
+      }
+    } catch (_escUnified) {}
+    // top-layer 全空 → 回落既有组栈扫描（R4300 惰性补登记面维持）。
     // open 属性经 __zw_set_attr 异步入队（host 快照滞后）——querySelectorAll('dialog[open]')
     // 不可达同 turn 的 showModal；改查全部 dialog + _zwDialogHasOpen（latest-wins 感知）。
     var dialogs = document.querySelectorAll('dialog');
