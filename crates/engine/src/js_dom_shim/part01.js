@@ -1356,9 +1356,9 @@
   // close/requestClose）；toggle/show/hide → details（open 翻转/置位/清除）；auto →
   // dialog showModal / details 翻转。激活前以目标 key 存 invoker proxy（dialog/details
   // source store）——ToggleEvent.source 断言面（event.source === invoker；无变迁分支不落
-  // store，防泄漏到后续直接调用）。custom 命令（`--` 前缀 CommandEvent 派发）与
-  // hide-all-popovers 前步 defer（headless 无 popover 栈面）。InvalidStateError 吞（spec
-  // 激活行为不外抛）。
+  // store，防泄漏到后续直接调用）。custom 命令（`--` 前缀）R5243 收口——CommandEvent
+  // 派发后 return（见函数内注记）；hide-all-popovers 前步 defer（headless 无 popover
+  // 栈面）。InvalidStateError 吞（spec 激活行为不外抛）。
   // https://html.spec.whatwg.org/multipage/form-elements.html#attr-button-commandfor
   function _zwInvokerCommandActivate(sel, handle) {
     // trigger 定位双形态（`__zw_dispatch_key_at_active` 同精神）：sel 祖先链
@@ -1404,10 +1404,11 @@
     var cmdRaw = triggerHnd
       ? (typeof __zw_get_attr_handle === 'function' ? __zw_get_attr_handle(triggerHnd, 'command') : '')
       : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(triggerSel, 'command') : __zw_get_attr(triggerSel, 'command'));
-    var cmd = String(cmdRaw == null ? '' : cmdRaw).trim().toLowerCase();
-    var isCustomCmd = cmd.slice(0, 2) === '--';
+    var cmdCustom = String(cmdRaw == null ? '' : cmdRaw).trim();
+    var cmd = cmdCustom.toLowerCase();
+    var isCustomCmd = cmdCustom.slice(0, 2) === '--';
     // 缺失/非法（非 custom 关键字）→ auto 态（spec invalid value default）；custom
-    //（`--` 前缀 CommandEvent 派发）defer——不映射 auto、直落 no-op。
+    //（`--` 前缀）不映射 auto——R5243 下方分支派 CommandEvent 后 return。
     if (!cmd || (!isCustomCmd && cmd !== 'show-modal' && cmd !== 'show' && cmd !== 'hide' && cmd !== 'close' && cmd !== 'request-close' && cmd !== 'toggle')) cmd = 'auto';
     var tSel = target.__zwSelector || null;
     var tHnd = target.__zwHandle || null;
@@ -1415,6 +1416,31 @@
     var tTag = '';
     try { tTag = String(target.tagName || '').toUpperCase(); } catch (_eInvTag) { return; }
     var invokerProxy = _makeProxy(triggerSel, triggerHnd);
+    // R5243（html-semantics M2 切片 40）：custom command（`--` 前缀）——spec 激活行为
+    // 「custom 态只派 command 事件即 return」：CommandEvent 在 target 上派发（command =
+    // 属性原值大小写保留——custom 态 getter 返值本身；source = invoker；cancelable=true；
+    // bubbles=false / composed=true——button-event-dispatch 语料断言面），随后无内建行为
+    //（validity 判定 Custom 对任意元素为 true——DIALOG/DETAILS 内建分支不适用，dialog
+    // 目标不得 showModal）。UA 激活通道 trusted（R312 印记，isTrusted=true 语料断言面）。
+    // CommandEvent 未装（异常形态）→ 维持旧 no-op。 https://html.spec.whatwg.org/
+    // multipage/form-elements.html#the-button-element:activation-behavior
+    if (isCustomCmd) {
+      var cmdEvt = null;
+      try {
+        if (typeof globalThis.CommandEvent === 'function') {
+          cmdEvt = new globalThis.CommandEvent('command', {
+            bubbles: false, cancelable: true, composed: true,
+            command: cmdCustom, source: invokerProxy,
+          });
+          try { cmdEvt.isTrusted = true; } catch (_e5243t) {}
+          try { cmdEvt._zwUaDispatch = true; } catch (_e5243u) {}
+        }
+      } catch (_e5243c) { cmdEvt = null; }
+      if (cmdEvt) {
+        try { _dispatchWithBubble(tKey, tSel, tHnd, cmdEvt); } catch (_e5243d) {}
+      }
+      return;
+    }
     try {
       if (tTag === 'DIALOG') {
         var dlgCmd = (cmd === 'auto') ? 'show-modal' : cmd;

@@ -1,12 +1,43 @@
 # HTML Semantics 兼容 — html/semantics 语义面（主攻大域）
 
 **版本**: v2.0
-**日期**: 2026-10-21（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 39 收口（挂账 focus-in-shadow 跨流：content 视图活缓存 + replaceWith 补插入半边 + focus delegate 递归，double-nested 2F→2P、focus-after-close 2F→1F，REG 0），下一步按挂账序推进；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**日期**: 2026-10-23（v1.0 立项 2026-10-08）
+**状态**: Active——M2 切片 40 收口（挂账 custom command `--` 前缀 CommandEvent 派发：part05 CommandEvent 接口 + part01 custom 分支派发后 return，全域 REG 0），下一步按挂账序推进；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-23 M2 切片 39 收口）**：挂账 focus-in-shadow
+> **▶ 当前状态（2026-10-23 M2 切片 40 收口）**：挂账 custom command
+> （`--` 前缀）CommandEvent 派发收口（s24 defer）。**spec 钉定**：现行
+> button activation behavior——validity Custom 态对任意元素 true →
+> fire command 事件（command=值本身大小写保留、source=invoker、
+> cancelable=true）→ Custom 态 return 无内建行为；派发形状
+> bubbles=false/composed=true/isTrusted=true/无 relatedTarget（上游
+> button-event-dispatch 语料钉死）。**落地（R5243 两刀）**：①part05
+> `_defineEventSubclass('CommandEvent','Event',[command,source])`
+> （ToggleEvent 同厂）；②part01 `_zwInvokerCommandActivate` custom
+> 分支构造 CommandEvent + trusted 印记（R312 通道）经
+> `_dispatchWithBubble` 在 target 派发后 return——分派在既有调用方
+> 门内（disabled/preventDefault 零新写），`cmdCustom` 原值与 `cmd`
+> 小写拆分、内建关键字面不变。**集群**：interactive-elements 全域
+> 98 files 482 subtest **419P/61F/2T 与 s39 逐位打平**；dialog 集群
+> 82 files 对 s35 账本 **REG 0 / GAIN 5**（全为 s39 既有收益）；
+> forms/the-button-element 18 files 54 subtest 对 s24 逐位一致
+> **REG 0**（corpus 零 custom command 消费）。**已知边界**：现行
+> spec「invalid → Unknown 不派事件」未跟进（维持 R4400 auto 映射，
+> corpus 钉住，跟进涉 dialog/details 内建关键字重构独立切片）；
+> popover 关键字 + oncommand IDL + button command/commandFor IDL
+> 反射维持挂账。gates：lib **3432P/0F**（+1 契约 part73
+> test_invoker_custom_command_event_r5243）、clippy/fmt clean、零
+> 新增依赖。账本见
+> [evidence/2026-10-23-m2s40-custom-command-event.md](html-semantics-compat/evidence/2026-10-23-m2s40-custom-command-event.md)。
+> **下一步**：按挂账序 ESC 组栈边缘乱序、非模态 close 不出组栈、
+> R371 模板残留、summary-less details 内非激活后代翻转（s37）、
+> focus-after-close Complex dialog usage focus 恢复深层（s39 剩余
+> 1F）；parser form element pointer 4F **已缓行**（2026-10-23 用户
+> 决策：与 declarative shadow DOM（H）打捆 parser 批次、M2 收口后
+> 尾段单独立项）；declarative shadow DOM 同打捆待触发。
+>
+> **▶ 上轮状态（2026-10-23 M2 切片 39 收口）**：挂账 focus-in-shadow
 > 跨流收口（focus-after-close「moved to shadow root」案 +
 > dialog-focus-shadow-double-nested）。**探针钉定**（zz-probe 五迭代，
 > 验证后已删）四层根因：①sel 模板 content 子列表 per-read 重建，跨读
@@ -493,6 +524,23 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-23 M2 切片 40**：custom command（`--` 前缀）CommandEvent
+  派发收口（R5243，s24 defer）——part05 CommandEvent 接口
+  （`_defineEventSubclass`，command=''、source=null，无 relatedTarget）
+  + part01 `_zwInvokerCommandActivate` custom 分支派发后 return
+  （command=原值大小写保留、source=invoker、cancelable=true、
+  bubbles=false/composed=true、R312 trusted 印记；分派在调用方
+  disabled/preventDefault 门内零新写）。interactive-elements 全域
+  98 files **419P/61F/2T 对 s39 打平**；dialog 集群对 s35 **REG 0 /
+  GAIN 5**（s39 既有收益）；forms/the-button-element 对 s24 逐位一致。
+  gates：engine lib **3432P/0F**（+1 契约 part73）、clippy/fmt 过、
+  零新增依赖。账本
+  [evidence/2026-10-23-m2s40-custom-command-event.md](html-semantics-compat/evidence/2026-10-23-m2s40-custom-command-event.md)。
+  挂账：现行 spec invalid→Unknown 面（跟进涉内建关键字重构）、
+  popover 关键字、oncommand IDL、command/commandFor IDL 反射、
+  ESC 组栈边缘乱序、非模态 close 不出组栈、R371 模板残留、
+  summary-less details 非激活后代翻转、focus-after-close Complex
+  dialog usage 深层。
 - **2026-10-23 M2 切片 27**：corner-cases 毒化链根因收口（R4620 批内
   selector 时序）——根因在宿主共享 apply 路径：drain 顺序重放时前序
   Remove 摘除移动语义节点 → 后续 INS ref 的 `:nth-child` 索引漂移 →

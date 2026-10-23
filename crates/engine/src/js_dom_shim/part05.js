@@ -13367,6 +13367,17 @@
     ['newState', 'newState', ''],
     ['source', 'source', null],
   ]);
+  // R5243（html-semantics M2 切片 40）：CommandEvent（Event 子类）——invoker command
+  // 激活（`--` 前缀 custom command）在 target 上派发的 command 事件接口。command 默认
+  // ''（DOMString）、source 默认 null（CommandEventInit 缺省）；无 relatedTarget 字段
+  //（button-event-dispatch 语料「CommandEvent doesn't expose relatedTarget property」
+  // 断言面——读 undefined）。原型身份与 ToggleEvent 同厂（`_defineEventSubclass`）。
+  // part01 `_zwInvokerCommandActivate` 派发面（custom 态 spec 激活行为只派事件即 return）。
+  // https://html.spec.whatwg.org/multipage/form-elements.html#commandevent
+  _defineEventSubclass('CommandEvent', 'Event', [
+    ['command', 'command', ''],
+    ['source', 'source', null],
+  ]);
   // js-dom M4 R110（WPT Event-init-while-dispatching）：legacy initXxxEvent 族补齐——
   // initUIEvent / initMouseEvent / initKeyboardEvent。共同语义（spec 各接口 init 方法步骤 1）：
   // ① **dispatch flag set → return**（派发中 no-op，用 R106 `_zwDispatching` 计数）；
