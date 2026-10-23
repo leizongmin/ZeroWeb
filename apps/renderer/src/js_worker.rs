@@ -55,11 +55,15 @@ pub(crate) fn real_rect_enabled() -> bool {
     !matches!(std::env::var("ZW_REAL_RECT").as_deref(), Ok("0"))
 }
 
-/// P1a 事件循环 slice 1（R2713b）：帧驱动 rAF kill-switch。默认 off——shim rAF 走同步 stub
-///（reftest 兼容，零默认行为变更）；`ZW_RAF_FRAME_DRIVEN=1` 开启：shim rAF 注册队列，render 后
-/// `tick_observers` 调 `__zw_raf_tick` 派发。详见 p1a-event-loop-raf-slice-design-2026-08-05.md。
+/// P1a 事件循环 slice 1（R2713b）：帧驱动 rAF 开关。默认 on（P9b 产品默认翻转：rAF 停摆
+/// 消除）——shim rAF 注册队列，render 后 `tick_observers` 调 `__zw_raf_tick` 派发；
+/// `ZW_RAF_FRAME_DRIVEN=0/false/off` 显式 opt-out 回落同步 stub，用于诊断与对照测量
+///（reftest 宿主直驱 sandbox，不经本开关）。详见 p1a-event-loop-raf-slice-design-2026-08-05.md。
 pub(crate) fn raf_frame_driven_enabled() -> bool {
-    matches!(std::env::var("ZW_RAF_FRAME_DRIVEN").as_deref(), Ok("1"))
+    !matches!(
+        std::env::var("ZW_RAF_FRAME_DRIVEN").as_deref(),
+        Ok("0") | Ok("false") | Ok("off")
+    )
 }
 
 type ScriptFn = Arc<dyn Fn(&str) -> Result<String, String> + Send + Sync>;
@@ -1448,8 +1452,9 @@ fn js_worker_main(
             String::new()
         }),
     );
-    // R2713b：帧驱动 rAF kill-switch——execute shim 前注入 globalThis.__ZW_RAF_FRAME_DRIVEN
-    //（shim 据此分支 rAF 同步 stub / 帧驱动）。默认 OFF 不注入 → shim `|| false` → 同步 stub。
+    // R2713b：帧驱动 rAF 开关——execute shim 前注入 globalThis.__ZW_RAF_FRAME_DRIVEN
+    //（shim 据此分支 rAF 同步 stub / 帧驱动）。默认注入（P9b 产品默认）；显式 opt-out
+    //（=0/false/off，诊断/对照测量）不注入 → shim `|| false` → 同步 stub。
     if raf_frame_driven_enabled() {
         let _ = sandbox.execute("globalThis.__ZW_RAF_FRAME_DRIVEN = true;");
     }
