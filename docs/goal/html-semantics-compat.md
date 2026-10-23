@@ -2,11 +2,33 @@
 
 **版本**: v2.0
 **日期**: 2026-10-21（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 33 收口（light dismiss 两遍模型：auto popover 关闭 + dialog 链停，closedby-complex +16 绿 REG 0；帧驱动快照实验 +8 实证挂账），下一步按挂账序推进
+**状态**: Active——M2 切片 34 收口（挂账 F：html-semantics 套件帧驱动 rAF 默认启用，dialog 域 +8 REG 0、forms 域 4627 subtest 逐位一致），下一步按挂账序推进
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-23 M2 切片 33 收口）**：light dismiss 两遍模型
+> **▶ 当前状态（2026-10-23 M2 切片 34 收口）**：挂账 F 帧驱动快照新鲜
+> 化。**落地（R5235）**：Makefile `testharness-html-semantics` 入口默认
+> `ZW_TESTHARNESS_RAF_FRAME_DRIVEN=1`（R2713a/R3254-KP4 既有开关，
+> keyboard 套件同款入口模式；直接调 runner 维持 OFF 旧路径）。**对账三
+> 面**：dialog filter 82 files 411 subtest **337P/73F/1T → 345P/65F/1T
+> REG 0 / GAIN 8**（closedby-complex normal dialogB/popoverB——快照新
+> 鲜后命中循环拿到真实盒）；testharness-html 合成面 7 files 14 subtest
+> 逐字节一致；forms 域 401 files **4627 subtest 逐位一致**。**侦察钉定
+> 挂账 G 根因**：`_zwDialogModalFocusGateOk` 只判栈顶模态 contains——嵌
+> 套 modal 中下层 dialog（栈顶的 DOM 祖先）被 gate 误拒 → runner 命中循
+> 环排除其盒 → 回落栈顶 backdrop；spec 应 top-layer 元素及祖先链豁免，
+> gate 三路共用（focus/hit-test/pointer）需独立切片全对账。**挂账 I（新
+> ）**：全量 testharness-html-semantics（2594 用例）>5400s 跑不完且
+> `--json` 缓冲到最后超时全丢——runner 增量输出或 make 分域入口。gates：
+> runner Makefile 一行无 Rust 变化、零新增依赖。账本见
+> [evidence/2026-10-23-m2s34-raf-frame-driven-default.md](html-semantics-compat/evidence/2026-10-23-m2s34-raf-frame-driven-default.md)。
+> **下一步**：挂账 G（modal gate 嵌套祖先豁免，独立切片含 uievents/
+> pointer 对账）或按挂账序 H（shadow 影域 light dismiss）、E 余项 ESC
+> 栈序、impl-doc wrapper requestClose、anchor-with-inline 导航缺口、
+> parser form element pointer 4F、custom command `--` 前缀 CommandEvent
+> defer、ESC 组栈边缘乱序、非模态 close 不出组栈、R371 模板残留。
+>
+> **▶ 上轮状态（2026-10-23 M2 切片 33 收口）**：light dismiss 两遍模型
 >（挂账 E 第一刀）。**落地（R5234）**：`__zw_dialog_light_dismiss_check`
 > 两遍重写——①popover pass（`_zwTopLayer` 反走自顶向下，stale/摘属性/
 > 断连跳过，contains 即级联停，否则 `_zwHidePopover`）；②dialog pass

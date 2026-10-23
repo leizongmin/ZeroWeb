@@ -599,8 +599,11 @@ fetch-wpt-compression:
 fetch-wpt-html-semantics:
 	bash tests/wpt-runner/scripts/goals/25-html-semantics-compat.sh
 
+# R5235：帧驱动 rAF（R2713a/R3254-KP4 既有开关，keyboard 同款入口开启）——
+# waitForRender（双 rAF）改真实帧驱动，probe 拍间刷新 rect 快照，消除测试体内
+# gBCR 滞后一拍（s33 探针钉定：closedby normal dialogB/popoverB 8 案 +8 无回归）。
 testharness-html-semantics: target-disk-guard fetch-wpt-html-semantics target/test-guard zero-wpt-runner-release
-	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),5400) -- ./target/release/zero-wpt-runner testharness-html-semantics $(if $(FILTER),$(FILTER),)
+	ZW_TESTHARNESS_RAF_FRAME_DRIVEN=1 ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),5400) -- ./target/release/zero-wpt-runner testharness-html-semantics $(if $(FILTER),$(FILTER),)
 
 testharness-compression: target-disk-guard fetch-wpt-compression target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),900) -- ./target/release/zero-wpt-runner testharness-compression $(if $(FILTER),$(FILTER),)
