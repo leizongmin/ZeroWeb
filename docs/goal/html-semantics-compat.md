@@ -2,9 +2,44 @@
 
 **版本**: v2.0
 **日期**: 2026-10-24（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 53 收口（零代码轮：corner-cases「focusin calls showModal, modeless」ESC 1F 复审定性 spec 一致行为/测试期望分歧，四重证据 + wpt.fyi 双引擎绿反证矛盾坐实 wptrunner 环境层，全域 433P/50F/0T 维持），下一步 F 族 name-attribute 3F 分诊或续 B/C 挂账序；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 54 收口（name-attribute 3F 分诊轮：R5260 toggle 任务重排队 + R5261 template content 元素族收口 2F，xhr-response 1F 定性 parse-world 底座缺口挂账，全域 **435P/48F/0T** GAIN 2 / REG 0），下一步 parse-world 写面切片排期或续 B/C 挂账序；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-24 M2 切片 53 收口，零代码轮）**：corner-cases
+> **▶ 当前状态（2026-10-24 M2 切片 54 收口，name-attribute 3F 分诊轮）**：
+> F 族 name-attribute.html 三案分诊完成——**2F shim 收口 + 1F 底座缺口
+> 挂账**，全域 433P/50F/0T → **435P/48F/0T**（GAIN 2 / REG 0）。
+> **R5260**（mutation event and toggle event order → Pass）：R4009 toggle
+> 事件任务队列旧 in-place 去重使 e0 解析期合并事件留队首；spec「queue a
+> details toggle event task」合并语义为**移除已排 task + 重排队尾**（
+> oldState 取首排程 pre-state）。修复换新 entry 对象 + old 承接
+> prevEntry.old——旧 timer 经 fire 闭包身份守卫（`!== entry`）自动作废，
+> 兼容 part81 `__zw_setTimeout` stub 环境；spec 推演 FIFO [e3,e2,e1,e0]
+> 对齐测试期望。**R5261**（connected-in-template → Pass）：plain wrapper
+> 模板 content 视图（part03 `_zwContentView`，模板 childNodes 内联存储
+> 形态）缺 ParentNode 元素族 getter，`content.firstElementChild` 恒
+> undefined、setup 断言即败；part04 `_tplContent`（sel/handle 形态，
+> R151）有全套故 `template-in-disconnected` 本来就过。补
+> firstChild/lastChild/children/firstElementChild/lastElementChild/
+> childElementCount 六 getter（R151 同款形状）；探针全链：inner
+> instanceof HTMLDivElement、innerHTML 解析互斥 [1,0]、qSA 全通。
+> **xhr-response 1F 挂账**：`xhr.response.body` 是 `_zwParseEl` 快照（
+> protoChain `_zwParseEl > Object > null` 无接口原型），场景链需三件套
+> 探针逐步实证——①instanceof HTMLBodyElement（R130 setPrototypeOf 会剪
+> 掉 `_zwParseEl.prototype` 全部方法面）；②innerHTML 写解析（ctor own
+> data property 赋值仅覆写字符串，R3019 mutTree 桥只读 rewire 无
+> setter）；③open IDL（qSA 经 `_zwWrapQ` 返回 `_zwParseEl`，`e.open`
+> undefined）。定性 parse-world 写面切片，波及 DOMParser/XHR/responseXML
+> 全语料，单独立项排期。**验证**：name-attribute 单案 15P/3F →
+> **17P/1F**；zero-engine lib 3448P/0F（part60 R4100 契约 per-element
+> 形态不断言跨元素序，重排队零回归）；探针页已删；fmt/clippy 不适用（
+> diff 仅 JS shim）。账本见
+> [evidence/2026-10-24-m2s54-details-name-3f-triage.md](html-semantics-compat/evidence/2026-10-24-m2s54-details-name-3f-triage.md)。
+> **下一步**：parse-world 写面三件套切片（接口原型双链保留 / innerHTML
+> setter 进解析 / open IDL）排期，或续挂账序 B 族 pointer-capture 2F、
+> C 族渲染流 20F；declarative shadow 联合切片待用户点名。**切片间隙**：
+> 本切片为 engine shim 面（part03），下一挂账开工前查 oracle master
+> 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 53 收口，零代码轮）**：corner-cases
 > 「focusin calls showModal, modeless」ESC 1F 复审定性——**spec 一致行为，
 > 测试期望分歧**。四重证据同向（ESC 后 dialog 重开 open=true）：live
 > spec close-the-dialog 恢复门（anchor 后代 OR wasModal → focusing steps

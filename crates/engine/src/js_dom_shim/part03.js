@@ -13319,8 +13319,19 @@
     if (post === pre) return; // 同态写不排程（t9/t10）
     var key = isPlain ? _zwPlainDetailsKey4100(plainNode) : _elKey(sel, handle);
     if (key == null) return;
-    if (_zwDetailsToggleQ4009[key]) return; // 已排程——同任务后续变迁仅更新存在性
-    var entry = _zwDetailsToggleQ4009[key] = { sel: sel, handle: handle, old: post ? 'closed' : 'open', plain: isPlain ? plainNode : null, source: source == null ? null : source };
+    // spec 合并语义（queue a details toggle event task）：tracker 非 null 时取其 old
+    // state、**移除已排 task 并重排新 task 到队尾**——换新 entry 对象即旧 timer 的
+    // 身份守卫（`!== entry`）自动作废，无需 clearTimeout；oldState 保持首排程
+    // pre-state（net-zero 单事件形态不变，t2/t6 面），task 位置移到当前队尾。
+    // name-attribute.html「mutation event and toggle event order」跨元素 FIFO 序
+    // 钉住（e0 解析期开 + 变迁期关 → 单事件落队尾非原解析位）。
+    var prevEntry = _zwDetailsToggleQ4009[key];
+    var entry = _zwDetailsToggleQ4009[key] = {
+      sel: sel, handle: handle,
+      old: prevEntry ? prevEntry.old : (post ? 'closed' : 'open'),
+      plain: isPlain ? plainNode : null,
+      source: source == null ? null : source
+    };
     var fire = function () {
       if (_zwDetailsToggleQ4009[key] !== entry) return;
       delete _zwDetailsToggleQ4009[key];
@@ -15195,6 +15206,24 @@
             get ownerDocument() { return node._zwContentsOwnerDoc; },
             get childNodes() { return node.childNodes; },
             hasChildNodes: function () { return node.childNodes.length > 0; },
+            // R5261：ParentNode 首/末子 + 元素族 getter（part04 `_tplContent` sel 视图
+            // R151 同款——fragment 是 ParentNode，spec `dom-parentnode-children`；
+            // WPT name-attribute「exclusivity enforcement with attachment scenario
+            // connected-in-template」经 content.firstElementChild 取装配容器，plain
+            // 视图缺族 getter 恒 undefined，setup 断言直接失败）。
+            // https://dom.spec.whatwg.org/#dom-parentnode-children
+            get firstChild() { var k = node.childNodes; return k.length ? k[0] : null; },
+            get lastChild() { var k = node.childNodes; return k.length ? k[k.length - 1] : null; },
+            get children() {
+              var out = [];
+              for (var i = 0; i < node.childNodes.length; i++) {
+                if (node.childNodes[i] && node.childNodes[i].nodeType === 1) out.push(node.childNodes[i]);
+              }
+              return out;
+            },
+            get firstElementChild() { var ek = this.children; return ek.length ? ek[0] : null; },
+            get lastElementChild() { var ek = this.children; return ek.length ? ek[ek.length - 1] : null; },
+            get childElementCount() { return this.children.length; },
             // mutation 面（WPT template-content：content.appendChild(el) 等装配断言）
             // 直写模板 childNodes（contents 内联存储的当前形态——M2 parser 真实化后
             // 收敛为独立 fragment 持有）。
