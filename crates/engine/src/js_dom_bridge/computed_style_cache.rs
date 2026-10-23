@@ -546,9 +546,13 @@ fn generation_cache_matches(html: &str, drain_gen: usize, style_version: usize) 
 /// selector 查找）不再每 miss 付出全队列 clone（真站 hydration 后队列可达千条，每元素
 /// ~3 次 gCS miss 的 clone 成本进入 innerText 级读放大）。
 ///
-/// 预检与执行之间无其他代码运行（同一 host 回调栈内，外部 CSS/drain/快照不回流——重入
-/// 契约同主函数），预检命中 ⇒ 主函数 `same_gen` 亦命中 ⇒ 空队列不可达消费点；预检未命中
-/// ⇒ 闭包产出真实队列，语义与直传切片逐位一致。
+/// 预检与执行之间主体无其他代码运行（同一 host 回调栈内，外部 CSS/drain/快照不回流——
+/// 重入契约同主函数），预检命中 ⇒ 主函数 `same_gen` 亦命中 ⇒ 空队列不可达消费点；预检
+/// 未命中 ⇒ 闭包产出真实队列，语义与直传切片逐位一致。两处例外不破契约：else 分支
+/// `mutations()` 在预检后运行（仅读锁 clone 队列，不碰代际槽）；`ACTIVE_ADOPTED_CSS`
+/// 有跨线程写者（其他 worker 的 `__zw_set_adopted_css`）——预检后、主函数前被改写时，
+/// 主函数以同键独立复检判换代、replay 分支幂等重放与 eager 逐位等价，仅损失一次免
+/// clone 优化（p104-def 首轮时序推演；谓词漂移由此测试钉兜底，见 part04 计数闭包）。
 pub fn with_cached_document_styles_lazy<T>(
     html: &str,
     drain_gen: usize,

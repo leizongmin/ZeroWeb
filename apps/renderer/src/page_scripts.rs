@@ -303,6 +303,14 @@ pub fn finish_page_load(
 /// 的事件损失上界压到单片尾部。
 const LINK_EVENT_CHUNK: usize = 6;
 
+/// P104：link 事件按 [`LINK_EVENT_CHUNK`] 对/片保序切分（不重不漏）。抽纯函数供单测
+/// 钉分片形状（TV-2：回退整批或改片大小时变红）；「单片撞守卫只丢片尾」的上界语义
+/// 无法在单测模拟 sandbox 守卫，由 release census 行为验证支撑（verify4b 轮 4 分片臂
+/// vs 基线整批臂，见运行目录 tmp/p104-diag/）。
+fn build_link_event_chunks(link_events: &[(String, &'static str)]) -> Vec<Vec<(String, &'static str)>> {
+    link_events.chunks(LINK_EVENT_CHUNK).map(|c| c.to_vec()).collect()
+}
+
 /// 资源结果派发共享体（finish 里程碑与 t8o 迟到派发同款）：资源 window 'error' +
 /// img/media/source/track 元素级事件 + stylesheet load/error + @font-face 批与 settle。
 /// 生命周期里程碑（readyState/DCL/load）归 [`finish_page_load`]，此处不重派。
@@ -332,8 +340,8 @@ fn dispatch_resource_outcomes(
     // 序与整批一致（提交序即快照树序；至多一次由上方去重保证）；单片撞守卫只丢该片尾部。
     // 逐条提交仍是禁区（P102 车队），见 [`zero_engine::script_dispatch_link_events_batch`]。
     let link_events = dedupe_link_events(&link_events);
-    for chunk in link_events.chunks(LINK_EVENT_CHUNK) {
-        let batch = script_dispatch_link_events_batch(chunk);
+    for chunk in build_link_event_chunks(&link_events) {
+        let batch = script_dispatch_link_events_batch(&chunk);
         // t2-pb1 fix#5/#12：优先队列 + fire-and-forget（同 dispatch_page_lifecycle）。
         if let Err(e) = js_worker.submit_script_priority(&batch) {
             warn!(
@@ -2900,6 +2908,30 @@ mod tests {
             "分片提交后 8 个 link load 事件仍跨片保序全部触发"
         );
         worker.shutdown();
+    }
+
+    /// P104（TV-2）：分片形状钉——8 对拆 [6,2] 保序不重不漏；恰整除无空尾片。回退整批
+    /// 或改 [`LINK_EVENT_CHUNK`] 在此变红。守卫击杀上界语义由 release census 支撑
+    ///（单测无法模拟 sandbox 30s 守卫）。
+    #[test]
+    fn build_link_event_chunks_shapes_and_order_p104() {
+        let pairs: Vec<(String, &'static str)> = (0..8)
+            .map(|i| (format!("https://example.com/{i}.css"), "load"))
+            .collect();
+        let chunks = build_link_event_chunks(&pairs);
+        assert_eq!(chunks.iter().map(Vec::len).collect::<Vec<_>>(), vec![6, 2]);
+        let flat: Vec<String> = chunks.concat().into_iter().map(|(u, _)| u).collect();
+        let expect: Vec<String> = (0..8).map(|i| format!("https://example.com/{i}.css")).collect();
+        assert_eq!(flat, expect, "跨片保序不重不漏");
+        let pairs12: Vec<(String, &'static str)> = (0..12).map(|i| (format!("u{i}"), "load")).collect();
+        assert_eq!(
+            build_link_event_chunks(&pairs12)
+                .iter()
+                .map(Vec::len)
+                .collect::<Vec<_>>(),
+            vec![6, 6],
+            "恰整除时无空尾片"
+        );
     }
 
     /// P102：`dedupe_link_events` 保序去重——同 (url, type) 只留首个，同 URL 不同 type 保留。

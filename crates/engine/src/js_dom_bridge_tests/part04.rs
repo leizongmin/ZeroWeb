@@ -2036,18 +2036,28 @@ fn test_cached_document_styles_lazy_skips_queue_on_warm_generation() {
     );
     assert_eq!(v1, "rgb(0, 0, 255)", "换代后闭包队列的消费语义与直传一致");
     // adopted CSS 单独前进（同 html/drain_gen/style_version）→ 预检必须判换代：闭包
-    // 被消费、新级联可见（display 只来自 adopted 表，不受队列 inline color 遮蔽）。
-    // 谓词漏 adopted 分量时预检误报命中 → 空切片进入 → stale（R-t2qq 语义面回归）。
+    // 必须被消费（计数钉，TV-1）。注意该漂移在当前主函数语义下结果良性——主函数
+    // same_gen 独立复检仍换代、replay 分支幂等重放与 eager 逐位等价——但「命中即免
+    // clone」契约依赖预检与主函数谓词逐字一致，漏分量的漂移必须在此变红，不得依赖
+    // 下游兜底（display=none 只钉「换代发生」，检不出漂移：空切片换代同样产出 none）。
+    let consumed = std::sync::atomic::AtomicBool::new(false);
     crate::js_dom_bridge::set_active_adopted_css("#a { display: none }");
-    let v2 = with_cached_document_styles_lazy(
+    let d2 = with_cached_document_styles_lazy(
         html,
         0,
         1,
-        || muts2.clone(),
+        || {
+            consumed.store(true, std::sync::atomic::Ordering::Relaxed);
+            muts2.clone()
+        },
         |doc, styles| lookup_computed_property(doc, styles, "#a", "display"),
     );
     crate::js_dom_bridge::set_active_adopted_css("");
-    assert_eq!(v2, "none", "adopted 单独变化必须触发换代重算（预检含 adopted 分量）");
+    assert_eq!(d2, "none", "adopted 单独变化必须触发换代重算（预检含 adopted 分量）");
+    assert!(
+        consumed.load(std::sync::atomic::Ordering::Relaxed),
+        "adopted 前进时代际未命中，变更队列闭包必须被消费（预检漏分量漂移在此变红）"
+    );
 }
 
 #[test]
