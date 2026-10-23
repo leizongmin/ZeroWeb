@@ -4,7 +4,7 @@
 **状态**：**DONE**（2026-10-23 收尾审计收敛，见[审计](evidence/2026-10-23-m4-closing-audit/ANALYSIS.md)）。DC-1/DC-3/DC-4/DC-5 DONE；DC-2 DONE 附 INCONCLUSIVE 子项（audio/autoplay「不误停」依赖媒体播放时钟三缺口修复，归 media-playback 面，时钟走通前不可测——按契约「缺指标标 INCONCLUSIVE」记档）。交付面：M1 基线（12 腿双口径）、M2 三步修复（fetch 取消/RSS 有界判定/残留计数）、DC-1 双面钳制 + 隐藏页 1s 下限策略、M3 DC-2 四切片（呈现链/rAF 泵/可见性消息/offscreen 声明门控）、M4 GUI 双轮（DC-3/DC-4 GUI 收口 + compositor 会话断链与 page_hidden 两修复）+ 资源门禁（gate 脚本 + 7 场景阈值基线 v1，正 8/负 3 腿验证）。
 **当前卡点**：无阻塞（唯一外部依赖：媒体播放时钟三缺口归 media-playback 面修复，修复后回补基线 v2 可复评 DC-2 INCONCLUSIVE 子项——goal 重开条件仅此一项）。
 **下一步**：无（goal 收敛；后续如 media-playback 面落地媒体时钟修复，从[门禁配对 ANALYSIS](evidence/2026-10-23-m4-gate-pairing/ANALYSIS.md) §DC-2 入口回补）。
-**入口**：[目标契约](../background-resource-lifecycle.md) / [启动与证据协议](../ladybird-followups/README.md)
+**入口**：[目标契约](../background-resource-lifecycle.md) / [启动与证据协议](../../ladybird-followups/README.md)
 
 ## 缺口与待决
 

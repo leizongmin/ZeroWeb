@@ -1,6 +1,6 @@
 # Ladybird 建议：ZeroWeb 后续目标与启动入口
 
-**日期**：2026-10-20。7 个 goal 与 Shell 入口已准备；本轮只交付规划资产，未启动产品开发、基准、安装或发布。各目标处于 Active 启动门控，运行基线全部 **NOT_RUN**（2026-10-22 更新：P2 合成动画与 Worker Canvas 已完成收口并归档；P0 后台资源生命周期 M1 资源基线已建立，见各自控制面）。
+**日期**：2026-10-20。7 个 goal 与 Shell 入口已准备；本轮只交付规划资产，未启动产品开发、基准、安装或发布。各目标处于 Active 启动门控，运行基线全部 **NOT_RUN**（2026-10-22 更新：P2 合成动画与 Worker Canvas 已完成收口并归档；2026-10-23 更新：P0 后台资源生命周期已完成收口并归档，见各自控制面）。
 
 依据：[Ladybird 近期进展调研](../../research/research-ladybird-progress-2026-10-20.md)。这些目标是参考方向，不表示 ZeroWeb 已存在同样缺陷。源码与复用资产索引见 [catalog.json](catalog.json)；目标契约决定范围，master 是唯一执行状态控制面。
 
@@ -10,7 +10,7 @@
 |---|---|---|---|
 | P0 | [Renderer 信任边界](../renderer-trust-boundary.md) | [master](../renderer-trust-boundary/master.md) | [rally-goal-renderer-trust-boundary.sh](../../../scripts/rally-goal-renderer-trust-boundary.sh) |
 | P0 | [增量渲染完整计算对照](../incremental-rendering-oracle.md) | [master](../incremental-rendering-oracle/master.md) | [rally-goal-incremental-rendering-oracle.sh](../../../scripts/rally-goal-incremental-rendering-oracle.sh) |
-| P0 | [后台资源生命周期](../background-resource-lifecycle.md) | [master](../background-resource-lifecycle/master.md) | [rally-goal-background-resource-lifecycle.sh](../../../scripts/rally-goal-background-resource-lifecycle.sh) |
+| P0 | [后台资源生命周期](../archive/background-resource-lifecycle.md)——✅ 已完成（2026-10-23，模式 A 归档） | [master](../archive/background-resource-lifecycle/master.md) | 无（启动脚本已随归档删除，不重启） |
 | P1 | [DOM 操作基准](../dom-operation-bench.md) | [master](../dom-operation-bench/master.md) | [rally-goal-dom-operation-bench.sh](../../../scripts/rally-goal-dom-operation-bench.sh) |
 | P1-release | [安装更新与崩溃反馈](../browser-delivery-loop.md) | [master](../browser-delivery-loop/master.md) | [rally-goal-browser-delivery-loop.sh](../../../scripts/rally-goal-browser-delivery-loop.sh) |
 | P2 | [合成动画与 Worker Canvas](../compositor-animation-continuity/archive/compositor-animation-continuity-goal-v1-2026-10-22.md)——✅ 已完成（2026-10-22，模式 B 归档；控制面原地保留） | [master](../compositor-animation-continuity/master.md) | 无（启动脚本已随归档删除，不重启） |
@@ -29,7 +29,6 @@
 # 后续决定投入时，直接执行即可启动该目标。
 ./scripts/rally-goal-renderer-trust-boundary.sh
 ./scripts/rally-goal-incremental-rendering-oracle.sh
-./scripts/rally-goal-background-resource-lifecycle.sh
 ./scripts/rally-goal-dom-operation-bench.sh
 ./scripts/rally-goal-browser-delivery-loop.sh
 ./scripts/rally-goal-media-runtime-isolation.sh

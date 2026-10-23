@@ -1,8 +1,8 @@
 # 后台页面与重复导航资源生命周期
 
 **版本**：v2.4 / 2026-10-23
-**状态**：**DONE**（2026-10-23 收尾审计收敛，[审计](background-resource-lifecycle/evidence/2026-10-23-m4-closing-audit/ANALYSIS.md)）。五类场景验收范围内全交付：M1 基线（12 腿双口径）→ M2 三步修复（fetch 取消 / RSS 有界判定 / 残留计数）→ DC-1 双面钳制 + 隐藏页 1s 下限策略（三层测试 + GUI 端到端）→ M3 DC-2 四切片（呈现链双断点 / rAF 泵 / 可见性消息 / offscreen 声明门控，offscreen 空转消除且 onscreen 同带）→ M4 GUI 双轮（DC-3/DC-4 GUI 收口 + compositor 会话断链与 page_hidden 两修复）+ 资源门禁（gate 脚本 + 7 场景阈值基线 v1，正 8 fresh 腿 PASS / 负 3 条 M1 修复前腿各中目标指标 FAIL）。DC-2 附唯一 INCONCLUSIVE 子项：audio/autoplay「不误停」依赖媒体播放时钟三缺口（autoplay 绕桥 / march 死钩子 / audio 桥武装，归 media-playback 面修复），按契约「缺指标标 INCONCLUSIVE」记档；goal 重开条件唯一 = 修复后回补 bg02-media 媒体时钟下界（基线 v2）。
-**父目标**：[zero-web](zero-web.md) / **控制面**：[master](background-resource-lifecycle/master.md)
+**状态**: ✅ Completed——2026-10-23 收尾审计收敛（[审计](background-resource-lifecycle/evidence/2026-10-23-m4-closing-audit/ANALYSIS.md)）。五类场景验收范围内全交付：M1 基线（12 腿双口径）→ M2 三步修复（fetch 取消 / RSS 有界判定 / 残留计数）→ DC-1 双面钳制 + 隐藏页 1s 下限策略（三层测试 + GUI 端到端）→ M3 DC-2 四切片（呈现链双断点 / rAF 泵 / 可见性消息 / offscreen 声明门控，offscreen 空转消除且 onscreen 同带）→ M4 GUI 双轮（DC-3/DC-4 GUI 收口 + compositor 会话断链与 page_hidden 两修复）+ 资源门禁（gate 脚本 + 7 场景阈值基线 v1，正 8 fresh 腿 PASS / 负 3 条 M1 修复前腿各中目标指标 FAIL）。DC-2 附唯一 INCONCLUSIVE 子项：audio/autoplay「不误停」依赖媒体播放时钟三缺口（autoplay 绕桥 / march 死钩子 / audio 桥武装，归 media-playback 面修复），按契约「缺指标标 INCONCLUSIVE」记档；goal 重开条件唯一 = 修复后回补 bg02-media 媒体时钟下界（基线 v2）。
+**父目标**：[zero-web](../zero-web.md) / **控制面**：[master](background-resource-lifecycle/master.md)
 
 ## 0. 执行摘要与 Mission
 
@@ -18,7 +18,7 @@
 
 范围：各进程 CPU、RSS 趋势、旧文档/回调/连接/队列与呈现次数；前后台切换、重复导航和关闭后恢复。
 
-边界：复用 [page-state-compat](archive/page-state-compat.md)、[navigation-compat](navigation-compat.md)、现有 regression-guard。可见性 API 规范复用历史成果，本 goal负责长期生产资源；不绕过 iframe 或深结构门控。
+边界：复用 [page-state-compat](../archive/page-state-compat.md)、[navigation-compat](../navigation-compat.md)、现有 regression-guard。可见性 API 规范复用历史成果，本 goal负责长期生产资源；不绕过 iframe 或深结构门控。
 
 碰撞：按 [run-rules §9–11](../rally/run-rules.md)协调 browser/renderer/page-runtime/engine/compositor；只写本目标控制面；不停止用户实例。
 
@@ -45,6 +45,6 @@
 
 ## 执行与 Document Control
 
-`./scripts/rally-goal-background-resource-lifecycle.sh` 直接执行启动 Rally，加 `--dry-run` 仅预览；统一 CLI 与证据协议见 [启动说明](ladybird-followups/README.md)。
+启动入口 `scripts/rally-goal-background-resource-lifecycle.sh` 已随 2026-10-23 归档删除（不重启；重开条件见状态行）；统一 CLI 与证据协议见 [启动说明](../ladybird-followups/README.md)。
 
 启动前不采样用户浏览器。入口稳定，master/evidence 更新，archive 只追加；启动后 `CONTINUE` / `BLOCK`，全部 DC 与适用门禁有证才 `DONE`。
