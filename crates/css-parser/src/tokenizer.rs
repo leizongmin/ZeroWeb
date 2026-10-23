@@ -83,7 +83,11 @@ impl fmt::Display for Token {
             Token::Ident(s) => write!(f, "{}", s),
             Token::AtKeyword(s) => write!(f, "@{}", s),
             Token::Hash(s) => write!(f, "#{}", s),
-            Token::String(s) => write!(f, "\"{}\"", s),
+            // String token 序列化须转义值内 `"` / `\`（css-syntax-3 #serialize-a-string）。
+            // 裸串化会让声明值重建后含未转义引号——下游属性解析器把 string 边界读劈
+            // （R5237 driving：`quotes:"\0022"` 经 tokenizer 解码为 `"` 后裸串化成
+            // `"""`，parse_quotes 读到空串/空格对返 None → quotes 声明整条丢失）。
+            Token::String(s) => write!(f, "\"{}\"", escape_css_string(s)),
             Token::Url(s) if url_needs_quoted_serialization(s) => {
                 write!(f, "url(\"{}\")", escape_css_string_for_url(s))
             }
@@ -131,6 +135,12 @@ fn url_needs_quoted_serialization(s: &str) -> bool {
 }
 
 fn escape_css_string_for_url(s: &str) -> String {
+    escape_css_string(s)
+}
+
+/// css-syntax-3 #serialize-a-string：字符串值序列化时转义 `\` 与 `"`（前缀 `\`）。
+/// 值内原始换行不存在（tokenizer 对裸换行终止字符串并报错），无需 `\a` 臂。
+fn escape_css_string(s: &str) -> String {
     let mut escaped = String::with_capacity(s.len());
     for ch in s.chars() {
         if matches!(ch, '"' | '\\') {

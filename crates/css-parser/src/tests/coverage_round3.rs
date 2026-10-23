@@ -542,9 +542,52 @@ fn test_parse_extended_uncovered_cases() {
         ]))
     );
 
-    // 含 url()/attr() 的多 item → defer（None，同旧行为）。
-    assert_eq!(parse_content("\"x\" url(a.png)"), None);
-    assert_eq!(parse_content("\"x\" attr(href)"), None);
+    // 含 url()/attr() 的多 item（R5237 落地：defer 解除，序列含图片/属性项）。
+    assert_eq!(
+        parse_content("\"x\" url(a.png)"),
+        Some(ContentValue::List(vec![
+            ContentListItem::Str("x".to_string()),
+            ContentListItem::Url("a.png".to_string()),
+        ]))
+    );
+    assert_eq!(
+        parse_content("\"x\" attr(href)"),
+        Some(ContentValue::List(vec![
+            ContentListItem::Str("x".to_string()),
+            ContentListItem::Attr("href".to_string()),
+        ]))
+    );
+    // 引号关键字项（CSS2 §12.4）：裸 ident 无括号；单关键字项也入 List（无单 item 表示）。
+    assert_eq!(
+        parse_content("counter(ctr) open-quote \"B \" attr(class) close-quote"),
+        Some(ContentValue::List(vec![
+            ContentListItem::Counter {
+                name: "ctr".to_string(),
+                style: None
+            },
+            ContentListItem::OpenQuote,
+            ContentListItem::Str("B ".to_string()),
+            ContentListItem::Attr("class".to_string()),
+            ContentListItem::CloseQuote,
+        ]))
+    );
+    assert_eq!(
+        parse_content("open-quote"),
+        Some(ContentValue::List(vec![ContentListItem::OpenQuote]))
+    );
+    assert_eq!(
+        parse_content("no-open-quote"),
+        Some(ContentValue::List(vec![ContentListItem::NoOpenQuote]))
+    );
+    // 单 item url/attr 仍走既有单值表示（不经 List，零回归）。
+    assert_eq!(
+        parse_content("url(a.png)"),
+        Some(ContentValue::Url("a.png".to_string()))
+    );
+    assert_eq!(
+        parse_content("attr(href)"),
+        Some(ContentValue::Attr("href".to_string()))
+    );
 
     // 单 item counter() 不变 List（仍走既有 Counter variant，零回归）。
     assert_eq!(

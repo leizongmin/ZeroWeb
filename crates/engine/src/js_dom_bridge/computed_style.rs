@@ -3040,13 +3040,21 @@ fn content_to_css(c: &ContentComputedValue, element_color: &ColorValue, font_siz
     }
 }
 
-/// 序列化 content 多 component value 序列的单项 [`ContentListItem`]（Str/Counter/Counters）。
+/// 序列化 content 多 component value 序列的单项 [`ContentListItem`]（Str/Counter/Counters
+/// 及 R5237 的 url/attr/引号关键字项）。
 fn content_list_item_to_css(item: &ContentListItem) -> String {
     use ContentListItem as I;
     match item {
         I::Str(s) => css_string_to_css(s),
         I::Counter { name, style } => counter_fn_to_css(name, style.as_deref()),
         I::Counters { name, separator, style } => counters_fn_to_css(name, separator, style.as_deref()),
+        I::Url(url) => format!("url({url})"),
+        I::Attr(name) => format!("attr({name})"),
+        // CSS2 §12.4 引号关键字按原样序列化。
+        I::OpenQuote => "open-quote".to_string(),
+        I::CloseQuote => "close-quote".to_string(),
+        I::NoOpenQuote => "no-open-quote".to_string(),
+        I::NoCloseQuote => "no-close-quote".to_string(),
     }
 }
 

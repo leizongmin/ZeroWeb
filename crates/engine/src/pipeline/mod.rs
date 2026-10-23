@@ -8,6 +8,7 @@ use std::time::Instant;
 use slotmap::Key;
 use zero_css_parser::Stylesheet;
 use zero_css_parser::media_query::PrefersColorSchemeValue;
+use zero_css_parser::values::ContentListItem;
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_layout_engine::{LayoutEngine, LayoutResult};
 use zero_render_foundation::color::Color;
@@ -2885,13 +2886,177 @@ fn simulate_document_counters(
 pub(crate) type CounterValueMaps = HashMap<NodeId, (HashMap<String, i64>, HashMap<String, i64>)>;
 pub(crate) type CounterStackMaps = HashMap<NodeId, (HashMap<String, Vec<i64>>, HashMap<String, Vec<i64>>)>;
 
+/// R5237（CSS Content §content-property 多 item 序列）：content 复合序列的注入部件。
+/// 序列顺序保真——`counter(c) url(i) " t"` 语义 = 图片夹在计数与文本之间。
+#[derive(Debug, Clone)]
+enum PseudoPart {
+    /// 文本段（string/counter/counters/attr/引号字形累积）。
+    Text(String),
+    /// 图片段（序列内 url() 项，注入为 `<img>` 元素）。
+    Image(String),
+}
+
+/// content 列表是否含 compound 项（url/attr/引号关键字——R5237 前解析 defer、
+/// 整伪元素无生成内容的形态）。kill-switch 只对含此类项的列表回退旧行为。
+fn list_has_compound_items(items: &[zero_css_parser::values::ContentListItem]) -> bool {
+    items.iter().any(|i| {
+        matches!(
+            i,
+            ContentListItem::Url(_)
+                | ContentListItem::Attr(_)
+                | ContentListItem::OpenQuote
+                | ContentListItem::CloseQuote
+                | ContentListItem::NoOpenQuote
+                | ContentListItem::NoCloseQuote
+        )
+    })
+}
+
+/// quotes 值的第 depth 层引号字形（`close` 取闭引号）。CSS2 §12.4：超出对数重复
+/// 最后一对（idx 钳制）；quotes:none → 空串（无字形）；auto → 典型英文弯引号对兜底。
+fn quote_pair_glyph(
+    quotes: &zero_style_system::property::types::QuotesComputedValue,
+    depth: i32,
+    close: bool,
+) -> String {
+    let pairs: &[(String, String)] = match quotes {
+        zero_style_system::property::types::QuotesComputedValue::Pairs(p) => p,
+        // quotes:none 时 open/close-quote 均无字形（CSS2 §12.4）。
+        zero_style_system::property::types::QuotesComputedValue::None => return String::new(),
+        // auto：无 UA quotes 表时的典型英文弯引号对兜底。
+        zero_style_system::property::types::QuotesComputedValue::Auto => {
+            &[("\u{201C}".to_string(), "\u{201D}".to_string())]
+        }
+    };
+    if pairs.is_empty() {
+        return String::new();
+    }
+    let idx = (depth.max(0) as usize).min(pairs.len() - 1);
+    let (open, close_glyph) = &pairs[idx];
+    if close { close_glyph.clone() } else { open.clone() }
+}
+
+/// R5237（CSS2 §12.4 generated content）：content 多 item 序列解析为注入部件。
+/// 文本项（string/counter/counters/attr/open-quote/close-quote）累积为 `Text` 部件，
+/// `url()` 项切断文本流产出一个 `Image` 部件。`quote_depth` 跨 ::before→::after
+/// 传递（同元素引号嵌套层级）。返回 `None` = 整伪元素无生成内容（空 counter 文本
+/// 中止，旧 List 臂同语义）。
+fn resolve_list_parts(
+    doc: &Document,
+    host: NodeId,
+    items: &[zero_css_parser::values::ContentListItem],
+    pseudo_style: &ComputedStyle,
+    is_before: bool,
+    counter_value_maps: &CounterValueMaps,
+    counter_stack_maps: &CounterStackMaps,
+    counter_styles: &HashMap<String, zero_css_parser::ast::CounterStyleRule>,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    quote_depth: &mut i32,
+) -> Option<Vec<PseudoPart>> {
+    let mut parts: Vec<PseudoPart> = Vec::new();
+    let mut text = String::new();
+    for item in items {
+        match item {
+            ContentListItem::Str(value) => text.push_str(value),
+            ContentListItem::Counter { name, style } => {
+                // R3887：与单 Counter 分支同源——树序模拟值优先，静态兜底。
+                let value = counter_value_maps
+                    .get(&host)
+                    .and_then(|(b, a)| if is_before { b.get(name) } else { a.get(name) })
+                    .copied()
+                    .or_else(|| counter_value_before_paint_by_name(doc, host, name, styles));
+                match pseudo_disclosure_counter_text(style, pseudo_style, counter_styles) {
+                    Some(t) => text.push_str(&t),
+                    None => {
+                        if let Some(v) = value {
+                            let t = crate::paint::painter::text::text_list::format_counter_text(
+                                v,
+                                style,
+                                pseudo_style,
+                                counter_styles,
+                            );
+                            if t.is_empty() {
+                                return None;
+                            }
+                            text.push_str(&t);
+                        }
+                    }
+                }
+            }
+            // R3891：counters() 整栈快照由外到内 join（单 Counters 分支同源）。
+            ContentListItem::Counters { name, separator, style } => {
+                let stack = counter_stack_maps
+                    .get(&host)
+                    .and_then(|(b, a)| if is_before { b.get(name) } else { a.get(name) })
+                    .cloned()
+                    .unwrap_or_else(|| vec![0]);
+                for (i, v) in stack.iter().enumerate() {
+                    if i > 0 {
+                        text.push_str(separator);
+                    }
+                    match pseudo_disclosure_counter_text(style, pseudo_style, counter_styles) {
+                        Some(t) => text.push_str(&t),
+                        None => {
+                            let t = crate::paint::painter::text::text_list::format_counter_text(
+                                *v,
+                                style,
+                                pseudo_style,
+                                counter_styles,
+                            );
+                            if t.is_empty() {
+                                return None;
+                            }
+                            text.push_str(&t);
+                        }
+                    }
+                }
+            }
+            ContentListItem::Url(url) => {
+                if !text.is_empty() {
+                    parts.push(PseudoPart::Text(std::mem::take(&mut text)));
+                }
+                parts.push(PseudoPart::Image(url.clone()));
+            }
+            ContentListItem::Attr(name) => {
+                // attr() 缺属性 → 空串（CSS Values §attr()：序列中段缺属性只空缺该段，
+                // 不整体不注入——与单 item 分支的 None-不注入语义不同）。
+                if let Some(v) = doc.get(host).and_then(|n| match &n.kind {
+                    zero_dom::NodeKind::Element(elem) => elem.get_attribute(name),
+                    _ => None,
+                }) {
+                    text.push_str(&v);
+                }
+            }
+            // CSS2 §12.4：open-quote 产出 quotes[depth] 开引号后深度 +1；close-quote
+            // 深度已 0 时无字形，否则深度 -1 后产出匹配闭引号；no-open/no-close 只移
+            // 深度不产出。
+            ContentListItem::OpenQuote => {
+                text.push_str(&quote_pair_glyph(&pseudo_style.quotes, *quote_depth, false));
+                *quote_depth += 1;
+            }
+            ContentListItem::CloseQuote => {
+                if *quote_depth > 0 {
+                    *quote_depth -= 1;
+                    text.push_str(&quote_pair_glyph(&pseudo_style.quotes, *quote_depth, true));
+                }
+            }
+            ContentListItem::NoOpenQuote => *quote_depth += 1,
+            ContentListItem::NoCloseQuote => *quote_depth = (*quote_depth - 1).max(0),
+        }
+    }
+    if !text.is_empty() {
+        parts.push(PseudoPart::Text(text));
+    }
+    Some(parts)
+}
+
 pub(crate) fn inject_pseudo_text_nodes(
     doc: &mut Document,
     styles: &mut HashMap<NodeId, ComputedStyle>,
     stylesheets: &[Stylesheet],
 ) {
     use zero_css_parser::ast::Rule;
-    use zero_css_parser::values::{ContentListItem, DisplayValue, FloatValue, PositionValue};
+    use zero_css_parser::values::{DisplayValue, FloatValue, PositionValue};
     use zero_style_system::property::types::ContentComputedValue;
 
     let mut counter_styles: HashMap<String, zero_css_parser::ast::CounterStyleRule> = HashMap::new();
@@ -2913,6 +3078,12 @@ pub(crate) fn inject_pseudo_text_nodes(
     // R1988：content:url() 图片 content（parent, is_before, url, pseudo_style）——注入 `<img>`
     // 元素，图片已由 extract_css_image_urls 抓取+缓存，build_layout_tree 按替换元素处理。
     let mut pending_img: Vec<(NodeId, bool, String, ComputedStyle)> = Vec::new();
+    // R5237：复合 content 含 url() 部件（parent, is_before, parts, pseudo_style）——注入
+    // zw-pseudo 盒并按序列顺序挂 text/img 子节点（两级结构镜像 R3806）。
+    let mut pending_mixed: Vec<(NodeId, bool, Vec<PseudoPart>, ComputedStyle)> = Vec::new();
+    // R5237 kill-switch：ZW_PSEUDO_COMPOUND_CONTENT=0 时含 compound 项（url/attr/引号
+    // 关键字）的 content 列表回退旧 defer（整伪元素无生成内容）。
+    let compound_content_enabled = std::env::var("ZW_PSEUDO_COMPOUND_CONTENT").as_deref() != Ok("0");
     for (&nid, st) in styles.iter() {
         // 解析伪元素 content 的文本：String 直接用；attr(name) 读宿主元素（nid）的
         // 属性值（CSS generated content 的 attr() 函数，如 `content: attr(bgcolor)`
@@ -2975,68 +3146,8 @@ pub(crate) fn inject_pseudo_text_nodes(
                         }
                         (!text.is_empty()).then_some(text)
                     }
-                    ContentComputedValue::List(items) => {
-                        let mut text = String::new();
-                        for item in items {
-                            match item {
-                                ContentListItem::Str(value) => text.push_str(value),
-                                ContentListItem::Counter { name, style } => {
-                                    // R3887：与单 Counter 分支同源——树序模拟值优先，静态兜底。
-                                    let value = counter_value_maps
-                                        .get(&nid)
-                                        .and_then(|(b, a)| if is_before { b.get(name) } else { a.get(name) })
-                                        .copied()
-                                        .or_else(|| counter_value_before_paint_by_name(doc, nid, name, styles));
-                                    match pseudo_disclosure_counter_text(style, pseudo_style, &counter_styles) {
-                                        Some(t) => text.push_str(&t),
-                                        None => {
-                                            if let Some(v) = value {
-                                                let t = crate::paint::painter::text::text_list::format_counter_text(
-                                                    v,
-                                                    style,
-                                                    pseudo_style,
-                                                    &counter_styles,
-                                                );
-                                                if t.is_empty() {
-                                                    return None;
-                                                }
-                                                text.push_str(&t);
-                                            }
-                                        }
-                                    }
-                                }
-                                // R3891：List 内 counters() 同单 Counters 分支（整栈 join）。
-                                ContentListItem::Counters { name, separator, style } => {
-                                    let stack = counter_stack_maps
-                                        .get(&nid)
-                                        .and_then(|(b, a)| if is_before { b.get(name) } else { a.get(name) })
-                                        .cloned()
-                                        .unwrap_or_else(|| vec![0]);
-                                    for (i, v) in stack.iter().enumerate() {
-                                        if i > 0 {
-                                            text.push_str(separator);
-                                        }
-                                        match pseudo_disclosure_counter_text(style, pseudo_style, &counter_styles) {
-                                            Some(t) => text.push_str(&t),
-                                            None => {
-                                                let t = crate::paint::painter::text::text_list::format_counter_text(
-                                                    *v,
-                                                    style,
-                                                    pseudo_style,
-                                                    &counter_styles,
-                                                );
-                                                if t.is_empty() {
-                                                    return None;
-                                                }
-                                                text.push_str(&t);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        Some(text)
-                    }
+                    // R5237：List 多 item 序列不再在此解析——统一交由下方 resolve_parts /
+                    // resolve_list_parts（compound 项 url/attr/quote 与按序拆部件通道）。
                     _ => None,
                 }
             };
@@ -3047,18 +3158,78 @@ pub(crate) fn inject_pseudo_text_nodes(
                 _ => None,
             }
         };
+        // R5237：content 多 item 序列 → 部件列表。含 Image 部件走 pending_mixed（zw-pseudo
+        // 盒 + 按序 text/img 子）；纯文本部件 join 后走既有 pending 文本通道（单值路径
+        // 行为不变）。CSS2 §12.4：引号嵌套深度跨同元素 ::before→::after 传递。
+        let mut quote_depth = 0i32;
+        let mut resolve_parts = |content: &ContentComputedValue,
+                                 pseudo_style: &ComputedStyle,
+                                 is_before: bool|
+         -> Option<Vec<PseudoPart>> {
+            match content {
+                ContentComputedValue::List(items) => {
+                    if list_has_compound_items(items) && !compound_content_enabled {
+                        None
+                    } else {
+                        resolve_list_parts(
+                            doc,
+                            nid,
+                            items,
+                            pseudo_style,
+                            is_before,
+                            &counter_value_maps,
+                            &counter_stack_maps,
+                            &counter_styles,
+                            styles,
+                            &mut quote_depth,
+                        )
+                    }
+                }
+                _ => resolve_text(content, pseudo_style, is_before).map(|t| vec![PseudoPart::Text(t)]),
+            }
+        };
         if let Some(b) = st.before_pseudo.as_ref() {
-            if let Some(t) = resolve_text(&b.content, b, true) {
-                pending.push((nid, true, t, (**b).clone()));
-            } else if let Some(u) = resolve_url(&b.content) {
-                pending_img.push((nid, true, u, (**b).clone()));
+            match resolve_parts(&b.content, b, true) {
+                Some(parts) if parts.iter().any(|p| matches!(p, PseudoPart::Image(_))) => {
+                    pending_mixed.push((nid, true, parts, (**b).clone()));
+                }
+                Some(parts) => {
+                    let text = parts
+                        .into_iter()
+                        .map(|p| match p {
+                            PseudoPart::Text(t) => t,
+                            PseudoPart::Image(_) => String::new(),
+                        })
+                        .collect::<String>();
+                    pending.push((nid, true, text, (**b).clone()));
+                }
+                None => {
+                    if let Some(u) = resolve_url(&b.content) {
+                        pending_img.push((nid, true, u, (**b).clone()));
+                    }
+                }
             }
         }
         if let Some(a) = st.after_pseudo.as_ref() {
-            if let Some(t) = resolve_text(&a.content, a, false) {
-                pending.push((nid, false, t, (**a).clone()));
-            } else if let Some(u) = resolve_url(&a.content) {
-                pending_img.push((nid, false, u, (**a).clone()));
+            match resolve_parts(&a.content, a, false) {
+                Some(parts) if parts.iter().any(|p| matches!(p, PseudoPart::Image(_))) => {
+                    pending_mixed.push((nid, false, parts, (**a).clone()));
+                }
+                Some(parts) => {
+                    let text = parts
+                        .into_iter()
+                        .map(|p| match p {
+                            PseudoPart::Text(t) => t,
+                            PseudoPart::Image(_) => String::new(),
+                        })
+                        .collect::<String>();
+                    pending.push((nid, false, text, (**a).clone()));
+                }
+                None => {
+                    if let Some(u) = resolve_url(&a.content) {
+                        pending_img.push((nid, false, u, (**a).clone()));
+                    }
+                }
             }
         }
     }
@@ -3223,6 +3394,48 @@ pub(crate) fn inject_pseudo_text_nodes(
         } else if insert_target != img_id {
             // img 是 zw-pseudo 的子节点：append（insert_before 仅在 is_before 定 pseudo 位置时相关）
             let _ = doc.append_child(insert_target, img_id);
+        }
+    }
+
+    // R5237：复合 content 含 url() 部件 → zw-pseudo 盒（持伪元素样式，content 清 Normal）
+    // + 按序列顺序挂 text/img 子节点。两级结构镜像 R3806：盒语义（border/padding/定位）
+    // 属伪元素盒，子内容持干净样式；序列顺序保真——`counter(c) url(i) " t"` 语义 =
+    // 图片夹在计数与文本之间。
+    for (parent, is_before, parts, mut pseudo_style) in pending_mixed {
+        pseudo_style.content = ContentComputedValue::Normal;
+        let box_id = doc.create_element("zw-pseudo");
+        styles.insert(box_id, pseudo_style);
+        let mut child_ids: Vec<NodeId> = Vec::new();
+        for part in parts {
+            let child_id = match part {
+                PseudoPart::Text(text) => doc.create_text_node(&text),
+                PseudoPart::Image(url) => {
+                    let img_id = doc.create_element("img");
+                    doc.set_attribute(img_id, "src", &url);
+                    // img 自身干净替换元素样式（R3806 同口径），尺寸由 image_sizes 固有注入。
+                    let mut img_style = zero_style_system::ComputedStyle::default();
+                    img_style.display = DisplayValue::InlineBlock;
+                    styles.insert(img_id, img_style);
+                    img_id
+                }
+            };
+            child_ids.push(child_id);
+            let _ = doc.append_child(box_id, child_id);
+        }
+        let inserted = if is_before {
+            match doc.get(parent).and_then(|n| n.children.first().copied()) {
+                Some(fc) => doc.insert_before(parent, box_id, fc).is_ok(),
+                None => doc.append_child(parent, box_id).is_ok(),
+            }
+        } else {
+            doc.append_child(parent, box_id).is_ok()
+        };
+        if !inserted {
+            // 插入失败（如 parent 不存在）则回滚盒与子节点的 styles 条目。
+            styles.remove(&box_id);
+            for cid in child_ids {
+                styles.remove(&cid);
+            }
         }
     }
 }
@@ -3876,6 +4089,201 @@ mod pseudo_tests {
         match &doc.get(first_child).unwrap().kind {
             zero_dom::NodeKind::Text(t) => assert_eq!(t.content, "a"),
             other => panic!("R4581: ruby 宿主伪元素应维持 text-node 路径，实际 {other:?}"),
+        }
+    }
+
+    /// R5237：复合 content 注入全相（单测试函数顺序执行——kill-switch 相会临时改设
+    /// ZW_PSEUDO_COMPOUND_CONTENT 进程级 env，与其余读该变量的注入相并行会竞态，故
+    /// 全部读者收敛到本函数内）：
+    /// ① List 含 url 项 → zw-pseudo 盒 + 按序 text/img 子（序列顺序保真）；
+    /// ② open/close-quote 按 quotes 产出字形，纯文本序列走 text-node 通道；
+    /// ③ attr(class) 读宿主属性拼入序列；
+    /// ④ 引号深度跨同元素 ::before→::after 传递（CSS2 §12.4）；
+    /// ⑤ kill-switch=0：compound 列表回退旧 defer（整伪元素无生成内容）。
+    #[test]
+    fn inject_compound_content_phases_r5237() {
+        use zero_style_system::property::types::QuotesComputedValue;
+        // ---- 相①：混合部件 → 盒化 + 按序子节点 ----
+        {
+            let html = r#"<html><body><div>X</div></body></html>"#;
+            let mut doc = zero_dom::parse_html(html);
+            let div = find_element(&doc, doc.root(), "div").expect("div 存在");
+            let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
+            let mut div_style = ComputedStyle::default();
+            div_style.before_pseudo = Some(Box::new(ComputedStyle {
+                content: ContentComputedValue::List(vec![
+                    ContentListItem::Str("A ".to_string()),
+                    ContentListItem::Url("i.png".to_string()),
+                    ContentListItem::Str(" B".to_string()),
+                ]),
+                ..ComputedStyle::default()
+            }));
+            styles.insert(div, div_style);
+
+            inject_pseudo_text_nodes(&mut doc, &mut styles, &[]);
+
+            let first_child = doc
+                .get(div)
+                .and_then(|n| n.children.first().copied())
+                .expect("有子节点");
+            let box_id = match &doc.get(first_child).unwrap().kind {
+                zero_dom::NodeKind::Element(_) => first_child,
+                other => panic!("R5237 相①: 复合 content 应盒化为 ELEMENT，实际 {other:?}"),
+            };
+            let kids = doc.child_nodes(box_id);
+            assert_eq!(kids.len(), 3, "text/img/text 三部件按序");
+            match &doc.get(kids[0]).unwrap().kind {
+                zero_dom::NodeKind::Text(t) => assert_eq!(t.content, "A "),
+                other => panic!("相① 部件 0 应为文本，实际 {other:?}"),
+            }
+            match &doc.get(kids[1]).unwrap().kind {
+                zero_dom::NodeKind::Element(el) => {
+                    assert_eq!(el.local_name(), "img");
+                    assert_eq!(el.get_attribute("src").as_deref(), Some("i.png"));
+                }
+                other => panic!("相① 部件 1 应为 img 元素，实际 {other:?}"),
+            }
+            match &doc.get(kids[2]).unwrap().kind {
+                zero_dom::NodeKind::Text(t) => assert_eq!(t.content, " B"),
+                other => panic!("相① 部件 2 应为文本，实际 {other:?}"),
+            }
+            // img 干净替换样式（InlineBlock，R3806 同口径），盒样式条目存在。
+            let img_style = styles.get(&kids[1]).expect("img 有样式");
+            assert!(matches!(
+                img_style.display,
+                zero_css_parser::values::DisplayValue::InlineBlock
+            ));
+            assert!(styles.contains_key(&box_id), "zw-pseudo 盒有样式");
+        }
+        // ---- 相②：open/close-quote 字形（纯文本序列 → text-node 通道）----
+        {
+            let html = r#"<html><body><div>X</div></body></html>"#;
+            let mut doc = zero_dom::parse_html(html);
+            let div = find_element(&doc, doc.root(), "div").expect("div 存在");
+            let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
+            let mut div_style = ComputedStyle::default();
+            div_style.before_pseudo = Some(Box::new(ComputedStyle {
+                content: ContentComputedValue::List(vec![
+                    ContentListItem::OpenQuote,
+                    ContentListItem::Str("B".to_string()),
+                    ContentListItem::CloseQuote,
+                ]),
+                quotes: QuotesComputedValue::Pairs(vec![("«".to_string(), "»".to_string())]),
+                ..ComputedStyle::default()
+            }));
+            styles.insert(div, div_style);
+
+            inject_pseudo_text_nodes(&mut doc, &mut styles, &[]);
+
+            let first_child = doc
+                .get(div)
+                .and_then(|n| n.children.first().copied())
+                .expect("有子节点");
+            match &doc.get(first_child).unwrap().kind {
+                zero_dom::NodeKind::Text(t) => assert_eq!(t.content, "«B»", "开闭引号字形包裹文本"),
+                other => panic!("R5237 相②: 纯文本复合序列应注入文本节点，实际 {other:?}"),
+            }
+        }
+        // ---- 相③：attr(class) 读宿主属性 ----
+        {
+            let html = r#"<html><body><div class="K">X</div></body></html>"#;
+            let mut doc = zero_dom::parse_html(html);
+            let div = find_element(&doc, doc.root(), "div").expect("div 存在");
+            let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
+            let mut div_style = ComputedStyle::default();
+            div_style.before_pseudo = Some(Box::new(ComputedStyle {
+                content: ContentComputedValue::List(vec![
+                    ContentListItem::Str("x".to_string()),
+                    ContentListItem::Attr("class".to_string()),
+                ]),
+                ..ComputedStyle::default()
+            }));
+            styles.insert(div, div_style);
+
+            inject_pseudo_text_nodes(&mut doc, &mut styles, &[]);
+
+            let first_child = doc
+                .get(div)
+                .and_then(|n| n.children.first().copied())
+                .expect("有子节点");
+            match &doc.get(first_child).unwrap().kind {
+                zero_dom::NodeKind::Text(t) => assert_eq!(t.content, "xK", "attr(class) 取宿主 class 值"),
+                other => panic!("R5237 相③: attr 复合序列应注入文本节点，实际 {other:?}"),
+            }
+        }
+        // ---- 相④：引号深度跨 ::before→::after（超出对数钳制最后一对）----
+        {
+            let html = r#"<html><body><div>X</div></body></html>"#;
+            let mut doc = zero_dom::parse_html(html);
+            let div = find_element(&doc, doc.root(), "div").expect("div 存在");
+            let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
+            let mut div_style = ComputedStyle::default();
+            let pairs = QuotesComputedValue::Pairs(vec![
+                ("«".to_string(), "»".to_string()),
+                ("‘".to_string(), "’".to_string()),
+            ]);
+            div_style.before_pseudo = Some(Box::new(ComputedStyle {
+                content: ContentComputedValue::List(vec![
+                    ContentListItem::OpenQuote,
+                    ContentListItem::Str("b".to_string()),
+                ]),
+                quotes: pairs.clone(),
+                ..ComputedStyle::default()
+            }));
+            div_style.after_pseudo = Some(Box::new(ComputedStyle {
+                content: ContentComputedValue::List(vec![
+                    ContentListItem::Str("a".to_string()),
+                    ContentListItem::CloseQuote,
+                ]),
+                quotes: pairs,
+                ..ComputedStyle::default()
+            }));
+            styles.insert(div, div_style);
+
+            inject_pseudo_text_nodes(&mut doc, &mut styles, &[]);
+
+            let children = &doc.get(div).unwrap().children;
+            // before 文本 "«b"（depth0 开引号取首对）；after 文本 "a»"（depth1→0 闭引号
+            // 钳制取首对闭引号，非第二对）。
+            match &doc.get(children[0]).unwrap().kind {
+                zero_dom::NodeKind::Text(t) => assert_eq!(t.content, "«b"),
+                other => panic!("R5237 相④: before 应为引号文本，实际 {other:?}"),
+            }
+            match &doc.get(*children.last().unwrap()).unwrap().kind {
+                zero_dom::NodeKind::Text(t) => assert_eq!(t.content, "a»"),
+                other => panic!("R5237 相④: after 应为闭引号文本，实际 {other:?}"),
+            }
+        }
+        // ---- 相⑤：kill-switch=0 回退旧 defer（不注入）----
+        {
+            let html = r#"<html><body><div>X</div></body></html>"#;
+            let mut doc = zero_dom::parse_html(html);
+            let div = find_element(&doc, doc.root(), "div").expect("div 存在");
+            let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
+            let mut div_style = ComputedStyle::default();
+            div_style.before_pseudo = Some(Box::new(ComputedStyle {
+                content: ContentComputedValue::List(vec![
+                    ContentListItem::Str("A".to_string()),
+                    ContentListItem::Url("i.png".to_string()),
+                ]),
+                ..ComputedStyle::default()
+            }));
+            styles.insert(div, div_style);
+
+            unsafe {
+                std::env::set_var("ZW_PSEUDO_COMPOUND_CONTENT", "0");
+            }
+            inject_pseudo_text_nodes(&mut doc, &mut styles, &[]);
+            unsafe {
+                std::env::remove_var("ZW_PSEUDO_COMPOUND_CONTENT");
+            }
+
+            let children = &doc.get(div).unwrap().children;
+            assert_eq!(children.len(), 1, "关断后不注入（宿主仅存原文本子 X）");
+            assert!(matches!(
+                doc.get(children[0]).unwrap().kind,
+                zero_dom::NodeKind::Text(_)
+            ));
         }
     }
 
