@@ -98,8 +98,12 @@ pub fn collect_custom_properties(css: &str) -> Vec<(String, String)> {
 /// 仅在值末尾识别，出现在值中间的 `!important` 字样按普通值保留。
 fn split_important(value: &str) -> (&str, bool) {
     let t = value.trim();
+    // 尾部 9 字节窗口用字节比较：值含多字节字符时 len()-9 可落在字符中间，
+    // str 切片会 panic（P12 renderer 崩溃）。比较成功时窗口必为 ASCII
+    // "important"（多字节字符各字节 ≥0x80 不可能相等），len()-9 处是 'i' 而
+    // 非 UTF-8 续字节，此时 t[..len()-9] 必为 char boundary，切片安全。
     if t.len() >= 10
-        && t[t.len() - 9..].eq_ignore_ascii_case("important")
+        && t.as_bytes()[t.len() - 9..].eq_ignore_ascii_case(b"important")
         && let Some(head) = t[..t.len() - 9].trim_end().strip_suffix('!')
     {
         return (head.trim_end(), true);
@@ -549,6 +553,40 @@ div#c { --foo: 150px/1 Ahem; }
         // 单值名（bing 主题形态）不报冲突。
         let single = r#"div { --theme: dark; span { --theme: dark; } }"#;
         assert!(conflicting_custom_property_names(single).is_empty());
+    }
+
+    /// P12（perf-mem-20261023 基线 M4 g3 实证，bilibili 页面 CSS 触发 renderer
+    /// 崩溃）：值尾部含多字节 UTF-8 字符时，`!important` 探测窗口按字节回退 9
+    /// 字节可落在字符中间——探测不得 panic，中文字面值按 css-variables-1 §2
+    /// 整体保留；合法尾标记（大小写不敏感）仍须正确剥离。
+    #[test]
+    fn multibyte_tail_value_no_panic() {
+        // 18 字节：len()-9=9 落在 '广'（bytes 8..11）内部——修复前 byte-slice panic。
+        let css = ".a { --x: abcdefgh广ij12345; }";
+        let props = collect_custom_properties(css);
+        assert_eq!(
+            props.iter().find(|(n, _)| n == "--x").map(|(_, v)| v.as_str()),
+            Some("abcdefgh广ij12345"),
+            "多字节尾值须原样保留且不得 panic: {props:?}"
+        );
+        // 引号包裹中文（bilibili content 形态，14 字节：len()-9=5 落在 '片' bytes 4..7 内）。
+        let css1 = ".a { --x1: \"图片广告\"; }";
+        let props1 = collect_custom_properties(css1);
+        assert_eq!(
+            props1.iter().find(|(n, _)| n == "--x1").map(|(_, v)| v.as_str()),
+            Some("\"图片广告\""),
+            "引号中文值须原样保留且不得 panic: {props1:?}"
+        );
+        // 中文值 + 尾标记：窗口起点恰为 char boundary，剥离行为不变。
+        let css2 = ".a { --y: 广告 !IMPORTANT; }";
+        let props2 = collect_custom_properties(css2);
+        assert_eq!(
+            props2.iter().find(|(n, _)| n == "--y").map(|(_, v)| v.as_str()),
+            Some("广告"),
+            "大小写不敏感 !important 剥离后中文值保留: {props2:?}"
+        );
+        let out = substitute_vars(".b { z-index: var(--y); }", &props2);
+        assert!(out.contains("z-index: 广"), "替换值须为剥离后的中文值: {out}");
     }
 
     /// R5106：跳过语义——skip 名的 var() 引用原样保留（含空回退），非 skip 名正常替换。
