@@ -1991,6 +1991,66 @@ fn test_cached_document_styles_invalidates_on_generation_change() {
 }
 
 #[test]
+fn test_cached_document_styles_lazy_skips_queue_on_warm_generation() {
+    // P104：lazy 变体在代际命中时不得消费变更队列闭包（gCS 热 path 免全队列 clone）；
+    // 换代分支闭包必须被消费且 override 语义与直传切片逐位一致（防「永不消费」回归——
+    // 那会静默丢 inline override，返 stale 样式）。
+    // adopted 变体触碰进程级 ACTIVE_ADOPTED_CSS，与 part56 同款用 P56_ADOPTED_SLOT_LOCK
+    // 互斥（flat 模块，裸名可见），防止并行 case 互相污染槽值。
+    let _slot_guard = P56_ADOPTED_SLOT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let html = "<html><body><div id='a'></div></body></html>";
+    let muts = vec![DomMutation::SetStyle {
+        selector: "#a".to_string(),
+        property: "color".to_string(),
+        value: "red".to_string(),
+    }];
+    // 冷槽：闭包被消费，override 经 lazy 入口生效。
+    let v0 = with_cached_document_styles_lazy(
+        html,
+        0,
+        0,
+        || muts.clone(),
+        |doc, styles| lookup_computed_property(doc, styles, "#a", "color"),
+    );
+    assert_eq!(v0, "rgb(255, 0, 0)", "lazy 换代分支 inline override 生效");
+    // 同代际第二次调用：闭包不得被调用（调用即 panic）。
+    with_cached_document_styles_lazy(
+        html,
+        0,
+        0,
+        || panic!("代际命中不得消费变更队列（P104 懒克隆契约）"),
+        |_, _| {},
+    );
+    // style_version 前进 → 换代：闭包再次被消费，新队列生效。
+    let muts2 = vec![DomMutation::SetStyle {
+        selector: "#a".to_string(),
+        property: "color".to_string(),
+        value: "blue".to_string(),
+    }];
+    let v1 = with_cached_document_styles_lazy(
+        html,
+        0,
+        1,
+        || muts2.clone(),
+        |doc, styles| lookup_computed_property(doc, styles, "#a", "color"),
+    );
+    assert_eq!(v1, "rgb(0, 0, 255)", "换代后闭包队列的消费语义与直传一致");
+    // adopted CSS 单独前进（同 html/drain_gen/style_version）→ 预检必须判换代：闭包
+    // 被消费、新级联可见（display 只来自 adopted 表，不受队列 inline color 遮蔽）。
+    // 谓词漏 adopted 分量时预检误报命中 → 空切片进入 → stale（R-t2qq 语义面回归）。
+    crate::js_dom_bridge::set_active_adopted_css("#a { display: none }");
+    let v2 = with_cached_document_styles_lazy(
+        html,
+        0,
+        1,
+        || muts2.clone(),
+        |doc, styles| lookup_computed_property(doc, styles, "#a", "display"),
+    );
+    crate::js_dom_bridge::set_active_adopted_css("");
+    assert_eq!(v2, "none", "adopted 单独变化必须触发换代重算（预检含 adopted 分量）");
+}
+
+#[test]
 fn test_cached_document_styles_invalidates_on_drain_gen_change() {
     // E14 复审 major 修复钉：mutation 队列 drain 后重长回同 len（同 style_version）、
     // html 未变，但批次内容不同——drain_gen 并入键后不得读到上一批的 stale 样式。

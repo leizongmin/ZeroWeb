@@ -526,6 +526,44 @@ pub fn clear_generation_cache() {
     }
 }
 
+/// 代际槽键是否与 (html, drain_gen, style_version) 全匹配（含外部 CSS 与 adopted
+/// 分量）。谓词与 [`with_cached_document_styles`] 的 `same_gen` 判定逐字一致（两处
+/// 同文件，改一处须同步另一处；预检漏分量会在该分量单独变化时误报命中，致变更
+/// 队列被空切片顶替——坏方向不可接受）。
+fn generation_cache_matches(html: &str, drain_gen: usize, style_version: usize) -> bool {
+    let css = active_external_css();
+    let adopted = active_adopted_css();
+    GENERATION_CACHE.with(|cell| {
+        matches!(
+            &*cell.borrow(),
+            Some((h, g, v, .., c, a)) if h == html && *g == drain_gen && *v == style_version && **c == *css && **a == *adopted
+        )
+    })
+}
+
+/// [`with_cached_document_styles`] 的按需变更队列变体（P104）：代际命中时 `mutations`
+/// 在主函数中不会被消费，故仅在换代分支调用闭包 clone 队列——gCS 热 path（同代际新
+/// selector 查找）不再每 miss 付出全队列 clone（真站 hydration 后队列可达千条，每元素
+/// ~3 次 gCS miss 的 clone 成本进入 innerText 级读放大）。
+///
+/// 预检与执行之间无其他代码运行（同一 host 回调栈内，外部 CSS/drain/快照不回流——重入
+/// 契约同主函数），预检命中 ⇒ 主函数 `same_gen` 亦命中 ⇒ 空队列不可达消费点；预检未命中
+/// ⇒ 闭包产出真实队列，语义与直传切片逐位一致。
+pub fn with_cached_document_styles_lazy<T>(
+    html: &str,
+    drain_gen: usize,
+    style_version: usize,
+    mutations: impl FnOnce() -> Vec<DomMutation>,
+    f: impl FnOnce(&Document, &HashMap<NodeId, ComputedStyle>) -> T,
+) -> T {
+    if generation_cache_matches(html, drain_gen, style_version) {
+        with_cached_document_styles(html, drain_gen, style_version, &[], f)
+    } else {
+        let mlist = mutations();
+        with_cached_document_styles(html, drain_gen, style_version, &mlist, f)
+    }
+}
+
 /// 在 `(html, drain_gen, style_version)` 代际缓存的 `(Document, NodeId→ComputedStyle)`
 /// 上执行 `f`。
 ///

@@ -1638,14 +1638,21 @@ pub fn register_dom_callbacks(
             // 未命中：E14 per-generation 缓存（parsed doc + 全文档样式按 (html, drain_gen,
             // style_version) 代际复用，同代际新 selector 仅 O(节点) 查找——真站每 tick 几十
             // 个新 selector 不再各触发一次全量 parse+cascade）内提取该 selector 的
-            // ComputedStyle 并入 per-selector map，再 serialize。clone 变更列表后即释放锁，
-            // 重算不持 mutation 锁。
-            let mlist = m.lock().unwrap_or_else(|e| e.into_inner()).clone();
-            let hit = with_cached_document_styles(&snap, doc_drain_gen, style_version, &mlist, |doc, styles| {
-                find_by_selector(doc, sel)
-                    .and_then(|node| styles.get(&node))
-                    .map(|style| (serialize_computed_property(style, prop), style.clone()))
-            });
+            // ComputedStyle 并入 per-selector map，再 serialize。P104：变更队列按需 clone
+            //（[`with_cached_document_styles_lazy`]）——代际命中时主函数不消费 mutations，
+            // 热 path 不再每 miss 付全队列 clone；换代分支闭包内 clone 后即释放锁，
+            // 重算不持 mutation 锁（语义同前）。
+            let hit = with_cached_document_styles_lazy(
+                &snap,
+                doc_drain_gen,
+                style_version,
+                || m.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+                |doc, styles| {
+                    find_by_selector(doc, sel)
+                        .and_then(|node| styles.get(&node))
+                        .map(|style| (serialize_computed_property(style, prop), style.clone()))
+                },
+            );
             let Some((value, style)) = hit else {
                 return String::new();
             };
