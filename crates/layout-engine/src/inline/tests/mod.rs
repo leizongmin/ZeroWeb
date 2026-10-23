@@ -16,6 +16,7 @@ mod r5165_atomic_gl_no_break_tests;
 mod r5229_word_separator_ws_tests;
 mod r5235_nested_atomic_walk_signal_tests;
 mod r5239_bidi_control_metering_probe;
+mod r5240_first_word_float_fit_probe;
 mod text_align;
 mod text_indent;
 mod vertical_bidi;
