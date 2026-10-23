@@ -841,3 +841,7 @@ mod r5248_inline_border_x_double_count;
 mod r5249_element_first_fold_spacer_anchor;
 
 mod r5250_inline_relpos_shift_map;
+
+/// R5251（CSS2 §9.2.1.1 block-in-inline）容器层升格拆分锚——含块 span 提升块子
+/// 垂直堆叠 + margin collapse，inline 文本片段并入容器匿名块序。
+mod r5251_block_in_inline_deep_split;
