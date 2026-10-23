@@ -12999,13 +12999,22 @@
               }
             }
           } catch (_e155a) {}
-        } else if (_r112Act.type === 'act:details' && event._zwUaDispatch === true) {
+        } else if (_r112Act.type === 'act:details'
+            && (event._zwUaDispatch === true || event._zwSyntheticClick !== true)) {
           // R4400（html-semantics M2 切片 24，2026-10-22）：UA 通道坐标点击落
           // summary-less DETAILS——激活翻转（spec the-details-element activation
           // behaviour）。`_zwUaDispatch` 门三通道互斥：`.click()` 面由 part04 内联段
           // 承接（本段 skip 防双翻）；plan 面（test_driver.click(summary-less
           // details) 分类 Generic 纯 click）无翻转，本段为唯一激活；SUMMARY 不入
           // 本段——plan_summary 已有 plan 级 SetOpen，双翻先例（R4009 注记）。
+          // R5248（html-semantics M2 切片 45）：门放宽至 JS `new MouseEvent`
+          // dispatch 通道（无 synthetic 标、无 UA 印记）——s37 已知边界「点击
+          // summary-less details 内非激活后代不翻转」的 dispatch 半边：nearest
+          // 上溯（`_zwFindClickActivation`）命中 DETAILS 站返回 act:details，
+          // 而合成 dispatch 无任何翻转点（part04 内联段是 click() proxy 专属、
+          // finally 补面有 `_zwUaDispatch` 门）。`.click()` 合成（`_zwSyntheticClick`
+          // 标）保持不进——part04 内联段 R5248 nearest 分支承接，防双翻互斥
+          // 不变；anchor act:a 分支无门同款先例（R5239）。
           try { _zwDetailsActivateR4400(_r112Act.sel, _r112Act.handle); } catch (_e4400d) {}
         } else if (_r112Act.type === 'act:button' && event._zwUaDispatch === true) {
           // R4400：UA 通道坐标点击落 commandfor 按钮——invoker 命令激活（spec

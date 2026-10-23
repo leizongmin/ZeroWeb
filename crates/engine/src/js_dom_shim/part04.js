@@ -5292,6 +5292,26 @@
               if (_r154Tag === 'DETAILS' && typeof _zwDetailsActivateR4400 === 'function') {
                 _zwDetailsActivateR4400(sel, handle);
               }
+              // R5248（html-semantics M2 切片 45）：target 非激活站时 nearest 上溯——
+              // summary-less details 内非激活后代 `.click()` 翻转所属 details（s37
+              // 已知边界「点击 summary-less details 内非激活后代不翻转」的 click()
+              // 半边；spec the-details-element activation behaviour + concept-event-
+              // dispatch legacy-pre-activation「nearest ancestor (or self) with
+              // activation behavior」——DETAILS 无 summary 子时其 activation behavior
+              // 覆盖全部非交互后代）。receiver 自身三站让位（LABEL 转发/SUMMARY/
+              // DETAILS 分支已执行，DETAILS 自身再跑 nearest 会双翻）；nearest 命中
+              // 交互后代（act:button/act:a/act:summary/checkbox）时不落 act:details
+              // 自然豁免。`_zwSyntheticClick` 标使 R112 post act:details 门（R5248
+              // 放宽版）跳过本通道——单翻互斥。
+              if (_r154Tag !== 'LABEL' && _r154Tag !== 'SUMMARY' && _r154Tag !== 'DETAILS'
+                  && typeof _zwFindClickActivation === 'function') {
+                var _r5248Act = null;
+                try { _r5248Act = _zwFindClickActivation(sel, handle, true); } catch (_e5248a) { _r5248Act = null; }
+                if (_r5248Act && _r5248Act.type === 'act:details'
+                    && typeof _zwDetailsActivateR4400 === 'function') {
+                  try { _zwDetailsActivateR4400(_r5248Act.sel, _r5248Act.handle); } catch (_e5248d) {}
+                }
+              }
             }
             return notPrevented;
           };

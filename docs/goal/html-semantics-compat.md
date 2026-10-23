@@ -2,11 +2,43 @@
 
 **版本**: v2.0
 **日期**: 2026-10-23（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 44 收口（s39 剩余 1F 收口：focus-after-close Complex 案——跨代 handle proxy 孤儿 isConnected 假阴性 + activeElement light 锚误穿收口，全域 REG 0 / GAIN 1），下一步按挂账序推进；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 45 收口（s37 已知边界收口：summary-less details 内非激活后代点击翻转——nearest activation 上溯双刀，全域 REG 0 / GAIN 0），下一步按挂账序推进；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-23 M2 切片 44 收口）**：s39 剩余 1F「focus-after-close
+> **▶ 当前状态（2026-10-23 M2 切片 45 收口）**：s37 已知边界「点击
+> summary-less details 内非激活后代不翻转」收口（2026-10-23 重新定性：
+> spec 无 summary 翻转是 UA affordance 非 MUST，corpus 无观测面——性质
+> 同 s42/s43：spec 正确性收口 + 契约钉住）。**根因**（通道分裂）：details
+> 激活面两条通道各断半边——①`.click()` 合成通道 part04 click 默认动作段
+> 只处理 receiver 自身三站（LABEL/SUMMARY/DETAILS），非激活后代无 nearest
+> 上溯；②JS dispatch 通道 part03 R112 post act:details 门
+> `_zwUaDispatch === true` 挡 `new MouseEvent`（无 UA 印记、无 synthetic
+> 标）。**落地（R5248 双刀）**：part04 nearest 上溯分支——receiver 非
+> 三站且 `_zwFindClickActivation` 命中 act:details 时
+> `_zwDetailsActivateR4400` 翻转（spec the-details-element activation
+> behaviour + legacy-pre-activation nearest ancestor (or self) with
+> activation behavior；notPrevented 门内；receiver 三站让位防双翻；交互
+> 后代 act:button/act:a/act:summary/checkbox 命中时 type 豁免自然不落）；
+> part03 门放宽 `(_zwUaDispatch === true || _zwSyntheticClick !== true)`
+> ——JS dispatch 进同款翻转，`.click()` 合成标保持不进（单翻互斥），
+> preventDefault/connected 门由消费块入口守卫继承；hasSum 门槛让位不变
+> （summary 站优先，R4009 面不回归）。**验证**：探针七案修后全翻且单翻
+> 互斥成立；interactive-elements 全域 98 files 482 subtest **420P/60F/2T
+> 对 s44 逐位 REG 0 / GAIN 0**（R4400 既有面无回归，corpus 无观测面无
+> GAIN）；lib **3440P/0F**（+2 契约 part77）；契约翻转力实证（nearest
+> 分支短路 → 钉 1(a) 红；门收紧 → 钉 1(c) 红）。**已知边界**：corpus 无
+> 观测面（无 GAIN）；detached details 后代点击不翻转（R112 connected
+> 门，spec 无条件但 corpus 无观测面）维持现状。gates：clippy --workspace
+> -D warnings（test-guard 包裹）/fmt clean、零新增依赖。账本见
+> [evidence/2026-10-23-m2s45-summaryless-details-descendant-activation.md](html-semantics-compat/evidence/2026-10-23-m2s45-summaryless-details-descendant-activation.md)。
+> **下一步**：按挂账序其余余案归因；parser form element pointer 4F
+> **已缓行**（2026-10-23 用户决策：与 declarative shadow DOM（H）打捆
+> parser 批次、M2 收口后尾段单独立项）；declarative shadow DOM 同打捆
+> 待触发。**切片间隙**：本切片为 shim 面，下一挂账开工前查 oracle
+> master 碰撞记录（间隙开放）。
+>
+> **▶ 上轮状态（2026-10-23 M2 切片 44 收口）**：s39 剩余 1F「focus-after-close
 > Complex dialog usage focus 恢复红（activeElement 得 div）」收口。**根因**
 > （六层钻透）：Complex 案跨 testdriver 多命令 execute_script，宿主 apply
 > 换代发生在 show 与 close 之间——①静态树节点 handle 形 proxy 无
@@ -624,6 +656,17 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-23 M2 切片 45**：s37 已知边界「点击 summary-less details 内
+  非激活后代不翻转」收口（R5248 双刀，shim part03/part04）——part04
+  click 默认动作段 nearest activation 上溯分支（`.click()` 合成半边，
+  receiver 三站让位 + 交互后代 type 豁免 + notPrevented 门继承）+
+  part03 R112 post act:details 门放宽至 JS dispatch 通道
+  （`_zwSyntheticClick` 标互斥防双翻，preventDefault/connected 门由入口
+  守卫继承）。契约 part77 两钉（翻转/互斥六臂 + 让位/豁免三臂）+ 翻转力
+  实证。interactive-elements 全域 98 files **420P/60F/2T 对 s44 逐位
+  REG 0 / GAIN 0**（corpus 无观测面）；lib **3440P/0F**（+2 契约）；零
+  新增依赖。账本
+  [evidence/2026-10-23-m2s45-summaryless-details-descendant-activation.md](html-semantics-compat/evidence/2026-10-23-m2s45-summaryless-details-descendant-activation.md)。
 - **2026-10-23 M2 切片 44**：s39 剩余 1F focus-after-close Complex 案收口
   （R5247，shim part01/part04/part06 三处）——跨代 handle proxy 孤儿
   isConnected 假阴性修正（宿主持久反查 + querySelector 同一性核验前置
