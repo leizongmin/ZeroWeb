@@ -817,3 +817,6 @@ mod r5236_abspos_stf_replaced_child_tests;
 /// R5242（CSS2 §9.2.2 × §10.3.5）float 收缩对 definite 宽 inline-table 子按行内级
 /// Σ 求和锚点。
 mod r5242_inline_table_float_anchor;
+/// R5243（CSS2 §10.3.5 × §17.2.1 × §17.5.1）auto 宽 inline-table 入 float Σ、
+/// table-row 裸文本匿名 cell 与纯 inline 容器锚定判据锚点。
+mod r5243_inline_table_auto_measure_anchor;

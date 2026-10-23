@@ -1372,6 +1372,7 @@ pub(crate) fn text_content_max_width(node_id: NodeId, doc: &Document, styles: &H
     let mut segments: Vec<f32> = vec![0.0];
     let mut state = DomWalkState {
         pending_space: false,
+        pending_font: None,
         line_has_content: false,
         font_size,
         is_ahem,
@@ -1425,6 +1426,7 @@ pub(crate) fn text_content_max_width_scoped(
     let mut segments: Vec<f32> = vec![0.0];
     let mut state = DomWalkState {
         pending_space: false,
+        pending_font: None,
         line_has_content: false,
         font_size,
         is_ahem,
@@ -1469,6 +1471,7 @@ pub(crate) fn text_content_min_width(node_id: NodeId, doc: &Document, styles: &H
     let mut segments: Vec<f32> = vec![0.0];
     let mut state = DomWalkState {
         pending_space: false,
+        pending_font: None,
         line_has_content: false,
         font_size,
         is_ahem,
@@ -1528,6 +1531,15 @@ pub(crate) fn inline_children_non_text_width(
             | DisplayValue::InlineFlex
             | DisplayValue::InlineGrid
             | DisplayValue::InlineTable => {
+                // R5243：auto 宽 inline-table 豁免进本路径后本臂可达——其 margin-box 由
+                // 调用方 auto_table_sum 全额计入（ml+frame+content+mr，float_positioning
+                // shrink_pure_text_floats），此处再计 ml+mr 即双计
+                //（margin-right-applies-to-014 实证 float 70→120，恰好差一个 margin-right）。
+                // measure 关时本臂对 auto 表不可达（has_block_or_replaced 早退门未豁免），
+                // 维持旧口径不 skip。
+                if float_inline_table_measure_on() && resolve_intrinsic_real_length(&cs.width, cs).is_none() {
+                    continue;
+                }
                 let w = resolve(&cs.width);
                 let ml = resolve(&cs.margin_left);
                 let mr = resolve(&cs.margin_right);
@@ -1560,11 +1572,53 @@ pub(crate) fn inline_children_non_text_width(
 /// R5242（CSS2 §9.2.2/§10.3.5）：float 收缩两处早退/块叠口径（shrink_pure_text_floats
 /// 的 `has_block_or_replaced` 门 + adjust_float_positions 的 `content_child_widths` 过滤）
 /// 对 inline-table 子的豁免谓词——**CSS width definite** 的 inline-table 才按行内级原子
-/// 豁免（交 R4920 Σ 臂按 width+margin 计盒外尺寸）；auto 宽的 Σ 贡献是 0（上方 R4921
-/// 已知局限），豁免会让 float 同时失去块叠与 Σ 两个收缩来源（塌全宽/塌 0 双向失真），
-/// 维持旧块叠语义。 FIXME(R5242 后继)：auto 宽 inline-table 的 intrinsic 真测量对接后放开。
+/// 豁免（交 R4920 Σ 臂按 width+margin 计盒外尺寸）。auto 宽的豁免在 R5243 落地（见
+/// [`float_inline_table_exempt`]）——本谓词保持 definite 窄义供 R5242 消费点独立回退。
 pub(crate) fn float_sigma_eligible_inline_table(cs: &ComputedStyle) -> bool {
     matches!(cs.display, DisplayValue::InlineTable) && resolve_intrinsic_real_length(&cs.width, cs).is_some()
+}
+
+/// R5243 开关：`ZW_FLOAT_INLINE_TABLE_MEASURE=0` 回退 R5242 语义（仅 definite 宽
+/// inline-table 豁免 float 块叠口径；auto 宽维持旧块叠 + walk 内文近似）。
+pub(crate) fn float_inline_table_measure_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("ZW_FLOAT_INLINE_TABLE_MEASURE").as_deref() != Ok("0"))
+}
+
+/// R5243（CSS2 §9.2.2/§10.3.5，R5242 谓词 FIXME 收账）：float 块叠口径的 inline-table
+/// 豁免谓词——definite 宽（R5242 既有）∪ **auto 宽**（本轮放开）。auto 放开的安全前提
+/// = R5243 两件配套：① 表行裸文本盒化（tree.rs）后表子树布局出真实几何（修 B 前表塌
+/// 0，豁免即失双重收缩源）；② float Σ 臂对 auto 表按 [`inline_table_auto_max_content`]
+/// 独立测量补源（表 c.width 在 5a.1 时点可能是 taffy 拉伸伪影 R4032，不可用）+ 主 walk
+/// 对 inline-table 无条件停防双计。三处消费点（shrink_pure_text_floats 早退门、
+/// adjust_float_positions content_child_widths、inline_finalization 收缩臂）同源此谓词。
+pub(crate) fn float_inline_table_exempt(cs: &ComputedStyle) -> bool {
+    float_sigma_eligible_inline_table(cs)
+        || (float_inline_table_measure_on() && matches!(cs.display, DisplayValue::InlineTable))
+}
+
+/// R5243：auto 宽 inline-table 的 max-content 近似——**逐直接元素子独立 walk 取 max**
+///（row/row-group 为行边界分段：行内 cell 文本连续计宽=单行 Σ、行间取 max=多行正确；
+/// 整表单次 walk 会把多行文本连成一段过测——009 两行 X 实证 100 应 50）。纯 DOM 测量
+/// 无 R4032 taffy 拉伸伪影。近似：忽略列间距/border-spacing/cell padding 表盒模型
+///（无显式列宽的简单表精确；FIXME(R5243 后继)：表 intrinsic 真测量（列宽和）对接）。
+pub(crate) fn inline_table_auto_max_content(
+    table_dom: NodeId,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> f32 {
+    let mut max_w = 0.0f32;
+    for child in doc.child_nodes(table_dom) {
+        let is_element = doc
+            .get(child)
+            .is_some_and(|n| matches!(n.kind, zero_dom::NodeKind::Element(_)));
+        if !is_element {
+            continue;
+        }
+        let w = text_content_max_width_scoped(child, doc, styles, false);
+        max_w = max_w.max(w);
+    }
+    max_w
 }
 
 /// R4416（CSS Text 3 §4.1.3）：tab 度量对 (unit, space_advance)——unit = 下一 tab stop
@@ -1730,18 +1784,32 @@ fn text_max_width_walk(
                 //（float > inline-block(auto) > 文本收缩到 0 回归）。
                 // 仅 float 纯文本臂经 text_content_max_width_scoped 启用（其余消费方无 Σ
                 // 配对侧，维持旧口径）；`ZW_INTRINSIC_ATOMIC_GATE=0` 回退（回归归因 A/B）。
-                if stop_at_definite_atomic
-                    && let Some(cs) = child_style
-                    && matches!(
+                if stop_at_definite_atomic && let Some(cs) = child_style {
+                    // R5243（CSS2 §9.2.1.1/§10.3.7）：absolute/fixed 子**离流**（out of flow），
+                    // 其内容不参与父 inline 流 max-content——旧 walk 递归其内文致 float 收缩
+                    // 宽被离流文本吹胀（table-vertical-align-baseline-009 实证：float 内
+                    // abs span X 计入 text_max_w，wrapper 过测 50px）。sticky 在流不豁免。
+                    if matches!(cs.position, PositionValue::Absolute | PositionValue::Fixed) {
+                        continue;
+                    }
+                    // R5243：inline-table 无条件停（含 auto 宽）——float Σ 侧对 auto 表按
+                    // inline_table_auto_max_content 独立测量补源（`ZW_FLOAT_INLINE_TABLE_
+                    // MEASURE` 门），主 walk 再递归内文即双计。表是布局容器（行/列结构），
+                    // walk 的连续段近似本就失真（多行连段过测），停得比 inline-block 族
+                    // 更早是精确化而非欠测。开关关时回落下方 R4921 既有定宽判定。
+                    if float_inline_table_measure_on() && matches!(cs.display, DisplayValue::InlineTable) {
+                        continue;
+                    }
+                    if matches!(
                         cs.display,
                         DisplayValue::InlineBlock
                             | DisplayValue::InlineFlex
                             | DisplayValue::InlineGrid
                             | DisplayValue::InlineTable
-                    )
-                    && resolve_intrinsic_real_length(&cs.width, cs).is_some()
-                {
-                    continue;
+                    ) && resolve_intrinsic_real_length(&cs.width, cs).is_some()
+                    {
+                        continue;
+                    }
                 }
                 let child_ws = child_style
                     .map(|s| s.white_space.clone())
@@ -1831,6 +1899,7 @@ fn dom_inline_text_max_width(box_node: &LayoutBox, doc: &Document, styles: &Hash
     let mut segments: Vec<f32> = vec![0.0];
     let mut state = DomWalkState {
         pending_space: false,
+        pending_font: None,
         line_has_content: false,
         font_size,
         is_ahem,
@@ -1868,6 +1937,7 @@ fn dom_inline_text_min_width(box_node: &LayoutBox, doc: &Document, styles: &Hash
     let mut segments: Vec<f32> = vec![0.0];
     let mut state = DomWalkState {
         pending_space: false,
+        pending_font: None,
         line_has_content: false,
         font_size,
         is_ahem,
@@ -1895,6 +1965,12 @@ fn dom_inline_text_min_width(box_node: &LayoutBox, doc: &Document, styles: &Hash
 /// 无断点（= max-content），由调用方分派。
 struct DomWalkState {
     pending_space: bool,
+    /// R5243：pending 空白累积时的字体语境（fs/is_ahem/font_id）——空格字符属于其所在
+    /// 文本节点的父元素（css-text-3 §white-space-processing：空白度量随该节点的 computed
+    /// font），flush 时按记录语境计宽而非当前（可能已换入子元素）语境。None = 旧语义
+    ///（按 flush 时当前语境，R4919 行为）。仅 3 处 `pending_space = true` 设置点刷新，
+    /// 复位点不清理（flush 只在 pending_space=true 时读取，读前必被设置点覆盖）。
+    pending_font: Option<(f32, bool, Option<u32>)>,
     line_has_content: bool,
     font_size: f32,
     is_ahem: bool,
@@ -1903,6 +1979,12 @@ struct DomWalkState {
 }
 
 impl DomWalkState {
+    /// R5243：置 pending 并记录当前字体语境（见 [`DomWalkState::pending_font`]）。
+    fn mark_pending(&mut self) {
+        self.pending_space = true;
+        self.pending_font = Some((self.font_size, self.is_ahem, self.font_id));
+    }
+
     fn flush_space(&mut self, segments: &mut [f32]) {
         if self.min_mode {
             // R5036：min-content 语境空格 = 软换行断点，永不入账。
@@ -1910,8 +1992,10 @@ impl DomWalkState {
             return;
         }
         if self.pending_space && self.line_has_content {
-            *segments.last_mut().expect("segments 非空") +=
-                measure_intrinsic_char(' ', self.font_id, self.font_size, self.is_ahem);
+            let (fs, ahem, fid) = self
+                .pending_font
+                .unwrap_or((self.font_size, self.is_ahem, self.font_id));
+            *segments.last_mut().expect("segments 非空") += measure_intrinsic_char(' ', fid, fs, ahem);
         }
         self.pending_space = false;
     }
@@ -1929,12 +2013,12 @@ fn walk_collapsible_text(content: &str, segments: &mut [f32], state: &mut DomWal
     let trailing = collapsed.ends_with(' ');
     if trimmed.is_empty() {
         if !collapsed.is_empty() || content.chars().any(char::is_whitespace) {
-            state.pending_space = true;
+            state.mark_pending();
         }
         return;
     }
     if leading {
-        state.pending_space = true;
+        state.mark_pending();
     }
     state.flush_space(segments);
     // R5036（css-sizing-3 §min-content）：min 模式按软换行断点（折叠空格）切词取最宽
@@ -1965,7 +2049,7 @@ fn walk_collapsible_text(content: &str, segments: &mut [f32], state: &mut DomWal
     }
     state.line_has_content = true;
     if trailing {
-        state.pending_space = true;
+        state.mark_pending();
     }
 }
 
@@ -2223,6 +2307,7 @@ pub(crate) fn fragment_inline_max_width(
     // 行缘可折叠空格不入账。
     let mut state = DomWalkState {
         pending_space: false,
+        pending_font: None,
         line_has_content: false,
         font_size,
         is_ahem,
