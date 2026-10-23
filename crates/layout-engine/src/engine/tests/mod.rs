@@ -823,3 +823,7 @@ mod r5243_inline_table_auto_measure_anchor;
 /// R5244（UAX #9 HL1）CSS direction 定段落基方向锚点——LTR 块 R-first run 视觉序
 /// = 逻辑序、plaintext HL4 例外与 rtl 臂回归守。
 mod r5244_bidi_ltr_para_base_anchor;
+/// R5245（CSS2 §9.2.1.1 × §9.5）float 宿主 R109 匿名块流内化（不继承宿主 float 旗标）
+/// 与匿名块片段 intrinsic 片段级测量锚点——set 4 形态宿主收缩宽、匿名块堆叠与非
+/// float 宿主回归守。
+mod r5245_anon_float_anchor;
