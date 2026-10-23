@@ -11039,6 +11039,9 @@
           }
         }
         var moAttr = null;
+        // R5249（html-semantics M2 切片 46）：声明前置（R3069 reflected 臂条件内
+        // 赋值复用——历史 menu 面 tag 门，见 part05.js R3069 分支注记）。
+        var _r5249Tag;
         // js-dom M4 R45：MutationObserver attributeOldValue——IDL 反射 setter（el.id=/className=/title= 等）的
         // old 值须在**写入前**捕获（写后读即新值）。旧实现 part05 末尾 notify 不带 oldValue（恒 null，WPT
         // MutationObserver-attributes "oldValue didn't match" 全族 fail）。此处按 IDL 名预判目标内容属性名，

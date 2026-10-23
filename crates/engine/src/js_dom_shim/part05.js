@@ -865,9 +865,17 @@
           // backed 属性（part03 _zwMakeSvgHref）。须在 R3069 reflected 分支前拦截
           // ——该分支按 HTML a/area 语义写 href 属性，SVG a 会吃进真浏览器没有的
           // 假 set→get round-trip。
-        } else if ((p === 'name' && typeof _reflectedNameAttr === 'function'
+        } else if (!((_r5249Tag = _realTag(sel, handle)) === 'MENU' || _r5249Tag === 'MENUITEM')
+                   && ((p === 'name' && typeof _reflectedNameAttr === 'function'
                     && _reflectedNameAttr(_realTag(sel, handle), p) != null)
-                   || _reflectedStringAttr(p) || _REFLECTED_UINT[p] || p === 'size' || p === 'href' || p === 'label' || p === 'as' || p === 'crossorigin' || p === 'span' || p === 'scope' || p === 'valign') {
+                   || _reflectedStringAttr(p) || _REFLECTED_UINT[p] || p === 'size' || p === 'href' || p === 'label' || p === 'as' || p === 'crossorigin' || p === 'span' || p === 'scope' || p === 'valign')) {
+          // R5249（html-semantics M2 切片 46，2026-10-23）：MENU/MENUITEM 排除本臂
+          //（条件首项负门，_r5249Tag 声明在 set trap 前段）——FLAT 表 `type` 与
+          // 显式 `label` 列（R3069-fix）均无 tag 门，历史 menu 面（HTMLMenuElement
+          // 现代无任何 IDL 属性；menuitem 已删为 HTMLUnknownElement）赋值应落
+          // expando、内容属性不变（contextmenu-historical menu.type/menu.label
+          // getAttribute 断言面）。排除后非反射名赋值走 expando 默认路径；name 臂
+          // 自带 tag 门不受影响。
           // R3069：reflected 原始属性——get trap 经 `_reflectedStringAttr`（type/name/placeholder/...）/ `_REFLECTED_UINT`
           //（colSpan/rowSpan/maxLength/cols/rows/start）/ `size` 专用分支读内容属性，故 set 须继续写属性（非 expando），
           // 否则 set 写 expando / get 读空属性 round-trip 断。复用 get trap 同源检测函数，自动一致（无静态名表维护）。
@@ -1053,8 +1061,25 @@
             || prop === 'preservesPitch'
             || prop === 'paused' || prop === 'ended' || prop === 'preload'
             || prop === 'loop' || prop === 'played' || prop === 'seekable' || prop === 'buffered'
-            || prop === 'kind' || prop === 'label' || prop === 'srclang'
-            || prop === 'default' || prop === 'src' || prop === 'textTracks'
+            // R5249（html-semantics M2 切片 46，2026-10-23）：track/option IDL 归属
+            // tag 门——kind/srclang 仅 TRACK（HTMLTrackElement），label/default
+            // TRACK+OPTION（HTMLOptionElement.label/.default，R3069-fix 读侧对称）。
+            // 原无条件列使历史 menu/menuitem（现代 spec 无任何 IDL 属性，menuitem 是
+            // HTMLUnknownElement）`'label' in el`/`'default' in el` 假阳性
+            //（contextmenu-historical HTMLMenuItemElement/menu.label 两案断言面）。
+            // https://html.spec.whatwg.org/multipage/media.html#htmltrackelement
+            // https://html.spec.whatwg.org/multipage/form-elements.html#dom-option-default
+            || (function () {
+                 try {
+                   var _t5249 = _realTag(sel, handle);
+                   if (prop === 'kind' || prop === 'srclang') return _t5249 === 'TRACK';
+                   if (prop === 'label' || prop === 'default') {
+                     return _t5249 === 'TRACK' || _t5249 === 'OPTION';
+                   }
+                 } catch (_e5249t) { return false; }
+                 return false;
+               })()
+            || prop === 'src' || prop === 'textTracks'
             || prop === 'addTextTrack' || prop === 'track' || prop === 'controlsList'
             // cdp-protocol objectId 桥（PW injectedScript）：节点身份与表单约束面的
             // `in` 可见性——locator CSS 引擎 `queryEngineAll` 对每个命中断言

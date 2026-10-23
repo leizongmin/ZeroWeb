@@ -2,11 +2,40 @@
 
 **版本**: v2.0
 **日期**: 2026-10-23（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 45 收口（s37 已知边界收口：summary-less details 内非激活后代点击翻转——nearest activation 上溯双刀，全域 REG 0 / GAIN 0），下一步按挂账序推进；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 46 收口（余 60F 归因分诊六族地图落档 + 历史 menu 面 IDL 归属收口（R5249），全域 423P/57F/2T REG 0 / GAIN 3），下一步按挂账序推进；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-23 M2 切片 45 收口）**：s37 已知边界「点击
+> **▶ 当前状态（2026-10-23 M2 切片 46 收口）**：余 60F 归因分诊落档（六族
+> 地图——A closedby×slot 交叉 16F（crbug 417571176 Chrome-parity 同红）、
+> B light dismiss 5F、C top-layer/UA 布局 15F（渲染流面）、D focus/inert
+> 10F、E dialog API 语义 5F（可 shim 收口候选）、F details 零散 4F/1T +
+> G 历史 menu 面 3F）+ 族 G 顺手收口（R5249）。**根因**（三半边「IDL 名
+> 无 tag 门」同模式）：①part05 has trap track IDL 列 label/kind/srclang/
+> default（media 切片 3 加）无条件命中——历史 menu/menuitem（menuitem 已
+> 删为 HTMLUnknownElement）`'label' in el` 假阳性；②set trap R3069 臂
+> FLAT 表 type 无 tag 排除——`menu.type=` 误写内容属性；③同臂 label 显式
+> 列（R3069-fix）无 tag 门。**落地（R5249 双刀）**：has trap kind/srclang
+> 收 TRACK 门、label/default 收 TRACK+OPTION 门（HTMLOptionElement 读侧
+> R3069-fix 对称）；R3069 臂条件首项 MENU/MENUITEM 负门——赋值落 expando、
+> 内容属性不变，name 臂自带门与 FLAT 其余名零变化。**验证**：
+> contextmenu-historical 单案 **11/11 Pass**；interactive-elements 全域
+> 98 files 482 subtest **423P/57F/2T 对 s45 逐位 REG 0 / GAIN 3**（GAIN
+> 即三案）；lib **3442P/0F**（+2 契约 part78）；契约翻转力实证（tag 读恒
+> TRACK → 钉 1(a) 红；负门短路 → 钉 1(c) 红）。**已知边界**：menu.type/
+> label 读侧 FLAT 读仍返内容属性值（真浏览器 undefined，测试无此面）；
+> track 接口其余成员 in 仍无条件（corpus 无 menu 面观测）。gates：clippy
+> --workspace -D warnings（test-guard 包裹）/fmt clean、零新增依赖。账本
+> 见 [evidence/2026-10-23-m2s46-historical-menu-idl-gate.md](html-semantics-compat/evidence/2026-10-23-m2s46-historical-menu-idl-gate.md)。
+> **下一步**：按挂账序 E 族 dialog API 语义 5F（close-via-attribute 移除
+> open 属性触发 closing/close 事件 2F 为首靶，active-document/showModal
+> throw/movebefore 跟进）；parser form element pointer 4F **已缓行**
+>（2026-10-23 用户决策：与 declarative shadow DOM（H）打捆 parser 批次、
+> M2 收口后尾段单独立项）；declarative shadow DOM 同打捆待触发。**切片
+> 间隙**：本切片为 shim 面，下一挂账 E 族亦 shim 面——间隙开放，开工前查
+> oracle master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-23 M2 切片 45 收口）**：s37 已知边界「点击
 > summary-less details 内非激活后代不翻转」收口（2026-10-23 重新定性：
 > spec 无 summary 翻转是 UA affordance 非 MUST，corpus 无观测面——性质
 > 同 s42/s43：spec 正确性收口 + 契约钉住）。**根因**（通道分裂）：details
@@ -656,6 +685,16 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-23 M2 切片 46**：余 60F 归因分诊六族地图落档（A–G，含
+  Chrome-parity 同红族 A/B 与可 shim 收口候选 E）+ 历史 menu 面 IDL 归属
+  收口（R5249 双刀，shim part04/part05）——has trap track IDL 列
+  kind/srclang/label/default tag 门（TRACK 与 TRACK+OPTION）+ R3069 写臂
+  MENU/MENUITEM 负门（FLAT type 与显式 label 列无 tag 门致 menu.type=/
+  menu.label= 误写内容属性）。契约 part78 两钉（menu 排除五臂 + track/
+  option/FLAT 面四臂不回归）+ 翻转力实证。contextmenu-historical
+  **11/11 Pass**；interactive-elements 全域 98 files **423P/57F/2T 对 s45
+  逐位 REG 0 / GAIN 3**；lib **3442P/0F**（+2 契约）；零新增依赖。账本
+  [evidence/2026-10-23-m2s46-historical-menu-idl-gate.md](html-semantics-compat/evidence/2026-10-23-m2s46-historical-menu-idl-gate.md)。
 - **2026-10-23 M2 切片 45**：s37 已知边界「点击 summary-less details 内
   非激活后代不翻转」收口（R5248 双刀，shim part03/part04）——part04
   click 默认动作段 nearest activation 上溯分支（`.click()` 合成半边，
