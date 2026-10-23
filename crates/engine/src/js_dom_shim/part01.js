@@ -756,10 +756,15 @@
     if (_zwDialogModal[key]) {
       delete _zwDialogModal[key];
       delete _zwTopLayer[key];
-      // R4300：模态栈同步出栈（_zwIdxOf 兜底——嵌套 close 后 stale 项由读侧 purge 兜）。
-      var _msI = _zwDialogModalStack.indexOf(key);
-      if (_msI !== -1) _zwDialogModalStack.splice(_msI, 1);
     }
+    // R5245（html-semantics M2 切片 42）：模态/非模态一律同步出组栈——spec close
+    // watcher 随 dialog 关闭销毁、其组离栈。R4300 只在模态臂 splice，modeless
+    // close() 残留 stale 项：show()/close() 循环下重复项无限增长，读侧 purge 仅
+    // ESC 扫描顺带清（s23 挂账「非模态 close 不出组栈——读侧 purge 兜底」收口）。
+    // open 属性直写面不经本核心：IDL false 臂（part04）与 markup 移除读侧 purge
+    // 各自兜底。
+    var _msI = _zwDialogModalStack.indexOf(key);
+    if (_msI !== -1) _zwDialogModalStack.splice(_msI, 1);
     if (returnValue !== undefined) _expando[key + '::returnValue'] = String(returnValue);
     // R4600（html-semantics M2 切片 26）：焦点恢复（spec close-the-dialog
     // previously focused element 尾步——dialog-closedby corner-cases focusin-showModal

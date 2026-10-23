@@ -2,11 +2,33 @@
 
 **版本**: v2.0
 **日期**: 2026-10-23（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 41 收口（挂账定性：ESC 组栈边缘乱序 → Chrome-parity 同红收口 crbug:417571176，R5244 假设门试错回退、零代码净变化、全域 REG 0），下一步按挂账序推进；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 42 收口（挂账收口：非模态 close 不出组栈——R5245 出栈移出模态臂，modeless show/close 循环 stale 项无限增长终结，全域 REG 0 / GAIN 0），下一步按挂账序推进；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-23 M2 切片 41 收口）**：挂账「ESC 组栈边缘乱序」
+> **▶ 当前状态（2026-10-23 M2 切片 42 收口）**：挂账「非模态 close 不出
+> 组栈」收口（s23 R4300 已知保守项）。**根因**：`_zwDialogCloseTheDialog4200`
+> 的组栈出栈 splice 在模态臂内——modeless close()/requestClose()/ESC/
+> light dismiss 全链残留 stale 项，show()/close() 循环重复项无限增长
+> （读侧 purge 仅 ESC 扫描顺带清，行为面无观测差异）。**落地（R5245
+> 一刀）**：splice 移出模态臂，模态/非模态一律同步出栈（spec close
+> watcher 随关闭销毁、其组离栈）；show()/showModal() 无条件 push 与
+> part06 读侧 purge 维持（markup open 直写面兜底不变）。**验证**：契约
+> test_dialog_group_stack_hygiene_r5245（part74 新文件，R1–R4：三循环
+> 重开 ESC 命中尾组 / 双 modeless 栈序 / 全关 no-op / 模态臂保持——栈
+> 内部态无 JS 观测面，契约钉行为不变量）；interactive-elements 全域
+> 98 files **419P/61F/2T 对 s41 逐位 REG 0 / GAIN 0**；lib **3433P/0F**。
+> **已知边界**：markup removeAttribute('open') 直写面不经 close 核心，
+> stale 项靠读侧 purge 兜底（R4300 既有设计维持）。gates：clippy/fmt
+> 无 Rust 变化、零新增依赖。账本见
+> [evidence/2026-10-23-m2s42-nonmodal-close-stack.md](html-semantics-compat/evidence/2026-10-23-m2s42-nonmodal-close-stack.md)。
+> **下一步**：按挂账序 R371 模板残留、summary-less details 内非激活
+> 后代翻转（s37）、focus-after-close Complex dialog usage focus 恢复
+> 深层（s39 剩余 1F）；parser form element pointer 4F **已缓行**
+> （2026-10-23 用户决策：与 declarative shadow DOM（H）打捆 parser
+> 批次、M2 收口后尾段单独立项）；declarative shadow DOM 同打捆待触发。
+>
+> **▶ 上轮状态（2026-10-23 M2 切片 41 收口）**：挂账「ESC 组栈边缘乱序」
 > 定性收口（非代码轮）。**探针钉定**（zz-probe-s41，验证后已删）：
 > corner-cases「focusin calls showModal, modeless」ESC 案事件序 =
 > show() 聚焦空 modeless dialog（subject fallback）→ close-the-dialog
@@ -551,6 +573,14 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-23 M2 切片 42**：非模态 close 不出组栈收口（R5245 一刀，
+  s23 已知保守项）——close-the-dialog 组栈出栈移出模态臂，modeless
+  show/close 循环 stale 项无限增长终结；契约 part74
+  test_dialog_group_stack_hygiene_r5245（R1–R4 行为不变量：循环/栈序/
+  全关 no-op/模态臂保持）。interactive-elements 全域 98 files
+  **419P/61F/2T 对 s41 逐位 REG 0 / GAIN 0**；lib **3433P/0F**（+1
+  契约）；零新增依赖。账本
+  [evidence/2026-10-23-m2s42-nonmodal-close-stack.md](html-semantics-compat/evidence/2026-10-23-m2s42-nonmodal-close-stack.md)。
 - **2026-10-23 M2 切片 41**：挂账定性轮——「ESC 组栈边缘乱序」收口为
   Chrome-parity 同红（corner-cases「focusin calls showModal, modeless」
   ESC 案：crbug 417571176、父 376516550，2026-04 wpt.fyi 仍红）。探针
