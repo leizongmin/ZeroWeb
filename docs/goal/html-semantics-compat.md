@@ -2,9 +2,43 @@
 
 **版本**: v2.0
 **日期**: 2026-10-24（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 51 收口（R5256 dialog open 属性移除面关闭步 + detached 文档 dialog 三方法——close-via-attribute 2F 与 active-document 1F 收口，全域 431P/51F/1T REG 0 / GAIN 3；A 族 closedby×slot 16F 与 H 前置 4F 分诊同根 declarative shadow 提升缺失，渲染流半边待用户点名协调），下一步 declarative shadow 联合切片待决策或续 dialog shim 面红名单；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 52 收口（R5257 focus 滚动进视口 + 视口 scroll document 级派发——focus-after-close 文件级 Timeout 收口；R5258 Element.moveBefore——movebefore-setup 1F 收口；全域 433P/50F/0T REG 0 / GAIN 3，Timeout 清零），下一步 declarative shadow 联合切片待决策或续 C 族渲染流/B 族指针/F 族 name-attribute 挂账序；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-24 M2 切片 51 收口）**：R5256 dialog 属性移除面
+> **▶ 当前状态（2026-10-24 M2 切片 52 收口）**：R5257 focus 滚动进视口
+> + R5258 moveBefore——**interactive-elements 文件级 Timeout 清零**（50F
+> 全为明确 Fail）。**分诊**（本轮刀前）：shim 面红名单三案——
+> focus-after-close 文件级 Timeout（6/7 Pass 悬挂末腿）、
+> movebefore-setup 1F（`new_parent.moveBefore` TypeError）、showModal 1F
+> （rendering on top——top-layer 绘制序渲染流面，转 C 族记账）。**R5257**
+>（focus-after-close Timeout → 7 子测试全 Pass）：探针双根因——proxy
+> focus() 无滚动步（spec focusing steps 尾 UA 滚动面）+ 视口 scroll 事件
+> 只派 window（document 监听永收不到）。三修：①focus 尾 nearest 滚动
+>（gBCR 出界才滚，R3047/R3051 面复用）；②几何 fallback——动态创建元素
+> 无布局几何（runner gBCR 零盒实证），读 proxy inline style（handle-only
+> 可达）position 非 static + top 可解析 → 文档 y 顶对齐（FIXME: 样式表
+> 定位随渲染流底座）；③no-scroll 变体 `__zwFocusNoScroll` 旗——R4600
+> dialog 内部 focusing steps（show/showModal/close 恢复/fixup）包旗不滚
+>（Chromium close 恢复不滚，同测试 scrollTop==0 断言面）；④`_zwFireScroll`
+> 补 document 级派发（非冒泡 bubble 腿门控，window 不双计）。**R5258**
+>（movebefore-setup 1F → 1P）：Element.moveBefore = WebIDL 校验 + 委派
+> insertBefore 机械——免 removal steps 语义（shim 移动面本无 dialog 删除
+> 钩子，组栈/open 态天然原地保持；FIXME: 跨文档同文档门随 parser 批次）；
+> ESC 断言链走既有 R5236/R4300 组栈序。**契约**（part83）：nearest 滚动
+> 位 + 双通道恰一次/showModal-close 零滚动 + 焦点恢复/moveBefore open 态
+> 保持 + ESC 关组栈顶/NotFoundError 零滚动。**验证**：focus-after-close
+> **Timeout → 7 全 Pass**、movebefore-setup **1F → 1P**；全域 98 files
+> 483 subtest **433P/50F/0T 对 s51 逐位 REG 0 / GAIN 3**；zero-engine lib
+> 3448P/0F（+契约 part83）；fmt/clippy clean（test-guard 包裹）；release
+> runner 含 R5257×4/R5258×1 锚点。账本见
+> [evidence/2026-10-24-m2s52-focus-scroll-movebefore.md](html-semantics-compat/evidence/2026-10-24-m2s52-focus-scroll-movebefore.md)。
+> **下一步**：declarative shadow 联合切片仍待用户点名（渲染流协调）；
+> 挂账序续 C 族渲染流 20F（top-layer 绘制序 showModal 1F / modal-selection
+> 1F / inert 族 4F——elementFromPoint/hit-test 缺口）与 B 族指针管线深水、
+> F 族 name-attribute 3F 逐案分诊。**切片间隙**：本切片为 engine shim 面
+>（part01/04 + 契约 part83），下一挂账 C 族为渲染流面需跨流协调，开工前
+> 查 oracle master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 51 收口）**：R5256 dialog 属性移除面
 > + A/H 分诊改记。**分诊**（本轮刀前）：A 族 closedby×slot 16F（
 > dialog-popover-closedby-complex 全部「shadow DOM slots」变体）与 H 前置
 > 4F **同根**——探针实证 `<template shadowrootmode=open>` 在页面视图被

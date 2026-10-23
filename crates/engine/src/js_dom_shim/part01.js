@@ -1071,7 +1071,13 @@
   // candidate 过滤已挡，DOM anchor 复核 defer rendering 域）。
   function _zwDialogRunFocusingStepsR4600(target) {
     if (!target) return;
+    // R5257：dialog 内部 focusing steps 不滚动视口（no-scroll 变体——show/showModal
+    // 聚焦与 close-the-dialog 焦点恢复共用本执行器；close 恢复不滚是 Chromium 可观察
+    // 行为，focus-after-close「close 后 scrollTop==0」断言面）。part04 focus 尾滚动步
+    // 读 `__zwFocusNoScroll` 旗跳过。
+    try { globalThis.__zwFocusNoScroll = true; } catch (_eNs1) {}
     try { target.focus(); } catch (_eFc) {}
+    try { globalThis.__zwFocusNoScroll = false; } catch (_eNs2) {}
   }
   // dialog focusing steps 本体。
   function _zwDialogFocusingStepsR4600(sel, handle, modal) {
@@ -1101,7 +1107,10 @@
         // 区），不是常规 focusing 操作；body 本身被模态 inert 不阻断 fixup
         //（Chromium 同款：inert modal dialog showModal 后 activeElement===body）。
         try { globalThis.__zwModalGateBypass = true; } catch (_eBp1) {}
+        // R5257：fixup 同走 no-scroll 变体（UA 级焦点回落不滚视口，同 close 恢复面）。
+        try { globalThis.__zwFocusNoScroll = true; } catch (_eNs0) {}
         try { if (globalThis.document && globalThis.document.body && globalThis.document.body.focus) globalThis.document.body.focus(); } catch (_eFx) {}
+        try { globalThis.__zwFocusNoScroll = false; } catch (_eNs0b) {}
         try { globalThis.__zwModalGateBypass = false; } catch (_eBp2) {}
       }
       return;
@@ -7717,7 +7726,17 @@
   function _zwFireScroll(key, sel, handle) {
     try {
       if (sel || handle) _dispatchWithBubble(key, sel, handle, _makeEvent('scroll'));
-      else if (typeof globalThis.dispatchEvent === 'function') globalThis.dispatchEvent(_makeEvent('scroll'));
+      else if (typeof globalThis.dispatchEvent === 'function') {
+        globalThis.dispatchEvent(_makeEvent('scroll'));
+        // R5257（html-semantics M2 切片 52，2026-10-24）：视口 scroll 事件同步派发到
+        // document（spec CSSOM View 视口滚动 scroll 事件 target 是 Document；此前只
+        // 派 window——document.addEventListener('scroll') 永收不到，WPT focus-after-close
+        // document 监听腿悬挂根因之一）。非冒泡事件 bubble 腿被 `event.bubbles` 门控
+        //（_dispatchWithBubble），window 监听不双计；'doc' 槽只触发 document 注册面。
+        if (typeof _dispatchWithBubble === 'function' && typeof _elKey === 'function') {
+          _dispatchWithBubble(_elKey('html', null), 'html', null, _makeEvent('scroll'), 'doc');
+        }
+      }
     } catch (_e) {}
   }
   Object.defineProperty(globalThis, 'scrollX', { configurable: true, get: function () { return _winScroll.left; } });

@@ -4329,6 +4329,65 @@
             // R3254-M7'：通知宿主同步 retained 焦点状态（键盘路由 + 滚动守卫）。空串 → host 不采纳
             //（selector 缺失的 focus 无稳定目标）；宿主侧另有 is_focusable_selector 校验兜底。
             if (sel && typeof __zw_focus_changed === 'function') __zw_focus_changed(sel);
+            // R5257（html-semantics M2 切片 52，2026-10-24）：focus 滚动进视口（spec
+            // focusing steps 尾 UA 滚动面，CSSOM View scroll a target into view——WPT
+            // focus-after-close「outViewPortButton.focus() 后 scroll 事件 + scrollTop>0」
+            // 断言面，此前 scroll 事件永挂文件级 Timeout）。gBCR 出界才滚（nearest 最小
+            // 滚动：上出界 → 元素顶对齐视口顶；下出界 → 底贴齐视口底；高于视口上出界
+            // 臂先命中 → 顶对齐）。复用 globalThis.scrollTo（R3047 `_winScroll` 更新 +
+            // R3051 scroll 事件——documentElement.scrollTop 窗口镜像读回自洽）。
+            // **no-scroll 变体**：`__zwFocusNoScroll` 旗为真跳过——R4600 dialog 内部
+            // focusing steps（show/showModal 聚焦、close-the-dialog 焦点恢复、inert
+            // fixup）包旗不滚（Chromium 同款 close 恢复不滚；focus-after-close 后半
+            // 「close 后 scrollTop==0」断言面）。detached 臂已提前 return（无几何无滚动）。
+            // https://html.spec.whatwg.org/multipage/interaction.html#focusing-steps
+            if (globalThis.__zwFocusNoScroll !== true && typeof __zw_getBoundingClientRect === 'function') {
+              try {
+                var _fsId = sel || handle;
+                var _fsT = 0, _fsH = 0, _fsHave = false;
+                if (_fsId) {
+                  var _fsR = null;
+                  try { _fsR = __zw_getBoundingClientRect(_fsId); } catch (_eFsG) {}
+                  if (_fsR && _fsR.indexOf(',') >= 0) {
+                    var _fsP = _fsR.split(',');
+                    _fsT = +_fsP[1] || 0; _fsH = +_fsP[3] || 0;
+                    _fsHave = (_fsT !== 0 || _fsH !== 0);
+                  }
+                }
+                // 几何 fallback：动态创建元素（createElement→appendChild）无布局几何
+                //（runner gBCR 零盒实证）——读 proxy **inline style**（JS 侧 cssText，
+                // handle-only 亦可达；宿主 computed style 仅收 selector）近似：position
+                // 非 static 且 top 可解析 → top 即文档 y（abspos ICB 近似）。语料钉
+                // inline style 形态（focus-after-close style.top 直写）；样式表定位
+                // 不在近似面（FIXME: 随渲染流样式几何底座补）。
+                if (!_fsHave) {
+                  var _fsSt = null;
+                  try { _fsSt = proxy.style; } catch (_eFsS) {}
+                  if (_fsSt) {
+                    var _fsPos = '', _fsTopV = NaN;
+                    try {
+                      _fsPos = (typeof _fsSt.getPropertyValue === 'function')
+                        ? String(_fsSt.getPropertyValue('position') || '')
+                        : String(_fsSt.position || '');
+                      _fsTopV = parseFloat(_fsSt.getPropertyValue ? _fsSt.getPropertyValue('top') : _fsSt.top);
+                    } catch (_eFsP) {}
+                    if (_fsPos && _fsPos !== 'static' && !isNaN(_fsTopV)) {
+                      _fsT = _fsTopV; _fsH = 0; _fsHave = true;
+                    }
+                  }
+                }
+                var _fsVh = (typeof globalThis.innerHeight === 'number' && globalThis.innerHeight > 0) ? globalThis.innerHeight : 0;
+                if (_fsVh > 0 && _fsHave && (_fsT < 0 || _fsT + _fsH > _fsVh)) {
+                  // nearest：上出界 → 顶对齐；下出界有高 → 底贴齐；下出界无高（样式
+                  // 近似）→ 顶对齐（可见性优先，R3060 center/end≈top 同款 documented 近似）。
+                  var _fsN;
+                  if (_fsT < 0) _fsN = _fsT;
+                  else if (_fsH > 0) _fsN = _fsT + _fsH - _fsVh;
+                  else _fsN = _fsT;
+                  globalThis.scrollTo(0, _fsN < 0 ? 0 : _fsN);
+                }
+              } catch (_eFs) {}
+            }
           };
         }
         if (prop === 'blur') {
@@ -7173,6 +7232,33 @@
               } catch (_e140sr) {}
             }
             return child;
+          };
+        }
+        // R5258（html-semantics M2 切片 52，2026-10-24）：Element.moveBefore（DOM
+        // standard moveBefore——免 removal/insertion steps 的树内移动）。此前未实现 →
+        // TypeError，WPT dialog-open-movebefore-setup「reparenting a dialog should not
+        // cause it to move in the open dialogs list」首行即炸（moveBefore(dialog, null)
+        // 后断言全灭）。spec 可观察语义：不跑 removal steps → close watcher 组、top-layer、
+        // dialog open 态**原地保持**（对照组树移动 R5250 语义仅弃自定义元素回调面，本
+        // shim 的 insertBefore 本就无 dialog 删除钩子——组栈/top-layer 清理只在 show/
+        // close/属性写路径，移动面天然与 spec moveBefore 可观察语义一致）。实现 = spec
+        // 校验（parameter 非 Node TypeError；child 非本父 NotFoundError 走 R300 判定）
+        // + 委派既有 insertBefore 机械（pre-insert 校验族 R296/R300 + 宿主 wire +
+        // registry 记账 + MO childList record 全继承）。
+        // FIXME: spec 同文档门（node 与 this 跨 Document → HierarchyRequestError）未加
+        // ——委派路径走 adopt 语义，语料无钉，随 declarative shadow/parser 批次补。
+        // https://dom.spec.whatwg.org/#dom-parentnode-movebefore
+        if (prop === 'moveBefore') {
+          return function (newNode, refNode) {
+            if (newNode == null || typeof newNode !== 'object' || newNode.nodeType === undefined) {
+              throw new globalThis.TypeError(
+                "Failed to execute 'moveBefore' on 'Element': parameter 1 is not of type 'Node'.");
+            }
+            if (arguments.length < 2 || (refNode != null && (typeof refNode !== 'object' || refNode.nodeType === undefined))) {
+              throw new globalThis.TypeError(
+                "Failed to execute 'moveBefore' on 'Element': parameter 2 is not of type 'Node' and is not null.");
+            }
+            return proxy.insertBefore(newNode, refNode != null ? refNode : null);
           };
         }
         if (prop === 'insertBefore') {
