@@ -478,7 +478,9 @@ impl V8Sandbox {
             cbs.push(Some(cb));
             HOST_CALLBACK_NAMES.with(|names| {
                 let mut names = names.borrow_mut();
-                while names.len() < cbs.len() {
+                // P105 定向复核（DEF-1）：pad 到 idx（cb 槽位前一位）再落名，名字对齐
+                // 槽位 idx；此前 pad 到 cbs.len()（push 后= idx+1）再 push 落在 idx+1。
+                while names.len() < idx {
                     names.push(None);
                 }
                 names.push(Some(name_for_trace));

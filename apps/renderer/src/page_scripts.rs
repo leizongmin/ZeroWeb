@@ -341,7 +341,8 @@ fn dispatch_resource_outcomes(
     // 逐条提交仍是禁区（P102 车队），见 [`zero_engine::script_dispatch_link_events_batch`]。
     // P105：分片自 prio 降为普通队列（[`RendererJsWorker::submit_script`]）——真实大页
     // 上站点 load handler 是纯计算长臂（round6：exec=30000ms/tail=0ms、臂内慢宿主调用
-    // ≤19ms、线程 state=R 用户态忙），prio FIFO 使后到的 automation eval 全数排在
+    // 最大 92ms（hostcall6.trace）非垄断面、线程 state=R 用户态忙），prio FIFO 使后到
+    // 的 automation eval 全数排在
     // 60-90s 分片簇之后（mux 35s deadline 逐请求墙死，eval 饥饿）。普通通道内片间
     // FIFO 保序不变；prio 留给里程碑/字体/交互请求，eval 插队即时应答。link load/
     // error 派发时点相对 window load 不再有先序保证——HTML link 处理模型的 load/error
@@ -2885,7 +2886,7 @@ mod tests {
     }
 
     /// P104 mirror：link 事件分片提交跨片保序——8 对（> [`LINK_EVENT_CHUNK`]）拆 2 片
-    /// 两次优先提交，prio FIFO 下提交序=派发序，8 个 load 仍按元素序全部触发（分片不得
+    /// 两次提交（P105 起走普通队列），提交序=派发序，8 个 load 仍按元素序全部触发（分片不得
     /// 丢序、不得重复，超界 pair 不因跨片遗漏）。
     #[test]
     fn finish_page_load_chunks_link_events_in_order_p104() {
