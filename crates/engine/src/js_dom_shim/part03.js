@@ -13013,6 +13013,27 @@
           // dismiss 案 test_driver.click(showmodalbutton) 断言面）。submit/reset
           // 仍不落本段——runner click 命令 S4J submit_script 承接，本段只补 invoker。
           try { _zwInvokerCommandActivate(_r112Act.sel, _r112Act.handle); } catch (_e4400b) {}
+        } else if (_r112Act.type === 'act:a' || _r112Act.type === 'act:area') {
+          // R5239（html-semantics M2 切片 37）：nearest activation target 是
+          // A/AREA（target 为其后代——anchor-with-inline-element 语料：a[href]
+          // 内 i/span/svg 后代 click，期望 anchor 激活 fragment 导航而非无动作；
+          // spec the-a-element activation behavior + nearest activatable ancestor
+          // 上溯语义）。receiver 自身点击（target === act 站）让位：part04
+          // click() post 段 / R106 dispatchEvent post 段已按 receiver tag 执行
+          // _zwAnchorActivate，本处再跑会双导航（hash 相同第二次 no-op，但
+          // sourceElement/nav 线程面重复置位）。summary 包裹面（summary>a>i）：
+          // nearest 先命中 a（更近），summary 翻转豁免由冒泡站 forward 钩的
+          // 交互祖先检查承接（_zwHasInteractiveAncestorBefore4009），两面正交。
+          // https://html.spec.whatwg.org/multipage/interaction.html#run-synthetic-activation-behavior
+          var _r5239Same = false;
+          try {
+            var _r5239Tk = _elKey(targetSel, targetHandle);
+            var _r5239Ak = _elKey(_r112Act.sel, _r112Act.handle);
+            _r5239Same = _r5239Tk != null && _r5239Ak != null && _r5239Tk === _r5239Ak;
+          } catch (_e5239k) { _r5239Same = false; }
+          if (!_r5239Same) {
+            try { _zwAnchorActivate(_r112Act.sel, _r112Act.handle); } catch (_e5239a) {}
+          }
         } else {
           try {
             _zwFireInputChange(_r112Act.sel, _r112Act.handle);
@@ -13592,6 +13613,22 @@
       try { cKey = _elKey(cur.__zwSelector, cur.__zwHandle); } catch (_eCK4009) { cKey = null; }
       if (sKey != null && cKey != null && cKey === sKey) return false; // 到达 summary 站
       if (_zwIsInteractiveContentEl(cur)) return true;
+      // R5239：SVG ns a[href] 同为可激活祖先（SVG a 有 activation behavior——
+      // navigate；真浏览器 nearest activation target 就近消化后 summary 不翻转，
+      // anchor-with-inline-element svg 案断言面）。HTML interactive content 定义
+      // 不列 SVG a（`_zwIsInteractiveContentEl` 的 ns 门对非 HTML ns 恒 false，
+      // 扩它会改 label 等共享消费面），本 summary 消费面单独补祖先判定。
+      var _r5239cTag = '';
+      try { _r5239cTag = _realTag(cur.__zwSelector, cur.__zwHandle); } catch (_e5239ct) { _r5239cTag = ''; }
+      if (_r5239cTag === 'A' || _r5239cTag === 'AREA') {
+        var _r5239cHref = '';
+        try {
+          _r5239cHref = cur.__zwHandle ? __zw_has_attr_handle(cur.__zwHandle, 'href')
+            : (cur.__zwSelector && typeof __zw_has_attr_lw === 'function'
+              ? __zw_has_attr_lw(cur.__zwSelector, 'href') : '');
+        } catch (_e5239ch) { _r5239cHref = ''; }
+        if (_r5239cHref === '1') return true;
+      }
       var cSel = cur.__zwSelector || null, cHnd = cur.__zwHandle || null;
       var pSel = null, pHnd = null;
       if (cHnd && typeof _zwNodeParent !== 'undefined' && _zwNodeParent && _zwNodeParent[cHnd]) {

@@ -2,11 +2,32 @@
 
 **版本**: v2.0
 **日期**: 2026-10-21（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 36 收口（挂账 impl-doc wrapper requestClose：合成 doc dialog 元素方法面，requestclose 面 79P/0F 全绿 REG 0），下一步按挂账序推进
+**状态**: Active——M2 切片 37 收口（挂账 anchor-with-inline 导航缺口：nearest activation 执行补面，语料 Timeout 全红 → 5P/0F，REG 0），下一步按挂账序推进
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-23 M2 切片 36 收口）**：挂账 impl-doc wrapper
+> **▶ 当前状态（2026-10-23 M2 切片 37 收口）**：挂账 anchor-with-inline
+> 导航缺口收口。**探针钉定**（单案隔离；多案探针 onhashchange 竞争污
+> 染作废）：裸 a 后代 click 也不导航——R112 post 段 nearest activation
+> 无 act:a 分支（落 input-change 兜底）；svg 案露出第二根因——summary
+> 豁免祖先 walk 不认 SVG ns a[href]（`_zwIsInteractiveContentEl` ns
+> 门），summary 误翻转。**落地（R5239）**：①R112 post 补 act:a/act:area
+> 分支执行 `_zwAnchorActivate`（receiver 自身让位防双导航）；②summary
+> 消费面祖先 walk 补 A/AREA href 判定（不扩共享交互函数）。**集群**：
+> anchor-with-inline-element **Timeout 全红 → 5P/0F**；A/B 对照 summary
+> 域 REG 0 / **GAIN 5**（窄面 20P/0F/0T 全绿）、details/label 逐位一
+> 致；interactive-elements 全域 98 files 415P/65F/2T（Timeout 2 文件均
+> 既有挂账）、dialog 子集对 s35 REG 0 / GAIN 1；forms 4627 subtest 计
+> 数逐位一致。**已知边界**：点击 summary-less details 内非激活后代不
+> 翻转（同根邻近缺口，真浏览器会翻转，记待办）。gates：lib **3429P/
+> 0F**、clippy/fmt clean、零新增依赖。账本见
+> [evidence/2026-10-23-m2s37-anchor-inline-activation.md](html-semantics-compat/evidence/2026-10-23-m2s37-anchor-inline-activation.md)。
+> **下一步**：按挂账序 parser form element pointer 4F、custom command
+> `--` 前缀 CommandEvent defer、ESC 组栈边缘乱序、非模态 close 不出组
+> 栈、R371 模板残留、summary-less details 内非激活后代翻转（s37 新）；
+> declarative shadow DOM（H 定性后）待 parser/渲染流联合切片。
+>
+> **▶ 上轮状态（2026-10-23 M2 切片 36 收口）**：挂账 impl-doc wrapper
 > requestClose 收口。**探针钉定**：dialog-requestclose 面 5 files 78P/1F，
 > 唯一红正是挂账项；合成 doc（`_zwMEl` 产物）dialog 四方法全缺，R125
 > 原型链已接 HTMLDialogElement.prototype 但 prototype 空占位。**落地
