@@ -182,9 +182,10 @@
 - 2026-07-29 [reftest-upstream 大目录触发 test-guard OOM 杀进程（fail-list 捕获空致误判）](bugs/2026-07/2026-07-29-reftest-upstream-large-dir-testguard-oom.md) — tests/wpt-runner（cmd_reftest_upstream）, scripts/test-guard.rs（OOM 包裹器）
 - 2026-07-25 [product-smoke 输出 PNG 路径陷阱（stale 文件致假 bug 误判）](bugs/2026-07/2026-07-25-product-smoke-png-stale-trap.md) — tests/wpt-runner（cmd_product_smoke）, legacy/product smoke 诊断流程
 
-## Patterns — 可复用代码模式与最佳实践（24）
+## Patterns — 可复用代码模式与最佳实践（25）
 
 - 2026-10-23 [真 Chrome 仲裁：WPT 语料在本地 Chromium 的基线跑法](patterns/2026-10/2026-10-23-real-chrome-wpt-arbitration.md) — wpt-runner, engine
+- 2026-10-23 [IFC collect 期 styles 依赖判定必须有存储信号镜像（paint Path B 空 styles）](patterns/2026-10/2026-10-23-ifc-collect-styles-dependent-branch-needs-stored-signal.md) — layout-engine/inline, engine/paint
 - 2026-10-19 [spec 字面与 WPT 语料分歧时：先查真实引擎结果，语料是验收标尺](patterns/2026-10/2026-10-19-spec-literal-vs-corpus-pin.md) — engine
 - 2026-10-19 [shim 新 API 需 trap 分支 + 原型回落双层，否则克隆树/实例域元素静默缺方法](patterns/2026-10/2026-10-19-shim-new-api-dual-domain-trap-and-prototype.md) — js_dom_shim
 - 2026-10-09 [final_acceptance 派发与回执契约速查](patterns/2026-10/2026-10-09-final-acceptance-dispatch-contract.md) — .agents/skills/zeroweb-site-optimizer

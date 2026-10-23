@@ -1217,10 +1217,25 @@ impl InlineFormattingContext {
                         //（向后兼容，纯文本 inline 行为不变）。修复 `<p><a><img class=inline-block></a></p>`
                         // 的 `<p>` 塌缩 h=0（旧扁平化 `text_content` 漏嵌套 inline-block，IFC 产 0 item）。
                         // env `ZW_INLINE_BOX_RECURSE=0` 关闭。仅当后代有 inline-block 才递归（最小行为变化）。
+                        // R5235：paint Path B（空 styles）下 BFS 判定逐节点 styles.get 失败即
+                        // continue、恒 false → 含原子后代的 inline 元素落 FLAT_CHILD_WALK，原子
+                        // 后代（img leaf 无文本无 frame）在 walk 分支被丢弃 → items 无
+                        // InlineBlock 项 → img 后文本少推进一个原子宽（before-after-positioned-
+                        // 001 盒3/4 叠盖根因）。layout 趟（有 styles）直判并记录触发集；Path B
+                        // 读存储信号逐位镜像同一分叉。kill-switch `ZW_NESTED_ATOMIC_SIGNAL=0`。
+                        let child_has_nested_atomic = if styles.is_empty() {
+                            runtime_flags::nested_atomic_signal()
+                                && self.nested_atomic_walk_nodes.borrow().contains(&child_id)
+                        } else {
+                            Self::inline_elem_has_nested_inline_block(doc, styles, child_id)
+                        };
                         if Self::inline_box_model_recurse()
                             && !self.vertical
-                            && Self::inline_elem_has_nested_inline_block(doc, styles, child_id)
+                            && child_has_nested_atomic
                         {
+                            if runtime_flags::nested_atomic_signal() {
+                                self.nested_atomic_walk_nodes.borrow_mut().insert(child_id);
+                            }
                             // R3997：fragment_node_ids 是 **split 容器作用域**的片段成员表
                             //（R109 §9.2.1.1 ②匿名块），递归进 inline 子元素后必须清除——
                             // 否则子元素把自己的成员表当容器子列表（子元素 ∈ 成员表 →
@@ -1229,7 +1244,13 @@ impl InlineFormattingContext {
                             let nested = {
                                 let mut nested_ctx = self.clone();
                                 nested_ctx.fragment_node_ids = None;
-                                nested_ctx.collect_inline_items(doc, child_id, styles)
+                                let nested_items = nested_ctx.collect_inline_items(doc, child_id, styles);
+                                // R5235：嵌套递归层触发的 R1576 判定并回本层信号集
+                                //（clone 隔离，不回流则嵌套 span 内层触发在存储集缺失）。
+                                self.nested_atomic_walk_nodes
+                                    .borrow_mut()
+                                    .extend(nested_ctx.nested_atomic_walk_nodes.borrow_mut().drain());
+                                nested_items
                             };
                             items.extend(nested);
                             continue;

@@ -29,6 +29,12 @@ pub(crate) fn store_font_sizes_from_ifc(
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
 ) {
+    // R5235：R1576 递归臂触发集落盒——paint Path B（空 styles）重跑 IFC 时
+    // `inline_elem_has_nested_inline_block` 恒 false，须读本集逐位镜像同一分叉
+    //（见 `LayoutBox.inline_nested_atomic_nodes` 字段文档）。
+    if crate::inline::nested_atomic_signal_enabled() {
+        box_node.inline_nested_atomic_nodes = inline_ctx.nested_atomic_walk_nodes.borrow().clone();
+    }
     store_font_sizes_from_ifc_mode(inline_ctx, box_node, doc, styles, metric_dedup_enabled());
 }
 

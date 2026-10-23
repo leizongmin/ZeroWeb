@@ -1549,7 +1549,13 @@ impl super::Painter {
                     .with_inline_element_metrics(inline_metrics)
                     .with_margin_overrides(margin_overrides)
                     .with_padding_overrides(padding_overrides)
-                    .with_inline_block_sizes(collect_atomic_inline_sizes(box_node, styles));
+                    .with_inline_block_sizes(collect_atomic_inline_sizes(box_node, styles))
+                    // R5235：R1576 递归臂触发集——Path B 空 styles 下 BFS 判定恒 false，
+                    // 含原子后代（img）的 inline 元素落 FLAT_CHILD_WALK 后原子被丢弃，
+                    // img 后文本少推进一个原子宽（before-after-positioned-001 叠盖根因）。
+                    // 读 layout 期存储信号逐位镜像同一分叉（layout-engine 域修复，此处
+                    // 仅注入既有 builder 通道）。
+                    .with_nested_atomic_walk_nodes(box_node.inline_nested_atomic_nodes.clone());
                 ctx = with_shaped_layout(
                     ctx,
                     doc,

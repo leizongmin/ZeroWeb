@@ -14,6 +14,7 @@ mod r5101_path_b_oof_skip_tests;
 mod r5102_oof_walk_prune_tests;
 mod r5165_atomic_gl_no_break_tests;
 mod r5229_word_separator_ws_tests;
+mod r5235_nested_atomic_walk_signal_tests;
 mod text_align;
 mod text_indent;
 mod vertical_bidi;

@@ -810,3 +810,5 @@ mod r5226_nbsp_flow_anon_block_tests;
 mod r5227_oof_static_below_preserved_line_tests;
 /// R5228（CSS2 §8.3.1 × §9.5.1）float 前置容器首流内子重放不重放已折叠 margin。
 mod r5228_float_first_margin_replay_tests;
+/// R5235 D1：rel span 包裹原子 img 后文本 run advance 丢失复现（R2156 提升路径）。
+mod r5235_rel_span_atomic_advance_tests;

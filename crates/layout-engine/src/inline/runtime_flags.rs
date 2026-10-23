@@ -49,6 +49,13 @@ pub(super) fn inline_box_recurse() -> bool {
     selected(*VALUE, || default_on("ZW_INLINE_BOX_RECURSE"))
 }
 
+/// R5235：R1576 递归臂触发集信号（paint Path B 空 styles 镜像分叉）。default-on；
+/// `ZW_NESTED_ATOMIC_SIGNAL=0` 回退旧行为（记录与消费同关）。
+pub(super) fn nested_atomic_signal() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_NESTED_ATOMIC_SIGNAL"));
+    selected(*VALUE, || default_on("ZW_NESTED_ATOMIC_SIGNAL"))
+}
+
 pub(super) fn prewrap_hang() -> bool {
     static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_PREWRAP_HANG"));
     selected(*VALUE, || default_on("ZW_PREWRAP_HANG"))

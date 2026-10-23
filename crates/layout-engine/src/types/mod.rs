@@ -544,6 +544,16 @@ pub struct LayoutBox {
     /// 读此集合（`store_font_sizes_from_ifc` 按 run owner 填充——divergent 子经
     /// layout 同一判定门被拆分为独立 run 持有者，覆盖完备）。
     pub inline_color_divergent_nodes: NodeIdSet,
+    /// R5235（R1576/R2156 配套）：layout IFC 中 **R1576 递归臂实际触发**的 inline
+    /// 元素集合（key = 元素 NodeId；`inline_elem_has_nested_inline_block` 判真即记录，
+    /// 含嵌套递归层触发者）。paint Path B（空 styles）重跑 IFC 时该 BFS 判定逐节点
+    /// `styles.get` 失败即 continue、恒 false → inline 元素含原子后代（img 等）时落
+    /// FLAT_CHILD_WALK，原子后代在 walk leaf 分支（无文本无 frame）被 `continue`
+    /// 丢弃 → items 无 InlineBlock 项 → img 后文本少推进一个原子宽
+    /// （before-after-positioned-001 盒3/4 叠盖形态根因）。layout 趟触发即记录；
+    /// paint 读此集合逐位镜像同一分叉（`collect_inline_items` R1576 臂）。kill-switch
+    /// `ZW_NESTED_ATOMIC_SIGNAL=0`（记录与消费同关，回退旧行为）。
+    pub inline_nested_atomic_nodes: NodeIdSet,
     /// R3840：元素级 `unicode-bidi: bidi-override` 映射（key = inline owner 元素
     /// NodeId，value = 方向 rtl?）。paint Path B 空 styles 恢复 per-run 字符反转。
     pub text_node_bidi_overrides: NodeIdMap<bool>,
@@ -791,6 +801,7 @@ impl Default for LayoutBox {
             plaintext_bidi_nodes: NodeIdSet::default(),
             inline_vertical_nodes: NodeIdSet::default(),
             inline_color_divergent_nodes: NodeIdSet::default(),
+            inline_nested_atomic_nodes: NodeIdSet::default(),
             inline_block_child_nodes: NodeIdSet::default(),
             text_node_bidi_overrides: NodeIdMap::default(),
             text_node_font_families: NodeIdMap::default(),

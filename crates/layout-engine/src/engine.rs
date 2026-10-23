@@ -2638,6 +2638,7 @@ impl LayoutEngine {
             inline_vertical_nodes: Default::default(),
             inline_block_child_nodes: Default::default(),
             inline_color_divergent_nodes: Default::default(),
+            inline_nested_atomic_nodes: Default::default(),
             text_node_bidi_overrides: Default::default(),
             text_node_font_families: Default::default(),
             text_node_font_size_adjust: Default::default(),

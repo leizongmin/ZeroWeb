@@ -18,6 +18,12 @@ pub(crate) fn content_visibility_enabled() -> bool {
     runtime_flags::content_visibility()
 }
 
+/// R5235：R1576 递归臂触发集信号（paint Path B 空 styles 镜像分叉）——转发
+/// runtime_flags 供 inline 模块外（inline_metric_storage 落盒点）消费。
+pub(crate) fn nested_atomic_signal_enabled() -> bool {
+    runtime_flags::nested_atomic_signal()
+}
+
 // R830：行内布局核心数据类型抽出，glob 再导出保持公开路径。
 mod inline_types;
 pub use inline_types::*;
@@ -95,6 +101,16 @@ pub struct InlineFormattingContext {
     /// color:lime} 的 XX 折回 span 画成容器黑）。painter 从真实 computed styles
     /// 扫描注入，两臂同语义同值。
     pub color_divergent_walk_nodes: NodeIdSet,
+    /// R5235：R1576 递归臂触发元素集——`collect_inline_items` 的
+    /// `inline_elem_has_nested_inline_block` 分叉在 paint Path B（空 styles）下 BFS
+    /// 逐节点 `styles.get` 失败即 continue、恒 false，inline 元素含原子后代时落
+    /// FLAT_CHILD_WALK，原子后代（img）在 walk leaf 分支被丢弃 → items 无
+    /// InlineBlock 项 → img 后文本少推进一个原子宽。layout IFC 触发即记录（含嵌套
+    /// 递归层），经 `LayoutBox.inline_nested_atomic_nodes` 存储；paint Path B 注入
+    /// 后逐位镜像同一分叉。layout IFC 有 styles 直判不消费本集。RefCell：记录点在
+    /// `collect_inline_items(&self)` 内，注入（builder）/记录（触发点）/合并（嵌套
+    /// 回传）共享同一集合。
+    pub nested_atomic_walk_nodes: std::cell::RefCell<NodeIdSet>,
     /// R3840：paint Path B 恢复元素级 `unicode-bidi: bidi-override`（key = inline
     /// owner 元素 NodeId，value = 方向 rtl?）。layout 期经
     /// `LayoutBox.text_node_bidi_overrides` 存储。
@@ -397,6 +413,7 @@ impl InlineFormattingContext {
             display_none_walk_nodes: NodeIdSet::default(),
             oof_walk_nodes: NodeIdSet::default(),
             color_divergent_walk_nodes: NodeIdSet::default(),
+            nested_atomic_walk_nodes: std::cell::RefCell::new(NodeIdSet::default()),
             text_node_bidi_overrides: NodeIdMap::default(),
             text_align_last: None,
             break_word: false,
@@ -582,6 +599,13 @@ impl InlineFormattingContext {
     /// R5177：设置 color 差异元素集（walk 折回门 paint Path B 信号，见字段文档）。
     pub fn with_color_divergent_walk_nodes(mut self, nodes: NodeIdSet) -> Self {
         self.color_divergent_walk_nodes = nodes;
+        self
+    }
+
+    /// R5235：设置 R1576 递归臂触发元素集（paint Path B 空 styles 镜像分叉信号，
+    /// 见字段文档）。
+    pub fn with_nested_atomic_walk_nodes(mut self, nodes: NodeIdSet) -> Self {
+        self.nested_atomic_walk_nodes = std::cell::RefCell::new(nodes);
         self
     }
 
