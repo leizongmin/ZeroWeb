@@ -101,6 +101,14 @@ pub struct InlineFormattingContext {
     /// color:lime} 的 XX 折回 span 画成容器黑）。painter 从真实 computed styles
     /// 扫描注入，两臂同语义同值。
     pub color_divergent_walk_nodes: NodeIdSet,
+    /// R5250（CSS2 §9.3.2）：relative inset 视觉位移非零的归因节点 → `(dx, dy)`——
+    /// FLAT_CHILD_WALK 折回门分裂信号 + fragment 位移消费表。同样式 relative inline
+    /// 子折回外层会把其文本并入外层合并 run（归因外层），inset 位移无法按节点施加
+    ///（position-relative-032 案形）——命中即子自身构造独立 run（归因子自身，R5177
+    /// 同形状），fragment 查表平移。layout IFC 与 paint Path B（空 styles）注入
+    /// 同一张表（compute_final 以真实 styles 构建、存 `LayoutBox.inline_relpos_shifts`），
+    /// 两臂分段恒等。
+    pub relpos_shifts: NodeIdMap<(f32, f32)>,
     /// R5235：R1576 递归臂触发元素集——`collect_inline_items` 的
     /// `inline_elem_has_nested_inline_block` 分叉在 paint Path B（空 styles）下 BFS
     /// 逐节点 `styles.get` 失败即 continue、恒 false，inline 元素含原子后代时落
@@ -413,6 +421,7 @@ impl InlineFormattingContext {
             display_none_walk_nodes: NodeIdSet::default(),
             oof_walk_nodes: NodeIdSet::default(),
             color_divergent_walk_nodes: NodeIdSet::default(),
+            relpos_shifts: NodeIdMap::default(),
             nested_atomic_walk_nodes: std::cell::RefCell::new(NodeIdSet::default()),
             text_node_bidi_overrides: NodeIdMap::default(),
             text_align_last: None,
@@ -599,6 +608,13 @@ impl InlineFormattingContext {
     /// R5177：设置 color 差异元素集（walk 折回门 paint Path B 信号，见字段文档）。
     pub fn with_color_divergent_walk_nodes(mut self, nodes: NodeIdSet) -> Self {
         self.color_divergent_walk_nodes = nodes;
+        self
+    }
+
+    /// R5250：设置 relative inset 位移表（walk 折回门分裂信号 + fragment 平移消费表，
+    /// 见字段文档）。
+    pub fn with_relpos_shifts(mut self, shifts: NodeIdMap<(f32, f32)>) -> Self {
+        self.relpos_shifts = shifts;
         self
     }
 

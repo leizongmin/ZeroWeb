@@ -493,6 +493,13 @@ pub struct LayoutBox {
     /// paint 系统重跑 IFC（空 styles）时经 `glyph_verticals_overrides` 复用，
     /// 无需再判 line-height 语义。
     pub text_node_glyph_verticals: NodeIdMap<(f32, f32)>,
+    /// R5250（CSS2 §9.3.2 relative positioning）：本容器 IFC 内各 run 归因节点的
+    /// relative inset 视觉位移 `(dx, dy)` 映射（compute_final 以真实 styles 构建，
+    /// 容器自身 inset 不入表——taffy 已随盒施加）。纯 inline 非替换盒无 taffy 节点
+    /// 无人施加 inset（R5225 判例对其不成立），stored IFC 映射与 paint Path B
+    /// （空 styles 重跑，无 styles 可判）据表平移 fragment。`ZW_RELPOS_INLINE_SHIFT=0`
+    /// 回退静态位行为。
+    pub inline_relpos_shifts: NodeIdMap<(f32, f32)>,
     /// 文本节点的 letter-spacing 映射（来自 layout engine 的 IFC 运行）。
     ///
     /// paint 系统在运行空 styles IFC 时无法获取 letter-spacing（无 style 信息），
@@ -793,6 +800,7 @@ impl Default for LayoutBox {
             text_node_is_ahem: NodeIdMap::default(),
             text_node_ws_overrides: NodeIdMap::default(),
             text_node_glyph_verticals: NodeIdMap::default(),
+            inline_relpos_shifts: NodeIdMap::default(),
             text_node_letter_spacing: NodeIdMap::default(),
             text_node_word_spacing: NodeIdMap::default(),
             text_node_line_heights: NodeIdMap::default(),

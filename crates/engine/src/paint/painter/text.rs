@@ -1508,6 +1508,10 @@ impl super::Painter {
                     // store_font_sizes_from_ifc），layout IFC 有 styles 直判同语义（见
                     // collect_flat_inline_children 折回臂）。
                     .with_color_divergent_walk_nodes(box_node.inline_color_divergent_nodes.clone())
+                    // R5250（CSS2 §9.3.2）：relative inset 位移表——walk 折回门分裂信号
+                    // + fragment 平移消费表，layout 期构建存盒（compute_final），Path B
+                    // 注入同一张表保持两臂分段恒等（见 IFC relpos_shifts 字段文档）。
+                    .with_relpos_shifts(box_node.inline_relpos_shifts.clone())
                     // R3840：元素级 bidi-override 恢复（layout 期按文本节点 id 存储）。
                     .with_text_node_bidi_overrides(box_node.text_node_bidi_overrides.clone())
                     // R3778：run 级有效 white-space 覆盖——inline 包裹层声明的 pre 等在
@@ -1706,7 +1710,24 @@ impl super::Painter {
                 for line in &inline_ctx.lines {
                     frag_line_tops.extend(std::iter::repeat_n(line.y, line.runs.len()));
                 }
-                inline_ctx.all_fragments_with_line_y()
+                let mut fragments = inline_ctx.all_fragments_with_line_y();
+                // R5250（CSS2 §9.3.2）：relative inset 视觉位移——纯 inline 非替换盒无
+                // taffy 节点无人施加，Path B（空 styles 重跑，无 styles 可判）从盒读
+                // compute_final 存的位移映射（inline_relpos_shifts）平移 fragment；装饰锚
+                // 行盒顶平行表索引对齐同移（R4332 契约）。表空（无 relative inline /
+                // 竖排 / kill-switch）时循环体零命中，无行为变化。
+                if !box_node.inline_relpos_shifts.is_empty() {
+                    for (i, frag) in fragments.iter_mut().enumerate() {
+                        if let Some(&(dx, dy)) = box_node.inline_relpos_shifts.get(&frag.node_id) {
+                            frag.x += dx;
+                            frag.y += dy;
+                            if let Some(t) = frag_line_tops.get_mut(i) {
+                                *t += dy;
+                            }
+                        }
+                    }
+                }
+                fragments
             };
 
             let has_content = use_stored && !stored_fragments.is_empty() || !fragments.is_empty();

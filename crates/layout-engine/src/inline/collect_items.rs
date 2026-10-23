@@ -2105,6 +2105,25 @@ impl InlineFormattingContext {
                             }
                             continue;
                         }
+                        // R5250（CSS2 §9.3.2）：relative inline 子（位移表非零）不折回——
+                        // 折回把子树文本并入外层合并 run（归因外层），inset 视觉位移无法
+                        // 按节点施加（032 案形：span relative top:25px 折回外层，glyph 静态
+                        // 位）。子自身构造独立 run（归因子自身，R5177 同形状），paint 端
+                        // fragment 查表平移。表 layout/Path B 两臂同源注入（见 IFC 字段
+                        // 文档），分段恒等。
+                        if self
+                            .relpos_shifts
+                            .get(&gc)
+                            .is_some_and(|&(dx, dy)| dx != 0.0 || dy != 0.0)
+                        {
+                            let flushed = flush_pending(&mut text_pending, items, !emitted_text_run, false);
+                            maybe_emit_first_slot_spacer(flushed, emitted_text_run, items);
+                            emitted_text_run = true;
+                            if let Some(item) = self.build_flatten_run_for_element(doc, gc, styles) {
+                                items.push(item);
+                            }
+                            continue;
+                        }
                         // R4300d 修正：ws_override=None = **继承容器 flags**（collect 主路径
                         // 同语义），非「与父不同」——旧比较把 (Some, None) 判异，把继承态
                         // 子（如 `<q>` 嵌套）无谓拆 run（quotes-001 的 27v1 整段被拆成

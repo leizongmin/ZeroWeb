@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 use taffy::prelude::*;
-use zero_css_parser::values::{DisplayValue, FloatValue, LengthValue, VerticalAlignValue};
+use zero_css_parser::values::{DisplayValue, FloatValue, LengthValue, PositionValue, VerticalAlignValue};
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_style_system::ComputedStyle;
 
@@ -26,6 +26,15 @@ use zero_style_system::property::types::ColumnSpanComputedValue;
 /// https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
 static CONTENT_AREA_DORMANT_ON: std::sync::LazyLock<bool> =
     std::sync::LazyLock::new(|| std::env::var("ZW_INLINE_CONTENT_AREA").as_deref() != Ok("0"));
+
+/// R5250（CSS2 §9.3.2 relative positioning）：纯 inline 非替换盒无 taffy 节点，其行内流
+/// 中 relative inline 子的 inset 无人施加（R5225 判例「display:inline 非替换盒 inset 由
+/// taffy 单次施加」对纯 inline 不成立，inline_finalization 收窄门 ③「相对 inset 已烘焙
+/// 进盒位」假设失效）——compute_final 以真实 styles 构建 per-node 视觉位移映射
+/// （`inline_relpos_shifts`），stored IFC 映射与 paint Path B（空 styles 重跑，无 styles
+/// 可判）据表平移 fragment。`ZW_RELPOS_INLINE_SHIFT=0` 回退静态位行为。
+static RELPOS_INLINE_SHIFT_ON: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_RELPOS_INLINE_SHIFT").as_deref() != Ok("0"));
 
 /// 行内布局使用的字体相关依赖。
 #[derive(Clone, Copy, Default)]
@@ -786,6 +795,90 @@ pub(crate) fn build_inline_owner_ancestor_map(
     let mut chain = Vec::new();
     for child in doc.child_nodes(container_id) {
         walk(doc, child, &mut chain, styles, &mut map);
+    }
+    map
+}
+
+/// R5250：relative inset 水平/垂直分量 px 解析。over-constrained 时 left 胜 right、
+/// top 胜 bottom（R716 惯例，rtl 镜像未实现 FIXME）；Px 直取，Percent 水平对包含块
+/// content 宽解析（`cb_width` None 时 0），Em/Rem 等其余走 `resolve_length`（元素自身
+/// font_size 上下文，033 的 -6em@20px = -120px）。Auto 与垂直百分比 → 0
+///（FIXME：top/bottom 百分比按包含块高度解析，高度未传入）。
+fn inline_relative_inset_px(style: &ComputedStyle, cb_width: Option<f32>) -> (f32, f32) {
+    let resolve = |v: &LengthValue, negate: bool, horizontal: bool| -> f32 {
+        let m = match v {
+            LengthValue::Px(p) => *p as f32,
+            LengthValue::Percentage(p) if horizontal => ((*p / 100.0) * f64::from(cb_width.unwrap_or(0.0))) as f32,
+            LengthValue::Percentage(_) | LengthValue::Auto => 0.0,
+            other => {
+                let fs = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
+                zero_style_system::computed::resolve_length(other, fs, None, None) as f32
+            }
+        };
+        if negate { -m } else { m }
+    };
+    let dx = match &style.left {
+        LengthValue::Auto => match &style.right {
+            LengthValue::Auto => 0.0,
+            v => resolve(v, true, true),
+        },
+        v => resolve(v, false, true),
+    };
+    let dy = match &style.top {
+        LengthValue::Auto => match &style.bottom {
+            LengthValue::Auto => 0.0,
+            v => resolve(v, true, false),
+        },
+        v => resolve(v, false, false),
+    };
+    (dx, dy)
+}
+
+/// R5250（CSS2 §9.3.2）：本容器 IFC 内各归因节点的 relative inset 视觉位移
+/// `(dx, dy)` 映射。纯 inline 非替换盒无 taffy 节点，其行内流中 relative inline 子的
+/// inset 无人施加（见 [`RELPOS_INLINE_SHIFT_ON`]）——compute_final 以真实 styles 构建
+/// 本表存盒（`inline_relpos_shifts`），stored IFC 映射与 paint Path B（空 styles 重跑，
+/// 无 styles 可判）据表平移 fragment。**容器自身不入表**（其 inset 随盒由
+/// taffy/apply_relative_offsets 施加，入表即双计）；S = 节点与容器之间严格祖先的
+/// relative inset 累计，`map[e] = S + inset(e)`——文本 run 归因元素自身（collect_items
+/// R4382 契约），共享元素键。仅递归 display:inline 流内非替换子——block/atomic/
+/// replaced/float/OOF 子树属其他 IFC 或 taffy 面，位移各由既有路径施加。水平 only
+///（竖排块轴流行进语义不同，暂不启用）。
+pub(crate) fn build_inline_relpos_shift_map(
+    doc: &Document,
+    container_id: NodeId,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    cb_width: f32,
+) -> NodeIdMap<(f32, f32)> {
+    fn walk(
+        doc: &Document,
+        id: NodeId,
+        shift: (f32, f32),
+        styles: &HashMap<NodeId, ComputedStyle>,
+        cb_width: f32,
+        map: &mut NodeIdMap<(f32, f32)>,
+    ) {
+        let Some(style) = styles.get(&id) else { return };
+        if !matches!(style.display, DisplayValue::Inline)
+            || !matches!(style.float, FloatValue::None)
+            || matches!(style.position, PositionValue::Absolute | PositionValue::Fixed)
+            || crate::inline_block_split::is_replaced_element(&id, doc)
+        {
+            return;
+        }
+        let own = inline_relative_inset_px(style, Some(cb_width));
+        let total = (shift.0 + own.0, shift.1 + own.1);
+        // 零位移不记，消费端免查（Ahem 外层无 inset 的 032/033 形态 map 仅含真位移节点）。
+        if total.0 != 0.0 || total.1 != 0.0 {
+            map.insert(id, total);
+        }
+        for child in doc.child_nodes(id) {
+            walk(doc, child, total, styles, cb_width, map);
+        }
+    }
+    let mut map = NodeIdMap::default();
+    for child in doc.child_nodes(container_id) {
+        walk(doc, child, (0.0, 0.0), styles, cb_width, &mut map);
     }
     map
 }
@@ -1654,6 +1747,16 @@ pub(crate) fn compute_final_inline_layouts(
         .collect();
 
     let mut inline_ctx = InlineFormattingContext::new(container_width)
+        // R5250：relative inset 位移表（§9.3.2，纯 inline 非替换盒无 taffy 节点无人
+        // 施加）——collect 折回门分裂信号 + fragment 平移消费表，须在 layout 前
+        // 注入（collect 期消费）。竖排块轴不启用（水平 only，见 builder 文档）。
+        .with_relpos_shifts(
+            if *RELPOS_INLINE_SHIFT_ON && !root.writing_mode.is_vertical_block_flow() {
+                build_inline_relpos_shift_map(doc, node_id, styles, container_width)
+            } else {
+                NodeIdMap::default()
+            },
+        )
         .with_text_align(text_align)
         .with_text_group_align(resolve_text_group_align(Some(style)))
         .with_text_align_last(text_align_last)
@@ -1811,6 +1914,12 @@ pub(crate) fn compute_final_inline_layouts(
     // 自身，扁平化收集路径），回填 hit-test/struct-check 可见的代理盒并注册 paint_skip
     // 防双绘（同 orphan 先例）。须在 store-gate return 之前跑。
     backfill_run_in_boxes(root, doc, styles, &inline_ctx, context.paint_skip);
+    // R5250：位移表存盒（构建在上方 builder 链处）——非 stored 容器（033-test serif
+    // 等）paint 走 Path B（空 styles 重跑），从盒读表注入重跑 IFC 并平移 fragment。
+    // 须在 store-gate return 之前。空表不存（Path B 注入空表 = 无分裂无平移，两臂一致）。
+    if !inline_ctx.relpos_shifts.is_empty() {
+        root.inline_relpos_shifts = inline_ctx.relpos_shifts.clone();
+    }
     let is_pure_ahem =
         style.font_family.len() == 1 && style.font_family[0].trim_matches('"').eq_ignore_ascii_case("Ahem");
     let is_floated = !matches!(style.float, FloatValue::None);
@@ -1861,8 +1970,24 @@ pub(crate) fn compute_final_inline_layouts(
                         _ => line.baseline_y,
                     };
                     InlineLayoutFragment {
-                        x: frag.x,
-                        y: frag.y,
+                        // R5250：relative inset 视觉位移（§9.3.2，纯 inline 非替换盒无
+                        // taffy 节点无人施加）——stored fragment 烘焙进存面，paint 端
+                        // baseline_y_abs = line_y + f.baseline_y 随之移动。行盒 y 不动
+                        //（同线多 span 各自 inset 不同，行级位移无定义）。
+                        x: frag.x
+                            + root
+                                .inline_relpos_shifts
+                                .get(&frag.node_id)
+                                .copied()
+                                .unwrap_or((0.0, 0.0))
+                                .0,
+                        y: frag.y
+                            + root
+                                .inline_relpos_shifts
+                                .get(&frag.node_id)
+                                .copied()
+                                .unwrap_or((0.0, 0.0))
+                                .1,
                         width: frag.width,
                         height: frag.height,
                         font_size: frag.font_size,
@@ -1872,7 +1997,13 @@ pub(crate) fn compute_final_inline_layouts(
                         source: frag.source.clone(),
                         letter_spacing: frag.letter_spacing,
                         node_id: Some(frag.node_id),
-                        baseline_y: frag_baseline_y,
+                        baseline_y: frag_baseline_y
+                            + root
+                                .inline_relpos_shifts
+                                .get(&frag.node_id)
+                                .copied()
+                                .unwrap_or((0.0, 0.0))
+                                .1,
                     }
                 })
                 .collect(),
