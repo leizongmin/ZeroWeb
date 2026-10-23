@@ -812,3 +812,5 @@ mod r5227_oof_static_below_preserved_line_tests;
 mod r5228_float_first_margin_replay_tests;
 /// R5235 D1：rel span 包裹原子 img 后文本 run advance 丢失复现（R2156 提升路径）。
 mod r5235_rel_span_atomic_advance_tests;
+/// R5236 D2（CSS2 §10.3.8）：含 replaced 原子后代的 auto 宽 abspos shrink-to-fit 诊断锚。
+mod r5236_abspos_stf_replaced_child_tests;

@@ -945,7 +945,32 @@ impl LayoutEngine {
                 continue;
             }
             if width_fix && b.width > 0.5 {
-                width_fix = false;
+                // R5236 D2（CSS2 §10.3.8 shrink-to-fit）：R2156 slice19 提升原子为 taffy
+                // Absolute 子（R4941）后，含 IFC 文本的 branch 盒（有元素子 → taffy branch、
+                // 无 measure 函数）宽 = taffy 子贡献 max（block.rs content_size =
+                // inflow.max(absolute)，提升原子仍计入）——IFC 文本不入 taffy content_size，
+                // auto 宽解析为「最宽原子/块子」（min-content 侧；before-after-positioned-001
+                // D2：abs span `1<img>"Before gen abs` 塌 32 = img 宽逐词换行；img 0×0 时塌 0
+                // 入上方塌 0 补测臂反而正确）。§10.3.8 shrink-to-fit 须含文本 max-content →
+                // 保持 width_fix 重测（下方写侧取 border-box 测量值）。窄门：有 inline 内容
+                //（文本为缺口主项；纯原子/块子盒 taffy 宽已 ≈ max-content 语义）+ 有元素子
+                //（leaf 文本盒走 R5104 measure 臂已正确）+ 无 aspect-ratio（transferred 宽
+                // taffy 已解，max-content 测量无此语义）+ 无 definite max-width（测量不含
+                // max-width 钳，扩臂会撑破钳制盒——FIXME 案驱动）。只扩不缩（写侧
+                // b.width < target 才写）——taffy 已正确的大宽盒不触碰。kill-switch
+                // `ZW_ABSPOS_STF_BRANCH_TEXT=0` 回退旧行为。
+                let max_width_definite = match &s.max_width {
+                    LengthValue::Px(v) => v.is_finite(),
+                    LengthValue::Percentage(_) => true,
+                    _ => false,
+                };
+                let branch_text_box = crate::inline_content::has_inline_content(doc, styles, id)
+                    && !b.children.is_empty()
+                    && !s.aspect_ratio.is_some_and(|r| r > 0.0)
+                    && !max_width_definite;
+                if !(branch_text_box && abspos_stf_branch_text_enabled()) {
+                    width_fix = false;
+                }
             }
             if height_fix && b.height > 0.5 {
                 height_fix = false;
@@ -992,7 +1017,17 @@ impl LayoutEngine {
                             measured
                         };
                         let frame = b.padding_left + b.padding_right + b.border_left + b.border_right;
-                        let target_bw = (target + frame).max(0.0);
+                        // R5236 D2 扩臂（非塌 0 branch-text 盒）：block_max_content_width 返回
+                        // **border-box**（intrinsic_sizing `inner + frame` 收口）——直接取值不再
+                        // 叠 frame；单行放下时 ceil（R5104 同理：整型盒宽 ≥ 小数 advance，防
+                        // paint Path B 整宽复排折行；abspos OOF 不入流内相位网格）。塌 0 补测臂
+                        // 维持既有 `target + frame` 口径（corpus 既有绿面，不动）。
+                        let target_bw = if width_collapsed {
+                            (target + frame).max(0.0)
+                        } else {
+                            let single_line = !available.is_finite() || measured <= available;
+                            (if single_line { target.ceil() } else { target }).max(0.0)
+                        };
                         if b.width < target_bw - 0.5 {
                             style.size.width = taffy::style::Dimension::length(target_bw);
                         }
@@ -2849,4 +2884,11 @@ impl LayoutEngine {
 fn perspective_sc_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ENABLED.get_or_init(|| std::env::var("ZW_PERSPECTIVE_STACKING_CONTEXT").as_deref() != Ok("0"))
+}
+
+/// R5236 D2：auto 宽 abspos 含 IFC 文本的 branch 盒 shrink-to-fit 重测开关（进程级
+/// 单读，同上热路径口径）。kill-switch `ZW_ABSPOS_STF_BRANCH_TEXT=0` 回退旧行为。
+fn abspos_stf_branch_text_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_ABSPOS_STF_BRANCH_TEXT").as_deref() != Ok("0"))
 }
