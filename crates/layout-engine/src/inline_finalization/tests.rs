@@ -1826,7 +1826,8 @@ fn test_build_inline_owner_ancestor_map_chain_order_and_coverage() {
 /// R5232：嵌套 inline 盒 x 收紧到子孙内容首缘——外层盒自身名下 fragments 仅含
 /// 折回文本段（R4300c），首内容属子孙（R5177 分歧独立归因）时 min_x 推导右移
 /// （position-relative-033-ref 蓝框右移 6em 形态）；传映射后外盒 x = 子孙首缘 −
-/// 自身 (ml+pl+bl)。空映射维持自身推导（旧行为锚）。
+/// 自身**流内落账** frame（R5248：fold 落流与否按首 run ml−raw 检测）。空映射
+/// 维持自身推导（旧行为锚）。
 #[test]
 fn test_sync_inline_box_x_tightens_to_descendant_first_edge() {
     let mut doc = Document::new();
@@ -1886,12 +1887,16 @@ fn test_sync_inline_box_x_tightens_to_descendant_first_edge() {
         "空映射（旧行为）：外盒 x 应右移到折回段首缘，实际 {x_legacy}"
     );
 
-    // R5232：真实映射 → 外盒 x 收紧到 inner1 首缘 0 − 自身 bl 2 = −2。
+    // R5232：真实映射 → 外盒 x 收紧到 inner1 首缘候选。R5248 修订：候选只扣
+    // **流内落账** frame——外层 fold（bl 2）element-first（inner1 走 color 分歧
+    // flatten 消耗首槽）不落流，候选 = 子孙首缘 0 − 0 = 0（chromium 真值同形：
+    // border 盒 = cursor 0 + ml 0 = 0，border 在盒内消费；R5232 初版 −2 系
+    // 「box = 内容首缘 − bl」margin 盒语义误设，随 R5248 退役）。
     let map = super::build_inline_owner_ancestor_map(&doc, container, &styles);
     sync_inline_child_boxes_from_ifc_with_ancestors(&mut root, &context, &styles, &map);
     let x_tightened = root.children[0].x;
     assert!(
-        (x_tightened - (-2.0)).abs() < 0.01,
-        "映射收紧：外盒 x 应 = 子孙首缘 0 − bl 2 = −2，实际 {x_tightened}（旧行为 {x_legacy}）"
+        x_tightened.abs() < 0.01,
+        "映射收紧：外盒 x 应 = 子孙首缘 0（外层 fold 不落流不扣），实际 {x_tightened}（旧行为 {x_legacy}）"
     );
 }

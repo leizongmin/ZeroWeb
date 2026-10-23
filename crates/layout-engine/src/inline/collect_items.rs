@@ -2175,7 +2175,7 @@ impl InlineFormattingContext {
         }
     }
 
-    fn resolve_inline_margin(value: &LengthValue, style: &ComputedStyle) -> f32 {
+    pub(crate) fn resolve_inline_margin(value: &LengthValue, style: &ComputedStyle) -> f32 {
         match value {
             LengthValue::Auto
             | LengthValue::Percentage(_)

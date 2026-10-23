@@ -831,3 +831,7 @@ mod r5245_anon_float_anchor;
 /// LS 段落连续行级 L2 锚点——pre 容器 LS/PS 折行行数与 RTL 混排跨 LS 两行守。
 mod r5246_forced_break_ls_ps_anchor;
 mod r5247_vertical_inline_metric_transpose;
+/// R5248（CSS2 §10.3.x × R4332 折入语义）inline 树盒 x 双扣 border 修正锚点——
+/// 盒 x = 流内内容首缘 − 流内落账 frame（折入落流按首 run ml−raw 检测），
+/// box-level 边框/背景归位守。
+mod r5248_inline_border_x_double_count;

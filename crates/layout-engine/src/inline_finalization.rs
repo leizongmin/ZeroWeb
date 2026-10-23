@@ -827,8 +827,10 @@ pub(crate) fn sync_inline_child_boxes_from_ifc_with_ancestors(
         /// 对齐行主基线，本式与 line_y + line_baseline_y 逐字节同值。
         first_frag_h: f32,
         first_w: f32,
-        first_ml: f32,
         first_pl: f32,
+        /// R5248：首 run 记账 margin（R4332 折入含 border advance）——x 式只扣**流内
+        /// 实际落账**的 frame，折入落流与否 = `first_ml − raw_ml > 0` 检测。
+        first_ml: f32,
         text_empty: bool,
         count: u32,
         /// slice13：全部 fragment 是否同在一行（CJK 逐字分词/拉丁多词会把单行元素
@@ -853,8 +855,8 @@ pub(crate) fn sync_inline_child_boxes_from_ifc_with_ancestors(
                 first_y: y,
                 first_frag_h: run.height,
                 first_w: run.width,
-                first_ml: run.margin_left,
                 first_pl: run.padding_left,
+                first_ml: run.margin_left,
                 text_empty: run.text.is_empty(),
                 count: 0,
                 first_line_idx: line_idx,
@@ -896,17 +898,26 @@ pub(crate) fn sync_inline_child_boxes_from_ifc_with_ancestors(
             // ml/pl/bl 已在行内推进时扣除），祖先盒起点 = 沿链逐段再扣该段 frame。
             let mut deducted = 0.0_f32;
             for anc in chain {
-                let anc_border_left = styles
-                    .get(anc)
-                    .map(|s| extract_inline_visual_metrics(s).border_left)
+                // R5248：只扣**流内实际落账**的 frame——折入落流与否 = 自名首 run
+                // ml − raw ml > 0（text-first 落流；R4332 bidi 控制符臂清零与
+                // element-first 首槽被元素 run 消耗两态不落流，bidi-011 /
+                // position-relative-033-ref 实证）。无自名 fragment 的段 fold 本无
+                // 落点，pl 同理取首 fragment 记账（R5232 判例）。
+                let anc_agg = aggs.get(anc);
+                let anc_pl = anc_agg.map(|a| a.first_pl).unwrap_or(0.0);
+                let anc_fold = anc_agg
+                    .map(|a| {
+                        let raw = styles
+                            .get(anc)
+                            .map(|s| InlineFormattingContext::resolve_inline_margin(&s.margin_left, s))
+                            .unwrap_or(0.0);
+                        (a.first_ml - raw).max(0.0)
+                    })
                     .unwrap_or(0.0);
-                // 有 frame 的段必有归因 fragment（collect R4300e spacer 零宽 run），
-                // ml/pl 取其首 fragment 记录；无 frame 段自然为 0。
-                let (anc_ml, anc_pl) = aggs.get(anc).map(|a| (a.first_ml, a.first_pl)).unwrap_or((0.0, 0.0));
-                let cand = owner_agg.min_x - deducted - anc_ml - anc_pl - anc_border_left;
+                let cand = owner_agg.min_x - deducted - anc_pl - anc_fold;
                 let entry = min_inherited_x.entry(*anc).or_insert(f32::INFINITY);
                 *entry = entry.min(cand);
-                deducted += anc_ml + anc_pl + anc_border_left;
+                deducted += anc_pl + anc_fold;
             }
         }
     }
@@ -935,7 +946,18 @@ pub(crate) fn sync_inline_child_boxes_from_ifc_with_ancestors(
             //（gBCR 仍报行盒几何）。同类语义面未修未挂账，备查（R4384 轴邻接项）。
             if !child.is_replaced && frag_pos_on && pure_inline_container && !vertical && !child.is_relative {
                 let metrics = extract_inline_visual_metrics(style);
-                child.x = agg.min_x - agg.first_ml - agg.first_pl - metrics.border_left;
+                // R5248：盒 x = margin 盒 + raw ml = 流内内容首缘 − 流内落账 frame。
+                // run.x 含流内推进（raw ml、pl、落流的折入 border advance——bidi-011
+                // probe：ml 32/pl 32 → x = cursor+64 实证），旧式再减全量 ml 系对已在
+                // 流内的 ml/折入双扣（multicol-rule-dashed-000 span border-left 段
+                // 198 vs 208 实证）。折入落流与否 = `first_ml − raw ml`（text-first
+                // 落流；R4332 bidi 控制符臂清零——bidi-011 test div 实证——与
+                // element-first 首槽被元素 run 消耗——position-relative-033-ref 实证
+                // ——两态不落流，此时 bl 悬在流外不扣）。宽度式（first_w + frame）
+                // 本就无 ml，右缘随之对齐。
+                let raw_ml = InlineFormattingContext::resolve_inline_margin(&style.margin_left, style);
+                let fold_landed = (agg.first_ml - raw_ml).max(0.0);
+                child.x = agg.min_x - agg.first_pl - fold_landed;
                 // R5232：子孙首缘候选更小（首内容属子孙）时收紧——只收紧不放松。
                 if let Some(cand) = min_inherited_x.get(&child_id) {
                     child.x = child.x.min(*cand);
