@@ -869,6 +869,27 @@
     }
     _zwDialogCloseTheDialog4200(key, sel, handle, returnValue);
   }
+  // R5256（html-semantics M2 切片 51，2026-10-24）：open 属性直写移除面
+  //（removeAttribute('open') / IDL open falsy）的 dialog 关闭步。spec
+  // the-dialog-element attribute change steps（open 移除）→ dialog closing
+  // algorithm——与 close-the-dialog 核心的差异面：**无 cancel 事件**（非
+  // request-close）、**无 beforetoggle**（close-the-dialog 步语义，本算法不含，
+  // corpus 无钉）、**焦点不恢复**（dialog-close-via-attribute.tentative 断言面：
+  // previously focused element 不聚焦，当前焦点原地保留）、**returnValue 不变**
+  //（仅 close()/requestClose() 写）；模态态/top-layer/组栈清理 + close/toggle
+  // 事件排队与核心同队列（toggle 合并语义一致，oldState=open）。**close watcher
+  // 门在调用方 pre-snapshot**（part04 两调用点删态前取样：模态态/组栈双信号）——
+  // 属性直开（markup open / IDL true，未经 show）无 watcher，移除仅隐藏不入本
+  // 函数（dialog-open「IDL false 不派 close」断言面）。
+  // https://html.spec.whatwg.org/multipage/interactive-elements.html#the-dialog-element
+  function _zwDialogAttrClosedR5256(key, sel, handle) {
+    delete _zwDialogModal[key];
+    delete _zwTopLayer[key];
+    var _msI = _zwDialogModalStack.indexOf(key);
+    if (_msI !== -1) _zwDialogModalStack.splice(_msI, 1);
+    _zwDialogQueueCloseEvent4200(key, sel, handle);
+    _zwDialogToggleQueueNotify4200(key, sel, handle, true, null);
+  }
   // ---------- R4600（html-semantics M2 切片 26，2026-10-22）dialog focusing steps 家族 ----------
   // spec：dialog focusing steps（https://html.spec.whatwg.org/multipage/interactive-elements.html
   // #dialog-focusing-steps）——allow focus 门（headless 恒允许；FIXME: rendering 域

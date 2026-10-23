@@ -19941,6 +19941,25 @@
         if (!_isHtmlDoc && globalThis.Element && globalThis.Element.prototype) {
           try { Object.setPrototypeOf(e, globalThis.Element.prototype); } catch (_e290xp) {}
         }
+        // R5256（html-semantics M2 切片 51，2026-10-24）：detached 文档
+        //（createHTMLDocument/createDocument——无 browsing context，文档永非
+        // fully active）的 HTML DIALOG 产物接 HTMLDialogElement 三方法。spec
+        // the-dialog-element：showModal()「If document is not fully active, then
+        // throw InvalidStateError」（dialog-active-document 断言面——旧产物无此
+        // 方法，TypeError 非 DOMException）；show()「If document is not fully
+        // active, then return」（静默 no-op）；close() 无活动性检查——无 open
+        // 属性 no-op（FIXME: wrapper 无派发链，open 态 close 的事件队列面未建，
+        // 语料无钉）。
+        // https://html.spec.whatwg.org/multipage/interactive-elements.html#the-dialog-element
+        if (_isHtmlDoc && _tagIn.toLowerCase() === 'dialog') {
+          e.showModal = function () {
+            throw new (globalThis.DOMException)("Failed to execute 'showModal' on 'HTMLDialogElement': The element's node document is not active.", 'InvalidStateError');
+          };
+          e.show = function () {};
+          e.close = function () {
+            try { if (typeof e.hasAttribute === 'function' && e.hasAttribute('open')) e.removeAttribute('open'); } catch (_e5256dc) {}
+          };
+        }
                 // WC-M1 切片 4：customized built-in——createElement(localName, { is }) 命中
         // registered entry（localName 匹配）→ 升级 + is 内容属性。**registry 按 document
         // 隔离**（spec look up a custom element registry：detached/iframe 文档用自己的

@@ -2,9 +2,42 @@
 
 **版本**: v2.0
 **日期**: 2026-10-24（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 50 收口（toggleEvent 1T 文件级 Timeout 收口——分诊定位 parser 初始 open details 无 toggle 事件，R5254 两段式补偿（注册期 mark 初始 open 集 + DCL fire「初始 open 且仍 open」派发）+ DOMParser 身份键 handler 表，全域 428P/54F/1T REG 0 / GAIN 2），下一步按挂账序 A 族 closedby×slot 16F 或 H 前置 declarative shadow 联合切片；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 51 收口（R5256 dialog open 属性移除面关闭步 + detached 文档 dialog 三方法——close-via-attribute 2F 与 active-document 1F 收口，全域 431P/51F/1T REG 0 / GAIN 3；A 族 closedby×slot 16F 与 H 前置 4F 分诊同根 declarative shadow 提升缺失，渲染流半边待用户点名协调），下一步 declarative shadow 联合切片待决策或续 dialog shim 面红名单；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-24 M2 切片 50 收口）**：toggleEvent 1T 收口
+> **▶ 当前状态（2026-10-24 M2 切片 51 收口）**：R5256 dialog 属性移除面
+> + A/H 分诊改记。**分诊**（本轮刀前）：A 族 closedby×slot 16F（
+> dialog-popover-closedby-complex 全部「shadow DOM slots」变体）与 H 前置
+> 4F **同根**——探针实证 `<template shadowrootmode=open>` 在页面视图被
+> 拆包平铺（part03:7639「parser 占位」互证）、shadowRoot null、shim
+> attachShadow 虚拟树不下传 dom（attach_shadow 生产零接线）、shadow 内容
+> rect=0/hit-test null（几何面未通）；clickOn 坐标驱动下 shim 虚拟单边
+> 提升会 REG 现存 4 Pass（点击落 (0,0) 全员误关）。**改记**：A+H 统一
+> 「declarative shadow parser 提升 + shadow 几何渲染流联合切片」，渲染流
+> 半边维持用户决策门禁（web-components 归档流明示等点名协调
+> rendering-compat；与 parser form pointer 缓行决策同域）。**R5256 两刀**
+>（dialog shim 面）：①open 属性移除面关闭步——`_zwDialogAttrClosedR5256`
+>（part01）清模态/组栈 + close/toggle 排队，无 cancel/无 beforetoggle/
+> 焦点不恢复/returnValue 不变（tentative 断言契约；旧注记「不派 close」
+> 已被 2025 attribute change steps 变更推翻）；removeAttribute 尾钩 +
+> IDL falsy 臂双接通，**close watcher 门**（pre-snapshot 模态态/组栈双
+> 信号——属性直开无 watcher 仅隐藏，首版 REG dialog-open 一案当场修正）；
+> ②detached 文档 dialog 三方法——showModal 抛 InvalidStateError、show
+> 静默返、close no-op（dialog-active-document 旧产物 TypeError 面）。
+> **契约**（part82）：模态移除/IDL falsy/wasOpen 门/同任务 toggle 合并/
+> detached 三方法/属性直开零 close 六腿。**验证**：close-via-attribute
+> **2F → 2P**、active-document **1F → 1P**、dialog-open 维持 3P；全域
+> 98 files 483 subtest **431P/51F/1T 对 s50 逐位 REG 0 / GAIN 3**；
+> zero-engine lib 3447P/0F（+契约 part82）；fmt/clippy clean（test-guard
+> 包裹）；release runner 含 R5256 锚点。账本见
+> [evidence/2026-10-24-m2s51-dialog-attr-removal.md](html-semantics-compat/evidence/2026-10-24-m2s51-dialog-attr-removal.md)。
+> **下一步**：declarative shadow 联合切片待用户点名（渲染流协调）；续
+> dialog shim 面红名单（focus-after-close 1T / showModal 1F /
+> dialog-inert 1F 等逐案分诊）。C 族渲染流 20F 与指针管线维持跨子系统
+> 单独排期。**切片间隙**：本切片为 engine shim 面（part01/03/04），
+> 下一挂账预期仍 shim 面或待决策项，间隙开放，开工前查 oracle master
+> 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 50 收口）**：toggleEvent 1T 收口
 > （R5254 parser 初始 open details toggle 补偿两段式）。**分诊**：
 > toggleEvent.html 文件级 Timeout——11 async_test 中 9 Pass、pending: 2
 > 永挂（t9 依赖 inline ontoggle 在 parser 声明 open 时 resolve promise；

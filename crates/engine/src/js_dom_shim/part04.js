@@ -3702,6 +3702,16 @@
             var targetTag = _realTag(sel, handle);
             // R3909：option selected 内容属性变更步前半（写入前快照）。
             var _optSelSnap9 = (n === 'selected') ? _zwOptSelAttrPre(sel, handle) : null;
+            // R5256：dialog open 移除面 pre-snapshot——真移除后属性不在场
+            //（`_zwDialogHasOpen` 恒 false），wasOpen 门须含模态态（modal + open
+            // 属性双态一致，防御性取或）。**close watcher 门**：仅 show()/
+            // showModal() 开过的 dialog 有 watcher（R4300 组栈/R3290 模态态双
+            // 信号）→ 移除跑关闭步；属性直开（markup open / IDL true，未经
+            // show）无 watcher，移除仅隐藏不关闭（dialog-open「IDL false 不派
+            // close」断言面）。pre 块删态前取样。
+            var _r5256DlgPre = (nLower === 'open' && targetTag === 'DIALOG'
+              && (_zwDialogModal[key] || _zwDialogModalStack.indexOf(key) !== -1)
+              && _zwDialogHasOpen(sel, handle)) ? true : false;
             // R122：非 NS 移除按**限定名**剔实例（与 setAttribute 的限定名 upsert 对称），
             // 并解绑 Attr（ownerElement=null——WPT "Attribute loses its owner when removed"：
             // removeAttribute 后 attr.ownerElement 须 null，否则 setAttributeNode 误抛
@@ -3841,6 +3851,11 @@
             // 已是 closed 时 presence 不变，notify 内比对后 no-op——t9 断言面）。
             if (n === 'open' && typeof _zwToggleQueueNotify4009 === 'function') {
               _zwToggleQueueNotify4009(sel, handle, _rmExisted);
+            }
+            // R5256：dialog open 移除 → 关闭步（pre-snapshot wasOpen 门——模态
+            // 清理/pre 块删态后仍以快照判定；close/toggle 排队、焦点不恢复）。
+            if (_r5256DlgPre && typeof _zwDialogAttrClosedR5256 === 'function') {
+              _zwDialogAttrClosedR5256(key, sel, handle);
             }
             if (ceEntry) _ce_dispatchAttrChange(ceEntry, proxy, n, ceOld, null);
           };
@@ -11911,6 +11926,12 @@
           var _r4009IsDetails = _realTag(sel, handle) === 'DETAILS';
           var _r4009PreOpen = _r4009IsDetails ? _zwDetailsHasOpen4009(sel, handle) : null;
           var _r4009Src = _r4009IsDetails ? _zwDetailsTakeInvokerSourceR4400(key) : null;
+          // R5256：dialog IDL falsy 臂 pre-snapshot（下方 _zwRemoveAttr 前属性在场，
+          // 与 removeAttribute 直写面同判定口径）+ close watcher 门（组栈/模态态
+          // 双信号——属性直开无 watcher 仅隐藏，dialog-open 断言面）。
+          var _r5256DlgPre = (!_r4009IsDetails && _realTag(sel, handle) === 'DIALOG'
+            && (_zwDialogModal[key] || _zwDialogModalStack.indexOf(key) !== -1)
+            && _zwDialogHasOpen(sel, handle)) ? true : false;
           // R4200（html-semantics M2 切片 22）：open 属性 IDL 写面发 MutationObserver
           // attributes record（moAttr 尾钩同其余反射 setter——R45 汇流点）。dialog/show
           // 内部写走 part01 调用点直发（helper 为 aria 共用，不在 helper 内发）。
@@ -11927,6 +11948,12 @@
               delete _zwTopLayer[key];
               var _msI2 = _zwDialogModalStack.indexOf(key);
               if (_msI2 !== -1) _zwDialogModalStack.splice(_msI2, 1);
+              // R5256：open falsy 直写 = 属性移除面——同关关闭步（close/toggle
+              // 排队、焦点不恢复；旧注记「不派 close」已被 attribute change steps
+              // 变更推翻——dialog-close-via-attribute.tentative 断言契约）。
+              if (_r5256DlgPre && typeof _zwDialogAttrClosedR5256 === 'function') {
+                _zwDialogAttrClosedR5256(key, sel, handle);
+              }
             }
           }
           if (_r4009PreOpen !== null) {
