@@ -830,3 +830,4 @@ mod r5245_anon_float_anchor;
 /// R5246（css-writing-modes-3 §2.2 × css-text-3 §5.2）U+2028/U+2029 强制断行类 +
 /// LS 段落连续行级 L2 锚点——pre 容器 LS/PS 折行行数与 RTL 混排跨 LS 两行守。
 mod r5246_forced_break_ls_ps_anchor;
+mod r5247_vertical_inline_metric_transpose;
