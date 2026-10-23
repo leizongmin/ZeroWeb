@@ -2,11 +2,39 @@
 
 **版本**: v2.0
 **日期**: 2026-10-23（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 42 收口（挂账收口：非模态 close 不出组栈——R5245 出栈移出模态臂，modeless show/close 循环 stale 项无限增长终结，全域 REG 0 / GAIN 0），下一步按挂账序推进；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 43 收口（挂账收口：replaceWith self-removal 父桶记账——R5246 补 removed identity 入桶，合并视图残留终结，全域 REG 0 / GAIN 0），下一步按挂账序推进；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-23 M2 切片 42 收口）**：挂账「非模态 close 不出
+> **▶ 当前状态（2026-10-23 M2 切片 43 收口）**：挂账「replaceWith
+> self-removal 父桶记账」收口（s26 既有挂账，R371 模板残留）。**根因**：
+> replaceWith sel 臂 remove 步只覆盖 apply 面（Remove/RemoveHandle
+> mutation）与 sel/handle 字符串标记表（parentNode/isConnected 读），合并
+> 视图子读（childNodes overlay / R322 归并查询）按**父桶 removed identity**
+> 剔除——桶缺 removed 项 → 被替换者（快照 sel 节点）在合并视图残留至 apply
+> 换代，视图 ≠ spec 终态。**落地（R5246 一刀）**：remove 步后经 canonical
+> 记账入口 `_zwHCLiveInvalidate([], [被替换者 proxy], 父sel, null)` 直调
+> （父桶 removed + 全局 pending-removed + live 集合失效一体；子树展平含
+> template 内容子）；proxy identity 取基列表条目（`_r371Self`，与 overlay
+> 剔除同一缓存对象）；记账先于 R371 rekey → dst 桶必存在，rekey 走合并分支
+>（promote 分支保留护栏）。**验证**：契约
+> test_dialog_replacewith_parent_bucket_accounting_r5246（part75 新文件，
+> R1 corpus 同形全树视图退出 + R2 body 直子面）+ 既有
+> r321_replacewith_fragment_flatten 断言更新（kids 前导宿主残留 DIV 消失，
+> 视图即 spec 终态）；interactive-elements 全域 98 files 482 subtest
+> **419P/61F/2T 对 s42 逐位 REG 0 / GAIN 0**（挂账本就「对扫描无害」，
+> corpus 无观测面——切片性质同 s42：spec 正确性收口 + 契约钉住）；lib
+> **3434P/0F**。**已知边界**：sel 臂 replaceWith 的 MO record 面（插入/
+> 移除两段，R117 handle 臂已有）独立挂账不扩面。gates：clippy
+> --workspace -D warnings（test-guard 包裹）/fmt clean、零新增依赖。账本
+> 见 [evidence/2026-10-23-m2s43-replacewith-parent-bucket.md](html-semantics-compat/evidence/2026-10-23-m2s43-replacewith-parent-bucket.md)。
+> **下一步**：按挂账序 summary-less details 内非激活后代翻转（s37 邻近
+> 缺口，真浏览器会翻转）、focus-after-close Complex dialog usage focus
+> 恢复深层（s39 剩余 1F）；parser form element pointer 4F **已缓行**
+>（2026-10-23 用户决策：与 declarative shadow DOM（H）打捆 parser
+> 批次、M2 收口后尾段单独立项）；declarative shadow DOM 同打捆待触发。
+>
+> **▶ 上轮状态（2026-10-23 M2 切片 42 收口）**：挂账「非模态 close 不出
 > 组栈」收口（s23 R4300 已知保守项）。**根因**：`_zwDialogCloseTheDialog4200`
 > 的组栈出栈 splice 在模态臂内——modeless close()/requestClose()/ESC/
 > light dismiss 全链残留 stale 项，show()/close() 循环重复项无限增长
@@ -579,6 +607,16 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-23 M2 切片 43**：replaceWith self-removal 父桶记账收口（R5246
+  一刀，s26 既有挂账「R371 rekey 时 dst 桶不存在，不记父桶 removed」）——
+  sel 臂 remove 步补 `_zwHCLiveInvalidate` 直调（父桶 removed identity +
+  全局 pending-removed + live 失效一体），合并视图残留终结、视图即 spec
+  终态；记账先于 rekey，promote 分支留护栏。契约 part75
+  test_dialog_replacewith_parent_bucket_accounting_r5246（R1/R2）+ part24
+  r321 kids 断言更新（宿主残留 DIV 消失）。interactive-elements 全域
+  98 files **419P/61F/2T 对 s42 逐位 REG 0 / GAIN 0**；lib **3434P/0F**
+  （+1 契约）；零新增依赖。账本
+  [evidence/2026-10-23-m2s43-replacewith-parent-bucket.md](html-semantics-compat/evidence/2026-10-23-m2s43-replacewith-parent-bucket.md)。
 - **2026-10-23 M2 切片 42**：非模态 close 不出组栈收口（R5245 一刀，
   s23 已知保守项）——close-the-dialog 组栈出栈移出模态臂，modeless
   show/close 循环 stale 项无限增长终结；契约 part74

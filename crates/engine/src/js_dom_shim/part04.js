@@ -8375,6 +8375,7 @@
               // 文本快照条目无 selector，文本 proxy 的 .nextSibling 链不可依赖），仅跨
               // 相邻非元素节点，元素相对序不变。
               var _r371Next = null;
+              var _r371Self = null; // R5246：被替换者基列表 proxy（overlay 剔除 identity 用）。
               try {
                 var _r371kids = (typeof _childNodeList === 'function' && _r371ParentSel)
                   ? _childNodeList(_r371ParentSel) : null;
@@ -8383,6 +8384,7 @@
                   for (var _r371k = 0; _r371k < _r371kids.length; _r371k++) {
                     if (_r371kids[_r371k] && _r371kids[_r371k].__zwSelector === sel) { _r371ki = _r371k; break; }
                   }
+                  if (_r371ki >= 0) _r371Self = _r371kids[_r371ki];
                   for (var _r371k2 = _r371ki + 1; _r371ki >= 0 && _r371k2 < _r371kids.length; _r371k2++) {
                     var _r371kc = _r371kids[_r371k2];
                     if (_r371kc && _r371kc.nodeType === 1) { _r371Next = _r371kc; break; }
@@ -8394,6 +8396,23 @@
               _zwRemoveIframeWindowClientForNode(_makeProxy(sel, handle));
               if (handle) { __zw_remove_handle(handle); if (typeof _zwMarkRemovedHandle === 'function') _zwMarkRemovedHandle(handle); }
               else { __zw_remove(sel); if (typeof _zwMarkRemoved === 'function') _zwMarkRemoved(sel); }
+              // R5246（html-semantics M2 切片 43）：self-removal 的**父桶记账**——上方两路只
+              // 覆盖 apply 面（Remove/RemoveHandle mutation）与 sel/handle 字符串标记表
+              //（parentNode/isConnected 读），合并视图子读（childNodes overlay
+              // `_zwOverlayPendingChildNodes` / R322 归并查询）按**父桶 removed identity** 剔除
+              // ——桶缺 removed 项 → 被替换者（快照 sel 节点，corpus dialog-focus-shadow 的
+              // template 形）在合并视图残留至 apply 换代（s26 挂账「R371 rekey 时 dst 桶不存在
+              //（dstA:-1），不记父桶 removed」收口）。经 canonical 记账入口 `_zwHCLiveInvalidate`
+              // 直调（父桶 removed + 全局 pending-removed + live 集合失效一体；子树展平含
+              // template 内容子）。不经 `_mo_notify`——sel 臂插入/移除两段的 MO record 面是
+              // 独立缺口（R117 handle 臂已有 record），本轮只收口合并视图残留，不扩面。
+              // proxy 取基列表条目（`_r371Self`——与 overlay 剔除 `res[ri] === rm` 同一缓存
+              // 对象；scan miss 回落 `_makeProxy(sel, null)`，sel 键 identity 稳定同
+              // `_wrapSelector`）。本记账先于下方 rekey → dst 桶必存在（含 removed 项），
+              // rekey 走合并分支（promote 分支保留为护栏）。
+              if (_r371ParentSel && typeof _zwHCLiveInvalidate === 'function') {
+                try { _zwHCLiveInvalidate([], [_r371Self || _makeProxy(sel, null)], _r371ParentSel, null); } catch (_e5246inv) {}
+              }
               // R379（js-dom M4）：replaceWith 的「remove 自身」步骤补移除标记（spec
               // `dom-childnode-replacewith` = insert-then-remove 两步，remove 步语义与
               // remove() 同——同步脚本内标记中元素的 parentNode/查询门须立即反映；
