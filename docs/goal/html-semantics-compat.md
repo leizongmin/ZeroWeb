@@ -2,47 +2,46 @@
 
 **版本**: v2.0
 **日期**: 2026-10-24（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 47 收口（E 族重分诊 5F→1F + showModal fully-active 门（R5250），全域 424P/56F/2T REG 0 / GAIN 1），下一步按分诊地图 D 族推进；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
-**执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
-**父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
+**状态**: Active——M2 切片 48 收口（D 族重分诊 10F→1F + editing host focusable area（R5251），全域 425P/55F/2T REG 0 / GAIN 1），下一步按挂账序转 B 族 light dismiss 5F 分诊；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-24 M2 切片 47 收口）**：E 族 dialog API 语义 5F
-> 逐项核证后重分诊收窄为 1F 收口（R5250 showModal fully-active 门）。**重
-> 分诊**：close-via-attribute 2F → **挂账（Chrome-parity 同红）**——现行
-> spec（2026-09 版）dialog attribute change steps 明文「The `close` event
-> will not be fired」，whatwg/html#5802 至今 open、测试 2024-05 移 tentative
-> 即提案未落地，实现即背离真实浏览器；dialog-active-document 1F → **挂账
->（接口面缺口）**——createHTMLDocument 产物文档 createElement 是 R3018
-> `_zwMEl` 本地节点（无接口 IDL），`showModal` 方法不存在，修复属
-> detached-doc 元素模型工程；movebefore 1F → **改判 A/B 族**——依赖
-> moveBefore + closedby + userActivation 特性栈。**根因**（showModal
-> 「not attached to any pages」第二断言面）：detached dialog 经
-> `doc.body.appendChild` 移入 createHTMLDocument 文档后，M3 扩批 XLIII 的
-> `_zwUnmarkRemoved`（新父即脱离 removed 态）+ host 快照滞后
-> `__zw_contains` 恒 1，连接门双信号均判连接 → showModal 误开；spec 步 3
-> 「node document 非 fully active → 抛」缺失，而 JS 侧唯一信号是收养章
->（handle 形态已有 `__zwAdoptDocByHandle`，sel 形态只盖代理对象、
-> showModal 持三元组不可达）。**落地（R5250 四刀）**：part03
-> `_zwUnmarkAdoptDocSel` helper + `_r191adoptBody` 落 sel 键控收养章
-> `__zwAdoptDocBySel`；part01 showModal 连接门后加 fully-active 门（章
-> 非空且 ≠ active document → 抛 InvalidStateError）；part04 主文档
-> append 族**五处**对称删章（R334 两分支/R334b/R86/R87——首版漏
-> XLV/R86 分支被契约 (c) 回插臂红 + 探针反查补齐）。**验证**：
-> dialog-showModal 单案目标子测试 **Fail → Pass**；interactive-elements
-> 全域 98 files 482 subtest **424P/56F/2T 对 s46 逐位 REG 0 / GAIN 1**；
-> lib **3443P/0F**（+契约 part79）；契约翻转力实证（门条件短路 → 钉 (b)
-> 红）。**已知边界**：iframe 文档元素同被收养章盖 → 门会抛（spec rendered
-> iframe 是 fully active，FIXME 浏览上下文树判定，corpus 无观测面）；
-> handle 形态章主文档重插无对称清除（既有机制面貌）。gates：clippy
-> --workspace -D warnings（test-guard 包裹）/fmt clean、零新增依赖、
-> release runner 含 R5250 符号。账本见
-> [evidence/2026-10-24-m2s47-showmodal-fully-active-gate.md](html-semantics-compat/evidence/2026-10-24-m2s47-showmodal-fully-active-gate.md)。
-> **下一步**：按分诊地图 D 族 focus/inert 10F（focus-previous-outside
-> 3F 既有挂账为首靶，focusability/inert/inert-svg-hittest 等跟 进）；
-> parser form element pointer 4F **已缓行**（2026-10-23 用户决策：与
-> declarative shadow DOM（H）打捆 parser 批次、M2 收口后尾段单独立项）。
-> **切片间隙**：本切片为 shim 面（part01/03/04），下一挂账 D 族亦 shim
-> 面——间隙开放，开工前查 oracle master 碰撞记录。
+> **▶ 当前状态（2026-10-24 M2 切片 48 收口）**：D 族 focus/inert 10F
+> 逐案单跑取证后重分诊——可收口面仅 focusability 1F（R5251）。**重
+> 分诊**：focus-previous-outside 3F + form-submit-dialog-shadow 1F →
+> **挂账（H 族前置）**——首层根因是 `<template shadowrootmode=open>`
+> 声明式 shadow root 从未被提升（`host.shadowRoot` 返 null，
+> `querySelector` 即炸），shim 全 part 无 shadowrootmode 处理
+>（attachShadow 命令式已有），4F 记入 H 族「parser+渲染流联合切片」
+> 范围，R4600 焦点恢复 shadow/slot 边界是其后续面；dialog-inert 1F +
+> modal-dialog-ancestor-is-inert 1F + inert-svg-hittest 1F +
+> inert-node-is-unselectable 1F + modal-dialog-selection 1F → **挂账
+>（渲染流面）**——elementFromPoint 对 open dialog 返 null / 点击穿透
+> inert 祖先 / 选择窗口空串，同底座 = 命中测试几何链缺失，与 C 族
+> top-layer/UA 布局 15F 合并记账。**根因**（focusability）：Tab 可聚焦
+> 判定两处均无 editing host 分支——runner `dispatch_tab_focus` 页面候选
+> 序选择器不含 contenteditable 宿主（本案观测路径，testdriver
+> send_keys TAB）；host `FocusManager::scan_node` 同缺口（MoveFocus 效果
+> 面）。spec：editing host 是 focusable area（HTML §focusable-area）。**落
+> 地（R5251 两刀）**：runner dispatch_tab_focus 候选选择器尾补
+> `[contenteditable]` + host 门（`isContentEditable`（R3187 枚举态）真
+> 且父不可编辑 → 入零序；嵌套 editable 非 host / `contenteditable=false`
+> 孤岛不入序；显式 tabindex 优先原臂，原生可聚焦元素落原 else 臂——首版
+> 误让 button 落 CE 臂 continue 掉，回归当场修正）；dom FocusManager 补
+> `contenteditable_state`/`is_editable`/`is_editing_host` 三 helper +
+> scan_node 零序分支。**验证**：dialog-focusability 单案目标子测试
+> **Fail → Pass**；interactive-elements 全域 98 files 482 subtest
+> **425P/55F/2T 对 s47 逐位 REG 0 / GAIN 1**；zero-dom lib 866P/0F
+>（+3 新单测，fail-first 先行）；zero-engine lib 3444P/0F（+契约
+> part02 R5251）；fmt/clippy clean（test-guard 包裹）；release runner
+> 含 R5251 JS 串锚点。账本见
+> [evidence/2026-10-24-m2s48-editing-host-focusable.md](html-semantics-compat/evidence/2026-10-24-m2s48-editing-host-focusable.md)。
+> **下一步**：按挂账序转 B 族 light dismiss 5F 分诊（invoker/backdrop
+> 面）；H 前置 4F 与渲染流面 5F（并入 C 族记账）维持挂账；parser form
+> element pointer 4F **已缓行**（2026-10-23 用户决策：与 declarative
+> shadow DOM（H）打捆 parser 批次、M2 收口后尾段单独立项）。
+> **切片间隙**：本切片为 runner 页面序脚本面（testharness.rs）+ dom
+> FocusManager 面（crates/dom）——下一挂账 B 族 light dismiss 预期
+> engine shim 面（part01 dialog 事件），间隙开放，开工前查 oracle
+> master 碰撞记录。
 >
 > **▶ 上轮状态（2026-10-23 M2 切片 46 收口）**：余 60F 归因分诊落档（六族
 > 地图——A closedby×slot 交叉 16F（crbug 417571176 Chrome-parity 同红）、

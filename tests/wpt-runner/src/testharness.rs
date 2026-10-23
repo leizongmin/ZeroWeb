@@ -10250,6 +10250,12 @@ fn dispatch_action(
 /// sequential focus navigation）；起点 = 页面真实焦点（`document.activeElement` 身份
 /// 比对——querySelector 同源 _makeProxy 缓存 identity 相等，handle 兜底双判）；
 /// 无下一可聚焦 → 焦点不变（真浏览器 Tab 落浏览器 UI，headless 近似驻留）。
+/// R5251（html-semantics M2 切片 48，2026-10-24）：候选集补 editing host——
+/// contenteditable true 状态且父不可编辑的元素是 focusable area（WPT
+/// dialog-focusability：`<dialog contenteditable=true open>` 须入 Tab 序）。isContentEditable
+/// 走 shim R3187 枚举态（大小写不敏感 + inherit 继承）；嵌套 editable 非 host 与
+/// contenteditable=false 孤岛不入序。显式 tabindex 元素优先 tabIndex 臂（含 ""）。
+/// https://html.spec.whatwg.org/multipage/interaction.html#focusable-area
 /// https://html.spec.whatwg.org/multipage/interaction.html#sequential-focus-navigation
 /// https://html.spec.whatwg.org/multipage/interaction.html#focusing-steps
 fn dispatch_tab_focus(webview: &mut WebView) -> Option<String> {
@@ -10258,7 +10264,7 @@ fn dispatch_tab_focus(webview: &mut WebView) -> Option<String> {
     // ——appendChild 动态元素天然在面（引擎 cached_html 快照路径的窗口期不适用）。
     let script = "(function(){\
         var act=document.activeElement;\
-        var all=document.querySelectorAll('a[href],area[href],button,input,select,textarea,summary,[tabindex]');\
+        var all=document.querySelectorAll('a[href],area[href],button,input,select,textarea,summary,[tabindex],[contenteditable]');\
         var pos=[],zero=[];\
         for(var i=0;i<all.length;i++){\
             var el=all[i];\
@@ -10267,7 +10273,13 @@ fn dispatch_tab_focus(webview: &mut WebView) -> Option<String> {
             if(ti==='-1')continue;\
             if(el.tagName==='INPUT'&&String(el.type).toLowerCase()==='hidden')continue;\
             var n=parseInt(ti,10);\
-            if(n>0)pos.push([n,el]);else zero.push(el);\
+            if(n>0){pos.push([n,el]);continue;}\
+            if(ti===null&&el.hasAttribute('contenteditable')){\
+                if(!el.isContentEditable)continue;\
+                var par=el.parentElement;\
+                if(par&&par.isContentEditable)continue;\
+                zero.push(el);\
+            }else{zero.push(el);}\
         }\
         pos.sort(function(a,b){return a[0]-b[0];});\
         var seq=[];\
