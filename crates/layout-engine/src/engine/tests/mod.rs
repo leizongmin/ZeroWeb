@@ -820,3 +820,6 @@ mod r5242_inline_table_float_anchor;
 /// R5243（CSS2 §10.3.5 × §17.2.1 × §17.5.1）auto 宽 inline-table 入 float Σ、
 /// table-row 裸文本匿名 cell 与纯 inline 容器锚定判据锚点。
 mod r5243_inline_table_auto_measure_anchor;
+/// R5244（UAX #9 HL1）CSS direction 定段落基方向锚点——LTR 块 R-first run 视觉序
+/// = 逻辑序、plaintext HL4 例外与 rtl 臂回归守。
+mod r5244_bidi_ltr_para_base_anchor;

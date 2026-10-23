@@ -687,9 +687,24 @@ fn bidi_override_mapping(text: &str, is_rtl: bool, mirror_glyphs: bool) -> BidiR
     })
 }
 
+/// R5244：CSS direction 定段落基方向（UAX #9 HL1）kill-switch——`=0` 回退内容
+/// auto-detect（P2/P3 首强字符侦测，修前 LTR 上下文的既有行为）。
+fn css_para_base_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("ZW_BIDI_LTR_PARA_BASE").as_deref() != Ok("0"))
+}
+
 /// BiDi reorder with CSS `direction` context.
 /// When `is_rtl` is true and the text needs BiDi processing, sets paragraph level to RTL (level 1).
-fn bidi_reorder_with_direction(text: &str, preserve_all_paragraphs: bool, is_rtl: bool) -> BidiReorderedText {
+/// `hl4_plaintext`：调用方（[`BidiFragmentCursor::with_direction`]）已把 CSS direction 与
+/// `unicode-bidi:plaintext` 折叠进 `is_rtl`，此处需独立知道 plaintext 以保 HL4 内容
+/// auto-detect（plaintext 不受 CSS direction 约束）。
+fn bidi_reorder_with_direction(
+    text: &str,
+    preserve_all_paragraphs: bool,
+    is_rtl: bool,
+    hl4_plaintext: bool,
+) -> BidiReorderedText {
     use unicode_bidi::{BidiInfo, Level};
 
     // 快速检查：如果文本为空或全是 ASCII 且 LTR，不需要 BiDi 处理
@@ -730,8 +745,19 @@ fn bidi_reorder_with_direction(text: &str, preserve_all_paragraphs: bool, is_rtl
     }
 
     // UBA paragraph level: None = auto-detect, Some(Level::rtl()) = RTL, Some(Level::ltr()) = LTR.
-    // CSS `direction: rtl` sets paragraph base direction to RTL (UAX #9 HL1).
-    let para_level = if is_rtl { Some(Level::rtl()) } else { None };
+    // CSS `direction: rtl` sets paragraph base direction to RTL (UAX #9 HL1)。
+    // R5244：direction:ltr 原实现也传 None（auto-detect）——P3 首强字符侦测把 R 开头
+    // run（"א + - × ÷"）判成 RTL 段**整段反转**，而 CSS 语义下 ltr 块的中性字符应随
+    // 嵌入方向解析为 L（UAX #9 N1/N2，sor/eor = L），视觉序 = 逻辑序（bidi-breaking-001
+    // ref 页 bdo ltr 与 test 页 R-first run 双页反排实证；HL4 plaintext 例外保持
+    // auto-detect）。https://unicode.org/reports/tr9/#HL1
+    let para_level = if is_rtl {
+        Some(Level::rtl())
+    } else if hl4_plaintext || !css_para_base_on() {
+        None
+    } else {
+        Some(Level::ltr())
+    };
     let bidi_info = BidiInfo::new(text, para_level);
     bidi_reorder_paragraphs(&bidi_info, text, preserve_all_paragraphs)
 }
@@ -848,7 +874,7 @@ impl BidiFragmentCursor {
         let enabled = super::runtime_flags::bidi_fragment_source();
         // unicode-bidi: plaintext → paragraph level auto-detect (CSS Writing Modes §2.2)
         let effective_rtl = is_rtl && !is_plaintext;
-        let reordered = bidi_reorder_with_direction(text, enabled, effective_rtl);
+        let reordered = bidi_reorder_with_direction(text, enabled, effective_rtl, is_plaintext);
         let identity = reordered.visual_text == text
             && reordered
                 .visual_to_logical
@@ -979,7 +1005,10 @@ mod tests {
     };
 
     fn bidi_reorder_with_mapping(text: &str) -> BidiReorderedText {
-        bidi_reorder_with_direction(text, true, false)
+        // HL4 plaintext 语义（内容 auto-detect）——下列各测试钉的是 P3 段落侦测 +
+        // 段落切分/回滚机制本身，非 CSS direction 基方向语义（R5244 后者见
+        // css_ltr_para_base_keeps_r_first_run_logical）。
+        bidi_reorder_with_direction(text, true, false, true)
     }
 
     #[test]
@@ -1042,10 +1071,28 @@ mod tests {
 
     #[test]
     fn bidi_reorder_rollback_mode_stops_after_first_paragraph() {
-        let reordered = bidi_reorder_with_direction("אבג\nדה", false, false);
+        // hl4_plaintext=true = auto-detect 语义（R5244 前唯一路径），钉段落回滚机制。
+        let reordered = bidi_reorder_with_direction("אבג\nדה", false, false, true);
         assert_eq!(reordered.visual_text, "גבא\n");
         assert_eq!(reordered.visual_to_logical, vec![4..6, 2..4, 0..2, 6..7]);
         assert_eq!(reordered.visual_is_rtl, vec![true; 4]);
+    }
+
+    /// R5244（UAX #9 HL1）：CSS direction:ltr 块内 R-first run 的中性字符随嵌入方向
+    /// 解析为 L（N1/N2，sor/eor=L）→ 视觉序 = 逻辑序，不整段反转（修前 P3 首强
+    /// 侦测判 RTL 段 → "גבא"，bidi-breaking-001 双页反排实证）。
+    #[test]
+    fn css_ltr_para_base_keeps_r_first_run_logical() {
+        // direction:ltr + R 开头内容：段落基强制 LTR，强 R 字符保位、中性字符不反转。
+        let reordered = bidi_reorder_with_direction("א + -", false, false, false);
+        assert_eq!(reordered.visual_text, "א + -");
+        assert_eq!(reordered.visual_is_rtl, vec![true, false, false, false, false]);
+        // HL4 plaintext 同参仍走内容 auto-detect（首强 א → RTL 段 → 整段反转）。
+        let plaintext = bidi_reorder_with_direction("א + -", false, false, true);
+        assert_eq!(plaintext.visual_text, "- + א");
+        // direction:rtl 臂不受影响（基 level 1，整段反转）。
+        let rtl = bidi_reorder_with_direction("א + -", false, true, false);
+        assert_eq!(rtl.visual_text, "- + א");
     }
 
     #[test]
