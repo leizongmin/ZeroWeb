@@ -566,6 +566,31 @@
         }
         _icLink = _icParent ? _zwNodeParent[_icParent] : null;
       }
+      // 反链走尽未证明在档：先经宿主持久 handle→selector 反查复核（R5247，
+      // html-semantics M2 切片 44）——apply 换代重注册清 _zwNodeParent 反链后，
+      // 旧 handle 形 proxy（静态树物化产物）链断假阴性 disconnected
+      //（focus-after-close「Complex dialog usage」：show 时捕获的 prevFocused
+      // input proxy 孤儿化 → pf.focus() 误入 R114 detached 臂 → activeElement
+      // 回落撞换代空壳节点）。反查表不随换代清（viaHnd 实证），命中且宿主树
+      // __zw_contains 真值在档 → true。误活象限全保持：显式 remove 已在函数头
+      // _zwRemovedHandles 挡（不达此处）；未挂载 createElement 宿主树游离 →
+      // contains false；反查 miss 落下方 rect 探测原兜底。
+      if (typeof __zw_selector_for_handle === 'function') {
+        try {
+          var _icSelR5247 = __zw_selector_for_handle(String(handle));
+          // 同一性核验（part04 getter R5247 同款）：反查 selector 回查文档命中同
+          // handle 才认在档——shadow 树内元素宿主扁平 selector 命中别元素不复核，
+          // R5181 反链 shadow 穿越判定权威保持；兼消多实例 selector 歧义。
+          if (_icSelR5247) {
+            var _icElR5247 = null;
+            try { _icElR5247 = globalThis.document.querySelector(_icSelR5247); } catch (_e5247q2) {}
+            if (_icElR5247 && String(_icElR5247.__zwHandle) === String(handle)
+                && typeof __zw_contains === 'function') {
+              return __zw_contains('html', _icSelR5247) === '1';
+            }
+          }
+        } catch (_eICR5247) {}
+      }
       // 反链走尽未证明在档：回落 rect 探测（getter 同款——append 已应用且在布局树的
       // 元素命中；getBoundingClientRect 缺失或空 → disconnected）。
       if (typeof __zw_getBoundingClientRect === 'function') {

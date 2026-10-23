@@ -2365,6 +2365,38 @@
         //   的同一 execute 内可能暂报 false（layout-dependent probe）；text/comment 节点无布局 rect → append
         //   后仍报 false（少见 `textNode.isConnected` 检查，documented）。Document 节点恒 connected（见 literal）。
         if (prop === 'isConnected') {
+          // R5247（html-semantics M2 切片 44）：handle 形换代孤儿前置复核——apply
+          // 换代重注册清 _zwNodeParent 反链后，旧 handle 形 proxy（静态树物化产物）
+          // 反链上行断 + rect 探测空 → 双假阴性 disconnected
+          //（focus-after-close「Complex dialog usage」：show 时捕获的 prevFocused
+          // input proxy 孤儿化 → pf.focus() 误入 R114 detached 臂 → activeElement
+          // 回落撞换代空壳节点）。宿主持久 handle→selector 反查（不随换代清）+
+          // __zw_contains 宿主树真值在档 → true 短路（本块反链循环含 R91 host
+          // rect 等中途 return，后置复核不可达——真值短路须前置）。false/miss 落
+          // 原全路径：同步窗口 append（宿主 contains 未反映、反链 parentSel 记账
+          // 在）反链真值优先不受损；显式 remove（_zwRemovedHandles 记账）与未挂载
+          // createElement（反查 miss）语义原样。
+          if (!sel && handle
+              && !(typeof _zwRemovedHandles !== 'undefined' && _zwRemovedHandles && _zwRemovedHandles[handle])
+              && typeof __zw_selector_for_handle === 'function') {
+            try {
+              var _icSelR5247c = __zw_selector_for_handle(String(handle));
+              // 同一性核验：反查 selector 回查文档须命中**同 handle**——shadow 树内
+              // 元素（detached shadowRoot，反链 R91 权威判定）的宿主扁平 selector 在
+              // 文档查询空间命中的是**别元素**，handle 不合 → 不短路、落反链原路径
+              //（focus-after-close「moved to shadow root」/「shadow DOM host」回归
+              // 面）；同时消多实例文档 selector 歧义。
+              if (_icSelR5247c) {
+                var _icElR5247 = null;
+                try { _icElR5247 = globalThis.document.querySelector(_icSelR5247c); } catch (_e5247q) {}
+                if (_icElR5247 && String(_icElR5247.__zwHandle) === String(handle)
+                    && typeof __zw_contains === 'function'
+                    && __zw_contains('html', _icSelR5247c) === '1') {
+                  return true;
+                }
+              }
+            } catch (_eICR5247c) {}
+          }
           if (sel) {
             // R4200：同步移除标记优先（`_zwIsConnected` part01 同款门）——脚本内
             // remove() 后（host mutation 尚未应用）isConnected 立即为 false（spec

@@ -73,3 +73,4 @@ include!("js_dom_bridge_tests/part72.rs");
 include!("js_dom_bridge_tests/part73.rs");
 include!("js_dom_bridge_tests/part74.rs");
 include!("js_dom_bridge_tests/part75.rs");
+include!("js_dom_bridge_tests/part76.rs");
