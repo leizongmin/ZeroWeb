@@ -740,6 +740,26 @@
       return;
     }
     if (!_zwIsConnected(sel, handle)) throw new globalThis.DOMException('showModal: dialog is not connected', 'InvalidStateError');
+    // R5250（html-semantics M2 切片 47）：spec「show a modal dialog」步 3——subject 的
+    // node document 非 fully active → 抛。dialog-showModal「not attached to any pages」
+    // 第二断言面：detached dialog 被 `doc.body.appendChild` 移入 implementation.
+    // createHTMLDocument 文档后连接门失效——M3 扩批 XLIII 的 `_zwUnmarkRemoved`（新父
+    // 即脱离 removed 态）+ host 快照滞后 `__zw_contains` 恒 1，双信号都判连接。owner
+    // doc 经收养章读：handle 形态走既有 `__zwAdoptDocByHandle`（R327/R191 落表），
+    // sel 形态走 `__zwAdoptDocBySel`（part03 `_r191adoptBody` 落表；主文档 append 族
+    // `_zwUnmarkAdoptDocSel` 对称清除）。重插主文档后章已删 → 判 fully active 不抛。
+    // 已知边界：iframe 文档元素同样被 R191/R327 盖章 → 本门会抛——spec 中 rendered
+    // iframe 文档是 fully active（FIXME: 浏览上下文树 active 判定；corpus 无 iframe 内
+    // showModal 面，暂按 not-active 收窄）。
+    // https://html.spec.whatwg.org/multipage/interactive-elements.html#dom-dialog-showmodal
+    var _r5250OwnDoc = null;
+    try {
+      if (handle && globalThis.__zwAdoptDocByHandle) _r5250OwnDoc = globalThis.__zwAdoptDocByHandle[String(handle)];
+      else if (sel && globalThis.__zwAdoptDocBySel) _r5250OwnDoc = globalThis.__zwAdoptDocBySel[sel];
+    } catch (_e5250o) {}
+    if (_r5250OwnDoc && _r5250OwnDoc !== globalThis.document) {
+      throw new globalThis.DOMException('showModal: document is not fully active', 'InvalidStateError');
+    }
     if (!_dispatchWithBubble(key, sel, handle, _makeToggleEvent('beforetoggle', 'closed', 'open', true, invokerSrc))) return;
     if (!_zwIsConnected(sel, handle)) return; // beforetoggle 内被移除 → 中止（不开、无 toggle）
     if (_zwTopLayer[key]) return; // beforetoggle 内 showPopover → showing → 中止

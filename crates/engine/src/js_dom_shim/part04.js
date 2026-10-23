@@ -6235,6 +6235,8 @@
               // 短路返 null）恒 null、removal-pause tick 误判（track-remove-insert-
               // ready-state 的 host 通道缺口根因之一）。
               try { if (typeof _zwUnmarkRemoved === 'function') _zwUnmarkRemoved(_r334ChildSel); } catch (_e334um) {}
+              // R5250：sel 子重插清除收养章（XLV 同款对称面——showModal fully-active 门）。
+              try { if (typeof _zwUnmarkAdoptDocSel === 'function') _zwUnmarkAdoptDocSel(_r334ChildSel); } catch (_e5250um2) {}
               try {
                 // （_r334OldSel 已在 wire 前读取——XLV）
                 // R334：removed record 的兄弟字段——wire 前的兄弟 getter 快照。
@@ -6269,6 +6271,10 @@
             // R34xx：重新插入清除移除标记（append 后元素回到文档）。
             if (sel) _zwUnmarkRemoved(sel);
             if (child && child.__zwSelector) _zwUnmarkRemoved(child.__zwSelector);
+            // R5250：重插主文档树清除 sel 收养章（showModal fully-active 门对称面——
+            // 回插后 node document 恢复 active document）。
+            if (sel) _zwUnmarkAdoptDocSel(sel);
+            if (child && child.__zwSelector) _zwUnmarkAdoptDocSel(child.__zwSelector);
             // js-dom M4 R81：无 handle 的轻量节点（CDATASection 等 plain object）——append 到
             // handle 父时入 registry（host 无对应 mutation 类型；WPT Node-properties
             // testDiv.textContent 期望 CDATA "1234"+"5678" 计入拼接）。
@@ -6551,6 +6557,8 @@
                   var ca86 = ceAdded[ci86];
                   if (ca86 && ca86.__zwHandle) _zwUnmarkRemovedHandle(ca86.__zwHandle);
                   if (ca86 && ca86.__zwSelector && typeof _zwUnmarkRemoved === 'function') _zwUnmarkRemoved(ca86.__zwSelector);
+                  // R5250：append 重插清除 sel 收养章（fully-active 门对称面）。
+                  if (ca86 && ca86.__zwSelector && typeof _zwUnmarkAdoptDocSel === 'function') _zwUnmarkAdoptDocSel(ca86.__zwSelector);
                 }
               }
               // R2994 connectedCallback：子树按父连接态传播（父连入 → 子树连入；未观察/非 custom 仅传播）。
@@ -7372,6 +7380,8 @@
               // 随连接视图丢失（corner-cases focusin removes-and-reinserts 臂：R4600
               // focusing steps 让 focusin 真实触发后暴露的面）。
               try { if (typeof _zwUnmarkRemoved === 'function') _zwUnmarkRemoved(_r334bChildSel); } catch (_e334bum) {}
+              // R5250：带位变体重插清除 sel 收养章（R334 appendChild 同款对称面）。
+              try { if (typeof _zwUnmarkAdoptDocSel === 'function') _zwUnmarkAdoptDocSel(_r334bChildSel); } catch (_e5250um) {}
               try {
                 var _r334bOldSel = null;
                 try {
@@ -7899,6 +7909,8 @@
                   var ia87 = _ibAdd[ci87];
                   if (ia87 && ia87.__zwHandle) _zwUnmarkRemovedHandle(ia87.__zwHandle);
                   if (ia87 && ia87.__zwSelector && typeof _zwUnmarkRemoved === 'function') _zwUnmarkRemoved(ia87.__zwSelector);
+                  // R5250：insertBefore 重插清除 sel 收养章（R87 恢复段对称面）。
+                  if (ia87 && ia87.__zwSelector && typeof _zwUnmarkAdoptDocSel === 'function') _zwUnmarkAdoptDocSel(ia87.__zwSelector);
                 }
               }
               // R2994 connectedCallback：子树按父连接态传播。

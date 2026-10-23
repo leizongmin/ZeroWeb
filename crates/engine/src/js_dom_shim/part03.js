@@ -14463,6 +14463,13 @@
     }
   }
   function _zwUnmarkRemoved(sel) { if (sel) delete _zwRemovedSels[sel]; }
+  // R5250（html-semantics M2 切片 47）：sel 键控收养章清除——元素重插主文档树即脱离
+  // 收养文档（spec concept-node-adopt 对称面；showModal fully-active 门消费，见
+  // part01 `_zwDialogShowModal` R5250 注记）。与 `_zwUnmarkRemoved` 同款 append 族
+  // 挂点（part04 appendChild/insertAdjacent/insertBefore 三处同步调用）。
+  function _zwUnmarkAdoptDocSel(sel) {
+    if (sel && globalThis.__zwAdoptDocBySel) delete globalThis.__zwAdoptDocBySel[sel];
+  }
   function _zwIsRemoved(sel) { return !!(sel && _zwRemovedSels[sel]); }
   // js-dom M4 R86：handle 移除标记（sel 版同款语义）——removeChild/remove 的 handle 节点
   // 标记已移除，NodeIterator/TreeWalker 的 order 快照扫描跳过（spec：迭代集合是 live 的，
@@ -18830,6 +18837,16 @@
         try {
           (function _r191adoptBody(n2) {
             if (!n2 || typeof n2 !== 'object') return;
+            // R5250：sel 形态收养章（proxy 携 `__zwSelector`；handle 形态走上方既有表）——
+            // showModal fully-active 门（part01 R5250）的 owner doc 数据源。detached 文档
+            // 收养后 `_zwUnmarkRemoved` 使连接门失效（host 快照滞后 contains=1），本表是
+            // 「node document ≠ active document」的唯一 JS 侧信号。
+            try {
+              if (n2.__zwSelector) {
+                if (!globalThis.__zwAdoptDocBySel) globalThis.__zwAdoptDocBySel = {};
+                globalThis.__zwAdoptDocBySel[String(n2.__zwSelector)] = doc;
+              }
+            } catch (_e5250st) {}
             if (n2.__zwHandle) {
               if (!globalThis.__zwAdoptDocByHandle) globalThis.__zwAdoptDocByHandle = {};
               globalThis.__zwAdoptDocByHandle[String(n2.__zwHandle)] = doc;

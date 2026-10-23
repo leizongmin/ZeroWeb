@@ -1,12 +1,50 @@
 # HTML Semantics 兼容 — html/semantics 语义面（主攻大域）
 
 **版本**: v2.0
-**日期**: 2026-10-23（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 46 收口（余 60F 归因分诊六族地图落档 + 历史 menu 面 IDL 归属收口（R5249），全域 423P/57F/2T REG 0 / GAIN 3），下一步按挂账序推进；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**日期**: 2026-10-24（v1.0 立项 2026-10-08）
+**状态**: Active——M2 切片 47 收口（E 族重分诊 5F→1F + showModal fully-active 门（R5250），全域 424P/56F/2T REG 0 / GAIN 1），下一步按分诊地图 D 族推进；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-23 M2 切片 46 收口）**：余 60F 归因分诊落档（六族
+> **▶ 当前状态（2026-10-24 M2 切片 47 收口）**：E 族 dialog API 语义 5F
+> 逐项核证后重分诊收窄为 1F 收口（R5250 showModal fully-active 门）。**重
+> 分诊**：close-via-attribute 2F → **挂账（Chrome-parity 同红）**——现行
+> spec（2026-09 版）dialog attribute change steps 明文「The `close` event
+> will not be fired」，whatwg/html#5802 至今 open、测试 2024-05 移 tentative
+> 即提案未落地，实现即背离真实浏览器；dialog-active-document 1F → **挂账
+>（接口面缺口）**——createHTMLDocument 产物文档 createElement 是 R3018
+> `_zwMEl` 本地节点（无接口 IDL），`showModal` 方法不存在，修复属
+> detached-doc 元素模型工程；movebefore 1F → **改判 A/B 族**——依赖
+> moveBefore + closedby + userActivation 特性栈。**根因**（showModal
+> 「not attached to any pages」第二断言面）：detached dialog 经
+> `doc.body.appendChild` 移入 createHTMLDocument 文档后，M3 扩批 XLIII 的
+> `_zwUnmarkRemoved`（新父即脱离 removed 态）+ host 快照滞后
+> `__zw_contains` 恒 1，连接门双信号均判连接 → showModal 误开；spec 步 3
+> 「node document 非 fully active → 抛」缺失，而 JS 侧唯一信号是收养章
+>（handle 形态已有 `__zwAdoptDocByHandle`，sel 形态只盖代理对象、
+> showModal 持三元组不可达）。**落地（R5250 四刀）**：part03
+> `_zwUnmarkAdoptDocSel` helper + `_r191adoptBody` 落 sel 键控收养章
+> `__zwAdoptDocBySel`；part01 showModal 连接门后加 fully-active 门（章
+> 非空且 ≠ active document → 抛 InvalidStateError）；part04 主文档
+> append 族**五处**对称删章（R334 两分支/R334b/R86/R87——首版漏
+> XLV/R86 分支被契约 (c) 回插臂红 + 探针反查补齐）。**验证**：
+> dialog-showModal 单案目标子测试 **Fail → Pass**；interactive-elements
+> 全域 98 files 482 subtest **424P/56F/2T 对 s46 逐位 REG 0 / GAIN 1**；
+> lib **3443P/0F**（+契约 part79）；契约翻转力实证（门条件短路 → 钉 (b)
+> 红）。**已知边界**：iframe 文档元素同被收养章盖 → 门会抛（spec rendered
+> iframe 是 fully active，FIXME 浏览上下文树判定，corpus 无观测面）；
+> handle 形态章主文档重插无对称清除（既有机制面貌）。gates：clippy
+> --workspace -D warnings（test-guard 包裹）/fmt clean、零新增依赖、
+> release runner 含 R5250 符号。账本见
+> [evidence/2026-10-24-m2s47-showmodal-fully-active-gate.md](html-semantics-compat/evidence/2026-10-24-m2s47-showmodal-fully-active-gate.md)。
+> **下一步**：按分诊地图 D 族 focus/inert 10F（focus-previous-outside
+> 3F 既有挂账为首靶，focusability/inert/inert-svg-hittest 等跟 进）；
+> parser form element pointer 4F **已缓行**（2026-10-23 用户决策：与
+> declarative shadow DOM（H）打捆 parser 批次、M2 收口后尾段单独立项）。
+> **切片间隙**：本切片为 shim 面（part01/03/04），下一挂账 D 族亦 shim
+> 面——间隙开放，开工前查 oracle master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-23 M2 切片 46 收口）**：余 60F 归因分诊落档（六族
 > 地图——A closedby×slot 交叉 16F（crbug 417571176 Chrome-parity 同红）、
 > B light dismiss 5F、C top-layer/UA 布局 15F（渲染流面）、D focus/inert
 > 10F、E dialog API 语义 5F（可 shim 收口候选）、F details 零散 4F/1T +
