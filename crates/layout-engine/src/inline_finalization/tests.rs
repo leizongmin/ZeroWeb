@@ -1827,7 +1827,7 @@ fn test_build_inline_owner_ancestor_map_chain_order_and_coverage() {
 /// 折回文本段（R4300c），首内容属子孙（R5177 分歧独立归因）时 min_x 推导右移
 /// （position-relative-033-ref 蓝框右移 6em 形态）；传映射后外盒 x = 子孙首缘 −
 /// 自身**流内落账** frame（R5248：fold 落流与否按首 run ml−raw 检测）。空映射
-/// 维持自身推导（旧行为锚）。
+/// 维持自身推导（旧行为锚；R5249 起自身名下另含首槽 spacer，见函数内注）。
 #[test]
 fn test_sync_inline_box_x_tightens_to_descendant_first_edge() {
     let mut doc = Document::new();
@@ -1879,12 +1879,15 @@ fn test_sync_inline_box_x_tightens_to_descendant_first_edge() {
         ..LayoutBox::default()
     };
 
-    // 旧行为锚：空映射 → 盒 x = 自身名下（折回 nbsp 段）min_x − bl 2 > 0。
+    // 旧行为锚：空映射 → 盒 x = 自身名下 min_x − bl 2。R5249 起自身名下含首槽
+    // spacer（element-first 折入落流，x = cursor 0 + bl 2 = 2），min_x 收到内容
+    // 前缘 → 旧式 −bl 双扣后恰得 0（R4297-F 式在 fold 落流 + raw ml 0 时代退化
+    // 为正确值）；折回段独占 min_x 的旧前提随 spacer 落槽退役。
     sync_inline_child_boxes_from_ifc_with_ancestors(&mut root, &context, &styles, &HashMap::new());
     let x_legacy = root.children[0].x;
     assert!(
-        x_legacy > 0.0,
-        "空映射（旧行为）：外盒 x 应右移到折回段首缘，实际 {x_legacy}"
+        x_legacy.abs() < 0.01,
+        "空映射（旧行为）：外盒 x = spacer 前缘 2 − bl 2 = 0，实际 {x_legacy}"
     );
 
     // R5232：真实映射 → 外盒 x 收紧到 inner1 首缘候选。R5248 修订：候选只扣

@@ -835,3 +835,7 @@ mod r5247_vertical_inline_metric_transpose;
 /// 盒 x = 流内内容首缘 − 流内落账 frame（折入落流按首 run ml−raw 检测），
 /// box-level 边框/背景归位守。
 mod r5248_inline_border_x_double_count;
+/// R5249（CSS2 §10.2/§8.4 × R4332 折入语义）element-first 首槽 spacer 锚点——
+/// 首内容为元素子时外层自身 ml+pl 以零宽 spacer 落首槽、fold 仍落自名 run，
+/// 流内推进与内层盒守。
+mod r5249_element_first_fold_spacer_anchor;

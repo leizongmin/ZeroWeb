@@ -832,6 +832,9 @@ pub(crate) fn sync_inline_child_boxes_from_ifc_with_ancestors(
         /// 实际落账**的 frame，折入落流与否 = `first_ml − raw_ml > 0` 检测。
         first_ml: f32,
         text_empty: bool,
+        /// R5249：任一 fragment 非空（门信号）——element-first spacer（空文本首
+        /// run）落槽后首 run 记账属 spacer，门不得按首 run 空文本误判整盒无内容。
+        any_text: bool,
         count: u32,
         /// slice13：全部 fragment 是否同在一行（CJK 逐字分词/拉丁多词会把单行元素
         /// 拆成多 run——同线多 run 的 content area 并集仍等于单一 content area，
@@ -858,6 +861,7 @@ pub(crate) fn sync_inline_child_boxes_from_ifc_with_ancestors(
                 first_pl: run.padding_left,
                 first_ml: run.margin_left,
                 text_empty: run.text.is_empty(),
+                any_text: !run.text.is_empty(),
                 count: 0,
                 first_line_idx: line_idx,
                 single_line: true,
@@ -867,6 +871,9 @@ pub(crate) fn sync_inline_child_boxes_from_ifc_with_ancestors(
                 max_y: y + run.height,
             });
             a.count += 1;
+            if !run.text.is_empty() {
+                a.any_text = true;
+            }
             if a.first_line_idx != line_idx {
                 a.single_line = false;
             }
@@ -940,7 +947,7 @@ pub(crate) fn sync_inline_child_boxes_from_ifc_with_ancestors(
             continue;
         };
 
-        if !agg.text_empty {
+        if agg.any_text {
             // slice13 挂账（信息级 i4）：排除面——vertical writing / 相对定位 / 含块级子
             // 容器（pure_inline_container=false）中的 inline 不进本分支，上报缺席
             //（gBCR 仍报行盒几何）。同类语义面未修未挂账，备查（R4384 轴邻接项）。
@@ -957,7 +964,11 @@ pub(crate) fn sync_inline_child_boxes_from_ifc_with_ancestors(
                 // 本就无 ml，右缘随之对齐。
                 let raw_ml = InlineFormattingContext::resolve_inline_margin(&style.margin_left, style);
                 let fold_landed = (agg.first_ml - raw_ml).max(0.0);
-                child.x = agg.min_x - agg.first_pl - fold_landed;
+                // R5249：首 run 为空文本（element-first spacer）时 fragment x 记
+                // 推进前 border-box 缘（break_lines 空 inline 分支口径，不含 pl），
+                // pl 项不扣；非空 run x = content 缘（含 pl），照扣。
+                let pl_term = if agg.text_empty { 0.0 } else { agg.first_pl };
+                child.x = agg.min_x - pl_term - fold_landed;
                 // R5232：子孙首缘候选更小（首内容属子孙）时收紧——只收紧不放松。
                 if let Some(cand) = min_inherited_x.get(&child_id) {
                     child.x = child.x.min(*cand);

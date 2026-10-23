@@ -1776,9 +1776,9 @@ impl InlineFormattingContext {
         let children = doc.child_nodes(elem_id);
         let mut text_pending = String::new();
         let mut emitted_text_run = false;
-        let flush_pending = |text_pending: &mut String, items: &mut Vec<InlineItem>, first: bool, last_text: bool| {
+        let flush_pending = |text_pending: &mut String, items: &mut Vec<InlineItem>, first: bool, last_text: bool| -> bool {
             if text_pending.is_empty() {
-                return;
+                return false;
             }
             let trimmed = if run_preserves {
                 std::mem::take(text_pending)
@@ -1792,7 +1792,7 @@ impl InlineFormattingContext {
                 collapse_whitespace(text_pending)
             };
             if trimmed.is_empty() {
-                return;
+                return false;
             }
             // R4382（CSS Text 3 §3.1）：walk 路径的 run 归因 inline 元素自身——
             // text-transform 同扁平化 run 语义（layout 读元素 computed；Path B 读
@@ -1859,7 +1859,84 @@ impl InlineFormattingContext {
                 glyph_descent,
             }));
             *text_pending = String::new();
+            true
         };
+        // R5249：element-first 首槽 spacer——首内容为元素子（flatten/递归站位）时
+        // flush 无产出，旧实现无条件置 emitted_text_run 把首槽消耗掉，外层自身
+        // ml+pl（R4332 折入含 border advance）整体丢失（033-ref：外 span bl 2px
+        // 悬流外、内容 −2px 实证）。此处以空文本零宽 run 归因外层自身落首槽——
+        // break_lines 空 inline 分支消费 ml/pl 推进（CSS2 §10.2/§8.4），fold 仍落
+        // 自名 run、盒 x 主臂 `first_ml − raw_ml` 检测与链臂口径逐字节不变。
+        // ml/pl 全零不落（绝大多数 inline 无水平 frame，零扰动）。
+        let emit_first_slot_spacer = |items: &mut Vec<InlineItem>| {
+            let flat_font_id = self.shaping_font_id_for_style(
+                Some(elem_id),
+                style,
+                is_ahem_font,
+                letter_spacing,
+                word_spacing,
+                false,
+            );
+            let flat_font_ids = self
+                .ordered_font_ids_for_style(style)
+                .or_else(|| self.font_ids_overrides.get(&elem_id).cloned())
+                .unwrap_or_else(|| flat_font_id.into_iter().collect());
+            let (glyph_ascent, glyph_descent) = match self.glyph_verticals_overrides.get(&elem_id) {
+                Some(&(ga, gd)) => (ga, gd),
+                None => Self::run_glyph_verticals(
+                    glyph_verticals_enabled,
+                    &flat_font_ids,
+                    "",
+                    font_size,
+                    is_ahem_font,
+                    line_height,
+                    style.is_some_and(|s| matches!(s.line_height, zero_style_system::LineHeightValue::Normal)),
+                ),
+            };
+            items.push(InlineItem::Text(TextRun {
+                ws_override: run_ws,
+                ruby_rt_ascent: 0.0,
+                text: String::new(),
+                node_id: elem_id,
+                font_size,
+                line_height,
+                vertical_align: style
+                    .map(|s| s.vertical_align.clone())
+                    .unwrap_or(VerticalAlignValue::Baseline),
+                letter_spacing,
+                word_spacing,
+                margin_left,
+                margin_right: 0.0,
+                padding_left,
+                padding_right: 0.0,
+                padding_top,
+                padding_bottom,
+                border_top,
+                border_bottom,
+                is_ahem_font,
+                font_id: flat_font_id,
+                is_rtl: style.is_some_and(|s| matches!(s.direction, zero_style_system::DirectionValue::Rtl)),
+                bidi_override: Self::element_bidi_override(style),
+                is_plaintext_bidi: style
+                    .map(|s| matches!(s.unicode_bidi, zero_style_system::UnicodeBidiValue::Plaintext))
+                    .unwrap_or_else(|| {
+                        self.plaintext_bidi_override || self.plaintext_bidi_overrides.contains(&elem_id)
+                    }),
+                glyph_ascent,
+                glyph_descent,
+            }));
+        };
+        // 站位共用：flush 无产出且首槽未消耗时落外层 spacer（R5249）。
+        let maybe_emit_first_slot_spacer =
+            |flushed: bool, emitted_text_run: bool, items: &mut Vec<InlineItem>| {
+                if !flushed
+                    && !emitted_text_run
+                    && runtime_flags::element_first_spacer()
+                    && (margin_left != 0.0 || padding_left != 0.0)
+                {
+                    emit_first_slot_spacer(items);
+                }
+            };
 
         for &gc in &children {
             let Some(node) = doc.get(gc) else { continue };
@@ -1991,7 +2068,8 @@ impl InlineFormattingContext {
                                 from_style.max(from_overrides)
                             };
                             if frame_sum > 0.0 {
-                                flush_pending(&mut text_pending, items, !emitted_text_run, false);
+                                let flushed = flush_pending(&mut text_pending, items, !emitted_text_run, false);
+                                maybe_emit_first_slot_spacer(flushed, emitted_text_run, items);
                                 emitted_text_run = true;
                                 if let Some(item) = self.build_flatten_run_for_element(doc, gc, styles) {
                                     items.push(item);
@@ -2019,7 +2097,8 @@ impl InlineFormattingContext {
                             .map(|(c, p)| c.color != p.color)
                             .unwrap_or_else(|| self.color_divergent_walk_nodes.contains(&gc));
                         if color_divergent {
-                            flush_pending(&mut text_pending, items, !emitted_text_run, false);
+                            let flushed = flush_pending(&mut text_pending, items, !emitted_text_run, false);
+                            maybe_emit_first_slot_spacer(flushed, emitted_text_run, items);
                             emitted_text_run = true;
                             if let Some(item) = self.build_flatten_run_for_element(doc, gc, styles) {
                                 items.push(item);
@@ -2042,14 +2121,16 @@ impl InlineFormattingContext {
                             }
                             continue;
                         }
-                        flush_pending(&mut text_pending, items, !emitted_text_run, false);
+                        let flushed = flush_pending(&mut text_pending, items, !emitted_text_run, false);
+                        maybe_emit_first_slot_spacer(flushed, emitted_text_run, items);
                         emitted_text_run = true;
                         if let Some(item) = self.build_flatten_run_for_element(doc, gc, styles) {
                             items.push(item);
                         }
                         continue;
                     }
-                    flush_pending(&mut text_pending, items, !emitted_text_run, false);
+                    let flushed = flush_pending(&mut text_pending, items, !emitted_text_run, false);
+                    maybe_emit_first_slot_spacer(flushed, emitted_text_run, items);
                     emitted_text_run = true;
                     // R4308：递归不绕过主路径特例门——collect 主路径对 ruby / bidi
                     // 控制字符子不走 walk（R1022 ruby rt/rp 注音语义 / R4300c 控制字符
