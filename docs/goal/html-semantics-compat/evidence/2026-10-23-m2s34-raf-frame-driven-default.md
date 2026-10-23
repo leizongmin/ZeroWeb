@@ -27,15 +27,26 @@ GAIN 8 = closedby-complex normal DOM nesting 的 clicking dialogB/popoverB
 真实盒，不再误 retarget）。forms 域 4627 subtest 双跑逐位一致 + 合成面
 逐字节一致：帧驱动对该两面零行为变化（rAF 直接用户语料全在 dialog 域）。
 
-## 侦察（挂账 G 根因钉定，未动）
+## 侦察（G 移除 + H 重新定性，2026-10-23 同日续勘）
 
-`_zwDialogModalFocusGateOk`（part01.js:1068）反走模态栈只判**栈顶**的
-shadow-including contains——嵌套 modal 栈中下层 modal dialog 作为栈顶的
-DOM 祖先被 gate 误拒 → runner `resolve_pointer_target` 命中循环排除其盒
-（best 空）→ 回落栈顶模态 backdrop 语义（`msel`）。spec 嵌套语义应为
-top-layer 元素及其 shadow-including 祖先链豁免。gate 被 focus gate /
-hit-test inert 排除 / 指针命中三路共用（part06 同源引用），修需独立切
-片全对账（含 uievents/pointer 语料面）。
+- **挂账 G 移除**：拉取 spec 原文钉定（interaction.html#blocked-by-a-
+  modal-dialog）——「blocked by a modal dialog subject if subject is
+  the **topmost dialog element**… every node that is connected… with the
+  exception of the subject element and its **flat tree descendants**,
+  must become inert」。现行 spec 就是「栈顶模态 + flat tree 后代豁免」
+  **无祖先链豁免**——`_zwDialogModalFocusGateOk` 只判栈顶的语义与 spec
+  一致。s33 探针三层栈（人造面）里下层 modal 被 gate 拒是 spec 正确切
+  行，当时误关链的真因是快照滞后（本切片 F 已修）。无语料红面，不扩切
+  片。
+- **挂账 H 重新定性**：最小探针实证 `<template shadowrootmode=open>`
+  declarative shadow root 在 shim 不支持（`host.shadowRoot` null、
+  template 留在 light DOM 当普通子元素）——closedby-complex shadow
+  slots 16F 的 elements 实为 **template 内被当活 DOM 的元素**（R371
+  模板伪象），布局零盒 + 拓扑错，light dismiss 语义无从谈起。修 flat
+  contains 是修在伪象上；真修 = declarative shadow DOM（parser 解析 +
+  shadowRoot getter + **shadow 树进 render doc**——后者归渲染流）。
+  H 归因改记 declarative shadow DOM 缺口，16F 维持红面待 parser/渲染
+  切片。
 
 ## 已知边界
 

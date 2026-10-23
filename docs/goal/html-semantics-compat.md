@@ -13,20 +13,24 @@
 > 面**：dialog filter 82 files 411 subtest **337P/73F/1T → 345P/65F/1T
 > REG 0 / GAIN 8**（closedby-complex normal dialogB/popoverB——快照新
 > 鲜后命中循环拿到真实盒）；testharness-html 合成面 7 files 14 subtest
-> 逐字节一致；forms 域 401 files **4627 subtest 逐位一致**。**侦察钉定
-> 挂账 G 根因**：`_zwDialogModalFocusGateOk` 只判栈顶模态 contains——嵌
-> 套 modal 中下层 dialog（栈顶的 DOM 祖先）被 gate 误拒 → runner 命中循
-> 环排除其盒 → 回落栈顶 backdrop；spec 应 top-layer 元素及祖先链豁免，
-> gate 三路共用（focus/hit-test/pointer）需独立切片全对账。**挂账 I（新
-> ）**：全量 testharness-html-semantics（2594 用例）>5400s 跑不完且
-> `--json` 缓冲到最后超时全丢——runner 增量输出或 make 分域入口。gates：
-> runner Makefile 一行无 Rust 变化、零新增依赖。账本见
+> 逐字节一致；forms 域 401 files **4627 subtest 逐位一致**。**同日续勘
+> 归因修正**：**挂账 G 移除**——spec 原文（#blocked-by-a-modal-dialog）
+> 就是「栈顶模态 + flat tree 后代豁免」无祖先链豁免，gate 只判栈顶与
+> spec 一致，三层栈探针是人造面（误关真因 = 快照滞后已修）；**挂账 H
+> 重新定性**——最小探针实证 `<template shadowrootmode>` declarative
+> shadow root 不支持（shadowRoot null、template 当活 DOM=R371 伪象），
+> shadow slots 16F 归因 declarative shadow DOM 缺口（parser + shadow 树
+> 渲染，后者归渲染流），修 light dismiss flat contains 是修在伪象上。
+> **挂账 I（新）**：全量 testharness-html-semantics（2594 用例）>5400s
+> 跑不完且 `--json` 缓冲到最后超时全丢——runner 增量输出或 make 分域入
+> 口。gates：runner Makefile 一行无 Rust 变化、零新增依赖。账本见
 > [evidence/2026-10-23-m2s34-raf-frame-driven-default.md](html-semantics-compat/evidence/2026-10-23-m2s34-raf-frame-driven-default.md)。
-> **下一步**：挂账 G（modal gate 嵌套祖先豁免，独立切片含 uievents/
-> pointer 对账）或按挂账序 H（shadow 影域 light dismiss）、E 余项 ESC
-> 栈序、impl-doc wrapper requestClose、anchor-with-inline 导航缺口、
-> parser form element pointer 4F、custom command `--` 前缀 CommandEvent
-> defer、ESC 组栈边缘乱序、非模态 close 不出组栈、R371 模板残留。
+> **下一步**：E 余项 ESC 栈序（simple 5F——统一 top-layer 序覆盖
+> popover 候选，涉 R4300 组栈改造）或按挂账序 impl-doc wrapper
+> requestClose、anchor-with-inline 导航缺口、parser form element
+> pointer 4F、custom command `--` 前缀 CommandEvent defer、ESC 组栈边缘
+> 乱序、非模态 close 不出组栈、R371 模板残留；declarative shadow DOM
+> （H 定性后）待 parser/渲染流联合切片。
 >
 > **▶ 上轮状态（2026-10-23 M2 切片 33 收口）**：light dismiss 两遍模型
 >（挂账 E 第一刀）。**落地（R5234）**：`__zw_dialog_light_dismiss_check`
