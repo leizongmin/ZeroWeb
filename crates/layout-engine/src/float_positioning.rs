@@ -377,7 +377,7 @@ pub(crate) fn shrink_pure_text_floats(
             && !(float_inline_sum_on
                 && c.node_id
                     .and_then(|id| styles.get(&id))
-                    .is_some_and(crate::intrinsic_sizing::float_sigma_eligible_inline_table))
+                    .is_some_and(crate::intrinsic_sizing::float_inline_table_exempt))
     });
     if has_block_or_replaced {
         return;
@@ -419,7 +419,41 @@ pub(crate) fn shrink_pure_text_floats(
     // text_max_w+frame）且扩臂关（R4921 gate 不受本开关影响，其归因用
     // `ZW_INTRINSIC_ATOMIC_GATE`）。
     let non_text_w = if adjusted_text_max_w.is_none() && float_inline_sum_on {
-        crate::intrinsic_sizing::inline_children_non_text_width(dom_id, doc, styles)
+        // R5243（CSS2 §10.3.5）：auto 宽 inline-table 子按 [`inline_table_auto_max_content`]
+        // 独立测量入 Σ（definite 部分仍由 inline_children_non_text_width 计 width+margin）。
+        // 表 c.width 此刻可能是 taffy 拉伸伪影（R4032）不可用；纯 DOM 测量无伪影。主 walk
+        // 对 inline-table 已停（R4921 gate R5243 扩臂），内文不再双计。
+        // kill-switch 随 `ZW_FLOAT_INLINE_TABLE_MEASURE=0`（豁免谓词同关，块叠口径复原）。
+        let auto_table_sum: f32 = if crate::intrinsic_sizing::float_inline_table_measure_on() {
+            box_node
+                .children
+                .iter()
+                .filter_map(|c| {
+                    let id = c.node_id?;
+                    let cs = styles.get(&id)?;
+                    if !matches!(cs.display, DisplayValue::InlineTable) {
+                        return None;
+                    }
+                    if crate::intrinsic_sizing::resolve_intrinsic_real_length(&cs.width, cs).is_some() {
+                        return None; // definite 已由 Σ 函数按 width+margin 计
+                    }
+                    let ml = crate::intrinsic_sizing::resolve_intrinsic_real_length(&cs.margin_left, cs).unwrap_or(0.0);
+                    let mr =
+                        crate::intrinsic_sizing::resolve_intrinsic_real_length(&cs.margin_right, cs).unwrap_or(0.0);
+                    // R5243（margin-right-applies-to-014 实证）：表自身 border/padding 入账
+                    // ——max-content 只测内容，表框是 margin-box 的一部分；框值来自盒构建
+                    // 期样式解析（非 taffy 拉伸伪影，可靠）。
+                    let frame = c.border_left + c.border_right + c.padding_left + c.padding_right;
+                    Some(
+                        (ml + frame + crate::intrinsic_sizing::inline_table_auto_max_content(id, doc, styles) + mr)
+                            .max(0.0),
+                    )
+                })
+                .sum()
+        } else {
+            0.0
+        };
+        crate::intrinsic_sizing::inline_children_non_text_width(dom_id, doc, styles) + auto_table_sum
     } else {
         0.0
     };
@@ -1869,8 +1903,10 @@ pub(crate) fn adjust_float_positions_with_context(
             // R5242（与 shrink_pure_text_floats 同口径）：definite 宽 inline-table 子是
             // 行内级原子，其 preferred 宽已由 5a.1 的 R4920 Σ 臂先行落定——不入块叠 max
             //（块叠 max 会把 Σ 结果重收缩回 max(子)，撤掉行内求和；008 实证 100→50）。
-            // auto 宽 inline-table 不豁免（float_sigma_eligible_inline_table 谓词文档），
-            // ZW_FLOAT_INLINE_SUM=0 时两处豁免同关（维持旧块叠语义）。
+            // R5243：auto 宽 inline-table 同豁免（Σ 补源见 5a.1；豁免后 content_child_widths
+            // 为空时本臂跳过收缩，float 保持 5a.1 扩臂值——块叠 max(50) 不再撤 Σ(100)）。
+            // ZW_FLOAT_INLINE_SUM=0 两处同关；`ZW_FLOAT_INLINE_TABLE_MEASURE=0` 收窄回
+            // R5242 definite 语义（float_inline_table_exempt 内部门控）。
             let float_inline_sum_on = std::env::var("ZW_FLOAT_INLINE_SUM").as_deref() != Ok("0");
             let content_child_widths: Vec<f32> = child
                 .children
@@ -1882,7 +1918,7 @@ pub(crate) fn adjust_float_positions_with_context(
                         && !(float_inline_sum_on
                             && c.node_id
                                 .and_then(|id| styles.get(&id))
-                                .is_some_and(crate::intrinsic_sizing::float_sigma_eligible_inline_table))
+                                .is_some_and(crate::intrinsic_sizing::float_inline_table_exempt))
                 })
                 .map(|c| c.width)
                 .collect();

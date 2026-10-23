@@ -118,6 +118,78 @@ impl PostprocessEnvFlag {
 /// 然后将 inline-block 子元素的 LayoutBox 坐标更新为行内格式化结果。
 ///
 /// 跳过 flex/grid/inline-flex/inline-grid 容器——它们的子元素由 flex/grid 布局定位。
+/// R5243（CSS2 §17.5.1）：inline-table 的 IFC 基线合成 = **首行基线**——首行首 cell 的
+/// 内容基线；空 cell 自其**内容盒下边缘**合成（table-vertical-align-baseline-008 的
+/// 断言即此）；行/表皆空回退 None（调用方维持旧底边口径）。collect_items 原子构造点
+/// 只有表盒 h 可用（布局树不可达，其 `_ => h` 臂为底边近似），本 helper 在 step 10 以
+/// LayoutBox 子树几何合成：cell 内容顶 + strut ascent（(cell content 高 − fs)/2 +
+/// fs×ratio，R4380/R990 口径；fs/字体取 cell 向上首个命中 styles 的盒——R5168 合成
+/// cell 的 node_id = 宿主行，字体随行继承）。
+/// 近似：多 cell 行取首 cell（CSS2 行基线 = 各 cell 基线 max，单基线行精确；
+/// FIXME(R5243 后继)：行内多 cell 基线取 max）。
+fn inline_table_first_row_baseline(
+    table: &LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> Option<f32> {
+    let style_of = |b: &LayoutBox| b.node_id.and_then(|id| styles.get(&id));
+    let is_row = |b: &LayoutBox| style_of(b).is_some_and(|s| matches!(s.display, DisplayValue::TableRow));
+    let is_group = |b: &LayoutBox| style_of(b).is_some_and(|s| matches!(s.display, DisplayValue::TableRowGroup));
+    // 首行：table 直接 TableRow 子，或 row-group 的首个 TableRow 子（显式行结构；
+    // 匿名行表 R5243 起亦有 row 盒）。无行结构（异常形态）→ None。
+    let first_row = table.children.iter().find(|c| is_row(c)).or_else(|| {
+        table
+            .children
+            .iter()
+            .filter(|c| is_group(c))
+            .find_map(|g| g.children.iter().find(|c| is_row(c)))
+    })?;
+    let cell = first_row.children.first()?;
+    let cell_frame = cell.border_top + cell.padding_top;
+    // cell 有内容（盒子树非空，或 DOM node 有子——R5168 合成 cell node_id=宿主行）→
+    // strut 基线；空 cell → 内容盒下边缘合成。
+    let has_content = !cell.children.is_empty() || cell.node_id.is_some_and(|id| doc.first_child(id).is_some());
+    if !has_content {
+        return Some(cell.y + cell_frame + cell.content_height);
+    }
+    // R5243 回归收窄（border-collapse-empty-row 实证）：strut 近似只对 **文本内容** cell
+    // 可靠——纯原子内容（inline-block span 等）cell 的基线 = 内容基线（行盒/原子规则），
+    // cell 字号 strut 会高估（该案基线全绿走旧底边口径，helper 一介入 0.91→1.24%）。
+    // 文本叶判定 = 子树内首个无子非零高盒且 node_id 是 **Text 节点**（R5243 匿名文本盒
+    // context=文本 id；元素叶如 span 排除）。无文本叶 → None（旧底边口径）。
+    fn has_text_leaf(b: &LayoutBox, doc: &Document) -> bool {
+        if b.children.is_empty()
+            && b.height > 0.0
+            && b.node_id.is_some_and(|id| {
+                doc.get(id)
+                    .is_some_and(|n| matches!(n.kind, zero_dom::NodeKind::Text(_)))
+            })
+        {
+            return true;
+        }
+        b.children.iter().any(|c| has_text_leaf(c, doc))
+    }
+    if !has_text_leaf(cell, doc) {
+        return None;
+    }
+    // fs/字体：cell 向上（cell → row → table）首个命中 styles 的盒。
+    let styled = style_of(cell)
+        .or_else(|| style_of(first_row))
+        .or_else(|| style_of(table))?;
+    let fs = crate::inline::resolve_inline_font_size_px(styled);
+    let ratio = if styled
+        .font_family
+        .iter()
+        .any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"))
+    {
+        0.8
+    } else {
+        0.928
+    };
+    let strut_ascent = ((cell.content_height - fs) / 2.0 + fs * ratio).max(0.0);
+    Some(cell.y + cell_frame + strut_ascent)
+}
+
 pub(super) fn adjust_inline_block_positions(
     root: &mut LayoutBox,
     doc: &Document,
@@ -328,6 +400,18 @@ pub(super) fn adjust_inline_block_positions(
         .chain(ib_indices.iter().filter_map(|&idx| {
             let child = &root.children[idx];
             let node_id = child.node_id?;
+            // R5243（CSS2 §17.5.1）：inline-table 基线 = 首行基线（几何合成见
+            // [`inline_table_first_row_baseline`]；None 回退旧底边口径）。仅水平模式
+            // ——垂直模式原子盒走 central baseline（R4469），基线语义不同。
+            if !root.writing_mode.is_vertical_block_flow()
+                && styles
+                    .get(&node_id)
+                    .is_some_and(|s| matches!(s.display, DisplayValue::InlineTable))
+                && let Some(b) = inline_table_first_row_baseline(child, doc, styles)
+                && b > 0.0
+            {
+                return Some((node_id, b));
+            }
             child.inline_block_baseline.filter(|&b| b > 0.0).map(|b| (node_id, b))
         }))
         .collect();
@@ -418,10 +502,39 @@ pub(super) fn adjust_inline_block_positions(
     });
     // 前驱 in-flow 块级子存在 = 原点偏置的必要条件（纯 inline 容器的 IFC 行盒本就
     // 从原点起排，无偏置；inline-replaced-width-012 的 p>img 双 img 页面回退实证）。
-    let has_block_child = root
-        .children
-        .iter()
-        .any(|c| c.is_block_level && !c.is_absolute && !c.is_fixed && matches!(c.float, FloatValue::None));
+    // R5243：判据改 **display 基准**（与下方 R5215 `has_real_block_element_child`
+    // 同款）——旧 `is_block_level` 盒旗标把 inline-table 的盒包装误判成块级子
+    //（旗标在 R5215 已注证不可靠），纯 inline 容器（float 内 span + auto
+    // inline-table，table-vertical-align-baseline-009）被误锚：锚 = 首原子
+    // (taffy 堆叠位 − fragment y) = 表自身 50px 伪堆叠偏移，整行原子被拉到块流位。
+    // kill-switch `ZW_ANCHOR_REALBLOCK_DISPLAY=0` 回退盒旗标判据（OnceLock 单读，
+    // 稳定策略开关不进逐节点热路径——guidelines #9）。
+    fn anchor_realblock_display_on() -> bool {
+        static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *ON.get_or_init(|| std::env::var("ZW_ANCHOR_REALBLOCK_DISPLAY").as_deref() != Ok("0"))
+    }
+    let has_block_child = if anchor_realblock_display_on() {
+        root.children.iter().any(|c| {
+            !c.is_absolute
+                && !c.is_fixed
+                && matches!(c.float, FloatValue::None)
+                && c.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+                    matches!(
+                        s.display,
+                        DisplayValue::Block
+                            | DisplayValue::FlowRoot
+                            | DisplayValue::ListItem
+                            | DisplayValue::Table
+                            | DisplayValue::Flex
+                            | DisplayValue::Grid
+                    )
+                })
+        })
+    } else {
+        root.children
+            .iter()
+            .any(|c| c.is_block_level && !c.is_absolute && !c.is_fixed && matches!(c.float, FloatValue::None))
+    };
     // 垂直书写模式块轴为 X（box-offsets-rel-pos-vrl-002 谱系）：y 锚定仅水平模式。
     let is_vertical_wm = root.writing_mode.is_vertical_block_flow();
     let anchor_path = !has_non_ws_dom_text && has_block_child && !is_vertical_wm;

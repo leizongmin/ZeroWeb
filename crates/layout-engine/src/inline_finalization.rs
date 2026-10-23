@@ -3792,15 +3792,16 @@ pub(crate) fn remeasure_inline_only_containers(
             let has_block_children = box_node.children.iter().any(|c| {
                 c.is_block_level
                         && !is_atomic_inline_family_box(c, styles)
-                        // R5242：definite 宽 inline-table 子是行内级原子（R5242 同口径，
-                        // 见 float_sigma_eligible_inline_table 文档）——高度已并入本 IFC
-                        // 行盒（ib_sizes R5242 扩展），不构成「块级子」阻止容器高收缩到
-                        // 行盒高（008：wrapper 200 应 100）。auto 宽维持旧块叠语义。
-                        // kill-switch 同上 `ZW_INLINE_TABLE_IB_SIZING=0`。
+                        // R5242/R5243：inline-table 子是行内级原子（豁免口径见
+                        // float_inline_table_exempt——R5242 definite + R5243 auto）——高度
+                        // 已并入本 IFC 行盒（ib_sizes R5242 扩展），不构成「块级子」阻止
+                        // 容器高收缩到行盒高（008：wrapper 200 应 100；009 auto 表同域）。
+                        // kill-switch：R5242 部分 `ZW_INLINE_TABLE_IB_SIZING=0`；R5243
+                        // auto 部分 `ZW_FLOAT_INLINE_TABLE_MEASURE=0`。
                         && !(*INLINE_TABLE_IB_SIZING
                             && c.node_id
                                 .and_then(|id| styles.get(&id))
-                                .is_some_and(crate::intrinsic_sizing::float_sigma_eligible_inline_table))
+                                .is_some_and(crate::intrinsic_sizing::float_inline_table_exempt))
                         && !c.is_absolute
                         && !c.is_fixed
             });
