@@ -2,7 +2,7 @@
 
 **版本**: v2.0
 **日期**: 2026-10-21（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 39 收口（挂账 focus-in-shadow 跨流：content 视图活缓存 + replaceWith 补插入半边 + focus delegate 递归，double-nested 2F→2P、focus-after-close 2F→1F，REG 0），下一步按挂账序推进
+**状态**: Active——M2 切片 39 收口（挂账 focus-in-shadow 跨流：content 视图活缓存 + replaceWith 补插入半边 + focus delegate 递归，double-nested 2F→2P、focus-after-close 2F→1F，REG 0），下一步按挂账序推进；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
@@ -32,12 +32,13 @@
 > innerHTML= 的宿主侧子树变化。gates：lib **3431P/0F**、clippy/fmt
 > clean、零新增依赖。账本见
 > [evidence/2026-10-23-m2s39-focus-in-shadow.md](html-semantics-compat/evidence/2026-10-23-m2s39-focus-in-shadow.md)。
-> **下一步**：按挂账序 parser form element pointer 4F（用户决策门禁，
-> 单独立项征询）、custom command `--` 前缀 CommandEvent defer、ESC 组
-> 栈边缘乱序、非模态 close 不出组栈、R371 模板残留、summary-less
+> **下一步**：按挂账序 custom command `--` 前缀 CommandEvent defer、
+> ESC 组栈边缘乱序、非模态 close 不出组栈、R371 模板残留、summary-less
 > details 内非激活后代翻转（s37）、focus-after-close Complex dialog
-> usage focus 恢复深层（s39 剩余 1F）；declarative shadow DOM（H 定性
-> 后）待 parser/渲染流联合切片。
+> usage focus 恢复深层（s39 剩余 1F）；parser form element pointer 4F
+> **已缓行**（2026-10-23 用户决策：与 declarative shadow DOM（H）打捆
+> parser 批次、M2 收口后尾段单独立项，触发条件见
+> [决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)）。
 >
 > **▶ 上轮状态（2026-10-23 M2 切片 38 收口）**：挂账 appendChild move
 > 后兄弟读 stale 收口。**探针钉定**（zz-probe 两迭代，验证后已删）：
