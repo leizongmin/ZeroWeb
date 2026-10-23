@@ -6268,6 +6268,40 @@
       }
     }
   })();
+  // R5238（html-semantics M2 切片 36）：HTMLDialogElement.prototype.requestClose——
+  // plain 世界供给（_zwMEl 产物原型链 R125 已接本 prototype，detached/XML doc 的
+  // dialog 元素此前四方法全缺——dialog-requestclose-3 断言面）。trap 世界 proxy 的
+  // get trap 走 part04 prop 特判（R4200 完整语义版），先于原型命中——本方法只服务
+  // plain 世界，不与其重叠可达。spec「request to close the dialog」步骤：无 open →
+  // return；not connected 或 node document 非 fully active → return。plain 世界树
+  // 节点只出自 detached/XML doc 工厂（主 doc createElement 恒 proxy），ownerDocument
+  // 恒非 globalThis.document（无 browsing context → 非 fully active）——两 return
+  // 条件对 plain 世界全覆盖（detached doc 挂树节点 spec connected 为 true，落
+  // not-fully-active 支；未挂树落 not-connected 支，ownerDocument 判定同覆盖）。
+  // close watcher 机制只在 trap 世界存在——plain 世界无 watcher 可请求，条件判毕恒
+  // no-op，open 保持（dialog-requestclose-3 "should not close ... inactive
+  // document" 断言面）。
+  // https://html.spec.whatwg.org/multipage/interactive-elements.html#request-to-close-the-dialog-element
+  try {
+    if (globalThis.HTMLDialogElement && globalThis.HTMLDialogElement.prototype
+        && !Object.prototype.hasOwnProperty.call(globalThis.HTMLDialogElement.prototype, 'requestClose')) {
+      Object.defineProperty(globalThis.HTMLDialogElement.prototype, 'requestClose', {
+        value: function (returnValue) {
+          try {
+            if (typeof this.getAttribute !== 'function' || this.getAttribute('open') === null) return;
+            // detached 树节点经 R167 ownerDocument accessor 读源 doc；≠ 主文档即
+            // 非 fully active（spec 步骤 2 not-connected 支在 plain 世界同被此判覆盖）。
+            if (this.ownerDocument !== globalThis.document) return;
+            // 主 doc plain 元素（本环境不存在）：无 close watcher → no-op。returnValue
+            // 按 spec 步骤 1 归一但不落任何状态——与 trap 世界 R4200 语义面互不影响。
+            void returnValue;
+          } catch (_e5238rc) {}
+        },
+        writable: true, enumerable: false, // 同 R4100/preservesPitch 惯例，for-in 面零变化
+        configurable: true,
+      });
+    }
+  } catch (_e5238mount) {}
   // R4100（html-semantics M2 切片 21）：HTMLDetailsElement.prototype.name accessor
   //（spec exclusive accordions——details.name IDL 反射 name 内容属性；`'name' in
   // HTMLDetailsElement.prototype` 判定面——WPT name-content-attribute-and-property
@@ -12979,6 +13013,27 @@
           // dismiss 案 test_driver.click(showmodalbutton) 断言面）。submit/reset
           // 仍不落本段——runner click 命令 S4J submit_script 承接，本段只补 invoker。
           try { _zwInvokerCommandActivate(_r112Act.sel, _r112Act.handle); } catch (_e4400b) {}
+        } else if (_r112Act.type === 'act:a' || _r112Act.type === 'act:area') {
+          // R5239（html-semantics M2 切片 37）：nearest activation target 是
+          // A/AREA（target 为其后代——anchor-with-inline-element 语料：a[href]
+          // 内 i/span/svg 后代 click，期望 anchor 激活 fragment 导航而非无动作；
+          // spec the-a-element activation behavior + nearest activatable ancestor
+          // 上溯语义）。receiver 自身点击（target === act 站）让位：part04
+          // click() post 段 / R106 dispatchEvent post 段已按 receiver tag 执行
+          // _zwAnchorActivate，本处再跑会双导航（hash 相同第二次 no-op，但
+          // sourceElement/nav 线程面重复置位）。summary 包裹面（summary>a>i）：
+          // nearest 先命中 a（更近），summary 翻转豁免由冒泡站 forward 钩的
+          // 交互祖先检查承接（_zwHasInteractiveAncestorBefore4009），两面正交。
+          // https://html.spec.whatwg.org/multipage/interaction.html#run-synthetic-activation-behavior
+          var _r5239Same = false;
+          try {
+            var _r5239Tk = _elKey(targetSel, targetHandle);
+            var _r5239Ak = _elKey(_r112Act.sel, _r112Act.handle);
+            _r5239Same = _r5239Tk != null && _r5239Ak != null && _r5239Tk === _r5239Ak;
+          } catch (_e5239k) { _r5239Same = false; }
+          if (!_r5239Same) {
+            try { _zwAnchorActivate(_r112Act.sel, _r112Act.handle); } catch (_e5239a) {}
+          }
         } else {
           try {
             _zwFireInputChange(_r112Act.sel, _r112Act.handle);
@@ -13558,6 +13613,22 @@
       try { cKey = _elKey(cur.__zwSelector, cur.__zwHandle); } catch (_eCK4009) { cKey = null; }
       if (sKey != null && cKey != null && cKey === sKey) return false; // 到达 summary 站
       if (_zwIsInteractiveContentEl(cur)) return true;
+      // R5239：SVG ns a[href] 同为可激活祖先（SVG a 有 activation behavior——
+      // navigate；真浏览器 nearest activation target 就近消化后 summary 不翻转，
+      // anchor-with-inline-element svg 案断言面）。HTML interactive content 定义
+      // 不列 SVG a（`_zwIsInteractiveContentEl` 的 ns 门对非 HTML ns 恒 false，
+      // 扩它会改 label 等共享消费面），本 summary 消费面单独补祖先判定。
+      var _r5239cTag = '';
+      try { _r5239cTag = _realTag(cur.__zwSelector, cur.__zwHandle); } catch (_e5239ct) { _r5239cTag = ''; }
+      if (_r5239cTag === 'A' || _r5239cTag === 'AREA') {
+        var _r5239cHref = '';
+        try {
+          _r5239cHref = cur.__zwHandle ? __zw_has_attr_handle(cur.__zwHandle, 'href')
+            : (cur.__zwSelector && typeof __zw_has_attr_lw === 'function'
+              ? __zw_has_attr_lw(cur.__zwSelector, 'href') : '');
+        } catch (_e5239ch) { _r5239cHref = ''; }
+        if (_r5239cHref === '1') return true;
+      }
       var cSel = cur.__zwSelector || null, cHnd = cur.__zwHandle || null;
       var pSel = null, pHnd = null;
       if (cHnd && typeof _zwNodeParent !== 'undefined' && _zwNodeParent && _zwNodeParent[cHnd]) {
@@ -16011,8 +16082,35 @@
       for (var g = 0; g < arguments.length; g++) _r117MVal(arguments[g]); };
     node.replaceWith = function () {
       for (var h = 0; h < arguments.length; h++) _r117MVal(arguments[h]);
-      if (node.parentNode && node.parentNode.removeChild) {
-        try { node.parentNode.removeChild(node); } catch (_eR117) {}
+      var _r5241P = node.parentNode;
+      if (!_r5241P) return;
+      // R5241（html-semantics M2 s39）：spec ChildNode.replaceWith = concept-node-replace
+      // （https://dom.spec.whatwg.org/#concept-node-replace——pre-insert 群到 node 前，
+      // 再 remove node）。旧实现仅 remove 半边，plain 树（_zwMEl 解析产物 + template
+      // content 视图活数组）的 replaceWith 替换者落空——dialog-focus-shadow-double-nested
+      // turnIntoShadowTree `template.replaceWith(host)` 后 content 数组缺 host，shadow
+      // 链断。**plain 父才走本地 splice**（childNodes 为活数组）；host proxy 父
+      // （__zwHandle/__zwSelector）的融合 childNodes 每读重建、splice 无效，保持
+      // remove-only 旧行为（host wire 的 replaceWith 由 proxy trap 面负责）。
+      var _r5241Plain = !_r5241P.__zwHandle && !_r5241P.__zwSelector;
+      var _r5241Kids = null;
+      var _r5241Idx = -1;
+      if (_r5241Plain) {
+        try { _r5241Kids = _r5241P.childNodes; } catch (_e5241k) {}
+        if (Array.isArray(_r5241Kids)) {
+          for (var i5241 = 0; i5241 < _r5241Kids.length; i5241++) {
+            if (_r5241Kids[i5241] === node) { _r5241Idx = i5241; break; }
+          }
+        }
+      }
+      if (_r5241P.removeChild) { try { _r5241P.removeChild(node); } catch (_eR117) {} }
+      if (_r5241Idx >= 0) {
+        for (var h5241 = 0; h5241 < arguments.length; h5241++) {
+          var nw5241 = arguments[h5241];
+          if (nw5241 && typeof nw5241 === 'object') { nw5241.parentNode = _r5241P; }
+          else { nw5241 = { nodeType: 3, nodeName: '#text', data: String(nw5241), parentNode: _r5241P, get textContent() { return this.data; } }; }
+          _r5241Kids.splice(_r5241Idx + h5241, 0, nw5241);
+        }
       }
     };
     node.remove = function () {

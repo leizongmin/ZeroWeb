@@ -9971,9 +9971,19 @@
       }
       // sel 子旧位剔除：移动语义（旧父可能就是同一父——快照基底已含本节点），
       // 先删旧位再按 nextSibling 插新位。
+      // R5240（html-semantics M2 切片 38）：旧位在插位**前**时剔除使 res 左移一位，
+      // pos 须同步递减——否则 splice 把节点插到 ref **后**一位（body.appendChild(input)
+      // → body.insertBefore(input, dialog) 形态：pos 按剔前索引指 dialog，剔后该索引
+      // 已是 dialog 的后继，view 序成 [dialog, input, script] 而真树是
+      // [input, dialog, script]——focus-after-close「moved in between」第二遍调用的
+      // 首断言 input.nextElementSibling 恒 script 的根因）。
       if (isSelChild182) {
         for (var d0 = res.length - 1; d0 >= 0; d0--) {
-          if (res[d0] === nd) { res.splice(d0, 1); break; }
+          if (res[d0] === nd) {
+            res.splice(d0, 1);
+            if (d0 < pos) pos--;
+            break;
+          }
         }
         if (pos > res.length) pos = res.length;
       }
@@ -13355,6 +13365,17 @@
   _defineEventSubclass('ToggleEvent', 'Event', [
     ['oldState', 'oldState', ''],
     ['newState', 'newState', ''],
+    ['source', 'source', null],
+  ]);
+  // R5243（html-semantics M2 切片 40）：CommandEvent（Event 子类）——invoker command
+  // 激活（`--` 前缀 custom command）在 target 上派发的 command 事件接口。command 默认
+  // ''（DOMString）、source 默认 null（CommandEventInit 缺省）；无 relatedTarget 字段
+  //（button-event-dispatch 语料「CommandEvent doesn't expose relatedTarget property」
+  // 断言面——读 undefined）。原型身份与 ToggleEvent 同厂（`_defineEventSubclass`）。
+  // part01 `_zwInvokerCommandActivate` 派发面（custom 态 spec 激活行为只派事件即 return）。
+  // https://html.spec.whatwg.org/multipage/form-elements.html#commandevent
+  _defineEventSubclass('CommandEvent', 'Event', [
+    ['command', 'command', ''],
     ['source', 'source', null],
   ]);
   // js-dom M4 R110（WPT Event-init-while-dispatching）：legacy initXxxEvent 族补齐——

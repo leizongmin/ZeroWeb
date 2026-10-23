@@ -1,14 +1,14 @@
 # 安装更新与崩溃反馈交付闭环
 
 **版本**：v1.0 / 2026-10-20
-**状态**：挂起（2026-10-23 用户裁定 P4 不授权、goal 挂起搁置；恢复条件=授权 P1/P4；进度见 [master](browser-delivery-loop/master.md)）
-**父目标**：[zero-web](zero-web.md) / **控制面**：[master](browser-delivery-loop/master.md)
+**状态**：终止归档（2026-10-23 用户决策搁置并归档；**非 DONE**——机制层 M1–M4 ✅，验收面被 P1/P2/P3/P4/P5 授权门挡；恢复条件=授权 P1/P4 后从归档重启；进度见 [master](browser-delivery-loop/master.md)）
+**父目标**：[zero-web](../zero-web.md) / **控制面**：[master](browser-delivery-loop/master.md)
 
 ## 0. 执行摘要与 Mission
 
 让现有浏览器交付具备可验收的安装、版本识别、更新中断恢复和本地崩溃反馈流程。先盘点现有打包与恢复入口，再选定一个平台完成最小闭环。
 
-拆分依据：2026-10-20 用户要求按 [Ladybird 建议](../research/research-ladybird-progress-2026-10-20.md)创建后续 goal，开发另行启动。
+拆分依据：2026-10-20 用户要求按 [Ladybird 建议](../../research/research-ladybird-progress-2026-10-20.md)创建后续 goal，开发另行启动。
 
 ## 基线与 Support Envelope
 
@@ -16,9 +16,9 @@
 
 范围：现有桌面平台安装/卸载、可追溯版本与构建信息、更新校验与中断回滚、本地崩溃报告、用户同意后导出反馈、会话恢复。
 
-边界：复用 [desktop-browser](archive/desktop-browser.md)、[Android 历史交付](archive/android-browser/master.md)和现有验证工具，不改变支持平台承诺。渠道、签名证书、更新源、报告服务和保留策略在 M1/M2 记录待定；没有对应授权只做本地模拟，不自动购买、发布、上传或发送消息。
+边界：复用 [desktop-browser](desktop-browser.md)、[Android 历史交付](android-browser/master.md)和现有验证工具，不改变支持平台承诺。渠道、签名证书、更新源、报告服务和保留策略在 M1/M2 记录待定；没有对应授权只做本地模拟，不自动购买、发布、上传或发送消息。
 
-碰撞：按 [run-rules §9–11](../rally/run-rules.md)协调 packaging/browser/profile/storage 和既有发布流；只修改本 goal 控制面，安装使用隔离目录与 profile。
+碰撞：按 [run-rules §9–11](../../rally/run-rules.md)协调 packaging/browser/profile/storage 和既有发布流；只修改本 goal 控制面，安装使用隔离目录与 profile。
 
 ## Done Criteria / 验收场景（P1-release）
 
@@ -45,6 +45,6 @@ DC-1 的渠道与签名要求必须在 M2 固定；本地未签名模拟只能�
 
 ## 执行与 Document Control
 
-入口：`./scripts/rally-goal-browser-delivery-loop.sh`；加 `--dry-run` 仅预览，直接执行将启动 Rally。统一授权、守卫与证据协议见 [启动说明](ladybird-followups/README.md)。
+入口：`./scripts/rally-goal-browser-delivery-loop.sh` 已随 2026-10-23 终止归档删除（重启需先获用户授权 P1/P4 并重建入口）。统一授权、守卫与证据协议见 [启动说明](../ladybird-followups/README.md)。
 
 入口仅目标变化时更新；master/evidence 持续更新，archive 只追加。本轮安装、发布和产品开发 **NOT_RUN**。启动后 `CONTINUE: <下一切片>` / `BLOCK: <真实阻塞>`；所有 DC 与适用门禁有证才 `DONE`。

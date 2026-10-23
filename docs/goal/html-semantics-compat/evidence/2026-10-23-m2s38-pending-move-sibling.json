@@ -1,0 +1,62 @@
+{
+ "meta": {
+  "slice": "M2 s38",
+  "date": "2026-10-23",
+  "R": "R5240",
+  "command": "ZW_TESTHARNESS_RAF_FRAME_DRIVEN=1 ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit N -- ./target/release/zero-wpt-runner testharness-html-semantics <filter> --json",
+  "baseline": "s37: interactive-elements 98f 482t 415P/65F/2T; forms 401f 4627t 3899P/707F/20T(/1U)",
+  "summary": {
+   "focus_after_close": "3F+1T -> 2F+1T (moved-in-between GAIN)",
+   "interactive_elements": "98f 482t 416P/64F/2T, REG 0 / GAIN 1",
+   "forms": "401f 4627t 3899P/707F/20T/1U, REG 0 / GAIN 0 (逐位一致)",
+   "engine_lib": "3430P/0F"
+  },
+  "fixes": [
+   "part04 sibling trap pending gate (sel slot merged view / ariaSync container registry)",
+   "part05 overlay R182 relocation pos sync (shared view insertion-position fix)",
+   "part04 container-append dual-form slot overwrite (stale parentSel clear)"
+  ]
+ },
+ "results": [
+  [
+   "html/semantics/interactive-elements/the-dialog-element/focus-after-close.html",
+   [
+    {
+     "name": "Focus should be moved to the previously focused element (Simple dialog usage)",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Focus should be moved to the previously focused element even if it has moved in between show/close",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Focus should be moved to the previously focused element even if it has moved to shadow DOM root in between show/close",
+     "status": "Fail",
+     "message": "assert_equals: Focus should be restored to previously focused input expected Element node <input></input> but got null"
+    },
+    {
+     "name": "Focus should be moved to the body if the previously focused element is removed",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Focus should be moved to the shadow DOM host if the previouly focused element is a shadow DOM node",
+     "status": "Pass",
+     "message": null
+    },
+    {
+     "name": "Focus should be moved to the previously focused element (Complex dialog usage)",
+     "status": "Fail",
+     "message": "assert_equals: expected Element node <input></input> but got Element node <div></div>"
+    },
+    {
+     "name": "html/semantics/interactive-elements/the-dialog-element/focus-after-close.html",
+     "status": "Timeout",
+     "message": "testharness completion callback was not called (test=function, hook=function, scripts=[201856, 23873, 6850], state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":7}, test_wait=false)"
+    }
+   ]
+  ]
+ ]
+}

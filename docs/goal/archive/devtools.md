@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-09-12
-**状态**: Done（2026-09-17 DC-1~3 判定满足——bundle pin/serve 骨架 + 四面板演示流全绿 + GUI 模式 CDP 可开关，转守成态（守成门 = make cdp-e2e + make test）；GUI 标签页桥接 / matched rules / overlay 高亮等碰头协调项挂账，见 [master.md](devtools/master.md)）
+**状态**: ✅ Completed——2026-09-17 M3 收口，DC-1~3 判定满足（——bundle pin/serve 骨架 + 四面板演示流全绿 + GUI 模式 CDP 可开关，转守成态（守成门 = make cdp-e2e + make test）；GUI 标签页桥接 / matched rules / overlay 高亮等碰头协调项挂账，见 [master.md](devtools/master.md)）
 **执行模式**: 面板可用性驱动（每面板一条可演示调试流为验收）；协议域缺口回流 cdp-protocol
 goal 或碰头协调
 **父目标**: `docs/goal/zero-web.md`（M11 浏览器应用调试能力 + M10 自动化基础延伸）
@@ -179,6 +179,6 @@ goal 或碰头协调
 
 - **入口文档**（本文件）：定义 Mission、Done Criteria、执行协议和文档治理规则。
   仅在目标本身实质变化时修改；每轮执行不重写。
-- **运行时控制平面** `docs/goal/devtools/master.md`：当前真实状态唯一控制面板。
-- **归档区域** `docs/goal/devtools/archive/`：只追加不修改。
-- **证据区域** `docs/goal/devtools/evidence/`：bundle/许可记账、面板演示流记录，持续追加。
+- **运行时控制平面** `docs/goal/archive/devtools/master.md`：当前真实状态唯一控制面板。
+- **归档区域** `docs/goal/archive/devtools/archive/`：只追加不修改。
+- **证据区域** `docs/goal/archive/devtools/evidence/`：bundle/许可记账、面板演示流记录，持续追加。

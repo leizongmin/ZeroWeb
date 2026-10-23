@@ -223,6 +223,16 @@ pub(super) fn atomic_postbreak_float_fit() -> bool {
     selected(*VALUE, || default_on("ZW_ATOMIC_POSTBREAK_FLOAT_FIT"))
 }
 
+/// R5240（CSS2 §9.5 rule 8「shortened line box」）：行首**词**放不下 float 缩短后的
+/// 剩余带宽（0 < avail < 词宽，R3785 只盖 avail≤0）时同 R4234 行首原子盒下绕——
+/// 行位下移到最早结束的重叠 float 带底重算，直到放得下或不再与 float 重叠
+///（floats-132：160px 词在 float 缩短的 140px 首行带强放溢出，满宽第二行本可容纳，
+/// 上行溢出+下行红露）。default-on；`ZW_FIRST_WORD_FLOAT_FIT=0` 回退行首词原地强放。
+pub(super) fn first_word_float_fit() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_FIRST_WORD_FLOAT_FIT"));
+    selected(*VALUE, || default_on("ZW_FIRST_WORD_FLOAT_FIT"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::select_value;

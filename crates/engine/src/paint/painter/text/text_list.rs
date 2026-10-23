@@ -1292,6 +1292,16 @@ impl super::super::Painter {
                                     .join(separator),
                             );
                         }
+                        // R5237 compound 项（url/attr/引号关键字）：绘制期此路径无宿主
+                        // 属性上下文与引号深度状态，保持 None 语义（与单值 Attr/Url 在
+                        // 此路径的 None 处理一致）。注入期已由 pipeline resolve_list_parts
+                        // 物化为文本/img 节点，正常不会落到这里。
+                        ContentListItem::Url(_) => return None,
+                        ContentListItem::Attr(_) => return None,
+                        ContentListItem::OpenQuote
+                        | ContentListItem::CloseQuote
+                        | ContentListItem::NoOpenQuote
+                        | ContentListItem::NoCloseQuote => return None,
                     }
                 }
                 Some(text)

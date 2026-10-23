@@ -570,6 +570,19 @@ pub enum ContentListItem {
         /// 可选的列表样式类型。
         style: Option<String>,
     },
+    /// url(...) 图片项（R5237，CSS Content §content-property：序列内的 \<image\> 项，
+    /// 如 `content: counter(c) url(icon.png) " label"`；单 item url 仍走 ContentValue::Url）。
+    Url(String),
+    /// attr(name) 属性引用项（R5237；单 item attr 仍走 ContentValue::Attr）。
+    Attr(String),
+    /// open-quote（CSS2 §12.4：按 quotes 属性与引号嵌套深度产出开引号字形，深度 +1）。
+    OpenQuote,
+    /// close-quote（CSS2 §12.4：深度 -1 并产出匹配闭引号字形；深度已 0 时无字形）。
+    CloseQuote,
+    /// no-open-quote（CSS2 §12.4：不产出字形，引号嵌套深度 +1）。
+    NoOpenQuote,
+    /// no-close-quote（CSS2 §12.4：不产出字形，引号嵌套深度 -1）。
+    NoCloseQuote,
 }
 
 /// 若 input 恰为单个完整函数调用 `fn_open ... )`（fn_open 含末尾 '('，如 "counter("），
@@ -727,12 +740,28 @@ fn parse_content_list(input: &str) -> Option<ContentValue> {
             items.push(ContentListItem::Str(input[start..pos].to_string()));
             pos += 1; // 消费闭合引号
         } else {
-            // 函数 token：读 ident 后须紧跟 '('
+            // 函数 token：读 ident 后须紧跟 '('；ident 含 '-'（open-quote 等关键字，
+            // R5237）。含 '-' 的未知 ident 若无 '(' 仍 None，与旧行为一致。
             let id_start = pos;
-            while pos < bytes.len() && bytes[pos].is_ascii_alphabetic() {
+            while pos < bytes.len() && (bytes[pos].is_ascii_alphabetic() || bytes[pos] == b'-') {
                 pos += 1;
             }
             let ident = &input[id_start..pos];
+            // 引号关键字（CSS2 §12.4）：裸 ident 无括号（open-quote / close-quote /
+            // no-open-quote / no-close-quote，大小写不敏感同 CSS 关键字口径）。
+            if ident.eq_ignore_ascii_case("open-quote") {
+                items.push(ContentListItem::OpenQuote);
+                continue;
+            } else if ident.eq_ignore_ascii_case("close-quote") {
+                items.push(ContentListItem::CloseQuote);
+                continue;
+            } else if ident.eq_ignore_ascii_case("no-open-quote") {
+                items.push(ContentListItem::NoOpenQuote);
+                continue;
+            } else if ident.eq_ignore_ascii_case("no-close-quote") {
+                items.push(ContentListItem::NoCloseQuote);
+                continue;
+            }
             if ident.is_empty() || pos >= bytes.len() || bytes[pos] != b'(' {
                 return None; // 非法 token
             }
@@ -758,13 +787,36 @@ fn parse_content_list(input: &str) -> Option<ContentValue> {
             } else if ident.eq_ignore_ascii_case("counters") {
                 let (name, separator, style) = parse_counters_call_args(inner)?;
                 items.push(ContentListItem::Counters { name, separator, style });
+            } else if ident.eq_ignore_ascii_case("url") {
+                // R5237：序列内 url() 图片项（载荷解析与单 item url 分支同源）。
+                let url = super::parse_extended_visual::parse_css_url_payload(inner)?;
+                items.push(ContentListItem::Url(url));
+            } else if ident.eq_ignore_ascii_case("attr") {
+                // R5237：序列内 attr() 项（空 inner 拒收，同单 item attr 分支）。
+                if inner.is_empty() {
+                    return None;
+                }
+                items.push(ContentListItem::Attr(inner.to_string()));
             } else {
-                // attr/url 等在多 item 序列暂不支持 → None（defer，同旧行为）
+                // 其余函数在多 item 序列不支持 → None（defer，同旧行为）
                 return None;
             }
         }
     }
-    if items.len() >= 2 {
+    // ≥2 item 恒 List；单 item 仅引号关键字入 List（它们无单 item 表示，且旧解析
+    // 对单关键字返 None——`content: open-quote` 旧形态整体无生成内容，新形态注入
+    // 单引号字形/深度项）。单 string/counter/url/attr 仍由 parse_content 单 item
+    // 分支处理（此处返回 None 自然落回），保持既有计算值表示不变。
+    if items.len() >= 2
+        || (items.len() == 1
+            && matches!(
+                items[0],
+                ContentListItem::OpenQuote
+                    | ContentListItem::CloseQuote
+                    | ContentListItem::NoOpenQuote
+                    | ContentListItem::NoCloseQuote
+            ))
+    {
         Some(ContentValue::List(items))
     } else {
         None

@@ -1201,23 +1201,43 @@
               if (!_handleChildren[handle]) _handleChildren[handle] = [];
               return _handleChildren[handle];
             }
+            // R5241（html-semantics M2 切片 39）：sel 模板 content 子列表**首次物化
+            // 后缓存**——深 JSON 每读重建 per-read 条目对象，跨读 mutation 落空
+            // （dialog-focus-shadow-double-nested turnIntoShadowTree 形态：首读
+            // content 拿 inner template 条目 → replaceWith 换 div → 二读 content 重
+            // 建出未替换的 template——spec the-template-element content getter
+            // 「Each time returns the same DocumentFragment」，视图子树 mutation 须
+            // 持久）。缓存数组即活树（append/insert/remove 直接 splice 该数组）。
+            // 已知边界：首读后 host 侧模板子树变化不回灌。
+            if (proxy._zwTplContentKids) return proxy._zwTplContentKids;
             // WC-M2：host 解析产物在 contents fragment（parser 真实化）——sel 路径读
             // __zw_parse_template_contents（参数化 html 的**深 JSON**，本地构建节点——
             // contents 子非文档树节点，浅 selector 二次定位不可达）。**仅非空时采用**——
             // 动态装配（createElement('template') + innerHTML=/appendChild）走
             // _handleChildren/_childNodeList（回退分支，既有语义）。
+            var _r145Built = null;
             if (sel && typeof __zw_template_contents_deep === 'function') {
               try {
                 var _tcArr = JSON.parse(__zw_template_contents_deep(sel) || '[]');
                 if (Array.isArray(_tcArr) && _tcArr.length) {
-                  var _tcParent = typeof _wrapSelector === 'function' ? _wrapSelector(sel) : null;
-                  return _tcArr.map(function (e) {
+                  // R5241（html-semantics M2 s39）：built 条目的 parentNode = content
+                  // 视图本体（spec the-template-element contents 子的父是
+                  // DocumentFragment，视图 mutation 路径 appendChild/insertBefore 的
+                  // `c.parentNode = _tplContent` 同款）。旧指模板 wrapper proxy——
+                  // 条目 replaceWith 沿 parentNode 读到 wrapper 的融合 childNodes
+                  // 而非缓存数组，mutation 落错列表（double-nested turnIntoShadowTree
+                  // 红面）。视图对象在 getter 首调时必已赋值（_r145SelKids 仅经
+                  // _tplContent 的 getter/方法触达），惰性引用安全。
+                  var _tcParent = _tplContent;
+                  _r145Built = _tcArr.map(function (e) {
                     return (typeof _zwMBuildDeepEntry === 'function') ? _zwMBuildDeepEntry(e, _tcParent) : null;
                   }).filter(Boolean);
                 }
               } catch (_eTcJ) {}
             }
-            return _childNodeList(sel, null);
+            if (_r145Built == null) _r145Built = _childNodeList(sel, null);
+            try { proxy._zwTplContentKids = _r145Built; } catch (_eTkC) { return _r145Built; }
+            return _r145Built;
           }
           // R145：fragment 视图补 cloneNode（deep）——Node.prototype 泛型的 fragment 分支
           // 递归 clone 子（每子 proxy/视图自带 cloneNode）。WPT 同用例的
@@ -1794,6 +1814,14 @@
               try { _xlPending = this._zwSelPendingParent || null; } catch (_eXlT) {}
             }
             if (_xlPending && _xlPending.parentSel) return _wrapSelector(_xlPending.parentSel);
+            // R5241（html-semantics M2 切片 39）：**容器父**（dual-form 槽 parentHandle
+            // ——s38 容器挂载路径覆写）→ 容器 wrapper。sel 子挂 shadow/fragment 容器后
+            // focus chain 上行（document/ShadowRoot.activeElement 的 parentNode walk）
+            // 须经此达 shadow 边界（focus-after-close「moved to shadow root」案
+            // document.activeElement 恒读 shadow 内元素本体、SR.activeElement 恒 null
+            // 的根因）；spec concept-node-pre-insert 步骤 6「set parent」对容器父同样
+            // 生效（ShadowRoot 是 DocumentFragment，parentNode 返 root wrapper）。
+            if (_xlPending && _xlPending.parentHandle) return _makeProxy(null, _xlPending.parentHandle);
           } catch (_eXlPp) {}
           return _parentNodeFor(sel, handle);
         }
@@ -1802,6 +1830,14 @@
           // Document（非元素）→ null。不能与 parentNode 共用 R79 的 html→document 分支：
           // parity 采集器/页面脚本沿 parentElement 上行到 html 后走进 document，node.tagName
           // 为 undefined → toLowerCase 崩溃（zeroweb-regression-guard 2026-08-17 发现）。
+          // R5241：容器槽 parentHandle——shadow root/fragment 容器**非元素** → null
+          //（spec parentElement 对非元素父跳过且无更上层可达——直接 null）。dual
+          // 槽（parentSel 并存，R97 noWire 形态）父是 sel 元素，不在此列。
+          try {
+            var _pe5241Ex = _expando[key];
+            var _pe5241 = (_pe5241Ex && _pe5241Ex._zwSelPendingParent) || this._zwSelPendingParent || null;
+            if (_pe5241 && _pe5241.parentHandle && !_pe5241.parentSel) return null;
+          } catch (_ePe5241) {}
           return _parentNodeFor(sel, handle, true);
         }
         // 元素遍历/导航 API（仅元素子/兄弟，跳过文本/注释）。handle（脱离 DOM，无 sel）→ null/[]。
@@ -1993,6 +2029,50 @@
               return _pidx >= 0 && _pidx < _pkEls.length - 1 ? _pkEls[_pidx + 1] : null;
             }
             return null;
+          }
+          // R5240（html-semantics M2 切片 38）：pending 重插窗口的兄弟读补偿——R334
+          // appendChild/insertBefore 的结构 wire 异步 drain，同 turn
+          // `__zw_element_siblings` 读 host 旧树（focus-after-close「moved in between」
+          // 案：body.appendChild(input) 移位后 nextElementSibling 恒读旧兄弟 dialog，
+          // assert_not_equals 红；「moved to shadow root」案：sel 子挂 shadow 容器后
+          // host 无该树，读恒旧 body 位）。补偿镜像 parentNode getter（M3 扩批 XLV）
+          // 的槽位双读：①sel 父槽 `_zwSelPendingParent` → 新父融合元素子列表定位
+          // （R317 视图源，含 R182 重定位「旧位剔除+新位插入」语义）；②handle 容器
+          // 记账 `_zwAriaSyncParent[sel]`（R5009 片 e）→ 容器 registry 元素定位。
+          // spec dom-nondocumenttypechildnode-nextelementsibling 树序语义按当前树
+          // （pre-insert 步骤 4「remove」同步生效），pending 视图即 JS 侧权威树。
+          if (sel) {
+            var _r5240GateKids = null;
+            try {
+              var _r5240Ex = _expando[key];
+              var _r5240Slot = (_r5240Ex && _r5240Ex._zwSelPendingParent) ? _r5240Ex._zwSelPendingParent : null;
+              if (!_r5240Slot) { try { _r5240Slot = this._zwSelPendingParent || null; } catch (_e5240t) {} }
+              if (_r5240Slot && _r5240Slot.parentSel) {
+                _r5240GateKids = _childNodeList(_r5240Slot.parentSel, null);
+              } else if (typeof _zwAriaSyncParent !== 'undefined' && _zwAriaSyncParent) {
+                var _r5240Sync = _zwAriaSyncParent[String(sel)];
+                if (_r5240Sync && _r5240Sync.parentHandle && !_r5240Sync.parentSel) {
+                  _r5240GateKids = _handleChildren[_r5240Sync.parentHandle] || [];
+                }
+              }
+            } catch (_e5240g) { _r5240GateKids = null; }
+            if (_r5240GateKids) {
+              var _r5240Els = [], _r5240Idx = -1;
+              var _r5240Self = _makeProxy(sel, handle);
+              var _r5240Resel = (typeof globalThis.__zwPendReselGet === 'function') ? globalThis.__zwPendReselGet(sel) : null;
+              for (var _r5240i = 0; _r5240i < _r5240GateKids.length; _r5240i++) {
+                var _r5240c = _r5240GateKids[_r5240i];
+                if (!_r5240c || _r5240c.nodeType !== 1) continue;
+                if (_r5240Idx < 0 && (_r5240c === _r5240Self || _r5240c === _r5240Resel
+                    || (_r5240c.__zwSelector && String(_r5240c.__zwSelector) === String(sel)
+                      && !_r5240c.__zwHandle))) {
+                  _r5240Idx = _r5240Els.length;
+                }
+                _r5240Els.push(_r5240c);
+              }
+              if (prop === 'previousElementSibling') return _r5240Idx > 0 ? _r5240Els[_r5240Idx - 1] : null;
+              return _r5240Idx >= 0 && _r5240Idx < _r5240Els.length - 1 ? _r5240Els[_r5240Idx + 1] : null;
+            }
           }
           if (!sel || typeof __zw_element_siblings !== 'function') return null;
           try {
@@ -6146,9 +6226,16 @@
             // R5009 片 e（M4 片 e）：sel 子挂 handle 容器（shadow/fragment/handle 元素）
             // 同步父记录——`_recordHandleChild` 早退于无 handle 子，R334 槽仅覆盖 sel 父；
             // ARIA 树链 walker 在 host mutation apply 前消费（`_zwAriaSyncParent`）。
+            // R5240（html-semantics M2 切片 38）：**同步覆写 sel 槽**——子此前经 R334
+            // sel 父路径移动过时 `_zwSelPendingParent` 残留旧 parentSel（focus-after-close
+            // 「moved to shadow root」案：先 appendChild/insertBefore 移动再挂 shadow 容器，
+            // 槽仍指 body → 兄弟读 gate 命中 stale 槽读 body 视图）。dual-form 槽
+            // （parentSel: null + parentHandle，R97 noWire 同款形状）让槽消费面按容器
+            // 树取值；parentSel 空值时既有消费面回落 host 读，行为不变。
             if (handle && child && child.__zwSelector && !child.__zwHandle
                 && typeof _zwAriaSyncParent !== 'undefined') {
               _zwAriaSyncParent[String(child.__zwSelector)] = { parentSel: null, parentHandle: handle };
+              try { child._zwSelPendingParent = { parentSel: null, parentHandle: handle, nextSibling: null }; } catch (_e5240cs) {}
             }
             if (child && !child.__zwHandle && handle && child.nodeType) {
               if (!_handleChildren[handle]) _handleChildren[handle] = [];
@@ -11026,6 +11113,17 @@
             var _ihAdded = _zwFragmentAdded(_ihVal.trim(), handle);
             if (handle) __zw_set_inner_html_handle(handle, _ihVal);
             else __zw_set_inner_html(sel, _ihVal);
+            // R5241（html-semantics M2 切片 39）：sel 模板 contents 重写失效 content
+            // 子缓存——spec the-template-element：innerHTML= 重新解析 contents，同一
+            // DocumentFragment 视图的子全量更替（R5196 面：同一模板三次 innerHTML=
+            // 每次重读新解析树；form= 树内关联语义依赖新条目）。仅失效子缓存，视图
+            // 身份（_zwTplContentView）不动——spec content getter 恒返同一对象。
+            if (_realTag(sel, handle) === 'TEMPLATE') {
+              try {
+                var _ihTplPx = _makeProxy(sel, handle);
+                if (_ihTplPx) _ihTplPx._zwTplContentKids = null;
+              } catch (_e5241iv) {}
+            }
             // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-innerhtml
             // Host mutations are applied asynchronously. Keep a parsed local child
             // view for created elements so childNodes/firstChild/lastChild remain

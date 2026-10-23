@@ -673,6 +673,29 @@ impl InlineFormattingContext {
                         // 行露红底）。word_idx==0 = 仅首词与原子直邻。
                         let atomic_gl_first_word =
                             runtime_flags::atomic_gl_no_break() && atomic_next_gl && word_idx == 0;
+                        // R5240（CSS2 §9.5 rule 8「shortened line box」）：行首词放不下
+                        // float 缩短后的剩余带宽（0 < avail < 词宽，R3785 只盖 avail≤0）
+                        // → 同 R4234 行首原子盒下绕：行位下移到最早结束的重叠 float 带
+                        // 底重算，直到放得下或不再与 float 重叠。旧行为行首词永不折行
+                        //（fit 门 !runs.is_empty() 守卫）→ 强放缩短带溢出（floats-132：
+                        // 160px 词在 float 缩短的 140px 首行强放，满宽第二行本可容纳）。
+                        // 行首 x 同 R4234 按下移后新带重算（FloatAnchor 预置的是旧带
+                        // left_offset，只调大会保留 stale 值 → 词落回 float 右侧）。
+                        if runtime_flags::first_word_float_fit()
+                            && !hang_trailing_space
+                            && wrap_allowed
+                            && !atomic_gl_first_word
+                            && current_line.runs.is_empty()
+                            && word_width > avail_width
+                            && !self.float_exclusions.is_empty()
+                        {
+                            let (new_y, lo, aw) =
+                                self.shift_new_line_below_floats(current_y, est_height, word_width);
+                            current_y = new_y;
+                            left_offset = lo;
+                            avail_width = aw;
+                            current_x = self.text_indent.max(left_offset);
+                        }
                         if !hang_trailing_space
                             && wrap_allowed
                             && !atomic_gl_first_word

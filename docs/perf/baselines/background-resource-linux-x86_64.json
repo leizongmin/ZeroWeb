@@ -4,18 +4,18 @@
   "platform_class": "linux-x86_64",
   "recorded_at": "2026-10-23",
   "git_sha": "402487ade",
-  "justification": "background-resource-lifecycle M4：后台资源门禁阈值首次配对导出。配对腿 = 各场景修复后多轮同协议观测（run-config + 250ms sampler 固定协议），修复前 M1 负例腿不入配对、仅作 check 负例验证。阈值带：CPU/率上界=max×1.5、RSS 上界=max+64MiB、工作下界=min×0.5；bg02-anim-compgui 等(GUI/compositor) 腿与 bg01-interval（墙钟不一致）不入 v1。证据：docs/goal/background-resource-lifecycle/evidence/2026-10-23-m4-gate-pairing/",
+  "justification": "background-resource-lifecycle M4：后台资源门禁阈值首次配对导出。配对腿 = 各场景修复后多轮同协议观测（run-config + 250ms sampler 固定协议），修复前 M1 负例腿不入配对、仅作 check 负例验证。阈值带：CPU/率上界=max×1.5、RSS 上界=max+64MiB、工作下界=min×0.5；bg02-anim-compgui 等(GUI/compositor) 腿与 bg01-interval（墙钟不一致）不入 v1。证据：docs/goal/archive/background-resource-lifecycle/evidence/2026-10-23-m4-gate-pairing/",
   "platform": "linux-x86_64",
   "policy": "CPU/率上界=配对腿max×1.5；RSS上界=max+64MiB；工作下界=min×0.5。修改配对须更新 pairing 清单并写明理由，禁止为通过门禁调阈值。",
   "scenarios": {
     "bg01-background": {
       "pairing": [
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-23-m3-dc2-visibility/bg01-background",
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-23-m4-gate-pairing/bg01-background"
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-23-m3-dc2-visibility/bg01-background",
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-23-m4-gate-pairing/bg01-background"
       ],
       "n": 2,
       "observed": {
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-23-m3-dc2-visibility/bg01-background": {
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-23-m3-dc2-visibility/bg01-background": {
           "renderer_cpu_cores": 0.0547,
           "renderer_rss_last_mib": 324.8,
           "renderer_rss_hwm_mib": 369.0,
@@ -25,7 +25,7 @@
           "probe_delta:bg01-background": 4808.0,
           "probe_rate:bg01-background/s": 160.27
         },
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-23-m4-gate-pairing/bg01-background": {
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-23-m4-gate-pairing/bg01-background": {
           "renderer_cpu_cores": 0.054,
           "renderer_rss_last_mib": 327.0,
           "renderer_rss_hwm_mib": 375.0,
@@ -65,12 +65,12 @@
     },
     "bg01-foreground": {
       "pairing": [
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-22-dc1-nested-clamp/bg01-nested-after",
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-23-m4-gate-pairing/bg01-foreground"
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-22-dc1-nested-clamp/bg01-nested-after",
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-23-m4-gate-pairing/bg01-foreground"
       ],
       "n": 2,
       "observed": {
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-22-dc1-nested-clamp/bg01-nested-after": {
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-22-dc1-nested-clamp/bg01-nested-after": {
           "renderer_cpu_cores": 0.0543,
           "renderer_rss_last_mib": 327.4,
           "renderer_rss_hwm_mib": 361.1,
@@ -80,7 +80,7 @@
           "probe_delta:bg01-foreground": 4741.0,
           "probe_rate:bg01-foreground/s": 158.03
         },
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-23-m4-gate-pairing/bg01-foreground": {
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-23-m4-gate-pairing/bg01-foreground": {
           "renderer_cpu_cores": 0.0533,
           "renderer_rss_last_mib": 323.8,
           "renderer_rss_hwm_mib": 372.8,
@@ -120,13 +120,13 @@
     },
     "bg02-anim": {
       "pairing": [
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-23-m3-dc2-raf-pump/bg02-anim",
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-23-m3-dc2-visibility/bg02-anim",
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-23-m4-gate-pairing/bg02-anim"
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-23-m3-dc2-raf-pump/bg02-anim",
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-23-m3-dc2-visibility/bg02-anim",
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-23-m4-gate-pairing/bg02-anim"
       ],
       "n": 3,
       "observed": {
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-23-m3-dc2-raf-pump/bg02-anim": {
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-23-m3-dc2-raf-pump/bg02-anim": {
           "renderer_cpu_cores": 0.0419,
           "renderer_rss_last_mib": 248.5,
           "renderer_rss_hwm_mib": 285.3,
@@ -136,7 +136,7 @@
           "probe_delta:bg02-anim": 1242.0,
           "probe_rate:bg02-anim/s": 41.4
         },
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-23-m3-dc2-visibility/bg02-anim": {
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-23-m3-dc2-visibility/bg02-anim": {
           "renderer_cpu_cores": 0.0297,
           "renderer_rss_last_mib": 228.2,
           "renderer_rss_hwm_mib": 252.0,
@@ -146,7 +146,7 @@
           "probe_delta:bg02-anim": 1241.0,
           "probe_rate:bg02-anim/s": 41.37
         },
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-23-m4-gate-pairing/bg02-anim": {
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-23-m4-gate-pairing/bg02-anim": {
           "renderer_cpu_cores": 0.0297,
           "renderer_rss_last_mib": 234.7,
           "renderer_rss_hwm_mib": 253.4,
@@ -186,12 +186,12 @@
     },
     "bg02-media": {
       "pairing": [
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-23-m4-gate-pairing/bg02-media",
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-23-m4-gate-pairing/bg02-media-b"
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-23-m4-gate-pairing/bg02-media",
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-23-m4-gate-pairing/bg02-media-b"
       ],
       "n": 2,
       "observed": {
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-23-m4-gate-pairing/bg02-media": {
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-23-m4-gate-pairing/bg02-media": {
           "renderer_cpu_cores": 0.0135,
           "renderer_rss_last_mib": 167.9,
           "renderer_rss_hwm_mib": 167.9,
@@ -201,7 +201,7 @@
           "probe_delta:bg02-media-ticks": 81.0,
           "probe_rate:bg02-media-ticks/s": 2.7
         },
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-23-m4-gate-pairing/bg02-media-b": {
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-23-m4-gate-pairing/bg02-media-b": {
           "renderer_cpu_cores": 0.0167,
           "renderer_rss_last_mib": 174.8,
           "renderer_rss_hwm_mib": 174.8,
@@ -241,13 +241,13 @@
     },
     "bg02-static": {
       "pairing": [
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-23-m3-dc2-raf-pump/bg02-static",
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-23-m3-dc2-visibility/bg02-static",
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-23-m4-gate-pairing/bg02-static"
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-23-m3-dc2-raf-pump/bg02-static",
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-23-m3-dc2-visibility/bg02-static",
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-23-m4-gate-pairing/bg02-static"
       ],
       "n": 3,
       "observed": {
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-23-m3-dc2-raf-pump/bg02-static": {
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-23-m3-dc2-raf-pump/bg02-static": {
           "renderer_cpu_cores": 0.0135,
           "renderer_rss_last_mib": 128.4,
           "renderer_rss_hwm_mib": 128.4,
@@ -255,7 +255,7 @@
           "browser_rss_last_mib": 35.4,
           "browser_rss_hwm_mib": 51.0
         },
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-23-m3-dc2-visibility/bg02-static": {
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-23-m3-dc2-visibility/bg02-static": {
           "renderer_cpu_cores": 0.0094,
           "renderer_rss_last_mib": 129.8,
           "renderer_rss_hwm_mib": 129.8,
@@ -263,7 +263,7 @@
           "browser_rss_last_mib": 35.3,
           "browser_rss_hwm_mib": 51.1
         },
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-23-m4-gate-pairing/bg02-static": {
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-23-m4-gate-pairing/bg02-static": {
           "renderer_cpu_cores": 0.0087,
           "renderer_rss_last_mib": 131.8,
           "renderer_rss_hwm_mib": 131.8,
@@ -298,14 +298,14 @@
     },
     "bg03-nav": {
       "pairing": [
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-22-m2-s1-fetch-cancel/bg03-nav-recheck",
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-22-m2-s2-rss-attribution/bg03-nav-plain",
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-22-m2-s3-timer-form/bg03-nav-residue",
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-23-m4-gate-pairing/bg03-nav"
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-22-m2-s1-fetch-cancel/bg03-nav-recheck",
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-22-m2-s2-rss-attribution/bg03-nav-plain",
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-22-m2-s3-timer-form/bg03-nav-residue",
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-23-m4-gate-pairing/bg03-nav"
       ],
       "n": 4,
       "observed": {
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-22-m2-s1-fetch-cancel/bg03-nav-recheck": {
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-22-m2-s1-fetch-cancel/bg03-nav-recheck": {
           "renderer_cpu_cores": 0.0686,
           "renderer_rss_last_mib": 253.2,
           "renderer_rss_hwm_mib": 270.1,
@@ -315,7 +315,7 @@
           "nav_ok_ratio": 1.0,
           "stall_closed_ratio": 0.9375
         },
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-22-m2-s2-rss-attribution/bg03-nav-plain": {
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-22-m2-s2-rss-attribution/bg03-nav-plain": {
           "renderer_cpu_cores": 0.0806,
           "renderer_rss_last_mib": 209.1,
           "renderer_rss_hwm_mib": 248.1,
@@ -324,7 +324,7 @@
           "browser_rss_hwm_mib": 51.0,
           "nav_ok_ratio": 1.0
         },
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-22-m2-s3-timer-form/bg03-nav-residue": {
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-22-m2-s3-timer-form/bg03-nav-residue": {
           "renderer_cpu_cores": 0.0713,
           "renderer_rss_last_mib": 246.2,
           "renderer_rss_hwm_mib": 286.6,
@@ -334,7 +334,7 @@
           "nav_ok_ratio": 1.0,
           "stall_closed_ratio": 0.9375
         },
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-23-m4-gate-pairing/bg03-nav": {
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-23-m4-gate-pairing/bg03-nav": {
           "renderer_cpu_cores": 0.0681,
           "renderer_rss_last_mib": 245.8,
           "renderer_rss_hwm_mib": 276.1,
@@ -377,12 +377,12 @@
     },
     "bg04-cycle": {
       "pairing": [
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-22-m1-baseline/bg04-cycle",
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-23-m4-gate-pairing/bg04-cycle"
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-22-m1-baseline/bg04-cycle",
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-23-m4-gate-pairing/bg04-cycle"
       ],
       "n": 2,
       "observed": {
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-22-m1-baseline/bg04-cycle": {
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-22-m1-baseline/bg04-cycle": {
           "renderer_cpu_cores": 0.0251,
           "renderer_rss_last_mib": 209.0,
           "renderer_rss_hwm_mib": 228.1,
@@ -391,7 +391,7 @@
           "browser_rss_hwm_mib": 50.9,
           "close_error_count": 0.0
         },
-        "docs/goal/background-resource-lifecycle/evidence/2026-10-23-m4-gate-pairing/bg04-cycle": {
+        "docs/goal/archive/background-resource-lifecycle/evidence/2026-10-23-m4-gate-pairing/bg04-cycle": {
           "renderer_cpu_cores": 0.0274,
           "renderer_rss_last_mib": 230.7,
           "renderer_rss_hwm_mib": 230.7,

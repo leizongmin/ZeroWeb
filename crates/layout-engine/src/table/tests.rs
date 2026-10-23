@@ -766,8 +766,9 @@ fn test_collapse_table_size_deducts_covered_edge_cell_border() {
 
     // 模拟 compute_column_widths 的 collapse 列宽：content(50) + (bl+br)/2 = 54.95
     let col_width = 50.0_f32 + (4.95 + 4.95) / 2.0; // 54.95
-    // 行高含整 cell border top+bottom
-    let total_row_height = 50.0_f32 + 4.95 + 4.95; // 59.9
+    // R5241：行高为边框中心间距（border-box − ½(bt+bb)）——position_cells 半分摊
+    // 后的产出形态（旧整 border 口径 59.9 下整扣等价，见 apply_table_size_constraints 注）。
+    let total_row_height = 50.0_f32 + (4.95 + 4.95) / 2.0; // 54.95
 
     apply_table_size_constraints(&mut table_box, &grid, total_row_height, &[col_width], 0.0, &styles);
 
@@ -783,8 +784,9 @@ fn test_collapse_table_size_deducts_covered_edge_cell_border() {
         col_width,
         col_width,
     );
-    // 期望：顶+底边缘 cell border 被覆盖 → 扣 bt+bb = 9.9
-    // content_height = row_height(59.9) - 9.9 = 50.0（旧 bug 会留 59.9，多算 ~10px）
+    // 期望：顶+底边缘 cell border 被覆盖 → 扣 (bt+bb)/2 = 4.95（R5241 半分摊行高
+    // 下的镜像口径；旧整 border 行高下整扣 9.9 代数等价）
+    // content_height = row_height(54.95) - 4.95 = 50.0（旧 bug 会留 59.9，多算 ~10px）
     let expected_content_height = 50.0_f32;
     assert!(
         (table_box.content_height - expected_content_height).abs() < 0.5,
@@ -794,6 +796,154 @@ fn test_collapse_table_size_deducts_covered_edge_cell_border() {
         expected_content_height,
         total_row_height,
         total_row_height,
+    );
+}
+
+/// R5241（CSS2 §17.5.2.1 行高 = 边框中心间距）：collapse 模式行高贡献 =
+/// cell border-box − ½(bt+bb)，与列宽半 border 分摊同构。镜像
+/// border-conflict-element-001a 几何：1×1 表，td 四边 20px border、空 cell
+/// （border-box 高 40）→ 行高 20（旧整 border 口径 40 使表高翻倍）。
+/// cell 盒自身不回写：保持 40（相邻行 cell 带 ±½ 重叠，paint 内绘带落边框中心）。
+#[test]
+fn test_collapse_row_height_deducts_half_cell_borders() {
+    use zero_css_parser::values::LengthValue;
+    use zero_style_system::property::types::{BorderCollapseValue, BorderStyleValue};
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let table_id = doc.create_element("div");
+    let row_id = doc.create_element("div");
+    let cell_id = doc.create_element("div");
+    let _ = doc.append_child(root, table_id);
+
+    let mut styles = HashMap::new();
+    let mut ts = ComputedStyle::default();
+    ts.display = DisplayValue::Table;
+    ts.border_collapse = BorderCollapseValue::Collapse;
+    styles.insert(table_id, ts);
+    let mut rs = ComputedStyle::default();
+    rs.display = DisplayValue::TableRow;
+    styles.insert(row_id, rs);
+    let mut cs = ComputedStyle::default();
+    cs.display = DisplayValue::TableCell;
+    cs.border_top_width = LengthValue::Px(20.0);
+    cs.border_right_width = LengthValue::Px(20.0);
+    cs.border_bottom_width = LengthValue::Px(20.0);
+    cs.border_left_width = LengthValue::Px(20.0);
+    cs.border_top_style = BorderStyleValue::Solid;
+    cs.border_right_style = BorderStyleValue::Solid;
+    cs.border_bottom_style = BorderStyleValue::Solid;
+    cs.border_left_style = BorderStyleValue::Solid;
+    styles.insert(cell_id, cs);
+
+    // cell border-box 高 40（空内容 + 四边 20 border），列宽 20（边框中心间距）
+    let cell_box = LayoutBox {
+        node_id: Some(cell_id),
+        border_top: 20.0,
+        border_right: 20.0,
+        border_bottom: 20.0,
+        border_left: 20.0,
+        height: 40.0,
+        ..Default::default()
+    };
+    let row_box = LayoutBox {
+        node_id: Some(row_id),
+        children: vec![cell_box],
+        ..Default::default()
+    };
+    let mut table_box = LayoutBox {
+        node_id: Some(table_id),
+        children: vec![row_box],
+        ..Default::default()
+    };
+
+    let grid = build_grid(&table_box, &doc, &styles);
+    position_cells(&mut table_box, &grid, &[20.0], 0.0, 0.0, &styles);
+
+    let row = &table_box.children[0];
+    assert!(
+        (row.height - 20.0).abs() < 0.5,
+        "collapse row height should be border-box 40 − ½(20+20) = 20, got {} (old full-border \
+         model kept 40 and doubled the table height)",
+        row.height
+    );
+    let cell = &row.children[0];
+    assert!(
+        (cell.height - 40.0).abs() < 0.5,
+        "cell box keeps its full border-box height 40 (overlapping bands land on border \
+         centers), got {}",
+        cell.height
+    );
+}
+
+/// R5241（CSS2 §17.6.2.1）：cell 边框胜出（> table 自身边框）的表边缘，胜出边框
+/// 外半伸出到边框中心距之外 → 计入表 border-box。镜像 border-conflict-element-001a
+/// 单 cell 几何：表无自身边框，td 四边 20px border、空 cell → 列宽/行高 20（中心
+/// 距），表 border-box = 20 + 外半 10+10 = 40（chromium 一致；旧实现缺外缘 20×20）。
+#[test]
+fn test_collapse_table_size_adds_won_outer_cell_border_halves() {
+    use zero_css_parser::values::LengthValue;
+    use zero_style_system::property::types::{BorderCollapseValue, BorderStyleValue};
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let table_id = doc.create_element("div");
+    let cell_id = doc.create_element("div");
+    let _ = doc.append_child(root, table_id);
+
+    let mut styles = HashMap::new();
+    let mut ts = ComputedStyle::default();
+    ts.display = DisplayValue::Table;
+    ts.border_collapse = BorderCollapseValue::Collapse;
+    styles.insert(table_id, ts);
+    let mut cs = ComputedStyle::default();
+    cs.display = DisplayValue::TableCell;
+    cs.border_top_width = LengthValue::Px(20.0);
+    cs.border_right_width = LengthValue::Px(20.0);
+    cs.border_bottom_width = LengthValue::Px(20.0);
+    cs.border_left_width = LengthValue::Px(20.0);
+    cs.border_top_style = BorderStyleValue::Solid;
+    cs.border_right_style = BorderStyleValue::Solid;
+    cs.border_bottom_style = BorderStyleValue::Solid;
+    cs.border_left_style = BorderStyleValue::Solid;
+    styles.insert(cell_id, cs);
+
+    let cell_box = LayoutBox {
+        node_id: Some(cell_id),
+        border_top: 20.0,
+        border_right: 20.0,
+        border_bottom: 20.0,
+        border_left: 20.0,
+        height: 40.0,
+        ..Default::default()
+    };
+    let mut table_box = LayoutBox {
+        node_id: Some(table_id),
+        children: vec![cell_box],
+        ..Default::default()
+    };
+
+    let grid = build_grid(&table_box, &doc, &styles);
+
+    // 边框中心距口径（compute_column_widths auto cell / position_cells 半分摊产出）
+    let col_width = 20.0_f32;
+    let total_row_height = 20.0_f32;
+    apply_table_size_constraints(&mut table_box, &grid, total_row_height, &[col_width], 0.0, &styles);
+
+    // content box = 边框中心距（不含外缘）；border-box = 20 + ½(20+20) = 40
+    assert!(
+        (table_box.content_width - 20.0).abs() < 0.5 && (table_box.width - 40.0).abs() < 0.5,
+        "collapse table width should keep content at border-center extent 20 and add won outer \
+         halves to border-box → 40, got content={} width={}",
+        table_box.content_width,
+        table_box.width
+    );
+    assert!(
+        (table_box.content_height - 20.0).abs() < 0.5 && (table_box.height - 40.0).abs() < 0.5,
+        "collapse table height should keep content at border-center extent 20 and add won outer \
+         halves to border-box → 40, got content={} height={}",
+        table_box.content_height,
+        table_box.height
     );
 }
 

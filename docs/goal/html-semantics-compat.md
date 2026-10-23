@@ -1,12 +1,192 @@
 # HTML Semantics 兼容 — html/semantics 语义面（主攻大域）
 
 **版本**: v2.0
-**日期**: 2026-10-21（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 34 收口（挂账 F：html-semantics 套件帧驱动 rAF 默认启用，dialog 域 +8 REG 0、forms 域 4627 subtest 逐位一致），下一步按挂账序推进
+**日期**: 2026-10-23（v1.0 立项 2026-10-08）
+**状态**: Active——M2 切片 41 收口（挂账定性：ESC 组栈边缘乱序 → Chrome-parity 同红收口 crbug:417571176，R5244 假设门试错回退、零代码净变化、全域 REG 0），下一步按挂账序推进；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 **执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
 
-> **▶ 当前状态（2026-10-23 M2 切片 34 收口）**：挂账 F 帧驱动快照新鲜
+> **▶ 当前状态（2026-10-23 M2 切片 41 收口）**：挂账「ESC 组栈边缘乱序」
+> 定性收口（非代码轮）。**探针钉定**（zz-probe-s41，验证后已删）：
+> corner-cases「focusin calls showModal, modeless」ESC 案事件序 =
+> show() 聚焦空 modeless dialog（subject fallback）→ close-the-dialog
+> 焦点恢复尾步 anchor 门命中（焦点锚=subject 后代）→ prevFocused
+> focusing steps 触 focusin → 处理器 re-entrant showModal 重开。**spec
+> 对账**：恢复门（锚 shadow-including 后代 OR wasModal）、show()/
+> showModal() 双记录 prevFocused、focusing steps「not focusable →
+> nothing」与现行文本逐字一致——R4600/R5236 无漂移。**试错回退**
+> （R5244 subject 非 focusable 门，未合入）：目标案 GAIN 1 但 REG 4
+> （dialog-focus-shadow「show:」三臂 + focus-previous-outside——Chrome
+> 断言面「show() 无 focus delegate 聚焦 dialog 自身」，whatwg/html#8199
+> 只移除 TAB 序可聚焦），两面矛盾 Chrome 选边聚焦面。**Chrome-parity
+> 同红证据**：crbug 417571176（父 376516550 closedby 特性）2026-04
+> 仍 "still failing according to wpt.fyi"，上游已改一次 assertion 仍未
+> 过；本项目按 Chrome 拉齐，修复后随 corpus 刷新自然转绿。**收口**：
+> 挂账关闭（语料钉住 + crbug 引用入账）；interactive-elements 全域
+> 98 files **419P/61F/2T 对 s40 逐位 REG 0**、lib 3432P/0F、零代码净
+> 变化。账本见
+> [evidence/2026-10-23-m2s41-esc-stacked-parity.md](html-semantics-compat/evidence/2026-10-23-m2s41-esc-stacked-parity.md)。
+> **下一步**：按挂账序非模态 close 不出组栈、R371 模板残留、
+> summary-less details 内非激活后代翻转（s37）、focus-after-close
+> Complex dialog usage focus 恢复深层（s39 剩余 1F）；parser form
+> element pointer 4F **已缓行**（2026-10-23 用户决策：与 declarative
+> shadow DOM（H）打捆 parser 批次、M2 收口后尾段单独立项）；
+> declarative shadow DOM 同打捆待触发。
+>
+> **▶ 上轮状态（2026-10-23 M2 切片 40 收口）**：挂账 custom command
+> （`--` 前缀）CommandEvent 派发收口（s24 defer）。**spec 钉定**：现行
+> button activation behavior——validity Custom 态对任意元素 true →
+> fire command 事件（command=值本身大小写保留、source=invoker、
+> cancelable=true）→ Custom 态 return 无内建行为；派发形状
+> bubbles=false/composed=true/isTrusted=true/无 relatedTarget（上游
+> button-event-dispatch 语料钉死）。**落地（R5243 两刀）**：①part05
+> `_defineEventSubclass('CommandEvent','Event',[command,source])`
+> （ToggleEvent 同厂）；②part01 `_zwInvokerCommandActivate` custom
+> 分支构造 CommandEvent + trusted 印记（R312 通道）经
+> `_dispatchWithBubble` 在 target 派发后 return——分派在既有调用方
+> 门内（disabled/preventDefault 零新写），`cmdCustom` 原值与 `cmd`
+> 小写拆分、内建关键字面不变。**集群**：interactive-elements 全域
+> 98 files 482 subtest **419P/61F/2T 与 s39 逐位打平**；dialog 集群
+> 82 files 对 s35 账本 **REG 0 / GAIN 5**（全为 s39 既有收益）；
+> forms/the-button-element 18 files 54 subtest 对 s24 逐位一致
+> **REG 0**（corpus 零 custom command 消费）。**已知边界**：现行
+> spec「invalid → Unknown 不派事件」未跟进（维持 R4400 auto 映射，
+> corpus 钉住，跟进涉 dialog/details 内建关键字重构独立切片）；
+> popover 关键字 + oncommand IDL + button command/commandFor IDL
+> 反射维持挂账。gates：lib **3432P/0F**（+1 契约 part73
+> test_invoker_custom_command_event_r5243）、clippy/fmt clean、零
+> 新增依赖。账本见
+> [evidence/2026-10-23-m2s40-custom-command-event.md](html-semantics-compat/evidence/2026-10-23-m2s40-custom-command-event.md)。
+> **下一步**：按挂账序 ESC 组栈边缘乱序、非模态 close 不出组栈、
+> R371 模板残留、summary-less details 内非激活后代翻转（s37）、
+> focus-after-close Complex dialog usage focus 恢复深层（s39 剩余
+> 1F）；parser form element pointer 4F **已缓行**（2026-10-23 用户
+> 决策：与 declarative shadow DOM（H）打捆 parser 批次、M2 收口后
+> 尾段单独立项）；declarative shadow DOM 同打捆待触发。
+>
+> **▶ 上轮状态（2026-10-23 M2 切片 39 收口）**：挂账 focus-in-shadow
+> 跨流收口（focus-after-close「moved to shadow root」案 +
+> dialog-focus-shadow-double-nested）。**探针钉定**（zz-probe 五迭代，
+> 验证后已删）四层根因：①sel 模板 content 子列表 per-read 重建，跨读
+> mutation 落空（spec content getter 恒返同一 fragment）；②content
+> 条目 parentNode 指模板 wrapper，replaceWith 落错列表（探针 D
+> `pidIsView=false`）；③`_zwMEl.replaceWith` 只有 remove 半边，替换者
+> 落空；④focus delegate 非 dialog 分支缺 get-the-focusable-area 递归，
+> 嵌套 shadow host 被跳过后焦点落树序后一 focusable（探针 E
+> `osraeTag=BUTTON`≠autofocus 锚）。**落地（R5241 四刀 + R5242 一刀 +
+> 收尾失效）**：①part04 content 子列表首读物化缓存（缓存数组即活
+> 树）；②parentNode/parentElement getter 槽位消费补 parentHandle 分支
+> （focus chain 上行达 shadow 边界）；③`_tcParent = _tplContent`（条
+> 目父 = 视图本体）；④part03 replaceWith 补插入半边（plain 父门控，
+> host proxy 面零变化）；⑤part01 focus delegate 递归（dialog 分支
+> seq-focusable 优先序不动）；⑥innerHTML= setter sel 模板缓存失效
+> （R5196 lib 红面收口，视图身份不动）。**集群**：
+> double-nested **2F → 2P 全绿**；focus-after-close **2F+1T → 1F+1T**；
+> interactive-elements 全域 98 files 419P/61F/2T 对 s38 账本
+> **REG 0 / GAIN 3**；forms 域 401 files 3902P/707F/20T/1U
+> **REG 0 / GAIN 3**（GAIN 为 label 文件尾 3 案 s38 跑时截断未注册，
+> 共同 48 案逐位一致）。**已知边界**：focus-after-close 余 1F
+> （Complex dialog usage focus 恢复，既有）；content 缓存不回灌非
+> innerHTML= 的宿主侧子树变化。gates：lib **3431P/0F**、clippy/fmt
+> clean、零新增依赖。账本见
+> [evidence/2026-10-23-m2s39-focus-in-shadow.md](html-semantics-compat/evidence/2026-10-23-m2s39-focus-in-shadow.md)。
+> **下一步**：按挂账序 custom command `--` 前缀 CommandEvent defer、
+> ESC 组栈边缘乱序、非模态 close 不出组栈、R371 模板残留、summary-less
+> details 内非激活后代翻转（s37）、focus-after-close Complex dialog
+> usage focus 恢复深层（s39 剩余 1F）；parser form element pointer 4F
+> **已缓行**（2026-10-23 用户决策：与 declarative shadow DOM（H）打捆
+> parser 批次、M2 收口后尾段单独立项，触发条件见
+> [决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)）。
+>
+> **▶ 上轮状态（2026-10-23 M2 切片 38 收口）**：挂账 appendChild move
+> 后兄弟读 stale 收口。**探针钉定**（zz-probe 两迭代，验证后已删）：
+> R334 appendChild/insertBefore wire 异步 drain，兄弟读无 pending 补偿
+> （parentNode 有槽位补偿、兄弟没有）；两遍调用序列进一步钉出**共享视
+> 图插位缺陷**——R182 重定位 pos 在旧位剔除前计算，剔除后未同步，
+> cleanup `insertBefore(input, dialog)` 形态视图成 [dialog, input,
+> script]（真树 [input, dialog, script]）；shadow 容器案露第三层——
+> 上一子测试 stale parentSel 槽未覆写。**落地（R5240 三刀）**：①part04
+> 兄弟 trap pending gate（sel 槽→融合视图定位 / 容器 ariaSync→
+> registry 定位）；②part05 overlay 旧位剔除 pos 同步（**共享路径**，
+> childNodes/children 全消费面受益）；③容器挂载路径 dual-form 槽覆写
+> （R97 noWire 同款形状）。**集群**：focus-after-close **3F+1T →
+> 2F+1T**（moved-in-between 案全绿）；interactive-elements 全域 98
+> files 416P/64F/2T 对 s37 账本 **REG 0 / GAIN 1**；forms 域 4627
+> subtest 逐位一致（REG 0）。**已知边界**：moved-to-shadow-root 案兄
+> 弟断言过、红点推进到 `shadowRoot.activeElement`（focus-in-shadow 跨
+> 流缺口，与 dialog-focus-previous-outside 同族，新挂账）。gates：lib
+> **3430P/0F**（+1 为渲染流新增）、clippy/fmt clean、零新增依赖。账本
+> 见 [evidence/2026-10-23-m2s38-pending-move-sibling.md](html-semantics-compat/evidence/2026-10-23-m2s38-pending-move-sibling.md)。
+> **下一步**：按挂账序 parser form element pointer 4F（用户决策门禁，
+> 单独立项征询）、custom command `--` 前缀 CommandEvent defer、ESC 组
+> 栈边缘乱序、非模态 close 不出组栈、R371 模板残留、summary-less
+> details 内非激活后代翻转（s37）、focus-in-shadow
+> shadowRoot.activeElement + focusing steps 跨 shadow 恢复（s38 新，与
+> dialog-focus 族跨流缺口同族）；declarative shadow DOM（H 定性后）待
+> parser/渲染流联合切片。
+>
+> **▶ 上上轮状态（2026-10-23 M2 切片 37 收口）**：挂账 anchor-with-inline
+> 导航缺口收口。**探针钉定**（单案隔离；多案探针 onhashchange 竞争污
+> 染作废）：裸 a 后代 click 也不导航——R112 post 段 nearest activation
+> 无 act:a 分支（落 input-change 兜底）；svg 案露出第二根因——summary
+> 豁免祖先 walk 不认 SVG ns a[href]（`_zwIsInteractiveContentEl` ns
+> 门），summary 误翻转。**落地（R5239）**：①R112 post 补 act:a/act:area
+> 分支执行 `_zwAnchorActivate`（receiver 自身让位防双导航）；②summary
+> 消费面祖先 walk 补 A/AREA href 判定（不扩共享交互函数）。**集群**：
+> anchor-with-inline-element **Timeout 全红 → 5P/0F**；A/B 对照 summary
+> 域 REG 0 / **GAIN 5**（窄面 20P/0F/0T 全绿）、details/label 逐位一
+> 致；interactive-elements 全域 98 files 415P/65F/2T（Timeout 2 文件均
+> 既有挂账）、dialog 子集对 s35 REG 0 / GAIN 1；forms 4627 subtest 计
+> 数逐位一致。**已知边界**：点击 summary-less details 内非激活后代不
+> 翻转（同根邻近缺口，真浏览器会翻转，记待办）。gates：lib **3429P/
+> 0F**、clippy/fmt clean、零新增依赖。账本见
+> [evidence/2026-10-23-m2s37-anchor-inline-activation.md](html-semantics-compat/evidence/2026-10-23-m2s37-anchor-inline-activation.md)。
+> **下一步**：按挂账序 parser form element pointer 4F、custom command
+> `--` 前缀 CommandEvent defer、ESC 组栈边缘乱序、非模态 close 不出组
+> 栈、R371 模板残留、summary-less details 内非激活后代翻转（s37 新）；
+> declarative shadow DOM（H 定性后）待 parser/渲染流联合切片。
+>
+> **▶ 上轮状态（2026-10-23 M2 切片 36 收口）**：挂账 impl-doc wrapper
+> requestClose 收口。**探针钉定**：dialog-requestclose 面 5 files 78P/1F，
+> 唯一红正是挂账项；合成 doc（`_zwMEl` 产物）dialog 四方法全缺，R125
+> 原型链已接 HTMLDialogElement.prototype 但 prototype 空占位。**落地
+>（R5238）**：`HTMLDialogElement.prototype.requestClose`（R4100
+> details.name 同款 plain 世界供给惯例）——spec「request to close」
+> 步骤照抄：open 缺 return、ownerDocument ≠ 主文档（非 fully active）
+> return；trap 世界走 part04 R4200 版先于原型命中，双世界不重叠。
+> **集群**：requestclose 面 **78P/1F → 79P/0F**（EXIT 1→0）、dialog
+> 集群 82 files 对 s35 账本 **REG 0 / GAIN 1**（351P/59F/1T）、forms 域
+> 4627 subtest 对 s34 基线计数逐位一致。**已知边界**：detached doc
+> dialog 的 close/show/showModal 三方法仍缺（挂账范围外，探针 3F
+> 实证）。R5237 撞渲染流，改 R5238。gates：lib **3429P/0F**、clippy/
+> fmt clean、零新增依赖。账本见
+> [evidence/2026-10-23-m2s36-wrapper-requestclose.md](html-semantics-compat/evidence/2026-10-23-m2s36-wrapper-requestclose.md)。
+> **下一步**：按挂账序 anchor-with-inline 导航缺口、parser form element
+> pointer 4F、custom command `--` 前缀 CommandEvent defer、ESC 组栈边
+> 缘乱序、非模态 close 不出组栈、R371 模板残留；detached doc dialog
+> close/show/showModal 三方法（新）；declarative shadow DOM（H 定性
+> 后）待 parser/渲染流联合切片。
+>
+> **▶ 上轮状态（2026-10-23 M2 切片 35 收口）**：挂账 E 余项 ESC 栈序
+> 收口，**closedby 双语料面全清**（simple 6/6 + complex normal 面 s34
+> 已绿）。**落地（R5236）**：`__zw_esc_dialog_cancel` 两段式——①
+> `_zwTopLayer`（showModal+showPopover 共享插入序）反走，栈顶 popover
+> 命中即 hidePopover、先碰 open dialog 切组栈；②R4300 组栈原逻辑不动
+> （惰性补登记 + none 挡板 + 尾→头首个 open 组）。spec 钉定：close
+> watcher 组栈，none dialog 组挡「再往下」不挡「更晚注册」——两段拼接
+> 与 watcher 组栈语义在所有混合序一致。**集群**：82 files 411 subtest
+> **350P/60F/1T**，同 key 对 s34 ON 基线 diff **REG 0 / GAIN 5**；回归
+> 面 canceling 族 8P/0F、keyboard 77 键 A/B 逐位一致。设计迭代：首版
+> 统一扫描破 part60 R2（lib test 抓住），两段式恢复。gates：zero-engine
+> lib **3429P/0F**、clippy -D warnings、fmt clean、零新增依赖。账本见
+> [evidence/2026-10-23-m2s35-esc-unified-toplayer.md](html-semantics-compat/evidence/2026-10-23-m2s35-esc-unified-toplayer.md)。
+> **下一步**：按挂账序 impl-doc wrapper requestClose（s36 已收口）、
+> anchor-with-inline 导航缺口、parser form element pointer 4F、custom
+> command `--` 前缀 CommandEvent defer、ESC 组栈边缘乱序、非模态 close
+> 不出组栈、R371 模板残留；declarative shadow DOM（H 定性后）待
+> parser/渲染流联合切片。
+>
+> **▶ 上轮状态（2026-10-23 M2 切片 34 收口）**：挂账 F 帧驱动快照新鲜
 > 化。**落地（R5235）**：Makefile `testharness-html-semantics` 入口默认
 > `ZW_TESTHARNESS_RAF_FRAME_DRIVEN=1`（R2713a/R3254-KP4 既有开关，
 > keyboard 套件同款入口模式；直接调 runner 维持 OFF 旧路径）。**对账三
@@ -371,6 +551,31 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-23 M2 切片 41**：挂账定性轮——「ESC 组栈边缘乱序」收口为
+  Chrome-parity 同红（corner-cases「focusin calls showModal, modeless」
+  ESC 案：crbug 417571176、父 376516550，2026-04 wpt.fyi 仍红）。探针
+  钉定事件序 + spec 逐字对账（R4600 恢复门/R5236 组栈零漂移）；R5244
+  假设门（subject 非 focusable no-op）GAIN 1 / REG 4（dialog-focus-shadow
+  Chrome「show() 聚焦 dialog 自身」面）试错回退，零代码净变化。全域
+  419P/61F/2T 对 s40 逐位 REG 0、lib 3432P/0F、零新增依赖。账本
+  [evidence/2026-10-23-m2s41-esc-stacked-parity.md](html-semantics-compat/evidence/2026-10-23-m2s41-esc-stacked-parity.md)。
+- **2026-10-23 M2 切片 40**：custom command（`--` 前缀）CommandEvent
+  派发收口（R5243，s24 defer）——part05 CommandEvent 接口
+  （`_defineEventSubclass`，command=''、source=null，无 relatedTarget）
+  + part01 `_zwInvokerCommandActivate` custom 分支派发后 return
+  （command=原值大小写保留、source=invoker、cancelable=true、
+  bubbles=false/composed=true、R312 trusted 印记；分派在调用方
+  disabled/preventDefault 门内零新写）。interactive-elements 全域
+  98 files **419P/61F/2T 对 s39 打平**；dialog 集群对 s35 **REG 0 /
+  GAIN 5**（s39 既有收益）；forms/the-button-element 对 s24 逐位一致。
+  gates：engine lib **3432P/0F**（+1 契约 part73）、clippy/fmt 过、
+  零新增依赖。账本
+  [evidence/2026-10-23-m2s40-custom-command-event.md](html-semantics-compat/evidence/2026-10-23-m2s40-custom-command-event.md)。
+  挂账：现行 spec invalid→Unknown 面（跟进涉内建关键字重构）、
+  popover 关键字、oncommand IDL、command/commandFor IDL 反射、
+  ESC 组栈边缘乱序、非模态 close 不出组栈、R371 模板残留、
+  summary-less details 非激活后代翻转、focus-after-close Complex
+  dialog usage 深层。
 - **2026-10-23 M2 切片 27**：corner-cases 毒化链根因收口（R4620 批内
   selector 时序）——根因在宿主共享 apply 路径：drain 顺序重放时前序
   Remove 摘除移动语义节点 → 后续 INS ref 的 `:nth-child` 索引漂移 →

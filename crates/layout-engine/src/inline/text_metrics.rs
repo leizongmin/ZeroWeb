@@ -54,7 +54,9 @@ pub fn estimate_char_width(c: char, font_size: f32, is_ahem: bool) -> f32 {
     // 注：ZWSP U+200B 亦零宽，但其零宽在 **normal 模式**会触发 seg-break-transformation-018
     // 回归（ZW seg-break 变换 bug，20px U+200B 反而更近 oracle）——故 U+200B 零宽仅经
     // preserve 模式 split_into_words 的断词丢弃路径实现（见 mod.rs），normal 模式暂不零宽。
-    if matches!(c, '\u{200C}' | '\u{200D}' | '\u{2060}' | '\u{FEFF}') {
+    if matches!(c, '\u{200C}' | '\u{200D}' | '\u{2060}' | '\u{FEFF}') || is_bidi_control_char(c) {
+        // R5239：bidi 控制码同 R1449 零宽口径（UAX #9 X9——重排驱动后对计量零
+        // 贡献）；防御纵深，覆盖不经 BidiFragmentCursor 的 intrinsic/ruby 测量。
         return 0.0;
     }
     static ZERO_WIDTH_NSM: LazyLock<bool> = LazyLock::new(|| std::env::var("ZW_ZERO_WIDTH_NSM").as_deref() != Ok("0"));
@@ -606,6 +608,46 @@ pub(crate) struct BidiReorderedText {
     pub visual_is_rtl: Vec<bool>,
 }
 
+/// bidi 控制码：U+202A-202E 嵌入/覆盖（LRE/RLE/LRO/RLO/PDF）+ U+2066-2069 isolate
+///（LRI/RLI/FSI/PDI）。
+pub(crate) fn is_bidi_control_char(c: char) -> bool {
+    let cp = c as u32;
+    (0x202A..=0x202E).contains(&cp) || (0x2066..=0x2069).contains(&cp)
+}
+
+/// R5239：从重排产物中剥除 bidi 控制码——三平行数组同步过滤。
+///
+/// UAX #9 X9 / css-writing-modes-3 #bidi-control-codes：控制码驱动重排后对呈现零
+/// 贡献（不产生盒子、不参与计量）。unicode_bidi 的 `visual_runs` 保留控制码索引位，
+/// 逐位 push 会把它们带进 visual_text → 被 estimate_char_width 计字宽、被
+/// letter-spacing 按 char_count 计费、并被 paint 绘出字形（bidi-005/006 test 段
+/// 12 个控制码与 ref 段（span 构造）恒差平移，✗1.35%）。
+fn strip_bidi_controls(reordered: BidiReorderedText) -> BidiReorderedText {
+    if !reordered.visual_text.chars().any(is_bidi_control_char) {
+        return reordered;
+    }
+    let mut visual_text = String::with_capacity(reordered.visual_text.len());
+    let mut visual_to_logical = Vec::with_capacity(reordered.visual_to_logical.len());
+    let mut visual_is_rtl = Vec::with_capacity(reordered.visual_is_rtl.len());
+    for (ch, (range, rtl)) in reordered
+        .visual_text
+        .chars()
+        .zip(reordered.visual_to_logical.into_iter().zip(reordered.visual_is_rtl))
+    {
+        if is_bidi_control_char(ch) {
+            continue;
+        }
+        visual_text.push(ch);
+        visual_to_logical.push(range);
+        visual_is_rtl.push(rtl);
+    }
+    BidiReorderedText {
+        visual_text,
+        visual_to_logical,
+        visual_is_rtl,
+    }
+}
+
 fn identity_bidi_mapping(text: &str) -> BidiReorderedText {
     let char_count = text.chars().count();
     BidiReorderedText {
@@ -638,11 +680,11 @@ fn bidi_override_mapping(text: &str, is_rtl: bool, mirror_glyphs: bool) -> BidiR
         visual_to_logical.push(range);
     }
     let char_count = visual_to_logical.len();
-    BidiReorderedText {
+    strip_bidi_controls(BidiReorderedText {
         visual_text,
         visual_to_logical,
         visual_is_rtl: vec![is_rtl; char_count],
-    }
+    })
 }
 
 /// BiDi reorder with CSS `direction` context.
@@ -747,11 +789,12 @@ fn bidi_reorder_paragraphs(
             visual_is_rtl.push(para.level.is_rtl());
         }
     }
-    BidiReorderedText {
+    // R5239：X9 剥除——visual_runs 保留控制码索引位，逐位 push 会带进视觉流。
+    strip_bidi_controls(BidiReorderedText {
         visual_text,
         visual_to_logical,
         visual_is_rtl,
-    }
+    })
 }
 
 /// 按视觉顺序为断词后的片段提取逻辑源码映射。
@@ -790,7 +833,7 @@ impl BidiFragmentCursor {
         let enabled = super::runtime_flags::bidi_fragment_source();
         Self {
             source_text: enabled.then(|| Arc::<str>::from(text)),
-            reordered: identity_bidi_mapping(text),
+            reordered: strip_bidi_controls(identity_bidi_mapping(text)),
             visual_byte_offset: 0,
             visual_char_offset: 0,
         }
@@ -852,9 +895,10 @@ impl BidiFragmentCursor {
         for (rtl, level) in reordered.visual_is_rtl.iter_mut().zip(levels.iter()) {
             *rtl = level % 2 == 1;
         }
+        // R5239：levels 按原文逐位消费完毕后再剥控制码（剥前 zip 需原文对齐）。
         Self {
             source_text: enabled.then(|| Arc::<str>::from(text)),
-            reordered,
+            reordered: strip_bidi_controls(reordered),
             visual_byte_offset: 0,
             visual_char_offset: 0,
         }
