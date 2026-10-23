@@ -7880,6 +7880,37 @@
       }
       return false;
     }
+    // R5253（M2 切片 49，2026-10-24）：spec scroll to the fragment 的 details 展开步——
+    // target 自身是 details → 开它；否则逐个开 target 链上未 open 的 details 祖先
+    //（target 落于 closed details 内时 fragment 导航自动展开，展开后才有几何可量）。
+    // 经 setAttribute 走既有属性通道（toggle 事件 / name 排他组链自动）。
+    // https://html.spec.whatwg.org/multipage/browsing-the-web.html#scroll-to-the-fragment-spec
+    var _r253Expanded = false;
+    try {
+      var _r253N = anchor;
+      if (_r253N && _r253N.setAttribute) {
+        if (String(_r253N.tagName || '').toLowerCase() === 'details' && !_r253N.hasAttribute('open')) {
+          _r253N.setAttribute('open', '');
+          _r253Expanded = true;
+        }
+        var _r253P = _r253N.parentNode;
+        while (_r253P) {
+          if (_r253P.tagName && String(_r253P.tagName).toLowerCase() === 'details'
+              && _r253P.setAttribute && !_r253P.hasAttribute('open')) {
+            _r253P.setAttribute('open', '');
+            _r253Expanded = true;
+          }
+          _r253P = _r253P.parentNode;
+        }
+      }
+    } catch (_eR253) {}
+    if (_r253Expanded && typeof requestAnimationFrame === 'function') {
+      // 展开是属性 mutation（批应用后才有新布局）——同步链内 gBCR 拿旧几何，滚动落
+      // 不了位；rAF 帧回调（mutation 已 apply）重入本函数：展开步 no-op（全已 open，
+      // 不再挂臂）+ 既有 scrollIntoView/窗口位同步按新几何落位。仅在真正展开时挂，
+      // 既有滚动面（不涉 closed details）零变化。
+      requestAnimationFrame(function () { _scrollToAnchorForHash(frag, _noTopFallback); });
+    }
     // M2-S4D：窗口滚动位同步——fragment 导航后 window.scrollY 可观测（WPT scroll-behavior
     // after-transition-* 「navigate('#frag') 后 scrollY ≠ 0」基面）。先取**滚动前**几何算绝对
     // 目标位；scrollIntoView 已落窗口位（scroll-to-fragid/scroll-position 的 border-edge 精确值）

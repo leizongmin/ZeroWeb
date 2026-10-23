@@ -2,9 +2,39 @@
 
 **版本**: v2.0
 **日期**: 2026-10-24（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 48 收口（D 族重分诊 10F→1F + editing host focusable area（R5251），全域 425P/55F/2T REG 0 / GAIN 1），下一步按挂账序转 B 族 light dismiss 5F 分诊；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 49 收口（B 族 5F 挂账定性——bounds 2F 渲染流面 + pointer-capture 2F 指针管线深水（R5252 试错回退）+ corner 1F 既有；F 族分诊；R5253 fragment 导航 details 展开收口 auto-expand，全域 426P/54F/2T REG 0 / GAIN 1），下一步按挂账序 A 族 closedby×slot 16F 或 H 前置 declarative shadow 联合切片；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-24 M2 切片 48 收口）**：D 族 focus/inert 10F
+> **▶ 当前状态（2026-10-24 M2 切片 49 收口）**：B 族 light dismiss 5F 全挂账
+> 零净变更 + F 族分诊 + R5253 收口 details auto-expand 1F。**B 族定性**：
+> bounds-clicking 2F——探针实证 elementFromPoint 对 dialog 自身盒命中返
+> null（modal+modeless 同断、后代正常），渲染流命中缺口并 C 族记账；
+> pointer-capture 2F——R5252 两腿模型（down/up 双 target 判定 + capture
+> retarget 救回）试错三洞（backdrop retarget 使 down 腿 contains=true 短
+> 路漏记、capture 残留未隐式释放误救回、corner-cases modal 组入口永挂），
+> git 回退定性**指针管线深水**，需先有指针序列契约面再动；corner-cases
+> 1F 既有挂账（modeless ESC 竞态）。**F 族分诊**：closed-details-layout-
+> apis 1F 渲染流面；name-attribute 3F（mutation events / XHR 解析 /
+> template 附着底座未实现）；toggleEvent 1T 文件级 Timeout（9 子测试
+> Pass 后 completion 未触发，未深查待分诊）。**R5253 两刀**（part02
+> `_scrollToAnchorForHash`）：几何量测前插 spec 展开步（target 链逐个
+> setAttribute('open','')，toggle/name 组链自动）+ 仅真展开时挂 rAF 补偿
+> 臂（属性 mutation 批应用后重入：展开步 no-op + 既有滚动按新几何落位，
+> 既有滚动面零变化）。**契约环境差异注记**：bridge 契约 sandbox 无帧驱
+> 动/布局供给面，滚动落位不可建模（帧驱动 + 手动 tick 仍红）——契约钉
+> (a) 展开/(b) 链外不误开/(c) no-crash，落位面由 WPT 单案承载。**验证**：
+> auto-expand 单案 **Fail → Pass**；interactive-elements 全域 98 files
+> 482 subtest **426P/54F/2T 对 s48 逐位 REG 0 / GAIN 1**；zero-engine
+> lib 3445P/0F（+契约 part80）；fmt/clippy clean（test-guard 包裹）；
+> release runner 含 R5253 JS 串锚点。账本见
+> [evidence/2026-10-24-m2s49-fragment-details-expand.md](html-semantics-compat/evidence/2026-10-24-m2s49-fragment-details-expand.md)。
+> **下一步**：按挂账序候选 A 族 closedby×slot 16F（Chrome-parity 同红
+> 钉住）或 H 前置 4F（declarative shadow parser+渲染流联合切片）；
+> toggleEvent 1T 分诊可作小切片插入。C 族渲染流 20F 与指针管线两腿模型
+> 需跨子系统协调，单独排期。**切片间隙**：本切片为 engine shim 面
+>（part02 fragment 导航），下一挂账 A/H 均预期跨 parser/shim/渲染流，
+> 间隙开放，开工前查 oracle master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 48 收口）**：D 族 focus/inert 10F
 > 逐案单跑取证后重分诊——可收口面仅 focusability 1F（R5251）。**重
 > 分诊**：focus-previous-outside 3F + form-submit-dialog-shadow 1F →
 > **挂账（H 族前置）**——首层根因是 `<template shadowrootmode=open>`
