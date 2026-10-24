@@ -48,8 +48,8 @@ fn img_static_sweep_settle_r5275() {
     sandbox
         .execute(
             "globalThis.__zw_get_image_size = function (src) {\
-               if (src === 'pix.png') return '32,16';\
-               if (src === 'x.png') return '5,5';\
+               if (src === 'https://zero.test/pix.png') return '32,16';\
+               if (src === 'https://zero.test/x.png') return '5,5';\
                return '';\
              };\
              var _a = document.getElementById('a'), _l = document.getElementById('l'),\
@@ -111,12 +111,15 @@ fn img_static_sweep_settle_r5275() {
 /// false）；settle drain 后 error 派发且 broken 补写（complete true）。
 /// 'complete' 后 available-images 命中 → 状态同步 settle（naturalWidth/complete
 /// 同步可读）、load 事件 _defer 后续任务派发（setter 同步任务内注册的 onload 不
-/// 丢——available-images-onload i2 链面）、currentSrc 绝对 URL；同 URL 重复 set
-/// 幂等（load 不重派）。
+/// 丢——available-images-onload i2 链面）、currentSrc 绝对 URL。s70 修订：同 URL
+/// 重复 set **重派** load（spec update-the-image-data available-images 臂 load
+/// 派发仅受 maybe-omit-events 门控——relevant-mutations 'src set to same value'
+/// 期望 load；R5275「stable state 合并不重派」与 spec 相悖，s70 收窄 restart
+/// 判定为选中 URL 变更）。
 /// 断言翻转：闸门被撤（error 即派 → (a) 翻红）；broken 补写被撤（(b) complete
 /// false）；available-images 同步面被撤（(c)(d) 走 fetch 链异步，同步读翻红）；
 /// _defer 事件面被撤（(c2) 计数 0——同步即派则 1，但探针面 onload 后注册丢事件
-/// → available-images-onload 文件级 Timeout）；同 URL 幂等被撤（(e) 计数 2）。
+/// → available-images-onload 文件级 Timeout）；重派面被撤（(e) 计数停 1）。
 #[test]
 fn img_runtime_deferred_settle_r5275() {
     use std::sync::{Arc, Mutex};
@@ -167,11 +170,12 @@ fn img_runtime_deferred_settle_r5275() {
         "(b) settle drain：error 派发 + broken 补写（complete true、naturalWidth 0）"
     );
     // (c)(d)(e) available-images 同步 settle（**状态同步可读**、load 事件 _defer
-    // 后续任务派发——spec image loading task 异步面）+ currentSrc 绝对 URL + 幂等。
+    // 后续任务派发——spec image loading task 异步面）+ currentSrc 绝对 URL + s70
+    // 同 URL 重派面（(e)）。
     sandbox
         .execute(
             "globalThis.__zwReadyState = 'complete';\
-             globalThis._zwAvailableImages = { 'ok.png': { width: 7, height: 9 } };\
+             globalThis._zwAvailableImages = { 'https://zero.test/ok.png': { width: 7, height: 9 } };\
              globalThis.__flagO = 0;\
              img.addEventListener('load', function () { globalThis.__flagO++; });\
              img.src = 'ok.png';\
@@ -204,7 +208,7 @@ fn img_runtime_deferred_settle_r5275() {
         .unwrap();
     assert_eq!(
         sandbox.execute("globalThis.__r5275e").unwrap().value,
-        "1",
-        "(e) 同 URL 重复 set 幂等——load 不重派（stable state 合并）"
+        "2",
+        "(e) 同 URL 重复 set 重派 load（s70 spec 收窄——available-images 臂 load 仅受 maybe-omit-events 门控）"
     );
 }

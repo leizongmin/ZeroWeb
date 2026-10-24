@@ -685,8 +685,14 @@
         //（__zw_get_image_size，webview fetch_page_images 预抓图）；否则 0。
         // https://html.spec.whatwg.org/multipage/images.html#density-corrected-intrinsic-width-and-height
         var _zwImgNaturalDim = function (isWidth) {
+          var _ndDen = 1;
           if (resourceState && resourceState.outcome === 'loaded') {
-            return isWidth ? resourceState.width : resourceState.height;
+            // s70：密度校正（spec density-corrected intrinsic width/height——
+            // round(dim / density)；密度非法/0 回退原值，历史状态无 density 按 1）。
+            var _ndD = Number(resourceState.density);
+            if (_ndD > 0 && isFinite(_ndD)) _ndDen = _ndD;
+            var _ndDim = isWidth ? resourceState.width : resourceState.height;
+            return _ndDen === 1 ? _ndDim : Math.round(_ndDim / _ndDen);
           }
           // R5275：loading=lazy 且未 settle → 恒 0（spec #attr-img-loading——lazy
           // 延迟到接近视口，资源未加载无可报尺寸；host 快照回落不得绕过）。
@@ -694,11 +700,27 @@
           try { _ndLoading = String((handle ? __zw_get_attr_handle(handle, 'loading') : __zw_get_attr(sel, 'loading')) || '').toLowerCase(); } catch (_eNdl) {}
           if (_ndLoading === 'lazy') return 0;
           if (typeof __zw_get_image_size === 'function') {
-            var srcAttr = (handle ? __zw_get_attr_handle(handle, 'src') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'src') : __zw_get_attr(sel, 'src'))) || '';
+            // s70：快照查询 URL = 选中源（srcset/sizes/picture 归一；核心缺失回落
+            // raw src——host fetch_page_images 以原始属性串为键，选中 URL 保持 raw）。
+            var srcAttr = '';
+            try {
+              if (typeof globalThis.__zwSelectImageSource5277 === 'function') {
+                var _ndPk = globalThis.__zwSelectImageSource5277(sel, handle);
+                if (_ndPk && _ndPk.url) {
+                  srcAttr = String(_ndPk.url);
+                  var _ndSd = Number(_ndPk.density);
+                  if (_ndSd > 0 && isFinite(_ndSd)) _ndDen = _ndSd;
+                }
+              }
+            } catch (_eNdpk) {}
+            if (!srcAttr) {
+              srcAttr = (handle ? __zw_get_attr_handle(handle, 'src') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'src') : __zw_get_attr(sel, 'src'))) || '';
+            }
             var dims = String(__zw_get_image_size(srcAttr));
             if (dims) {
               var wh = dims.split(',');
-              return isWidth ? (parseInt(wh[0], 10) || 0) : (parseInt(wh[1], 10) || 0);
+              var _ndRaw = isWidth ? (parseInt(wh[0], 10) || 0) : (parseInt(wh[1], 10) || 0);
+              return _ndDen === 1 ? _ndRaw : Math.round(_ndRaw / _ndDen);
             }
           }
           return 0;
@@ -730,7 +752,16 @@
               // headless 无渲染几何，以 intrinsic 自然尺寸近似——
               // naturalWidth-naturalHeight-width-height raster src 案 width 期望
               // = naturalWidth。VIDEO/INPUT 维持 0（反射缺省语义不动）。
-              if (rgTag === 'IMG') return _zwImgNaturalDim(prop === 'width');
+              // s70：broken 请求臂 → 0（spec：broken 的 density-corrected
+              // intrinsic dimension 为 0——naturalWidth-naturalHeight-width-height
+              // 'non existent image (when not rendered)' width 期望 0 实证；
+              // 300/150 是 UA broken-icon 渲染尺寸非 IDL 面）。
+              if (rgTag === 'IMG') {
+                if (resourceState && resourceState.outcome === 'broken') {
+                  return 0;
+                }
+                return _zwImgNaturalDim(prop === 'width');
+              }
               return 0;
             }
             return dN;
@@ -1076,8 +1107,23 @@
               var _zwImLoading = '';
               try { _zwImLoading = String(_zwIm.getAttribute('loading') || '').toLowerCase(); } catch (_eSwl) {}
               if (_zwImLoading === 'lazy') continue;
-              var _zwImSrc = '';
-              try { _zwImSrc = String(_zwIm.getAttribute('src') || ''); } catch (_eSws) {}
+              // s70：选中源 settle——请求 URL = select-an-image-source 结果（srcset/
+              // sizes/picture 归一，spec update-the-image-data 步 3-17 的请求 URL；
+              // 核心缺失回落 raw src 保底）。密度随状态入账供 naturalWidth 密度校正。
+              var _zwImSrc = '', _zwImDen = 1;
+              try {
+                if (typeof globalThis.__zwSelectImageSource5277 === 'function') {
+                  var _zwImPk = globalThis.__zwSelectImageSource5277(_zwImSel, _zwImHandle);
+                  if (_zwImPk && _zwImPk.url) {
+                    _zwImSrc = String(_zwImPk.url);
+                    var _zwImD = Number(_zwImPk.density);
+                    if (_zwImD > 0 && isFinite(_zwImD)) _zwImDen = _zwImD;
+                  }
+                }
+              } catch (_eSwPk) {}
+              if (!_zwImSrc) {
+                try { _zwImSrc = String(_zwIm.getAttribute('src') || ''); } catch (_eSws) {}
+              }
               if (!_zwImSrc) continue;
               var _zwDims = '';
               try { if (typeof __zw_get_image_size === 'function') _zwDims = String(__zw_get_image_size(_zwImSrc)); } catch (_eSwg) {}
@@ -1085,14 +1131,14 @@
                 var _zwWh = _zwDims.split(',');
                 var _zwW = parseInt(_zwWh[0], 10) || 0;
                 var _zwH = parseInt(_zwWh[1], 10) || 0;
-                _resourceStates[_zwImKey] = { url: _zwImSrc, outcome: 'loaded', width: _zwW, height: _zwH, error: null };
+                _resourceStates[_zwImKey] = { url: _zwImSrc, outcome: 'loaded', width: _zwW, height: _zwH, error: null, density: _zwImDen };
                 try {
                   globalThis._zwAvailableImages = globalThis._zwAvailableImages || {};
                   globalThis._zwAvailableImages[_zwImSrc] = { width: _zwW, height: _zwH };
                 } catch (_eSwa) {}
                 _dispatchWithBubble(_zwImKey, _zwImSel, _zwImHandle, _makeEvent('load', { bubbles: false, cancelable: false }));
               } else {
-                _resourceStates[_zwImKey] = { url: _zwImSrc, outcome: 'broken', width: 0, height: 0, error: true };
+                _resourceStates[_zwImKey] = { url: _zwImSrc, outcome: 'broken', width: 0, height: 0, error: true, density: _zwImDen };
                 _dispatchWithBubble(_zwImKey, _zwImSel, _zwImHandle, _makeEvent('error', { bubbles: false, cancelable: false }));
               }
             }
@@ -3671,6 +3717,16 @@
             //（_reflectedTypeEnum 读 attr——写入后读即新值）。写后应用见 set_attr 之后。
             var _r3901OldTy = (n === 'type' && _realTag(sel, handle) === 'INPUT')
               ? _reflectedTypeEnum(sel, handle) : null;
+            // s70：IMG/SOURCE 相关属性写入前旧值捕获（crossorigin/referrerpolicy 状态
+            // 枚举比对消费；名称门先行零成本跳过——同 set trap 头预捕获口径）。
+            var _zw5277SetPre;
+            if (n === 'src' || n === 'srcset' || n === 'sizes' || n === 'crossorigin'
+                || n === 'referrerpolicy' || n === 'media' || n === 'type') {
+              var _zw5277SetTag = _realTag(sel, handle);
+              if (_zw5277SetTag === 'IMG' || _zw5277SetTag === 'SOURCE') {
+                _zw5277SetPre = _ce_attrValue(sel, handle, n);
+              }
+            }
             if (handle) __zw_set_attr_handle(handle, n, v);
             else __zw_set_attr(sel, n, v);
             // navigation-compat M3：setAttribute('src'/'srcdoc') 入已连接 iframe →
@@ -3727,6 +3783,14 @@
                 } catch (_eCspE) {}
                 return true;
               }
+            }
+            // s70：IMG/SOURCE 相关属性 setAttribute → relevant mutation 重验（spec
+            // relevant mutations 内容属性路径——IDL 路径在 part05 set trap 汇流点；
+            // CSP 阻止臂已 return，重验不达）。触发面语义见 __zwImgAttrMutated5277。
+            if (typeof globalThis.__zwImgAttrMutated5277 === 'function'
+                && (n === 'src' || n === 'srcset' || n === 'sizes' || n === 'crossorigin'
+                    || n === 'referrerpolicy' || n === 'media' || n === 'type')) {
+              try { globalThis.__zwImgAttrMutated5277(sel, handle, n, false, _zw5277SetPre); } catch (_e5277sa) {}
             }
             if (n === 'src' && typeof _realTag === 'function'
                 && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')) {
@@ -3967,6 +4031,15 @@
             // R125：id 移除先摘 pending-ID 索引旧键（写后再摘同样摘到 post-state——
             // remove 后 proxy.id 读 ''/null，_zwPAIdRemove 摘空键 no-op，旧条目残留）。
             if (n === 'id' && handle && typeof _zwPAIdRemove === 'function') _zwPAIdRemove(proxy);
+            // s70：移除前旧值捕获（crossorigin/referrerpolicy 状态比对消费）。
+            var _zw5277RmPre;
+            if (n === 'src' || n === 'srcset' || n === 'sizes' || n === 'crossorigin'
+                || n === 'referrerpolicy' || n === 'media' || n === 'type') {
+              var _zw5277RmTag = _realTag(sel, handle);
+              if (_zw5277RmTag === 'IMG' || _zw5277RmTag === 'SOURCE') {
+                _zw5277RmPre = _ce_attrValue(sel, handle, n);
+              }
+            }
             if (handle && typeof __zw_remove_attr_handle === 'function') __zw_remove_attr_handle(handle, n);
             else if (handle) __zw_set_attr_handle(handle, n, '');
             else if (typeof __zw_remove_attr === 'function') __zw_remove_attr(sel, n);
@@ -3979,6 +4052,13 @@
                 typeof _zwIframeNavigationConnected === 'function' &&
                 _zwIframeNavigationConnected(sel, handle)) {
               globalThis.__zw_reload_iframe(proxy, undefined, {});
+            }
+            // s70：IMG/SOURCE 相关属性移除 → relevant mutation 重验（spec「attributes
+            // are set, changed, or removed」的 removed 臂；属性本不存在非变更，不触发）。
+            if (_rmExisted && typeof globalThis.__zwImgAttrMutated5277 === 'function'
+                && (n === 'src' || n === 'srcset' || n === 'sizes' || n === 'crossorigin'
+                    || n === 'referrerpolicy' || n === 'media' || n === 'type')) {
+              try { globalThis.__zwImgAttrMutated5277(sel, handle, n, true, _zw5277RmPre); } catch (_e5277ra) {}
             }
             // R125：id 移除登记覆盖表（null = absent——sel-based 元素旧 id 查询剔除）。
             if (n === 'id' && !handle && globalThis._zwIdOverrideSet) globalThis._zwIdOverrideSet(key, null);
@@ -4883,6 +4963,14 @@
           // arg（boolean / {block,behavior,inline}）解析 block 对齐：headless 无 viewportH，center/end 近似为 top
           //（documented；viewportH>0 时按 spec 算）。gBCR 未注册（reftest/polyfill/WebView 无 rect bridge）→ rect 零 → no-op。
           return function (arg) {
+            // s70：lazy img 视口触发近似——scrollIntoView 视为「进入视口」，
+            // 置旗标并重验未启动的 lazy img（在 rect 早退之前——bridge 未注册
+            // gBCR 的环境同样生效）。
+            try {
+              if (_realTag(sel, handle) === 'IMG' && typeof globalThis.__zwImgScrollIntoView5277 === 'function') {
+                globalThis.__zwImgScrollIntoView5277(sel, handle);
+              }
+            } catch (_eSiv5277) {}
             var identity = sel || handle;
             if (!identity || typeof __zw_getBoundingClientRect !== 'function') return;
             var rs;
@@ -6419,6 +6507,15 @@
               _mo_notify(sel, handle, { type: 'childList', addedNodes: _r97Added, removedNodes: [], previousSibling: null, nextSibling: null });
               var _r97Pc = _ceParentConnected(sel, handle);
               for (var _r97j = 0; _r97j < _r97Added.length; _r97j++) _ceApplyConn(_r97Added[_r97j], _r97Pc);
+              // s70：fragment 展开插入 = 逐子插入（spec pre-insert fragment 步骤）——
+              // img/source 直接入 picture 的相关变异逐子挂钩。
+              try {
+                if (typeof globalThis.__zwImgTreeMutated5277 === 'function') {
+                  for (var _r97s70 = 0; _r97s70 < _r97Added.length; _r97s70++) {
+                    globalThis.__zwImgTreeMutated5277(sel, handle, _r97Added[_r97s70], true);
+                  }
+                }
+              } catch (_e5277t97) {}
               return child;
             }
             // R334（js-dom M4）：**sel 子**（静态页面元素，有 __zwSelector 无 __zwHandle）
@@ -6505,6 +6602,10 @@
               } catch (_e334n) {}
               var _r334pc = _ceParentConnected(sel, handle);
               _ceApplyConn(child, _r334pc);
+              // s70：img/source 插入 picture → relevant mutation（spec relevant
+              // mutations「parent is a picture and [the element / a source sibling]
+              // is inserted」；非 picture 父在 helper tag 门零成本返回）。
+              try { if (typeof globalThis.__zwImgTreeMutated5277 === 'function') globalThis.__zwImgTreeMutated5277(sel, handle, child, true); } catch (_e5277t334) {}
               return child;
             }
             // R34xx：重新插入清除移除标记（append 后元素回到文档）。
@@ -6911,6 +7012,10 @@
                 }
               }
             }
+            // s70：img/source 插入 picture → relevant mutation（主尾路径——handle/
+            // plain 子与 CE 例外流均汇此 return；R97 fragment / R334 sel 子路径
+            // 各自挂钩）。非 picture 父在 helper tag 门零成本返回。
+            try { if (typeof globalThis.__zwImgTreeMutated5277 === 'function') globalThis.__zwImgTreeMutated5277(sel, handle, child, true); } catch (_e5277tap) {}
             return child;
           };
         }
@@ -7288,6 +7393,9 @@
               _unrecordHandleChild(handle, child);
               try { child.parentNode = null; } catch (_e195p) {}
               _mo_notify(sel, handle, { type: 'childList', addedNodes: [], removedNodes: [child] });
+              // s70：img/source 自 picture 移除 → relevant mutation（helper 内旧父
+              // picture 门——img 自身重验、source 其后 img 兄弟重验）。
+              try { if (typeof globalThis.__zwImgTreeMutated5277 === 'function') globalThis.__zwImgTreeMutated5277(sel, handle, child, false); } catch (_e5277trm) {}
               return child;
             }
             // R125：sel-based 子元素移除路径——此前静默穿透（无 Remove mutation、无本地
@@ -7396,6 +7504,9 @@
                 }
               } catch (_e140sr) {}
             }
+            // s70：img/source 自 picture 移除 → relevant mutation（R125 sel 子与各
+            // 长尾路径汇此 return；文本路径的早退 return 不达——非元素本就无关）。
+            try { if (typeof globalThis.__zwImgTreeMutated5277 === 'function') globalThis.__zwImgTreeMutated5277(sel, handle, child, false); } catch (_e5277trm2) {}
             return child;
           };
         }
@@ -7678,6 +7789,8 @@
               } catch (_e334bn) {}
               var _r334bpc = _ceParentConnected(sel, handle);
               _ceApplyConn(newNode, _r334bpc);
+              // s70：img/source 带位插入 picture → relevant mutation（同 appendChild）。
+              try { if (typeof globalThis.__zwImgTreeMutated5277 === 'function') globalThis.__zwImgTreeMutated5277(sel, handle, newNode, true); } catch (_e5277tib) {}
               return newNode;
             }
             // js-dom M3 R97：无 handle fragment 视图插入（appendChild 同款分支的带位变体）——
@@ -7745,6 +7858,14 @@
               _mo_notify(sel, handle, { type: 'childList', addedNodes: _r97Fb.slice(), removedNodes: [], previousSibling: null, nextSibling: refNode || null });
               var _r97Pb = _ceParentConnected(sel, handle);
               for (var _r97l = 0; _r97l < _r97Fb.length; _r97l++) _ceApplyConn(_r97Fb[_r97l], _r97Pb);
+              // s70：fragment 展开插入逐子挂钩（同 appendChild R97 分支）。
+              try {
+                if (typeof globalThis.__zwImgTreeMutated5277 === 'function') {
+                  for (var _r97bs70 = 0; _r97bs70 < _r97Fb.length; _r97bs70++) {
+                    globalThis.__zwImgTreeMutated5277(sel, handle, _r97Fb[_r97bs70], true);
+                  }
+                }
+              } catch (_e5277t97b) {}
               return newNode;
             }
             // t8i：fragment 视图插入 **sel-only 容器**（handle 空——querySelector 产物
@@ -7790,6 +7911,14 @@
               _mo_notify(sel, null, { type: 'childList', addedNodes: _r97sFb.slice(), removedNodes: [], previousSibling: null, nextSibling: refNode || null });
               var _r97sPb = _ceParentConnected(sel, null);
               for (var _r97sl = 0; _r97sl < _r97sFb.length; _r97sl++) _ceApplyConn(_r97sFb[_r97sl], _r97sPb);
+              // s70：fragment 展开插入逐子挂钩（sel-only 容器变体）。
+              try {
+                if (typeof globalThis.__zwImgTreeMutated5277 === 'function') {
+                  for (var _r97ss70 = 0; _r97ss70 < _r97sFb.length; _r97ss70++) {
+                    globalThis.__zwImgTreeMutated5277(sel, null, _r97sFb[_r97ss70], true);
+                  }
+                }
+              } catch (_e5277t97s) {}
               return newNode;
             }
             // R5001 M3 片 a 收口（html-syntax-compat）：plain 节点（_zwMEl 解析子——无
@@ -7836,6 +7965,8 @@
               _mo_notify(sel, handle, { type: 'childList', addedNodes: [newNode], removedNodes: [], previousSibling: _pnbPrev, nextSibling: refNode || null });
               var _pnbPc = _ceParentConnected(sel, handle);
               _ceApplyConn(newNode, _pnbPc);
+              // s70：img/source 插入 picture → relevant mutation（plain 子带位路径）。
+              try { if (typeof globalThis.__zwImgTreeMutated5277 === 'function') globalThis.__zwImgTreeMutated5277(sel, handle, newNode, true); } catch (_e5277tpnb) {}
               return newNode;
             }
             if (newNode && newNode.__zwHandle) {
@@ -8203,6 +8334,8 @@
                 }
               } catch (_eR263ii) {}
             }
+            // s70：img/source 插入 picture → relevant mutation（insertBefore 主尾路径）。
+            try { if (typeof globalThis.__zwImgTreeMutated5277 === 'function') globalThis.__zwImgTreeMutated5277(sel, handle, newNode, true); } catch (_e5277tibm) {}
             return newNode;
           };
         }
@@ -11353,6 +11486,24 @@
           else if (p === 'title' || p === 'lang' || p === 'type') _attrOf = p;
           if (_attrOf && _moIdVal != null && _mo_any_wants_attr_old(_moIdVal, _attrOf)) {
             _moOldVal = _mo_read_attr(sel, handle, _attrOf);
+          }
+        }
+        // s70（html-semantics M2）：IMG/SOURCE 相关属性 IDL set **写入前**捕获旧内容属性
+        // 值（relevant-mutations：src/srcset/sizes 仅判「是否变更」、crossorigin/
+        // referrerpolicy 按内容状态枚举比对——写后读即新值，必须在 trap 头暂存）。名称门
+        // 先行（零成本字符串比较，绝大多数 setter 零路径变化），命中才做 tag 门与读取。
+        // 末尾汇流点（part05 set trap `if (moAttr)`）传 __zwImgAttrMutated5277。
+        var _zw5277PreAttr;
+        {
+          var _zw5277PName = null;
+          if (p === 'src' || p === 'srcset' || p === 'sizes' || p === 'media' || p === 'type') _zw5277PName = p;
+          else if (p === 'crossOrigin') _zw5277PName = 'crossorigin';
+          else if (p === 'referrerPolicy') _zw5277PName = 'referrerpolicy';
+          if (_zw5277PName !== null) {
+            var _zw5277PTag = _realTag(sel, handle);
+            if (_zw5277PTag === 'IMG' || _zw5277PTag === 'SOURCE') {
+              _zw5277PreAttr = _ce_attrValue(sel, handle, _zw5277PName);
+            }
           }
         }
         // R3034：text/comment 节点 `.data`/`.nodeValue` IDL setter（CharacterData）。须先于末尾 generic fallthrough

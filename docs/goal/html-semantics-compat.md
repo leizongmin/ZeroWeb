@@ -1,10 +1,45 @@
 # HTML Semantics 兼容 — html/semantics 语义面（主攻大域）
 
 **版本**: v2.0
-**日期**: 2026-10-24（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 69 收口（F3 img.decode() promise 面收口 R5276：域 **549P/738F/35T → 607P/678F/37T** GAIN 58 / REG 0），下一步 F1b naturalWidth SVG 固有尺寸尾片（210F 余量）或 F2 select-image-source/currentSrc/srcset（~300F 最大单族，decode 已接近似地基）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**日期**: 2026-10-25（v1.0 立项 2026-10-08）
+**状态**: Active——M2 切片 70 收口（F2 source-set 族收口 R5277：域 **607P/678F/37T → 747P/479F/32T** GAIN 133 / REG 0），下一步 F1b naturalWidth SVG 固有尺寸尾片（210F 余量）或 F4 image-map 命中测试（84F）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-24 M2 切片 69 收口，F3 img.decode() 轮）**：
+> **▶ 当前状态（2026-10-25 M2 切片 70 收口，F2 source-set 族轮）**：
+> s67 八族地图 F2 收口（parse-a-srcset 49 + select-an-image-source 13 +
+> update-the-source-set 84 + relevant-mutations 46 + current-pixel-density
+> 21 + 邻族 7）。**根因**：srcset/sizes/picture-source 选择面仅 R4162/R2419
+> 「首 URL」近似——描述符语法/DPR 择面/media+type 门/relevant mutations
+> 触发/密度校正全缺。**修复（R5277 九刀）**：①part03 共享选择核
+> （parse-srcset/parse-sizes/create-source-set/update-source-set/
+> select-image-source 五核，spec §4.8.4.3.7-12 逐字）；②候选 URL 就地绝对化
+> （`_zwResolveFetchUrl` 文档基含 `<base href>`——available-images 键/请求
+> URL/currentSrc 同源；raw/绝对键并存把同图拆两个 avail 表项，
+> image-loading-lazy-available P→F 实证）；③全状态写入面切选中 URL（sweep
+> srcset-only img / `.src` IDL 链 / revalidate）+ 密度入 resourceState +
+> naturalWidth 密度折算；④relevant mutations 触发面（src/srcset/sizes 恒重
+> 验、crossorigin/referrerpolicy content-state 枚举比对、SOURCE 变迁 → 其后
+> img 兄弟、picture 树插入/移除）+ restart 收窄为选中 URL 变更（同 URL 命中
+> 照常重派 load——spec maybe-omit-events 门）；⑤null selection（src/srcset
+> 移除 → broken，error 仅在仍有关联时派）；⑥detached 更新延一步（重读
+> loading——src-then-lazy-load 时序）+ lazy 视口门只拦 fetch 不拦 avail
+> settle（avail 先于 lazy 决定）+ scrollIntoView 视口旗标近似（F5 几何收口
+> 前债务标记）；⑦broken 无 width/height 属性 → IDL 0（s68 误正改 0——
+> 300/150 是 UA icon 非 IDL 面）；⑧css-parser media_query.rs MQ4
+> error-handling——非空 inner 无法解析 → 整条不匹配，不再退化空条件 all 恒
+> 匹配（`all and (!)` 面 + matchMedia false 对齐，钉定测试撤换）；⑨extract.rs
+> 候选收集接解析核。契约 part87 五测试。**验证**：域 **607P/678F/37T →
+> 747P/479F/32T**（GAIN 133 = 133 F→P / 0 P→F；run3 捕获唯一 P→F 由②收口
+> run4 复验翻回；run3→run4 差恰 2 行）+ interactive **439P/44F/0T 逐位持平**
+> + engine lib **3484P/0F**（+5 契约）+ css-parser lib **3003P/0F** +
+> clippy/fmt clean。账本见
+> [evidence/2026-10-25-m2s70-source-set.md](html-semantics-compat/evidence/2026-10-25-m2s70-source-set.md)。
+> **下一步**：F1b naturalWidth SVG 固有尺寸/密度校正尾片（210F 余量）或 F4
+> image-map 命中测试 84F（elementFromPoint 几何）——按共享路径收益取一。
+> **切片间隙**：本轮 part03/04/05 shim + extract.rs + css-parser media_query
+> + 契约 part87（part85 键位随绝对化更新）；下一挂账 F1b/F4 亦 engine 面，
+> 间隙开放，开工前查 oracle master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 69 收口，F3 img.decode() 轮）**：
 > s67 八族地图 F3 收口（60 子测试 60F → 58P/2F）。**根因**：decode IDL 无
 > 实现（get trap 无臂 + SVGImageElement 原型无方法）。**修复（R5276 三刀）**：
 > ①共享解码核 `__zwImgDecodeCore`（part03 IIFE 顶层，IMG trap/detached 动态
