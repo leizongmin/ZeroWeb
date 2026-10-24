@@ -4,6 +4,6 @@
   "private": true,
   "description": "Node tooling for WPT reftest — chromium screenshot Oracle (DC-14)",
   "dependencies": {
-    "puppeteer-core": "^25.1.0"
+    "puppeteer-core": "^25.16.0"
   }
 }
