@@ -210,6 +210,8 @@ mod r4149_width_keyword_clamp_tests;
 mod r4176_negative_margin_float_tests;
 #[allow(dead_code)]
 mod r4499_spanner_region_diag;
+/// R5261 cell intrinsic inline 级显式宽子相邻 run 求和（CSS2 §17.5.2 + css-sizing-3）。
+mod r5261_cell_inline_run_intrinsic_tests;
 mod r717_flex_ratio_img_tests;
 mod table_layout_tests;
 mod tests_1;

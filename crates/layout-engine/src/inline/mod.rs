@@ -2295,6 +2295,37 @@ impl InlineFormattingContext {
         true
     }
 
+    /// R5261：定位复用的**免刷新**校验（[`Self::refresh_reused_inline_block_metrics`]
+    /// 的只读臂）——全 baseline 门会把 va≠baseline 的原子 run（img-swatch 条带表
+    /// `img{vertical-align:bottom}`，css/CSS2/tables border-conflict-element-001d/001e）
+    /// 整体拒之门外，定位同步缺席，原子子盒滞留 taffy 块堆叠位（竖条）。
+    /// 本校验不改任何几何：逐 run 复核 IFC 存储位形与最终盒**宽高一致**（原子 run
+    /// font_size==0、宽高差 ≤0.01、逐子 matched 对账）。一致时几何即终态——IFC 布局期
+    /// `apply_vertical_alignment` 已施加 va 偏移（CSS2 §10.8.1 行内对齐），定位同步
+    /// 直接消费存储行位，无需刷新重算。宽或高任一变化即 bail（刷新臂允许高更新后
+    /// 重对齐，本只读臂无该补偿，不得消费过期行位——css-sizing aspect-ratio
+    /// replaced-element-010 假回归实证）。
+    pub(crate) fn reuse_positions_valid_without_refresh(&self, sizes: &HashMap<NodeId, (f32, f32)>) -> bool {
+        if self.vertical || sizes.is_empty() {
+            return false;
+        }
+        let mut matched = 0usize;
+        for line in &self.lines {
+            for run in &line.runs {
+                // 宽高双轴一致（宽口径与刷新臂逐字节同源，高轴收紧为相等）；非 sizes
+                // 键 run（文本）跳过——其几何不依赖本复用面。
+                let Some(&(width, height)) = sizes.get(&run.node_id) else {
+                    continue;
+                };
+                if run.font_size != 0.0 || (run.width - width).abs() > 0.01 || (run.height - height).abs() > 0.01 {
+                    return false;
+                }
+                matched += 1;
+            }
+        }
+        matched == sizes.len()
+    }
+
     /// 根据每个片段的 vertical-align 值，计算其在行盒内的 y 偏移量。
     ///
     /// 对齐规则（基于行盒高度 line_height 和片段高度 fragment_height）：

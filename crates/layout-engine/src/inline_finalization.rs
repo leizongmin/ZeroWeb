@@ -4207,11 +4207,30 @@ pub(crate) fn remeasure_inline_only_containers(
                     .then_some((node_id, (child.width, child.height)))
             })
             .collect();
-        if inline_ctx.refresh_reused_inline_block_metrics(doc, styles, &final_sizes)
-            && sync_inline_block_positions_from_ifc(box_node, &inline_ctx, doc, styles)
-        {
+        // R5261（CSS2 §9.4.2/#inline-formatting：inline 级盒按行内流排布，va 仅在
+        // 行盒内偏移）：刷新臂的全 baseline 门对 va≠baseline 原子 run（img-swatch
+        // 条带表 `img{vertical-align:bottom}`）恒 bail，行位同步缺席 → 原子子盒滞留
+        // taffy 块堆叠位。宽高一致时 IFC 存储位形即终态（va 偏移布局期已施加），
+        // 免刷新校验通过即直接消费。**限纯 inline 容器**（谓词与
+        // `sync_inline_child_boxes_from_ifc_with_ancestors` 同源）：混排容器（原子子 +
+        // 流内块级兄弟）的单一连续行流是伪行（R5215 语义），css-sizing
+        // replaced-element-010（img va:top + 块 div）/ contain-intrinsic-size-logical-001
+        // （inline-block va:bottom + 块 div）假回归实证——此类保持旧臂（无同步，taffy
+        // 堆叠位正确）。fallback 臂**不进 claim 集**——claim 使 step 10 跳过该容器，
+        // 而 step 10 以终局容器宽重跑 IFC 定位（6.5 时点容器宽未终定），非 table
+        // 容器须维持该纠正；TableCell 由 step 8 定格、step 10 本就跳过，6.5 行位即终态。
+        let pure_inline_container = !box_node
+            .children
+            .iter()
+            .any(|c| c.is_block_level && !c.is_absolute && !c.is_fixed);
+        let via_refresh = inline_ctx.refresh_reused_inline_block_metrics(doc, styles, &final_sizes);
+        let via_fallback =
+            !via_refresh && pure_inline_container && inline_ctx.reuse_positions_valid_without_refresh(&final_sizes);
+        if (via_refresh || via_fallback) && sync_inline_block_positions_from_ifc(box_node, &inline_ctx, doc, styles) {
             store_font_sizes_from_ifc(&inline_ctx, box_node, doc, styles);
-            positioned_inline_blocks.insert(dom_id);
+            if via_refresh {
+                positioned_inline_blocks.insert(dom_id);
+            }
         }
     }
 }
