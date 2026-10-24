@@ -1,9 +1,9 @@
 # 媒体运行时隔离控制面
 
 **日期**：2026-10-25
-**状态**：Active（**D-RFC-1~4 已批复**——方案 C 批准 / A 批次随批复即启 / B 核查暂缓 / decode-h264 维持默认关，RFC v1.9 §10 批复记录；M1 基线 + M2 RFC 两项交付 + M3 前置设计八片齐备，[m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；**A1–A4 + C1 + C2 切片 1 已落地**——rate 1.00000 + 三缺口闭合 + 内存面收敛 + seek 冷路径 O(GOP) + 协议消息族/media-host 骨架/webview proxy + **C2 解码内核/自走时钟事件循环/proxy 事件面/真实二进制契约**（feature 默认关），偏差记录 DESIGN §2.4/§3.5/§6.5/§8.6/§9.6/§10.7）。
-**当前卡点**：无。A 批次 + C1 + C2 切片 1 完成。
-**下一步**：C2 切片 2（registry 客户端切换 + renderer 泵被动消费 + push 镜像状态 + M1 harness 复验，DESIGN §10.4/§10.5）；relative-position 产物流 seek 抽样复核归后续验证切片。
+**状态**：Active（**D-RFC-1~4 已批复**——方案 C 批准 / A 批次随批复即启 / B 核查暂缓 / decode-h264 维持默认关，RFC v1.9 §10 批复记录；M1 基线 + M2 RFC 两项交付 + M3 前置设计八片齐备，[m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；**A1–A4 + C1 + C2 切片 1/2 已落地**——rate 1.00000 + 三缺口闭合 + 内存面收敛 + seek 冷路径 O(GOP) + 协议消息族/media-host 骨架/webview proxy + C2 解码内核/自走时钟事件循环/proxy 事件面/真实二进制契约 + **registry 开态客户端切换（HostMediaFacade push 镜像 + 21 面分流）/M1 双 feature 零回归/release 宿主面基线**（feature 默认关），偏差记录 DESIGN §2.4/§3.5/§6.5/§8.6/§9.6/§10.7/§10.8，[切片 2 证据](evidence/2026-10-25-c2-slice2/ANALYSIS.md)）。
+**当前卡点**：无。A 批次 + C1 + C2 切片 1/2 完成；C2 收尾（M1 harness 排空语义已并入切片 2）。
+**下一步**：C3（崩溃检测/重启退避，DESIGN §11——proxy `try_wait` 兜底 + send 失败即时检测 + `MediaError{HostInternal}` 全活跃源广播，退避 1s/2s/4s n≤3）；relative-position 产物流 seek 抽样复核与 bg02-media 站点复评归后续验证切片。
 **入口**：[目标契约](../media-runtime-isolation.md) / [启动与证据协议](../ladybird-followups/README.md)
 
 ## 缺口与待决
@@ -21,7 +21,7 @@
 |---|---|---|---|
 | M1 | 生产资源、能力与权限基线 | **完成**（测量面成立，收口待评审） | [2026-10-24 基线](evidence/2026-10-24-m1-baseline/ANALYSIS.md) |
 | M2 | 方案/许可证/回滚 RFC + protocol 接口契约 | **v1.9 已批复**（D-RFC-1~4 用户裁决） | [media-runtime-isolation-spec-rfc](../../../specs/media-runtime-isolation-spec-rfc.md) |
-| M3 | 已确认平台与隔离切片 | **IN_PROGRESS**（A1–A4 已全部落地——rate≡1.0 + 三缺口闭合 + 内存面收敛 + seek O(GOP)；C1 已落地——protocol 17 变体 + media-host 骨架 + webview proxy，feature 默认关；**C2 切片 1 已落地**——音频管线迁零-media + 解码内核/自走时钟 + proxy 事件面 + 真实二进制契约，registry 未切换仍内联；C2 切片 2 + C3/C4 设计稿齐备，D-RFC-1/2 已批） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
+| M3 | 已确认平台与隔离切片 | **IN_PROGRESS**（A1–A4 已全部落地——rate≡1.0 + 三缺口闭合 + 内存面收敛 + seek O(GOP)；C1 已落地——protocol 17 变体 + media-host 骨架 + webview proxy，feature 默认关；**C2 切片 1/2 已落地**——音频管线迁零-media + 解码内核/自走时钟 + proxy 事件面 + 真实二进制契约 + registry 开态客户端切换（HostMediaFacade push 镜像/21 面分流/MSE 内联豁免/IF-006 不回落）+ 端到端契约 5 场景 + M1 双 feature release 零回归（宿主面 tick p50 3.7µs、冷 seek 19.1ms≈内联 18.2ms）；C3/C4 设计稿齐备，D-RFC-1/2 已批） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
 | M4 | 配对媒体、故障和资源审计 | NOT_STARTED | 无 |
 
 ## 验证基线
@@ -213,3 +213,13 @@
 - **门红修复**（既有非本切片，`guarded-clippy` -D warnings 暴露）：`zero-media` `cue_times_ms` 收窄 `#[cfg(test)]`（A4 起唯一调用方在测试面）+ tests.rs 冗余 `mut` + `media_m1_baseline.rs` 文档列表缩进（doc_lazy_continuation）。
 - **验收**：media-host 15+5（decode-h264 组合同绿）+ webview media_proxy 7 + 契约 4 全绿；workspace `guarded-clippy` -D warnings 过；全量 `make guarded-test` 过（exit 0）。registry 未切换（`media-process` 仍默认关），默认路径行为零变化。
 - 共享面占用：zero-media（pipeline.rs 新增 + 门红两行）+ webview（video_registry 迁出 + media_proxy + 契约测试）+ media-host + protocol transport（MAX_FRAME_SIZE pub）+ RFC/DESIGN/master 文档；engine/renderer/registry 调用点零改动。
+
+### 2026-10-25 C2 切片 2 实施轮（registry 客户端切换 + 宿主面端到端）
+
+- **client 面载荷化 + set 面补齐**（commit A）：`MediaHostClient::play`/`pause` 回执改返 `MediaStateUpdateParams` 载荷（wire 不变，IF-002 id 配对消费面）；新增 `set_rate`/`set_gain` fire-and-forget。
+- **桥拆分**（commit B）：`video_bridge_facade_script` + `register_video_bridge_callbacks` + bridge_tests 迁 `video_registry_bridge.rs`（532 行）；registry 2212→1817 行（行数纪律），外部 `zero_webview::video_registry::*` 路径经再导出不变；桥私有字段访问改 `contains_source` pub API。
+- **registry 客户端切换**（commit C）：新 `video_registry_host.rs` `HostMediaFacade`（push 镜像 DC-2 epoch 门控/未知键丢弃；8MiB 分片 settle；纯视频 Ended+loop 回卷待办 + flush 镜像归零防 seek 回流末；play 回执后即时排空元数据——`SourceReady` 同批出队使 JS 立读 duration 有真值，排空窗帧缓冲不丢首帧）；video_registry 21 面 `hosts(key)` 早退/并集分流（登记不落内联字节 IF-006；MSE 键天然内联豁免；`tick_all` 并集形态保 MSE 内联 player）；lib.rs 两模块 cfg 门控。
+- **测试**：facade 合成事件单测 7 + 契约第 5 场景 `hosted_registry_end_to_end`（登记→play→帧入 ImageCache→元数据升级→seek resolved→暂停冻结→纯视频 loop 回卷观测→clear）+ M1 harness 时钟分叉（开态真实节拍/关态合成钟原样）+ A4 断言 feature 分叉（release 内核冷 seek 19.1ms≈内联 18.2ms 并源；宿主暖对 30s/45s 非线断言；30s 收全量条件化）。
+- **验收**：M1 release 宿主面 5/5（226.6s，[证据](evidence/2026-10-25-c2-slice2/ANALYSIS.md)——测试进程 cores 1.001→0.012、tick p50 431ns→3.7µs、时钟 rate 0.99827、1440/1440 帧零丢）+ feature-off release 5/5（20.0s 零回归）+ 契约 5 场景全绿（5.0s）+ `make guarded-clippy` 过 + 全量 `make guarded-test` 过。
+- **偏差四处**记 [DESIGN §10.8](evidence/2026-10-24-m3-prep-design/DESIGN.md)（play 回执后即时排空/元数据升级时点、M1 时钟分叉 + A4 feature 界、泵保持 16ms 被动排空、host 不落内联字节 + MSE 内联豁免）。
+- 共享面占用：webview（video_registry/video_registry_host/video_registry_bridge/media_proxy/lib.rs/两测试文件）+ 文档三处；renderer runtime.rs 泵调用点零改动（`tick_all` 排空语义内聚）、engine/protocol/media-host 零改动。

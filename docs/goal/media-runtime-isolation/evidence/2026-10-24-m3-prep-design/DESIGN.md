@@ -532,6 +532,33 @@ FrameTooLarge / HostInternal）。全部走既有 `IpcMessage` 信封 + bincode 
 8. **能力真值（DC-4）**：握手 capabilities = `codec_capabilities()` 实际路由面（vp9/vorbis/
    opus webm + mp3 + ogg-opus + mp4-aac 常开；av1/h264 随 feature 门控），不虚报。
 
+### 10.8 实施偏差记录（C2 切片 2 落地轮增补，2026-10-25）
+
+切片 2 = registry 客户端切换（`HostMediaFacade` push 镜像 + 命令分流）+ renderer 泵被动消费
++ M1 harness 时钟分叉。落地时确认的偏差与设计对齐点：
+
+9. **元数据升级时点与 play 回执后即时排空**：host 模式固有尺寸/时长在 `SourceReady`（play
+   建解码器后，§10.7-6）前不可得——`probe_dimensions`/`duration` 在 play 前落 (0,0)/None
+   （内联模式 settle 后即可探字节）。实现面：play/pause 回执载荷即时入镜像（消除 250ms 心跳
+   盲区），play 回执后即时排空通道元数据（`SourceReady` 先于 `Playing` 回执同批出队）——
+   JS `play()` 后立读 duration/currentTime 即在真值，不等 16ms 泵 tick；排空窗内的帧缓冲到
+   下一 tick 注入 `ImageCache`（不丢首帧窗）。
+10. **M1 harness 时钟源 feature 分叉 + A4 界放宽**：容量泵 `media-process` 开态改真实节拍
+    （内核真实墙钟推进，合成加速钟不适用——16ms sleep 对齐生产泵节奏；容量面 = 实时排空 +
+    注入成本，解码 CPU 归宿主进程不进测试进程 cpu_ms）；A4 断言 feature 分叉——release 档
+    内核冷 seek 19.2ms ≈ 内联 18.2ms（共享 `VideoPlayer::seek_to_ms` 窄化路径，并源性 <
+    1ms），界保持并新增宿主面暖对（30s/45s）非线断言；debug 档解码慢 ~20×（内联冷跳
+    411ms 同样越出 100ms release 界——A4 界仅 release 测量口径成立），宿主面冷跳界放宽
+    600ms 且 30s 收全量作暖对（冷热方差不可比，§10.7-2 非线性语义由暖对承载）。
+11. **泵保持 16ms tick 被动排空**（非 interest/唤醒机制）：§10.4 既定被动消费形态，事件到达
+    不主动唤醒渲染泵——帧呈现延迟上界一个泵周期（~16ms，240fps 源丢帧率与内联同面）；
+    interest 面归后续优化切片。
+12. **host 模式不落内联字节 + MSE 保持内联**：`register_source`/`register_audio_source`
+    无论宿主登记成败都不存内联字节副本（IF-006 不回落——失败面 = 镜像缺席的空命令面，字节
+    归宿主常驻 §10.7-5）；MSE 源不经 `register_source`（blob:MSE 句柄面独立登记、内核无
+    append 面）天然内联，registry `tick_all`/`is_any_playing` 并集形态保其内联 player 推进
+    不被宿主排空短路。
+
 ## 11. C3 设计——崩溃检测/重启退避 + 降级纪律先例订正（同日第六轮增补）
 
 ### 11.1 先例核实：image-decoder spawn 失败语义订正（RFC v1.7 触发点）
