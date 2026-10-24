@@ -1,7 +1,7 @@
 # 平台媒体解码与媒体运行时隔离
 
 **版本**：v1.0 / 2026-10-20
-**状态**：Active（**M1 已解锁**——2026-10-23 用户决策，无人值守可启动；M2 RFC 架构门与平台/许可待决不随 M1 解锁）
+**状态**：Active（**D-RFC-1~4 已批复**——方案 C 批准，RFC v1.9 §10 批复记录；**A1–A4 + C1 + C2 切片 1/2 + C3 已落地**（feature 默认关），M3 IN_PROGRESS，下一步 C4/M4 终验）
 **父目标**：[zero-web](zero-web.md) / **控制面**：[master](media-runtime-isolation/master.md)
 
 ## 0. 执行摘要与 Mission
