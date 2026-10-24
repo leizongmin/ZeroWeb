@@ -648,6 +648,12 @@ pub struct ComputedStyle {
     /// paint 侧把块容器首个文本片段的首字符按本样式绘制（不改几何——font/metrics
     /// 类属性需 IFC 分词切片，FIXME 挂账）。伪元素不参与继承传播。
     pub first_letter_pseudo: Option<Box<ComputedStyle>>,
+    /// R5258（CSS2 §5.12.1）：`::first-line` 伪元素的计算样式。仅当级联存在
+    /// `::first-line` 声明且 color 与元素不同时存储（切片 1：color 面；bg/font
+    /// 类属性 FIXME 挂账）。paint 侧把块容器首格式行（行组 line_top == 组内最小）
+    /// 上 color 未显式覆盖（解析值 == 元素值 ≈ 继承）的 inline 后代字形按本样式
+    /// 绘制。伪元素不参与继承传播。
+    pub first_line_pseudo: Option<Box<ComputedStyle>>,
     /// css-variables-1：本元素的自定义属性（`--name` → 级联胜者指定值，var() 未替换——
     /// 使用点经 [`resolve_var`](crate::resolve_var) 完整解析）。继承属性：子元素共享父链
     /// Arc（自身声明覆盖时才重建）。供 getComputedStyle `--` 查询暴露（R5114）。

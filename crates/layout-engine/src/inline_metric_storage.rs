@@ -193,9 +193,14 @@ fn store_font_sizes_from_ifc_mode(
                 .text_node_text_transform
                 .insert(frag.node_id, style.text_transform);
         }
+        // R5247：行高槽同 R4440 转置——vertical 下 frag.height = 行内 advance（非行高），
+        // 扁平化 run 的 Path B/measure 重建（build_flatten_run_for_element / walk flush
+        // 的 inline_element_metrics 三级回退）读到 advance 当行高（h1 32px 下 span run
+        // lh=32 vs 直系文本 37），vertical_text_runs_are_compatible 判 false 拆列推进
+        //（text-transform-fullwidth-004/005：span 与兄弟文本同位叠画实证）。
         box_node
             .inline_element_metrics
-            .insert(frag.node_id, (frag.font_size, frag.height));
+            .insert(frag.node_id, (frag.font_size, line_height_metric));
         box_node
             .inline_element_margins
             .insert(frag.node_id, (frag.margin_left, frag.margin_right));

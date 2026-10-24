@@ -1,7 +1,7 @@
 # Renderer 特权请求与进程信任边界
 
 **版本**：v1.0 / 2026-10-20
-**状态**：Active（启动门控：用户本轮只要求规划和脚本；等待后续明确启动）
+**状态**：Active（**M1 已解锁**——2026-10-23 用户决策，无人值守可启动；M2+ 修复切片按证据另行确认）
 **父目标**：[zero-web](zero-web.md)
 **控制面**：[master.md](renderer-trust-boundary/master.md)
 

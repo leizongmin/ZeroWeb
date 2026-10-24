@@ -200,11 +200,17 @@ fn corner_polygon_with_kinds(
         ),
     ];
 
-    // 每角 8 段：R5179 实测 16 段对 corpus 残差（square/notch-mixed 等径向系统偏差）
-    // 零改善——弦高 AA 非残差来源，加密只增顶点成本，保持 8。
-    let n_samples = 8usize;
+    // 每角 8 段基线：R5179 实测 16 段对 corpus 残差（square/notch-mixed 等径向系统
+    // 偏差）零改善——弦高 AA 非残差来源，加密只增顶点成本，保持 8。
+    // R5254：大半径按 r/8 自适应加密（上限 64）——8 段弦的矢高 r(1−cos(π/16)) 在
+    // 切线端横向放大（r=边长极端案外圈弦距真弧 ~8px/扫描行，弧带 even-odd 环
+    // （R5180）与背景精确椭圆光栅共享外轮廓时漏出底色 ~300px，round-2 族
+    // background-clip-content-box-with-border-radius-003 实证）；r≤64 维持 8 段
+    // 既有行为不变。
+    let n_samples_for = |r: f32| -> usize { 8usize.max((r / 8.0).ceil() as usize).min(64) };
     let mut pts: Vec<(f32, f32)> = Vec::new();
     for (kind, r, start, end, c, corner_pt, a0, a1) in corners {
+        let n_samples = n_samples_for(r);
         pts.push(start);
         match kind {
             CornerShapeKind::Round => {

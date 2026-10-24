@@ -1742,6 +1742,21 @@
           if (prop === 'relList'
               && (_r374isHtmlNs ? (_r374clTag === 'a' || _r374clTag === 'area' || _r374clTag === 'link')
                                : ((_r374clNs === 'http://www.w3.org/2000/svg' || _r374clNs === 'http://www.w3.org/1998/Math/MathML') && _r374clTag === 'a'))) {
+            // R5271：link.relList supported tokens（spec「limited to only known values」）——
+            // link types 表中适用 link 元素的关键字全集，supports() 精确匹配（大小写敏感，
+            // DOMTokenList 语义；WPT link-rellist `supports("stylesheet")` 期望 true）。
+            // https://html.spec.whatwg.org/multipage/links.html#linkTypes
+            // FIXME: a/area.relList 各有自己的适用子集（bookmark/external/nofollow/
+            // noopener/noreferrer/opener/tag 等），corpus 未钉，暂走无表路径（supports
+            // 恒 false）。
+            if (_r374isHtmlNs && _r374clTag === 'link') {
+              return _classListProxy(sel, handle, 'rel', [
+                'alternate', 'author', 'canonical', 'dns-prefetch', 'expect', 'help',
+                'icon', 'license', 'manifest', 'modulepreload', 'next', 'pingback',
+                'preconnect', 'prefetch', 'preload', 'prev', 'privacy-policy',
+                'search', 'stylesheet', 'terms-of-service',
+              ]);
+            }
             return _classListProxy(sel, handle, 'rel');
           }
           if (prop === 'sandbox' && _r374isHtmlNs && _r374clTag === 'iframe') {
@@ -2365,6 +2380,38 @@
         //   的同一 execute 内可能暂报 false（layout-dependent probe）；text/comment 节点无布局 rect → append
         //   后仍报 false（少见 `textNode.isConnected` 检查，documented）。Document 节点恒 connected（见 literal）。
         if (prop === 'isConnected') {
+          // R5247（html-semantics M2 切片 44）：handle 形换代孤儿前置复核——apply
+          // 换代重注册清 _zwNodeParent 反链后，旧 handle 形 proxy（静态树物化产物）
+          // 反链上行断 + rect 探测空 → 双假阴性 disconnected
+          //（focus-after-close「Complex dialog usage」：show 时捕获的 prevFocused
+          // input proxy 孤儿化 → pf.focus() 误入 R114 detached 臂 → activeElement
+          // 回落撞换代空壳节点）。宿主持久 handle→selector 反查（不随换代清）+
+          // __zw_contains 宿主树真值在档 → true 短路（本块反链循环含 R91 host
+          // rect 等中途 return，后置复核不可达——真值短路须前置）。false/miss 落
+          // 原全路径：同步窗口 append（宿主 contains 未反映、反链 parentSel 记账
+          // 在）反链真值优先不受损；显式 remove（_zwRemovedHandles 记账）与未挂载
+          // createElement（反查 miss）语义原样。
+          if (!sel && handle
+              && !(typeof _zwRemovedHandles !== 'undefined' && _zwRemovedHandles && _zwRemovedHandles[handle])
+              && typeof __zw_selector_for_handle === 'function') {
+            try {
+              var _icSelR5247c = __zw_selector_for_handle(String(handle));
+              // 同一性核验：反查 selector 回查文档须命中**同 handle**——shadow 树内
+              // 元素（detached shadowRoot，反链 R91 权威判定）的宿主扁平 selector 在
+              // 文档查询空间命中的是**别元素**，handle 不合 → 不短路、落反链原路径
+              //（focus-after-close「moved to shadow root」/「shadow DOM host」回归
+              // 面）；同时消多实例文档 selector 歧义。
+              if (_icSelR5247c) {
+                var _icElR5247 = null;
+                try { _icElR5247 = globalThis.document.querySelector(_icSelR5247c); } catch (_e5247q) {}
+                if (_icElR5247 && String(_icElR5247.__zwHandle) === String(handle)
+                    && typeof __zw_contains === 'function'
+                    && __zw_contains('html', _icSelR5247c) === '1') {
+                  return true;
+                }
+              }
+            } catch (_eICR5247c) {}
+          }
           if (sel) {
             // R4200：同步移除标记优先（`_zwIsConnected` part01 同款门）——脚本内
             // remove() 后（host mutation 尚未应用）isConnected 立即为 false（spec
@@ -3670,6 +3717,16 @@
             var targetTag = _realTag(sel, handle);
             // R3909：option selected 内容属性变更步前半（写入前快照）。
             var _optSelSnap9 = (n === 'selected') ? _zwOptSelAttrPre(sel, handle) : null;
+            // R5256：dialog open 移除面 pre-snapshot——真移除后属性不在场
+            //（`_zwDialogHasOpen` 恒 false），wasOpen 门须含模态态（modal + open
+            // 属性双态一致，防御性取或）。**close watcher 门**：仅 show()/
+            // showModal() 开过的 dialog 有 watcher（R4300 组栈/R3290 模态态双
+            // 信号）→ 移除跑关闭步；属性直开（markup open / IDL true，未经
+            // show）无 watcher，移除仅隐藏不关闭（dialog-open「IDL false 不派
+            // close」断言面）。pre 块删态前取样。
+            var _r5256DlgPre = (nLower === 'open' && targetTag === 'DIALOG'
+              && (_zwDialogModal[key] || _zwDialogModalStack.indexOf(key) !== -1)
+              && _zwDialogHasOpen(sel, handle)) ? true : false;
             // R122：非 NS 移除按**限定名**剔实例（与 setAttribute 的限定名 upsert 对称），
             // 并解绑 Attr（ownerElement=null——WPT "Attribute loses its owner when removed"：
             // removeAttribute 后 attr.ownerElement 须 null，否则 setAttributeNode 误抛
@@ -3809,6 +3866,11 @@
             // 已是 closed 时 presence 不变，notify 内比对后 no-op——t9 断言面）。
             if (n === 'open' && typeof _zwToggleQueueNotify4009 === 'function') {
               _zwToggleQueueNotify4009(sel, handle, _rmExisted);
+            }
+            // R5256：dialog open 移除 → 关闭步（pre-snapshot wasOpen 门——模态
+            // 清理/pre 块删态后仍以快照判定；close/toggle 排队、焦点不恢复）。
+            if (_r5256DlgPre && typeof _zwDialogAttrClosedR5256 === 'function') {
+              _zwDialogAttrClosedR5256(key, sel, handle);
             }
             if (ceEntry) _ce_dispatchAttrChange(ceEntry, proxy, n, ceOld, null);
           };
@@ -4282,6 +4344,65 @@
             // R3254-M7'：通知宿主同步 retained 焦点状态（键盘路由 + 滚动守卫）。空串 → host 不采纳
             //（selector 缺失的 focus 无稳定目标）；宿主侧另有 is_focusable_selector 校验兜底。
             if (sel && typeof __zw_focus_changed === 'function') __zw_focus_changed(sel);
+            // R5257（html-semantics M2 切片 52，2026-10-24）：focus 滚动进视口（spec
+            // focusing steps 尾 UA 滚动面，CSSOM View scroll a target into view——WPT
+            // focus-after-close「outViewPortButton.focus() 后 scroll 事件 + scrollTop>0」
+            // 断言面，此前 scroll 事件永挂文件级 Timeout）。gBCR 出界才滚（nearest 最小
+            // 滚动：上出界 → 元素顶对齐视口顶；下出界 → 底贴齐视口底；高于视口上出界
+            // 臂先命中 → 顶对齐）。复用 globalThis.scrollTo（R3047 `_winScroll` 更新 +
+            // R3051 scroll 事件——documentElement.scrollTop 窗口镜像读回自洽）。
+            // **no-scroll 变体**：`__zwFocusNoScroll` 旗为真跳过——R4600 dialog 内部
+            // focusing steps（show/showModal 聚焦、close-the-dialog 焦点恢复、inert
+            // fixup）包旗不滚（Chromium 同款 close 恢复不滚；focus-after-close 后半
+            // 「close 后 scrollTop==0」断言面）。detached 臂已提前 return（无几何无滚动）。
+            // https://html.spec.whatwg.org/multipage/interaction.html#focusing-steps
+            if (globalThis.__zwFocusNoScroll !== true && typeof __zw_getBoundingClientRect === 'function') {
+              try {
+                var _fsId = sel || handle;
+                var _fsT = 0, _fsH = 0, _fsHave = false;
+                if (_fsId) {
+                  var _fsR = null;
+                  try { _fsR = __zw_getBoundingClientRect(_fsId); } catch (_eFsG) {}
+                  if (_fsR && _fsR.indexOf(',') >= 0) {
+                    var _fsP = _fsR.split(',');
+                    _fsT = +_fsP[1] || 0; _fsH = +_fsP[3] || 0;
+                    _fsHave = (_fsT !== 0 || _fsH !== 0);
+                  }
+                }
+                // 几何 fallback：动态创建元素（createElement→appendChild）无布局几何
+                //（runner gBCR 零盒实证）——读 proxy **inline style**（JS 侧 cssText，
+                // handle-only 亦可达；宿主 computed style 仅收 selector）近似：position
+                // 非 static 且 top 可解析 → top 即文档 y（abspos ICB 近似）。语料钉
+                // inline style 形态（focus-after-close style.top 直写）；样式表定位
+                // 不在近似面（FIXME: 随渲染流样式几何底座补）。
+                if (!_fsHave) {
+                  var _fsSt = null;
+                  try { _fsSt = proxy.style; } catch (_eFsS) {}
+                  if (_fsSt) {
+                    var _fsPos = '', _fsTopV = NaN;
+                    try {
+                      _fsPos = (typeof _fsSt.getPropertyValue === 'function')
+                        ? String(_fsSt.getPropertyValue('position') || '')
+                        : String(_fsSt.position || '');
+                      _fsTopV = parseFloat(_fsSt.getPropertyValue ? _fsSt.getPropertyValue('top') : _fsSt.top);
+                    } catch (_eFsP) {}
+                    if (_fsPos && _fsPos !== 'static' && !isNaN(_fsTopV)) {
+                      _fsT = _fsTopV; _fsH = 0; _fsHave = true;
+                    }
+                  }
+                }
+                var _fsVh = (typeof globalThis.innerHeight === 'number' && globalThis.innerHeight > 0) ? globalThis.innerHeight : 0;
+                if (_fsVh > 0 && _fsHave && (_fsT < 0 || _fsT + _fsH > _fsVh)) {
+                  // nearest：上出界 → 顶对齐；下出界有高 → 底贴齐；下出界无高（样式
+                  // 近似）→ 顶对齐（可见性优先，R3060 center/end≈top 同款 documented 近似）。
+                  var _fsN;
+                  if (_fsT < 0) _fsN = _fsT;
+                  else if (_fsH > 0) _fsN = _fsT + _fsH - _fsVh;
+                  else _fsN = _fsT;
+                  globalThis.scrollTo(0, _fsN < 0 ? 0 : _fsN);
+                }
+              } catch (_eFs) {}
+            }
           };
         }
         if (prop === 'blur') {
@@ -5260,6 +5381,26 @@
               if (_r154Tag === 'DETAILS' && typeof _zwDetailsActivateR4400 === 'function') {
                 _zwDetailsActivateR4400(sel, handle);
               }
+              // R5248（html-semantics M2 切片 45）：target 非激活站时 nearest 上溯——
+              // summary-less details 内非激活后代 `.click()` 翻转所属 details（s37
+              // 已知边界「点击 summary-less details 内非激活后代不翻转」的 click()
+              // 半边；spec the-details-element activation behaviour + concept-event-
+              // dispatch legacy-pre-activation「nearest ancestor (or self) with
+              // activation behavior」——DETAILS 无 summary 子时其 activation behavior
+              // 覆盖全部非交互后代）。receiver 自身三站让位（LABEL 转发/SUMMARY/
+              // DETAILS 分支已执行，DETAILS 自身再跑 nearest 会双翻）；nearest 命中
+              // 交互后代（act:button/act:a/act:summary/checkbox）时不落 act:details
+              // 自然豁免。`_zwSyntheticClick` 标使 R112 post act:details 门（R5248
+              // 放宽版）跳过本通道——单翻互斥。
+              if (_r154Tag !== 'LABEL' && _r154Tag !== 'SUMMARY' && _r154Tag !== 'DETAILS'
+                  && typeof _zwFindClickActivation === 'function') {
+                var _r5248Act = null;
+                try { _r5248Act = _zwFindClickActivation(sel, handle, true); } catch (_e5248a) { _r5248Act = null; }
+                if (_r5248Act && _r5248Act.type === 'act:details'
+                    && typeof _zwDetailsActivateR4400 === 'function') {
+                  try { _zwDetailsActivateR4400(_r5248Act.sel, _r5248Act.handle); } catch (_e5248d) {}
+                }
+              }
             }
             return notPrevented;
           };
@@ -6183,6 +6324,8 @@
               // 短路返 null）恒 null、removal-pause tick 误判（track-remove-insert-
               // ready-state 的 host 通道缺口根因之一）。
               try { if (typeof _zwUnmarkRemoved === 'function') _zwUnmarkRemoved(_r334ChildSel); } catch (_e334um) {}
+              // R5250：sel 子重插清除收养章（XLV 同款对称面——showModal fully-active 门）。
+              try { if (typeof _zwUnmarkAdoptDocSel === 'function') _zwUnmarkAdoptDocSel(_r334ChildSel); } catch (_e5250um2) {}
               try {
                 // （_r334OldSel 已在 wire 前读取——XLV）
                 // R334：removed record 的兄弟字段——wire 前的兄弟 getter 快照。
@@ -6217,6 +6360,10 @@
             // R34xx：重新插入清除移除标记（append 后元素回到文档）。
             if (sel) _zwUnmarkRemoved(sel);
             if (child && child.__zwSelector) _zwUnmarkRemoved(child.__zwSelector);
+            // R5250：重插主文档树清除 sel 收养章（showModal fully-active 门对称面——
+            // 回插后 node document 恢复 active document）。
+            if (sel) _zwUnmarkAdoptDocSel(sel);
+            if (child && child.__zwSelector) _zwUnmarkAdoptDocSel(child.__zwSelector);
             // js-dom M4 R81：无 handle 的轻量节点（CDATASection 等 plain object）——append 到
             // handle 父时入 registry（host 无对应 mutation 类型；WPT Node-properties
             // testDiv.textContent 期望 CDATA "1234"+"5678" 计入拼接）。
@@ -6499,6 +6646,8 @@
                   var ca86 = ceAdded[ci86];
                   if (ca86 && ca86.__zwHandle) _zwUnmarkRemovedHandle(ca86.__zwHandle);
                   if (ca86 && ca86.__zwSelector && typeof _zwUnmarkRemoved === 'function') _zwUnmarkRemoved(ca86.__zwSelector);
+                  // R5250：append 重插清除 sel 收养章（fully-active 门对称面）。
+                  if (ca86 && ca86.__zwSelector && typeof _zwUnmarkAdoptDocSel === 'function') _zwUnmarkAdoptDocSel(ca86.__zwSelector);
                 }
               }
               // R2994 connectedCallback：子树按父连接态传播（父连入 → 子树连入；未观察/非 custom 仅传播）。
@@ -7100,6 +7249,33 @@
             return child;
           };
         }
+        // R5258（html-semantics M2 切片 52，2026-10-24）：Element.moveBefore（DOM
+        // standard moveBefore——免 removal/insertion steps 的树内移动）。此前未实现 →
+        // TypeError，WPT dialog-open-movebefore-setup「reparenting a dialog should not
+        // cause it to move in the open dialogs list」首行即炸（moveBefore(dialog, null)
+        // 后断言全灭）。spec 可观察语义：不跑 removal steps → close watcher 组、top-layer、
+        // dialog open 态**原地保持**（对照组树移动 R5250 语义仅弃自定义元素回调面，本
+        // shim 的 insertBefore 本就无 dialog 删除钩子——组栈/top-layer 清理只在 show/
+        // close/属性写路径，移动面天然与 spec moveBefore 可观察语义一致）。实现 = spec
+        // 校验（parameter 非 Node TypeError；child 非本父 NotFoundError 走 R300 判定）
+        // + 委派既有 insertBefore 机械（pre-insert 校验族 R296/R300 + 宿主 wire +
+        // registry 记账 + MO childList record 全继承）。
+        // FIXME: spec 同文档门（node 与 this 跨 Document → HierarchyRequestError）未加
+        // ——委派路径走 adopt 语义，语料无钉，随 declarative shadow/parser 批次补。
+        // https://dom.spec.whatwg.org/#dom-parentnode-movebefore
+        if (prop === 'moveBefore') {
+          return function (newNode, refNode) {
+            if (newNode == null || typeof newNode !== 'object' || newNode.nodeType === undefined) {
+              throw new globalThis.TypeError(
+                "Failed to execute 'moveBefore' on 'Element': parameter 1 is not of type 'Node'.");
+            }
+            if (arguments.length < 2 || (refNode != null && (typeof refNode !== 'object' || refNode.nodeType === undefined))) {
+              throw new globalThis.TypeError(
+                "Failed to execute 'moveBefore' on 'Element': parameter 2 is not of type 'Node' and is not null.");
+            }
+            return proxy.insertBefore(newNode, refNode != null ? refNode : null);
+          };
+        }
         if (prop === 'insertBefore') {
           return function(newNode, refNode) {
             // R296（js-dom M4）：WebIDL 参数序（转换先于算法）——parameter 1 非节点
@@ -7320,6 +7496,8 @@
               // 随连接视图丢失（corner-cases focusin removes-and-reinserts 臂：R4600
               // focusing steps 让 focusin 真实触发后暴露的面）。
               try { if (typeof _zwUnmarkRemoved === 'function') _zwUnmarkRemoved(_r334bChildSel); } catch (_e334bum) {}
+              // R5250：带位变体重插清除 sel 收养章（R334 appendChild 同款对称面）。
+              try { if (typeof _zwUnmarkAdoptDocSel === 'function') _zwUnmarkAdoptDocSel(_r334bChildSel); } catch (_e5250um) {}
               try {
                 var _r334bOldSel = null;
                 try {
@@ -7847,6 +8025,8 @@
                   var ia87 = _ibAdd[ci87];
                   if (ia87 && ia87.__zwHandle) _zwUnmarkRemovedHandle(ia87.__zwHandle);
                   if (ia87 && ia87.__zwSelector && typeof _zwUnmarkRemoved === 'function') _zwUnmarkRemoved(ia87.__zwSelector);
+                  // R5250：insertBefore 重插清除 sel 收养章（R87 恢复段对称面）。
+                  if (ia87 && ia87.__zwSelector && typeof _zwUnmarkAdoptDocSel === 'function') _zwUnmarkAdoptDocSel(ia87.__zwSelector);
                 }
               }
               // R2994 connectedCallback：子树按父连接态传播。
@@ -8375,6 +8555,7 @@
               // 文本快照条目无 selector，文本 proxy 的 .nextSibling 链不可依赖），仅跨
               // 相邻非元素节点，元素相对序不变。
               var _r371Next = null;
+              var _r371Self = null; // R5246：被替换者基列表 proxy（overlay 剔除 identity 用）。
               try {
                 var _r371kids = (typeof _childNodeList === 'function' && _r371ParentSel)
                   ? _childNodeList(_r371ParentSel) : null;
@@ -8383,6 +8564,7 @@
                   for (var _r371k = 0; _r371k < _r371kids.length; _r371k++) {
                     if (_r371kids[_r371k] && _r371kids[_r371k].__zwSelector === sel) { _r371ki = _r371k; break; }
                   }
+                  if (_r371ki >= 0) _r371Self = _r371kids[_r371ki];
                   for (var _r371k2 = _r371ki + 1; _r371ki >= 0 && _r371k2 < _r371kids.length; _r371k2++) {
                     var _r371kc = _r371kids[_r371k2];
                     if (_r371kc && _r371kc.nodeType === 1) { _r371Next = _r371kc; break; }
@@ -8394,6 +8576,23 @@
               _zwRemoveIframeWindowClientForNode(_makeProxy(sel, handle));
               if (handle) { __zw_remove_handle(handle); if (typeof _zwMarkRemovedHandle === 'function') _zwMarkRemovedHandle(handle); }
               else { __zw_remove(sel); if (typeof _zwMarkRemoved === 'function') _zwMarkRemoved(sel); }
+              // R5246（html-semantics M2 切片 43）：self-removal 的**父桶记账**——上方两路只
+              // 覆盖 apply 面（Remove/RemoveHandle mutation）与 sel/handle 字符串标记表
+              //（parentNode/isConnected 读），合并视图子读（childNodes overlay
+              // `_zwOverlayPendingChildNodes` / R322 归并查询）按**父桶 removed identity** 剔除
+              // ——桶缺 removed 项 → 被替换者（快照 sel 节点，corpus dialog-focus-shadow 的
+              // template 形）在合并视图残留至 apply 换代（s26 挂账「R371 rekey 时 dst 桶不存在
+              //（dstA:-1），不记父桶 removed」收口）。经 canonical 记账入口 `_zwHCLiveInvalidate`
+              // 直调（父桶 removed + 全局 pending-removed + live 集合失效一体；子树展平含
+              // template 内容子）。不经 `_mo_notify`——sel 臂插入/移除两段的 MO record 面是
+              // 独立缺口（R117 handle 臂已有 record），本轮只收口合并视图残留，不扩面。
+              // proxy 取基列表条目（`_r371Self`——与 overlay 剔除 `res[ri] === rm` 同一缓存
+              // 对象；scan miss 回落 `_makeProxy(sel, null)`，sel 键 identity 稳定同
+              // `_wrapSelector`）。本记账先于下方 rekey → dst 桶必存在（含 removed 项），
+              // rekey 走合并分支（promote 分支保留为护栏）。
+              if (_r371ParentSel && typeof _zwHCLiveInvalidate === 'function') {
+                try { _zwHCLiveInvalidate([], [_r371Self || _makeProxy(sel, null)], _r371ParentSel, null); } catch (_e5246inv) {}
+              }
               // R379（js-dom M4）：replaceWith 的「remove 自身」步骤补移除标记（spec
               // `dom-childnode-replacewith` = insert-then-remove 两步，remove 步语义与
               // remove() 同——同步脚本内标记中元素的 parentNode/查询门须立即反映；
@@ -10466,6 +10665,19 @@
             return _ZW_LINK_AS_KEYWORDS.hasOwnProperty(_p5asLo) ? _p5asLo : '';
           }
         }
+        // R5271：link.fetchPriority enumerated reflection（spec fetchpriority content
+        // attribute「limited to only known values」——missing value default 与 invalid
+        // value default 均 auto state：合法关键字 ascii 小写返 canonical，其余/缺省
+        // → 'auto'；WPT attr-link-fetchpriority 全案）。
+        // https://html.spec.whatwg.org/multipage/semantics.html#attr-link-fetchpriority
+        // FIXME: IDL setter（合法值反射写内容属性）corpus 未钉，暂缺（读侧覆盖）。
+        if (prop === 'fetchPriority' && _realTag(sel, handle) === 'LINK') {
+          var _p5fprRaw = handle
+            ? __zw_get_attr_handle(handle, 'fetchpriority')
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'fetchpriority') : __zw_get_attr(sel, 'fetchpriority'));
+          var _p5fprLo = _zwASCIILower(String(_p5fprRaw == null ? '' : _p5fprRaw));
+          return (_p5fprLo === 'high' || _p5fprLo === 'low' || _p5fprLo === 'auto') ? _p5fprLo : 'auto';
+        }
         // R5009 片 d（M4 片 d）：nonce「string」反射（link/style——nonce-hiding 面：
         // IDL set **不写内容属性**（corpus 'IDL set to X' getAttribute 期望 previous
         // value，security 语义），IDL get 读「内部值优先、attr 回落、缺省 ''」。
@@ -10862,7 +11074,7 @@
         }
         return undefined;
       },
-      set: function(_t, prop, value) {
+      set: function(_t, prop, value, receiver) {
         var p = String(prop);
         // R-t2qq（constructable stylesheets，siteopt qq-20261016-r1）：ShadowRoot
         // 原型 accessor 派发——`ShadowRoot.prototype.adoptedStyleSheets` 的 setter。
@@ -10968,6 +11180,9 @@
           }
         }
         var moAttr = null;
+        // R5249（html-semantics M2 切片 46）：声明前置（R3069 reflected 臂条件内
+        // 赋值复用——历史 menu 面 tag 门，见 part05.js R3069 分支注记）。
+        var _r5249Tag;
         // js-dom M4 R45：MutationObserver attributeOldValue——IDL 反射 setter（el.id=/className=/title= 等）的
         // old 值须在**写入前**捕获（写后读即新值）。旧实现 part05 末尾 notify 不带 oldValue（恒 null，WPT
         // MutationObserver-attributes "oldValue didn't match" 全族 fail）。此处按 IDL 名预判目标内容属性名，
@@ -11070,6 +11285,13 @@
         // false、`.text = ''` 后无子）。直接委托 textContent setter——同 spec 步骤，零平行
         // 记账面（清 _handleChildren/注册本地文本子/_zwTextWritten/MO childList 全继承）。
         if (p === 'text' && _realTag(sel, handle) === 'OPTION') {
+          _makeProxy(sel, handle).textContent = value;
+          return true;
+        }
+        // R5269（html-semantics M2 切片 62）：title.text setter = set child text
+        // content（与 option.text R3907 同口径——string replace all 步骤与
+        // textContent 一致；直接委托继承宿主写回 + 本地文本子注册 + childList 记录）。
+        if (p === 'text' && _realTag(sel, handle) === 'TITLE') {
           _makeProxy(sel, handle).textContent = value;
           return true;
         }
@@ -11825,6 +12047,12 @@
           var _r4009IsDetails = _realTag(sel, handle) === 'DETAILS';
           var _r4009PreOpen = _r4009IsDetails ? _zwDetailsHasOpen4009(sel, handle) : null;
           var _r4009Src = _r4009IsDetails ? _zwDetailsTakeInvokerSourceR4400(key) : null;
+          // R5256：dialog IDL falsy 臂 pre-snapshot（下方 _zwRemoveAttr 前属性在场，
+          // 与 removeAttribute 直写面同判定口径）+ close watcher 门（组栈/模态态
+          // 双信号——属性直开无 watcher 仅隐藏，dialog-open 断言面）。
+          var _r5256DlgPre = (!_r4009IsDetails && _realTag(sel, handle) === 'DIALOG'
+            && (_zwDialogModal[key] || _zwDialogModalStack.indexOf(key) !== -1)
+            && _zwDialogHasOpen(sel, handle)) ? true : false;
           // R4200（html-semantics M2 切片 22）：open 属性 IDL 写面发 MutationObserver
           // attributes record（moAttr 尾钩同其余反射 setter——R45 汇流点）。dialog/show
           // 内部写走 part01 调用点直发（helper 为 aria 共用，不在 helper 内发）。
@@ -11841,6 +12069,12 @@
               delete _zwTopLayer[key];
               var _msI2 = _zwDialogModalStack.indexOf(key);
               if (_msI2 !== -1) _zwDialogModalStack.splice(_msI2, 1);
+              // R5256：open falsy 直写 = 属性移除面——同关关闭步（close/toggle
+              // 排队、焦点不恢复；旧注记「不派 close」已被 attribute change steps
+              // 变更推翻——dialog-close-via-attribute.tentative 断言契约）。
+              if (_r5256DlgPre && typeof _zwDialogAttrClosedR5256 === 'function') {
+                _zwDialogAttrClosedR5256(key, sel, handle);
+              }
             }
           }
           if (_r4009PreOpen !== null) {

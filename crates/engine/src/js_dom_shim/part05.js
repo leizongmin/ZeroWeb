@@ -699,6 +699,91 @@
               }
             } catch (_e) {}
           }
+        } else if ((p === 'caption' || p === 'tHead' || p === 'tFoot') && (_realTag(sel, handle) || '').split(':').pop() === 'TABLE') {
+          // R5265：HTMLTableElement caption/tHead/tFoot IDL setter（WHATWG HTML §4.9.1
+          // dom-caption/dom-thead/dom-tfoot setter steps——闭合 part03 R2845「仅 getter」限制）。
+          // null/undefined → 移除首个匹配元素子（t.tHead=null 案）；非表 section/caption 形态
+          // → **JS TypeError**（t.tHead=div 案 assert_throws_js）；section 家族但 localName
+          // 不符 → HierarchyRequestError（tbody 入 tHead / thead 入 tFoot 案）；node 为本表
+          // 祖先 → pre-insert HierarchyRequestError（t2.tHead=t2thead 案）；否则首个匹配子存在
+          // 则替换、否则按 create 位置插入（caption 首子、thead 首个 tbody/tfoot 子前、tfoot
+          // 末尾——与 createCaption/createTHead/createTFoot 同位）。经 proxy 原语（insertBefore/
+          // appendChild + victim.remove()）。自代理优先取 set trap 的 receiver（= 页面持有的
+          // proxy 本体，insert 经其落位并记 _zwNodeParent 反链），兜底 `_makeProxy(sel, handle)`
+          //（R100 登记身份）。类型检查用卫语句：不满足即 throw（代理 set trap 转发异常），
+          // 通过后平铺走查与插入、三种 tag 共享——早期嵌套 if/else 版把插入段困在末臂
+          // else 里，caption 正确 localName 时永不可达（caption_001 parentNode null 案实证）。
+          var _tblP5 = (receiver && typeof receiver === 'object' && receiver.nodeType != null)
+            ? receiver : _makeProxy(sel, handle);
+          if (_tblP5) {
+            var _5tag = p === 'tHead' ? 'thead' : (p === 'tFoot' ? 'tfoot' : 'caption');
+            if (value == null) {
+              var _5at = _zwTblChildIdx(_tblP5, _5tag);
+              if (_5at >= 0) {
+                var _5old0 = _tblP5.childNodes[_5at];
+                if (_5old0 && typeof _5old0.remove === 'function') _5old0.remove();
+              }
+            } else {
+              var _5ln = '';
+              try { _5ln = String(value.localName || '').toLowerCase(); } catch (_e5ln) {}
+              if (_5tag === 'caption') {
+                // 非 caption 形态 → TypeError（t.caption=div 案 assert_throws_js）。
+                if (_5ln !== 'caption') throw new TypeError("Failed to set the 'caption' property on 'HTMLTableElement': parameter 1 is not of type 'HTMLTableCaptionElement'.");
+              } else if (_5ln !== 'thead' && _5ln !== 'tbody' && _5ln !== 'tfoot') {
+                // 非 section 形态 → TypeError（t.tHead=div 案）。
+                throw new TypeError("Failed to set the '" + p + "' property on 'HTMLTableElement': parameter 1 is not of type 'HTMLTableSectionElement'.");
+              } else if (_5ln !== _5tag) {
+                // section 家族但 localName 不符 → HierarchyRequestError（tbody 入 tHead / thead 入 tFoot 案）。
+                _throwDom('HierarchyRequestError', "The '" + p + "' property takes only a '" + _5tag + "' element.");
+              }
+              // pre-insert 有效性：node 含本 table（祖先）→ HierarchyRequestError。
+              var _5anc = _tblP5, _5isAnc = false, _5guard = 0;
+              while (_5anc && _5guard++ < 128) {
+                var _5hit = _5anc === value;
+                if (!_5hit) {
+                  try {
+                    var _5aS = _5anc.__zwSelector, _5vS = value.__zwSelector;
+                    var _5aH = _5anc.__zwHandle, _5vH = value.__zwHandle;
+                    _5hit = (_5aS != null && _5aS === _5vS) || (_5aH != null && _5aH === _5vH);
+                  } catch (_e5id) {}
+                }
+                if (_5hit) { _5isAnc = true; break; }
+                try { _5anc = _5anc.parentNode; } catch (_e5pn) { break; }
+              }
+              if (_5isAnc) {
+                _throwDom('HierarchyRequestError', 'The new node is an ancestor of the table.');
+              } else if (_5tag === 'caption') {
+                // caption 语义 = 移除首个既有 caption 子 + 插入为**首子**
+                //（caption_001「setting caption」案 firstChild=new caption 钉定——
+                // Chromium setCaption 行为，非原位替换）。
+                var _5atC = _zwTblChildIdx(_tblP5, 'caption');
+                if (_5atC >= 0) {
+                  var _5oldC = _tblP5.childNodes[_5atC];
+                  if (_5oldC && typeof _5oldC.remove === 'function') _5oldC.remove();
+                }
+                _tblP5.insertBefore(value, _tblP5.firstChild);
+              } else {
+                var _5have = _zwTblChildIdx(_tblP5, _5tag);
+                if (_5have >= 0) {
+                  // 先移除旧子（新子未入树，selector 唯一可解析）再按原位插入——
+                  // 旧子后置 remove 经 selector 重解析会误删同形新子（caption 探针
+                  // zz-probe13 实证：remove 后新子 parentNode 落 null）。
+                  var _5old = _tblP5.childNodes[_5have];
+                  var _5ref = _tblP5.childNodes[_5have + 1];
+                  if (_5old && typeof _5old.remove === 'function') _5old.remove();
+                  if (_5ref) _tblP5.insertBefore(value, _5ref);
+                  else _tblP5.appendChild(value);
+                } else if (_5tag === 'thead') {
+                  var _5at2 = _zwTblChildIdx(_tblP5, 'tbody');
+                  if (_5at2 < 0) _5at2 = _zwTblChildIdx(_tblP5, 'tfoot');
+                  if (_5at2 >= 0) _tblP5.insertBefore(value, _tblP5.childNodes[_5at2]);
+                  else _tblP5.appendChild(value);
+                } else {
+                  _tblP5.appendChild(value);
+                }
+              }
+            }
+          }
         } else if (typeof _ZW_ARIA_ENUMS === 'object' && _ZW_ARIA_ENUMS.hasOwnProperty(p)) {
           // R5009 片 e（M4 片 a）：ARIA enumerated setter（w3c/aria#2484）——null/
           // undefined → removeAttribute（isNullable 全员）；其余（字符串/数字/布尔/
@@ -865,9 +950,17 @@
           // backed 属性（part03 _zwMakeSvgHref）。须在 R3069 reflected 分支前拦截
           // ——该分支按 HTML a/area 语义写 href 属性，SVG a 会吃进真浏览器没有的
           // 假 set→get round-trip。
-        } else if ((p === 'name' && typeof _reflectedNameAttr === 'function'
+        } else if (!((_r5249Tag = _realTag(sel, handle)) === 'MENU' || _r5249Tag === 'MENUITEM')
+                   && ((p === 'name' && typeof _reflectedNameAttr === 'function'
                     && _reflectedNameAttr(_realTag(sel, handle), p) != null)
-                   || _reflectedStringAttr(p) || _REFLECTED_UINT[p] || p === 'size' || p === 'href' || p === 'label' || p === 'as' || p === 'crossorigin' || p === 'span' || p === 'scope' || p === 'valign') {
+                   || _reflectedStringAttr(p) || _REFLECTED_UINT[p] || p === 'size' || p === 'href' || p === 'label' || p === 'as' || p === 'crossorigin' || p === 'span' || p === 'scope' || p === 'valign')) {
+          // R5249（html-semantics M2 切片 46，2026-10-23）：MENU/MENUITEM 排除本臂
+          //（条件首项负门，_r5249Tag 声明在 set trap 前段）——FLAT 表 `type` 与
+          // 显式 `label` 列（R3069-fix）均无 tag 门，历史 menu 面（HTMLMenuElement
+          // 现代无任何 IDL 属性；menuitem 已删为 HTMLUnknownElement）赋值应落
+          // expando、内容属性不变（contextmenu-historical menu.type/menu.label
+          // getAttribute 断言面）。排除后非反射名赋值走 expando 默认路径；name 臂
+          // 自带 tag 门不受影响。
           // R3069：reflected 原始属性——get trap 经 `_reflectedStringAttr`（type/name/placeholder/...）/ `_REFLECTED_UINT`
           //（colSpan/rowSpan/maxLength/cols/rows/start）/ `size` 专用分支读内容属性，故 set 须继续写属性（非 expando），
           // 否则 set 写 expando / get 读空属性 round-trip 断。复用 get trap 同源检测函数，自动一致（无静态名表维护）。
@@ -1053,8 +1146,46 @@
             || prop === 'preservesPitch'
             || prop === 'paused' || prop === 'ended' || prop === 'preload'
             || prop === 'loop' || prop === 'played' || prop === 'seekable' || prop === 'buffered'
-            || prop === 'kind' || prop === 'label' || prop === 'srclang'
-            || prop === 'default' || prop === 'src' || prop === 'textTracks'
+            // R5249（html-semantics M2 切片 46，2026-10-23）：track/option IDL 归属
+            // tag 门——kind/srclang 仅 TRACK（HTMLTrackElement），label/default
+            // TRACK+OPTION（HTMLOptionElement.label/.default，R3069-fix 读侧对称）。
+            // 原无条件列使历史 menu/menuitem（现代 spec 无任何 IDL 属性，menuitem 是
+            // HTMLUnknownElement）`'label' in el`/`'default' in el` 假阳性
+            //（contextmenu-historical HTMLMenuItemElement/menu.label 两案断言面）。
+            // https://html.spec.whatwg.org/multipage/media.html#htmltrackelement
+            // https://html.spec.whatwg.org/multipage/form-elements.html#dom-option-default
+            || (function () {
+                 try {
+                   var _t5249 = _realTag(sel, handle);
+                   if (prop === 'kind' || prop === 'srclang') return _t5249 === 'TRACK';
+                   if (prop === 'label' || prop === 'default') {
+                     return _t5249 === 'TRACK' || _t5249 === 'OPTION';
+                   }
+                 } catch (_e5249t) { return false; }
+                 return false;
+               })()
+            // R5266（html-semantics M2 切片 59）：tr 族索引/集合 IDL 属性 `in` 可见性
+            //（get trap 供给面在 target 无 own key → has 白名单缺列恒 false——cellIndex.html
+            // 首案 `"cellIndex" in th` 断言面；media-elements 切片 3 同款根因）。tag 门
+            //（':' 后缀容差前缀产物）：TD/TH → cellIndex；TR → rowIndex/sectionRowIndex/
+            // cells；TABLE/THEAD/TBODY/TFOOT → rows；TABLE → tBodies（HTMLTable* 接口
+            // 成员归属）。
+            // https://html.spec.whatwg.org/multipage/tables.html#htmltableelement
+            || (function () {
+                 try {
+                   var _t5266 = (_realTag(sel, handle) || '').split(':').pop();
+                   if (prop === 'cellIndex') return _t5266 === 'TD' || _t5266 === 'TH';
+                   if (prop === 'rowIndex' || prop === 'sectionRowIndex' || prop === 'cells') {
+                     return _t5266 === 'TR';
+                   }
+                   if (prop === 'rows') {
+                     return _t5266 === 'TABLE' || _t5266 === 'THEAD' || _t5266 === 'TBODY' || _t5266 === 'TFOOT';
+                   }
+                   if (prop === 'tBodies') return _t5266 === 'TABLE';
+                 } catch (_e5266h) { return false; }
+                 return false;
+               })()
+            || prop === 'src' || prop === 'textTracks'
             || prop === 'addTextTrack' || prop === 'track' || prop === 'controlsList'
             // cdp-protocol objectId 桥（PW injectedScript）：节点身份与表单约束面的
             // `in` 可见性——locator CSS 引擎 `queryEngineAll` 对每个命中断言
@@ -11207,11 +11338,16 @@
 
   function _zwMakeHTMLCollection(elements, liveSpec) {
     var state = { els: elements };
+    // R5267（html-semantics M2 切片 60）：rebuild 钩子——[SameObject] 集合的 live 读
+    // 重建形态（HTMLTableElement.rows 等排序/过滤复杂的派生集合）：每次属性读重算
+    // 成员表（排序/过滤天然最新），不注册写侧 live 维护（无 matches → 不进
+    // _zwLiveCollections）。与 matches 形态互斥：传 rebuild 的调用方不得依赖写侧同步。
+    var _rebuild = (liveSpec && typeof liveSpec.rebuild === 'function') ? liveSpec.rebuild : null;
     var target = Object.create(_zwHCPrototype());
     // __zwHC：读入口（trap 与 prototype 方法共用）。live 维护在写入侧（_zwHCLiveInvalidate
     // 同步 push/filter state.els），读取零开销。
     function current() {
-      return state.els;
+      return _rebuild ? _rebuild() : state.els;
     }
     target.__zwHC = current;
     // named 候选表：文档序首匹配（id 或 name 反射）。与旧 R43 实现一致（含空串/纯数字排除语义

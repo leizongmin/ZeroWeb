@@ -159,4 +159,4 @@ Linux 确认已安装 `libclang-dev`，必要时用发行版工具定位 `libcla
 
 ### macOS 首次运行被 Gatekeeper 阻止
 
-本地 `make browser` 直接运行构建产物，不需要应用签名。只有下载或分发 `.app` 时涉及 Gatekeeper、Developer ID 签名和公证，详见 [README 打包说明](../../README.md#4-打包为可分发产物)。
+本地 `make browser` 直接运行构建产物，不需要应用签名。只有下载或分发 `.app` 时涉及 Gatekeeper、Developer ID 签名和公证，详见 [打包与发布](../releases/packaging.md)。

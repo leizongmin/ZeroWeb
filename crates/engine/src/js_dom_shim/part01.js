@@ -566,6 +566,31 @@
         }
         _icLink = _icParent ? _zwNodeParent[_icParent] : null;
       }
+      // 反链走尽未证明在档：先经宿主持久 handle→selector 反查复核（R5247，
+      // html-semantics M2 切片 44）——apply 换代重注册清 _zwNodeParent 反链后，
+      // 旧 handle 形 proxy（静态树物化产物）链断假阴性 disconnected
+      //（focus-after-close「Complex dialog usage」：show 时捕获的 prevFocused
+      // input proxy 孤儿化 → pf.focus() 误入 R114 detached 臂 → activeElement
+      // 回落撞换代空壳节点）。反查表不随换代清（viaHnd 实证），命中且宿主树
+      // __zw_contains 真值在档 → true。误活象限全保持：显式 remove 已在函数头
+      // _zwRemovedHandles 挡（不达此处）；未挂载 createElement 宿主树游离 →
+      // contains false；反查 miss 落下方 rect 探测原兜底。
+      if (typeof __zw_selector_for_handle === 'function') {
+        try {
+          var _icSelR5247 = __zw_selector_for_handle(String(handle));
+          // 同一性核验（part04 getter R5247 同款）：反查 selector 回查文档命中同
+          // handle 才认在档——shadow 树内元素宿主扁平 selector 命中别元素不复核，
+          // R5181 反链 shadow 穿越判定权威保持；兼消多实例 selector 歧义。
+          if (_icSelR5247) {
+            var _icElR5247 = null;
+            try { _icElR5247 = globalThis.document.querySelector(_icSelR5247); } catch (_e5247q2) {}
+            if (_icElR5247 && String(_icElR5247.__zwHandle) === String(handle)
+                && typeof __zw_contains === 'function') {
+              return __zw_contains('html', _icSelR5247) === '1';
+            }
+          }
+        } catch (_eICR5247) {}
+      }
       // 反链走尽未证明在档：回落 rect 探测（getter 同款——append 已应用且在布局树的
       // 元素命中；getBoundingClientRect 缺失或空 → disconnected）。
       if (typeof __zw_getBoundingClientRect === 'function') {
@@ -715,6 +740,26 @@
       return;
     }
     if (!_zwIsConnected(sel, handle)) throw new globalThis.DOMException('showModal: dialog is not connected', 'InvalidStateError');
+    // R5250（html-semantics M2 切片 47）：spec「show a modal dialog」步 3——subject 的
+    // node document 非 fully active → 抛。dialog-showModal「not attached to any pages」
+    // 第二断言面：detached dialog 被 `doc.body.appendChild` 移入 implementation.
+    // createHTMLDocument 文档后连接门失效——M3 扩批 XLIII 的 `_zwUnmarkRemoved`（新父
+    // 即脱离 removed 态）+ host 快照滞后 `__zw_contains` 恒 1，双信号都判连接。owner
+    // doc 经收养章读：handle 形态走既有 `__zwAdoptDocByHandle`（R327/R191 落表），
+    // sel 形态走 `__zwAdoptDocBySel`（part03 `_r191adoptBody` 落表；主文档 append 族
+    // `_zwUnmarkAdoptDocSel` 对称清除）。重插主文档后章已删 → 判 fully active 不抛。
+    // 已知边界：iframe 文档元素同样被 R191/R327 盖章 → 本门会抛——spec 中 rendered
+    // iframe 文档是 fully active（FIXME: 浏览上下文树 active 判定；corpus 无 iframe 内
+    // showModal 面，暂按 not-active 收窄）。
+    // https://html.spec.whatwg.org/multipage/interactive-elements.html#dom-dialog-showmodal
+    var _r5250OwnDoc = null;
+    try {
+      if (handle && globalThis.__zwAdoptDocByHandle) _r5250OwnDoc = globalThis.__zwAdoptDocByHandle[String(handle)];
+      else if (sel && globalThis.__zwAdoptDocBySel) _r5250OwnDoc = globalThis.__zwAdoptDocBySel[sel];
+    } catch (_e5250o) {}
+    if (_r5250OwnDoc && _r5250OwnDoc !== globalThis.document) {
+      throw new globalThis.DOMException('showModal: document is not fully active', 'InvalidStateError');
+    }
     if (!_dispatchWithBubble(key, sel, handle, _makeToggleEvent('beforetoggle', 'closed', 'open', true, invokerSrc))) return;
     if (!_zwIsConnected(sel, handle)) return; // beforetoggle 内被移除 → 中止（不开、无 toggle）
     if (_zwTopLayer[key]) return; // beforetoggle 内 showPopover → showing → 中止
@@ -823,6 +868,27 @@
       return; // preventDefault → 保持 open、不变 returnValue
     }
     _zwDialogCloseTheDialog4200(key, sel, handle, returnValue);
+  }
+  // R5256（html-semantics M2 切片 51，2026-10-24）：open 属性直写移除面
+  //（removeAttribute('open') / IDL open falsy）的 dialog 关闭步。spec
+  // the-dialog-element attribute change steps（open 移除）→ dialog closing
+  // algorithm——与 close-the-dialog 核心的差异面：**无 cancel 事件**（非
+  // request-close）、**无 beforetoggle**（close-the-dialog 步语义，本算法不含，
+  // corpus 无钉）、**焦点不恢复**（dialog-close-via-attribute.tentative 断言面：
+  // previously focused element 不聚焦，当前焦点原地保留）、**returnValue 不变**
+  //（仅 close()/requestClose() 写）；模态态/top-layer/组栈清理 + close/toggle
+  // 事件排队与核心同队列（toggle 合并语义一致，oldState=open）。**close watcher
+  // 门在调用方 pre-snapshot**（part04 两调用点删态前取样：模态态/组栈双信号）——
+  // 属性直开（markup open / IDL true，未经 show）无 watcher，移除仅隐藏不入本
+  // 函数（dialog-open「IDL false 不派 close」断言面）。
+  // https://html.spec.whatwg.org/multipage/interactive-elements.html#the-dialog-element
+  function _zwDialogAttrClosedR5256(key, sel, handle) {
+    delete _zwDialogModal[key];
+    delete _zwTopLayer[key];
+    var _msI = _zwDialogModalStack.indexOf(key);
+    if (_msI !== -1) _zwDialogModalStack.splice(_msI, 1);
+    _zwDialogQueueCloseEvent4200(key, sel, handle);
+    _zwDialogToggleQueueNotify4200(key, sel, handle, true, null);
   }
   // ---------- R4600（html-semantics M2 切片 26，2026-10-22）dialog focusing steps 家族 ----------
   // spec：dialog focusing steps（https://html.spec.whatwg.org/multipage/interactive-elements.html
@@ -1005,7 +1071,13 @@
   // candidate 过滤已挡，DOM anchor 复核 defer rendering 域）。
   function _zwDialogRunFocusingStepsR4600(target) {
     if (!target) return;
+    // R5257：dialog 内部 focusing steps 不滚动视口（no-scroll 变体——show/showModal
+    // 聚焦与 close-the-dialog 焦点恢复共用本执行器；close 恢复不滚是 Chromium 可观察
+    // 行为，focus-after-close「close 后 scrollTop==0」断言面）。part04 focus 尾滚动步
+    // 读 `__zwFocusNoScroll` 旗跳过。
+    try { globalThis.__zwFocusNoScroll = true; } catch (_eNs1) {}
     try { target.focus(); } catch (_eFc) {}
+    try { globalThis.__zwFocusNoScroll = false; } catch (_eNs2) {}
   }
   // dialog focusing steps 本体。
   function _zwDialogFocusingStepsR4600(sel, handle, modal) {
@@ -1035,7 +1107,10 @@
         // 区），不是常规 focusing 操作；body 本身被模态 inert 不阻断 fixup
         //（Chromium 同款：inert modal dialog showModal 后 activeElement===body）。
         try { globalThis.__zwModalGateBypass = true; } catch (_eBp1) {}
+        // R5257：fixup 同走 no-scroll 变体（UA 级焦点回落不滚视口，同 close 恢复面）。
+        try { globalThis.__zwFocusNoScroll = true; } catch (_eNs0) {}
         try { if (globalThis.document && globalThis.document.body && globalThis.document.body.focus) globalThis.document.body.focus(); } catch (_eFx) {}
+        try { globalThis.__zwFocusNoScroll = false; } catch (_eNs0b) {}
         try { globalThis.__zwModalGateBypass = false; } catch (_eBp2) {}
       }
       return;
@@ -1238,15 +1313,25 @@
   //   （target === P || P.contains(target)），首个包含者停；不包含则逐个隐
   //   （_zwHidePopover 状态机，beforetoggle 可取消）——spec hide all popovers
   //   until 链上全隐（closedby-simple/complex popover light dismiss 断言面）。
-  // ② dialog pass：open+any dialog 按文档序反走（内层先）只看第一个：
-  //   backdrop 属主（backdropHit）→ close + 停（backdrop 点击对属主为「外」、
-  //   对祖先链为「内」——complex modalB 面落地即靠 popover pass 的 contains 停）；
-  //   target 在包含链内 → 停不关（内层 any 挡外层——complex「一次 click 只关
-  //   最内层链」断言面，旧实现全量关闭为 dialogA 误关红因）；盒外 → close + 停。
+  // ② dialog pass（R5263 起两腿）：open+any dialog 按文档序反走（内层先）只看
+  //   第一个，down 腿只记 nearest clicked dialog 祖先分类（'in' 包含链内 /
+  //   'out' 链外——backdrop 属主（backdropHit）与盒外均 'out'；内层 any 挡
+  //   外层——complex「一次 click 只关最内层链」断言面，旧实现全量关闭为
+  //   dialogA 误关红因），关判定移 up 腿 __zw_dialog_light_dismiss_up。
+  // R5263（M2 切片 56，2026-10-24）：dialog pass 两腿化——spec light dismiss 已
+  //   演进为 pointerdown 记祖先 + pointerup sameTarget 比对后才关（身份模型）；
+  //   本实现以两态分类等价（'in'/'out'，全腿组合结果一致：in/in、out/in、
+  //   in/out 均不关，out/out 关 topmost）。pointer capture 使 up 重定向捕获
+  //   目标（part06 capturedSel 换防后取）→ down 'out' + up 'in' 不关——
+  //   dialog-light-dismiss-pointer-capture 双腿断言面。popover pass 维持
+  //   down 腿单发（R5234 绿面不动）。
   // https://html.spec.whatwg.org/multipage/interactive-elements.html#dialog-light-dismiss
   // https://html.spec.whatwg.org/multipage/popover.html#popover-light-dismiss
   globalThis.__zw_dialog_light_dismiss_check = function (targetSel, px, py) {
     if (typeof document === 'undefined' || !document.querySelectorAll) return;
+    // R5263：down 腿终态必写槽（无 dialog / target 解析不到的早退也清）——
+    // 防 up 腿读到上一交互的残留分类。
+    _zwDialogLdDown = null;
     var dialogs;
     try { dialogs = document.querySelectorAll('dialog'); } catch (_eLdQ) { return; }
     if (!dialogs || !dialogs.length) return;
@@ -1286,24 +1371,61 @@
         try { _zwHidePopover(_ldK, _ldPs, _ldPh); } catch (_eLdPh) {}
       }
     } catch (_eLdPass) {}
-    // ② dialog pass（R5234）：反文档序首个 open+any dialog 一锤定音。
+    // ② dialog pass（R5263 两腿 down 腿）：反文档序首个 open+any dialog 定祖先
+    // 分类，只记槽不关——关判定在 up 腿（__zw_dialog_light_dismiss_up）。
+    var _ldPick = _zwDialogLdPick(dialogs, target, targetSel, backdropHit);
+    _zwDialogLdDown = _ldPick ? _ldPick.state : null;
+  };
+  // R5263：nearest clicked dialog 祖先分类（spec ancestor 步的反文档序近似，选择
+  // 器保持 R5234 口径——内层 any 挡外层）。
+  function _zwDialogLdPick(dialogs, target, targetSel, backdropHit) {
     for (var i = dialogs.length - 1; i >= 0; i--) {
       var d = dialogs[i];
       var ds = d.__zwSelector || null;
       var dh = d.__zwHandle || null;
-      var dk = _elKey(ds, dh);
       if (!_zwDialogHasOpen(ds, dh)) continue;
+      var dk = _elKey(ds, dh);
       if (_zwDialogClosedByState(ds, dh, dk) !== 'any') continue;
-      if (backdropHit && ds && targetSel === ds) {
-        _zwDialogRequestClose(dk, ds, dh, undefined);
-        break;
-      }
+      if (backdropHit && ds && targetSel === ds) return { dk: dk, ds: ds, dh: dh, state: 'out' };
       var contains = false;
       try { contains = !!target && (target === d || (d.contains ? !!d.contains(target) : false)); } catch (_eLdC) { contains = false; }
-      if (contains) break; // 内层 any 挡外层
-      _zwDialogRequestClose(dk, ds, dh, undefined);
-      break;
+      if (contains) return { dk: dk, ds: ds, dh: dh, state: 'in' };
+      return { dk: dk, ds: ds, dh: dh, state: 'out' };
     }
+    return null;
+  }
+  // R5263：dialog light dismiss up 腿——sameTarget 同态比对（down 槽分类 vs up
+  // 重分类）后才关 topmost。targetSel 用捕获换防后的有效目标（part06 传
+  // capturedSel || upSel）：down 于 backdrop 链外（'out'）+ setPointerCapture 把
+  // up 重定向 dialog 内元素（'in'）→ 同态不等不关；无 capture 双 'out' 照常关。
+  // 槽在读取即清（spec：pointerup 后清 dialog pointerdown target，无论结果）。
+  // https://html.spec.whatwg.org/multipage/interactive-elements.html#dialog-light-dismiss
+  globalThis.__zw_dialog_light_dismiss_up = function (targetSel, px, py) {
+    if (typeof document === 'undefined' || !document.querySelectorAll) return;
+    var down = _zwDialogLdDown;
+    _zwDialogLdDown = null;
+    if (down == null) return;
+    var dialogs;
+    try { dialogs = document.querySelectorAll('dialog'); } catch (_eLdQ2) { return; }
+    if (!dialogs || !dialogs.length) return;
+    var target = null;
+    if (targetSel) {
+      try { target = document.querySelector(targetSel); } catch (_eLdT2) { target = null; }
+    }
+    if (targetSel && !target) return;
+    var backdropHit = false;
+    if (px != null && py != null && targetSel) {
+      try {
+        var bdTop = _zwDialogModalTopSel();
+        if (bdTop && bdTop === targetSel && target && target.getBoundingClientRect) {
+          var bdR = target.getBoundingClientRect();
+          backdropHit = !bdR || px < bdR.left || px > bdR.right || py < bdR.top || py > bdR.bottom;
+        }
+      } catch (_eLdBd) {}
+    }
+    var pick = _zwDialogLdPick(dialogs, target, targetSel, backdropHit);
+    if (!pick || pick.state !== down || pick.state === 'in') return;
+    _zwDialogRequestClose(pick.dk, pick.ds, pick.dh, undefined);
   };
   // R3290：统一 set/remove 内容属性 helper（sel/handle 双路径 + latest-wins 读一致性依赖 host 侧 latest-wins 变体，
   // 写走常规 __zw_set_attr/__zw_remove_attr 入队）。dialog open 属性专用，与 popover setter 同模式。
@@ -7135,7 +7257,7 @@
   // M2 RFC s1（FR-10）：锁态/激活 per-page 清理——_pl*（含 _plUnadjusted）+ _fs*（fullscreen
   // 同族跨导航泄漏，用户 2026-10-19 确认随修）+ 瞬态激活双旗。导航后新文档无锁、无激活；
   // 清零不派事件（文档已替换，无监听面意义）。
-  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputValuesSet = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _checkedDirtyState = {}; _optSelectedDirty = {}; _optSelectedClean = {}; _inputFiles = {}; _classCache = {}; _customValidity = {}; _userEdited = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _resourceStates = {}; _textareaDefault = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; _zwDialogModalStack = []; _zwDialogInvokerSourceR4400 = {}; if (typeof _zwDetailsToggleQ4009 !== 'undefined') _zwDetailsToggleQ4009 = {}; if (typeof _zwDetailsToggleSourceR4400 !== 'undefined') _zwDetailsToggleSourceR4400 = {}; _plKey = null; _plSel = null; _plHandle = null; _plTarget = null; _plUnadjusted = false; _fsKey = null; _fsSel = null; _fsHandle = null; _zwTransientActive = false; _zwActiveEver = false; if (typeof globalThis.__zw_pointer_reset === 'function') globalThis.__zw_pointer_reset(); };
+  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputValuesSet = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _checkedDirtyState = {}; _optSelectedDirty = {}; _optSelectedClean = {}; _inputFiles = {}; _classCache = {}; _customValidity = {}; _userEdited = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _resourceStates = {}; _textareaDefault = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; _zwDialogModalStack = []; _zwDialogInvokerSourceR4400 = {}; if (typeof _zwDetailsToggleQ4009 !== 'undefined') _zwDetailsToggleQ4009 = {}; if (typeof _zwDetailsToggleSourceR4400 !== 'undefined') _zwDetailsToggleSourceR4400 = {}; _plKey = null; _plSel = null; _plHandle = null; _plTarget = null; _plUnadjusted = false; _fsKey = null; _fsSel = null; _fsHandle = null; _zwTransientActive = false; _zwActiveEver = false; if (typeof globalThis.__zwDetailsInitOpen5254 !== 'undefined') globalThis.__zwDetailsInitOpen5254 = {}; if (typeof globalThis.__zwDetailsInitOpenMark5254 === 'function') globalThis.__zwDetailsInitOpenMark5254(); if (typeof globalThis.__zw_pointer_reset === 'function') globalThis.__zw_pointer_reset(); };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF
@@ -7651,7 +7773,17 @@
   function _zwFireScroll(key, sel, handle) {
     try {
       if (sel || handle) _dispatchWithBubble(key, sel, handle, _makeEvent('scroll'));
-      else if (typeof globalThis.dispatchEvent === 'function') globalThis.dispatchEvent(_makeEvent('scroll'));
+      else if (typeof globalThis.dispatchEvent === 'function') {
+        globalThis.dispatchEvent(_makeEvent('scroll'));
+        // R5257（html-semantics M2 切片 52，2026-10-24）：视口 scroll 事件同步派发到
+        // document（spec CSSOM View 视口滚动 scroll 事件 target 是 Document；此前只
+        // 派 window——document.addEventListener('scroll') 永收不到，WPT focus-after-close
+        // document 监听腿悬挂根因之一）。非冒泡事件 bubble 腿被 `event.bubbles` 门控
+        //（_dispatchWithBubble），window 监听不双计；'doc' 槽只触发 document 注册面。
+        if (typeof _dispatchWithBubble === 'function' && typeof _elKey === 'function') {
+          _dispatchWithBubble(_elKey('html', null), 'html', null, _makeEvent('scroll'), 'doc');
+        }
+      }
     } catch (_e) {}
   }
   Object.defineProperty(globalThis, 'scrollX', { configurable: true, get: function () { return _winScroll.left; } });

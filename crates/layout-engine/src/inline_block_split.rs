@@ -141,8 +141,25 @@ pub(crate) fn block_container_has_mixed_content(
     // OPTIMIZATION：两遍扫描——第一遍仅廉价判定（text + block-level display，R4489 前
     // 原口径成本）；无 block 子（纯 inline 容器 = 文档绝大多数）直接 false，不跑第二遍
     // 的 inline 元素资格判定（phasea_multi_inline_eligible 含子遍历 + ooflow 后代深查）。
+    // R5251 deep 臂（`ZW_R109_DEEP_SPLIT=0` 回退）：inline-level 子为**纯块载体**
+    //（自身全部流内内容为 block 子，`<span><div></div></span>` ×N）同样触发
+    // §9.2.1.1——spec：含块级盒的 inline 盒在其周围断开，块级盒提升到块容器层。
+    // 此前仅直子 block 判定使这类容器误走纯 inline 行排（含块 span 全挤同一行、
+    // 内嵌块重叠，three-block-in-inlines-cascading-margins 1.333% 实证）。纯块载体
+    // 自身不生成可见盒（空 inline 盒），升格无歧义；文本+块混排 wrapper 不在此列
+    //（其匿名块需继承 split inline 盒模型与 wrapper relative 施加——r1748/r5225/
+    // r1044b 锚形，维持旧路径，FIXME 另切片）。限 horizontal-tb（vertical 块轴
+    // 堆叠另域）。
+    let r109_deep_split = deep_split_enabled()
+        && styles.get(&container_id).is_some_and(|s| {
+            matches!(
+                s.writing_mode,
+                zero_style_system::property::types::WritingModeValue::HorizontalTb
+            )
+        });
     let mut has_text = false;
     let mut has_block = false;
+    let mut has_deep_block = false;
     for &child in &children {
         let Some(node) = doc.get(child) else {
             continue;
@@ -172,15 +189,17 @@ pub(crate) fn block_container_has_mixed_content(
                 }
                 if is_block_level_display(&style.display) {
                     has_block = true;
+                } else if r109_deep_split && inline_child_is_pure_block_carrier(doc, styles, child) {
+                    has_deep_block = true;
                 }
             }
             _ => {}
         }
     }
-    if !has_block {
+    if !has_block && !has_deep_block {
         return false;
     }
-    if has_text {
+    if has_text || has_deep_block {
         return true;
     }
     if !inline_elements_count {
@@ -286,6 +305,180 @@ fn compute_child_split_impl(
     }
 }
 
+/// R5251 kill-switch：`ZW_R109_DEEP_SPLIT=0` 回退「inline 含块子不升格」旧口径。
+fn deep_split_enabled() -> bool {
+    std::env::var("ZW_R109_DEEP_SPLIT").as_deref() != Ok("0")
+}
+
+/// R5251：inline 子是否「纯块载体」——全部流内内容为 in-flow block-level 子。
+///
+/// 判据（全满足才升格，其余形态保守维持旧路径）：
+/// - display:inline 且 in-flow（非 OOF）且自身非 `position:relative`——wrapper 的
+///   relative 施加依赖自身盒（r5225 block-in-inline-relpos 锚形）；
+/// - 子树无 OOF 后代（abspos/fixed/float 的 CB/静态位锚在 inline 祖先盒，升格丢盒
+///   即丢锚——R1024 abspos-in-inline 簇同教训）；
+/// - 无 preserved 文本子（nbsp 等生成行盒，R5226 口径）、无 inline-level/contents/
+///   样式缺失的元素子——文本+块混排 wrapper 的匿名块需继承 split inline 盒模型与
+///   wrapper 施加（r1748 片段收缩宽锚形），不升格；
+/// - 至少一个 in-flow block-level 子。
+///
+/// 纯块载体的 inline 自身不生成可见盒（空 inline 盒），其块子可无歧义提升到块
+/// 容器层（§9.2.1.1 block-in-inline）。
+fn inline_child_is_pure_block_carrier(doc: &Document, styles: &HashMap<NodeId, ComputedStyle>, child: NodeId) -> bool {
+    let Some(style) = styles.get(&child) else {
+        return false;
+    };
+    if !matches!(style.display, DisplayValue::Inline)
+        || is_out_of_flow(style)
+        || matches!(style.position, PositionValue::Relative)
+    {
+        return false;
+    }
+    // 盒承载的 stacking/合成语义依赖自身盒——升格丢盒即丢语义
+    //（opacity-affects-block-in-inline：span opacity:0.5 升格后子块全强度绘制）。
+    // 含任一即保守维持旧路径。
+    if style.opacity < 1.0
+        || !style.filter.is_empty()
+        || !style.backdrop_filter.is_empty()
+        || !matches!(
+            style.mix_blend_mode,
+            zero_style_system::property::types::MixBlendModeComputedValue::Normal
+        )
+        || !matches!(
+            style.isolation,
+            zero_style_system::property::types::IsolationValue::Auto
+        )
+        || !matches!(style.transform, zero_css_parser::values::TransformValue::None)
+        || !style.will_change.is_empty()
+    {
+        return false;
+    }
+    if inline_subtree_has_oof_descendant(doc, styles, child) {
+        return false;
+    }
+    let mut has_block = false;
+    for gc in doc.child_nodes(child) {
+        match doc.get(gc).map(|n| &n.kind) {
+            Some(NodeKind::Text(t)) => {
+                if crate::inline::has_preserved_content(&t.content) {
+                    return false;
+                }
+            }
+            Some(NodeKind::Element(_)) => {
+                let Some(s) = styles.get(&gc) else {
+                    return false;
+                };
+                if matches!(s.display, DisplayValue::None) {
+                    continue;
+                }
+                if is_block_level_display(&s.display) && !is_out_of_flow(s) {
+                    has_block = true;
+                } else {
+                    return false;
+                }
+            }
+            _ => {}
+        }
+    }
+    has_block
+}
+
+/// R5251：inline 子树内是否存在 OOF（abspos/fixed/float）后代。
+///
+/// 升格拆分会丢弃 inline 祖先盒（[`compute_child_split_deep`]），其子树 OOF 的
+/// 包含块/静态位锚点随之丢失，故带 OOF 后代的 inline 不参与升格（保守维持旧路径）。
+/// 全后代下探（不限 inline-level），与
+/// [`crate::inline::InlineFormattingContext::inline_subtree_has_ooflow_descendant`]
+/// 同构但谓词含 float（该helper 仅 abspos/fixed）。
+fn inline_subtree_has_oof_descendant(
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    inline_id: NodeId,
+) -> bool {
+    let mut stack = doc.child_nodes(inline_id);
+    while let Some(cid) = stack.pop() {
+        let Some(node) = doc.get(cid) else {
+            continue;
+        };
+        if let NodeKind::Element(_) = &node.kind
+            && let Some(s) = styles.get(&cid)
+            && is_out_of_flow(s)
+        {
+            return true;
+        }
+        stack.extend(doc.child_nodes(cid));
+    }
+    false
+}
+
+/// R5251：容器版子拆分——纯块载体 inline 子的块子原位升格为容器 Block 段。
+///
+/// §9.2.1.1：含块级盒的 inline 盒（及其 inline 祖先）在块盒周围断开，块级盒提升
+/// 到块容器层（https://www.w3.org/TR/CSS22/visuren.html#block-nesting）。载体判定
+/// 见 [`inline_child_is_pure_block_carrier`]；升格只搬其 in-flow block 子（DOM 序，
+/// 闭合当前 inline run），载体自身不生成任何片段（空 inline 盒）。文本+块混排
+/// wrapper 维持旧路径（FIXME：混排形态的匿名块盒模型继承/断片绘制另切片）。
+fn compute_child_split_deep(
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    parent_id: NodeId,
+) -> Option<Vec<InlineBlockSegment>> {
+    if !deep_split_enabled() {
+        return compute_child_split_impl(doc, styles, parent_id);
+    }
+    let mut segments: Vec<InlineBlockSegment> = Vec::new();
+    let mut current_inline: Vec<NodeId> = Vec::new();
+    let flush = |cur: &mut Vec<NodeId>, segs: &mut Vec<InlineBlockSegment>| {
+        if !cur.is_empty() {
+            segs.push(InlineBlockSegment::Inline {
+                item_node_ids: std::mem::take(cur),
+            });
+        }
+    };
+
+    for child in doc.child_nodes(parent_id) {
+        let Some(node) = doc.get(child) else {
+            continue;
+        };
+        match &node.kind {
+            NodeKind::Text(_) => current_inline.push(child),
+            NodeKind::Element(_) => {
+                let Some(style) = styles.get(&child) else {
+                    continue;
+                };
+                if matches!(style.display, DisplayValue::None | DisplayValue::Contents) {
+                    continue;
+                }
+                if is_block_level_display(&style.display) && !is_out_of_flow(style) {
+                    flush(&mut current_inline, &mut segments);
+                    segments.push(InlineBlockSegment::Block { node_id: child });
+                } else if inline_child_is_pure_block_carrier(doc, styles, child) {
+                    // 升格：按 DOM 序搬 in-flow block 子（可折叠空白子不产生片段）。
+                    for gc in doc.child_nodes(child) {
+                        let Some(s) = styles.get(&gc) else {
+                            continue;
+                        };
+                        if is_block_level_display(&s.display) && !is_out_of_flow(s) {
+                            flush(&mut current_inline, &mut segments);
+                            segments.push(InlineBlockSegment::Block { node_id: gc });
+                        }
+                    }
+                } else {
+                    current_inline.push(child);
+                }
+            }
+            _ => {}
+        }
+    }
+    flush(&mut current_inline, &mut segments);
+
+    if segments.iter().any(|s| matches!(s, InlineBlockSegment::Block { .. })) {
+        Some(segments)
+    } else {
+        None
+    }
+}
+
 /// 判断 Inline 片段是否仅含空白文本（collapse-through 保留）。
 ///
 /// 若一个 Inline 片段所有 Text 节点均为空白，且无 Element 子节点，
@@ -333,7 +526,7 @@ pub(crate) fn compute_block_container_split(
     if !block_container_has_mixed_content(doc, styles, container_id) {
         return None;
     }
-    let segments = compute_child_split_impl(doc, styles, container_id)?;
+    let segments = compute_child_split_deep(doc, styles, container_id)?;
     // R4489：纯 out-of-flow 元素片段 → Block 片段。compute_child_split_impl 把
     // out-of-flow 子归入当前 inline 片段（split-INLINE 语义：随片段 IFC 保留）；块容器
     // 拆分下这会为 abspos/float 子生成**占流行空间**的匿名块（line-height-applies-to-

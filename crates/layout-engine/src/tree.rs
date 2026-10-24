@@ -2803,6 +2803,31 @@ fn body_overflow_visible_enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var("ZW_BODY_OVERFLOW_VISIBLE").as_deref() != Ok("0"))
 }
 
+/// R5243 kill-switch 读取：`ZW_TABLE_ROW_TEXT_ANON=0` 回退 table-row 直接裸文本子的
+/// 丢弃行为（pre-R5243：非 flex 分支「仅处理元素子」循环无 Text 臂）。
+fn table_row_text_anon_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_TABLE_ROW_TEXT_ANON").as_deref() != Ok("0"))
+}
+
+/// R5243：table-row 是否处于真表上下文（DOM 祖先链含 table/inline-table 容器）——
+/// 直接裸文本盒化仅限真表行（合成 cell 由表管线网格消费）；孤儿 row（body 直系
+/// run-in 后继、flex item 伪元素）维持行级直绘（flexbox-with-pseudo-elements-003
+/// 0.03→2.92% 翻红实证，R5169 同款回归面；run-in-table-row-between 祖先=body 同门）。
+fn row_in_table_context(doc: &Document, styles: &HashMap<NodeId, ComputedStyle>, row_dom: NodeId) -> bool {
+    let mut cur = doc.parent_node(row_dom);
+    while let Some(p) = cur {
+        if styles
+            .get(&p)
+            .is_some_and(|s| matches!(s.display, DisplayValue::Table | DisplayValue::InlineTable))
+        {
+            return true;
+        }
+        cur = doc.parent_node(p);
+    }
+    false
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build_subtree(
     ctx: &mut BuildContext,
@@ -4305,6 +4330,29 @@ fn build_subtree(
                             // 下标作稳定序。
                             let child_index = children_dom.iter().position(|&c| c == child_dom).unwrap_or(0);
                             children_with_order.push((child_dom, order, child_index * 1000, false));
+                        } else if table_row_text_anon_enabled()
+                            && matches!(computed.display, DisplayValue::TableRow)
+                            && row_in_table_context(doc, styles, dom_id)
+                            // R5243 回归收窄：合成 cell 的行/列 extent 与 drain 绘制链只对
+                            // 水平行进验证过——垂直表（inline-table-alignment-002~005，基线
+                            // 全绿）盒化后 5~7% 翻红，维持 R1043 已知垂直缺口不动。
+                            && matches!(computed.writing_mode, WritingModeValue::HorizontalTb)
+                            && child_data.is_some_and(
+                                |n| matches!(&n.kind, NodeKind::Text(t) if !t.content.trim().is_empty()),
+                            )
+                        {
+                            // R5243（CSS2 §17.2.1 匿名 cell 级联）：table-row 的直接裸文本
+                            // 子入布局序列——下方建子树循环的 `is_text_node` 臂（R3848 同构）
+                            // 建匿名 taffy leaf（context=文本 id）→ LayoutBox 树出现
+                            // is_anonymous_text_item 盒 → R5168 盒级 drain 吞入合成 cell
+                            //（cell 高=文本盒高、列宽=子盒宽、绘制走 cell IFC/Path B，088
+                            // 已验证链）。此前该循环对 Text 无 else 静默丢弃 → row 无盒可
+                            // drain、R5169 DOM 级纯文本 run 又被排除 → build_row 零 cell
+                            // 表塌 0×0（table-vertical-align-baseline-009 实证 ✗1.56%；
+                            // row 的 taffy ch 虽含文本度量但 LayoutBox 树无盒）。
+                            // kill-switch `ZW_TABLE_ROW_TEXT_ANON=0` 回退丢弃行为。
+                            let child_index = children_dom.iter().position(|&c| c == child_dom).unwrap_or(0);
+                            children_with_order.push((child_dom, 0, child_index * 1000, false));
                         }
                     }
                     // R3848：提升项（Element/Text/VirtualBox）携 contents 子下标序入同一排序流。

@@ -1508,6 +1508,10 @@ impl super::Painter {
                     // store_font_sizes_from_ifc），layout IFC 有 styles 直判同语义（见
                     // collect_flat_inline_children 折回臂）。
                     .with_color_divergent_walk_nodes(box_node.inline_color_divergent_nodes.clone())
+                    // R5250（CSS2 §9.3.2）：relative inset 位移表——walk 折回门分裂信号
+                    // + fragment 平移消费表，layout 期构建存盒（compute_final），Path B
+                    // 注入同一张表保持两臂分段恒等（见 IFC relpos_shifts 字段文档）。
+                    .with_relpos_shifts(box_node.inline_relpos_shifts.clone())
                     // R3840：元素级 bidi-override 恢复（layout 期按文本节点 id 存储）。
                     .with_text_node_bidi_overrides(box_node.text_node_bidi_overrides.clone())
                     // R3778：run 级有效 white-space 覆盖——inline 包裹层声明的 pre 等在
@@ -1706,7 +1710,24 @@ impl super::Painter {
                 for line in &inline_ctx.lines {
                     frag_line_tops.extend(std::iter::repeat_n(line.y, line.runs.len()));
                 }
-                inline_ctx.all_fragments_with_line_y()
+                let mut fragments = inline_ctx.all_fragments_with_line_y();
+                // R5250（CSS2 §9.3.2）：relative inset 视觉位移——纯 inline 非替换盒无
+                // taffy 节点无人施加，Path B（空 styles 重跑，无 styles 可判）从盒读
+                // compute_final 存的位移映射（inline_relpos_shifts）平移 fragment；装饰锚
+                // 行盒顶平行表索引对齐同移（R4332 契约）。表空（无 relative inline /
+                // 竖排 / kill-switch）时循环体零命中，无行为变化。
+                if !box_node.inline_relpos_shifts.is_empty() {
+                    for (i, frag) in fragments.iter_mut().enumerate() {
+                        if let Some(&(dx, dy)) = box_node.inline_relpos_shifts.get(&frag.node_id) {
+                            frag.x += dx;
+                            frag.y += dy;
+                            if let Some(t) = frag_line_tops.get_mut(i) {
+                                *t += dy;
+                            }
+                        }
+                    }
+                }
+                fragments
             };
 
             let has_content = use_stored && !stored_fragments.is_empty() || !fragments.is_empty();
@@ -3276,22 +3297,40 @@ impl super::Painter {
                     let mut sel_line_colors: HashMap<(NodeId, u32), Color> = HashMap::new();
                     let mut sel_padbox_fill: Option<Color> = None;
                     let mut sel_line_fills: Vec<(Rect, Color)> = Vec::new();
-                    if let Some(box_id) = box_node.node_id
-                        && !is_vertical
-                        && matches!(style.direction, zero_style_system::DirectionValue::Ltr)
-                        && let Some(&(sel_start, sel_end)) = self.text_selections.get(&box_id)
-                        && let Some(pseudo) = &style.selection_pseudo
-                    {
-                        let sel_color = super::super::color::resolve_color_current(&pseudo.color, &style.color);
-                        let sel_bg = super::super::color::resolve_color_current(&pseudo.background_color, &style.color);
-                        // 表单控件 owner（padding box 形态判据）。
-                        let owner_is_text_control = doc.get(box_id).is_some_and(|n| {
-                            matches!(
-                                &n.kind,
-                                NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("input")
-                                    || e.local_name().eq_ignore_ascii_case("textarea")
-                            )
+                    // R5256：整contents 选区的后代 owner 行（R5054 后代 owner FIXME
+                    // 首片）——selectNodeContents(盒/祖先) 形下片段行可归 inline 后代
+                    // owner（ref 页 `<div 选区><span>text</span></div>` 的 span 文本），
+                    // 此前 owner==box_id 过滤整行跳过。整contents 判据 start==0 且
+                    // end ≥ owner（自身无记录时最近祖先）textContent utf16 长（≡ shim
+                    // dump branch ① 的 textContent 口径），该形全部片段行无条件选中；
+                    // 部分选区维持既有 owner==box_id + 行子集检查不变。
+                    let sel_owned = box_node
+                        .node_id
+                        .and_then(|id| self.text_selections.get(&id).map(|&(s, e)| (id, s, e)))
+                        .map(|(id, s, e)| {
+                            let whole = doc
+                                .text_content(id)
+                                .map(|t| t.encode_utf16().count())
+                                .is_some_and(|n| s == 0 && e >= n);
+                            ((s, e), whole)
+                        })
+                        .or_else(|| {
+                            let mut cur = box_node.node_id.and_then(|id| doc.parent_node(id));
+                            while let Some(aid) = cur {
+                                if let Some(&(s, e)) = self.text_selections.get(&aid) {
+                                    let total = doc.text_content(aid).map(|t| t.encode_utf16().count()).unwrap_or(0);
+                                    return (s == 0 && e >= total).then_some(((s, e), true));
+                                }
+                                cur = doc.parent_node(aid);
+                            }
+                            None
                         });
+                    // 行分组（活跃路径片段 → (owner, 行盒顶) 组，含行内横向范围）——
+                    // R5258 起选区门与 ::first-line 门共用；两门皆不需要时跳过构建
+                    //（paint_text 热路径零闲置分配）。
+                    let line_ranges: Vec<((NodeId, u32), usize, usize, f32, f32)> = if style.first_line_pseudo.is_some()
+                        || sel_owned.is_some()
+                    {
                         // 活跃路径的 (node_id, 行盒顶, 片段文本, x, 宽) 序列（渲染序 ≈ 文档序）。
                         let active_frags: Vec<(NodeId, f32, &str, f32, f32)> = if use_stored {
                             stored_fragments
@@ -3324,12 +3363,12 @@ impl super::Painter {
                         // 逐 owner utf16 累计 + 行分组（软换行不消耗字符；同行连续片段
                         // 首片段前偏移即行起点）+ 行内横向范围。
                         let mut owner_off: HashMap<NodeId, usize> = HashMap::new();
-                        let mut line_ranges: Vec<((NodeId, u32), usize, usize, f32, f32)> = Vec::new();
+                        let mut ranges: Vec<((NodeId, u32), usize, usize, f32, f32)> = Vec::new();
                         for (nid, line_top, text, fx, fw) in &active_frags {
                             let owner = owner_of(*nid);
                             let off = owner_off.entry(owner).or_insert(0);
                             let len16 = text.encode_utf16().count();
-                            match line_ranges
+                            match ranges
                                 .iter_mut()
                                 .find(|((o, l), _, _, _, _)| *o == owner && *l == line_top.to_bits())
                             {
@@ -3338,12 +3377,55 @@ impl super::Painter {
                                     *min_x = min_x.min(*fx);
                                     *max_xw = max_xw.max(*fx + *fw);
                                 }
-                                None => {
-                                    line_ranges.push(((owner, line_top.to_bits()), *off, *off + len16, *fx, *fx + *fw))
-                                }
+                                None => ranges.push(((owner, line_top.to_bits()), *off, *off + len16, *fx, *fx + *fw)),
                             }
                             *off += len16;
                         }
+                        ranges
+                    } else {
+                        Vec::new()
+                    };
+                    // R5258（CSS2 §5.12.1 切片 1）：::first-line 首格式行字形 color——
+                    // 行组 line_top == 组内最小者为首行；组内 inline 后代解析 color ==
+                    // 盒 color（≈继承、无显式覆盖）才随伪样式（span{color} 显式声明
+                    // 胜出 ::first-line 继承，css-pseudo-4 §first-line）。先于选区门
+                    // insert（选区行覆写胜出）。bg/font 类属性不应用（FIXME 切片 2）；
+                    // 与 ::first-letter 同存时首字符 interplay 未处理（FIXME）；竖排
+                    // 不应用（FIXME）。
+                    if !is_vertical
+                        && let Some(fl) = &style.first_line_pseudo
+                        && !line_ranges.is_empty()
+                    {
+                        let first_ltb = line_ranges.iter().map(|((_, ltb), ..)| *ltb).min().unwrap_or(0);
+                        let fl_color = super::super::color::resolve_color_current(&fl.color, &style.color);
+                        for ((owner, ltb), _, _, _, _) in &line_ranges {
+                            if *ltb != first_ltb {
+                                continue;
+                            }
+                            let inherited = styles
+                                .and_then(|st| st.get(owner))
+                                .is_none_or(|os| os.color == style.color);
+                            if inherited {
+                                sel_line_colors.insert((*owner, *ltb), fl_color);
+                            }
+                        }
+                    }
+                    if let Some(box_id) = box_node.node_id
+                        && !is_vertical
+                        && matches!(style.direction, zero_style_system::DirectionValue::Ltr)
+                        && let Some(((sel_start, sel_end), anc_whole)) = sel_owned
+                        && let Some(pseudo) = &style.selection_pseudo
+                    {
+                        let sel_color = super::super::color::resolve_color_current(&pseudo.color, &style.color);
+                        let sel_bg = super::super::color::resolve_color_current(&pseudo.background_color, &style.color);
+                        // 表单控件 owner（padding box 形态判据）。
+                        let owner_is_text_control = doc.get(box_id).is_some_and(|n| {
+                            matches!(
+                                &n.kind,
+                                NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("input")
+                                    || e.local_name().eq_ignore_ascii_case("textarea")
+                            )
+                        });
                         let line_h = match &style.line_height {
                             zero_style_system::LineHeightValue::Normal => font_size * 1.2,
                             zero_style_system::LineHeightValue::Number(n) => font_size * (*n as f32),
@@ -3354,13 +3436,43 @@ impl super::Painter {
                         let mut any_line = false;
                         let mut all_selected = true;
                         for ((owner, ltb), line_start, line_end, min_x, max_xw) in &line_ranges {
-                            if *owner != box_id || line_end <= line_start {
+                            // 祖先整contents 形：本盒片段迭代的所有 owner（自身或 inline
+                            // 后代）都在选区内，跨 owner 行不再按 owner==box_id 过滤。
+                            if !anc_whole && *owner != box_id {
+                                continue;
+                            }
+                            if line_end <= line_start {
                                 continue;
                             }
                             any_line = true;
-                            if sel_start <= *line_start && *line_end <= sel_end {
-                                sel_line_colors.insert((*owner, *ltb), sel_color);
-                                if !owner_is_text_control && sel_bg.a > 0 {
+                            if anc_whole || (sel_start <= *line_start && *line_end <= sel_end) {
+                                // R5257（css-pseudo-4 §highlight-cascading 后续片）：后代
+                                // owner 自持 ::selection 规则时高亮样式按 owner 独立级联
+                                //（universal ::selection{green/yellow} vs div#test::selection
+                                // {red/black} 的 span 行应 green/yellow，R5256 整contents 形
+                                // 用盒伪样式曾整段涂红——driving: cascade-highlight-002）。
+                                // owner 无自持记录回落盒伪样式（R5256 判例全保持）；门仍
+                                // 要求盒自持伪样式（后代-only 形维持 FIXME）。
+                                let (line_color, line_bg) = if *owner == box_id {
+                                    (sel_color, sel_bg)
+                                } else {
+                                    styles
+                                        .and_then(|st| st.get(owner))
+                                        .and_then(|os| {
+                                            os.selection_pseudo.as_ref().map(|p| {
+                                                (
+                                                    super::super::color::resolve_color_current(&p.color, &os.color),
+                                                    super::super::color::resolve_color_current(
+                                                        &p.background_color,
+                                                        &os.color,
+                                                    ),
+                                                )
+                                            })
+                                        })
+                                        .unwrap_or((sel_color, sel_bg))
+                                };
+                                sel_line_colors.insert((*owner, *ltb), line_color);
+                                if !owner_is_text_control && line_bg.a > 0 {
                                     sel_line_fills.push((
                                         Rect::new(
                                             content_x + min_x,
@@ -3368,7 +3480,7 @@ impl super::Painter {
                                             (max_xw - min_x).max(0.0),
                                             line_h,
                                         ),
-                                        sel_bg,
+                                        line_bg,
                                     ));
                                 }
                             } else {

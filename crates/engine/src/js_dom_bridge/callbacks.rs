@@ -1638,14 +1638,21 @@ pub fn register_dom_callbacks(
             // 未命中：E14 per-generation 缓存（parsed doc + 全文档样式按 (html, drain_gen,
             // style_version) 代际复用，同代际新 selector 仅 O(节点) 查找——真站每 tick 几十
             // 个新 selector 不再各触发一次全量 parse+cascade）内提取该 selector 的
-            // ComputedStyle 并入 per-selector map，再 serialize。clone 变更列表后即释放锁，
-            // 重算不持 mutation 锁。
-            let mlist = m.lock().unwrap_or_else(|e| e.into_inner()).clone();
-            let hit = with_cached_document_styles(&snap, doc_drain_gen, style_version, &mlist, |doc, styles| {
-                find_by_selector(doc, sel)
-                    .and_then(|node| styles.get(&node))
-                    .map(|style| (serialize_computed_property(style, prop), style.clone()))
-            });
+            // ComputedStyle 并入 per-selector map，再 serialize。P104：变更队列按需 clone
+            //（[`with_cached_document_styles_lazy`]）——代际命中时主函数不消费 mutations，
+            // 热 path 不再每 miss 付全队列 clone；换代分支闭包内 clone 后即释放锁，
+            // 重算不持 mutation 锁（语义同前）。
+            let hit = with_cached_document_styles_lazy(
+                &snap,
+                doc_drain_gen,
+                style_version,
+                || m.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+                |doc, styles| {
+                    find_by_selector(doc, sel)
+                        .and_then(|node| styles.get(&node))
+                        .map(|style| (serialize_computed_property(style, prop), style.clone()))
+                },
+            );
             let Some((value, style)) = hit else {
                 return String::new();
             };
@@ -2888,6 +2895,17 @@ pub fn register_dom_callbacks(
             }),
         );
     }
+
+    // R5254（html-semantics M2 切片 50，2026-10-24）：主文档初始 HTML 的 details
+    // parser-open toggle 补偿两段式。spec attribute change steps 随 parser 逐元素
+    // 运行——解析器添加 `open` 也排 toggle task；innerHTML/createElement-HTML/包装
+    // 世界解析面已在各自解析点调 `__zwDetailsScan4100(…, true)`，唯主文档初始属性
+    // 由 host 解析直建、不经任何 JS 写路径。注册期（页面脚本前）标记初始 open 身份
+    // 集 + DOMContentLoaded（解析完成点，页面脚本必已跑完）只对「初始 open 且当前
+    // 仍 open」补派——单段直扫的两难见 part03 函数注记。
+    let _ = sandbox.execute(
+        "try { if (typeof __zwDetailsInitOpenMark5254 === 'function') __zwDetailsInitOpenMark5254(); if (typeof document !== 'undefined' && document && typeof document.addEventListener === 'function') document.addEventListener('DOMContentLoaded', function () { try { if (typeof __zwDetailsInitOpenFire5254 === 'function') __zwDetailsInitOpenFire5254(); } catch (_eR5254d) {} }, true); } catch (_eR5254) {}",
+    );
 }
 
 thread_local! {

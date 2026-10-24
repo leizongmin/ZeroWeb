@@ -687,9 +687,24 @@ fn bidi_override_mapping(text: &str, is_rtl: bool, mirror_glyphs: bool) -> BidiR
     })
 }
 
+/// R5244：CSS direction 定段落基方向（UAX #9 HL1）kill-switch——`=0` 回退内容
+/// auto-detect（P2/P3 首强字符侦测，修前 LTR 上下文的既有行为）。
+fn css_para_base_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("ZW_BIDI_LTR_PARA_BASE").as_deref() != Ok("0"))
+}
+
 /// BiDi reorder with CSS `direction` context.
 /// When `is_rtl` is true and the text needs BiDi processing, sets paragraph level to RTL (level 1).
-fn bidi_reorder_with_direction(text: &str, preserve_all_paragraphs: bool, is_rtl: bool) -> BidiReorderedText {
+/// `hl4_plaintext`：调用方（[`BidiFragmentCursor::with_direction`]）已把 CSS direction 与
+/// `unicode-bidi:plaintext` 折叠进 `is_rtl`，此处需独立知道 plaintext 以保 HL4 内容
+/// auto-detect（plaintext 不受 CSS direction 约束）。
+fn bidi_reorder_with_direction(
+    text: &str,
+    preserve_all_paragraphs: bool,
+    is_rtl: bool,
+    hl4_plaintext: bool,
+) -> BidiReorderedText {
     use unicode_bidi::{BidiInfo, Level};
 
     // 快速检查：如果文本为空或全是 ASCII 且 LTR，不需要 BiDi 处理
@@ -730,10 +745,86 @@ fn bidi_reorder_with_direction(text: &str, preserve_all_paragraphs: bool, is_rtl
     }
 
     // UBA paragraph level: None = auto-detect, Some(Level::rtl()) = RTL, Some(Level::ltr()) = LTR.
-    // CSS `direction: rtl` sets paragraph base direction to RTL (UAX #9 HL1).
-    let para_level = if is_rtl { Some(Level::rtl()) } else { None };
-    let bidi_info = BidiInfo::new(text, para_level);
+    // CSS `direction: rtl` sets paragraph base direction to RTL (UAX #9 HL1)。
+    // R5244：direction:ltr 原实现也传 None（auto-detect）——P3 首强字符侦测把 R 开头
+    // run（"א + - × ÷"）判成 RTL 段**整段反转**，而 CSS 语义下 ltr 块的中性字符应随
+    // 嵌入方向解析为 L（UAX #9 N1/N2，sor/eor = L），视觉序 = 逻辑序（bidi-breaking-001
+    // ref 页 bdo ltr 与 test 页 R-first run 双页反排实证；HL4 plaintext 例外保持
+    // auto-detect）。https://unicode.org/reports/tr9/#HL1
+    let para_level = if is_rtl {
+        Some(Level::rtl())
+    } else if hl4_plaintext || !css_para_base_on() {
+        None
+    } else {
+        Some(Level::ltr())
+    };
+    let bidi_info = if ls_line_only_enabled() {
+        BidiInfo::new_with_data_source(&CssBidiSource, text, para_level)
+    } else {
+        BidiInfo::new(text, para_level)
+    };
     bidi_reorder_paragraphs(&bidi_info, text, preserve_all_paragraphs)
+}
+
+/// R5246 kill-switch 读取：`ZW_BIDI_LS_LINE_ONLY=0` 回退 U+2028 按 UAX #9 class B
+/// 切段（unicode-bidi 硬编码数据源的既有行为）。
+fn ls_line_only_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_BIDI_LS_LINE_ONLY").as_deref() != Ok("0"))
+}
+
+/// R5246（css-writing-modes-3 §2.2 #bidi-algo）：CSS 语境下 UAX #9 的段落分隔只有
+/// U+2029 PARAGRAPH SEPARATOR；U+2028 LINE SEPARATOR 是**强制断行**不是段落分隔，
+/// 只降报为 LF（不切段的中性行标记——段落 levels 跨 LS 连续计算，N1 可把 LS 两侧
+/// 强字符之间的中性序列连接成同一 RTL run，L1 再把行界字符降到段基 level 锚定行结构，
+/// 断行层按行界切行）。UAX #9 纯算法 P1 按 class B 一并切 LS，CSS 覆盖之。
+/// kill-switch `ZW_BIDI_LS_LINE_ONLY=0` 回退硬编码数据源。
+struct CssBidiSource;
+
+impl unicode_bidi::BidiDataSource for CssBidiSource {
+    fn bidi_class(&self, c: char) -> unicode_bidi::BidiClass {
+        use unicode_bidi::{BidiClass, HardcodedBidiData};
+        // BN（Boundary Neutral，NI 中性类）：不切段、可被 N1 与两侧强字符合并、
+        // L1 行尾降级对象——正是 LS 的 CSS 角色（探针实证 BN 下段落 levels 跨 LS
+        // 连续全 1，行序与行内形态符合 ref）。
+        if c == '\u{2028}' {
+            BidiClass::BN
+        } else {
+            HardcodedBidiData.bidi_class(c)
+        }
+    }
+}
+
+/// 段（行）range 的 L2 视觉重排 push：visual_runs 按已解析 levels 对 range 做反转，
+/// 逐字符写进三个平行视觉流集合。
+fn push_visual_runs(
+    bidi_info: &unicode_bidi::BidiInfo,
+    para: &unicode_bidi::ParagraphInfo,
+    text: &str,
+    range: std::ops::Range<usize>,
+    visual_text: &mut String,
+    visual_to_logical: &mut Vec<std::ops::Range<usize>>,
+    visual_is_rtl: &mut Vec<bool>,
+) {
+    let (levels, runs) = bidi_info.visual_runs(para, range);
+    for run in runs {
+        let run_is_rtl = levels[run.start].is_rtl();
+        let mut chars = text[run.clone()]
+            .char_indices()
+            .map(|(offset, ch)| {
+                let start = run.start + offset;
+                (ch, start..start + ch.len_utf8())
+            })
+            .collect::<Vec<_>>();
+        if run_is_rtl {
+            chars.reverse();
+        }
+        for (ch, logical_range) in chars {
+            visual_text.push(ch);
+            visual_to_logical.push(logical_range);
+            visual_is_rtl.push(run_is_rtl);
+        }
+    }
 }
 
 fn bidi_reorder_paragraphs(
@@ -758,24 +849,56 @@ fn bidi_reorder_paragraphs(
         let content_end = separator_start.unwrap_or(para.range.end);
         if para.range.start < content_end {
             let content_range = para.range.start..content_end;
-            let (levels, runs) = bidi_info.visual_runs(para, content_range);
-            for run in runs {
-                let run_is_rtl = levels[run.start].is_rtl();
-                let mut chars = text[run.clone()]
-                    .char_indices()
-                    .map(|(offset, ch)| {
-                        let start = run.start + offset;
-                        (ch, start..start + ch.len_utf8())
-                    })
-                    .collect::<Vec<_>>();
-                if run_is_rtl {
-                    chars.reverse();
+            if ls_line_only_enabled() {
+                // R5246：行级 L2——LS 不切段后段落 levels 跨行连续（N1 跨 LS 连接两侧
+                // 强字符间的中性序列），但 L2 反转须以**逻辑行**为界逐行执行：整段反转
+                // 把逻辑后半行反排到视觉前部，断行层按视觉流切行得到镜像行序（探针实证
+                // visual = 后半 + LS + 前半）。规范顺序 = 先按逻辑断行再行内重排（与
+                // R5121 para_bidi 文档同一顺序）：行界 sor/eor 取整段 levels 在切点处的
+                // 值，`visual_runs(para, line_range)` 按 range 内 levels 反转恰好实现。
+                // 行界 LS 本体不参与反转，按逻辑位置（行界）push，parity 记段基。
+                let mut line_start = content_range.start;
+                for (start, ch) in text[content_range.clone()].char_indices() {
+                    let abs = content_range.start + start;
+                    if ch == '\u{2028}' {
+                        if line_start < abs {
+                            push_visual_runs(
+                                bidi_info,
+                                para,
+                                text,
+                                line_start..abs,
+                                &mut visual_text,
+                                &mut visual_to_logical,
+                                &mut visual_is_rtl,
+                            );
+                        }
+                        visual_text.push(ch);
+                        visual_to_logical.push(abs..abs + ch.len_utf8());
+                        visual_is_rtl.push(para.level.is_rtl());
+                        line_start = abs + ch.len_utf8();
+                    }
                 }
-                for (ch, logical_range) in chars {
-                    visual_text.push(ch);
-                    visual_to_logical.push(logical_range);
-                    visual_is_rtl.push(run_is_rtl);
+                if line_start < content_range.end {
+                    push_visual_runs(
+                        bidi_info,
+                        para,
+                        text,
+                        line_start..content_range.end,
+                        &mut visual_text,
+                        &mut visual_to_logical,
+                        &mut visual_is_rtl,
+                    );
                 }
+            } else {
+                push_visual_runs(
+                    bidi_info,
+                    para,
+                    text,
+                    content_range,
+                    &mut visual_text,
+                    &mut visual_to_logical,
+                    &mut visual_is_rtl,
+                );
             }
         }
 
@@ -848,7 +971,7 @@ impl BidiFragmentCursor {
         let enabled = super::runtime_flags::bidi_fragment_source();
         // unicode-bidi: plaintext → paragraph level auto-detect (CSS Writing Modes §2.2)
         let effective_rtl = is_rtl && !is_plaintext;
-        let reordered = bidi_reorder_with_direction(text, enabled, effective_rtl);
+        let reordered = bidi_reorder_with_direction(text, enabled, effective_rtl, is_plaintext);
         let identity = reordered.visual_text == text
             && reordered
                 .visual_to_logical
@@ -979,7 +1102,10 @@ mod tests {
     };
 
     fn bidi_reorder_with_mapping(text: &str) -> BidiReorderedText {
-        bidi_reorder_with_direction(text, true, false)
+        // HL4 plaintext 语义（内容 auto-detect）——下列各测试钉的是 P3 段落侦测 +
+        // 段落切分/回滚机制本身，非 CSS direction 基方向语义（R5244 后者见
+        // css_ltr_para_base_keeps_r_first_run_logical）。
+        bidi_reorder_with_direction(text, true, false, true)
     }
 
     #[test]
@@ -996,6 +1122,44 @@ mod tests {
     fn r2019_bidi_reorder_pure_ascii_unchanged() {
         assert_eq!(bidi_reorder_with_mapping("hello world").visual_text, "hello world");
         assert_eq!(bidi_reorder_with_mapping("").visual_text, "");
+    }
+
+    /// R5246（css-writing-modes-3 §2.2）：U+2028 LS 是强制断行**不是**段落分隔——
+    /// 段落 levels 跨 LS 连续（N1 把两侧 R 强字符间的中性序列含 LS 连成同一 RTL
+    /// run），L2 反转以逻辑行为界逐行执行（整段反转会把后半行反排到视觉前部，行序
+    /// 镜像错位）。bidi-breaking-003 set 3 形态：行 1 = `\u{a0} ÷ × - + א`、
+    /// 行 2 = `ת ÷ × - + \u{a0}`（与 ref 页 bdo ltr 逐字符一致）。
+    #[test]
+    fn r5246_ls_line_break_not_paragraph_line_scoped_l2() {
+        let text = "א + - × ÷ \u{a0}\u{2028}\u{a0} + - × ÷ ת";
+        let reordered = bidi_reorder_with_mapping(text);
+        assert_eq!(
+            reordered.visual_text, "\u{a0} ÷ × - + א\u{2028}ת ÷ × - + \u{a0}",
+            "LS 不切段：行级 L2 反转（行 1 = 逻辑前半反转、行 2 = 逻辑后半反转）"
+        );
+        // LS 本体在视觉流中保持逻辑行界位置，parity 记段基（plaintext helper 下本串
+        // auto-detect 首强 א → RTL 段基）。
+        let ls_pos = reordered.visual_text.chars().position(|c| c == '\u{2028}').unwrap();
+        assert!(
+            reordered.visual_is_rtl[ls_pos],
+            "plaintext helper 下段基 RTL，LS 行界位 parity = 段基"
+        );
+        // 行 1/行 2 内容同为 RTL run（全 1 levels）。
+        assert!(reordered.visual_is_rtl[0]);
+        assert!(reordered.visual_is_rtl[reordered.visual_is_rtl.len() - 1]);
+    }
+
+    /// R5246 对照：U+2029 PS 仍是段落分隔（UAX #9 class B / P1 切段）——各段独立
+    /// LTR……不，helper 为 plaintext：段 1 首强 א → RTL 段反转；段 2 首强 ת → RTL
+    /// 段反转。bidi-breaking-003 set 2 两侧内容各自反转形态。
+    #[test]
+    fn r5246_ps_still_breaks_paragraph() {
+        let reordered = bidi_reorder_with_mapping("ab\u{2029}אבג");
+        // 段 1 "ab" 纯 LTR 段（首强 a）直排；段 2 "אבג" RTL 反转 גבא。
+        assert_eq!(reordered.visual_text, "ab\u{2029}גבא");
+        // PS 锚定在段界视觉位置。
+        let ps_pos = reordered.visual_text.chars().position(|c| c == '\u{2029}').unwrap();
+        assert_eq!(ps_pos, 2);
     }
 
     /// R2019：bidi 控制码（U+202E RLO）须触发重排序（修：原 `has_rtl` 漏控制码致早返原序）。
@@ -1042,10 +1206,28 @@ mod tests {
 
     #[test]
     fn bidi_reorder_rollback_mode_stops_after_first_paragraph() {
-        let reordered = bidi_reorder_with_direction("אבג\nדה", false, false);
+        // hl4_plaintext=true = auto-detect 语义（R5244 前唯一路径），钉段落回滚机制。
+        let reordered = bidi_reorder_with_direction("אבג\nדה", false, false, true);
         assert_eq!(reordered.visual_text, "גבא\n");
         assert_eq!(reordered.visual_to_logical, vec![4..6, 2..4, 0..2, 6..7]);
         assert_eq!(reordered.visual_is_rtl, vec![true; 4]);
+    }
+
+    /// R5244（UAX #9 HL1）：CSS direction:ltr 块内 R-first run 的中性字符随嵌入方向
+    /// 解析为 L（N1/N2，sor/eor=L）→ 视觉序 = 逻辑序，不整段反转（修前 P3 首强
+    /// 侦测判 RTL 段 → "גבא"，bidi-breaking-001 双页反排实证）。
+    #[test]
+    fn css_ltr_para_base_keeps_r_first_run_logical() {
+        // direction:ltr + R 开头内容：段落基强制 LTR，强 R 字符保位、中性字符不反转。
+        let reordered = bidi_reorder_with_direction("א + -", false, false, false);
+        assert_eq!(reordered.visual_text, "א + -");
+        assert_eq!(reordered.visual_is_rtl, vec![true, false, false, false, false]);
+        // HL4 plaintext 同参仍走内容 auto-detect（首强 א → RTL 段 → 整段反转）。
+        let plaintext = bidi_reorder_with_direction("א + -", false, false, true);
+        assert_eq!(plaintext.visual_text, "- + א");
+        // direction:rtl 臂不受影响（基 level 1，整段反转）。
+        let rtl = bidi_reorder_with_direction("א + -", false, true, false);
+        assert_eq!(rtl.visual_text, "- + א");
     }
 
     #[test]

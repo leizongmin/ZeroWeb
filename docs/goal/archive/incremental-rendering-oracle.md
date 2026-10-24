@@ -1,14 +1,14 @@
 # 增量样式布局与完整计算对照
 
 **版本**：v1.0 / 2026-10-20
-**状态**：Active（2026-10-23 Rally 运行解除启动门控，开发进行中；执行状态见 [master](incremental-rendering-oracle/master.md)）
-**父目标**：[zero-web](zero-web.md) / **控制面**：[master](incremental-rendering-oracle/master.md)
+**状态**：Archived（✅ 2026-10-24 五 DC 与 M1–M4 全部收口，rally 执行+verify 双 DONE 后模式 A 归档；终态见 [master](incremental-rendering-oracle/master.md)）
+**父目标**：[zero-web](../zero-web.md) / **控制面**：[master](incremental-rendering-oracle/master.md)
 
 ## 0. 执行摘要与 Mission
 
 为现有增量样式、布局缓存和帧复用建立确定性完整计算参考路径，发现失效传播、缓存输入和后处理导致的分歧。先验证现有优化，不预设重写样式引擎。
 
-拆分依据：2026-10-20 用户要求按 [Ladybird 建议](../research/research-ladybird-progress-2026-10-20.md)立项，开发后续进行。
+拆分依据：2026-10-20 用户要求按 [Ladybird 建议](../../research/research-ladybird-progress-2026-10-20.md)立项，开发后续进行。
 
 ## 基线与 Support Envelope
 
@@ -16,9 +16,9 @@
 
 范围：DOM/CSSOM 变更、继承、伪元素、Shadow DOM、容器/字体/语言变化；完整计算与增量结果的样式、几何、溢出、基线、命中测试、最终像素；缓存内存保留。
 
-边界：规范修复与 Chromium oracle 仍复用 [rendering-compat](rendering-compat.md)，本 goal 负责内部完整计算对照与回放，内部等价不代表规范正确。Taffy 后处理全部纳入最终输出；深结构重写仍遵守已有授权边界。
+边界：规范修复与 Chromium oracle 仍复用 [rendering-compat](../rendering-compat.md)，本 goal 负责内部完整计算对照与回放，内部等价不代表规范正确。Taffy 后处理全部纳入最终输出；深结构重写仍遵守已有授权边界。
 
-碰撞：按 [run-rules §9–11](../rally/run-rules.md)协调 style/layout/engine/字体与共享 corpus；只写本 goal 控制面。原始 WPT pin 不变，不覆盖现有语料。
+碰撞：按 [run-rules §9–11](../../rally/run-rules.md)协调 style/layout/engine/字体与共享 corpus；只写本 goal 控制面。原始 WPT pin 不变，不覆盖现有语料。
 
 ## Done Criteria / 验收场景（P0）
 
@@ -45,6 +45,6 @@
 
 ## 执行与 Document Control
 
-统一 CLI/证据/守卫见 [启动说明](ladybird-followups/README.md)；`./scripts/rally-goal-incremental-rendering-oracle.sh` 直接执行启动 Rally，加 `--dry-run` 仅预览。
+统一 CLI/证据/守卫见 [启动说明](../ladybird-followups/README.md)；启动脚本已随归档删除，不重启。
 
 入口稳定，master/evidence 持续更新，archive 只追加。未启动不执行 M1；启动后用 `CONTINUE: <下一切片>` / `BLOCK: <真实阻塞>`；全部 DC 与适用门禁有据才 `DONE`。

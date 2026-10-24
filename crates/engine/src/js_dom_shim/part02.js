@@ -4891,6 +4891,14 @@
     out.__zwQSA = true;
     return out;
   };
+  // R5268（html-semantics M2 切片 61）：快照元素级 getElementsByTagName——旧仅 doc 级
+  //（_zwParsedDoc.getElementsByTagName），元素级缺方法（`doc.documentElement.getElementsByTagName
+  // is not a function`，tBodies.html XML 导入案）。与 doc 级同口径：type selector 查询
+  // 委托 querySelectorAll（outerHTML 重解析 + 镜像剔除 + per-element 缓存）。
+  // https://dom.spec.whatwg.org/#dom-element-getelementsbytagname
+  _zwParseEl.prototype.getElementsByTagName = function (tag) {
+    return this.querySelectorAll(String(tag));
+  };
   // R3019：lazy 可变子树桥——DOMPurify / sanitizer / 树遍历库经 DOMParser.parseFromString 拿到 body 后，
   // 用 createNodeIterator 递归 childNodes + removeChild/setAttribute/removeAttribute 清洗 + 读 body.innerHTML。
   // 旧 _zwParseEl 为只读快照（无 childNodes/mutation），walk 恒只见 root。本桥首次 childNodes/mutation 访问时
@@ -5060,6 +5068,22 @@
     if (this.id) return 'id:' + this.id;
     return 'sig:' + this.tagName + '|' + String(this.className) + '|' + String(this.outerHTML).slice(0, 64);
   };
+  // R5254（html-semantics M2 切片 50，2026-10-24）：解析快照元素 ontoggle IDL
+  // accessor——快照架构（querySelector 每次重解析产新对象）下 on* 实例属性无派发链
+  // 可达；handler 按身份键（_zwEvKey：id 或 sig 串，同源重解析稳定）登记全局表，
+  // R5254 初始 toggle task 经身份键寻址派发。spec event handler IDL 属性语义
+  //（赋值即注册）。
+  // https://html.spec.whatwg.org/multipage/webappapis.html#handler-event-types
+  globalThis._zwParsedToggleH = {};
+  Object.defineProperty(_zwParseEl.prototype, 'ontoggle', {
+    configurable: true,
+    get: function () {
+      try { return globalThis._zwParsedToggleH[this._zwEvKey()] || null; } catch (_eR254g) { return null; }
+    },
+    set: function (fn) {
+      try { globalThis._zwParsedToggleH[this._zwEvKey()] = typeof fn === 'function' ? fn : null; } catch (_eR254s2) {}
+    },
+  });
   _zwParseEl.prototype.addEventListener = function (type, fn, opts) {
     if (!this._zwEvLs) this._zwEvLs = {};
     var t = String(type);
@@ -5704,6 +5728,57 @@
       },
       configurable: true, enumerable: true,
     });
+    // R5254（html-semantics M2 切片 50，2026-10-24）：DOMParser 产物 open details 的
+    // toggle 补偿——spec attribute change steps 随 parser 逐元素运行，解析器添加
+    // `open` 同样排 details toggle event task（toggleEvent.html 末案：parseFromString
+    // 产物 ontoggle 应收到初始 toggle）。快照架构（querySelector 每次重解析、无 live
+    // 视图）下事件无宿主派发链——扫描命中的快照对象经 task 直调其 `ontoggle` 属性
+    //（handler 在 parse 返回后才赋值、task 派发时已就位），并给该快照补 `open` IDL
+    // getter（boolean 反射 _attrs，断言面 e.target.open）。只碰 open details 快照，
+    // 其余解析产物零变化。
+    // https://html.spec.whatwg.org/multipage/interactive-elements.html#the-details-element
+    if (d.mimeType === 'text/html' || d.mimeType === 'application/xhtml+xml') {
+      try {
+        var _r254Open = d.querySelectorAll('details[open]');
+        for (var _r254i = 0; _r254i < _r254Open.length; _r254i++) {
+          (function (_r254el) {
+            try {
+              Object.defineProperty(_r254el, 'open', {
+                configurable: true,
+                get: function () {
+                  return this._attrs != null
+                    && Object.prototype.hasOwnProperty.call(this._attrs, 'open');
+                },
+              });
+            } catch (_eR254o) {}
+            // handler 经身份键寻址（用户对 querySelector 产物赋值——与扫描快照不同
+            // 对象，实例属性不可达；_zwEvKey 同源重解析稳定）。
+            var _r254key;
+            try { _r254key = _r254el._zwEvKey(); } catch (_eR254k) { _r254key = null; }
+            if (typeof globalThis.setTimeout === 'function') {
+              globalThis.setTimeout(function () {
+                try {
+                  var _r254fn = _r254key == null ? null : globalThis._zwParsedToggleH[_r254key];
+                  if (typeof _r254fn !== 'function') return;
+                  var _r254ev;
+                  if (typeof globalThis.ToggleEvent === 'function') {
+                    _r254ev = new globalThis.ToggleEvent('toggle', {
+                      oldState: 'closed', newState: 'open', source: null,
+                      bubbles: false, cancelable: false,
+                    });
+                  } else {
+                    _r254ev = { type: 'toggle', oldState: 'closed', newState: 'open', source: null, bubbles: false, cancelable: false };
+                  }
+                  try { _r254ev.isTrusted = true; } catch (_eR254t) {}
+                  try { _r254ev.target = _r254el; } catch (_eR254t2) {}
+                  _r254fn(_r254ev);
+                } catch (_eR254f) {}
+              }, 0);
+            }
+          })(_r254Open[_r254i]);
+        }
+      } catch (_eR254s) {}
+    }
     return d;
   };
 
@@ -7879,6 +7954,37 @@
         _zwFireScroll(null, null, null);
       }
       return false;
+    }
+    // R5253（M2 切片 49，2026-10-24）：spec scroll to the fragment 的 details 展开步——
+    // target 自身是 details → 开它；否则逐个开 target 链上未 open 的 details 祖先
+    //（target 落于 closed details 内时 fragment 导航自动展开，展开后才有几何可量）。
+    // 经 setAttribute 走既有属性通道（toggle 事件 / name 排他组链自动）。
+    // https://html.spec.whatwg.org/multipage/browsing-the-web.html#scroll-to-the-fragment-spec
+    var _r253Expanded = false;
+    try {
+      var _r253N = anchor;
+      if (_r253N && _r253N.setAttribute) {
+        if (String(_r253N.tagName || '').toLowerCase() === 'details' && !_r253N.hasAttribute('open')) {
+          _r253N.setAttribute('open', '');
+          _r253Expanded = true;
+        }
+        var _r253P = _r253N.parentNode;
+        while (_r253P) {
+          if (_r253P.tagName && String(_r253P.tagName).toLowerCase() === 'details'
+              && _r253P.setAttribute && !_r253P.hasAttribute('open')) {
+            _r253P.setAttribute('open', '');
+            _r253Expanded = true;
+          }
+          _r253P = _r253P.parentNode;
+        }
+      }
+    } catch (_eR253) {}
+    if (_r253Expanded && typeof requestAnimationFrame === 'function') {
+      // 展开是属性 mutation（批应用后才有新布局）——同步链内 gBCR 拿旧几何，滚动落
+      // 不了位；rAF 帧回调（mutation 已 apply）重入本函数：展开步 no-op（全已 open，
+      // 不再挂臂）+ 既有 scrollIntoView/窗口位同步按新几何落位。仅在真正展开时挂，
+      // 既有滚动面（不涉 closed details）零变化。
+      requestAnimationFrame(function () { _scrollToAnchorForHash(frag, _noTopFallback); });
     }
     // M2-S4D：窗口滚动位同步——fragment 导航后 window.scrollY 可观测（WPT scroll-behavior
     // after-transition-* 「navigate('#frag') 后 scrollY ≠ 0」基面）。先取**滚动前**几何算绝对

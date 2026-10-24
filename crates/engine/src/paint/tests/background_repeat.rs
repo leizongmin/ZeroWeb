@@ -1016,3 +1016,55 @@ fn test_r3923_repeat_grid_phase_anchored_at_position() {
         "不应出现旧 clip 对齐相位 x=-8，实际 {xs:?}"
     );
 }
+
+/// R5253（css-backgrounds-3 §3.9 单值 = 两维 auto / §2.9 round 第三步）：`round
+/// no-repeat` + 默认 background-size——单值 auto 等价 `auto auto`，x 轴 round 缩放
+/// 72/2=36 后，y 轴（no-repeat、auto）按固有比恢复 32→36；旧判定只认 TwoValue
+/// 形态导致 y 留在固有 32（round-2 tile 高 32 应 36）。driving：wpt
+/// background-repeat-round-2 `.outer`。
+#[test]
+fn r5253_round_no_repeat_default_size_aspect_follow() {
+    use crate::paint::image_resource_key;
+
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("div");
+    let layout = make_box(Some(elem), 0.0, 0.0, 72.0, 72.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.background_image = vec![BackgroundImageComputedValue::Url("/bg32.png".to_string())];
+    style.background_size = vec![BackgroundSizeComputedValue::Auto];
+    style.background_repeat = vec![BackgroundRepeatComputedValue::TwoValue(
+        Box::new(BackgroundRepeatComputedValue::Round),
+        Box::new(BackgroundRepeatComputedValue::NoRepeat),
+    )];
+    style.color = ColorValue::CurrentColor;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter
+        .image_sizes
+        .insert(image_resource_key("/bg32.png", None), (32.0, 32.0));
+    painter.paint(&layout, &styles, None);
+
+    let prims = painter.primitives();
+    // x：round 72/32→2 个 36 宽 tile 覆盖 0..72；y：no-repeat 单行（第三步恢复高 36）。
+    assert_eq!(
+        prims.images.len(),
+        2,
+        "应为 2 个 tile（一行），实际 {}",
+        prims.images.len()
+    );
+    for img in &prims.images {
+        assert!(
+            (img.rect.size.width - 36.0).abs() < 0.1,
+            "tile 宽应 36，实际 {}",
+            img.rect.size.width
+        );
+        assert!(
+            (img.rect.size.height - 36.0).abs() < 0.1,
+            "no-repeat auto 维应按固有比跟随 round 维到 36，实际 {}",
+            img.rect.size.height
+        );
+    }
+}

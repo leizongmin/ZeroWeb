@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 use taffy::prelude::*;
-use zero_css_parser::values::{DisplayValue, FloatValue, LengthValue, VerticalAlignValue};
+use zero_css_parser::values::{DisplayValue, FloatValue, LengthValue, PositionValue, VerticalAlignValue};
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_style_system::ComputedStyle;
 
@@ -26,6 +26,15 @@ use zero_style_system::property::types::ColumnSpanComputedValue;
 /// https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
 static CONTENT_AREA_DORMANT_ON: std::sync::LazyLock<bool> =
     std::sync::LazyLock::new(|| std::env::var("ZW_INLINE_CONTENT_AREA").as_deref() != Ok("0"));
+
+/// R5250（CSS2 §9.3.2 relative positioning）：纯 inline 非替换盒无 taffy 节点，其行内流
+/// 中 relative inline 子的 inset 无人施加（R5225 判例「display:inline 非替换盒 inset 由
+/// taffy 单次施加」对纯 inline 不成立，inline_finalization 收窄门 ③「相对 inset 已烘焙
+/// 进盒位」假设失效）——compute_final 以真实 styles 构建 per-node 视觉位移映射
+/// （`inline_relpos_shifts`），stored IFC 映射与 paint Path B（空 styles 重跑，无 styles
+/// 可判）据表平移 fragment。`ZW_RELPOS_INLINE_SHIFT=0` 回退静态位行为。
+static RELPOS_INLINE_SHIFT_ON: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_RELPOS_INLINE_SHIFT").as_deref() != Ok("0"));
 
 /// 行内布局使用的字体相关依赖。
 #[derive(Clone, Copy, Default)]
@@ -790,6 +799,90 @@ pub(crate) fn build_inline_owner_ancestor_map(
     map
 }
 
+/// R5250：relative inset 水平/垂直分量 px 解析。over-constrained 时 left 胜 right、
+/// top 胜 bottom（R716 惯例，rtl 镜像未实现 FIXME）；Px 直取，Percent 水平对包含块
+/// content 宽解析（`cb_width` None 时 0），Em/Rem 等其余走 `resolve_length`（元素自身
+/// font_size 上下文，033 的 -6em@20px = -120px）。Auto 与垂直百分比 → 0
+///（FIXME：top/bottom 百分比按包含块高度解析，高度未传入）。
+fn inline_relative_inset_px(style: &ComputedStyle, cb_width: Option<f32>) -> (f32, f32) {
+    let resolve = |v: &LengthValue, negate: bool, horizontal: bool| -> f32 {
+        let m = match v {
+            LengthValue::Px(p) => *p as f32,
+            LengthValue::Percentage(p) if horizontal => ((*p / 100.0) * f64::from(cb_width.unwrap_or(0.0))) as f32,
+            LengthValue::Percentage(_) | LengthValue::Auto => 0.0,
+            other => {
+                let fs = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
+                zero_style_system::computed::resolve_length(other, fs, None, None) as f32
+            }
+        };
+        if negate { -m } else { m }
+    };
+    let dx = match &style.left {
+        LengthValue::Auto => match &style.right {
+            LengthValue::Auto => 0.0,
+            v => resolve(v, true, true),
+        },
+        v => resolve(v, false, true),
+    };
+    let dy = match &style.top {
+        LengthValue::Auto => match &style.bottom {
+            LengthValue::Auto => 0.0,
+            v => resolve(v, true, false),
+        },
+        v => resolve(v, false, false),
+    };
+    (dx, dy)
+}
+
+/// R5250（CSS2 §9.3.2）：本容器 IFC 内各归因节点的 relative inset 视觉位移
+/// `(dx, dy)` 映射。纯 inline 非替换盒无 taffy 节点，其行内流中 relative inline 子的
+/// inset 无人施加（见 [`RELPOS_INLINE_SHIFT_ON`]）——compute_final 以真实 styles 构建
+/// 本表存盒（`inline_relpos_shifts`），stored IFC 映射与 paint Path B（空 styles 重跑，
+/// 无 styles 可判）据表平移 fragment。**容器自身不入表**（其 inset 随盒由
+/// taffy/apply_relative_offsets 施加，入表即双计）；S = 节点与容器之间严格祖先的
+/// relative inset 累计，`map[e] = S + inset(e)`——文本 run 归因元素自身（collect_items
+/// R4382 契约），共享元素键。仅递归 display:inline 流内非替换子——block/atomic/
+/// replaced/float/OOF 子树属其他 IFC 或 taffy 面，位移各由既有路径施加。水平 only
+///（竖排块轴流行进语义不同，暂不启用）。
+pub(crate) fn build_inline_relpos_shift_map(
+    doc: &Document,
+    container_id: NodeId,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    cb_width: f32,
+) -> NodeIdMap<(f32, f32)> {
+    fn walk(
+        doc: &Document,
+        id: NodeId,
+        shift: (f32, f32),
+        styles: &HashMap<NodeId, ComputedStyle>,
+        cb_width: f32,
+        map: &mut NodeIdMap<(f32, f32)>,
+    ) {
+        let Some(style) = styles.get(&id) else { return };
+        if !matches!(style.display, DisplayValue::Inline)
+            || !matches!(style.float, FloatValue::None)
+            || matches!(style.position, PositionValue::Absolute | PositionValue::Fixed)
+            || crate::inline_block_split::is_replaced_element(&id, doc)
+        {
+            return;
+        }
+        let own = inline_relative_inset_px(style, Some(cb_width));
+        let total = (shift.0 + own.0, shift.1 + own.1);
+        // 零位移不记，消费端免查（Ahem 外层无 inset 的 032/033 形态 map 仅含真位移节点）。
+        if total.0 != 0.0 || total.1 != 0.0 {
+            map.insert(id, total);
+        }
+        for child in doc.child_nodes(id) {
+            walk(doc, child, total, styles, cb_width, map);
+        }
+    }
+    let mut map = NodeIdMap::default();
+    for child in doc.child_nodes(container_id) {
+        walk(doc, child, (0.0, 0.0), styles, cb_width, &mut map);
+    }
+    map
+}
+
 /// 重写路径（行为不变）。kill-switch `ZW_INLINE_FRAG_POS=0`（LazyLock 构造期单读，
 /// R3858 热路径零 env 查询教训）。
 ///
@@ -827,9 +920,14 @@ pub(crate) fn sync_inline_child_boxes_from_ifc_with_ancestors(
         /// 对齐行主基线，本式与 line_y + line_baseline_y 逐字节同值。
         first_frag_h: f32,
         first_w: f32,
-        first_ml: f32,
         first_pl: f32,
+        /// R5248：首 run 记账 margin（R4332 折入含 border advance）——x 式只扣**流内
+        /// 实际落账**的 frame，折入落流与否 = `first_ml − raw_ml > 0` 检测。
+        first_ml: f32,
         text_empty: bool,
+        /// R5249：任一 fragment 非空（门信号）——element-first spacer（空文本首
+        /// run）落槽后首 run 记账属 spacer，门不得按首 run 空文本误判整盒无内容。
+        any_text: bool,
         count: u32,
         /// slice13：全部 fragment 是否同在一行（CJK 逐字分词/拉丁多词会把单行元素
         /// 拆成多 run——同线多 run 的 content area 并集仍等于单一 content area，
@@ -853,9 +951,10 @@ pub(crate) fn sync_inline_child_boxes_from_ifc_with_ancestors(
                 first_y: y,
                 first_frag_h: run.height,
                 first_w: run.width,
-                first_ml: run.margin_left,
                 first_pl: run.padding_left,
+                first_ml: run.margin_left,
                 text_empty: run.text.is_empty(),
+                any_text: !run.text.is_empty(),
                 count: 0,
                 first_line_idx: line_idx,
                 single_line: true,
@@ -865,6 +964,9 @@ pub(crate) fn sync_inline_child_boxes_from_ifc_with_ancestors(
                 max_y: y + run.height,
             });
             a.count += 1;
+            if !run.text.is_empty() {
+                a.any_text = true;
+            }
             if a.first_line_idx != line_idx {
                 a.single_line = false;
             }
@@ -896,17 +998,26 @@ pub(crate) fn sync_inline_child_boxes_from_ifc_with_ancestors(
             // ml/pl/bl 已在行内推进时扣除），祖先盒起点 = 沿链逐段再扣该段 frame。
             let mut deducted = 0.0_f32;
             for anc in chain {
-                let anc_border_left = styles
-                    .get(anc)
-                    .map(|s| extract_inline_visual_metrics(s).border_left)
+                // R5248：只扣**流内实际落账**的 frame——折入落流与否 = 自名首 run
+                // ml − raw ml > 0（text-first 落流；R4332 bidi 控制符臂清零与
+                // element-first 首槽被元素 run 消耗两态不落流，bidi-011 /
+                // position-relative-033-ref 实证）。无自名 fragment 的段 fold 本无
+                // 落点，pl 同理取首 fragment 记账（R5232 判例）。
+                let anc_agg = aggs.get(anc);
+                let anc_pl = anc_agg.map(|a| a.first_pl).unwrap_or(0.0);
+                let anc_fold = anc_agg
+                    .map(|a| {
+                        let raw = styles
+                            .get(anc)
+                            .map(|s| InlineFormattingContext::resolve_inline_margin(&s.margin_left, s))
+                            .unwrap_or(0.0);
+                        (a.first_ml - raw).max(0.0)
+                    })
                     .unwrap_or(0.0);
-                // 有 frame 的段必有归因 fragment（collect R4300e spacer 零宽 run），
-                // ml/pl 取其首 fragment 记录；无 frame 段自然为 0。
-                let (anc_ml, anc_pl) = aggs.get(anc).map(|a| (a.first_ml, a.first_pl)).unwrap_or((0.0, 0.0));
-                let cand = owner_agg.min_x - deducted - anc_ml - anc_pl - anc_border_left;
+                let cand = owner_agg.min_x - deducted - anc_pl - anc_fold;
                 let entry = min_inherited_x.entry(*anc).or_insert(f32::INFINITY);
                 *entry = entry.min(cand);
-                deducted += anc_ml + anc_pl + anc_border_left;
+                deducted += anc_pl + anc_fold;
             }
         }
     }
@@ -929,13 +1040,28 @@ pub(crate) fn sync_inline_child_boxes_from_ifc_with_ancestors(
             continue;
         };
 
-        if !agg.text_empty {
+        if agg.any_text {
             // slice13 挂账（信息级 i4）：排除面——vertical writing / 相对定位 / 含块级子
             // 容器（pure_inline_container=false）中的 inline 不进本分支，上报缺席
             //（gBCR 仍报行盒几何）。同类语义面未修未挂账，备查（R4384 轴邻接项）。
             if !child.is_replaced && frag_pos_on && pure_inline_container && !vertical && !child.is_relative {
                 let metrics = extract_inline_visual_metrics(style);
-                child.x = agg.min_x - agg.first_ml - agg.first_pl - metrics.border_left;
+                // R5248：盒 x = margin 盒 + raw ml = 流内内容首缘 − 流内落账 frame。
+                // run.x 含流内推进（raw ml、pl、落流的折入 border advance——bidi-011
+                // probe：ml 32/pl 32 → x = cursor+64 实证），旧式再减全量 ml 系对已在
+                // 流内的 ml/折入双扣（multicol-rule-dashed-000 span border-left 段
+                // 198 vs 208 实证）。折入落流与否 = `first_ml − raw ml`（text-first
+                // 落流；R4332 bidi 控制符臂清零——bidi-011 test div 实证——与
+                // element-first 首槽被元素 run 消耗——position-relative-033-ref 实证
+                // ——两态不落流，此时 bl 悬在流外不扣）。宽度式（first_w + frame）
+                // 本就无 ml，右缘随之对齐。
+                let raw_ml = InlineFormattingContext::resolve_inline_margin(&style.margin_left, style);
+                let fold_landed = (agg.first_ml - raw_ml).max(0.0);
+                // R5249：首 run 为空文本（element-first spacer）时 fragment x 记
+                // 推进前 border-box 缘（break_lines 空 inline 分支口径，不含 pl），
+                // pl 项不扣；非空 run x = content 缘（含 pl），照扣。
+                let pl_term = if agg.text_empty { 0.0 } else { agg.first_pl };
+                child.x = agg.min_x - pl_term - fold_landed;
                 // R5232：子孙首缘候选更小（首内容属子孙）时收紧——只收紧不放松。
                 if let Some(cand) = min_inherited_x.get(&child_id) {
                     child.x = child.x.min(*cand);
@@ -1621,6 +1747,16 @@ pub(crate) fn compute_final_inline_layouts(
         .collect();
 
     let mut inline_ctx = InlineFormattingContext::new(container_width)
+        // R5250：relative inset 位移表（§9.3.2，纯 inline 非替换盒无 taffy 节点无人
+        // 施加）——collect 折回门分裂信号 + fragment 平移消费表，须在 layout 前
+        // 注入（collect 期消费）。竖排块轴不启用（水平 only，见 builder 文档）。
+        .with_relpos_shifts(
+            if *RELPOS_INLINE_SHIFT_ON && !root.writing_mode.is_vertical_block_flow() {
+                build_inline_relpos_shift_map(doc, node_id, styles, container_width)
+            } else {
+                NodeIdMap::default()
+            },
+        )
         .with_text_align(text_align)
         .with_text_group_align(resolve_text_group_align(Some(style)))
         .with_text_align_last(text_align_last)
@@ -1778,6 +1914,12 @@ pub(crate) fn compute_final_inline_layouts(
     // 自身，扁平化收集路径），回填 hit-test/struct-check 可见的代理盒并注册 paint_skip
     // 防双绘（同 orphan 先例）。须在 store-gate return 之前跑。
     backfill_run_in_boxes(root, doc, styles, &inline_ctx, context.paint_skip);
+    // R5250：位移表存盒（构建在上方 builder 链处）——非 stored 容器（033-test serif
+    // 等）paint 走 Path B（空 styles 重跑），从盒读表注入重跑 IFC 并平移 fragment。
+    // 须在 store-gate return 之前。空表不存（Path B 注入空表 = 无分裂无平移，两臂一致）。
+    if !inline_ctx.relpos_shifts.is_empty() {
+        root.inline_relpos_shifts = inline_ctx.relpos_shifts.clone();
+    }
     let is_pure_ahem =
         style.font_family.len() == 1 && style.font_family[0].trim_matches('"').eq_ignore_ascii_case("Ahem");
     let is_floated = !matches!(style.float, FloatValue::None);
@@ -1828,8 +1970,24 @@ pub(crate) fn compute_final_inline_layouts(
                         _ => line.baseline_y,
                     };
                     InlineLayoutFragment {
-                        x: frag.x,
-                        y: frag.y,
+                        // R5250：relative inset 视觉位移（§9.3.2，纯 inline 非替换盒无
+                        // taffy 节点无人施加）——stored fragment 烘焙进存面，paint 端
+                        // baseline_y_abs = line_y + f.baseline_y 随之移动。行盒 y 不动
+                        //（同线多 span 各自 inset 不同，行级位移无定义）。
+                        x: frag.x
+                            + root
+                                .inline_relpos_shifts
+                                .get(&frag.node_id)
+                                .copied()
+                                .unwrap_or((0.0, 0.0))
+                                .0,
+                        y: frag.y
+                            + root
+                                .inline_relpos_shifts
+                                .get(&frag.node_id)
+                                .copied()
+                                .unwrap_or((0.0, 0.0))
+                                .1,
                         width: frag.width,
                         height: frag.height,
                         font_size: frag.font_size,
@@ -1839,7 +1997,13 @@ pub(crate) fn compute_final_inline_layouts(
                         source: frag.source.clone(),
                         letter_spacing: frag.letter_spacing,
                         node_id: Some(frag.node_id),
-                        baseline_y: frag_baseline_y,
+                        baseline_y: frag_baseline_y
+                            + root
+                                .inline_relpos_shifts
+                                .get(&frag.node_id)
+                                .copied()
+                                .unwrap_or((0.0, 0.0))
+                                .1,
                     }
                 })
                 .collect(),
@@ -2111,10 +2275,20 @@ pub(crate) fn try_measure_fragment_segment(
     if std::env::var("ZW_FRAGMENT_MEASURE").as_deref() == Ok("0") {
         return None;
     }
-    // 仅 Definite 宽参与（intrinsic 测量维持旧快捷路径，避免 intrinsic 面行为变更）。
+    // R5245：intrinsic 查询也按片段 IFC 测量（旧仅 Definite 宽参与，intrinsic 落回
+    // measure_text_content 文本节点臂——其整串 shaped 测量对混排文本系统性偏窄
+    //（bidi-breaking-001 set 4「א + - × ÷」59.4 应 ~107）且多节点片段只测首个文本子，
+    // float 宿主 shrink-to-fit 据此收缩过窄、片段多折行）。查询宽度映射同
+    // measure_text_content R428 惯例：MaxContent = INFINITY（最宽行）、MinContent = 0
+    //（最宽不可拆单元独占一行）。
+    let is_intrinsic_query = matches!(
+        available_space.width,
+        AvailableSpace::MaxContent | AvailableSpace::MinContent
+    );
     let width = known_dimensions.width.or(match available_space.width {
         AvailableSpace::Definite(w) => Some(w),
-        _ => None,
+        AvailableSpace::MaxContent => Some(f32::INFINITY),
+        AvailableSpace::MinContent => Some(0.0),
     })?;
     if item_node_ids.is_empty() {
         return None;
@@ -2126,8 +2300,19 @@ pub(crate) fn try_measure_fragment_segment(
     inline_ctx.set_fragment_node_ids(item_node_ids.to_vec());
     inline_ctx = configure_inline_fonts(inline_ctx, inline_fonts, false);
     inline_ctx.layout(doc, host_id, styles);
+    // intrinsic 查询回报内容固有宽（片段最右缘，同 measure_text_content 的
+    // measured_width 口径）；Definite 维持透传（taffy 以已知宽消费）。
+    let out_width = if is_intrinsic_query {
+        inline_ctx
+            .all_fragments()
+            .iter()
+            .map(|fragment| fragment.x + fragment.width)
+            .fold(0.0_f32, f32::max)
+    } else {
+        width
+    };
     Some(Size {
-        width,
+        width: out_width,
         height: inline_ctx.total_height(),
     })
 }
@@ -3792,15 +3977,16 @@ pub(crate) fn remeasure_inline_only_containers(
             let has_block_children = box_node.children.iter().any(|c| {
                 c.is_block_level
                         && !is_atomic_inline_family_box(c, styles)
-                        // R5242：definite 宽 inline-table 子是行内级原子（R5242 同口径，
-                        // 见 float_sigma_eligible_inline_table 文档）——高度已并入本 IFC
-                        // 行盒（ib_sizes R5242 扩展），不构成「块级子」阻止容器高收缩到
-                        // 行盒高（008：wrapper 200 应 100）。auto 宽维持旧块叠语义。
-                        // kill-switch 同上 `ZW_INLINE_TABLE_IB_SIZING=0`。
+                        // R5242/R5243：inline-table 子是行内级原子（豁免口径见
+                        // float_inline_table_exempt——R5242 definite + R5243 auto）——高度
+                        // 已并入本 IFC 行盒（ib_sizes R5242 扩展），不构成「块级子」阻止
+                        // 容器高收缩到行盒高（008：wrapper 200 应 100；009 auto 表同域）。
+                        // kill-switch：R5242 部分 `ZW_INLINE_TABLE_IB_SIZING=0`；R5243
+                        // auto 部分 `ZW_FLOAT_INLINE_TABLE_MEASURE=0`。
                         && !(*INLINE_TABLE_IB_SIZING
                             && c.node_id
                                 .and_then(|id| styles.get(&id))
-                                .is_some_and(crate::intrinsic_sizing::float_sigma_eligible_inline_table))
+                                .is_some_and(crate::intrinsic_sizing::float_inline_table_exempt))
                         && !c.is_absolute
                         && !c.is_fixed
             });

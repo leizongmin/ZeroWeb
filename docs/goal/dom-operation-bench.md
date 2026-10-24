@@ -1,7 +1,7 @@
 # 跨浏览器 DOM 与脚本桥接操作基准
 
 **版本**：v1.0 / 2026-10-20
-**状态**：Active（启动门控：文档/脚本本轮创建；基准开发与运行待后续启动）
+**状态**：Active（**M1 已解锁**——2026-10-23 用户决策，无人值守可启动；基准开发与运行 NOT_RUN）
 **父目标**：[zero-web](zero-web.md) / **控制面**：[master](dom-operation-bench/master.md)
 
 ## 0. 执行摘要与 Mission

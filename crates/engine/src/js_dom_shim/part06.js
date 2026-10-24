@@ -1865,7 +1865,44 @@
     rule.style = _makeRuleStyle(rule, flushFn);
     return rule;
   }
+  // R5271：`element.sheet` [SameObject] 缓存——CSSOM getter 每次返回同一对象（旧实现
+  // 每读重建，跨读 identity 断言必炸）。失效模型按 corpus the-style-element/
+  // mutations.window.js 钉定：直接子指纹（nodeType + data/nodeValue 串接）变更
+  //（comment 插入/数据变更/normalize/移除等**有效**子变更 → CSSOM remove + create
+  // style sheet，换新对象）；零子插入（空 DocumentFragment appendChild）指纹不变
+  // → 身份保持。外部合成条目（owner=null）不缓存（externalWire 逐次可变）。
+  var _zwSheetSameObj = typeof WeakMap === 'function' ? new WeakMap() : null;
+
   function _makeStyleSheet(owner, externalWire) {
+    if (owner != null && _zwSheetSameObj) {
+      // R5271b：元素不在文档 → sheet 返 null（spec LinkStyle：HTMLStyleElement/
+      // HTMLLinkElement 的 sheet 仅在文档内存在——LinkStyle.html「not in a Document」
+      // 案钉定 createElement 未挂载阶段返 null；CSS-in-JS 惯用时序先 append 后读不受
+      // 影响）。守卫兜底 true（_zwIsConnected 异常时不引入行为差）。
+      var _conn5271 = true;
+      try {
+        if (typeof _zwIsConnected === 'function') _conn5271 = _zwIsConnected(owner.__zwSelector, owner.__zwHandle);
+      } catch (_conn5271e) { _conn5271 = true; }
+      if (!_conn5271) return null;
+      var _fp5271 = '';
+      try {
+        var _fp5271Kids = owner.childNodes;
+        for (var _fp5271i = 0; _fp5271i < _fp5271Kids.length; _fp5271i++) {
+          var _fp5271k = _fp5271Kids[_fp5271i];
+          if (!_fp5271k) continue;
+          _fp5271 += ':' + _fp5271k.nodeType + ':' + (_fp5271k.data != null ? _fp5271k.data : (_fp5271k.nodeValue != null ? _fp5271k.nodeValue : ''));
+        }
+      } catch (_fp5271e) {}
+      var _fp5271hit = _zwSheetSameObj.get(owner);
+      if (_fp5271hit && _fp5271hit.fp === _fp5271) return _fp5271hit.ss;
+      var _ss5271 = _makeSheetBuild(owner, externalWire);
+      _zwSheetSameObj.set(owner, { fp: _fp5271, ss: _ss5271 });
+      return _ss5271;
+    }
+    return _makeSheetBuild(owner, externalWire);
+  }
+
+  function _makeSheetBuild(owner, externalWire) {
     var sel = owner && owner.__zwSelector;
     // js-dom M4 R113：handle-based owner（createElement('style') 后 append——CSS-in-JS /
     // WPT prefixed-animation 形态）。初始规则经 `__zw_style_rules_handle`（host 从 mutation
@@ -1981,6 +2018,14 @@
         try { this.deleteRule(index); } catch (_e) { /* deleteRule 失败 best-effort */ }
       }
     };
+    // R5271b：brand 进 CSSOM 原型链（CSSStyleSheet extends StyleSheet）——
+    // `style.sheet instanceof StyleSheet` 断言可达（LinkStyle.html）。自有成员
+    //（cssRules/insertRule/…）不受影响（own props 遮蔽原型）。
+    try {
+      if (globalThis.CSSStyleSheet && globalThis.CSSStyleSheet.prototype) {
+        Object.setPrototypeOf(ss, globalThis.CSSStyleSheet.prototype);
+      }
+    } catch (_eBrd) {}
     return ss;
   }
 
@@ -2147,6 +2192,18 @@
   };
   // spec：CSSStyleSheet 不可函数调用（必须 new）。
   try { Object.defineProperty(globalThis.CSSStyleSheet, 'prototype', { value: globalThis.CSSStyleSheet.prototype, writable: false, enumerable: false, configurable: false }); } catch (_eProto) {}
+  // R5271b：StyleSheet 基接口——CSSOM 链 CSSStyleSheet extends StyleSheet；
+  // `style.sheet instanceof StyleSheet`（LinkStyle.html「must return StyleSheet
+  // object」案钉定）。纯 brand 面：无自有成员（spec StyleSheet 的 type/ownerNode
+  // 等由 sheet 对象自身属性承载）。
+  if (!globalThis.StyleSheet) {
+    globalThis.StyleSheet = function StyleSheet() {
+      throw new globalThis.TypeError("Illegal constructor: StyleSheet is not constructable");
+    };
+    globalThis.StyleSheet.prototype = {};
+    try { Object.defineProperty(globalThis.StyleSheet, 'prototype', { value: globalThis.StyleSheet.prototype, writable: false, enumerable: false, configurable: false }); } catch (_eSSp) {}
+    try { Object.setPrototypeOf(globalThis.CSSStyleSheet.prototype, globalThis.StyleSheet.prototype); } catch (_eSSc) {}
+  }
 
   // DocumentOrShadowRoot.adoptedStyleSheets：ShadowRoot.prototype 版（document 版在
   // 下方 document 字面量 R2808 styleSheets 相邻处，同闭包变量）。
@@ -2218,9 +2275,10 @@
   };
   // R3254-M3 切片 3（editing goal DC-4，2026-09-07）：queryCommandSupported/Enabled
   // 真实反射——按本实现**实际接通的命令面**判定（不再无条件 true）。
-  // - supported：copy/cut/paste（ClipboardEvent 路径，R2936）∪ 编辑类（_zwExecCmdInputType
-  //   表——format/insert/delete 族，事件序 M2 切片 1 接通）。其余命令（styleWithCSS/
-  //   useCSS/selectAll/undo/redo/justify*/indent/outdent 等）未接 → false。
+  // - supported：copy/cut/paste（ClipboardEvent 路径，R2936）∪ selectAll（R5264 选区
+  //   应用）∪ 编辑类（_zwExecCmdInputType 表——format/insert/delete 族，事件序 M2
+  //   切片 1 接通）。其余命令（styleWithCSS/useCSS/undo/redo/justify*/indent/outdent
+  //   等）未接 → false。
   // - enabled：spec（"queryCommandEnabled"）按命令状态判定——copy/cut 需选区非空
   //   （Chromium 语义）；编辑类需选区在单一 editing host 内且整个选区在 host 内
   //   （与 execCommand 编辑分支的前提一致——M2 切片 1 同款祖先链扫描）。
@@ -2243,6 +2301,8 @@
     var c = String(cmd == null ? '' : cmd).toLowerCase();
     // copy/cut/paste：ClipboardEvent 路径真实接通 → supported。
     if (c === 'copy' || c === 'cut' || c === 'paste') return { supported: true, enabled: true };
+    // R5264：selectAll 选区应用接通（execCommand 分支同款模态 inert 作用域）。
+    if (c === 'selectall') return { supported: true, enabled: true };
     // 编辑类命令：inputType 表命中 = supported；enabled 与 execCommand 编辑分支同前提。
     if (typeof _zwExecCmdInputType[c] === 'undefined') return { supported: false, enabled: false };
     var enabled = false;
@@ -4196,6 +4256,28 @@
             }
           }
         } catch (_eEdEv) {}
+      } else if (cmd === 'selectall') {
+        // R5264（M2 切片 57，2026-10-24）：execCommand('selectAll') 选区应用——
+        // 此前未接（permissive no-op → toString 恒 ''）。作用域取模态 inert 遮罩：
+        // 栈顶模态 dialog 存在 → 仅其子树（HTML inert——模态 open dialog 外文档
+        // 内容不可选；inert-node-is-unselectable 断言面：SelectAll 后 toString
+        // 只含 dialog 内文本）；无模态 → body。复用 _selection.selectAllChildren
+        //（R2804 面，DocumentType 门 / detached no-op 内建）；不派 beforeinput/
+        // input（选区命令不经编辑宿主事件序，与 undo/redo 同口径）。
+        try {
+          var selSA = (typeof _getSelection === 'function') ? _getSelection() : null;
+          if (selSA && typeof selSA.selectAllChildren === 'function') {
+            var scopeSA = null;
+            try {
+              if (typeof _zwDialogModalTopSel === 'function') {
+                var _saTopSel = _zwDialogModalTopSel();
+                scopeSA = _saTopSel ? document.querySelector(_saTopSel) : null;
+              }
+            } catch (_eSaTop) {}
+            if (!scopeSA) scopeSA = document.body || document.documentElement;
+            if (scopeSA) selSA.selectAllChildren(scopeSA);
+          }
+        } catch (_eSa) {}
       }
       return true;
     },
@@ -4474,6 +4556,20 @@
           globalThis.__zwAdoptDocByHandle[String(copy.__zwHandle)] = globalThis.document;
         }
       } catch (_e132h) {}
+      // R5268（html-semantics M2 切片 61）：快照域产物 deep import 物化为 handle 树——
+      // spec importNode = clone + adopt，产物须落目标文档完整接口面；raw _zwMEl 副本
+      // append 进活树后 `.tBodies` 等读 undefined（tBodies.html XML 导入案 + probe
+      // s61b C 实证）。t8q adoptNode 同款 `_wcRebuildAsHandle`（跨 part 先例 part04 R97
+      // clone 产物物化）；浅克隆不物化（child 剥离语义会丢）。真 wrapper 源不进本分支
+      //（既有行为零变化）。
+      try {
+        if (isDeep
+            && ((typeof _zwParseEl === 'function' && node instanceof _zwParseEl) || node.__zwIsMEl === true)
+            && typeof _wcRebuildAsHandle === 'function') {
+          var _r5268mat = _wcRebuildAsHandle(copy);
+          if (_r5268mat && _r5268mat.nodeType === 1) return _r5268mat;
+        }
+      } catch (_eR5268) {}
       return copy;
     },
     // `document.implementation`（DOMImplementation，R2815）——feature-detection（jQuery support 等查 hasFeature）
@@ -5239,6 +5335,17 @@
     },
     set title(v) {
       _doc_title = v == null ? '' : String(v);
+      // R5269（html-semantics M2 切片 62）：改经元素 textContent setter 落地
+      //（string replace all 同口径——该路径自带 __zw_set_text 宿主写回 + 本地文本子
+      // 注册 + childList 记录）。旧裸 `__zw_set_text('title', v)` 只写宿主快照，
+      // title 元素本地文本子视图 stale（title.text-03 setter 案 firstChild.nodeValue
+      // 读回旧值实证）。querySelector miss（无 title 文档）时回退既有裸通道，行为不变。
+      var t = null;
+      try { t = globalThis.document.querySelector('title'); } catch (_e5269t) { t = null; }
+      if (t) {
+        try { t.textContent = _doc_title; } catch (_e5269s) {}
+        return;
+      }
       // R3035：写回 host <title>（已有则 SetText，无则 find_by_selector 不命中 → no-op）。
       if (typeof __zw_set_text === 'function') {
         try { __zw_set_text('title', _doc_title); } catch (_e) {}
@@ -5314,6 +5421,31 @@
         if (!_aeCn) { try { _activeElKey = null; } catch (_eAeK2) {} _aeP = null; }
       }
       if (_aeP) {
+        // R5247（html-semantics M2 切片 44）：焦点链 retarget 语义前提——锚身处
+        // shadow 树（HTML §focusing steps focus chain retargeting：仅当焦点元素
+        // 在 shadow 树内才穿边界读 host；light 锚无边界可穿）。判据复用 part04
+        // getter R5247 同款同一性核验：锚 handle 宿主反查 selector 回查文档命中
+        // 同一 handle 且宿主树在档 → 锚在 light 树，直返锚。focus-after-close
+        // Complex 案：跨 testdriver 命令换代重物化的 parentNode 解析成 runner
+        // 投影容器形（_shadowHandles 跨执行残留注册），误 retarget 回吐投影
+        // host；shadow 树内锚宿主扁平 selector 命中别元素（handle 不合）→ 门
+        // 开，shadow 双案 + R4600 dialog-focus-shadow 嵌套 retarget 面不受影响。
+        var _aeLightR5247 = false;
+        try {
+          if (typeof __zw_selector_for_handle === 'function' && _aeP.__zwHandle != null) {
+            var _aeSelR5247 = __zw_selector_for_handle(String(_aeP.__zwHandle));
+            if (_aeSelR5247) {
+              var _aeElR5247 = null;
+              try { _aeElR5247 = globalThis.document.querySelector(_aeSelR5247); } catch (_e5247aq) {}
+              if (_aeElR5247 && String(_aeElR5247.__zwHandle) === String(_aeP.__zwHandle)
+                  && typeof __zw_contains === 'function'
+                  && __zw_contains('html', _aeSelR5247) === '1') {
+                _aeLightR5247 = true;
+              }
+            }
+          }
+        } catch (_e5247al) {}
+        if (_aeLightR5247) return _aeP;
         // R4600 续：proxy 焦点锚 parentNode 上行（探针 P2：移入 shadow 树的 sel 域节点
         // 焦点身份保持——上行必须对象域而非 handle 反链）。零 shadow root 文档一步
         // for-in 探测即出（无迭代，activeElement 高频读热路径成本守恒，trap 域成本
@@ -5337,7 +5469,12 @@
           }
           break; // light 树父或链尽头 → 上行止
         }
-        if (_aeOuter) return _makeProxy(_aeOuter.hostSel, _aeOuter.hostHandle);
+        if (_aeOuter) {
+          // R5247：host 解析兜底——换代空壳（tagName 不可读）不回吐，落回原锚。
+          var _aeHost = null;
+          try { _aeHost = _makeProxy(_aeOuter.hostSel, _aeOuter.hostHandle); } catch (_e5247hh) {}
+          if (_aeHost && _aeHost.tagName) return _aeHost;
+        }
       }
       if (_aeP) return _aeP;
       return globalThis.document.body;
@@ -15471,10 +15608,11 @@
   // 目标即 pending 捕获目标（spec §9.3 direct manipulation 设备隐式捕获；WPT
   // pointerevent_element_haspointercapture ?touch expected_default_capture 面）。
   globalThis.__zw_pointer_down_sequence = function (sel, x, y, pointerType, button) {
-    // R4300（M2 切片 23，2026-10-22）：light dismiss 前步——pointerdown 落点在任何
-    // open+closedby=any dialog 的包含链外 → 先发 close request（spec dialog light
-    // dismiss：pointerdown 触发、序在 click 语义之前）。产品指针管线与 runner click
-    // 命令共用本全局；non-any 态（默认模态 closerequest / none）不受影响。
+    // R4300（M2 切片 23，2026-10-22）/ R5263（M2 切片 56，2026-10-24）：light
+    // dismiss down 腿——pointerdown 只记 nearest clicked dialog 祖先分类（槽），
+    // 关判定移 up 腿（__zw_dialog_light_dismiss_up，sameTarget 同态比对后才关；
+    // spec 两腿模型）。产品指针管线与 runner click 命令共用本全局；non-any 态
+    // （默认模态 closerequest / none）不受影响。
     // https://html.spec.whatwg.org/multipage/interactive-elements.html#dialog-light-dismiss
     try {
       if (typeof __zw_dialog_light_dismiss_check === 'function') __zw_dialog_light_dismiss_check(sel, x, y);
@@ -15750,6 +15888,15 @@
       _zwProcessPendingCapture('1', true);
     }
     var capturedSel = st.capture['1'] ? st.capture['1'].sel : null;
+    // R5263：light dismiss up 腿——down 槽分类 vs up 重分类 sameTarget 同态比对
+    // 后才关。落点用捕获换防后的有效目标：setPointerCapture 把 up 重定向 dialog
+    // 内元素（'in'）≠ down 于 backdrop（'out'）→ 不关（pointer-capture 断言面）。
+    // 序在 pointerup 派发前，与 down 腿先于 pointerdown 派发对称。槽在 up 函数
+    // 内读取即清；portal/chorded 早退分支不经过本站——每次 up 前必有 down 重写
+    // 槽，不会读到上一交互的残留。
+    try {
+      if (typeof __zw_dialog_light_dismiss_up === 'function') __zw_dialog_light_dismiss_up(capturedSel || upSel, x, y);
+    } catch (_eLdUp) {}
     // 尾簇 6c：变异代际快照——up 派发（pointerup/mouseup）期间页内 listener 的
     // DOM 变异（attach/move-under-cursor）以此检测，驱动 post-up 结算。
     var upTick0 = st.mutTick;

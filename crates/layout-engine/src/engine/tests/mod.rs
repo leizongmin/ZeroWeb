@@ -817,3 +817,34 @@ mod r5236_abspos_stf_replaced_child_tests;
 /// R5242（CSS2 §9.2.2 × §10.3.5）float 收缩对 definite 宽 inline-table 子按行内级
 /// Σ 求和锚点。
 mod r5242_inline_table_float_anchor;
+/// R5243（CSS2 §10.3.5 × §17.2.1 × §17.5.1）auto 宽 inline-table 入 float Σ、
+/// table-row 裸文本匿名 cell 与纯 inline 容器锚定判据锚点。
+mod r5243_inline_table_auto_measure_anchor;
+/// R5244（UAX #9 HL1）CSS direction 定段落基方向锚点——LTR 块 R-first run 视觉序
+/// = 逻辑序、plaintext HL4 例外与 rtl 臂回归守。
+mod r5244_bidi_ltr_para_base_anchor;
+/// R5245（CSS2 §9.2.1.1 × §9.5）float 宿主 R109 匿名块流内化（不继承宿主 float 旗标）
+/// 与匿名块片段 intrinsic 片段级测量锚点——set 4 形态宿主收缩宽、匿名块堆叠与非
+/// float 宿主回归守。
+mod r5245_anon_float_anchor;
+/// R5246（css-writing-modes-3 §2.2 × css-text-3 §5.2）U+2028/U+2029 强制断行类 +
+/// LS 段落连续行级 L2 锚点——pre 容器 LS/PS 折行行数与 RTL 混排跨 LS 两行守。
+mod r5246_forced_break_ls_ps_anchor;
+mod r5247_vertical_inline_metric_transpose;
+/// R5248（CSS2 §10.3.x × R4332 折入语义）inline 树盒 x 双扣 border 修正锚点——
+/// 盒 x = 流内内容首缘 − 流内落账 frame（折入落流按首 run ml−raw 检测），
+/// box-level 边框/背景归位守。
+mod r5248_inline_border_x_double_count;
+/// R5249（CSS2 §10.2/§8.4 × R4332 折入语义）element-first 首槽 spacer 锚点——
+/// 首内容为元素子时外层自身 ml+pl 以零宽 spacer 落首槽、fold 仍落自名 run，
+/// 流内推进与内层盒守。
+mod r5249_element_first_fold_spacer_anchor;
+
+mod r5250_inline_relpos_shift_map;
+
+/// R5251（CSS2 §9.2.1.1 block-in-inline）容器层升格拆分锚——含块 span 提升块子
+/// 垂直堆叠 + margin collapse，inline 文本片段并入容器匿名块序。
+mod r5251_block_in_inline_deep_split;
+/// R5252（CSS2 §8.3.1 + §9.2.1.1）块→匿名行盒边界锚定 collapse gap 锚——原子
+/// inline 的 margin-top 不与前驱块级兄弟 margin-bottom 块级 collapse。
+mod r5252_anchor_collapse_gap;

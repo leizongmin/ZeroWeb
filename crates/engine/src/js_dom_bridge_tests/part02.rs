@@ -2162,6 +2162,44 @@ fn test_next_focus_selector_returns_unique_for_same_tag_inputs() {
     assert_eq!(back, first);
 }
 
+/// R5251：editing host（contenteditable true 状态）是 focusable area，参与 Tab 序
+///（WPT dialog-focusability：`<dialog contenteditable=true open>` 须落在文档序
+/// after3 与其内 button 之间；修复前 Tab 从 after3 直接跳 within4）。
+#[test]
+fn test_next_focus_selector_editing_host_dialog_r5251() {
+    let html = "<html><body>\
+            <button id='after3'>after</button>\
+            <dialog id='dialog4' open contenteditable='true'>\
+              <button id='within4'>button</button>\
+            </dialog>\
+            </body></html>";
+    // after3 → dialog4（editing host，文档序 tabindex=0）→ within4。
+    assert_eq!(
+        next_focus_selector(html, Some("#after3"), true).as_deref(),
+        Some("#dialog4")
+    );
+    assert_eq!(
+        next_focus_selector(html, Some("#dialog4"), true).as_deref(),
+        Some("#within4")
+    );
+    // 反向：within4 → dialog4。
+    assert_eq!(
+        next_focus_selector(html, Some("#within4"), false).as_deref(),
+        Some("#dialog4")
+    );
+    // contenteditable='' 与 'true' 同为 true 状态；host 内嵌套 editable 元素不是
+    // editing host，不单独入 Tab 序（Tab 循环回唯一 focusable——host 自身）。
+    let html2 = "<html><body><div id='host' contenteditable=''><p id='inner'>t</p></div></body></html>";
+    assert_eq!(
+        next_focus_selector(html2, None, true).as_deref(),
+        Some("#host")
+    );
+    assert_eq!(
+        next_focus_selector(html2, Some("#host"), true).as_deref(),
+        Some("#host")
+    );
+}
+
 #[test]
 fn test_insert_adjacent_html_e2e() {
     // 端到端：注入生产 shim + register_dom_callbacks，验证 insertAdjacentHTML JS 契约——

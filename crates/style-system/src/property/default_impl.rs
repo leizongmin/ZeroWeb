@@ -404,6 +404,7 @@ impl Default for ComputedStyle {
             placeholder_pseudo: None,
             selection_pseudo: None,
             first_letter_pseudo: None,
+            first_line_pseudo: None,
         }
     }
 }
