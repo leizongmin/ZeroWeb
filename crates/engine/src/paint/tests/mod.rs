@@ -46,6 +46,8 @@ mod r5203_bg_clip_radius_tests;
 mod r5204_skip_spaces_decoration_tests;
 /// R5205 paint Path B 分带窗口绝对锚定（line-clamp serif 簇省略号行位）。
 mod r5205_clamp_ellipsis_anchor_tests;
+/// R5255 迟延 positioned 后代的 shaped clip edge（R5201 圆角改写覆盖 R3922 补裁窗口）。
+mod r5255_deferred_positioned_rounded_clip_tests;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;

@@ -378,6 +378,9 @@ struct DeferredPositioned<'a> {
     abs_x: f32,
     abs_y: f32,
     clip_rect: Option<Rect>,
+    /// R5255：随 clip_rect 同源携带的 shaped clip edge 半径（R5201，仅 clip 轴）。
+    /// 迟延 positioned/变换子此前只承接矩形补裁，圆角裁剪边漏成方角。
+    clip_radii: Option<[f32; 4]>,
 }
 
 /// 子节点的 content-box origin（父 abs + padding + border，扣除 scroll 偏移）。
@@ -621,11 +624,15 @@ fn overflow_clip_radii(
     let dt = clip_rect.top() - abs_y;
     let db = abs_y + bh - clip_rect.bottom();
     let clamp0 = |v: f32| v.max(0.0);
+    // 外扩（d<0）只放大非零规格角——方角保持方角（外阴影 spread 语义；R3922
+    // 方形容器 + clip-margin 外扩曾被 `0−(−10)` 发明出圆角，迟延子被改写圆角，
+    // R5255 实证）；内缩（d≥0）路径 clamp0 行为不变（R5201 判例）。
+    let shape = |spec_r: f32, d: f32| if spec_r <= 0.0 { 0.0 } else { clamp0(spec_r - d) };
     let radii = [
-        clamp0(spec.top_left - dl.max(dt)),
-        clamp0(spec.top_right - dr.max(dt)),
-        clamp0(spec.bottom_right - dr.max(db)),
-        clamp0(spec.bottom_left - dl.max(db)),
+        shape(spec.top_left, dl.max(dt)),
+        shape(spec.top_right, dr.max(dt)),
+        shape(spec.bottom_right, dr.max(db)),
+        shape(spec.bottom_left, dl.max(db)),
     ];
     (radii[0] > 0.0 || radii[1] > 0.0 || radii[2] > 0.0 || radii[3] > 0.0).then_some(radii)
 }
@@ -656,7 +663,18 @@ fn collect_positioned_descendants<'a>(
     doc: Option<&zero_dom::Document>,
     transform_phase: bool,
 ) {
-    collect_positioned_descendants_inner(box_node, abs_x, abs_y, styles, None, false, out, doc, transform_phase);
+    collect_positioned_descendants_inner(
+        box_node,
+        abs_x,
+        abs_y,
+        styles,
+        None,
+        None,
+        false,
+        out,
+        doc,
+        transform_phase,
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -666,6 +684,7 @@ fn collect_positioned_descendants_inner<'a>(
     abs_y: f32,
     styles: &HashMap<NodeId, ComputedStyle>,
     clip_rect: Option<Rect>,
+    clip_radii: Option<[f32; 4]>,
     clip_is_scope_root: bool,
     out: &mut Vec<DeferredPositioned<'a>>,
     doc: Option<&zero_dom::Document>,
@@ -679,10 +698,17 @@ fn collect_positioned_descendants_inner<'a>(
     // line-clamp-with-abspos-023 的 abspos 在 clamp 点后容器外可见）不适用容器
     // padding-box 裁剪，携带会误裁（A/B 实证）。
     let css_overflow_clips = needs_clip && !box_node.line_clamp_clip;
-    let clip_rect = if css_overflow_clips {
-        Some(overflow_clip_rect(box_node, abs_x, abs_y))
+    // R5255：矩形与 shaped edge 半径（R5201）同源计算、同源覆盖——迟延子补裁时
+    // 二者成对生效，避免只带矩形漏方角。
+    let (clip_rect, clip_radii) = if css_overflow_clips {
+        let rect = overflow_clip_rect(box_node, abs_x, abs_y);
+        let radii = box_node
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .and_then(|s| overflow_clip_radii(box_node, s, &rect, abs_x, abs_y));
+        (Some(rect), radii)
     } else {
-        clip_rect
+        (clip_rect, clip_radii)
     };
     let clip_is_scope_root = if css_overflow_clips { clip_is_scope_root } else { false };
     let self_positioned = is_positioned_child(box_node);
@@ -702,10 +728,10 @@ fn collect_positioned_descendants_inner<'a>(
             }
             // CB 恒为 scope 根：矩形来自 scope 根自身 → 保留；来自中间层且本项是
             // abspos/fixed（CB 在中间层上方）→ 清除。
-            let child_clip = if (child.is_absolute || child.is_fixed) && !clip_is_scope_root {
-                None
+            let (child_clip, child_radii) = if (child.is_absolute || child.is_fixed) && !clip_is_scope_root {
+                (None, None)
             } else {
-                clip_rect
+                (clip_rect, clip_radii)
             };
             // 所有 positioned（z-index:auto pseudo-SC + real-SC）收集到所属 scope，
             // 不下钻（positioned 自成 scope），flush 时按 z_index 分 step 2/6/7。
@@ -714,6 +740,7 @@ fn collect_positioned_descendants_inner<'a>(
                 abs_x: child_abs_x,
                 abs_y: child_abs_y,
                 clip_rect: child_clip,
+                clip_radii: child_radii,
             });
         } else if transform_phase && box_paints_in_transform_phase(child, styles) {
             // R5176（css-transforms-1 §4 + App E step 8）：in-flow/float 变换元素与
@@ -729,6 +756,7 @@ fn collect_positioned_descendants_inner<'a>(
                 abs_x: child_abs_x,
                 abs_y: child_abs_y,
                 clip_rect,
+                clip_radii,
             });
         } else if child.creates_stacking_context {
             // in-flow 但建立堆叠上下文（opacity<1/transform/filter 等 CSS3 SC 触发器）：
@@ -744,6 +772,7 @@ fn collect_positioned_descendants_inner<'a>(
                 child_abs_y,
                 styles,
                 clip_rect,
+                clip_radii,
                 true,
                 out,
                 doc,
@@ -787,6 +816,7 @@ fn collect_mapped_oof_in_multicol<'a>(
                     abs_x: child_abs_x,
                     abs_y: child_abs_y,
                     clip_rect: None,
+                    clip_radii: None,
                 });
             }
         } else if child.creates_stacking_context {
@@ -810,6 +840,7 @@ fn collect_mapped_oof_in_multicol<'a>(
                 child_abs_x,
                 child_abs_y,
                 styles,
+                None,
                 None,
                 false,
                 &mut sub,
@@ -2634,6 +2665,9 @@ impl Painter {
             self.paint_node(item.node, styles, off_x, off_y, doc, false);
             if let Some(clip) = item.clip_rect {
                 super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_item, &clip);
+                if let Some(radii) = item.clip_radii {
+                    super::helpers::clip_fills_to_rounded_rect(&mut self.primitives, &counts_before_item, &clip, radii);
+                }
             }
         }
         // 列子元素自身为裁剪祖先但个别收集项不带矩形（理论不可达，防御
@@ -2967,6 +3001,14 @@ impl Painter {
                 self.paint_node(item.node, styles, off_x, off_y, doc, false);
                 if let Some(clip) = item.clip_rect {
                     super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_item, &clip);
+                    if let Some(radii) = item.clip_radii {
+                        super::helpers::clip_fills_to_rounded_rect(
+                            &mut self.primitives,
+                            &counts_before_item,
+                            &clip,
+                            radii,
+                        );
+                    }
                 }
             }
             true
@@ -3417,6 +3459,14 @@ impl Painter {
                 self.paint_node(item.node, styles, off_x, off_y, doc, false);
                 if let Some(clip) = item.clip_rect {
                     super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_item, &clip);
+                    if let Some(radii) = item.clip_radii {
+                        super::helpers::clip_fills_to_rounded_rect(
+                            &mut self.primitives,
+                            &counts_before_item,
+                            &clip,
+                            radii,
+                        );
+                    }
                 }
             }
         }
@@ -3454,6 +3504,14 @@ impl Painter {
                 self.paint_node(item.node, styles, off_x, off_y, doc, false);
                 if let Some(clip) = item.clip_rect {
                     super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_item, &clip);
+                    if let Some(radii) = item.clip_radii {
+                        super::helpers::clip_fills_to_rounded_rect(
+                            &mut self.primitives,
+                            &counts_before_item,
+                            &clip,
+                            radii,
+                        );
+                    }
                 }
             }
         }
@@ -3472,6 +3530,14 @@ impl Painter {
                 self.paint_node(item.node, styles, off_x, off_y, doc, false);
                 if let Some(clip) = item.clip_rect {
                     super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_item, &clip);
+                    if let Some(radii) = item.clip_radii {
+                        super::helpers::clip_fills_to_rounded_rect(
+                            &mut self.primitives,
+                            &counts_before_item,
+                            &clip,
+                            radii,
+                        );
+                    }
                 }
             }
         }
@@ -3742,16 +3808,26 @@ impl Painter {
                                     false,
                                 );
                                 if let Some(clip) = item.clip_rect {
+                                    let translated = Rect::new(
+                                        clip.origin.x + dx,
+                                        clip.origin.y + dy,
+                                        clip.size.width,
+                                        clip.size.height,
+                                    );
                                     super::helpers::clip_all_primitives_to_rect(
                                         &mut self.primitives,
                                         &counts_before_copy,
-                                        &Rect::new(
-                                            clip.origin.x + dx,
-                                            clip.origin.y + dy,
-                                            clip.size.width,
-                                            clip.size.height,
-                                        ),
+                                        &translated,
                                     );
+                                    // 半径平移不变（R5255）。
+                                    if let Some(radii) = item.clip_radii {
+                                        super::helpers::clip_fills_to_rounded_rect(
+                                            &mut self.primitives,
+                                            &counts_before_copy,
+                                            &translated,
+                                            radii,
+                                        );
+                                    }
                                 }
                                 let dest_window = Rect::new(content_x + dest_col_x, clip_y, col_w + gap / 2.0, clip_h);
                                 super::helpers::clip_all_primitives_to_rect(
