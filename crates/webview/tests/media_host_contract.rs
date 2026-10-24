@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use zero_protocol::media::{MediaErrorCode, MediaPlaybackState};
-use zero_webview::media_proxy::{MediaHostClient, MediaHostEvent};
+use zero_webview::media_proxy::{MediaHostClient, MediaHostError, MediaHostEvent};
 
 /// 提取 target/debug 级 zero-media-host（测试二进制在 target/debug/deps/，上溯一级）。
 fn built_media_host_bin() -> Option<PathBuf> {
@@ -408,4 +408,199 @@ fn hosted_registry_end_to_end() {
     lock(&registry).clear();
     assert!(!lock(&registry).contains_source(src), "clear 清宿主镜像");
     assert!(!lock(&registry).is_any_playing());
+}
+
+/// SIGKILL 注入（契约测试面；`kill` 外部命令——std 无信号原语，测试平台 Linux）。
+fn sigkill(pid: u32) {
+    let status = std::process::Command::new("kill")
+        .arg("-9")
+        .arg(pid.to_string())
+        .status()
+        .expect("kill 可用");
+    assert!(status.success(), "SIGKILL 注入失败（pid {pid}）");
+}
+
+/// 轮询 [`MediaHostClient::poll_health`] 至 one-shot 崩溃通知到达。
+fn wait_poll_crash(client: &mut MediaHostClient, timeout: Duration) -> MediaHostError {
+    let deadline = Instant::now() + timeout;
+    loop {
+        match client.poll_health() {
+            Err(crash) => return crash,
+            Ok(()) if Instant::now() >= deadline => panic!("崩溃检测超时（try_wait 兜底未触发）"),
+            Ok(()) => std::thread::sleep(Duration::from_millis(10)),
+        }
+    }
+}
+
+/// C3 契约场景 1+2（DESIGN §11.5）：SIGKILL host → one-shot 崩溃通知携 exit
+/// status 诊断（stderr tail 入 tracing）→ 通知消费后转重启面（非永久）；renderer
+/// 进程存活（隔离目的成立——本测试进程持续执行即断言面）。
+#[test]
+#[ignore = "需真实 zero-media-host 二进制（make 构建后显式运行）"]
+#[serial_test::serial]
+fn crash_broadcast_one_shot_and_renderer_survives() {
+    let _guard = HostBinGuard::set();
+    let mut client = MediaHostClient::new();
+    feed_fixture(&mut client, 7, "sample-webm-vp9.webm", "video/webm");
+    client.play(7, 0).expect("play");
+    let pid = client.host_pid().expect("host pid");
+
+    sigkill(pid);
+    let crash = wait_poll_crash(&mut client, Duration::from_secs(5));
+    assert_eq!(crash.code, MediaErrorCode::HostInternal);
+    assert!(
+        crash.message.contains("media-host exited"),
+        "exit status 诊断入消息面: {}",
+        crash.message
+    );
+
+    // one-shot：通知消费后轮询恢复 Ok（Restarting 退避中，非永久面）。
+    client.poll_health().expect("one-shot 已消费，后续轮询 Ok");
+    assert!(!client.is_failed(), "重启面 ≠ 永久面");
+    // 场景 2：renderer 存活——client 面仍可服务（teardown 收尾）。
+    assert!(!matches!(client.try_recv_event(), Err(_)), "无连接排空不报传输错误");
+    let _ = client.shutdown();
+}
+
+/// C3 契约场景 3：kill 后重启路径——退避到期重连成功（全新 pid）；源全丢失
+/// play 如实报错（不自动重播）；页面重走 register/喂入后可播（元数据推送到达，
+/// epoch 重单调）。
+#[test]
+#[ignore = "需真实 zero-media-host 二进制（make 构建后显式运行）"]
+#[serial_test::serial]
+fn crash_restart_yields_fresh_host_and_refeed_plays() {
+    let _guard = HostBinGuard::set();
+    let mut client = MediaHostClient::new();
+    feed_fixture(&mut client, 7, "sample-webm-vp9.webm", "video/webm");
+    client.play(7, 0).expect("play");
+    let pid1 = client.host_pid().expect("host pid");
+
+    sigkill(pid1);
+    let _crash = wait_poll_crash(&mut client, Duration::from_secs(5));
+
+    // 退避 1s 到期后重连（生产 = 16ms 泵 tick 自然推进；测试对齐真实节拍）。
+    std::thread::sleep(Duration::from_millis(1200));
+    let restart_wait = Instant::now();
+    loop {
+        client.poll_health().expect("重连轮询不产生崩溃通知");
+        if client.host_pid().is_some() {
+            break;
+        }
+        assert!(
+            restart_wait.elapsed() < Duration::from_secs(5),
+            "重启超时（退避后未重连）"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let pid2 = client.host_pid().expect("fresh host pid");
+    assert_ne!(pid1, pid2, "重启 = 全新 host 进程");
+
+    // 源全丢失：未重喂 play 如实报 unknown source（§11.4 不自动重播）。
+    let unknown = client.play(7, 0).expect_err("重启后源丢失，play 必错");
+    assert_eq!(unknown.code, MediaErrorCode::HostInternal);
+    assert!(unknown.message.contains("unknown source"), "{}", unknown.message);
+
+    // 页面重走装载面：register + 全量喂入 → play 可播。
+    feed_fixture(&mut client, 7, "sample-webm-vp9.webm", "video/webm");
+    client.play(7, 0).expect("重喂后 play");
+    let event = wait_event(&mut client, Duration::from_secs(5), |e| {
+        matches!(e, MediaHostEvent::SourceReady(_))
+    })
+    .expect("重喂后元数据推送超时");
+    let MediaHostEvent::SourceReady(ready) = event else {
+        unreachable!("wait_event 谓词已过滤")
+    };
+    assert_eq!(ready.duration_ms, Some(2000), "新流元数据真值（epoch 重单调面）");
+
+    client.shutdown().expect("shutdown");
+}
+
+/// C3 契约场景 4+5：重启尝试连续 3 次失败 → Failed 永久错误面（真实二进制
+/// 恢复后 register 仍恒 false——无内联回落、不再尝试）→ reload（clear teardown
+/// 回 Idle）→ 全新 host 重喂恢复（DC-3「重载恢复」）。
+///
+/// Failed 到达路径按「崩溃后重启尝试耗尽」实施（`ZW_MEDIA_HOST_BIN` 置假路径
+/// 驱动 1s/2s/4s 退避全败）——§11.3「握手成功重置计数」下 kill 本身不消耗重启
+/// 预算（每次 kill 后成功重连即复位），偏差记 DESIGN §10.9。两态配对对照：
+/// feature 关时同场景 registry 直调内联可播（既有 inline 套件全绿即证），feature
+/// 开时 Failed 面命令恒 false——两态差异即隔离边界证明。
+#[test]
+#[ignore = "需真实 zero-media-host 二进制（make 构建后显式运行）"]
+#[serial_test::serial]
+fn restart_exhaustion_failed_then_reload_recovers() {
+    use zero_render_foundation::image_cache::ImageCache;
+    use zero_webview::video_registry::VideoPlayerRegistry;
+
+    let _guard = HostBinGuard::set();
+    let registry = std::sync::Arc::new(std::sync::Mutex::new(VideoPlayerRegistry::new()));
+    let src = "https://example.com/media/c3-exhaustion.webm";
+    fn lock(
+        r: &std::sync::Arc<std::sync::Mutex<VideoPlayerRegistry>>,
+    ) -> std::sync::MutexGuard<'_, VideoPlayerRegistry> {
+        r.lock().unwrap_or_else(|e| e.into_inner())
+    }
+    let mut cache = ImageCache::default();
+
+    lock(&registry).register_source(src, fixture_bytes("sample-webm-vp9.webm"));
+    assert!(lock(&registry).play(src, 0));
+    let pid1 = lock(&registry).media_host_pid().expect("host pid");
+
+    // 崩溃 → 泵 tick 检测 → 全活跃源 error 广播（registry 真值口可见）。
+    sigkill(pid1);
+    let detect_wait = Instant::now();
+    loop {
+        lock(&registry).tick_all(detect_wait.elapsed().as_millis() as u64, &mut cache);
+        if lock(&registry).is_errored(src) {
+            break;
+        }
+        assert!(detect_wait.elapsed() < Duration::from_secs(5), "崩溃广播未达镜像");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(!lock(&registry).is_playing(src), "error 态清除 playing");
+
+    // 重启尝试连续 3 次失败（假路径）：1s+2s+4s 退避耗尽 → Failed。
+    unsafe {
+        std::env::set_var("ZW_MEDIA_HOST_BIN", "/nonexistent/zw-missing-media-host");
+    }
+    let exhaust_wait = Instant::now();
+    while exhaust_wait.elapsed() < Duration::from_secs(8) {
+        lock(&registry).tick_all(exhaust_wait.elapsed().as_millis() as u64, &mut cache);
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    assert_eq!(lock(&registry).media_host_pid(), None, "重启耗尽后无连接");
+
+    // 永久面判据：真实二进制恢复 + 超越退避窗后仍无重连（若尚在 Restarting，
+    // 泵重连会出新 pid）且 play 恒 false——不再尝试即证 Failed（无内联回落）。
+    unsafe {
+        std::env::remove_var("ZW_MEDIA_HOST_BIN");
+    }
+    let verify_wait = Instant::now();
+    while verify_wait.elapsed() < Duration::from_millis(1500) {
+        lock(&registry).tick_all(u64::MAX / 2, &mut cache);
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    assert_eq!(
+        lock(&registry).media_host_pid(),
+        None,
+        "Failed 后不再重连（若仍在退避重试会出新 pid）"
+    );
+    assert!(!lock(&registry).play(src, 0), "Failed 永久面：play 恒 false");
+
+    // 场景 5：reload（clear teardown 回 Idle）→ 全新 host 重喂恢复。
+    lock(&registry).clear();
+    lock(&registry).register_source(src, fixture_bytes("sample-webm-vp9.webm"));
+    assert!(lock(&registry).contains_source(src), "teardown 后 register 恢复");
+    let pid2 = lock(&registry).media_host_pid().expect("reload 后全新 host");
+    assert_ne!(pid1, pid2, "reload = 全新 host 进程");
+    assert!(lock(&registry).play(src, 0), "reload 后重喂可播");
+    let play_wait = Instant::now();
+    loop {
+        if lock(&registry).tick_all(play_wait.elapsed().as_millis() as u64, &mut cache) {
+            break;
+        }
+        assert!(play_wait.elapsed() < Duration::from_secs(5), "reload 后帧注入超时");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(lock(&registry).duration(src), Some(2.0), "新流元数据升级");
+    lock(&registry).clear();
 }
