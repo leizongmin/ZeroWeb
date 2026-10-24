@@ -312,3 +312,100 @@ fn real_host_audio_loop_wraps_with_epoch_increment() {
 
     client.shutdown().expect("shutdown");
 }
+
+/// C2 切片 2 端到端：`VideoPlayerRegistry` 经 `HostMediaFacade` 全宿主面——
+/// register 镜像建档（不落内联字节）→ play 回执载荷即时 Playing → tick_all 排空
+/// SourceReady 升级元数据 + 帧注入 `ImageCache` → current_time 镜像真值 → seek
+/// resolved 真值 → pause 冻结 → 纯视频 loop Ended 回卷重头（renderer 侧 play(0)，
+/// 内核 replay 链代际 +1——§10.7-2）。真实二进制驱动，DC-2/M1 验收面。
+#[test]
+#[ignore = "需真实 zero-media-host 二进制（make 构建后显式运行）"]
+#[serial_test::serial]
+fn hosted_registry_end_to_end() {
+    use zero_render_foundation::image_cache::ImageCache;
+    use zero_webview::video_registry::VideoPlayerRegistry;
+
+    let _guard = HostBinGuard::set();
+    let registry = std::sync::Arc::new(std::sync::Mutex::new(VideoPlayerRegistry::new()));
+    let src = "https://example.com/media/e2e-hosted.webm";
+    fn lock(
+        r: &std::sync::Arc<std::sync::Mutex<VideoPlayerRegistry>>,
+    ) -> std::sync::MutexGuard<'_, VideoPlayerRegistry> {
+        r.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    // 登记：宿主建档镜像；contains_source 宿主面命中（幂等登记守卫同面）。
+    lock(&registry).register_source(src, fixture_bytes("sample-webm-vp9.webm"));
+    assert!(lock(&registry).contains_source(src));
+
+    // 未 play：镜像初值——时钟 0、元数据未就绪（SourceReady 未到，§10.7 偏差 9）。
+    assert_eq!(lock(&registry).current_time(src), 0.0);
+    assert_eq!(lock(&registry).duration(src), None);
+    assert_eq!(lock(&registry).probe_dimensions(src), (0, 0));
+    assert!(!lock(&registry).is_any_playing());
+
+    // play：回执载荷即时入镜像（无心跳盲区）。
+    assert!(lock(&registry).play(src, 0));
+    assert!(lock(&registry).is_playing(src));
+    assert!(lock(&registry).is_any_playing());
+
+    // tick 排空：SourceReady 升级元数据 + 帧注入 ImageCache（painter 同键）。
+    let mut cache = ImageCache::default();
+    let started = Instant::now();
+    loop {
+        if lock(&registry).tick_all(started.elapsed().as_millis() as u64, &mut cache) {
+            break;
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "帧注入超时（SourceReady/帧推送未达）"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(cache.len() > 0, "帧须入 ImageCache");
+    assert_eq!(lock(&registry).duration(src), Some(2.0), "SourceReady 升级时长真值");
+    assert_eq!(lock(&registry).probe_dimensions(src), (320, 240));
+    assert!(lock(&registry).source_media_meta(src).is_some());
+
+    // seek：resolved 真值即时入镜像（回执配对面）。
+    assert!(lock(&registry).seek(src, 1000));
+    let seeked = lock(&registry).current_time(src);
+    assert!((seeked - 1.0).abs() < 0.05, "seek 后镜像时钟 = resolved: {seeked}");
+
+    // pause：冻结（暂停后内核无帧/无时钟推进，镜像时钟不再变化）。
+    lock(&registry).pause(src);
+    assert!(!lock(&registry).is_playing(src));
+    let frozen_at = lock(&registry).current_time(src);
+    std::thread::sleep(Duration::from_millis(200));
+    lock(&registry).tick_all(u64::MAX / 2, &mut cache);
+    assert_eq!(lock(&registry).current_time(src), frozen_at, "暂停时钟冻结");
+
+    // 纯视频 loop：内核不自动回卷（无音频轨 wrap 检测）——Ended 推送后 registry
+    // 侧 flush_replays play(0) 走内核 replay 链（代际 +1）。观测面：时钟先走远
+    //（>1.5s）再回小值（<0.5s）且保持播放态。
+    lock(&registry).set_loop(src, true);
+    assert!(lock(&registry).play(src, 0));
+    let loop_started = Instant::now();
+    let (mut saw_far, mut saw_wrapped) = (false, false);
+    while loop_started.elapsed() < Duration::from_secs(8) {
+        lock(&registry).tick_all(loop_started.elapsed().as_millis() as u64, &mut cache);
+        let t = lock(&registry).current_time(src);
+        if t > 1.5 {
+            saw_far = true;
+        }
+        if saw_far && t < 0.5 {
+            saw_wrapped = true;
+            assert!(lock(&registry).is_playing(src), "回卷后保持播放态");
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        saw_far && saw_wrapped,
+        "纯视频 loop 回卷未观测到: far={saw_far} wrapped={saw_wrapped}"
+    );
+
+    lock(&registry).clear();
+    assert!(!lock(&registry).contains_source(src), "clear 清宿主镜像");
+    assert!(!lock(&registry).is_any_playing());
+}

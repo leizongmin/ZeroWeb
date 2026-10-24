@@ -8,7 +8,6 @@
 //! 同键，settle 时注册表先收到解码字节（`register_source`），play 即建 player。
 
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic;
 use zero_engine::image_resource_key;
 // AudioEntry 族与 BatchSampleQueue 自本文件迁入 zero-media `pipeline`（C2 同构代码
 // 随内核入宿主，DESIGN §10.3）——registry 与 media-host 共享同一 A1 时钟语义真值。
@@ -20,6 +19,10 @@ use zero_media::{
 };
 
 use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey};
+
+// JS 门面桥拆分至 `video_registry_bridge`（行数纪律）；`zero_webview::video_registry::*`
+// 外部调用路径（webview.rs/js_worker.rs/tab_js_worker.rs）经本再导出保持不变。
+pub use crate::video_registry_bridge::{register_video_bridge_callbacks, video_bridge_facade_script};
 
 /// 注册表规范化键（M3 扩批 XXIV）：query/fragment 不敏感——WPT 用例的 cache-buster
 /// query（`?...Math.random()`）指向同一 fixture 字节；shim 侧 IDL getter 与 runner
@@ -46,6 +49,11 @@ pub struct VideoPlayerRegistry {
     /// 播放器创建时探得的媒体元 (w, h, durMs)（t8o）——源字节被 play 消费后桥
     /// 升级面的真值来源（release/clear 同步清理）。
     media_meta: HashMap<u64, (u32, u32, u64)>,
+    /// 宿主进程媒体面（C2 切片 2，`media-process` 开态）：命令转发 +
+    /// push 镜像真值（DESIGN §10.4 getter backing 换面）。登记不落内联
+    /// 字节（IF-006 不回落）；MSE 面独立内联（键不经 register_source）。
+    #[cfg(feature = "media-process")]
+    host: crate::video_registry_host::HostMediaFacade,
     /// MSE 面（t8n）：blob:MSE 源键 → append 句柄（`mse_create` 建，shim 桥
     /// appendBuffer/endOfStream 跨线程写入；play 懒建 `MseVideoFeed` 挂接）。
     #[cfg(feature = "decode-h264")]
@@ -72,6 +80,7 @@ const MSE_FEED_MAX_BYTES: usize = 256 * 1024 * 1024;
 /// `sources + av_sources` 源字节总量封顶（A3 Fix 源驻留封顶，DESIGN §8.4——M1 §5
 /// 权限表缺口：无界驻留 renderer 堆放大 OOM 面）。量级对齐
 /// [`MSE_FEED_MAX_BYTES`]；超限准入时驱逐非在播 LRU，仍超拒绝登记。
+#[cfg_attr(feature = "media-process", allow(dead_code))]
 const MEDIA_SOURCE_MAX_BYTES: usize = 256 * 1024 * 1024;
 
 impl VideoPlayerRegistry {
@@ -85,10 +94,21 @@ impl VideoPlayerRegistry {
     /// → 不登记，后续 play 源查找失败走既有错误面。
     pub fn register_source(&mut self, abs_src: &str, bytes: Vec<u8>) {
         let key = registry_key(abs_src);
-        if !self.admit_source_bytes(key, bytes.len()) {
+        #[cfg(feature = "media-process")]
+        {
+            // C2 切片 2：开态登记全走宿主进程（settle 全量喂入，内核按内容
+            // 嗅探路由）。失败不落内联字节（IF-006 不回落——镜像缺席使后续
+            // 命令/getter 落空面，错误经 play false / getter 零值如实呈现）。
+            let _hosted = self.host.register_source(key, &bytes);
             return;
         }
-        self.sources.insert(key, bytes);
+        #[cfg(not(feature = "media-process"))]
+        {
+            if !self.admit_source_bytes(key, bytes.len()) {
+                return;
+            }
+            self.sources.insert(key, bytes);
+        }
     }
 
     /// 源字节总量封顶准入（A3 Fix 源驻留封顶，DESIGN §8.4）：`sources +
@@ -99,11 +119,13 @@ impl VideoPlayerRegistry {
     /// 再驱逐无存活 player 的 `av_sources` 孤儿键（存活 player 的伴音源受 seek
     /// 重建依赖保护）。驱逐后仍超 → false（调用方拒绝登记）。永不驱逐：在播
     /// player/audio entry 的键。驱逐记 tracing。
+    #[cfg_attr(feature = "media-process", allow(dead_code))]
     fn admit_source_bytes(&mut self, incoming_key: u64, incoming: usize) -> bool {
         self.admit_source_bytes_with_budget(incoming_key, incoming, MEDIA_SOURCE_MAX_BYTES)
     }
 
     /// [`Self::admit_source_bytes`] 的预算参数化形态（单测用小预算验证驱逐/拒绝面）。
+    #[cfg_attr(feature = "media-process", allow(dead_code))]
     fn admit_source_bytes_with_budget(&mut self, incoming_key: u64, incoming: usize, budget: usize) -> bool {
         if incoming > budget {
             return false;
@@ -171,12 +193,19 @@ impl VideoPlayerRegistry {
 
     /// 源字节是否已登记（幂等登记面——WPT runner 逐 tick 动态登记的重复调用守卫）。
     pub fn contains_source(&self, abs_src: &str) -> bool {
-        self.sources.contains_key(&registry_key(abs_src))
+        let key = registry_key(abs_src);
+        #[cfg(feature = "media-process")]
+        if self.host.hosts(key) {
+            return true;
+        }
+        self.sources.contains_key(&key)
     }
 
     /// 元素移除/导航离开时的资源释放（资源生命周期面）。
     pub fn release(&mut self, abs_src: &str) {
         let key = registry_key(abs_src);
+        #[cfg(feature = "media-process")]
+        self.host.release(key);
         self.players.remove(&key);
         self.sources.remove(&key);
         self.audio_entries.remove(&key);
@@ -195,31 +224,43 @@ impl VideoPlayerRegistry {
     /// settle 时登记音频源（`<audio>` settle 面；解码器立即构建——音频探测轻量）。
     pub fn register_audio_source(&mut self, abs_src: &str, bytes: Vec<u8>) {
         let key = registry_key(abs_src);
-        let decoder = match AudioDecoder::open(&bytes) {
-            Ok(d) => AudioStreamDecoder::Symphonia(d),
-            // symphonia 面外（oga-opus 等）→ opus 纯 Rust 面（M2c opus 接线）。
-            Err(_) => match open_ogg_opus(&bytes) {
-                Ok(t) => AudioStreamDecoder::Opus(Box::new(t)),
-                // 两面皆不识别：不登记——shim 桥 play 返 false 回落 headless
-                // （与 video 非 webm 面同策略）。
-                Err(_) => {
-                    self.audio_entries.remove(&key);
-                    return;
-                }
-            },
-        };
-        // seek 重建解码器需要源字节——留存（与 video sources 面同键共享）。
-        // A3 封顶：准入失败不登记（shim 桥 play 找不到 entry 返 false 回落 headless，
-        // 与两解码面皆不识别同错误面）。
-        if !self.admit_source_bytes(key, bytes.len()) {
+        #[cfg(feature = "media-process")]
+        {
+            // C2 切片 2：音频源同走宿主进程（内核内容嗅探归音频面）；失败
+            // 不落内联（IF-006 同 [`Self::register_source`]）。
+            let _hosted = self.host.register_source(key, &bytes);
             return;
         }
-        self.sources.insert(key, bytes);
-        self.audio_entries.insert(key, AudioEntry::new(decoder));
+        #[cfg(not(feature = "media-process"))]
+        {
+            let decoder = match AudioDecoder::open(&bytes) {
+                Ok(d) => AudioStreamDecoder::Symphonia(d),
+                // symphonia 面外（oga-opus 等）→ opus 纯 Rust 面（M2c opus 接线）。
+                Err(_) => match open_ogg_opus(&bytes) {
+                    Ok(t) => AudioStreamDecoder::Opus(Box::new(t)),
+                    // 两面皆不识别：不登记——shim 桥 play 返 false 回落 headless
+                    // （与 video 非 webm 面同策略）。
+                    Err(_) => {
+                        self.audio_entries.remove(&key);
+                        return;
+                    }
+                },
+            };
+            // seek 重建解码器需要源字节——留存（与 video sources 面同键共享）。
+            // A3 封顶：准入失败不登记（shim 桥 play 找不到 entry 返 false 回落 headless，
+            // 与两解码面皆不识别同错误面）。
+            if !self.admit_source_bytes(key, bytes.len()) {
+                return;
+            }
+            self.sources.insert(key, bytes);
+            self.audio_entries.insert(key, AudioEntry::new(decoder));
+        }
     }
 
     /// 释放全部资源（导航离开——DC-4：player/音频解码器/源字节不跨文档泄漏）。
     pub fn clear(&mut self) {
+        #[cfg(feature = "media-process")]
+        self.host.clear();
         self.sources.clear();
         self.players.clear();
         self.audio_entries.clear();
@@ -321,6 +362,10 @@ impl VideoPlayerRegistry {
     /// 音频 play（桥面；已登记源 → 播放态 + 时钟锚点）。
     pub fn audio_play(&mut self, abs_src: &str, now_ms: u64) -> bool {
         let key = registry_key(abs_src);
+        #[cfg(feature = "media-process")]
+        if self.host.hosts(key) {
+            return self.host.play(key);
+        }
         match self.audio_entries.get_mut(&key) {
             Some(entry) => {
                 entry.playing = true;
@@ -338,6 +383,11 @@ impl VideoPlayerRegistry {
     /// 音频 pause（时钟冻结；已解码采样保留在 sink 统计面）。
     pub fn audio_pause(&mut self, abs_src: &str) {
         let key = registry_key(abs_src);
+        #[cfg(feature = "media-process")]
+        if self.host.hosts(key) {
+            self.host.pause(key);
+            return;
+        }
         if let Some(entry) = self.audio_entries.get_mut(&key) {
             entry.playing = false;
             entry.last_tick_ms = None;
@@ -347,6 +397,10 @@ impl VideoPlayerRegistry {
     /// 音频 currentTime（毫秒游标 → 秒）。
     pub fn audio_current_time(&self, abs_src: &str) -> f64 {
         let key = registry_key(abs_src);
+        #[cfg(feature = "media-process")]
+        if self.host.hosts(key) {
+            return self.host.current_time(key);
+        }
         self.audio_entries
             .get(&key)
             .map(|e| e.cursor_ms as f64 / 1000.0)
@@ -357,6 +411,10 @@ impl VideoPlayerRegistry {
     /// 真实流面后续做 byte-position 恢复）。
     pub fn audio_seek(&mut self, abs_src: &str, target_ms: u64) -> bool {
         let key = registry_key(abs_src);
+        #[cfg(feature = "media-process")]
+        if self.host.hosts(key) {
+            return self.host.seek(key, target_ms);
+        }
         let Some(entry) = self.audio_entries.get_mut(&key) else {
             return false;
         };
@@ -390,6 +448,11 @@ impl VideoPlayerRegistry {
     /// 音频增益面（media-elements IDL 联动：volume/muted setter 桥推）。
     pub fn audio_set_gain(&mut self, abs_src: &str, volume: f32, muted: bool) {
         let key = registry_key(abs_src);
+        #[cfg(feature = "media-process")]
+        if self.host.hosts(key) {
+            self.host.set_gain(key, volume as f64, muted);
+            return;
+        }
         if let Some(entry) = self.audio_entries.get_mut(&key) {
             entry.volume = volume.clamp(0.0, 1.0);
             entry.muted = muted;
@@ -410,6 +473,10 @@ impl VideoPlayerRegistry {
     /// 音频播放中检查。
     pub fn audio_is_playing(&self, abs_src: &str) -> bool {
         let key = registry_key(abs_src);
+        #[cfg(feature = "media-process")]
+        if self.host.hosts(key) {
+            return self.host.is_playing(key);
+        }
         self.audio_entries.get(&key).is_some_and(|e| e.playing)
     }
 
@@ -421,6 +488,10 @@ impl VideoPlayerRegistry {
     /// media-audio M2 后续切片）。
     pub fn play(&mut self, abs_src: &str, now_ms: u64) -> bool {
         let key = registry_key(abs_src);
+        #[cfg(feature = "media-process")]
+        if self.host.hosts(key) {
+            return self.host.play(key);
+        }
         // MSE 面（t8n）：源不经 settle 字节——句柄在位即懒建 MseVideoFeed（挂接
         // 共享增长缓冲；无伴生音频轨探针——MSE 音频为后续切片）。
         #[cfg(feature = "decode-h264")]
@@ -572,6 +643,11 @@ impl VideoPlayerRegistry {
     /// pause：保持位置（未播放/不存在 no-op）；A/V pair 音频同步暂停。
     pub fn pause(&mut self, abs_src: &str) {
         let key = registry_key(abs_src);
+        #[cfg(feature = "media-process")]
+        if self.host.hosts(key) {
+            self.host.pause(key);
+            return;
+        }
         if let Some(player) = self.players.get_mut(&key) {
             player.pause();
         }
@@ -590,6 +666,11 @@ impl VideoPlayerRegistry {
     /// registry 存储待用速率）。
     pub fn set_playback_rate(&mut self, abs_src: &str, rate: f64) {
         let key = registry_key(abs_src);
+        #[cfg(feature = "media-process")]
+        if self.host.hosts(key) {
+            self.host.set_playback_rate(key, rate);
+            return;
+        }
         if let Some(player) = self.players.get_mut(&key) {
             player.set_playback_rate(rate);
         }
@@ -601,6 +682,10 @@ impl VideoPlayerRegistry {
     /// 返回是否作用于存在的 player。
     pub fn seek(&mut self, abs_src: &str, target_ms: u64) -> bool {
         let key = registry_key(abs_src);
+        #[cfg(feature = "media-process")]
+        if self.host.hosts(key) {
+            return self.host.seek(key, target_ms);
+        }
         let mut player_ok = false;
         match self.players.get_mut(&key) {
             Some(player) => {
@@ -685,6 +770,10 @@ impl VideoPlayerRegistry {
     /// 由组合时钟驱动；无伴生轨回落视频位置）。
     pub fn current_time(&self, abs_src: &str) -> f64 {
         let key = registry_key(abs_src);
+        #[cfg(feature = "media-process")]
+        if self.host.hosts(key) {
+            return self.host.current_time(key);
+        }
         // MSE 伴生音频游标优先（t8s-3 返修 N4——audio clock 主时钟契约与 av 面一致）。
         #[cfg(feature = "decode-h264")]
         if let Some(e) = self.mse_audio_entries.get(&key) {
@@ -703,6 +792,10 @@ impl VideoPlayerRegistry {
     /// MSE 显式时长优先（fragmented 容器常缺声明——`mediaSource.duration` 真值）。
     pub fn duration(&self, abs_src: &str) -> Option<f64> {
         let key = registry_key(abs_src);
+        #[cfg(feature = "media-process")]
+        if self.host.hosts(key) {
+            return self.host.duration(key);
+        }
         #[cfg(feature = "decode-h264")]
         if let Some(d) = self.mse_durations.get(&key) {
             return Some(*d);
@@ -716,6 +809,10 @@ impl VideoPlayerRegistry {
     /// 另读容器声明时长）；两处皆无 → None（shim 保持占位态不升级）。
     pub fn source_media_meta(&self, abs_src: &str) -> Option<(u32, u32, u64)> {
         let key = registry_key(abs_src);
+        #[cfg(feature = "media-process")]
+        if self.host.hosts(key) {
+            return self.host.source_media_meta(key);
+        }
         if let Some(meta) = self.media_meta.get(&key) {
             return Some(*meta);
         }
@@ -733,6 +830,10 @@ impl VideoPlayerRegistry {
     /// 解码 ~10ms 可接受），非 webm/解码失败 → (0,0)（语义层占位）。
     pub fn probe_dimensions(&self, abs_src: &str) -> (u32, u32) {
         let key = registry_key(abs_src);
+        #[cfg(feature = "media-process")]
+        if self.host.hosts(key) {
+            return self.host.probe_dimensions(key);
+        }
         let bytes = self.sources.get(&key).or_else(|| self.av_sources.get(&key)).cloned();
         let Some(bytes) = bytes else {
             return (0, 0);
@@ -751,6 +852,10 @@ impl VideoPlayerRegistry {
     /// 是否在播放（桥查询面）。
     pub fn is_playing(&self, abs_src: &str) -> bool {
         let key = registry_key(abs_src);
+        #[cfg(feature = "media-process")]
+        if self.host.hosts(key) {
+            return self.host.is_playing(key);
+        }
         self.players.get(&key).is_some_and(|p| p.is_playing())
             || self.audio_entries.get(&key).is_some_and(|e| e.playing)
     }
@@ -760,6 +865,10 @@ impl VideoPlayerRegistry {
     /// 桥真值时钟走到流末时语义层须能观测 Ended 态。
     pub fn is_ended(&self, abs_src: &str) -> bool {
         let key = registry_key(abs_src);
+        #[cfg(feature = "media-process")]
+        if self.host.hosts(key) {
+            return self.host.is_ended(key);
+        }
         self.players
             .get(&key)
             .is_some_and(|p| p.state() == zero_media::PlayerState::Ended)
@@ -771,6 +880,10 @@ impl VideoPlayerRegistry {
 
     /// 快速检查：是否存在播放中的 player（渲染泵门禁——无播放时零开销跳过 tick）。
     pub fn is_any_playing(&self) -> bool {
+        #[cfg(feature = "media-process")]
+        if self.host.is_any_playing() {
+            return true;
+        }
         self.players.values().any(|p| p.is_playing())
             || self.audio_entries.values().any(|e| e.playing)
             || self.av_audio_entries.values().any(|e| e.playing)
@@ -828,6 +941,11 @@ impl VideoPlayerRegistry {
     /// 「Ended 后重头」语义）+ march 面派 seeked；音频面：advance_to 流末回卷。
     pub fn set_loop(&mut self, abs_src: &str, on: bool) {
         let key = registry_key(abs_src);
+        #[cfg(feature = "media-process")]
+        if self.host.hosts(key) {
+            self.host.set_loop(key, on);
+            return;
+        }
         if let Some(entry) = self.audio_entries.get_mut(&key) {
             entry.loop_on = on;
         }
@@ -843,6 +961,15 @@ impl VideoPlayerRegistry {
     /// 先走），视频帧调度经 `sync_to_media_time` 对齐音频游标——drift 由构造校正
     /// （位置每 tick 派生自主时钟，不积累墙钟差）。纯视频源回落墙钟 tick（零回归）。
     pub fn tick_all(&mut self, now_ms: u64, image_cache: &mut ImageCache) -> bool {
+        #[cfg(feature = "media-process")]
+        // 宿主帧排空（push 镜像/帧注入 ImageCache/Ended+loop 回卷待办）→ 纯
+        // 视频 loop 回卷统一驱动（内核不自动回卷纯视频，§10.7-2 同构）。并集
+        // 形态：内联面保留（MSE 源走内联 player；宿主登记键的内联容器恒空）。
+        let host_changed = {
+            let changed = self.host.tick_into(image_cache);
+            self.host.flush_replays();
+            changed
+        };
         // 主时钟先行：伴音频轨按实时节奏解码（游标即媒体时间真值）。
         let av_keys: Vec<u64> = self
             .av_audio_entries
@@ -904,6 +1031,10 @@ impl VideoPlayerRegistry {
                 image_cache.insert_with_key(ImageKey::new(key), data);
                 changed = true;
             }
+        }
+        #[cfg(feature = "media-process")]
+        {
+            changed |= host_changed;
         }
         changed
     }
@@ -1452,531 +1583,6 @@ mod tests {
             "唯一牺牲候选在播 → 拒绝"
         );
         assert!(reg.contains_source(MP3), "在播键不因准入被驱逐");
-    }
-}
-
-/// `__zwVideoBridge` JS 门面脚本。native 回调（`__zw_video_*`/`__zw_ms_*`）由 sandbox
-/// 回调表随每次 context 重建自动重挂，但门面是一次性 `execute` 的普通全局——js_worker
-/// ResetDocument（真导航 reset_context + shim 重装）后会丢失，须由调用方在 shim 重装后
-/// 重新执行本脚本补挂（renderer js_worker 路径；learning #25 武装时机同模式）。
-/// decode-h264 关闭时仅含基础播放面（无 mse* 方法 → shim isTypeSupported 恒 false，
-/// 不虚报）。
-pub fn video_bridge_facade_script() -> String {
-    let mut s = String::new();
-    s.push_str(
-        "globalThis.__zwVideoBridge = {\
-           play: function (src, nowMs) { return __zw_video_play(src, nowMs | 0) === '1'; },\
-           pause: function (src) { __zw_video_pause(src); },\
-           seek: function (src, targetMs) { return __zw_video_seek(src, targetMs | 0) === '1'; },\
-           currentTime: function (src) { return Number(__zw_video_current_time(src)); },\
-           duration: function (src) { return Number(__zw_video_duration(src)); },\
-           isPlaying: function (src) { return __zw_video_is_playing(src) === '1'; },\
-           isEnded: function (src) { return __zw_video_is_ended(src) === '1'; },\
-           setRate: function (src, rate) { __zw_video_set_rate(src, Number(rate)); },\
-           setGain: function (src, volume, muted) { __zw_video_set_gain(src, Number(volume), muted ? '1' : '0'); },\
-           setLoop: function (src, on) { __zw_video_set_loop(src, on ? '1' : '0'); },\
-           mediaMeta: function (src) { return __zw_video_media_meta(src); }\
-         };",
-    );
-    // MSE 面 shim 契约（feature-detect 面）：`__zwVideoBridge.mseCreate` 在位 =
-    // 宿主 MSE 通路可用——shim MediaSource/SourceBuffer 据此走真值挂接。
-    #[cfg(feature = "decode-h264")]
-    s.push_str(
-        "globalThis.__zwVideoBridge.mseCreate = function (src) { return __zw_ms_create(src) === '1'; };\
-         globalThis.__zwVideoBridge.mseAppend = function (src, b64) { return __zw_ms_append(src, b64) === '1'; };\
-         globalThis.__zwVideoBridge.mseAppendAudio = function (src, b64) { return __zw_ms_append_audio(src, b64) === '1'; };\
-         globalThis.__zwVideoBridge.mseEnd = function (src) { return __zw_ms_end(src) === '1'; };\
-         globalThis.__zwVideoBridge.mseSetDuration = function (src, secs) { __zw_ms_set_duration(src, String(secs)); };\
-         globalThis.__zwVideoBridge.mseDims = function (src) { return __zw_ms_dims(src); };",
-    );
-    s
-}
-
-/// 宿主桥 — 在 sandbox 上注册 `__zw_video_*` 回调族并注入 `__zwVideoBridge` JS 对象
-///（media-playback M2a 切片 5b）。
-///
-/// JS 侧 `globalThis.__zwVideoBridge = { play(src, nowMs), pause(src),
-/// currentTime(src), isPlaying(src) }`——shim `play()`/`pause()` feature-detect 此对象
-/// 走真值路径；未注册（testharness/reftest 沙箱）时对象不存在，shim 回落 headless
-/// 路径（372 基线零回归）。键 = 资源绝对 URL（settle 登记同串——shim `src` getter
-/// 的 `_zwResolveFetchUrl` 产出）。
-///
-/// 回调签名 `Fn(&[String]) -> String`（script-sandbox 契约）；秒值以字符串往返。
-///
-/// M3 切片 2（2026-09-03）：`source_provider` 可选——play 未命中（源未登记）时同步
-/// 回调取字节补登记后重评一次（WPT runner 注册竞态消除：宿主侧已知 wpt-data 布局，
-/// registry 不感知文件系统；None = 未设置，维持「未登记 → false」原语义零回归）。
-/// t8n：门面执行改消费 [`video_bridge_facade_script`]（与 ResetDocument 补挂同源）。
-pub fn register_video_bridge_callbacks(
-    sandbox: &mut dyn zero_script_sandbox::Sandbox,
-    registry: std::sync::Arc<std::sync::Mutex<VideoPlayerRegistry>>,
-    source_provider: Option<crate::MediaSourceProvider>,
-    clock: Option<std::sync::Arc<atomic::AtomicU64>>,
-) {
-    // __zw_video_play(absSrc, nowMs) -> "1"/"0"（bool 字符串避免 JS↔host 布尔歧义）。
-    // M2c 后续：audio 回退——video 面未命中（非 webm/纯音频源）时试 audio 条目。
-    // M3 扩批 XXV：clock（宿主泵毫秒）在位时 nowMs<=0 翻译为泵时钟现值——shim 无钟
-    // 恒传 0，registry play 锚与泵 tick 时钟必须同源（原点错位使首拍 delta=泵全程，
-    // 位置瞬间跳到流末——loop 回卷/长加载页面的播放推进失真根因）。
-    let reg_play = std::sync::Arc::clone(&registry);
-    sandbox.register_callback(
-        "__zw_video_play",
-        Box::new(move |args| {
-            let src = args.first().map(String::as_str).unwrap_or("");
-            let now_ms: u64 = match clock.as_ref() {
-                Some(c) => {
-                    let v = args.get(1).and_then(|s| s.parse::<i64>().ok()).unwrap_or(0);
-                    if v > 0 {
-                        v as u64
-                    } else {
-                        c.load(atomic::Ordering::Relaxed)
-                    }
-                }
-                None => args.get(1).and_then(|s| s.parse().ok()).unwrap_or(0),
-            };
-            let first = {
-                let mut reg = reg_play.lock().unwrap_or_else(|e| e.into_inner());
-                reg.play(src, now_ms) || reg.audio_play(src, now_ms)
-            };
-            if !first {
-                // M3 切片 2：供给方在位且源未登记 → 同步补登记后重评一次（decode
-                // 可达性仍由 open_webm 决定——失败回落 false，字节留存可重试）。
-                if let Some(provider) = source_provider.as_ref() {
-                    // t8o 返修 D1：登记判定与补登记各自短锁，provider 取字节（生产
-                    // 直联 GET，秒级上界）在锁外——registry 锁被 renderer 主循环泵
-                    // 每 tick 争用（is_any_playing 门/tick_all），持锁做网络 I/O 使
-                    // 主循环与页面 JS 线程在首次 miss 期间整体停摆。调用方（js_worker
-                    // 脚本线程）串行，无并发双 fetch 面。
-                    let present = {
-                        let reg = reg_play.lock().unwrap_or_else(|e| e.into_inner());
-                        reg.sources.contains_key(&registry_key(src))
-                    };
-                    if !present && let Some(bytes) = provider(src) {
-                        // audio 判定 strip query/fragment（WPT cache-buster URL——
-                        // sound_5.oga?... 以随机数结尾，直接 ends_with 恒 false →
-                        // 音频条目永不登记 → 桥 play 恒 miss，audio_loop_* 族超时）。
-                        let bare = src.split(['?', '#']).next().unwrap_or(src);
-                        let audio_guess = bare.ends_with(".oga") || bare.ends_with(".mp3");
-                        let mut reg = reg_play.lock().unwrap_or_else(|e| e.into_inner());
-                        // 非 audio 常规路径 move 字节（免全量 body clone 双份峰值——
-                        // t8o 审查 D2 的锁外收窄）；audio 双登记才 clone。
-                        if audio_guess {
-                            reg.register_source(src, bytes.clone());
-                            reg.register_audio_source(src, bytes);
-                        } else {
-                            reg.register_source(src, bytes);
-                        }
-                    }
-                }
-            }
-            let ok = {
-                let mut reg = reg_play.lock().unwrap_or_else(|e| e.into_inner());
-                reg.play(src, now_ms) || reg.audio_play(src, now_ms)
-            };
-            if ok { "1".into() } else { "0".into() }
-        }),
-    );
-
-    // t8o：登记/播放源的媒体元——桥命中后 shim 升级 settle 占位 (w0h0) 面。
-    // "w|h|durMs" 管道串（数字跨 host 边界的既有串契约）；未登记/解码失败
-    // "0|0|0"（shim 以 0 判定保持占位态）。
-    let reg_meta = std::sync::Arc::clone(&registry);
-    sandbox.register_callback(
-        "__zw_video_media_meta",
-        Box::new(move |args| {
-            let src = args.first().map(String::as_str).unwrap_or("");
-            let reg = reg_meta.lock().unwrap_or_else(|e| e.into_inner());
-            match reg.source_media_meta(src) {
-                Some((w, h, dur_ms)) => format!("{w}|{h}|{dur_ms}"),
-                None => "0|0|0".into(),
-            }
-        }),
-    );
-
-    let reg_pause = std::sync::Arc::clone(&registry);
-    sandbox.register_callback(
-        "__zw_video_pause",
-        Box::new(move |args| {
-            let src = args.first().map(String::as_str).unwrap_or("");
-            let mut reg = reg_pause.lock().unwrap_or_else(|e| e.into_inner());
-            reg.pause(src);
-            reg.audio_pause(src);
-            "1".into()
-        }),
-    );
-
-    // __zw_video_set_gain(absSrc, volume, muted)——media-elements IDL 联动
-    //（volume/muted setter 桥推；音频面增益，video 面 reserved）。
-    let reg_gain = std::sync::Arc::clone(&registry);
-    sandbox.register_callback(
-        "__zw_video_set_gain",
-        Box::new(move |args| {
-            let src = args.first().map(String::as_str).unwrap_or("");
-            let volume: f32 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(1.0);
-            let muted = args.get(2).map(|s| s == "1").unwrap_or(false);
-            reg_gain
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .audio_set_gain(src, volume, muted);
-            "1".into()
-        }),
-    );
-
-    let reg_ct = std::sync::Arc::clone(&registry);
-    sandbox.register_callback(
-        "__zw_video_current_time",
-        Box::new(move |args| {
-            let src = args.first().map(String::as_str).unwrap_or("");
-            let reg = reg_ct.lock().unwrap_or_else(|e| e.into_inner());
-            format!("{}", reg.current_time(src))
-        }),
-    );
-
-    let reg_dur = std::sync::Arc::clone(&registry);
-    sandbox.register_callback(
-        "__zw_video_duration",
-        Box::new(move |args| {
-            let src = args.first().map(String::as_str).unwrap_or("");
-            let reg = reg_dur.lock().unwrap_or_else(|e| e.into_inner());
-            match reg.duration(src) {
-                Some(d) => format!("{d}"),
-                None => "NaN".into(),
-            }
-        }),
-    );
-
-    let reg_rate = std::sync::Arc::clone(&registry);
-    sandbox.register_callback(
-        "__zw_video_set_rate",
-        Box::new(move |args| {
-            let src = args.first().map(String::as_str).unwrap_or("");
-            let rate: f64 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(1.0);
-            reg_rate
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .set_playback_rate(src, rate);
-            "1".into()
-        }),
-    );
-
-    let reg_seek = std::sync::Arc::clone(&registry);
-    sandbox.register_callback(
-        "__zw_video_seek",
-        Box::new(move |args| {
-            let src = args.first().map(String::as_str).unwrap_or("");
-            let target_ms: u64 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
-            let mut reg = reg_seek.lock().unwrap_or_else(|e| e.into_inner());
-            if reg.seek(src, target_ms) {
-                "1".into()
-            } else {
-                "0".into()
-            }
-        }),
-    );
-
-    let reg_playing = std::sync::Arc::clone(&registry);
-    sandbox.register_callback(
-        "__zw_video_is_playing",
-        Box::new(move |args| {
-            let src = args.first().map(String::as_str).unwrap_or("");
-            let reg = reg_playing.lock().unwrap_or_else(|e| e.into_inner());
-            if reg.is_playing(src) { "1".into() } else { "0".into() }
-        }),
-    );
-
-    // M3 扩批 XVI：流末查询（桥 isEnded——语义层 ended 事件驱动源；
-    // track-cues-missed 的 onended 断言面）。
-    let reg_ended = std::sync::Arc::clone(&registry);
-    sandbox.register_callback(
-        "__zw_video_is_ended",
-        Box::new(move |args| {
-            let src = args.first().map(String::as_str).unwrap_or("");
-            let reg = reg_ended.lock().unwrap_or_else(|e| e.into_inner());
-            if reg.is_ended(src) { "1".into() } else { "0".into() }
-        }),
-    );
-
-    // M3 扩批 XXIV：loop 真面（音频 entry 流末回卷；视频面由 shim Ended→play 重头）。
-    let reg_loop = std::sync::Arc::clone(&registry);
-    sandbox.register_callback(
-        "__zw_video_set_loop",
-        Box::new(move |args| {
-            let src = args.first().map(String::as_str).unwrap_or("");
-            let on = args.get(1).map(|s| s == "1").unwrap_or(false);
-            reg_loop.lock().unwrap_or_else(|e| e.into_inner()).set_loop(src, on);
-            "1".into()
-        }),
-    );
-
-    // MSE 面（t8n，decode-h264 feature）：MediaSource 生命周期 op 族——shim
-    // SourceBuffer.appendBuffer/endOfStream 与 duration 赋值经此入共享缓冲。
-    // appendBuffer 二进制经 base64 字符串过桥（sandbox 回调 string-only 契约，
-    // atob/btoa 为 Web 平台既有面——shim 侧 btoa 编码，宿主侧 base64_decode）。
-    #[cfg(feature = "decode-h264")]
-    {
-        let reg_ms = std::sync::Arc::clone(&registry);
-        sandbox.register_callback(
-            "__zw_ms_create",
-            Box::new(move |args| {
-                let src = args.first().map(String::as_str).unwrap_or("");
-                reg_ms.lock().unwrap_or_else(|e| e.into_inner()).mse_create(src);
-                "1".into()
-            }),
-        );
-        let reg_ms = std::sync::Arc::clone(&registry);
-        sandbox.register_callback(
-            "__zw_ms_append",
-            Box::new(move |args| {
-                let src = args.first().map(String::as_str).unwrap_or("");
-                let b64 = args.get(1).map(String::as_str).unwrap_or("");
-                match crate::webview::base64_decode(b64) {
-                    // t8n 返修 N2：封顶拒绝 → "0"（shim 按既有 append 失败面派
-                    // error + updateend）。
-                    Ok(bytes) => {
-                        let ok = reg_ms.lock().unwrap_or_else(|e| e.into_inner()).mse_append(src, &bytes);
-                        if ok { "1".into() } else { "0".into() }
-                    }
-                    Err(_) => "0".into(),
-                }
-            }),
-        );
-        let reg_ms = std::sync::Arc::clone(&registry);
-        sandbox.register_callback(
-            "__zw_ms_append_audio",
-            Box::new(move |args| {
-                let src = args.first().map(String::as_str).unwrap_or("");
-                let b64 = args.get(1).map(String::as_str).unwrap_or("");
-                match crate::webview::base64_decode(b64) {
-                    Ok(bytes) => {
-                        let ok = reg_ms
-                            .lock()
-                            .unwrap_or_else(|e| e.into_inner())
-                            .mse_append_audio(src, &bytes);
-                        if ok { "1".into() } else { "0".into() }
-                    }
-                    Err(_) => "0".into(),
-                }
-            }),
-        );
-        let reg_ms = std::sync::Arc::clone(&registry);
-        sandbox.register_callback(
-            "__zw_ms_end",
-            Box::new(move |args| {
-                let src = args.first().map(String::as_str).unwrap_or("");
-                reg_ms.lock().unwrap_or_else(|e| e.into_inner()).mse_end(src);
-                "1".into()
-            }),
-        );
-        let reg_ms = std::sync::Arc::clone(&registry);
-        sandbox.register_callback(
-            "__zw_ms_set_duration",
-            Box::new(move |args| {
-                let src = args.first().map(String::as_str).unwrap_or("");
-                let secs: f64 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(f64::NAN);
-                if secs.is_finite() && secs >= 0.0 {
-                    reg_ms
-                        .lock()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .mse_set_duration(src, secs);
-                }
-                "1".into()
-            }),
-        );
-        // __zw_ms_dims(absSrc) -> "WxH"/""——首 append 后的 moov 维度真值探针
-        //（shim settle 真值链：loadedmetadata/videoWidth/Height 消费）。
-        let reg_ms = std::sync::Arc::clone(&registry);
-        sandbox.register_callback(
-            "__zw_ms_dims",
-            Box::new(move |args| {
-                let src = args.first().map(String::as_str).unwrap_or("");
-                match reg_ms.lock().unwrap_or_else(|e| e.into_inner()).mse_probe_dims(src) {
-                    Some((w, h)) => format!("{w}x{h}"),
-                    None => String::new(),
-                }
-            }),
-        );
-    }
-
-    // JS 侧门面对象：shim 只认它（feature-detect 单点）。
-    let _ = sandbox.execute(&video_bridge_facade_script());
-}
-
-#[cfg(all(test, feature = "v8"))]
-mod bridge_tests {
-    use super::*;
-    use zero_script_sandbox::{Sandbox, V8Sandbox};
-
-    fn fixture_bytes() -> Vec<u8> {
-        let mut p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        p.pop();
-        p.pop();
-        p.push("tests/fixtures/media/sample-webm-vp9.webm");
-        std::fs::read(p).expect("webm fixture present")
-    }
-
-    const SRC: &str = "https://example.com/media/sample-webm-vp9.webm";
-
-    /// 宿主桥端到端：register → JS __zwVideoBridge.play → currentTime 推进 → pause 冻结
-    /// → duration NaN/真值两面。真实 fixture 驱动。
-    #[test]
-    fn video_bridge_js_face_roundtrip() {
-        let registry = std::sync::Arc::new(std::sync::Mutex::new(VideoPlayerRegistry::new()));
-        registry
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .register_source(SRC, fixture_bytes());
-        let config = zero_script_sandbox::SandboxConfig {
-            persistent_context: true,
-            ..Default::default()
-        };
-        let mut sandbox = V8Sandbox::with_config(config).expect("v8 sandbox");
-        register_video_bridge_callbacks(&mut sandbox, registry, None, None);
-
-        // 未播放：currentTime 0、duration 2（真值）。
-        assert_eq!(
-            sandbox
-                .execute(
-                    "String(globalThis.__zwVideoBridge.currentTime('https://example.com/media/sample-webm-vp9.webm'))"
-                )
-                .unwrap()
-                .value
-                .replace('\0', ""),
-            "0"
-        );
-        // play → isPlaying true → tick 前位置 0。
-        assert_eq!(
-            sandbox
-                .execute(
-                    "String(globalThis.__zwVideoBridge.play('https://example.com/media/sample-webm-vp9.webm', 1000))"
-                )
-                .unwrap()
-                .value,
-            "true"
-        );
-        assert_eq!(
-            sandbox
-                .execute(
-                    "String(globalThis.__zwVideoBridge.isPlaying('https://example.com/media/sample-webm-vp9.webm'))"
-                )
-                .unwrap()
-                .value,
-            "true"
-        );
-        // pause → isPlaying false。
-        sandbox
-            .execute("globalThis.__zwVideoBridge.pause('https://example.com/media/sample-webm-vp9.webm');")
-            .unwrap();
-        assert_eq!(
-            sandbox
-                .execute(
-                    "String(globalThis.__zwVideoBridge.isPlaying('https://example.com/media/sample-webm-vp9.webm'))"
-                )
-                .unwrap()
-                .value,
-            "false"
-        );
-        // duration 真值面（fixture 2.0s）。
-        let dur = sandbox
-            .execute("String(globalThis.__zwVideoBridge.duration('https://example.com/media/sample-webm-vp9.webm'))")
-            .unwrap()
-            .value;
-        assert!(dur.starts_with('2'), "duration 应为 2 秒真值，got {dur}");
-        // seek 面：seek(1000ms) → currentTime ≥ 1s（精确 seek 真值）。
-        assert_eq!(
-            sandbox
-                .execute(
-                    "String(globalThis.__zwVideoBridge.seek('https://example.com/media/sample-webm-vp9.webm', 1000))"
-                )
-                .unwrap()
-                .value,
-            "true"
-        );
-        let ct = sandbox
-            .execute("String(globalThis.__zwVideoBridge.currentTime('https://example.com/media/sample-webm-vp9.webm'))")
-            .unwrap()
-            .value;
-        let ct: f64 = ct.parse().unwrap_or(0.0);
-        assert!(ct >= 1.0, "seek(1000) 后 currentTime ≥ 1s，got {ct}");
-        // 未登记源：play false。
-        assert_eq!(
-            sandbox
-                .execute("String(globalThis.__zwVideoBridge.play('https://x/nope.webm', 0))")
-                .unwrap()
-                .value,
-            "false"
-        );
-    }
-
-    /// MSE 桥端到端（t8n，decode-h264+v8）：mseCreate → mseAppend（base64 过桥）
-    /// → play 真值 → duration 显式面经 __zwVideoBridge.duration 读回。
-    #[cfg(feature = "decode-h264")]
-    #[test]
-    fn video_bridge_mse_face_roundtrip() {
-        const MSE_SRC: &str = "blob:https://example.com/zw-mse-test-1";
-        let registry = std::sync::Arc::new(std::sync::Mutex::new(VideoPlayerRegistry::new()));
-        let config = zero_script_sandbox::SandboxConfig {
-            persistent_context: true,
-            ..Default::default()
-        };
-        let mut sandbox = V8Sandbox::with_config(config).expect("v8 sandbox");
-        register_video_bridge_callbacks(&mut sandbox, registry, None, None);
-        // mseCreate + 显式 duration 读回（NaN 面 → 赋值 → 真值）。
-        assert_eq!(
-            sandbox
-                .execute(&format!("String(__zwVideoBridge.mseCreate('{MSE_SRC}'))"))
-                .unwrap()
-                .value,
-            "true"
-        );
-        assert_eq!(
-            sandbox
-                .execute(&format!("String(__zwVideoBridge.duration('{MSE_SRC}'))"))
-                .unwrap()
-                .value,
-            "NaN"
-        );
-        sandbox
-            .execute(&format!("__zwVideoBridge.mseSetDuration('{MSE_SRC}', 12.5);"))
-            .unwrap();
-        assert_eq!(
-            sandbox
-                .execute(&format!("String(__zwVideoBridge.duration('{MSE_SRC}'))"))
-                .unwrap()
-                .value,
-            "12.5"
-        );
-        // appendBuffer 过桥（base64）→ play 真值（等待面也建 player——tick 推进在
-        // registry 单测已钉，此处钉桥面往返）。
-        let mut p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        p.pop();
-        p.pop();
-        p.push("tests/fixtures/media/sample-mp4-h264.mp4");
-        let data = std::fs::read(p).expect("mp4 fixture present");
-        let b64 = crate::webview::base64_encode(&data);
-        assert_eq!(
-            sandbox
-                .execute(&format!("String(__zwVideoBridge.mseAppend('{MSE_SRC}', '{b64}'))"))
-                .unwrap()
-                .value,
-            "true"
-        );
-        sandbox
-            .execute(&format!("__zwVideoBridge.mseEnd('{MSE_SRC}');"))
-            .unwrap();
-        assert_eq!(
-            sandbox
-                .execute(&format!("String(__zwVideoBridge.play('{MSE_SRC}', 0))"))
-                .unwrap()
-                .value,
-            "true"
-        );
-        assert_eq!(
-            sandbox
-                .execute(&format!("String(__zwVideoBridge.isPlaying('{MSE_SRC}'))"))
-                .unwrap()
-                .value,
-            "true"
-        );
     }
 }
 
