@@ -803,7 +803,10 @@ fn test_collapse_table_size_deducts_covered_edge_cell_border() {
 /// cell border-box − ½(bt+bb)，与列宽半 border 分摊同构。镜像
 /// border-conflict-element-001a 几何：1×1 表，td 四边 20px border、空 cell
 /// （border-box 高 40）→ 行高 20（旧整 border 口径 40 使表高翻倍）。
-/// cell 盒自身不回写：保持 40（相邻行 cell 带 ±½ 重叠，paint 内绘带落边框中心）。
+/// R5262：真表容器下 cell 盒高同步为边框中心跨度（= 行高 20）——盒缘随格线
+/// 原点平移落在格线上（chromium 001e td getBoundingClientRect 40×40 = 整
+/// border-box 60 − ½边框 实证）；外缘带由 paint 端外展居中，不再依赖盒高
+/// 保留整边框。
 #[test]
 fn test_collapse_row_height_deducts_half_cell_borders() {
     use zero_css_parser::values::LengthValue;
@@ -869,10 +872,225 @@ fn test_collapse_row_height_deducts_half_cell_borders() {
     );
     let cell = &row.children[0];
     assert!(
-        (cell.height - 40.0).abs() < 0.5,
-        "cell box keeps its full border-box height 40 (overlapping bands land on border \
-         centers), got {}",
+        (cell.height - 20.0).abs() < 0.5,
+        "cell box height = border-center span (row height 20, chromium 001e cell 40×40 vs \
+         border-box 60), got {}",
         cell.height
+    );
+}
+
+/// R5262（CSS2 §17.6.2 collapse 带几何）：真表容器格线原点平移 + cell 盒边框
+/// 中心跨度 + 表盒 edge 每缘 max。镜像 border-conflict-element-001e test 表：
+/// table（红框 20）> tbody > 3 行 × 4 空 td（border 20 + padding 10，taffy
+/// border-box 高 60），列宽 40。chromium 探针真值：表 180×140、td border-box
+/// 40×40 起排于表盒 +10（tbody 盒 content 帧 −10、高 120）、行高 40。
+#[test]
+fn test_collapse_grid_origin_real_table_geometry() {
+    use zero_css_parser::values::LengthValue;
+    use zero_style_system::property::types::BorderCollapseValue;
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let table_id = doc.create_element("table");
+    let rg_id = doc.create_element("tbody");
+    let _ = doc.append_child(root, table_id);
+    let _ = doc.append_child(table_id, rg_id);
+
+    let mut styles = HashMap::new();
+    let mut ts = ComputedStyle::default();
+    ts.display = DisplayValue::Table;
+    ts.border_collapse = BorderCollapseValue::Collapse;
+    styles.insert(table_id, ts);
+    let mut rgs = ComputedStyle::default();
+    rgs.display = DisplayValue::TableRowGroup;
+    styles.insert(rg_id, rgs);
+
+    // 3 行 × 4 cell，全部带 20px border + 10px padding（taffy border-box 高 60）
+    let mut row_ids = Vec::new();
+    let mut cell_ids = Vec::new();
+    for _r in 0..3 {
+        let row_id = doc.create_element("tr");
+        let _ = doc.append_child(rg_id, row_id);
+        row_ids.push(row_id);
+        let mut rs = ComputedStyle::default();
+        rs.display = DisplayValue::TableRow;
+        styles.insert(row_id, rs);
+        for _c in 0..4 {
+            let cell_id = doc.create_element("td");
+            let _ = doc.append_child(row_id, cell_id);
+            cell_ids.push(cell_id);
+            let mut cs = ComputedStyle::default();
+            cs.display = DisplayValue::TableCell;
+            cs.border_top_width = LengthValue::Px(20.0);
+            cs.border_right_width = LengthValue::Px(20.0);
+            cs.border_bottom_width = LengthValue::Px(20.0);
+            cs.border_left_width = LengthValue::Px(20.0);
+            cs.padding_top = LengthValue::Px(10.0);
+            cs.padding_right = LengthValue::Px(10.0);
+            cs.padding_bottom = LengthValue::Px(10.0);
+            cs.padding_left = LengthValue::Px(10.0);
+            styles.insert(cell_id, cs);
+        }
+    }
+
+    let mut cell_proto = LayoutBox {
+        border_top: 20.0,
+        border_right: 20.0,
+        border_bottom: 20.0,
+        border_left: 20.0,
+        padding_top: 10.0,
+        padding_right: 10.0,
+        padding_bottom: 10.0,
+        padding_left: 10.0,
+        ..Default::default()
+    };
+    let mut rows = Vec::new();
+    for (r, &row_id) in row_ids.iter().enumerate() {
+        let cells: Vec<LayoutBox> = (0..4)
+            .map(|c| {
+                let id = cell_ids[r * 4 + c];
+                cell_proto.node_id = Some(id);
+                cell_proto.height = 60.0;
+                cell_proto.clone()
+            })
+            .collect();
+        rows.push(LayoutBox {
+            node_id: Some(row_id),
+            children: cells,
+            ..Default::default()
+        });
+    }
+    let rg_box = LayoutBox {
+        node_id: Some(rg_id),
+        children: rows,
+        ..Default::default()
+    };
+    let mut table_box = LayoutBox {
+        node_id: Some(table_id),
+        border_top: 20.0,
+        border_right: 20.0,
+        border_bottom: 20.0,
+        border_left: 20.0,
+        children: vec![rg_box],
+        ..Default::default()
+    };
+
+    let grid = build_grid(&table_box, &doc, &styles);
+    position_cells(&mut table_box, &grid, &[40.0, 40.0, 40.0, 40.0], 0.0, 0.0, &styles);
+
+    // 表盒 180×140（Fix 1 edge 每缘 max：edge_w = 20+20；R5241 outer 半带 = 0，
+    // 表框 ≥ cell 框 → covered）
+    assert!(
+        (table_box.width - 180.0).abs() < 0.5 && (table_box.height - 140.0).abs() < 0.5,
+        "table border-box 180×140 (chromium probe), got {}×{}",
+        table_box.width,
+        table_box.height
+    );
+    // 行组盒 content 帧 (−10, −10)、高 120（格线原点平移）
+    let rg = &table_box.children[0];
+    assert!(
+        (rg.x - (-10.0)).abs() < 0.5 && (rg.y - (-10.0)).abs() < 0.5 && (rg.height - 120.0).abs() < 0.5,
+        "rowgroup at (−10,−10) h=120 (band center = table+10), got ({},{}) h={}",
+        rg.x,
+        rg.y,
+        rg.height
+    );
+    for row in &rg.children {
+        assert!(
+            (row.height - 40.0).abs() < 0.5,
+            "row height = border-center span 40, got {}",
+            row.height
+        );
+        for cell in &row.children {
+            assert!(
+                (cell.height - 40.0).abs() < 0.5,
+                "td border-box 40×40 at band center (chromium getBoundingClientRect), got h={}",
+                cell.height
+            );
+        }
+    }
+    // 首行 cells 落行帧 x 0/40/80/120（行组已承载 −10 平移）
+    let first_row = &rg.children[0];
+    for (i, cell) in first_row.children.iter().enumerate() {
+        assert!(
+            (cell.x - (i as f32 * 40.0)).abs() < 0.5,
+            "td{} x = {} in row frame",
+            i,
+            i as f32 * 40.0
+        );
+    }
+}
+
+/// R5262 门禁：格线原点平移与 cell 盒高跨度仅适用于**真表容器**（display:table
+/// 的实际节点）。匿名 table 根（node_id None，body 下裸 table-cell 的 R5208/R5209
+/// retrofit 形态，line-box-direction-srl-055 实证域）保持 legacy 几何——cell 盒
+/// 保留整 border-box 高、无 +½外缘带平移。
+#[test]
+fn test_collapse_grid_origin_skips_anon_root() {
+    use zero_css_parser::values::LengthValue;
+    use zero_style_system::property::types::{BorderCollapseValue, BorderStyleValue};
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let row_id = doc.create_element("div");
+    let cell_id = doc.create_element("div");
+    let _ = doc.append_child(root, row_id);
+    let _ = doc.append_child(row_id, cell_id);
+
+    let mut styles = HashMap::new();
+    let mut rs = ComputedStyle::default();
+    rs.display = DisplayValue::TableRow;
+    rs.border_collapse = BorderCollapseValue::Collapse;
+    styles.insert(row_id, rs);
+    let mut cs = ComputedStyle::default();
+    cs.display = DisplayValue::TableCell;
+    cs.border_top_width = LengthValue::Px(20.0);
+    cs.border_right_width = LengthValue::Px(20.0);
+    cs.border_bottom_width = LengthValue::Px(20.0);
+    cs.border_left_width = LengthValue::Px(20.0);
+    cs.border_top_style = BorderStyleValue::Solid;
+    cs.border_right_style = BorderStyleValue::Solid;
+    cs.border_bottom_style = BorderStyleValue::Solid;
+    cs.border_left_style = BorderStyleValue::Solid;
+    styles.insert(cell_id, cs);
+
+    let cell_box = LayoutBox {
+        node_id: Some(cell_id),
+        border_top: 20.0,
+        border_right: 20.0,
+        border_bottom: 20.0,
+        border_left: 20.0,
+        height: 40.0,
+        ..Default::default()
+    };
+    let row_box = LayoutBox {
+        node_id: Some(row_id),
+        children: vec![cell_box],
+        ..Default::default()
+    };
+    // 匿名 table 根：node_id None（R5202 形态，样式不可查 → grid_shift_ok = false）
+    let mut table_box = LayoutBox {
+        node_id: None,
+        is_anon_table_root: true,
+        children: vec![row_box],
+        ..Default::default()
+    };
+
+    let grid = build_grid(&table_box, &doc, &styles);
+    position_cells(&mut table_box, &grid, &[20.0], 0.0, 0.0, &styles);
+
+    let row = &table_box.children[0];
+    let cell = &row.children[0];
+    assert!(
+        (cell.height - 40.0).abs() < 0.5,
+        "anon-root retrofit keeps R5241 guard: cell box keeps full border-box height 40, got {}",
+        cell.height
+    );
+    assert!(
+        (cell.x - 0.0).abs() < 0.5 && (cell.y - 0.0).abs() < 0.5,
+        "anon-root retrofit has no grid origin shift, got ({},{})",
+        cell.x,
+        cell.y
     );
 }
 

@@ -311,6 +311,34 @@ impl super::Painter {
         let bottom_t = eff(2, box_node.border_bottom);
         let left_t = eff(3, box_node.border_left);
 
+        // R5262（CSS2 §17.6.2 collapse 带几何，layout 端格线原点平移的 paint 侧
+        // 配对）：cell 自身边框胜出的外缘带以格线为中心——起点外展半厚，带跨
+        // [edge−t/2, edge+t/2]（chromium 001e：td 盒缘 = 表盒+10，顶带
+        // [表盒, 表盒+20]）。门 = 该边**无 color override**：阶段 3 仅在非 cell
+        // 源（行/行组/表/列）胜出时写 override 并把胜出宽度入账 cell border——
+        // 此时表盒几何未含该带膨胀（sizing 只读 cell 自身边框，先于 resolve），
+        // 盒缘尚未移到带中心，legacy 内绘 full 恰与 chromium 带绝对位对齐
+        //（border-top-width-applies-to-001：行组 96px 胜出、表盒高 0，内绘
+        // [表盒, 表盒+96] ≈ ref img 位 [53,149]；外展反而上溢 48px 盖段落，
+        // 1.92% 实证）。cell 自胜时盒缘已在带中心（R5262 格线原点平移），
+        // 内绘 full 会下偏半带（001e 3.92% 根因之一），外展居中才对位。
+        let band_outset = |side: usize, t: f32| -> f32 {
+            if collapse && outer_full && outer[side] && box_node.collapsed_border_color_overrides[side].is_none() {
+                t / 2.0
+            } else {
+                0.0
+            }
+        };
+        let band_far = |side: usize, t: f32| -> f32 {
+            if collapse && outer_full && outer[side] && box_node.collapsed_border_color_overrides[side].is_none() {
+                t / 2.0
+            } else {
+                t
+            }
+        };
+        let top_far = band_far(0, top_t);
+        let bottom_near = band_far(2, bottom_t);
+
         // border-collapse 颜色覆盖：当表格边框胜出时使用表格的颜色
         let top_color = collapsed_border_color(&box_node.collapsed_border_color_overrides[0], &style.border_top_color);
         let right_color =
@@ -400,7 +428,8 @@ impl super::Painter {
             self.paint_border_edge(
                 &BorderEdgeSpec {
                     x1: if diag_tl { abs_x + left_t } else { abs_x },
-                    y1: abs_y,
+                    // R5262：collapse cell 外缘带外展半厚（带以格线为中心）
+                    y1: abs_y - band_outset(0, top_t),
                     x2: if diag_tr { abs_x + w - right_t } else { abs_x + w },
                     y2: abs_y,
                     thickness: top_t,
@@ -437,10 +466,11 @@ impl super::Painter {
         {
             self.paint_border_edge(
                 &BorderEdgeSpec {
-                    x1: abs_x + w,
-                    y1: abs_y + top_t,
+                    // R5262：collapse cell 外缘带外展半厚 + 带端收边到相邻横带的远/近缘
+                    x1: abs_x + w + band_outset(1, right_t),
+                    y1: abs_y + top_far,
                     x2: abs_x + w,
-                    y2: abs_y + h - bottom_t,
+                    y2: abs_y + h - bottom_near,
                     thickness: right_t,
                     is_horizontal: false,
                     extend_left: true,
@@ -480,9 +510,10 @@ impl super::Painter {
             self.paint_border_edge(
                 &BorderEdgeSpec {
                     x1: if diag_bl { abs_x + left_t } else { abs_x },
-                    y1: abs_y + h - bottom_t,
+                    // R5262：collapse cell 外缘带外展半厚（带以格线为中心）
+                    y1: abs_y + h - bottom_t + band_outset(2, bottom_t),
                     x2: if diag_br { abs_x + w - right_t } else { abs_x + w },
-                    y2: abs_y + h - bottom_t,
+                    y2: abs_y + h - bottom_t + band_outset(2, bottom_t),
                     thickness: bottom_t,
                     is_horizontal: true,
                     extend_left: false,
@@ -521,10 +552,11 @@ impl super::Painter {
         {
             self.paint_border_edge(
                 &BorderEdgeSpec {
-                    x1: abs_x,
-                    y1: abs_y + top_t,
+                    // R5262：collapse cell 外缘带外展半厚 + 带端收边到相邻横带的远/近缘
+                    x1: abs_x - band_outset(3, left_t),
+                    y1: abs_y + top_far,
                     x2: abs_x,
-                    y2: abs_y + h - bottom_t,
+                    y2: abs_y + h - bottom_near,
                     thickness: left_t,
                     is_horizontal: false,
                     extend_left: false,
