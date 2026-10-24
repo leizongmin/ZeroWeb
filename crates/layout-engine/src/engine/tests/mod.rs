@@ -845,3 +845,6 @@ mod r5250_inline_relpos_shift_map;
 /// R5251（CSS2 §9.2.1.1 block-in-inline）容器层升格拆分锚——含块 span 提升块子
 /// 垂直堆叠 + margin collapse，inline 文本片段并入容器匿名块序。
 mod r5251_block_in_inline_deep_split;
+/// R5252（CSS2 §8.3.1 + §9.2.1.1）块→匿名行盒边界锚定 collapse gap 锚——原子
+/// inline 的 margin-top 不与前驱块级兄弟 margin-bottom 块级 collapse。
+mod r5252_anchor_collapse_gap;

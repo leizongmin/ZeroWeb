@@ -9,6 +9,15 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5252 实现轮（块→匿名行盒边界锚定 collapse gap——margin-collapse 同构族 5 案 ✗→✓0.00 收口，corpus FIXED=6 REGRESSED=0 净 +6）**（2026-10-24）
+>
+> - **择案**（R5251 下一步① 红带续扫择轻）：margin-collapse 族 12 案（1.9–13.9%）PIL 分带定性——121/123 test/ref 盒高完全一致、整盒垂直差恰 16px（= 1em 默认字号），非 collapse 语义错；case diff 两个案源后定性 REF 页 Talbot 改写形态：`<p>`（UA mb 1em）后继 `table { display:inline-table; margin:1em 0em auto 1em }` 双表并排。
+> - **根因**：taffy 把提升的原子 inline 当块级兄弟伪堆叠——原子 margin-top 与前驱块级兄弟 margin-bottom 参与**块级 collapse（取 max）**；CSS2 §8.3.1 真语义是 prev mb 与匿名块 mt=0 collapse 出段隙 + 原子 mt **不 collapse**（inline 级盒）在行盒内独立生效（§10.8.1 margin box）。`adjust_inline_block_positions` 锚（R5011/R5215）= 首原子 taffy 位 − fragment y 沿用伪堆叠位 → 吞掉 `min(prev_mb, mt_a)` 段隙（两值非零时行盒整体上移）。最小判别探针实证**非表格特有**（inline-block 同丢）：p mb0+mt32 → 50 ✓（伪堆叠与真位重合）、p mb16+mt32 → 50 ✗应 66（inline-block/inline-table 双形态）、121-ref 等值形 → 34 ✗应 50。
+> - **实现**（engine/postprocess.rs 渲染流域，kill-switch `ZW_R5252_ANCHOR_GAP=0` default-on，水平模式域内）：锚原子**流内直接紧跟**块级兄弟（段首行）时 `anchor += min(prev_mb, mt_a)`——`preceding_block_margin_pair` 回溯跳过 OOF（不阻断匿名段），遇非块级 in-flow 前驱即同段前行不触（R5215 匿名段内换行后继行锚谱系不触）；任一 margin 为 0 时 min=0 零影响（绝大多数容器）。
+> - **验证**：新锚 4（`r5252_anchor_collapse_gap`：inline-block/inline-table 双形态段隙+行内 mt 叠加 66、121-ref 等值 50、prev mb=0 控制组）；kill-switch off 3 锚预期失败归因确认（控制组保持绿）；layout-engine lib **2131P/0F/2I**（2127+4 对账精确）fmt 0 diff + clippy 0 告警；目标族单案：121/122/123/142/158 全 **✓0.00**（真通过-可信）、125 5.17→2.80%（改善仍 ✗ 异因残余）、134 3.02% 未动（异因）；corpus 16,590 全量 A/B（vs /tmp/r5251_full.json）**FIXED=6 REGRESSED=0 净 15673→15679**——margin-collapse-121/122/123/142/158 + border-shape-background-origin-border-box（0.217→0.006% 附带转绿）；make reftest **716/716**；product-smoke PASS + legacy struct 0 失败。证据：[r5252](rendering-compat/evidence/r5252-anchor-collapse-gap-2026-10-24.md)。
+> - **挂账**：新增——① margin-collapse 族异因残余 7 案（125 2.80%/134 3.02%/clear-014 13.9%/margin-collapse-104 2.08%/110/111 2.82%/margin-bottom-applies-to-012..015 5.32%：clear 深域与 applies-to 域，非锚定域）。维持——R5251 混排 wrapper 升格、嵌套 inline 链块后代升格、relpos proxy 盒 hit-test、rtl 镜像/top-bottom 百分比 FIXME、element-first intrinsic walk 镜像、R4332 bidi 臂专项、Path B 元素分支丢元素级 bidi_override、`<bdo dir>` UA stylesheet 缺失、文本节点臂混排偏窄、vertical 块轴 vs Path B 重建列推进、hanging-punctuation 属性未实现等全部既有项。
+> - **下一步**：R5253 ① 红带续扫择轻（候选：::first-line 族 6 案 = 属性完全未实现中大片需立切片评估；dir-style-04 0.666%/outline-028 0.696%/letter-spacing-ligatures-005 0.551% 等轻端逐案定性）② 混排 wrapper 升格切片评估择机 ③ 跨流碰头维持 ④ 深结构域维持不动。
+
 > **▶ R5251 实现轮（block-in-inline 纯块载体升格——three-block-in-inlines ✗1.33→✓0.00 收口，corpus FIXED=15 REGRESSED=0 净 +15）**（2026-10-24）
 >
 > - **择案**（R5250 下一步① 红带续扫择轻）：`css/CSS2/box-display/three-block-in-inlines-cascading-margins.html`（✗1.333%，点名案池 CSS2 留池最轻）。
