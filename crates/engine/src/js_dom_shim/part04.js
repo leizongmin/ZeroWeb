@@ -11046,7 +11046,7 @@
         }
         return undefined;
       },
-      set: function(_t, prop, value) {
+      set: function(_t, prop, value, receiver) {
         var p = String(prop);
         // R-t2qq（constructable stylesheets，siteopt qq-20261016-r1）：ShadowRoot
         // 原型 accessor 派发——`ShadowRoot.prototype.adoptedStyleSheets` 的 setter。

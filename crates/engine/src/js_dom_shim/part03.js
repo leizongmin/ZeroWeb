@@ -14825,6 +14825,47 @@
     try { var c = elProxy.cells; return (c && c.length) ? c : []; } catch (_e) { return []; }
   }
 
+  // R5265：HTMLTableElement create/delete 派生族共用的**首个匹配直接子元素**索引
+  //（无 → -1）。仅直接子（嵌套不算——delete-caption descendant 案 + createTBody
+  // nested 案断言面）；localName 匹配 + HTML ns 判定（sel 世界 proxy namespaceURI
+  // 空串/null 印记视为 HTML ns——上方 R1573 口径；非空且非 HTML ns 不匹配，
+  // delete-caption SVG:caption 案）。
+  function _zwTblChildIdx(table, tag) {
+    try {
+      var kids = table.childNodes;
+      if (!kids || !kids.length) return -1;
+      for (var i = 0; i < kids.length; i++) {
+        var k = kids[i];
+        if (!k || k.nodeType !== 1) continue;
+        if (String(k.localName || '').toLowerCase() !== tag) continue;
+        var ns = null;
+        try { ns = k.namespaceURI; } catch (_eNs) {}
+        if (ns != null && ns !== '' && ns !== 'http://www.w3.org/1999/xhtml') continue;
+        return i;
+      }
+    } catch (_eKid) {}
+    return -1;
+  }
+
+  // 同口径的**最后一个**匹配直接子元素索引（createTBody 用——新 tbody 插最后
+  // 一个 HTML-ns tbody 元素子之后；createTBody.html [before1, before2, tbody] 案）。
+  function _zwTblChildIdxLast(table, tag) {
+    try {
+      var kids = table.childNodes;
+      if (!kids || !kids.length) return -1;
+      for (var i = kids.length - 1; i >= 0; i--) {
+        var k = kids[i];
+        if (!k || k.nodeType !== 1) continue;
+        if (String(k.localName || '').toLowerCase() !== tag) continue;
+        var ns = null;
+        try { ns = k.namespaceURI; } catch (_eNs) {}
+        if (ns != null && ns !== '' && ns !== 'http://www.w3.org/1999/xhtml') continue;
+        return i;
+      }
+    } catch (_eKid) {}
+    return -1;
+  }
+
   // detached Document（供 document.implementation.createDocument/createHTMLDocument，R2815；R3013 queryable；
   // R3016 traversable）。
   // R3013：body 经 __zw_parse_html_query 支持可写可查——body.innerHTML setter 存解析源，querySelector 族
@@ -24149,31 +24190,35 @@ return e;
         // 元素作用域 querySelectorAll('tr') 返真数组（length/索引/迭代/Array 方法）。gate = TABLE 或
         // THEAD/TBODY/TFOOT（section-scoped）；textarea.rows 落 set-trap catch-al 反射不冲突（textarea 非 section）。
         if (prop === 'rows') {
-          var rTag = _realTag(sel, handle);
+          var rTag = (_realTag(sel, handle) || '').split(':').pop();
           if (rTag === 'TABLE' || rTag === 'THEAD' || rTag === 'TBODY' || rTag === 'TFOOT') {
             if (!sel) return [];
             try { return _wrapSelector(sel).querySelectorAll('tr'); } catch (_e) { return []; }
           }
         }
-        if (prop === 'tBodies' && _realTag(sel, handle) === 'TABLE') {
+        if (prop === 'tBodies' && (_realTag(sel, handle) || '').split(':').pop() === 'TABLE') {
           if (!sel) return [];
           try { return _wrapSelector(sel).querySelectorAll('tbody'); } catch (_e) { return []; }
         }
         // `<tr>`.cells（HTMLTableRowElement，R3243）——行内全部 td+th 单元格（document order，混计）。
         // 与 cellIndex（R2842）同源 :is(td, th) 查询，返真数组（length/索引/迭代）。表格修改库
         // （insertCell/deleteCell 定位 + DataTables 等读列）高频。仅 TR。
-        if (prop === 'cells' && _realTag(sel, handle) === 'TR') {
+        if (prop === 'cells' && (_realTag(sel, handle) || '').split(':').pop() === 'TR') {
           if (!sel) return [];
           try { return _wrapSelector(sel).querySelectorAll(':is(td, th)'); } catch (_e) { return []; }
         }
         // `<table>`.caption / `<table>`.tHead / `<table>`.tFoot（HTMLTableElement，R2845）——table 的首个
-        // caption / thead / tfoot 子元素（Chromium 150 oracle：querySelector 首匹配；无 → null）。表格分析 /
-        // 序列化库读结构高频。仅 getter（setter 须 remove 既有 + insert 新建属 table 头部位置，复杂且罕见——
-        // 落 catch-al 反射内容属性，documented 限制）。gate 仅 TABLE。
-        if ((prop === 'caption' || prop === 'tHead' || prop === 'tFoot') && _realTag(sel, handle) === 'TABLE') {
-          if (!sel) return null;
+        // caption / thead / tfoot 子元素（spec dom-caption/dom-thead/dom-tfoot「first X element child」；
+        // 无 → null）。表格分析 / 序列化库读结构高频。仅 TABLE。
+        // R5265：改走 `_zwTblChildIdx` 首个 HTML-ns **直接子**扫描——旧 querySelector 含后代（delete-caption
+        // descendant 案同构近似）且 handle-only（createElementNS 前缀表，tHead/tFoot 前缀案）恒 null 两面同修。
+        // setter 由 part05 set-trap R5265 分支承接（原「复杂且罕见」限制闭合）。
+        if ((prop === 'caption' || prop === 'tHead' || prop === 'tFoot') && (_realTag(sel, handle) || '').split(':').pop() === 'TABLE') {
+          var _gp5 = sel ? _wrapSelector(sel) : _wrapHandle(handle);
+          if (!_gp5) return null;
           var cTag = prop === 'tHead' ? 'thead' : (prop === 'tFoot' ? 'tfoot' : 'caption');
-          try { return _wrapSelector(sel).querySelector(cTag); } catch (_e) { return null; }
+          var _ghIdx = _zwTblChildIdx(_gp5, cTag);
+          return _ghIdx >= 0 ? _gp5.childNodes[_ghIdx] : null;
         }
         // ── HTMLTableElement / HTMLTableSectionElement / HTMLTableRowElement 修改 API（R3243）——
         // WHATWG HTML §4.9.1 表格写侧族：insertRow/deleteRow（table + thead/tbody/tfoot section）、
@@ -24183,7 +24228,9 @@ return e;
         // （Chromium oracle 一致，经 `_throwDom`）；table.insertRow 在无 tr 且无 section 子时自动建 tbody
         // 挂载新行（spec「no tr/tbody/thead/tfoot children」分支）。
         if (prop === 'insertRow') {
-          var _irTag = _realTag(sel, handle);
+          // R5265：取 ':' 后缀容差前缀表（createElementNS 产物 tagName 含前缀——insertRow
+          // should not copy prefixes 案同修）。
+          var _irTag = (_realTag(sel, handle) || '').split(':').pop();
           // https://html.spec.whatwg.org/multipage/tables.html#dom-table-insertrow
           if (_irTag === 'TABLE') {
             return function(index) {
@@ -24239,7 +24286,7 @@ return e;
         }
         // https://html.spec.whatwg.org/multipage/tables.html#dom-table-deleterow（table + section 共用）
         if (prop === 'deleteRow') {
-          var _drTag = _realTag(sel, handle);
+          var _drTag = (_realTag(sel, handle) || '').split(':').pop();
           if (_drTag === 'TABLE' || _drTag === 'THEAD' || _drTag === 'TBODY' || _drTag === 'TFOOT') {
             return function(index) {
               if (arguments.length === 0) index = -1;
@@ -24257,7 +24304,7 @@ return e;
           }
         }
         // https://html.spec.whatwg.org/multipage/tables.html#dom-tr-insertcell
-        if (prop === 'insertCell' && _realTag(sel, handle) === 'TR') {
+        if (prop === 'insertCell' && (_realTag(sel, handle) || '').split(':').pop() === 'TR') {
           return function(index) {
             if (arguments.length === 0) index = -1;
             else { index = Number(index); if (isNaN(index)) index = 0; }
@@ -24275,7 +24322,7 @@ return e;
           };
         }
         // https://html.spec.whatwg.org/multipage/tables.html#dom-tr-deletecell
-        if (prop === 'deleteCell' && _realTag(sel, handle) === 'TR') {
+        if (prop === 'deleteCell' && (_realTag(sel, handle) || '').split(':').pop() === 'TR') {
           return function(index) {
             if (arguments.length === 0) index = -1;
             else { index = Number(index); if (isNaN(index)) index = 0; }
@@ -24285,6 +24332,64 @@ return e;
             }
             var victim = (index === -1) ? cellsArr[cellsArr.length - 1] : cellsArr[index];
             if (victim && typeof victim.remove === 'function') victim.remove();
+          };
+        }
+        // ── HTMLTableElement create/delete 派生族（R5265）——WHATWG HTML §4.9.1：
+        // createCaption/createTHead 有守卫（已有首个匹配直接子 → 直返既有；否则建并**首子前插**）、
+        // createTFoot 同守卫但**末尾追加**、createTBody 无守卫（建后插首个 HTML-ns tbody 元素子
+        // 之前，无则末尾——createTBody.html 15 案钉定：嵌套表内 tbody 不算锚、childNodes 顺序
+        // 断言 [before, tbody, after]）；deleteCaption/deleteTHead/deleteTFoot 移除首个匹配直接子
+        // （无则 no-op，返 undefined——delete-caption.html 6 案：descendant 表内同名子不删、
+        // SVG ns caption 不删）。子匹配走 `_zwTblChildIdx`（直接子 + localName + HTML ns，sel 世界
+        // namespaceURI 空串印记口径）。创建经既有 createElement 原语；删除经 victim.remove()
+        // （R3243 deleteRow 同款 sel/handle 双身份记录）。
+        if ((prop === 'createCaption' || prop === 'createTHead' || prop === 'createTFoot') && (_realTag(sel, handle) || '').split(':').pop() === 'TABLE') {
+          var _ccTag = prop === 'createTHead' ? 'thead' : (prop === 'createTFoot' ? 'tfoot' : 'caption');
+          // https://html.spec.whatwg.org/multipage/tables.html#dom-table-createcaption
+          return function () {
+            var have = _zwTblChildIdx(this, _ccTag);
+            if (have >= 0) return this.childNodes[have];
+            var el = globalThis.document.createElement(_ccTag);
+            if (_ccTag === 'tfoot') {
+              this.appendChild(el);
+            } else if (_ccTag === 'thead') {
+              // R5265：thead 非首子位——首个 tbody（无则 tfoot）元素子之前（caption/colgroup
+              // 自然在前——tHead.html previousSibling=tcaption / nextSibling=tbody1 案）。
+              var _thAt = _zwTblChildIdx(this, 'tbody');
+              if (_thAt < 0) _thAt = _zwTblChildIdx(this, 'tfoot');
+              if (_thAt >= 0) this.insertBefore(el, this.childNodes[_thAt]);
+              else this.appendChild(el);
+            } else {
+              this.insertBefore(el, this.firstChild);
+            }
+            return el;
+          };
+        }
+        if (prop === 'createTBody' && (_realTag(sel, handle) || '').split(':').pop() === 'TABLE') {
+          // https://html.spec.whatwg.org/multipage/tables.html#dom-table-createtbody
+          return function () {
+            var el = globalThis.document.createElement('tbody');
+            var last = _zwTblChildIdxLast(this, 'tbody');
+            if (last >= 0) {
+              var kids = this.childNodes;
+              var next = kids[last + 1];
+              if (next) this.insertBefore(el, next);
+              else this.appendChild(el);
+            } else {
+              this.appendChild(el);
+            }
+            return el;
+          };
+        }
+        if ((prop === 'deleteCaption' || prop === 'deleteTHead' || prop === 'deleteTFoot') && (_realTag(sel, handle) || '').split(':').pop() === 'TABLE') {
+          var _dcTag = prop === 'deleteTHead' ? 'thead' : (prop === 'deleteTFoot' ? 'tfoot' : 'caption');
+          // https://html.spec.whatwg.org/multipage/tables.html#dom-table-deletecaption
+          return function () {
+            var at = _zwTblChildIdx(this, _dcTag);
+            if (at >= 0) {
+              var victim = this.childNodes[at];
+              if (victim && typeof victim.remove === 'function') victim.remove();
+            }
           };
         }
         // HTMLOptionElement 读属性（option.text/label/defaultSelected，R2832），仅 OPTION（_realTag gate，

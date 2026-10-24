@@ -699,6 +699,91 @@
               }
             } catch (_e) {}
           }
+        } else if ((p === 'caption' || p === 'tHead' || p === 'tFoot') && (_realTag(sel, handle) || '').split(':').pop() === 'TABLE') {
+          // R5265：HTMLTableElement caption/tHead/tFoot IDL setter（WHATWG HTML §4.9.1
+          // dom-caption/dom-thead/dom-tfoot setter steps——闭合 part03 R2845「仅 getter」限制）。
+          // null/undefined → 移除首个匹配元素子（t.tHead=null 案）；非表 section/caption 形态
+          // → **JS TypeError**（t.tHead=div 案 assert_throws_js）；section 家族但 localName
+          // 不符 → HierarchyRequestError（tbody 入 tHead / thead 入 tFoot 案）；node 为本表
+          // 祖先 → pre-insert HierarchyRequestError（t2.tHead=t2thead 案）；否则首个匹配子存在
+          // 则替换、否则按 create 位置插入（caption 首子、thead 首个 tbody/tfoot 子前、tfoot
+          // 末尾——与 createCaption/createTHead/createTFoot 同位）。经 proxy 原语（insertBefore/
+          // appendChild + victim.remove()）。自代理优先取 set trap 的 receiver（= 页面持有的
+          // proxy 本体，insert 经其落位并记 _zwNodeParent 反链），兜底 `_makeProxy(sel, handle)`
+          //（R100 登记身份）。类型检查用卫语句：不满足即 throw（代理 set trap 转发异常），
+          // 通过后平铺走查与插入、三种 tag 共享——早期嵌套 if/else 版把插入段困在末臂
+          // else 里，caption 正确 localName 时永不可达（caption_001 parentNode null 案实证）。
+          var _tblP5 = (receiver && typeof receiver === 'object' && receiver.nodeType != null)
+            ? receiver : _makeProxy(sel, handle);
+          if (_tblP5) {
+            var _5tag = p === 'tHead' ? 'thead' : (p === 'tFoot' ? 'tfoot' : 'caption');
+            if (value == null) {
+              var _5at = _zwTblChildIdx(_tblP5, _5tag);
+              if (_5at >= 0) {
+                var _5old0 = _tblP5.childNodes[_5at];
+                if (_5old0 && typeof _5old0.remove === 'function') _5old0.remove();
+              }
+            } else {
+              var _5ln = '';
+              try { _5ln = String(value.localName || '').toLowerCase(); } catch (_e5ln) {}
+              if (_5tag === 'caption') {
+                // 非 caption 形态 → TypeError（t.caption=div 案 assert_throws_js）。
+                if (_5ln !== 'caption') throw new TypeError("Failed to set the 'caption' property on 'HTMLTableElement': parameter 1 is not of type 'HTMLTableCaptionElement'.");
+              } else if (_5ln !== 'thead' && _5ln !== 'tbody' && _5ln !== 'tfoot') {
+                // 非 section 形态 → TypeError（t.tHead=div 案）。
+                throw new TypeError("Failed to set the '" + p + "' property on 'HTMLTableElement': parameter 1 is not of type 'HTMLTableSectionElement'.");
+              } else if (_5ln !== _5tag) {
+                // section 家族但 localName 不符 → HierarchyRequestError（tbody 入 tHead / thead 入 tFoot 案）。
+                _throwDom('HierarchyRequestError', "The '" + p + "' property takes only a '" + _5tag + "' element.");
+              }
+              // pre-insert 有效性：node 含本 table（祖先）→ HierarchyRequestError。
+              var _5anc = _tblP5, _5isAnc = false, _5guard = 0;
+              while (_5anc && _5guard++ < 128) {
+                var _5hit = _5anc === value;
+                if (!_5hit) {
+                  try {
+                    var _5aS = _5anc.__zwSelector, _5vS = value.__zwSelector;
+                    var _5aH = _5anc.__zwHandle, _5vH = value.__zwHandle;
+                    _5hit = (_5aS != null && _5aS === _5vS) || (_5aH != null && _5aH === _5vH);
+                  } catch (_e5id) {}
+                }
+                if (_5hit) { _5isAnc = true; break; }
+                try { _5anc = _5anc.parentNode; } catch (_e5pn) { break; }
+              }
+              if (_5isAnc) {
+                _throwDom('HierarchyRequestError', 'The new node is an ancestor of the table.');
+              } else if (_5tag === 'caption') {
+                // caption 语义 = 移除首个既有 caption 子 + 插入为**首子**
+                //（caption_001「setting caption」案 firstChild=new caption 钉定——
+                // Chromium setCaption 行为，非原位替换）。
+                var _5atC = _zwTblChildIdx(_tblP5, 'caption');
+                if (_5atC >= 0) {
+                  var _5oldC = _tblP5.childNodes[_5atC];
+                  if (_5oldC && typeof _5oldC.remove === 'function') _5oldC.remove();
+                }
+                _tblP5.insertBefore(value, _tblP5.firstChild);
+              } else {
+                var _5have = _zwTblChildIdx(_tblP5, _5tag);
+                if (_5have >= 0) {
+                  // 先移除旧子（新子未入树，selector 唯一可解析）再按原位插入——
+                  // 旧子后置 remove 经 selector 重解析会误删同形新子（caption 探针
+                  // zz-probe13 实证：remove 后新子 parentNode 落 null）。
+                  var _5old = _tblP5.childNodes[_5have];
+                  var _5ref = _tblP5.childNodes[_5have + 1];
+                  if (_5old && typeof _5old.remove === 'function') _5old.remove();
+                  if (_5ref) _tblP5.insertBefore(value, _5ref);
+                  else _tblP5.appendChild(value);
+                } else if (_5tag === 'thead') {
+                  var _5at2 = _zwTblChildIdx(_tblP5, 'tbody');
+                  if (_5at2 < 0) _5at2 = _zwTblChildIdx(_tblP5, 'tfoot');
+                  if (_5at2 >= 0) _tblP5.insertBefore(value, _tblP5.childNodes[_5at2]);
+                  else _tblP5.appendChild(value);
+                } else {
+                  _tblP5.appendChild(value);
+                }
+              }
+            }
+          }
         } else if (typeof _ZW_ARIA_ENUMS === 'object' && _ZW_ARIA_ENUMS.hasOwnProperty(p)) {
           // R5009 片 e（M4 片 a）：ARIA enumerated setter（w3c/aria#2484）——null/
           // undefined → removeAttribute（isNullable 全员）；其余（字符串/数字/布尔/
