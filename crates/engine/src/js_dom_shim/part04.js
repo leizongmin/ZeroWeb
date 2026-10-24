@@ -376,12 +376,26 @@
         }
         if (resourceTag === 'IMG' && prop === 'complete') {
           if (resourceState) return true;
-          var completeSrc = handle ? __zw_get_attr_handle(handle, 'src') : __zw_get_attr(sel, 'src');
-          var completeSrcset = handle ? __zw_get_attr_handle(handle, 'srcset') : __zw_get_attr(sel, 'srcset');
+          // R5275：sel 路径读 latest-wins 视图（R3204——`__zw_get_attr` 是解析期
+          // 陈旧快照，写入只在 lw 层可见；同批 setAttribute 后 complete 判定
+          // 「src changed → false」依赖此读。img.complete async src / async src
+          // broken / async pending request 三案断言面）。
+          var completeSrc = handle ? __zw_get_attr_handle(handle, 'src') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'src') : __zw_get_attr(sel, 'src'));
+          var completeSrcset = handle ? __zw_get_attr_handle(handle, 'srcset') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'srcset') : __zw_get_attr(sel, 'srcset'));
           return !completeSrc && !completeSrcset;
         }
         if ((resourceTag === 'IMG' || resourceTag === 'AUDIO' || resourceTag === 'VIDEO') && prop === 'currentSrc') {
-          return resourceState ? resourceState.url : '';
+          if (!resourceState) return '';
+          // R5275：IMG currentSrc 为**绝对 URL**（spec
+          // https://html.spec.whatwg.org/multipage/images.html#dom-img-currentsrc
+          // ——selected source 的 resolved URL；img.complete async src 案
+          // `new URL(currentSrc).pathname`、adoption 案 `resolve()` 期望绝对形）。
+          // 解析失败回落原串。AUDIO/VIDEO 维持原串（媒体 data: URL currentSrc
+          // 断言面不动）。
+          if (resourceTag === 'IMG' && typeof _zwResolveFetchUrl === 'function') {
+            try { return _zwResolveFetchUrl(String(resourceState.url)); } catch (_eCur5275) {}
+          }
+          return resourceState.url;
         }
         // media-elements M3 扩批：`source.src` IDL getter——URL 属性反射 + base 解析为绝对 URL
         //（同 track.src / a.href 模式；URL 解析前剥离首尾 C0 control/space）。缺省返 ''。
@@ -641,24 +655,32 @@
         // reflected unsigned-long 维度属性（R2851）：IMG/IFRAME `.width`/`.height`（反射 width/height 内容属性
         // 为非负整数，缺省/不可解析 → 0；spec「reflect unsigned long」算法）+ IMG `.naturalWidth`/`.naturalHeight`.
         // CANVAS（缺省 300/150 且 setter 改 bitmap，特殊）/ VIDEO/EMBED defer。
+        // R5275：IMG 自然尺寸读取统一面——resourceState loaded → 宽高；否则 host 快照
+        //（__zw_get_image_size，webview fetch_page_images 预抓图）；否则 0。
+        // https://html.spec.whatwg.org/multipage/images.html#density-corrected-intrinsic-width-and-height
+        var _zwImgNaturalDim = function (isWidth) {
+          if (resourceState && resourceState.outcome === 'loaded') {
+            return isWidth ? resourceState.width : resourceState.height;
+          }
+          // R5275：loading=lazy 且未 settle → 恒 0（spec #attr-img-loading——lazy
+          // 延迟到接近视口，资源未加载无可报尺寸；host 快照回落不得绕过）。
+          var _ndLoading = '';
+          try { _ndLoading = String((handle ? __zw_get_attr_handle(handle, 'loading') : __zw_get_attr(sel, 'loading')) || '').toLowerCase(); } catch (_eNdl) {}
+          if (_ndLoading === 'lazy') return 0;
+          if (typeof __zw_get_image_size === 'function') {
+            var srcAttr = (handle ? __zw_get_attr_handle(handle, 'src') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'src') : __zw_get_attr(sel, 'src'))) || '';
+            var dims = String(__zw_get_image_size(srcAttr));
+            if (dims) {
+              var wh = dims.split(',');
+              return isWidth ? (parseInt(wh[0], 10) || 0) : (parseInt(wh[1], 10) || 0);
+            }
+          }
+          return 0;
+        };
         if (prop === 'width' || prop === 'height' || prop === 'naturalWidth' || prop === 'naturalHeight') {
           var rgTag = resourceTag;
           if (rgTag === 'IMG' && (prop === 'naturalWidth' || prop === 'naturalHeight')) {
-            if (resourceState && resourceState.outcome === 'loaded') {
-              return prop === 'naturalWidth' ? resourceState.width : resourceState.height;
-            }
-            // R34xx：G5 —— host 查询图片尺寸（webview image_sizes 快照，__zw_get_image_size）。
-            if (typeof __zw_get_image_size === 'function') {
-              var srcAttr = (handle ? __zw_get_attr_handle(handle, 'src') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'src') : __zw_get_attr(sel, 'src'))) || '';
-              var dims = String(__zw_get_image_size(srcAttr));
-              if (dims) {
-                var wh = dims.split(',');
-                var w = parseInt(wh[0], 10) || 0;
-                var h = parseInt(wh[1], 10) || 0;
-                return prop === 'naturalWidth' ? w : h;
-              }
-            }
-            return 0;
+            return _zwImgNaturalDim(prop === 'naturalWidth');
           }
           // R5009 片 e（M4 片 b）：iframe/embed 的 width/height 是 **string** 反射
           // （elements-embedded 表）——收窄出 numeric 面（落 R3037 FLAT 串读）。
@@ -676,7 +698,16 @@
             // parseInt 宽松解析曾把 "\v7" 吞成 7，WPT reflection-embedded
             // 'video.width setAttribute("\v7")' 期望 0）。
             var dN = _zwParseSpecNonneg(String(dRaw == null ? '' : dRaw));
-            return (dN == null || dN > 2147483647) ? 0 : dN;
+            if (dN == null || dN > 2147483647) {
+              // R5275：IMG 无 width/height 内容属性（或不可解析）→ 回落自然尺寸
+              //（spec #dom-img-width——「the width IDL getter」rendered 尺寸；
+              // headless 无渲染几何，以 intrinsic 自然尺寸近似——
+              // naturalWidth-naturalHeight-width-height raster src 案 width 期望
+              // = naturalWidth。VIDEO/INPUT 维持 0（反射缺省语义不动）。
+              if (rgTag === 'IMG') return _zwImgNaturalDim(prop === 'width');
+              return 0;
+            }
+            return dN;
           }
         }
         // R3077：HTMLCanvasElement proxy 的 canvas 2D API（getContext/toDataURL/width/height）。旧仅 standalone
@@ -975,6 +1006,85 @@
               _zwStartConnectedIframe(f, true);
             }
           } catch (_eS6sweep) {}
+        };
+        // R5275（html-semantics M2 切片 68）：静态 img settle 扫描 + 运行期 img 事件
+        // 排队 drain——window 'load' 派发前调用（part06 dispatchEvent load 分支，与
+        // R139/S6 同款扫描位）。
+        //
+        // ① sweep：parser 静态 `<img src>` 无 fetch 通路（img 资源 settle 只接 R56h
+        // `.src` IDL setter 通道），naturalWidth 恒 0、load/error 恒不派。此处按
+        // `__zw_get_image_size` host 快照（webview fetch_page_images 预抓图，runner/
+        // 生产 headless 均注册）逐元素 settle：命中 → loaded + load 事件 + 写
+        // available-images 缓存；未命中 → broken + error 事件。loading=lazy 跳过
+        //（spec https://html.spec.whatwg.org/multipage/images.html#attr-img-loading
+        // ——lazy 延迟到接近视口，headless 近似维持惰性记账面）；无/空 src 跳过
+        //（无当前请求，complete 走 getter `!src && !srcset` 面）。
+        // ② drain：R56h 闸门队列（`__zwReadyState === 'loading'` 时入队）——
+        // DOMContentLoaded 已派、window load 未派的窗口内统一派发（spec：DCL 不等
+        // 图片、图片延迟 window load——delay-load-event 两案断言序）。error 派发
+        // 前补写 broken 终态（complete=true；排队时不写——「complete 不能在任务内
+        // 翻转」案面依赖 loading 阶段保持 false）。
+        // ③ wait：window load 派发前图片仍在飞（R56h fetch 链 `_zwImgInflight` 计数、
+        // 闸门队列未 drain）→ 生命周期脚本（testharness 阶段 3）循环重试等待（spec
+        // the-end：load 等待延迟的 load 事件——wptserve trickle(d2) 慢图面，
+        // delay-load-event-detached）。settle 先于判定（drain 后队列恒空，仅在飞
+        // 计数阻塞）。
+        globalThis.__zwImgLoadBlocked = globalThis.__zwImgLoadBlocked || function () {
+          if (globalThis._zwImgInflight > 0) return true;
+          var _zwBlkQ = globalThis._zwImgPendingEvents;
+          return !!(_zwBlkQ && _zwBlkQ.length > 0);
+        };
+        // https://html.spec.whatwg.org/multipage/images.html#updating-the-image-data
+        globalThis.__zwFireStaticImgSettle = globalThis.__zwFireStaticImgSettle || function () {
+          try {
+            var _zwImgs = document.querySelectorAll('img');
+            for (var _zwIi = 0; _zwIi < _zwImgs.length; _zwIi++) {
+              var _zwIm = _zwImgs[_zwIi];
+              var _zwImSel = null, _zwImHandle = null;
+              try { _zwImSel = _zwIm.__zwSelector; _zwImHandle = _zwIm.__zwHandle; } catch (_eSwk) {}
+              var _zwImKey = _elKey(_zwImSel, _zwImHandle);
+              if (_resourceStates[_zwImKey]) continue; // 已 settle（R56h/重复扫描幂等）
+              try {
+                if (globalThis._zwImgPendingSet && globalThis._zwImgPendingSet[_zwImKey]) continue; // 运行期事件排队中，drain 段处理
+              } catch (_eSwP) {}
+              var _zwImLoading = '';
+              try { _zwImLoading = String(_zwIm.getAttribute('loading') || '').toLowerCase(); } catch (_eSwl) {}
+              if (_zwImLoading === 'lazy') continue;
+              var _zwImSrc = '';
+              try { _zwImSrc = String(_zwIm.getAttribute('src') || ''); } catch (_eSws) {}
+              if (!_zwImSrc) continue;
+              var _zwDims = '';
+              try { if (typeof __zw_get_image_size === 'function') _zwDims = String(__zw_get_image_size(_zwImSrc)); } catch (_eSwg) {}
+              if (_zwDims) {
+                var _zwWh = _zwDims.split(',');
+                var _zwW = parseInt(_zwWh[0], 10) || 0;
+                var _zwH = parseInt(_zwWh[1], 10) || 0;
+                _resourceStates[_zwImKey] = { url: _zwImSrc, outcome: 'loaded', width: _zwW, height: _zwH, error: null };
+                try {
+                  globalThis._zwAvailableImages = globalThis._zwAvailableImages || {};
+                  globalThis._zwAvailableImages[_zwImSrc] = { width: _zwW, height: _zwH };
+                } catch (_eSwa) {}
+                _dispatchWithBubble(_zwImKey, _zwImSel, _zwImHandle, _makeEvent('load', { bubbles: false, cancelable: false }));
+              } else {
+                _resourceStates[_zwImKey] = { url: _zwImSrc, outcome: 'broken', width: 0, height: 0, error: true };
+                _dispatchWithBubble(_zwImKey, _zwImSel, _zwImHandle, _makeEvent('error', { bubbles: false, cancelable: false }));
+              }
+            }
+          } catch (_eSweep) {}
+          var _zwPend = globalThis._zwImgPendingEvents;
+          if (_zwPend && _zwPend.length) {
+            globalThis._zwImgPendingEvents = [];
+            try { globalThis._zwImgPendingSet = {}; } catch (_eSwPs) {}
+            for (var _zwPi = 0; _zwPi < _zwPend.length; _zwPi++) {
+              var _zwPe = _zwPend[_zwPi];
+              try {
+                if (_zwPe.type === 'error' && !_resourceStates[_zwPe.key]) {
+                  _resourceStates[_zwPe.key] = { url: _zwPe.url, outcome: 'broken', width: 0, height: 0, error: true };
+                }
+                _dispatchWithBubble(_zwPe.key, _zwPe.sel, _zwPe.handle, _makeEvent(_zwPe.type, { bubbles: false, cancelable: false }));
+              } catch (_eSwD) {}
+            }
+          }
         };
         // media-audio M3 第十八批补（2026-09-04）：createElementNS(HTMLNS,'iframe')
         // 形态的 iframe——host tag store 对 ns handle 为空（CreateElementNS 不入

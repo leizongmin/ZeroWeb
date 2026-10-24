@@ -2,9 +2,44 @@
 
 **版本**: v2.0
 **日期**: 2026-10-24（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 67 收口（embedded-content 开片分诊轮：域刷新 458P/819F/40T 八族地图 + object/embed null 反射窄面收口 R5274，域 **461P/816F/40T** GAIN 3 / REG 0），下一步 F1 img 静态加载管线（~260F 最大可收口单族）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 68 收口（F1 img 静态加载管线收口 R5275：域 **461P/816F/40T → 549P/738F/35T** GAIN 88 / REG 0），下一步 F1b naturalWidth SVG 固有尺寸尾片（210F 余量）或 F3 img.decode()；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-24 M2 切片 67 收口，embedded-content 开片分诊轮）**：
+> **▶ 当前状态（2026-10-24 M2 切片 68 收口，F1 img 静态加载管线轮）**：
+> s67 八族地图 F1 首靶收口（原估 ~260F，实测归因后 raster src 克隆可翻
+> 部分本轮全收，SVG 尾片归 F1b）。**根因**：img settle 只接 `.src` IDL
+> setter 通道（R56h），parser 静态 `<img src>` 无 fetch/settle——
+> naturalWidth 恒 0、load/error 恒不派；叠加 template 内容漏抓（zero_dom
+> fragment 不在文档树，extract_img_srcs 不达）、broken 终态缺失（error 后
+> complete 恒 false）、运行期事件在页面脚本阶段即时派（spec：DCL 不等图
+> 片、图片延迟 window load）。**修复（R5275 六刀）**：①part04
+> `__zwFireStaticImgSettle` sweep（`__zw_get_image_size` 快照命中 → loaded
+> + load + available-images；未命中 → broken + error；lazy/空 src 跳过）+
+> 闸门队列 drain + `__zwImgLoadBlocked` 在飞判定；②part04 getter 面——
+> `_zwImgNaturalDim`（lazy 未 settle → 0 防快照绕门）+ IMG width/height
+> 缺失回落自然尺寸 + currentSrc 绝对 URL + complete getter 改读
+> latest-wins（R3204 陈旧快照坑）；③part05 R56h src 臂重写——restart 语
+> 义（同 URL 幂等）+ available-images 同步 settle（状态同步可读、load 事件
+> `_defer` 后续任务派）+ `_zwImgInflight` 在飞计数 + `__zwReadyState ===
+> 'loading'` 闸门入队；④extract.rs 递归收集 template contents `<img>`；
+> ⑤testharness.rs 生命周期拆三任务链（interactive+DCL / settle 独立任务
+> 微任务边界排水 / load 等待任务 100ms 重试至图片不在飞——trickle(dN) 慢
+> 图延迟 window load 语义）；⑥available-images 臂事件 `_defer` 化（probe14
+> 实证同步即派丢 src 后注册的 onload）。契约 part85 两测试（sweep settle
+> 四臂 + 闸门/available-images/幂等）。**验证**：域 **461P/816F/40T →
+> 549P/738F/35T**（GAIN 88 = 78 F→P + 5 T→P + 5 新注册，三数守恒无回归空
+> 间）+ naturalWidth 30P/228F→48P/210F + delay-load 7 案全绿 + invisible
+> /already-loaded/available-images-onload 各 +1 + interactive
+> **439P/44F/0T 逐位持平** + lib **3474P/0F** + 翻转力实证（撤钩子调用/
+> 撤 sweep 体 → part85 双红，恢复字节一致）。账本见
+> [evidence/2026-10-24-m2s68-img-static-loading.md](html-semantics-compat/evidence/2026-10-24-m2s68-img-static-loading.md)。
+> **下一步**：F1b naturalWidth SVG 固有尺寸/密度校正尾片（210F 余量，
+> intrinsic dimensions 算法）或 F3 img.decode() 56F（promise 面接 settle
+> 状态机，F1 地基已备）——按共享路径收益取一开片。
+> **切片间隙**：本轮 part04/05 shim + extract.rs + testharness.rs + 契约
+> part85；下一挂账 F1b/F3 亦 engine 面，间隙开放，开工前查 oracle
+> master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 67 收口，embedded-content 开片分诊轮）**：
 > 两件事。**① 域分诊八族地图落档（819F 全归因）**：F1 img 静态加载管线
 > ~260F（settle 只接 `.src` IDL setter 通道 R56h，parser 静态 img 无
 > fetch/load 事件、naturalWidth 恒 0）+ F2 select-an-image-source/currentSrc

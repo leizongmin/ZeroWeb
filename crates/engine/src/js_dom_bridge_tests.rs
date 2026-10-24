@@ -82,3 +82,4 @@ include!("js_dom_bridge_tests/part81.rs");
 include!("js_dom_bridge_tests/part82.rs");
 include!("js_dom_bridge_tests/part83.rs");
 include!("js_dom_bridge_tests/part84.rs");
+include!("js_dom_bridge_tests/part85.rs");
