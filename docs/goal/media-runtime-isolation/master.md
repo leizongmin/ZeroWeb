@@ -1,9 +1,9 @@
 # 媒体运行时隔离控制面
 
 **日期**：2026-10-25
-**状态**：Active（**D-RFC-1~4 已批复**——方案 C 批准 / A 批次随批复即启 / B 核查暂缓 / decode-h264 维持默认关，RFC v1.9 §10 批复记录；M1 基线 + M2 RFC 两项交付 + M3 前置设计八片齐备，[m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；**A1–A4 + C1 + C2 切片 1/2 + C3 + C4 已落地**——A 批次四片（rate 1.00000 / 三缺口闭合 / 内存收敛 / seek 冷路径 O(GOP)）+ C 批次隔离面（协议消息族与 media-host 骨架 / 解码内核与自走时钟 / registry 开态客户端切换 / 崩溃检测与退避重启）+ **C4 配对验收**（三态 M1 零回归 + 帧摘要三态全等 + 代际风暴零泄漏 + 能力真值三对照 + 30min 资源审计；配对抓出并订正两缺陷：A1 解码超前 pts 锚定回归 → 样本锚定、宿主 replay 流末残留位置拖拽 → replay 跳过位置 seek，feature 默认关），偏差记录 DESIGN §2.4/§3.5/§6.5/§8.6/§9.6/§10.7/§10.8/§10.9，[切片 2 证据](evidence/2026-10-25-c2-slice2/ANALYSIS.md)，[C3 证据](evidence/2026-10-25-c3-crash-recovery/ANALYSIS.md)，[C4 证据](evidence/2026-10-25-c4-paired-acceptance/ANALYSIS.md)）。
-**当前卡点**：无。A 批次 + C1 + C2 切片 1/2 + C3 + C4 + D4 能力对齐 + bg02-media 基线 v2 复评完成。
-**下一步**：DC-5 收口审计（RFC §10 批复 vs 落地状态对照 + media-process feature 启用时机=用户裁决项）；C4/M4 后的 feature 默认开关裁决待用户。
+**状态**：Active（**D-RFC-1~4 已批复**——方案 C 批准 / A 批次随批复即启 / B 核查暂缓 / decode-h264 维持默认关，RFC v1.9 §10 批复记录；M1 基线 + M2 RFC 两项交付 + M3 前置设计八片齐备，[m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；**A1–A4 + C1 + C2 切片 1/2 + C3 + C4 已落地**——A 批次四片（rate 1.00000 / 三缺口闭合 / 内存收敛 / seek 冷路径 O(GOP)）+ C 批次隔离面（协议消息族与 media-host 骨架 / 解码内核与自走时钟 / registry 开态客户端切换 / 崩溃检测与退避重启）+ **C4 配对验收**（三态 M1 零回归 + 帧摘要三态全等 + 代际风暴零泄漏 + 能力真值三对照 + 30min 资源审计；配对抓出并订正两缺陷：A1 解码超前 pts 锚定回归 → 样本锚定、宿主 replay 流末残留位置拖拽 → replay 跳过位置 seek，feature 默认关），偏差记录 DESIGN §2.4/§3.5/§6.5/§8.6/§9.6/§10.7/§10.8/§10.9，[切片 2 证据](evidence/2026-10-25-c2-slice2/ANALYSIS.md)，[C3 证据](evidence/2026-10-25-c3-crash-recovery/ANALYSIS.md)，[C4 证据](evidence/2026-10-25-c4-paired-acceptance/ANALYSIS.md)；**DC-5 收口审计完成**——RFC §10 批复落地对照 + DC-1~4 逐项证据复核 + 最终支持范围 + 常驻回归清单，[审计](evidence/2026-10-25-dc5-final-audit/ANALYSIS.md)）。
+**当前卡点**：无。DC-1~5 全部有证闭合；唯一待决 = `media-process` feature 启用时机（RFC §10「C4/M4 后另议」已到期，用户裁决项，双侧事实见[审计 §三](evidence/2026-10-25-dc5-final-audit/ANALYSIS.md)）。
+**下一步**：用户裁决 `media-process` feature 启用时机（默认开 / 维持默认关 / 移交产品线节奏）；「维持关或移交」→ goal DONE 收口，「默认开」→ 开关切换按产品变更另启切片。
 **入口**：[目标契约](../media-runtime-isolation.md) / [启动与证据协议](../ladybird-followups/README.md)
 
 ## 缺口与待决
@@ -12,8 +12,9 @@
 |---|---|---|
 | CPU/帧复制/A-V 同步与权限 | 固定长视频、版本与真实帧消费链 | **已测**（60s 基线 + 复制链 C1–C5 + 权限表，evidence 2026-10-24） |
 | 同步状态代理/时钟/seek 的进程契约 | 比较现状、平台解码、独立运行时 | **RFC v1.9 已批复**（三路线对比 + §9 IF 级接口契约；方案 C 立项） |
-| 故障、权限不足与软件回退 | 真实隔离实例注入并验证浏览器恢复 | NOT_STARTED |
-| 平台 SDK/codec 许可/分发与架构投入 | M1/M2 证据与 RFC 后决定，不自动换许可证 | 待决（M1 核查：本平台 /dev/dri 缺失，无硬解路径） |
+| 故障、权限不足与软件回退 | 真实隔离实例注入并验证浏览器恢复 | **已闭合**（C3 SIGKILL 注入契约 8/8 + 退避重启 + reload 恢复 + shim march Error face 页面事件通路） |
+| 平台 SDK/codec 许可/分发与架构投入 | M1/M2 证据与 RFC 后决定，不自动换许可证 | **已裁决**（D-RFC-1 方案 C 批准立项 / D-RFC-3 平台硬解暂缓 / D-RFC-4 decode-h264 维持默认关；M1 核查：本平台 /dev/dri 缺失，无硬解路径） |
+| `media-process` feature 启用时机（RFC §10「C4/M4 后另议」，已到期） | 用户裁决：默认开 / 维持默认关 / 移交产品线节奏，双侧事实见 [DC-5 审计 §三](evidence/2026-10-25-dc5-final-audit/ANALYSIS.md) | **待用户裁决**（本 goal 唯一待决项） |
 
 ## 里程碑
 
@@ -21,7 +22,7 @@
 |---|---|---|---|
 | M1 | 生产资源、能力与权限基线 | **完成**（测量面成立，收口待评审） | [2026-10-24 基线](evidence/2026-10-24-m1-baseline/ANALYSIS.md) |
 | M2 | 方案/许可证/回滚 RFC + protocol 接口契约 | **v1.9 已批复**（D-RFC-1~4 用户裁决） | [media-runtime-isolation-spec-rfc](../../../specs/media-runtime-isolation-spec-rfc.md) |
-| M3 | 已确认平台与隔离切片 | **IN_PROGRESS**（A1–A4 已全部落地——rate≡1.0 + 三缺口闭合 + 内存面收敛 + seek O(GOP)；C1 已落地——protocol 17 变体 + media-host 骨架 + webview proxy，feature 默认关；C2 切片 1/2 已落地——音频管线迁零-media + 解码内核/自走时钟 + proxy 事件面 + 真实二进制契约 + registry 开态客户端切换（HostMediaFacade push 镜像/21 面分流/MSE 内联豁免/IF-006 不回落）+ 端到端契约 5 场景 + M1 双 feature release 零回归；**C3 已落地**——崩溃检测双路（send 失败即时 + 泵周期 try_wait 兜底）+ 状态机退避重启（1s/2s/4s n≤3，Failed 永久面/reload 回 Idle）+ 全活跃源 error 广播 + 桥 isErrored 真值口 + SIGKILL 注入契约 3 新场景（8/8 全绿）+ M1 宿主面零回归；C4 设计稿齐备） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
+| M3 | 已确认平台与隔离切片 | **完成**（A1–A4 + C1–C4 全部落地并通过 M4 配对验收——rate≡1.0 + 三缺口闭合（bg02-media 基线 v2 复评再确认）+ 内存面收敛 + seek O(GOP)；protocol 17 变体 + media-host 骨架 + registry 开态客户端切换（HostMediaFacade push 镜像/21 面分流/MSE 内联豁免/IF-006 不回落）+ 崩溃检测双路 + 状态机退避重启 + SIGKILL 注入契约 8/8；`media-process` feature 默认关） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
 | M4 | 配对媒体、故障和资源审计 | **完成**（三态配对矩阵 + 帧一致性 + 代际风暴 + 能力真值 + 30min 资源审计全过；抓出并订正 A1 解码超前回归与宿主 replay 拖拽两缺陷） | [2026-10-25 C4](evidence/2026-10-25-c4-paired-acceptance/ANALYSIS.md) |
 
 ## 验证基线
@@ -273,3 +274,12 @@
 - 临时诊断面（bg02-media-debug fixture、debug 场景臂、probe 埋点、shim 埋点）全部移除；autoplay fixture（bg02-media-autoplay.html）转正为常驻变体腿。
 - 门禁：guarded-clippy 过 + 全量 make test 过（exit 0，87 套件，六项新回归在内）。前两轮失败均非代码面：fmt 漂移（renderer 两文件，`cargo fmt --all` 修复——单包 fmt 漏跨包漂移）、target/debug/zero-browser 缺失（make test build 步不覆盖该 bin，integration e2e `workspace_bin` 硬前置——systemd 24G 守卫内补建后绿）。
 - 共享面占用：engine shim part06（play 内核一处）、renderer runtime.rs（march 门）、webview video_registry.rs（登记幂等）、观测脚本与 goal 文档。
+
+### 2026-10-25 DC-5 收口审计轮（RFC §10 批复落地对照 + 唯一待决移交用户）
+
+- **D-RFC-1~4 对照全过**（[审计](evidence/2026-10-25-dc5-final-audit/ANALYSIS.md)，基线 git 9c6652fa3）：方案 C 批准 → C1–C4 落地 + M4 验收过（feature 默认关核实）；A 批次随批 → A1–A4 落地（bg02-media v2 复评再确认 A2）；方案 B 暂缓 → 零平台 SDK 代码（grep 核实）+ TBD-2 维持；decode-h264 → 默认关核实 + 能力真值如实门控。
+- **DC-1~4 逐项证据复核**：全部有证闭合、非豁免——DC-1 基线+能力真值、DC-2 IF-003 契约+配对验收+bg02 v2、DC-3 SIGKILL 注入 8/8+页面 error 通路、DC-4 能力不虚报+feature 关零回归+IF-006 不回落。
+- **最终支持范围**落档：默认构建 = 方案 A 强化内联（A1–A4 全生效）；`media-process` 显式开启 = C 批次托管路径（验收平台 Linux x86_64）；平台硬解未启动；av1/h264 feature 门控默认关。
+- **唯一待决移交用户**：`media-process` feature 启用时机（RFC §10「C4/M4 后另议」到期）——默认开（崩溃隔离+内存收益）/ 维持默认关（非 Linux 帧路径内联缺口 + 验收平台单平台 + A 批次收益已在默认路径）双侧事实附审计 §三；「维持关或移交」→ goal DONE，「默认开」→ 另启产品切片。
+- **控制面过时项订正**：缺口表「故障注入」行 NOT_STARTED → 已闭合（C3）、「架构投入」行待决 → 已裁决（D-RFC-1/3/4）、M3 行 IN_PROGRESS → 完成。
+- 本轮零代码改动（纯审计 + 控制面/文档订正）；工作区门禁沿用本轮 make test 87 套件 exit 0 + guarded-clippy 全绿（无新代码面，无新增门禁义务）。

@@ -1,7 +1,7 @@
 # 平台媒体解码与媒体运行时隔离
 
 **版本**：v1.0 / 2026-10-20
-**状态**：Active（**D-RFC-1~4 已批复**——方案 C 批准，RFC v1.9 §10 批复记录；**A1–A4 + C1 + C2 切片 1/2 + C3 + C4 已落地**（feature 默认关），M4 配对验收完成，shim march Error face 接线收口 C3 链页面级通路；**D4 能力清单对齐完成 + bg02-media 基线 v2 复评通过**（三根因修复：loop attr 推送/march 边沿拍/音频重复登记幂等；「显式 play 未武装」误读订正）；收尾一件：DC-5 收口审计（media-process feature 启用时机=用户裁决项））
+**状态**：Active（**D-RFC-1~4 已批复**——方案 C 批准，RFC v1.9 §10 批复记录；**A1–A4 + C1 + C2 切片 1/2 + C3 + C4 已落地**（feature 默认关），M4 配对验收完成，shim march Error face 接线收口 C3 链页面级通路；**D4 能力清单对齐 + bg02-media 基线 v2 复评 + DC-5 收口审计完成**（D-RFC-1~4 落地对照全过、DC-1~4 逐项证据闭合、最终支持范围落档，[审计](media-runtime-isolation/evidence/2026-10-25-dc5-final-audit/ANALYSIS.md)）；唯一待决 = media-process feature 启用时机（用户裁决：「维持关/移交」→ DONE 收口，「默认开」→ 另启产品切片））
 **父目标**：[zero-web](zero-web.md) / **控制面**：[master](media-runtime-isolation/master.md)
 
 ## 0. 执行摘要与 Mission
