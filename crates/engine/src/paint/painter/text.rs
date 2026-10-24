@@ -3325,22 +3325,12 @@ impl super::Painter {
                             }
                             None
                         });
-                    if let Some(box_id) = box_node.node_id
-                        && !is_vertical
-                        && matches!(style.direction, zero_style_system::DirectionValue::Ltr)
-                        && let Some(((sel_start, sel_end), anc_whole)) = sel_owned
-                        && let Some(pseudo) = &style.selection_pseudo
+                    // 行分组（活跃路径片段 → (owner, 行盒顶) 组，含行内横向范围）——
+                    // R5258 起选区门与 ::first-line 门共用；两门皆不需要时跳过构建
+                    //（paint_text 热路径零闲置分配）。
+                    let line_ranges: Vec<((NodeId, u32), usize, usize, f32, f32)> = if style.first_line_pseudo.is_some()
+                        || sel_owned.is_some()
                     {
-                        let sel_color = super::super::color::resolve_color_current(&pseudo.color, &style.color);
-                        let sel_bg = super::super::color::resolve_color_current(&pseudo.background_color, &style.color);
-                        // 表单控件 owner（padding box 形态判据）。
-                        let owner_is_text_control = doc.get(box_id).is_some_and(|n| {
-                            matches!(
-                                &n.kind,
-                                NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("input")
-                                    || e.local_name().eq_ignore_ascii_case("textarea")
-                            )
-                        });
                         // 活跃路径的 (node_id, 行盒顶, 片段文本, x, 宽) 序列（渲染序 ≈ 文档序）。
                         let active_frags: Vec<(NodeId, f32, &str, f32, f32)> = if use_stored {
                             stored_fragments
@@ -3373,12 +3363,12 @@ impl super::Painter {
                         // 逐 owner utf16 累计 + 行分组（软换行不消耗字符；同行连续片段
                         // 首片段前偏移即行起点）+ 行内横向范围。
                         let mut owner_off: HashMap<NodeId, usize> = HashMap::new();
-                        let mut line_ranges: Vec<((NodeId, u32), usize, usize, f32, f32)> = Vec::new();
+                        let mut ranges: Vec<((NodeId, u32), usize, usize, f32, f32)> = Vec::new();
                         for (nid, line_top, text, fx, fw) in &active_frags {
                             let owner = owner_of(*nid);
                             let off = owner_off.entry(owner).or_insert(0);
                             let len16 = text.encode_utf16().count();
-                            match line_ranges
+                            match ranges
                                 .iter_mut()
                                 .find(|((o, l), _, _, _, _)| *o == owner && *l == line_top.to_bits())
                             {
@@ -3387,12 +3377,55 @@ impl super::Painter {
                                     *min_x = min_x.min(*fx);
                                     *max_xw = max_xw.max(*fx + *fw);
                                 }
-                                None => {
-                                    line_ranges.push(((owner, line_top.to_bits()), *off, *off + len16, *fx, *fx + *fw))
-                                }
+                                None => ranges.push(((owner, line_top.to_bits()), *off, *off + len16, *fx, *fx + *fw)),
                             }
                             *off += len16;
                         }
+                        ranges
+                    } else {
+                        Vec::new()
+                    };
+                    // R5258（CSS2 §5.12.1 切片 1）：::first-line 首格式行字形 color——
+                    // 行组 line_top == 组内最小者为首行；组内 inline 后代解析 color ==
+                    // 盒 color（≈继承、无显式覆盖）才随伪样式（span{color} 显式声明
+                    // 胜出 ::first-line 继承，css-pseudo-4 §first-line）。先于选区门
+                    // insert（选区行覆写胜出）。bg/font 类属性不应用（FIXME 切片 2）；
+                    // 与 ::first-letter 同存时首字符 interplay 未处理（FIXME）；竖排
+                    // 不应用（FIXME）。
+                    if !is_vertical
+                        && let Some(fl) = &style.first_line_pseudo
+                        && !line_ranges.is_empty()
+                    {
+                        let first_ltb = line_ranges.iter().map(|((_, ltb), ..)| *ltb).min().unwrap_or(0);
+                        let fl_color = super::super::color::resolve_color_current(&fl.color, &style.color);
+                        for ((owner, ltb), _, _, _, _) in &line_ranges {
+                            if *ltb != first_ltb {
+                                continue;
+                            }
+                            let inherited = styles
+                                .and_then(|st| st.get(owner))
+                                .is_none_or(|os| os.color == style.color);
+                            if inherited {
+                                sel_line_colors.insert((*owner, *ltb), fl_color);
+                            }
+                        }
+                    }
+                    if let Some(box_id) = box_node.node_id
+                        && !is_vertical
+                        && matches!(style.direction, zero_style_system::DirectionValue::Ltr)
+                        && let Some(((sel_start, sel_end), anc_whole)) = sel_owned
+                        && let Some(pseudo) = &style.selection_pseudo
+                    {
+                        let sel_color = super::super::color::resolve_color_current(&pseudo.color, &style.color);
+                        let sel_bg = super::super::color::resolve_color_current(&pseudo.background_color, &style.color);
+                        // 表单控件 owner（padding box 形态判据）。
+                        let owner_is_text_control = doc.get(box_id).is_some_and(|n| {
+                            matches!(
+                                &n.kind,
+                                NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("input")
+                                    || e.local_name().eq_ignore_ascii_case("textarea")
+                            )
+                        });
                         let line_h = match &style.line_height {
                             zero_style_system::LineHeightValue::Normal => font_size * 1.2,
                             zero_style_system::LineHeightValue::Number(n) => font_size * (*n as f32),

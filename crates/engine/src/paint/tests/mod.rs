@@ -50,6 +50,8 @@ mod r5205_clamp_ellipsis_anchor_tests;
 mod r5255_deferred_positioned_rounded_clip_tests;
 /// R5256 整contents 选区的后代 owner 行（R5054 后代 owner FIXME 首片）。
 mod r5256_selection_descendant_owner_tests;
+/// R5258 ::first-line 首格式行字形 color（切片 1，CSS2 §5.12.1）。
+mod r5258_first_line_color_tests;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;
