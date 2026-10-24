@@ -1349,10 +1349,25 @@ impl StyleSystem {
             ),
         };
 
-        // 伪元素无匹配规则时直接返回默认值（content: Normal），跳过整条级联/继承/计算
-        // 管线——避免对无伪元素规则的元素产生 2× 额外开销。调用方据 content 判定是否合成盒。
+        // 伪元素无匹配规则时直接返回 originating element 自身样式（content 恒
+        // Normal，before/after 合成门不受影响），跳过整条级联/继承/计算管线——
+        // 避免对无伪元素规则的元素产生 2× 额外开销。曾返回 default()：scoped
+        // ::selection 页（如仅 `div::selection` 规则）的非匹配后代经「color 差异」
+        // 存储判据误存 initial 黑（R5257 paint 侧 per-owner 消费首触即黑字）。
         if pseudo.is_some() && matching.is_empty() {
-            return Box::new(ComputedStyle::default());
+            return match parent_style {
+                Some(p) => {
+                    let mut s = p.clone();
+                    // content 恒 Normal（before/after 合成门不变）、背景恒透明
+                    //（存储判据「非透明 bg」必须拒绝——UA 表单默认白底是非继承
+                    // 属性，比 elem_style 会误存）；color 留 origin 值（继承属性，
+                    // ≡ 无作者高亮样式时伪样式继承 originating element）。
+                    s.content = property::types::ContentComputedValue::Normal;
+                    s.background_color = property::types::ColorValue::Transparent;
+                    Box::new(s)
+                }
+                None => Box::new(ComputedStyle::default()),
+            };
         }
 
         // 1.5. 展开简写属性（保留层索引）

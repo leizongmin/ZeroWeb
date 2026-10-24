@@ -44,3 +44,50 @@ fn partial_selection_on_owner_leaves_descendant_uncolored() {
         prims.glyphs.iter().map(|g| g.color).collect::<Vec<_>>()
     );
 }
+
+/// R5257（css-pseudo-4 §highlight-cascading 后续片）：后代 owner 自持 ::selection
+/// 规则时按 owner 独立级联——universal `::selection{green/yellow}` vs
+/// `div::selection{red/black}` 的 span 行应用 span 的 green/yellow，而非盒的
+/// red/black（driving: cascade-highlight-002，R5256 整contents 形曾整段涂红）。
+#[test]
+fn descendant_own_selection_pseudo_overrides_ancestor() {
+    let mut pipeline = RenderPipeline::new(400.0, 300.0);
+    pipeline.set_text_selections(vec![("#d".to_string(), 0, 5)]);
+    let result = pipeline.render_html(
+        r#"<body><div id="d" style="color: black; font: 50px Ahem;"><span>Hello</span></div></body>"#,
+        "::selection { background-color: green; color: yellow } \
+         div::selection { background-color: red; color: black }",
+    );
+    let prims = result.primitives();
+    assert!(
+        prims.glyphs.iter().all(|g| g.color == Color::rgba(255, 255, 0, 255)),
+        "后代 owner 行字形应为 span 自持伪样式色 yellow，实际 {:?}",
+        prims.glyphs.iter().map(|g| g.color).collect::<Vec<_>>()
+    );
+    assert!(
+        prims.fills.iter().any(|f| f.color == Color::rgba(0, 128, 0, 255)),
+        "后代 owner 行高亮应为 span 自持 green，实际 fills {:?}",
+        prims.fills.iter().map(|f| f.color).collect::<Vec<_>>()
+    );
+    assert!(
+        !prims.fills.iter().any(|f| f.color == Color::rgba(255, 0, 0, 255)),
+        "后代 owner 行不应承接盒自持 red 高亮"
+    );
+}
+
+/// 后代无自持 ::selection 记录 → 回落盒伪样式（R5256 行为保持零回归）。
+#[test]
+fn descendant_without_own_pseudo_falls_back_to_box_pseudo() {
+    let mut pipeline = RenderPipeline::new(400.0, 300.0);
+    pipeline.set_text_selections(vec![("#d".to_string(), 0, 5)]);
+    let result = pipeline.render_html(
+        r#"<body><div id="d" style="color: blue; font: 50px Ahem;"><span style="color: blue">Hello</span></div></body>"#,
+        "div::selection { background-color: transparent; color: red }",
+    );
+    let prims = result.primitives();
+    assert!(
+        !prims.glyphs.is_empty() && prims.glyphs.iter().all(|g| g.color == Color::rgba(255, 0, 0, 255)),
+        "无自持记录的后代应回落盒伪样式色 red，实际 {:?}",
+        prims.glyphs.iter().map(|g| g.color).collect::<Vec<_>>()
+    );
+}

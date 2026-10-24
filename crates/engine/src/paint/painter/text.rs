@@ -3413,8 +3413,33 @@ impl super::Painter {
                             }
                             any_line = true;
                             if anc_whole || (sel_start <= *line_start && *line_end <= sel_end) {
-                                sel_line_colors.insert((*owner, *ltb), sel_color);
-                                if !owner_is_text_control && sel_bg.a > 0 {
+                                // R5257（css-pseudo-4 §highlight-cascading 后续片）：后代
+                                // owner 自持 ::selection 规则时高亮样式按 owner 独立级联
+                                //（universal ::selection{green/yellow} vs div#test::selection
+                                // {red/black} 的 span 行应 green/yellow，R5256 整contents 形
+                                // 用盒伪样式曾整段涂红——driving: cascade-highlight-002）。
+                                // owner 无自持记录回落盒伪样式（R5256 判例全保持）；门仍
+                                // 要求盒自持伪样式（后代-only 形维持 FIXME）。
+                                let (line_color, line_bg) = if *owner == box_id {
+                                    (sel_color, sel_bg)
+                                } else {
+                                    styles
+                                        .and_then(|st| st.get(owner))
+                                        .and_then(|os| {
+                                            os.selection_pseudo.as_ref().map(|p| {
+                                                (
+                                                    super::super::color::resolve_color_current(&p.color, &os.color),
+                                                    super::super::color::resolve_color_current(
+                                                        &p.background_color,
+                                                        &os.color,
+                                                    ),
+                                                )
+                                            })
+                                        })
+                                        .unwrap_or((sel_color, sel_bg))
+                                };
+                                sel_line_colors.insert((*owner, *ltb), line_color);
+                                if !owner_is_text_control && line_bg.a > 0 {
                                     sel_line_fills.push((
                                         Rect::new(
                                             content_x + min_x,
@@ -3422,7 +3447,7 @@ impl super::Painter {
                                             (max_xw - min_x).max(0.0),
                                             line_h,
                                         ),
-                                        sel_bg,
+                                        line_bg,
                                     ));
                                 }
                             } else {
