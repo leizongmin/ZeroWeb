@@ -197,6 +197,8 @@ pub struct ProcessTabBackend {
     /// FR-6：renderer 异常退出的 tab 事件（app 侧递增崩溃计数并落盘）。
     pending_renderer_crashes: Vec<TabId>,
     pending_tab_navigates: Vec<(TabId, TabNavigateRequestParams)>,
+    /// T5/P10：页面 history 遍历请求（renderer HistoryTraverse——app 消费提交 shell 栈遍历）。
+    pending_history_traverses: Vec<(TabId, i32)>,
     fetch_proxy: TabFetchProxy,
     service_worker_owner: BrowserServiceWorkerOwner,
     /// 异步 DOM 事件派发的回执（按 dispatch id 收集，由 TabManager 消费）。
@@ -314,6 +316,7 @@ impl ProcessTabBackend {
             pending_errors: Vec::new(),
             pending_renderer_crashes: Vec::new(),
             pending_tab_navigates: Vec::new(),
+            pending_history_traverses: Vec::new(),
             fetch_proxy: TabFetchProxy::new(),
             service_worker_owner,
             pending_dispatch_results: Vec::new(),
@@ -1661,6 +1664,11 @@ impl ProcessTabBackend {
         std::mem::take(&mut self.pending_tab_navigates)
     }
 
+    /// 取出页面 history 遍历请求（T5/P10）。
+    pub fn take_history_traverses(&mut self) -> Vec<(TabId, i32)> {
+        std::mem::take(&mut self.pending_history_traverses)
+    }
+
     /// 确保 Tab 有对应渲染进程。
     pub fn ensure_renderer(&mut self, tab_id: TabId, viewport: (u32, u32)) {
         self.viewport = viewport;
@@ -2021,6 +2029,11 @@ impl ProcessTabBackend {
                     }
                     IpcMessageKind::FocusOwnerChanged(info) => {
                         self.pending_focus_changes.push((tab_id, info));
+                    }
+                    IpcMessageKind::HistoryTraverse { delta } => {
+                        // T5/P10：页面 history 遍历移交（shim 本地栈越界）——入队由 app 消费
+                        // 提交 shell 栈遍历（越界判界在 app 消费侧，不可达静默 no-op）。
+                        self.pending_history_traverses.push((tab_id, delta));
                     }
                     IpcMessageKind::PointerLockChanged(params) => {
                         self.pending_pointer_lock_changes.push((tab_id, params));

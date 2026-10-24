@@ -6646,6 +6646,15 @@
           return;
         }
       }
+      // P10/T5：无 ctrl 越界（history.back/forward/go）移交宿主 tab 级会话历史——跨文档
+      // entry 不在本 shim 本地栈（真导航后宿主已 __zw_reset_history 重置为单 entry），spec
+      // back()/forward() 遍历的是 traversable navigable 的会话历史而非当前文档本地栈：
+      // https://html.spec.whatwg.org/multipage/nav-history-apis.html#the-history-interface
+      // feature-detect 保底：无桥环境（headless/WPT/单测 sandbox）保持 R3004 静默 no-op，
+      // 行为不变。ctrl（navigation API）越界结算面不动——仍走下方 InvalidStateError reject。
+      if (!ctrl && typeof __zw_request_history_traverse === 'function') {
+        __zw_request_history_traverse(delta);
+      }
       if (ctrl) {
         var ie = new (globalThis.DOMException || DOMException)('Cannot go back or forward.', 'InvalidStateError');
         ctrl.reject(ie);

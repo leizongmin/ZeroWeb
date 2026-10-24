@@ -289,6 +289,26 @@ fn test_tab_jump_history_arbitrary_index() {
     assert_eq!(tab.url(), Some("https://c.com"));
 }
 
+/// T5/P10：页面 history 遍历提交面的宿主判界——jump_history（go(delta) 绝对目标共享
+/// 路径）越界 no-op，遍历按钮态（can_go_back/can_go_forward）与栈不变。
+#[test]
+fn test_tab_jump_history_traverse_out_of_bounds_noop_t5() {
+    let mut tab = Tab::new("https://a.com");
+    tab.navigate("https://b.com");
+    // index=1，delta=-2 → 绝对目标 -1：宿主以 i64 判界后不会调用 jump_history；
+    // 此处钉 jump_history 自身对一切越界索引（含 usize 下溢前哨 0）的 no-op 语义。
+    assert!(tab.can_go_back(), "前置：index=1 可后退");
+    let (len, index) = (tab.history_len(), tab.history_index());
+    assert!(!tab.jump_history(3), "越界（>=len）no-op");
+    assert_eq!(
+        (tab.history_len(), tab.history_index()),
+        (len, index),
+        "越界后栈与索引不变"
+    );
+    assert_eq!(tab.url(), Some("https://b.com"), "越界后 url 不变");
+    assert!(tab.can_go_back() && !tab.can_go_forward(), "越界后遍历按钮态不变");
+}
+
 #[test]
 fn test_tab_navigate_resets_title() {
     let mut tab = Tab::new("https://a.com");
