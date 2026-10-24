@@ -404,3 +404,62 @@ FrameTooLarge / HostInternal）。全部走既有 `IpcMessage` 信封 + bincode 
 
 - C2 单提交（`media-process` gate 内）；回退即回 `tick_all` 主动轮询面。wire 向前兼容由 C1 握手
   版本守门（renderer/host 版本不符按 spawn 失败处理，IF-001）——无灰度态。
+
+## 11. C3 设计——崩溃检测/重启退避 + 降级纪律先例订正（同日第六轮增补）
+
+### 11.1 先例核实：image-decoder spawn 失败语义订正（RFC v1.7 触发点）
+
+- `crates/webview/src/image_decoder.rs:177-179` 注释称「spawn 失败后不再重试，后续请求直接进程内
+  解码」；**代码为准**：SPAWN_FAILED 置位后 `decode_image` 直接返回 Err（:205-206），三调用方
+  （async_load.rs:1125-1160、:1213-1245 落 `ResourceElementOutcome::Error` / `FailedResource`；
+  webview.rs:1509 落 warn+continue 跳过）——**无任何层内联回落**。:266 的 store(false) 仅测试
+  helper，生产生命周期内一次性。
+- 影响：RFC v1.6 IF-001/IF-006 与本文 §9 C1 骨架「spawn 失败 → 永久进程内直调（现状行为，等价
+  feature 关）」引用失实——image-decoder 现行为 = 永久**错误面**（从严：失败显性、不静默）。
+- C 批次纪律随之简化：隔离开启后 spawn 失败与运行期失败**同归错误面**（纪律 1/2 合一）——spawn
+  失败 → `MediaError{HostInternal}` + SPAWN_FAILED 短路（本 webview 生命周期不重试、不内联）；
+  feature 默认关 = 内联直调（正常路径不受影响）；「隔离静默失效」状态不可能发生。失实注释订正
+  归 C1 批次顺带（仅注释，无行为变化）。
+
+### 11.2 崩溃检测（双路）
+
+- 先例（protocol/process.rs:441-459）：`exit_reason` = `try_wait` + bounded stderr tail 诊断；
+  `is_alive` 注释明示「崩溃管理器应使用 exit_reason」；check_crashes 崩溃管理器模式（:623-643，
+  置 Crashed + 移除 + kill 收尸，返回崩溃清单）。
+- media proxy 镜像双路：(a) **send 失败即时检测**——控制消息写入遇 broken pipe 即报；
+  (b) 泵周期 `try_wait` 兜底——覆盖在途消息/无写入期，syscall 级成本随 16ms tick 可忽略。
+- proxy 所有权：**per-webview**（registry 持有，随 webview 释放）——与 IF-001「每个 renderer
+  至多一个 host」一致；image-decoder 的全局 static PROXY（image_decoder.rs:176）模式不采（媒体源
+  是长生命周期状态，须随 webview 导航/释放清理）。
+
+### 11.3 错误传播与状态机
+
+- 检测 → 对全部活跃源发 `MediaStateUpdate{Error{HostInternal}}`（IF-006 既定）→ registry 镜像
+  置 error → bridge getter 面 → march Error face → 页面 error 事件（DC-3 第一段：页面可观察）。
+- 状态机：`Idle`（未 spawn）→ `Healthy` → 崩溃 → `Restarting`（退避重试 n≤3：1s/2s/4s，握手
+  成功重置计数）→ `Healthy` | `Failed`（耗尽 → 本 webview 生命周期永久错误面，**不内联回落**，
+  后续 play 立即 `MediaError`）；正常退出 = `MediaShutdown` → wait（renderer 退出路径）。
+- C2 阶段（未接 C3）：崩溃仅报错不重启（IF-006 既定），状态机实现随 C3 批次。
+
+### 11.4 重启语义（DC-3 第二段）
+
+- 重启 = 全新 host 进程，全部源丢失；**不自动重播、不自动重注册**——错误事件已通知页面，页面
+  `play()` 时按需重走 MediaRegisterSource/DataChunk（epoch 从 0 重新单调，旧代际数据天然失效）。
+- 导航恢复：reload 走现有导航释放面（MediaReleaseSource 全部 + proxy teardown + 状态机回 Idle）
+  → 全新 host——DC-3「重载恢复」验证路径。
+- 崩溃诊断：stderr tail 截断入 tracing；exit status 入 `MediaError.message` 面。
+
+### 11.5 契约测试（DC-3 验收）
+
+真实 SIGKILL 注入（`#[ignore]` + test-guard，M1 先例）：
+
+1. kill host → 页面 error 事件可见（march Error face 断言）；
+2. renderer 进程存活（隔离目的成立，DC-3 核心断言）；
+3. kill 后 `play()` → 重启路径（新 pid，重喂字节可播）；
+4. 连续 3 次 kill → Failed 永久错误面 + 断言无内联回落（与 feature 关配对对照：关闭时同场景
+   直调可播，开启时永久错误——两态差异即隔离边界证明）；
+5. reload → 全新 host，重喂恢复。
+
+### 11.6 回滚
+
+- C3 单提交（gate 内）；状态机与退避常量单点，回退即回 C2「仅报错」形态。

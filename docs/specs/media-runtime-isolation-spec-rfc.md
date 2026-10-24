@@ -1,6 +1,6 @@
 # RFC：平台媒体解码与媒体运行时隔离——方案/许可证/回滚
 
-**版本**：v1.6-draft
+**版本**：v1.7-draft
 **日期**：2026-10-24
 **作者**：AI Assistant（Rally media-runtime-isolation M2）
 **状态**：草稿——待用户评审决策（D-RFC-1~4；见 §10）
@@ -70,7 +70,7 @@ part03.js:23558/23610（play-only 桥武装）——页面可见时钟/状态契
 - 播放/注册表/桥：`crates/webview/src/video_registry.rs`（`__zw_video_*` 回调族、MSE_FEED_MAX_BYTES=256MB）
 - 帧消费：`crates/render-foundation/src/image_cache.rs`、`crates/engine/src/paint/painter/text.rs:820`
 - IPC 基建（方案 C 复用面）：`crates/protocol/src/process.rs`（ProcessManager/RendererState 进程监理、`child_process_args` 角色参数约定）、`frame_shm.rs`（POSIX shm 帧传输，Linux 默认开、非 Linux 内联回落）、`channel/message/transport`
-- **解码进程隔离同构先例（D1）**：`apps/image-decoder`（角色循环 `run_role`）+ `crates/webview/src/image_decoder.rs`（renderer 侧代理：懒惰 spawn、邻位二进制发现、spawn 失败永久进程内、运行期失败不绕过隔离边界）+ `IpcMessageKind::ImageDecodeRequest/Result`（消息形态先例）
+- **解码进程隔离同构先例（D1）**：`apps/image-decoder`（角色循环 `run_role`）+ `crates/webview/src/image_decoder.rs`（renderer 侧代理：懒惰 spawn、邻位二进制发现、spawn 失败永久错误面短路（SPAWN_FAILED，v1.7 订正——注释称「进程内解码」与代码不符，以代码为准）、运行期失败不绕过隔离边界）+ `IpcMessageKind::ImageDecodeRequest/Result`（消息形态先例）
 
 ---
 
@@ -206,7 +206,7 @@ request/response）、**跨进程时钟/状态镜像**（DC-2 契约核心，C2 
 | A4 | seek 定位窄化：phase-② 全量前向（O(target)）→ cue 锚定 fallback（O(GOP)，`decode.rs` 面；归因证据见 goal evidence 2026-10-24-m3-prep-design DESIGN.md §3） | D-RFC-2（随批） | 扩展 `m1_seek_cue_path`：mid-GOP 目标耗时不随 target 线性增长；15/30/45 三点不回退 | 单提交回退 |
 | C1 | `zero-protocol` 媒体消息族契约（§9 IF-001/002/005/006）+ host 进程骨架（feature `media-process` 默认关；设计稿见 goal evidence DESIGN.md §9——17 拟新增变体 wire format（§9.2 基础 14 + §10.2 补 setRate/setGain/setLoop；命名零冲突已核：ProcessRole 无 Media、IpcMessageKind 无 Media*）+ `ProcessRole::Media`/`--type=media` 接线 + media-host 骨架（C1 只立契约与空源生命周期，解码内核 C2 接）+ `zeroweb-media-` shm 前缀 / `ZW_MEDIA_SHM=0` 关断） | D-RFC-1 | 契约测试（两端同步核对）；默认关路径全量 `make test` 绿 | feature 关即现状 |
 | C2 | registry 客户端切换 + 状态/时钟代理（§9 IF-003/004；DC-2 契约测试；设计稿见 goal evidence DESIGN.md §10——host 自走时钟（音频截止/帧演示截止等待，无 60Hz 轮询）+ push 校准闭合（跃迁即时/随帧/250ms 心跳）+ epoch 代际 + march 页面语义原样保留（getter backing 转 push 镜像，泵媒体分支转被动）） | D-RFC-1 | 拟新增跨进程时钟/状态/seek 契约测试；A/V 漂移真值复测 | feature 关 |
-| C3 | 故障注入验收（DC-3）：host 终止 → 可观察错误 → 重载恢复 | D-RFC-1 | 拟新增 DC-3 场景测试（真实进程终止） | feature 关 |
+| C3 | 故障注入验收（DC-3）：host 终止 → 可观察错误 → 重载恢复（设计稿见 goal evidence DESIGN.md §11——崩溃检测双路（send 失败即时 + 泵周期 `try_wait` 兜底）、状态机 Idle/Healthy/Restarting（退避 1s/2s/4s，n≤3）/Failed、重启不自动重播重注册（epoch 重单调）、SIGKILL 注入 5 场景契约测试） | D-RFC-1 | 拟新增 DC-3 场景测试（真实进程终止） | feature 关 |
 | C4 | M4 配对数据 + 资源审计（DC-1/DC-4 收口证据） | D-RFC-1 | M1 harness 对照复测（开/关 feature 配对） | feature 关 |
 | B1 | 平台框架逐平台核查（§4.2 表落 evidence） | D-RFC-3 | 核查报告 + 可用平台清单 | 纯文档 |
 | B2+ | 首个平台 backend（依核查结果定） | D-RFC-3 + 用户点名平台 | capability 真值测试 + 软解配对 | feature 关 |
@@ -250,7 +250,7 @@ request/response）、**跨进程时钟/状态镜像**（DC-2 契约核心，C2 
 | 角色主循环 | `apps/image-decoder` `run_role<C: IpcChannel>`（对端断开退出） | `apps/media-host`（拟新增）同形角色循环 |
 | 帧零拷贝 | `frame_shm.rs`（`/dev/shm/zeroweb-cmp-*`、env 关断、非 Linux 内联） | media 专属 shm 段（拟新增，前缀 `zeroweb-media-*`，`ZW_MEDIA_SHM=0` 关断） |
 | 崩溃检测 | `RendererHandle::exit_reason`/`check_crashes` 状态机 | media host 句柄（拟新增，同形）+ 重启/退避（C3） |
-| 降级纪律 | image_decoder.rs：「隔离开启后运行期失败→返回错误，不得绕过隔离边界；spawn 失败→永久进程内」 | 同纪律直接沿用（见 9.6） |
+| 降级纪律 | image_decoder.rs 代码为准（v1.7 订正）：隔离开启后 spawn 失败（SPAWN_FAILED 短路，image_decoder.rs:205）与运行期失败同归错误面，无任何层内联回落；源码注释「spawn 失败→进程内解码」与代码不符，注释订正归 C1 顺带 | 同纪律直接沿用（见 9.6） |
 
 ### IF-001 会话与生命周期
 
@@ -264,8 +264,9 @@ request/response）、**跨进程时钟/状态镜像**（DC-2 契约核心，C2 
 - **关闭**：renderer 退出前发拟新增 `MediaShutdown` 并等子进程退出（对齐
   `RendererHandle::shutdown` 语义）；host 收到对端断开（stdin EOF）自行退出（`run_role`
   先例）。
-- **错误处理**：spawn 失败（二进制缺失/握手超时）→ 永久进程内模式（本 renderer 生命周期
-  不再重试，先例 image_decoder.rs:178 注记）；运行期崩溃 → 9.6 错误面，不静默回退。
+- **错误处理**：spawn 失败（二进制缺失/握手超时）→ 永久错误面 `MediaError{HostInternal}`
+  （本 webview/renderer 生命周期不重试、不内联——SPAWN_FAILED 短路先例 image_decoder.rs:205，
+  v1.7 订正：先例实际为错误面而非「进程内直调」）；运行期崩溃 → 9.6 错误面，不静默回退。
 - **默认动作**：`media-process` feature 默认关 = 不 spawn，registry 直调 zero-media（现状）。
 
 ### IF-002 控制面（renderer → host）
@@ -325,10 +326,11 @@ request/response）、**跨进程时钟/状态镜像**（DC-2 契约核心，C2 
   `MediaStateUpdate{Error{HostInternal}}`（页面可观察播放错误，DC-3 第一段）→ 页面重载
   走现有导航恢复面（DC-3 第二段）；**renderer 自身不随宿主崩溃**（隔离目的）。
 - **重启**：C3 批次实现（退避/上限策略拟新增）；C2 阶段崩溃后不再自动重播，仅报错。
-- **降级纪律**（沿 image-decoder 先例，两条分立）：
-  1. 启动失败（spawn/握手）→ 永久进程内直调模式（现状行为，等价 feature 关）；
-  2. 运行期失败（host 崩溃/协议错误）→ `MediaError` 面上抛，**不得静默回进程内**
-     （隔离边界不可绕过——DC-3 验收前提）。
+- **降级纪律**（v1.7 合一并订正——image-decoder 代码为准，启动失败与运行期失败本就同面）：
+  隔离开启后**一切失败（spawn/握手/运行期崩溃/协议错误）同归 `MediaError` 错误面**，
+  **不得静默回进程内直调**（隔离边界不可绕过——DC-3 验收前提；spawn 失败短路为本 webview
+  生命周期一次性，后续 play 立即 `MediaError{HostInternal}`）；feature 默认关 = 内联直调，
+  正常路径不受影响。「spawn 失败 → 进程内回退」不可能发生（image_decoder.rs:205 先例即错误面）。
 
 ### 9.7 与 DC 的映射
 
@@ -392,3 +394,4 @@ request/response）、**跨进程时钟/状态镜像**（DC-2 契约核心，C2 
 | v1.4-draft | 2026-10-24 | A3 行补设计稿指引（DESIGN.md §8：C4 = CacheEntry Arc 化——「像素插入后不可变」既有不变量使 Arc 共享语义安全，快照本体从不出进程；C2 = from_rgba_variable 跳纯色扫描；源驻留 = 256MB 总预算 + 非在播 LRU + 准入拒绝，av_sources seek 依赖受保护）。无决策/门禁/批次范围变化，零代码改动 |
 | v1.5-draft | 2026-10-24 | C1 行补设计稿指引（DESIGN.md §9：媒体消息族 14 拟新增变体 wire format 草案——控制面 7 + 状态/帧/错误面 7 + MediaPlaybackState/MediaErrorCode 伴生枚举；命名冲突排查（ProcessRole 无 Media 变体、IpcMessageKind 无 Media* 变体）；media-host 骨架边界（C1 = 契约 + 握手 + 空源生命周期，解码内核 C2 接）；契约测试计划含 kill-switch 与 feature 关回归）。无决策/门禁/批次范围变化，零代码改动 |
 | v1.6-draft | 2026-10-24 | C2 行补设计稿指引（DESIGN.md §10：host 自走时钟 + push 供数 renderer 镜像——march 页面语义原样保留、getter backing 转 push 镜像、250ms 心跳与 shim timeupdate 节流同值校准闭合 IF-003「≥100ms」实施值）；**C1 wire format 缺口修订**：桥面 setRate/setGain/setLoop（video_registry.rs:1711-1713 同步面）在 C1 草案无对应消息，§10.2 拟新增 3 变体（全族 14→17）+ MediaSourceReady 载荷扩 mediaMeta 三元组。无决策/门禁/批次范围变化，零代码改动 |
+| v1.7-draft | 2026-10-24 | C3 行补设计稿指引（DESIGN.md §11：崩溃检测双路 + 状态机/退避 + SIGKILL 注入 5 场景）；**降级纪律先例订正**：image-decoder spawn 失败实为永久错误面（SPAWN_FAILED 短路 image_decoder.rs:205，三调用方均落错误面、无内联回落），源码注释「spawn 失败→进程内解码」与代码不符——§2.2/§9.0/IF-001/IF-006 全部以代码为准改写，IF-006 纪律两条合一（spawn/运行期同归错误面），失实注释订正归 C1 顺带。无决策/门禁/批次范围变化，零代码改动 |

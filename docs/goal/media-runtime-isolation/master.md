@@ -1,7 +1,7 @@
 # 媒体运行时隔离控制面
 
 **日期**：2026-10-24
-**状态**：Active（**M1 基线测量完成**——见 [2026-10-24 evidence](evidence/2026-10-24-m1-baseline/ANALYSIS.md)；**M2 两项交付齐备 + M3 前置设计就绪待用户评审**——[docs/specs/media-runtime-isolation-spec-rfc.md](../../../specs/media-runtime-isolation-spec-rfc.md) v1.6：三路线对比 + §9 接口契约；A1–A4 + C1/C2 设计稿齐备见 [m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；D-RFC-1~4 决策点）。
+**状态**：Active（**M1 基线测量完成**——见 [2026-10-24 evidence](evidence/2026-10-24-m1-baseline/ANALYSIS.md)；**M2 两项交付齐备 + M3 前置设计就绪待用户评审**——[docs/specs/media-runtime-isolation-spec-rfc.md](../../../specs/media-runtime-isolation-spec-rfc.md) v1.7：三路线对比 + §9 接口契约；A1–A4 + C1–C3 设计稿齐备见 [m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；D-RFC-1~4 决策点）。
 **当前卡点**：用户评审/批复 RFC（D-RFC-1~4：方案 C 立项 / A 批次随批 / 方案 B 核查 / decode-h264 启用）。批复前不改代码、不装 SDK、不变 feature 表。M1 待决输入（时钟 rate 1.454、NullSink）已入 RFC 方案 A 批次与 TBD-3。
 **下一步**：用户批复后按 RFC §7 批次推进——D-RFC-2 随批即启 A1（时钟批内对齐）；D-RFC-1 批准则并行 C1（protocol 媒体消息族 + `media-process` feature 骨架）。若改选 A-only，DC-3 按 DC-5 由用户认可延期/调整后收口。
 **入口**：[目标契约](../media-runtime-isolation.md) / [启动与证据协议](../ladybird-followups/README.md)
@@ -20,8 +20,8 @@
 | 阶段 | 产物 | 状态 | 证据 |
 |---|---|---|---|
 | M1 | 生产资源、能力与权限基线 | **完成**（测量面成立，收口待评审） | [2026-10-24 基线](evidence/2026-10-24-m1-baseline/ANALYSIS.md) |
-| M2 | 方案/许可证/回滚 RFC + protocol 接口契约 | **v1.2 完成待批复**（决策门=用户） | [media-runtime-isolation-spec-rfc](../../../specs/media-runtime-isolation-spec-rfc.md) |
-| M3 | 已确认平台与隔离切片 | NOT_STARTED（A1–A4 + C1/C2 设计稿齐备，待 D-RFC-2/1） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
+| M2 | 方案/许可证/回滚 RFC + protocol 接口契约 | **v1.7 完成待批复**（决策门=用户） | [media-runtime-isolation-spec-rfc](../../../specs/media-runtime-isolation-spec-rfc.md) |
+| M3 | 已确认平台与隔离切片 | NOT_STARTED（A1–A4 + C1–C3 设计稿齐备，待 D-RFC-2/1） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
 | M4 | 配对媒体、故障和资源审计 | NOT_STARTED | 无 |
 
 ## 验证基线
@@ -120,3 +120,21 @@
     宿主不接管）；仅供数方式变——bridge getter backing 转 push 镜像；生产泵媒体分支转被动
     （帧队列排空 → ImageCache 注入 → interest 标脏，rAF 泵先例通道）。
 - RFC v1.6：C2 行补设计稿指引 + C1 行 14→17 修订 + §13 历史行；无决策/门禁/批次范围变化。
+
+### 2026-10-24 M3 前置设计轮 VI（C3）
+
+- DESIGN.md 追加 §11（同日第六轮，仍零代码改动）——**C 批次 C3 设计稿就绪**：
+  - **降级纪律先例订正（RFC v1.7 触发点）**：image_decoder.rs 注释称「spawn 失败→直接进程内解码」，
+    **代码为准**——SPAWN_FAILED 置位后 `decode_image` 直接 Err（:205-206），三调用方
+    （async_load.rs:1125/:1213 落 Outcome::Error+FailedResource、webview.rs:1509 warn+continue）
+    均无内联回落；RFC v1.6 IF-001/IF-006 与本文 §9 的「永久进程内直调」引用失实，§2.2/§9.0/
+    IF-001/IF-006 全部改写，IF-006 纪律两条合一（spawn/运行期同归错误面）；失实注释订正归 C1 顺带。
+  - **崩溃检测双路**：send 失败即时检测（broken pipe）+ 泵周期 `try_wait` 兜底（先例
+    protocol/process.rs:441-459 `exit_reason`、:623-643 check_crashes）；proxy per-webview
+    所有权（registry 持有），不采 image-decoder 全局 static PROXY 模式。
+  - **状态机与重启**：Idle→Healthy→Restarting（退避 1s/2s/4s，n≤3，握手成功重置）→Healthy|
+    Failed（耗尽=永久错误面，不内联）；重启不自动重播/重注册（epoch 重单调），reload 走现有
+    导航释放面回 Idle=DC-3 重载恢复路径。
+  - **DC-3 契约测试**：真实 SIGKILL 注入 5 场景（error 事件可见/renderer 存活/kill 后 play 重启/
+    3 连 kill 永久错误+无回落断言/reload 恢复），`#[ignore]`+test-guard 先例。
+- RFC v1.7：C3 行补设计稿指引 + 降级纪律订正（见上）+ §13 历史行；无决策/门禁/批次范围变化。
