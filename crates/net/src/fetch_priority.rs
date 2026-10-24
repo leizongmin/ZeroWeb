@@ -81,9 +81,18 @@ impl FetchPriority {
 }
 
 /// 从 URL 路径推断资源类型（无显式 hint 时的兜底）。
+///
+/// URL 推断本无标准（fetch metadata 不定义 URL→类型映射，浏览器以请求发起方
+/// destination 为准，如 https://fetch.spec.whatwg.org/#concept-request-destination），
+/// 本函数只按扩展名识别确定性的子资源类型；无法识别时兜底 `"other"` 而非
+/// `"document"`——document 身份只能由导航请求显式携带的 `x-zero-resource-type`
+/// 头声明（renderer `AsyncFetchHost::fetch_document` 注入）。若兜底 document，
+/// 任何无扩展名子资源/资源 hint（dns-prefetch、preconnect）的 2xx 完成都会被
+/// fetch_proxy 打上 document 印章，renderer 据此污染 document_url 翻转地址栏
+/// （P11：juejin 页面 dns-prefetch `https://p2-jj.byteimg.com/` 合成 204 劫持）。
 pub fn infer_resource_type_from_url(url: &str) -> &'static str {
     // RFC 3986：fragment（`#...`）不属于 path，且查询串（`?...`）也不参与扩展名；
-    // 二者都先剥离，避免 `app.js#frag` 因 `#frag` 后缀被误判为 document。
+    // 二者都先剥离，避免 `app.js#frag` 因 `#frag` 后缀被误判为其他类型。
     let no_frag = url.split('#').next().unwrap_or(url);
     let path = no_frag
         .split('?')
@@ -112,7 +121,7 @@ pub fn infer_resource_type_from_url(url: &str) -> &'static str {
     {
         "image"
     } else {
-        "document"
+        "other"
     }
 }
 
@@ -172,9 +181,34 @@ mod tests {
     }
 
     #[test]
-    fn infer_resource_type_trailing_slash_is_document() {
-        // 目录路径（无扩展名 basename）→ document。
-        assert_eq!(infer_resource_type_from_url("https://x/dir/"), "document");
-        assert_eq!(infer_resource_type_from_url("https://x/"), "document");
+    fn infer_resource_type_trailing_slash_is_other() {
+        // P11 回归钉：目录/根路径等无扩展名 URL 兜底 "other"，不得兜底 "document"——
+        // 否则 dns-prefetch/preconnect 等 hint 的 2xx 完成会被打上 document 印章，
+        // renderer 采信后污染 document_url 翻转地址栏（juejin p2-jj.byteimg.com 实证）。
+        // document 身份由导航请求显式头声明，见 from_fetch_headers。
+        assert_eq!(infer_resource_type_from_url("https://x/"), "other");
+        assert_eq!(infer_resource_type_from_url("https://x/dir/"), "other");
+    }
+
+    #[test]
+    fn infer_resource_type_extension_less_basename_is_other() {
+        // 邻近变体：无扩展名 basename（重定向落点常见形态）与带 query 无扩展名。
+        assert_eq!(infer_resource_type_from_url("https://x/redirect-target"), "other");
+        assert_eq!(infer_resource_type_from_url("https://x/beacon?n=1"), "other");
+        assert_eq!(infer_resource_type_from_url("data:text/html,hello"), "other");
+    }
+
+    #[test]
+    fn explicit_document_header_is_not_overridden_by_inference() {
+        // 导航请求显式携带 document 头（AsyncFetchHost::fetch_document 注入），
+        // 无扩展名 URL 不得被推断改写——document_url 消费契约依赖该显式性。
+        let headers = vec![("X-Zero-Resource-Type".into(), "document".into())];
+        let (priority, rt) = FetchPriority::from_fetch_headers(&headers, "https://x/");
+        assert_eq!(rt, "document");
+        assert_eq!(priority, FetchPriority::CRITICAL);
+        // 无 hint 时同一 URL 兜底 other（MEDIUM 默认），不再冒充 document 优先级。
+        let (priority, rt) = FetchPriority::from_fetch_headers(&[], "https://x/");
+        assert_eq!(rt, "other");
+        assert_eq!(priority, FetchPriority::MEDIUM);
     }
 }

@@ -557,6 +557,38 @@ mod tests {
     }
 
     #[test]
+    fn non_document_stamp_does_not_set_document_url() {
+        // P11 回归钉：document_url 只能由显式 document 印章的完成更新。无扩展名
+        // 子资源/hint（dns-prefetch 合成 204、preconnect）完成后 fetch_proxy 打
+        // "other" 印章，try_complete 必须忽略其 X-Zero-Final-URL——修前推断兜底
+        // document 使任何根路径 2xx 子资源都可翻转地址栏（juejin 实证）。
+        let mut inflight = InflightIpcFetches::new();
+        let (_tx, rx) = channel::<Result<Vec<u8>, String>>();
+        inflight.pending.insert(
+            5,
+            InflightEntry {
+                reply: InflightReply::Ignore,
+                request_url: "https://cdn.example/".into(),
+            },
+        );
+        let msg = IpcMessage {
+            id: 0,
+            kind: IpcMessageKind::FetchResponse(FetchResponseParams {
+                request_id: 5,
+                status_code: 204,
+                headers: vec![
+                    ("X-Zero-Resource-Type".into(), "other".into()),
+                    ("X-Zero-Final-URL".into(), "https://cdn.example/".into()),
+                ],
+                body: Vec::new(),
+            }),
+        };
+        assert!(inflight.try_complete(&msg));
+        assert!(rx.try_recv().is_err(), "Ignore 回执不得投递");
+        assert_eq!(inflight.take_document_url(), None);
+    }
+
+    #[test]
     fn fetch_response_http_error_propagates() {
         let mut inflight = InflightIpcFetches::new();
         let (tx, rx) = channel();
