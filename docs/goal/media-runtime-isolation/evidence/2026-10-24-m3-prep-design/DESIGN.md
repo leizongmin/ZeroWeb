@@ -419,6 +419,20 @@ FrameTooLarge / HostInternal）。全部走既有 `IpcMessage` 信封 + bincode 
 - MSE 字节流 IPC 化不进 C1（decode-h264 门控，依赖 D-RFC-4）；重启/退避策略归 C3；host 自走时钟
   节拍与 100ms 推送校准归 C2；不新增第三种传输（复用 PipeTransport + frame_shm）。
 
+### 9.6 实施偏差记录（C1 落地轮增补，2026-10-24）
+
+| # | 设计原文（§9） | 实际落地 | 原因 |
+|---|---|---|---|
+| 1 | §9.4「spawn 失败永久内联回落」测试 | 落地为「spawn 失败永久**错误面**」契约测试（`spawn_failure_latches_permanent_error_face`：坏路径 → 失败；恢复合法路径 → 仍失败，证明 latch 不重试） | §11.1 / RFC v1.7 订正：隔离边界不可绕过，无内联回落；本表记录设计文本与 v1.7 的时序差 |
+| 2 | §9.4「`ZW_MEDIA_SHM=0` 内联帧路径」测试 | 延后至 C2 | C1 无解码内核，host 从不发 `MediaFrame`，kill-switch 路径端到端无消息可驱动；机制面已由 `media_shm_enabled()`（frame_shm `env_linux_default_on` 复用）+ protocol 单测（开关名断言）覆盖 |
+| 3 | §9.4「feature 关 = 现状直调（回归守护）」测试 | 不设专项测试，以结构保证替代 | C1 不改 registry 任何调用点（接线归 C2）；默认关路径 = `#[cfg]` 模块整体不编译（feature-off `cargo check --all-targets` 过）+ 全量 `make test`（默认关）绿，无行为可回归 |
+| 4 | §9.4「host 两端契约（回声/错误注入）」 | 落地为真实二进制全生命周期契约（`tests/media_c1_contract.rs`，`#[ignore]` + test-guard 显式运行）：握手/SourceReady/DataAck/play-seek 错误面/配额拒绝后连接仍健康/release/shutdown | 「回声」模式（image-decoder M1 用 decode 请求回显）对媒体骨架无对应物；改为 lifecycle + 错误面 + 非 latch 语义证明（host `MediaError` ≠ 传输失败） |
+| 5 | §9.4「64MiB 超限拒绝」protocol 单测 | 不另设，复用共享层既有测试 | 媒体消息走同一 `PipeTransport` 帧校验（transport.rs `MAX_FRAME_SIZE`，oversize 测试已存 transport.rs:429） |
+| 6 | §9.2 `MediaFrame` 载荷形态 | 内联（非 `Box`），随 17 变体落定 | `CompositorFrameData`/`ImagePayloadBatch` 先例已携带更大内联载荷，`Box` 无收益 |
+| 7 | RFC §7「per-source 上限值 C1 定」 | `MEDIA_SOURCE_MAX_BYTES = 256 MiB`；登记时校验 `total_len` 自报值，实收字节独立封顶（超限摘源走 QuotaExceeded） | 信任边界：自报值不可信，双面校验；值取 4K RGBA 单帧（约 33MB）的安全倍数且远低于 64MiB 帧上限的可持续分片流 |
+| 8 | §9.3 proxy 骨架（未定内部结构） | 读线程 + mpsc：`PipeTransport::try_recv` 不支持管道非阻塞；后台线程持 stdout 只读传输、主线程持 stdin 只写传输（split transport）；等特定响应期间非匹配消息进独立 pending 队列按序恢复 | 5s 握手超时需要超时收信；线程化收信同时是 C2 泵「排空待决帧队列」的前置（guidelines #15 独立本地队列） |
+| 9 | image_decoder.rs:178-179 注释「spawn 失败→进程内解码」 | 仅注释订正（无行为变化）：实际走 `Err("image-decoder 进程不可用")` 错误面 | §11.1 / RFC v1.7 订正项，归 C1 顺带；同文件测试注释同步订正 |
+
 ## 10. C2 设计——状态时钟面接线：host 自走时钟 + push 供数 renderer 镜像（同日第五轮增补）
 
 ### 10.1 现状解剖（源码级）

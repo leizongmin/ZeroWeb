@@ -1,6 +1,6 @@
 # RFC：平台媒体解码与媒体运行时隔离——方案/许可证/回滚
 
-**版本**：v1.9
+**版本**：v1.10
 **日期**：2026-10-24
 **作者**：AI Assistant（Rally media-runtime-isolation M2）
 **状态**：**已批复**（2026-10-24 用户裁决 D-RFC-1~4，见 §10 批复记录）——按 §7 批次推进
@@ -273,7 +273,7 @@ request/response）、**跨进程时钟/状态镜像**（DC-2 契约核心，C2 
 
 | 消息（拟新增） | 载荷 | 语义 | 响应 |
 |---|---|---|---|
-| `MediaRegisterSource` | source 键、总长、mime | 登记源；**超 per-source 字节上限 → `MediaError{QuotaExceeded}`**（上限值 C1 定，对齐 MSE 封顶精神） | `MediaSourceReady` |
+| `MediaRegisterSource` | source 键、总长、mime | 登记源；**超 per-source 字节上限 → `MediaError{QuotaExceeded}`**（C1 定值 256 MiB = `MEDIA_SOURCE_MAX_BYTES`；登记自报 `total_len` 与实收字节双面校验——自报值不可信，超限摘源，对齐 MSE 封顶精神） | `MediaSourceReady` |
 | `MediaDataChunk` | source、seq、字节 | 源字节流式喂入（64MiB 帧上限内分片） | 累积回执（bounded） |
 | `MediaPlay` | source、position_ms | 起播/重播（Ended 后 = 重头，registry 现语义） | `MediaStateUpdate` |
 | `MediaPause` | source | 暂停（时钟冻结） | `MediaStateUpdate` |
@@ -397,3 +397,4 @@ request/response）、**跨进程时钟/状态镜像**（DC-2 契约核心，C2 
 | v1.7-draft | 2026-10-24 | C3 行补设计稿指引（DESIGN.md §11：崩溃检测双路 + 状态机/退避 + SIGKILL 注入 5 场景）；**降级纪律先例订正**：image-decoder spawn 失败实为永久错误面（SPAWN_FAILED 短路 image_decoder.rs:205，三调用方均落错误面、无内联回落），源码注释「spawn 失败→进程内解码」与代码不符——§2.2/§9.0/IF-001/IF-006 全部以代码为准改写，IF-006 纪律两条合一（spawn/运行期同归错误面），失实注释订正归 C1 顺带。无决策/门禁/批次范围变化，零代码改动 |
 | v1.8-draft | 2026-10-24 | C4 行补设计稿指引（DESIGN.md §12：M4 三态配对矩阵 + M1 harness 复用 + 判据表 + 资源审计清单 + capabilities 三对照）——**A1–A4 + C1–C4 全部批次设计稿齐备**。无决策/门禁/批次范围变化，零代码改动 |
 | v1.9 | 2026-10-24 | **用户批复 D-RFC-1~4**（§10 批复列：方案 C 批准 / A 批次随批即启 / B 核查暂缓 / decode-h264 维持默认关）；状态 草稿→已批复，批复前禁令解除。实施按 §7 推进：A1 先行，C1 并行 |
+| v1.10 | 2026-10-24 | C1 落地闭合 §9 IF-002 待定值：per-source 上限定值 256 MiB（`MEDIA_SOURCE_MAX_BYTES`），登记自报 `total_len` 与实收字节双面校验、超限摘源（信任边界：自报值不可信）；失实注释订正（v1.7 归 C1 项）随 C1 提交完成。无决策/门禁/批次范围变化 |

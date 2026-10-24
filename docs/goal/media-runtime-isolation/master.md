@@ -1,9 +1,9 @@
 # 媒体运行时隔离控制面
 
 **日期**：2026-10-24
-**状态**：Active（**D-RFC-1~4 已批复**——方案 C 批准 / A 批次随批复即启 / B 核查暂缓 / decode-h264 维持默认关，RFC v1.9 §10 批复记录；M1 基线 + M2 RFC 两项交付 + M3 前置设计八片齐备，[m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；**A1–A4 已全部落地**——rate 1.00000 + 三缺口闭合 + 内存面收敛 + seek 冷路径 O(GOP)，偏差记录 DESIGN §2.4/§3.5/§6.5/§8.6）。
-**当前卡点**：无。A 批次完成；C1 骨架待启动。
-**下一步**：C1（protocol 媒体消息族 17 变体 + `media-process` feature 骨架，feature 默认关，DESIGN §9）；relative-position 产物流 seek 抽样复核归后续验证切片。
+**状态**：Active（**D-RFC-1~4 已批复**——方案 C 批准 / A 批次随批复即启 / B 核查暂缓 / decode-h264 维持默认关，RFC v1.9 §10 批复记录；M1 基线 + M2 RFC 两项交付 + M3 前置设计八片齐备，[m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；**A1–A4 + C1 已落地**——rate 1.00000 + 三缺口闭合 + 内存面收敛 + seek 冷路径 O(GOP) + 协议消息族/media-host 骨架/webview proxy（feature 默认关），偏差记录 DESIGN §2.4/§3.5/§6.5/§8.6/§9.6）。
+**当前卡点**：无。A 批次 + C1 完成。
+**下一步**：C2（registry 客户端切换 + host 自走时钟 + push 供数 renderer 镜像，DESIGN §10）；relative-position 产物流 seek 抽样复核归后续验证切片。
 **入口**：[目标契约](../media-runtime-isolation.md) / [启动与证据协议](../ladybird-followups/README.md)
 
 ## 缺口与待决
@@ -21,7 +21,7 @@
 |---|---|---|---|
 | M1 | 生产资源、能力与权限基线 | **完成**（测量面成立，收口待评审） | [2026-10-24 基线](evidence/2026-10-24-m1-baseline/ANALYSIS.md) |
 | M2 | 方案/许可证/回滚 RFC + protocol 接口契约 | **v1.9 已批复**（D-RFC-1~4 用户裁决） | [media-runtime-isolation-spec-rfc](../../../specs/media-runtime-isolation-spec-rfc.md) |
-| M3 | 已确认平台与隔离切片 | **IN_PROGRESS**（A1–A4 已全部落地——rate≡1.0 + 三缺口闭合 + 内存面收敛 + seek O(GOP)；C1 待实施；C2–C4 设计稿齐备，D-RFC-1/2 已批） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
+| M3 | 已确认平台与隔离切片 | **IN_PROGRESS**（A1–A4 已全部落地——rate≡1.0 + 三缺口闭合 + 内存面收敛 + seek O(GOP)；C1 已落地——protocol 17 变体 + media-host 骨架 + webview proxy，feature 默认关；C2–C4 设计稿齐备，D-RFC-1/2 已批） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
 | M4 | 配对媒体、故障和资源审计 | NOT_STARTED | 无 |
 
 ## 验证基线
@@ -193,3 +193,12 @@
 - **验收**（[m1baseline-a4-post.log](evidence/2026-10-24-m3-prep-design/m1baseline-a4-post.log)，release + test-guard）：mid-GOP 冷 seek 15s **302ms→18.3ms**（16×）、45s **1000ms→18.4ms**（54×），15s/45s 差 62µs——线性增长断言 + GOP 上界断言入 harness T4 常驻；30s 直落 1.0ms 不变；drift/rate/容量逐位或噪声带内零回归。单测三新增（cue 平扫真值 / 窄化精确 / 稀疏回退），media lib 54 + webview lib 790 全绿；workspace clippy -D warnings（含 quickjs 组合）、make test、fmt 过。期间修复 rebase 带入的 s68（R5275）`collapsible_if` lint——quickjs feature 组合 clippy 挂（extract.rs 机械坍缩，独立提交非本切片代码）。
 - **限制**：CueRelativePosition 产物流抽样复核待验证（本环境无 ffmpeg 抽样面，归后续验证切片）；§7 movie_5 稀疏形态以等价 fixture 覆盖（wpt-data gitignore 不可作单测依赖）。
 - 共享面占用：zero-media decode.rs + tests.rs + webview M1 harness T4 扩展；registry/engine/protocol 零改动。
+
+### 2026-10-24 C1 协议与骨架实施轮（C 批次首片落地）
+
+- **protocol 媒体消息族**（`crates/protocol` 单提交回滚点）：新增 `media.rs` wire format 模块——`IpcMessageKind` 追加 17 变体（控制面 10：Register/DataChunk/Play/Pause/Seek{request_id}/Release/Shutdown/SetRate/SetLoop/SetGain；host 面 7：Ready/SourceReady/DataAck/StateUpdate/SeekResult/Frame/Error）+ 伴生枚举 `MediaPlaybackState`/`MediaErrorCode` + 常量（`MEDIA_PROTOCOL_VERSION=1`/`MEDIA_SOURCE_MAX_BYTES=256MiB`/`MEDIA_SHM_PREFIX="zeroweb-media-"`，kill-switch `ZW_MEDIA_SHM` 复用 frame_shm `env_linux_default_on`）；`ProcessRole::Media` + `--type=media` 映射；变体**追加在枚举尾**（bincode 1 追加式纪律）。protocol 单测 6 新增（17 变体往返/伴生枚举/Frame 双路径/常量面），331 全绿。
+- **media-host 骨架**（`apps/media-host` 新 member，单提交）：`run_role` 镜像 image-decoder 先例——首发 `MediaReady{version, capabilities: []}` 握手（DC-4 不虚报 codec 能力）+ 空源生命周期（register 校验 total_len 上限 → SourceReady(None 元数据)；DataChunk 实收封顶超限摘源 → DataAck/QuotaExceeded）+ 播放控制如实报 `HostInternal`（C2 前无解码内核不虚报状态）+ Release/Shutdown fire-and-forget/退出。单测 4（握手序/生命周期契约含信封 id 配对/配额双面/断连退出）。
+- **webview proxy + feature 门**（`crates/webview` 单提交）：`media_proxy.rs` `MediaHostClient`（懒惰 spawn + 5s 握手超时 + 二进制解析链 `ZW_MEDIA_HOST_BIN`→`CARGO_BIN_EXE`→exe 上溯→PATH）——读线程 + mpsc split transport（`try_recv` 不支持管道非阻塞；C2 泵排空队列前置），非匹配消息独立 pending 队列；**IF-006 降级纪律**：传输级失败（spawn/握手/读写/超时）置永久错误面不重试不内联回落，host `MediaError`（配额/播放）为播放级不置永久失败。feature `media-process` 默认关 = registry 直调现状零变化（C1 不改任何调用点）。契约测试 2（`#[ignore]` + test-guard 真实二进制）：全生命周期 + spawn 失败 latch 证明（坏路径失败→恢复合法路径仍失败）。
+- **顺带订正与配套**：image_decoder.rs:178 挂名注释订正（「spawn 失败→进程内解码」为失实，实际错误面，RFC v1.7/§11.1 归 C1 项，仅注释）；renderer runtime.rs 收消息 match 补 17 变体臂（媒体走独立 stdio 通道不经主进程 IPC，防 E0004）；Makefile 四处 image-decoder 构建行同列 `-p zero-media-host`。偏差九处记 [DESIGN §9.6](evidence/2026-10-24-m3-prep-design/DESIGN.md)（含 shm kill-switch 集成测试延后 C2：C1 无 Frame 流可驱动）。
+- **验收**：protocol 331 + media-host 4 + webview feature-on 定向（media_proxy 3 单测 + 契约 2）全绿；全量 `make test` 过（含 quickjs clippy 组合）；`cargo check -p zero-webview`（默认关，media_proxy 不编译）过。首轮 make test 暴露 renderer E0004（17 变体非穷尽 match）——已修后复跑绿。
+- 共享面占用：protocol（消息族）+ webview（feature 门/proxy/注释）+ renderer（match 臂）+ Makefile；registry/engine/media 零改动，默认关路径行为零变化。
