@@ -11338,11 +11338,16 @@
 
   function _zwMakeHTMLCollection(elements, liveSpec) {
     var state = { els: elements };
+    // R5267（html-semantics M2 切片 60）：rebuild 钩子——[SameObject] 集合的 live 读
+    // 重建形态（HTMLTableElement.rows 等排序/过滤复杂的派生集合）：每次属性读重算
+    // 成员表（排序/过滤天然最新），不注册写侧 live 维护（无 matches → 不进
+    // _zwLiveCollections）。与 matches 形态互斥：传 rebuild 的调用方不得依赖写侧同步。
+    var _rebuild = (liveSpec && typeof liveSpec.rebuild === 'function') ? liveSpec.rebuild : null;
     var target = Object.create(_zwHCPrototype());
     // __zwHC：读入口（trap 与 prototype 方法共用）。live 维护在写入侧（_zwHCLiveInvalidate
     // 同步 push/filter state.els），读取零开销。
     function current() {
-      return state.els;
+      return _rebuild ? _rebuild() : state.els;
     }
     target.__zwHC = current;
     // named 候选表：文档序首匹配（id 或 name 反射）。与旧 R43 实现一致（含空串/纯数字排除语义

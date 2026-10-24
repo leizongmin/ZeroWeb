@@ -2,9 +2,35 @@
 
 **版本**: v2.0
 **日期**: 2026-10-24（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 59 收口（tabular-data 域 R5266 tr 族索引/集合读侧 childNodes 化，域 **94P/40F → 122P/12F** GAIN 28 / REG 0；interactive-elements 全域 439P/44F/0T 复跑逐值不变），下一步 table-rows 5F（HTMLCollection 类型）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 60 收口（tabular-data 域 R5267 table.rows HTMLCollection 形态，域 **122P/12F → 127P/7F** GAIN 5 / REG 0；interactive-elements 全域 439P/44F/0T 复跑逐值不变），下一步 table-insertRow 2F + tBodies 1F（可并片）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-24 M2 切片 59 收口，tr 族索引/集合读侧轮）**：
+> **▶ 当前状态（2026-10-24 M2 切片 60 收口，table.rows HTMLCollection 轮）**：
+> tabular-data 域第三实施切片：**122P/12F → 127P/7F**（GAIN 5 / REG 0），
+> interactive-elements 全域 **439P/44F/0T** 复跑逐值不变，zero-engine
+> lib **3454P/0F**（+5 为 oracle 流新增测试）。**修复面（R5267）**：
+> ①`_zwMakeHTMLCollection` 加 **rebuild 钩子**——[SameObject] 集合的 live
+> 读重建形态：每次属性读重算成员表（排序/过滤天然最新），不注册写侧
+> live 维护（无 matches 不进 `_zwLiveCollections`；与 matches 形态互斥
+> 守卫，既有调用方零变化）。②rows getter（part03）裸数组 → 集合形态：
+> `_zwRowsCollCache` WeakMap 缓存（R3908 selectedOptions 同口径，键 =
+> 元素 proxy；rebuild 闭包持 sel/handle 原始值防自持环）+ rebuild 每读
+> 重算 `_zwTableRowsAll`/`_zwTblChildAll`（s59 地基复用）。table-rows
+> 断言面全落既有完备工厂：instanceof（`_zwHCPrototype` 链）、named
+> getter（id 全元素 + name 仅 HTML-ns）、ownKeys（[indices…, names…]
+> 集合序）、gOPD、canonical 索引；live 断言（removeChild 后 namedItem
+> →null）由重建天然过。**范围界定**：仅 rows 收进集合；cells/tBodies
+> 保持数组（类型一致化留挂账）；`_rowList`/`_cellList` 消费面经 trap
+> 语义兼容零改动。**验证**：table-rows 5/5 全绿 + 连带面逐文件复核零
+> 回归（remove-row/insertCell/rowIndex/sectionRowIndex/cells/cellIndex/
+> createTBody/table-insertRow 持平）。账本见
+> [evidence/2026-10-24-m2s60-table-rows-htmlcollection.md](html-semantics-compat/evidence/2026-10-24-m2s60-table-rows-htmlcollection.md)。
+> **下一步**：tabular-data 余 7F——table-insertRow 2F（无 tr 时插入位
+> 语义：spec **末 tbody**，现实现首 tbody）+ tBodies 1F（DOMParser XML
+> documentElement.getElementsByTagName 缺）可并片；处理模型 4F 待分诊。
+> **切片间隙**：本轮 part03/05；下一挂账亦 shim 面——间隙开放，开工前
+> 查 oracle master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 59 收口，tr 族索引/集合读侧轮）**：
 > tabular-data 域第二实施切片：**94P/40F → 122P/12F**（GAIN 28 / REG 0），
 > interactive-elements 全域 **439P/44F/0T** 复跑逐值不变，zero-engine
 > lib **3449P/0F**。**根因（R5266）**：tr 族六 getter（rowIndex/
@@ -30,12 +56,8 @@
 > 122P/12F/0T；interactive-elements 439P/44F/0T（REG 0）；lib 3449P/0F；
 > fmt/clippy 干净。账本见
 > [evidence/2026-10-24-m2s59-tr-index-family.md](html-semantics-compat/evidence/2026-10-24-m2s59-tr-index-family.md)。
-> **下一步**：tabular-data 余 12F——table-rows 5F（instanceof
-> HTMLCollection 读侧类型，参照 R3908 selectedOptions 形模式）下一切片；
-> table-insertRow 2F（无 tr 时插入位）、tBodies 1F（DOMParser XML 面）、
-> 处理模型 4F 待分诊。**切片间隙**：本轮 part03/05 + part15 测试文件；
-> 下一挂账 table-rows 亦 shim 面——间隙开放，开工前查 oracle master
-> 碰撞记录。
+> **下一步**（s60 已收口）：table-rows 5F 已清；余挂账 table-insertRow
+> 2F / tBodies 1F / 处理模型 4F / cells-tBodies 类型一致化。
 >
 > **▶ 上轮状态（2026-10-24 M2 切片 58 收口，tabular-data create/delete + setter 族轮）**：
 > tabular-data 域首个实施切片：**67P/67F → 94P/40F**（GAIN 27 / REG 0），

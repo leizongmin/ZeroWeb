@@ -14942,6 +14942,9 @@
     }
     return -1;
   }
+  // R5267：rows HTMLCollection [SameObject] 缓存（键 = 元素 proxy；换代后 sel 重解析
+  // 自然换键，弱引用自清——同 `_zwOptionsCollCache` 形）。
+  var _zwRowsCollCache = new WeakMap();
 
   // detached Document（供 document.implementation.createDocument/createHTMLDocument，R2815；R3013 queryable；
   // R3016 traversable）。
@@ -24295,11 +24298,23 @@ return e;
         if (prop === 'rows') {
           var rTag = (_realTag(sel, handle) || '').split(':').pop();
           if (rTag === 'TABLE' || rTag === 'THEAD' || rTag === 'TBODY' || rTag === 'TFOOT') {
-            var rrSelf = sel ? _wrapSelector(sel) : _wrapHandle(handle);
-            if (!rrSelf) return [];
-            // table = spec rows 排序集合；section = 直接 HTML-ns tr 子。
+            if (!sel && !handle) return _zwMakeCollection([], true);
+            // R5267：HTMLCollection 形态（table-rows.html instanceof/named/ownKeys/
+            // live 断言面）——[SameObject] WeakMap 缓存外层 + rebuild 读重建（每次
+            // 属性读重算 spec 排序成员表；R5266 `_zwTableRowsAll`/`_zwTblChildAll`
+            // 复用）。闭包持 sel/handle 原始值不持 proxy（防 WeakMap 键自持环，
+            // R3908 selectedOptions 同口径）。
             // https://html.spec.whatwg.org/multipage/tables.html#dom-table-rows
-            return rTag === 'TABLE' ? _zwTableRowsAll(rrSelf) : _zwTblChildAll(rrSelf, 'tr', null);
+            var _rowsKey = _makeProxy(sel, handle);
+            var _rowsColl = _zwRowsCollCache.get(_rowsKey);
+            if (!_rowsColl) {
+              var _rowsRebuild = rTag === 'TABLE'
+                ? function () { return _zwTableRowsAll(sel ? _wrapSelector(sel) : _wrapHandle(handle)); }
+                : function () { return _zwTblChildAll(sel ? _wrapSelector(sel) : _wrapHandle(handle), 'tr', null); };
+              _rowsColl = _zwMakeHTMLCollection(_rowsRebuild(), { rebuild: _rowsRebuild });
+              _zwRowsCollCache.set(_rowsKey, _rowsColl);
+            }
+            return _rowsColl;
           }
         }
         if (prop === 'tBodies' && (_realTag(sel, handle) || '').split(':').pop() === 'TABLE') {
