@@ -259,3 +259,77 @@ clone，仅引用计数」（runtime.rs:1453-1455）；`svg_source: Arc<[u8]>`�
 - 既有 image_cache 契约测试（ref_count/gc/世代）全绿；快照 Arc 化后 `duplicate_for_snapshot`
   单测补 Arc 共享断言（同像素指针、源缓存驱逐不影响快照读取）。
 - 回滚：三个子项各自单提交（C4 / C2 / 封顶互相独立）。
+
+## 9. C1 实施级设计——媒体消息族 wire format + media-process 骨架（同日第四轮增补）
+
+### 9.1 协议面现状核对（拟新增命名冲突排查）
+
+- `ProcessRole`（protocol/channel.rs:20-31）现有 Browser/Renderer/Network/ImageDecoder/Compositor
+  五变体，无 Media——拟新增 `ProcessRole::Media`；`child_process_args`（process.rs:133-142）role→type
+  名映射拟增 `Media => "media"`（产出 `--type=media --instance-id=N`；先例 :138 `"image-decoder"`）。
+- `IpcMessageKind`（message.rs:119-133 一带）grep 证实无任何 `Media*` 变体（最近邻 ImageDecodeRequest/
+  Result :119/:121、CompositorFrame :125）——IF-002~006 全族 14 个拟新增变体命名零冲突。
+- 载荷先例：`ImageDecodeParams`（message.rs:860+）`request_id` 回带匹配 = `MediaSeek{request_id}` →
+  `MediaSeekResult{request_id}` 同构；请求/响应配对走既有 `IpcMessage{id, kind}` 信封（IF-002 已定）。
+- 帧传输先例：frame_shm.rs:11 `SHM_PREFIX = "zeroweb-cmp-"`、:118 段名
+  `{surface_id}-{frame_id}-{nonce}`、:14 `env_linux_default_on` 环境关断——媒体侧镜像为
+  `zeroweb-media-` 前缀 + `ZW_MEDIA_SHM=0` 关断。
+
+### 9.2 消息族 wire format 草案（14 拟新增变体）
+
+renderer → host（控制面，IF-002）：
+
+| 拟新增变体 | 载荷 | 响应 |
+|---|---|---|
+| `MediaRegisterSource` | source_key: u64、total_len: u64、mime: String | `MediaSourceReady` / `MediaError{QuotaExceeded}` |
+| `MediaDataChunk` | source_key、seq: u64、data: Vec\<u8\> | `MediaDataAck{last_seq}`（累积回执） |
+| `MediaPlay` | source_key、position_ms: u64 | `MediaStateUpdate` |
+| `MediaPause` | source_key | `MediaStateUpdate` |
+| `MediaSeek` | source_key、target_ms: u64、request_id: u64 | `MediaSeekResult{request_id, resolved_ms}` |
+| `MediaReleaseSource` | source_key | —（fire-and-forget） |
+| `MediaShutdown` | — | —（host 对 stdin EOF 亦自行退出） |
+
+host → renderer（握手/状态/帧/错误面，IF-001/003/004/006）：
+
+| 拟新增变体 | 载荷 |
+|---|---|
+| `MediaReady` | protocol_version: u32、capabilities: Vec\<String\>（codec 面真值，与 canPlayType 同源） |
+| `MediaSourceReady` | source_key |
+| `MediaDataAck` | source_key、last_seq |
+| `MediaStateUpdate` | source_key、epoch: u64、state: MediaPlaybackState |
+| `MediaSeekResult` | request_id、resolved_ms: u64 |
+| `MediaFrame` | source_key、epoch、pts_ms、key: bool、像素（shm 段名或内联 rgba） |
+| `MediaError` | source_key、epoch、code: MediaErrorCode、message |
+
+伴生拟新增类型：`MediaPlaybackState`（`Playing{media_time_ms}` / `Paused{media_time_ms}` /
+`Ended` / `Error{code}`）、`MediaErrorCode`（DecodeFailure / SourceCorrupt / QuotaExceeded /
+FrameTooLarge / HostInternal）。全部走既有 `IpcMessage` 信封 + bincode over PipeTransport；单消息受
+`MAX_FRAME_SIZE` 64MiB 约束——`MediaDataChunk` 上限内分片，`MediaFrame` 超限 → `FrameTooLarge`
+（4K RGBA ≈33MB 在界内，RFC §5.1 已核）。
+
+### 9.3 media-process 骨架
+
+- 新 app `apps/media-host`（bin `zero-media-host`）：`run_role<C: IpcChannel>` 循环照搬 image-decoder
+  先例（读信封→分发→回写；对端断开/stdin EOF 退出）；连接后首发 `MediaReady` 握手，renderer 侧
+  版本/能力不符按 spawn 失败处理（IF-001）。
+- `ProcessRole::Media` 接线：child_process_args 映射 + webview 侧 media_proxy 懒 spawn（首个媒体源
+  play 时；image_decoder.rs:211 先例）+ spawn 失败 → SPAWN_FAILED 永久进程内（:178 注记先例）；
+  握手等待超时（实施定值，5s 量级）同落此面。
+- host 内核：C1 只立骨架 + 握手 + 空源生命周期（register/release/错误面，保契约可测）；zero-media
+  player/audio entry 移植（携 A1 修复后实现）归 C2 接入。
+- feature `media-process` 默认关（= D-RFC-1 未批不进）：关时 registry 直调 zero-media（现状路径零
+  变化），proxy 不参与。
+- Makefile：media-host 挂入与 image-decoder 相同的构建接线位（Makefile :120/:201/:220/:1641 先例位）。
+
+### 9.4 契约测试计划（C1 验收面）
+
+- protocol 单测：14 变体 bincode 往返 + 64MiB 超限拒绝 + 两个伴生枚举覆盖（image-decoder 消息测试
+  同形）；process 单测：`--type=media` 映射断言。
+- 集成测试（`#[ignore]` 显式运行 + test-guard 包裹，M1 先例）：host 两端契约（回声/错误注入）、
+  spawn 失败永久内联回落、`ZW_MEDIA_SHM=0` 内联帧路径、feature 关 = 现状直调（回归守护）。
+- 回滚：C1 全部处于默认关 feature 之后，单提交回退无行为影响。
+
+### 9.5 边界（C1 不做）
+
+- MSE 字节流 IPC 化不进 C1（decode-h264 门控，依赖 D-RFC-4）；重启/退避策略归 C3；host 自走时钟
+  节拍与 100ms 推送校准归 C2；不新增第三种传输（复用 PipeTransport + frame_shm）。

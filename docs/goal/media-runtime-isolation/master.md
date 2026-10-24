@@ -1,7 +1,7 @@
 # 媒体运行时隔离控制面
 
 **日期**：2026-10-24
-**状态**：Active（**M1 基线测量完成**——见 [2026-10-24 evidence](evidence/2026-10-24-m1-baseline/ANALYSIS.md)；**M2 两项交付齐备 + M3 前置设计就绪待用户评审**——[docs/specs/media-runtime-isolation-spec-rfc.md](../../../specs/media-runtime-isolation-spec-rfc.md) v1.2：三路线对比 + §9 接口契约 + A4 seek 窄化批次；A1/A4 设计稿见 [m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；D-RFC-1~4 决策点）。
+**状态**：Active（**M1 基线测量完成**——见 [2026-10-24 evidence](evidence/2026-10-24-m1-baseline/ANALYSIS.md)；**M2 两项交付齐备 + M3 前置设计就绪待用户评审**——[docs/specs/media-runtime-isolation-spec-rfc.md](../../../specs/media-runtime-isolation-spec-rfc.md) v1.5：三路线对比 + §9 接口契约；A1–A4 + C1 设计稿齐备见 [m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；D-RFC-1~4 决策点）。
 **当前卡点**：用户评审/批复 RFC（D-RFC-1~4：方案 C 立项 / A 批次随批 / 方案 B 核查 / decode-h264 启用）。批复前不改代码、不装 SDK、不变 feature 表。M1 待决输入（时钟 rate 1.454、NullSink）已入 RFC 方案 A 批次与 TBD-3。
 **下一步**：用户批复后按 RFC §7 批次推进——D-RFC-2 随批即启 A1（时钟批内对齐）；D-RFC-1 批准则并行 C1（protocol 媒体消息族 + `media-process` feature 骨架）。若改选 A-only，DC-3 按 DC-5 由用户认可延期/调整后收口。
 **入口**：[目标契约](../media-runtime-isolation.md) / [启动与证据协议](../ladybird-followups/README.md)
@@ -21,7 +21,7 @@
 |---|---|---|---|
 | M1 | 生产资源、能力与权限基线 | **完成**（测量面成立，收口待评审） | [2026-10-24 基线](evidence/2026-10-24-m1-baseline/ANALYSIS.md) |
 | M2 | 方案/许可证/回滚 RFC + protocol 接口契约 | **v1.2 完成待批复**（决策门=用户） | [media-runtime-isolation-spec-rfc](../../../specs/media-runtime-isolation-spec-rfc.md) |
-| M3 | 已确认平台与隔离切片 | NOT_STARTED（A1–A4 设计稿齐备，待 D-RFC-2） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
+| M3 | 已确认平台与隔离切片 | NOT_STARTED（A1–A4 + C1 设计稿齐备，待 D-RFC-2/1） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
 | M4 | 配对媒体、故障和资源审计 | NOT_STARTED | 无 |
 
 ## 验证基线
@@ -87,3 +87,21 @@
   - **源驻留封顶**：`sources`/`av_sources` 无总量上限（M1 §5 缺口）；**av_sources 有 seek 重建功能性依赖**（seek :945-959 字节源）——设计为 256MB 总预算 + 非在播 LRU 驱逐（av_sources 随 player 存活保留）+ 准入拒绝走既有错误面。
   - 回滚：三子项各自单提交。
 - RFC v1.4：A3 行补设计稿指引；无决策/门禁/批次范围变化。
+
+### 2026-10-24 M3 前置设计轮 IV（C1）
+
+- DESIGN.md 追加 §9（同日第四轮，仍零代码改动）——**C 批次首片实施级设计就绪**：
+  - **命名冲突排查闭合**：`ProcessRole`（channel.rs:20-31）无 Media 变体、`IpcMessageKind` 无任何
+    Media* 变体（最近邻 ImageDecode* :119/:121、CompositorFrame :125）——IF-002~006 全族 14 个拟
+    新增变体命名零冲突。
+  - **wire format 草案**：控制面 7 变体（Register/DataChunk/Play/Pause/Seek{request_id}/Release/
+    Shutdown）+ host 面 7 变体（Ready/SourceReady/DataAck/StateUpdate{epoch}/SeekResult/Frame/Error）
+    + MediaPlaybackState/MediaErrorCode 伴生枚举；全走 IpcMessage 信封 + bincode，受 64MiB 上限
+    （DataChunk 分片、Frame 超限 → FrameTooLarge）。
+  - **骨架边界**：C1 = `apps/media-host`（run_role 先例）+ `--type=media` 接线 + 懒 spawn/
+    SPAWN_FAILED 永久内联先例镜像 + 空源生命周期（保契约可测）；解码内核（携 A1 修复后实现）
+    C2 接；`zeroweb-media-` shm 前缀 + `ZW_MEDIA_SHM=0` 关断镜像 frame_shm 先例；feature
+    `media-process` 默认关 = D-RFC-1 门。
+  - 契约测试计划：bincode 往返/超限拒绝/`--type=media` 映射单测 + 内联回落与 kill-switch 集成
+    （`#[ignore]` + test-guard 先例）。
+- RFC v1.5：C1 行补设计稿指引；无决策/门禁/批次范围变化。
