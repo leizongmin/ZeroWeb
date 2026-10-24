@@ -397,6 +397,32 @@
           }
           return resourceState.url;
         }
+        // s69（html-semantics M2 切片 69，2026-10-24）：img.decode() —— image
+        // decoding API promise 面接 settle 状态机。决策序与恒异步 settle 语义
+        // 在共享解码核 `__zwImgDecodeCore`（part03 SVG 接口环后定义，IIFE 同
+        // 作用域；select-image-source 近似 / 活跃文档判别 / 终态即决 / 自驱
+        // fetch 链 / settle 复检候选变异与 adopt 时序）。本臂只提供 trap 闭包
+        // 的属性读通道（R3204 latest-wins——`__zw_get_attr` 是解析期陈旧快照）
+        // 与资源 key（终态复用）。
+        // https://html.spec.whatwg.org/multipage/embedded-content.html#dom-img-decode
+        if (resourceTag === 'IMG' && prop === 'decode') {
+          return function () {
+            var _dcSelf = this;
+            var _dcRead = function (name) {
+              return handle ? __zw_get_attr_handle(handle, name)
+                : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, name) : __zw_get_attr(sel, name));
+            };
+            return globalThis.__zwImgDecodeCore(_dcSelf, function () {
+              var s = String(_dcRead('src') == null ? '' : _dcRead('src')).trim();
+              if (!s) {
+                var ss = String(_dcRead('srcset') == null ? '' : _dcRead('srcset'));
+                var m = ss.match(/^\s*([^\s,]+)/);
+                if (m) s = m[1];
+              }
+              return s;
+            }, key);
+          };
+        }
         // media-elements M3 扩批：`source.src` IDL getter——URL 属性反射 + base 解析为绝对 URL
         //（同 track.src / a.href 模式；URL 解析前剥离首尾 C0 control/space）。缺省返 ''。
         // https://html.spec.whatwg.org/multipage/embedded-content.html#dom-source-src

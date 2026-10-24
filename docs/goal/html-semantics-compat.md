@@ -2,9 +2,37 @@
 
 **版本**: v2.0
 **日期**: 2026-10-24（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 68 收口（F1 img 静态加载管线收口 R5275：域 **461P/816F/40T → 549P/738F/35T** GAIN 88 / REG 0），下一步 F1b naturalWidth SVG 固有尺寸尾片（210F 余量）或 F3 img.decode()；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 69 收口（F3 img.decode() promise 面收口 R5276：域 **549P/738F/35T → 607P/678F/37T** GAIN 58 / REG 0），下一步 F1b naturalWidth SVG 固有尺寸尾片（210F 余量）或 F2 select-image-source/currentSrc/srcset（~300F 最大单族，decode 已接近似地基）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-24 M2 切片 68 收口，F1 img 静态加载管线轮）**：
+> **▶ 当前状态（2026-10-24 M2 切片 69 收口，F3 img.decode() 轮）**：
+> s67 八族地图 F3 收口（60 子测试 60F → 58P/2F）。**根因**：decode IDL 无
+> 实现（get trap 无臂 + SVGImageElement 原型无方法）。**修复（R5276 三刀）**：
+> ①共享解码核 `__zwImgDecodeCore`（part03 IIFE 顶层，IMG trap/detached 动态
+> 臂/SVG 原型三方复用）——select-image-source 近似候选（picture 首 source
+> srcset 首 token，data: URL 不逗号截断）**调用时捕获** + 恒异步 settle +
+> settle/快捷面双点变异与活跃性复检（探针钉定中断前同步即决稿三缺口：同步
+> 即决漏 adopt 时序、pinned 恒拒臂挡 adopt-in、settle 重读误判同 turn
+> attach）+ 自驱 fetch 链，decode 只读不写 settle 状态；②part03 detached
+> 产物动态臂（调用时 parentNode 链判活跃，adopt-in 后可达走核，属性空回落
+> src expando）+ SVGImageElement.prototype.decode（href → xlink:href）；
+> ③part04 trap 臂瘦身为闭包供给。extract.rs collapsible_if（s68 遗留
+> clippy，非行为变更）。契约 part86 两测试（决策序九臂 + adopt/SVG/picture
+> 九臂）。**验证**：域 **549P/738F/35T → 607P/678F/37T**（GAIN 58 = 58
+> F→P；子测试总数 1322 守恒；逐子测试 diff 非 decode 变化仅 2 条）+ 残留
+> 2F = quick-attach empty picture cached/uncached 时序差（issue 10531 待改
+> 行为，归 F2 请求对象模型）+ 2 案 F→T（audio/video loading-lazy-autoplay
+> **预存环境抖动**——stash 后 HEAD 复跑同 Timeout 实证，非本切片）+ lib
+> **3477P/0F**（+2 契约）+ clippy/fmt clean。账本见
+> [evidence/2026-10-24-m2s69-img-decode.md](html-semantics-compat/evidence/2026-10-24-m2s69-img-decode.md)。
+> **下一步**：F1b naturalWidth SVG 固有尺寸/密度校正尾片（210F 余量，
+> intrinsic dimensions 算法）或 F2 select-image-source/currentSrc/srcset/
+> sizes（~300F 最大单族——decode 已消费 select-image-source 近似，开片有
+> 地基）——按共享路径收益取一开片。
+> **切片间隙**：本轮 part03/part04 shim + 契约 part86 + extract.rs（s68
+> 遗留 clippy）；下一挂账 F1b/F2 亦 engine 面，间隙开放，开工前查 oracle
+> master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 68 收口，F1 img 静态加载管线轮）**：
 > s67 八族地图 F1 首靶收口（原估 ~260F，实测归因后 raster src 克隆可翻
 > 部分本轮全收，SVG 尾片归 F1b）。**根因**：img settle 只接 `.src` IDL
 > setter 通道（R56h），parser 静态 `<img src>` 无 fetch/settle——
