@@ -74,6 +74,12 @@ cue 路径全部精确命中（precise-seek 语义成立）。耗时方差大（
 narrow phase 前向扫块），30s 热路径 O(log n) 达标；冷/热差与 15s/45s 慢点为后续
 M3 seek 切片的优化证据，本轮不展开。
 
+> 订正（2026-10-24 同日 M3 前置设计轮）：15s/45s 慢点主项经三方证据归因为
+> **phase-② 全量前向解码（∝ target，非冷 I/O）**——mid-GOP 目标块非 keyframe 触发
+> `decode.rs:285` 回退；30s 恰为 keyframe 对齐走 phase-①。证据与修复设计（A4 cue
+> 锚定窄化）见 [2026-10-24-m3-prep-design/DESIGN.md](../2026-10-24-m3-prep-design/DESIGN.md)
+> §3；解码器重建降为 ms 级次项。上文原归因按当时静态分析保留不改写。
+
 ## 4. 帧复制链静态图（decode → 上屏）
 
 生产链（runtime.rs:4122 泵 → try_republish_cached → CPU/GPU 光栅）逐节点：

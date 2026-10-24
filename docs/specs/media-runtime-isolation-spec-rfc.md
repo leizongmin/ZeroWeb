@@ -1,6 +1,6 @@
 # RFC：平台媒体解码与媒体运行时隔离——方案/许可证/回滚
 
-**版本**：v1.0-draft
+**版本**：v1.2-draft
 **日期**：2026-10-24
 **作者**：AI Assistant（Rally media-runtime-isolation M2）
 **状态**：草稿——待用户评审决策（D-RFC-1~4；见 §10）
@@ -203,6 +203,7 @@ request/response）、**跨进程时钟/状态镜像**（DC-2 契约核心，C2 
 | A1 | 时钟批内对齐（advance_to 插值/目标对齐，rate→≈1.0） | D-RFC-2（随批） | 扩展 `media_m1_baseline.rs` T3 断言收 0.9–1.1；时钟契约测试 | 单提交回退 |
 | A2 | 三缺口修复（autoplay 绕桥 / 死钩子接线 / load 时桥武装） | D-RFC-2（随批） | 拟新增页面语义测试 + bg02-media 基线 v2 回补 | 单提交回退 |
 | A3 | C4 快照深拷贝消除（publish 路径引用化/写时复制）、C2 扫描跳过、源驻留封顶 | D-RFC-2（随批；性能关键面） | `make bench-gate` 定向（media/render 域）+ M1 harness 复测 | 单提交回退 |
+| A4 | seek 定位窄化：phase-② 全量前向（O(target)）→ cue 锚定 fallback（O(GOP)，`decode.rs` 面；归因证据见 goal evidence 2026-10-24-m3-prep-design DESIGN.md §3） | D-RFC-2（随批） | 扩展 `m1_seek_cue_path`：mid-GOP 目标耗时不随 target 线性增长；15/30/45 三点不回退 | 单提交回退 |
 | C1 | `zero-protocol` 媒体消息族契约（§9 IF-001/002/005/006）+ host 进程骨架（feature `media-process` 默认关） | D-RFC-1 | 契约测试（两端同步核对）；默认关路径全量 `make test` 绿 | feature 关即现状 |
 | C2 | registry 客户端切换 + 状态/时钟代理（§9 IF-003/004；DC-2 契约测试） | D-RFC-1 | 拟新增跨进程时钟/状态/seek 契约测试；A/V 漂移真值复测 | feature 关 |
 | C3 | 故障注入验收（DC-3）：host 终止 → 可观察错误 → 重载恢复 | D-RFC-1 | 拟新增 DC-3 场景测试（真实进程终止） | feature 关 |
@@ -210,7 +211,7 @@ request/response）、**跨进程时钟/状态镜像**（DC-2 契约核心，C2 
 | B1 | 平台框架逐平台核查（§4.2 表落 evidence） | D-RFC-3 | 核查报告 + 可用平台清单 | 纯文档 |
 | B2+ | 首个平台 backend（依核查结果定） | D-RFC-3 + 用户点名平台 | capability 真值测试 + 软解配对 | feature 关 |
 
-依赖：A1–A3 与 C1 并行可行（不同文件面）；C2 依赖 A1（时钟语义先修）；C3 依赖 C2；B 依赖 B1 核查。
+依赖：A1–A4 与 C1 并行可行（不同文件面；A4 在 media 层 `decode.rs`，A1 在 webview 层 registry）；C2 依赖 A1（时钟语义先修）；C3 依赖 C2；B 依赖 B1 核查。
 
 ### 7.1 代码变更边界
 
@@ -227,6 +228,7 @@ request/response）、**跨进程时钟/状态镜像**（DC-2 契约核心，C2 
 | DC-3（拟新增） | 集成（C3 批次） | 终止 media host → 播放错误事件可见 → renderer 可用 → 重载恢复 | 长 fixture + 进程终止注入 | 现架构无法测试（方案 C 动机） |
 | DC-4（部分已测） | 平台核查（已落 evidence）+ 拟新增 quota 测试 | 能力查询真值；无硬解→软解回退；超限拒绝 | 环境事实 | 跨平台核查缺口 = TBD-2/TBD-4 |
 | 时钟缺陷回归 | 扩展 T3 断言（A1） | rate 收 0.9–1.1 带 | AV 长 fixture | 现 sanity 带 0.5–3.0 防回退后收紧 |
+| seek 冷路径回归（A4，v1.2 增补） | 扩展 `m1_seek_cue_path` | mid-GOP 目标（15s/45s）seek 耗时 ≤ GOP 前向上界且不随 target 线性增长；keyframe 对齐点不回退 | 长 fixture（GOP=2s 受控形态） | WPT 上游流 GOP 抽样 = 实施期待验证项 |
 | 帧传输双路径（C2/C4） | 集成（拟新增） | `media-process` 开/关配对：同一 fixture 逐帧像素一致（shm 开与 `ZW_`关断、内联回落各一档） | 长 fixture + 环境变量翻转 | Linux shm/内联两路径均显式覆盖；非 Linux 平台实测缺口 = TBD-4 |
 | 帧拷贝回归 | `make bench-gate` 定向（A3） | media/render 域微基准不回退 | 基线在库 | 全量 capture 合入前补跑 |
 
@@ -362,12 +364,13 @@ request/response）、**跨进程时钟/状态镜像**（DC-2 契约核心，C2 
 - **语义评审（关键项）**：原始意图与授权一致（Pass——推荐不采纳，§10 决策表留用户，加粗声明「批复前不改代码/不装 SDK/不变 feature 表」）；外部事实保守化（Pass——§4.2 平台框架全表标待验证 → TBD-2，未写入任何 FR/已定决策）；实现来源闭合（Pass——§3.1 来源列：A 仓内自实现、C 复用 protocol 先例 + 拟新增、B 拟新增平台 backend）；章节引用（Pass——§10→§5.1、§4.2→TBD-2、§5.2→C3、§9→§7/§10、§5.1A→§9、§11→§0/§3.1/§4.2/§7/§8/§10 均实指）；清单/依赖计数一致（Pass——新增依赖仅 §3.1/§5.2 所列拟新增项，无未列依赖）。
 - **独立评审记录（同日）**：独立视角复核（完整文档 + 原始需求 + 代码锚点逐项核实）返回 0 blocker / 2 major / 5 minor，全部已修复——major①D-RFC ID 与前 RFC 撞名（§10 消歧注 + 全文标「前 RFC」）；major②§2.2 产能数字与入库 raw log 不一致（已对齐 42–45× 口径，evidence 侧同步订正）；minor 含 §7 门禁列、MSE feature 门控限定、ProcessManager 无重启先例的诚实边界（§5.1A）、§4.1 许可待核查标注。
 - **v1.1 增补检查（§9 接口契约）**：结构（IF-001~006 各带错误处理/默认动作，先例映射表 9.0 逐行区分真名/拟新增——实现来源闭合 Pass）；语义（§5.1A「无先例可复用」旧表述经 image-decoder 源码核实后修正为部分先例——外部事实保守化 Pass，进程模型事实全部锚定 `apps/image-decoder`、`image_decoder.rs`、`process.rs:143`、`frame_shm.rs` 真名）；引用（§9→§7/§10/§8 实指）；新拟新增名称（`ProcessRole::Media`、`MediaReady`/`MediaStateUpdate`/`MediaFrame`/`MediaError` 族、`zeroweb-media-*` shm 前缀）全部标注拟新增且不进入任何已定决策——仍受 D-RFC-1 门禁。
-- **Warning ×1**：M1 seek 冷路径（15s/45s 慢点）未归因——不阻塞架构决策，留 A 批次观察（见已接受风险）。
+- **Warning ×1**：M1 seek 冷路径（15s/45s 慢点）未归因——不阻塞架构决策，留 A 批次观察。**v1.2 已归因**（fixture 块级探针 + matroska-demuxer 源码 + `decode.rs` 判定三方交叉：mid-GOP 目标触发 phase-② 全量前向解码，耗时 ∝ target，证据见 goal evidence DESIGN.md §3），拟新增 A4 批次收口，实施期窄化后复核。
 - **Skip ×3**：平台 API 可用性、许可核查结论、真机环境（均属 TBD-2/TBD-4 外部事实，未验证 ≠ 通过；不阻塞 A/C）。
 - **PendingReview ×4**：D-RFC-1~4（决策点，呈现用户）。
 - **N/A ×5**：场景存在性、UI 对齐、CLI 语义、默认动作闭合、优先级完备（无 UI/CLI 接口需求；无 FR/NFR 新定义——设计交付引用 goal 权威）。
 - **未决与阻塞**：TBD-1（PendingReview）阻塞实施、不阻塞草案评审；TBD-2/TBD-4 仅阻塞方案 B 与跨平台收口。
-- **已接受风险**：方案 C 非 Linux 帧传输先内联（性能缺口已知，双路径配对测试见 §8）；seek 冷路径方差未归因；决策前 main 保持纯方案 A 能力。
+- **已接受风险**：方案 C 非 Linux 帧传输先内联（性能缺口已知，双路径配对测试见 §8）；seek 冷路径方差已归因（v1.2，收口待 A4）；决策前 main 保持纯方案 A 能力。
+- **v1.2 增补检查（A4 批次 + 归因）**：结构（§7 A4 行带门禁/验证/回滚列，与 A1–A3 同构——实施交接完备维持 Pass）；语义（归因证据三方交叉为一手事实——demuxer 源码为 cargo registry 本地只读、fixture 探针为自建产物分析、`decode.rs` 判定为仓内源码；「cue 访问 API 不存在」经 matroska-demuxer 0.8.1 源码核实（`CuePoint` 私有），A4 的 Cues 自解析实现来源闭合（仓内自实现，fixture 生成器同构先例）——外部事实保守化 Pass）；引用（A4 行 → goal evidence DESIGN.md §3 实指；A4 仍受 D-RFC-2 门禁，未进入任何已定决策）。汇总计数不变（增补项全部 Pass，无新增 Warning/Fail）。
 
 ## 12. 待定列表
 
@@ -384,3 +387,4 @@ request/response）、**跨进程时钟/状态镜像**（DC-2 契约核心，C2 
 |---|---|---|
 | v1.0-draft | 2026-10-24 | 初稿：M1 基线（27d45b8c8）输入下的三路线对比、许可/分发核查、分批实施与回滚切点、D-RFC-1~4 决策点。同日独立评审修复（0 blocker/2 major/5 minor，见 §11 评审记录）；evidence 数字同步订正对齐 raw log。待用户评审 |
 | v1.1-draft | 2026-10-24 | 补齐 M2 交付第二项「protocol 与媒体 host 接口」：新增 §9 IF 级契约（会话/控制/状态时钟/帧/字节流/错误六面 + 先例映射），image-decoder 独立进程先例核实后修正 §5.1A 成本口径；§10 决策点、门禁与 D-RFC 语义不变。零代码改动 |
+| v1.2-draft | 2026-10-24 | M3 前置设计轮：§7 新增 A4（seek 定位窄化，O(target)→O(GOP)）+ §8 seek 回归行；M1 seek 冷路径 Warning 经三方证据归因解除（demuxer 源码 + fixture 块级探针 + decode.rs 判定，详见 goal evidence 2026-10-24-m3-prep-design/DESIGN.md）；A1 时钟批内对齐设计稿落 DESIGN.md §2。零代码改动，D-RFC 门禁不变 |

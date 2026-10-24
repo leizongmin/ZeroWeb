@@ -1,7 +1,7 @@
 # 媒体运行时隔离控制面
 
 **日期**：2026-10-24
-**状态**：Active（**M1 基线测量完成**——见 [2026-10-24 evidence](evidence/2026-10-24-m1-baseline/ANALYSIS.md)；**M2 两项交付齐备待用户评审**——[docs/specs/media-runtime-isolation-spec-rfc.md](../../../specs/media-runtime-isolation-spec-rfc.md) v1.1：三路线对比 + §9 媒体 host 接口契约（IF-001~006），D-RFC-1~4 决策点）。
+**状态**：Active（**M1 基线测量完成**——见 [2026-10-24 evidence](evidence/2026-10-24-m1-baseline/ANALYSIS.md)；**M2 两项交付齐备 + M3 前置设计就绪待用户评审**——[docs/specs/media-runtime-isolation-spec-rfc.md](../../../specs/media-runtime-isolation-spec-rfc.md) v1.2：三路线对比 + §9 接口契约 + A4 seek 窄化批次；A1/A4 设计稿见 [m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；D-RFC-1~4 决策点）。
 **当前卡点**：用户评审/批复 RFC（D-RFC-1~4：方案 C 立项 / A 批次随批 / 方案 B 核查 / decode-h264 启用）。批复前不改代码、不装 SDK、不变 feature 表。M1 待决输入（时钟 rate 1.454、NullSink）已入 RFC 方案 A 批次与 TBD-3。
 **下一步**：用户批复后按 RFC §7 批次推进——D-RFC-2 随批即启 A1（时钟批内对齐）；D-RFC-1 批准则并行 C1（protocol 媒体消息族 + `media-process` feature 骨架）。若改选 A-only，DC-3 按 DC-5 由用户认可延期/调整后收口。
 **入口**：[目标契约](../media-runtime-isolation.md) / [启动与证据协议](../ladybird-followups/README.md)
@@ -20,8 +20,8 @@
 | 阶段 | 产物 | 状态 | 证据 |
 |---|---|---|---|
 | M1 | 生产资源、能力与权限基线 | **完成**（测量面成立，收口待评审） | [2026-10-24 基线](evidence/2026-10-24-m1-baseline/ANALYSIS.md) |
-| M2 | 方案/许可证/回滚 RFC + protocol 接口契约 | **v1.1 完成待批复**（决策门=用户） | [media-runtime-isolation-spec-rfc](../../../specs/media-runtime-isolation-spec-rfc.md) |
-| M3 | 已确认平台与隔离切片 | NOT_STARTED（候选清单已备） | 无 |
+| M2 | 方案/许可证/回滚 RFC + protocol 接口契约 | **v1.2 完成待批复**（决策门=用户） | [media-runtime-isolation-spec-rfc](../../../specs/media-runtime-isolation-spec-rfc.md) |
+| M3 | 已确认平台与隔离切片 | NOT_STARTED（A1/A4 设计稿已备，待 D-RFC-2） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
 | M4 | 配对媒体、故障和资源审计 | NOT_STARTED | 无 |
 
 ## 验证基线
@@ -60,3 +60,12 @@
 - 帧传输双路径与 64MiB 帧上限核过：4K RGBA ≈33MB < `MAX_FRAME_SIZE`；超限走 `FrameTooLarge` 错误码。
 - Lint 增补 v1.1 专项检查（结构/语义/引用/拟新增命名隔离四项均 Pass）；D-RFC-1~4 门禁、批复前禁令（不改代码/不装 SDK/不变 feature 表）不变。
 - 本轮零代码改动；修订历史 v1.1-draft 行已记。
+
+### 2026-10-24 M3 前置设计轮（A1 + seek 归因）
+
+- 新增 [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md)（设计准备，零代码改动）：
+  - **A1 时钟批内对齐设计稿**：缺陷机制源码级确认（三入口同构，批长 ~23.3ms > 16ms 泵节拍 → 每 tick 整批消费 → rate=B/16≈1.45）；修复 = 样本级队列（`BatchSampleQueue` 批内精确消费，EOF/loop/seek/skip 语义不变），验收 rate 收 [0.9,1.1]、漂移重测钉带。
+  - **seek 冷路径归因闭合**（M1 Warning 解除）：三方交叉证据——fixture 块级探针（1440 块仅 30 keyframe 全在偶秒；tc=15000/45000 非 keyframe、30000 keyframe）+ matroska-demuxer 0.8.1 源码（broad phase cue 二分落簇首、narrow phase 落首个 ≥ target 块、`CuePoint` 私有无 API）+ `decode.rs:258-304` 判定。因果链：mid-GOP 目标 → phase-① 判定失败 → phase-② 全量前向解码（302ms@15s、1000ms@45s，∝ target；30s keyframe 对齐 1.1ms）。M1 ANALYSIS §3.4「冷 I/O」归因就此修正（解码器重建降为次项）。
+  - **A4 修复设计**：cue 锚定窄化 fallback（Cues 自解析 ~60 行 + ≤ target 最近 cue 重 seek + 前向解码 ≤ GOP），O(target)→O(GOP)；无 Cues 流保留全量前向为最终回退。
+- RFC v1.2：§7 新增 A4 行 + 依赖行更新 + §8 seek 回归行 + §11 Warning 标注已归因 + §13 v1.2 行；D-RFC 门禁与批复前禁令不变。
+- 本轮探针/源码查阅均为只读（/tmp 脚本不入仓，cargo registry 只读）；未改代码、未装 SDK、未变 feature 表。
