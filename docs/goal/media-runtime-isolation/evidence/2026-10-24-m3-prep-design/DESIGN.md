@@ -559,6 +559,33 @@ FrameTooLarge / HostInternal）。全部走既有 `IpcMessage` 信封 + bincode 
     append 面）天然内联，registry `tick_all`/`is_any_playing` 并集形态保其内联 player 推进
     不被宿主排空短路。
 
+### 10.9 实施偏差记录（C3 落地轮增补，2026-10-25）
+
+C3 = 崩溃检测双路 + 状态机/退避重启（§11.2–11.4 实现）+ SIGKILL 注入契约（§11.5）。落地时
+确认的偏差与设计对齐点：
+
+13. **场景 4「连续 3 次 kill → Failed」按「重启尝试连续 3 次失败」实施**：§11.3「握手成功
+    重置计数」下 kill 本身不消耗重启预算（每次 kill 后成功重连即复位，三次 kill 三次恢复
+    永远到不了 Failed）——测试以 `ZW_MEDIA_HOST_BIN` 假路径驱动 1s/2s/4s 退避全败达
+    Failed（SIGKILL 一次触发重启面）。永久面判据 = 真实二进制恢复 + 超越退避窗后仍无重连
+    （若尚在 Restarting 泵重连会出新 pid）且 `play` 恒 false（无内联回落）。feature 关配对
+    对照由既有内联套件承载（同场景直调可播）。
+14. **崩溃通知 one-shot 双路投递语义**：命令路径检测（send 失败/读半失效）存 pending 由
+    泵周期 `poll_health` 下发——命令 `Err` 本身不触发镜像广播（quota 等播放级错误同为
+    `Err` 面，按码区分会漏 `HostInternal` 播放错误，广播只认崩溃通知）；`poll` `try_wait`
+    路径同步返回并清 pending（同一次崩溃不二次投递）。
+15. **stderr tail 本地实现**（不泛化共享 crate）：renderer 先例（zero-protocol
+    process.rs `spawn_stderr_reader` 族）为 `RendererId`/echo 环境变量耦合的私有函数，泛化
+    需动共享 crate 与 renderer 调用点——`media_proxy` 本地镜像同形实现（16KiB 截断 + 后台
+    读线程，host stderr 从 inherit 改 piped；诊断经 `exit_reason` 同构面）。
+16. **页面 error 事件链止步桥 getter**：C3 落 registry 镜像 error 态 → registry
+    `is_errored` → 桥 `__zwVideoBridge.isErrored` 真值口；shim march Error face → 元素
+    error 事件接线归后续切片（engine shim 属 zero-web 流共享面 + WPT event 族门禁，DC-3
+    页面级终验归 C4/M4）。
+17. **`clear()` 语义从「连接保持」改 teardown 回 Idle**：§11.4 reload 恢复路径既定（
+    MediaReleaseSource 全部 + proxy teardown + 状态机回 Idle → 全新 host）——切片 2 的
+    「页面复用零重 spawn」让位；Failed 态随导航清除（DC-3「重载恢复」验证路径）。
+
 ## 11. C3 设计——崩溃检测/重启退避 + 降级纪律先例订正（同日第六轮增补）
 
 ### 11.1 先例核实：image-decoder spawn 失败语义订正（RFC v1.7 触发点）
