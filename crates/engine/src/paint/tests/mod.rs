@@ -48,6 +48,8 @@ mod r5204_skip_spaces_decoration_tests;
 mod r5205_clamp_ellipsis_anchor_tests;
 /// R5255 迟延 positioned 后代的 shaped clip edge（R5201 圆角改写覆盖 R3922 补裁窗口）。
 mod r5255_deferred_positioned_rounded_clip_tests;
+/// R5256 整contents 选区的后代 owner 行（R5054 后代 owner FIXME 首片）。
+mod r5256_selection_descendant_owner_tests;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;

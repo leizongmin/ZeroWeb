@@ -3297,10 +3297,38 @@ impl super::Painter {
                     let mut sel_line_colors: HashMap<(NodeId, u32), Color> = HashMap::new();
                     let mut sel_padbox_fill: Option<Color> = None;
                     let mut sel_line_fills: Vec<(Rect, Color)> = Vec::new();
+                    // R5256：整contents 选区的后代 owner 行（R5054 后代 owner FIXME
+                    // 首片）——selectNodeContents(盒/祖先) 形下片段行可归 inline 后代
+                    // owner（ref 页 `<div 选区><span>text</span></div>` 的 span 文本），
+                    // 此前 owner==box_id 过滤整行跳过。整contents 判据 start==0 且
+                    // end ≥ owner（自身无记录时最近祖先）textContent utf16 长（≡ shim
+                    // dump branch ① 的 textContent 口径），该形全部片段行无条件选中；
+                    // 部分选区维持既有 owner==box_id + 行子集检查不变。
+                    let sel_owned = box_node
+                        .node_id
+                        .and_then(|id| self.text_selections.get(&id).map(|&(s, e)| (id, s, e)))
+                        .map(|(id, s, e)| {
+                            let whole = doc
+                                .text_content(id)
+                                .map(|t| t.encode_utf16().count())
+                                .is_some_and(|n| s == 0 && e >= n);
+                            ((s, e), whole)
+                        })
+                        .or_else(|| {
+                            let mut cur = box_node.node_id.and_then(|id| doc.parent_node(id));
+                            while let Some(aid) = cur {
+                                if let Some(&(s, e)) = self.text_selections.get(&aid) {
+                                    let total = doc.text_content(aid).map(|t| t.encode_utf16().count()).unwrap_or(0);
+                                    return (s == 0 && e >= total).then_some(((s, e), true));
+                                }
+                                cur = doc.parent_node(aid);
+                            }
+                            None
+                        });
                     if let Some(box_id) = box_node.node_id
                         && !is_vertical
                         && matches!(style.direction, zero_style_system::DirectionValue::Ltr)
-                        && let Some(&(sel_start, sel_end)) = self.text_selections.get(&box_id)
+                        && let Some(((sel_start, sel_end), anc_whole)) = sel_owned
                         && let Some(pseudo) = &style.selection_pseudo
                     {
                         let sel_color = super::super::color::resolve_color_current(&pseudo.color, &style.color);
@@ -3375,11 +3403,16 @@ impl super::Painter {
                         let mut any_line = false;
                         let mut all_selected = true;
                         for ((owner, ltb), line_start, line_end, min_x, max_xw) in &line_ranges {
-                            if *owner != box_id || line_end <= line_start {
+                            // 祖先整contents 形：本盒片段迭代的所有 owner（自身或 inline
+                            // 后代）都在选区内，跨 owner 行不再按 owner==box_id 过滤。
+                            if !anc_whole && *owner != box_id {
+                                continue;
+                            }
+                            if line_end <= line_start {
                                 continue;
                             }
                             any_line = true;
-                            if sel_start <= *line_start && *line_end <= sel_end {
+                            if anc_whole || (sel_start <= *line_start && *line_end <= sel_end) {
                                 sel_line_colors.insert((*owner, *ltb), sel_color);
                                 if !owner_is_text_control && sel_bg.a > 0 {
                                     sel_line_fills.push((
