@@ -250,6 +250,7 @@ impl VideoDecoder {
 
     /// Cues 的 CueTime 列表（毫秒，流序升序；无 Cues 流为空）——seek 锚点集
     ///（A4 cue 锚定窄化；测试面经此读取）。
+    #[cfg(test)]
     pub(crate) fn cue_times_ms(&self) -> &[u64] {
         &self.cue_times_ms
     }

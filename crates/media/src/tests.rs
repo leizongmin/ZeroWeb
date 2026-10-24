@@ -676,7 +676,7 @@ fn webm_cue_times_parsed_from_source_bytes() {
     // A4 cue 锚定：开流时对源字节平扫 Cues——60s fixture（GOP 2s，30 簇）应有
     // 30 个偶秒 cue 点，升序 [0, 2000, …, 58000]（tick≡ms，TimestampScale 1e6）。
     let data = fs::read(fixture_path("long-webm-vp9-60s.webm")).unwrap();
-    let mut dec = VideoDecoder::open_webm_vp9(&data).unwrap();
+    let dec = VideoDecoder::open_webm_vp9(&data).unwrap();
     let cues = dec.cue_times_ms();
     assert_eq!(cues.len(), 30, "60s/2sGOP fixture 应有 30 个 cue 点");
     assert_eq!(cues[0], 0);

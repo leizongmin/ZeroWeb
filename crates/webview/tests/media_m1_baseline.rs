@@ -200,7 +200,7 @@ fn m1_clock_fidelity_realtime_15s() {
 
 /// T4：cue 路径 seek 基线（重建 Cues 的长 fixture——cue 二分命中 keyframe）
 /// + seek 后续播到流末的参考链完整性 + A4 窄化断言（mid-GOP 冷 seek 有界且
-/// 不随 target 线性增长——cue 锚定前向解码 O(GOP)，DESIGN §3.4）。
+///   不随 target 线性增长——cue 锚定前向解码 O(GOP)，DESIGN §3.4）。
 #[test]
 #[ignore = "M1 长跑基线——显式运行（evidence 协议）"]
 fn m1_seek_cue_path() {
