@@ -1,0 +1,16 @@
+
+running 1 test
+test hosted::c4_capability_truth_host_vs_decode ... C4PAIR host-capabilities protocol_v=1 list=["video/webm; codecs=vp9", "audio/webm; codecs=vorbis", "audio/webm; codecs=opus", "audio/mpeg", "audio/ogg; codecs=opus", "audio/mp4; codecs=aac", "audio/ogg; codecs=vorbis", "audio/wav"]
+C4PAIR capability-verified claim=video/webm; codecs=vp9 fixture=sample-webm-vp9.webm decode=ok
+C4PAIR capability-verified claim=audio/webm; codecs=vorbis fixture=sample-webm-vp9-vorbis.webm decode=ok
+C4PAIR capability-verified claim=audio/mpeg fixture=sample-mp3.mp3 decode=ok
+C4PAIR capability-verified claim=audio/ogg; codecs=opus fixture=sample-ogg-opus.oga decode=ok
+C4PAIR capability-verified claim=audio/mp4; codecs=aac fixture=sample-mp4-h264.mp4 decode=ok
+C4PAIR capability-verified claim=audio/ogg; codecs=vorbis fixture=sample-ogg-vorbis.oga decode=ok
+C4PAIR capability-verified claim=audio/wav fixture=sample-wav-pcm.wav decode=ok
+C4PAIR capability-verified claim=audio/webm; codecs=opus fixture=wpt-data/media/movie_5.webm decode=ok
+C4PAIR quota code=QuotaExceeded message=total_len 268435457 exceeds per-source cap 268435456
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.02s
+

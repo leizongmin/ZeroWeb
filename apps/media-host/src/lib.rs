@@ -218,6 +218,12 @@ mod tests {
         // C2 内核能力真值（DC-4 不虚报；与 feature 门控同源）。
         assert_eq!(ready.capabilities, codec_capabilities());
         assert!(ready.capabilities.iter().any(|c| c.contains("vp9")));
+        // D4 欠申报订正后真值（C4 ANALYSIS §四）——路由面可解的两条目必须在列。
+        assert!(
+            ready.capabilities.iter().any(|c| c == "audio/ogg; codecs=vorbis")
+                && ready.capabilities.iter().any(|c| c == "audio/wav"),
+            "ogg-vorbis/wav 欠申报回归"
+        );
     }
 
     /// 空源生命周期：register → SourceReady(None 元数据) → chunk → Ack →

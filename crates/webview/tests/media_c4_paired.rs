@@ -273,6 +273,14 @@ mod hosted {
             ("audio/webm; codecs=vorbis", "sample-webm-vp9-vorbis.webm", true),
             ("audio/mpeg", "sample-mp3.mp3", true),
             ("audio/ogg; codecs=opus", "sample-ogg-opus.oga", true),
+            // D4 能力清单对齐（C4 ANALYSIS §四/§六 D4）：原欠申报两条目（ogg-vorbis/
+            // wav，symphonia probe 面早已可解）转正式主张；aac 以 sample-mp4-h264.mp4
+            // 的 AAC LC 音轨验证（feature 关时 open_media 报 NoVideoTrack 回落
+            // AudioDecoder::open 的 symphonia isomp4+aac 路由——README 生成记录在案，
+            // 不新增 fixture）。
+            ("audio/mp4; codecs=aac", "sample-mp4-h264.mp4", true),
+            ("audio/ogg; codecs=vorbis", "sample-ogg-vorbis.oga", true),
+            ("audio/wav", "sample-wav-pcm.wav", true),
             // feature 门控主张（默认关）——不虚报面。
             (
                 "video/webm; codecs=av1",
@@ -296,17 +304,27 @@ mod hosted {
                 println!("C4PAIR capability-verified claim={claim} fixture={fixture} decode=ok");
             }
         }
-        // 仓内无 fixture 的主张——如实记录不虚验（ANALYSIS 限制面）。
-        for claim in ["audio/webm; codecs=opus", "audio/mp4; codecs=aac"] {
-            assert!(caps.iter().any(|c| c == claim), "主张缺失: {claim}");
-            println!("C4PAIR capability-unverified claim={claim} fixture=无（仓内缺对应 fixture）");
-        }
-        // 欠主张面探针（解码面支持而 host 未列入——分歧如实记录，不在此改产品面）。
-        for fixture in ["sample-ogg-vorbis.oga", "sample-wav-pcm.wav"] {
-            let bytes = fixture_bytes(fixture);
-            let ok = zero_media::AudioDecoder::open(&bytes).is_ok();
-            println!("C4PAIR host-underclaim-check fixture={fixture} decode_ok={ok}");
-        }
+        // audio/webm; codecs=opus：webm 容器 Opus 轨不在 symphonia probe 面，走
+        // `open_webm_opus_audio_track` 直解（与 zero-media 常驻单测
+        // `webm_av_opus_track_decode_chain` 同源资产 movie_5.webm——wpt-data fetch
+        // 白名单按需拉取、不入库；VP9+Opus 双轨只验音频轨主张本身）。
+        assert!(
+            caps.iter().any(|c| c == "audio/webm; codecs=opus"),
+            "主张缺失: audio/webm; codecs=opus"
+        );
+        let mut opus_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        opus_path.pop(); // crates/
+        opus_path.pop(); // workspace root
+        opus_path.push("tests/wpt-runner/wpt-data/media/movie_5.webm");
+        let opus_bytes = std::fs::read(&opus_path).unwrap_or_else(|e| {
+            panic!("movie_5.webm 读取失败（先跑 tests/wpt-runner/scripts/fetch-media-subset.sh）: {e}")
+        });
+        let mut opus_track = zero_media::open_webm_opus_audio_track(&opus_bytes)
+            .expect("webm Opus 轨实解（audio/webm; codecs=opus 主张真值）");
+        assert!(opus_track.next_batch().unwrap().is_some(), "Opus 轨应产出数据包");
+        println!(
+            "C4PAIR capability-verified claim=audio/webm; codecs=opus fixture=wpt-data/media/movie_5.webm decode=ok"
+        );
 
         // quota 面（IF-002）：登记 total_len 超限 → QuotaExceeded（只声明不传字节）。
         let mut client = MediaHostClient::new();

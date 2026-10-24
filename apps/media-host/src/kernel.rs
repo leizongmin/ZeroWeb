@@ -477,6 +477,12 @@ pub(crate) fn codec_capabilities() -> Vec<String> {
         "audio/mpeg".to_string(),
         "audio/ogg; codecs=opus".to_string(),
         "audio/mp4; codecs=aac".to_string(),
+        // D4 能力清单对齐（media-runtime-isolation C4 ANALYSIS §四/§六 D4）：
+        // 欠申报订正——两条目内核路由面（AudioDecoder::open symphonia probe）早已
+        // 可解（ogg-vorbis / wav PCM），列表补齐使申报与路由同源（可播性收窄
+        // 风险消除；engine 静态表 _cptTable 两侧真值一致）。
+        "audio/ogg; codecs=vorbis".to_string(),
+        "audio/wav".to_string(),
     ];
     if cfg!(feature = "decode-av1") {
         caps.push("video/webm; codecs=av1".to_string());
