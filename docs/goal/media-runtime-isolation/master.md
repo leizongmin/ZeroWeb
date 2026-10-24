@@ -1,7 +1,7 @@
 # 媒体运行时隔离控制面
 
 **日期**：2026-10-24
-**状态**：Active（**M1 基线测量完成**——见 [2026-10-24 evidence](evidence/2026-10-24-m1-baseline/ANALYSIS.md)；**M2 两项交付齐备 + M3 前置设计就绪待用户评审**——[docs/specs/media-runtime-isolation-spec-rfc.md](../../../specs/media-runtime-isolation-spec-rfc.md) v1.5：三路线对比 + §9 接口契约；A1–A4 + C1 设计稿齐备见 [m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；D-RFC-1~4 决策点）。
+**状态**：Active（**M1 基线测量完成**——见 [2026-10-24 evidence](evidence/2026-10-24-m1-baseline/ANALYSIS.md)；**M2 两项交付齐备 + M3 前置设计就绪待用户评审**——[docs/specs/media-runtime-isolation-spec-rfc.md](../../../specs/media-runtime-isolation-spec-rfc.md) v1.6：三路线对比 + §9 接口契约；A1–A4 + C1/C2 设计稿齐备见 [m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；D-RFC-1~4 决策点）。
 **当前卡点**：用户评审/批复 RFC（D-RFC-1~4：方案 C 立项 / A 批次随批 / 方案 B 核查 / decode-h264 启用）。批复前不改代码、不装 SDK、不变 feature 表。M1 待决输入（时钟 rate 1.454、NullSink）已入 RFC 方案 A 批次与 TBD-3。
 **下一步**：用户批复后按 RFC §7 批次推进——D-RFC-2 随批即启 A1（时钟批内对齐）；D-RFC-1 批准则并行 C1（protocol 媒体消息族 + `media-process` feature 骨架）。若改选 A-only，DC-3 按 DC-5 由用户认可延期/调整后收口。
 **入口**：[目标契约](../media-runtime-isolation.md) / [启动与证据协议](../ladybird-followups/README.md)
@@ -21,7 +21,7 @@
 |---|---|---|---|
 | M1 | 生产资源、能力与权限基线 | **完成**（测量面成立，收口待评审） | [2026-10-24 基线](evidence/2026-10-24-m1-baseline/ANALYSIS.md) |
 | M2 | 方案/许可证/回滚 RFC + protocol 接口契约 | **v1.2 完成待批复**（决策门=用户） | [media-runtime-isolation-spec-rfc](../../../specs/media-runtime-isolation-spec-rfc.md) |
-| M3 | 已确认平台与隔离切片 | NOT_STARTED（A1–A4 + C1 设计稿齐备，待 D-RFC-2/1） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
+| M3 | 已确认平台与隔离切片 | NOT_STARTED（A1–A4 + C1/C2 设计稿齐备，待 D-RFC-2/1） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
 | M4 | 配对媒体、故障和资源审计 | NOT_STARTED | 无 |
 
 ## 验证基线
@@ -105,3 +105,18 @@
   - 契约测试计划：bincode 往返/超限拒绝/`--type=media` 映射单测 + 内联回落与 kill-switch 集成
     （`#[ignore]` + test-guard 先例）。
 - RFC v1.5：C1 行补设计稿指引；无决策/门禁/批次范围变化。
+
+### 2026-10-24 M3 前置设计轮 V（C2）
+
+- DESIGN.md 追加 §10（同日第五轮，仍零代码改动）：
+  - **C1 wire format 缺口发现并闭合**：桥面 setRate/setGain/setLoop（video_registry.rs:1711-1713，
+    起播同步面 part03.js:23633/23639/23647）在轮 IV 草案控制面无对应消息——拟新增 3 变体
+    （MediaSetRate/MediaSetLoop/MediaSetGain，全族 14→17）+ MediaSourceReady 扩 mediaMeta 三元组。
+  - **host 自走时钟设计**：audio cursor 主时钟（携 A1 BatchSampleQueue 同构语义），事件循环按
+    (音频采样截止 | 帧演示截止) 等待，无 60Hz 轮询；推送校准闭合 IF-003「≥100ms」实施值——
+    跃迁即时 / media_time 随帧（pts_ms 自带）/ 纯音频 250ms 心跳（与 shim timeupdate 节流
+    part06.js:16463 同值，页面可见节拍零变化）。
+  - **renderer 变换**：march 页面语义原样保留（250ms 节流/played ranges/ended/loop 全是 DOM 面，
+    宿主不接管）；仅供数方式变——bridge getter backing 转 push 镜像；生产泵媒体分支转被动
+    （帧队列排空 → ImageCache 注入 → interest 标脏，rAF 泵先例通道）。
+- RFC v1.6：C2 行补设计稿指引 + C1 行 14→17 修订 + §13 历史行；无决策/门禁/批次范围变化。

@@ -333,3 +333,74 @@ FrameTooLarge / HostInternal）。全部走既有 `IpcMessage` 信封 + bincode 
 
 - MSE 字节流 IPC 化不进 C1（decode-h264 门控，依赖 D-RFC-4）；重启/退避策略归 C3；host 自走时钟
   节拍与 100ms 推送校准归 C2；不新增第三种传输（复用 PipeTransport + frame_shm）。
+
+## 10. C2 设计——状态时钟面接线：host 自走时钟 + push 供数 renderer 镜像（同日第五轮增补）
+
+### 10.1 现状解剖（源码级）
+
+- **拉取链**：泵 tick 提交 march 脚本（生产面缺口 = A2 Fix 2；runner 面 testharness.rs:9290）→
+  march（part06.js:16407）→ bridgeOn 元素**主动拉** `__zwVideoBridge.currentTime`（:16415-16421，
+  泵 tick 无人读 IDL 须主动同步）；headless 元素墙钟推进 × playbackRate（:16424-16437）。
+- **页面可见节拍**：周期 timeupdate 250ms 节流（:16463 `_zwLastTuMs`，spec 15-250ms 对齐上限
+  :16459-16462 注）；played ranges 250ms 采样容差合并（:16445-16451）。
+- **ended/loop 面**：桥 `isEnded()` → active cue exit + paused 翻转 + timeupdate + ended
+  （:16620+，`_zwEndedDispatched` 幂等）；loop 分叉 = 音频 entry registry 内部流末回卷 + 视频
+  march seek(0)+play（:16640+，M3 扩批 XXIV）。
+- **registry tick 面**：`tick_all(now_ms, &mut ImageCache)`（video_registry.rs:1148，视频帧解码
+  直入缓存）+ `audio_advance_all(now_ms)`（:1091）；生产泵 runtime.rs:4094-4138 主动轮询驱动。
+- **桥面全貌**（video_registry.rs:1700-1716）：play / pause / seek / currentTime / duration /
+  isPlaying / isEnded / **setRate**(:1711) / **setGain**(:1712) / **setLoop**(:1713) / mediaMeta
+  共 11 方法 + MSE 六方法（decode-h264 门控）。
+
+### 10.2 wire format 缺口闭合（C1 §9.2 修订）
+
+- **缺口**：setRate / setGain / setLoop 三桥方法在 C1 草案控制面（§9.2）无对应消息——而桥同步面
+  在起播时同步既有设置（part03.js:23633 setRate / :23639 setGain / :23647 setLoop），跨进程即断。
+- 拟新增 3 变体（控制面 7→10，全族 14→17）：
+  - `MediaSetRate{source_key, rate: f64}`——宿主音频消费与时钟缩放是物理面，不能留在 renderer
+    镜像（headless 墙钟 ×rate :16433 与 BatchSampleQueue rate 同语义）；
+  - `MediaSetLoop{source_key, on: bool}`——音频 entry 流末回卷随内核入宿主（registry `set_loop`
+    :1132 面迁移）；
+  - `MediaSetGain{source_key, volume: f64, muted: bool}`——宿主持音频输出面时必须；NullSink
+    现状下为记账字段。
+- `MediaSourceReady` 载荷扩为 `{source_key, duration_ms: Option<u64>, width: Option<u32>,
+  height: Option<u32>}`——mediaMeta 面一次带回（demux settle 后已知）。
+
+### 10.3 host 自走时钟（IF-003 校准闭合）
+
+- **真值**：宿主持媒体时钟（audio cursor 主时钟，携 A1 `BatchSampleQueue` 修复语义——同构代码
+  随内核入宿主）；事件循环 = 非阻塞排空控制消息 + 按 (音频采样截止 | 视频帧演示截止) 等待，
+  无 renderer 往返（省 60Hz 轮询）。
+- **推送时机**（RFC「≥100ms 推一次」的实施定值）：
+  1. 状态跃迁即时推（Playing/Paused/Ended/Error）；
+  2. `media_time_ms` 随帧推——`MediaFrame.pts_ms` 自带时钟信息，视频源零额外消息；
+  3. 纯音频或帧间隔 >250ms 时 250ms 心跳推——与 shim timeupdate 节流同值，页面可见节拍零变化
+    （renderer 侧 250ms 节流保持，见 10.4）。
+- **epoch**：源级 u64 单调；seek / replay（含 loop 回卷）/ 换源递增；renderer 收旧 epoch 的状态
+  或帧一律丢弃（DC-2「不返回旧代际数据」）。
+
+### 10.4 renderer 侧变换（march 不重写，供数方式变）
+
+- **march 脚本（part06.js:16407）页面可见语义原样保留**：250ms timeupdate 节流、played ranges、
+  ended 派发、loop 分叉全是 DOM 面，宿主无 DOM 不接管——回归风险集中到供数时序而非事件语义。
+- 变化仅在供数：bridge getter（currentTime/isPlaying/isEnded，:1708-1710）的 backing 从「泵
+  `tick_all` 推进的 registry cursor」变为「proxy 按 push 更新的镜像 cursor/状态」——getter 本体
+  零改动。
+- **生产泵（runtime.rs:4094-4138）媒体分支转被动**：排空 proxy 待决帧队列 → ImageCache 注入
+  （复用 `from_rgba` 路径，A3 C2 扫描跳过同面适用）→ 标脏；march 提交挂 interest 机制
+  （rAF 泵 :4152-4156 同通道先例）——StateUpdate/Frame 到达即标 interest，无消息无提交。
+- WebAudio 泵分支不动（script 驱动、renderer 域，与解码底座边界既有）。
+
+### 10.5 验收
+
+- DC-2 契约测试：旧 epoch 丢弃断言、seek 后镜像一致性、pause 冻结（宿主停推）、loop 回卷
+  epoch 递增；A/V 漂移真值复测（M1 harness，宿主时钟 vs 页面镜像）。
+- 页面语义回归：M1 harness + bg02-media——timeupdate 节拍 / played ranges / ended / loop 断言面
+  全绿（march 未重写，面不变）。
+- currentTime 新鲜度：pull-per-tick（16ms）→ push 节拍（~40ms@24fps / 250ms 心跳）——页面无
+  新鲜度契约，WPT 断言面（currentTime>0 类）不收窄。
+
+### 10.6 回滚
+
+- C2 单提交（`media-process` gate 内）；回退即回 `tick_all` 主动轮询面。wire 向前兼容由 C1 握手
+  版本守门（renderer/host 版本不符按 spawn 失败处理，IF-001）——无灰度态。

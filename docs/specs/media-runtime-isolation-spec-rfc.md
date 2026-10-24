@@ -1,6 +1,6 @@
 # RFC：平台媒体解码与媒体运行时隔离——方案/许可证/回滚
 
-**版本**：v1.5-draft
+**版本**：v1.6-draft
 **日期**：2026-10-24
 **作者**：AI Assistant（Rally media-runtime-isolation M2）
 **状态**：草稿——待用户评审决策（D-RFC-1~4；见 §10）
@@ -204,8 +204,8 @@ request/response）、**跨进程时钟/状态镜像**（DC-2 契约核心，C2 
 | A2 | 三缺口修复（autoplay 绕桥 / 死钩子接线 / load 时桥武装；设计稿见 goal evidence DESIGN.md §6——缺口 1+3 同面 = autoplay 走 play 算法，缺口 2 = 生产 renderer march 接线（runner 已接线，生产面缺失）） | D-RFC-2（随批） | 拟新增页面语义测试 + bg02-media 基线 v2 回补 | 单提交回退（Fix 1/Fix 2 各自独立） |
 | A3 | C4 快照深拷贝消除（publish 路径引用化/写时复制）、C2 扫描跳过、源驻留封顶（设计稿见 goal evidence DESIGN.md §8——C4 = `CacheEntry.data` Arc 化（像素不可变既有不变量），C2 = 视频帧跳纯色扫描，封顶 = 256MB 总预算 + 非在播 LRU 驱逐 + 准入拒绝错误面） | D-RFC-2（随批；性能关键面） | `make bench-gate` 定向（media/render 域）+ M1 harness 复测 | 单提交回退（三子项互相独立） |
 | A4 | seek 定位窄化：phase-② 全量前向（O(target)）→ cue 锚定 fallback（O(GOP)，`decode.rs` 面；归因证据见 goal evidence 2026-10-24-m3-prep-design DESIGN.md §3） | D-RFC-2（随批） | 扩展 `m1_seek_cue_path`：mid-GOP 目标耗时不随 target 线性增长；15/30/45 三点不回退 | 单提交回退 |
-| C1 | `zero-protocol` 媒体消息族契约（§9 IF-001/002/005/006）+ host 进程骨架（feature `media-process` 默认关；设计稿见 goal evidence DESIGN.md §9——14 拟新增变体 wire format（命名零冲突已核：ProcessRole 无 Media、IpcMessageKind 无 Media*）+ `ProcessRole::Media`/`--type=media` 接线 + media-host 骨架（C1 只立契约与空源生命周期，解码内核 C2 接）+ `zeroweb-media-` shm 前缀 / `ZW_MEDIA_SHM=0` 关断） | D-RFC-1 | 契约测试（两端同步核对）；默认关路径全量 `make test` 绿 | feature 关即现状 |
-| C2 | registry 客户端切换 + 状态/时钟代理（§9 IF-003/004；DC-2 契约测试） | D-RFC-1 | 拟新增跨进程时钟/状态/seek 契约测试；A/V 漂移真值复测 | feature 关 |
+| C1 | `zero-protocol` 媒体消息族契约（§9 IF-001/002/005/006）+ host 进程骨架（feature `media-process` 默认关；设计稿见 goal evidence DESIGN.md §9——17 拟新增变体 wire format（§9.2 基础 14 + §10.2 补 setRate/setGain/setLoop；命名零冲突已核：ProcessRole 无 Media、IpcMessageKind 无 Media*）+ `ProcessRole::Media`/`--type=media` 接线 + media-host 骨架（C1 只立契约与空源生命周期，解码内核 C2 接）+ `zeroweb-media-` shm 前缀 / `ZW_MEDIA_SHM=0` 关断） | D-RFC-1 | 契约测试（两端同步核对）；默认关路径全量 `make test` 绿 | feature 关即现状 |
+| C2 | registry 客户端切换 + 状态/时钟代理（§9 IF-003/004；DC-2 契约测试；设计稿见 goal evidence DESIGN.md §10——host 自走时钟（音频截止/帧演示截止等待，无 60Hz 轮询）+ push 校准闭合（跃迁即时/随帧/250ms 心跳）+ epoch 代际 + march 页面语义原样保留（getter backing 转 push 镜像，泵媒体分支转被动）） | D-RFC-1 | 拟新增跨进程时钟/状态/seek 契约测试；A/V 漂移真值复测 | feature 关 |
 | C3 | 故障注入验收（DC-3）：host 终止 → 可观察错误 → 重载恢复 | D-RFC-1 | 拟新增 DC-3 场景测试（真实进程终止） | feature 关 |
 | C4 | M4 配对数据 + 资源审计（DC-1/DC-4 收口证据） | D-RFC-1 | M1 harness 对照复测（开/关 feature 配对） | feature 关 |
 | B1 | 平台框架逐平台核查（§4.2 表落 evidence） | D-RFC-3 | 核查报告 + 可用平台清单 | 纯文档 |
@@ -391,3 +391,4 @@ request/response）、**跨进程时钟/状态镜像**（DC-2 契约核心，C2 
 | v1.3-draft | 2026-10-24 | A2 行补设计稿指引（DESIGN.md §6：缺口 1+3 同面 = autoplay 走 play 算法；缺口 2 = 生产 renderer march 接线——runner 已接线、生产面缺失，M1「零调用方」表述按 crates/ 域订正）；WPT 上游 GOP 抽样闭合 A4 待验证项（DESIGN.md §7）。无决策/门禁/批次范围变化，零代码改动 |
 | v1.4-draft | 2026-10-24 | A3 行补设计稿指引（DESIGN.md §8：C4 = CacheEntry Arc 化——「像素插入后不可变」既有不变量使 Arc 共享语义安全，快照本体从不出进程；C2 = from_rgba_variable 跳纯色扫描；源驻留 = 256MB 总预算 + 非在播 LRU + 准入拒绝，av_sources seek 依赖受保护）。无决策/门禁/批次范围变化，零代码改动 |
 | v1.5-draft | 2026-10-24 | C1 行补设计稿指引（DESIGN.md §9：媒体消息族 14 拟新增变体 wire format 草案——控制面 7 + 状态/帧/错误面 7 + MediaPlaybackState/MediaErrorCode 伴生枚举；命名冲突排查（ProcessRole 无 Media 变体、IpcMessageKind 无 Media* 变体）；media-host 骨架边界（C1 = 契约 + 握手 + 空源生命周期，解码内核 C2 接）；契约测试计划含 kill-switch 与 feature 关回归）。无决策/门禁/批次范围变化，零代码改动 |
+| v1.6-draft | 2026-10-24 | C2 行补设计稿指引（DESIGN.md §10：host 自走时钟 + push 供数 renderer 镜像——march 页面语义原样保留、getter backing 转 push 镜像、250ms 心跳与 shim timeupdate 节流同值校准闭合 IF-003「≥100ms」实施值）；**C1 wire format 缺口修订**：桥面 setRate/setGain/setLoop（video_registry.rs:1711-1713 同步面）在 C1 草案无对应消息，§10.2 拟新增 3 变体（全族 14→17）+ MediaSourceReady 载荷扩 mediaMeta 三元组。无决策/门禁/批次范围变化，零代码改动 |
