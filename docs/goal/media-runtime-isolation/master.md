@@ -216,9 +216,8 @@
 
 ### 2026-10-25 C2 切片 2 实施轮（registry 客户端切换 + 宿主面端到端）
 
-- **client 面载荷化 + set 面补齐**（commit A）：`MediaHostClient::play`/`pause` 回执改返 `MediaStateUpdateParams` 载荷（wire 不变，IF-002 id 配对消费面）；新增 `set_rate`/`set_gain` fire-and-forget。
-- **桥拆分**（commit B）：`video_bridge_facade_script` + `register_video_bridge_callbacks` + bridge_tests 迁 `video_registry_bridge.rs`（532 行）；registry 2212→1817 行（行数纪律），外部 `zero_webview::video_registry::*` 路径经再导出不变；桥私有字段访问改 `contains_source` pub API。
-- **registry 客户端切换**（commit C）：新 `video_registry_host.rs` `HostMediaFacade`（push 镜像 DC-2 epoch 门控/未知键丢弃；8MiB 分片 settle；纯视频 Ended+loop 回卷待办 + flush 镜像归零防 seek 回流末；play 回执后即时排空元数据——`SourceReady` 同批出队使 JS 立读 duration 有真值，排空窗帧缓冲不丢首帧）；video_registry 21 面 `hosts(key)` 早退/并集分流（登记不落内联字节 IF-006；MSE 键天然内联豁免；`tick_all` 并集形态保 MSE 内联 player）；lib.rs 两模块 cfg 门控。
+- **client 面载荷化 + set 面补齐**（`22c2ab10f`）：`MediaHostClient::play`/`pause` 回执改返 `MediaStateUpdateParams` 载荷（wire 不变，IF-002 id 配对消费面）；新增 `set_rate`/`set_gain` fire-and-forget。
+- **桥拆分 + registry 客户端切换**（`0e6ca7aa5`）：`video_bridge_facade_script` + `register_video_bridge_callbacks` + bridge_tests 迁 `video_registry_bridge.rs`（532 行）；registry 2212→1817 行（行数纪律），外部 `zero_webview::video_registry::*` 路径经再导出不变；桥私有字段访问改 `contains_source` pub API。新 `video_registry_host.rs` `HostMediaFacade`（push 镜像 DC-2 epoch 门控/未知键丢弃；8MiB 分片 settle；纯视频 Ended+loop 回卷待办 + flush 镜像归零防 seek 回流末；play 回执后即时排空元数据——`SourceReady` 同批出队使 JS 立读 duration 有真值，排空窗帧缓冲不丢首帧）；video_registry 21 面 `hosts(key)` 早退/并集分流（登记不落内联字节 IF-006；MSE 键天然内联豁免；`tick_all` 并集形态保 MSE 内联 player）；lib.rs 两模块 cfg 门控。
 - **测试**：facade 合成事件单测 7 + 契约第 5 场景 `hosted_registry_end_to_end`（登记→play→帧入 ImageCache→元数据升级→seek resolved→暂停冻结→纯视频 loop 回卷观测→clear）+ M1 harness 时钟分叉（开态真实节拍/关态合成钟原样）+ A4 断言 feature 分叉（release 内核冷 seek 19.1ms≈内联 18.2ms 并源；宿主暖对 30s/45s 非线断言；30s 收全量条件化）。
 - **验收**：M1 release 宿主面 5/5（226.6s，[证据](evidence/2026-10-25-c2-slice2/ANALYSIS.md)——测试进程 cores 1.001→0.012、tick p50 431ns→3.7µs、时钟 rate 0.99827、1440/1440 帧零丢）+ feature-off release 5/5（20.0s 零回归）+ 契约 5 场景全绿（5.0s）+ `make guarded-clippy` 过 + 全量 `make guarded-test` 过。
 - **偏差四处**记 [DESIGN §10.8](evidence/2026-10-24-m3-prep-design/DESIGN.md)（play 回执后即时排空/元数据升级时点、M1 时钟分叉 + A4 feature 界、泵保持 16ms 被动排空、host 不落内联字节 + MSE 内联豁免）。
