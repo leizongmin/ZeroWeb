@@ -37,6 +37,7 @@ members = [
     "apps/browser",
     "apps/renderer",
     "apps/image-decoder",
+    "apps/media-host",
     "apps/compositor",
     "apps/webdriver",
     "apps/webview-demo",

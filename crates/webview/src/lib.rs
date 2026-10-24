@@ -17,6 +17,8 @@ mod async_load;
 mod css_urls;
 mod image_decoder;
 mod indexed_db_owner;
+#[cfg(feature = "media-process")]
+pub mod media_proxy;
 mod net_pool;
 pub mod video_registry;
 pub mod webaudio_registry;

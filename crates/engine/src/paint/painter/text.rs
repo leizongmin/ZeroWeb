@@ -17,8 +17,8 @@ use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
 use zero_render_foundation::primitive::{GlyphPrimitive, ImagePrimitive, TextControlBoundary};
 use zero_style_system::{
-    ComputedStyle, TabSizeValue, TextEmphasisPositionValue, TextEmphasisStyleValue, TextOverflowValue,
-    TextTransformValue, WhiteSpaceValue,
+    ComputedStyle, MixBlendModeComputedValue, TabSizeValue, TextEmphasisPositionValue, TextEmphasisStyleValue,
+    TextOverflowValue, TextTransformValue, WhiteSpaceValue,
 };
 /// R4443：ZW_DEBUG_GLYPHS 探针开关（OnceLock 缓存，热路径零 env::var 开销——
 /// block_layout_1000_elements bench +39% 实证 env::var 逐次调用开销）。
@@ -99,9 +99,9 @@ pub(super) fn bg_clip_text_solid_color(
             st.background_attachment.get(i)?,
         ))
     };
-    let mut acc = resolve_color_current(&st.background_color, &st.color);
-    let mut layer_idx = 0usize;
-    for layer in &st.background_image {
+    // 各图层恒色提取（list 位置随行保留；None 层无贡献跳过，位置仍归 mode/repeat 配对）。
+    let mut layers = Vec::new();
+    for (i, layer) in st.background_image.iter().enumerate() {
         // R5021：filter() 图像函数层——clip:text 纯色提取按内层图像取色
         //（滤镜作用于最终绘制面，纯色近似不消费）。
         let layer = layer.inner();
@@ -111,7 +111,7 @@ pub(super) fn bg_clip_text_solid_color(
             BackgroundImageComputedValue::Url(u) => {
                 // R4553 门：纯色缓存命中 + 该层平铺参数全默认（默认 repeat 平铺纯色图 ≡
                 // 恒色满铺；no-repeat/contain 等留空区露底色，非恒色）。
-                let (r, s, a) = layer_ctx(layer_idx)?;
+                let (r, s, a) = layer_ctx(i)?;
                 let tiled = matches!(r, BackgroundRepeatComputedValue::Repeat)
                     && matches!(s, BackgroundSizeComputedValue::Auto)
                     && matches!(a, BackgroundAttachmentComputedValue::Scroll);
@@ -122,8 +122,27 @@ pub(super) fn bg_clip_text_solid_color(
             // loop 顶 inner() 已剥 filter() 壳——静态穷尽防御臂（运行时不可达）。
             BackgroundImageComputedValue::Filtered { .. } => continue,
         };
-        acc = color_over(c, acc);
-        layer_idx += 1;
+        layers.push((i, c));
+    }
+    let mut acc = resolve_color_current(&st.background_color, &st.color);
+    // R5267（css-compositing-1 §background-blend-mode）：存在非 normal 层模式时自底
+    // 向上合成——图层 i 与其下方合成结果按 mode `i % m` 混合，background-color 为
+    // 最底层 backdrop。全 normal（含未声明）保持既有 plain OVER 叠加（字节不变）；
+    // kill-switch `ZW_BG_CLIP_TEXT_LAYER_BLEND=0` 回退旧行为。
+    let layer_blend = std::env::var("ZW_BG_CLIP_TEXT_LAYER_BLEND").as_deref() != Ok("0")
+        && st
+            .background_blend_mode
+            .iter()
+            .any(|m| !matches!(m, MixBlendModeComputedValue::Normal));
+    if layer_blend {
+        for &(i, c) in layers.iter().rev() {
+            let mode = &st.background_blend_mode[i % st.background_blend_mode.len()];
+            acc = blend_solid_layer(mode, c, acc);
+        }
+    } else {
+        for &(_, c) in layers.iter() {
+            acc = color_over(c, acc);
+        }
     }
     (acc.a > 0).then_some(acc)
 }
@@ -142,6 +161,41 @@ fn gradient_solid_color(g: &zero_css_parser::values::GradientValue, element_colo
         .iter()
         .all(|s| resolve_color_current(&s.color, element_color) == first)
         .then_some(first)
+}
+
+/// R5267：恒色层间混合单层步（css-compositing-1 §5.1 B(Cb,Cs) + §5.2 alpha 合成）。
+/// normal 走既有 color_over（与 R4549 预混合等价链同路径）；其余模式复用
+/// render-foundation 逐像素公式（与 mix-blend-mode 同源，`cpu::blend_rgba`）。
+fn blend_solid_layer(mode: &MixBlendModeComputedValue, src: Color, dst: Color) -> Color {
+    let Some(rf_mode) = blend_mode_rf(mode) else {
+        return color_over(src, dst);
+    };
+    let out =
+        zero_render_foundation::cpu::blend_rgba([src.r, src.g, src.b, src.a], [dst.r, dst.g, dst.b, dst.a], rf_mode);
+    Color::rgba(out[0], out[1], out[2], out[3])
+}
+
+/// MixBlendModeComputedValue → render-foundation BlendMode（normal → None = 纯 OVER）。
+fn blend_mode_rf(m: &MixBlendModeComputedValue) -> Option<zero_render_foundation::primitive::BlendMode> {
+    use zero_render_foundation::primitive::BlendMode;
+    Some(match m {
+        MixBlendModeComputedValue::Normal => return None,
+        MixBlendModeComputedValue::Multiply => BlendMode::Multiply,
+        MixBlendModeComputedValue::Screen => BlendMode::Screen,
+        MixBlendModeComputedValue::Overlay => BlendMode::Overlay,
+        MixBlendModeComputedValue::Darken => BlendMode::Darken,
+        MixBlendModeComputedValue::Lighten => BlendMode::Lighten,
+        MixBlendModeComputedValue::ColorDodge => BlendMode::ColorDodge,
+        MixBlendModeComputedValue::ColorBurn => BlendMode::ColorBurn,
+        MixBlendModeComputedValue::HardLight => BlendMode::HardLight,
+        MixBlendModeComputedValue::SoftLight => BlendMode::SoftLight,
+        MixBlendModeComputedValue::Difference => BlendMode::Difference,
+        MixBlendModeComputedValue::Exclusion => BlendMode::Exclusion,
+        MixBlendModeComputedValue::Hue => BlendMode::Hue,
+        MixBlendModeComputedValue::Saturation => BlendMode::Saturation,
+        MixBlendModeComputedValue::Color => BlendMode::Color,
+        MixBlendModeComputedValue::Luminosity => BlendMode::Luminosity,
+    })
 }
 
 /// R4552（css-backgrounds-4 §background-clip:text）：沿 DOM 祖先链查最近 clip:text
@@ -968,7 +1022,12 @@ impl super::Painter {
             .map(|ts| (ts.offset_x, ts.offset_y, resolve_color_current(&ts.color, &style.color)))
             .collect();
 
-        let content_x = abs_x + box_node.border_left + box_node.padding_left;
+        let content_x = abs_x
+            + box_node.border_left
+            + box_node.padding_left
+            // R5264：collapse 格线模型 cell 内容原点半框修正（table.rs
+            // apply_collapse_content_half_shift 设置，非 collapse 盒恒 (0,0)）。
+            + box_node.collapse_half_shift.0;
         // R3835：inside 文本型 marker → 内容起点右移 marker 步进宽度（CSS Lists 3
         // §list-style-position：inside marker 是首行行盒第一个 inline，内容排其后）。
         // remove 消费一次；paint_list_marker（先于本函数执行）已按 li NodeId 填充。
@@ -991,7 +1050,13 @@ impl super::Painter {
 
         // R1717：+ valign_offset — 表格单元格文本的 vertical-align 内容偏移（仅 table-cell，
         // table.rs position_cells 设置；其他盒默认 0.0，零影响）。
-        let content_y = abs_y + box_node.border_top + box_node.padding_top + box_node.valign_offset;
+        // R5264：+ collapse_half_shift.1 — collapse 格线模型 cell 内容原点半框修正
+        //（table.rs apply_collapse_content_half_shift 设置，非 collapse 盒恒 0.0）。
+        let content_y = abs_y
+            + box_node.border_top
+            + box_node.padding_top
+            + box_node.valign_offset
+            + box_node.collapse_half_shift.1;
 
         // R3901：transform translate 不在此偏移——paint_node 末段对自子树全部图元统一做
         // 图元级平移（translate_primitives_since，单一平移点）。旧实现仅直属文本 +tx/ty，
@@ -4017,6 +4082,7 @@ impl super::Painter {
         style: &ComputedStyle,
         doc: &Document,
         node_id: NodeId,
+        styles: Option<&HashMap<NodeId, ComputedStyle>>,
     ) {
         let font_size: f32 = match style.font_size {
             LengthValue::Px(s) => s as f32,
@@ -4026,7 +4092,25 @@ impl super::Painter {
             return;
         }
 
-        let color = color_value_to_render(&style.color);
+        // R4525/R4549：clip:text 恒色彩字上下文——flex/grid 匿名文本项不经
+        // paint_node_inner（恒色 push 站在此路径之外），按 owner 容器自身 / DOM 祖先链
+        // 静态判定补链（与 paint_text 主路径同规）：字形色 = text 色 OVER bg 恒色
+        //（text 色透明时 = bg 恒色，clip-text-flex 判例）。
+        let color = match bg_clip_text_solid_color(style, &self.image_solid_colors, self.document_url.as_deref())
+            .or_else(|| {
+                styles.and_then(|s| {
+                    bg_clip_text_solid_color_ancestral(
+                        doc,
+                        node_id,
+                        s,
+                        &self.image_solid_colors,
+                        self.document_url.as_deref(),
+                    )
+                })
+            }) {
+            Some(clip_bg) => color_over(color_value_to_render(&style.color), clip_bg),
+            None => color_value_to_render(&style.color),
+        };
         let default_font_id = self.resolve_style_font_id(&style.font_family, style).0;
         let variations = crate::text_metrics::paint_font_variations(&style.font_variation_settings);
         let font_variation_id = self.primitives.intern_font_variations(&variations);

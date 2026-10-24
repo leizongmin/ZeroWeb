@@ -1,9 +1,9 @@
 # RFC：平台媒体解码与媒体运行时隔离——方案/许可证/回滚
 
-**版本**：v1.5-draft
+**版本**：v1.10
 **日期**：2026-10-24
 **作者**：AI Assistant（Rally media-runtime-isolation M2）
-**状态**：草稿——待用户评审决策（D-RFC-1~4；见 §10）
+**状态**：**已批复**（2026-10-24 用户裁决 D-RFC-1~4，见 §10 批复记录）——按 §7 批次推进
 **需求权威**：[goal 契约](../goal/media-runtime-isolation.md) DC-1~DC-5；本文为设计交付，需求不在此重述
 
 ---
@@ -70,7 +70,7 @@ part03.js:23558/23610（play-only 桥武装）——页面可见时钟/状态契
 - 播放/注册表/桥：`crates/webview/src/video_registry.rs`（`__zw_video_*` 回调族、MSE_FEED_MAX_BYTES=256MB）
 - 帧消费：`crates/render-foundation/src/image_cache.rs`、`crates/engine/src/paint/painter/text.rs:820`
 - IPC 基建（方案 C 复用面）：`crates/protocol/src/process.rs`（ProcessManager/RendererState 进程监理、`child_process_args` 角色参数约定）、`frame_shm.rs`（POSIX shm 帧传输，Linux 默认开、非 Linux 内联回落）、`channel/message/transport`
-- **解码进程隔离同构先例（D1）**：`apps/image-decoder`（角色循环 `run_role`）+ `crates/webview/src/image_decoder.rs`（renderer 侧代理：懒惰 spawn、邻位二进制发现、spawn 失败永久进程内、运行期失败不绕过隔离边界）+ `IpcMessageKind::ImageDecodeRequest/Result`（消息形态先例）
+- **解码进程隔离同构先例（D1）**：`apps/image-decoder`（角色循环 `run_role`）+ `crates/webview/src/image_decoder.rs`（renderer 侧代理：懒惰 spawn、邻位二进制发现、spawn 失败永久错误面短路（SPAWN_FAILED，v1.7 订正——注释称「进程内解码」与代码不符，以代码为准）、运行期失败不绕过隔离边界）+ `IpcMessageKind::ImageDecodeRequest/Result`（消息形态先例）
 
 ---
 
@@ -204,10 +204,10 @@ request/response）、**跨进程时钟/状态镜像**（DC-2 契约核心，C2 
 | A2 | 三缺口修复（autoplay 绕桥 / 死钩子接线 / load 时桥武装；设计稿见 goal evidence DESIGN.md §6——缺口 1+3 同面 = autoplay 走 play 算法，缺口 2 = 生产 renderer march 接线（runner 已接线，生产面缺失）） | D-RFC-2（随批） | 拟新增页面语义测试 + bg02-media 基线 v2 回补 | 单提交回退（Fix 1/Fix 2 各自独立） |
 | A3 | C4 快照深拷贝消除（publish 路径引用化/写时复制）、C2 扫描跳过、源驻留封顶（设计稿见 goal evidence DESIGN.md §8——C4 = `CacheEntry.data` Arc 化（像素不可变既有不变量），C2 = 视频帧跳纯色扫描，封顶 = 256MB 总预算 + 非在播 LRU 驱逐 + 准入拒绝错误面） | D-RFC-2（随批；性能关键面） | `make bench-gate` 定向（media/render 域）+ M1 harness 复测 | 单提交回退（三子项互相独立） |
 | A4 | seek 定位窄化：phase-② 全量前向（O(target)）→ cue 锚定 fallback（O(GOP)，`decode.rs` 面；归因证据见 goal evidence 2026-10-24-m3-prep-design DESIGN.md §3） | D-RFC-2（随批） | 扩展 `m1_seek_cue_path`：mid-GOP 目标耗时不随 target 线性增长；15/30/45 三点不回退 | 单提交回退 |
-| C1 | `zero-protocol` 媒体消息族契约（§9 IF-001/002/005/006）+ host 进程骨架（feature `media-process` 默认关；设计稿见 goal evidence DESIGN.md §9——14 拟新增变体 wire format（命名零冲突已核：ProcessRole 无 Media、IpcMessageKind 无 Media*）+ `ProcessRole::Media`/`--type=media` 接线 + media-host 骨架（C1 只立契约与空源生命周期，解码内核 C2 接）+ `zeroweb-media-` shm 前缀 / `ZW_MEDIA_SHM=0` 关断） | D-RFC-1 | 契约测试（两端同步核对）；默认关路径全量 `make test` 绿 | feature 关即现状 |
-| C2 | registry 客户端切换 + 状态/时钟代理（§9 IF-003/004；DC-2 契约测试） | D-RFC-1 | 拟新增跨进程时钟/状态/seek 契约测试；A/V 漂移真值复测 | feature 关 |
-| C3 | 故障注入验收（DC-3）：host 终止 → 可观察错误 → 重载恢复 | D-RFC-1 | 拟新增 DC-3 场景测试（真实进程终止） | feature 关 |
-| C4 | M4 配对数据 + 资源审计（DC-1/DC-4 收口证据） | D-RFC-1 | M1 harness 对照复测（开/关 feature 配对） | feature 关 |
+| C1 | `zero-protocol` 媒体消息族契约（§9 IF-001/002/005/006）+ host 进程骨架（feature `media-process` 默认关；设计稿见 goal evidence DESIGN.md §9——17 拟新增变体 wire format（§9.2 基础 14 + §10.2 补 setRate/setGain/setLoop；命名零冲突已核：ProcessRole 无 Media、IpcMessageKind 无 Media*）+ `ProcessRole::Media`/`--type=media` 接线 + media-host 骨架（C1 只立契约与空源生命周期，解码内核 C2 接）+ `zeroweb-media-` shm 前缀 / `ZW_MEDIA_SHM=0` 关断） | D-RFC-1 | 契约测试（两端同步核对）；默认关路径全量 `make test` 绿 | feature 关即现状 |
+| C2 | registry 客户端切换 + 状态/时钟代理（§9 IF-003/004；DC-2 契约测试；设计稿见 goal evidence DESIGN.md §10——host 自走时钟（音频截止/帧演示截止等待，无 60Hz 轮询）+ push 校准闭合（跃迁即时/随帧/250ms 心跳）+ epoch 代际 + march 页面语义原样保留（getter backing 转 push 镜像，泵媒体分支转被动）） | D-RFC-1 | 拟新增跨进程时钟/状态/seek 契约测试；A/V 漂移真值复测 | feature 关 |
+| C3 | 故障注入验收（DC-3）：host 终止 → 可观察错误 → 重载恢复（设计稿见 goal evidence DESIGN.md §11——崩溃检测双路（send 失败即时 + 泵周期 `try_wait` 兜底）、状态机 Idle/Healthy/Restarting（退避 1s/2s/4s，n≤3）/Failed、重启不自动重播重注册（epoch 重单调）、SIGKILL 注入 5 场景契约测试） | D-RFC-1 | 拟新增 DC-3 场景测试（真实进程终止） | feature 关 |
+| C4 | M4 配对数据 + 资源审计（DC-1/DC-4 收口证据；设计稿见 goal evidence DESIGN.md §12——三态配对矩阵（feature 关 / shm 开 / `ZW_MEDIA_SHM=0`）、M1 harness 场景体复用、判据表（rate 带/seek 相等/漂移带/像素全等/IPC 税上界/代际零泄漏）、资源审计清单（进程树/RSS/shm 槽位/源驻留 256MB 复测/空闲 CPU）、capabilities 三对照） | D-RFC-1 | M1 harness 对照复测（开/关 feature 配对） | feature 关 |
 | B1 | 平台框架逐平台核查（§4.2 表落 evidence） | D-RFC-3 | 核查报告 + 可用平台清单 | 纯文档 |
 | B2+ | 首个平台 backend（依核查结果定） | D-RFC-3 + 用户点名平台 | capability 真值测试 + 软解配对 | feature 关 |
 
@@ -250,7 +250,7 @@ request/response）、**跨进程时钟/状态镜像**（DC-2 契约核心，C2 
 | 角色主循环 | `apps/image-decoder` `run_role<C: IpcChannel>`（对端断开退出） | `apps/media-host`（拟新增）同形角色循环 |
 | 帧零拷贝 | `frame_shm.rs`（`/dev/shm/zeroweb-cmp-*`、env 关断、非 Linux 内联） | media 专属 shm 段（拟新增，前缀 `zeroweb-media-*`，`ZW_MEDIA_SHM=0` 关断） |
 | 崩溃检测 | `RendererHandle::exit_reason`/`check_crashes` 状态机 | media host 句柄（拟新增，同形）+ 重启/退避（C3） |
-| 降级纪律 | image_decoder.rs：「隔离开启后运行期失败→返回错误，不得绕过隔离边界；spawn 失败→永久进程内」 | 同纪律直接沿用（见 9.6） |
+| 降级纪律 | image_decoder.rs 代码为准（v1.7 订正）：隔离开启后 spawn 失败（SPAWN_FAILED 短路，image_decoder.rs:205）与运行期失败同归错误面，无任何层内联回落；源码注释「spawn 失败→进程内解码」与代码不符，注释订正归 C1 顺带 | 同纪律直接沿用（见 9.6） |
 
 ### IF-001 会话与生命周期
 
@@ -264,15 +264,16 @@ request/response）、**跨进程时钟/状态镜像**（DC-2 契约核心，C2 
 - **关闭**：renderer 退出前发拟新增 `MediaShutdown` 并等子进程退出（对齐
   `RendererHandle::shutdown` 语义）；host 收到对端断开（stdin EOF）自行退出（`run_role`
   先例）。
-- **错误处理**：spawn 失败（二进制缺失/握手超时）→ 永久进程内模式（本 renderer 生命周期
-  不再重试，先例 image_decoder.rs:178 注记）；运行期崩溃 → 9.6 错误面，不静默回退。
+- **错误处理**：spawn 失败（二进制缺失/握手超时）→ 永久错误面 `MediaError{HostInternal}`
+  （本 webview/renderer 生命周期不重试、不内联——SPAWN_FAILED 短路先例 image_decoder.rs:205，
+  v1.7 订正：先例实际为错误面而非「进程内直调」）；运行期崩溃 → 9.6 错误面，不静默回退。
 - **默认动作**：`media-process` feature 默认关 = 不 spawn，registry 直调 zero-media（现状）。
 
 ### IF-002 控制面（renderer → host）
 
 | 消息（拟新增） | 载荷 | 语义 | 响应 |
 |---|---|---|---|
-| `MediaRegisterSource` | source 键、总长、mime | 登记源；**超 per-source 字节上限 → `MediaError{QuotaExceeded}`**（上限值 C1 定，对齐 MSE 封顶精神） | `MediaSourceReady` |
+| `MediaRegisterSource` | source 键、总长、mime | 登记源；**超 per-source 字节上限 → `MediaError{QuotaExceeded}`**（C1 定值 256 MiB = `MEDIA_SOURCE_MAX_BYTES`；登记自报 `total_len` 与实收字节双面校验——自报值不可信，超限摘源，对齐 MSE 封顶精神） | `MediaSourceReady` |
 | `MediaDataChunk` | source、seq、字节 | 源字节流式喂入（64MiB 帧上限内分片） | 累积回执（bounded） |
 | `MediaPlay` | source、position_ms | 起播/重播（Ended 后 = 重头，registry 现语义） | `MediaStateUpdate` |
 | `MediaPause` | source | 暂停（时钟冻结） | `MediaStateUpdate` |
@@ -280,8 +281,11 @@ request/response）、**跨进程时钟/状态镜像**（DC-2 契约核心，C2 
 | `MediaReleaseSource` | source | 释放源与播放器（导航/`release` 面） | — |
 | `MediaShutdown` | — | 优雅退出 | — |
 
-请求/响应以信封 `id` 匹配（现有 `IpcMessage.id` 先例）；fire-and-forget 仅限无回执行
-（`MediaReleaseSource`）。
+请求/响应以信封 `id` 匹配（现有 `IpcMessage.id` 先例）；fire-and-forget 限于无成功
+回执面：`MediaReleaseSource` 与 set 面（`MediaSetRate`/`MediaSetLoop`/`MediaSetGain`，
+C2 落地语义——成功无回执，未知源错误经自发 `MediaError` 事件补投）；`MediaPlay`/
+`MediaPause` 的成功回执即首条 `MediaStateUpdate`（携请求信封 id，后续心跳/终态为
+id 0 自发面）。
 
 ### IF-003 状态/时钟面（host → renderer，DC-2 契约核心）
 
@@ -325,10 +329,11 @@ request/response）、**跨进程时钟/状态镜像**（DC-2 契约核心，C2 
   `MediaStateUpdate{Error{HostInternal}}`（页面可观察播放错误，DC-3 第一段）→ 页面重载
   走现有导航恢复面（DC-3 第二段）；**renderer 自身不随宿主崩溃**（隔离目的）。
 - **重启**：C3 批次实现（退避/上限策略拟新增）；C2 阶段崩溃后不再自动重播，仅报错。
-- **降级纪律**（沿 image-decoder 先例，两条分立）：
-  1. 启动失败（spawn/握手）→ 永久进程内直调模式（现状行为，等价 feature 关）；
-  2. 运行期失败（host 崩溃/协议错误）→ `MediaError` 面上抛，**不得静默回进程内**
-     （隔离边界不可绕过——DC-3 验收前提）。
+- **降级纪律**（v1.7 合一并订正——image-decoder 代码为准，启动失败与运行期失败本就同面）：
+  隔离开启后**一切失败（spawn/握手/运行期崩溃/协议错误）同归 `MediaError` 错误面**，
+  **不得静默回进程内直调**（隔离边界不可绕过——DC-3 验收前提；spawn 失败短路为本 webview
+  生命周期一次性，后续 play 立即 `MediaError{HostInternal}`）；feature 默认关 = 内联直调，
+  正常路径不受影响。「spawn 失败 → 进程内回退」不可能发生（image_decoder.rs:205 先例即错误面）。
 
 ### 9.7 与 DC 的映射
 
@@ -346,14 +351,14 @@ request/response）、**跨进程时钟/状态镜像**（DC-2 契约核心，C2 
 > [video-decode-playback-spec-rfc](video-decode-playback-spec-rfc.md) 中同名 D-RFC-1~3 **无关**；
 > 本文引用后者时一律标「前 RFC」（形态沿其先例）。
 
-| ID | 决策点 | 选项 | 建议批复 |
-|---|---|---|---|
-| D-RFC-1 | 是否批准方案 C（独立媒体进程）立项，解锁批次 C1 起 | 批准 / 改选 A-only（DC-3 须按 DC-5 认可延期或调整）/ 暂缓 | 批准（理由 §5.1） |
-| D-RFC-2 | 方案 A 批次（A1–A3）是否随本 RFC 批复直接进入 M3 切片 | 随批 / 逐片另批 | 随批（均为实测缺陷修复，无架构含义） |
-| D-RFC-3 | 方案 B（平台硬解）是否启动逐平台核查（B1 纯文档） | 启动核查 / 暂缓 | 暂缓（无实测痛点，核查成本高） |
-| D-RFC-4 | H.264 兼容缺口是否启用既有 `decode-h264`（openh264）feature | 启用（生产 feature 表变更）/ 维持默认关 | 暂缓（与架构解耦；现网需求出现时再议） |
+| ID | 决策点 | 选项 | 建议批复 | 批复（2026-10-24 用户裁决） |
+|---|---|---|---|---|
+| D-RFC-1 | 是否批准方案 C（独立媒体进程）立项，解锁批次 C1 起 | 批准 / 改选 A-only（DC-3 须按 DC-5 认可延期或调整）/ 暂缓 | 批准（理由 §5.1） | **批准方案 C** |
+| D-RFC-2 | 方案 A 批次（A1–A3）是否随本 RFC 批复直接进入 M3 切片 | 随批 / 逐片另批 | 随批（均为实测缺陷修复，无架构含义） | **随批复即启** |
+| D-RFC-3 | 方案 B（平台硬解）是否启动逐平台核查（B1 纯文档） | 启动核查 / 暂缓 | 暂缓（无实测痛点，核查成本高） | **暂缓** |
+| D-RFC-4 | H.264 兼容缺口是否启用既有 `decode-h264`（openh264）feature | 启用（生产 feature 表变更）/ 维持默认关 | 暂缓（与架构解耦；现网需求出现时再议） | **维持默认关** |
 
-> 批复前：不改代码、不装 SDK、不变更 feature 表。D-RFC-1 未批时，goal 收口按 DC-5 走「用户认可延期/调整 DC」路径。
+> 批复前禁令（不改代码、不装 SDK、不变更 feature 表）自批复起解除；`media-process` feature 仍默认关，C1 骨架按 §7 门禁实施，启用时机归 C4/M4 验收后另议。
 
 ## 11. Spec Lint 报告
 
@@ -391,3 +396,9 @@ request/response）、**跨进程时钟/状态镜像**（DC-2 契约核心，C2 
 | v1.3-draft | 2026-10-24 | A2 行补设计稿指引（DESIGN.md §6：缺口 1+3 同面 = autoplay 走 play 算法；缺口 2 = 生产 renderer march 接线——runner 已接线、生产面缺失，M1「零调用方」表述按 crates/ 域订正）；WPT 上游 GOP 抽样闭合 A4 待验证项（DESIGN.md §7）。无决策/门禁/批次范围变化，零代码改动 |
 | v1.4-draft | 2026-10-24 | A3 行补设计稿指引（DESIGN.md §8：C4 = CacheEntry Arc 化——「像素插入后不可变」既有不变量使 Arc 共享语义安全，快照本体从不出进程；C2 = from_rgba_variable 跳纯色扫描；源驻留 = 256MB 总预算 + 非在播 LRU + 准入拒绝，av_sources seek 依赖受保护）。无决策/门禁/批次范围变化，零代码改动 |
 | v1.5-draft | 2026-10-24 | C1 行补设计稿指引（DESIGN.md §9：媒体消息族 14 拟新增变体 wire format 草案——控制面 7 + 状态/帧/错误面 7 + MediaPlaybackState/MediaErrorCode 伴生枚举；命名冲突排查（ProcessRole 无 Media 变体、IpcMessageKind 无 Media* 变体）；media-host 骨架边界（C1 = 契约 + 握手 + 空源生命周期，解码内核 C2 接）；契约测试计划含 kill-switch 与 feature 关回归）。无决策/门禁/批次范围变化，零代码改动 |
+| v1.6-draft | 2026-10-24 | C2 行补设计稿指引（DESIGN.md §10：host 自走时钟 + push 供数 renderer 镜像——march 页面语义原样保留、getter backing 转 push 镜像、250ms 心跳与 shim timeupdate 节流同值校准闭合 IF-003「≥100ms」实施值）；**C1 wire format 缺口修订**：桥面 setRate/setGain/setLoop（video_registry.rs:1711-1713 同步面）在 C1 草案无对应消息，§10.2 拟新增 3 变体（全族 14→17）+ MediaSourceReady 载荷扩 mediaMeta 三元组。无决策/门禁/批次范围变化，零代码改动 |
+| v1.7-draft | 2026-10-24 | C3 行补设计稿指引（DESIGN.md §11：崩溃检测双路 + 状态机/退避 + SIGKILL 注入 5 场景）；**降级纪律先例订正**：image-decoder spawn 失败实为永久错误面（SPAWN_FAILED 短路 image_decoder.rs:205，三调用方均落错误面、无内联回落），源码注释「spawn 失败→进程内解码」与代码不符——§2.2/§9.0/IF-001/IF-006 全部以代码为准改写，IF-006 纪律两条合一（spawn/运行期同归错误面），失实注释订正归 C1 顺带。无决策/门禁/批次范围变化，零代码改动 |
+| v1.8-draft | 2026-10-24 | C4 行补设计稿指引（DESIGN.md §12：M4 三态配对矩阵 + M1 harness 复用 + 判据表 + 资源审计清单 + capabilities 三对照）——**A1–A4 + C1–C4 全部批次设计稿齐备**。无决策/门禁/批次范围变化，零代码改动 |
+| v1.9 | 2026-10-24 | **用户批复 D-RFC-1~4**（§10 批复列：方案 C 批准 / A 批次随批即启 / B 核查暂缓 / decode-h264 维持默认关）；状态 草稿→已批复，批复前禁令解除。实施按 §7 推进：A1 先行，C1 并行 |
+| v1.10 | 2026-10-24 | C1 落地闭合 §9 IF-002 待定值：per-source 上限定值 256 MiB（`MEDIA_SOURCE_MAX_BYTES`），登记自报 `total_len` 与实收字节双面校验、超限摘源（信任边界：自报值不可信）；失实注释订正（v1.7 归 C1 项）随 C1 提交完成。无决策/门禁/批次范围变化 |
+| v1.11 | 2026-10-25 | C2 切片 1 落地闭合 IF-002 成功面语义：`MediaPlay`/`MediaPause` 成功回执 = 首条 `MediaStateUpdate` 携请求信封 id（心跳/终态 id 0 自发面）；set 面（SetRate/SetLoop/SetGain）成功无回执 → fire-and-forget 扩围。偏差细则 DESIGN §10.7（循环回卷分轨、SourceReady 元数据推送时机、±1ms 位置容差）。无决策/门禁/批次范围变化 |

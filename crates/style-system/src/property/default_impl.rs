@@ -362,6 +362,7 @@ impl Default for ComputedStyle {
             background_size: vec![BackgroundSizeComputedValue::Auto],
             background_attachment: vec![BackgroundAttachmentComputedValue::Scroll],
             background_clip: vec![BackgroundClipComputedValue::BorderBox],
+            background_blend_mode: vec![MixBlendModeComputedValue::Normal],
             background_origin: BackgroundOriginComputedValue::PaddingBox,
 
             // Border Image (Source / Slice / Width / Repeat / Outset)

@@ -163,6 +163,9 @@ pub struct VideoDecoder {
     /// seek 前向推进时暂存的「已解出但未消费」帧（`seek_to_ms` 命中 target 时
     /// 写入；下一次 `next_frame` 先弹出——spec precise-seek 不丢帧）。
     pending: Option<DecodedVideoFrame>,
+    /// Cues 的 CueTime 列表（毫秒，流序升序；开流时对源字节平扫一次——A4 cue
+    /// 锚定窄化 seek 的锚点集；无 Cues 流为空）。
+    cue_times_ms: Vec<u64>,
     /// 色彩描述（TrackEntry Video.Colour，开流时解析一次——M2 色度精化）。
     color: ColorSpace,
 }
@@ -181,14 +184,17 @@ impl VideoDecoder {
             .ok_or(DecodeError::NoVideoTrack)?;
         let video_track = track.track_number().get();
         let color = track.video().map(ColorSpace::from_track).unwrap_or_default();
+        let timestamp_scale = demuxer.info().timestamp_scale().get();
+        let cue_times_ms = parse_cue_times_ms(data, timestamp_scale);
         Ok(Self {
-            timestamp_scale: demuxer.info().timestamp_scale().get(),
+            timestamp_scale,
             demuxer,
             codec: VideoCodec::Vp9(Box::new(rusty_vp9::Vp9Decoder::new())),
             video_track,
             eof: false,
             draining: false,
             pending: None,
+            cue_times_ms,
             color,
         })
     }
@@ -217,14 +223,17 @@ impl VideoDecoder {
             "V_AV1" => return Err(DecodeError::NoVideoTrack),
             _ => return Err(DecodeError::NoVideoTrack),
         };
+        let timestamp_scale = demuxer.info().timestamp_scale().get();
+        let cue_times_ms = parse_cue_times_ms(data, timestamp_scale);
         Ok(Self {
-            timestamp_scale: demuxer.info().timestamp_scale().get(),
+            timestamp_scale,
             demuxer,
             codec,
             video_track,
             eof: false,
             draining: false,
             pending: None,
+            cue_times_ms,
             color,
         })
     }
@@ -239,20 +248,30 @@ impl VideoDecoder {
             .map(|d| (d * self.timestamp_scale as f64 / 1e6).round() as u64)
     }
 
+    /// Cues 的 CueTime 列表（毫秒，流序升序；无 Cues 流为空）——seek 锚点集
+    ///（A4 cue 锚定窄化；测试面经此读取）。
+    #[cfg(test)]
+    pub(crate) fn cue_times_ms(&self) -> &[u64] {
+        &self.cue_times_ms
+    }
+
     /// seek 到目标位置（毫秒，媒体时间轴）——M2b 精确 seek（spec「seek」算法面）。
     ///
-    /// 两阶段：
-    /// ① demuxer 经 Cues（cue 二分）定位 ≤ target 的最近块并重建 VP9 解码器
-    ///   （cue 点即 keyframe；旧参考链作废）。落点帧可解 → 完成（cue 齐全的流
-    ///   O(log n) 到位）。
-    /// ② 回退：无 Cues 或落点为非 keyframe（VP9 参考链断裂不可解——如 testsrc2
-    ///   单 keyframe 流）→ 全量回退（demuxer seek 0 + 解码器重建），**前向解码**
-    ///   至 ≥ target 的首帧后定位完成（spec precise-seek：从最近 keyframe 解码到
-    ///   精确呈现点）。
+    /// 三形态（A4 窄化后）：
+    /// ① demuxer 经 Cues（cue 二分）定位 ≤ target 的最近块并重建解码器（cue 点即
+    ///   keyframe；旧参考链作废）。落点帧可解 → 完成（target 恰为 intra 帧位置的
+    ///   流 O(log n) 到位）。
+    /// ② cue 锚定窄化回退：① 落点非 keyframe（mid-GOP 目标——cue 点为簇级时间，
+    ///   target 落簇内非首块）→ 取 ≤ target 最近 cue 重 seek（broad phase 落同簇
+    ///   首，narrow phase 首块 = 簇首 keyframe 不再被跳过），解码器重建后**前向
+    ///   解码**至 ≥ target（≤ GOP 帧数）；锚块非 keyframe（稀疏 cue /
+    ///   relative-position 形态）→ 落 ③。O(GOP)。
+    /// ③ 流首全量回退：无 cue 锚（无 Cues 流）或锚块非 keyframe → demuxer seek 0
+    ///   + 解码器重建，前向解码至 ≥ target（spec precise-seek 最终形态）。
     ///
     /// 语义契约：完成后的「下一次 [`Self::next_frame`]」返回 pts ≥ target 的首帧
-    ///（② 路径精确命中；① 路径为 cue 点帧，调用方 VideoPlayer 把播放位置对齐到
-    /// 实际帧 pts）。
+    ///（①②③ 路径均精确命中——① 直落 target 帧，②③ 自 keyframe 前向解码到
+    /// 精确呈现点；调用方 VideoPlayer 把播放位置对齐到实际帧 pts）。
     /// https://www.matroska.org/technical/cues.html
     /// https://html.spec.whatwg.org/multipage/media.html#seek
     pub fn seek_to_ms(&mut self, target_ms: u64) -> Result<(), DecodeError> {
@@ -282,7 +301,44 @@ impl VideoDecoder {
             return Ok(());
         }
 
-        // ② 回退：从流首 keyframe 前向解码到 target（spec precise-seek）。
+        // ② cue 锚定窄化（A4）：≤ target 最近 cue 重 seek——narrow phase 首块 =
+        //   簇首 keyframe，参考链完整，前向解码 ≤ GOP 帧到位。锚块非 keyframe
+        //   （cue 与簇首错位形态）→ 落 ③ 全量回退（错误面不新增）。
+        let anchor_ms = self
+            .cue_times_ms
+            .partition_point(|&t| t <= target_ms)
+            .checked_sub(1)
+            .map(|i| self.cue_times_ms[i]);
+        if let Some(cue_ms) = anchor_ms {
+            let anchor_tick = (cue_ms as u128 * 1_000_000 / self.timestamp_scale as u128) as u64;
+            self.demuxer.seek(anchor_tick)?;
+            self.codec.reset()?;
+            self.eof = false;
+            self.draining = false;
+            let mut block = matroska_demuxer::Frame::default();
+            if matches!(self.demuxer.next_frame(&mut block), Ok(true))
+                && block.track == self.video_track
+                && block.is_keyframe == Some(true)
+            {
+                let pts_ms = block.timestamp * self.timestamp_scale / 1_000_000;
+                self.codec.push(&block.data, pts_ms as i64)?;
+                // 锚 keyframe 起步前向解码至 ≥ target（EOF/错误出口同 ③）。
+                loop {
+                    match self.try_decode_next_frame() {
+                        Ok(Some(frame)) => {
+                            if frame.pts_ms as u128 * 1_000_000 >= target_ns {
+                                self.pending = Some(frame);
+                                return Ok(());
+                            }
+                        }
+                        Ok(None) => return Ok(()),
+                        Err(e) => return Err(e),
+                    }
+                }
+            }
+        }
+
+        // ③ 回退：从流首 keyframe 前向解码到 target（spec precise-seek）。
         self.demuxer.seek(0)?;
         self.codec.reset()?;
         self.eof = false;
@@ -681,6 +737,88 @@ pub(crate) fn planes_to_rgba(
 
 fn clamp_u8(v: f32) -> u8 {
     v.round().clamp(0.0, 255.0) as u8
+}
+
+/// EBML 元素 ID（vint，标记位保留在值内）。
+fn read_ebml_id(data: &[u8], pos: &mut usize) -> Option<u32> {
+    let first = *data.get(*pos)?;
+    if first == 0 {
+        return None; // 非法 ID vint（长度位 > 8）
+    }
+    let len = first.leading_zeros() as usize + 1;
+    let mut val = 0u32;
+    for i in 0..len {
+        val = (val << 8) | u32::from(*data.get(*pos + i)?);
+    }
+    *pos += len;
+    Some(val)
+}
+
+/// EBML 尺寸 vint（标记位剥离；全 1 未知尺寸按「余下全部」处理）。
+fn read_ebml_size(data: &[u8], pos: &mut usize) -> Option<usize> {
+    let first = *data.get(*pos)?;
+    if first == 0 {
+        return None; // 非法尺寸 vint（长度位 > 8）
+    }
+    let len = first.leading_zeros() as usize + 1;
+    // 8 字节 vint 首字节值位为 0（掩码 0xFF>>8 = 0）——掩码须在宽类型上移位。
+    let mut val = u64::from(first) & (0xFFu64 >> len);
+    for i in 1..len {
+        val = (val << 8) | u64::from(*data.get(*pos + i)?);
+    }
+    *pos += len;
+    let all_ones = val == (1u64 << (7 * len)) - 1;
+    Some(if all_ones { data.len() - *pos } else { val as usize }.min(data.len() - *pos))
+}
+
+/// 遍历同层元素，命中 `want` 的载荷交给 `hit`（其余按尺寸跳过；损坏面即停）。
+fn walk_ebml(payload: &[u8], want: u32, hit: &mut dyn FnMut(&[u8])) {
+    let mut pos = 0usize;
+    while pos < payload.len() {
+        let Some(id) = read_ebml_id(payload, &mut pos) else {
+            break;
+        };
+        let Some(size) = read_ebml_size(payload, &mut pos) else {
+            break;
+        };
+        let end = (pos + size).min(payload.len());
+        if id == want {
+            hit(&payload[pos..end]);
+        }
+        pos = end;
+    }
+}
+
+/// 平扫源字节提取 Cues 的 CueTime 列表（毫秒，流序升序）。
+///
+/// A4 cue 锚定窄化 seek：matroska-demuxer 不暴露 cue 访问 API（`CuePoint` 私有），
+/// 对源字节自解析——Segment → Cues → CuePoint/CueTime 三层遍历（解析逻辑与
+/// fixture 生成器 scripts/make-long-video-fixture.py 同构，零新依赖）。含音频轨的
+/// 流 CuePoint 可能重复（每轨一条）——时间重复对锚点二分无害。tick→ms 换算与
+/// [`VideoDecoder::duration_ms`] 同式。
+/// https://www.matroska.org/technical/cues.html
+pub(crate) fn parse_cue_times_ms(data: &[u8], timestamp_scale: u64) -> Vec<u64> {
+    const SEGMENT: u32 = 0x1853_8067;
+    const CUES: u32 = 0x1C53_BB6B;
+    const CUE_POINT: u32 = 0x0000_00BB;
+    const CUE_TIME: u32 = 0x0000_00B3;
+
+    let mut out = Vec::new();
+    walk_ebml(data, SEGMENT, &mut |seg| {
+        walk_ebml(seg, CUES, &mut |cues| {
+            walk_ebml(cues, CUE_POINT, &mut |point| {
+                walk_ebml(point, CUE_TIME, &mut |time| {
+                    // uint 大端（≤8 字节）。
+                    let mut tick = 0u64;
+                    for &b in time {
+                        tick = (tick << 8) | u64::from(b);
+                    }
+                    out.push(((tick as f64) * timestamp_scale as f64 / 1e6).round() as u64);
+                });
+            });
+        });
+    });
+    out
 }
 
 /// 供测试与 M1b 校验的辅助——帧的 luma 摘要（RGBA 面的均值）。

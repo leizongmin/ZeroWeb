@@ -683,7 +683,35 @@ pub(crate) fn compute_cell_intrinsic_width_impl(
     let mut content_width = 0.0f32;
     let mut has_explicit_child = false;
 
-    for child in &cell_box.children {
+    // R5261（CSS2 §17.5.2 cell max-content + css-sizing-3 §max-content inline 轴求和）：
+    // 连续 inline 级显式宽子共享同一行盒，列宽贡献 = run **求和**而非逐子 max——
+    // img-swatch 参照表形态（`<td><img>×9</td>`，border-conflict-element-001d/001e）
+    // 旧 max 致列宽 = 单图宽（20px），行内逐图折行成竖条。run 只在 DOM **相邻**
+    // 盒子间累积（间隔任意 DOM 节点即断：文本/`<br>` 强制断行/contents 穿透均不
+    // 应求和——`<img><br><img>` 的 max-content 语义是 max 而非和）；abspos/fixed
+    // 不入 run（脱流），落既有分支。
+    let cell_dom_index: HashMap<NodeId, usize> = cell_box
+        .node_id
+        .map(|id| {
+            doc.child_nodes(id)
+                .into_iter()
+                .enumerate()
+                .map(|(i, c)| (c, i))
+                .collect()
+        })
+        .unwrap_or_default();
+    let dom_adjacent = |a: &LayoutBox, b: &LayoutBox| -> bool {
+        match (a.node_id, b.node_id) {
+            (Some(x), Some(y)) => cell_dom_index
+                .get(&x)
+                .is_some_and(|&i| cell_dom_index.get(&y) == Some(&(i + 1))),
+            _ => false,
+        }
+    };
+    let mut inline_run_sum = 0.0f32;
+    let mut inline_run_active = false;
+
+    for (child_idx, child) in cell_box.children.iter().enumerate() {
         // 检查子元素是否有显式 CSS width
         let child_has_explicit_width = child
             .node_id
@@ -693,6 +721,37 @@ pub(crate) fn compute_cell_intrinsic_width_impl(
                 !matches!(s.width, LengthValue::Auto)
             })
             .unwrap_or(false);
+        let child_is_inline_level = child
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .map(|s| {
+                matches!(
+                    s.display,
+                    DisplayValue::Inline
+                        | DisplayValue::InlineBlock
+                        | DisplayValue::InlineFlex
+                        | DisplayValue::InlineGrid
+                        | DisplayValue::InlineTable
+                )
+            })
+            .unwrap_or(false);
+
+        if child_has_explicit_width && child_is_inline_level && !child.is_absolute && !child.is_fixed {
+            if inline_run_active && !dom_adjacent(&cell_box.children[child_idx - 1], child) {
+                content_width = content_width.max(inline_run_sum);
+                inline_run_sum = 0.0;
+            }
+            // 同一 run 的 inline 级子：outer width 求和（taffy 忠实保留显式宽）
+            inline_run_sum += child.width + child.margin_left + child.margin_right;
+            inline_run_active = true;
+            has_explicit_child = true;
+            continue;
+        }
+        if inline_run_active {
+            content_width = content_width.max(inline_run_sum);
+            inline_run_sum = 0.0;
+            inline_run_active = false;
+        }
 
         if child_has_explicit_width {
             // 有显式 width 的子元素：使用其 outer width（taffy 忠实保留显式宽）
@@ -738,6 +797,10 @@ pub(crate) fn compute_cell_intrinsic_width_impl(
             content_width = content_width.max(child.width + child.margin_left + child.margin_right);
             has_explicit_child = true;
         }
+    }
+    // R5261：run 延伸到最后一个子元素时的收尾 flush
+    if inline_run_active {
+        content_width = content_width.max(inline_run_sum);
     }
 
     // R1001：cell 的**直接匿名 inline 文本**（cell 的直接文本节点子元素）。

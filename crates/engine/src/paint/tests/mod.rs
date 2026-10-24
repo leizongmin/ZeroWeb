@@ -54,6 +54,15 @@ mod r5256_selection_descendant_owner_tests;
 mod r5258_first_line_color_tests;
 /// R5259 appearance widget 纳入 per-node 效果窗口（transform 作用于全部渲染输出）。
 mod r5259_appearance_transform_window_tests;
+/// R5260 clip:text 恒色染色接入 flex/grid 匿名文本项（css-backgrounds-4 §background-clip:text）。
+mod r5260_clip_text_anonymous_item_tests;
+/// R5263 collapse 横带端部随相邻竖格线胜者伸缩（CSS2 §17.6.2 带端归属）。
+mod r5263_collapse_band_end_tests;
+mod r5264_collapse_content_half_shift_tests;
+/// R5265 collapse 带 z 序相位间插（CSS2.1 Appendix E / Blink kCollapsedTableBorders）。
+mod r5265_collapse_band_phase_tests;
+/// R5267 clip:text 恒色层间混合（css-compositing-1 §background-blend-mode）。
+mod r5267_bg_clip_text_layer_blend_tests;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;

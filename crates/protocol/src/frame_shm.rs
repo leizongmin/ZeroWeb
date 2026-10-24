@@ -11,7 +11,7 @@ use crate::gpu_mailbox::{GpuMailboxHeader, decode_gpu_mailbox, encode_gpu_mailbo
 const SHM_PREFIX: &str = "zeroweb-cmp-";
 
 /// Linux 环境变量：未设置时默认开，`0`/`false` 禁用。
-fn env_linux_default_on(name: &str) -> bool {
+pub(crate) fn env_linux_default_on(name: &str) -> bool {
     #[cfg(target_os = "linux")]
     {
         zero_runtime_config::enabled_by_default(name)

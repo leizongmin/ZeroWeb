@@ -1,0 +1,25 @@
+
+running 5 tests
+test m1_av_drift_media_layer ... M1BASELINE scenario=av-drift-media presented_frames=1440 drift_ms p50=11.0 p95=21.0 max=35.0 mean=11.1 audio_cursor_end_ms=60050
+ok
+test m1_capacity_av_pair_60s ... M1BASELINE scenario=av-pair-60s wall_ms=1138 cpu_ms=1130 cores=0.993 ticks=2640 present_ticks=1013 media_end_s=60.678
+M1BASELINE tick_us label=av-pair-60s n=2640 p50=10500.0 p95=882648.0 p99=1100733.0 max=320699143.0 mean_us=431.0
+ok
+test m1_capacity_pure_video_60s ... M1BASELINE scenario=pure-video-60s wall_ms=1098 cpu_ms=1100 cores=1.002 ticks=3749 present_ticks=1440 media_end_s=59.968 cpu_per_present_ms=0.764
+M1BASELINE tick_us label=pure-video-60s n=3749 p50=371.0 p95=844765.0 p99=1023375.0 max=1916443.0 mean_us=292.9
+ok
+test m1_clock_fidelity_realtime_15s ... M1BASELINE scenario=clock-fidelity-rt-15s rate=1.00000 max_offset_ms=0.00 p95_offset_ms=0.00 end_media_s=15.008
+M1BASELINE tick_us label=clock-fidelity-rt n=939 p50=52620.0 p95=1295181.0 p99=1479633.0 max=1797146.0 mean_us=426.1
+M1BASELINE a1=clock-rate-aligned rate=1.00000
+ok
+test m1_seek_cue_path ... M1BASELINE scenario=seek-cue target_s=15 seek_us=18316 after_ct_s=15.000
+M1BASELINE scenario=seek-resume target_s=15 resume_ticks=2811 end_s=59.960
+M1BASELINE scenario=seek-cue target_s=30 seek_us=1001 after_ct_s=30.000
+M1BASELINE scenario=seek-resume target_s=30 resume_ticks=1874 end_s=59.968
+M1BASELINE scenario=seek-cue target_s=45 seek_us=18378 after_ct_s=45.000
+M1BASELINE scenario=seek-resume target_s=45 resume_ticks=936 end_s=59.960
+M1BASELINE a4=seek-narrowed mid_gop_seek_us=18316/18378
+ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.03s
+

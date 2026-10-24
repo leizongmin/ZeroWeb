@@ -5635,6 +5635,11 @@
     // 后续读走已注册值（幂等，重复派发 no-op）。
     if (event && event.type === 'load' && typeof globalThis.__zwRegisterNamedIframes === 'function') {
       try { globalThis.__zwStartParserIframes(); } catch (_eS6p) {}
+      // R5275（html-semantics M2 切片 68）：静态 img settle 扫描 + R56h 闸门队列
+      // drain——DOMContentLoaded 已派（runner 生命周期串先派 DCL 再派 load）、
+      // window load listener 未跑，img load/error 在此窗口统一落点（spec「图片
+      // 延迟 window load、DCL 不等图片」——delay-load-event 断言序）。
+      try { if (typeof globalThis.__zwFireStaticImgSettle === 'function') globalThis.__zwFireStaticImgSettle(); } catch (_eIm5275) {}
       try { globalThis.__zwRegisterNamedIframes(); } catch (_e139r) {}
     }
     // M2-S4M（navigation-compat）：window 'load' 派发 = 文档 completely loaded 标记——
@@ -10128,6 +10133,279 @@
       }
     } catch (_eMediaEv) {}
   }
+  // A2 Fix 1（media-runtime-isolation DESIGN §6.2）：play 算法内核（spec internal
+  // play steps——IDL play() 与 autoplay 潜在自动播放分支共用）。自 part03 IDL play
+  // 原文迁移（整体去层），行为面不变：资源选择 invoke → playing 翻转 → 无候选
+  // pending → 桥 feature-detect + latest-wins src 解析（身份分派）→ 桥 play 恰一次
+  // + 未命中退避重试 → 命中后 bridgeOn/dims 升级/pending seek 补推/rate/gain/loop
+  // 同步/ended-loop → queued task 派 play/playing/timeupdate + promise settle。
+  // 元素身份留档一并内移（autoplay 路径的 march/ended 钩子同需反查派发面）。
+  // https://html.spec.whatwg.org/multipage/media.html#internal-play-steps
+  function _zwMediaPlaySteps(sel, handle, key) {
+    var _pKey = key;
+    var _pMs = _mediaState[_pKey] || (_mediaState[_pKey] = {});
+    // M3 扩批 XVI：元素身份留档（march/ended 钩子经 key 反查派发面——
+    // sel/handle 不在 march 作用域，暂存于此）。
+    _pMs._zwSel = sel;
+    _pMs._zwHandle = handle;
+    // media-elements M3 扩批 XIV（spec dom-media-play / pause-on-removal）：
+    // **已移出文档**的 sel media 元素 play()——播放无法推进（无 resource
+    // selection invoke、无 queued 派发），promise 保持 pending 交由
+    // removeChild 钩子的 playPromise 中断面 reject AbortError。
+    // pause-remove-from-document-networkState 断言面：play() → 移除 →
+    // watcher 等 pause → promise_rejects_dom AbortError。
+    // https://html.spec.whatwg.org/multipage/media.html#dom-media-play
+    // media-elements M3 扩批 XIV（spec dom-media-play）：无候选资源时播放
+    // 无法推进——不 queue play/playing 派发 task，promise **保持 pending**，
+    // 直到移除文档（pause on removal → AbortError）或资源就绪。
+    // **仅 sel 身份**（静态/动态 HTML 形态——`a.src=` 的 latest-wins 覆盖表
+    // 可判存在性）；handle-only（detached createElement）无宿主资源通路，
+    // 保持既有 queued task（cues「default attribute」等 detached 断言面）。
+    var _noCandidate = false;
+    if (!handle && typeof _zwMediaResourceSelect === 'function'
+        && (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'src') : __zw_has_attr(sel, 'src')) !== '1'
+        && !_resourceStates[_pKey]) {
+      _zwMediaResourceSelect(sel, handle, _pKey);
+      var _hasSrc = (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'src') : __zw_has_attr(sel, 'src')) === '1';
+      var _hasSourceChild = false;
+      try {
+        var _psList = _makeProxy(sel, handle).querySelectorAll('source');
+        _hasSourceChild = !!(_psList && _psList.length);
+      } catch (_ePsQ) {}
+      _noCandidate = !_hasSrc && !_hasSourceChild;
+    }
+    // media-elements M3 扩批 XI（spec resource selection）——无 src 候选时
+    // play() 亦触发资源选择（invoke：同步段 NO_SOURCE；稳定态无候选回落 EMPTY，
+    // 不派 loadstart——无加载发生）。
+    // https://html.spec.whatwg.org/multipage/media.html#dom-media-play
+    if (handle && typeof _zwMediaResourceSelect === 'function'
+        && __zw_has_attr_handle(handle, 'src') !== '1'
+        && !_resourceStates[_pKey]) {
+      _zwMediaResourceSelect(sel, handle, _pKey);
+    }
+    if (_pMs.playing) return Promise.resolve(undefined);
+    _pMs.playing = true;
+    _pMs.ended = false;
+    // M3 扩批 XIV：无候选资源 → promise pending 挂起（playing 态保持同步
+    // 翻转供脚本观察；无 queued 派发/resolve）。移除文档路径的 pause on
+    // removal 会 reject pending promise（AbortError）——见 removeChild 钩子
+    // 的 playPromise 中断面。
+    if (_noCandidate) {
+      var _ncEntry = null;
+      var _ncPromise = new Promise(function (resolve, reject) { _ncEntry = { resolve: resolve, reject: reject }; });
+      _pMs.playPromise = _ncEntry;
+      return _ncPromise;
+    }
+    // media-playback M2a 切片 5b：宿主桥 feature-detect——注册了
+    // __zwVideoBridge（生产 worker 注入）时走真值播放（Rust VideoPlayer
+    // 时钟/帧推进）；未注册（testharness/reftest 沙箱）保持 headless 近似
+    //（桥缺失零回归——372 基线）。src 取 IDL getter 同源解析（绝对 URL =
+    // 注册表 settle 登记键）。
+    if (typeof globalThis.__zwVideoBridge === 'object' && globalThis.__zwVideoBridge) {
+      try {
+        // M3 扩批 XVI：latest-wins 读——`.src=` IDL setter 的写是 pending mutation
+        //（render apply 前不入快照），纯快照读 `__zw_get_attr` 看不到 → bridgeSrc
+        // 空串 → 播放桥失联（fixture-mounted runner 的 track-cues-* 用例形态）。
+        // `__zw_get_attr_lw` 同批 SetAttr 命中新值（R2995 同源语义）。
+        // M3 扩批 XXII：src 读按身份分派——handle 身份（createElement 产物，
+        // track-active-cues / track-remove-active-cue 形态）走 registry 现值
+        // `__zw_get_attr_handle`（IDL .src= setter 的 handle 路径写 registry——
+        // `__zw_get_attr_lw` 是 sel 文档查询，对 null sel 恒空 → bridgeSrc 空
+        // → 桥失联 + 重试不启动）；sel 身份保持 latest-wins（同批 setter 命中）。
+        var _pSrcRaw = handle
+          ? ((typeof __zw_get_attr_handle === 'function') ? (__zw_get_attr_handle(handle, 'src') || '') : '')
+          : ((typeof __zw_get_attr_lw === 'function')
+              ? (__zw_get_attr_lw(sel, 'src') || '')
+              : ((typeof __zw_get_attr === 'function') ? (__zw_get_attr(sel, 'src') || '') : ''));
+        var _pAbs = _pSrcRaw ? _zwResolveFetchUrl(String(_pSrcRaw).replace(/^[\x00-\x20]+/, '').replace(/[\x00-\x20]+$/, '')) : '';
+        if (_pAbs) _pMs.bridgeSrc = _pAbs;
+        // M3 扩批 XVI：play 桥调用**恰一次**（结果存 _hit——旧形态条件里各调一次
+        // 致桥双调，engine 桥契约测试断言调用序列面）。命中路径：bridgeOn 置位 +
+        // pending seek 补推 + 速率/增益同步；未命中：**退避重试**（fixture-mounted
+        // runner 的源登记走逐 tick 动态补登记——脚本 turn 内同步 play 早于登记
+        // 落位）。spec play() promise pending 于播放真正推进，重试窗口内 playing
+        // 态保持；命中后与同步路径同面（playPromise 由既有 queued task resolve）。
+        var _hit = _pAbs ? globalThis.__zwVideoBridge.play(_pAbs, 0) : false;
+        if (!_hit && _pAbs && typeof setTimeout === 'function') {
+          var _pRetry = function (_n) {
+            if (_n > 5000 || !_pMs.playing || _pMs.bridgeOn) return;
+            setTimeout(function () {
+              try {
+                if (globalThis.__zwVideoBridge.play(_pAbs, 0)) {
+                  _pMs.bridgeOn = true;
+                  // t8o：桥命中升级 settle 占位维度（IDL 形态 w0h0 → 解码真值；
+                  // 重试命中路径——provider 补登记后首播）。
+                  if (typeof globalThis._zwMediaBridgeDimsUpgrade === 'function') {
+                    globalThis._zwMediaBridgeDimsUpgrade(_pKey, _pAbs);
+                  }
+                  // M3 扩批 XVI：pending seek 补推（seek-before-play 时序——
+                  // 桥未接通期的 currentTime= 赋值在此落位，spec 播放启动
+                  // 位置 = 请求 seek 目标）。
+                  if (typeof _pMs._zwSeekPendingMs === 'number') {
+                    try {
+                      if (typeof globalThis.__zwVideoBridge.seek === 'function') {
+                        globalThis.__zwVideoBridge.seek(_pAbs, _pMs._zwSeekPendingMs | 0);
+                      }
+                    } catch (_eVbSk2) {}
+                    // M3 扩批 XVIII：march 区间基线 = seek 目标（播放时间线从
+                    // 目标起——目标前的 cue 不入捕获区间，spec seeked missed-cue
+                    // 语义；pending seek 路径无 seeked 回调，在此记账）。
+                    // R3936：**目标时刻的 cue active 面同步**（_zwMediaSeekSync）
+                    // 也要跑——只记基线不派 enter，起点恰在目标上的 cue
+                    //（pause-on-exit 的 cue0@4.0-4.5，currentTime=4.0 seek）永
+                    // 不进 active → exit/暂停面全部缺席（start > lastMs 判定
+                    // 在后续每拍恒假）。
+                    if (typeof globalThis._zwMediaSeekSync === 'function') {
+                      try { globalThis._zwMediaSeekSync(_pKey); } catch (_eSsP1) {}
+                    }
+                    _pMs._zwLastMarchMs = _pMs._zwSeekPendingMs;
+                    delete _pMs._zwSeekPendingMs;
+                  }
+                  if (typeof globalThis.__zwVideoBridge.setRate === 'function') {
+                    try { globalThis.__zwVideoBridge.setRate(_pAbs, _pMs.playbackRate || 1); } catch (_eVbR3) {}
+                  }
+                  if (typeof globalThis.__zwVideoBridge.setGain === 'function') {
+                    try {
+                      globalThis.__zwVideoBridge.setGain(
+                        _pAbs, (_pMs.volume != null ? _pMs.volume : 1), _pMs.muted === true);
+                    } catch (_eVbG1) {}
+                  }
+                  // M3 扩批 XXIV：重试路径 loop 同步（同 gain 面——retry 命中
+                  // 时把 play 前设的 loop 推给桥）。
+                  if (typeof globalThis.__zwVideoBridge.setLoop === 'function') {
+                    try { globalThis.__zwVideoBridge.setLoop(_pAbs, _pMs.loop === true); } catch (_eVbL1) {}
+                  }
+                } else {
+                  _pRetry(_n + 1);
+                }
+              } catch (_eVbRt) {}
+            }, 0);
+          };
+          _pRetry(1);
+        }
+        if (_hit) {
+          _pMs.bridgeOn = true;
+          // t8o：桥命中升级 settle 占位维度（IDL 形态 w0h0 → 解码真值；
+          // 同步命中路径——源字节 settle 登记在先）。
+          if (typeof globalThis._zwMediaBridgeDimsUpgrade === 'function') {
+            globalThis._zwMediaBridgeDimsUpgrade(_pKey, _pAbs);
+          }
+          // M3 扩批 XVI：pending seek 补推（同步命中路径——seek 发生在 play 前、
+          // 桥登记落位前，与重试路径同语义；spec 播放启动位置 = 请求 seek 目标）。
+          if (typeof _pMs._zwSeekPendingMs === 'number') {
+            try {
+              if (typeof globalThis.__zwVideoBridge.seek === 'function') {
+                globalThis.__zwVideoBridge.seek(_pAbs, _pMs._zwSeekPendingMs | 0);
+              }
+            } catch (_eVbSk3) {}
+            // M3 扩批 XVIII：march 区间基线 = seek 目标（同步命中路径，同上）。
+            // R3936：目标时刻 cue active 面同步（同重试路径注记）。
+            if (typeof globalThis._zwMediaSeekSync === 'function') {
+              try { globalThis._zwMediaSeekSync(_pKey); } catch (_eSsP0) {}
+            }
+            _pMs._zwLastMarchMs = _pMs._zwSeekPendingMs;
+            delete _pMs._zwSeekPendingMs;
+          }
+          // 起播时同步既有速率（play 前设的 playbackRate 经桥生效）。
+          if (typeof globalThis.__zwVideoBridge.setRate === 'function') {
+            try { globalThis.__zwVideoBridge.setRate(_pAbs, _pMs.playbackRate || 1); } catch (_eVbR2) {}
+          }
+          // M2c 后续：起播时同步既有增益（play 前设的 volume/muted 经桥生效——
+          // 该两 setter 的桥推 gated on bridgeOn，首播前设置只落 _mediaState）。
+          if (typeof globalThis.__zwVideoBridge.setGain === 'function') {
+            try {
+              globalThis.__zwVideoBridge.setGain(
+                _pAbs, (_pMs.volume != null ? _pMs.volume : 1), _pMs.muted === true);
+            } catch (_eVbG0) {}
+          }
+          // M3 扩批 XXIV：起播时同步既有 loop（play 前设的 loop 经桥生效——
+          // 同 gain 面；音频 entry 流末回卷 / 视频 march Ended→seek(0)+play 面）。
+          if (typeof globalThis.__zwVideoBridge.setLoop === 'function') {
+            try { globalThis.__zwVideoBridge.setLoop(_pAbs, _pMs.loop === true); } catch (_eVbL0) {}
+          }
+          // M3 扩批 XXV：ended 态 play = seek 回最早位置（spec「ended playback」
+          // 步 6.4——ended 且播放方向向前 → seek to earliest position + 派
+          // seeking/seeked，非 ended；loop-from-ended 的 onseeked 断言面）。
+          // 判定面：loop setter 已按 spec 把 ended 翻回 false（looping 媒体
+          // 不能是 ended）——ms.ended 不可靠；桥侧 restart 前的 Ended 态由
+          // 「march 非 loop 分支置位过的 _zwEndedDispatched」承载（registry
+          // reset 后 isEnded 已 false，不能事后查桥）。
+          // registry 侧 reset 重建解码器（Ended→play 重头），语义层在此补事件对
+          //（march Ended 分叉只在「播放中走到流末」时跑——ended 后停着再 play
+          // 的形态不经过 march）。位置真值经 _zwMediaSeekSync 拉取。
+          if (_pMs._zwEndedDispatched === true) {
+            delete _pMs._zwEndedDispatched;
+            _pMs.ended = false;
+            _pMs.currentTime = 0;
+            _pMs._zwLastMarchMs = 0;
+            _pMs.seeking = true;
+            _zwMediaFire(sel, handle, _pKey, 'seeking');
+            var _epSeeked = function () {
+              var _epMs = _mediaState[_pKey];
+              if (!_epMs) return;
+              _epMs.seeking = false;
+              _zwMediaFire(sel, handle, _pKey, 'timeupdate');
+              _zwMediaFire(sel, handle, _pKey, 'seeked');
+              if (typeof globalThis._zwMediaSeekSync === 'function') {
+                try { globalThis._zwMediaSeekSync(_pKey); } catch (_eEpSs) {}
+              }
+            };
+            if (typeof setTimeout === 'function') setTimeout(_epSeeked, 0);
+            else _epSeeked();
+          }
+        }
+      } catch (_eVbP) {}
+    }
+    // media-elements M3 扩批 VII：play/playing/timeupdate 走 queued task
+    //（spec dom-media-play：「queue a media element task to fire play/
+    // playing」）——**异步**派发，play() 返回后注册的 onplaying/listener
+    // 仍能收到（pause-remove-from-document 的 v.onplaying 在 play() 之后
+    // 挂；同步派发致 handler 错过 → pending 挂起）。paused 状态同步翻转
+    // （spec dom-media-paused）。
+    // play Promise 的 settle 与事件派发**同一个 queued task**（无独立
+    // setTimeout——宿主 __zw_setTimeout 每定时器独立线程投递，两个 0ms
+    // 定时器顺序不保证，竞态下 promise-check 先于事件派发跑会把仍 playing
+    // 的 promise 误 resolve、丢 AbortError 契约——event_play_noautoplay
+    // 断言面）。task 内序：先派事件（listener 可能 pause() → 同步 reject
+    // playPromise），后检查 playPromise 身份再 resolve。
+    // 无 setTimeout 环境（纯同步沙箱）回落同步路径。
+    var entry = null;
+    var promise = new Promise(function (resolve, reject) {
+      entry = { resolve: resolve, reject: reject };
+    });
+    _pMs.playPromise = entry;
+    // M3 扩批 XXIX：HAVE_NOTHING 期 play()（readyState==0 且有候选）——
+    // spec dom-media-play 步 6「readyState is HAVE_NOTHING」分支：promise
+    // **pending**，等 readyState 变化 task 再派 play/playing（play 事件在
+    // canplay 前、playing 在 canplay 后——ready-states/autoplay 的
+    //「autoplay and play()」事件严格序断言面）。事件派发移至
+    // _zwMediaLoadSequence 的 readyState 翻转点（part06）。
+    // 候选判据按身份分派（同上方资源选择）：handle-only 无 src 无 settle
+    // 序列可达——保持既有 queued task resolve 契约（detached 断言面）；
+    // handle-only 有 src 的 settle 由 shim 侧调度承载（与身份无关）。
+    var _hasPendingCandidate = handle
+      ? __zw_has_attr_handle(handle, 'src') === '1'
+      : ((typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'src') : __zw_has_attr(sel, 'src')) === '1');
+    if (_hasPendingCandidate && (_pMs.readyState | 0) === 0) {
+      _pMs._zwPlayPendingEvents = { sel: sel, handle: handle, key: _pKey, entry: entry };
+      return promise;
+    }
+    var _pf = function () {
+      _dispatchWithBubble(_pKey, sel, handle, _makeEvent('play', { bubbles: false, cancelable: false }));
+      _dispatchWithBubble(_pKey, sel, handle, _makeEvent('playing', { bubbles: false, cancelable: false }));
+      _dispatchWithBubble(_pKey, sel, handle, _makeEvent('timeupdate', { bubbles: false, cancelable: false }));
+      if (_pMs.playPromise !== entry) return; // 已被 pause() settle
+      delete _pMs.playPromise;
+      if (_pMs.playing) entry.resolve(undefined);
+      else entry.reject(new (globalThis.DOMException || Error)('play() was interrupted by pause()', 'AbortError'));
+    };
+    if (typeof setTimeout === 'function') setTimeout(_pf, 0);
+    else {
+      delete _pMs.playPromise;
+      entry.resolve(undefined);
+    }
+    return promise;
+  }
   function _zwMediaAutoplay(sel, handle, key) {
     var hasAutoplay = false;
     try {
@@ -10136,12 +10414,14 @@
         : (typeof __zw_has_attr === 'function') && __zw_has_attr(sel, 'autoplay') === '1';
     } catch (_eAuto) {}
     if (!hasAutoplay) return;
-    var ms = _mediaState[key] || (_mediaState[key] = {});
-    if (ms.playing) return;
-    ms.playing = true;
-    _zwMediaFire(sel, handle, key, 'play');
-    _zwMediaFire(sel, handle, key, 'playing');
-    _zwMediaFire(sel, handle, key, 'timeupdate'); // 播放推进首帧（event_timeupdate* 断言面）
+    // A2 Fix 1（media-runtime-isolation DESIGN §6.2，spec ready-states potential
+    // autoplay 分支「eligible for autoplay → run the internal play steps」）：改走
+    // play 算法内核——原手写置态 + 同步三事件删除，bridgeOn/重试/pending-seek/
+    // rate-gain-loop/ended-loop 全继承；事件时序随 play 算法 queued task 面
+    //（event_play*/event_timeupdate* 断言族门禁；playing 态翻转仍在内核同步段）。
+    // autoplay 不向页面暴露 promise（无返回值，与现一致）。
+    // https://html.spec.whatwg.org/multipage/media.html#ready-states
+    if (typeof _zwMediaPlaySteps === 'function') _zwMediaPlaySteps(sel, handle, key);
   }
   function _zwMediaLoadSequence(sel, handle, key, tag) {
     var ms = _mediaState[key] || (_mediaState[key] = {});

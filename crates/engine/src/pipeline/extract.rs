@@ -214,6 +214,17 @@ pub fn extract_img_srcs(html: &str) -> Vec<String> {
             }
         }
     }
+    // R5275（html-semantics M2 切片 68）：`<template>` contents fragment 内声明的
+    // `<img>` 也进抓取清单——fragment 不在文档树（zero_dom 解析期侧表
+    // template_contents_map，template.children 恒空），get_elements_by_tag_name
+    // 不达；naturalWidth-naturalHeight-width-height 族全部图源声明在模板内，
+    // 漏抓 → host 尺寸快照空 → shim 静态 settle 扫描全落 broken。
+    for template_id in doc.get_elements_by_tag_name("template") {
+        let Some(frag_id) = doc.template_contents(template_id) else {
+            continue;
+        };
+        collect_fragment_imgs(&doc, frag_id, &mut srcs);
+    }
     // R34xx：SVG `<image>` 元素源（href/xlink:href——2d.pattern.svgimage.zeroheight 的
     // `<svg><image xlink:href="/images/red-zeroheight.svg">` 须进尺寸/像素缓存，
     // createPattern 才能判 0 尺寸 → null）。
@@ -335,6 +346,23 @@ pub fn srcset_first_url(srcset: &str) -> Option<String> {
     let first = srcset.split(',').next()?.trim();
     let url = first.split_whitespace().next()?;
     (!url.is_empty()).then(|| url.to_string())
+}
+
+/// R5275：template contents fragment 递归收集 `<img>`（fragment 不在文档树，
+/// `get_elements_by_tag_name` 不达；嵌套模板/任意深度均覆盖）。
+fn collect_fragment_imgs(doc: &zero_dom::Document, id: zero_dom::NodeId, srcs: &mut Vec<String>) {
+    for child in doc.child_nodes(id) {
+        let is_img = doc
+            .get(child)
+            .is_some_and(|n| matches!(&n.kind, zero_dom::NodeKind::Element(e) if e.local_name() == "img"));
+        if is_img && let Some(src) = effective_img_src(doc, child) {
+            let src = src.trim();
+            if !src.is_empty() {
+                srcs.push(src.to_string());
+            }
+        }
+        collect_fragment_imgs(doc, child, srcs);
+    }
 }
 
 /// `<img>` 的有效图源 URL（HTML §4.8.5 picture/source 选择）：

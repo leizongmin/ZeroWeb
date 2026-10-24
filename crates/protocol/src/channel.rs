@@ -28,4 +28,6 @@ pub enum ProcessRole {
     ImageDecoder,
     /// 合成器进程（页面帧光栅化与 backing store 管理）。
     Compositor,
+    /// 媒体宿主进程（方案 C C1：解码与媒体时钟隔离，由渲染进程懒惰 spawn）。
+    Media,
 }

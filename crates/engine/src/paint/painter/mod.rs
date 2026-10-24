@@ -4,6 +4,7 @@
 //! 边框、效果、文本等子模块通过 `impl Painter` 扩展。
 
 mod border;
+mod collapse_phase;
 mod controls;
 mod effects;
 mod effects_indicators;
@@ -28,9 +29,9 @@ use zero_style_system::property::types::DisplayValue;
 use zero_style_system::{
     AccentColorComputedValue, AppearanceComputedValue, BackgroundAttachmentComputedValue, BackgroundClipComputedValue,
     BorderCollapseValue, BorderImageSourceComputedValue, CaretColorComputedValue, ClipPathComputedValue, ComputedStyle,
-    ContainComputedValue, ContentVisibilityValue, FilterComputedValue, HyphensComputedValue, ImageRenderingValue,
-    IsolationValue, MixBlendModeComputedValue, OverscrollBehaviorValue, PointerEventsValue, ResizeValue,
-    ScrollbarGutterComputedValue, ScrollbarWidthComputedValue, TouchActionValue, UserSelectValue,
+    ContainComputedValue, FilterComputedValue, HyphensComputedValue, ImageRenderingValue, IsolationValue,
+    MixBlendModeComputedValue, OverscrollBehaviorValue, PointerEventsValue, ResizeValue, ScrollbarGutterComputedValue,
+    ScrollbarWidthComputedValue, TouchActionValue, UserSelectValue,
 };
 
 use self::effects::ShadowPhase;
@@ -257,6 +258,11 @@ pub struct Painter {
     ///（`oof_static_mapped`，CB 在 multicol 之外）不参与本容器碎片复制，其子树在此
     /// 类重绘中整体抑制；映射位的一次绘制由 k=0 迭代照常完成。paint_node 入口判定。
     pub(crate) suppress_mapped_oof: bool,
+    /// R5265：collapse cell 带相位间插 sweep 栈帧（CSS2.1 App E / Blink
+    /// kCollapsedTableBorders——「后代块背景 < 带 < inline 内容」）。None = 常规
+    /// 路径；Some(DecoSweep)/Some(ContentSweep) = 带前/带后 sweep 访间，由
+    /// collapse_phase 模块驱动置位并在子 paint_node 返回后恢复。
+    pub(crate) collapse_cell_phase: Option<collapse_phase::CollapseCellPhase>,
     /// R3835：`list-style-position: inside` 文本型 marker 的步进宽度（li NodeId → advance）。
     /// CSS Lists 3 §list-style-position：inside marker 是首行行盒的第一个 inline，内容排
     /// 其后——paint 侧 marker 独立绘字，首片段须右移 marker 宽度避免重叠
@@ -905,6 +911,7 @@ impl Painter {
             parent_perspective_enabled: std::env::var("ZW_PARENT_PERSPECTIVE").as_deref() != Ok("0"),
             transform_paint_phase_enabled: std::env::var("ZW_TRANSFORM_PAINT_PHASE").as_deref() != Ok("0"),
             multicol_fragment_depth: 0,
+            collapse_cell_phase: None,
             paint_skip_nodes: HashSet::new(),
             counters: HashMap::new(),
             bg_clip_text_color: Vec::new(),
@@ -2326,7 +2333,7 @@ impl Painter {
                     parent_style.visibility,
                     VisibilityValue::Hidden | VisibilityValue::Collapse
                 ) {
-                    self.paint_anonymous_text_item(box_node, abs_x, abs_y, &parent_style, doc, node_id);
+                    self.paint_anonymous_text_item(box_node, abs_x, abs_y, &parent_style, doc, node_id, Some(styles));
                 }
             }
             false
@@ -2950,6 +2957,22 @@ impl Painter {
 
         let self_positioned = box_node.is_absolute || box_node.is_fixed || box_node.is_relative || box_node.is_sticky;
 
+        // CSS §11.1.1：overflow 仅裁剪 CB 为本元素或其后代的 positioned 后代。
+        // 当 overflow 元素自身**非 positioned** 时，其 abspos 后代的 CB 必为祖先
+        //（或中间有 positioned 后代）。常见情形（overflow 元素非 positioned、
+        // abspos 与 overflow 之间无 positioned 元素）下，abspos 的 CB 在 overflow 之上，
+        // 不应被本 overflow 裁剪。ZeroWeb 原先把 abspos 当普通子元素绘制被误裁。
+        // 此处对「非 positioned 的 overflow 元素」把 abspos/fixed 子元素移到 overflow
+        // 裁剪之后绘制（positioned overflow 元素保持原行为，避免 z-order 回归）。
+        // R5265：自子循环前置提到此处——DecoSweep 早返（见下）需要同款谓词构建
+        // in-flow 子集。
+        let is_multicol = box_node.is_multicol;
+        // R1352 R1343：nested-spanner wrapper（R1341 标 is_nested_spanner_wrapper）须按
+        // multicol 方式绘其子（breaking 子按 column_span_offsets 逐片段绘）。精确 flag gate
+        //（仅 R1341 wrapper），区别于 R1351 any_child_has_cso（误触 deep-nesting regression）。
+        let paint_as_multicol = is_multicol || box_node.is_nested_spanner_wrapper;
+        let defer_abspos = needs_clip && !self_positioned && !is_multicol;
+
         // CSS 2.1 Appendix E 全局 positioned-descendant 延迟（step 2/6/7）：
         // scope 根（positioned 元素、根 html、或任何建立堆叠上下文的元素）收集其子树中
         // **所有** positioned 后代（z-index:auto pseudo-SC + real-SC，含嵌套，经
@@ -3029,7 +3052,7 @@ impl Painter {
                     parent_style.visibility,
                     VisibilityValue::Hidden | VisibilityValue::Collapse
                 ) {
-                    self.paint_anonymous_text_item(box_node, abs_x, abs_y, &parent_style, doc, node_id);
+                    self.paint_anonymous_text_item(box_node, abs_x, abs_y, &parent_style, doc, node_id, Some(styles));
                 }
             }
             false
@@ -3037,26 +3060,8 @@ impl Painter {
             && let Some(style) = styles.get(&node_id)
         {
             let hidden = matches!(style.visibility, VisibilityValue::Hidden | VisibilityValue::Collapse);
-            // R2251 content-visibility:hidden → 直属文本跳过绘制（元素自身盒装饰仍绘）。
-            // kill-switch `ZW_CONTENT_VISIBILITY`，default-on。
-            // R4058：UA display:inline 的 **替换元素**（svg 根等）是 atomic inline——
-            // content-visibility:hidden 对其生效（css-contain-2 §5：size containment 适用于
-            // atomic inline；cv-022 hidden svg 不绘制，display Inline 排除臂仅指非替换 inline）。
-            let self_replaced = doc.is_some_and(|d| {
-                d.get(node_id).is_some_and(|n| {
-                    matches!(
-                        &n.kind,
-                        NodeKind::Element(e)
-                            if matches!(
-                                e.local_name(),
-                                "img" | "canvas" | "video" | "embed" | "object" | "applet" | "iframe" | "svg"
-                            )
-                    )
-                })
-            });
-            let content_hidden = std::env::var("ZW_CONTENT_VISIBILITY").as_deref() != Ok("0")
-                && (style.content_visibility_hidden_effective()
-                    || (self_replaced && matches!(style.content_visibility, ContentVisibilityValue::Hidden)));
+            // R2251/R4058 content-visibility:hidden 直属文本/替换内容跳过——R5265 起
+            // 随内容相位（4/4b/5/5b3）一并移入 paint_inline_content_phase。
 
             // empty-cells:hide — 空表格单元格不绘制背景和边框
             let skip_empty_cell = matches!(style.empty_cells, zero_style_system::EmptyCellsComputedValue::Hide)
@@ -3073,7 +3078,16 @@ impl Painter {
                     | DisplayValue::TableRow
             );
 
-            if !hidden && !skip_empty_cell {
+            // R5265：collapse cell 带相位间插（CSS2.1 App E / Blink kCollapsedTableBorders）。
+            // band_driver：本节点是驱动 cell——deco 相位的带置位（子树分派处 sweep A →
+            // 带补发射 → 内容相位 → sweep B）；content_sweep/deco_sweep：本节点处于
+            // sweep 访间（B 抑制装饰、A 不绘内容）。
+            let band_driver =
+                self.collapse_cell_phase.is_none() && collapse_phase::is_collapse_band_cell(box_node, style);
+            let content_sweep = self.collapse_cell_phase == Some(collapse_phase::CollapseCellPhase::ContentSweep);
+            let deco_sweep = self.collapse_cell_phase == Some(collapse_phase::CollapseCellPhase::DecoSweep);
+
+            if !hidden && !skip_empty_cell && !content_sweep {
                 // R109 §9.2.1.1：被拆分的 inline 父盒自身不绘制盒装饰（背景/边框/阴影）——
                 // 其 border/background 已下放到匿名块片段（带 fragment_node_ids），由片段
                 // 收缩到文本宽后绘制。父盒只作为结构包裹，绘制装饰会画全宽（错）。
@@ -3279,9 +3293,12 @@ impl Painter {
 
                 // 2. 边框填充（zero_box_model 已归零，但保留防护检查）
                 // R4332：多行 inline（skip_inline_box_border）改由 paint_text per-fragment 描绘。
+                // R5265：collapse 驱动 cell 的带在此置位，由子树分派处 sweep A 之后补发射
+                //（带 = 「后代块背景 < 带 < inline 内容」相位间插，CSS2 App E）。
                 if !skip_split_inline_deco
                     && !skip_inline_box_border
                     && !spanner_segs_active
+                    && !band_driver
                     && (box_node.border_top > 0.0
                         || box_node.border_right > 0.0
                         || box_node.border_bottom > 0.0
@@ -3345,6 +3362,25 @@ impl Painter {
             // 此后（list marker/img/content/自身文本/列背景/子节点）纳入 overflow 裁剪范围。
             counts_before_children = PrimitiveCounts::snapshot(&self.primitives);
 
+            // R5265：sweep A 访间——装饰已在此前 deco 段发射，此处沿 plain-block
+            // in-flow 链下探后即返回（文本/内容/计数器/positioned flush 全部留给
+            // sweep B）。置于 update_counters 之前，维持「早返无作用域压栈」单一
+            // 出口不变量；sweep A 无文本发射，bg-clip:text 染色栈不触（push 在
+            // 返回点之后）。swept 盒 overflow 恒 Visible（sweep 分类门）→ 子偏移
+            // 无 scroll 平移项。
+            if deco_sweep {
+                let in_flow = collapse_phase::collapse_sweep_in_flow(
+                    box_node,
+                    styles,
+                    paint_as_multicol,
+                    defer_abspos,
+                    transform_phase_defer,
+                );
+                let (offset_x, offset_y) = child_content_origin(box_node, abs_x, abs_y);
+                self.paint_collapse_deco_sweep_children(box_node, styles, offset_x, offset_y, doc, &in_flow);
+                return;
+            }
+
             if bg_clip_text_active {
                 // R4549：push 恒色合成值（color + image 层叠）而非裸 bg color——
                 // gradient(green,green) 层在 red bg 上时字形应承载 green（顶层覆盖语义）。
@@ -3354,27 +3390,12 @@ impl Painter {
                     self.bg_clip_text_color.push(c);
                 }
             }
-            // 列表标记和文本始终绘制（不受 empty-cells 影响）
-            if !hidden {
-                // 4. 列表标记绘制（bullets/numbers，位于文本之前）
-                if let Some(doc) = doc {
-                    self.paint_list_marker(box_node, abs_x, abs_y, style, doc);
-
-                    // R1686：<summary> disclosure 标记（▶闭合/▼开启），≡ list marker 同位。
-                    self.paint_summary_marker(box_node, abs_x, abs_y, style, doc);
-                }
-
-                // 4b/4b2/4b4/4c. 替换内容 + 表单控件值 + CSS content（与脏矩形走查共用）。
-                self.paint_element_specials_before_text(box_node, abs_x, abs_y, style, styles, doc, content_hidden);
-
-                // 5. 文本内容绘制（含 text-shadow，使用行内格式化上下文处理换行）
-                // R2251 content-visibility:hidden → 直属文本跳过（元素盒装饰仍绘）。
-                if !content_hidden {
-                    self.paint_text(box_node, abs_x, abs_y, style, doc, Some(styles));
-                }
-
-                // 5b3. <progress>/<meter> value 填充条（须在 paint_text 之后盖 fallback）。
-                self.paint_element_specials_after_text(box_node, abs_x, abs_y, style, doc);
+            // 列表标记和文本始终绘制（不受 empty-cells 影响）。
+            // R5265：collapse 驱动 cell 的内容相位重定位到带补发射之后（band_driver）；
+            // sweep A 访间已在上方早返。本体移入 paint_inline_content_phase
+            //（驱动补发射与原位两处共用）。
+            if !band_driver {
+                self.paint_inline_content_phase(box_node, abs_x, abs_y, style, styles, doc);
             }
 
             hidden
@@ -3437,13 +3458,6 @@ impl Painter {
         // 不应被本 overflow 裁剪。ZeroWeb 原先把 abspos 当普通子元素绘制被误裁。
         // 此处对「非 positioned 的 overflow 元素」把 abspos/fixed 子元素移到 overflow
         // 裁剪之后绘制（positioned overflow 元素保持原行为，避免 z-order 回归）。
-        let is_multicol = box_node.is_multicol;
-        // R1352 R1343：nested-spanner wrapper（R1341 标 is_nested_spanner_wrapper）须按
-        // multicol 方式绘其子（breaking 子按 column_span_offsets 逐片段绘）。精确 flag gate
-        //（仅 R1341 wrapper），区别于 R1351 any_child_has_cso（误触 deep-nesting regression）。
-        let paint_as_multicol = is_multicol || box_node.is_nested_spanner_wrapper;
-        let defer_abspos = needs_clip && !self_positioned && !is_multicol;
-
         // R5024：pseudo-SC（z-index:auto positioned）的负 z 后代已在装饰绘制前 flush
         //（见上方 neg_z_early_flushed）；真实 SC 与根 scope 此处按 App E step 2 保持原序。
         // R3922：flush 晚于中间层 overflow 裁剪步骤，收集项携带的裁剪矩形在此补裁
@@ -3479,19 +3493,47 @@ impl Painter {
             .node_id
             .and_then(|id| doc.and_then(|d| d.get(id)))
             .is_some_and(|n| matches!(&n.kind, zero_dom::NodeKind::Element(e) if e.local_name() == "canvas"));
-        for child_idx in ordered_child_indices(&box_node.children, |child| {
-            (!paint_as_multicol || child.column_span_offsets.is_empty())
-                && (!defer_abspos || (!child.is_absolute && !child.is_fixed))
-                && !is_positioned_child(child)
-                // R5176：变换子改由 scope 的 step 6 flush 施绘（App E step 8 组），
-                // 不入 in-flow 相位；collect 侧同旗标收集（transform_phase_defer）。
-                && !(transform_phase_defer && box_paints_in_transform_phase(child, styles))
-        }) {
-            if is_canvas_box {
-                continue;
+        let in_flow = collapse_phase::collapse_sweep_in_flow(
+            box_node,
+            styles,
+            paint_as_multicol,
+            defer_abspos,
+            transform_phase_defer,
+        );
+        // R5265（CSS2.1 App E / Blink kCollapsedTableBorders）：collapse cell 带相位间插。
+        // 驱动序：sweep A（plain-block 链装饰，带之前）→ R793 裁剪 → 带补发射（deco
+        // 相位已置位）→ 自身 inline/替换内容 → R792 基线重置 → sweep B（plain-block
+        // 补文本/子树，其余整体常规）。positioned 后代仍走步 2/6/7，不入 sweep。
+        // ContentSweep 访间：plain-block 子继续拆分递归，其余整体常规。
+        let band_cell = self.collapse_cell_phase.is_none()
+            && box_node
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(|st| collapse_phase::is_collapse_band_cell(box_node, st));
+        if band_cell {
+            let sweep_a_counts = PrimitiveCounts::snapshot(&self.primitives);
+            self.paint_collapse_deco_sweep_children(box_node, styles, child_offset_x, child_offset_y, doc, &in_flow);
+            // sweep A 属 R792 内容域（后代装饰），按 R793 同款裁到 padding box。
+            self.clip_overflow_children(box_node, styles, abs_x, abs_y, doc, &sweep_a_counts);
+            if let Some(band_style) = box_node.node_id.and_then(|id| styles.get(&id)) {
+                // TableCell 非 inline：deco 锚 = 树盒（R5171 inline_ca 恒 None）。
+                self.paint_borders(box_node, abs_x, abs_y, band_style);
+                self.paint_inline_content_phase(box_node, abs_x, abs_y, band_style, styles, doc);
             }
-            let child = &box_node.children[child_idx];
-            self.paint_node(child, styles, child_offset_x, child_offset_y, doc, false);
+            // R792 基线重置：带（格外展）不属 padding-box 裁剪域，sweep B 单独入窗；
+            // 此后 clip_path/effects 窗口与既有 deco 相位覆盖面一致。
+            counts_before_children = PrimitiveCounts::snapshot(&self.primitives);
+            self.paint_collapse_content_sweep_children(box_node, styles, child_offset_x, child_offset_y, doc, &in_flow);
+        } else if self.collapse_cell_phase == Some(collapse_phase::CollapseCellPhase::ContentSweep) {
+            self.paint_collapse_content_sweep_children(box_node, styles, child_offset_x, child_offset_y, doc, &in_flow);
+        } else {
+            for child_idx in &in_flow {
+                if is_canvas_box {
+                    continue;
+                }
+                let child = &box_node.children[*child_idx];
+                self.paint_node(child, styles, child_offset_x, child_offset_y, doc, false);
+            }
         }
 
         // step 6：z-index:auto/0（positioned-auto + z:0 SC），tree order（z_index==0，无需排序）
@@ -3874,93 +3916,9 @@ impl Painter {
         // overflow:hidden 并按自身 40px 盒裁剪，列 1..N 全被切掉（multicol-span-all-002：
         // 容器 overflow:hidden 时区域内容只剩 col 0）。语义：overflow 属主是宿主容器
         // （其 padding-box 裁剪在上层 paint_node 已应用，仍覆盖区域全部列位）。
-        if needs_clip && !box_node.is_multicol_region_fragment && !self.svg_filter_canvas_skip(box_node) {
-            // R793：CSS §11.1.1 — overflow 裁剪到 **padding box**（内容 + padding，border 之内），
-            // 非 content box。原实现按 content box 裁剪（起点加 padding、尺寸=content），致溢出内容
-            // 落在 content 边与 padding 边之间的条带时被多裁（chromium 保留到 padding 边）。
-            // R2500：overflow:clip 轴额外按 overflow-clip-margin 扩展（CSS Overflow 3 §3）。
-            let clip_rect = overflow_clip_rect(box_node, abs_x, abs_y);
-            super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_children, &clip_rect);
-            // R4541（css-borders-4 §border-shape）：border-shape 声明时 overflow 内容
-            // 裁剪到形状内缘（fill mode = 内形状；stroke mode = 形状路径内缩半宽）——
-            // 子内容不得盖过边框或溢出形状（border-shape-overflow /
-            // border-shape-overflow-child-clip 构型）。覆盖填充改写 + v2 条带裁剪与
-            // clip-path polygon 臂共用同一入口。
-            // R4547（css-borders-4 §corner-shaping）：corner-shape 非初始态时溢出内容
-            // 同样裁剪到形角化 border-box 轮廓（shaped_corner_polygon；R5179 起全形
-            // 状按 §3.9.4.2 分 regime 出几何，不再有 None 回退——round 初始态除外）。
-            // v2 条带使部分相交子内容正确渲染（bevel-overflow 构型：corner-shape:bevel
-            // + overflow:clip + 溢出子层应裁成菱形；R4540 前 strips 不渲染故不可行）。
-            // kill-switch `ZW_CORNER_SHAPE_OVERFLOW=0`（回退纯矩形裁剪）。
-            let shaped_overflow = box_node.node_id.and_then(|node_id| {
-                styles.get(&node_id).and_then(|style| {
-                    super::helpers::border_shape_overflow_polygon(style, box_node, abs_x, abs_y).or_else(|| {
-                        if std::env::var("ZW_CORNER_SHAPE_OVERFLOW").as_deref() == Ok("0") {
-                            return None;
-                        }
-                        // R5179（css-overflow-4 §3）：overflow:clip 轴按
-                        // overflow-clip-margin 外扩后套形角几何（半径不变）——clip
-                        // 区域随 margin 长大，角形状属于扩后的矩形。零 margin 与
-                        // 既有 border-box 多边形逐位一致。margin-box 变体
-                        // （content/padding/border-box 基准）未在此分支区分。
-                        let mx = if box_node.overflow_x == OverflowClip::Clip {
-                            box_node.overflow_clip_margin_length
-                        } else {
-                            0.0
-                        };
-                        let my = if box_node.overflow_y == OverflowClip::Clip {
-                            box_node.overflow_clip_margin_length
-                        } else {
-                            0.0
-                        };
-                        // R5183：半径百分比相对元素 border-box（clip 区域虽外扩 mx/my，
-                        // 半径属于元素本身），shaped_radius_spec 规范口径与形角边框带
-                        // 一致。
-                        super::helpers::shaped_corner_polygon_in_box(
-                            style,
-                            abs_x - mx,
-                            abs_y - my,
-                            box_node.width + 2.0 * mx,
-                            box_node.height + 2.0 * my,
-                            crate::paint::helpers::shaped_radius_spec(style, box_node.width, box_node.height),
-                        )
-                    })
-                })
-            });
-            if let Some(polygon) = shaped_overflow {
-                super::helpers::clip_with_polygon_rewrite(&mut self.primitives, &counts_before_children, &polygon);
-            }
-            // R5155：contain:paint 圆角裁剪——图片内容窗口追加四角圆角剔除
-            //（矩形交集后逐像素测试角部）。
-            if let Some(node_id) = box_node.node_id
-                && let Some(style) = styles.get(&node_id)
-                && let Some(radii) = paint_containment_clip_radii(box_node, style)
-            {
-                super::helpers::clip_images_to_rounded_rect(
-                    &mut self.primitives,
-                    &counts_before_children,
-                    &clip_rect,
-                    radii,
-                );
-            }
-            // R5201：overflow 裁剪圆角——触及裁剪角的 fill 改写圆角矩形（CSS
-            // Overflow 3 §3 shaped clip edge，gate 见 overflow_clip_radii：仅 clip
-            // 轴；hidden 面/backdrop-filter 祖先裁剪域挂账）。仅 fill：图片面
-            //（attachment local 背景图 post-snapshot 发射与 border_shape 圆角双裁
-            // 冲突，attachment-local-clipping-image-6 实证 10.62% 整块差）/glyph/
-            // 渐变/阴影仍案驱动。
-            if let Some(node_id) = box_node.node_id
-                && let Some(style) = styles.get(&node_id)
-                && let Some(radii) = overflow_clip_radii(box_node, style, &clip_rect, abs_x, abs_y)
-            {
-                super::helpers::clip_fills_to_rounded_rect(
-                    &mut self.primitives,
-                    &counts_before_children,
-                    &clip_rect,
-                    radii,
-                );
-            }
-        }
+        // R5265：裁剪本体抽为 clip_overflow_children（collapse 驱动 cell 的 sweep A
+        // 段同属 R792 内容域，需同款 padding-box 裁剪），本处调用语义不变。
+        self.clip_overflow_children(box_node, styles, abs_x, abs_y, doc, &counts_before_children);
 
         // 非 positioned overflow 元素：abspos/fixed 子元素移到裁剪之后绘制，
         // 使其 CB 为祖先时不被本 overflow 误裁（CSS §11.1.1）。

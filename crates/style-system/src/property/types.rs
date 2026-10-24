@@ -1866,6 +1866,9 @@ pub enum PropertyValue {
     BackgroundAttachment(BackgroundAttachmentComputedValue),
     /// background-clip 值。
     BackgroundClip(BackgroundClipComputedValue),
+    /// background-blend-mode 值（逐层混合模式列表，css-compositing-1；关键字集合同
+    /// mix-blend-mode，复用其值类型）。
+    BackgroundBlendMode(Vec<MixBlendModeComputedValue>),
     /// background-origin 值。
     BackgroundOrigin(BackgroundOriginComputedValue),
     /// border-image-source 值。

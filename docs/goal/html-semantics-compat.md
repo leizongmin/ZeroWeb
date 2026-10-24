@@ -2,9 +2,123 @@
 
 **版本**: v2.0
 **日期**: 2026-10-24（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 65 收口（http-equiv-and-name 2F 分诊：1F 渲染流记账回流 + content-language pragma 回落 R5272，域 **58P/60F/18T → 59P/59F/18T** GAIN 1 / REG 0，document-metadata 分诊轮全归档），下一步 text-level-semantics 开片（M1 基线 21P/13F）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 69 收口（F3 img.decode() promise 面收口 R5276：域 **549P/738F/35T → 607P/678F/37T** GAIN 58 / REG 0），下一步 F1b naturalWidth SVG 固有尺寸尾片（210F 余量）或 F2 select-image-source/currentSrc/srcset（~300F 最大单族，decode 已接近似地基）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-24 M2 切片 65 收口，http-equiv 分诊 + content-language pragma 轮）**：
+> **▶ 当前状态（2026-10-24 M2 切片 69 收口，F3 img.decode() 轮）**：
+> s67 八族地图 F3 收口（60 子测试 60F → 58P/2F）。**根因**：decode IDL 无
+> 实现（get trap 无臂 + SVGImageElement 原型无方法）。**修复（R5276 三刀）**：
+> ①共享解码核 `__zwImgDecodeCore`（part03 IIFE 顶层，IMG trap/detached 动态
+> 臂/SVG 原型三方复用）——select-image-source 近似候选（picture 首 source
+> srcset 首 token，data: URL 不逗号截断）**调用时捕获** + 恒异步 settle +
+> settle/快捷面双点变异与活跃性复检（探针钉定中断前同步即决稿三缺口：同步
+> 即决漏 adopt 时序、pinned 恒拒臂挡 adopt-in、settle 重读误判同 turn
+> attach）+ 自驱 fetch 链，decode 只读不写 settle 状态；②part03 detached
+> 产物动态臂（调用时 parentNode 链判活跃，adopt-in 后可达走核，属性空回落
+> src expando）+ SVGImageElement.prototype.decode（href → xlink:href）；
+> ③part04 trap 臂瘦身为闭包供给。extract.rs collapsible_if（s68 遗留
+> clippy，非行为变更）。契约 part86 两测试（决策序九臂 + adopt/SVG/picture
+> 九臂）。**验证**：域 **549P/738F/35T → 607P/678F/37T**（GAIN 58 = 58
+> F→P；子测试总数 1322 守恒；逐子测试 diff 非 decode 变化仅 2 条）+ 残留
+> 2F = quick-attach empty picture cached/uncached 时序差（issue 10531 待改
+> 行为，归 F2 请求对象模型）+ 2 案 F→T（audio/video loading-lazy-autoplay
+> **预存环境抖动**——stash 后 HEAD 复跑同 Timeout 实证，非本切片）+ lib
+> **3477P/0F**（+2 契约）+ clippy/fmt clean。账本见
+> [evidence/2026-10-24-m2s69-img-decode.md](html-semantics-compat/evidence/2026-10-24-m2s69-img-decode.md)。
+> **下一步**：F1b naturalWidth SVG 固有尺寸/密度校正尾片（210F 余量，
+> intrinsic dimensions 算法）或 F2 select-image-source/currentSrc/srcset/
+> sizes（~300F 最大单族——decode 已消费 select-image-source 近似，开片有
+> 地基）——按共享路径收益取一开片。
+> **切片间隙**：本轮 part03/part04 shim + 契约 part86 + extract.rs（s68
+> 遗留 clippy）；下一挂账 F1b/F2 亦 engine 面，间隙开放，开工前查 oracle
+> master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 68 收口，F1 img 静态加载管线轮）**：
+> s67 八族地图 F1 首靶收口（原估 ~260F，实测归因后 raster src 克隆可翻
+> 部分本轮全收，SVG 尾片归 F1b）。**根因**：img settle 只接 `.src` IDL
+> setter 通道（R56h），parser 静态 `<img src>` 无 fetch/settle——
+> naturalWidth 恒 0、load/error 恒不派；叠加 template 内容漏抓（zero_dom
+> fragment 不在文档树，extract_img_srcs 不达）、broken 终态缺失（error 后
+> complete 恒 false）、运行期事件在页面脚本阶段即时派（spec：DCL 不等图
+> 片、图片延迟 window load）。**修复（R5275 六刀）**：①part04
+> `__zwFireStaticImgSettle` sweep（`__zw_get_image_size` 快照命中 → loaded
+> + load + available-images；未命中 → broken + error；lazy/空 src 跳过）+
+> 闸门队列 drain + `__zwImgLoadBlocked` 在飞判定；②part04 getter 面——
+> `_zwImgNaturalDim`（lazy 未 settle → 0 防快照绕门）+ IMG width/height
+> 缺失回落自然尺寸 + currentSrc 绝对 URL + complete getter 改读
+> latest-wins（R3204 陈旧快照坑）；③part05 R56h src 臂重写——restart 语
+> 义（同 URL 幂等）+ available-images 同步 settle（状态同步可读、load 事件
+> `_defer` 后续任务派）+ `_zwImgInflight` 在飞计数 + `__zwReadyState ===
+> 'loading'` 闸门入队；④extract.rs 递归收集 template contents `<img>`；
+> ⑤testharness.rs 生命周期拆三任务链（interactive+DCL / settle 独立任务
+> 微任务边界排水 / load 等待任务 100ms 重试至图片不在飞——trickle(dN) 慢
+> 图延迟 window load 语义）；⑥available-images 臂事件 `_defer` 化（probe14
+> 实证同步即派丢 src 后注册的 onload）。契约 part85 两测试（sweep settle
+> 四臂 + 闸门/available-images/幂等）。**验证**：域 **461P/816F/40T →
+> 549P/738F/35T**（GAIN 88 = 78 F→P + 5 T→P + 5 新注册，三数守恒无回归空
+> 间）+ naturalWidth 30P/228F→48P/210F + delay-load 7 案全绿 + invisible
+> /already-loaded/available-images-onload 各 +1 + interactive
+> **439P/44F/0T 逐位持平** + lib **3474P/0F** + 翻转力实证（撤钩子调用/
+> 撤 sweep 体 → part85 双红，恢复字节一致）。账本见
+> [evidence/2026-10-24-m2s68-img-static-loading.md](html-semantics-compat/evidence/2026-10-24-m2s68-img-static-loading.md)。
+> **下一步**：F1b naturalWidth SVG 固有尺寸/密度校正尾片（210F 余量，
+> intrinsic dimensions 算法）或 F3 img.decode() 56F（promise 面接 settle
+> 状态机，F1 地基已备）——按共享路径收益取一开片。
+> **切片间隙**：本轮 part04/05 shim + extract.rs + testharness.rs + 契约
+> part85；下一挂账 F1b/F3 亦 engine 面，间隙开放，开工前查 oracle
+> master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 67 收口，embedded-content 开片分诊轮）**：
+> 两件事。**① 域分诊八族地图落档（819F 全归因）**：F1 img 静态加载管线
+> ~260F（settle 只接 `.src` IDL setter 通道 R56h，parser 静态 img 无
+> fetch/load 事件、naturalWidth 恒 0）+ F2 select-an-image-source/currentSrc
+> /srcset/sizes ~300F（currentSrc 恒 ''，全族算法未实现，独立大切片）+
+> F3 img.decode() 56F + F4 image-map 命中测试 84F（elementFromPoint 几何
+> 底座→渲染流记账回流）+ F5 lazy-loading ~49F（视口几何缺失，F1 后重
+> 分诊）+ F6 canvas 53F（getContext options 序 + Tab 序，逐案分诊）+
+> F7 object/embed 窄面 25F + F8 杂项 2F。域刷新基线 **458P/819F/40T**
+>（执行案 231 与 M1 一致；subtest 1060→1317 为 R5235 帧驱动后此前
+> Timeout 悬挂案完成注册）。**② F7 null 反射收口（R5274 一刀）**：part04
+> get-trap IFRAME 分支后补 OBJECT/EMBED 分支——contentDocument/
+> contentWindow 恒 null（spec「does not represent a nested browsing
+> context → null」尾步）+ getSVGDocument 返 null 函数（GetSVGDocument
+> Support）；EMBED 无 contentDocument/contentWindow 成员保持 undefined。
+> 契约 part84 两测试（钉①五臂 + 钉② IFRAME R130 面不回归）。**验证**：
+> 域 **458P/819F/40T → 461P/816F/40T**（GAIN 3 / REG 0）+ interactive
+> 439P/44F/0T 逐位持平 + lib **3469P/0F**（+2 契约）+ 翻转力实证（撤刀
+> → 钉①红，恢复字节一致）。账本见
+> [evidence/2026-10-24-m2s67-embedded-content-triage.md](html-semantics-compat/evidence/2026-10-24-m2s67-embedded-content-triage.md)。
+> **下一步**：F1 img 静态加载管线开片（~260F 最大可收口单族；DCL 扫描
+> settle + loading=lazy 跳过 + setAttribute('src') 通道，R5254 两段式
+> 先例）。
+> **切片间隙**：本轮 part04 get-trap + 契约 part84；下一挂账 F1 亦
+> engine shim/host 桥面，间隙开放，开工前查 oracle master 碰撞记录
+>（2026-10-24 已查：oracle master 记「engine 面占用标记已退场清除」，
+> 无新占用）。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 66 收口，text-level-semantics 开片轮）**：
+> 两件事。**① the-a-element 13F 两族全收（R5273 三刀）**：a.text
+> getter/setter = textContent 精确委托（9F；option 的 strip-and-collapse
+> 不适用）+ a/area toString 品牌检查（4F；WebIDL es-stringifier step 2，
+> **探针实证 trap 臂才是 createElement 产物 toString 实际供给面**——原型
+> defineProperty 不达，双侧同步防直装路径）。**② 共享路径根修（part05
+> overlay 种子）**：a.text 委托暴露预存缺陷——textContent=（sel 形）写后
+> 同 turn childNodes.length===0 而 firstChild 已见新值（探针钉定与 .text
+> 无关）。根因 = 注册文本节点无 pending link，overlay added 并入跳过而
+> removed 剔除生效，childNodes 与 firstChild 两视图分裂（R5269 probe62
+> childLen=0 同根源）。修 = `_zwOverlayPendingChildNodes` 入口
+> `_zwTextElsBySel` 种子（命中即以注册节点为基；appendChild 并入/
+> removeChild 剔除/apply 后不双计均保持）。**验证**：域 **34P/0F**
+>（exit 0 首次）+ links 119P/20F/4T（stash 二分与 HEAD 逐值一致，预存）
+> + document-metadata 59P/59F/18T + tabular 130P/4F + interactive
+> 439P/44F + engine lib **3463P/0F**。账本见
+> [evidence/2026-10-24-m2s66-text-level-a-element.md](html-semantics-compat/evidence/2026-10-24-m2s66-text-level-a-element.md)。
+> **下一步**：embedded-content / scripting-1 / microdata 按挂账序开片
+>（分诊轮先行）。
+> **切片间隙**：本轮 part03/part04/part05 shim + part05 overlay；下一挂
+> 账 embedded-content 分诊未定，间隙开放，开工前查 oracle master 碰撞
+> 记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 65 收口，http-equiv 分诊 + content-language pragma 轮）**：
 > 两件事。**① http-equiv-and-name 2F 分诊（本域 shim 面最后未分诊项，
 > 分诊轮全归档）**：-1 = CanvasText 系统色 × color-scheme applied-color
 > 链 → 渲染流记账回流（与 s64 color-scheme 23F 同桶）；-2 = 本流修复。
@@ -1203,6 +1317,15 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-24 M2 切片 67**：embedded-content 开片分诊轮——域刷新
+  458P/819F/40T 八族地图（F1 img 静态加载管线 ~260F / F2
+  select-an-image-source ~300F / F3 decode 56F / F4 image-map 命中 84F
+  渲染流回流 / F5 lazy ~49F / F6 canvas 53F / F7 object|embed 窄面 25F /
+  F8 杂项 2F）+ F7 null 反射收口（R5274 一刀，part04 get-trap
+  OBJECT/EMBED 分支——contentDocument/contentWindow/getSVGDocument 恒
+  null 面）+ 契约 part84 两钉 + 翻转力实证。域 **461P/816F/40T**（GAIN 3
+  / REG 0）；interactive 439P/44F/0T 持平；lib **3469P/0F**（+2）。账本
+  [evidence/2026-10-24-m2s67-embedded-content-triage.md](html-semantics-compat/evidence/2026-10-24-m2s67-embedded-content-triage.md)。
 - **2026-10-23 M2 切片 46**：余 60F 归因分诊六族地图落档（A–G，含
   Chrome-parity 同红族 A/B 与可 shim 收口候选 E）+ 历史 menu 面 IDL 归属
   收口（R5249 双刀，shim part04/part05）——has trap track IDL 列
