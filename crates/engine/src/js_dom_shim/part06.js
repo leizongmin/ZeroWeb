@@ -2218,9 +2218,10 @@
   };
   // R3254-M3 切片 3（editing goal DC-4，2026-09-07）：queryCommandSupported/Enabled
   // 真实反射——按本实现**实际接通的命令面**判定（不再无条件 true）。
-  // - supported：copy/cut/paste（ClipboardEvent 路径，R2936）∪ 编辑类（_zwExecCmdInputType
-  //   表——format/insert/delete 族，事件序 M2 切片 1 接通）。其余命令（styleWithCSS/
-  //   useCSS/selectAll/undo/redo/justify*/indent/outdent 等）未接 → false。
+  // - supported：copy/cut/paste（ClipboardEvent 路径，R2936）∪ selectAll（R5264 选区
+  //   应用）∪ 编辑类（_zwExecCmdInputType 表——format/insert/delete 族，事件序 M2
+  //   切片 1 接通）。其余命令（styleWithCSS/useCSS/undo/redo/justify*/indent/outdent
+  //   等）未接 → false。
   // - enabled：spec（"queryCommandEnabled"）按命令状态判定——copy/cut 需选区非空
   //   （Chromium 语义）；编辑类需选区在单一 editing host 内且整个选区在 host 内
   //   （与 execCommand 编辑分支的前提一致——M2 切片 1 同款祖先链扫描）。
@@ -2243,6 +2244,8 @@
     var c = String(cmd == null ? '' : cmd).toLowerCase();
     // copy/cut/paste：ClipboardEvent 路径真实接通 → supported。
     if (c === 'copy' || c === 'cut' || c === 'paste') return { supported: true, enabled: true };
+    // R5264：selectAll 选区应用接通（execCommand 分支同款模态 inert 作用域）。
+    if (c === 'selectall') return { supported: true, enabled: true };
     // 编辑类命令：inputType 表命中 = supported；enabled 与 execCommand 编辑分支同前提。
     if (typeof _zwExecCmdInputType[c] === 'undefined') return { supported: false, enabled: false };
     var enabled = false;
@@ -4196,6 +4199,28 @@
             }
           }
         } catch (_eEdEv) {}
+      } else if (cmd === 'selectall') {
+        // R5264（M2 切片 57，2026-10-24）：execCommand('selectAll') 选区应用——
+        // 此前未接（permissive no-op → toString 恒 ''）。作用域取模态 inert 遮罩：
+        // 栈顶模态 dialog 存在 → 仅其子树（HTML inert——模态 open dialog 外文档
+        // 内容不可选；inert-node-is-unselectable 断言面：SelectAll 后 toString
+        // 只含 dialog 内文本）；无模态 → body。复用 _selection.selectAllChildren
+        //（R2804 面，DocumentType 门 / detached no-op 内建）；不派 beforeinput/
+        // input（选区命令不经编辑宿主事件序，与 undo/redo 同口径）。
+        try {
+          var selSA = (typeof _getSelection === 'function') ? _getSelection() : null;
+          if (selSA && typeof selSA.selectAllChildren === 'function') {
+            var scopeSA = null;
+            try {
+              if (typeof _zwDialogModalTopSel === 'function') {
+                var _saTopSel = _zwDialogModalTopSel();
+                scopeSA = _saTopSel ? document.querySelector(_saTopSel) : null;
+              }
+            } catch (_eSaTop) {}
+            if (!scopeSA) scopeSA = document.body || document.documentElement;
+            if (scopeSA) selSA.selectAllChildren(scopeSA);
+          }
+        } catch (_eSa) {}
       }
       return true;
     },

@@ -2,9 +2,37 @@
 
 **版本**: v2.0
 **日期**: 2026-10-24（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 56 收口（s49 定性「指针管线深水」的 B 族 pointer-capture 2F 以 R5263 dialog light dismiss 两腿模型收口，全域 **438P/45F/0T** GAIN 2 / REG 0），下一步续挂账序 C 族渲染流 20F 跨流协调；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 57 收口（45F 全量复核钉案 + D 族最后 shim 面 inert-node-is-unselectable 1F 以 R5264 execCommand('selectAll') 模态 inert 作用域收口，全域 **439P/44F/0T** GAIN 1 / REG 0；**本流 engine shim 可收口项清空**，余 44F 全为渲染流门 ~21F / shadow 底座 20F / spec-consistent divergence 1F），下一步跨流协调（渲染流按名取案）+ 待用户点名；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-24 M2 切片 56 收口，light dismiss 两腿轮）**：
+> **▶ 当前状态（2026-10-24 M2 切片 57 收口，selectAll inert 作用域 + 钉案轮）**：
+> 45F 全量复核（逐案读测试源钉断言机制）+ D 族唯一非几何门案收口
+>（R5264），全域 438P/45F/0T → **439P/44F/0T**（GAIN 1 / REG 0）。**方案
+> 取舍**：s46 五桶分组沿用并逐案核对——`inert-node-is-unselectable`
+> 断言链 `document.execCommand('SelectAll')` →
+> `getSelection().toString()`，此前 execCommand selectAll 未接（permissive
+> no-op → toString 恒 ''），且模态 inert 遮罩是**纯 DOM 树行走**（区别于
+> D 族其余案的 gBCR/elementFromPoint 几何门）。**修复**（part06）：
+> execCommand 新增 selectall 分支——`_zwDialogModalTopSel()` 命中 → 栈顶
+> 模态 dialog 子树，否则 body；复用 `_selection.selectAllChildren`（R2804
+> 面）；不派 beforeinput/input（选区命令不经编辑宿主事件序，与 undo/redo
+> 同口径）；`_zwQueryCommandState` 补真实反射。**钉案成果**（跨流协调
+> 交付物）：余 44F = 渲染流门 ~21F（abspos 居中 6 / default-color 2 /
+> overlay 2 / top-layer-position 1 / non-modal 1 / multiple-centered 1 /
+> scroll-height 1 / visibility-hidden UA 1 / bounds-clicking 2 /
+> modal-selection 拖选几何 1 / dialog-inert 1 / ancestor-is-inert 1 /
+> inert-svg-hittest 1 / showModal top-layer 绘制序 1 / closed-details-
+> layout-apis 1）+ shadow 底座 20F（closedby-complex 16 + focus-previous-
+> outside 3 + form-submit-shadow 1，declarative shadow 待用户点名）+
+> corner-cases ESC 1F（s53 定性 divergence 不弯就）。**验证**：目标
+> 1F→1P；全域 439P/44F/0T；zero-engine lib 3448P/0F；对照面
+> not-highlighted（reftest 视觉）/ with-modal-dialogs-and-iframes /
+> 两 crash 测试（语料不载）零波及。账本见
+> [evidence/2026-10-24-m2s57-selectall-inert-scope.md](html-semantics-compat/evidence/2026-10-24-m2s57-selectall-inert-scope.md)。
+> **下一步**：本流 shim 面清空——跨流协调（渲染流按名取案，飞书已通知）
+> + declarative shadow 联合切片待用户点名。**切片间隙**：本轮零 .rs 变更
+>（仅 JS shim），下一挂账开工前查 oracle master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 56 收口，light dismiss 两腿轮）**：
 > s49 定性「指针管线深水」的
 > dialog-light-dismiss-pointer-capture.html（touch/mouse 双腿）**2F → 2P
 > 全收口**（R5263），全域 436P/47F/0T → **438P/45F/0T**（GAIN 2 / REG 0
