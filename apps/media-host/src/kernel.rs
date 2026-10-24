@@ -844,18 +844,24 @@ impl MediaKernel {
         if replay {
             entry.epoch += 1;
             entry.rebuild_for_replay();
-        }
-        // wire 授权位置 ≠ 当前游标（±1ms 舍入容差）→ seek 链（epoch +1）。
-        let cursor = entry.media_time_ms();
-        if position_ms.abs_diff(cursor) > PLAY_POSITION_TOLERANCE_MS && entry.seek_to(position_ms).is_none() {
-            out.push(error_message(
-                request_id,
-                source_key,
-                entry.epoch,
-                MediaErrorCode::HostInternal,
-                format!("play@{position_ms} seek chain failed"),
-            ));
-            return;
+        } else {
+            // wire 授权位置 ≠ 当前游标（±1ms 舍入容差）→ seek 链（epoch +1）。
+            // replay 面不走位置 seek：此时 wire 位置是 Ended 态残留（renderer
+            // 镜像末次 Playing 读数 = 流末），按 spec「ended playback」步 6.4
+            // 回头重播；照单 seek 会把重启拖回流末、瞬间再 Ended（C4 资源审计
+            // 重播轮 2 tick 即坍缩，2026-10-25 配对验收抓出）。
+            // https://html.spec.whatwg.org/multipage/media.html#playing-media-element
+            let cursor = entry.media_time_ms();
+            if position_ms.abs_diff(cursor) > PLAY_POSITION_TOLERANCE_MS && entry.seek_to(position_ms).is_none() {
+                out.push(error_message(
+                    request_id,
+                    source_key,
+                    entry.epoch,
+                    MediaErrorCode::HostInternal,
+                    format!("play@{position_ms} seek chain failed"),
+                ));
+                return;
+            }
         }
         // 起播（registry play 同锚点时钟：视频 play + 伴生轨/纯音频同 now 锚）。
         if let Some(player) = entry.video.as_mut() {
@@ -1283,6 +1289,40 @@ mod tests {
         let frames = d.frames();
         assert!(!frames.is_empty(), "replay 后帧重新产出");
         assert!(frames.iter().all(|f| f.epoch == 1), "replay 帧携新代际");
+        assert_eq!(frames[0].pts_ms, 0, "重头播放首帧 pts=0");
+    }
+
+    /// replay 携流末残留位置：renderer 镜像在 Ended 后保留末次 Playing 读数，
+    /// facade play 原样回传 wire——replay 链须回头重播而非照单 seek（照单则
+    /// 重启即拖回流末瞬间再 Ended；C4 资源审计重播轮坍缩的最小复现面）。
+    #[test]
+    fn replay_after_ended_ignores_stale_wire_position() {
+        let mut d = Driven::new("sample-webm-vp9.webm", 13);
+        d.play(13, 0, 0);
+        let mut now = 0u64;
+        let mut end_ms = 0u64;
+        while ended_count(&d) == 0 {
+            now += 500;
+            d.advance(now);
+            assert!(now < 60_000, "runaway loop");
+            if let Some((_, MediaPlaybackState::Playing { media_time_ms })) = d.states().last() {
+                end_ms = *media_time_ms;
+            }
+        }
+        assert!(end_ms > 0, "Ended 前应有非零 media_time 残留");
+        d.out.clear();
+        // 真实客户端形态：position = Ended 态镜像残留（流末读数），非 0。
+        d.play(13, end_ms, now + 100);
+        let states = d.states();
+        let (epoch, state) = states.last().expect("replay 即时状态");
+        assert_eq!(*epoch, 1, "replay 代际 +1");
+        assert!(
+            matches!(state, MediaPlaybackState::Playing { media_time_ms: 0 }),
+            "流末残留位置不拖拽重启——Playing@0，got {state:?}"
+        );
+        d.advance(now + 108);
+        let frames = d.frames();
+        assert!(!frames.is_empty(), "replay 后帧重新产出");
         assert_eq!(frames[0].pts_ms, 0, "重头播放首帧 pts=0");
     }
 

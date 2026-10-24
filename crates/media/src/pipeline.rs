@@ -139,6 +139,12 @@ impl BatchSampleQueue {
             _ => 0,
         }
     }
+
+    /// 队内未写样本的时长（毫秒）——样本锚定解码超前用（`advance_to` 的
+    /// `decoded_end` 基面）。
+    pub fn queued_ms(&self) -> u64 {
+        self.duration_ms_of(self.pending.len())
+    }
 }
 
 impl Default for BatchSampleQueue {
@@ -253,8 +259,12 @@ impl AudioEntry {
         // 写出（毫秒→帧定点换算，余数跨 tick 累积）——批粒度整批推进曾使
         // media clock rate≈1.45（M1 FINDING，[`BatchSampleQueue`] 模块文档）。
         let mut need = self.queue.need_for_tick(elapsed);
-        // 本 tick 已解码到的流位（含追赶区丢弃批——终止条件与原批粒度循环同）。
-        let mut decoded_end = self.cursor_ms;
+        // 本 tick 已解码到的流位——样本锚定（written 游标 + 队内未写时长）。A1
+        // 原实现锚 batch pts：pts 漂移轨（本仓长 fixture 的 vorbis pts 步长 ≈
+        // 样本步长/1.44）下解码超前随时钟发散，EOF 在 ~70% 样本时刻提前触发、
+        // 视频面（audio cursor 主时钟）同步冻结——C4 配对矩阵抓出（av-pair
+        // present_ticks 1440→1013），订正为与游标同坐标系（对 pts 连续轨零变化）。
+        let mut decoded_end = self.cursor_ms + self.queue.queued_ms();
         while decoded_end < target {
             let Ok(Some(batch)) = self.decoder.next_batch() else {
                 // 流末：队内已解码尾段全量冲入 sink 再停/回卷（解码超前有界后
@@ -287,9 +297,8 @@ impl AudioEntry {
                 }
                 break;
             };
-            decoded_end = batch.pts_ms
-                + (batch.samples.len() as u64 * 1000)
-                    / (u64::from(batch.sample_rate) * u64::from(batch.channels).max(1));
+            decoded_end +=
+                (batch.samples.len() as u64 * 1000) / (u64::from(batch.sample_rate) * u64::from(batch.channels).max(1));
             // seek 追赶区（批粒度判定不变）：批末 ≤ 丢弃线整批静默丢弃，不入队。
             if decoded_end > self.skip_until_ms {
                 self.queue.push_batch(&batch);
@@ -402,8 +411,9 @@ impl WebmAudioEntry {
         let mut wrote = false;
         // A1 批内对齐（AudioEntry 同构，[`BatchSampleQueue`] 模块文档）。
         let mut need = self.queue.need_for_tick(elapsed);
-        // 本 tick 已解码到的流位（含追赶区丢弃批——终止条件与原批粒度循环同）。
-        let mut decoded_end = self.cursor_ms;
+        // 样本锚定流位（AudioEntry 同构订正——pts 漂移轨上 pts 锚定使解码超前
+        // 随时钟发散：EOF 提前 + 视频面冻结，C4 配对抓出）。
+        let mut decoded_end = self.cursor_ms + self.queue.queued_ms();
         while decoded_end < target {
             let Ok(Some(batch)) = self.track.next_batch() else {
                 // 流末：队内已解码尾段全量冲入 sink 再停/回卷（AudioEntry EOF 面
@@ -443,9 +453,8 @@ impl WebmAudioEntry {
                 }
                 break;
             };
-            decoded_end = batch.pts_ms
-                + (batch.samples.len() as u64 * 1000)
-                    / (u64::from(batch.sample_rate) * u64::from(batch.channels).max(1));
+            decoded_end +=
+                (batch.samples.len() as u64 * 1000) / (u64::from(batch.sample_rate) * u64::from(batch.channels).max(1));
             // seek 追赶区（批粒度判定不变）：批末 ≤ 丢弃线整批静默丢弃，不入队
             // （spec precise-seek——与 AudioEntry 同面）。
             if decoded_end > self.skip_until_ms {
@@ -524,7 +533,9 @@ impl MseAudioEntry {
         // A1 批内对齐（AudioEntry/WebmAudioEntry 同构，[`BatchSampleQueue`]
         // 模块文档）。
         let mut need = self.queue.need_for_tick(elapsed);
-        let mut decoded_end = self.cursor_ms;
+        // 样本锚定流位（AudioEntry 同构订正——pts 漂移流上 pts 锚定使解码超前
+        // 随时钟发散；pts 饱和面 u64::MAX 随锚定切换自然消失）。
+        let mut decoded_end = self.cursor_ms + self.queue.queued_ms();
         while decoded_end < target {
             match self.feed.next_batch() {
                 Ok(Some(batch)) => {
@@ -535,12 +546,8 @@ impl MseAudioEntry {
                         });
                         self.sink_started = true;
                     }
-                    // saturating：pts 饱和值（u64::MAX，负 pts/edit-list 形态）
-                    // 不进裸加法（debug overflow panic / release 回绕）。
-                    decoded_end = batch.pts_ms.saturating_add(
-                        (batch.samples.len() as u64 * 1000)
-                            / (u64::from(batch.sample_rate) * u64::from(batch.channels).max(1)),
-                    );
+                    decoded_end += (batch.samples.len() as u64 * 1000)
+                        / (u64::from(batch.sample_rate) * u64::from(batch.channels).max(1));
                     // seek 追赶区（批粒度判定不变）：批末 ≤ 丢弃线整批静默丢弃，
                     // 不入队（spec precise-seek——与 AudioEntry 同面）。
                     if decoded_end > self.skip_until_ms {
