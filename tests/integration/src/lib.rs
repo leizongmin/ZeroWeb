@@ -125,3 +125,8 @@ mod viewport_adaptive;
 
 #[cfg(test)]
 mod font_fallback_render;
+
+// t6/site-opt（perf-mem-20261025 P14，TV-F1）：renderer 发布路径两阶段图片取回
+// 真进程端到端并发钉（真 zero-browser + 真 zero-renderer + 本地 fixture）。
+#[cfg(test)]
+mod image_batch_e2e;

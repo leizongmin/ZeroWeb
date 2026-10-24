@@ -164,7 +164,32 @@ fn draw_op_to_ipc(op: DrawOp) -> IpcDrawOp {
     }
 }
 
-/// 优先从已解码 `ImageCache` 取图，缺失时再经 fetch 回调抓取。
+/// 发布路径图片子资源两阶段取回回调（P14，2026-10-25）。
+///
+/// 旧契约 `FnMut(&str) -> Option<Vec<u8>>` 令调用方逐图阻塞等待网络往返——DOM 序
+/// 每张图完整串行，同 origin 图片并发恒为 1（cnblogs 107 请求 106 串行的第一根因）。
+/// 两阶段契约：调用方先把全部缺图请求**非阻塞**发起（`issue`），再按 DOM 序逐图
+/// `resolve` 收取；同 origin 并发由 zero-net 调度器按每来源上限自然展开。
+pub trait ImageBatchFetcher {
+    /// 非阻塞发起一张图的取回；发起失败静默（对应 `resolve` 返回 `None`，图片按既有宽松降级跳过）。
+    fn issue(&mut self, url: &str);
+    /// 收取已发起 URL 的响应体；网络失败/非 2xx/未发起 → `None`。
+    ///
+    /// 调用方保证全部 `issue` 先于首个 `resolve`；实现方可在首个 `resolve` 统一收齐在途响应。
+    fn resolve(&mut self, url: &str) -> Option<Vec<u8>>;
+}
+
+/// 无网络取回器：不发起任何请求，`resolve` 恒 `None`（无网络发布/stub 网络路径，行为同旧 no_fetch 闭包）。
+pub struct NoImageFetch;
+
+impl ImageBatchFetcher for NoImageFetch {
+    fn issue(&mut self, _url: &str) {}
+    fn resolve(&mut self, _url: &str) -> Option<Vec<u8>> {
+        None
+    }
+}
+
+/// 优先从已解码 `ImageCache` 取图，缺失时经 `fetch` 两阶段批量抓取。
 ///
 /// `sent_keys`（性能门禁优化 S8，2026-08-08）：已发送过且 browser 端 ImageCache
 /// 已存的 key 不再重传像素——DOM 变更后每次 publish 全量 clone 图片像素是
@@ -176,23 +201,39 @@ fn draw_op_to_ipc(op: DrawOp) -> IpcDrawOp {
 /// （`CompositorPublishThread::drain_sent_image_keys`），legacy 同步路径由
 /// `publish_render_with_layout` 同步发送成功后返回。否则 latest-wins 邮箱丢弃
 /// 的帧（携带某图片首个 payload 且从未发出）会留下「已发送」假象，图片永久缺失。
-pub fn fetch_image_payloads_with_cache<F>(
+pub fn fetch_image_payloads_with_cache<F: ImageBatchFetcher>(
     html: &str,
     page_url: &str,
     cache: &mut zero_render_foundation::image_cache::ImageCache,
     fetch: &mut F,
     sent_keys: &std::collections::HashSet<u64>,
-) -> Vec<IpcImagePayload>
-where
-    F: FnMut(&str) -> Option<Vec<u8>>,
-{
+) -> Vec<IpcImagePayload> {
     use zero_render_foundation::image_cache::ImageKey;
 
+    let sources = extract_img_srcs(html);
+
+    // P14：PASS 1 先把全部缺图请求非阻塞发起——本循环内不得发生任何阻塞等待，
+    // 同 origin 并发由 zero-net 调度器展开（旧逐图闭包契约在此退化为
+    // max-in-flight=1，cnblogs 107 请求 106 串行的第一根因）。
+    let mut issued = std::collections::HashSet::new();
+    for src in &sources {
+        let resolved = resolve_document_url(page_url, src);
+        let key = image_resource_key(&resolved, None);
+        if !issued.insert(key) {
+            continue;
+        }
+        if cache.get(&ImageKey::new(key)).is_some() || src.starts_with("data:") {
+            continue;
+        }
+        fetch.issue(&resolved);
+    }
+
+    // PASS 2：DOM 序逐图收取/解码/组 payload（语义与旧逐图路径一致）。
     let mut out = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
-    for src in extract_img_srcs(html) {
-        let resolved = resolve_document_url(page_url, &src);
+    for src in &sources {
+        let resolved = resolve_document_url(page_url, src);
         let key = image_resource_key(&resolved, None);
         if !seen.insert(key) {
             continue;
@@ -205,7 +246,7 @@ where
                 Ok(data) => data,
                 Err(_) => continue,
             }
-        } else if let Some(body) = fetch(&resolved) {
+        } else if let Some(body) = fetch.resolve(&resolved) {
             match decode_image_bytes(&body) {
                 Ok(data) => data,
                 Err(_) => continue,
@@ -876,5 +917,133 @@ mod tests {
             assert_eq!(data.height, *height);
             assert_eq!(data.pixels, *rgba);
         }
+    }
+
+    // ── P14：两阶段批量取回契约 ─────────────────────────────────────────
+
+    const SVG_BODY: &[u8] =
+        b"<svg xmlns='http://www.w3.org/2000/svg' width='2' height='3'><rect width='2' height='3' fill='red'/></svg>";
+    const DATA_URI: &str = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScyJyBoZWlnaHQ9JzMnPjxyZWN0IHdpZHRoPScyJyBoZWlnaHQ9JzMnIGZpbGw9J3JlZCcvPjwvc3ZnPg==";
+    const PAGE_URL: &str = "https://page.test/index.html";
+
+    /// 测试桩：记录 issue/resolve 次序；resolve 返回预置表（None = 网络失败）。
+    struct RecordingBatchFetcher {
+        bodies: HashMap<String, Option<Vec<u8>>>,
+        issued: Vec<String>,
+        resolved: Vec<String>,
+    }
+
+    impl RecordingBatchFetcher {
+        fn new(bodies: HashMap<String, Option<Vec<u8>>>) -> Self {
+            Self {
+                bodies,
+                issued: Vec::new(),
+                resolved: Vec::new(),
+            }
+        }
+    }
+
+    impl ImageBatchFetcher for RecordingBatchFetcher {
+        fn issue(&mut self, url: &str) {
+            self.issued.push(url.to_string());
+        }
+        fn resolve(&mut self, url: &str) -> Option<Vec<u8>> {
+            self.resolved.push(url.to_string());
+            self.bodies.get(url).cloned().flatten()
+        }
+    }
+
+    fn key_of(src: &str) -> u64 {
+        image_resource_key(&resolve_document_url(PAGE_URL, src), None)
+    }
+
+    fn fixture_html() -> String {
+        format!(
+            "<html><body>\
+             <img src='https://pic.test/a.svg'>\
+             <img src='https://pic.test/b.svg'>\
+             <img src='https://pic.test/a.svg'>\
+             <img src='https://cache.test/hit.svg'>\
+             <img src='{DATA_URI}'>\
+             <img src='https://pic.test/fail.svg'>\
+             <img src='https://pic.test/missing.svg'>\
+             </body></html>"
+        )
+    }
+
+    /// P14 契约钉：全部缺图（cache miss 且非 data:，去重）先于任何 resolve 被
+    /// 非阻塞 issue，且按 DOM 序；resolve 同样按 DOM 序且只问 issued 的 URL。
+    #[test]
+    fn batch_fetch_issues_all_missing_before_any_resolve() {
+        let html = fixture_html();
+        let a = "https://pic.test/a.svg".to_string();
+        let b = "https://pic.test/b.svg".to_string();
+        let fail = "https://pic.test/fail.svg".to_string();
+        let missing = "https://pic.test/missing.svg".to_string();
+        let mut bodies: HashMap<String, Option<Vec<u8>>> = HashMap::new();
+        bodies.insert(a.clone(), Some(SVG_BODY.to_vec()));
+        bodies.insert(b.clone(), Some(SVG_BODY.to_vec()));
+        bodies.insert(fail.clone(), Some(b"not an image".to_vec()));
+        bodies.insert(missing.clone(), None);
+        let mut fetcher = RecordingBatchFetcher::new(bodies);
+
+        let mut cache = zero_render_foundation::image_cache::ImageCache::new(64, 1 << 20);
+        cache.insert_with_key(
+            zero_render_foundation::image_cache::ImageKey::new(key_of("https://cache.test/hit.svg")),
+            zero_render_foundation::image_cache::ImageData::from_rgba(vec![0, 0, 0, 255], 1, 1).expect("1x1 ImageData"),
+        );
+        let sent_keys = std::collections::HashSet::new();
+
+        let payloads = fetch_image_payloads_with_cache(&html, PAGE_URL, &mut cache, &mut fetcher, &sent_keys);
+
+        // issue：全部缺图、DOM 序、去重；cache hit 与 data: 不发起。
+        assert_eq!(
+            fetcher.issued,
+            vec![a.clone(), b.clone(), fail.clone(), missing.clone()]
+        );
+        // resolve：DOM 序，且只问 issued 的 URL（cache hit/data: 不经 fetch）。
+        assert_eq!(fetcher.resolved, vec![a, b, fail, missing]);
+        // payload：成功图按 DOM 序（含 cache hit 与 data: 内联）；decode 失败/网络失败跳过。
+        assert_eq!(
+            payloads.iter().map(|p| p.image_key).collect::<Vec<_>>(),
+            vec![
+                key_of("https://pic.test/a.svg"),
+                key_of("https://pic.test/b.svg"),
+                key_of("https://cache.test/hit.svg"),
+                key_of(DATA_URI),
+            ]
+        );
+        // 解码成功图携带真实尺寸（2x3），证明确实走了 SVG 解码而非占位。
+        assert_eq!((payloads[0].width, payloads[0].height), (2, 3));
+    }
+
+    /// S8 语义保持：sent_keys 命中的成功图不进 payload（含 cache hit 路径）。
+    #[test]
+    fn batch_fetch_sent_keys_filter_unchanged() {
+        let html = "<html><body><img src='https://pic.test/a.svg'></body></html>";
+        let a = "https://pic.test/a.svg".to_string();
+        let mut bodies: HashMap<String, Option<Vec<u8>>> = HashMap::new();
+        bodies.insert(a, Some(SVG_BODY.to_vec()));
+        let mut fetcher = RecordingBatchFetcher::new(bodies);
+        let mut cache = zero_render_foundation::image_cache::ImageCache::new(64, 1 << 20);
+        let mut sent_keys = std::collections::HashSet::new();
+        sent_keys.insert(key_of("https://pic.test/a.svg"));
+
+        let payloads = fetch_image_payloads_with_cache(html, PAGE_URL, &mut cache, &mut fetcher, &sent_keys);
+        assert!(payloads.is_empty());
+        // sent 命中的图仍然发起了网络请求（取回后丢弃像素，语义同旧路径）。
+        assert_eq!(fetcher.issued, vec!["https://pic.test/a.svg".to_string()]);
+    }
+
+    /// 无网络取回器：不发起、恒 None（stub/无网络发布路径行为同旧 no_fetch 闭包）。
+    #[test]
+    fn no_image_fetch_never_issues_and_resolves_none() {
+        let html = "<html><body><img src='https://pic.test/a.svg'></body></html>";
+        let mut fetcher = NoImageFetch;
+        let mut cache = zero_render_foundation::image_cache::ImageCache::new(64, 1 << 20);
+        let sent_keys = std::collections::HashSet::new();
+
+        let payloads = fetch_image_payloads_with_cache(html, PAGE_URL, &mut cache, &mut fetcher, &sent_keys);
+        assert!(payloads.is_empty());
     }
 }
