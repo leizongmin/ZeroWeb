@@ -122,6 +122,35 @@ impl ImageData {
         }
     }
 
+    /// 从 RGBA 字节数据创建图片（跳过纯色检测——A3 Fix C2：视频帧插入路径专用，
+    /// 视频帧恒非纯色，全帧逐像素扫描是每帧一次的纯开销；content_hash 照算——
+    /// GPU 纹理缓存键/指纹依赖不破。图片解码路径保持 `from_rgba` 扫描：UI 图片
+    /// 纯色常见，纯色 fast-path 对其有价值）。
+    ///
+    /// # Errors
+    /// 如果数据长度不等于 `width * height * 4` 则返回错误
+    pub fn from_rgba_variable(pixels: Vec<u8>, width: u32, height: u32) -> Result<Self, String> {
+        let expected = (width as usize) * (height as usize) * 4;
+        if pixels.len() != expected {
+            return Err(format!(
+                "pixel data size mismatch: expected {expected}, got {}",
+                pixels.len()
+            ));
+        }
+        let content_hash = hash_pixels(&pixels);
+        Ok(Self {
+            pixels,
+            width,
+            height,
+            content_hash,
+            solid_color: None,
+            intrinsic_ratio: None,
+            no_ratio: None,
+            computed_intrinsic: None,
+            svg_source: None,
+        })
+    }
+
     /// 获取指定位置的像素 (R, G, B, A)。
     ///
     /// 越界坐标钳制到最近有效像素；像素缓冲与宽高不一致时返回透明（避免渲染崩溃）。

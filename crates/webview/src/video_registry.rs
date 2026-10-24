@@ -1356,7 +1356,7 @@ impl VideoPlayerRegistry {
                 let media_ms = self.mse_audio_entries.get(&key).map(|e| e.cursor_ms).unwrap_or(0);
                 let ticked = player.sync_to_media_time(media_ms as f64);
                 if let Ok(Some(frame)) = ticked
-                    && let Ok(data) = ImageData::from_rgba(frame.rgba, frame.width, frame.height)
+                    && let Ok(data) = ImageData::from_rgba_variable(frame.rgba, frame.width, frame.height)
                 {
                     image_cache.insert_with_key(ImageKey::new(key), data);
                     changed = true;
@@ -1372,7 +1372,9 @@ impl VideoPlayerRegistry {
             let Ok(Some(frame)) = ticked else {
                 continue;
             };
-            if let Ok(data) = ImageData::from_rgba(frame.rgba, frame.width, frame.height) {
+            // A3 Fix C2（DESIGN §8.3）：视频帧恒非纯色——from_rgba_variable 跳过
+            // 全帧逐像素纯色扫描（每帧省 1 次全帧读；content_hash 照算不破指纹面）。
+            if let Ok(data) = ImageData::from_rgba_variable(frame.rgba, frame.width, frame.height) {
                 image_cache.insert_with_key(ImageKey::new(key), data);
                 changed = true;
             }
@@ -1863,6 +1865,7 @@ mod tests {
         );
         assert_eq!(reg.mse_probe_dims("blob:x/absent"), None, "未注册键 → None");
     }
+
 }
 
 /// `__zwVideoBridge` JS 门面脚本。native 回调（`__zw_video_*`/`__zw_ms_*`）由 sandbox
