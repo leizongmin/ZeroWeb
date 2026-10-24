@@ -36,6 +36,10 @@ decode-h264 = ["zero-media/decode-h264"]
 # AV1 解码（media-playback M3 / D-RFC-2）：转发 zero-media decode-av1（dav1d）——
 # settle 探针 `probe_video_media_meta`（open_webm codec 自路由）与播放面同 codec 面。
 decode-av1 = ["zero-media/decode-av1"]
+# 媒体宿主进程（media-runtime-isolation 方案 C / D-RFC-1 获批）：启用 `media_proxy`
+# 独立进程分发面。C1 骨架默认关——registry 仍走 zero-media 进程内直调（行为零变化），
+# 接线时机归 C2，启用时机归 C4/M4 另议。
+media-process = []
 
 [dev-dependencies]
 criterion = { workspace = true }
