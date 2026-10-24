@@ -179,10 +179,7 @@ fn m1_clock_fidelity_realtime_15s() {
     }
     let (wall_last, media_last) = *samples.last().expect("采样非空");
     let rate = media_last / (wall_last as f64 / 1000.0);
-    let mut offsets: Vec<f64> = samples
-        .iter()
-        .map(|(w, m)| (m - *w as f64 / 1000.0).abs())
-        .collect();
+    let mut offsets: Vec<f64> = samples.iter().map(|(w, m)| (m - *w as f64 / 1000.0).abs()).collect();
     offsets.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     println!(
         "M1BASELINE scenario=clock-fidelity-rt-15s rate={:.5} max_offset_ms={:.2} p95_offset_ms={:.2} end_media_s={media_last:.3}",

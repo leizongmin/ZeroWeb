@@ -630,8 +630,8 @@ pub fn dispatch_host_focus(
 /// 派发后续通知——让 `observe()` 之后的真实 render（snapshot 已填真实 rect）触发 observer 回调。
 /// 返回 observer 回调是否改了 DOM（调用方据此单次 rerender，防反馈环）。
 ///
-/// R2713b：同一 post-render tick 附带 `__zw_raf_tick`——帧驱动 rAF（`ZW_RAF_FRAME_DRIVEN=1`）的
-/// 待 fire 回调在此派发（OFF 时 shim 早返零开销）。ts 传 `performance.now()`（R2768 land 的
+/// R2713b：同一 post-render tick 附带 `__zw_raf_tick`——帧驱动 rAF（`ZW_RAF_FRAME_DRIVEN`
+/// 默认 on，=0/false/off 显式关闭）的待 fire 回调在此派发（关闭时 shim 早返零开销）。ts 传 `performance.now()`（R2768 land 的
 /// DOMHighResTimeStamp，单调 ms 自 time origin 起）；performance 缺失（旧 shim）兜底 0。observer
 /// tick 先于 rAF，rAF 回调见到的 DOM 反映 observer 本帧变更；两者 mutation 合并由
 /// `apply_recorded_mutations` 单次 rerender。
