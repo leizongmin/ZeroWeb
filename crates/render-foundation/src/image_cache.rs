@@ -188,8 +188,9 @@ impl ImageData {
 /// 图片缓存条目
 #[derive(Debug)]
 struct CacheEntry {
-    /// 图片数据
-    data: ImageData,
+    /// 图片数据（A3 Fix C4：`Arc` 共享句柄——快照发布路径引用计数替代全量深拷贝；
+    /// 像素在插入后不可变（R3254-M2，content_hash 复用前提），共享语义安全）。
+    data: Arc<ImageData>,
     /// 引用计数
     ref_count: u32,
     /// 最近访问的代数（用于 GC）
@@ -1188,7 +1189,10 @@ impl ImageCache {
     /// R34xx：快照全部缓存条目（key hash → ImageData clone），供 host 回调查询
     ///（webview 的 __zw_get_image_wire——headless canvas drawImage img 源 G5）。
     pub fn snapshot_entries(&self) -> std::collections::HashMap<u64, ImageData> {
-        self.entries.iter().map(|(k, e)| (k.0, e.data.clone())).collect()
+        self.entries
+            .iter()
+            .map(|(k, e)| (k.0, e.data.as_ref().clone()))
+            .collect()
     }
 
     /// 插入图片数据，返回缓存键
@@ -1197,7 +1201,7 @@ impl ImageCache {
         self.next_key += 1;
 
         let entry = CacheEntry {
-            data,
+            data: Arc::new(data),
             ref_count: 1,
             last_access_gen: self.current_gen,
         };
@@ -1211,7 +1215,7 @@ impl ImageCache {
     /// 外部加载器需要用相同的 key 将解码后的图片数据注入缓存。
     pub fn insert_with_key(&mut self, key: ImageKey, data: ImageData) {
         let entry = CacheEntry {
-            data,
+            data: Arc::new(data),
             ref_count: 1,
             last_access_gen: self.current_gen,
         };
@@ -1223,7 +1227,7 @@ impl ImageCache {
         let entry = self.entries.get_mut(key)?;
         entry.ref_count = entry.ref_count.saturating_add(1);
         entry.last_access_gen = self.current_gen;
-        Some(&entry.data)
+        Some(entry.data.as_ref())
     }
 
     /// R3761：按目标尺寸取 SVG 栅格化结果（矢量重栅格化，替代位图插值）。
@@ -1336,7 +1340,11 @@ impl ImageCache {
         self.current_gen += 1;
     }
 
-    /// 复制当前缓存内容供 UI 线程快照使用（不共享可变状态）。
+    /// 共享句柄快照供 UI 线程发布路径使用（A3 Fix C4：`Arc` 引用计数替代全缓存
+    /// 像素深拷贝——视频播放期每帧发布的 O(entries) clone 曾为全像素复制量级）。
+    /// 快照为瞬态只读对象（发布后即弃）；像素在插入后不可变（R3254-M2，
+    /// content_hash 复用前提），共享语义安全。LRU/字节预算按句柄自计（与现行为
+    /// 等价，无核算漂移）。
     pub fn duplicate_for_snapshot(&self) -> Self {
         let mut out = Self::new(self.max_entries, self.max_bytes);
         out.next_key = self.next_key;
@@ -1344,7 +1352,7 @@ impl ImageCache {
             out.entries.insert(
                 key.clone(),
                 CacheEntry {
-                    data: entry.data.clone(),
+                    data: Arc::clone(&entry.data),
                     ref_count: 1,
                     last_access_gen: 0,
                 },
@@ -3006,6 +3014,23 @@ mod tests {
 
         let _ = cache.get(&key);
         assert_eq!(cache.ref_count(&key), Some(3));
+    }
+
+    #[test]
+    fn test_snapshot_shares_pixel_handle_a3c4() {
+        // A3 Fix C4（DESIGN §8.2）：duplicate_for_snapshot 为 Arc 共享句柄快照——
+        // 同条目像素指针一致（零拷贝，每帧发布路径 O(entries) 引用计数）；源缓存
+        // clear（强计数归零）后快照读取不受影响（像素不可变 R3254-M2）。
+        let mut cache = ImageCache::new(10, 1024 * 1024);
+        let key = cache.insert(make_image(3, 3, 7));
+        let snapshot = cache.duplicate_for_snapshot();
+        let src_ptr = cache.entries.get(&key).unwrap().data.pixels.as_ptr() as usize;
+        let snap_ptr = snapshot.entries.get(&key).unwrap().data.pixels.as_ptr() as usize;
+        assert_eq!(src_ptr, snap_ptr, "快照应与源共享像素句柄（零拷贝）");
+        cache.clear();
+        let snap = snapshot.entries.get(&key).unwrap();
+        assert_eq!(snap.data.pixels.len(), 3 * 3 * 4, "源清空后快照像素不受影响");
+        assert_eq!(snap.data.content_hash, hash_pixels(&snap.data.pixels));
     }
 
     #[test]
