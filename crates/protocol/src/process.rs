@@ -137,6 +137,7 @@ pub fn child_process_args(role: ProcessRole, instance_id: u64) -> Vec<String> {
         ProcessRole::Network => "network",
         ProcessRole::ImageDecoder => "image-decoder",
         ProcessRole::Compositor => "compositor",
+        ProcessRole::Media => "media",
     };
     vec![format!("--type={type_name}"), format!("--instance-id={instance_id}")]
 }
@@ -836,6 +837,13 @@ mod tests {
             args,
             vec!["--type=compositor".to_string(), format!("--instance-id={}", u64::MAX),]
         );
+    }
+
+    /// 测试 media host 角色参数（方案 C C1：`--type=media` 映射）。
+    #[test]
+    fn test_child_process_args_media() {
+        let args = child_process_args(ProcessRole::Media, 3);
+        assert_eq!(args, vec!["--type=media".to_string(), "--instance-id=3".to_string()]);
     }
 
     /// 测试心跳超时常量。

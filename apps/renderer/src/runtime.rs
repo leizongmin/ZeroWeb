@@ -4018,6 +4018,25 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             | IpcMessageKind::NavigationCommitted(_)
             // 合成器动画声明是 renderer 的发送方向（M2-S1），不接收。
             | IpcMessageKind::CompositorAnimationState(_)
+            // 媒体消息族走 webview proxy ↔ media-host 独立 stdio 通道（media-runtime-isolation
+            // 方案 C C1），不经 renderer ↔ 主进程 IPC，两侧方向均不接收。
+            | IpcMessageKind::MediaRegisterSource(_)
+            | IpcMessageKind::MediaDataChunk(_)
+            | IpcMessageKind::MediaPlay(_)
+            | IpcMessageKind::MediaPause(_)
+            | IpcMessageKind::MediaSeek(_)
+            | IpcMessageKind::MediaReleaseSource(_)
+            | IpcMessageKind::MediaShutdown
+            | IpcMessageKind::MediaSetRate(_)
+            | IpcMessageKind::MediaSetLoop(_)
+            | IpcMessageKind::MediaSetGain(_)
+            | IpcMessageKind::MediaReady(_)
+            | IpcMessageKind::MediaSourceReady(_)
+            | IpcMessageKind::MediaDataAck(_)
+            | IpcMessageKind::MediaStateUpdate(_)
+            | IpcMessageKind::MediaSeekResult(_)
+            | IpcMessageKind::MediaFrame(_)
+            | IpcMessageKind::MediaError(_)
             | IpcMessageKind::CrashNotification(_) => {
                 tracing::warn!("渲染进程收到非预期消息类型（应从渲染进程发出）");
                 Ok(())
