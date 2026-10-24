@@ -1,9 +1,9 @@
 # 媒体运行时隔离控制面
 
 **日期**：2026-10-24
-**状态**：Active（**D-RFC-1~4 已批复**——方案 C 批准 / A 批次随批复即启 / B 核查暂缓 / decode-h264 维持默认关，RFC v1.9 §10 批复记录；M1 基线 + M2 RFC 两项交付 + M3 前置设计八片齐备，[m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；**A1/A2 已落地**——rate 1.00000 + 三缺口闭合，偏差记录 DESIGN §2.4/§6.5）。
-**当前卡点**：无。A3/A4 待启动。
-**下一步**：A3（C4 快照 Arc 化 + C2 扫描跳过 + 源驻留封顶，DESIGN §8）/ A4（cue 锚定窄化 seek，DESIGN §3.3）；C1（protocol 媒体消息族 17 变体 + `media-process` feature 骨架，feature 默认关）并行启动。
+**状态**：Active（**D-RFC-1~4 已批复**——方案 C 批准 / A 批次随批复即启 / B 核查暂缓 / decode-h264 维持默认关，RFC v1.9 §10 批复记录；M1 基线 + M2 RFC 两项交付 + M3 前置设计八片齐备，[m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；**A1/A2/A3 已落地**——rate 1.00000 + 三缺口闭合 + 图片快照/视频帧/源驻留内存面收敛，偏差记录 DESIGN §2.4/§6.5/§8.6）。
+**当前卡点**：无。A4 待启动。
+**下一步**：A4（cue 锚定窄化 seek，DESIGN §3.3）；C1（protocol 媒体消息族 17 变体 + `media-process` feature 骨架，feature 默认关）并行启动。
 **入口**：[目标契约](../media-runtime-isolation.md) / [启动与证据协议](../ladybird-followups/README.md)
 
 ## 缺口与待决
@@ -21,7 +21,7 @@
 |---|---|---|---|
 | M1 | 生产资源、能力与权限基线 | **完成**（测量面成立，收口待评审） | [2026-10-24 基线](evidence/2026-10-24-m1-baseline/ANALYSIS.md) |
 | M2 | 方案/许可证/回滚 RFC + protocol 接口契约 | **v1.9 已批复**（D-RFC-1~4 用户裁决） | [media-runtime-isolation-spec-rfc](../../../specs/media-runtime-isolation-spec-rfc.md) |
-| M3 | 已确认平台与隔离切片 | **IN_PROGRESS**（A1/A2 已落地——rate≡1.0 + 三缺口闭合；A3/A4 待实施；C1–C4 设计稿齐备，D-RFC-1/2 已批） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
+| M3 | 已确认平台与隔离切片 | **IN_PROGRESS**（A1/A2/A3 已落地——rate≡1.0 + 三缺口闭合 + 内存面收敛；A4 待实施；C1–C4 设计稿齐备，D-RFC-1/2 已批） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
 | M4 | 配对媒体、故障和资源审计 | NOT_STARTED | 无 |
 
 ## 验证基线
@@ -177,3 +177,12 @@
 - **验证**：engine lib 3473 全绿（既有 media event 族 + 新测试）；wpt-runner 225 全绿；make test、clippy -D warnings、fmt 过。
 - **限制**：`testharness-media` 门禁本环境未跑——外网不可达（fetch curl 超时），且该子集首批本就不含 ready-states/autoplay/event_* 真解码族（后置声明）；断言面由 engine 桥测试承载，有网环境补跑。
 - 共享面占用：engine shim（part03/part06）+ bridge 测试、renderer runtime.rs 一处提交；runner 面行为随 shim 语义同迁（门禁族全绿）。bg02-media 基线 v2 回补（audio/autoplay INCONCLUSIVE 复评）仍归后续验证切片。
+
+### 2026-10-24 A3 内存面收敛轮（M3 第三切片，C4/C2/封顶各自单提交）
+
+- **C4 快照 Arc 化**（`2003c55dc`，render-foundation）：`CacheEntry.data: Arc<ImageData>`——页面隐藏快照与源缓存共享像素句柄零拷贝（R3254-M2 像素不可变前提），`snapshot_entries` 深拷贝面不变；新增 Arc 共享断言单测。
+- **C2 视频帧扫描跳过**（`aa540dc4d`）：`ImageData::from_rgba_variable` 视频帧专用（`solid_color: None`，content_hash 照算），registry 两处 tick_all 帧插入切换；图片解码路径保持 `from_rgba` 扫描。
+- **源驻留封顶**（`340fcde8b`，webview）：`sources + av_sources` 256MB 总量准入（M1 §5 权限表缺口闭合）——超限驱逐非在播 sources 键，再驱逐无存活 player 的 av_sources 孤儿键，仍超拒绝登记走既有 play 失败面；在播 player/audio entry 键永不驱逐；play 字节搬移总量守恒不加检；驱逐 `_with_budget` 参数化 4 单测。
+- **偏差四处**记入 [DESIGN §8.6](evidence/2026-10-24-m3-prep-design/DESIGN.md)（LRU→迭代序任一 / play 搬移不加检 / audio 准入失败 plain return / 预算参数化）。
+- **验收**：M1 harness 5/5（[m1baseline-a3-post.log](evidence/2026-10-24-m3-prep-design/m1baseline-a3-post.log)：rate 1.00000、漂移逐位持平、seek 同量级；容量在噪声带内，pure-video tick p50 411→401us——§8.5 墙钟预期下降未显现，C2 单帧省读低于噪声，C4 快照路径无触发，如实记录）；bench-gate 定向 2/2 PASS；render-foundation 116 + webview lib 790 全绿；workspace clippy -D warnings、make test、fmt 过。
+- 共享面占用：render-foundation image_cache + webview video_registry 两文件；zero-media/engine/protocol 零改动。

@@ -282,6 +282,36 @@ clone，仅引用计数」（runtime.rs:1453-1455）；`svg_source: Arc<[u8]>`�
   单测补 Arc 共享断言（同像素指针、源缓存驱逐不影响快照读取）。
 - 回滚：三个子项各自单提交（C4 / C2 / 封顶互相独立）。
 
+### 8.6 实施偏差记录与验收结果（A3 落地后）
+
+三单提交：C4 `2003c55dc`（快照 Arc 化）/ C2 `aa540dc4d`（扫描跳过）/ 封顶 `340fcde8b`。
+
+偏差（C2/C4 无语义偏差，按设计落地；封顶四处）：
+
+1. **驱逐序 LRU → HashMap 迭代序任一**：设计写"非在播 LRU"，实现无时间戳账本，按 HashMap
+   迭代序驱逐任一非在播键——svg_rasterized FIFO 同先例的缓存语义（预算目的只要求逐出足够
+   字节，任一非在播键等价）；trace 逐键记录。
+2. **play 内 sources→av_sources 搬移不加检**：设计"仍超拒绝登记，走既有 play 失败/不可解码
+   错误面"仅适用 register/settle 准入路径；play 是 `sources.remove` → `av_sources.insert`
+   字节搬移（总量守恒），加检反而可误拒已准入源的伴音 seek 重建。
+3. **register_audio_source 准入失败 = plain return**（解码器已建即弃）：设计草案曾提"remove
+   audio_entries key"，实际不采用——同键重登记被拒时保旧 entry/源对一致，remove 会留下
+   sources 有、entry 无的分裂态。
+4. **驱逐逻辑 `_with_budget` 预算参数化**（256MB 常量单测不可达）：语义不变，仅测试面增补。
+
+验收（§8.5 逐项）：
+
+- M1 harness 复测（release + test-guard，[m1baseline-a3-post.log](m1baseline-a3-post.log)）：
+  5/5 PASS；T3 rate 1.00000 持平；T5 漂移 p50/p95/max 11.0/21.0/35.0 逐位持平；T4 seek
+  279716/1042/850756us 与 A1 同量级；容量场景 A3 带 av-pair 1211–1279ms、pure-video
+  1226–1316ms（含两次复跑），对 A1 单值 1206/1191 在单次运行噪声带（±7%）内，tick/present
+  计数逐位一致、pure-video tick p50 411→401us（C2 省读方向一致）。**§8.5"纯视频墙钟预期
+  下降"未在墙钟显现**——C2 单帧省读（约 300KB 一次线性扫）低于测量噪声；C4 收益在页面隐藏
+  快照路径，harness 无快照触发，不进此数。
+- `make bench-gate` 定向（zero-render-foundation + zero-webview）：2/2 microbench PASS，
+  绝对预算过（硬件基线 WARN 为既有常态）。
+- image_cache 契约测试 116 全绿（含新增 Arc 共享断言）；webview lib 790 全绿（含封顶 4 单测）。
+
 ## 9. C1 实施级设计——媒体消息族 wire format + media-process 骨架（同日第四轮增补）
 
 ### 9.1 协议面现状核对（拟新增命名冲突排查）
