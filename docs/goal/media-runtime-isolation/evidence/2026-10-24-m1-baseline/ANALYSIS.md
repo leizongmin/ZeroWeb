@@ -36,12 +36,16 @@ Segment data start）。
 
 | 场景 | 墙钟（60s 媒体） | CPU | 核 | 呈现帧 | 每 tick p50 | 帧 tick p95 |
 |---|---|---|---|---|---|---|
-| 纯视频 VP9 60s | 1076ms | 1070ms | 0.994 | 1440 | 400ns | ~780µs |
-| A/V 双轨 60s | 1733ms | 1740ms | 1.004 | 1440 | 748µs | ~1.39ms |
+| 纯视频 VP9 60s | 1339ms | 1340ms | 1.001 | 1440 | 431ns | ~1.24ms |
+| A/V 双轨 60s | 1422ms | 1430ms | 1.006 | 1440 | 768µs | ~1.33ms |
 
-- 解码容量 ≈ 34–56× 实时：单核软解 320×240@24fps 余量充足；空 tick p50=400ns 证明
+> 订正（同日 RFC 独立评审发现）：初稿误录一次未入库先行 run 的数值（1076/1733ms 等）；
+> 上表已对齐本目录 committed raw log（唯一入库原始数据）。结论不变：容量 ≈42–45× 实时、
+> 单核、每 tick 远低于 16ms 节拍。
+
+- 解码容量 ≈ 42–45× 实时：单核软解 320×240@24fps 余量充足；空 tick p50≈431ns 证明
   `is_any_playing` 门控零开销成立（runtime.rs:4096 同款）。
-- 每 tick 消耗（p95 ~1ms）远低于 16ms 泵节拍：renderer 主循环节拍不被解码挤占。
+- 每 tick 消耗（p95 ~1.2–1.3ms）远低于 16ms 泵节拍：renderer 主循环节拍不被解码挤占。
 
 ### 3.2 时钟保真（真实节拍 15s 段，16ms sleep 泵）
 
@@ -49,8 +53,8 @@ Segment data start）。
 页面可见 currentTime 真值）速率 **1.45402**——系统性快于墙钟 45%。根因形态：
 `AudioEntry/WebmAudioEntry::advance_to`（webview/src/video_registry.rs）整批解码推进，
 `cursor_ms` 停在「越过 target 的首个批次末」；vorbis 批粒度（~1024 样本 ≈23ms）对 16ms 泵
-每拍平均 +batch/2 超越。60s 源实测 ~41s 墙钟走完（`media_end_s=60.677 @ wall 1733ms`
-为容量档；真实节拍档 rate 同款）。harness 断言收紧为 sanity 带 0.5–3.0 防回退。
+每拍平均 +batch/2 超越。按该速率 60s 流约 41s 墙钟走完（由 rate 推导；真实节拍档
+实测 end_media_s=21.822 @ 15.008s 墙钟）。harness 断言收紧为 sanity 带 0.5–3.0 防回退。
 
 ### 3.3 A/V 漂移（media 层真值，VideoPlayer.sync_to_media_time）
 
@@ -62,9 +66,9 @@ Segment data start）。
 
 | 目标 | seek 耗时 | 落点 | 续播 |
 |---|---|---|---|
-| 15s | 300ms（冷） | 精确 15.000s | 至流末 59.960s |
+| 15s | 302ms（冷） | 精确 15.000s | 至流末 59.960s |
 | 30s | 1.1ms（热） | 精确 30.000s | 至流末 59.968s |
-| 45s | 932ms | 精确 45.000s | 至流末 59.960s |
+| 45s | 1000ms | 精确 45.000s | 至流末 59.960s |
 
 cue 路径全部精确命中（precise-seek 语义成立）。耗时方差大（冷 I/O + VP9 解码器重建 +
 narrow phase 前向扫块），30s 热路径 O(log n) 达标；冷/热差与 15s/45s 慢点为后续
@@ -97,7 +101,7 @@ CPU 路径无零拷贝上屏通道。这是 M2 RFC「平台解码/进程隔离�
 | 能力 | 现状 | 位置 |
 |---|---|---|
 | 源获取 | registry 未命中时 `source_provider` 同步回调直联 GET（秒级上界，锁外） | webview.rs:148、video_registry.rs:1780+ |
-| MSE 缓冲封顶 | `MSE_FEED_MAX_BYTES = 256MB`（页面 appendBuffer 字节，超限拒绝→QuotaExceededError 面） | video_registry.rs:477 |
+| MSE 缓冲封顶 | `MSE_FEED_MAX_BYTES = 256MB`（页面 appendBuffer 字节，超限拒绝→QuotaExceededError 面；整个 MSE 面在 `decode-h264` feature 门控下，默认关即无 MSE 路径） | video_registry.rs:476–477 |
 | 图片缓存预算 | 256 entries / 64MB（`ImageCache::default`，LRU 淘汰） | image_cache.rs:1352 |
 | 源字节驻留 | `sources`/`av_sources` HashMap 无总量封顶（单源无界；release/clear 导航面释放） | video_registry.rs:444–455 |
 | 解码线程模型 | 进程内单线程同步解码（renderer 主循环泵内联），无独立解码进程/线程池 | runtime.rs:4122 |
