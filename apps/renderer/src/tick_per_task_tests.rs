@@ -564,7 +564,13 @@ fn dns_prefetch_hint_completion_does_not_flip_document_url_p11() {
             }),
         })
         .unwrap();
+    // 基线在导航派发点钉定：handle_navigate 同步发 UrlChanged 并置 current_url
+    //（runtime.rs 导航处理，先于任何 fetch 完成）；后续 document 完成仅在印章
+    // final URL 与之不同（重定向）时才覆写。臂 1 的不变断言以此为比较基准。
+    assert_eq!(runtime.current_url.as_deref(), Some(page_url), "导航基线 URL");
+    let baseline = runtime.current_url.clone();
     // 主文档 IPC fetch 挂起（outbound=sink 吞请求），注入文档响应驱动文档就绪。
+    // final URL 与导航 URL 相同，document 印章完成对 current_url 是无差同步。
     let doc_request_id = *runtime
         .inflight_fetches
         .pending_request_ids()
@@ -596,8 +602,6 @@ fn dns_prefetch_hint_completion_does_not_flip_document_url_p11() {
         "dns-prefetch hint 应经 IPC 在飞，实得 {}",
         hint_ids.len()
     );
-    let baseline = runtime.current_url.clone();
-    assert_eq!(baseline.as_deref(), Some(page_url), "文档完成后基线 URL");
 
     // 臂 1：hint 完成为 "other" 印章（修后 fetch_proxy 输出形状）——不得翻转。
     p11_inject_fetch_response(
