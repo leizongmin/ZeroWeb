@@ -1,10 +1,10 @@
 # 增量渲染对照控制面
 
 **日期**：2026-10-24
-**状态**：**DONE（goal 收口）**。M1/M2/M4 及 M3-a/b/c 均已于 2026-10-23 收口（详见里程碑与 evidence/）；2026-10-24 engine 面解封（html-semantics-compat s57 后切片间隙宣告维持），三项运行时对照常驻测试落地并经 fail-first 演练：多次导航 A→B→A′ 逐位对照、命中 warm==cold 网格对照 + 必须失效/必须保留双门、像素容差契约运行时应用（自对照逐位、不设容差）——五 DC 全部 DONE，M1–M4 全部 DONE，[runtime](evidence/2026-10-24-engine-runtime-comparison/ANALYSIS.md)。
+**状态**：**DONE（goal 收口，✅ 2026-10-24 模式 A 归档，账本封存）**。M1/M2/M4 及 M3-a/b/c 均已于 2026-10-23 收口（详见里程碑与 evidence/）；2026-10-24 engine 面解封（html-semantics-compat s57 后切片间隙宣告维持），三项运行时对照常驻测试落地并经 fail-first 演练：多次导航 A→B→A′ 逐位对照、命中 warm==cold 网格对照 + 必须失效/必须保留双门、像素容差契约运行时应用（自对照逐位、不设容差）——五 DC 全部 DONE，M1–M4 全部 DONE，[runtime](evidence/2026-10-24-engine-runtime-comparison/ANALYSIS.md)。
 **当前卡点**：无。engine 面占用标记已退场清除（2026-10-24 切片完成），html-semantics-compat 可按其挂账序恢复 engine shim 面切片。
 **下一步**：无（goal 收口）。移交/保留项：browser 条带 chrome 半透明 AA 观察项归 zero-web 面协调（m3-c 定性）；反例 A（style-system 增量 API 契约，生产不可达）保持文档开放（m1-style 固化为 Divergent 检出）；规范正确性验收归 rendering-compat（内部等价≠规范正确）。
-**入口**：[目标契约](../incremental-rendering-oracle.md) / [启动与证据协议](../ladybird-followups/README.md)
+**入口**：[目标契约](../incremental-rendering-oracle.md) / [启动与证据协议](../../ladybird-followups/README.md)
 
 ## 缺口与待决
 
