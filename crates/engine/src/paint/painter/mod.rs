@@ -3214,12 +3214,28 @@ impl Painter {
                 let bg_clip_text_solid =
                     text::bg_clip_text_solid_color(style, &self.image_solid_colors, self.document_url.as_deref())
                         .is_some();
+                // R5268（css-backgrounds-4 §background-clip:text 逐层 clip）：混合 clip
+                // 页（如 text,border-box）的 bg **色**按末层 clip 绘制（R4528）——末层非
+                // Text 时色矩形照常铺盒并作为字形混合 backdrop；末层 Text（含单层页）
+                // 与整盒抑制等价。kill-switch `ZW_BG_CLIP_TEXT_PER_LAYER=0` 回退整盒抑制。
+                // env::var 仅在恒色激活页读取（R5267 口径：kill-switch 读在激活门后）。
+                let (bg_clip_text_suppress_color, bg_clip_text_suppress_image) = if bg_clip_text_solid {
+                    let per_layer = std::env::var("ZW_BG_CLIP_TEXT_PER_LAYER").as_deref() != Ok("0");
+                    let color_clip_is_text =
+                        matches!(style.background_clip.last(), Some(BackgroundClipComputedValue::Text));
+                    (
+                        bg_clip_text_solid && (!per_layer || color_clip_is_text),
+                        bg_clip_text_solid && !per_layer,
+                    )
+                } else {
+                    (false, false)
+                };
                 if style.background_color != ColorValue::Transparent
                     && !skip_split_inline_deco
                     && !skip_inline_box_bg
                     && !skip_contents_deco
                     && !spanner_segs_active
-                    && !bg_clip_text_solid
+                    && !bg_clip_text_suppress_color
                 {
                     // R5086：行内盒且 render_fragment 已记录字形前位点 → 背景发射后把
                     // draw_order 段移动到字形之前（css2.1 附录 E：行内背景先于文本）。
@@ -3254,7 +3270,13 @@ impl Painter {
                 // 1b. 背景图片（行组/行仍可渲染背景图片）
                 // R4549：clip:text 恒色激活时同步抑制（v1 激活必无 image 层故无需此门；
                 // 恒色 image 层的色已由字形承载，全盒 image 绘制会盖掉字形裁剪语义）。
-                if !skip_split_inline_deco && !skip_contents_deco && !spanner_segs_active && !bg_clip_text_solid {
+                // R5268：逐层模式放行到 paint_background_image 内按层抑制（Text 层跳过、
+                // 非 Text 层照常）；整盒抑制模式（kill-switch）保持调用方拦截。
+                if !skip_split_inline_deco
+                    && !skip_contents_deco
+                    && !spanner_segs_active
+                    && !bg_clip_text_suppress_image
+                {
                     // R5184（css-borders-4 §7.5.3）：border-shape 活跃时背景图像层裁剪到
                     // 形状背景多边形（stroke = 路径、fill = 内形状，≡ R4534 背景色语义）
                     // ——collapsed/负尺寸形状（inset(100px)、circle(0%)）须把渐变等图像

@@ -885,128 +885,36 @@
           if (handle) __zw_set_attr_handle(handle, 'src', String(value));
           else __zw_set_attr(sel, 'src', String(value));
           moAttr = 'src';
-          var _imSrc = String(value == null ? '' : value);
-          // R5275（html-semantics M2 切片 68）：img 更新图片数据收口——
-          // ① restart 语义：src 变更是 relevant mutation，旧 current request 作废
-          //（spec https://html.spec.whatwg.org/multipage/images.html#updating-the-image-data）；
-          // 同 URL 且已 loaded → 幂等 no-op（stable state 合并，不重派 load）。
-          // ② available-images 同步 settle：URL 已在可用图片列表 → 同步写 loaded 态
-          //（spec https://html.spec.whatwg.org/multipage/images.html#the-list-of-available-images
-          // ——already-loaded-image-sync-width「换 src 到已加载图后尺寸同步可读」断言面）。
-          // ③ broken 终态：error 派发时写 outcome:'broken'（complete=true 语义——
-          // img.complete async src broken / not loadable / invalid URL 三案）。
-          // ④ 生命周期闸门：`__zwReadyState === 'loading'`（runner 页面脚本阶段）时
-          // load/error 事件入队 `_zwImgPendingEvents`，由 `__zwFireStaticImgSettle`
-          //（window load 派发钩子调用，part06/part04）在 DOMContentLoaded 与 window
-          // load 之间统一派发（spec：DCL 不等图片、图片延迟 window load——
-          // delay-load-event 两案断言序）；'complete'/未注入（契约沙箱、运行期动态
-          // src）→ 即时派发，既有语义零回归。
-          var _imKey = _elKey(sel, handle);
-          var _imPrev = _resourceStates[_imKey];
-          var _imLoadedSame = !!( _imPrev && _imPrev.outcome === 'loaded' && _imPrev.url === _imSrc);
-          if (_imPrev && !_imLoadedSame) delete _resourceStates[_imKey];
-          var _zwAvailImgs = globalThis._zwAvailableImages = globalThis._zwAvailableImages || {};
-          var _imFetched = false; // R5275：fetch 臂旗标（终点消费一次 → 在飞 -1）
-          // R5275：仅 fetch 臂终点计数 -1（available-images 同步臂/空 src 臂未 +1 不减
-          // ——__zwImgLoadBlocked 的等待判定面）；无派发终点（InvalidState 守卫失败）
-          // 也须消费旗标。
-          var _imInflightEnd = function () {
-            if (_imFetched) {
-              _imFetched = false;
-              globalThis._zwImgInflight = Math.max(0, (globalThis._zwImgInflight || 0) - 1);
+          // s70：更新核抽至 part03 共享核（R5275 四语义——restart/available-images
+          // 同步 settle/broken 终态/生命周期闸门——注释与实现见 __zwImgRunUpdate5277）；
+          // src 写入先经选中核归一（srcset/sizes 在场时 src 仅作 default source，
+          // spec create-a-source-set 步 4）。
+          var _imRaw5277 = String(value == null ? '' : value);
+          var _imSrc = _imRaw5277;
+          try {
+            if (typeof globalThis.__zwSelectUrl5277 === 'function') {
+              var _imSelUrl = globalThis.__zwSelectUrl5277(sel, handle);
+              if (_imSelUrl) _imSrc = _imSelUrl;
             }
-          };
-          var _zwImgDispatch = function (type) {
-            _imInflightEnd();
-            if (globalThis.__zwReadyState === 'loading') {
-              globalThis._zwImgPendingEvents = globalThis._zwImgPendingEvents || [];
-              globalThis._zwImgPendingSet = globalThis._zwImgPendingSet || {};
-              globalThis._zwImgPendingSet[_imKey] = true;
-              globalThis._zwImgPendingEvents.push({ key: _imKey, sel: sel, handle: handle, type: type, url: _imSrc });
-              return;
+          } catch (_e5277sl) {}
+          try {
+            if (typeof globalThis.__zwImgRunUpdate5277 === 'function') {
+              var _imDen5277 = null;
+              try {
+                var _imPk = globalThis.__zwSelectImageSource5277 ? globalThis.__zwSelectImageSource5277(sel, handle) : null;
+                _imDen5277 = _imPk ? _imPk.density : 1;
+              } catch (_e5277sp) {}
+              globalThis.__zwImgRunUpdate5277(sel, handle, _imSrc, _imDen5277 == null ? 1 : _imDen5277);
             }
-            if (type === 'error' && !_resourceStates[_imKey]) {
-              _resourceStates[_imKey] = { url: _imSrc, outcome: 'broken', width: 0, height: 0, error: true };
+          } catch (_e5277ru) {
+            // 共享核缺失/异常兜底：空 src 保持既有 error 面
+            if (!_imSrc) {
+              var _imKey = _elKey(sel, handle);
+              _resourceStates[_imKey] = { url: '', outcome: 'broken', width: 0, height: 0, error: true, density: 1 };
+              _defer(function () {
+                _dispatchWithBubble(_imKey, sel, handle, _makeEvent('error', { bubbles: false, cancelable: false }));
+              });
             }
-            _dispatchWithBubble(_imKey, sel, handle, _makeEvent(type, { bubbles: false, cancelable: false }));
-          };
-          // security-hardening M2-s8：img-src 检查点——`__zwCspImgCheck` 原生回调
-          // （resolve abs → check_image → 阻止 → violation 入共享队列 [document 站] +
-          // 返回 '1'）：跳过 fetch 链、延迟派 error（onerror 语义）。回调未注册
-          //（CSP 关）→ 恒放行零变更。CSP 臂保持既有 _defer 直派语义（不进闸门队列
-          // ——violation 事件时序面独立）。
-          if (_imSrc && typeof __zwCspImgCheck === 'function' && __zwCspImgCheck(_imSrc) === '1') {
-            moAttr = 'src';
-            _defer(function () {
-              _dispatchWithBubble(key, sel, handle, _makeEvent('error', { bubbles: false, cancelable: false }));
-            });
-            _imSrc = undefined;
-          }
-          var _imFail = function () {
-            _zwImgDispatch('error');
-          };
-          if (_imSrc && !_imLoadedSame && _zwAvailImgs[_imSrc]) {
-            // R5275 ②：available-images 命中——**状态同步 settle**（naturalWidth/
-            // complete 同步可读——already-loaded-image-sync-width 断言面），load 事件
-            // _defer 派发（spec：relevant mutation 触发的 image loading task 异步派
-            // load——setter 同步任务内 src 后注册的 onload 不得丢，探针实证
-            // available-images-onload i2 链同步即派丢事件）+ 在飞计数（window load
-            // 等待循环据 `__zwImgLoadBlocked` 排在事件之后——spec the-end 序）。
-            var _av5275 = _zwAvailImgs[_imSrc];
-            _resourceStates[_imKey] = { url: _imSrc, outcome: 'loaded', width: _av5275.width, height: _av5275.height, error: null };
-            _imFetched = true;
-            globalThis._zwImgInflight = (globalThis._zwImgInflight || 0) + 1;
-            _defer(function () { _zwImgDispatch('load'); });
-          } else if (_imSrc && !_imLoadedSame && typeof fetch === 'function') {
-            try {
-              // Resource Timing（M3-S3）：运行时 img 经页面 fetch 取图——置发起方
-              // 旗标（fetch 包裹消费为 initiatorType 'img'；net 元数据经响应对象
-              // __zwRtMeta 携带——resource_timing_test0 的 img encodedBodySize 精确面）。
-              _zwRtPendingInitiator = 'img';
-              // R5275：在飞计数 +1（终点 _zwImgDispatch 消费 _imFetched 后 -1）——
-              // window load 派发前 __zwImgLoadBlocked 据此等待（trickle(d2) 慢图
-              // 延迟 window load 语义）。
-              _imFetched = true;
-              globalThis._zwImgInflight = (globalThis._zwImgInflight || 0) + 1;
-              fetch(_imSrc).then(function (resp) {
-                if (!resp.ok) { _imFail(); return; }
-                resp.blob().then(function (blob) {
-                  createImageBitmap(blob).then(function (bm) {
-                    // R56h：手动 settle（handle 元素）——_zwSettleResourceSelector 只收
-                    // sel（new Image() 的 handle-based 元素 sel 为 null → key 不匹配
-                    // listener 槽位，onload 不触发）。resourceState 用 _elKey(sel, handle)
-                    // 与 naturalWidth getter 同 key；事件经 _dispatchWithBubble 同 key 派发。
-                    // R5275：settle 同时写 available-images 缓存（同 URL 后续 src 同步
-                    // settle）；旧「已 settled → _imFail」守卫删除（restart 语义由
-                    // setter 前置 _imLoadedSame/delete 承担——mid-flight 二次 fetch 回调
-                    // 后写胜出，镜像 spec 最后一个 relevant mutation 胜出）。
-                    _resourceStates[_imKey] = { url: _imSrc, outcome: 'loaded', width: bm.width, height: bm.height, error: null };
-                    _zwAvailImgs[_imSrc] = { width: bm.width, height: bm.height };
-                    _zwImgDispatch('load');
-                  }, function (e) {
-                    // R56h：零尺寸图像（SVG width=0）→ img 元素语义 = loaded（naturalWidth
-                    // 0，drawImage no-op——2d.drawImage.zerosource.image 期望 onload 且
-                    // 不绘制）；真解码失败（broken）→ error 事件。
-                    if (e && e.name === 'InvalidStateError') {
-                      if (!_resourceStates[_imKey]) {
-                        _resourceStates[_imKey] = { url: _imSrc, outcome: 'loaded', width: 0, height: 0, error: null };
-                        _zwImgDispatch('load');
-                      } else {
-                        _imInflightEnd(); // 无派发终点——旗标仍消费（在飞计数平衡）
-                      }
-                    } else {
-                      _imFail();
-                    }
-                  });
-                }, _imFail);
-              }, _imFail);
-            } catch (_e) {
-              _imFail();
-            }
-          } else {
-            // R5275：fetch 不可用（无宿主 handler）或空 src（failed with null 语义
-            // 保持既有 error 面）→ broken + error（原语义）。
-            _imFail();
           }
         } else if (p === 'href' && _zwIsSvgNsEl(sel, handle)) {
           // svg-compat M3 S2：SVGURIReference.href IDL 是 readonly（[SameObject]
@@ -1165,6 +1073,14 @@
             // ''）；sel 路径快照同 turn stale，回落写串（parsed 自定义标签 best-effort）。
             var _ceNewVal = handle ? _ce_attrValue(sel, handle, _ceSetAttr) : String(value == null ? '' : value);
             _ce_dispatchAttrChange(_ceSetEntry, proxy, _ceSetAttr, _ceSetOld, _ceNewVal, null);
+          }
+          // s70（html-semantics M2）：IMG/SOURCE 相关属性 IDL set 的 relevant mutation
+          // 汇流点（spec relevant mutations：src/srcset/sizes 变更 → 重新选源；crossorigin/
+          // referrerpolicy 内容状态变更 → 同；SOURCE 侧经 picture 前向兄弟传播）。名称/tag
+          // 门在 helper 内。`src`+IMG 例外——上方专属 R56h 臂已跑 __zwImgRunUpdate5277，
+          // 此处重入会二次 fetch。
+          if (moAttr !== 'src' && typeof globalThis.__zwImgAttrMutated5277 === 'function') {
+            try { globalThis.__zwImgAttrMutated5277(sel, handle, moAttr, false, _zw5277PreAttr); } catch (_e5277idl) {}
           }
         }
         return true;

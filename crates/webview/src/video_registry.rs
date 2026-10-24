@@ -878,6 +878,28 @@ impl VideoPlayerRegistry {
                 .is_some_and(|e| e.reached_end || e.wrap_pending)
     }
 
+    /// 源错误态（桥 `isErrored` 查询面，C3 §11.3——宿主崩溃广播/播放级错误的
+    /// registry 真值口）。内联面无 registry 级 error 态（错误经元素路径语义），
+    /// 恒 `false`。
+    #[cfg_attr(not(feature = "media-process"), allow(unused_variables))]
+    pub fn is_errored(&self, abs_src: &str) -> bool {
+        #[cfg(feature = "media-process")]
+        {
+            let key = registry_key(abs_src);
+            if self.host.hosts(key) {
+                return self.host.is_errored(key);
+            }
+        }
+        false
+    }
+
+    /// 宿主进程 pid（诊断/契约测试 SIGKILL 注入面；未连接 `None`；feature 关恒
+    /// 无此面）。
+    #[cfg(feature = "media-process")]
+    pub fn media_host_pid(&self) -> Option<u32> {
+        self.host.host_pid()
+    }
+
     /// 快速检查：是否存在播放中的 player（渲染泵门禁——无播放时零开销跳过 tick）。
     pub fn is_any_playing(&self) -> bool {
         #[cfg(feature = "media-process")]

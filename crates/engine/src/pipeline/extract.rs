@@ -213,6 +213,18 @@ pub fn extract_img_srcs(html: &str) -> Vec<String> {
                 srcs.push(src.to_string());
             }
         }
+        // s70：srcset 全候选预抓取（spec §4.8.4.3.7 select an image source——选中面
+        // 随 DPR/sizes 动态，宿主尺寸快照须覆盖每个可能选中 URL；over-collection
+        // 无害）。键 = 原始属性串 token，与 shim `__zw_get_image_size` 查询同串。
+        if let Some(srcset) = doc.get_attribute(img_id, "srcset") {
+            push_srcset_candidates(&srcset, &mut srcs);
+        }
+    }
+    // s70：picture `source` srcset 候选（picture 选中面的 source 分支）。
+    for source_id in doc.get_elements_by_tag_name("source") {
+        if let Some(srcset) = doc.get_attribute(source_id, "srcset") {
+            push_srcset_candidates(&srcset, &mut srcs);
+        }
     }
     // R5275（html-semantics M2 切片 68）：`<template>` contents fragment 内声明的
     // `<img>` 也进抓取清单——fragment 不在文档树（zero_dom 解析期侧表
@@ -349,19 +361,47 @@ pub fn srcset_first_url(srcset: &str) -> Option<String> {
 }
 
 /// R5275：template contents fragment 递归收集 `<img>`（fragment 不在文档树，
-/// `get_elements_by_tag_name` 不达；嵌套模板/任意深度均覆盖）。
+/// `get_elements_by_tag_name` 不达；嵌套模板/任意深度均覆盖）。s70：img 附带
+/// srcset 候选、`source` srcset 候选一并收集（同文档树 s70 面）。
 fn collect_fragment_imgs(doc: &zero_dom::Document, id: zero_dom::NodeId, srcs: &mut Vec<String>) {
     for child in doc.child_nodes(id) {
         let is_img = doc
             .get(child)
             .is_some_and(|n| matches!(&n.kind, zero_dom::NodeKind::Element(e) if e.local_name() == "img"));
-        if is_img && let Some(src) = effective_img_src(doc, child) {
-            let src = src.trim();
-            if !src.is_empty() {
-                srcs.push(src.to_string());
+        let is_source = doc
+            .get(child)
+            .is_some_and(|n| matches!(&n.kind, zero_dom::NodeKind::Element(e) if e.local_name() == "source"));
+        if is_img {
+            if let Some(src) = effective_img_src(doc, child) {
+                let src = src.trim();
+                if !src.is_empty() {
+                    srcs.push(src.to_string());
+                }
             }
+            if let Some(srcset) = doc.get_attribute(child, "srcset") {
+                push_srcset_candidates(&srcset, srcs);
+            }
+        } else if is_source && let Some(srcset) = doc.get_attribute(child, "srcset") {
+            push_srcset_candidates(&srcset, srcs);
         }
         collect_fragment_imgs(doc, child, srcs);
+    }
+}
+
+/// s70：srcset 属性候选 URL 收集（spec parse-a-srcset 的 URL 提取采集近似——
+/// 逗号分组切分、每组取首个非空白 token、剥除尾部逗号（裸 URL 候选
+/// `"a.png,"` 形态）；描述符 token（`1x`/`2w`）不构成分组首 token 的情形仅
+/// 出现在逗号前无 URL 的病态输入，不入清单即可。over-collection 无害：
+/// 宿主多抓一图只多一条尺寸快照，选中面由 shim 动态判定。
+fn push_srcset_candidates(srcset: &str, srcs: &mut Vec<String>) {
+    for group in srcset.split(',') {
+        let Some(token) = group.trim().split_ascii_whitespace().next() else {
+            continue;
+        };
+        let url = token.trim_end_matches(',');
+        if !url.is_empty() {
+            srcs.push(url.to_string());
+        }
     }
 }
 

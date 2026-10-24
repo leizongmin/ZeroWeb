@@ -23,6 +23,7 @@ pub fn video_bridge_facade_script() -> String {
            duration: function (src) { return Number(__zw_video_duration(src)); },\
            isPlaying: function (src) { return __zw_video_is_playing(src) === '1'; },\
            isEnded: function (src) { return __zw_video_is_ended(src) === '1'; },\
+           isErrored: function (src) { return __zw_video_is_errored(src) === '1'; },\
            setRate: function (src, rate) { __zw_video_set_rate(src, Number(rate)); },\
            setGain: function (src, volume, muted) { __zw_video_set_gain(src, Number(volume), muted ? '1' : '0'); },\
            setLoop: function (src, on) { __zw_video_set_loop(src, on ? '1' : '0'); },\
@@ -244,6 +245,18 @@ pub fn register_video_bridge_callbacks(
             let src = args.first().map(String::as_str).unwrap_or("");
             let reg = reg_ended.lock().unwrap_or_else(|e| e.into_inner());
             if reg.is_ended(src) { "1".into() } else { "0".into() }
+        }),
+    );
+
+    // C3 崩溃面（§11.3）：源错误查询（宿主失效广播/播放级错误）。FIXME(media-process):
+    // shim march Error face → 元素 error 事件接线归后续切片（桥真值口先行）。
+    let reg_errored = std::sync::Arc::clone(&registry);
+    sandbox.register_callback(
+        "__zw_video_is_errored",
+        Box::new(move |args| {
+            let src = args.first().map(String::as_str).unwrap_or("");
+            let reg = reg_errored.lock().unwrap_or_else(|e| e.into_inner());
+            if reg.is_errored(src) { "1".into() } else { "0".into() }
         }),
     );
 

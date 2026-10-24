@@ -7,13 +7,16 @@
 //! 排空注入 `ImageCache`（painter 同键）。MSE 源不经 `register_source`（
 //! blob:MSE 句柄面独立登记），键不在镜像集即落内联直调——内核无 append 面。
 //!
-//! 降级纪律（IF-006）：传输级失败由 client 置永久错误面后命令恒 `false`——
-//! 不内联回落；host `MediaError` 为播放级（镜像 error 态，不置永久失败）。
-//! 旧 epoch 的状态/帧一律丢弃（DC-2「不返回旧代际数据」）。
+//! 降级纪律（IF-006，C3 重启面）：初始 spawn 失败由 client 置永久错误面后命令恒
+//! `false`——不内联回落；运行期 host 失效经 [`MediaHostClient::poll_health`]
+//! one-shot 崩溃通知 → 全活跃源广播 error 态（DC-3 页面可观察链真值口），client
+//! 转退避重启（1s/2s/4s n≤3，泵 tick 推进）；重启后源全丢失不自动重注册（页面
+//! 重新走资源装载面，epoch 重单调）。host `MediaError` 为播放级（镜像 error 态，
+//! 不置失败）。旧 epoch 的状态/帧一律丢弃（DC-2「不返回旧代际数据」）。
 
 use std::collections::HashMap;
 
-use zero_protocol::media::{MediaErrorParams, MediaPlaybackState, MediaStateUpdateParams};
+use zero_protocol::media::{MediaErrorCode, MediaErrorParams, MediaPlaybackState, MediaStateUpdateParams};
 use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey};
 
 use crate::media_proxy::{MediaHostClient, MediaHostEvent};
@@ -215,6 +218,17 @@ impl HostMediaFacade {
         self.mirrors.get(&key).is_some_and(|m| m.playing)
     }
 
+    /// 源错误态（崩溃广播/播放级错误镜像面——桥 `isErrored` 真值口，DC-3 页面
+    /// 可观察链；§11.3）。
+    pub(crate) fn is_errored(&self, key: u64) -> bool {
+        self.mirrors.get(&key).is_some_and(|m| m.error)
+    }
+
+    /// 宿主进程 pid（诊断/契约测试 SIGKILL 注入面；未连接 `None`）。
+    pub(crate) fn host_pid(&self) -> Option<u32> {
+        self.client.host_pid()
+    }
+
     pub(crate) fn is_ended(&self, key: u64) -> bool {
         self.mirrors.get(&key).is_some_and(|m| m.ended)
     }
@@ -225,7 +239,8 @@ impl HostMediaFacade {
         self.mirrors.remove(&key);
     }
 
-    /// 导航清面：逐键释放 + 镜像清空（client 连接保持——页面复用零重 spawn）。
+    /// 导航清面：逐键释放 + 镜像清空 + client teardown（§11.4 reload 恢复路径
+    /// ——状态机回 Idle，下次登记 spawn 全新 host；崩溃 Failed 态随导航清除）。
     pub(crate) fn clear(&mut self) {
         let keys: Vec<u64> = self.mirrors.keys().copied().collect();
         for key in keys {
@@ -233,13 +248,19 @@ impl HostMediaFacade {
         }
         self.mirrors.clear();
         self.pending_replays.clear();
+        let _ = self.client.shutdown();
     }
 
-    /// 泵推进（16ms 节拍被动消费面，DESIGN §10.4）：排空 host 推送 → 状态更新
-    /// 镜像 / 帧注入 `image_cache`（painter 同键）/ Ended+loop 回卷待办。返回
-    /// 是否有帧更新。传输失效后恒 `false`（client 已 latch，IF-006 不回落）。
+    /// 泵推进（16ms 节拍被动消费面，DESIGN §10.4）：健康巡检（崩溃检测兜底路 +
+    /// 重启退避推进，§11.2-b）→ 排空 host 推送 → 状态更新镜像 / 帧注入
+    /// `image_cache`（painter 同键）/ Ended+loop 回卷待办。返回是否有帧更新。
     pub(crate) fn tick_into(&mut self, image_cache: &mut ImageCache) -> bool {
         let mut changed = false;
+        // 崩溃检测兜底路（§11.2-b）：one-shot 通知 → 全活跃源广播 error 态
+        // （§11.3——桥 `isErrored` 真值口，DC-3 页面可观察链）。
+        if self.client.poll_health().is_err() {
+            self.broadcast_host_error();
+        }
         // 命令后排空缓冲的帧先行注入（play/seek 回执窗内到达的首帧不丢）。
         for frame in std::mem::take(&mut self.deferred_frames) {
             changed |= self.apply_event(MediaHostEvent::Frame(frame), Some(image_cache));
@@ -248,6 +269,17 @@ impl HostMediaFacade {
             changed |= self.apply_event(event, Some(image_cache));
         }
         changed
+    }
+
+    /// 崩溃广播（§11.3）：全部活跃镜像置 error 态（playing 清除；epoch 不变——
+    /// 重启后新流 epoch 重单调，旧代际推送天然失效）。回卷待办随连接失效作废。
+    fn broadcast_host_error(&mut self) {
+        for m in self.mirrors.values_mut() {
+            m.apply_state(&MediaPlaybackState::Error {
+                code: MediaErrorCode::HostInternal,
+            });
+        }
+        self.pending_replays.clear();
     }
 
     /// 驱动排空时收集的纯视频 loop 回卷（registry tick 面调用）。内核 replay
@@ -471,6 +503,22 @@ mod tests {
         );
         assert!(!facade.is_playing(7));
         assert!(!facade.client.is_failed());
+    }
+
+    /// 崩溃广播（C3 §11.3）：全部活跃镜像置 error 态（playing 清除，DC-3 页面
+    /// 可观察真值）+ 回卷待办随连接失效作废。
+    #[test]
+    fn host_crash_broadcasts_error_to_all_mirrors() {
+        let mut facade = facade_with(7);
+        facade.mirrors.insert(8, HostMirror::default());
+        facade.mirrors.get_mut(&7).expect("seeded").playing = true;
+        facade.mirrors.get_mut(&8).expect("seeded").playing = true;
+        facade.pending_replays.push(7);
+
+        facade.broadcast_host_error();
+        assert!(!facade.is_playing(7) && !facade.is_playing(8));
+        assert!(facade.is_errored(7) && facade.is_errored(8));
+        assert!(facade.pending_replays.is_empty(), "回卷待办随连接失效作废");
     }
 
     /// SourceReady 升级镜像元数据（duration/尺寸——桥升级面真值）。

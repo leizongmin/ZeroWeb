@@ -1,9 +1,9 @@
 # 媒体运行时隔离控制面
 
 **日期**：2026-10-25
-**状态**：Active（**D-RFC-1~4 已批复**——方案 C 批准 / A 批次随批复即启 / B 核查暂缓 / decode-h264 维持默认关，RFC v1.9 §10 批复记录；M1 基线 + M2 RFC 两项交付 + M3 前置设计八片齐备，[m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；**A1–A4 + C1 + C2 切片 1/2 已落地**——rate 1.00000 + 三缺口闭合 + 内存面收敛 + seek 冷路径 O(GOP) + 协议消息族/media-host 骨架/webview proxy + C2 解码内核/自走时钟事件循环/proxy 事件面/真实二进制契约 + **registry 开态客户端切换（HostMediaFacade push 镜像 + 21 面分流）/M1 双 feature 零回归/release 宿主面基线**（feature 默认关），偏差记录 DESIGN §2.4/§3.5/§6.5/§8.6/§9.6/§10.7/§10.8，[切片 2 证据](evidence/2026-10-25-c2-slice2/ANALYSIS.md)）。
-**当前卡点**：无。A 批次 + C1 + C2 切片 1/2 完成；C2 收尾（M1 harness 排空语义已并入切片 2）。
-**下一步**：C3（崩溃检测/重启退避，DESIGN §11——proxy `try_wait` 兜底 + send 失败即时检测 + `MediaError{HostInternal}` 全活跃源广播，退避 1s/2s/4s n≤3）；relative-position 产物流 seek 抽样复核与 bg02-media 站点复评归后续验证切片。
+**状态**：Active（**D-RFC-1~4 已批复**——方案 C 批准 / A 批次随批复即启 / B 核查暂缓 / decode-h264 维持默认关，RFC v1.9 §10 批复记录；M1 基线 + M2 RFC 两项交付 + M3 前置设计八片齐备，[m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；**A1–A4 + C1 + C2 切片 1/2 + C3 已落地**——rate 1.00000 + 三缺口闭合 + 内存面收敛 + seek 冷路径 O(GOP) + 协议消息族/media-host 骨架/webview proxy + C2 解码内核/自走时钟事件循环/proxy 事件面/真实二进制契约 + registry 开态客户端切换（HostMediaFacade push 镜像 + 21 面分流）/M1 双 feature 零回归 + **C3 崩溃检测双路/状态机退避重启（1s/2s/4s n≤3）/SIGKILL 注入契约 8 场景/M1 宿主面零回归**（feature 默认关），偏差记录 DESIGN §2.4/§3.5/§6.5/§8.6/§9.6/§10.7/§10.8/§10.9，[切片 2 证据](evidence/2026-10-25-c2-slice2/ANALYSIS.md)，[C3 证据](evidence/2026-10-25-c3-crash-recovery/ANALYSIS.md)）。
+**当前卡点**：无。A 批次 + C1 + C2 切片 1/2 + C3 完成。
+**下一步**：C4/M4（三态配对矩阵 + 资源审计 + DC 终验，DESIGN §12）；shim march Error face 接线（C3 止步桥 getter，DESIGN §10.9-16）与 bg02-media 站点复评归 C4 批次或后续验证切片。
 **入口**：[目标契约](../media-runtime-isolation.md) / [启动与证据协议](../ladybird-followups/README.md)
 
 ## 缺口与待决
@@ -21,7 +21,7 @@
 |---|---|---|---|
 | M1 | 生产资源、能力与权限基线 | **完成**（测量面成立，收口待评审） | [2026-10-24 基线](evidence/2026-10-24-m1-baseline/ANALYSIS.md) |
 | M2 | 方案/许可证/回滚 RFC + protocol 接口契约 | **v1.9 已批复**（D-RFC-1~4 用户裁决） | [media-runtime-isolation-spec-rfc](../../../specs/media-runtime-isolation-spec-rfc.md) |
-| M3 | 已确认平台与隔离切片 | **IN_PROGRESS**（A1–A4 已全部落地——rate≡1.0 + 三缺口闭合 + 内存面收敛 + seek O(GOP)；C1 已落地——protocol 17 变体 + media-host 骨架 + webview proxy，feature 默认关；**C2 切片 1/2 已落地**——音频管线迁零-media + 解码内核/自走时钟 + proxy 事件面 + 真实二进制契约 + registry 开态客户端切换（HostMediaFacade push 镜像/21 面分流/MSE 内联豁免/IF-006 不回落）+ 端到端契约 5 场景 + M1 双 feature release 零回归（宿主面 tick p50 3.7µs、冷 seek 19.1ms≈内联 18.2ms）；C3/C4 设计稿齐备，D-RFC-1/2 已批） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
+| M3 | 已确认平台与隔离切片 | **IN_PROGRESS**（A1–A4 已全部落地——rate≡1.0 + 三缺口闭合 + 内存面收敛 + seek O(GOP)；C1 已落地——protocol 17 变体 + media-host 骨架 + webview proxy，feature 默认关；C2 切片 1/2 已落地——音频管线迁零-media + 解码内核/自走时钟 + proxy 事件面 + 真实二进制契约 + registry 开态客户端切换（HostMediaFacade push 镜像/21 面分流/MSE 内联豁免/IF-006 不回落）+ 端到端契约 5 场景 + M1 双 feature release 零回归；**C3 已落地**——崩溃检测双路（send 失败即时 + 泵周期 try_wait 兜底）+ 状态机退避重启（1s/2s/4s n≤3，Failed 永久面/reload 回 Idle）+ 全活跃源 error 广播 + 桥 isErrored 真值口 + SIGKILL 注入契约 3 新场景（8/8 全绿）+ M1 宿主面零回归；C4 设计稿齐备） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
 | M4 | 配对媒体、故障和资源审计 | NOT_STARTED | 无 |
 
 ## 验证基线
@@ -30,7 +30,7 @@
 |---|---|---|---|
 | DC-1 | MEDIA-01-cpu-copy-and-capability | **已测成立**（容量/复制链/权限/能力对照；收口待用户评审） | evidence/2026-10-24-m1-baseline |
 | DC-2 | MEDIA-02-clock-seek-and-state | 部分（media 层时钟 rate FINDING 已修：A1 落地 rate=1.00000；cue seek 精确、漂移 p50=11ms；seek 冷路径 A4 窄化 O(GOP)——mid-GOP 302ms→18ms 且不随 target 线性增长；页面可见时钟缺口已修（A2 三缺口闭合，bg02-media v2 复评归后续验证切片）） | evidence/2026-10-24-m1-baseline + m3-prep-design（含 m1baseline-a1/a4-post.log） |
-| DC-3 | MEDIA-03-decoder-crash-recovery | NOT_RUN | 无 |
+| DC-3 | MEDIA-03-decoder-crash-recovery | 部分（C3 崩溃检测/重启面落地——SIGKILL 注入契约 8 场景全绿：error 镜像可观察/renderer 存活/重启重喂可播/重启耗尽 Failed 无内联回落/reload 恢复；页面 error 事件与 march face 接线归 C4，页面级终验未做） | evidence/2026-10-25-c3-crash-recovery |
 | DC-4 | MEDIA-04-platform-fallback-and-permissions | 部分（平台核查：无 /dev/dri、NullSink、VP9-only 生产面；故障注入未做） | evidence/2026-10-24-m1-baseline |
 | DC-5 | RFC 与最终支持范围审计 | NOT_RUN | 无 |
 
@@ -222,3 +222,13 @@
 - **验收**：M1 release 宿主面 5/5（226.6s，[证据](evidence/2026-10-25-c2-slice2/ANALYSIS.md)——测试进程 cores 1.001→0.012、tick p50 431ns→3.7µs、时钟 rate 0.99827、1440/1440 帧零丢）+ feature-off release 5/5（20.0s 零回归）+ 契约 5 场景全绿（5.0s）+ `make guarded-clippy` 过 + 全量 `make guarded-test` 过。
 - **偏差四处**记 [DESIGN §10.8](evidence/2026-10-24-m3-prep-design/DESIGN.md)（play 回执后即时排空/元数据升级时点、M1 时钟分叉 + A4 feature 界、泵保持 16ms 被动排空、host 不落内联字节 + MSE 内联豁免）。
 - 共享面占用：webview（video_registry/video_registry_host/video_registry_bridge/media_proxy/lib.rs/两测试文件）+ 文档三处；renderer runtime.rs 泵调用点零改动（`tick_all` 排空语义内聚）、engine/protocol/media-host 零改动。
+
+### 2026-10-25 C3 实施轮（崩溃检测/重启退避 + SIGKILL 注入契约）
+
+- **状态机 + 双路检测**（media_proxy.rs）：`HostLifecycle{Idle/Healthy/Restarting/Failed}` 替换 failed 布尔——运行期连接失效（send 失败即时 + 泵周期 `poll_health` try_wait 兜底，facade `tick_into` 每 tick 调用）转退避重启（1s/2s/4s n≤3，重连成功重置计数），初始 spawn/握手失败保持直达 Failed（§11.1 纪律）；`shutdown` 回 Idle（reload 恢复）。失效弃置前取 exit status（`exit_reason` 同构 renderer 先例）+ stderr tail（16KiB 有界读线程，host stderr inherit→piped）入 tracing、status 入消息面。
+- **崩溃通知 one-shot + 镜像广播**：命令路径检测存 pending 由 poll 下发（播放级错误与传输失效同为 Err 面，广播只认崩溃通知防误播）；poll try_wait 路径同步返回清 pending（不二次投递）；facade 收通知全活跃镜像广播 `Error{HostInternal}`（playing 清除/回卷待办作废/epoch 不变）。真值口：facade `is_errored` → registry `is_errored`（pub）→ 桥 `__zwVideoBridge.isErrored`；`media_host_pid` 诊断/注入面。
+- **重启语义**：全新 host 源全丢失、不自动重播/重注册（重喂前 play 报 unknown source）；Restarting 期间命令恒错误面；`clear()` 从「连接保持」改 teardown 回 Idle（§11.4 reload 恢复路径，Failed 随导航清除）。
+- **测试**：SIGKILL 注入契约 3 新场景（崩溃广播+隔离 / 退避重连新 pid+重喂可播 / 假二进制驱动三次重试全败达 Failed+reload 恢复）——契约套件 8/8（16.2s）；单测 facade 崩溃广播 + proxy spawn 失败短路 + tail 有界（feature-on 17/17）；registry 内联 24/24（feature-off）。
+- **验收**：契约 8/8 全绿（16.2s，[证据](evidence/2026-10-25-c3-crash-recovery/ANALYSIS.md)）+ M1 宿主面 release 复跑 5/5（226.9s 零回归——rate 0.99827、冷 seek 19.0ms、1440/1440 帧零丢）+ `make guarded-clippy` 过 + 全量 `make guarded-test` 过（exit 0）。
+- **偏差五处**记 [DESIGN §10.9](evidence/2026-10-24-m3-prep-design/DESIGN.md)（场景 4 到达路径=重启尝试耗尽、one-shot 双路投递语义、stderr tail 本地实现、页面 error 事件链止步桥 getter、clear 改 teardown）。
+- 共享面占用：webview（media_proxy/video_registry_host/video_registry/video_registry_bridge/契约测试）+ 文档三处；engine/protocol/media-host/renderer 零改动。

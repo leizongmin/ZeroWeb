@@ -2265,14 +2265,631 @@
       globalThis[_sn].prototype = Object.create(_spp);
     }
   }
+  // s70（html-semantics M2 切片 70，2026-10-25）：select-an-image-source 共享核——
+  // srcset 解析（§4.8.4.3.10）/ sizes 解析（§4.8.4.3.11）/ source set 创建与更新
+  //（§4.8.4.3.8-9）/ 密度归一（§4.8.4.3.12）/ 选择（§4.8.4.3.7）+ relevant
+  // mutations（§4.8.4.3.2）重验触发。sweep（part04 __zwFireStaticImgSettle）、
+  // R56h `.src` IDL 链（下方 __zwImgRunUpdate5277）、decode 核（selectedCand）
+  // 三方消费同一选中 URL——srcset-only img 的 resourceState/currentSrc/naturalWidth
+  // 由共享核供给（基线 src-only 路径 URL 串不变，s68/s69 绿面零漂移）。
+  // ASCII 空白判定（srcset/sizes 分割语义——U+00A0/U+1680/U+2000 系等非 ASCII
+  // 空白是 URL/描述符组成部分，parse-a-srcset-attribute 全真值表面）。
+  var _zw5277IsWs = function (c) {
+    return c === ' ' || c === '\t' || c === '\n' || c === '\f' || c === '\r';
+  };
+  // HTML 元素 tag（svg: 前缀产物剥除——SVG ns 的 source/picture 不算 HTML 元素，
+  // s58 同款门）。入参为 proxy/元素对象。
+  var _zw5277Tag = function (el) {
+    try {
+      if (!el) return '';
+      if (el.__zwHandle && typeof _realTag === 'function') return String(_realTag(null, el.__zwHandle) || '').split(':').pop();
+      if (el.__zwSelector && typeof _realTag === 'function') return String(_realTag(el.__zwSelector, null) || '').split(':').pop();
+      return String(el.tagName || el.localName || '').toUpperCase().split(':').pop();
+    } catch (_e5277tg) { return ''; }
+  };
+  // proxy 三级属性读（handle → lw → 解析期快照，R3204/R5275 同款）。
+  var _zw5277Attr = function (sel, handle, name) {
+    try {
+      if (handle && typeof __zw_get_attr_handle === 'function') {
+        if (typeof __zw_has_attr_handle === 'function' && __zw_has_attr_handle(handle, name) === '1') {
+          return String(__zw_get_attr_handle(handle, name) || '');
+        }
+        // 句柄缺席且无 sel——已无事实源，不再回落 sel 读（lw 对 null sel 返 ''
+        // 而非 null，present 判定 `'' != null` 把已移除属性误判在位——null
+        // selection error 门 'srcset removed' 无关联面走偏）。
+        if (!sel) return null;
+      }
+      if (sel && typeof __zw_get_attr_lw === 'function') {
+        // lw 视角缺席（removeAttribute 闭合 + 从未存在）即缺席——不再回落
+        // 解析期快照 `__zw_get_attr`（stale 原值复活 → selection 非 null →
+        // avail-hit 重派 load，relevant-mutations 'src removed' timeout 行实证）。
+        if (typeof __zw_has_attr_lw === 'function' && __zw_has_attr_lw(sel, name) !== '1') {
+          return null;
+        }
+        var lwv = __zw_get_attr_lw(sel, name);
+        if (lwv != null) return String(lwv);
+      }
+      if (sel && typeof __zw_get_attr === 'function') {
+        var sv = __zw_get_attr(sel, name);
+        if (sv != null) return String(sv);
+      }
+    } catch (_e5277at) {}
+    return null;
+  };
+  // §4.8.4.3.10 parse a srcset attribute。描述符文法：w = 纯数字+'w'（0 → error）、
+  // x = HTML 浮点解析（`.5`/`1e0`/`-.5` 合法，`+1`/`1.`/`Infinity` 字面量非法；
+  // <0 → error，0 合法）、h = 兼容描述符（parse error 但继续；width 缺席 → error）。
+  // 括号分组：in-parens 状态吞并逗号/空白（`( , b 1x, )` 成单描述符后整体 error，
+  // 候选丢弃、后续候选继续）。
+  globalThis.__zwParseSrcsetAttr5277 = function (input) {
+    input = String(input == null ? '' : input);
+    var pos = 0, n = input.length, candidates = [];
+    while (pos < n) {
+      // splitting loop：吞 ASCII 空白与逗号（逗号收集是 parse error 但继续）
+      while (pos < n && (_zw5277IsWs(input.charAt(pos)) || input.charAt(pos) === ',')) pos++;
+      if (pos >= n) break;
+      var end = pos;
+      while (end < n && !_zw5277IsWs(input.charAt(end))) end++;
+      var url = input.slice(pos, end);
+      pos = end;
+      var descriptors = [];
+      if (url.charAt(url.length - 1) === ',') {
+        url = url.replace(/,+$/, '');
+      } else {
+        // descriptor tokenizer（in descriptor / in parens / after descriptor 三态）
+        while (pos < n && _zw5277IsWs(input.charAt(pos))) pos++;
+        var current = '', state = 0 /* 0=in-desc 1=in-parens 2=after-desc */, jumped = false;
+        while (pos < n) {
+          var c = input.charAt(pos);
+          if (state === 0) {
+            if (_zw5277IsWs(c)) {
+              if (current) { descriptors.push(current); current = ''; }
+              state = 2;
+            } else if (c === ',') {
+              pos++;
+              if (current) descriptors.push(current);
+              jumped = true;
+              break;
+            } else if (c === '(') {
+              current += c; state = 1;
+            } else {
+              current += c;
+            }
+          } else if (state === 1) {
+            if (c === ')') { current += c; state = 0; } else { current += c; }
+          } else {
+            if (!_zw5277IsWs(c)) { state = 0; pos--; }
+          }
+          pos++;
+        }
+        if (!jumped && current) descriptors.push(current);
+      }
+      // descriptor parser（per-candidate 显式复位——var 无初始化子不随迭代重置，
+      // 上一候选的 width/density 残留会误判冲突 error）
+      var error = false, width = undefined, density = undefined, fch = undefined;
+      for (var di = 0; di < descriptors.length; di++) {
+        var d = descriptors[di], m;
+        if ((m = /^([0-9]+)w$/.exec(d))) {
+          if (width !== undefined || density !== undefined) { error = true; break; }
+          if (parseInt(m[1], 10) === 0) { error = true; break; }
+          width = parseInt(m[1], 10);
+        } else if ((m = /^(-?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?)x$/.exec(d))) {
+          if (width !== undefined || density !== undefined || fch !== undefined) { error = true; break; }
+          var dv = parseFloat(m[1]);
+          if (!(dv >= 0)) { error = true; break; }
+          density = dv;
+        } else if ((m = /^([0-9]+)h$/.exec(d))) {
+          // future-compat-h：本就是 parse error（spec 注），解析继续
+          if (fch !== undefined || density !== undefined) { error = true; break; }
+          if (parseInt(m[1], 10) === 0) { error = true; break; }
+          fch = parseInt(m[1], 10);
+        } else {
+          error = true; break;
+        }
+      }
+      if (fch !== undefined && width === undefined) error = true;
+      if (!error) {
+        var cand = { url: url };
+        if (width !== undefined) cand.width = width;
+        if (density !== undefined) cand.density = density;
+        candidates.push(cand);
+      }
+    }
+    return candidates;
+  };
+  // <source-size-value> 数值解析（px 及常用绝对/视口单位；calc() 与 % 拒收——
+  // FIXME: math functions 随后续切片）。非法 → null。
+  globalThis.__zwSourceSizeValue5277 = function (v, vw, vh) {
+    var s = String(v == null ? '' : v).trim();
+    if (!/^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(px|vw|vh|vmin|vmax|em|rem|ex|ch|q|cm|mm|in|pt|pc)?$/.test(s)) return null;
+    var num = parseFloat(s);
+    var unit = s.replace(/^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)/, '') || '';
+    switch (unit) {
+      case '': return num === 0 ? 0 : null; // 裸数字仅 0 合法（CSS <length>）
+      case 'px': return num;
+      case 'vw': return num / 100 * vw;
+      case 'vh': return num / 100 * vh;
+      case 'vmin': return num / 100 * Math.min(vw, vh);
+      case 'vmax': return num / 100 * Math.max(vw, vh);
+      case 'em': case 'rem': case 'ch': return num * 16;
+      case 'ex': return num * 8;
+      case 'q': return num * 96 / 25.4;
+      case 'cm': return num * 96 / 2.54;
+      case 'mm': return num * 96 / 25.4;
+      case 'in': return num * 96;
+      case 'pt': return num * 96 / 72;
+      case 'pc': return num * 16;
+      default: return null;
+    }
+  };
+  // §4.8.4.3.11 parse a sizes attribute → px 数值。逗号顶层切分（括号深度感知），
+  // 每项末 component = source-size-value，余下为 media-condition（matchMedia
+  // host 桥求值——逗号列表 OR、malformed → false，spec-correct）；auto 关键字
+  // （lazy auto-sizes，F5 挂账）本片按「忽略该项继续」处理。全不命中 → 100vw。
+  globalThis.__zwParseSizesAttr5277 = function (value) {
+    var vw = globalThis.innerWidth || 0, vh = globalThis.innerHeight || 0;
+    var list = String(value == null ? '' : value);
+    var parts = [], depth = 0, start = 0;
+    for (var i = 0; i < list.length; i++) {
+      var ch = list.charAt(i);
+      if (ch === '(') depth++;
+      else if (ch === ')') { if (depth > 0) depth--; }
+      else if (ch === ',' && depth === 0) { parts.push(list.slice(start, i)); start = i + 1; }
+    }
+    parts.push(list.slice(start));
+    for (var pi = 0; pi < parts.length; pi++) {
+      var entry = parts[pi].replace(/\s+$/, '');
+      if (!entry) continue;
+      var cut = -1;
+      for (var j = entry.length - 1; j >= 0; j--) {
+        if (_zw5277IsWs(entry.charAt(j))) { cut = j; break; }
+      }
+      var condStr = '', valStr = entry;
+      if (cut >= 0) { condStr = entry.slice(0, cut).trim(); valStr = entry.slice(cut + 1); }
+      var size = globalThis.__zwSourceSizeValue5277(valStr, vw, vh);
+      var isAuto = size === null && /^\s*auto\s*$/i.test(valStr);
+      if (size === null && !isAuto) continue;
+      if (condStr !== '' && !globalThis.__zwMediaMatches5277(condStr)) continue;
+      if (!isAuto) return size;
+    }
+    return vw;
+  };
+  // media-condition 求值（window.matchMedia host 桥复用——zero_css_parser
+  // media_query：空串隐含 all → true、malformed → false、逗号列表 OR）。
+  globalThis.__zwMediaMatches5277 = function (q) {
+    try {
+      if (typeof globalThis.matchMedia === 'function') {
+        var m = globalThis.matchMedia(String(q));
+        return !!(m && m.matches);
+      }
+    } catch (_e5277mq) {}
+    return false;
+  };
+  // source type 属性支持性判定（RFC 7231 MIME 结构 + 图像格式白名单；空/空白
+  // 值跳过检查——`type`/`type=' '` rows 选中 source 面）。参数（;k=v）不影响
+  // 本质类型；image/* 通配是结构合法但白名单外 → unsupported。
+  globalThis.__zwSourceSupportedType5277 = function (v) {
+    var s = String(v == null ? '' : v).trim();
+    if (!s) return true;
+    var sc = s.indexOf(';');
+    var essence = (sc >= 0 ? s.slice(0, sc) : s).trim();
+    var slash = essence.indexOf('/');
+    if (slash <= 0 || slash !== essence.lastIndexOf('/')) return false;
+    var tokenRe = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+    var t = essence.slice(0, slash), st = essence.slice(slash + 1);
+    if (!tokenRe.test(t) || !tokenRe.test(st)) return false;
+    var rest = sc >= 0 ? s.slice(sc + 1) : '';
+    if (rest && !/^\s*[!#$%&'*+\-.^_`|~0-9A-Za-z]+(\s*=\s*("[^"]*"|[!#$%&'*+\-.^_`|~0-9A-Za-z]+))?\s*(;.*)?$/.test(rest)) return false;
+    var mime = (t + '/' + st).toLowerCase();
+    return mime === 'image/gif' || mime === 'image/png' || mime === 'image/jpeg'
+      || mime === 'image/svg+xml' || mime === 'image/x-icon' || mime === 'image/webp';
+  };
+  // §4.8.4.3.8 create a source set：srcset 候选 + sizes 源尺寸 + default source
+  // 补挂（无 1x 密度描述符且无 width 描述符时）+ 密度归一。候选 URL 就地
+  // 绝对化（spec select-an-image-source：selected source 是**解析后** URL
+  // https://html.spec.whatwg.org/multipage/images.html#select-an-image-source
+  // ——available-images 元组键/请求 URL/currentSrc 同源；IDL `.src` 往返会把
+  // 绝对形写回属性，raw 键与绝对键并存会把同图拆成两个 avail 表项——
+  // image-loading-lazy-available P→F 实证）。
+  globalThis.__zwCreateSourceSet5277 = function (defaultSource, srcset, sizes) {
+    var sources = String(srcset == null ? '' : srcset) !== '' ? globalThis.__zwParseSrcsetAttr5277(srcset) : [];
+    var size = globalThis.__zwParseSizesAttr5277(sizes);
+    var hasD1 = false, hasW = false;
+    for (var i = 0; i < sources.length; i++) {
+      if (sources[i].density === 1) hasD1 = true;
+      if (sources[i].width !== undefined) hasW = true;
+    }
+    var def = String(defaultSource == null ? '' : defaultSource);
+    if (def !== '' && !hasD1 && !hasW) sources.push({ url: def, density: 1 });
+    for (var k = 0; k < sources.length; k++) {
+      if (sources[k].density === undefined) {
+        sources[k].density = sources[k].width !== undefined ? sources[k].width / size : 1;
+      }
+      if (sources[k].url && typeof _zwResolveFetchUrl === 'function') {
+        try { sources[k].url = _zwResolveFetchUrl(String(sources[k].url)); } catch (_e5277abs) {}
+      }
+    }
+    return { sources: sources, size: size };
+  };
+  // §4.8.4.3.9 update the source set：父为 picture 时按 picture 子元素序走
+  // source（srcset 缺席/零候选/media 不匹配/type 不支持 → continue），
+  // 命中 el 即从 el 自身属性创建并返回。SVG ns 的 source 不参与（HTML 元素门）。
+  // FIXME: source width/height dimension attribute source（corpus 本片无观测面）。
+  globalThis.__zwUpdateSourceSet5277 = function (sel, handle) {
+    var el = _makeProxy(sel, handle);
+    var parent = null;
+    try { parent = el.parentElement || null; } catch (_e5277pp) {}
+    var children = null;
+    if (parent && _zw5277Tag(parent) === 'PICTURE') {
+      try {
+        var kids = parent.children;
+        children = [];
+        for (var ci = 0; ci < kids.length; ci++) children.push(kids[ci]);
+      } catch (_e5277ck) { children = null; }
+    }
+    if (!children || !children.length) children = [el];
+    for (var i = 0; i < children.length; i++) {
+      var child = children[i];
+      if (child === el) {
+        return globalThis.__zwCreateSourceSet5277(
+          _zw5277Attr(sel, handle, 'src') || '',
+          _zw5277Attr(sel, handle, 'srcset') || '',
+          _zw5277Attr(sel, handle, 'sizes') || '');
+      }
+      if (_zw5277Tag(child) !== 'SOURCE') continue;
+      var cSel = child.__zwSelector, cHandle = child.__zwHandle;
+      var cSrcset = _zw5277Attr(cSel, cHandle, 'srcset');
+      if (cSrcset == null) continue;
+      var cSources = globalThis.__zwParseSrcsetAttr5277(cSrcset);
+      // source 分支不经 __zwCreateSourceSet5277——绝对化同源（见 create 注记）。
+      for (var cs = 0; cs < cSources.length; cs++) {
+        if (cSources[cs].url && typeof _zwResolveFetchUrl === 'function') {
+          try { cSources[cs].url = _zwResolveFetchUrl(String(cSources[cs].url)); } catch (_e5277absc) {}
+        }
+      }
+      if (!cSources.length) continue;
+      var cMedia = _zw5277Attr(cSel, cHandle, 'media');
+      if (cMedia != null && !globalThis.__zwMediaMatches5277(cMedia)) continue;
+      var cType = _zw5277Attr(cSel, cHandle, 'type');
+      if (cType != null && !globalThis.__zwSourceSupportedType5277(cType)) continue;
+      var setSize = globalThis.__zwParseSizesAttr5277(_zw5277Attr(cSel, cHandle, 'sizes') || '');
+      for (var k2 = 0; k2 < cSources.length; k2++) {
+        if (cSources[k2].density === undefined) {
+          cSources[k2].density = cSources[k2].width !== undefined ? cSources[k2].width / setSize : 1;
+        }
+      }
+      return { sources: cSources, size: setSize };
+    }
+    return { sources: [], size: 0 };
+  };
+  // §4.8.4.3.7 select an image source：去重（同密度保首）+ 实现
+  // 定义选择（取 ≤ DPR 的最大密度，无则最小密度——Chromium「最接近且不超」
+  // 惯例；corpus 判别面全部单存活候选，不敏感）。null → 无选中源。
+  globalThis.__zwSelectImageSource5277 = function (sel, handle) {
+    var set = globalThis.__zwUpdateSourceSet5277(sel, handle);
+    if (!set.sources.length) return null;
+    var seen = {}, picked = [];
+    for (var i = 0; i < set.sources.length; i++) {
+      var kk = String(set.sources[i].density);
+      if (seen[kk]) continue;
+      seen[kk] = true;
+      picked.push(set.sources[i]);
+    }
+    var dpr = Number(globalThis.devicePixelRatio) || 1;
+    var best = null, smallest = null;
+    for (var j = 0; j < picked.length; j++) {
+      var s = picked[j];
+      if (s.density <= dpr && (best === null || s.density > best.density)) best = s;
+      if (smallest === null || s.density < smallest.density) smallest = s;
+    }
+    return best || smallest;
+  };
+  globalThis.__zwSelectUrl5277 = function (sel, handle) {
+    var s = globalThis.__zwSelectImageSource5277(sel, handle);
+    return s ? s.url : '';
+  };
+  // §4.8.4.3.2 relevant mutations 状态表：crossorigin/referrerpolicy 按
+  // content-state 枚举比较（missing/empty/invalid → 缺省态，大小写不敏感）——
+  // 「state not changed」rows（empty→invalid、absent→invalid、大小写等值）
+  // 不触发，真变迁（absent→empty、default→有效关键字）触发。
+  globalThis.__zwAttrState5277 = function (name, v) {
+    if (v == null) return name === 'crossorigin' ? 'missing' : 'no-referrer-when-downgrade';
+    var s = String(v).trim().toLowerCase();
+    if (name === 'crossorigin') {
+      return (s === 'use-credentials') ? 'use-credentials' : 'anonymous';
+    }
+    switch (s) {
+      case 'no-referrer': case 'no-referrer-when-downgrade': case 'same-origin':
+      case 'origin': case 'strict-origin': case 'origin-when-cross-origin':
+      case 'strict-origin-when-cross-origin': case 'unsafe-url':
+        return s;
+      default:
+        return 'no-referrer-when-downgrade';
+    }
+  };
+  // s70：update-the-image-data 运行核（R56h `.src` IDL 链自 part05 setter 抽出，
+  // 供 setter 与 relevant-mutations 重验共用）。语义增补（spec
+  // https://html.spec.whatwg.org/multipage/images.html#updating-the-image-data）：
+  // ① restart 判定改为选中 URL 比较——选中 URL 与现态不同才作废旧请求；相同 URL
+  //    不 delete（available-images 命中 → 重 settle + 重派 load，`src set to
+  //    same value` 面——spec available-images 臂 load 派发仅受 maybe-omit-events
+  //    门控，R5275 的「同 URL 幂等不重派」按 spec 语义收窄为「URL 变更才重启」）。
+  // ② _imDensity：选中像素密度入 resourceState（naturalWidth 密度校正消费）。
+  // ③ 入参 _imSrc 为**选中** URL（srcset/sizes/picture 已在 __zwSelectUrl5277
+  //    归一）；null/空串由调用方的 null-selection 路径处理，不入本核。
+  // ④ CSP 阻止臂的 moAttr 复写删除（setter 外层已置，抽取后无此局部量）。
+  // ⑤ 错误派发条件补 spec 门（null-selection 除外）：has src/srcset/picture 且
+  //    previousURL 非空才派 error——空选中路径在 __zwImgNullSelection5277。
+  globalThis.__zwImgRunUpdate5277 = function (sel, handle, _imSrc, _imDensity, _imViaDefer) {
+    var key = _elKey(sel, handle);
+    var _imKey = key;
+    var _imPrev = _resourceStates[_imKey];
+    var _imHadPrev = !!_imPrev;
+    var _imUrlChanged = !!(!_imPrev || _imPrev.url !== _imSrc);
+    if (_imPrev && _imUrlChanged) delete _resourceStates[_imKey];
+    var _zwAvailImgs = globalThis._zwAvailableImages = globalThis._zwAvailableImages || {};
+    var _imFetched = false; // R5275：fetch 臂旗标（终点消费一次 → 在飞 -1）
+    // R5275：仅 fetch 臂终点计数 -1（available-images 同步臂/空 src 臂未 +1 不减
+    // ——__zwImgLoadBlocked 的等待判定面）；无派发终点（InvalidState 守卫失败）
+    // 也须消费旗标。
+    var _imInflightEnd = function () {
+      if (_imFetched) {
+        _imFetched = false;
+        globalThis._zwImgInflight = Math.max(0, (globalThis._zwImgInflight || 0) - 1);
+      }
+    };
+    var _zwImgDispatch = function (type) {
+      _imInflightEnd();
+      if (globalThis.__zwReadyState === 'loading') {
+        globalThis._zwImgPendingEvents = globalThis._zwImgPendingEvents || [];
+        globalThis._zwImgPendingSet = globalThis._zwImgPendingSet || {};
+        globalThis._zwImgPendingSet[_imKey] = true;
+        globalThis._zwImgPendingEvents.push({ key: _imKey, sel: sel, handle: handle, type: type, url: _imSrc });
+        return;
+      }
+      if (type === 'error' && !_resourceStates[_imKey]) {
+        _resourceStates[_imKey] = { url: _imSrc, outcome: 'broken', width: 0, height: 0, error: true, density: _imDensity };
+      }
+      _dispatchWithBubble(_imKey, sel, handle, _makeEvent(type, { bubbles: false, cancelable: false }));
+    };
+    // security-hardening M2-s8：img-src 检查点——`__zwCspImgCheck` 原生回调
+    // （resolve abs → check_image → 阻止 → violation 入共享队列 [document 站] +
+    // 返回 '1'）：跳过 fetch 链、延迟派 error（onerror 语义）。回调未注册
+    //（CSP 关）→ 恒放行零变更。CSP 臂保持既有 _defer 直派语义（不进闸门队列
+    // ——violation 事件时序面独立）。
+    if (_imSrc && typeof __zwCspImgCheck === 'function' && __zwCspImgCheck(_imSrc) === '1') {
+      _defer(function () {
+        _dispatchWithBubble(key, sel, handle, _makeEvent('error', { bubbles: false, cancelable: false }));
+      });
+      _imSrc = undefined;
+    }
+    var _imFail = function () {
+      _zwImgDispatch('error');
+    };
+    if (_imSrc && _zwAvailImgs[_imSrc]) {
+      // R5275 ②：available-images 命中——**状态同步 settle**（naturalWidth/
+      // complete 同步可读——already-loaded-image-sync-width 断言面），load 事件
+      // _defer 派发（spec：relevant mutation 触发的 image loading task 异步派
+      // load——setter 同步任务内 src 后注册的 onload 不得丢，探针实证
+      // available-images-onload i2 链同步即派丢事件）+ 在飞计数（window load
+      // 等待循环据 `__zwImgLoadBlocked` 排在事件之后——spec the-end 序）。
+      // s70：同 URL 重复命中也重派（relevant-mutations 'src set to same value'
+      // ——spec load 派发门控仅 maybe-omit-events）。
+      var _av5275 = _zwAvailImgs[_imSrc];
+      _resourceStates[_imKey] = { url: _imSrc, outcome: 'loaded', width: _av5275.width, height: _av5275.height, error: null, density: _imDensity };
+      _imFetched = true;
+      globalThis._zwImgInflight = (globalThis._zwImgInflight || 0) + 1;
+      _defer(function () { _zwImgDispatch('load'); });
+    } else if (_imSrc && typeof fetch === 'function') {
+      // detached 更新延一步（spec update-the-image-data：img 不在 document 时
+      // await 步进；relevant mutations 本身是 microtask——脚本任务内 `.src=`
+      // 先于 `loading='lazy'` 写入的时序（src-then-lazy-load）须在延后重读
+      // loading attr 再判定）。avail settle/restart 删除保持同步（img.complete
+      // available-lookup/pending-request 两行同步断言面）。经 defer 重入不再
+      // 延（detached Image() 预载照常 fetch——2d.drawImage zerosource 面）。
+      if (!_imViaDefer) {
+        try {
+          var _imConn = _makeProxy(sel, handle);
+          if (_imConn && _imConn.isConnected === false) {
+            _defer(function () {
+              globalThis.__zwImgRunUpdate5277(sel, handle, _imSrc, _imDensity, true);
+            });
+            return;
+          }
+        } catch (_e5277cn) {}
+      }
+      // lazy 视口门（spec updating-the-image-data：available-images 检查先于
+      // lazy 决定——image-loading-lazy-available/use-list 断言面，故只拦 fetch
+      // 启动不拦 avail settle；deferred lazy img 的 relevant mutations 不触发
+      // 请求——image-loading-lazy-relevant-mutations 面）。视口触发近似 =
+      // scrollIntoView 旗标（__zwImgScrollIntoView5277；F5 视口模型收口前）。
+      // 曾有请求（已加载 lazy img 换 src）不受门——restart 语义照旧。
+      var _imLazy = '';
+      try { _imLazy = String(_zw5277Attr(sel, handle, 'loading') || '').toLowerCase(); } catch (_e5277lz) {}
+      if (_imLazy === 'lazy' && !_imHadPrev
+          && !(globalThis._zw5277ViewportFlag && globalThis._zw5277ViewportFlag[_imKey])) {
+        return;
+      }
+      try {
+        // Resource Timing（M3-S3）：运行时 img 经页面 fetch 取图——置发起方
+        // 旗标（fetch 包裹消费为 initiatorType 'img'；net 元数据经响应对象
+        // __zwRtMeta 携带——resource_timing_test0 的 img encodedBodySize 精确面）。
+        _zwRtPendingInitiator = 'img';
+        // R5275：在飞计数 +1（终点 _zwImgDispatch 消费 _imFetched 后 -1）——
+        // window load 派发前 __zwImgLoadBlocked 据此等待（trickle(d2) 慢图
+        // 延迟 window load 语义）。
+        _imFetched = true;
+        globalThis._zwImgInflight = (globalThis._zwImgInflight || 0) + 1;
+        fetch(_imSrc).then(function (resp) {
+          if (!resp.ok) { _imFail(); return; }
+          resp.blob().then(function (blob) {
+            createImageBitmap(blob).then(function (bm) {
+              // R56h：手动 settle（handle 元素）——_zwSettleResourceSelector 只收
+              // sel（new Image() 的 handle-based 元素 sel 为 null → key 不匹配
+              // listener 槽位，onload 不触发）。resourceState 用 _elKey(sel, handle)
+              // 与 naturalWidth getter 同 key；事件经 _dispatchWithBubble 同 key 派发。
+              // R5275：settle 同时写 available-images 缓存（同 URL 后续 src 同步
+              // settle）；旧「已 settled → _imFail」守卫删除（restart 语义由
+              // setter 前置 delete 承担——mid-flight 二次 fetch 回调后写胜出，
+              // 镜像 spec 最后一个 relevant mutation 胜出）。
+              _resourceStates[_imKey] = { url: _imSrc, outcome: 'loaded', width: bm.width, height: bm.height, error: null, density: _imDensity };
+              _zwAvailImgs[_imSrc] = { width: bm.width, height: bm.height };
+              _zwImgDispatch('load');
+            }, function (e) {
+              // R56h：零尺寸图像（SVG width=0）→ img 元素语义 = loaded（naturalWidth
+              // 0，drawImage no-op——2d.drawImage.zerosource.image 期望 onload 且
+              // 不绘制）；真解码失败（broken）→ error 事件。
+              if (e && e.name === 'InvalidStateError') {
+                if (!_resourceStates[_imKey]) {
+                  _resourceStates[_imKey] = { url: _imSrc, outcome: 'loaded', width: 0, height: 0, error: null, density: _imDensity };
+                  _zwImgDispatch('load');
+                } else {
+                  _imInflightEnd(); // 无派发终点——旗标仍消费（在飞计数平衡）
+                }
+              } else {
+                _imFail();
+              }
+            });
+          }, _imFail);
+        }, _imFail);
+      } catch (_e) {
+        _imFail();
+      }
+    } else {
+      // R5275：fetch 不可用（无宿主 handler）或空 src（failed with null 语义
+      // 保持既有 error 面）→ broken + error（原语义）。
+      _imFail();
+    }
+  };
+  // s70：relevant mutations 重验入口——选中源非空走运行核，空选中走
+  // null-selection 面（spec：current request → broken、current URL 清空、
+  // error 仅在「有 src/srcset/picture 关联」时派——'src removed'/'srcset
+  // removed' rows 撤除后无关联 → 不派（timeout 面））。
+  globalThis.__zwImgRevalidate5277 = function (sel, handle) {
+    var picked = null;
+    try { picked = globalThis.__zwSelectImageSource5277(sel, handle); } catch (_e5277rv) { picked = null; }
+    if (picked && picked.url) {
+      globalThis.__zwImgRunUpdate5277(sel, handle, picked.url, picked.density);
+      return;
+    }
+    // null selection：仅已有请求（resourceState 在）时写 broken（无请求 img 维持
+    // 既有「无状态」面——sweep 跳过语义）。
+    var _nkKey = _elKey(sel, handle);
+    var _nkPrev = _resourceStates[_nkKey];
+    if (!_nkPrev) return;
+    _resourceStates[_nkKey] = { url: '', outcome: 'broken', width: 0, height: 0, error: true, density: 1 };
+    // error 门：post-mutation 仍有 src/srcset 关联或 picture 祖先
+    var _nkHasLink = false;
+    try {
+      _nkHasLink = _zw5277Attr(sel, handle, 'src') != null || _zw5277Attr(sel, handle, 'srcset') != null;
+      if (!_nkHasLink) {
+        var _nkEl = _makeProxy(sel, handle);
+        var _nkUp = _nkEl.parentElement, _nkGuard = 0;
+        while (_nkUp && _nkGuard++ < 32) {
+          if (_zw5277Tag(_nkUp) === 'PICTURE') { _nkHasLink = true; break; }
+          _nkUp = _nkUp.parentElement;
+        }
+      }
+    } catch (_e5277nl) {}
+    if (_nkHasLink) {
+      if (globalThis.__zwReadyState === 'loading') {
+        globalThis._zwImgPendingEvents = globalThis._zwImgPendingEvents || [];
+        globalThis._zwImgPendingSet = globalThis._zwImgPendingSet || {};
+        globalThis._zwImgPendingSet[_nkKey] = true;
+        globalThis._zwImgPendingEvents.push({ key: _nkKey, sel: sel, handle: handle, type: 'error', url: '' });
+        return;
+      }
+      _dispatchWithBubble(_nkKey, sel, handle, _makeEvent('error', { bubbles: false, cancelable: false }));
+    }
+  };
+  // s70：scrollIntoView 视口触发近似——置 per-element 旗标并重验未启动的
+  // lazy img（spec update-the-image-data 视口门：进入视口后按**最新**选中源
+  // fetch——image-loading-lazy-crossorigin-change「deferred img 用最新
+  // crossorigin」断言面）。headless 无真视口，旗标置即开（F5 视口模型收口
+  // 时随 layout 几何接管）。
+  globalThis.__zwImgScrollIntoView5277 = function (sel, handle) {
+    try {
+      var _svKey = _elKey(sel, handle);
+      globalThis._zw5277ViewportFlag = globalThis._zw5277ViewportFlag || {};
+      globalThis._zw5277ViewportFlag[_svKey] = true;
+      if (!_resourceStates[_svKey]) globalThis.__zwImgRevalidate5277(sel, handle);
+    } catch (_e5277sv) {}
+  };
+  // s70：内容属性/IDL 写入触发面（part04 setAttribute/removeAttribute trap 尾、
+  // part05 set trap IDL 臂消费）。src/srcset/sizes 恒重验；crossorigin/
+  // referrerpolicy 按状态枚举比对（preRaw = 写入前值，null = 缺席）。SOURCE 的
+  // srcset/sizes/media/type 变迁 → 父 picture 内其后 img 兄弟重验。
+  globalThis.__zwImgAttrMutated5277 = function (sel, handle, name, removed, preRaw) {
+    var tag = '';
+    try { tag = _realTag(sel, handle) || ''; } catch (_e5277am) {}
+    tag = String(tag).split(':').pop();
+    var ln = String(name).toLowerCase();
+    if (tag === 'IMG') {
+      if (ln === 'src' || ln === 'srcset' || ln === 'sizes') {
+        globalThis.__zwImgRevalidate5277(sel, handle);
+        return;
+      }
+      if (ln === 'crossorigin' || ln === 'referrerpolicy') {
+        var postV = removed ? null : _zw5277Attr(sel, handle, ln);
+        if (globalThis.__zwAttrState5277(ln, preRaw) !== globalThis.__zwAttrState5277(ln, postV)) {
+          globalThis.__zwImgRevalidate5277(sel, handle);
+        }
+      }
+      return;
+    }
+    if (tag === 'SOURCE') {
+      if (ln !== 'srcset' && ln !== 'sizes' && ln !== 'media' && ln !== 'type') return;
+      // 关联 img：父为 picture 时**其后**的 img 兄弟（spec——img 只看前序 source）
+      try {
+        var sEl = _makeProxy(sel, handle);
+        var sParent = sEl.parentElement;
+        if (!sParent || _zw5277Tag(sParent) !== 'PICTURE') return;
+        var sKids = sParent.children;
+        var after = false;
+        for (var si = 0; si < sKids.length; si++) {
+          if (sKids[si] === sEl) { after = true; continue; }
+          if (after && _zw5277Tag(sKids[si]) === 'IMG') {
+            globalThis.__zwImgRevalidate5277(sKids[si].__zwSelector, sKids[si].__zwHandle);
+          }
+        }
+      } catch (_e5277sa) {}
+    }
+  };
+  // s70：树结构触发面（part04 appendChild/insertBefore/removeChild trap 消费）。
+  // spec relevant mutations：img 自身插入/移除且新/旧父为 picture → 重验该 img；
+  // source 插入/移除且父为 picture → 其后 img 兄弟重验。子树深查不做（picture
+  // 整体插入不动 img 自身——'picture is inserted' rows timeout 面）。
+  globalThis.__zwImgTreeMutated5277 = function (parentSel, parentHandle, node, isInsert) {
+    try {
+      if (!node || node.nodeType !== 1) return;
+      var pTag = '';
+      try { pTag = _realTag(parentSel, parentHandle) || ''; } catch (_e5277tp) {}
+      if (String(pTag).split(':').pop() !== 'PICTURE') return;
+      var nTag = _zw5277Tag(node);
+      if (nTag === 'IMG') {
+        globalThis.__zwImgRevalidate5277(node.__zwSelector, node.__zwHandle);
+        return;
+      }
+      if (nTag !== 'SOURCE') return;
+      var pEl = _makeProxy(parentSel, parentHandle);
+      var kids = pEl.children;
+      var after = false;
+      for (var i = 0; i < kids.length; i++) {
+        if (kids[i] === node) { after = true; continue; }
+        if (after && _zw5277Tag(kids[i]) === 'IMG') {
+          globalThis.__zwImgRevalidate5277(kids[i].__zwSelector, kids[i].__zwHandle);
+        }
+      }
+    } catch (_e5277tm) {}
+  };
   // s69（html-semantics M2 切片 69，2026-10-24）：img.decode() 共享解码核——
   // 资源 trap（part04，R56h settle 状态机面）/ detached 产物动态臂（上方
   // createElement IMG）/ SVGImageElement 原型三方复用。决策序近似 spec
   // dom-img-decode：
-  // ① 候选 URL = select-image-source 近似：nearest ancestor picture 的首个含
-  //    srcset 的 <source> 首 token 优先（FIXME: source media/type 匹配与
-  //    srcset 完整描述符解析随 F2），否则 directCand()（IMG：src → srcset 首
-  //    token；SVG：href → xlink:href）；无候选 → EncodingError。
+  // ① 候选 URL = select-an-image-source 共享核（s70 __zwSelectUrl5277——
+  //    picture/source walk + srcset/sizes 完整解析），核不可用/无选中时回落
+  //    directCand()（IMG：src → srcset 首 token；SVG：href → xlink:href）；
+  //    无候选 → EncodingError。
   // ② 活跃文档判别：ownerDocument 改指（adopt-out 即 false，探针 A 实证）+
   //    parentNode 链 root doc 非主文档兜底 → EncodingError（spec 步 2）。
   // ③ 终态/available-images 命中即 resolve；自驱 fetch 链（fetch → blob →
@@ -2303,25 +2920,14 @@
       } catch (_eDcA) { return false; }
     };
     var selectedCand = function () {
+      // s70：select-an-image-source 共享核（picture/source media/type 匹配、
+      // srcset 完整描述符解析、sizes——FIXME 记录的 s69 近似全部收口）。
       try {
-        var p = self.parentNode, guard = 0;
-        while (p && guard++ < 32) {
-          if (String(p.localName || '').toLowerCase() === 'picture') {
-            var kids = p.children;
-            for (var i = 0; i < kids.length; i++) {
-              var k = kids[i];
-              if (String(k.localName || '').toLowerCase() !== 'source') continue;
-              var ss = String(k.getAttribute('srcset') == null ? '' : k.getAttribute('srcset'));
-              // srcset 首 token：data: URL 含逗号不截断（spec srcset parser 对
-              // data URL 收集到空白为止——image-decode-picture data URL source 案）。
-              var m = ss.match(/^\s*(data:[^\s]+|[^\s,]+)/);
-              if (m) return m[1];
-            }
-            break;
-          }
-          p = p.parentNode;
-        }
-      } catch (_eP) {}
+        var selfSel = self ? self.__zwSelector : null;
+        var selfHandle = self ? self.__zwHandle : null;
+        var pickedUrl = globalThis.__zwSelectUrl5277 ? globalThis.__zwSelectUrl5277(selfSel, selfHandle) : '';
+        if (pickedUrl) return pickedUrl;
+      } catch (_eP5277) {}
       return directCand();
     };
     return new Promise(function (res, rej) {

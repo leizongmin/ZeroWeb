@@ -9,6 +9,16 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5268 实现轮（clip:text 逐层 clip 轻切片——box2/3 收敛 background-clip-text-and-blend-mode 11.71→0.00%，corpus FIXED=1 REGRESSED=0 净 +1）**（2026-10-25）
+>
+> - **评估**（R5267 下一步①）：chromium 活体矩阵探针（6 变体 headless 逐像素）先验混合模型——**clip:text 恒色页无需 mask 管线**：文字域 ⊆ 每个非 Text clip 域（border-box ⊇ 文字域）⇒「恒色全栈合成染字形 + 非 Text 层照常铺盒」与真分组 mask 输出逐像素等价。box2（clip text,border-box）文本 = difference(green, cyan)=blue、盒 cyan；box3（border-box,text）文本 = difference(green, yellow)=red、盒 lime。**on-body-scroll 重定性**：dump 证 scrollTo 在 harness 从未执行（文本原位 vs ref 空白）——改挂滚动执行域，非 clip:text 缺口。box1 chromium 绿 vs ref/规范 cyan 不一致记录（harness 以 ref 计分，R5267 立场不变）。
+> - **实现中取证两处提取缺口**（补链，非计划内）：① text.rs `layer_ctx` 非 cyclic——多层页 image 层数 > 声明值数（缺省单值 list）时次层 `.get(i)?` = None 整页提取禁用（probe 实证 sentinel 落地后 box2/3 仍 suppress=false）；修 = css-backgrounds-3 §3.1 cyclic `i % len`（与 R2311 paint 侧同规）。② plain OVER 叠序颠倒——list 首项最上却按序 OVER 累加 = 底层反盖顶层；修 = `.rev()` 自底向上（与 R5267 混合路径及铺层序一致；单层页交换律平凡不受影响）。
+> - **实现**（5 文件）：runner `extract_image_metrics` cache-miss else 臂记透明哨兵 `[0,0,0,0]`（失败加载 = 无贡献层，不再整页禁用提取；仅 runner 注入面）；painter/mod.rs bg 色门逐层化（末层 Text 抑制色矩形 per R4528 `last()` 口径、非 Text 照常铺盒）+ bg-image 调用门放行逐层抑制；painter/effects.rs 层循环顶 Text 层 `continue`（门序 = clip 快扫描 → env::var → 恒色提取，首版 env 无门前置被 bench 暴露 paint_ms +16ms 后重排）；painter/text.rs cyclic + `.rev()`；kill-switch `ZW_BG_CLIP_TEXT_PER_LAYER=0` 回退整盒抑制（`ZW_BG_CLIP_TEXT`/`ZW_BG_CLIP_TEXT_LAYER_BLEND` 不变）。
+> - **锚测试**：paint 3 案（box2 形：red 层照常铺盒 + green Text 层抑制 + 字形 yellow；box3 形：green 层照常 + blue/yellow 双抑制 + 字形 green——兼 plain OVER 叠序锚旧码当场翻红；url 层 cyclic 锚：solid_colors 注入 + 哨兵层 + green 图元抑制旧码当场翻红）+ `crates/engine/tests/` 独立进程 kill-switch 案（R3858 教训）。
+> - **验证**：目标案 **11.71→0.00%** 三盒全收敛（gate 重排前后两版二进制均 0.00%）；corpus 16,590 全量 A/B（最终二进制 /tmp/r5268_full2.txt vs /tmp/r5267_full.txt）**FIXED=1 REGRESSED=0，净 15700→15701**；fmt 0 diff + clippy 0；make test exit=0（83 套件 22,816P/0F）、make reftest **716/716**（重排版复跑同绿）、product-smoke exit=0 struct PASS；bench-gate 定向 zero-engine **GATE PASS 26/26**——首两跑 wall 指标超预算经取证 = 并行 clone（/lzcapp/document/work/ZeroWeb，非本仓）testharness 重载（107% CPU load 6.09），load 回落后同机复跑全过（morning first_paint_wall 172.56 ≤ 174.37），测量配置与基线未动（R5266 同款负载噪声签名）。证据：[r5268](rendering-compat/evidence/r5268-clip-text-per-layer-2026-10-25.md)。
+> - **保真边界**（记录不立专项）：非 Text 层 clip = BorderArea/形状带时「文字域 ⊆ clip 域」假设可破（corpus 无案形，归 mask 管线 RFC 域）；透明哨兵层在 multiply 系模式非 no-op（blend_rgba 既有保真边界）；box1 chromium/ref 口径不一致维持记录。
+> - **下一步**：R5269 ① ::selection 后代-only 形放门评估（顺延两轮）② collapse 相位间插忠实度延伸评估（顺延两轮）③ clip-text 余案 table-cell 0.28%/descendants 1.07%（float+br 布局域）维持 ④ harness 并行 flake 定性维持 ⑤ 跨流碰头维持 ⑥ 深结构域维持不动。
+
 > **▶ R5267 实现轮（background-blend-mode 解析 + clip:text 恒色层间混合——box1 cyan 收敛，clip-text-blend-mode 0.30% 假通过转 0.00% 真通过，corpus 零回归）**（2026-10-25）
 >
 > - **取证**：`bg_clip_text_solid_color` 忽略 background-blend-mode（图层 top-first plain OVER 叠加——box1 lighten(lime 层, blue 底色) 应 cyan 得 lime）；`REFTEST_DUMP_PASS=1` dump 证 clip-text-blend-mode 0.30% 为**假通过**（TEST 黄 255,255,0 vs REF lime 0,255,0 同位 1,070 px，<1% fuzzy 阈值放行）；`background-blend-mode` 全仓未解析——切片含属性解析面；box2/3（`clip: text,border-box` 逐层 clip + blue.png 资源缺失）= mask 管线 slice 3 域与本轮无关。
