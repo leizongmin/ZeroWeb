@@ -3746,6 +3746,85 @@ fn test_media_autoplay_walks_play_steps_a2fix1() {
 }
 
 #[test]
+fn test_media_march_error_face_dispatches_element_error_c3() {
+    // media-runtime-isolation DESIGN §10.9-16 接线：桥 isErrored 真值（C3 链——
+    // 宿主崩溃/解码失败 → registry 镜像 error 态 → 桥 isErrored 真值口）→ march
+    // error face：playing 中轮询翻转 → playing 翻转 + 元素 error 事件单次派发
+    // （spec：媒体数据失败置 error 态并派 error，播放停止；不冒泡）。幂等：
+    // _zwErrorDispatched 单次——错误态保持到下次 load，重复 march 不再派；翻转前
+    // march 不误派。宿主面 C3 契约场景 1「kill host → 页面 error 事件可见」的
+    // 页面级断言通路。
+    // https://html.spec.whatwg.org/multipage/media.html#concept-media-error
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 记录型桥 stub + isErrored 开关（真值口轮询面）。
+    sandbox.execute(
+        "globalThis.__calls = [];\
+         globalThis.__errFlip = false;\
+         globalThis.__zwVideoBridge = {\
+           play: function (src, now) { globalThis.__calls.push('play:' + src); return true; },\
+           pause: function (src) { globalThis.__calls.push('pause:' + src); },\
+           currentTime: function (src) { return 0; },\
+           duration: function (src) { return 5; },\
+           isPlaying: function (src) { return true; },\
+           isErrored: function (src) { return globalThis.__errFlip === true; }\
+         };\
+         globalThis.__ev = [];\
+         var v = document.createElement('video');\
+         globalThis.__vprobe = v;\
+         v.addEventListener('error', function () { globalThis.__ev.push('error'); });\
+         v.src = '/media/movie_5.webm';",
+    ).unwrap();
+    let _ = sandbox.execute(";");
+    // 播放中（桥 play 命中 → bridgeOn/bridgeSrc/playing 置位）。
+    sandbox.execute("globalThis.__vprobe.play();").unwrap();
+    let calls = sandbox.execute("globalThis.__calls.join('|')").unwrap().value;
+    assert!(
+        calls.contains("play:https://wpt.test/media/movie_5.webm"),
+        "IDL play 应经桥起播（bridgeOn 前置），got {calls}"
+    );
+    // 翻转前 march：不误派 error。
+    sandbox.execute("globalThis._zwMediaTimeMarchesOn();").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__ev.join(',')").unwrap().value,
+        "",
+        "isErrored 翻转前 march 不得派 error"
+    );
+    // 翻转后 march：error 单次派发 + playing 翻转（paused=true）。
+    sandbox.execute("globalThis.__errFlip = true;").unwrap();
+    sandbox.execute("globalThis._zwMediaTimeMarchesOn();").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__ev.join(',')").unwrap().value,
+        "error",
+        "isErrored 翻转后 march 应派元素 error 事件"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__vprobe.paused)").unwrap().value,
+        "true",
+        "error 后播放停止（paused=true）"
+    );
+    // 重复 march：幂等（错误态保持，不二次派发）。
+    sandbox.execute("globalThis._zwMediaTimeMarchesOn();").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__ev.join(',')").unwrap().value,
+        "error",
+        "重复 march 不得二次派 error（_zwErrorDispatched 单次）"
+    );
+}
+
+#[test]
 fn test_media_bridge_hit_upgrades_placeholder_dims_t8o() {
     // t8o G2b：IDL setter 形态（`video.src=` 动态赋值）两时序面的桥真值。
     // play-后-settle：settle 先占 w0h0 占位（_zwSettleResourceKey 幂等门阻断真值

@@ -16896,6 +16896,28 @@
             } catch (_eCc1) {}
           }
         }
+        // M3 扩批 XXXV（media-runtime-isolation DESIGN §10.9-16 接线）：error 面——
+        // 桥 isErrored 真值（C3 链：宿主崩溃/解码失败 → registry 镜像 error 态 →
+        // 桥 isErrored 真值口）翻转 → playing 翻转 + 元素 error 事件单次派发
+        // （spec：媒体数据获取/解码失败置 error 态、暂停播放、派 error——不冒泡，
+        // _zwMediaFire 同款面；错误态保持到下次 load，play() 不重试，重复 march
+        // 不再派）。宿主面 C3 契约场景 1「kill host → 页面 error 事件可见」的
+        // 页面级断言通路。
+        // https://html.spec.whatwg.org/multipage/media.html#concept-media-error
+        if (ms.playing && ms.bridgeOn && ms.bridgeSrc
+            && typeof globalThis.__zwVideoBridge === 'object'
+            && typeof globalThis.__zwVideoBridge.isErrored === 'function'
+            && !ms._zwErrorDispatched) {
+          try {
+            if (globalThis.__zwVideoBridge.isErrored(ms.bridgeSrc)) {
+              ms._zwErrorDispatched = true;
+              ms.playing = false;
+              _zwMediaFire(ms._zwSel || (key.charAt(0) === '@' ? null : key),
+                ms._zwHandle || (key.charAt(0) === '@' ? key.slice(1) : null),
+                key, 'error');
+            }
+          } catch (_eErBr) {}
+        }
         // M3 扩批 XVI：ended 面——桥真值时钟走到流末（registry player Ended 态）→
         // active cue 全部派 exit（spec：ended 时 activeCues 清空、exit 逐 cue 派）+
         // paused 翻转 + timeupdate + ended（spec time-marches-on 流末处理；
