@@ -24519,6 +24519,34 @@ return e;
           // option-text-spaces/recurse 两文件 55F）。latest-wins 语义由子列表融合视图继承。
           return _zwOptChildText(sel, handle);
         }
+        // R5269（html-semantics M2 切片 62）：HTMLTitleElement.text——child text
+        // content（**直接** Text 子 data 依树序拼接；comment/元素子不含，
+        // title.text-01 断言 .text="TEXT" 而 textContent="TEXTELEMENT"）；**无空白
+        // 归一**（折叠面在 document.title getter；title.text-03 断言空白/制表/换行
+        // 原样保留）。旧无 getter 落属性反射兜底读 ''。
+        // sel 形 SetText 后子列表融合视图不载新文本（probe62：childLen=0）——walk
+        // 空且 latest-wins 文本非空 = 整体替换生效，直取 lw 原样返回；appendChild
+        // 变更链 walk 非空自然落子列表 walk（lw 含元素后代文本不可作信号，
+        // title.text-01 实证：lw="TEXTELEMENT" 而 .text="TEXT"）。
+        // https://html.spec.whatwg.org/multipage/dom.html#dom-title-text
+        if (prop === 'text' && _realTag(sel, handle) === 'TITLE') {
+          var self5269 = sel ? _wrapSelector(sel) : _wrapHandle(handle);
+          if (!self5269) return '';
+          var out5269 = '';
+          try {
+            var kids5269 = self5269.childNodes;
+            for (var i5269 = 0; i5269 < kids5269.length; i5269++) {
+              var k5269 = kids5269[i5269];
+              if (!k5269 || k5269.nodeType !== 3) continue;
+              out5269 += (k5269.data != null ? k5269.data : (k5269.nodeValue != null ? k5269.nodeValue : ''));
+            }
+          } catch (_e5269) {}
+          if (out5269 === '' && sel) {
+            var lw5269 = (typeof __zw_get_text_lw === 'function') ? __zw_get_text_lw(sel) : null;
+            if (lw5269 != null && String(lw5269) !== '') return String(lw5269);
+          }
+          return out5269;
+        }
         if (prop === 'label' && _realTag(sel, handle) === 'OPTION') {
           // R3907：.label = 无 ns label 内容属性（**存在即采纳**——空串不回落文本）；
           // 缺省回落 child text content（同 .text 口径；旧 `lab || text` 空串回落 +

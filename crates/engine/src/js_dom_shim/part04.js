@@ -11260,6 +11260,13 @@
           _makeProxy(sel, handle).textContent = value;
           return true;
         }
+        // R5269（html-semantics M2 切片 62）：title.text setter = set child text
+        // content（与 option.text R3907 同口径——string replace all 步骤与
+        // textContent 一致；直接委托继承宿主写回 + 本地文本子注册 + childList 记录）。
+        if (p === 'text' && _realTag(sel, handle) === 'TITLE') {
+          _makeProxy(sel, handle).textContent = value;
+          return true;
+        }
         if (p === 'textContent' || p === 'innerText' || p === 'innerHTML') {
           // R81：PI 节点的 textContent= 直接写 data（spec CharacterData——不建文本子视图、不发
           // childList；WPT "For a ProcessingInstruction, textContent should set the data"）。

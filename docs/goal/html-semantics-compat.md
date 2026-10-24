@@ -2,9 +2,35 @@
 
 **版本**: v2.0
 **日期**: 2026-10-24（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 61 收口（tabular-data 域 R5268 insertRow tbody 目标 + XML 导入链，域 **127P/7F → 130P/4F** GAIN 3 / REG 0；interactive-elements 全域 439P/44F/0T 复跑逐值不变），下一步处理模型 4F 分诊；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 62 开片（document-metadata 域首轮：title.text 族 R5269，域 **31P/75F/18T → 43P/63F/18T** GAIN 12 / REG 0；tabular-data 处理模型 4F 分诊定档渲染流不修，本流定格 130P/4F），下一步 base 族 9F；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-24 M2 切片 61 收口，insertRow tbody 目标 + XML 导入链轮）**：
+> **▶ 当前状态（2026-10-24 M2 切片 62 开片，document-metadata title.text 族轮）**：
+> 两件事。**① tabular-data 余 4F 分诊定档（不修）**：processing-model-1
+> 四案全是表格布局 span 几何（colspan/col span=1000 字面列数摊宽、
+> rowspan=0 不参与行高分布；offsetWidth/clientHeight 读），控制面排除
+> 清单明确归 rendering-compat——本流收口定格 **130P/4F**，余案归因
+> 挂账（DOM 语义面 IDL clamp 15 断言已全绿）。**② document-metadata
+> 开片（M1 基线 31P/75F/18T → 43P/63F/18T，GAIN 12 / REG 0）**：
+> Mission 序 tabular-data 后下一域，域内从未切片。**修复面（R5269，
+> title.text 族 12F 全收）**：①title.text getter（part03）——child text
+> content 直接 Text 子原样拼接（comment/元素子不含、无空白归一；
+> title.text-01 断言 .text="TEXT"≠textContent）；sel 形 SetText 后融合
+> 视图不载新文本——walk 空且 lw 非空才直取 latest-wins（appendChild
+> 变更链 walk 非空自然排除，lw 不可直接作信号——title.text-01 首版
+> 回退实证）。②title.text setter（part04）——R3907 option.text 同口径
+> 委托 textContent。③document.title setter（part06）——改经元素
+> textContent setter 落地（自带宿主写 + 本地文本子注册；旧裸
+> __zw_set_text 只写宿主，本地文本子 stale 实证）。**验证**：
+> the-title-element 13/13 + tabular 130P/4F + interactive 439P/44F +
+> lib 3454P/0F（R3035 共享面零回归）。账本见
+> [evidence/2026-10-24-m2s62-title-text-family.md](html-semantics-compat/evidence/2026-10-24-m2s62-title-text-family.md)。
+> **下一步**：base 族 9F（HTMLBaseElement.href IDL + base 感知 URL 解析）；
+> meta color-scheme 10F 归属核对；link/style 事件 30F+18T 分诊
+> （runner file 通道能力上限）；style type/media + CSP tentative 待分诊。
+> **切片间隙**：本轮 part03/04/06；下一挂账 base 族亦 shim/net 面，
+> 间隙开放，开工前查 oracle master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 61 收口，insertRow tbody 目标 + XML 导入链轮）**：
 > tabular-data 域第四实施切片：**127P/7F → 130P/4F**（GAIN 3 / REG 0），
 > interactive-elements 全域 **439P/44F/0T** 复跑逐值不变，zero-engine
 > lib **3454P/0F**。**修复面（R5268）**：①table.insertRow append 位

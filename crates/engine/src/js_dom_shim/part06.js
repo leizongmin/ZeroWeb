@@ -5278,6 +5278,17 @@
     },
     set title(v) {
       _doc_title = v == null ? '' : String(v);
+      // R5269（html-semantics M2 切片 62）：改经元素 textContent setter 落地
+      //（string replace all 同口径——该路径自带 __zw_set_text 宿主写回 + 本地文本子
+      // 注册 + childList 记录）。旧裸 `__zw_set_text('title', v)` 只写宿主快照，
+      // title 元素本地文本子视图 stale（title.text-03 setter 案 firstChild.nodeValue
+      // 读回旧值实证）。querySelector miss（无 title 文档）时回退既有裸通道，行为不变。
+      var t = null;
+      try { t = globalThis.document.querySelector('title'); } catch (_e5269t) { t = null; }
+      if (t) {
+        try { t.textContent = _doc_title; } catch (_e5269s) {}
+        return;
+      }
       // R3035：写回 host <title>（已有则 SetText，无则 find_by_selector 不命中 → no-op）。
       if (typeof __zw_set_text === 'function') {
         try { __zw_set_text('title', _doc_title); } catch (_e) {}
