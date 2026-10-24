@@ -9,6 +9,14 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5270 实现轮（inline owner 自持选区行高亮 fill 同站同几何——active-selection-012 2.27→✓0.00%、selection-contenteditable-011 2.64→✓0.00%，corpus FIXED=2 REGRESSED=0 净 +2 = 15703）**（2026-10-25）
+>
+> - **取证**：012 div#test 为 **orphan inline**——无 LayoutBox（临时探针树走查仅 root/anonymous/body/p/IFC 盒），taffy skip → `inline_heights` 无条目 → owner_h==0.0 → `phasea_orphan_fire`（R2198）放行 R639 片段 bg 站；红底 rect = `(frag_base_x, content_y + frag.y + ty, text_width, line_h)` 逐 run 两矩形。结论：fill 与元素 bg **同一发射站同一 rect 公式** → 几何/次序恒等 by construction，无需 splice 调序（宏体次序 bg → fill → 字形天然 = 高亮在 bg 上字形下）。
+> - **实现**（text.rs 单站 3 处）：`owner_sel_fill` 判据 = `!text_selections.is_empty()` 短路 + owner 选区整 contents（`start==0 && end ≥ textContent utf16 长` ≡ R5256 口径）+ 自持 `::selection` bg 非透明 + `bg_clip_text_solid_color` 抑制（≡ has_bg R4549 同款）；门 `has_bg || has_bleed` 扩 `|| owner_sel_fill.is_some()`；`(bg_y, bg_h)` 外提共享、fill 紧随 bg 发射（零宽片段跳过）。非 orphan inline 盒级 bg 站 fill 未接——语料零案 FIXME 挂账。
+> - **锚测试（关键发现）**：单 div（无块级前兄弟）**不构成 orphan**——div 持 LayoutBox（inline_heights=50）走盒级 bg 站、本臂门不触发（首版锚全空 fill 根因）；012 形 = 前置块级 `<p>` 兄弟，全部锚补 `<p>` 前缀复现 orphan。r5270 新 4 案（red/green 逐 run 一一对应 rect 全等 + 发射序 green>red；透明 bg 2 run 同行不连体词间隙留空；clip:text 抑制；end 超界整 contents）+ r5269 4 案更新为 orphan 形（字形断言过滤 intro 黑字形）；8 案 fmt 后复跑全绿。
+> - **验证**：定向 `reftest-upstream active-selection-0`——**012 2.27→✓0.00、011 2.64→✓0.00**，031/041/063 与基线逐字节同值；全量 corpus A/B（vs /tmp/r5269_full2.txt，本轮 /tmp/r5270_full.txt）**FIXED=2 REGRESSED=0 净 15701→15703**，逐案 diff 仅 3 行（012/011 FIXED + at-media-002 ✓0.52→✓0.00 同态漂移）；fmt 0 diff + clippy 0；zero-engine lib 3505P/0F。证据：[r5270](rendering-compat/evidence/r5270-inline-owner-selection-fill-2026-10-25.md)。
+> - **下一步**：R5271 ① bench-gate 晨窗静机复验（R5269 wall 指标 + 本轮，静窗未得则维持挂账）② zero-browser autocomplete_url_match_segment 既有失败归因（并行流工作面，待该面自查）③ ::selection 部分行高亮域维持（本臂整 contents 口径外仍挂账）④ 非 orphan inline 盒级站 fill（语料零案，遇案再修）⑤ clip-text 余案维持 ⑥ harness 并行 flake + 跨流碰头维持 ⑦ 深结构域维持不动。
+
 > **▶ R5269 实现轮（inline owner 自持选区字形色——active-selection-012 形选区从零到生效，012/011 各 −0.30pp，corpus FIXED=0 REGRESSED=0 净持平 15701）**（2026-10-25）
 >
 > - **取证**：探针实证 inline div 自身被选中（`selectNodeContents`）时文本经父块 paint_text 片段路径绘制——盒级 sel_owned（盒/祖先链）与 `style.selection_pseudo` 均 miss（box=body、sel_owned=None、lines=0），owner 自身选区记录与伪样式从未被 consult → 整行零处理。两项顺延评估同轮关闭（均无案形、零码关闭）：**① ::selection descendant-only 形**——唯一规则形吻合的 selection-background-painting-order 选区目标为 span 自身（盒级臂已覆盖），失败在部分行域（setEnd 3/5 字符），开门零渲染字节变化；**② collapse 相位间插延伸**——border-conflict-element-001a–e 全 ✓0.00%，余失败属不同域（margin-collapse 族/empty-row/box-shadow-table/conflict-style-107 冲突消解深域）。

@@ -2834,6 +2834,38 @@ impl super::Painter {
                                     )
                                     .is_none();
                                 let has_bleed = pad_top > 0.0 || pad_bot > 0.0 || bt_w > 0.0 || bb_w > 0.0;
+                                // R5270（css-pseudo-4 §highlight-painting/§highlight-bounds）：
+                                // owner 自持选区行高亮——orphan inline（无 LayoutBox，盒级背景
+                                // 即本站）被选中时，高亮 fill 须与元素背景**同几何同站**（同
+                                // rect 公式、紧随 bg 发射 = 画于其上、字形之下）；R5269 行级
+                                // 连体 fill（词间隙 + frag.y 行顶错位）实证铺出带外细条（011
+                                // 局部 +0.31pp）故废弃。判据 = owner 选区记录整 contents
+                                //（start==0 且 end ≥ textContent utf16 长，≡ R5256 口径）+
+                                // owner 自持 ::selection bg 非透明；部分行高亮维持挂账；
+                                // clip:text 恒色 owner 与 has_bg 同款抑制（高亮域未见案形）。
+                                let owner_sel_fill = if !self.text_selections.is_empty()
+                                    && let Some(&(sel_start, sel_end)) = self.text_selections.get(&owner_id)
+                                    && sel_start == 0
+                                    && sel_end >= doc
+                                        .text_content(owner_id)
+                                        .map(|t| t.encode_utf16().count())
+                                        .unwrap_or(0)
+                                    && let Some(sel_pseudo) = owner_style.selection_pseudo.as_ref()
+                                    && sel_pseudo.background_color != ColorValue::Transparent
+                                    && bg_clip_text_solid_color(
+                                        &owner_style,
+                                        &self.image_solid_colors,
+                                        self.document_url.as_deref(),
+                                    )
+                                    .is_none()
+                                {
+                                    Some(super::super::color::resolve_color_current(
+                                        &sel_pseudo.background_color,
+                                        &owner_style.color,
+                                    ))
+                                } else {
+                                    None
+                                };
                                 // R4332：仅**真多片段**（跨行）owner 走 per-fragment 边框——
                                 // 单片段 owner（含 line-height 撑大 content_height 的单行 span，
                                 // bidi-003 的 line-height:3em 形态）保留 box-level border-box
@@ -2881,7 +2913,7 @@ impl super::Painter {
                                 } else {
                                     None
                                 };
-                                if has_bg || has_bleed {
+                                if has_bg || has_bleed || owner_sel_fill.is_some() {
                                     let line_h = box_node
                                         .text_node_line_heights
                                         .get(&$frag_nid)
@@ -2898,21 +2930,33 @@ impl super::Painter {
                                         r5120_content_box.unwrap_or((line_top, line_h));
                                     let bleed_top = pad_top + bt_w;
                                     let bleed_bot = pad_bot + bb_w;
-                                    // bg（has_bg 时）：has_bleed 外延对齐整盒边（单行=内容区锚 /
-                                    // 多片段=行盒锚，R5120），否则 R639 旧位（frag.y）。
-                                    if has_bg {
-                                        let (bg_y, bg_h) = if has_bleed {
-                                            if r4332_whole_box {
-                                                (box_top - bleed_top, box_h + bleed_top + bleed_bot)
-                                            } else {
-                                                (legacy_line_top - bleed_top, line_h + bleed_top + bleed_bot)
-                                            }
+                                    // bg（has_bg/owner_sel_fill 时）：has_bleed 外延对齐整盒边
+                                    //（单行=内容区锚 / 多片段=行盒锚，R5120），否则 R639 旧位
+                                    //（frag.y）。矩形外提共享——R5270 选区 fill 与元素 bg 同几何。
+                                    let (bg_y, bg_h) = if has_bleed {
+                                        if r4332_whole_box {
+                                            (box_top - bleed_top, box_h + bleed_top + bleed_bot)
                                         } else {
-                                            (content_y + $frag_y + ty, line_h)
-                                        };
+                                            (legacy_line_top - bleed_top, line_h + bleed_top + bleed_bot)
+                                        }
+                                    } else {
+                                        (content_y + $frag_y + ty, line_h)
+                                    };
+                                    if has_bg {
                                         self.primitives.add_fill(
                                             Rect::new(frag_base_x, bg_y, text_width, bg_h),
                                             color_value_to_render(&owner_style.background_color),
+                                        );
+                                    }
+                                    // R5270 选区行高亮 fill：与元素 bg 同 rect（同站 = 画于其
+                                    // 上），宏体次序先于本片段字形 = 字形之下（R5086 splice 同
+                                    // 效：高亮不盖字）。零宽片段（text_width==0）跳过。
+                                    if let Some(sel_fill) = owner_sel_fill
+                                        && text_width > 0.0
+                                    {
+                                        self.primitives.add_fill(
+                                            Rect::new(frag_base_x, bg_y, text_width, bg_h),
+                                            sel_fill,
                                         );
                                     }
                                     // 横条：整盒几何（多片段 slice=行盒锚 / 单行=内容区锚）+ 含角；
@@ -3611,11 +3655,10 @@ impl super::Painter {
                     // 既有挂账）。盒级臂已处理的盒自身行（sel_owned 命中且 owner==box_id）
                     // 不重复。行完全落在 owner 选区内才着色（部分行高亮维持挂账）；
                     // 竖排/RTL 同盒级臂维持挂账。
-                    // FIXME(R5270)：本臂暂只着字形色、不铺行高亮 fill——fill 需与 inline
-                    // 盒级背景同几何（逐 run 矩形 + inline_reported_rect 行盒顶）且经
-                    // R5086 式 splice 绘于元素背景之上；行级连体 fill（含词间隙、frag.y
-                    // 行顶）实测在 active-selection-012/011 铺出带外细条（011 局部
-                    // +0.31pp），几何/次序校准须与 inline bg 站同切片完成。
+                    // 行高亮 fill 不在本臂——R5270 已于片段 bg 发射站（has_bg 块）按同
+                    // rect 公式铺 owner 整contents 选区 fill（同几何同站、字形之下）；
+                    // 部分行高亮维持挂账；非 orphan inline（有 LayoutBox、盒级 bg）的
+                    // 盒级 bg 站 fill 未接——语料零案，FIXME 遇案再修。
                     if let Some(box_id) = box_node.node_id
                         && !is_vertical
                         && matches!(style.direction, zero_style_system::DirectionValue::Ltr)
