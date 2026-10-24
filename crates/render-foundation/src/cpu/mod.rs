@@ -20,6 +20,8 @@ mod gradient;
 mod shadow;
 
 pub use effects::apply_filter_straight_alpha;
+/// R5267：单像素 CSS 混合（background-blend-mode 恒色层间合成复用 mix-blend-mode 公式）。
+pub use effects::blend_rgba;
 
 use crate::geometry::Rect;
 mod stroke;

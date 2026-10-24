@@ -584,6 +584,10 @@ pub struct ComputedStyle {
     /// R4528：逐层 background-clip（层数与 background_image 图层数按 `i % len` 对齐；
     /// background-color 取末层 clip 绘制）。
     pub background_clip: Vec<BackgroundClipComputedValue>,
+    /// background-blend-mode 属性（R5267：逐层混合模式列表，css-compositing-1
+    /// §background-blend-mode；列表 top-first 与 background_image 图层按 `i % len`
+    /// 配对循环补齐，background-color 为最底层 backdrop）。
+    pub background_blend_mode: Vec<MixBlendModeComputedValue>,
     /// background-origin 属性。
     pub background_origin: BackgroundOriginComputedValue,
     /// corner-shape 属性（CSS Borders 4 §corner-shaping，R4248）。

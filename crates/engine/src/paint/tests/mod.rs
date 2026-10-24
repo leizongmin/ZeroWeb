@@ -61,6 +61,8 @@ mod r5263_collapse_band_end_tests;
 mod r5264_collapse_content_half_shift_tests;
 /// R5265 collapse 带 z 序相位间插（CSS2.1 Appendix E / Blink kCollapsedTableBorders）。
 mod r5265_collapse_band_phase_tests;
+/// R5267 clip:text 恒色层间混合（css-compositing-1 §background-blend-mode）。
+mod r5267_bg_clip_text_layer_blend_tests;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;

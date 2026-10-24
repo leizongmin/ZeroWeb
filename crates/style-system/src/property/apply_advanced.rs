@@ -2079,6 +2079,36 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 return true;
             }
         }
+        "background-blend-mode" => {
+            // R5267：逐层混合模式——单值页等价 vec![v]；逗号列表全解析，任一段非法
+            // 整条丢弃（与 background-clip 多层行为一致）。
+            let mapped = |v: zero_css_parser::values::MixBlendModeValue| match v {
+                zero_css_parser::values::MixBlendModeValue::Normal => MixBlendModeComputedValue::Normal,
+                zero_css_parser::values::MixBlendModeValue::Multiply => MixBlendModeComputedValue::Multiply,
+                zero_css_parser::values::MixBlendModeValue::Screen => MixBlendModeComputedValue::Screen,
+                zero_css_parser::values::MixBlendModeValue::Overlay => MixBlendModeComputedValue::Overlay,
+                zero_css_parser::values::MixBlendModeValue::Darken => MixBlendModeComputedValue::Darken,
+                zero_css_parser::values::MixBlendModeValue::Lighten => MixBlendModeComputedValue::Lighten,
+                zero_css_parser::values::MixBlendModeValue::ColorDodge => MixBlendModeComputedValue::ColorDodge,
+                zero_css_parser::values::MixBlendModeValue::ColorBurn => MixBlendModeComputedValue::ColorBurn,
+                zero_css_parser::values::MixBlendModeValue::HardLight => MixBlendModeComputedValue::HardLight,
+                zero_css_parser::values::MixBlendModeValue::SoftLight => MixBlendModeComputedValue::SoftLight,
+                zero_css_parser::values::MixBlendModeValue::Difference => MixBlendModeComputedValue::Difference,
+                zero_css_parser::values::MixBlendModeValue::Exclusion => MixBlendModeComputedValue::Exclusion,
+                zero_css_parser::values::MixBlendModeValue::Hue => MixBlendModeComputedValue::Hue,
+                zero_css_parser::values::MixBlendModeValue::Saturation => MixBlendModeComputedValue::Saturation,
+                zero_css_parser::values::MixBlendModeValue::Color => MixBlendModeComputedValue::Color,
+                zero_css_parser::values::MixBlendModeValue::Luminosity => MixBlendModeComputedValue::Luminosity,
+            };
+            if let Some(v) = values::parse_background_blend_mode(value) {
+                style.background_blend_mode = vec![mapped(v)];
+                return true;
+            }
+            if let Some(layers) = values::parse_background_blend_mode_layers(value) {
+                style.background_blend_mode = layers.into_iter().map(mapped).collect();
+                return true;
+            }
+        }
         "background-origin" => {
             if let Some(v) = values::parse_background_origin(value) {
                 style.background_origin = match v {
