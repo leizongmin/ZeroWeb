@@ -7495,6 +7495,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "zero-media-host"
+version = "0.1.0"
+dependencies = [
+ "tracing",
+ "tracing-subscriber",
+ "zero-protocol",
+]
+
+[[package]]
 name = "zero-net"
 version = "0.1.0"
 dependencies = [

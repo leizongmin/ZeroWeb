@@ -117,7 +117,7 @@ browser-cpu: target-disk-guard
 else
 browser-build: setup-rusty-v8 target-disk-guard
 	cargo build --release -p zero-browser
-	cargo build --release -p zero-renderer -p zero-compositor -p zero-image-decoder
+	cargo build --release -p zero-renderer -p zero-compositor -p zero-image-decoder -p zero-media-host
 
 browser: browser-build
 	RUST_BACKTRACE=1 $(BROWSER_BIN) --renderer=gpu
@@ -198,7 +198,7 @@ ifeq ($(OS),Windows_NT)
 test: target-disk-guard target/test-guard
 	# T58（2026-10-17）：fmt 门禁前置快速失败（格式漂移不等全量测试尾部才暴露）。
 	cargo fmt --all -- --check
-	cargo build -p zero-renderer -p zero-compositor -p zero-image-decoder
+	cargo build -p zero-renderer -p zero-compositor -p zero-image-decoder -p zero-media-host
 	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test --workspace --exclude zero-browser --exclude zero-renderer
 	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test -p zero-renderer --bin zero-renderer -- --test-threads=1
 	set ZERO_NOPROXY=1&& .\target\test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test -p zero-browser --bin zero-browser -- --test-threads=1
@@ -217,7 +217,7 @@ test: target-disk-guard target/test-guard
 	cargo fmt --all -- --check
 	# Browser 多进程单测直接 spawn target/debug/{zero-renderer,zero-compositor}；先刷新
 	# standalone binaries，避免协议结构变更后复用旧 wire schema，导致断管或 stale 帧。
-	cargo build -p zero-renderer -p zero-compositor -p zero-image-decoder
+	cargo build -p zero-renderer -p zero-compositor -p zero-image-decoder -p zero-media-host
 	# cargo test 执行器（2026-08-09 从 nextest 换回——字体共享后评估反转）：
 	# - nextest 每测试独立进程 → 每测试进程重复解析 19MB CJK 字体（~3s/进程），
 	#   实测 zero-wpt-runner 45s / zero-browser 30s；cargo test 每二进制 1 进程
@@ -1638,7 +1638,7 @@ form-visual-browser-gpu-smoke: target-disk-guard target/test-guard
 	@test -f $(FORM_VISUAL_ORACLE) || (echo "Error: missing $(FORM_VISUAL_ORACLE)"; exit 2)
 	@test -f $(FORM_VISUAL_CJK_DIR)/NotoSansCJK-Regular.ttc || (echo "Error: missing Noto CJK font in $(FORM_VISUAL_CJK_DIR)"; exit 2)
 	cargo build --release -p zero-browser
-	cargo build --release -p zero-renderer -p zero-compositor -p zero-image-decoder -p zero-wpt-runner
+	cargo build --release -p zero-renderer -p zero-compositor -p zero-image-decoder -p zero-media-host -p zero-wpt-runner
 	rm -rf $(FORM_VISUAL_GPU_DIR)
 	ZW_BROWSER_GPU_DMABUF_IMPORT=0 ZW_CJK_FACE_INDEX=2 ZW_CJK_FONT_DIR=$(FORM_VISUAL_CJK_DIR) ./target/test-guard --time-limit 150 -- ./target/release/zero-browser --renderer=gpu --scale=1 --viewport-width=800 --viewport-height=720 --gui-smoke-url=file://$(CURDIR)/examples/forms/form-interaction-test.html --gui-smoke-dir=$(FORM_VISUAL_GPU_DIR)
 	./target/release/zero-wpt-runner compare-png $(FORM_VISUAL_GPU_DIR)/01-loaded-page.png $(FORM_VISUAL_ORACLE) --max-diff 5 --channel-diff 8 --pixel-radius 1
