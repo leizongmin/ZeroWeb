@@ -21,7 +21,7 @@
 |---|---|---|---|
 | M1 | 生产资源、能力与权限基线 | **完成**（测量面成立，收口待评审） | [2026-10-24 基线](evidence/2026-10-24-m1-baseline/ANALYSIS.md) |
 | M2 | 方案/许可证/回滚 RFC + protocol 接口契约 | **v1.2 完成待批复**（决策门=用户） | [media-runtime-isolation-spec-rfc](../../../specs/media-runtime-isolation-spec-rfc.md) |
-| M3 | 已确认平台与隔离切片 | NOT_STARTED（A1/A2/A4 设计稿已备，待 D-RFC-2） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
+| M3 | 已确认平台与隔离切片 | NOT_STARTED（A1–A4 设计稿齐备，待 D-RFC-2） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
 | M4 | 配对媒体、故障和资源审计 | NOT_STARTED | 无 |
 
 ## 验证基线
@@ -78,3 +78,12 @@
   - **Fix 2 设计**：any_playing 门控 + `submit_script_priority` 裸 march 脚本（rAF 泵 runtime.rs:4152 同通道先例）；不加 page_hidden（播放推进不随可见性暂停）；否决 shim 自泵/getter 镜像两备选并记录理由。
   - **WPT 上游 GOP 抽样**：4 webm 全量（white 2s 规则 GOP / test、movie_5 近全 intra ~20-23ms / movie_5 仅 1 cue 点）——A4 待验证项闭合，movie_5 稀疏 cue 形态证实 A4 全量前向回退分支为必要路径。
 - RFC v1.3：A2 行补设计稿指引 + 回滚格（Fix 1/Fix 2 独立）；无决策/门禁/批次范围变化。
+
+### 2026-10-24 M3 前置设计轮 III（A3）
+
+- DESIGN.md 追加 §8（同日第三轮，仍零代码改动）——**A 批次四片设计稿齐备（A1/A2/A3/A4）**：
+  - **C4 快照 Arc 化**：`duplicate_for_snapshot`（image_cache.rs:1340，唯一调用方 webview.rs:1713 → runtime.rs:1443 每帧发布）逐条深拷贝全缓存；「像素插入后不可变」（image_cache.rs:31 既有 R3254-M2 不变量）使 `CacheEntry.data` Arc 化语义安全（hit-test 缓存 runtime.rs:1453 与 svg_source 先例同面）；快照本体从不出进程（跨进程只传 IpcImagePayload），深拷贝纯浪费。
+  - **C2 扫描跳过**：视频帧 `ImageData::from_rgba`（video_registry.rs:1188/1204）每帧 2 次全帧读（纯色检测 + content_hash）；`from_rgba_variable` 跳纯色检测，图片解码路径保持扫描。
+  - **源驻留封顶**：`sources`/`av_sources` 无总量上限（M1 §5 缺口）；**av_sources 有 seek 重建功能性依赖**（seek :945-959 字节源）——设计为 256MB 总预算 + 非在播 LRU 驱逐（av_sources 随 player 存活保留）+ 准入拒绝走既有错误面。
+  - 回滚：三子项各自单提交。
+- RFC v1.4：A3 行补设计稿指引；无决策/门禁/批次范围变化。

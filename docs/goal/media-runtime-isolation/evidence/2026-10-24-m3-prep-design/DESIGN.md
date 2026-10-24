@@ -199,3 +199,63 @@ O(GOP) 收益对该形态成立；② 主力媒体 fixture（movie_5）近全 ke
 phase-② 触发面天然小；③ **稀疏 cue 形态在位**（movie_5 仅 1 个 cue 点）——A4 设计的「无 ≤target
 cue 点 → 保留全量前向回退」分支为必要路径（非防御性冗余），实施期须以 movie_5 形态覆盖该分支
 测试。
+
+## 8. A3 设计——C4 快照 Arc 化 + C2 扫描跳过 + 源驻留封顶（同日第三轮增补）
+
+### 8.1 现状链路（源码级）
+
+**C4 快照深拷贝**：`ImageCache::duplicate_for_snapshot`（image_cache.rs:1340-1354）逐条
+`entry.data.clone()`——`ImageData.pixels: Vec<u8>` 深拷贝全缓存。唯一调用方 `snapshot_image_cache`
+（webview.rs:1713）→ renderer 发布路径（runtime.rs:1443）每帧发布执行（视频播放期每帧变更触发
+`try_republish_cached`，24fps ≈ 24 次/s）。快照仅在本进程内被 `fetch_image_payloads_with_cache`
+（runtime.rs:1497）读取出 `IpcImagePayload`，跨进程只传 payload 字节——快照本体从不出进程。
+tab_snapshot.rs:149 同面消费。
+
+**关键不变量**（image_cache.rs:31-32 既有注释）：「像素在插入 ImageCache 后不可变」（R3254-M2，
+content_hash 复用前提）——Arc 共享语义安全。同路径先例：hit-test 缓存发布已是 `Arc` +「无数据
+clone，仅引用计数」（runtime.rs:1453-1455）；`svg_source: Arc<[u8]>`（image_cache.rs:58）。
+
+**C2 纯色扫描**：视频帧插入 `ImageData::from_rgba`（video_registry.rs:1188/1204 → image_cache.rs:76）
+——全帧逐像素纯色检测（视频帧恒 false）+ `hash_pixels` 全帧读（content_hash）。320×240 帧每次插入
+2 次全帧读。
+
+**源驻留**：`sources`/`av_sources: HashMap<u64, Vec<u8>>`（video_registry.rs:444-455）无总量封顶
+（M1 §5 权限表缺口）。**功能性依赖**：av_sources 为 seek 重建 `WebmAudioTrack` 的字节源
+（seek :945-959）——封顶不得驱逐在播源与存活 player 的伴音源。
+
+### 8.2 Fix C4：快照 Arc 化
+
+- `CacheEntry.data: ImageData` → `Arc<ImageData>`；`insert`/`insert_with_key` 包 `Arc::new`；
+  `get` 返回 `Option<&ImageData>`（Arc deref，**签名不变**）；`duplicate_for_snapshot` 变 Arc
+  引用计数循环（改名不做——API 面稳定，文档注释改写为「共享句柄快照（像素不可变，R3254-M2）」）。
+- 快照内 LRU/字节数预算按句柄自计（快照为瞬态只读对象，发布后即弃；不跨对象核算——与现行为
+  等价，无核算漂移）。
+- 效果：每帧发布的全缓存深拷贝 → O(entries) 引用计数（µs 级）；跨进程 payload 序列化保持不变
+  （帧传输字节是必要面，归 C 批次帧传输优化，不在 A3 范围）。
+- 风险：无互斥需求（ImageData 构造后只读）；`Clone` derive 保留（外部 decode 路径仍按值移动）。
+
+### 8.3 Fix C2：视频帧扫描跳过
+
+- 新增 `ImageData::from_rgba_variable(pixels, w, h)`（跳过纯色检测，`solid_color: None`，
+  content_hash 照算——GPU 纹理键/指纹依赖不破）；video_registry :1188/:1204 两处切换。
+- 图片解码路径（PNG/JPEG/WebP/SVG）保持扫描（UI 图片纯色常见，fast-path 有价值）。
+- 效果：视频每帧省 1 次全帧读（C2 项消除）；content_hash 全帧读保留——若 A3 后 profiling 显示
+  仍显著，后续切片可评估 pts 键控哈希（本设计不扩scope）。
+
+### 8.4 Fix 源驻留封顶
+
+- 预算：registry 内 `sources + av_sources` 总字节常量上限（**256MB**，对齐 MSE_FACE
+  `MSE_FEED_MAX_BYTES` 既有量级）。
+- 策略（register/settle 路径准入时）：超限 → 先驱逐**非在播** LRU 源（`sources` 优先于
+  `av_sources`，后者有 seek 重建依赖、随 player 存活保留）；仍超 → 拒绝登记，走既有 play 失败/
+  不可解码错误面（不新增语义，与 MSE QuotaExceeded 形态对齐）。
+- 永不驱逐：任一在播 player/audio entry 的键；存活 player 的 av_sources 键。
+- release/clear 导航清理面不变；驱逐记 tracing。
+
+### 8.5 验收与回滚
+
+- `make bench-gate` 定向（`ZERO_WEB_BENCH_CRATES=zero-render-foundation` 或 media/render 域）+
+  M1 harness 复测：纯视频 60s 墙钟预期下降（C2 省 1 读 + C4 省全缓存 clone），数字回写本目录。
+- 既有 image_cache 契约测试（ref_count/gc/世代）全绿；快照 Arc 化后 `duplicate_for_snapshot`
+  单测补 Arc 共享断言（同像素指针、源缓存驱逐不影响快照读取）。
+- 回滚：三个子项各自单提交（C4 / C2 / 封顶互相独立）。
