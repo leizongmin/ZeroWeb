@@ -14866,6 +14866,83 @@
     return -1;
   }
 
+  // R5266（html-semantics M2 切片 59）：tr 族索引/集合读侧共用地基。旧实现经
+  // selector 查询（querySelectorAll）三缺陷：① detached script-created 子树无法解析
+  // （selector 世界按 document 锚定）恒空；② 匹配全部后代非直接子；③ 无 namespace
+  // 过滤。统一改 childNodes 直接子扫描 + 严格 HTML-ns 判定。
+  // 严格口径（区别于上方 _zwTblChildIdx 宽松口径——s58 create/delete 族在用不动）：
+  // namespaceURI **恒等 xhtml 串**才命中。createElementNS("", x) 产物读 null
+  //（探针 zz-probe59 P3/P9b 实证；part04 namespaceURI getter `_nsHandles` 印记直通），
+  // 解析树与 createElement 产物读 xhtml（P1/P2）——rowIndex 7 个 null-ns 案（期望
+  // -1）+ cellIndex not-a-HTML-tr 案 + cells foo-ns td 排除案全靠此判定。
+  function _zwIsHtmlNsEl(el) {
+    try { return el.namespaceURI === 'http://www.w3.org/1999/xhtml'; } catch (_eNs) { return false; }
+  }
+  // 直接子收集（localName ∈ {tagA, tagB?}，nodeType 1 + HTML-ns；保 childNodes 树序）。
+  // childNodes 产物为缓存 proxy（探针 P4：appendChild 返回值 === childNodes 槽位），
+  // `_zwIdxOfSelf` 身份计位成立。
+  function _zwTblChildAll(proxy, tagA, tagB) {
+    var out = [];
+    try {
+      var kids = proxy.childNodes;
+      if (!kids) return out;
+      for (var i = 0; i < kids.length; i++) {
+        var k = kids[i];
+        if (!k || k.nodeType !== 1) continue;
+        var ln = String(k.localName || '').toLowerCase();
+        if (ln !== tagA && (tagB == null || ln !== tagB)) continue;
+        if (!_zwIsHtmlNsEl(k)) continue;
+        out.push(k);
+      }
+    } catch (_eKid) {}
+    return out;
+  }
+  // table rows 集合（spec dom-table-rows 过滤器 + 排序）：thead 行（树序）→
+  // table 直接 tr 子 + tbody 行（树序一趟）→ tfoot 行（树序）。
+  // https://html.spec.whatwg.org/multipage/tables.html#dom-table-rows
+  function _zwTableRowsAll(tableProxy) {
+    var out = [];
+    try {
+      var kids = tableProxy.childNodes;
+      if (!kids) return out;
+      var i, k;
+      for (i = 0; i < kids.length; i++) {
+        k = kids[i];
+        if (k && k.nodeType === 1 && _zwIsHtmlNsEl(k)
+            && String(k.localName || '').toLowerCase() === 'thead') {
+          out = out.concat(_zwTblChildAll(k, 'tr', null));
+        }
+      }
+      for (i = 0; i < kids.length; i++) {
+        k = kids[i];
+        if (!k || k.nodeType !== 1 || !_zwIsHtmlNsEl(k)) continue;
+        var ln = String(k.localName || '').toLowerCase();
+        if (ln === 'tr') out.push(k);
+        else if (ln === 'tbody') out = out.concat(_zwTblChildAll(k, 'tr', null));
+      }
+      for (i = 0; i < kids.length; i++) {
+        k = kids[i];
+        if (k && k.nodeType === 1 && _zwIsHtmlNsEl(k)
+            && String(k.localName || '').toLowerCase() === 'tfoot') {
+          out = out.concat(_zwTblChildAll(k, 'tr', null));
+        }
+      }
+    } catch (_eRows) {}
+    return out;
+  }
+  // 行/单元格在集合中的身份计位（proxy 缓存恒同对象；selector+handle 串兜底——
+  // 两者齐等才判同，parsed 元素 selector 为唯一树路径不误并）。
+  function _zwIdxOfSelf(list, self) {
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] === self) return i;
+      try {
+        if (list[i] && list[i].__zwSelector === self.__zwSelector
+            && list[i].__zwHandle === self.__zwHandle) return i;
+      } catch (_eId) {}
+    }
+    return -1;
+  }
+
   // detached Document（供 document.implementation.createDocument/createHTMLDocument，R2815；R3013 queryable；
   // R3016 traversable）。
   // R3013：body 经 __zw_parse_html_query 支持可写可查——body.innerHTML setter 存解析源，querySelector 族
@@ -24112,60 +24189,84 @@ return e;
             return null;
           }
         }
-        // `<tr>.rowIndex`（HTMLTableRowElement，R2842）——行在 table 中的位置（0-based，跨 thead/tbody/tfoot
-        // 全部行，document order）；-1 若不在 table。data-table / 表格操作库读 rowIndex 定位行高频。
-        // 经 _ancestorChain 找 owning TABLE + 元素作用域 querySelectorAll('tr')（R2673）+ proxy identity 计位。
-        if (prop === 'rowIndex' && _realTag(sel, handle) === 'TR') {
-          if (!sel) return -1;
+        // `<tr>.rowIndex`（HTMLTableRowElement，R2842）——行在 owning table rows 集合中的位置（0-based）；
+        // -1 若无。spec 门槛是 **parent**（HTML table）或 parent 为 HTML section（thead/tbody/tfoot）且
+        // **grandparent** 为 HTML table——非「最近祖先」链（table>div>tr 案 -1）。行集合经
+        // `_zwTableRowsAll`（spec rows 排序：thead 行 → table 直接 tr + tbody 行 → tfoot 行）。
+        // R5266：旧实现 selector 查询三缺陷（detached script-created 子树不可解析 / 含后代 /
+        // 无 ns 过滤）统一换 childNodes 直接子扫描——tr 族 21F 根因。
+        // https://html.spec.whatwg.org/multipage/tables.html#dom-tr-rowindex
+        if (prop === 'rowIndex' && (_realTag(sel, handle) || '').split(':').pop() === 'TR') {
           try {
-            var riChain = _ancestorChain(sel);
-            var riTable = null;
-            for (var ri = 1; ri < riChain.length; ri++) {
-              if ((__zw_get_tag(riChain[ri]) || '').toUpperCase() === 'TABLE') { riTable = riChain[ri]; break; }
+            var riSelf = sel ? _wrapSelector(sel) : _wrapHandle(handle);
+            var riPar = null;
+            try { riPar = riSelf.parentNode; } catch (_eRiP) {}
+            if (riPar && riPar.nodeType === 1) {
+              var riParTag = String(riPar.localName || '').toLowerCase();
+              if (riParTag === 'table' && _zwIsHtmlNsEl(riPar)) {
+                var riIdx = _zwIdxOfSelf(_zwTableRowsAll(riPar), riSelf);
+                if (riIdx >= 0) return riIdx;
+              } else if ((riParTag === 'thead' || riParTag === 'tbody' || riParTag === 'tfoot')
+                         && _zwIsHtmlNsEl(riPar)) {
+                var riGp = null;
+                try { riGp = riPar.parentNode; } catch (_eRiG) {}
+                if (riGp && riGp.nodeType === 1 && String(riGp.localName || '').toLowerCase() === 'table'
+                    && _zwIsHtmlNsEl(riGp)) {
+                  var riIdx2 = _zwIdxOfSelf(_zwTableRowsAll(riGp), riSelf);
+                  if (riIdx2 >= 0) return riIdx2;
+                }
+              }
             }
-            if (!riTable) return -1;
-            var riRows = _wrapSelector(riTable).querySelectorAll('tr');
-            var riSelf = _wrapSelector(sel);
-            for (var rk = 0; rk < riRows.length; rk++) if (riRows[rk] === riSelf) return rk;
-            return -1;
-          } catch (_e) { return -1; }
+          } catch (_e) {}
+          return -1;
         }
         // `<td>`/`<th>`.cellIndex（HTMLTableCellElement，R2842）——单元格在行中的位置（0-based，td+th 混计
-        // document order）；-1 若不在行。表格操作库读 cellIndex 定位列高频。经 :is(td, th) 单查询保序
-        // （querySelectorAll 顶层不支持逗号列表，:is() 内部支持）。
-        if (prop === 'cellIndex' && (_realTag(sel, handle) === 'TD' || _realTag(sel, handle) === 'TH')) {
-          if (!sel) return -1;
+        // document order）；-1 若无。spec：parent 为 HTML tr 时返回自身在 parent cells 集合中的索引
+        //（cells = 直接 HTML-ns td/th 子——`_zwTblChildAll`，非 td/th 兄弟跳过即自然达成）。
+        // R5266：同 rowIndex 根因换 childNodes 扫描。
+        // https://html.spec.whatwg.org/multipage/tables.html#dom-td-cellindex
+        if (prop === 'cellIndex' && (function () {
+              var _cg = (_realTag(sel, handle) || '').split(':').pop();
+              return _cg === 'TD' || _cg === 'TH';
+            })()) {
           try {
-            var ciChain = _ancestorChain(sel);
-            var ciTr = null;
-            for (var ci = 1; ci < ciChain.length; ci++) {
-              if ((__zw_get_tag(ciChain[ci]) || '').toUpperCase() === 'TR') { ciTr = ciChain[ci]; break; }
+            var ciSelf = sel ? _wrapSelector(sel) : _wrapHandle(handle);
+            var ciPar = null;
+            try { ciPar = ciSelf.parentNode; } catch (_eCiP) {}
+            if (ciPar && ciPar.nodeType === 1 && String(ciPar.localName || '').toLowerCase() === 'tr'
+                && _zwIsHtmlNsEl(ciPar)) {
+              var ciIdx = _zwIdxOfSelf(_zwTblChildAll(ciPar, 'td', 'th'), ciSelf);
+              if (ciIdx >= 0) return ciIdx;
             }
-            if (!ciTr) return -1;
-            var ciCells = _wrapSelector(ciTr).querySelectorAll(':is(td, th)');
-            var ciSelf = _wrapSelector(sel);
-            for (var ck = 0; ck < ciCells.length; ck++) if (ciCells[ck] === ciSelf) return ck;
-            return -1;
-          } catch (_e) { return -1; }
+          } catch (_e) {}
+          return -1;
         }
-        // `<tr>`.sectionRowIndex（HTMLTableRowElement，R2843）——行在其 section（thead/tbody/tfoot）内的位置
-        //（0-based）；-1 若无 section（html5ever 为 table-直属 tr 插入隐式 tbody，故通常有 section）。
-        // 同 rowIndex 模式：_ancestorChain 找最近 thead/tbody/tfoot → 元素作用域 querySelectorAll('tr') + identity。
-        if (prop === 'sectionRowIndex' && _realTag(sel, handle) === 'TR') {
-          if (!sel) return -1;
+        // `<tr>`.sectionRowIndex（HTMLTableRowElement，R2843）——行在其父内集合中的位置（0-based）；
+        // -1 若无合格父。spec：parent 为 HTML table（取 table rows 集合）或 HTML section
+        //（thead/tbody/tfoot，取直接 HTML-ns tr 子集合）；其余（div/tr/td 等）-1。
+        // R5266：同 rowIndex 根因换 childNodes 扫描。
+        // https://html.spec.whatwg.org/multipage/tables.html#dom-tr-sectionrowindex
+        if (prop === 'sectionRowIndex' && (_realTag(sel, handle) || '').split(':').pop() === 'TR') {
           try {
-            var srChain = _ancestorChain(sel);
-            var srSection = null;
-            for (var si = 1; si < srChain.length; si++) {
-              var stag = (__zw_get_tag(srChain[si]) || '').toUpperCase();
-              if (stag === 'THEAD' || stag === 'TBODY' || stag === 'TFOOT') { srSection = srChain[si]; break; }
+            var srSelf = sel ? _wrapSelector(sel) : _wrapHandle(handle);
+            var srPar = null;
+            try { srPar = srSelf.parentNode; } catch (_eSrP) {}
+            if (srPar && srPar.nodeType === 1) {
+              var srTag = String(srPar.localName || '').toLowerCase();
+              var srList = null;
+              if (srTag === 'table' && _zwIsHtmlNsEl(srPar)) {
+                srList = _zwTableRowsAll(srPar);
+              } else if ((srTag === 'thead' || srTag === 'tbody' || srTag === 'tfoot')
+                         && _zwIsHtmlNsEl(srPar)) {
+                srList = _zwTblChildAll(srPar, 'tr', null);
+              }
+              if (srList) {
+                var srIdx = _zwIdxOfSelf(srList, srSelf);
+                if (srIdx >= 0) return srIdx;
+              }
             }
-            if (!srSection) return -1;
-            var srRows = _wrapSelector(srSection).querySelectorAll('tr');
-            var srSelf = _wrapSelector(sel);
-            for (var ssk = 0; ssk < srRows.length; ssk++) if (srRows[ssk] === srSelf) return ssk;
-            return -1;
-          } catch (_e) { return -1; }
+          } catch (_e) {}
+          return -1;
         }
         // `<option>`.index（HTMLOptionElement，R2849）——option 在其 select 中的位置（0-based，document order）；
         // 0 若不在 select（detached / handle-based，与 Chromium detached→0 一致）。form 库读 option.index 定位高频。
@@ -24186,26 +24287,34 @@ return e;
           } catch (_e) { return 0; }
         }
         // `<table>`.rows（HTMLTableElement，R2843）/ section.rows（HTMLTableSectionElement，R2845）——
-        // table 内全部行（跨 thead/tbody/tfoot document order）/ section（thead/tbody/tfoot）作用域内行。
-        // 元素作用域 querySelectorAll('tr') 返真数组（length/索引/迭代/Array 方法）。gate = TABLE 或
-        // THEAD/TBODY/TFOOT（section-scoped）；textarea.rows 落 set-trap catch-al 反射不冲突（textarea 非 section）。
+        // table 内全部行（spec 排序）/ section（thead/tbody/tfoot）作用域内行。返真数组
+        //（length/索引/迭代/Array 方法）。gate = TABLE 或 THEAD/TBODY/TFOOT（section-scoped）；
+        // textarea.rows 落 set-trap catch-al 反射不冲突（textarea 非 section）。
+        // R5266：rows/tBodies/cells 读侧统一 childNodes 直接子扫描——detached created
+        // 子树（selector 不可解析）、后代误收、非 HTML-ns 收纳三缺陷同 rowIndex 面修。
         if (prop === 'rows') {
           var rTag = (_realTag(sel, handle) || '').split(':').pop();
           if (rTag === 'TABLE' || rTag === 'THEAD' || rTag === 'TBODY' || rTag === 'TFOOT') {
-            if (!sel) return [];
-            try { return _wrapSelector(sel).querySelectorAll('tr'); } catch (_e) { return []; }
+            var rrSelf = sel ? _wrapSelector(sel) : _wrapHandle(handle);
+            if (!rrSelf) return [];
+            // table = spec rows 排序集合；section = 直接 HTML-ns tr 子。
+            // https://html.spec.whatwg.org/multipage/tables.html#dom-table-rows
+            return rTag === 'TABLE' ? _zwTableRowsAll(rrSelf) : _zwTblChildAll(rrSelf, 'tr', null);
           }
         }
         if (prop === 'tBodies' && (_realTag(sel, handle) || '').split(':').pop() === 'TABLE') {
-          if (!sel) return [];
-          try { return _wrapSelector(sel).querySelectorAll('tbody'); } catch (_e) { return []; }
+          var tbSelf = sel ? _wrapSelector(sel) : _wrapHandle(handle);
+          if (!tbSelf) return [];
+          return _zwTblChildAll(tbSelf, 'tbody', null);
         }
         // `<tr>`.cells（HTMLTableRowElement，R3243）——行内全部 td+th 单元格（document order，混计）。
-        // 与 cellIndex（R2842）同源 :is(td, th) 查询，返真数组（length/索引/迭代）。表格修改库
-        // （insertCell/deleteCell 定位 + DataTables 等读列）高频。仅 TR。
+        // 直接 HTML-ns td/th 子（`_zwTblChildAll`）。表格修改库（insertCell/deleteCell 定位 +
+        // DataTables 等读列）高频。仅 TR。
+        // https://html.spec.whatwg.org/multipage/tables.html#dom-tr-cells
         if (prop === 'cells' && (_realTag(sel, handle) || '').split(':').pop() === 'TR') {
-          if (!sel) return [];
-          try { return _wrapSelector(sel).querySelectorAll(':is(td, th)'); } catch (_e) { return []; }
+          var ceSelf = sel ? _wrapSelector(sel) : _wrapHandle(handle);
+          if (!ceSelf) return [];
+          return _zwTblChildAll(ceSelf, 'td', 'th');
         }
         // `<table>`.caption / `<table>`.tHead / `<table>`.tFoot（HTMLTableElement，R2845）——table 的首个
         // caption / thead / tfoot 子元素（spec dom-caption/dom-thead/dom-tfoot「first X element child」；

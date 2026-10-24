@@ -2,9 +2,42 @@
 
 **版本**: v2.0
 **日期**: 2026-10-24（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 58 收口（tabular-data 域 R5265 create/delete 派生族 + caption/tHead/tFoot setter 族，域 **67P/67F → 94P/40F** GAIN 27 / REG 0；interactive-elements 全域 439P/44F/0T 复跑逐值不变），下一步 tr 族 21F（sectionRowIndex/insertCell/rowIndex/cellIndex/cells）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 59 收口（tabular-data 域 R5266 tr 族索引/集合读侧 childNodes 化，域 **94P/40F → 122P/12F** GAIN 28 / REG 0；interactive-elements 全域 439P/44F/0T 复跑逐值不变），下一步 table-rows 5F（HTMLCollection 类型）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-24 M2 切片 58 收口，tabular-data create/delete + setter 族轮）**：
+> **▶ 当前状态（2026-10-24 M2 切片 59 收口，tr 族索引/集合读侧轮）**：
+> tabular-data 域第二实施切片：**94P/40F → 122P/12F**（GAIN 28 / REG 0），
+> interactive-elements 全域 **439P/44F/0T** 复跑逐值不变，zero-engine
+> lib **3449P/0F**。**根因（R5266）**：tr 族六 getter（rowIndex/
+> cellIndex/sectionRowIndex/rows/tBodies/cells）旧实现经 selector 查询
+> 三缺陷——detached script-created 子树不可解析恒空 / 匹配全部后代非
+> 直接子 / 无 namespace 过滤。**修复面**：①part03 新地基四件——
+> `_zwIsHtmlNsEl`（**严格** xhtml 串判定，探针实证 createElementNS("",
+> x) 产物 namespaceURI 读 **null**、解析树/createElement 读 xhtml 串；
+> 区别于 `_zwTblChildIdx` 宽松口径不动）+ `_zwTblChildAll` 直接子收集 +
+> `_zwTableRowsAll`（spec rows 排序：thead 行 → 直接 tr + tbody 行 →
+> tfoot 行）+ `_zwIdxOfSelf` 身份计位（childNodes 缓存 proxy 恒等）。
+> ②六 getter 重写：rowIndex 门槛 **parent**（table）或 section+**grandparent**
+> table（非最近祖先，table>div>tr 案 -1）；sectionRowIndex 父 table/section；
+> cellIndex 父 HTML tr 直接 td/th 子；handle-only created 全覆盖。③has
+> trap 名册（part05，R5249 tag-gate 模式）——`"cellIndex" in th` 等恒
+> false 补六名。**连带收口**：remove-row 3F + thead/tbody/tfoot rows 3F
+> + table-insertRow 1F（`_rowList`/`_cellList` 转读修好的 rows/cells）。
+> **lib 测试契约修补**（part15 R3243 三测试）：rows/cells 读侧走
+> childNodes 融合视图后，测试换代点只 bump 宿主代际未调 shim 侧挂钩的
+> 缺口显形（跨场景 pending 桶残留，探针实证 len=5 含建行）——按
+> part12/38/41 既有契约补 `__zw_reset_pending_state` + 两处同场景续跑
+> 步先重播种 pristine 快照。**验证**：五目标文件 45 断言全绿；域
+> 122P/12F/0T；interactive-elements 439P/44F/0T（REG 0）；lib 3449P/0F；
+> fmt/clippy 干净。账本见
+> [evidence/2026-10-24-m2s59-tr-index-family.md](html-semantics-compat/evidence/2026-10-24-m2s59-tr-index-family.md)。
+> **下一步**：tabular-data 余 12F——table-rows 5F（instanceof
+> HTMLCollection 读侧类型，参照 R3908 selectedOptions 形模式）下一切片；
+> table-insertRow 2F（无 tr 时插入位）、tBodies 1F（DOMParser XML 面）、
+> 处理模型 4F 待分诊。**切片间隙**：本轮 part03/05 + part15 测试文件；
+> 下一挂账 table-rows 亦 shim 面——间隙开放，开工前查 oracle master
+> 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 58 收口，tabular-data create/delete + setter 族轮）**：
 > tabular-data 域首个实施切片：**67P/67F → 94P/40F**（GAIN 27 / REG 0），
 > interactive-elements 全域 98 files **439P/44F/0T** 复跑逐值不变。
 > **修复面三件（R5265）**：①table create/delete 派生族（part03）——
@@ -26,13 +59,9 @@
 > interactive-elements 439P/44F/0T（REG 0）；zero-engine lib 3448P/0F。
 > 账本见
 > [evidence/2026-10-24-m2s58-tabular-create-delete-family.md](html-semantics-compat/evidence/2026-10-24-m2s58-tabular-create-delete-family.md)。
-> **下一步**：tabular-data 余 40F 挂账序——tr 族 21F（sectionRowIndex 8
-> / insertCell 5 / rowIndex 4 / cellIndex 3 / cells 1）下一切片；table-
-> rows 5F（HTMLCollection 类型，参照 R3908 形模式）、remove-row 3F +
-> section rows 3F（live-sync/created section）、insertRow 3F、tBodies 1F
->（DOMParser XML 面）、处理模型 4F 待分诊。**切片间隙**：本切片为
-> engine shim 面（part03/04/05），下一挂账 tr 族亦 shim 面——间隙开放，
-> 开工前查 oracle master 碰撞记录。
+> **下一步**（s59 已收口前两见）：tr 族 21F 已清；余挂账 table-rows
+> 5F / remove-row 3F + section rows 3F / insertRow / tBodies 1F / 处理
+> 模型 4F。
 >
 > **▶ 上轮状态（2026-10-24 M2 切片 57 收口，selectAll inert 作用域 + 钉案轮）**：
 > 45F 全量复核（逐案读测试源钉断言机制）+ D 族唯一非几何门案收口

@@ -1164,6 +1164,27 @@
                  } catch (_e5249t) { return false; }
                  return false;
                })()
+            // R5266（html-semantics M2 切片 59）：tr 族索引/集合 IDL 属性 `in` 可见性
+            //（get trap 供给面在 target 无 own key → has 白名单缺列恒 false——cellIndex.html
+            // 首案 `"cellIndex" in th` 断言面；media-elements 切片 3 同款根因）。tag 门
+            //（':' 后缀容差前缀产物）：TD/TH → cellIndex；TR → rowIndex/sectionRowIndex/
+            // cells；TABLE/THEAD/TBODY/TFOOT → rows；TABLE → tBodies（HTMLTable* 接口
+            // 成员归属）。
+            // https://html.spec.whatwg.org/multipage/tables.html#htmltableelement
+            || (function () {
+                 try {
+                   var _t5266 = (_realTag(sel, handle) || '').split(':').pop();
+                   if (prop === 'cellIndex') return _t5266 === 'TD' || _t5266 === 'TH';
+                   if (prop === 'rowIndex' || prop === 'sectionRowIndex' || prop === 'cells') {
+                     return _t5266 === 'TR';
+                   }
+                   if (prop === 'rows') {
+                     return _t5266 === 'TABLE' || _t5266 === 'THEAD' || _t5266 === 'TBODY' || _t5266 === 'TFOOT';
+                   }
+                   if (prop === 'tBodies') return _t5266 === 'TABLE';
+                 } catch (_e5266h) { return false; }
+                 return false;
+               })()
             || prop === 'src' || prop === 'textTracks'
             || prop === 'addTextTrack' || prop === 'track' || prop === 'controlsList'
             // cdp-protocol objectId 桥（PW injectedScript）：节点身份与表单约束面的
