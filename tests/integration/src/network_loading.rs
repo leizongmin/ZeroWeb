@@ -5,7 +5,7 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use zero_net::{CacheLookup, FetchPriority, HttpCache, PerOriginFetchScheduler, ResourceLoader, ResourceRequest};
 
@@ -357,4 +357,101 @@ fn cache_partition_prevents_cross_site_reuse() {
         );
     }
     assert_eq!(server.request_count(), 2, "each partition needs its own initial fetch");
+}
+
+/// P14 突发图片的持槽响应：读请求后延迟回包，让并发峰值可观测（延迟须大于
+/// 30 连接的爬升耗时，120ms 足够）。
+fn respond_with_delay(mut stream: TcpStream) {
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .expect("set fixture read timeout");
+    let mut request = [0_u8; 4096];
+    let _ = stream.read(&mut request).expect("read fixture request");
+    thread::sleep(Duration::from_millis(120));
+    let body = b"fixture-image";
+    write!(
+        stream,
+        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    )
+    .expect("write burst response headers");
+    stream.write_all(body).expect("write burst response body");
+}
+
+/// P14（2026-10-25）：同 origin 图片突发必须达到每来源并发上限——renderer 发布
+/// 路径修复后一次性 issue 全部缺图（修复前逐图阻塞 IPC fetch，同 origin
+/// max-in-flight 恒 1，cnblogs 107 请求 106 串行的第一根因）。本地 fixture 30 张
+/// 同源图并发提交：服务端观测在途峰值 == 调度器每来源上限且 >1；超限请求排队、
+/// 槽释放后全部完成（排队/释放/跨 origin 互不阻塞语义另由 zero-net 单测
+/// `queues_beyond_per_origin_limit` / `different_origins_do_not_share_limit` 与
+/// FR-004/005 用例钉住）。
+#[test]
+fn same_origin_image_burst_reaches_per_origin_concurrency_limit() {
+    const IMAGE_BURST: usize = 30;
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind fixture");
+    let address = listener.local_addr().expect("fixture address");
+    listener.set_nonblocking(true).expect("make fixture nonblocking");
+    let in_flight = Arc::new(AtomicUsize::new(0));
+    let max_in_flight = Arc::new(AtomicUsize::new(0));
+    let served = Arc::new(AtomicUsize::new(0));
+    let server = {
+        let in_flight = Arc::clone(&in_flight);
+        let max_in_flight = Arc::clone(&max_in_flight);
+        let served = Arc::clone(&served);
+        thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while served.load(Ordering::Relaxed) < IMAGE_BURST && Instant::now() < deadline {
+                match listener.accept() {
+                    Ok((stream, _)) => {
+                        served.fetch_add(1, Ordering::Relaxed);
+                        let in_flight = Arc::clone(&in_flight);
+                        let max_in_flight = Arc::clone(&max_in_flight);
+                        thread::spawn(move || {
+                            in_flight.fetch_add(1, Ordering::Relaxed);
+                            max_in_flight.fetch_max(in_flight.load(Ordering::Relaxed), Ordering::Relaxed);
+                            respond_with_delay(stream);
+                            in_flight.fetch_sub(1, Ordering::Relaxed);
+                        });
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        thread::sleep(Duration::from_millis(2));
+                    }
+                    Err(error) => panic!("fixture accept failed: {error}"),
+                }
+            }
+        })
+    };
+
+    let loader = loader();
+    let origin = format!("http://{address}");
+    // 修复后的发布路径形态：全部请求先提交、再统一等响应（不是逐发逐收）。
+    let requests: Vec<_> = (0..IMAGE_BURST)
+        .map(|index| {
+            loader.submit(ResourceRequest::get(
+                format!("{origin}/img-{index}.png"),
+                FetchPriority::MEDIUM,
+            ))
+        })
+        .collect();
+    for response in &requests {
+        assert!(
+            response
+                .recv_timeout(Duration::from_secs(10))
+                .expect("burst response")
+                .is_ok(),
+            "all queued images must complete as slots release"
+        );
+    }
+
+    let limit = zero_net::resource_policy::max_connections_per_origin();
+    let peak = max_in_flight.load(Ordering::Relaxed);
+    assert!(
+        peak > 1,
+        "concurrency must exceed the pre-fix serial shape (peak={peak})"
+    );
+    assert_eq!(
+        peak, limit,
+        "same-origin burst must saturate the per-origin limit (limit={limit})"
+    );
+    server.join().expect("join fixture server");
 }

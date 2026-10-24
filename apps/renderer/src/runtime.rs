@@ -1478,31 +1478,24 @@ impl RendererRuntime {
             }
         }
         // S8：已发送图片 key（browser 端 ImageCache 已存）不重传像素。
-        // fetch 闭包按字段捕获（2021 edition 最小捕获）——sent_image_keys 独立借用
-        let payloads = if allow_network_fetch {
-            let mut fetch = |u: &str| {
-                if self.stub_network {
-                    None
-                } else {
-                    ipc_fetch_get(
-                        &mut self.outbound,
-                        &self.inbound_rx,
-                        &mut self.next_fetch_id,
-                        &mut self.deferred_inbound,
-                        u,
-                    )
-                    .ok()
-                }
-            };
+        // P14（2026-10-25）：取回改两阶段批量——先非阻塞发起全部缺图，再统收响应。
+        // 旧逐图 `ipc_fetch_get` 闭包每次阻塞收单张，同 origin 图片并发恒为 1。
+        let payloads = if allow_network_fetch && !self.stub_network {
+            let mut batch = crate::ipc_image_batch::IpcImageBatch::new(
+                &mut self.outbound,
+                &self.inbound_rx,
+                &mut self.next_fetch_id,
+                &mut self.deferred_inbound,
+            );
             paint_export::fetch_image_payloads_with_cache(
                 &html,
                 &url,
                 &mut image_cache,
-                &mut fetch,
+                &mut batch,
                 &self.sent_image_keys,
             )
         } else {
-            let mut no_fetch = |_u: &str| None;
+            let mut no_fetch = paint_export::NoImageFetch;
             paint_export::fetch_image_payloads_with_cache(
                 &html,
                 &url,
