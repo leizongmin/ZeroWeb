@@ -2,9 +2,37 @@
 
 **版本**: v2.0
 **日期**: 2026-10-24（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 66 收口（text-level-semantics 开片：the-a-element 两族 a.text + stringifier 全收 R5273 + sel 形注册文本视图共享根修，域 **21P/13F → 34P/0F** GAIN 13 / REG 0 全绿），下一步 embedded-content / scripting-1 / microdata 按挂账序开片；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 67 收口（embedded-content 开片分诊轮：域刷新 458P/819F/40T 八族地图 + object/embed null 反射窄面收口 R5274，域 **461P/816F/40T** GAIN 3 / REG 0），下一步 F1 img 静态加载管线（~260F 最大可收口单族）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-24 M2 切片 66 收口，text-level-semantics 开片轮）**：
+> **▶ 当前状态（2026-10-24 M2 切片 67 收口，embedded-content 开片分诊轮）**：
+> 两件事。**① 域分诊八族地图落档（819F 全归因）**：F1 img 静态加载管线
+> ~260F（settle 只接 `.src` IDL setter 通道 R56h，parser 静态 img 无
+> fetch/load 事件、naturalWidth 恒 0）+ F2 select-an-image-source/currentSrc
+> /srcset/sizes ~300F（currentSrc 恒 ''，全族算法未实现，独立大切片）+
+> F3 img.decode() 56F + F4 image-map 命中测试 84F（elementFromPoint 几何
+> 底座→渲染流记账回流）+ F5 lazy-loading ~49F（视口几何缺失，F1 后重
+> 分诊）+ F6 canvas 53F（getContext options 序 + Tab 序，逐案分诊）+
+> F7 object/embed 窄面 25F + F8 杂项 2F。域刷新基线 **458P/819F/40T**
+>（执行案 231 与 M1 一致；subtest 1060→1317 为 R5235 帧驱动后此前
+> Timeout 悬挂案完成注册）。**② F7 null 反射收口（R5274 一刀）**：part04
+> get-trap IFRAME 分支后补 OBJECT/EMBED 分支——contentDocument/
+> contentWindow 恒 null（spec「does not represent a nested browsing
+> context → null」尾步）+ getSVGDocument 返 null 函数（GetSVGDocument
+> Support）；EMBED 无 contentDocument/contentWindow 成员保持 undefined。
+> 契约 part84 两测试（钉①五臂 + 钉② IFRAME R130 面不回归）。**验证**：
+> 域 **458P/819F/40T → 461P/816F/40T**（GAIN 3 / REG 0）+ interactive
+> 439P/44F/0T 逐位持平 + lib **3469P/0F**（+2 契约）+ 翻转力实证（撤刀
+> → 钉①红，恢复字节一致）。账本见
+> [evidence/2026-10-24-m2s67-embedded-content-triage.md](html-semantics-compat/evidence/2026-10-24-m2s67-embedded-content-triage.md)。
+> **下一步**：F1 img 静态加载管线开片（~260F 最大可收口单族；DCL 扫描
+> settle + loading=lazy 跳过 + setAttribute('src') 通道，R5254 两段式
+> 先例）。
+> **切片间隙**：本轮 part04 get-trap + 契约 part84；下一挂账 F1 亦
+> engine shim/host 桥面，间隙开放，开工前查 oracle master 碰撞记录
+>（2026-10-24 已查：oracle master 记「engine 面占用标记已退场清除」，
+> 无新占用）。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 66 收口，text-level-semantics 开片轮）**：
 > 两件事。**① the-a-element 13F 两族全收（R5273 三刀）**：a.text
 > getter/setter = textContent 精确委托（9F；option 的 strip-and-collapse
 > 不适用）+ a/area toString 品牌检查（4F；WebIDL es-stringifier step 2，
@@ -1226,6 +1254,15 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-24 M2 切片 67**：embedded-content 开片分诊轮——域刷新
+  458P/819F/40T 八族地图（F1 img 静态加载管线 ~260F / F2
+  select-an-image-source ~300F / F3 decode 56F / F4 image-map 命中 84F
+  渲染流回流 / F5 lazy ~49F / F6 canvas 53F / F7 object|embed 窄面 25F /
+  F8 杂项 2F）+ F7 null 反射收口（R5274 一刀，part04 get-trap
+  OBJECT/EMBED 分支——contentDocument/contentWindow/getSVGDocument 恒
+  null 面）+ 契约 part84 两钉 + 翻转力实证。域 **461P/816F/40T**（GAIN 3
+  / REG 0）；interactive 439P/44F/0T 持平；lib **3469P/0F**（+2）。账本
+  [evidence/2026-10-24-m2s67-embedded-content-triage.md](html-semantics-compat/evidence/2026-10-24-m2s67-embedded-content-triage.md)。
 - **2026-10-23 M2 切片 46**：余 60F 归因分诊六族地图落档（A–G，含
   Chrome-parity 同红族 A/B 与可 shim 收口候选 E）+ 历史 menu 面 IDL 归属
   收口（R5249 双刀，shim part04/part05）——has trap track IDL 列

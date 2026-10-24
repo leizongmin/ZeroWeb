@@ -1072,6 +1072,20 @@
           if (_r115Co) return null;
           return _r115Entry.servedDoc || _r115Entry.doc; // loading 期 null（spec：未加载完成 contentDocument 可为 null）
         }
+        // R5274（html-semantics M2 切片 67）：OBJECT/EMBED contentDocument/contentWindow/
+        // getSVGDocument——runner 无 object/embed 嵌套浏览上下文（不加载 data/src、不建
+        // browsing context），spec「does not represent a nested browsing context → null」
+        // 尾步（#dom-object-contentdocument / #dom-object-contentwindow）+ GetSVGDocument
+        // Support「非 SVG document → null」（#dom-getsvgdocument）。旧 fallthrough 返
+        // undefined（document-getters-return-null-for-cross-origin 断言 null ×3 翻车）。
+        // IFRAME 分支是活浏览上下文面（上支），OBJECT/EMBED 无此二成员仅 getSVGDocument。
+        if ((prop === 'contentDocument' || prop === 'contentWindow' || prop === 'getSVGDocument') &&
+            (_zwIframeTag === 'OBJECT' || _zwIframeTag === 'EMBED')) {
+          if (prop === 'getSVGDocument') {
+            return function () { return null; };
+          }
+          if (_zwIframeTag === 'OBJECT') return null;
+        }
         // R2926 Shadow DOM：`element.attachShadow(init)` / `element.shadowRoot`。host 元素专用（非
         // fragment/comment/text/shadow）。attachShadow 建 shadow root（复用 DocumentFragment handle 容器）；
         // shadowRoot 读——open 返 root、closed/未建 返 null（spec）。详见 `_attachShadow`。
