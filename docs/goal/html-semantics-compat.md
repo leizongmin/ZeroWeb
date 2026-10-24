@@ -2,9 +2,39 @@
 
 **版本**: v2.0
 **日期**: 2026-10-25（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 70 收口（F2 source-set 族收口 R5277：域 **607P/678F/37T → 747P/479F/32T** GAIN 133 / REG 0），下一步 F1b naturalWidth SVG 固有尺寸尾片（210F 余量）或 F4 image-map 命中测试（84F）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 71 收口（F1b SVG 固有尺寸族 R5277：域 **747P/479F/32T → 907P/320F/31T** GAIN 160 / REG 0），下一步 F4 image-map 命中测试（84F）或 720-stretch 布局面（22F）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-25 M2 切片 70 收口，F2 source-set 族轮）**：
+> **▶ 当前状态（2026-10-25 M2 切片 71 收口，F1b SVG 固有尺寸轮）**：
+> s67 八族地图 F1b 收口（naturalWidth-naturalHeight-width-height 的 SVG
+> data URL 族 77P/181F + svg-img-density-vs-zoom 1P/8F）。**根因**：runner
+> 位图解码面不解 SVG——host `__zw_get_image_size` 返回 viewBox 原始宽高
+> （缺省 100×100），非 CSS-images natural dimensions 组合表；resourceState
+> 无固有轴元数据，密度校正无法逐轴表达语料 data-density 语义（attr 轴校正、
+> 默认/AR 轴不校正）；display:none 未渲染 IDL 面（whatwg#11287）恒密度校正。
+> **修复（R5277 五刀）**：①`__zwSvgPayload5277` data:SVG payload 提取
+> （percent/base64/raw）；②`__zwSvgNaturalDims5277` 固有尺寸核（无引号 attr
+> 按 HTML tokenizer 语义、length 非负 number|px、viewBox AR、w+h/w/h/none
+> 组合表）；③sweep SVG 核前置 + 覆写面——携 axes（本核已写）幂等跳过、
+> host 态（无 axes）原位覆写不重派 load、非 SVG 维持 host 幂等；④密度逐轴
+> 折算（attr 轴按选中密度校正、默认/AR 轴恒原始；无 axes 旧态默认 both，
+> raster 语义不变）；⑤未渲染 IDL 臂——display:none + loaded 回原始未校正
+> intrinsic（内联样式直读近似，FIXME 样式表/继承面）+ avail 传播携 axes。
+> **运行期 fast path 撤除留档**：fetch 臂 SVG 前置在 129 img 模板克隆风暴下
+> 超 `_deferBudget=256` 静默丢回调 → inflight 泄漏 → load 链死锁（run5 全域
+> 1001/1258 行截断实证），同步 dispatch 变体仍抖（77P/181F 不稳）——终版
+> 撤除，运行期 SVG 语义归 host 解码器切片。契约 part89 两测试（27 断言，
+> (h) 覆写面 load 不重派钉）。**验证**：域 **747P/479F/32T → 907P/320F/31T**
+> （GAIN 160 = 160 F→P / 0 P→F；唯一 T 变化 video-loading-lazy-autoplay
+> T→F 为 s70 已记环境抖动行翻回）+ naturalWidth 文件 77P/181F → **236P/22F**
+> （3× 稳定）+ interactive **439P/44F/0T 逐位持平** + engine lib
+> **3496P/0F** + clippy/fmt clean。账本见
+> [evidence/2026-10-25-m2s71-svg-intrinsic-dims.md](html-semantics-compat/evidence/2026-10-25-m2s71-svg-intrinsic-dims.md)。
+> **下一步**：F4 image-map 命中测试 84F（elementFromPoint 几何）优先，或
+> 720-stretch 渲染展开 22F（需布局几何，归 layout 集成面）。
+> **切片间隙**：本轮 part03/04 shim + 契约 part89；下一挂账 F4 亦 engine 面，
+> 间隙开放，开工前查 oracle master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-25 M2 切片 70 收口，F2 source-set 族轮）**：
 > s67 八族地图 F2 收口（parse-a-srcset 49 + select-an-image-source 13 +
 > update-the-source-set 84 + relevant-mutations 46 + current-pixel-density
 > 21 + 邻族 7）。**根因**：srcset/sizes/picture-source 选择面仅 R4162/R2419
@@ -27,7 +57,7 @@
 > 300/150 是 UA icon 非 IDL 面）；⑧css-parser media_query.rs MQ4
 > error-handling——非空 inner 无法解析 → 整条不匹配，不再退化空条件 all 恒
 > 匹配（`all and (!)` 面 + matchMedia false 对齐，钉定测试撤换）；⑨extract.rs
-> 候选收集接解析核。契约 part87 五测试。**验证**：域 **607P/678F/37T →
+> 候选收集接解析核。契约 part88 五测试。**验证**：域 **607P/678F/37T →
 > 747P/479F/32T**（GAIN 133 = 133 F→P / 0 P→F；run3 捕获唯一 P→F 由②收口
 > run4 复验翻回；run3→run4 差恰 2 行）+ interactive **439P/44F/0T 逐位持平**
 > + engine lib **3484P/0F**（+5 契约）+ css-parser lib **3003P/0F** +
@@ -36,7 +66,7 @@
 > **下一步**：F1b naturalWidth SVG 固有尺寸/密度校正尾片（210F 余量）或 F4
 > image-map 命中测试 84F（elementFromPoint 几何）——按共享路径收益取一。
 > **切片间隙**：本轮 part03/04/05 shim + extract.rs + css-parser media_query
-> + 契约 part87（part85 键位随绝对化更新）；下一挂账 F1b/F4 亦 engine 面，
+> + 契约 part88（part85 键位随绝对化更新）；下一挂账 F1b/F4 亦 engine 面，
 > 间隙开放，开工前查 oracle master 碰撞记录。
 >
 > **▶ 上轮状态（2026-10-24 M2 切片 69 收口，F3 img.decode() 轮）**：

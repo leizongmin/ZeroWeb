@@ -691,6 +691,11 @@
             // round(dim / density)；密度非法/0 回退原值，历史状态无 density 按 1）。
             var _ndD = Number(resourceState.density);
             if (_ndD > 0 && isFinite(_ndD)) _ndDen = _ndD;
+            // s71 F1b：SVG 固有轴逐轴折算（axes：'none'=默认 300/150 具体对象
+            // 轴不校正，'width'/'height' 仅 SVG 自身固有单轴，'both'=w+h 均
+            // 固有；raster 无 axes = 全轴校正）。
+            var _ndAxes = resourceState.axes != null ? resourceState.axes : 'both';
+            if (_ndDen !== 1 && _ndAxes !== 'both' && _ndAxes !== (isWidth ? 'width' : 'height')) _ndDen = 1;
             var _ndDim = isWidth ? resourceState.width : resourceState.height;
             return _ndDen === 1 ? _ndDim : Math.round(_ndDim / _ndDen);
           }
@@ -759,6 +764,21 @@
               if (rgTag === 'IMG') {
                 if (resourceState && resourceState.outcome === 'broken') {
                   return 0;
+                }
+                // s71 F1b：未渲染臂——spec #dom-img-width：being rendered → 渲染
+                // 尺寸（headless 无真布局，以密度校正 intrinsic 近似）；未渲染
+                //（display:none）且有媒体数据 → **原始** intrinsic（不折密度——
+                // whatwg#11287：密度折算属渲染面，not-rendered 行 UNSCALED 断言
+                // 面）。渲染判定 = inline display != 'none'（R4600 同款 JS 侧
+                // cssText 读；样式表/继承 none 不在近似面——FIXME: 随渲染流样式
+                // 几何底座补）；detached 元素保持既有密度校正语义（零回归面）。
+                var _iwNone = false;
+                try {
+                  var _iwSt = proxy.style;
+                  _iwNone = !!(_iwSt && String(_iwSt.display || '') === 'none');
+                } catch (_eIwS) {}
+                if (_iwNone && resourceState && resourceState.outcome === 'loaded') {
+                  return prop === 'width' ? resourceState.width : resourceState.height;
                 }
                 return _zwImgNaturalDim(prop === 'width');
               }
@@ -1100,7 +1120,12 @@
               var _zwImSel = null, _zwImHandle = null;
               try { _zwImSel = _zwIm.__zwSelector; _zwImHandle = _zwIm.__zwHandle; } catch (_eSwk) {}
               var _zwImKey = _elKey(_zwImSel, _zwImHandle);
-              if (_resourceStates[_zwImKey]) continue; // 已 settle（R56h/重复扫描幂等）
+              // s71 F1b：仅「SVG 核已入账（携 axes）」才幂等跳过；host 面已 settle
+              // 的项（无 axes）不跳——host `__zw_get_image_size` 的 SVG 语义
+              // （viewBox 原始宽高/缺省 100×100）与本核 CSS-images 组合表不同，
+              // 由下方 SVG 核覆写，非 SVG payload 维持既有幂等语义（见覆写臂后置守卫）。
+              var _zwPrior = _resourceStates[_zwImKey] || null;
+              if (_zwPrior && _zwPrior.axes != null) continue; // 已 settle 且 SVG 核已入账（R56h/重复扫描幂等）
               try {
                 if (globalThis._zwImgPendingSet && globalThis._zwImgPendingSet[_zwImKey]) continue; // 运行期事件排队中，drain 段处理
               } catch (_eSwP) {}
@@ -1125,6 +1150,29 @@
                 try { _zwImSrc = String(_zwIm.getAttribute('src') || ''); } catch (_eSws) {}
               }
               if (!_zwImSrc) continue;
+              // s71 F1b：data:image/svg+xml 静态 settle——固有尺寸核优先于 host
+              // 快照（runner 位图解码面不解 SVG，host `__zw_get_image_size` 的
+              // SVG 语义是 viewBox 原始宽高/缺省 100×100，与本核 CSS-images
+              // natural dimensions 组合表不同）；axes 元数据入 resourceState +
+              // avail 缓存（渲染面密度逐轴折算）。无根 <svg> → 回落 host 面。
+              // 覆写面：既有 host 态（无 axes，含运行期臂与先前 sweep 写入）原位
+              // 换核值，不重派 load（load 已派发过）；新 settle 面照常派发。
+              if (typeof globalThis.__zwSvgPayload5277 === 'function') {
+                var _zwSvgTxt = globalThis.__zwSvgPayload5277(_zwImSrc);
+                if (_zwSvgTxt != null) {
+                  var _zwSvgDims = globalThis.__zwSvgNaturalDims5277(_zwSvgTxt);
+                  if (_zwSvgDims) {
+                    _resourceStates[_zwImKey] = { url: _zwImSrc, outcome: 'loaded', width: _zwSvgDims.width, height: _zwSvgDims.height, error: null, density: _zwImDen, axes: _zwSvgDims.axes };
+                    try {
+                      globalThis._zwAvailableImages = globalThis._zwAvailableImages || {};
+                      globalThis._zwAvailableImages[_zwImSrc] = { width: _zwSvgDims.width, height: _zwSvgDims.height, axes: _zwSvgDims.axes };
+                    } catch (_eSwa2) {}
+                    if (!_zwPrior) _dispatchWithBubble(_zwImKey, _zwImSel, _zwImHandle, _makeEvent('load', { bubbles: false, cancelable: false }));
+                    continue;
+                  }
+                }
+              }
+              if (_zwPrior) continue; // 非 SVG payload/核无根 <svg>：host 态维持既有幂等语义
               var _zwDims = '';
               try { if (typeof __zw_get_image_size === 'function') _zwDims = String(__zw_get_image_size(_zwImSrc)); } catch (_eSwg) {}
               if (_zwDims) {

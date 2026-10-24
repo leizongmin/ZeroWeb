@@ -2584,6 +2584,69 @@
     }
     return best || smallest;
   };
+  // s71 F1b：data: SVG payload 抽取——`data:image/svg+xml[,base64],<body>`，
+  // 百分号解码（宽松：非法 % 序列保留原串），非 SVG data URL → null。
+  globalThis.__zwSvgPayload5277 = function (url) {
+    var u = String(url == null ? '' : url);
+    var m = /^data:image\/svg\+xml([^,]*),/i.exec(u);
+    if (!m) return null;
+    var raw = u.slice(m[0].length);
+    if (/;base64/i.test(m[1])) {
+      try { raw = atob(raw); } catch (_eSvgB64) { return null; }
+    } else {
+      try { raw = decodeURIComponent(raw); } catch (_eSvgDec) {}
+    }
+    return raw;
+  };
+  // s71 F1b：SVG 固有尺寸核（CSS-images natural dimensions + HTML img SVG
+  // 语义，naturalWidth-naturalHeight-width-height SVG 面逐行对齐）。输入 SVG
+  // 文本，抽根 <svg> 标签 width/height/viewBox：
+  //   - length：数（用户单位=px，可带 px 尾缀），0 有效；负值/百分比/不可解析
+  //     → 缺席（spec：error → 属性缺席——'natural width being negative'/
+  //     'percentage' 两行 density none 实证）。
+  //   - viewBox 四数且 w>0 且 h>0 → 长宽比；退化（含 0/缺项）→ 无（'viewBox
+  //     with 0 width' 组无影响面）。
+  // 组合（axes = 逐轴密度校正元数据，仅 SVG 自身固有轴随选中密度折算，默认
+  // 具体对象尺寸 300/150 轴不校正——data-density none/both/width/height 四态）：
+  //   w+h → (w,h,both)；仅 w → AR ? (w,w/ar,both) : (w,150,width)；
+  //   仅 h → AR ? (h*ar,h,both) : (300,h,height)；
+  //   均缺 → AR ? (300,300/ar,none) : (300,150,none)。
+  // 非根 svg 标签/无标签 → null（调用方回落 host 快照/broken 原语义）。
+  // https://drafts.csswg.org/css-images/#natural-dimensions
+  // https://html.spec.whatwg.org/multipage/images.html#density-corrected-intrinsic-width-and-height
+  globalThis.__zwSvgNaturalDims5277 = function (svgText) {
+    var tag = /<svg\b([^>]*)>/i.exec(String(svgText == null ? '' : svgText));
+    if (!tag) return null;
+    var attrs = tag[1] || '';
+    var _svgAttr = function (name) {
+      var re = new RegExp('(?:^|[\\s])' + name + '\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\'|([^\\s"\'<>`]+))', 'i');
+      var m = re.exec(attrs);
+      if (!m) return null;
+      return m[1] != null ? m[1] : (m[2] != null ? m[2] : m[3]);
+    };
+    var _svgLen = function (v) {
+      if (v == null) return null;
+      var m = /^([+-]?(?:\d+(?:\.\d+)?|\.\d+))(?:px)?$/i.exec(String(v).trim());
+      if (!m) return null;
+      var n = parseFloat(m[1]);
+      if (!isFinite(n) || n < 0) return null;
+      return n;
+    };
+    var w = _svgLen(_svgAttr('width')), h = _svgLen(_svgAttr('height'));
+    var ar = null;
+    var vb = _svgAttr('viewBox');
+    if (vb != null) {
+      var vp = String(vb).trim().split(/[\s,]+/);
+      if (vp.length === 4) {
+        var vw = parseFloat(vp[2]), vh = parseFloat(vp[3]);
+        if (isFinite(vw) && isFinite(vh) && vw > 0 && vh > 0) ar = vw / vh;
+      }
+    }
+    if (w != null && h != null) return { width: w, height: h, axes: 'both' };
+    if (w != null) return ar ? { width: w, height: w / ar, axes: 'both' } : { width: w, height: 150, axes: 'width' };
+    if (h != null) return ar ? { width: h * ar, height: h, axes: 'both' } : { width: 300, height: h, axes: 'height' };
+    return ar ? { width: 300, height: 300 / ar, axes: 'none' } : { width: 300, height: 150, axes: 'none' };
+  };
   globalThis.__zwSelectUrl5277 = function (sel, handle) {
     var s = globalThis.__zwSelectImageSource5277(sel, handle);
     return s ? s.url : '';
@@ -2676,7 +2739,9 @@
       // s70：同 URL 重复命中也重派（relevant-mutations 'src set to same value'
       // ——spec load 派发门控仅 maybe-omit-events）。
       var _av5275 = _zwAvailImgs[_imSrc];
-      _resourceStates[_imKey] = { url: _imSrc, outcome: 'loaded', width: _av5275.width, height: _av5275.height, error: null, density: _imDensity };
+      // s71 F1b：SVG 固有轴元数据随 avail 缓存传播（density-corrected 尺寸逐轴
+      // 折算——仅 SVG 自身固有轴随密度校正，默认 300/150 轴不校正）。
+      _resourceStates[_imKey] = { url: _imSrc, outcome: 'loaded', width: _av5275.width, height: _av5275.height, error: null, density: _imDensity, axes: _av5275.axes };
       _imFetched = true;
       globalThis._zwImgInflight = (globalThis._zwImgInflight || 0) + 1;
       _defer(function () { _zwImgDispatch('load'); });
