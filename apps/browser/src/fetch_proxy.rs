@@ -994,8 +994,12 @@ mod tests {
         std::fs::write(&file, b"<html><body>local file</body></html>").unwrap();
         let url = url::Url::from_file_path(&file).unwrap().to_string();
 
+        // 导航文档请求经 AsyncFetchHost::fetch_document 显式携带 document 类型头
+        //（URL 推断不再兜底 document），与真实 file:// 导航流量同型。
+        let mut request = params(7, &url);
+        request.headers = vec![("X-Zero-Resource-Type".into(), "document".into())];
         let mut proxy = TabFetchProxy::new();
-        proxy.enqueue(TabId(1), &params(7, &url));
+        proxy.enqueue(TabId(1), &request);
         let completed = proxy.drain();
 
         assert_eq!(completed.len(), 1);
@@ -1020,7 +1024,9 @@ mod tests {
 
     #[test]
     fn dns_prefetch_completes_without_an_http_connection() {
-        let mut request = params(8, "http://localhost:9");
+        // hint origin 形如 `scheme://host/`（async_load 以 origin.ascii_serialization
+        // + "/" 下发），根路径无扩展名——推断兜底面即此形态。
+        let mut request = params(8, "http://localhost:9/");
         request.method = "DNS-PREFETCH".into();
         let mut proxy = TabFetchProxy::new();
         proxy.enqueue(TabId(1), &request);
@@ -1037,6 +1043,67 @@ mod tests {
         assert_eq!(done[0].request_id, 8);
         assert_eq!(done[0].status, 204);
         assert!(done[0].body.is_empty());
+        // P11 回归钉：hint 完成的合成 204 不得带 document 印章——renderer 与
+        // IndexedDB 导航跟踪都以该头采信 document 完成，兜底推断 document 会让
+        // 根路径 hint 劫持地址栏（juejin p2-jj.byteimg.com 实证）。
+        let stamp = |name: &str| {
+            done[0]
+                .headers
+                .iter()
+                .find(|(n, _)| n == name)
+                .map(|(_, v)| v.clone())
+                .unwrap_or_default()
+        };
+        assert_eq!(stamp("X-Zero-Resource-Type"), "other");
+        assert_eq!(stamp("X-Zero-Final-URL"), "http://localhost:9/");
+    }
+
+    #[test]
+    fn preconnect_head_completion_is_not_stamped_document() {
+        // P11 邻近变体：preconnect HEAD 无显式类型头，裸 origin 的 2xx 完成同样
+        // 不得推断为 document（与 dns-prefetch 同一污染面）。
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let origin = format!("http://{}/", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 1024];
+            let _ = stream.read(&mut request).unwrap();
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                .unwrap();
+        });
+        let mut request = params(9, &origin);
+        request.method = "HEAD".into();
+        // issue_preconnect 不携带任何 x-zero- 头（renderer 侧 hint 语义）。
+        request.headers = Vec::new();
+
+        let mut proxy = TabFetchProxy::new();
+        proxy.enqueue(TabId(2), &request);
+        let mut done = Vec::new();
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while done.is_empty() && std::time::Instant::now() < deadline {
+            done.extend(proxy.drain());
+            if done.is_empty() {
+                std::thread::sleep(Duration::from_millis(30));
+            }
+        }
+        server.join().unwrap();
+
+        assert_eq!(done.len(), 1);
+        assert_eq!(done[0].status, 200);
+        assert!(
+            done[0]
+                .headers
+                .iter()
+                .any(|(name, value)| name == "X-Zero-Resource-Type" && value == "other"),
+            "无显式类型的 preconnect HEAD 完成不得被打 document 印章"
+        );
+        assert!(
+            !done[0]
+                .headers
+                .iter()
+                .any(|(name, value)| name == "X-Zero-Resource-Type" && value == "document")
+        );
     }
 
     #[test]
