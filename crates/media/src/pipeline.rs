@@ -141,6 +141,12 @@ impl BatchSampleQueue {
     }
 }
 
+impl Default for BatchSampleQueue {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// 音频播放条目 — 解码器 + NullSink（可观测）+ 增益（M2c 后续：播放管线接 sink）。
 ///
 /// 时序模型与 VideoPlayer 同源：调用方注入单调时钟，`advance_to` 按已流逝媒体时间
