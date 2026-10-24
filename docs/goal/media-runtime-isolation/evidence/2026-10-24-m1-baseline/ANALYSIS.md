@@ -145,6 +145,11 @@ CPU 路径无零拷贝上屏通道。这是 M2 RFC「平台解码/进程隔离�
 三缺口修复面归媒体播放语义（engine shim + registry 桥），属 M3 切片候选；本轮只盘点不修。
 背景流基线 v2 回补条件（缺口修复后 bg02-media 复测）依赖此修复，保持上游记录不动。
 
+> 订正（2026-10-24 M3 前置设计 II 轮）：缺口 2「全仓零调用方」表述**仅对 crates/ 域成立**——
+> `tests/wpt-runner/src/testharness.rs:9290` 泵 tick 有同形调用（runner 面 march 工作），死的是
+> **生产 renderer 面**（runtime.rs 媒体泵不调）。语义不变（生产缺口在位），修复设计见
+> [DESIGN.md §6](../2026-10-24-m3-prep-design/DESIGN.md)。
+
 ## 8. 结论与待决
 
 - DC-1 测量面（CPU/复制/同步报告 + 能力对照）：**本轮成立**（长视频 60s 版本化基线 + 复制链

@@ -1,6 +1,6 @@
 # RFC：平台媒体解码与媒体运行时隔离——方案/许可证/回滚
 
-**版本**：v1.2-draft
+**版本**：v1.3-draft
 **日期**：2026-10-24
 **作者**：AI Assistant（Rally media-runtime-isolation M2）
 **状态**：草稿——待用户评审决策（D-RFC-1~4；见 §10）
@@ -201,7 +201,7 @@ request/response）、**跨进程时钟/状态镜像**（DC-2 契约核心，C2 
 | 批次 | 范围 | 门禁 | 验证 | 回滚切点 |
 |---|---|---|---|---|
 | A1 | 时钟批内对齐（advance_to 插值/目标对齐，rate→≈1.0） | D-RFC-2（随批） | 扩展 `media_m1_baseline.rs` T3 断言收 0.9–1.1；时钟契约测试 | 单提交回退 |
-| A2 | 三缺口修复（autoplay 绕桥 / 死钩子接线 / load 时桥武装） | D-RFC-2（随批） | 拟新增页面语义测试 + bg02-media 基线 v2 回补 | 单提交回退 |
+| A2 | 三缺口修复（autoplay 绕桥 / 死钩子接线 / load 时桥武装；设计稿见 goal evidence DESIGN.md §6——缺口 1+3 同面 = autoplay 走 play 算法，缺口 2 = 生产 renderer march 接线（runner 已接线，生产面缺失）） | D-RFC-2（随批） | 拟新增页面语义测试 + bg02-media 基线 v2 回补 | 单提交回退（Fix 1/Fix 2 各自独立） |
 | A3 | C4 快照深拷贝消除（publish 路径引用化/写时复制）、C2 扫描跳过、源驻留封顶 | D-RFC-2（随批；性能关键面） | `make bench-gate` 定向（media/render 域）+ M1 harness 复测 | 单提交回退 |
 | A4 | seek 定位窄化：phase-② 全量前向（O(target)）→ cue 锚定 fallback（O(GOP)，`decode.rs` 面；归因证据见 goal evidence 2026-10-24-m3-prep-design DESIGN.md §3） | D-RFC-2（随批） | 扩展 `m1_seek_cue_path`：mid-GOP 目标耗时不随 target 线性增长；15/30/45 三点不回退 | 单提交回退 |
 | C1 | `zero-protocol` 媒体消息族契约（§9 IF-001/002/005/006）+ host 进程骨架（feature `media-process` 默认关） | D-RFC-1 | 契约测试（两端同步核对）；默认关路径全量 `make test` 绿 | feature 关即现状 |
@@ -388,3 +388,4 @@ request/response）、**跨进程时钟/状态镜像**（DC-2 契约核心，C2 
 | v1.0-draft | 2026-10-24 | 初稿：M1 基线（27d45b8c8）输入下的三路线对比、许可/分发核查、分批实施与回滚切点、D-RFC-1~4 决策点。同日独立评审修复（0 blocker/2 major/5 minor，见 §11 评审记录）；evidence 数字同步订正对齐 raw log。待用户评审 |
 | v1.1-draft | 2026-10-24 | 补齐 M2 交付第二项「protocol 与媒体 host 接口」：新增 §9 IF 级契约（会话/控制/状态时钟/帧/字节流/错误六面 + 先例映射），image-decoder 独立进程先例核实后修正 §5.1A 成本口径；§10 决策点、门禁与 D-RFC 语义不变。零代码改动 |
 | v1.2-draft | 2026-10-24 | M3 前置设计轮：§7 新增 A4（seek 定位窄化，O(target)→O(GOP)）+ §8 seek 回归行；M1 seek 冷路径 Warning 经三方证据归因解除（demuxer 源码 + fixture 块级探针 + decode.rs 判定，详见 goal evidence 2026-10-24-m3-prep-design/DESIGN.md）；A1 时钟批内对齐设计稿落 DESIGN.md §2。零代码改动，D-RFC 门禁不变 |
+| v1.3-draft | 2026-10-24 | A2 行补设计稿指引（DESIGN.md §6：缺口 1+3 同面 = autoplay 走 play 算法；缺口 2 = 生产 renderer march 接线——runner 已接线、生产面缺失，M1「零调用方」表述按 crates/ 域订正）；WPT 上游 GOP 抽样闭合 A4 待验证项（DESIGN.md §7）。无决策/门禁/批次范围变化，零代码改动 |

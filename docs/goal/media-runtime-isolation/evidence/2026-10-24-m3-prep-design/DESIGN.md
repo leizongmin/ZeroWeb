@@ -1,9 +1,9 @@
-# M3 前置设计——A1 时钟批内对齐 + seek 冷路径归因与 A4 窄化
+# M3 前置设计——A1 时钟批内对齐 + seek 冷路径归因与 A4 窄化 + A2 三缺口修复 + WPT GOP 抽样
 
 **日期**：2026-10-24
-**状态**：设计就绪（门禁 = D-RFC-2 随批；本文为设计准备，**零代码改动**）
+**状态**：设计就绪（门禁 = D-RFC-2 随批；本文为设计准备，**零代码改动**；§6-§7 为同日第二轮增补）
 **goal**：[media-runtime-isolation](../../master.md)
-**RFC**：[media-runtime-isolation-spec-rfc](../../../../specs/media-runtime-isolation-spec-rfc.md) v1.2（A4 批次行为本轮增补）
+**RFC**：[media-runtime-isolation-spec-rfc](../../../../specs/media-runtime-isolation-spec-rfc.md) v1.2（A4 批次行为首轮增补；A2 行本轮补设计稿指引）
 
 ## 1. 门禁状态
 
@@ -103,3 +103,99 @@ phase-① 失败后不再 `seek(0)` 全量前向，改为：
 ## 5. 后续验证计划（D-RFC-2 批复后）
 
 A1 与 A4 分批实施、各自单提交（独立回滚点）：A1 先行（C2 依赖时钟语义），A4 随后；每批跑 `make test` 定向 + M1 harness 显式入口复测（release + test-guard），A4 完成后 seek 场景数字回写本目录（追加，不改写本文）。
+
+## 6. A2 三缺口修复设计（同日第二轮增补）
+
+### 6.1 三缺口定性修正（本轮源码核查）
+
+M1 ANALYSIS §7 的缺口 2 表述「全仓零调用方」**仅对 crates/ 域成立**：`_zwMediaTimeMarchesOn` 在
+`tests/wpt-runner/src/testharness.rs:9290` 有泵 tick 调用（timer 泵每拍同形提交，:9285-9292 注释
+引用 spec#time-marches-on）——M3 扩批 XVIII/XXIV/XXVII 建的 cue/played/timeupdate 机器在 **WPT
+runner 面工作**，生产 renderer 主循环（`apps/renderer/src/runtime.rs:4094-4138` 媒体泵）不调。
+即：**死的是生产面，不是钩子本体**；M1 ANALYSIS §7 追加订正注（本轮）。
+
+缺口 1+3 同面确认：`_zwMediaAutoplay` 由 load 序列末调用（part06.js:10273，canplaythrough/suspend
+之后）——正是上游移交定位的「shim load 时武装环节」（background-resource-lifecycle master.md:45
+「终末桥探测证实原生音频管线健康、定位收敛在 shim load 时武装环节」）。缺口 3 的 audio 形态与缺口 1
+共用此面（bridge 武装无 video/audio 之分，registry 按容器路由 AudioEntry/VideoPlayer）。
+
+### 6.2 Fix 1：autoplay 走 play 算法（缺口 1+3，单一修复面）
+
+**spec 锚点**：ready-state update steps 的 potential autoplay 分支——eligible for autoplay 时
+「run the internal play steps」。
+https://html.spec.whatwg.org/multipage/media.html#ready-states
+https://html.spec.whatwg.org/multipage/media.html#internal-play-steps
+
+**现状**（part06.js:10131-10145）：`ms.playing = true` 直置 + 同步派 play/playing/timeupdate 三事件
+——无 `__zwVideoBridge.play()`、无 `bridgeOn`、无重试、无 ended/loop/pending-seek 面。对比 play IDL
+完整面（part03.js:23386+）：resource select → playing 翻转 → 无候选 pending → bridge feature-detect
+→ latest-wins src 解析（handle 身份分派）→ `__zwVideoBridge.play` 恰一次 + 未命中 setTimeout 退避重试
+（≤5000 次，`_pMs.playing && !bridgeOn` 门控）→ 命中后 bridgeOn + dims 升级 + pending seek 补推 +
+rate/gain/loop 同步；ended 态 play = seek 最早位置（:23649+）。
+
+**改造**：play 内核提取 `_zwMediaPlaySteps(sel, handle, key)`（返回 Promise；IDL `play` 方法与
+`_zwMediaAutoplay` 共同调用）；autoplay 保持 load 序列末调用点不动，删除手写置态+三事件段。
+autoplay 不向页面暴露 promise（与现一致）。
+
+**行为差异与风险**：事件时序从「同步三事件」变为 play 算法派发面（play/playing 的 queued task 面、
+promise resolve 面）——`event_play*`/`event_timeupdate*` 断言族为门禁；headless（无桥沙箱）面下
+play 算法的 playing 翻转与 queued resolve 语义已由既有 372 基线覆盖（:23522-23526 注释），autoplay
+切换后同面继承。无候选 autoplay 获得 pending promise 面（自动，spec 正确方向）；ended→loop 自动获得。
+
+**验收**：WPT autoplay 族 + media event 面不回退（make test）；拟新增生产面语义测试——autoplay 元素
+load 后 `bridgeOn === true` 且 registry 起播（`__zwVideoBridge.play` 可达、registry `is_any_playing`
+真）；bg02-media 基线 v2 回补（audio/autoplay INCONCLUSIVE 子项复评条件，上游移交的重开条件）。
+
+### 6.3 Fix 2：生产 renderer march 接线（缺口 2）
+
+**现状**：媒体泵（runtime.rs:4094-4138，`any_playing` 门控 16ms 节拍）只推进 Rust registry 面
+（tick_all/audio_advance_all/webaudio）；shim 侧 march（桥时钟拉取/headless 时钟/played ranges/
+timeupdate 节流/cue active 面/ended 面）仅 runner 调用。生产播放中 IDL 读经 getter 镜像保持真值
+（part06.js:16376），但 timeupdate/cue/ended **事件面**无驱动。
+
+**改造**：any_playing 块内（audio_advance_all 之后）经 `submit_script_priority` 提交裸 march 脚本，
+与 rAF 泵同通道同形态（runtime.rs:4152-4156 先例；runner 调用同形 testharness.rs:9288-9292）：
+
+```rust
+if self.javascript_enabled && any_playing {
+    let _ = self.js_worker.submit_script_priority(
+        "if(globalThis._zwMediaTimeMarchesOn)globalThis._zwMediaTimeMarchesOn();",
+    );
+}
+```
+
+**门控论证**：门控 = `any_playing`（沿用 :4100 已算布尔）+ `javascript_enabled`；**不加 page_hidden**
+——spec time-marches-on 属播放推进，不随可见性暂停（后台音频继续播是现行为，rAF 的可见性门控
+语义不适用）。无播放零提交；钩子内首行早退（`!ms.playing continue`，part06.js:16412）+ timeupdate
+250ms 节流（:16460+）成本有界；bridgeOn 元素每 tick 一次 registry 锁 + cursor 读（M1 空 tick p50
+431ns 同面）。
+
+**否决备选**（记录防重提）：① shim 内 setTimeout 自泵——违「事件循环节拍，否决独立泵线程」既定
+裁决（runtime.rs:4094 D4 注），后台 timer 节流面不可控；② 依赖 getter 镜像——仅页面主动读 IDL
+时生效，事件面永不触发（bg02 泵推进测量已证不足）。
+
+**风险**：march 派发的事件 handler mutations 经既有 drain_pending_script_mutations 通道下一拍
+apply+渲染（rAF 回调同流，无新通道）；cue/ended 机器生产首启——track-cues 族断言在生产形态的
+回归面 = bg02-media v2 + 拟新增生产面 cue/ended 语义测试（A2 验收行）。
+
+### 6.4 A2 回滚
+
+Fix 1、Fix 2 各自单提交（独立回滚点）；Fix 2 纯增量（一处 submit_script_priority 调用），feature
+无关、默认生效面 = 生产 renderer（runner 行为不变）。
+
+## 7. WPT 上游 GOP 抽样（A4 待验证项闭合，同日第二轮增补）
+
+`tests/wpt-runner/wpt-data` 全量 4 个 webm（Python EBML 只读探针，/tmp 不入仓）：
+
+| fixture | 时长 | 块数 | keyframe | kf 间隔 | cue 点 |
+|---|---|---|---|---|---|
+| css/css-contain/support/white.webm | 10s | 300 | 5 | 规则 2000ms | 5 |
+| css/css-ui/support/test.webm | 6.5s | 475 | 291 | ~23ms（近全 intra） | 9 |
+| media/movie_5.webm | 5s | 370 | 251 | ~20ms（近全 intra） | 1 |
+| css/css-sizing/aspect-ratio/support/2x2-green.webm | 33ms | 1 | 1 | —（单帧） | 1 |
+
+结论：A4 的「真实生产输入受控确认」项闭合——① 最坏常例（2s 规则 GOP，white.webm）在位，
+O(GOP) 收益对该形态成立；② 主力媒体 fixture（movie_5）近全 keyframe，phase-① 直落为主路径，
+phase-② 触发面天然小；③ **稀疏 cue 形态在位**（movie_5 仅 1 个 cue 点）——A4 设计的「无 ≤target
+cue 点 → 保留全量前向回退」分支为必要路径（非防御性冗余），实施期须以 movie_5 形态覆盖该分支
+测试。

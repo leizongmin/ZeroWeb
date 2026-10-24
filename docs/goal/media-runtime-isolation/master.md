@@ -21,7 +21,7 @@
 |---|---|---|---|
 | M1 | 生产资源、能力与权限基线 | **完成**（测量面成立，收口待评审） | [2026-10-24 基线](evidence/2026-10-24-m1-baseline/ANALYSIS.md) |
 | M2 | 方案/许可证/回滚 RFC + protocol 接口契约 | **v1.2 完成待批复**（决策门=用户） | [media-runtime-isolation-spec-rfc](../../../specs/media-runtime-isolation-spec-rfc.md) |
-| M3 | 已确认平台与隔离切片 | NOT_STARTED（A1/A4 设计稿已备，待 D-RFC-2） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
+| M3 | 已确认平台与隔离切片 | NOT_STARTED（A1/A2/A4 设计稿已备，待 D-RFC-2） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
 | M4 | 配对媒体、故障和资源审计 | NOT_STARTED | 无 |
 
 ## 验证基线
@@ -69,3 +69,12 @@
   - **A4 修复设计**：cue 锚定窄化 fallback（Cues 自解析 ~60 行 + ≤ target 最近 cue 重 seek + 前向解码 ≤ GOP），O(target)→O(GOP)；无 Cues 流保留全量前向为最终回退。
 - RFC v1.2：§7 新增 A4 行 + 依赖行更新 + §8 seek 回归行 + §11 Warning 标注已归因 + §13 v1.2 行；D-RFC 门禁与批复前禁令不变。
 - 本轮探针/源码查阅均为只读（/tmp 脚本不入仓，cargo registry 只读）；未改代码、未装 SDK、未变 feature 表。
+
+### 2026-10-24 M3 前置设计轮 II（A2 + GOP 抽样）
+
+- DESIGN.md 追加 §6/§7（同日第二轮，仍零代码改动）：
+  - **缺口定性修正**：`_zwMediaTimeMarchesOn` 在 runner 面（testharness.rs:9290 泵 tick）有调用，死的是**生产 renderer 面**（媒体泵不调）；M1 ANALYSIS §7 订正注追加。缺口 1+3 确认同面：`_zwMediaAutoplay` 挂 load 序列末（part06.js:10273）= 上游移交定位的「load 时武装环节」。
+  - **Fix 1 设计**：play 内核提取 `_zwMediaPlaySteps`，IDL play 与 autoplay 共用（spec#ready-states potential autoplay 分支原义）；风险 = 事件时序切 play 算法派发面（WPT event 族门禁）；收益 = bridgeOn/重试/pending-seek/rate-gain-loop 同步/ended-loop 全面继承。
+  - **Fix 2 设计**：any_playing 门控 + `submit_script_priority` 裸 march 脚本（rAF 泵 runtime.rs:4152 同通道先例）；不加 page_hidden（播放推进不随可见性暂停）；否决 shim 自泵/getter 镜像两备选并记录理由。
+  - **WPT 上游 GOP 抽样**：4 webm 全量（white 2s 规则 GOP / test、movie_5 近全 intra ~20-23ms / movie_5 仅 1 cue 点）——A4 待验证项闭合，movie_5 稀疏 cue 形态证实 A4 全量前向回退分支为必要路径。
+- RFC v1.3：A2 行补设计稿指引 + 回滚格（Fix 1/Fix 2 独立）；无决策/门禁/批次范围变化。
