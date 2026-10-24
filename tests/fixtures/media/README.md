@@ -14,6 +14,8 @@
 | `sample-ogg-opus.oga` | ogg | 无 | Opus (48k) | 48kHz 单声道 | 2s | 14KB |
 | `sample-ogg-vorbis.oga` | ogg | 无 | Vorbis (q4) | 44.1kHz 单声道 | 2s | 7KB |
 | `sample-wav-pcm.wav` | wav (RIFF) | 无 | PCM s16le | 44.1kHz 单声道 | 2s | 172KB |
+| `long-webm-vp9-60s.webm` | webm | VP9 (yuv420p) | 无 | 320x240 | 60s | 1.2MB |
+| `long-webm-vp9-vorbis-60s.webm` | webm | VP9 (yuv420p) | Vorbis (q4) | 320x240 / 44.1kHz 单声道 | 60.09s | 1.4MB |
 
 ## 生成命令
 
@@ -76,3 +78,27 @@ ffmpeg -f lavfi -i "sine=frequency=440:duration=2" \
 # V_AV1 轨（CodecPrivate 在）——demux 面就绪，仅解码器面缺位）
 ffmpeg -f lavfi -i "testsrc2=size=320x240:rate=24:duration=2" \
        -c:v libaom-av1 -b:v 200k -pix_fmt yuv420p -y sample-webm-av1.webm
+
+## 长 fixture（media-runtime-isolation M1 基线）
+
+`long-webm-vp9-60s.webm` 与 `long-webm-vp9-vorbis-60s.webm` 由
+`scripts/make-long-video-fixture.py` 现场生成：把上表母本（`sample-webm-vp9.webm` /
+`sample-webm-vp9-vorbis.webm`）的簇序列整段重复 ×30 拼成 60s 流，并重建 Info Duration /
+SeekHead / Cues。**来源清白**：零外部素材、零编码器依赖，母本即上表 ffmpeg 产物，
+可零差异重现：
+
+```bash
+python3 scripts/make-long-video-fixture.py \
+    tests/fixtures/media/sample-webm-vp9.webm \
+    tests/fixtures/media/long-webm-vp9-60s.webm 30
+python3 scripts/make-long-video-fixture.py \
+    tests/fixtures/media/sample-webm-vp9-vorbis.webm \
+    tests/fixtures/media/long-webm-vp9-vorbis-60s.webm 30
+```
+
+- 每份簇序列以 keyframe 起始，重复后仍是合法 VP9 参考链；每副本首簇建一个 cue 点
+  （seek 二分用）。
+- 超出 100KB 约束属例外：长基线需要 seek/时钟/容量的时长跨度（60s@24fps=1440 帧），
+  簇重复使体积仅线性增长（1.2MB/1.4MB），无 LFS 依赖。
+- 消费方：`crates/webview/tests/media_m1_baseline.rs`（`#[ignore]` 长跑，显式运行）。
+
