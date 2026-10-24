@@ -9,6 +9,15 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5254 实现轮（圆角弧带大半径自适应加密——clip-content-box-with-border-radius-003 ✗0.110→✓0.066 收口，corpus FIXED=1 REGRESSED=0 净 +1）**（2026-10-24）
+>
+> - **择案**（R5253 下一步① 红带续扫择轻）：`css/css-backgrounds/background-clip-content-box-with-border-radius-003`（0.110%，529px 超 fuzzy 预算 totalPixels≤400）。像素取证（REFTEST_DUMP + PIL）：宏观黑楔两侧一致，全部 529 个 >96ch 差异像素 = `test=light ref=dark`——ref 页黑底沿外圈弧**漏出白边框带**（切线端各 ~35px 细带 + 弧中段 1-2px 连续细缝）。同轮轻端定性：column-scroll-marker-008 = scroll-markers 特性域（`::scroll-marker-group`/`::column::scroll-marker`/css-overflow-5 未实现）转挂账。
+> - **根因**：R5180 弧带边框 = 外圈+内圈多边形 even-odd 单次 path_fill，背景色 = `RoundedRectPrimitive` 精确逐像素椭圆判定——两者共享外轮廓但几何模型不同：多边形固定 8 段/象限折线，弦矢高 r(1−cos(π/16)) ≈ 0.049r 常规 r 亚像素不可见，r=边长（本案 r=200）时 ~0.96px 在弧切线端横向放大 ~8px/扫描行，未覆盖 sliver 漏出背景底色。
+> - **实现**（engine/paint/helpers.rs `corner_polygon_with_kinds` 渲染流域）：每角采样密度自适应 `n = max(8, ceil(r/8))` 上限 64——r≤64 维持 8 段既有行为（R5179 顶点判例不变），r=200 → 25 段（矢高 0.099px）；R5180 弧带与 R4248 形角填充/裁剪同 builder 一并受益，顶点成本仅 r>64 大角增长。
+> - **验证**：新锚 1（`test_r5254_round_arc_adaptive_density_extreme_radius`：TL r200 → 26 顶点、含端点弦全部中点矢高 ≤0.12px，r25 36 顶点既有判例不变）；engine lib **3450P/0F**（3449+1 对账精确）fmt 0 diff + clippy 0 告警；目标案 0.110→**0.066%** ✓ 预算内，同族 padding-box-003 附带改善 0.041→0.019%、002 0.02% 不变；corpus 16,590 全量 A/B（vs /tmp/r5253_full.json，基线已存 /tmp/r5254_full.json）**FIXED=1 REGRESSED=0** 净 15680→15681，pass 案漂移仅 contain-intrinsic-size-014（既存单轮抖动 R5250 判例）；make reftest **716/716**；product-smoke PASS + legacy struct 0 失败；make test **exit=0 76 套件 22,728P/0F/199I**（22,727+1 对账精确）。证据：[r5254](rendering-compat/evidence/r5254-round-arc-band-density-2026-10-24.md)。
+> - **挂账**：新增——① scroll-markers 特性域（`::scroll-marker-group`/`::column::scroll-marker`/css-overflow-5 未实现，column-scroll-marker-008 等定性）。维持——letter-spacing-ligatures-005 深域定性、::first-line 伪元素切片评估、margin-collapse 族异因残余 7 案、R5251 混排 wrapper 升格、嵌套 inline 链块后代升格、relpos proxy 盒 hit-test、rtl 镜像/top-bottom 百分比 FIXME、element-first intrinsic walk 镜像、R4332 bidi 臂专项、Path B 元素分支丢元素级 bidi_override、`<bdo dir>` UA stylesheet 缺失、文本节点臂混排偏窄、vertical 块轴 vs Path B 重建列推进、hanging-punctuation 属性未实现等全部既有项。
+> - **下一步**：R5255 ① 红带续扫择轻（::first-line color/bg 片 1 案 0.175% 切片落地评估 / outline-028 0.696% 定性 / CSS2 留池 border-conflict-element-001d/001e paint 仲裁 5.04/6.31% 等）② 混排 wrapper 升格切片评估择机 ③ 跨流碰头维持 ④ 深结构域维持不动。
+
 > **▶ R5253 实现轮（background round 第三步 auto 维跟随——round-2 ✗0.128→✓0.00 收口，corpus FIXED=1 REGRESSED=0 净 +1）**（2026-10-24）
 >
 > - **择案**（R5252 下一步① 红带续扫择轻）：`css/css-backgrounds/background-repeat-round-2`（红带最轻 0.128%，614px）。像素取证（REFTEST_DUMP + PIL）：我方 2 tile 36 宽 ✓ 但 32 高（ref 36 高）；整页 diff bbox 只覆盖 `.outer`（auto 尺寸盒），`.outer_gradient`（显式 `32px 36px`）已在容差内——x 轴 round 取整正确，缺 no-repeat 维等比恢复。同轮轻端定性：letter-spacing-ligatures-005 深域（IFC 估算 advance 与 paint 实测 hmtx advance 统一，guideline #3 域；paint-only 豁免零像素效果已回退）、::first-line 切片（color/bg 片 1 案 0.175% 多 crate、line-height 片 3 案需 first-line 布局盒、vertical-align 012-016 规范可选）、dir-style-04 跨流 js_dom_bridge 域、outline-028 未探。

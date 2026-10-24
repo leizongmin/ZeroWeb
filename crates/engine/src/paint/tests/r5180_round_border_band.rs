@@ -98,3 +98,34 @@ fn test_r5180_dotted_falls_back_to_strips() {
         "dotted 不应产生弧带 path_fill"
     );
 }
+
+/// R5254（弧带大半径自适应加密）：r=边长极端案（200×200 盒 TL r200，即
+/// background-clip-content-box-with-border-radius-003 ref 页外圈形）——8 段弦
+/// 矢高 r(1−cos(π/16)) 在切线端横向放大 ~8px/扫描行，R5180 even-odd 环与背景
+/// 精确椭圆共享外轮廓时漏出底色（实证 529px 超预算）。断言：① TL 角按
+/// ceil(r/8)=25 段加密（小角 r≤64 维持 8 段：r25 用例 36 顶点不变）；② 含
+/// 端点弦在内的全部弦中点矢高 ≤ 0.12px（n=25 → 200(1−cos(1.8°)) ≈ 0.099）。
+#[test]
+fn test_r5254_round_arc_adaptive_density_extreme_radius() {
+    let pts = rounded_corner_polygon_in_box(0.0, 0.0, 200.0, 200.0, [200.0, 0.0, 0.0, 0.0]);
+    // TL = start + 24 采样 + end = 26；TR/BR/BL r=0 仍 8 段（1+7+1=9，退化重复点）。
+    assert_eq!(
+        pts.len(),
+        26 + 9 + 9 + 9,
+        "TL 角应按 ceil(r/8)=25 段加密，got {}",
+        pts.len()
+    );
+    let (cx, cy, r) = (200.0_f64, 200.0_f64, 200.0_f64);
+    // 含 TL end 的连续顶点链（start→24 采样→end），逐弦检查中点矢高。
+    let chain = &pts[0..26];
+    for w in chain.windows(2) {
+        let (mx, my) = ((w[0].0 + w[1].0) as f64 / 2.0, (w[0].1 + w[1].1) as f64 / 2.0);
+        let d = ((mx - cx).powi(2) + (my - cy).powi(2)).sqrt();
+        assert!(
+            r - d <= 0.12,
+            "弦中点矢高应 ≤0.12px（n=25），got {d}（弦 {:?}->{:?}）",
+            w[0],
+            w[1]
+        );
+    }
+}
