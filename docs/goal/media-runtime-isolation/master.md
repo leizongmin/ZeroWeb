@@ -1,7 +1,7 @@
 # 媒体运行时隔离控制面
 
 **日期**：2026-10-24
-**状态**：Active（**M1 基线测量完成**——见 [2026-10-24 evidence](evidence/2026-10-24-m1-baseline/ANALYSIS.md)；**M2 两项交付齐备 + M3 前置设计就绪待用户评审**——[docs/specs/media-runtime-isolation-spec-rfc.md](../../../specs/media-runtime-isolation-spec-rfc.md) v1.7：三路线对比 + §9 接口契约；A1–A4 + C1–C3 设计稿齐备见 [m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；D-RFC-1~4 决策点）。
+**状态**：Active（**M1 基线测量完成**——见 [2026-10-24 evidence](evidence/2026-10-24-m1-baseline/ANALYSIS.md)；**M2 两项交付齐备 + M3 前置设计全部就绪待用户评审**——[docs/specs/media-runtime-isolation-spec-rfc.md](../../../specs/media-runtime-isolation-spec-rfc.md) v1.8：三路线对比 + §9 接口契约；A1–A4 + C1–C4 **全部批次**设计稿齐备见 [m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；D-RFC-1~4 决策点）。
 **当前卡点**：用户评审/批复 RFC（D-RFC-1~4：方案 C 立项 / A 批次随批 / 方案 B 核查 / decode-h264 启用）。批复前不改代码、不装 SDK、不变 feature 表。M1 待决输入（时钟 rate 1.454、NullSink）已入 RFC 方案 A 批次与 TBD-3。
 **下一步**：用户批复后按 RFC §7 批次推进——D-RFC-2 随批即启 A1（时钟批内对齐）；D-RFC-1 批准则并行 C1（protocol 媒体消息族 + `media-process` feature 骨架）。若改选 A-only，DC-3 按 DC-5 由用户认可延期/调整后收口。
 **入口**：[目标契约](../media-runtime-isolation.md) / [启动与证据协议](../ladybird-followups/README.md)
@@ -21,7 +21,7 @@
 |---|---|---|---|
 | M1 | 生产资源、能力与权限基线 | **完成**（测量面成立，收口待评审） | [2026-10-24 基线](evidence/2026-10-24-m1-baseline/ANALYSIS.md) |
 | M2 | 方案/许可证/回滚 RFC + protocol 接口契约 | **v1.7 完成待批复**（决策门=用户） | [media-runtime-isolation-spec-rfc](../../../specs/media-runtime-isolation-spec-rfc.md) |
-| M3 | 已确认平台与隔离切片 | NOT_STARTED（A1–A4 + C1–C3 设计稿齐备，待 D-RFC-2/1） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
+| M3 | 已确认平台与隔离切片 | NOT_STARTED（A1–A4 + C1–C4 全部批次设计稿齐备，待 D-RFC-2/1） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
 | M4 | 配对媒体、故障和资源审计 | NOT_STARTED | 无 |
 
 ## 验证基线
@@ -138,3 +138,20 @@
   - **DC-3 契约测试**：真实 SIGKILL 注入 5 场景（error 事件可见/renderer 存活/kill 后 play 重启/
     3 连 kill 永久错误+无回落断言/reload 恢复），`#[ignore]`+test-guard 先例。
 - RFC v1.7：C3 行补设计稿指引 + 降级纪律订正（见上）+ §13 历史行；无决策/门禁/批次范围变化。
+
+### 2026-10-24 M3 前置设计轮 VII（C4）
+
+- DESIGN.md 追加 §12（同日第七轮，仍零代码改动）——**C4/M4 验收实施级方案就绪，全部批次设计稿齐备（A1–A4 + C1–C4）**：
+  - **三态配对矩阵**：feature 关（内联基线）/ 开 + shm / 开 + `ZW_MEDIA_SHM=0`（非 Linux 形态
+    代理），固定输入 = M1 两枚 60s fixture，同 commit 同机器，报告头必含版本与来源（DC-1）。
+  - **仪器复用**：M1 harness 五场景场景体与 M1BASELINE 输出行原样保留，仅构造入口按态切换
+    （直调 vs proxy）；帧一致性 = 三态逐帧 RGBA 哈希序列比对（§8 双路径行集成化）。
+  - **判据表**：rate [0.9,1.1]（A1 同带）、seek resolved_ms 三态相等、漂移 p50 内联+5ms、
+    像素全等、开态墙钟 ≤ 内联 ×1.5（IPC 税上界）、旧 epoch 零泄漏——拟新增值 C4 定稿可调，
+    语义带绑定既有契约；不满按域回修重跑，不改判据凑数。
+  - **资源审计**：每 renderer 恰 1 host、host RSS、shm 槽位有界、源驻留 ≤256MB（A3 复测闭环
+    M1 §5 缺口）、暂停态 host CPU≈0（自走时钟验证）、C1–C5 复制链开/关态增量表。
+  - **能力三对照**（DC-4）：capabilities vs canPlayType vs 实解一致 + QuotaExceeded 面；
+    本机无 /dev/dri 即软解如实报用例。
+- RFC v1.8：C4 行补设计稿指引 + §13 历史行；无决策/门禁/批次范围变化。**设计前置至此全部完成，
+  后续推进唯一入口 = 用户批复 D-RFC-1~4。**

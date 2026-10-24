@@ -463,3 +463,63 @@ FrameTooLarge / HostInternal）。全部走既有 `IpcMessage` 信封 + bincode 
 ### 11.6 回滚
 
 - C3 单提交（gate 内）；状态机与退避常量单点，回退即回 C2「仅报错」形态。
+
+## 12. C4 设计——M4 配对验收 + 资源审计实施级方案（同日第七轮增补）
+
+### 12.1 配对矩阵（三态 × 固定输入 × 同 commit）
+
+| 态 | feature `media-process` | 帧传输 | 语义 |
+|---|---|---|---|
+| 内联基线 | 关（现状） | 进程内直调 | M1 复测基线（A1–A3 落地后） |
+| shm 开 | 开 | `zeroweb-media-*` 共享内存 | 生产目标形态 |
+| shm 关 | 开 + `ZW_MEDIA_SHM=0` | IPC 内联 Vec<rgba>（64MiB 上限内） | 非 Linux 形态代理 + FrameTooLarge 路径 |
+
+固定输入：M1 两枚 60s fixture（母本簇 ×30）；同一 commit、同一机器、同一 feature 组合声明
+（DC-1「版本与来源」：报告头必含 commit / binary / 平台 / feature 开关矩阵，缺一不收口）。
+非 Linux 平台实测缺口维持 TBD-4，本机以 shm 关态代理其帧传输面。
+
+### 12.2 测量仪器复用（场景体不动，入口按态切换）
+
+- M1 harness（`crates/webview/tests/media_m1_baseline.rs` 五场景：pure-video-60s / av-pair-60s /
+  clock-fidelity-rt-15s / seek-cue / av-drift-media）场景体与 `M1BASELINE key=value` 输出行
+  **原样复用**；唯一变化 = 构造入口——基线态直调 registry，开态经 proxy 面（C2 被动消费 +
+  push 镜像已就位后，泵行为对场景透明）。新增配对 runner 同为 `#[ignore]` + test-guard（M1 先例）。
+- 帧一致性：三态各跑同 fixture，逐帧 RGBA 哈希序列比对（§8「帧传输双路径」行的集成化）；
+  以 C1 转换输出为参照点（解码内核同源，差异只允许来自传输面）。
+
+### 12.3 判据表（拟新增值随 C4 定稿可调，语义带绑定既有契约）
+
+| 维度 | 判据 | 来源契约 |
+|---|---|---|
+| 时钟保真 | 开态 rate 收 [0.9,1.1] | A1 验收带同值（host 侧 BatchSampleQueue 同构语义，§10.2） |
+| seek 语义 | 三态 `resolved_ms` 相等；热路径不劣于内联 +10ms | IF-002 cue 契约（M1 热 1.1ms 基线） |
+| A/V 漂移 | 开态 p50 不劣于内联基线 +5ms | M1 p50=11ms 基线（media 层） |
+| 像素一致 | 三态逐帧哈希序列全等 | §8 双路径行 |
+| 容量开销 | 开态墙钟 ≤ 内联 ×1.5（IPC+跨进程调度税上界） | M1 45× 产能富余下不改变可用性结论 |
+| 代际 | 旧 epoch 帧/状态零泄漏（seek/重播风暴下断言） | DC-2 / IF-003 |
+
+### 12.4 资源审计清单（开态生产形态跑 30min 长播）
+
+- 进程树：每 renderer 恰好 1 个 media host（IF-001）；无孤儿（kill 收尸后 `ps` 核对）。
+- 内存：host RSS 峰值/稳态；shm 段数量与总大小（槽位有界，IF-004）；renderer 侧源驻留
+  ≤ 256MB（A3 预算复测，M1 §5 无界缺口闭环证据）。
+- 空闲成本：暂停态 host CPU ≈ 0（自走时钟事件循环等待面，无 60Hz 轮询——§10 设计目标验证）。
+- 复制链复测：A3 后内联基线重测 C1–C5 残留 + 开态叠加传输面成本（shm 零拷 / IPC 内联 +1 次
+  全帧拷），对照 M1 §4 静态图出增量表。
+
+### 12.5 能力真值三对照（DC-4 收口面）
+
+`MediaReady.capabilities`（host 实报）vs `canPlayType`（页面可见）vs 实解（fixture 逐 codec
+喂入）三者一致；quota 面：超 per-source 上限 → `MediaError{QuotaExceeded}`（IF-002）对齐
+MSE 封顶语义。平台无硬解如实报软解（本机 /dev/dri 缺失即天然用例，M1 §6）。
+
+### 12.6 DC 映射与产物
+
+- C4 产出 M4 evidence（`ANALYSIS.md` + raw log）：12.3 判据表逐行 + 12.4 审计清单逐项 +
+  §11.5 注入五场景结果（DC-3 直接引用 C3 测试，不重造）——DC-1/DC-4 收口证据、DC-2/DC-3
+  终验面。全部 DC 有证后按 goal 收口条件走 DC-5 审计。
+- 通过判据不满 → 按域回 C1–C3 对应片修复后重跑配对；不改判据带凑数（perf-gate 纪律同源）。
+
+### 12.7 回滚
+
+- C4 为验收批次，无产品代码改动（仅测试/工具/文档）；判据脚本单提交，回退不影响 C1–C3 形态。

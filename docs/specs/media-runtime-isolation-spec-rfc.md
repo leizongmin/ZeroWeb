@@ -1,6 +1,6 @@
 # RFC：平台媒体解码与媒体运行时隔离——方案/许可证/回滚
 
-**版本**：v1.7-draft
+**版本**：v1.8-draft
 **日期**：2026-10-24
 **作者**：AI Assistant（Rally media-runtime-isolation M2）
 **状态**：草稿——待用户评审决策（D-RFC-1~4；见 §10）
@@ -207,7 +207,7 @@ request/response）、**跨进程时钟/状态镜像**（DC-2 契约核心，C2 
 | C1 | `zero-protocol` 媒体消息族契约（§9 IF-001/002/005/006）+ host 进程骨架（feature `media-process` 默认关；设计稿见 goal evidence DESIGN.md §9——17 拟新增变体 wire format（§9.2 基础 14 + §10.2 补 setRate/setGain/setLoop；命名零冲突已核：ProcessRole 无 Media、IpcMessageKind 无 Media*）+ `ProcessRole::Media`/`--type=media` 接线 + media-host 骨架（C1 只立契约与空源生命周期，解码内核 C2 接）+ `zeroweb-media-` shm 前缀 / `ZW_MEDIA_SHM=0` 关断） | D-RFC-1 | 契约测试（两端同步核对）；默认关路径全量 `make test` 绿 | feature 关即现状 |
 | C2 | registry 客户端切换 + 状态/时钟代理（§9 IF-003/004；DC-2 契约测试；设计稿见 goal evidence DESIGN.md §10——host 自走时钟（音频截止/帧演示截止等待，无 60Hz 轮询）+ push 校准闭合（跃迁即时/随帧/250ms 心跳）+ epoch 代际 + march 页面语义原样保留（getter backing 转 push 镜像，泵媒体分支转被动）） | D-RFC-1 | 拟新增跨进程时钟/状态/seek 契约测试；A/V 漂移真值复测 | feature 关 |
 | C3 | 故障注入验收（DC-3）：host 终止 → 可观察错误 → 重载恢复（设计稿见 goal evidence DESIGN.md §11——崩溃检测双路（send 失败即时 + 泵周期 `try_wait` 兜底）、状态机 Idle/Healthy/Restarting（退避 1s/2s/4s，n≤3）/Failed、重启不自动重播重注册（epoch 重单调）、SIGKILL 注入 5 场景契约测试） | D-RFC-1 | 拟新增 DC-3 场景测试（真实进程终止） | feature 关 |
-| C4 | M4 配对数据 + 资源审计（DC-1/DC-4 收口证据） | D-RFC-1 | M1 harness 对照复测（开/关 feature 配对） | feature 关 |
+| C4 | M4 配对数据 + 资源审计（DC-1/DC-4 收口证据；设计稿见 goal evidence DESIGN.md §12——三态配对矩阵（feature 关 / shm 开 / `ZW_MEDIA_SHM=0`）、M1 harness 场景体复用、判据表（rate 带/seek 相等/漂移带/像素全等/IPC 税上界/代际零泄漏）、资源审计清单（进程树/RSS/shm 槽位/源驻留 256MB 复测/空闲 CPU）、capabilities 三对照） | D-RFC-1 | M1 harness 对照复测（开/关 feature 配对） | feature 关 |
 | B1 | 平台框架逐平台核查（§4.2 表落 evidence） | D-RFC-3 | 核查报告 + 可用平台清单 | 纯文档 |
 | B2+ | 首个平台 backend（依核查结果定） | D-RFC-3 + 用户点名平台 | capability 真值测试 + 软解配对 | feature 关 |
 
@@ -395,3 +395,4 @@ request/response）、**跨进程时钟/状态镜像**（DC-2 契约核心，C2 
 | v1.5-draft | 2026-10-24 | C1 行补设计稿指引（DESIGN.md §9：媒体消息族 14 拟新增变体 wire format 草案——控制面 7 + 状态/帧/错误面 7 + MediaPlaybackState/MediaErrorCode 伴生枚举；命名冲突排查（ProcessRole 无 Media 变体、IpcMessageKind 无 Media* 变体）；media-host 骨架边界（C1 = 契约 + 握手 + 空源生命周期，解码内核 C2 接）；契约测试计划含 kill-switch 与 feature 关回归）。无决策/门禁/批次范围变化，零代码改动 |
 | v1.6-draft | 2026-10-24 | C2 行补设计稿指引（DESIGN.md §10：host 自走时钟 + push 供数 renderer 镜像——march 页面语义原样保留、getter backing 转 push 镜像、250ms 心跳与 shim timeupdate 节流同值校准闭合 IF-003「≥100ms」实施值）；**C1 wire format 缺口修订**：桥面 setRate/setGain/setLoop（video_registry.rs:1711-1713 同步面）在 C1 草案无对应消息，§10.2 拟新增 3 变体（全族 14→17）+ MediaSourceReady 载荷扩 mediaMeta 三元组。无决策/门禁/批次范围变化，零代码改动 |
 | v1.7-draft | 2026-10-24 | C3 行补设计稿指引（DESIGN.md §11：崩溃检测双路 + 状态机/退避 + SIGKILL 注入 5 场景）；**降级纪律先例订正**：image-decoder spawn 失败实为永久错误面（SPAWN_FAILED 短路 image_decoder.rs:205，三调用方均落错误面、无内联回落），源码注释「spawn 失败→进程内解码」与代码不符——§2.2/§9.0/IF-001/IF-006 全部以代码为准改写，IF-006 纪律两条合一（spawn/运行期同归错误面），失实注释订正归 C1 顺带。无决策/门禁/批次范围变化，零代码改动 |
+| v1.8-draft | 2026-10-24 | C4 行补设计稿指引（DESIGN.md §12：M4 三态配对矩阵 + M1 harness 复用 + 判据表 + 资源审计清单 + capabilities 三对照）——**A1–A4 + C1–C4 全部批次设计稿齐备**。无决策/门禁/批次范围变化，零代码改动 |
