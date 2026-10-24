@@ -6437,6 +6437,29 @@
   //（setBase），相对输入簇全挂（探针实证：基址 = 页面 location、document.baseURI undefined）。
   globalThis._zwDocBaseURL = function () {
     var fallback = globalThis.location ? String(globalThis.location.href) : 'about:blank';
+    // R5270（html-semantics M2 切片 63）：pending 增补 base 先扫——querySelectorAll
+    // 的 R161 归并把 pending 追加快照尾，树序不保（head.prepend 的新 base 应先于
+    // 快照 base 评估；base-data/-javascript 案 3「动态插入 data: base → 回落」实证
+    // 走到快照二 base 返 example.com）。corpus 未钉「pending valid base 在快照 base
+    // 之后插入」的树序案——先扫近似记已知限制。
+    try {
+      if (typeof _zwPendingAdded !== 'undefined' && _zwPendingAdded.length) {
+        for (var _pbi = 0; _pbi < _zwPendingAdded.length; _pbi++) {
+          var _pb = _zwPendingAdded[_pbi];
+          if (!_pb || _pb.nodeType !== 1 || String(_pb.tagName || '').toUpperCase() !== 'BASE') continue;
+          var _pbRaw = null;
+          try { _pbRaw = typeof _pb.getAttribute === 'function' ? _pb.getAttribute('href') : null; } catch (_ePbR) {}
+          if (_pbRaw == null || String(_pbRaw) === '') continue;
+          if (typeof __zw_parse_url !== 'function') return fallback;
+          var _pbJ = __zw_parse_url(String(_pbRaw), fallback);
+          if (!_pbJ) return fallback;
+          var _pbParsed = JSON.parse(_pbJ);
+          var _pbHref = _pbParsed && _pbParsed.href ? String(_pbParsed.href) : fallback;
+          if (/^(data|javascript):/i.test(_pbHref)) return fallback;
+          return _pbHref;
+        }
+      }
+    } catch (_ePbAll) {}
     try {
       var doc = globalThis.document;
       if (!doc || typeof doc.querySelectorAll !== 'function') return fallback;
@@ -6455,7 +6478,14 @@
         var j = __zw_parse_url(String(raw), fallback);
         if (!j) return fallback; // frozen base URL 解析失败 → fallback base URL
         var parsed = JSON.parse(j);
-        return parsed && parsed.href ? String(parsed.href) : fallback;
+        // R5270（html-semantics M2 切片 63）：spec 文档基 URL 算法末步——解析结果
+        // scheme 为 data/javascript 时**立即返 fallback**（非继续找下一 base：
+        // base-data 案 1 首 base data: + 二 base https://example.com/ 期望解析落
+        // document.URL 非 example.com 实证）。空 href（''）解析即文档地址不受此门。
+        // https://html.spec.whatwg.org/multipage/urls-and-fetching.html#document-base-url
+        var _bHref = parsed && parsed.href ? String(parsed.href) : fallback;
+        if (/^(data|javascript):/i.test(_bHref)) return fallback;
+        return _bHref;
       }
     } catch (_eDb) {}
     return fallback;
@@ -23974,6 +24004,28 @@ return e;
           // 组件读取——空串 parse 失败组件恒 '' → ret '//' 回落原串）；非空仍解析
           // 绝对 URL（resolveUrl 非空走 A 组件解析面）。
           if (_realTag(sel, handle) !== 'A' && _realTag(sel, handle) !== 'AREA') {
+            // R5270（html-semantics M2 切片 63）：BASE href IDL spec 三态——href 内容
+            // 属性**缺失或空串 → 文档地址**；非空解析（基 = 文档地址）失败 → 文档地址
+            //（dom-base-href）。旧 R5008 与 LINK 同臂（缺失/空 → ''、失败 → 原串），
+            // base_href_empty/unspecified/specified 共 5F。LINK 保持 R5008 口径不变
+            //（harness resolveUrl 消费面）。sel 形走 lw 读（setAttribute 后同步读，
+            // M2-S9 A href 同款）。
+            // https://html.spec.whatwg.org/multipage/semantics.html#dom-base-href
+            if (_realTag(sel, handle) === 'BASE') {
+              var _bDoc5270 = globalThis.location ? globalThis.location.href : 'about:blank';
+              var _bRaw5270 = handle
+                ? __zw_get_attr_handle(handle, 'href')
+                : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'href') : __zw_get_attr(sel, 'href'));
+              if (_bRaw5270 == null || String(_bRaw5270) === '') return _bDoc5270;
+              if (typeof __zw_parse_url !== 'function') return String(_bRaw5270);
+              try {
+                var _bJson5270 = __zw_parse_url(String(_bRaw5270), _bDoc5270);
+                // 解析失败 → **原属性串**（base_href_invalid corpus 钉定："//test:test"
+                // ——非文档地址；R5008 LINK 同款口径，空串成功解析落文档地址不受此门）。
+                if (!_bJson5270) return String(_bRaw5270);
+                return JSON.parse(_bJson5270).href || _bDoc5270;
+              } catch (_eB5270) { return String(_bRaw5270); }
+            }
             var _r5blRaw = handle ? __zw_get_attr_handle(handle, 'href') : __zw_get_attr(sel, 'href');
             if (_r5blRaw == null || _r5blRaw === '' || typeof __zw_parse_url !== 'function') {
               return _r5blRaw == null ? '' : String(_r5blRaw);

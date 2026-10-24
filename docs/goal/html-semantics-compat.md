@@ -2,9 +2,32 @@
 
 **版本**: v2.0
 **日期**: 2026-10-24（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 62 开片（document-metadata 域首轮：title.text 族 R5269，域 **31P/75F/18T → 43P/63F/18T** GAIN 12 / REG 0；tabular-data 处理模型 4F 分诊定档渲染流不修，本流定格 130P/4F），下一步 base 族 9F；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 63 收口（document-metadata 域 base 族 R5270，域 **43P/63F/18T → 52P/54F/18T** GAIN 9 / REG 0），下一步 meta color-scheme 10F 归属核对 / link+style 事件族分诊；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-24 M2 切片 62 开片，document-metadata title.text 族轮）**：
+> **▶ 当前状态（2026-10-24 M2 切片 63 收口，document-metadata base 族轮）**：
+> document-metadata 第二实施切片：**43P/63F/18T → 52P/54F/18T**
+>（GAIN 9 / REG 0），the-base-element 13/13 全绿。**修复面
+>（R5270 三刀）**：①`_zwDocBaseURL` scheme 排除——spec 文档基 URL
+> 算法末步 data/javascript scheme **立即返 fallback**（非继续找下一
+> base，base-data 案 1 期望 document.URL 实证）。②pending 增补 base
+> 先扫——R161 归并把 pending 追加快照尾树序不保（head.prepend 新
+> base 先于快照 base 评估，案 3 实证）；corpus 未钉 pending valid
+> base 树序案，先扫近似记已知限制。③BASE href IDL（R5008 块内分
+> 支）——缺失/空串 → 文档地址；解析失败 → **原属性串**
+>（base_href_invalid corpus 钉定 "//test:test"，首版「失败 → 文档
+> 地址」翻红回退修正）；LINK 保持 R5008 口径（harness resolveUrl
+> 消费面）。**验证**：the-base-element 13/13 + tabular 130P/4F +
+> interactive 439P/44F + lib **3456P/0F**（_zwDocBaseURL 共享面
+> a/form action、baseURI、img src 零回归；+2 为 oracle 流新增）。
+> 账本见
+> [evidence/2026-10-24-m2s63-base-url-family.md](html-semantics-compat/evidence/2026-10-24-m2s63-base-url-family.md)。
+> **下一步**：meta color-scheme 10F 归属核对（疑 style-system/渲染
+> 面）；link/style 事件 30F+18T 分诊（runner file 通道能力上限）；
+> style type/media + CSP tentative 待分诊。
+> **切片间隙**：本轮 part03；下一挂账分诊未定，间隙开放，开工前查
+> oracle master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 62 开片，document-metadata title.text 族轮）**：
 > 两件事。**① tabular-data 余 4F 分诊定档（不修）**：processing-model-1
 > 四案全是表格布局 span 几何（colspan/col span=1000 字面列数摊宽、
 > rowspan=0 不参与行高分布；offsetWidth/clientHeight 读），控制面排除
