@@ -1204,6 +1204,12 @@ impl TabManager {
         std::mem::take(&mut self.pending_history_traverses)
     }
 
+    /// 测试用：直接入队页面 history 遍历请求（替代 worker 回执/多进程合流路径）。
+    #[cfg(test)]
+    pub fn push_history_traverse_for_test(&mut self, tab_id: TabId, delta: i32) {
+        self.pending_history_traverses.push((tab_id, delta));
+    }
+
     /// Tab 是否已注册。
     pub fn has_tab(&self, tab_id: TabId) -> bool {
         self.workers.contains_key(&tab_id)

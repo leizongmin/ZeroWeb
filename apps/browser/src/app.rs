@@ -3405,6 +3405,12 @@ impl BrowserApp {
         self.start_tab_load(tab_id, url);
     }
 
+    /// 测试用：直接入队页面 history 遍历请求（驱动消费半 drain + 活跃 tab 守卫）。
+    #[cfg(test)]
+    pub fn push_history_traverse_for_test(&mut self, tab_id: TabId, delta: i32) {
+        self.tabs.push_history_traverse_for_test(tab_id, delta);
+    }
+
     /// 执行前进导航
     pub fn go_forward(&mut self) {
         if let Some(tab_id) = self.shell.active_tab_id() {
