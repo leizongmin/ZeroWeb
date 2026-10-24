@@ -4,7 +4,7 @@ DESIGN §12 的验收批次：M1 harness 三态原样复跑（内联 feature-off
 `ZW_MEDIA_SHM=0`）+ 帧一致性摘要 + 代际风暴 + 能力真值三对照 + 30min 资源审计。
 判据原文见 [DESIGN §12](../2026-10-24-m3-prep-design/DESIGN.md)。
 
-**版本与来源（§12.1 报告头）**：评估对象 = C4 修复提交 `c9e249707`（A1 解码超前订正 +
+**版本与来源（§12.1 报告头）**：评估对象 = C4 修复提交 `4ea7f9e26`（A1 解码超前订正 +
 宿主 replay 订正，`crates/media/src/pipeline.rs` + `apps/media-host/src/kernel.rs`）；测试二进制（release）：
 `media_m1_baseline-7a862d9fa4166770`（内联）/ `media_m1_baseline-b0ff9b34acad5a97`
 （宿主）/ `media_c4_paired-b5b49af819253f0f`（内联）/ `media_c4_paired-a772fe394d302f18`

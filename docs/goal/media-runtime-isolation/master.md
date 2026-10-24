@@ -233,7 +233,7 @@
 - **偏差五处**记 [DESIGN §10.9](evidence/2026-10-24-m3-prep-design/DESIGN.md)（场景 4 到达路径=重启尝试耗尽、one-shot 双路投递语义、stderr tail 本地实现、页面 error 事件链止步桥 getter、clear 改 teardown）。
 - 共享面占用：webview（media_proxy/video_registry_host/video_registry/video_registry_bridge/契约测试）+ 文档三处；engine/protocol/media-host/renderer 零改动。
 
-### 2026-10-25 C4 配对验收轮（A1 解码超前订正 + 宿主 replay 订正，代码 `c9e249707`）
+### 2026-10-25 C4 配对验收轮（A1 解码超前订正 + 宿主 replay 订正，代码 `4ea7f9e26`）
 
 - 新增 `crates/webview/tests/media_c4_paired.rs`（验收 instrument，`#[ignore]` 显式运行 + test-guard 包裹，M1 先例）：帧一致性摘要（逐帧 content_hash 序列 fold，参照=解码器直出同管道）、代际风暴（9 跨 seek + 30 帧邻域断言）、能力真值三对照（host 协议实报 vs 实解 vs engine 静态表）、配额端到端、30min 资源审计（30 轮完整重播 + 暂停态空闲探针 + 孤儿核对）。
 - **配对抓出缺陷 1——A1 解码超前 pts 锚定回归**：A1（`3f98c4332`）把 decoded_end 锚 batch pts，长 fixture vorbis pts 步长 ≈ 样本步长/1.44 → EOF 提前至 ~70% 样本时刻，AV 轨 1013/1440 帧、视频随 audio cursor 同步冻结；`pipeline.rs` 三入口订正样本锚定（cursor+queued 基面），pts 连续轨零变化。M1 原判据只数纯视频呈现帧故三批未觉——帧摘要配对首次现形，回归自 A1 起潜伏（a1-post 证据已是 1013）。
