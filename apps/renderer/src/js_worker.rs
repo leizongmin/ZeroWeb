@@ -59,11 +59,14 @@ pub(crate) fn real_rect_enabled() -> bool {
 /// 消除）——shim rAF 注册队列，render 后 `tick_observers` 调 `__zw_raf_tick` 派发；
 /// `ZW_RAF_FRAME_DRIVEN=0/false/off` 显式 opt-out 回落同步 stub，用于诊断与对照测量
 ///（reftest 宿主直驱 sandbox，不经本开关）。详见 p1a-event-loop-raf-slice-design-2026-08-05.md。
+/// [`raf_frame_driven_enabled`] 的纯函数形态（env 值注入）——开关语义测试不碰进程级
+/// env（set_var 并行竞态规避，同 rAF 帧驱动测试 JS 侧注入惯用法）。
+fn raf_frame_driven_enabled_from(env: Option<&str>) -> bool {
+    !matches!(env, Some("0") | Some("false") | Some("off"))
+}
+
 pub(crate) fn raf_frame_driven_enabled() -> bool {
-    !matches!(
-        std::env::var("ZW_RAF_FRAME_DRIVEN").as_deref(),
-        Ok("0") | Ok("false") | Ok("off")
-    )
+    raf_frame_driven_enabled_from(std::env::var("ZW_RAF_FRAME_DRIVEN").ok().as_deref())
 }
 
 type ScriptFn = Arc<dyn Fn(&str) -> Result<String, String> + Send + Sync>;
@@ -5686,6 +5689,24 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(80));
         assert_eq!(worker.execute_script_direct("String(globalThis.__calls)").unwrap(), "2");
         worker.shutdown();
+    }
+
+    #[test]
+    fn raf_frame_driven_switch_semantics_pinned() {
+        // P9b 返修 TV-1：开关语义纯函数钉扎（不碰进程级 env，并行测试无竞态）——
+        // None（env 未设）/Some("")（env 设为空串）/Some("1")/Some("其他") 均开启
+        // （默认 on，任意非 opt-out 值不关闭）；
+        // Some("0")/Some("false")/Some("off") 显式 opt-out。大小写敏感且不 trim
+        // 的行为按实现钉住（"OFF"/" off" 视为非 opt-out，仍开启）。
+        assert!(raf_frame_driven_enabled_from(None), "env 未设 → 默认 on");
+        assert!(raf_frame_driven_enabled_from(Some("")), "env 设空串 → 默认 on");
+        assert!(raf_frame_driven_enabled_from(Some("1")));
+        assert!(raf_frame_driven_enabled_from(Some("其他")));
+        assert!(!raf_frame_driven_enabled_from(Some("0")), "显式 opt-out");
+        assert!(!raf_frame_driven_enabled_from(Some("false")), "显式 opt-out");
+        assert!(!raf_frame_driven_enabled_from(Some("off")), "显式 opt-out");
+        assert!(raf_frame_driven_enabled_from(Some("OFF")), "大小写敏感：OFF 非 opt-out");
+        assert!(raf_frame_driven_enabled_from(Some(" off")), "不 trim：带空白非 opt-out");
     }
 
     #[test]

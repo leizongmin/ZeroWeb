@@ -1,8 +1,9 @@
 <!doctype html>
 <title>BG-02 offscreen animation</title>
 <!-- BG-02 视口外动画呈现观测页：动画元素位于视口外（top: 200%），CSS 动画
-     infinite + rAF 帧驱动循环（需 ZW_RAF_FRAME_DRIVEN=1，默认为同步 stub）。
-     __zw_raf 计数供 CDP 采样；呈现次数由 compositor frame_dump 承载。 -->
+     infinite + rAF 帧驱动循环（P9b 起默认 on；ZW_RAF_FRAME_DRIVEN=0/false/off
+     显式 opt-out 时回落同步 stub）。__zw_raf 计数供 CDP 采样；呈现次数由
+     compositor frame_dump 承载。 -->
 <style>
   #off {
     position: absolute;
