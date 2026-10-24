@@ -4499,6 +4499,20 @@
           globalThis.__zwAdoptDocByHandle[String(copy.__zwHandle)] = globalThis.document;
         }
       } catch (_e132h) {}
+      // R5268（html-semantics M2 切片 61）：快照域产物 deep import 物化为 handle 树——
+      // spec importNode = clone + adopt，产物须落目标文档完整接口面；raw _zwMEl 副本
+      // append 进活树后 `.tBodies` 等读 undefined（tBodies.html XML 导入案 + probe
+      // s61b C 实证）。t8q adoptNode 同款 `_wcRebuildAsHandle`（跨 part 先例 part04 R97
+      // clone 产物物化）；浅克隆不物化（child 剥离语义会丢）。真 wrapper 源不进本分支
+      //（既有行为零变化）。
+      try {
+        if (isDeep
+            && ((typeof _zwParseEl === 'function' && node instanceof _zwParseEl) || node.__zwIsMEl === true)
+            && typeof _wcRebuildAsHandle === 'function') {
+          var _r5268mat = _wcRebuildAsHandle(copy);
+          if (_r5268mat && _r5268mat.nodeType === 1) return _r5268mat;
+        }
+      } catch (_eR5268) {}
       return copy;
     },
     // `document.implementation`（DOMImplementation，R2815）——feature-detection（jQuery support 等查 hasFeature）

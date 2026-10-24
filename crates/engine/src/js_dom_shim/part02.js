@@ -4891,6 +4891,14 @@
     out.__zwQSA = true;
     return out;
   };
+  // R5268（html-semantics M2 切片 61）：快照元素级 getElementsByTagName——旧仅 doc 级
+  //（_zwParsedDoc.getElementsByTagName），元素级缺方法（`doc.documentElement.getElementsByTagName
+  // is not a function`，tBodies.html XML 导入案）。与 doc 级同口径：type selector 查询
+  // 委托 querySelectorAll（outerHTML 重解析 + 镜像剔除 + per-element 缓存）。
+  // https://dom.spec.whatwg.org/#dom-element-getelementsbytagname
+  _zwParseEl.prototype.getElementsByTagName = function (tag) {
+    return this.querySelectorAll(String(tag));
+  };
   // R3019：lazy 可变子树桥——DOMPurify / sanitizer / 树遍历库经 DOMParser.parseFromString 拿到 body 后，
   // 用 createNodeIterator 递归 childNodes + removeChild/setAttribute/removeAttribute 清洗 + 读 body.innerHTML。
   // 旧 _zwParseEl 为只读快照（无 childNodes/mutation），walk 恒只见 root。本桥首次 childNodes/mutation 访问时

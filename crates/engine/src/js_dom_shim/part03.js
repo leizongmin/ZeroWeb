@@ -24363,23 +24363,18 @@ return e;
               if (index < -1) _throwDom('IndexSizeError', 'index is negative and not -1');
               var tr = globalThis.document.createElement('tr');
               var rowsArr = _rowList(this);
-              var firstTbody = null;
-              try { var _tbs = this.tBodies; firstTbody = (_tbs && _tbs.length) ? _tbs[0] : null; } catch (_e) {}
-              var hasSection = firstTbody || this.tHead || this.tFoot;
-              // 无 tr 且无 section → 建 tbody 挂新行（spec「no tr/tbody/thead/tfoot children」分支）
-              if (rowsArr.length === 0 && !hasSection) {
-                var tb = globalThis.document.createElement('tbody');
-                this.appendChild(tb);
-                tb.appendChild(tr);
-                return tr;
-              }
               if (index === -1 || index === rowsArr.length) {
-                if (rowsArr.length === 0) {
-                  // section 已存在（非上分支）→ 入首个 tbody（无 tbody 则直挂 table）
-                  if (firstTbody) firstTbody.appendChild(tr); else this.appendChild(tr);
-                } else {
-                  rowsArr[rowsArr.length - 1].parentNode.appendChild(tr);
+                // R5268：append 位 = **最后** tbody 元素子；无 tbody（thead/tfoot 不是插入
+                // 目标）则新建 tbody 挂 table——旧「首 tbody / 无 tbody 直挂 table」与 spec
+                // 不符（thead/tfoot-only 表 insertRow(-1) 案 2F：新行须入新建 tbody）。
+                // https://html.spec.whatwg.org/multipage/tables.html#dom-table-insertrow
+                var lastIdx = _zwTblChildIdxLast(this, 'tbody');
+                var targetBody = lastIdx >= 0 ? this.childNodes[lastIdx] : null;
+                if (!targetBody) {
+                  targetBody = globalThis.document.createElement('tbody');
+                  this.appendChild(targetBody);
                 }
+                targetBody.appendChild(tr);
               } else if (index >= 0 && index < rowsArr.length) {
                 var ref = rowsArr[index];
                 ref.parentNode.insertBefore(tr, ref);

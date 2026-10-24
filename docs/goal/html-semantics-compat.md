@@ -2,9 +2,33 @@
 
 **版本**: v2.0
 **日期**: 2026-10-24（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 60 收口（tabular-data 域 R5267 table.rows HTMLCollection 形态，域 **122P/12F → 127P/7F** GAIN 5 / REG 0；interactive-elements 全域 439P/44F/0T 复跑逐值不变），下一步 table-insertRow 2F + tBodies 1F（可并片）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 61 收口（tabular-data 域 R5268 insertRow tbody 目标 + XML 导入链，域 **127P/7F → 130P/4F** GAIN 3 / REG 0；interactive-elements 全域 439P/44F/0T 复跑逐值不变），下一步处理模型 4F 分诊；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-24 M2 切片 60 收口，table.rows HTMLCollection 轮）**：
+> **▶ 当前状态（2026-10-24 M2 切片 61 收口，insertRow tbody 目标 + XML 导入链轮）**：
+> tabular-data 域第四实施切片：**127P/7F → 130P/4F**（GAIN 3 / REG 0），
+> interactive-elements 全域 **439P/44F/0T** 复跑逐值不变，zero-engine
+> lib **3454P/0F**。**修复面（R5268）**：①table.insertRow append 位
+> （part03）——删 `hasSection` 分支（旧：rows 空 + thead/tfoot 存在时新
+> 行**直挂 table**），统一「`_zwTblChildIdxLast` 最后 tbody，无则新建
+> tbody 挂 table」——spec append 位 = 最后 tbody 元素子，thead/tfoot
+> 不是插入目标（table-insertRow thead/tfoot 案 2F 同修）；连带多 tbody
+> append 位从「最后有行的 tbody」纠正为「最后 tbody 元素子」。②快照
+> 元素级 getElementsByTagName（part02）——`_zwParseEl` 缺方法（仅 doc 级
+> 有），委托 querySelectorAll 一行补齐（tBodies.html XML documentElement
+> 查询面）。③importNode 快照域产物物化（part06）——`_zwParseEl`/
+> `__zwIsMEl` 源 deep import 经 `_wcRebuildAsHandle` 物化为 handle 树
+> （t8q adoptNode 同判据同重建器；raw _zwMEl 副本 append 进活树后
+> `.tBodies` 读 undefined 实证）；浅克隆与真 wrapper 源不进分支零变化。
+> **验证**：probe 6 案全绿（已删）+ table-insertRow 3/3 + tBodies 1/1 +
+> 两域复跑零回归。账本见
+> [evidence/2026-10-24-m2s61-insertrow-tbody-xml-import.md](html-semantics-compat/evidence/2026-10-24-m2s61-insertrow-tbody-xml-import.md)。
+> **下一步**：tabular-data 余 4F 全在 processing-model-1——rowspan-0×2
+> （clientHeight 渲染门）+ col-span-limits×2（span 处理模型），待分诊；
+> cells/tBodies HTMLCollection 类型一致化（无断言，低优先）。
+> **切片间隙**：本轮 part02/03/06；下一挂账分诊未定，间隙开放，开工前
+> 查 oracle master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 60 收口，table.rows HTMLCollection 轮）**：
 > tabular-data 域第三实施切片：**122P/12F → 127P/7F**（GAIN 5 / REG 0），
 > interactive-elements 全域 **439P/44F/0T** 复跑逐值不变，zero-engine
 > lib **3454P/0F**（+5 为 oracle 流新增测试）。**修复面（R5267）**：
