@@ -355,12 +355,10 @@ fn collect_fragment_imgs(doc: &zero_dom::Document, id: zero_dom::NodeId, srcs: &
         let is_img = doc
             .get(child)
             .is_some_and(|n| matches!(&n.kind, zero_dom::NodeKind::Element(e) if e.local_name() == "img"));
-        if is_img {
-            if let Some(src) = effective_img_src(doc, child) {
-                let src = src.trim();
-                if !src.is_empty() {
-                    srcs.push(src.to_string());
-                }
+        if is_img && let Some(src) = effective_img_src(doc, child) {
+            let src = src.trim();
+            if !src.is_empty() {
+                srcs.push(src.to_string());
             }
         }
         collect_fragment_imgs(doc, child, srcs);
