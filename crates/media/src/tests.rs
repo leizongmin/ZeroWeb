@@ -670,3 +670,70 @@ fn mp4_h264_seek_forward_precise() {
     // 24fps：pts ≥1000ms 的帧 = 1000→1958ms ≈ (1958-1000)/41.7 + 1 = 24 帧。
     assert_eq!(count, 24, "seek(1000) 后应剩余 24 帧（24fps × ~958ms 窗口）");
 }
+
+#[test]
+fn webm_cue_times_parsed_from_source_bytes() {
+    // A4 cue 锚定：开流时对源字节平扫 Cues——60s fixture（GOP 2s，30 簇）应有
+    // 30 个偶秒 cue 点，升序 [0, 2000, …, 58000]（tick≡ms，TimestampScale 1e6）。
+    let data = fs::read(fixture_path("long-webm-vp9-60s.webm")).unwrap();
+    let mut dec = VideoDecoder::open_webm_vp9(&data).unwrap();
+    let cues = dec.cue_times_ms();
+    assert_eq!(cues.len(), 30, "60s/2sGOP fixture 应有 30 个 cue 点");
+    assert_eq!(cues[0], 0);
+    assert_eq!(cues[29], 58000);
+    for (i, &t) in cues.iter().enumerate() {
+        assert_eq!(t, (i as u64) * 2000, "cue 点应落在偶秒簇首");
+    }
+}
+
+#[test]
+fn webm_seek_mid_gop_narrowed_forward_precise() {
+    // A4 窄化回退正确性：mid-GOP 目标（15s，奇秒簇内）——phase-① 落非 keyframe
+    // → cue 锚定（14s 簇首）前向解码至 ≥ target。首帧 pts 精确 ∈ [15000, 15417]
+    //（24fps 帧距 ~41.7ms），后续单调续播（≤ 24+1 帧窗口内不回退到流首——
+    // 剩余帧数远小于全流 1440）。
+    let data = fs::read(fixture_path("long-webm-vp9-60s.webm")).unwrap();
+    let mut dec = VideoDecoder::open_webm_vp9(&data).unwrap();
+    dec.seek_to_ms(15000).unwrap();
+    let f = dec.next_frame().unwrap().expect("seek 后应有帧");
+    assert!(
+        (15000..=15417).contains(&f.pts_ms),
+        "mid-GOP seek(15s) 首帧 pts 应精确 ∈ [15000,15417]，got {}",
+        f.pts_ms
+    );
+    let mut count = 1u32;
+    let mut last = f.pts_ms;
+    while let Some(frame) = dec.next_frame().unwrap() {
+        assert!(frame.pts_ms > last, "seek 后 PTS 单调性破坏");
+        last = frame.pts_ms;
+        count += 1;
+        assert!(count <= 1440, "runaway frame count");
+    }
+    assert!(
+        count <= 24 * 45 + 48,
+        "seek(15s) 后剩余帧应 ≈ 45s×24fps=1080（窄化路径不回放前段），got {count}"
+    );
+    assert!(
+        (59900..=60050).contains(&last),
+        "末帧 PTS 应达流末窗口（60s fixture），got {last}"
+    );
+}
+
+#[test]
+fn webm_seek_sparse_cue_stream_falls_back_full_forward() {
+    // 稀疏 cue 形态（movie_5 同构——单 keyframe 流，cue 集为空或仅流首）：无有效
+    // 锚 → 全量前向回退（spec precise-seek 形态保留）。seek(1000) 后首帧 pts
+    // ≥ 1000、单调续播至流末 48 帧——与既有 webm_vp9_seek_to_mid_stream_keyframe
+    // 同面，此处锁 A4 重构后该分支不回退。
+    let data = fs::read(fixture_path("sample-webm-vp9.webm")).unwrap();
+    let mut dec = VideoDecoder::open_webm_vp9(&data).unwrap();
+    dec.seek_to_ms(1000).unwrap();
+    let f = dec.next_frame().unwrap().expect("seek 后应有帧");
+    assert!(f.pts_ms >= 1000, "sparse-cue seek 首帧 pts ≥ target，got {}", f.pts_ms);
+    let mut count = 1u32;
+    while dec.next_frame().unwrap().is_some() {
+        count += 1;
+        assert!(count <= 48);
+    }
+    assert_eq!(count, 24, "seek(1s) 后剩余 24 帧（24fps × ~958ms）");
+}
