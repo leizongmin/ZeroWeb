@@ -1,9 +1,9 @@
 # 媒体运行时隔离控制面
 
 **日期**：2026-10-24
-**状态**：Active（**M1 基线测量完成**——见 [2026-10-24 evidence](evidence/2026-10-24-m1-baseline/ANALYSIS.md)；**M2 两项交付齐备 + M3 前置设计全部就绪待用户评审**——[docs/specs/media-runtime-isolation-spec-rfc.md](../../../specs/media-runtime-isolation-spec-rfc.md) v1.8：三路线对比 + §9 接口契约；A1–A4 + C1–C4 **全部批次**设计稿齐备见 [m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；D-RFC-1~4 决策点）。
-**当前卡点**：用户评审/批复 RFC（D-RFC-1~4：方案 C 立项 / A 批次随批 / 方案 B 核查 / decode-h264 启用）。批复前不改代码、不装 SDK、不变 feature 表。M1 待决输入（时钟 rate 1.454、NullSink）已入 RFC 方案 A 批次与 TBD-3。
-**下一步**：用户批复后按 RFC §7 批次推进——D-RFC-2 随批即启 A1（时钟批内对齐）；D-RFC-1 批准则并行 C1（protocol 媒体消息族 + `media-process` feature 骨架）。若改选 A-only，DC-3 按 DC-5 由用户认可延期/调整后收口。
+**状态**：Active（**D-RFC-1~4 已批复**——方案 C 批准 / A 批次随批即启 / B 核查暂缓 / decode-h264 维持默认关，RFC v1.9 §10 批复记录；M1 基线 + M2 RFC 两项交付 + M3 前置设计八片齐备，[m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；**M3 实施启动：A1 先行**）。
+**当前卡点**：无（决策门已过）。A1 实施中——时钟批内对齐（`BatchSampleQueue` 样本级消费，三入口 advance_to 改造，rate 收 [0.9,1.1]）。
+**下一步**：A1 落地并过 M1 harness T3 复测 → A2（三缺口修复）→ A3/A4；C1（protocol 媒体消息族 17 变体 + `media-process` feature 骨架，feature 默认关）并行启动。
 **入口**：[目标契约](../media-runtime-isolation.md) / [启动与证据协议](../ladybird-followups/README.md)
 
 ## 缺口与待决
@@ -11,7 +11,7 @@
 | 缺口/选择 | 首步 | 状态 |
 |---|---|---|
 | CPU/帧复制/A-V 同步与权限 | 固定长视频、版本与真实帧消费链 | **已测**（60s 基线 + 复制链 C1–C5 + 权限表，evidence 2026-10-24） |
-| 同步状态代理/时钟/seek 的进程契约 | 比较现状、平台解码、独立运行时 | **RFC v1.1 完成**（三路线对比 + §9 IF 级接口契约，待用户批复） |
+| 同步状态代理/时钟/seek 的进程契约 | 比较现状、平台解码、独立运行时 | **RFC v1.9 已批复**（三路线对比 + §9 IF 级接口契约；方案 C 立项） |
 | 故障、权限不足与软件回退 | 真实隔离实例注入并验证浏览器恢复 | NOT_STARTED |
 | 平台 SDK/codec 许可/分发与架构投入 | M1/M2 证据与 RFC 后决定，不自动换许可证 | 待决（M1 核查：本平台 /dev/dri 缺失，无硬解路径） |
 
@@ -20,8 +20,8 @@
 | 阶段 | 产物 | 状态 | 证据 |
 |---|---|---|---|
 | M1 | 生产资源、能力与权限基线 | **完成**（测量面成立，收口待评审） | [2026-10-24 基线](evidence/2026-10-24-m1-baseline/ANALYSIS.md) |
-| M2 | 方案/许可证/回滚 RFC + protocol 接口契约 | **v1.7 完成待批复**（决策门=用户） | [media-runtime-isolation-spec-rfc](../../../specs/media-runtime-isolation-spec-rfc.md) |
-| M3 | 已确认平台与隔离切片 | NOT_STARTED（A1–A4 + C1–C4 全部批次设计稿齐备，待 D-RFC-2/1） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
+| M2 | 方案/许可证/回滚 RFC + protocol 接口契约 | **v1.9 已批复**（D-RFC-1~4 用户裁决） | [media-runtime-isolation-spec-rfc](../../../specs/media-runtime-isolation-spec-rfc.md) |
+| M3 | 已确认平台与隔离切片 | **IN_PROGRESS**（A1 实施启动；A1–A4 + C1–C4 设计稿齐备，D-RFC-1/2 已批） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
 | M4 | 配对媒体、故障和资源审计 | NOT_STARTED | 无 |
 
 ## 验证基线
@@ -155,3 +155,9 @@
     本机无 /dev/dri 即软解如实报用例。
 - RFC v1.8：C4 行补设计稿指引 + §13 历史行；无决策/门禁/批次范围变化。**设计前置至此全部完成，
   后续推进唯一入口 = 用户批复 D-RFC-1~4。**
+
+### 2026-10-24 D-RFC 批复轮（M3 实施启动）
+
+- **用户四项裁决**（AskUserQuestion 逐项确认）：D-RFC-1 **批准方案 C**（独立媒体进程立项）/ D-RFC-2 **随批复即启**（A1–A4 按序推进）/ D-RFC-3 **暂缓**（方案 B 核查不启动）/ D-RFC-4 **维持默认关**（decode-h264 不启用）。
+- RFC v1.9：状态 草稿→已批复；§10 决策表增批复列；§13 历史行。批复前禁令解除；`media-process` feature 仍默认关（启用时机归 C4/M4 后另议）。
+- master.md 状态面同步（状态/卡点/缺口表/M2/M3 里程碑）。本轮纯文档；A1 实施随后同日另轮记录。
