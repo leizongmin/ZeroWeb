@@ -504,6 +504,34 @@ FrameTooLarge / HostInternal）。全部走既有 `IpcMessage` 信封 + bincode 
 - C2 单提交（`media-process` gate 内）；回退即回 `tick_all` 主动轮询面。wire 向前兼容由 C1 握手
   版本守门（renderer/host 版本不符按 spawn 失败处理，IF-001）——无灰度态。
 
+### 10.7 实施偏差记录（C2 切片 1 落地轮增补，2026-10-25）
+
+切片 1 = 音频管线迁零-media（§10.3 前置）+ 内核/事件循环 + proxy 事件面 + 真实二进制契约。
+落地时确认的偏差与设计对齐点：
+
+1. **回执 id 配对修正（IF-002 闭合）**：play 成功的即时 `Playing` 推送与 pause 的
+   `Paused` 回执携请求信封 id（原推送面 id 0 会让 `client.play` 成功路径按 id 等待必
+   超时）；set_loop/set_gain/set_rate 成功面无回执（client 侧 fire-and-forget），未知源
+   错误经事件面补投。
+2. **纯视频循环回卷由 renderer 驱动**：内核对纯视频不自动回卷——`Ended` 状态推送后由
+   renderer 走 seek+play（registry `Ended→reset` 分支同构）；纯音频与 A/V 音频轨的
+   `wrap_pending` 回卷在内核内完成（代际 +1，§10.3）。
+3. **A/V 视频 `Ended` 即静音伴音轨**（`av.playing = false`）：registry 的音频残余步进
+   段（视频终态后音频继续走到流末）不复刻——页面 `ended` 语义以视频轨为准，伴音残余
+   无页面可观察面。
+4. **play 位置 ±1ms 容差**（`PLAY_POSITION_TOLERANCE_MS`）：wire 授权位与游标差在容差内
+   不触发 seek 链（代际不空转）；超出即走 seek 链（代际 +1）。
+5. **host 常驻源字节**：registry 播放后会摘除单轨源字节，内核始终保留（重播/seek 重建
+   解码链需全量字节）；256MiB 配额覆盖常驻面。
+6. **`SourceReady` 元数据推送时机 = play 建解码器后**（id 0 自发面）：register 回执的
+   `SourceReady` 元数据恒 `None`（喂入未齐 demux 不可行，如实不上假值）；真实
+   duration/尺寸经 play 后推送升级（renderer 镜像升级面）。
+7. **真实进程首帧 pts ≠ 0**：present 语义 = 最新可呈现帧 ≤ position（registry 同构，中
+   间帧跳过）；真实时钟下首个泵 tick 已越过 0 点（观测 42ms@26ms 握手延迟），契约测试
+   断言首帧 < 250ms 而非 == 0。虚拟时钟内核单测仍锚 pts 0（时钟受控）。
+8. **能力真值（DC-4）**：握手 capabilities = `codec_capabilities()` 实际路由面（vp9/vorbis/
+   opus webm + mp3 + ogg-opus + mp4-aac 常开；av1/h264 随 feature 门控），不虚报。
+
 ## 11. C3 设计——崩溃检测/重启退避 + 降级纪律先例订正（同日第六轮增补）
 
 ### 11.1 先例核实：image-decoder spawn 失败语义订正（RFC v1.7 触发点）

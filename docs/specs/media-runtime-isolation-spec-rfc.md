@@ -281,8 +281,11 @@ request/response）、**跨进程时钟/状态镜像**（DC-2 契约核心，C2 
 | `MediaReleaseSource` | source | 释放源与播放器（导航/`release` 面） | — |
 | `MediaShutdown` | — | 优雅退出 | — |
 
-请求/响应以信封 `id` 匹配（现有 `IpcMessage.id` 先例）；fire-and-forget 仅限无回执行
-（`MediaReleaseSource`）。
+请求/响应以信封 `id` 匹配（现有 `IpcMessage.id` 先例）；fire-and-forget 限于无成功
+回执面：`MediaReleaseSource` 与 set 面（`MediaSetRate`/`MediaSetLoop`/`MediaSetGain`，
+C2 落地语义——成功无回执，未知源错误经自发 `MediaError` 事件补投）；`MediaPlay`/
+`MediaPause` 的成功回执即首条 `MediaStateUpdate`（携请求信封 id，后续心跳/终态为
+id 0 自发面）。
 
 ### IF-003 状态/时钟面（host → renderer，DC-2 契约核心）
 
@@ -398,3 +401,4 @@ request/response）、**跨进程时钟/状态镜像**（DC-2 契约核心，C2 
 | v1.8-draft | 2026-10-24 | C4 行补设计稿指引（DESIGN.md §12：M4 三态配对矩阵 + M1 harness 复用 + 判据表 + 资源审计清单 + capabilities 三对照）——**A1–A4 + C1–C4 全部批次设计稿齐备**。无决策/门禁/批次范围变化，零代码改动 |
 | v1.9 | 2026-10-24 | **用户批复 D-RFC-1~4**（§10 批复列：方案 C 批准 / A 批次随批即启 / B 核查暂缓 / decode-h264 维持默认关）；状态 草稿→已批复，批复前禁令解除。实施按 §7 推进：A1 先行，C1 并行 |
 | v1.10 | 2026-10-24 | C1 落地闭合 §9 IF-002 待定值：per-source 上限定值 256 MiB（`MEDIA_SOURCE_MAX_BYTES`），登记自报 `total_len` 与实收字节双面校验、超限摘源（信任边界：自报值不可信）；失实注释订正（v1.7 归 C1 项）随 C1 提交完成。无决策/门禁/批次范围变化 |
+| v1.11 | 2026-10-25 | C2 切片 1 落地闭合 IF-002 成功面语义：`MediaPlay`/`MediaPause` 成功回执 = 首条 `MediaStateUpdate` 携请求信封 id（心跳/终态 id 0 自发面）；set 面（SetRate/SetLoop/SetGain）成功无回执 → fire-and-forget 扩围。偏差细则 DESIGN §10.7（循环回卷分轨、SourceReady 元数据推送时机、±1ms 位置容差）。无决策/门禁/批次范围变化 |

@@ -1,9 +1,9 @@
 # 媒体运行时隔离控制面
 
-**日期**：2026-10-24
-**状态**：Active（**D-RFC-1~4 已批复**——方案 C 批准 / A 批次随批复即启 / B 核查暂缓 / decode-h264 维持默认关，RFC v1.9 §10 批复记录；M1 基线 + M2 RFC 两项交付 + M3 前置设计八片齐备，[m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；**A1–A4 + C1 已落地**——rate 1.00000 + 三缺口闭合 + 内存面收敛 + seek 冷路径 O(GOP) + 协议消息族/media-host 骨架/webview proxy（feature 默认关），偏差记录 DESIGN §2.4/§3.5/§6.5/§8.6/§9.6）。
-**当前卡点**：无。A 批次 + C1 完成。
-**下一步**：C2（registry 客户端切换 + host 自走时钟 + push 供数 renderer 镜像，DESIGN §10）；relative-position 产物流 seek 抽样复核归后续验证切片。
+**日期**：2026-10-25
+**状态**：Active（**D-RFC-1~4 已批复**——方案 C 批准 / A 批次随批复即启 / B 核查暂缓 / decode-h264 维持默认关，RFC v1.9 §10 批复记录；M1 基线 + M2 RFC 两项交付 + M3 前置设计八片齐备，[m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；**A1–A4 + C1 + C2 切片 1 已落地**——rate 1.00000 + 三缺口闭合 + 内存面收敛 + seek 冷路径 O(GOP) + 协议消息族/media-host 骨架/webview proxy + **C2 解码内核/自走时钟事件循环/proxy 事件面/真实二进制契约**（feature 默认关），偏差记录 DESIGN §2.4/§3.5/§6.5/§8.6/§9.6/§10.7）。
+**当前卡点**：无。A 批次 + C1 + C2 切片 1 完成。
+**下一步**：C2 切片 2（registry 客户端切换 + renderer 泵被动消费 + push 镜像状态 + M1 harness 复验，DESIGN §10.4/§10.5）；relative-position 产物流 seek 抽样复核归后续验证切片。
 **入口**：[目标契约](../media-runtime-isolation.md) / [启动与证据协议](../ladybird-followups/README.md)
 
 ## 缺口与待决
@@ -21,7 +21,7 @@
 |---|---|---|---|
 | M1 | 生产资源、能力与权限基线 | **完成**（测量面成立，收口待评审） | [2026-10-24 基线](evidence/2026-10-24-m1-baseline/ANALYSIS.md) |
 | M2 | 方案/许可证/回滚 RFC + protocol 接口契约 | **v1.9 已批复**（D-RFC-1~4 用户裁决） | [media-runtime-isolation-spec-rfc](../../../specs/media-runtime-isolation-spec-rfc.md) |
-| M3 | 已确认平台与隔离切片 | **IN_PROGRESS**（A1–A4 已全部落地——rate≡1.0 + 三缺口闭合 + 内存面收敛 + seek O(GOP)；C1 已落地——protocol 17 变体 + media-host 骨架 + webview proxy，feature 默认关；C2–C4 设计稿齐备，D-RFC-1/2 已批） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
+| M3 | 已确认平台与隔离切片 | **IN_PROGRESS**（A1–A4 已全部落地——rate≡1.0 + 三缺口闭合 + 内存面收敛 + seek O(GOP)；C1 已落地——protocol 17 变体 + media-host 骨架 + webview proxy，feature 默认关；**C2 切片 1 已落地**——音频管线迁零-media + 解码内核/自走时钟 + proxy 事件面 + 真实二进制契约，registry 未切换仍内联；C2 切片 2 + C3/C4 设计稿齐备，D-RFC-1/2 已批） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
 | M4 | 配对媒体、故障和资源审计 | NOT_STARTED | 无 |
 
 ## 验证基线
@@ -202,3 +202,14 @@
 - **顺带订正与配套**：image_decoder.rs:178 挂名注释订正（「spawn 失败→进程内解码」为失实，实际错误面，RFC v1.7/§11.1 归 C1 项，仅注释）；renderer runtime.rs 收消息 match 补 17 变体臂（媒体走独立 stdio 通道不经主进程 IPC，防 E0004）；Makefile 四处 image-decoder 构建行同列 `-p zero-media-host`。偏差九处记 [DESIGN §9.6](evidence/2026-10-24-m3-prep-design/DESIGN.md)（含 shm kill-switch 集成测试延后 C2：C1 无 Frame 流可驱动）。
 - **验收**：protocol 331 + media-host 4 + webview feature-on 定向（media_proxy 3 单测 + 契约 2）全绿；全量 `make test` 过（含 quickjs clippy 组合）；`cargo check -p zero-webview`（默认关，media_proxy 不编译）过。首轮 make test 暴露 renderer E0004（17 变体非穷尽 match）——已修后复跑绿。
 - 共享面占用：protocol（消息族）+ webview（feature 门/proxy/注释）+ renderer（match 臂）+ Makefile；registry/engine/media 零改动，默认关路径行为零变化。
+
+### 2026-10-25 C2 切片 1 实施轮（解码内核 + 自走时钟 + 事件面落地）
+
+- **音频管线六类型迁零-media**（`3e07f7f46`）：`AudioStreamDecoder`/`BatchSampleQueue`/`AudioEntry`/`WebmAudioTrackKind`/`WebmAudioEntry`/`MseAudioEntry` 自 video_registry.rs（2780→2209 行）逐字迁入 `crates/media/src/pipeline.rs`（A1 时钟语义单一真值，内核与 registry 共享；`#[cfg(decode-h264)]` 门随迁）；registry 改 `use zero_media::` 引用，行为零变化。
+- **解码内核 + 自走时钟事件循环**（`6a2b5d4d2`）：`apps/media-host` 增 `kernel.rs` `MediaKernel` 纯函数面（`handle`/`advance`/`next_wake_ms` 无 IO）——registry 同构播放语义（A/V 音频主钟 `sync_to_media_time`、纯视频墙钟、纯音频游标；seek/replay 重建链同序；懒建解码器 + `apply_stored_controls` 补存 loop/gain）+ 推送面（跃迁即时 / 帧携 pts / 250ms 心跳 / epoch 代际 DC-2 / 配额 256MiB 双面）；`lib.rs` `RoleIo{next_message(timeout), send_reply}` + `run_role_feed`（唤醒截止 = 音频队列排空时刻，纯视频 16ms 泵量子 FIXME 标注待 player next_pts API；空闲无限期阻塞，无 60Hz 轮询）；`main.rs` stdio 拆两半（stdin 读线程 → mpsc + `recv_timeout`，`IpcChannel` 阻塞 recv 无超时是拆分根因）。虚拟时钟单测 15（真实 fixture 全管线）+ lib 5。
+- **proxy 事件面**（`402bcf854`）：`MediaHostEvent{State/Frame/SourceReady/Error}` + `try_recv_event` 非阻塞排空（暂存+入站按到达序合并，推送面出队为事件、响应面留队供 `wait_for` 配对；未连接不触发懒 spawn；传输失效置永久错误面 IF-006，C3 换重启面）。单测 7。
+- **真实二进制契约 + 回执 id 配对修正**（`7f154ee13`）：内核 play 即时 `Playing` 推送与 pause `Paused` 回执携请求信封 id（**IF-002 闭合**——原 id 0 使 `client.play` 成功路径必超时）；client 增 `pause`/`set_loop`（set 面 fire-and-forget 对齐内核无回执成功面）；契约测试更名 `media_host_contract.rs`（C1「play/seek 必错」断言对 C2 内核失效）扩 4 场景（视频 play→元数据/状态/帧→seek 代际+1→暂停冻结 / A/V / 纯音频 set_loop 回卷代际+1 / 控制面错误面），全绿 3.4s。
+- **偏差八处**记 [DESIGN §10.7](evidence/2026-10-24-m3-prep-design/DESIGN.md)（回执 id 配对、纯视频回卷 renderer 驱动、A/V Ended 静音伴音轨、±1ms 位置容差、host 常驻源字节、SourceReady 元数据推送时机=play 后、真实进程首帧 pts≠0、能力真值）；RFC v1.11 记 IF-002 成功面语义与 set 面 fire-and-forget 扩围。
+- **门红修复**（既有非本切片，`guarded-clippy` -D warnings 暴露）：`zero-media` `cue_times_ms` 收窄 `#[cfg(test)]`（A4 起唯一调用方在测试面）+ tests.rs 冗余 `mut` + `media_m1_baseline.rs` 文档列表缩进（doc_lazy_continuation）。
+- **验收**：media-host 15+5（decode-h264 组合同绿）+ webview media_proxy 7 + 契约 4 全绿；workspace `guarded-clippy` -D warnings 过；全量 `make guarded-test` 过（exit 0）。registry 未切换（`media-process` 仍默认关），默认路径行为零变化。
+- 共享面占用：zero-media（pipeline.rs 新增 + 门红两行）+ webview（video_registry 迁出 + media_proxy + 契约测试）+ media-host + protocol transport（MAX_FRAME_SIZE pub）+ RFC/DESIGN/master 文档；engine/renderer/registry 调用点零改动。
