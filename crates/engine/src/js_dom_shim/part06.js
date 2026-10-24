@@ -10226,6 +10226,16 @@
         // 落位）。spec play() promise pending 于播放真正推进，重试窗口内 playing
         // 态保持；命中后与同步路径同面（playPromise 由既有 queued task resolve）。
         var _hit = _pAbs ? globalThis.__zwVideoBridge.play(_pAbs, 0) : false;
+        // bg02-media 基线 v2（media-runtime-isolation）：loop 推送读与 IDL getter /
+        // march 同源——dirty 镜像优先，未写回落 loop 内容属性 presence。原裸读
+        // `_pMs.loop === true` 漏解析属性形态（<audio loop> 静态 HTML——IDL getter
+        // 走 attr 回退报 true，此处推 false）→ registry loop 关 → 音频 entry 流末
+        // 停播、视频 Ended 冻结，loop 属性整链失效。
+        var _pLoopOn = (_pMs.loop !== undefined) ? _pMs.loop === true
+          : (handle ? __zw_has_attr_handle(handle, 'loop')
+            : ((typeof __zw_has_attr_lw === 'function')
+                ? __zw_has_attr_lw(sel, 'loop')
+                : __zw_has_attr(sel, 'loop'))) === '1';
         if (!_hit && _pAbs && typeof setTimeout === 'function') {
           var _pRetry = function (_n) {
             if (_n > 5000 || !_pMs.playing || _pMs.bridgeOn) return;
@@ -10271,9 +10281,10 @@
                     } catch (_eVbG1) {}
                   }
                   // M3 扩批 XXIV：重试路径 loop 同步（同 gain 面——retry 命中
-                  // 时把 play 前设的 loop 推给桥）。
+                  // 时把 play 前设的 loop 推给桥；读源同 IDL getter——上方
+                  // _pLoopOn，bg02-media v2 解析属性回退）。
                   if (typeof globalThis.__zwVideoBridge.setLoop === 'function') {
-                    try { globalThis.__zwVideoBridge.setLoop(_pAbs, _pMs.loop === true); } catch (_eVbL1) {}
+                    try { globalThis.__zwVideoBridge.setLoop(_pAbs, _pLoopOn); } catch (_eVbL1) {}
                   }
                 } else {
                   _pRetry(_n + 1);
@@ -10319,9 +10330,10 @@
             } catch (_eVbG0) {}
           }
           // M3 扩批 XXIV：起播时同步既有 loop（play 前设的 loop 经桥生效——
-          // 同 gain 面；音频 entry 流末回卷 / 视频 march Ended→seek(0)+play 面）。
+          // 同 gain 面；音频 entry 流末回卷 / 视频 march Ended→seek(0)+play 面；
+          // 读源同 IDL getter——上方 _pLoopOn，bg02-media v2 解析属性回退）。
           if (typeof globalThis.__zwVideoBridge.setLoop === 'function') {
-            try { globalThis.__zwVideoBridge.setLoop(_pAbs, _pMs.loop === true); } catch (_eVbL0) {}
+            try { globalThis.__zwVideoBridge.setLoop(_pAbs, _pLoopOn); } catch (_eVbL0) {}
           }
           // M3 扩批 XXV：ended 态 play = seek 回最早位置（spec「ended playback」
           // 步 6.4——ended 且播放方向向前 → seek to earliest position + 派

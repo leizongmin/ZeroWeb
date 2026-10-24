@@ -2,8 +2,8 @@
 
 **日期**：2026-10-25
 **状态**：Active（**D-RFC-1~4 已批复**——方案 C 批准 / A 批次随批复即启 / B 核查暂缓 / decode-h264 维持默认关，RFC v1.9 §10 批复记录；M1 基线 + M2 RFC 两项交付 + M3 前置设计八片齐备，[m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；**A1–A4 + C1 + C2 切片 1/2 + C3 + C4 已落地**——A 批次四片（rate 1.00000 / 三缺口闭合 / 内存收敛 / seek 冷路径 O(GOP)）+ C 批次隔离面（协议消息族与 media-host 骨架 / 解码内核与自走时钟 / registry 开态客户端切换 / 崩溃检测与退避重启）+ **C4 配对验收**（三态 M1 零回归 + 帧摘要三态全等 + 代际风暴零泄漏 + 能力真值三对照 + 30min 资源审计；配对抓出并订正两缺陷：A1 解码超前 pts 锚定回归 → 样本锚定、宿主 replay 流末残留位置拖拽 → replay 跳过位置 seek，feature 默认关），偏差记录 DESIGN §2.4/§3.5/§6.5/§8.6/§9.6/§10.7/§10.8/§10.9，[切片 2 证据](evidence/2026-10-25-c2-slice2/ANALYSIS.md)，[C3 证据](evidence/2026-10-25-c3-crash-recovery/ANALYSIS.md)，[C4 证据](evidence/2026-10-25-c4-paired-acceptance/ANALYSIS.md)）。
-**当前卡点**：无。A 批次 + C1 + C2 切片 1/2 + C3 + C4 完成。
-**下一步**：bg02-media 站点复评（外网依赖，audio/autoplay INCONCLUSIVE 子项）；D4 能力清单对齐（ogg-vorbis/wav 欠申报 + webm-opus/aac 补 fixture，C4 ANALYSIS §四）；DC-5 收口审计（RFC 与最终支持范围）。
+**当前卡点**：无。A 批次 + C1 + C2 切片 1/2 + C3 + C4 + D4 能力对齐 + bg02-media 基线 v2 复评完成。
+**下一步**：DC-5 收口审计（RFC §10 批复 vs 落地状态对照 + media-process feature 启用时机=用户裁决项）；C4/M4 后的 feature 默认开关裁决待用户。
 **入口**：[目标契约](../media-runtime-isolation.md) / [启动与证据协议](../ladybird-followups/README.md)
 
 ## 缺口与待决
@@ -28,8 +28,8 @@
 
 | 判据 | 场景 | 状态 | 证据 |
 |---|---|---|---|
-| DC-1 | MEDIA-01-cpu-copy-and-capability | **已测成立**（容量/复制链/权限/能力对照；C4 补能力真值三对照 + 配额端到端 QuotaExceeded；收口待用户评审） | evidence/2026-10-24-m1-baseline + 2026-10-25-c4-paired-acceptance |
-| DC-2 | MEDIA-02-clock-seek-and-state | 部分（media 层时钟 rate FINDING 已修：A1 落地 rate=1.00000；cue seek 精确、漂移 p50=11ms；seek 冷路径 A4 窄化 O(GOP)——mid-GOP 302ms→18ms 且不随 target 线性增长；页面可见时钟缺口已修（A2 三缺口闭合，bg02-media v2 复评归后续验证切片）；C4 补帧摘要三态全等 + 代际风暴零泄漏 + 三态 M1 零回归） | evidence/2026-10-24-m1-baseline + m3-prep-design（含 m1baseline-a1/a4-post.log）+ 2026-10-25-c4-paired-acceptance |
+| DC-1 | MEDIA-01-cpu-copy-and-capability | **已测成立**（容量/复制链/权限/能力对照；C4 补能力真值三对照 + 配额端到端 QuotaExceeded；D4 对齐——宿主补申报 ogg-vorbis/wav + aac/webm-opus 主张实解验证，8/8 基础主张真值全验；收口待用户评审） | evidence/2026-10-24-m1-baseline + 2026-10-25-c4-paired-acceptance + 2026-10-25-d4-capability-alignment |
+| DC-2 | MEDIA-02-clock-seek-and-state | 部分（media 层时钟 rate FINDING 已修：A1 落地 rate=1.00000；cue seek 精确、漂移 p50=11ms；seek 冷路径 A4 窄化 O(GOP)——mid-GOP 302ms→18ms 且不随 target 线性增长；页面可见时钟缺口已修：A2 三缺口闭合 + **bg02-media 基线 v2 复评通过**——4/4 腿音频/视频桥循环健康，三根因修复（loop attr 推送/march 边沿拍/音频重复登记幂等）+ 2026-10-23「显式 play 未武装」误读订正；C4 补帧摘要三态全等 + 代际风暴零泄漏 + 三态 M1 零回归） | evidence/2026-10-24-m1-baseline + m3-prep-design（含 m1baseline-a1/a4-post.log）+ 2026-10-25-c4-paired-acceptance + 2026-10-25-bg02-media-v3 |
 | DC-3 | MEDIA-03-decoder-crash-recovery | 部分（C3 崩溃检测/重启面落地——SIGKILL 注入契约 8 场景全绿：error 镜像可观察/renderer 存活/重启重喂可播/重启耗尽 Failed 无内联回落/reload 恢复；C4 补宿主 replay 拖拽缺陷订正（常驻单测门）+ 30 轮重播审计单 host 零崩溃；shim march Error face 已接线——桥 isErrored 真值 → 元素 error 事件（常驻门 test_media_march_error_face_dispatches_element_error_c3）；页面级端到端终验未做） | evidence/2026-10-25-c3-crash-recovery + 2026-10-25-c4-paired-acceptance |
 | DC-4 | MEDIA-04-platform-fallback-and-permissions | 部分（平台核查：无 /dev/dri、NullSink、VP9-only 生产面；故障注入未做） | evidence/2026-10-24-m1-baseline |
 | DC-5 | RFC 与最终支持范围审计 | NOT_RUN | 无 |
@@ -253,3 +253,23 @@
 - 生产链路补齐：runtime 每 tick march（A2 Fix 2）× registry 镜像 error 态（C3）× 桥 isErrored 真值口（C3）→ **页面 error 事件**——C3 契约场景 1「kill host → 页面 error 事件可见」的页面级断言通路。dormant：feature-off registry 无 error → 桥假值不触发；桥缺 isErrored（如 WPT runner）→ 面不触发。边界：仅 playing 时间轴错误投递（march 受 any_playing 门控），暂停时错误投递超出本切片。
 - 门禁：新测试过 + guarded-clippy 过 + 全量 guarded-test 过（exit 0，87 套件零失败）。首轮门禁与 integration 套件单独复跑各遇负载型 flake（`details_summary_activation_and_cancellation_conform_across_hosts` 三宿主事件序 / `image_batch_e2e::renderer_publish_batch_image_fetch_reaches_concurrent_in_flight` 并发，逐轮失败面不同），干净树 stash+重编译对照同样复现——既有 flake 与本改动无关，全量复跑即绿；flake 根修另立工作项（test-guard 包裹复跑 `zero-integration-tests` 套件可复现）。
 - 共享面占用：engine（js_dom_shim/part06.js +22 行 + js_dom_bridge_tests/part09.rs +79 行）——zero-web stream 面；其余 member 零改动。
+
+### 2026-10-25 D4 能力清单对齐轮（宿主欠申报订正 + 无 fixture 主张实解验证）
+
+- 宿主 `codec_capabilities`（apps/media-host/src/kernel.rs）补申报 `audio/ogg; codecs=vorbis` + `audio/wav`——内核路由面（`AudioDecoder::open` symphonia probe）早已可解（C4 ANALYSIS §四欠申报两条目），申报与路由同源，「能播却报不支持」可播性收窄风险消除；engine 静态表 `_cptTable` 两侧真值一致。
+- C4 instrument 能力真值段对齐（media_c4_paired.rs）：原「无 fixture 未验」两主张实解落位——`audio/mp4; codecs=aac` 以 sample-mp4-h264.mp4 的 AAC LC 音轨验证（symphonia isomp4+aac 路由，README 生成记录在案），`audio/webm; codecs=opus` 以 wpt-data 既有资产 movie_5.webm 直解验证（open_webm_opus_audio_track，与 zero-media 常驻单测同源；fetch 白名单按需不入库）。不新增 fixture、不破坏 fixtures 目录来源清白声明。8 项基础主张全部「在列 ⇔ 实解」双断言；原未验记录段/欠申报探针段移除。
+- 宿主单测常驻断言（lib.rs handshake 测试）：ogg-vorbis/wav 必须在列——欠申报回归默认构建即红，不依赖 instrument 显式运行。
+- 验证：capability instrument 过（8/8 capability-verified + QuotaExceeded 不变，[证据](evidence/2026-10-25-d4-capability-alignment/ANALYSIS.md)）+ 宿主 handshake 单测过；全量 make test 过（与 bg02 复评轮同批门禁，见该轮执行记录）。
+- 共享面占用：media-host（kernel.rs 能力表 + lib.rs 单测）+ webview（instrument）+ goal 文档；零 protocol/engine 改动。
+
+### 2026-10-25 bg02-media 基线 v2 复评轮（三根因修复 + 误读订正 + 基线 v2）
+
+- **A2 三缺口闭合判定 PASS**：autoplay 腿音频桥武装 + 循环健康（audio-clock 1.59→0.63→1.67 跨流末回卷）；显式 play 腿 shim 埋点实测两轮 load `#a` 均 `hit=true`——2026-10-23「显式 play audio 桥武装失败」系终态误读（单遍播完 → EOF 停播 → 游标复位 0 → shim playing 卡 true，5s 首采样全落 EOF 后），已订正入 [ANALYSIS §三](evidence/2026-10-25-bg02-media-v3/ANALYSIS.md)。
+- **根因修复一（shim play 内核）**：setLoop 推送裸读 `_pMs.loop` 漏解析属性形态（`<audio loop>` 静态 HTML）→ registry loop 关 → 音频 entry 流末停播、视频 Ended 冻结。推送读与 IDL getter/march 同源（dirty 镜像优先 + attr 回退）；回归 `test_media_play_pushes_parsed_loop_attr_to_bridge`（三面）。
+- **根因修复二（renderer march 泵）**：`any_playing` 纯电平门在全停播拍自断 march 供给——ended 派发/loop 回卷永久搁浅（「paused=false、ticks 恒进、时钟冻结」的产品级根因）。true→false 边沿补交一拍（`media_march_submittable` + 真值表四测试）；停播稳态零提交保持。
+- **根因修复三（webview registry）**：`register_audio_source` 无条件 `AudioEntry::new` 替换——load 后延迟 settle 重登记同 URL 静默掐死播放中的音频（video 面 register_source 本即幂等，音频面对齐）。回归 `registry_audio_reregister_preserves_live_entry` + 伴生锁定 `registry_mp4_aac_audio_loop_rewrinds`（mp4/AAC 回卷此前无常驻覆盖）。
+- **复评腿 4/4 PASS**（显式 ×2 + autoplay ×2，16s 墙钟，systemd scope 24G）：audio-clock 序列逐腿回卷、element/桥游标一致、isPlaying=true。40s 长墙腿证实 video 七采样连续回绕——终态读数 v=2.02「卡死」系 probe 固定时序对循环相位的锁定采样（三腿 ±3ms 复现），测量伪象教训入 ANALYSIS §四。
+- **基线 v2**（docs/perf/baselines/background-resource-linux-x86_64-v2.json）：2 场景 n=2 配对；新增 `probe_travel:*` 回卷安全行程下界（gate.py 指标扩展——时钟回绕时 delta 末减首随相位可为 0/负，travel 界存在时取代 delta 界）；check 4/4 PASS。
+- 临时诊断面（bg02-media-debug fixture、debug 场景臂、probe 埋点、shim 埋点）全部移除；autoplay fixture（bg02-media-autoplay.html）转正为常驻变体腿。
+- 门禁：guarded-clippy 过 + 全量 make test 过（exit 0，87 套件，六项新回归在内）。前两轮失败均非代码面：fmt 漂移（renderer 两文件，`cargo fmt --all` 修复——单包 fmt 漏跨包漂移）、target/debug/zero-browser 缺失（make test build 步不覆盖该 bin，integration e2e `workspace_bin` 硬前置——systemd 24G 守卫内补建后绿）。
+- 共享面占用：engine shim part06（play 内核一处）、renderer runtime.rs（march 门）、webview video_registry.rs（登记幂等）、观测脚本与 goal 文档。

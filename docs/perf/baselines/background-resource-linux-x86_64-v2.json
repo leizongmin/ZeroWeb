@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "kind": "background-resource-baseline",
+  "platform_class": "linux-x86_64",
+  "recorded_at": "2026-10-25",
+  "git_sha": "f7dec49e2",
+  "justification": "bg02-media 基线 v2（media-runtime-isolation）：A2 三缺口闭合 + 本轮 loop attr 推送/重复登记幂等/march 边沿拍三修复后的复评腿；新增 bg02-media-audio-clock 序列与回卷安全 travel 下界（时钟推进防冻结伪象，travel 取代回卷序列的 delta 界）与 bg02-media-autoplay 变体腿（autoplay 属性路径桥武装面）",
+  "platform": "linux-x86_64",
+  "policy": "CPU/率上界=配对腿max×1.5；RSS上界=max+64MiB；工作下界=min×0.5。修改配对须更新 pairing 清单并写明理由，禁止为通过门禁调阈值。",
+  "scenarios": {
+    "bg02-media": {
+      "pairing": [
+        "docs/goal/media-runtime-isolation/evidence/2026-10-25-bg02-media-v3/bg02-media",
+        "docs/goal/media-runtime-isolation/evidence/2026-10-25-bg02-media-v3/bg02-media-b"
+      ],
+      "n": 2,
+      "observed": {
+        "docs/goal/media-runtime-isolation/evidence/2026-10-25-bg02-media-v3/bg02-media": {
+          "renderer_cpu_cores": 0.0532,
+          "renderer_rss_last_mib": 263.4,
+          "renderer_rss_hwm_mib": 301.8,
+          "browser_cpu_cores": 0.0094,
+          "browser_rss_last_mib": 78.2,
+          "browser_rss_hwm_mib": 78.2,
+          "probe_delta:bg02-media-ticks": 40.0,
+          "probe_travel:bg02-media-ticks": 40.0,
+          "probe_delta:bg02-media-audio-clock": 0.04100000000000015,
+          "probe_travel:bg02-media-audio-clock": 2.025,
+          "probe_rate:bg02-media-ticks/s": 2.5,
+          "probe_rate:bg02-media-audio-clock/s": 0.0
+        },
+        "docs/goal/media-runtime-isolation/evidence/2026-10-25-bg02-media-v3/bg02-media-b": {
+          "renderer_cpu_cores": 0.0566,
+          "renderer_rss_last_mib": 262.9,
+          "renderer_rss_hwm_mib": 301.2,
+          "browser_cpu_cores": 0.01,
+          "browser_rss_last_mib": 78.5,
+          "browser_rss_hwm_mib": 78.5,
+          "probe_delta:bg02-media-ticks": 40.0,
+          "probe_travel:bg02-media-ticks": 40.0,
+          "probe_delta:bg02-media-audio-clock": 0.03400000000000003,
+          "probe_travel:bg02-media-audio-clock": 1.992,
+          "probe_rate:bg02-media-ticks/s": 2.5,
+          "probe_rate:bg02-media-audio-clock/s": 0.0
+        }
+      },
+      "env": {
+        "ZW_COMPOSITOR_ANIMATIONS": "0",
+        "gui": "0",
+        "ZW_RAF_FRAME_DRIVEN": "0"
+      },
+      "bounds": {
+        "browser_cpu_cores": {
+          "max": 0.015
+        },
+        "browser_rss_last_mib": {
+          "max": 142.5
+        },
+        "probe_travel:bg02-media-audio-clock": {
+          "min": 0.996
+        },
+        "probe_travel:bg02-media-ticks": {
+          "min": 20.0
+        },
+        "renderer_cpu_cores": {
+          "max": 0.0849
+        },
+        "renderer_rss_hwm_mib": {
+          "max": 365.8
+        },
+        "renderer_rss_last_mib": {
+          "max": 327.4
+        }
+      },
+      "pairing_insufficient": false
+    },
+    "bg02-media-autoplay": {
+      "pairing": [
+        "docs/goal/media-runtime-isolation/evidence/2026-10-25-bg02-media-v3/bg02-media-autoplay",
+        "docs/goal/media-runtime-isolation/evidence/2026-10-25-bg02-media-v3/bg02-media-autoplay-b"
+      ],
+      "n": 2,
+      "observed": {
+        "docs/goal/media-runtime-isolation/evidence/2026-10-25-bg02-media-v3/bg02-media-autoplay": {
+          "renderer_cpu_cores": 0.0519,
+          "renderer_rss_last_mib": 263.5,
+          "renderer_rss_hwm_mib": 301.2,
+          "browser_cpu_cores": 0.0095,
+          "browser_rss_last_mib": 78.4,
+          "browser_rss_hwm_mib": 78.4,
+          "probe_delta:bg02-media-ticks": 40.0,
+          "probe_travel:bg02-media-ticks": 40.0,
+          "probe_delta:bg02-media-audio-clock": 0.07799999999999985,
+          "probe_travel:bg02-media-audio-clock": 1.992,
+          "probe_rate:bg02-media-ticks/s": 2.5,
+          "probe_rate:bg02-media-audio-clock/s": 0.0
+        },
+        "docs/goal/media-runtime-isolation/evidence/2026-10-25-bg02-media-v3/bg02-media-autoplay-b": {
+          "renderer_cpu_cores": 0.0528,
+          "renderer_rss_last_mib": 262.1,
+          "renderer_rss_hwm_mib": 299.5,
+          "browser_cpu_cores": 0.0086,
+          "browser_rss_last_mib": 78.0,
+          "browser_rss_hwm_mib": 78.0,
+          "probe_delta:bg02-media-ticks": 40.0,
+          "probe_travel:bg02-media-ticks": 40.0,
+          "probe_delta:bg02-media-audio-clock": -0.0029999999999998916,
+          "probe_travel:bg02-media-audio-clock": 1.977,
+          "probe_rate:bg02-media-ticks/s": 2.5,
+          "probe_rate:bg02-media-audio-clock/s": -0.0
+        }
+      },
+      "env": {
+        "ZW_COMPOSITOR_ANIMATIONS": "0",
+        "gui": "0",
+        "ZW_RAF_FRAME_DRIVEN": "0"
+      },
+      "bounds": {
+        "browser_cpu_cores": {
+          "max": 0.0142
+        },
+        "browser_rss_last_mib": {
+          "max": 142.4
+        },
+        "probe_travel:bg02-media-audio-clock": {
+          "min": 0.9885
+        },
+        "probe_travel:bg02-media-ticks": {
+          "min": 20.0
+        },
+        "renderer_cpu_cores": {
+          "max": 0.0792
+        },
+        "renderer_rss_hwm_mib": {
+          "max": 365.2
+        },
+        "renderer_rss_last_mib": {
+          "max": 327.5
+        }
+      },
+      "pairing_insufficient": false
+    }
+  }
+}

@@ -253,7 +253,15 @@ impl VideoPlayerRegistry {
                 return;
             }
             self.sources.insert(key, bytes);
-            self.audio_entries.insert(key, AudioEntry::new(decoder));
+            // bg02-media 基线 v2（media-runtime-isolation）：重复登记幂等——已有
+            // entry 保留。原无条件 `AudioEntry::new` 替换：load 后延迟 settle 重登记
+            // 同 URL 时，默认新 entry（playing=false/loop_on=false/cursor=0）静默
+            // 掐死播放中的音频（显式 play 腿武装后数百 ms 死亡实测）；video 面
+            // register_source 只刷 sources 字节、player 不经登记重建，本即幂等——
+            // 此处对齐同语义（字节刷新 + entry 保留）。
+            if !self.audio_entries.contains_key(&key) {
+                self.audio_entries.insert(key, AudioEntry::new(decoder));
+            }
         }
     }
 
@@ -1324,6 +1332,73 @@ mod tests {
             reg.audio_is_playing(MP3)
         );
         assert!(reg.audio_is_playing(MP3), "loop 回卷后播放态保持");
+    }
+
+    #[test]
+    fn registry_mp4_aac_audio_loop_rewrinds() {
+        // bg02-media 基线 v2 伴生锁定：mp4/AAC 纯音频 entry 的 loop 回卷面（此前
+        // 常驻 loop 测试只覆盖 mp3——mp4 容器 AAC 轨经 symphonia isomp4 面重建，
+        // 产品腿 #v 循环健康以本测试锁定 codec 泛化）。
+        let mut reg = VideoPlayerRegistry::new();
+        let mp4 = "https://example.com/media/sample-mp4-h264.mp4";
+        reg.register_audio_source(mp4, fixture_bytes_named("sample-mp4-h264.mp4"));
+        assert!(reg.audio_play(mp4, 0));
+        reg.set_loop(mp4, true);
+        let mut now = 0u64;
+        let mut wraps = 0usize;
+        let mut prev_ct = 0.0f64;
+        while now < 30_000 {
+            now += 250;
+            reg.audio_advance_all(now);
+            let ct = reg.audio_current_time(mp4);
+            if ct + 0.25 < prev_ct - 0.001 {
+                wraps += 1;
+            }
+            prev_ct = ct;
+            if wraps >= 2 {
+                break;
+            }
+        }
+        assert!(wraps >= 2, "mp4 AAC entry 应回卷（实测 {wraps}）");
+        assert!(reg.audio_is_playing(mp4), "回卷后播放态保持");
+    }
+
+    #[test]
+    fn registry_audio_reregister_preserves_live_entry() {
+        // bg02-media 基线 v2（media-runtime-isolation）：重复登记幂等——load 后
+        // 延迟 settle 重登记同 URL，不得用默认新 entry（playing=false/loop_on=
+        // false/cursor=0）静默替换播放中的音频。video 面 register_source 只刷
+        // sources 字节本即幂等，此处锁音频面同语义。
+        let mut reg = VideoPlayerRegistry::new();
+        reg.register_audio_source(MP3, fixture_bytes_named("sample-mp3.mp3"));
+        assert!(reg.audio_play(MP3, 0));
+        reg.audio_advance_all(500);
+        let cur_before = reg.audio_current_time(MP3);
+        assert!(cur_before > 0.0, "推进前置条件（游标已走）");
+        // 播放中重复登记（同 URL 同字节——settle 重登记形态）。
+        reg.register_audio_source(MP3, fixture_bytes_named("sample-mp3.mp3"));
+        assert!(reg.audio_is_playing(MP3), "重复登记不应掐死播放中的 entry");
+        assert_eq!(reg.audio_current_time(MP3), cur_before, "重复登记不重置游标");
+        // loop 标志同样经保留 entry 存续：set_loop 后重登记，仍跨流末回卷。
+        reg.set_loop(MP3, true);
+        reg.register_audio_source(MP3, fixture_bytes_named("sample-mp3.mp3"));
+        let mut now = 0u64;
+        let mut wraps = 0usize;
+        let mut prev_ct = reg.audio_current_time(MP3);
+        while now < 30_000 {
+            now += 250;
+            reg.audio_advance_all(now);
+            let ct = reg.audio_current_time(MP3);
+            if ct + 0.25 < prev_ct - 0.001 {
+                wraps += 1;
+            }
+            prev_ct = ct;
+            if wraps >= 1 {
+                break;
+            }
+        }
+        assert!(wraps >= 1, "重登记后 loop 标志存续（应回卷，实测 {wraps}）");
+        assert!(reg.audio_is_playing(MP3), "回卷后播放态保持");
     }
 
     #[test]

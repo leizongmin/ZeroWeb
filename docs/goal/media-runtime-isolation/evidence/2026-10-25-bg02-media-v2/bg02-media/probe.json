@@ -1,0 +1,86 @@
+{
+ "scenario": "bg02-media",
+ "started": "2026-10-24T22:31:01.254Z",
+ "wall_ms": 30000,
+ "events_session": [],
+ "errors": [],
+ "targets": [
+  {
+   "targetId": "zeroweb-tab-1",
+   "url": "http://127.0.0.1:50823/bg02-media.html",
+   "sessionId": "zeroweb-session-1"
+  }
+ ],
+ "start_nav": {
+  "ok": true,
+  "title": "BG-02 media playback"
+ },
+ "samples": [
+  {
+   "t_ms": 1792881066917,
+   "label": "bg02-media-ticks",
+   "value": 21
+  },
+  {
+   "t_ms": 1792881066973,
+   "label": "bg02-media-audio-clock",
+   "value": 0
+  },
+  {
+   "t_ms": 1792881071931,
+   "label": "bg02-media-ticks",
+   "value": 41
+  },
+  {
+   "t_ms": 1792881072000,
+   "label": "bg02-media-audio-clock",
+   "value": 0
+  },
+  {
+   "t_ms": 1792881076940,
+   "label": "bg02-media-ticks",
+   "value": 62
+  },
+  {
+   "t_ms": 1792881077042,
+   "label": "bg02-media-audio-clock",
+   "value": 0
+  },
+  {
+   "t_ms": 1792881082033,
+   "label": "bg02-media-ticks",
+   "value": 82
+  },
+  {
+   "t_ms": 1792881082086,
+   "label": "bg02-media-audio-clock",
+   "value": 0
+  },
+  {
+   "t_ms": 1792881087050,
+   "label": "bg02-media-ticks",
+   "value": 102
+  },
+  {
+   "t_ms": 1792881087092,
+   "label": "bg02-media-audio-clock",
+   "value": 0
+  }
+ ],
+ "media_final": {
+  "value": "a=0.00,false,4,0,false;v=2.04,false,4,2.043,false;pos=2.04"
+ },
+ "media_bridge_probe": {
+  "value": "true"
+ },
+ "media_bridge_after": {
+  "value": "2.00,2"
+ },
+ "media_bridge_after2": {
+  "value": "2.00,2,false"
+ },
+ "visibility_state": {
+  "value": "false,visible"
+ },
+ "finished": "2026-10-24T22:31:36.083Z"
+}

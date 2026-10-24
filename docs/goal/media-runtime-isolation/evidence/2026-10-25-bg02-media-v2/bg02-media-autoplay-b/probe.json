@@ -1,0 +1,86 @@
+{
+ "scenario": "bg02-media",
+ "started": "2026-10-24T22:32:50.300Z",
+ "wall_ms": 30000,
+ "events_session": [],
+ "errors": [],
+ "targets": [
+  {
+   "targetId": "zeroweb-tab-1",
+   "url": "http://127.0.0.1:45457/bg02-media-autoplay.html",
+   "sessionId": "zeroweb-session-1"
+  }
+ ],
+ "start_nav": {
+  "ok": true,
+  "title": "BG-02 media autoplay"
+ },
+ "samples": [
+  {
+   "t_ms": 1792881175914,
+   "label": "bg02-media-ticks",
+   "value": 21
+  },
+  {
+   "t_ms": 1792881175967,
+   "label": "bg02-media-audio-clock",
+   "value": 2
+  },
+  {
+   "t_ms": 1792881180926,
+   "label": "bg02-media-ticks",
+   "value": 41
+  },
+  {
+   "t_ms": 1792881180978,
+   "label": "bg02-media-audio-clock",
+   "value": 2
+  },
+  {
+   "t_ms": 1792881185972,
+   "label": "bg02-media-ticks",
+   "value": 61
+  },
+  {
+   "t_ms": 1792881185988,
+   "label": "bg02-media-audio-clock",
+   "value": 2
+  },
+  {
+   "t_ms": 1792881190980,
+   "label": "bg02-media-ticks",
+   "value": 81
+  },
+  {
+   "t_ms": 1792881190996,
+   "label": "bg02-media-audio-clock",
+   "value": 2
+  },
+  {
+   "t_ms": 1792881195991,
+   "label": "bg02-media-ticks",
+   "value": 101
+  },
+  {
+   "t_ms": 1792881196003,
+   "label": "bg02-media-audio-clock",
+   "value": 2
+  }
+ ],
+ "media_final": {
+  "value": "a=2.00,false,4,2,false;v=2.04,false,4,2.043,false;pos=4.04"
+ },
+ "media_bridge_probe": {
+  "value": "true"
+ },
+ "media_bridge_after": {
+  "value": "2.00,2"
+ },
+ "media_bridge_after2": {
+  "value": "2.00,2,false"
+ },
+ "visibility_state": {
+  "value": "false,visible"
+ },
+ "finished": "2026-10-24T22:33:25.020Z"
+}

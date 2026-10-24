@@ -3746,6 +3746,78 @@ fn test_media_autoplay_walks_play_steps_a2fix1() {
 }
 
 #[test]
+fn test_media_play_pushes_parsed_loop_attr_to_bridge() {
+    // bg02-media 基线 v2（media-runtime-isolation）：play 内核 setLoop 推送读与
+    // IDL getter / march 判定同源——dirty 镜像优先、未写回落 loop 内容属性
+    // presence。原裸读 `_pMs.loop === true` 漏解析属性形态（<audio loop> 静态
+    // HTML——getter 走 attr 回退报 true，推送却 false）→ registry loop 关 → 音频
+    // entry 流末停播、视频 Ended 冻结，loop 属性整链失效（bg02 产品腿实测）。
+    // 三面：① 解析属性 → 推 true；② 无属性 → 推 false；
+    // ③ IDL dirty 镜像优先（loop 属性在位但 el.loop=false → 推 false）。
+    // https://html.spec.whatwg.org/multipage/media.html#dom-media-loop
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><audio id=\"a\" src=\"/media/sample-mp3.mp3\" loop>\
+         <audio id=\"b\" src=\"/media/sample-mp3.mp3\">\
+         <audio id=\"c\" src=\"/media/sample-mp3.mp3\" loop></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 记录型桥 stub（play 命中 + setLoop 记录推送值）。
+    sandbox.execute(
+        "globalThis.__calls = [];\
+         globalThis.__zwVideoBridge = {\
+           play: function (src, now) { globalThis.__calls.push('play:' + src); return true; },\
+           pause: function (src) { globalThis.__calls.push('pause:' + src); },\
+           currentTime: function (src) { return 0; },\
+           duration: function (src) { return 2; },\
+           isPlaying: function (src) { return true; },\
+           setLoop: function (src, on) { globalThis.__calls.push('setLoop:' + on); }\
+         };",
+    ).unwrap();
+    let _ = sandbox.execute(";");
+
+    // ① 解析属性形态（<audio loop>，IDL 未写过）。
+    sandbox.execute("document.getElementById('a').play();").unwrap();
+    let calls_a = sandbox.execute("globalThis.__calls.join('|')").unwrap().value;
+    assert!(
+        calls_a.contains("setLoop:true"),
+        "解析 loop 属性应推 true（attr 回退同源 IDL getter），got {calls_a}"
+    );
+
+    // ② 无属性形态。
+    sandbox.execute("globalThis.__calls = []; document.getElementById('b').play();").unwrap();
+    let calls_b = sandbox.execute("globalThis.__calls.join('|')").unwrap().value;
+    assert!(
+        calls_b.contains("setLoop:false"),
+        "无 loop 属性应推 false，got {calls_b}"
+    );
+
+    // ③ IDL dirty 镜像优先（属性在位但 el.loop=false）。
+    sandbox.execute(
+        "globalThis.__calls = [];\
+         var c = document.getElementById('c');\
+         c.loop = false;\
+         c.play();",
+    ).unwrap();
+    let calls_c = sandbox.execute("globalThis.__calls.join('|')").unwrap().value;
+    assert!(
+        calls_c.contains("setLoop:false"),
+        "IDL loop=false 应压过解析属性推 false（dirty 镜像优先），got {calls_c}"
+    );
+}
+
+#[test]
 fn test_media_march_error_face_dispatches_element_error_c3() {
     // media-runtime-isolation DESIGN §10.9-16 接线：桥 isErrored 真值（C3 链——
     // 宿主崩溃/解码失败 → registry 镜像 error 态 → 桥 isErrored 真值口）→ march

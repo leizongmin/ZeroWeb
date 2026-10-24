@@ -364,9 +364,18 @@ async function run(conn) {
     result.targets = sessions;
     result.start_nav = nav;
     const samples = [];
-    await sampleLoop(conn, page.sessionId,
-        "window.__zw_media_ticks === undefined ? null : window.__zw_media_ticks",
-        wallMs, 5000, samples, "bg02-media-ticks");
+    // v2 复评追加音频时钟序列（media-runtime-isolation bg02-media 基线 v2）：
+    // 2026-10-23 缺口形态是「paused=false、ticks 推进而 currentTime 恒 0」——
+    // ticks 下界对该形态盲，只有时钟序列能暴露。bridgeOn 元素 IDL 读经 getter
+    // 镜像回桥真值，序列即桥 cursor 推进面。derive 对 probe_delta 自动设工作下界。
+    await Promise.all([
+        sampleLoop(conn, page.sessionId,
+            "window.__zw_media_ticks === undefined ? null : window.__zw_media_ticks",
+            wallMs, 5000, samples, "bg02-media-ticks"),
+        sampleLoop(conn, page.sessionId,
+            "var a = document.getElementById('a'); a ? Number(a.currentTime.toFixed(3)) : 0",
+            wallMs, 5000, samples, "bg02-media-audio-clock"),
+    ]);
     result.samples = samples;
     result.media_final = await evaluate(conn, page.sessionId,
         "(function(){ var b = globalThis.__zwVideoBridge;"

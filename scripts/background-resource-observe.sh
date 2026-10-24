@@ -44,6 +44,7 @@ case "$SCENARIO" in
     bg02-anim-compgui) START_URL="bg02-offscreen-anim.html"; RAF_DRIVEN=1; GUI=1; COMP_ANIM=1 ;;
     bg02-onscreen-compgui) START_URL="bg02-onscreen-anim.html"; RAF_DRIVEN=1; GUI=1; COMP_ANIM=1 ;;
     bg02-media)      START_URL="bg02-media.html";         RAF_DRIVEN=0 ;;
+    bg02-media-autoplay) START_URL="bg02-media-autoplay.html"; RAF_DRIVEN=0 ;;
     bg03-nav)        START_URL="bg03-nav-source.html";    RAF_DRIVEN=0; WALL="${3:-45}" ;;
     bg04-cycle)      START_URL="bg02-static.html";        RAF_DRIVEN=0; WALL=40 ;;
     *) echo "unknown scenario: $SCENARIO" >&2; exit 2 ;;
@@ -83,7 +84,8 @@ if [ "$GUI" = "1" ]; then
         "http://127.0.0.1:$HTTP_PORT/$START_URL" \
         >"$OUT/browser.log" 2>&1 &
 else
-    PROBE_SCENARIO="$SCENARIO"
+    # probe 场景名回落：autoplay 变体复用 bg02-media 采样臂（-gui 先例）。
+    PROBE_SCENARIO="${SCENARIO%-autoplay}"
     XDG_CONFIG_HOME="$OUT/profile" \
     ZW_RAF_FRAME_DRIVEN="$RAF_DRIVEN" \
     ZW_COMPOSITOR_BIN="$COMPOSITOR" \

@@ -1,0 +1,2 @@
+scenario=bg02-media-autoplay wall=16s cdp=127.0.0.1:51211 http=127.0.0.1:50721
+start_url=bg02-media-autoplay.html ZW_RAF_FRAME_DRIVEN=0 ZW_COMPOSITOR_ANIMATIONS=0 gui=0 viewport=800x600 display=:0

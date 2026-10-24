@@ -603,6 +603,15 @@ pub(crate) fn keypress_synth_enabled() -> bool {
     predoc_enabled_for(std::env::var("ZW_KEYPRESS_SYNTH").as_deref().ok())
 }
 
+/// media march 提交门（A2 Fix 2 + bg02-media 基线 v2 边沿拍）：播放中每拍提交；
+/// `any_playing` true→false 切换拍（registry 侧全部流末停播）补交一拍——shim 侧
+/// 唯一能观察 isEnded 的时机（ended 派发/loop 回卷 seek(0)+play），纯电平门在停播
+/// 拍自断供给（paused 卡 false、时钟冻结、loop 属性失效——bg02 腿实测形态）。此后
+/// 停播稳态恢复零提交。
+fn media_march_submittable(javascript_enabled: bool, any_playing: bool, prev_playing: bool) -> bool {
+    javascript_enabled && (any_playing || prev_playing)
+}
+
 impl RendererRuntime {
     /// 创建新的渲染进程运行时。
     pub(crate) fn new(renderer_id: u64) -> Self {
@@ -4060,6 +4069,9 @@ return JSON.stringify({{action:action,name:name,val:val}});\
 
     pub(crate) fn run(&mut self) -> Result<(), String> {
         tracing::info!("渲染进程 {} 启动，等待 IPC 消息...", self.renderer_id);
+        // bg02-media 基线 v2（media-runtime-isolation）：march 提交门 true→false
+        // 边沿检测态（上一拍 any_playing——EOF 停播拍补交一拍 march，见下方门注释）。
+        let mut prev_media_playing = false;
         loop {
             if self.pending_load.is_some()
                 || self.pending_script_prefetch.is_some()
@@ -4180,11 +4192,17 @@ return JSON.stringify({{action:action,name:name,val:val}});\
                 // ——播放推进不随可见性暂停（后台音频继续播是现行为，rAF 可见性门控
                 // 语义不适用）。无播放零提交；钩子内 !ms.playing 早退 + timeupdate
                 // 250ms 节流成本有界（M1 空 tick p50 431ns 同面）。
-                if self.javascript_enabled && any_playing {
+                // bg02-media 基线 v2 补边沿拍：any_playing true→false 切换拍（registry
+                // 侧全部流末停播）**补交一拍** march——此刻恰是 shim 侧唯一能观察
+                // isEnded 的时机（ended 派发/loop 回卷 seek(0)+play）；纯电平门在停播
+                // 拍自断供给，paused 卡 false、时钟冻结、loop 属性失效（bg02 腿实测
+                // 形态）。此后停播稳态恢复零提交。
+                if media_march_submittable(self.javascript_enabled, any_playing, prev_media_playing) {
                     let _ = self.js_worker.submit_script_priority(
                         "if(globalThis._zwMediaTimeMarchesOn)globalThis._zwMediaTimeMarchesOn();",
                     );
                 }
+                prev_media_playing = any_playing;
             }
 
             // DC-2/M3（帧驱动 rAF 泵——镜像媒体泵「事件循环节拍，否决独立泵线程」）：
@@ -4699,6 +4717,9 @@ mod fetch_cancel_on_reset_tests;
 #[cfg(test)]
 #[path = "keyboard_input_tests.rs"]
 mod keyboard_input_tests;
+#[cfg(test)]
+#[path = "media_march_tests.rs"]
+mod media_march_tests;
 #[cfg(test)]
 #[path = "navigation_preemption_tests.rs"]
 mod navigation_preemption_tests;
