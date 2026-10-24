@@ -76,6 +76,10 @@ pub type HostCallback = Arc<dyn Fn(&[String]) -> String + Send + Sync + 'static>
 // 表长以线程历史上**不同名字的注册总数**为上界。
 thread_local! {
     static HOST_CALLBACKS: RefCell<Vec<Option<HostCallback>>> = RefCell::new(Vec::new());
+    // P105 诊断：与 HOST_CALLBACKS 平行的名字表（同槽位同步置 None）——
+    // ZW_HOST_CALL_TRACE 慢宿主调用归因用，invoke 处按 idx 取名。仅诊断读取，
+    // 不参与分派语义。
+    static HOST_CALLBACK_NAMES: RefCell<Vec<Option<String>>> = const { RefCell::new(Vec::new()) };
 }
 
 /// 清空线程局部宿主回调注册表（整表）。
@@ -94,6 +98,7 @@ thread_local! {
 /// 整线程拆卸场景使用。
 pub fn clear_host_callbacks() {
     HOST_CALLBACKS.with(|cbs| cbs.borrow_mut().clear());
+    HOST_CALLBACK_NAMES.with(|names| names.borrow_mut().clear());
 }
 
 /// V8 FunctionTemplate 回调：按 args.data() 的索引查 HOST_CALLBACKS 调用。
@@ -106,6 +111,13 @@ fn host_callback_invoke(scope: &mut v8::PinScope, args: v8::FunctionCallbackArgu
     let strs: Vec<String> = (0..n)
         .filter_map(|i| args.get(i).to_string(scope).map(|s| s.to_rust_string_lossy(scope)))
         .collect();
+    // P105 诊断：慢宿主调用归因（crate::HOST_CALL_TRACE 注释）。
+    let _trace = if *crate::HOST_CALL_TRACE {
+        let nm = HOST_CALLBACK_NAMES.with(|names| names.borrow().get(idx as usize).and_then(|slot| slot.clone()));
+        crate::HostCallTraceGuard::arm(nm.as_deref().unwrap_or("__zw_idx_unknown"), &strs)
+    } else {
+        None
+    };
     let result = HOST_CALLBACKS.with(|cbs| {
         cbs.borrow()
             .get(idx as usize)
@@ -439,6 +451,7 @@ impl V8Sandbox {
         // 失效（None 洞/越界，仅防御面——own-slot 清空下活 sandbox 不可达）时退化
         // 为新注册占新槽，不越界不撞写。
         let cb: HostCallback = Arc::from(callback);
+        let name_for_trace = name.to_string();
         if let Some(entry) = self.callbacks.iter_mut().find(|(n, _)| n == name) {
             HOST_CALLBACKS.with(|cbs| {
                 let mut cbs = cbs.borrow_mut();
@@ -449,6 +462,13 @@ impl V8Sandbox {
                     cbs.push(Some(cb));
                     entry.1 = idx;
                 }
+                HOST_CALLBACK_NAMES.with(|names| {
+                    let mut names = names.borrow_mut();
+                    while names.len() < cbs.len() {
+                        names.push(None);
+                    }
+                    names[entry.1] = Some(name_for_trace);
+                });
             });
             return;
         }
@@ -456,6 +476,15 @@ impl V8Sandbox {
             let mut cbs = cbs.borrow_mut();
             let idx = cbs.len();
             cbs.push(Some(cb));
+            HOST_CALLBACK_NAMES.with(|names| {
+                let mut names = names.borrow_mut();
+                // P105 定向复核（DEF-1）：pad 到 idx（cb 槽位前一位）再落名，名字对齐
+                // 槽位 idx；此前 pad 到 cbs.len()（push 后= idx+1）再 push 落在 idx+1。
+                while names.len() < idx {
+                    names.push(None);
+                }
+                names.push(Some(name_for_trace));
+            });
             idx
         });
         self.callbacks.push((name.to_string(), idx));
@@ -952,11 +981,19 @@ impl Drop for V8Sandbox {
         let slots: Vec<usize> = self.callbacks.iter().map(|(_, slot)| *slot).collect();
         HOST_CALLBACKS.with(|cbs| {
             let mut cbs = cbs.borrow_mut();
-            for slot in slots {
-                if slot < cbs.len() {
-                    cbs[slot] = None;
+            for slot in &slots {
+                if *slot < cbs.len() {
+                    cbs[*slot] = None;
                 }
             }
+            HOST_CALLBACK_NAMES.with(|names| {
+                let mut names = names.borrow_mut();
+                for slot in &slots {
+                    if *slot < names.len() {
+                        names[*slot] = None;
+                    }
+                }
+            });
         });
         // 未处理 rejection 撤回暂存持有本 isolate 的 `Global<Promise>` 句柄；
         // 若 drop 前未排空（异常路径/测试直落），残留句柄会在同线程下一个
