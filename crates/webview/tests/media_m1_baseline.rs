@@ -188,13 +188,14 @@ fn m1_clock_fidelity_realtime_15s() {
         percentile(&offsets, 0.95) * 1000.0,
     );
     report(&tick_us, "clock-fidelity-rt");
-    // M1 基线发现（2026-10-24 实测 rate≈1.45）：audio cursor 主时钟按整批解码
-    // 粒度推进，每 tick 停在「越过 target 的首个批次末」——批量 ~23ms（vorbis
-    // 1024 样本）对 16ms 泵即每拍平均 +batch/2 超越，media clock 系统性快于墙钟。
-    // 修复面归 M3/RFC 切片（advance_to 批内插值或目标对齐），基线轮只钉住量级
-    // 不回退（sanity 带 0.5–3.0）。
-    println!("M1BASELINE finding=clock-rate-quantization rate={rate:.5}");
-    assert!((0.5..=3.0).contains(&rate), "media clock 速率 {rate} 越出 sanity 带");
+    // A1 修复后收带（2026-10-24 RFC D-RFC-2 批复，DESIGN §2.3）：样本级队列
+    // （BatchSampleQueue）按 tick 目标帧数精确消费，rate ≡ 1.0 由构造保证；带宽
+    // 留 EOF/睡眠抖动裕度。修复前批粒度整批推进实测 rate≈1.45（M1 FINDING）。
+    println!("M1BASELINE a1=clock-rate-aligned rate={rate:.5}");
+    assert!(
+        (0.9..=1.1).contains(&rate),
+        "media clock 速率 {rate} 越出 A1 对齐带 [0.9, 1.1]"
+    );
 }
 
 /// T4：cue 路径 seek 基线（重建 Cues 的长 fixture——cue 二分命中 keyframe）

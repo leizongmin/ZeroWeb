@@ -7,7 +7,7 @@
 //! 键契约：`registry_key(abs_src)`——与 painter/async_load settle 注入
 //! 同键，settle 时注册表先收到解码字节（`register_source`），play 即建 player。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic;
 use zero_engine::image_resource_key;
 use zero_media::{
@@ -48,6 +48,104 @@ impl AudioStreamDecoder {
     }
 }
 
+/// 批间样本队列 — `advance_to` 的样本级精确消费面（A1 时钟批内对齐，M3/RFC 批次）。
+///
+/// 缺陷机制（M1 FINDING，[DESIGN §2](../../docs/goal/media-runtime-isolation/evidence/2026-10-24-m3-prep-design/DESIGN.md)）：
+/// vorbis/symphonia 按包交付（~1024 样本/ch ≈ 23.3ms @44.1kHz），批长 > 16ms 泵节拍
+/// → 每 tick 整批消费 → 游标以批长/tick 推进 → media clock rate ≈ 1.45（实测
+/// 1.45402）。修复 = 解码批先入队（解码超前有界 ≈1 批），按 tick 目标帧数（毫秒
+/// →帧定点换算，余数跨 tick 累积）精确写出——构造上 Σ写出时长 ≡ Σelapsed，
+/// rate ≡ 1.0；解码推进与游标推进保持耦合（解码超前不随时钟发散）。
+///
+/// 语义面：EOF/loop/错误分支与 seek 追赶区静默线（批粒度判定）均保持原行为；
+/// 轨重建（seek/回卷/复活）随解码器重建 [`Self::clear`]。格式以帧为换算粒度
+/// （帧 = 一组全声道交错采样），保证 sink 写入恒帧对齐（[`AudioSink::write`]
+/// 契约）。
+struct BatchSampleQueue {
+    /// 已解码未写 sink 的交错样本（f32；批粒度入队，样本粒度写出）。
+    pending: VecDeque<f32>,
+    /// 队列当前格式（首批登记；批间格式变更时清队列防混排）。`None` = 未拉到
+    /// 可入队批次（含追赶区全丢弃面）。
+    format: Option<(u32, u16)>,
+    /// 毫秒→帧定点换算余数（1/1000 帧单位，跨 tick 累积）。
+    frac_rem: u32,
+}
+
+impl BatchSampleQueue {
+    fn new() -> Self {
+        Self {
+            pending: VecDeque::new(),
+            format: None,
+            frac_rem: 0,
+        }
+    }
+
+    /// 轨重建/游标重置面（seek/回卷/复活）清队——旧位样本不得入新轨游标。
+    fn clear(&mut self) {
+        self.pending.clear();
+        self.format = None;
+        self.frac_rem = 0;
+    }
+
+    /// 批次入队（交错样本追加；与已登记格式不符时先清队——不同格式样本混排
+    /// 会破坏帧换算与 sink 对齐）。
+    fn push_batch(&mut self, batch: &DecodedAudio) {
+        if self
+            .format
+            .is_some_and(|(rate, ch)| rate != batch.sample_rate || ch != batch.channels)
+        {
+            self.pending.clear();
+            self.frac_rem = 0;
+        }
+        self.format = Some((batch.sample_rate, batch.channels));
+        self.pending.extend(batch.samples.iter().copied());
+    }
+
+    /// 本 tick 应写样本数：`elapsed` 毫秒 → 帧数定点换算（余数累积）× 声道数。
+    /// 格式未登记（追赶区未产出可入队批次）时 `None`，调用方继续拉批。
+    fn need_for_tick(&mut self, elapsed_ms: u64) -> Option<usize> {
+        let (rate, channels) = self.format?;
+        let milli_frames = elapsed_ms * u64::from(rate) + u64::from(self.frac_rem);
+        self.frac_rem = (milli_frames % 1000) as u32;
+        Some((milli_frames / 1000) as usize * usize::from(channels))
+    }
+
+    /// 写出队首至多 `need` 个样本（增益变换原样；`usize::MAX` = 全量，EOF 尾段
+    /// 回卷面用）。返回实际写出样本数（供游标按实际时长推进）。
+    fn write_to(&mut self, sink: &mut NullSink, need: usize, gain: f32) -> usize {
+        let n = need.min(self.pending.len());
+        if n == 0 {
+            return 0;
+        }
+        if gain == 1.0 {
+            // 零拷贝面：as_slices 双段覆盖跨环包裹（常规态单段）。
+            let (head, tail) = self.pending.as_slices();
+            let (a, b) = if head.len() >= n {
+                (&head[..n], &[][..])
+            } else {
+                (head, &tail[..n - head.len()])
+            };
+            let _ = sink.write(a);
+            if !b.is_empty() {
+                let _ = sink.write(b);
+            }
+        } else {
+            let gained: Vec<f32> = self.pending.range(..n).map(|s| s * gain).collect();
+            let _ = sink.write(&gained);
+        }
+        self.pending.drain(..n);
+        n
+    }
+
+    /// 已写出样本数 → 毫秒（当前格式；格式未登记返回 0，游标不动）。
+    fn duration_ms_of(&self, samples: usize) -> u64 {
+        match self.format {
+            Some((rate, channels)) if channels > 0 => (samples as u64 * 1000) / (u64::from(rate) * u64::from(channels)),
+            _ => 0,
+        }
+    }
+}
+
 /// 音频播放条目 — 解码器 + NullSink（可观测）+ 增益（M2c 后续：播放管线接 sink）。
 ///
 /// 时序模型与 VideoPlayer 同源：调用方注入单调时钟，`advance_to` 按已流逝媒体时间
@@ -80,6 +178,8 @@ struct AudioEntry {
     /// 恒 false 使 seeking/seeked 派发不可达（audio_loop_base Timeout 根因）。
     /// 回卷时置位，语义层 loop 分叉消费（seek(0)+play(0)）后清除。
     wrap_pending: bool,
+    /// 样本级消费队列（A1 批内对齐——[`BatchSampleQueue`] 模块文档）。
+    queue: BatchSampleQueue,
 }
 
 impl AudioEntry {
@@ -102,6 +202,7 @@ impl AudioEntry {
             loop_on: false,
             reached_end: false,
             wrap_pending: false,
+            queue: BatchSampleQueue::new(),
         }
     }
 
@@ -130,6 +231,8 @@ impl AudioEntry {
         self.cursor_ms = 0;
         self.skip_until_ms = 0;
         self.reached_end = false;
+        // 解码器重建 = 流位重置，旧位已解码样本作废（清队面）。
+        self.queue.clear();
     }
 
     /// 推进到墙钟 `now_ms`（实时节奏解码；带增益写入 sink）。返回是否写入采样。
@@ -141,12 +244,24 @@ impl AudioEntry {
         }
         let last = self.last_tick_ms.unwrap_or(now_ms);
         self.last_tick_ms = Some(now_ms);
-        let target = self.cursor_ms + now_ms.saturating_sub(last);
+        let elapsed = now_ms.saturating_sub(last);
+        let target = self.cursor_ms + elapsed;
         let gain = if self.muted { 0.0 } else { self.volume };
         let mut wrote = false;
-        while self.cursor_ms < target {
+        // A1 批内对齐：解码批入队（解码超前有界），按本 tick 目标样本数精确
+        // 写出（毫秒→帧定点换算，余数跨 tick 累积）——批粒度整批推进曾使
+        // media clock rate≈1.45（M1 FINDING，[`BatchSampleQueue`] 模块文档）。
+        let mut need = self.queue.need_for_tick(elapsed);
+        // 本 tick 已解码到的流位（含追赶区丢弃批——终止条件与原批粒度循环同）。
+        let mut decoded_end = self.cursor_ms;
+        while decoded_end < target {
             let Ok(Some(batch)) = self.decoder.next_batch() else {
-                // 流末：loop=true → 回卷重播（spec「ended playback」步 6.4——
+                // 流末：队内已解码尾段全量冲入 sink 再停/回卷（解码超前有界后
+                // 停拍时刻队内尚有未消费尾段——原行为末批整批入 sink 不丢样）。
+                let drained = self.queue.write_to(&mut self.sink, usize::MAX, gain);
+                wrote |= drained > 0;
+                self.cursor_ms += self.queue.duration_ms_of(drained);
+                // loop=true → 回卷重播（spec「ended playback」步 6.4——
                 // 位置 seek 到最早位置继续播，语义层派 seeked 非 ended）；
                 // loop=false → 停在末尾（ended 面归语义层）。
                 if self.loop_on {
@@ -171,24 +286,27 @@ impl AudioEntry {
                 }
                 break;
             };
-            let batch_end_ms = batch.pts_ms
+            decoded_end = batch.pts_ms
                 + (batch.samples.len() as u64 * 1000)
                     / (u64::from(batch.sample_rate) * u64::from(batch.channels).max(1));
-            self.cursor_ms = batch_end_ms;
-            // seek 追赶区（batch 末 ≤ 丢弃线）：静默解码，不入 sink。
-            if batch_end_ms <= self.skip_until_ms {
-                continue;
+            // seek 追赶区（批粒度判定不变）：批末 ≤ 丢弃线整批静默丢弃，不入队。
+            if decoded_end > self.skip_until_ms {
+                self.queue.push_batch(&batch);
             }
-            if gain == 1.0 {
-                let _ = self.sink.write(&batch.samples);
-            } else {
-                let gained: Vec<f32> = batch.samples.iter().map(|s| s * gain).collect();
-                let _ = self.sink.write(&gained);
+            if need.is_none() {
+                need = self.queue.need_for_tick(elapsed);
             }
-            wrote = true;
-            // 批次已越过 target（包粒度 > 剩余）——停在 batch 末（包不可分割）。
-            if self.cursor_ms >= target {
-                break;
+        }
+        if let Some(n) = need {
+            let written = self.queue.write_to(&mut self.sink, n, gain);
+            wrote |= written > 0;
+            if written == n {
+                // 全额写出：游标精确到 target（余数已累积，rate ≡ 1.0）。
+                self.cursor_ms = target;
+            } else if written > 0 {
+                // 部分写出（EOF 尾段/等待面）：游标按实际写出时长推进；
+                // 零写出（回卷面队列已清/等待首批）游标不动。
+                self.cursor_ms += self.queue.duration_ms_of(written);
             }
         }
         wrote
@@ -214,6 +332,8 @@ struct WebmAudioEntry {
     muted: bool,
     /// loop 真面（M3 扩批 XXIV，AudioEntry 同语义）——伴生轨流末回卷。
     loop_on: bool,
+    /// 样本级消费队列（A1 批内对齐——[`BatchSampleQueue`] 模块文档）。
+    queue: BatchSampleQueue,
 }
 
 /// webm 伴生音频轨的 codec 形态（M3 扩批 2026-09-02：A_OPUS 加入——WPT 上游
@@ -262,6 +382,7 @@ impl WebmAudioEntry {
             volume: 1.0,
             muted: false,
             loop_on: false,
+            queue: BatchSampleQueue::new(),
         }
     }
 
@@ -274,12 +395,22 @@ impl WebmAudioEntry {
         }
         let last = self.last_tick_ms.unwrap_or(now_ms);
         self.last_tick_ms = Some(now_ms);
-        let target = self.cursor_ms + now_ms.saturating_sub(last);
+        let elapsed = now_ms.saturating_sub(last);
+        let target = self.cursor_ms + elapsed;
         let gain = if self.muted { 0.0 } else { self.volume };
         let mut wrote = false;
-        while self.cursor_ms < target {
+        // A1 批内对齐（AudioEntry 同构，[`BatchSampleQueue`] 模块文档）。
+        let mut need = self.queue.need_for_tick(elapsed);
+        // 本 tick 已解码到的流位（含追赶区丢弃批——终止条件与原批粒度循环同）。
+        let mut decoded_end = self.cursor_ms;
+        while decoded_end < target {
             let Ok(Some(batch)) = self.track.next_batch() else {
-                // 流末：loop=true → 回卷（重建伴生轨 + 游标归零）；否则停止。
+                // 流末：队内已解码尾段全量冲入 sink 再停/回卷（AudioEntry EOF 面
+                // 同构——停拍时刻队内尚有未消费尾段，不丢样）。
+                let drained = self.queue.write_to(&mut self.sink, usize::MAX, gain);
+                wrote |= drained > 0;
+                self.cursor_ms += self.queue.duration_ms_of(drained);
+                // loop=true → 回卷（重建伴生轨 + 游标归零）；否则停止。
                 if self.loop_on {
                     // codec 泛化重建序与 play 懒建同：A_VORBIS 优先、A_OPUS 次之。
                     let rebuilt = restart_bytes.and_then(|bytes| {
@@ -301,6 +432,8 @@ impl WebmAudioEntry {
                             });
                             self.cursor_ms = 0;
                             self.skip_until_ms = 0;
+                            // 轨重建 = 流位重置，旧位已解码样本作废（清队面）。
+                            self.queue.clear();
                         }
                         None => self.playing = false,
                     }
@@ -309,24 +442,28 @@ impl WebmAudioEntry {
                 }
                 break;
             };
-            self.cursor_ms = batch.pts_ms
+            decoded_end = batch.pts_ms
                 + (batch.samples.len() as u64 * 1000)
                     / (u64::from(batch.sample_rate) * u64::from(batch.channels).max(1));
-            // seek 追赶区（batch 末 ≤ 丢弃线）：静默解码，不入 sink（spec
-            // precise-seek——与 AudioEntry 同面）。
-            if self.cursor_ms <= self.skip_until_ms {
-                continue;
+            // seek 追赶区（批粒度判定不变）：批末 ≤ 丢弃线整批静默丢弃，不入队
+            // （spec precise-seek——与 AudioEntry 同面）。
+            if decoded_end > self.skip_until_ms {
+                self.queue.push_batch(&batch);
             }
-            if gain == 1.0 {
-                let _ = self.sink.write(&batch.samples);
-            } else {
-                let gained: Vec<f32> = batch.samples.iter().map(|s| s * gain).collect();
-                let _ = self.sink.write(&gained);
+            if need.is_none() {
+                need = self.queue.need_for_tick(elapsed);
             }
-            wrote = true;
-            // 批次越过 target（包粒度 > 剩余）——停在本包末（包不可分割）。
-            if self.cursor_ms >= target {
-                break;
+        }
+        if let Some(n) = need {
+            let written = self.queue.write_to(&mut self.sink, n, gain);
+            wrote |= written > 0;
+            if written == n {
+                // 全额写出：游标精确到 target（余数已累积，rate ≡ 1.0）。
+                self.cursor_ms = target;
+            } else if written > 0 {
+                // 部分写出（EOF 尾段/等待面）：游标按实际写出时长推进；
+                // 零写出（回卷面队列已清）游标不动。
+                self.cursor_ms += self.queue.duration_ms_of(written);
             }
         }
         wrote
@@ -351,6 +488,8 @@ struct MseAudioEntry {
     last_tick_ms: Option<u64>,
     volume: f32,
     muted: bool,
+    /// 样本级消费队列（A1 批内对齐——[`BatchSampleQueue`] 模块文档）。
+    queue: BatchSampleQueue,
 }
 
 #[cfg(feature = "decode-h264")]
@@ -366,6 +505,7 @@ impl MseAudioEntry {
             last_tick_ms: None,
             volume: 1.0,
             muted: false,
+            queue: BatchSampleQueue::new(),
         }
     }
 
@@ -376,10 +516,15 @@ impl MseAudioEntry {
         }
         let last = self.last_tick_ms.unwrap_or(now_ms);
         self.last_tick_ms = Some(now_ms);
-        let target = self.cursor_ms + now_ms.saturating_sub(last);
+        let elapsed = now_ms.saturating_sub(last);
+        let target = self.cursor_ms + elapsed;
         let gain = if self.muted { 0.0 } else { self.volume };
         let mut wrote = false;
-        while self.cursor_ms < target {
+        // A1 批内对齐（AudioEntry/WebmAudioEntry 同构，[`BatchSampleQueue`]
+        // 模块文档）。
+        let mut need = self.queue.need_for_tick(elapsed);
+        let mut decoded_end = self.cursor_ms;
+        while decoded_end < target {
             match self.feed.next_batch() {
                 Ok(Some(batch)) => {
                     if !self.sink_started {
@@ -391,37 +536,53 @@ impl MseAudioEntry {
                     }
                     // saturating：pts 饱和值（u64::MAX，负 pts/edit-list 形态）
                     // 不进裸加法（debug overflow panic / release 回绕）。
-                    self.cursor_ms = batch.pts_ms.saturating_add(
+                    decoded_end = batch.pts_ms.saturating_add(
                         (batch.samples.len() as u64 * 1000)
                             / (u64::from(batch.sample_rate) * u64::from(batch.channels).max(1)),
                     );
-                    if self.cursor_ms <= self.skip_until_ms {
-                        continue;
+                    // seek 追赶区（批粒度判定不变）：批末 ≤ 丢弃线整批静默丢弃，
+                    // 不入队（spec precise-seek——与 AudioEntry 同面）。
+                    if decoded_end > self.skip_until_ms {
+                        self.queue.push_batch(&batch);
                     }
-                    if gain == 1.0 {
-                        let _ = self.sink.write(&batch.samples);
-                    } else {
-                        let gained: Vec<f32> = batch.samples.iter().map(|s| s * gain).collect();
-                        let _ = self.sink.write(&gained);
-                    }
-                    wrote = true;
-                    if self.cursor_ms >= target {
-                        break;
+                    if need.is_none() {
+                        need = self.queue.need_for_tick(elapsed);
                     }
                 }
                 Ok(None) => {
                     // MSE 流边缘：ended + 耗尽才停；增长等待面保持播放态
                     //（下一 tick 续解码——appendBuffer 与解码泵异步交错）。
                     if self.feed.is_exhausted() {
+                        // 停止前队内已解码尾段全量冲入 sink（AudioEntry EOF 面
+                        // 同构——不丢样），游标按实际写出推进到流末。
+                        let drained = self.queue.write_to(&mut self.sink, usize::MAX, gain);
+                        wrote |= drained > 0;
+                        self.cursor_ms += self.queue.duration_ms_of(drained);
                         self.playing = false;
                     }
                     break;
                 }
                 Err(_) => {
-                    // 解码错误停轨（事件面归后续切片——FIXME(mse-full-semantics)）。
+                    // 解码错误停轨：同 EOF 冲队面（已解码样本不丢），错误批本身
+                    // 已失——事件面归后续切片（FIXME(mse-full-semantics)）。
+                    let drained = self.queue.write_to(&mut self.sink, usize::MAX, gain);
+                    wrote |= drained > 0;
+                    self.cursor_ms += self.queue.duration_ms_of(drained);
                     self.playing = false;
                     break;
                 }
+            }
+        }
+        if let Some(n) = need {
+            let written = self.queue.write_to(&mut self.sink, n, gain);
+            wrote |= written > 0;
+            if written == n {
+                // 全额写出：游标精确到 target（余数已累积，rate ≡ 1.0）。
+                self.cursor_ms = target;
+            } else if written > 0 {
+                // 部分写出（EOF 尾段/等待面）：游标按实际写出时长推进；
+                // 零写出（停止面队列已冲/等待首批）游标不动。
+                self.cursor_ms += self.queue.duration_ms_of(written);
             }
         }
         wrote
@@ -693,6 +854,8 @@ impl VideoPlayerRegistry {
             // 追赶区静默线（mp3/vorbis 无精确包定位——重建后前向解码至 target；
             // target 前的采样丢弃，不写 sink）。
             entry.skip_until_ms = target_ms;
+            // 解码器重建 = 流位重置，旧位已解码样本作废（清队面）。
+            entry.queue.clear();
             return true;
         }
         false
@@ -829,6 +992,8 @@ impl VideoPlayerRegistry {
                         entry.cursor_ms = 0;
                         entry.skip_until_ms = 0;
                         entry.last_tick_ms = None;
+                        // feed 重建 = 流位重置，旧位已解码样本作废（清队面）。
+                        entry.queue.clear();
                     }
                 }
                 // 源字节：单轨源 play 首次即消费（sources.remove），双轨源经 av_sources
@@ -854,6 +1019,8 @@ impl VideoPlayerRegistry {
                         entry.cursor_ms = 0;
                         entry.skip_until_ms = 0;
                         entry.last_tick_ms = None;
+                        // 轨重建 = 流位重置，旧位已解码样本作废（清队面）。
+                        entry.queue.clear();
                     }
                 }
             }
@@ -938,6 +1105,8 @@ impl VideoPlayerRegistry {
             entry.cursor_ms = target_ms;
             entry.skip_until_ms = target_ms;
             entry.last_tick_ms = None;
+            // feed 重建 = 流位重置，旧位已解码样本作废（清队面）。
+            entry.queue.clear();
         }
         // 伴生音频轨 seek（重建 + 追赶区静默）——master clock 游标对齐 target，
         // 后续 tick 视频 sync_to_media_time 跟随（不脱轨）。
@@ -979,6 +1148,8 @@ impl VideoPlayerRegistry {
             entry.cursor_ms = clamped_ms;
             entry.skip_until_ms = clamped_ms;
             entry.last_tick_ms = None;
+            // 轨重建 = 流位重置，旧位已解码样本作废（清队面）。
+            entry.queue.clear();
         }
         player_ok
     }
@@ -1402,8 +1573,11 @@ mod tests {
         assert!(reg.play(AV, 0));
         let mut cache = ImageCache::new(16, 64 * 1024 * 1024);
         let mut now = 0u64;
-        // 快进到双轨流末（2s fixture；500ms 步进必越界）。
-        while reg.is_playing(AV) && now < 60_000 {
+        // 快进到双轨流末（2s fixture；500ms 步进必越界）。泵条件 is_any_playing：
+        // A1 精确游标下 EOF None 拉晚一拍（视频 Ended 后下一 tick 音频停），
+        // 以 is_playing(AV) 为停机条件会在该拍前退出（生产 renderer 泵 rAF
+        // tick_all 无条件节拍不受影响）。
+        while reg.is_any_playing() && now < 60_000 {
             now += 500;
             reg.tick_all(now, &mut cache);
         }

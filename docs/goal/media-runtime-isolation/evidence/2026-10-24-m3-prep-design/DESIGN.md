@@ -55,6 +55,16 @@ advance_to 改造（返回值、EOF/loop/错误分支语义**不变**）：
 - A/V pair 60s 容量场景不回退（每 tick 增加样本切片写，预期 <5%，测量面已备）；空 tick p50 量级不变（无播放快路径保留）。
 - 回滚：单提交。
 
+### 2.4 实施偏差记录（2026-10-24 A1 落地轮，相对 §2.2）
+
+实施时发现设计稿三处需修正，均不改变验收判据：
+
+1. **填充条件从 `pending.len() < need` 改为 `decoded_end < target`（crossing 语义）**。原条件在 `pending ≥ need` 时提前退出，跳过 EOF 的 `Ok(None)` 拉——精确游标下（旧码的量化越冲 δ 不复存在）流末恰在 target 跨越后一次拉才暴露，`registry_av_pair_reaches_ended_after_audio_exhausted` 实测失败（视频已 Ended、泵停、音频残尾不消费）。crossing 条件保持「解码侧拉到流位越过 target」的原批粒度终止语义，EOF 拉时序由此保证。
+2. **解码超前/时钟推进耦合不变式**（设计稿未显式写出，trim 变体失败实证）：游标只能按**消费**推进，不能按解码位或 trim 推进——解码批 23.3ms/tick vs 时钟 16ms/tick，解耦后解码器以 1.45× 速率先行，流末提前耗尽（60s 流在游标 42s 处 EOF、18s 内容丢失、时钟冻结 runaway）。队列使解码超前有界（~1 批），`cursor_ms += duration_ms_of(written)` 只随写出前进。
+3. **EOF 检测晚一拍 + 停止前冲队**。EOF `Ok(None)` 拉比视频 Ended 晚一 tick（生产 renderer rAF 泵 tick_all 无条件节拍，无影响）；测试泵若以 `is_playing(src)` 为停机条件会提前一拍退出——M2 切片 F 用例与 M1 harness 泵条件改 `is_any_playing()`（注释注明缘由）。另：解码超前有界后，停止/回卷时刻队内尚有未消费尾段，EOF/loop/错误停止分支先 `write_to(usize::MAX)` 全量冲队再停（原行为末批整批入 sink 不丢样），游标按冲出时长推进到流末。
+
+验收实测（m1baseline-a1-post.log）：T3 rate=1.00000（修复前 1.45402）；漂移 p50=11.0ms 与基线持平；容量/seek 场景无回退；786 lib 测试全绿。
+
 ## 3. seek 冷路径归因（Lint Warning 解除）与 A4 窄化设计
 
 ### 3.1 证据链（三方交叉，全部一手）

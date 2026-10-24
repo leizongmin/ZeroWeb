@@ -1,9 +1,9 @@
 # 媒体运行时隔离控制面
 
 **日期**：2026-10-24
-**状态**：Active（**D-RFC-1~4 已批复**——方案 C 批准 / A 批次随批即启 / B 核查暂缓 / decode-h264 维持默认关，RFC v1.9 §10 批复记录；M1 基线 + M2 RFC 两项交付 + M3 前置设计八片齐备，[m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；**M3 实施启动：A1 先行**）。
-**当前卡点**：无（决策门已过）。A1 实施中——时钟批内对齐（`BatchSampleQueue` 样本级消费，三入口 advance_to 改造，rate 收 [0.9,1.1]）。
-**下一步**：A1 落地并过 M1 harness T3 复测 → A2（三缺口修复）→ A3/A4；C1（protocol 媒体消息族 17 变体 + `media-process` feature 骨架，feature 默认关）并行启动。
+**状态**：Active（**D-RFC-1~4 已批复**——方案 C 批准 / A 批次随批复即启 / B 核查暂缓 / decode-h264 维持默认关，RFC v1.9 §10 批复记录；M1 基线 + M2 RFC 两项交付 + M3 前置设计八片齐备，[m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；**A1 已落地**——T3 rate 1.00000，偏差记录 DESIGN §2.4）。
+**当前卡点**：无。A1 完成待提交；A2 待启动。
+**下一步**：A2（三缺口修复：autoplay 走 play 算法 + 生产 renderer march 接线，DESIGN §6）→ A3/A4；C1（protocol 媒体消息族 17 变体 + `media-process` feature 骨架，feature 默认关）并行启动。
 **入口**：[目标契约](../media-runtime-isolation.md) / [启动与证据协议](../ladybird-followups/README.md)
 
 ## 缺口与待决
@@ -21,7 +21,7 @@
 |---|---|---|---|
 | M1 | 生产资源、能力与权限基线 | **完成**（测量面成立，收口待评审） | [2026-10-24 基线](evidence/2026-10-24-m1-baseline/ANALYSIS.md) |
 | M2 | 方案/许可证/回滚 RFC + protocol 接口契约 | **v1.9 已批复**（D-RFC-1~4 用户裁决） | [media-runtime-isolation-spec-rfc](../../../specs/media-runtime-isolation-spec-rfc.md) |
-| M3 | 已确认平台与隔离切片 | **IN_PROGRESS**（A1 实施启动；A1–A4 + C1–C4 设计稿齐备，D-RFC-1/2 已批） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
+| M3 | 已确认平台与隔离切片 | **IN_PROGRESS**（A1 已落地 rate≡1.0；A2–A4 待实施；C1–C4 设计稿齐备，D-RFC-1/2 已批） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
 | M4 | 配对媒体、故障和资源审计 | NOT_STARTED | 无 |
 
 ## 验证基线
@@ -29,7 +29,7 @@
 | 判据 | 场景 | 状态 | 证据 |
 |---|---|---|---|
 | DC-1 | MEDIA-01-cpu-copy-and-capability | **已测成立**（容量/复制链/权限/能力对照；收口待用户评审） | evidence/2026-10-24-m1-baseline |
-| DC-2 | MEDIA-02-clock-seek-and-state | 部分（media 层时钟/seek/漂移已测：rate 1.454 FINDING、cue seek 精确、漂移 p50=11ms；页面可见时钟缺口=三缺口未修） | evidence/2026-10-24-m1-baseline |
+| DC-2 | MEDIA-02-clock-seek-and-state | 部分（media 层时钟 rate FINDING 已修：A1 落地 rate=1.00000；cue seek 精确、漂移 p50=11ms；页面可见时钟缺口=三缺口未修） | evidence/2026-10-24-m1-baseline（含 m1baseline-a1-post.log） |
 | DC-3 | MEDIA-03-decoder-crash-recovery | NOT_RUN | 无 |
 | DC-4 | MEDIA-04-platform-fallback-and-permissions | 部分（平台核查：无 /dev/dri、NullSink、VP9-only 生产面；故障注入未做） | evidence/2026-10-24-m1-baseline |
 | DC-5 | RFC 与最终支持范围审计 | NOT_RUN | 无 |
@@ -161,3 +161,10 @@
 - **用户四项裁决**（AskUserQuestion 逐项确认）：D-RFC-1 **批准方案 C**（独立媒体进程立项）/ D-RFC-2 **随批复即启**（A1–A4 按序推进）/ D-RFC-3 **暂缓**（方案 B 核查不启动）/ D-RFC-4 **维持默认关**（decode-h264 不启用）。
 - RFC v1.9：状态 草稿→已批复；§10 决策表增批复列；§13 历史行。批复前禁令解除；`media-process` feature 仍默认关（启用时机归 C4/M4 后另议）。
 - master.md 状态面同步（状态/卡点/缺口表/M2/M3 里程碑）。本轮纯文档；A1 实施随后同日另轮记录。
+
+### 2026-10-24 A1 时钟批内对齐实施轮（M3 首切片落地）
+
+- **A1 修复落地**（`crates/webview/src/video_registry.rs` 单提交回滚点）：新增私有 `BatchSampleQueue`（样本级队列：交错样本 pending + 格式登记 + 毫秒→帧定点换算余数 `frac_rem` 跨 tick 累积），三入口（AudioEntry / WebmAudioEntry / MseAudioEntry）advance_to 同构改造——解码批入队（解码超前有界 ~1 批）、按 tick 目标帧数精确写出、全额写出时 `cursor_ms = target`（rate ≡ 1.0 由构造保证）；EOF/loop/错误停止分支先全量冲队再停（原行为末批整批入 sink 不丢样）；5 个 registry 级流位重置点（audio_seek、seek/play 的 MSE 与 av 复活分支）补 `queue.clear()`。
+- **实施偏差三处**记入 [DESIGN.md §2.4](evidence/2026-10-24-m3-prep-design/DESIGN.md)：填充条件改 crossing 语义（`decoded_end < target`——原设计 `pending < need` 会跳过 EOF None 拉）；解码超前/时钟推进耦合不变式（游标只随消费推进，trim 变体失败实证：解耦后 60s 流在 42s 处提前 EOF 丢 18s）；EOF 检测晚一拍（生产 rAF 泵无条件节拍无影响，测试泵条件改 `is_any_playing`——M2 切片 F 用例与 M1 harness 同步修正）。
+- **验收**（[m1baseline-a1-post.log](evidence/2026-10-24-m1-baseline/m1baseline-a1-post.log)，release + test-guard）：T3 rate **1.00000**（修复前 1.45402，带宽 [0.9,1.1]）；T5 漂移 p50=11.0ms 与基线持平；T2 av-pair 容量 1206ms/60s（≈50× 实时，基线 1422ms）无回退；T4 cue seek 325ms/1ms/870ms 与基线同量级。lib 786 测试全绿；workspace make test、clippy -D warnings、fmt 过。
+- 本轮仅动 video_registry.rs + M1 测试断言收带 + 两文档；zero-media/engine/protocol 零改动。
