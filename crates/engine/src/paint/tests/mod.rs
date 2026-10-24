@@ -54,6 +54,8 @@ mod r5256_selection_descendant_owner_tests;
 mod r5258_first_line_color_tests;
 /// R5259 appearance widget 纳入 per-node 效果窗口（transform 作用于全部渲染输出）。
 mod r5259_appearance_transform_window_tests;
+/// R5260 clip:text 恒色染色接入 flex/grid 匿名文本项（css-backgrounds-4 §background-clip:text）。
+mod r5260_clip_text_anonymous_item_tests;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;

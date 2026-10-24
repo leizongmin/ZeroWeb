@@ -2326,7 +2326,7 @@ impl Painter {
                     parent_style.visibility,
                     VisibilityValue::Hidden | VisibilityValue::Collapse
                 ) {
-                    self.paint_anonymous_text_item(box_node, abs_x, abs_y, &parent_style, doc, node_id);
+                    self.paint_anonymous_text_item(box_node, abs_x, abs_y, &parent_style, doc, node_id, Some(styles));
                 }
             }
             false
@@ -3029,7 +3029,7 @@ impl Painter {
                     parent_style.visibility,
                     VisibilityValue::Hidden | VisibilityValue::Collapse
                 ) {
-                    self.paint_anonymous_text_item(box_node, abs_x, abs_y, &parent_style, doc, node_id);
+                    self.paint_anonymous_text_item(box_node, abs_x, abs_y, &parent_style, doc, node_id, Some(styles));
                 }
             }
             false

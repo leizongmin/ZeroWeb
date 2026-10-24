@@ -4017,6 +4017,7 @@ impl super::Painter {
         style: &ComputedStyle,
         doc: &Document,
         node_id: NodeId,
+        styles: Option<&HashMap<NodeId, ComputedStyle>>,
     ) {
         let font_size: f32 = match style.font_size {
             LengthValue::Px(s) => s as f32,
@@ -4026,7 +4027,25 @@ impl super::Painter {
             return;
         }
 
-        let color = color_value_to_render(&style.color);
+        // R4525/R4549：clip:text 恒色彩字上下文——flex/grid 匿名文本项不经
+        // paint_node_inner（恒色 push 站在此路径之外），按 owner 容器自身 / DOM 祖先链
+        // 静态判定补链（与 paint_text 主路径同规）：字形色 = text 色 OVER bg 恒色
+        //（text 色透明时 = bg 恒色，clip-text-flex 判例）。
+        let color = match bg_clip_text_solid_color(style, &self.image_solid_colors, self.document_url.as_deref())
+            .or_else(|| {
+                styles.and_then(|s| {
+                    bg_clip_text_solid_color_ancestral(
+                        doc,
+                        node_id,
+                        s,
+                        &self.image_solid_colors,
+                        self.document_url.as_deref(),
+                    )
+                })
+            }) {
+            Some(clip_bg) => color_over(color_value_to_render(&style.color), clip_bg),
+            None => color_value_to_render(&style.color),
+        };
         let default_font_id = self.resolve_style_font_id(&style.font_family, style).0;
         let variations = crate::text_metrics::paint_font_variations(&style.font_variation_settings);
         let font_variation_id = self.primitives.intern_font_variations(&variations);
