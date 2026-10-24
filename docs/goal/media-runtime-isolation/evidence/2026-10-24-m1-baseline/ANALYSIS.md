@@ -127,10 +127,13 @@ CPU 路径无零拷贝上屏通道。这是 M2 RFC「平台解码/进程隔离�
 上游移交（archive/background-resource-lifecycle：DC-2 INCONCLUSIVE 子项）锚点逐条核对，
 **三缺口在当前源码全部在位**：
 
+> 行号订正（2026-10-24 二次核对）：dd17e2854（R5271，metadata/link-style）在 part06.js
+> 前段插入 47 行，媒体锚点行号漂移；语义核对不变，行号以 HEAD `56d499bb0` 为准。
+
 | # | 缺口 | 当前锚点 | 核对 |
 |---|---|---|---|
-| 1 | autoplay 置态绕桥——`_zwMediaAutoplay` 直置 `ms.playing=true`，不经 play() IDL 路径，桥不武装、registry 不起播 | engine/src/js_dom_shim/part06.js:10084 | 在位 |
-| 2 | `_zwMediaTimeMarchesOn` 死钩子——定义后全仓零调用方（仅 part01b.js:727 注释引用） | engine/src/js_dom_shim/part06.js:16350 | 在位 |
+| 1 | autoplay 置态绕桥——`_zwMediaAutoplay` 直置 `ms.playing=true`（part06.js:10141），不经 play() IDL 路径，桥不武装、registry 不起播 | engine/src/js_dom_shim/part06.js:10131（函数） | 在位 |
+| 2 | `_zwMediaTimeMarchesOn` 死钩子——定义后全仓零调用方（仅 part01b.js:727 注释引用） | engine/src/js_dom_shim/part06.js:16407 | 在位 |
 | 3 | audio load 桥武装未命中——`bridgeOn` 仅在 play() IDL 同步/重试命中路径置位（part03.js:23558/23610），load/autoplay 路径无武装点 | engine/src/js_dom_shim/part03.js:23558/23610 | 在位 |
 
 三缺口修复面归媒体播放语义（engine shim + registry 桥），属 M3 切片候选；本轮只盘点不修。

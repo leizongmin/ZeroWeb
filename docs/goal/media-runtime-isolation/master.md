@@ -43,7 +43,7 @@
 - 新增 `scripts/make-long-video-fixture.py` + 2 个 60s fixture（母本簇重复 ×30，来源清白，README 有声明与重现命令）。
 - 新增 `crates/webview/tests/media_m1_baseline.rs` 5 场景（`#[ignore]` 显式运行，release + test-guard 全过）。
 - 关键测量：纯视频 60s 解码 1339ms（≈45× 实时，~1 核）；A/V 双轨 1422ms（≈42×）；空 tick p50≈431ns；cue seek 精确（302ms 冷/1.1ms 热/1000ms）；漂移 p50=11ms。**FINDING**：media clock rate=1.45402（音频批量化），断言收 sanity 带，修复归 M3。（数字已按 raw log 订正，ANALYSIS 内有订正注）
-- 三缺口盘点在位核对：part06.js:10084（autoplay 绕桥）、part06.js:16350（死钩子）、part03.js:23558/23610（play-only 武装）。
+- 三缺口盘点在位核对：part06.js:10131（autoplay 绕桥）、part06.js:16407（死钩子）、part03.js:23558/23610（play-only 武装）——行号按 dd17e2854 后 HEAD 订正，语义核对不变。
 - 守卫与证据：执行阶段 test-guard（900s/4GB）；原始输出 m1baseline-raw.log；无残留进程。本轮未安装 SDK，未改 feature 门。
 
 ### 2026-10-24 M2 RFC 轮
