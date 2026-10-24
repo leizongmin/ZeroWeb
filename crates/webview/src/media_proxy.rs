@@ -28,8 +28,8 @@ use std::time::{Duration, Instant};
 use zero_protocol::media::{
     MEDIA_PROTOCOL_VERSION, MediaDataAckParams, MediaDataChunkParams, MediaErrorCode, MediaErrorParams,
     MediaFrameParams, MediaPauseParams, MediaPlayParams, MediaReadyParams, MediaRegisterSourceParams,
-    MediaReleaseSourceParams, MediaSeekParams, MediaSeekResultParams, MediaSetLoopParams, MediaSourceReadyParams,
-    MediaStateUpdateParams,
+    MediaReleaseSourceParams, MediaSeekParams, MediaSeekResultParams, MediaSetGainParams, MediaSetLoopParams,
+    MediaSetRateParams, MediaSourceReadyParams, MediaStateUpdateParams,
 };
 use zero_protocol::message::{IpcMessage, IpcMessageKind};
 use zero_protocol::transport::PipeTransport;
@@ -405,9 +405,10 @@ impl MediaHostClient {
         })
     }
 
-    /// 起播/重播。成功即回 `MediaStateUpdate{Playing}`（内核即时推送兼作回执，
-    /// IF-002 id 配对）；未知源/字节未齐/解码失败为 `MediaError` 错误面。
-    pub fn play(&mut self, source_key: u64, position_ms: u64) -> Result<(), MediaHostError> {
+    /// 起播/重播。成功即回 `MediaStateUpdate{Playing}` 载荷（内核即时推送兼作
+    /// 回执，IF-002 id 配对；media_time_ms 为镜像即时真值）；未知源/字节未齐/
+    /// 解码失败为 `MediaError` 错误面。
+    pub fn play(&mut self, source_key: u64, position_ms: u64) -> Result<MediaStateUpdateParams, MediaHostError> {
         self.with_conn(|conn, pending| {
             let id = conn.send(IpcMessageKind::MediaPlay(MediaPlayParams {
                 source_key,
@@ -415,9 +416,9 @@ impl MediaHostClient {
             }))?;
             Ok(match conn.wait_for(pending, id)? {
                 IpcMessage {
-                    kind: IpcMessageKind::MediaStateUpdate(_),
+                    kind: IpcMessageKind::MediaStateUpdate(state),
                     ..
-                } => Ok(()),
+                } => Ok(state),
                 IpcMessage {
                     kind: IpcMessageKind::MediaError(err),
                     ..
@@ -427,15 +428,15 @@ impl MediaHostClient {
         })
     }
 
-    /// 暂停（成功即回 `MediaStateUpdate{Paused}`，IF-002 id 配对）。
-    pub fn pause(&mut self, source_key: u64) -> Result<(), MediaHostError> {
+    /// 暂停（成功即回 `MediaStateUpdate{Paused}` 载荷，IF-002 id 配对）。
+    pub fn pause(&mut self, source_key: u64) -> Result<MediaStateUpdateParams, MediaHostError> {
         self.with_conn(|conn, pending| {
             let id = conn.send(IpcMessageKind::MediaPause(MediaPauseParams { source_key }))?;
             Ok(match conn.wait_for(pending, id)? {
                 IpcMessage {
-                    kind: IpcMessageKind::MediaStateUpdate(_),
+                    kind: IpcMessageKind::MediaStateUpdate(state),
                     ..
-                } => Ok(()),
+                } => Ok(state),
                 IpcMessage {
                     kind: IpcMessageKind::MediaError(err),
                     ..
@@ -477,6 +478,27 @@ impl MediaHostClient {
         self.with_conn(|conn, _pending| {
             conn.send(IpcMessageKind::MediaSetLoop(MediaSetLoopParams { source_key, on }))
                 .map(|_| Ok(()))
+        })
+    }
+
+    /// 设置播放速率（fire-and-forget；语义面同 [`Self::set_loop`]——内核侧只作用
+    /// 视频墙钟，registry 已知限制同面）。
+    pub fn set_rate(&mut self, source_key: u64, rate: f64) -> Result<(), MediaHostError> {
+        self.with_conn(|conn, _pending| {
+            conn.send(IpcMessageKind::MediaSetRate(MediaSetRateParams { source_key, rate }))
+                .map(|_| Ok(()))
+        })
+    }
+
+    /// 设置增益/静音（fire-and-forget；语义面同 [`Self::set_loop`]）。
+    pub fn set_gain(&mut self, source_key: u64, volume: f64, muted: bool) -> Result<(), MediaHostError> {
+        self.with_conn(|conn, _pending| {
+            conn.send(IpcMessageKind::MediaSetGain(MediaSetGainParams {
+                source_key,
+                volume,
+                muted,
+            }))
+            .map(|_| Ok(()))
         })
     }
 
