@@ -378,11 +378,13 @@ fn respond_with_delay(mut stream: TcpStream) {
     stream.write_all(body).expect("write burst response body");
 }
 
-/// P14（2026-10-25）：同 origin 图片突发必须达到每来源并发上限——renderer 发布
-/// 路径修复后一次性 issue 全部缺图（修复前逐图阻塞 IPC fetch，同 origin
-/// max-in-flight 恒 1，cnblogs 107 请求 106 串行的第一根因）。本地 fixture 30 张
-/// 同源图并发提交：服务端观测在途峰值 == 调度器每来源上限且 >1；超限请求排队、
-/// 槽释放后全部完成（排队/释放/跨 origin 互不阻塞语义另由 zero-net 单测
+/// P14（2026-10-25）：同 origin 图片突发必须并发展开——renderer 发布路径修复后
+/// 一次性 issue 全部缺图（修复前逐图阻塞 IPC fetch，同 origin max-in-flight 恒 1，
+/// cnblogs 107 请求 106 串行的第一根因）。本地 fixture 30 张同源图并发提交：服务
+/// 端观测在途峰值 >1（区分串行形态）且 ≤ 调度器每来源上限——不钉 ==上限：本测试
+/// 二进制内用例并行共享进程级调度器可压低峰值（TV-F3）、env 覆盖上限超过图数时
+/// == 恒假（DF-F2），饱和判据由 zero-net 调度器级用例钉住；超限请求排队、槽释放
+/// 后全部完成（排队/释放/跨 origin 互不阻塞语义另由 zero-net 单测
 /// `queues_beyond_per_origin_limit` / `different_origins_do_not_share_limit` 与
 /// FR-004/005 用例钉住）。
 #[test]
@@ -449,9 +451,9 @@ fn same_origin_image_burst_reaches_per_origin_concurrency_limit() {
         peak > 1,
         "concurrency must exceed the pre-fix serial shape (peak={peak})"
     );
-    assert_eq!(
-        peak, limit,
-        "same-origin burst must saturate the per-origin limit (limit={limit})"
+    assert!(
+        peak <= limit,
+        "same-origin burst must stay within the per-origin limit (peak={peak}, limit={limit})"
     );
     server.join().expect("join fixture server");
 }
