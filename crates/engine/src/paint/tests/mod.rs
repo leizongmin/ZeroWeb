@@ -56,6 +56,8 @@ mod r5258_first_line_color_tests;
 mod r5259_appearance_transform_window_tests;
 /// R5260 clip:text 恒色染色接入 flex/grid 匿名文本项（css-backgrounds-4 §background-clip:text）。
 mod r5260_clip_text_anonymous_item_tests;
+/// R5263 collapse 横带端部随相邻竖格线胜者伸缩（CSS2 §17.6.2 带端归属）。
+mod r5263_collapse_band_end_tests;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;

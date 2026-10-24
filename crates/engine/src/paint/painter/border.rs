@@ -12,7 +12,7 @@ use zero_render_foundation::primitive::{FilterPrimitive, ImagePrimitive, LineCap
 use zero_style_system::{
     AppearanceComputedValue, BorderCollapseValue, BorderImageOutsetComputedComponent, BorderImageRepeatComputedMode,
     BorderImageSliceComputedComponent, BorderImageSourceComputedValue, BorderImageWidthComputedComponent,
-    BorderStyleValue, ComputedStyle, FilterComputedValue,
+    BorderStyleValue, ComputedStyle, DisplayValue, FilterComputedValue,
 };
 
 use super::super::color::{color_value_to_render, resolve_color_current};
@@ -339,6 +339,40 @@ impl super::Painter {
         let top_far = band_far(0, top_t);
         let bottom_near = band_far(2, bottom_t);
 
+        // R5263（CSS2 §17.6.2 collapse 带端归属）：横带端部随相邻竖格线胜者伸缩。
+        // chromium 001e 实测：横带跨 [首格线−win/2, 末格线+win/2]（蓝 cell 顶带
+        // [48,108] = 盒 [58,98] 左外延 10 + 右跨格线外延 10）——自身边框胜该格线
+        // （该边无 override）→ 端点外延 win/2（eff 口径：外缘带 full → t/2，内缘
+        // 两半带 → t）；败于邻 cell（阶段 3/R1626 把胜者宽色写入本边 override，
+        // [g−win/2, g+win/2] 已由两侧半带按胜者色合成）→ 端点收进同量，让位邻
+        // cell 顶带外延；本边无带（win 后仍 0 宽）或外缘带被行/表/列源夺色的
+        // legacy 域 → 维持盒缘。整体门 = 横带自身无 override：行组/表源胜出横带
+        // 的 bwat001 域是逐 cell 连续合成的 legacy 内绘，带端伸缩会撕开断层
+        //（R5262 排障 −20 族同因），整体不动。另限 TableCell 盒：表盒自身红框
+        // 同样无 override 全自胜，会越出表 border-box 外延（实测表框左右各溢
+        // 10px），带端伸缩是格线 cell 专属语义。
+        let band_end_off = |own: usize, adj: usize, adj_w: f32, adj_t: f32, outward: f32| -> f32 {
+            if !collapse
+                || !outer_full
+                || !matches!(style.display, DisplayValue::TableCell)
+                || box_node.collapsed_border_color_overrides[own].is_some()
+            {
+                return 0.0;
+            }
+            let ext = if outer[adj] { adj_t / 2.0 } else { adj_t };
+            if box_node.collapsed_border_color_overrides[adj].is_none() {
+                outward * ext
+            } else if !outer[adj] && adj_w > 0.0 {
+                -outward * ext
+            } else {
+                0.0
+            }
+        };
+        let top_l = band_end_off(0, 3, box_node.border_left, left_t, -1.0);
+        let top_r = band_end_off(0, 1, box_node.border_right, right_t, 1.0);
+        let bot_l = band_end_off(2, 3, box_node.border_left, left_t, -1.0);
+        let bot_r = band_end_off(2, 1, box_node.border_right, right_t, 1.0);
+
         // border-collapse 颜色覆盖：当表格边框胜出时使用表格的颜色
         let top_color = collapsed_border_color(&box_node.collapsed_border_color_overrides[0], &style.border_top_color);
         let right_color =
@@ -427,10 +461,15 @@ impl super::Painter {
         if box_node.border_top > 0.0 && *top_style != BorderStyleValue::None && *top_style != BorderStyleValue::Hidden {
             self.paint_border_edge(
                 &BorderEdgeSpec {
-                    x1: if diag_tl { abs_x + left_t } else { abs_x },
+                    // R5263：collapse 横带端部随相邻竖格线胜者伸缩（band_end_off）
+                    x1: if diag_tl { abs_x + left_t } else { abs_x + top_l },
                     // R5262：collapse cell 外缘带外展半厚（带以格线为中心）
                     y1: abs_y - band_outset(0, top_t),
-                    x2: if diag_tr { abs_x + w - right_t } else { abs_x + w },
+                    x2: if diag_tr {
+                        abs_x + w - right_t
+                    } else {
+                        abs_x + w + top_r
+                    },
                     y2: abs_y,
                     thickness: top_t,
                     is_horizontal: true,
@@ -509,10 +548,15 @@ impl super::Painter {
         {
             self.paint_border_edge(
                 &BorderEdgeSpec {
-                    x1: if diag_bl { abs_x + left_t } else { abs_x },
+                    // R5263：collapse 横带端部随相邻竖格线胜者伸缩（band_end_off）
+                    x1: if diag_bl { abs_x + left_t } else { abs_x + bot_l },
                     // R5262：collapse cell 外缘带外展半厚（带以格线为中心）
                     y1: abs_y + h - bottom_t + band_outset(2, bottom_t),
-                    x2: if diag_br { abs_x + w - right_t } else { abs_x + w },
+                    x2: if diag_br {
+                        abs_x + w - right_t
+                    } else {
+                        abs_x + w + bot_r
+                    },
                     y2: abs_y + h - bottom_t + band_outset(2, bottom_t),
                     thickness: bottom_t,
                     is_horizontal: true,
