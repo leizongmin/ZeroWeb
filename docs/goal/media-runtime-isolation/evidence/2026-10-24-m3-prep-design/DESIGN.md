@@ -103,6 +103,39 @@ phase-① 失败后不再 `seek(0)` 全量前向，改为：
 - WPT 上游 media/*.webm 抽样核对 GOP 形态（真实生产输入受控确认）。
 - 待验证：带 CueRelativePosition/CueDuration 的 ffmpeg 产物流落点复核（broad phase relative 分支 :1721-1727——设计同样成立：cue_time 重 seek 落簇首；实施期以抽样 fixture 验证）。
 
+### 3.5 实施偏差记录与验收结果（A4 落地后）
+
+单提交回滚点（decode.rs + tests.rs + M1 harness T4 扩展）。
+
+偏差三处：
+
+1. **锚点缓存只存 CueTime**（设计写 `Vec<(cue_time_ms, cluster_pos)>`）：窄化重 seek 走
+   demuxer 的时间二分（broad phase 自带簇定位），cluster position 冗余不存；`VideoDecoder`
+   新增 `cue_times_ms: Vec<u64>`（开流时 `parse_cue_times_ms` 对源字节平扫——Segment →
+   Cues → CuePoint/CueTime 三层 EBML 遍历，零新依赖）。
+2. **多轨流 CuePoint 重复不过滤 CueTrack**：音视频同簇 cue 各一条，时间重复对「≤ target
+   最近 cue」二分无害（重复时间同簇首）。
+3. **锚块非 keyframe → 落 ③ 全量回退**（设计未明说该出口）：稀疏 cue / relative-position
+   形态下锚首块非视频 keyframe 时不强解（VP9 参考链断裂会 Err）——探块判定失败即走既有
+   流首全量前向，错误面不新增；同时 vint 读取对 0x00 首字节（非法长度位）即停，损坏输入
+   不 panic。
+
+验收（§3.4 逐项 + §7 待验证项）：
+
+- M1 harness T4（[m1baseline-a4-post.log](m1baseline-a4-post.log)，release + test-guard）：
+  mid-GOP 冷 seek 15s **301717µs → 18316µs**（16×）、45s **999822µs → 18378µs**（54×），
+  15s vs 45s 差 62µs——**不随 target 线性增长**断言（差 < 50ms）与 GOP 前向上界断言
+  （≤ 100ms）入 harness 常驻；keyframe 对齐 30s 1001µs 不变；after_ct 三点全精确；续播
+  resume_ticks 2811/1874/936 与 A1 后逐位一致。实测帧速 ~0.76ms/帧（24 帧半 GOP ≈ 18ms，
+  与设计预估 ~25ms 同量级）。其余场景：drift p50/p95/max 逐位持平、rate 1.00000、容量
+  1138/1098ms 在噪声带内——零回归。
+- §7 稀疏 cue 分支：`webm_seek_sparse_cue_stream_falls_back_full_forward`（movie_5 同构
+  单 keyframe fixture——gitignore 的 wpt-data 不可作单测依赖，形态等价替换）+ 既有
+  `webm_vp9_seek_to_mid_stream_keyframe` 双面锁定 ③ 分支。
+- 单测三新增：cue 平扫（60s fixture 30 偶秒 cue 真值）、mid-GOP 窄化精确性（首帧 pts
+  ∈ [15000,15417] + 剩余帧数界）、稀疏回退精确性；media lib 54 全绿、webview lib 790 全绿。
+- 待验证项（relative-position 产物流）保留：本环境无 ffmpeg 抽样面，归后续验证切片。
+
 ## 4. RFC v1.2 变更清单
 
 - §7 批次表新增 **A4**（seek 定位窄化：cue 锚定 fallback，`decode.rs` 面）；依赖行 A1–A3 → A1–A4。

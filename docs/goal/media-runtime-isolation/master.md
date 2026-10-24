@@ -1,9 +1,9 @@
 # 媒体运行时隔离控制面
 
 **日期**：2026-10-24
-**状态**：Active（**D-RFC-1~4 已批复**——方案 C 批准 / A 批次随批复即启 / B 核查暂缓 / decode-h264 维持默认关，RFC v1.9 §10 批复记录；M1 基线 + M2 RFC 两项交付 + M3 前置设计八片齐备，[m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；**A1/A2/A3 已落地**——rate 1.00000 + 三缺口闭合 + 图片快照/视频帧/源驻留内存面收敛，偏差记录 DESIGN §2.4/§6.5/§8.6）。
-**当前卡点**：无。A4 待启动。
-**下一步**：A4（cue 锚定窄化 seek，DESIGN §3.3）；C1（protocol 媒体消息族 17 变体 + `media-process` feature 骨架，feature 默认关）并行启动。
+**状态**：Active（**D-RFC-1~4 已批复**——方案 C 批准 / A 批次随批复即启 / B 核查暂缓 / decode-h264 维持默认关，RFC v1.9 §10 批复记录；M1 基线 + M2 RFC 两项交付 + M3 前置设计八片齐备，[m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；**A1–A4 已全部落地**——rate 1.00000 + 三缺口闭合 + 内存面收敛 + seek 冷路径 O(GOP)，偏差记录 DESIGN §2.4/§3.5/§6.5/§8.6）。
+**当前卡点**：无。A 批次完成；C1 骨架待启动。
+**下一步**：C1（protocol 媒体消息族 17 变体 + `media-process` feature 骨架，feature 默认关，DESIGN §9）；relative-position 产物流 seek 抽样复核归后续验证切片。
 **入口**：[目标契约](../media-runtime-isolation.md) / [启动与证据协议](../ladybird-followups/README.md)
 
 ## 缺口与待决
@@ -21,7 +21,7 @@
 |---|---|---|---|
 | M1 | 生产资源、能力与权限基线 | **完成**（测量面成立，收口待评审） | [2026-10-24 基线](evidence/2026-10-24-m1-baseline/ANALYSIS.md) |
 | M2 | 方案/许可证/回滚 RFC + protocol 接口契约 | **v1.9 已批复**（D-RFC-1~4 用户裁决） | [media-runtime-isolation-spec-rfc](../../../specs/media-runtime-isolation-spec-rfc.md) |
-| M3 | 已确认平台与隔离切片 | **IN_PROGRESS**（A1/A2/A3 已落地——rate≡1.0 + 三缺口闭合 + 内存面收敛；A4 待实施；C1–C4 设计稿齐备，D-RFC-1/2 已批） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
+| M3 | 已确认平台与隔离切片 | **IN_PROGRESS**（A1–A4 已全部落地——rate≡1.0 + 三缺口闭合 + 内存面收敛 + seek O(GOP)；C1 待实施；C2–C4 设计稿齐备，D-RFC-1/2 已批） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
 | M4 | 配对媒体、故障和资源审计 | NOT_STARTED | 无 |
 
 ## 验证基线
@@ -29,7 +29,7 @@
 | 判据 | 场景 | 状态 | 证据 |
 |---|---|---|---|
 | DC-1 | MEDIA-01-cpu-copy-and-capability | **已测成立**（容量/复制链/权限/能力对照；收口待用户评审） | evidence/2026-10-24-m1-baseline |
-| DC-2 | MEDIA-02-clock-seek-and-state | 部分（media 层时钟 rate FINDING 已修：A1 落地 rate=1.00000；cue seek 精确、漂移 p50=11ms；页面可见时钟缺口已修（A2 三缺口闭合，bg02-media v2 复评归后续验证切片）） | evidence/2026-10-24-m1-baseline（含 m1baseline-a1-post.log） |
+| DC-2 | MEDIA-02-clock-seek-and-state | 部分（media 层时钟 rate FINDING 已修：A1 落地 rate=1.00000；cue seek 精确、漂移 p50=11ms；seek 冷路径 A4 窄化 O(GOP)——mid-GOP 302ms→18ms 且不随 target 线性增长；页面可见时钟缺口已修（A2 三缺口闭合，bg02-media v2 复评归后续验证切片）） | evidence/2026-10-24-m1-baseline + m3-prep-design（含 m1baseline-a1/a4-post.log） |
 | DC-3 | MEDIA-03-decoder-crash-recovery | NOT_RUN | 无 |
 | DC-4 | MEDIA-04-platform-fallback-and-permissions | 部分（平台核查：无 /dev/dri、NullSink、VP9-only 生产面；故障注入未做） | evidence/2026-10-24-m1-baseline |
 | DC-5 | RFC 与最终支持范围审计 | NOT_RUN | 无 |
@@ -186,3 +186,10 @@
 - **偏差四处**记入 [DESIGN §8.6](evidence/2026-10-24-m3-prep-design/DESIGN.md)（LRU→迭代序任一 / play 搬移不加检 / audio 准入失败 plain return / 预算参数化）。
 - **验收**：M1 harness 5/5（[m1baseline-a3-post.log](evidence/2026-10-24-m3-prep-design/m1baseline-a3-post.log)：rate 1.00000、漂移逐位持平、seek 同量级；容量在噪声带内，pure-video tick p50 411→401us——§8.5 墙钟预期下降未显现，C2 单帧省读低于噪声，C4 快照路径无触发，如实记录）；bench-gate 定向 2/2 PASS；render-foundation 116 + webview lib 790 全绿；workspace clippy -D warnings、make test、fmt 过。
 - 共享面占用：render-foundation image_cache + webview video_registry 两文件；zero-media/engine/protocol 零改动。
+
+### 2026-10-24 A4 cue 锚定窄化 seek 轮（M3 第四切片，A 批次收官）
+
+- **A4 落地**（`crates/media` 单提交回滚点）：`VideoDecoder` 开流时对源字节平扫 Cues（EBML 三层遍历 Segment→Cues→CuePoint/CueTime，零新依赖，`cue_times_ms` 锚点集缓存）；`seek_to_ms` 插入 cue 锚定窄化回退——≤ target 最近 cue 重 seek（簇首 keyframe 起步）前向解码至 ≥ target，O(target)→O(GOP)；锚块非 keyframe（稀疏/relative-position 形态）落既有流首全量前向，错误面不新增。偏差三处记 [DESIGN §3.5](evidence/2026-10-24-m3-prep-design/DESIGN.md)（锚点只存 CueTime / 多轨重复不过滤 / 非 keyframe 锚回落 ③）。
+- **验收**（[m1baseline-a4-post.log](evidence/2026-10-24-m3-prep-design/m1baseline-a4-post.log)，release + test-guard）：mid-GOP 冷 seek 15s **302ms→18.3ms**（16×）、45s **1000ms→18.4ms**（54×），15s/45s 差 62µs——线性增长断言 + GOP 上界断言入 harness T4 常驻；30s 直落 1.0ms 不变；drift/rate/容量逐位或噪声带内零回归。单测三新增（cue 平扫真值 / 窄化精确 / 稀疏回退），media lib 54 + webview lib 790 全绿；workspace clippy -D warnings（含 quickjs 组合）、make test、fmt 过。期间修复 rebase 带入的 s68（R5275）`collapsible_if` lint——quickjs feature 组合 clippy 挂（extract.rs 机械坍缩，独立提交非本切片代码）。
+- **限制**：CueRelativePosition 产物流抽样复核待验证（本环境无 ffmpeg 抽样面，归后续验证切片）；§7 movie_5 稀疏形态以等价 fixture 覆盖（wpt-data gitignore 不可作单测依赖）。
+- 共享面占用：zero-media decode.rs + tests.rs + webview M1 harness T4 扩展；registry/engine/protocol 零改动。
