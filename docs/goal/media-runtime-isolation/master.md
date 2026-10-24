@@ -3,7 +3,7 @@
 **日期**：2026-10-25
 **状态**：Active（**D-RFC-1~4 已批复**——方案 C 批准 / A 批次随批复即启 / B 核查暂缓 / decode-h264 维持默认关，RFC v1.9 §10 批复记录；M1 基线 + M2 RFC 两项交付 + M3 前置设计八片齐备，[m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；**A1–A4 + C1 + C2 切片 1/2 + C3 + C4 已落地**——A 批次四片（rate 1.00000 / 三缺口闭合 / 内存收敛 / seek 冷路径 O(GOP)）+ C 批次隔离面（协议消息族与 media-host 骨架 / 解码内核与自走时钟 / registry 开态客户端切换 / 崩溃检测与退避重启）+ **C4 配对验收**（三态 M1 零回归 + 帧摘要三态全等 + 代际风暴零泄漏 + 能力真值三对照 + 30min 资源审计；配对抓出并订正两缺陷：A1 解码超前 pts 锚定回归 → 样本锚定、宿主 replay 流末残留位置拖拽 → replay 跳过位置 seek，feature 默认关），偏差记录 DESIGN §2.4/§3.5/§6.5/§8.6/§9.6/§10.7/§10.8/§10.9，[切片 2 证据](evidence/2026-10-25-c2-slice2/ANALYSIS.md)，[C3 证据](evidence/2026-10-25-c3-crash-recovery/ANALYSIS.md)，[C4 证据](evidence/2026-10-25-c4-paired-acceptance/ANALYSIS.md)）。
 **当前卡点**：无。A 批次 + C1 + C2 切片 1/2 + C3 + C4 完成。
-**下一步**：DC-5 收口审计（RFC 与最终支持范围）；shim march Error face 接线（C3 止步桥 getter，DESIGN §10.9-16）；bg02-media 站点复评；D4 能力清单对齐（ogg-vorbis/wav 欠申报 + webm-opus/aac 补 fixture，C4 ANALYSIS §四）。
+**下一步**：bg02-media 站点复评（外网依赖，audio/autoplay INCONCLUSIVE 子项）；D4 能力清单对齐（ogg-vorbis/wav 欠申报 + webm-opus/aac 补 fixture，C4 ANALYSIS §四）；DC-5 收口审计（RFC 与最终支持范围）。
 **入口**：[目标契约](../media-runtime-isolation.md) / [启动与证据协议](../ladybird-followups/README.md)
 
 ## 缺口与待决
@@ -30,7 +30,7 @@
 |---|---|---|---|
 | DC-1 | MEDIA-01-cpu-copy-and-capability | **已测成立**（容量/复制链/权限/能力对照；C4 补能力真值三对照 + 配额端到端 QuotaExceeded；收口待用户评审） | evidence/2026-10-24-m1-baseline + 2026-10-25-c4-paired-acceptance |
 | DC-2 | MEDIA-02-clock-seek-and-state | 部分（media 层时钟 rate FINDING 已修：A1 落地 rate=1.00000；cue seek 精确、漂移 p50=11ms；seek 冷路径 A4 窄化 O(GOP)——mid-GOP 302ms→18ms 且不随 target 线性增长；页面可见时钟缺口已修（A2 三缺口闭合，bg02-media v2 复评归后续验证切片）；C4 补帧摘要三态全等 + 代际风暴零泄漏 + 三态 M1 零回归） | evidence/2026-10-24-m1-baseline + m3-prep-design（含 m1baseline-a1/a4-post.log）+ 2026-10-25-c4-paired-acceptance |
-| DC-3 | MEDIA-03-decoder-crash-recovery | 部分（C3 崩溃检测/重启面落地——SIGKILL 注入契约 8 场景全绿：error 镜像可观察/renderer 存活/重启重喂可播/重启耗尽 Failed 无内联回落/reload 恢复；C4 补宿主 replay 拖拽缺陷订正（常驻单测门）+ 30 轮重播审计单 host 零崩溃；页面 error 事件与 march face 接线仍未做，页面级终验未做） | evidence/2026-10-25-c3-crash-recovery + 2026-10-25-c4-paired-acceptance |
+| DC-3 | MEDIA-03-decoder-crash-recovery | 部分（C3 崩溃检测/重启面落地——SIGKILL 注入契约 8 场景全绿：error 镜像可观察/renderer 存活/重启重喂可播/重启耗尽 Failed 无内联回落/reload 恢复；C4 补宿主 replay 拖拽缺陷订正（常驻单测门）+ 30 轮重播审计单 host 零崩溃；shim march Error face 已接线——桥 isErrored 真值 → 元素 error 事件（常驻门 test_media_march_error_face_dispatches_element_error_c3）；页面级端到端终验未做） | evidence/2026-10-25-c3-crash-recovery + 2026-10-25-c4-paired-acceptance |
 | DC-4 | MEDIA-04-platform-fallback-and-permissions | 部分（平台核查：无 /dev/dri、NullSink、VP9-only 生产面；故障注入未做） | evidence/2026-10-24-m1-baseline |
 | DC-5 | RFC 与最终支持范围审计 | NOT_RUN | 无 |
 
@@ -245,3 +245,11 @@
 - **偏差 D1–D7**（shm 传输面未实施第三态同传输 / 容量判据等价解释 / 风暴匹配器周期处理 / 能力清单偏差 / 审计协议时钟面二订 / 复制链增量表代理 / renderer 驻留代理）记 [C4 ANALYSIS §六](evidence/2026-10-25-c4-paired-acceptance/ANALYSIS.md)。
 - 门禁：guarded-clippy 过 + 全量 guarded-test 过（exit 0）+ 提交门禁 PASS；证据 13 log + ANALYSIS 同批入库（[ANALYSIS](evidence/2026-10-25-c4-paired-acceptance/ANALYSIS.md)）。
 - 共享面占用：zero-media（pipeline 解码超前锚定）+ media-host（kernel replay 面）+ webview（新增测试文件）+ goal 文档；其余 member 零改动。
+
+### 2026-10-25 shim march Error face 接线轮（C3 链页面级收口）
+
+- engine shim `_zwMediaTimeMarchesOn` 每 tick 新增 error 面（M3 扩批 XXXV，DESIGN §10.9-16 接线）：桥 `__zwVideoBridge.isErrored` 真值翻转 → `playing=false` + 元素 `error` 事件单次派发（`_zwMediaFire` 标准面、不冒泡、one-shot `_zwErrorDispatched`，错误态保持到下次 load，spec #concept-media-error）。置于 ended 面（XVI）之前——error 先翻 `playing=false`，同 tick 抑制假 ended。
+- 常驻回归门 `test_media_march_error_face_dispatches_element_error_c3`（js_dom_bridge_tests/part09.rs）：play 后桥假值 march 无事件 → 真值翻转 march 派 error + paused 置位 → 再 march 不重复派。
+- 生产链路补齐：runtime 每 tick march（A2 Fix 2）× registry 镜像 error 态（C3）× 桥 isErrored 真值口（C3）→ **页面 error 事件**——C3 契约场景 1「kill host → 页面 error 事件可见」的页面级断言通路。dormant：feature-off registry 无 error → 桥假值不触发；桥缺 isErrored（如 WPT runner）→ 面不触发。边界：仅 playing 时间轴错误投递（march 受 any_playing 门控），暂停时错误投递超出本切片。
+- 门禁：新测试过 + guarded-clippy 过 + 全量 guarded-test 过（exit 0，87 套件零失败）。首轮门禁与 integration 套件单独复跑各遇负载型 flake（`details_summary_activation_and_cancellation_conform_across_hosts` 三宿主事件序 / `image_batch_e2e::renderer_publish_batch_image_fetch_reaches_concurrent_in_flight` 并发，逐轮失败面不同），干净树 stash+重编译对照同样复现——既有 flake 与本改动无关，全量复跑即绿；flake 根修另立工作项（test-guard 包裹复跑 `zero-integration-tests` 套件可复现）。
+- 共享面占用：engine（js_dom_shim/part06.js +22 行 + js_dom_bridge_tests/part09.rs +79 行）——zero-web stream 面；其余 member 零改动。
