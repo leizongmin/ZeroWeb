@@ -59,6 +59,8 @@ mod r5260_clip_text_anonymous_item_tests;
 /// R5263 collapse 横带端部随相邻竖格线胜者伸缩（CSS2 §17.6.2 带端归属）。
 mod r5263_collapse_band_end_tests;
 mod r5264_collapse_content_half_shift_tests;
+/// R5265 collapse 带 z 序相位间插（CSS2.1 Appendix E / Blink kCollapsedTableBorders）。
+mod r5265_collapse_band_phase_tests;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;
