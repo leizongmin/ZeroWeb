@@ -4113,6 +4113,28 @@ impl Painter {
             }
         }
 
+        // `appearance` 是元素真实渲染，不是调试指示器；reftest/product-smoke 也必须绘制。
+        // R5259：须在 per-node 效果窗口（下方 transform/opacity/mask/blend 按
+        // [counts_before, now] 差集应用）**之内**发射——旧位置在窗口之后，transform
+        // translate 路径（R3901 图元级平移）只平移窗口内图元，widget 的边框环/accent
+        // glyph 留在原位而 UA 背景随移（transform-input-017：input widget 半移半留）。
+        // 置于 children/positioned flush 之后保持既有盖序；焦点环（同窗口后发射）
+        // 待 focus+transform 判例再评估（FIXME）。
+        if let Some(node_id) = box_node.node_id
+            && let Some(style) = styles.get(&node_id)
+            && !matches!(
+                style.appearance,
+                AppearanceComputedValue::None
+                    | AppearanceComputedValue::Auto
+                    | AppearanceComputedValue::Meter
+                    | AppearanceComputedValue::ProgressBar
+                    | AppearanceComputedValue::Listbox
+                    | AppearanceComputedValue::Menulist
+            )
+        {
+            self.paint_appearance(box_node, abs_x, abs_y, style, doc);
+        }
+
         // CSS transform — 为含 rotate/scale/skew 的元素生成 TransformPrimitive
         if let Some(node_id) = box_node.node_id
             && let Some(style) = styles.get(&node_id)
@@ -4832,22 +4854,6 @@ impl Painter {
                 self.paint_container_type_indicator(box_node, abs_x, abs_y, style);
             }
         } // end skip_indicators guard
-
-        // `appearance` 是元素真实渲染，不是调试指示器；reftest/product-smoke 也必须绘制。
-        if let Some(node_id) = box_node.node_id
-            && let Some(style) = styles.get(&node_id)
-            && !matches!(
-                style.appearance,
-                AppearanceComputedValue::None
-                    | AppearanceComputedValue::Auto
-                    | AppearanceComputedValue::Meter
-                    | AppearanceComputedValue::ProgressBar
-                    | AppearanceComputedValue::Listbox
-                    | AppearanceComputedValue::Menulist
-            )
-        {
-            self.paint_appearance(box_node, abs_x, abs_y, style, doc);
-        }
 
         // 弹出本元素 counter-reset 创建的作用域（CSS2 §12.4.1：作用域在元素子树结束后关闭）。
         // 仅本元素 reset 的计数器名；paint_node 单一出口（除 line 695 orphan-skip 早返，
