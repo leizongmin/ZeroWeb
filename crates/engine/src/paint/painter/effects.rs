@@ -1019,14 +1019,8 @@ impl super::Painter {
                         sized_w,
                         sized_h,
                         img_ratio,
-                        matches!(
-                            size,
-                            BackgroundSizeComputedValue::TwoValue(BgSizeComponentComputed::Auto, _)
-                        ),
-                        matches!(
-                            size,
-                            BackgroundSizeComputedValue::TwoValue(_, BgSizeComponentComputed::Auto)
-                        ),
+                        size_axis_is_auto(size, true),
+                        size_axis_is_auto(size, false),
                     );
 
                     // R3908：background-clip: border-area（css-backgrounds-4 §2.1）——背景
@@ -1167,14 +1161,8 @@ impl super::Painter {
                             sized_w,
                             sized_h,
                             img_ratio,
-                            matches!(
-                                size,
-                                BackgroundSizeComputedValue::TwoValue(BgSizeComponentComputed::Auto, _)
-                            ),
-                            matches!(
-                                size,
-                                BackgroundSizeComputedValue::TwoValue(_, BgSizeComponentComputed::Auto)
-                            ),
+                            size_axis_is_auto(size, true),
+                            size_axis_is_auto(size, false),
                         );
                         let ((x0, x1), (y0, y1), step_w, step_h) = tiles;
                         // space：步距含间隙（eff），tile 本身不缩放——绘制尺寸用 sized（CSS §3.4
@@ -2830,6 +2818,21 @@ pub(super) fn resolve_background_position(
             resolve_position_component(single, container_w, img_w),
             resolve_position_component(&BackgroundPositionComputedValue::Center, container_h, img_h),
         ),
+    }
+}
+
+/// R5253（css-backgrounds-3 §3.9 单值 = 两维 auto）：`auto` 单值（含默认值）等价
+/// `auto auto`——round 第三步（§2.9：恰一维被 round 缩放且另一维 background-size
+/// 为 auto 时按固有比恢复）依赖该信号；旧判定只认 TwoValue 形态，`round no-repeat`
+/// + 默认尺寸的 no-repeat 维不跟随（round-2 tile 高 32 应 36）。
+fn size_axis_is_auto(size: &BackgroundSizeComputedValue, first: bool) -> bool {
+    match size {
+        BackgroundSizeComputedValue::Auto => true,
+        BackgroundSizeComputedValue::TwoValue(w, h) => {
+            let dim = if first { w } else { h };
+            matches!(*dim, BgSizeComponentComputed::Auto)
+        }
+        _ => false,
     }
 }
 
