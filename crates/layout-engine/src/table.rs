@@ -662,6 +662,10 @@ fn layout_table_inner(
     //    必须在 suppress 之前，因为 resolve 从 ComputedStyle 读取边框
     resolve_collapsed_borders(table_box, &grid, styles, doc);
 
+    // 4.5 R5264：格线模型 cell 内容原点半框修正（须在 resolve 之后——border_* 已
+    //     是胜出宽；suppress 之前与既有 pass 序一致）。
+    apply_collapse_content_half_shift(table_box, &grid, styles);
+
     // 5. 抑制行组和行的 border/padding/margin
     //    CSS 2.1 规范：在 separated border model 中，
     //    table-row-group / table-row 的 border、padding、margin 无视觉效果
@@ -1704,6 +1708,75 @@ fn collapse_grid_origin_shift(table_box: &LayoutBox, grid: &TableGrid) -> (f32, 
         }
     }
     (win_l / 2.0 - table_box.border_left, win_t / 2.0 - table_box.border_top)
+}
+
+/// R5264（CSS2 §17.6.2 格线模型内容原点）：collapse cell 内容盒按半框内缩。
+///
+/// 格线模型（R5262 格线原点平移、R5241 半框行高/列宽）下，chromium 的 cell 内容
+/// 盒 = 盒跨（格线到格线）内缩**胜出边框宽的一半**/缘——共享带以格线为中心跨画
+/// 双邻，内容按整框内缩会在带侧留 ½框护城河且字形/子块整体错位 +½框（001d 白
+/// 字母 +10 咬带 1.00% 残差、ref 马赛克槽位算术 + p001/p002 chromium 位图取证）。
+/// 须在 resolve_collapsed_borders 之后：border_* 已是胜出宽（含行/行组/表源胜出
+/// 写入）。子树平移 −½上/左框、content_width/height 改半框口径，位移记入
+/// collapse_half_shift 供 paint 文本原点（text-only cell 的 IFC 经 border+padding
+/// 推导，无子盒可平移）同源消费。仅 horizontal 真表容器（与 grid_shift_ok 同门；
+/// vertical 表未接格线模型，见挂账⑤）。
+fn apply_collapse_content_half_shift(
+    table_box: &mut LayoutBox,
+    grid: &TableGrid,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
+    let shift_ok = !matches!(
+        table_box.writing_mode,
+        WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
+    ) && table_box.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+        matches!(s.display, DisplayValue::Table | DisplayValue::InlineTable)
+            && matches!(s.border_collapse, zero_style_system::BorderCollapseValue::Collapse)
+    });
+    if !shift_ok {
+        return;
+    }
+    for row in &grid.rows {
+        let Some(row_box) = get_row_box_mut(table_box, row) else {
+            continue;
+        };
+        for cell in &row.cells {
+            // R5168：匿名占位 entry 无盒（child_index = usize::MAX）
+            if cell.child_index == usize::MAX {
+                continue;
+            }
+            let cell_box = if let Some(rg_idx) = cell.parent_rg_idx {
+                row_box
+                    .children
+                    .get_mut(rg_idx)
+                    .and_then(|rg| rg.children.get_mut(cell.child_index))
+            } else {
+                row_box.children.get_mut(cell.child_index)
+            };
+            let Some(cell_box) = cell_box else {
+                continue;
+            };
+            let dx = -cell_box.border_left / 2.0;
+            let dy = -cell_box.border_top / 2.0;
+            for child in &mut cell_box.children {
+                child.x += dx;
+                child.y += dy;
+            }
+            cell_box.content_width = (cell_box.width
+                - cell_box.border_left / 2.0
+                - cell_box.border_right / 2.0
+                - cell_box.padding_left
+                - cell_box.padding_right)
+                .max(0.0);
+            cell_box.content_height = (cell_box.height
+                - cell_box.border_top / 2.0
+                - cell_box.border_bottom / 2.0
+                - cell_box.padding_top
+                - cell_box.padding_bottom)
+                .max(0.0);
+            cell_box.collapse_half_shift = (dx, dy);
+        }
+    }
 }
 
 /// 根据 grid 结构和列宽定位每个单元格。

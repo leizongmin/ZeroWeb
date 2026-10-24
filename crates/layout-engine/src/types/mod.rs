@@ -674,6 +674,17 @@ pub struct LayoutBox {
     /// 算出 dy 写入此字段，paint_text 据此偏移文本起点。仅 middle/bottom 非 0；top/baseline=0。
     /// kill-switch `ZW_TABLE_CELL_VALIGN_IFC=0` 关闭（default-on）。
     pub valign_offset: f32,
+    /// R5264（CSS2 §17.6.2 格线模型内容原点）：collapse cell 内容原点半框修正
+    /// (dx, dy)，负值（= −½胜出上/左边框宽）。
+    ///
+    /// 格线模型（R5262 格线原点平移 + R5241 半框行高/列宽）下，chromium 的 cell
+    /// 内容盒 = 盒跨（格线到格线）内缩**胜出边框宽的一半**/缘——共享带以格线为
+    /// 中心跨画双邻，内容按整框内缩会留 ½框护城河并错位 +½框（001d 白字母 +10
+    /// 咬带 1.00% 残差全解实证；ref 马赛克槽位算术 + p001/p002 chromium 位图取证）。
+    /// table.rs `apply_collapse_content_half_shift` 在 resolve 之后设置：子树平移与
+    /// content 口径当场生效，此字段供 paint 文本原点（text-only cell 的 IFC 走
+    /// border+padding 推导，无子盒可平移）同源消费，语义同 `valign_offset`。
+    pub collapse_half_shift: (f32, f32),
 }
 
 impl LayoutBox {
@@ -831,6 +842,7 @@ impl Default for LayoutBox {
             run_in_border: None,
             table_col_backgrounds: Vec::new(),
             valign_offset: 0.0,
+            collapse_half_shift: (0.0, 0.0),
         }
     }
 }

@@ -968,7 +968,12 @@ impl super::Painter {
             .map(|ts| (ts.offset_x, ts.offset_y, resolve_color_current(&ts.color, &style.color)))
             .collect();
 
-        let content_x = abs_x + box_node.border_left + box_node.padding_left;
+        let content_x = abs_x
+            + box_node.border_left
+            + box_node.padding_left
+            // R5264：collapse 格线模型 cell 内容原点半框修正（table.rs
+            // apply_collapse_content_half_shift 设置，非 collapse 盒恒 (0,0)）。
+            + box_node.collapse_half_shift.0;
         // R3835：inside 文本型 marker → 内容起点右移 marker 步进宽度（CSS Lists 3
         // §list-style-position：inside marker 是首行行盒第一个 inline，内容排其后）。
         // remove 消费一次；paint_list_marker（先于本函数执行）已按 li NodeId 填充。
@@ -991,7 +996,13 @@ impl super::Painter {
 
         // R1717：+ valign_offset — 表格单元格文本的 vertical-align 内容偏移（仅 table-cell，
         // table.rs position_cells 设置；其他盒默认 0.0，零影响）。
-        let content_y = abs_y + box_node.border_top + box_node.padding_top + box_node.valign_offset;
+        // R5264：+ collapse_half_shift.1 — collapse 格线模型 cell 内容原点半框修正
+        //（table.rs apply_collapse_content_half_shift 设置，非 collapse 盒恒 0.0）。
+        let content_y = abs_y
+            + box_node.border_top
+            + box_node.padding_top
+            + box_node.valign_offset
+            + box_node.collapse_half_shift.1;
 
         // R3901：transform translate 不在此偏移——paint_node 末段对自子树全部图元统一做
         // 图元级平移（translate_primitives_since，单一平移点）。旧实现仅直属文本 +tx/ty，

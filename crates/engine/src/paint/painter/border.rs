@@ -346,17 +346,17 @@ impl super::Painter {
         // 两半带 → t）；败于邻 cell（阶段 3/R1626 把胜者宽色写入本边 override，
         // [g−win/2, g+win/2] 已由两侧半带按胜者色合成）→ 端点收进同量，让位邻
         // cell 顶带外延；本边无带（win 后仍 0 宽）或外缘带被行/表/列源夺色的
-        // legacy 域 → 维持盒缘。整体门 = 横带自身无 override：行组/表源胜出横带
-        // 的 bwat001 域是逐 cell 连续合成的 legacy 内绘，带端伸缩会撕开断层
-        //（R5262 排障 −20 族同因），整体不动。另限 TableCell 盒：表盒自身红框
-        // 同样无 override 全自胜，会越出表 border-box 外延（实测表框左右各溢
+        // legacy 域 → 维持盒缘。
+        // R5264：端偏移改判「邻边」归属，不问本带自身 override——001d 取证证
+        // loser 带（阶段 3 override 半带）在表 margin 列同样按邻边伸缩（chromium
+        // cell five 顶带 override 蓝 [48,108)：左端 = 外缘自胜外延 10、右端 =
+        // 右缘自胜外延 10），own-override 门曾封死该外延 → margin 列共享带下半
+        // 露白。bwat001 域（行组/表源横带 override + cell 无竖边框）ext 取
+        // adj_t = 0 自然不动，原整体门冗余部分撤销。另限 TableCell 盒：表盒自身
+        // 红框同样无 override 全自胜，会越出表 border-box 外延（实测表框左右各溢
         // 10px），带端伸缩是格线 cell 专属语义。
-        let band_end_off = |own: usize, adj: usize, adj_w: f32, adj_t: f32, outward: f32| -> f32 {
-            if !collapse
-                || !outer_full
-                || !matches!(style.display, DisplayValue::TableCell)
-                || box_node.collapsed_border_color_overrides[own].is_some()
-            {
+        let band_end_off = |adj: usize, adj_w: f32, adj_t: f32, outward: f32| -> f32 {
+            if !collapse || !outer_full || !matches!(style.display, DisplayValue::TableCell) {
                 return 0.0;
             }
             let ext = if outer[adj] { adj_t / 2.0 } else { adj_t };
@@ -368,10 +368,10 @@ impl super::Painter {
                 0.0
             }
         };
-        let top_l = band_end_off(0, 3, box_node.border_left, left_t, -1.0);
-        let top_r = band_end_off(0, 1, box_node.border_right, right_t, 1.0);
-        let bot_l = band_end_off(2, 3, box_node.border_left, left_t, -1.0);
-        let bot_r = band_end_off(2, 1, box_node.border_right, right_t, 1.0);
+        let top_l = band_end_off(3, box_node.border_left, left_t, -1.0);
+        let top_r = band_end_off(1, box_node.border_right, right_t, 1.0);
+        let bot_l = band_end_off(3, box_node.border_left, left_t, -1.0);
+        let bot_r = band_end_off(1, box_node.border_right, right_t, 1.0);
 
         // border-collapse 颜色覆盖：当表格边框胜出时使用表格的颜色
         let top_color = collapsed_border_color(&box_node.collapsed_border_color_overrides[0], &style.border_top_color);
