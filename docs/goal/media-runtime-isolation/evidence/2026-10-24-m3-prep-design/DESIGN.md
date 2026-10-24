@@ -193,6 +193,18 @@ apply+渲染（rAF 回调同流，无新通道）；cue/ended 机器生产首启
 Fix 1、Fix 2 各自单提交（独立回滚点）；Fix 2 纯增量（一处 submit_script_priority 调用），feature
 无关、默认生效面 = 生产 renderer（runner 行为不变）。
 
+### 6.5 实施偏差记录（2026-10-24 A2 落地轮，相对 §6.2/§6.3）
+
+1. `_zwMediaPlaySteps` 落 **part06 顶层**（§6.2 未指定落点——媒体加载序列/march 机器同域，高内聚；
+   拼接单作用域下 part03 IDL play 直接转发）。元素身份留档（`_zwSel`/`_zwHandle`）随内核**内移**——
+   autoplay 路径的 march/ended 钩子同需 key 反查派发面，不能只留在 IDL 包装。
+2. 原 autoplay 的 `if (ms.playing) return` 手写守卫由内核 playing 检查承接（同语义，单守卫面）；
+   内核 `ended = false` 置位为 autoplay 新获得面（spec 方向：自动播放清 ended）。
+3. **`testharness-media` 门禁本环境未跑**：fetch-media-subset.sh 依赖外网（curl 30s 超时 ×N）；
+   且该子集首批白名单本就不含 ready-states/autoplay/event_* 真解码族（脚本头注「后置到 headless
+   语义层落地」）——媒体事件族断言面由 engine 桥测试族承载（既有基线 + 新增
+   `test_media_autoplay_walks_play_steps_a2fix1`）。有网环境补跑 full 子集。
+
 ## 7. WPT 上游 GOP 抽样（A4 待验证项闭合，同日第二轮增补）
 
 `tests/wpt-runner/wpt-data` 全量 4 个 webm（Python EBML 只读探针，/tmp 不入仓）：

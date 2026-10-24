@@ -1,9 +1,9 @@
 # 媒体运行时隔离控制面
 
 **日期**：2026-10-24
-**状态**：Active（**D-RFC-1~4 已批复**——方案 C 批准 / A 批次随批复即启 / B 核查暂缓 / decode-h264 维持默认关，RFC v1.9 §10 批复记录；M1 基线 + M2 RFC 两项交付 + M3 前置设计八片齐备，[m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；**A1 已落地**——T3 rate 1.00000，偏差记录 DESIGN §2.4）。
-**当前卡点**：无。A1 完成待提交；A2 待启动。
-**下一步**：A2（三缺口修复：autoplay 走 play 算法 + 生产 renderer march 接线，DESIGN §6）→ A3/A4；C1（protocol 媒体消息族 17 变体 + `media-process` feature 骨架，feature 默认关）并行启动。
+**状态**：Active（**D-RFC-1~4 已批复**——方案 C 批准 / A 批次随批复即启 / B 核查暂缓 / decode-h264 维持默认关，RFC v1.9 §10 批复记录；M1 基线 + M2 RFC 两项交付 + M3 前置设计八片齐备，[m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；**A1/A2 已落地**——rate 1.00000 + 三缺口闭合，偏差记录 DESIGN §2.4/§6.5）。
+**当前卡点**：无。A3/A4 待启动。
+**下一步**：A3（C4 快照 Arc 化 + C2 扫描跳过 + 源驻留封顶，DESIGN §8）/ A4（cue 锚定窄化 seek，DESIGN §3.3）；C1（protocol 媒体消息族 17 变体 + `media-process` feature 骨架，feature 默认关）并行启动。
 **入口**：[目标契约](../media-runtime-isolation.md) / [启动与证据协议](../ladybird-followups/README.md)
 
 ## 缺口与待决
@@ -21,7 +21,7 @@
 |---|---|---|---|
 | M1 | 生产资源、能力与权限基线 | **完成**（测量面成立，收口待评审） | [2026-10-24 基线](evidence/2026-10-24-m1-baseline/ANALYSIS.md) |
 | M2 | 方案/许可证/回滚 RFC + protocol 接口契约 | **v1.9 已批复**（D-RFC-1~4 用户裁决） | [media-runtime-isolation-spec-rfc](../../../specs/media-runtime-isolation-spec-rfc.md) |
-| M3 | 已确认平台与隔离切片 | **IN_PROGRESS**（A1 已落地 rate≡1.0；A2–A4 待实施；C1–C4 设计稿齐备，D-RFC-1/2 已批） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
+| M3 | 已确认平台与隔离切片 | **IN_PROGRESS**（A1/A2 已落地——rate≡1.0 + 三缺口闭合；A3/A4 待实施；C1–C4 设计稿齐备，D-RFC-1/2 已批） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
 | M4 | 配对媒体、故障和资源审计 | NOT_STARTED | 无 |
 
 ## 验证基线
@@ -29,7 +29,7 @@
 | 判据 | 场景 | 状态 | 证据 |
 |---|---|---|---|
 | DC-1 | MEDIA-01-cpu-copy-and-capability | **已测成立**（容量/复制链/权限/能力对照；收口待用户评审） | evidence/2026-10-24-m1-baseline |
-| DC-2 | MEDIA-02-clock-seek-and-state | 部分（media 层时钟 rate FINDING 已修：A1 落地 rate=1.00000；cue seek 精确、漂移 p50=11ms；页面可见时钟缺口=三缺口未修） | evidence/2026-10-24-m1-baseline（含 m1baseline-a1-post.log） |
+| DC-2 | MEDIA-02-clock-seek-and-state | 部分（media 层时钟 rate FINDING 已修：A1 落地 rate=1.00000；cue seek 精确、漂移 p50=11ms；页面可见时钟缺口已修（A2 三缺口闭合，bg02-media v2 复评归后续验证切片）） | evidence/2026-10-24-m1-baseline（含 m1baseline-a1-post.log） |
 | DC-3 | MEDIA-03-decoder-crash-recovery | NOT_RUN | 无 |
 | DC-4 | MEDIA-04-platform-fallback-and-permissions | 部分（平台核查：无 /dev/dri、NullSink、VP9-only 生产面；故障注入未做） | evidence/2026-10-24-m1-baseline |
 | DC-5 | RFC 与最终支持范围审计 | NOT_RUN | 无 |
@@ -168,3 +168,12 @@
 - **实施偏差三处**记入 [DESIGN.md §2.4](evidence/2026-10-24-m3-prep-design/DESIGN.md)：填充条件改 crossing 语义（`decoded_end < target`——原设计 `pending < need` 会跳过 EOF None 拉）；解码超前/时钟推进耦合不变式（游标只随消费推进，trim 变体失败实证：解耦后 60s 流在 42s 处提前 EOF 丢 18s）；EOF 检测晚一拍（生产 rAF 泵无条件节拍无影响，测试泵条件改 `is_any_playing`——M2 切片 F 用例与 M1 harness 同步修正）。
 - **验收**（[m1baseline-a1-post.log](evidence/2026-10-24-m1-baseline/m1baseline-a1-post.log)，release + test-guard）：T3 rate **1.00000**（修复前 1.45402，带宽 [0.9,1.1]）；T5 漂移 p50=11.0ms 与基线持平；T2 av-pair 容量 1206ms/60s（≈50× 实时，基线 1422ms）无回退；T4 cue seek 325ms/1ms/870ms 与基线同量级。lib 786 测试全绿；workspace make test、clippy -D warnings、fmt 过。
 - 本轮仅动 video_registry.rs + M1 测试断言收带 + 两文档；zero-media/engine/protocol 零改动。
+
+### 2026-10-24 A2 三缺口修复轮（M3 第二切片，Fix 1/Fix 2 各自单提交）
+
+- **Fix 1（缺口 1+3，autoplay 走 play 算法）**：play 算法内核自 part03 IDL play 提取为 part06 顶层 `_zwMediaPlaySteps`（257 行原文迁移去层，行为面不变），IDL play 薄包装转发；`_zwMediaAutoplay` 删手写置态 + 同步三事件、改调内核（autoplay 不暴露 promise）——bridgeOn/退避重试/pending-seek 补推/rate-gain-loop 同步/ended-loop 全继承，**生产 autoplay 元素首次可达 `__zwVideoBridge.play`**（缺口 1 的 shim load 武装环节 + 缺口 3 audio 形态同面闭合）。元素身份留档（`_zwSel`/`_zwHandle`）内移内核（偏差记 [DESIGN §6.5](evidence/2026-10-24-m3-prep-design/DESIGN.md)）。
+- **Fix 2（缺口 2，生产 renderer march 接线）**：`apps/renderer/src/runtime.rs` 媒体泵 any_playing 块增 `submit_script_priority` 裸 march 提交（rAF 泵同通道同形态；门控 any_playing + javascript_enabled，**不加 page_hidden**——播放推进不随可见性暂停）——timeupdate 250ms 节流/cue active/ended 事件面生产首启。
+- **新增语义测试**：`test_media_autoplay_walks_play_steps_a2fix1`（autoplay 元素加载序列末 → 桥 play 同步命中绝对 URL + paused=false + play/playing/timeupdate queued 泵后派发锁新时序 + pause 走桥证 bridgeOn）。
+- **验证**：engine lib 3473 全绿（既有 media event 族 + 新测试）；wpt-runner 225 全绿；make test、clippy -D warnings、fmt 过。
+- **限制**：`testharness-media` 门禁本环境未跑——外网不可达（fetch curl 超时），且该子集首批本就不含 ready-states/autoplay/event_* 真解码族（后置声明）；断言面由 engine 桥测试承载，有网环境补跑。
+- 共享面占用：engine shim（part03/part06）+ bridge 测试、renderer runtime.rs 一处提交；runner 面行为随 shim 语义同迁（门禁族全绿）。bg02-media 基线 v2 回补（audio/autoplay INCONCLUSIVE 复评）仍归后续验证切片。

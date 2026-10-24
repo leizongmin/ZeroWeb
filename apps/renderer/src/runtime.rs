@@ -4135,6 +4135,20 @@ return JSON.stringify({{action:action,name:name,val:val}});\
                         self.try_republish_cached()?;
                     }
                 }
+                // A2 Fix 2（media-runtime-isolation DESIGN §6.3，spec#time-marches-on）：
+                // 生产面 march 接线——shim 侧 march（桥时钟拉取/headless 时钟/played
+                // ranges/timeupdate 250ms 节流/cue active/ended 面）此前仅 WPT runner
+                // 泵调用（testharness.rs 泵 tick 同形提交），生产 renderer 主循环不调
+                // → timeupdate/cue/ended 事件面无驱动。与 rAF 泵同通道同形态（下方
+                // 先例）；门控 = any_playing + javascript_enabled，**不加 page_hidden**
+                // ——播放推进不随可见性暂停（后台音频继续播是现行为，rAF 可见性门控
+                // 语义不适用）。无播放零提交；钩子内 !ms.playing 早退 + timeupdate
+                // 250ms 节流成本有界（M1 空 tick p50 431ns 同面）。
+                if self.javascript_enabled && any_playing {
+                    let _ = self.js_worker.submit_script_priority(
+                        "if(globalThis._zwMediaTimeMarchesOn)globalThis._zwMediaTimeMarchesOn();",
+                    );
+                }
             }
 
             // DC-2/M3（帧驱动 rAF 泵——镜像媒体泵「事件循环节拍，否决独立泵线程」）：
