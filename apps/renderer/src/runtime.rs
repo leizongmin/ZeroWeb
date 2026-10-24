@@ -2563,6 +2563,24 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         Ok(())
     }
 
+    /// T5/P10 页面 history 遍历 drain——`history.back()/forward()/go(delta)` 在 shim 本地栈
+    /// 越界时经 `__zw_request_history_traverse` 投递的 delta。drain 队列取最后一条（快速连点
+    /// 合并为一次遍历，同 `tick_pending_navigation` 取 last 的既有取舍）→ `HistoryTraverse`
+    /// IPC 发主进程 shell 栈提交遍历（遍历提交在宿主线程，复用既有返回路径；越界由宿主
+    /// shell 判界静默 no-op）。
+    fn tick_pending_history_traverse(&mut self) -> Result<(), String> {
+        let pending: Vec<i32> = self
+            .js_worker
+            .pending_history_traverses()
+            .lock()
+            .map(|mut q| std::mem::take(&mut *q))
+            .unwrap_or_default();
+        if let Some(delta) = pending.into_iter().last() {
+            self.send_regular(IpcMessageKind::HistoryTraverse { delta })?;
+        }
+        Ok(())
+    }
+
     /// 加载字体字节并按 (weight, style) 注册 alias（R2417/R2493 键规则）。返 true=注册成功（需刷新 resolver）。
     /// 抽自 drain_loaded_fonts 字体加载块，供 @font-face（async_load）与 FontFace.load()（JS 投递）共用。
     fn register_loaded_font(
@@ -4016,6 +4034,8 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             | IpcMessageKind::ServiceWorkerHostEvent(_)
             | IpcMessageKind::NavigationStarted(_)
             | IpcMessageKind::NavigationCommitted(_)
+            // T5/P10 页面 history 遍历是 renderer 的发送方向，不接收。
+            | IpcMessageKind::HistoryTraverse { .. }
             // 合成器动画声明是 renderer 的发送方向（M2-S1），不接收。
             | IpcMessageKind::CompositorAnimationState(_)
             // 媒体消息族走 webview proxy ↔ media-host 独立 stdio 通道（media-runtime-isolation
@@ -4094,6 +4114,10 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             // R3058 JS 跨文档导航：drain location.href=/assign/replace 投递的导航 URL，handle_navigate（fetch 新文档）。
             // 多次导航取最后一条（real browser 亦取最后发起；前者被后者覆盖）。任意时刻可来，故每轮检查。
             self.tick_pending_navigation()?;
+
+            // T5/P10 页面 history 遍历：drain history.back/forward/go 越界移交的 delta →
+            // HistoryTraverse IPC 发主进程。任意页面脚本均可产生，故每轮检查（同上）。
+            self.tick_pending_history_traverse()?;
 
             // S11（cdp-protocol value-only console 面）：drain page console 输出（任意脚本
             // 执行均可产生，故每轮检查）→ browser/headless（`Runtime.consoleAPICalled`）。

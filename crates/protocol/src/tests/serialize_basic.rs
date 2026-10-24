@@ -1687,3 +1687,20 @@ fn test_indexed_db_connection_event_roundtrip() {
         })
     ));
 }
+
+#[test]
+fn test_serialize_deserialize_history_traverse_t5() {
+    // T5/P10：页面 history 遍历请求（renderer → browser）——delta 字段序列化往返。
+    for delta in [-1, 1, -2, 3] {
+        let msg = IpcMessage {
+            id: 71,
+            kind: IpcMessageKind::HistoryTraverse { delta },
+        };
+        let out = roundtrip(msg);
+        assert_eq!(out.id, 71);
+        let IpcMessageKind::HistoryTraverse { delta: out_delta } = out.kind else {
+            panic!("expected HistoryTraverse for delta={delta}");
+        };
+        assert_eq!(out_delta, delta, "delta 往返保真");
+    }
+}

@@ -44,6 +44,9 @@ mod storage;
 mod protocol_navigation;
 
 #[cfg(test)]
+mod history_traverse;
+
+#[cfg(test)]
 mod canvas_render;
 
 #[cfg(test)]

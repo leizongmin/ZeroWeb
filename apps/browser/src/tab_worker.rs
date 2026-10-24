@@ -180,6 +180,12 @@ pub enum TabWorkerMessage {
         /// POST body。
         body: Option<String>,
     },
+    /// T5/P10：页面 history 遍历请求（shim 本地栈越界移交——TabManager 入队，app 消费
+    /// 提交 shell 栈遍历；越界判界在 app 消费侧，不可达静默 no-op）。
+    HistoryTraverse {
+        /// 遍历步长（back=-1、forward=+1、go(n)=n，相对当前条目）。
+        delta: i32,
+    },
 }
 
 /// Tab worker 句柄（UI 线程持有）。
@@ -814,6 +820,16 @@ fn tab_worker_main(
                     continue;
                 }
                 let _ = msg_tx.send(TabWorkerMessage::FocusChanged(change));
+            }
+            // T5/P10：drain 页面 history 遍历请求（history.back/forward/go 越界移交）→
+            // 回传 TabManager 入队（任意页面脚本均可产生，同 focus drain 每轮检查）。
+            let traverses = {
+                let queue = js_worker.pending_history_traverses();
+                let mut queue = queue.lock().unwrap_or_else(|e| e.into_inner());
+                std::mem::take(&mut *queue)
+            };
+            for delta in traverses {
+                let _ = msg_tx.send(TabWorkerMessage::HistoryTraverse { delta });
             }
         }
 

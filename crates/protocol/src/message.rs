@@ -280,6 +280,15 @@ pub enum IpcMessageKind {
     NavigationStarted(NavigationStartedParams),
     /// 渲染端请求浏览器装载页面（zero:// GET 转交；T62-D1 返修）。
     TabNavigateRequest(TabNavigateRequestParams),
+    /// 页面 history 遍历请求（renderer → browser；T5/P10——shim 本地栈越界的
+    /// `history.back()/forward()/go(delta)` 移交宿主 shell 栈提交遍历）。
+    ///
+    /// `delta` 为遍历步长（back=-1、forward=+1、go(n)=n）；越界由宿主 shell 判界，
+    /// 不可达时静默 no-op（R3004）。
+    HistoryTraverse {
+        /// 遍历步长（相对当前条目）。
+        delta: i32,
+    },
     /// 页面导航提交（renderer → browser storage-key authority）。
     NavigationCommitted(NavigationCommittedParams),
     /// IndexedDB connection 的 versionchange 通知（browser → renderer）。

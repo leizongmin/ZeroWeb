@@ -89,6 +89,9 @@ pub struct TabManager {
     pending_navigations: Vec<(TabId, String, String, Option<String>)>,
     /// T62-D1：多进程渲染端 zero:// 导航装载请求（同 pending_navigations 语义）。
     pending_renderer_navigations: Vec<(TabId, TabNavigateRequestParams)>,
+    /// T5/P10：页面 history 遍历请求（单进程 worker 与多进程 HistoryTraverse 同语义；
+    /// app 消费提交 shell 栈遍历）。
+    pending_history_traverses: Vec<(TabId, i32)>,
     /// 下一个 dispatch_id。
     next_dispatch_id: u64,
 }
@@ -129,6 +132,7 @@ impl TabManager {
             pending_actions: VecDeque::new(),
             pending_navigations: Vec::new(),
             pending_renderer_navigations: Vec::new(),
+            pending_history_traverses: Vec::new(),
             next_dispatch_id: 1,
         };
         if manager.process_backend.is_some() {
@@ -397,6 +401,8 @@ impl TabManager {
             self.pending_downloads.extend(backend.take_pending_downloads());
             self.pending_renderer_navigations
                 .extend(backend.take_tab_navigate_requests());
+            // T5/P10：多进程渲染端页面 history 遍历请求（与单进程 worker 回执同语义）。
+            self.pending_history_traverses.extend(backend.take_history_traverses());
             for (dispatch_id, default_allowed) in backend.take_dispatch_results() {
                 Self::resolve_dispatch(
                     &mut self.pending_dispatch,
@@ -493,6 +499,10 @@ impl TabManager {
                     // R3254-M10：worker 侧表单提交导航请求（Enter 默认动作）。
                     TabWorkerMessage::SubmitNavigation { url, method, body } => {
                         self.pending_navigations.push((*tab_id, url, method, body));
+                    }
+                    // T5/P10：worker 侧页面 history 遍历请求（shim 本地栈越界移交）。
+                    TabWorkerMessage::HistoryTraverse { delta } => {
+                        self.pending_history_traverses.push((*tab_id, delta));
                     }
                 }
             }
@@ -1187,6 +1197,17 @@ impl TabManager {
     /// T62-D1：取出多进程渲染端 zero:// 导航装载请求。
     pub fn take_renderer_navigations(&mut self) -> Vec<(TabId, TabNavigateRequestParams)> {
         std::mem::take(&mut self.pending_renderer_navigations)
+    }
+
+    /// T5/P10：取出页面 history 遍历请求（单进程 worker 与多进程 HistoryTraverse 同语义）。
+    pub fn take_history_traverses(&mut self) -> Vec<(TabId, i32)> {
+        std::mem::take(&mut self.pending_history_traverses)
+    }
+
+    /// 测试用：直接入队页面 history 遍历请求（替代 worker 回执/多进程合流路径）。
+    #[cfg(test)]
+    pub fn push_history_traverse_for_test(&mut self, tab_id: TabId, delta: i32) {
+        self.pending_history_traverses.push((tab_id, delta));
     }
 
     /// Tab 是否已注册。

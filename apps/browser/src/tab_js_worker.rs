@@ -105,6 +105,9 @@ pub struct TabJsWorkerHandle {
     element_from_point_cache: ElementFromPointCache,
     /// R3254-M10：页面 JS focus()/blur() 变更队列（TabManager 消费同步 event_targets）。
     focus_changes: Arc<std::sync::Mutex<Vec<Option<String>>>>,
+    /// T5/P10：页面 history 遍历请求队列（tab_worker drain 后经
+    /// `TabWorkerMessage::HistoryTraverse` 提交 TabManager → app 返回路径）。
+    history_traverses: Arc<std::sync::Mutex<Vec<i32>>>,
 }
 
 impl TabJsWorkerHandle {
@@ -115,6 +118,10 @@ impl TabJsWorkerHandle {
         let handle_selector_map = new_handle_selector_map();
         let element_from_point_cache = new_element_from_point_cache();
         let focus_changes: Arc<std::sync::Mutex<Vec<Option<String>>>> = Arc::default();
+        // T5/P10 页面 history 遍历桥——queue 与 tab_worker 共享，bridge 移入 worker 线程注册
+        // __zw_request_history_traverse。
+        let hist_bridge = zero_engine::HistoryBridge::new();
+        let history_traverses = hist_bridge.queue();
         let (cmd_tx, cmd_rx) = mpsc::channel();
         let cmd_for_exec = cmd_tx.clone();
         let cmd_for_module = cmd_tx.clone();
@@ -138,6 +145,7 @@ impl TabJsWorkerHandle {
                     rect_snapshot_for_worker,
                     handle_selector_map_for_worker,
                     element_from_point_cache_for_worker,
+                    hist_bridge,
                     import_map_for_worker,
                 )
             })
@@ -182,6 +190,7 @@ impl TabJsWorkerHandle {
             handle_selector_map,
             element_from_point_cache,
             focus_changes,
+            history_traverses,
         }
     }
 
@@ -234,6 +243,12 @@ impl TabJsWorkerHandle {
     /// `TabWorkerMessage::FocusChanged` 同步 TabManager 的 event_targets。
     pub fn focus_changes(&self) -> Arc<std::sync::Mutex<Vec<Option<String>>>> {
         Arc::clone(&self.focus_changes)
+    }
+
+    /// T5/P10：页面 history 遍历请求队列句柄——tab_worker drain 后经
+    /// `TabWorkerMessage::HistoryTraverse` 提交 TabManager → app 返回路径。
+    pub fn pending_history_traverses(&self) -> Arc<std::sync::Mutex<Vec<i32>>> {
+        Arc::clone(&self.history_traverses)
     }
 
     /// P1a gBCR：共享 layout-rect snapshot 句柄——tab_worker render 后经
@@ -386,6 +401,7 @@ fn refresh_worker_native_dom_source(
     }
 }
 
+#[allow(clippy::too_many_arguments)] // Thread-owned bridges are explicit at the single worker bootstrap boundary.
 fn js_worker_main(
     cmd_rx: Receiver<JsWorkerCommand>,
     cmd_tx: Sender<JsWorkerCommand>,
@@ -393,6 +409,7 @@ fn js_worker_main(
     rect_snapshot: LayoutRectSnapshot,
     handle_selector_map: HandleSelectorMap,
     element_from_point_cache: ElementFromPointCache,
+    hist_bridge: zero_engine::HistoryBridge,
     import_map: Arc<std::sync::Mutex<Option<ImportMap>>>,
 ) {
     let js_config = SandboxConfig {
@@ -466,6 +483,9 @@ fn js_worker_main(
     // （子线程 sleep + resolver.resolve → __zwResolveCallback 调用 JS 回调）。
     let timer_bridge = TimerBridge::new(resolver);
     timer_bridge.register(&mut *sandbox);
+    // T5/P10 页面 history 遍历桥——__zw_request_history_traverse 回调 push delta 到共享队列
+    //（tab_worker drain 后经 TabWorkerMessage::HistoryTraverse 提交 app 返回路径）。
+    hist_bridge.register(&mut *sandbox);
     // js-dom R386：原生绑定 install 踪迹（bootstrap install 置 true；context 重建后
     // 重 install 刷新）。tab worker 不做 reset_context（持久 context 全生命周期），
     // 但守卫位形态与 renderer worker 一致。

@@ -219,6 +219,9 @@ pub struct RendererJsWorker {
     /// R3058 JS 发起跨文档导航请求队列——`__zw_request_navigate` 回调（worker 线程）push，renderer
     /// 主循环 drain 后 handle_navigate（fetch 新文档 + 重载）。location.href=/assign/replace 跨文档触发。
     navigations: Arc<std::sync::Mutex<Vec<String>>>,
+    /// T5/P10 页面 history 遍历请求队列——`__zw_request_history_traverse` 回调（worker 线程）
+    /// push，renderer 主循环 drain 后 `HistoryTraverse` IPC 发主进程 shell 栈提交遍历。
+    history_traverses: Arc<std::sync::Mutex<Vec<i32>>>,
     /// R3254-M7'：页面 JS `focus()`/`blur()` 变更队列——`apply_recorded_mutations` 从 mutations
     /// 分离后 push（主线程），renderer 事件循环在事务边界 drain 同步 retained 焦点状态。
     focus_changes: Arc<std::sync::Mutex<Vec<Option<String>>>>,
@@ -292,6 +295,9 @@ impl RendererJsWorker {
         // R3058 JS 跨文档导航桥——queue 与 runtime 共享，bridge 移入 worker 线程注册 __zw_request_navigate。
         let nav_bridge = zero_engine::NavigationBridge::new();
         let navigations = nav_bridge.queue();
+        // T5/P10 页面 history 遍历桥——queue 与 runtime 共享，bridge 移入 worker 线程注册 __zw_request_history_traverse。
+        let hist_bridge = zero_engine::HistoryBridge::new();
+        let history_traverses = hist_bridge.queue();
         let focus_changes: Arc<std::sync::Mutex<Vec<Option<String>>>> = Arc::default();
         // P6 import map：页面 `<script type="importmap">` 解析产物共享槽——仅 worker
         // 线程使用（SetDomSnapshot 换代写入；ExecuteModule 编译与 __zw_compile_module
@@ -376,6 +382,7 @@ impl RendererJsWorker {
                     element_from_point_cache_for_worker,
                     font_bridge,
                     nav_bridge,
+                    hist_bridge,
                     indexed_db_handler,
                     service_worker_client,
                     async_callbacks_ready_for_worker,
@@ -459,6 +466,7 @@ impl RendererJsWorker {
             element_from_point_cache,
             font_loads,
             navigations,
+            history_traverses,
             focus_changes,
             async_callbacks_ready,
             pending_document_reset: Arc::default(),
@@ -808,6 +816,12 @@ impl RendererJsWorker {
     /// 主循环 drain 后 handle_navigate（fetch 新文档 + 重载）。
     pub fn pending_navigations(&self) -> Arc<std::sync::Mutex<Vec<String>>> {
         Arc::clone(&self.navigations)
+    }
+
+    /// T5/P10 页面 history 遍历请求队列句柄——`__zw_request_history_traverse` 回调（worker 线程）
+    /// push，renderer 主循环 drain 后 `HistoryTraverse` IPC 发主进程 shell 栈提交遍历。
+    pub fn pending_history_traverses(&self) -> Arc<std::sync::Mutex<Vec<i32>>> {
+        Arc::clone(&self.history_traverses)
     }
 
     /// R3254-M7'：页面 JS `focus()`/`blur()` 变更队列句柄——主线程 drain 后同步焦点状态。
@@ -1245,6 +1259,7 @@ fn js_worker_main(
     element_from_point_cache: ElementFromPointCache,
     font_bridge: zero_engine::FontLoadBridge,
     nav_bridge: zero_engine::NavigationBridge,
+    hist_bridge: zero_engine::HistoryBridge,
     indexed_db_handler: zero_engine::IndexedDbHandler,
     service_worker_client: Option<ServiceWorkerIpcClient>,
     async_callbacks_ready: Arc<AtomicBool>,
@@ -1437,6 +1452,9 @@ fn js_worker_main(
     font_bridge.register(&mut *sandbox);
     // R3058 JS 跨文档导航桥——__zw_request_navigate 回调 push URL 到共享队列（runtime drain 后 handle_navigate）。
     nav_bridge.register(&mut *sandbox);
+    // T5/P10 页面 history 遍历桥——__zw_request_history_traverse 回调 push delta 到共享队列
+    //（runtime drain 后 HistoryTraverse IPC 发主进程 shell 栈提交遍历）。
+    hist_bridge.register(&mut *sandbox);
     // P1b S5：TimerBridge 注 __zw_setTimeout——shim setTimeout/setInterval 真实延迟
     // （子线程 sleep + resolver.resolve → __zwResolveCallback 调用 JS 回调）。
     let timer_bridge = TimerBridge::new(resolver);
