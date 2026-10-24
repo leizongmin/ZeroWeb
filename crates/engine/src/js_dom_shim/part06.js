@@ -15501,10 +15501,11 @@
   // 目标即 pending 捕获目标（spec §9.3 direct manipulation 设备隐式捕获；WPT
   // pointerevent_element_haspointercapture ?touch expected_default_capture 面）。
   globalThis.__zw_pointer_down_sequence = function (sel, x, y, pointerType, button) {
-    // R4300（M2 切片 23，2026-10-22）：light dismiss 前步——pointerdown 落点在任何
-    // open+closedby=any dialog 的包含链外 → 先发 close request（spec dialog light
-    // dismiss：pointerdown 触发、序在 click 语义之前）。产品指针管线与 runner click
-    // 命令共用本全局；non-any 态（默认模态 closerequest / none）不受影响。
+    // R4300（M2 切片 23，2026-10-22）/ R5263（M2 切片 56，2026-10-24）：light
+    // dismiss down 腿——pointerdown 只记 nearest clicked dialog 祖先分类（槽），
+    // 关判定移 up 腿（__zw_dialog_light_dismiss_up，sameTarget 同态比对后才关；
+    // spec 两腿模型）。产品指针管线与 runner click 命令共用本全局；non-any 态
+    // （默认模态 closerequest / none）不受影响。
     // https://html.spec.whatwg.org/multipage/interactive-elements.html#dialog-light-dismiss
     try {
       if (typeof __zw_dialog_light_dismiss_check === 'function') __zw_dialog_light_dismiss_check(sel, x, y);
@@ -15780,6 +15781,15 @@
       _zwProcessPendingCapture('1', true);
     }
     var capturedSel = st.capture['1'] ? st.capture['1'].sel : null;
+    // R5263：light dismiss up 腿——down 槽分类 vs up 重分类 sameTarget 同态比对
+    // 后才关。落点用捕获换防后的有效目标：setPointerCapture 把 up 重定向 dialog
+    // 内元素（'in'）≠ down 于 backdrop（'out'）→ 不关（pointer-capture 断言面）。
+    // 序在 pointerup 派发前，与 down 腿先于 pointerdown 派发对称。槽在 up 函数
+    // 内读取即清；portal/chorded 早退分支不经过本站——每次 up 前必有 down 重写
+    // 槽，不会读到上一交互的残留。
+    try {
+      if (typeof __zw_dialog_light_dismiss_up === 'function') __zw_dialog_light_dismiss_up(capturedSel || upSel, x, y);
+    } catch (_eLdUp) {}
     // 尾簇 6c：变异代际快照——up 派发（pointerup/mouseup）期间页内 listener 的
     // DOM 变异（attach/move-under-cursor）以此检测，驱动 post-up 结算。
     var upTick0 = st.mutTick;

@@ -2,9 +2,36 @@
 
 **版本**: v2.0
 **日期**: 2026-10-24（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 55 收口（s54 挂账 xhr-response 1F 以 R5262 XHR 文档 body graft 窄域收口，F 族 name-attribute **18P/0F 全绿**，全域 **436P/47F/0T** GAIN 1 / REG 0），下一步续挂账序 B 族 pointer-capture 2F 分诊或 C 族渲染流协调；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 56 收口（s49 定性「指针管线深水」的 B 族 pointer-capture 2F 以 R5263 dialog light dismiss 两腿模型收口，全域 **438P/45F/0T** GAIN 2 / REG 0），下一步续挂账序 C 族渲染流 20F 跨流协调；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-24 M2 切片 55 收口，xhr-response graft 轮）**：
+> **▶ 当前状态（2026-10-24 M2 切片 56 收口，light dismiss 两腿轮）**：
+> s49 定性「指针管线深水」的
+> dialog-light-dismiss-pointer-capture.html（touch/mouse 双腿）**2F → 2P
+> 全收口**（R5263），全域 436P/47F/0T → **438P/45F/0T**（GAIN 2 / REG 0
+> / Timeout 0）。**方案取舍**：s49 三洞试错后回退定性指针管线深水；本轮
+> 复核推翻前提——管线 capture 重定向面已全通（part04 setPointerCapture
+> pending override + part06 `_zwProcessPendingCapture` up 派发前换防 +
+> 尾簇 12 换防后取 capturedSel），真缺口唯一：light dismiss 决策仍是
+> R4300 单腿（pointerdown 即关），capture 无从影响。spec 已演进两腿
+>（down 记 nearest clicked dialog 祖先，up sameTarget 比对后关），实现
+> 以**两态分类**等价替换身份模型：down `_zwDialogLdPick` 反文档序首个
+> open+any 定类（'in' 链内 / 'out' 链外）存槽，up
+> `__zw_dialog_light_dismiss_up` 重分类同态比对，相等且 'out' 才关
+>（选择器保持 R5234 口径）；全腿组合等价（in/in、out/in、in/out 不关，
+> out/out 关）——capture 面（down 'out' + capture 把 up 重定向 dialog 内
+> 'in'）由此不关门。槽卫生：down 终态必写槽（早退也清）+ up 读取即清。
+> popover pass 维持 down 腿单发（R5234 绿面零变化）。**验证**：目标
+> 2F→2P（pointerId 全管线默认 1 与 `st.capture['1']` 对齐实证）；全域
+> 438P/45F/0T；part60 R4 契约两腿化 + out→in capture 门腿（r4d）+ R6
+> down+up 对（r4d 首轮 fallback `'button'` 命中 l1 首按钮误关，改
+> `'#inner3'` 唯一 id——契约侧 bug）；zero-engine lib 3448P/0F；
+> fmt/clippy 清。账本见
+> [evidence/2026-10-24-m2s56-dialog-light-dismiss-two-leg.md](html-semantics-compat/evidence/2026-10-24-m2s56-dialog-light-dismiss-two-leg.md)。
+> **下一步**：B 族清空，挂账序——C 族渲染流 20F 跨流协调（归渲染流）；
+> declarative shadow 联合切片待用户点名。**切片间隙**：本切片为 engine
+> shim 面（part01/part06），下一挂账开工前查 oracle master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 55 收口，xhr-response graft 轮）**：
 > s54 分诊轮挂账的 xhr-response 1F **窄域收口**（R5262），F 族
 > name-attribute.html 三案全清（**18P/0F**），全域 435P/48F/0T →
 > **436P/47F/0T**（GAIN 1 / REG 0）。**方案取舍**：s54 定性 parse-world

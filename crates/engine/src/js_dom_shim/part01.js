@@ -1313,15 +1313,25 @@
   //   （target === P || P.contains(target)），首个包含者停；不包含则逐个隐
   //   （_zwHidePopover 状态机，beforetoggle 可取消）——spec hide all popovers
   //   until 链上全隐（closedby-simple/complex popover light dismiss 断言面）。
-  // ② dialog pass：open+any dialog 按文档序反走（内层先）只看第一个：
-  //   backdrop 属主（backdropHit）→ close + 停（backdrop 点击对属主为「外」、
-  //   对祖先链为「内」——complex modalB 面落地即靠 popover pass 的 contains 停）；
-  //   target 在包含链内 → 停不关（内层 any 挡外层——complex「一次 click 只关
-  //   最内层链」断言面，旧实现全量关闭为 dialogA 误关红因）；盒外 → close + 停。
+  // ② dialog pass（R5263 起两腿）：open+any dialog 按文档序反走（内层先）只看
+  //   第一个，down 腿只记 nearest clicked dialog 祖先分类（'in' 包含链内 /
+  //   'out' 链外——backdrop 属主（backdropHit）与盒外均 'out'；内层 any 挡
+  //   外层——complex「一次 click 只关最内层链」断言面，旧实现全量关闭为
+  //   dialogA 误关红因），关判定移 up 腿 __zw_dialog_light_dismiss_up。
+  // R5263（M2 切片 56，2026-10-24）：dialog pass 两腿化——spec light dismiss 已
+  //   演进为 pointerdown 记祖先 + pointerup sameTarget 比对后才关（身份模型）；
+  //   本实现以两态分类等价（'in'/'out'，全腿组合结果一致：in/in、out/in、
+  //   in/out 均不关，out/out 关 topmost）。pointer capture 使 up 重定向捕获
+  //   目标（part06 capturedSel 换防后取）→ down 'out' + up 'in' 不关——
+  //   dialog-light-dismiss-pointer-capture 双腿断言面。popover pass 维持
+  //   down 腿单发（R5234 绿面不动）。
   // https://html.spec.whatwg.org/multipage/interactive-elements.html#dialog-light-dismiss
   // https://html.spec.whatwg.org/multipage/popover.html#popover-light-dismiss
   globalThis.__zw_dialog_light_dismiss_check = function (targetSel, px, py) {
     if (typeof document === 'undefined' || !document.querySelectorAll) return;
+    // R5263：down 腿终态必写槽（无 dialog / target 解析不到的早退也清）——
+    // 防 up 腿读到上一交互的残留分类。
+    _zwDialogLdDown = null;
     var dialogs;
     try { dialogs = document.querySelectorAll('dialog'); } catch (_eLdQ) { return; }
     if (!dialogs || !dialogs.length) return;
@@ -1361,24 +1371,61 @@
         try { _zwHidePopover(_ldK, _ldPs, _ldPh); } catch (_eLdPh) {}
       }
     } catch (_eLdPass) {}
-    // ② dialog pass（R5234）：反文档序首个 open+any dialog 一锤定音。
+    // ② dialog pass（R5263 两腿 down 腿）：反文档序首个 open+any dialog 定祖先
+    // 分类，只记槽不关——关判定在 up 腿（__zw_dialog_light_dismiss_up）。
+    var _ldPick = _zwDialogLdPick(dialogs, target, targetSel, backdropHit);
+    _zwDialogLdDown = _ldPick ? _ldPick.state : null;
+  };
+  // R5263：nearest clicked dialog 祖先分类（spec ancestor 步的反文档序近似，选择
+  // 器保持 R5234 口径——内层 any 挡外层）。
+  function _zwDialogLdPick(dialogs, target, targetSel, backdropHit) {
     for (var i = dialogs.length - 1; i >= 0; i--) {
       var d = dialogs[i];
       var ds = d.__zwSelector || null;
       var dh = d.__zwHandle || null;
-      var dk = _elKey(ds, dh);
       if (!_zwDialogHasOpen(ds, dh)) continue;
+      var dk = _elKey(ds, dh);
       if (_zwDialogClosedByState(ds, dh, dk) !== 'any') continue;
-      if (backdropHit && ds && targetSel === ds) {
-        _zwDialogRequestClose(dk, ds, dh, undefined);
-        break;
-      }
+      if (backdropHit && ds && targetSel === ds) return { dk: dk, ds: ds, dh: dh, state: 'out' };
       var contains = false;
       try { contains = !!target && (target === d || (d.contains ? !!d.contains(target) : false)); } catch (_eLdC) { contains = false; }
-      if (contains) break; // 内层 any 挡外层
-      _zwDialogRequestClose(dk, ds, dh, undefined);
-      break;
+      if (contains) return { dk: dk, ds: ds, dh: dh, state: 'in' };
+      return { dk: dk, ds: ds, dh: dh, state: 'out' };
     }
+    return null;
+  }
+  // R5263：dialog light dismiss up 腿——sameTarget 同态比对（down 槽分类 vs up
+  // 重分类）后才关 topmost。targetSel 用捕获换防后的有效目标（part06 传
+  // capturedSel || upSel）：down 于 backdrop 链外（'out'）+ setPointerCapture 把
+  // up 重定向 dialog 内元素（'in'）→ 同态不等不关；无 capture 双 'out' 照常关。
+  // 槽在读取即清（spec：pointerup 后清 dialog pointerdown target，无论结果）。
+  // https://html.spec.whatwg.org/multipage/interactive-elements.html#dialog-light-dismiss
+  globalThis.__zw_dialog_light_dismiss_up = function (targetSel, px, py) {
+    if (typeof document === 'undefined' || !document.querySelectorAll) return;
+    var down = _zwDialogLdDown;
+    _zwDialogLdDown = null;
+    if (down == null) return;
+    var dialogs;
+    try { dialogs = document.querySelectorAll('dialog'); } catch (_eLdQ2) { return; }
+    if (!dialogs || !dialogs.length) return;
+    var target = null;
+    if (targetSel) {
+      try { target = document.querySelector(targetSel); } catch (_eLdT2) { target = null; }
+    }
+    if (targetSel && !target) return;
+    var backdropHit = false;
+    if (px != null && py != null && targetSel) {
+      try {
+        var bdTop = _zwDialogModalTopSel();
+        if (bdTop && bdTop === targetSel && target && target.getBoundingClientRect) {
+          var bdR = target.getBoundingClientRect();
+          backdropHit = !bdR || px < bdR.left || px > bdR.right || py < bdR.top || py > bdR.bottom;
+        }
+      } catch (_eLdBd) {}
+    }
+    var pick = _zwDialogLdPick(dialogs, target, targetSel, backdropHit);
+    if (!pick || pick.state !== down || pick.state === 'in') return;
+    _zwDialogRequestClose(pick.dk, pick.ds, pick.dh, undefined);
   };
   // R3290：统一 set/remove 内容属性 helper（sel/handle 双路径 + latest-wins 读一致性依赖 host 侧 latest-wins 变体，
   // 写走常规 __zw_set_attr/__zw_remove_attr 入队）。dialog open 属性专用，与 popover setter 同模式。
