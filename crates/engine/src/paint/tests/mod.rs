@@ -63,6 +63,8 @@ mod r5264_collapse_content_half_shift_tests;
 mod r5265_collapse_band_phase_tests;
 /// R5267 clip:text 恒色层间混合（css-compositing-1 §background-blend-mode）。
 mod r5267_bg_clip_text_layer_blend_tests;
+/// R5268 clip:text 逐层 clip（css-backgrounds-4 §background-clip:text）。
+mod r5268_bg_clip_text_per_layer_tests;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;

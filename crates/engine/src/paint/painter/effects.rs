@@ -875,7 +875,30 @@ impl super::Painter {
         //（`longhands[layer_idx % longhands.len()]`）。单值 longhand（len=1）→ 所有层取 [0]
         // = 旧「单值应用到所有层」行为，**byte-identical 零回归**；仅多层 longhand 改变输出。
         // enumerate().rev()：tuple 的 index 即原始图层下标（rev 仅反序，index 仍随元素）。
+        // R5268（css-backgrounds-4 §background-clip:text 逐层 clip）：恒色提取激活时
+        // Text 层矩形抑制（色由子树字形承载，paint_node bg_clip_text_color push）；
+        // 非 Text 层照常铺盒——文字域 ⊆ 非 Text clip 域，其色同时作为字形混合的
+        // backdrop 进入恒色合成（background-clip-text-and-blend-mode box2/3 判据）。
+        // 整盒抑制回退（ZW_BG_CLIP_TEXT_PER_LAYER=0）由调用方门拦截全层，不入此路径。
+        // 门序 = clip:text 快扫描 → env::var（R5267 口径：kill-switch 读在激活门后，
+        // 非 clip:text 页零读取）→ 恒色提取（最重，尾部短路）。
+        let bg_clip_text_layer_suppress = style
+            .background_clip
+            .iter()
+            .any(|c| matches!(c, BackgroundClipComputedValue::Text))
+            && std::env::var("ZW_BG_CLIP_TEXT").as_deref() != Ok("0")
+            && std::env::var("ZW_BG_CLIP_TEXT_PER_LAYER").as_deref() != Ok("0")
+            && super::text::bg_clip_text_solid_color(style, &self.image_solid_colors, self.document_url.as_deref())
+                .is_some();
         for (layer_idx, layer) in style.background_image.iter().enumerate().rev() {
+            if bg_clip_text_layer_suppress
+                && matches!(
+                    style.background_clip_for_layer(layer_idx),
+                    BackgroundClipComputedValue::Text
+                )
+            {
+                continue;
+            }
             let size = &style.background_size[layer_idx % style.background_size.len()];
             let position = &style.background_position[layer_idx % style.background_position.len()];
             let repeat = &style.background_repeat[layer_idx % style.background_repeat.len()];

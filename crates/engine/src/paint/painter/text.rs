@@ -88,15 +88,26 @@ pub(super) fn bg_clip_text_solid_color(
     {
         return None;
     }
+    // R5268：per-layer longhand 按 css-backgrounds-3 §3.1 cyclic 取值（`i % len`，
+    // 与 paint 侧 R2311 同规）——旧 `.get(i)?` 在多层页（image 层数 > 声明值数）时
+    // 次层取 None 直接禁用整页提取（background-clip-text-and-blend-mode box2/3）。
     let layer_ctx = |i: usize| -> Option<(
         &BackgroundRepeatComputedValue,
         &BackgroundSizeComputedValue,
         &BackgroundAttachmentComputedValue,
     )> {
+        let (n_r, n_s, n_a) = (
+            st.background_repeat.len(),
+            st.background_size.len(),
+            st.background_attachment.len(),
+        );
+        if n_r == 0 || n_s == 0 || n_a == 0 {
+            return None;
+        }
         Some((
-            st.background_repeat.get(i)?,
-            st.background_size.get(i)?,
-            st.background_attachment.get(i)?,
+            st.background_repeat.get(i % n_r)?,
+            st.background_size.get(i % n_s)?,
+            st.background_attachment.get(i % n_a)?,
         ))
     };
     // 各图层恒色提取（list 位置随行保留；None 层无贡献跳过，位置仍归 mode/repeat 配对）。
@@ -140,7 +151,10 @@ pub(super) fn bg_clip_text_solid_color(
             acc = blend_solid_layer(mode, c, acc);
         }
     } else {
-        for &(_, c) in layers.iter() {
+        // R5268：plain OVER 同样自底向上合成（css-backgrounds-3 §3.1 list 首项在最
+        // 上；与下方混合路径及 paint_background 实际铺层序一致）。旧 list 序多层页
+        // 提取取底层色（顶层反被盖），单层页不受影响。
+        for &(_, c) in layers.iter().rev() {
             acc = color_over(c, acc);
         }
     }
