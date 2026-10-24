@@ -6421,6 +6421,11 @@
       try {
         Object.defineProperty(C.prototype, 'toString', {
           value: function () {
+            // R5273（html-semantics M2 切片 66）：WebIDL es-stringifier step 2——
+            // this 非本接口 platform object 须 TypeError（a-stringifier 断言
+            // `a.toString.call(null/undefined/{})` throw；null/undefined 在非严格
+            // 函数装箱为 globalThis，instanceof 判 false 同样覆盖）。
+            if (!(this instanceof C)) throw new TypeError('Illegal invocation');
             try { return String((this && this.href) || ''); } catch (_eWsaStr) { return ''; }
           },
           writable: true, enumerable: false, configurable: true,
@@ -22791,6 +22796,14 @@ return e;
           var _aStrTag = _realTag(sel, handle);
           if (_aStrTag === 'A' || _aStrTag === 'AREA') {
             return function () {
+              // R5273（html-semantics M2 切片 66）：WebIDL es-stringifier step 2 品牌检查
+              // ——this 非本接口 platform object 须 TypeError（a-stringifier
+              // stringifier 1/2/6/7 断言 `a.toString.call(null/undefined/{})` throw；
+              // null/undefined 非严格函数装箱为 globalThis，instanceof 判 false 覆盖）。
+              // 本 trap 才是 createElement 产物 toString 的实际供给面（探针实证：
+              // 原型侧 part03:6420 不达——proxy 拦截全部 get）。
+              var _aStrC = globalThis[_aStrTag === 'A' ? 'HTMLAnchorElement' : 'HTMLAreaElement'];
+              if (!(_aStrC && this instanceof _aStrC)) throw new TypeError('Illegal invocation');
               try { return String(this && this.href); } catch (_eWsaStr) { return ''; }
             };
           }
@@ -24598,6 +24611,15 @@ return e;
             if (lw5269 != null && String(lw5269) !== '') return String(lw5269);
           }
           return out5269;
+        }
+        // R5273（html-semantics M2 切片 66）：HTMLAnchorElement.text = textContent
+        //（HTML §dom-a-text——getter 返 textContent、setter 为「string replace all」
+        // 与 textContent 同步；option.text 的 strip-and-collapse **不适用**——
+        // a.text-getter-01 断言 `<a>a <!--b-->b c </a>` 的 .text 为全文 "a b c "，
+        // 与 textContent 相等）。R5269 title.text 同口径委托。
+        if (prop === 'text' && _realTag(sel, handle) === 'A') {
+          var selfA5273 = sel ? _wrapSelector(sel) : _wrapHandle(handle);
+          return selfA5273 ? selfA5273.textContent : '';
         }
         if (prop === 'label' && _realTag(sel, handle) === 'OPTION') {
           // R3907：.label = 无 ns label 内容属性（**存在即采纳**——空串不回落文本）；

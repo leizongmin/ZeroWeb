@@ -2,9 +2,32 @@
 
 **版本**: v2.0
 **日期**: 2026-10-24（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 65 收口（http-equiv-and-name 2F 分诊：1F 渲染流记账回流 + content-language pragma 回落 R5272，域 **58P/60F/18T → 59P/59F/18T** GAIN 1 / REG 0，document-metadata 分诊轮全归档），下一步 text-level-semantics 开片（M1 基线 21P/13F）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 66 收口（text-level-semantics 开片：the-a-element 两族 a.text + stringifier 全收 R5273 + sel 形注册文本视图共享根修，域 **21P/13F → 34P/0F** GAIN 13 / REG 0 全绿），下一步 embedded-content / scripting-1 / microdata 按挂账序开片；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-24 M2 切片 65 收口，http-equiv 分诊 + content-language pragma 轮）**：
+> **▶ 当前状态（2026-10-24 M2 切片 66 收口，text-level-semantics 开片轮）**：
+> 两件事。**① the-a-element 13F 两族全收（R5273 三刀）**：a.text
+> getter/setter = textContent 精确委托（9F；option 的 strip-and-collapse
+> 不适用）+ a/area toString 品牌检查（4F；WebIDL es-stringifier step 2，
+> **探针实证 trap 臂才是 createElement 产物 toString 实际供给面**——原型
+> defineProperty 不达，双侧同步防直装路径）。**② 共享路径根修（part05
+> overlay 种子）**：a.text 委托暴露预存缺陷——textContent=（sel 形）写后
+> 同 turn childNodes.length===0 而 firstChild 已见新值（探针钉定与 .text
+> 无关）。根因 = 注册文本节点无 pending link，overlay added 并入跳过而
+> removed 剔除生效，childNodes 与 firstChild 两视图分裂（R5269 probe62
+> childLen=0 同根源）。修 = `_zwOverlayPendingChildNodes` 入口
+> `_zwTextElsBySel` 种子（命中即以注册节点为基；appendChild 并入/
+> removeChild 剔除/apply 后不双计均保持）。**验证**：域 **34P/0F**
+>（exit 0 首次）+ links 119P/20F/4T（stash 二分与 HEAD 逐值一致，预存）
+> + document-metadata 59P/59F/18T + tabular 130P/4F + interactive
+> 439P/44F + engine lib **3463P/0F**。账本见
+> [evidence/2026-10-24-m2s66-text-level-a-element.md](html-semantics-compat/evidence/2026-10-24-m2s66-text-level-a-element.md)。
+> **下一步**：embedded-content / scripting-1 / microdata 按挂账序开片
+>（分诊轮先行）。
+> **切片间隙**：本轮 part03/part04/part05 shim + part05 overlay；下一挂
+> 账 embedded-content 分诊未定，间隙开放，开工前查 oracle master 碰撞
+> 记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 65 收口，http-equiv 分诊 + content-language pragma 轮）**：
 > 两件事。**① http-equiv-and-name 2F 分诊（本域 shim 面最后未分诊项，
 > 分诊轮全归档）**：-1 = CanvasText 系统色 × color-scheme applied-color
 > 链 → 渲染流记账回流（与 s64 color-scheme 23F 同桶）；-2 = 本流修复。

@@ -10045,6 +10045,19 @@
   // pending added（_zwNodeParent 反向链父 sel 匹配）按 nextSibling 定位插入；pending removed
   // 剔除。无匹配 nextSibling（append 到尾 / nextSibling 也是 pending）→ 尾部追加（保守）。
   function _zwOverlayPendingChildNodes(out, sel, parent) {
+    // R5273（html-semantics M2 切片 66）：sel 形注册文本视图并入——textContent=（setter
+    // 经 _zwRegisterTextEl 落 `_zwTextElsBySel` 注册表）后 spec「string replace all」
+    // 状态恰为单文本子；firstChild 走 _zwLocalChildNodes 直读注册表（R49），childNodes
+    // 的 R140 sel 路径只吃 base 缓存 + 本 overlay → 同 turn 两视图分裂（a.text-setter-01
+    // childNodes.length===1 断言翻车根因；R5269 probe62 childLen=0 同根源——title
+    // corpus 不读 sel 形 childNodes 未暴露）。注册表命中即整体替换语义生效：视图以
+    // 注册文本节点为基（其后 appendChild 的 handle 子经下方 bucket added 照常并入；
+    // removeChild 移除该节点经 bucket removed identity 剔除；host apply 后快照虽含
+    // 真文本子，种子恒取注册单节点不双计——bucket added 的同节点无 link 不再并入）。
+    if (sel && typeof _zwTextElsBySel !== 'undefined' && _zwTextElsBySel) {
+      var _r5273e = _zwTextElsBySel.get(sel);
+      if (_r5273e && _r5273e.node) out = [_r5273e.node];
+    }
     // R55：no-pending 快路径返回副本——out 可能是基底缓存本体（_childNodeList 缓存命中/刚存入），
     // 调用方 concat/原地写不得污染缓存。
     if (!_zwPendingAdded.length && !_zwPendingRemoved.length) return out.slice();

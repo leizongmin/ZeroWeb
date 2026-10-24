@@ -11295,6 +11295,14 @@
           _makeProxy(sel, handle).textContent = value;
           return true;
         }
+        // R5273（html-semantics M2 切片 66）：a.text setter = textContent setter
+        //（HTML §dom-a-text「string replace all」同 spec 步骤——a.text-setter-01
+        // 断言 childNodes.length===1、firstChild.data 同步、textContent 镜像）。
+        // 与 option.text R3907 / title.text R5269 同口径委托。
+        if (p === 'text' && _realTag(sel, handle) === 'A') {
+          _makeProxy(sel, handle).textContent = value;
+          return true;
+        }
         if (p === 'textContent' || p === 'innerText' || p === 'innerHTML') {
           // R81：PI 节点的 textContent= 直接写 data（spec CharacterData——不建文本子视图、不发
           // childList；WPT "For a ProcessingInstruction, textContent should set the data"）。
