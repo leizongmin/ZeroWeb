@@ -1,9 +1,9 @@
 # 媒体运行时隔离控制面
 
 **日期**：2026-10-25
-**状态**：Active（**D-RFC-1~4 已批复**——方案 C 批准 / A 批次随批复即启 / B 核查暂缓 / decode-h264 维持默认关，RFC v1.9 §10 批复记录；M1 基线 + M2 RFC 两项交付 + M3 前置设计八片齐备，[m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；**A1–A4 + C1 + C2 切片 1/2 + C3 已落地**——rate 1.00000 + 三缺口闭合 + 内存面收敛 + seek 冷路径 O(GOP) + 协议消息族/media-host 骨架/webview proxy + C2 解码内核/自走时钟事件循环/proxy 事件面/真实二进制契约 + registry 开态客户端切换（HostMediaFacade push 镜像 + 21 面分流）/M1 双 feature 零回归 + **C3 崩溃检测双路/状态机退避重启（1s/2s/4s n≤3）/SIGKILL 注入契约 8 场景/M1 宿主面零回归**（feature 默认关），偏差记录 DESIGN §2.4/§3.5/§6.5/§8.6/§9.6/§10.7/§10.8/§10.9，[切片 2 证据](evidence/2026-10-25-c2-slice2/ANALYSIS.md)，[C3 证据](evidence/2026-10-25-c3-crash-recovery/ANALYSIS.md)）。
-**当前卡点**：无。A 批次 + C1 + C2 切片 1/2 + C3 完成。
-**下一步**：C4/M4（三态配对矩阵 + 资源审计 + DC 终验，DESIGN §12）；shim march Error face 接线（C3 止步桥 getter，DESIGN §10.9-16）与 bg02-media 站点复评归 C4 批次或后续验证切片。
+**状态**：Active（**D-RFC-1~4 已批复**——方案 C 批准 / A 批次随批复即启 / B 核查暂缓 / decode-h264 维持默认关，RFC v1.9 §10 批复记录；M1 基线 + M2 RFC 两项交付 + M3 前置设计八片齐备，[m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；**A1–A4 + C1 + C2 切片 1/2 + C3 + C4 已落地**——A 批次四片（rate 1.00000 / 三缺口闭合 / 内存收敛 / seek 冷路径 O(GOP)）+ C 批次隔离面（协议消息族与 media-host 骨架 / 解码内核与自走时钟 / registry 开态客户端切换 / 崩溃检测与退避重启）+ **C4 配对验收**（三态 M1 零回归 + 帧摘要三态全等 + 代际风暴零泄漏 + 能力真值三对照 + 30min 资源审计；配对抓出并订正两缺陷：A1 解码超前 pts 锚定回归 → 样本锚定、宿主 replay 流末残留位置拖拽 → replay 跳过位置 seek，feature 默认关），偏差记录 DESIGN §2.4/§3.5/§6.5/§8.6/§9.6/§10.7/§10.8/§10.9，[切片 2 证据](evidence/2026-10-25-c2-slice2/ANALYSIS.md)，[C3 证据](evidence/2026-10-25-c3-crash-recovery/ANALYSIS.md)，[C4 证据](evidence/2026-10-25-c4-paired-acceptance/ANALYSIS.md)）。
+**当前卡点**：无。A 批次 + C1 + C2 切片 1/2 + C3 + C4 完成。
+**下一步**：DC-5 收口审计（RFC 与最终支持范围）；shim march Error face 接线（C3 止步桥 getter，DESIGN §10.9-16）；bg02-media 站点复评；D4 能力清单对齐（ogg-vorbis/wav 欠申报 + webm-opus/aac 补 fixture，C4 ANALYSIS §四）。
 **入口**：[目标契约](../media-runtime-isolation.md) / [启动与证据协议](../ladybird-followups/README.md)
 
 ## 缺口与待决
@@ -22,15 +22,15 @@
 | M1 | 生产资源、能力与权限基线 | **完成**（测量面成立，收口待评审） | [2026-10-24 基线](evidence/2026-10-24-m1-baseline/ANALYSIS.md) |
 | M2 | 方案/许可证/回滚 RFC + protocol 接口契约 | **v1.9 已批复**（D-RFC-1~4 用户裁决） | [media-runtime-isolation-spec-rfc](../../../specs/media-runtime-isolation-spec-rfc.md) |
 | M3 | 已确认平台与隔离切片 | **IN_PROGRESS**（A1–A4 已全部落地——rate≡1.0 + 三缺口闭合 + 内存面收敛 + seek O(GOP)；C1 已落地——protocol 17 变体 + media-host 骨架 + webview proxy，feature 默认关；C2 切片 1/2 已落地——音频管线迁零-media + 解码内核/自走时钟 + proxy 事件面 + 真实二进制契约 + registry 开态客户端切换（HostMediaFacade push 镜像/21 面分流/MSE 内联豁免/IF-006 不回落）+ 端到端契约 5 场景 + M1 双 feature release 零回归；**C3 已落地**——崩溃检测双路（send 失败即时 + 泵周期 try_wait 兜底）+ 状态机退避重启（1s/2s/4s n≤3，Failed 永久面/reload 回 Idle）+ 全活跃源 error 广播 + 桥 isErrored 真值口 + SIGKILL 注入契约 3 新场景（8/8 全绿）+ M1 宿主面零回归；C4 设计稿齐备） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
-| M4 | 配对媒体、故障和资源审计 | NOT_STARTED | 无 |
+| M4 | 配对媒体、故障和资源审计 | **完成**（三态配对矩阵 + 帧一致性 + 代际风暴 + 能力真值 + 30min 资源审计全过；抓出并订正 A1 解码超前回归与宿主 replay 拖拽两缺陷） | [2026-10-25 C4](evidence/2026-10-25-c4-paired-acceptance/ANALYSIS.md) |
 
 ## 验证基线
 
 | 判据 | 场景 | 状态 | 证据 |
 |---|---|---|---|
-| DC-1 | MEDIA-01-cpu-copy-and-capability | **已测成立**（容量/复制链/权限/能力对照；收口待用户评审） | evidence/2026-10-24-m1-baseline |
-| DC-2 | MEDIA-02-clock-seek-and-state | 部分（media 层时钟 rate FINDING 已修：A1 落地 rate=1.00000；cue seek 精确、漂移 p50=11ms；seek 冷路径 A4 窄化 O(GOP)——mid-GOP 302ms→18ms 且不随 target 线性增长；页面可见时钟缺口已修（A2 三缺口闭合，bg02-media v2 复评归后续验证切片）） | evidence/2026-10-24-m1-baseline + m3-prep-design（含 m1baseline-a1/a4-post.log） |
-| DC-3 | MEDIA-03-decoder-crash-recovery | 部分（C3 崩溃检测/重启面落地——SIGKILL 注入契约 8 场景全绿：error 镜像可观察/renderer 存活/重启重喂可播/重启耗尽 Failed 无内联回落/reload 恢复；页面 error 事件与 march face 接线归 C4，页面级终验未做） | evidence/2026-10-25-c3-crash-recovery |
+| DC-1 | MEDIA-01-cpu-copy-and-capability | **已测成立**（容量/复制链/权限/能力对照；C4 补能力真值三对照 + 配额端到端 QuotaExceeded；收口待用户评审） | evidence/2026-10-24-m1-baseline + 2026-10-25-c4-paired-acceptance |
+| DC-2 | MEDIA-02-clock-seek-and-state | 部分（media 层时钟 rate FINDING 已修：A1 落地 rate=1.00000；cue seek 精确、漂移 p50=11ms；seek 冷路径 A4 窄化 O(GOP)——mid-GOP 302ms→18ms 且不随 target 线性增长；页面可见时钟缺口已修（A2 三缺口闭合，bg02-media v2 复评归后续验证切片）；C4 补帧摘要三态全等 + 代际风暴零泄漏 + 三态 M1 零回归） | evidence/2026-10-24-m1-baseline + m3-prep-design（含 m1baseline-a1/a4-post.log）+ 2026-10-25-c4-paired-acceptance |
+| DC-3 | MEDIA-03-decoder-crash-recovery | 部分（C3 崩溃检测/重启面落地——SIGKILL 注入契约 8 场景全绿：error 镜像可观察/renderer 存活/重启重喂可播/重启耗尽 Failed 无内联回落/reload 恢复；C4 补宿主 replay 拖拽缺陷订正（常驻单测门）+ 30 轮重播审计单 host 零崩溃；页面 error 事件与 march face 接线仍未做，页面级终验未做） | evidence/2026-10-25-c3-crash-recovery + 2026-10-25-c4-paired-acceptance |
 | DC-4 | MEDIA-04-platform-fallback-and-permissions | 部分（平台核查：无 /dev/dri、NullSink、VP9-only 生产面；故障注入未做） | evidence/2026-10-24-m1-baseline |
 | DC-5 | RFC 与最终支持范围审计 | NOT_RUN | 无 |
 
@@ -232,3 +232,16 @@
 - **验收**：契约 8/8 全绿（16.2s，[证据](evidence/2026-10-25-c3-crash-recovery/ANALYSIS.md)）+ M1 宿主面 release 复跑 5/5（226.9s 零回归——rate 0.99827、冷 seek 19.0ms、1440/1440 帧零丢）+ `make guarded-clippy` 过 + 全量 `make guarded-test` 过（exit 0）。
 - **偏差五处**记 [DESIGN §10.9](evidence/2026-10-24-m3-prep-design/DESIGN.md)（场景 4 到达路径=重启尝试耗尽、one-shot 双路投递语义、stderr tail 本地实现、页面 error 事件链止步桥 getter、clear 改 teardown）。
 - 共享面占用：webview（media_proxy/video_registry_host/video_registry/video_registry_bridge/契约测试）+ 文档三处；engine/protocol/media-host/renderer 零改动。
+
+### 2026-10-25 C4 配对验收轮（A1 解码超前订正 + 宿主 replay 订正，代码 `c9e249707`）
+
+- 新增 `crates/webview/tests/media_c4_paired.rs`（验收 instrument，`#[ignore]` 显式运行 + test-guard 包裹，M1 先例）：帧一致性摘要（逐帧 content_hash 序列 fold，参照=解码器直出同管道）、代际风暴（9 跨 seek + 30 帧邻域断言）、能力真值三对照（host 协议实报 vs 实解 vs engine 静态表）、配额端到端、30min 资源审计（30 轮完整重播 + 暂停态空闲探针 + 孤儿核对）。
+- **配对抓出缺陷 1——A1 解码超前 pts 锚定回归**：A1（`3f98c4332`）把 decoded_end 锚 batch pts，长 fixture vorbis pts 步长 ≈ 样本步长/1.44 → EOF 提前至 ~70% 样本时刻，AV 轨 1013/1440 帧、视频随 audio cursor 同步冻结；`pipeline.rs` 三入口订正样本锚定（cursor+queued 基面），pts 连续轨零变化。M1 原判据只数纯视频呈现帧故三批未觉——帧摘要配对首次现形，回归自 A1 起潜伏（a1-post 证据已是 1013）。
+- **配对抓出缺陷 2——宿主 replay 流末残留位置拖拽**：renderer 镜像 Ended 后保留末次 Playing 读数（流末），facade play 原样回传 wire，内核 replay 重建后照单 seek 拖回流末 → 重启即再 Ended（审计重播轮 2 tick 坍缩）；`kernel.rs` replay 面跳过位置 seek 链（spec「ended playback」步 6.4），新增常驻单测（内核 16/16、契约 8/8）。
+- **三态 M1 零回归**：内联 5/5 20.41s / 宿主 5/5 226.33s / 宿主+shm=0 5/5 226.31s——1440/1440 帧、rate≥0.998、宿主客户端 CPU ≤0.013 核、seek 不劣于内联 +10ms 带。
+- **帧一致性/风暴**：digest `3f970f43b2bfb694` 三态全等（presented=reference=1440）；风暴 30 帧邻域零泄漏（匹配器最近邻订正——48 帧内容周期致最低命中假回跳）。
+- **能力真值/配额**：6 项实报 4 验证 2 无 fixture；欠申报 ogg-vorbis/wav（可解未列）；配额 QuotaExceeded 端到端。
+- **30min 审计**（1807s）：30/30 轮完整重播单 host 零 respawn（IF-001）、RSS 峰值 18.4MB 平台化、暂停态空闲 5s CPU 0ms、shm 0 段、退出无孤儿。
+- **偏差 D1–D7**（shm 传输面未实施第三态同传输 / 容量判据等价解释 / 风暴匹配器周期处理 / 能力清单偏差 / 审计协议时钟面二订 / 复制链增量表代理 / renderer 驻留代理）记 [C4 ANALYSIS §六](evidence/2026-10-25-c4-paired-acceptance/ANALYSIS.md)。
+- 门禁：guarded-clippy 过 + 全量 guarded-test 过（exit 0）+ 提交门禁 PASS；证据 13 log + ANALYSIS 同批入库（[ANALYSIS](evidence/2026-10-25-c4-paired-acceptance/ANALYSIS.md)）。
+- 共享面占用：zero-media（pipeline 解码超前锚定）+ media-host（kernel replay 面）+ webview（新增测试文件）+ goal 文档；其余 member 零改动。

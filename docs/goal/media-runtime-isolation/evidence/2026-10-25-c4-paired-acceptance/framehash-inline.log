@@ -1,0 +1,9 @@
+
+running 2 tests
+test c4_frame_hash_av_pair ... C4PAIR framehash src=file:///fixtures/long-webm-vp9-vorbis-60s.webm presented=1440 reference=1440 digest_presented=3f970f43b2bfb694 digest_reference=3f970f43b2bfb694
+ok
+test c4_frame_hash_pure_video ... C4PAIR framehash src=file:///fixtures/long-webm-vp9-60s.webm presented=1440 reference=1440 digest_presented=3f970f43b2bfb694 digest_reference=3f970f43b2bfb694
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 4.90s
+

@@ -1,0 +1,18 @@
+
+running 1 test
+test hosted::c4_resource_audit_30min ... C4AUDIT sample round=0 tick=1875 pid=1549783 rss_kb=13180 host_cpu_ms=1120 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=1 tick=1875 pid=1549783 rss_kb=15520 host_cpu_ms=3290 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=2 tick=1875 pid=1549783 rss_kb=16892 host_cpu_ms=6000 shm_segments=0 shm_bytes=0
+
+thread 'hosted::c4_resource_audit_30min' (1549782) panicked at crates/webview/tests/media_c4_paired.rs:493:13:
+round 2 仅 3690 tick 即退出——重播未走满 60s（宿主重启后 EOS 残留？）
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    hosted::c4_resource_audit_30min
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 180.25s
+
