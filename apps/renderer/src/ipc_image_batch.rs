@@ -12,6 +12,11 @@
 //! 就地回包；IPC 断开放弃剩余在途（对应 URL `resolve` 返回 `None`，图片按既有
 //! 宽松降级跳过）。信任 browser 对每个请求恰回一个 `FetchResponse`（错误路径
 //! immediate_err/队列满/负缓存均有回包），与既有 `ipc_fetch` 相同，不加超时。
+//!
+//! 信任前提披露（DF-F1，2026-10-25）：上句「恰一回响应」在导航取消路径不成立——
+//! browser `cancel_tab` 以 retain 丢弃在途 PendingFetch 且不补发 `FetchResponse`，
+//! `drain_all` 的无超时 `recv` 遂存在挂起窗口；旧逐图 `ipc_fetch_get` 同型，属既有
+//! 隐患（P21 入池），留作后续修复面，本披露不改任何可执行代码。
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::mpsc::Receiver;
@@ -157,9 +162,37 @@ impl ImageBatchFetcher for IpcImageBatch<'_> {
 mod tests {
     use super::*;
     use std::io::Write;
-    use std::sync::mpsc;
+    use std::sync::{Arc, Mutex, mpsc};
 
     use zero_protocol::message::{FetchResponseParams, SetViewportParams};
+
+    /// outbound 字节捕获（同 `ipc_fetch` 测试先例的 SharedBuf 写法）。
+    #[derive(Clone)]
+    struct SharedBuf(Arc<Mutex<Vec<u8>>>);
+    impl Write for SharedBuf {
+        fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(b);
+            Ok(b.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// 逐帧拆解 outbound 字节（4 字节 LE 长度前缀 + bincode 载荷，transport 帧协议）。
+    fn parse_frames(bytes: &[u8]) -> Vec<IpcMessage> {
+        let mut messages = Vec::new();
+        let mut offset = 0;
+        while offset < bytes.len() {
+            assert!(offset + 4 <= bytes.len(), "帧头不完整（offset={offset}）");
+            let len = u32::from_le_bytes(bytes[offset..offset + 4].try_into().expect("4 字节帧头")) as usize;
+            let end = offset + 4 + len;
+            assert!(end <= bytes.len(), "帧体不完整（offset={offset} len={len}）");
+            messages.push(zero_protocol::deserialize(&bytes[offset + 4..end]).expect("帧载荷反序列化"));
+            offset = end;
+        }
+        messages
+    }
 
     fn response(request_id: u64, status_code: u16, body: &[u8]) -> IpcMessage {
         IpcMessage {
@@ -287,5 +320,56 @@ mod tests {
 
         assert_eq!(batch.resolve("https://pic.test/a.png"), Some(b"A".to_vec()));
         assert_eq!(batch.resolve("https://pic.test/b.png"), None, "IPC 断开放弃剩余");
+    }
+
+    /// 线型钉（TV-F2/TV-F5）：`issue` 实际发出的帧经反序列化后与 `ipc_fetch_get`
+    /// 同线型——FetchRequest、request_id 顺序对应 pending 登记、GET、无附加头、
+    /// 无 body；drain 期间的 Heartbeat 必须就地回包且 id 回显（帧序：请求×N → 回包）。
+    #[test]
+    fn batch_issue_wire_matches_ipc_fetch_get_and_heartbeat_reply_echoes_id() {
+        let buf = SharedBuf(Arc::new(Mutex::new(Vec::new())));
+        let mut outbound = PipeTransport::new(std::io::empty(), Box::new(buf.clone()) as Box<dyn Write + Send>);
+        let (tx, rx) = mpsc::channel();
+        let mut next_fetch_id = 41_u64;
+        let mut deferred = VecDeque::new();
+        let mut batch = IpcImageBatch::new(&mut outbound, &rx, &mut next_fetch_id, &mut deferred);
+        batch.issue("https://pic.test/a.png");
+        batch.issue("https://pic.test/b.png");
+        tx.send(IpcMessage {
+            id: 77,
+            kind: IpcMessageKind::Heartbeat,
+        })
+        .unwrap();
+        tx.send(response(41, 200, b"A")).unwrap();
+        tx.send(response(42, 200, b"B")).unwrap();
+        batch.issue("https://pic.test/c.png");
+        tx.send(response(43, 200, b"C")).unwrap();
+        drop(tx);
+
+        assert_eq!(batch.resolve("https://pic.test/a.png"), Some(b"A".to_vec()));
+
+        // outbound 实际字节恰 4 帧：3 个 FetchRequest + 1 个 Heartbeat 回包。
+        let frames = parse_frames(&buf.0.lock().unwrap());
+        assert_eq!(frames.len(), 4, "3 请求 + 1 心跳回包，无其他帧");
+        for (index, url) in [
+            "https://pic.test/a.png",
+            "https://pic.test/b.png",
+            "https://pic.test/c.png",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let IpcMessageKind::FetchRequest(params) = &frames[index].kind else {
+                panic!("第 {index} 帧应是 FetchRequest，实际 {:?}", frames[index].kind);
+            };
+            assert_eq!(params.request_id, 41 + index as u64, "request_id 顺序对应 pending 登记");
+            assert_eq!(params.url, url);
+            assert_eq!(params.method, "GET");
+            assert!(params.headers.is_empty(), "无附加头（ipc_fetch_get 同线型）");
+            assert_eq!(params.body, None);
+        }
+        assert_eq!(frames[3].id, 77, "Heartbeat 回包 id 回显");
+        assert!(matches!(frames[3].kind, IpcMessageKind::Heartbeat));
+        assert_eq!(next_fetch_id, 44);
     }
 }
