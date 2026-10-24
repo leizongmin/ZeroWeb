@@ -750,6 +750,13 @@ fn render_draw_order(
 
     // 源层与背景层合成（P2-7）
     if let Some(src) = blend_src {
+        // R5266：blend 标记之后、全部 blend rect 之外的图元（后续兄弟内容）按
+        // src-over 回贴主帧（css-compositing-2：混合只作用于元素自身子树组）。
+        // kill-switch `ZW_BLEND_SIBLING_RECOVER=0` 回退旧行为（rect 外滞留源缓冲）。
+        if std::env::var("ZW_BLEND_SIBLING_RECOVER").as_deref() != Ok("0") {
+            let rects: Vec<crate::geometry::Rect> = blend_list.iter().map(|b| b.rect).collect();
+            effects::composite_outside_blend_rects(fb, &src, &rects, scale);
+        }
         for blend in blend_list {
             effects::composite_blend(fb, &src, &blend, scale);
         }

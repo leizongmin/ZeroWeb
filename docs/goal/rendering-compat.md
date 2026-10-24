@@ -9,6 +9,15 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5266 实现轮（clip:text slice 2 评估转向——mix-blend-mode 后继吞没修复，stacking-002 9.38→0.19% 转绿，corpus FIXED=1 REGRESSED=0 净 +1）**（2026-10-25）
+>
+> - **评估转向**（R5265 下一步①前提被取证推翻）：stacking-context-child-002（9.38%）真根因**不是 mask 管线**——glyph 探针证 8 行 80 字形全部已染绿（恒色链已达 SC 子树）；harness 分带（TEST 绿 y[8,187]=3 div vs REF y[8,427]=8 div）+ pair 二分（t1/t2+t4 双行齐、t3(mix-blend-mode:lighten)+t4 只剩 t3）+ 纯色块最小化（图元在 draw_order 而落图丢失）→ 根因 = render_draw_order P2-7：`DrawOp::BlendMode` 标记后**全部后继图元**滞留离屏源缓冲、仅 blend rect 内合成——rect 外后继兄弟永不落地。chromium 活体真值（headless + Ahem @font-face）：002 全页 14 行全绿、t3 行混合无操作（父 bg-clip:text 绿在子组外）——我方标记后置自身子树同样不参与混合**意外同色**，9.38% 全额 = 吞没。
+> - **实现**：`composite_outside_blend_rects`（cpu/effects.rs）——blend rect 并集掩码、源缓冲 rect 外 A>0 像素回贴主帧（写入方 A=255 硬编码 ⇒ 覆盖 ≡ src-over，回贴序 = 源内容全晚于主帧 ⇒ OVER 序正确）；`render_draw_order` 合成尾调用，kill-switch `ZW_BLEND_SIBLING_RECOVER=0`。语义依据 css-compositing-2 §mix-blend-mode：混合只作用于元素自身子树组。
+> - **切片边界**（记录不立专项）：标记后落在 blend rect **内**的后继内容仍并入该 blend 合成（子树组归属须 push/pop 双标记模型，RFC slice 2 域）；blend 元素自身子树实际不参与混合（标记后置现状，恒色染色近似域意外正确，真分组归 mask 管线 RFC）。
+> - **clip-text 族余案重定性**：background-clip-text-and-blend-mode 13.27% = box1 固色**层间混合**缺口（`bg_clip_text_solid_color` 未按 background-blend-mode 合成 image+color 层，轻端可切片）+ box2/3 逐层 clip 模型（mask slice 3 域）；on-body-scroll 3.98%（slice 3）、table-cell 0.28%、descendants 1.07%（float+br 布局域）维持。
+> - **验证**：新锚 1（render-foundation cpu/tests.rs：[Fill 红, BlendMode, Fill 蓝] 直渲——蓝块须落地 + rect 内 backdrop 不动）；render-foundation lib 728P/0F；目标案 **9.38→0.19% ✓**；corpus 16,590 全量 A/B（vs /tmp/r5265_full.txt，本轮 /tmp/r5266_full.txt）**FIXED=1 REGRESSED=0 同态漂移 0，净 15699→15700**；fmt 0 diff + clippy -D warnings 0；make test exit=0（82 套件 22,797P/0F）、make reftest **716/716**、product-smoke exit=0 struct PASS（0 issues）；bench-gate 定向 zero-render-foundation 三跑各判不同 wall 指标 FAIL（morning-wall→raster_1500_fills→medium-wall 互斥 = 并行流负载噪声；结构论证：恢复路径仅 blend_src 非空可达，bench 场景/morning-work 页零 blend 图元；隔离 criterion 实测 raster_1500_fills_1080p **4.47ms ≤ 基线 4.61ms**——无真实回归，不动基线）。证据：[r5266](rendering-compat/evidence/r5266-blend-sibling-swallow-2026-10-25.md)。
+> - **下一步**：R5267 ① background-clip-text-and-blend-mode box1 固色层间混合切片评估（`bg_clip_text_solid_color` 按 background-blend-mode 合成恒色层，判据 = box1 cyan 文本域收敛）② ::selection 后代-only 形放门评估（顺延）③ collapse 相位间插忠实度延伸评估（非 plain-block 子树 App E 摊平，边界案形勘察先行）④ harness 并行 flake 定性维持 ⑤ 跨流碰头维持 ⑥ 深结构域维持不动。
+
 > **▶ R5265 实现轮（collapse 带 z 序相位间插落地——paint-phase-002 2.08→0.00% 转绿双判据满分收口，corpus FIXED=1 REGRESSED=0 净 +1）**（2026-10-24）
 >
 > - **择案与切片**：R5264 挂账「带 z 序相位间插」本轮实施。Blink `kCollapsedTableBorders`（CSS2.1 App E）语义「后代块背景 < 带 < inline 内容」以 **cell 子树两遍 sweep** 落地：sweep A（带前）沿 plain-block in-flow 链（Block/Flow/FlowRoot/ListItem）只绘 deco 段 → 带补发射（树盒锚，TableCell 非 inline）→ 自身内容相位（4/4b/5/5b3 抽为 `paint_inline_content_phase` 重定位带后）→ sweep B（plain-block 以 ContentSweep 抑制装饰补文本/子树，inline/atomic/浮动/SC 整体常规 = 既有 z 序）。

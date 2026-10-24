@@ -717,6 +717,54 @@ pub fn composite_blend(fb: &mut FrameBuffer, src: &FrameBuffer, blend: &BlendMod
     }
 }
 
+/// R5266：把源缓冲中落在**全部** blend rect 之外的已绘制像素按 src-over 回贴主帧。
+///
+/// css-compositing-2 §mix-blend-mode：混合只作用于元素自身子树组；标记之后的
+/// 后续兄弟内容正常绘制。旧 render_draw_order 把标记之后的全部图元滞留源缓冲、
+/// 仅在 blend rect 内合成——rect 外的后续内容（兄弟 div 等）永不落地＝被
+/// mix-blend-mode 元素「吞没」（paint-phase 域 clip-text-stacking-context-child-002
+/// 取证：t3 blend 行之后的 t4-t8 整体消失）。
+///
+/// 源缓冲写入方按不透明底语义硬编码 A=255（P2-7 现状），未写区域 A=0——
+/// 以 A>0 判「已绘制」，已绘制像素不透明 ⇒ 直接覆盖等价 src-over。
+/// kill-switch `ZW_BLEND_SIBLING_RECOVER=0` 回退旧行为。
+pub fn composite_outside_blend_rects(
+    fb: &mut FrameBuffer,
+    src: &FrameBuffer,
+    blend_rects: &[crate::geometry::Rect],
+    scale: f32,
+) {
+    if blend_rects.is_empty() {
+        return;
+    }
+    let w = fb.width;
+    let h = fb.height;
+    // 覆盖掩码（物理像素）＝ blend rect 并集；rect 外才回贴
+    let mut covered = vec![false; w as usize * h as usize];
+    for rect in blend_rects {
+        let left = (rect.left() * scale).floor().max(0.0) as u32;
+        let top = (rect.top() * scale).floor().max(0.0) as u32;
+        let right = (rect.right() * scale).ceil().min(w as f32) as u32;
+        let bottom = (rect.bottom() * scale).ceil().min(h as f32) as u32;
+        for y in top..bottom {
+            let row = y as usize * w as usize;
+            for x in left..right {
+                covered[row + x as usize] = true;
+            }
+        }
+    }
+    for y in 0..h {
+        let row = y as usize * w as usize;
+        for x in 0..w as usize {
+            let i = (row + x) * 4;
+            if covered[row + x] || src.data[i + 3] == 0 {
+                continue;
+            }
+            fb.data[i..i + 4].copy_from_slice(&src.data[i..i + 4]);
+        }
+    }
+}
+
 /// 单个像素的 CSS 混合（RGB 通道按模式公式，alpha 走 src-over 合成；
 /// CSS Compositing-1 §5.1 B(Cb,Cs) + §5.2 simple alpha compositing）。
 pub fn blend_rgba(src: [u8; 4], dst: [u8; 4], mode: BlendMode) -> [u8; 4] {
