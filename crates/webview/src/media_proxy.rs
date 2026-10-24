@@ -1,4 +1,4 @@
-//! 媒体宿主进程代理（`media-process` feature 门控；方案 C C1 骨架）。
+//! 媒体宿主进程代理（`media-process` feature 门控；方案 C C2 客户端面）。
 //!
 //! webview/renderer 侧的媒体 host 分发面（IF-001 会话与生命周期）：
 //! - 懒惰 spawn：首个媒体源登记时启动 `zero-media-host`（image_decoder.rs:211 先例）；
@@ -9,23 +9,26 @@
 //!   生命周期内不重试、**不内联回落**——隔离边界不可绕过，image_decoder SPAWN_FAILED
 //!   先例语义镜像）；host 回复的 `MediaError`（配额/播放错误）为播放级错误面，不置
 //!   永久失败（host 进程仍健康）。
+//! - 事件面（C2）：[`MediaHostClient::try_recv_event`] 非阻塞排空 host 自发推送
+//!   （状态/帧/元数据/错误）——渲染泵被动消费「排空待决帧队列」的取数口（DESIGN
+//!   §10 push 供数）；未连接时不触发懒 spawn（无 host 即无事件）。
 //!
 //! 读路径：后台线程持 stdout 只读传输（`PipeTransport` 的 `try_recv` 不支持非阻塞，
-//! 线程化收信是 C2 泵被动消费「排空待决帧队列」的前置），主线程持 stdin 只写传输；
-//! 等待特定响应期间非匹配消息进独立 pending 队列（等待退出后按序恢复，防自旋丢信）。
+//! 线程化收信是泵被动消费的前置），主线程持 stdin 只写传输；等待特定响应期间非匹配
+//! 消息进独立 pending 队列（等待退出后按序恢复，防自旋丢信）。
 
 use std::collections::VecDeque;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
-use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, TryRecvError, channel};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use zero_protocol::media::{
     MEDIA_PROTOCOL_VERSION, MediaDataAckParams, MediaDataChunkParams, MediaErrorCode, MediaErrorParams,
-    MediaPlayParams, MediaReadyParams, MediaRegisterSourceParams, MediaReleaseSourceParams, MediaSeekParams,
-    MediaSeekResultParams, MediaSourceReadyParams,
+    MediaFrameParams, MediaPlayParams, MediaReadyParams, MediaRegisterSourceParams, MediaReleaseSourceParams,
+    MediaSeekParams, MediaSeekResultParams, MediaSourceReadyParams, MediaStateUpdateParams,
 };
 use zero_protocol::message::{IpcMessage, IpcMessageKind};
 use zero_protocol::transport::PipeTransport;
@@ -50,6 +53,20 @@ impl MediaHostError {
             message: message.into(),
         }
     }
+}
+
+/// host 自发推送事件（[`MediaHostClient::try_recv_event`] 消费面；非请求响应）。
+#[derive(Debug)]
+pub enum MediaHostEvent {
+    /// 状态/时钟推送（DC-2：epoch 过期数据丢弃归镜像面）。
+    State(MediaStateUpdateParams),
+    /// 解码帧（内联 `rgba`；shm 传输面归后续切片）。
+    Frame(MediaFrameParams),
+    /// 元数据推送（play 建解码器后的 `SourceReady` 真值，id 0）。
+    SourceReady(MediaSourceReadyParams),
+    /// 错误推送（播放级，不置永久失败——IF-006 边界；含先前等待超时的请求级
+    /// 错误补投）。
+    Error(MediaErrorParams),
 }
 
 impl std::fmt::Display for MediaHostError {
@@ -442,6 +459,29 @@ impl MediaHostClient {
         })
     }
 
+    /// 非阻塞排空 host 推送面（C2 泵取数口，DESIGN §10 push 供数）。
+    ///
+    /// 暂存队列与入站通道按到达序合并，首个推送面消息作为 [`MediaHostEvent`]
+    /// 返回；响应面消息留队供 [`Self::seek`] 等请求的 `wait_for` 配对。未连接
+    /// （含已 shutdown）返回 `Ok(None)`——不触发懒 spawn（spawn 归请求面，无
+    /// host 即无事件）。传输失效置永久错误面（IF-006；C3 起换重启面）。
+    pub fn try_recv_event(&mut self) -> Result<Option<MediaHostEvent>, MediaHostError> {
+        if self.failed {
+            return Err(MediaHostError::internal("media-host 永久错误面（先前失败短路）"));
+        }
+        let Some(conn) = self.connection.as_ref() else {
+            return Ok(None);
+        };
+        match drain_host_event(&conn.inbound, &mut self.pending) {
+            Ok(event) => Ok(event),
+            Err(error) => {
+                self.failed = true;
+                tracing::warn!("media-host 事件面传输失败（转永久错误面）: {error}");
+                Err(MediaHostError::internal(error))
+            }
+        }
+    }
+
     /// 优雅关闭：发 `MediaShutdown` 后收尾子进程与读线程（IF-001 关闭面）。
     pub fn shutdown(&mut self) -> Result<(), MediaHostError> {
         if self.failed {
@@ -456,6 +496,55 @@ impl MediaHostClient {
             drop(conn);
         }
         Ok(())
+    }
+}
+
+/// 排空推送面：暂存与入站通道按到达序合并，返回首个推送面事件，其余按序回队。
+///
+/// 传输失效（读线程报错/已退出）为 `Err`——调用方置永久错误面；已收消息随
+/// 连接弃置（不再有消费面）。
+fn drain_host_event(
+    inbound: &Receiver<Result<IpcMessage, String>>,
+    pending: &mut VecDeque<IpcMessage>,
+) -> Result<Option<MediaHostEvent>, String> {
+    let mut queued: Vec<IpcMessage> = pending.drain(..).collect();
+    loop {
+        match inbound.try_recv() {
+            Ok(Ok(message)) => queued.push(message),
+            Ok(Err(error)) => return Err(format!("media-host 传输失效: {error}")),
+            Err(TryRecvError::Empty) => break,
+            Err(TryRecvError::Disconnected) => return Err("media-host 读线程已退出".to_string()),
+        }
+    }
+    let mut rest = VecDeque::with_capacity(queued.len());
+    let mut event = None;
+    for message in queued {
+        match event_from_message(&message) {
+            Some(candidate) if event.is_none() => event = Some(candidate),
+            _ => {
+                tracing::debug!("media-proxy: 非推送消息留队（等待请求配对）: {:?}", message.kind);
+                rest.push_back(message);
+            }
+        }
+    }
+    *pending = rest;
+    Ok(event)
+}
+
+/// 推送面分类：状态/帧/元数据推送与播放级错误为事件；请求响应面（`DataAck`/
+/// `SeekResult`/带 id 的 `SourceReady`/`Ready`）返回 `None` 留队（wait_for 配对）。
+fn event_from_message(message: &IpcMessage) -> Option<MediaHostEvent> {
+    match &message.kind {
+        IpcMessageKind::MediaStateUpdate(params) => Some(MediaHostEvent::State(*params)),
+        IpcMessageKind::MediaFrame(params) => Some(MediaHostEvent::Frame(params.clone())),
+        // MediaError 请求响应（先前等待超时后的补投）与自发推送统一走事件面——
+        // 播放级错误不置永久失败（IF-006 边界，host 进程仍健康）。
+        IpcMessageKind::MediaError(params) => Some(MediaHostEvent::Error(params.clone())),
+        // id 0 = 非请求响应的元数据推送；带 id 的为 register 响应（留队配对）。
+        IpcMessageKind::MediaSourceReady(params) if message.id == 0 => {
+            Some(MediaHostEvent::SourceReady(params.clone()))
+        }
+        _ => None,
     }
 }
 
@@ -478,6 +567,7 @@ impl Drop for MediaHostClient {
 mod tests {
     use super::*;
     use zero_protocol::is_disconnected_channel_message;
+    use zero_protocol::media::MediaPlaybackState;
 
     /// 握手校验：版本不符按 spawn 失败处理（IF-001）。
     #[test]
@@ -509,5 +599,132 @@ mod tests {
             "读取帧头失败: failed to fill whole buffer"
         ));
         assert!(!is_disconnected_channel_message("帧过大: 999 字节"));
+    }
+
+    fn state_message(id: u64, media_time_ms: u64) -> IpcMessage {
+        IpcMessage {
+            id,
+            kind: IpcMessageKind::MediaStateUpdate(MediaStateUpdateParams {
+                source_key: 1,
+                epoch: 0,
+                state: MediaPlaybackState::Playing { media_time_ms },
+            }),
+        }
+    }
+
+    /// 未连接客户端：事件面返回 `Ok(None)` 且不触发懒 spawn（spawn 归请求面）。
+    #[test]
+    fn try_recv_event_without_connection_is_none_without_spawn() {
+        let mut client = MediaHostClient::new();
+        assert!(matches!(client.try_recv_event(), Ok(None)));
+        assert!(!client.is_failed());
+    }
+
+    /// 事件面分类：状态/帧推送出队为事件；响应面（DataAck）留队保序供配对。
+    #[test]
+    fn drain_classifies_pushes_and_keeps_responses_in_order() {
+        let (tx, rx) = channel();
+        let _ = tx.send(Ok(IpcMessage {
+            id: 5,
+            kind: IpcMessageKind::MediaDataAck(MediaDataAckParams {
+                source_key: 1,
+                last_seq: 2,
+            }),
+        }));
+        let _ = tx.send(Ok(state_message(0, 12)));
+        let _ = tx.send(Ok(IpcMessage {
+            id: 0,
+            kind: IpcMessageKind::MediaFrame(MediaFrameParams {
+                source_key: 1,
+                epoch: 0,
+                pts_ms: 0,
+                key: true,
+                width: 2,
+                height: 2,
+                rgba: vec![0; 16],
+                shm_name: None,
+            }),
+        }));
+
+        let mut pending = VecDeque::new();
+        match drain_host_event(&rx, &mut pending).expect("drain ok") {
+            Some(MediaHostEvent::State(s)) => {
+                assert!(matches!(s.state, MediaPlaybackState::Playing { media_time_ms: 12 }));
+            }
+            other => panic!("expected State event, got {other:?}"),
+        }
+        // 排空至首个事件为止：DataAck（响应面）与其后的帧推送按到达序回队。
+        assert_eq!(pending.len(), 2, "DataAck 与 Frame 按序回队");
+        assert_eq!(pending.front().unwrap().id, 5);
+        match drain_host_event(&rx, &mut pending).expect("drain ok") {
+            Some(MediaHostEvent::Frame(frame)) => {
+                assert_eq!((frame.source_key, frame.epoch, frame.pts_ms), (1, 0, 0));
+            }
+            other => panic!("expected Frame event, got {other:?}"),
+        }
+        assert!(drain_host_event(&rx, &mut pending).expect("drain ok").is_none());
+        assert_eq!(pending.len(), 1, "DataAck 仍在队");
+    }
+
+    /// SourceReady 按信封 id 分流：id 0 = 元数据推送（事件），带 id = register
+    /// 响应（留队）；播放级错误推送为事件（不置永久失败）。
+    #[test]
+    fn source_ready_splits_by_envelope_id_and_error_is_event() {
+        let (tx, rx) = channel();
+        let _ = tx.send(Ok(IpcMessage {
+            id: 7,
+            kind: IpcMessageKind::MediaSourceReady(MediaSourceReadyParams {
+                source_key: 1,
+                duration_ms: None,
+                width: None,
+                height: None,
+            }),
+        }));
+        let _ = tx.send(Ok(IpcMessage {
+            id: 0,
+            kind: IpcMessageKind::MediaSourceReady(MediaSourceReadyParams {
+                source_key: 1,
+                duration_ms: Some(250),
+                width: Some(2),
+                height: Some(2),
+            }),
+        }));
+        let _ = tx.send(Ok(IpcMessage {
+            id: 0,
+            kind: IpcMessageKind::MediaError(MediaErrorParams {
+                source_key: 1,
+                epoch: 0,
+                code: MediaErrorCode::DecodeFailure,
+                message: "bad frame".into(),
+            }),
+        }));
+
+        let mut pending = VecDeque::new();
+        assert!(matches!(
+            drain_host_event(&rx, &mut pending).expect("drain ok"),
+            Some(MediaHostEvent::SourceReady(_))
+        ));
+        match drain_host_event(&rx, &mut pending).expect("drain ok") {
+            Some(MediaHostEvent::Error(err)) => {
+                assert_eq!(err.code, MediaErrorCode::DecodeFailure);
+            }
+            other => panic!("expected Error event, got {other:?}"),
+        }
+        assert!(drain_host_event(&rx, &mut pending).expect("drain ok").is_none());
+        assert_eq!(pending.len(), 1, "带 id 的 SourceReady 留队（register 响应）");
+        assert_eq!(pending.front().unwrap().id, 7);
+    }
+
+    /// 传输失效（读线程报错/退出）为 `Err`——调用方据此置永久错误面（IF-006）。
+    #[test]
+    fn transport_failure_surfaces_as_err() {
+        let (tx, rx) = channel();
+        let _ = tx.send(Err("pipe broken".into()));
+        let mut pending = VecDeque::new();
+        assert!(drain_host_event(&rx, &mut pending).is_err());
+
+        let (tx, rx) = channel();
+        drop(tx);
+        assert!(drain_host_event(&rx, &mut pending).is_err(), "Disconnected 亦为 Err");
     }
 }
