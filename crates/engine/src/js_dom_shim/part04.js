@@ -1742,6 +1742,21 @@
           if (prop === 'relList'
               && (_r374isHtmlNs ? (_r374clTag === 'a' || _r374clTag === 'area' || _r374clTag === 'link')
                                : ((_r374clNs === 'http://www.w3.org/2000/svg' || _r374clNs === 'http://www.w3.org/1998/Math/MathML') && _r374clTag === 'a'))) {
+            // R5271：link.relList supported tokens（spec「limited to only known values」）——
+            // link types 表中适用 link 元素的关键字全集，supports() 精确匹配（大小写敏感，
+            // DOMTokenList 语义；WPT link-rellist `supports("stylesheet")` 期望 true）。
+            // https://html.spec.whatwg.org/multipage/links.html#linkTypes
+            // FIXME: a/area.relList 各有自己的适用子集（bookmark/external/nofollow/
+            // noopener/noreferrer/opener/tag 等），corpus 未钉，暂走无表路径（supports
+            // 恒 false）。
+            if (_r374isHtmlNs && _r374clTag === 'link') {
+              return _classListProxy(sel, handle, 'rel', [
+                'alternate', 'author', 'canonical', 'dns-prefetch', 'expect', 'help',
+                'icon', 'license', 'manifest', 'modulepreload', 'next', 'pingback',
+                'preconnect', 'prefetch', 'preload', 'prev', 'privacy-policy',
+                'search', 'stylesheet', 'terms-of-service',
+              ]);
+            }
             return _classListProxy(sel, handle, 'rel');
           }
           if (prop === 'sandbox' && _r374isHtmlNs && _r374clTag === 'iframe') {
@@ -10649,6 +10664,19 @@
             var _p5asLo = _zwASCIILower(String(_p5coRaw));
             return _ZW_LINK_AS_KEYWORDS.hasOwnProperty(_p5asLo) ? _p5asLo : '';
           }
+        }
+        // R5271：link.fetchPriority enumerated reflection（spec fetchpriority content
+        // attribute「limited to only known values」——missing value default 与 invalid
+        // value default 均 auto state：合法关键字 ascii 小写返 canonical，其余/缺省
+        // → 'auto'；WPT attr-link-fetchpriority 全案）。
+        // https://html.spec.whatwg.org/multipage/semantics.html#attr-link-fetchpriority
+        // FIXME: IDL setter（合法值反射写内容属性）corpus 未钉，暂缺（读侧覆盖）。
+        if (prop === 'fetchPriority' && _realTag(sel, handle) === 'LINK') {
+          var _p5fprRaw = handle
+            ? __zw_get_attr_handle(handle, 'fetchpriority')
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'fetchpriority') : __zw_get_attr(sel, 'fetchpriority'));
+          var _p5fprLo = _zwASCIILower(String(_p5fprRaw == null ? '' : _p5fprRaw));
+          return (_p5fprLo === 'high' || _p5fprLo === 'low' || _p5fprLo === 'auto') ? _p5fprLo : 'auto';
         }
         // R5009 片 d（M4 片 d）：nonce「string」反射（link/style——nonce-hiding 面：
         // IDL set **不写内容属性**（corpus 'IDL set to X' getAttribute 期望 previous

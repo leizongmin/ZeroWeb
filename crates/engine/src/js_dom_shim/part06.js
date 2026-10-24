@@ -1865,7 +1865,44 @@
     rule.style = _makeRuleStyle(rule, flushFn);
     return rule;
   }
+  // R5271：`element.sheet` [SameObject] 缓存——CSSOM getter 每次返回同一对象（旧实现
+  // 每读重建，跨读 identity 断言必炸）。失效模型按 corpus the-style-element/
+  // mutations.window.js 钉定：直接子指纹（nodeType + data/nodeValue 串接）变更
+  //（comment 插入/数据变更/normalize/移除等**有效**子变更 → CSSOM remove + create
+  // style sheet，换新对象）；零子插入（空 DocumentFragment appendChild）指纹不变
+  // → 身份保持。外部合成条目（owner=null）不缓存（externalWire 逐次可变）。
+  var _zwSheetSameObj = typeof WeakMap === 'function' ? new WeakMap() : null;
+
   function _makeStyleSheet(owner, externalWire) {
+    if (owner != null && _zwSheetSameObj) {
+      // R5271b：元素不在文档 → sheet 返 null（spec LinkStyle：HTMLStyleElement/
+      // HTMLLinkElement 的 sheet 仅在文档内存在——LinkStyle.html「not in a Document」
+      // 案钉定 createElement 未挂载阶段返 null；CSS-in-JS 惯用时序先 append 后读不受
+      // 影响）。守卫兜底 true（_zwIsConnected 异常时不引入行为差）。
+      var _conn5271 = true;
+      try {
+        if (typeof _zwIsConnected === 'function') _conn5271 = _zwIsConnected(owner.__zwSelector, owner.__zwHandle);
+      } catch (_conn5271e) { _conn5271 = true; }
+      if (!_conn5271) return null;
+      var _fp5271 = '';
+      try {
+        var _fp5271Kids = owner.childNodes;
+        for (var _fp5271i = 0; _fp5271i < _fp5271Kids.length; _fp5271i++) {
+          var _fp5271k = _fp5271Kids[_fp5271i];
+          if (!_fp5271k) continue;
+          _fp5271 += ':' + _fp5271k.nodeType + ':' + (_fp5271k.data != null ? _fp5271k.data : (_fp5271k.nodeValue != null ? _fp5271k.nodeValue : ''));
+        }
+      } catch (_fp5271e) {}
+      var _fp5271hit = _zwSheetSameObj.get(owner);
+      if (_fp5271hit && _fp5271hit.fp === _fp5271) return _fp5271hit.ss;
+      var _ss5271 = _makeSheetBuild(owner, externalWire);
+      _zwSheetSameObj.set(owner, { fp: _fp5271, ss: _ss5271 });
+      return _ss5271;
+    }
+    return _makeSheetBuild(owner, externalWire);
+  }
+
+  function _makeSheetBuild(owner, externalWire) {
     var sel = owner && owner.__zwSelector;
     // js-dom M4 R113：handle-based owner（createElement('style') 后 append——CSS-in-JS /
     // WPT prefixed-animation 形态）。初始规则经 `__zw_style_rules_handle`（host 从 mutation
@@ -1981,6 +2018,14 @@
         try { this.deleteRule(index); } catch (_e) { /* deleteRule 失败 best-effort */ }
       }
     };
+    // R5271b：brand 进 CSSOM 原型链（CSSStyleSheet extends StyleSheet）——
+    // `style.sheet instanceof StyleSheet` 断言可达（LinkStyle.html）。自有成员
+    //（cssRules/insertRule/…）不受影响（own props 遮蔽原型）。
+    try {
+      if (globalThis.CSSStyleSheet && globalThis.CSSStyleSheet.prototype) {
+        Object.setPrototypeOf(ss, globalThis.CSSStyleSheet.prototype);
+      }
+    } catch (_eBrd) {}
     return ss;
   }
 
@@ -2147,6 +2192,18 @@
   };
   // spec：CSSStyleSheet 不可函数调用（必须 new）。
   try { Object.defineProperty(globalThis.CSSStyleSheet, 'prototype', { value: globalThis.CSSStyleSheet.prototype, writable: false, enumerable: false, configurable: false }); } catch (_eProto) {}
+  // R5271b：StyleSheet 基接口——CSSOM 链 CSSStyleSheet extends StyleSheet；
+  // `style.sheet instanceof StyleSheet`（LinkStyle.html「must return StyleSheet
+  // object」案钉定）。纯 brand 面：无自有成员（spec StyleSheet 的 type/ownerNode
+  // 等由 sheet 对象自身属性承载）。
+  if (!globalThis.StyleSheet) {
+    globalThis.StyleSheet = function StyleSheet() {
+      throw new globalThis.TypeError("Illegal constructor: StyleSheet is not constructable");
+    };
+    globalThis.StyleSheet.prototype = {};
+    try { Object.defineProperty(globalThis.StyleSheet, 'prototype', { value: globalThis.StyleSheet.prototype, writable: false, enumerable: false, configurable: false }); } catch (_eSSp) {}
+    try { Object.setPrototypeOf(globalThis.CSSStyleSheet.prototype, globalThis.StyleSheet.prototype); } catch (_eSSc) {}
+  }
 
   // DocumentOrShadowRoot.adoptedStyleSheets：ShadowRoot.prototype 版（document 版在
   // 下方 document 字面量 R2808 styleSheets 相邻处，同闭包变量）。

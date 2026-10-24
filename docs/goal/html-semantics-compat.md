@@ -2,9 +2,34 @@
 
 **版本**: v2.0
 **日期**: 2026-10-24（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 63 收口（document-metadata 域 base 族 R5270，域 **43P/63F/18T → 52P/54F/18T** GAIN 9 / REG 0），下一步 meta color-scheme 10F 归属核对 / link+style 事件族分诊；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 64 收口（document-metadata 分诊轮：color-scheme 归渲染流 + corpus helper 修复 + link/style 窄面 R5271，域 **52P/54F/18T → 58P/60F/18T** GAIN 6 / REG 0，含 corpus 步进 +12F 归因），下一步 http-equiv 2F 分诊 / text-level-semantics 开片；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-24 M2 切片 63 收口，document-metadata base 族轮）**：
+> **▶ 当前状态（2026-10-24 M2 切片 64 收口，document-metadata 分诊 + link/style 窄面轮）**：
+> 三件事。**① color-scheme 归属核对（定档渲染流）**：10F 死因 =
+> corpus 打包缺口（缺 support/compute-root-color-scheme.js，上游有）
+> ——按「打包缺口本地补」先例恢复（gitignored 本地数据，**步进
+> 52P/54F/18T → 52P/66F/18T** +12F 归因入账）；断言面 23F 塌缩单根
+>（inline CanvasText 系统色 × color-scheme 解析 + colorScheme IDL +
+> root 应用色）= applied-color → 渲染流记账回流。**② link/style 事件
+> 族分诊（35F+18T 四类）**：资源管道 ~13F + applied CSSOM ~13F + CSP
+> tentative 底座 7F+5T + parse-world 底座 1F 挂账；shim 窄面 7F 本轮
+> 全收。**③ 修复面（R5271）**：①link.fetchPriority 枚举反射（合法
+> ascii 小写、missing/invalid → auto，2F）；②link.relList supported
+> tokens（link types 表 20 关键字，supports() 1F）；③style.sheet
+> [SameObject] WeakMap 缓存 + 直接子指纹失效（有效子变更换新对象 /
+> 空 fragment 身份保持）+ connected 门（不在文档返 null）+
+> StyleSheet 基接口 brand（instanceof 可达，LinkStyle 2F）。**验证**：
+> 域 **58P/60F/18T** + tabular 130P/4F（终版二进制）+ interactive
+> 439P/44F + lib **3458P/0F**（CSSOM 契约零回归）。账本见
+> [evidence/2026-10-24-m2s64-metadata-triage-linkstyle.md](html-semantics-compat/evidence/2026-10-24-m2s64-metadata-triage-linkstyle.md)。
+> **下一步**：http-equiv-and-name 2F 分诊（本域 shim 面最后未分诊项）；
+> 域收口后 text-level-semantics 开片（M1 基线 21P/13F）。余账全归档：
+> color-scheme 23F + 管道/应用面 ~27F 渲染流、CSP tentative + parse-world
+> 底座。
+> **切片间隙**：本轮 part04/part06 JS shim；下一挂账 http-equiv 分诊
+> 未定，间隙开放，开工前查 oracle master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 63 收口，document-metadata base 族轮）**：
 > document-metadata 第二实施切片：**43P/63F/18T → 52P/54F/18T**
 >（GAIN 9 / REG 0），the-base-element 13/13 全绿。**修复面
 >（R5270 三刀）**：①`_zwDocBaseURL` scheme 排除——spec 文档基 URL
