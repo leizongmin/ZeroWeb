@@ -7,7 +7,7 @@
 //! 键契约：`registry_key(abs_src)`——与 painter/async_load settle 注入
 //! 同键，settle 时注册表先收到解码字节（`register_source`），play 即建 player。
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic;
 use zero_engine::image_resource_key;
 use zero_media::{
@@ -637,6 +637,11 @@ pub struct VideoPlayerRegistry {
 #[cfg(feature = "decode-h264")]
 const MSE_FEED_MAX_BYTES: usize = 256 * 1024 * 1024;
 
+/// `sources + av_sources` 源字节总量封顶（A3 Fix 源驻留封顶，DESIGN §8.4——M1 §5
+/// 权限表缺口：无界驻留 renderer 堆放大 OOM 面）。量级对齐
+/// [`MSE_FEED_MAX_BYTES`]；超限准入时驱逐非在播 LRU，仍超拒绝登记。
+const MEDIA_SOURCE_MAX_BYTES: usize = 256 * 1024 * 1024;
+
 impl VideoPlayerRegistry {
     /// 新建空注册表。
     pub fn new() -> Self {
@@ -644,8 +649,92 @@ impl VideoPlayerRegistry {
     }
 
     /// settle 时登记源字节（键 = painter 同款资源哈希；重复 settle 幂等覆盖）。
+    /// A3 封顶：准入失败（总量超 [`MEDIA_SOURCE_MAX_BYTES`] 且无可驱逐非在播源）
+    /// → 不登记，后续 play 源查找失败走既有错误面。
     pub fn register_source(&mut self, abs_src: &str, bytes: Vec<u8>) {
-        self.sources.insert(registry_key(abs_src), bytes);
+        let key = registry_key(abs_src);
+        if !self.admit_source_bytes(key, bytes.len()) {
+            return;
+        }
+        self.sources.insert(key, bytes);
+    }
+
+    /// 源字节总量封顶准入（A3 Fix 源驻留封顶，DESIGN §8.4）：`sources +
+    /// av_sources` 总字节上限 [`MEDIA_SOURCE_MAX_BYTES`]（对齐 MSE feed 配额量级；
+    /// M1 §5 权限表缺口——无界驻留 renderer 堆放大 OOM 面）。`incoming_key` 的
+    /// 既有条目按替换核算（幂等重登记不双计）。超限先驱逐**非在播**的 `sources`
+    /// 条目（HashMap 迭代序任一——svg_rasterized FIFO 同先例的缓存语义），仍超
+    /// 再驱逐无存活 player 的 `av_sources` 孤儿键（存活 player 的伴音源受 seek
+    /// 重建依赖保护）。驱逐后仍超 → false（调用方拒绝登记）。永不驱逐：在播
+    /// player/audio entry 的键。驱逐记 tracing。
+    fn admit_source_bytes(&mut self, incoming_key: u64, incoming: usize) -> bool {
+        self.admit_source_bytes_with_budget(incoming_key, incoming, MEDIA_SOURCE_MAX_BYTES)
+    }
+
+    /// [`Self::admit_source_bytes`] 的预算参数化形态（单测用小预算验证驱逐/拒绝面）。
+    fn admit_source_bytes_with_budget(&mut self, incoming_key: u64, incoming: usize, budget: usize) -> bool {
+        if incoming > budget {
+            return false;
+        }
+        let replaced = self
+            .sources
+            .get(&incoming_key)
+            .map(|b| b.len())
+            .or_else(|| self.av_sources.get(&incoming_key).map(|b| b.len()))
+            .unwrap_or(0);
+        let mut total: usize = self
+            .sources
+            .values()
+            .chain(self.av_sources.values())
+            .map(|b| b.len())
+            .sum::<usize>()
+            .saturating_sub(replaced);
+        if total + incoming <= budget {
+            return true;
+        }
+        let playing: HashSet<u64> = self
+            .players
+            .iter()
+            .filter(|(_, p)| p.is_playing())
+            .map(|(k, _)| *k)
+            .chain(self.audio_entries.iter().filter(|(_, e)| e.playing).map(|(k, _)| *k))
+            .chain(self.av_audio_entries.iter().filter(|(_, e)| e.playing).map(|(k, _)| *k))
+            .collect();
+        if total + incoming > budget {
+            let victims: Vec<u64> = self
+                .sources
+                .keys()
+                .filter(|k| **k != incoming_key && !playing.contains(k))
+                .copied()
+                .collect();
+            for v in victims {
+                if total + incoming <= budget {
+                    break;
+                }
+                if let Some(bytes) = self.sources.remove(&v) {
+                    total = total.saturating_sub(bytes.len());
+                    tracing::debug!(key = v, bytes = bytes.len(), "media source evicted (sources cap)");
+                }
+            }
+        }
+        if total + incoming > budget {
+            let victims: Vec<u64> = self
+                .av_sources
+                .keys()
+                .filter(|k| **k != incoming_key && !playing.contains(k) && !self.players.contains_key(k))
+                .copied()
+                .collect();
+            for v in victims {
+                if total + incoming <= budget {
+                    break;
+                }
+                if let Some(bytes) = self.av_sources.remove(&v) {
+                    total = total.saturating_sub(bytes.len());
+                    tracing::debug!(key = v, bytes = bytes.len(), "media source evicted (av_sources cap)");
+                }
+            }
+        }
+        total + incoming <= budget
     }
 
     /// 源字节是否已登记（幂等登记面——WPT runner 逐 tick 动态登记的重复调用守卫）。
@@ -688,6 +777,11 @@ impl VideoPlayerRegistry {
             },
         };
         // seek 重建解码器需要源字节——留存（与 video sources 面同键共享）。
+        // A3 封顶：准入失败不登记（shim 桥 play 找不到 entry 返 false 回落 headless，
+        // 与两解码面皆不识别同错误面）。
+        if !self.admit_source_bytes(key, bytes.len()) {
+            return;
+        }
         self.sources.insert(key, bytes);
         self.audio_entries.insert(key, AudioEntry::new(decoder));
     }
@@ -1866,6 +1960,67 @@ mod tests {
         assert_eq!(reg.mse_probe_dims("blob:x/absent"), None, "未注册键 → None");
     }
 
+    /// A3 源驻留封顶（DESIGN §8.4）：驱逐序——`sources` 非在播键先于
+    /// `av_sources` 键（后者有 seek 重建依赖）。
+    #[test]
+    fn registry_source_cap_evicts_sources_before_av_sources() {
+        let mut reg = VideoPlayerRegistry::new();
+        reg.sources.insert(1, vec![0u8; 40]);
+        reg.av_sources.insert(2, vec![0u8; 40]);
+        // 40+40+40 > 100 → 驱逐 sources 键 1（40）后 40+40 ≤ 100 即停。
+        assert!(reg.admit_source_bytes_with_budget(3, 40, 100));
+        assert!(!reg.sources.contains_key(&1), "sources 非在播键先被驱逐");
+        assert!(reg.av_sources.contains_key(&2), "av_sources 靠后驱逐");
+    }
+
+    /// A3 封顶替换核算与超预算拒绝：同键重登记不双计；单源超预算直接拒绝
+    ///（与既有条目多少无关）。
+    #[test]
+    fn registry_source_cap_replacement_accounting_and_refusal() {
+        let mut reg = VideoPlayerRegistry::new();
+        reg.sources.insert(7, vec![0u8; 60]);
+        // 替换核算：60+90-60 = 90 ≤ 100（不双计）。
+        assert!(reg.admit_source_bytes_with_budget(7, 90, 100));
+        // 单源超预算 → 拒绝。
+        assert!(!reg.admit_source_bytes_with_budget(8, 150, 100));
+        assert!(!reg.sources.contains_key(&8), "拒绝登记");
+    }
+
+    /// A3 封顶在播保护：在播 audio entry 的 sources 键不被驱逐，牺牲非在播键。
+    ///（预算参数化直测——`register_source` 走真实 256MB 常量，测试预算不可达。）
+    #[test]
+    fn registry_source_cap_protects_playing_entry_key() {
+        let mut reg = VideoPlayerRegistry::new();
+        let mp3 = fixture_bytes_named("sample-mp3.mp3");
+        reg.register_audio_source(MP3, mp3.clone());
+        assert!(reg.audio_play(MP3, 0), "音频 play 建在播 entry");
+        // 直改私有态逼近封顶：sources = {MP3: mp3, 0xE1: 10}，预算 mp3+10。
+        reg.sources.insert(0xE1, vec![0u8; 10]);
+        let budget = mp3.len() + 10;
+        let third = registry_key("https://example.com/media/third.webm");
+        // 10+5 超预算 10 → 驱逐 0xE1（10）后准入。
+        assert!(
+            reg.admit_source_bytes_with_budget(third, 5, budget),
+            "驱逐非在播键后准入"
+        );
+        assert!(!reg.sources.contains_key(&0xE1), "非在播键被驱逐");
+        assert!(reg.sources.contains_key(&registry_key(MP3)), "在播 entry 的源键受保护");
+    }
+
+    /// A3 封顶无牺牲面：仅剩在播键可驱逐时拒绝新登记（既有错误面，不抢占）。
+    #[test]
+    fn registry_source_cap_refuses_when_only_playing_victims() {
+        let mut reg = VideoPlayerRegistry::new();
+        let mp3 = fixture_bytes_named("sample-mp3.mp3");
+        reg.register_audio_source(MP3, mp3.clone());
+        assert!(reg.audio_play(MP3, 0));
+        let budget = mp3.len() + 5;
+        assert!(
+            !reg.admit_source_bytes_with_budget(registry_key("https://example.com/media/over.webm"), 10, budget),
+            "唯一牺牲候选在播 → 拒绝"
+        );
+        assert!(reg.contains_source(MP3), "在播键不因准入被驱逐");
+    }
 }
 
 /// `__zwVideoBridge` JS 门面脚本。native 回调（`__zw_video_*`/`__zw_ms_*`）由 sandbox
