@@ -65,6 +65,8 @@ mod r5265_collapse_band_phase_tests;
 mod r5267_bg_clip_text_layer_blend_tests;
 /// R5268 clip:text 逐层 clip（css-backgrounds-4 §background-clip:text）。
 mod r5268_bg_clip_text_per_layer_tests;
+/// R5269 inline owner 自持选区行高亮（css-pseudo-4 §highlight-cascading）。
+mod r5269_inline_owner_selection_tests;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;

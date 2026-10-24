@@ -3409,7 +3409,39 @@ impl super::Painter {
                     //（paint_text 热路径零闲置分配）。
                     let line_ranges: Vec<((NodeId, u32), usize, usize, f32, f32)> = if style.first_line_pseudo.is_some()
                         || sel_owned.is_some()
-                    {
+                        // R5269（css-pseudo-4 §highlight-cascading）：owner 自持选区
+                        //（inline 元素自身被 selectNodeContents 选中——文本经父块
+                        // paint_text 片段路径绘制，盒级 sel_owned 查不到）也需行分组。
+                        // 门 = 选区非空（product 零选区零扫描）+ 任一片段 owner 有记录。
+                        || (!self.text_selections.is_empty() && {
+                            let mut any = false;
+                            if use_stored {
+                                for f in stored_fragments.iter() {
+                                    let o = if doc.get(f.node_id).is_some_and(|n| matches!(n.kind, NodeKind::Text(_))) {
+                                        doc.parent_node(f.node_id).unwrap_or(f.node_id)
+                                    } else {
+                                        f.node_id
+                                    };
+                                    if self.text_selections.contains_key(&o) {
+                                        any = true;
+                                        break;
+                                    }
+                                }
+                            } else {
+                                for f in fragments.iter() {
+                                    let o = if doc.get(f.node_id).is_some_and(|n| matches!(n.kind, NodeKind::Text(_))) {
+                                        doc.parent_node(f.node_id).unwrap_or(f.node_id)
+                                    } else {
+                                        f.node_id
+                                    };
+                                    if self.text_selections.contains_key(&o) {
+                                        any = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            any
+                        }) {
                         // 活跃路径的 (node_id, 行盒顶, 片段文本, x, 宽) 序列（渲染序 ≈ 文档序）。
                         let active_frags: Vec<(NodeId, f32, &str, f32, f32)> = if use_stored {
                             stored_fragments
@@ -3568,6 +3600,47 @@ impl super::Painter {
                         }
                         if owner_is_text_control && any_line && all_selected && sel_bg.a > 0 {
                             sel_padbox_fill = Some(sel_bg);
+                        }
+                    }
+                    // R5269（css-pseudo-4 §highlight-cascading 起源元素独立级联——owner
+                    // 自持选区形）：inline 元素自身被选中（selectNodeContents(inline)，
+                    // active-selection-012 型）时其文本经父块 paint_text 片段路径绘制，
+                    // 盒级 sel_owned（盒/祖先链）查不到 owner 记录 → 盒级臂整关、整行
+                    // 零高亮。此臂按片段 owner 自身选区记录判定行选中，字形色按 owner
+                    // 自持 ::selection 级联；无自持伪样式的行跳过（无 UA 默认高亮维持
+                    // 既有挂账）。盒级臂已处理的盒自身行（sel_owned 命中且 owner==box_id）
+                    // 不重复。行完全落在 owner 选区内才着色（部分行高亮维持挂账）；
+                    // 竖排/RTL 同盒级臂维持挂账。
+                    // FIXME(R5270)：本臂暂只着字形色、不铺行高亮 fill——fill 需与 inline
+                    // 盒级背景同几何（逐 run 矩形 + inline_reported_rect 行盒顶）且经
+                    // R5086 式 splice 绘于元素背景之上；行级连体 fill（含词间隙、frag.y
+                    // 行顶）实测在 active-selection-012/011 铺出带外细条（011 局部
+                    // +0.31pp），几何/次序校准须与 inline bg 站同切片完成。
+                    if let Some(box_id) = box_node.node_id
+                        && !is_vertical
+                        && matches!(style.direction, zero_style_system::DirectionValue::Ltr)
+                        && !self.text_selections.is_empty()
+                    {
+                        for ((owner, ltb), line_start, line_end, _, _) in &line_ranges {
+                            if sel_owned.is_some() && *owner == box_id {
+                                continue;
+                            }
+                            let Some(&(sel_start, sel_end)) = self.text_selections.get(owner) else {
+                                continue;
+                            };
+                            if line_end <= line_start || !(sel_start <= *line_start && *line_end <= sel_end) {
+                                continue;
+                            }
+                            let Some(os) = styles.and_then(|st| st.get(owner)) else {
+                                continue;
+                            };
+                            let Some(p) = os.selection_pseudo.as_ref() else {
+                                continue;
+                            };
+                            sel_line_colors.insert(
+                                (*owner, *ltb),
+                                super::super::color::resolve_color_current(&p.color, &os.color),
+                            );
                         }
                     }
                     if let Some(sel_bg) = sel_padbox_fill {
