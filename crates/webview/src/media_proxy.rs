@@ -27,8 +27,9 @@ use std::time::{Duration, Instant};
 
 use zero_protocol::media::{
     MEDIA_PROTOCOL_VERSION, MediaDataAckParams, MediaDataChunkParams, MediaErrorCode, MediaErrorParams,
-    MediaFrameParams, MediaPlayParams, MediaReadyParams, MediaRegisterSourceParams, MediaReleaseSourceParams,
-    MediaSeekParams, MediaSeekResultParams, MediaSourceReadyParams, MediaStateUpdateParams,
+    MediaFrameParams, MediaPauseParams, MediaPlayParams, MediaReadyParams, MediaRegisterSourceParams,
+    MediaReleaseSourceParams, MediaSeekParams, MediaSeekResultParams, MediaSetLoopParams, MediaSourceReadyParams,
+    MediaStateUpdateParams,
 };
 use zero_protocol::message::{IpcMessage, IpcMessageKind};
 use zero_protocol::transport::PipeTransport;
@@ -404,8 +405,8 @@ impl MediaHostClient {
         })
     }
 
-    /// 起播/重播。C1 骨架 host 无解码内核 → `MediaError{HostInternal}` 错误面；
-    /// C2 起正常路径为 `MediaStateUpdate`。
+    /// 起播/重播。成功即回 `MediaStateUpdate{Playing}`（内核即时推送兼作回执，
+    /// IF-002 id 配对）；未知源/字节未齐/解码失败为 `MediaError` 错误面。
     pub fn play(&mut self, source_key: u64, position_ms: u64) -> Result<(), MediaHostError> {
         self.with_conn(|conn, pending| {
             let id = conn.send(IpcMessageKind::MediaPlay(MediaPlayParams {
@@ -426,7 +427,29 @@ impl MediaHostClient {
         })
     }
 
-    /// 精确 seek（响应 `MediaSeekResult{request_id}` 配对；C1 骨架为错误面）。
+    /// 暂停（成功即回 `MediaStateUpdate{Paused}`，IF-002 id 配对）。
+    pub fn pause(&mut self, source_key: u64) -> Result<(), MediaHostError> {
+        self.with_conn(|conn, pending| {
+            let id = conn.send(IpcMessageKind::MediaPause(MediaPauseParams { source_key }))?;
+            Ok(match conn.wait_for(pending, id)? {
+                IpcMessage {
+                    kind: IpcMessageKind::MediaStateUpdate(_),
+                    ..
+                } => Ok(()),
+                IpcMessage {
+                    kind: IpcMessageKind::MediaError(err),
+                    ..
+                } => Err(err.into()),
+                other => Err(MediaHostError::internal(format!(
+                    "pause 响应类型异常: {:?}",
+                    other.kind
+                ))),
+            })
+        })
+    }
+
+    /// 精确 seek（响应 `MediaSeekResult{request_id}` 配对；结果经事件面/回执
+    /// 双达——回执为同步等待面）。
     pub fn seek(&mut self, source_key: u64, target_ms: u64) -> Result<MediaSeekResultParams, MediaHostError> {
         self.with_conn(|conn, pending| {
             let request_id = conn.next_id;
@@ -446,6 +469,14 @@ impl MediaHostClient {
                 } => Err(err.into()),
                 other => Err(MediaHostError::internal(format!("seek 响应类型异常: {:?}", other.kind))),
             })
+        })
+    }
+
+    /// 设置循环（fire-and-forget；内核成功面无回执，未知源错误经事件面补投）。
+    pub fn set_loop(&mut self, source_key: u64, on: bool) -> Result<(), MediaHostError> {
+        self.with_conn(|conn, _pending| {
+            conn.send(IpcMessageKind::MediaSetLoop(MediaSetLoopParams { source_key, on }))
+                .map(|_| Ok(()))
         })
     }
 

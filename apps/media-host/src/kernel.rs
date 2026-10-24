@@ -617,13 +617,17 @@ impl MediaKernel {
                             av.playing = false;
                             av.last_tick_ms = None;
                         }
-                        out.push(state_message(
-                            source_key,
-                            entry.epoch,
-                            MediaPlaybackState::Paused {
-                                media_time_ms: entry.media_time_ms(),
-                            },
-                        ));
+                        // Paused 回执兼即时状态推送（IF-002：请求响应面 id 配对）。
+                        out.push(IpcMessage {
+                            id: message.id,
+                            kind: IpcMessageKind::MediaStateUpdate(MediaStateUpdateParams {
+                                source_key,
+                                epoch: entry.epoch,
+                                state: MediaPlaybackState::Paused {
+                                    media_time_ms: entry.media_time_ms(),
+                                },
+                            }),
+                        });
                         entry.last_push_ms = None;
                     }
                 }
@@ -867,13 +871,18 @@ impl MediaKernel {
             av.last_tick_ms = Some(now_ms);
         }
         let media_time = entry.media_time_ms();
-        out.push(state_message(
-            source_key,
-            entry.epoch,
-            MediaPlaybackState::Playing {
-                media_time_ms: media_time,
-            },
-        ));
+        // 即时 Playing 推送兼作 play 回执（IF-002：请求响应面 id 配对；后续
+        // 心跳/终态为自发推送面 id 0）。
+        out.push(IpcMessage {
+            id: request_id,
+            kind: IpcMessageKind::MediaStateUpdate(MediaStateUpdateParams {
+                source_key,
+                epoch: entry.epoch,
+                state: MediaPlaybackState::Playing {
+                    media_time_ms: media_time,
+                },
+            }),
+        });
         entry.last_push_ms = Some(now_ms);
     }
 
