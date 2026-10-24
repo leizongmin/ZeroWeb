@@ -74,6 +74,12 @@ cue 路径全部精确命中（precise-seek 语义成立）。耗时方差大（
 narrow phase 前向扫块），30s 热路径 O(log n) 达标；冷/热差与 15s/45s 慢点为后续
 M3 seek 切片的优化证据，本轮不展开。
 
+> 订正（2026-10-24 同日 M3 前置设计轮）：15s/45s 慢点主项经三方证据归因为
+> **phase-② 全量前向解码（∝ target，非冷 I/O）**——mid-GOP 目标块非 keyframe 触发
+> `decode.rs:285` 回退；30s 恰为 keyframe 对齐走 phase-①。证据与修复设计（A4 cue
+> 锚定窄化）见 [2026-10-24-m3-prep-design/DESIGN.md](../2026-10-24-m3-prep-design/DESIGN.md)
+> §3；解码器重建降为 ms 级次项。上文原归因按当时静态分析保留不改写。
+
 ## 4. 帧复制链静态图（decode → 上屏）
 
 生产链（runtime.rs:4122 泵 → try_republish_cached → CPU/GPU 光栅）逐节点：
@@ -127,14 +133,22 @@ CPU 路径无零拷贝上屏通道。这是 M2 RFC「平台解码/进程隔离�
 上游移交（archive/background-resource-lifecycle：DC-2 INCONCLUSIVE 子项）锚点逐条核对，
 **三缺口在当前源码全部在位**：
 
+> 行号订正（2026-10-24 二次核对）：dd17e2854（R5271，metadata/link-style）在 part06.js
+> 前段插入 47 行，媒体锚点行号漂移；语义核对不变，行号以 HEAD `56d499bb0` 为准。
+
 | # | 缺口 | 当前锚点 | 核对 |
 |---|---|---|---|
-| 1 | autoplay 置态绕桥——`_zwMediaAutoplay` 直置 `ms.playing=true`，不经 play() IDL 路径，桥不武装、registry 不起播 | engine/src/js_dom_shim/part06.js:10084 | 在位 |
-| 2 | `_zwMediaTimeMarchesOn` 死钩子——定义后全仓零调用方（仅 part01b.js:727 注释引用） | engine/src/js_dom_shim/part06.js:16350 | 在位 |
+| 1 | autoplay 置态绕桥——`_zwMediaAutoplay` 直置 `ms.playing=true`（part06.js:10141），不经 play() IDL 路径，桥不武装、registry 不起播 | engine/src/js_dom_shim/part06.js:10131（函数） | 在位 |
+| 2 | `_zwMediaTimeMarchesOn` 死钩子——定义后全仓零调用方（仅 part01b.js:727 注释引用） | engine/src/js_dom_shim/part06.js:16407 | 在位 |
 | 3 | audio load 桥武装未命中——`bridgeOn` 仅在 play() IDL 同步/重试命中路径置位（part03.js:23558/23610），load/autoplay 路径无武装点 | engine/src/js_dom_shim/part03.js:23558/23610 | 在位 |
 
 三缺口修复面归媒体播放语义（engine shim + registry 桥），属 M3 切片候选；本轮只盘点不修。
 背景流基线 v2 回补条件（缺口修复后 bg02-media 复测）依赖此修复，保持上游记录不动。
+
+> 订正（2026-10-24 M3 前置设计 II 轮）：缺口 2「全仓零调用方」表述**仅对 crates/ 域成立**——
+> `tests/wpt-runner/src/testharness.rs:9290` 泵 tick 有同形调用（runner 面 march 工作），死的是
+> **生产 renderer 面**（runtime.rs 媒体泵不调）。语义不变（生产缺口在位），修复设计见
+> [DESIGN.md §6](../2026-10-24-m3-prep-design/DESIGN.md)。
 
 ## 8. 结论与待决
 

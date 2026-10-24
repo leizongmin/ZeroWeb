@@ -52,6 +52,8 @@ mod r5255_deferred_positioned_rounded_clip_tests;
 mod r5256_selection_descendant_owner_tests;
 /// R5258 ::first-line 首格式行字形 color（切片 1，CSS2 §5.12.1）。
 mod r5258_first_line_color_tests;
+/// R5259 appearance widget 纳入 per-node 效果窗口（transform 作用于全部渲染输出）。
+mod r5259_appearance_transform_window_tests;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;

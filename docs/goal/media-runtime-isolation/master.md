@@ -1,7 +1,7 @@
 # 媒体运行时隔离控制面
 
 **日期**：2026-10-24
-**状态**：Active（**M1 基线测量完成**——见 [2026-10-24 evidence](evidence/2026-10-24-m1-baseline/ANALYSIS.md)；**M2 RFC 草案完成待用户评审**——[docs/specs/media-runtime-isolation-spec-rfc.md](../../../specs/media-runtime-isolation-spec-rfc.md) D-RFC-1~4 决策点）。
+**状态**：Active（**M1 基线测量完成**——见 [2026-10-24 evidence](evidence/2026-10-24-m1-baseline/ANALYSIS.md)；**M2 两项交付齐备 + M3 前置设计就绪待用户评审**——[docs/specs/media-runtime-isolation-spec-rfc.md](../../../specs/media-runtime-isolation-spec-rfc.md) v1.5：三路线对比 + §9 接口契约；A1–A4 + C1 设计稿齐备见 [m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；D-RFC-1~4 决策点）。
 **当前卡点**：用户评审/批复 RFC（D-RFC-1~4：方案 C 立项 / A 批次随批 / 方案 B 核查 / decode-h264 启用）。批复前不改代码、不装 SDK、不变 feature 表。M1 待决输入（时钟 rate 1.454、NullSink）已入 RFC 方案 A 批次与 TBD-3。
 **下一步**：用户批复后按 RFC §7 批次推进——D-RFC-2 随批即启 A1（时钟批内对齐）；D-RFC-1 批准则并行 C1（protocol 媒体消息族 + `media-process` feature 骨架）。若改选 A-only，DC-3 按 DC-5 由用户认可延期/调整后收口。
 **入口**：[目标契约](../media-runtime-isolation.md) / [启动与证据协议](../ladybird-followups/README.md)
@@ -11,7 +11,7 @@
 | 缺口/选择 | 首步 | 状态 |
 |---|---|---|
 | CPU/帧复制/A-V 同步与权限 | 固定长视频、版本与真实帧消费链 | **已测**（60s 基线 + 复制链 C1–C5 + 权限表，evidence 2026-10-24） |
-| 同步状态代理/时钟/seek 的进程契约 | 比较现状、平台解码、独立运行时 | **RFC 草案完成**（三路线对比 + 许可/回滚，待用户批复） |
+| 同步状态代理/时钟/seek 的进程契约 | 比较现状、平台解码、独立运行时 | **RFC v1.1 完成**（三路线对比 + §9 IF 级接口契约，待用户批复） |
 | 故障、权限不足与软件回退 | 真实隔离实例注入并验证浏览器恢复 | NOT_STARTED |
 | 平台 SDK/codec 许可/分发与架构投入 | M1/M2 证据与 RFC 后决定，不自动换许可证 | 待决（M1 核查：本平台 /dev/dri 缺失，无硬解路径） |
 
@@ -20,8 +20,8 @@
 | 阶段 | 产物 | 状态 | 证据 |
 |---|---|---|---|
 | M1 | 生产资源、能力与权限基线 | **完成**（测量面成立，收口待评审） | [2026-10-24 基线](evidence/2026-10-24-m1-baseline/ANALYSIS.md) |
-| M2 | 方案/许可证/回滚 RFC | **草案完成待批复**（决策门=用户） | [media-runtime-isolation-spec-rfc](../../../specs/media-runtime-isolation-spec-rfc.md) |
-| M3 | 已确认平台与隔离切片 | NOT_STARTED（候选清单已备） | 无 |
+| M2 | 方案/许可证/回滚 RFC + protocol 接口契约 | **v1.2 完成待批复**（决策门=用户） | [media-runtime-isolation-spec-rfc](../../../specs/media-runtime-isolation-spec-rfc.md) |
+| M3 | 已确认平台与隔离切片 | NOT_STARTED（A1–A4 + C1 设计稿齐备，待 D-RFC-2/1） | [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md) |
 | M4 | 配对媒体、故障和资源审计 | NOT_STARTED | 无 |
 
 ## 验证基线
@@ -43,7 +43,7 @@
 - 新增 `scripts/make-long-video-fixture.py` + 2 个 60s fixture（母本簇重复 ×30，来源清白，README 有声明与重现命令）。
 - 新增 `crates/webview/tests/media_m1_baseline.rs` 5 场景（`#[ignore]` 显式运行，release + test-guard 全过）。
 - 关键测量：纯视频 60s 解码 1339ms（≈45× 实时，~1 核）；A/V 双轨 1422ms（≈42×）；空 tick p50≈431ns；cue seek 精确（302ms 冷/1.1ms 热/1000ms）；漂移 p50=11ms。**FINDING**：media clock rate=1.45402（音频批量化），断言收 sanity 带，修复归 M3。（数字已按 raw log 订正，ANALYSIS 内有订正注）
-- 三缺口盘点在位核对：part06.js:10084（autoplay 绕桥）、part06.js:16350（死钩子）、part03.js:23558/23610（play-only 武装）。
+- 三缺口盘点在位核对：part06.js:10131（autoplay 绕桥）、part06.js:16407（死钩子）、part03.js:23558/23610（play-only 武装）——行号按 dd17e2854 后 HEAD 订正，语义核对不变。
 - 守卫与证据：执行阶段 test-guard（900s/4GB）；原始输出 m1baseline-raw.log；无残留进程。本轮未安装 SDK，未改 feature 门。
 
 ### 2026-10-24 M2 RFC 轮
@@ -52,3 +52,56 @@
 - 独立评审（lei-spec-rfc §4 独立视角）：0 blocker/2 major/5 minor 全部修复——D-RFC ID 与前 RFC 撞名（§9 消歧 + 全文标「前 RFC」）、§2.2 数字与 raw log 对齐；MSE 面属 `decode-h264` feature 门控事实补入 ANALYSIS §5。
 - Lint：26 Pass/1 Warning/0 Fail/3 Skip/4 PendingReview/5 N/A；决策草案就绪、实施未就绪（PendingReview 门）。
 - 本轮零代码改动；无 SDK 安装、无 feature 表变更。
+
+### 2026-10-24 M2 RFC v1.1 轮（接口契约）
+
+- RFC 新增 §9 媒体 host 协议接口契约（IF 级，M2 交付第二项「protocol 与媒体 host 接口」）：先例映射表 + IF-001~006 六面（会话生命周期 / 控制面 / 状态时钟面含 epoch 代际 / 帧面含 shm 双路径 / 字节流含 MSE 扩展点 / 错误面含降级纪律），§9.7 挂接 DC-2/3/4；原 §9~12 顺延为 §10~13，交叉引用同步。
+- 成本口径修正：§5.1A 原写「无先例可复用」，经 `apps/image-decoder` 源码核实（`run_role` 循环、懒惰 spawn `image_decoder.rs:211`、SPAWN_FAILED 永久回落、`child_process_args` role 映射、PipeTransport/frame_shm 复用面）改为**部分先例成立**；真正拟新增成本收敛为流式控制契约 + 跨进程时钟镜像 + 持续帧传输三点。
+- 帧传输双路径与 64MiB 帧上限核过：4K RGBA ≈33MB < `MAX_FRAME_SIZE`；超限走 `FrameTooLarge` 错误码。
+- Lint 增补 v1.1 专项检查（结构/语义/引用/拟新增命名隔离四项均 Pass）；D-RFC-1~4 门禁、批复前禁令（不改代码/不装 SDK/不变 feature 表）不变。
+- 本轮零代码改动；修订历史 v1.1-draft 行已记。
+
+### 2026-10-24 M3 前置设计轮（A1 + seek 归因）
+
+- 新增 [DESIGN.md](evidence/2026-10-24-m3-prep-design/DESIGN.md)（设计准备，零代码改动）：
+  - **A1 时钟批内对齐设计稿**：缺陷机制源码级确认（三入口同构，批长 ~23.3ms > 16ms 泵节拍 → 每 tick 整批消费 → rate=B/16≈1.45）；修复 = 样本级队列（`BatchSampleQueue` 批内精确消费，EOF/loop/seek/skip 语义不变），验收 rate 收 [0.9,1.1]、漂移重测钉带。
+  - **seek 冷路径归因闭合**（M1 Warning 解除）：三方交叉证据——fixture 块级探针（1440 块仅 30 keyframe 全在偶秒；tc=15000/45000 非 keyframe、30000 keyframe）+ matroska-demuxer 0.8.1 源码（broad phase cue 二分落簇首、narrow phase 落首个 ≥ target 块、`CuePoint` 私有无 API）+ `decode.rs:258-304` 判定。因果链：mid-GOP 目标 → phase-① 判定失败 → phase-② 全量前向解码（302ms@15s、1000ms@45s，∝ target；30s keyframe 对齐 1.1ms）。M1 ANALYSIS §3.4「冷 I/O」归因就此修正（解码器重建降为次项）。
+  - **A4 修复设计**：cue 锚定窄化 fallback（Cues 自解析 ~60 行 + ≤ target 最近 cue 重 seek + 前向解码 ≤ GOP），O(target)→O(GOP)；无 Cues 流保留全量前向为最终回退。
+- RFC v1.2：§7 新增 A4 行 + 依赖行更新 + §8 seek 回归行 + §11 Warning 标注已归因 + §13 v1.2 行；D-RFC 门禁与批复前禁令不变。
+- 本轮探针/源码查阅均为只读（/tmp 脚本不入仓，cargo registry 只读）；未改代码、未装 SDK、未变 feature 表。
+
+### 2026-10-24 M3 前置设计轮 II（A2 + GOP 抽样）
+
+- DESIGN.md 追加 §6/§7（同日第二轮，仍零代码改动）：
+  - **缺口定性修正**：`_zwMediaTimeMarchesOn` 在 runner 面（testharness.rs:9290 泵 tick）有调用，死的是**生产 renderer 面**（媒体泵不调）；M1 ANALYSIS §7 订正注追加。缺口 1+3 确认同面：`_zwMediaAutoplay` 挂 load 序列末（part06.js:10273）= 上游移交定位的「load 时武装环节」。
+  - **Fix 1 设计**：play 内核提取 `_zwMediaPlaySteps`，IDL play 与 autoplay 共用（spec#ready-states potential autoplay 分支原义）；风险 = 事件时序切 play 算法派发面（WPT event 族门禁）；收益 = bridgeOn/重试/pending-seek/rate-gain-loop 同步/ended-loop 全面继承。
+  - **Fix 2 设计**：any_playing 门控 + `submit_script_priority` 裸 march 脚本（rAF 泵 runtime.rs:4152 同通道先例）；不加 page_hidden（播放推进不随可见性暂停）；否决 shim 自泵/getter 镜像两备选并记录理由。
+  - **WPT 上游 GOP 抽样**：4 webm 全量（white 2s 规则 GOP / test、movie_5 近全 intra ~20-23ms / movie_5 仅 1 cue 点）——A4 待验证项闭合，movie_5 稀疏 cue 形态证实 A4 全量前向回退分支为必要路径。
+- RFC v1.3：A2 行补设计稿指引 + 回滚格（Fix 1/Fix 2 独立）；无决策/门禁/批次范围变化。
+
+### 2026-10-24 M3 前置设计轮 III（A3）
+
+- DESIGN.md 追加 §8（同日第三轮，仍零代码改动）——**A 批次四片设计稿齐备（A1/A2/A3/A4）**：
+  - **C4 快照 Arc 化**：`duplicate_for_snapshot`（image_cache.rs:1340，唯一调用方 webview.rs:1713 → runtime.rs:1443 每帧发布）逐条深拷贝全缓存；「像素插入后不可变」（image_cache.rs:31 既有 R3254-M2 不变量）使 `CacheEntry.data` Arc 化语义安全（hit-test 缓存 runtime.rs:1453 与 svg_source 先例同面）；快照本体从不出进程（跨进程只传 IpcImagePayload），深拷贝纯浪费。
+  - **C2 扫描跳过**：视频帧 `ImageData::from_rgba`（video_registry.rs:1188/1204）每帧 2 次全帧读（纯色检测 + content_hash）；`from_rgba_variable` 跳纯色检测，图片解码路径保持扫描。
+  - **源驻留封顶**：`sources`/`av_sources` 无总量上限（M1 §5 缺口）；**av_sources 有 seek 重建功能性依赖**（seek :945-959 字节源）——设计为 256MB 总预算 + 非在播 LRU 驱逐（av_sources 随 player 存活保留）+ 准入拒绝走既有错误面。
+  - 回滚：三子项各自单提交。
+- RFC v1.4：A3 行补设计稿指引；无决策/门禁/批次范围变化。
+
+### 2026-10-24 M3 前置设计轮 IV（C1）
+
+- DESIGN.md 追加 §9（同日第四轮，仍零代码改动）——**C 批次首片实施级设计就绪**：
+  - **命名冲突排查闭合**：`ProcessRole`（channel.rs:20-31）无 Media 变体、`IpcMessageKind` 无任何
+    Media* 变体（最近邻 ImageDecode* :119/:121、CompositorFrame :125）——IF-002~006 全族 14 个拟
+    新增变体命名零冲突。
+  - **wire format 草案**：控制面 7 变体（Register/DataChunk/Play/Pause/Seek{request_id}/Release/
+    Shutdown）+ host 面 7 变体（Ready/SourceReady/DataAck/StateUpdate{epoch}/SeekResult/Frame/Error）
+    + MediaPlaybackState/MediaErrorCode 伴生枚举；全走 IpcMessage 信封 + bincode，受 64MiB 上限
+    （DataChunk 分片、Frame 超限 → FrameTooLarge）。
+  - **骨架边界**：C1 = `apps/media-host`（run_role 先例）+ `--type=media` 接线 + 懒 spawn/
+    SPAWN_FAILED 永久内联先例镜像 + 空源生命周期（保契约可测）；解码内核（携 A1 修复后实现）
+    C2 接；`zeroweb-media-` shm 前缀 + `ZW_MEDIA_SHM=0` 关断镜像 frame_shm 先例；feature
+    `media-process` 默认关 = D-RFC-1 门。
+  - 契约测试计划：bincode 往返/超限拒绝/`--type=media` 映射单测 + 内联回落与 kill-switch 集成
+    （`#[ignore]` + test-guard 先例）。
+- RFC v1.5：C1 行补设计稿指引；无决策/门禁/批次范围变化。

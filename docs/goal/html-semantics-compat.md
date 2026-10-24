@@ -2,9 +2,33 @@
 
 **版本**: v2.0
 **日期**: 2026-10-24（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 64 收口（document-metadata 分诊轮：color-scheme 归渲染流 + corpus helper 修复 + link/style 窄面 R5271，域 **52P/54F/18T → 58P/60F/18T** GAIN 6 / REG 0，含 corpus 步进 +12F 归因），下一步 http-equiv 2F 分诊 / text-level-semantics 开片；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 65 收口（http-equiv-and-name 2F 分诊：1F 渲染流记账回流 + content-language pragma 回落 R5272，域 **58P/60F/18T → 59P/59F/18T** GAIN 1 / REG 0，document-metadata 分诊轮全归档），下一步 text-level-semantics 开片（M1 基线 21P/13F）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-24 M2 切片 64 收口，document-metadata 分诊 + link/style 窄面轮）**：
+> **▶ 当前状态（2026-10-24 M2 切片 65 收口，http-equiv 分诊 + content-language pragma 轮）**：
+> 两件事。**① http-equiv-and-name 2F 分诊（本域 shim 面最后未分诊项，
+> 分诊轮全归档）**：-1 = CanvasText 系统色 × color-scheme applied-color
+> 链 → 渲染流记账回流（与 s64 color-scheme 23F 同桶）；-2 = 本流修复。
+> **② 修复面（R5272，dom crate 两刀）**：①`parse_selector_chain` 复合伪类
+> 名字边界——名字取 `(`/`#`/`.`/`[`/`:` 最早命中、仅 `(` 按含参取 args，
+> 旧 `r.find('(')` 扫过整段余串把 `:root:lang(de-DE)` 的 `root:lang` 当
+> 名字 → SyntaxError；②`matches_lang` pragma-set default language 回落
+>（spec「language of a node」Otherwise 分支）——祖先链全无 lang 时吃
+> `<meta http-equiv=content-language>`（含逗号失效、首 ASCII 空白 token、
+> 文档序最后胜出；空 lang = explicitly unknown 不回落；HTTP 头回落
+> FIXME），R3281 共享权威面 style-system `:lang()` CSS 匹配同步吃到。
+> 回归测试 zz_r5272×2。**验证**：域 **59P/59F/18T**（+1 NotRun 为 CSP
+> tentative 行与本修复无关）+ interactive 439P/44F + style-system lib
+> **2449P/0F**（共享权威零回归）+ zero-dom lib **868P/0F**（+2）。账本见
+> [evidence/2026-10-24-m2s65-http-equiv-content-language.md](html-semantics-compat/evidence/2026-10-24-m2s65-http-equiv-content-language.md)。
+> **下一步**：text-level-semantics 开片（M1 基线 21P/13F），分诊轮先行。
+> 余账全归档：color-scheme 23F + http-equiv-and-name-1 1F + 管道/应用面
+> ~27F 渲染流、CSP tentative + parse-world 底座。
+> **切片间隙**：本轮 dom crate（query.rs/lang_dir.rs）；下一片
+> text-level-semantics 分诊轮不改引擎生产面，间隙开放，开工前查 oracle
+> master 碰撞记录（2026-10-24 已查：渲染流在 ::first-line/::selection/
+> paint 面，无 dom/shim 占用）。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 64 收口，document-metadata 分诊 + link/style 窄面轮）**：
 > 三件事。**① color-scheme 归属核对（定档渲染流）**：10F 死因 =
 > corpus 打包缺口（缺 support/compute-root-color-scheme.js，上游有）
 > ——按「打包缺口本地补」先例恢复（gitignored 本地数据，**步进
