@@ -2,7 +2,7 @@
 
 ## 项目与入口
 
-ZeroWeb 是 MIT 许可的 Rust 跨平台浏览器项目，交付嵌入式 `ZeroWebView` 库和 `ZeroBrowser` 应用。桌面支持 macOS/Linux/Windows，Android 使用 Kotlin/Compose 宿主与 Rust JNI 桥。Rust edition 2024，MSRV 1.85；workspace 有 32 个 member（22 库、7 应用、2 测试工具、1 开发工具）。
+ZeroWeb 是 MIT 许可的 Rust 跨平台浏览器项目，交付嵌入式 `ZeroWebView` 库和 `ZeroBrowser` 应用。桌面支持 macOS/Linux/Windows，Android 使用 Kotlin/Compose 宿主与 Rust JNI 桥。Rust edition 2024，MSRV 1.85；workspace 有 33 个 member（22 库、8 应用、2 测试工具、1 开发工具）。
 
 - 目录、职责和页面管线见 [架构总览](docs/architecture.md)；依赖与 member 以 [Cargo.toml](Cargo.toml) 为准。`crates/taffy-local` 通过 `[patch.crates-io]` 接入，不在显式 member 清单。
 - 开发环境：[Linux/macOS](docs/development/linux-macos.md)、[Windows](docs/development/windows.md)；Android 进度见 [任务控制面](docs/goal/archive/android-browser/master.md)。
