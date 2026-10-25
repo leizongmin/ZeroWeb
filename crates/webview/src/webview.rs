@@ -618,6 +618,11 @@ pub struct WebView {
     title: Option<String>,
     /// 是否正在加载。
     loading: bool,
+    /// T13 R1：loading 翻转沿闩——值实际变化时置位，`take_loading_flip` 消费；
+    /// renderer 主循环 tick 据此重锚延迟回收 deadline（初载相补充锚；CDP 导航流
+    /// 的主锚是 LoadComplete——预算渲染路径不走 `set_loading(false)`，翻转沿首载
+    /// 后不再置位）。单 pending 槽合并语义。
+    loading_flip: bool,
     /// 上次渲染结果。
     last_render: Option<WebViewRenderResult>,
     /// 最新帧的 canvas_images（内联 SVG 栅格 / Canvas 位图 / 滤镜 isolate 产物），
@@ -817,6 +822,7 @@ impl WebView {
             referrer: None,
             title: None,
             loading: false,
+            loading_flip: false,
             last_render: None,
             pending_canvas_images: Vec::new(),
             canvas_fingerprints: HashMap::new(),
@@ -1776,7 +1782,7 @@ impl WebView {
         self.referrer = old_url.clone();
         self.current_url = Some(url.to_string());
         self.set_page_url_wire(url);
-        self.loading = true;
+        self.set_loading(true);
         self.emit_event(&WebViewEvent::LoadStart(url.to_string()));
 
         if old_url.as_deref() != Some(url) {
@@ -1796,7 +1802,7 @@ impl WebView {
                 https_url
             }
             ResourceCheckResult::Blocked(reason) => {
-                self.loading = false;
+                self.set_loading(false);
                 self.emit_event(&WebViewEvent::LoadFailed(url.to_string(), reason.clone()));
                 return Err(WebViewError::Navigation(reason));
             }
@@ -1809,7 +1815,7 @@ impl WebView {
                 FetchInterceptResult::Cached(response) | FetchInterceptResult::Responded(response) => {
                     tracing::info!("Service Worker intercepted fetch for {effective_url}");
                     let html = String::from_utf8(response.body).map_err(|e| {
-                        self.loading = false;
+                        self.set_loading(false);
                         self.emit_event(&WebViewEvent::LoadFailed(
                             effective_url.to_string(),
                             format!("SW response body is not valid UTF-8: {e}"),
@@ -1818,7 +1824,7 @@ impl WebView {
                     })?;
                     let external_css = self.prepare_page_subresources(&html, &effective_url);
                     let render_result = self.load_html(&html, Some(&external_css));
-                    self.loading = false;
+                    self.set_loading(false);
                     self.emit_event(&WebViewEvent::LoadEnd(effective_url.to_string()));
                     return Ok(render_result);
                 }
@@ -1832,7 +1838,7 @@ impl WebView {
         match self.resource_get(&effective_url, FetchPriority::CRITICAL, "document") {
             Ok(response) => {
                 let html = response.text().map_err(|e| {
-                    self.loading = false;
+                    self.set_loading(false);
                     self.emit_event(&WebViewEvent::LoadFailed(
                         effective_url.to_string(),
                         format!("Failed to decode response body: {e}"),
@@ -1867,24 +1873,24 @@ impl WebView {
 
                 // 渲染 HTML
                 let render_result = self.load_html(&html, Some(&external_css));
-                self.loading = false;
+                self.set_loading(false);
                 self.emit_event(&WebViewEvent::LoadEnd(final_url.to_string()));
                 Ok(render_result)
             }
             Err(NetError::Timeout) => {
-                self.loading = false;
+                self.set_loading(false);
                 let msg = format!("Request to {effective_url} timed out");
                 self.emit_event(&WebViewEvent::LoadFailed(effective_url.to_string(), msg.clone()));
                 Err(WebViewError::Navigation(msg))
             }
             Err(NetError::Proxy(detail)) => {
-                self.loading = false;
+                self.set_loading(false);
                 let msg = format!("Proxy error fetching {effective_url}: {detail}");
                 self.emit_event(&WebViewEvent::LoadFailed(effective_url.to_string(), msg.clone()));
                 Err(WebViewError::Navigation(msg))
             }
             Err(e) => {
-                self.loading = false;
+                self.set_loading(false);
                 let msg = format!("Failed to fetch {effective_url}: {e}");
                 self.emit_event(&WebViewEvent::LoadFailed(effective_url.to_string(), msg.clone()));
                 Err(WebViewError::Navigation(msg))
@@ -1923,7 +1929,7 @@ impl WebView {
         self.referrer = old_url.clone();
         self.current_url = Some(url.to_string());
         self.set_page_url_wire(url);
-        self.loading = true;
+        self.set_loading(true);
         self.emit_event(&WebViewEvent::LoadStart(url.to_string()));
         if old_url.as_deref() != Some(url) {
             self.emit_event(&WebViewEvent::UrlChanged(url.to_string()));
@@ -1943,7 +1949,7 @@ impl WebView {
         self.security_context.set_page_origin(page_url);
         let external_css = self.prepare_page_subresources(html, page_url);
         let result = self.load_html(html, Some(&external_css));
-        self.loading = false;
+        self.set_loading(false);
         self.emit_event(&WebViewEvent::LoadEnd(page_url.to_string()));
         result
     }
@@ -1955,7 +1961,7 @@ impl WebView {
     pub fn complete_load(&mut self, html: &str, css: Option<&str>) -> WebViewRenderResult {
         let url = self.current_url.clone().unwrap_or_default();
         let result = self.load_html(html, css);
-        self.loading = false;
+        self.set_loading(false);
         self.emit_event(&WebViewEvent::LoadEnd(url));
         result
     }
@@ -1963,7 +1969,7 @@ impl WebView {
     /// 标记加载失败。
     pub fn fail_load(&mut self, error: &str) {
         let url = self.current_url.clone().unwrap_or_default();
-        self.loading = false;
+        self.set_loading(false);
         self.emit_event(&WebViewEvent::LoadFailed(url, error.to_string()));
     }
 
@@ -2045,7 +2051,7 @@ impl WebView {
         }
         self.current_url = Some(page_url.to_string());
         self.set_page_url_wire(page_url);
-        self.loading = true;
+        self.set_loading(true);
         self.pipeline.set_document_url(Some(page_url));
         // slice37（mm-regression 根修）：文档换代清 handle→NodeId 持久表——预算渲染
         // 路径（AsyncPageLoad → advance_budgeted_render）不经过 render_html 的 slotmap
@@ -2078,7 +2084,7 @@ impl WebView {
         let render_result = self.absorb_render_result(&result);
         self.last_render = Some(render_result);
         if finished {
-            self.loading = false;
+            self.set_loading(false);
             self.emit_event(&WebViewEvent::LoadEnd(page_url.to_string()));
         }
     }
@@ -2220,6 +2226,20 @@ impl WebView {
     /// 是否正在加载。
     pub fn is_loading(&self) -> bool {
         self.loading
+    }
+
+    /// T13 R1：loading 赋值统一入口——值实际翻转时置位 [`Self::take_loading_flip`]
+    /// 闩（同值赋值不置位）。所有 `self.loading` 直赋点必须走此入口。
+    fn set_loading(&mut self, loading: bool) {
+        if self.loading != loading {
+            self.loading = loading;
+            self.loading_flip = true;
+        }
+    }
+
+    /// T13 R1：取走翻转沿闩（有未消费翻转沿即 `true`，取后清零）。
+    pub fn take_loading_flip(&mut self) -> bool {
+        std::mem::take(&mut self.loading_flip)
     }
 
     /// 获取上次渲染结果。

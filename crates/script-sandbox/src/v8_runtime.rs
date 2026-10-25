@@ -829,14 +829,20 @@ impl V8Sandbox {
     ///
     /// 下次 execute 会创建新的 Context。仅在 `persistent_context` 模式下有意义。
     ///
-    /// T13 S3：复位尾对 isolate 发 `low_memory_notification`——`cached_context = None`
+    /// T13 R1：S3 的 `low_memory_notification` 移至 [`Self::low_memory_reclaim`]
+    /// （延迟到点，isolate 线程命令边界执行）——复位臂自身只做 context 丢弃，成本
+    /// 移出首载测窗（处置工单主控 M1；窗口证据见 bench/results/t13-rework-frozen.md）。
+    pub fn reset_context(&mut self) {
+        self.cached_context = None;
+    }
+
+    /// T13 S3/R1：对 isolate 发 `low_memory_notification`——`cached_context = None`
     /// 只 drop Context 引用，旧 Context 成 isolate 内垃圾，而持久 isolate 永不销毁、
     /// 复位处此前无任何 GC 触发点，垃圾滞留 V8 堆 + glibc arena（C1→C2 增长主嫌疑，
     /// 设计卡 §1-#3）。宿主 GC hint 无需 `--expose-gc` 全局 flag（同
     /// [`crate::dom_bindings`] weak-handle 先例），只对已 drop 的旧 Context 垃圾生效，
-    /// 新文档语义零接触。
-    pub fn reset_context(&mut self) {
-        self.cached_context = None;
+    /// 新文档语义零接触。须在 isolate 所属线程调用（js worker 命令边界满足）。
+    pub fn low_memory_reclaim(&mut self) {
         let Some(isolate) = self.isolate.as_mut() else {
             return;
         };
@@ -1027,6 +1033,9 @@ impl crate::Sandbox for V8Sandbox {
     }
     fn reset_context(&mut self) {
         V8Sandbox::reset_context(self)
+    }
+    fn low_memory_reclaim(&mut self) {
+        V8Sandbox::low_memory_reclaim(self)
     }
     fn heap_used_bytes(&mut self) -> Option<usize> {
         V8Sandbox::heap_used_bytes(self)

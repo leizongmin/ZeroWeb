@@ -419,6 +419,11 @@ pub trait Sandbox {
     }
     /// 重置上下文（清空 JS 状态）。
     fn reset_context(&mut self);
+    /// T13 S3/R1：延迟回收点对 isolate 发 GC hint（`low_memory_notification`）。
+    ///
+    /// **默认 no-op**：QuickJS 后端 context 丢弃即同步释放对象，无持久 isolate 垃圾面，
+    /// 无需 GC hint。须在执行 JS 的线程调用（V8 isolate 线程约束）。
+    fn low_memory_reclaim(&mut self) {}
     /// T13 S7 探针：JS heap 在用量（字节；`ZEROWEB_MEM_PROBE=1` reset 臂打点）。
     ///
     /// **默认 no-op**：QuickJS 后端不支持 heap 统计读取，返 `None`（观测腿不进判据）。
