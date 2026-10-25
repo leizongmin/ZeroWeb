@@ -4,7 +4,7 @@
 //! 切换拍（registry 全部流末停播）必须补交一拍 march（shim 观察 isEnded → ended
 //! 派发/loop 回卷），停播稳态不提交（零开销面保持）。shim 侧 march 行为（ended
 //! 派发/loop 分叉）由 engine js_dom_bridge_tests 覆盖；产品腿验收见
-//! docs/goal/media-runtime-isolation/evidence/2026-10-25-bg02-media-v3/。
+//! docs/goal/archive/media-runtime-isolation/evidence/2026-10-25-bg02-media-v3/。
 
 use super::media_march_submittable;
 

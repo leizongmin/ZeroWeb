@@ -29,7 +29,6 @@
 # 后续决定投入时，直接执行即可启动该目标。
 ./scripts/rally-goal-renderer-trust-boundary.sh
 ./scripts/rally-goal-dom-operation-bench.sh
-./scripts/rally-goal-media-runtime-isolation.sh
 ```
 
 以上逐行是独立入口。脚本定位自身所在仓库，因此从其他工作目录调用也使用该仓库与目标。`--dry-run` 由 Rally 处理；Shell 不另实现计划器、状态管理器或守卫。运行结束码原样返回。

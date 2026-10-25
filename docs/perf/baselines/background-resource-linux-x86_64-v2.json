@@ -10,12 +10,12 @@
   "scenarios": {
     "bg02-media": {
       "pairing": [
-        "docs/goal/media-runtime-isolation/evidence/2026-10-25-bg02-media-v3/bg02-media",
-        "docs/goal/media-runtime-isolation/evidence/2026-10-25-bg02-media-v3/bg02-media-b"
+        "docs/goal/archive/media-runtime-isolation/evidence/2026-10-25-bg02-media-v3/bg02-media",
+        "docs/goal/archive/media-runtime-isolation/evidence/2026-10-25-bg02-media-v3/bg02-media-b"
       ],
       "n": 2,
       "observed": {
-        "docs/goal/media-runtime-isolation/evidence/2026-10-25-bg02-media-v3/bg02-media": {
+        "docs/goal/archive/media-runtime-isolation/evidence/2026-10-25-bg02-media-v3/bg02-media": {
           "renderer_cpu_cores": 0.0532,
           "renderer_rss_last_mib": 263.4,
           "renderer_rss_hwm_mib": 301.8,
@@ -29,7 +29,7 @@
           "probe_rate:bg02-media-ticks/s": 2.5,
           "probe_rate:bg02-media-audio-clock/s": 0.0
         },
-        "docs/goal/media-runtime-isolation/evidence/2026-10-25-bg02-media-v3/bg02-media-b": {
+        "docs/goal/archive/media-runtime-isolation/evidence/2026-10-25-bg02-media-v3/bg02-media-b": {
           "renderer_cpu_cores": 0.0566,
           "renderer_rss_last_mib": 262.9,
           "renderer_rss_hwm_mib": 301.2,
@@ -76,12 +76,12 @@
     },
     "bg02-media-autoplay": {
       "pairing": [
-        "docs/goal/media-runtime-isolation/evidence/2026-10-25-bg02-media-v3/bg02-media-autoplay",
-        "docs/goal/media-runtime-isolation/evidence/2026-10-25-bg02-media-v3/bg02-media-autoplay-b"
+        "docs/goal/archive/media-runtime-isolation/evidence/2026-10-25-bg02-media-v3/bg02-media-autoplay",
+        "docs/goal/archive/media-runtime-isolation/evidence/2026-10-25-bg02-media-v3/bg02-media-autoplay-b"
       ],
       "n": 2,
       "observed": {
-        "docs/goal/media-runtime-isolation/evidence/2026-10-25-bg02-media-v3/bg02-media-autoplay": {
+        "docs/goal/archive/media-runtime-isolation/evidence/2026-10-25-bg02-media-v3/bg02-media-autoplay": {
           "renderer_cpu_cores": 0.0519,
           "renderer_rss_last_mib": 263.5,
           "renderer_rss_hwm_mib": 301.2,
@@ -95,7 +95,7 @@
           "probe_rate:bg02-media-ticks/s": 2.5,
           "probe_rate:bg02-media-audio-clock/s": 0.0
         },
-        "docs/goal/media-runtime-isolation/evidence/2026-10-25-bg02-media-v3/bg02-media-autoplay-b": {
+        "docs/goal/archive/media-runtime-isolation/evidence/2026-10-25-bg02-media-v3/bg02-media-autoplay-b": {
           "renderer_cpu_cores": 0.0528,
           "renderer_rss_last_mib": 262.1,
           "renderer_rss_hwm_mib": 299.5,

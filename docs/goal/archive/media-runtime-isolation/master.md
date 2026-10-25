@@ -290,3 +290,9 @@
 - **收口依据**：Mission 三面全交付（现有媒体成本测量 = M1 基线 + C4 配对 + 资源审计；平台硬解与独立运行时评估 = RFC v1.9 批复 + C 批次落地验证；HTMLMediaElement 语义保持 = DC-2 契约 + march 语义面）；DC-1~5 全部有证闭合（[DC-5 审计](evidence/2026-10-25-dc5-final-audit/ANALYSIS.md)）；DC-5 条件中的用户认可门仅约束「证据不支持投入而延期」情形——本案投入已落地验证，不触发。
 - **归档动作**（模式 A，同 background-resource-lifecycle / incremental-rendering-oracle 先例）：goal 契约与控制面目录迁 `docs/goal/archive/`；启动脚本 `scripts/rally-goal-media-runtime-isolation.sh` 删除（不重启）；ladybird-followups README 目标行转 ✅；media-host README 指路更新；catalog 保留（规划资产清单，含已完成 goal 先例）。
 - **门禁**：收口轮零代码改动；最终代码面门禁记录 = 2026-10-25 bg02/D4 提交批全量 make test 87 套件 exit 0 + guarded-clippy 全绿（基线 9c6652fa3，其后仅渲染流 paint 修复与本轮文档归档）；收口时组合态复跑全量 make test **exit 0（87 套件，2026-10-25）**——两流组合态收口验证。
+
+### 2026-10-25 归档引用同步轮（收口归档后补账）
+
+- 全仓扫描（`goal/media-runtime-isolation` 旧路径 + 已删脚本名）：7 文件残留旧路径引用，全部改指归档现址——archive/README.md 目录表补本 goal 行（模式 A、2026-10-25、DC-1~5 ✅、`media-process` 默认关）；ladybird-followups/README.md 启动示例删已删脚本行（oracle 先例 f62c377b4 同款）；ROADMAP.md 媒体行死链改归档址 + 「启用时机另议」更新为已裁决维持默认关；spec RFC 需求权威与 M1 evidence 两链接加 archive 一级；`crates/media/src/pipeline.rs:48` DESIGN 注释链接、`apps/renderer/src/media_march_tests.rs:7` evidence 注释路径、`docs/perf/baselines/background-resource-linux-x86_64-v2.json` 8 处 provenance 路径同改（gate 按 scenario 名配腿，路径串纯溯源，门禁行为不变）。
+- goal 名注释引用（不涉路径）与 CHANGELOG/zero-web 巡检等带日期历史记录按先例保留不改写；未跟踪 http.jsonl 维持 v3 ANALYSIS 已记录的裁剪态不入库。
+- 验证：JSON parse 过；改动文件相对链接逐一解析存在；全仓再扫旧路径零残留；本轮纯文档/注释，零行为改动，无新增门禁义务。

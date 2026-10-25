@@ -4,7 +4,7 @@
 **日期**：2026-10-24
 **作者**：AI Assistant（Rally media-runtime-isolation M2）
 **状态**：**已批复**（2026-10-24 用户裁决 D-RFC-1~4，见 §10 批复记录）——按 §7 批次推进
-**需求权威**：[goal 契约](../goal/media-runtime-isolation.md) DC-1~DC-5；本文为设计交付，需求不在此重述
+**需求权威**：[goal 契约](../goal/archive/media-runtime-isolation.md) DC-1~DC-5；本文为设计交付，需求不在此重述
 
 ---
 
@@ -22,7 +22,7 @@
 ### 1.1 背景与依据
 
 - 立项依据：2026-10-20 用户按 [Ladybird 建议](../research/research-ladybird-progress-2026-10-20.md) 立项，媒体进程是待证据支持的方案（goal §0）。
-- M1 基线已实测（[2026-10-24 evidence](../goal/media-runtime-isolation/evidence/2026-10-24-m1-baseline/ANALYSIS.md)）：产能、复制链、权限表、平台核查、时钟三缺口全部量化。
+- M1 基线已实测（[2026-10-24 evidence](../goal/archive/media-runtime-isolation/evidence/2026-10-24-m1-baseline/ANALYSIS.md)）：产能、复制链、权限表、平台核查、时钟三缺口全部量化。
 - 前置 RFC 决策（[video-decode-playback-spec-rfc](video-decode-playback-spec-rfc.md)，2026-09-01 批复）：路线 C 纯 Rust VP9 先行；dav1d/H.264 feature 默认关、按需单独立项——本 RFC 不推翻这些已定决策。
 
 ### 1.2 目标

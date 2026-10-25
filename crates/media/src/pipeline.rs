@@ -45,7 +45,7 @@ impl AudioStreamDecoder {
 
 /// 批间样本队列 — `advance_to` 的样本级精确消费面（A1 时钟批内对齐，M3/RFC 批次）。
 ///
-/// 缺陷机制（M1 FINDING，[DESIGN §2](../../../docs/goal/media-runtime-isolation/evidence/2026-10-24-m3-prep-design/DESIGN.md)）：
+/// 缺陷机制（M1 FINDING，[DESIGN §2](../../../docs/goal/archive/media-runtime-isolation/evidence/2026-10-24-m3-prep-design/DESIGN.md)）：
 /// vorbis/symphonia 按包交付（~1024 样本/ch ≈ 23.3ms @44.1kHz），批长 > 16ms 泵节拍
 /// → 每 tick 整批消费 → 游标以批长/tick 推进 → media clock rate ≈ 1.45（实测
 /// 1.45402）。修复 = 解码批先入队（解码超前有界 ≈1 批），按 tick 目标帧数（毫秒
