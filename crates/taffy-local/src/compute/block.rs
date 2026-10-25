@@ -25,6 +25,12 @@ use crate::{Clear, Float, FloatDirection};
 static FLOAT_CHILD_COLLAPSE_THROUGH: std::sync::LazyLock<bool> =
     std::sync::LazyLock::new(|| std::env::var("ZW_FLOAT_CHILD_COLLAPSE_THROUGH").as_deref() != Ok("0"));
 
+/// R5281（CSS2 §8.3.1 × §17.5.1）：table-cell 立独立格式化上下文——子代 margin
+/// 不与 cell 自身折叠，cell 高度须含末子 bottom margin（margin-collapse-110/111）。
+///（kill-switch `ZW_CELL_MARGIN_ISOLATE=0` 回退，default-on）。
+static CELL_MARGIN_ISOLATE: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_CELL_MARGIN_ISOLATE").as_deref() != Ok("0"));
+
 /// Context for positioning Block and Float boxes within a Block Formatting Context
 pub struct BlockFormattingContext {
     /// The float positioning context that handles positioning floats within this Block Formatting Context
@@ -205,6 +211,10 @@ struct BlockItem {
 
     /// Whether the child is a non-independent block or inline node
     is_in_same_bfc: bool,
+
+    /// ZW R5281：立独立格式化上下文、margin 与子代隔离的盒（table-cell）。
+    /// 摆放仍走 is_in_same_bfc 路径，仅折叠旗标传 Line::FALSE（CSS2 §8.3.1）。
+    margins_isolated: bool,
 
     #[cfg(feature = "float_layout")]
     /// The `float` style of the node
@@ -672,6 +682,7 @@ fn generate_item_list(
                 order: order as u32,
                 is_table,
                 is_in_same_bfc,
+                margins_isolated: child_style.margins_isolated(),
                 #[cfg(feature = "float_layout")]
                 float,
                 #[cfg(feature = "float_layout")]
@@ -999,7 +1010,16 @@ fn perform_final_layout_on_in_flow_children(
                 known_dimensions,
                 parent_size,
                 available_space: available_space.map_width(|_| AvailableSpace::Definite(stretch_width)),
-                vertical_margins_are_collapsible: if item.is_in_same_bfc { Line::TRUE } else { Line::FALSE },
+                // R5281：margins_isolated 盒（table-cell）摆放走同 BFC 路径
+                //（is_in_same_bfc 不动，表几何由 ZW 表算法接管），但 margin 折叠
+                // 须与子代隔离——Line::FALSE 使子首/末 margin 留在盒内（§8.3.1）。
+                vertical_margins_are_collapsible: if item.is_in_same_bfc
+                    && !(item.margins_isolated && *CELL_MARGIN_ISOLATE)
+                {
+                    Line::TRUE
+                } else {
+                    Line::FALSE
+                },
                 flex_base_probe: false,
             };
 

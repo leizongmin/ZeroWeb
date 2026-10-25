@@ -25,6 +25,13 @@ pub trait BlockItemStyle: CoreStyle {
         false
     }
 
+    /// ZW R5281：该盒立独立格式化上下文，子代 margin 不与自身折叠（CSS2 §8.3.1；
+    /// table-cell §17.5.1）。默认不隔离。
+    #[inline(always)]
+    fn margins_isolated(&self) -> bool {
+        false
+    }
+
     /// Whether the item is a floated
     #[cfg(feature = "float_layout")]
     #[inline(always)]

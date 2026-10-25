@@ -937,3 +937,31 @@ fn test_resolve_named_area_name_not_found() {
     );
     assert_eq!(result, GridLineValue::Name("nonexistent".to_string()));
 }
+
+// ── R5281：item_margins_isolated 旗标（table-cell margin 隔离）──
+
+/// 测试 item_margins_isolated：table-cell 置位（CSS2 §8.3.1 × §17.5.1——cell 立
+/// 独立格式化上下文，子代 margin 不与自身折叠，margin-collapse-110/111）；block
+/// 与 table-row/table（不立 FC）不置位。
+#[test]
+fn test_item_margins_isolated_table_cell() {
+    let mut cell = ComputedStyle::default();
+    cell.display = DisplayValue::TableCell;
+    let ts = computed_style_to_taffy(&cell, None, 800.0, 600.0);
+    assert!(ts.item_margins_isolated, "table-cell 应置位 item_margins_isolated");
+
+    let mut block = ComputedStyle::default();
+    block.display = DisplayValue::Block;
+    let ts = computed_style_to_taffy(&block, None, 800.0, 600.0);
+    assert!(!ts.item_margins_isolated, "block 不应置位");
+
+    let mut row = ComputedStyle::default();
+    row.display = DisplayValue::TableRow;
+    let ts = computed_style_to_taffy(&row, None, 800.0, 600.0);
+    assert!(!ts.item_margins_isolated, "table-row 不立 FC，不应置位");
+
+    let mut table = ComputedStyle::default();
+    table.display = DisplayValue::Table;
+    let ts = computed_style_to_taffy(&table, None, 800.0, 600.0);
+    assert!(!ts.item_margins_isolated, "table 不应置位");
+}

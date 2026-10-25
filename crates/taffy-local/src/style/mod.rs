@@ -442,6 +442,11 @@ pub struct Style<S: CheapCloneStr = DefaultCheapStr> {
     /// Is it a replaced element like an image or form field?
     /// <https://drafts.csswg.org/css-sizing-3/#min-content-zero>
     pub item_is_replaced: bool,
+    /// ZW R5281（CSS2 §8.3.1）：该盒立独立格式化上下文——子代 margin 不得与自身
+    /// 折叠（子首/末 margin 是内部空间，不外溢出盒）。ZW 侧用于 taffy 模型为
+    /// Block 但按规范隔离 margin 的盒（table-cell §17.5.1）。摆放仍走同 BFC
+    /// 路径（表几何由 ZW 表算法接管），仅隔离 margin 折叠。
+    pub item_margins_isolated: bool,
     /// Should size styles apply to the content box or the border box of the node
     pub box_sizing: BoxSizing,
     /// Sets the direction of text, table and grid columns, and horizontal overflow.
@@ -591,6 +596,7 @@ impl<S: CheapCloneStr> Style<S> {
         display: Display::DEFAULT,
         item_is_table: false,
         item_is_replaced: false,
+        item_margins_isolated: false,
         box_sizing: BoxSizing::BorderBox,
         direction: Direction::Ltr,
         overflow: Point { x: Overflow::Visible, y: Overflow::Visible },
@@ -842,6 +848,11 @@ impl<S: CheapCloneStr> BlockItemStyle for Style<S> {
         self.item_is_table
     }
 
+    #[inline(always)]
+    fn margins_isolated(&self) -> bool {
+        self.item_margins_isolated
+    }
+
     #[cfg(feature = "float_layout")]
     #[inline(always)]
     fn float(&self) -> Float {
@@ -860,6 +871,11 @@ impl<T: BlockItemStyle> BlockItemStyle for &'_ T {
     #[inline(always)]
     fn is_table(&self) -> bool {
         (*self).is_table()
+    }
+
+    #[inline(always)]
+    fn margins_isolated(&self) -> bool {
+        (*self).margins_isolated()
     }
 
     #[cfg(feature = "float_layout")]
@@ -1208,6 +1224,7 @@ mod tests {
             display: Default::default(),
             item_is_table: false,
             item_is_replaced: false,
+            item_margins_isolated: false,
             box_sizing: Default::default(),
             #[cfg(feature = "float_layout")]
             float: Default::default(),
