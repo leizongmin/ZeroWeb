@@ -446,6 +446,22 @@ pub trait Sandbox {
     fn install_native_bindings_quickjs(&mut self, _installer: Box<dyn FnOnce(&rquickjs::Ctx)>) -> bool {
         false
     }
+
+    /// s88（html-semantics-compat dynamic-import classic 面）：注册 V8 原生动态
+    /// `import()` 宿主解析器。契约与 `__zw_compile_module` 一致——`resolver(spec,
+    /// referrer)` 返回 `resolved\u{1f}iife` / `resolved\u{1f}`（依赖图编译失败）/
+    /// 空串（取回失败）。须在 `execute` 之前调用；未注册时动态 import() 维持引擎
+    /// 默认 reject 语义。
+    ///
+    /// **默认 no-op**：QuickJS 后端降级（classic 上下文动态 import() 维持不支持态）。
+    #[allow(clippy::type_complexity)] // 镜像 register_callback 模式
+    fn set_dynamic_import_resolver(&mut self, _resolver: std::sync::Arc<dyn Fn(&str, &str) -> String + Send + Sync>) {}
+
+    /// s88：设定当前执行脚本的 referrer（动态 `import()` 的 base URL——classic 路径
+    /// 无 ScriptOrigin/resource_name，宿主每脚本执行前供给）。
+    ///
+    /// **默认 no-op**：QuickJS 后端降级（同上）。
+    fn set_dynamic_import_referrer(&mut self, _url: &str) {}
 }
 
 #[cfg(all(test, feature = "v8"))]

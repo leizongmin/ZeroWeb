@@ -1,10 +1,52 @@
 # HTML Semantics 兼容 — html/semantics 语义面（主攻大域）
 
 **版本**: v2.0
-**日期**: 2026-10-25（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 87 施工收口（dynamic-import must-reject 族 −22F bitwise：scripting-1 **117P/335F/34T→139P/313F/34T**——es_module 失败三态语义（取回失败 TypeError×新对象 / 依赖图断 TypeError×同对象 / parse/求值缓存原错误×同对象，对齐 spec fetch-a-single-module-script 与 module map 失败记账）+ webview `ModuleGraphFailure` 三分类回传 + runner `?pipe=header` MIME 模板建模；余 2F instantiation 归 module 基面切片④；失败族地图四切片序：①dynamic-import must-reject ✅ → ②stylesheets-blocking-scripts 12F 簇 → ③the-script-element 基面 65F → ④module 尾片），下一步 s88 classic-script dynamic import 重写（裸 V8 无宿主回调 reject `Error: Not supported` 单根——credentials 12F + delay-load/nonce/string-compilation classic 族）+ check-cookie/set-cookie runner handler 仿真；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**日期**: 2026-10-26（v1.0 立项 2026-10-08）
+**状态**: Active——M2 切片 88 施工收口（classic-script dynamic import +6P bitwise：scripting-1 **139P/313F/34T→145P/308F/33T**——V8 原生 `set_host_import_module_dynamically_callback` 接 `__zw_compile_module` 同款三态契约（源码重写不可达的 classic 上下文 `import()`：eval/setTimeout 字符串、Function 构造器、内联事件处理器共享一刃），webview `compile_module_contract` 共享化 + 每脚本 referrer 供给；s87 credentials「同根」归因勘误——该族实为 iframe+cookie handler 门控（M3），classic 根落 propagate-nonce/string-compilation/inline-handler；失败族地图序：①dynamic-import must-reject + classic 面 ✅ → ②stylesheets-blocking-scripts 12F 簇 → ③the-script-element 基面 65F → ④module 尾片），下一步 s89 execution-timing stylesheets-blocking-scripts 12F 簇（s86 切片序②）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-25 M2 切片 87 施工收口，dynamic-import must-reject 族轮）**：
+> **▶ 当前状态（2026-10-26 M2 切片 88 施工收口，classic-script dynamic import 轮）**：
+> **入场核账**：s87 遗留 classic 根 `Error: Not supported` 面当拍
+>（HEAD=a2b8e71e8 全子树基线复扫 138P/313F/34T，域账面 −1P 为
+> v8-code-cache 未上报同缺）细分：propagate-nonce-{inline,external}-
+> classic 2F、string-compilation-classic 1F+1T、inline-event-handler 1T、
+> base-url/nonce-classic 3T、css-module/import-css-module-dynamic 1F。
+> **s87 归因勘误**：credentials 12F/1T 整族走 iframe + HTTP cookie
+> handler（fetch set-cookie.py → iframe appendChild →
+> fetch_tests_from_window），**非** classic import 根（本轮修复对其零
+> 移动反证）；delay-load-event 1F 须异步取回 + trickle 时序建模。
+> **本轮一刀（共享路径）**：script-sandbox 注册 V8 原生
+> `set_host_import_module_dynamically_callback`（isolate slot 持
+> referrer+resolver），三态消费与 `__zw_load_module` 同款契约（返空→
+> 逐次新 TypeError / 空码→TypeError 携已解析 URL / `resolved\x1fiife`→
+> 按需最小安装 prelude helpers + TryCatch 编译求值）；未注册 resolver
+> 保 V8 默认 `Error: Not supported` 零外溢；`Sandbox` trait 新增
+> `set_dynamic_import_resolver/referrer` 默认 no-op（QuickJS 降级不变）。
+> webview `__zw_compile_module` 闭包体提升 `compile_module_contract`
+> 共享函数，原生 resolver 同契约；每 classic 脚本前刷 referrer=文档 URL。
+> **验证**：the-script-element/ 全子树基线/修复后双扫 bitwise
+> **138P/313F/34T → 144P/308F/33T**，diff 恰 6 行全红→绿零误伤
+>（nonce-classic ×2 + nonce-external-module + string-compilation-classic
+> :: eval 4×F→P；inline-event-handler T→P；css-module/import-css-module-
+> dynamic F→P 域外红利——无 type CSS module 动态 import 现按契约 reject
+> TypeError）；fetch-error 16P/script-error/credentials 逐位不动。单测
+> v8 **357/357**（+5 classic 原生 import 钉：成功/eval 字符串/取回失败/
+> 图断/无 resolver 保真）、quickjs 255/255、webview 792/792；fmt +
+> clippy `-D warnings` 两 crate clean。域账自此按 **145P/308F/33T** 记。
+> 账本见 [evidence/2026-10-26-m2s88-classic-dynamic-import.md](html-semantics-compat/evidence/2026-10-26-m2s88-classic-dynamic-import.md)。
+> **范围**：生产面 script-sandbox/webview 两 crate；runner 零改动；
+> apps/browser 与 renderer 宿主未动（未注册 resolver 行为不变）；语料
+> 不可改维持。FIXME 挂账：classic 上下文重复失败 `__moduleFailures`
+> 同对象记账未接；目标模块体 import.meta 无注入。**卡点（非本流）**：
+> `make test` 预存红维持 s86 记录——quickjs zero-renderer
+> `mutation_arm_…reset_window`（归 perf/renderer 流未解）。
+> **下一步**：s89 execution-timing stylesheets-blocking-scripts 12F 簇
+>（s86 切片序②）；string-compilation 余 4 臂/nonce CSP/base URL/
+> delay-load/credentials 残面归基面③、CSP、runner 建模、M3 各账
+>（明细见账本 §4）。
+> **切片间隙**：本轮 script-sandbox/webview 面；下一挂账 runner 面
+>（stylesheets-blocking-scripts 时序），间隙开放。
+>
+> **▶ 上轮状态（2026-10-25 M2 切片 87 施工收口，dynamic-import must-reject 族轮——其下一步 classic 面已由 s88 收口，见上）**：
 > **入场核账**：s86 切片序①当拍 dynamic-import 子树 **6P/49F/11T**
 >（FILTER=the-script-element/module/dynamic-import）。must-reject 24F
 >「单根」经当拍细分为三根：①错误类型根 18F——`__zw_load_module` 宿主返空
@@ -48,41 +90,6 @@
 > 切片④。
 > **切片间隙**：本轮 script-sandbox/webview/runner 面；下一挂账同面
 >（script-sandbox 重写），间隙开放。
->
-> **▶ 上轮状态（2026-10-25 M2 切片 86 开片分诊，scripting-1 轮——其下一步 dynamic-import must-reject 已由 s87 收口，见上）**：
-> **入场核账**：s85 下一步「testdriver-Actions 支持面」过时——s79 已证伪
-> s78 注记（runner 自带 Actions stub，点击链可达）、s80 journal 已收口
-> hash-name-dynamic 3P/5F→8P/0F；本轮 FILTER 复跑 **8/8 Pass** 复证。
-> F 族 name-attribute（s51 时代挂账）已被 s54+ 收口至 18P/0F；
-> 720-stretch 22F 归 layout 集成面跨流协调。按 DC-2 挂账序转
-> **scripting-1 开片**（s67 轮挂账序首个未消费大项；microdata 上游 404
-> 空域 M1 已销项）。**当拍红图**（make 目标 + FILTER，47min 全域）：
-> **169P/335F/86T**（M1 78P/247F/70T——语料 +195 后 P +91、通过率
-> 19.7%→28.6%；模块底座 es_module+R3093 已建，M1 主簇松动）。失败族四
-> 切片序：①dynamic-import must-reject 24F 单根 + credentials 12F；
-> ②execution-timing stylesheets-blocking-scripts 12F 簇；③the-script-
-> element 基面 65F（script-for-event/charset/script-text 等）；④module
-> 基面尾片 + css/json/text 变体 40F。**本轮一刀（R5286，runner）**：
-> moving-between-documents 53 案经 helper 运行期 createElement("iframe")
-> 开第二文档，主源无 iframe 字面逃过内容规则，全部 1P+1T（首子测试过、
-> iframe load 挂满超时网）——单文档 runner 不可执行面，归 navigation M3
-> 多 frame 管线门控（the-iframe-element 先例）；`html_semantics_case_
-> skipped` 增 helper 标记臂 + 契约单测。**验证**：复跑 **117P/335F/34T**
-> （−52P/−52T 全落 helper 案，F 逐位不变，ordering 五案与
-> during-evaluation 单文档真实红面零误伤；墙钟 47→24min）。域账自此按
-> 117P/335F/34T 记。账本见
-> [evidence/2026-10-25-m2s86-scripting1-triage.md](html-semantics-compat/evidence/2026-10-25-m2s86-scripting1-triage.md)。
-> **范围**：生产面仅 runner skip 规则臂 + 单测；engine/webview/shim 零
-> 改动；语料不可改维持。**卡点（非本流，碰头记录）**：`make test` 88 绿
-> 腿后止于两预存红——①quickjs zero-renderer --lib
-> `mutation_arm_…reset_window` 时序窗测试确定性红（疑 `48937037e` rAF 默认
-> 开启引入，cargo tree 证 zero-renderer 零依赖 wpt-runner，归 perf/renderer
-> 流重审）；②zero-webview video_registry.rs:262 clippy::map_entry
-> （`9c6652fa3` bg02-media 引入，归 media 流修）。均记录不代修。
-> **下一步**：dynamic-import must-reject（24F 单根，script-sandbox
-> es_module `__zw_dynamic_import` 拒绝语义）+ credentials mode 12F。
-> **切片间隙**：本轮 runner 一刀 + 契约单测；下一挂账 script-sandbox 面
-> 亦本流，间隙开放。
 >
 > **▶ 上轮状态（2026-10-25 M2 切片 85 定证收口，s84 根因证伪轮——其下一步挂账经 s86 核账已被 s79/s80 消费，见上）**：
 > s84「gBCR materialize 滞后」根因三路定证**证伪**（s53 先例零代码轮，
@@ -1594,6 +1601,17 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-25 M2 切片 86**：scripting-1 开片分诊轮——s85 下一步
+  「testdriver-Actions 支持面」过时（s79 已证伪 s78 注记、s80 journal
+  已收口 hash-name-dynamic 8P/0F，FILTER 复跑 8/8 复证）；当拍红图
+  **169P/335F/86T**（语料 +195 后），失败族四切片序：①dynamic-import
+  must-reject → ②stylesheets-blocking-scripts 12F 簇 → ③the-script-
+  element 基面 65F → ④module 尾片。一刀（R5286，runner）：moving-between-
+  documents 53 案 helper 运行期 iframe 开第二文档——单文档 runner
+  不可执行面归 navigation M3 门控，`html_semantics_case_skipped` 增
+  helper 标记臂 + 契约单测。域 **169P/335F/86T → 117P/335F/34T**
+  （−52P/−52T 全落 helper 案，F 逐位不变；墙钟 47→24min）。账本
+  [evidence/2026-10-25-m2s86-scripting1-triage.md](html-semantics-compat/evidence/2026-10-25-m2s86-scripting1-triage.md)。
 - **2026-10-24 M2 切片 69**：F3 img.decode() 收口（R5276 三刀）——根因
   decode IDL 无实现（get trap 无臂 + SVGImageElement 原型无方法）。
   ①共享解码核 `__zwImgDecodeCore`（IMG trap/detached 动态臂/SVG 原型三方

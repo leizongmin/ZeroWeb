@@ -66,6 +66,13 @@ must-reject 24F 三根（s86 记「单根」经当拍细分）：
   （delay-load-event/propagate-nonce-classic/string-compilation-classic 同
   根）。转 classic-script dynamic import 重写 + `check-cookie.py`/
   `set-cookie.py` handler 建模 + 跨源 cookie jar——下一刀单独成轮。
+  **勘误（2026-10-26 s88 当拍实证）**：上句「同根」归因有误——
+  dynamic-imports-credentials.sub.html（含 setTimeout 变体）整族走
+  iframe + HTTP cookie handler（fetch `set-cookie.py` → Promise.all →
+  iframe appendChild → `fetch_tests_from_window`），12F/1T 根因是
+  cookie-handler 未建模（M3 多文档面），classic `import()` 重写对其
+  **零移动**（s88 复扫 bitwise 不变证）；classic 根实际落在
+  propagate-nonce-classic/string-compilation-classic/inline-event-handler。
 - **TLA 3 案**（basic/cyclic/tla-deferred `.tentative.html`）：模块体
   top-level await transform 后 eval 语法错——归 module 基面；runner
   「整案抛零声明 → rc=1」报告语义留 FIXME。

@@ -3749,6 +3749,7 @@ impl WebView {
         //（外链 URL）/ 动态 import() fetch 外链脚本源。fetcher 未配 → 不注册（shim typeof-check no-op）。
         if let Some(fetcher) = self.script_source_fetcher.clone() {
             let fetcher_compile = fetcher.clone();
+            let fetcher_native_import = fetcher.clone();
             sandbox.register_callback(
                 "__zw_fetch_script",
                 Box::new(move |args| {
@@ -3769,34 +3770,17 @@ impl WebView {
                     if spec.is_empty() {
                         return String::new();
                     }
-                    // R3094：递归 fetch transitive deps（闭合 module graph）。registry 按原 spec 注册源，
-                    // 循环防护按解析后 URL；fetch 失败 → 返空（__zw_load_module 抛 TypeError）。
-                    // t8j-r2（D1）：回传 `resolved\x1fcode`，JS 侧缓存键取宿主解析键。
-                    // s87 失败三态（WPT dynamic-imports-fetch-error/script-error 对象身份
-                    // 判据）：fetch 期失败（顶层/依赖取回、顶层编译）返空 → JS 逐次新
-                    // TypeError（不入 module map）；依赖解析失败（裸 specifier）返
-                    // `resolved\x1f` 空码标记 → JS 记入 __moduleFailures 复抛同对象（parse
-                    // 期失败随顶层 module map 记账——HTML spec fetch-a-single-module-script）。
-                    let mut reg = zero_script_sandbox::ModuleRegistry::new();
-                    let mut visited = std::collections::HashSet::new();
-                    match collect_module_deps_recursive(&fetcher_compile, parent, spec, false, &mut reg, &mut visited) {
-                        Ok(()) => match zero_script_sandbox::compile_dependency_iife(spec, &reg) {
-                            Ok(iife) => format!("{}\u{1f}{iife}", resolve_document_url(parent, spec)),
-                            Err(_) => {
-                                tracing::warn!("compile module {spec} (transitive fetch)");
-                                String::new()
-                            }
-                        },
-                        Err(ModuleGraphFailure::DepResolution) => {
-                            format!("{}\u{1f}", resolve_document_url(parent, spec))
-                        }
-                        Err(failure @ (ModuleGraphFailure::TopFetch | ModuleGraphFailure::DepFetch)) => {
-                            tracing::warn!("collect module {spec} (transitive fetch): {failure:?}");
-                            String::new()
-                        }
-                    }
+                    compile_module_contract(&fetcher_compile, parent, spec)
                 }),
             );
+            // s88：V8 原生动态 import() 解析器（classic 上下文——eval 字符串/Function
+            // 构造器/事件处理器上下文源码重写不可达）。复用同一编译契约（三态标记）。
+            sandbox.set_dynamic_import_resolver(std::sync::Arc::new(move |spec: &str, parent: &str| {
+                if spec.is_empty() {
+                    return String::new();
+                }
+                compile_module_contract(&fetcher_native_import, parent, spec)
+            }));
         }
 
         // DOM shim 只注入一次（重复执行会重置 _nodeMap 丢失监听器）；含安装后 viewport
@@ -4063,6 +4047,9 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                     }),
                 );
             }
+            // s88：动态 import() referrer = 文档 URL（classic 路径无 ScriptOrigin，
+            // 每脚本前刷新——模块路径经 prelude `.call({referrer})` 自带，不受此影响）。
+            sandbox.set_dynamic_import_referrer(self.current_url.as_deref().unwrap_or("about:blank"));
             let execution = sandbox.execute(&full).map(|_| ());
             if eval_wrap_active {
                 let _ = sandbox.execute(
@@ -6713,6 +6700,32 @@ enum ModuleGraphFailure {
     DepResolution,
     /// 依赖取回失败（相对/绝对路径 404/MIME/跨源）。
     DepFetch,
+}
+
+/// s88：进程内 module 编译契约——`__zw_compile_module` 宿主回调与 V8 原生动态
+/// import() 解析器（classic 上下文）共用。R3094：递归 fetch transitive deps（闭合
+/// module graph），registry 按原 spec 注册源、循环防护按解析后 URL。回传三态标记：
+/// `resolved\x1fcode`（取回成功）/ `resolved\x1f` 空码（依赖解析失败）/ 空串（fetch
+/// 期失败）。s87 失败三态语义（WPT dynamic-imports-fetch-error/script-error 对象
+/// 身份判据——HTML spec fetch-a-single-module-script module map 失败记账）见
+/// es_module `__zw_load_module` 与 v8_runtime `dynamic_import_callback` 两侧消费。
+fn compile_module_contract(fetcher: &ScriptSourceFetcher, parent: &str, spec: &str) -> String {
+    let mut reg = zero_script_sandbox::ModuleRegistry::new();
+    let mut visited = std::collections::HashSet::new();
+    match collect_module_deps_recursive(fetcher, parent, spec, false, &mut reg, &mut visited) {
+        Ok(()) => match zero_script_sandbox::compile_dependency_iife(spec, &reg) {
+            Ok(iife) => format!("{}\u{1f}{iife}", resolve_document_url(parent, spec)),
+            Err(_) => {
+                tracing::warn!("compile module {spec} (transitive fetch)");
+                String::new()
+            }
+        },
+        Err(ModuleGraphFailure::DepResolution) => format!("{}\u{1f}", resolve_document_url(parent, spec)),
+        Err(failure @ (ModuleGraphFailure::TopFetch | ModuleGraphFailure::DepFetch)) => {
+            tracing::warn!("collect module {spec} (transitive fetch): {failure:?}");
+            String::new()
+        }
+    }
 }
 
 /// 递归抓取 module graph（transitive deps），供进程内 `__zw_compile_module`（R3094）闭合 module graph。
