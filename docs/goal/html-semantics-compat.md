@@ -2,9 +2,36 @@
 
 **版本**: v2.0
 **日期**: 2026-10-25（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 84 分诊收口（dialog closedby 家族「Chrome-parity 同红」假设重估：chrome-158 全绿实证过时，23F 转可施工；根因隔离到 gBCR materialize 滞后——showModal/showPopover 后 rect 经 4 rAF 恒零、~100ms 才有效），下一步 Rust 侧定证 take_probe flush/version-gate 链 + 修复 rect 新鲜度（closedby 23F + abspos-dialog-layout 5F 共桥）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 85 定证收口（s84「gBCR materialize 滞后」根因**证伪**：take_probe 链直插 + Rust 复现 + TD 点击坐标三路定证——flush/version-gate/refresh 逐轮即拍无漏批、rect 首拍即非零、normal 嵌套 20/20 Pass；closedby 红图修正 **104P/19F 全归位**：complex 16F=declarative shadow 联合切片（用户门禁）、bounds 2F=R-s31 渲染流、corner 1F=s53 keep、simple 复绿——本流工作面无剩余可施工面），下一步 testdriver-Actions 支持面（s78 挂账：hash-name-dynamic 5F + 指针/键盘合成输入族，runner 面本流工作面）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-25 M2 切片 84 分诊收口，closedby 同红假设重估轮）**：
+> **▶ 当前状态（2026-10-25 M2 切片 85 定证收口，s84 根因证伪轮）**：
+> s84「gBCR materialize 滞后」根因三路定证**证伪**（s53 先例零代码轮，
+> 插桩临时已全部回退/删除，工作树回 s84 基线）：①take_probe 链直插
+> （ZW_PROBE_TRACE）——corpus complex 逐轮 `flush 即 apply → version
+> 同拍 bump → 门即开 → changed=true → refresh fired=true`，GATE MISS
+> 0 次（fired=false 仅 html 未变轮，正确 no-op），s84 三处漏批候选
+> （version 门时序 / runner_probe_html 基线 / timer 泵批次归属）无一
+> 成立；②Rust 复现测试（复刻 probe loop 双结构逐拍采样）——round 0
+> rect 即非零（normal dialogA@8,100,784,18 …、slots dialogA@8,100,0,36
+> …），12 轮 + +100ms 稳定，s84「三拍恒零、+100ms 才有效」不存在；
+> ③TD 点击坐标实测——normal 嵌套 20/20 Pass、clickOn 落点非零命中
+> 正确目标。**红图修正**（make + FILTER 当拍实测）：closedby 家族
+> **104P/19F**——closedby 27P/0F、stacked 4P/0F、start-open 2P/0F、
+> **simple 6P/0F（s84 记 2F 过时复绿）**、corner-cases 29P/1F（s53
+> keep）、bounds-clicking 12P/2F（R-s31 渲染流）、complex 24P/16F
+> （16F 全 shadow-slots，normal 20/20 Pass）。**归账**：16F=declarative
+> shadow 联合切片（s51 用户门禁维持）、2F=渲染流、1F=keep——本流
+> 工作面（engine shim/webview/runner）无剩余可施工面。s84 伪值推断
+> （存疑不下死论）与「红图当拍复核」教训见账本。账本见
+> [evidence/2026-10-25-m2s85-closedby-rootcause-falsified.md](html-semantics-compat/evidence/2026-10-25-m2s85-closedby-rootcause-falsified.md)。
+> **范围**：零代码轮（s53 先例），不改生产面；corpus 不可改维持
+> （正常面下我方 rect 同步可见，无需「新鲜度」修复）。
+> **下一步**：testdriver-Actions 支持面（s78 挂账：hash-name-dynamic
+> 5F + 指针/键盘合成输入族——runner 语料 testdriver.js 缺席面，runner
+> 面本流工作面）。
+> **切片间隙**：本轮零代码；下一挂账 runner 面亦本流，间隙开放。
+>
+> **▶ 上轮状态（2026-10-25 M2 切片 84 分诊收口，closedby 同红假设重估轮——s85 证伪其根因，见上）**：
 > A 族 closedby×slot 16F 挂账依据（crbug 417571176 同红，2026-04）重估
 > **过时**：wpt.fyi chrome-158.0.8122.0 summary 实证 closedby 家族全绿
 > （complex 40/40、simple 6/6、closedby 27/27、bounds 14/14、corner
@@ -289,41 +316,6 @@
 > 地基）——按共享路径收益取一开片。
 > **切片间隙**：本轮 part03/part04 shim + 契约 part86 + extract.rs（s68
 > 遗留 clippy）；下一挂账 F1b/F2 亦 engine 面，间隙开放，开工前查 oracle
-> master 碰撞记录。
->
-> **▶ 上轮状态（2026-10-24 M2 切片 68 收口，F1 img 静态加载管线轮）**：
-> s67 八族地图 F1 首靶收口（原估 ~260F，实测归因后 raster src 克隆可翻
-> 部分本轮全收，SVG 尾片归 F1b）。**根因**：img settle 只接 `.src` IDL
-> setter 通道（R56h），parser 静态 `<img src>` 无 fetch/settle——
-> naturalWidth 恒 0、load/error 恒不派；叠加 template 内容漏抓（zero_dom
-> fragment 不在文档树，extract_img_srcs 不达）、broken 终态缺失（error 后
-> complete 恒 false）、运行期事件在页面脚本阶段即时派（spec：DCL 不等图
-> 片、图片延迟 window load）。**修复（R5275 六刀）**：①part04
-> `__zwFireStaticImgSettle` sweep（`__zw_get_image_size` 快照命中 → loaded
-> + load + available-images；未命中 → broken + error；lazy/空 src 跳过）+
-> 闸门队列 drain + `__zwImgLoadBlocked` 在飞判定；②part04 getter 面——
-> `_zwImgNaturalDim`（lazy 未 settle → 0 防快照绕门）+ IMG width/height
-> 缺失回落自然尺寸 + currentSrc 绝对 URL + complete getter 改读
-> latest-wins（R3204 陈旧快照坑）；③part05 R56h src 臂重写——restart 语
-> 义（同 URL 幂等）+ available-images 同步 settle（状态同步可读、load 事件
-> `_defer` 后续任务派）+ `_zwImgInflight` 在飞计数 + `__zwReadyState ===
-> 'loading'` 闸门入队；④extract.rs 递归收集 template contents `<img>`；
-> ⑤testharness.rs 生命周期拆三任务链（interactive+DCL / settle 独立任务
-> 微任务边界排水 / load 等待任务 100ms 重试至图片不在飞——trickle(dN) 慢
-> 图延迟 window load 语义）；⑥available-images 臂事件 `_defer` 化（probe14
-> 实证同步即派丢 src 后注册的 onload）。契约 part85 两测试（sweep settle
-> 四臂 + 闸门/available-images/幂等）。**验证**：域 **461P/816F/40T →
-> 549P/738F/35T**（GAIN 88 = 78 F→P + 5 T→P + 5 新注册，三数守恒无回归空
-> 间）+ naturalWidth 30P/228F→48P/210F + delay-load 7 案全绿 + invisible
-> /already-loaded/available-images-onload 各 +1 + interactive
-> **439P/44F/0T 逐位持平** + lib **3474P/0F** + 翻转力实证（撤钩子调用/
-> 撤 sweep 体 → part85 双红，恢复字节一致）。账本见
-> [evidence/2026-10-24-m2s68-img-static-loading.md](html-semantics-compat/evidence/2026-10-24-m2s68-img-static-loading.md)。
-> **下一步**：F1b naturalWidth SVG 固有尺寸/密度校正尾片（210F 余量，
-> intrinsic dimensions 算法）或 F3 img.decode() 56F（promise 面接 settle
-> 状态机，F1 地基已备）——按共享路径收益取一开片。
-> **切片间隙**：本轮 part04/05 shim + extract.rs + testharness.rs + 契约
-> part85；下一挂账 F1b/F3 亦 engine 面，间隙开放，开工前查 oracle
 > master 碰撞记录。
 >
 > **▶ 上轮状态（2026-10-24 M2 切片 67 收口，embedded-content 开片分诊轮）**：
@@ -1576,6 +1568,15 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-24 M2 切片 68**：F1 img 静态加载管线收口（R5275 六刀）——
+  根因 img settle 只接 `.src` IDL 通道（parser 静态 img 无 fetch/settle）
+  + template 内容漏抓 + broken 终态缺失。part04 sweep/getter 面 + part05
+  R56h restart 语义 + extract.rs template 递归 + testharness.rs 生命周期
+  拆三任务链 + available-images `_defer` 化。域 **461P/816F/40T →
+  549P/738F/35T**（GAIN 88）；naturalWidth 30P/228F→48P/210F + delay-load
+  7 案全绿；interactive **439P/44F/0T 持平**；lib **3474P/0F**（+2 契约
+  part85）。账本
+  [evidence/2026-10-24-m2s68-img-static-loading.md](html-semantics-compat/evidence/2026-10-24-m2s68-img-static-loading.md)。
 - **2026-10-24 M2 切片 67**：embedded-content 开片分诊轮——域刷新
   458P/819F/40T 八族地图（F1 img 静态加载管线 ~260F / F2
   select-an-image-source ~300F / F3 decode 56F / F4 image-map 命中 84F
