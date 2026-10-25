@@ -2,9 +2,44 @@
 
 **版本**: v2.0
 **日期**: 2026-10-25（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 85 定证收口（s84「gBCR materialize 滞后」根因**证伪**：take_probe 链直插 + Rust 复现 + TD 点击坐标三路定证——flush/version-gate/refresh 逐轮即拍无漏批、rect 首拍即非零、normal 嵌套 20/20 Pass；closedby 红图修正 **104P/19F 全归位**：complex 16F=declarative shadow 联合切片（用户门禁）、bounds 2F=R-s31 渲染流、corner 1F=s53 keep、simple 复绿——本流工作面无剩余可施工面），下一步 testdriver-Actions 支持面（s78 挂账：hash-name-dynamic 5F + 指针/键盘合成输入族，runner 面本流工作面）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 86 开片分诊（scripting-1 当拍 **169P/335F/86T→117P/335F/34T**：53 案 moving-between-documents 多文档面按 helper 标记出账——navigation M3 门控，the-iframe-element 先例；失败族地图四切片序：dynamic-import must-reject 24F 单根 → stylesheets-blocking-scripts 12F 簇 → the-script-element 基面 65F → module 尾片；入场核账：s85 下一步 testdriver-Actions 挂账已被 s79/s80 消费，hash-name-dynamic 复跑 8/8 Pass 复证），下一步 dynamic-import must-reject + credentials 12F（script-sandbox es_module 面）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-25 M2 切片 85 定证收口，s84 根因证伪轮）**：
+> **▶ 当前状态（2026-10-25 M2 切片 86 开片分诊，scripting-1 轮）**：
+> **入场核账**：s85 下一步「testdriver-Actions 支持面」过时——s79 已证伪
+> s78 注记（runner 自带 Actions stub，点击链可达）、s80 journal 已收口
+> hash-name-dynamic 3P/5F→8P/0F；本轮 FILTER 复跑 **8/8 Pass** 复证。
+> F 族 name-attribute（s51 时代挂账）已被 s54+ 收口至 18P/0F；
+> 720-stretch 22F 归 layout 集成面跨流协调。按 DC-2 挂账序转
+> **scripting-1 开片**（s67 轮挂账序首个未消费大项；microdata 上游 404
+> 空域 M1 已销项）。**当拍红图**（make 目标 + FILTER，47min 全域）：
+> **169P/335F/86T**（M1 78P/247F/70T——语料 +195 后 P +91、通过率
+> 19.7%→28.6%；模块底座 es_module+R3093 已建，M1 主簇松动）。失败族四
+> 切片序：①dynamic-import must-reject 24F 单根 + credentials 12F；
+> ②execution-timing stylesheets-blocking-scripts 12F 簇；③the-script-
+> element 基面 65F（script-for-event/charset/script-text 等）；④module
+> 基面尾片 + css/json/text 变体 40F。**本轮一刀（R5286，runner）**：
+> moving-between-documents 53 案经 helper 运行期 createElement("iframe")
+> 开第二文档，主源无 iframe 字面逃过内容规则，全部 1P+1T（首子测试过、
+> iframe load 挂满超时网）——单文档 runner 不可执行面，归 navigation M3
+> 多 frame 管线门控（the-iframe-element 先例）；`html_semantics_case_
+> skipped` 增 helper 标记臂 + 契约单测。**验证**：复跑 **117P/335F/34T**
+> （−52P/−52T 全落 helper 案，F 逐位不变，ordering 五案与
+> during-evaluation 单文档真实红面零误伤；墙钟 47→24min）。域账自此按
+> 117P/335F/34T 记。账本见
+> [evidence/2026-10-25-m2s86-scripting1-triage.md](html-semantics-compat/evidence/2026-10-25-m2s86-scripting1-triage.md)。
+> **范围**：生产面仅 runner skip 规则臂 + 单测；engine/webview/shim 零
+> 改动；语料不可改维持。**卡点（非本流，碰头记录）**：`make test` 88 绿
+> 腿后止于两预存红——①quickjs zero-renderer --lib
+> `mutation_arm_…reset_window` 时序窗测试确定性红（疑 `48937037e` rAF 默认
+> 开启引入，cargo tree 证 zero-renderer 零依赖 wpt-runner，归 perf/renderer
+> 流重审）；②zero-webview video_registry.rs:262 clippy::map_entry
+> （`9c6652fa3` bg02-media 引入，归 media 流修）。均记录不代修。
+> **下一步**：dynamic-import must-reject（24F 单根，script-sandbox
+> es_module `__zw_dynamic_import` 拒绝语义）+ credentials mode 12F。
+> **切片间隙**：本轮 runner 一刀 + 契约单测；下一挂账 script-sandbox 面
+> 亦本流，间隙开放。
+>
+> **▶ 上轮状态（2026-10-25 M2 切片 85 定证收口，s84 根因证伪轮——其下一步挂账经 s86 核账已被 s79/s80 消费，见上）**：
 > s84「gBCR materialize 滞后」根因三路定证**证伪**（s53 先例零代码轮，
 > 插桩临时已全部回退/删除，工作树回 s84 基线）：①take_probe 链直插
 > （ZW_PROBE_TRACE）——corpus complex 逐轮 `flush 即 apply → version
@@ -289,34 +324,6 @@
 > **切片间隙**：本轮 part03/04/05 shim + extract.rs + css-parser media_query
 > + 契约 part88（part85 键位随绝对化更新）；下一挂账 F1b/F4 亦 engine 面，
 > 间隙开放，开工前查 oracle master 碰撞记录。
->
-> **▶ 上轮状态（2026-10-24 M2 切片 69 收口，F3 img.decode() 轮）**：
-> s67 八族地图 F3 收口（60 子测试 60F → 58P/2F）。**根因**：decode IDL 无
-> 实现（get trap 无臂 + SVGImageElement 原型无方法）。**修复（R5276 三刀）**：
-> ①共享解码核 `__zwImgDecodeCore`（part03 IIFE 顶层，IMG trap/detached 动态
-> 臂/SVG 原型三方复用）——select-image-source 近似候选（picture 首 source
-> srcset 首 token，data: URL 不逗号截断）**调用时捕获** + 恒异步 settle +
-> settle/快捷面双点变异与活跃性复检（探针钉定中断前同步即决稿三缺口：同步
-> 即决漏 adopt 时序、pinned 恒拒臂挡 adopt-in、settle 重读误判同 turn
-> attach）+ 自驱 fetch 链，decode 只读不写 settle 状态；②part03 detached
-> 产物动态臂（调用时 parentNode 链判活跃，adopt-in 后可达走核，属性空回落
-> src expando）+ SVGImageElement.prototype.decode（href → xlink:href）；
-> ③part04 trap 臂瘦身为闭包供给。extract.rs collapsible_if（s68 遗留
-> clippy，非行为变更）。契约 part86 两测试（决策序九臂 + adopt/SVG/picture
-> 九臂）。**验证**：域 **549P/738F/35T → 607P/678F/37T**（GAIN 58 = 58
-> F→P；子测试总数 1322 守恒；逐子测试 diff 非 decode 变化仅 2 条）+ 残留
-> 2F = quick-attach empty picture cached/uncached 时序差（issue 10531 待改
-> 行为，归 F2 请求对象模型）+ 2 案 F→T（audio/video loading-lazy-autoplay
-> **预存环境抖动**——stash 后 HEAD 复跑同 Timeout 实证，非本切片）+ lib
-> **3477P/0F**（+2 契约）+ clippy/fmt clean。账本见
-> [evidence/2026-10-24-m2s69-img-decode.md](html-semantics-compat/evidence/2026-10-24-m2s69-img-decode.md)。
-> **下一步**：F1b naturalWidth SVG 固有尺寸/密度校正尾片（210F 余量，
-> intrinsic dimensions 算法）或 F2 select-image-source/currentSrc/srcset/
-> sizes（~300F 最大单族——decode 已消费 select-image-source 近似，开片有
-> 地基）——按共享路径收益取一开片。
-> **切片间隙**：本轮 part03/part04 shim + 契约 part86 + extract.rs（s68
-> 遗留 clippy）；下一挂账 F1b/F2 亦 engine 面，间隙开放，开工前查 oracle
-> master 碰撞记录。
 >
 > **▶ 上轮状态（2026-10-24 M2 切片 67 收口，embedded-content 开片分诊轮）**：
 > 两件事。**① 域分诊八族地图落档（819F 全归因）**：F1 img 静态加载管线
@@ -1568,6 +1575,15 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-24 M2 切片 69**：F3 img.decode() 收口（R5276 三刀）——根因
+  decode IDL 无实现（get trap 无臂 + SVGImageElement 原型无方法）。
+  ①共享解码核 `__zwImgDecodeCore`（IMG trap/detached 动态臂/SVG 原型三方
+  复用，调用时捕获候选 + 恒异步 settle + 双点变异与活跃性复检 + 自驱
+  fetch 链）；②part03 detached 产物动态臂 + SVGImageElement.decode；
+  ③part04 trap 臂瘦身为闭包供给。契约 part86 两测试。域
+  **549P/738F/35T → 607P/678F/37T**（GAIN 58；残留 2F=quick-attach 时序
+  归 F2、2 案 F→T 预存环境抖动）；lib **3477P/0F**（+2 契约）。账本
+  [evidence/2026-10-24-m2s69-img-decode.md](html-semantics-compat/evidence/2026-10-24-m2s69-img-decode.md)。
 - **2026-10-24 M2 切片 68**：F1 img 静态加载管线收口（R5275 六刀）——
   根因 img settle 只接 `.src` IDL 通道（parser 静态 img 无 fetch/settle）
   + template 内容漏抓 + broken 终态缺失。part04 sweep/getter 面 + part05
