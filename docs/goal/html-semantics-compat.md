@@ -2,9 +2,36 @@
 
 **版本**: v2.0
 **日期**: 2026-10-25（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 83 收口（handle 形元素 matches complex 读面：JS 双形态父链 complex 走三态契约，域 **976P/252F/30T 逐位持平 REG 0**、pin 逐位持平、engine lib 3523P/0F），下一步 720-stretch 渲染展开 22F（需布局几何，归 layout 集成面，启动前查 oracle master 碰撞记录）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 84 分诊收口（dialog closedby 家族「Chrome-parity 同红」假设重估：chrome-158 全绿实证过时，23F 转可施工；根因隔离到 gBCR materialize 滞后——showModal/showPopover 后 rect 经 4 rAF 恒零、~100ms 才有效），下一步 Rust 侧定证 take_probe flush/version-gate 链 + 修复 rect 新鲜度（closedby 23F + abspos-dialog-layout 5F 共桥）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-25 M2 切片 83 收口，handle 形元素 matches complex 读面轮）**：
+> **▶ 当前状态（2026-10-25 M2 切片 84 分诊收口，closedby 同红假设重估轮）**：
+> A 族 closedby×slot 16F 挂账依据（crbug 417571176 同红，2026-04）重估
+> **过时**：wpt.fyi chrome-158.0.8122.0 summary 实证 closedby 家族全绿
+> （complex 40/40、simple 6/6、closedby 27/27、bounds 14/14、corner
+> 30/30、stacked 4/4、start-open 2/2）——closedby 已 ship，**23F 转可
+> 施工**（complex 16 + simple 2 + bounds 2 + corner 1）。**根因隔离**
+> （三步插桩探针，临时已删）：失败首腿全是 light-dismiss 误触发——
+> 首测点击 popover 的 ld 落点 px=0/py=0（corpus clickOn 2-rAF 后采样
+> rect 恒零）→ s30 backdrop retarget → popover pass 误隐；gBCR 时序
+> 探针证 showModal/showPopover 后 sync/2raf/4raf 三拍 rect 恒零、
+> +100ms 才有效，且序列化 htmlLen +23（closedby+open）与 rect 转有效
+> 同拍——mutation 批 materialize（apply→render→rect 快照）在 rAF 驱动
+> 节拍整链滞后 ~5+ 探测轮。**下一步**：Rust 侧定证 take_probe
+> flush/version-gate/refresh 链哪环漏批（候选：mutation_version 门
+> 时序、runner_probe_html 基线、timer 泵与 rAF 拍批次归属），修复 rect
+> 新鲜度（closedby 23F 与 abspos-dialog-layout 5F 共桥——本轮顺带观测
+> `:modal` UA position:fixed 未上、dialog 盒 in-flow）。账本见
+> [evidence/2026-10-25-m2s84-closedby-parity-recheck.md](html-semantics-compat/evidence/2026-10-25-m2s84-closedby-parity-recheck.md)。
+> **范围**：零代码轮（s53 先例），不改生产面；corpus 不可改（2-rAF
+> 采样是上游语料行为，Chrome 同步 rect 语义使其天然正确——修复须落
+> 我方 rect 新鲜度）。
+> **下一步**：s85 修复片——Rust 契约测试复现 gBCR 滞后 + take_probe
+> 链定证 + materialize 时机修复；验证门 closedby 家族 23F 红转绿 +
+> 域/pin 逐位持平。
+> **切片间隙**：本轮零代码；下一挂账 webview/runner 面（rect 快照链
+> ——本流工作面），间隙开放。
+>
+> **▶ 上轮状态（2026-10-25 M2 切片 83 收口，handle 形元素 matches complex 读面轮）**：
 > s82 遗留 matches complex 面分诊**推翻非平凡判定**：probe 实证 gap 非
 > 同 turn 窗口而是**永久**——post-drain `matches('#anc span')` 仍 false；
 > qS 倒查命中并登记 R100 锚，但 t6 锚臂 host `__zw_matches` 读原始
