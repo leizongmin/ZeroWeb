@@ -850,3 +850,6 @@ mod r5251_block_in_inline_deep_split;
 /// R5252（CSS2 §8.3.1 + §9.2.1.1）块→匿名行盒边界锚定 collapse gap 锚——原子
 /// inline 的 margin-top 不与前驱块级兄弟 margin-bottom 块级 collapse。
 mod r5252_anchor_collapse_gap;
+/// R5275（CSS Text 3 §3 + CSS2 §10.3.5）preserve 纯空白 float 收缩锚——measure 空叶
+/// 早退对 pre 纯 tab div 判「无 inline 内容」曾致 float 0 宽整缺（active-selection-063）。
+mod r5275_preserved_ws_float_measure_tests;

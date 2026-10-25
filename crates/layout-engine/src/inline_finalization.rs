@@ -2526,7 +2526,16 @@ pub(crate) fn measure_text_content(
     // 只能靠 backfill_run_in_boxes 事后回写未取整行高；而後继块的 taffy 高度已按「前块高 0」
     // 的错误相位网格取整，回写把亚像素错相位固化进流内（ref 页普通块 19/18 vs test 18.6/19 的
     // 1.08% 恒等族签名）。放行后测量 IFC 含前缀行，taffy 对整页一次性取整，相位一致。
-    if !has_inline_content(doc, styles, dom_id) && run_in_prepended.is_none() {
+    // R5275（css-text-3 §3 + css-sizing-3 §10.3.5）：preserve 容器的纯空白文本是保留
+    // 内容——has_direct_text 的 is_collapsible_ws 判空不看 white-space 上下文，纯 tab/
+    // 空格 div 被误判无 inline 内容 → 本空叶分支回报 0 宽 → taffy 给 float/intrinsic
+    // 尺寸 0，shrink_pure_text_floats 只缩不扩（扩臂要求非文本 Σ>0）宽停 0（active-
+    // selection-063 float 盒整缺实证；混合文本正常 = 下游 measure 链路无缺）。放行走
+    // IFC 测量：下方 measure_preserve 链路按保留空白计宽计高（R1935/R4416 同源，tab
+    // 片段 width=tab_advance 参与 extent）。ZW_MEASURE_PRESERVE=0 时同关（回退旧口径）。
+    let preserve_ws_text = std::env::var("ZW_MEASURE_PRESERVE").as_deref() != Ok("0")
+        && crate::inline_content::has_preserved_ws_text(doc, styles, dom_id);
+    if !has_inline_content(doc, styles, dom_id) && !preserve_ws_text && run_in_prepended.is_none() {
         // 无行内内容的叶节点（如空的 flex/grid 子元素）：
         // 尺寸来自 known_dimensions（taffy 已知的尺寸），
         // 回退到 CSS computed style 的显式 width/height。

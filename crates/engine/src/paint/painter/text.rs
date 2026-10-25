@@ -1166,8 +1166,33 @@ impl super::Painter {
             // 文本判据不适用（片段可全为 inline 元素、host 直子仅空白文本：
             // insert-inline-in-blocks-n-inlines-* 族的 Inline 片段 = [span, span]）。
             // 片段仅在非空白时创建（is_whitespace_only_inline_segment 跳过），故放行。
+            // R5275（css-text-3 §3）：preserve 容器（pre/pre-wrap）的纯空白文本是保留
+            // 内容——has_direct_paintable_text 的 has_preserved_content 窄集合判据（R5055
+            // collapse 口径）不看 white-space 上下文，pre 纯 tab div 被判无可绘制文本 →
+            // 本门整跳 paint_text，行盒字形/选区高亮全缺（active-selection-063 修宽片
+            // 后仍全红实证：盒 bg 已出而选区 fill 无，paint_text 在本门早退）。放行限
+            // **纯文本子**容器（063 形）：含元素子时宿主 Path B 重跑会把块子树文本吸进
+            // 容器流（R109 同型，outside-marker-paint-order 内嵌 pre+ol 3.48% 实证）；
+            // ws + inline 元子由 has_direct_paintable_text 的 PHASEA 纯 inline 臂放行，
+            // 无需本臂。collapse 语境判据不变。
+            let children = doc.child_nodes(node_id);
+            let has_element_child = children
+                .iter()
+                .any(|child_id| matches!(doc.get(*child_id).map(|n| &n.kind), Some(NodeKind::Element(_))));
+            let preserve_direct_text = !has_element_child
+                && matches!(
+                    styles.and_then(|m| m.get(&node_id)).map(|s| &s.white_space),
+                    Some(WhiteSpaceValue::Pre | WhiteSpaceValue::PreWrap)
+                )
+                && children.iter().any(|child_id| {
+                    matches!(
+                        doc.get(*child_id).map(|n| &n.kind),
+                        Some(NodeKind::Text(t)) if !t.content.is_empty()
+                    )
+                });
             if box_node.fragment_node_ids.is_none()
                 && !has_direct_paintable_text(doc, node_id, styles)
+                && !preserve_direct_text
                 && box_node.run_in_prepended.is_none()
             {
                 return;
@@ -3574,7 +3599,20 @@ impl super::Painter {
                         for (nid, line_top, text, fx, fw) in &active_frags {
                             let owner = owner_of(*nid);
                             let off = owner_off.entry(owner).or_insert(0);
-                            let len16 = text.encode_utf16().count();
+                            // R5275：R1447 tab 片段 text="" 但在 textContent 占 1 个 utf16
+                            // 位置（CSS Text 3 §4.1.3 preserve 保留 tab）——空文本**文本节点**
+                            // 片段恒为保留 tab，按 1 计入 owner utf16 累计，行坐标与 shim
+                            // dump（textContent 口径）同系；否则 preserve 空白行区间退化
+                            // (0,0) 被行门整跳（active-selection-063 高亮缺失）。替换元素
+                            // 片段（img 等，节点为元素）不占 textContent，len 恒 0，原行门
+                            // 仍跳过（selection-image-001 图片区不得 fabrication 行 fill）。
+                            let len16 = if text.is_empty()
+                                && doc.get(*nid).is_some_and(|n| matches!(n.kind, NodeKind::Text(_)))
+                            {
+                                1
+                            } else {
+                                text.encode_utf16().count()
+                            };
                             match ranges
                                 .iter_mut()
                                 .find(|((o, l), _, _, _, _)| *o == owner && *l == line_top.to_bits())
