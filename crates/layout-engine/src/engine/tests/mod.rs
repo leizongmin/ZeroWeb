@@ -845,6 +845,8 @@ mod r5249_element_first_fold_spacer_anchor;
 mod r5277_caption_frame_only_auto_table_tests;
 /// R5278：collapse cell 胜出缘外半带与表自身 border 带同条不双计。
 mod r5278_collapse_outer_band_size_tests;
+/// R5279：collapse 表 border-spacing 整体无效。
+mod r5279_collapse_ignores_border_spacing_tests;
 
 mod r5250_inline_relpos_shift_map;
 

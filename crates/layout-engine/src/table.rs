@@ -569,12 +569,23 @@ fn layout_table_inner(
     inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
     width_constraint: Option<f32>,
 ) {
-    // 读取 border-spacing
-    let (spacing_x, spacing_y) = table_box
+    // 读取 border-spacing（CSS2 §17.6.1：collapse 模式 border-spacing 整体无效——
+    // 源头清零统一覆盖下游列间/行间 gap 与列背景推进；下游只余周界各自的
+    // separated 门控。collapsing-border-model-010a：collapse 表声明
+    // border-spacing:50px 必须被忽略，旧实现 50px gap 露表底红色）
+    let spacing_ignored = table_box
         .node_id
         .and_then(|id| styles.get(&id))
-        .map(get_border_spacing)
-        .unwrap_or((0.0, 0.0));
+        .is_some_and(|s| matches!(s.border_collapse, zero_style_system::BorderCollapseValue::Collapse));
+    let (spacing_x, spacing_y) = if spacing_ignored {
+        (0.0, 0.0)
+    } else {
+        table_box
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .map(get_border_spacing)
+            .unwrap_or((0.0, 0.0))
+    };
 
     // 1. 收集行和单元格
     let grid = build_grid(table_box, doc, styles);
@@ -2746,8 +2757,14 @@ fn apply_table_size_constraints(
 
     let (intrinsic_width, is_border_box, padding_border_w, padding_border_h, border_collapse) = match style {
         Some(style) => {
-            // 计算表格内容的固有宽度（所有列宽 + spacing）
-            let spacing_x = style.border_spacing.horizontal;
+            // 计算表格内容的固有宽度（所有列宽 + spacing）。§17.6.1：collapse 模式
+            // border-spacing 整体无效，列间与周界同为 0（collapsing-border-model-010a
+            // 旧缺陷 spacing_total_x 未门控 → collapse 表 100 被撑到 208）。
+            let spacing_x = if matches!(style.border_collapse, zero_style_system::BorderCollapseValue::Separate) {
+                style.border_spacing.horizontal
+            } else {
+                0.0
+            };
             let spacing_total_x = if col_widths.len() > 1 {
                 (col_widths.len() - 1) as f32 * spacing_x
             } else {
@@ -2756,11 +2773,7 @@ fn apply_table_size_constraints(
             // §17.6.1 周界 spacing：左右各 spacing_x，仅 separated 模式。intrinsic_height 已含
             // 上下周界（position_cells 的 row_y 起始 = perimeter_y，循环每行 +spacing_y 自然
             // 产生顶部+底部周界，collapsed 行跳过 spacing 故不破坏周界语义）。
-            let perimeter_x = if matches!(style.border_collapse, zero_style_system::BorderCollapseValue::Separate) {
-                spacing_x
-            } else {
-                0.0
-            };
+            let perimeter_x = spacing_x;
             let intrinsic_width = (total_col_width + spacing_total_x + 2.0 * perimeter_x)
                 .max(caption_definite_width)
                 .max(caption_frame_floor);
@@ -3003,21 +3016,28 @@ fn update_row_group_positions(
         return;
     }
 
-    // 读取 border-spacing
-    let (spacing_x, spacing_y) = table_box
-        .node_id
-        .and_then(|id| styles.get(&id))
-        .map(get_border_spacing)
-        .unwrap_or((0.0, 0.0));
-    // §17.6.1 周界 spacing（顶部），仅 separated 模式——与 position_cells 的 row_y 起始一致，
-    // 否则行组位置会与行位置错位。
+    // 读取 border-spacing（§17.6.1 collapse 模式整体无效——行间推进/行组高度累计
+    // 与周界同受门控，与 position_cells 源头清零口径一致；
+    // collapsing-border-model-010a：collapse 表行组盒按 50px spacing 下坠与 cell 错位、
+    // tbody 行带露表底红色）
     let separated = table_box
         .node_id
         .and_then(|id| styles.get(&id))
         .is_some_and(|s| matches!(s.border_collapse, zero_style_system::BorderCollapseValue::Separate));
-    let perimeter_y = if separated { spacing_y } else { 0.0 };
+    let (spacing_x, spacing_y) = if separated {
+        table_box
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .map(get_border_spacing)
+            .unwrap_or((0.0, 0.0))
+    } else {
+        (0.0, 0.0)
+    };
+    // §17.6.1 周界 spacing（顶部），仅 separated 模式——与 position_cells 的 row_y 起始一致，
+    // 否则行组位置会与行位置错位。
+    let perimeter_y = spacing_y;
     // R2050：水平周界 spacing（行组背景覆盖 cell grid，不含左右周界，与行盒一致）。
-    let perimeter_x = if separated { spacing_x } else { 0.0 };
+    let perimeter_x = spacing_x;
     // R5262：collapse 格线原点平移由 position_cells 传入（同源同门——真表容器
     // 判定在调用侧；行组盒落在 table content 帧，x/y 随格线移动；first_row_y 由
     // 本函数游标重导出而非读实际行盒，须镜像同一平移，否则行组盒与行/cell 错位

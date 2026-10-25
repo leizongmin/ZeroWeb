@@ -9,6 +9,13 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5279 实现轮（collapse 表 border-spacing 整体无效三处门控——collapsing-border-model-010a ✗9.87→✓0.00%；corpus FIXED=1 REGRESSED=0 净 +1 = 15713）**（2026-10-25）
+>
+> - **取证**：877 failed 账本暖域续选，010a = collapse 表声明 `border-spacing:50px`（§17.6.1 必须整体忽略）；同案 010b（唯一 delta = 无此声明）修前已 ✓ 锁死缺陷面。REFTEST_DUMP 逐轮消歧（9.87→4.17→2.08→0.00）拆出**三处**漏门控消费点：①layout_table_inner 源头（列间/行间 gap 与列背景推进；周界下游本有门控）②apply_table_size_constraints 的 spacing_total_x（表 100 撑到 208）③update_row_group_positions 行间推进（行组盒与 cell 错位 50px，tbody 露表底红、tfoot 下坠——复用 R5278 COLLAPSE_DBG 插桩法定位 y 分叉）。
+> - **实现**：三处统一 `matches!(border_collapse, Collapse)` 清零，separated 语义不动；尺寸臂化简 perimeter_x 直读门控值。
+> - **验证**：新常驻测试 2（collapse 两列 100 → 表盒 200 / 第二列相对 x 100 + separated 对照 350/150 周界+列间语义保持）；separated 侧锚点 border-spacing / separated-border-model / visibility-collapse 族全绿，collapse 侧 collapsing-border-model 族（本轮起全 ✓）/ border-conflict-element-001 / subpixel-collapsed-borders 全绿；全量 corpus A/B（/tmp/r5279_run.log vs /tmp/r5278_run.log）**FIXED=1 REGRESSED=0 净 15712→15713**；漂移唯一 text-decoration-inset-orthogonal-block-001 1.11↔0.50 = R5276 已记录已知 flake。证据：[r5279](rendering-compat/evidence/r5279-collapse-ignores-border-spacing-2026-10-25.md)。
+> - **下一步**：R5280 ① 轻量修复回归主循环（877 failed 账本内选取）② table-backgrounds 族（§17.5.1 层叠：rowgroup 背景含 spacing gap 连续画 + 图片平铺，8 案）/ border-right-width-applies-to-006（table-column 折叠边框）css-tables 深特性视预算 ③ 031 竖排/::selection 部分行域维持 ④ UA 图片 wash/部分选区跨 img 挂账缓维持 ⑤ 跨流碰头维持（browser autocomplete main 既有失败 + page_scripts mutation_arm 归并行流 + clippy 2 项）。
+
 > **▶ R5278 实现轮（collapse cell 胜出缘外半带同条不双计——collapsing-border-model-001/004 ✗1.36→✓0.00%；corpus FIXED=2 REGRESSED=0 净 +2 = 15712）**（2026-10-25）
 >
 > - **取证**：880 failed 账本选 CSS2/tables 折叠边框族。001 形态 = 表 border 25px、边缘 cell border 50px 胜出四缘。COLLAPSE_DBG 插桩实证 TBL w=270（chromium 220）：R291/R5241 列宽 = 边框中心距 170、自身 border 带 25×2、R5241 外半 25×2 三层叠加——而折叠边框中心 = content 缘，胜出带外半展进的 [盒缘, content 缘] 窄条**正是表自身 border 带**（[0,25] 同条重叠只计一次）。paint 侧排除：阶段 3 对 cell 自胜缘不写 override → R5262 band_outset 居中臂本就生效（band 跨 [edge−t/2, edge+t/2] 盖住红条）；grid_dx = 50/2−25 = 0 格线原点未平移，cell 盒缘即在带中心——红带可见纯由 size 双计把右侧几何顶出 50px。
