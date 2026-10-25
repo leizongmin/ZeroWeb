@@ -191,15 +191,19 @@
       var r = sel._ranges[i];
       var sc = r.startContainer, ec = r.endContainer;
       if (!sc || !ec) continue;
+      // R5272：node 臂（selectNode）容器恒为父节点（html 时为 document，无
+      // __zwSelector）——容器选择器门只约束 contents/切片臂；node 臂选择器取
+      // _mode.node 自身（见下）。
+      var isNodeArm = !!(r._mode && r._mode.kind === 'node' && r._mode.node && r._mode.node.nodeType === 1);
       var sSel = sc.__zwSelector || (sc.parentNode && sc.parentNode.__zwSelector);
       var eSel = ec.__zwSelector || (ec.parentNode && ec.parentNode.__zwSelector);
-      if (!sSel || sSel.charAt(0) === '@' || sSel !== eSel) continue;
+      if (!isNodeArm && (!sSel || sSel.charAt(0) === '@' || sSel !== eSel)) continue;
       var s16, e16;
       if (sc === ec && sc.nodeType === 1 && r._mode && r._mode.kind === 'contents') {
         var t = '';
         try { t = String(sc.textContent || ''); } catch (_eTs) {}
         s16 = 0; e16 = t.length;
-      } else if (r._mode && r._mode.kind === 'node' && r._mode.node && r._mode.node.nodeType === 1) {
+      } else if (isNodeArm) {
         // R5271：selectNode(元素)（spec range-selectNode：选节点本身——绘制口径
         // ≡ 其内容文本 [0, textContent.length)）。system-color-hightlights-vs-
         // getSelection-001/002（selectNode(span#id)）与 selection-image-001/002
@@ -207,7 +211,15 @@
         // 节点自身（start/endContainer 是父，__zwSelector 须落被选元素）。
         var tn = r._mode.node;
         var tSel = tn.__zwSelector || (tn.parentNode && tn.parentNode.__zwSelector);
-        if (!tSel || tSel.charAt(0) === '@') continue;
+        if (!tSel || tSel.charAt(0) === '@') {
+          // R5272：documentElement/body 无 __zwSelector（parse 映射按 id/class
+          // 落键，根/体元素无寻址规则）——类型选择器回落（html/body 文档唯一
+          // 无歧义，paint 侧 query_selector 全引擎解析；selection-image-001/002
+          // 族）。其余无寻址节点仍跳过（避免错锚到同标签首个元素）。
+          var tag = String(tn.tagName || '').toLowerCase();
+          if (tag !== 'html' && tag !== 'body') continue;
+          tSel = tag;
+        }
         var t2 = '';
         try { t2 = String(tn.textContent || ''); } catch (_eTs2) {}
         s16 = 0; e16 = t2.length;

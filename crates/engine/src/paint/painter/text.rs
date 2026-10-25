@@ -3569,10 +3569,33 @@ impl super::Painter {
                         && !is_vertical
                         && matches!(style.direction, zero_style_system::DirectionValue::Ltr)
                         && let Some(((sel_start, sel_end), anc_whole)) = sel_owned
-                        && let Some(pseudo) = &style.selection_pseudo
+                        && (style.selection_pseudo.is_some()
+                            || std::env::var("ZW_SELECTION_HIGHLIGHT_DEFAULT").as_deref() != Ok("0"))
                     {
-                        let sel_color = super::super::color::resolve_color_current(&pseudo.color, &style.color);
-                        let sel_bg = super::super::color::resolve_color_current(&pseudo.background_color, &style.color);
+                        // R5272（css-pseudo-4 §highlight-styling + css-color-4
+                        // §css-system-colors）：盒/祖先链有选区记录而盒无作者
+                        // ::selection 伪样式时回落 **UA 默认高亮面** Highlight 背景 +
+                        // HighlightText 前景——driving: selection-image-002（页零
+                        // ::selection 规则，selectNode(documentElement) 记录落 html，
+                        // p 行经 anc_whole 本臂处理，此前门 `selection_pseudo` 整关）。
+                        // 与 R5269 臂回落同开关同色对；作者声明面（含显式 transparent）
+                        // selection_pseudo 已存不回落。
+                        let (sel_color, sel_bg) = match &style.selection_pseudo {
+                            Some(pseudo) => (
+                                super::super::color::resolve_color_current(&pseudo.color, &style.color),
+                                super::super::color::resolve_color_current(&pseudo.background_color, &style.color),
+                            ),
+                            None => (
+                                zero_css_parser::values::parse_named_color("highlighttext")
+                                    .map(|c| super::super::color::resolve_color_current(&c, &style.color))
+                                    .unwrap_or_else(|| {
+                                        super::super::color::resolve_color_current(&style.color, &style.color)
+                                    }),
+                                zero_css_parser::values::parse_named_color("highlight")
+                                    .map(|c| super::super::color::resolve_color_current(&c, &style.color))
+                                    .unwrap_or(zero_render_foundation::color::Color::TRANSPARENT),
+                            ),
+                        };
                         // 表单控件 owner（padding box 形态判据）。
                         let owner_is_text_control = doc.get(box_id).is_some_and(|n| {
                             matches!(

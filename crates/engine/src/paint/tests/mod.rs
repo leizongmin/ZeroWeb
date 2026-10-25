@@ -71,6 +71,8 @@ mod r5269_inline_owner_selection_tests;
 mod r5270_inline_owner_selection_fill_tests;
 /// R5271 选区高亮 UA 默认回落面（css-pseudo-4 §highlight-styling）。
 mod r5271_selection_ua_default_tests;
+/// R5272 祖先链整 contents 选区 UA 默认高亮（css-pseudo-4 §highlight-painting）。
+mod r5272_selection_ancestor_ua_default_tests;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;
