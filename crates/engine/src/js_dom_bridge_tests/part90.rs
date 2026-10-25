@@ -264,3 +264,84 @@ fn image_map_element_from_point_r5278() {
     assert_eq!(get(&mut sandbox, 9), "IMG", "(e1) 无形状覆盖 → img 自身");
     assert_eq!(get(&mut sandbox, 10), "", "(e2) (e) 块无异常");
 }
+// R5279（s79）：IDL `.id=` 改名的同 execute 可见性——set trap 与 setAttribute('id')
+// 同记 R125 sel-based id 覆盖表（缺登记 → getElementById/querySelector('[id=…]')
+// miss 新 id；latest-wins 缺写 → 「改名回原 id」被残留旧条目毒化——WPT
+// hash-name-reference-dynamic 的 `map.id = …` 动态改名族根因）。
+// https://dom.spec.whatwg.org/#dom-nonelementparentnode-getelementbyid
+#[test]
+fn idl_id_rename_getelementbyid_r5279() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='dv'></div><map id='testmap'></map></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://zero.test/s79".to_string()));
+    let canvas_registry: Arc<Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__r = [];\
+             function st(f) { try { f(); } catch (e) { globalThis.__r.push('E:' + String((e && e.message) || e)); } }\
+             var dv = document.getElementById('dv');\
+             var map = document.querySelector('map');\
+             // (a) IDL 改名 → gEBI 新 id 命中、旧 id 落空、qs('[id=…]') 命中
+             st(function () {\
+               dv.id = 'dx';\
+               globalThis.__r.push(document.getElementById('dx') === dv);\
+               globalThis.__r.push(document.getElementById('dv') === null);\
+             });\
+             // (b) 改名回原 id → latest-wins 覆盖残留条目（毒化面）
+             st(function () {\
+               dv.id = 'dv';\
+               globalThis.__r.push(document.getElementById('dv') === dv);\
+               globalThis.__r.push(document.getElementById('dx') === null);\
+             });\
+             // (c) setAttribute 路径对称仍在（R125 原面）
+             st(function () {\
+               dv.setAttribute('id', 'da');\
+               globalThis.__r.push(document.getElementById('da') === dv);\
+               dv.setAttribute('id', 'dv');\
+             });\
+             // (d) map IDL 改名（hash-name-reference-dynamic 形态）
+             st(function () {\
+               map.id = 'mx';\
+               globalThis.__r.push(document.getElementById('mx') === map);\
+               map.removeAttribute('name');\
+               map.id = 'testmap';\
+               globalThis.__r.push(document.getElementById('testmap') === map);\
+             });",
+        )
+        .unwrap();
+    let get = |sandbox: &mut V8Sandbox, i: usize| -> String {
+        sandbox
+            .execute(&format!("globalThis.__r[{}]", i))
+            .unwrap()
+            .value
+    };
+    // (a)
+    assert_eq!(get(&mut sandbox, 0), "true", "(a1) IDL 改名后 gEBI 新 id 命中");
+    assert_eq!(get(&mut sandbox, 1), "true", "(a2) 旧 id 落空");
+    // 注：querySelector('[id=…]') 同 turn 改名可见性不在本修复面（R125 读侧只接
+    // getElementById——host 快照读路径为查询共享面，改造须独立切片）。
+    // (b)
+    assert_eq!(get(&mut sandbox, 2), "true", "(b1) 改名回原 id → gEBI 命中（毒化面）");
+    assert_eq!(get(&mut sandbox, 3), "true", "(b2) 中间 id 落空");
+    // (c)
+    assert_eq!(get(&mut sandbox, 4), "true", "(c1) setAttribute 路径对称仍在");
+    // (d)
+    assert_eq!(get(&mut sandbox, 5), "true", "(d1) map IDL 改名 gEBI 命中");
+    assert_eq!(get(&mut sandbox, 6), "true", "(d2) map 改名回原 id gEBI 命中");
+    // st() 仅在异常时追加条目——全块无异常则索引 7 越界读 undefined（s78 (e2) 同法）
+    assert_eq!(get(&mut sandbox, 7), "undefined", "(e) 全块无异常");
+}

@@ -3378,7 +3378,10 @@
         // 连续 append 时序=树序，跨父时以快照命中先行、pending 兜底的合成次序近似）。
         for (var pi = 0; pi < pending.length; pi++) {
           var pn = pending[pi];
-          if (!pn || _zwPRSet().has(pn) || _r125AncestorRemoved(pn)) continue;
+          // R5279：R125 覆盖门同 pendingEarly 快路径/池路径（:3241/:3256）——快照命中
+          // 剔除后不得经本兜底环复活（`.id=`/setAttribute('id') 改名后旧 id 条目仍在
+          // 索引，WPT hash-name-reference-dynamic 的 `map.id = …` 动态改名族实证）。
+          if (!pn || _zwPRSet().has(pn) || _r125AncestorRemoved(pn) || _r125Overridden(pn)) continue;
           var pSel = pn && pn.__zwSelector ? pn.__zwSelector : null;
           var pH = pn && pn.__zwHandle ? pn.__zwHandle : null;
           if (pH && _zwMutationInDoc(null, pH)) return pn;

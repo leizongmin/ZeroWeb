@@ -12346,6 +12346,14 @@
           if (handle) __zw_set_attr_handle(handle, 'id', idv);
           else __zw_set_attr(sel, 'id', idv);
           if (typeof _zwPAIdAdd === 'function') _zwPAIdAdd(proxy);
+          // R125 对称臂（s79，R5279）：IDL `.id=` 路径与 setAttribute('id') 同记
+          // sel-based 覆盖表——host 快照不反映同批 id 变更，缺登记使同 execute 的
+          // getElementById/querySelector('[id=…]') miss 新 id（WPT hash-name-reference-dynamic
+          // 的 `map.id = …` 动态改名族实证：div/map `.id=` 改名后 gEBI null）；且
+          // latest-wins 缺写使「改名回原 id」被残留旧条目毒化（改名 other 后回
+          // testmap，gEBI('testmap') 命中快照却被 stale 条目判 overridden 剔除）。
+          // https://dom.spec.whatwg.org/#dom-nonelementparentnode-getelementbyid
+          if (!handle && globalThis._zwIdOverrideSet) globalThis._zwIdOverrideSet(key, idv);
           moAttr = 'id';
         } else if (p === 'title' || p === 'lang' || p === 'dir') {
           // reflected 字符串属性 set——写同名 attribute + 同步客户端缓存（set 后 get 读缓存）。

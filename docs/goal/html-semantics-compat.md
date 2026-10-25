@@ -2,9 +2,37 @@
 
 **版本**: v2.0
 **日期**: 2026-10-25（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 78 收口（F4 image-map 命中测试 R5278：域 **907P/320F/31T → 971P/257F/30T** GAIN 64 / REG 0），下一步 720-stretch 渲染展开 22F（需布局几何，归 layout 集成面）或 testdriver-Actions 支持面（hash-name-dynamic 5F）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 79 收口（hash-name-dynamic 5F 分诊证伪 + IDL `.id=` R125 对称臂 R5279：engine lib 3512P/0F，域/pin 持平零回归），下一步 runner 属性传播缺陷切片（hash-name-dynamic 5F 真实归属）或 720-stretch 渲染展开 22F（需布局几何，归 layout 集成面）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-25 M2 切片 78 收口，F4 image-map 命中轮）**：
+> **▶ 当前状态（2026-10-25 M2 切片 79 收口，IDL id 改名 R125 对称臂轮）**：
+> s78 未解决项 hash-name-reference-dynamic 5F 分诊——**控制面原记
+> 「testdriver-Actions 面」证伪**：runner 自带 test_driver.Actions stub，
+> 8 行点击全链路可达（ZW_TD_DEBUG resolve 迹：首点击 `#area` 全通，首个
+> DOM 变更后 map 解析失败）。5F 真实面 = shim 两缺陷（本轮修复）+ runner
+> 属性传播缺陷（未解决，后续切片）。**修复（R5279 两刀）**：①part04
+> `.id=` set trap 补 R125 sel-based id 覆盖表登记（与 setAttribute('id')
+> 对称——缺登记同 execute getElementById miss 新 id；latest-wins 缺写使
+> 「改名回原 id」被残留旧条目毒化）；②part06 getElementById 第二条
+> pending-by-id 兜底环补 `_r125Overridden` 门（快照命中被覆盖表剔除后
+> 不得经该环复活）。契约 part90 `idl_id_rename_getelementbyid_r5279`
+> （8 断言，撤任一刀对应转红）。**验证**：engine lib **3512P/0F** + 域
+> （FILTER=embedded-content）**971P/257F/30T 持平** + interactive pin
+> **439P/44F/0T 逐位持平**（R5279 只增 id 覆盖登记，语料面零数字变化）。
+> **新诊断（未解决）**：runner 命令 turn 的 resolve 时点**属性写丢失**
+> （`setAttribute('name')` 不在 live 态亦不入序列化——id 写有客户端缓存
+> 可见、name 写不可见，疑序列化/apply 管线只覆盖客户端缓存属性）+
+> **覆盖表缓存代理空子树**（re-parse 代际后 gEBI 命中代理
+> `querySelectorAll('area')` → 0）——hash-name-dynamic 5F 实际归属此组合
+> 面；resolve 迹仪器化方法已验证（ZW_TD_DEBUG + 临时探针，跑完即删）。
+> 账本见
+> [evidence/2026-10-25-m2s79-idl-id-rename-r125.md](html-semantics-compat/evidence/2026-10-25-m2s79-idl-id-rename-r125.md)。
+> **下一步**：runner 属性传播缺陷切片（refresh 管线属性 mutation 应用 +
+> 代际代理失效，面在 tests/wpt-runner + shim 视图生命周期）或 720-stretch
+> 渲染展开 22F（需布局几何，归 layout 集成面）。
+> **切片间隙**：本轮 part04/06 shim + 契约 part90；下一挂账 runner 面
+> 在 tests/wpt-runner，间隙开放。
+>
+> **▶ 上轮状态（2026-10-25 M2 切片 78 收口，F4 image-map 命中轮）**：
 > s67 八族地图 F4 收口（the-area-element 三文件 area-coords 32F +
 > area-shape 17F + area-processing 14F）。失败面修正：控制面原记 84F 系
 > 旧账——实测 68F 中 5F 是 hash-name-reference-dynamic 的 testdriver-Actions
