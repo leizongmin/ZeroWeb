@@ -841,6 +841,8 @@ mod r5248_inline_border_x_double_count;
 /// 首内容为元素子时外层自身 ml+pl 以零宽 spacer 落首槽、fold 仍落自名 run，
 /// 流内推进与内层盒守。
 mod r5249_element_first_fold_spacer_anchor;
+/// R5277：frame-only 空 caption 在 auto 表的收缩 + 表宽下界。
+mod r5277_caption_frame_only_auto_table_tests;
 
 mod r5250_inline_relpos_shift_map;
 

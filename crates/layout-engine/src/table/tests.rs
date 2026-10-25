@@ -268,7 +268,7 @@ fn test_table_cell_valign_bottom_stays_in_content_box() {
     };
 
     let grid = build_grid(&table_box, &doc, &styles);
-    position_cells(&mut table_box, &grid, &[200.0], 0.0, 0.0, &styles);
+    position_cells(&mut table_box, &doc, &grid, &[200.0], 0.0, 0.0, &styles);
 
     let cell = &table_box.children[0];
     let content = &cell.children[0];
@@ -331,7 +331,7 @@ fn test_table_cell_text_valign_offset_for_text_only_cell() {
     };
 
     let grid = build_grid(&table_box, &doc, &styles);
-    position_cells(&mut table_box, &grid, &[200.0], 0.0, 0.0, &styles);
+    position_cells(&mut table_box, &doc, &grid, &[200.0], 0.0, 0.0, &styles);
 
     let cell = &table_box.children[0];
     // valign:middle → 文本居中，offset ≈ (content_height − text_h)/2 = (120−18)/2 = 51
@@ -355,7 +355,7 @@ fn test_table_cell_text_valign_offset_for_text_only_cell() {
         ..Default::default()
     };
     let grid2 = build_grid(&table_box2, &doc, &styles);
-    position_cells(&mut table_box2, &grid2, &[200.0], 0.0, 0.0, &styles);
+    position_cells(&mut table_box2, &doc, &grid2, &[200.0], 0.0, 0.0, &styles);
     assert!(
         table_box2.children[0].valign_offset == 0.0,
         "valign:top should not set valign_offset, got {}",
@@ -557,7 +557,7 @@ fn test_table_cell_bfc_first_child_margin_top_preserved() {
     };
 
     let grid = build_grid(&table_box, &doc, &styles);
-    position_cells(&mut table_box, &grid, &[100.0], 0.0, 0.0, &styles);
+    position_cells(&mut table_box, &doc, &grid, &[100.0], 0.0, 0.0, &styles);
 
     let cell = &table_box.children[0];
     let content = &cell.children[0];
@@ -770,7 +770,15 @@ fn test_collapse_table_size_deducts_covered_edge_cell_border() {
     // 后的产出形态（旧整 border 口径 59.9 下整扣等价，见 apply_table_size_constraints 注）。
     let total_row_height = 50.0_f32 + (4.95 + 4.95) / 2.0; // 54.95
 
-    apply_table_size_constraints(&mut table_box, &grid, total_row_height, &[col_width], 0.0, &styles);
+    apply_table_size_constraints(
+        &mut table_box,
+        &doc,
+        &grid,
+        total_row_height,
+        &[col_width],
+        0.0,
+        &styles,
+    );
 
     // 期望：左+右边缘 cell border 被 table border 覆盖 → 扣 (bl+br)/2 = 4.95
     // content_width = col_width(54.95) - 4.95 = 50.0（旧 bug 会留 54.95，多算 ~5px）
@@ -861,7 +869,7 @@ fn test_collapse_row_height_deducts_half_cell_borders() {
     };
 
     let grid = build_grid(&table_box, &doc, &styles);
-    position_cells(&mut table_box, &grid, &[20.0], 0.0, 0.0, &styles);
+    position_cells(&mut table_box, &doc, &grid, &[20.0], 0.0, 0.0, &styles);
 
     let row = &table_box.children[0];
     assert!(
@@ -976,7 +984,15 @@ fn test_collapse_grid_origin_real_table_geometry() {
     };
 
     let grid = build_grid(&table_box, &doc, &styles);
-    position_cells(&mut table_box, &grid, &[40.0, 40.0, 40.0, 40.0], 0.0, 0.0, &styles);
+    position_cells(
+        &mut table_box,
+        &doc,
+        &grid,
+        &[40.0, 40.0, 40.0, 40.0],
+        0.0,
+        0.0,
+        &styles,
+    );
 
     // 表盒 180×140（Fix 1 edge 每缘 max：edge_w = 20+20；R5241 outer 半带 = 0，
     // 表框 ≥ cell 框 → covered）
@@ -1077,7 +1093,7 @@ fn test_collapse_grid_origin_skips_anon_root() {
     };
 
     let grid = build_grid(&table_box, &doc, &styles);
-    position_cells(&mut table_box, &grid, &[20.0], 0.0, 0.0, &styles);
+    position_cells(&mut table_box, &doc, &grid, &[20.0], 0.0, 0.0, &styles);
 
     let row = &table_box.children[0];
     let cell = &row.children[0];
@@ -1146,7 +1162,15 @@ fn test_collapse_table_size_adds_won_outer_cell_border_halves() {
     // 边框中心距口径（compute_column_widths auto cell / position_cells 半分摊产出）
     let col_width = 20.0_f32;
     let total_row_height = 20.0_f32;
-    apply_table_size_constraints(&mut table_box, &grid, total_row_height, &[col_width], 0.0, &styles);
+    apply_table_size_constraints(
+        &mut table_box,
+        &doc,
+        &grid,
+        total_row_height,
+        &[col_width],
+        0.0,
+        &styles,
+    );
 
     // content box = 边框中心距（不含外缘）；border-box = 20 + ½(20+20) = 40
     assert!(
@@ -1201,7 +1225,7 @@ fn test_table_min_width_relative_length_expands_content_width() {
     };
 
     let grid = build_grid(&table_box, &doc, &styles);
-    apply_table_size_constraints(&mut table_box, &grid, 20.0, &[50.0], 0.0, &styles);
+    apply_table_size_constraints(&mut table_box, &doc, &grid, 20.0, &[50.0], 0.0, &styles);
 
     assert_eq!(
         table_box.content_width, 200.0,

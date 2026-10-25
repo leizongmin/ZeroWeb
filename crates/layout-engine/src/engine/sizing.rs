@@ -1085,10 +1085,15 @@ impl LayoutEngine {
         let mut changed = false;
         // stack 携带父 border-box 宽作 caption 的 CB 口径（caption 的 CB 是表盒；常规案
         // 表盒无 border/padding，含 frame 的表盒偏大——FIXME 按需精化 padding-box 扣除）。
-        let mut stack: Vec<(&LayoutBox, f32)> = vec![(root, f32::INFINITY)];
-        while let Some((b, cb_width)) = stack.pop() {
+        // stack 携带父表 width 是否 auto（R5277：空 caption 收缩例外仅 auto 表生效）。
+        let mut stack: Vec<(&LayoutBox, f32, bool)> = vec![(root, f32::INFINITY, false)];
+        while let Some((b, cb_width, parent_width_auto)) = stack.pop() {
+            let width_auto = b
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(|s| matches!(s.width, LengthValue::Auto));
             for child in &b.children {
-                stack.push((child, b.width));
+                stack.push((child, b.width, width_auto));
             }
             let Some(id) = b.node_id else { continue };
             let Some(s) = styles.get(&id) else { continue };
@@ -1103,7 +1108,17 @@ impl LayoutEngine {
                 // 空 caption 应 fill 320−margin，收缩致 border 缺边翻红）；纯 inline 内容
                 // caption（无子盒）同样维持 fill——css-tables-3 caption intrinsic 尺寸
                 // （含文本内容的 shrink 语义）FIXME 案驱动。
-                || b.children.is_empty()
+                // R5277 例外：父表（caption 的 CB）width:auto 且 caption frame-only
+                //（无子盒、无文本内容）时收缩——§17.4.1/§17.5.2 auto 表 shrink-to-fit 以
+                // caption 为内容界，维持 fill 会让表缩到 cell 残宽而 caption 满宽
+                //（border-right-width-applies-to-015 ✗3.84：border-right 96px 黑条画到
+                // 视口右缘）。文本 caption 的 intrinsic 未实现（上 FIXME），frame-only
+                // 判定排除（table_types::caption_is_frame_only，与表宽下界臂同口径）。
+                || {
+                    b.children.is_empty()
+                        && !(parent_width_auto
+                            && b.node_id.is_some_and(|id| crate::table::caption_is_frame_only(doc, id)))
+                }
             {
                 continue;
             }

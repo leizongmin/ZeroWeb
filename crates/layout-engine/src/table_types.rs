@@ -124,6 +124,28 @@ pub(crate) fn is_table_internal(display: &DisplayValue) -> bool {
     )
 }
 
+/// R5277（CSS2 §17.4.1）：caption 子树是否 frame-only——无任何非 ASCII 空白文本节点。
+/// 供 R5172 空 caption 收缩例外与 apply_table_size_constraints 的 caption 壳下界共用
+/// 同一分类（caption 收缩 ⟺ 表下界计入，两处口径必须一致）。nbsp（U+00A0）算内容
+///（R4034 口径：`char::is_whitespace` 按 White_Space 含 nbsp，误判会吞 inline 内容）。
+pub(crate) fn caption_is_frame_only(doc: &zero_dom::Document, root: NodeId) -> bool {
+    let mut stack = vec![root];
+    while let Some(id) = stack.pop() {
+        for child in doc.child_nodes(id).iter() {
+            match doc.get(*child).map(|n| &n.kind) {
+                Some(zero_dom::NodeKind::Text(t)) => {
+                    if t.content.chars().any(|c| !c.is_ascii_whitespace()) {
+                        return false;
+                    }
+                }
+                Some(zero_dom::NodeKind::Element(_)) => stack.push(*child),
+                _ => {}
+            }
+        }
+    }
+    true
+}
+
 /// 从 DOM 中读取元素的 colspan 属性值。
 pub(crate) fn get_colspan(box_node: &LayoutBox, doc: &zero_dom::Document) -> usize {
     if let Some(node_id) = box_node.node_id {

@@ -9,6 +9,13 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5277 实现轮（frame-only 空 caption × auto 表收缩双臂——border-right-width-applies-to-015 ✗3.84→✓0.00%；corpus FIXED=1 REGRESSED=0 净 +1 = 15710）**（2026-10-25）
+>
+> - **取证（反转一次）**：015 剩余 ✗ 轮初归因「border-top-width 泄漏进 computed width」（top 案 caption 样式宽实测 Px(96) 而两案 diff 表面只差 border 边）——两轮探针（plain div / caption-table 结构）无泄漏后重读原文发现**归一化 diff 漏行**：top 案 #test 是 `width: 1in` 显式宽（R5213 正当消费），right 案是 `height: 1in`。真缺陷 = §17.4.1/§17.5.2 auto 表 shrink-to-fit 不含 caption：right 案 caption width auto 无子盒 → R5172 空 caption 排除维持 fill 784，表缩到空 cell 残宽 9.6，黑 border-right 画到视口右缘。
+> - **实现**（双臂同轮同分类）：R5172 例外臂（stack 携父表 width-auto；空 caption + 父表 auto + frame-only 放行收缩）+ apply_table_size_constraints 表宽下界臂（auto 表时 frame-only 空 caption 边框壳 max 进 intrinsic_width，与收缩值一致）。新谓词 `caption_is_frame_only`（table_types，子树无非 ASCII 空白文本，nbsp 算内容 R4034 口径）单一分类源；指定宽表空 caption 维持 fill（margin-applies-to-015 锚）、文本 caption 维持 fill（文本 intrinsic FIXME 不扩面）。`doc` 穿 position_cells 镜像 vertical 路径既有签名。
+> - **验证**：新常驻测试 3（auto 表收缩 caption=表=96 / 指定宽表 fill 双 200 对照 / 文本 caption 784 对照）；锚案 8 定向全绿（bfc-006 ✗1.18 与基线同值非本轮）；全量 corpus A/B（/tmp/r5277_full.txt）**FIXED=1 REGRESSED=0 漂移 0，净 15709→15710**；make test 3 轮各 1 个不同失败——2 个单跑复过（已知并行编译竞态），1 个（browser autocomplete_url_match_segment）clean HEAD worktree 同败 4/4 = **main 既有失败**（域不相交，挂账待归零-web 流）；product-smoke 6/6；bench-gate 两 criterion 稳超旧预算但双树同刻配对（HEAD 3.396/2.948ms ≥ 分支 3.271/2.934ms）证非代码回归 → R4376 同款机器态漂移重捕获基线（relax + 全证据 justification，复测 GATE PASS 25/25；与 R5275 不 relax 的差异 = 本轮有 clean-tree 配对证据且旧基线失参照意义）。证据：[r5277](rendering-compat/evidence/r5277-caption-frame-only-2026-10-25.md)。
+> - **下一步**：R5278 ① 轻量修复回归主循环（880 failed 账本内选取）② border-right-width-applies-to-006（table-column 折叠边框，css-tables 深特性）视下轮预算 ③ 031 竖排/::selection 部分行域维持 ④ UA 图片 wash/部分选区跨 img 挂账缓维持 ⑤ 跨流碰头维持（browser autocomplete main 既有失败 + page_scripts mutation_arm 归并行流 + clippy 2 项）。
+
 > **▶ R5276 专项轮（black96x96 语料完整性核实——负结果：顶层缺图是 corpus 死路径，零翻转，净维持 15709）**（2026-10-25）
 >
 > - **取证**：R5274 扫出的 `css/support/black96x96.png`（顶层 `css/reference/ref-filled-black-96px-square.xht` 引用）经核实**无案可达**——150 个引用该 ref 的案（CSS2 backgrounds/borders/normal-flow/tables/values + background-clip-009）match 声明全为相对自身目录的 `../reference/...`，解析落到套件内 `css/CSS2/reference/` + `css/CSS2/support/` **完整副本**（4 副本 md5 全同 ed89c5f9，自导入起就在）。R5274「补入会翻转大批现存结果」前提不成立。

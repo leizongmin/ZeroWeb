@@ -626,7 +626,7 @@ fn layout_table_inner(
     ) {
         position_cells_vertical(table_box, &grid, &col_widths, spacing_x, spacing_y, styles, doc);
     } else {
-        position_cells(table_box, &grid, &col_widths, spacing_x, spacing_y, styles);
+        position_cells(table_box, doc, &grid, &col_widths, spacing_x, spacing_y, styles);
     }
 
     // R4298：列压缩（R4298 收缩臂 / R4227 约束臂）后，cell content 仍是压缩前宽度的
@@ -645,7 +645,7 @@ fn layout_table_inner(
         ) {
             position_cells_vertical(table_box, &grid, &col_widths, spacing_x, spacing_y, styles, doc);
         } else {
-            position_cells(table_box, &grid, &col_widths, spacing_x, spacing_y, styles);
+            position_cells(table_box, doc, &grid, &col_widths, spacing_x, spacing_y, styles);
         }
     }
 
@@ -1782,6 +1782,7 @@ fn apply_collapse_content_half_shift(
 /// 根据 grid 结构和列宽定位每个单元格。
 fn position_cells(
     table_box: &mut LayoutBox,
+    doc: &zero_dom::Document,
     grid: &TableGrid,
     col_widths: &[f32],
     spacing_x: f32,
@@ -2526,6 +2527,7 @@ fn position_cells(
     // 后处理：应用 min-height/max-height/min-width/max-width 约束
     apply_table_size_constraints(
         table_box,
+        doc,
         grid,
         row_y + top_caption_mb + bottom_caption_extent,
         col_widths,
@@ -2680,6 +2682,7 @@ fn resolve_table_used_length(value: &zero_css_parser::values::LengthValue, style
 /// 在 position_cells 之后调用，根据 CSS 尺寸约束调整表格的实际尺寸。
 fn apply_table_size_constraints(
     table_box: &mut LayoutBox,
+    doc: &zero_dom::Document,
     grid: &TableGrid,
     total_row_height: f32,
     col_widths: &[f32],
@@ -2712,6 +2715,35 @@ fn apply_table_size_constraints(
         .map(|c| c.width)
         .fold(0.0_f32, f32::max);
 
+    // R5277（CSS2 §17.4.1/§17.5.2）：width:auto 表的 frame-only 空 caption（width:auto、
+    // 无子盒、无文本）边框壳计入表 shrink-to-fit 下界。R5172 同轮把该 caption 收缩到
+    // 壳宽；表若仍按 cell 残宽（空 cell min-content 9.6px floor）落宽，壳悬在窄表上，
+    // 下游消费表宽的口径（float beside-fit、bg 裁剪）与 caption 实宽不一致
+    //（border-right-width-applies-to-015：表 9.6 / caption 96）。definite Px 臂维持
+    // R5213；auto caption 的盒宽是 taffy 陈旧分配值不可用（同 R5213 注），此处取壳和。
+    // 仅 auto 表启用——指定宽表 caption 维持 fill、壳不参与（margin-applies-to-015
+    // 实证）；匿名包装盒（style None）维持原收缩口径。
+    let table_width_auto = style
+        .as_ref()
+        .is_some_and(|s| matches!(s.width, zero_css_parser::values::LengthValue::Auto));
+    let caption_frame_floor = if table_width_auto {
+        table_box
+            .children
+            .iter()
+            .filter(|c| {
+                c.children.is_empty()
+                    && c.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+                        s.display == DisplayValue::TableCaption
+                            && matches!(s.width, zero_css_parser::values::LengthValue::Auto)
+                    })
+                    && c.node_id.is_some_and(|id| caption_is_frame_only(doc, id))
+            })
+            .map(|c| c.padding_left + c.padding_right + c.border_left + c.border_right)
+            .fold(0.0_f32, f32::max)
+    } else {
+        0.0
+    };
+
     let (intrinsic_width, is_border_box, padding_border_w, padding_border_h, border_collapse) = match style {
         Some(style) => {
             // 计算表格内容的固有宽度（所有列宽 + spacing）
@@ -2729,7 +2761,9 @@ fn apply_table_size_constraints(
             } else {
                 0.0
             };
-            let intrinsic_width = (total_col_width + spacing_total_x + 2.0 * perimeter_x).max(caption_definite_width);
+            let intrinsic_width = (total_col_width + spacing_total_x + 2.0 * perimeter_x)
+                .max(caption_definite_width)
+                .max(caption_frame_floor);
             let is_border_box = matches!(style.box_sizing, zero_css_parser::values::BoxSizingValue::BorderBox);
             let padding_border_w =
                 table_box.padding_left + table_box.padding_right + table_box.border_left + table_box.border_right;
