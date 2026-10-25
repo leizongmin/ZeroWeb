@@ -554,6 +554,12 @@ impl RendererJsWorker {
         }) {
             return Ok(Err(format!("js worker prio send failed: {e}")));
         }
+        // T8/P7：与 [`Self::execute_script_priority_bounded`] 同一唤醒义务——分派环
+        // 空闲时阻塞在普通通道 `recv_timeout(WORKER_IDLE_POLL)`，优先命令到达不会
+        // 中断该等待（std mpsc 无跨通道 select）。CDP evaluate 串行负载下每次求值
+        // 都等满 50ms 量子（headless 实测 RTT 恒定 ~51ms，本仓 mux slow conn step
+        // 54–75ms 同源）；令牌即时唤醒，picked 时 no-op，见 `JsWorkerCommand::WakePrio`。
+        let _ = self.cmd_tx.send(JsWorkerCommand::WakePrio);
         match reply_rx.recv_timeout(timeout) {
             Ok(result) => Ok(result),
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => Err(reply_rx),
@@ -2526,6 +2532,43 @@ mod tests {
             elapsed < Duration::from_millis(100),
             "10 priority executes took {elapsed:?} on idle worker; WakePrio wake is missing \
              (WORKER_IDLE_POLL quantum leaked into the interactive path)"
+        );
+    }
+
+    /// T8/P7 回归钉：自动化求值路径（`execute_script_priority_deferrable`，CDP
+    /// Runtime.evaluate / AutomationRequest 的 renderer 消费面）与 T66 bounded 路径
+    /// 同判据——空闲 worker 上必须被 WakePrio 即时唤醒，不能等满 WORKER_IDLE_POLL
+    /// 轮询量子。缺唤醒时串行请求-应答负载下每次求值叠加近满量子（headless 实测
+    /// CDP eval RTT 恒定 ~51ms：worker 每次应答后即刻驻回 recv_timeout，下一条
+    /// 请求总在量子窗口内到达）。变异验证：移除 deferrable 的 WakePrio 发送，
+    /// 10 次连发总耗时超 100ms 上限即红。
+    #[test]
+    fn priority_deferrable_execute_wakes_idle_dispatch_loop() {
+        let worker = RendererJsWorker::spawn(6142);
+        // 预热同 T66 钉：首条强制完成 spawn 侧 setup 并进入分派环，再静置两个
+        // 轮询量子，worker 必已驻留在 recv_timeout(WORKER_IDLE_POLL) 等待。
+        let warmup = worker
+            .execute_script_priority_deferrable("1+1", Duration::from_secs(2))
+            .ok()
+            .and_then(|r| r.ok())
+            .expect("warmup execute failed");
+        assert_eq!(warmup, "2");
+        std::thread::sleep(Duration::from_millis(150));
+        // 无唤醒时每条求值期望 25ms/条（缺唤醒期望总 ~250ms），唤醒路径 ~2ms/条
+        //（总 ~20ms）；100ms 上限两侧 ≥4 倍余量，变异必红（二项汇聚）。
+        let started = std::time::Instant::now();
+        for _ in 0..10 {
+            let result = worker
+                .execute_script_priority_deferrable("2+2", Duration::from_secs(2))
+                .expect("deferrable execute should complete synchronously on idle worker")
+                .expect("deferrable execute failed");
+            assert_eq!(result, "4");
+        }
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed < Duration::from_millis(100),
+            "10 deferrable executes took {elapsed:?} on idle worker; WakePrio wake is missing \
+             (WORKER_IDLE_POLL quantum leaked into the automation eval path)"
         );
     }
 
