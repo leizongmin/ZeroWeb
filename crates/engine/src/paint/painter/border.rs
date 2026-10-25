@@ -201,8 +201,10 @@ impl super::Painter {
         // border-center（自源 ref 对 −3px 挂账），`=1` 启用。
         // R5283：与 layout 端 collapse_winner_center_table 同门——vertical 表（cell
         // writing_mode 继承自表）格线模型未接，保持 border-center 带绘制。
+        // R5285：随 layout 端翻正默认 ON（`!= "0"` 成对；只翻 layout 侧会成混合态
+        // ——corpus 15720→15706 十四案回归实证），回退 kill-switch 显式 `=0`。
         let winner_center = collapse
-            && std::env::var("ZW_TABLE_COLLAPSE_WINNER_CENTER").as_deref() == Ok("1")
+            && std::env::var("ZW_TABLE_COLLAPSE_WINNER_CENTER").as_deref() != Ok("0")
             && !matches!(
                 box_node.writing_mode,
                 zero_style_system::WritingModeValue::VerticalRl | zero_style_system::WritingModeValue::VerticalLr

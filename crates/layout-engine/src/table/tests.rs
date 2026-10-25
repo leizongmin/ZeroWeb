@@ -3221,3 +3221,125 @@ fn collapse_winner_center_column_slot_per_cell_edge_basis() {
         r2.content_width
     );
 }
+
+// R5285：行局部格线胜者列槽锚——bc-row-001 首表形态（chromium headless 探针定谳：
+// td offsetWidth [59,57,57,57,57]、表 offsetWidth 291）。table border-width
+// 4px 2px 8px 6px、td border-width 2px 0 4px 2px + padding 1/2/4/3、div 50×10、
+// 1 行 5 列。行局部胜者 = [6,2,2,2,2,2]（左缘表 6 胜 cell 2；内线 = 右邻 bl 2；
+// 右缘表 2 胜 cell 0）→ 槽 = [3+55+1, 1+55+1 ×4]；extent = 3 + 287 + 1 = 291。
+// 旧全局/own-half 口径（R5283）槽 56×5 = 280——ON ✗1.19 的缺口 7px = 内线 4 +
+// 左缘 2 + 右缘 1。行局部性同时保住 bc-006（上行测试槽 75：非邻接行源不进需求）。
+#[test]
+fn collapse_winner_center_column_row_local_line_winners() {
+    crate::table::set_winner_center_test(true);
+    use zero_css_parser::values::LengthValue;
+    use zero_style_system::property::types::{BorderCollapseValue, BorderStyleValue};
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let table_id = doc.create_element("table");
+    let _ = doc.append_child(root, table_id);
+    let mut styles = HashMap::new();
+    let mut ts = ComputedStyle::default();
+    ts.display = DisplayValue::Table;
+    ts.border_collapse = BorderCollapseValue::Collapse;
+    ts.border_top_width = LengthValue::Px(4.0);
+    ts.border_right_width = LengthValue::Px(2.0);
+    ts.border_bottom_width = LengthValue::Px(8.0);
+    ts.border_left_width = LengthValue::Px(6.0);
+    ts.border_top_style = BorderStyleValue::Solid;
+    ts.border_right_style = BorderStyleValue::Solid;
+    ts.border_bottom_style = BorderStyleValue::Solid;
+    ts.border_left_style = BorderStyleValue::Solid;
+    styles.insert(table_id, ts);
+
+    let row_id = doc.create_element("tr");
+    let _ = doc.append_child(table_id, row_id);
+    let mut rs = ComputedStyle::default();
+    rs.display = DisplayValue::TableRow;
+    styles.insert(row_id, rs);
+
+    let mut cell_ids = Vec::new();
+    for _c in 0..5 {
+        let cell_id = doc.create_element("td");
+        let _ = doc.append_child(row_id, cell_id);
+        cell_ids.push(cell_id);
+        let mut cs = ComputedStyle::default();
+        cs.display = DisplayValue::TableCell;
+        cs.border_top_width = LengthValue::Px(2.0);
+        cs.border_right_width = LengthValue::Px(0.0);
+        cs.border_bottom_width = LengthValue::Px(4.0);
+        cs.border_left_width = LengthValue::Px(2.0);
+        cs.border_top_style = BorderStyleValue::Solid;
+        cs.border_right_style = BorderStyleValue::Solid;
+        cs.border_bottom_style = BorderStyleValue::Solid;
+        cs.border_left_style = BorderStyleValue::Solid;
+        cs.padding_top = LengthValue::Px(1.0);
+        cs.padding_right = LengthValue::Px(2.0);
+        cs.padding_bottom = LengthValue::Px(4.0);
+        cs.padding_left = LengthValue::Px(3.0);
+        // content 域 50 经显式 width 喂入（probe 先例：intrinsic 测量走 taffy
+        // 子布局，手工树测不出——winner-center 显式臂 = content-box explicit）。
+        cs.width = LengthValue::Px(50.0);
+        styles.insert(cell_id, cs);
+    }
+
+    // border-box 57 = div 50 + pads 5 + borders (2+0)；content 域 55
+    let mk_cell = |id: usize| LayoutBox {
+        node_id: Some(cell_ids[id]),
+        width: 57.0,
+        height: 10.0 + 5.0 + 6.0,
+        border_top: 2.0,
+        border_right: 0.0,
+        border_bottom: 4.0,
+        border_left: 2.0,
+        padding_top: 1.0,
+        padding_right: 2.0,
+        padding_bottom: 4.0,
+        padding_left: 3.0,
+        content_width: 50.0,
+        content_height: 10.0,
+        children: vec![LayoutBox {
+            x: 2.0 + 3.0,
+            y: 2.0 + 1.0,
+            width: 50.0,
+            height: 10.0,
+            content_width: 50.0,
+            content_height: 10.0,
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let mut table_box = LayoutBox {
+        node_id: Some(table_id),
+        border_top: 4.0,
+        border_right: 2.0,
+        border_bottom: 8.0,
+        border_left: 6.0,
+        content_width: 800.0,
+        children: vec![LayoutBox {
+            node_id: Some(row_id),
+            children: (0..5).map(mk_cell).collect(),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    let grid = build_grid(&table_box, &doc, &styles);
+    let (col_widths, _) = compute_column_widths_inner(&table_box, &grid, &styles, &doc, Default::default(), None);
+    let expect = [59.0, 57.0, 57.0, 57.0, 57.0];
+    assert!(
+        col_widths.len() == 5 && col_widths.iter().zip(expect).all(|(w, e)| (w - e).abs() < 0.01),
+        "column slots {:?} != [59,57,57,57,57] (row-local line winners, chromium probe)",
+        col_widths
+    );
+    position_cells(&mut table_box, &doc, &grid, &col_widths, 0.0, 0.0, &styles);
+    resolve_collapsed_borders(&mut table_box, &grid, &styles, &doc);
+    apply_collapse_content_half_shift(&mut table_box, &grid, &styles);
+    // extent = Σ槽 287 + 左缘外半 3 + 右缘外半 1 = 291（chromium offsetWidth 实证）
+    assert!(
+        (table_box.width - 291.0).abs() < 0.01,
+        "table width {} != 291",
+        table_box.width
+    );
+}
