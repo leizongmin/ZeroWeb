@@ -199,7 +199,14 @@ impl super::Painter {
         // legacy 内绘 full 的前提「盒缘未在带中心」不再成立）。与 layout 端
         // ZW_TABLE_COLLAPSE_WINNER_CENTER 同名同默认（kill-switch 成对）：默认回退
         // border-center（自源 ref 对 −3px 挂账），`=1` 启用。
-        let winner_center = collapse && std::env::var("ZW_TABLE_COLLAPSE_WINNER_CENTER").as_deref() == Ok("1");
+        // R5283：与 layout 端 collapse_winner_center_table 同门——vertical 表（cell
+        // writing_mode 继承自表）格线模型未接，保持 border-center 带绘制。
+        let winner_center = collapse
+            && std::env::var("ZW_TABLE_COLLAPSE_WINNER_CENTER").as_deref() == Ok("1")
+            && !matches!(
+                box_node.writing_mode,
+                zero_style_system::WritingModeValue::VerticalRl | zero_style_system::WritingModeValue::VerticalLr
+            );
         let winner_center_outer_centered = |side: usize, box_node: &LayoutBox| -> bool {
             winner_center || box_node.collapsed_border_color_overrides[side].is_none()
         };
