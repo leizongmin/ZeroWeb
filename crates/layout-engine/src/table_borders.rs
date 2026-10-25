@@ -905,6 +905,15 @@ pub(crate) fn resolve_collapsed_borders(
 
     // 阶段 3：应用所有边框覆盖到 LayoutBox
     for ((row_idx, cell_idx), side, width, color_override, style_override) in overrides {
+        // R5284：hidden 胜者零宽——CSS2.1 §17.6.2.1 hidden 抑制该缘一切边框，paint
+        // 不出线且不占布局空间（与 none 同为零消费；used border 不变量同
+        // tree.rs border_px / apply_collapse_content_half_shift 口径）。否则 specified
+        // 初值 medium=3px 随 hidden 胜者进盒（rules=groups 表 hidden 提示的周界
+        // cell 盒 +3px 内容错位根因），paint 端跳过 hidden 而布局端消费宽度。
+        let width = match &style_override {
+            Some(BorderStyleValue::Hidden) => 0.0,
+            _ => width,
+        };
         let row = &grid.rows[row_idx];
         let row_box = match get_row_box_mut(table_box, row) {
             Some(b) => b,

@@ -2139,6 +2139,33 @@ fn collapse_boundary_winners(
             }
         }
     }
+    // R5284：表 own 边 style hidden → 该缘周界线零账（CSS2 §17.6.2.1 hidden 最高
+    // 优先压掉他源；此处是 max 聚合无显式消解，表 used border 已为 0
+    //（tree.rs border_px 口径）压不住 row/rowgroup/col 源——rules=groups 表
+    // hidden 提示 + 行组组边的周界冲突：组边 1px 入账使 test 页行槽/位移多
+    // +½px/缘。内格线 hidden cell 源同理未压（used 0 不占账），挂账 R5284①。
+    let table_style = |side: usize| -> Option<&zero_style_system::property::types::BorderStyleValue> {
+        table_box.node_id.and_then(|id| styles.get(&id)).map(|s| match side {
+            0 => &s.border_top_style,
+            1 => &s.border_right_style,
+            2 => &s.border_bottom_style,
+            _ => &s.border_left_style,
+        })
+    };
+    if rows > 0 {
+        if matches!(table_style(0), Some(BorderStyleValue::Hidden)) {
+            wh[0] = 0.0;
+        }
+        if matches!(table_style(2), Some(BorderStyleValue::Hidden)) {
+            wh[rows] = 0.0;
+        }
+    }
+    if matches!(table_style(3), Some(BorderStyleValue::Hidden)) {
+        wv[0] = 0.0;
+    }
+    if matches!(table_style(1), Some(BorderStyleValue::Hidden)) {
+        wv[cols] = 0.0;
+    }
     (wv, wh)
 }
 

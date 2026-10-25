@@ -2593,6 +2593,16 @@ fn collect_presentational_hints(doc: &Document, element: NodeId) -> Vec<(String,
                     _ => {}
                 }
             }
+            // R5284：WHATWG §15.3.3 legacy `rules` 属性，仅实现 groups 值（rules-groups
+            // reftest 唯一消费方；其余值 none/rows/cols/all 未实现，// FIXME:）。
+            // groups → 表 hidden/collapse；行/列组子元素 1px solid 组边框见 rowgroup 臂。
+            // 表 hidden 在 collapse 消解中最高优先、压掉外缘组边框，组边框仅内格线出现
+            // ——与 ref 页（显式 collapse + thead/tbody border-block-end）几何等价。
+            // https://html.spec.whatwg.org/multipage/rendering.html#tables
+            if elem_attr(elem, "rules").is_some_and(|r| r.trim().eq_ignore_ascii_case("groups")) {
+                hints.push(("border-style".to_string(), "hidden".to_string()));
+                hints.push(("border-collapse".to_string(), "collapse".to_string()));
+            }
         }
         "td" | "th" => {
             if let Some(bg) = parent_tr_bgcolor(doc, element) {
@@ -2633,6 +2643,28 @@ fn collect_presentational_hints(doc: &Document, element: NodeId) -> Vec<(String,
             if let Some(table_id) = ancestor_table(doc, element) {
                 if table_border_width_attr_from_doc(doc, table_id) > 0 {
                     hints.push(("border".to_string(), "1px solid".to_string()));
+                }
+            }
+        }
+        // R5284：`table[rules=groups] > 行/列组` 的组边框提示（WHATWG §15.3.3；逻辑
+        // 长手经 apply_advanced 按元素 writing-mode 映射物理边）。rowgroup → block 轴、
+        // colgroup → inline 轴，均 1px solid。作者规则（如 `#a > * { border-block-start:
+        // none }`）以更高特异性覆盖单侧，组间边界仍由另一侧提供。外缘被表
+        // border-style:hidden 压制。cell 提示（1px none，几何上被一切实样式压过）与
+        // rules 其余值未实现（// FIXME:）。
+        // https://html.spec.whatwg.org/multipage/rendering.html#tables
+        "thead" | "tbody" | "tfoot" | "colgroup" => {
+            if let Some(table_id) = ancestor_table(doc, element)
+                && doc
+                    .get_attribute(table_id, "rules")
+                    .is_some_and(|r| r.trim().eq_ignore_ascii_case("groups"))
+            {
+                if tag == "colgroup" {
+                    hints.push(("border-inline-width".to_string(), "1px".to_string()));
+                    hints.push(("border-inline-style".to_string(), "solid".to_string()));
+                } else {
+                    hints.push(("border-block-width".to_string(), "1px".to_string()));
+                    hints.push(("border-block-style".to_string(), "solid".to_string()));
                 }
             }
         }
