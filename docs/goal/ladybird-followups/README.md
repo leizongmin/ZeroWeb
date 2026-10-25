@@ -1,6 +1,6 @@
 # Ladybird 建议：ZeroWeb 后续目标与启动入口
 
-**日期**：2026-10-20。7 个 goal 与 Shell 入口已准备；本轮只交付规划资产，未启动产品开发、基准、安装或发布。各目标处于 Active 启动门控，运行基线全部 **NOT_RUN**（2026-10-22 更新：P2 合成动画与 Worker Canvas 已完成收口并归档；2026-10-23 更新：P0 后台资源生命周期已完成收口并归档，P1-release 安装更新与崩溃反馈经用户决策终止归档——非 DONE，恢复=授权 P1/P4，见各自控制面；**2026-10-23 用户决策：renderer-trust-boundary / dom-operation-bench / media-runtime-isolation 三目标 M1 解锁**，无人值守可启动，RFC 门与深结构门控不随 M1 解锁，见各自 master；2026-10-24 更新：P0 增量渲染完整计算对照已完成收口并归档（五 DC 全收，rally 双 DONE），见其控制面）。
+**日期**：2026-10-20。7 个 goal 与 Shell 入口已准备；本轮只交付规划资产，未启动产品开发、基准、安装或发布。各目标处于 Active 启动门控，运行基线全部 **NOT_RUN**（2026-10-22 更新：P2 合成动画与 Worker Canvas 已完成收口并归档；2026-10-23 更新：P0 后台资源生命周期已完成收口并归档，P1-release 安装更新与崩溃反馈经用户决策终止归档——非 DONE，恢复=授权 P1/P4，见各自控制面；**2026-10-23 用户决策：renderer-trust-boundary / dom-operation-bench / media-runtime-isolation 三目标 M1 解锁**，无人值守可启动，RFC 门与深结构门控不随 M1 解锁，见各自 master；2026-10-24 更新：P0 增量渲染完整计算对照已完成收口并归档（五 DC 全收，rally 双 DONE），见其控制面；2026-10-25 更新：P2 平台媒体解码与隔离已完成收口并归档（M1–M4 全交付 + D-RFC-1~4 落地对照五 DC 全证，`media-process` 维持默认关默认态、启用须用户授权，见其控制面））。
 
 依据：[Ladybird 近期进展调研](../../research/research-ladybird-progress-2026-10-20.md)。这些目标是参考方向，不表示 ZeroWeb 已存在同样缺陷。源码与复用资产索引见 [catalog.json](catalog.json)；目标契约决定范围，master 是唯一执行状态控制面。
 
@@ -14,7 +14,7 @@
 | P1 | [DOM 操作基准](../dom-operation-bench.md) | [master](../dom-operation-bench/master.md) | [rally-goal-dom-operation-bench.sh](../../../scripts/rally-goal-dom-operation-bench.sh) |
 | P1-release | [安装更新与崩溃反馈](../archive/browser-delivery-loop.md)——⏸️ 终止归档（2026-10-23，用户决策；非 DONE，恢复=授权 P1/P4 并从归档重启） | [master](../archive/browser-delivery-loop/master.md) | 无（启动脚本已随归档删除） |
 | P2 | [合成动画与 Worker Canvas](../compositor-animation-continuity/archive/compositor-animation-continuity-goal-v1-2026-10-22.md)——✅ 已完成（2026-10-22，模式 B 归档；控制面原地保留） | [master](../compositor-animation-continuity/master.md) | 无（启动脚本已随归档删除，不重启） |
-| P2 | [平台媒体解码与隔离](../media-runtime-isolation.md) | [master](../media-runtime-isolation/master.md) | [rally-goal-media-runtime-isolation.sh](../../../scripts/rally-goal-media-runtime-isolation.sh) |
+| P2 | [平台媒体解码与隔离](../archive/media-runtime-isolation.md)——✅ 已完成（2026-10-25，模式 A 归档） | [master](../archive/media-runtime-isolation/master.md) | 无（启动脚本已随归档删除，不重启） |
 
 建议先推进三个 P0；DOM 基准可为渲染优化提供配对数据。交付闭环可在核心稳定后启动。动画、媒体先建立生产证据，再投入架构切片。优先级不代表同时启动，共享源码面需先协调。
 

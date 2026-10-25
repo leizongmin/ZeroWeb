@@ -63,4 +63,4 @@ webview 按以下顺序定位本二进制（与 image-decoder 的发现模式一
 
 - 协议契约：`crates/protocol/src/media.rs`（RFC `docs/specs/media-runtime-isolation-spec-rfc.md` §9）
 - 客户端接入面：`crates/webview/src/media_proxy.rs`
-- 目标与执行记录：`docs/goal/media-runtime-isolation.md`
+- 目标与执行记录：`docs/goal/archive/media-runtime-isolation.md`（2026-10-25 收口归档）

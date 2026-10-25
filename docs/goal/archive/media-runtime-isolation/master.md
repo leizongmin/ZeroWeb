@@ -1,9 +1,9 @@
 # 媒体运行时隔离控制面
 
 **日期**：2026-10-25
-**状态**：Active（**D-RFC-1~4 已批复**——方案 C 批准 / A 批次随批复即启 / B 核查暂缓 / decode-h264 维持默认关，RFC v1.9 §10 批复记录；M1 基线 + M2 RFC 两项交付 + M3 前置设计八片齐备，[m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；**A1–A4 + C1 + C2 切片 1/2 + C3 + C4 已落地**——A 批次四片（rate 1.00000 / 三缺口闭合 / 内存收敛 / seek 冷路径 O(GOP)）+ C 批次隔离面（协议消息族与 media-host 骨架 / 解码内核与自走时钟 / registry 开态客户端切换 / 崩溃检测与退避重启）+ **C4 配对验收**（三态 M1 零回归 + 帧摘要三态全等 + 代际风暴零泄漏 + 能力真值三对照 + 30min 资源审计；配对抓出并订正两缺陷：A1 解码超前 pts 锚定回归 → 样本锚定、宿主 replay 流末残留位置拖拽 → replay 跳过位置 seek，feature 默认关），偏差记录 DESIGN §2.4/§3.5/§6.5/§8.6/§9.6/§10.7/§10.8/§10.9，[切片 2 证据](evidence/2026-10-25-c2-slice2/ANALYSIS.md)，[C3 证据](evidence/2026-10-25-c3-crash-recovery/ANALYSIS.md)，[C4 证据](evidence/2026-10-25-c4-paired-acceptance/ANALYSIS.md)；**DC-5 收口审计完成**——RFC §10 批复落地对照 + DC-1~4 逐项证据复核 + 最终支持范围 + 常驻回归清单，[审计](evidence/2026-10-25-dc5-final-audit/ANALYSIS.md)）。
-**当前卡点**：无。DC-1~5 全部有证闭合；唯一待决 = `media-process` feature 启用时机（RFC §10「C4/M4 后另议」已到期，用户裁决项，双侧事实见[审计 §三](evidence/2026-10-25-dc5-final-audit/ANALYSIS.md)）。
-**下一步**：用户裁决 `media-process` feature 启用时机（默认开 / 维持默认关 / 移交产品线节奏）；「维持关或移交」→ goal DONE 收口，「默认开」→ 开关切换按产品变更另启切片。
+**状态**：Done（2026-10-25 收口归档；**D-RFC-1~4 已批复**——方案 C 批准 / A 批次随批复即启 / B 核查暂缓 / decode-h264 维持默认关，RFC v1.9 §10 批复记录；M1 基线 + M2 RFC 两项交付 + M3 前置设计八片齐备，[m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；**A1–A4 + C1 + C2 切片 1/2 + C3 + C4 已落地**——A 批次四片（rate 1.00000 / 三缺口闭合 / 内存收敛 / seek 冷路径 O(GOP)）+ C 批次隔离面（协议消息族与 media-host 骨架 / 解码内核与自走时钟 / registry 开态客户端切换 / 崩溃检测与退避重启）+ **C4 配对验收**（三态 M1 零回归 + 帧摘要三态全等 + 代际风暴零泄漏 + 能力真值三对照 + 30min 资源审计；配对抓出并订正两缺陷：A1 解码超前 pts 锚定回归 → 样本锚定、宿主 replay 流末残留位置拖拽 → replay 跳过位置 seek，feature 默认关），偏差记录 DESIGN §2.4/§3.5/§6.5/§8.6/§9.6/§10.7/§10.8/§10.9，[切片 2 证据](evidence/2026-10-25-c2-slice2/ANALYSIS.md)，[C3 证据](evidence/2026-10-25-c3-crash-recovery/ANALYSIS.md)，[C4 证据](evidence/2026-10-25-c4-paired-acceptance/ANALYSIS.md)；**DC-5 收口审计完成**——RFC §10 批复落地对照 + DC-1~4 逐项证据复核 + 最终支持范围 + 常驻回归清单，[审计](evidence/2026-10-25-dc5-final-audit/ANALYSIS.md)）。
+**当前卡点**：无。**goal 已收口**（2026-10-25）——DC-1~5 全部有证闭合；`media-process` 启用维持默认关默认态（启用须用户授权，见缺口与待决表）。
+**下一步**：无。goal 完成归档；重开条件 = 用户授权 `media-process` 默认启用（另启产品切片）或新媒体架构议题。
 **入口**：[目标契约](../media-runtime-isolation.md) / [启动与证据协议](../ladybird-followups/README.md)
 
 ## 缺口与待决
@@ -14,7 +14,7 @@
 | 同步状态代理/时钟/seek 的进程契约 | 比较现状、平台解码、独立运行时 | **RFC v1.9 已批复**（三路线对比 + §9 IF 级接口契约；方案 C 立项） |
 | 故障、权限不足与软件回退 | 真实隔离实例注入并验证浏览器恢复 | **已闭合**（C3 SIGKILL 注入契约 8/8 + 退避重启 + reload 恢复 + shim march Error face 页面事件通路） |
 | 平台 SDK/codec 许可/分发与架构投入 | M1/M2 证据与 RFC 后决定，不自动换许可证 | **已裁决**（D-RFC-1 方案 C 批准立项 / D-RFC-3 平台硬解暂缓 / D-RFC-4 decode-h264 维持默认关；M1 核查：本平台 /dev/dri 缺失，无硬解路径） |
-| `media-process` feature 启用时机（RFC §10「C4/M4 后另议」，已到期） | 用户裁决：默认开 / 维持默认关 / 移交产品线节奏，双侧事实见 [DC-5 审计 §三](evidence/2026-10-25-dc5-final-audit/ANALYSIS.md) | **待用户裁决**（本 goal 唯一待决项） |
+| `media-process` feature 启用时机（RFC §10「C4/M4 后另议」） | 默认态 = 维持默认关（启用属产品默认面变更，须用户点名授权方动——rule 11；无授权即现状，D-RFC-4 decode-h264 同款先例）。双侧事实存 [审计 §三](evidence/2026-10-25-dc5-final-audit/ANALYSIS.md) | **无行动待决**（重开条件 = 用户授权启用，另启产品切片，不等同本 goal 重开） |
 
 ## 里程碑
 
@@ -283,3 +283,10 @@
 - **唯一待决移交用户**：`media-process` feature 启用时机（RFC §10「C4/M4 后另议」到期）——默认开（崩溃隔离+内存收益）/ 维持默认关（非 Linux 帧路径内联缺口 + 验收平台单平台 + A 批次收益已在默认路径）双侧事实附审计 §三；「维持关或移交」→ goal DONE，「默认开」→ 另启产品切片。
 - **控制面过时项订正**：缺口表「故障注入」行 NOT_STARTED → 已闭合（C3）、「架构投入」行待决 → 已裁决（D-RFC-1/3/4）、M3 行 IN_PROGRESS → 完成。
 - 本轮零代码改动（纯审计 + 控制面/文档订正）；工作区门禁沿用本轮 make test 87 套件 exit 0 + guarded-clippy 全绿（无新代码面，无新增门禁义务）。
+
+### 2026-10-25 收口归档轮（待决项处置 + 模式 A 归档）
+
+- **待决项处置**：`media-process` 启用时机按「默认态」销项——维持默认关（启用属产品默认面变更，rule 11 须用户点名授权方动；无授权即现状，与 D-RFC-4 decode-h264「维持默认关、需求出现再议」同款先例）。审计 §三 双侧事实与「按需另启切片」重开条件留档；本轮未改任何 feature 表/产品面。
+- **收口依据**：Mission 三面全交付（现有媒体成本测量 = M1 基线 + C4 配对 + 资源审计；平台硬解与独立运行时评估 = RFC v1.9 批复 + C 批次落地验证；HTMLMediaElement 语义保持 = DC-2 契约 + march 语义面）；DC-1~5 全部有证闭合（[DC-5 审计](evidence/2026-10-25-dc5-final-audit/ANALYSIS.md)）；DC-5 条件中的用户认可门仅约束「证据不支持投入而延期」情形——本案投入已落地验证，不触发。
+- **归档动作**（模式 A，同 background-resource-lifecycle / incremental-rendering-oracle 先例）：goal 契约与控制面目录迁 `docs/goal/archive/`；启动脚本 `scripts/rally-goal-media-runtime-isolation.sh` 删除（不重启）；ladybird-followups README 目标行转 ✅；media-host README 指路更新；catalog 保留（规划资产清单，含已完成 goal 先例）。
+- **门禁**：收口轮零代码改动；最终代码面门禁记录 = 2026-10-25 bg02/D4 提交批全量 make test 87 套件 exit 0 + guarded-clippy 全绿（基线 9c6652fa3，其后仅渲染流 paint 修复与本轮文档归档）；收口时组合态复跑全量 make test **exit 0（87 套件，2026-10-25）**——两流组合态收口验证。
