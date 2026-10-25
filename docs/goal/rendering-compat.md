@@ -9,6 +9,14 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5276 专项轮（black96x96 语料完整性核实——负结果：顶层缺图是 corpus 死路径，零翻转，净维持 15709）**（2026-10-25）
+>
+> - **取证**：R5274 扫出的 `css/support/black96x96.png`（顶层 `css/reference/ref-filled-black-96px-square.xht` 引用）经核实**无案可达**——150 个引用该 ref 的案（CSS2 backgrounds/borders/normal-flow/tables/values + background-clip-009）match 声明全为相对自身目录的 `../reference/...`，解析落到套件内 `css/CSS2/reference/` + `css/CSS2/support/` **完整副本**（4 副本 md5 全同 ed89c5f9，自导入起就在）。R5274「补入会翻转大批现存结果」前提不成立。
+> - **实证**：补入顶层资产（CSS2/support 副本拷贝）后全量 corpus A/B（/tmp/r5276_full.txt vs /tmp/r5275_full2.txt）**FIXED=0 REGRESSED=0**，ref 族 150 案判态逐案不变（148✓/2✗ 与基线一致）；唯一 ✓ 内漂移 text-decoration-inset-orthogonal-block-001 0.5↔1.11 = 已知 flake。净维持 15709，无隐藏批量翻转挂账。
+> - **处置**：顶层资产留置（1KB，使既有顶层 ref 自洽，防未来导入案静默白板假 ✓）+ 死路径结论记 update-wpt-data.sh 缺口注释；其余 4 缺失维持不补（判定复核不变：black_red 无 match 声明/2 个 testharness JS 非像素面/swatch-blue manual）。ref 族现存 2✗（border-right-width-applies-to-006/-015）为真兼容缺口，归 CSS2 borders 日常轻量修复面。
+> - **方法论**：语料完整性专项第一步应从案内 match 声明解析 ref 实际落点，路径存在性扫描只产线索不产结论（与 R5275 单采样归因同族教训）。证据：[r5276](rendering-compat/evidence/r5276-wpt-asset-deadpath-2026-10-25.md)。
+> - **下一步**：R5277 ① 轻量修复回归主循环（881 failed 账本内选取；候选：CSS2 borders ref 族 2✗）② 031 竖排/::selection 部分行域维持 ③ UA 图片 wash/部分选区跨 img 挂账缓维持 ④ 跨流碰头维持（page_scripts mutation_arm 归并行流、clippy 2 项）。
+
 > **▶ R5275 实现轮（preserve 空白 float 宽/选区高亮三片修复——active-selection-063 ✗2.08→✓0.00%；corpus FIXED=1 REGRESSED=0 净 +1 = 15709）**（2026-10-25）
 >
 > - **取证**：063 剩余片根因 = 四层空白语境盲门族叠加——collapse 口径判空白谓词（`is_collapsible_ws`/`has_preserved_content` 窄集合，R4034/R5055 口径）不看 `white-space` 上下文，preserve（pre/pre-wrap）纯 tab 是保留内容（CSS Text 3 §3）却逐层被判无：①measure 空叶早退回 0 宽 → ②float 只缩不扩（shrink_pure_text_floats 扩臂要求非文本 Σ>0）盒 0×0 整缺 → ③paint 门早退行盒字形/选区 fill 全缺 → ④R1447 tab 片段 text="" utf16 记 0 → 行区间 (0,0) 被行门整跳（DBG_SEL：sel_owned=Some((0,7)) 而 4 行 ranges 全 (0,0) 实证）。
