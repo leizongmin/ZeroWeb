@@ -12690,6 +12690,25 @@
     return !event._defaultPrevented;
   }
 
+  // s90（string-compilation base URL——inline 事件处理器臂）：inline/反射处理器体无
+  // active script——体内动态 import() 的基 URL = 求值时刻**当前文档基 URL**（处理器
+  // 编译的 API base URL 取文档基 URL，非任何脚本的捕获基；`<base>` 动态变更即时生
+  // 效）。求值窗 swap 进文档基、finally 换回——referrer 槽位是每脚本共享态，零外溢
+  //（后续 timer/模块回调不被污染）。宿主回调未注册（QuickJS 后端降级）→ 直接执行零变更。
+  // https://html.spec.whatwg.org/multipage/webappapis.html#event-handler-processing-model
+  function _zwCallHandlerDocBase(fn, thisArg, ev) {
+    var swap = typeof globalThis.__zwSwapImportReferrer === 'function'
+      && typeof globalThis._zwDocBaseURL === 'function';
+    var prev = swap ? globalThis.__zwSwapImportReferrer(globalThis._zwDocBaseURL()) : null;
+    try { return fn.call(thisArg, ev); }
+    finally { if (swap) globalThis.__zwSwapImportReferrer(prev); }
+  }
+
+  // 编译 fn 的换基包装（参数绑定——var 循环里直闭包捕获会读到末轮绑定）。
+  function _zwWrapHandlerDocBase(fnC) {
+    return function (_ev) { return _zwCallHandlerDocBase(fnC, this, _ev); };
+  }
+
   // R2934 inline HTML event handler 编译（`<button onclick="...">`）：on* getter 无 JS 设值时回落编译
   // 元素的 on* 属性串为函数（spec 近似：`new Function('event', 'with(document){with(this){ <code> }}')`，
   // this=元素），缓存 + 注册进 _listenerStore[key]（使 dispatchEvent/click 触发）。JS 设值优先（set trap 覆盖），
@@ -12725,8 +12744,10 @@
     }
     try {
       globalThis.__zwAttrClear = true;
-      fn = new Function('event', 'with(document) { with(this) { ' + code + ' } }');
+      var fnC = new Function('event', 'with(document) { with(this) { ' + code + ' } }');
       globalThis.__zwAttrClear = false;
+      // s90：求值换基包装（_zwCallHandlerDocBase——体内 import() 用当前文档基 URL）。
+      fn = _zwWrapHandlerDocBase(fnC);
     } catch (_e) {
       globalThis.__zwAttrClear = false;
       _onHandlers[key][type] = false;
@@ -12769,7 +12790,9 @@
       try { code = __zw_get_attr('body', 'on' + t); } catch (_e) {}
       if (code) {
         try {
-          globalThis['on' + t] = new Function('event', 'with(document){with(this){' + code + '}}');
+          var fnB = new Function('event', 'with(document){with(this){' + code + '}}');
+          // s90：同 _ensureInlineHandler——求值换基包装（import() 用当前文档基 URL）。
+          globalThis['on' + t] = _zwWrapHandlerDocBase(fnB);
         } catch (_e) {}
       }
     }
@@ -16949,7 +16972,8 @@
           try {
             globalThis.__zwAttrClear = true;
             var fn152 = new Function('event', 'with(document) { with(this) { ' + inlineCode + ' } }');
-            try { fn152.call(node, ev); } catch (_e152i) {}
+            // s90：求值换基（同 _zwCallHandlerDocBase——体内 import() 用当前文档基 URL）。
+            try { _zwCallHandlerDocBase(fn152, node, ev); } catch (_e152i) {}
             globalThis.__zwAttrClear = false;
           } catch (_e152c) { globalThis.__zwAttrClear = false; }
         }
@@ -16979,7 +17003,8 @@
           if (code) {
             try {
               var f = new Function('event', 'with(document) { with(this) { ' + code + ' } }');
-              try { f.call(node, _makeEvent(evType, { bubbles: true })); } catch (_ei) {}
+              // s90：求值换基（同 _zwCallHandlerDocBase——体内 import() 用当前文档基 URL）。
+              try { _zwCallHandlerDocBase(f, node, _makeEvent(evType, { bubbles: true })); } catch (_ei) {}
             } catch (_ec) {}
           }
         };

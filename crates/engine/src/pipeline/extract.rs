@@ -1092,6 +1092,51 @@ pub fn extract_script_source_positions(html: &str) -> Vec<(u32, u32)> {
     positions
 }
 
+/// 每个 `<script>` 元素（DOM 文档序）位置生效的文档基 URL（绝对；无 `<base>` → 页面 URL）。
+///
+/// s90（string-compilation base URL 面）spec
+/// https://html.spec.whatwg.org/multipage/webappapis.html#concept-scripts-base-url
+/// ——内联脚本的基 URL 在脚本创建（parse）时刻取文档基 URL 快照（后续 `<base>`
+/// 变更不回溯）；调用方对外链经典脚本另用其绝对 src（外链脚本基 URL = 自身
+/// URL），不经本表。DOM 前序遍历（与 [`extract_page_scripts_indexed`] 的
+/// this_idx 同一序号空间——全部 `<script>` 元素、含 template 内计数项）。
+/// `<base>` 无 href 跳过（spec first base **with an href attribute**）；href
+/// 解析失败回落页面 URL。
+pub fn script_effective_base_urls(html: &str, page_url: &str) -> Vec<String> {
+    let doc = zero_dom::parse_html(html);
+    let mut bases: Vec<String> = Vec::new();
+    let mut current_base: Option<String> = None;
+    // 显式栈 DFS（子节点逆序入栈 = 前序文档序）。
+    let mut stack = vec![doc.root()];
+    while let Some(id) = stack.pop() {
+        let Some(node) = doc.get(id) else { continue };
+        if let zero_dom::NodeKind::Element(e) = &node.kind {
+            // tag_name HTML 命名空间 ASCII 大写（node.rs tag_name 契约）——归一小写匹配。
+            match e.tag_name().to_ascii_lowercase().as_str() {
+                "base" => {
+                    if let Some(href) = doc.get_attribute(id, "href").filter(|h| !h.is_empty()) {
+                        current_base = Some(
+                            url::Url::parse(page_url)
+                                .ok()
+                                .and_then(|u| u.join(&href).ok())
+                                .map(|u| u.to_string())
+                                .unwrap_or_else(|| page_url.to_string()),
+                        );
+                    }
+                }
+                "script" => {
+                    bases.push(current_base.clone().unwrap_or_else(|| page_url.to_string()));
+                }
+                _ => {}
+            }
+        }
+        for child in node.children.iter().rev() {
+            stack.push(*child);
+        }
+    }
+    bases
+}
+
 /// 单个 `<style>` 元素的 CSP 检查点输入面（security-hardening M2-s3）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StyleElementCsp {
@@ -1183,8 +1228,37 @@ mod tests {
     use super::{
         MediaResourceElementKind, PageScript, extract_media_resources, extract_meta_csp_policies,
         extract_page_scripts_indexed, extract_script_csp_info, extract_script_source_positions,
-        extract_style_elements_csp,
+        extract_style_elements_csp, script_effective_base_urls,
     };
+
+    const BASE_PAGE: &str = "https://wpt.test/a/b/page.html";
+
+    #[test]
+    fn script_bases_capture_parse_time_base_and_skip_hrefless() {
+        // s90：脚本前 `<base>` 捕获（脚本**执行中**动态换 base 不入解析树序之外——
+        // 表纯函数于原文）；无 href 的 base 跳过；无 base 回落页面 URL。
+        let html = r#"<html><head><base id="x"><base href="scripts/foo/"></head>
+<body><script>a</script><script>b</script></body></html>"#;
+        let bases = script_effective_base_urls(html, BASE_PAGE);
+        assert_eq!(
+            bases,
+            ["https://wpt.test/a/b/scripts/foo/", "https://wpt.test/a/b/scripts/foo/"]
+        );
+        assert_eq!(
+            script_effective_base_urls("<p>no scripts</p>", BASE_PAGE),
+            Vec::<String>::new()
+        );
+        assert_eq!(script_effective_base_urls("<script>a</script>", BASE_PAGE), [BASE_PAGE]);
+    }
+
+    #[test]
+    fn script_bases_count_template_and_later_base_only_for_later_scripts() {
+        // base 仅影响其树序**之后**的脚本（前序遍历顺序语义）；template 内 script
+        // 计数不跳过（与 extract_page_scripts_indexed 的 this_idx 同空间）。
+        let html = r#"<script>a</script><base href="../"><script>b</script>"#;
+        let bases = script_effective_base_urls(html, BASE_PAGE);
+        assert_eq!(bases, [BASE_PAGE, "https://wpt.test/a/"]);
+    }
 
     #[test]
     fn media_resource_extraction_respects_owner_and_direct_src() {

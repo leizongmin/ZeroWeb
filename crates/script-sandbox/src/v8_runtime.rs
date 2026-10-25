@@ -565,6 +565,26 @@ impl V8Sandbox {
         }
     }
 
+    /// s90（string-compilation base URL——inline 事件处理器臂）：注册全局函数
+    /// `__zwSwapImportReferrer(url)`——JS shim 于 inline/反射事件处理器求值窗调用，
+    /// 返回旧 referrer 并换入新值（处理器体内动态 import() 用求值时刻文档基 URL，
+    /// finally 换回零外溢）。回调捕获 [`DynamicImportState`] 的 Arc，不经
+    /// `&mut self`（JS 执行中沙箱不可变借用不可得——与 resolver 同理由回调面承载）。
+    /// 未注册（QuickJS 后端）时 shim 按函数缺席降级为直接执行，零变更。
+    pub fn register_dynamic_import_referrer_swapper(&mut self) {
+        let dynamic_import = self.dynamic_import.clone();
+        self.register_callback(
+            "__zwSwapImportReferrer",
+            Box::new(move |args| {
+                let url = args.first().cloned().unwrap_or_default();
+                if let Ok(mut st) = dynamic_import.lock() {
+                    return std::mem::replace(&mut st.referrer, url);
+                }
+                String::new()
+            }),
+        );
+    }
+
     /// 注册宿主回调，挂为全局函数 `name`（JS-DOM-bridge：JS shim 调 `name(...)` 触发）。
     ///
     /// 回调闭包存入线程局部注册表（返回索引），`execute` 时按索引挂到当前 Context 的
@@ -1179,6 +1199,9 @@ impl crate::Sandbox for V8Sandbox {
     }
     fn set_dynamic_import_referrer(&mut self, url: &str) {
         V8Sandbox::set_dynamic_import_referrer(self, url)
+    }
+    fn register_dynamic_import_referrer_swapper(&mut self) {
+        V8Sandbox::register_dynamic_import_referrer_swapper(self)
     }
     fn reset_context(&mut self) {
         V8Sandbox::reset_context(self)

@@ -473,6 +473,13 @@ pub trait Sandbox {
     ///
     /// **默认 no-op**：QuickJS 后端降级（同上）。
     fn set_dynamic_import_referrer(&mut self, _url: &str) {}
+
+    /// s90（string-compilation base URL——inline 事件处理器臂）：注册全局函数
+    /// `__zwSwapImportReferrer(url)`——返回旧 referrer 并换入新值。JS shim 于
+    /// inline/反射事件处理器求值窗调用（体内动态 import() 用求值时刻文档基 URL）。
+    ///
+    /// **默认 no-op**：QuickJS 后端降级（shim 按函数缺席直接执行，零变更）。
+    fn register_dynamic_import_referrer_swapper(&mut self) {}
 }
 
 #[cfg(all(test, feature = "v8"))]

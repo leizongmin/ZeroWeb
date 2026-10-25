@@ -3333,6 +3333,11 @@ impl WebView {
             .then(|| self.security_context.eval_violation())
             .flatten();
         let scripts = extract_page_scripts_indexed(&html);
+        // s90（string-compilation base URL 面）：每脚本 parse 时刻的文档基 URL 捕获
+        // 表（DOM 文档序，与 script_index 同序号空间；纯函数于原文，动态 `<base>`
+        // 变更天然不回溯）。外链脚本不经此表（referrer 用自身 src，见循环内）。
+        let script_bases =
+            zero_engine::script_effective_base_urls(&html, self.current_url.as_deref().unwrap_or("about:blank"));
         // M2-s2：无脚页面若仍有被 CSP 阻止的 img 待派发 error，不早退（下方派发点
         // 需 sandbox/shim 就绪；有脚页面照常走全量装配）。
         if scripts.is_empty() && !(self.config.csp_enforcement && !self.pending_csp_img_blocks.is_empty()) {
@@ -3871,6 +3876,10 @@ impl WebView {
                 }
                 compile_module_contract(&fetcher_native_import, parent, spec)
             }));
+            // s90：__zwSwapImportReferrer——inline/反射事件处理器求值窗换基
+            //（shim 侧 _zwCallHandlerDocBase 调用：求值时刻文档基 URL 进 referrer
+            // 槽位，finally 换回，零外溢）。
+            sandbox.register_dynamic_import_referrer_swapper();
         }
 
         // DOM shim 只注入一次（重复执行会重置 _nodeMap 丢失监听器）；含安装后 viewport
@@ -3958,6 +3967,16 @@ impl WebView {
                 let _ = sandbox.execute(&snippet);
                 continue;
             }
+            // s90（string-compilation base URL 面）：spec 脚本基 URL = 创建时刻的
+            // 文档基 URL（后续 `<base>` 变更不回溯）——内联脚本用捕获表；外链经典
+            // 脚本用自身 src 绝对 URL（spec 外链脚本基 URL = 自身 URL）。先于下方
+            // `match script` 的 move 计算。
+            // https://html.spec.whatwg.org/multipage/webappapis.html#concept-scripts-base-url
+            let doc_url = self.current_url.clone().unwrap_or_else(|| "about:blank".to_string());
+            let referrer = match &script {
+                zero_engine::pipeline::PageScript::External(src) => resolve_document_url(&doc_url, src),
+                _ => script_bases.get(script_index).cloned().unwrap_or(doc_url),
+            };
             let (code, is_module) = match script {
                 zero_engine::pipeline::PageScript::Inline(c) => (c, false),
                 // R3083：`<script type="module">` 经 compile_module_script 转 import/export 为经典可执行
@@ -4137,9 +4156,10 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                     }),
                 );
             }
-            // s88：动态 import() referrer = 文档 URL（classic 路径无 ScriptOrigin，
-            // 每脚本前刷新——模块路径经 prelude `.call({referrer})` 自带，不受此影响）。
-            sandbox.set_dynamic_import_referrer(self.current_url.as_deref().unwrap_or("about:blank"));
+            // s88：动态 import() referrer（classic 路径无 ScriptOrigin，每脚本前刷新
+            // ——模块路径经 prelude `.call({referrer})` 自带，不受此影响）。s90：
+            // referrer 升为脚本基 URL（上方按 PageScript 形态计算）。
+            sandbox.set_dynamic_import_referrer(&referrer);
             let execution = sandbox.execute(&full).map(|_| ());
             if eval_wrap_active {
                 let _ = sandbox.execute(

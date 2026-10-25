@@ -2,9 +2,57 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 89 施工收口（execution-timing stylesheets-blocking 12F 簇 +150-\* 2 行同根红利 bitwise：scripting-1 **145P/308F/33T→159P/295F/33T**——四根四刀：语料 fetch 扩展名表补 `*.css`、webview `load_html` 接 `set_active_external_css` 生产装填（此前恒空）、`resolve_external_css` @import 递归展开 + `strip_import_statements` 拼接前剥离（无分号 `@import` 文本残留经 css-syntax 吞块根因，css-parser 未动）、getComputedStyle `position` 初始值回落（css-position-3，107 面 write 重放 plain 元素）；失败族地图序：①dynamic-import must-reject + classic 面 ✅ → ②stylesheets-blocking-scripts 12F 簇 ✅ → ③the-script-element 基面 65F → ④module 尾片），下一步 s90 the-script-element 基面（s86 切片序③）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 90 施工收口（string-compilation 动态 import() 字符串编译面 classic 三刀闭环 +20P 拆臂 bitwise：scripting-1 **158P/294F/33T→173P/294F/30T**（raw；域账 +1 惯例 **174P/294F/30T**）——三刀：①shim setTimeout/setInterval 字符串 handler 注册期 `new Function` 编译（TimerInitializationSteps WebIDL callback 转换，此前静默丢弃堵死 harness 串行）；②engine `script_effective_base_urls` zero_dom 树序捕获每脚本 parse 时刻基 URL 接 webview referrer 槽位（concept-scripts-base-url；原文偏移扫曾误——`<script` 文本≠DOM 序号返工记录在账）；③inline/反射事件处理器求值窗换基 `__zwSwapImportReferrer` 原生回调 + shim `_zwCallHandlerDocBase` finally 换回（event-handler-processing-model）；失败族地图序：①dynamic-import must-reject + classic 面 ✅ → ②stylesheets-blocking-scripts 12F 簇 ✅ → ③the-script-element 基面余 module 基座/外链加载器/CSP nonce → ④module 尾片），下一步 s91 the-script-element 余账（module 上下文 5 文件 T + base-url-external-classic 动态加载器）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-26 M2 切片 89 施工收口，execution-timing stylesheets-blocking 轮）**：
+> **▶ 当前状态（2026-10-26 M2 切片 90 施工收口，string-compilation 动态 import() 字符串编译轮）**：
+> **入场核账**：s89 HEAD（44e23748f）the-script-element 全子树复扫
+> **158P/294F/33T**（485 行）。string-compilation 族基线 3P/3F/8T：
+> classic 整页 T（字符串 setTimeout handler 被静默丢弃永不 fire，堵死
+> harness 串行队列连累 4 臂 pending）、promise-result 2F（执行中换
+> `<base>` 后 import 基走错）、base-url-inline-classic / nonce-classic
+> 整页 T、module 系 4T + module eval 1F、base-url-external-classic 1T。
+> **本轮三刀**：①part01.js `setTimeout/setInterval` 补字符串 handler
+> `new Function` 注册期编译（HTML spec TimerInitializationSteps 的
+> WebIDL callback 转换；语法错同步抛同 Chrome）——classic 页解堵拆臂；
+> ②engine extract 新增 `script_effective_base_urls`（zero_dom 树序，
+> `<base href>` 更新 current_base、script 记基，与 extract_page_scripts
+> _indexed 同序号空间）接 webview `run_page_scripts_impl`——外链经典
+> 脚本 referrer 用自身 src、内联用捕获表（concept-scripts-base-url：
+> parse 时刻定格，动态 base 不回溯）；③script-sandbox 新增
+> `register_dynamic_import_referrer_swapper`（`__zwSwapImportReferrer`
+> 返旧换新，捕获 DynamicImportState Arc 不借 &mut self）+ shim
+> `_zwCallHandlerDocBase`（inline/反射 handler 求值窗换当前文档基、
+> finally 换回零外溢）接四处编译点——reflected/UA 臂 import() 用求值
+> 时刻文档基（event-handler-processing-model）。**返工两笔记账**：
+> 原文偏移扫 `<script` ≠ DOM 序号（harness 注入 + 字符串字面量过计数，
+> DEBUG 探针实证后改 zero_dom 树序）；body-reflect `var fnB` 循环闭包
+> 读末轮绑定（R2946 单测红，改 `_zwWrapHandlerDocBase` 参数绑定）。
+> **验证**：全子树 stash 基线/修后双扫 diff 恰 31 行全落族内零误伤：
+> **+20P −2F −3T +2F（nonce must-not-inherit 从整页 T 拆臂显形，非回归）**
+> ——族 3P/3F/8T → **18P/2F/5T**（classic 5/5、promise-result 4/4、
+> nonce 继承臂 4/4、base-url-inline-classic 5/5 全绿）。单测 engine
+> **3526/3526**、sandbox v8 **358/358**、quickjs **255/255**、webview
+> **800/800**（首跑 1F 系 target-disk-guard 清理 zero-image-decoder
+> 独立进程二进制，补建全绿非代码回归）；fmt clean、clippy 三 crate
+> clean（test-guard 包裹）；reftest **716/716** rc=0。域账自此按
+> **174P/294F/30T** 记（raw 173P + v8-code-cache +1 惯例；F 双扫同
+> 294，对 s89 账面 295F 为截断方差）。账本见
+> [evidence/2026-10-26-m2s90-string-compilation-base-url.md](html-semantics-compat/evidence/2026-10-26-m2s90-string-compilation-base-url.md)。
+> **范围**：engine shim ×2 / engine extract / script-sandbox ×2 /
+> webview 六文件；css/layout/renderer 零改动；语料不可改维持（探针页
+> gitignore 数据跑完即删）。
+> **挂账**：module 上下文 5 文件 T（`<script type="module">` 页基座，
+> module 面单独探）；base-url-external-classic 1T（dynamic
+> createElement('script') 外链页面加载器）；nonce-classic must-not-
+> inherit 2F（CSP nonce 语义未建模，s88 已挂）；QuickJS 后端
+> classic 动态 import 不支持态维持（swapper trait 默认 no-op 降级）。
+> **下一步**：s91 the-script-element 余账——module 页基座先行探针
+> （区分页面加载失败 vs import 永不落定），再决 external-classic
+> 动态加载器刀位。
+> **切片间隙**：本轮 engine/script-sandbox/webview 面；下一挂账同流
+> 同面，间隙开放。
+
+> **▶ 上轮状态（2026-10-26 M2 切片 89 施工收口，execution-timing stylesheets-blocking 轮——其下一步 the-script-element 基面 classic 面已由 s90 收口，见上）**：
 > **入场核账**：s88 基线（HEAD=4fdaf03e5）execution-timing 目录当拍
 > **48P/94F/8T**——s86 记「12F 单簇」细分为 106-\* ×10 + 107-\* ×2 的
 > 「scheduler: stylesheets blocking \*」目标行；其余 82F 编号套件预存红

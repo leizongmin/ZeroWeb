@@ -5572,6 +5572,12 @@
   }
   globalThis.setTimeout = function(fn, delay) {
     var handle = _timerId++;
+    // s90（string-compilation classic setTimeout 臂）：字符串 handler 是合法形态
+    //（https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#timer-initialisation-steps
+    // ——WebIDL callback 转换）——原静默丢弃致计时器永不 fire（harness 页首臂 pend
+    // 连累串行后续臂）。注册期 `new Function` 编译（spec 转换同时点；语法错同步抛，
+    // 同 Chrome）。其余非 function 维持旧行为（静默 no-op）。
+    if (typeof fn === 'string') fn = new Function(fn);
     if (typeof fn !== 'function') return handle;
     var id = _timerIdKey(handle);
     var level = _zwTimerNesting;
@@ -5598,6 +5604,8 @@
   };
   globalThis.setInterval = function(fn, delay) {
     var handle = _timerId++;
+    // s90：字符串 handler 同 setTimeout（spec 同步 support；语法错注册期同步抛）。
+    if (typeof fn === 'string') fn = new Function(fn);
     if (typeof fn !== 'function') return handle;
     var id = _intervalIdKey(handle);
     var ms = delay | 0;
