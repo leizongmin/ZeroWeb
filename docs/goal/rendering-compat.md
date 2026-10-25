@@ -9,6 +9,13 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5278 实现轮（collapse cell 胜出缘外半带同条不双计——collapsing-border-model-001/004 ✗1.36→✓0.00%；corpus FIXED=2 REGRESSED=0 净 +2 = 15712）**（2026-10-25）
+>
+> - **取证**：880 failed 账本选 CSS2/tables 折叠边框族。001 形态 = 表 border 25px、边缘 cell border 50px 胜出四缘。COLLAPSE_DBG 插桩实证 TBL w=270（chromium 220）：R291/R5241 列宽 = 边框中心距 170、自身 border 带 25×2、R5241 外半 25×2 三层叠加——而折叠边框中心 = content 缘，胜出带外半展进的 [盒缘, content 缘] 窄条**正是表自身 border 带**（[0,25] 同条重叠只计一次）。paint 侧排除：阶段 3 对 cell 自胜缘不写 override → R5262 band_outset 居中臂本就生效（band 跨 [edge−t/2, edge+t/2] 盖住红条）；grid_dx = 50/2−25 = 0 格线原点未平移，cell 盒缘即在带中心——红带可见纯由 size 双计把右侧几何顶出 50px。
+> - **实现**（一处）：`apply_table_size_constraints` 外半入账改每缘补 `max(0, outer/2 − 自身边框)`——表 border 0（R5241 原锚域）补整外半量不变，表有自身 border 且 cell 更宽补 0。高侧口径核实：行高含整 cell border，显高 td 行 120 + 自身带 50 = 170（§17.6.2 中心距）修前修后一致；空 td 行 70 + 50 = 120 = ref 不变——仅宽侧 270→220。
+> - **验证**：新常驻测试 2（胜出缘不双计 220/170 + 表 border 0 外半整计入 220/170）；锚点族 border-conflict-element-001、subpixel-collapsed-borders、border-top/bottom-width-applies-to-001、border-collapse-dynamic-row 全绿；全量 corpus A/B（/tmp/r5278_run.log vs /tmp/r5277_full.txt）**FIXED=2 REGRESSED=0，净 15710→15712**；唯一漂移 contain-intrinsic-size-014 0.10↔0.33 均 ✓ 与 collapse 无关（像素噪声级）；collapsing-border-model-010a ✗9.87 持平基线（rowgroup 边框深特性，挂账）。证据：[r5278](rendering-compat/evidence/r5278-collapse-outer-band-2026-10-25.md)。
+> - **下一步**：R5279 ① 轻量修复回归主循环（878 failed 账本内选取）② border-right-width-applies-to-006（table-column 折叠边框）/ collapsing-border-model-010a（rowgroup 边框）css-tables 深特性视下轮预算 ③ 031 竖排/::selection 部分行域维持 ④ UA 图片 wash/部分选区跨 img 挂账缓维持 ⑤ 跨流碰头维持（browser autocomplete main 既有失败 + page_scripts mutation_arm 归并行流 + clippy 2 项）。
+
 > **▶ R5277 实现轮（frame-only 空 caption × auto 表收缩双臂——border-right-width-applies-to-015 ✗3.84→✓0.00%；corpus FIXED=1 REGRESSED=0 净 +1 = 15710）**（2026-10-25）
 >
 > - **取证（反转一次）**：015 剩余 ✗ 轮初归因「border-top-width 泄漏进 computed width」（top 案 caption 样式宽实测 Px(96) 而两案 diff 表面只差 border 边）——两轮探针（plain div / caption-table 结构）无泄漏后重读原文发现**归一化 diff 漏行**：top 案 #test 是 `width: 1in` 显式宽（R5213 正当消费），right 案是 `height: 1in`。真缺陷 = §17.4.1/§17.5.2 auto 表 shrink-to-fit 不含 caption：right 案 caption width auto 无子盒 → R5172 空 caption 排除维持 fill 784，表缩到空 cell 残宽 9.6，黑 border-right 画到视口右缘。

@@ -2939,8 +2939,16 @@ fn apply_table_size_constraints(
     } else {
         edge_h.min(final_height.max(0.0))
     };
+    // R5278：cell 胜出缘的外半带与表自身 border 带同落 content 缘外侧同一窄条
+    //（折叠边框中心 = content 缘，胜出带外半展进 [盒缘, content 缘] 窄条），故每缘
+    // 只补「外半 − 自身边框」的缺口：表 border 0（R5241 原锚）补整外半；表有自身
+    // border 且 cell 更宽时补 0，不再双计（collapsing-border-model-001：25 表框
+    // + 50 cell 框，旧 270 → 220 = chromium 实证）。
     let (outer_half_w, outer_half_h) = if collapse_half_extent_enabled() {
-        ((outer_l + outer_r) / 2.0, (outer_t + outer_b) / 2.0)
+        (
+            (outer_l / 2.0 - table_box.border_left).max(0.0) + (outer_r / 2.0 - table_box.border_right).max(0.0),
+            (outer_t / 2.0 - table_box.border_top).max(0.0) + (outer_b / 2.0 - table_box.border_bottom).max(0.0),
+        )
     } else {
         (0.0, 0.0)
     };

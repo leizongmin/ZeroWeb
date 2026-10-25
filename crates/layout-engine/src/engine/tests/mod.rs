@@ -843,6 +843,8 @@ mod r5248_inline_border_x_double_count;
 mod r5249_element_first_fold_spacer_anchor;
 /// R5277：frame-only 空 caption 在 auto 表的收缩 + 表宽下界。
 mod r5277_caption_frame_only_auto_table_tests;
+/// R5278：collapse cell 胜出缘外半带与表自身 border 带同条不双计。
+mod r5278_collapse_outer_band_size_tests;
 
 mod r5250_inline_relpos_shift_map;
 
