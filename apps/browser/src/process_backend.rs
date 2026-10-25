@@ -234,16 +234,14 @@ pub struct ProcessTabBackend {
     /// T12：本进程是否已有 spare 预热史（claim_miss 计数门——启动首 tab 冷启发生在
     /// 任何预热之前，不计入认领落空）。
     warm_spawned_any: bool,
-    /// T1 实验形态（`ZEROWEB_WARM_RENDERER=1`，默认关）：无条件 idle 触发是否已发射
-    /// （一次性，不自动重预热；设计 §8「spare 重预热策略不包含」）。
-    warm_idle_fired: bool,
-    /// T1：idle 触发资格起始时刻（首帧 present 后首个 tick 记入；冷却期满即发射）。
-    warm_idle_eligible_since: Option<Instant>,
     /// T_idle 暖槽闲置回收时限（构造时读 `ZEROWEB_WARM_RENDERER_IDLE_MS`，缺省 60s；
     /// 测试可覆写，不做完整配置面）。
     warm_idle_reap: Duration,
-    /// T1 开关构造时快照（`ZEROWEB_WARM_RENDERER=1`）。
-    warm_idle_enabled: bool,
+    /// R1 返修：claim 后延迟补位 pending（认领时刻起算）。pending 期间地址栏聚焦
+    /// 边沿不触发 spawn，由 `warm_spare_poll_tick` 到点补位；补位发射即清除。
+    warm_refill_pending_since: Option<Instant>,
+    /// claim 后延迟补位时限（R1 返修，测试覆写用；缺省见 `WARM_REFILL_DELAY`）。
+    warm_refill_delay: Duration,
 }
 
 /// 拦截到的附件下载（应用层落盘 + 下载管理器记账的输入）。
@@ -352,10 +350,9 @@ impl ProcessTabBackend {
             warm_spare: None,
             warm_edge_prev_focused: false,
             warm_spawned_any: false,
-            warm_idle_fired: false,
-            warm_idle_eligible_since: None,
             warm_idle_reap: Self::warm_idle_reap_from_env(),
-            warm_idle_enabled: zero_runtime_config::enabled_when_true("ZEROWEB_WARM_RENDERER"),
+            warm_refill_pending_since: None,
+            warm_refill_delay: Self::WARM_REFILL_DELAY,
         }
     }
 
@@ -1722,6 +1719,10 @@ impl ProcessTabBackend {
             if alive {
                 self.warm_spare = None;
                 self.tab_to_renderer.insert(tab_id, rid);
+                // R1 返修：认领后进入 D 延迟补位 pending——认领本身（Ctrl+T）聚焦新
+                // 标签地址栏产生边沿，即时 re-arm 的 spawn 落入 M2b 测量窗与被测标签
+                // 首帧渲染并发；改为 poll tick 到点补位（`WARM_REFILL_DELAY`）。
+                self.warm_refill_pending_since = Some(Instant::now());
                 // 认领后照常执行 spawn 后尾段（SW 恢复/SetViewport/SetJavascriptEnabled
                 // 全部幂等；warm 面三命令均不置位 document_started，首文档走 T9 工厂态
                 // 跳过臂——设计 §4 臂 A）。
@@ -1772,26 +1773,29 @@ impl ProcessTabBackend {
 
     /// T12 预热触发入口（每次主循环 poll tick 由 app 经 TabManager 转发一次）。
     ///
-    /// - T2 意图门（默认）：地址栏失焦→聚焦边沿（false→true）触发预热；边沿单 shot；
-    ///   认领/回收/崩溃清槽后下次边沿自然重 arm；已有 spare 不重复触发。
-    /// - T1 无条件 idle（`ZEROWEB_WARM_RENDERER=1`，默认关，设计 §5 超线仅实验）：
-    ///   首帧 present 后主循环 idle + ~0.5s 冷却触发一次，不自动重预热。
-    pub fn note_warm_tick(&mut self, address_bar_focused: bool, main_loop_idle: bool) {
-        if self.warm_idle_enabled && main_loop_idle && !self.warm_idle_fired {
-            let since = *self.warm_idle_eligible_since.get_or_insert(Instant::now());
-            if since.elapsed() >= Self::WARM_IDLE_COOLDOWN {
-                self.warm_idle_fired = true;
-                self.warm_spawn_spare("idle");
-            }
-        }
-        if address_bar_focused && !self.warm_edge_prev_focused {
+    /// 地址栏失焦→聚焦边沿（false→true）触发预热；已有 spare 或 claim 后延迟补位
+    /// pending（`warm_refill_pending_since`）在场时不触发。槽空且无 pending 才即时
+    /// arm——覆盖首个冷启动迭代首边沿与回收/崩溃清槽后的重 arm（R1 返修：claim 后
+    /// 槽空的边沿改由 `warm_spare_poll_tick` 到点补位，即时 re-arm 的 spawn 落入
+    /// M2b 测量窗）。
+    pub fn note_warm_tick(&mut self, address_bar_focused: bool) {
+        // FIXME(T13): 真实 idle 门随 C2 生命周期设计补（T1 无条件 idle 实验臂已随
+        // 返修 R2 移除：实现语义非 idle，见处置表 DEF-F1）。
+        if address_bar_focused
+            && !self.warm_edge_prev_focused
+            && self.warm_spare.is_none()
+            && self.warm_refill_pending_since.is_none()
+        {
             self.warm_spawn_spare("focus_edge");
         }
         self.warm_edge_prev_focused = address_bar_focused;
     }
 
-    /// T1 idle 触发冷却常数（设计 §2.1 T1 行：首帧 present 后 ~0.5s 冷却）。
-    const WARM_IDLE_COOLDOWN: Duration = Duration::from_millis(500);
+    /// claim 后延迟补位时限（R1 返修）。依据 run2 after 侧 25 迭代日志（2026-10-25）
+    /// 选定：claim→b1 shot（M2b 测量窗上界）max 617.2ms、claim→journey COMPLETE
+    /// max 753.3ms，claim→下一次地址栏聚焦 min 2804.1ms；2s 对两侧均留 ≥2.6x 余量，
+    /// 补位 spawn 不与被测新标签渲染、也不与下一次旅程的预热窗并发。
+    const WARM_REFILL_DELAY: Duration = Duration::from_secs(2);
 
     /// 预热动作（设计 §2.2）：spawn 备用 renderer 并发 warm 面命令。
     ///
@@ -1843,21 +1847,27 @@ impl ProcessTabBackend {
 
     /// 暖槽 poll tick 维护（挂靠既有主循环 poll，`handle_crashes` 之后）：
     /// 崩溃清槽（与 `check_crashes` 协同，handle 已被移除即失效）+ T_idle 到期回收
-    /// （`shutdown_renderer` 强杀，内存归还 OS；设计 §3）。
+    /// （`shutdown_renderer` 强杀，内存归还 OS；设计 §3）+ claim 后延迟补位（R1）。
     fn warm_spare_poll_tick(&mut self) {
-        let Some((rid, spawned_at)) = self.warm_spare else {
-            return;
-        };
-        let alive = self.manager.get_renderer(rid).map(|r| r.is_alive()).unwrap_or(false);
-        if !alive {
-            self.warm_spare = None;
-            tracing::info!(renderer_id = rid, where = "poll", "crash_fallback");
-            return;
+        if let Some((rid, spawned_at)) = self.warm_spare {
+            let alive = self.manager.get_renderer(rid).map(|r| r.is_alive()).unwrap_or(false);
+            if !alive {
+                self.warm_spare = None;
+                tracing::info!(renderer_id = rid, where = "poll", "crash_fallback");
+            } else if spawned_at.elapsed() >= self.warm_idle_reap {
+                self.warm_spare = None;
+                let _ = self.manager.shutdown_renderer(rid);
+                tracing::info!(renderer_id = rid, "reap");
+            }
         }
-        if spawned_at.elapsed() >= self.warm_idle_reap {
-            self.warm_spare = None;
-            let _ = self.manager.shutdown_renderer(rid);
-            tracing::info!(renderer_id = rid, "reap");
+        // R1 claim 后延迟补位：pending 到点即补位 spawn；槽已被占用（理论上不可达，
+        // pending 期边沿不 spawn）则 `warm_spawn_spare` 早退，不重复触发。发射即清
+        // pending——spawn 失败时回落「槽空无 pending」，下次边沿即时重 arm。
+        if let Some(claimed_at) = self.warm_refill_pending_since {
+            if claimed_at.elapsed() >= self.warm_refill_delay {
+                self.warm_refill_pending_since = None;
+                self.warm_spawn_spare("claim_refill");
+            }
         }
     }
 

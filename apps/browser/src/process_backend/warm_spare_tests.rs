@@ -1,10 +1,11 @@
-//! T12 投机预热暖槽单测（设计卡 §7-1 五场景，与实现同提交）。
+//! T12 投机预热暖槽单测（设计卡 §7-1 五场景 + 返修 R1 延迟补位/R3 poll 侧清槽，
+//! 与实现同提交）。
 //!
 //! 真实 renderer 子进程链路（`resolve_renderer_binary`，与 service_worker_owner_tests
 //! 同款约束）：多进程锁串行 + 缺二进制即显式失败。renderer 侧「工厂态首文档跳过臂 /
 //! 真复位臂」语义由 zero-renderer 既有钉守卫（js_worker.rs:2986/:3044/:3892）；本文件
-//! 钉 browser 侧不变量——warm 面命令白名单、认领绑定、失效回退、T_idle 回收、边沿
-//! 单 shot/重 arm。
+//! 钉 browser 侧不变量——warm 面命令白名单、认领绑定、失效回退（认领侧 + poll 侧）、
+//! T_idle 回收、边沿单 shot、claim 后 D 延迟补位。
 
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -87,9 +88,9 @@ fn warm_claim_binds_virgin_spare_with_allowlisted_command_face() {
     let mut backend = real_backend();
     let tab_id = TabId(901);
 
-    backend.note_warm_tick(false, false);
+    backend.note_warm_tick(false);
     assert!(backend.warm_spare.is_none(), "非聚焦 tick 不得触发预热");
-    backend.note_warm_tick(true, false);
+    backend.note_warm_tick(true);
     let Some((spare_rid, _)) = backend.warm_spare else {
         panic!("聚焦边沿应触发预热");
     };
@@ -145,8 +146,8 @@ fn polluted_warm_spare_claim_engages_true_reset_and_still_loads() {
     let mut backend = real_backend();
     let tab_id = TabId(902);
 
-    backend.note_warm_tick(false, true);
-    backend.note_warm_tick(true, true);
+    backend.note_warm_tick(false);
+    backend.note_warm_tick(true);
     let Some((spare_rid, _)) = backend.warm_spare else {
         panic!("聚焦边沿应触发预热");
     };
@@ -204,8 +205,8 @@ fn crashed_warm_spare_falls_back_to_cold_spawn() {
     let mut backend = real_backend();
     let tab_id = TabId(903);
 
-    backend.note_warm_tick(false, true);
-    backend.note_warm_tick(true, true);
+    backend.note_warm_tick(false);
+    backend.note_warm_tick(true);
     let Some((spare_rid, _)) = backend.warm_spare else {
         panic!("聚焦边沿应触发预热");
     };
@@ -232,8 +233,8 @@ fn warm_idle_reap_clears_slot_for_later_cold_spawn() {
     backend.warm_idle_reap = Duration::from_millis(50);
     let tab_id = TabId(904);
 
-    backend.note_warm_tick(false, true);
-    backend.note_warm_tick(true, true);
+    backend.note_warm_tick(false);
+    backend.note_warm_tick(true);
     let Some((spare_rid, _)) = backend.warm_spare else {
         panic!("聚焦边沿应触发预热");
     };
@@ -258,34 +259,105 @@ fn warm_idle_reap_clears_slot_for_later_cold_spawn() {
     assert_ne!(bound_rid, spare_rid, "回收后的新 tab 必须走冷启");
 }
 
-/// 场景 5（设计 §7-1/§2.1）：触发边沿一次性——已有 spare 不重复触发；认领清槽后
-/// 下次边沿重 arm。
+/// 场景 5（设计 §7-1/§2.1 + 返修 R1）：触发边沿一次性——已有 spare 不重复触发；
+/// 认领后进入 D 延迟补位 pending：pending 期边沿被抑制不 spawn，到点由 poll tick
+/// 补位入槽，补位后边沿不再重复触发。首个冷启动迭代的首边沿即时 arm 由本测试
+/// 开头的边沿触发覆盖。
 #[test]
 fn focus_edge_triggers_once_per_arm_and_rearms_after_claim() {
     let _multiprocess_guard = lock_multiprocess_tests();
     let mut backend = real_backend();
+    backend.warm_refill_delay = Duration::from_millis(80);
     let tab_id = TabId(905);
 
-    backend.note_warm_tick(false, true);
-    backend.note_warm_tick(true, true);
+    backend.note_warm_tick(false);
+    backend.note_warm_tick(true);
     let Some((first_rid, _)) = backend.warm_spare else {
         panic!("首次聚焦边沿应触发预热");
     };
 
     // 已有 spare：同态/再次边沿转发都不得重复触发。
-    backend.note_warm_tick(true, true);
-    backend.note_warm_tick(false, true);
-    backend.note_warm_tick(true, true);
+    backend.note_warm_tick(true);
+    backend.note_warm_tick(false);
+    backend.note_warm_tick(true);
     let still = backend.warm_spare.map(|(rid, _)| rid);
     assert_eq!(still, Some(first_rid), "已有 spare 不得重复触发");
 
-    // 认领清槽后，下次边沿重 arm（新 spare，rid 递增）。
+    // 认领清槽 → 延迟补位 pending；pending 期边沿被抑制，不得立即 spawn。
     backend.ensure_renderer(tab_id, (800, 600));
     assert!(backend.warm_spare.is_none());
-    backend.note_warm_tick(false, true);
-    backend.note_warm_tick(true, true);
-    let Some((second_rid, _)) = backend.warm_spare else {
-        panic!("认领清槽后下次边沿应重 arm");
+    assert!(
+        backend.warm_refill_pending_since.is_some(),
+        "认领必须置延迟补位 pending"
+    );
+    backend.note_warm_tick(false);
+    backend.note_warm_tick(true);
+    backend.note_warm_tick(false);
+    backend.note_warm_tick(true);
+    assert!(
+        backend.warm_spare.is_none() && backend.warm_refill_pending_since.is_some(),
+        "pending 期边沿不得触发 spawn"
+    );
+
+    // 到点后由 poll tick 补位入槽（全新 spare）并发射清 pending。
+    let mut snapshots = HashMap::new();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let refill_rid = loop {
+        backend.poll(&mut snapshots, &mut HashMap::new(), None, true);
+        if let Some((rid, _)) = backend.warm_spare {
+            assert_ne!(rid, first_rid, "延迟补位必须是全新 spare");
+            break rid;
+        }
+        assert!(Instant::now() < deadline, "到点后 poll tick 必须补位 spawn");
+        std::thread::sleep(Duration::from_millis(10));
     };
-    assert_ne!(second_rid, first_rid, "重 arm 必须是全新 spare");
+    assert!(backend.warm_refill_pending_since.is_none(), "补位发射必须清 pending");
+
+    // 补位后槽占用：边沿不重复触发。
+    backend.note_warm_tick(false);
+    backend.note_warm_tick(true);
+    assert_eq!(
+        backend.warm_spare.map(|(rid, _)| rid),
+        Some(refill_rid),
+        "补位后边沿不得重复触发"
+    );
+}
+
+/// 场景 6（返修 R3，TV-F3）：spare 崩溃后 poll tick 清槽（与认领侧场景 3 对偶）——
+/// poll 检测槽位 !alive 即清槽，后续 ensure_renderer 走冷启。
+#[test]
+fn crashed_warm_spare_cleared_by_poll_tick() {
+    let _multiprocess_guard = lock_multiprocess_tests();
+    let mut backend = real_backend();
+    let tab_id = TabId(906);
+
+    backend.note_warm_tick(false);
+    backend.note_warm_tick(true);
+    let Some((spare_rid, _)) = backend.warm_spare else {
+        panic!("聚焦边沿应触发预热");
+    };
+    // 以子进程退出为准令 spare 失效（shutdown 后 child=None，`is_alive` 即 false）。
+    let _ = backend.manager.get_renderer(spare_rid).unwrap().shutdown();
+
+    // 认领侧回退由场景 3 覆盖；此处验 poll 侧：poll tick 检测槽位失效并清槽。
+    let mut snapshots = HashMap::new();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        backend.poll(&mut snapshots, &mut HashMap::new(), None, true);
+        if backend.warm_spare.is_none() {
+            break;
+        }
+        assert!(Instant::now() < deadline, "poll tick 必须清掉崩溃 spare 槽位");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    // 清槽后无 pending 干扰，ensure_renderer 自然落冷启。
+    assert!(backend.warm_refill_pending_since.is_none());
+    backend.ensure_renderer(tab_id, (800, 600));
+    let bound_rid = backend
+        .tab_to_renderer
+        .get(&tab_id)
+        .copied()
+        .expect("清槽后必须冷启绑定");
+    assert_ne!(bound_rid, spare_rid, "崩溃 spare 不得被认领");
 }

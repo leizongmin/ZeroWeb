@@ -547,11 +547,9 @@ impl BrowserApp {
         if self.tabs.poll(self.shell.active_tab_id(), self.gpu_renderer_is_some()) {
             self.needs_redraw = true;
         }
-        // T12 投机预热触发面：每 tick 转发地址栏聚焦态（T2 边沿，默认）与主循环
-        // idle 态（T1 env 实验形态要求首帧 present 后才具资格；presented_frames
-        // 由 GPU/CPU present 路径计数）。单进程 worker 路在 TabManager 内 no-op。
-        self.tabs
-            .note_warm_renderer_tick(self.address_bar_focused, self.presented_frames > 0);
+        // T12 投机预热触发面：每 tick 转发地址栏聚焦态（T2 边沿，默认）。单进程
+        // worker 路在 TabManager 内 no-op。
+        self.tabs.note_warm_renderer_tick(self.address_bar_focused);
         // 消费异步 DOM 事件派发产生的延迟动作（链接导航等）。
         // 必须在 `tabs.poll` 之后调用 —— pending actions 由 poll 收集。
         for (tab_id, action) in self.tabs.take_pending_actions() {
