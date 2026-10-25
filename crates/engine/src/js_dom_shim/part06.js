@@ -3461,8 +3461,12 @@
     elementFromPoint: function(x, y) {
       if (typeof __zw_elementFromPoint !== 'function') {
         try {
-          var sSel = (typeof _zwSvgHitSel === 'function') ? _zwSvgHitSel(Number(x) || 0, Number(y) || 0) : null;
-          return sSel ? _wrapSelector(sSel) : null;
+          var nx = Number(x) || 0, ny = Number(y) || 0;
+          var sSel = (typeof _zwSvgHitSel === 'function') ? _zwSvgHitSel(nx, ny) : null;
+          if (sSel) return _wrapSelector(sSel);
+          // s78 F4：image-map 命中（usemap img 形状面——SVG 命中后置臂）
+          var imSel = (typeof _zwImgMapHitSel === 'function') ? _zwImgMapHitSel(nx, ny) : null;
+          return imSel ? _wrapSelector(imSel) : null;
         } catch (_eEFPsvg) { return null; }
       }
       var sel = __zw_elementFromPoint(String(x), String(y));
@@ -15125,6 +15129,58 @@
       if (hit) {
         try { return el.__zwSelector || null; } catch (_eHS) { return null; }
       }
+    }
+    return null;
+  };
+  // s78 F4：image-map 命中（elementFromPoint 的 host-bridge 缺席臂消费——runner
+  // headless 无 HitTestCache 且 gBCR 全零，img 框以 (0,0) 起点 + IDL
+  // width/height 近似，FIXME(image-map)：真实几何（containing block 布局）归
+  // layout 集成面）。spec：usemap → hash-name 查 map（树序首个 name/id 匹配）→
+  // area 形状按树序分层首个覆盖者为最顶层 → 无形状覆盖 → img 自身。
+  // https://html.spec.whatwg.org/multipage/image-maps.html#image-map-processing-model
+  var _zwImgMapHitSel = function (x, y) {
+    var list;
+    try {
+      if (typeof document === 'undefined' || !document.querySelectorAll) return null;
+      list = document.querySelectorAll('img');
+    } catch (_eIQ) { return null; }
+    for (var i = 0; i < list.length; i++) {
+      var img = list[i];
+      var um = null;
+      try { um = img.getAttribute('usemap'); } catch (_eUA) {}
+      if (!um) continue;
+      var w = 0, h = 0;
+      try { w = Number(img.width) || 0; h = Number(img.height) || 0; } catch (_eID) {}
+      if (!(x >= 0 && x < w && y >= 0 && y < h)) continue;
+      var ref = (typeof __zwImgMapHashRef5278 === 'function') ? __zwImgMapHashRef5278(um) : null;
+      var map = null;
+      if (ref !== null) {
+        var maps;
+        try { maps = document.querySelectorAll('map'); } catch (_eMQ) { maps = []; }
+        for (var mi = 0; mi < maps.length; mi++) {
+          var nm = null, mid = null;
+          try { nm = maps[mi].getAttribute('name'); mid = maps[mi].getAttribute('id'); } catch (_eMA) {}
+          if (nm === ref || mid === ref) { map = maps[mi]; break; }
+        }
+      }
+      // ref/map 解析失败 → 无形状覆盖 → img 自身（spec：img 不入 image map
+      // 即普通渲染内容，命中回落 image element 臂）。
+      if (map) {
+        var areas;
+        try { areas = map.querySelectorAll('area'); } catch (_eAQ) { areas = []; }
+        for (var ai = 0; ai < areas.length; ai++) {
+          var area = areas[ai];
+          var shapeAttr = null, coordsAttr = null;
+          try { shapeAttr = area.getAttribute('shape'); coordsAttr = area.getAttribute('coords'); } catch (_eAA) {}
+          var shape = (typeof __zwImgMapShape5278 === 'function') ? __zwImgMapShape5278(shapeAttr) : 'rect';
+          var nums = (typeof __zwImgMapFloatList5278 === 'function') ? __zwImgMapFloatList5278(coordsAttr) : [];
+          if ((typeof __zwImgMapShapeAt5278 === 'function') && __zwImgMapShapeAt5278(shape, nums, x, y)) {
+            try { return area.__zwSelector || null; } catch (_eAS) { return null; }
+          }
+        }
+      }
+      // 无形状覆盖 → img 自身（spec：无 area 覆盖命中点 → image element）
+      try { return img.__zwSelector || null; } catch (_eIS) { return null; }
     }
     return null;
   };

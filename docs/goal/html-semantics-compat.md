@@ -2,9 +2,41 @@
 
 **版本**: v2.0
 **日期**: 2026-10-25（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 71 收口（F1b SVG 固有尺寸族 R5277：域 **747P/479F/32T → 907P/320F/31T** GAIN 160 / REG 0），下一步 F4 image-map 命中测试（84F）或 720-stretch 布局面（22F）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 78 收口（F4 image-map 命中测试 R5278：域 **907P/320F/31T → 971P/257F/30T** GAIN 64 / REG 0），下一步 720-stretch 渲染展开 22F（需布局几何，归 layout 集成面）或 testdriver-Actions 支持面（hash-name-dynamic 5F）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-25 M2 切片 71 收口，F1b SVG 固有尺寸轮）**：
+> **▶ 当前状态（2026-10-25 M2 切片 78 收口，F4 image-map 命中轮）**：
+> s67 八族地图 F4 收口（the-area-element 三文件 area-coords 32F +
+> area-shape 17F + area-processing 14F）。失败面修正：控制面原记 84F 系
+> 旧账——实测 68F 中 5F 是 hash-name-reference-dynamic 的 testdriver-Actions
+> 面（runner 语料缺 testdriver.js，指针/键盘合成输入族，本切片外），
+> image-map 实际可收面 63F。**根因**：runner headless 无渲染管线——host
+> `__zw_elementFromPoint`（R2924 HitTestCache）与 `__zw_getBoundingClientRect`
+> 均缺席，elementFromPoint 缺席臂此前只有 SVG 形状回落，usemap img 形状
+> 命中面为空 → 63F 全 null。**修复（R5278 三刀）**：①解析核（part03）——
+> float-list 逐字解析（分隔集 ASCII 空白+逗号+分号、`\v` 非空白、垃圾跳读、
+> 浮点前缀截断含指数 `.4`/`1e1`/`2in`、error→0）+ shape 枚举（ASCII
+> case-insensitive，missing/invalid → rect）+ 点入形状（rect min/max 归一
+> 半开框、circle d²≤r²、poly on-edge 预检**边界含入** + even-odd 半开边
+> 射线——star (101,101)/(199,101)/hitPoly (119,101) 三行 corpus 定谳、
+> default 恒真）+ hash-name reference；②命中面（part06 `_zwImgMapHitSel`）
+> ——elementFromPoint 缺席臂（SVG 后置臂，产品路径零波及），img 框 (0,0)+
+> IDL 尺寸近似（FIXME 真实几何归 layout 集），无形状覆盖/usemap 不可解析 →
+> img 自身；③契约 part90 两测试（65 断言）。**排障留档**：裸跑 runner 缺
+> Makefile 目标的 `ZW_TESTHARNESS_RAF_FRAME_DRIVEN=1`，interactive pin 假红
+> 7 行（滚动/点击时序面）；stash 验证基线同红排除代码回归后改走 make 目标
+> ——runner 数果实测必须走 Makefile 目标。**验证**：域（make + FILTER）run3
+> **907P/320F/31T → 971P/257F/30T**（GAIN 64 = area 63 + usemap-casing
+> 加成 1 / 0 P→F；audio-lazy T→P 为已记抖动族顺风向；裸跑/make/全域截断跑
+> 三方 embedded-content 数字逐位一致）+ interactive pin **439P/44F/0T 逐位
+> 持平**（make 目标重跑后）+ engine lib **3499P/0F** + clippy/fmt clean。
+> 账本见
+> [evidence/2026-10-25-m2s78-image-map-hit.md](html-semantics-compat/evidence/2026-10-25-m2s78-image-map-hit.md)。
+> **下一步**：720-stretch 渲染展开 22F（需布局几何，归 layout 集成面）或
+> testdriver-Actions 支持面（hash-name-dynamic 5F + 指针/键盘合成输入族）。
+> **切片间隙**：本轮 part03/06 shim + 契约 part90；下一挂账 720-stretch 需
+> layout 面协同，间隙开放，开工前查 oracle master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-25 M2 切片 71 收口，F1b SVG 固有尺寸轮）**：
 > s67 八族地图 F1b 收口（naturalWidth-naturalHeight-width-height 的 SVG
 > data URL 族 77P/181F + svg-img-density-vs-zoom 1P/8F）。**根因**：runner
 > 位图解码面不解 SVG——host `__zw_get_image_size` 返回 viewBox 原始宽高

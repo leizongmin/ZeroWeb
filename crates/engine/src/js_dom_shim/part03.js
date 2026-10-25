@@ -2647,6 +2647,102 @@
     if (h != null) return ar ? { width: h * ar, height: h, axes: 'both' } : { width: 300, height: h, axes: 'height' };
     return ar ? { width: 300, height: 300 / ar, axes: 'none' } : { width: 300, height: 150, axes: 'none' };
   };
+  // s78 F4：image-map 命中核（image map processing model；消费方为 part06
+  // elementFromPoint 的 host-bridge 缺席臂——runner headless 无 HitTestCache，
+  // img 框以 (0,0) 起点 + IDL width/height 近似，FIXME: 真实几何归 layout
+  // 集成面）。
+
+  // 「rules for parsing a list of floating-point numbers」：分隔集 = ASCII
+  // 空白（TAB LF FF CR SP；\v U+000B 非空白——area-coords 矩阵 hitNone 行）+
+  // 逗号 + 分号，连续分隔一体跳过（'2,,10' 不产 0 项）；垃圾字符（非分隔且非
+  // 数字/'.'/’-’）跳到数值起点（'="2' → 2、'2a2b20c20' token 浮点前缀截断）；
+  // token 浮点解析（'.4' → 0.4、'1e1' → 10、'2in' → 2 尾垃圾忽略、error → 0
+  // 如 '--5'）；全垃圾/空 → 空表。
+  // https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#rules-for-parsing-a-list-of-floating-point-number-values
+  globalThis.__zwImgMapFloatList5278 = function (input) {
+    var s = String(input == null ? '' : input);
+    var i = 0, n = s.length, out = [];
+    var _delim = function (c) {
+      return c === ',' || c === ';' || c === ' ' || c === '\t' || c === '\n' || c === '\f' || c === '\r';
+    };
+    var _numch = function (c) {
+      return (c >= '0' && c <= '9') || c === '.' || c === '-';
+    };
+    while (i < n) {
+      while (i < n && _delim(s.charAt(i))) i++;
+      if (i >= n) break;
+      while (i < n && !_delim(s.charAt(i)) && !_numch(s.charAt(i))) i++;
+      var start = i;
+      while (i < n && !_delim(s.charAt(i))) i++;
+      if (i === start) break; // 垃圾直接到尾——无 token
+      var m = /^([+-]?)(\d+(?:\.\d*)?|\.\d+)(?:[eE]([+-]?\d+))?/.exec(s.slice(start, i));
+      var v = m ? parseFloat((m[1] || '') + m[2] + (m[3] !== undefined ? 'e' + m[3] : '')) : NaN;
+      out.push(isFinite(v) ? v : 0);
+    }
+    return out;
+  };
+  // shape 枚举属性解析：ASCII case-insensitive 关键字匹配（Unicode toLowerCase
+  // 会把 'CİRCLE' 折成 'ci̇rcle' 误判 circle——corpus hitNone 行）；missing/
+  // invalid 值均落 rectangle 缺省。
+  // https://html.spec.whatwg.org/multipage/image-maps.html#attr-area-shape
+  globalThis.__zwImgMapShape5278 = function (shapeAttr) {
+    switch (_zwASCIILower(shapeAttr == null ? '' : String(shapeAttr))) {
+      case 'circle': case 'circ': return 'circle';
+      case 'default': return 'default';
+      case 'poly': case 'polygon': return 'poly';
+      default: return 'rect'; // 'rect'/'rectangle'/missing/invalid → rectangle
+    }
+  };
+  // 点入形状判定（spec processing model 步 4：各态最小计数 circle 3/poly 6/
+  // rect 4 不足 → 空形；circle 截到 3 数且 r ≤ 0 → 空形；rect 1↔3/2↔4 交换
+  // 归一 + [x1,x2)×[y1,y2)——corpus 无 rect 边界定谳行，FIXME: 取 CSS 半开
+  // 惯例；poly 奇数丢尾 + 偶数顶点全取 even-odd 射线（半开边 min(y)≤y<
+  // max(y) + x ≤ 交点——star (199,101) 边界行定谳面）；default → 整图恒真。
+  // https://html.spec.whatwg.org/multipage/image-maps.html#image-map-processing-model
+  globalThis.__zwImgMapShapeAt5278 = function (shape, nums, x, y) {
+    if (shape === 'default') return true;
+    if (shape === 'circle') {
+      if (nums.length < 3) return false;
+      var r = nums[2];
+      if (r <= 0) return false;
+      var dx = x - nums[0], dy = y - nums[1];
+      return dx * dx + dy * dy <= r * r;
+    }
+    if (shape === 'rect') {
+      if (nums.length < 4) return false;
+      var x1 = Math.min(nums[0], nums[2]), x2 = Math.max(nums[0], nums[2]);
+      var y1 = Math.min(nums[1], nums[3]), y2 = Math.max(nums[1], nums[3]);
+      return x >= x1 && x < x2 && y >= y1 && y < y2;
+    }
+    // poly
+    if (nums.length % 2 === 1) nums = nums.slice(0, nums.length - 1);
+    if (nums.length < 6) return false;
+    var inside = false;
+    for (var i = 0, j = nums.length - 2; i < nums.length; j = i, i += 2) {
+      var yi = nums[i + 1], yj = nums[j + 1], xi = nums[i], xj = nums[j];
+      // 边界含入（corpus 定谳面：star (101,101) 在闭合边 y=x、(199,101) 在
+      // x+y=300、hitPoly (119,101) 在 x+y=220 均期望命中——先 on-edge 预检，
+      // 命中即真；语料全整数坐标，外积精确判 0，FIXME: 非整数边界 FP 噪声
+      // 落 even-odd 射线仍确定性）。
+      var lo = yi < yj ? yi : yj, hi = yi < yj ? yj : yi;
+      if (y >= lo && y <= hi) {
+        var lox = xi < xj ? xi : xj, hix = xi < xj ? xj : xi;
+        var cross = (x - xi) * (yj - yi) - (y - yi) * (xj - xi);
+        if (cross === 0 && x >= lox && x <= hix) return true;
+      }
+      if (y >= lo && y < hi && x <= ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  };
+  // hash-name reference 解析：无 '#' 或 '#' 为末字符 → null；否则首个 '#' 后
+  // 到尾（不 trim）。map 元素查找（树序首个 name/id 匹配）在 part06 命中面。
+  // https://html.spec.whatwg.org/multipage/image-maps.html#rules-for-parsing-a-hash-name-reference
+  globalThis.__zwImgMapHashRef5278 = function (usemapAttr) {
+    var s = String(usemapAttr == null ? '' : usemapAttr);
+    var i = s.indexOf('#');
+    if (i < 0 || i === s.length - 1) return null;
+    return s.slice(i + 1);
+  };
   globalThis.__zwSelectUrl5277 = function (sel, handle) {
     var s = globalThis.__zwSelectImageSource5277(sel, handle);
     return s ? s.url : '';
