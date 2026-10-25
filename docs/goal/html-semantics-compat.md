@@ -2,9 +2,35 @@
 
 **版本**: v2.0
 **日期**: 2026-10-25（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 79 收口（hash-name-dynamic 5F 分诊证伪 + IDL `.id=` R125 对称臂 R5279：engine lib 3512P/0F，域/pin 持平零回归），下一步 runner 属性传播缺陷切片（hash-name-dynamic 5F 真实归属）或 720-stretch 渲染展开 22F（需布局几何，归 layout 集成面）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 80 收口（hash-name-dynamic 5F 真根因=apply 面 selector 跨批失配：跨批改名 journal，域 **976P/252F/30T GAIN 5 / REG 0**、pin 逐位持平、engine lib 3515P/0F），下一步 `querySelector('[id=…]')` 同 turn 改名可见性（共享查询视图面）或 720-stretch 渲染展开 22F（需布局几何，归 layout 集成面）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-25 M2 切片 79 收口，IDL id 改名 R125 对称臂轮）**：
+> **▶ 当前状态（2026-10-25 M2 切片 80 收口，跨批 selector 迁移 journal 轮）**：
+> s79 遗留 runner 缺陷 C（hash-name-reference-dynamic 3P/5F）定位并修复。
+> s79 假说「序列化/apply 只经客户端缓存属性」**证伪**：Rust 侧 attr-trace
+> 实证 mutations 队列不 drain（1→9 单调）、同键 lw 读亦通——丢点在
+> **apply 解析**：全以创建期 sel 入队（proxy 闭包 sel 冻结），批 2 改名
+> 落管线 doc 后，批 3 起旧键属性写 `find_by_selector` 恒 miss 走
+> lenient skip 静默丢写；序列化无 name / 视图查询 miss / gEBI 旧键落空
+> 均为下游表现。**修复（s80 journal）**：`apply_dom_mutations_full` 新参
+> `sel_renames`——SetAttr(id) 落地记（改名前 sel → `#新id`），失配臂
+> `journal_find_sel_rename` 追链（4 跳封顶）重试；直查命中优先（新元素
+> 抢占旧 id 不劫持）。持有方 `RenderPipeline::sel_renames`，导航边界清、
+> 同页 `render_html` 重建不清（selector→selector 映射不受 slotmap 换代
+> 约束——首版在重建点清空致语料无效，复跑定位后修正）。契约
+> dom_bridge_tests `test_apply_sel_rename_journal_cross_batch_attr_s80`。
+> **验证**：engine lib **3515P/0F** + 域（FILTER=embedded-content）
+> **976P/252F/30T（GAIN 5 / REG 0，hash-name-dynamic 3P/5F→8P/0F）** +
+> interactive pin **439P/44F/0T 逐位持平**。范围：journal 只挂
+> SetAttr/RemoveAttr 失配臂（SetText/SetStyle 等无语料实证面暂不扩）。
+> 账本见
+> [evidence/2026-10-25-m2s80-cross-batch-sel-rename-journal.md](html-semantics-compat/evidence/2026-10-25-m2s80-cross-batch-sel-rename-journal.md)。
+> **下一步**：`querySelector('[id=…]')` 同 turn 改名可见性（共享查询
+> 视图面）或 720-stretch 渲染展开 22F（需布局几何，归 layout 集成面，
+> 启动前查 oracle master 碰撞记录）。
+> **切片间隙**：本轮 js_dom_bridge + pipeline + webview 导航清点 +
+> 契约 dom_bridge_tests；下一挂账同面或 layout 集成面，间隙开放。
+>
+> **▶ 上轮状态（2026-10-25 M2 切片 79 收口，IDL id 改名 R125 对称臂轮）**：
 > s78 未解决项 hash-name-reference-dynamic 5F 分诊——**控制面原记
 > 「testdriver-Actions 面」证伪**：runner 自带 test_driver.Actions stub，
 > 8 行点击全链路可达（ZW_TD_DEBUG resolve 迹：首点击 `#area` 全通，首个

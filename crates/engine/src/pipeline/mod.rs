@@ -187,6 +187,15 @@ pub struct RenderPipeline {
     /// 之间，insert 类 child 失配时复用摘下节点（[`DetachedNodeStash`]）。`render_html`
     /// 全量重建时清空（slotmap 换代旧 NodeId 无效）。
     pub(crate) detached_sel_nodes: crate::js_dom_bridge::DetachedNodeStash,
+    /// s80（html-semantics）：跨批 id 改名 journal（改名前 selector → 改名后 selector）
+    /// ——R45 批内追链的跨批半边：id 改名落 doc 后，后续批携带的旧 `#id` 属性
+    /// mutation（selector 取自 proxy 建立时点）恒失配走 lenient skip（属性写静默
+    /// 丢失）。attr 失配臂查表追链重试。**同页全量重建不清**（`render_html` 的
+    /// refresh 重建来自 shim 序列化——改名后 id 已在其中，selector 空间延续；本表是
+    /// selector→selector 映射非 NodeId，不受 slotmap 换代失效约束——与
+    /// `persistent_handle_nodes` 的 R100 不变式分叉）。导航边界清（webview
+    /// `clear_sel_renames`——旧文档 selector 迁移史对新文档无意义）。
+    pub(crate) sel_renames: HashMap<String, String>,
     /// 文本表单控件尚未提交的 IME preedit。
     pub(crate) form_control_compositions: HashMap<NodeId, (String, usize, usize)>,
     /// 脚本批量渲染 defer 开关（宿主 `begin_script_batch`/`end_script_batch` 控制）。
@@ -497,6 +506,7 @@ impl RenderPipeline {
             form_control_values: HashMap::new(),
             persistent_handle_nodes: HashMap::new(),
             detached_sel_nodes: crate::js_dom_bridge::DetachedNodeStash::default(),
+            sel_renames: HashMap::new(),
             form_control_compositions: HashMap::new(),
             defer_render: false,
             focused_selector: None,
@@ -1409,6 +1419,13 @@ impl RenderPipeline {
         self.persistent_handle_nodes.clear();
     }
 
+    /// s80（html-semantics）：导航边界清跨批 id 改名 journal（旧文档的 selector
+    /// 迁移史对新文档无意义——镜像 [`Self::clear_detached_sel_nodes`] 的清空点；
+    /// 同页 `render_html` 重建不清——selector 空间延续，见字段文档）。
+    pub fn clear_sel_renames(&mut self) {
+        self.sel_renames.clear();
+    }
+
     /// uievents-compat M3 尾簇 4：handle→NodeId 重绑——全量 `render_html` 重建会清
     /// `persistent_handle_nodes`（R100），此后 handle 型 mutation（页内
     /// createElement 产物的后续写）报 unknown handle。结构性刷新方持 shim 侧
@@ -2045,6 +2062,7 @@ impl RenderPipeline {
                 persistent,
                 Some(&mut self.persistent_handle_nodes),
                 Some(&mut self.detached_sel_nodes),
+                Some(&mut self.sel_renames),
             ) {
                 Ok(hs) => hs,
                 Err(e) => {

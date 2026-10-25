@@ -1080,6 +1080,8 @@ impl WebView {
         // 片段不复活；页内 remove→re-append 间隔的宿主管线全量重建不清——片段
         // 跨重建有效，见 [`DetachedNodeStash`]）。
         self.pipeline.clear_detached_sel_nodes();
+        // s80：跨批 id 改名 journal 同批清空（旧文档 selector 迁移史不跨页）。
+        self.pipeline.clear_sel_renames();
         self.cached_html = html.to_string();
         let css_str = css.unwrap_or("");
         self.cached_css = css_str.to_string();
@@ -2022,6 +2024,8 @@ impl WebView {
         // 该时点 renderer 脚本未启/session 随即重绘，无实际损害；script-during-load
         // 路径落地时须先修 same_navigation 语义。
         self.pipeline.clear_persistent_handle_nodes();
+        // s80：跨批 id 改名 journal 同批清空（旧文档 selector 迁移史不跨页）。
+        self.pipeline.clear_sel_renames();
         self.security_context.set_page_origin(page_url);
         self.emit_event(&WebViewEvent::LoadStart(page_url.to_string()));
     }
@@ -2053,6 +2057,8 @@ impl WebView {
         // uievents-compat M3 尾簇 4：新页面内容到达 = 导航边界——跨批 detached 片段
         // stash 清空（同 load 路径；防跨页 stale 片段复活）。
         self.pipeline.clear_detached_sel_nodes();
+        // s80：跨批 id 改名 journal 同批清空（旧文档 selector 迁移史不跨页）。
+        self.pipeline.clear_sel_renames();
     }
 
     /// 当前外部样式表文本（P9-9/R5107：renderer 同步进 js worker，getComputedStyle

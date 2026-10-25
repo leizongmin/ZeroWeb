@@ -738,12 +738,36 @@ fn rewrite_pending_id_selectors(
     }
 }
 
+/// s80（html-semantics）：R45 追链的**跨批**扩展。R45 的批内重写只覆盖本批剩余队列——
+/// id 改名落 doc 后，后续批携带的旧 `#id` mutation（selector 取自 proxy 建立时点）
+/// 恒失配走 lenient skip（属性写静默丢失）。journal 记 (改名前 selector → 改名后
+/// selector)：直查 miss 时查表追链（封顶 4 跳防环）重试解析。直查命中优先——新元素
+/// 抢占旧 id 时不劫持（journal 只补失配，不改写命中语义）。条目按改名前 selector 键
+/// 覆写，导航边界清空（pipeline `clear_sel_renames`，镜像 `detached_sel_nodes`）。
+/// WPT hash-name-reference-dynamic 的 `map.setAttribute('name',…)` 跨批丢写实证面。
+fn journal_find_sel_rename(
+    doc: &Document,
+    journal: Option<&HashMap<String, String>>,
+    selector: &str,
+) -> Option<NodeId> {
+    let journal = journal?;
+    let mut cur = selector.to_string();
+    for _ in 0..4 {
+        let next = journal.get(&cur)?;
+        if let Some(node) = find_by_selector(doc, next) {
+            return Some(node);
+        }
+        cur = next.clone();
+    }
+    None
+}
+
 /// 应用一批 [`DomMutation`] 到 `doc`（解析 HTML 后调用；生产路径 renderer/browser 经
 /// `apply_mutations_to_html*` 包装）。CreateElement/Text/Comment/PI 建立的 ephemeral
 /// handle→NodeId 映射仅在本函数调用作用域内有效（返回 handle→selector 供 RectBridge）。
 /// R45：同批 id 重命名经 [`rewrite_pending_id_selectors`] 追链（见该函数文档）。
 pub fn apply_dom_mutations(doc: &mut Document, mutations: &[DomMutation]) -> Result<HashMap<String, String>, String> {
-    apply_dom_mutations_full(doc, mutations, None, None, None)
+    apply_dom_mutations_full(doc, mutations, None, None, None, None)
 }
 
 /// uievents-compat M3 尾簇 4：detach→re-insert 移动语义的**跨批** detached-stash——
@@ -810,7 +834,7 @@ pub fn apply_dom_mutations_with_persistent(
     mutations: &[DomMutation],
     persistent: Option<&HashMap<String, String>>,
 ) -> Result<HashMap<String, String>, String> {
-    apply_dom_mutations_full(doc, mutations, persistent, None, None)
+    apply_dom_mutations_full(doc, mutations, persistent, None, None, None)
 }
 
 /// [`apply_dom_mutations_with_persistent`] 的 NodeId 持久表扩展（R100——见其文档）。
@@ -819,12 +843,15 @@ pub fn apply_dom_mutations_with_persistent(
 /// Remove/RemoveHandle 应用后应失效对应条目（当前批内移除的 handle 从返出 map 剔除）。
 /// `detached`：跨批 detach→re-insert 移动语义记账（见 [`DetachedNodeStash`]）——传
 /// `None` 时退化为批内 stash（R361 原语义）。
+/// `sel_renames`：跨批 id 改名 journal（s80——见 `journal_find_sel_rename`）——R45 批内
+/// 追链的跨批半边；调用方持有（生产方 pipeline，导航边界清空）。
 pub fn apply_dom_mutations_full(
     doc: &mut Document,
     mutations: &[DomMutation],
     persistent: Option<&HashMap<String, String>>,
     persistent_nodes: Option<&mut HashMap<String, NodeId>>,
     mut detached: Option<&mut DetachedNodeStash>,
+    mut sel_renames: Option<&mut HashMap<String, String>>,
 ) -> Result<HashMap<String, String>, String> {
     let mut handles: HashMap<String, NodeId> = HashMap::new();
     // js-dom M3 R100：NodeId 持久表（优先解析层）——查到即**预植**进本批 ephemeral map，
@@ -1011,7 +1038,9 @@ pub fn apply_dom_mutations_full(
                 // / R100 SetTextOnHandle 同一不变式的推广）。悬垂 handle（unknown
                 // handle）与 doc 结构性错误仍硬错（暴露真 bug，T7 口径不变）。
                 // https://github.com/whatwg/dom/issues/1017
-                let Some(node) = find_by_selector(doc, &selector) else {
+                let Some(node) = find_by_selector(doc, &selector)
+                    .or_else(|| journal_find_sel_rename(doc, sel_renames.as_deref(), &selector))
+                else {
                     tracing::warn!("apply DOM mutations: set_attr selector no match, skipped: {selector}");
                     continue;
                 };
@@ -1019,11 +1048,22 @@ pub fn apply_dom_mutations_full(
                 // id 改名 → 追链重写剩余 mutation 的 `#旧id` selector（属性名 effective 已小写）。
                 if name.eq_ignore_ascii_case("id") {
                     rewrite_pending_id_selectors(&mut pending, &selector, &value);
+                    // s80：跨批 journal 记账（R45 批内重写的跨批半边）——后续批的旧键
+                    // mutation 追链。改名回原 id（新 sel == 记账键）不记：直查已命中，
+                    // journal 只补失配面。
+                    if let Some(j) = sel_renames.as_deref_mut() {
+                        let new_sel = format!("#{value}");
+                        if new_sel != selector {
+                            j.insert(selector.clone(), new_sel);
+                        }
+                    }
                 }
             }
             DomMutation::RemoveAttr { selector, name } => {
                 // siteopt t4 P19：失配 lenient warn+跳过（不变式见 SetAttr arm）。
-                let Some(node) = find_by_selector(doc, &selector) else {
+                let Some(node) = find_by_selector(doc, &selector)
+                    .or_else(|| journal_find_sel_rename(doc, sel_renames.as_deref(), &selector))
+                else {
                     tracing::warn!("apply DOM mutations: remove_attr selector no match, skipped: {selector}");
                     continue;
                 };
