@@ -49,7 +49,7 @@ RFC §10 附注：`media-process` 启用时机归 C4/M4 验收后另议。C4/M4 
 | A3/C2 内存与内核 | zero-media 解码/webm 族 + `video_registry` 单测（loop 回卷/登记幂等/mp4-aac） | make test + bench（源驻留预算） |
 | C1/C3 契约与故障 | `media_host_contract` 8 场景（含 kill-switch、feature 关回归、SIGKILL 注入） | make test |
 | C4/D4 验收与能力 | `media_c4_paired` 6 项（`--features media-process` 显式运行） | 提交批内显式跑 |
-| 资源面 | bg02-media 基线 v2（2 场景 n=2，`probe_travel` 回卷安全界，[基线](../../../../perf/baselines/background-resource-linux-x86_64-v2.json)） | background-resource-gate check |
+| 资源面 | bg02-media 基线 v2（2 场景 n=2，`probe_travel` 回卷安全界，[基线](../../../../../perf/baselines/background-resource-linux-x86_64-v2.json)） | background-resource-gate check |
 | 工作区 | make test 87 套件 + guarded-clippy | 本轮（2026-10-25）exit 0 全绿 |
 
 ## 六、遗留与移交

@@ -3,7 +3,7 @@
 **日期**：2026-10-24
 **状态**：设计就绪（门禁 = D-RFC-2 随批；本文为设计准备，**零代码改动**；§6-§7 为同日第二轮增补）
 **goal**：[media-runtime-isolation](../../master.md)
-**RFC**：[media-runtime-isolation-spec-rfc](../../../../specs/media-runtime-isolation-spec-rfc.md) v1.2（A4 批次行为首轮增补；A2 行本轮补设计稿指引）
+**RFC**：[media-runtime-isolation-spec-rfc](../../../../../specs/media-runtime-isolation-spec-rfc.md) v1.2（A4 批次行为首轮增补；A2 行本轮补设计稿指引）
 
 ## 1. 门禁状态
 

@@ -8,7 +8,7 @@
 
 测量现有媒体 CPU、帧复制、同步和权限成本，再评估平台硬件解码与独立媒体运行时。保持 HTMLMediaElement 可读状态、时钟、seek 与故障恢复语义。
 
-依据：2026-10-20 用户要求按 [Ladybird 建议](../research/research-ladybird-progress-2026-10-20.md)立项；媒体进程是待证据支持的方案，不是本轮已确认架构。
+依据：2026-10-20 用户要求按 [Ladybird 建议](../../research/research-ladybird-progress-2026-10-20.md)立项；媒体进程是待证据支持的方案，不是本轮已确认架构。
 
 ## 基线与 Support Envelope
 
@@ -16,9 +16,9 @@
 
 范围：现有格式真实能力、CPU/拷贝/A/V 同步、平台解码来源、状态代理/时钟与解码进程故障；sandbox 权限和 CPU 回退。
 
-边界：复用 [media-playback](archive/media-playback/master.md)、[media-audio](archive/media-audio/master.md)、[media-elements](archive/media-elements/master.md)，不重做媒体元素语义。平台 SDK 能力、codec 许可与分发策略启动时核查；不自动改变许可证或引入 FFmpeg/新 codec。
+边界：复用 [media-playback](media-playback/master.md)、[media-audio](media-audio/master.md)、[media-elements](media-elements/master.md)，不重做媒体元素语义。平台 SDK 能力、codec 许可与分发策略启动时核查；不自动改变许可证或引入 FFmpeg/新 codec。
 
-碰撞：按 [run-rules §9–11](../rally/run-rules.md)协调 media/engine/webview/protocol/renderer/compositor 与 Android；协议改动同步消费者，不自动扩大平台支持承诺。
+碰撞：按 [run-rules §9–11](../../rally/run-rules.md)协调 media/engine/webview/protocol/renderer/compositor 与 Android；协议改动同步消费者，不自动扩大平台支持承诺。
 
 ## Done Criteria / 验收场景（P2）
 

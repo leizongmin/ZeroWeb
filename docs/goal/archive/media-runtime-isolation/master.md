@@ -4,7 +4,7 @@
 **状态**：Done（2026-10-25 收口归档；**D-RFC-1~4 已批复**——方案 C 批准 / A 批次随批复即启 / B 核查暂缓 / decode-h264 维持默认关，RFC v1.9 §10 批复记录；M1 基线 + M2 RFC 两项交付 + M3 前置设计八片齐备，[m3-prep-design DESIGN](evidence/2026-10-24-m3-prep-design/DESIGN.md)；**A1–A4 + C1 + C2 切片 1/2 + C3 + C4 已落地**——A 批次四片（rate 1.00000 / 三缺口闭合 / 内存收敛 / seek 冷路径 O(GOP)）+ C 批次隔离面（协议消息族与 media-host 骨架 / 解码内核与自走时钟 / registry 开态客户端切换 / 崩溃检测与退避重启）+ **C4 配对验收**（三态 M1 零回归 + 帧摘要三态全等 + 代际风暴零泄漏 + 能力真值三对照 + 30min 资源审计；配对抓出并订正两缺陷：A1 解码超前 pts 锚定回归 → 样本锚定、宿主 replay 流末残留位置拖拽 → replay 跳过位置 seek，feature 默认关），偏差记录 DESIGN §2.4/§3.5/§6.5/§8.6/§9.6/§10.7/§10.8/§10.9，[切片 2 证据](evidence/2026-10-25-c2-slice2/ANALYSIS.md)，[C3 证据](evidence/2026-10-25-c3-crash-recovery/ANALYSIS.md)，[C4 证据](evidence/2026-10-25-c4-paired-acceptance/ANALYSIS.md)；**DC-5 收口审计完成**——RFC §10 批复落地对照 + DC-1~4 逐项证据复核 + 最终支持范围 + 常驻回归清单，[审计](evidence/2026-10-25-dc5-final-audit/ANALYSIS.md)）。
 **当前卡点**：无。**goal 已收口**（2026-10-25）——DC-1~5 全部有证闭合；`media-process` 启用维持默认关默认态（启用须用户授权，见缺口与待决表）。
 **下一步**：无。goal 完成归档；重开条件 = 用户授权 `media-process` 默认启用（另启产品切片）或新媒体架构议题。
-**入口**：[目标契约](../media-runtime-isolation.md) / [启动与证据协议](../ladybird-followups/README.md)
+**入口**：[目标契约](../media-runtime-isolation.md) / [启动与证据协议](../../ladybird-followups/README.md)
 
 ## 缺口与待决
 
@@ -296,3 +296,8 @@
 - 全仓扫描（`goal/media-runtime-isolation` 旧路径 + 已删脚本名）：7 文件残留旧路径引用，全部改指归档现址——archive/README.md 目录表补本 goal 行（模式 A、2026-10-25、DC-1~5 ✅、`media-process` 默认关）；ladybird-followups/README.md 启动示例删已删脚本行（oracle 先例 f62c377b4 同款）；ROADMAP.md 媒体行死链改归档址 + 「启用时机另议」更新为已裁决维持默认关；spec RFC 需求权威与 M1 evidence 两链接加 archive 一级；`crates/media/src/pipeline.rs:48` DESIGN 注释链接、`apps/renderer/src/media_march_tests.rs:7` evidence 注释路径、`docs/perf/baselines/background-resource-linux-x86_64-v2.json` 8 处 provenance 路径同改（gate 按 scenario 名配腿，路径串纯溯源，门禁行为不变）。
 - goal 名注释引用（不涉路径）与 CHANGELOG/zero-web 巡检等带日期历史记录按先例保留不改写；未跟踪 http.jsonl 维持 v3 ANALYSIS 已记录的裁剪态不入库。
 - 验证：JSON parse 过；改动文件相对链接逐一解析存在；全仓再扫旧路径零残留；本轮纯文档/注释，零行为改动，无新增门禁义务。
+
+### 2026-10-25 归档链接深度订正轮（verify 复核）
+
+- verify session 复核发现上轮「相对链接逐一解析存在」漏检 6 处：goal 目录下沉 `archive/` 一层后相对链接少一个 `..`（master 入口行 ladybird-followups；契约 research 立项依据、run-rules §9–11、media-playback/audio-elements 三边界复用行；DC-5 审计基线 json 链接；DESIGN RFC 头部链接）。
+- 六处全部改指归档现址；脚本化相对链接检查覆盖契约 + master + evidence 全部 md（10 文件）清零。零状态/行为变化，无新增门禁义务。
