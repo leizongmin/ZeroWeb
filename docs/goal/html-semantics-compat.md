@@ -2,9 +2,36 @@
 
 **版本**: v2.0
 **日期**: 2026-10-25（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 81 收口（`querySelector('[id=…]')` 同 turn 改名可见性：查询面双臂补偿 + IDL `el.id` 读 lw 化，域 **976P/252F/30T 逐位持平 REG 0**、pin 逐位持平、engine lib 3521P/0F），下一步 720-stretch 渲染展开 22F（需布局几何，归 layout 集成面，启动前查 oracle master 碰撞记录）或 s81 遗留同 turn insert 身份缺口分诊；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 82 收口（handle 形元素 closest 读面：R100 锚回 host 全语义 + JS 单 compound 祖先走双臂，域 **976P/252F/30T 逐位持平 REG 0**、pin 逐位持平、engine lib 3522P/0F），下一步 720-stretch 渲染展开 22F（需布局几何，归 layout 集成面，启动前查 oracle master 碰撞记录）或 matches complex stale 面分诊；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-25 M2 切片 81 收口，查询面 id 改名可见性轮）**：
+> **▶ 当前状态（2026-10-25 M2 切片 82 收口，handle 形元素 closest 读面轮）**：
+> s81 范围注记的「同 turn insert 身份缺口」分诊升级：createElement 产物
+> 是 handle 形代理（`__zwSelector` 恒 null），closest 的 `!sel` 门使其
+> **永久盲**（非同 turn 窗口——已 append 排水后仍 null；身份永驻 handle
+> 形）。分诊矩阵实证：matches 单 compound true（t6 臂）、complex false
+> （stale 缺口）、closest ×3 全 null；语料需求 0（117F × createElement
+> 39 处 × closest/matches 共现 = 0），立项按 spec 定义 + 真实站点
+> slice（jQuery/Swiper 创建元素 `closest`）。**修复双臂**
+> （part05 `_zwHandleClosest` + part04 closest 入口 handle 分支）：
+> ①R100 锚回（曾 sel 向解析过）→ host `__zw_closest` 全语义；②JS 单
+> compound 祖先走——父链双形态解析（sel→`__zw_parent` 视图文档；handle
+> →`_zwNodeParent` 反链），48 跳封顶（R125 口径），nodeType≠1 停
+> （不越 shadow 边界——spec closest 祖先轴不含 shadow host），complex/
+> 伪类保守 null（`_matchCompoundOf` 不求值 pseudos，防 over-match）。
+> 契约 dom_bridge_tests `handle_element_closest_s82`（15 断言）。
+> **验证**：probe 4 面 Pass（临时已删）+ engine lib **3522P/0F** +
+> 域（FILTER=embedded-content）**976P/252F/30T 逐位持平（REG 0——
+> 语料 0 需求预判实证）** + interactive pin **439P/44F/0T 逐位持平** +
+> fmt clean + clippy 仅 s78 既有 concat! 警告（不在本 diff）。账本见
+> [evidence/2026-10-25-m2s82-handle-closest.md](html-semantics-compat/evidence/2026-10-25-m2s82-handle-closest.md)。
+> **范围**：matches complex stale 面（handle 形锚回 host 快照 miss）
+> 记遗留不建——需 Rust 视图文档 matches 回调或 query_all 回退，非平凡。
+> **下一步**：720-stretch 渲染展开 22F（需布局几何，归 layout 集成面，
+> 启动前查 oracle master 碰撞记录）或 matches complex stale 面分诊。
+> **切片间隙**：本轮 js_dom_shim 两件 + 契约 dom_bridge_tests；下一
+> 挂账同面或 layout 集成面，间隙开放。
+>
+> **▶ 上轮状态（2026-10-25 M2 切片 81 收口，查询面 id 改名可见性轮）**：
 > R125（s79）读侧只接 gEBI；查询面（querySelector/querySelectorAll/
 > matches/closest）同 turn 改名 `#new` miss、`#old` stale hit。probe
 > 分轮定位**根因补刀**：`el.id` IDL 反射读走纯快照（与 getAttribute

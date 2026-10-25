@@ -5344,6 +5344,12 @@
         // `__zw_closest`（parent_node 链 + 全匹配集），返唯一选择器后包 proxy。
         if (prop === 'closest') {
           return function(selector) {
+            if (!sel && handle && typeof _zwHandleClosest === 'function') {
+              // s82：handle 形 closest（createElement/fragment 产物，`__zwSelector`
+              // 恒 null）——R100 锚回 host 臂 + JS 单 compound 祖先走（详见 part05
+              // `_zwHandleClosest` 注记）。
+              try { return _zwHandleClosest(handle, selector); } catch (_e82hct) { return null; }
+            }
             if (!sel || typeof __zw_closest !== 'function') return null;
             // s81：id 约束单 compound——JS 链上行逐祖先复验（含 self；lw 现值可见，
             // host `__zw_closest` 走快照 stale）。`__zw_parent` 链 + compound 复验，

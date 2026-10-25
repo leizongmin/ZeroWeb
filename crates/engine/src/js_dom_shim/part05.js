@@ -5813,6 +5813,73 @@
       return ia - ib;
     } catch (_e81dc) { return 0; }
   }
+  // s82（html-semantics M2）：handle 形元素（createElement/fragment 产物，
+  // `__zwSelector` 恒 null）的 closest 读面——matches 已有 R134/t6 锚回臂，
+  // closest 无 handle 分支：`!sel` 门即 null（同 turn append 即盲，排水后仍
+  // 盲——身份永驻 handle 形）。双臂：
+  // ① R100 锚回（connected 且曾被 sel 向解析过）→ host `__zw_closest` 全语义
+  //   （complex/伪类活；同 turn append 的快照 stale 窗口锚未命中，落 ②）；
+  // ② JS 单 compound 祖先走——父链双形态解析（sel → `__zw_parent` 视图文档，
+  //   handle → `_zwNodeParent` 反链），48 跳封顶（R125 口径）。complex/伪类
+  //   保守不接（`_matchCompoundOf` 不求值 pseudos——混入会 over-match）。
+  function _zwClosestSingleCompounds(q) {
+    var groups = null;
+    try { groups = _parseSelectorListOf(String(q == null ? '' : q)); } catch (_e82p) { return []; }
+    var out = [];
+    for (var i = 0; i < (groups || []).length; i++) {
+      var g = groups[i];
+      if (!g || !g.combinators || !g.compounds) continue;
+      if (g.combinators.length !== 0 || g.compounds.length !== 1) continue;
+      var c = g.compounds[0];
+      if (c.unsupported || (c.pseudos && c.pseudos.length)) continue;
+      out.push(c);
+    }
+    return out;
+  }
+  // 祖先步进：px 须为元素（fragment 容器 nodeType 11 → null，不越 shadow 边界
+  // ——spec closest 祖先轴不含 shadow host）。
+  function _zwClosestParentOfPx(px) {
+    if (!px) return null;
+    var nt = 0;
+    try { nt = px.nodeType; } catch (_e82nt) { return null; }
+    if (nt !== 1) return null;
+    var s = px.__zwSelector;
+    if (s && typeof __zw_parent === 'function') {
+      try { var p = __zw_parent(s); return p ? { sel: p } : null; } catch (_e82ps) { return null; }
+    }
+    var h = px.__zwHandle;
+    if (h && typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
+      var L = _zwNodeParent[h];
+      if (!L) return null;
+      if (L.parentSel) return { sel: L.parentSel };
+      if (L.parentHandle) return { handle: L.parentHandle };
+    }
+    return null;
+  }
+  function _zwHandleClosest(handle, selector) {
+    var anchor = (typeof _r100SelOfHandle === 'function') ? _r100SelOfHandle(handle) : null;
+    if (anchor && typeof __zw_closest === 'function') {
+      try {
+        var hit = __zw_closest(anchor, String(selector));
+        if (hit) return _wrapSelector(hit);
+      } catch (_e82hc) {}
+    }
+    var cs = _zwClosestSingleCompounds(selector);
+    if (!cs.length) return null;
+    var cur = null;
+    try { cur = _wrapHandle(handle); } catch (_e82wh) { return null; }
+    var guard = 0;
+    while (cur && guard++ < 48) {
+      for (var i = 0; i < cs.length; i++) {
+        try { if (_matchCompoundOf(cur, cs[i])) return cur; } catch (_e82mc) {}
+      }
+      var L = null;
+      try { L = _zwClosestParentOfPx(cur); } catch (_e82lp) { return null; }
+      if (!L) return null;
+      try { cur = L.sel ? _makeProxy(L.sel, null) : _wrapHandle(L.handle); } catch (_e82nx) { return null; }
+    }
+    return null;
+  }
   // 读 compound 内裸 token（tag/id/class 名），遇 `.`/`#`/`[`/`:`/空白停。
   function _readCompoundToken(text, start) {
     // js-dom M4 R118：CSS 转义解码（CSS Syntax 4.3.4「consume an escaped code point」——

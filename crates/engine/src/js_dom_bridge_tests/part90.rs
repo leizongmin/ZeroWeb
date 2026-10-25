@@ -445,3 +445,93 @@ fn query_id_rename_same_turn_visibility_s81() {
     assert_eq!(get(&mut sandbox, 15), "true", "(f1) 改名回原 id qS 命中");
     assert_eq!(get(&mut sandbox, 16), "true", "(f2) 中间 id 落空");
 }
+
+// R5282（s82）：handle 形元素（createElement 产物，`__zwSelector` 恒 null）的
+// closest 读面——matches 已有 R134/t6 锚回臂，closest 无 handle 分支（`!sel`
+// 门即 null），同 turn append 即盲、排水后仍盲（身份永驻 handle 形）。双臂
+// 修复：① R100 锚回（曾 sel 向解析过）→ host `__zw_closest` 全语义；② JS 单
+// compound 祖先走——父链双形态解析（sel → `__zw_parent` 视图文档；handle →
+// `_zwNodeParent` 反链），48 跳封顶；complex/伪类保守 null（不 over-match）。
+// https://dom.spec.whatwg.org/#dom-element-closest
+#[test]
+fn handle_element_closest_s82() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='pa'><div id='anc'></div></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://zero.test/s82".to_string()));
+    let canvas_registry: Arc<Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__r = [];\
+             var anc = document.getElementById('anc');\
+             // (a) sel 父 append 的 handle 子——self/父/祖/body/无命中
+             var inner = document.createElement('span');\
+             anc.appendChild(inner);\
+             globalThis.__r.push(inner.__zwHandle ? 'h' : 'n');\
+             globalThis.__r.push(inner.closest('span') === inner);\
+             globalThis.__r.push(inner.closest('div') === anc);\
+             globalThis.__r.push(inner.closest('#pa') !== null);\
+             globalThis.__r.push(inner.closest('body') !== null);\
+             globalThis.__r.push(inner.closest('.nope') === null);\
+             // (b) 与 s81 改名面组合——父改名后以 lw 现值命中、旧 id stale
+             anc.setAttribute('id', 'ancx');\
+             globalThis.__r.push(inner.closest('#ancx') === anc);\
+             globalThis.__r.push(inner.closest('#anc') === null);\
+             anc.setAttribute('id', 'anc');\
+             // (c) handle 父链（created 下挂 created）——双形态混合爬链
+             var outer = document.createElement('div');\
+             var innerEl = document.createElement('span');\
+             outer.appendChild(innerEl);\
+             anc.appendChild(outer);\
+             globalThis.__r.push(innerEl.closest('div') === outer);\
+             globalThis.__r.push(innerEl.closest('body') !== null);\
+             globalThis.__r.push(innerEl.closest('#pa') !== null);\
+             // (d) detached（从未 append）——self 命中、上行 null
+             var d = document.createElement('div');\
+             globalThis.__r.push(d.closest('div') === d);\
+             globalThis.__r.push(d.closest('body') === null);\
+             // (e) complex/伪类保守 null（不 over-match）
+             globalThis.__r.push(inner.closest('div span') === null);\
+             globalThis.__r.push(inner.closest('span:first-child') === null);",
+        )
+        .unwrap();
+    let get = |sandbox: &mut V8Sandbox, i: usize| -> String {
+        sandbox
+            .execute(&format!("globalThis.__r[{}]", i))
+            .unwrap()
+            .value
+    };
+    // (a)
+    assert_eq!(get(&mut sandbox, 0), "h", "(a0) created 子持 handle 身份");
+    assert_eq!(get(&mut sandbox, 1), "true", "(a1) closest self 命中");
+    assert_eq!(get(&mut sandbox, 2), "true", "(a2) closest 父 div 命中");
+    assert_eq!(get(&mut sandbox, 3), "true", "(a3) closest 祖 #pa 命中");
+    assert_eq!(get(&mut sandbox, 4), "true", "(a4) closest body 命中");
+    assert_eq!(get(&mut sandbox, 5), "true", "(a5) 无命中 null");
+    // (b)
+    assert_eq!(get(&mut sandbox, 6), "true", "(b1) 父改名 lw 现值命中");
+    assert_eq!(get(&mut sandbox, 7), "true", "(b2) 旧 id stale");
+    // (c)
+    assert_eq!(get(&mut sandbox, 8), "true", "(c1) handle 父命中");
+    assert_eq!(get(&mut sandbox, 9), "true", "(c2) handle 链爬到 body");
+    assert_eq!(get(&mut sandbox, 10), "true", "(c3) 混合链到 #pa");
+    // (d)
+    assert_eq!(get(&mut sandbox, 11), "true", "(d1) detached self 命中");
+    assert_eq!(get(&mut sandbox, 12), "true", "(d2) detached 上行 null");
+    // (e)
+    assert_eq!(get(&mut sandbox, 13), "true", "(e1) complex 保守 null");
+    assert_eq!(get(&mut sandbox, 14), "true", "(e2) 伪类保守 null");
+}
