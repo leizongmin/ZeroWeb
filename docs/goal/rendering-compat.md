@@ -9,6 +9,13 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5280 实现轮（separated 表层背景 cell 分段——table-backgrounds-bs-colgroup/column/rowgroup ✗10.04/3.24/1.45→✓0.00/0.00/0.97%；corpus FIXED=3 REGRESSED=0 净 +3 = 15716）**（2026-10-25）
+>
+> - **取证**：table-backgrounds-bs 族（dbaron §17.5.1 层叠构造，separated + spacing 2×3）。ref 构造 = 层背景一幅连续 div（cell 并集包围盒）+ 白条盖 gap——层背景只填 cell 区域、gap 露表底层、image 相位锚包围盒。REFTEST_DUMP 逐轮消歧：行组/行层先落 `bg_cell_segments`（盒自身帧 cell 矩形，paint 早臂裁剪）即绿；col/colgroup 无盒可挂，列条目重构 `TableColBgEntry{origin+segments}` 后残余 7.74% 唯二 patch = tile 四角 tick 半截——像素级对照实证 image 相位原点 y = content 顶而 ref = 首行 cell 顶，差纵向 perimeter spacing 3px（cell 区含四缘 spacing，R4243 口径），origin 收敛为 cell 并集包围盒。
+> - **实现**：`types` 新增 `TableColBgEntry`；collector 加 spacing_y 参数 + split_cells（spacing 已 R5279 collapse 门控，collapse 天然单段哨兵）+ row_cell_rects x 交列跨 + origin 包围盒；painter image origin=包围盒、clip=逐段；退化 grid 无 cell 回退旧单段全高哨兵（零回归面，修掉一版早退破坏既有收集器测试）。
+> - **验证**：bs 族 6/6 ✓；锚点 background-repeat-applies-to-005/006/007、fixed-table-layout-022/023 全绿，bc-* collapse 五案数值持平（另一根因挂账）；全量 corpus A/B（/tmp/r5280_run2.log vs /tmp/r5279_run.log）**FIXED=3 REGRESSED=0 净 15713→15716** 无 >0.5% 漂移；新常驻测试 2 + 收集器测试 3 改结构体断言；product-smoke 六 viewport PASS；bench-gate（directed zero-layout-engine）GATE PASS 25/25。make test 三跑记录：①product-smoke 并发同编 test-guard 链接竞态（瞬态，单跑消失）②image_batch_e2e 1F = sidecar 陈旧环境性（release 重建 zero-browser/zero-renderer 后 standalone 1P，R5272 同款）③network_loading same_origin_image_burst 1F = 并行流（s86-scripting 在跑）负载 timing flake（standalone 2/2 P，page_scripts mutation_arm 同族归并行流）；其余套件全绿。证据：[r5280](rendering-compat/evidence/r5280-table-layer-bg-cell-segments-2026-10-25.md)。
+> - **下一步**：R5281 ① 轻量修复回归主循环（874 failed 账本内选取）② table-backgrounds-bc-* collapse 族（折叠边框带参与层区域，5 案）/ border-right-width-applies-to-006（table-column 折叠边框）css-tables 深特性视预算 ③ 031 竖排/::selection 部分行域维持 ④ UA 图片 wash/部分选区跨 img 挂账缓维持 ⑤ 跨流碰头维持（browser autocomplete main 既有失败 + page_scripts mutation_arm 归并行流 + clippy part90 concat!/video_registry map_entry 2 项）。
+
 > **▶ R5279 实现轮（collapse 表 border-spacing 整体无效三处门控——collapsing-border-model-010a ✗9.87→✓0.00%；corpus FIXED=1 REGRESSED=0 净 +1 = 15713）**（2026-10-25）
 >
 > - **取证**：877 failed 账本暖域续选，010a = collapse 表声明 `border-spacing:50px`（§17.6.1 必须整体忽略）；同案 010b（唯一 delta = 无此声明）修前已 ✓ 锁死缺陷面。REFTEST_DUMP 逐轮消歧（9.87→4.17→2.08→0.00）拆出**三处**漏门控消费点：①layout_table_inner 源头（列间/行间 gap 与列背景推进；周界下游本有门控）②apply_table_size_constraints 的 spacing_total_x（表 100 撑到 208）③update_row_group_positions 行间推进（行组盒与 cell 错位 50px，tbody 露表底红、tfoot 下坠——复用 R5278 COLLAPSE_DBG 插桩法定位 y 分叉）。

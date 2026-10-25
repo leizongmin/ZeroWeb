@@ -33,6 +33,7 @@ use zero_dom::NodeId;
 use zero_style_system::{ComputedStyle, WritingModeValue};
 
 use crate::types::LayoutBox;
+use crate::types::TableColBgEntry;
 
 use crate::types::OverflowClip;
 
@@ -667,7 +668,9 @@ fn layout_table_inner(
 
     // 3.5 收集 <col>/<colgroup> 列背景（CSS Tables §17.5.3）
     //     列背景在单元格之下绘制，须在 paint 前把列元素几何写入 table_col_backgrounds。
-    collect_table_col_backgrounds(table_box, &grid, &col_widths, spacing_x, styles, doc);
+    collect_table_col_backgrounds(table_box, &grid, &col_widths, spacing_x, spacing_y, styles, doc);
+    // §17.5.1：行组/行背景 cell 区域分段（separated spacing gap 不覆盖）
+    collect_table_row_bg_segments(table_box, &grid, spacing_x, spacing_y, styles);
 
     // 4. border-collapse: collapse 时解析边框冲突
     //    必须在 suppress 之前，因为 resolve 从 ComputedStyle 读取边框
@@ -775,6 +778,7 @@ fn collect_table_col_backgrounds(
     grid: &TableGrid,
     col_widths: &[f32],
     spacing_x: f32,
+    spacing_y: f32,
     styles: &HashMap<NodeId, ComputedStyle>,
     doc: &zero_dom::Document,
 ) {
@@ -834,7 +838,96 @@ fn collect_table_col_backgrounds(
         Some((left, right - left))
     }
 
-    let mut entries: Vec<(NodeId, f32, f32)> = Vec::new();
+    // §17.5.1 cell 区域分段：有 spacing 时（spacing 参数已经 R5279 collapse 门控为
+    // 0）列背景实际填充裁剪到覆盖该列跨的各 cell border-box（spacing gap 露表
+    // 底层，table-backgrounds-bs-colgroup-001/bs-column-001）；定位区仍为列全跨
+    // （image 平铺相位跨 cell 连续）。无 spacing 单段全高哨兵（h=-1）。
+    let split_cells = spacing_x > 0.0 || spacing_y > 0.0;
+    // 每行 cell 矩形 (x, y, w, h) 相对表格 content box：行盒（行组行经行组盒）
+    // + cell 盒几何，跳过 collapsed 行与无盒 cell。
+    let row_cell_rects: Vec<Vec<(f32, f32, f32, f32)>> = if split_cells {
+        let mut rows_rects = Vec::with_capacity(grid.rows.len());
+        for (row_idx, row) in grid.rows.iter().enumerate() {
+            let mut rects: Vec<(f32, f32, f32, f32)> = Vec::new();
+            let collapsed_row = grid.collapsed_rows.get(row_idx).copied().unwrap_or(false);
+            if !collapsed_row {
+                if let Some(rb) = get_row_box(table_box, row) {
+                    // 行盒 x/y 相对 content：行组行经行组盒（update_row_group_positions
+                    // 已落位），直接行 = row.y（position_cells 落 content 帧）。
+                    let (row_x, row_y) = match row.row_group_index {
+                        Some(rg_idx) => table_box
+                            .children
+                            .get(rg_idx)
+                            .map(|rg| (rg.x + rb.x, rg.y + rb.y))
+                            .unwrap_or((rb.x, rb.y)),
+                        None => (rb.x, rb.y),
+                    };
+                    for cell in &row.cells {
+                        if cell.child_index == usize::MAX {
+                            continue;
+                        }
+                        let Some(cb) = get_cell_box(rb, cell) else { continue };
+                        rects.push((row_x + cb.x, row_y + cb.y, cb.width, cb.height));
+                    }
+                }
+            }
+            rows_rects.push(rects);
+        }
+        rows_rects
+    } else {
+        Vec::new()
+    };
+    // 分段展开：每 cell 矩形与列跨 [l, l+w) 求 x 交；无纵向 spacing 时 y 取全高
+    // 哨兵（paint 期取 content_height，镜像旧行为，content_height 以 paint 时为准）。
+    // 定位区 = cell 并集包围盒（§17.5.1 列层区域；image 相位锚定于此——dbaron ref
+    // bs-colgroup-001 的 tile tick 顶 = 首行 cell 顶 = content 顶 + 纵向 perimeter）；
+    // 无 spacing 时哨兵 (0, -1) 镜像旧全高行为。
+    let push_col_entry = |entries: &mut Vec<TableColBgEntry>, nid: NodeId, l: f32, w: f32| {
+        let mut segments: Vec<(f32, f32, f32, f32)> = Vec::new();
+        let mut origin_y = 0.0f32;
+        let mut origin_h = -1.0f32;
+        if split_cells {
+            let mut y_min = f32::INFINITY;
+            let mut y_max = f32::NEG_INFINITY;
+            for rects in &row_cell_rects {
+                for (rx, ry, rw, rh) in rects {
+                    let x0 = (*rx).max(l);
+                    let x1 = ((*rx) + (*rw)).min(l + w);
+                    if x1 <= x0 {
+                        continue;
+                    }
+                    if *ry < y_min {
+                        y_min = *ry;
+                    }
+                    if *ry + *rh > y_max {
+                        y_max = *ry + *rh;
+                    }
+                    let (y, h) = if spacing_y > 0.0 { (*ry, *rh) } else { (0.0, -1.0) };
+                    segments.push((x0, y, x1 - x0, h));
+                }
+            }
+            if segments.is_empty() {
+                // 无行/cell 不涉该列跨（退化 grid）：回退旧单段全高哨兵（零回归面）。
+                segments.push((l, 0.0, w, -1.0));
+            }
+            if spacing_y > 0.0 && y_min.is_finite() {
+                origin_y = y_min;
+                origin_h = y_max - y_min;
+            }
+        } else {
+            segments.push((l, 0.0, w, -1.0));
+        }
+        entries.push(TableColBgEntry {
+            node_id: nid,
+            origin_x: l,
+            origin_w: w,
+            origin_y,
+            origin_h,
+            segments,
+        });
+    };
+    let mut entries: Vec<TableColBgEntry> = Vec::new();
+
     let mut col_cursor = 0usize;
 
     // Pass 1：colgroup（下层先入）
@@ -874,7 +967,7 @@ fn collect_table_col_backgrounds(
         if !rg_collapsed && rg_has_bg {
             if let Some((l, w)) = span_rect(&col_geo, grid, col_start, col_end) {
                 if let Some(nid) = child.node_id {
-                    entries.push((nid, l, w));
+                    push_col_entry(&mut entries, nid, l, w);
                 }
             }
         }
@@ -916,7 +1009,7 @@ fn collect_table_col_backgrounds(
                             if !col_collapsed && col_has_bg {
                                 if let Some((l, w)) = span_rect(&col_geo, grid, col_start, col_end) {
                                     if let Some(nid) = col_child.node_id {
-                                        entries.push((nid, l, w));
+                                        push_col_entry(&mut entries, nid, l, w);
                                     }
                                 }
                             }
@@ -941,7 +1034,7 @@ fn collect_table_col_backgrounds(
                 if !col_collapsed && col_has_bg {
                     if let Some((l, w)) = span_rect(&col_geo, grid, col_start, col_end) {
                         if let Some(nid) = child.node_id {
-                            entries.push((nid, l, w));
+                            push_col_entry(&mut entries, nid, l, w);
                         }
                     }
                 }
@@ -952,6 +1045,95 @@ fn collect_table_col_backgrounds(
     }
 
     table_box.table_col_backgrounds = entries;
+}
+
+/// 收集行组/行背景的 cell 区域分段，写入各盒 `bg_cell_segments`。
+///
+/// CSS2 §17.5.1 表格层叠：separated 模式下 row-group/row 层背景**不覆盖
+/// border-spacing gap**（gap 露表底层），绘制须裁剪到该层各 cell border-box
+/// 区域的并集；定位区仍为层盒全矩形（background-position 锚定整组——
+/// table-backgrounds-bs-rowgroup-001：top-left/bottom-right 锚点 tick 位置实证）。
+/// 旧实现整盒连续绘制 → gap 露底色、行组盒高含内部 spacing 使 image 相位漂移。
+/// 仅 separated 且 spacing > 0 时收集（无 gap 时 cell 区域并 = 整盒，paint 走
+/// 原路径零变化）；collapse / 匿名行 retrofit 形态不收集（FIXME 深形态）。
+fn collect_table_row_bg_segments(
+    table_box: &mut LayoutBox,
+    grid: &TableGrid,
+    spacing_x: f32,
+    spacing_y: f32,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
+    use zero_style_system::ColorValue;
+
+    if spacing_x <= 0.0 && spacing_y <= 0.0 {
+        return;
+    }
+    let separated = table_box
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .is_some_and(|s| matches!(s.border_collapse, zero_style_system::BorderCollapseValue::Separate));
+    if !separated {
+        return;
+    }
+    let has_bg = |nid: Option<NodeId>| -> bool {
+        nid.and_then(|id| styles.get(&id))
+            .is_some_and(|s| !matches!(s.background_color, ColorValue::Transparent) || !s.background_image.is_empty())
+    };
+
+    // 阶段一（不可变）：逐非匿名行收集 cell rects——相对行盒，及相对行组盒
+    //（行盒局部坐标 + 行盒在行组内偏移；cell 在行帧内已由 position_cells 落位）。
+    /// cell 区域矩形 `(x, y, w, h)`——层背景分段共用形态（相对各盒自身帧）。
+    type CellSegRect = (f32, f32, f32, f32);
+    let mut rg_segs: HashMap<usize, Vec<CellSegRect>> = HashMap::new();
+    let mut row_segs: Vec<(usize, usize, Vec<CellSegRect>)> = Vec::new();
+    for (row_idx, row) in grid.rows.iter().enumerate() {
+        if row.is_anonymous || row.row_group_index.is_none() {
+            continue;
+        }
+        if grid.collapsed_rows.get(row_idx).copied().unwrap_or(false) {
+            continue;
+        }
+        let Some(rg_idx) = row.row_group_index else { continue };
+        let Some(rb) = get_row_box(table_box, row) else {
+            continue;
+        };
+        let mut row_rects: Vec<(f32, f32, f32, f32)> = Vec::new();
+        for cell in &row.cells {
+            // R5168：匿名占位 entry 无盒（child_index = usize::MAX）
+            if cell.child_index == usize::MAX {
+                continue;
+            }
+            let Some(cb) = get_cell_box(rb, cell) else { continue };
+            row_rects.push((cb.x, cb.y, cb.width, cb.height));
+        }
+        if row_rects.is_empty() {
+            continue;
+        }
+        if has_bg(rb.node_id) {
+            row_segs.push((rg_idx, row.child_index, row_rects.clone()));
+        }
+        let rg_has_bg = has_bg(table_box.children.get(rg_idx).and_then(|rg| rg.node_id));
+        if rg_has_bg {
+            rg_segs
+                .entry(rg_idx)
+                .or_default()
+                .extend(row_rects.iter().map(|&(x, y, w, h)| (rb.x + x, rb.y + y, w, h)));
+        }
+    }
+
+    // 阶段二（可变）：按盒写回
+    for (rg_idx, segs) in rg_segs {
+        if let Some(rg) = table_box.children.get_mut(rg_idx) {
+            rg.bg_cell_segments = segs;
+        }
+    }
+    for (rg_idx, row_child_idx, segs) in row_segs {
+        if let Some(rg) = table_box.children.get_mut(rg_idx) {
+            if let Some(rb) = rg.children.get_mut(row_child_idx) {
+                rb.bg_cell_segments = segs;
+            }
+        }
+    }
 }
 
 /// Auto table layout：根据单元格内容计算每列的宽度。

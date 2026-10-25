@@ -2721,6 +2721,7 @@ impl LayoutEngine {
                 })
             }),
             table_col_backgrounds: Vec::new(),
+            bg_cell_segments: Vec::new(),
             valign_offset: 0.0,
             collapse_half_shift: (0.0, 0.0),
         }

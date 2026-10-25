@@ -94,6 +94,31 @@ pub struct NestedSpannerChildFrag {
     pub clip_h: f32,
 }
 
+/// R5280：表格列背景条目（CSS2 §17.5.3 列/列组背景 + §17.5.1 层背景不覆盖 spacing gap）。
+///
+/// 定位区与绘制区分开：image 平铺相位锚定在**该列 cell 区域并集的包围盒**
+/// （§17.5.1 列层区域 = cell 并集；跨 cell 连续、含 spacing，dbaron ref 以整幅
+/// div + 白条构造即此语义），实际填充按 `segments` 逐 cell 矩形（spacing gap
+/// 不在段内，露出表格背景层）。
+#[derive(Debug, Clone)]
+pub struct TableColBgEntry {
+    /// `<col>` 或 `<colgroup>` 元素节点（painter 据此取背景样式）。
+    pub node_id: NodeId,
+    /// 定位区 x（相对表格 content box）——列全跨。
+    pub origin_x: f32,
+    /// 定位区宽——列全跨。
+    pub origin_w: f32,
+    /// 定位区 y（相对表格 content box）——cell 并集包围盒顶（含纵向 perimeter
+    /// spacing）；`h = -1` 哨兵时取 0（paint 期锚 content_y，镜像旧全高行为）。
+    pub origin_y: f32,
+    /// 定位区高——cell 并集包围盒高；`-1` 哨兵 = 全高（paint 期取 content_height，
+    /// 无 spacing 单段形态，镜像旧行为）。
+    pub origin_h: f32,
+    /// cell 区域分段 `(x, y, w, h)` 相对表格 content box。`h = -1` 哨兵 = 全高
+    /// （paint 期取 content_height，无纵向 spacing 的单段形态）；空段不发射。
+    pub segments: Vec<(f32, f32, f32, f32)>,
+}
+
 /// 布局盒 — 一个元素在页面上的几何位置与绘制信息（含 R4330 run-in 分裂边框载荷）。
 #[derive(Debug, Clone)]
 pub struct LayoutBox {
@@ -657,14 +682,19 @@ pub struct LayoutBox {
     pub run_in_border: Option<RunInBorder>,
     /// 表格列背景绘制信息（CSS Tables §17.5.3 列背景）。
     ///
-    /// `<col>`/`<colgroup>` 元素不生成常规流盒，其 `background-color` 须由表格
-    /// 绘制算法特殊处理：在单元格背景**之下**、按列跨满表格高度绘制。
-    /// 每项 = `(node_id, x_offset, width)`：x_offset/width 相对表格 content box，
-    /// node_id 指向 `<col>` 或 `<colgroup>` 元素（painter 据此取 background-color）。
-    /// 仅含 background-color 非透明且宽度 > 0 的列元素；顺序为 colgroup 在前、
-    /// col 在后（colgroup 背景在下层）。由 `collect_table_col_backgrounds` 在
-    /// position_cells 后填充（彼时 col_widths + col→column 映射已知）。
-    pub table_col_backgrounds: Vec<(NodeId, f32, f32)>,
+    /// `<col>`/`<colgroup>` 元素不生成常规流盒，其背景须由表格绘制算法特殊处理：
+    /// 在单元格背景**之下**、按列绘制。仅含背景非透明或带 background-image 且
+    /// 宽度 > 0 的列元素；顺序为 colgroup 在前、col 在后（colgroup 背景在下层）。
+    /// 由 `collect_table_col_backgrounds` 在 position_cells 后填充。
+    pub table_col_backgrounds: Vec<TableColBgEntry>,
+    /// 行组/行背景的 cell 区域分段（CSS2 §17.5.1 表格层叠：separated 模式下
+    /// row-group/row 层背景不覆盖 border-spacing gap，绘制须裁剪到 cell 区域并；
+    /// 定位区仍为层盒全矩形——background-position 锚定整组）。
+    /// 每项 = `(x, y, w, h)` 相对**该盒自身** border-box 原点；为空 = 无裁剪
+    /// （paint 走整盒路径）。由 `collect_table_row_bg_segments` 在 post-process
+    /// 填充，仅 separated 且 spacing > 0 且盒带非透明背景时非空
+    ///（table-backgrounds-bs-rowgroup-001：连续块画法 gap 露表底、图相位漂移）。
+    pub bg_cell_segments: Vec<(f32, f32, f32, f32)>,
     /// R1717：表格单元格文本的 vertical-align 内容偏移（px，正=向下）。
     ///
     /// CSS 2.1 表格单元格的 `vertical-align` 控制单元格**内容**在单元格内的垂直对齐
@@ -841,6 +871,7 @@ impl Default for LayoutBox {
             is_run_in_merged: false,
             run_in_border: None,
             table_col_backgrounds: Vec::new(),
+            bg_cell_segments: Vec::new(),
             valign_offset: 0.0,
             collapse_half_shift: (0.0, 0.0),
         }

@@ -4916,8 +4916,9 @@ impl Painter {
     /// 绘制表格列背景（CSS Tables §17.5.3）。
     ///
     /// `<col>`/`<colgroup>` 不生成常规流盒，其 `background-color` 须按列跨满表格
-    /// content 高度绘制，位于单元格背景之下。几何 `(node_id, x_offset, width)` 相对
-    /// 表格 content box（由 layout 层 `collect_table_col_backgrounds` 写入）。
+    /// content 高度绘制，位于单元格背景之下。几何由 layout 层
+    /// `collect_table_col_backgrounds` 写入：origin = 列全跨（相对表格 content
+    /// box），segments = cell 区域分段（§17.5.1 层背景不覆盖 spacing gap）。
     /// 绘制 background-color + background-image（R2046：col 经列 rect 平铺 image）。
     fn paint_table_col_backgrounds(
         &mut self,
@@ -4935,32 +4936,71 @@ impl Painter {
         if h <= 0.0 {
             return;
         }
-        for (node_id, x_off, w) in &box_node.table_col_backgrounds {
-            let Some(style) = styles.get(node_id) else { continue };
-            if *w <= 0.0 {
+        for entry in &box_node.table_col_backgrounds {
+            let Some(style) = styles.get(&entry.node_id) else {
+                continue;
+            };
+            if entry.origin_w <= 0.0 || entry.segments.is_empty() {
                 continue;
             }
-            let rect_x = content_x + *x_off;
-            // bg-color（§17.5.1 col 层；透明跳过）。
-            if !matches!(style.background_color, ColorValue::Transparent) {
-                self.primitives.add_fill(
-                    Rect::new(rect_x, content_y, *w, h),
-                    resolve_color_current(&style.background_color, &style.color),
-                );
-            }
-            // R2046：col/colgroup background-image（§17.5.1 col 层；col 无 box，经列 rect 平铺）。
-            // attachment:fixed 须 viewport-anchored（col rect 锚定 = scroll 语义会错位）→ 跳过
-            // （col fixed-image 极罕见；跳过回到无 col-image 行为，零回归）。
-            if !style.background_image.is_empty()
-                && !style
-                    .background_attachment
-                    .iter()
-                    .any(|a| matches!(a, zero_style_system::BackgroundAttachmentComputedValue::Fixed))
-            {
-                self.paint_bg_image_in_origin(
-                    rect_x, content_y, *w, h, rect_x, content_y, *w, h, style, 0.0, 0.0, None, false, None, None, None,
-                    None,
-                );
+            let origin_x = content_x + entry.origin_x;
+            // R5280（§17.5.1）：origin = cell 并集包围盒（image 相位锚定，含纵向
+            // perimeter spacing——bs-colgroup-001 tile tick 对齐首行 cell 顶），
+            // clip = 逐 cell 段（spacing gap 不在段内，露表底层）。h = -1 哨兵 =
+            // 全高（镜像旧行为，content_height 以 paint 时为准）；段高夹到 content
+            // 底防布局后段溢出。
+            let (origin_y, origin_h) = if entry.origin_h < 0.0 {
+                (content_y, h)
+            } else {
+                (content_y + entry.origin_y, entry.origin_h.min(h - entry.origin_y))
+            };
+            for (sx, sy, sw, sh) in &entry.segments {
+                let seg_x = content_x + *sx;
+                let (seg_y, seg_h) = if *sh < 0.0 {
+                    (content_y, h)
+                } else {
+                    (content_y + *sy, (*sh).min(h - *sy))
+                };
+                if seg_h <= 0.0 || *sw <= 0.0 {
+                    continue;
+                }
+                // bg-color（§17.5.1 col 层；透明跳过）。
+                if !matches!(style.background_color, ColorValue::Transparent) {
+                    self.primitives.add_fill(
+                        Rect::new(seg_x, seg_y, *sw, seg_h),
+                        resolve_color_current(&style.background_color, &style.color),
+                    );
+                }
+                // R2046：col/colgroup background-image（§17.5.1 col 层；col 无 box，经列 rect 平铺）。
+                // attachment:fixed 须 viewport-anchored（col rect 锚定 = scroll 语义会错位）→ 跳过
+                // （col fixed-image 极罕见；跳过回到无 col-image 行为，零回归）。
+                // R5280：origin = cell 并集包围盒（相位跨 cell 连续），clip = cell 段。
+                if !style.background_image.is_empty()
+                    && !style
+                        .background_attachment
+                        .iter()
+                        .any(|a| matches!(a, zero_style_system::BackgroundAttachmentComputedValue::Fixed))
+                {
+                    self.paint_bg_image_in_origin(
+                        origin_x,
+                        origin_y,
+                        entry.origin_w,
+                        origin_h,
+                        seg_x,
+                        seg_y,
+                        *sw,
+                        seg_h,
+                        style,
+                        0.0,
+                        0.0,
+                        None,
+                        false,
+                        None,
+                        None,
+                        None,
+                        None,
+                    );
+                }
             }
         }
     }
@@ -4985,6 +5025,51 @@ impl Painter {
             .node_id
             .is_some_and(|id| self.canvas_propagated_node == Some(id))
         {
+            return;
+        }
+        // R5280（CSS2 §17.5.1 表格层叠）：separated 表行组/行层背景裁剪到 cell 区域并
+        //（bg_cell_segments 由 layout collect_table_row_bg_segments 写入，空 = 无裁剪
+        // 走整盒常规路径）。定位区 = 层盒全 border-box（background-position 锚定整组，
+        // bs-rowgroup-001 top-left/bottom-right tick 实证），色/图逐段发射。层盒 border
+        // 已被 suppress（行组/行盒模型归零），段坐标即 border-box 帧。
+        if !box_node.bg_cell_segments.is_empty() {
+            let color = resolve_color_current(&style.background_color, &style.color);
+            let has_color = !matches!(style.background_color, ColorValue::Transparent);
+            let img_fixed = style
+                .background_attachment
+                .iter()
+                .any(|a| matches!(a, zero_style_system::BackgroundAttachmentComputedValue::Fixed));
+            let has_img = !style.background_image.is_empty() && !img_fixed;
+            for (sx, sy, sw, sh) in &box_node.bg_cell_segments {
+                if *sw <= 0.0 || *sh <= 0.0 {
+                    continue;
+                }
+                if has_color {
+                    self.primitives
+                        .add_fill(Rect::new(abs_x + *sx, abs_y + *sy, *sw, *sh), color.clone());
+                }
+                if has_img {
+                    self.paint_bg_image_in_origin(
+                        abs_x,
+                        abs_y,
+                        box_node.width,
+                        box_node.height,
+                        abs_x + *sx,
+                        abs_y + *sy,
+                        *sw,
+                        *sh,
+                        style,
+                        0.0,
+                        0.0,
+                        None,
+                        false,
+                        None,
+                        None,
+                        None,
+                        None,
+                    );
+                }
+            }
             return;
         }
         // R4534（css-borders-4 §7.5.3）：border-shape 活跃时背景色裁剪至内形状

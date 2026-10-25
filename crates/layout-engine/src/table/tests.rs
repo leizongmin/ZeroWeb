@@ -1425,23 +1425,23 @@ fn test_collect_table_col_backgrounds() {
     };
     let col_widths = [65.0f32, 0.0, 160.0];
 
-    collect_table_col_backgrounds(&mut table_box, &grid, &col_widths, 0.0, &styles, &doc);
+    collect_table_col_backgrounds(&mut table_box, &grid, &col_widths, 0.0, 0.0, &styles, &doc);
 
     // 仅 col1(red) 和 col3(green)；col2(blue) 折叠跳过；x/width 镜像单元格定位
     let entries = &table_box.table_col_backgrounds;
     assert_eq!(entries.len(), 2, "collapsed col should be skipped");
-    assert_eq!(entries[0].0, col1_id, "first entry = col1 (red)");
+    assert_eq!(entries[0].node_id, col1_id, "first entry = col1 (red)");
     assert!(
-        (entries[0].1 - 0.0).abs() < 0.01 && (entries[0].2 - 65.0).abs() < 0.01,
+        (entries[0].origin_x - 0.0).abs() < 0.01 && (entries[0].origin_w - 65.0).abs() < 0.01,
         "col1 x=0 w=65"
     );
-    assert_eq!(entries[1].0, col3_id, "second entry = col3 (green)");
+    assert_eq!(entries[1].node_id, col3_id, "second entry = col3 (green)");
     // col2 折叠不引入 spacing/位移 → col3 从 x=65 起
     assert!(
-        (entries[1].1 - 65.0).abs() < 0.01 && (entries[1].2 - 160.0).abs() < 0.01,
+        (entries[1].origin_x - 65.0).abs() < 0.01 && (entries[1].origin_w - 160.0).abs() < 0.01,
         "col3 x=65 w=160 (collapsed col2 contributes no offset), got x={} w={}",
-        entries[1].1,
-        entries[1].2
+        entries[1].origin_x,
+        entries[1].origin_w
     );
 }
 
@@ -1500,20 +1500,20 @@ fn test_collect_table_col_backgrounds_perimeter_spacing() {
         ],
         ..Default::default()
     };
-    collect_table_col_backgrounds(&mut table_box, &grid, &col_widths, 15.0, &styles, &doc);
+    collect_table_col_backgrounds(&mut table_box, &grid, &col_widths, 15.0, 0.0, &styles, &doc);
     let entries = &table_box.table_col_backgrounds;
     assert_eq!(entries.len(), 2, "both separated cols collected");
     assert!(
-        (entries[0].1 - 15.0).abs() < 0.01 && (entries[0].2 - 65.0).abs() < 0.01,
+        (entries[0].origin_x - 15.0).abs() < 0.01 && (entries[0].origin_w - 65.0).abs() < 0.01,
         "separated col1 x=15 (perimeter) w=65, got x={} w={}",
-        entries[0].1,
-        entries[0].2
+        entries[0].origin_x,
+        entries[0].origin_w
     );
     assert!(
-        (entries[1].1 - 95.0).abs() < 0.01 && (entries[1].2 - 160.0).abs() < 0.01,
+        (entries[1].origin_x - 95.0).abs() < 0.01 && (entries[1].origin_w - 160.0).abs() < 0.01,
         "separated col2 x=95 (15+65+15) w=160, got x={} w={}",
-        entries[1].1,
-        entries[1].2
+        entries[1].origin_x,
+        entries[1].origin_w
     );
 
     // collapse：perimeter 为 0，维持 x=0 起；列间 spacing 参数与 position_cells
@@ -1537,18 +1537,18 @@ fn test_collect_table_col_backgrounds_perimeter_spacing() {
         ],
         ..Default::default()
     };
-    collect_table_col_backgrounds(&mut table_box, &grid, &col_widths, 15.0, &styles, &doc);
+    collect_table_col_backgrounds(&mut table_box, &grid, &col_widths, 15.0, 0.0, &styles, &doc);
     let entries = &table_box.table_col_backgrounds;
     assert_eq!(entries.len(), 2, "both collapse-mode cols collected");
     assert!(
-        (entries[0].1 - 0.0).abs() < 0.01,
+        (entries[0].origin_x - 0.0).abs() < 0.01,
         "collapse col1 x=0 (no perimeter), got x={}",
-        entries[0].1
+        entries[0].origin_x
     );
     assert!(
-        (entries[1].1 - 80.0).abs() < 0.01,
+        (entries[1].origin_x - 80.0).abs() < 0.01,
         "collapse col2 x=80 (65+spacing, mirrors cell advance), got x={}",
-        entries[1].1
+        entries[1].origin_x
     );
 }
 

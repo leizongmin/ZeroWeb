@@ -847,6 +847,8 @@ mod r5277_caption_frame_only_auto_table_tests;
 mod r5278_collapse_outer_band_size_tests;
 /// R5279：collapse 表 border-spacing 整体无效。
 mod r5279_collapse_ignores_border_spacing_tests;
+/// R5280：separated 表层背景 cell 分段（列条目定位区/分段 + 行组层 bg_cell_segments）。
+mod r5280_table_layer_bg_cell_segments_tests;
 
 mod r5250_inline_relpos_shift_map;
 
