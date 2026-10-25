@@ -9,6 +9,14 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5274 实现轮（图片容器选区可见性——active-selection-041 ✗0.00→✓2.08%；preserve 空白行盒计高前置片；corpus FIXED=1 REGRESSED=0 净 +1 = 15708）**（2026-10-25）
+>
+> - **取证**：041（mismatch）✗0.00 = TEST/notref 全等，二分两处独立缺口——①语料资产 `css/support/swatch-yellow.png` 缺失（导入裁剪，`../support/` 全量扫描 6 缺失目标，仅补本案所需单一文件；black96x96 系 CSS2/backgrounds 共享 ref 翻转面大，专项挂账）；②shim contents 臂 `e16>s16` 折叠守卫丢 img-only 容器 (0,0) 记录（spec dom-range-selectNodeContents：childCount≥1 即非折叠）。063（match）✗2.08 = pre 纯 tab/空格行盒 0 高 → float 盒 0×0 整缺；探针矩阵（8 页 bisect）钉到 R57「全可折叠空白行塌 0 高」未区分 preserve 模式（tab 片段 text="" 宽度由 x 推进承载、保留空格 §9.2.1.1 preserved white space 须计高）。
+> - **实现**（3 文件 + 语料 1 资产）：swatch-yellow.png 补入（CSS2 副本 md5 936698f3；wpt-data 独立 repo 本地补丁模式，缺口记 update-wpt-data.sh 已知缺口注释防升级失忆）；part01.js contents 臂 `contentsForce`（空 text 有子节点出记录，真空容器仍丢，负臂入测）；break_lines.rs cull 加 preserve 检查（collapse 模式字节不变，R57 canvas-grid/R4034 nbsp 形态锚入测）。R5273 下一步 ①UA 默认图片 wash、②部分选区覆盖图片评估收口：**均挂账缓**（corpus 无案形 + 混合公式不可拟合 + 无规则路径字节不动），详见证据文件。
+> - **验证**：新锚 layout-engine r5274 3P + engine part91 1P；定向 reftest 041 ✗0.00→**✓2.08**、selection-image 001/002 维持、active-selection 族 12→13/15；全量 corpus A/B（/tmp/r5274_full.txt）**FIXED=1 REGRESSED=0 净 15707→15708**（行高片零回归）；引擎选区锚 r52xx 101P、layout-engine 全套 2141P；**make test 全量 89 套件 0 failed**；fmt 0 diff + clippy 两 crate 干净；product-smoke PASS（welcome 15.50% ≤20 门 + 全 struct-check + form-perf）。证据：[r5274](rendering-compat/evidence/r5274-selection-img-container-2026-10-25.md)。
+> - **碰头记录（规则 9/10）**：clippy 既有 2 项（part90/video_registry）+ zero-browser autocomplete 翻红维持归并行面；**layout-engine mb 基准双指标（block_layout_1000_elements 3.29/3.34/3.08ms 预算 2.94、incremental_layout）超预算为干净 HEAD 既有漂移**（stash A/B criterion 3.01ms 同超预算；bench 页 1000 空 div 无文本行改动不可达），不 relax 基线，挂账基线维护面。
+> - **下一步**：R5275 ① 063 剩余片——float 无宽 + 纯空白 pre 文本 shrink-to-fit 宽 0（混合文本 tab 计宽正确 → 纯空白文本节点在 float 首选宽链路被整跳过；候选 dom_inline_text_walk/IFC measure 趟，带 instrument 归因）② corpus-completeness 专项评估（black96x96 共享 ref 翻转面 A/B）③ UA 图片 wash / 部分选区跨 img 维持挂账 ④ 031 竖排 / ::selection 部分行域维持 ⑤ 跨流碰头维持。
+
 > **▶ R5273 实现轮（图片替换元素作者 ::selection 底 tint——selection-image-001 ✗0.00→✓0.05%，corpus FIXED=1 REGRESSED=0 净 +1 = 15707）**（2026-10-25）
 >
 > - **取证（chromium 151 活体真值）**：001 vs noref 差异**只在图片区域**（285px，文本高亮两侧逐字节对称）；blue15x15 纯不透明 RGB →「背景铺底在图片后面」不可见，chromium 对图片 ::selection 呈现是**内容覆写（tint）**——红/白/绿/灰四底探针定量 α=0.8（红案逐通道自洽 204=255·0.8/51=255·0.2；白/灰底中通道偏差为 chromium 色管理混合，非逐通道线性可拟合，保真边界记录）。noref 侧 chromium 亦有 UA 图片蓝暗化 (0,52,209)——UA 默认图片 wash 不入本轮切片（无规则路径字节不动），FIXME 挂账。

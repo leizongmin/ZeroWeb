@@ -199,10 +199,16 @@
       var eSel = ec.__zwSelector || (ec.parentNode && ec.parentNode.__zwSelector);
       if (!isNodeArm && (!sSel || sSel.charAt(0) === '@' || sSel !== eSel)) continue;
       var s16, e16;
+      // R5274：contents 臂容器含子节点时非折叠（spec dom-range-selectNodeContents：
+      // 边界 (parent,0)-(parent,childCount)，childCount≥1 即覆盖全部子节点）——即使
+      // textContent 为空（纯替换元素子节点，如 active-selection-041 的 img-only div）
+      // 也须出记录，paint 侧整 contents 判据 s==0&&e≥len 对 len=0 成立 → 图片 wash 生效。
+      var contentsForce = false;
       if (sc === ec && sc.nodeType === 1 && r._mode && r._mode.kind === 'contents') {
         var t = '';
         try { t = String(sc.textContent || ''); } catch (_eTs) {}
         s16 = 0; e16 = t.length;
+        try { contentsForce = !!(sc.childNodes && sc.childNodes.length); } catch (_eK) {}
       } else if (isNodeArm) {
         // R5271：selectNode(元素)（spec range-selectNode：选节点本身——绘制口径
         // ≡ 其内容文本 [0, textContent.length)）。system-color-hightlights-vs-
@@ -229,7 +235,7 @@
       } else {
         continue;
       }
-      if (e16 > s16) out.push({ selector: sSel, start: s16, end: e16 });
+      if (e16 > s16 || contentsForce) out.push({ selector: sSel, start: s16, end: e16 });
     }
     return out;
   };

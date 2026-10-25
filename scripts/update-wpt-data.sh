@@ -25,6 +25,8 @@
 #   - css/css-masking、css/css-shapes 未打包但**在 reftest-skip-list.txt**
 #     （SVG 渲染不在范围），无需补
 #   - css/reference/ref-nothing-below.xht 等个别 ref 文件缺失（影响少量 case）
+#   - css/support/swatch-yellow.png 缺失（active-selection-041 依赖；R5274 已本地补入
+#     CSS2/support 副本——升级新 ref 后需重新补）
 #   common/ 已由本脚本自动补齐。
 
 set -euo pipefail

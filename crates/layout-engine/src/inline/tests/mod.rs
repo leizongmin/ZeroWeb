@@ -17,6 +17,8 @@ mod r5229_word_separator_ws_tests;
 mod r5235_nested_atomic_walk_signal_tests;
 mod r5239_bidi_control_metering_probe;
 mod r5240_first_word_float_fit_probe;
+/// R5274 preserve 模式纯空白行盒计 line-height（CSS2 §9.2.1.1 preserved white space）。
+mod r5274_preserved_ws_line_height_tests;
 mod text_align;
 mod text_indent;
 mod vertical_bidi;
