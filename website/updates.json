@@ -1,5 +1,45 @@
 [
   {
+    "date": "2026-10-25",
+    "type": "weekly",
+    "title": {"en": "33 closed goals batch-archived, 15 more close this week; rendering failures down to 884", "zh": "33 个已收口 goal 批量归档，本周再收 15 个；渲染失败降到 884"},
+    "summary": {
+      "en": "Two batch waves on 10-20 moved 33 already-closed goals into archive/ (18 engineering goals, 15 WPT-domain goals); fifteen more goals reached terminal state this week. Eight WPT compat goals closed: html-syntax-compat archived at 61,228/61,333 (99.9%); workers-compat went from 169/371 to 693/714 (97.1%) within a day; svg-compat followed its 8.8% M1 baseline (134/1,527) with M4 closure a day later at 1,245/1,772 (70.3%); webgl-compat covered M1→M4 in two days and fixed its baseline at 2,112/2,115 (3 upstream IDL-mixin failures accepted); navigation-compat closed against the M3 criteria (473/584, 81.0%); encoding-compat (12,072/12,075), pointerlock-compat (22/22) and page-wasm (715/719) closed in the same window. Four engineering goals closed: media-runtime-isolation with all five done-criteria verified (media-process stays default-off), the incremental-rendering oracle (five DCs), background-resource-lifecycle, and compositor animation plus Worker Canvas. devtools and browser-delivery-loop were archived as terminated, clearing the goal root. On the media side, batch A of plan C landed: sample-level clock alignment moved the media clock rate from 1.45402 to 1.00000; narrowed cue-anchored seek cut the mid-GOP cold path from 302ms to 18ms; source residency gained a 256MB admission-eviction cap. Rendering cut full-corpus failures from 1,104 to 884 (R5272 accounting: 15,706/16,590, 94.67%): the collapse border model took 001e from 7.25% to 0.00%, ::selection highlight owner and UA-fallback models got several consecutive rounds, clip:text converged box2/3 from 11.71% to 0.00%, and the frame-driven rAF fix lifted 30-second frame counts from 2 to 1,575. On the browser, the split_important crash on CSS variable values ending with Chinese characters is fixed (#215), CDP eval round-trips dropped from 52ms to 5ms, and a zero://feedback page plus --profile/--version flags landed.",
+      "zh": "10-20 两波批量归档把 33 个已收口 goal 整树移入 archive/（18 个工程目标、15 个 WPT 分域 goal）；本周另有 15 个 goal 走到终态。八个 WPT 兼容 goal 收口：html-syntax-compat 以 61,228/61,333（99.9%）归档；workers-compat 一天内从 169/371 做到 693/714（97.1%）；svg-compat 从 M1 基线 8.8%（134/1,527）次日以 1,245/1,772（70.3%）收口；webgl-compat 两天走完 M1→M4，基线定格 2,112/2,115（3 例上游 IDL-mixin 失败接受入基线）；navigation-compat 按 M3 判据收口（473/584，81.0%）；encoding-compat 12,072/12,075、pointerlock-compat 22/22、page-wasm 715/719 同期归档。四个工程目标收口：media-runtime-isolation 五个完成判据全证、media-process 维持默认关；增量渲染对照 oracle 五 DC 收口；后台资源生命周期 DONE 收敛；合成动画与 Worker Canvas 收口。devtools 与 browser-delivery-loop 终止归档，清出根目录。媒体实现面，方案 C 的 A 批落地：时钟批内对齐把 media clock rate 从 1.45402 修到 1.00000；cue 锚定窄化 seek 把 mid-GOP 冷路径从 302ms 降到 18ms；源驻留加 256MB 准入驱逐。渲染全语料失败数从 1,104 降到 884（R5272 记账 15,706/16,590，94.67%）：collapse 边框模型把 001e 从 7.25% 收到 0.00%，::selection 高亮的 owner 与 UA 回落模型连修数轮，clip:text 把 box2/3 从 11.71% 收敛到 0.00%；帧驱动 rAF 饥饿修复把 30 秒帧数从 2 提到 1,575。浏览器面修掉 CSS 变量值尾含中文时的 split_important 崩溃（#215），CDP eval 往返从 52ms 降到 5ms，新增 zero://feedback 内部页和 --profile/--version 参数。"
+    },
+    "completed": {
+      "en": ["Two batch waves moved 18 completed goals and 15 closed WPT-domain goals into archive/ (10-20)", "html-syntax-compat closed and archived at 61,228/61,333 (99.9%)", "workers-compat closed within a day: 169/371 on 10-20 to 693/714 (97.1%) on 10-21, DC-1~4 all met", "svg-compat went from its 8.8% M1 baseline (134/1,527) to M4 closure a day later: 1,245/1,772 (70.3%)", "webgl-compat covered M1→M4 in two days and was signed off, baseline 2,112/2,115 (3 upstream IDL-mixin failures accepted)", "navigation-compat closed against the M3 criteria (473/584, 81.0%); encoding-compat 12,072/12,075, pointerlock-compat 22/22 and page-wasm 715/719 closed in the same window", "media-runtime-isolation closed with all five done-criteria verified (media-process stays default-off); incremental-rendering oracle (five DCs), background-resource-lifecycle and compositor animation + Worker Canvas closed the same week", "Media batch A landed: sample-level clock alignment moved the rate from 1.45402 to 1.00000; cue-anchored seek narrowing cut 302ms→18ms; source residency gained a 256MB admission-eviction cap", "Rendering failures fell 1,104→884 (15,706/16,590, 94.67% at R5272): collapse 001e 7.25%→0.00%, ::selection owner/UA-fallback fixed over consecutive rounds, clip:text box2/3 11.71%→0.00%; after the frame-driven rAF fix, 2→1,575 frames per 30s", "Browser: fixed the split_important crash on CSS variable values ending with Chinese characters (#215); CDP eval 52ms→5ms; new zero://feedback page, --profile and --version flags"],
+      "zh": ["两波批量归档：18 个已完成目标与 15 个已收口 WPT 分域 goal 整树迁入 archive/（10-20）", "html-syntax-compat 收口归档，终态 61,228/61,333（99.9%）", "workers-compat 一天完成收口：10-20 尚为 169/371，10-21 达 693/714（97.1%），DC-1~4 全满足", "svg-compat 从 M1 基线 8.8%（134/1,527）到 M4 收口仅隔一天：1,245/1,772（70.3%）", "webgl-compat 两天走完 M1→M4 并签收归档，基线 2,112/2,115（3 例上游 IDL-mixin 失败接受入基线）", "navigation-compat 按 M3 判据收口（473/584，81.0%）；encoding-compat 12,072/12,075、pointerlock-compat 22/22、page-wasm 715/719 同期收官", "media-runtime-isolation 收口归档：五个完成判据全证，media-process 维持默认关；增量渲染对照 oracle（五 DC）、后台资源生命周期、合成动画与 Worker Canvas 同周收口", "媒体 A 批落地：时钟批内对齐 rate 1.45402→1.00000；cue 锚定窄化 seek 302ms→18ms；源驻留 256MB 准入驱逐", "渲染失败 1,104→884（15,706/16,590，94.67%，R5272 记账）：collapse 001e 7.25%→0.00%、::selection owner/UA 回落连轮修复、clip:text box2/3 11.71%→0.00%；帧驱动 rAF 修复后 30 秒 2→1,575 帧", "浏览器：修复 CSS 变量值尾含中文的 split_important 崩溃（#215）；CDP eval 52ms→5ms；新增 zero://feedback 内部页、--profile 与 --version 参数"]
+    },
+    "inProgress": {
+      "en": "rendering-compat has 884 cases left against the 100% target; next up are the selection-image-001 image-selection paint path and the mechanism gaps in partial-line and vertical ::selection highlight. html-semantics-compat reached 63.48% after slice 14 cleared the meter cluster.",
+      "zh": "rendering-compat 距 100% 目标余 884 案，下一步在 selection-image-001 图片选区绘制路径与 ::selection 部分行/竖排高亮域的机制缺口；html-semantics-compat 切片 14 清零 meter 簇后到 63.48%。"
+    },
+    "sources": [
+      {"label": "整体归档 18 个已完成目标", "url": "https://github.com/leizongmin/ZeroWeb/commit/623a8d40b"},
+      {"label": "15 个已收口 WPT 分域 goal 批量归档", "url": "https://github.com/leizongmin/ZeroWeb/commit/e2f4f2bc2"},
+      {"label": "html-syntax-compat 收口归档（61,228/61,333）", "url": "https://github.com/leizongmin/ZeroWeb/commit/5a25668bd"},
+      {"label": "workers-compat M4 收口归档（693/714）", "url": "https://github.com/leizongmin/ZeroWeb/commit/88c884f2f"},
+      {"label": "svg-compat M4 收口归档（70.3%）", "url": "https://github.com/leizongmin/ZeroWeb/commit/fd61b3c67"},
+      {"label": "webgl-compat M4 收口定稿（基线 2112/2115）", "url": "https://github.com/leizongmin/ZeroWeb/commit/5d4428a69"},
+      {"label": "navigation-compat M3 收口归档（473/584）", "url": "https://github.com/leizongmin/ZeroWeb/commit/79bbeec7f"},
+      {"label": "pointerlock-compat 22/22 归档", "url": "https://github.com/leizongmin/ZeroWeb/commit/acd094ed9"},
+      {"label": "media-runtime-isolation 收口归档（五 DC，media-process 默认关）", "url": "https://github.com/leizongmin/ZeroWeb/commit/e5d5062a1"},
+      {"label": "合成动画与 Worker Canvas 收口 DONE", "url": "https://github.com/leizongmin/ZeroWeb/commit/99fb3677c"},
+      {"label": "增量渲染对照 oracle 五 DC 收口归档", "url": "https://github.com/leizongmin/ZeroWeb/commit/f62c377b4"},
+      {"label": "后台资源生命周期 DONE 归档", "url": "https://github.com/leizongmin/ZeroWeb/commit/c4f09f54e"},
+      {"label": "A1 时钟批内对齐 rate 1.45402→1.00000", "url": "https://github.com/leizongmin/ZeroWeb/commit/3f98c4332"},
+      {"label": "A4 cue 锚定窄化 seek 302ms→18ms", "url": "https://github.com/leizongmin/ZeroWeb/commit/7b9551455"},
+      {"label": "A3 源驻留 256MB 准入驱逐", "url": "https://github.com/leizongmin/ZeroWeb/commit/340fcde8b"},
+      {"label": "collapse 001e 满分收口（7.25%→0.00%）", "url": "https://github.com/leizongmin/ZeroWeb/commit/e7df69b2c"},
+      {"label": "帧驱动 rAF 饥饿修复（2→1575 帧/30s）", "url": "https://github.com/leizongmin/ZeroWeb/commit/d8772f537"},
+      {"label": "#215 split_important 中文尾值崩溃修复", "url": "https://github.com/leizongmin/ZeroWeb/commit/2411af9a9"},
+      {"label": "CDP eval RTT 52ms→5ms", "url": "https://github.com/leizongmin/ZeroWeb/commit/7586fd030"},
+      {"label": "html-semantics-compat 切片 14（63.48%）", "url": "https://github.com/leizongmin/ZeroWeb/commit/f1267556e"},
+      {"label": "Roadmap", "url": "https://github.com/leizongmin/ZeroWeb/blob/main/ROADMAP.md"}
+    ]
+  },
+  {
     "date": "2026-10-18",
     "type": "weekly",
     "title": {"en": "Crypto goal goes from baseline to closed in one day; rendering failures down to 1,104", "zh": "加密 goal 一天从基线走到收口；渲染失败降到 1,104"},
