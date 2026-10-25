@@ -2,9 +2,53 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 88 施工收口（classic-script dynamic import +6P bitwise：scripting-1 **139P/313F/34T→145P/308F/33T**——V8 原生 `set_host_import_module_dynamically_callback` 接 `__zw_compile_module` 同款三态契约（源码重写不可达的 classic 上下文 `import()`：eval/setTimeout 字符串、Function 构造器、内联事件处理器共享一刃），webview `compile_module_contract` 共享化 + 每脚本 referrer 供给；s87 credentials「同根」归因勘误——该族实为 iframe+cookie handler 门控（M3），classic 根落 propagate-nonce/string-compilation/inline-handler；失败族地图序：①dynamic-import must-reject + classic 面 ✅ → ②stylesheets-blocking-scripts 12F 簇 → ③the-script-element 基面 65F → ④module 尾片），下一步 s89 execution-timing stylesheets-blocking-scripts 12F 簇（s86 切片序②）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 89 施工收口（execution-timing stylesheets-blocking 12F 簇 +150-\* 2 行同根红利 bitwise：scripting-1 **145P/308F/33T→159P/295F/33T**——四根四刀：语料 fetch 扩展名表补 `*.css`、webview `load_html` 接 `set_active_external_css` 生产装填（此前恒空）、`resolve_external_css` @import 递归展开 + `strip_import_statements` 拼接前剥离（无分号 `@import` 文本残留经 css-syntax 吞块根因，css-parser 未动）、getComputedStyle `position` 初始值回落（css-position-3，107 面 write 重放 plain 元素）；失败族地图序：①dynamic-import must-reject + classic 面 ✅ → ②stylesheets-blocking-scripts 12F 簇 ✅ → ③the-script-element 基面 65F → ④module 尾片），下一步 s90 the-script-element 基面（s86 切片序③）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-26 M2 切片 88 施工收口，classic-script dynamic import 轮）**：
+> **▶ 当前状态（2026-10-26 M2 切片 89 施工收口，execution-timing stylesheets-blocking 轮）**：
+> **入场核账**：s88 基线（HEAD=4fdaf03e5）execution-timing 目录当拍
+> **48P/94F/8T**——s86 记「12F 单簇」细分为 106-\* ×10 + 107-\* ×2 的
+> 「scheduler: stylesheets blocking \*」目标行；其余 82F 编号套件预存红
+> （s88 基线同态非回归）。四根：①语料根——`fetch_dir_html` 扩展名表缺
+> `*.css`，css/background.css（`#test{position:fixed}`）与 css/import.css
+> （`@import url("background.css")` 无分号）从未入语料；②装填根——
+> `set_active_external_css` 生产恒空（唯一调用点是单测），getComputedStyle
+> 桥读空级联；③@import 根——进程内无递归展开，且无分号语句文本拼进合并
+> 级联后 css-syntax at-rule 消费遇裸 `{` 吞块，把**下一张表首条规则**吞掉
+> （106-import 实证：双表 fetch 序正确探针仍 `static`）；④107 根——隐式
+> write 走 `body.innerHTML=基线` 重放，原 `#test` 注册元素被 plain 产物
+> 替换（无 `__zwSelector`）→ position 不在 UA 默认表返 `''`。
+> **本轮一刀（四文件）**：webview `load_html` 同步发布外链样式表文本
+> `set_active_external_css`（css-less 传空串复位防跨文档泄漏）+
+> `resolve_external_css` @import 递归队列（对齐 R2411：相对导入表 URL、
+> css_seen 防环、FIFO 文档序）；css_urls 新增 `strip_import_statements`
+> （Tokenizer span 切除顶层 @import 语句，接线两处拼接点，css-parser
+> 未动回避跨流改写）；engine shim getComputedStyle `position` 初始值
+> `static` 回落（css-position-3，R5009 float 同形）；runner lib.sh 扩展
+> 名表补 `*.css`。FIXME：@import 臂不走 CSP/Mixed 门（async_load 既有
+> 同态）；级联顺序近似（子表追加在导入表文本后，逐位拼接归基建轮）。
+> **验证**：execution-timing 子树 **48P/94F/8T → 62P/80F/8T**，stash 基线
+> 逐行 diff 恰 **14 行 Fail→Pass**（106×10 + 107×2 + 150×2 同根红利）、
+> Pass→Fail 0 行、T 不变；the-script-element 全子树 **158P/295F/33T**
+> ——非目标 144 行 Pass 逐位不动（零误伤），F 差 1 为 TLA 截断点漂移
+> 报表方差；dynamic-import 金丝雀与 stash 基线 bitwise 同态（对 s87
+> 账面漂移为环境方差不记本刀）。单测 webview **799/799**（含探针三钉
+> + css_urls 4 钉）、engine **3523/3523**；fmt + clippy 三 crate clean；
+> reftest **716/716**（清缓存全量重编）。域账自此按 **159P/295F/33T** 记
+> （raw 158P + v8-code-cache +1 惯例，F −13 与 P +14 之差同截断方差）。
+> 账本见 [evidence/2026-10-26-m2s89-execution-timing-stylesheets.md](html-semantics-compat/evidence/2026-10-26-m2s89-execution-timing-stylesheets.md)。
+> **范围**：生产面 webview ×3 / engine shim / runner lib.sh 五文件；
+> script-sandbox/layout/css-parser 零改动；语料不可改维持（css 两文件
+> 已按 pin 补拉本地，gitignore 数据命令留档）。挂账：编号套件 82F
+> （trickle pipe/多文档时序）、webview 第 2 跑单失败未复现 flake。
+> **卡点（非本流）**：`make test` 预存红维持 s86 记录——quickjs
+> zero-renderer `mutation_arm_…reset_window`（归 perf/renderer 流未解）。
+> **下一步**：s90 the-script-element 基面（s86 切片序③——string-compilation
+> 余 4 臂挂 runner 计时器/Function Proxy/事件派发建模、nonce CSP、
+> base URL、delay-load trickle、credentials M3；明细见 s88 账本 §4）。
+> **切片间隙**：本轮 webview/engine/runner 面；下一挂账同流多面
+> （shim/runner/CSP），间隙开放。
+
+> **▶ 上轮状态（2026-10-26 M2 切片 88 施工收口，classic-script dynamic import 轮——其下一步 stylesheets-blocking 12F 簇已由 s89 收口，见上）**：
 > **入场核账**：s87 遗留 classic 根 `Error: Not supported` 面当拍
 >（HEAD=a2b8e71e8 全子树基线复扫 138P/313F/34T，域账面 −1P 为
 > v8-code-cache 未上报同缺）细分：propagate-nonce-{inline,external}-

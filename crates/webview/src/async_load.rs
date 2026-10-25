@@ -702,8 +702,6 @@ impl AsyncPageLoad {
                     Ok(css) => {
                         // https://drafts.csswg.org/css-values-4/#relative-urls
                         let css = crate::css_urls::absolutize_css_urls(&css, url);
-                        self.css.push_str(&css);
-                        self.css.push('\n');
                         self.link_element_events.push((url.clone(), "load"));
                         for imp in extract_import_urls(&css) {
                             if imp.starts_with("data:") {
@@ -715,6 +713,13 @@ impl AsyncPageLoad {
                             };
                             import_urls.push(abs);
                         }
+                        // s89：@import 语句剥离后再入合并级联——子表内容经上方
+                        // import_urls 单独抓取追加，语句文本残留会在无分号形态把
+                        // 后续拼接表的首条规则吞进 at-rule 块（与
+                        // resolve_external_css 同刀）。
+                        let css = crate::css_urls::strip_import_statements(&css);
+                        self.css.push_str(&css);
+                        self.css.push('\n');
                     }
                     Err(e) => {
                         tracing::warn!("stylesheet {url} fetch failed: {e}");

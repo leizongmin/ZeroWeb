@@ -7430,6 +7430,19 @@
               } catch (_eD1) {}
               return _zwUaDisplay(elt);
             }
+            // s89（execution-timing 107-*）：position 计算值初始 'static'
+            //（css-position-3 https://drafts.csswg.org/css-position/#position-property
+            // initial value）——host miss 的 plain 元素（innerHTML/document.write 重放
+            // 产物无 __zwSelector）真值即初始值，同 R5009 float 初始值回落形状。
+            if (kp === 'position') {
+              var hvP = query(kp);
+              if (hvP !== '') return hvP;
+              try {
+                var ivP = elt && elt.style && elt.style.position;
+                if (ivP) return String(ivP);
+              } catch (_eP1) {}
+              return 'static';
+            }
             return query(kp);
           };
         }
@@ -7455,7 +7468,12 @@
         // 期望 'none'；host 真值非空时不变）。
         // css-variables-1：`--` 起始 camelCase 属性访问同 getPropertyValue 免归一（R5114）。
         var _csV = query(p.slice(0, 2) === '--' ? p : _camelToKebab(p));
-        if (_csV === '' && (p === 'cssFloat' || p === 'float')) return 'none';
+        if (_csV === '') {
+          // R5009 float / s89 position：初始值回落（css-position-3 position initial
+          // value 'static'——host miss 的 plain 元素真值即初始值）。
+          if (p === 'cssFloat' || p === 'float') return 'none';
+          if (p === 'position') return 'static';
+        }
         return _csV;
       }
     });

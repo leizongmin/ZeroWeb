@@ -1100,6 +1100,11 @@ impl WebView {
         self.cached_html = html.to_string();
         let css_str = css.unwrap_or("");
         self.cached_css = css_str.to_string();
+        // s89（execution-timing 106-*）：getComputedStyle 级联与布局级联同源——管线
+        // 拿到的外链样式表文本同步发布给 computed-style 桥（P9-9 `active_external_css`
+        // 装填点此前只有单测调用，生产恒空 → 外链规则对 `__zw_get_computed_style`
+        // 不可见）。css-less 页传空串复位（旧页规则不跨文档泄漏）。
+        zero_engine::js_dom_bridge::set_active_external_css(css_str);
         self.sync_pipeline_page_state();
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
         self.pipeline.set_media_type(self.media_type);
@@ -1329,26 +1334,38 @@ impl WebView {
         }
         let base = url::Url::parse(base_url).ok();
         let mut combined = String::new();
+        // s89：@import 递归抓取（对齐 async_load `poll_stylesheets` R2411 语义——相对
+        // **导入表 URL** 解析、`css_seen` 防环；FIFO 保级联文档序）。此前进程内路径只抓
+        // 顶层 link，@import 链规则缺失（WPT execution-timing 106-import 面
+        // import.css→background.css 规则不入级联）。FIXME：@import 臂不走 CSP/Mixed
+        // Content 门（async_load 既有同态；violation 元素站对导入规则无 link 序号可锚）。
+        let mut css_seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut queue: std::collections::VecDeque<(Option<usize>, String)> = std::collections::VecDeque::new();
         for (link_ordinal, href) in hrefs.iter().enumerate() {
             let abs = match base.as_ref().and_then(|b| b.join(href).ok()) {
                 Some(u) => u.to_string(),
                 None => href.clone(),
             };
+            if css_seen.insert(abs.clone()) {
+                queue.push_back((Some(link_ordinal), abs));
+            }
+        }
+        while let Some((link_ordinal, fetch_url)) = queue.pop_front() {
             // security-hardening M2-s3：外链 stylesheet CSP 检查点（style-src-elem 源
             // 匹配）——被阻止 href 不 fetch/不并入 combined；violation 入队（元素站
             // target = link 元素）+ link error 事件（abs href）随 run 尾统一派发。
             if self.config.csp_enforcement
                 && self.security_context.has_document_csp()
-                && let Some(violation) = self.security_context.check_style(None, None, Some(&abs))
+                && let Some(violation) = self.security_context.check_style(None, None, Some(&fetch_url))
             {
                 self.pending_csp_style_violations.push(PendingCspStyleViolation {
                     effective_directive: violation.effective_directive,
                     blocked_uri: violation.blocked_uri,
                     original_policy: violation.original_policy,
                     target_tag: "link",
-                    target_ordinal: link_ordinal,
+                    target_ordinal: link_ordinal.unwrap_or(0),
                     target_selector: None,
-                    link_error: Some(abs.clone()),
+                    link_error: Some(fetch_url.clone()),
                 });
                 continue;
             }
@@ -1357,16 +1374,16 @@ impl WebView {
             // 抓取/解析均以 fetch URL 为基准（升级后 url() 相对引用按升级 URL 解析）。
             // spec https://w3c.github.io/webappsec-mixed-content/#should-block-fetch。
             let fetch_url = if self.config.mixed_content_enforcement {
-                match self.security_context.check_resource_url(&abs, "style") {
-                    ResourceCheckResult::Allow => abs.clone(),
+                match self.security_context.check_resource_url(&fetch_url, "style") {
+                    ResourceCheckResult::Allow => fetch_url,
                     ResourceCheckResult::Upgraded(upgraded) => upgraded,
                     ResourceCheckResult::Blocked(reason) => {
-                        tracing::warn!("mixed content blocked stylesheet {abs}: {reason}");
+                        tracing::warn!("mixed content blocked stylesheet {fetch_url}: {reason}");
                         continue;
                     }
                 }
             } else {
-                abs.clone()
+                fetch_url
             };
             // R34xx：headless/testharness 路径外链样式表经 image_source_fetcher 本地提供
             //（wpt-data 文件映射，与图片子资源同款；None → 回退 HTTP 网络）。
@@ -1397,10 +1414,30 @@ impl WebView {
                     // （driving: 2d.text.variationSelectors 的 variation-sequences.css
                     // `url(../../resources/vs/...)` 字体引用）。data:/绝对/占位符不动。
                     let css = crate::css_urls::absolutize_css_urls(&css, &fetch_url);
+                    // R2411：@import 引用先入队（相对本样式表 URL 解析；css_seen 命中
+                    // 即跳过——循环 @import A→B→A 因 seen 止）。
+                    for imp in zero_engine::extract_import_urls(&css) {
+                        if imp.starts_with("data:") {
+                            continue;
+                        }
+                        let abs = match url::Url::parse(&fetch_url).ok().and_then(|b| b.join(&imp).ok()) {
+                            Some(u) => u.to_string(),
+                            None => imp,
+                        };
+                        if css_seen.insert(abs.clone()) {
+                            queue.push_back((None, abs));
+                        }
+                    }
+                    // s89：拼接前剥离 @import 语句——子表内容已经队列单独抓取，
+                    // 语句文本留在合并文本里会在无分号形态（上游 import.css 即无
+                    // `;`）把下一张表的首条规则吞进 at-rule 块（106-import 面：
+                    // `#test{position:fixed}` 恒缺级联）。级联顺序近似：导入子表
+                    // 追加在导入表文本之后（async_load poll_stylesheets 既有同态）。
+                    let css = crate::css_urls::strip_import_statements(&css);
                     combined.push_str(&css);
                     combined.push('\n');
                 }
-                Err(e) => tracing::warn!("external stylesheet {abs} fetch failed: {e}"),
+                Err(e) => tracing::warn!("external stylesheet {fetch_url} fetch failed: {e}"),
             }
         }
         combined
