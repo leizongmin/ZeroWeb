@@ -126,6 +126,11 @@ impl FontLoader {
         self.bitmap_glyphs.remove(&(font_id, glyph_id, size_px.to_bits()));
     }
 
+    /// T13 S7：当前 shaping 缓存条目数（导航换页内存探针读取）。
+    pub fn shape_cache_len(&self) -> usize {
+        self.shape_cache.lock().expect("shape cache poisoned").len()
+    }
+
     /// 设置回退字体链（按优先级排序）
     pub fn set_fallback_chain(&mut self, ids: Vec<u32>) {
         self.fallback_chain = ids;

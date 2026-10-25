@@ -419,6 +419,12 @@ pub trait Sandbox {
     }
     /// 重置上下文（清空 JS 状态）。
     fn reset_context(&mut self);
+    /// T13 S7 探针：JS heap 在用量（字节；`ZEROWEB_MEM_PROBE=1` reset 臂打点）。
+    ///
+    /// **默认 no-op**：QuickJS 后端不支持 heap 统计读取，返 `None`（观测腿不进判据）。
+    fn heap_used_bytes(&mut self) -> Option<usize> {
+        None
+    }
     /// 返回沙箱配置的引用。
     fn config(&self) -> &SandboxConfig;
     /// P1b S2 原生绑定安装 escape-hatch（RFC `p1b-v8-native-bindings-rfc.md` §6 S2）。

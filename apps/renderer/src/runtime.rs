@@ -3184,6 +3184,8 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             .as_mut()
             .expect("webview")
             .prepare_document_state(&page_url);
+        // T13 S2/S4/S6/S7：导航落定增量回收（worker 侧对称臂在 js_worker Reset 尾）。
+        self.reclaim_after_document_reset();
 
         // R3055：POST 导航——同步 fetch POST body → from_html。POST fetch 失败（stub_network / 网络/HTTP
         // 错误）→ 不命中此分支，回落下方 GET `start`（保 load 状态机一致，复用既有 load-failure 处理）。
@@ -3209,6 +3211,49 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             emit_load_complete: true,
             dcl_sent: false,
         })
+    }
+
+    /// T13：导航落定增量回收收口（设计卡 §3 推荐方案 A——只回收已 free 内存与
+    /// cache-by-design 条目，零语义面；触发点 = `navigate_with` 的
+    /// prepare_document_state 之后）。
+    ///
+    /// S4 主线程 thread_local 槽清空（worker 槽在 js_worker Reset 臂尾对称清）+
+    /// S6 共享 HTTP 缓存预算收缩（disk 层兜底不动）+ S2 主侧 `malloc_trim`
+    /// （`ZEROWEB_NAV_TRIM=0` 关）+ S7 探针打点（`ZEROWEB_MEM_PROBE=1`，观测腿）。
+    fn reclaim_after_document_reset(&mut self) {
+        // S4：主线程槽清空（单槽 cache 语义不变，下次查询重建）。
+        zero_engine::clear_rect_doc_cache();
+        zero_engine::js_dom_bridge::clear_view_doc_cache();
+        // S6：共享 default HTTP 缓存收缩至导航预算（poisoned 锁内数据仍有效，照常收缩）。
+        let evicted = zero_net::shared_http_cache()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .shrink_to_bytes(zero_net::http_cache::HTTP_CACHE_NAV_SHRINK_BYTES);
+        tracing::info!(target: "mem_reclaim", evicted = evicted as u64, "http_shrink");
+        // S2：主侧 trim——worker 臂尾已有一次；两落定点分别兜住 JS 与 DOM/cache
+        // 释放窗（process-wide，各自归还当时已 free 的 arena 页）。
+        if crate::mem_reclaim::nav_trim_enabled() {
+            crate::mem_reclaim::malloc_trim_now("nav_trim");
+        }
+        // S7：填充量探针（svg 重栅格条目/shape 缓存条目/canvas 上下文/HTTP 字节/PSS）。
+        if crate::mem_reclaim::mem_probe_enabled() {
+            let (svg_len, canvas_len) = self.webview.as_ref().map_or((0, 0), |wv| wv.mem_probe_cache_lens());
+            let shape_len = self.font_loader.shape_cache_len();
+            let http_bytes = zero_net::shared_http_cache()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .total_bytes();
+            let pss_kb = crate::mem_reclaim::read_process_pss_kb().unwrap_or(0);
+            tracing::info!(
+                target: "mem_probe",
+                pss_kb,
+                svg_len,
+                shape_len,
+                canvas_len,
+                http_bytes,
+                "nav settle probe"
+            );
+        }
     }
 
     fn handle_load_html(&mut self, params: LoadHtmlParams) -> Result<(), String> {

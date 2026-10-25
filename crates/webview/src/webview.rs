@@ -568,6 +568,14 @@ pub struct WebView {
     fetch_handler: Option<zero_engine::fetch_bridge::FetchHandler>,
     /// 当前 URL。
     current_url: Option<String>,
+    /// T13 S5：上次 CanvasRegistry 代际清理时的文档 URL（代际门锚）。
+    ///
+    /// `prepare_document_state` 每次进入都递增 document_generation/navigation_epoch
+    /// ——代际数无法判别 same-navigation 误判重入（lazy 尾图 is_loading()==false 窗，
+    /// 见该方法内注释），门取「上次清理 URL 恒等」：同 URL 重入落在活文档上不清，
+    /// 旧文档条目延至下一异址导航回收（新文档 getContext 取新 id，旧条目不可达，
+    /// 仅延迟回收、无语义面）。
+    canvas_cleared_url: Option<String>,
     /// 当前导航 epoch（user-action node identity scope）。
     navigation_epoch: u64,
     /// 当前 live Document generation。
@@ -793,6 +801,7 @@ impl WebView {
             image_source_fetcher,
             fetch_handler,
             current_url: None,
+            canvas_cleared_url: None,
             navigation_epoch: 0,
             document_generation: 0,
             focus_owner: None,
@@ -1630,6 +1639,19 @@ impl WebView {
         std::sync::Arc::clone(&self.canvas_registry)
     }
 
+    /// T13 S7 探针：缓存填充量观测（`ZEROWEB_MEM_PROBE=1` 导航落定打点）——
+    /// SVG 重栅格缓存条目数 + canvas 上下文数。
+    pub fn mem_probe_cache_lens(&self) -> (usize, usize) {
+        let svg_len = self.image_cache.svg_rasterized_len();
+        let canvas_len = self
+            .canvas_registry
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contexts
+            .len();
+        (svg_len, canvas_len)
+    }
+
     /// media-audio M3 切片 2：Web Audio 注册表共享句柄（宿主桥回调注册 /
     /// 音频泵 advance 消费）。
     pub fn webaudio(&self) -> std::sync::Arc<std::sync::Mutex<crate::webaudio_registry::WebAudioRegistry>> {
@@ -2009,6 +2031,17 @@ impl WebView {
         // 源字节）——旧页媒体不跨文档泄漏（注册表 Arc 共享给宿主桥/帧泵，就地清空）。
         if let Ok(mut reg) = self.video_players.lock() {
             reg.clear();
+        }
+        // T13 S5：CanvasRegistry 代际门清理（真跨文档才清；门锚见 `canvas_cleared_url`
+        // 字段文档）。活 canvas 像素 buffer 是页面可寻址状态，误清即丢；同 URL 重入
+        // （same_navigation 误判窗/同址 reload）跳过，旧文档上下文延至下一异址导航
+        // 回收。命中事件 token `canvas_gen_clear`（A/B 命中语义计数面）。
+        if self.canvas_cleared_url.as_deref() != Some(page_url) {
+            if let Ok(mut reg) = self.canvas_registry.lock() {
+                reg.clear_for_new_document();
+            }
+            self.canvas_cleared_url = Some(page_url.to_string());
+            tracing::info!(target: "mem_reclaim", "canvas_gen_clear");
         }
         self.current_url = Some(page_url.to_string());
         self.set_page_url_wire(page_url);
@@ -7089,6 +7122,48 @@ mod tests {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .extend(fwd.iter().map(|(h, s)| (h.to_string(), s.to_string())));
+    }
+
+    // T13 S5：CanvasRegistry 换代清走 URL 同一性门——真异址导航清空注册表
+    //（`canvas_gen_clear`）；同 URL 重入（same_navigation 误判窗/同址 reload）
+    // 跳过不清（活 canvas 像素是页面可寻址状态，误清即丢；旧文档上下文延至
+    // 下一异址导航回收，见 `canvas_cleared_url` 字段文档）。探针读取面
+    // `mem_probe_cache_lens` 同步反映注册表长度。
+    #[test]
+    fn prepare_document_state_clears_canvas_registry_cross_url_only_t13() {
+        let mut wv = wv();
+        let seed_ctx = |wv: &WebView| {
+            let mut reg = wv.canvas_registry.lock().unwrap_or_else(|e| e.into_inner());
+            zero_engine::canvas_context_op(
+                &mut reg,
+                "0",
+                "getContext2d",
+                &["8".to_string(), "8".to_string(), String::new(), String::new()],
+            );
+        };
+        seed_ctx(&wv);
+        assert_eq!(wv.mem_probe_cache_lens(), (0, 1), "前置：canvas 上下文就位");
+
+        // 首次异址导航：清空注册表。
+        wv.prepare_document_state("http://t13.test/doc1");
+        assert_eq!(
+            wv.mem_probe_cache_lens().1,
+            0,
+            "异址导航清 canvas 上下文（旧文档死句柄不得跨文档存活）"
+        );
+
+        // 同 URL 重入（same_navigation 误判窗）：注册表不清。
+        seed_ctx(&wv);
+        wv.prepare_document_state("http://t13.test/doc1");
+        assert_eq!(
+            wv.mem_probe_cache_lens().1,
+            1,
+            "同 URL 重入跳过清理（误判窗不清活文档 canvas）"
+        );
+
+        // 再次异址导航：重新清理。
+        wv.prepare_document_state("http://t13.test/doc2");
+        assert_eq!(wv.mem_probe_cache_lens().1, 0, "异址导航再次清 canvas 上下文");
     }
 
     // Remove 臂（非同批）：stale 绑定照删（同位重建残影通道关闭的本体语义）；

@@ -2094,8 +2094,14 @@ fn js_worker_main(
                 // https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate
                 // A cross-document navigation creates a new global object. Keeping the
                 // renderer worker is an implementation detail, not page-visible state.
+                // T13 S3 顺序调整：竞态窗清队提前到 reset_context 之前——S3 起复位尾带
+                // `low_memory_notification`（全堆 GC，毫秒级），清队若排其后会迟滞同等
+                // 时长（t8 d1 时序余量即被打穿）。两位置间无任何 mutation 推入源（旧页
+                // 脚本已结束、shim 未重装、GC 不跑页面回调），清队语义不变、污染窗只缩不增。
+                if let Ok(mut pending) = mutations.lock() {
+                    pending.clear();
+                }
                 sandbox.reset_context();
-                // R-t2qq 二轮返修 D2：adopted 槽清空挂**真跨文档代际切换**（本臂）。
                 // WHATWG HTML navigate：cross-document navigation creates a new global
                 // object——新文档在页面 JS 设置前无 adopted 表，槽须清空；shim 闭包列表
                 // 随 context 销毁重建自然失效（下方重新 eval shim 后 `_zwDocAdoptedSheets`
@@ -2113,11 +2119,8 @@ fn js_worker_main(
                 // 已先清一次队列，但 worker 串行处理下，旧页脚本/timer 回调
                 // （ResolveAsyncCallback 的 microtask checkpoint）可能在其之后、本 arm 之前
                 // 继续写入；本 arm 执行时旧页执行已全部结束，此处再清一次，确保跨导航残留
-                // mutation 不被新文档的 tick/drain apply（跨文档污染）。
-                // https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate
-                if let Ok(mut pending) = mutations.lock() {
-                    pending.clear();
-                }
+                // mutation 不被新文档的 tick/drain apply（跨文档污染）。（T13 S3：清队执行
+                // 点已上移至 reset_context 之前，见该处注释。）
                 // DC-2/M3：跨导航清 rAF 兴趣——旧文档挂起回调随 global object 销毁
                 // （同上方 mutations 清队语义）；不清则计数残留使泵对新文档空转 tick。
                 raf_interest.store(0, Ordering::Relaxed);
@@ -2145,6 +2148,24 @@ fn js_worker_main(
                 // t2-pb1 fix#19：context 重建即重置宿主动态脚本旗标（见 bootstrap 处注释）。
                 let _ = sandbox.execute("globalThis.__zwHostDynamicScripts = true;");
                 async_callbacks_ready.store(false, Ordering::Release);
+                // T13 S4：worker 线程 thread_local 槽清空——rect gBCR Document 缓存与
+                // 查询视图文档缓存都活在执行 JS 的本线程，条目持上一文档整棵 DOM
+                //（主线程槽在 runtime 导航落定收口对称清空）。
+                zero_engine::clear_rect_doc_cache();
+                zero_engine::js_dom_bridge::clear_view_doc_cache();
+                // T13 S3/S7 探针：复位后 V8 已用堆打点（low_memory_notification 已在
+                // reset_context 内触发；观测腿 `ZEROWEB_MEM_PROBE=1`，不进判据样本）。
+                if crate::mem_reclaim::mem_probe_enabled()
+                    && let Some(heap_bytes) = sandbox.heap_used_bytes()
+                {
+                    tracing::info!(target: "mem_probe", v8_heap_bytes = heap_bytes as u64, "worker reset probe");
+                }
+                // T13 S2：Reset 臂尾归还分配器 free 页——旧 Context/DOM free 后滞留
+                // glibc arena（C1→C2 增长主嫌疑，设计卡 §1-#3）；本点收 JS 释放窗，
+                // 主侧落定点收 DOM/cache 释放窗。`ZEROWEB_NAV_TRIM=0` 关。
+                if crate::mem_reclaim::nav_trim_enabled() {
+                    crate::mem_reclaim::malloc_trim_now("worker_trim");
+                }
                 let _ = reply.send(());
             }
             JsWorkerCommand::DispatchIndexedDbConnectionEvent {

@@ -199,6 +199,16 @@ thread_local! {
     static RECT_DOC_CACHE: RefCell<Option<(String, zero_dom::Document)>> = const { RefCell::new(None) };
 }
 
+/// T13 S4：清空当前线程的 gBCR Document 缓存槽（文档代际复位收口调用）。
+///
+/// 槽内 `Document` 属上一文档代际，滞留至同线程下次同 html 键查询前；导航复位时
+/// 显式置空提前释放（单槽 cache 语义不变，下次查询重建）。
+pub fn clear_rect_doc_cache() {
+    RECT_DOC_CACHE.with(|slot| {
+        *slot.borrow_mut() = None;
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

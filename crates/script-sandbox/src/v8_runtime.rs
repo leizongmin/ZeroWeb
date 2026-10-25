@@ -827,9 +827,37 @@ unsafe fn resolve_context<'s>(
 impl V8Sandbox {
     /// 重置缓存的 V8 Context。
     ///
-    /// 下次 execute 时会创建新的 Context。仅在 `persistent_context` 模式下有意义。
+    /// 下次 execute 会创建新的 Context。仅在 `persistent_context` 模式下有意义。
+    ///
+    /// T13 S3：复位尾对 isolate 发 `low_memory_notification`——`cached_context = None`
+    /// 只 drop Context 引用，旧 Context 成 isolate 内垃圾，而持久 isolate 永不销毁、
+    /// 复位处此前无任何 GC 触发点，垃圾滞留 V8 堆 + glibc arena（C1→C2 增长主嫌疑，
+    /// 设计卡 §1-#3）。宿主 GC hint 无需 `--expose-gc` 全局 flag（同
+    /// [`crate::dom_bindings`] weak-handle 先例），只对已 drop 的旧 Context 垃圾生效，
+    /// 新文档语义零接触。
     pub fn reset_context(&mut self) {
         self.cached_context = None;
+        let Some(isolate) = self.isolate.as_mut() else {
+            return;
+        };
+        // SAFETY: 与 execute 一致——OwnedIsolate 创建时已 enter，此处配对
+        // IsolateEnterGuard 维持栈式 enter/exit 纪律。
+        unsafe {
+            isolate.enter();
+        }
+        let _enter_guard = IsolateEnterGuard { isolate };
+        isolate.low_memory_notification();
+    }
+
+    /// T13 S7 探针：isolate 已用堆字节（`ZEROWEB_MEM_PROBE=1` 观测腿，不进判据样本）。
+    pub fn heap_used_bytes(&mut self) -> Option<usize> {
+        let isolate = self.isolate.as_mut()?;
+        // SAFETY: 同 reset_context——栈式 enter/exit 配对。
+        unsafe {
+            isolate.enter();
+        }
+        let _enter_guard = IsolateEnterGuard { isolate };
+        Some(isolate.get_heap_statistics().used_heap_size())
     }
 
     /// P1b S2 escape-hatch：进入持久 V8 Context，在 raw scope + context 内执行 `f`。
@@ -1000,6 +1028,9 @@ impl crate::Sandbox for V8Sandbox {
     fn reset_context(&mut self) {
         V8Sandbox::reset_context(self)
     }
+    fn heap_used_bytes(&mut self) -> Option<usize> {
+        V8Sandbox::heap_used_bytes(self)
+    }
     /// R-baidu2/P3 slice-2：取走未捕获异常报告（message listener + promise-reject
     /// 回调经 isolate slot 收集）。
     fn take_uncaught_reports(&mut self) -> Vec<(String, u32, u32)> {
@@ -1040,6 +1071,31 @@ mod tests {
     use super::*;
 
     // ── 创建与初始化 ──
+
+    /// T13 S3：reset_context 尾 `low_memory_notification` 后 context 重建语义不破——
+    /// 持久 isolate 下旧全局随 Context 丢弃，新 execute 拿到全新全局对象（导航复位
+    /// 语义），通知调用不悬 isolate、不污染后续执行。
+    #[test]
+    fn t13_reset_context_low_memory_notification_keeps_fresh_global() {
+        let mut sandbox = V8Sandbox::with_config(crate::SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        })
+        .unwrap();
+        sandbox
+            .execute("globalThis.__doc = 'old'; 1")
+            .expect("first document execute");
+        sandbox.reset_context();
+        let r = sandbox
+            .execute("typeof globalThis.__doc")
+            .expect("execute after reset must recreate context");
+        assert_eq!(r.value, "undefined", "旧全局随 Context 丢弃: {:?}", r.value);
+        // 复位后再次写入 + 读回（新 Context 可用性）。
+        let r = sandbox
+            .execute("globalThis.__doc = 'new'; globalThis.__doc")
+            .expect("write after reset");
+        assert_eq!(r.value, "new", "新全局可写: {:?}", r.value);
+    }
 
     #[test]
     fn test_unhandled_promise_rejection_collected() {
