@@ -4891,12 +4891,15 @@ fn wpt_data_script_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::S
         }
         // workers-compat M2：script MIME 判定（classic worker(-imported) script 的
         // fetch 步骤——非 JavaScript MIME 按网络错误失败；Worker_script_mimetype/
-        // importscripts_mime 案面）。派生序（wptserve 语义）：① `<file>.headers`
-        // sidecar Content-Type 覆盖（无扩展名脚本 `1`/`null`/`undefined`、nosniff
-        // 面）；② `workers/support/imported_script.py?mime=` 动态 handler（wptserve
-        // 返空体——成功源以 "\n" 交付，__zw_fetch_script 以空串承载 Err 不可区分，
-        // 空脚本与 "\n" 执行语义恒等）；③ 扩展名 .js/.mjs scripty，其余（含无扩展
-        // 名）非 scripty。
+        // importscripts_mime 案面）。派生序（wptserve 语义）：① wptserve
+        // `?pipe=header(Content-Type,X)` 响应头模板（s87——dynamic-import
+        // fetch-error 用例经 specifier 直带；errorhandling-wrongMimetype.js `text/plain`
+        // 面：文件本体合法 JS，无此建模按 .js 扩展名误判 scripty → import() 须拒未拒）；
+        // ② `<file>.headers` sidecar Content-Type 覆盖（无扩展名脚本 `1`/`null`/
+        // `undefined`、nosniff 面）；③ `workers/support/imported_script.py?mime=` 动态
+        // handler（wptserve 返空体——成功源以 "\n" 交付，__zw_fetch_script 以空串承载
+        // Err 不可区分，空脚本与 "\n" 执行语义恒等）；④ 扩展名 .js/.mjs scripty，
+        // 其余（含无扩展名）非 scripty。其余 pipe 指令（trickle 等）不涉 MIME 照旧忽略。
         // https://html.spec.whatwg.org/multipage/workers.html#dom-workerglobalscope-importscripts
         fn mime_is_scripty(mime: &str) -> bool {
             let essence = mime.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
@@ -4905,6 +4908,18 @@ fn wpt_data_script_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::S
                 "text/javascript" | "application/javascript" | "text/ecmascript" | "application/ecmascript"
             )
         }
+        let mime_from_pipe = src.split('?').nth(1).and_then(|query| {
+            query
+                .split('&')
+                .find_map(|kv| kv.strip_prefix("pipe="))
+                .and_then(|pipe| {
+                    let inner = pipe.strip_prefix("header(")?.strip_suffix(')')?;
+                    let (name, value) = inner.split_once(',')?;
+                    name.trim()
+                        .eq_ignore_ascii_case("content-type")
+                        .then(|| value.trim().to_string())
+                })
+        });
         let mime_from_sidecar = std::fs::read_to_string(root.join(format!("{clean}.headers")))
             .ok()
             .and_then(|headers| {
@@ -4917,7 +4932,9 @@ fn wpt_data_script_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::S
                     }
                 })
             });
-        let scripty = if let Some(mime) = mime_from_sidecar {
+        let scripty = if let Some(mime) = mime_from_pipe {
+            mime_is_scripty(&mime)
+        } else if let Some(mime) = mime_from_sidecar {
             mime_is_scripty(&mime)
         } else if clean == "workers/support/imported_script.py" {
             // wptserve 动态 handler 语义：按 `?mime=` 查询回 Content-Type + 空体——

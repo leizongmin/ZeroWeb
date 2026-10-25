@@ -185,7 +185,7 @@ impl std::fmt::Debug for EsModuleSandbox {
 /// 重建全局对象（缓存随之消失，无须本脚本）；tab worker 路径（`tab_scripts::script_phase_begin`）
 /// 与 webview 进程内路径（`run_page_scripts_impl`，无 reset_context）持持久 context，
 /// 必须显式执行本脚本——不复位则同 URL 模块在新文档零次求值（D1 回归）。
-pub const MODULE_CACHE_RESET_SCRIPT: &str = "globalThis.__moduleCache = {};\n";
+pub const MODULE_CACHE_RESET_SCRIPT: &str = "globalThis.__moduleCache = {};\nglobalThis.__moduleFailures = {};\n";
 
 /// 把依赖 IIFE 包成 `__moduleCache` 记忆化赋值表达式——模块体求值恰好一次（HTML module
 /// map 命中即复用，https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script）。
@@ -206,7 +206,7 @@ pub fn compile_module_script(source: &str, url: &str, registry: &ModuleRegistry)
     let body = build_module_script(source, url, registry, uses_await, &mut HashSet::new())?;
     // R5182：首行初始化文档级模块缓存（幂等）——独立调用路径（EsModuleSandbox、SW 编译）
     // 不经过 prelude 也能安全使用记忆化发射点。
-    let init = "globalThis.__moduleCache = globalThis.__moduleCache || {};\n";
+    let init = "globalThis.__moduleCache = globalThis.__moduleCache || {};\nglobalThis.__moduleFailures = globalThis.__moduleFailures || {};\n";
     if source.contains("import(") || uses_await {
         // FIXME(R5182)：async 入口体暂不记忆化——缓存实例会成 Promise（依赖读取方期望导出
         // 对象）。共享 async 模块的跨元素恰好一次留待后续切片（活体证据：MDN 入口链均同步）。
@@ -234,7 +234,9 @@ pub fn compile_dependency_iife(specifier: &str, registry: &ModuleRegistry) -> Re
 /// `compile_module_script` 的转换体承担该入口的求值；非入口注册模块照旧急切求值（转换式
 /// 架构无 live binding，入口的静态导入依赖 prelude 预热的依赖实例）。
 pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&str>) -> Result<String, ScriptError> {
-    let mut out = String::from("globalThis.__moduleCache = globalThis.__moduleCache || {};\n");
+    let mut out = String::from(
+        "globalThis.__moduleCache = globalThis.__moduleCache || {};\nglobalThis.__moduleFailures = globalThis.__moduleFailures || {};\n",
+    );
     // t8j：helper（__zw_load_module / __zw_dynamic_import）必须先于 `__moduleCache[spec] = IIFE`
     // 注册求值——注册右侧的 IIFE **立即执行模块体**（依赖预热 + collect_module_deps 把入口模块
     // 自身也注册进 registry，见 js_worker/tab_js_worker collect_module_deps）。模块体顶层的
@@ -254,13 +256,35 @@ pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&st
     // 旧契约（无分隔符的裸 code）回退 spec 键（base 语义）。renderer/tab 宿主有 runtime_iifes
     // 编译缓存，重复调用不重复取回；webview 进程内路径无宿主缓存（重复动态 import 同模块
     // 重复取回+编译，副作用不重复——转池候选）。
+    // s87（html-semantics-compat dynamic-import must-reject 面）失败三态（HTML spec
+    // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+    // module map 失败记账语义；WPT dynamic-imports-fetch-error/script-error 判据）：
+    // ① 宿主返空 = 顶层取回失败（404/500/MIME/跨源/解析失败）→ **每次**调用抛新
+    //   TypeError（不入缓存）——fetch 失败不入 module map，逐次新错误对象；
+    // ② 宿主返 `resolved\u{1f}`（空码标记）= 顶层已取回、依赖图编译失败 → 首抛新
+    //   TypeError 且记入 `__moduleFailures`，重调复抛**同对象**（parse 期失败入 map 记账）；
+    // ③ 取回成功但模块体 parse/求值抛错 → 错误对象记入 `__moduleFailures` 复抛同对象
+    //   （spec：parse error 与 evaluation error 均缓存；instantiation/link 期失败上游
+    //   语义为逐次新对象，transform 管线暂并入 ③——WPT 判据 instantiation 行仍红，
+    //   归 module 基面切片）。未发标记的宿主（renderer/tab）②退化为 ①，行为不劣化。
     out.push_str("  var r = __zw_compile_module(spec, parent);\n");
-    out.push_str("  if (!r) throw new Error('Module not found: ' + spec);\n");
+    out.push_str("  if (!r) throw new TypeError(\"Failed to fetch module: '\" + spec + \"'\");\n");
     out.push_str("  var sep = r.indexOf('\\u001f');\n");
     out.push_str("  var resolved = sep >= 0 ? r.slice(0, sep) : spec;\n");
     out.push_str("  if (__moduleCache[resolved]) return __moduleCache[resolved];\n");
+    out.push_str("  if (__moduleFailures[resolved]) throw __moduleFailures[resolved];\n");
     out.push_str("  var code = sep >= 0 ? r.slice(sep + 1) : r;\n");
-    out.push_str("  __moduleCache[resolved] = (function() { return eval('(' + code + ')'); })();\n");
+    out.push_str("  if (sep >= 0 && code === '') {\n");
+    out.push_str("    var graphError = new TypeError(\"Failed to fetch module graph: '\" + resolved + \"'\");\n");
+    out.push_str("    __moduleFailures[resolved] = graphError;\n");
+    out.push_str("    throw graphError;\n");
+    out.push_str("  }\n");
+    out.push_str("  try {\n");
+    out.push_str("    __moduleCache[resolved] = (function() { return eval('(' + code + ')'); })();\n");
+    out.push_str("  } catch (e) {\n");
+    out.push_str("    __moduleFailures[resolved] = e;\n");
+    out.push_str("    throw e;\n");
+    out.push_str("  }\n");
     out.push_str("  return __moduleCache[resolved];\n");
     out.push_str("};\n");
     // t8j：动态 import() 失败须以 rejected promise 呈现，不得同步 throw——
@@ -1712,13 +1736,16 @@ mod tests {
     /// `import("_").catch(()=>1)` 整体中断、后续语句永不执行 → 站点误回落 legacy 路径。
     /// 红态：`__zw_dynamic_import` 在 `__zw_compile_module` 返空（取回失败）时同步抛
     /// `Module not found`，本测试首个 execute 即 Err。
+    /// s87：失败原因钉 TypeError（HTML spec fetch-a-single-module-script——取回失败以
+    /// TypeError reject；WPT dynamic-imports-fetch-error `promise_rejects_js(t, TypeError, …)`
+    /// 判据），消息携带 spec。
     #[test]
     fn test_dynamic_import_failure_rejects_not_throws() {
         #[cfg(feature = "v8")]
         let mut sandbox = crate::V8Sandbox::new().unwrap();
         #[cfg(all(feature = "quickjs", not(feature = "v8")))]
         let mut sandbox = crate::QuickJSSandbox::new().unwrap();
-        // 模拟宿主取回失败：__zw_compile_module 返空 → __zw_load_module 抛 Module not found。
+        // 模拟宿主取回失败：__zw_compile_module 返空 → __zw_load_module 抛 TypeError。
         sandbox.register_callback("__zw_compile_module", Box::new(|_args| String::new()));
         // promise 落定结果经宿主回调回传（execute 间 global 不共享——非 persistent
         // context 每次 execute 新建；真实路径 prelude+模块同为单次 execute）。
@@ -1740,14 +1767,102 @@ mod tests {
                 "{prelude}\n\
                      __zw_dynamic_import('_nope').then(\n\
                        function () {{ __zw_report('fulfilled'); }},\n\
-                       function (e) {{ __zw_report('rejected:' + (e && e.message)); }});\n"
+                       function (e) {{ __zw_report('rejected:' + (e && e.constructor.name) + ':' + (e && e.message)); }});\n"
             ))
             .expect("动态 import 失败不得同步 throw");
         assert_eq!(
             settled.lock().unwrap().as_deref(),
-            Some("rejected:Module not found: _nope"),
-            "失败以 rejection 呈现且原因携带 spec（红态：同步 throw 后首个 execute 即 Err）"
+            Some("rejected:TypeError:Failed to fetch module: '_nope'"),
+            "失败以 TypeError rejection 呈现且原因携带 spec（红态：同步 throw 后首个 execute 即 Err）"
         );
+    }
+
+    /// s87（html-semantics-compat dynamic-import must-reject 面）：取回失败三态身份钉。
+    /// HTML spec fetch-a-single-module-script：fetch 失败**不入** module map（逐次新
+    /// 错误对象——WPT fetch-error `assert_not_equals(error1, error2)`）；parse 期失败
+    /// （顶层已取回、依赖图断）与 parse/求值期错误**入 map 记账**（重调同对象——WPT
+    /// script-error `assert_equals(error1, error2)`）。红态：全走 `Module not found`
+    /// 普通 Error、逐次新对象、parse/求值错误不缓存。
+    #[test]
+    fn test_dynamic_import_failure_identity_semantics() {
+        #[cfg(feature = "v8")]
+        let mut sandbox = crate::V8Sandbox::new().unwrap();
+        #[cfg(all(feature = "quickjs", not(feature = "v8")))]
+        let mut sandbox = crate::QuickJSSandbox::new().unwrap();
+        // 宿主模拟：`missing.js` 返空（①顶层取回失败）；`graphcut.js` 返 `resolved\x1f`
+        // 空码标记（②依赖图断）；`parsebad.js` 返可编译 IIFE 但体为语法错；`throwing.js`
+        // 返体抛错的 IIFE（③求值错误）。IIFE 形态复刻 compile_dependency_iife 输出
+        // （eval('(' + code + ')') 消费的括号包裹函数调用表达式）。
+        sandbox.register_callback("__zw_compile_module", Box::new(|args| {
+            let spec = args.first().map(String::as_str).unwrap_or("");
+            match spec {
+                "missing.js" => String::new(),
+                "graphcut.js" => "https://zero.test/graphcut.js\u{1f}".to_string(),
+                "parsebad.js" => "https://zero.test/parsebad.js\u{1f}(function() { return (function() { export const x =; })(); })()".to_string(),
+                "throwing.js" => {
+                    "https://zero.test/throwing.js\u{1f}(function() { return (function() { globalThis.__s87_eval_count = (globalThis.__s87_eval_count || 0) + 1; throw new Error('boom'); })(); })()".to_string()
+                }
+                _ => String::new(),
+            }
+        }));
+        let reported: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let reported_cb = reported.clone();
+        sandbox.register_callback(
+            "__zw_report",
+            Box::new(move |args| {
+                if let Some(v) = args.first() {
+                    reported_cb.lock().unwrap().push(v.clone());
+                }
+                String::new()
+            }),
+        );
+        let prelude = build_module_runtime_prelude(&ModuleRegistry::new(), None).unwrap();
+        // 同一 execute 内逐 case 回传（execute 间 global 不共享）。probe 串行两次
+        // import 同 spec，回传 `spec:首错构造器:(首错 === 次错)`——身份语义直接落在
+        // 错误对象比较上（不借缓存表反查：求值后缓存已就位，反查恒真无区分力）。
+        sandbox
+            .execute(&format!(
+                "{prelude}\n\
+                var out = [];\n\
+                function probe(spec) {{\n\
+                  return __zw_dynamic_import(spec).then(\n\
+                    function () {{ out.push(spec + ':fulfilled'); }},\n\
+                    function (e1) {{\n\
+                      return __zw_dynamic_import(spec).then(\n\
+                        function () {{ out.push(spec + ':second-fulfilled'); }},\n\
+                        function (e2) {{ out.push(spec + ':' + e1.constructor.name + ':' + (e1 === e2)); }});\n\
+                    }});\n\
+                }}\n\
+                Promise.all([probe('missing.js'), probe('graphcut.js'), probe('parsebad.js'), probe('throwing.js')]).then(function () {{ __zw_report(out.join('|') + '|count=' + (globalThis.__s87_eval_count || 0)); }});\n"
+            ))
+            .expect("失败身份探针不得同步 throw");
+        let lines = reported.lock().unwrap();
+        let joined = lines.join("");
+        let parts: Vec<&str> = joined.split('|').collect();
+        assert_eq!(parts.len(), 5, "四案探针 + 求值计数全部落定：{joined}");
+        // ① 顶层取回失败：TypeError × 逐次**新对象**（fetch 失败不入 module map）。
+        assert_eq!(
+            parts[0], "missing.js:TypeError:false",
+            "取回失败恒 TypeError 且逐次新对象：{joined}"
+        );
+        // ② 依赖图断（宿主空码标记）：TypeError × **同对象**（parse 期失败入 map 记账）。
+        assert_eq!(
+            parts[1], "graphcut.js:TypeError:true",
+            "图断失败恒 TypeError 且复抛同对象：{joined}"
+        );
+        // ③ parse 错误：SyntaxError × 同对象。
+        assert_eq!(
+            parts[2], "parsebad.js:SyntaxError:true",
+            "parse 错误恒 SyntaxError 且复抛同对象：{joined}"
+        );
+        // ③' 求值错误：Error × 同对象。
+        assert_eq!(
+            parts[3], "throwing.js:Error:true",
+            "求值错误复抛同一错误对象（入 map 记账判据）：{joined}"
+        );
+        // 求值错误模块体恰好执行一次（重调不再跑体——module map 记账后零重复求值）。
+        assert_eq!(parts[4], "count=1", "求值错误模块体只跑一次：{joined}");
     }
 
     /// t8j F3（site-compat bilibili laputa-home）：prelude 语句顺序钉——helper 定义必须先于
@@ -1952,7 +2067,7 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         let text = reported.lock().unwrap().clone();
         let text = text.as_deref().unwrap_or_default();
         assert!(
-            text.starts_with("slen=") && text.contains("rej=Module not found: ./dep.js"),
+            text.starts_with("slen=") && text.contains("rej=Failed to fetch module: './dep.js'"),
             "字符串字面量后续语句执行、动态 import 走 rejection（实际: {text:?}）"
         );
     }
@@ -2137,11 +2252,12 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
             &registry,
         )
         .unwrap();
-        // R5182：首行为模块缓存初始化（幂等），其后的入口体保持 async IIFE 包裹
-        // （async 入口体暂不记忆化——见 compile_module_script FIXME）。
-        assert!(
-            compiled.starts_with("globalThis.__moduleCache = globalThis.__moduleCache || {};\n(async function() {")
-        );
+        // R5182：首行为模块缓存初始化（幂等，s87 并入 __moduleFailures 初始化），
+        // 其后的入口体保持 async IIFE 包裹（async 入口体暂不记忆化——见
+        // compile_module_script FIXME）。
+        assert!(compiled.starts_with(
+            "globalThis.__moduleCache = globalThis.__moduleCache || {};\nglobalThis.__moduleFailures = globalThis.__moduleFailures || {};\n(async function() {"
+        ));
         assert!(compiled.contains("await Promise.resolve();"));
     }
 

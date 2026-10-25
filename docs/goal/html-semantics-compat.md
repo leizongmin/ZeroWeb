@@ -2,9 +2,54 @@
 
 **版本**: v2.0
 **日期**: 2026-10-25（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 86 开片分诊（scripting-1 当拍 **169P/335F/86T→117P/335F/34T**：53 案 moving-between-documents 多文档面按 helper 标记出账——navigation M3 门控，the-iframe-element 先例；失败族地图四切片序：dynamic-import must-reject 24F 单根 → stylesheets-blocking-scripts 12F 簇 → the-script-element 基面 65F → module 尾片；入场核账：s85 下一步 testdriver-Actions 挂账已被 s79/s80 消费，hash-name-dynamic 复跑 8/8 Pass 复证），下一步 dynamic-import must-reject + credentials 12F（script-sandbox es_module 面）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 87 施工收口（dynamic-import must-reject 族 −22F bitwise：scripting-1 **117P/335F/34T→139P/313F/34T**——es_module 失败三态语义（取回失败 TypeError×新对象 / 依赖图断 TypeError×同对象 / parse/求值缓存原错误×同对象，对齐 spec fetch-a-single-module-script 与 module map 失败记账）+ webview `ModuleGraphFailure` 三分类回传 + runner `?pipe=header` MIME 模板建模；余 2F instantiation 归 module 基面切片④；失败族地图四切片序：①dynamic-import must-reject ✅ → ②stylesheets-blocking-scripts 12F 簇 → ③the-script-element 基面 65F → ④module 尾片），下一步 s88 classic-script dynamic import 重写（裸 V8 无宿主回调 reject `Error: Not supported` 单根——credentials 12F + delay-load/nonce/string-compilation classic 族）+ check-cookie/set-cookie runner handler 仿真；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-25 M2 切片 86 开片分诊，scripting-1 轮）**：
+> **▶ 当前状态（2026-10-25 M2 切片 87 施工收口，dynamic-import must-reject 族轮）**：
+> **入场核账**：s86 切片序①当拍 dynamic-import 子树 **6P/49F/11T**
+>（FILTER=the-script-element/module/dynamic-import）。must-reject 24F
+>「单根」经当拍细分为三根：①错误类型根 18F——`__zw_load_module` 宿主返空
+> 一律普通 `Error`，spec fetch-a-single-module-script 取回失败须
+> TypeError；②对象身份根 4F——parse/求值失败不缓存，重复 import 每次新
+> 对象（spec module map 失败记账：parse/求值/依赖解析失败复抛同对象，
+> fetch 期失败逐次新对象）；③MIME 根 2F——wptserve
+> `?pipe=header(Content-Type,…)` 响应头模板未建模，wrongMimetype 按扩展名
+> 误判 scripty。**本轮一刀（三面）**：es_module prelude `__zw_load_module`
+> 失败三态（宿主返空→逐次新 TypeError 不入缓存 / `resolved\x1f` 空码标记
+> →TypeError 入 `__moduleFailures` 复抛同对象 / eval 抛错→原错误对象入
+> 缓存复抛）；webview `collect_module_deps_recursive` 返
+> `ModuleGraphFailure` 三分类（TopFetch/DepResolution/DepFetch——裸
+> specifier 无 import map 即解析失败），`__zw_compile_module` 失败两态
+> 回传（fetch 失败返空 / 解析失败返空码标记）——renderer/tab 旧宿主返空
+> 契约降级不劣化；runner `wpt_data_script_fetcher` MIME 派生序新增最高
+> 优先 `?pipe=header` 臂。**验证**：子树 **6P/49F/11T → 28P/27F/11T**；
+> the-script-element 全子树 stash 基线复扫 bitwise——**116P/335F/34T →
+> 138P/313F/34T，diff 恰 22 行全 Fail→Pass、全落 dynamic-import/ 目标
+> 族零误伤**（TLA 3 案页脚抛 rc=1 截断两轮同态、`v8-code-cache.html`
+> 未及上报，runner 行为先于本轮）；域账自此按 **139P/313F/34T** 记。
+> 单测：es_module 新增失败身份语义四态钉（取回 TypeError×新对象/图断
+> TypeError×同对象/parse SyntaxError×同对象/求值 Error×同对象+体恰跑
+> 一次）+ v8 352/352 + quickjs 8/8 + webview 792/792；fmt clean + clippy
+> 三 crate clean（video_registry map_entry 门禁已由渲染流 `9d50e4a91`
+> 同刻自修解除，见卡点）。账本见
+> [evidence/2026-10-25-m2s87-dynamic-import-must-reject.md](html-semantics-compat/evidence/2026-10-25-m2s87-dynamic-import-must-reject.md)。
+> **范围**：生产面 script-sandbox/webview/runner 三文件 + 契约单测；
+> apps/browser 与 renderer 宿主未动（返空契约降级路径行为不变）；语料
+> 不可改维持。**卡点（非本流，碰头记录）**：`make test` 预存红维持 s86
+> 记录——quickjs zero-renderer `mutation_arm_…reset_window` 本轮复跑仍红
+> 0.63s（page_scripts.rs 无新提交，归 perf/renderer 流未解）。
+> **碰头记录（已化解）**：video_registry map_entry 代修与渲染流 `9d50e4a91`
+> 同刻撞车（同款 entry API 改写）——保留上游版，本流重复提交 rebase
+> skip 移除，零净损；渲染流 guarded-clippy 已全绿佐证门禁解除。
+> **下一步**：s88 classic-script dynamic import 重写——classic 脚本
+> `import()` 未重写，裸 V8 无宿主回调 reject `Error: Not supported`
+>（credentials 12F + delay-load-event/propagate-nonce-classic/
+> string-compilation-classic 同根），配 `check-cookie.py`/`set-cookie.py`
+> runner handler 仿真 + 跨源 cookie jar；instantiation 2F 归 module 基面
+> 切片④。
+> **切片间隙**：本轮 script-sandbox/webview/runner 面；下一挂账同面
+>（script-sandbox 重写），间隙开放。
+>
+> **▶ 上轮状态（2026-10-25 M2 切片 86 开片分诊，scripting-1 轮——其下一步 dynamic-import must-reject 已由 s87 收口，见上）**：
 > **入场核账**：s85 下一步「testdriver-Actions 支持面」过时——s79 已证伪
 > s78 注记（runner 自带 Actions stub，点击链可达）、s80 journal 已收口
 > hash-name-dynamic 3P/5F→8P/0F；本轮 FILTER 复跑 **8/8 Pass** 复证。
@@ -1469,32 +1514,6 @@
 > command `--` 前缀 CommandEvent defer、ESC 组栈边缘乱序、非模态 close 不
 > 出组栈、R371 模板残留。
 >
-> **▶ 上轮状态（2026-10-22 M2 切片 25）**：corner-cases hang 收口（R4500）
-> ——真根因横切两层：①shim `close()` IDL 包装透传 helper 的 wasOpen
-> boolean（spec void）；②语料 testharness `is_valid_cleanup_result` 对
-> cleanup 返非 undefined **及** `on_error` 对 cleanup 抛错均 `tests.abort()`
-> → 完成回调不达 → file Timeout 吞全文件。`t.add_cleanup(() =>
-> dialog.close())` 返 false 一个值吞 27-29 案；s23「detach 窗口身份链」
-> 归因作废（hang 案实为前一案 cleanup abort，探针五文件 DA/DB 对照 +
-> partial-flush 形态学定位）。修复：part04 三处 close 包装 void 化 +
-> part14 R3290 两处旧断言更正 + part60 `test_dialog_void_return_r4500`
-> （四方法全生命周期 + 八方法 void 族审计无第二 offender）。九域
-> 5016→**5070P**，同 key 回归 **0**、翻转 **0**；Timeout 180→173（7 文件
-> 解除吞没：closedby 1P→27/27、corner-cases 1P→28P/2F、focus-shadow
-> 50F 新上报等），+55F 为新上报真断言非回归（分母 +102 漂移，百分比口径
-> 不可比）。余 1 hang：popover-closedby-simple（cleanup `hidePopover()`
-> 抛 not-showing → abort 同族——病根 popover 有效性语义，popover 域挂
-> 账）。corner-cases 余 2F＝closing steps 内 focus fixup 不派 focusin
-> （focusing steps 家族）。
-> **下一步**：focusing-steps 家族（focus fixup→closing steps 派 focusin、
-> autofocus 委派、activeElement 语义——corner-cases 2F + focus-shadow
-> 50F + focusing-steps/activeElement 原挂账 ~15F 同域合并攻）；余挂账
-> inert 计算态（inert-node-is-unfocusable 13F 精化）、abspos/layout
-> ~10F（rendering 域）、popover 有效性语义（`:popover-open` 选择器 +
-> hidePopover not-showing 抛，popover-simple 余 hang）、impl-doc wrapper
-> requestClose、anchor-with-inline 导航缺口、parser form element pointer
-> 4F、custom command `--` 前缀 CommandEvent defer、ESC 组栈边缘乱序、
-> 非模态 close 不出组栈。
 
 
 > **▶ 拆分动机（2026-10-08 预留编号立项，用户「候选 goal 也立项吧」）**：继

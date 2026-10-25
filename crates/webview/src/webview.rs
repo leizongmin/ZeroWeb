@@ -3770,18 +3770,28 @@ impl WebView {
                         return String::new();
                     }
                     // R3094：递归 fetch transitive deps（闭合 module graph）。registry 按原 spec 注册源，
-                    // 循环防护按解析后 URL；fetch 失败 → 返空（__zw_load_module 抛 Module not found）。
+                    // 循环防护按解析后 URL；fetch 失败 → 返空（__zw_load_module 抛 TypeError）。
                     // t8j-r2（D1）：回传 `resolved\x1fcode`，JS 侧缓存键取宿主解析键。
+                    // s87 失败三态（WPT dynamic-imports-fetch-error/script-error 对象身份
+                    // 判据）：fetch 期失败（顶层/依赖取回、顶层编译）返空 → JS 逐次新
+                    // TypeError（不入 module map）；依赖解析失败（裸 specifier）返
+                    // `resolved\x1f` 空码标记 → JS 记入 __moduleFailures 复抛同对象（parse
+                    // 期失败随顶层 module map 记账——HTML spec fetch-a-single-module-script）。
                     let mut reg = zero_script_sandbox::ModuleRegistry::new();
                     let mut visited = std::collections::HashSet::new();
-                    let compiled =
-                        collect_module_deps_recursive(&fetcher_compile, parent, spec, &mut reg, &mut visited)
-                            .ok()
-                            .and_then(|_| zero_script_sandbox::compile_dependency_iife(spec, &reg).ok());
-                    match compiled {
-                        Some(iife) => format!("{}\u{1f}{iife}", resolve_document_url(parent, spec)),
-                        None => {
-                            tracing::warn!("compile module {spec} (transitive fetch)");
+                    match collect_module_deps_recursive(&fetcher_compile, parent, spec, false, &mut reg, &mut visited) {
+                        Ok(()) => match zero_script_sandbox::compile_dependency_iife(spec, &reg) {
+                            Ok(iife) => format!("{}\u{1f}{iife}", resolve_document_url(parent, spec)),
+                            Err(_) => {
+                                tracing::warn!("compile module {spec} (transitive fetch)");
+                                String::new()
+                            }
+                        },
+                        Err(ModuleGraphFailure::DepResolution) => {
+                            format!("{}\u{1f}", resolve_document_url(parent, spec))
+                        }
+                        Err(failure @ (ModuleGraphFailure::TopFetch | ModuleGraphFailure::DepFetch)) => {
+                            tracing::warn!("collect module {spec} (transitive fetch): {failure:?}");
                             String::new()
                         }
                     }
@@ -3944,8 +3954,15 @@ impl WebView {
                     let page_url_m = self.current_url.as_deref().unwrap_or("about:blank").to_string();
                     let mut visited_m = std::collections::HashSet::new();
                     for spec in &specs {
-                        if collect_module_deps_recursive(&fetcher_m, &page_url_m, spec, &mut registry, &mut visited_m)
-                            .is_err()
+                        if collect_module_deps_recursive(
+                            &fetcher_m,
+                            &page_url_m,
+                            spec,
+                            false,
+                            &mut registry,
+                            &mut visited_m,
+                        )
+                        .is_err()
                         {
                             registry.register(spec, "");
                         }
@@ -6683,30 +6700,65 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
     }
 }
 
+/// s87：module graph 抓取失败分类——进程内 `__zw_compile_module` 失败回传两态（返空 /
+/// `resolved\x1f` 空码标记）的判定输入。语义对齐 HTML spec
+/// fetch-a-single-module-script 的 module map 失败记账：parse 期失败随顶层记账
+/// （JS 侧复抛同对象），fetch 期失败不入 map（JS 侧逐次新 TypeError）。
+#[derive(Debug)]
+enum ModuleGraphFailure {
+    /// 顶层模块自身取回失败（文件缺失/MIME/跨源/空源）。
+    TopFetch,
+    /// 依赖 specifier 解析失败（裸 specifier——runner 路径宿主无 import map 恒失败；
+    /// spec resolve-a-module-specifier）。
+    DepResolution,
+    /// 依赖取回失败（相对/绝对路径 404/MIME/跨源）。
+    DepFetch,
+}
+
 /// 递归抓取 module graph（transitive deps），供进程内 `__zw_compile_module`（R3094）闭合 module graph。
 /// registry 按**原始 spec**（importer 引用时写的，匹配 transform_import 按原 spec 查 registry）注册源；
 /// 循环防护按**解析后 URL**（同一 module 经不同 raw spec 引用视为同一，避免死循环）。
-/// fetcher 解析 spec 相对 parent_url。**已知限制**：钻石依赖（同 module 经不同 raw spec 引用）defer
+/// fetcher 解析 spec 相对 parent_url。`is_dep` 区分顶层/递归调用——失败分类的归属面。
+/// **已知限制**：钻石依赖（同 module 经不同 raw spec 引用）defer
 ///（仅注册首个 raw spec，第二引用 lookup 落空 → compile 失败；罕见，多数 module graph 为树）。
 fn collect_module_deps_recursive(
     fetcher: &ScriptSourceFetcher,
     parent_url: &str,
     spec: &str,
+    is_dep: bool,
     registry: &mut zero_script_sandbox::ModuleRegistry,
     visited: &mut std::collections::HashSet<String>,
-) -> Result<(), String> {
+) -> Result<(), ModuleGraphFailure> {
+    // s87：裸 specifier（无 `./` `../` `/` 前缀、非绝对 URL）无 import map 即解析失败
+    // （依赖面归属 DepResolution——parse 期失败随顶层记账；顶层裸 specifier 由 JS 侧
+    // 按取回失败逐次新对象处理，对齐 WPT bad-module-specifier 行判据）。
+    let is_bare =
+        !spec.starts_with("./") && !spec.starts_with("../") && !spec.starts_with('/') && !spec.contains("://");
+    if is_dep && is_bare {
+        return Err(ModuleGraphFailure::DepResolution);
+    }
     let url = resolve_document_url(parent_url, spec);
     if visited.contains(&url) {
         return Ok(()); // 循环防护（解析后 URL）
     }
     visited.insert(url.clone());
-    let source = fetcher(parent_url, spec)?;
+    let source = fetcher(parent_url, spec).map_err(|_| {
+        if is_dep {
+            ModuleGraphFailure::DepFetch
+        } else {
+            ModuleGraphFailure::TopFetch
+        }
+    })?;
     if source.is_empty() {
-        return Err(format!("empty source for {spec}"));
+        return Err(if is_dep {
+            ModuleGraphFailure::DepFetch
+        } else {
+            ModuleGraphFailure::TopFetch
+        });
     }
     registry.register(spec, &source); // key = raw spec（transform_import 按原 spec 查）
     for imp in zero_script_sandbox::extract_static_module_import_specifiers(&source) {
-        collect_module_deps_recursive(fetcher, &url, &imp, registry, visited)?;
+        collect_module_deps_recursive(fetcher, &url, &imp, true, registry, visited)?;
     }
     Ok(())
 }
