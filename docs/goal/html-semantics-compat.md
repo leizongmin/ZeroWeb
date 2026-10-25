@@ -2,9 +2,35 @@
 
 **版本**: v2.0
 **日期**: 2026-10-25（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 82 收口（handle 形元素 closest 读面：R100 锚回 host 全语义 + JS 单 compound 祖先走双臂，域 **976P/252F/30T 逐位持平 REG 0**、pin 逐位持平、engine lib 3522P/0F），下一步 720-stretch 渲染展开 22F（需布局几何，归 layout 集成面，启动前查 oracle master 碰撞记录）或 matches complex stale 面分诊；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 83 收口（handle 形元素 matches complex 读面：JS 双形态父链 complex 走三态契约，域 **976P/252F/30T 逐位持平 REG 0**、pin 逐位持平、engine lib 3523P/0F），下一步 720-stretch 渲染展开 22F（需布局几何，归 layout 集成面，启动前查 oracle master 碰撞记录）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-25 M2 切片 82 收口，handle 形元素 closest 读面轮）**：
+> **▶ 当前状态（2026-10-25 M2 切片 83 收口，handle 形元素 matches complex 读面轮）**：
+> s82 遗留 matches complex 面分诊**推翻非平凡判定**：probe 实证 gap 非
+> 同 turn 窗口而是**永久**——post-drain `matches('#anc span')` 仍 false；
+> qS 倒查命中并登记 R100 锚，但 t6 锚臂 host `__zw_matches` 读原始
+> dom_html 快照（apply 后锚不可解析），'0' 无条件 return 短路。s82 已
+> 落双形态父链解析 + compound 匹配器，JS 侧判定材料齐备（无需 Rust
+> 回调）。**修复**：part05 `_zwHandleMatchesComplex` 三态契约（true/
+> false/null——null=有不可判 complex，落回锚臂 host 全语义，pseudo 面
+> 不劣化）+ part04 t6 臂重排（R134 → s83 JS 走 → 锚臂 → regex）。列表
+> 逐 complex 判定；compound 带 pseudo/组合器非后代/子代保守不判（防
+> over-match）；48 跳封顶；不越 shadow 边界。**关键序**：JS 走必须先
+> 于锚臂——锚臂 '0' 短路后置补偿不可达（probe 定位）。契约
+> dom_bridge_tests `handle_element_matches_complex_s83`（18 断言）。
+> **验证**：probe 同 turn + post-drain 全 Pass（临时已删）+ engine lib
+> **3523P/0F** + 域（FILTER=embedded-content）**976P/252F/30T 逐位
+> 持平 REG 0** + interactive pin **439P/44F/0T 逐位持平** + fmt clean
+> + clippy 仅 s78 既有警告。账本见
+> [evidence/2026-10-25-m2s83-handle-matches-complex.md](html-semantics-compat/evidence/2026-10-25-m2s83-handle-matches-complex.md)。
+> **范围**：兄弟组合器（`+`/`~`）保守 false（反链无前兄弟指针，语料
+> 0 需求）；锚臂 host 快照底层未动（JS 走已覆盖可判面，host 修复仅剩
+> pseudo complex 面，无已知消费方）。
+> **下一步**：720-stretch 渲染展开 22F（需布局几何，归 layout 集成
+> 面，启动前查 oracle master 碰撞记录）。
+> **切片间隙**：本轮 js_dom_shim 两件 + 契约 dom_bridge_tests；下一
+> 挂账 layout 集成面需跨流协调，间隙开放。
+>
+> **▶ 上轮状态（2026-10-25 M2 切片 82 收口，handle 形元素 closest 读面轮）**：
 > s81 范围注记的「同 turn insert 身份缺口」分诊升级：createElement 产物
 > 是 handle 形代理（`__zwSelector` 恒 null），closest 的 `!sel` 门使其
 > **永久盲**（非同 turn 窗口——已 append 排水后仍 null；身份永驻 handle

@@ -5263,6 +5263,16 @@
             if (!sel && handle) {
               var _r134M = _r134MatchTypeSelector(handle, q);
               if (_r134M !== null) return _r134M;
+              // s83：JS 双形态父链 complex 走先于锚臂——锚臂 host `__zw_matches`
+              // 读原始 dom_html 快照，handle 元素 apply 后锚不可解析时 '0' 会短路
+              // （probe 实证 post-drain '#anc span' 恒 false），故可判面在此先答；
+              // null（pseudo/兄弟组合器不可判）落回锚臂 host 全语义，pseudo 面
+              // 不劣化。详见 part05 `_zwHandleMatchesComplex` 注记。
+              if (typeof _zwHandleMatchesComplex === 'function') {
+                var _t6Cx = null;
+                try { _t6Cx = _zwHandleMatchesComplex(handle, q); } catch (_eT6m5) { _t6Cx = null; }
+                if (_t6Cx !== null) return _t6Cx;
+              }
               // t6（siteopt qq-20261016-r1）：class/id/attr 等**非 type 选择器**两臂：
               // ① R100 锚回（元素已连入文档）→ 委托 host 按当前位匹配——复合/伪类/
               //    组合器全语义活。此前直接 return false 使 `dynamicEl.matches('.cls')`

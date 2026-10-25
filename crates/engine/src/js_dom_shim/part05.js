@@ -5880,6 +5880,73 @@
     }
     return null;
   }
+  // s83（html-semantics M2）：handle 形元素（`__zwSelector` 恒 null）的 matches
+  // complex 读面——t6 锚臂 host `__zw_matches` 读原始 dom_html 快照，runner 流
+  // post-drain 亦无法解析 apply 后锚（probe 实证恒 false）；regex 臂只接
+  // tag/.cls/#id 自匹配。本臂 JS 走：选择器列表逐 complex 判定（spec 列表任一
+  // 命中即 true）——compound 带 pseudo/unsupported 或组合器非后代/子代 → 该
+  // complex 不可判（`_matchCompoundOf` 不求值 pseudos，混入会 over-match）；
+  // 右 compound 对自匹配，沿 s82 `_zwClosestParentOfPx` 双形态父链右→左走
+  // （descendant 找任意祖先、child 限父），48 跳全程封顶（R125 口径）。
+  // 返回三态：true（可判且命中）/ false（全 complex 可判且全未命中）/ null
+  // （存在不可判 complex 且无命中——交还锚臂 host 全语义，pseudo 面不劣化）。
+  // https://dom.spec.whatwg.org/#dom-element-matches
+  function _zwHandleMatchesComplex(handle, selector) {
+    var self = null;
+    try { self = _wrapHandle(handle); } catch (_e83wh) { return null; }
+    var groups = null;
+    try { groups = _parseSelectorListOf(String(selector == null ? '' : selector)); } catch (_e83p) { return null; }
+    if (!groups || !groups.length) return null;
+    var anyDecided = false;
+    for (var gi = 0; gi < groups.length; gi++) {
+      var g = groups[gi];
+      if (!g || !g.compounds || !g.compounds.length) continue;
+      // 保守门：任一 compound 带 pseudo/unsupported、组合器非 ' '/'>' → 本 complex 不判。
+      var ok = true;
+      for (var ci = 0; ci < g.compounds.length; ci++) {
+        var c = g.compounds[ci];
+        if (!c || c.unsupported || (c.pseudos && c.pseudos.length)) { ok = false; break; }
+      }
+      for (var bi = 0; ok && bi < (g.combinators || []).length; bi++) {
+        if (g.combinators[bi] !== ' ' && g.combinators[bi] !== '>') ok = false;
+      }
+      if (!ok) continue;
+      // 右→左：右 compound 对自；逐组合器消费剩余 compounds。
+      var need = g.compounds.length - 1;
+      var m0 = false;
+      try { m0 = _matchCompoundOf(self, g.compounds[need]); } catch (_e83m0) {}
+      if (!m0) { anyDecided = true; continue; }
+      var cur = self, guard = 0, hit = true;
+      for (var k = need - 1; k >= 0; k--) {
+        var L = null;
+        try { L = _zwClosestParentOfPx(cur); } catch (_e83lp) { hit = false; break; }
+        if (!L) { hit = false; break; }
+        try { cur = L.sel ? _makeProxy(L.sel, null) : _wrapHandle(L.handle); } catch (_e83nx) { hit = false; break; }
+        if (g.combinators[k] === '>') {
+          if (++guard > 48) { hit = false; break; }
+          var m1 = false;
+          try { m1 = _matchCompoundOf(cur, g.compounds[k]); } catch (_e83m1) {}
+          if (!m1) { hit = false; break; }
+        } else {
+          // descendant：自父起上爬找任意命中（guard 全程共享封顶）。
+          var found = false;
+          while (cur && guard++ < 48) {
+            var m2 = false;
+            try { m2 = _matchCompoundOf(cur, g.compounds[k]); } catch (_e83m2) {}
+            if (m2) { found = true; break; }
+            var L2 = null;
+            try { L2 = _zwClosestParentOfPx(cur); } catch (_e83lp2) { break; }
+            if (!L2) break;
+            try { cur = L2.sel ? _makeProxy(L2.sel, null) : _wrapHandle(L2.handle); } catch (_e83nx2) { break; }
+          }
+          if (!found) { hit = false; break; }
+        }
+      }
+      if (hit) return true;
+      anyDecided = true;
+    }
+    return anyDecided ? false : null;
+  }
   // 读 compound 内裸 token（tag/id/class 名），遇 `.`/`#`/`[`/`:`/空白停。
   function _readCompoundToken(text, start) {
     // js-dom M4 R118：CSS 转义解码（CSS Syntax 4.3.4「consume an escaped code point」——

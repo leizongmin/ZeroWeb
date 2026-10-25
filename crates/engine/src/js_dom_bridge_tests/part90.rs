@@ -535,3 +535,98 @@ fn handle_element_closest_s82() {
     assert_eq!(get(&mut sandbox, 13), "true", "(e1) complex 保守 null");
     assert_eq!(get(&mut sandbox, 14), "true", "(e2) 伪类保守 null");
 }
+
+// R5283（s83）：handle 形元素（createElement 产物，`__zwSelector` 恒 null）的
+// matches complex 读面——t6 锚臂 host `__zw_matches` 读原始 dom_html 快照
+// （apply 后锚不可解析恒 false），regex 臂只接 tag/.cls/#id 自匹配。修复：
+// JS 双形态父链 complex 走（part05 `_zwHandleMatchesComplex`）先于锚臂——
+// 列表逐 complex 判定，compound 带 pseudo/组合器非后代/子代 → 不可判落回
+// 锚臂 host 全语义（三态契约，pseudo 面不劣化）；48 跳封顶，不越 shadow
+// 边界。https://dom.spec.whatwg.org/#dom-element-matches
+#[test]
+fn handle_element_matches_complex_s83() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='pa'><div id='anc'></div></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://zero.test/s83".to_string()));
+    let canvas_registry: Arc<Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__r = [];\
+             var anc = document.getElementById('anc');\
+             // (a) sel 父 append 的 handle 子——complex 可判面同 turn 即真
+             var inner = document.createElement('span');\
+             inner.setAttribute('data-x', '1');\
+             anc.appendChild(inner);\
+             globalThis.__r.push(inner.matches('span'));\
+             globalThis.__r.push(inner.matches('span[data-x]'));\
+             globalThis.__r.push(inner.matches('#anc span'));\
+             globalThis.__r.push(inner.matches('div > span'));\
+             globalThis.__r.push(inner.matches('span, .nope'));\
+             globalThis.__r.push(inner.matches('.nope, div > span'));\
+             globalThis.__r.push(inner.matches('#pa #anc span'));\
+             // (b) 与 s81 改名面组合——父改名 compound id 读 lw 现值、旧 id stale
+             anc.setAttribute('id', 'ancx');\
+             globalThis.__r.push(inner.matches('#ancx span'));\
+             globalThis.__r.push(inner.matches('#anc span'));\
+             anc.setAttribute('id', 'anc');\
+             // (c) 保守面——pseudo/兄弟组合器不可判（三态 null 落锚臂→false）
+             globalThis.__r.push(inner.matches('span:first-child'));\
+             globalThis.__r.push(inner.matches('span ~ span'));\
+             globalThis.__r.push(inner.matches('div + span'));\
+             // (d) detached——complex 可判且无父 false、单 compound 自匹配 true
+             var d = document.createElement('div');\
+             globalThis.__r.push(d.matches('body div'));\
+             globalThis.__r.push(d.matches('div'));\
+             globalThis.__r.push(d.matches('div > div'));\
+             // (e) 右 compound 不匹配即整 complex false（self 面先行否决）
+             globalThis.__r.push(inner.matches('#anc div'));\
+             globalThis.__r.push(inner.matches('p span'));\
+             // (f) 列表混合可判/不可判——不可判 complex 存在且无命中 → null 落锚臂
+             globalThis.__r.push(inner.matches('span:first-child, p span'));",
+        )
+        .unwrap();
+    let get = |sandbox: &mut V8Sandbox, i: usize| -> String {
+        sandbox
+            .execute(&format!("globalThis.__r[{}]", i))
+            .unwrap()
+            .value
+    };
+    // (a)
+    assert_eq!(get(&mut sandbox, 0), "true", "(a1) 单 tag 自匹配");
+    assert_eq!(get(&mut sandbox, 1), "true", "(a2) tag+attr compound");
+    assert_eq!(get(&mut sandbox, 2), "true", "(a3) descendant complex");
+    assert_eq!(get(&mut sandbox, 3), "true", "(a4) child 组合器");
+    assert_eq!(get(&mut sandbox, 4), "true", "(a5) 列表首 complex 命中");
+    assert_eq!(get(&mut sandbox, 5), "true", "(a6) 列表次 complex 命中");
+    assert_eq!(get(&mut sandbox, 6), "true", "(a7) 双级 descendant 链");
+    // (b)
+    assert_eq!(get(&mut sandbox, 7), "true", "(b1) 父改名 lw 现值命中");
+    assert_eq!(get(&mut sandbox, 8), "false", "(b2) 旧 id stale");
+    // (c)
+    assert_eq!(get(&mut sandbox, 9), "false", "(c1) 伪类保守 false");
+    assert_eq!(get(&mut sandbox, 10), "false", "(c2) 兄弟 ~ 保守 false");
+    assert_eq!(get(&mut sandbox, 11), "false", "(c3) 兄弟 + 保守 false");
+    // (d)
+    assert_eq!(get(&mut sandbox, 12), "false", "(d1) detached descendant false");
+    assert_eq!(get(&mut sandbox, 13), "true", "(d2) detached 单 compound 自匹配");
+    assert_eq!(get(&mut sandbox, 14), "false", "(d3) detached child false");
+    // (e)
+    assert_eq!(get(&mut sandbox, 15), "false", "(e1) 右 compound 不匹配");
+    assert_eq!(get(&mut sandbox, 16), "false", "(e2) 祖先 tag 不匹配");
+    // (f)
+    assert_eq!(get(&mut sandbox, 17), "false", "(f1) 混合列表无命中 false");
+}
