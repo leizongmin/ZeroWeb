@@ -25351,7 +25351,13 @@ return e;
           // R297：JS 原值优先（含孤立代理的 id——host 值经 lossy 换损为 U+FFFD，
           // WPT escapes never-match 族须原值比较；详见 part01 `_zwRawIds` 注记）。
           if (Object.prototype.hasOwnProperty.call(_zwRawIds, key)) return _zwRawIds[key];
-          return handle ? __zw_get_attr_handle(handle, 'id') : __zw_get_attr(sel, 'id');
+          // s81：IDL 反射读内容属性——setAttribute 同步生效（spec「set an attribute
+          // value」即改 attr，反射随之；快照读 `__zw_get_attr` 同 turn 恒 stale——
+          // 与 getAttribute R2995 lw 链同款读源，querySelector/matches 侧
+          // `_hIdOf` 匹配读同源对齐）。https://dom.spec.whatwg.org/#concept-attribute
+          return handle
+            ? __zw_get_attr_handle(handle, 'id')
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'id') : __zw_get_attr(sel, 'id'));
         }
         // reflected 字符串属性（title/lang）——get 反射同名 attribute（无 → ''）；同步 set→get 优先读
         // _reflectedAttrs 缓存（__zw_set_attr 异步入队，无缓存则 set 后 get 读 stale 快照）。

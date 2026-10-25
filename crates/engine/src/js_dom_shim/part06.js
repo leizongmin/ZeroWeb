@@ -3010,6 +3010,11 @@
         try { globalThis._zwScheduleAllTrackLoads(); } catch (_eDqsT) {}
       }
       var hit = __zw_query_match(sel);
+      // s81：id 约束 stale 剔除——host 命中元素的现 id（latest-wins）不再满足
+      // 最终复合段约束 → 未命中（`#old`/`[id=old]` 改名后 stale hit 面；gEBI
+      // R125 ①臂同语义）。详见 part05 `_zwSelIdConstraint` 注记。
+      var _s81c = _zwSelIdConstraint(sel);
+      if (hit && _s81c && _zwIdConViolated(hit, _s81c)) hit = null;
       if (hit) {
         // slice44：pendingRemoved sel 剔除——已移除 parsed 后代在 host apply 前仍被
         // 快照命中，视为未命中（spec：查询面限当下 document tree；R310 元素面同族
@@ -3033,7 +3038,10 @@
             if (_s44all) {
               var _s44list = _s44all.split('|').filter(Boolean);
               for (var _s44i = 0; _s44i < _s44list.length; _s44i++) {
-                if (!_zwHitPendingRemoved(_s44list[_s44i])) return _zwQueryWrapIdentity(_s44list[_s44i]);
+                if (!_zwHitPendingRemoved(_s44list[_s44i])
+                    && !(_s81c && _zwIdConViolated(_s44list[_s44i], _s81c))) {
+                  return _zwQueryWrapIdentity(_s44list[_s44i]);
+                }
               }
             }
           }
@@ -3102,6 +3110,23 @@
               if (_matchCompoundOf(_r3902bn, _r3902bC)) return _r3902bn;
             } catch (_e3902bm) {}
           }
+        }
+      }
+      // s81 pull-in 臂：R125 表中现持目标 id 的元素拉回（`#new`/`[id=new]` 改名
+      // 后 host miss 面；gEBI R125 ②臂同语义）。单 compound——无祖先约束需复验；
+      // full compound 复验补 tag/class 共面。in-doc 门防「改名后同 turn 移除」
+      // 复活（gEBI ②臂同源、门加严）。
+      if (!hit && _s81c && _s81c.single && typeof _matchCompoundOf === 'function') {
+        var _s81cands = _zwIdOverrideCandidates(_s81c);
+        for (var _s81i = 0; _s81i < _s81cands.length; _s81i++) {
+          var _s81pr = _s81cands[_s81i];
+          if (!_s81pr) continue;
+          try {
+            if (typeof _zwMutationInDoc === 'function'
+                && !_zwMutationInDoc(_s81pr.__zwSelector, _s81pr.__zwHandle)) continue;
+            if (!_matchCompoundOf(_s81pr, _s81c.c)) continue;
+          } catch (_e81qm) { continue; }
+          return _s81pr;
         }
       }
       return null;
@@ -3596,6 +3621,45 @@
             } catch (_e3902bmq) {}
           }
         }
+      }
+      // s81：id 约束双臂——stale 剔除（最终复合段约束的 lw 现值复验；handle 形
+      // 命中不进 R125 无改名面，保序）+ pull-in 归并（R125 表现持目标 id 元素，
+      // 单 compound；`_zwDocPosCmp` 文档序插入保 tree order）。
+      var _s81q = _zwSelIdConstraint(q);
+      if (_s81q) {
+        var _s81out = [];
+        for (var _s81k = 0; _s81k < out161.length; _s81k++) {
+          var _s81p = out161[_s81k];
+          var _s81ps = _s81p ? _s81p.__zwSelector : null;
+          if (_s81ps && _zwIdConViolated(_s81ps, _s81q)) continue;
+          _s81out.push(_s81p);
+        }
+        if (_s81q.single && typeof _matchCompoundOf === 'function') {
+          var _s81cands = _zwIdOverrideCandidates(_s81q);
+          for (var _s81j = 0; _s81j < _s81cands.length; _s81j++) {
+            var _s81pr = _s81cands[_s81j];
+            if (!_s81pr) continue;
+            try {
+              if (typeof _zwMutationInDoc === 'function'
+                  && !_zwMutationInDoc(_s81pr.__zwSelector, _s81pr.__zwHandle)) continue;
+              if (!_matchCompoundOf(_s81pr, _s81q.c)) continue;
+            } catch (_e81qm2) { continue; }
+            var _s81dup = false;
+            for (var _s81d = 0; _s81d < _s81out.length; _s81d++) {
+              if (_s81out[_s81d] === _s81pr) { _s81dup = true; break; }
+              var _s81dk = null, _s81pk = null;
+              try { _s81dk = _elKeyOf(_s81pr); _s81pk = _s81out[_s81d] ? _elKeyOf(_s81out[_s81d]) : null; } catch (_e81dk) {}
+              if (_s81dk && _s81dk === _s81pk) { _s81dup = true; break; }
+            }
+            if (_s81dup) continue;
+            var _s81pos = _s81out.length;
+            for (var _s81p2 = 0; _s81p2 < _s81out.length; _s81p2++) {
+              if (_zwDocPosCmp(_s81pr, _s81out[_s81p2]) < 0) { _s81pos = _s81p2; break; }
+            }
+            _s81out.splice(_s81pos, 0, _s81pr);
+          }
+        }
+        out161 = _s81out;
       }
       var r159 = _zwMakeCollection(out161, false);
       try { r159.__zwQSA = true; } catch (_e159q) {} // R159：instanceof NodeList 标记

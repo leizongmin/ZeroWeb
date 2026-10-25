@@ -5323,7 +5323,21 @@
             // 语法校验之前）。非 type selector（含伪类/属性/组合器）→ false（保守
             // ——detached 元素的复合匹配属选择器引擎深结构，R120 只覆盖文档内元素）。
             if (!sel || typeof __zw_matches !== 'function') return false;
-            try { return __zw_matches(sel, q) === '1'; } catch (_e) { return false; }
+            // s81：id 约束双臂——host 快照 stale 的改名面（R4200 裸属性臂的 id 约束
+            // 扩展：最终复合段 id 约束以 lw 现值复验——host true 被约束否决则 false；
+            // 单 compound host miss 时 JS 侧全 compound 复验拉真，`#id`/`div#id` 等）。
+            // 详见 part05 `_zwSelIdConstraint` 注记。
+            var _s81m = _zwSelIdConstraint(q);
+            try {
+              var _s81mv = __zw_matches(sel, q) === '1';
+              if (_s81mv) return !(_s81m && _zwIdConViolated(sel, _s81m));
+              if (_s81m && _s81m.single && typeof _matchCompoundOf === 'function') {
+                try {
+                  if (_matchCompoundOf(_wrapSelector(sel), _s81m.c) && !_zwIdConViolated(sel, _s81m)) return true;
+                } catch (_e81mm) {}
+              }
+              return false;
+            } catch (_e) { return false; }
           };
         }
         // `el.closest(selector)`——自身或最近祖先首个匹配元素（proxy），无匹配 null。经 host
@@ -5331,6 +5345,25 @@
         if (prop === 'closest') {
           return function(selector) {
             if (!sel || typeof __zw_closest !== 'function') return null;
+            // s81：id 约束单 compound——JS 链上行逐祖先复验（含 self；lw 现值可见，
+            // host `__zw_closest` 走快照 stale）。`__zw_parent` 链 + compound 复验，
+            // spec closest 祖先序语义不变。
+            var _s81cl = _zwSelIdConstraint(String(selector));
+            if (_s81cl && _s81cl.single && typeof _matchCompoundOf === 'function') {
+              var _s81cur = sel, _s81g = 0;
+              while (_s81cur && _s81g++ < 48) {
+                try {
+                  if (_matchCompoundOf(_wrapSelector(_s81cur), _s81cl.c)
+                      && !_zwIdConViolated(_s81cur, _s81cl)) {
+                    return _wrapSelector(_s81cur);
+                  }
+                } catch (_e81cm) {}
+                var _s81par = null;
+                try { _s81par = (typeof __zw_parent === 'function') ? __zw_parent(_s81cur) : null; } catch (_e81cp2) {}
+                _s81cur = _s81par || null;
+              }
+              return null;
+            }
             try {
               var hit = __zw_closest(sel, String(selector));
               return hit ? _wrapSelector(hit) : null;
@@ -9682,6 +9715,11 @@
               // 监听器跨 execute 可达；未命中回调 → 原 sel proxy 零回归）。
               try {
                 var hit = __zw_query_match_sub(sel, String(q));
+                // s81：id 约束 stale 剔除——子树 host 命中的现 id（latest-wins）不
+                // 再满足最终复合段约束 → 未命中（走下方 R322 回落/pull-in）。详见
+                // part05 `_zwSelIdConstraint` 注记。
+                var _s81e = _zwSelIdConstraint(String(q));
+                if (hit && _s81e && _zwIdConViolated(hit, _s81e)) hit = null;
                 // R310（js-dom M4/L2）：pending-removed 过滤（querySelectorAll 同款）——
                 // 同 turn remove 的子树未 apply 前快照仍可命中，命中 sel 在本容器桶
                 // removed 子树的剔除集内 → 视为未命中。
@@ -9798,6 +9836,22 @@
                   }
                 }
               } catch (_e) {}
+              // s81 pull-in 臂：R125 表现持目标 id 的元素拉回（单 compound；子树
+              // 门 `_zwElInSubtreeSel` + full compound 复验 + in-doc 门）。
+              if (sel && _s81e && _s81e.single && typeof _matchCompoundOf === 'function') {
+                var _s81ec = _zwIdOverrideCandidates(_s81e);
+                for (var _s81ei = 0; _s81ei < _s81ec.length; _s81ei++) {
+                  var _s81ep = _s81ec[_s81ei];
+                  if (!_s81ep || !_s81ep.__zwSelector) continue;
+                  try {
+                    if (typeof _zwMutationInDoc === 'function'
+                        && !_zwMutationInDoc(_s81ep.__zwSelector, _s81ep.__zwHandle)) continue;
+                    if (!_zwElInSubtreeSel(_s81ep.__zwSelector, sel)) continue;
+                    if (!_matchCompoundOf(_s81ep, _s81e.c)) continue;
+                  } catch (_e81em) { continue; }
+                  return _s81ep;
+                }
+              }
               return null;
             }
             if (handle) return _handleQueryFirst(handle, q);
@@ -9915,6 +9969,46 @@
                       _r310list = _r310kept;
                     }
                   }
+                  // s81：id 约束 stale 剔除 + pull-in 归并（详见 part05
+                  // `_zwSelIdConstraint`；剔除作用于 host 列表——归并/直返两路径
+                  // 同源；pull-in 单 compound + 子树门，文档序插入）。
+                  var _s81eq = _zwSelIdConstraint(String(q));
+                  var _s81mrg = null;
+                  if (_s81eq) {
+                    var _s81el = [];
+                    for (var _s81f = 0; _s81f < _r310list.length; _s81f++) {
+                      if (!_zwIdConViolated(_r310list[_s81f], _s81eq)) _s81el.push(_r310list[_s81f]);
+                    }
+                    _r310list = _s81el;
+                    if (_s81eq.single && typeof _matchCompoundOf === 'function') {
+                      _s81mrg = function (out) {
+                        var cands = _zwIdOverrideCandidates(_s81eq);
+                        for (var i = 0; i < cands.length; i++) {
+                          var pr = cands[i];
+                          if (!pr || !pr.__zwSelector) continue;
+                          try {
+                            if (typeof _zwMutationInDoc === 'function'
+                                && !_zwMutationInDoc(pr.__zwSelector, pr.__zwHandle)) continue;
+                            if (!_zwElInSubtreeSel(pr.__zwSelector, sel)) continue;
+                            if (!_matchCompoundOf(pr, _s81eq.c)) continue;
+                          } catch (_e81em2) { continue; }
+                          var dup = false;
+                          for (var d = 0; d < out.length; d++) {
+                            if (out[d] === pr) { dup = true; break; }
+                            if (out[d] && pr.__zwSelector && out[d].__zwSelector === pr.__zwSelector) { dup = true; break; }
+                            if (out[d] && pr.__zwHandle && out[d].__zwHandle === pr.__zwHandle) { dup = true; break; }
+                          }
+                          if (dup) continue;
+                          var pos = out.length;
+                          for (var p2 = 0; p2 < out.length; p2++) {
+                            if (_zwDocPosCmp(pr, out[p2]) < 0) { pos = p2; break; }
+                          }
+                          out.splice(pos, 0, pr);
+                        }
+                        return out;
+                      };
+                    }
+                  }
                   var _r322comp = null;
                   try { _r322comp = (typeof _parseCompoundOf === 'function') ? _parseCompoundOf(String(q)) : null; } catch (_e322p) { _r322comp = null; }
                   var _r322mg = 0;
@@ -9965,7 +10059,7 @@
                     // + pending handle proxy）双计——vue_reconciliation lis:A,B,A,B（R322/R323
                     // 轮 A/B 列表未含 vue e2e，回归潜伏两轮）。
                     for (var _r322k3 = 0; _r322k3 < _r310list.length; _r322k3++) _r322out.push(_zwQueryWrapIdentity(_r310list[_r322k3]));
-                    if (_r331seenHandles) return _zwMakeCollection(_r322out, false);
+                    if (_r331seenHandles) return _zwMakeCollection(_s81mrg ? _s81mrg(_r322out) : _r322out, false);
                     for (var _r322a2 = 0; _r322a2 < _r322b3.added.length; _r322a2++) {
                       var _r322n2 = _r322b3.added[_r322a2];
                       if (!_r322n2 || !_r322n2.__zwHandle) continue;
@@ -10005,10 +10099,11 @@
                         } catch (_e322m2) {}
                       }
                     }
-                    return _zwMakeCollection(_r322out, false);
+                    return _zwMakeCollection(_s81mrg ? _s81mrg(_r322out) : _r322out, false);
                   }
                   // js-dom M4 R331：同上——无 pending 归并时的 host 结果包装也走反查。
-                  return _zwMakeCollection(_r310list.map(_zwQueryWrapIdentity), false);
+                  var _s81hl = _r310list.map(_zwQueryWrapIdentity);
+                  return _zwMakeCollection(_s81mrg ? _s81mrg(_s81hl) : _s81hl, false);
                 }
               } catch (_e) {}
               return _zwMakeCollection([], false);

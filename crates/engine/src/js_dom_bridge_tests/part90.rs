@@ -332,8 +332,8 @@ fn idl_id_rename_getelementbyid_r5279() {
     // (a)
     assert_eq!(get(&mut sandbox, 0), "true", "(a1) IDL 改名后 gEBI 新 id 命中");
     assert_eq!(get(&mut sandbox, 1), "true", "(a2) 旧 id 落空");
-    // 注：querySelector('[id=…]') 同 turn 改名可见性不在本修复面（R125 读侧只接
-    // getElementById——host 快照读路径为查询共享面，改造须独立切片）。
+    // 注：querySelector/matches/closest 的同 turn 改名可见性由 s81 独立切片承接
+    //（见 query_id_rename_same_turn_visibility_s81）。
     // (b)
     assert_eq!(get(&mut sandbox, 2), "true", "(b1) 改名回原 id → gEBI 命中（毒化面）");
     assert_eq!(get(&mut sandbox, 3), "true", "(b2) 中间 id 落空");
@@ -344,4 +344,104 @@ fn idl_id_rename_getelementbyid_r5279() {
     assert_eq!(get(&mut sandbox, 6), "true", "(d2) map 改名回原 id gEBI 命中");
     // st() 仅在异常时追加条目——全块无异常则索引 7 越界读 undefined（s78 (e2) 同法）
     assert_eq!(get(&mut sandbox, 7), "undefined", "(e) 全块无异常");
+}
+
+// R5281（s81）：querySelector/querySelectorAll/matches/closest 的 id 改名同 turn
+// 可见性——R125 读侧查询半边（gEBI 双臂之外的共享查询面）。host 查询视图
+// `with_query_view_doc` 只应用结构级 mutation（R3190「查询反映 pending 前」属性
+// 语义锚定），同 turn `setAttribute('id',…)`/`.id=` 改名不入快照——双臂补偿：
+// ① 命中复验（lw 现 id 不满足最终复合段 id 约束 → stale 剔除，全形态）；
+// ② 单 compound 拉真（R125 表候选 + `_mutationInDoc` 门 + full compound 复验；
+//    complex 祖先段约束不接——见 `_zwSelIdConstraint.single` 门注记）。
+// IDL 反射读同步 lw 化（part03 get trap id 臂）是 `_hIdOf` 匹配读同源前提。
+// FIXME(s81 后续面)：同 turn insert 元素无 `__zwSelector`（批末 apply 才有身份），
+// 从其上行的 closest/query 全盲——结构性身份缺口，与 id 改名无关。
+// https://dom.spec.whatwg.org/#dom-parentnode-queryselector
+#[test]
+fn query_id_rename_same_turn_visibility_s81() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='pa'><div id='old1'></div><div id='old2'></div>\
+         <div id='old3'></div></div></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://zero.test/s81".to_string()));
+    let canvas_registry: Arc<Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__r = [];\
+             var pa = document.getElementById('pa');\
+             var e1 = document.getElementById('old1');\
+             // (a) setAttribute 改名——文档查询面双向
+             e1.setAttribute('id', 'n1');\
+             globalThis.__r.push(document.querySelector('#n1') === e1);\
+             globalThis.__r.push(document.querySelector('#old1') === null);\
+             globalThis.__r.push(document.querySelector('[id=\"n1\"]') === e1);\
+             globalThis.__r.push(document.querySelectorAll('#n1').length);\
+             globalThis.__r.push(document.querySelectorAll('#old1').length);\
+             // (b) IDL 改名对称（s79 写侧 + s81 查询读侧）
+             var e2 = document.getElementById('old2');\
+             e2.id = 'n2';\
+             globalThis.__r.push(document.querySelector('#n2') === e2);\
+             globalThis.__r.push(document.querySelector('#old2') === null);\
+             // (c) 元素子树查询 + tag 复合段
+             var e3 = document.getElementById('old3');\
+             e3.setAttribute('id', 'n3');\
+             globalThis.__r.push(pa.querySelector('#n3') === e3);\
+             globalThis.__r.push(pa.querySelector('#old3') === null);\
+             globalThis.__r.push(pa.querySelector('div#n3') === e3);\
+             // (d) matches 双向（含 tag 复合段）
+             globalThis.__r.push(e1.matches('#n1'));\
+             globalThis.__r.push(e1.matches('#old1'));\
+             globalThis.__r.push(e1.matches('div#n1'));\
+             // (e) closest 改名面（self；同 turn insert 元素上行盲区见 FIXME）
+             globalThis.__r.push(e1.closest('#old1') === null);\
+             globalThis.__r.push(e1.closest('#n1') !== null);\
+             // (f) 改名回原 id——latest-wins 不残留（毒化面）
+             e1.setAttribute('id', 'old1');\
+             globalThis.__r.push(document.querySelector('#old1') === e1);\
+             globalThis.__r.push(document.querySelector('#n1') === null);",
+        )
+        .unwrap();
+    let get = |sandbox: &mut V8Sandbox, i: usize| -> String {
+        sandbox
+            .execute(&format!("globalThis.__r[{}]", i))
+            .unwrap()
+            .value
+    };
+    // (a)
+    assert_eq!(get(&mut sandbox, 0), "true", "(a1) qS 新 id 拉真命中");
+    assert_eq!(get(&mut sandbox, 1), "true", "(a2) qS 旧 id stale 剔除");
+    assert_eq!(get(&mut sandbox, 2), "true", "(a3) qS [id=…] 属性形态命中");
+    assert_eq!(get(&mut sandbox, 3), "1", "(a4) qSA 新 id 计 1");
+    assert_eq!(get(&mut sandbox, 4), "0", "(a5) qSA 旧 id 计 0");
+    // (b)
+    assert_eq!(get(&mut sandbox, 5), "true", "(b1) IDL 改名 qS 新 id 命中");
+    assert_eq!(get(&mut sandbox, 6), "true", "(b2) IDL 改名 qS 旧 id 剔除");
+    // (c)
+    assert_eq!(get(&mut sandbox, 7), "true", "(c1) 子树 qS 新 id 命中");
+    assert_eq!(get(&mut sandbox, 8), "true", "(c2) 子树 qS 旧 id 剔除");
+    assert_eq!(get(&mut sandbox, 9), "true", "(c3) 子树 div#id 复合段命中");
+    // (d)
+    assert_eq!(get(&mut sandbox, 10), "true", "(d1) matches 新 id true");
+    assert_eq!(get(&mut sandbox, 11), "false", "(d2) matches 旧 id false");
+    assert_eq!(get(&mut sandbox, 12), "true", "(d3) matches div#id true");
+    // (e)
+    assert_eq!(get(&mut sandbox, 13), "true", "(e1) closest 旧 id null");
+    assert_eq!(get(&mut sandbox, 14), "true", "(e2) closest 新 id 非空");
+    // (f)
+    assert_eq!(get(&mut sandbox, 15), "true", "(f1) 改名回原 id qS 命中");
+    assert_eq!(get(&mut sandbox, 16), "true", "(f2) 中间 id 落空");
 }

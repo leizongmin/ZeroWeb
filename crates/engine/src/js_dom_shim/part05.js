@@ -5690,6 +5690,129 @@
     }
     return false;
   }
+  // s81（html-semantics M2）：id 改名同 turn 查询可见性——querySelector/querySelectorAll/
+  // matches/closest 的 id 约束双臂补偿（R125 的查询读面半边；gEBI 双向消费已落在
+  // part06 getElementById）。host 查询视图同 turn 不反映 queued id 改名：
+  // `with_query_view_doc` 只应用结构级 mutation（R3190 的「查询反映 pending 前」
+  // 属性语义锚定），live doc 批末 drain——`#new` miss / `#old` stale hit。补偿只动
+  // **选择器 id 约束**（`#id` token 与 `[id]`/`[id=v]`）：其余属性约束维持 R3190
+  // 既有语义不变。R125 表只收 sel-based 元素（part04 写侧 `!handle` 门）——
+  // 候选反查 `_proxyCache[key]` 即原 proxy（身份同 gEBI ②臂）。
+  // 提取选择器**最终复合段**的 id 约束（complex 选择器仅最终段约束作用于命中
+  // 元素——祖先段约束归 host 判定）。返 null = 无约束或不可安全近似形态
+  //（unsupported compound、`[id~=…]` 等操作符——host 行为保持）。`single` =
+  // 整条选择器是单 compound（pull-in 臂前提：无祖先约束需复验）。
+  function _zwSelIdConstraint(q) {
+    var s = String(q == null ? '' : q);
+    if (!s) return null;
+    // 轻量预门：无 `#`/`[` 的形态（裸 tag/类/后代组合）必无 id 约束——查询高频
+    // 面免逐次复合段拆分（R3902b 预门同口径）。
+    if (s.indexOf('#') < 0 && s.indexOf('[') < 0) return null;
+    var parts = null;
+    try { parts = _splitComplex(s); } catch (_e81sp) { return null; }
+    if (!parts || !parts.compounds || !parts.compounds.length) return null;
+    var c = null;
+    try { c = _parseCompoundOf(parts.compounds[parts.compounds.length - 1]); } catch (_e81cp) { return null; }
+    if (!c || c.unsupported) return null;
+    var ids = (c.ids || []).slice(), idEq = [], idPresent = false;
+    for (var i = 0; i < (c.attrs || []).length; i++) {
+      var a = c.attrs[i];
+      if (String(a.name).toLowerCase() !== 'id') continue;
+      if (a.op == null) { idPresent = true; continue; }
+      if (a.op === '=') { idEq.push({ val: a.val, flag: a.flag }); continue; }
+      return null; // ~=^=$=*=| 对改名面无 lw 单值近似 → 不补偿（host 行为保持）
+    }
+    if (!ids.length && !idEq.length && !idPresent) return null;
+    return { ids: ids, idEq: idEq, idPresent: idPresent, single: parts.compounds.length === 1, c: c };
+  }
+  // sel 元素当前 id——latest-wins 读（同 turn 改名可见，R4200 同款读链）。读链
+  // 缺席 → undefined（调用方不剔除——host 行为保持）。
+  function _zwIdCurOfSel(selStr) {
+    if (!selStr || typeof __zw_get_attr_lw !== 'function') return undefined;
+    try {
+      var v = __zw_get_attr_lw(selStr, 'id');
+      return v == null ? null : String(v);
+    } catch (_e81id) { return undefined; }
+  }
+  // host 命中的 id 约束复验：lw 现 id 不满足任一约束 → violated（stale 剔除）。
+  function _zwIdConViolated(selStr, cons) {
+    var cur = _zwIdCurOfSel(selStr);
+    if (cur === undefined) return false;
+    for (var i = 0; i < cons.ids.length; i++) if (cur !== cons.ids[i]) return true;
+    for (var j = 0; j < cons.idEq.length; j++) {
+      var want = cons.idEq[j].flag === 'i' ? cons.idEq[j].val.toLowerCase() : cons.idEq[j].val;
+      var got = cons.idEq[j].flag === 'i' ? String(cur).toLowerCase() : cur;
+      if (got !== want) return true;
+    }
+    if (cons.idPresent && cur === null) return true;
+    return false;
+  }
+  // pull-in 候选：R125 表中现持目标 id 的元素 proxy（full compound 复验由调用方
+  // 做——tag/class 等共面约束读 lw/IDL 同源可见）。
+  function _zwIdOverrideCandidates(cons) {
+    if ((!cons.ids.length && !cons.idEq.length) || typeof _zwIdOverridesEntries !== 'function') return [];
+    var out = [];
+    try {
+      var ents = _zwIdOverridesEntries();
+      for (var i = 0; i < ents.length; i++) {
+        var ov = ents[i][1];
+        var want = false;
+        for (var a = 0; a < cons.ids.length; a++) if (ov === cons.ids[a]) { want = true; break; }
+        if (!want) {
+          for (var b = 0; b < cons.idEq.length; b++) {
+            var wv = cons.idEq[b].flag === 'i' ? cons.idEq[b].val.toLowerCase() : cons.idEq[b].val;
+            var ovv = cons.idEq[b].flag === 'i' ? String(ov).toLowerCase() : ov;
+            if (ovv === wv) { want = true; break; }
+          }
+        }
+        if (!want) continue;
+        var pr = _proxyCache[ents[i][0]];
+        if (pr) out.push(pr);
+      }
+    } catch (_e81oc) {}
+    return out;
+  }
+  // sel 元素是否 rootSel 子树成员（元素级 pull-in 门；`__zw_parent` 链上行，
+  // 封顶 48 跳防环——R125 gEBI `_r125AncestorRemoved` 同款封顶口径）。
+  function _zwElInSubtreeSel(selStr, rootSel) {
+    var cur = selStr, guard = 0;
+    while (cur && guard++ < 48) {
+      var par = null;
+      try { par = (typeof __zw_parent === 'function') ? __zw_parent(cur) : null; } catch (_e81ps) { return false; }
+      if (!par) return false;
+      if (par === rootSel) return true;
+      cur = par;
+    }
+    return false;
+  }
+  // 文档序比较（proxy/sel 混排；pull-in 归并排序用——R4006 `_r4006TreeCmp` 同语义
+  // 轻量版：异根/身份分裂/索引不可得返 0 保插入序）。
+  function _zwDocPosCmp(a, b) {
+    if (a === b) return 0;
+    var as = (a && a.__zwSelector) || a, bs = (b && b.__zwSelector) || b;
+    if (!as || !bs || as === bs || typeof __zw_parent !== 'function') return 0;
+    var ac = [], bc = [], n;
+    try {
+      for (n = as; n && ac.length < 64; n = __zw_parent(n)) ac.unshift(n);
+      for (n = bs; n && bc.length < 64; n = __zw_parent(bs)) bc.unshift(n);
+    } catch (_e81dp) { return 0; }
+    var ci = 0;
+    while (ci < ac.length && ci < bc.length && ac[ci] === bc[ci]) ci++;
+    if (ci === 0) return 0;
+    if (ci === ac.length) return -1;
+    if (ci === bc.length) return 1;
+    try {
+      var kids = _childNodeList(ac[ci - 1], null) || [];
+      var ia = -1, ib = -1;
+      for (var k = 0; k < kids.length; k++) {
+        var ks = kids[k] && kids[k].__zwSelector;
+        if (ia < 0 && ks === ac[ci]) ia = k;
+        if (ib < 0 && ks === bc[ci]) ib = k;
+      }
+      if (ia < 0 || ib < 0) return 0;
+      return ia - ib;
+    } catch (_e81dc) { return 0; }
+  }
   // 读 compound 内裸 token（tag/id/class 名），遇 `.`/`#`/`[`/`:`/空白停。
   function _readCompoundToken(text, start) {
     // js-dom M4 R118：CSS 转义解码（CSS Syntax 4.3.4「consume an escaped code point」——
