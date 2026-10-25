@@ -12696,12 +12696,18 @@
   // 效）。求值窗 swap 进文档基、finally 换回——referrer 槽位是每脚本共享态，零外溢
   //（后续 timer/模块回调不被污染）。宿主回调未注册（QuickJS 后端降级）→ 直接执行零变更。
   // https://html.spec.whatwg.org/multipage/webappapis.html#event-handler-processing-model
-  function _zwCallHandlerDocBase(fn, thisArg, ev) {
-    var swap = typeof globalThis.__zwSwapImportReferrer === 'function'
-      && typeof globalThis._zwDocBaseURL === 'function';
-    var prev = swap ? globalThis.__zwSwapImportReferrer(globalThis._zwDocBaseURL()) : null;
+  // s91（string-compilation base URL external 面）：抽出通用 swap 形——base 由调用方
+  // 给定（inline 处理器传当前文档基；字符串 timer 传**注册期捕获**的脚本基——fire 在
+  // 脚本求值窗外，届时槽位已被后续脚本改写）。
+  function _zwCallHandlerSwapBase(fn, thisArg, ev, base) {
+    var swap = typeof globalThis.__zwSwapImportReferrer === 'function' && base != null;
+    var prev = swap ? globalThis.__zwSwapImportReferrer(base) : null;
     try { return fn.call(thisArg, ev); }
     finally { if (swap) globalThis.__zwSwapImportReferrer(prev); }
+  }
+  function _zwCallHandlerDocBase(fn, thisArg, ev) {
+    return _zwCallHandlerSwapBase(fn, thisArg, ev,
+      typeof globalThis._zwDocBaseURL === 'function' ? globalThis._zwDocBaseURL() : null);
   }
 
   // 编译 fn 的换基包装（参数绑定——var 循环里直闭包捕获会读到末轮绑定）。

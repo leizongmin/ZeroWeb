@@ -5577,7 +5577,22 @@
     // ——WebIDL callback 转换）——原静默丢弃致计时器永不 fire（harness 页首臂 pend
     // 连累串行后续臂）。注册期 `new Function` 编译（spec 转换同时点；语法错同步抛，
     // 同 Chrome）。其余非 function 维持旧行为（静默 no-op）。
-    if (typeof fn === 'string') fn = new Function(fn);
+    // s91（string-compilation base URL external 面）：字符串 timer 的动态 import() 基 =
+    // **注册时刻**执行脚本的基 URL（spec TimerInitializationSteps 用设置对象 API base
+    // URL——外链脚本注册的 timer fire 在脚本求值窗外，届时 referrer 槽位已被后续脚本
+    // 改写）。注册期捕获槽位（`__zwSwapImportReferrer` 无参 getter）、fire 时 swap 求
+    // 值、finally 换回（同 inline 处理器换基模式，part03 `_zwCallHandlerSwapBase`）。
+    if (typeof fn === 'string') {
+      var _zwCapBase = (typeof globalThis.__zwSwapImportReferrer === 'function')
+        ? globalThis.__zwSwapImportReferrer() : null;
+      var _zwCompiled = new Function(fn);
+      fn = function () {
+        if (typeof _zwCallHandlerSwapBase === 'function') {
+          return _zwCallHandlerSwapBase(_zwCompiled, this, arguments[0], _zwCapBase);
+        }
+        return _zwCompiled.apply(this, arguments);
+      };
+    }
     if (typeof fn !== 'function') return handle;
     var id = _timerIdKey(handle);
     var level = _zwTimerNesting;
@@ -5605,7 +5620,18 @@
   globalThis.setInterval = function(fn, delay) {
     var handle = _timerId++;
     // s90：字符串 handler 同 setTimeout（spec 同步 support；语法错注册期同步抛）。
-    if (typeof fn === 'string') fn = new Function(fn);
+    // s91：注册期捕获脚本基同 setTimeout（fire 时 swap 求值 finally 换回）。
+    if (typeof fn === 'string') {
+      var _zwCapBaseI = (typeof globalThis.__zwSwapImportReferrer === 'function')
+        ? globalThis.__zwSwapImportReferrer() : null;
+      var _zwCompiledI = new Function(fn);
+      fn = function () {
+        if (typeof _zwCallHandlerSwapBase === 'function') {
+          return _zwCallHandlerSwapBase(_zwCompiledI, this, arguments[0], _zwCapBaseI);
+        }
+        return _zwCompiledI.apply(this, arguments);
+      };
+    }
     if (typeof fn !== 'function') return handle;
     var id = _intervalIdKey(handle);
     var ms = delay | 0;

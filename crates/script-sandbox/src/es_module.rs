@@ -314,30 +314,148 @@ pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&st
 }
 
 pub(crate) fn rewrite_dynamic_imports(source: &str) -> String {
-    let mut out = String::new();
+    // s91（string-compilation module 面）：字符串/模板/注释上下文感知——旧版纯文本
+    // 扫描把**字符串字面量内**的 `import(`（eval/Function/setTimeout 字符串、事件处
+    // 理器属性体的源码形态）也重写并发射 `_importMeta.url`，该绑定是模块 IIFE 局部
+    // 量，字符串运行时经 Function/事件处理器编译到全局作用域 → `ReferenceError:
+    // _importMeta`（探针实证：s91probe-fn/-reflected sync-throw、-timer 静默抛）。
+    // 上下文内不重写 → 运行时编译体走 V8 原生动态 import() 宿主回调（classic/module
+    // 页面 s88/s90 已接通槽位 referrer；SW 上下文动态 import 本就 spec 禁止，prelude
+    // stub 维持 TypeError 语义）。
+    // 已知限制：正则字面量内的引号（如 `/['"]/`）会把扫描器带入字符串态——后续真实
+    // `import(` 漏重写降级走原生回调（页面上下文行为正确，仅 referrer 取槽位而非词法
+    // 穿参）；全量 JS 词法器不做，按 t8j-r2 轻量精神取舍。
+    let bytes = source.as_bytes();
+    let mut out = String::with_capacity(source.len());
+    let mut stack: Vec<RewriteCtx> = Vec::new();
     let mut i = 0;
     while i < source.len() {
-        if source[i..].starts_with("import(") {
-            // t8j：经 `.call({referrer})` 把调用点 referrer 穿给 helper——重写点在模块 IIFE
-            // 内（build_module_script / build_dep_iife 均定义 `var _importMeta`；service_worker
-            // 经典脚本路径在宿主侧设置 `globalThis._importMeta`），而 `__zw_dynamic_import`
-            // 本体在全局作用域执行，读不到 IIFE 局部的 `_importMeta`（旧实现恒回退
-            // 'about:blank' → 相对 spec 解析失败、按原始 specifier 发起网络请求）。
-            // ECMA-262 §sec-module-specifiers：动态 import 的 specifier 相对
-            // **active script/module**（即调用点 referrer）解析。
-            // t8j-r2（D2）：发射串不得含任何引号字符——子串扫描不识别字符串字面量上下文，
-            // 发射进宿主单引号字符串（如 `throw new Error('import() failed')`）时引号提前
-            // 终止字符串 → 整脚本 SyntaxError（base 发射串无引号仅值污染）。发射体只引用
-            // 调用点词法作用域的 `_importMeta`（全部重写目标已保证定义），零引号。
-            out.push_str("__zw_dynamic_import.call({ referrer: _importMeta.url }, ");
-            i += "import(".len();
-        } else {
-            let ch = source[i..].chars().next().expect("char");
-            out.push(ch);
-            i += ch.len_utf8();
+        if stack.is_empty() {
+            if source[i..].starts_with("import(") {
+                // t8j：经 `.call({referrer})` 把调用点 referrer 穿给 helper——重写点在模块 IIFE
+                // 内（build_module_script / build_dep_iife 均定义 `var _importMeta`；service_worker
+                // 经典脚本路径在宿主侧设置 `globalThis._importMeta`），而 `__zw_dynamic_import`
+                // 本体在全局作用域执行，读不到 IIFE 局部的 `_importMeta`（旧实现恒回退
+                // 'about:blank' → 相对 spec 解析失败、按原始 specifier 发起网络请求）。
+                // ECMA-262 §sec-module-specifiers：动态 import 的 specifier 相对
+                // **active script/module**（即调用点 referrer）解析。
+                // t8j-r2（D2）：发射串不得含任何引号字符——发射进宿主单引号字符串
+                //（如 `throw new Error('import() failed')`）时引号提前终止字符串 → 整脚
+                // 本 SyntaxError（base 发射串无引号仅值污染）。发射体只引用调用点词法
+                // 作用域的 `_importMeta`（代码态重写目标已保证定义），零引号。
+                out.push_str("__zw_dynamic_import.call({ referrer: _importMeta.url }, ");
+                i += "import(".len();
+                continue;
+            }
+            match bytes[i] {
+                b'\'' | b'"' | b'`' => stack.push(RewriteCtx::Literal(bytes[i])),
+                b'/' if bytes.get(i + 1) == Some(&b'/') => {
+                    stack.push(RewriteCtx::LineComment);
+                    out.push_str("//");
+                    i += 2;
+                    continue;
+                }
+                b'/' if bytes.get(i + 1) == Some(&b'*') => {
+                    stack.push(RewriteCtx::BlockComment);
+                    out.push_str("/*");
+                    i += 2;
+                    continue;
+                }
+                _ => {}
+            }
+            let step = source[i..].chars().next().map_or(1, char::len_utf8);
+            out.push_str(&source[i..i + step]);
+            i += step;
+            continue;
+        }
+        let c = bytes[i];
+        // 栈空分支已在上方 continue；此处栈非空，`expect` 恒成立。
+        match stack.last_mut().expect("ctx stack non-empty") {
+            RewriteCtx::Literal(q) => {
+                if c == b'\\' {
+                    // 转义对：拷转义符与被转义字符（UTF-8 逐字符，防切多字节序列）。
+                    let step = source[i..].chars().next().map_or(1, char::len_utf8);
+                    out.push_str(&source[i..i + step]);
+                    i += step;
+                    if i < source.len() {
+                        let step2 = source[i..].chars().next().map_or(1, char::len_utf8);
+                        out.push_str(&source[i..i + step2]);
+                        i += step2;
+                    }
+                    continue;
+                }
+                if c == *q {
+                    stack.pop();
+                } else if *q == b'`' && c == b'$' && bytes.get(i + 1) == Some(&b'{') {
+                    // 模板表达式态：`${` 内是代码——真实 `import(` 须照常重写。
+                    stack.push(RewriteCtx::TemplateExpr(0));
+                    out.push_str("${");
+                    i += 2;
+                    continue;
+                }
+                let step = source[i..].chars().next().map_or(1, char::len_utf8);
+                out.push_str(&source[i..i + step]);
+                i += step;
+            }
+            RewriteCtx::TemplateExpr(depth) => {
+                // 模板 `${}` 表达式区内仍是代码——真实 `import(` 照常重写（仍在模块
+                // IIFE 词法作用域内，发射体 `_importMeta` 合法）。
+                if source[i..].starts_with("import(") {
+                    out.push_str("__zw_dynamic_import.call({ referrer: _importMeta.url }, ");
+                    i += "import(".len();
+                    continue;
+                }
+                match c {
+                    b'\'' | b'"' | b'`' => stack.push(RewriteCtx::Literal(c)),
+                    b'{' => *depth += 1,
+                    b'}' => {
+                        if *depth == 0 {
+                            stack.pop(); // `}` 闭合 `${` → 回模板串
+                        } else {
+                            *depth -= 1;
+                        }
+                    }
+                    _ => {}
+                }
+                let step = source[i..].chars().next().map_or(1, char::len_utf8);
+                out.push_str(&source[i..i + step]);
+                i += step;
+            }
+            RewriteCtx::LineComment => {
+                if c == b'\n' {
+                    stack.pop();
+                }
+                let step = source[i..].chars().next().map_or(1, char::len_utf8);
+                out.push_str(&source[i..i + step]);
+                i += step;
+            }
+            RewriteCtx::BlockComment => {
+                if c == b'*' && bytes.get(i + 1) == Some(&b'/') {
+                    stack.pop();
+                    out.push_str("*/");
+                    i += 2;
+                    continue;
+                }
+                let step = source[i..].chars().next().map_or(1, char::len_utf8);
+                out.push_str(&source[i..i + step]);
+                i += step;
+            }
         }
     }
     out
+}
+
+/// `rewrite_dynamic_imports` 的词法上下文栈元素（代码态 = 栈空）。
+#[derive(Clone, Copy)]
+enum RewriteCtx {
+    /// 单/双引号字符串或模板串（值 = 定界符字节）。
+    Literal(u8),
+    /// 模板串 `${` 表达式态（值 = 未闭合 `{` 深度；0 时 `}` 回模板串）。
+    TemplateExpr(u32),
+    /// `//` 行注释（至行尾）。
+    LineComment,
+    /// `/* */` 块注释（至 `*/`）。
+    BlockComment,
 }
 
 /// 从模块源码中提取全部 `import` 依赖标识符（静态 `import` + 动态 `import()`）。
@@ -1550,6 +1668,74 @@ fn is_reserved_word(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // s91（string-compilation module 面）：rewrite 的字符串/模板/注释上下文感知——
+    // 字面量内的 `import(` 是 eval/Function/setTimeout 字符串的**运行时代码**，编译到
+    // 全局作用域后 `_importMeta`（IIFE 局部量）不可见 → ReferenceError 探针实证。
+    // 仅代码态的真实 `import(` 重写；字面量内保持原样走运行时 V8 原生宿主回调。
+    #[test]
+    fn test_rewrite_skips_import_inside_string_literal() {
+        let r =
+            rewrite_dynamic_imports("var a = \"import('./x.js')\"; var b = 'import(\\'y.js\\')'; import('./z.js');");
+        assert!(
+            !r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url }, './x.js')"),
+            "双引号串内 import( 不重写：{r}"
+        );
+        assert!(
+            !r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url }, 'y.js')"),
+            "单引号串（内嵌转义引号）内 import( 不重写：{r}"
+        );
+        assert!(
+            r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url }, "),
+            "代码态真实 import( 照常重写：{r}"
+        );
+        assert_eq!(r.matches("import(").count(), 2, "字面量内两处原样保留：{r}");
+    }
+
+    #[test]
+    fn test_rewrite_rewrites_import_inside_template_expression_only() {
+        // 模板文本区不重写；`${}` 表达式区照常重写（含嵌套对象花括号深度）。
+        let r = rewrite_dynamic_imports("var t = `text import('./a.js') ${ {n: 1}.n } ${ import('./b.js') }`;");
+        assert!(
+            !r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url }, './a.js')"),
+            "模板文本区内不重写：{r}"
+        );
+        assert!(
+            r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url }, './b.js')"),
+            "模板表达式区内照常重写：{r}"
+        );
+    }
+
+    #[test]
+    fn test_rewrite_skips_import_inside_comments() {
+        let r = rewrite_dynamic_imports("// import('./c.js')\n/* import('./d.js') */ import('./e.js');");
+        assert!(
+            !r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url }, './c.js')")
+                && !r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url }, './d.js')"),
+            "行/块注释内不重写：{r}"
+        );
+        assert!(
+            r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url }, './e.js')"),
+            "注释后代码态照常重写：{r}"
+        );
+    }
+
+    #[test]
+    fn test_rewrite_survives_multibyte_characters() {
+        // s91 返工钉：逐字节 `source[i..i+1]` 切进多字节字符 panic（WPT 语料
+        // module 页含 'ś' 实证，runner 整批 rc=101）——拷贝按整字符步进。
+        let r = rewrite_dynamic_imports(r#"var s = 'zażółć import("x.js") gęślą'; import('./y.js'); // importé"#);
+        assert!(
+            r.contains("zażółć") && r.contains("gęślą") && r.contains(r#"import("x.js")"#),
+            "多字节字符串原样保留：{r}"
+        );
+        assert!(!r.contains(r#"_importMeta.url }, "x.js")"#), "串内 import( 未重写：{r}");
+        assert!(
+            r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url }, './y.js')"),
+            "代码态照常重写：{r}"
+        );
+        assert!(r.ends_with("// importé"), "多字节行注释原样保留：{r}");
+    }
 
     #[test]
     fn test_module_registry_new() {

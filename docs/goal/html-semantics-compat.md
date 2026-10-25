@@ -2,9 +2,55 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 90 施工收口（string-compilation 动态 import() 字符串编译面 classic 三刀闭环 +20P 拆臂 bitwise：scripting-1 **158P/294F/33T→173P/294F/30T**（raw；域账 +1 惯例 **174P/294F/30T**）——三刀：①shim setTimeout/setInterval 字符串 handler 注册期 `new Function` 编译（TimerInitializationSteps WebIDL callback 转换，此前静默丢弃堵死 harness 串行）；②engine `script_effective_base_urls` zero_dom 树序捕获每脚本 parse 时刻基 URL 接 webview referrer 槽位（concept-scripts-base-url；原文偏移扫曾误——`<script` 文本≠DOM 序号返工记录在账）；③inline/反射事件处理器求值窗换基 `__zwSwapImportReferrer` 原生回调 + shim `_zwCallHandlerDocBase` finally 换回（event-handler-processing-model）；失败族地图序：①dynamic-import must-reject + classic 面 ✅ → ②stylesheets-blocking-scripts 12F 簇 ✅ → ③the-script-element 基面余 module 基座/外链加载器/CSP nonce → ④module 尾片），下一步 s91 the-script-element 余账（module 上下文 5 文件 T + base-url-external-classic 动态加载器）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 91 施工收口（动态 import() 重写器词法上下文感知 + module 上下文面收口，string-compilation 族清盘 **42P/4F/0T**：scripting-1 **173P/294F/30T→197P/295F/25T**（raw；域账 +1 惯例 **198P/295F/25T**）——三刀：①es_module `rewrite_dynamic_imports` 重写器 RewriteCtx 栈词法感知——字符串字面量/注释内 `import(` 不再改写（根因：纯文本扫描把字面量内 import( 也改写，字符串编译产物全局作用域 `ReferenceError: _importMeta`；UTF-8 char 步进返工在账）；②语料补 `dynamic-import/scripts/` 5 loader（fetch_dir_html depth-1 缺口，s89 *.css 同类）+ part04 R387b 外链经典脚本求值窗换基（concept-scripts-base-url：脚本基 = 自身 URL）；③字符串 timer 注册期捕获基——swapper 无参 getter 语义 + part01 注册期捕获 + part03 `_zwCallHandlerSwapBase` 拆通用形（fire 在求值窗外）；失败族地图序：①dynamic-import must-reject + classic 面 ✅ → ②stylesheets-blocking-scripts ✅ → ③the-script-element 基面余 CSP nonce 4F → ④module 尾片），下一步 s92 CSP nonce must-not-inherit 4F（s88 挂账 CSP 语义建模）或 module 尾片盘点，开工先探针定刀位；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-26 M2 切片 90 施工收口，string-compilation 动态 import() 字符串编译轮）**：
+> **▶ 当前状态（2026-10-26 M2 切片 91 施工收口，动态 import() 重写器词法感知 + module 面收口轮）**：
+> **入场核账**：s90 HEAD（8c4a575dd）the-script-element 全子树复扫
+> **173P/294F/30T**（497 行）。残面：string-compilation-module
+> eval 1F + 整页 1T、base-url-inline-module / nonce-module /
+> base-url-external-module 整页 3T、base-url-external-classic 整页 1T
+> （语料缺 dynamic-import/scripts/——fetch_dir_html depth-1 不下钻）。
+> **根因**（STEPS 探针串实证）：`rewrite_dynamic_imports` 纯文本扫描
+> 把**字符串字面量内** `import(` 也改写——字面量被 Function/eval/
+> setTimeout 字符串体编译后在全局作用域执行，体内 `__zw_dynamic_import
+> .call({ referrer: _importMeta.url }, ...)` 引用 IIFE 局部绑定
+> `_importMeta` → ReferenceError，import 永不发生；WPT 子测试名（显式
+> 字面量）在 s90 扫描被污染成 `__zw_dynamic_import.call(...)` 同源实证。
+> **本轮三刀**：①es_module 重写器 `RewriteCtx` 栈词法感知——Literal
+> （引号定界/转义对）/TemplateExpr（`${}` 内照常重写、花括号计深）/
+> 行注释/块注释，栈空代码态照旧；5 拷贝点改 `char::len_utf8` 步进
+> （首版按字节切遇 WPT 语料 `ś` panic、runner 批次 rc=101 全灭——返工
+> ①）+多字节单测钉死；已知限制：含引号正则字面量误入 Literal 态、
+> 漏改走 V8 原生宿主回调语义仍对；②语料 fetch_raw 补 scripts/ 5
+> loader（gitignore 本地数据）+ part04 R387b 外链经典脚本求值窗
+> `__zwSwapImportReferrer(自身绝对 URL)` finally 换回（concept-scripts
+> -base-url）；③v8_runtime swapper 无参调用 = 纯 getter + part01
+> 字符串 timer 注册期捕获基（fire 在求值窗外槽位已被改写）+ part03
+> `_zwCallHandlerSwapBase(fn, thisArg, ev, base)` 拆通用形、
+> `_zwCallHandlerDocBase` 变薄壳。**验证**：全子树基线/修后双扫 diff
+> 归因配对核清零误伤：**+24P +1F −5T**——module 5（eval F→P+4 拆臂）、
+> base-url-inline-module 5、base-url-external-classic 5、
+> base-url-external-module 5、nonce-module 4P+2F（must-not-inherit
+> 拆臂显形既有红面非回归）；族外 27 行派生名恢复 + import-meta 1 行
+> 同名异写状态不变（名恢复即刀A 生效直接证据）。族终态 **42P/4F/0T**。
+> 单测 engine **3526/3526**、webview **800/800**、sandbox v8 **362/362**
+> （含新增 4 测）、quickjs 全绿；fmt clean、clippy 双 crate
+> `-D warnings` clean（用户 systemd scope 本环境不可用，ulimit 24G +
+> timeout 900 shell 兜底）。域账自此按 **198P/295F/25T** 记（raw
+> 197P + 惯例 +1）。账本见
+> [evidence/2026-10-26-m2s91-module-context-lexer-aware-rewrite.md](html-semantics-compat/evidence/2026-10-26-m2s91-module-context-lexer-aware-rewrite.md)。
+> **范围**：script-sandbox ×2 / engine shim ×3 文件；css/layout/
+> renderer 零改动；语料不可改维持（探针页跑完即删）。
+> **挂账**：nonce-classic/-module must-not-inherit 4F（CSP nonce 语义
+> 未建模，s88 已挂）；正则字面量限制（漏改走原生回调语义对、换基精度
+> 降）；语料 fetch 深度工具局限在案；QuickJS 后端动态 import 不支持态
+> 维持。
+> **下一步**：s92 二选一定刀位——CSP nonce must-not-inherit 4F（引擎
+> CSP 语义建模，s88 挂账合并）或 module 尾片盘点；开工先探针。
+> **切片间隙**：本轮 script-sandbox/engine 面；下一挂账同流同面，
+> 间隙开放。
+
+> **▶ 上轮状态（2026-10-26 M2 切片 90 施工收口，string-compilation 动态 import() 字符串编译轮——其下一步 s91 module 上下文面已由 s91 收口，见上）**：
 > **入场核账**：s89 HEAD（44e23748f）the-script-element 全子树复扫
 > **158P/294F/33T**（485 行）。string-compilation 族基线 3P/3F/8T：
 > classic 整页 T（字符串 setTimeout handler 被静默丢弃永不 fire，堵死

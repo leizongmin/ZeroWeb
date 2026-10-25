@@ -7096,7 +7096,23 @@
                       if (!_r.ok && _r.status) throw new Error('HTTP ' + _r.status);
                       return _r.text();
                     }).then(function (_code) {
-                      if (_code) (0, eval).call(globalThis, _code);
+                      // s91（string-compilation base URL external 面）：外链经典脚本
+                      // 求值窗 swap 进脚本自身绝对 URL（spec 脚本基 URL = 自身 URL
+                      // ——体内 eval/Function/import 同步触发读 referrer 槽位；finally
+                      // 换回。后续 timer 回调由 part01 刀①注册期捕获本基）。
+                      // https://html.spec.whatwg.org/multipage/webappapis.html#concept-scripts-base-url
+                      var _zwAbs = _r387url;
+                      try {
+                        _zwAbs = new URL(_r387url, (globalThis.document && globalThis.document.baseURI)
+                          || (globalThis.location && globalThis.location.href) || 'about:blank').href;
+                      } catch (_zwAbsE) {}
+                      var _zwPrev = (typeof globalThis.__zwSwapImportReferrer === 'function')
+                        ? globalThis.__zwSwapImportReferrer(_zwAbs) : null;
+                      try {
+                        if (_code) (0, eval).call(globalThis, _code);
+                      } finally {
+                        if (_zwPrev !== null) globalThis.__zwSwapImportReferrer(_zwPrev);
+                      }
                       try { _r387el.dispatchEvent(new Event('load')); } catch (_e387l) {}
                     }).catch(function () {
                       try { _r387el.dispatchEvent(new Event('error')); } catch (_e387e2) {}

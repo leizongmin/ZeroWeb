@@ -576,9 +576,13 @@ impl V8Sandbox {
         self.register_callback(
             "__zwSwapImportReferrer",
             Box::new(move |args| {
-                let url = args.first().cloned().unwrap_or_default();
                 if let Ok(mut st) = dynamic_import.lock() {
-                    return std::mem::replace(&mut st.referrer, url);
+                    // 无参调用 = 纯 getter（返回当前值不换）——shim 字符串 timer 注册
+                    // 期捕获脚本基（fire 在求值窗外，届时槽位已被后续脚本改写）。
+                    return match args.first() {
+                        Some(url) => std::mem::replace(&mut st.referrer, url.clone()),
+                        None => st.referrer.clone(),
+                    };
                 }
                 String::new()
             }),
