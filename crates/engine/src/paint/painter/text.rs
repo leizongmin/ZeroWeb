@@ -3664,7 +3664,7 @@ impl super::Painter {
                         && matches!(style.direction, zero_style_system::DirectionValue::Ltr)
                         && !self.text_selections.is_empty()
                     {
-                        for ((owner, ltb), line_start, line_end, _, _) in &line_ranges {
+                        for ((owner, ltb), line_start, line_end, min_x, max_xw) in &line_ranges {
                             if sel_owned.is_some() && *owner == box_id {
                                 continue;
                             }
@@ -3677,13 +3677,87 @@ impl super::Painter {
                             let Some(os) = styles.and_then(|st| st.get(owner)) else {
                                 continue;
                             };
-                            let Some(p) = os.selection_pseudo.as_ref() else {
-                                continue;
+                            // R5271（css-pseudo-4 §highlight-styling/§highlight-cascading）：
+                            // owner 无作者 ::selection 记录时回落 **UA 默认高亮面**
+                            // Highlight 背景 + HighlightText 前景（css-color-4 §css-system-
+                            // colors；ref 页同关键字静态样式 → 双侧同 RGB 必收敛）。
+                            // driving: system-color-hightlights-vs-getSelection-001/002
+                            //（selectNode(span) 5.25pp 合计带）。作者声明面（含显式
+                            // transparent——selection_pseudo 已存）不回落；kill-switch
+                            // `ZW_SELECTION_HIGHLIGHT_DEFAULT=0`（≡ R5065 同语义开关）回退
+                            // 「无规则无高亮」旧口径。
+                            let (line_color, line_bg) = match os.selection_pseudo.as_ref() {
+                                Some(p) => (
+                                    super::super::color::resolve_color_current(&p.color, &os.color),
+                                    super::super::color::resolve_color_current(&p.background_color, &os.color),
+                                ),
+                                None if std::env::var("ZW_SELECTION_HIGHLIGHT_DEFAULT").as_deref() != Ok("0") => (
+                                    zero_css_parser::values::parse_named_color("highlighttext")
+                                        .map(|c| super::super::color::resolve_color_current(&c, &os.color))
+                                        .unwrap_or_else(|| {
+                                            super::super::color::resolve_color_current(&os.color, &os.color)
+                                        }),
+                                    zero_css_parser::values::parse_named_color("highlight")
+                                        .map(|c| super::super::color::resolve_color_current(&c, &os.color))
+                                        .unwrap_or(zero_render_foundation::color::Color::TRANSPARENT),
+                                ),
+                                None => continue,
                             };
-                            sel_line_colors.insert(
-                                (*owner, *ltb),
-                                super::super::color::resolve_color_current(&p.color, &os.color),
-                            );
+                            sel_line_colors.insert((*owner, *ltb), line_color);
+                            // R5271 fill 去重：orphan/多片段 owner 的**整 contents**选中行
+                            // 已由 R5270 片段 bg 站 fill 覆盖（逐 run 同站同几何）——本臂
+                            // 行级连体 rect（跨词间隙）会双绘（r5270 锚 greens 3 vs 2 实证）。
+                            // 站 fill 判据镜像 owner_sel_fill：自持伪样式 bg 非透明 +
+                            // 整 contents + 站门（orphan 或真多片段）。非 orphan 单行（站门
+                            // 不触发）与部分选区下逐行整盖由本臂补位；UA 默认回落臂（无伪
+                            // 样式）站恒不铺 → 恒由本臂补。clip:text 恒色 owner 与站同款
+                            // 抑制（R4549 口径，r5270 锚）——本臂 fill 亦不铺。
+                            let clip_ok =
+                                bg_clip_text_solid_color(os, &self.image_solid_colors, self.document_url.as_deref())
+                                    .is_none();
+                            let station_fills = clip_ok
+                                && os
+                                    .selection_pseudo
+                                    .as_ref()
+                                    .is_some_and(|p| p.background_color != ColorValue::Transparent)
+                                && sel_start == 0
+                                && sel_end >= doc.text_content(*owner).map(|t| t.encode_utf16().count()).unwrap_or(0)
+                                && std::env::var("ZW_PHASEA_MULTI_INLINE").as_deref() != Ok("0")
+                                && match self.inline_heights.get(owner) {
+                                    None => true,
+                                    Some(&h) => {
+                                        let fs = match os.font_size {
+                                            zero_style_system::LengthValue::Px(v) => v,
+                                            _ => 0.0,
+                                        };
+                                        h as f64 > fs * 1.5
+                                    }
+                                };
+                            if line_bg.a > 0 && clip_ok && !station_fills {
+                                // 行高 ≡ 盒级臂口径（容器 line_height 折算，3584 同式——
+                                // 高亮行界随行盒非 owner 伪样式）。
+                                let owner_line_h = match &style.line_height {
+                                    zero_style_system::LineHeightValue::Normal => font_size * 1.2,
+                                    zero_style_system::LineHeightValue::Number(n) => font_size * (*n as f32),
+                                    zero_style_system::LineHeightValue::Length(length) => {
+                                        zero_style_system::computed::resolve_length(
+                                            length,
+                                            font_size as f64,
+                                            None,
+                                            None,
+                                        ) as f32
+                                    }
+                                };
+                                sel_line_fills.push((
+                                    Rect::new(
+                                        content_x + min_x,
+                                        content_y + f32::from_bits(*ltb),
+                                        (*max_xw - *min_x).max(0.0),
+                                        owner_line_h,
+                                    ),
+                                    line_bg,
+                                ));
+                            }
                         }
                     }
                     if let Some(sel_bg) = sel_padbox_fill {

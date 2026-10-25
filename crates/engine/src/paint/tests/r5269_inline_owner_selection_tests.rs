@@ -76,10 +76,12 @@ fn block_owner_selection_unchanged() {
     );
 }
 
-/// inline owner 无自持 ::selection 记录（页无任何 ::selection 规则）→ 不铺
-/// UA 默认高亮（既有记录状态：无作者规则不存储、paint 无高亮）。
+/// inline owner 无自持 ::selection 记录（页无任何 ::selection 规则）→ R5271 起
+/// 回落 **UA 默认高亮面**（Highlight 背景 + HighlightText 前景，css-color-4
+/// §css-system-colors 系统色；driving: system-color-hightlights-vs-getSelection
+/// 族——ref 页同关键字静态样式，双侧同 RGB）。
 #[test]
-fn inline_owner_without_pseudo_gets_no_highlight() {
+fn inline_owner_without_pseudo_gets_ua_default_highlight() {
     let mut pipeline = RenderPipeline::new(400.0, 300.0);
     pipeline.set_text_selections(vec![("#test".to_string(), 0, 8)]);
     let result = pipeline.render_html(
@@ -92,13 +94,13 @@ fn inline_owner_without_pseudo_gets_no_highlight() {
             .glyphs
             .iter()
             .filter(|g| g.color != Color::rgba(0, 0, 0, 255))
-            .all(|g| g.color == Color::rgba(255, 0, 255, 255)),
-        "无伪样式时字形应保持元素色 fuchsia，实际 {:?}",
+            .all(|g| g.color == Color::rgba(255, 255, 255, 255)),
+        "无伪样式时字形应回落 UA 默认 HighlightText 白，实际 {:?}",
         prims.glyphs.iter().map(|g| g.color).collect::<Vec<_>>()
     );
     assert!(
-        !prims.fills.iter().any(|f| f.color.a > 0),
-        "无伪样式时不应铺任何高亮 fill，实际 fills {:?}",
+        prims.fills.iter().any(|f| f.color == Color::rgba(51, 153, 255, 255)),
+        "无伪样式时应铺 UA 默认 Highlight 背景，实际 fills {:?}",
         prims.fills.iter().map(|f| f.color).collect::<Vec<_>>()
     );
 }

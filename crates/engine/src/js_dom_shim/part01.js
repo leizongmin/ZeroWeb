@@ -199,6 +199,19 @@
         var t = '';
         try { t = String(sc.textContent || ''); } catch (_eTs) {}
         s16 = 0; e16 = t.length;
+      } else if (r._mode && r._mode.kind === 'node' && r._mode.node && r._mode.node.nodeType === 1) {
+        // R5271：selectNode(元素)（spec range-selectNode：选节点本身——绘制口径
+        // ≡ 其内容文本 [0, textContent.length)）。system-color-hightlights-vs-
+        // getSelection-001/002（selectNode(span#id)）与 selection-image-001/002
+        //（selectNode(documentElement)）族此前整跳过（渲染零变化）。选择器取
+        // 节点自身（start/endContainer 是父，__zwSelector 须落被选元素）。
+        var tn = r._mode.node;
+        var tSel = tn.__zwSelector || (tn.parentNode && tn.parentNode.__zwSelector);
+        if (!tSel || tSel.charAt(0) === '@') continue;
+        var t2 = '';
+        try { t2 = String(tn.textContent || ''); } catch (_eTs2) {}
+        s16 = 0; e16 = t2.length;
+        sSel = tSel;
       } else if (sc.nodeType === 3 && ec.nodeType === 3) {
         s16 = r.startOffset | 0; e16 = r.endOffset | 0;
       } else {

@@ -69,6 +69,8 @@ mod r5268_bg_clip_text_per_layer_tests;
 mod r5269_inline_owner_selection_tests;
 /// R5270 inline owner 选区行高亮 fill 同站同几何（css-pseudo-4 §highlight-painting）。
 mod r5270_inline_owner_selection_fill_tests;
+/// R5271 选区高亮 UA 默认回落面（css-pseudo-4 §highlight-styling）。
+mod r5271_selection_ua_default_tests;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;
