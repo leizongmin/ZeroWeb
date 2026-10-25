@@ -44,7 +44,7 @@ fn image_map_parse_r5278() {
         Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
     register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
-    let js = concat!(
+    let js =
             "var L = function (s) { return JSON.stringify(globalThis.__zwImgMapFloatList5278(s)); };\
              var S = function (s) { return String(globalThis.__zwImgMapShape5278(s)); };\
              var A = function (sh, co, x, y) { return String(globalThis.__zwImgMapShapeAt5278(globalThis.__zwImgMapShape5278(sh), globalThis.__zwImgMapFloatList5278(co), x, y)); };\
@@ -98,7 +98,7 @@ fn image_map_parse_r5278() {
                A('default', '', 101, 101),\
                // (d) hash-name ref
                H('#x'), H('x'), H('#'), H('a#b#c'), H('#MAP1')\
-             ];");
+             ];";
     sandbox
         .execute(js)
         .unwrap();

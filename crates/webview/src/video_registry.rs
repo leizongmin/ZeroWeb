@@ -259,9 +259,9 @@ impl VideoPlayerRegistry {
             // 掐死播放中的音频（显式 play 腿武装后数百 ms 死亡实测）；video 面
             // register_source 只刷 sources 字节、player 不经登记重建，本即幂等——
             // 此处对齐同语义（字节刷新 + entry 保留）。
-            if !self.audio_entries.contains_key(&key) {
-                self.audio_entries.insert(key, AudioEntry::new(decoder));
-            }
+            self.audio_entries
+                .entry(key)
+                .or_insert_with(|| AudioEntry::new(decoder));
         }
     }
 
