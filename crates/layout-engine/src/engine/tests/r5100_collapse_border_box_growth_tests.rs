@@ -33,9 +33,13 @@ fn layout(html: &str) -> (Document, crate::engine::LayoutResult) {
 }
 
 /// 正例（border-bottom-width-applies-to-001 形态）：rowgroup border-bottom 96px
-/// 胜出末行 cell 底缘 → 末行 cell 高 96、首行 cell 不增长。
+/// 胜出末行底格线 → 末行槽高 96/2 = 48、底带以格线为中心跨 [0,96)。
+/// R5282 winner-center：槽 = content+pads 基 + 两侧胜者半宽（旧行/表塌 0、底缘带
+/// upside 的修复语义保留——槽高吃进胜者半宽，不再靠 resolve 增长 cell 盒）。
 #[test]
 fn test_r5100_collapse_bottom_border_grows_cell_height() {
+    // R5282 默认回退 border-center 后，本测锚定 winner-center 槽高吃胜者半宽，经测试缝启用。
+    crate::table::set_winner_center_test(true);
     let html = r#"<html><body style="margin:0">
       <div style="display:table;border-collapse:collapse;table-layout:fixed;width:96px" id="tbl">
         <div style="display:table-row-group;border-bottom-style:solid;border-bottom-width:96px" id="rg">
@@ -54,17 +58,21 @@ fn test_r5100_collapse_bottom_border_grows_cell_height() {
     let c1 = find("c1", &doc, &result.root).expect("c1 box");
     let c2 = find("c2", &doc, &result.root).expect("c2 box");
     assert!(
-        (c1.height - 96.0).abs() < 0.5 && (c2.height - 96.0).abs() < 0.5,
-        "R5100: 末行 cell 高应含胜出底缘边框 96（旧行/表塌 0、底缘带 upside），         got c1={} c2={}",
+        (c1.height - 48.0).abs() < 0.5 && (c2.height - 48.0).abs() < 0.5,
+        "R5100/R5282: 末行 cell 盒高 = 底格线胜者半宽 96/2 = 48（旧行/表塌 0 的修复面），         got c1={} c2={}",
         c1.height,
         c2.height
     );
 }
 
 /// gate 正例（border-right-width-applies-to-001 形态）：rowgroup border-right 96px
-/// 胜出末列右缘（side 4）→ 末列 cell 宽 48+96=144，首列不增长。
+/// 胜出右周界格线 → R5282 winner-center 下末列 cell 盒右缘贴格线（宽保持 48），
+/// 胜者带以格线为中心跨 [48,144)，表 border-box = extent 96 + 外半 48 = 144
+///（chromium 探针：同构 30px 源 → 盒 130 = extent 115 + 15）。首列不增长。
 #[test]
 fn test_r5100_collapse_right_border_rowgroup_winner_grows_width() {
+    // R5282 默认回退后仍锚定末列宽吃胜者外半，经测试缝启用。
+    crate::table::set_winner_center_test(true);
     let html = r#"<html><body style="margin:0">
       <div style="display:table;border-collapse:collapse;table-layout:fixed;width:96px" id="tbl">
         <div style="display:table-row-group;border-right-style:solid;border-right-width:96px" id="rg">
@@ -79,8 +87,8 @@ fn test_r5100_collapse_right_border_rowgroup_winner_grows_width() {
     let first = find("first", &doc, &result.root).expect("first cell box");
     let last = find("last", &doc, &result.root).expect("last cell box");
     assert!(
-        (last.width - (48.0 + 96.0)).abs() < 0.5,
-        "R5100: 行组胜出右缘的末列 cell 宽应 48+96=144，got {}",
+        (last.width - 48.0).abs() < 0.5,
+        "R5100/R5282: 末列 cell 盒贴格线宽 48（带居中格线绘出，不再增长盒），got {}",
         last.width
     );
     assert!(

@@ -194,6 +194,15 @@ impl super::Painter {
         let collapse = matches!(style.border_collapse, BorderCollapseValue::Collapse);
         let outer_full = collapse && std::env::var("ZW_COLLAPSE_OUTER_FULL").as_deref() != Ok("0");
         let outer = &box_node.collapsed_border_outer_edge;
+        // R5282：winner-center 尺寸模型下 cell 盒缘贴格线（layout 端槽宽含胜者半带），
+        // 外缘带一律以格线（盒缘）为中心——含行/行组/表/列源胜出（color override 臂，
+        // legacy 内绘 full 的前提「盒缘未在带中心」不再成立）。与 layout 端
+        // ZW_TABLE_COLLAPSE_WINNER_CENTER 同名同默认（kill-switch 成对）：默认回退
+        // border-center（自源 ref 对 −3px 挂账），`=1` 启用。
+        let winner_center = collapse && std::env::var("ZW_TABLE_COLLAPSE_WINNER_CENTER").as_deref() == Ok("1");
+        let winner_center_outer_centered = |side: usize, box_node: &LayoutBox| -> bool {
+            winner_center || box_node.collapsed_border_color_overrides[side].is_none()
+        };
         // R4248（CSS Borders 4 §corner-shaping）：形角盒的边框环——外圈形角多边形
         //（边框色）+ 内圈形角多边形（背景色）叠出环带。前提：四边同色（含 collapse
         // 覆盖差异为零）、背景非透明（内圈须遮出环带孔）、非 collapse 表格。
@@ -323,14 +332,14 @@ impl super::Painter {
         // 1.92% 实证）。cell 自胜时盒缘已在带中心（R5262 格线原点平移），
         // 内绘 full 会下偏半带（001e 3.92% 根因之一），外展居中才对位。
         let band_outset = |side: usize, t: f32| -> f32 {
-            if collapse && outer_full && outer[side] && box_node.collapsed_border_color_overrides[side].is_none() {
+            if collapse && outer_full && outer[side] && winner_center_outer_centered(side, box_node) {
                 t / 2.0
             } else {
                 0.0
             }
         };
         let band_far = |side: usize, t: f32| -> f32 {
-            if collapse && outer_full && outer[side] && box_node.collapsed_border_color_overrides[side].is_none() {
+            if collapse && outer_full && outer[side] && winner_center_outer_centered(side, box_node) {
                 t / 2.0
             } else {
                 t
