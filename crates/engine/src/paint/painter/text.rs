@@ -874,6 +874,58 @@ impl super::Painter {
                     });
             }
         }
+
+        // R5273（css-pseudo-4 §highlight-painting + Bugzilla 1449010「::selection
+        // is respected on images」）：图片替换元素被选区覆盖且作者声明非透明
+        // `::selection` 背景时，图片内容上以 0.8 alpha 叠加该底色——不透明图
+        // 片背后铺底不可见（corpus blue15x15 实证纯不透明 RGB），作者声明面对
+        // 图片失去可见性即失义。chromium 151 活体探针（红/白/绿/灰四底，
+        // /tmp/r5273）定量：红案逐通道自洽 α=0.8（R 204=255·0.8 / B 51=255·0.2，
+        // 条带零通道同 α），白/灰/绿底中通道偏差为 chromium 色管理混合（非逐
+        // 通道成分，精确公式不可自截图复原——保真边界记录；mismatch 判据只
+        // 要求 TEST/REF 图片区域可见差异）。门序：选区 map 空（product 零选区
+        // 零扫描）→ 作者声明面（selection_pseudo 仅页含 ::selection 规则时存，
+        // R5054/R5065）→ kill-switch；无作者规则路径（UA 默认域）与无选区页
+        // 字节不动。选区覆盖 = 整 contents 判据（≡ 盒级 anc_whole 口径：
+        // selectNode(html) 形记录落祖先链；img 自身 textContent 空，任意自身
+        // 记录即整选）。部分选区覆盖图片维持挂账（corpus 无案形）。
+        if !self.text_selections.is_empty()
+            && img_w > 0.0
+            && img_h > 0.0
+            && let Some(pseudo) = style.selection_pseudo.as_ref()
+            && std::env::var("ZW_SELECTION_IMG_BG").as_deref() != Ok("0")
+        {
+            let sel_bg = super::super::color::resolve_color_current(&pseudo.background_color, &style.color);
+            let selected = self
+                .text_selections
+                .get(&node_id)
+                .map(|&(s, e)| {
+                    doc.text_content(node_id)
+                        .map(|t| t.encode_utf16().count())
+                        .is_some_and(|n| s == 0 && e >= n)
+                })
+                .unwrap_or_else(|| {
+                    let mut cur = doc.parent_node(node_id);
+                    while let Some(aid) = cur {
+                        if let Some(&(s, e)) = self.text_selections.get(&aid) {
+                            // 首个有记录的祖先判定整 contents（≡ sel_owned 祖先
+                            // 链臂：部分记录即否，不继续上溯）。
+                            let total = doc.text_content(aid).map(|t| t.encode_utf16().count()).unwrap_or(0);
+                            return s == 0 && e >= total;
+                        }
+                        cur = doc.parent_node(aid);
+                    }
+                    false
+                });
+            if selected && sel_bg.a > 0 {
+                // 0.8 alpha 覆写（chromium 红案逐通道自洽值；css-pseudo-4 高亮
+                // 面呈现须保图片内容可辨）。
+                self.primitives.add_fill(
+                    Rect::new(img_x, img_y, img_w, img_h),
+                    Color::rgba(sel_bg.r, sel_bg.g, sel_bg.b, 204),
+                );
+            }
+        }
     }
 
     /// 绘制 `<video>` 元素的当前帧（media-playback M1b 帧上屏通路）。
