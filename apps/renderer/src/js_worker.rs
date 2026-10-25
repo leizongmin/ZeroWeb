@@ -237,8 +237,15 @@ pub struct RendererJsWorker {
     /// （QuickJS context + shim 刚建、无任何旧文档命令可清），`reset_document_state`
     /// 的复位往返与首快照的 reply 有界等待可安全跳过——否则新标签首载会把 worker
     /// 启动全程串行进导航关键路径（冷启动探针实测复位等待 ~91ms + 重建 ~21ms）。
-    /// 执行器闭包与 `PrioritySubmitter` 持克隆置位；仅主线程读写（worker 不读），
-    /// Relaxed 足够。
+    /// 置位面共 10 处（T9 返修 DF-F1 补齐后 4 处）：执行器三闭包
+    /// （executor/module_executor/prio_executor）、`PrioritySubmitter::submit`、
+    /// `set_dom_snapshot` 的 swap、`set_dom_snapshot_priority`、
+    /// `execute_script_direct_bounded`、`submit_script_priority`、
+    /// `execute_script_priority_deferrable`、`JsExecutor::execute_script_priority_bounded`。
+    /// 多写单读：写方为主循环各提交入口/快照 setter + worker-runtime-host 宿主线程
+    /// （`PrioritySubmitter`），读方仅主循环（复位跳过门/首快照免等待，worker 不读）；
+    /// 单调布尔、仅建议性判定（最坏方向 = 误跳过一次真臂复位），happens-before 由
+    /// 命令通道承载，Relaxed 足够。
     document_started: Arc<AtomicBool>,
     #[cfg(test)]
     execution_count: Arc<AtomicU64>,
@@ -520,6 +527,8 @@ impl RendererJsWorker {
     /// worker 继续处理的回调重新置位，下一轮重试），主循环回到 recv 保持导航 IPC 响应。
     pub fn execute_script_direct_bounded(&self, script: &str, timeout: Duration) -> Result<String, String> {
         let (reply_tx, reply_rx) = mpsc::channel();
+        // T9 返修（DF-F1）：有界等待求值同为文档载荷提交——置位首文档踪迹。
+        self.document_started.store(true, Ordering::Relaxed);
         self.cmd_tx
             .send(JsWorkerCommand::Execute {
                 script: script.to_string(),
@@ -550,6 +559,8 @@ impl RendererJsWorker {
     pub fn submit_script_priority(&self, script: &str) -> Result<(), String> {
         let (reply_tx, reply_rx) = mpsc::channel();
         drop(reply_rx);
+        // T9 返修（DF-F1）：fire-and-forget 优先派发同为文档载荷提交——置位首文档踪迹。
+        self.document_started.store(true, Ordering::Relaxed);
         self.prio_tx
             .send(JsWorkerCommand::Execute {
                 script: script.to_string(),
@@ -569,6 +580,8 @@ impl RendererJsWorker {
         timeout: std::time::Duration,
     ) -> Result<Result<String, String>, mpsc::Receiver<Result<String, String>>> {
         let (reply_tx, reply_rx) = mpsc::channel();
+        // T9 返修（DF-F1）：可挂起优先求值同为文档载荷提交——置位首文档踪迹。
+        self.document_started.store(true, Ordering::Relaxed);
         if let Err(e) = self.prio_tx.send(JsWorkerCommand::Execute {
             script: script.to_string(),
             reply: reply_tx,
@@ -784,9 +797,10 @@ impl RendererJsWorker {
         // https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate
         // （cross-document navigation creates a new global object——首文档无旧全局可弃）。
         // 文档域副作用（external_css / async_callbacks_ready / 各队列清空）已在上方主侧
-        // 完成；复位命令本臂的 worker 侧清队对空队列是 no-op。任何 Execute/快照提交即置
-        // `document_started`（含首文档前的 automation Evaluate）→ 复位照走真臂，宿主
-        // 求值残留不被本跳过路径放过。
+        // 完成；复位命令本臂的 worker 侧清队对空队列是 no-op。Execute 族/ExecuteModule/
+        // 快照任一入口提交即置 `document_started`（置位面 10 处见字段文档，含首文档前
+        // 的 automation Evaluate 与 SetViewport/SetVisibility 类交互求值）→ 复位照走
+        // 真臂，宿主求值残留不被本跳过路径放过。
         if !self.document_started.load(Ordering::Relaxed) {
             tracing::debug!("first-document worker reset skipped (factory-fresh context)");
             return;
@@ -2508,6 +2522,8 @@ impl zero_page_runtime::JsExecutor for RendererJsWorker {
     }
     fn execute_script_priority_bounded(&self, script: &str, timeout: std::time::Duration) -> Result<String, String> {
         let (reply_tx, reply_rx) = mpsc::channel();
+        // T9 返修（DF-F1）：交互优先求值同为文档载荷提交——置位首文档踪迹。
+        self.document_started.store(true, Ordering::Relaxed);
         self.prio_tx
             .send(JsWorkerCommand::Execute {
                 script: script.to_string(),
@@ -3039,6 +3055,7 @@ mod tests {
 
     // T9（perf-mem M2b）：首文档快照免等待的判别窗口——spawn 后立刻快照（worker 仍在
     // QuickJS 启动），有等待实现会阻塞至启动完成（实测 ~40-120ms），跳过实现 send 即返。
+    // 阈值 25ms 对齐姊妹钉口径（低于启动窗下缘，等待型变异不留假绿窗；T9 返修 TV-F3）。
     // 快照应用语义由后续有界等待求值钉住（读新文档元素即证应用）。
     #[test]
     fn renderer_js_worker_first_snapshot_returns_during_worker_startup_t9() {
@@ -3049,7 +3066,7 @@ mod tests {
             "https://zero.test/t9boot",
         );
         assert!(
-            t0.elapsed() < std::time::Duration::from_millis(50),
+            t0.elapsed() < std::time::Duration::from_millis(25),
             "首文档快照不得等待 worker 启动（跳过 reply 等待），实际 {:?}",
             t0.elapsed()
         );
@@ -6439,6 +6456,11 @@ mod tests {
     #[test]
     fn reset_purge_keeps_commands_submitted_after_reset() {
         let mut worker = RendererJsWorker::spawn(75);
+        // T9 返修（TV-F1）：前置一次经置位入口的载荷——下方裸 cmd_tx 长臂不置位
+        // `document_started`，缺此前置时复位走首文档跳过臂、F1 清队场景空转。
+        worker
+            .execute_script_direct_bounded("", Duration::from_secs(5))
+            .expect("置位载荷执行");
         let (busy_tx, busy_rx) = mpsc::channel();
         // 长臂占住 worker（普通通道；复位/新文档命令排优先队列）。
         worker
@@ -6477,6 +6499,12 @@ mod tests {
     #[test]
     fn reset_purge_retains_config_commands_and_worker_keeps_serving() {
         let mut worker = RendererJsWorker::spawn(76);
+        // T9 返修（TV-F1）：前置一次经置位入口的载荷——下方裸 cmd_tx 长臂与
+        // set_viewport_hint 均不置位 `document_started`，缺此前置时复位走首文档跳过臂、
+        // 滞留配置跨复位存活场景空转。
+        worker
+            .execute_script_direct_bounded("", Duration::from_secs(5))
+            .expect("置位载荷执行");
         let (busy_tx, busy_rx) = mpsc::channel();
         // 长臂占住 worker。
         worker
