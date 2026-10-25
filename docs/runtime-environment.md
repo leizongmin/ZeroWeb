@@ -42,6 +42,9 @@ switch there before consuming it in an application or library crate.
 | `ZW_COMPOSITOR_SECCOMP` | `0`/`false` disables | enabled | Enable compositor seccomp filtering on Linux. |
 | `ZW_COMPOSITOR_LANDLOCK` | `0`/`false` disables | enabled | Enable compositor Landlock on Linux. |
 | `ZW_DEVTOOLS_FRONTEND_DIR` | directory path | unset | Serve a devtools-frontend bundle over `/devtools/` on the CDP HTTP endpoint and point `devtoolsFrontendUrl` at it. |
+| `ZEROWEB_NAV_TRIM` | `0` disables | enabled | Disable the deferred navigation-settle allocator reclaim (`nav_trim`/`worker_trim`); the deferred V8 GC hint is not gated by this switch. |
+| `ZEROWEB_MEM_PROBE` | `1` enables | disabled | Emit memory-fill/PSS probe logs (T13 observation leg; not part of judgment samples). |
+| `ZEROWEB_WARM_IDLE_REARM` | `1` enables | disabled | Automatically re-arm the warm spare after an idle reap (T13 S8 experimental arm). |
 
 ## Compatibility and test switches
 

@@ -568,6 +568,14 @@ pub struct WebView {
     fetch_handler: Option<zero_engine::fetch_bridge::FetchHandler>,
     /// 当前 URL。
     current_url: Option<String>,
+    /// T13 S5：上次 CanvasRegistry 代际清理时的文档 URL（代际门锚）。
+    ///
+    /// `prepare_document_state` 每次进入都递增 document_generation/navigation_epoch
+    /// ——代际数无法判别 same-navigation 误判重入（lazy 尾图 is_loading()==false 窗，
+    /// 见该方法内注释），门取「上次清理 URL 恒等」：同 URL 重入落在活文档上不清，
+    /// 旧文档条目延至下一异址导航回收（新文档 getContext 取新 id，旧条目不可达，
+    /// 仅延迟回收、无语义面）。
+    canvas_cleared_url: Option<String>,
     /// 当前导航 epoch（user-action node identity scope）。
     navigation_epoch: u64,
     /// 当前 live Document generation。
@@ -610,6 +618,11 @@ pub struct WebView {
     title: Option<String>,
     /// 是否正在加载。
     loading: bool,
+    /// T13 R1：loading 翻转沿闩——值实际变化时置位，`take_loading_flip` 消费；
+    /// renderer 主循环 tick 据此重锚延迟回收 deadline（初载相补充锚；CDP 导航流
+    /// 的主锚是 LoadComplete——预算渲染路径不走 `set_loading(false)`，翻转沿首载
+    /// 后不再置位）。单 pending 槽合并语义。
+    loading_flip: bool,
     /// 上次渲染结果。
     last_render: Option<WebViewRenderResult>,
     /// 最新帧的 canvas_images（内联 SVG 栅格 / Canvas 位图 / 滤镜 isolate 产物），
@@ -793,6 +806,7 @@ impl WebView {
             image_source_fetcher,
             fetch_handler,
             current_url: None,
+            canvas_cleared_url: None,
             navigation_epoch: 0,
             document_generation: 0,
             focus_owner: None,
@@ -808,6 +822,7 @@ impl WebView {
             referrer: None,
             title: None,
             loading: false,
+            loading_flip: false,
             last_render: None,
             pending_canvas_images: Vec::new(),
             canvas_fingerprints: HashMap::new(),
@@ -1630,6 +1645,19 @@ impl WebView {
         std::sync::Arc::clone(&self.canvas_registry)
     }
 
+    /// T13 S7 探针：缓存填充量观测（`ZEROWEB_MEM_PROBE=1` 导航落定打点）——
+    /// SVG 重栅格缓存条目数 + canvas 上下文数。
+    pub fn mem_probe_cache_lens(&self) -> (usize, usize) {
+        let svg_len = self.image_cache.svg_rasterized_len();
+        let canvas_len = self
+            .canvas_registry
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contexts
+            .len();
+        (svg_len, canvas_len)
+    }
+
     /// media-audio M3 切片 2：Web Audio 注册表共享句柄（宿主桥回调注册 /
     /// 音频泵 advance 消费）。
     pub fn webaudio(&self) -> std::sync::Arc<std::sync::Mutex<crate::webaudio_registry::WebAudioRegistry>> {
@@ -1754,7 +1782,7 @@ impl WebView {
         self.referrer = old_url.clone();
         self.current_url = Some(url.to_string());
         self.set_page_url_wire(url);
-        self.loading = true;
+        self.set_loading(true);
         self.emit_event(&WebViewEvent::LoadStart(url.to_string()));
 
         if old_url.as_deref() != Some(url) {
@@ -1774,7 +1802,7 @@ impl WebView {
                 https_url
             }
             ResourceCheckResult::Blocked(reason) => {
-                self.loading = false;
+                self.set_loading(false);
                 self.emit_event(&WebViewEvent::LoadFailed(url.to_string(), reason.clone()));
                 return Err(WebViewError::Navigation(reason));
             }
@@ -1787,7 +1815,7 @@ impl WebView {
                 FetchInterceptResult::Cached(response) | FetchInterceptResult::Responded(response) => {
                     tracing::info!("Service Worker intercepted fetch for {effective_url}");
                     let html = String::from_utf8(response.body).map_err(|e| {
-                        self.loading = false;
+                        self.set_loading(false);
                         self.emit_event(&WebViewEvent::LoadFailed(
                             effective_url.to_string(),
                             format!("SW response body is not valid UTF-8: {e}"),
@@ -1796,7 +1824,7 @@ impl WebView {
                     })?;
                     let external_css = self.prepare_page_subresources(&html, &effective_url);
                     let render_result = self.load_html(&html, Some(&external_css));
-                    self.loading = false;
+                    self.set_loading(false);
                     self.emit_event(&WebViewEvent::LoadEnd(effective_url.to_string()));
                     return Ok(render_result);
                 }
@@ -1810,7 +1838,7 @@ impl WebView {
         match self.resource_get(&effective_url, FetchPriority::CRITICAL, "document") {
             Ok(response) => {
                 let html = response.text().map_err(|e| {
-                    self.loading = false;
+                    self.set_loading(false);
                     self.emit_event(&WebViewEvent::LoadFailed(
                         effective_url.to_string(),
                         format!("Failed to decode response body: {e}"),
@@ -1845,24 +1873,24 @@ impl WebView {
 
                 // 渲染 HTML
                 let render_result = self.load_html(&html, Some(&external_css));
-                self.loading = false;
+                self.set_loading(false);
                 self.emit_event(&WebViewEvent::LoadEnd(final_url.to_string()));
                 Ok(render_result)
             }
             Err(NetError::Timeout) => {
-                self.loading = false;
+                self.set_loading(false);
                 let msg = format!("Request to {effective_url} timed out");
                 self.emit_event(&WebViewEvent::LoadFailed(effective_url.to_string(), msg.clone()));
                 Err(WebViewError::Navigation(msg))
             }
             Err(NetError::Proxy(detail)) => {
-                self.loading = false;
+                self.set_loading(false);
                 let msg = format!("Proxy error fetching {effective_url}: {detail}");
                 self.emit_event(&WebViewEvent::LoadFailed(effective_url.to_string(), msg.clone()));
                 Err(WebViewError::Navigation(msg))
             }
             Err(e) => {
-                self.loading = false;
+                self.set_loading(false);
                 let msg = format!("Failed to fetch {effective_url}: {e}");
                 self.emit_event(&WebViewEvent::LoadFailed(effective_url.to_string(), msg.clone()));
                 Err(WebViewError::Navigation(msg))
@@ -1901,7 +1929,7 @@ impl WebView {
         self.referrer = old_url.clone();
         self.current_url = Some(url.to_string());
         self.set_page_url_wire(url);
-        self.loading = true;
+        self.set_loading(true);
         self.emit_event(&WebViewEvent::LoadStart(url.to_string()));
         if old_url.as_deref() != Some(url) {
             self.emit_event(&WebViewEvent::UrlChanged(url.to_string()));
@@ -1921,7 +1949,7 @@ impl WebView {
         self.security_context.set_page_origin(page_url);
         let external_css = self.prepare_page_subresources(html, page_url);
         let result = self.load_html(html, Some(&external_css));
-        self.loading = false;
+        self.set_loading(false);
         self.emit_event(&WebViewEvent::LoadEnd(page_url.to_string()));
         result
     }
@@ -1933,7 +1961,7 @@ impl WebView {
     pub fn complete_load(&mut self, html: &str, css: Option<&str>) -> WebViewRenderResult {
         let url = self.current_url.clone().unwrap_or_default();
         let result = self.load_html(html, css);
-        self.loading = false;
+        self.set_loading(false);
         self.emit_event(&WebViewEvent::LoadEnd(url));
         result
     }
@@ -1941,7 +1969,7 @@ impl WebView {
     /// 标记加载失败。
     pub fn fail_load(&mut self, error: &str) {
         let url = self.current_url.clone().unwrap_or_default();
-        self.loading = false;
+        self.set_loading(false);
         self.emit_event(&WebViewEvent::LoadFailed(url, error.to_string()));
     }
 
@@ -2010,9 +2038,20 @@ impl WebView {
         if let Ok(mut reg) = self.video_players.lock() {
             reg.clear();
         }
+        // T13 S5：CanvasRegistry 代际门清理（真跨文档才清；门锚见 `canvas_cleared_url`
+        // 字段文档）。活 canvas 像素 buffer 是页面可寻址状态，误清即丢；同 URL 重入
+        // （same_navigation 误判窗/同址 reload）跳过，旧文档上下文延至下一异址导航
+        // 回收。命中事件 token `canvas_gen_clear`（A/B 命中语义计数面）。
+        if self.canvas_cleared_url.as_deref() != Some(page_url) {
+            if let Ok(mut reg) = self.canvas_registry.lock() {
+                reg.clear_for_new_document();
+            }
+            self.canvas_cleared_url = Some(page_url.to_string());
+            tracing::info!(target: "mem_reclaim", "canvas_gen_clear");
+        }
         self.current_url = Some(page_url.to_string());
         self.set_page_url_wire(page_url);
-        self.loading = true;
+        self.set_loading(true);
         self.pipeline.set_document_url(Some(page_url));
         // slice37（mm-regression 根修）：文档换代清 handle→NodeId 持久表——预算渲染
         // 路径（AsyncPageLoad → advance_budgeted_render）不经过 render_html 的 slotmap
@@ -2045,7 +2084,7 @@ impl WebView {
         let render_result = self.absorb_render_result(&result);
         self.last_render = Some(render_result);
         if finished {
-            self.loading = false;
+            self.set_loading(false);
             self.emit_event(&WebViewEvent::LoadEnd(page_url.to_string()));
         }
     }
@@ -2187,6 +2226,20 @@ impl WebView {
     /// 是否正在加载。
     pub fn is_loading(&self) -> bool {
         self.loading
+    }
+
+    /// T13 R1：loading 赋值统一入口——值实际翻转时置位 [`Self::take_loading_flip`]
+    /// 闩（同值赋值不置位）。所有 `self.loading` 直赋点必须走此入口。
+    fn set_loading(&mut self, loading: bool) {
+        if self.loading != loading {
+            self.loading = loading;
+            self.loading_flip = true;
+        }
+    }
+
+    /// T13 R1：取走翻转沿闩（有未消费翻转沿即 `true`，取后清零）。
+    pub fn take_loading_flip(&mut self) -> bool {
+        std::mem::take(&mut self.loading_flip)
     }
 
     /// 获取上次渲染结果。
@@ -7154,6 +7207,48 @@ mod tests {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .extend(fwd.iter().map(|(h, s)| (h.to_string(), s.to_string())));
+    }
+
+    // T13 S5：CanvasRegistry 换代清走 URL 同一性门——真异址导航清空注册表
+    //（`canvas_gen_clear`）；同 URL 重入（same_navigation 误判窗/同址 reload）
+    // 跳过不清（活 canvas 像素是页面可寻址状态，误清即丢；旧文档上下文延至
+    // 下一异址导航回收，见 `canvas_cleared_url` 字段文档）。探针读取面
+    // `mem_probe_cache_lens` 同步反映注册表长度。
+    #[test]
+    fn prepare_document_state_clears_canvas_registry_cross_url_only_t13() {
+        let mut wv = wv();
+        let seed_ctx = |wv: &WebView| {
+            let mut reg = wv.canvas_registry.lock().unwrap_or_else(|e| e.into_inner());
+            zero_engine::canvas_context_op(
+                &mut reg,
+                "0",
+                "getContext2d",
+                &["8".to_string(), "8".to_string(), String::new(), String::new()],
+            );
+        };
+        seed_ctx(&wv);
+        assert_eq!(wv.mem_probe_cache_lens(), (0, 1), "前置：canvas 上下文就位");
+
+        // 首次异址导航：清空注册表。
+        wv.prepare_document_state("http://t13.test/doc1");
+        assert_eq!(
+            wv.mem_probe_cache_lens().1,
+            0,
+            "异址导航清 canvas 上下文（旧文档死句柄不得跨文档存活）"
+        );
+
+        // 同 URL 重入（same_navigation 误判窗）：注册表不清。
+        seed_ctx(&wv);
+        wv.prepare_document_state("http://t13.test/doc1");
+        assert_eq!(
+            wv.mem_probe_cache_lens().1,
+            1,
+            "同 URL 重入跳过清理（误判窗不清活文档 canvas）"
+        );
+
+        // 再次异址导航：重新清理。
+        wv.prepare_document_state("http://t13.test/doc2");
+        assert_eq!(wv.mem_probe_cache_lens().1, 0, "异址导航再次清 canvas 上下文");
     }
 
     // Remove 臂（非同批）：stale 绑定照删（同位重建残影通道关闭的本体语义）；

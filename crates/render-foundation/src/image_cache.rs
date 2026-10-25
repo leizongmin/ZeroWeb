@@ -1364,9 +1364,19 @@ impl ImageCache {
     }
 
     /// 清空所有缓存
+    ///
+    /// T13 S1：`svg_rasterized` 一并收编——该表此前只被 FIFO 挤出，旧文档的 SVG
+    /// 重栅格结果（≤8 条 × 4Mpx≈16MB）跨导航滞留（prepare_document_state 只调
+    /// clear）。同文档重栅格化按需重算，纯缓存语义无损。
     pub fn clear(&mut self) {
         self.entries.clear();
+        self.svg_rasterized.clear();
         self.current_gen += 1;
+    }
+
+    /// SVG 重栅格化缓存条目数（T13 S7 探针观测腿：`ZEROWEB_MEM_PROBE=1` 打点）。
+    pub fn svg_rasterized_len(&self) -> usize {
+        self.svg_rasterized.len()
     }
 
     /// 共享句柄快照供 UI 线程发布路径使用（A3 Fix C4：`Arc` 引用计数替代全缓存
@@ -2758,6 +2768,26 @@ mod tests {
         let (right, bottom) = svg_content_extents(src, 100, 100).expect("bbox");
         assert!((right - 150.0).abs() < 1.0, "right 应 150，got {right}");
         assert!((bottom - 150.0).abs() < 1.0, "bottom 应 150，got {bottom}");
+    }
+
+    /// T13 S1：`clear()` 收编 `svg_rasterized`——旧文档 SVG 重栅格缓存不跨导航滞留
+    /// （prepare_document_state 走 clear()，此前该表只被 FIFO 挤出）。
+    #[test]
+    fn t13_clear_drops_svg_rasterized() {
+        let mut cache = ImageCache::default();
+        let mut data = make_image(8, 8, 255);
+        data.svg_source = Some(
+            b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"8\" height=\"8\">\
+              <rect width=\"8\" height=\"8\" fill=\"green\"/></svg>"
+                .to_vec()
+                .into(),
+        );
+        let key = cache.insert(data);
+        // 放大（16×16 > 固有 8×8）触发重栅格化入缓存。
+        assert!(cache.get_rasterized(&key, 16, 16).is_some(), "放大应命中重栅格化路径");
+        assert_eq!(cache.svg_rasterized_len(), 1);
+        cache.clear();
+        assert_eq!(cache.svg_rasterized_len(), 0, "clear 必须一并清 svg_rasterized");
     }
 
     /// R3762：端到端——无尺寸 SVG 栅格化到目标尺寸后 viewport = 目标（50% 宽 rect

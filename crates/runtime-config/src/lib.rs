@@ -183,6 +183,21 @@ pub const ENVIRONMENT_VARIABLES: &[EnvironmentVariable] = &[
         default: "disabled",
         description: "js worker 命令成本普查（t7 诊断基座）：按命令类型周期性输出执行次数/累计耗时/单次最大耗时；值 1=true 输出 tracing，值为路径则追加写该文件",
     },
+    EnvironmentVariable {
+        name: "ZEROWEB_NAV_TRIM",
+        default: "enabled",
+        description: "导航落定延迟回收（T13）：`0` 关闭 nav_trim/worker_trim 分配器归还（S3 GC hint 不受此门）",
+    },
+    EnvironmentVariable {
+        name: "ZEROWEB_MEM_PROBE",
+        default: "disabled",
+        description: "内存探针（T13 S7 观测腿）：`1` 启用填充量/PSS 打点，不进判据样本",
+    },
+    EnvironmentVariable {
+        name: "ZEROWEB_WARM_IDLE_REARM",
+        default: "disabled",
+        description: "暖槽闲置回收后自动重 arm 保温（T13 S8 实验臂）：`1` 启用",
+    },
 ];
 
 /// `1` 或不区分大小写的 `true` 才表示启用。

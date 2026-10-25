@@ -154,6 +154,13 @@ enum JsWorkerCommand {
     /// 通道同步发本令牌即时唤醒分派环；令牌自身是 no-op，picked 即丢弃，不参与
     /// 快照屏障与 fix#18 搁置序。
     WakePrio,
+    /// T13 R1：延迟回收（settle+D 到点，主循环 fire）——isolate 线程命令边界执行
+    /// S3 `low_memory_notification`（无条件，维持首轮 OFF 面）与 S2 worker trim
+    ///（`ZEROWEB_NAV_TRIM=0` 关）。gens = 本次 fire 覆盖的文档代数（合并 fire >1，
+    /// 预注册命中语义按 Σgens ≥ reset_count 判定；工厂态 fire gens=0 合法）。
+    DeferredReclaim {
+        gens: u32,
+    },
     Shutdown,
 }
 
@@ -567,6 +574,15 @@ impl RendererJsWorker {
                 reply: reply_tx,
                 seq: self.cmd_seq.fetch_add(1, Ordering::Relaxed),
             })
+            .map_err(|e| e.to_string())
+    }
+
+    /// T13 R1：延迟回收提交（fire-and-forget，普通通道）——worker 在命令边界执行
+    /// S3 通知与 worker trim（isolate 线程，处置工单约束 4）。跨文档命令（复位清队
+    /// 存活面）：归还的是当时已 free 页，随新文档执行同样安全。
+    pub fn submit_deferred_reclaim(&self, gens: u32) -> Result<(), String> {
+        self.cmd_tx
+            .send(JsWorkerCommand::DeferredReclaim { gens })
             .map_err(|e| e.to_string())
     }
 
@@ -1221,6 +1237,7 @@ impl WorkerCensus {
             JsWorkerCommand::SetViewportHint { .. } => "SetViewportHint",
             JsWorkerCommand::DispatchIndexedDbConnectionEvent { .. } => "DispatchIndexedDbConnectionEvent",
             JsWorkerCommand::WakePrio => "WakePrio",
+            JsWorkerCommand::DeferredReclaim { .. } => "DeferredReclaim",
             JsWorkerCommand::Shutdown => "Shutdown",
         }
     }
@@ -2094,8 +2111,14 @@ fn js_worker_main(
                 // https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate
                 // A cross-document navigation creates a new global object. Keeping the
                 // renderer worker is an implementation detail, not page-visible state.
+                // T13 S3 顺序调整：竞态窗清队提前到 reset_context 之前——S3 起复位尾带
+                // `low_memory_notification`（全堆 GC，毫秒级），清队若排其后会迟滞同等
+                // 时长（t8 d1 时序余量即被打穿）。两位置间无任何 mutation 推入源（旧页
+                // 脚本已结束、shim 未重装、GC 不跑页面回调），清队语义不变、污染窗只缩不增。
+                if let Ok(mut pending) = mutations.lock() {
+                    pending.clear();
+                }
                 sandbox.reset_context();
-                // R-t2qq 二轮返修 D2：adopted 槽清空挂**真跨文档代际切换**（本臂）。
                 // WHATWG HTML navigate：cross-document navigation creates a new global
                 // object——新文档在页面 JS 设置前无 adopted 表，槽须清空；shim 闭包列表
                 // 随 context 销毁重建自然失效（下方重新 eval shim 后 `_zwDocAdoptedSheets`
@@ -2113,11 +2136,8 @@ fn js_worker_main(
                 // 已先清一次队列，但 worker 串行处理下，旧页脚本/timer 回调
                 // （ResolveAsyncCallback 的 microtask checkpoint）可能在其之后、本 arm 之前
                 // 继续写入；本 arm 执行时旧页执行已全部结束，此处再清一次，确保跨导航残留
-                // mutation 不被新文档的 tick/drain apply（跨文档污染）。
-                // https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate
-                if let Ok(mut pending) = mutations.lock() {
-                    pending.clear();
-                }
+                // mutation 不被新文档的 tick/drain apply（跨文档污染）。（T13 S3：清队执行
+                // 点已上移至 reset_context 之前，见该处注释。）
                 // DC-2/M3：跨导航清 rAF 兴趣——旧文档挂起回调随 global object 销毁
                 // （同上方 mutations 清队语义）；不清则计数残留使泵对新文档空转 tick。
                 raf_interest.store(0, Ordering::Relaxed);
@@ -2145,6 +2165,21 @@ fn js_worker_main(
                 // t2-pb1 fix#19：context 重建即重置宿主动态脚本旗标（见 bootstrap 处注释）。
                 let _ = sandbox.execute("globalThis.__zwHostDynamicScripts = true;");
                 async_callbacks_ready.store(false, Ordering::Release);
+                // T13 S4：worker 线程 thread_local 槽清空——rect gBCR Document 缓存与
+                // 查询视图文档缓存都活在执行 JS 的本线程，条目持上一文档整棵 DOM
+                //（主线程槽在 runtime 导航落定收口对称清空）。
+                zero_engine::clear_rect_doc_cache();
+                zero_engine::js_dom_bridge::clear_view_doc_cache();
+                // T13 S3/S7 探针：复位后 V8 已用堆打点（low_memory_notification 已在
+                // reset_context 内触发；观测腿 `ZEROWEB_MEM_PROBE=1`，不进判据样本）。
+                if crate::mem_reclaim::mem_probe_enabled()
+                    && let Some(heap_bytes) = sandbox.heap_used_bytes()
+                {
+                    tracing::info!(target: "mem_probe", v8_heap_bytes = heap_bytes as u64, "worker reset probe");
+                }
+                // T13 R1：Reset 臂尾不再同步 trim/S3 通知——成本移出首载测窗（处置
+                // 工单主控 M1），改由主循环 settle+D 到点的 `DeferredReclaim` 臂执行
+                //（窗口证据见 t13-rework-frozen.md）。此处仅回信复位完成。
                 let _ = reply.send(());
             }
             JsWorkerCommand::DispatchIndexedDbConnectionEvent {
@@ -2160,6 +2195,16 @@ fn js_worker_main(
                 );
                 let result = sandbox.execute(&script).map(|_| ()).map_err(|error| error.to_string());
                 let _ = reply.send(result);
+            }
+            JsWorkerCommand::DeferredReclaim { gens } => {
+                // T13 R1：延迟回收臂（isolate 线程命令边界，处置工单约束 4 的定时点）。
+                // S3：复位尾移来的 `low_memory_notification`——旧 Context 垃圾的全堆
+                // GC 触发（无条件：首轮 OFF 面通知即无条件执行，仅时机后移）。
+                sandbox.low_memory_reclaim();
+                // T13 S2：归还 glibc arena free 页（`ZEROWEB_NAV_TRIM=0` 关，token 全零）。
+                if crate::mem_reclaim::nav_trim_enabled() {
+                    crate::mem_reclaim::malloc_trim_now("worker_trim", gens);
+                }
             }
             JsWorkerCommand::Shutdown => {
                 // js-dom R386：worker 退出前清原生绑定线程局部（镜像 webview Drop
@@ -6663,6 +6708,60 @@ mod tests {
                 .unwrap(),
             "true",
             "换代后 named prop 重装为新元素（回收链路双腿不失效）"
+        );
+        worker.shutdown();
+    }
+
+    /// T13 R1 TV-F4 调度门钉（js_worker 面）：Reset 臂不得同步 trim——复位臂内若
+    /// 回退为首帧 trim（绕过延迟调度）本测即红（计数 >0）。先执行脚本造堆再复位，
+    /// 留足复位臂处理时间后校验计数不变；`ZEROWEB_NAV_TRIM=0` 关断面由 fire 臂
+    /// 的 env 门分支保证（调度器整体不布防，token 缺失为日志断言面）。
+    #[test]
+    fn reset_arm_does_not_trim_synchronously() {
+        let _guard = crate::mem_reclaim::test_trim_lock();
+        let mut worker = RendererJsWorker::spawn(6140);
+        let warm = worker
+            .execute_script_direct_bounded(
+                "Array.from({length: 4096}, (_, i) => i).join(',').length > 0;",
+                Duration::from_secs(5),
+            )
+            .expect("warmup execute failed");
+        assert_eq!(warm, "true");
+        let before = crate::mem_reclaim::test_trim_count();
+        worker.reset_document_state();
+        // 复位臂在普通 FIFO 通道串行处理；空闲 worker 上毫秒级完成，300ms 余量后
+        // 计数必须不变（同步 trim 回退即在此窗内现形）。
+        std::thread::sleep(Duration::from_millis(300));
+        assert_eq!(
+            crate::mem_reclaim::test_trim_count(),
+            before,
+            "Reset 臂出现了同步 trim——延迟调度门被绕过（TV-F4）"
+        );
+        worker.shutdown();
+    }
+
+    /// T13 R1 TV-F4 调度门钉（js_worker 面）：`DeferredReclaim` 臂必须执行 trim
+    /// （gens 载荷面）与 S3 通知——移除该臂或延迟调度整体缺失时本测红（计数不增）。
+    /// 先造堆再投递，300ms 余量后计数必须 +≥1。
+    #[test]
+    fn deferred_reclaim_arm_executes_trim() {
+        let _guard = crate::mem_reclaim::test_trim_lock();
+        let mut worker = RendererJsWorker::spawn(6139);
+        let warm = worker
+            .execute_script_direct_bounded(
+                "Array.from({length: 4096}, (_, i) => i).join(',').length > 0;",
+                Duration::from_secs(5),
+            )
+            .expect("warmup execute failed");
+        assert_eq!(warm, "true");
+        let before = crate::mem_reclaim::test_trim_count();
+        worker
+            .submit_deferred_reclaim(2)
+            .expect("deferred reclaim submit failed");
+        std::thread::sleep(Duration::from_millis(300));
+        assert!(
+            crate::mem_reclaim::test_trim_count() > before,
+            "DeferredReclaim 臂未执行 trim——延迟回收执行面缺失（TV-F4）"
         );
         worker.shutdown();
     }

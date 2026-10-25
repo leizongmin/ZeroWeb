@@ -226,6 +226,9 @@ fn crashed_warm_spare_falls_back_to_cold_spawn() {
 
 /// 场景 4（设计 §7-1/§3）：T_idle 到期回收（shutdown_renderer 强杀清槽）→ 后续
 /// ensure_renderer 冷启。回收时限经构造字段覆写（env 覆写的测试等价面）。
+/// T13 S8：回收判定升级为「宿主连续闲置 ≥ T_idle」——本测显式注入谓词闲置
+/// （`note_warm_idle(true)`）钉住新语义；无信号缺省（构造值 true）下与 T12
+/// 纯年龄判定行为等价（不放松断言，回收/冷启路径原样保持判别力）。
 #[test]
 fn warm_idle_reap_clears_slot_for_later_cold_spawn() {
     let _multiprocess_guard = lock_multiprocess_tests();
@@ -235,6 +238,7 @@ fn warm_idle_reap_clears_slot_for_later_cold_spawn() {
 
     backend.note_warm_tick(false);
     backend.note_warm_tick(true);
+    backend.note_warm_idle(true);
     let Some((spare_rid, _)) = backend.warm_spare else {
         panic!("聚焦边沿应触发预热");
     };
@@ -360,4 +364,95 @@ fn crashed_warm_spare_cleared_by_poll_tick() {
         .copied()
         .expect("清槽后必须冷启绑定");
     assert_ne!(bound_rid, spare_rid, "崩溃 spare 不得被认领");
+}
+
+/// T13 S8：回收判定升级为「宿主连续闲置 ≥ T_idle」——谓词忙（`note_warm_idle(false)`，
+/// 等价页面加载/compositor 动画/崩溃重置窗）时超过 T_idle 也不回收；恢复闲置后连续
+/// 闲置到场才回收。
+#[test]
+fn warm_reap_blocked_by_busy_idle_face_then_reaps_when_idle() {
+    let _multiprocess_guard = lock_multiprocess_tests();
+    let mut backend = real_backend();
+    backend.warm_idle_reap = Duration::from_millis(60);
+
+    backend.note_warm_tick(false);
+    backend.note_warm_tick(true);
+    backend.note_warm_idle(false);
+    assert!(backend.warm_spare.is_some(), "前置：spare 已入槽");
+
+    // 忙窗明显超过 T_idle：连续闲置被打断（锚点 None），槽不得回收。
+    let mut snapshots = HashMap::new();
+    let busy_deadline = Instant::now() + Duration::from_millis(200);
+    while Instant::now() < busy_deadline {
+        backend.poll(&mut snapshots, &mut HashMap::new(), None, true);
+        assert!(backend.warm_spare.is_some(), "宿主忙时不得回收 spare");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+
+    // 恢复闲置：连续闲置 ≥ T_idle 后到点回收（新语义判别力）。
+    backend.note_warm_idle(true);
+    let idle_deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        backend.poll(&mut snapshots, &mut HashMap::new(), None, true);
+        if backend.warm_spare.is_none() {
+            break;
+        }
+        assert!(Instant::now() < idle_deadline, "恢复闲置后 T_idle 到期必须回收");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+/// T13 S8：活动 recency 分量——宿主近期触达（导航/输入经 `note_host_activity` 戳）
+/// 打断连续闲置，超过 T_idle 窗内槽不得回收（否则空闲期误杀刚结束交互页面的保温槽）。
+#[test]
+fn warm_reap_blocked_by_recent_host_activity() {
+    let _multiprocess_guard = lock_multiprocess_tests();
+    let mut backend = real_backend();
+    backend.warm_idle_reap = Duration::from_millis(60);
+
+    backend.note_warm_tick(false);
+    backend.note_warm_tick(true);
+    assert!(backend.warm_spare.is_some(), "前置：spare 已入槽");
+
+    // 持续注入活动戳（等价导航/输入触达），明显超过 T_idle 窗内槽不得回收。
+    let mut snapshots = HashMap::new();
+    let busy_deadline = Instant::now() + Duration::from_millis(200);
+    while Instant::now() < busy_deadline {
+        backend.note_host_activity();
+        backend.poll(&mut snapshots, &mut HashMap::new(), None, true);
+        assert!(backend.warm_spare.is_some(), "近期有宿主活动时不得回收 spare");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// T13 S8 实验臂（缺省关）：`warm_idle_rearm` 开启后，闲置回收到点自动重 arm
+/// 保温（trigger=idle_rearm，全新 spare）；缺省关时不重 arm（场景 4 回收后槽空即证）。
+#[test]
+fn idle_rearm_experimental_respawns_spare_after_reap_when_enabled() {
+    let _multiprocess_guard = lock_multiprocess_tests();
+    let mut backend = real_backend();
+    backend.warm_idle_reap = Duration::from_millis(60);
+    backend.warm_idle_rearm = true;
+
+    backend.note_warm_tick(false);
+    backend.note_warm_tick(true);
+    backend.note_warm_idle(true);
+    let Some((first_rid, _)) = backend.warm_spare else {
+        panic!("聚焦边沿应触发预热");
+    };
+
+    // 回收后（可能同 tick）实验臂重 arm 保温——无任何聚焦边沿输入，槽自动回填
+    //（缺省关时槽保持空，场景 4 即证）。rid 可能复用（旧进程已 shutdown，id 回收），
+    // 判别面是「无边沿自动回填」本身。
+    let mut snapshots = HashMap::new();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        backend.poll(&mut snapshots, &mut HashMap::new(), None, true);
+        if backend.warm_spare.is_some() {
+            break;
+        }
+        assert!(Instant::now() < deadline, "闲置回收后实验臂必须重 arm");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let _ = first_rid;
 }

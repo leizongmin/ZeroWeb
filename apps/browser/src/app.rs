@@ -550,6 +550,15 @@ impl BrowserApp {
         // T12 投机预热触发面：每 tick 转发地址栏聚焦态（T2 边沿，默认）。单进程
         // worker 路在 TabManager 内 no-op。
         self.tabs.note_warm_renderer_tick(self.address_bar_focused);
+        // T13 S8：宿主 idle 谓词注入——tab 面（快照 loading / compositor 动画·贴片
+        // 拉取活跃 / 任一 pending 队列非空均忙）+ 无崩溃重置 deadline + 无平滑滚动
+        // 动画 + 无注入器在弦。backend 叠加活动 recency 构成连续闲置锚点（回收判据；
+        // 单进程 worker 路在 TabManager 内 no-op）。
+        let idle_face = self.tabs.tab_face_idle(self.shell.active_tab_id())
+            && self.crash_reset_deadlines.is_empty()
+            && self.scroll_anim.is_empty()
+            && !self.click_injector.armed();
+        self.tabs.note_warm_idle_tick(idle_face);
         // 消费异步 DOM 事件派发产生的延迟动作（链接导航等）。
         // 必须在 `tabs.poll` 之后调用 —— pending actions 由 poll 收集。
         for (tab_id, action) in self.tabs.take_pending_actions() {

@@ -34,6 +34,16 @@ thread_local! {
         RefCell<Option<(ViewDocKey, zero_dom::Document)>> = const { RefCell::new(None) };
 }
 
+/// T13 S4：清空当前线程的查询视图文档缓存槽（文档代际复位收口调用）。
+///
+/// 条目持有 `(dom_arc, mut_arc)` Arc 克隆 + 整棵解析视图 `Document`，滞留至同线程
+/// 下次同键查询前；导航复位时显式置空提前释放（单槽 cache 语义不变，下次查询重建）。
+pub fn clear_view_doc_cache() {
+    VIEW_DOC_CACHE.with(|slot| {
+        *slot.borrow_mut() = None;
+    });
+}
+
 /// [`VIEW_DOC_CACHE`] 条目键（命中判定字段 + 增量链前提）。
 struct ViewDocKey {
     dom_arc: Arc<std::sync::Mutex<String>>,

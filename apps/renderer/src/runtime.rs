@@ -499,6 +499,10 @@ pub(crate) struct RendererRuntime {
     cached_css: String,
     /// JS 执行 worker。
     js_worker: RendererJsWorker,
+    /// T13 R1：延迟回收调度器——锚点 = webview loading 翻转沿（主循环 tick 消费
+    /// 闩），D 后到点触发主侧批量回收并向 worker 投递延迟回收；窗口证据与命中
+    /// 语义预注册见 bench/results/t13-rework-frozen.md。
+    reclaim_sched: crate::mem_reclaim::DeferredReclaimScheduler,
     /// 是否允许执行 JavaScript。
     javascript_enabled: bool,
     /// 最近一次交互目标选择器（键盘事件）。
@@ -821,6 +825,7 @@ impl RendererRuntime {
             pump_epoch,
             pump_clock,
             js_worker,
+            reclaim_sched: crate::mem_reclaim::DeferredReclaimScheduler::default(),
             javascript_enabled: true,
             interaction: PageInteractionState::new(),
             focus_from_keyboard: false,
@@ -2801,6 +2806,13 @@ return JSON.stringify({{action:action,name:name,val:val}});\
                 navigation_epoch: self.navigation_epoch,
             }))?;
             self.send_regular(IpcMessageKind::LoadComplete)?;
+            // T13 R1：LoadComplete = renderer 逐导航「文档渲染完成」沿（浏览器 tab
+            // loading 态与 wait_idle settle 同源信号），延迟回收在此重锚 deadline。
+            // webview loading 生命周期在预算渲染路径不走 set_loading(false)
+            //（is_loading 唯一消费面 same_navigation），翻转沿闩在 CDP 导航流首载后
+            // 不再置位（r2 冒烟 gg1 实证 1 fire/13 resets），故以本沿为主锚、翻转沿
+            // 闩保留为初载相补充。窗口证据见 t13-rework-frozen.md。
+            self.reclaim_sched.arm(std::time::Instant::now());
             tracing::info!("页面渲染完成: {page_url}");
         }
         if run_scripts && !page_scripts::should_skip_scripts(&page_url) {
@@ -3184,6 +3196,8 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             .as_mut()
             .expect("webview")
             .prepare_document_state(&page_url);
+        // T13 S2/S4/S6/S7：导航落定增量回收（worker 侧对称臂在 js_worker Reset 尾）。
+        self.reclaim_after_document_reset();
 
         // R3055：POST 导航——同步 fetch POST body → from_html。POST fetch 失败（stub_network / 网络/HTTP
         // 错误）→ 不命中此分支，回落下方 GET `start`（保 load 状态机一致，复用既有 load-failure 处理）。
@@ -3209,6 +3223,63 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             emit_load_complete: true,
             dcl_sent: false,
         })
+    }
+
+    /// T13：导航落定增量回收收口（设计卡 §3 推荐方案 A——只回收已 free 内存与
+    /// cache-by-design 条目，零语义面；触发点 = `navigate_with` 的
+    /// prepare_document_state 之后）。
+    ///
+    /// S4 主线程 thread_local 槽清空（worker 槽在 js_worker Reset 臂尾对称清）+
+    /// S6 共享 HTTP 缓存预算收缩（disk 层兜底不动）+ S2 主侧 `malloc_trim`
+    /// （`ZEROWEB_NAV_TRIM=0` 关）+ S7 探针打点（`ZEROWEB_MEM_PROBE=1`，观测腿）。
+    fn reclaim_after_document_reset(&mut self) {
+        // S4：主线程槽清空（单槽 cache 语义不变，下次查询重建）——µs 级，保持同步。
+        zero_engine::clear_rect_doc_cache();
+        zero_engine::js_dom_bridge::clear_view_doc_cache();
+        // T13 R1：S6 收缩/S2 trim/S7 探针移出首载测窗（处置工单主控 M1）——此处只
+        // 累计待回收代数，主循环 tick 在 loading 翻转沿重锚的 deadline 到点后经
+        // `fire_deferred_reclaim` 统一执行（窗口证据见 t13-rework-frozen.md）。
+        self.reclaim_sched.note_reset();
+    }
+
+    /// T13 R1：延迟回收到点触发（主循环 tick，settle+D）——S6/S2/S7 主侧批量 +
+    /// 向 js worker 投递 `DeferredReclaim`（isolate 线程执行 S3 通知与 worker trim）。
+    /// 相邻 reset 间距 < D 时合并为一次 fire（gens 累加；gens=0 的工厂态 fire 合法）。
+    fn fire_deferred_reclaim(&mut self, gens: u32) {
+        // S6：共享 default HTTP 缓存收缩至导航预算（poisoned 锁内数据仍有效，照常收缩）。
+        let evicted = zero_net::shared_http_cache()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .shrink_to_bytes(zero_net::http_cache::HTTP_CACHE_NAV_SHRINK_BYTES);
+        tracing::info!(target: "mem_reclaim", gens = gens as u64, evicted = evicted as u64, "http_shrink");
+        // S2：主侧 trim——与 worker 延迟点统一；归还 DOM/cache 释放窗的 arena 页。
+        // `ZEROWEB_NAV_TRIM=0` 关（token 全零面，预注册）。
+        if crate::mem_reclaim::nav_trim_enabled() {
+            crate::mem_reclaim::malloc_trim_now("nav_trim", gens);
+        }
+        // S7：填充量探针（svg 重栅格条目/shape 缓存条目/canvas 上下文/HTTP 字节/PSS）。
+        if crate::mem_reclaim::mem_probe_enabled() {
+            let (svg_len, canvas_len) = self.webview.as_ref().map_or((0, 0), |wv| wv.mem_probe_cache_lens());
+            let shape_len = self.font_loader.shape_cache_len();
+            let http_bytes = zero_net::shared_http_cache()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .total_bytes();
+            let pss_kb = crate::mem_reclaim::read_process_pss_kb().unwrap_or(0);
+            tracing::info!(
+                target: "mem_probe",
+                pss_kb,
+                svg_len,
+                shape_len,
+                canvas_len,
+                http_bytes,
+                "nav settle probe"
+            );
+        }
+        // worker 侧（S3 通知无条件维持首轮 OFF 面；S2 worker trim 随 NAV_TRIM 门）。
+        if let Err(e) = self.js_worker.submit_deferred_reclaim(gens) {
+            tracing::warn!(gens = gens as u64, "deferred worker reclaim submit failed: {e}");
+        }
     }
 
     fn handle_load_html(&mut self, params: LoadHtmlParams) -> Result<(), String> {
@@ -4229,6 +4300,20 @@ return JSON.stringify({{action:action,name:name,val:val}});\
                 && let Err(e) = self.poll_deferred_automation_replies()
             {
                 tracing::warn!("deferred automation reply send failed: {e}");
+            }
+
+            // T13 R1：延迟回收调度——LoadComplete 主锚 + loading 翻转沿补充（初载相）
+            // 重锚 deadline（16ms tick 消费）；到点触发主侧批量回收 + worker 延迟回收。
+            // S2/S3 成本移出首载测窗（t13-rework-frozen.md 窗口证据）。
+            if self
+                .webview
+                .as_mut()
+                .map_or(false, |webview| webview.take_loading_flip())
+            {
+                self.reclaim_sched.arm(std::time::Instant::now());
+            }
+            if let Some(gens) = self.reclaim_sched.due(std::time::Instant::now()) {
+                self.fire_deferred_reclaim(gens);
             }
 
             match self.recv_next_or_timeout(LOAD_TICK_INTERVAL) {

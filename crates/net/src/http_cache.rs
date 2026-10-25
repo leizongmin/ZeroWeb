@@ -17,6 +17,10 @@ use crate::request::HttpResponse;
 /// Default maximum total body size of the in-memory HTTP cache.
 const DEFAULT_HTTP_CACHE_MAX_BYTES: usize = 50 * 1024 * 1024;
 
+/// T13 S6：导航落定内存缓存收缩预算。共享 default 缓存常驻 ≤50MB 是 renderer C2
+/// 构成项（设计卡 §1-#8）；每代导航落定收缩至 8MB 释放跨站旧条目，磁盘层兜底回源。
+pub const HTTP_CACHE_NAV_SHRINK_BYTES: usize = 8 * 1024 * 1024;
+
 /// 缓存查找结果。
 #[derive(Debug, Clone)]
 pub enum CacheLookup {
@@ -546,6 +550,37 @@ impl HttpCache {
         self.entries.values().map(|e| e.body.len()).sum()
     }
 
+    /// T13 S6：内存层收缩至预算内（LRU 尾淘汰），导航落定调用。
+    ///
+    /// 仅收缩内存层——磁盘层是 cache-by-design 持久面（[`Self::open_persistent`]），
+    /// 不随导航回收，内存 miss 回源磁盘兜底。返回淘汰条目数。
+    pub fn shrink_to_bytes(&mut self, budget_bytes: usize) -> usize {
+        let mut evicted = 0usize;
+        while self.total_bytes() > budget_bytes {
+            let Some(oldest) = self.lru_order.first().cloned() else {
+                break;
+            };
+            if !self.remove_memory_only(&oldest) {
+                break;
+            }
+            evicted += 1;
+        }
+        evicted
+    }
+
+    /// 仅移除内存层条目（[`Self::remove`] 的内存子集，磁盘层保留）。
+    fn remove_memory_only(&mut self, url: &str) -> bool {
+        let resource_base = self.entries.get(url).map(|e| e.resource_base.clone());
+        if let Some(base) = resource_base {
+            self.unregister_resource_key(&base, url);
+        }
+        let removed = self.entries.remove(url).is_some();
+        if removed {
+            self.lru_order.retain(|u| u != url);
+        }
+        removed
+    }
+
     /// 为条件请求生成请求头。
     ///
     /// 如果缓存中有该 URL 的条目，返回 If-None-Match 和/或 If-Modified-Since 头。
@@ -869,6 +904,69 @@ mod tests {
         cache.put("https://example.com/b", &resp);
         cache.clear();
         assert_eq!(cache.len(), 0);
+    }
+
+    /// T13 S6：shrink_to_bytes LRU 尾淘汰至预算内，promote 过的条目存活。
+    #[test]
+    fn t13_shrink_to_bytes_evicts_lru_tail() {
+        let mut cache = HttpCache::new();
+        cache.put(
+            "https://example.com/a",
+            &make_response(200, b"aaaa", vec![("cache-control", "max-age=60")]),
+        );
+        cache.put(
+            "https://example.com/b",
+            &make_response(200, b"bb", vec![("cache-control", "max-age=60")]),
+        );
+        cache.put(
+            "https://example.com/c",
+            &make_response(200, b"ccc", vec![("cache-control", "max-age=60")]),
+        );
+        assert_eq!(cache.total_bytes(), 9);
+        // 命中最旧条目提升 LRU 序（尾变为 b、c）。
+        assert!(matches!(
+            cache.lookup("https://example.com/a", &[]),
+            CacheLookup::Hit(_)
+        ));
+        let evicted = cache.shrink_to_bytes(4);
+        assert_eq!(evicted, 2, "LRU 尾 b、c 先淘汰（a 已 promote）");
+        assert!(cache.total_bytes() <= 4);
+        assert!(cache.contains("https://example.com/a"), "promote 过的条目存活");
+        assert!(!cache.contains("https://example.com/b"));
+        assert!(!cache.contains("https://example.com/c"));
+        // 预算内零淘汰；空缓存零淘汰。
+        assert_eq!(cache.shrink_to_bytes(8 * 1024 * 1024), 0);
+        let mut empty = HttpCache::new();
+        assert_eq!(empty.shrink_to_bytes(0), 0);
+    }
+
+    /// T13 S6：收缩只动内存层——磁盘条目保留（cache-by-design 持久面，miss 回源兜底）。
+    #[test]
+    fn t13_shrink_keeps_disk_layer() {
+        let root = std::env::temp_dir().join(format!("zw-t13-shrink-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("temp cache dir");
+        let disk_bytes = {
+            let mut cache = HttpCache::open_persistent_at(&root);
+            cache.put(
+                "https://example.com/a",
+                &make_response(200, b"aaaa", vec![("cache-control", "max-age=60")]),
+            );
+            cache.put(
+                "https://example.com/b",
+                &make_response(200, b"bb", vec![("cache-control", "max-age=60")]),
+            );
+            let before = cache.disk_bytes();
+            assert!(before > 0, "磁盘层应已落盘");
+            cache.shrink_to_bytes(0);
+            assert_eq!(cache.len(), 0, "内存层清空");
+            assert_eq!(cache.disk_bytes(), before, "磁盘层不随收缩删除");
+            before
+        };
+        // 重开验证磁盘条目仍在（独立实例读同一目录）。
+        let reopened = HttpCache::open_persistent_at(&root);
+        assert!(reopened.disk_bytes() >= disk_bytes - 1);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
