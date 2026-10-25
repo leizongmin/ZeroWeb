@@ -2536,17 +2536,17 @@ mod tests {
     }
 
     /// T8/P7 回归钉：自动化求值路径（`execute_script_priority_deferrable`，CDP
-    /// Runtime.evaluate / AutomationRequest 的 renderer 消费面）与 T66 bounded 路径
-    /// 同判据——空闲 worker 上必须被 WakePrio 即时唤醒，不能等满 WORKER_IDLE_POLL
-    /// 轮询量子。缺唤醒时串行请求-应答负载下每次求值叠加近满量子（headless 实测
-    /// CDP eval RTT 恒定 ~51ms：worker 每次应答后即刻驻回 recv_timeout，下一条
-    /// 请求总在量子窗口内到达）。变异验证：移除 deferrable 的 WakePrio 发送，
-    /// 10 次连发总耗时超 100ms 上限即红。
+    /// Runtime.evaluate / AutomationRequest 与页面用户动作脚本派发同走此 renderer
+    /// 消费面）与 T66 bounded 路径同判据——空闲 worker 上必须被 WakePrio 即时唤醒，
+    /// 不能等满 WORKER_IDLE_POLL 轮询量子。缺唤醒时串行请求-应答负载下每条求值
+    /// 叠加近满量子（~50ms/条，headless 实测 CDP eval RTT 恒定 ~51ms：worker 每次
+    /// 应答后即刻驻回 recv_timeout，下一条请求总在量子窗口内到达）。变异验证：
+    /// 移除 deferrable 的 WakePrio 发送，10 条期望 ~500ms，远超 100ms 上限即红。
     #[test]
     fn priority_deferrable_execute_wakes_idle_dispatch_loop() {
         let worker = RendererJsWorker::spawn(6142);
-        // 预热同 T66 钉：首条强制完成 spawn 侧 setup 并进入分派环，再静置两个
-        // 轮询量子，worker 必已驻留在 recv_timeout(WORKER_IDLE_POLL) 等待。
+        // 预热同 T66 钉：首条强制完成 spawn 侧 setup 并进入分派环，再静置 150ms
+        //（3 个轮询量子），worker 必已驻留在 recv_timeout(WORKER_IDLE_POLL) 等待。
         let warmup = worker
             .execute_script_priority_deferrable("1+1", Duration::from_secs(2))
             .ok()
@@ -2554,8 +2554,8 @@ mod tests {
             .expect("warmup execute failed");
         assert_eq!(warmup, "2");
         std::thread::sleep(Duration::from_millis(150));
-        // 无唤醒时每条求值期望 25ms/条（缺唤醒期望总 ~250ms），唤醒路径 ~2ms/条
-        //（总 ~20ms）；100ms 上限两侧 ≥4 倍余量，变异必红（二项汇聚）。
+        // 缺唤醒时 ~50ms/条（10 条 ~500ms），唤醒路径 ~2ms/条（总 ~20ms）；对
+        // 100ms 上限：变异方向 5 倍越限必红，唤醒方向 5 倍余量耐慢机。
         let started = std::time::Instant::now();
         for _ in 0..10 {
             let result = worker
