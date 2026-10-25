@@ -1667,7 +1667,7 @@ impl super::Painter {
                     // R5250（CSS2 §9.3.2）：relative inset 位移表——walk 折回门分裂信号
                     // + fragment 平移消费表，layout 期构建存盒（compute_final），Path B
                     // 注入同一张表保持两臂分段恒等（见 IFC relpos_shifts 字段文档）。
-                    .with_relpos_shifts(box_node.inline_relpos_shifts.clone())
+                    .with_relpos_shifts(box_node.inline_relpos_shifts.as_deref().cloned().unwrap_or_default())
                     // R3840：元素级 bidi-override 恢复（layout 期按文本节点 id 存储）。
                     .with_text_node_bidi_overrides(box_node.text_node_bidi_overrides.clone())
                     // R3778：run 级有效 white-space 覆盖——inline 包裹层声明的 pre 等在
@@ -1872,9 +1872,9 @@ impl super::Painter {
                 // compute_final 存的位移映射（inline_relpos_shifts）平移 fragment；装饰锚
                 // 行盒顶平行表索引对齐同移（R4332 契约）。表空（无 relative inline /
                 // 竖排 / kill-switch）时循环体零命中，无行为变化。
-                if !box_node.inline_relpos_shifts.is_empty() {
+                if let Some(shifts) = box_node.inline_relpos_shifts.as_deref() {
                     for (i, frag) in fragments.iter_mut().enumerate() {
-                        if let Some(&(dx, dy)) = box_node.inline_relpos_shifts.get(&frag.node_id) {
+                        if let Some(&(dx, dy)) = shifts.get(&frag.node_id) {
                             frag.x += dx;
                             frag.y += dy;
                             if let Some(t) = frag_line_tops.get_mut(i) {

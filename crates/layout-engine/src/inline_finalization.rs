@@ -1918,7 +1918,7 @@ pub(crate) fn compute_final_inline_layouts(
     // 等）paint 走 Path B（空 styles 重跑），从盒读表注入重跑 IFC 并平移 fragment。
     // 须在 store-gate return 之前。空表不存（Path B 注入空表 = 无分裂无平移，两臂一致）。
     if !inline_ctx.relpos_shifts.is_empty() {
-        root.inline_relpos_shifts = inline_ctx.relpos_shifts.clone();
+        root.inline_relpos_shifts = Some(Box::new(inline_ctx.relpos_shifts.clone()));
     }
     let is_pure_ahem =
         style.font_family.len() == 1 && style.font_family[0].trim_matches('"').eq_ignore_ascii_case("Ahem");
@@ -1969,25 +1969,21 @@ pub(crate) fn compute_final_inline_layouts(
                         VerticalAlignValue::Super => line.baseline_y - 0.3 * frag.font_size,
                         _ => line.baseline_y,
                     };
+                    // R5250：本 fragment 归因节点的 relative inset 视觉位移（无表/未
+                    // 入表 = 零位移）。
+                    let shift = root
+                        .inline_relpos_shifts
+                        .as_deref()
+                        .and_then(|m| m.get(&frag.node_id))
+                        .copied()
+                        .unwrap_or((0.0, 0.0));
                     InlineLayoutFragment {
                         // R5250：relative inset 视觉位移（§9.3.2，纯 inline 非替换盒无
                         // taffy 节点无人施加）——stored fragment 烘焙进存面，paint 端
                         // baseline_y_abs = line_y + f.baseline_y 随之移动。行盒 y 不动
                         //（同线多 span 各自 inset 不同，行级位移无定义）。
-                        x: frag.x
-                            + root
-                                .inline_relpos_shifts
-                                .get(&frag.node_id)
-                                .copied()
-                                .unwrap_or((0.0, 0.0))
-                                .0,
-                        y: frag.y
-                            + root
-                                .inline_relpos_shifts
-                                .get(&frag.node_id)
-                                .copied()
-                                .unwrap_or((0.0, 0.0))
-                                .1,
+                        x: frag.x + shift.0,
+                        y: frag.y + shift.1,
                         width: frag.width,
                         height: frag.height,
                         font_size: frag.font_size,
@@ -1997,13 +1993,7 @@ pub(crate) fn compute_final_inline_layouts(
                         source: frag.source.clone(),
                         letter_spacing: frag.letter_spacing,
                         node_id: Some(frag.node_id),
-                        baseline_y: frag_baseline_y
-                            + root
-                                .inline_relpos_shifts
-                                .get(&frag.node_id)
-                                .copied()
-                                .unwrap_or((0.0, 0.0))
-                                .1,
+                        baseline_y: frag_baseline_y + shift.1,
                     }
                 })
                 .collect(),

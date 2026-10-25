@@ -1129,3 +1129,17 @@ fn test_layout_box_position_flags_mutually_exclusive() {
     assert!(!box_abs.is_fixed);
     assert!(box_abs.is_sticky);
 }
+
+/// LayoutBox 尺寸钉：防字段膨胀劣化树构造/遍历（ZRG-2026-08-18-01 先例——R3441-F
+/// 24 B hasher 每盒 +80 B，合成遍历 ≈ -25%；ZRG-2026-10-25-01 R5250 per-box 常驻
+/// `NodeIdMap` +32 B、R5264 collapse_half_shift +8 B，box 树构造 +4.1~4.9%）。
+/// 1360 = Option<Box> 化收回 per-box 位移表内联 24 B 后的实测值；新增字段若把
+/// size_of 推过钉值，须同样 Option<Box>/堆侧化并在此续钉，不得抬阈值。
+#[test]
+fn layout_box_size_pin() {
+    assert!(
+        std::mem::size_of::<LayoutBox>() <= 1360,
+        "LayoutBox 膨胀至 {} B（钉值 1360）——per-box 新增字段须堆侧化（Option<Box> 等）",
+        std::mem::size_of::<LayoutBox>()
+    );
+}

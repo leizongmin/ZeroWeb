@@ -50,7 +50,8 @@ fn r5250_relpos_inline_shift_map_built() {
         .expect("span1 存在");
     let shift = div
         .inline_relpos_shifts
-        .get(&span1)
+        .as_deref()
+        .and_then(|m| m.get(&span1))
         .copied()
         .expect("div 盒应存 span1 位移映射");
     assert!(

@@ -524,7 +524,12 @@ pub struct LayoutBox {
     /// 无人施加 inset（R5225 判例对其不成立），stored IFC 映射与 paint Path B
     /// （空 styles 重跑，无 styles 可判）据表平移 fragment。`ZW_RELPOS_INLINE_SHIFT=0`
     /// 回退静态位行为。
-    pub inline_relpos_shifts: NodeIdMap<(f32, f32)>,
+    ///
+    /// R3441/ZRG-2026-08-18-01：LayoutBox 每盒放大直接放大树构造/遍历成本
+    ///（per-box 常驻 `NodeIdMap` 曾致 +80 B ≈ 遍历 -25%），故盒侧仅存
+    /// `Option<Box<_>>`（8 B，多数盒无 relative inline 子 = None 零分配），
+    /// 表本体按需堆分配。
+    pub inline_relpos_shifts: Option<Box<NodeIdMap<(f32, f32)>>>,
     /// 文本节点的 letter-spacing 映射（来自 layout engine 的 IFC 运行）。
     ///
     /// paint 系统在运行空 styles IFC 时无法获取 letter-spacing（无 style 信息），
@@ -841,7 +846,7 @@ impl Default for LayoutBox {
             text_node_is_ahem: NodeIdMap::default(),
             text_node_ws_overrides: NodeIdMap::default(),
             text_node_glyph_verticals: NodeIdMap::default(),
-            inline_relpos_shifts: NodeIdMap::default(),
+            inline_relpos_shifts: None,
             text_node_letter_spacing: NodeIdMap::default(),
             text_node_word_spacing: NodeIdMap::default(),
             text_node_line_heights: NodeIdMap::default(),
