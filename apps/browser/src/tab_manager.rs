@@ -305,6 +305,14 @@ impl TabManager {
     /// 前台 Tab 切换（每个 Tab 的 worker / 渲染进程保持存活直至用户关闭标签）。
     pub fn on_active_tab_changed(&mut self, _active: Option<TabId>) {}
 
+    /// T12 投机预热触发转发：主循环每 tick 由 app 转发地址栏聚焦态（多进程 backend
+    /// 内部做 false→true 边沿检测；单进程 worker 路无 renderer 进程可预热，no-op）。
+    pub fn note_warm_renderer_tick(&mut self, address_bar_focused: bool) {
+        if let Some(ref mut backend) = self.process_backend {
+            backend.note_warm_tick(address_bar_focused);
+        }
+    }
+
     /// 导航到 URL。
     pub fn navigate(&mut self, tab_id: TabId, url: String) {
         self.navigate_request(tab_id, url, "GET".to_string(), None);
