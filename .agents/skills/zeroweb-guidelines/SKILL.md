@@ -11,7 +11,7 @@ description: 从 docs/learnings 提炼 ZeroWeb 工程不变式。在本仓编写
 
 - 触发后整个编码任务期间持续生效，不因多轮对话或任务切换遗忘；仅当用户明确说「跳过准则」时暂停，恢复编码后自动重新生效。
 - 动代码前按改动选择主题，CR 时对照触碰到的条目；先核对适用条件，不把局部经验扩展为无条件禁令。
-- **权衡**：这些不变式倾向谨慎而非速度。小改动不必全量过 34 条，自行判断。
+- **权衡**：这些不变式倾向谨慎而非速度。小改动不必全量过 35 条，自行判断。
 - 本 skill 是领域层，叠加在 AGENTS.md 编码准则 / `lei-code-guidelines`（行为层）之上，不复述其行为规则。
 
 | 改动入口 | 必读条目 |
@@ -22,7 +22,7 @@ description: 从 docs/learnings 提炼 ZeroWeb 工程不变式。在本仓编写
 | 布局 / 后处理 pass | #18、#29、#34 |
 | IPC / 同步脚本 / 宿主桥 | #12–15、#24–25、#30、#32 |
 | 存储 / 并发缓存 | #16、#19、#22 |
-| 性能 / 测试工具 | #9–11、#17–20、#23、#27–28、#31、#33；shim 循环加 #26 |
+| 性能 / 测试工具 | #9–11、#17–20、#23、#27–28、#31、#33、#35；shim 循环加 #26 |
 
 ## 与「简单至上」的关系
 
@@ -32,7 +32,7 @@ ZeroWeb 中一切来自网页的输入（HTML/CSS/JS 传值）都是**不可信�
 
 以下场景可临时放宽（合入 main 前必须恢复，放宽结束自动恢复全部）：
 
-- 原型 / spike：#7 像素等价、#11 性能三件套、#23 定向性能门禁、#26 trap 域成本模型、#27 产物目录隔离、#28 执行体证据核验、#29 pass 归因与臂覆盖审计、#33 双侧影响预核对、#34 Path B 信号镜像臂可先单跑看方向，合入前补全验证
+- 原型 / spike：#7 像素等价、#11 性能三件套、#23 定向性能门禁、#26 trap 域成本模型、#27 产物目录隔离、#28 执行体证据核验、#29 pass 归因与臂覆盖审计、#33 双侧影响预核对、#34 Path B 信号镜像臂、#35 归因采样协议可先单跑看方向，合入前补全验证
 - 紧急热修复且用户确认：#11 可先单跑，事后补同条件配对对照
 
 任何场景下不可放宽：#1、#2、#16、#21、#31（信任边界与数据丢失）。
@@ -215,3 +215,9 @@ corpus 的 test/ref 两页均由本引擎渲染，判定是两页像素差而非
 layout 与 paint 复用同一 collect 逻辑却是两条通道：存储容器（Path A）持真实 styles，非存储容器 paint 走 Path B 以空 styles 重跑 IFC（R72 裁决，不可改为传真实 styles）。collect/finalize 新增任何 `styles.get(&id)` 依赖分叉，Path B 查表恒空、判定必然塌向固定侧——layout 趟正确、paint 趟劈叉，症状是 `inline_layout` 单测全绿而真实页面绘制错位。正确形态：判定为真**即记录**进 `NodeIdSet`（触发即记录天然覆盖所有门控组合，优于信号侧重扫 DOM），容器收尾存进 `LayoutBox`（store-gate return 之前——Path B 容器恰是非存储容器），分叉改双通道 `styles.get(&id).map(直判).unwrap_or_else(|| 信号集.contains(&id))`，paint 经既有 builder 通道注入同一信号集逐位镜像；嵌套递归 clone 子 ctx 时子层触发 merge-back 回容器 ctx。给该面写断言前先查 store-gate：纯 Ahem 存储路径单测绿不证明 Path B 正确，需另建空 styles + 注入信号的镜像臂断言。
 
 依据：[IFC collect styles 依赖判定的存储信号镜像](../../../docs/learnings/patterns/2026-10/2026-10-23-ifc-collect-styles-dependent-branch-needs-stored-signal.md)——同一失败形态此前已四度独立修复（R4310 vertical_walk_nodes、R4312 block_child_walk_nodes、R5177 color_divergent、R5235 nested_atomic）而规则未成文，本条为第五例成文收敛。
+
+### 35. 归因实验先采样再查档后 bisect，单跑数字不构成归因证据
+
+corpus 单案 mismatch % 与 bench wall-ms 都有运行间/窗间非确定性（HashMap 迭代序/绘制序抖动放大成亚像素 AA 差；CPU 频率窗使微基准跨窗漂移 2–3×），单采样恰好连续命中同档会呈现「确定性」假象，而 bisect 每臂只跑一次，必然把波动钉成无辜代码片——同一轮可先后得出两个相互矛盾的归因结论。归因协议固定三步：先同二进制对目标案连跑 ≥3–4 次，值有波动即判 flake、退出代码实验；再查 goal 文档证据链，漂移案名大概率已归档为已知 flake；仅对采样稳定的案做撤片/stash 实验。「单跑数字」与机制分析矛盾时优先怀疑采样不足，不修补机制解释——门控谓词静态可读，机制矛盾是比数字更硬的证据。
+
+依据：[单案 reftest % 值运行间波动——单采样钉出无辜代码片](../../../docs/learnings/bugs/2026-10/2026-10-25-reftest-single-sample-attribution-flake.md)、[CPU 频率窗效应——bench-gate 跨窗漂移误判归因](../../../docs/learnings/performance/2026-09/2026-09-14-cpu-freq-window-bench-drift.md)。
