@@ -49,8 +49,14 @@ pub enum PageScript {
     External(String),
     /// 内联 ES module。
     InlineModule(String),
-    /// 外链 ES module `src`。
-    ExternalModule(String),
+    /// 外链 ES module `src`（可能为相对 URL）；`integrity` 为 SRI 属性原文（s107——
+    /// 顶层模块取回后校验面；classic 外链脚本未建模，FIXME 挂账）。
+    ExternalModule {
+        /// `src` 属性原文（SVG script 为 href/xlink:href）。
+        src: String,
+        /// `integrity` 属性原文（空格分隔 integrity metadata，空属性归 None）。
+        integrity: Option<String>,
+    },
 }
 
 /// HTML「ASCII whitespace」剥离（TAB/LF/FF/CR/SPACE）——s93（classic 脚本属性面）：spec 剥离
@@ -210,7 +216,21 @@ pub fn extract_page_scripts_indexed(html: &str) -> Vec<(PageScript, usize)> {
                 }
             } else {
                 if is_module {
-                    scripts.push((PageScript::ExternalModule(src.to_string()), this_idx));
+                    // s107（SRI）：integrity 属性随外链模块携带——webview 取回后按
+                    // integrity metadata 校验（mismatch → 网络错误语义，元素 fire error
+                    // + 体不执行）。classic 外链脚本未建模（无语料判据，FIXME）。
+                    // https://html.spec.whatwg.org/multipage/semantics.html#integrity-metadata-attribute
+                    let integrity = doc
+                        .get_attribute(script_id, "integrity")
+                        .map(|v| v.trim().to_string())
+                        .filter(|v| !v.is_empty());
+                    scripts.push((
+                        PageScript::ExternalModule {
+                            src: src.to_string(),
+                            integrity,
+                        },
+                        this_idx,
+                    ));
                 } else {
                     scripts.push((PageScript::External(src.to_string()), this_idx));
                 }
@@ -1638,6 +1658,35 @@ mod tests {
             (scripts[0].1, scripts[1].1, scripts[2].1),
             (0, 1, 2),
             "无嵌套时序号与执行序均不变"
+        );
+    }
+
+    /// s107 回归钉（SRI）：外链模块 integrity 属性随 PageScript 携带（原文、trim、
+    /// 空属性归 None）；classic 外链脚本不带。
+    #[test]
+    fn external_module_integrity_attr_extraction_s107() {
+        let html = "<script type=\"module\" src=\"m.js\" integrity=\"sha384-kc1K2K\"></script>\
+                    <script type=\"module\" src=\"n.js\" integrity=\"  \"></script>\
+                    <script type=\"module\" src=\"o.js\"></script>\
+                    <script src=\"p.js\" integrity=\"sha256-AA\"></script>";
+        let scripts = extract_page_scripts_indexed(html);
+        assert_eq!(scripts.len(), 4);
+        assert!(
+            matches!(&scripts[0].0, PageScript::ExternalModule { src, integrity: Some(v) }
+                if src == "m.js" && v == "sha384-kc1K2K"),
+            "integrity 原文随外链模块携带"
+        );
+        assert!(
+            matches!(&scripts[1].0, PageScript::ExternalModule { integrity: None, .. }),
+            "空白 integrity 归 None"
+        );
+        assert!(
+            matches!(&scripts[2].0, PageScript::ExternalModule { integrity: None, .. }),
+            "无 integrity 归 None"
+        );
+        assert!(
+            matches!(&scripts[3].0, PageScript::External(_)),
+            "classic 外链脚本不带 integrity（FIXME 挂账）"
         );
     }
 

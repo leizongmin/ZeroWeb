@@ -4932,6 +4932,62 @@ fn wpt_data_script_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::S
                     }
                 })
             });
+        // s107（JSON module）：`.json` 静态文件与 `serve-with-content-type.py?fn=<rel>&ct=<mime>`
+        // 动态 handler 的 JSON 意图面——按 Content-Type 判 JSON MIME type：essence
+        // application/json | text/json 或 `+json` 后缀、`;参数` 剥离（text/json 为
+        // corpus 时代合法集——现行 spec 已收窄至 application/json 与 +json 后缀，
+        // json-module/valid-content-type 8 臂判据为准）。合法 → 交付文件原文；非法 →
+        // Err（网络错误语义）。ct 值百分号解码（charset 页 %3B、valid-content-type t7
+        // %2B；裸 `+` 原样保留——t3/t4/t8 的 `text/html+json` 在 query 中不表示空格）。
+        // 端点本体不在 runner 语料（上游 wptserve .py 脚本），按 handler 语义模拟：
+        // 交付 fn 指向的文件（fn 相对 .py 所在目录解析——corpus
+        // `fn=json-module/module.json` 对 the-script-element/ 目录成立）。
+        // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+        fn mime_is_json(mime: &str) -> bool {
+            let essence = mime.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
+            essence == "application/json" || essence == "text/json" || essence.ends_with("+json")
+        }
+        let json_intent: Option<(String, String)> = if clean.ends_with(".json") {
+            // wptserve 对 .json 文件默认 Content-Type: application/json；
+            // `?pipe=header(...)` / `.headers` sidecar 可覆盖（MIME 判定派生序同 scripty 面）。
+            let mime = mime_from_pipe
+                .clone()
+                .or_else(|| mime_from_sidecar.clone())
+                .unwrap_or_else(|| "application/json".to_string());
+            Some((clean.to_string(), mime))
+        } else if std::path::Path::new(clean).file_name().is_some_and(|name| {
+            name == std::ffi::OsStr::new("serve-with-content-type.py")
+        }) {
+            let query = src.split('?').nth(1).unwrap_or("");
+            let mut fn_param = None;
+            let mut ct_param = None;
+            for pair in query.split('&') {
+                if let Some(value) = pair.strip_prefix("fn=") {
+                    fn_param =
+                        Some(percent_encoding::percent_decode_str(value).decode_utf8_lossy().into_owned());
+                } else if let Some(value) = pair.strip_prefix("ct=") {
+                    ct_param =
+                        Some(percent_encoding::percent_decode_str(value).decode_utf8_lossy().into_owned());
+                }
+            }
+            match (fn_param, ct_param) {
+                (Some(file), Some(ct)) => {
+                    let dir = clean.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
+                    Some((format!("{dir}/{file}"), ct))
+                }
+                _ => return Err(format!("serve-with-content-type.py missing fn/ct: {src}")),
+            }
+        } else {
+            None
+        };
+        if let Some((file_rel, mime)) = json_intent {
+            if !mime_is_json(&mime) {
+                return Err(format!("non-JSON MIME for module: {file_rel} ({mime})"));
+            }
+            return std::fs::read(root.join(&file_rel))
+                .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+                .map_err(|e| format!("json module fetch failed: {file_rel} ({e})"));
+        }
         let scripty = if let Some(mime) = mime_from_pipe {
             mime_is_scripty(&mime)
         } else if let Some(mime) = mime_from_sidecar {
@@ -8182,7 +8238,7 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
         .iter()
         .map(|script| match script {
             zero_engine::PageScript::Inline(source) | zero_engine::PageScript::InlineModule(source) => source.len(),
-            zero_engine::PageScript::External(_) | zero_engine::PageScript::ExternalModule(_) => 0,
+            zero_engine::PageScript::External(_) | zero_engine::PageScript::ExternalModule { .. } => 0,
         })
         .collect::<Vec<_>>();
     // js-dom M5/M7 收尾（R384）：kill-switch `ZW_NATIVE_DOM` env 已删——原生绑定是唯一
@@ -9188,8 +9244,16 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str) -> String 
         };
         let open_end = start + open_end;
         let open = &remaining[start..=open_end];
-        // 提取 src="..."（仅相对路径 .js）。
-        let src = extract_script_src(open);
+        // 提取 src="..."（仅相对路径 .js）。s107（SRI）：带 integrity 属性的单元保持
+        // 外链整段透传——内联投递丢 src/integrity，webview 顶层模块 SRI 校验
+        //（ExternalModule 臂）与元素 load/error 事件 src 匹配派发（R2944）都以 src 为
+        // 锚（json-module/module/css-module/text-module 四页 integrity.html 语料）。
+        // https://html.spec.whatwg.org/multipage/semantics.html#integrity-metadata-attribute
+        let src = if zero_engine::attr_from_open_tag(open, "integrity").is_some() {
+            None
+        } else {
+            extract_script_src(open)
+        };
         let resolved = src.and_then(|s| {
             // R4300（html-semantics M2 切片 23）：`/` 根路径（非 `//`、非 http(s):）
             // 解析为 wpt_root 相对——dialog closedby/canceling 语料以
@@ -11028,6 +11092,58 @@ const TESTDRIVER_STUB: &str = r#"<script>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // s107 回归钉：fetcher JSON module 意图面——`.json` 静态文件默认
+    // application/json 放行（pipe/sidecar 可覆盖）；serve-with-content-type.py 按
+    // `?fn=<相对 .py 目录>&ct=<mime>` 模拟交付；ct 百分号解码；非 JSON MIME → Err。
+    #[test]
+    fn json_module_fetcher_mime_gate_s107() {
+        let dir = std::env::temp_dir().join(format!("zw-json-fetch-{}-s107", std::process::id()));
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::write(dir.join("sub/data.json"), "{\"test\":true}").unwrap();
+        std::fs::write(dir.join("sub/serve-with-content-type.py"), "# handler\n").unwrap();
+        let fetch = wpt_data_script_fetcher(&dir).unwrap();
+        // 静态 .json 默认 MIME 放行（相对 + 根绝对两形态）
+        assert_eq!(
+            fetch("https://wpt.test/sub/page.html", "./data.json").unwrap(),
+            "{\"test\":true}"
+        );
+        assert_eq!(
+            fetch("https://wpt.test/other.html", "/sub/data.json").unwrap(),
+            "{\"test\":true}"
+        );
+        // serve-with-content-type.py：fn 相对 .py 所在目录 + ct 交付
+        assert_eq!(
+            fetch(
+                "https://wpt.test/sub/page.html",
+                "./serve-with-content-type.py?fn=data.json&ct=text/json"
+            )
+            .unwrap(),
+            "{\"test\":true}"
+        );
+        // ct 百分号解码（%3B 分号；合法 essence 判定剥参数）
+        assert_eq!(
+            fetch(
+                "https://wpt.test/sub/page.html",
+                "./serve-with-content-type.py?fn=data.json&ct=text/json%3Bcharset=utf-8"
+            )
+            .unwrap(),
+            "{\"test\":true}"
+        );
+        // 非 JSON MIME → Err（网络错误语义）
+        assert!(
+            fetch(
+                "https://wpt.test/sub/page.html",
+                "./serve-with-content-type.py?fn=data.json&ct=text/plain"
+            )
+            .is_err(),
+            "text/plain 须拒"
+        );
+        // sidecar 覆盖成非 JSON MIME → Err
+        std::fs::write(dir.join("sub/data.json.headers"), "Content-Type: text/plain").unwrap();
+        assert!(fetch("https://wpt.test/sub/page.html", "./data.json").is_err(), "sidecar text/plain 须拒");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     const MINI_HARNESS: &str = r#"
 var __resultCallbacks = [], __completionCallbacks = [], __pending = 0;

@@ -75,7 +75,7 @@ pub fn validate_static_import_attributes(source: &str) -> Result<(), ImportAttri
 /// 探测 `with {…}` 属性子句）。字面量未闭合视为无属性。裸字符串形态（`import"m"`）
 /// 字面量在子句首；绑定形态经 `from` 定位（[`crate::es_module::split_from_clause`]
 /// 的 spec_part 保证以引号开头）。
-fn suffix_after_specifier_literal(clause: &str) -> Option<&str> {
+pub(crate) fn suffix_after_specifier_literal(clause: &str) -> Option<&str> {
     let literal = if matches!(clause.chars().next(), Some('\'') | Some('"') | Some('`')) {
         clause
     } else {
@@ -98,7 +98,7 @@ fn suffix_after_specifier_literal(clause: &str) -> Option<&str> {
 /// 解析 specifier 之后的 `with {…}` 属性子句；无 with 子句（含 `withstand` 这类
 /// 标识符续字）返 None。属性块语法错误（未闭合块 / 值非字符串字面量）按提案语法
 /// 静态语义报 SyntaxError。返回有序 (key, value) 列表。
-fn parse_with_clause(suffix: &str) -> Result<Option<Vec<(String, String)>>, ImportAttributeError> {
+pub(crate) fn parse_with_clause(suffix: &str) -> Result<Option<Vec<(String, String)>>, ImportAttributeError> {
     let rest = match suffix.trim_start().strip_prefix("with") {
         Some(rest) if rest.starts_with('{') || rest.chars().next().is_some_and(char::is_whitespace) => {
             rest.trim_start()

@@ -3921,7 +3921,7 @@ impl WebView {
             let mc_script_fetch_src: Option<String> = if self.config.mixed_content_enforcement {
                 let external_src = match &script {
                     zero_engine::pipeline::PageScript::External(src)
-                    | zero_engine::pipeline::PageScript::ExternalModule(src) => Some(src.as_str()),
+                    | zero_engine::pipeline::PageScript::ExternalModule { src, .. } => Some(src.as_str()),
                     _ => None,
                 };
                 match external_src {
@@ -3954,7 +3954,7 @@ impl WebView {
                 let nonce = info.and_then(|i| i.nonce.as_deref());
                 let external_src = match &script {
                     zero_engine::pipeline::PageScript::External(src)
-                    | zero_engine::pipeline::PageScript::ExternalModule(src) => Some(src.as_str()),
+                    | zero_engine::pipeline::PageScript::ExternalModule { src, .. } => Some(src.as_str()),
                     _ => None,
                 };
                 match external_src {
@@ -4020,7 +4020,7 @@ impl WebView {
                 zero_engine::pipeline::PageScript::InlineModule(_) => {
                     format!("{doc_url}#!zw-inline-module-{script_index}")
                 }
-                zero_engine::pipeline::PageScript::ExternalModule(src) => resolve_document_url(&doc_url, src),
+                zero_engine::pipeline::PageScript::ExternalModule { src, .. } => resolve_document_url(&doc_url, src),
                 _ => doc_url.clone(),
             };
             // s101：外链模块静态 import 的收集基 = 模块自身绝对 URL（spec：import 语句
@@ -4030,7 +4030,9 @@ impl WebView {
             //（nomodule-set-on-external-module-script 实证；strict 下整页 abort）。
             // https://tc39.es/ecma262/#sec-hostresolveimportedmodule
             let module_dep_base = match &script {
-                zero_engine::pipeline::PageScript::ExternalModule(src) => Some(resolve_document_url(&doc_url, src)),
+                zero_engine::pipeline::PageScript::ExternalModule { src, .. } => {
+                    Some(resolve_document_url(&doc_url, src))
+                }
                 _ => None,
             };
             let (code, is_module) = match script {
@@ -4068,7 +4070,7 @@ impl WebView {
                         None => continue,
                     }
                 }
-                zero_engine::pipeline::PageScript::ExternalModule(src) => {
+                zero_engine::pipeline::PageScript::ExternalModule { src, integrity } => {
                     // R3090：外链模块脚本。fetch 源后 is_module=true → 走 InlineModule 编译路径
                     //（预注册空存根 + compile_module_script，外链模块的进一步 import 仍为空存根，defer 递归 fetch）。
                     match &self.script_source_fetcher {
@@ -4077,7 +4079,23 @@ impl WebView {
                             // security-hardening M3：HSTS 升级 URL 就位时按升级 URL fetch。
                             let fetch_src: &str = mc_script_fetch_src.as_deref().unwrap_or(src.as_str());
                             match fetch(page_url, fetch_src) {
-                                Ok(code) => (code, true),
+                                Ok(code) => {
+                                    // s107（SRI）：integrity 属性在场 → 按响应字节校验
+                                    // integrity metadata；不匹配 → 网络错误语义（元素 fire
+                                    // error + 体不执行，与取回失败同面）。classic 外链脚本
+                                    // 未建模（FIXME）。
+                                    // https://w3c.github.io/webappsec-subresource-integrity/#verify-integrity-metadata-algorithm
+                                    // https://html.spec.whatwg.org/multipage/semantics.html#integrity-metadata-attribute
+                                    if let Some(expected) = integrity.as_deref()
+                                        && !integrity_metadata_matches(&code, expected)
+                                    {
+                                        let abs = resolve_document_url(&doc_url, &src);
+                                        let _ = sandbox.execute(&script_dispatch_script_event(&abs, "error"));
+                                        tracing::warn!("外链模块 integrity 校验失败 {src}");
+                                        continue;
+                                    }
+                                    (code, true)
+                                }
                                 Err(e) => {
                                     // 同外链经典脚本：fetch 失败页面继续（strict 门面收窄为内联抛错）。
                                     // s102：补元素 error 投递（spec 网络级取回失败 → fire error；
@@ -4116,10 +4134,14 @@ impl WebView {
                 // 导入全数 compile error；WPT focus-reset basic/multiple-intercept 首证）。递归收集
                 // （transitive deps 一并入册）；单 spec 失败回落空存根（保旧「不阻塞模块 body 执行」语义）。
                 let mut registry = zero_script_sandbox::ModuleRegistry::new();
+                // s107：fetcher 路径带 with-type 属性提取（JSON module 按属性分派合成）。
                 let specs = if self.script_source_fetcher.is_some() {
-                    zero_script_sandbox::extract_static_module_import_specifiers(&code)
+                    zero_script_sandbox::extract_static_module_imports_with_attributes(&code)
                 } else {
                     zero_script_sandbox::extract_module_import_specifiers(&code)
+                        .into_iter()
+                        .map(|spec| (spec, None))
+                        .collect::<Vec<_>>()
                 };
                 if let Some(fetcher_m) = self.script_source_fetcher.clone() {
                     // s101：外链模块以模块自身 URL 为收集基（module_dep_base）；
@@ -4145,12 +4167,13 @@ impl WebView {
                     // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
                     // https://html.spec.whatwg.org/multipage/webappapis.html#resolve-a-module-specifier
                     let mut graph_failure: Option<(ModuleGraphFailure, String)> = None;
-                    for spec in &specs {
+                    for (spec, type_attr) in &specs {
                         match collect_module_deps_recursive(
                             &fetcher_m,
                             &dep_base_m,
                             spec,
                             true,
+                            type_attr.as_deref(),
                             &mut registry,
                             &mut visited_m,
                             &mut fetched_m,
@@ -4187,7 +4210,7 @@ impl WebView {
                         continue;
                     }
                 } else {
-                    for spec in &specs {
+                    for (spec, _) in &specs {
                         registry.register(spec, "");
                     }
                 }
@@ -4305,6 +4328,17 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                 let _ = sandbox.execute(
                     "if(globalThis.__zwRealEval)globalThis.eval=globalThis.__zwRealEval;if(globalThis.__zwRealFunction)globalThis.Function=globalThis.__zwRealFunction;",
                 );
+            }
+            // s107（module 元素 load 面）：**外链**模块取回+编译+求值成功 → 元素 fire
+            // load（spec load 事件属 fetch 完成路径——此前仅失败面有派发：s102 report
+            // 面附 load、s103/图网络失败面附 error，成功路径无 load）。内联模块成功
+            // **不** fire load（load-error-events-inline 四臂判据 assert_unreached
+            // 「Load event should not be fired」；内联无 fetch，load/error 不适用）。
+            // 求值抛错走上方 s102 面（其附 load），此处仅外链成功臂，按 src 匹配派发
+            //（R2944 同口径）。
+            // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+            if is_module && execution.is_ok() && module_dep_base.is_some() {
+                let _ = sandbox.execute(&script_dispatch_script_event(&module_cache_key, "load"));
             }
             let script_error = if strict && !is_module && execution.is_ok() {
                 match sandbox.execute(&page_script_error_check()) {
@@ -6977,7 +7011,7 @@ fn compile_module_contract(fetcher: &ScriptSourceFetcher, parent: &str, spec: &s
     let mut reg = zero_script_sandbox::ModuleRegistry::new();
     let mut visited = std::collections::HashSet::new();
     let mut fetched = std::collections::HashMap::new();
-    match collect_module_deps_recursive(fetcher, parent, spec, false, &mut reg, &mut visited, &mut fetched) {
+    match collect_module_deps_recursive(fetcher, parent, spec, false, None, &mut reg, &mut visited, &mut fetched) {
         Ok(()) => match zero_script_sandbox::compile_dependency_iife(spec, &reg) {
             Ok(iife) => format!("{}\u{1f}{iife}", resolve_document_url(parent, spec)),
             Err(_) => {
@@ -7004,11 +7038,15 @@ fn compile_module_contract(fetcher: &ScriptSourceFetcher, parent: &str, spec: &s
 /// module map 按 URL 记账、同一模块唯一；本引擎按导入方体内拼写查表，补注册保
 /// 跨拼写一致，源相同不产生第二实例语义分歧。
 /// https://html.spec.whatwg.org/multipage/webappapis.html#module-map
+// 9 形参（fetcher/parent/spec/is_dep + s107 type_attr + 三账本）超 clippy 默认阈值；
+// 账本打包重构波及 s103 失败分类关键路径，暂以 allow 承接（FIXME 挂账）。
+#[allow(clippy::too_many_arguments)]
 fn collect_module_deps_recursive(
     fetcher: &ScriptSourceFetcher,
     parent_url: &str,
     spec: &str,
     is_dep: bool,
+    type_attr: Option<&str>,
     registry: &mut zero_script_sandbox::ModuleRegistry,
     visited: &mut std::collections::HashSet<String>,
     fetched: &mut std::collections::HashMap<String, String>,
@@ -7047,16 +7085,57 @@ fn collect_module_deps_recursive(
     }
     registry.register(spec, &source); // key = raw spec（transform_import 按原 spec 查）
     fetched.insert(url.clone(), source.clone());
-    for imp in zero_script_sandbox::extract_static_module_import_specifiers(&source) {
-        collect_module_deps_recursive(fetcher, &url, &imp, true, registry, visited, fetched)?;
+    // s107（JSON module）：`import … with { type: "json" }` → 响应体校验为合法 JSON
+    //（非法 → 网络错误语义，与取回失败同面）后合成 JS 模块源 `export default <字面量>;`
+    //（serde_json 规范化内嵌；default 导入经既有 export transform/导出扫描自动成立）。
+    // 数据模块无依赖不递归。charset 转换未建模（fetcher 按 UTF-8 lossy 交付）——
+    // charset 域页面维持非 P 挂账。
+    // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+    if type_attr == Some("json") {
+        let fetch_failure = || {
+            if is_dep {
+                ModuleGraphFailure::DepFetch
+            } else {
+                ModuleGraphFailure::TopFetch
+            }
+        };
+        let value: serde_json::Value = serde_json::from_str(&source).map_err(|_| fetch_failure())?;
+        let literal = serde_json::to_string(&value).map_err(|_| fetch_failure())?;
+        let synth = format!("export default {literal};");
+        registry.register(spec, &synth);
+        fetched.insert(url.clone(), synth);
+        return Ok(());
+    }
+    for (imp, attr) in zero_script_sandbox::extract_static_module_imports_with_attributes(&source) {
+        collect_module_deps_recursive(fetcher, &url, &imp, true, attr.as_deref(), registry, visited, fetched)?;
     }
     Ok(())
+}
+
+/// s107（SRI）：按 integrity metadata 属性校验响应字节——属性为空格分隔的
+/// `algo-digest` 列表，任一项命中即通过；algo 大小写不敏感（sha256/sha384/sha512，
+/// corpus sha384 单项）。digest 选项（`?XX`）与 classic 外链脚本面未建模（FIXME）。
+/// https://w3c.github.io/webappsec-subresource-integrity/#verify-integrity-metadata-algorithm
+fn integrity_metadata_matches(source: &str, attr: &str) -> bool {
+    use sha2::Digest;
+    let bytes = source.as_bytes();
+    attr.split_whitespace().any(|entry| {
+        let Some((algo, digest)) = entry.split_once('-') else {
+            return false;
+        };
+        let computed = match algo.to_ascii_lowercase().as_str() {
+            "sha256" => base64_encode(&sha2::Sha256::digest(bytes)),
+            "sha384" => base64_encode(&sha2::Sha384::digest(bytes)),
+            "sha512" => base64_encode(&sha2::Sha512::digest(bytes)),
+            _ => return false,
+        };
+        computed == digest.trim()
+    })
 }
 
 /// 将字节编码为 base64 字符串。
 ///
 /// WASM 桥接使用 base64 在 JS 和 Rust 之间传递内存数据。
-#[allow(dead_code)]
 pub(crate) fn base64_encode(data: &[u8]) -> String {
     const B64: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut result = String::with_capacity(data.len() * 4 / 3 + 4);
@@ -8394,6 +8473,184 @@ mod redirect_tests {
             wv.execute_script("String(globalThis.__bodyRan)").unwrap(),
             "undefined",
             "校验失败模块体须不执行"
+        );
+        assert_eq!(
+            wv.execute_script("String(globalThis.__after)").unwrap(),
+            "1",
+            "失败模块之后的 classic 脚本须照常执行"
+        );
+    }
+
+    /// s107 回归钉：`import v from './module.json' with { type: "json" }` → fetcher
+    /// 交付 JSON 原文，合成 `export default <字面量>;` 模块源，default 导入经既有
+    /// export transform 成立（WPT json-module/module.html `v.test === true` 判据）。
+    /// https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+    #[test]
+    fn json_module_default_import_executes_with_synthetic_source_s107() {
+        let cfg = WebViewConfig {
+            script_source_fetcher: Some(std::sync::Arc::new(
+                |_parent: &str, spec: &str| -> Result<String, String> {
+                    assert!(spec.ends_with(".json"), "JSON 意图请求: {spec}");
+                    Ok("{\"test\": true}".to_string())
+                },
+            )),
+            ..WebViewConfig::default()
+        };
+        let mut wv = WebView::new(cfg);
+        wv.prepare_document_state("https://wpt.test/a/page.html");
+        wv.load_html(
+            "<!doctype html><body>\
+             <script type=\"module\" onload=\"globalThis.__modLoad = 1\">\
+             import v from './module.json' with { type: \"json\" }; globalThis.__v = v.test;</script>\
+             <script>globalThis.__after = 1;</script>\
+             </body>",
+            None,
+        );
+        wv.run_page_scripts_strict().expect("JSON module 页面须正常执行");
+        assert_eq!(
+            wv.execute_script("String(globalThis.__v)").unwrap(),
+            "true",
+            "JSON module default 导入须合成成立（v.test === true）"
+        );
+        assert_eq!(
+            wv.execute_script("String(globalThis.__modLoad)").unwrap(),
+            "undefined",
+            "内联模块成功不 fire 元素 load（load 事件属外链 fetch 完成路径——\
+             load-error-events-inline 判据）"
+        );
+        assert_eq!(
+            wv.execute_script("String(globalThis.__after)").unwrap(),
+            "1",
+            "模块之后的 classic 脚本须照常执行"
+        );
+    }
+
+    /// s107 回归钉：JSON 响应体语法非法 → 网络错误语义（元素 fire error、不 fire
+    /// load、体不执行，与取回失败同面——WPT parse-error 族错误事件面）。
+    #[test]
+    fn json_module_parse_failure_fires_element_error_and_skips_body_s107() {
+        let cfg = WebViewConfig {
+            script_source_fetcher: Some(std::sync::Arc::new(
+                |_parent: &str, _spec: &str| -> Result<String, String> { Ok("{\"test\": true".to_string()) },
+            )),
+            ..WebViewConfig::default()
+        };
+        let mut wv = WebView::new(cfg);
+        wv.prepare_document_state("https://wpt.test/a/page.html");
+        wv.load_html(
+            "<!doctype html><body>\
+             <script type=\"module\" onload=\"globalThis.__modLoad = 1\"\
+             onerror=\"globalThis.__modError = 1\">\
+             import v from './module.json' with { type: \"json\" }; globalThis.__bodyRan = 1;</script>\
+             <script>globalThis.__after = 1;</script>\
+             </body>",
+            None,
+        );
+        wv.run_page_scripts_strict()
+            .expect("JSON 语法失败页面须继续（strict 不 abort）");
+        assert_eq!(
+            wv.execute_script("String(globalThis.__modError)").unwrap(),
+            "1",
+            "JSON 语法失败属网络错误语义——元素 fire error"
+        );
+        assert_eq!(
+            wv.execute_script("String(globalThis.__modLoad)").unwrap(),
+            "undefined",
+            "JSON 语法失败元素不 fire load"
+        );
+        assert_eq!(
+            wv.execute_script("String(globalThis.__bodyRan)").unwrap(),
+            "undefined",
+            "JSON 语法失败模块体须不执行"
+        );
+        assert_eq!(
+            wv.execute_script("String(globalThis.__after)").unwrap(),
+            "1",
+            "失败模块之后的 classic 脚本须照常执行"
+        );
+    }
+
+    /// s107 回归钉（SRI）：外链模块 integrity 属性摘要命中 → 正常执行 + fire load
+    ///（WPT json-module/integrity.html matches 臂「allow it to execute」判据）。
+    /// https://w3c.github.io/webappsec-subresource-integrity/#verify-integrity-metadata-algorithm
+    #[test]
+    fn external_module_integrity_match_executes_s107() {
+        use sha2::Digest;
+        let source = "export const ok = 1; globalThis.__bodyRan = 1;";
+        let digest = base64_encode(&sha2::Sha384::digest(source.as_bytes()));
+        let cfg = WebViewConfig {
+            script_source_fetcher: Some(std::sync::Arc::new(
+                move |_parent: &str, _spec: &str| -> Result<String, String> { Ok(source.to_string()) },
+            )),
+            ..WebViewConfig::default()
+        };
+        let mut wv = WebView::new(cfg);
+        wv.prepare_document_state("https://wpt.test/a/page.html");
+        wv.load_html(
+            &format!(
+                "<!doctype html><body>\
+                 <script type=\"module\" src=\"./mod.js\" integrity=\"sha384-{digest}\"\
+                 onload=\"globalThis.__modLoad = 1\" onerror=\"globalThis.__modError = 1\"></script>\
+                 <script>globalThis.__after = 1;</script>\
+                 </body>"
+            ),
+            None,
+        );
+        wv.run_page_scripts_strict().expect("integrity 命中页面须正常执行");
+        assert_eq!(
+            wv.execute_script("String(globalThis.__bodyRan)").unwrap(),
+            "1",
+            "integrity 命中外链模块体须执行"
+        );
+        assert_eq!(
+            wv.execute_script("String(globalThis.__modLoad)").unwrap(),
+            "1",
+            "integrity 命中须 fire 元素 load"
+        );
+        assert_eq!(
+            wv.execute_script("String(globalThis.__modError)").unwrap(),
+            "undefined",
+            "integrity 命中不 fire 元素 error"
+        );
+    }
+
+    /// s107 回归钉（SRI）：integrity 摘要不匹配 → 网络错误语义（元素 fire error、
+    /// 不 fire load、体不执行，与取回失败同面——WPT integrity.html mismatches 臂
+    /// 「not allow it to execute」判据：log 空保持 + events=["error"]）。
+    #[test]
+    fn external_module_integrity_mismatch_fires_error_and_skips_body_s107() {
+        let cfg = WebViewConfig {
+            script_source_fetcher: Some(std::sync::Arc::new(
+                |_parent: &str, _spec: &str| -> Result<String, String> { Ok("globalThis.__bodyRan = 1;".to_string()) },
+            )),
+            ..WebViewConfig::default()
+        };
+        let mut wv = WebView::new(cfg);
+        wv.prepare_document_state("https://wpt.test/a/page.html");
+        wv.load_html(
+            "<!doctype html><body>\
+             <script type=\"module\" src=\"./mod.js\" integrity=\"sha384-doesnotmatch\"\
+             onload=\"globalThis.__modLoad = 1\" onerror=\"globalThis.__modError = 1\"></script>\
+             <script>globalThis.__after = 1;</script>\
+             </body>",
+            None,
+        );
+        wv.run_page_scripts_strict()
+            .expect("integrity 失配页面须继续（strict 不 abort）");
+        assert_eq!(
+            wv.execute_script("String(globalThis.__modError)").unwrap(),
+            "1",
+            "integrity 失配属网络错误语义——元素 fire error"
+        );
+        assert_eq!(
+            wv.execute_script("String(globalThis.__modLoad)").unwrap(),
+            "undefined",
+            "integrity 失配元素不 fire load"
+        );
+        assert_eq!(
+            wv.execute_script("String(globalThis.__bodyRan)").unwrap(),
+            "undefined",
+            "integrity 失配模块体须不执行"
         );
         assert_eq!(
             wv.execute_script("String(globalThis.__after)").unwrap(),

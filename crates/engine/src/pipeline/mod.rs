@@ -4666,7 +4666,7 @@ mod pseudo_tests {
         let scripts = extract_page_scripts(html);
         assert_eq!(scripts.len(), 2);
         assert!(matches!(&scripts[0], PageScript::InlineModule(s) if s.contains("export")));
-        assert!(matches!(&scripts[1], PageScript::ExternalModule(s) if s == "main.mjs"));
+        assert!(matches!(&scripts[1], PageScript::ExternalModule { src, .. } if src == "main.mjs"));
     }
 
     /// XHTML 脚本常以 `<![CDATA[ ... ]]>` 包裹（CSS21 测试套件 .xht 大量使用）。

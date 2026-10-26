@@ -584,6 +584,34 @@ pub fn extract_static_module_import_specifiers(source: &str) -> Vec<String> {
     specs
 }
 
+/// s107：静态 import 语句的 (specifier, with-type 属性) 对——JSON module 图收集按
+/// type 属性分派数据模块合成（webview collect_module_deps_recursive）。复用 s105
+/// 属性子句解析（suffix_after_specifier_literal / parse_with_clause）；属性块语法
+/// 错误由校验面（validate_static_import_attributes）先行报告，此处按无属性处理。
+/// 仅 import 语句——export-from 与动态 import() 不在此面（s105 同口径）。
+pub fn extract_static_module_imports_with_attributes(source: &str) -> Vec<(String, Option<String>)> {
+    let mut pairs: Vec<(String, Option<String>)> = Vec::new();
+    for stmt in split_statements(source) {
+        let Some(clause) = strip_import_keyword(stmt.trim()) else {
+            continue;
+        };
+        if !import_clause_shape_ok(clause) {
+            continue;
+        }
+        let Ok(spec) = extract_import_specifier(clause) else {
+            continue;
+        };
+        let type_attr = crate::import_attributes::suffix_after_specifier_literal(clause)
+            .and_then(|suffix| crate::import_attributes::parse_with_clause(suffix).ok())
+            .flatten()
+            .and_then(|attrs| attrs.into_iter().find(|(key, _)| key == "type").map(|(_, v)| v));
+        if !pairs.iter().any(|(existing, _)| existing == &spec) {
+            pairs.push((spec, type_attr));
+        }
+    }
+    pairs
+}
+
 /// 从模块源码中提取 `import('...')` 动态依赖标识符。
 pub fn extract_dynamic_import_specifiers(source: &str) -> Vec<String> {
     let mut specs = Vec::new();
@@ -2480,6 +2508,34 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
             ),
             ["./named.js", "./star.js", "./namespace.js"]
         );
+    }
+
+    // s107：with type 属性随 specifier 提取；无属性/非 type 键返 None；重复 specifier
+    // 去重（首个 type 胜）；export-from 不在此面。
+    #[test]
+    fn test_static_import_extraction_with_type_attribute_s107() {
+        assert_eq!(
+            extract_static_module_imports_with_attributes(
+                "import v from './module.json' with { type: \"json\" };\nimport './side.js';\nimport d from './dep.js' with { charset: \"utf-8\" };"
+            ),
+            [
+                ("./module.json".to_string(), Some("json".to_string())),
+                ("./side.js".to_string(), None),
+                ("./dep.js".to_string(), None),
+            ]
+        );
+        // 重复 specifier 去重 + 压缩形态（corpus module.html 同形）
+        assert_eq!(
+            extract_static_module_imports_with_attributes(
+                "import a from'./m.json'with{type:\"json\"};\nimport b from './m.json' with { type: \"json\" };"
+            ),
+            [("./m.json".to_string(), Some("json".to_string()))]
+        );
+        // export-from 与动态 import() 不提取
+        assert!(extract_static_module_imports_with_attributes(
+            "export { x } from './m.json' with { type: \"json\" };\nconst m = import('./m.json', { with: { type: \"json\" } });"
+        )
+        .is_empty());
     }
 
     #[test]

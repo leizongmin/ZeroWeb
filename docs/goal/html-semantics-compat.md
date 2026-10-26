@@ -2,9 +2,70 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 106 施工收口（SVG script 族静态面：**execution-timing 域 4F→4P**（137/138/139/140），scripting-1 **352P/189F/37T→356P/185F/37T**，行级 diff 恰 4 行零旁损——探针实证根因：html5ever 对 foreign content 按 spec markup 解析（SVG script 嵌套 `<script>` 为真实子元素），提取器取源误用递归 textContent 把嵌套脚本文本吞进外层源致 SyntaxError；三刀：脚本源改 **child text content**（直接子文本节点拼接，zero-dom 新访问器）、执行序按 **end-tag 序**重排（pre-order 先行者是后行者祖先 → 后行者先行，序号保持 pre-order 与 shim 对齐）、SVG script href 空串不落内联臂（137）；族内 142/143/144/145 属运行时面（write 闭合外层/mutation 重触发 prepare）另立项；zero-dom lib 868/engine lib 3540（+4 钉）/webview lib 809；clippy 三 crate clean），下一步 s107 入场探针定刀位（候选：execution-timing 余 ~42F scheduler 语义定刀 / 数据模块全量支持或 .py 执行器前置体量评估 / SVG script 运行时面 4 页体量评估）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 107 施工收口（JSON module 基础执行面 + 顶层模块 SRI + 外链模块成功 load 面：scripting-1 **356P/185F/37T→372P/175F/35T**，**+16P 零 P→非P**——json-module 13 行（module.html/valid-content-type ×5/integrity 双臂/charset ×6/load-error 页面级）+ module/integrity 2 行；四刀：fetcher JSON MIME 门（语料时代合法集 application/json|text/json|+json 后缀，serve-with-content-type.py 端点按 handler 语义模拟 fn+ct）、script-sandbox 带属性提取（复用 s105 parse_with_clause）、webview collect type 分派（serde_json 校验 + `export default` 合成）、顶层模块 SRI（ExternalModule 结构化携 integrity + sha256/384/512 + mismatch 网络错误语义，webview 增 sha2 workspace dep）+ 外链模块成功 load 派发（**内联不派**——load-error-events-inline 判据，首版全派 2 行 P→F 定向轮即定位改外链限定）+ runner 带 integrity 单元跳过内联（src/integrity 双锚保真）；script-sandbox 373/engine 3541/webview 813/clippy 六 crate clean），下一步 s108 入场探针定刀位（候选：css/text 数据模块合成器——本轮分派骨架就位，css-module/text-module ~30 行 / execution-timing 余 ~42F scheduler 语义定刀 / SVG script 运行时面 4 页体量评估）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-27 M2 切片 106 施工收口，SVG script 族静态面轮）**：
+> **▶ 当前状态（2026-10-27 M2 切片 107 施工收口，JSON module 执行面 + 顶层模块 SRI 轮）**：
+> **入场定谳**：三候选——module 域 92 行最大、数据模块域合计 47 行（css 21 + json
+> 17 + text 9）、execution-timing 余 46 行 scheduler 长尾异质。JSON module 定最小
+> 可收口切片。MIME 合法集按**语料判据**定谳（不凭现行 spec 印象）：essence
+> application/json | text/json | +json 后缀、`;参数` 剥离——valid-content-type 8 臂
+> 全应成功（现行 spec 已收窄至 application/json + +json 后缀，text/json 是 corpus
+> 时代合法集）；`serve-with-content-type.py` 端点本体不在 runner 语料——fetcher 按
+> handler 语义模拟 `?fn=&ct=`，与 imported_script.py 模拟同模式。风险面定谳两处：
+> ①integrity.html mismatch 行平凡 Pass（fetch 恒败→体不执行）——JSON 放行后必翻
+> Fail，**须真实现 SRI** 才能保零 P→非P；②script-element-json-src 负例 src 是
+> file.txt 非 .json，解除。
+> **本轮四刀**：①fetcher JSON 意图分支（.json 静态文件默认 application/json +
+> 端点 fn+ct 模拟，mime_is_json 门：合法交付原文/非法 Err 网络错误语义；ct 百分号
+> 解码、裸 `+` 保留——`text/html+json` 裸 + 在 query 不表示空格）；②script-sandbox
+> 新 `extract_static_module_imports_with_attributes`（复用 s105
+> suffix_after_specifier_literal/parse_with_clause 提 pub(crate)，仅 import 语句，
+> export-from/动态 import() 不提取）；③webview collect 链增 type_attr 参数（9 形参
+> 函数级 allow + FIXME 挂账），type=json → serde_json 校验（非法→DepFetch/TopFetch
+> 网络错误语义）+ 规范化内嵌合成 `export default <字面量>;`（default 导入经既有
+> export transform 与导出扫描自动成立）；④顶层模块 SRI：`PageScript::ExternalModule
+> { src, integrity }` 结构化（六消费点模式同步）+ webview
+> integrity_metadata_matches（空格分隔多 hash 任一命中、algo 大小写不敏感、
+> sha256/384/512，base64_encode 启用 + sha2 workspace dep）+ mismatch→元素 fire
+> error + 体不执行。附刀：**外链模块成功 load 面**——模块成功后按 src 匹配 fire
+> load（此前仅失败面有事件派发），**内联成功不派**（load-error-events-inline 四臂
+> assert_unreached 判据；首版内联也派致 2 行 P→F，定向轮即定位改外链限定）；
+> runner inline_local_scripts 对带 integrity 属性单元整段透传不内联（内联投递丢
+> src/integrity 双锚——SRI 校验与事件 src 匹配都以 src 为锚）。
+> **验证**：script-sandbox **373/373**（+带属性提取钉）；engine lib **3541/3541**
+> （+integrity 提取钉）；webview lib **813/813**（+5 钉：JSON default 导入执行+
+> 内联成功无 load / JSON 语法失败元素 error / SRI 命中执行+load / SRI 失配
+> error+体不执行 / 承袭 s105）；wpt-runner fetcher 钉（.json 默认 MIME/端点
+> fn+ct/解码/非 JSON 拒/sidecar 覆盖拒）；定向 **FILTER=json-module 26→30 行，
+> 9F+2T→13P 零 P→非P**；load-error-events 滤页对照零回归（module/ 族行不变）；
+> 全域交叉 integrity 四页（module 1P+2F→3P、json-module 2P、css/text mismatch 行
+> 维持 Pass）；全子树终扫（FILTER=scripting-1 口径）**372P/175F/35T+15N**
+> （s106：356P/185F/37T+15N，**+16P**），行级归一 diff（/tmp/s107-final-scan.log
+> 存档）10 Fail + 2 Timeout → Pass 全正向、**零 P→非P**；fmt clean + clippy 六
+> crate clean（renderer/browser/wpt-runner 模式改形波及）。渲染面零依赖——
+> reftest/product-smoke 未跑。账本见
+> [evidence/2026-10-27-m2s107-json-module-sri.md](html-semantics-compat/evidence/2026-10-27-m2s107-json-module-sri.md)。
+> **范围**：script-sandbox es_module/import_attributes ×2 + engine extract ×1 +
+> webview webview.rs/Cargo.toml ×2（sha2 dep）+ runner testharness ×1 + 六消费点
+> 模式改形（browser/renderer/reftest 无行为变化）；解析器/语料零变更；语料不可改
+> 维持。
+> **挂账**：css/text 数据模块执行面（同一 collect 分派骨架已就位，type=css/text
+> 合成器另切片，~30 行）；load-error-events.py 端点 module 路径 3 行；parse-error
+> 族 Timeout（parse 失败元素事件模型与 s102 报告面差异）；http-accept-header
+> （Accept 头建模 + 动态 import with 子句）；script-element-json-src（顶模块 MIME
+> 拒绝→元素 error 事件模型与 s102 冲突待梳理）；referrer-policies；dynamic
+> import() with 子句透传（现被丢弃）；export-from with 属性；classic 外链 SRI；
+> collect_module_deps_recursive 账本打包重构（FIXME allow 承接）；hash 列表
+> options；SVG script 族运行时面 4 页、execution-timing 余 ~42F、charset 族残留、
+> svg-script-fragment-clone 3F、FIXME 组、接口对象基建面、/tmp/zw-hb*.txt 插桩
+> 来源待查（承袭）。json-module 13 行 + module/integrity 2 行本轮销账。
+> **下一步**：s108 入场探针定刀位（候选：css/text 数据模块合成器——本轮分派骨架
+> 就位，css-module/text-module ~30 行 / execution-timing 余 ~42F scheduler 语义
+> 定刀 / SVG script 运行时面 4 页体量评估）。
+> **切片间隙**：本轮 script 管线面（fetch/编译/事件派发）+ 单测；下一挂账同流
+> 同面，间隙开放。
+>
+> **▶ 上轮状态（2026-10-27 M2 切片 106 施工收口，SVG script 族静态面轮——其下一步 s107 入场探针定刀位已由 s107 收口，见上）**：
 > **入场定谳**：三候选按 fail 形状重新分组——execution-timing 50F 中藏 **SVG script
 > 族 8 页**（137/138/139/140/142/143/144/145），138/139/143 为 harness 级失败
 > （`page script threw: SyntaxError: Unexpected token '.'`，143 的 `':'` 正是语料
