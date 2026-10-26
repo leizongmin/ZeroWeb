@@ -1447,6 +1447,17 @@
   // 原型链挂到对应基类（DocumentFragment→Node、HTML*→HTMLElement）仅为语义一致，instanceof 不依赖实例身份。
   globalThis.HTMLFormElement = globalThis.HTMLFormElement || function HTMLFormElement() {};
   globalThis.HTMLFormElement.prototype = Object.create(globalThis.HTMLElement.prototype);
+  // s93（classic 脚本属性面）：HTMLScriptElement 接口对象 + 静态 supports(type)（HTML
+  // #dom-script-supports）——四值**精确匹配**（'classic'/'module'/'importmap'/'speculationrules'
+  // → true；JavaScript MIME 类型、空白沾染、大小写变体一概 false；spec 明示不做 ASCII
+  // case-insensitive、不剥空白）。实例面仍走 tag→接口名字符串表（__zwHtmlTagIface），此处仅补
+  // 静态 API（WPT script-supports 5F；完整接口对象/instanceof 同一性挂账）。
+  // https://html.spec.whatwg.org/multipage/scripting.html#dom-script-supports
+  globalThis.HTMLScriptElement = globalThis.HTMLScriptElement || function HTMLScriptElement() {};
+  globalThis.HTMLScriptElement.supports = globalThis.HTMLScriptElement.supports || function (type) {
+    type = String(type);
+    return type === 'classic' || type === 'module' || type === 'importmap' || type === 'speculationrules';
+  };
   globalThis.NamedNodeMap = globalThis.NamedNodeMap || function NamedNodeMap() {};
   // js-dom M4 R122：原型方法占位——WPT attributes-namednodemap「should not interfere with
   // existing method names」断言 `map.item === NamedNodeMap.prototype.item`（**同一函数对象**，

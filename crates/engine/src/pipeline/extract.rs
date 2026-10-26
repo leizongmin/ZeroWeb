@@ -52,8 +52,19 @@ pub enum PageScript {
     ExternalModule(String),
 }
 
+/// HTML「ASCII whitespace」剥离（TAB/LF/FF/CR/SPACE）——s93（classic 脚本属性面）：spec 剥离
+/// 仅此五种，不含 Unicode White_Space 充数；旧 `str::trim` 连 \x0B/\x85/\xA0 等一起剥，
+/// `type="text/javascript\x0B"` 被误判为 JS 执行（WPT script-type-whitespace 5F 红因）。
+/// https://html.spec.whatwg.org/multipage/infrastructure.html#ascii-whitespace
+fn trim_ascii_html_ws(s: &str) -> &str {
+    s.trim_matches(|c: char| matches!(c, '\t' | '\n' | '\x0C' | '\r' | ' '))
+}
+
+/// 脚本 type 判 JS（HTML prepare-the-script-element 步骤 3：type 值剥首尾 ASCII whitespace 后
+/// 为空或 JavaScript MIME type essence match → classic/module；余为 data block 不执行）。
+/// https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
 fn script_type_is_javascript(type_attr: Option<&str>) -> bool {
-    match type_attr.map(str::trim).filter(|t| !t.is_empty()) {
+    match type_attr.map(trim_ascii_html_ws).filter(|t| !t.is_empty()) {
         None => true,
         Some(t) if t.eq_ignore_ascii_case("text/javascript") => true,
         Some(t) if t.eq_ignore_ascii_case("application/javascript") => true,
@@ -63,9 +74,10 @@ fn script_type_is_javascript(type_attr: Option<&str>) -> bool {
     }
 }
 
+/// 脚本 type 判 module（同上步骤：剥首尾 ASCII whitespace 后 ASCII case-insensitive 匹配 `module`）。
 fn script_is_module(type_attr: Option<&str>) -> bool {
     type_attr
-        .map(|t| t.trim().eq_ignore_ascii_case("module"))
+        .map(|t| trim_ascii_html_ws(t).eq_ignore_ascii_case("module"))
         .unwrap_or(false)
 }
 
@@ -1233,6 +1245,28 @@ mod tests {
     };
 
     const BASE_PAGE: &str = "https://wpt.test/a/b/page.html";
+
+    #[test]
+    fn script_type_strip_is_ascii_whitespace_only() {
+        // s93（classic 脚本属性面）：type 首尾剥离仅 ASCII whitespace（TAB/LF/FF/CR/SPACE）——
+        // 尾随 \x0B/\x85/\xA0/ /　 使 type 非 JavaScript MIME type essence match →
+        // data block 不提取；ASCII 空白照剥（WPT script-type-whitespace 五例红因）。
+        let script_type =
+            |type_attr: &str| extract_page_scripts_indexed(&format!(r#"<script type="{type_attr}">x();</script>"#));
+        assert!(matches!(
+            script_type(" text/javascript ")[..],
+            [(PageScript::Inline(_), _)]
+        ));
+        assert!(matches!(
+            script_type("\t\n\x0C\r module")[..],
+            [(PageScript::InlineModule(_), _)]
+        ));
+        assert!(script_type("text/javascript\u{000B}").is_empty());
+        assert!(script_type("text/javascript\u{0085}").is_empty());
+        assert!(script_type("text/javascript\u{00A0}").is_empty());
+        assert!(script_type("text/javascript\u{1680}").is_empty());
+        assert!(script_type("text/javascript\u{3000}").is_empty());
+    }
 
     #[test]
     fn script_bases_capture_parse_time_base_and_skip_hrefless() {

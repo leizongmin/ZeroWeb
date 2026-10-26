@@ -2,9 +2,47 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 92 施工收口（CSP nonce 传播面：动态 import() 槽位 nonce + 内联投递保真，s88 挂账 4F 清盘，**string-compilation 族 46P/0F/0T 完全清盘**：scripting-1 **197P/295F/25T→201P/291F/25T**（raw；域账 +1 惯例 **202P/291F/25T**）——三刀：①script-sandbox `DynamicImportState` nonce 槽位 + resolver 契约升三参 `(spec, referrer, nonce)`（空串↔None 双射）+ `set_dynamic_import_nonce`/`register_dynamic_import_nonce_swapper`（`__zwSwapImportNonce` 同 referrer swapper 形）；②webview 逐脚本 nonce 刷新 + resolver CSP 检查（`check_script` → violation 入队 + 返空串 → 既有 TypeError reject 路径零改动命中判据）；③shim 求值窗——part03 `_zwCallHandlerSwapBase` 加 nonce 参（处理器传 `''` 不继承、timer 传注册期捕获值）、part01 双 timer 注册期捕获、part04 R387b 窗换 `''`；**返工**：首轮全子树 2 行附带（propagate-nonce-external 翻红）——runner `inline_local_scripts` 内联投递丢原标签 nonce 属性（s90 投递保真同族），复用 `attr_from_open_tag`（升 pub）保留 nonce 修复；失败族地图序：①dynamic-import must-reject + classic 面 ✅ → ②stylesheets-blocking-scripts ✅ → ③the-script-element 基面 CSP nonce ✅ → ④module 尾片），下一步 s93 module 尾片盘点（propagate-nonce-inline-module 1F module 路径检查点缺位等）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 93 施工收口（classic 脚本属性面批刀：**script-supports 族 + script-type-whitespace 族 9F 清盘**：scripting-1 **201P/291F/25T→210P/282F/25T**（the-script-element 子树 517 行恒等；域账 +1 惯例 **211P/282F/25T**）——两刀：①shim R3019 占位区 `HTMLScriptElement` 接口对象 + 静态 `supports(type)`（HTML #dom-script-supports 四值**精确匹配** classic/module/importmap/speculationrules，spec 明示不 case-insensitive 不剥空白；语料无 importmap/speculationrules 断言按 spec 现行实现两相兼容）；②extract `trim_ascii_html_ws`（TAB/LF/FF/CR/SPACE 五字符类）替换 `str::trim`——type 归一化只剥 ASCII whitespace，`text/javascript\x0B` 等非 ASCII 空白尾随不再误判 JS（WPT script-type-whitespace 红因）；**转向记录**：s92「下一步 module 尾片盘点」入场探针后修正——module 尾片 43F 簇（css/json/text-module + import-attributes）被 wptserve .py 执行语义缺口封顶，转 runner 可达 classic 属性面；非 Diff 23 行逐行归因零附带（1 行 noscript FILTER 口径加宽 + 22 行超时页 teardown 粒度，s92 代码 stash 复跑 bitwise 同现）；失败族地图序：①dynamic-import must-reject + classic 面 ✅ → ②stylesheets-blocking-scripts ✅ → ③the-script-element 基面（CSP nonce + classic 属性）✅ → ④module 尾片（.py 执行器为前置）），下一步 s94 入场探针定刀位（候选：execution-timing 80F scheduler 语义 / 顶层 65F / 接口对象基建面）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-26 M2 切片 92 施工收口，CSP nonce 传播轮）**：
+> **▶ 当前状态（2026-10-26 M2 切片 93 施工收口，classic 脚本属性面批刀轮）**：
+> **入场核账**：s92 HEAD（2cf2a5c5c）基线 **201P/291F/25T**（the-script-element
+> 子树 517 行）。s92「下一步 module 尾片盘点」入场探针后**转向**：module 尾片
+> 43F 簇（css-module 20 + json-module 11 + text-module 8 + import-attributes 4）
+> 被 wptserve .py 执行语义缺口封顶（serve-custom-response.py 等以静态文本投递，
+> runner 无 .py 执行器），转 runner 可达 classic 属性面。**本轮两刀**：
+> ①shim part03 R3019 占位区 `HTMLScriptElement` 接口对象 + 静态 `supports(type)`
+> ——HTML #dom-script-supports 四值精确匹配（'classic'/'module'/'importmap'/
+> 'speculationrules'→true，JavaScript MIME 类型/空白沾染/大小写变体全 false；
+> spec 明示不做 ASCII case-insensitive、不剥空白；webReader 取回 spec 原文定谳，
+> 语料为旧版无 importmap/speculationrules 断言，按 spec 现行实现两相兼容）；
+> shimming 前 grep 定谳 shim/Rust 侧零 HTMLScriptElement 全局引用，`||` 守卫
+> 无冲突面。②extract `trim_ascii_html_ws`（TAB/LF/FF/CR/SPACE）替换两函数的
+> `str::trim`——type 剥离收窄到 ASCII whitespace，\x0B/\x85/\xA0/ /　
+> 尾随不再误判 JS；调用方仅脚本提取循环两处，+单测 ASCII 照剥/非 ASCII 不提取
+> 双形态。**验证**：定向 script-supports 5/5、script-type-whitespace 5/5 全绿；
+> 全子树复扫（FILTER=scripting-1 加宽口径）540 行 211P/282F/25T+22 NotRun，
+> diff vs 基线 9 行 F→P（两面全数）+23 行非 Diff 逐行归因：1 行 noscript Pass
+> = 口径加宽（本来就绿）、22 行 = 超时页 teardown 粒度——**stash 复归位 s92
+> 代码重建复跑 load-error 族 bitwise 同现（diff 空）+当前二进制全扫/单跑行集
+> 一致**定谳非附带；基线缺行系 s92 扫描会话后台负载早停。历史口径重述
+> **210P/282F/25T（517 行恒等，+9P −9F）**，域账 **211P/282F/25T**（+1 惯例）。
+> 单测：zero-engine **3531/3531**（lib 3527=3526+1；engine 自 s92 零外来变更）；
+> fmt/clippy clean（ulimit+timeout shell 兜底）；reftest 未跑（无 render/layout
+> 面，沿 s91/s92 影响面口径）。账本见
+> [evidence/2026-10-26-m2s93-classic-script-attribute-faces.md](html-semantics-compat/evidence/2026-10-26-m2s93-classic-script-attribute-faces.md)。
+> **范围**：engine ×2（shim 一处 + extract 一函数族）；runner/webview/
+> script-sandbox 零改动；css/layout/renderer 零改动；语料不可改维持。
+> **挂账**：完整接口对象面（HTMLScriptElement 仅静态 supports，constructor/
+> instanceof 同一性缺，`__zwHtmlTagIface` 全表无真实 class 同族挂账）；module
+> 尾片 43F 簇（.py 执行器为前置，含 propagate-nonce-inline-module 1F 与
+> module 路径 CSP 检查点缺位承袭）；execution-timing 80F / 顶层 65F（既有账）；
+> runner 报告粒度受会话负载影响（超时页 teardown，基线扫描宜空载跑——s93 终扫
+> /tmp/s93-final-scan.txt 定为下轮基线，FILTER=scripting-1 口径 540 行）。
+> **下一步**：s94 入场探针定刀位（候选：execution-timing 80F scheduler 语义 /
+> 顶层 65F / 接口对象基建面）。
+> **切片间隙**：本轮 engine 面；下一挂账同流同面，间隙开放。
+
+> **▶ 上轮状态（2026-10-26 M2 切片 92 施工收口，CSP nonce 传播轮——其下一步 s93 module 尾片盘点入场转向 classic 属性面，已由 s93 收口，见上）**：
 > **入场核账**：s91 HEAD（abdd1b178）基线 **197P/295F/25T**。残面：
 > string-compilation-nonce-{classic,module} must-not-inherit 4F（s88
 > 挂账 CSP 面）——setAttribute onclick 两臂 spec 语义：事件处理器不
