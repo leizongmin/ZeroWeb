@@ -158,6 +158,9 @@ pub fn computed_style_to_taffy(
         // margin-collapse-110/111：末子 margin 外溢致 cell/表矮一行）。row/rowgroup/
         // table 不立 FC，不在此列；caption 已由引擎侧 is_table_caption 处理。
         item_margins_isolated: matches!(style.display, DisplayValue::TableCell),
+        // R5293：table box 仅隔 bottom 侧 margin（caption margin-bottom 留盒内，
+        // ZW 表几何已计入；margin-top 照常塌出表顶）。
+        item_margins_end_isolated: matches!(style.display, DisplayValue::Table),
         // M3 step(b) 试：native float 激活，但保留 ZW adjust_float_positions（覆盖 native 定位）
         float: if is_table_internal_box {
             taffy::style::Float::None

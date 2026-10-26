@@ -32,6 +32,13 @@ pub trait BlockItemStyle: CoreStyle {
         false
     }
 
+    /// ZW R5293：仅 bottom 侧 margin 隔离（table box）——末子 margin 留盒内，
+    /// 首 margin 照常塌出顶（CSS2 §8.3.1 × §17.5.1）。默认不隔离。
+    #[inline(always)]
+    fn margins_end_isolated(&self) -> bool {
+        false
+    }
+
     /// Whether the item is a floated
     #[cfg(feature = "float_layout")]
     #[inline(always)]

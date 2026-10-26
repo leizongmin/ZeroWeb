@@ -31,6 +31,22 @@ static FLOAT_CHILD_COLLAPSE_THROUGH: std::sync::LazyLock<bool> =
 static CELL_MARGIN_ISOLATE: std::sync::LazyLock<bool> =
     std::sync::LazyLock::new(|| std::env::var("ZW_CELL_MARGIN_ISOLATE").as_deref() != Ok("0"));
 
+/// R5293（CSS2 §8.3.1 × §17.5.1）：table box 仅 bottom 侧 margin 隔离——caption
+/// margin-top 照常塌出表顶，margin-bottom 留盒内。ZW 表几何（R3813）已把
+/// caption margin-bottom 计入表高，塌穿链再溢出即双计（margin-applies-to-015，
+/// 表 item bottom_margin PL=50 vs CS=0 不对称被 R5293 重算采信现形）。
+///（kill-switch `ZW_TABLE_MARGIN_END_ISOLATE=0` 回退，default-on）。
+static TABLE_MARGIN_END_ISOLATE: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_TABLE_MARGIN_END_ISOLATE").as_deref() != Ok("0"));
+
+/// R5293（CSS2 §10.5）：auto 高 abs 盒的高度来自内容（§10.6.4），不得作为
+/// 子代百分比高的解析基——包含块高依赖内容时子代 `height:<percentage>`
+/// 计算为 auto，末子 bottom margin 借 collapse-through 计入 abs 盒高
+///（child-bottom-margin-in-unresolvable-percentage-height）。
+///（kill-switch `ZW_ABSPOS_AUTO_H_PCT_BASE=0` 回退，default-on）。
+static ABSPOS_AUTO_H_PCT_BASE: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_ABSPOS_AUTO_H_PCT_BASE").as_deref() != Ok("0"));
+
 /// Context for positioning Block and Float boxes within a Block Formatting Context
 pub struct BlockFormattingContext {
     /// The float positioning context that handles positioning floats within this Block Formatting Context
@@ -215,6 +231,10 @@ struct BlockItem {
     /// ZW R5281：立独立格式化上下文、margin 与子代隔离的盒（table-cell）。
     /// 摆放仍走 is_in_same_bfc 路径，仅折叠旗标传 Line::FALSE（CSS2 §8.3.1）。
     margins_isolated: bool,
+
+    /// ZW R5293：仅 bottom 侧 margin 隔离的盒（table box）——子首 margin 仍
+    /// 塌出顶（Line.start=TRUE），末 margin 留盒内（Line.end=FALSE，§8.3.1）。
+    margins_end_isolated: bool,
 
     #[cfg(feature = "float_layout")]
     /// The `float` style of the node
@@ -683,6 +703,7 @@ fn generate_item_list(
                 is_table,
                 is_in_same_bfc,
                 margins_isolated: child_style.margins_isolated(),
+                margins_end_isolated: child_style.margins_end_isolated(),
                 #[cfg(feature = "float_layout")]
                 float,
                 #[cfg(feature = "float_layout")]
@@ -1013,10 +1034,16 @@ fn perform_final_layout_on_in_flow_children(
                 // R5281：margins_isolated 盒（table-cell）摆放走同 BFC 路径
                 //（is_in_same_bfc 不动，表几何由 ZW 表算法接管），但 margin 折叠
                 // 须与子代隔离——Line::FALSE 使子首/末 margin 留在盒内（§8.3.1）。
+                // R5293：margins_end_isolated 盒（table box）仅隔 bottom 侧——
+                // caption margin-top 照常塌出顶，margin-bottom 留盒内防双计。
                 vertical_margins_are_collapsible: if item.is_in_same_bfc
                     && !(item.margins_isolated && *CELL_MARGIN_ISOLATE)
                 {
-                    Line::TRUE
+                    if item.margins_end_isolated && *TABLE_MARGIN_END_ISOLATE {
+                        Line { start: true, end: false }
+                    } else {
+                        Line::TRUE
+                    }
                 } else {
                     Line::FALSE
                 },
@@ -1309,8 +1336,8 @@ fn perform_final_layout_on_in_flow_children(
 
 /// Perform absolute layout on all absolutely positioned children.
 #[inline]
-fn perform_absolute_layout_on_absolute_children(
-    tree: &mut impl LayoutBlockContainer,
+fn perform_absolute_layout_on_absolute_children<T: LayoutBlockContainer>(
+    tree: &mut T,
     items: &[BlockItem],
     area_size: Size<f32>,
     area_offset: Point<f32>,
@@ -1330,6 +1357,21 @@ fn perform_absolute_layout_on_absolute_children(
         {
             continue;
         }
+
+        // R5293：修正域限纯块级内容（kill-switch `ZW_ABSPOS_AUTO_H_PCT_BASE=0`
+        // 连同本检查一并回退）。
+        let content_block_only = child_style.is_block()
+            && {
+                let mut block_only = true;
+                for child in tree.child_ids(item.node_id) {
+                    let sub_style = tree.get_block_child_style(child);
+                    if sub_style.is_table() || !sub_style.is_block() {
+                        block_only = false;
+                        break;
+                    }
+                }
+                block_only
+            };
 
         let aspect_ratio = child_style.aspect_ratio();
         let margin =
@@ -1400,17 +1442,49 @@ fn perform_absolute_layout_on_absolute_children(
 
         let final_size = known_dimensions.unwrap_or(measured_size).maybe_clamp(min_size, max_size);
 
-        let layout_output = tree.perform_child_layout(
-            item.node_id,
-            final_size.map(Some),
-            area_size.map(Some),
-            Size {
-                width: AvailableSpace::Definite(area_width.maybe_clamp(min_size.width, max_size.width)),
-                height: AvailableSpace::Definite(area_height.maybe_clamp(min_size.height, max_size.height)),
-            },
-            SizingMode::ContentSize,
-            Line::FALSE,
-        );
+        // R5293（CSS2 §10.5）：内容派生高（样式/inset 均未定高）不得回灌为子代
+        // 百分比高解析基——包含块高依赖内容时子代 `height:<percentage>` 计算
+        // 为 auto；回灌定高会锁死 auto 高（inner 的 own_margins_collapse 断开，
+        // 末子 bottom margin 丢失）。重排时高传 None，取回实际高度参与定位。
+        //
+        // 采信条件：① kill-switch `ZW_ABSPOS_AUTO_H_PCT_BASE=0` 回退；② 纯
+        // 块级内容——margin 塌穿是块布局现象，flex 列主轴高语义
+        //（dynamic-change-simplified-layout 依赖定高回灌）与表子树不适用。
+        // 表 wrapper 的 bottom_margin 在 CS/PL 两模式不对称（PL 多带 caption
+        // margin，本修正单独生效时 margin-applies-to-015 现形 1.54%），由同轮
+        // 机制② table box 仅 bottom 侧 margin 隔离消解（见
+        // TABLE_MARGIN_END_ISOLATE）。
+        // FIXME(table-margin)：表 wrapper bottom_margin CS/PL 不对称根因待表域
+        // 结构化识别后消除（当前由 end-isolate 门在下游兜住）。
+        let height_content_derived =
+            *ABSPOS_AUTO_H_PCT_BASE && known_dimensions.height.is_none() && content_block_only;
+
+        let abs_space = Size {
+            width: AvailableSpace::Definite(area_width.maybe_clamp(min_size.width, max_size.width)),
+            height: AvailableSpace::Definite(area_height.maybe_clamp(min_size.height, max_size.height)),
+        };
+        // R5293 定高回灌重排闭臂（known_height=None 即 §10.5 修正路径）。
+        let relayout = |tree: &mut T, known_height: Option<f32>| {
+            tree.perform_child_layout(
+                item.node_id,
+                Size { width: Some(final_size.width), height: known_height },
+                area_size.map(Some),
+                abs_space,
+                SizingMode::ContentSize,
+                Line::FALSE,
+            )
+        };
+
+        let layout_output = relayout(tree, if height_content_derived { None } else { Some(final_size.height) });
+        // 采信重排时：定位与 tree 记录用回排后的实际高（§10.6.4 内容高，
+        // 含塌穿 margin 溢入）。ContentSize 模式下叶盒忽略自身 min/max
+        //（leaf.rs sizing 分支），重算高须补外层钳
+        //（absolute-non-replaced-max-height-* 依赖）。
+        let final_size = if height_content_derived {
+            Size { width: final_size.width, height: layout_output.size.height }.maybe_clamp(min_size, max_size)
+        } else {
+            final_size
+        };
 
         let non_auto_margin = Rect {
             left: if left.is_some() { margin.left.unwrap_or(0.0) } else { 0.0 },
