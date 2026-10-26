@@ -1236,7 +1236,12 @@ pub fn attr_from_open_tag(open_tag: &str, name: &str) -> Option<String> {
             } else {
                 val.find(quote).unwrap_or(val.len())
             };
-            return Some(val[..end].trim().to_string());
+            // s100：值面从**原文**切片（lower 定位镜像仅 ASCII 小写化、等字节长，偏移
+            // 通用；值内多字节 UTF-8 序列小写化不变，find 偏移两侧一致）——旧版从
+            // lower 切值把大小写敏感值降为小写（`onLoad(t1)` → `onload(t1)` 失效；
+            // base64 nonce 同面）。
+            let val_start = lower.len() - val.len();
+            return Some(open_tag[val_start..val_start + end].trim().to_string());
         }
         // 裸属性（无值）——nonce 无值视作缺失。
         return None;

@@ -7763,6 +7763,25 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     body_bytes: Some(body.to_vec()),
                 });
             }
+            if clean == "html/semantics/scripting-1/the-script-element/resources/load-error-events.py" {
+                // html-semantics M2 s100 fixture：经典脚本 load/error 事件族端点（上游
+                // wptserve CGI 静态等价，语义见 wpt_load_error_events_response——语料
+                // pull 面不含 .py，此前落通用缺文件 404：200 组动态 appendChild 案取回
+                // 404 → error 路径误触发 → load-error-events-1 dynamic load 两行假红）。
+                // 404 组依赖 `_r.ok` false → 门 throw → error 路径，status 保真即可。
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+                let (status, body) = wpt_load_error_events_response(query);
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), "text/javascript".into()));
+                wpt_add_fetch_metadata(&mut headers, req, status);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status,
+                    status_text: wpt_status_text(status).to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
+                });
+            }
             match std::fs::read(root.join(clean)) {
                 Ok(bytes) => {
                     let query = path_part.split_once('?').map(|(_, query)| query).unwrap_or("");
@@ -7908,6 +7927,36 @@ fn wpt_query_value(query: &str, name: &str) -> Option<String> {
                 .to_string(),
         )
     })
+}
+
+/// `html/semantics/scripting-1/the-script-element/resources/load-error-events.py`
+/// 的 wptserve CGI 静态等价（html-semantics M2 s100；语料 pull 面不含 .py，运行时
+/// 按上游脚本语义仿真——pin 315976933870 逐字核对）：
+/// `test` 查询参数须匹配 `^[a-zA-Z0-9_]+$`（缺席/非法 → 400 空体）；含 `_load`
+/// → 200 + `<test>.executed = true`（load 组脚本执行体）；否则 → 404 +
+/// `<test>.test.step(... assert_unreached ...)`（error 组——上游 404 体**不执行**，
+/// 本引擎侧 fetch/dynamic 通道由 status 拒 eval、内联通道直接不投递该体）。
+/// Content-Type 恒 `text/javascript`（调用方装配）。经典脚本根 fixture；module 族
+/// 各自路径的变体不匹配本路径（语义各异，仍走通用 404——挂账 module 尾片）。
+/// https://html.spec.whatwg.org/multipage/scripting.html#execute-the-script-block
+fn wpt_load_error_events_response(query: &str) -> (u16, String) {
+    let Some(test) = wpt_query_value(query, "test") else {
+        return (400, String::new());
+    };
+    let valid = !test.is_empty() && test.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+    if !valid {
+        return (400, String::new());
+    }
+    if test.contains("_load") {
+        (200, format!("\"use strict\";\n{test}.executed = true;"))
+    } else {
+        (
+            404,
+            format!(
+                "\"use strict\";\n{test}.test.step(function() {{ assert_unreached(\"404 script should not be executed\"); }});"
+            ),
+        )
+    }
 }
 
 /// wptserve `{{GET[name]}}` 查询模板替换（fetch 通道 .html——iframe 子文档面）。
@@ -9150,17 +9199,27 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str) -> String 
             if s.starts_with("//") || s.starts_with("http://") || s.starts_with("https://") {
                 return None;
             }
-            let combined = if let Some(root_rel) = s.strip_prefix('/') {
+            // s100：查询串先剥离再归一——.py fixture src 携带 `?test=` 查询（CGI 端点），
+            // 路径归一与语料读面只对路径段，查询由 fixture 仿真面消费。
+            let (path_src, src_query) = s.split_once('?').unwrap_or((s, ""));
+            let combined = if let Some(root_rel) = path_src.strip_prefix('/') {
                 normalize_relative(root_rel)
             } else {
                 // 规范化 "./" 前缀 + 相对 case_dir 解析（含 ../ 上溯）。
-                let rel = s.strip_prefix("./").unwrap_or(s);
+                let rel = path_src.strip_prefix("./").unwrap_or(path_src);
                 if case_dir.is_empty() {
                     rel.to_string()
                 } else {
                     normalize_relative(&format!("{case_dir}/{rel}"))
                 }
             };
+            // s100：load-error-events.py fixture——CGI 端点不在语料 pull 面，按查询串
+            // 仿真服务（wpt_load_error_events_response）；非 200 状态脚本体不执行（error
+            // 事件面），与上游 404 脚本不执行语义一致。
+            if combined == WPT_LOAD_ERROR_EVENTS_PY {
+                let (status, body) = wpt_load_error_events_response(src_query);
+                return Some((combined, status, body));
+            }
             std::fs::read_to_string(wpt_root.join(&combined)).ok().map(|c| {
                 // net-api M5-S1：`.sub.js` 服务端替换（上游 wptserve 语义；与
                 // script fetcher M4-S22、fetch 通道本切片同口径——`.html` 案外部
@@ -9170,12 +9229,12 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str) -> String 
                 } else {
                     c
                 };
-                (combined, c)
+                (combined, 200, c)
             })
         });
         let rest_start = open_end + 1;
         match resolved {
-            Some((combined, content)) => {
+            Some((combined, status, content)) => {
                 output.push_str(&remaining[..start]);
                 // s92（string-compilation CSP nonce 面）：投递形态改写保留原标签
                 // nonce 属性（上方 harness 注入块 csp_nonce_attr 同款保真）——CSP
@@ -9208,12 +9267,29 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str) -> String 
                     }
                     _ => String::new(),
                 };
+                // s100（load/error 事件投递保真）：保留原标签 onload/onerror 内容属性
+                // （s94 保真只留 nonce/nomodule/type——事件处理器内容属性丢失使内联投递
+                // 后页面 on* 语义面缺失：nomodule-set-on-synchronously「must run」的
+                // assert_true(loaded) 假红、load-error-events-1 解析器组全批 pending 即
+                // 本缺口）；200 投递原脚本体 + load 投递尾（成功执行 fire load），404/400
+                // 只投 error 投递尾（取回失败脚本体不执行——fixture 404 体上游亦不执行）。
+                // 投递尾经 document.currentScript 派发同名事件：on* 内容属性 handler 由
+                // shim dispatch 链（R2934 _ensureInlineHandler）编译触发，addEventListener
+                // 侦听者同样可达；事件不冒泡，window load 生命周期不受扰。
+                // https://html.spec.whatwg.org/multipage/scripting.html#execute-the-script-block
+                let onload_attr = script_event_handler_attr(open, "onload");
+                let onerror_attr = script_event_handler_attr(open, "onerror");
                 output.push_str(&format!(
-                    "<script{nonce_attr}{nomodule_attr}{type_attr} data-zw-harness data-inline=\""
+                    "<script{nonce_attr}{nomodule_attr}{type_attr}{onload_attr}{onerror_attr} data-zw-harness data-inline=\""
                 ));
                 output.push_str(&combined);
                 output.push_str("\">");
-                output.push_str(&content);
+                if status == 200 {
+                    output.push_str(&content);
+                    output.push_str(&script_event_dispatch_tail("load"));
+                } else {
+                    output.push_str(&script_event_dispatch_tail("error"));
+                }
                 output.push_str("</script>");
             }
             None => {
@@ -9242,6 +9318,32 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str) -> String 
         remaining = &remaining[rest_start..];
     }
     output
+}
+
+/// s100：经典脚本 load-error fixture 端点路径（fetch 通道与内联预处理共用面）。
+const WPT_LOAD_ERROR_EVENTS_PY: &str = "html/semantics/scripting-1/the-script-element/resources/load-error-events.py";
+
+/// s100：从 open 标签提取 on* 事件处理器内容属性并按投递形态转义（& → &amp;、
+/// " → &quot;——与 nonce/type 保真同款转义）；缺席/空值返回空串（不进重写标签）。
+fn script_event_handler_attr(open_tag: &str, name: &str) -> String {
+    match zero_engine::attr_from_open_tag(open_tag, name) {
+        Some(v) if !v.is_empty() => format!(" {}=\"{}\"", name, v.replace('&', "&amp;").replace('"', "&quot;")),
+        _ => String::new(),
+    }
+}
+
+/// s100：内联投递脚本的 load/error 事件投递尾——解析器外链被内联后无取回环节，
+/// spec 的「成功执行 fire load / 取回失败 fire error」随之丢失；尾片在脚本体求值时
+/// 经 `document.currentScript` 派发同名事件（on* 内容属性 handler 由 shim dispatch 链
+/// R2934 编译触发，addEventListener 侦听者同样可达；事件不冒泡，window load 生命
+/// 周期不受扰）。
+/// https://html.spec.whatwg.org/multipage/scripting.html#execute-the-script-block
+fn script_event_dispatch_tail(event: &str) -> String {
+    format!(
+        "\n;(function () {{ var _cs = document.currentScript; \
+         if (_cs && typeof _cs.dispatchEvent === 'function') {{ \
+         try {{ _cs.dispatchEvent(new Event('{event}')); }} catch (_zwLev) {{}} }} }})();\n"
+    )
 }
 
 /// 从 `<script src="...">` 标签提取 src 值（单/双引号）。
@@ -12014,6 +12116,79 @@ async_test(function(test) {
         assert_eq!(resp.status, 200);
         assert_eq!(resp.body, "TEST_TRICKLE\n".repeat(4));
         assert_eq!(resp.body_bytes, Some(resp.body.as_bytes().to_vec()));
+    }
+
+    #[test]
+    fn load_error_events_fixture_serves_query_aware_bodies() {
+        let handler = wpt_data_fetch_handler(Path::new("/nonexistent-wpt-root")).unwrap();
+        let base = "https://wpt.test/html/semantics/scripting-1/the-script-element/resources/load-error-events.py";
+        let make_req = |url: &str| zero_engine::fetch_bridge::FetchRequest {
+            url: url.to_string(),
+            method: "GET".to_string(),
+            headers: Vec::new(),
+            body: None,
+            body_bytes: None,
+            credentials: None,
+            mode: None,
+            redirect: None,
+        };
+
+        // 200 组：test 含 `_load` → 执行体（executed = true）+ text/javascript。
+        let ok = handler(&make_req(&format!("{base}?test=test3_dynamic_load"))).unwrap();
+        assert_eq!(ok.status, 200);
+        assert_eq!(ok.body, "\"use strict\";\ntest3_dynamic_load.executed = true;");
+        assert!(
+            ok.headers
+                .iter()
+                .any(|(n, v)| n.eq_ignore_ascii_case("content-type") && v == "text/javascript")
+        );
+
+        // 404 组：非 `_load` → 404 + assert_unreached 体（本引擎侧 status 拒 eval）。
+        let missing = handler(&make_req(&format!("{base}?test=test1_error"))).unwrap();
+        assert_eq!(missing.status, 404);
+        assert!(missing.body.contains("test1_error.test.step"));
+        assert!(missing.body.contains("assert_unreached"));
+
+        // 400 组：test 缺席/非法（`^[a-zA-Z0-9_]+$` 之外）→ 400 空体。
+        assert_eq!(handler(&make_req(base)).unwrap().status, 400);
+        let bad = handler(&make_req(&format!("{base}?test=bad-name"))).unwrap();
+        assert_eq!(bad.status, 400);
+        assert_eq!(bad.body, "");
+
+        // 路径精确匹配：module 族变体路径不走本 arm（维持通用缺文件 404 面）。
+        let other = handler(&make_req(
+            "https://wpt.test/html/semantics/scripting-1/the-script-element/module/load-error-events.py?test=x_load",
+        ))
+        .unwrap();
+        assert_eq!(other.status, 404);
+    }
+
+    #[test]
+    fn inline_local_scripts_preserves_handlers_and_appends_delivery_tails() {
+        let root = std::env::temp_dir().join("zw-s100-inline-local-scripts-test");
+        let case_dir = "html/semantics/scripting-1/the-script-element";
+        std::fs::create_dir_all(root.join(case_dir)).unwrap();
+        std::fs::write(root.join(case_dir).join("ok.js"), "globalThis.ran = true;").unwrap();
+        let html = "<!doctype html><body>\
+            <script src=\"./ok.js\" onload=\"loaded = true\"></script>\
+            <script src=\"resources/load-error-events.py?test=t1_load\" onload=\"onLoad(t1)\"></script>\
+            <script src=\"resources/load-error-events.py?test=t1_error\" onerror=\"onError(t1)\"></script>\
+            </body>";
+
+        let out = inline_local_scripts(html, &root, &format!("{case_dir}/load-error-events-1.html"));
+
+        // 200 本地 .js：体保留 + onload 保真 + load 投递尾。
+        assert!(out.contains("globalThis.ran = true;"));
+        assert!(out.contains("onload=\"loaded = true\""));
+        assert!(out.contains("new Event('load')"));
+        // fixture 200：执行体入页 + load 投递尾。
+        assert!(out.contains("t1_load.executed = true;"));
+        // fixture 404：执行体不入页（上游 404 体不执行）+ onerror 保真 + error 投递尾。
+        assert!(!out.contains("assert_unreached"));
+        assert!(out.contains("onerror=\"onError(t1)\""));
+        assert!(out.contains("new Event('error')"));
+
+        std::fs::remove_dir_all(&root).ok();
     }
 
     #[test]
