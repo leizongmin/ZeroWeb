@@ -4001,7 +4001,26 @@ impl WebView {
             let doc_url = self.current_url.clone().unwrap_or_else(|| "about:blank".to_string());
             let referrer = match &script {
                 zero_engine::pipeline::PageScript::External(src) => resolve_document_url(&doc_url, src),
-                _ => script_bases.get(script_index).cloned().unwrap_or(doc_url),
+                _ => script_bases
+                    .get(script_index)
+                    .cloned()
+                    .unwrap_or_else(|| doc_url.clone()),
+            };
+            // s94 附带修复（module 缓存键）：R5182 `__moduleCache` 文档级记忆化键旧一律传
+            // 页面 URL——同文档第二枚 module script（内联/外链皆然）被首枚的记忆化命中
+            // 短路，模块体零次求值（currentScript-null 双内联 module 定谳：testharness
+            // "completed without reporting registered tests"；probe-csn-d 双纯内联最小复现）。
+            // spec 模块 map 只按请求 URL 缓存 fetch 型模块，内联 module script 每元素是
+            // 独立模块记录：内联键 = 页面 URL 挂 ordinal 片段（仍为绝对 URL，相对 import
+            // 解析基准不变——URL 构造剥旧 fragment）；外链键 = src 绝对化（同 src 两元素
+            // 命中同键恰好一次，spec 语义；异 src 各自求值）。
+            // https://html.spec.whatwg.org/multipage/webappapis.html#module-map
+            let module_cache_key = match &script {
+                zero_engine::pipeline::PageScript::InlineModule(_) => {
+                    format!("{doc_url}#!zw-inline-module-{script_index}")
+                }
+                zero_engine::pipeline::PageScript::ExternalModule(src) => resolve_document_url(&doc_url, src),
+                _ => doc_url.clone(),
             };
             let (code, is_module) = match script {
                 zero_engine::pipeline::PageScript::Inline(c) => (c, false),
@@ -4092,7 +4111,7 @@ impl WebView {
                     }
                 }
                 let url = self.current_url.as_deref().unwrap_or("about:blank");
-                match zero_script_sandbox::compile_module_script(&code, url, &registry) {
+                match zero_script_sandbox::compile_module_script(&code, url, &module_cache_key, &registry) {
                     Ok(transformed) => {
                         // R5182：入口（当前 script 元素）不在 prelude 急切求值——由 transformed 体承担，
                         // 模块体恰好执行一次（__moduleCache 挂 globalThis，跨元素共享、随导航重建复位）。
