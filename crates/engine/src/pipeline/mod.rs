@@ -3348,7 +3348,19 @@ pub(crate) fn inject_pseudo_text_nodes(
                     && has_decoration
                     && !text_blank
                     && !parent_is_ruby_family
-                    && std::env::var("ZW_PSEUDO_INLINE_DECORATED_BOX").as_deref() != Ok("0")));
+                    && std::env::var("ZW_PSEUDO_INLINE_DECORATED_BOX").as_deref() != Ok("0"))
+                // R5295（CSS2 §9.2.1 / css-pseudo-4）：inline-block 伪元素 + 真文本
+                // → element 盒化（不要求装饰）。atomic inline 是有自身盒模型的原子盒，
+                // text-node 路径结构上容不下 display/width/height——c547-indent-001 ref
+                // `p.eight:before { display: inline-block; width: 50% }` 无装饰落
+                // text-node，shrink-to-fit 文本宽（~162px）冒充 392px 盒，首行缩进
+                // 全错（style-system 侧伪样式本就正确，纯此处门控缺口）。块级
+                // （display:block 等）无装饰臂仍维持 R3928 保守门（盒化收益域未证）；
+                // ruby 族宿主排除同上。kill-switch ZW_PSEUDO_INLINEBLOCK_TEXT_BOX=0。
+                || (pseudo_style.display == DisplayValue::InlineBlock
+                    && !text_blank
+                    && !parent_is_ruby_family
+                    && std::env::var("ZW_PSEUDO_INLINEBLOCK_TEXT_BOX").as_deref() != Ok("0")));
         let new_id = if needs_box {
             let el = doc.create_element("zw-pseudo");
             if !text_blank {
@@ -4215,6 +4227,87 @@ mod pseudo_tests {
             match &doc.get(first_child).unwrap().kind {
                 zero_dom::NodeKind::Text(t) => assert_eq!(t.content, "T"),
                 other => panic!("R5238: kill-switch=0 应回 text-node 路径，实际 {other:?}"),
+            }
+        }
+    }
+
+    /// R5295：inline-block 伪元素 + 真文本（无装饰）→ ELEMENT 盒化（单测试函数顺序执行
+    /// ——kill-switch 相会临时改设 ZW_PSEUDO_INLINEBLOCK_TEXT_BOX 进程级 env，与其余读
+    /// 该变量的注入相并行会竞态，故全部读者收敛到本函数内）：
+    /// ① inline-block + 真文本 + 无装饰 → zw-pseudo ELEMENT（c547-indent-001 ref 形态：
+    ///    `p.eight:before { display: inline-block; width: 50% }` 无 background/border，
+    ///    旧门落 text-node 后 display/width 结构性丢失，shrink-to-fit 文本宽冒充 50% 盒）；
+    /// ② kill-switch=0 → 回 text-node 路径。
+    #[test]
+    fn inject_inlineblock_text_pseudo_as_element_node_r5295() {
+        use zero_css_parser::values::DisplayValue;
+        // ---- 相①：inline-block + 真文本 + 无装饰 → ELEMENT，样式携带 width ----
+        {
+            let html = r#"<html><body><div><span>x</span></div></body></html>"#;
+            let mut doc = zero_dom::parse_html(html);
+            let span = find_element(&doc, doc.root(), "span").expect("span 存在");
+            let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
+            let mut span_style = ComputedStyle::default();
+            span_style.before_pseudo = Some(Box::new(ComputedStyle {
+                content: ContentComputedValue::String("generated content before".to_string()),
+                display: DisplayValue::InlineBlock,
+                width: zero_css_parser::values::LengthValue::Percentage(50.0),
+                ..ComputedStyle::default()
+            }));
+            styles.insert(span, span_style);
+
+            inject_pseudo_text_nodes(&mut doc, &mut styles, &[]);
+
+            let first_child = doc
+                .get(span)
+                .and_then(|n| n.children.first().copied())
+                .expect("有子节点");
+            match &doc.get(first_child).unwrap().kind {
+                zero_dom::NodeKind::Element(_) => {}
+                other => panic!("R5295: inline-block 真文本伪元素应为 ELEMENT 节点，实际 {other:?}"),
+            }
+            let has_text_child = doc
+                .child_nodes(first_child)
+                .iter()
+                .any(|c| matches!(doc.get(*c).map(|n| &n.kind), Some(zero_dom::NodeKind::Text(_))));
+            assert!(has_text_child, "真文本须携带为 zw-pseudo 子节点");
+            let pseudo_style = styles.get(&first_child).expect("zw-pseudo 盒有样式");
+            assert_eq!(
+                pseudo_style.display,
+                DisplayValue::InlineBlock,
+                "盒样式须保留 inline-block"
+            );
+            assert_eq!(
+                pseudo_style.width,
+                zero_css_parser::values::LengthValue::Percentage(50.0),
+                "盒样式须保留 width:50%"
+            );
+        }
+        // ---- 相②：kill-switch=0 → 回 text-node ----
+        {
+            let html = r#"<html><body><div><span>x</span></div></body></html>"#;
+            let mut doc = zero_dom::parse_html(html);
+            let span = find_element(&doc, doc.root(), "span").expect("span 存在");
+            let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
+            let mut span_style = ComputedStyle::default();
+            span_style.before_pseudo = Some(Box::new(ComputedStyle {
+                content: ContentComputedValue::String("T".to_string()),
+                display: DisplayValue::InlineBlock,
+                ..ComputedStyle::default()
+            }));
+            styles.insert(span, span_style);
+
+            unsafe { std::env::set_var("ZW_PSEUDO_INLINEBLOCK_TEXT_BOX", "0") };
+            inject_pseudo_text_nodes(&mut doc, &mut styles, &[]);
+            unsafe { std::env::remove_var("ZW_PSEUDO_INLINEBLOCK_TEXT_BOX") };
+
+            let first_child = doc
+                .get(span)
+                .and_then(|n| n.children.first().copied())
+                .expect("有子节点");
+            match &doc.get(first_child).unwrap().kind {
+                zero_dom::NodeKind::Text(t) => assert_eq!(t.content, "T"),
+                other => panic!("R5295: kill-switch=0 应回 text-node 路径，实际 {other:?}"),
             }
         }
     }

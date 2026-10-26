@@ -9,6 +9,14 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5295 实现轮（伪元素 inline-block+文本盒化 + inline 水平百分比 padding + 跨行 padded 行内盒 x 写回——c547-indent-001 ✗2.23%→✗1.17%，corpus 15731P/859F 失败集 859=859 逐案零翻转，新 kill-switch 1）**（2026-10-27）
+>
+> - **根因**（15-probe 二分 + style-system scratch 定谳 + 像素取证）：①`needs_box` 门控缺口——`::before { display:inline-block; width:50% }` **无装饰**落 R5238 全臂之外走 text-node 注入，display/width 结构性丢失（text-node 无盒模型），伪文本 shrink-to-fit ~162px 冒充 392px 盒（含 `background` 变体正确盒化，而伪样式两侧均正确——纯引擎门控缺口）；②`resolve_inline_padding` 对 Percentage 归 0——inline 水平百分比 padding 全丢（CSS2 §8.4 应按包含块内联轴宽，IFC `container_width` collect 期可用）；③跨行 padded 行内盒 x 写回统一扣 first_pl——续行 fragment 不含 pl 推进，min 命中续行缘再扣首行 pl 得负偏（px 同构既有缺口）。
+> - **实现**（engine needs_box 新臂 `ZW_PSEUDO_INLINEBLOCK_TEXT_BOX=0` + collect_items `resolve_inline_padding_pct` 仅 4 处水平调用点 + inline_finalization FragAgg 新增 `min_box_x` 两口径分离——内容缘 min_x 逐字节不动供宽度 union/R5232 祖先链，盒缘口径仅 x 写回消费；首版误改 min_x 语义被单行盒宽断言当场抓获双计 48.8→88.8，回退收窄）。ruby 族宿主排除同 R4581；块级无装饰臂维持 R3928 保守门。
+> - **交付**：全量 corpus **16590/15731P/859F**，失败集与 R5294 交付态 **逐案零翻转**（859=859 diff 空），全 corpus 唯一变化即驱动案 c547 ✗2.23%→✗1.17%（真改善留红——残余 atomic inline-block 基线模型 2px 垂直位移独立域挂账）。kill-switch OFF 判别 2.22% 回修复前。回归 +6（engine 桥测 1 双相位 + resolver 单测 3 + 盒 x 锚 2，样式显式传入防 vacuous 假绿）。
+> - **门禁**：reftest 716/716、engine lib 3534P(+1)、layout-engine lib 2168P(+5)、style-system 2450P、fmt 0 diff、clippy 0 告警、product-smoke 6/6 + welcome 15.50% 持平、bench-gate 定向两 crate GATE PASS（25 指标 NEW=7）。make test 5 跑 4 观察跨流散布红（净域 image_batch 37≠36 / CDP busy-arm / renderer page_scripts）——全部 standalone 复验绿 + **干净基线 HEAD 逐字节复现同案同断言**（page_scripts.rs:1787）+ 对端流 testharness 重腿同机并行窗背景（load 2.4-3.4），本流触达各腿全绿，按车道规则记录不修。
+> - **挂账**：c547 残余 1.17%（atomic inline-block 基线模型）；userstyle 注入域（html-precedence-004）；inline 百分比 margin 专项（R5068 耦合）；垂直 padding 与原子 frame 累加 legacy resolver；未装饰 inline 盒宽不含 padding（slice13 既有）。**下一步 R5296**：①859F 账本续扫择轻（before-after-table-parts-001 14.97 深结构挂账维持、anonymous-boxes-001a 4.17 等候选）②跨流红对端流自查移交（image_batch 37≠36 / page_scripts 滞留窗时序）③深结构域维持不动。证据：[`rendering-compat/evidence/r5295-pseudo-inlineblock-text-box-inline-pct-padding-2026-10-27.md`](rendering-compat/evidence/r5295-pseudo-inlineblock-text-box-inline-pct-padding-2026-10-27.md)。
+>
 > **▶ R5294 实现轮（innerHTML/insertAdjacentHTML/outerHTML fragment 解析去 trim——dir-style-04 ✓0.00，corpus 15730P/860F→15731P/859F 仅一案移出零翻转）**（2026-10-27）
 >
 > - **根因**（前轮像素取证 + 本轮桥面审计定位）：`replace_inner_html` / `insert_adjacent_html` / `replace_outer_html_node` 三 setter 共用路径在 fragment 解析前 `html.trim()`——HTML spec fragment parsing algorithm 无 trim 步骤，首尾空白属文本节点内容（dir-style-04 的 `x.innerHTML = "…parent. "` 尾随空格在 DOM 构建前丢失，行中渲染缺格）；shim 本地视图（`__zw_parse_html_child_nodes` 整包解析）不 trim，两端视图此前已失步。in-process 布局重算锚（动态构建 DOM vs 静态同形标记逐盒一致，修前即绿）先排除布局面。

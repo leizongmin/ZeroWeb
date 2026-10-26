@@ -857,6 +857,9 @@ mod r5293_abs_auto_height_pct_base_tests;
 /// R5294 结构锚：动态构建 DOM 与静态同形标记布局逐盒一致（dir-style-04 排查
 /// 中排除布局面路径分歧——实际根因在 engine innerHTML fragment 解析 trim）。
 mod r5294_dyn_trailing_space_tests;
+/// R5295（CSS2 §8.4）：换行 padded 行内盒 border-box 左缘写回——逐片段盒缘
+/// 收敛（run 首片段扣自身 pl、续行/空片段不扣），负偏回归守护。
+mod r5295_wrapped_padding_box_x_tests;
 
 mod r5250_inline_relpos_shift_map;
 

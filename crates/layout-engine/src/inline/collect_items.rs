@@ -1559,10 +1559,10 @@ impl InlineFormattingContext {
             (margin_left, margin_right)
         };
         let padding_left = style
-            .map(|s| Self::resolve_inline_padding(&s.padding_left, s))
+            .map(|s| Self::resolve_inline_padding_pct(&s.padding_left, s, self.container_width))
             .unwrap_or_else(|| self.padding_overrides.get(&child_id).map(|(pl, _)| *pl).unwrap_or(0.0));
         let padding_right = style
-            .map(|s| Self::resolve_inline_padding(&s.padding_right, s))
+            .map(|s| Self::resolve_inline_padding_pct(&s.padding_right, s, self.container_width))
             .unwrap_or_else(|| self.padding_overrides.get(&child_id).map(|(pr, _)| *pr).unwrap_or(0.0));
         let is_ahem_font = style
             .map(|s| s.font_family.iter().any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem")))
@@ -1764,10 +1764,10 @@ impl InlineFormattingContext {
             .unwrap_or_else(|| self.margin_overrides.get(&elem_id).map(|(_, mr)| *mr).unwrap_or(0.0))
             + border_adv_r;
         let padding_left = style
-            .map(|s| Self::resolve_inline_padding(&s.padding_left, s))
+            .map(|s| Self::resolve_inline_padding_pct(&s.padding_left, s, self.container_width))
             .unwrap_or_else(|| self.padding_overrides.get(&elem_id).map(|(pl, _)| *pl).unwrap_or(0.0));
         let padding_right = style
-            .map(|s| Self::resolve_inline_padding(&s.padding_right, s))
+            .map(|s| Self::resolve_inline_padding_pct(&s.padding_right, s, self.container_width))
             .unwrap_or_else(|| self.padding_overrides.get(&elem_id).map(|(pr, _)| *pr).unwrap_or(0.0));
 
         // R4376：旗标每次 collect 读一次（同 collect_inline_items hoist 口径）。
@@ -2297,6 +2297,19 @@ impl InlineFormattingContext {
     fn resolve_inline_padding(value: &LengthValue, style: &ComputedStyle) -> f32 {
         Self::resolve_inline_margin(value, style)
     }
+    /// R5295（CSS2 §8.4）：inline 水平 padding 解析（px）——百分比按包含块内联轴宽
+    ///（IFC `container_width`）解析。旧实现 Percentage 归 0（沿 margin 口径），span
+    /// `padding-left:50%` 的水平推进整体丢失（c547-indent-001 ref div 臂：padding 在
+    /// 不换行探针下盒宽含 200px、文本推进却恒 0，两套解析器不一致实锤断点）。
+    /// CSS2 §8.3：百分比 margin 本应同样按包含块宽解析——margin 域涉及 R5068 负
+    /// margin 校准与 word-space-transform-012 补偿形态，留待专项，不并入本修。
+    /// 容器宽未知（内在尺寸趟 container_width=0）→ 0，≡ css-sizing-3 §5.2 不定基准。
+    fn resolve_inline_padding_pct(value: &LengthValue, style: &ComputedStyle, container_width: f32) -> f32 {
+        match value {
+            LengthValue::Percentage(p) => container_width * (*p as f32) / 100.0,
+            other => Self::resolve_inline_padding(other, style),
+        }
+    }
 
     /// R3840：元素级 `unicode-bidi: bidi-override` → Some(方向 rtl?)；非 override → None。
     /// 文本节点分支（paint Path B）经 `text_node_bidi_overrides` 映射恢复。
@@ -2783,5 +2796,43 @@ mod r4395_rtc_annotation_tests {
         //（collect 主路径同参调用 &["rt", "rp", "rtc"]）。
         let base = InlineFormattingContext::collect_text_excluding(&doc, ruby, &["rt", "rp", "rtc"], &HashMap::new(), &NodeIdSet::default(), &NodeIdSet::default());
         assert_eq!(base, "東南", "base = rb 文本，rt/rtc 子树排除");
+    }
+}
+
+#[cfg(test)]
+mod r5295_inline_pct_padding_tests {
+    use super::*;
+
+    /// R5295（CSS2 §8.4）：inline 水平 padding 百分比按包含块内联轴宽解析——
+    /// 旧实现 Percentage 归 0（沿 margin 口径），span `padding-left:50%` 在
+    /// 196px 容器内的 98px 推进整体丢失（c547-indent-001 ref div 臂）。
+    #[test]
+    fn pct_padding_resolves_against_container_width() {
+        let style = ComputedStyle::default();
+        let got = InlineFormattingContext::resolve_inline_padding_pct(
+            &LengthValue::Percentage(50.0),
+            &style,
+            196.0,
+        );
+        assert!((got - 98.0).abs() < 0.01, "50% × 196 = 98px，got {got}");
+    }
+
+    /// 旧口径 `resolve_inline_padding`（垂直 padding 域与 frame 求和消费）维持
+    /// Percentage 归 0 不变——本修只替换水平 run 推进的 4 个调用点。
+    #[test]
+    fn legacy_resolver_percentage_unchanged() {
+        let style = ComputedStyle::default();
+        let got = InlineFormattingContext::resolve_inline_padding(&LengthValue::Percentage(50.0), &style);
+        assert_eq!(got, 0.0, "旧口径 Percentage 归 0（垂直域口径不动）");
+    }
+
+    /// em/px 走既有 resolve_length 路径不受容器宽影响。
+    #[test]
+    fn absolute_and_em_padding_unchanged() {
+        let style = ComputedStyle::default();
+        let px = InlineFormattingContext::resolve_inline_padding_pct(&LengthValue::Px(40.0), &style, 196.0);
+        assert!((px - 40.0).abs() < 0.01, "px 直通，got {px}");
+        let em = InlineFormattingContext::resolve_inline_padding_pct(&LengthValue::Em(1.0), &style, 196.0);
+        assert!((em - 16.0).abs() < 0.5, "1em ≈ 16px（默认字号），got {em}");
     }
 }

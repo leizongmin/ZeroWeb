@@ -924,7 +924,6 @@ pub(crate) fn sync_inline_child_boxes_from_ifc_with_ancestors(
         /// R5248：首 run 记账 margin（R4332 折入含 border advance）——x 式只扣**流内
         /// 实际落账**的 frame，折入落流与否 = `first_ml − raw_ml > 0` 检测。
         first_ml: f32,
-        text_empty: bool,
         /// R5249：任一 fragment 非空（门信号）——element-first spacer（空文本首
         /// run）落槽后首 run 记账属 spacer，门不得按首 run 空文本误判整盒无内容。
         any_text: bool,
@@ -935,6 +934,11 @@ pub(crate) fn sync_inline_child_boxes_from_ifc_with_ancestors(
         first_line_idx: usize,
         single_line: bool,
         min_x: f32,
+        /// R5295：border-box 左缘口径 min_x（仅 x 写回消费）。首片段 x 记内容区
+        /// 起点（pl 推进已落账），盒缘 = 非空首片段 x − 自身 pl；续行片段 pl 不再
+        /// 落账（x 即盒缘）、空片段 x 本记盒缘（R5249），照原值收敛。宽度 union
+        /// 与 R5232 祖先链消费下方内容缘 min_x，不消费本字段。
+        min_box_x: f32,
         max_x: f32,
         min_y: f32,
         max_y: f32,
@@ -944,6 +948,12 @@ pub(crate) fn sync_inline_child_boxes_from_ifc_with_ancestors(
     for (line_idx, line) in inline_ctx.lines.iter().enumerate() {
         for run in &line.runs {
             let y = if vertical { run.y } else { run.y + line.y };
+            // R5295：盒缘口径首建换算——非空首片段 x − 自身 pl，空片段 x 即盒缘。
+            let first_box_x = if run.text.is_empty() {
+                run.x
+            } else {
+                run.x - run.padding_left
+            };
             let a = aggs.entry(run.node_id).or_insert(FragAgg {
                 line_y: line.y,
                 line_baseline_y: line.baseline_y,
@@ -953,12 +963,12 @@ pub(crate) fn sync_inline_child_boxes_from_ifc_with_ancestors(
                 first_w: run.width,
                 first_pl: run.padding_left,
                 first_ml: run.margin_left,
-                text_empty: run.text.is_empty(),
                 any_text: !run.text.is_empty(),
                 count: 0,
                 first_line_idx: line_idx,
                 single_line: true,
                 min_x: run.x,
+                min_box_x: first_box_x,
                 max_x: run.x + run.width,
                 min_y: y,
                 max_y: y + run.height,
@@ -970,7 +980,13 @@ pub(crate) fn sync_inline_child_boxes_from_ifc_with_ancestors(
             if a.first_line_idx != line_idx {
                 a.single_line = false;
             }
+            // R5295（CSS2 §8.4 inline box model）：更新行两个口径都用片段原值 x——
+            // 盒缘换算（非空扣自身 padding_left）只发生在 min_box_x 首建处（walk 序
+            // 首见 = run 首片段）；续行片段 x 不含 pl 推进（padding 只在 run 首缘落账
+            // 一次）、空片段 x 本就记盒缘（R5249 口径），照原值收敛；内容缘 min_x
+            // 语义不变（宽度 union 与祖先链消费方依赖）。
             a.min_x = a.min_x.min(run.x);
+            a.min_box_x = a.min_box_x.min(run.x);
             a.max_x = a.max_x.max(run.x + run.width);
             a.min_y = a.min_y.min(y);
             a.max_y = a.max_y.max(y + run.height);
@@ -1058,10 +1074,11 @@ pub(crate) fn sync_inline_child_boxes_from_ifc_with_ancestors(
                 let raw_ml = InlineFormattingContext::resolve_inline_margin(&style.margin_left, style);
                 let fold_landed = (agg.first_ml - raw_ml).max(0.0);
                 // R5249：首 run 为空文本（element-first spacer）时 fragment x 记
-                // 推进前 border-box 缘（break_lines 空 inline 分支口径，不含 pl），
-                // pl 项不扣；非空 run x = content 缘（含 pl），照扣。
-                let pl_term = if agg.text_empty { 0.0 } else { agg.first_pl };
-                child.x = agg.min_x - pl_term - fold_landed;
+                // 推进前 border-box 缘（break_lines 空 inline 分支口径，不含 pl）。
+                // R5295：min_box_x 已在聚合处逐片段换算盒缘（首片段扣、续行/空片段
+                // 不扣），写回不再统一扣 first_pl——旧式对「跨行 padded 行内盒」把
+                // 续行缘误扣首行 pl 得负偏 x。宽度 union 仍消费内容缘 min_x。
+                child.x = agg.min_box_x - fold_landed;
                 // R5232：子孙首缘候选更小（首内容属子孙）时收紧——只收紧不放松。
                 if let Some(cand) = min_inherited_x.get(&child_id) {
                     child.x = child.x.min(*cand);
