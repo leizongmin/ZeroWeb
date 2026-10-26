@@ -4305,11 +4305,7 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             // T13 R1：延迟回收调度——LoadComplete 主锚 + loading 翻转沿补充（初载相）
             // 重锚 deadline（16ms tick 消费）；到点触发主侧批量回收 + worker 延迟回收。
             // S2/S3 成本移出首载测窗（t13-rework-frozen.md 窗口证据）。
-            if self
-                .webview
-                .as_mut()
-                .map_or(false, |webview| webview.take_loading_flip())
-            {
+            if self.webview.as_mut().is_some_and(|webview| webview.take_loading_flip()) {
                 self.reclaim_sched.arm(std::time::Instant::now());
             }
             if let Some(gens) = self.reclaim_sched.due(std::time::Instant::now()) {

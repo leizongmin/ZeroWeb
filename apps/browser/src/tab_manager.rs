@@ -1473,16 +1473,20 @@ mod t13_idle_face_tests {
 
         // 活动 tab 快照 loading：忙；同快照落在非活动 tab 不参与判定。
         let mut manager = TabManager::new((800, 600), PrefersColorSchemeValue::Light);
-        let mut snapshot = TabSnapshot::default();
-        snapshot.loading = true;
+        let snapshot = TabSnapshot {
+            loading: true,
+            ..Default::default()
+        };
         manager.snapshots.insert(tab_id, snapshot);
         assert!(!manager.tab_face_idle(Some(tab_id)), "loading 中必须判忙");
         assert!(manager.tab_face_idle(Some(TabId(2))), "非活动 tab 的 loading 不判忙");
 
         // compositor 动画拉取活跃：忙。
         let mut manager = TabManager::new((800, 600), PrefersColorSchemeValue::Light);
-        let mut snapshot = TabSnapshot::default();
-        snapshot.compositor_animations_active = true;
+        let snapshot = TabSnapshot {
+            compositor_animations_active: true,
+            ..Default::default()
+        };
         manager.snapshots.insert(tab_id, snapshot);
         assert!(!manager.tab_face_idle(Some(tab_id)), "compositor 动画拉取活跃必须判忙");
 
