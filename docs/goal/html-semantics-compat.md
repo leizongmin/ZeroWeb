@@ -2,9 +2,44 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 98 施工收口（write 注入 harness 的 runner 面完成探测接线：**102 Timeout→Pass 销账**：scripting-1 **311P/229F/16T→312P/229F/15T**（raw + 18 NotRun；净 +1 Pass，零 P→非P）——`wpt_data_fetch_handler` 静态回退特判两资源：`/resources/testharness.js` 服务补丁源（`apply_harness_completion_patch` 与静态内联共用 replacen，抽公共函数防漂移）+ eval 尾自调 `__zw_mark_harness_loaded()`（`document.open` 后 load 不重发，注入副本求值完成即置 all_loaded；此刻 tests.length=0 无误完成）；`/resources/testharnessreport.js` 服务 reporter 装配快照（上游 report 裸 loader，注册的回调到不了探针全局）；reporter 提升为 `HARNESS_REPORTER_SOURCE` 常量、静态/fetch 两路共用装配面；全语料核查 write/dynamic 注入仅 102 形（静态标签一律内联替换走不到 fetch 通道），blast radius 有界；runner bin 单测 226/226；失败族地图序：⑤module 尾片（.py 执行器前置）/ nomodule-async 2F / load-error-events 元素 onload 保真 / 116 frameset / 063 承袭），下一步 s99 入场探针定刀位（候选：nomodule-async window-load 2F / load-error-events 元素 onload 保真 / module 尾片 .py 执行器前置）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 99 施工收口（HTMLScriptElement 布尔反射 IDL `in` 可见性：**nomodule-set-on-async-classic-script 2F→2P 销账**：scripting-1 **312P/229F/15T→314P/227F/15T**（raw + 18 NotRun；净 +2 Pass，零 P→非P）——元素 proxy has trap 白名单新增 R5300 分支：`async`/`defer`/`noModule` 三名 tag 门 SCRIPT（'  :' 后缀容差同 R5266；值面 part04 R3038/R3040 _REFLECTED_BOOL presence 读早已覆盖，has 探测缺列恒 false——两行同报 `assert_true(supportsNoModule)` 首断言即 `"noModule" in script`）；R5249 menuitem 假阳性先例 → 无条件列名不可取，按接口成员归属 tag 门控；load 门（window.onload promise resolve）实测正常；engine lib 3530/3530；失败族地图序：⑥load-event 保真族（parser 外链内联投递丢 onload/onerror 属性 → nomodule-sync 1F + load-error-events 7F/3T 同族汇入）/ module 编译错误事件面（nomodule-external-module 1F）/ module 尾片（.py 执行器前置）/ 116 frameset / 063 承袭），下一步 s100 入场探针定刀位（候选：load-event 投递保真族——内联重写保留 onload/onerror + 执行后投递 / module 编译错误 Script error 面）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-26 M2 切片 98 施工收口，write 注入 harness runner 面接线轮）**：
+> **▶ 当前状态（2026-10-26 M2 切片 99 施工收口，script 布尔 IDL has 可见性轮）**：
+> **入场核账**：s98 下一步候选入场探针——nomodule-set-on-async-classic-script
+> 两行**同报** `assert_true: expected true got false`，两测试首断言同为
+> `assert_true(supportsNoModule)`（`"noModule" in script` 探针）；若 load 门
+> （`waitForLoadEvent = new Promise(r => window.onload = r)`）失灵应报 Timeout
+> 而非断言失败——门正常，缺口在 `in` 可见性。**根因**：元素 proxy has trap
+> （part05 生效版，R129 定谳）白名单无 _REFLECTED_BOOL 面——get trap（part04
+> R3038/R3040）值面覆盖全表、`in` 探测恒 false（「'id' in el 仍 false」既有
+> documented 限制同类面）。**本轮接线**：has 白名单新增 R5300 分支，
+> `async`/`defer`/`noModule` 三名 **tag 门 SCRIPT**（':' 后缀容差同 R5266）——
+> 全员表列名重蹈 R5249 menuitem 假阳性先例（接口成员归属按 tag 门控）；三名恰
+> 为 HTMLScriptElement 接口成员（spec：reflected boolean，
+> https://html.spec.whatwg.org/multipage/scripting.html#dom-script-nomodule）。
+> **验证**：FILTER=nomodule 本两行 **2F→2P**——测试 1（noModule=false）四断言
+> 全过（动态 appendChild src 执行 + onload 投递 + load 门 resolve）；测试 2
+> （noModule=true）!executed/!loaded/!errored 全过（s96 prepare 门阻塞执行且不
+> 投递 load/error——动态臂阻塞面实测）；全子树终扫 **314P/227F/15T + 18
+> NotRun**，净 +2 Pass、行级 diff 仅本两行、**零 P→非P**（/tmp/s99-s1-rows.txt）；
+> engine lib **3530/3530**（guard）；shim 拼接 node --check OK；纯 shim .js 变更
+> fmt/clippy/reftest/product-smoke 不涉（沿 s91-s98 口径）。账本见
+> [evidence/2026-10-26-m2s99-script-bool-idl-has-visibility.md](html-semantics-compat/evidence/2026-10-26-m2s99-script-bool-idl-has-visibility.md)。
+> **范围**：part05.js ×1（has trap 一分支）；runner/语料零变更；语料不可改维持。
+> **挂账**：load-event 投递保真族——parser 外链被 inline_local_scripts 内联投递
+> 时 `onload`/`onerror` 内容属性被丢弃（s94 保真只留 nonce/nomodule/type）→
+> nomodule-set-on-synchronously「must run」1F（脚本执行到位、`assert_true(loaded)`
+> 假红）+ load-error-events 族 7F/3T 同族汇入；module 编译错误事件面
+> （nomodule-set-on-external-module-script——缺 default export 的编译错误冒出为
+> page script threw，spec 须落 error 事件）；116 frameset 文档语义缺口；063
+> Timeout 承袭；module 尾片（.py 前置）；charset 12F（.py）；
+> svg-script-fragment-clone 3F；FIXME 组（bufTop 漂移 / setAttribute('src') /
+> type 门 / children-changed 其余入口）；接口对象基建面（承袭）；基线扫描宜空载
+> （承袭）。nomodule-async 2F 本轮翻绿销账。
+> **切片间隙**：本轮纯 engine shim 面（has trap）；下一挂账 load-event 保真族跨
+> runner（inline_local_scripts）+ engine（执行后投递）两面。
+>
+> **▶ 上轮状态（2026-10-26 M2 切片 98 施工收口，write 注入 harness runner 面接线轮——其下一步 s99 入场探针定刀位已由 s99 收口，见上）**：
 > **入场核账**：s97 挂账定谳——102 页脚本全执行但 write 注入 testharness.js 经
 > fetch 通道取回 RAW 副本（`hook=undefined/state=null` 超时转储）。**完成机制核
 > 实**（pinned testharness.js）：`notify_result → all_done()（要求

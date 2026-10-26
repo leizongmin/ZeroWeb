@@ -1190,6 +1190,19 @@
                  } catch (_e5266h) { return false; }
                  return false;
                })()
+            // R5300（html-semantics M2 切片 99）：HTMLScriptElement 布尔反射 IDL
+            // `in` 可见性 tag 门——async/defer/noModule 是 HTMLScriptElement 接口
+            // 成员（值面 = part04 get trap R3038/R3040 _REFLECTED_BOOL presence 读；
+            // has 白名单缺列使 `in` 恒 false）。无条件列名会重蹈 R5249 menuitem
+            // 假阳性（接口成员归属按 tag 门控）；SCRIPT ':' 后缀容差同 R5266。
+            // WPT nomodule-set-on-async-classic-script 首断言
+            // `"noModule" in script`（supportsNoModule 探针）。
+            // https://html.spec.whatwg.org/multipage/scripting.html#dom-script-nomodule
+            || (prop === 'async' || prop === 'defer' || prop === 'noModule')
+               && (function () {
+                    try { return (_realTag(sel, handle) || '').split(':').pop() === 'SCRIPT'; }
+                    catch (_e5300h) { return false; }
+                  })()
             || prop === 'src' || prop === 'textTracks'
             || prop === 'addTextTrack' || prop === 'track' || prop === 'controlsList'
             // cdp-protocol objectId 桥（PW injectedScript）：节点身份与表单约束面的
