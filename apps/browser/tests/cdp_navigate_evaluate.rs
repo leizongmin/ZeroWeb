@@ -15,7 +15,7 @@
 //!    （连续导航不残留旧文档状态）。
 //! 5. `iframe_page_frame_attached_events`——iframe 页 frameAttached 即时路径。
 //! 6. `busy_iframe_page_evaluate_works`——忙臂 iframe 页导航即时返回 + 臂中发送
-//!    evaluate（臂后应答）通道必答（忙臂页放弃 frame 元数据，evaluate 语义不丢）。
+//!    evaluate（臂后应答）通道必答（frameAttached 见钉 8，evaluate 语义不丢）。
 //! 7. `kill_switch_env_off_keeps_frame_attached_on_busy_iframe_page`——kill-switch
 //!    `ZW_CDP_NAV_IFRAME_PROBE_ASYNC=0`（子进程 env 注入）回落旧阻塞探测：忙臂
 //!    iframe 页 frameAttached 事件在（旧行为面常驻判别）。
@@ -409,9 +409,9 @@ fn iframe_page_frame_attached_events() {
 
 /// 忙臂 iframe 页：导航即时返回（同钉 1 语义）+ 臂结束后 evaluate 通道可用。
 ///
-/// 忙臂页的 iframe 探测在界内未应答时按 0 子帧放弃（迟发求值与导航管线 worker
-/// 快照安装竞态，迟发 frameAttached 不可靠）——本页不产出 frame 元数据，但
-/// evaluate 语义不丢（base 上此形态 evaluate 直接楔死）。
+/// 默认异步探测在本页形的臂前自由窗即已应答并发 frameAttached（见钉 8）；本钉
+/// 只关注臂中发送的 evaluate——求值迟发到臂尾应答，语义不丢（base 上此形态
+/// evaluate 直接楔死）。
 #[test]
 fn busy_iframe_page_evaluate_works() {
     let site = TestSite::spawn();
@@ -471,7 +471,9 @@ fn kill_switch_env_off_keeps_frame_attached_on_busy_iframe_page() {
 /// ≈80ms，探测求值应答 ≈80ms，2500ms 忙臂实际 192→2692ms；臂中发送的求值迟发到
 /// 臂尾应答（迟发不丢语义保持，另由 deferred-reply 门禁测试覆盖）。早发事件携带
 /// 真实 frame 元数据，不违反宁缺勿错；与 Chrome 一致（frame 元素挂上即发
-/// frameAttached，不等主文档空闲）。
+/// frameAttached，不等主文档空闲）。自由窗余量实测 ≈110ms（探测应答 ≈80ms →
+/// 臂起始 ≈192ms）：慢机负载下窗口收窄最坏只会让本测试超窗翻红，不可能在
+/// 未发现时误绿。
 ///
 /// 探测的有界放弃路径保留为渲染器病态迟缓防线：本页形下 navigate 应答不早于
 /// parse 完成、探测先于脚本相执行，放弃路径无法由页面内容构造，故不再断言
