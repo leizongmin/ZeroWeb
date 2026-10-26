@@ -1688,6 +1688,60 @@ fn blend_mode_normal_does_nothing() {
     assert_eq!(p, [255, 0, 0, 255]);
 }
 
+/// R5266（css-compositing-2 §mix-blend-mode）：blend 标记之后的后续兄弟图元落在
+/// 全部 blend rect 之外时，须按 src-over 回贴主帧——旧 render_draw_order 把标记
+/// 之后的全部图元滞留源缓冲、仅 rect 内合成，rect 外的后续兄弟（蓝块）永不落地
+/// ＝被 mix-blend-mode 元素吞没（clip-text-stacking-context-child-002 取证）。
+#[test]
+fn blend_marker_does_not_swallow_following_sibling_outside_rect() {
+    let mut primitives = RenderPrimitives::new();
+    // blend 元素自身内容：红块（画在标记之前 = 主帧）
+    primitives.fills.push(FillPrimitive {
+        rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+        color: Color::RED,
+    });
+    primitives.blend_modes.push(BlendModePrimitive {
+        rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+        mode: BlendMode::Lighten,
+    });
+    // 后续兄弟：蓝块（标记之后 = 旧路径滞留源缓冲、rect 外丢失）
+    primitives.fills.push(FillPrimitive {
+        rect: Rect::new(20.0, 0.0, 10.0, 10.0),
+        color: Color::BLUE,
+    });
+    primitives.draw_order = vec![
+        crate::primitive::DrawOp::Fill(0),
+        crate::primitive::DrawOp::BlendMode(0),
+        crate::primitive::DrawOp::Fill(1),
+    ];
+
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    let fb = render_full_scene(
+        30,
+        10,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+
+    // 后续兄弟蓝块必须落地（旧行为此处恒白）
+    assert_eq!(
+        fb.get_pixel(25, 5),
+        [0, 0, 255, 255],
+        "blend rect 之外的后续兄弟内容须回贴主帧（R5266 吞没修复）"
+    );
+    // blend rect 内 backdrop 不被吞没修复扰动：白底 lighten(白, 红在主帧已画) ——
+    // 源缓冲 rect 内无内容（蓝块在 rect 外）⇒ lighten(红, 透明)=红 保留
+    assert_eq!(fb.get_pixel(5, 5), [255, 0, 0, 255]);
+}
+
 #[test]
 fn full_scene_renders_multiple_primitives() {
     let mut primitives = RenderPrimitives::new();

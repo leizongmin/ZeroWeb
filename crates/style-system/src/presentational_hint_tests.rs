@@ -1259,3 +1259,74 @@ fn r5065_selection_default_highlight_seeded_for_decoration_only_rules() {
         v.selection_pseudo
     );
 }
+
+/// R5284：legacy `rules=groups` 表现提示（WHATWG §15.3.3）。表 hidden/collapse +
+/// 行/列组 1px solid；作者规则以更高特异性覆盖单侧（rules-groups reftest 的
+/// `#a > * { border-block-start: none }` 语义：单侧压掉、另一侧组边界仍在）；
+/// rules 其余值与无 rules 表不产出提示。
+#[test]
+fn table_rules_groups_attr_maps_to_group_border_hints() {
+    // ① 表级 hidden/collapse；行组 block 轴；列组 inline 轴。
+    let doc = parse_html(
+        "<table rules=groups><colgroup></colgroup><thead><tr><td>h</td></tr></thead>\
+         <tbody><tr><td>b</td></tr></tbody><tfoot><tr><td>f</td></tr></tfoot></table>",
+    );
+    let table_hints = collect_presentational_hints(&doc, doc.get_elements_by_tag_name("table")[0]);
+    assert!(
+        table_hints.iter().any(|(p, v)| p == "border-style" && v == "hidden")
+            && table_hints
+                .iter()
+                .any(|(p, v)| p == "border-collapse" && v == "collapse"),
+        "table rules=groups → hidden/collapse: {table_hints:?}"
+    );
+    let thead_hints = collect_presentational_hints(&doc, doc.get_elements_by_tag_name("thead")[0]);
+    assert!(
+        thead_hints.iter().any(|(p, v)| p == "border-block-width" && v == "1px")
+            && thead_hints
+                .iter()
+                .any(|(p, v)| p == "border-block-style" && v == "solid"),
+        "行组 → block 轴组边框提示: {thead_hints:?}"
+    );
+    let cg_hints = collect_presentational_hints(&doc, doc.get_elements_by_tag_name("colgroup")[0]);
+    assert!(
+        cg_hints.iter().any(|(p, v)| p == "border-inline-width" && v == "1px")
+            && cg_hints.iter().any(|(p, v)| p == "border-inline-style" && v == "solid"),
+        "列组 → inline 轴组边框提示: {cg_hints:?}"
+    );
+
+    // ② 非 groups 值（未实现）与无 rules 表：零提示（维持现状）。
+    let doc2 = parse_html(
+        "<table rules=none><tbody><tr><td>x</td></tr></tbody></table>\
+         <table><tbody><tr><td>y</td></tr></tbody></table>",
+    );
+    for t in doc2.get_elements_by_tag_name("table") {
+        let h = collect_presentational_hints(&doc2, t);
+        assert!(
+            !h.iter().any(|(p, _)| p == "border-style" || p == "border-collapse"),
+            "rules={:?} 不产出组提示: {h:?}",
+            doc2.get_attribute(t, "rules")
+        );
+    }
+
+    // ③ 端到端：作者单侧覆盖（特异性 > 提示 (0,0,0)），另一侧保留 1px solid；
+    // 逻辑长手按 writing-mode 映射物理边（horizontal-tb：block-start→top）。
+    let doc3 = parse_html("<table id=a rules=groups><thead><tr><td>h</td></tr></thead></table>");
+    let css = zero_css_parser::parser::Parser::parse_stylesheet("#a > * { border-block-start: none; }");
+    let mut system = StyleSystem::new();
+    let styles = system.compute_styles(&doc3, &[css]);
+    let s = styles
+        .get(&doc3.get_elements_by_tag_name("thead")[0])
+        .expect("thead styled");
+    assert!(
+        matches!(s.border_top_style, BorderStyleValue::None),
+        "作者 border-block-start:none 压掉提示，got {:?}",
+        s.border_top_style
+    );
+    assert!(
+        matches!(s.border_bottom_style, BorderStyleValue::Solid)
+            && matches!(s.border_bottom_width, zero_css_parser::values::LengthValue::Px(w) if w == 1.0),
+        "block-end 提示保留 1px solid，got {:?} {:?}",
+        s.border_bottom_style,
+        s.border_bottom_width
+    );
+}

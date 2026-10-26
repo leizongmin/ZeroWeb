@@ -1,0 +1,25 @@
+[package]
+name = "zero-media-host"
+description = "ZeroWeb 媒体宿主进程 — 独立进程承载解码与媒体时钟（media-runtime-isolation 方案 C；C2 解码内核 + 自走时钟）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "zero-media-host"
+path = "src/main.rs"
+
+[lib]
+name = "zero_media_host"
+path = "src/lib.rs"
+
+[features]
+# codec 面转发 zero-media（默认关，与 webview 同纪律——D-RFC-2/3 获批面）。
+decode-av1 = ["zero-media/decode-av1"]
+decode-h264 = ["zero-media/decode-h264"]
+
+[dependencies]
+zero-media = { workspace = true }
+zero-protocol = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

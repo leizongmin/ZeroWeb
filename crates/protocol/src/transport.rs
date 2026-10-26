@@ -13,7 +13,9 @@ use crate::{IpcChannel, IpcMessage, ProtocolError};
 ///
 /// Compositor 的 UI 上传和 present 回读可能携带整张物理像素位图；高 DPI
 /// 窗口已超过旧的 16 MiB 上限。64 MiB 可容纳单张 4K RGBA 帧，同时保持有界分配。
-const MAX_FRAME_SIZE: usize = 64 * 1024 * 1024;
+/// media host 内联帧推送以本值为界（media.rs `MediaFrameParams` 契约——超限
+/// 报 `MediaError{FrameTooLarge}`，不静默截断）。
+pub const MAX_FRAME_SIZE: usize = 64 * 1024 * 1024;
 
 fn validate_frame_size(len: usize) -> Result<(), ProtocolError> {
     if len > MAX_FRAME_SIZE {

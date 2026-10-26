@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>BG-02 media autoplay</title>
+</head>
+<body>
+<!-- DC-2「合法工作不误停」媒体腿 autoplay 变体（media-runtime-isolation A2 后
+     bg02-media 基线 v2 复评腿）：与 bg02-media.html 同构，audio/video 均以
+     autoplay 属性起播（spec autoplay = 就绪后隐式 play()，A2 Fix 1 后该路径
+     经桥武装原生 registry——2026-10-23 缺口 1「autoplay 置态绕桥」的复评面）。
+     页面侧信号与 bg02-media.html 同名（probe bg02-media 采样臂直接复用）。 -->
+<audio id="a" src="/media/sample-mp3.mp3" autoplay loop></audio>
+<video id="v" src="/media/sample-mp4-h264.mp4" autoplay loop muted playsinline
+       style="position:absolute;left:-9999px;top:0;width:160px;height:90px"></video>
+<script>
+window.__zw_media_ticks = 0;
+window.__zw_media_pos = 0;
+setInterval(function () {
+  var a = document.getElementById('a');
+  var v = document.getElementById('v');
+  if ((a && !a.paused) || (v && !v.paused)) window.__zw_media_ticks++;
+  var pos = (a ? a.currentTime : 0) + (v ? v.currentTime : 0);
+  if (pos > window.__zw_media_pos) window.__zw_media_pos = pos;
+}, 500);
+</script>
+</body>
+</html>

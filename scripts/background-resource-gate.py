@@ -116,6 +116,12 @@ def probe_metrics(probe: dict) -> tuple[dict, int]:
         if len(values) >= 2:
             delta = values[-1] - values[0]
             metrics[f"probe_delta:{label}"] = delta
+            # bg02-media v2（media-runtime-isolation）：回卷安全行程指标——时钟
+            # 序列（bg02-media-audio-clock 等）跨流末回绕时末减首净位移可为 0/
+            # 负（采样相位落点），对「时钟推进」判定盲；路径长度（相邻差绝对值
+            # 累计）冻结序列恒 0、推进/回卷序列随时长增长，工作下界设此口径。
+            travel = sum(abs(b - a) for a, b in zip(values, values[1:]))
+            metrics[f"probe_travel:{label}"] = round(travel, 4)
     nav = probe.get("nav_series") or []
     if nav:
         ok = sum(1 for item in nav if item.get("nav_ok"))
@@ -242,9 +248,15 @@ def cmd_derive(out_path: Path, legs: list[Path], *, sha: str, date: str, note: s
             if name in FIXED_BOUNDS:
                 bounds[name] = dict(FIXED_BOUNDS[name])
                 continue
-            if name.startswith("probe_delta:"):
+            if name.startswith("probe_delta:") and f"probe_travel:{name.split(':', 1)[1]}" in names:
+                # 回卷安全 travel 界存在时取代 delta 界：单调计数器两者数值恒等
+                # （无损失）；时钟序列跨流末回绕时末减首净位移随采样相位可为 0/
+                # 负（autoplay-b 实测 -0.003）——delta 界对该序列不健全。
+                continue
+            if name.startswith("probe_delta:") or name.startswith("probe_travel:"):
                 # probe 计数差值是「合法工作不误停」信号（rAF 泵/迭代计数），
-                # 墙钟同源配对下设下界——跌破即工作被误停。
+                # 墙钟同源配对下设下界——跌破即工作被误停。travel（路径长度）
+                # 同口径：时钟序列的回卷安全推进下界（bg02-media v2）。
                 bounds[name] = derive_bounds(values, "floor")
                 continue
             kind = METRIC_KINDS.get(name)

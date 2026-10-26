@@ -393,7 +393,7 @@ fn test_border_collapse_table_wins() {
             cell.border_top
         );
         // Color override should be set for top edge (green from table)
-        let top_color_override = cell.collapsed_border_color_overrides[0];
+        let top_color_override = cell.collapsed_border_color_overrides.as_deref().and_then(|ovr| ovr[0]);
         assert!(
             top_color_override.is_some(),
             "top color override should be set (table's green), got None"

@@ -153,6 +153,11 @@ pub fn computed_style_to_taffy(
         );
     taffy::Style {
         display: convert_display(&style.display),
+        // R5281（CSS2 §8.3.1 × §17.5.1）：table-cell 立独立格式化上下文——子代
+        // margin 不与 cell 自身折叠（cell 高度须含末子 bottom margin，
+        // margin-collapse-110/111：末子 margin 外溢致 cell/表矮一行）。row/rowgroup/
+        // table 不立 FC，不在此列；caption 已由引擎侧 is_table_caption 处理。
+        item_margins_isolated: matches!(style.display, DisplayValue::TableCell),
         // M3 step(b) 试：native float 激活，但保留 ZW adjust_float_positions（覆盖 native 定位）
         float: if is_table_internal_box {
             taffy::style::Float::None

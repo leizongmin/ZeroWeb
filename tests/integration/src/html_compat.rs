@@ -1309,3 +1309,63 @@ fn resource_failure_dispatches_error_without_hang() {
         "audio:error,image:error,source:error,track:error,video:error|true|0|3|true|2|3|2|3"
     );
 }
+
+#[test]
+fn renderer_worker_default_frame_driven_raf_advances() {
+    // P9b（perf-mem-20261023）：帧驱动 rAF 产品默认翻转的回归守护——env 未设时 renderer
+    // worker init 即注入 __ZW_RAF_FRAME_DRIVEN=true（apps/renderer/src/js_worker.rs
+    // raf_frame_driven_enabled 默认 on），页面 requestAnimationFrame 注册延后到 host
+    // render 后的 `__zw_raf_tick` 派发，不再走同步 stub 即 fire（HTML event loops：
+    // run the animation frame callbacks，https://html.spec.whatwg.org/multipage/webappapis.html#event-loops）。
+    let mut worker = zero_renderer::js_worker::RendererJsWorker::spawn(113);
+    worker.set_dom_snapshot("<html><body></body></html>", "https://zero.test/raf-default");
+    worker
+        .execute_script_direct(
+            "globalThis.__count = 0;\
+             requestAnimationFrame(function(){ globalThis.__count++; });",
+        )
+        .expect("rAF registration");
+    assert_eq!(
+        worker.execute_script_direct("String(globalThis.__count)").unwrap(),
+        "0",
+        "默认帧驱动：tick 前回调不应 fire（注册延后，非同步 stub）"
+    );
+    assert!(
+        worker.raf_interest(),
+        "默认帧驱动：注册应置兴趣（host 泵据此刻画派发帧）"
+    );
+    worker
+        .execute_script_direct("if(globalThis.__zw_raf_tick)globalThis.__zw_raf_tick(0);")
+        .unwrap();
+    assert_eq!(
+        worker.execute_script_direct("String(globalThis.__count)").unwrap(),
+        "1",
+        "默认帧驱动：tick 后回调 fire（帧推进生效）"
+    );
+    // TV-2（P9b 返修）：跨导航 reset 重注入段——真实触发 ResetDocumentState 臂
+    //（apps/renderer/src/js_worker.rs：context 重建 → 清 rAF 兴趣 → 开关重注入 →
+    // shim 重装）。默认帧驱动须在新文档继续生效，非仅 init 一次。
+    worker.reset_document_state();
+    worker.set_dom_snapshot("<html><body></body></html>", "https://zero.test/raf-next");
+    worker
+        .execute_script_direct(
+            "globalThis.__count = 0;\
+             requestAnimationFrame(function(){ globalThis.__count++; });",
+        )
+        .expect("rAF registration after reset");
+    assert_eq!(
+        worker.execute_script_direct("String(globalThis.__count)").unwrap(),
+        "0",
+        "复位后新文档：tick 前回调不应 fire（重注入生效）"
+    );
+    assert!(worker.raf_interest(), "复位后新文档：注册应置兴趣（重注入生效）");
+    worker
+        .execute_script_direct("if(globalThis.__zw_raf_tick)globalThis.__zw_raf_tick(0);")
+        .unwrap();
+    assert_eq!(
+        worker.execute_script_direct("String(globalThis.__count)").unwrap(),
+        "1",
+        "复位后新文档：tick 后回调 fire（跨导航帧推进生效）"
+    );
+    worker.shutdown();
+}

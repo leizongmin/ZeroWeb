@@ -568,6 +568,14 @@ pub struct WebView {
     fetch_handler: Option<zero_engine::fetch_bridge::FetchHandler>,
     /// 当前 URL。
     current_url: Option<String>,
+    /// T13 S5：上次 CanvasRegistry 代际清理时的文档 URL（代际门锚）。
+    ///
+    /// `prepare_document_state` 每次进入都递增 document_generation/navigation_epoch
+    /// ——代际数无法判别 same-navigation 误判重入（lazy 尾图 is_loading()==false 窗，
+    /// 见该方法内注释），门取「上次清理 URL 恒等」：同 URL 重入落在活文档上不清，
+    /// 旧文档条目延至下一异址导航回收（新文档 getContext 取新 id，旧条目不可达，
+    /// 仅延迟回收、无语义面）。
+    canvas_cleared_url: Option<String>,
     /// 当前导航 epoch（user-action node identity scope）。
     navigation_epoch: u64,
     /// 当前 live Document generation。
@@ -610,6 +618,11 @@ pub struct WebView {
     title: Option<String>,
     /// 是否正在加载。
     loading: bool,
+    /// T13 R1：loading 翻转沿闩——值实际变化时置位，`take_loading_flip` 消费；
+    /// renderer 主循环 tick 据此重锚延迟回收 deadline（初载相补充锚；CDP 导航流
+    /// 的主锚是 LoadComplete——预算渲染路径不走 `set_loading(false)`，翻转沿首载
+    /// 后不再置位）。单 pending 槽合并语义。
+    loading_flip: bool,
     /// 上次渲染结果。
     last_render: Option<WebViewRenderResult>,
     /// 最新帧的 canvas_images（内联 SVG 栅格 / Canvas 位图 / 滤镜 isolate 产物），
@@ -793,6 +806,7 @@ impl WebView {
             image_source_fetcher,
             fetch_handler,
             current_url: None,
+            canvas_cleared_url: None,
             navigation_epoch: 0,
             document_generation: 0,
             focus_owner: None,
@@ -808,6 +822,7 @@ impl WebView {
             referrer: None,
             title: None,
             loading: false,
+            loading_flip: false,
             last_render: None,
             pending_canvas_images: Vec::new(),
             canvas_fingerprints: HashMap::new(),
@@ -1080,9 +1095,16 @@ impl WebView {
         // 片段不复活；页内 remove→re-append 间隔的宿主管线全量重建不清——片段
         // 跨重建有效，见 [`DetachedNodeStash`]）。
         self.pipeline.clear_detached_sel_nodes();
+        // s80：跨批 id 改名 journal 同批清空（旧文档 selector 迁移史不跨页）。
+        self.pipeline.clear_sel_renames();
         self.cached_html = html.to_string();
         let css_str = css.unwrap_or("");
         self.cached_css = css_str.to_string();
+        // s89（execution-timing 106-*）：getComputedStyle 级联与布局级联同源——管线
+        // 拿到的外链样式表文本同步发布给 computed-style 桥（P9-9 `active_external_css`
+        // 装填点此前只有单测调用，生产恒空 → 外链规则对 `__zw_get_computed_style`
+        // 不可见）。css-less 页传空串复位（旧页规则不跨文档泄漏）。
+        zero_engine::js_dom_bridge::set_active_external_css(css_str);
         self.sync_pipeline_page_state();
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
         self.pipeline.set_media_type(self.media_type);
@@ -1312,26 +1334,38 @@ impl WebView {
         }
         let base = url::Url::parse(base_url).ok();
         let mut combined = String::new();
+        // s89：@import 递归抓取（对齐 async_load `poll_stylesheets` R2411 语义——相对
+        // **导入表 URL** 解析、`css_seen` 防环；FIFO 保级联文档序）。此前进程内路径只抓
+        // 顶层 link，@import 链规则缺失（WPT execution-timing 106-import 面
+        // import.css→background.css 规则不入级联）。FIXME：@import 臂不走 CSP/Mixed
+        // Content 门（async_load 既有同态；violation 元素站对导入规则无 link 序号可锚）。
+        let mut css_seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut queue: std::collections::VecDeque<(Option<usize>, String)> = std::collections::VecDeque::new();
         for (link_ordinal, href) in hrefs.iter().enumerate() {
             let abs = match base.as_ref().and_then(|b| b.join(href).ok()) {
                 Some(u) => u.to_string(),
                 None => href.clone(),
             };
+            if css_seen.insert(abs.clone()) {
+                queue.push_back((Some(link_ordinal), abs));
+            }
+        }
+        while let Some((link_ordinal, fetch_url)) = queue.pop_front() {
             // security-hardening M2-s3：外链 stylesheet CSP 检查点（style-src-elem 源
             // 匹配）——被阻止 href 不 fetch/不并入 combined；violation 入队（元素站
             // target = link 元素）+ link error 事件（abs href）随 run 尾统一派发。
             if self.config.csp_enforcement
                 && self.security_context.has_document_csp()
-                && let Some(violation) = self.security_context.check_style(None, None, Some(&abs))
+                && let Some(violation) = self.security_context.check_style(None, None, Some(&fetch_url))
             {
                 self.pending_csp_style_violations.push(PendingCspStyleViolation {
                     effective_directive: violation.effective_directive,
                     blocked_uri: violation.blocked_uri,
                     original_policy: violation.original_policy,
                     target_tag: "link",
-                    target_ordinal: link_ordinal,
+                    target_ordinal: link_ordinal.unwrap_or(0),
                     target_selector: None,
-                    link_error: Some(abs.clone()),
+                    link_error: Some(fetch_url.clone()),
                 });
                 continue;
             }
@@ -1340,16 +1374,16 @@ impl WebView {
             // 抓取/解析均以 fetch URL 为基准（升级后 url() 相对引用按升级 URL 解析）。
             // spec https://w3c.github.io/webappsec-mixed-content/#should-block-fetch。
             let fetch_url = if self.config.mixed_content_enforcement {
-                match self.security_context.check_resource_url(&abs, "style") {
-                    ResourceCheckResult::Allow => abs.clone(),
+                match self.security_context.check_resource_url(&fetch_url, "style") {
+                    ResourceCheckResult::Allow => fetch_url,
                     ResourceCheckResult::Upgraded(upgraded) => upgraded,
                     ResourceCheckResult::Blocked(reason) => {
-                        tracing::warn!("mixed content blocked stylesheet {abs}: {reason}");
+                        tracing::warn!("mixed content blocked stylesheet {fetch_url}: {reason}");
                         continue;
                     }
                 }
             } else {
-                abs.clone()
+                fetch_url
             };
             // R34xx：headless/testharness 路径外链样式表经 image_source_fetcher 本地提供
             //（wpt-data 文件映射，与图片子资源同款；None → 回退 HTTP 网络）。
@@ -1380,10 +1414,30 @@ impl WebView {
                     // （driving: 2d.text.variationSelectors 的 variation-sequences.css
                     // `url(../../resources/vs/...)` 字体引用）。data:/绝对/占位符不动。
                     let css = crate::css_urls::absolutize_css_urls(&css, &fetch_url);
+                    // R2411：@import 引用先入队（相对本样式表 URL 解析；css_seen 命中
+                    // 即跳过——循环 @import A→B→A 因 seen 止）。
+                    for imp in zero_engine::extract_import_urls(&css) {
+                        if imp.starts_with("data:") {
+                            continue;
+                        }
+                        let abs = match url::Url::parse(&fetch_url).ok().and_then(|b| b.join(&imp).ok()) {
+                            Some(u) => u.to_string(),
+                            None => imp,
+                        };
+                        if css_seen.insert(abs.clone()) {
+                            queue.push_back((None, abs));
+                        }
+                    }
+                    // s89：拼接前剥离 @import 语句——子表内容已经队列单独抓取，
+                    // 语句文本留在合并文本里会在无分号形态（上游 import.css 即无
+                    // `;`）把下一张表的首条规则吞进 at-rule 块（106-import 面：
+                    // `#test{position:fixed}` 恒缺级联）。级联顺序近似：导入子表
+                    // 追加在导入表文本之后（async_load poll_stylesheets 既有同态）。
+                    let css = crate::css_urls::strip_import_statements(&css);
                     combined.push_str(&css);
                     combined.push('\n');
                 }
-                Err(e) => tracing::warn!("external stylesheet {abs} fetch failed: {e}"),
+                Err(e) => tracing::warn!("external stylesheet {fetch_url} fetch failed: {e}"),
             }
         }
         combined
@@ -1628,6 +1682,19 @@ impl WebView {
         std::sync::Arc::clone(&self.canvas_registry)
     }
 
+    /// T13 S7 探针：缓存填充量观测（`ZEROWEB_MEM_PROBE=1` 导航落定打点）——
+    /// SVG 重栅格缓存条目数 + canvas 上下文数。
+    pub fn mem_probe_cache_lens(&self) -> (usize, usize) {
+        let svg_len = self.image_cache.svg_rasterized_len();
+        let canvas_len = self
+            .canvas_registry
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contexts
+            .len();
+        (svg_len, canvas_len)
+    }
+
     /// media-audio M3 切片 2：Web Audio 注册表共享句柄（宿主桥回调注册 /
     /// 音频泵 advance 消费）。
     pub fn webaudio(&self) -> std::sync::Arc<std::sync::Mutex<crate::webaudio_registry::WebAudioRegistry>> {
@@ -1752,7 +1819,7 @@ impl WebView {
         self.referrer = old_url.clone();
         self.current_url = Some(url.to_string());
         self.set_page_url_wire(url);
-        self.loading = true;
+        self.set_loading(true);
         self.emit_event(&WebViewEvent::LoadStart(url.to_string()));
 
         if old_url.as_deref() != Some(url) {
@@ -1772,7 +1839,7 @@ impl WebView {
                 https_url
             }
             ResourceCheckResult::Blocked(reason) => {
-                self.loading = false;
+                self.set_loading(false);
                 self.emit_event(&WebViewEvent::LoadFailed(url.to_string(), reason.clone()));
                 return Err(WebViewError::Navigation(reason));
             }
@@ -1785,7 +1852,7 @@ impl WebView {
                 FetchInterceptResult::Cached(response) | FetchInterceptResult::Responded(response) => {
                     tracing::info!("Service Worker intercepted fetch for {effective_url}");
                     let html = String::from_utf8(response.body).map_err(|e| {
-                        self.loading = false;
+                        self.set_loading(false);
                         self.emit_event(&WebViewEvent::LoadFailed(
                             effective_url.to_string(),
                             format!("SW response body is not valid UTF-8: {e}"),
@@ -1794,7 +1861,7 @@ impl WebView {
                     })?;
                     let external_css = self.prepare_page_subresources(&html, &effective_url);
                     let render_result = self.load_html(&html, Some(&external_css));
-                    self.loading = false;
+                    self.set_loading(false);
                     self.emit_event(&WebViewEvent::LoadEnd(effective_url.to_string()));
                     return Ok(render_result);
                 }
@@ -1808,7 +1875,7 @@ impl WebView {
         match self.resource_get(&effective_url, FetchPriority::CRITICAL, "document") {
             Ok(response) => {
                 let html = response.text().map_err(|e| {
-                    self.loading = false;
+                    self.set_loading(false);
                     self.emit_event(&WebViewEvent::LoadFailed(
                         effective_url.to_string(),
                         format!("Failed to decode response body: {e}"),
@@ -1843,24 +1910,24 @@ impl WebView {
 
                 // 渲染 HTML
                 let render_result = self.load_html(&html, Some(&external_css));
-                self.loading = false;
+                self.set_loading(false);
                 self.emit_event(&WebViewEvent::LoadEnd(final_url.to_string()));
                 Ok(render_result)
             }
             Err(NetError::Timeout) => {
-                self.loading = false;
+                self.set_loading(false);
                 let msg = format!("Request to {effective_url} timed out");
                 self.emit_event(&WebViewEvent::LoadFailed(effective_url.to_string(), msg.clone()));
                 Err(WebViewError::Navigation(msg))
             }
             Err(NetError::Proxy(detail)) => {
-                self.loading = false;
+                self.set_loading(false);
                 let msg = format!("Proxy error fetching {effective_url}: {detail}");
                 self.emit_event(&WebViewEvent::LoadFailed(effective_url.to_string(), msg.clone()));
                 Err(WebViewError::Navigation(msg))
             }
             Err(e) => {
-                self.loading = false;
+                self.set_loading(false);
                 let msg = format!("Failed to fetch {effective_url}: {e}");
                 self.emit_event(&WebViewEvent::LoadFailed(effective_url.to_string(), msg.clone()));
                 Err(WebViewError::Navigation(msg))
@@ -1899,7 +1966,7 @@ impl WebView {
         self.referrer = old_url.clone();
         self.current_url = Some(url.to_string());
         self.set_page_url_wire(url);
-        self.loading = true;
+        self.set_loading(true);
         self.emit_event(&WebViewEvent::LoadStart(url.to_string()));
         if old_url.as_deref() != Some(url) {
             self.emit_event(&WebViewEvent::UrlChanged(url.to_string()));
@@ -1919,7 +1986,7 @@ impl WebView {
         self.security_context.set_page_origin(page_url);
         let external_css = self.prepare_page_subresources(html, page_url);
         let result = self.load_html(html, Some(&external_css));
-        self.loading = false;
+        self.set_loading(false);
         self.emit_event(&WebViewEvent::LoadEnd(page_url.to_string()));
         result
     }
@@ -1931,7 +1998,7 @@ impl WebView {
     pub fn complete_load(&mut self, html: &str, css: Option<&str>) -> WebViewRenderResult {
         let url = self.current_url.clone().unwrap_or_default();
         let result = self.load_html(html, css);
-        self.loading = false;
+        self.set_loading(false);
         self.emit_event(&WebViewEvent::LoadEnd(url));
         result
     }
@@ -1939,7 +2006,7 @@ impl WebView {
     /// 标记加载失败。
     pub fn fail_load(&mut self, error: &str) {
         let url = self.current_url.clone().unwrap_or_default();
-        self.loading = false;
+        self.set_loading(false);
         self.emit_event(&WebViewEvent::LoadFailed(url, error.to_string()));
     }
 
@@ -2008,9 +2075,20 @@ impl WebView {
         if let Ok(mut reg) = self.video_players.lock() {
             reg.clear();
         }
+        // T13 S5：CanvasRegistry 代际门清理（真跨文档才清；门锚见 `canvas_cleared_url`
+        // 字段文档）。活 canvas 像素 buffer 是页面可寻址状态，误清即丢；同 URL 重入
+        // （same_navigation 误判窗/同址 reload）跳过，旧文档上下文延至下一异址导航
+        // 回收。命中事件 token `canvas_gen_clear`（A/B 命中语义计数面）。
+        if self.canvas_cleared_url.as_deref() != Some(page_url) {
+            if let Ok(mut reg) = self.canvas_registry.lock() {
+                reg.clear_for_new_document();
+            }
+            self.canvas_cleared_url = Some(page_url.to_string());
+            tracing::info!(target: "mem_reclaim", "canvas_gen_clear");
+        }
         self.current_url = Some(page_url.to_string());
         self.set_page_url_wire(page_url);
-        self.loading = true;
+        self.set_loading(true);
         self.pipeline.set_document_url(Some(page_url));
         // slice37（mm-regression 根修）：文档换代清 handle→NodeId 持久表——预算渲染
         // 路径（AsyncPageLoad → advance_budgeted_render）不经过 render_html 的 slotmap
@@ -2022,6 +2100,8 @@ impl WebView {
         // 该时点 renderer 脚本未启/session 随即重绘，无实际损害；script-during-load
         // 路径落地时须先修 same_navigation 语义。
         self.pipeline.clear_persistent_handle_nodes();
+        // s80：跨批 id 改名 journal 同批清空（旧文档 selector 迁移史不跨页）。
+        self.pipeline.clear_sel_renames();
         self.security_context.set_page_origin(page_url);
         self.emit_event(&WebViewEvent::LoadStart(page_url.to_string()));
     }
@@ -2041,7 +2121,7 @@ impl WebView {
         let render_result = self.absorb_render_result(&result);
         self.last_render = Some(render_result);
         if finished {
-            self.loading = false;
+            self.set_loading(false);
             self.emit_event(&WebViewEvent::LoadEnd(page_url.to_string()));
         }
     }
@@ -2053,6 +2133,8 @@ impl WebView {
         // uievents-compat M3 尾簇 4：新页面内容到达 = 导航边界——跨批 detached 片段
         // stash 清空（同 load 路径；防跨页 stale 片段复活）。
         self.pipeline.clear_detached_sel_nodes();
+        // s80：跨批 id 改名 journal 同批清空（旧文档 selector 迁移史不跨页）。
+        self.pipeline.clear_sel_renames();
     }
 
     /// 当前外部样式表文本（P9-9/R5107：renderer 同步进 js worker，getComputedStyle
@@ -2181,6 +2263,20 @@ impl WebView {
     /// 是否正在加载。
     pub fn is_loading(&self) -> bool {
         self.loading
+    }
+
+    /// T13 R1：loading 赋值统一入口——值实际翻转时置位 [`Self::take_loading_flip`]
+    /// 闩（同值赋值不置位）。所有 `self.loading` 直赋点必须走此入口。
+    fn set_loading(&mut self, loading: bool) {
+        if self.loading != loading {
+            self.loading = loading;
+            self.loading_flip = true;
+        }
+    }
+
+    /// T13 R1：取走翻转沿闩（有未消费翻转沿即 `true`，取后清零）。
+    pub fn take_loading_flip(&mut self) -> bool {
+        std::mem::take(&mut self.loading_flip)
     }
 
     /// 获取上次渲染结果。
@@ -3237,6 +3333,11 @@ impl WebView {
             .then(|| self.security_context.eval_violation())
             .flatten();
         let scripts = extract_page_scripts_indexed(&html);
+        // s90（string-compilation base URL 面）：每脚本 parse 时刻的文档基 URL 捕获
+        // 表（DOM 文档序，与 script_index 同序号空间；纯函数于原文，动态 `<base>`
+        // 变更天然不回溯）。外链脚本不经此表（referrer 用自身 src，见循环内）。
+        let script_bases =
+            zero_engine::script_effective_base_urls(&html, self.current_url.as_deref().unwrap_or("about:blank"));
         // M2-s2：无脚页面若仍有被 CSP 阻止的 img 待派发 error，不早退（下方派发点
         // 需 sandbox/shim 就绪；有脚页面照常走全量装配）。
         if scripts.is_empty() && !(self.config.csp_enforcement && !self.pending_csp_img_blocks.is_empty()) {
@@ -3743,6 +3844,7 @@ impl WebView {
         //（外链 URL）/ 动态 import() fetch 外链脚本源。fetcher 未配 → 不注册（shim typeof-check no-op）。
         if let Some(fetcher) = self.script_source_fetcher.clone() {
             let fetcher_compile = fetcher.clone();
+            let fetcher_native_import = fetcher.clone();
             sandbox.register_callback(
                 "__zw_fetch_script",
                 Box::new(move |args| {
@@ -3763,24 +3865,47 @@ impl WebView {
                     if spec.is_empty() {
                         return String::new();
                     }
-                    // R3094：递归 fetch transitive deps（闭合 module graph）。registry 按原 spec 注册源，
-                    // 循环防护按解析后 URL；fetch 失败 → 返空（__zw_load_module 抛 Module not found）。
-                    // t8j-r2（D1）：回传 `resolved\x1fcode`，JS 侧缓存键取宿主解析键。
-                    let mut reg = zero_script_sandbox::ModuleRegistry::new();
-                    let mut visited = std::collections::HashSet::new();
-                    let compiled =
-                        collect_module_deps_recursive(&fetcher_compile, parent, spec, &mut reg, &mut visited)
-                            .ok()
-                            .and_then(|_| zero_script_sandbox::compile_dependency_iife(spec, &reg).ok());
-                    match compiled {
-                        Some(iife) => format!("{}\u{1f}{iife}", resolve_document_url(parent, spec)),
-                        None => {
-                            tracing::warn!("compile module {spec} (transitive fetch)");
-                            String::new()
-                        }
-                    }
+                    compile_module_contract(&fetcher_compile, parent, spec)
                 }),
             );
+            // s88：V8 原生动态 import() 解析器（classic 上下文——eval 字符串/Function
+            // 构造器/事件处理器上下文源码重写不可达）。复用同一编译契约（三态标记）。
+            // s92（string-compilation CSP nonce 面）：resolve 前按 nonce 槽位做
+            // script-src 检查（spec 动态 import 继承触发脚本 nonce；事件处理器窗
+            // shim 换 None → 检查阻止）——violation 入 connect 共享队列（run 尾
+            // document 站派发），返空串 → reject TypeError（WPT nonce must-not-
+            // inherit 判据族）。
+            // https://html.spec.whatwg.org/multipage/webappapis.html#hostimportmoduledynamically-retrieval
+            let csp_ctx = self.security_context.clone();
+            let import_violations = std::sync::Arc::clone(&self.pending_csp_connect_violations);
+            sandbox.set_dynamic_import_resolver(std::sync::Arc::new(move |spec: &str, parent: &str, nonce: &str| {
+                if spec.is_empty() {
+                    return String::new();
+                }
+                let abs = resolve_document_url(parent, spec);
+                let nonce_opt = if nonce.is_empty() { None } else { Some(nonce) };
+                if let Some(violation) = csp_ctx.check_script(nonce_opt, None, Some(&abs)) {
+                    if let Ok(mut queue) = import_violations.lock() {
+                        queue.push(PendingCspStyleViolation {
+                            effective_directive: violation.effective_directive,
+                            blocked_uri: violation.blocked_uri,
+                            original_policy: violation.original_policy,
+                            target_tag: "",
+                            target_ordinal: usize::MAX,
+                            target_selector: None,
+                            link_error: None,
+                        });
+                    }
+                    return String::new();
+                }
+                compile_module_contract(&fetcher_native_import, parent, spec)
+            }));
+            // s90：__zwSwapImportReferrer——inline/反射事件处理器求值窗换基
+            //（shim 侧 _zwCallHandlerDocBase 调用：求值时刻文档基 URL 进 referrer
+            // 槽位，finally 换回，零外溢）。s92：__zwSwapImportNonce 同形——事件
+            // 处理器窗换 None（不继承 nonce）、字符串 timer fire 窗换注册期捕获值。
+            sandbox.register_dynamic_import_referrer_swapper();
+            sandbox.register_dynamic_import_nonce_swapper();
         }
 
         // DOM shim 只注入一次（重复执行会重置 _nodeMap 丢失监听器）；含安装后 viewport
@@ -3868,6 +3993,35 @@ impl WebView {
                 let _ = sandbox.execute(&snippet);
                 continue;
             }
+            // s90（string-compilation base URL 面）：spec 脚本基 URL = 创建时刻的
+            // 文档基 URL（后续 `<base>` 变更不回溯）——内联脚本用捕获表；外链经典
+            // 脚本用自身 src 绝对 URL（spec 外链脚本基 URL = 自身 URL）。先于下方
+            // `match script` 的 move 计算。
+            // https://html.spec.whatwg.org/multipage/webappapis.html#concept-scripts-base-url
+            let doc_url = self.current_url.clone().unwrap_or_else(|| "about:blank".to_string());
+            let referrer = match &script {
+                zero_engine::pipeline::PageScript::External(src) => resolve_document_url(&doc_url, src),
+                _ => script_bases
+                    .get(script_index)
+                    .cloned()
+                    .unwrap_or_else(|| doc_url.clone()),
+            };
+            // s94 附带修复（module 缓存键）：R5182 `__moduleCache` 文档级记忆化键旧一律传
+            // 页面 URL——同文档第二枚 module script（内联/外链皆然）被首枚的记忆化命中
+            // 短路，模块体零次求值（currentScript-null 双内联 module 定谳：testharness
+            // "completed without reporting registered tests"；probe-csn-d 双纯内联最小复现）。
+            // spec 模块 map 只按请求 URL 缓存 fetch 型模块，内联 module script 每元素是
+            // 独立模块记录：内联键 = 页面 URL 挂 ordinal 片段（仍为绝对 URL，相对 import
+            // 解析基准不变——URL 构造剥旧 fragment）；外链键 = src 绝对化（同 src 两元素
+            // 命中同键恰好一次，spec 语义；异 src 各自求值）。
+            // https://html.spec.whatwg.org/multipage/webappapis.html#module-map
+            let module_cache_key = match &script {
+                zero_engine::pipeline::PageScript::InlineModule(_) => {
+                    format!("{doc_url}#!zw-inline-module-{script_index}")
+                }
+                zero_engine::pipeline::PageScript::ExternalModule(src) => resolve_document_url(&doc_url, src),
+                _ => doc_url.clone(),
+            };
             let (code, is_module) = match script {
                 zero_engine::pipeline::PageScript::Inline(c) => (c, false),
                 // R3083：`<script type="module">` 经 compile_module_script 转 import/export 为经典可执行
@@ -3938,8 +4092,15 @@ impl WebView {
                     let page_url_m = self.current_url.as_deref().unwrap_or("about:blank").to_string();
                     let mut visited_m = std::collections::HashSet::new();
                     for spec in &specs {
-                        if collect_module_deps_recursive(&fetcher_m, &page_url_m, spec, &mut registry, &mut visited_m)
-                            .is_err()
+                        if collect_module_deps_recursive(
+                            &fetcher_m,
+                            &page_url_m,
+                            spec,
+                            false,
+                            &mut registry,
+                            &mut visited_m,
+                        )
+                        .is_err()
                         {
                             registry.register(spec, "");
                         }
@@ -3950,7 +4111,7 @@ impl WebView {
                     }
                 }
                 let url = self.current_url.as_deref().unwrap_or("about:blank");
-                match zero_script_sandbox::compile_module_script(&code, url, &registry) {
+                match zero_script_sandbox::compile_module_script(&code, url, &module_cache_key, &registry) {
                     Ok(transformed) => {
                         // R5182：入口（当前 script 元素）不在 prelude 急切求值——由 transformed 体承担，
                         // 模块体恰好执行一次（__moduleCache 挂 globalThis，跨元素共享、随导航重建复位）。
@@ -4040,6 +4201,14 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                     }),
                 );
             }
+            // s88：动态 import() referrer（classic 路径无 ScriptOrigin，每脚本前刷新
+            // ——模块路径经 prelude `.call({referrer})` 自带，不受此影响）。s90：
+            // referrer 升为脚本基 URL（上方按 PageScript 形态计算）。s92：nonce 同
+            // 刷新（spec 动态 import 继承触发脚本 nonce——eval/Function 同步窗直读
+            // 槽位；事件处理器/timer 窗由 shim 换入）。
+            // https://html.spec.whatwg.org/multipage/webappapis.html#hostimportmoduledynamically-retrieval
+            sandbox.set_dynamic_import_nonce(script_csp_info.get(script_index).and_then(|i| i.nonce.as_deref()));
+            sandbox.set_dynamic_import_referrer(&referrer);
             let execution = sandbox.execute(&full).map(|_| ());
             if eval_wrap_active {
                 let _ = sandbox.execute(
@@ -6677,30 +6846,91 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
     }
 }
 
+/// s87：module graph 抓取失败分类——进程内 `__zw_compile_module` 失败回传两态（返空 /
+/// `resolved\x1f` 空码标记）的判定输入。语义对齐 HTML spec
+/// fetch-a-single-module-script 的 module map 失败记账：parse 期失败随顶层记账
+/// （JS 侧复抛同对象），fetch 期失败不入 map（JS 侧逐次新 TypeError）。
+#[derive(Debug)]
+enum ModuleGraphFailure {
+    /// 顶层模块自身取回失败（文件缺失/MIME/跨源/空源）。
+    TopFetch,
+    /// 依赖 specifier 解析失败（裸 specifier——runner 路径宿主无 import map 恒失败；
+    /// spec resolve-a-module-specifier）。
+    DepResolution,
+    /// 依赖取回失败（相对/绝对路径 404/MIME/跨源）。
+    DepFetch,
+}
+
+/// s88：进程内 module 编译契约——`__zw_compile_module` 宿主回调与 V8 原生动态
+/// import() 解析器（classic 上下文）共用。R3094：递归 fetch transitive deps（闭合
+/// module graph），registry 按原 spec 注册源、循环防护按解析后 URL。回传三态标记：
+/// `resolved\x1fcode`（取回成功）/ `resolved\x1f` 空码（依赖解析失败）/ 空串（fetch
+/// 期失败）。s87 失败三态语义（WPT dynamic-imports-fetch-error/script-error 对象
+/// 身份判据——HTML spec fetch-a-single-module-script module map 失败记账）见
+/// es_module `__zw_load_module` 与 v8_runtime `dynamic_import_callback` 两侧消费。
+fn compile_module_contract(fetcher: &ScriptSourceFetcher, parent: &str, spec: &str) -> String {
+    let mut reg = zero_script_sandbox::ModuleRegistry::new();
+    let mut visited = std::collections::HashSet::new();
+    match collect_module_deps_recursive(fetcher, parent, spec, false, &mut reg, &mut visited) {
+        Ok(()) => match zero_script_sandbox::compile_dependency_iife(spec, &reg) {
+            Ok(iife) => format!("{}\u{1f}{iife}", resolve_document_url(parent, spec)),
+            Err(_) => {
+                tracing::warn!("compile module {spec} (transitive fetch)");
+                String::new()
+            }
+        },
+        Err(ModuleGraphFailure::DepResolution) => format!("{}\u{1f}", resolve_document_url(parent, spec)),
+        Err(failure @ (ModuleGraphFailure::TopFetch | ModuleGraphFailure::DepFetch)) => {
+            tracing::warn!("collect module {spec} (transitive fetch): {failure:?}");
+            String::new()
+        }
+    }
+}
+
 /// 递归抓取 module graph（transitive deps），供进程内 `__zw_compile_module`（R3094）闭合 module graph。
 /// registry 按**原始 spec**（importer 引用时写的，匹配 transform_import 按原 spec 查 registry）注册源；
 /// 循环防护按**解析后 URL**（同一 module 经不同 raw spec 引用视为同一，避免死循环）。
-/// fetcher 解析 spec 相对 parent_url。**已知限制**：钻石依赖（同 module 经不同 raw spec 引用）defer
+/// fetcher 解析 spec 相对 parent_url。`is_dep` 区分顶层/递归调用——失败分类的归属面。
+/// **已知限制**：钻石依赖（同 module 经不同 raw spec 引用）defer
 ///（仅注册首个 raw spec，第二引用 lookup 落空 → compile 失败；罕见，多数 module graph 为树）。
 fn collect_module_deps_recursive(
     fetcher: &ScriptSourceFetcher,
     parent_url: &str,
     spec: &str,
+    is_dep: bool,
     registry: &mut zero_script_sandbox::ModuleRegistry,
     visited: &mut std::collections::HashSet<String>,
-) -> Result<(), String> {
+) -> Result<(), ModuleGraphFailure> {
+    // s87：裸 specifier（无 `./` `../` `/` 前缀、非绝对 URL）无 import map 即解析失败
+    // （依赖面归属 DepResolution——parse 期失败随顶层记账；顶层裸 specifier 由 JS 侧
+    // 按取回失败逐次新对象处理，对齐 WPT bad-module-specifier 行判据）。
+    let is_bare =
+        !spec.starts_with("./") && !spec.starts_with("../") && !spec.starts_with('/') && !spec.contains("://");
+    if is_dep && is_bare {
+        return Err(ModuleGraphFailure::DepResolution);
+    }
     let url = resolve_document_url(parent_url, spec);
     if visited.contains(&url) {
         return Ok(()); // 循环防护（解析后 URL）
     }
     visited.insert(url.clone());
-    let source = fetcher(parent_url, spec)?;
+    let source = fetcher(parent_url, spec).map_err(|_| {
+        if is_dep {
+            ModuleGraphFailure::DepFetch
+        } else {
+            ModuleGraphFailure::TopFetch
+        }
+    })?;
     if source.is_empty() {
-        return Err(format!("empty source for {spec}"));
+        return Err(if is_dep {
+            ModuleGraphFailure::DepFetch
+        } else {
+            ModuleGraphFailure::TopFetch
+        });
     }
     registry.register(spec, &source); // key = raw spec（transform_import 按原 spec 查）
     for imp in zero_script_sandbox::extract_static_module_import_specifiers(&source) {
-        collect_module_deps_recursive(fetcher, &url, &imp, registry, visited)?;
+        collect_module_deps_recursive(fetcher, &url, &imp, true, registry, visited)?;
     }
     Ok(())
 }
@@ -7083,6 +7313,48 @@ mod tests {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .extend(fwd.iter().map(|(h, s)| (h.to_string(), s.to_string())));
+    }
+
+    // T13 S5：CanvasRegistry 换代清走 URL 同一性门——真异址导航清空注册表
+    //（`canvas_gen_clear`）；同 URL 重入（same_navigation 误判窗/同址 reload）
+    // 跳过不清（活 canvas 像素是页面可寻址状态，误清即丢；旧文档上下文延至
+    // 下一异址导航回收，见 `canvas_cleared_url` 字段文档）。探针读取面
+    // `mem_probe_cache_lens` 同步反映注册表长度。
+    #[test]
+    fn prepare_document_state_clears_canvas_registry_cross_url_only_t13() {
+        let mut wv = wv();
+        let seed_ctx = |wv: &WebView| {
+            let mut reg = wv.canvas_registry.lock().unwrap_or_else(|e| e.into_inner());
+            zero_engine::canvas_context_op(
+                &mut reg,
+                "0",
+                "getContext2d",
+                &["8".to_string(), "8".to_string(), String::new(), String::new()],
+            );
+        };
+        seed_ctx(&wv);
+        assert_eq!(wv.mem_probe_cache_lens(), (0, 1), "前置：canvas 上下文就位");
+
+        // 首次异址导航：清空注册表。
+        wv.prepare_document_state("http://t13.test/doc1");
+        assert_eq!(
+            wv.mem_probe_cache_lens().1,
+            0,
+            "异址导航清 canvas 上下文（旧文档死句柄不得跨文档存活）"
+        );
+
+        // 同 URL 重入（same_navigation 误判窗）：注册表不清。
+        seed_ctx(&wv);
+        wv.prepare_document_state("http://t13.test/doc1");
+        assert_eq!(
+            wv.mem_probe_cache_lens().1,
+            1,
+            "同 URL 重入跳过清理（误判窗不清活文档 canvas）"
+        );
+
+        // 再次异址导航：重新清理。
+        wv.prepare_document_state("http://t13.test/doc2");
+        assert_eq!(wv.mem_probe_cache_lens().1, 0, "异址导航再次清 canvas 上下文");
     }
 
     // Remove 臂（非同批）：stale 绑定照删（同位重建残影通道关闭的本体语义）；

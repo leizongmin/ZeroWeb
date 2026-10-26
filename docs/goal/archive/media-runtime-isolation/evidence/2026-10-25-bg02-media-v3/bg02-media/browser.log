@@ -1,0 +1,133 @@
+[2m2026-10-24T23:08:04.321648Z[0m [32m INFO[0m [2mzero_browser[0m[2m:[0m ZeroBrowser starting...
+[2m2026-10-24T23:08:04.321687Z[0m [32m INFO[0m [2mzero_browser[0m[2m:[0m Tabs use zero-renderer child processes
+[2m2026-10-24T23:08:04.321689Z[0m [32m INFO[0m [2mzero_browser[0m[2m:[0m Renderer mode: auto
+[2m2026-10-24T23:08:04.321695Z[0m [32m INFO[0m [2mzero_browser[0m[2m:[0m Starting headless mode on port 35579, viewport: 800x600
+ZeroWeb headless server: ws://127.0.0.1:35579
+DevTools URL: http://127.0.0.1:35579
+[2m2026-10-24T23:08:04.321760Z[0m [32m INFO[0m [2mzero_browser::headless[0m[2m:[0m Headless protocol server listening on ws://127.0.0.1:35579
+[2m2026-10-24T23:08:04.323254Z[0m [32m INFO[0m [2mzero_render_foundation::font::system[0m[2m:[0m Loaded platform primary font [3mpath[0m[2m=[0m"/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf" [3mfont_id[0m[2m=[0m0
+[2m2026-10-24T23:08:04.324117Z[0m [32m INFO[0m [2mzero_render_foundation::font::system[0m[2m:[0m Loaded platform bold-regular font [3mpath[0m[2m=[0m"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf" [3mfont_id[0m[2m=[0m1
+[renderer-1] [2m2026-10-24T23:08:04.324150Z[0m [32m INFO[0m ZeroWeb renderer starting (type=renderer, instance-id=1)
+[renderer-1] [2m2026-10-24T23:08:04.324230Z[0m [32m INFO[0m renderer: seccomp 沙箱钩子已启用（P3 占位；完整 OS sandbox 仍为后续）
+[2m2026-10-24T23:08:04.324891Z[0m [32m INFO[0m [2mzero_render_foundation::font::system[0m[2m:[0m Loaded platform bold font [3mpath[0m[2m=[0m"/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" [3mfont_id[0m[2m=[0m2
+[renderer-1] [2m2026-10-24T23:08:04.325237Z[0m [32m INFO[0m Loaded platform primary font [3mpath[0m[2m=[0m"/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf" [3mfont_id[0m[2m=[0m0
+[renderer-1] [2m2026-10-24T23:08:04.325968Z[0m [32m INFO[0m Loaded platform bold-regular font [3mpath[0m[2m=[0m"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf" [3mfont_id[0m[2m=[0m1
+[renderer-1] [2m2026-10-24T23:08:04.326599Z[0m [32m INFO[0m Loaded platform bold font [3mpath[0m[2m=[0m"/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" [3mfont_id[0m[2m=[0m2
+[renderer-1] [2m2026-10-24T23:08:04.345380Z[0m [32m INFO[0m Loaded platform fallback font [3mpath[0m[2m=[0m/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc [3mface_index[0m[2m=[0m2 [3mfont_id[0m[2m=[0m6
+[2m2026-10-24T23:08:04.345930Z[0m [32m INFO[0m [2mzero_render_foundation::font::system[0m[2m:[0m Loaded platform fallback font [3mpath[0m[2m=[0m/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc [3mface_index[0m[2m=[0m2 [3mfont_id[0m[2m=[0m6
+[2m2026-10-24T23:08:04.353214Z[0m [32m INFO[0m [2mzero_render_foundation::font::system[0m[2m:[0m Loaded platform fallback font [3mpath[0m[2m=[0m/usr/share/fonts/truetype/wqy/wqy-microhei.ttc [3mface_index[0m[2m=[0m0 [3mfont_id[0m[2m=[0m8
+[renderer-1] [2m2026-10-24T23:08:04.353479Z[0m [32m INFO[0m Loaded platform fallback font [3mpath[0m[2m=[0m/usr/share/fonts/truetype/wqy/wqy-microhei.ttc [3mface_index[0m[2m=[0m0 [3mfont_id[0m[2m=[0m8
+[renderer-1] [2m2026-10-24T23:08:04.370827Z[0m [32m INFO[0m Loaded platform fallback font [3mpath[0m[2m=[0m/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc [3mface_index[0m[2m=[0m0 [3mfont_id[0m[2m=[0m9
+[2m2026-10-24T23:08:04.371148Z[0m [32m INFO[0m [2mzero_render_foundation::font::system[0m[2m:[0m Loaded platform fallback font [3mpath[0m[2m=[0m/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc [3mface_index[0m[2m=[0m0 [3mfont_id[0m[2m=[0m9
+[2m2026-10-24T23:08:04.371204Z[0m [32m INFO[0m [2mzero_browser::headless[0m[2m:[0m Headless startup navigation: http://127.0.0.1:52607/bg02-media.html
+[renderer-1] [2m2026-10-24T23:08:04.371997Z[0m [32m INFO[0m 渲染进程 1 启动，等待 IPC 消息...
+[renderer-1] [2m2026-10-24T23:08:04.372103Z[0m [32m INFO[0m 导航到: http://127.0.0.1:52607/bg02-media.html (GET)
+[renderer-1] [2m2026-10-24T23:08:04.444565Z[0m [32m INFO[0m document reset residue stats [3mseq[0m[2m=[0m0 [3mtimers_pending[0m[2m=[0m0 [3mfetch_abandoned[0m[2m=[0m0 [3mcommands_retained[0m[2m=[0m5
+[renderer-1] [2m2026-10-24T23:08:04.463762Z[0m [32m INFO[0m page load: fetch document [3murl[0m[2m=[0mhttp://127.0.0.1:52607/bg02-media.html
+[2m2026-10-24T23:08:04.463795Z[0m [32m INFO[0m renderer fetch start [3mrequest_id[0m[2m=[0m1 [3murl[0m[2m=[0m"http://127.0.0.1:52607/bg02-media.html" [3mkind[0m[2m=[0m"document" [3mpriority[0m[2m=[0m4
+[2m2026-10-24T23:08:04.465458Z[0m [32m INFO[0m [2mzero_net::fetch_scheduler[0m[2m:[0m HTTP fetch start [3murl[0m[2m=[0mhttp://127.0.0.1:52607/bg02-media.html [3morigin[0m[2m=[0mhttp://127.0.0.1:52607 [3mpriority[0m[2m=[0mFetchPriority(4)
+[2m2026-10-24T23:08:04.468365Z[0m [32m INFO[0m [2mzero_net::fetch_scheduler[0m[2m:[0m HTTP fetch done [3murl[0m[2m=[0mhttp://127.0.0.1:52607/bg02-media.html [3mstatus[0m[2m=[0m200 [3mbytes[0m[2m=[0m1603
+[renderer-1] [2m2026-10-24T23:08:04.469850Z[0m [32m INFO[0m document ready, HTML skeleton render [3murl[0m[2m=[0mhttp://127.0.0.1:52607/bg02-media.html [3mstage[0m[2m=[0mFirstPaint
+[2m2026-10-24T23:08:04.469883Z[0m [32m INFO[0m page load: budget render start [3murl[0m[2m=[0mhttp://127.0.0.1:52607/bg02-media.html [3mstage[0m[2m=[0mFirstPaint
+[renderer-1] [2m2026-10-24T23:08:04.470915Z[0m [32m INFO[0m page load: budget render complete [3murl[0m[2m=[0mhttp://127.0.0.1:52607/bg02-media.html [3mstage[0m[2m=[0mFirstPaint
+[renderer-1] [2m2026-10-24T23:08:04.471139Z[0m [32m INFO[0m renderer fetch start [3mrequest_id[0m[2m=[0m2 [3murl[0m[2m=[0m"http://127.0.0.1:52607/media/sample-mp3.mp3" [3mkind[0m[2m=[0m"media" [3mpriority[0m[2m=[0m2
+[renderer-1] [2m2026-10-24T23:08:04.471188Z[0m [32m INFO[0m renderer fetch start [3mrequest_id[0m[2m=[0m3 [3murl[0m[2m=[0m"http://127.0.0.1:52607/media/sample-mp4-h264.mp4" [3mkind[0m[2m=[0m"media" [3mpriority[0m[2m=[0m2
+[2m2026-10-24T23:08:04.471213Z[0m [32m INFO[0m page load: fetch images and resource elements [3murl[0m[2m=[0mhttp://127.0.0.1:52607/bg02-media.html [3mcount[0m[2m=[0m0 [3mresources[0m[2m=[0m2 [3mlazy[0m[2m=[0m0
+[renderer-1] [2m2026-10-24T23:08:04.471222Z[0m [32m INFO[0m progressive paint publish [3murl[0m[2m=[0mhttp://127.0.0.1:52607/bg02-media.html [3mstage[0m[2m=[0mFetchingImages
+[2m2026-10-24T23:08:04.471762Z[0m [32m INFO[0m [2mzero_net::fetch_scheduler[0m[2m:[0m HTTP fetch start [3murl[0m[2m=[0mhttp://127.0.0.1:52607/media/sample-mp3.mp3 [3morigin[0m[2m=[0mhttp://127.0.0.1:52607 [3mpriority[0m[2m=[0mFetchPriority(2)
+[2m2026-10-24T23:08:04.471904Z[0m [32m INFO[0m [2mzero_net::fetch_scheduler[0m[2m:[0m HTTP fetch start [3murl[0m[2m=[0mhttp://127.0.0.1:52607/media/sample-mp4-h264.mp4 [3morigin[0m[2m=[0mhttp://127.0.0.1:52607 [3mpriority[0m[2m=[0mFetchPriority(2)
+[2m2026-10-24T23:08:04.473306Z[0m [32m INFO[0m [2mzero_net::fetch_scheduler[0m[2m:[0m HTTP fetch done [3murl[0m[2m=[0mhttp://127.0.0.1:52607/media/sample-mp4-h264.mp4 [3mstatus[0m[2m=[0m200 [3mbytes[0m[2m=[0m94294
+[2m2026-10-24T23:08:04.516568Z[0m [32m INFO[0m [2mzero_net::fetch_scheduler[0m[2m:[0m HTTP fetch done [3murl[0m[2m=[0mhttp://127.0.0.1:52607/media/sample-mp3.mp3 [3mstatus[0m[2m=[0m200 [3mbytes[0m[2m=[0m16552
+[renderer-1] [2m2026-10-24T23:08:04.643250Z[0m [32m INFO[0m HTTP fetch start [3murl[0m[2m=[0mhttp://127.0.0.1:52607/media/sample-mp3.mp3 [3morigin[0m[2m=[0mhttp://127.0.0.1:52607 [3mpriority[0m[2m=[0mFetchPriority(2)
+[renderer-1] [2m2026-10-24T23:08:04.645137Z[0m [32m INFO[0m HTTP fetch done [3murl[0m[2m=[0mhttp://127.0.0.1:52607/media/sample-mp3.mp3 [3mstatus[0m[2m=[0m200 [3mbytes[0m[2m=[0m16552
+[renderer-1] [2m2026-10-24T23:08:04.645351Z[0m [33m WARN[0m skipped 44 bytes of junk at 0
+[2m2026-10-24T23:08:04.645378Z[0m [32m INFO[0m using xing header for duration
+[renderer-1] [2m2026-10-24T23:08:04.645727Z[0m [32m INFO[0m HTTP fetch start [3murl[0m[2m=[0mhttp://127.0.0.1:52607/media/sample-mp4-h264.mp4 [3morigin[0m[2m=[0mhttp://127.0.0.1:52607 [3mpriority[0m[2m=[0mFetchPriority(2)
+[renderer-1] [2m2026-10-24T23:08:04.646361Z[0m [32m INFO[0m HTTP fetch done [3murl[0m[2m=[0mhttp://127.0.0.1:52607/media/sample-mp4-h264.mp4 [3mstatus[0m[2m=[0m200 [3mbytes[0m[2m=[0m94294
+[renderer-1] [2m2026-10-24T23:08:04.649217Z[0m [33m WARN[0m skipped 44 bytes of junk at 0
+[2m2026-10-24T23:08:04.649250Z[0m [32m INFO[0m using xing header for duration
+[renderer-1] [2m2026-10-24T23:08:04.649292Z[0m [33m WARN[0m skipped 4 bytes of junk at 0
+[renderer-1] [2m2026-10-24T23:08:04.649326Z[0m [32m INFO[0m stream is seekable with len=94294 bytes.
+[2m2026-10-24T23:08:04.649451Z[0m [32m INFO[0m [2mzero_browser::headless[0m[2m:[0m Connection from 127.0.0.1:51278
+[renderer-1] [2m2026-10-24T23:08:04.649547Z[0m [32m INFO[0m page load: budget render start [3murl[0m[2m=[0mhttp://127.0.0.1:52607/bg02-media.html [3mstage[0m[2m=[0mComplete
+[renderer-1] [2m2026-10-24T23:08:04.650292Z[0m [32m INFO[0m page load: budget render complete [3murl[0m[2m=[0mhttp://127.0.0.1:52607/bg02-media.html [3mstage[0m[2m=[0mComplete
+[renderer-1] [2m2026-10-24T23:08:04.650335Z[0m [32m INFO[0m progressive paint publish [3murl[0m[2m=[0mhttp://127.0.0.1:52607/bg02-media.html [3mstage[0m[2m=[0mComplete
+[renderer-1] [2m2026-10-24T23:08:04.657599Z[0m [32m INFO[0m 页面渲染完成: http://127.0.0.1:52607/bg02-media.html
+[2m2026-10-24T23:08:04.795265Z[0m [32m INFO[0m [2mzero_browser::headless[0m[2m:[0m Connection from 127.0.0.1:51284
+[2m2026-10-24T23:08:04.807810Z[0m [32m INFO[0m [2mzero_browser::headless[0m[2m:[0m Connection from 127.0.0.1:51290
+[renderer-1] [2m2026-10-24T23:08:04.817650Z[0m [32m INFO[0m 导航到: http://127.0.0.1:52607/bg02-media.html (GET)
+[renderer-1] [2m2026-10-24T23:08:04.865270Z[0m [32m INFO[0m document reset residue stats [3mseq[0m[2m=[0m33 [3mtimers_pending[0m[2m=[0m1 [3mtimer_nearest_expiry_ms[0m[2m=[0m219 [3mfetch_abandoned[0m[2m=[0m0 [3mcommands_retained[0m[2m=[0m0
+[renderer-1] [2m2026-10-24T23:08:04.884563Z[0m [32m INFO[0m page load: fetch document [3murl[0m[2m=[0mhttp://127.0.0.1:52607/bg02-media.html
+[2m2026-10-24T23:08:04.884609Z[0m [32m INFO[0m renderer fetch start [3mrequest_id[0m[2m=[0m4 [3murl[0m[2m=[0m"http://127.0.0.1:52607/bg02-media.html" [3mkind[0m[2m=[0m"document" [3mpriority[0m[2m=[0m4
+[2m2026-10-24T23:08:04.886657Z[0m [32m INFO[0m [2mzero_net::fetch_scheduler[0m[2m:[0m HTTP fetch start [3murl[0m[2m=[0mhttp://127.0.0.1:52607/bg02-media.html [3morigin[0m[2m=[0mhttp://127.0.0.1:52607 [3mpriority[0m[2m=[0mFetchPriority(4)
+[2m2026-10-24T23:08:04.887621Z[0m [32m INFO[0m [2mzero_net::fetch_scheduler[0m[2m:[0m HTTP fetch done [3murl[0m[2m=[0mhttp://127.0.0.1:52607/bg02-media.html [3mstatus[0m[2m=[0m200 [3mbytes[0m[2m=[0m1603
+[renderer-1] [2m2026-10-24T23:08:04.888902Z[0m [32m INFO[0m document ready, HTML skeleton render [3murl[0m[2m=[0mhttp://127.0.0.1:52607/bg02-media.html [3mstage[0m[2m=[0mFirstPaint
+[2m2026-10-24T23:08:04.888933Z[0m [32m INFO[0m page load: budget render start [3murl[0m[2m=[0mhttp://127.0.0.1:52607/bg02-media.html [3mstage[0m[2m=[0mFirstPaint
+[renderer-1] [2m2026-10-24T23:08:04.889564Z[0m [32m INFO[0m page load: budget render complete [3murl[0m[2m=[0mhttp://127.0.0.1:52607/bg02-media.html [3mstage[0m[2m=[0mFirstPaint
+[renderer-1] [2m2026-10-24T23:08:04.889752Z[0m [32m INFO[0m renderer fetch start [3mrequest_id[0m[2m=[0m5 [3murl[0m[2m=[0m"http://127.0.0.1:52607/media/sample-mp3.mp3" [3mkind[0m[2m=[0m"media" [3mpriority[0m[2m=[0m2
+[renderer-1] [2m2026-10-24T23:08:04.889800Z[0m [32m INFO[0m renderer fetch start [3mrequest_id[0m[2m=[0m6 [3murl[0m[2m=[0m"http://127.0.0.1:52607/media/sample-mp4-h264.mp4" [3mkind[0m[2m=[0m"media" [3mpriority[0m[2m=[0m2
+[renderer-1] [2m2026-10-24T23:08:04.889840Z[0m [32m INFO[0m page load: fetch images and resource elements [3murl[0m[2m=[0mhttp://127.0.0.1:52607/bg02-media.html [3mcount[0m[2m=[0m0 [3mresources[0m[2m=[0m2 [3mlazy[0m[2m=[0m0
+[renderer-1] [2m2026-10-24T23:08:04.889848Z[0m [32m INFO[0m progressive paint publish [3murl[0m[2m=[0mhttp://127.0.0.1:52607/bg02-media.html [3mstage[0m[2m=[0mFetchingImages
+[2m2026-10-24T23:08:04.890911Z[0m [32m INFO[0m [2mzero_net::fetch_scheduler[0m[2m:[0m HTTP fetch start [3murl[0m[2m=[0mhttp://127.0.0.1:52607/media/sample-mp3.mp3 [3morigin[0m[2m=[0mhttp://127.0.0.1:52607 [3mpriority[0m[2m=[0mFetchPriority(2)
+[2m2026-10-24T23:08:04.890999Z[0m [32m INFO[0m [2mzero_net::fetch_scheduler[0m[2m:[0m HTTP fetch start [3murl[0m[2m=[0mhttp://127.0.0.1:52607/media/sample-mp4-h264.mp4 [3morigin[0m[2m=[0mhttp://127.0.0.1:52607 [3mpriority[0m[2m=[0mFetchPriority(2)
+[2m2026-10-24T23:08:04.892008Z[0m [32m INFO[0m [2mzero_net::fetch_scheduler[0m[2m:[0m HTTP fetch done [3murl[0m[2m=[0mhttp://127.0.0.1:52607/media/sample-mp4-h264.mp4 [3mstatus[0m[2m=[0m200 [3mbytes[0m[2m=[0m94294
+[2m2026-10-24T23:08:04.932550Z[0m [32m INFO[0m [2mzero_net::fetch_scheduler[0m[2m:[0m HTTP fetch done [3murl[0m[2m=[0mhttp://127.0.0.1:52607/media/sample-mp3.mp3 [3mstatus[0m[2m=[0m200 [3mbytes[0m[2m=[0m16552
+[renderer-1] [2m2026-10-24T23:08:05.050363Z[0m [32m INFO[0m HTTP fetch start [3murl[0m[2m=[0mhttp://127.0.0.1:52607/media/sample-mp3.mp3 [3morigin[0m[2m=[0mhttp://127.0.0.1:52607 [3mpriority[0m[2m=[0mFetchPriority(2)
+[renderer-1] [2m2026-10-24T23:08:05.092594Z[0m [32m INFO[0m HTTP fetch done [3murl[0m[2m=[0mhttp://127.0.0.1:52607/media/sample-mp3.mp3 [3mstatus[0m[2m=[0m200 [3mbytes[0m[2m=[0m16552
+[renderer-1] [2m2026-10-24T23:08:05.092803Z[0m [33m WARN[0m skipped 44 bytes of junk at 0
+[2m2026-10-24T23:08:05.092837Z[0m [32m INFO[0m using xing header for duration
+[renderer-1] [2m2026-10-24T23:08:05.093274Z[0m [32m INFO[0m HTTP fetch start [3murl[0m[2m=[0mhttp://127.0.0.1:52607/media/sample-mp4-h264.mp4 [3morigin[0m[2m=[0mhttp://127.0.0.1:52607 [3mpriority[0m[2m=[0mFetchPriority(2)
+[renderer-1] [2m2026-10-24T23:08:05.094172Z[0m [32m INFO[0m HTTP fetch done [3murl[0m[2m=[0mhttp://127.0.0.1:52607/media/sample-mp4-h264.mp4 [3mstatus[0m[2m=[0m200 [3mbytes[0m[2m=[0m94294
+[renderer-1] [2m2026-10-24T23:08:05.097623Z[0m [33m WARN[0m skipped 44 bytes of junk at 0
+[2m2026-10-24T23:08:05.097649Z[0m [32m INFO[0m using xing header for duration
+[renderer-1] [2m2026-10-24T23:08:05.097689Z[0m [33m WARN[0m skipped 4 bytes of junk at 0
+[2m2026-10-24T23:08:05.097709Z[0m [32m INFO[0m stream is seekable with len=94294 bytes.
+[renderer-1] [2m2026-10-24T23:08:05.097877Z[0m [32m INFO[0m page load: budget render start [3murl[0m[2m=[0mhttp://127.0.0.1:52607/bg02-media.html [3mstage[0m[2m=[0mComplete
+[renderer-1] [2m2026-10-24T23:08:05.098536Z[0m [32m INFO[0m page load: budget render complete [3murl[0m[2m=[0mhttp://127.0.0.1:52607/bg02-media.html [3mstage[0m[2m=[0mComplete
+[renderer-1] [2m2026-10-24T23:08:05.098570Z[0m [32m INFO[0m progressive paint publish [3murl[0m[2m=[0mhttp://127.0.0.1:52607/bg02-media.html [3mstage[0m[2m=[0mComplete
+[renderer-1] [2m2026-10-24T23:08:05.103519Z[0m [32m INFO[0m 页面渲染完成: http://127.0.0.1:52607/bg02-media.html
+[mux-debug] slow conn step 341ms peer 127.0.0.1:51290
+[mux-debug] slow tick 341ms conns=1
+[renderer-1] [2m2026-10-24T23:08:06.818123Z[0m [33m WARN[0m skipped 44 bytes of junk at 0
+[2m2026-10-24T23:08:06.818160Z[0m [32m INFO[0m using xing header for duration
+[renderer-1] [2m2026-10-24T23:08:07.142985Z[0m [33m WARN[0m skipped 4 bytes of junk at 0
+[2m2026-10-24T23:08:07.143021Z[0m [32m INFO[0m stream is seekable with len=94294 bytes.
+[renderer-1] [2m2026-10-24T23:08:08.830292Z[0m [33m WARN[0m skipped 44 bytes of junk at 0
+[2m2026-10-24T23:08:08.830332Z[0m [32m INFO[0m using xing header for duration
+[renderer-1] [2m2026-10-24T23:08:09.187809Z[0m [33m WARN[0m skipped 4 bytes of junk at 0
+[2m2026-10-24T23:08:09.187843Z[0m [32m INFO[0m stream is seekable with len=94294 bytes.
+[renderer-1] [2m2026-10-24T23:08:10.834701Z[0m [33m WARN[0m skipped 44 bytes of junk at 0
+[2m2026-10-24T23:08:10.834737Z[0m [32m INFO[0m using xing header for duration
+[renderer-1] [2m2026-10-24T23:08:11.239494Z[0m [33m WARN[0m skipped 4 bytes of junk at 0
+[2m2026-10-24T23:08:11.239526Z[0m [32m INFO[0m stream is seekable with len=94294 bytes.
+[renderer-1] [2m2026-10-24T23:08:12.841534Z[0m [33m WARN[0m skipped 44 bytes of junk at 0
+[2m2026-10-24T23:08:12.841576Z[0m [32m INFO[0m using xing header for duration
+[renderer-1] [2m2026-10-24T23:08:13.294630Z[0m [33m WARN[0m skipped 4 bytes of junk at 0
+[2m2026-10-24T23:08:13.294664Z[0m [32m INFO[0m stream is seekable with len=94294 bytes.
+[renderer-1] [2m2026-10-24T23:08:14.847904Z[0m [33m WARN[0m skipped 44 bytes of junk at 0
+[2m2026-10-24T23:08:14.847939Z[0m [32m INFO[0m using xing header for duration
+[renderer-1] [2m2026-10-24T23:08:15.349200Z[0m [33m WARN[0m skipped 4 bytes of junk at 0
+[2m2026-10-24T23:08:15.349233Z[0m [32m INFO[0m stream is seekable with len=94294 bytes.
+[renderer-1] [2m2026-10-24T23:08:16.850074Z[0m [33m WARN[0m skipped 44 bytes of junk at 0
+[2m2026-10-24T23:08:16.850114Z[0m [32m INFO[0m using xing header for duration
+[renderer-1] [2m2026-10-24T23:08:17.399841Z[0m [33m WARN[0m skipped 4 bytes of junk at 0
+[2m2026-10-24T23:08:17.399873Z[0m [32m INFO[0m stream is seekable with len=94294 bytes.
+[renderer-1] [2m2026-10-24T23:08:18.855977Z[0m [33m WARN[0m skipped 44 bytes of junk at 0
+[2m2026-10-24T23:08:18.856013Z[0m [32m INFO[0m using xing header for duration
+[renderer-1] [2m2026-10-24T23:08:19.454275Z[0m [33m WARN[0m skipped 4 bytes of junk at 0
+[2m2026-10-24T23:08:19.454307Z[0m [32m INFO[0m stream is seekable with len=94294 bytes.
+[renderer-1] [2m2026-10-24T23:08:20.855214Z[0m [33m WARN[0m skipped 44 bytes of junk at 0
+[2m2026-10-24T23:08:20.855250Z[0m [32m INFO[0m using xing header for duration
+[renderer-1] [2m2026-10-24T23:08:21.505504Z[0m [33m WARN[0m skipped 4 bytes of junk at 0
+[2m2026-10-24T23:08:21.505537Z[0m [32m INFO[0m stream is seekable with len=94294 bytes.
+[mux-debug] slow conn step 58ms peer 127.0.0.1:51290
+[renderer-1] [2m2026-10-24T23:08:22.860583Z[0m [33m WARN[0m skipped 44 bytes of junk at 0
+[2m2026-10-24T23:08:22.860619Z[0m [32m INFO[0m using xing header for duration
+[mux-debug] slow conn step 52ms peer 127.0.0.1:51290
+[renderer-1] [2m2026-10-24T23:08:23.557077Z[0m [33m WARN[0m skipped 4 bytes of junk at 0
+[2m2026-10-24T23:08:23.557111Z[0m [32m INFO[0m stream is seekable with len=94294 bytes.
+[renderer-1] [2m2026-10-24T23:08:24.868815Z[0m [33m WARN[0m skipped 44 bytes of junk at 0
+[2m2026-10-24T23:08:24.868852Z[0m [32m INFO[0m using xing header for duration
+[renderer-1] [2m2026-10-24T23:08:25.614538Z[0m [33m WARN[0m skipped 4 bytes of junk at 0
+[2m2026-10-24T23:08:25.614572Z[0m [32m INFO[0m stream is seekable with len=94294 bytes.
+[2m2026-10-24T23:08:25.649837Z[0m [31mERROR[0m [2mzero_browser::headless[0m[2m:[0m WebSocket read error: WebSocket protocol error: Connection reset without closing handshake

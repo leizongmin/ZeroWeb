@@ -64,6 +64,123 @@ pub(crate) use v8_try_catch_message;
 /// `Send + Sync + 'static` 以便能跨 V8 调用边界存于线程局部注册表。
 pub type HostCallback = Arc<dyn Fn(&[String]) -> String + Send + Sync + 'static>;
 
+/// s88（html-semantics-compat dynamic-import classic 面）：V8 原生动态 `import()`
+/// 宿主解析器——服务 classic script / eval 字符串 / Function 构造器 / 事件处理器
+/// 上下文的 `import()`（这些面源码重写不可达，须 V8 isolate 回调）。
+///
+/// 契约与 `__zw_compile_module` 宿主回调完全一致（es_module `__zw_load_module`
+/// 三态）：返回 `resolved\u{1f}code`（IIFE，求值为 module namespace）、
+/// `resolved\u{1f}`（依赖图编译失败）、空串（取回失败）。spec/referrer/nonce 均为
+/// 宿主解析语义（referrer/nonce 由 [`Sandbox::set_dynamic_import_referrer`] /
+/// [`Sandbox::set_dynamic_import_nonce`] 每脚本前设定；nonce 空串 = 无 nonce，
+/// s92 string-compilation CSP nonce 面——宿主据此对外链 module fetch 做 script-src
+/// 检查，阻止返空串 → reject TypeError）。
+#[allow(clippy::type_complexity)] // 镜像 HostCallback 形态（Arc 闭包跨 V8 回调边界）
+pub type DynamicImportResolver = Arc<dyn Fn(&str, &str, &str) -> String + Send + Sync + 'static>;
+
+/// 动态 import() 宿主状态（isolate slot 持有——同线程多 sandbox 状态隔离）。
+#[derive(Default)]
+struct DynamicImportState {
+    /// 当前执行脚本的 referrer（classic 路径 ScriptOrigin 缺席，宿主显式供给）。
+    referrer: String,
+    /// s92（string-compilation CSP nonce 面）：当前执行脚本的 nonce 属性值
+    /// （None = 无 nonce——字符串编译产物在事件处理器求值窗被 shim 换入 None，
+    /// spec 事件处理器不继承触发脚本 nonce）。
+    nonce: Option<String>,
+    /// 宿主解析器；None = 维持 V8 默认语义（reject 普通 `Error("Not supported")`，
+    /// 未接线宿主 renderer/tab 行为不劣化）。
+    resolver: Option<DynamicImportResolver>,
+}
+
+/// 动态 import() V8 isolate 回调。失败三态与 es_module `__zw_load_module` 对齐：
+/// 取回失败 → 新 TypeError（classic 上下无语料身份断言，`__moduleFailures` 记账
+/// 不接线——FIXME: 与模块面共享 module map 失败记账）；IIFE parse/求值异常 →
+/// 原异常对象 reject。嵌套动态 import()（IIFE 内重写体）依赖 `__zw_dynamic_import`
+/// 全局 helper——classic 上下文缺席时按需装模块 prelude（空 registry，无急切求值），
+/// helper 自身又依赖宿主注册的 `__zw_compile_module` 全局回调（webview 同块注册）。
+#[allow(unused_variables)]
+fn dynamic_import_callback<'s, 'i>(
+    scope: &mut v8::PinScope<'s, 'i>,
+    host_defined_options: v8::Local<'s, v8::Data>,
+    resource_name: v8::Local<'s, v8::Value>,
+    specifier: v8::Local<'s, v8::String>,
+    import_attributes: v8::Local<'s, v8::FixedArray>,
+) -> Option<v8::Local<'s, v8::Promise>> {
+    let spec = specifier.to_rust_string_lossy(scope);
+    let state = scope.get_slot::<Arc<std::sync::Mutex<DynamicImportState>>>().cloned()?;
+    let promise_resolver = v8::PromiseResolver::new(scope)?;
+    let contract = match state.lock() {
+        Ok(st) => match st.resolver.as_ref() {
+            Some(resolver) => resolver(&spec, &st.referrer, st.nonce.as_deref().unwrap_or("")),
+            // 未注册宿主：V8 默认行为即 reject 普通 Error("Not supported")（原生效语义）。
+            None => {
+                if let Some(msg) = v8::String::new(scope, "Not supported")
+                    && promise_resolver
+                        .reject(scope, v8::Exception::error(scope, msg))
+                        .is_none()
+                {
+                    return None;
+                }
+                return Some(promise_resolver.get_promise(scope));
+            }
+        },
+        Err(_) => return None, // 毒化锁（前置 panic）——V8 按 promise 创建失败抛出。
+    };
+    // 三态解析（同 __zw_load_module）。
+    if contract.is_empty() {
+        let msg = format!("Failed to fetch module: '{spec}'");
+        if let Some(m) = v8::String::new(scope, &msg) {
+            promise_resolver.reject(scope, v8::Exception::type_error(scope, m));
+        }
+        return Some(promise_resolver.get_promise(scope));
+    }
+    let Some((resolved, code)) = contract.split_once('\u{1f}') else {
+        let msg = format!("Failed to fetch module: '{spec}'");
+        if let Some(m) = v8::String::new(scope, &msg) {
+            promise_resolver.reject(scope, v8::Exception::type_error(scope, m));
+        }
+        return Some(promise_resolver.get_promise(scope));
+    };
+    if code.is_empty() {
+        let msg = format!("Failed to fetch module graph: '{resolved}'");
+        if let Some(m) = v8::String::new(scope, &msg) {
+            promise_resolver.reject(scope, v8::Exception::type_error(scope, m));
+        }
+        return Some(promise_resolver.get_promise(scope));
+    }
+    // classic 上下文 helper 缺席面：嵌套动态 import() 走 prelude helper（幂等——
+    // 模块脚本先于此执行时已装，presence 检查免重复求值）。
+    let context = scope.get_current_context();
+    let has_helpers = v8::String::new(scope, "__zw_dynamic_import")
+        .and_then(|key| context.global(scope).get(scope, key.into()))
+        .map(|v| !v.is_undefined())
+        .unwrap_or(false);
+    let mut script_src = String::with_capacity(code.len() + 256);
+    if !has_helpers && let Ok(prelude) = crate::build_module_runtime_prelude(&crate::ModuleRegistry::new(), None) {
+        script_src.push_str(&prelude);
+    }
+    script_src.push_str(code);
+    // compile/run 须在自有 TryCatch 内——宿主回调 scope 非 TryCatch，裸 run 的
+    // 异常会按 uncaught 上抛（永不达 promise rejection）。
+    v8::tc_scope!(let tc, scope);
+    let result = v8::String::new(tc, &script_src)
+        .and_then(|src| v8::Script::compile(tc, src, None))
+        .and_then(|script| script.run(tc));
+    match result {
+        Some(value) => {
+            promise_resolver.resolve(tc, value);
+        }
+        None => {
+            // parse（SyntaxError）/求值异常 → 原异常对象 reject（spec module record
+            // evaluation error 语义；classic 上下文 identity 记账不接线，见上 FIXME）。
+            if let Some(exception) = tc.exception() {
+                promise_resolver.reject(tc, exception);
+            }
+        }
+    }
+    Some(promise_resolver.get_promise(tc))
+}
+
 // 宿主回调注册表（线程局部）。FunctionTemplate 回调须为 `Copy`
 //（MapFnTo<FunctionCallback>），无法捕获 Arc 状态；故回调闭包存于此注册表，
 // FunctionTemplate 经 builder().data(idx) 携带索引，fn 回调按 idx 查表调用。
@@ -387,6 +504,9 @@ pub struct V8Sandbox {
     watchdog_join: Option<std::thread::JoinHandle<()>>,
     /// performance-api-compat M2-S1：long task 观察器（None = 未订阅零开销）。
     long_task_observer: Option<crate::LongTaskObserver>,
+    /// s88：动态 import() 宿主状态（与 isolate slot 同享 Arc——setter 经此写，
+    /// V8 回调经 slot 读）。
+    dynamic_import: Arc<std::sync::Mutex<DynamicImportState>>,
 }
 
 impl V8Sandbox {
@@ -414,6 +534,13 @@ impl V8Sandbox {
         // 回调与排空同在 JS 执行线程）。
         isolate.set_promise_reject_callback(promise_reject_callback_entry);
 
+        // s88：动态 import() 宿主回调（classic 上下文）。回调状态经 isolate slot
+        //（同线程多 sandbox 隔离）；未 set_dynamic_import_resolver 时回调按 V8
+        // 默认语义 reject "Not supported"（行为与今恒等）。
+        let dynamic_import = Arc::new(std::sync::Mutex::new(DynamicImportState::default()));
+        isolate.set_slot(dynamic_import.clone());
+        isolate.set_host_import_module_dynamically_callback(dynamic_import_callback);
+
         // SEC-13 持久看门狗（2026-08-10）：每 sandbox 一个常驻线程（execute 侧按
         // 当前 timeout_ms Arm），避免每次 execute spawn+join 的线程 churn。
         let (watchdog_tx, watchdog_rx) = std::sync::mpsc::channel();
@@ -431,7 +558,89 @@ impl V8Sandbox {
             watchdog_seq: 0,
             watchdog_join: Some(watchdog_join),
             long_task_observer: None,
+            dynamic_import,
         })
+    }
+
+    /// s88：注册 V8 原生动态 `import()` 宿主解析器（classic 上下文——源码重写仅
+    /// 覆盖模块管线；eval 字符串/Function 构造器/事件处理器上下文重写不可达）。
+    ///
+    /// 契约：`resolver(spec, referrer)` 返回 `resolved\u{1f}iife` / `resolved\u{1f}`
+    /// （依赖图编译失败）/ 空串（取回失败）——与 `__zw_compile_module` 宿主回调
+    /// 完全一致（webview 侧复用同一闭包实现）。须在 `execute` 之前调用；未注册时
+    /// 动态 import() 维持 V8 默认 reject（普通 `Error("Not supported")`）。
+    pub fn set_dynamic_import_resolver(&mut self, resolver: DynamicImportResolver) {
+        if let Ok(mut st) = self.dynamic_import.lock() {
+            st.resolver = Some(resolver);
+        }
+    }
+
+    /// s88：设定当前执行脚本的 referrer（动态 import() 的 base URL——classic 路径
+    /// `v8::Script::compile` 不设 ScriptOrigin，resource_name 缺席，宿主显式供给）。
+    /// 每脚本执行前更新（webview 脚本循环取 `current_url`）。
+    pub fn set_dynamic_import_referrer(&mut self, url: &str) {
+        if let Ok(mut st) = self.dynamic_import.lock() {
+            st.referrer = url.to_string();
+        }
+    }
+
+    /// s90（string-compilation base URL——inline 事件处理器臂）：注册全局函数
+    /// `__zwSwapImportReferrer(url)`——JS shim 于 inline/反射事件处理器求值窗调用，
+    /// 返回旧 referrer 并换入新值（处理器体内动态 import() 用求值时刻文档基 URL，
+    /// finally 换回零外溢）。回调捕获 [`DynamicImportState`] 的 Arc，不经
+    /// `&mut self`（JS 执行中沙箱不可变借用不可得——与 resolver 同理由回调面承载）。
+    /// 未注册（QuickJS 后端）时 shim 按函数缺席降级为直接执行，零变更。
+    pub fn register_dynamic_import_referrer_swapper(&mut self) {
+        let dynamic_import = self.dynamic_import.clone();
+        self.register_callback(
+            "__zwSwapImportReferrer",
+            Box::new(move |args| {
+                if let Ok(mut st) = dynamic_import.lock() {
+                    // 无参调用 = 纯 getter（返回当前值不换）——shim 字符串 timer 注册
+                    // 期捕获脚本基（fire 在求值窗外，届时槽位已被后续脚本改写）。
+                    return match args.first() {
+                        Some(url) => std::mem::replace(&mut st.referrer, url.clone()),
+                        None => st.referrer.clone(),
+                    };
+                }
+                String::new()
+            }),
+        );
+    }
+
+    /// s92（string-compilation CSP nonce 面）：设定当前执行脚本的 nonce（动态
+    /// `import()` 的 CSP script-src 检查输入——spec 动态 import 继承触发脚本
+    /// nonce）。`None` = 无 nonce。每脚本执行前更新（webview 脚本循环取
+    /// script_csp_info）。
+    pub fn set_dynamic_import_nonce(&mut self, nonce: Option<&str>) {
+        if let Ok(mut st) = self.dynamic_import.lock() {
+            st.nonce = nonce.map(str::to_string);
+        }
+    }
+
+    /// s92（string-compilation CSP nonce 面）：注册全局函数
+    /// `__zwSwapImportNonce(v)`——与 [`Self::register_dynamic_import_referrer_swapper`]
+    /// 同形：有参换入新 nonce 返旧值、无参纯 getter。shim 侧事件处理器求值窗换入
+    /// 空串（None——spec 事件处理器不继承触发脚本 nonce，体内 import() 的 module
+    /// fetch 无 nonce → 宿主 CSP 检查阻止）、字符串 timer fire 窗换入注册期捕获值
+    /// （spec 字符串编译继承触发脚本 nonce）。nonce 空串 ↔ `None` 双射（extract
+    /// 侧 nonce 空值视作缺失，合法 nonce 恒非空）。未注册（QuickJS 后端）时 shim
+    /// typeof 降级直执行，零变更。
+    pub fn register_dynamic_import_nonce_swapper(&mut self) {
+        let dynamic_import = self.dynamic_import.clone();
+        self.register_callback(
+            "__zwSwapImportNonce",
+            Box::new(move |args| {
+                if let Ok(mut st) = dynamic_import.lock() {
+                    return match args.first() {
+                        Some(v) => std::mem::replace(&mut st.nonce, if v.is_empty() { None } else { Some(v.clone()) })
+                            .unwrap_or_default(),
+                        None => st.nonce.clone().unwrap_or_default(),
+                    };
+                }
+                String::new()
+            }),
+        );
     }
 
     /// 注册宿主回调，挂为全局函数 `name`（JS-DOM-bridge：JS shim 调 `name(...)` 触发）。
@@ -856,9 +1065,43 @@ unsafe fn resolve_context<'s>(
 impl V8Sandbox {
     /// 重置缓存的 V8 Context。
     ///
-    /// 下次 execute 时会创建新的 Context。仅在 `persistent_context` 模式下有意义。
+    /// 下次 execute 会创建新的 Context。仅在 `persistent_context` 模式下有意义。
+    ///
+    /// T13 R1：S3 的 `low_memory_notification` 移至 [`Self::low_memory_reclaim`]
+    /// （延迟到点，isolate 线程命令边界执行）——复位臂自身只做 context 丢弃，成本
+    /// 移出首载测窗（处置工单主控 M1；窗口证据见 bench/results/t13-rework-frozen.md）。
     pub fn reset_context(&mut self) {
         self.cached_context = None;
+    }
+
+    /// T13 S3/R1：对 isolate 发 `low_memory_notification`——`cached_context = None`
+    /// 只 drop Context 引用，旧 Context 成 isolate 内垃圾，而持久 isolate 永不销毁、
+    /// 复位处此前无任何 GC 触发点，垃圾滞留 V8 堆 + glibc arena（C1→C2 增长主嫌疑，
+    /// 设计卡 §1-#3）。宿主 GC hint 无需 `--expose-gc` 全局 flag（同
+    /// [`crate::dom_bindings`] weak-handle 先例），只对已 drop 的旧 Context 垃圾生效，
+    /// 新文档语义零接触。须在 isolate 所属线程调用（js worker 命令边界满足）。
+    pub fn low_memory_reclaim(&mut self) {
+        let Some(isolate) = self.isolate.as_mut() else {
+            return;
+        };
+        // SAFETY: 与 execute 一致——OwnedIsolate 创建时已 enter，此处配对
+        // IsolateEnterGuard 维持栈式 enter/exit 纪律。
+        unsafe {
+            isolate.enter();
+        }
+        let _enter_guard = IsolateEnterGuard { isolate };
+        isolate.low_memory_notification();
+    }
+
+    /// T13 S7 探针：isolate 已用堆字节（`ZEROWEB_MEM_PROBE=1` 观测腿，不进判据样本）。
+    pub fn heap_used_bytes(&mut self) -> Option<usize> {
+        let isolate = self.isolate.as_mut()?;
+        // SAFETY: 同 reset_context——栈式 enter/exit 配对。
+        unsafe {
+            isolate.enter();
+        }
+        let _enter_guard = IsolateEnterGuard { isolate };
+        Some(isolate.get_heap_statistics().used_heap_size())
     }
 
     /// P1b S2 escape-hatch：进入持久 V8 Context，在 raw scope + context 内执行 `f`。
@@ -1034,8 +1277,29 @@ impl crate::Sandbox for V8Sandbox {
     fn set_long_task_observer(&mut self, observer: Option<crate::LongTaskObserver>) {
         V8Sandbox::set_long_task_observer(self, observer)
     }
+    fn set_dynamic_import_resolver(&mut self, resolver: DynamicImportResolver) {
+        V8Sandbox::set_dynamic_import_resolver(self, resolver)
+    }
+    fn set_dynamic_import_referrer(&mut self, url: &str) {
+        V8Sandbox::set_dynamic_import_referrer(self, url)
+    }
+    fn register_dynamic_import_referrer_swapper(&mut self) {
+        V8Sandbox::register_dynamic_import_referrer_swapper(self)
+    }
+    fn set_dynamic_import_nonce(&mut self, nonce: Option<&str>) {
+        V8Sandbox::set_dynamic_import_nonce(self, nonce)
+    }
+    fn register_dynamic_import_nonce_swapper(&mut self) {
+        V8Sandbox::register_dynamic_import_nonce_swapper(self)
+    }
     fn reset_context(&mut self) {
         V8Sandbox::reset_context(self)
+    }
+    fn low_memory_reclaim(&mut self) {
+        V8Sandbox::low_memory_reclaim(self)
+    }
+    fn heap_used_bytes(&mut self) -> Option<usize> {
+        V8Sandbox::heap_used_bytes(self)
     }
     /// R-baidu2/P3 slice-2：取走未捕获异常报告（message listener + promise-reject
     /// 回调经 isolate slot 收集）。
@@ -1077,6 +1341,31 @@ mod tests {
     use super::*;
 
     // ── 创建与初始化 ──
+
+    /// T13 S3：reset_context 尾 `low_memory_notification` 后 context 重建语义不破——
+    /// 持久 isolate 下旧全局随 Context 丢弃，新 execute 拿到全新全局对象（导航复位
+    /// 语义），通知调用不悬 isolate、不污染后续执行。
+    #[test]
+    fn t13_reset_context_low_memory_notification_keeps_fresh_global() {
+        let mut sandbox = V8Sandbox::with_config(crate::SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        })
+        .unwrap();
+        sandbox
+            .execute("globalThis.__doc = 'old'; 1")
+            .expect("first document execute");
+        sandbox.reset_context();
+        let r = sandbox
+            .execute("typeof globalThis.__doc")
+            .expect("execute after reset must recreate context");
+        assert_eq!(r.value, "undefined", "旧全局随 Context 丢弃: {:?}", r.value);
+        // 复位后再次写入 + 读回（新 Context 可用性）。
+        let r = sandbox
+            .execute("globalThis.__doc = 'new'; globalThis.__doc")
+            .expect("write after reset");
+        assert_eq!(r.value, "new", "新全局可写: {:?}", r.value);
+    }
 
     #[test]
     fn test_unhandled_promise_rejection_collected() {
@@ -2633,5 +2922,248 @@ mod tests {
             assert!(matches!(r3, Err(ScriptError::Timeout(_))), "死循环应持续被终止: {r3:?}");
             assert_eq!(sandbox.execute("2 * 3").unwrap().value, "6");
         }
+    }
+
+    // ── s88（html-semantics-compat）：classic 上下文原生动态 import ──
+    // classic 脚本（内联/eval 字符串/setTimeout 字符串/Function 构造器——
+    // string-compilation 家族）中的 `import()` 无法经源码重写触达，由 V8
+    // host-import-module-dynamically 回调承载；三态契约与 `__zw_compile_module`
+    // 一致（取回失败返空 / 依赖图断 `resolved\x1f` 空码 / 成功 `resolved\x1fiife`）。
+
+    /// classic 上下文 `import()` 成功路径：resolver 返回 `resolved\x1fiife`，
+    /// promise 以模块命名空间落定且模块体已执行；resolver 收到 (spec, referrer)。
+    #[test]
+    fn test_native_dynamic_import_resolves_in_classic_context() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        let calls: std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let calls_cb = calls.clone();
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(move |spec, referrer, _nonce| {
+            calls_cb.lock().unwrap().push((spec.to_string(), referrer.to_string()));
+            "https://zero.test/a.js\u{1f}(function() { return (function() { \
+             globalThis.__s88_eval = true; return { from: 'a.js' }; })(); })()"
+                .to_string()
+        }));
+        sandbox.set_dynamic_import_referrer("https://zero.test/page.html");
+        let settled: std::sync::Arc<std::sync::Mutex<Option<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        let settled_cb = settled.clone();
+        sandbox.register_callback(
+            "__zw_report",
+            Box::new(move |args| {
+                *settled_cb.lock().unwrap() = args.first().cloned();
+                String::new()
+            }),
+        );
+        // classic 脚本（无 module prelude 预装）：微任务检查点在 execute 内跑 →
+        // .then 落定发生在返回前。
+        sandbox
+            .execute(
+                "import('./a.js').then(\n\
+                   function (m) { __zw_report('fulfilled:' + JSON.stringify(m) + ':' + globalThis.__s88_eval); },\n\
+                   function (e) { __zw_report('rejected:' + (e && e.constructor.name) + ':' + (e && e.message)); });\n",
+            )
+            .expect("classic 上下文 import() 不得同步 throw");
+        assert_eq!(
+            settled.lock().unwrap().as_deref(),
+            Some("fulfilled:{\"from\":\"a.js\"}:true"),
+            "resolver 返回的 IIFE 求值结果作为命名空间落定且模块体已执行"
+        );
+        assert_eq!(
+            calls.lock().unwrap().as_slice(),
+            [("./a.js".to_string(), "https://zero.test/page.html".to_string())],
+            "resolver 收到 (spec, referrer)"
+        );
+    }
+
+    /// s92（string-compilation CSP nonce 面）：nonce 槽位随 resolver 第三参透传——
+    /// `set_dynamic_import_nonce(Some)` → resolver 收到该值；`None` 编码空串。
+    #[test]
+    fn test_dynamic_import_nonce_reaches_resolver() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        let nonces: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let nonces_cb = nonces.clone();
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(move |_spec, _referrer, nonce| {
+            nonces_cb.lock().unwrap().push(nonce.to_string());
+            String::new() // 空契约 → reject TypeError（本测只看透传，不关心落定）
+        }));
+        sandbox.set_dynamic_import_referrer("https://zero.test/page.html");
+        sandbox.set_dynamic_import_nonce(Some("correct"));
+        sandbox
+            .execute("import('./a.js').then(function () {}, function () {});")
+            .expect("classic 上下文 import() 不得同步 throw");
+        sandbox.set_dynamic_import_nonce(None);
+        sandbox
+            .execute("import('./b.js').then(function () {}, function () {});")
+            .expect("classic 上下文 import() 不得同步 throw");
+        assert_eq!(
+            nonces.lock().unwrap().as_slice(),
+            ["correct".to_string(), String::new()],
+            "nonce 槽位随 resolver 第三参透传（None 编码空串）"
+        );
+    }
+
+    /// s92：`__zwSwapImportNonce` swapper 契约——有参换入返旧值、无参纯 getter；
+    /// nonce 空串 ↔ `None` 双射。
+    #[test]
+    fn test_dynamic_import_nonce_swapper_contract() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        sandbox.register_dynamic_import_nonce_swapper();
+        sandbox.set_dynamic_import_nonce(Some("correct"));
+        let settled: std::sync::Arc<std::sync::Mutex<Option<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        let settled_cb = settled.clone();
+        sandbox.register_callback(
+            "__zw_report",
+            Box::new(move |args| {
+                *settled_cb.lock().unwrap() = args.first().cloned();
+                String::new()
+            }),
+        );
+        sandbox
+            .execute(
+                "__zw_report([\n\
+                   __zwSwapImportNonce(),\n\
+                   __zwSwapImportNonce(''),\n\
+                   __zwSwapImportNonce(),\n\
+                   __zwSwapImportNonce('rotated'),\n\
+                   __zwSwapImportNonce()\n\
+                 ].join('|'));",
+            )
+            .expect("swapper 序列不得同步 throw");
+        assert_eq!(
+            settled.lock().unwrap().as_deref(),
+            Some("correct|correct|||rotated"),
+            "getter 读当前值、swap 返旧换新、空串 = None"
+        );
+    }
+
+    /// string-compilation 家族根因钉：eval 字符串内的 `import()`（classic 上下文
+    /// 运行期编译，源码重写不可达）同样经原生回调走三态契约。红态：V8 默认
+    /// 回调 reject `Error: Not supported`。
+    #[test]
+    fn test_native_dynamic_import_reaches_eval_compiled_string() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer, _nonce| {
+            "https://zero.test/a.js\u{1f}(function() { return (function() { \
+             globalThis.__s88_eval = true; return { from: 'a.js' }; })(); })()"
+                .to_string()
+        }));
+        sandbox.set_dynamic_import_referrer("https://zero.test/page.html");
+        let settled: std::sync::Arc<std::sync::Mutex<Option<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        let settled_cb = settled.clone();
+        sandbox.register_callback(
+            "__zw_report",
+            Box::new(move |args| {
+                *settled_cb.lock().unwrap() = args.first().cloned();
+                String::new()
+            }),
+        );
+        sandbox
+            .execute(
+                "eval(\"import('./a.js').then(\\\n\
+                   function (m) { __zw_report('fulfilled:' + JSON.stringify(m) + ':' + globalThis.__s88_eval); },\\\n\
+                   function (e) { __zw_report('rejected:' + (e && e.constructor.name) + ':' + (e && e.message)); });\")",
+            )
+            .expect("eval 字符串内 import() 不得同步 throw");
+        assert_eq!(
+            settled.lock().unwrap().as_deref(),
+            Some("fulfilled:{\"from\":\"a.js\"}:true"),
+            "运行期编译字符串内的 import() 经原生回调解析"
+        );
+    }
+
+    /// 取回失败三态（返空）：以 TypeError `Failed to fetch module: '<spec>'`
+    /// reject——与 `__zw_compile_module` 契约同判据（s87 钉死），不再 V8 默认
+    /// `Not supported`。
+    #[test]
+    fn test_native_dynamic_import_fetch_failure_rejects_type_error() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer, _nonce| String::new()));
+        let settled: std::sync::Arc<std::sync::Mutex<Option<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        let settled_cb = settled.clone();
+        sandbox.register_callback(
+            "__zw_report",
+            Box::new(move |args| {
+                *settled_cb.lock().unwrap() = args.first().cloned();
+                String::new()
+            }),
+        );
+        sandbox
+            .execute(
+                "import('./missing.js').then(\n\
+                   function () { __zw_report('fulfilled'); },\n\
+                   function (e) { __zw_report('rejected:' + (e && e.constructor.name) + ':' + (e && e.message)); });\n",
+            )
+            .expect("取回失败不得同步 throw");
+        assert_eq!(
+            settled.lock().unwrap().as_deref(),
+            Some("rejected:TypeError:Failed to fetch module: './missing.js'"),
+            "取回失败以携带 spec 的 TypeError rejection 呈现"
+        );
+    }
+
+    /// 依赖图断三态（`resolved\x1f` 空码）：以 TypeError `Failed to fetch module
+    /// graph: '<resolved>'` reject（WPT dynamic-imports-fetch-error 判据族）。
+    #[test]
+    fn test_native_dynamic_import_graph_cut_rejects_type_error() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer, _nonce| {
+            "https://zero.test/graphcut.js\u{1f}".to_string()
+        }));
+        let settled: std::sync::Arc<std::sync::Mutex<Option<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        let settled_cb = settled.clone();
+        sandbox.register_callback(
+            "__zw_report",
+            Box::new(move |args| {
+                *settled_cb.lock().unwrap() = args.first().cloned();
+                String::new()
+            }),
+        );
+        sandbox
+            .execute(
+                "import('./graphcut.js').then(\n\
+                   function () { __zw_report('fulfilled'); },\n\
+                   function (e) { __zw_report('rejected:' + (e && e.constructor.name) + ':' + (e && e.message)); });\n",
+            )
+            .expect("依赖图断不得同步 throw");
+        assert_eq!(
+            settled.lock().unwrap().as_deref(),
+            Some("rejected:TypeError:Failed to fetch module graph: 'https://zero.test/graphcut.js'"),
+            "依赖图断以携带已解析 URL 的 TypeError rejection 呈现"
+        );
+    }
+
+    /// 未注册 resolver 的嵌入方保真：保持 V8 默认行为——`Error: Not supported`
+    /// rejection（不注入 helper、不改判据，零行为外溢）。
+    #[test]
+    fn test_native_dynamic_import_without_resolver_keeps_v8_default() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        let settled: std::sync::Arc<std::sync::Mutex<Option<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        let settled_cb = settled.clone();
+        sandbox.register_callback(
+            "__zw_report",
+            Box::new(move |args| {
+                *settled_cb.lock().unwrap() = args.first().cloned();
+                String::new()
+            }),
+        );
+        sandbox
+            .execute(
+                "import('./x.js').then(\n\
+                   function () { __zw_report('fulfilled'); },\n\
+                   function (e) { __zw_report('rejected:' + (e && e.constructor.name) + ':' + (e && e.message)); });\n",
+            )
+            .expect("未注册 resolver 时不得同步 throw");
+        assert_eq!(
+            settled.lock().unwrap().as_deref(),
+            Some("rejected:Error:Not supported"),
+            "无宿主 resolver 保持 V8 默认 Error: Not supported"
+        );
     }
 }

@@ -175,8 +175,9 @@ impl ImageDecoderProxy {
 
 static PROXY: Mutex<Option<ImageDecoderProxy>> = Mutex::new(None);
 
-/// spawn 已失败（如宿主环境无 zero-image-decoder 可执行文件）——不再重试，
-/// 后续请求直接进程内解码，避免每次栅格图解码都重复 spawn 尝试与告警。
+/// spawn 已失败（如宿主环境无 zero-image-decoder 可执行文件）——进入永久错误面：
+/// 不再重试，也不内联回落（隔离边界不可绕过，media-runtime-isolation RFC v1.7
+/// IF-006 订正；先前注释「直接进程内解码」为笔误，实际走解码失败错误面）。
 static SPAWN_FAILED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static PROCESS_ISOLATION_ENABLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -262,7 +263,7 @@ mod tests {
 
     fn set_process_isolation(on: bool, bin: Option<&std::path::Path>) {
         // 重置 spawn 失败缓存，保证本测试的代理路径不被先前测试的
-        // spawn 失败短路（真实子进程优先，失败则回退进程内）。
+        // spawn 失败短路（真实子进程优先，spawn 失败走错误面不内联回落）。
         SPAWN_FAILED.store(false, std::sync::atomic::Ordering::Relaxed);
         // edition 2024：env 修改为 unsafe（测试单线程环境无并发，安全）
         unsafe {

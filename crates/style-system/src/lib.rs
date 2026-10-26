@@ -957,6 +957,19 @@ impl StyleSystem {
             ) {
                 computed.first_letter_pseudo = Some(fl);
             }
+            // R5258（CSS2 §5.12.1）：`::first-line` 伪样式存储——镜像 ::first-letter 同款
+            // collect-空探测 + color 差异存储 gate（切片 1 只应用 color；bg/font 类挂账）。
+            if let Some(fline) = self.compute_first_line_pseudo(
+                doc,
+                node,
+                stylesheets,
+                rule_index,
+                &elem_style,
+                &saved_custom,
+                quirks_mode,
+            ) {
+                computed.first_line_pseudo = Some(fline);
+            }
             self.custom_properties = saved_custom;
 
             // R3806：Url（content:url() 图片）也保留——pipeline inject_pseudo_text_nodes
@@ -1000,6 +1013,26 @@ impl StyleSystem {
                 self.container_chain.pop();
             }
         } // if has_pseudo_rules || is_q（S10）
+        // R5258 切片 2（css-pseudo-4 §first-line-inheritance）：首格式行 inline 后代
+        // 从祖先块的 `::first-line` 伪样式继承可继承属性——本切片只传播 color
+        //（bg-image 渐变的 currentcolor 经元素 color 解析随之，driving:
+        // linear-gradient-currentcolor-first-line）。判据 = 解析 color == 父 color
+        //（≈继承、无显式声明），显式 `span { color }` 声明自然胜出。流外盒
+        //（float / absolute / fixed）不参与行内格式化，不传播。跨行 inline 的次行
+        // 本应回落元素值——style 期无法按行分裂，整随伪样式（FIXME：paint 期按行
+        // 拆分挂账）；仅直亲传播，中间块容器不穿透（深结构域 FIXME）。
+        if matches!(computed.display, property::types::DisplayValue::Inline)
+            && matches!(computed.float, zero_css_parser::values::FloatValue::None)
+            && !matches!(
+                computed.position,
+                property::types::PositionValue::Absolute | property::types::PositionValue::Fixed
+            )
+            && let Some(parent) = parent_style
+            && let Some(fl) = &parent.first_line_pseudo
+            && computed.color == parent.color
+        {
+            computed.color = fl.color.clone();
+        }
     }
 
     /// 递归计算样式。
@@ -1207,6 +1240,57 @@ impl StyleSystem {
     }
 
     /// R3867：`::first-letter`（CSS2 §5.12.2）伪元素计算——独立 helper 保持
+    /// R5258（CSS2 §5.12.1）：`::first-line` 伪样式计算——镜像
+    /// [`Self::compute_first_letter_pseudo`]：collect 空 → None（零存储零 paint
+    /// 影响）；非空走完整级联，color 与元素不同才存储（帧体量纪律 R3867 同款
+    /// 独立 helper，不占 [`Self::compute_styles_recursive`] 的 debug 栈帧体量）。
+    #[allow(clippy::too_many_arguments)]
+    fn compute_first_line_pseudo(
+        &mut self,
+        doc: &Document,
+        element: NodeId,
+        stylesheets: &[Stylesheet],
+        rule_index: &matcher::StylesheetIndex,
+        elem_style: &ComputedStyle,
+        parent_custom: &CustomProperties,
+        quirks_mode: QuirksMode,
+    ) -> Option<Box<ComputedStyle>> {
+        let fl_media_ctx = match (self.viewport_width, self.viewport_height) {
+            (Some(w), Some(h)) => {
+                let mut ctx = zero_css_parser::media_query::MediaContext::new(w, h);
+                ctx.prefers_color_scheme = self.prefers_color_scheme;
+                ctx.media_type = self.media_type;
+                Some(ctx)
+            }
+            _ => None,
+        };
+        if matcher::collect_pseudo_declarations_with_media(
+            doc,
+            element,
+            stylesheets,
+            rule_index,
+            fl_media_ctx.as_ref(),
+            None,
+            "first-line",
+        )
+        .is_empty()
+        {
+            return None;
+        }
+        let first_line = *self.compute_element_style_internal(
+            doc,
+            element,
+            stylesheets,
+            rule_index,
+            Some(elem_style),
+            parent_custom,
+            quirks_mode,
+            Some("first-line"),
+        );
+        (first_line.color != elem_style.color).then(|| Box::new(first_line))
+    }
+
+    /// `::first-letter` 伪样式计算抽为独立 helper，不占
     /// [`Self::compute_styles_recursive`] 的 debug 栈帧体量（该帧已 ~90KB，深嵌套页
     /// 逼近 2MB 测试线程栈顶；见调用点「帧体量纪律」注释）。
     ///
@@ -1349,10 +1433,25 @@ impl StyleSystem {
             ),
         };
 
-        // 伪元素无匹配规则时直接返回默认值（content: Normal），跳过整条级联/继承/计算
-        // 管线——避免对无伪元素规则的元素产生 2× 额外开销。调用方据 content 判定是否合成盒。
+        // 伪元素无匹配规则时直接返回 originating element 自身样式（content 恒
+        // Normal，before/after 合成门不受影响），跳过整条级联/继承/计算管线——
+        // 避免对无伪元素规则的元素产生 2× 额外开销。曾返回 default()：scoped
+        // ::selection 页（如仅 `div::selection` 规则）的非匹配后代经「color 差异」
+        // 存储判据误存 initial 黑（R5257 paint 侧 per-owner 消费首触即黑字）。
         if pseudo.is_some() && matching.is_empty() {
-            return Box::new(ComputedStyle::default());
+            return match parent_style {
+                Some(p) => {
+                    let mut s = p.clone();
+                    // content 恒 Normal（before/after 合成门不变）、背景恒透明
+                    //（存储判据「非透明 bg」必须拒绝——UA 表单默认白底是非继承
+                    // 属性，比 elem_style 会误存）；color 留 origin 值（继承属性，
+                    // ≡ 无作者高亮样式时伪样式继承 originating element）。
+                    s.content = property::types::ContentComputedValue::Normal;
+                    s.background_color = property::types::ColorValue::Transparent;
+                    Box::new(s)
+                }
+                None => Box::new(ComputedStyle::default()),
+            };
         }
 
         // 1.5. 展开简写属性（保留层索引）
@@ -2494,6 +2593,16 @@ fn collect_presentational_hints(doc: &Document, element: NodeId) -> Vec<(String,
                     _ => {}
                 }
             }
+            // R5284：WHATWG §15.3.3 legacy `rules` 属性，仅实现 groups 值（rules-groups
+            // reftest 唯一消费方；其余值 none/rows/cols/all 未实现，// FIXME:）。
+            // groups → 表 hidden/collapse；行/列组子元素 1px solid 组边框见 rowgroup 臂。
+            // 表 hidden 在 collapse 消解中最高优先、压掉外缘组边框，组边框仅内格线出现
+            // ——与 ref 页（显式 collapse + thead/tbody border-block-end）几何等价。
+            // https://html.spec.whatwg.org/multipage/rendering.html#tables
+            if elem_attr(elem, "rules").is_some_and(|r| r.trim().eq_ignore_ascii_case("groups")) {
+                hints.push(("border-style".to_string(), "hidden".to_string()));
+                hints.push(("border-collapse".to_string(), "collapse".to_string()));
+            }
         }
         "td" | "th" => {
             if let Some(bg) = parent_tr_bgcolor(doc, element) {
@@ -2534,6 +2643,28 @@ fn collect_presentational_hints(doc: &Document, element: NodeId) -> Vec<(String,
             if let Some(table_id) = ancestor_table(doc, element) {
                 if table_border_width_attr_from_doc(doc, table_id) > 0 {
                     hints.push(("border".to_string(), "1px solid".to_string()));
+                }
+            }
+        }
+        // R5284：`table[rules=groups] > 行/列组` 的组边框提示（WHATWG §15.3.3；逻辑
+        // 长手经 apply_advanced 按元素 writing-mode 映射物理边）。rowgroup → block 轴、
+        // colgroup → inline 轴，均 1px solid。作者规则（如 `#a > * { border-block-start:
+        // none }`）以更高特异性覆盖单侧，组间边界仍由另一侧提供。外缘被表
+        // border-style:hidden 压制。cell 提示（1px none，几何上被一切实样式压过）与
+        // rules 其余值未实现（// FIXME:）。
+        // https://html.spec.whatwg.org/multipage/rendering.html#tables
+        "thead" | "tbody" | "tfoot" | "colgroup" => {
+            if let Some(table_id) = ancestor_table(doc, element)
+                && doc
+                    .get_attribute(table_id, "rules")
+                    .is_some_and(|r| r.trim().eq_ignore_ascii_case("groups"))
+            {
+                if tag == "colgroup" {
+                    hints.push(("border-inline-width".to_string(), "1px".to_string()));
+                    hints.push(("border-inline-style".to_string(), "solid".to_string()));
+                } else {
+                    hints.push(("border-block-width".to_string(), "1px".to_string()));
+                    hints.push(("border-block-style".to_string(), "solid".to_string()));
                 }
             }
         }

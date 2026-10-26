@@ -614,6 +614,31 @@
           self.response = new _zwParsedDoc(docText);
           if (docCharset) self.response._zwEncoding = docCharset;
           self.responseXML = self.response;
+          // R5262（F 族 xhr-response 收口）：response.body 换 wrapper-world 实体
+          // 节点——`_zwParseEl` 快照 body 无接口原型（`instanceof HTMLBodyElement`
+          // 失败）、innerHTML 是 ctor own data property（赋值仅覆写字符串不触发
+          // 解析）、open IDL 缺失；WPT name-attribute「exclusivity enforcement with
+          // attachment scenario connected-in-xhr-response」经 body 装配 + qSA +
+          // open toggle 需实体树面。配方复用 R3019 mutTree 桥
+          //（`_zwParseEl._ensureMutTree`——`__zw_parse_html_child_nodes` +
+          // `_zwMBuildNode`，inert 印章同盖）；旧 body 读面（firstChild 等）本就
+          // 惰性经同一 mtree，读语义零变化。根节点补 R125 接口原型接线（body →
+          // HTMLBodyElement.prototype——`_zwMEl` 裸构造不接线，接线在
+          // `_zwMBuildNode` 仅覆盖解析子）；head/documentElement 保持快照面
+          //（场景不触及，DOMParser 语料零波及——本 graft 仅 XHR HTML 文档分支）。
+          try {
+            var _xhrBodyPe = self.response.body;
+            if (_xhrBodyPe && typeof _xhrBodyPe._ensureMutTree === 'function') {
+              var _xhrBodyNode = _xhrBodyPe._ensureMutTree();
+              var _xhrBIface = globalThis.__zwHtmlTagIface && globalThis.__zwHtmlTagIface.body;
+              var _xhrBProto = (_xhrBIface && globalThis[_xhrBIface] && globalThis[_xhrBIface].prototype)
+                || (globalThis.HTMLBodyElement && globalThis.HTMLBodyElement.prototype) || null;
+              if (_xhrBProto && _xhrBodyNode.nodeType === 1) {
+                try { Object.setPrototypeOf(_xhrBodyNode, _xhrBProto); } catch (_eXhrBodyProto) {}
+                self.response.body = _xhrBodyNode;
+              }
+            }
+          } catch (_eXhrBodyGraft) {}
         } else if (_zwXhrIsXmlMime(docMime) && typeof _zwXmlParseDoc === 'function') {
           self.responseXML = _zwXmlParseDoc(text);
           self.response = self.responseXML;
@@ -1422,6 +1447,17 @@
   // 原型链挂到对应基类（DocumentFragment→Node、HTML*→HTMLElement）仅为语义一致，instanceof 不依赖实例身份。
   globalThis.HTMLFormElement = globalThis.HTMLFormElement || function HTMLFormElement() {};
   globalThis.HTMLFormElement.prototype = Object.create(globalThis.HTMLElement.prototype);
+  // s93（classic 脚本属性面）：HTMLScriptElement 接口对象 + 静态 supports(type)（HTML
+  // #dom-script-supports）——四值**精确匹配**（'classic'/'module'/'importmap'/'speculationrules'
+  // → true；JavaScript MIME 类型、空白沾染、大小写变体一概 false；spec 明示不做 ASCII
+  // case-insensitive、不剥空白）。实例面仍走 tag→接口名字符串表（__zwHtmlTagIface），此处仅补
+  // 静态 API（WPT script-supports 5F；完整接口对象/instanceof 同一性挂账）。
+  // https://html.spec.whatwg.org/multipage/scripting.html#dom-script-supports
+  globalThis.HTMLScriptElement = globalThis.HTMLScriptElement || function HTMLScriptElement() {};
+  globalThis.HTMLScriptElement.supports = globalThis.HTMLScriptElement.supports || function (type) {
+    type = String(type);
+    return type === 'classic' || type === 'module' || type === 'importmap' || type === 'speculationrules';
+  };
   globalThis.NamedNodeMap = globalThis.NamedNodeMap || function NamedNodeMap() {};
   // js-dom M4 R122：原型方法占位——WPT attributes-namednodemap「should not interfere with
   // existing method names」断言 `map.item === NamedNodeMap.prototype.item`（**同一函数对象**，
@@ -2239,6 +2275,882 @@
       var _spp = globalThis[_sp] && globalThis[_sp].prototype ? globalThis[_sp].prototype : globalThis.Object.prototype;
       globalThis[_sn].prototype = Object.create(_spp);
     }
+  }
+  // s70（html-semantics M2 切片 70，2026-10-25）：select-an-image-source 共享核——
+  // srcset 解析（§4.8.4.3.10）/ sizes 解析（§4.8.4.3.11）/ source set 创建与更新
+  //（§4.8.4.3.8-9）/ 密度归一（§4.8.4.3.12）/ 选择（§4.8.4.3.7）+ relevant
+  // mutations（§4.8.4.3.2）重验触发。sweep（part04 __zwFireStaticImgSettle）、
+  // R56h `.src` IDL 链（下方 __zwImgRunUpdate5277）、decode 核（selectedCand）
+  // 三方消费同一选中 URL——srcset-only img 的 resourceState/currentSrc/naturalWidth
+  // 由共享核供给（基线 src-only 路径 URL 串不变，s68/s69 绿面零漂移）。
+  // ASCII 空白判定（srcset/sizes 分割语义——U+00A0/U+1680/U+2000 系等非 ASCII
+  // 空白是 URL/描述符组成部分，parse-a-srcset-attribute 全真值表面）。
+  var _zw5277IsWs = function (c) {
+    return c === ' ' || c === '\t' || c === '\n' || c === '\f' || c === '\r';
+  };
+  // HTML 元素 tag（svg: 前缀产物剥除——SVG ns 的 source/picture 不算 HTML 元素，
+  // s58 同款门）。入参为 proxy/元素对象。
+  var _zw5277Tag = function (el) {
+    try {
+      if (!el) return '';
+      if (el.__zwHandle && typeof _realTag === 'function') return String(_realTag(null, el.__zwHandle) || '').split(':').pop();
+      if (el.__zwSelector && typeof _realTag === 'function') return String(_realTag(el.__zwSelector, null) || '').split(':').pop();
+      return String(el.tagName || el.localName || '').toUpperCase().split(':').pop();
+    } catch (_e5277tg) { return ''; }
+  };
+  // proxy 三级属性读（handle → lw → 解析期快照，R3204/R5275 同款）。
+  var _zw5277Attr = function (sel, handle, name) {
+    try {
+      if (handle && typeof __zw_get_attr_handle === 'function') {
+        if (typeof __zw_has_attr_handle === 'function' && __zw_has_attr_handle(handle, name) === '1') {
+          return String(__zw_get_attr_handle(handle, name) || '');
+        }
+        // 句柄缺席且无 sel——已无事实源，不再回落 sel 读（lw 对 null sel 返 ''
+        // 而非 null，present 判定 `'' != null` 把已移除属性误判在位——null
+        // selection error 门 'srcset removed' 无关联面走偏）。
+        if (!sel) return null;
+      }
+      if (sel && typeof __zw_get_attr_lw === 'function') {
+        // lw 视角缺席（removeAttribute 闭合 + 从未存在）即缺席——不再回落
+        // 解析期快照 `__zw_get_attr`（stale 原值复活 → selection 非 null →
+        // avail-hit 重派 load，relevant-mutations 'src removed' timeout 行实证）。
+        if (typeof __zw_has_attr_lw === 'function' && __zw_has_attr_lw(sel, name) !== '1') {
+          return null;
+        }
+        var lwv = __zw_get_attr_lw(sel, name);
+        if (lwv != null) return String(lwv);
+      }
+      if (sel && typeof __zw_get_attr === 'function') {
+        var sv = __zw_get_attr(sel, name);
+        if (sv != null) return String(sv);
+      }
+    } catch (_e5277at) {}
+    return null;
+  };
+  // §4.8.4.3.10 parse a srcset attribute。描述符文法：w = 纯数字+'w'（0 → error）、
+  // x = HTML 浮点解析（`.5`/`1e0`/`-.5` 合法，`+1`/`1.`/`Infinity` 字面量非法；
+  // <0 → error，0 合法）、h = 兼容描述符（parse error 但继续；width 缺席 → error）。
+  // 括号分组：in-parens 状态吞并逗号/空白（`( , b 1x, )` 成单描述符后整体 error，
+  // 候选丢弃、后续候选继续）。
+  globalThis.__zwParseSrcsetAttr5277 = function (input) {
+    input = String(input == null ? '' : input);
+    var pos = 0, n = input.length, candidates = [];
+    while (pos < n) {
+      // splitting loop：吞 ASCII 空白与逗号（逗号收集是 parse error 但继续）
+      while (pos < n && (_zw5277IsWs(input.charAt(pos)) || input.charAt(pos) === ',')) pos++;
+      if (pos >= n) break;
+      var end = pos;
+      while (end < n && !_zw5277IsWs(input.charAt(end))) end++;
+      var url = input.slice(pos, end);
+      pos = end;
+      var descriptors = [];
+      if (url.charAt(url.length - 1) === ',') {
+        url = url.replace(/,+$/, '');
+      } else {
+        // descriptor tokenizer（in descriptor / in parens / after descriptor 三态）
+        while (pos < n && _zw5277IsWs(input.charAt(pos))) pos++;
+        var current = '', state = 0 /* 0=in-desc 1=in-parens 2=after-desc */, jumped = false;
+        while (pos < n) {
+          var c = input.charAt(pos);
+          if (state === 0) {
+            if (_zw5277IsWs(c)) {
+              if (current) { descriptors.push(current); current = ''; }
+              state = 2;
+            } else if (c === ',') {
+              pos++;
+              if (current) descriptors.push(current);
+              jumped = true;
+              break;
+            } else if (c === '(') {
+              current += c; state = 1;
+            } else {
+              current += c;
+            }
+          } else if (state === 1) {
+            if (c === ')') { current += c; state = 0; } else { current += c; }
+          } else {
+            if (!_zw5277IsWs(c)) { state = 0; pos--; }
+          }
+          pos++;
+        }
+        if (!jumped && current) descriptors.push(current);
+      }
+      // descriptor parser（per-candidate 显式复位——var 无初始化子不随迭代重置，
+      // 上一候选的 width/density 残留会误判冲突 error）
+      var error = false, width = undefined, density = undefined, fch = undefined;
+      for (var di = 0; di < descriptors.length; di++) {
+        var d = descriptors[di], m;
+        if ((m = /^([0-9]+)w$/.exec(d))) {
+          if (width !== undefined || density !== undefined) { error = true; break; }
+          if (parseInt(m[1], 10) === 0) { error = true; break; }
+          width = parseInt(m[1], 10);
+        } else if ((m = /^(-?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?)x$/.exec(d))) {
+          if (width !== undefined || density !== undefined || fch !== undefined) { error = true; break; }
+          var dv = parseFloat(m[1]);
+          if (!(dv >= 0)) { error = true; break; }
+          density = dv;
+        } else if ((m = /^([0-9]+)h$/.exec(d))) {
+          // future-compat-h：本就是 parse error（spec 注），解析继续
+          if (fch !== undefined || density !== undefined) { error = true; break; }
+          if (parseInt(m[1], 10) === 0) { error = true; break; }
+          fch = parseInt(m[1], 10);
+        } else {
+          error = true; break;
+        }
+      }
+      if (fch !== undefined && width === undefined) error = true;
+      if (!error) {
+        var cand = { url: url };
+        if (width !== undefined) cand.width = width;
+        if (density !== undefined) cand.density = density;
+        candidates.push(cand);
+      }
+    }
+    return candidates;
+  };
+  // <source-size-value> 数值解析（px 及常用绝对/视口单位；calc() 与 % 拒收——
+  // FIXME: math functions 随后续切片）。非法 → null。
+  globalThis.__zwSourceSizeValue5277 = function (v, vw, vh) {
+    var s = String(v == null ? '' : v).trim();
+    if (!/^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(px|vw|vh|vmin|vmax|em|rem|ex|ch|q|cm|mm|in|pt|pc)?$/.test(s)) return null;
+    var num = parseFloat(s);
+    var unit = s.replace(/^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)/, '') || '';
+    switch (unit) {
+      case '': return num === 0 ? 0 : null; // 裸数字仅 0 合法（CSS <length>）
+      case 'px': return num;
+      case 'vw': return num / 100 * vw;
+      case 'vh': return num / 100 * vh;
+      case 'vmin': return num / 100 * Math.min(vw, vh);
+      case 'vmax': return num / 100 * Math.max(vw, vh);
+      case 'em': case 'rem': case 'ch': return num * 16;
+      case 'ex': return num * 8;
+      case 'q': return num * 96 / 25.4;
+      case 'cm': return num * 96 / 2.54;
+      case 'mm': return num * 96 / 25.4;
+      case 'in': return num * 96;
+      case 'pt': return num * 96 / 72;
+      case 'pc': return num * 16;
+      default: return null;
+    }
+  };
+  // §4.8.4.3.11 parse a sizes attribute → px 数值。逗号顶层切分（括号深度感知），
+  // 每项末 component = source-size-value，余下为 media-condition（matchMedia
+  // host 桥求值——逗号列表 OR、malformed → false，spec-correct）；auto 关键字
+  // （lazy auto-sizes，F5 挂账）本片按「忽略该项继续」处理。全不命中 → 100vw。
+  globalThis.__zwParseSizesAttr5277 = function (value) {
+    var vw = globalThis.innerWidth || 0, vh = globalThis.innerHeight || 0;
+    var list = String(value == null ? '' : value);
+    var parts = [], depth = 0, start = 0;
+    for (var i = 0; i < list.length; i++) {
+      var ch = list.charAt(i);
+      if (ch === '(') depth++;
+      else if (ch === ')') { if (depth > 0) depth--; }
+      else if (ch === ',' && depth === 0) { parts.push(list.slice(start, i)); start = i + 1; }
+    }
+    parts.push(list.slice(start));
+    for (var pi = 0; pi < parts.length; pi++) {
+      var entry = parts[pi].replace(/\s+$/, '');
+      if (!entry) continue;
+      var cut = -1;
+      for (var j = entry.length - 1; j >= 0; j--) {
+        if (_zw5277IsWs(entry.charAt(j))) { cut = j; break; }
+      }
+      var condStr = '', valStr = entry;
+      if (cut >= 0) { condStr = entry.slice(0, cut).trim(); valStr = entry.slice(cut + 1); }
+      var size = globalThis.__zwSourceSizeValue5277(valStr, vw, vh);
+      var isAuto = size === null && /^\s*auto\s*$/i.test(valStr);
+      if (size === null && !isAuto) continue;
+      if (condStr !== '' && !globalThis.__zwMediaMatches5277(condStr)) continue;
+      if (!isAuto) return size;
+    }
+    return vw;
+  };
+  // media-condition 求值（window.matchMedia host 桥复用——zero_css_parser
+  // media_query：空串隐含 all → true、malformed → false、逗号列表 OR）。
+  globalThis.__zwMediaMatches5277 = function (q) {
+    try {
+      if (typeof globalThis.matchMedia === 'function') {
+        var m = globalThis.matchMedia(String(q));
+        return !!(m && m.matches);
+      }
+    } catch (_e5277mq) {}
+    return false;
+  };
+  // source type 属性支持性判定（RFC 7231 MIME 结构 + 图像格式白名单；空/空白
+  // 值跳过检查——`type`/`type=' '` rows 选中 source 面）。参数（;k=v）不影响
+  // 本质类型；image/* 通配是结构合法但白名单外 → unsupported。
+  globalThis.__zwSourceSupportedType5277 = function (v) {
+    var s = String(v == null ? '' : v).trim();
+    if (!s) return true;
+    var sc = s.indexOf(';');
+    var essence = (sc >= 0 ? s.slice(0, sc) : s).trim();
+    var slash = essence.indexOf('/');
+    if (slash <= 0 || slash !== essence.lastIndexOf('/')) return false;
+    var tokenRe = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+    var t = essence.slice(0, slash), st = essence.slice(slash + 1);
+    if (!tokenRe.test(t) || !tokenRe.test(st)) return false;
+    var rest = sc >= 0 ? s.slice(sc + 1) : '';
+    if (rest && !/^\s*[!#$%&'*+\-.^_`|~0-9A-Za-z]+(\s*=\s*("[^"]*"|[!#$%&'*+\-.^_`|~0-9A-Za-z]+))?\s*(;.*)?$/.test(rest)) return false;
+    var mime = (t + '/' + st).toLowerCase();
+    return mime === 'image/gif' || mime === 'image/png' || mime === 'image/jpeg'
+      || mime === 'image/svg+xml' || mime === 'image/x-icon' || mime === 'image/webp';
+  };
+  // §4.8.4.3.8 create a source set：srcset 候选 + sizes 源尺寸 + default source
+  // 补挂（无 1x 密度描述符且无 width 描述符时）+ 密度归一。候选 URL 就地
+  // 绝对化（spec select-an-image-source：selected source 是**解析后** URL
+  // https://html.spec.whatwg.org/multipage/images.html#select-an-image-source
+  // ——available-images 元组键/请求 URL/currentSrc 同源；IDL `.src` 往返会把
+  // 绝对形写回属性，raw 键与绝对键并存会把同图拆成两个 avail 表项——
+  // image-loading-lazy-available P→F 实证）。
+  globalThis.__zwCreateSourceSet5277 = function (defaultSource, srcset, sizes) {
+    var sources = String(srcset == null ? '' : srcset) !== '' ? globalThis.__zwParseSrcsetAttr5277(srcset) : [];
+    var size = globalThis.__zwParseSizesAttr5277(sizes);
+    var hasD1 = false, hasW = false;
+    for (var i = 0; i < sources.length; i++) {
+      if (sources[i].density === 1) hasD1 = true;
+      if (sources[i].width !== undefined) hasW = true;
+    }
+    var def = String(defaultSource == null ? '' : defaultSource);
+    if (def !== '' && !hasD1 && !hasW) sources.push({ url: def, density: 1 });
+    for (var k = 0; k < sources.length; k++) {
+      if (sources[k].density === undefined) {
+        sources[k].density = sources[k].width !== undefined ? sources[k].width / size : 1;
+      }
+      if (sources[k].url && typeof _zwResolveFetchUrl === 'function') {
+        try { sources[k].url = _zwResolveFetchUrl(String(sources[k].url)); } catch (_e5277abs) {}
+      }
+    }
+    return { sources: sources, size: size };
+  };
+  // §4.8.4.3.9 update the source set：父为 picture 时按 picture 子元素序走
+  // source（srcset 缺席/零候选/media 不匹配/type 不支持 → continue），
+  // 命中 el 即从 el 自身属性创建并返回。SVG ns 的 source 不参与（HTML 元素门）。
+  // FIXME: source width/height dimension attribute source（corpus 本片无观测面）。
+  globalThis.__zwUpdateSourceSet5277 = function (sel, handle) {
+    var el = _makeProxy(sel, handle);
+    var parent = null;
+    try { parent = el.parentElement || null; } catch (_e5277pp) {}
+    var children = null;
+    if (parent && _zw5277Tag(parent) === 'PICTURE') {
+      try {
+        var kids = parent.children;
+        children = [];
+        for (var ci = 0; ci < kids.length; ci++) children.push(kids[ci]);
+      } catch (_e5277ck) { children = null; }
+    }
+    if (!children || !children.length) children = [el];
+    for (var i = 0; i < children.length; i++) {
+      var child = children[i];
+      if (child === el) {
+        return globalThis.__zwCreateSourceSet5277(
+          _zw5277Attr(sel, handle, 'src') || '',
+          _zw5277Attr(sel, handle, 'srcset') || '',
+          _zw5277Attr(sel, handle, 'sizes') || '');
+      }
+      if (_zw5277Tag(child) !== 'SOURCE') continue;
+      var cSel = child.__zwSelector, cHandle = child.__zwHandle;
+      var cSrcset = _zw5277Attr(cSel, cHandle, 'srcset');
+      if (cSrcset == null) continue;
+      var cSources = globalThis.__zwParseSrcsetAttr5277(cSrcset);
+      // source 分支不经 __zwCreateSourceSet5277——绝对化同源（见 create 注记）。
+      for (var cs = 0; cs < cSources.length; cs++) {
+        if (cSources[cs].url && typeof _zwResolveFetchUrl === 'function') {
+          try { cSources[cs].url = _zwResolveFetchUrl(String(cSources[cs].url)); } catch (_e5277absc) {}
+        }
+      }
+      if (!cSources.length) continue;
+      var cMedia = _zw5277Attr(cSel, cHandle, 'media');
+      if (cMedia != null && !globalThis.__zwMediaMatches5277(cMedia)) continue;
+      var cType = _zw5277Attr(cSel, cHandle, 'type');
+      if (cType != null && !globalThis.__zwSourceSupportedType5277(cType)) continue;
+      var setSize = globalThis.__zwParseSizesAttr5277(_zw5277Attr(cSel, cHandle, 'sizes') || '');
+      for (var k2 = 0; k2 < cSources.length; k2++) {
+        if (cSources[k2].density === undefined) {
+          cSources[k2].density = cSources[k2].width !== undefined ? cSources[k2].width / setSize : 1;
+        }
+      }
+      return { sources: cSources, size: setSize };
+    }
+    return { sources: [], size: 0 };
+  };
+  // §4.8.4.3.7 select an image source：去重（同密度保首）+ 实现
+  // 定义选择（取 ≤ DPR 的最大密度，无则最小密度——Chromium「最接近且不超」
+  // 惯例；corpus 判别面全部单存活候选，不敏感）。null → 无选中源。
+  globalThis.__zwSelectImageSource5277 = function (sel, handle) {
+    var set = globalThis.__zwUpdateSourceSet5277(sel, handle);
+    if (!set.sources.length) return null;
+    var seen = {}, picked = [];
+    for (var i = 0; i < set.sources.length; i++) {
+      var kk = String(set.sources[i].density);
+      if (seen[kk]) continue;
+      seen[kk] = true;
+      picked.push(set.sources[i]);
+    }
+    var dpr = Number(globalThis.devicePixelRatio) || 1;
+    var best = null, smallest = null;
+    for (var j = 0; j < picked.length; j++) {
+      var s = picked[j];
+      if (s.density <= dpr && (best === null || s.density > best.density)) best = s;
+      if (smallest === null || s.density < smallest.density) smallest = s;
+    }
+    return best || smallest;
+  };
+  // s71 F1b：data: SVG payload 抽取——`data:image/svg+xml[,base64],<body>`，
+  // 百分号解码（宽松：非法 % 序列保留原串），非 SVG data URL → null。
+  globalThis.__zwSvgPayload5277 = function (url) {
+    var u = String(url == null ? '' : url);
+    var m = /^data:image\/svg\+xml([^,]*),/i.exec(u);
+    if (!m) return null;
+    var raw = u.slice(m[0].length);
+    if (/;base64/i.test(m[1])) {
+      try { raw = atob(raw); } catch (_eSvgB64) { return null; }
+    } else {
+      try { raw = decodeURIComponent(raw); } catch (_eSvgDec) {}
+    }
+    return raw;
+  };
+  // s71 F1b：SVG 固有尺寸核（CSS-images natural dimensions + HTML img SVG
+  // 语义，naturalWidth-naturalHeight-width-height SVG 面逐行对齐）。输入 SVG
+  // 文本，抽根 <svg> 标签 width/height/viewBox：
+  //   - length：数（用户单位=px，可带 px 尾缀），0 有效；负值/百分比/不可解析
+  //     → 缺席（spec：error → 属性缺席——'natural width being negative'/
+  //     'percentage' 两行 density none 实证）。
+  //   - viewBox 四数且 w>0 且 h>0 → 长宽比；退化（含 0/缺项）→ 无（'viewBox
+  //     with 0 width' 组无影响面）。
+  // 组合（axes = 逐轴密度校正元数据，仅 SVG 自身固有轴随选中密度折算，默认
+  // 具体对象尺寸 300/150 轴不校正——data-density none/both/width/height 四态）：
+  //   w+h → (w,h,both)；仅 w → AR ? (w,w/ar,both) : (w,150,width)；
+  //   仅 h → AR ? (h*ar,h,both) : (300,h,height)；
+  //   均缺 → AR ? (300,300/ar,none) : (300,150,none)。
+  // 非根 svg 标签/无标签 → null（调用方回落 host 快照/broken 原语义）。
+  // https://drafts.csswg.org/css-images/#natural-dimensions
+  // https://html.spec.whatwg.org/multipage/images.html#density-corrected-intrinsic-width-and-height
+  globalThis.__zwSvgNaturalDims5277 = function (svgText) {
+    var tag = /<svg\b([^>]*)>/i.exec(String(svgText == null ? '' : svgText));
+    if (!tag) return null;
+    var attrs = tag[1] || '';
+    var _svgAttr = function (name) {
+      var re = new RegExp('(?:^|[\\s])' + name + '\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\'|([^\\s"\'<>`]+))', 'i');
+      var m = re.exec(attrs);
+      if (!m) return null;
+      return m[1] != null ? m[1] : (m[2] != null ? m[2] : m[3]);
+    };
+    var _svgLen = function (v) {
+      if (v == null) return null;
+      var m = /^([+-]?(?:\d+(?:\.\d+)?|\.\d+))(?:px)?$/i.exec(String(v).trim());
+      if (!m) return null;
+      var n = parseFloat(m[1]);
+      if (!isFinite(n) || n < 0) return null;
+      return n;
+    };
+    var w = _svgLen(_svgAttr('width')), h = _svgLen(_svgAttr('height'));
+    var ar = null;
+    var vb = _svgAttr('viewBox');
+    if (vb != null) {
+      var vp = String(vb).trim().split(/[\s,]+/);
+      if (vp.length === 4) {
+        var vw = parseFloat(vp[2]), vh = parseFloat(vp[3]);
+        if (isFinite(vw) && isFinite(vh) && vw > 0 && vh > 0) ar = vw / vh;
+      }
+    }
+    if (w != null && h != null) return { width: w, height: h, axes: 'both' };
+    if (w != null) return ar ? { width: w, height: w / ar, axes: 'both' } : { width: w, height: 150, axes: 'width' };
+    if (h != null) return ar ? { width: h * ar, height: h, axes: 'both' } : { width: 300, height: h, axes: 'height' };
+    return ar ? { width: 300, height: 300 / ar, axes: 'none' } : { width: 300, height: 150, axes: 'none' };
+  };
+  // s78 F4：image-map 命中核（image map processing model；消费方为 part06
+  // elementFromPoint 的 host-bridge 缺席臂——runner headless 无 HitTestCache，
+  // img 框以 (0,0) 起点 + IDL width/height 近似，FIXME: 真实几何归 layout
+  // 集成面）。
+
+  // 「rules for parsing a list of floating-point numbers」：分隔集 = ASCII
+  // 空白（TAB LF FF CR SP；\v U+000B 非空白——area-coords 矩阵 hitNone 行）+
+  // 逗号 + 分号，连续分隔一体跳过（'2,,10' 不产 0 项）；垃圾字符（非分隔且非
+  // 数字/'.'/’-’）跳到数值起点（'="2' → 2、'2a2b20c20' token 浮点前缀截断）；
+  // token 浮点解析（'.4' → 0.4、'1e1' → 10、'2in' → 2 尾垃圾忽略、error → 0
+  // 如 '--5'）；全垃圾/空 → 空表。
+  // https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#rules-for-parsing-a-list-of-floating-point-number-values
+  globalThis.__zwImgMapFloatList5278 = function (input) {
+    var s = String(input == null ? '' : input);
+    var i = 0, n = s.length, out = [];
+    var _delim = function (c) {
+      return c === ',' || c === ';' || c === ' ' || c === '\t' || c === '\n' || c === '\f' || c === '\r';
+    };
+    var _numch = function (c) {
+      return (c >= '0' && c <= '9') || c === '.' || c === '-';
+    };
+    while (i < n) {
+      while (i < n && _delim(s.charAt(i))) i++;
+      if (i >= n) break;
+      while (i < n && !_delim(s.charAt(i)) && !_numch(s.charAt(i))) i++;
+      var start = i;
+      while (i < n && !_delim(s.charAt(i))) i++;
+      if (i === start) break; // 垃圾直接到尾——无 token
+      var m = /^([+-]?)(\d+(?:\.\d*)?|\.\d+)(?:[eE]([+-]?\d+))?/.exec(s.slice(start, i));
+      var v = m ? parseFloat((m[1] || '') + m[2] + (m[3] !== undefined ? 'e' + m[3] : '')) : NaN;
+      out.push(isFinite(v) ? v : 0);
+    }
+    return out;
+  };
+  // shape 枚举属性解析：ASCII case-insensitive 关键字匹配（Unicode toLowerCase
+  // 会把 'CİRCLE' 折成 'ci̇rcle' 误判 circle——corpus hitNone 行）；missing/
+  // invalid 值均落 rectangle 缺省。
+  // https://html.spec.whatwg.org/multipage/image-maps.html#attr-area-shape
+  globalThis.__zwImgMapShape5278 = function (shapeAttr) {
+    switch (_zwASCIILower(shapeAttr == null ? '' : String(shapeAttr))) {
+      case 'circle': case 'circ': return 'circle';
+      case 'default': return 'default';
+      case 'poly': case 'polygon': return 'poly';
+      default: return 'rect'; // 'rect'/'rectangle'/missing/invalid → rectangle
+    }
+  };
+  // 点入形状判定（spec processing model 步 4：各态最小计数 circle 3/poly 6/
+  // rect 4 不足 → 空形；circle 截到 3 数且 r ≤ 0 → 空形；rect 1↔3/2↔4 交换
+  // 归一 + [x1,x2)×[y1,y2)——corpus 无 rect 边界定谳行，FIXME: 取 CSS 半开
+  // 惯例；poly 奇数丢尾 + 偶数顶点全取 even-odd 射线（半开边 min(y)≤y<
+  // max(y) + x ≤ 交点——star (199,101) 边界行定谳面）；default → 整图恒真。
+  // https://html.spec.whatwg.org/multipage/image-maps.html#image-map-processing-model
+  globalThis.__zwImgMapShapeAt5278 = function (shape, nums, x, y) {
+    if (shape === 'default') return true;
+    if (shape === 'circle') {
+      if (nums.length < 3) return false;
+      var r = nums[2];
+      if (r <= 0) return false;
+      var dx = x - nums[0], dy = y - nums[1];
+      return dx * dx + dy * dy <= r * r;
+    }
+    if (shape === 'rect') {
+      if (nums.length < 4) return false;
+      var x1 = Math.min(nums[0], nums[2]), x2 = Math.max(nums[0], nums[2]);
+      var y1 = Math.min(nums[1], nums[3]), y2 = Math.max(nums[1], nums[3]);
+      return x >= x1 && x < x2 && y >= y1 && y < y2;
+    }
+    // poly
+    if (nums.length % 2 === 1) nums = nums.slice(0, nums.length - 1);
+    if (nums.length < 6) return false;
+    var inside = false;
+    for (var i = 0, j = nums.length - 2; i < nums.length; j = i, i += 2) {
+      var yi = nums[i + 1], yj = nums[j + 1], xi = nums[i], xj = nums[j];
+      // 边界含入（corpus 定谳面：star (101,101) 在闭合边 y=x、(199,101) 在
+      // x+y=300、hitPoly (119,101) 在 x+y=220 均期望命中——先 on-edge 预检，
+      // 命中即真；语料全整数坐标，外积精确判 0，FIXME: 非整数边界 FP 噪声
+      // 落 even-odd 射线仍确定性）。
+      var lo = yi < yj ? yi : yj, hi = yi < yj ? yj : yi;
+      if (y >= lo && y <= hi) {
+        var lox = xi < xj ? xi : xj, hix = xi < xj ? xj : xi;
+        var cross = (x - xi) * (yj - yi) - (y - yi) * (xj - xi);
+        if (cross === 0 && x >= lox && x <= hix) return true;
+      }
+      if (y >= lo && y < hi && x <= ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  };
+  // hash-name reference 解析：无 '#' 或 '#' 为末字符 → null；否则首个 '#' 后
+  // 到尾（不 trim）。map 元素查找（树序首个 name/id 匹配）在 part06 命中面。
+  // https://html.spec.whatwg.org/multipage/image-maps.html#rules-for-parsing-a-hash-name-reference
+  globalThis.__zwImgMapHashRef5278 = function (usemapAttr) {
+    var s = String(usemapAttr == null ? '' : usemapAttr);
+    var i = s.indexOf('#');
+    if (i < 0 || i === s.length - 1) return null;
+    return s.slice(i + 1);
+  };
+  globalThis.__zwSelectUrl5277 = function (sel, handle) {
+    var s = globalThis.__zwSelectImageSource5277(sel, handle);
+    return s ? s.url : '';
+  };
+  // §4.8.4.3.2 relevant mutations 状态表：crossorigin/referrerpolicy 按
+  // content-state 枚举比较（missing/empty/invalid → 缺省态，大小写不敏感）——
+  // 「state not changed」rows（empty→invalid、absent→invalid、大小写等值）
+  // 不触发，真变迁（absent→empty、default→有效关键字）触发。
+  globalThis.__zwAttrState5277 = function (name, v) {
+    if (v == null) return name === 'crossorigin' ? 'missing' : 'no-referrer-when-downgrade';
+    var s = String(v).trim().toLowerCase();
+    if (name === 'crossorigin') {
+      return (s === 'use-credentials') ? 'use-credentials' : 'anonymous';
+    }
+    switch (s) {
+      case 'no-referrer': case 'no-referrer-when-downgrade': case 'same-origin':
+      case 'origin': case 'strict-origin': case 'origin-when-cross-origin':
+      case 'strict-origin-when-cross-origin': case 'unsafe-url':
+        return s;
+      default:
+        return 'no-referrer-when-downgrade';
+    }
+  };
+  // s70：update-the-image-data 运行核（R56h `.src` IDL 链自 part05 setter 抽出，
+  // 供 setter 与 relevant-mutations 重验共用）。语义增补（spec
+  // https://html.spec.whatwg.org/multipage/images.html#updating-the-image-data）：
+  // ① restart 判定改为选中 URL 比较——选中 URL 与现态不同才作废旧请求；相同 URL
+  //    不 delete（available-images 命中 → 重 settle + 重派 load，`src set to
+  //    same value` 面——spec available-images 臂 load 派发仅受 maybe-omit-events
+  //    门控，R5275 的「同 URL 幂等不重派」按 spec 语义收窄为「URL 变更才重启」）。
+  // ② _imDensity：选中像素密度入 resourceState（naturalWidth 密度校正消费）。
+  // ③ 入参 _imSrc 为**选中** URL（srcset/sizes/picture 已在 __zwSelectUrl5277
+  //    归一）；null/空串由调用方的 null-selection 路径处理，不入本核。
+  // ④ CSP 阻止臂的 moAttr 复写删除（setter 外层已置，抽取后无此局部量）。
+  // ⑤ 错误派发条件补 spec 门（null-selection 除外）：has src/srcset/picture 且
+  //    previousURL 非空才派 error——空选中路径在 __zwImgNullSelection5277。
+  globalThis.__zwImgRunUpdate5277 = function (sel, handle, _imSrc, _imDensity, _imViaDefer) {
+    var key = _elKey(sel, handle);
+    var _imKey = key;
+    var _imPrev = _resourceStates[_imKey];
+    var _imHadPrev = !!_imPrev;
+    var _imUrlChanged = !!(!_imPrev || _imPrev.url !== _imSrc);
+    if (_imPrev && _imUrlChanged) delete _resourceStates[_imKey];
+    var _zwAvailImgs = globalThis._zwAvailableImages = globalThis._zwAvailableImages || {};
+    var _imFetched = false; // R5275：fetch 臂旗标（终点消费一次 → 在飞 -1）
+    // R5275：仅 fetch 臂终点计数 -1（available-images 同步臂/空 src 臂未 +1 不减
+    // ——__zwImgLoadBlocked 的等待判定面）；无派发终点（InvalidState 守卫失败）
+    // 也须消费旗标。
+    var _imInflightEnd = function () {
+      if (_imFetched) {
+        _imFetched = false;
+        globalThis._zwImgInflight = Math.max(0, (globalThis._zwImgInflight || 0) - 1);
+      }
+    };
+    var _zwImgDispatch = function (type) {
+      _imInflightEnd();
+      if (globalThis.__zwReadyState === 'loading') {
+        globalThis._zwImgPendingEvents = globalThis._zwImgPendingEvents || [];
+        globalThis._zwImgPendingSet = globalThis._zwImgPendingSet || {};
+        globalThis._zwImgPendingSet[_imKey] = true;
+        globalThis._zwImgPendingEvents.push({ key: _imKey, sel: sel, handle: handle, type: type, url: _imSrc });
+        return;
+      }
+      if (type === 'error' && !_resourceStates[_imKey]) {
+        _resourceStates[_imKey] = { url: _imSrc, outcome: 'broken', width: 0, height: 0, error: true, density: _imDensity };
+      }
+      _dispatchWithBubble(_imKey, sel, handle, _makeEvent(type, { bubbles: false, cancelable: false }));
+    };
+    // security-hardening M2-s8：img-src 检查点——`__zwCspImgCheck` 原生回调
+    // （resolve abs → check_image → 阻止 → violation 入共享队列 [document 站] +
+    // 返回 '1'）：跳过 fetch 链、延迟派 error（onerror 语义）。回调未注册
+    //（CSP 关）→ 恒放行零变更。CSP 臂保持既有 _defer 直派语义（不进闸门队列
+    // ——violation 事件时序面独立）。
+    if (_imSrc && typeof __zwCspImgCheck === 'function' && __zwCspImgCheck(_imSrc) === '1') {
+      _defer(function () {
+        _dispatchWithBubble(key, sel, handle, _makeEvent('error', { bubbles: false, cancelable: false }));
+      });
+      _imSrc = undefined;
+    }
+    var _imFail = function () {
+      _zwImgDispatch('error');
+    };
+    if (_imSrc && _zwAvailImgs[_imSrc]) {
+      // R5275 ②：available-images 命中——**状态同步 settle**（naturalWidth/
+      // complete 同步可读——already-loaded-image-sync-width 断言面），load 事件
+      // _defer 派发（spec：relevant mutation 触发的 image loading task 异步派
+      // load——setter 同步任务内 src 后注册的 onload 不得丢，探针实证
+      // available-images-onload i2 链同步即派丢事件）+ 在飞计数（window load
+      // 等待循环据 `__zwImgLoadBlocked` 排在事件之后——spec the-end 序）。
+      // s70：同 URL 重复命中也重派（relevant-mutations 'src set to same value'
+      // ——spec load 派发门控仅 maybe-omit-events）。
+      var _av5275 = _zwAvailImgs[_imSrc];
+      // s71 F1b：SVG 固有轴元数据随 avail 缓存传播（density-corrected 尺寸逐轴
+      // 折算——仅 SVG 自身固有轴随密度校正，默认 300/150 轴不校正）。
+      _resourceStates[_imKey] = { url: _imSrc, outcome: 'loaded', width: _av5275.width, height: _av5275.height, error: null, density: _imDensity, axes: _av5275.axes };
+      _imFetched = true;
+      globalThis._zwImgInflight = (globalThis._zwImgInflight || 0) + 1;
+      _defer(function () { _zwImgDispatch('load'); });
+    } else if (_imSrc && typeof fetch === 'function') {
+      // detached 更新延一步（spec update-the-image-data：img 不在 document 时
+      // await 步进；relevant mutations 本身是 microtask——脚本任务内 `.src=`
+      // 先于 `loading='lazy'` 写入的时序（src-then-lazy-load）须在延后重读
+      // loading attr 再判定）。avail settle/restart 删除保持同步（img.complete
+      // available-lookup/pending-request 两行同步断言面）。经 defer 重入不再
+      // 延（detached Image() 预载照常 fetch——2d.drawImage zerosource 面）。
+      if (!_imViaDefer) {
+        try {
+          var _imConn = _makeProxy(sel, handle);
+          if (_imConn && _imConn.isConnected === false) {
+            _defer(function () {
+              globalThis.__zwImgRunUpdate5277(sel, handle, _imSrc, _imDensity, true);
+            });
+            return;
+          }
+        } catch (_e5277cn) {}
+      }
+      // lazy 视口门（spec updating-the-image-data：available-images 检查先于
+      // lazy 决定——image-loading-lazy-available/use-list 断言面，故只拦 fetch
+      // 启动不拦 avail settle；deferred lazy img 的 relevant mutations 不触发
+      // 请求——image-loading-lazy-relevant-mutations 面）。视口触发近似 =
+      // scrollIntoView 旗标（__zwImgScrollIntoView5277；F5 视口模型收口前）。
+      // 曾有请求（已加载 lazy img 换 src）不受门——restart 语义照旧。
+      var _imLazy = '';
+      try { _imLazy = String(_zw5277Attr(sel, handle, 'loading') || '').toLowerCase(); } catch (_e5277lz) {}
+      if (_imLazy === 'lazy' && !_imHadPrev
+          && !(globalThis._zw5277ViewportFlag && globalThis._zw5277ViewportFlag[_imKey])) {
+        return;
+      }
+      try {
+        // Resource Timing（M3-S3）：运行时 img 经页面 fetch 取图——置发起方
+        // 旗标（fetch 包裹消费为 initiatorType 'img'；net 元数据经响应对象
+        // __zwRtMeta 携带——resource_timing_test0 的 img encodedBodySize 精确面）。
+        _zwRtPendingInitiator = 'img';
+        // R5275：在飞计数 +1（终点 _zwImgDispatch 消费 _imFetched 后 -1）——
+        // window load 派发前 __zwImgLoadBlocked 据此等待（trickle(d2) 慢图
+        // 延迟 window load 语义）。
+        _imFetched = true;
+        globalThis._zwImgInflight = (globalThis._zwImgInflight || 0) + 1;
+        fetch(_imSrc).then(function (resp) {
+          if (!resp.ok) { _imFail(); return; }
+          resp.blob().then(function (blob) {
+            createImageBitmap(blob).then(function (bm) {
+              // R56h：手动 settle（handle 元素）——_zwSettleResourceSelector 只收
+              // sel（new Image() 的 handle-based 元素 sel 为 null → key 不匹配
+              // listener 槽位，onload 不触发）。resourceState 用 _elKey(sel, handle)
+              // 与 naturalWidth getter 同 key；事件经 _dispatchWithBubble 同 key 派发。
+              // R5275：settle 同时写 available-images 缓存（同 URL 后续 src 同步
+              // settle）；旧「已 settled → _imFail」守卫删除（restart 语义由
+              // setter 前置 delete 承担——mid-flight 二次 fetch 回调后写胜出，
+              // 镜像 spec 最后一个 relevant mutation 胜出）。
+              _resourceStates[_imKey] = { url: _imSrc, outcome: 'loaded', width: bm.width, height: bm.height, error: null, density: _imDensity };
+              _zwAvailImgs[_imSrc] = { width: bm.width, height: bm.height };
+              _zwImgDispatch('load');
+            }, function (e) {
+              // R56h：零尺寸图像（SVG width=0）→ img 元素语义 = loaded（naturalWidth
+              // 0，drawImage no-op——2d.drawImage.zerosource.image 期望 onload 且
+              // 不绘制）；真解码失败（broken）→ error 事件。
+              if (e && e.name === 'InvalidStateError') {
+                if (!_resourceStates[_imKey]) {
+                  _resourceStates[_imKey] = { url: _imSrc, outcome: 'loaded', width: 0, height: 0, error: null, density: _imDensity };
+                  _zwImgDispatch('load');
+                } else {
+                  _imInflightEnd(); // 无派发终点——旗标仍消费（在飞计数平衡）
+                }
+              } else {
+                _imFail();
+              }
+            });
+          }, _imFail);
+        }, _imFail);
+      } catch (_e) {
+        _imFail();
+      }
+    } else {
+      // R5275：fetch 不可用（无宿主 handler）或空 src（failed with null 语义
+      // 保持既有 error 面）→ broken + error（原语义）。
+      _imFail();
+    }
+  };
+  // s70：relevant mutations 重验入口——选中源非空走运行核，空选中走
+  // null-selection 面（spec：current request → broken、current URL 清空、
+  // error 仅在「有 src/srcset/picture 关联」时派——'src removed'/'srcset
+  // removed' rows 撤除后无关联 → 不派（timeout 面））。
+  globalThis.__zwImgRevalidate5277 = function (sel, handle) {
+    var picked = null;
+    try { picked = globalThis.__zwSelectImageSource5277(sel, handle); } catch (_e5277rv) { picked = null; }
+    if (picked && picked.url) {
+      globalThis.__zwImgRunUpdate5277(sel, handle, picked.url, picked.density);
+      return;
+    }
+    // null selection：仅已有请求（resourceState 在）时写 broken（无请求 img 维持
+    // 既有「无状态」面——sweep 跳过语义）。
+    var _nkKey = _elKey(sel, handle);
+    var _nkPrev = _resourceStates[_nkKey];
+    if (!_nkPrev) return;
+    _resourceStates[_nkKey] = { url: '', outcome: 'broken', width: 0, height: 0, error: true, density: 1 };
+    // error 门：post-mutation 仍有 src/srcset 关联或 picture 祖先
+    var _nkHasLink = false;
+    try {
+      _nkHasLink = _zw5277Attr(sel, handle, 'src') != null || _zw5277Attr(sel, handle, 'srcset') != null;
+      if (!_nkHasLink) {
+        var _nkEl = _makeProxy(sel, handle);
+        var _nkUp = _nkEl.parentElement, _nkGuard = 0;
+        while (_nkUp && _nkGuard++ < 32) {
+          if (_zw5277Tag(_nkUp) === 'PICTURE') { _nkHasLink = true; break; }
+          _nkUp = _nkUp.parentElement;
+        }
+      }
+    } catch (_e5277nl) {}
+    if (_nkHasLink) {
+      if (globalThis.__zwReadyState === 'loading') {
+        globalThis._zwImgPendingEvents = globalThis._zwImgPendingEvents || [];
+        globalThis._zwImgPendingSet = globalThis._zwImgPendingSet || {};
+        globalThis._zwImgPendingSet[_nkKey] = true;
+        globalThis._zwImgPendingEvents.push({ key: _nkKey, sel: sel, handle: handle, type: 'error', url: '' });
+        return;
+      }
+      _dispatchWithBubble(_nkKey, sel, handle, _makeEvent('error', { bubbles: false, cancelable: false }));
+    }
+  };
+  // s70：scrollIntoView 视口触发近似——置 per-element 旗标并重验未启动的
+  // lazy img（spec update-the-image-data 视口门：进入视口后按**最新**选中源
+  // fetch——image-loading-lazy-crossorigin-change「deferred img 用最新
+  // crossorigin」断言面）。headless 无真视口，旗标置即开（F5 视口模型收口
+  // 时随 layout 几何接管）。
+  globalThis.__zwImgScrollIntoView5277 = function (sel, handle) {
+    try {
+      var _svKey = _elKey(sel, handle);
+      globalThis._zw5277ViewportFlag = globalThis._zw5277ViewportFlag || {};
+      globalThis._zw5277ViewportFlag[_svKey] = true;
+      if (!_resourceStates[_svKey]) globalThis.__zwImgRevalidate5277(sel, handle);
+    } catch (_e5277sv) {}
+  };
+  // s70：内容属性/IDL 写入触发面（part04 setAttribute/removeAttribute trap 尾、
+  // part05 set trap IDL 臂消费）。src/srcset/sizes 恒重验；crossorigin/
+  // referrerpolicy 按状态枚举比对（preRaw = 写入前值，null = 缺席）。SOURCE 的
+  // srcset/sizes/media/type 变迁 → 父 picture 内其后 img 兄弟重验。
+  globalThis.__zwImgAttrMutated5277 = function (sel, handle, name, removed, preRaw) {
+    var tag = '';
+    try { tag = _realTag(sel, handle) || ''; } catch (_e5277am) {}
+    tag = String(tag).split(':').pop();
+    var ln = String(name).toLowerCase();
+    if (tag === 'IMG') {
+      if (ln === 'src' || ln === 'srcset' || ln === 'sizes') {
+        globalThis.__zwImgRevalidate5277(sel, handle);
+        return;
+      }
+      if (ln === 'crossorigin' || ln === 'referrerpolicy') {
+        var postV = removed ? null : _zw5277Attr(sel, handle, ln);
+        if (globalThis.__zwAttrState5277(ln, preRaw) !== globalThis.__zwAttrState5277(ln, postV)) {
+          globalThis.__zwImgRevalidate5277(sel, handle);
+        }
+      }
+      return;
+    }
+    if (tag === 'SOURCE') {
+      if (ln !== 'srcset' && ln !== 'sizes' && ln !== 'media' && ln !== 'type') return;
+      // 关联 img：父为 picture 时**其后**的 img 兄弟（spec——img 只看前序 source）
+      try {
+        var sEl = _makeProxy(sel, handle);
+        var sParent = sEl.parentElement;
+        if (!sParent || _zw5277Tag(sParent) !== 'PICTURE') return;
+        var sKids = sParent.children;
+        var after = false;
+        for (var si = 0; si < sKids.length; si++) {
+          if (sKids[si] === sEl) { after = true; continue; }
+          if (after && _zw5277Tag(sKids[si]) === 'IMG') {
+            globalThis.__zwImgRevalidate5277(sKids[si].__zwSelector, sKids[si].__zwHandle);
+          }
+        }
+      } catch (_e5277sa) {}
+    }
+  };
+  // s70：树结构触发面（part04 appendChild/insertBefore/removeChild trap 消费）。
+  // spec relevant mutations：img 自身插入/移除且新/旧父为 picture → 重验该 img；
+  // source 插入/移除且父为 picture → 其后 img 兄弟重验。子树深查不做（picture
+  // 整体插入不动 img 自身——'picture is inserted' rows timeout 面）。
+  globalThis.__zwImgTreeMutated5277 = function (parentSel, parentHandle, node, isInsert) {
+    try {
+      if (!node || node.nodeType !== 1) return;
+      var pTag = '';
+      try { pTag = _realTag(parentSel, parentHandle) || ''; } catch (_e5277tp) {}
+      if (String(pTag).split(':').pop() !== 'PICTURE') return;
+      var nTag = _zw5277Tag(node);
+      if (nTag === 'IMG') {
+        globalThis.__zwImgRevalidate5277(node.__zwSelector, node.__zwHandle);
+        return;
+      }
+      if (nTag !== 'SOURCE') return;
+      var pEl = _makeProxy(parentSel, parentHandle);
+      var kids = pEl.children;
+      var after = false;
+      for (var i = 0; i < kids.length; i++) {
+        if (kids[i] === node) { after = true; continue; }
+        if (after && _zw5277Tag(kids[i]) === 'IMG') {
+          globalThis.__zwImgRevalidate5277(kids[i].__zwSelector, kids[i].__zwHandle);
+        }
+      }
+    } catch (_e5277tm) {}
+  };
+  // s69（html-semantics M2 切片 69，2026-10-24）：img.decode() 共享解码核——
+  // 资源 trap（part04，R56h settle 状态机面）/ detached 产物动态臂（上方
+  // createElement IMG）/ SVGImageElement 原型三方复用。决策序近似 spec
+  // dom-img-decode：
+  // ① 候选 URL = select-an-image-source 共享核（s70 __zwSelectUrl5277——
+  //    picture/source walk + srcset/sizes 完整解析），核不可用/无选中时回落
+  //    directCand()（IMG：src → srcset 首 token；SVG：href → xlink:href）；
+  //    无候选 → EncodingError。
+  // ② 活跃文档判别：ownerDocument 改指（adopt-out 即 false，探针 A 实证）+
+  //    parentNode 链 root doc 非主文档兜底 → EncodingError（spec 步 2）。
+  // ③ 终态/available-images 命中即 resolve；自驱 fetch 链（fetch → blob →
+  //    createImageBitmap，R56h 同形）成功 resolve，任一环失败 EncodingError。
+  //    decode 只读：不写 _resourceStates/_zwAvailableImages、不派 load/error
+  //    ——settle 写路径仍归 setter/sweep 单通道。
+  // **恒异步 settle**（微任务决断）+ **候选调用时捕获**：spec decode 无同步
+  // settle 面、跟随调用时的 current request——同 turn 的 adopt 时序
+  //（adopted-into-inactive 案，先前同步即决版探针 B/C 实证漏判）与跨任务候选
+  // 变异（旧 promise EncodingError，path-changes 族）在决断/复检点可见；settle
+  // 时复检活跃性 + 候选（值比较，同值重赋不算变异）。
+  // https://html.spec.whatwg.org/multipage/embedded-content.html#dom-img-decode
+  globalThis.__zwImgDecodeCore = function (self, directCand, key) {
+    var enc = function () {
+      return new (globalThis.DOMException || DOMException || Error)("Failed to decode image: decoding the image data failed.", 'EncodingError');
+    };
+    var active = function () {
+      try {
+        if (!self) return false;
+        if (self.ownerDocument !== globalThis.document) return false;
+        // ownerDocument getter 未覆盖的形态兜底：parentNode 链 root 文档非主文档
+        var cur = self.parentNode, guard = 0;
+        while (cur && guard++ < 32) {
+          if (cur.nodeType === 9) return cur === globalThis.document;
+          cur = cur.parentNode;
+        }
+        return true;
+      } catch (_eDcA) { return false; }
+    };
+    var selectedCand = function () {
+      // s70：select-an-image-source 共享核（picture/source media/type 匹配、
+      // srcset 完整描述符解析、sizes——FIXME 记录的 s69 近似全部收口）。
+      try {
+        var selfSel = self ? self.__zwSelector : null;
+        var selfHandle = self ? self.__zwHandle : null;
+        var pickedUrl = globalThis.__zwSelectUrl5277 ? globalThis.__zwSelectUrl5277(selfSel, selfHandle) : '';
+        if (pickedUrl) return pickedUrl;
+      } catch (_eP5277) {}
+      return directCand();
+    };
+    return new Promise(function (res, rej) {
+      // 候选在**调用时捕获**（spec decode 跟随调用时的 current request；同 turn
+      // 的 attach/变异不改写已捕获请求——quick-attach picture-with-source 案
+      // expectReject 面实证 settle 重读会误解析）。
+      var url0 = selectedCand();
+      Promise.resolve().then(function () {
+        try {
+          if (!url0 || !active()) { rej(enc()); return; }
+          // 终态/available-images 快捷面前同样复检候选变异（同 turn attach 进
+          // picture 后选中源变化——available-images 命中不豁免，quick-attach
+          // picture cached 案）。
+          if (selectedCand() !== url0) { rej(enc()); return; }
+          var st = key != null ? _resourceStates[key] : null;
+          if (st && st.url === url0) {
+            if (st.outcome !== 'loaded') { rej(enc()); return; }
+            res(undefined); return;
+          }
+          var avail = globalThis._zwAvailableImages;
+          if (avail && avail[url0]) { res(undefined); return; }
+          if (typeof fetch !== 'function') { rej(enc()); return; }
+          fetch(url0).then(function (resp) {
+            if (!resp || !resp.ok || !resp.blob) { rej(enc()); return; }
+            resp.blob().then(function (blob) {
+              var bitmapFn = globalThis.createImageBitmap;
+              if (typeof bitmapFn !== 'function') { rej(enc()); return; }
+              bitmapFn(blob).then(function () {
+                if (!active() || selectedCand() !== url0) { rej(enc()); return; }
+                res(undefined);
+              }, function () { rej(enc()); });
+            }, function () { rej(enc()); });
+          }, function () { rej(enc()); });
+        } catch (_eDc) { rej(enc()); }
+      });
+    });
+  };
+  // s69：SVGImageElement.decode()——与 HTMLImageElement 同 spec 算法
+  //（dom-img-decode），候选读 href → xlink:href（src/srcset 语义不适用 SVG
+  // image；SVGImageElement 原型由上方接口环创建）。
+  // https://html.spec.whatwg.org/multipage/embedded-content.html#dom-img-decode
+  if (globalThis.SVGImageElement && globalThis.SVGImageElement.prototype
+      && !globalThis.SVGImageElement.prototype.decode) {
+    globalThis.SVGImageElement.prototype.decode = function () {
+      var _dSvg = this;
+      return globalThis.__zwImgDecodeCore(_dSvg, function () {
+        var h = _dSvg.getAttribute('href');
+        if (h == null || String(h).trim() === '') h = _dSvg.getAttribute('xlink:href');
+        return h == null ? '' : String(h).trim();
+      }, undefined);
+    };
   }
   // svg-compat M2 S1：MathMLElement 构造器（此前仅 part05 iframe window 名单转发、
   // realm 内未定义——R80 非 HTML ns 回落 Element.prototype 使 `instanceof
@@ -6396,6 +7308,11 @@
       try {
         Object.defineProperty(C.prototype, 'toString', {
           value: function () {
+            // R5273（html-semantics M2 切片 66）：WebIDL es-stringifier step 2——
+            // this 非本接口 platform object 须 TypeError（a-stringifier 断言
+            // `a.toString.call(null/undefined/{})` throw；null/undefined 在非严格
+            // 函数装箱为 globalThis，instanceof 判 false 同样覆盖）。
+            if (!(this instanceof C)) throw new TypeError('Illegal invocation');
             try { return String((this && this.href) || ''); } catch (_eWsaStr) { return ''; }
           },
           writable: true, enumerable: false, configurable: true,
@@ -6412,6 +7329,29 @@
   //（setBase），相对输入簇全挂（探针实证：基址 = 页面 location、document.baseURI undefined）。
   globalThis._zwDocBaseURL = function () {
     var fallback = globalThis.location ? String(globalThis.location.href) : 'about:blank';
+    // R5270（html-semantics M2 切片 63）：pending 增补 base 先扫——querySelectorAll
+    // 的 R161 归并把 pending 追加快照尾，树序不保（head.prepend 的新 base 应先于
+    // 快照 base 评估；base-data/-javascript 案 3「动态插入 data: base → 回落」实证
+    // 走到快照二 base 返 example.com）。corpus 未钉「pending valid base 在快照 base
+    // 之后插入」的树序案——先扫近似记已知限制。
+    try {
+      if (typeof _zwPendingAdded !== 'undefined' && _zwPendingAdded.length) {
+        for (var _pbi = 0; _pbi < _zwPendingAdded.length; _pbi++) {
+          var _pb = _zwPendingAdded[_pbi];
+          if (!_pb || _pb.nodeType !== 1 || String(_pb.tagName || '').toUpperCase() !== 'BASE') continue;
+          var _pbRaw = null;
+          try { _pbRaw = typeof _pb.getAttribute === 'function' ? _pb.getAttribute('href') : null; } catch (_ePbR) {}
+          if (_pbRaw == null || String(_pbRaw) === '') continue;
+          if (typeof __zw_parse_url !== 'function') return fallback;
+          var _pbJ = __zw_parse_url(String(_pbRaw), fallback);
+          if (!_pbJ) return fallback;
+          var _pbParsed = JSON.parse(_pbJ);
+          var _pbHref = _pbParsed && _pbParsed.href ? String(_pbParsed.href) : fallback;
+          if (/^(data|javascript):/i.test(_pbHref)) return fallback;
+          return _pbHref;
+        }
+      }
+    } catch (_ePbAll) {}
     try {
       var doc = globalThis.document;
       if (!doc || typeof doc.querySelectorAll !== 'function') return fallback;
@@ -6430,7 +7370,14 @@
         var j = __zw_parse_url(String(raw), fallback);
         if (!j) return fallback; // frozen base URL 解析失败 → fallback base URL
         var parsed = JSON.parse(j);
-        return parsed && parsed.href ? String(parsed.href) : fallback;
+        // R5270（html-semantics M2 切片 63）：spec 文档基 URL 算法末步——解析结果
+        // scheme 为 data/javascript 时**立即返 fallback**（非继续找下一 base：
+        // base-data 案 1 首 base data: + 二 base https://example.com/ 期望解析落
+        // document.URL 非 example.com 实证）。空 href（''）解析即文档地址不受此门。
+        // https://html.spec.whatwg.org/multipage/urls-and-fetching.html#document-base-url
+        var _bHref = parsed && parsed.href ? String(parsed.href) : fallback;
+        if (/^(data|javascript):/i.test(_bHref)) return fallback;
+        return _bHref;
       }
     } catch (_eDb) {}
     return fallback;
@@ -11754,6 +12701,40 @@
     return !event._defaultPrevented;
   }
 
+  // s90（string-compilation base URL——inline 事件处理器臂）：inline/反射处理器体无
+  // active script——体内动态 import() 的基 URL = 求值时刻**当前文档基 URL**（处理器
+  // 编译的 API base URL 取文档基 URL，非任何脚本的捕获基；`<base>` 动态变更即时生
+  // 效）。求值窗 swap 进文档基、finally 换回——referrer 槽位是每脚本共享态，零外溢
+  //（后续 timer/模块回调不被污染）。宿主回调未注册（QuickJS 后端降级）→ 直接执行零变更。
+  // https://html.spec.whatwg.org/multipage/webappapis.html#event-handler-processing-model
+  // s91（string-compilation base URL external 面）：抽出通用 swap 形——base 由调用方
+  // 给定（inline 处理器传当前文档基；字符串 timer 传**注册期捕获**的脚本基——fire 在
+  // 脚本求值窗外，届时槽位已被后续脚本改写）。
+  // s92（string-compilation CSP nonce 面）：nonce 同形换入——inline/反射处理器传 ''
+  // （None，spec 事件处理器不继承触发脚本 nonce，体内 import() 的 module fetch 被
+  // 宿主 CSP 检查阻止）；字符串 timer 传**注册期捕获**的脚本 nonce（字符串编译继承
+  // nonce）。swapper 未注册（QuickJS 后端）typeof 降级零变更。
+  function _zwCallHandlerSwapBase(fn, thisArg, ev, base, nonce) {
+    var swap = typeof globalThis.__zwSwapImportReferrer === 'function' && base != null;
+    var prev = swap ? globalThis.__zwSwapImportReferrer(base) : null;
+    var swapN = typeof globalThis.__zwSwapImportNonce === 'function';
+    var prevN = swapN ? globalThis.__zwSwapImportNonce(nonce) : null;
+    try { return fn.call(thisArg, ev); }
+    finally {
+      if (swap) globalThis.__zwSwapImportReferrer(prev);
+      if (swapN) globalThis.__zwSwapImportNonce(prevN);
+    }
+  }
+  function _zwCallHandlerDocBase(fn, thisArg, ev) {
+    return _zwCallHandlerSwapBase(fn, thisArg, ev,
+      typeof globalThis._zwDocBaseURL === 'function' ? globalThis._zwDocBaseURL() : null, '');
+  }
+
+  // 编译 fn 的换基包装（参数绑定——var 循环里直闭包捕获会读到末轮绑定）。
+  function _zwWrapHandlerDocBase(fnC) {
+    return function (_ev) { return _zwCallHandlerDocBase(fnC, this, _ev); };
+  }
+
   // R2934 inline HTML event handler 编译（`<button onclick="...">`）：on* getter 无 JS 设值时回落编译
   // 元素的 on* 属性串为函数（spec 近似：`new Function('event', 'with(document){with(this){ <code> }}')`，
   // this=元素），缓存 + 注册进 _listenerStore[key]（使 dispatchEvent/click 触发）。JS 设值优先（set trap 覆盖），
@@ -11789,8 +12770,10 @@
     }
     try {
       globalThis.__zwAttrClear = true;
-      fn = new Function('event', 'with(document) { with(this) { ' + code + ' } }');
+      var fnC = new Function('event', 'with(document) { with(this) { ' + code + ' } }');
       globalThis.__zwAttrClear = false;
+      // s90：求值换基包装（_zwCallHandlerDocBase——体内 import() 用当前文档基 URL）。
+      fn = _zwWrapHandlerDocBase(fnC);
     } catch (_e) {
       globalThis.__zwAttrClear = false;
       _onHandlers[key][type] = false;
@@ -11833,7 +12816,9 @@
       try { code = __zw_get_attr('body', 'on' + t); } catch (_e) {}
       if (code) {
         try {
-          globalThis['on' + t] = new Function('event', 'with(document){with(this){' + code + '}}');
+          var fnB = new Function('event', 'with(document){with(this){' + code + '}}');
+          // s90：同 _ensureInlineHandler——求值换基包装（import() 用当前文档基 URL）。
+          globalThis['on' + t] = _zwWrapHandlerDocBase(fnB);
         } catch (_e) {}
       }
     }
@@ -13319,8 +14304,19 @@
     if (post === pre) return; // 同态写不排程（t9/t10）
     var key = isPlain ? _zwPlainDetailsKey4100(plainNode) : _elKey(sel, handle);
     if (key == null) return;
-    if (_zwDetailsToggleQ4009[key]) return; // 已排程——同任务后续变迁仅更新存在性
-    var entry = _zwDetailsToggleQ4009[key] = { sel: sel, handle: handle, old: post ? 'closed' : 'open', plain: isPlain ? plainNode : null, source: source == null ? null : source };
+    // spec 合并语义（queue a details toggle event task）：tracker 非 null 时取其 old
+    // state、**移除已排 task 并重排新 task 到队尾**——换新 entry 对象即旧 timer 的
+    // 身份守卫（`!== entry`）自动作废，无需 clearTimeout；oldState 保持首排程
+    // pre-state（net-zero 单事件形态不变，t2/t6 面），task 位置移到当前队尾。
+    // name-attribute.html「mutation event and toggle event order」跨元素 FIFO 序
+    // 钉住（e0 解析期开 + 变迁期关 → 单事件落队尾非原解析位）。
+    var prevEntry = _zwDetailsToggleQ4009[key];
+    var entry = _zwDetailsToggleQ4009[key] = {
+      sel: sel, handle: handle,
+      old: prevEntry ? prevEntry.old : (post ? 'closed' : 'open'),
+      plain: isPlain ? plainNode : null,
+      source: source == null ? null : source
+    };
     var fire = function () {
       if (_zwDetailsToggleQ4009[key] !== entry) return;
       delete _zwDetailsToggleQ4009[key];
@@ -13554,6 +14550,59 @@
         if (close) _zwDetailsCloseOpen4100(el, _zwDetailsNodeId4100(el));
       }
     } catch (_e4s4100) {}
+  };
+
+  // ── R5254（html-semantics M2 切片 50，2026-10-24）：主文档初始 open details 的
+  // toggle 补偿两段式——「注册期标记 + DOMContentLoaded 派发」。注册期（页面脚本
+  // 前）文档还是 parser 初始态，标记初始 open 的身份 key；DCL（解析完成点）页面
+  // 脚本已跑完、运行时开合已走既有写路径队列——只对「初始 open 且当前仍 open」
+  // 补派 parser toggle（toggleEvent.html t9 inline ontoggle promise 依赖）。单段
+  // 直扫的两难：注册期直扫 task 派发早于页面脚本（runner 实证 resolver 未就位）；
+  // DCL 直扫分不清 parser open 与运行时 open（activation-behavior coalesced 案
+  // toggle 计数 +1 实证）。跨导航由 __zw_reset_form_state 重标记（同 sandbox 复用，
+  // 新文档重新标记初始态）。
+  // https://html.spec.whatwg.org/multipage/interactive-elements.html#the-details-element
+  globalThis.__zwDetailsInitOpenMark5254 = function () {
+    try {
+      if (typeof _zwDetailsCollect4100 !== 'function') return;
+      var root = typeof document !== 'undefined' ? document : null;
+      if (!root) return;
+      var all = _zwDetailsCollect4100(root);
+      var set = {};
+      for (var i = 0; i < all.length; i++) {
+        var el = all[i];
+        try {
+          if (!_zwDetailsIsOpen4100(el)) continue;
+          var idt = _zwDetailsNodeId4100(el);
+          if (!idt.identified) continue;
+          var k = _elKey(idt.sel, idt.hnd);
+          if (k != null) set[k] = true;
+        } catch (_eR254m) {}
+      }
+      globalThis.__zwDetailsInitOpen5254 = set;
+    } catch (_eR254m2) {}
+  };
+  globalThis.__zwDetailsInitOpenFire5254 = function () {
+    try {
+      var set = globalThis.__zwDetailsInitOpen5254;
+      if (!set) return;
+      globalThis.__zwDetailsInitOpen5254 = {};
+      if (typeof _zwDetailsCollect4100 !== 'function' || typeof _zwToggleQueueNotify4009 !== 'function') return;
+      var root = typeof document !== 'undefined' ? document : null;
+      if (!root) return;
+      var all = _zwDetailsCollect4100(root);
+      for (var i = 0; i < all.length; i++) {
+        var el = all[i];
+        try {
+          if (!_zwDetailsIsOpen4100(el)) continue;
+          var idt = _zwDetailsNodeId4100(el);
+          if (!idt.identified) continue;
+          var k = _elKey(idt.sel, idt.hnd);
+          if (k == null || !set[k]) continue;
+          _zwToggleQueueNotify4009(idt.sel, idt.hnd, false);
+        } catch (_eR254f5) {}
+      }
+    } catch (_eR254f6) {}
   };
 
   // ── R4009：summary 激活行为（spec the-summary-element activation behaviour）──
@@ -14736,6 +15785,127 @@
     try { var c = elProxy.cells; return (c && c.length) ? c : []; } catch (_e) { return []; }
   }
 
+  // R5265：HTMLTableElement create/delete 派生族共用的**首个匹配直接子元素**索引
+  //（无 → -1）。仅直接子（嵌套不算——delete-caption descendant 案 + createTBody
+  // nested 案断言面）；localName 匹配 + HTML ns 判定（sel 世界 proxy namespaceURI
+  // 空串/null 印记视为 HTML ns——上方 R1573 口径；非空且非 HTML ns 不匹配，
+  // delete-caption SVG:caption 案）。
+  function _zwTblChildIdx(table, tag) {
+    try {
+      var kids = table.childNodes;
+      if (!kids || !kids.length) return -1;
+      for (var i = 0; i < kids.length; i++) {
+        var k = kids[i];
+        if (!k || k.nodeType !== 1) continue;
+        if (String(k.localName || '').toLowerCase() !== tag) continue;
+        var ns = null;
+        try { ns = k.namespaceURI; } catch (_eNs) {}
+        if (ns != null && ns !== '' && ns !== 'http://www.w3.org/1999/xhtml') continue;
+        return i;
+      }
+    } catch (_eKid) {}
+    return -1;
+  }
+
+  // 同口径的**最后一个**匹配直接子元素索引（createTBody 用——新 tbody 插最后
+  // 一个 HTML-ns tbody 元素子之后；createTBody.html [before1, before2, tbody] 案）。
+  function _zwTblChildIdxLast(table, tag) {
+    try {
+      var kids = table.childNodes;
+      if (!kids || !kids.length) return -1;
+      for (var i = kids.length - 1; i >= 0; i--) {
+        var k = kids[i];
+        if (!k || k.nodeType !== 1) continue;
+        if (String(k.localName || '').toLowerCase() !== tag) continue;
+        var ns = null;
+        try { ns = k.namespaceURI; } catch (_eNs) {}
+        if (ns != null && ns !== '' && ns !== 'http://www.w3.org/1999/xhtml') continue;
+        return i;
+      }
+    } catch (_eKid) {}
+    return -1;
+  }
+
+  // R5266（html-semantics M2 切片 59）：tr 族索引/集合读侧共用地基。旧实现经
+  // selector 查询（querySelectorAll）三缺陷：① detached script-created 子树无法解析
+  // （selector 世界按 document 锚定）恒空；② 匹配全部后代非直接子；③ 无 namespace
+  // 过滤。统一改 childNodes 直接子扫描 + 严格 HTML-ns 判定。
+  // 严格口径（区别于上方 _zwTblChildIdx 宽松口径——s58 create/delete 族在用不动）：
+  // namespaceURI **恒等 xhtml 串**才命中。createElementNS("", x) 产物读 null
+  //（探针 zz-probe59 P3/P9b 实证；part04 namespaceURI getter `_nsHandles` 印记直通），
+  // 解析树与 createElement 产物读 xhtml（P1/P2）——rowIndex 7 个 null-ns 案（期望
+  // -1）+ cellIndex not-a-HTML-tr 案 + cells foo-ns td 排除案全靠此判定。
+  function _zwIsHtmlNsEl(el) {
+    try { return el.namespaceURI === 'http://www.w3.org/1999/xhtml'; } catch (_eNs) { return false; }
+  }
+  // 直接子收集（localName ∈ {tagA, tagB?}，nodeType 1 + HTML-ns；保 childNodes 树序）。
+  // childNodes 产物为缓存 proxy（探针 P4：appendChild 返回值 === childNodes 槽位），
+  // `_zwIdxOfSelf` 身份计位成立。
+  function _zwTblChildAll(proxy, tagA, tagB) {
+    var out = [];
+    try {
+      var kids = proxy.childNodes;
+      if (!kids) return out;
+      for (var i = 0; i < kids.length; i++) {
+        var k = kids[i];
+        if (!k || k.nodeType !== 1) continue;
+        var ln = String(k.localName || '').toLowerCase();
+        if (ln !== tagA && (tagB == null || ln !== tagB)) continue;
+        if (!_zwIsHtmlNsEl(k)) continue;
+        out.push(k);
+      }
+    } catch (_eKid) {}
+    return out;
+  }
+  // table rows 集合（spec dom-table-rows 过滤器 + 排序）：thead 行（树序）→
+  // table 直接 tr 子 + tbody 行（树序一趟）→ tfoot 行（树序）。
+  // https://html.spec.whatwg.org/multipage/tables.html#dom-table-rows
+  function _zwTableRowsAll(tableProxy) {
+    var out = [];
+    try {
+      var kids = tableProxy.childNodes;
+      if (!kids) return out;
+      var i, k;
+      for (i = 0; i < kids.length; i++) {
+        k = kids[i];
+        if (k && k.nodeType === 1 && _zwIsHtmlNsEl(k)
+            && String(k.localName || '').toLowerCase() === 'thead') {
+          out = out.concat(_zwTblChildAll(k, 'tr', null));
+        }
+      }
+      for (i = 0; i < kids.length; i++) {
+        k = kids[i];
+        if (!k || k.nodeType !== 1 || !_zwIsHtmlNsEl(k)) continue;
+        var ln = String(k.localName || '').toLowerCase();
+        if (ln === 'tr') out.push(k);
+        else if (ln === 'tbody') out = out.concat(_zwTblChildAll(k, 'tr', null));
+      }
+      for (i = 0; i < kids.length; i++) {
+        k = kids[i];
+        if (k && k.nodeType === 1 && _zwIsHtmlNsEl(k)
+            && String(k.localName || '').toLowerCase() === 'tfoot') {
+          out = out.concat(_zwTblChildAll(k, 'tr', null));
+        }
+      }
+    } catch (_eRows) {}
+    return out;
+  }
+  // 行/单元格在集合中的身份计位（proxy 缓存恒同对象；selector+handle 串兜底——
+  // 两者齐等才判同，parsed 元素 selector 为唯一树路径不误并）。
+  function _zwIdxOfSelf(list, self) {
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] === self) return i;
+      try {
+        if (list[i] && list[i].__zwSelector === self.__zwSelector
+            && list[i].__zwHandle === self.__zwHandle) return i;
+      } catch (_eId) {}
+    }
+    return -1;
+  }
+  // R5267：rows HTMLCollection [SameObject] 缓存（键 = 元素 proxy；换代后 sel 重解析
+  // 自然换键，弱引用自清——同 `_zwOptionsCollCache` 形）。
+  var _zwRowsCollCache = new WeakMap();
+
   // detached Document（供 document.implementation.createDocument/createHTMLDocument，R2815；R3013 queryable；
   // R3016 traversable）。
   // R3013：body 经 __zw_parse_html_query 支持可写可查——body.innerHTML setter 存解析源，querySelector 族
@@ -15142,6 +16312,24 @@
             get ownerDocument() { return node._zwContentsOwnerDoc; },
             get childNodes() { return node.childNodes; },
             hasChildNodes: function () { return node.childNodes.length > 0; },
+            // R5261：ParentNode 首/末子 + 元素族 getter（part04 `_tplContent` sel 视图
+            // R151 同款——fragment 是 ParentNode，spec `dom-parentnode-children`；
+            // WPT name-attribute「exclusivity enforcement with attachment scenario
+            // connected-in-template」经 content.firstElementChild 取装配容器，plain
+            // 视图缺族 getter 恒 undefined，setup 断言直接失败）。
+            // https://dom.spec.whatwg.org/#dom-parentnode-children
+            get firstChild() { var k = node.childNodes; return k.length ? k[0] : null; },
+            get lastChild() { var k = node.childNodes; return k.length ? k[k.length - 1] : null; },
+            get children() {
+              var out = [];
+              for (var i = 0; i < node.childNodes.length; i++) {
+                if (node.childNodes[i] && node.childNodes[i].nodeType === 1) out.push(node.childNodes[i]);
+              }
+              return out;
+            },
+            get firstElementChild() { var ek = this.children; return ek.length ? ek[0] : null; },
+            get lastElementChild() { var ek = this.children; return ek.length ? ek[ek.length - 1] : null; },
+            get childElementCount() { return this.children.length; },
             // mutation 面（WPT template-content：content.appendChild(el) 等装配断言）
             // 直写模板 childNodes（contents 内联存储的当前形态——M2 parser 真实化后
             // 收敛为独立 fragment 持有）。
@@ -15810,7 +16998,8 @@
           try {
             globalThis.__zwAttrClear = true;
             var fn152 = new Function('event', 'with(document) { with(this) { ' + inlineCode + ' } }');
-            try { fn152.call(node, ev); } catch (_e152i) {}
+            // s90：求值换基（同 _zwCallHandlerDocBase——体内 import() 用当前文档基 URL）。
+            try { _zwCallHandlerDocBase(fn152, node, ev); } catch (_e152i) {}
             globalThis.__zwAttrClear = false;
           } catch (_e152c) { globalThis.__zwAttrClear = false; }
         }
@@ -15840,7 +17029,8 @@
           if (code) {
             try {
               var f = new Function('event', 'with(document) { with(this) { ' + code + ' } }');
-              try { f.call(node, _makeEvent(evType, { bubbles: true })); } catch (_ei) {}
+              // s90：求值换基（同 _zwCallHandlerDocBase——体内 import() 用当前文档基 URL）。
+              try { _zwCallHandlerDocBase(f, node, _makeEvent(evType, { bubbles: true })); } catch (_ei) {}
             } catch (_ec) {}
           }
         };
@@ -19888,6 +21078,61 @@
         if (!_isHtmlDoc && globalThis.Element && globalThis.Element.prototype) {
           try { Object.setPrototypeOf(e, globalThis.Element.prototype); } catch (_e290xp) {}
         }
+        // R5256（html-semantics M2 切片 51，2026-10-24）：detached 文档
+        //（createHTMLDocument/createDocument——无 browsing context，文档永非
+        // fully active）的 HTML DIALOG 产物接 HTMLDialogElement 三方法。spec
+        // the-dialog-element：showModal()「If document is not fully active, then
+        // throw InvalidStateError」（dialog-active-document 断言面——旧产物无此
+        // 方法，TypeError 非 DOMException）；show()「If document is not fully
+        // active, then return」（静默 no-op）；close() 无活动性检查——无 open
+        // 属性 no-op（FIXME: wrapper 无派发链，open 态 close 的事件队列面未建，
+        // 语料无钉）。
+        // https://html.spec.whatwg.org/multipage/interactive-elements.html#the-dialog-element
+        if (_isHtmlDoc && _tagIn.toLowerCase() === 'dialog') {
+          e.showModal = function () {
+            throw new (globalThis.DOMException)("Failed to execute 'showModal' on 'HTMLDialogElement': The element's node document is not active.", 'InvalidStateError');
+          };
+          e.show = function () {};
+          e.close = function () {
+            try { if (typeof e.hasAttribute === 'function' && e.hasAttribute('open')) e.removeAttribute('open'); } catch (_e5256dc) {}
+          };
+        }
+        // s69（html-semantics M2 切片 69，2026-10-24）：detached 文档 IMG 产物接
+        // img.decode()。本产物无 R56h 加载管线（plain `_zwMEl` 节点无 set trap）
+        // 亦无资源 trap——decode 走**调用时**活跃性判别（parentNode 链 root doc
+        // === 主文档，adopt 进活跃文档后可达，探针 C 实证 ownerDocument/
+        // getAttribute 随 adoption 改指）：inactive → EncodingError reject（spec
+        // dom-img-decode 步 2「If this's node document is not active」——detached
+        // 文档无 browsing context 永非 active，即使已加载；image-decode.html
+        // inactive-document / adopted-active-into-inactive 两案）；active → 共享
+        // 解码核（adopted-inactive-into-active 案 resolve 面）。
+        // https://html.spec.whatwg.org/multipage/embedded-content.html#dom-img-decode
+        if (_isHtmlDoc && _tagIn.toLowerCase() === 'img') {
+          e.decode = function () {
+            var _dcE = this;
+            var _dcDoc = null, _dcCur = _dcE, _dcG = 0;
+            while (_dcCur && _dcG++ < 32) {
+              if (_dcCur.nodeType === 9) { _dcDoc = _dcCur; break; }
+              try { _dcCur = _dcCur.parentNode; } catch (_eDcW) { break; }
+            }
+            if (_dcDoc !== globalThis.document) {
+              return Promise.reject(new (globalThis.DOMException || Error)("Failed to decode image: the element's node document is not active.", 'EncodingError'));
+            }
+            return globalThis.__zwImgDecodeCore(_dcE, function () {
+              var rd = function (n) { try { return _dcE.getAttribute(n); } catch (_eDcR) { return null; } };
+              var s = String(rd('src') == null ? '' : rd('src')).trim();
+              // plain `_zwMEl` 产物无 src IDL setter——`img.src=` 落 expando，属性
+              // 读空时回落 expando（adopted-inactive-into-active 案）。
+              if (!s) { try { s = String(_dcE.src == null ? '' : _dcE.src).trim(); } catch (_eDcS) {} }
+              if (!s) {
+                var ss = String(rd('srcset') == null ? '' : rd('srcset'));
+                var m = ss.match(/^\s*(data:[^\s]+|[^\s,]+)/);
+                if (m) s = m[1];
+              }
+              return s;
+            }, undefined);
+          };
+        }
                 // WC-M1 切片 4：customized built-in——createElement(localName, { is }) 命中
         // registered entry（localName 匹配）→ 升级 + is 内容属性。**registry 按 document
         // 隔离**（spec look up a custom element registry：detached/iframe 文档用自己的
@@ -22514,6 +23759,14 @@ return e;
           var _aStrTag = _realTag(sel, handle);
           if (_aStrTag === 'A' || _aStrTag === 'AREA') {
             return function () {
+              // R5273（html-semantics M2 切片 66）：WebIDL es-stringifier step 2 品牌检查
+              // ——this 非本接口 platform object 须 TypeError（a-stringifier
+              // stringifier 1/2/6/7 断言 `a.toString.call(null/undefined/{})` throw；
+              // null/undefined 非严格函数装箱为 globalThis，instanceof 判 false 覆盖）。
+              // 本 trap 才是 createElement 产物 toString 的实际供给面（探针实证：
+              // 原型侧 part03:6420 不达——proxy 拦截全部 get）。
+              var _aStrC = globalThis[_aStrTag === 'A' ? 'HTMLAnchorElement' : 'HTMLAreaElement'];
+              if (!(_aStrC && this instanceof _aStrC)) throw new TypeError('Illegal invocation');
               try { return String(this && this.href); } catch (_eWsaStr) { return ''; }
             };
           }
@@ -23186,271 +24439,11 @@ return e;
           // headless 近似：setTimeout(0) 后仍 playing → resolve；pause() 先行 → pause()
           // 直接 reject AbortError（spec「pause() rejects all pending play Promises」，
           // event_play/pause_noautoplay 断言面）。
+          // A2 Fix 1（media-runtime-isolation DESIGN §6.2）：play 算法内核提取为
+          // _zwMediaPlaySteps（part06 顶层）——IDL play 与 autoplay 共用
+          //（spec#internal-play-steps；语义面注释随内核迁移）。
           return function () {
-            var _pTag = _realTag(sel, handle);
-            var _pKey = _elKey(sel, handle);
-            var _pMs = _mediaState[_pKey] || (_mediaState[_pKey] = {});
-            // M3 扩批 XVI：元素身份留档（march/ended 钩子经 key 反查派发面——
-            // sel/handle 不在 march 作用域，暂存于此）。
-            _pMs._zwSel = sel;
-            _pMs._zwHandle = handle;
-            // media-elements M3 扩批 XIV（spec dom-media-play / pause-on-removal）：
-            // **已移出文档**的 sel media 元素 play()——播放无法推进（无 resource
-            // selection invoke、无 queued 派发），promise 保持 pending 交由
-            // removeChild 钩子的 playPromise 中断面 reject AbortError。
-            // pause-remove-from-document-networkState 断言面：play() → 移除 →
-            // watcher 等 pause → promise_rejects_dom AbortError。
-            // https://html.spec.whatwg.org/multipage/media.html#dom-media-play
-            // media-elements M3 扩批 XIV（spec dom-media-play）：无候选资源时播放
-            // 无法推进——不 queue play/playing 派发 task，promise **保持 pending**，
-            // 直到移除文档（pause on removal → AbortError）或资源就绪。
-            // **仅 sel 身份**（静态/动态 HTML 形态——`a.src=` 的 latest-wins 覆盖表
-            // 可判存在性）；handle-only（detached createElement）无宿主资源通路，
-            // 保持既有 queued task（cues「default attribute」等 detached 断言面）。
-            var _noCandidate = false;
-            if (!handle && typeof _zwMediaResourceSelect === 'function'
-                && (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'src') : __zw_has_attr(sel, 'src')) !== '1'
-                && !_resourceStates[_pKey]) {
-              _zwMediaResourceSelect(sel, handle, _pKey);
-              var _hasSrc = (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'src') : __zw_has_attr(sel, 'src')) === '1';
-              var _hasSourceChild = false;
-              try {
-                var _psList = _makeProxy(sel, handle).querySelectorAll('source');
-                _hasSourceChild = !!(_psList && _psList.length);
-              } catch (_ePsQ) {}
-              _noCandidate = !_hasSrc && !_hasSourceChild;
-            }
-            // media-elements M3 扩批 XI（spec resource selection）——无 src 候选时
-            // play() 亦触发资源选择（invoke：同步段 NO_SOURCE；稳定态无候选回落 EMPTY，
-            // 不派 loadstart——无加载发生）。
-            // https://html.spec.whatwg.org/multipage/media.html#dom-media-play
-            if (handle && typeof _zwMediaResourceSelect === 'function'
-                && __zw_has_attr_handle(handle, 'src') !== '1'
-                && !_resourceStates[_pKey]) {
-              _zwMediaResourceSelect(sel, handle, _pKey);
-            }
-            if (_pMs.playing) return Promise.resolve(undefined);
-            _pMs.playing = true;
-            _pMs.ended = false;
-            // M3 扩批 XIV：无候选资源 → promise pending 挂起（playing 态保持同步
-            // 翻转供脚本观察；无 queued 派发/resolve）。移除文档路径的 pause on
-            // removal 会 reject pending promise（AbortError）——见 removeChild 钩子
-            // 的 playPromise 中断面。
-            if (_noCandidate) {
-              var _ncEntry = null;
-              var _ncPromise = new Promise(function (resolve, reject) { _ncEntry = { resolve: resolve, reject: reject }; });
-              _pMs.playPromise = _ncEntry;
-              return _ncPromise;
-            }
-            // media-playback M2a 切片 5b：宿主桥 feature-detect——注册了
-            // __zwVideoBridge（生产 worker 注入）时走真值播放（Rust VideoPlayer
-            // 时钟/帧推进）；未注册（testharness/reftest 沙箱）保持 headless 近似
-            //（桥缺失零回归——372 基线）。src 取 IDL getter 同源解析（绝对 URL =
-            // 注册表 settle 登记键）。
-            if (typeof globalThis.__zwVideoBridge === 'object' && globalThis.__zwVideoBridge) {
-              try {
-                // M3 扩批 XVI：latest-wins 读——`.src=` IDL setter 的写是 pending mutation
-                //（render apply 前不入快照），纯快照读 `__zw_get_attr` 看不到 → bridgeSrc
-                // 空串 → 播放桥失联（fixture-mounted runner 的 track-cues-* 用例形态）。
-                // `__zw_get_attr_lw` 同批 SetAttr 命中新值（R2995 同源语义）。
-                // M3 扩批 XXII：src 读按身份分派——handle 身份（createElement 产物，
-                // track-active-cues / track-remove-active-cue 形态）走 registry 现值
-                // `__zw_get_attr_handle`（IDL .src= setter 的 handle 路径写 registry——
-                // `__zw_get_attr_lw` 是 sel 文档查询，对 null sel 恒空 → bridgeSrc 空
-                // → 桥失联 + 重试不启动）；sel 身份保持 latest-wins（同批 setter 命中）。
-                var _pSrcRaw = handle
-                  ? ((typeof __zw_get_attr_handle === 'function') ? (__zw_get_attr_handle(handle, 'src') || '') : '')
-                  : ((typeof __zw_get_attr_lw === 'function')
-                      ? (__zw_get_attr_lw(sel, 'src') || '')
-                      : ((typeof __zw_get_attr === 'function') ? (__zw_get_attr(sel, 'src') || '') : ''));
-                var _pAbs = _pSrcRaw ? _zwResolveFetchUrl(String(_pSrcRaw).replace(/^[\x00-\x20]+/, '').replace(/[\x00-\x20]+$/, '')) : '';
-                if (_pAbs) _pMs.bridgeSrc = _pAbs;
-                // M3 扩批 XVI：play 桥调用**恰一次**（结果存 _hit——旧形态条件里各调一次
-                // 致桥双调，engine 桥契约测试断言调用序列面）。命中路径：bridgeOn 置位 +
-                // pending seek 补推 + 速率/增益同步；未命中：**退避重试**（fixture-mounted
-                // runner 的源登记走逐 tick 动态补登记——脚本 turn 内同步 play 早于登记
-                // 落位）。spec play() promise pending 于播放真正推进，重试窗口内 playing
-                // 态保持；命中后与同步路径同面（playPromise 由既有 queued task resolve）。
-                var _hit = _pAbs ? globalThis.__zwVideoBridge.play(_pAbs, 0) : false;
-                if (!_hit && _pAbs && typeof setTimeout === 'function') {
-                  var _pRetry = function (_n) {
-                    if (_n > 5000 || !_pMs.playing || _pMs.bridgeOn) return;
-                    setTimeout(function () {
-                      try {
-                        if (globalThis.__zwVideoBridge.play(_pAbs, 0)) {
-                          _pMs.bridgeOn = true;
-                          // t8o：桥命中升级 settle 占位维度（IDL 形态 w0h0 → 解码真值；
-                          // 重试命中路径——provider 补登记后首播）。
-                          if (typeof globalThis._zwMediaBridgeDimsUpgrade === 'function') {
-                            globalThis._zwMediaBridgeDimsUpgrade(_pKey, _pAbs);
-                          }
-                          // M3 扩批 XVI：pending seek 补推（seek-before-play 时序——
-                          // 桥未接通期的 currentTime= 赋值在此落位，spec 播放启动
-                          // 位置 = 请求 seek 目标）。
-                          if (typeof _pMs._zwSeekPendingMs === 'number') {
-                            try {
-                              if (typeof globalThis.__zwVideoBridge.seek === 'function') {
-                                globalThis.__zwVideoBridge.seek(_pAbs, _pMs._zwSeekPendingMs | 0);
-                              }
-                            } catch (_eVbSk2) {}
-                            // M3 扩批 XVIII：march 区间基线 = seek 目标（播放时间线从
-                            // 目标起——目标前的 cue 不入捕获区间，spec seeked missed-cue
-                            // 语义；pending seek 路径无 seeked 回调，在此记账）。
-                            // R3936：**目标时刻的 cue active 面同步**（_zwMediaSeekSync）
-                            // 也要跑——只记基线不派 enter，起点恰在目标上的 cue
-                            //（pause-on-exit 的 cue0@4.0-4.5，currentTime=4.0 seek）永
-                            // 不进 active → exit/暂停面全部缺席（start > lastMs 判定
-                            // 在后续每拍恒假）。
-                            if (typeof globalThis._zwMediaSeekSync === 'function') {
-                              try { globalThis._zwMediaSeekSync(_pKey); } catch (_eSsP1) {}
-                            }
-                            _pMs._zwLastMarchMs = _pMs._zwSeekPendingMs;
-                            delete _pMs._zwSeekPendingMs;
-                          }
-                          if (typeof globalThis.__zwVideoBridge.setRate === 'function') {
-                            try { globalThis.__zwVideoBridge.setRate(_pAbs, _pMs.playbackRate || 1); } catch (_eVbR3) {}
-                          }
-                          if (typeof globalThis.__zwVideoBridge.setGain === 'function') {
-                            try {
-                              globalThis.__zwVideoBridge.setGain(
-                                _pAbs, (_pMs.volume != null ? _pMs.volume : 1), _pMs.muted === true);
-                            } catch (_eVbG1) {}
-                          }
-                          // M3 扩批 XXIV：重试路径 loop 同步（同 gain 面——retry 命中
-                          // 时把 play 前设的 loop 推给桥）。
-                          if (typeof globalThis.__zwVideoBridge.setLoop === 'function') {
-                            try { globalThis.__zwVideoBridge.setLoop(_pAbs, _pMs.loop === true); } catch (_eVbL1) {}
-                          }
-                        } else {
-                          _pRetry(_n + 1);
-                        }
-                      } catch (_eVbRt) {}
-                    }, 0);
-                  };
-                  _pRetry(1);
-                }
-                if (_hit) {
-                  _pMs.bridgeOn = true;
-                  // t8o：桥命中升级 settle 占位维度（IDL 形态 w0h0 → 解码真值；
-                  // 同步命中路径——源字节 settle 登记在先）。
-                  if (typeof globalThis._zwMediaBridgeDimsUpgrade === 'function') {
-                    globalThis._zwMediaBridgeDimsUpgrade(_pKey, _pAbs);
-                  }
-                  // M3 扩批 XVI：pending seek 补推（同步命中路径——seek 发生在 play 前、
-                  // 桥登记落位前，与重试路径同语义；spec 播放启动位置 = 请求 seek 目标）。
-                  if (typeof _pMs._zwSeekPendingMs === 'number') {
-                    try {
-                      if (typeof globalThis.__zwVideoBridge.seek === 'function') {
-                        globalThis.__zwVideoBridge.seek(_pAbs, _pMs._zwSeekPendingMs | 0);
-                      }
-                    } catch (_eVbSk3) {}
-                    // M3 扩批 XVIII：march 区间基线 = seek 目标（同步命中路径，同上）。
-                    // R3936：目标时刻 cue active 面同步（同重试路径注记）。
-                    if (typeof globalThis._zwMediaSeekSync === 'function') {
-                      try { globalThis._zwMediaSeekSync(_pKey); } catch (_eSsP0) {}
-                    }
-                    _pMs._zwLastMarchMs = _pMs._zwSeekPendingMs;
-                    delete _pMs._zwSeekPendingMs;
-                  }
-                  // 起播时同步既有速率（play 前设的 playbackRate 经桥生效）。
-                  if (typeof globalThis.__zwVideoBridge.setRate === 'function') {
-                    try { globalThis.__zwVideoBridge.setRate(_pAbs, _pMs.playbackRate || 1); } catch (_eVbR2) {}
-                  }
-                  // M2c 后续：起播时同步既有增益（play 前设的 volume/muted 经桥生效——
-                  // 该两 setter 的桥推 gated on bridgeOn，首播前设置只落 _mediaState）。
-                  if (typeof globalThis.__zwVideoBridge.setGain === 'function') {
-                    try {
-                      globalThis.__zwVideoBridge.setGain(
-                        _pAbs, (_pMs.volume != null ? _pMs.volume : 1), _pMs.muted === true);
-                    } catch (_eVbG0) {}
-                  }
-                  // M3 扩批 XXIV：起播时同步既有 loop（play 前设的 loop 经桥生效——
-                  // 同 gain 面；音频 entry 流末回卷 / 视频 march Ended→seek(0)+play 面）。
-                  if (typeof globalThis.__zwVideoBridge.setLoop === 'function') {
-                    try { globalThis.__zwVideoBridge.setLoop(_pAbs, _pMs.loop === true); } catch (_eVbL0) {}
-                  }
-                  // M3 扩批 XXV：ended 态 play = seek 回最早位置（spec「ended playback」
-                  // 步 6.4——ended 且播放方向向前 → seek to earliest position + 派
-                  // seeking/seeked，非 ended；loop-from-ended 的 onseeked 断言面）。
-                  // 判定面：loop setter 已按 spec 把 ended 翻回 false（looping 媒体
-                  // 不能是 ended）——ms.ended 不可靠；桥侧 restart 前的 Ended 态由
-                  // 「march 非 loop 分支置位过的 _zwEndedDispatched」承载（registry
-                  // reset 后 isEnded 已 false，不能事后查桥）。
-                  // registry 侧 reset 重建解码器（Ended→play 重头），语义层在此补事件对
-                  //（march Ended 分叉只在「播放中走到流末」时跑——ended 后停着再 play
-                  // 的形态不经过 march）。位置真值经 _zwMediaSeekSync 拉取。
-                  if (_pMs._zwEndedDispatched === true) {
-                    delete _pMs._zwEndedDispatched;
-                    _pMs.ended = false;
-                    _pMs.currentTime = 0;
-                    _pMs._zwLastMarchMs = 0;
-                    _pMs.seeking = true;
-                    _zwMediaFire(sel, handle, _pKey, 'seeking');
-                    var _epSeeked = function () {
-                      var _epMs = _mediaState[_pKey];
-                      if (!_epMs) return;
-                      _epMs.seeking = false;
-                      _zwMediaFire(sel, handle, _pKey, 'timeupdate');
-                      _zwMediaFire(sel, handle, _pKey, 'seeked');
-                      if (typeof globalThis._zwMediaSeekSync === 'function') {
-                        try { globalThis._zwMediaSeekSync(_pKey); } catch (_eEpSs) {}
-                      }
-                    };
-                    if (typeof setTimeout === 'function') setTimeout(_epSeeked, 0);
-                    else _epSeeked();
-                  }
-                }
-              } catch (_eVbP) {}
-            }
-            // media-elements M3 扩批 VII：play/playing/timeupdate 走 queued task
-            //（spec dom-media-play：「queue a media element task to fire play/
-            // playing」）——**异步**派发，play() 返回后注册的 onplaying/listener
-            // 仍能收到（pause-remove-from-document 的 v.onplaying 在 play() 之后
-            // 挂；同步派发致 handler 错过 → pending 挂起）。paused 状态同步翻转
-            // （spec dom-media-paused）。
-            // play Promise 的 settle 与事件派发**同一个 queued task**（无独立
-            // setTimeout——宿主 __zw_setTimeout 每定时器独立线程投递，两个 0ms
-            // 定时器顺序不保证，竞态下 promise-check 先于事件派发跑会把仍 playing
-            // 的 promise 误 resolve、丢 AbortError 契约——event_play_noautoplay
-            // 断言面）。task 内序：先派事件（listener 可能 pause() → 同步 reject
-            // playPromise），后检查 playPromise 身份再 resolve。
-            // 无 setTimeout 环境（纯同步沙箱）回落同步路径。
-            var entry = null;
-            var promise = new Promise(function (resolve, reject) {
-              entry = { resolve: resolve, reject: reject };
-            });
-            _pMs.playPromise = entry;
-            // M3 扩批 XXIX：HAVE_NOTHING 期 play()（readyState==0 且有候选）——
-            // spec dom-media-play 步 6「readyState is HAVE_NOTHING」分支：promise
-            // **pending**，等 readyState 变化 task 再派 play/playing（play 事件在
-            // canplay 前、playing 在 canplay 后——ready-states/autoplay 的
-            //「autoplay and play()」事件严格序断言面）。事件派发移至
-            // _zwMediaLoadSequence 的 readyState 翻转点（part06）。
-            // 候选判据按身份分派（同上方资源选择）：handle-only 无 src 无 settle
-            // 序列可达——保持既有 queued task resolve 契约（detached 断言面）；
-            // handle-only 有 src 的 settle 由 shim 侧调度承载（与身份无关）。
-            var _hasPendingCandidate = handle
-              ? __zw_has_attr_handle(handle, 'src') === '1'
-              : ((typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'src') : __zw_has_attr(sel, 'src')) === '1');
-            if (_hasPendingCandidate && (_pMs.readyState | 0) === 0) {
-              _pMs._zwPlayPendingEvents = { sel: sel, handle: handle, key: _pKey, entry: entry };
-              return promise;
-            }
-            var _pf = function () {
-              _dispatchWithBubble(_pKey, sel, handle, _makeEvent('play', { bubbles: false, cancelable: false }));
-              _dispatchWithBubble(_pKey, sel, handle, _makeEvent('playing', { bubbles: false, cancelable: false }));
-              _dispatchWithBubble(_pKey, sel, handle, _makeEvent('timeupdate', { bubbles: false, cancelable: false }));
-              if (_pMs.playPromise !== entry) return; // 已被 pause() settle
-              delete _pMs.playPromise;
-              if (_pMs.playing) entry.resolve(undefined);
-              else entry.reject(new (globalThis.DOMException || Error)('play() was interrupted by pause()', 'AbortError'));
-            };
-            if (typeof setTimeout === 'function') setTimeout(_pf, 0);
-            else {
-              delete _pMs.playPromise;
-              entry.resolve(undefined);
-            }
-            return promise;
+            return _zwMediaPlaySteps(sel, handle, _elKey(sel, handle));
           };
         }
         if (prop === 'pause' && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')) {
@@ -23727,6 +24720,28 @@ return e;
           // 组件读取——空串 parse 失败组件恒 '' → ret '//' 回落原串）；非空仍解析
           // 绝对 URL（resolveUrl 非空走 A 组件解析面）。
           if (_realTag(sel, handle) !== 'A' && _realTag(sel, handle) !== 'AREA') {
+            // R5270（html-semantics M2 切片 63）：BASE href IDL spec 三态——href 内容
+            // 属性**缺失或空串 → 文档地址**；非空解析（基 = 文档地址）失败 → 文档地址
+            //（dom-base-href）。旧 R5008 与 LINK 同臂（缺失/空 → ''、失败 → 原串），
+            // base_href_empty/unspecified/specified 共 5F。LINK 保持 R5008 口径不变
+            //（harness resolveUrl 消费面）。sel 形走 lw 读（setAttribute 后同步读，
+            // M2-S9 A href 同款）。
+            // https://html.spec.whatwg.org/multipage/semantics.html#dom-base-href
+            if (_realTag(sel, handle) === 'BASE') {
+              var _bDoc5270 = globalThis.location ? globalThis.location.href : 'about:blank';
+              var _bRaw5270 = handle
+                ? __zw_get_attr_handle(handle, 'href')
+                : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'href') : __zw_get_attr(sel, 'href'));
+              if (_bRaw5270 == null || String(_bRaw5270) === '') return _bDoc5270;
+              if (typeof __zw_parse_url !== 'function') return String(_bRaw5270);
+              try {
+                var _bJson5270 = __zw_parse_url(String(_bRaw5270), _bDoc5270);
+                // 解析失败 → **原属性串**（base_href_invalid corpus 钉定："//test:test"
+                // ——非文档地址；R5008 LINK 同款口径，空串成功解析落文档地址不受此门）。
+                if (!_bJson5270) return String(_bRaw5270);
+                return JSON.parse(_bJson5270).href || _bDoc5270;
+              } catch (_eB5270) { return String(_bRaw5270); }
+            }
             var _r5blRaw = handle ? __zw_get_attr_handle(handle, 'href') : __zw_get_attr(sel, 'href');
             if (_r5blRaw == null || _r5blRaw === '' || typeof __zw_parse_url !== 'function') {
               return _r5blRaw == null ? '' : String(_r5blRaw);
@@ -23945,60 +24960,84 @@ return e;
             return null;
           }
         }
-        // `<tr>.rowIndex`（HTMLTableRowElement，R2842）——行在 table 中的位置（0-based，跨 thead/tbody/tfoot
-        // 全部行，document order）；-1 若不在 table。data-table / 表格操作库读 rowIndex 定位行高频。
-        // 经 _ancestorChain 找 owning TABLE + 元素作用域 querySelectorAll('tr')（R2673）+ proxy identity 计位。
-        if (prop === 'rowIndex' && _realTag(sel, handle) === 'TR') {
-          if (!sel) return -1;
+        // `<tr>.rowIndex`（HTMLTableRowElement，R2842）——行在 owning table rows 集合中的位置（0-based）；
+        // -1 若无。spec 门槛是 **parent**（HTML table）或 parent 为 HTML section（thead/tbody/tfoot）且
+        // **grandparent** 为 HTML table——非「最近祖先」链（table>div>tr 案 -1）。行集合经
+        // `_zwTableRowsAll`（spec rows 排序：thead 行 → table 直接 tr + tbody 行 → tfoot 行）。
+        // R5266：旧实现 selector 查询三缺陷（detached script-created 子树不可解析 / 含后代 /
+        // 无 ns 过滤）统一换 childNodes 直接子扫描——tr 族 21F 根因。
+        // https://html.spec.whatwg.org/multipage/tables.html#dom-tr-rowindex
+        if (prop === 'rowIndex' && (_realTag(sel, handle) || '').split(':').pop() === 'TR') {
           try {
-            var riChain = _ancestorChain(sel);
-            var riTable = null;
-            for (var ri = 1; ri < riChain.length; ri++) {
-              if ((__zw_get_tag(riChain[ri]) || '').toUpperCase() === 'TABLE') { riTable = riChain[ri]; break; }
+            var riSelf = sel ? _wrapSelector(sel) : _wrapHandle(handle);
+            var riPar = null;
+            try { riPar = riSelf.parentNode; } catch (_eRiP) {}
+            if (riPar && riPar.nodeType === 1) {
+              var riParTag = String(riPar.localName || '').toLowerCase();
+              if (riParTag === 'table' && _zwIsHtmlNsEl(riPar)) {
+                var riIdx = _zwIdxOfSelf(_zwTableRowsAll(riPar), riSelf);
+                if (riIdx >= 0) return riIdx;
+              } else if ((riParTag === 'thead' || riParTag === 'tbody' || riParTag === 'tfoot')
+                         && _zwIsHtmlNsEl(riPar)) {
+                var riGp = null;
+                try { riGp = riPar.parentNode; } catch (_eRiG) {}
+                if (riGp && riGp.nodeType === 1 && String(riGp.localName || '').toLowerCase() === 'table'
+                    && _zwIsHtmlNsEl(riGp)) {
+                  var riIdx2 = _zwIdxOfSelf(_zwTableRowsAll(riGp), riSelf);
+                  if (riIdx2 >= 0) return riIdx2;
+                }
+              }
             }
-            if (!riTable) return -1;
-            var riRows = _wrapSelector(riTable).querySelectorAll('tr');
-            var riSelf = _wrapSelector(sel);
-            for (var rk = 0; rk < riRows.length; rk++) if (riRows[rk] === riSelf) return rk;
-            return -1;
-          } catch (_e) { return -1; }
+          } catch (_e) {}
+          return -1;
         }
         // `<td>`/`<th>`.cellIndex（HTMLTableCellElement，R2842）——单元格在行中的位置（0-based，td+th 混计
-        // document order）；-1 若不在行。表格操作库读 cellIndex 定位列高频。经 :is(td, th) 单查询保序
-        // （querySelectorAll 顶层不支持逗号列表，:is() 内部支持）。
-        if (prop === 'cellIndex' && (_realTag(sel, handle) === 'TD' || _realTag(sel, handle) === 'TH')) {
-          if (!sel) return -1;
+        // document order）；-1 若无。spec：parent 为 HTML tr 时返回自身在 parent cells 集合中的索引
+        //（cells = 直接 HTML-ns td/th 子——`_zwTblChildAll`，非 td/th 兄弟跳过即自然达成）。
+        // R5266：同 rowIndex 根因换 childNodes 扫描。
+        // https://html.spec.whatwg.org/multipage/tables.html#dom-td-cellindex
+        if (prop === 'cellIndex' && (function () {
+              var _cg = (_realTag(sel, handle) || '').split(':').pop();
+              return _cg === 'TD' || _cg === 'TH';
+            })()) {
           try {
-            var ciChain = _ancestorChain(sel);
-            var ciTr = null;
-            for (var ci = 1; ci < ciChain.length; ci++) {
-              if ((__zw_get_tag(ciChain[ci]) || '').toUpperCase() === 'TR') { ciTr = ciChain[ci]; break; }
+            var ciSelf = sel ? _wrapSelector(sel) : _wrapHandle(handle);
+            var ciPar = null;
+            try { ciPar = ciSelf.parentNode; } catch (_eCiP) {}
+            if (ciPar && ciPar.nodeType === 1 && String(ciPar.localName || '').toLowerCase() === 'tr'
+                && _zwIsHtmlNsEl(ciPar)) {
+              var ciIdx = _zwIdxOfSelf(_zwTblChildAll(ciPar, 'td', 'th'), ciSelf);
+              if (ciIdx >= 0) return ciIdx;
             }
-            if (!ciTr) return -1;
-            var ciCells = _wrapSelector(ciTr).querySelectorAll(':is(td, th)');
-            var ciSelf = _wrapSelector(sel);
-            for (var ck = 0; ck < ciCells.length; ck++) if (ciCells[ck] === ciSelf) return ck;
-            return -1;
-          } catch (_e) { return -1; }
+          } catch (_e) {}
+          return -1;
         }
-        // `<tr>`.sectionRowIndex（HTMLTableRowElement，R2843）——行在其 section（thead/tbody/tfoot）内的位置
-        //（0-based）；-1 若无 section（html5ever 为 table-直属 tr 插入隐式 tbody，故通常有 section）。
-        // 同 rowIndex 模式：_ancestorChain 找最近 thead/tbody/tfoot → 元素作用域 querySelectorAll('tr') + identity。
-        if (prop === 'sectionRowIndex' && _realTag(sel, handle) === 'TR') {
-          if (!sel) return -1;
+        // `<tr>`.sectionRowIndex（HTMLTableRowElement，R2843）——行在其父内集合中的位置（0-based）；
+        // -1 若无合格父。spec：parent 为 HTML table（取 table rows 集合）或 HTML section
+        //（thead/tbody/tfoot，取直接 HTML-ns tr 子集合）；其余（div/tr/td 等）-1。
+        // R5266：同 rowIndex 根因换 childNodes 扫描。
+        // https://html.spec.whatwg.org/multipage/tables.html#dom-tr-sectionrowindex
+        if (prop === 'sectionRowIndex' && (_realTag(sel, handle) || '').split(':').pop() === 'TR') {
           try {
-            var srChain = _ancestorChain(sel);
-            var srSection = null;
-            for (var si = 1; si < srChain.length; si++) {
-              var stag = (__zw_get_tag(srChain[si]) || '').toUpperCase();
-              if (stag === 'THEAD' || stag === 'TBODY' || stag === 'TFOOT') { srSection = srChain[si]; break; }
+            var srSelf = sel ? _wrapSelector(sel) : _wrapHandle(handle);
+            var srPar = null;
+            try { srPar = srSelf.parentNode; } catch (_eSrP) {}
+            if (srPar && srPar.nodeType === 1) {
+              var srTag = String(srPar.localName || '').toLowerCase();
+              var srList = null;
+              if (srTag === 'table' && _zwIsHtmlNsEl(srPar)) {
+                srList = _zwTableRowsAll(srPar);
+              } else if ((srTag === 'thead' || srTag === 'tbody' || srTag === 'tfoot')
+                         && _zwIsHtmlNsEl(srPar)) {
+                srList = _zwTblChildAll(srPar, 'tr', null);
+              }
+              if (srList) {
+                var srIdx = _zwIdxOfSelf(srList, srSelf);
+                if (srIdx >= 0) return srIdx;
+              }
             }
-            if (!srSection) return -1;
-            var srRows = _wrapSelector(srSection).querySelectorAll('tr');
-            var srSelf = _wrapSelector(sel);
-            for (var ssk = 0; ssk < srRows.length; ssk++) if (srRows[ssk] === srSelf) return ssk;
-            return -1;
-          } catch (_e) { return -1; }
+          } catch (_e) {}
+          return -1;
         }
         // `<option>`.index（HTMLOptionElement，R2849）——option 在其 select 中的位置（0-based，document order）；
         // 0 若不在 select（detached / handle-based，与 Chromium detached→0 一致）。form 库读 option.index 定位高频。
@@ -24019,35 +25058,59 @@ return e;
           } catch (_e) { return 0; }
         }
         // `<table>`.rows（HTMLTableElement，R2843）/ section.rows（HTMLTableSectionElement，R2845）——
-        // table 内全部行（跨 thead/tbody/tfoot document order）/ section（thead/tbody/tfoot）作用域内行。
-        // 元素作用域 querySelectorAll('tr') 返真数组（length/索引/迭代/Array 方法）。gate = TABLE 或
-        // THEAD/TBODY/TFOOT（section-scoped）；textarea.rows 落 set-trap catch-al 反射不冲突（textarea 非 section）。
+        // table 内全部行（spec 排序）/ section（thead/tbody/tfoot）作用域内行。返真数组
+        //（length/索引/迭代/Array 方法）。gate = TABLE 或 THEAD/TBODY/TFOOT（section-scoped）；
+        // textarea.rows 落 set-trap catch-al 反射不冲突（textarea 非 section）。
+        // R5266：rows/tBodies/cells 读侧统一 childNodes 直接子扫描——detached created
+        // 子树（selector 不可解析）、后代误收、非 HTML-ns 收纳三缺陷同 rowIndex 面修。
         if (prop === 'rows') {
-          var rTag = _realTag(sel, handle);
+          var rTag = (_realTag(sel, handle) || '').split(':').pop();
           if (rTag === 'TABLE' || rTag === 'THEAD' || rTag === 'TBODY' || rTag === 'TFOOT') {
-            if (!sel) return [];
-            try { return _wrapSelector(sel).querySelectorAll('tr'); } catch (_e) { return []; }
+            if (!sel && !handle) return _zwMakeCollection([], true);
+            // R5267：HTMLCollection 形态（table-rows.html instanceof/named/ownKeys/
+            // live 断言面）——[SameObject] WeakMap 缓存外层 + rebuild 读重建（每次
+            // 属性读重算 spec 排序成员表；R5266 `_zwTableRowsAll`/`_zwTblChildAll`
+            // 复用）。闭包持 sel/handle 原始值不持 proxy（防 WeakMap 键自持环，
+            // R3908 selectedOptions 同口径）。
+            // https://html.spec.whatwg.org/multipage/tables.html#dom-table-rows
+            var _rowsKey = _makeProxy(sel, handle);
+            var _rowsColl = _zwRowsCollCache.get(_rowsKey);
+            if (!_rowsColl) {
+              var _rowsRebuild = rTag === 'TABLE'
+                ? function () { return _zwTableRowsAll(sel ? _wrapSelector(sel) : _wrapHandle(handle)); }
+                : function () { return _zwTblChildAll(sel ? _wrapSelector(sel) : _wrapHandle(handle), 'tr', null); };
+              _rowsColl = _zwMakeHTMLCollection(_rowsRebuild(), { rebuild: _rowsRebuild });
+              _zwRowsCollCache.set(_rowsKey, _rowsColl);
+            }
+            return _rowsColl;
           }
         }
-        if (prop === 'tBodies' && _realTag(sel, handle) === 'TABLE') {
-          if (!sel) return [];
-          try { return _wrapSelector(sel).querySelectorAll('tbody'); } catch (_e) { return []; }
+        if (prop === 'tBodies' && (_realTag(sel, handle) || '').split(':').pop() === 'TABLE') {
+          var tbSelf = sel ? _wrapSelector(sel) : _wrapHandle(handle);
+          if (!tbSelf) return [];
+          return _zwTblChildAll(tbSelf, 'tbody', null);
         }
         // `<tr>`.cells（HTMLTableRowElement，R3243）——行内全部 td+th 单元格（document order，混计）。
-        // 与 cellIndex（R2842）同源 :is(td, th) 查询，返真数组（length/索引/迭代）。表格修改库
-        // （insertCell/deleteCell 定位 + DataTables 等读列）高频。仅 TR。
-        if (prop === 'cells' && _realTag(sel, handle) === 'TR') {
-          if (!sel) return [];
-          try { return _wrapSelector(sel).querySelectorAll(':is(td, th)'); } catch (_e) { return []; }
+        // 直接 HTML-ns td/th 子（`_zwTblChildAll`）。表格修改库（insertCell/deleteCell 定位 +
+        // DataTables 等读列）高频。仅 TR。
+        // https://html.spec.whatwg.org/multipage/tables.html#dom-tr-cells
+        if (prop === 'cells' && (_realTag(sel, handle) || '').split(':').pop() === 'TR') {
+          var ceSelf = sel ? _wrapSelector(sel) : _wrapHandle(handle);
+          if (!ceSelf) return [];
+          return _zwTblChildAll(ceSelf, 'td', 'th');
         }
         // `<table>`.caption / `<table>`.tHead / `<table>`.tFoot（HTMLTableElement，R2845）——table 的首个
-        // caption / thead / tfoot 子元素（Chromium 150 oracle：querySelector 首匹配；无 → null）。表格分析 /
-        // 序列化库读结构高频。仅 getter（setter 须 remove 既有 + insert 新建属 table 头部位置，复杂且罕见——
-        // 落 catch-al 反射内容属性，documented 限制）。gate 仅 TABLE。
-        if ((prop === 'caption' || prop === 'tHead' || prop === 'tFoot') && _realTag(sel, handle) === 'TABLE') {
-          if (!sel) return null;
+        // caption / thead / tfoot 子元素（spec dom-caption/dom-thead/dom-tfoot「first X element child」；
+        // 无 → null）。表格分析 / 序列化库读结构高频。仅 TABLE。
+        // R5265：改走 `_zwTblChildIdx` 首个 HTML-ns **直接子**扫描——旧 querySelector 含后代（delete-caption
+        // descendant 案同构近似）且 handle-only（createElementNS 前缀表，tHead/tFoot 前缀案）恒 null 两面同修。
+        // setter 由 part05 set-trap R5265 分支承接（原「复杂且罕见」限制闭合）。
+        if ((prop === 'caption' || prop === 'tHead' || prop === 'tFoot') && (_realTag(sel, handle) || '').split(':').pop() === 'TABLE') {
+          var _gp5 = sel ? _wrapSelector(sel) : _wrapHandle(handle);
+          if (!_gp5) return null;
           var cTag = prop === 'tHead' ? 'thead' : (prop === 'tFoot' ? 'tfoot' : 'caption');
-          try { return _wrapSelector(sel).querySelector(cTag); } catch (_e) { return null; }
+          var _ghIdx = _zwTblChildIdx(_gp5, cTag);
+          return _ghIdx >= 0 ? _gp5.childNodes[_ghIdx] : null;
         }
         // ── HTMLTableElement / HTMLTableSectionElement / HTMLTableRowElement 修改 API（R3243）——
         // WHATWG HTML §4.9.1 表格写侧族：insertRow/deleteRow（table + thead/tbody/tfoot section）、
@@ -24057,7 +25120,9 @@ return e;
         // （Chromium oracle 一致，经 `_throwDom`）；table.insertRow 在无 tr 且无 section 子时自动建 tbody
         // 挂载新行（spec「no tr/tbody/thead/tfoot children」分支）。
         if (prop === 'insertRow') {
-          var _irTag = _realTag(sel, handle);
+          // R5265：取 ':' 后缀容差前缀表（createElementNS 产物 tagName 含前缀——insertRow
+          // should not copy prefixes 案同修）。
+          var _irTag = (_realTag(sel, handle) || '').split(':').pop();
           // https://html.spec.whatwg.org/multipage/tables.html#dom-table-insertrow
           if (_irTag === 'TABLE') {
             return function(index) {
@@ -24066,23 +25131,18 @@ return e;
               if (index < -1) _throwDom('IndexSizeError', 'index is negative and not -1');
               var tr = globalThis.document.createElement('tr');
               var rowsArr = _rowList(this);
-              var firstTbody = null;
-              try { var _tbs = this.tBodies; firstTbody = (_tbs && _tbs.length) ? _tbs[0] : null; } catch (_e) {}
-              var hasSection = firstTbody || this.tHead || this.tFoot;
-              // 无 tr 且无 section → 建 tbody 挂新行（spec「no tr/tbody/thead/tfoot children」分支）
-              if (rowsArr.length === 0 && !hasSection) {
-                var tb = globalThis.document.createElement('tbody');
-                this.appendChild(tb);
-                tb.appendChild(tr);
-                return tr;
-              }
               if (index === -1 || index === rowsArr.length) {
-                if (rowsArr.length === 0) {
-                  // section 已存在（非上分支）→ 入首个 tbody（无 tbody 则直挂 table）
-                  if (firstTbody) firstTbody.appendChild(tr); else this.appendChild(tr);
-                } else {
-                  rowsArr[rowsArr.length - 1].parentNode.appendChild(tr);
+                // R5268：append 位 = **最后** tbody 元素子；无 tbody（thead/tfoot 不是插入
+                // 目标）则新建 tbody 挂 table——旧「首 tbody / 无 tbody 直挂 table」与 spec
+                // 不符（thead/tfoot-only 表 insertRow(-1) 案 2F：新行须入新建 tbody）。
+                // https://html.spec.whatwg.org/multipage/tables.html#dom-table-insertrow
+                var lastIdx = _zwTblChildIdxLast(this, 'tbody');
+                var targetBody = lastIdx >= 0 ? this.childNodes[lastIdx] : null;
+                if (!targetBody) {
+                  targetBody = globalThis.document.createElement('tbody');
+                  this.appendChild(targetBody);
                 }
+                targetBody.appendChild(tr);
               } else if (index >= 0 && index < rowsArr.length) {
                 var ref = rowsArr[index];
                 ref.parentNode.insertBefore(tr, ref);
@@ -24113,7 +25173,7 @@ return e;
         }
         // https://html.spec.whatwg.org/multipage/tables.html#dom-table-deleterow（table + section 共用）
         if (prop === 'deleteRow') {
-          var _drTag = _realTag(sel, handle);
+          var _drTag = (_realTag(sel, handle) || '').split(':').pop();
           if (_drTag === 'TABLE' || _drTag === 'THEAD' || _drTag === 'TBODY' || _drTag === 'TFOOT') {
             return function(index) {
               if (arguments.length === 0) index = -1;
@@ -24131,7 +25191,7 @@ return e;
           }
         }
         // https://html.spec.whatwg.org/multipage/tables.html#dom-tr-insertcell
-        if (prop === 'insertCell' && _realTag(sel, handle) === 'TR') {
+        if (prop === 'insertCell' && (_realTag(sel, handle) || '').split(':').pop() === 'TR') {
           return function(index) {
             if (arguments.length === 0) index = -1;
             else { index = Number(index); if (isNaN(index)) index = 0; }
@@ -24149,7 +25209,7 @@ return e;
           };
         }
         // https://html.spec.whatwg.org/multipage/tables.html#dom-tr-deletecell
-        if (prop === 'deleteCell' && _realTag(sel, handle) === 'TR') {
+        if (prop === 'deleteCell' && (_realTag(sel, handle) || '').split(':').pop() === 'TR') {
           return function(index) {
             if (arguments.length === 0) index = -1;
             else { index = Number(index); if (isNaN(index)) index = 0; }
@@ -24161,6 +25221,64 @@ return e;
             if (victim && typeof victim.remove === 'function') victim.remove();
           };
         }
+        // ── HTMLTableElement create/delete 派生族（R5265）——WHATWG HTML §4.9.1：
+        // createCaption/createTHead 有守卫（已有首个匹配直接子 → 直返既有；否则建并**首子前插**）、
+        // createTFoot 同守卫但**末尾追加**、createTBody 无守卫（建后插首个 HTML-ns tbody 元素子
+        // 之前，无则末尾——createTBody.html 15 案钉定：嵌套表内 tbody 不算锚、childNodes 顺序
+        // 断言 [before, tbody, after]）；deleteCaption/deleteTHead/deleteTFoot 移除首个匹配直接子
+        // （无则 no-op，返 undefined——delete-caption.html 6 案：descendant 表内同名子不删、
+        // SVG ns caption 不删）。子匹配走 `_zwTblChildIdx`（直接子 + localName + HTML ns，sel 世界
+        // namespaceURI 空串印记口径）。创建经既有 createElement 原语；删除经 victim.remove()
+        // （R3243 deleteRow 同款 sel/handle 双身份记录）。
+        if ((prop === 'createCaption' || prop === 'createTHead' || prop === 'createTFoot') && (_realTag(sel, handle) || '').split(':').pop() === 'TABLE') {
+          var _ccTag = prop === 'createTHead' ? 'thead' : (prop === 'createTFoot' ? 'tfoot' : 'caption');
+          // https://html.spec.whatwg.org/multipage/tables.html#dom-table-createcaption
+          return function () {
+            var have = _zwTblChildIdx(this, _ccTag);
+            if (have >= 0) return this.childNodes[have];
+            var el = globalThis.document.createElement(_ccTag);
+            if (_ccTag === 'tfoot') {
+              this.appendChild(el);
+            } else if (_ccTag === 'thead') {
+              // R5265：thead 非首子位——首个 tbody（无则 tfoot）元素子之前（caption/colgroup
+              // 自然在前——tHead.html previousSibling=tcaption / nextSibling=tbody1 案）。
+              var _thAt = _zwTblChildIdx(this, 'tbody');
+              if (_thAt < 0) _thAt = _zwTblChildIdx(this, 'tfoot');
+              if (_thAt >= 0) this.insertBefore(el, this.childNodes[_thAt]);
+              else this.appendChild(el);
+            } else {
+              this.insertBefore(el, this.firstChild);
+            }
+            return el;
+          };
+        }
+        if (prop === 'createTBody' && (_realTag(sel, handle) || '').split(':').pop() === 'TABLE') {
+          // https://html.spec.whatwg.org/multipage/tables.html#dom-table-createtbody
+          return function () {
+            var el = globalThis.document.createElement('tbody');
+            var last = _zwTblChildIdxLast(this, 'tbody');
+            if (last >= 0) {
+              var kids = this.childNodes;
+              var next = kids[last + 1];
+              if (next) this.insertBefore(el, next);
+              else this.appendChild(el);
+            } else {
+              this.appendChild(el);
+            }
+            return el;
+          };
+        }
+        if ((prop === 'deleteCaption' || prop === 'deleteTHead' || prop === 'deleteTFoot') && (_realTag(sel, handle) || '').split(':').pop() === 'TABLE') {
+          var _dcTag = prop === 'deleteTHead' ? 'thead' : (prop === 'deleteTFoot' ? 'tfoot' : 'caption');
+          // https://html.spec.whatwg.org/multipage/tables.html#dom-table-deletecaption
+          return function () {
+            var at = _zwTblChildIdx(this, _dcTag);
+            if (at >= 0) {
+              var victim = this.childNodes[at];
+              if (victim && typeof victim.remove === 'function') victim.remove();
+            }
+          };
+        }
         // HTMLOptionElement 读属性（option.text/label/defaultSelected，R2832），仅 OPTION（_realTag gate，
         // 支持 sel + handle 两种身份——new Option 创建的 handle-based 亦可读）。
         if (prop === 'text' && _realTag(sel, handle) === 'OPTION') {
@@ -24168,6 +25286,43 @@ return e;
           // collect text value 含 script/comment 排除；此前裸 textContent 读使
           // option-text-spaces/recurse 两文件 55F）。latest-wins 语义由子列表融合视图继承。
           return _zwOptChildText(sel, handle);
+        }
+        // R5269（html-semantics M2 切片 62）：HTMLTitleElement.text——child text
+        // content（**直接** Text 子 data 依树序拼接；comment/元素子不含，
+        // title.text-01 断言 .text="TEXT" 而 textContent="TEXTELEMENT"）；**无空白
+        // 归一**（折叠面在 document.title getter；title.text-03 断言空白/制表/换行
+        // 原样保留）。旧无 getter 落属性反射兜底读 ''。
+        // sel 形 SetText 后子列表融合视图不载新文本（probe62：childLen=0）——walk
+        // 空且 latest-wins 文本非空 = 整体替换生效，直取 lw 原样返回；appendChild
+        // 变更链 walk 非空自然落子列表 walk（lw 含元素后代文本不可作信号，
+        // title.text-01 实证：lw="TEXTELEMENT" 而 .text="TEXT"）。
+        // https://html.spec.whatwg.org/multipage/dom.html#dom-title-text
+        if (prop === 'text' && _realTag(sel, handle) === 'TITLE') {
+          var self5269 = sel ? _wrapSelector(sel) : _wrapHandle(handle);
+          if (!self5269) return '';
+          var out5269 = '';
+          try {
+            var kids5269 = self5269.childNodes;
+            for (var i5269 = 0; i5269 < kids5269.length; i5269++) {
+              var k5269 = kids5269[i5269];
+              if (!k5269 || k5269.nodeType !== 3) continue;
+              out5269 += (k5269.data != null ? k5269.data : (k5269.nodeValue != null ? k5269.nodeValue : ''));
+            }
+          } catch (_e5269) {}
+          if (out5269 === '' && sel) {
+            var lw5269 = (typeof __zw_get_text_lw === 'function') ? __zw_get_text_lw(sel) : null;
+            if (lw5269 != null && String(lw5269) !== '') return String(lw5269);
+          }
+          return out5269;
+        }
+        // R5273（html-semantics M2 切片 66）：HTMLAnchorElement.text = textContent
+        //（HTML §dom-a-text——getter 返 textContent、setter 为「string replace all」
+        // 与 textContent 同步；option.text 的 strip-and-collapse **不适用**——
+        // a.text-getter-01 断言 `<a>a <!--b-->b c </a>` 的 .text 为全文 "a b c "，
+        // 与 textContent 相等）。R5269 title.text 同口径委托。
+        if (prop === 'text' && _realTag(sel, handle) === 'A') {
+          var selfA5273 = sel ? _wrapSelector(sel) : _wrapHandle(handle);
+          return selfA5273 ? selfA5273.textContent : '';
         }
         if (prop === 'label' && _realTag(sel, handle) === 'OPTION') {
           // R3907：.label = 无 ns label 内容属性（**存在即采纳**——空串不回落文本）；
@@ -24247,7 +25402,13 @@ return e;
           // R297：JS 原值优先（含孤立代理的 id——host 值经 lossy 换损为 U+FFFD，
           // WPT escapes never-match 族须原值比较；详见 part01 `_zwRawIds` 注记）。
           if (Object.prototype.hasOwnProperty.call(_zwRawIds, key)) return _zwRawIds[key];
-          return handle ? __zw_get_attr_handle(handle, 'id') : __zw_get_attr(sel, 'id');
+          // s81：IDL 反射读内容属性——setAttribute 同步生效（spec「set an attribute
+          // value」即改 attr，反射随之；快照读 `__zw_get_attr` 同 turn 恒 stale——
+          // 与 getAttribute R2995 lw 链同款读源，querySelector/matches 侧
+          // `_hIdOf` 匹配读同源对齐）。https://dom.spec.whatwg.org/#concept-attribute
+          return handle
+            ? __zw_get_attr_handle(handle, 'id')
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'id') : __zw_get_attr(sel, 'id'));
         }
         // reflected 字符串属性（title/lang）——get 反射同名 attribute（无 → ''）；同步 set→get 优先读
         // _reflectedAttrs 缓存（__zw_set_attr 异步入队，无缓存则 set 后 get 读 stale 快照）。

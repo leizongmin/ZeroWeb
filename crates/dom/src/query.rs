@@ -1588,29 +1588,28 @@ pub fn parse_simple_selector(selector: &str) -> Option<SimpleSelector> {
             result.classes.push(unescape_css_ident(&r[..end]));
             rest = &r[end..];
         } else if let Some(r) = rest.strip_prefix(':') {
-            // 伪类：名字直到 `(` 或下一个分隔符；`:nth-child(...)` 含括号参数。
+            // 伪类：名字直到首个特殊字符，首个字符是 `(` 时为含参伪类（`:nth-child(...)`）。
             // R159：`::` 双冒号伪元素语法（`::before`/`::slotted(foo)`——WPT 期望
             // 合法但零匹配）——剥前导第二冒号后按伪元素名解析。
             let r = r.strip_prefix(':').unwrap_or(r);
-            let (name, args, next_rest): (&str, Option<&str>, &str) = match r.find('(') {
-                Some(open) => {
-                    // `)` 相对 r[open..] 的偏移 → 换算到 r 的绝对位置。
-                    // R159：未闭合 `)` 宽容——args 取到串尾（`::slotted(foo` WPT
-                    // 期望合法零匹配；伪元素匹配恒 false 无需完整 args）。
-                    match r[open..].find(')') {
-                        Some(close) => {
-                            let arg_end = open + close;
-                            let name = &r[..open];
-                            let args = &r[open + 1..arg_end];
-                            (name, Some(args), &r[arg_end + 1..])
-                        }
-                        None => (&r[..open], Some(&r[open + 1..]), ""),
+            // R5272：名字边界取 `(`/`#`/`.`/`[`/`:` 的最早命中，仅当该字符是 `(` 才
+            // 按含参伪类取 args——旧实现 `r.find('(')` 扫过整段余串，复合伪类
+            // `:root:lang(de-DE)` 会把 `root:lang` 当名字（SyntaxError，WPT
+            // http-equiv-and-name-2 钉定）。
+            let name_end = r.find(['(', '#', '.', '[', ':']).unwrap_or(r.len());
+            let (name, args, next_rest): (&str, Option<&str>, &str) = if r.as_bytes().get(name_end) == Some(&b'(') {
+                // `)` 相对 r[name_end..] 的偏移 → 换算到 r 的绝对位置。
+                // R159：未闭合 `)` 宽容——args 取到串尾（`::slotted(foo` WPT
+                // 期望合法零匹配；伪元素匹配恒 false 无需完整 args）。
+                match r[name_end..].find(')') {
+                    Some(close) => {
+                        let arg_end = name_end + close;
+                        (&r[..name_end], Some(&r[name_end + 1..arg_end]), &r[arg_end + 1..])
                     }
+                    None => (&r[..name_end], Some(&r[name_end + 1..]), ""),
                 }
-                None => {
-                    let end = r.find(['#', '.', '[', ':']).unwrap_or(r.len());
-                    (&r[..end], None, &r[end..])
-                }
+            } else {
+                (&r[..name_end], None, &r[name_end..])
             };
             if name.is_empty() {
                 return None; // 空伪类名
@@ -1731,6 +1730,72 @@ mod tests {
         for bad in ["ns|div", "a b|c", "||div"] {
             assert!(!selector_is_valid(bad), "should be invalid: {bad}");
         }
+    }
+
+    // R5272：复合伪类名字边界 + pragma-set default language 回落（WPT
+    // the-meta-element/http-equiv-and-name-2 钉定）——`<meta http-equiv=content-language
+    // content=de-DE>` 后 `:root:lang(de-DE)` 须命中 `<html>`。旧实现两处断链：
+    // ①`parse_selector_chain` 把 `root:lang` 当名字（`r.find('(')` 扫过整段余串）→
+    // SyntaxError；②`matches_lang` 无 pragma 回落（spec「language of a node」Otherwise
+    // 分支，dom.html#language）。
+    #[test]
+    fn zz_r5272_root_lang_meta_pragma() {
+        for s in [
+            ":root:lang(de-DE)",
+            "div:hover:focus",
+            "a:first-child:last-child",
+            ":not(.x):lang(en)",
+        ] {
+            assert!(selector_is_valid(s), "should be valid: {s}");
+            assert!(parse_selector_chain(s).is_some(), "should parse: {s}");
+        }
+        let doc = crate::parse_html(
+            "<html><head><meta http-equiv=\"content-language\" content=\"de-DE\">\
+             </head><body><p>x</p></body></html>",
+        );
+        let root = doc.root();
+        let hits = doc.query_selector_all(root, ":root:lang(de-DE)");
+        assert_eq!(hits.len(), 1, "html matches :root:lang(de-DE) via pragma");
+        // 后代无 lang 同吃 pragma（language of a node Otherwise 分支）
+        assert_eq!(doc.query_selector_all(root, "p:lang(de-DE)").len(), 1);
+        assert!(doc.query_selector_all(root, "p:lang(en)").is_empty());
+    }
+
+    // R5272：pragma 合格性（含逗号失效）+ 文档序最后合格 meta 胜出 + 祖先 lang
+    // 压制 + 空 lang = explicitly unknown 不回落（dom.html#language 同段）。
+    #[test]
+    fn zz_r5272_pragma_lang_eligibility() {
+        // spec 步骤 2：content 含逗号 → pragma 失效
+        let doc = crate::parse_html(
+            "<head><meta http-equiv=\"content-language\" content=\"de-DE, en\">\
+             </head><body><p>x</p></body></html>",
+        );
+        assert!(doc.query_selector_all(doc.root(), ":root:lang(de-DE)").is_empty());
+
+        // 文档序最后一个合格 meta 胜出
+        let doc = crate::parse_html(
+            "<head><meta http-equiv=\"content-language\" content=\"fr\">\
+             <meta http-equiv=\"content-language\" content=\"de-DE\">\
+             </head><body><p>x</p></body></html>",
+        );
+        assert_eq!(doc.query_selector_all(doc.root(), ":root:lang(de-DE)").len(), 1);
+        assert!(doc.query_selector_all(doc.root(), ":root:lang(fr)").is_empty());
+
+        // 祖先 lang 压制 pragma
+        let doc = crate::parse_html(
+            "<html lang=\"en\"><head><meta http-equiv=\"content-language\" \
+             content=\"de-DE\"></head><body><p>x</p></body></html>",
+        );
+        assert_eq!(doc.query_selector_all(doc.root(), "html:lang(en)").len(), 1);
+        assert!(doc.query_selector_all(doc.root(), "html:lang(de-DE)").is_empty());
+        assert!(doc.query_selector_all(doc.root(), "p:lang(de-DE)").is_empty());
+
+        // 空 lang = explicitly unknown，不再回落
+        let doc = crate::parse_html(
+            "<html lang=\"\"><head><meta http-equiv=\"content-language\" \
+             content=\"de-DE\"></head><body><p>x</p></body></html>",
+        );
+        assert!(doc.query_selector_all(doc.root(), "html:lang(de-DE)").is_empty());
     }
 
     #[test]

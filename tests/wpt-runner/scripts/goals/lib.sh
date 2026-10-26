@@ -111,7 +111,7 @@ for entry in json.load(sys.stdin):
               fetch_raw "${dir}/${name}" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
             fi
             ;;
-          *.html | *.htm | *.js | *.json | *.xml | *.xhtml | *.svg)
+          *.html | *.htm | *.js | *.json | *.xml | *.xhtml | *.svg | *.css)
             fetch_raw "${dir}/${name}" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
             ;;
           # .headers sidecar（wptserve per-file 响应头——xmldecl support 的

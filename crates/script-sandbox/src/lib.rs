@@ -485,6 +485,17 @@ pub trait Sandbox {
     }
     /// 重置上下文（清空 JS 状态）。
     fn reset_context(&mut self);
+    /// T13 S3/R1：延迟回收点对 isolate 发 GC hint（`low_memory_notification`）。
+    ///
+    /// **默认 no-op**：QuickJS 后端 context 丢弃即同步释放对象，无持久 isolate 垃圾面，
+    /// 无需 GC hint。须在执行 JS 的线程调用（V8 isolate 线程约束）。
+    fn low_memory_reclaim(&mut self) {}
+    /// T13 S7 探针：JS heap 在用量（字节；`ZEROWEB_MEM_PROBE=1` reset 臂打点）。
+    ///
+    /// **默认 no-op**：QuickJS 后端不支持 heap 统计读取，返 `None`（观测腿不进判据）。
+    fn heap_used_bytes(&mut self) -> Option<usize> {
+        None
+    }
     /// 返回沙箱配置的引用。
     fn config(&self) -> &SandboxConfig;
     /// P1b S2 原生绑定安装 escape-hatch（RFC `p1b-v8-native-bindings-rfc.md` §6 S2）。
@@ -512,6 +523,50 @@ pub trait Sandbox {
     fn install_native_bindings_quickjs(&mut self, _installer: Box<dyn FnOnce(&rquickjs::Ctx)>) -> bool {
         false
     }
+
+    /// s88（html-semantics-compat dynamic-import classic 面）：注册 V8 原生动态
+    /// `import()` 宿主解析器。契约与 `__zw_compile_module` 一致——`resolver(spec,
+    /// referrer, nonce)` 返回 `resolved\u{1f}iife` / `resolved\u{1f}`（依赖图编译
+    /// 失败）/ 空串（取回失败；s92 起 CSP 阻止亦返空串 → reject TypeError）。
+    /// spec/referrer/nonce 均为宿主解析语义（referrer/nonce 由
+    /// [`Sandbox::set_dynamic_import_referrer`] / [`Sandbox::set_dynamic_import_nonce`]
+    /// 每脚本前设定；nonce 空串 = 无 nonce）。须在 `execute` 之前调用；未注册时
+    /// 动态 import() 维持引擎默认 reject 语义。
+    ///
+    /// **默认 no-op**：QuickJS 后端降级（classic 上下文动态 import() 维持不支持态）。
+    #[allow(clippy::type_complexity)] // 镜像 register_callback 模式
+    fn set_dynamic_import_resolver(
+        &mut self,
+        _resolver: std::sync::Arc<dyn Fn(&str, &str, &str) -> String + Send + Sync>,
+    ) {
+    }
+
+    /// s88：设定当前执行脚本的 referrer（动态 `import()` 的 base URL——classic 路径
+    /// 无 ScriptOrigin/resource_name，宿主每脚本执行前供给）。
+    ///
+    /// **默认 no-op**：QuickJS 后端降级（同上）。
+    fn set_dynamic_import_referrer(&mut self, _url: &str) {}
+
+    /// s92（string-compilation CSP nonce 面）：设定当前执行脚本的 nonce（动态
+    /// `import()` 的 CSP script-src 检查输入；`None` = 无 nonce）。
+    ///
+    /// **默认 no-op**：QuickJS 后端降级（同上）。
+    fn set_dynamic_import_nonce(&mut self, _nonce: Option<&str>) {}
+
+    /// s90（string-compilation base URL——inline 事件处理器臂）：注册全局函数
+    /// `__zwSwapImportReferrer(url)`——返回旧 referrer 并换入新值。JS shim 于
+    /// inline/反射事件处理器求值窗调用（体内动态 import() 用求值时刻文档基 URL）。
+    ///
+    /// **默认 no-op**：QuickJS 后端降级（shim 按函数缺席直接执行，零变更）。
+    fn register_dynamic_import_referrer_swapper(&mut self) {}
+
+    /// s92（string-compilation CSP nonce 面）：注册全局函数 `__zwSwapImportNonce(v)`
+    /// ——与 [`Sandbox::register_dynamic_import_referrer_swapper`] 同形（有参换入
+    /// 返旧值、无参纯 getter；nonce 空串 ↔ `None` 双射）。shim 事件处理器求值窗
+    /// 换入空串（不继承 nonce）、字符串 timer fire 窗换入注册期捕获值。
+    ///
+    /// **默认 no-op**：QuickJS 后端降级（同上）。
+    fn register_dynamic_import_nonce_swapper(&mut self) {}
 }
 
 #[cfg(all(test, feature = "v8"))]

@@ -89,6 +89,9 @@ pub struct TabManager {
     pending_navigations: Vec<(TabId, String, String, Option<String>)>,
     /// T62-D1：多进程渲染端 zero:// 导航装载请求（同 pending_navigations 语义）。
     pending_renderer_navigations: Vec<(TabId, TabNavigateRequestParams)>,
+    /// T5/P10：页面 history 遍历请求（单进程 worker 与多进程 HistoryTraverse 同语义；
+    /// app 消费提交 shell 栈遍历）。
+    pending_history_traverses: Vec<(TabId, i32)>,
     /// 下一个 dispatch_id。
     next_dispatch_id: u64,
 }
@@ -129,6 +132,7 @@ impl TabManager {
             pending_actions: VecDeque::new(),
             pending_navigations: Vec::new(),
             pending_renderer_navigations: Vec::new(),
+            pending_history_traverses: Vec::new(),
             next_dispatch_id: 1,
         };
         if manager.process_backend.is_some() {
@@ -301,6 +305,46 @@ impl TabManager {
     /// 前台 Tab 切换（每个 Tab 的 worker / 渲染进程保持存活直至用户关闭标签）。
     pub fn on_active_tab_changed(&mut self, _active: Option<TabId>) {}
 
+    /// T12 投机预热触发转发：主循环每 tick 由 app 转发地址栏聚焦态（多进程 backend
+    /// 内部做 false→true 边沿检测；单进程 worker 路无 renderer 进程可预热，no-op）。
+    pub fn note_warm_renderer_tick(&mut self, address_bar_focused: bool) {
+        if let Some(ref mut backend) = self.process_backend {
+            backend.note_warm_tick(address_bar_focused);
+        }
+    }
+
+    /// T13 S8：宿主 idle 谓词转发（app 每 tick 组合 `tab_face_idle` + 崩溃重置窗 +
+    /// 平滑滚动动画 + 注入器在弦后调用；backend 叠加活动 recency 更新连续闲置锚点。
+    /// 单进程 worker 路无 renderer 进程可回收，no-op）。
+    pub fn note_warm_idle_tick(&mut self, idle: bool) {
+        if let Some(ref mut backend) = self.process_backend {
+            backend.note_warm_idle(idle);
+        }
+    }
+
+    /// T13 S8：前台 tab 面空闲判定（回收谓词的 tab 分量）。
+    ///
+    /// 忙条件：活动 tab 快照 loading / compositor 动画或贴片拉取活跃，或任一全局
+    /// pending 队列非空（装载、下载、错误、崩溃、派发、动作、导航、zero:// 导航、
+    /// 历史遍历）——这些都是即将触达 renderer 的工作面。
+    pub fn tab_face_idle(&self, active_tab: Option<TabId>) -> bool {
+        if let Some(tab) = active_tab
+            && let Some(snapshot) = self.snapshots.get(&tab)
+            && (snapshot.loading || snapshot.compositor_animations_active || snapshot.compositor_patches_active)
+        {
+            return false;
+        }
+        self.pending_loaded.is_empty()
+            && self.pending_downloads.is_empty()
+            && self.pending_errors.is_empty()
+            && self.pending_renderer_crashes.is_empty()
+            && self.pending_dispatch.is_empty()
+            && self.pending_actions.is_empty()
+            && self.pending_navigations.is_empty()
+            && self.pending_renderer_navigations.is_empty()
+            && self.pending_history_traverses.is_empty()
+    }
+
     /// 导航到 URL。
     pub fn navigate(&mut self, tab_id: TabId, url: String) {
         self.navigate_request(tab_id, url, "GET".to_string(), None);
@@ -397,6 +441,8 @@ impl TabManager {
             self.pending_downloads.extend(backend.take_pending_downloads());
             self.pending_renderer_navigations
                 .extend(backend.take_tab_navigate_requests());
+            // T5/P10：多进程渲染端页面 history 遍历请求（与单进程 worker 回执同语义）。
+            self.pending_history_traverses.extend(backend.take_history_traverses());
             for (dispatch_id, default_allowed) in backend.take_dispatch_results() {
                 Self::resolve_dispatch(
                     &mut self.pending_dispatch,
@@ -493,6 +539,10 @@ impl TabManager {
                     // R3254-M10：worker 侧表单提交导航请求（Enter 默认动作）。
                     TabWorkerMessage::SubmitNavigation { url, method, body } => {
                         self.pending_navigations.push((*tab_id, url, method, body));
+                    }
+                    // T5/P10：worker 侧页面 history 遍历请求（shim 本地栈越界移交）。
+                    TabWorkerMessage::HistoryTraverse { delta } => {
+                        self.pending_history_traverses.push((*tab_id, delta));
                     }
                 }
             }
@@ -1189,6 +1239,17 @@ impl TabManager {
         std::mem::take(&mut self.pending_renderer_navigations)
     }
 
+    /// T5/P10：取出页面 history 遍历请求（单进程 worker 与多进程 HistoryTraverse 同语义）。
+    pub fn take_history_traverses(&mut self) -> Vec<(TabId, i32)> {
+        std::mem::take(&mut self.pending_history_traverses)
+    }
+
+    /// 测试用：直接入队页面 history 遍历请求（替代 worker 回执/多进程合流路径）。
+    #[cfg(test)]
+    pub fn push_history_traverse_for_test(&mut self, tab_id: TabId, delta: i32) {
+        self.pending_history_traverses.push((tab_id, delta));
+    }
+
     /// Tab 是否已注册。
     pub fn has_tab(&self, tab_id: TabId) -> bool {
         self.workers.contains_key(&tab_id)
@@ -1392,5 +1453,61 @@ mod ime_tests {
         assert!(manager.page_pointer_lock_active(tab_id));
         manager.navigate_request(tab_id, "https://zero.test/next".to_string(), "GET".to_string(), None);
         assert!(!manager.page_pointer_lock_active(tab_id));
+    }
+}
+
+/// T13 S8：`tab_face_idle` 前台 tab 面空闲判定——快照 loading / compositor 动画·
+/// 贴片拉取活跃、任一全局 pending 队列非空均判忙；全空判闲。
+#[cfg(test)]
+mod t13_idle_face_tests {
+    use super::*;
+
+    #[test]
+    fn tab_face_idle_reflects_snapshot_and_pending_queues() {
+        let tab_id = TabId(1);
+
+        // 无快照、队全空：闲。
+        let manager = TabManager::new((800, 600), PrefersColorSchemeValue::Light);
+        assert!(manager.tab_face_idle(Some(tab_id)), "空管理器必须判闲");
+        assert!(manager.tab_face_idle(None), "无活动 tab 且队全空必须判闲");
+
+        // 活动 tab 快照 loading：忙；同快照落在非活动 tab 不参与判定。
+        let mut manager = TabManager::new((800, 600), PrefersColorSchemeValue::Light);
+        let snapshot = TabSnapshot {
+            loading: true,
+            ..Default::default()
+        };
+        manager.snapshots.insert(tab_id, snapshot);
+        assert!(!manager.tab_face_idle(Some(tab_id)), "loading 中必须判忙");
+        assert!(manager.tab_face_idle(Some(TabId(2))), "非活动 tab 的 loading 不判忙");
+
+        // compositor 动画拉取活跃：忙。
+        let mut manager = TabManager::new((800, 600), PrefersColorSchemeValue::Light);
+        let snapshot = TabSnapshot {
+            compositor_animations_active: true,
+            ..Default::default()
+        };
+        manager.snapshots.insert(tab_id, snapshot);
+        assert!(!manager.tab_face_idle(Some(tab_id)), "compositor 动画拉取活跃必须判忙");
+
+        // pending 队列非空：忙。
+        let mut manager = TabManager::new((800, 600), PrefersColorSchemeValue::Light);
+        manager
+            .pending_loaded
+            .push((tab_id, "t".to_string(), "http://a".to_string()));
+        assert!(!manager.tab_face_idle(Some(tab_id)), "pending_loaded 非空必须判忙");
+
+        let mut manager = TabManager::new((800, 600), PrefersColorSchemeValue::Light);
+        manager
+            .pending_actions
+            .push_back((tab_id, PendingTabAction::NavigateActiveTab("http://a".to_string())));
+        assert!(!manager.tab_face_idle(Some(tab_id)), "pending_actions 非空必须判忙");
+
+        let mut manager = TabManager::new((800, 600), PrefersColorSchemeValue::Light);
+        manager.pending_renderer_crashes.push(tab_id);
+        assert!(
+            !manager.tab_face_idle(Some(tab_id)),
+            "pending_renderer_crashes 非空必须判忙"
+        );
     }
 }

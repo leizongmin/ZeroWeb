@@ -1155,7 +1155,16 @@ impl InlineFormattingContext {
             // Rust `trim()` 按 White_Space 属性剔除 nbsp，把仅含 `&nbsp;` 的行盒误判为
             // 「全可折叠空白」塌 0 高（nbsp 是 preserved 内容，行盒高 = line-height；
             // line-height-applies-to-004/014 的 2in 行 192 塌 0 实证）。
-            let all_collapsible_ws = !line.runs.is_empty()
+            // R5274：preserve 模式（pre/pre-wrap/break-spaces）的空白行是 §9.2.1.1
+            // 「preserved white space」——行盒计 line-height，不塌 0（active-selection-
+            // 063：pre 纯 tab 行选区高亮必须可见，chromium 绿满格实证；R1447 tab 片段
+            // text="" 宽度由 x 推进承载，仅凭文本判据会把保留空白行误塌 0 高 → auto
+            // 高块/float 盒高 0 整盒不可见）。
+            let line_preserves_ws = line.runs.iter().any(|f| {
+                f.ws_override.map_or(self.preserve_whitespace, |ws| ws.preserve)
+            });
+            let all_collapsible_ws = !line_preserves_ws
+                && !line.runs.is_empty()
                 && line.runs.iter().all(|f| {
                     (f.text.is_empty() || f.text.chars().all(crate::inline::is_collapsible_ws))
                         && f.font_size > 0.0

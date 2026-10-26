@@ -143,6 +143,130 @@ pub(crate) fn col_border_width_halves(
     Some(halves)
 }
 
+/// R5282：collapse 垂直格线的 col/colgroup 边框源整宽（winner-center 尺寸模型输入）。
+///
+/// 与 `col_border_width_halves`（旧模型「每列宽 floor」近似，组边重复计入每个覆盖列）
+/// 不同，此函数按 §17.6.2.1 冲突候选语义把边框落到**实际格线**：colgroup border-left
+/// 只参与其首列左格线、border-right 只参与末列右格线；col 边同理（span>1 时落首/
+/// 末列界线）。chromium 实证（R3810 形态）：colgroup border-left 1in + 两空列 →
+/// 格线 [96,0,0]、列槽 [48,0]、表盒 96 = extent 48 + 外半 48。
+pub(crate) fn col_border_line_widths(
+    table_box: &LayoutBox,
+    grid: &TableGrid,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    doc: &zero_dom::Document,
+) -> Option<Vec<f32>> {
+    use crate::table::{get_display, get_span};
+    use zero_css_parser::values::DisplayValue;
+
+    let table_style = table_box.node_id.and_then(|id| styles.get(&id))?;
+    if !matches!(
+        table_style.border_collapse,
+        zero_style_system::BorderCollapseValue::Collapse
+    ) {
+        return None;
+    }
+    if grid.col_count == 0 {
+        return None;
+    }
+
+    // 覆盖扫描与 col_border_width_halves 同构
+    let mut col_cover: Vec<(Option<NodeId>, Option<NodeId>)> = vec![(None, None); grid.col_count];
+    let mut cursor = 0usize;
+    for child in &table_box.children {
+        if cursor >= grid.col_count {
+            break;
+        }
+        match get_display(child, styles) {
+            Some(DisplayValue::TableColumnGroup) => {
+                let has_inner_cols = child
+                    .children
+                    .iter()
+                    .any(|c| get_display(c, styles) == Some(DisplayValue::TableColumn));
+                let rg_span = if has_inner_cols {
+                    child
+                        .children
+                        .iter()
+                        .filter(|c| get_display(c, styles) == Some(DisplayValue::TableColumn))
+                        .map(|c| get_span(c, doc))
+                        .sum::<usize>()
+                } else {
+                    get_span(child, doc)
+                };
+                let start = cursor.min(grid.col_count);
+                let end = (cursor + rg_span).min(grid.col_count);
+                let rg_id = child.node_id;
+                for slot in col_cover.iter_mut().take(end).skip(start) {
+                    slot.0 = rg_id;
+                }
+                let mut inner_cursor = cursor;
+                for inner in &child.children {
+                    if get_display(inner, styles) != Some(DisplayValue::TableColumn) {
+                        continue;
+                    }
+                    let cspan = get_span(inner, doc);
+                    let istart = inner_cursor.min(grid.col_count);
+                    let iend = (inner_cursor + cspan).min(grid.col_count);
+                    let col_id = inner.node_id;
+                    for slot in col_cover.iter_mut().take(iend).skip(istart) {
+                        slot.1 = col_id;
+                    }
+                    inner_cursor += cspan;
+                }
+                cursor += rg_span;
+            }
+            Some(DisplayValue::TableColumn) => {
+                let cspan = get_span(child, doc);
+                let start = cursor.min(grid.col_count);
+                let end = (cursor + cspan).min(grid.col_count);
+                let col_id = child.node_id;
+                for slot in col_cover.iter_mut().take(end).skip(start) {
+                    slot.1 = col_id;
+                }
+                cursor += cspan;
+            }
+            _ => {}
+        }
+    }
+
+    let edge_w = |elem: Option<NodeId>, right: bool| -> f32 {
+        let Some(id) = elem else { return 0.0 };
+        let Some(es) = styles.get(&id) else { return 0.0 };
+        let (w, st) = if right {
+            (length_to_px(&es.border_right_width, es), &es.border_right_style)
+        } else {
+            (length_to_px(&es.border_left_width, es), &es.border_left_style)
+        };
+        if w <= 0.0 || matches!(st, BorderStyleValue::None | BorderStyleValue::Hidden) {
+            return 0.0;
+        }
+        w
+    };
+
+    let cols = grid.col_count;
+    let mut lines = vec![0.0f32; cols + 1];
+    for i in 0..cols {
+        let (g, c) = col_cover[i];
+        // 左界线：本列是所属组/列的首列（i==0 或与前列 cover 异号）时组/列 border-left 参线
+        let (g_prev, c_prev) = if i > 0 { col_cover[i - 1] } else { (None, None) };
+        if g != g_prev {
+            lines[i] = lines[i].max(edge_w(g, false));
+        }
+        if c != c_prev {
+            lines[i] = lines[i].max(edge_w(c, false));
+        }
+        // 右界线：本列是所属组/列的末列（i==cols−1 或与后列 cover 异号）时 border-right 参线
+        let (g_next, c_next) = if i + 1 < cols { col_cover[i + 1] } else { (None, None) };
+        if g != g_next {
+            lines[i + 1] = lines[i + 1].max(edge_w(g, true));
+        }
+        if c != c_next {
+            lines[i + 1] = lines[i + 1].max(edge_w(c, true));
+        }
+    }
+    Some(lines)
+}
+
 pub(crate) fn resolve_collapsed_borders(
     table_box: &mut LayoutBox,
     grid: &TableGrid,
@@ -781,6 +905,15 @@ pub(crate) fn resolve_collapsed_borders(
 
     // 阶段 3：应用所有边框覆盖到 LayoutBox
     for ((row_idx, cell_idx), side, width, color_override, style_override) in overrides {
+        // R5284：hidden 胜者零宽——CSS2.1 §17.6.2.1 hidden 抑制该缘一切边框，paint
+        // 不出线且不占布局空间（与 none 同为零消费；used border 不变量同
+        // tree.rs border_px / apply_collapse_content_half_shift 口径）。否则 specified
+        // 初值 medium=3px 随 hidden 胜者进盒（rules=groups 表 hidden 提示的周界
+        // cell 盒 +3px 内容错位根因），paint 端跳过 hidden 而布局端消费宽度。
+        let width = match &style_override {
+            Some(BorderStyleValue::Hidden) => 0.0,
+            _ => width,
+        };
         let row = &grid.rows[row_idx];
         let row_box = match get_row_box_mut(table_box, row) {
             Some(b) => b,
@@ -802,7 +935,7 @@ pub(crate) fn resolve_collapsed_borders(
             0 => {
                 cell_box.border_top = width;
                 if let Some(c) = color_override {
-                    cell_box.collapsed_border_color_overrides[0] = Some(c);
+                    cell_box.collapsed_border_color_overrides.get_or_insert_default()[0] = Some(c);
                 }
                 if let Some(s) = style_override {
                     cell_box.collapsed_border_style_overrides[0] = Some(s);
@@ -811,7 +944,7 @@ pub(crate) fn resolve_collapsed_borders(
             1 => {
                 cell_box.border_right = width;
                 if let Some(c) = color_override {
-                    cell_box.collapsed_border_color_overrides[1] = Some(c);
+                    cell_box.collapsed_border_color_overrides.get_or_insert_default()[1] = Some(c);
                 }
                 if let Some(s) = style_override {
                     cell_box.collapsed_border_style_overrides[1] = Some(s);
@@ -820,14 +953,18 @@ pub(crate) fn resolve_collapsed_borders(
             // R5100：side 4 = 右缘 + cell 宽增长（行/行组胜出右缘，§17.6.1 边框区
             // 外扩语义）。colgroup/column/table 胜出走 side 1（带绘于内容区内缘，
             // 005 A/B 判例）。side 4 仅由右缘外边缘 section 发射。
+            // R5282：winner-center 下槽宽已含周界胜者内半（cell 盒右缘 = 格线），
+            // 带绘于盒缘外半落表盒外侧半带内——增长会把盒推过格线（chromium 探针：
+            // rowgroup border-right 30 表盒 130 = extent 115 + 15，cell 盒 [50,115)
+            // 即到格线），增长仅 legacy 模型需要。
             4 => {
                 let prev = cell_box.border_right;
                 cell_box.border_right = width;
-                if width > prev {
+                if width > prev && !crate::table::collapse_winner_center_enabled() {
                     cell_box.width += width - prev;
                 }
                 if let Some(c) = color_override {
-                    cell_box.collapsed_border_color_overrides[1] = Some(c);
+                    cell_box.collapsed_border_color_overrides.get_or_insert_default()[1] = Some(c);
                 }
                 if let Some(s) = style_override {
                     cell_box.collapsed_border_style_overrides[1] = Some(s);
@@ -842,11 +979,12 @@ pub(crate) fn resolve_collapsed_borders(
                 // 高（converter 记账的 border 分量不动，仅变宽切片）。
                 let prev = cell_box.border_bottom;
                 cell_box.border_bottom = width;
-                if width > prev {
+                // R5282：winner-center 行槽已含下格线胜者半宽（镜像 side 4 门）。
+                if width > prev && !crate::table::collapse_winner_center_enabled() {
                     cell_box.height += width - prev;
                 }
                 if let Some(c) = color_override {
-                    cell_box.collapsed_border_color_overrides[2] = Some(c);
+                    cell_box.collapsed_border_color_overrides.get_or_insert_default()[2] = Some(c);
                 }
                 if let Some(s) = style_override {
                     cell_box.collapsed_border_style_overrides[2] = Some(s);
@@ -855,7 +993,7 @@ pub(crate) fn resolve_collapsed_borders(
             3 => {
                 cell_box.border_left = width;
                 if let Some(c) = color_override {
-                    cell_box.collapsed_border_color_overrides[3] = Some(c);
+                    cell_box.collapsed_border_color_overrides.get_or_insert_default()[3] = Some(c);
                 }
                 if let Some(s) = style_override {
                     cell_box.collapsed_border_style_overrides[3] = Some(s);

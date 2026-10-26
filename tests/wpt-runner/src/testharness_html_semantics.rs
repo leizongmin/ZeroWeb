@@ -103,6 +103,16 @@ pub(crate) fn html_semantics_case_skipped(relative: &str, source: &str) -> bool 
     if relative.contains("links/downloading-resources/") {
         return true;
     }
+    // FIXME(navigation M3): moving-between-documents 多文档面挂账排除——用例经
+    // 同目录 resources/moving-between-documents-helper.js 运行期
+    // createElement("iframe") 开第二文档（.html 主源无 iframe 字面，上方内容
+    // 规则不可见；2026-10-25 s86 实测 53 案各 1P+1T：首子测试过，其后 iframe
+    // load 等待挂满超时网）。runner 单文档通道外，归 navigation-compat M3 多
+    // frame 文档管线门控（the-iframe-element 排除先例）；同目录 ordering/ 五案
+    // 不引 helper，可跑面保留。
+    if source.contains("moving-between-documents-helper.js") {
+        return true;
+    }
     source.contains("rel=match")
         || source.contains("content='http'")
         || source.contains("<iframe")
@@ -203,5 +213,36 @@ fn collect_html_semantics_cases(
             };
             cases.push((case_name, results));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // s86：moving-between-documents 多文档面按 helper 标记排除（FIXME(navigation
+    // M3) 臂）——主源只带 `<script src>` 不含 iframe 字面，须按 helper 文件名命中；
+    // 同目录 ordering/ 等不引 helper 的可跑面不得误伤。
+    #[test]
+    fn moving_between_documents_helper_cases_are_skipped() {
+        let helper_case = r#"
+<script src="/resources/testharness.js"></script>
+<script src="resources/moving-between-documents-helper.js"></script>
+<script>runTest("move-back", "iframe", "success", "inline", "classic");</script>
+"#;
+        assert!(html_semantics_case_skipped(
+            "html/semantics/scripting-1/the-script-element/moving-between-documents/move-back-iframe-success-inline-classic.html",
+            helper_case,
+        ));
+
+        let ordering_case = r#"
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<script>var t = async_test("in-order");</script>
+"#;
+        assert!(!html_semantics_case_skipped(
+            "html/semantics/scripting-1/the-script-element/moving-between-documents/ordering/in-order.html",
+            ordering_case,
+        ));
     }
 }

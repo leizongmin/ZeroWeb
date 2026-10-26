@@ -570,12 +570,31 @@ impl super::Painter {
         // 计算 background-origin 定位区域（positioning area）
         let (origin_x, origin_y, origin_w, origin_h) = match style.background_origin {
             BackgroundOriginComputedValue::BorderBox => (abs_x, abs_y, box_node.width, box_node.height),
-            BackgroundOriginComputedValue::PaddingBox => (
-                abs_x + box_node.border_left,
-                abs_y + box_node.border_top,
-                box_node.width - box_node.border_left - box_node.border_right,
-                box_node.height - box_node.border_top - box_node.border_bottom,
-            ),
+            BackgroundOriginComputedValue::PaddingBox => {
+                // R5286：winner-center collapse 表——周界格线以盒缘为中心（盒 =
+                // 外延），表背景 positioning area = 外延 − 周界胜者半宽（chromium
+                // bc-table-001 origin k=144 = 外延 − (3,2) 像素实证；按声明
+                // border 全宽内缩多缩半格线 → 对角渐变平铺相位错 (3,2) 整块
+                // 失配）。layout 端 apply_table_size_constraints 写入；字段 None
+                //（非表/border-center/无周界格线）回声明 border 原语义。
+                let (inset_l, inset_t, inset_r, inset_b) =
+                    if let Some(outer_half) = &box_node.collapsed_border_outer_half {
+                        (outer_half[3], outer_half[0], outer_half[1], outer_half[2])
+                    } else {
+                        (
+                            box_node.border_left,
+                            box_node.border_top,
+                            box_node.border_right,
+                            box_node.border_bottom,
+                        )
+                    };
+                (
+                    abs_x + inset_l,
+                    abs_y + inset_t,
+                    box_node.width - inset_l - inset_r,
+                    box_node.height - inset_t - inset_b,
+                )
+            }
             BackgroundOriginComputedValue::ContentBox => (
                 abs_x + box_node.border_left + box_node.padding_left,
                 abs_y + box_node.border_top + box_node.padding_top,
@@ -875,7 +894,30 @@ impl super::Painter {
         //（`longhands[layer_idx % longhands.len()]`）。单值 longhand（len=1）→ 所有层取 [0]
         // = 旧「单值应用到所有层」行为，**byte-identical 零回归**；仅多层 longhand 改变输出。
         // enumerate().rev()：tuple 的 index 即原始图层下标（rev 仅反序，index 仍随元素）。
+        // R5268（css-backgrounds-4 §background-clip:text 逐层 clip）：恒色提取激活时
+        // Text 层矩形抑制（色由子树字形承载，paint_node bg_clip_text_color push）；
+        // 非 Text 层照常铺盒——文字域 ⊆ 非 Text clip 域，其色同时作为字形混合的
+        // backdrop 进入恒色合成（background-clip-text-and-blend-mode box2/3 判据）。
+        // 整盒抑制回退（ZW_BG_CLIP_TEXT_PER_LAYER=0）由调用方门拦截全层，不入此路径。
+        // 门序 = clip:text 快扫描 → env::var（R5267 口径：kill-switch 读在激活门后，
+        // 非 clip:text 页零读取）→ 恒色提取（最重，尾部短路）。
+        let bg_clip_text_layer_suppress = style
+            .background_clip
+            .iter()
+            .any(|c| matches!(c, BackgroundClipComputedValue::Text))
+            && std::env::var("ZW_BG_CLIP_TEXT").as_deref() != Ok("0")
+            && std::env::var("ZW_BG_CLIP_TEXT_PER_LAYER").as_deref() != Ok("0")
+            && super::text::bg_clip_text_solid_color(style, &self.image_solid_colors, self.document_url.as_deref())
+                .is_some();
         for (layer_idx, layer) in style.background_image.iter().enumerate().rev() {
+            if bg_clip_text_layer_suppress
+                && matches!(
+                    style.background_clip_for_layer(layer_idx),
+                    BackgroundClipComputedValue::Text
+                )
+            {
+                continue;
+            }
             let size = &style.background_size[layer_idx % style.background_size.len()];
             let position = &style.background_position[layer_idx % style.background_position.len()];
             let repeat = &style.background_repeat[layer_idx % style.background_repeat.len()];
@@ -1019,14 +1061,8 @@ impl super::Painter {
                         sized_w,
                         sized_h,
                         img_ratio,
-                        matches!(
-                            size,
-                            BackgroundSizeComputedValue::TwoValue(BgSizeComponentComputed::Auto, _)
-                        ),
-                        matches!(
-                            size,
-                            BackgroundSizeComputedValue::TwoValue(_, BgSizeComponentComputed::Auto)
-                        ),
+                        size_axis_is_auto(size, true),
+                        size_axis_is_auto(size, false),
                     );
 
                     // R3908：background-clip: border-area（css-backgrounds-4 §2.1）——背景
@@ -1167,14 +1203,8 @@ impl super::Painter {
                             sized_w,
                             sized_h,
                             img_ratio,
-                            matches!(
-                                size,
-                                BackgroundSizeComputedValue::TwoValue(BgSizeComponentComputed::Auto, _)
-                            ),
-                            matches!(
-                                size,
-                                BackgroundSizeComputedValue::TwoValue(_, BgSizeComponentComputed::Auto)
-                            ),
+                            size_axis_is_auto(size, true),
+                            size_axis_is_auto(size, false),
                         );
                         let ((x0, x1), (y0, y1), step_w, step_h) = tiles;
                         // space：步距含间隙（eff），tile 本身不缩放——绘制尺寸用 sized（CSS §3.4
@@ -2830,6 +2860,21 @@ pub(super) fn resolve_background_position(
             resolve_position_component(single, container_w, img_w),
             resolve_position_component(&BackgroundPositionComputedValue::Center, container_h, img_h),
         ),
+    }
+}
+
+/// R5253（css-backgrounds-3 §3.9 单值 = 两维 auto）：`auto` 单值（含默认值）等价
+/// `auto auto`——round 第三步（§2.9：恰一维被 round 缩放且另一维 background-size
+/// 为 auto 时按固有比恢复）依赖该信号；旧判定只认 TwoValue 形态，`round no-repeat`
+/// + 默认尺寸的 no-repeat 维不跟随（round-2 tile 高 32 应 36）。
+fn size_axis_is_auto(size: &BackgroundSizeComputedValue, first: bool) -> bool {
+    match size {
+        BackgroundSizeComputedValue::Auto => true,
+        BackgroundSizeComputedValue::TwoValue(w, h) => {
+            let dim = if first { w } else { h };
+            matches!(*dim, BgSizeComponentComputed::Auto)
+        }
+        _ => false,
     }
 }
 

@@ -1798,6 +1798,9 @@ fn test_html_table_insert_row_r3243() {
     *dom_html.lock().unwrap() = s1.clone();
     // R358/R3243：测试模拟就地换代 → 同步 bump 宿主视图缓存代际。
     crate::js_dom_bridge::bump_dom_view_gen();
+    // R5266：换代 shim 侧挂钩（SetDomSnapshot 契约，part41「换代清缓存」同款）——
+    // rows 读侧走 childNodes 融合视图后，跨场景残留 pending 桶会污染读取。
+    sandbox.execute("__zw_reset_pending_state && __zw_reset_pending_state();").unwrap();
     mutations.lock().unwrap().clear();
     // 测试内 drain → 同步 bump drain 代际（增量视图链前提，见 MUT_DRAIN_GEN）。
     crate::js_dom_bridge::bump_mut_drain_gen();
@@ -1837,6 +1840,8 @@ fn test_html_table_insert_row_r3243() {
     *dom_html.lock().unwrap() = s2.clone();
     // R358/R3243：测试模拟就地换代 → 同步 bump 宿主视图缓存代际。
     crate::js_dom_bridge::bump_dom_view_gen();
+    // R5266：换代 shim 侧挂钩（同 ①）——①-③ 建行留存的 pending 桶不得跨场景入读。
+    sandbox.execute("__zw_reset_pending_state && __zw_reset_pending_state();").unwrap();
     mutations.lock().unwrap().clear();
     // 测试内 drain → 同步 bump drain 代际（增量视图链前提，见 MUT_DRAIN_GEN）。
     crate::js_dom_bridge::bump_mut_drain_gen();
@@ -1852,6 +1857,8 @@ fn test_html_table_insert_row_r3243() {
     *dom_html.lock().unwrap() = s3.clone();
     // R358/R3243：测试模拟就地换代 → 同步 bump 宿主视图缓存代际。
     crate::js_dom_bridge::bump_dom_view_gen();
+    // R5266：换代 shim 侧挂钩（同 ①）。
+    sandbox.execute("__zw_reset_pending_state && __zw_reset_pending_state();").unwrap();
     mutations.lock().unwrap().clear();
     // 测试内 drain → 同步 bump drain 代际（增量视图链前提，见 MUT_DRAIN_GEN）。
     crate::js_dom_bridge::bump_mut_drain_gen();
@@ -1907,7 +1914,13 @@ fn test_html_table_delete_row_and_section_r3243() {
     assert!(out.contains("id=\"r0\""), "deleteRow(-1) 保留 r0\n{out}");
     assert!(!out.contains("id=\"r1\""), "deleteRow(-1) 移除末行 r1\n{out}");
 
-    // ③ deleteRow() 省略 index → 等价 -1（移除末行）
+    // ③ deleteRow() 省略 index → 等价 -1（移除末行）——R5266：先重播种 pristine 快照
+    //（①② 的行删除留存 shim pending 视图，续跑已是空表语义非本步意图）。
+    *dom_html.lock().unwrap() = s1.clone();
+    // R358/R3243：测试模拟就地换代 → 同步 bump 宿主视图缓存代际。
+    crate::js_dom_bridge::bump_dom_view_gen();
+    // R5266：换代 shim 侧挂钩（SetDomSnapshot 契约，part41「换代清缓存」同款）。
+    sandbox.execute("__zw_reset_pending_state && __zw_reset_pending_state();").unwrap();
     mutations.lock().unwrap().clear();
     // 测试内 drain → 同步 bump drain 代际（增量视图链前提，见 MUT_DRAIN_GEN）。
     crate::js_dom_bridge::bump_mut_drain_gen();
@@ -1920,6 +1933,8 @@ fn test_html_table_delete_row_and_section_r3243() {
     *dom_html.lock().unwrap() = s2.clone();
     // R358/R3243：测试模拟就地换代 → 同步 bump 宿主视图缓存代际。
     crate::js_dom_bridge::bump_dom_view_gen();
+    // R5266：换代 shim 侧挂钩（同 ③）——①-③ 的删行 pending 不得跨场景入读。
+    sandbox.execute("__zw_reset_pending_state && __zw_reset_pending_state();").unwrap();
     mutations.lock().unwrap().clear();
     // 测试内 drain → 同步 bump drain 代际（增量视图链前提，见 MUT_DRAIN_GEN）。
     crate::js_dom_bridge::bump_mut_drain_gen();
@@ -1936,6 +1951,8 @@ fn test_html_table_delete_row_and_section_r3243() {
     *dom_html.lock().unwrap() = s3.clone();
     // R358/R3243：测试模拟就地换代 → 同步 bump 宿主视图缓存代际。
     crate::js_dom_bridge::bump_dom_view_gen();
+    // R5266：换代 shim 侧挂钩（同 ③）。
+    sandbox.execute("__zw_reset_pending_state && __zw_reset_pending_state();").unwrap();
     mutations.lock().unwrap().clear();
     // 测试内 drain → 同步 bump drain 代际（增量视图链前提，见 MUT_DRAIN_GEN）。
     crate::js_dom_bridge::bump_mut_drain_gen();
@@ -2001,7 +2018,13 @@ fn test_html_tr_cells_mutation_and_index_error_r3243() {
         "insertCell(0) 插到行头（c0 之前）\n{out}"
     );
 
-    // ④ deleteCell(-1) → 移除末 cell（c2）
+    // ④ deleteCell(-1) → 移除末 cell（c2）——R5266：先重播种 pristine 快照
+    //（②③ 的 insertCell 留存 shim pending 视图，活视图末 cell 已非 c2 非本步意图）。
+    *dom_html.lock().unwrap() = s1.clone();
+    // R358/R3243：测试模拟就地换代 → 同步 bump 宿主视图缓存代际。
+    crate::js_dom_bridge::bump_dom_view_gen();
+    // R5266：换代 shim 侧挂钩（SetDomSnapshot 契约，part41「换代清缓存」同款）。
+    sandbox.execute("__zw_reset_pending_state && __zw_reset_pending_state();").unwrap();
     mutations.lock().unwrap().clear();
     // 测试内 drain → 同步 bump drain 代际（增量视图链前提，见 MUT_DRAIN_GEN）。
     crate::js_dom_bridge::bump_mut_drain_gen();
@@ -2022,6 +2045,8 @@ fn test_html_tr_cells_mutation_and_index_error_r3243() {
     *dom_html.lock().unwrap() = "<html><body><table id='t'><tbody><tr id='r'><td>a</td></tr></tbody></table></body></html>".to_string();
     // R358/R3243：测试模拟就地换代 → 同步 bump 宿主视图缓存代际。
     crate::js_dom_bridge::bump_dom_view_gen();
+    // R5266：换代 shim 侧挂钩（同 ④）。
+    sandbox.execute("__zw_reset_pending_state && __zw_reset_pending_state();").unwrap();
     sandbox.execute(
         "globalThis.__errs = {};\
          function _trap(fn) { try { fn(); return 'no-throw'; } catch (e) { return (e && e.name) ? e.name : 'unknown'; } }\

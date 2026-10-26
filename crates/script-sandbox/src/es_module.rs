@@ -151,7 +151,7 @@ impl EsModuleSandbox {
         let start = std::time::Instant::now();
         let url = url.unwrap_or("zero://module");
 
-        let transformed = compile_module_script(source, url, &self.registry)?;
+        let transformed = compile_module_script(source, url, url, &self.registry)?;
 
         // 执行转换后的脚本；namespace_json 需要 JSON 序列化模块命名空间对象
         // （plain execute() 对对象返回 "[object Object]"，须用 execute_json()）
@@ -185,7 +185,7 @@ impl std::fmt::Debug for EsModuleSandbox {
 /// 重建全局对象（缓存随之消失，无须本脚本）；tab worker 路径（`tab_scripts::script_phase_begin`）
 /// 与 webview 进程内路径（`run_page_scripts_impl`，无 reset_context）持持久 context，
 /// 必须显式执行本脚本——不复位则同 URL 模块在新文档零次求值（D1 回归）。
-pub const MODULE_CACHE_RESET_SCRIPT: &str = "globalThis.__moduleCache = {};\n";
+pub const MODULE_CACHE_RESET_SCRIPT: &str = "globalThis.__moduleCache = {};\nglobalThis.__moduleFailures = {};\n";
 
 /// 把依赖 IIFE 包成 `__moduleCache` 记忆化赋值表达式——模块体求值恰好一次（HTML module
 /// map 命中即复用，https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script）。
@@ -201,12 +201,25 @@ fn memoized_dep_expr(key: &str, code: &str) -> String {
 }
 
 /// 将 ES Module 源码编译为可在 V8 中执行的 IIFE 脚本（内联依赖）。
-pub fn compile_module_script(source: &str, url: &str, registry: &ModuleRegistry) -> Result<String, ScriptError> {
+///
+/// `url` 为模块自身 URL（相对 import 解析基准 + `import.meta.url` 发射值）；
+/// `cache_key` 为 `__moduleCache` 文档级记忆化键——两者分离：同文档多个 module script
+/// 元素共享缓存（module map 语义），但内联 module script 每元素是独立模块记录、键不得
+/// 落在页面 URL 上（否则第二枚被首枚记忆化命中短路，模块体零次求值——s94 附带修复，
+/// currentScript-null 双内联 module 定谳）。外链 module 以 src 绝对 URL 为键（同 src
+/// 两元素恰好一次，spec 语义）。
+/// https://html.spec.whatwg.org/multipage/webappapis.html#module-map
+pub fn compile_module_script(
+    source: &str,
+    url: &str,
+    cache_key: &str,
+    registry: &ModuleRegistry,
+) -> Result<String, ScriptError> {
     let uses_await = source.contains("await");
     let body = build_module_script(source, url, registry, uses_await, &mut HashSet::new())?;
     // R5182：首行初始化文档级模块缓存（幂等）——独立调用路径（EsModuleSandbox、SW 编译）
     // 不经过 prelude 也能安全使用记忆化发射点。
-    let init = "globalThis.__moduleCache = globalThis.__moduleCache || {};\n";
+    let init = "globalThis.__moduleCache = globalThis.__moduleCache || {};\nglobalThis.__moduleFailures = globalThis.__moduleFailures || {};\n";
     if source.contains("import(") || uses_await {
         // FIXME(R5182)：async 入口体暂不记忆化——缓存实例会成 Promise（依赖读取方期望导出
         // 对象）。共享 async 模块的跨元素恰好一次留待后续切片（活体证据：MDN 入口链均同步）。
@@ -214,7 +227,7 @@ pub fn compile_module_script(source: &str, url: &str, registry: &ModuleRegistry)
     } else {
         // 记忆化入口体：本模块若已作为他元素依赖求值过（缓存命中）→ 复用实例，模块体
         // 恰好执行一次（红态实测入口计数 2：prelude 急切 + 转换体各一次）。
-        Ok(format!("{init}{}", memoized_dep_expr(url, &body)))
+        Ok(format!("{init}{}", memoized_dep_expr(cache_key, &body)))
     }
 }
 
@@ -234,7 +247,9 @@ pub fn compile_dependency_iife(specifier: &str, registry: &ModuleRegistry) -> Re
 /// `compile_module_script` 的转换体承担该入口的求值；非入口注册模块照旧急切求值（转换式
 /// 架构无 live binding，入口的静态导入依赖 prelude 预热的依赖实例）。
 pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&str>) -> Result<String, ScriptError> {
-    let mut out = String::from("globalThis.__moduleCache = globalThis.__moduleCache || {};\n");
+    let mut out = String::from(
+        "globalThis.__moduleCache = globalThis.__moduleCache || {};\nglobalThis.__moduleFailures = globalThis.__moduleFailures || {};\n",
+    );
     // t8j：helper（__zw_load_module / __zw_dynamic_import）必须先于 `__moduleCache[spec] = IIFE`
     // 注册求值——注册右侧的 IIFE **立即执行模块体**（依赖预热 + collect_module_deps 把入口模块
     // 自身也注册进 registry，见 js_worker/tab_js_worker collect_module_deps）。模块体顶层的
@@ -254,13 +269,35 @@ pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&st
     // 旧契约（无分隔符的裸 code）回退 spec 键（base 语义）。renderer/tab 宿主有 runtime_iifes
     // 编译缓存，重复调用不重复取回；webview 进程内路径无宿主缓存（重复动态 import 同模块
     // 重复取回+编译，副作用不重复——转池候选）。
+    // s87（html-semantics-compat dynamic-import must-reject 面）失败三态（HTML spec
+    // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+    // module map 失败记账语义；WPT dynamic-imports-fetch-error/script-error 判据）：
+    // ① 宿主返空 = 顶层取回失败（404/500/MIME/跨源/解析失败）→ **每次**调用抛新
+    //   TypeError（不入缓存）——fetch 失败不入 module map，逐次新错误对象；
+    // ② 宿主返 `resolved\u{1f}`（空码标记）= 顶层已取回、依赖图编译失败 → 首抛新
+    //   TypeError 且记入 `__moduleFailures`，重调复抛**同对象**（parse 期失败入 map 记账）；
+    // ③ 取回成功但模块体 parse/求值抛错 → 错误对象记入 `__moduleFailures` 复抛同对象
+    //   （spec：parse error 与 evaluation error 均缓存；instantiation/link 期失败上游
+    //   语义为逐次新对象，transform 管线暂并入 ③——WPT 判据 instantiation 行仍红，
+    //   归 module 基面切片）。未发标记的宿主（renderer/tab）②退化为 ①，行为不劣化。
     out.push_str("  var r = __zw_compile_module(spec, parent);\n");
-    out.push_str("  if (!r) throw new Error('Module not found: ' + spec);\n");
+    out.push_str("  if (!r) throw new TypeError(\"Failed to fetch module: '\" + spec + \"'\");\n");
     out.push_str("  var sep = r.indexOf('\\u001f');\n");
     out.push_str("  var resolved = sep >= 0 ? r.slice(0, sep) : spec;\n");
     out.push_str("  if (__moduleCache[resolved]) return __moduleCache[resolved];\n");
+    out.push_str("  if (__moduleFailures[resolved]) throw __moduleFailures[resolved];\n");
     out.push_str("  var code = sep >= 0 ? r.slice(sep + 1) : r;\n");
-    out.push_str("  __moduleCache[resolved] = (function() { return eval('(' + code + ')'); })();\n");
+    out.push_str("  if (sep >= 0 && code === '') {\n");
+    out.push_str("    var graphError = new TypeError(\"Failed to fetch module graph: '\" + resolved + \"'\");\n");
+    out.push_str("    __moduleFailures[resolved] = graphError;\n");
+    out.push_str("    throw graphError;\n");
+    out.push_str("  }\n");
+    out.push_str("  try {\n");
+    out.push_str("    __moduleCache[resolved] = (function() { return eval('(' + code + ')'); })();\n");
+    out.push_str("  } catch (e) {\n");
+    out.push_str("    __moduleFailures[resolved] = e;\n");
+    out.push_str("    throw e;\n");
+    out.push_str("  }\n");
     out.push_str("  return __moduleCache[resolved];\n");
     out.push_str("};\n");
     // t8j：动态 import() 失败须以 rejected promise 呈现，不得同步 throw——
@@ -290,30 +327,148 @@ pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&st
 }
 
 pub(crate) fn rewrite_dynamic_imports(source: &str) -> String {
-    let mut out = String::new();
+    // s91（string-compilation module 面）：字符串/模板/注释上下文感知——旧版纯文本
+    // 扫描把**字符串字面量内**的 `import(`（eval/Function/setTimeout 字符串、事件处
+    // 理器属性体的源码形态）也重写并发射 `_importMeta.url`，该绑定是模块 IIFE 局部
+    // 量，字符串运行时经 Function/事件处理器编译到全局作用域 → `ReferenceError:
+    // _importMeta`（探针实证：s91probe-fn/-reflected sync-throw、-timer 静默抛）。
+    // 上下文内不重写 → 运行时编译体走 V8 原生动态 import() 宿主回调（classic/module
+    // 页面 s88/s90 已接通槽位 referrer；SW 上下文动态 import 本就 spec 禁止，prelude
+    // stub 维持 TypeError 语义）。
+    // 已知限制：正则字面量内的引号（如 `/['"]/`）会把扫描器带入字符串态——后续真实
+    // `import(` 漏重写降级走原生回调（页面上下文行为正确，仅 referrer 取槽位而非词法
+    // 穿参）；全量 JS 词法器不做，按 t8j-r2 轻量精神取舍。
+    let bytes = source.as_bytes();
+    let mut out = String::with_capacity(source.len());
+    let mut stack: Vec<RewriteCtx> = Vec::new();
     let mut i = 0;
     while i < source.len() {
-        if source[i..].starts_with("import(") {
-            // t8j：经 `.call({referrer})` 把调用点 referrer 穿给 helper——重写点在模块 IIFE
-            // 内（build_module_script / build_dep_iife 均定义 `var _importMeta`；service_worker
-            // 经典脚本路径在宿主侧设置 `globalThis._importMeta`），而 `__zw_dynamic_import`
-            // 本体在全局作用域执行，读不到 IIFE 局部的 `_importMeta`（旧实现恒回退
-            // 'about:blank' → 相对 spec 解析失败、按原始 specifier 发起网络请求）。
-            // ECMA-262 §sec-module-specifiers：动态 import 的 specifier 相对
-            // **active script/module**（即调用点 referrer）解析。
-            // t8j-r2（D2）：发射串不得含任何引号字符——子串扫描不识别字符串字面量上下文，
-            // 发射进宿主单引号字符串（如 `throw new Error('import() failed')`）时引号提前
-            // 终止字符串 → 整脚本 SyntaxError（base 发射串无引号仅值污染）。发射体只引用
-            // 调用点词法作用域的 `_importMeta`（全部重写目标已保证定义），零引号。
-            out.push_str("__zw_dynamic_import.call({ referrer: _importMeta.url }, ");
-            i += "import(".len();
-        } else {
-            let ch = source[i..].chars().next().expect("char");
-            out.push(ch);
-            i += ch.len_utf8();
+        if stack.is_empty() {
+            if source[i..].starts_with("import(") {
+                // t8j：经 `.call({referrer})` 把调用点 referrer 穿给 helper——重写点在模块 IIFE
+                // 内（build_module_script / build_dep_iife 均定义 `var _importMeta`；service_worker
+                // 经典脚本路径在宿主侧设置 `globalThis._importMeta`），而 `__zw_dynamic_import`
+                // 本体在全局作用域执行，读不到 IIFE 局部的 `_importMeta`（旧实现恒回退
+                // 'about:blank' → 相对 spec 解析失败、按原始 specifier 发起网络请求）。
+                // ECMA-262 §sec-module-specifiers：动态 import 的 specifier 相对
+                // **active script/module**（即调用点 referrer）解析。
+                // t8j-r2（D2）：发射串不得含任何引号字符——发射进宿主单引号字符串
+                //（如 `throw new Error('import() failed')`）时引号提前终止字符串 → 整脚
+                // 本 SyntaxError（base 发射串无引号仅值污染）。发射体只引用调用点词法
+                // 作用域的 `_importMeta`（代码态重写目标已保证定义），零引号。
+                out.push_str("__zw_dynamic_import.call({ referrer: _importMeta.url }, ");
+                i += "import(".len();
+                continue;
+            }
+            match bytes[i] {
+                b'\'' | b'"' | b'`' => stack.push(RewriteCtx::Literal(bytes[i])),
+                b'/' if bytes.get(i + 1) == Some(&b'/') => {
+                    stack.push(RewriteCtx::LineComment);
+                    out.push_str("//");
+                    i += 2;
+                    continue;
+                }
+                b'/' if bytes.get(i + 1) == Some(&b'*') => {
+                    stack.push(RewriteCtx::BlockComment);
+                    out.push_str("/*");
+                    i += 2;
+                    continue;
+                }
+                _ => {}
+            }
+            let step = source[i..].chars().next().map_or(1, char::len_utf8);
+            out.push_str(&source[i..i + step]);
+            i += step;
+            continue;
+        }
+        let c = bytes[i];
+        // 栈空分支已在上方 continue；此处栈非空，`expect` 恒成立。
+        match stack.last_mut().expect("ctx stack non-empty") {
+            RewriteCtx::Literal(q) => {
+                if c == b'\\' {
+                    // 转义对：拷转义符与被转义字符（UTF-8 逐字符，防切多字节序列）。
+                    let step = source[i..].chars().next().map_or(1, char::len_utf8);
+                    out.push_str(&source[i..i + step]);
+                    i += step;
+                    if i < source.len() {
+                        let step2 = source[i..].chars().next().map_or(1, char::len_utf8);
+                        out.push_str(&source[i..i + step2]);
+                        i += step2;
+                    }
+                    continue;
+                }
+                if c == *q {
+                    stack.pop();
+                } else if *q == b'`' && c == b'$' && bytes.get(i + 1) == Some(&b'{') {
+                    // 模板表达式态：`${` 内是代码——真实 `import(` 须照常重写。
+                    stack.push(RewriteCtx::TemplateExpr(0));
+                    out.push_str("${");
+                    i += 2;
+                    continue;
+                }
+                let step = source[i..].chars().next().map_or(1, char::len_utf8);
+                out.push_str(&source[i..i + step]);
+                i += step;
+            }
+            RewriteCtx::TemplateExpr(depth) => {
+                // 模板 `${}` 表达式区内仍是代码——真实 `import(` 照常重写（仍在模块
+                // IIFE 词法作用域内，发射体 `_importMeta` 合法）。
+                if source[i..].starts_with("import(") {
+                    out.push_str("__zw_dynamic_import.call({ referrer: _importMeta.url }, ");
+                    i += "import(".len();
+                    continue;
+                }
+                match c {
+                    b'\'' | b'"' | b'`' => stack.push(RewriteCtx::Literal(c)),
+                    b'{' => *depth += 1,
+                    b'}' => {
+                        if *depth == 0 {
+                            stack.pop(); // `}` 闭合 `${` → 回模板串
+                        } else {
+                            *depth -= 1;
+                        }
+                    }
+                    _ => {}
+                }
+                let step = source[i..].chars().next().map_or(1, char::len_utf8);
+                out.push_str(&source[i..i + step]);
+                i += step;
+            }
+            RewriteCtx::LineComment => {
+                if c == b'\n' {
+                    stack.pop();
+                }
+                let step = source[i..].chars().next().map_or(1, char::len_utf8);
+                out.push_str(&source[i..i + step]);
+                i += step;
+            }
+            RewriteCtx::BlockComment => {
+                if c == b'*' && bytes.get(i + 1) == Some(&b'/') {
+                    stack.pop();
+                    out.push_str("*/");
+                    i += 2;
+                    continue;
+                }
+                let step = source[i..].chars().next().map_or(1, char::len_utf8);
+                out.push_str(&source[i..i + step]);
+                i += step;
+            }
         }
     }
     out
+}
+
+/// `rewrite_dynamic_imports` 的词法上下文栈元素（代码态 = 栈空）。
+#[derive(Clone, Copy)]
+enum RewriteCtx {
+    /// 单/双引号字符串或模板串（值 = 定界符字节）。
+    Literal(u8),
+    /// 模板串 `${` 表达式态（值 = 未闭合 `{` 深度；0 时 `}` 回模板串）。
+    TemplateExpr(u32),
+    /// `//` 行注释（至行尾）。
+    LineComment,
+    /// `/* */` 块注释（至 `*/`）。
+    BlockComment,
 }
 
 /// 从模块源码中提取全部 `import` 依赖标识符（静态 `import` + 动态 `import()`）。
@@ -1527,6 +1682,74 @@ fn is_reserved_word(name: &str) -> bool {
 mod tests {
     use super::*;
 
+    // s91（string-compilation module 面）：rewrite 的字符串/模板/注释上下文感知——
+    // 字面量内的 `import(` 是 eval/Function/setTimeout 字符串的**运行时代码**，编译到
+    // 全局作用域后 `_importMeta`（IIFE 局部量）不可见 → ReferenceError 探针实证。
+    // 仅代码态的真实 `import(` 重写；字面量内保持原样走运行时 V8 原生宿主回调。
+    #[test]
+    fn test_rewrite_skips_import_inside_string_literal() {
+        let r =
+            rewrite_dynamic_imports("var a = \"import('./x.js')\"; var b = 'import(\\'y.js\\')'; import('./z.js');");
+        assert!(
+            !r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url }, './x.js')"),
+            "双引号串内 import( 不重写：{r}"
+        );
+        assert!(
+            !r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url }, 'y.js')"),
+            "单引号串（内嵌转义引号）内 import( 不重写：{r}"
+        );
+        assert!(
+            r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url }, "),
+            "代码态真实 import( 照常重写：{r}"
+        );
+        assert_eq!(r.matches("import(").count(), 2, "字面量内两处原样保留：{r}");
+    }
+
+    #[test]
+    fn test_rewrite_rewrites_import_inside_template_expression_only() {
+        // 模板文本区不重写；`${}` 表达式区照常重写（含嵌套对象花括号深度）。
+        let r = rewrite_dynamic_imports("var t = `text import('./a.js') ${ {n: 1}.n } ${ import('./b.js') }`;");
+        assert!(
+            !r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url }, './a.js')"),
+            "模板文本区内不重写：{r}"
+        );
+        assert!(
+            r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url }, './b.js')"),
+            "模板表达式区内照常重写：{r}"
+        );
+    }
+
+    #[test]
+    fn test_rewrite_skips_import_inside_comments() {
+        let r = rewrite_dynamic_imports("// import('./c.js')\n/* import('./d.js') */ import('./e.js');");
+        assert!(
+            !r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url }, './c.js')")
+                && !r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url }, './d.js')"),
+            "行/块注释内不重写：{r}"
+        );
+        assert!(
+            r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url }, './e.js')"),
+            "注释后代码态照常重写：{r}"
+        );
+    }
+
+    #[test]
+    fn test_rewrite_survives_multibyte_characters() {
+        // s91 返工钉：逐字节 `source[i..i+1]` 切进多字节字符 panic（WPT 语料
+        // module 页含 'ś' 实证，runner 整批 rc=101）——拷贝按整字符步进。
+        let r = rewrite_dynamic_imports(r#"var s = 'zażółć import("x.js") gęślą'; import('./y.js'); // importé"#);
+        assert!(
+            r.contains("zażółć") && r.contains("gęślą") && r.contains(r#"import("x.js")"#),
+            "多字节字符串原样保留：{r}"
+        );
+        assert!(!r.contains(r#"_importMeta.url }, "x.js")"#), "串内 import( 未重写：{r}");
+        assert!(
+            r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url }, './y.js')"),
+            "代码态照常重写：{r}"
+        );
+        assert!(r.ends_with("// importé"), "多字节行注释原样保留：{r}");
+    }
+
     #[test]
     fn test_module_registry_new() {
         let reg = ModuleRegistry::new();
@@ -1712,13 +1935,16 @@ mod tests {
     /// `import("_").catch(()=>1)` 整体中断、后续语句永不执行 → 站点误回落 legacy 路径。
     /// 红态：`__zw_dynamic_import` 在 `__zw_compile_module` 返空（取回失败）时同步抛
     /// `Module not found`，本测试首个 execute 即 Err。
+    /// s87：失败原因钉 TypeError（HTML spec fetch-a-single-module-script——取回失败以
+    /// TypeError reject；WPT dynamic-imports-fetch-error `promise_rejects_js(t, TypeError, …)`
+    /// 判据），消息携带 spec。
     #[test]
     fn test_dynamic_import_failure_rejects_not_throws() {
         #[cfg(feature = "v8")]
         let mut sandbox = crate::V8Sandbox::new().unwrap();
         #[cfg(all(feature = "quickjs", not(feature = "v8")))]
         let mut sandbox = crate::QuickJSSandbox::new().unwrap();
-        // 模拟宿主取回失败：__zw_compile_module 返空 → __zw_load_module 抛 Module not found。
+        // 模拟宿主取回失败：__zw_compile_module 返空 → __zw_load_module 抛 TypeError。
         sandbox.register_callback("__zw_compile_module", Box::new(|_args| String::new()));
         // promise 落定结果经宿主回调回传（execute 间 global 不共享——非 persistent
         // context 每次 execute 新建；真实路径 prelude+模块同为单次 execute）。
@@ -1740,14 +1966,102 @@ mod tests {
                 "{prelude}\n\
                      __zw_dynamic_import('_nope').then(\n\
                        function () {{ __zw_report('fulfilled'); }},\n\
-                       function (e) {{ __zw_report('rejected:' + (e && e.message)); }});\n"
+                       function (e) {{ __zw_report('rejected:' + (e && e.constructor.name) + ':' + (e && e.message)); }});\n"
             ))
             .expect("动态 import 失败不得同步 throw");
         assert_eq!(
             settled.lock().unwrap().as_deref(),
-            Some("rejected:Module not found: _nope"),
-            "失败以 rejection 呈现且原因携带 spec（红态：同步 throw 后首个 execute 即 Err）"
+            Some("rejected:TypeError:Failed to fetch module: '_nope'"),
+            "失败以 TypeError rejection 呈现且原因携带 spec（红态：同步 throw 后首个 execute 即 Err）"
         );
+    }
+
+    /// s87（html-semantics-compat dynamic-import must-reject 面）：取回失败三态身份钉。
+    /// HTML spec fetch-a-single-module-script：fetch 失败**不入** module map（逐次新
+    /// 错误对象——WPT fetch-error `assert_not_equals(error1, error2)`）；parse 期失败
+    /// （顶层已取回、依赖图断）与 parse/求值期错误**入 map 记账**（重调同对象——WPT
+    /// script-error `assert_equals(error1, error2)`）。红态：全走 `Module not found`
+    /// 普通 Error、逐次新对象、parse/求值错误不缓存。
+    #[test]
+    fn test_dynamic_import_failure_identity_semantics() {
+        #[cfg(feature = "v8")]
+        let mut sandbox = crate::V8Sandbox::new().unwrap();
+        #[cfg(all(feature = "quickjs", not(feature = "v8")))]
+        let mut sandbox = crate::QuickJSSandbox::new().unwrap();
+        // 宿主模拟：`missing.js` 返空（①顶层取回失败）；`graphcut.js` 返 `resolved\x1f`
+        // 空码标记（②依赖图断）；`parsebad.js` 返可编译 IIFE 但体为语法错；`throwing.js`
+        // 返体抛错的 IIFE（③求值错误）。IIFE 形态复刻 compile_dependency_iife 输出
+        // （eval('(' + code + ')') 消费的括号包裹函数调用表达式）。
+        sandbox.register_callback("__zw_compile_module", Box::new(|args| {
+            let spec = args.first().map(String::as_str).unwrap_or("");
+            match spec {
+                "missing.js" => String::new(),
+                "graphcut.js" => "https://zero.test/graphcut.js\u{1f}".to_string(),
+                "parsebad.js" => "https://zero.test/parsebad.js\u{1f}(function() { return (function() { export const x =; })(); })()".to_string(),
+                "throwing.js" => {
+                    "https://zero.test/throwing.js\u{1f}(function() { return (function() { globalThis.__s87_eval_count = (globalThis.__s87_eval_count || 0) + 1; throw new Error('boom'); })(); })()".to_string()
+                }
+                _ => String::new(),
+            }
+        }));
+        let reported: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let reported_cb = reported.clone();
+        sandbox.register_callback(
+            "__zw_report",
+            Box::new(move |args| {
+                if let Some(v) = args.first() {
+                    reported_cb.lock().unwrap().push(v.clone());
+                }
+                String::new()
+            }),
+        );
+        let prelude = build_module_runtime_prelude(&ModuleRegistry::new(), None).unwrap();
+        // 同一 execute 内逐 case 回传（execute 间 global 不共享）。probe 串行两次
+        // import 同 spec，回传 `spec:首错构造器:(首错 === 次错)`——身份语义直接落在
+        // 错误对象比较上（不借缓存表反查：求值后缓存已就位，反查恒真无区分力）。
+        sandbox
+            .execute(&format!(
+                "{prelude}\n\
+                var out = [];\n\
+                function probe(spec) {{\n\
+                  return __zw_dynamic_import(spec).then(\n\
+                    function () {{ out.push(spec + ':fulfilled'); }},\n\
+                    function (e1) {{\n\
+                      return __zw_dynamic_import(spec).then(\n\
+                        function () {{ out.push(spec + ':second-fulfilled'); }},\n\
+                        function (e2) {{ out.push(spec + ':' + e1.constructor.name + ':' + (e1 === e2)); }});\n\
+                    }});\n\
+                }}\n\
+                Promise.all([probe('missing.js'), probe('graphcut.js'), probe('parsebad.js'), probe('throwing.js')]).then(function () {{ __zw_report(out.join('|') + '|count=' + (globalThis.__s87_eval_count || 0)); }});\n"
+            ))
+            .expect("失败身份探针不得同步 throw");
+        let lines = reported.lock().unwrap();
+        let joined = lines.join("");
+        let parts: Vec<&str> = joined.split('|').collect();
+        assert_eq!(parts.len(), 5, "四案探针 + 求值计数全部落定：{joined}");
+        // ① 顶层取回失败：TypeError × 逐次**新对象**（fetch 失败不入 module map）。
+        assert_eq!(
+            parts[0], "missing.js:TypeError:false",
+            "取回失败恒 TypeError 且逐次新对象：{joined}"
+        );
+        // ② 依赖图断（宿主空码标记）：TypeError × **同对象**（parse 期失败入 map 记账）。
+        assert_eq!(
+            parts[1], "graphcut.js:TypeError:true",
+            "图断失败恒 TypeError 且复抛同对象：{joined}"
+        );
+        // ③ parse 错误：SyntaxError × 同对象。
+        assert_eq!(
+            parts[2], "parsebad.js:SyntaxError:true",
+            "parse 错误恒 SyntaxError 且复抛同对象：{joined}"
+        );
+        // ③' 求值错误：Error × 同对象。
+        assert_eq!(
+            parts[3], "throwing.js:Error:true",
+            "求值错误复抛同一错误对象（入 map 记账判据）：{joined}"
+        );
+        // 求值错误模块体恰好执行一次（重调不再跑体——module map 记账后零重复求值）。
+        assert_eq!(parts[4], "count=1", "求值错误模块体只跑一次：{joined}");
     }
 
     /// t8j F3（site-compat bilibili laputa-home）：prelude 语句顺序钉——helper 定义必须先于
@@ -1952,7 +2266,7 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         let text = reported.lock().unwrap().clone();
         let text = text.as_deref().unwrap_or_default();
         assert!(
-            text.starts_with("slen=") && text.contains("rej=Module not found: ./dep.js"),
+            text.starts_with("slen=") && text.contains("rej=Failed to fetch module: './dep.js'"),
             "字符串字面量后续语句执行、动态 import 走 rejection（实际: {text:?}）"
         );
     }
@@ -2004,7 +2318,13 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
             "import { missing } from './dependency.js';",
             "export { missing } from './dependency.js';",
         ] {
-            let error = compile_module_script(source, "https://example.test/sw.js", &registry).unwrap_err();
+            let error = compile_module_script(
+                source,
+                "https://example.test/sw.js",
+                "https://example.test/sw.js",
+                &registry,
+            )
+            .unwrap_err();
             assert!(matches!(error, ScriptError::CompileError(_)));
             assert!(error.to_string().contains("does not provide an export named"));
         }
@@ -2020,6 +2340,7 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         let error = compile_module_script(
             "import { k } from './mid.js';",
             "https://example.test/entry.js",
+            "https://example.test/entry.js",
             &registry,
         )
         .unwrap_err();
@@ -2027,6 +2348,7 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         // 命名空间绑定本身仍可导入。
         let ok = compile_module_script(
             "import { ns } from './mid.js';",
+            "https://example.test/entry.js",
             "https://example.test/entry.js",
             &registry,
         );
@@ -2122,6 +2444,7 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         let compiled = compile_module_script(
             "// changing response marker\nimport { value } from './dependency.js';\nglobalThis.value = value;",
             "https://example.test/sw.js",
+            "https://example.test/sw.js",
             &registry,
         )
         .unwrap();
@@ -2134,14 +2457,16 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         let compiled = compile_module_script(
             "await Promise.resolve();\nglobalThis.ready = true;",
             "https://example.test/module.js",
+            "https://example.test/module.js",
             &registry,
         )
         .unwrap();
-        // R5182：首行为模块缓存初始化（幂等），其后的入口体保持 async IIFE 包裹
-        // （async 入口体暂不记忆化——见 compile_module_script FIXME）。
-        assert!(
-            compiled.starts_with("globalThis.__moduleCache = globalThis.__moduleCache || {};\n(async function() {")
-        );
+        // R5182：首行为模块缓存初始化（幂等，s87 并入 __moduleFailures 初始化），
+        // 其后的入口体保持 async IIFE 包裹（async 入口体暂不记忆化——见
+        // compile_module_script FIXME）。
+        assert!(compiled.starts_with(
+            "globalThis.__moduleCache = globalThis.__moduleCache || {};\nglobalThis.__moduleFailures = globalThis.__moduleFailures || {};\n(async function() {"
+        ));
         assert!(compiled.contains("await Promise.resolve();"));
     }
 
@@ -2200,7 +2525,7 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         reg.register("a", "import { b } from 'b'; export const a = b;");
         reg.register("b", "import { a } from 'a'; export const b = a;");
         // 修复前：栈溢出 abort（fatal runtime error）；修复后：编译成功返 Ok。
-        let result = compile_module_script("import { a } from 'a';", "http://a/", &reg);
+        let result = compile_module_script("import { a } from 'a';", "http://a/", "http://a/", &reg);
         assert!(result.is_ok(), "循环 import 须编译成功（不栈溢出）: {:?}", result.err());
         let script = result.unwrap();
         // 确认输出含占位空对象（已访问分支）而非无限内联。
@@ -2215,7 +2540,12 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         reg.register("a", "import { shared } from 'shared'; export const a = shared;");
         reg.register("b", "import { shared } from 'shared'; export const b = shared;");
         // 无循环，应正常编译（菱形 shared 经 visited 守卫不被重复递归致冗余，且不栈溢出）。
-        let result = compile_module_script("import { a } from 'a';\nimport { b } from 'b';", "http://root/", &reg);
+        let result = compile_module_script(
+            "import { a } from 'a';\nimport { b } from 'b';",
+            "http://root/",
+            "http://root/",
+            &reg,
+        );
         assert!(result.is_ok(), "菱形 import 须编译成功: {:?}", result.err());
     }
 
@@ -2225,7 +2555,7 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         let mut reg = ModuleRegistry::new();
         // 依赖模块副作用：模块顶层表达式（计数）。若求值 3 次，输出会含 3 个相同语句。
         reg.register("dep", "export default 1; 2;");
-        let script = compile_module_script("import d from 'dep';", "http://x/", &reg).unwrap();
+        let script = compile_module_script("import d from 'dep';", "http://x/", "http://x/", &reg).unwrap();
         // 修复前默认导入分支把 dep IIFE 字面拼 3 次（出现 3 处 `(function(){...2;...})()`）；
         // 修复后求值一次存 `_dep_d` 变量。断言不再三重拼接：依赖模块体 "2;" 应只出现一次
         // 在 IIFE 内（+ 一次在变量赋值的引用，但那是变量名非字面 "2;"）。
@@ -2761,7 +3091,7 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         );
         // 编译产物断言：声明体内动态 import() 须重写为宿主桥接调用，import.meta 须消解
         // （残留即经典脚本 IIFE SyntaxError）。
-        let compiled = compile_module_script(src, "zero://module", &ModuleRegistry::new()).unwrap();
+        let compiled = compile_module_script(src, "zero://module", "zero://module", &ModuleRegistry::new()).unwrap();
         assert!(
             compiled.contains("__zw_dynamic_import"),
             "dynamic import not rewritten: {}",
@@ -2925,7 +3255,13 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         registry.register("https://zero.test/entry.js", body);
         // 复刻宿主执行形（renderer/tab execute_module_in_sandbox）：prelude(入口跳过急切) + 转换体单次 execute。
         let prelude = build_module_runtime_prelude(&registry, Some("https://zero.test/entry.js")).unwrap();
-        let transformed = compile_module_script(body, "https://zero.test/entry.js", &registry).unwrap();
+        let transformed = compile_module_script(
+            body,
+            "https://zero.test/entry.js",
+            "https://zero.test/entry.js",
+            &registry,
+        )
+        .unwrap();
         sandbox.execute(&format!("{prelude}\n{transformed}")).unwrap();
         assert_eq!(
             sandbox.execute("String(globalThis.__r5182)").unwrap().value,
@@ -2942,18 +3278,71 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         let mut reg1 = ModuleRegistry::new();
         reg1.register("https://zero.test/a.js", dep_src);
         let p1 = build_module_runtime_prelude(&reg1, Some("https://zero.test/a.js")).unwrap();
-        let t1 = compile_module_script(dep_src, "https://zero.test/a.js", &reg1).unwrap();
+        let t1 = compile_module_script(dep_src, "https://zero.test/a.js", "https://zero.test/a.js", &reg1).unwrap();
         sandbox.execute(&format!("{p1}\n{t1}")).unwrap();
         // 元素 2：内联入口静态 import 共享模块（同文档第二个 module script 元素）。
         let mut reg2 = ModuleRegistry::new();
         reg2.register("https://zero.test/a.js", dep_src);
         let p2 = build_module_runtime_prelude(&reg2, Some("https://zero.test/e2.js")).unwrap();
-        let t2 = compile_module_script("import 'https://zero.test/a.js';", "https://zero.test/e2.js", &reg2).unwrap();
+        let t2 = compile_module_script(
+            "import 'https://zero.test/a.js';",
+            "https://zero.test/e2.js",
+            "https://zero.test/e2.js",
+            &reg2,
+        )
+        .unwrap();
         sandbox.execute(&format!("{p2}\n{t2}")).unwrap();
         assert_eq!(
             sandbox.execute("String(globalThis.__r5182dep)").unwrap().value,
             "1",
             "共享依赖跨 module script 元素只求值一次（红态：__moduleCache 每调用重置 + 内联重执行 = 4）"
+        );
+    }
+
+    #[test]
+    fn test_s94_inline_module_cache_key_separate_from_url() {
+        // s94 附带修复（module 缓存键）：R5182 记忆化键与模块 URL 分离——同文档两枚
+        // **内联** module script 旧以同一页面 URL 为键，第二枚被首枚的记忆化命中短路
+        //（模块体零次求值 → currentScript-null "completed without reporting"，
+        // probe-csn-d 双纯内联最小复现）。键分离后各自求值；同键（外链同 src 形态）
+        // 仍恰好一次。
+        // https://html.spec.whatwg.org/multipage/webappapis.html#module-map
+        let mut sandbox = r5182_sandbox();
+        let t1 = compile_module_script(
+            "globalThis.__s94k1=(globalThis.__s94k1||0)+1;",
+            "https://zero.test/page.html",
+            "https://zero.test/page.html#!zw-inline-module-0",
+            &ModuleRegistry::new(),
+        )
+        .unwrap();
+        sandbox.execute(&t1).unwrap();
+        let t2 = compile_module_script(
+            "globalThis.__s94k2=(globalThis.__s94k2||0)+1;",
+            "https://zero.test/page.html",
+            "https://zero.test/page.html#!zw-inline-module-1",
+            &ModuleRegistry::new(),
+        )
+        .unwrap();
+        sandbox.execute(&t2).unwrap();
+        assert_eq!(sandbox.execute("String(globalThis.__s94k1)").unwrap().value, "1");
+        assert_eq!(
+            sandbox.execute("String(globalThis.__s94k2)").unwrap().value,
+            "1",
+            "第二枚内联 module 须求值（红态：同键记忆化命中短路，零次求值）"
+        );
+        let ext = compile_module_script(
+            "globalThis.__s94k3=(globalThis.__s94k3||0)+1;",
+            "https://zero.test/a.js",
+            "https://zero.test/a.js",
+            &ModuleRegistry::new(),
+        )
+        .unwrap();
+        sandbox.execute(&ext).unwrap();
+        sandbox.execute(&ext).unwrap();
+        assert_eq!(
+            sandbox.execute("String(globalThis.__s94k3)").unwrap().value,
+            "1",
+            "同 cache_key（外链同 src 形态）恰好一次"
         );
     }
 
@@ -2969,6 +3358,7 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         let t1 = compile_module_script(
             "import { val } from 'https://zero.test/n.js';globalThis.__v1 = val;",
             "https://zero.test/ne1.js",
+            "https://zero.test/ne1.js",
             &reg1,
         )
         .unwrap();
@@ -2978,6 +3368,7 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         let p2 = build_module_runtime_prelude(&reg2, Some("https://zero.test/ne2.js")).unwrap();
         let t2 = compile_module_script(
             "import { val } from 'https://zero.test/n.js';globalThis.__v2 = val;",
+            "https://zero.test/ne2.js",
             "https://zero.test/ne2.js",
             &reg2,
         )
@@ -3007,7 +3398,8 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         let mut registry = ModuleRegistry::new();
         registry.register("https://zero.test/doc.js", body);
         let prelude = build_module_runtime_prelude(&registry, Some("https://zero.test/doc.js")).unwrap();
-        let transformed = compile_module_script(body, "https://zero.test/doc.js", &registry).unwrap();
+        let transformed =
+            compile_module_script(body, "https://zero.test/doc.js", "https://zero.test/doc.js", &registry).unwrap();
         sandbox.execute(&format!("{prelude}\n{transformed}")).unwrap();
         assert_eq!(
             sandbox.execute("String(globalThis.__r5182r)").unwrap().value,
@@ -3041,7 +3433,13 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         let mut registry = ModuleRegistry::new();
         registry.register("https://zero.test/page.js", body);
         let prelude = build_module_runtime_prelude(&registry, Some("https://zero.test/page.js")).unwrap();
-        let transformed = compile_module_script(body, "https://zero.test/page.js", &registry).unwrap();
+        let transformed = compile_module_script(
+            body,
+            "https://zero.test/page.js",
+            "https://zero.test/page.js",
+            &registry,
+        )
+        .unwrap();
         let run_page = |sandbox: &mut Box<dyn crate::Sandbox>| {
             let prelude = prelude.clone();
             let transformed = transformed.clone();

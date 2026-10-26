@@ -1086,6 +1086,12 @@ pub(super) fn extract_image_metrics(
                     no_ratio.insert(key.0, dims);
                 }
             }
+        } else {
+            // R5268：构建期加载失败/不可解码的 URL 记透明哨兵——clip:text 恒色提取把
+            // 该层按「无贡献层」合成（css-backgrounds-3：加载失败的图层不绘制），不再
+            // 整页禁用提取（background-clip-text-and-blend-mode box2/3 的 blue.png 即
+            // 此形态）。构建后缓存不会再补该 URL，paint 期同样绘不出——哨兵即失败语义。
+            solid_colors.insert(key.0, [0, 0, 0, 0]);
         }
     }
 

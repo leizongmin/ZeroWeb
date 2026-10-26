@@ -5707,6 +5707,116 @@ fn back_to_never_visited_entry_starts_at_top() {
     assert_eq!(app.smoke_scroll_offset_y(), 300.0, "第二页离开前的 300 应被保存");
 }
 
+/// T5/P10：GUI 消费半判界——`history_traverse` 越界/零步长保持宿主侧 R3004 静默
+/// no-op（URL、地址栏、滚动挂起零变更），有效 delta=-1 落 go_back 既有路径并同步
+/// 地址栏。判界先于一切副作用。
+#[test]
+fn history_traverse_bounds_and_valid_delta() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    let initial_url = app.shell.active_tab().and_then(|t| t.url()).map(str::to_string);
+
+    // 单条目会话：任何 delta 均无可遍历目标，全部静默 no-op。
+    app.history_traverse(0);
+    app.history_traverse(-1);
+    app.history_traverse(1);
+    app.history_traverse(-2);
+    assert_eq!(
+        app.shell.active_tab().and_then(|t| t.url()),
+        initial_url.as_deref(),
+        "无可遍历目标时遍历不得改变条目"
+    );
+    assert_eq!(app.pending_scroll_restore_for_test(), None, "越界不产生滚动挂起");
+
+    // 播种两条历史：正向越界不动当前条目，delta=-1 复用 go_back，负向越界同样静默。
+    app.navigate_to("http://one.test/a.html");
+    app.navigate_to("http://one.test/b.html");
+    app.history_traverse(2);
+    assert_eq!(
+        app.shell.active_tab().and_then(|t| t.url()),
+        Some("http://one.test/b.html"),
+        "越界判界不动当前条目"
+    );
+    app.history_traverse(-1);
+    assert_eq!(
+        app.shell.active_tab().and_then(|t| t.url()),
+        Some("http://one.test/a.html"),
+        "delta=-1 应提交宿主会话栈后退"
+    );
+    assert_eq!(app.address_bar_text(), "http://one.test/a.html", "地址栏同步遍历落点");
+    app.history_traverse(-2);
+    assert_eq!(
+        app.shell.active_tab().and_then(|t| t.url()),
+        Some("http://one.test/a.html"),
+        "负向越界同样静默"
+    );
+}
+
+/// T5/P10：|delta|≥1 多步遍历经 jump_history 判界落点——jump 只移索引不截断
+/// 前进条目，越界返回后仍可继续遍历。
+#[test]
+fn history_traverse_multi_step_keeps_forward_entries() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    app.navigate_to("http://one.test/a.html");
+    app.navigate_to("http://one.test/b.html");
+    app.navigate_to("http://one.test/c.html");
+
+    app.history_traverse(-2);
+    assert_eq!(
+        app.shell.active_tab().and_then(|t| t.url()),
+        Some("http://one.test/a.html"),
+        "delta=-2 应落到会话栈首条目"
+    );
+    assert!(
+        app.shell.active_tab().unwrap().can_go_forward(),
+        "jump_history 不截断前进条目"
+    );
+    app.history_traverse(1);
+    assert_eq!(
+        app.shell.active_tab().and_then(|t| t.url()),
+        Some("http://one.test/b.html"),
+        "delta=+1 从落点继续前进"
+    );
+}
+
+/// T5/P10：消费半 drain 合流与活跃 tab 守卫——后台标签的遍历请求被丢弃（不得
+/// 作用到活跃标签），活跃标签的请求经同一 drain 提交到宿主会话栈。
+#[test]
+fn history_traverse_drain_applies_active_tab_only() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1280, 900);
+    let first = app.shell.active_tab_id().unwrap();
+    app.navigate_to("http://one.test/a.html");
+    app.navigate_to("http://one.test/a2.html");
+
+    app.new_tab(Some("http://two.test/b.html"));
+    let second = app.shell.active_tab_id().unwrap();
+    assert_ne!(first, second);
+    app.handle_key(BrowserApp::test_modifier_key_name(), true, None);
+    app.handle_key("Tab", true, None);
+    assert_eq!(app.shell.active_tab_id(), Some(first));
+
+    // 后台 second 的遍历请求：drain 时被活跃守卫丢弃。
+    app.push_history_traverse_for_test(second, -1);
+    app.poll_tab_fetch();
+    assert_eq!(
+        app.shell.active_tab().and_then(|t| t.url()),
+        Some("http://one.test/a2.html"),
+        "后台 tab 的遍历请求应被丢弃"
+    );
+
+    // 活跃 first 的遍历请求经同一 drain 提交。
+    app.push_history_traverse_for_test(first, -1);
+    app.poll_tab_fetch();
+    assert_eq!(
+        app.shell.active_tab().and_then(|t| t.url()),
+        Some("http://one.test/a.html"),
+        "活跃 tab 的遍历请求应提交宿主栈"
+    );
+    assert!(app.shell.active_tab().unwrap().can_go_forward());
+}
+
 /// 同文档 fragment 导航（HTML navigate-to-a-fragment）：仅差 fragment 的导航不重载
 /// 文档（不置 loading、标题保持），push 历史、更新地址栏，滚动跳到锚点 id，且不落
 /// normalize_url 的搜索兜底；跨文档 fragment 目标仍走完整装载。

@@ -4920,10 +4920,12 @@ mod r5068_tests {
 
     /// 带水平 padding 的补偿形态（012 同构）：padding 与负 margin 并存 → 旧口径
     /// 保持。R5161 glue 后 `ab<span>cd</span>ef`（无空白跨 run）为单一不可拆单元
-    /// 恒单行，高度不再鉴别 margin 净 advance——断言改锚宽容器（200px，无折行
-    /// 耦合）下 span 盒 x = 40（"ab" 30 + 补偿形态净 +10；`ZW_INLINE_NEG_MARGIN`
-    /// 双态实测同值——本断言锁定「新旧行为逐位一致」，margin 臂被改坏时 x 偏移）。
-    /// compensation 形态的 corpus 锁 = word-space-transform-012。
+    /// 恒单行，高度不再鉴别 margin 净 advance——断言锚宽容器（200px，无折行
+    /// 耦合）下 span 盒 x。R5248 前 x 式含 −ml 项（margin 盒语义，与丢 margin 的
+    /// 补偿净值恰抵消）锁 40；R5248 盒 x = 内容首缘 − 流内落账 frame——run.x 已
+    /// 含流内推进，负 margin 补偿后首缘 35、无 border（fold 0）→ 锁 30（35 −
+    /// pl 5）。锁义不变：margin 臂改动 advance/x 联动时此处偏移。compensation
+    /// 形态的 corpus 锁 = word-space-transform-012。
     #[test]
     fn r5068_padding_margin_compensation_keeps_legacy_net() {
         let doc = zero_dom::parse_html(
@@ -4946,8 +4948,8 @@ mod r5068_tests {
         }
         let span = find(&doc, &result.root).expect("span found");
         assert!(
-            (span.x - 40.0).abs() < 0.5,
-            "padding+负 margin 抵消形态应保持旧净值（span 盒 x = 40，kill-switch 双态同值），实际 {}",
+            (span.x - 30.0).abs() < 0.5,
+            "padding+负 margin 抵消形态 span 盒 x = 30（R5248 内容首缘 35 − pl 5，fold 0 不扣），实际 {}",
             span.x
         );
     }

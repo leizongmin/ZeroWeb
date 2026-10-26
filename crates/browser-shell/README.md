@@ -15,6 +15,11 @@
 - 下载管理 — 下载记录与进度跟踪
 - 设置 — 搜索引擎、主页、隐私等设置数据模型
 - 右键上下文菜单 — 5 种场景的默认菜单项与子菜单
+- 会话持久化 — 关闭时保存标签页/导航快照、启动时恢复（`SessionState`），含崩溃循环跳过判定
+- Profile 路径 — `ProfilePaths` 统一单个 profile 的书签/历史/会话等文件布局
+- 崩溃报告 — panic / renderer 崩溃按白名单字段落本地报告（`CrashReport`），附崩溃循环守卫
+- 更新 — 本地源更新清单解析校验、版本比较、暂存翻转与回滚（`UpdateManifest` / `AppliedUpdate`）
+- 反馈导出 — 崩溃报告与会话摘要打包为反馈包（目录 / stored ZIP，`FeedbackExportOptions`）
 - 浏览器 UI 组件 — `BrowserShell` 整合各交互元素为完整的浏览器外壳
 
 ## 使用示例

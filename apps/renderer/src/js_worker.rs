@@ -55,15 +55,22 @@ pub(crate) fn real_rect_enabled() -> bool {
     !matches!(std::env::var("ZW_REAL_RECT").as_deref(), Ok("0"))
 }
 
-/// P1a 事件循环 slice 1（R2713b）：帧驱动 rAF kill-switch。默认 off——shim rAF 走同步 stub
-///（reftest 兼容，零默认行为变更）；`ZW_RAF_FRAME_DRIVEN=1` 开启：shim rAF 注册队列，render 后
-/// `tick_observers` 调 `__zw_raf_tick` 派发。详见 p1a-event-loop-raf-slice-design-2026-08-05.md。
+/// P1a 事件循环 slice 1（R2713b）：帧驱动 rAF 开关。默认 on（P9b 产品默认翻转：rAF 停摆
+/// 消除）——shim rAF 注册队列，render 后 `tick_observers` 调 `__zw_raf_tick` 派发；
+/// `ZW_RAF_FRAME_DRIVEN=0/false/off` 显式 opt-out 回落同步 stub，用于诊断与对照测量
+///（reftest 宿主直驱 sandbox，不经本开关）。详见 p1a-event-loop-raf-slice-design-2026-08-05.md。
+/// [`raf_frame_driven_enabled`] 的纯函数形态（env 值注入）——开关语义测试不碰进程级
+/// env（set_var 并行竞态规避，同 rAF 帧驱动测试 JS 侧注入惯用法）。
+fn raf_frame_driven_enabled_from(env: Option<&str>) -> bool {
+    !matches!(env, Some("0") | Some("false") | Some("off"))
+}
+
 pub(crate) fn raf_frame_driven_enabled() -> bool {
-    matches!(std::env::var("ZW_RAF_FRAME_DRIVEN").as_deref(), Ok("1"))
+    raf_frame_driven_enabled_from(std::env::var("ZW_RAF_FRAME_DRIVEN").ok().as_deref())
 }
 
 type ScriptFn = Arc<dyn Fn(&str) -> Result<String, String> + Send + Sync>;
-type ModuleFn = Arc<dyn Fn(&str, &str, &[(String, String)]) -> Result<String, String> + Send + Sync>;
+type ModuleFn = Arc<dyn Fn(&str, &str, &str, &[(String, String)]) -> Result<String, String> + Send + Sync>;
 
 enum JsWorkerCommand {
     Execute {
@@ -76,6 +83,8 @@ enum JsWorkerCommand {
     ExecuteModule {
         source: String,
         url: String,
+        /// s94：`__moduleCache` 记忆化键（内联每元素独立键 / 外链 src 绝对 URL），与 url 分离。
+        cache_key: String,
         deps: Vec<(String, String)>,
         reply: Sender<Result<String, String>>,
         /// t2-pb1 F1：文档代际序号（同 [`JsWorkerCommand::Execute`]）。
@@ -147,6 +156,13 @@ enum JsWorkerCommand {
     /// 通道同步发本令牌即时唤醒分派环；令牌自身是 no-op，picked 即丢弃，不参与
     /// 快照屏障与 fix#18 搁置序。
     WakePrio,
+    /// T13 R1：延迟回收（settle+D 到点，主循环 fire）——isolate 线程命令边界执行
+    /// S3 `low_memory_notification`（无条件，维持首轮 OFF 面）与 S2 worker trim
+    ///（`ZEROWEB_NAV_TRIM=0` 关）。gens = 本次 fire 覆盖的文档代数（合并 fire >1，
+    /// 预注册命中语义按 Σgens ≥ reset_count 判定；工厂态 fire gens=0 合法）。
+    DeferredReclaim {
+        gens: u32,
+    },
     Shutdown,
 }
 
@@ -212,6 +228,9 @@ pub struct RendererJsWorker {
     /// R3058 JS 发起跨文档导航请求队列——`__zw_request_navigate` 回调（worker 线程）push，renderer
     /// 主循环 drain 后 handle_navigate（fetch 新文档 + 重载）。location.href=/assign/replace 跨文档触发。
     navigations: Arc<std::sync::Mutex<Vec<String>>>,
+    /// T5/P10 页面 history 遍历请求队列——`__zw_request_history_traverse` 回调（worker 线程）
+    /// push，renderer 主循环 drain 后 `HistoryTraverse` IPC 发主进程 shell 栈提交遍历。
+    history_traverses: Arc<std::sync::Mutex<Vec<i32>>>,
     /// R3254-M7'：页面 JS `focus()`/`blur()` 变更队列——`apply_recorded_mutations` 从 mutations
     /// 分离后 push（主线程），renderer 事件循环在事务边界 drain 同步 retained 焦点状态。
     focus_changes: Arc<std::sync::Mutex<Vec<Option<String>>>>,
@@ -222,6 +241,21 @@ pub struct RendererJsWorker {
     /// 优先队列尚未被 worker 消费。receiver 就绪（worker 侧 Reset 臂清队后回信）即「复位
     /// 落定」，见 [`Self::document_reset_settled`]。
     pending_document_reset: Arc<std::sync::Mutex<Option<mpsc::Receiver<()>>>>,
+    /// T9（perf-mem M2b）：是否已有页面/文档载荷命令提交过 worker（Execute 族 /
+    /// ExecuteModule / SetDomSnapshot 任一通道置位）。首次提交前 worker 尚处启动工厂态
+    /// （QuickJS context + shim 刚建、无任何旧文档命令可清），`reset_document_state`
+    /// 的复位往返与首快照的 reply 有界等待可安全跳过——否则新标签首载会把 worker
+    /// 启动全程串行进导航关键路径（冷启动探针实测复位等待 ~91ms + 重建 ~21ms）。
+    /// 置位面共 10 处（T9 返修 DF-F1 补齐后 4 处）：执行器三闭包
+    /// （executor/module_executor/prio_executor）、`PrioritySubmitter::submit`、
+    /// `set_dom_snapshot` 的 swap、`set_dom_snapshot_priority`、
+    /// `execute_script_direct_bounded`、`submit_script_priority`、
+    /// `execute_script_priority_deferrable`、`JsExecutor::execute_script_priority_bounded`。
+    /// 多写单读：写方为主循环各提交入口/快照 setter + worker-runtime-host 宿主线程
+    /// （`PrioritySubmitter`），读方仅主循环（复位跳过门/首快照免等待，worker 不读）；
+    /// 单调布尔、仅建议性判定（最坏方向 = 误跳过一次真臂复位），happens-before 由
+    /// 命令通道承载，Relaxed 足够。
+    document_started: Arc<AtomicBool>,
     #[cfg(test)]
     execution_count: Arc<AtomicU64>,
 }
@@ -235,6 +269,9 @@ pub struct RendererJsWorker {
 pub struct PrioritySubmitter {
     prio_tx: Sender<JsWorkerCommand>,
     cmd_seq: Arc<AtomicU64>,
+    /// T9（perf-mem M2b）：同 [`RendererJsWorker::document_started`]——宿主事件派发
+    /// 脚本提交同样使 worker 脱离启动工厂态。
+    document_started: Arc<AtomicBool>,
 }
 
 impl PrioritySubmitter {
@@ -242,6 +279,7 @@ impl PrioritySubmitter {
     pub fn submit(&self, script: &str) {
         let (reply_tx, reply_rx) = mpsc::channel();
         drop(reply_rx);
+        self.document_started.store(true, Ordering::Relaxed);
         let _ = self.prio_tx.send(JsWorkerCommand::Execute {
             script: script.to_string(),
             reply: reply_tx,
@@ -285,6 +323,9 @@ impl RendererJsWorker {
         // R3058 JS 跨文档导航桥——queue 与 runtime 共享，bridge 移入 worker 线程注册 __zw_request_navigate。
         let nav_bridge = zero_engine::NavigationBridge::new();
         let navigations = nav_bridge.queue();
+        // T5/P10 页面 history 遍历桥——queue 与 runtime 共享，bridge 移入 worker 线程注册 __zw_request_history_traverse。
+        let hist_bridge = zero_engine::HistoryBridge::new();
+        let history_traverses = hist_bridge.queue();
         let focus_changes: Arc<std::sync::Mutex<Vec<Option<String>>>> = Arc::default();
         // P6 import map：页面 `<script type="importmap">` 解析产物共享槽——仅 worker
         // 线程使用（SetDomSnapshot 换代写入；ExecuteModule 编译与 __zw_compile_module
@@ -331,6 +372,12 @@ impl RendererJsWorker {
         let seq_for_exec = Arc::clone(&cmd_seq);
         let seq_for_module = Arc::clone(&cmd_seq);
         let seq_for_prio = Arc::clone(&cmd_seq);
+        // T9（perf-mem M2b）：首文档/首命令踪迹——执行器闭包与快照 setter 置位，
+        // reset_document_state / set_dom_snapshot 读取（见字段文档）。
+        let document_started = Arc::new(AtomicBool::new(false));
+        let document_started_for_exec = Arc::clone(&document_started);
+        let document_started_for_module = Arc::clone(&document_started);
+        let document_started_for_prio = Arc::clone(&document_started);
         let prio_tx_for_struct = prio_tx.clone();
         let cmd_for_exec = cmd_tx.clone();
         let cmd_for_module = cmd_tx.clone();
@@ -369,6 +416,7 @@ impl RendererJsWorker {
                     element_from_point_cache_for_worker,
                     font_bridge,
                     nav_bridge,
+                    hist_bridge,
                     indexed_db_handler,
                     service_worker_client,
                     async_callbacks_ready_for_worker,
@@ -385,6 +433,7 @@ impl RendererJsWorker {
 
         let executor: ScriptFn = Arc::new(move |script: &str| {
             let (reply_tx, reply_rx) = mpsc::channel();
+            document_started_for_exec.store(true, Ordering::Relaxed);
             cmd_for_exec
                 .send(JsWorkerCommand::Execute {
                     script: script.to_string(),
@@ -397,26 +446,31 @@ impl RendererJsWorker {
                 .map_err(|e| e.to_string())?
         });
 
-        let module_executor: ModuleFn = Arc::new(move |source: &str, url: &str, deps: &[(String, String)]| {
-            let (reply_tx, reply_rx) = mpsc::channel();
-            cmd_for_module
-                .send(JsWorkerCommand::ExecuteModule {
-                    source: source.to_string(),
-                    url: url.to_string(),
-                    deps: deps.to_vec(),
-                    reply: reply_tx,
-                    seq: seq_for_module.fetch_add(1, Ordering::Relaxed),
-                })
-                .map_err(|e| e.to_string())?;
-            reply_rx
-                .recv_timeout(TAB_JS_CHANNEL_TIMEOUT)
-                .map_err(|e| e.to_string())?
-        });
+        let module_executor: ModuleFn = Arc::new(
+            move |source: &str, url: &str, cache_key: &str, deps: &[(String, String)]| {
+                let (reply_tx, reply_rx) = mpsc::channel();
+                document_started_for_module.store(true, Ordering::Relaxed);
+                cmd_for_module
+                    .send(JsWorkerCommand::ExecuteModule {
+                        source: source.to_string(),
+                        url: url.to_string(),
+                        cache_key: cache_key.to_string(),
+                        deps: deps.to_vec(),
+                        reply: reply_tx,
+                        seq: seq_for_module.fetch_add(1, Ordering::Relaxed),
+                    })
+                    .map_err(|e| e.to_string())?;
+                reply_rx
+                    .recv_timeout(TAB_JS_CHANNEL_TIMEOUT)
+                    .map_err(|e| e.to_string())?
+            },
+        );
 
         // t2-pb1 fix#5：优先执行器——与 `executor` 同命令语义（Execute + reply），
         // 仅入队通道不同（worker 命令边界优先消费）。
         let prio_executor: ScriptFn = Arc::new(move |script: &str| {
             let (reply_tx, reply_rx) = mpsc::channel();
+            document_started_for_prio.store(true, Ordering::Relaxed);
             prio_tx
                 .send(JsWorkerCommand::Execute {
                     script: script.to_string(),
@@ -452,9 +506,11 @@ impl RendererJsWorker {
             element_from_point_cache,
             font_loads,
             navigations,
+            history_traverses,
             focus_changes,
             async_callbacks_ready,
             pending_document_reset: Arc::default(),
+            document_started,
             #[cfg(test)]
             execution_count,
         }
@@ -466,9 +522,15 @@ impl RendererJsWorker {
         Arc::clone(&self.executor)
     }
 
-    /// 执行 ES module（含依赖注册表）。
-    pub fn execute_module(&self, source: &str, url: &str, deps: &[(String, String)]) -> Result<String, String> {
-        (self.module_executor)(source, url, deps)
+    /// 执行 ES module（含依赖注册表）；`cache_key` 语义见 [`JsExecutor::execute_module`]。
+    pub fn execute_module(
+        &self,
+        source: &str,
+        url: &str,
+        cache_key: &str,
+        deps: &[(String, String)],
+    ) -> Result<String, String> {
+        (self.module_executor)(source, url, cache_key, deps)
     }
 
     /// 在 JS 线程执行脚本（不经 WebView 包装）。
@@ -483,6 +545,8 @@ impl RendererJsWorker {
     /// worker 继续处理的回调重新置位，下一轮重试），主循环回到 recv 保持导航 IPC 响应。
     pub fn execute_script_direct_bounded(&self, script: &str, timeout: Duration) -> Result<String, String> {
         let (reply_tx, reply_rx) = mpsc::channel();
+        // T9 返修（DF-F1）：有界等待求值同为文档载荷提交——置位首文档踪迹。
+        self.document_started.store(true, Ordering::Relaxed);
         self.cmd_tx
             .send(JsWorkerCommand::Execute {
                 script: script.to_string(),
@@ -513,6 +577,8 @@ impl RendererJsWorker {
     pub fn submit_script_priority(&self, script: &str) -> Result<(), String> {
         let (reply_tx, reply_rx) = mpsc::channel();
         drop(reply_rx);
+        // T9 返修（DF-F1）：fire-and-forget 优先派发同为文档载荷提交——置位首文档踪迹。
+        self.document_started.store(true, Ordering::Relaxed);
         self.prio_tx
             .send(JsWorkerCommand::Execute {
                 script: script.to_string(),
@@ -538,6 +604,15 @@ impl RendererJsWorker {
             .map_err(|e| e.to_string())
     }
 
+    /// T13 R1：延迟回收提交（fire-and-forget，普通通道）——worker 在命令边界执行
+    /// S3 通知与 worker trim（isolate 线程，处置工单约束 4）。跨文档命令（复位清队
+    /// 存活面）：归还的是当时已 free 页，随新文档执行同样安全。
+    pub fn submit_deferred_reclaim(&self, gens: u32) -> Result<(), String> {
+        self.cmd_tx
+            .send(JsWorkerCommand::DeferredReclaim { gens })
+            .map_err(|e| e.to_string())
+    }
+
     /// t2-pb1 fix#15：优先通道执行 + 有界等待，超时把 reply 通道交还调用方挂起续答。
     /// 脚本已入优先队列照常执行（结果晚至）；worker 忙于长臂（bilibili timer 回调
     /// 28-30s）时调用方主循环至多等 `timeout` 即可放行导航等 IPC，回复由调用方轮询
@@ -548,6 +623,8 @@ impl RendererJsWorker {
         timeout: std::time::Duration,
     ) -> Result<Result<String, String>, mpsc::Receiver<Result<String, String>>> {
         let (reply_tx, reply_rx) = mpsc::channel();
+        // T9 返修（DF-F1）：可挂起优先求值同为文档载荷提交——置位首文档踪迹。
+        self.document_started.store(true, Ordering::Relaxed);
         if let Err(e) = self.prio_tx.send(JsWorkerCommand::Execute {
             script: script.to_string(),
             reply: reply_tx,
@@ -555,6 +632,12 @@ impl RendererJsWorker {
         }) {
             return Ok(Err(format!("js worker prio send failed: {e}")));
         }
+        // T8/P7：与 [`Self::execute_script_priority_bounded`] 同一唤醒义务——分派环
+        // 空闲时阻塞在普通通道 `recv_timeout(WORKER_IDLE_POLL)`，优先命令到达不会
+        // 中断该等待（std mpsc 无跨通道 select）。CDP evaluate 串行负载下每次求值
+        // 都等满 50ms 量子（headless 实测 RTT 恒定 ~51ms，本仓 mux slow conn step
+        // 54–75ms 同源）；令牌即时唤醒，picked 时 no-op，见 `JsWorkerCommand::WakePrio`。
+        let _ = self.cmd_tx.send(JsWorkerCommand::WakePrio);
         match reply_rx.recv_timeout(timeout) {
             Ok(result) => Ok(result),
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => Err(reply_rx),
@@ -569,6 +652,7 @@ impl RendererJsWorker {
         PrioritySubmitter {
             prio_tx: self.prio_tx.clone(),
             cmd_seq: Arc::clone(&self.cmd_seq),
+            document_started: Arc::clone(&self.document_started),
         }
     }
 
@@ -668,6 +752,12 @@ impl RendererJsWorker {
 
     /// 脚本执行前更新 DOM HTML 快照与页面 URL。
     pub fn set_dom_snapshot(&self, html: &str, url: &str) {
+        // T9（perf-mem M2b）：首文档快照免 reply 等待。worker 冷启动（QuickJS context +
+        // shim eval）尚未完成时，等待会把启动全程串行进导航关键路径（冷启动探针实测
+        // ~70ms）。快照先于后续优先派发的次序不变式由 worker 端 r2946 快照屏障保证
+        // （普通队列 FIFO + 优先命令屏障扫描），reply 等待本身即为「worker 忙臂时超时
+        // 放行」的 best-effort 惯用法；首文档无旧页回调积压，屏障不变式已足够。
+        let first_document = !self.document_started.swap(true, Ordering::Relaxed);
         let (reply_tx, reply_rx) = std::sync::mpsc::channel();
         if self
             .cmd_tx
@@ -688,13 +778,18 @@ impl RendererJsWorker {
         // <body onload> 永不触发（r2946 单测实证；无脚本页生产窗口同源）。同
         // reset_document_state 的有界等待惯用法；worker 忙臂时超时放行不阻塞导航，
         // 此时快照已排普通队列，后续普通往返天然保持先快照后脚本的顺序。
-        let _ = reply_rx.recv_timeout(std::time::Duration::from_millis(250));
+        if !first_document {
+            let _ = reply_rx.recv_timeout(std::time::Duration::from_millis(250));
+        }
     }
 
     /// t2-pb1 fix#9：优先通道快照——与 [`Self::set_dom_snapshot`] 同命令，入优先队列。
     /// 供自动化求值路径与 `execute_script_direct_priority` 成对使用（同通道 FIFO 保持
     /// 快照先于执行的顺序），使宿主求值不被页面回调积压（普通队列）挡住。
     pub fn set_dom_snapshot_priority(&self, html: &str, url: &str) {
+        // T9（perf-mem M2b）：优先通道快照同为文档提交——置位首文档踪迹（fire-and-forget
+        // 通道本无 reply 等待可跳）。
+        self.document_started.store(true, Ordering::Relaxed);
         let _ = self.prio_tx.send(JsWorkerCommand::SetDomSnapshot {
             html: html.to_string(),
             url: url.to_string(),
@@ -737,6 +832,22 @@ impl RendererJsWorker {
         // 读到。镜像 runtime 侧 cached_css 复位，于此共享复位路径统一清空。
         self.set_external_css("");
         self.async_callbacks_ready.store(false, Ordering::Release);
+        // T9（perf-mem M2b）：首命令前跳过 worker 复位往返。worker 线程启动即建 QuickJS
+        // context + 全量装 shim（工厂新态），尚无任何页面载荷命令可清；照发
+        // ResetDocumentState 会让主线程在 250ms 有界窗内空等 worker 启动完成（冷启动探针
+        // 实测 ~91ms，恰覆盖启动全程），worker 臂再重复 reset_context + shim 重装
+        // （~21ms）。首文档即用启动 context，与复位臂重建后的新全局对象同构：
+        // https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate
+        // （cross-document navigation creates a new global object——首文档无旧全局可弃）。
+        // 文档域副作用（external_css / async_callbacks_ready / 各队列清空）已在上方主侧
+        // 完成；复位命令本臂的 worker 侧清队对空队列是 no-op。Execute 族/ExecuteModule/
+        // 快照任一入口提交即置 `document_started`（置位面 10 处见字段文档，含首文档前
+        // 的 automation Evaluate 与 SetViewport/SetVisibility 类交互求值）→ 复位照走
+        // 真臂，宿主求值残留不被本跳过路径放过。
+        if !self.document_started.load(Ordering::Relaxed) {
+            tracing::debug!("first-document worker reset skipped (factory-fresh context)");
+            return;
+        }
         // t2-pb1 fix#11：复位命令走优先队列（跳过页面回调积压；同通道 FIFO 保证新文档
         // 的优先命令排在其后）+ 有界等待——页面回调饱和 / 单臂 30s 级（bilibili timer
         // 实测）时同步 reply 等待曾把导航初始化整体挂住（二跳 ERR_FAILED 根因链末级）。
@@ -817,6 +928,12 @@ impl RendererJsWorker {
     /// 主循环 drain 后 handle_navigate（fetch 新文档 + 重载）。
     pub fn pending_navigations(&self) -> Arc<std::sync::Mutex<Vec<String>>> {
         Arc::clone(&self.navigations)
+    }
+
+    /// T5/P10 页面 history 遍历请求队列句柄——`__zw_request_history_traverse` 回调（worker 线程）
+    /// push，renderer 主循环 drain 后 `HistoryTraverse` IPC 发主进程 shell 栈提交遍历。
+    pub fn pending_history_traverses(&self) -> Arc<std::sync::Mutex<Vec<i32>>> {
+        Arc::clone(&self.history_traverses)
     }
 
     /// R3254-M7'：页面 JS `focus()`/`blur()` 变更队列句柄——主线程 drain 后同步焦点状态。
@@ -1157,6 +1274,7 @@ impl WorkerCensus {
             JsWorkerCommand::SetViewportHint { .. } => "SetViewportHint",
             JsWorkerCommand::DispatchIndexedDbConnectionEvent { .. } => "DispatchIndexedDbConnectionEvent",
             JsWorkerCommand::WakePrio => "WakePrio",
+            JsWorkerCommand::DeferredReclaim { .. } => "DeferredReclaim",
             JsWorkerCommand::Shutdown => "Shutdown",
         }
     }
@@ -1264,6 +1382,7 @@ fn js_worker_main(
     element_from_point_cache: ElementFromPointCache,
     font_bridge: zero_engine::FontLoadBridge,
     nav_bridge: zero_engine::NavigationBridge,
+    hist_bridge: zero_engine::HistoryBridge,
     indexed_db_handler: zero_engine::IndexedDbHandler,
     service_worker_client: Option<ServiceWorkerIpcClient>,
     async_callbacks_ready: Arc<AtomicBool>,
@@ -1456,6 +1575,9 @@ fn js_worker_main(
     font_bridge.register(&mut *sandbox);
     // R3058 JS 跨文档导航桥——__zw_request_navigate 回调 push URL 到共享队列（runtime drain 后 handle_navigate）。
     nav_bridge.register(&mut *sandbox);
+    // T5/P10 页面 history 遍历桥——__zw_request_history_traverse 回调 push delta 到共享队列
+    //（runtime drain 后 HistoryTraverse IPC 发主进程 shell 栈提交遍历）。
+    hist_bridge.register(&mut *sandbox);
     // P1b S5：TimerBridge 注 __zw_setTimeout——shim setTimeout/setInterval 真实延迟
     // （子线程 sleep + resolver.resolve → __zwResolveCallback 调用 JS 回调）。
     let timer_bridge = TimerBridge::new(resolver);
@@ -1474,8 +1596,9 @@ fn js_worker_main(
             String::new()
         }),
     );
-    // R2713b：帧驱动 rAF kill-switch——execute shim 前注入 globalThis.__ZW_RAF_FRAME_DRIVEN
-    //（shim 据此分支 rAF 同步 stub / 帧驱动）。默认 OFF 不注入 → shim `|| false` → 同步 stub。
+    // R2713b：帧驱动 rAF 开关——execute shim 前注入 globalThis.__ZW_RAF_FRAME_DRIVEN
+    //（shim 据此分支 rAF 同步 stub / 帧驱动）。默认注入（P9b 产品默认）；显式 opt-out
+    //（=0/false/off，诊断/对照测量）不注入 → shim `|| false` → 同步 stub。
     if raf_frame_driven_enabled() {
         let _ = sandbox.execute("globalThis.__ZW_RAF_FRAME_DRIVEN = true;");
     }
@@ -1693,13 +1816,15 @@ fn js_worker_main(
             JsWorkerCommand::ExecuteModule {
                 source,
                 url,
+                cache_key,
                 deps,
                 reply,
                 ..
             } => {
                 // P6：按本代页面 import map 编译（裸说明符 import 经映射键命中注册模块）。
                 let map_opt = import_map.lock().ok().and_then(|g| g.clone());
-                let result = execute_module_in_sandbox(&mut *sandbox, &source, &url, &deps, map_opt.as_ref());
+                let result =
+                    execute_module_in_sandbox(&mut *sandbox, &source, &url, &cache_key, &deps, map_opt.as_ref());
                 let _ = reply.send(result);
             }
             JsWorkerCommand::SetDomSnapshot {
@@ -2052,8 +2177,14 @@ fn js_worker_main(
                 // https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate
                 // A cross-document navigation creates a new global object. Keeping the
                 // renderer worker is an implementation detail, not page-visible state.
+                // T13 S3 顺序调整：竞态窗清队提前到 reset_context 之前——S3 起复位尾带
+                // `low_memory_notification`（全堆 GC，毫秒级），清队若排其后会迟滞同等
+                // 时长（t8 d1 时序余量即被打穿）。两位置间无任何 mutation 推入源（旧页
+                // 脚本已结束、shim 未重装、GC 不跑页面回调），清队语义不变、污染窗只缩不增。
+                if let Ok(mut pending) = mutations.lock() {
+                    pending.clear();
+                }
                 sandbox.reset_context();
-                // R-t2qq 二轮返修 D2：adopted 槽清空挂**真跨文档代际切换**（本臂）。
                 // WHATWG HTML navigate：cross-document navigation creates a new global
                 // object——新文档在页面 JS 设置前无 adopted 表，槽须清空；shim 闭包列表
                 // 随 context 销毁重建自然失效（下方重新 eval shim 后 `_zwDocAdoptedSheets`
@@ -2071,11 +2202,8 @@ fn js_worker_main(
                 // 已先清一次队列，但 worker 串行处理下，旧页脚本/timer 回调
                 // （ResolveAsyncCallback 的 microtask checkpoint）可能在其之后、本 arm 之前
                 // 继续写入；本 arm 执行时旧页执行已全部结束，此处再清一次，确保跨导航残留
-                // mutation 不被新文档的 tick/drain apply（跨文档污染）。
-                // https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate
-                if let Ok(mut pending) = mutations.lock() {
-                    pending.clear();
-                }
+                // mutation 不被新文档的 tick/drain apply（跨文档污染）。（T13 S3：清队执行
+                // 点已上移至 reset_context 之前，见该处注释。）
                 // DC-2/M3：跨导航清 rAF 兴趣——旧文档挂起回调随 global object 销毁
                 // （同上方 mutations 清队语义）；不清则计数残留使泵对新文档空转 tick。
                 raf_interest.store(0, Ordering::Relaxed);
@@ -2103,6 +2231,21 @@ fn js_worker_main(
                 // t2-pb1 fix#19：context 重建即重置宿主动态脚本旗标（见 bootstrap 处注释）。
                 let _ = sandbox.execute("globalThis.__zwHostDynamicScripts = true;");
                 async_callbacks_ready.store(false, Ordering::Release);
+                // T13 S4：worker 线程 thread_local 槽清空——rect gBCR Document 缓存与
+                // 查询视图文档缓存都活在执行 JS 的本线程，条目持上一文档整棵 DOM
+                //（主线程槽在 runtime 导航落定收口对称清空）。
+                zero_engine::clear_rect_doc_cache();
+                zero_engine::js_dom_bridge::clear_view_doc_cache();
+                // T13 S3/S7 探针：复位后 V8 已用堆打点（low_memory_notification 已在
+                // reset_context 内触发；观测腿 `ZEROWEB_MEM_PROBE=1`，不进判据样本）。
+                if crate::mem_reclaim::mem_probe_enabled()
+                    && let Some(heap_bytes) = sandbox.heap_used_bytes()
+                {
+                    tracing::info!(target: "mem_probe", v8_heap_bytes = heap_bytes as u64, "worker reset probe");
+                }
+                // T13 R1：Reset 臂尾不再同步 trim/S3 通知——成本移出首载测窗（处置
+                // 工单主控 M1），改由主循环 settle+D 到点的 `DeferredReclaim` 臂执行
+                //（窗口证据见 t13-rework-frozen.md）。此处仅回信复位完成。
                 let _ = reply.send(());
             }
             JsWorkerCommand::DispatchIndexedDbConnectionEvent {
@@ -2118,6 +2261,16 @@ fn js_worker_main(
                 );
                 let result = sandbox.execute(&script).map(|_| ()).map_err(|error| error.to_string());
                 let _ = reply.send(result);
+            }
+            JsWorkerCommand::DeferredReclaim { gens } => {
+                // T13 R1：延迟回收臂（isolate 线程命令边界，处置工单约束 4 的定时点）。
+                // S3：复位尾移来的 `low_memory_notification`——旧 Context 垃圾的全堆
+                // GC 触发（无条件：首轮 OFF 面通知即无条件执行，仅时机后移）。
+                sandbox.low_memory_reclaim();
+                // T13 S2：归还 glibc arena free 页（`ZEROWEB_NAV_TRIM=0` 关，token 全零）。
+                if crate::mem_reclaim::nav_trim_enabled() {
+                    crate::mem_reclaim::malloc_trim_now("worker_trim", gens);
+                }
             }
             JsWorkerCommand::Shutdown => {
                 // js-dom R386：worker 退出前清原生绑定线程局部（镜像 webview Drop
@@ -2300,6 +2453,7 @@ fn execute_module_in_sandbox(
     sandbox: &mut dyn zero_script_sandbox::Sandbox,
     source: &str,
     url: &str,
+    cache_key: &str,
     deps: &[(String, String)],
     import_map: Option<&ImportMap>,
 ) -> Result<String, String> {
@@ -2314,7 +2468,7 @@ fn execute_module_in_sandbox(
     // R5182：入口（当前 script 元素的模块）不在 prelude 急切求值——由 transformed 体承担，
     // 模块体恰好执行一次；__moduleCache 挂 globalThis 跨元素共享、随 reset_context 按文档复位。
     let prelude = build_module_runtime_prelude(&registry, Some(url)).map_err(|e| e.to_string())?;
-    let transformed = compile_module_script(source, url, &registry).map_err(|e| e.to_string())?;
+    let transformed = compile_module_script(source, url, cache_key, &registry).map_err(|e| e.to_string())?;
     let full = format!("{prelude}\n{transformed}");
     sandbox.execute(&full).map(|r| r.value).map_err(|e| e.to_string())
 }
@@ -2467,8 +2621,14 @@ impl zero_page_runtime::JsExecutor for RendererJsWorker {
     fn execute_script_direct(&self, script: &str) -> Result<String, String> {
         self.execute_script_direct(script)
     }
-    fn execute_module(&self, source: &str, url: &str, deps: &[(String, String)]) -> Result<String, String> {
-        self.execute_module(source, url, deps)
+    fn execute_module(
+        &self,
+        source: &str,
+        url: &str,
+        cache_key: &str,
+        deps: &[(String, String)],
+    ) -> Result<String, String> {
+        self.execute_module(source, url, cache_key, deps)
     }
     fn mutations(&self) -> Arc<std::sync::Mutex<Vec<zero_engine::DomMutation>>> {
         self.mutations()
@@ -2480,6 +2640,8 @@ impl zero_page_runtime::JsExecutor for RendererJsWorker {
     }
     fn execute_script_priority_bounded(&self, script: &str, timeout: std::time::Duration) -> Result<String, String> {
         let (reply_tx, reply_rx) = mpsc::channel();
+        // T9 返修（DF-F1）：交互优先求值同为文档载荷提交——置位首文档踪迹。
+        self.document_started.store(true, Ordering::Relaxed);
         self.prio_tx
             .send(JsWorkerCommand::Execute {
                 script: script.to_string(),
@@ -2553,6 +2715,43 @@ mod tests {
             elapsed < Duration::from_millis(100),
             "10 priority executes took {elapsed:?} on idle worker; WakePrio wake is missing \
              (WORKER_IDLE_POLL quantum leaked into the interactive path)"
+        );
+    }
+
+    /// T8/P7 回归钉：自动化求值路径（`execute_script_priority_deferrable`，CDP
+    /// Runtime.evaluate / AutomationRequest 与页面用户动作脚本派发同走此 renderer
+    /// 消费面）与 T66 bounded 路径同判据——空闲 worker 上必须被 WakePrio 即时唤醒，
+    /// 不能等满 WORKER_IDLE_POLL 轮询量子。缺唤醒时串行请求-应答负载下每条求值
+    /// 叠加近满量子（~50ms/条，headless 实测 CDP eval RTT 恒定 ~51ms：worker 每次
+    /// 应答后即刻驻回 recv_timeout，下一条请求总在量子窗口内到达）。变异验证：
+    /// 移除 deferrable 的 WakePrio 发送，10 条期望 ~500ms，远超 100ms 上限即红。
+    #[test]
+    fn priority_deferrable_execute_wakes_idle_dispatch_loop() {
+        let worker = RendererJsWorker::spawn(6142);
+        // 预热同 T66 钉：首条强制完成 spawn 侧 setup 并进入分派环，再静置 150ms
+        //（3 个轮询量子），worker 必已驻留在 recv_timeout(WORKER_IDLE_POLL) 等待。
+        let warmup = worker
+            .execute_script_priority_deferrable("1+1", Duration::from_secs(2))
+            .ok()
+            .and_then(|r| r.ok())
+            .expect("warmup execute failed");
+        assert_eq!(warmup, "2");
+        std::thread::sleep(Duration::from_millis(150));
+        // 缺唤醒时 ~50ms/条（10 条 ~500ms），唤醒路径 ~2ms/条（总 ~20ms）；对
+        // 100ms 上限：变异方向 5 倍越限必红，唤醒方向 5 倍余量耐慢机。
+        let started = std::time::Instant::now();
+        for _ in 0..10 {
+            let result = worker
+                .execute_script_priority_deferrable("2+2", Duration::from_secs(2))
+                .expect("deferrable execute should complete synchronously on idle worker")
+                .expect("deferrable execute failed");
+            assert_eq!(result, "4");
+        }
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed < Duration::from_millis(100),
+            "10 deferrable executes took {elapsed:?} on idle worker; WakePrio wake is missing \
+             (WORKER_IDLE_POLL quantum leaked into the automation eval path)"
         );
     }
 
@@ -2904,6 +3103,97 @@ mod tests {
                 .unwrap(),
             "SPAN",
             "reset_context 后下一快照重 install 原生绑定"
+        );
+        worker.shutdown();
+    }
+
+    // T9（perf-mem M2b）：首文档快速路径——worker 启动工厂态（QuickJS context + shim
+    // 刚建、尚无任何 Execute/快照命令提交）下，`reset_document_state` 跳过复位往返，
+    // 首个 `set_dom_snapshot` 跳过 reply 有界等待（均不等 worker 启动完成）；任何
+    // 文档/脚本载荷提交后的复位照旧走真臂（context 销毁重建 → 宿主求值全局被清，
+    // 与既有导航语义一致——renderer_js_worker_document_reset_drops_old_async_page_state
+    // 同款不变式）。冷启动探针实测：新标签首载的复位等待 ~91ms + 重建 ~21ms 串行在
+    // 导航关键路径，本快速路径消除之。变异判别：移除 reset 侧跳过 → 启动窗内复位
+    // 阻塞至启动完（时长断言转红，非跳过方向恒 ≥ QuickJS 启动量级）；移除快照侧
+    // 跳过 → 启动窗内快照同理转红。
+    #[test]
+    fn renderer_js_worker_first_document_skips_reset_and_snapshot_wait_t9() {
+        let mut worker = RendererJsWorker::spawn(9141);
+        // 启动窗内复位：跳过往返即刻返回（真臂须等 worker 启动 + 重建）。
+        let t0 = std::time::Instant::now();
+        worker.reset_document_state();
+        assert!(
+            t0.elapsed() < std::time::Duration::from_millis(25),
+            "工厂态复位应跳过 worker 往返即刻返回，实际 {:?}",
+            t0.elapsed()
+        );
+        // 启动窗内首文档快照：免 reply 等待，send 即返。
+        let t1 = std::time::Instant::now();
+        worker.set_dom_snapshot(
+            "<html><body><p id='t9fast'>f</p></body></html>",
+            "https://zero.test/t9fast",
+        );
+        assert!(
+            t1.elapsed() < std::time::Duration::from_millis(50),
+            "首文档快照应免 reply 等待即刻返回，实际 {:?}",
+            t1.elapsed()
+        );
+        // 快照照常应用（普通队列 FIFO；此求值自身有界等待，读到新文档即证应用）。
+        assert_eq!(
+            worker
+                .execute_script_direct("__zw_native_element_for_id('t9fast').tagName")
+                .unwrap(),
+            "P",
+            "跳过等待不改变快照应用语义"
+        );
+        // 文档/脚本已提交：复位走真臂 → context 销毁重建 → 宿主求值全局被清（既有
+        // 导航复位语义不变，见 drops_old_async_page_state）。
+        worker
+            .execute_script_direct("globalThis.__t9_keep = 1;")
+            .expect("preset global");
+        worker.reset_document_state();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__t9_keep)").unwrap(),
+            "undefined",
+            "载荷提交后的复位仍销毁重建 context"
+        );
+        worker.set_dom_snapshot(
+            "<html><body><span id='t9post'>s</span></body></html>",
+            "https://zero.test/t9post",
+        );
+        assert_eq!(
+            worker
+                .execute_script_direct("__zw_native_element_for_id('t9post').tagName")
+                .unwrap(),
+            "SPAN",
+            "真臂复位后下一快照重装原生绑定（既有语义不变）"
+        );
+        worker.shutdown();
+    }
+
+    // T9（perf-mem M2b）：首文档快照免等待的判别窗口——spawn 后立刻快照（worker 仍在
+    // QuickJS 启动），有等待实现会阻塞至启动完成（实测 ~40-120ms），跳过实现 send 即返。
+    // 阈值 25ms 对齐姊妹钉口径（低于启动窗下缘，等待型变异不留假绿窗；T9 返修 TV-F3）。
+    // 快照应用语义由后续有界等待求值钉住（读新文档元素即证应用）。
+    #[test]
+    fn renderer_js_worker_first_snapshot_returns_during_worker_startup_t9() {
+        let mut worker = RendererJsWorker::spawn(9142);
+        let t0 = std::time::Instant::now();
+        worker.set_dom_snapshot(
+            "<html><body><b id='t9boot'>b</b></body></html>",
+            "https://zero.test/t9boot",
+        );
+        assert!(
+            t0.elapsed() < std::time::Duration::from_millis(25),
+            "首文档快照不得等待 worker 启动（跳过 reply 等待），实际 {:?}",
+            t0.elapsed()
+        );
+        assert_eq!(
+            worker
+                .execute_script_direct("__zw_native_element_for_id('t9boot').tagName")
+                .unwrap(),
+            "B",
+            "启动窗内提交的快照仍须照常应用"
         );
         worker.shutdown();
     }
@@ -5737,6 +6027,24 @@ mod tests {
     }
 
     #[test]
+    fn raf_frame_driven_switch_semantics_pinned() {
+        // P9b 返修 TV-1：开关语义纯函数钉扎（不碰进程级 env，并行测试无竞态）——
+        // None（env 未设）/Some("")（env 设为空串）/Some("1")/Some("其他") 均开启
+        // （默认 on，任意非 opt-out 值不关闭）；
+        // Some("0")/Some("false")/Some("off") 显式 opt-out。大小写敏感且不 trim
+        // 的行为按实现钉住（"OFF"/" off" 视为非 opt-out，仍开启）。
+        assert!(raf_frame_driven_enabled_from(None), "env 未设 → 默认 on");
+        assert!(raf_frame_driven_enabled_from(Some("")), "env 设空串 → 默认 on");
+        assert!(raf_frame_driven_enabled_from(Some("1")));
+        assert!(raf_frame_driven_enabled_from(Some("其他")));
+        assert!(!raf_frame_driven_enabled_from(Some("0")), "显式 opt-out");
+        assert!(!raf_frame_driven_enabled_from(Some("false")), "显式 opt-out");
+        assert!(!raf_frame_driven_enabled_from(Some("off")), "显式 opt-out");
+        assert!(raf_frame_driven_enabled_from(Some("OFF")), "大小写敏感：OFF 非 opt-out");
+        assert!(raf_frame_driven_enabled_from(Some(" off")), "不 trim：带空白非 opt-out");
+    }
+
+    #[test]
     fn renderer_js_worker_raf_tick_fires_frame_driven_callbacks() {
         // R2713b：renderer worker 帧驱动 rAF——__ZW_RAF_FRAME_DRIVEN=true 时 requestAnimationFrame
         // 注册延后到 __zw_raf_tick（renderer `tick_observers` 在 post-render 调 `__zw_raf_tick`；
@@ -6266,6 +6574,11 @@ mod tests {
     #[test]
     fn reset_purge_keeps_commands_submitted_after_reset() {
         let mut worker = RendererJsWorker::spawn(75);
+        // T9 返修（TV-F1）：前置一次经置位入口的载荷——下方裸 cmd_tx 长臂不置位
+        // `document_started`，缺此前置时复位走首文档跳过臂、F1 清队场景空转。
+        worker
+            .execute_script_direct_bounded("", Duration::from_secs(5))
+            .expect("置位载荷执行");
         let (busy_tx, busy_rx) = mpsc::channel();
         // 长臂占住 worker（普通通道；复位/新文档命令排优先队列）。
         worker
@@ -6304,6 +6617,12 @@ mod tests {
     #[test]
     fn reset_purge_retains_config_commands_and_worker_keeps_serving() {
         let mut worker = RendererJsWorker::spawn(76);
+        // T9 返修（TV-F1）：前置一次经置位入口的载荷——下方裸 cmd_tx 长臂与
+        // set_viewport_hint 均不置位 `document_started`，缺此前置时复位走首文档跳过臂、
+        // 滞留配置跨复位存活场景空转。
+        worker
+            .execute_script_direct_bounded("", Duration::from_secs(5))
+            .expect("置位载荷执行");
         let (busy_tx, busy_rx) = mpsc::channel();
         // 长臂占住 worker。
         worker
@@ -6462,6 +6781,60 @@ mod tests {
                 .unwrap(),
             "true",
             "换代后 named prop 重装为新元素（回收链路双腿不失效）"
+        );
+        worker.shutdown();
+    }
+
+    /// T13 R1 TV-F4 调度门钉（js_worker 面）：Reset 臂不得同步 trim——复位臂内若
+    /// 回退为首帧 trim（绕过延迟调度）本测即红（计数 >0）。先执行脚本造堆再复位，
+    /// 留足复位臂处理时间后校验计数不变；`ZEROWEB_NAV_TRIM=0` 关断面由 fire 臂
+    /// 的 env 门分支保证（调度器整体不布防，token 缺失为日志断言面）。
+    #[test]
+    fn reset_arm_does_not_trim_synchronously() {
+        let _guard = crate::mem_reclaim::test_trim_lock();
+        let mut worker = RendererJsWorker::spawn(6140);
+        let warm = worker
+            .execute_script_direct_bounded(
+                "Array.from({length: 4096}, (_, i) => i).join(',').length > 0;",
+                Duration::from_secs(5),
+            )
+            .expect("warmup execute failed");
+        assert_eq!(warm, "true");
+        let before = crate::mem_reclaim::test_trim_count();
+        worker.reset_document_state();
+        // 复位臂在普通 FIFO 通道串行处理；空闲 worker 上毫秒级完成，300ms 余量后
+        // 计数必须不变（同步 trim 回退即在此窗内现形）。
+        std::thread::sleep(Duration::from_millis(300));
+        assert_eq!(
+            crate::mem_reclaim::test_trim_count(),
+            before,
+            "Reset 臂出现了同步 trim——延迟调度门被绕过（TV-F4）"
+        );
+        worker.shutdown();
+    }
+
+    /// T13 R1 TV-F4 调度门钉（js_worker 面）：`DeferredReclaim` 臂必须执行 trim
+    /// （gens 载荷面）与 S3 通知——移除该臂或延迟调度整体缺失时本测红（计数不增）。
+    /// 先造堆再投递，300ms 余量后计数必须 +≥1。
+    #[test]
+    fn deferred_reclaim_arm_executes_trim() {
+        let _guard = crate::mem_reclaim::test_trim_lock();
+        let mut worker = RendererJsWorker::spawn(6139);
+        let warm = worker
+            .execute_script_direct_bounded(
+                "Array.from({length: 4096}, (_, i) => i).join(',').length > 0;",
+                Duration::from_secs(5),
+            )
+            .expect("warmup execute failed");
+        assert_eq!(warm, "true");
+        let before = crate::mem_reclaim::test_trim_count();
+        worker
+            .submit_deferred_reclaim(2)
+            .expect("deferred reclaim submit failed");
+        std::thread::sleep(Duration::from_millis(300));
+        assert!(
+            crate::mem_reclaim::test_trim_count() > before,
+            "DeferredReclaim 臂未执行 trim——延迟回收执行面缺失（TV-F4）"
         );
         worker.shutdown();
     }

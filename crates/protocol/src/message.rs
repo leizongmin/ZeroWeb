@@ -280,6 +280,15 @@ pub enum IpcMessageKind {
     NavigationStarted(NavigationStartedParams),
     /// 渲染端请求浏览器装载页面（zero:// GET 转交；T62-D1 返修）。
     TabNavigateRequest(TabNavigateRequestParams),
+    /// 页面 history 遍历请求（renderer → browser；T5/P10——shim 本地栈越界的
+    /// `history.back()/forward()/go(delta)` 移交宿主 shell 栈提交遍历）。
+    ///
+    /// `delta` 为遍历步长（back=-1、forward=+1、go(n)=n）；越界由宿主 shell 判界，
+    /// 不可达时静默 no-op（R3004）。
+    HistoryTraverse {
+        /// 遍历步长（相对当前条目）。
+        delta: i32,
+    },
     /// 页面导航提交（renderer → browser storage-key authority）。
     NavigationCommitted(NavigationCommittedParams),
     /// IndexedDB connection 的 versionchange 通知（browser → renderer）。
@@ -377,6 +386,44 @@ pub enum IpcMessageKind {
     /// `visibilitychange`（HTML `Page visibility` API 的宿主驱动面；页面隐藏时 rAF 泵
     /// 门控停止泵帧）。追加于枚举末尾（bincode 判别值按声明序，protocol 纪律 FR-11）。
     SetVisibility(crate::message::SetVisibilityParams),
+
+    // ── 媒体 host（renderer ↔ media-host 独立进程；方案 C C1 批次）──
+    // wire format 契约见 `crate::media` 模块文档（IF-001~006）；载荷类型同域。
+    // 全族追加于枚举末尾（bincode 判别值按声明序，protocol 纪律 FR-11）。
+    /// 登记媒体源（renderer → host；超单源上限 → `MediaError{QuotaExceeded}`）。
+    MediaRegisterSource(crate::media::MediaRegisterSourceParams),
+    /// 源字节流分片（renderer → host；回执 `MediaDataAck`）。
+    MediaDataChunk(crate::media::MediaDataChunkParams),
+    /// 起播/重播（renderer → host；响应状态/错误面）。
+    MediaPlay(crate::media::MediaPlayParams),
+    /// 暂停（renderer → host）。
+    MediaPause(crate::media::MediaPauseParams),
+    /// 精确 seek（renderer → host；`MediaSeekResult{request_id}` 配对）。
+    MediaSeek(crate::media::MediaSeekParams),
+    /// 释放源（renderer → host；fire-and-forget）。
+    MediaReleaseSource(crate::media::MediaReleaseSourceParams),
+    /// 优雅退出（renderer → host；host 对 stdin EOF 亦自行退出）。
+    MediaShutdown,
+    /// 设置播放速率（renderer → host）。
+    MediaSetRate(crate::media::MediaSetRateParams),
+    /// 设置循环（renderer → host）。
+    MediaSetLoop(crate::media::MediaSetLoopParams),
+    /// 设置增益/静音（renderer → host）。
+    MediaSetGain(crate::media::MediaSetGainParams),
+    /// 握手（host → renderer；连接后首发，版本/能力校验）。
+    MediaReady(crate::media::MediaReadyParams),
+    /// 源就绪（host → renderer）。
+    MediaSourceReady(crate::media::MediaSourceReadyParams),
+    /// 数据回执（host → renderer；按 seq 累积确认）。
+    MediaDataAck(crate::media::MediaDataAckParams),
+    /// 状态/时钟推送（host → renderer；epoch 代际纪律）。
+    MediaStateUpdate(crate::media::MediaStateUpdateParams),
+    /// seek 结果（host → renderer）。
+    MediaSeekResult(crate::media::MediaSeekResultParams),
+    /// 解码帧（host → renderer；shm/内联双路径）。
+    MediaFrame(crate::media::MediaFrameParams),
+    /// 媒体错误（host → renderer）。
+    MediaError(crate::media::MediaErrorParams),
 }
 
 /// 页面可见性差分通知参数（浏览器→渲染）。

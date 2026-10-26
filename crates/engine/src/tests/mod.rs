@@ -4,6 +4,7 @@ mod badge_pill_background_tests;
 mod color;
 mod composite;
 mod dirty;
+mod incremental_oracle;
 mod paint;
 mod pipeline;
 mod pipeline_inline;

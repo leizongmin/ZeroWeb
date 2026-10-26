@@ -1,0 +1,13 @@
+
+running 8 tests
+test crash_broadcast_one_shot_and_renderer_survives ... ok
+test crash_restart_yields_fresh_host_and_refeed_plays ... ok
+test hosted_registry_end_to_end ... ok
+test real_host_audio_loop_wraps_with_epoch_increment ... ok
+test real_host_av_play_pushes_metadata_and_frames ... ok
+test real_host_lifecycle_and_error_faces ... ok
+test real_host_video_play_frames_seek_and_pause ... ok
+test restart_exhaustion_failed_then_reload_recovers ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 14.69s
+

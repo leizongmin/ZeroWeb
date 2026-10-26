@@ -1,0 +1,31 @@
+
+running 4 tests
+test c4_frame_hash_av_pair ... C4PAIR framehash src=file:///fixtures/long-webm-vp9-vorbis-60s.webm presented=1440 reference=1440 digest_presented=3f970f43b2bfb694 digest_reference=3f970f43b2bfb694
+ok
+test c4_frame_hash_pure_video ... C4PAIR framehash src=file:///fixtures/long-webm-vp9-60s.webm presented=1440 reference=1440 digest_presented=3f970f43b2bfb694 digest_reference=3f970f43b2bfb694
+ok
+test hosted::c4_capability_truth_host_vs_decode ... C4PAIR host-capabilities protocol_v=1 list=["video/webm; codecs=vp9", "audio/webm; codecs=vorbis", "audio/webm; codecs=opus", "audio/mpeg", "audio/ogg; codecs=opus", "audio/mp4; codecs=aac"]
+C4PAIR capability-verified claim=video/webm; codecs=vp9 fixture=sample-webm-vp9.webm decode=ok
+C4PAIR capability-verified claim=audio/webm; codecs=vorbis fixture=sample-webm-vp9-vorbis.webm decode=ok
+C4PAIR capability-verified claim=audio/mpeg fixture=sample-mp3.mp3 decode=ok
+C4PAIR capability-verified claim=audio/ogg; codecs=opus fixture=sample-ogg-opus.oga decode=ok
+C4PAIR capability-unverified claim=audio/webm; codecs=opus fixture=无（仓内缺对应 fixture）
+C4PAIR capability-unverified claim=audio/mp4; codecs=aac fixture=无（仓内缺对应 fixture）
+C4PAIR host-underclaim-check fixture=sample-ogg-vorbis.oga decode_ok=true
+C4PAIR host-underclaim-check fixture=sample-wav-pcm.wav decode_ok=true
+C4PAIR quota code=QuotaExceeded message=total_len 268435457 exceeds per-source cap 268435456
+ok
+test hosted::c4_epoch_storm_no_stale_frames ... C4PAIR epoch-storm captured=30 digest=45b70a0573a81d75 ct_end=58.710 errored=false
+
+thread 'hosted::c4_epoch_storm_no_stale_frames' (1541746) panicked at crates/webview/tests/media_c4_paired.rs:390:17:
+帧序回跳（1284 → 1189）
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    hosted::c4_epoch_storm_no_stale_frames
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 125.51s
+

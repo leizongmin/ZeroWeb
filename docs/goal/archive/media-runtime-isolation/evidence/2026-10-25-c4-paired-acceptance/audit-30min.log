@@ -1,0 +1,38 @@
+
+running 1 test
+test hosted::c4_resource_audit_30min ... C4AUDIT sample round=0 tick=1875 pid=1563791 rss_kb=13248 host_cpu_ms=1060 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=1 tick=1875 pid=1563791 rss_kb=15640 host_cpu_ms=3150 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=2 tick=1875 pid=1563791 rss_kb=17016 host_cpu_ms=5250 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=3 tick=1875 pid=1563791 rss_kb=17016 host_cpu_ms=7350 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=4 tick=1875 pid=1563791 rss_kb=17016 host_cpu_ms=9470 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=5 tick=1875 pid=1563791 rss_kb=17016 host_cpu_ms=11540 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=6 tick=1875 pid=1563791 rss_kb=17016 host_cpu_ms=13680 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=7 tick=1875 pid=1563791 rss_kb=17016 host_cpu_ms=16100 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=8 tick=1875 pid=1563791 rss_kb=17048 host_cpu_ms=18430 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=9 tick=1875 pid=1563791 rss_kb=17048 host_cpu_ms=20780 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=10 tick=1875 pid=1563791 rss_kb=17048 host_cpu_ms=23350 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=11 tick=1875 pid=1563791 rss_kb=18064 host_cpu_ms=25790 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=12 tick=1875 pid=1563791 rss_kb=18064 host_cpu_ms=28000 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=13 tick=1875 pid=1563791 rss_kb=18064 host_cpu_ms=30420 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=14 tick=1875 pid=1563791 rss_kb=18064 host_cpu_ms=32740 shm_segments=0 shm_bytes=0
+C4AUDIT idle-probe round=15 cpu_delta_5s_ms=0
+C4AUDIT sample round=15 tick=1875 pid=1563791 rss_kb=18064 host_cpu_ms=35120 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=16 tick=1875 pid=1563791 rss_kb=18064 host_cpu_ms=37540 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=17 tick=1875 pid=1563791 rss_kb=18064 host_cpu_ms=39980 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=18 tick=1875 pid=1563791 rss_kb=18064 host_cpu_ms=42350 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=19 tick=1875 pid=1563791 rss_kb=18064 host_cpu_ms=44610 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=20 tick=1875 pid=1563791 rss_kb=18064 host_cpu_ms=46880 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=21 tick=1875 pid=1563791 rss_kb=18064 host_cpu_ms=49110 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=22 tick=1875 pid=1563791 rss_kb=18064 host_cpu_ms=51370 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=23 tick=1875 pid=1563791 rss_kb=18064 host_cpu_ms=53620 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=24 tick=1875 pid=1563791 rss_kb=18064 host_cpu_ms=55890 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=25 tick=1875 pid=1563791 rss_kb=18376 host_cpu_ms=58160 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=26 tick=1875 pid=1563791 rss_kb=18388 host_cpu_ms=60520 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=27 tick=1875 pid=1563791 rss_kb=18388 host_cpu_ms=62800 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=28 tick=1875 pid=1563791 rss_kb=18388 host_cpu_ms=64810 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=29 tick=1875 pid=1563791 rss_kb=18388 host_cpu_ms=66830 shm_segments=0 shm_bytes=0
+C4AUDIT summary rounds=30 samples=30 single_host=true pid_stable=Some(1563791) rss_peak_kb=18388 rss_steady_kb=18064 host_cpu_total_ms=0 shm_segments=0 shm_bytes=0 idle_cpu_5s_ms=0 orphan=false
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1807.29s
+

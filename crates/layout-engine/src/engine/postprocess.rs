@@ -593,8 +593,23 @@ pub(super) fn adjust_inline_block_positions(
                     .runs
                     .iter()
                     .find(|r| r.node_id == child_node_id && r.font_size == 0.0 && r.width > 0.0)?;
-                // fragment y = run.y + line.y（与 all_fragments_with_line_y 同式）。
-                Some(child.y - (run.y + line.y))
+                let mut anchor = child.y - (run.y + line.y);
+                // R5252（CSS2 §8.3.1 + §9.2.1.1）：块→匿名行盒边界的 collapse gap 修正。
+                // taffy 把提升的原子 inline 当块级兄弟伪堆叠——锚原子的 margin-top 与
+                // 前驱块级兄弟的 margin-bottom 参与块级 collapse（取 max）；真语义是
+                // prev mb 与匿名块 mt=0 collapse 出段间隙，原子 margin-top 再在行盒内
+                // 独立生效（inline 级盒 margin 不 collapse，§8.3.1）。锚 = taffy 位 −
+                // frag 沿用伪堆叠位，吞掉 min(prev_mb, mt_a) 段间隙（margin-collapse-
+                // 121/123 REF 页 p mb 1em + inline-table mt 1em 整栈上移 16px 实证）。
+                // 仅锚原子**流内直接紧跟**块级兄弟（段首行）时补 min(prev_mb, mt_a)
+                // ——匿名段内换行的后继行锚仍走 taffy 伪堆叠位（R5215 谱系不触）。
+                // kill-switch `ZW_R5252_ANCHOR_GAP=0` 回退。
+                if anchor_gap_fix_on()
+                    && let Some((prev_mb, mt_a)) = preceding_block_margin_pair(root, styles, *idx)
+                {
+                    anchor += prev_mb.min(mt_a);
+                }
+                Some(anchor)
             });
             line_anchor.push(anchor.unwrap_or(0.0));
         }
@@ -622,6 +637,49 @@ pub(super) fn adjust_inline_block_positions(
             };
         }
     }
+}
+
+/// R5252 锚定 collapse gap 修正开关（OnceLock 单读，稳定策略开关不进逐节点热路径）。
+fn anchor_gap_fix_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("ZW_R5252_ANCHOR_GAP").as_deref() != Ok("0"))
+}
+
+/// R5252：`root.children[idx]` 的原子盒在流内是否直接紧跟块级兄弟；是则返回
+/// `(前驱块级兄弟 margin_bottom, 锚原子 margin_top)`。
+///
+/// 「直接紧跟」按 in-flow 判定——abspos/fixed/float 子脱离正常流（CSS2 §9.3.1，
+/// 不阻断匿名块段），回溯时跳过；首个 in-flow 前驱非块级 display（原子/inline
+/// 载体）即同段前行，无段边界 gap（R5215 匿名段内换行谱系，须回 None）。
+/// 块级 display 判据与 `has_real_block_element_child` 同款（display 基准，
+/// inline-table 盒包装的 block 旗标不可靠）。
+fn preceding_block_margin_pair(
+    root: &LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    idx: usize,
+) -> Option<(f32, f32)> {
+    let mt_a = root.children[idx].margin_top;
+    for child in root.children[..idx].iter().rev() {
+        if child.is_absolute || child.is_fixed || !matches!(child.float, FloatValue::None) {
+            continue;
+        }
+        let id = child.node_id?;
+        let s = styles.get(&id)?;
+        return if matches!(
+            s.display,
+            DisplayValue::Block
+                | DisplayValue::FlowRoot
+                | DisplayValue::ListItem
+                | DisplayValue::Table
+                | DisplayValue::Flex
+                | DisplayValue::Grid
+        ) {
+            Some((child.margin_bottom, mt_a))
+        } else {
+            None
+        };
+    }
+    None
 }
 
 /// 后处理：对 flex/grid 容器的子元素按 CSS `order` 属性排序。

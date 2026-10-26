@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-09-12
-**状态**: 草稿（Rally 交棒件——下一轮按 §7 实施交接执行）
+**状态**: 已实施（随 page-wasm goal M3 落地——importObject 链接 + host function 真重入，2026-09-12 goal 收口归档，见 [page-wasm/master.md](../goal/archive/page-wasm/master.md)）
 **父目标**: docs/goal/archive/page-wasm.md M3（master.md「下一步计划」切片 1，goal 已于 2026-09-12 收口归档）
 **规范依据**: https://webassembly.github.io/spec/js-api/ （WebAssembly JavaScript API）
 

@@ -1480,6 +1480,23 @@ pub fn parse_background_clip_layers(value: &str) -> Option<Vec<BackgroundClipVal
     Some(parts.into_iter().flatten().collect())
 }
 
+/// R5267：解析 background-blend-mode 属性值（css-compositing-1 §background-blend-mode）。
+/// 关键字集合与 mix-blend-mode 相同（16 模式），复用其值类型与解析。
+pub fn parse_background_blend_mode(value: &str) -> Option<MixBlendModeValue> {
+    parse_mix_blend_mode(value)
+}
+
+/// R5267：解析 background-blend-mode 逗号列表（逐层混合模式；层图层数多于列表时 CSS
+/// 规则循环补齐由消费方按 `i % len` 取，同 parse_background_clip_layers）。
+/// 任一段非法 → None（整条声明丢弃，与单值行为一致）。
+pub fn parse_background_blend_mode_layers(value: &str) -> Option<Vec<MixBlendModeValue>> {
+    let parts: Vec<Option<MixBlendModeValue>> = value.split(',').map(parse_background_blend_mode).collect();
+    if parts.iter().any(|p| p.is_none()) || parts.is_empty() {
+        return None;
+    }
+    Some(parts.into_iter().flatten().collect())
+}
+
 /// CSS background-origin 属性值。
 #[derive(Debug, Clone, PartialEq)]
 pub enum BackgroundOriginValue {

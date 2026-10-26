@@ -83,7 +83,9 @@ impl FocusManager {
                     });
                 }
                 // tabindex = -1: 不加入 Tab 顺序
-            } else if FOCUSABLE_TAGS.contains(&tag) && eligible && has_natural_focus_behavior(tag, elem) {
+            } else if (FOCUSABLE_TAGS.contains(&tag) && eligible && has_natural_focus_behavior(tag, elem))
+                || (eligible && is_editing_host(doc, node_id, elem))
+            {
                 self.focus_order.push(FocusableItem {
                     node: node_id,
                     tabindex: 0,
@@ -313,6 +315,46 @@ fn is_sequentially_focusable(doc: &Document, node: NodeId, elem: &crate::Element
 
 fn has_natural_focus_behavior(tag: &str, elem: &crate::ElementData) -> bool {
     !tag.eq_ignore_ascii_case("a") || elem.get_attribute("href").is_some()
+}
+
+/// 解析 `contenteditable` 属性的枚举状态：`Some(true)` / `Some(false)` / `None`（缺省
+/// 或非法值 → inherit 状态，向上爬祖先）。空串与 "true" 同为 true 状态。
+/// https://html.spec.whatwg.org/multipage/interaction.html#attr-contenteditable
+fn contenteditable_state(elem: &crate::ElementData) -> Option<bool> {
+    match elem.get_attribute("contenteditable").as_deref() {
+        Some(v) if v.is_empty() || v.eq_ignore_ascii_case("true") => Some(true),
+        Some(v) if v.eq_ignore_ascii_case("false") => Some(false),
+        _ => None,
+    }
+}
+
+/// 判断元素是否可编辑：自身 contenteditable 有显式状态则取之，否则继承最近的
+/// 显式 true 状态祖先（显式 "false" 截断继承）。
+fn is_editable(doc: &Document, node: NodeId) -> bool {
+    let mut current = Some(node);
+    while let Some(id) = current {
+        let Some(crate::NodeKind::Element(elem)) = doc.get(id).map(|n| &n.kind) else {
+            return false;
+        };
+        match contenteditable_state(elem) {
+            Some(state) => return state,
+            None => current = doc.parent_node(id),
+        }
+    }
+    false
+}
+
+/// 判断元素是否为 editing host：自身 contenteditable 处于 true 状态，且无父元素
+/// 或父元素不可编辑（嵌套在 editable 内的 true 状态元素不是 host）。
+/// https://html.spec.whatwg.org/multipage/interaction.html#editing-host
+fn is_editing_host(doc: &Document, node: NodeId, elem: &crate::ElementData) -> bool {
+    if contenteditable_state(elem) != Some(true) {
+        return false;
+    }
+    match doc.parent_node(node) {
+        None => true,
+        Some(parent) => !is_editable(doc, parent),
+    }
 }
 
 #[cfg(test)]
@@ -562,6 +604,63 @@ mod tests {
         let fm = FocusManager::default();
         assert_eq!(fm.focused(), None);
         assert_eq!(fm.focusable_count(), 0);
+    }
+
+    #[test]
+    fn editing_host_is_sequentially_focusable() {
+        // https://html.spec.whatwg.org/multipage/interaction.html#focusable-area
+        // editing host（contenteditable true 状态元素）是 focusable area，参与 Tab 序
+        // （WPT dialog-focusability：`<dialog contenteditable>` 应在文档序中可聚焦）。
+        let doc = parse_html(
+            r#"<html><body>
+              <button id="after3">after</button>
+              <dialog id="dialog4" open contenteditable="true">
+                <button id="within4">button</button>
+              </dialog>
+            </body></html>"#,
+        );
+        let mut focus = FocusManager::new();
+        focus.scan(&doc);
+
+        let ids: Vec<String> = (0..3)
+            .map(|_| {
+                let node = focus.focus_next().expect("focus target");
+                doc.get_attribute(node, "id").expect("id")
+            })
+            .collect();
+        assert_eq!(ids, ["after3", "dialog4", "within4"]);
+    }
+
+    #[test]
+    fn editing_host_shorthand_and_nested_non_host() {
+        // `contenteditable=""` 与 "true" 同为 true 状态（R3187 枚举）；host 内嵌套
+        // editable 元素自身不是 editing host，不单独入 Tab 序。
+        let doc = parse_html(
+            r#"<html><body>
+              <div id="host" contenteditable="">
+                <p id="inner">text</p>
+              </div>
+            </body></html>"#,
+        );
+        let mut focus = FocusManager::new();
+        focus.scan(&doc);
+
+        let node = focus.focus_next().expect("focus target");
+        assert_eq!(doc.get_attribute(node, "id").as_deref(), Some("host"));
+        assert_eq!(focus.focusable_count(), 1);
+    }
+
+    #[test]
+    fn editing_host_excluded_by_inert_ancestor() {
+        // inert 祖先链对 editing host 同样生效（sequential focus navigation 排除）。
+        let doc = parse_html(
+            r#"<html><body>
+              <div inert><div id="ce" contenteditable="true">blocked</div></div>
+            </body></html>"#,
+        );
+        let mut focus = FocusManager::new();
+        focus.scan(&doc);
+        assert_eq!(focus.focusable_count(), 0);
     }
 
     #[test]

@@ -1,0 +1,84 @@
+[2m2026-10-24T22:32:13.502713Z[0m [32m INFO[0m [2mzero_browser[0m[2m:[0m ZeroBrowser starting...
+[2m2026-10-24T22:32:13.502760Z[0m [32m INFO[0m [2mzero_browser[0m[2m:[0m Tabs use zero-renderer child processes
+[2m2026-10-24T22:32:13.502762Z[0m [32m INFO[0m [2mzero_browser[0m[2m:[0m Renderer mode: auto
+[2m2026-10-24T22:32:13.502764Z[0m [32m INFO[0m [2mzero_browser[0m[2m:[0m Starting headless mode on port 41787, viewport: 800x600
+ZeroWeb headless server: ws://127.0.0.1:41787
+DevTools URL: http://127.0.0.1:41787
+[2m2026-10-24T22:32:13.502836Z[0m [32m INFO[0m [2mzero_browser::headless[0m[2m:[0m Headless protocol server listening on ws://127.0.0.1:41787
+[2m2026-10-24T22:32:13.504003Z[0m [32m INFO[0m [2mzero_render_foundation::font::system[0m[2m:[0m Loaded platform primary font [3mpath[0m[2m=[0m"/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf" [3mfont_id[0m[2m=[0m0
+[2m2026-10-24T22:32:13.504715Z[0m [32m INFO[0m [2mzero_render_foundation::font::system[0m[2m:[0m Loaded platform bold-regular font [3mpath[0m[2m=[0m"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf" [3mfont_id[0m[2m=[0m1
+[renderer-1] [2m2026-10-24T22:32:13.504821Z[0m [32m INFO[0m ZeroWeb renderer starting (type=renderer, instance-id=1)
+[2m2026-10-24T22:32:13.504862Z[0m [32m INFO[0m renderer: seccomp 沙箱钩子已启用（P3 占位；完整 OS sandbox 仍为后续）
+[2m2026-10-24T22:32:13.505346Z[0m [32m INFO[0m [2mzero_render_foundation::font::system[0m[2m:[0m Loaded platform bold font [3mpath[0m[2m=[0m"/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" [3mfont_id[0m[2m=[0m2
+[renderer-1] [2m2026-10-24T22:32:13.505704Z[0m [32m INFO[0m Loaded platform primary font [3mpath[0m[2m=[0m"/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf" [3mfont_id[0m[2m=[0m0
+[renderer-1] [2m2026-10-24T22:32:13.506343Z[0m [32m INFO[0m Loaded platform bold-regular font [3mpath[0m[2m=[0m"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf" [3mfont_id[0m[2m=[0m1
+[renderer-1] [2m2026-10-24T22:32:13.506965Z[0m [32m INFO[0m Loaded platform bold font [3mpath[0m[2m=[0m"/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" [3mfont_id[0m[2m=[0m2
+[2m2026-10-24T22:32:13.524028Z[0m [32m INFO[0m [2mzero_render_foundation::font::system[0m[2m:[0m Loaded platform fallback font [3mpath[0m[2m=[0m/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc [3mface_index[0m[2m=[0m2 [3mfont_id[0m[2m=[0m6
+[renderer-1] [2m2026-10-24T22:32:13.526214Z[0m [32m INFO[0m Loaded platform fallback font [3mpath[0m[2m=[0m/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc [3mface_index[0m[2m=[0m2 [3mfont_id[0m[2m=[0m6
+[2m2026-10-24T22:32:13.531884Z[0m [32m INFO[0m [2mzero_render_foundation::font::system[0m[2m:[0m Loaded platform fallback font [3mpath[0m[2m=[0m/usr/share/fonts/truetype/wqy/wqy-microhei.ttc [3mface_index[0m[2m=[0m0 [3mfont_id[0m[2m=[0m8
+[renderer-1] [2m2026-10-24T22:32:13.533682Z[0m [32m INFO[0m Loaded platform fallback font [3mpath[0m[2m=[0m/usr/share/fonts/truetype/wqy/wqy-microhei.ttc [3mface_index[0m[2m=[0m0 [3mfont_id[0m[2m=[0m8
+[renderer-1] [2m2026-10-24T22:32:13.546990Z[0m [32m INFO[0m Loaded platform fallback font [3mpath[0m[2m=[0m/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc [3mface_index[0m[2m=[0m0 [3mfont_id[0m[2m=[0m9
+[2m2026-10-24T22:32:13.548493Z[0m [32m INFO[0m [2mzero_render_foundation::font::system[0m[2m:[0m Loaded platform fallback font [3mpath[0m[2m=[0m/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc [3mface_index[0m[2m=[0m0 [3mfont_id[0m[2m=[0m9
+[2m2026-10-24T22:32:13.548570Z[0m [32m INFO[0m [2mzero_browser::headless[0m[2m:[0m Headless startup navigation: http://127.0.0.1:34295/bg02-media-autoplay.html
+[renderer-1] [2m2026-10-24T22:32:13.548546Z[0m [32m INFO[0m 渲染进程 1 启动，等待 IPC 消息...
+[renderer-1] [2m2026-10-24T22:32:13.548719Z[0m [32m INFO[0m 导航到: http://127.0.0.1:34295/bg02-media-autoplay.html (GET)
+[renderer-1] [2m2026-10-24T22:32:13.612761Z[0m [32m INFO[0m document reset residue stats [3mseq[0m[2m=[0m0 [3mtimers_pending[0m[2m=[0m0 [3mfetch_abandoned[0m[2m=[0m0 [3mcommands_retained[0m[2m=[0m6
+[renderer-1] [2m2026-10-24T22:32:13.630578Z[0m [32m INFO[0m page load: fetch document [3murl[0m[2m=[0mhttp://127.0.0.1:34295/bg02-media-autoplay.html
+[2m2026-10-24T22:32:13.630608Z[0m [32m INFO[0m renderer fetch start [3mrequest_id[0m[2m=[0m1 [3murl[0m[2m=[0m"http://127.0.0.1:34295/bg02-media-autoplay.html" [3mkind[0m[2m=[0m"document" [3mpriority[0m[2m=[0m4
+[2m2026-10-24T22:32:13.632403Z[0m [32m INFO[0m [2mzero_net::fetch_scheduler[0m[2m:[0m HTTP fetch start [3murl[0m[2m=[0mhttp://127.0.0.1:34295/bg02-media-autoplay.html [3morigin[0m[2m=[0mhttp://127.0.0.1:34295 [3mpriority[0m[2m=[0mFetchPriority(4)
+[2m2026-10-24T22:32:13.635657Z[0m [32m INFO[0m [2mzero_net::fetch_scheduler[0m[2m:[0m HTTP fetch done [3murl[0m[2m=[0mhttp://127.0.0.1:34295/bg02-media-autoplay.html [3mstatus[0m[2m=[0m200 [3mbytes[0m[2m=[0m1224
+[renderer-1] [2m2026-10-24T22:32:13.636724Z[0m [32m INFO[0m document ready, HTML skeleton render [3murl[0m[2m=[0mhttp://127.0.0.1:34295/bg02-media-autoplay.html [3mstage[0m[2m=[0mFirstPaint
+[2m2026-10-24T22:32:13.636753Z[0m [32m INFO[0m page load: budget render start [3murl[0m[2m=[0mhttp://127.0.0.1:34295/bg02-media-autoplay.html [3mstage[0m[2m=[0mFirstPaint
+[renderer-1] [2m2026-10-24T22:32:13.637733Z[0m [32m INFO[0m page load: budget render complete [3murl[0m[2m=[0mhttp://127.0.0.1:34295/bg02-media-autoplay.html [3mstage[0m[2m=[0mFirstPaint
+[renderer-1] [2m2026-10-24T22:32:13.637952Z[0m [32m INFO[0m renderer fetch start [3mrequest_id[0m[2m=[0m2 [3murl[0m[2m=[0m"http://127.0.0.1:34295/media/sample-mp3.mp3" [3mkind[0m[2m=[0m"media" [3mpriority[0m[2m=[0m2
+[renderer-1] [2m2026-10-24T22:32:13.638000Z[0m [32m INFO[0m renderer fetch start [3mrequest_id[0m[2m=[0m3 [3murl[0m[2m=[0m"http://127.0.0.1:34295/media/sample-mp4-h264.mp4" [3mkind[0m[2m=[0m"media" [3mpriority[0m[2m=[0m2
+[renderer-1] [2m2026-10-24T22:32:13.638039Z[0m [32m INFO[0m page load: fetch images and resource elements [3murl[0m[2m=[0mhttp://127.0.0.1:34295/bg02-media-autoplay.html [3mcount[0m[2m=[0m0 [3mresources[0m[2m=[0m2 [3mlazy[0m[2m=[0m0
+[renderer-1] [2m2026-10-24T22:32:13.638063Z[0m [32m INFO[0m progressive paint publish [3murl[0m[2m=[0mhttp://127.0.0.1:34295/bg02-media-autoplay.html [3mstage[0m[2m=[0mFetchingImages
+[2m2026-10-24T22:32:13.638672Z[0m [32m INFO[0m [2mzero_net::fetch_scheduler[0m[2m:[0m HTTP fetch start [3murl[0m[2m=[0mhttp://127.0.0.1:34295/media/sample-mp3.mp3 [3morigin[0m[2m=[0mhttp://127.0.0.1:34295 [3mpriority[0m[2m=[0mFetchPriority(2)
+[2m2026-10-24T22:32:13.638763Z[0m [32m INFO[0m [2mzero_net::fetch_scheduler[0m[2m:[0m HTTP fetch start [3murl[0m[2m=[0mhttp://127.0.0.1:34295/media/sample-mp4-h264.mp4 [3morigin[0m[2m=[0mhttp://127.0.0.1:34295 [3mpriority[0m[2m=[0mFetchPriority(2)
+[2m2026-10-24T22:32:13.640173Z[0m [32m INFO[0m [2mzero_net::fetch_scheduler[0m[2m:[0m HTTP fetch done [3murl[0m[2m=[0mhttp://127.0.0.1:34295/media/sample-mp4-h264.mp4 [3mstatus[0m[2m=[0m200 [3mbytes[0m[2m=[0m94294
+[2m2026-10-24T22:32:13.680609Z[0m [32m INFO[0m [2mzero_net::fetch_scheduler[0m[2m:[0m HTTP fetch done [3murl[0m[2m=[0mhttp://127.0.0.1:34295/media/sample-mp3.mp3 [3mstatus[0m[2m=[0m200 [3mbytes[0m[2m=[0m16552
+[renderer-1] [2m2026-10-24T22:32:13.808031Z[0m [33m WARN[0m skipped 44 bytes of junk at 0
+[renderer-1] [2m2026-10-24T22:32:13.808065Z[0m [32m INFO[0m using xing header for duration
+[renderer-1] [2m2026-10-24T22:32:13.808115Z[0m [33m WARN[0m skipped 4 bytes of junk at 0
+[renderer-1] [2m2026-10-24T22:32:13.808146Z[0m [32m INFO[0m stream is seekable with len=94294 bytes.
+[renderer-1] [2m2026-10-24T22:32:13.808393Z[0m [32m INFO[0m page load: budget render start [3murl[0m[2m=[0mhttp://127.0.0.1:34295/bg02-media-autoplay.html [3mstage[0m[2m=[0mComplete
+[renderer-1] [2m2026-10-24T22:32:13.809246Z[0m [32m INFO[0m page load: budget render complete [3murl[0m[2m=[0mhttp://127.0.0.1:34295/bg02-media-autoplay.html [3mstage[0m[2m=[0mComplete
+[renderer-1] [2m2026-10-24T22:32:13.809283Z[0m [32m INFO[0m progressive paint publish [3murl[0m[2m=[0mhttp://127.0.0.1:34295/bg02-media-autoplay.html [3mstage[0m[2m=[0mComplete
+[2m2026-10-24T22:32:13.810137Z[0m [32m INFO[0m [2mzero_browser::headless[0m[2m:[0m Connection from 127.0.0.1:38648
+[renderer-1] [2m2026-10-24T22:32:13.816640Z[0m [32m INFO[0m 页面渲染完成: http://127.0.0.1:34295/bg02-media-autoplay.html
+[2m2026-10-24T22:32:13.937363Z[0m [32m INFO[0m [2mzero_browser::headless[0m[2m:[0m Connection from 127.0.0.1:38652
+[2m2026-10-24T22:32:13.949913Z[0m [32m INFO[0m [2mzero_browser::headless[0m[2m:[0m Connection from 127.0.0.1:38668
+[renderer-1] [2m2026-10-24T22:32:13.959827Z[0m [32m INFO[0m 导航到: http://127.0.0.1:34295/bg02-media-autoplay.html (GET)
+[renderer-1] [2m2026-10-24T22:32:13.989113Z[0m [32m INFO[0m document reset residue stats [3mseq[0m[2m=[0m31 [3mtimers_pending[0m[2m=[0m1 [3mtimer_nearest_expiry_ms[0m[2m=[0m261 [3mfetch_abandoned[0m[2m=[0m0 [3mcommands_retained[0m[2m=[0m0
+[renderer-1] [2m2026-10-24T22:32:14.006506Z[0m [32m INFO[0m page load: fetch document [3murl[0m[2m=[0mhttp://127.0.0.1:34295/bg02-media-autoplay.html
+[2m2026-10-24T22:32:14.006541Z[0m [32m INFO[0m renderer fetch start [3mrequest_id[0m[2m=[0m4 [3murl[0m[2m=[0m"http://127.0.0.1:34295/bg02-media-autoplay.html" [3mkind[0m[2m=[0m"document" [3mpriority[0m[2m=[0m4
+[2m2026-10-24T22:32:14.007834Z[0m [32m INFO[0m [2mzero_net::fetch_scheduler[0m[2m:[0m HTTP fetch start [3murl[0m[2m=[0mhttp://127.0.0.1:34295/bg02-media-autoplay.html [3morigin[0m[2m=[0mhttp://127.0.0.1:34295 [3mpriority[0m[2m=[0mFetchPriority(4)
+[2m2026-10-24T22:32:14.008682Z[0m [32m INFO[0m [2mzero_net::fetch_scheduler[0m[2m:[0m HTTP fetch done [3murl[0m[2m=[0mhttp://127.0.0.1:34295/bg02-media-autoplay.html [3mstatus[0m[2m=[0m200 [3mbytes[0m[2m=[0m1224
+[renderer-1] [2m2026-10-24T22:32:14.010080Z[0m [32m INFO[0m document ready, HTML skeleton render [3murl[0m[2m=[0mhttp://127.0.0.1:34295/bg02-media-autoplay.html [3mstage[0m[2m=[0mFirstPaint
+[2m2026-10-24T22:32:14.010109Z[0m [32m INFO[0m page load: budget render start [3murl[0m[2m=[0mhttp://127.0.0.1:34295/bg02-media-autoplay.html [3mstage[0m[2m=[0mFirstPaint
+[renderer-1] [2m2026-10-24T22:32:14.010783Z[0m [32m INFO[0m page load: budget render complete [3murl[0m[2m=[0mhttp://127.0.0.1:34295/bg02-media-autoplay.html [3mstage[0m[2m=[0mFirstPaint
+[renderer-1] [2m2026-10-24T22:32:14.011003Z[0m [32m INFO[0m renderer fetch start [3mrequest_id[0m[2m=[0m5 [3murl[0m[2m=[0m"http://127.0.0.1:34295/media/sample-mp3.mp3" [3mkind[0m[2m=[0m"media" [3mpriority[0m[2m=[0m2
+[renderer-1] [2m2026-10-24T22:32:14.011054Z[0m [32m INFO[0m renderer fetch start [3mrequest_id[0m[2m=[0m6 [3murl[0m[2m=[0m"http://127.0.0.1:34295/media/sample-mp4-h264.mp4" [3mkind[0m[2m=[0m"media" [3mpriority[0m[2m=[0m2
+[renderer-1] [2m2026-10-24T22:32:14.011093Z[0m [32m INFO[0m page load: fetch images and resource elements [3murl[0m[2m=[0mhttp://127.0.0.1:34295/bg02-media-autoplay.html [3mcount[0m[2m=[0m0 [3mresources[0m[2m=[0m2 [3mlazy[0m[2m=[0m0
+[2m2026-10-24T22:32:14.011107Z[0m [32m INFO[0m progressive paint publish [3murl[0m[2m=[0mhttp://127.0.0.1:34295/bg02-media-autoplay.html [3mstage[0m[2m=[0mFetchingImages
+[2m2026-10-24T22:32:14.012091Z[0m [32m INFO[0m [2mzero_net::fetch_scheduler[0m[2m:[0m HTTP fetch start [3murl[0m[2m=[0mhttp://127.0.0.1:34295/media/sample-mp3.mp3 [3morigin[0m[2m=[0mhttp://127.0.0.1:34295 [3mpriority[0m[2m=[0mFetchPriority(2)
+[2m2026-10-24T22:32:14.012162Z[0m [32m INFO[0m [2mzero_net::fetch_scheduler[0m[2m:[0m HTTP fetch start [3murl[0m[2m=[0mhttp://127.0.0.1:34295/media/sample-mp4-h264.mp4 [3morigin[0m[2m=[0mhttp://127.0.0.1:34295 [3mpriority[0m[2m=[0mFetchPriority(2)
+[2m2026-10-24T22:32:14.013754Z[0m [32m INFO[0m [2mzero_net::fetch_scheduler[0m[2m:[0m HTTP fetch done [3murl[0m[2m=[0mhttp://127.0.0.1:34295/media/sample-mp4-h264.mp4 [3mstatus[0m[2m=[0m200 [3mbytes[0m[2m=[0m94294
+[2m2026-10-24T22:32:14.056560Z[0m [32m INFO[0m [2mzero_net::fetch_scheduler[0m[2m:[0m HTTP fetch done [3murl[0m[2m=[0mhttp://127.0.0.1:34295/media/sample-mp3.mp3 [3mstatus[0m[2m=[0m200 [3mbytes[0m[2m=[0m16552
+[renderer-1] [2m2026-10-24T22:32:14.173732Z[0m [33m WARN[0m skipped 44 bytes of junk at 0
+[2m2026-10-24T22:32:14.173765Z[0m [32m INFO[0m using xing header for duration
+[renderer-1] [2m2026-10-24T22:32:14.173802Z[0m [33m WARN[0m skipped 4 bytes of junk at 0
+[2m2026-10-24T22:32:14.173805Z[0m [32m INFO[0m stream is seekable with len=94294 bytes.
+[renderer-1] [2m2026-10-24T22:32:14.173935Z[0m [32m INFO[0m page load: budget render start [3murl[0m[2m=[0mhttp://127.0.0.1:34295/bg02-media-autoplay.html [3mstage[0m[2m=[0mComplete
+[renderer-1] [2m2026-10-24T22:32:14.174577Z[0m [32m INFO[0m page load: budget render complete [3murl[0m[2m=[0mhttp://127.0.0.1:34295/bg02-media-autoplay.html [3mstage[0m[2m=[0mComplete
+[renderer-1] [2m2026-10-24T22:32:14.174613Z[0m [32m INFO[0m progressive paint publish [3murl[0m[2m=[0mhttp://127.0.0.1:34295/bg02-media-autoplay.html [3mstage[0m[2m=[0mComplete
+[renderer-1] [2m2026-10-24T22:32:14.179870Z[0m [32m INFO[0m 页面渲染完成: http://127.0.0.1:34295/bg02-media-autoplay.html
+[mux-debug] slow conn step 224ms peer 127.0.0.1:38668
+[mux-debug] slow tick 224ms conns=1
+[mux-debug] slow conn step 52ms peer 127.0.0.1:38668
+[mux-debug] slow conn step 50ms peer 127.0.0.1:38668
+[mux-debug] slow conn step 56ms peer 127.0.0.1:38668
+[mux-debug] slow conn step 52ms peer 127.0.0.1:38668
+[mux-debug] slow conn step 50ms peer 127.0.0.1:38668
+[2m2026-10-24T22:32:48.731770Z[0m [31mERROR[0m [2mzero_browser::headless[0m[2m:[0m WebSocket read error: WebSocket protocol error: Connection reset without closing handshake

@@ -337,6 +337,7 @@ impl PropertyRegistry {
             "background-size" => Some(BackgroundSize(vec![BackgroundSizeComputedValue::Auto])),
             "background-attachment" => Some(BackgroundAttachment(BackgroundAttachmentComputedValue::Scroll)),
             "background-clip" => Some(BackgroundClip(BackgroundClipComputedValue::BorderBox)),
+            "background-blend-mode" => Some(BackgroundBlendMode(vec![MixBlendModeComputedValue::Normal])),
             "background-origin" => Some(BackgroundOrigin(BackgroundOriginComputedValue::PaddingBox)),
 
             // Border Image
@@ -678,6 +679,7 @@ impl PropertyRegistry {
             "background-size",
             "background-attachment",
             "background-clip",
+            "background-blend-mode",
             "background-origin",
             "border-image-source",
             "border-image-slice",

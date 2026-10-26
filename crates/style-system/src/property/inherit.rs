@@ -287,6 +287,10 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.background_clip = parent.background_clip.clone();
             true
         }
+        "background-blend-mode" => {
+            child.background_blend_mode = parent.background_blend_mode.clone();
+            true
+        }
         "background-origin" => {
             child.background_origin = parent.background_origin.clone();
             true
@@ -1545,6 +1549,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "background-clip" => {
             style.background_clip = default_style.background_clip;
+            true
+        }
+        "background-blend-mode" => {
+            style.background_blend_mode = default_style.background_blend_mode.clone();
             true
         }
         "background-origin" => {

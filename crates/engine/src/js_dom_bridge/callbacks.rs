@@ -34,6 +34,16 @@ thread_local! {
         RefCell<Option<(ViewDocKey, zero_dom::Document)>> = const { RefCell::new(None) };
 }
 
+/// T13 S4：清空当前线程的查询视图文档缓存槽（文档代际复位收口调用）。
+///
+/// 条目持有 `(dom_arc, mut_arc)` Arc 克隆 + 整棵解析视图 `Document`，滞留至同线程
+/// 下次同键查询前；导航复位时显式置空提前释放（单槽 cache 语义不变，下次查询重建）。
+pub fn clear_view_doc_cache() {
+    VIEW_DOC_CACHE.with(|slot| {
+        *slot.borrow_mut() = None;
+    });
+}
+
 /// [`VIEW_DOC_CACHE`] 条目键（命中判定字段 + 增量链前提）。
 struct ViewDocKey {
     dom_arc: Arc<std::sync::Mutex<String>>,
@@ -2895,6 +2905,17 @@ pub fn register_dom_callbacks(
             }),
         );
     }
+
+    // R5254（html-semantics M2 切片 50，2026-10-24）：主文档初始 HTML 的 details
+    // parser-open toggle 补偿两段式。spec attribute change steps 随 parser 逐元素
+    // 运行——解析器添加 `open` 也排 toggle task；innerHTML/createElement-HTML/包装
+    // 世界解析面已在各自解析点调 `__zwDetailsScan4100(…, true)`，唯主文档初始属性
+    // 由 host 解析直建、不经任何 JS 写路径。注册期（页面脚本前）标记初始 open 身份
+    // 集 + DOMContentLoaded（解析完成点，页面脚本必已跑完）只对「初始 open 且当前
+    // 仍 open」补派——单段直扫的两难见 part03 函数注记。
+    let _ = sandbox.execute(
+        "try { if (typeof __zwDetailsInitOpenMark5254 === 'function') __zwDetailsInitOpenMark5254(); if (typeof document !== 'undefined' && document && typeof document.addEventListener === 'function') document.addEventListener('DOMContentLoaded', function () { try { if (typeof __zwDetailsInitOpenFire5254 === 'function') __zwDetailsInitOpenFire5254(); } catch (_eR5254d) {} }, true); } catch (_eR5254) {}",
+    );
 }
 
 thread_local! {

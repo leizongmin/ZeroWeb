@@ -122,6 +122,35 @@ impl ImageData {
         }
     }
 
+    /// 从 RGBA 字节数据创建图片（跳过纯色检测——A3 Fix C2：视频帧插入路径专用，
+    /// 视频帧恒非纯色，全帧逐像素扫描是每帧一次的纯开销；content_hash 照算——
+    /// GPU 纹理缓存键/指纹依赖不破。图片解码路径保持 `from_rgba` 扫描：UI 图片
+    /// 纯色常见，纯色 fast-path 对其有价值）。
+    ///
+    /// # Errors
+    /// 如果数据长度不等于 `width * height * 4` 则返回错误
+    pub fn from_rgba_variable(pixels: Vec<u8>, width: u32, height: u32) -> Result<Self, String> {
+        let expected = (width as usize) * (height as usize) * 4;
+        if pixels.len() != expected {
+            return Err(format!(
+                "pixel data size mismatch: expected {expected}, got {}",
+                pixels.len()
+            ));
+        }
+        let content_hash = hash_pixels(&pixels);
+        Ok(Self {
+            pixels,
+            width,
+            height,
+            content_hash,
+            solid_color: None,
+            intrinsic_ratio: None,
+            no_ratio: None,
+            computed_intrinsic: None,
+            svg_source: None,
+        })
+    }
+
     /// 获取指定位置的像素 (R, G, B, A)。
     ///
     /// 越界坐标钳制到最近有效像素；像素缓冲与宽高不一致时返回透明（避免渲染崩溃）。
@@ -188,8 +217,9 @@ impl ImageData {
 /// 图片缓存条目
 #[derive(Debug)]
 struct CacheEntry {
-    /// 图片数据
-    data: ImageData,
+    /// 图片数据（A3 Fix C4：`Arc` 共享句柄——快照发布路径引用计数替代全量深拷贝；
+    /// 像素在插入后不可变（R3254-M2，content_hash 复用前提），共享语义安全）。
+    data: Arc<ImageData>,
     /// 引用计数
     ref_count: u32,
     /// 最近访问的代数（用于 GC）
@@ -1188,7 +1218,10 @@ impl ImageCache {
     /// R34xx：快照全部缓存条目（key hash → ImageData clone），供 host 回调查询
     ///（webview 的 __zw_get_image_wire——headless canvas drawImage img 源 G5）。
     pub fn snapshot_entries(&self) -> std::collections::HashMap<u64, ImageData> {
-        self.entries.iter().map(|(k, e)| (k.0, e.data.clone())).collect()
+        self.entries
+            .iter()
+            .map(|(k, e)| (k.0, e.data.as_ref().clone()))
+            .collect()
     }
 
     /// 插入图片数据，返回缓存键
@@ -1197,7 +1230,7 @@ impl ImageCache {
         self.next_key += 1;
 
         let entry = CacheEntry {
-            data,
+            data: Arc::new(data),
             ref_count: 1,
             last_access_gen: self.current_gen,
         };
@@ -1211,7 +1244,7 @@ impl ImageCache {
     /// 外部加载器需要用相同的 key 将解码后的图片数据注入缓存。
     pub fn insert_with_key(&mut self, key: ImageKey, data: ImageData) {
         let entry = CacheEntry {
-            data,
+            data: Arc::new(data),
             ref_count: 1,
             last_access_gen: self.current_gen,
         };
@@ -1223,7 +1256,7 @@ impl ImageCache {
         let entry = self.entries.get_mut(key)?;
         entry.ref_count = entry.ref_count.saturating_add(1);
         entry.last_access_gen = self.current_gen;
-        Some(&entry.data)
+        Some(entry.data.as_ref())
     }
 
     /// R3761：按目标尺寸取 SVG 栅格化结果（矢量重栅格化，替代位图插值）。
@@ -1331,12 +1364,26 @@ impl ImageCache {
     }
 
     /// 清空所有缓存
+    ///
+    /// T13 S1：`svg_rasterized` 一并收编——该表此前只被 FIFO 挤出，旧文档的 SVG
+    /// 重栅格结果（≤8 条 × 4Mpx≈16MB）跨导航滞留（prepare_document_state 只调
+    /// clear）。同文档重栅格化按需重算，纯缓存语义无损。
     pub fn clear(&mut self) {
         self.entries.clear();
+        self.svg_rasterized.clear();
         self.current_gen += 1;
     }
 
-    /// 复制当前缓存内容供 UI 线程快照使用（不共享可变状态）。
+    /// SVG 重栅格化缓存条目数（T13 S7 探针观测腿：`ZEROWEB_MEM_PROBE=1` 打点）。
+    pub fn svg_rasterized_len(&self) -> usize {
+        self.svg_rasterized.len()
+    }
+
+    /// 共享句柄快照供 UI 线程发布路径使用（A3 Fix C4：`Arc` 引用计数替代全缓存
+    /// 像素深拷贝——视频播放期每帧发布的 O(entries) clone 曾为全像素复制量级）。
+    /// 快照为瞬态只读对象（发布后即弃）；像素在插入后不可变（R3254-M2，
+    /// content_hash 复用前提），共享语义安全。LRU/字节预算按句柄自计（与现行为
+    /// 等价，无核算漂移）。
     pub fn duplicate_for_snapshot(&self) -> Self {
         let mut out = Self::new(self.max_entries, self.max_bytes);
         out.next_key = self.next_key;
@@ -1344,7 +1391,7 @@ impl ImageCache {
             out.entries.insert(
                 key.clone(),
                 CacheEntry {
-                    data: entry.data.clone(),
+                    data: Arc::clone(&entry.data),
                     ref_count: 1,
                     last_access_gen: 0,
                 },
@@ -2723,6 +2770,26 @@ mod tests {
         assert!((bottom - 150.0).abs() < 1.0, "bottom 应 150，got {bottom}");
     }
 
+    /// T13 S1：`clear()` 收编 `svg_rasterized`——旧文档 SVG 重栅格缓存不跨导航滞留
+    /// （prepare_document_state 走 clear()，此前该表只被 FIFO 挤出）。
+    #[test]
+    fn t13_clear_drops_svg_rasterized() {
+        let mut cache = ImageCache::default();
+        let mut data = make_image(8, 8, 255);
+        data.svg_source = Some(
+            b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"8\" height=\"8\">\
+              <rect width=\"8\" height=\"8\" fill=\"green\"/></svg>"
+                .to_vec()
+                .into(),
+        );
+        let key = cache.insert(data);
+        // 放大（16×16 > 固有 8×8）触发重栅格化入缓存。
+        assert!(cache.get_rasterized(&key, 16, 16).is_some(), "放大应命中重栅格化路径");
+        assert_eq!(cache.svg_rasterized_len(), 1);
+        cache.clear();
+        assert_eq!(cache.svg_rasterized_len(), 0, "clear 必须一并清 svg_rasterized");
+    }
+
     /// R3762：端到端——无尺寸 SVG 栅格化到目标尺寸后 viewport = 目标（50% 宽 rect
     /// 占据目标宽一半），而非 usvg 默认 100×100 的 50%。
     #[test]
@@ -3006,6 +3073,23 @@ mod tests {
 
         let _ = cache.get(&key);
         assert_eq!(cache.ref_count(&key), Some(3));
+    }
+
+    #[test]
+    fn test_snapshot_shares_pixel_handle_a3c4() {
+        // A3 Fix C4（DESIGN §8.2）：duplicate_for_snapshot 为 Arc 共享句柄快照——
+        // 同条目像素指针一致（零拷贝，每帧发布路径 O(entries) 引用计数）；源缓存
+        // clear（强计数归零）后快照读取不受影响（像素不可变 R3254-M2）。
+        let mut cache = ImageCache::new(10, 1024 * 1024);
+        let key = cache.insert(make_image(3, 3, 7));
+        let snapshot = cache.duplicate_for_snapshot();
+        let src_ptr = cache.entries.get(&key).unwrap().data.pixels.as_ptr() as usize;
+        let snap_ptr = snapshot.entries.get(&key).unwrap().data.pixels.as_ptr() as usize;
+        assert_eq!(src_ptr, snap_ptr, "快照应与源共享像素句柄（零拷贝）");
+        cache.clear();
+        let snap = snapshot.entries.get(&key).unwrap();
+        assert_eq!(snap.data.pixels.len(), 3 * 3 * 4, "源清空后快照像素不受影响");
+        assert_eq!(snap.data.content_hash, hash_pixels(&snap.data.pixels));
     }
 
     #[test]

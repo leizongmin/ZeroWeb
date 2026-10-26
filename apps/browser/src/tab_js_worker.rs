@@ -35,7 +35,7 @@ fn channel_timeout_for(exec_timeout_ms: u64) -> Duration {
 }
 
 type ScriptFn = Arc<dyn Fn(&str, u64) -> Result<String, String> + Send + Sync>;
-type ModuleFn = Arc<dyn Fn(&str, &str, &[(String, String)]) -> Result<String, String> + Send + Sync>;
+type ModuleFn = Arc<dyn Fn(&str, &str, &str, &[(String, String)]) -> Result<String, String> + Send + Sync>;
 type ExecutorFn = Arc<dyn Fn(&str) -> Result<String, String> + Send + Sync>;
 
 enum JsWorkerCommand {
@@ -47,6 +47,8 @@ enum JsWorkerCommand {
     ExecuteModule {
         source: String,
         url: String,
+        /// s94：`__moduleCache` 记忆化键（内联每元素独立键 / 外链 src 绝对 URL），与 url 分离。
+        cache_key: String,
         deps: Vec<(String, String)>,
         reply: Sender<Result<String, String>>,
     },
@@ -105,6 +107,9 @@ pub struct TabJsWorkerHandle {
     element_from_point_cache: ElementFromPointCache,
     /// R3254-M10：页面 JS focus()/blur() 变更队列（TabManager 消费同步 event_targets）。
     focus_changes: Arc<std::sync::Mutex<Vec<Option<String>>>>,
+    /// T5/P10：页面 history 遍历请求队列（tab_worker drain 后经
+    /// `TabWorkerMessage::HistoryTraverse` 提交 TabManager → app 返回路径）。
+    history_traverses: Arc<std::sync::Mutex<Vec<i32>>>,
 }
 
 impl TabJsWorkerHandle {
@@ -115,6 +120,10 @@ impl TabJsWorkerHandle {
         let handle_selector_map = new_handle_selector_map();
         let element_from_point_cache = new_element_from_point_cache();
         let focus_changes: Arc<std::sync::Mutex<Vec<Option<String>>>> = Arc::default();
+        // T5/P10 页面 history 遍历桥——queue 与 tab_worker 共享，bridge 移入 worker 线程注册
+        // __zw_request_history_traverse。
+        let hist_bridge = zero_engine::HistoryBridge::new();
+        let history_traverses = hist_bridge.queue();
         let (cmd_tx, cmd_rx) = mpsc::channel();
         let cmd_for_exec = cmd_tx.clone();
         let cmd_for_module = cmd_tx.clone();
@@ -138,6 +147,7 @@ impl TabJsWorkerHandle {
                     rect_snapshot_for_worker,
                     handle_selector_map_for_worker,
                     element_from_point_cache_for_worker,
+                    hist_bridge,
                     import_map_for_worker,
                 )
             })
@@ -157,20 +167,23 @@ impl TabJsWorkerHandle {
                 .map_err(|e| e.to_string())?
         });
 
-        let module_executor: ModuleFn = Arc::new(move |source: &str, url: &str, deps: &[(String, String)]| {
-            let (reply_tx, reply_rx) = mpsc::channel();
-            cmd_for_module
-                .send(JsWorkerCommand::ExecuteModule {
-                    source: source.to_string(),
-                    url: url.to_string(),
-                    deps: deps.to_vec(),
-                    reply: reply_tx,
-                })
-                .map_err(|e| e.to_string())?;
-            reply_rx
-                .recv_timeout(channel_timeout_for(TAB_JS_EVENT_TIMEOUT_MS))
-                .map_err(|e| e.to_string())?
-        });
+        let module_executor: ModuleFn = Arc::new(
+            move |source: &str, url: &str, cache_key: &str, deps: &[(String, String)]| {
+                let (reply_tx, reply_rx) = mpsc::channel();
+                cmd_for_module
+                    .send(JsWorkerCommand::ExecuteModule {
+                        source: source.to_string(),
+                        url: url.to_string(),
+                        cache_key: cache_key.to_string(),
+                        deps: deps.to_vec(),
+                        reply: reply_tx,
+                    })
+                    .map_err(|e| e.to_string())?;
+                reply_rx
+                    .recv_timeout(channel_timeout_for(TAB_JS_EVENT_TIMEOUT_MS))
+                    .map_err(|e| e.to_string())?
+            },
+        );
 
         Self {
             cmd_tx,
@@ -182,6 +195,7 @@ impl TabJsWorkerHandle {
             handle_selector_map,
             element_from_point_cache,
             focus_changes,
+            history_traverses,
         }
     }
 
@@ -196,9 +210,15 @@ impl TabJsWorkerHandle {
         (self.executor)(script, PAGE_SCRIPT_TIMEOUT_MS)
     }
 
-    /// 执行 ES module（含依赖注册表）。
-    pub fn execute_module(&self, source: &str, url: &str, deps: &[(String, String)]) -> Result<String, String> {
-        (self.module_executor)(source, url, deps)
+    /// 执行 ES module（含依赖注册表）；`cache_key` 语义见 [`zero_page_runtime::JsExecutor::execute_module`]。
+    pub fn execute_module(
+        &self,
+        source: &str,
+        url: &str,
+        cache_key: &str,
+        deps: &[(String, String)],
+    ) -> Result<String, String> {
+        (self.module_executor)(source, url, cache_key, deps)
     }
 
     /// 在 JS 线程执行脚本（不经 WebView 包装）。
@@ -234,6 +254,12 @@ impl TabJsWorkerHandle {
     /// `TabWorkerMessage::FocusChanged` 同步 TabManager 的 event_targets。
     pub fn focus_changes(&self) -> Arc<std::sync::Mutex<Vec<Option<String>>>> {
         Arc::clone(&self.focus_changes)
+    }
+
+    /// T5/P10：页面 history 遍历请求队列句柄——tab_worker drain 后经
+    /// `TabWorkerMessage::HistoryTraverse` 提交 TabManager → app 返回路径。
+    pub fn pending_history_traverses(&self) -> Arc<std::sync::Mutex<Vec<i32>>> {
+        Arc::clone(&self.history_traverses)
     }
 
     /// P1a gBCR：共享 layout-rect snapshot 句柄——tab_worker render 后经
@@ -386,6 +412,7 @@ fn refresh_worker_native_dom_source(
     }
 }
 
+#[allow(clippy::too_many_arguments)] // Thread-owned bridges are explicit at the single worker bootstrap boundary.
 fn js_worker_main(
     cmd_rx: Receiver<JsWorkerCommand>,
     cmd_tx: Sender<JsWorkerCommand>,
@@ -393,6 +420,7 @@ fn js_worker_main(
     rect_snapshot: LayoutRectSnapshot,
     handle_selector_map: HandleSelectorMap,
     element_from_point_cache: ElementFromPointCache,
+    hist_bridge: zero_engine::HistoryBridge,
     import_map: Arc<std::sync::Mutex<Option<ImportMap>>>,
 ) {
     let js_config = SandboxConfig {
@@ -466,6 +494,9 @@ fn js_worker_main(
     // （子线程 sleep + resolver.resolve → __zwResolveCallback 调用 JS 回调）。
     let timer_bridge = TimerBridge::new(resolver);
     timer_bridge.register(&mut *sandbox);
+    // T5/P10 页面 history 遍历桥——__zw_request_history_traverse 回调 push delta 到共享队列
+    //（tab_worker drain 后经 TabWorkerMessage::HistoryTraverse 提交 app 返回路径）。
+    hist_bridge.register(&mut *sandbox);
     // js-dom R386：原生绑定 install 踪迹（bootstrap install 置 true；context 重建后
     // 重 install 刷新）。tab worker 不做 reset_context（持久 context 全生命周期），
     // 但守卫位形态与 renderer worker 一致。
@@ -491,12 +522,14 @@ fn js_worker_main(
             JsWorkerCommand::ExecuteModule {
                 source,
                 url,
+                cache_key,
                 deps,
                 reply,
             } => {
                 // P6：按本代页面 import map 编译（裸说明符 import 经映射键命中注册模块）。
                 let map_opt = import_map.lock().ok().and_then(|g| g.clone());
-                let result = execute_module_in_sandbox(&mut *sandbox, &source, &url, &deps, map_opt.as_ref());
+                let result =
+                    execute_module_in_sandbox(&mut *sandbox, &source, &url, &cache_key, &deps, map_opt.as_ref());
                 let _ = reply.send(result);
             }
             JsWorkerCommand::SetDomSnapshot { html, url } => {
@@ -674,6 +707,7 @@ fn execute_module_in_sandbox(
     sandbox: &mut dyn zero_script_sandbox::Sandbox,
     source: &str,
     url: &str,
+    cache_key: &str,
     deps: &[(String, String)],
     import_map: Option<&ImportMap>,
 ) -> Result<String, String> {
@@ -688,7 +722,7 @@ fn execute_module_in_sandbox(
     // R5182：入口（当前 script 元素的模块）不在 prelude 急切求值——由 transformed 体承担，
     // 模块体恰好执行一次；__moduleCache 挂 globalThis 跨元素共享、随 reset_context 按文档复位。
     let prelude = build_module_runtime_prelude(&registry, Some(url)).map_err(|e| e.to_string())?;
-    let transformed = compile_module_script(source, url, &registry).map_err(|e| e.to_string())?;
+    let transformed = compile_module_script(source, url, cache_key, &registry).map_err(|e| e.to_string())?;
     let full = format!("{prelude}\n{transformed}");
     sandbox.execute(&full).map(|r| r.value).map_err(|e| e.to_string())
 }
@@ -826,8 +860,14 @@ impl zero_page_runtime::JsExecutor for TabJsWorkerHandle {
     fn execute_script_direct(&self, script: &str) -> Result<String, String> {
         self.execute_script_direct(script)
     }
-    fn execute_module(&self, source: &str, url: &str, deps: &[(String, String)]) -> Result<String, String> {
-        self.execute_module(source, url, deps)
+    fn execute_module(
+        &self,
+        source: &str,
+        url: &str,
+        cache_key: &str,
+        deps: &[(String, String)],
+    ) -> Result<String, String> {
+        self.execute_module(source, url, cache_key, deps)
     }
     fn mutations(&self) -> std::sync::Arc<std::sync::Mutex<Vec<zero_engine::DomMutation>>> {
         self.mutations()

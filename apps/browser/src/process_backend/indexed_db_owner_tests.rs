@@ -203,6 +203,35 @@ fn redirected_document_commits_final_origin() {
     assert!(!backend.pending_indexed_db_navigations.contains_key(&95));
 }
 
+/// P11 正反对照：仅 document 印章的完成可改写 pending IndexedDB 导航 URL；
+/// "other" 印章（修后 fetch_proxy 对无显式类型完成——dns-prefetch/preconnect hint、
+/// 无扩展名子资源——的输出）即使携带 X-Zero-Final-URL 也不得污染导航跟踪。
+/// 修前推断兜底 document，根路径 hint 合成 204 会把 pending url 改写为 hint origin。
+#[test]
+fn hint_stamped_fetch_does_not_rewrite_pending_indexed_db_navigation_p11() {
+    let _multiprocess_guard = lock_multiprocess_tests();
+    let mut backend = ProcessTabBackend::with_renderer_bin(PathBuf::from("unused-renderer"));
+    let tab_id = TabId(707);
+    backend.tab_to_renderer.insert(tab_id, 96);
+    backend.stage_indexed_db_navigation(96, "https://page.example/nav", 7);
+    backend.update_pending_indexed_db_navigation_from_fetch(
+        tab_id,
+        &[
+            ("X-Zero-Resource-Type".to_string(), "other".to_string()),
+            ("X-Zero-Final-URL".to_string(), "https://hint.example/".to_string()),
+        ],
+    );
+
+    assert_eq!(
+        backend.pending_indexed_db_navigations.get(&96),
+        Some(&PendingIndexedDbNavigation {
+            url: "https://page.example/nav".to_string(),
+            navigation_epoch: 7,
+        }),
+        "hint 的 other 印章完成不得改写 pending IndexedDB 导航 URL（P11）"
+    );
+}
+
 #[test]
 fn mismatched_navigation_commit_does_not_enable_indexed_db() {
     let _multiprocess_guard = lock_multiprocess_tests();

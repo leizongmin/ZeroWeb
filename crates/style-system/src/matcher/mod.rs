@@ -1854,6 +1854,8 @@ fn is_property_supported(property: &str, value: &str) -> bool {
             .iter()
             .all(|p| parse_background_attachment(p).is_some()),
         "background-clip" => parse_background_clip(trimmed).is_some(),
+        // R5267：关键字集合与 mix-blend-mode 相同，复用其解析（css-compositing-1）。
+        "background-blend-mode" => parse_mix_blend_mode(trimmed).is_some(),
         "background-origin" => parse_background_origin(trimmed).is_some(),
         "scroll-snap-type" => parse_scroll_snap_type(trimmed).is_some(),
         "scroll-snap-align" => parse_scroll_snap_align(trimmed).is_some(),

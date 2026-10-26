@@ -499,6 +499,10 @@ pub(crate) struct RendererRuntime {
     cached_css: String,
     /// JS 执行 worker。
     js_worker: RendererJsWorker,
+    /// T13 R1：延迟回收调度器——锚点 = webview loading 翻转沿（主循环 tick 消费
+    /// 闩），D 后到点触发主侧批量回收并向 worker 投递延迟回收；窗口证据与命中
+    /// 语义预注册见 bench/results/t13-rework-frozen.md。
+    reclaim_sched: crate::mem_reclaim::DeferredReclaimScheduler,
     /// 是否允许执行 JavaScript。
     javascript_enabled: bool,
     /// 最近一次交互目标选择器（键盘事件）。
@@ -601,6 +605,15 @@ pub(crate) fn host_focus_state_sync() -> bool {
 /// <https://w3c.github.io/uievents/#events-keyboard-event-order>。
 pub(crate) fn keypress_synth_enabled() -> bool {
     predoc_enabled_for(std::env::var("ZW_KEYPRESS_SYNTH").as_deref().ok())
+}
+
+/// media march 提交门（A2 Fix 2 + bg02-media 基线 v2 边沿拍）：播放中每拍提交；
+/// `any_playing` true→false 切换拍（registry 侧全部流末停播）补交一拍——shim 侧
+/// 唯一能观察 isEnded 的时机（ended 派发/loop 回卷 seek(0)+play），纯电平门在停播
+/// 拍自断供给（paused 卡 false、时钟冻结、loop 属性失效——bg02 腿实测形态）。此后
+/// 停播稳态恢复零提交。
+fn media_march_submittable(javascript_enabled: bool, any_playing: bool, prev_playing: bool) -> bool {
+    javascript_enabled && (any_playing || prev_playing)
 }
 
 impl RendererRuntime {
@@ -812,6 +825,7 @@ impl RendererRuntime {
             pump_epoch,
             pump_clock,
             js_worker,
+            reclaim_sched: crate::mem_reclaim::DeferredReclaimScheduler::default(),
             javascript_enabled: true,
             interaction: PageInteractionState::new(),
             focus_from_keyboard: false,
@@ -1478,31 +1492,24 @@ impl RendererRuntime {
             }
         }
         // S8：已发送图片 key（browser 端 ImageCache 已存）不重传像素。
-        // fetch 闭包按字段捕获（2021 edition 最小捕获）——sent_image_keys 独立借用
-        let payloads = if allow_network_fetch {
-            let mut fetch = |u: &str| {
-                if self.stub_network {
-                    None
-                } else {
-                    ipc_fetch_get(
-                        &mut self.outbound,
-                        &self.inbound_rx,
-                        &mut self.next_fetch_id,
-                        &mut self.deferred_inbound,
-                        u,
-                    )
-                    .ok()
-                }
-            };
+        // P14（2026-10-25）：取回改两阶段批量——先非阻塞发起全部缺图，再统收响应。
+        // 旧逐图 `ipc_fetch_get` 闭包每次阻塞收单张，同 origin 图片并发恒为 1。
+        let payloads = if allow_network_fetch && !self.stub_network {
+            let mut batch = crate::ipc_image_batch::IpcImageBatch::new(
+                &mut self.outbound,
+                &self.inbound_rx,
+                &mut self.next_fetch_id,
+                &mut self.deferred_inbound,
+            );
             paint_export::fetch_image_payloads_with_cache(
                 &html,
                 &url,
                 &mut image_cache,
-                &mut fetch,
+                &mut batch,
                 &self.sent_image_keys,
             )
         } else {
-            let mut no_fetch = |_u: &str| None;
+            let mut no_fetch = paint_export::NoImageFetch;
             paint_export::fetch_image_payloads_with_cache(
                 &html,
                 &url,
@@ -2563,6 +2570,24 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         Ok(())
     }
 
+    /// T5/P10 页面 history 遍历 drain——`history.back()/forward()/go(delta)` 在 shim 本地栈
+    /// 越界时经 `__zw_request_history_traverse` 投递的 delta。drain 队列取最后一条（快速连点
+    /// 合并为一次遍历，同 `tick_pending_navigation` 取 last 的既有取舍）→ `HistoryTraverse`
+    /// IPC 发主进程 shell 栈提交遍历（遍历提交在宿主线程，复用既有返回路径；越界由宿主
+    /// shell 判界静默 no-op）。
+    fn tick_pending_history_traverse(&mut self) -> Result<(), String> {
+        let pending: Vec<i32> = self
+            .js_worker
+            .pending_history_traverses()
+            .lock()
+            .map(|mut q| std::mem::take(&mut *q))
+            .unwrap_or_default();
+        if let Some(delta) = pending.into_iter().last() {
+            self.send_regular(IpcMessageKind::HistoryTraverse { delta })?;
+        }
+        Ok(())
+    }
+
     /// 加载字体字节并按 (weight, style) 注册 alias（R2417/R2493 键规则）。返 true=注册成功（需刷新 resolver）。
     /// 抽自 drain_loaded_fonts 字体加载块，供 @font-face（async_load）与 FontFace.load()（JS 投递）共用。
     fn register_loaded_font(
@@ -2781,6 +2806,13 @@ return JSON.stringify({{action:action,name:name,val:val}});\
                 navigation_epoch: self.navigation_epoch,
             }))?;
             self.send_regular(IpcMessageKind::LoadComplete)?;
+            // T13 R1：LoadComplete = renderer 逐导航「文档渲染完成」沿（浏览器 tab
+            // loading 态与 wait_idle settle 同源信号），延迟回收在此重锚 deadline。
+            // webview loading 生命周期在预算渲染路径不走 set_loading(false)
+            //（is_loading 唯一消费面 same_navigation），翻转沿闩在 CDP 导航流首载后
+            // 不再置位（r2 冒烟 gg1 实证 1 fire/13 resets），故以本沿为主锚、翻转沿
+            // 闩保留为初载相补充。窗口证据见 t13-rework-frozen.md。
+            self.reclaim_sched.arm(std::time::Instant::now());
             tracing::info!("页面渲染完成: {page_url}");
         }
         if run_scripts && !page_scripts::should_skip_scripts(&page_url) {
@@ -3164,6 +3196,8 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             .as_mut()
             .expect("webview")
             .prepare_document_state(&page_url);
+        // T13 S2/S4/S6/S7：导航落定增量回收（worker 侧对称臂在 js_worker Reset 尾）。
+        self.reclaim_after_document_reset();
 
         // R3055：POST 导航——同步 fetch POST body → from_html。POST fetch 失败（stub_network / 网络/HTTP
         // 错误）→ 不命中此分支，回落下方 GET `start`（保 load 状态机一致，复用既有 load-failure 处理）。
@@ -3189,6 +3223,63 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             emit_load_complete: true,
             dcl_sent: false,
         })
+    }
+
+    /// T13：导航落定增量回收收口（设计卡 §3 推荐方案 A——只回收已 free 内存与
+    /// cache-by-design 条目，零语义面；触发点 = `navigate_with` 的
+    /// prepare_document_state 之后）。
+    ///
+    /// S4 主线程 thread_local 槽清空（worker 槽在 js_worker Reset 臂尾对称清）+
+    /// S6 共享 HTTP 缓存预算收缩（disk 层兜底不动）+ S2 主侧 `malloc_trim`
+    /// （`ZEROWEB_NAV_TRIM=0` 关）+ S7 探针打点（`ZEROWEB_MEM_PROBE=1`，观测腿）。
+    fn reclaim_after_document_reset(&mut self) {
+        // S4：主线程槽清空（单槽 cache 语义不变，下次查询重建）——µs 级，保持同步。
+        zero_engine::clear_rect_doc_cache();
+        zero_engine::js_dom_bridge::clear_view_doc_cache();
+        // T13 R1：S6 收缩/S2 trim/S7 探针移出首载测窗（处置工单主控 M1）——此处只
+        // 累计待回收代数，主循环 tick 在 loading 翻转沿重锚的 deadline 到点后经
+        // `fire_deferred_reclaim` 统一执行（窗口证据见 t13-rework-frozen.md）。
+        self.reclaim_sched.note_reset();
+    }
+
+    /// T13 R1：延迟回收到点触发（主循环 tick，settle+D）——S6/S2/S7 主侧批量 +
+    /// 向 js worker 投递 `DeferredReclaim`（isolate 线程执行 S3 通知与 worker trim）。
+    /// 相邻 reset 间距 < D 时合并为一次 fire（gens 累加；gens=0 的工厂态 fire 合法）。
+    fn fire_deferred_reclaim(&mut self, gens: u32) {
+        // S6：共享 default HTTP 缓存收缩至导航预算（poisoned 锁内数据仍有效，照常收缩）。
+        let evicted = zero_net::shared_http_cache()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .shrink_to_bytes(zero_net::http_cache::HTTP_CACHE_NAV_SHRINK_BYTES);
+        tracing::info!(target: "mem_reclaim", gens = gens as u64, evicted = evicted as u64, "http_shrink");
+        // S2：主侧 trim——与 worker 延迟点统一；归还 DOM/cache 释放窗的 arena 页。
+        // `ZEROWEB_NAV_TRIM=0` 关（token 全零面，预注册）。
+        if crate::mem_reclaim::nav_trim_enabled() {
+            crate::mem_reclaim::malloc_trim_now("nav_trim", gens);
+        }
+        // S7：填充量探针（svg 重栅格条目/shape 缓存条目/canvas 上下文/HTTP 字节/PSS）。
+        if crate::mem_reclaim::mem_probe_enabled() {
+            let (svg_len, canvas_len) = self.webview.as_ref().map_or((0, 0), |wv| wv.mem_probe_cache_lens());
+            let shape_len = self.font_loader.shape_cache_len();
+            let http_bytes = zero_net::shared_http_cache()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .total_bytes();
+            let pss_kb = crate::mem_reclaim::read_process_pss_kb().unwrap_or(0);
+            tracing::info!(
+                target: "mem_probe",
+                pss_kb,
+                svg_len,
+                shape_len,
+                canvas_len,
+                http_bytes,
+                "nav settle probe"
+            );
+        }
+        // worker 侧（S3 通知无条件维持首轮 OFF 面；S2 worker trim 随 NAV_TRIM 门）。
+        if let Err(e) = self.js_worker.submit_deferred_reclaim(gens) {
+            tracing::warn!(gens = gens as u64, "deferred worker reclaim submit failed: {e}");
+        }
     }
 
     fn handle_load_html(&mut self, params: LoadHtmlParams) -> Result<(), String> {
@@ -4016,8 +4107,29 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             | IpcMessageKind::ServiceWorkerHostEvent(_)
             | IpcMessageKind::NavigationStarted(_)
             | IpcMessageKind::NavigationCommitted(_)
+            // T5/P10 页面 history 遍历是 renderer 的发送方向，不接收。
+            | IpcMessageKind::HistoryTraverse { .. }
             // 合成器动画声明是 renderer 的发送方向（M2-S1），不接收。
             | IpcMessageKind::CompositorAnimationState(_)
+            // 媒体消息族走 webview proxy ↔ media-host 独立 stdio 通道（media-runtime-isolation
+            // 方案 C C1），不经 renderer ↔ 主进程 IPC，两侧方向均不接收。
+            | IpcMessageKind::MediaRegisterSource(_)
+            | IpcMessageKind::MediaDataChunk(_)
+            | IpcMessageKind::MediaPlay(_)
+            | IpcMessageKind::MediaPause(_)
+            | IpcMessageKind::MediaSeek(_)
+            | IpcMessageKind::MediaReleaseSource(_)
+            | IpcMessageKind::MediaShutdown
+            | IpcMessageKind::MediaSetRate(_)
+            | IpcMessageKind::MediaSetLoop(_)
+            | IpcMessageKind::MediaSetGain(_)
+            | IpcMessageKind::MediaReady(_)
+            | IpcMessageKind::MediaSourceReady(_)
+            | IpcMessageKind::MediaDataAck(_)
+            | IpcMessageKind::MediaStateUpdate(_)
+            | IpcMessageKind::MediaSeekResult(_)
+            | IpcMessageKind::MediaFrame(_)
+            | IpcMessageKind::MediaError(_)
             | IpcMessageKind::CrashNotification(_) => {
                 tracing::warn!("渲染进程收到非预期消息类型（应从渲染进程发出）");
                 Ok(())
@@ -4028,6 +4140,9 @@ return JSON.stringify({{action:action,name:name,val:val}});\
 
     pub(crate) fn run(&mut self) -> Result<(), String> {
         tracing::info!("渲染进程 {} 启动，等待 IPC 消息...", self.renderer_id);
+        // bg02-media 基线 v2（media-runtime-isolation）：march 提交门 true→false
+        // 边沿检测态（上一拍 any_playing——EOF 停播拍补交一拍 march，见下方门注释）。
+        let mut prev_media_playing = false;
         loop {
             if self.pending_load.is_some()
                 || self.pending_script_prefetch.is_some()
@@ -4075,6 +4190,10 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             // R3058 JS 跨文档导航：drain location.href=/assign/replace 投递的导航 URL，handle_navigate（fetch 新文档）。
             // 多次导航取最后一条（real browser 亦取最后发起；前者被后者覆盖）。任意时刻可来，故每轮检查。
             self.tick_pending_navigation()?;
+
+            // T5/P10 页面 history 遍历：drain history.back/forward/go 越界移交的 delta →
+            // HistoryTraverse IPC 发主进程。任意页面脚本均可产生，故每轮检查（同上）。
+            self.tick_pending_history_traverse()?;
 
             // S11（cdp-protocol value-only console 面）：drain page console 输出（任意脚本
             // 执行均可产生，故每轮检查）→ browser/headless（`Runtime.consoleAPICalled`）。
@@ -4135,6 +4254,26 @@ return JSON.stringify({{action:action,name:name,val:val}});\
                         self.try_republish_cached()?;
                     }
                 }
+                // A2 Fix 2（media-runtime-isolation DESIGN §6.3，spec#time-marches-on）：
+                // 生产面 march 接线——shim 侧 march（桥时钟拉取/headless 时钟/played
+                // ranges/timeupdate 250ms 节流/cue active/ended 面）此前仅 WPT runner
+                // 泵调用（testharness.rs 泵 tick 同形提交），生产 renderer 主循环不调
+                // → timeupdate/cue/ended 事件面无驱动。与 rAF 泵同通道同形态（下方
+                // 先例）；门控 = any_playing + javascript_enabled，**不加 page_hidden**
+                // ——播放推进不随可见性暂停（后台音频继续播是现行为，rAF 可见性门控
+                // 语义不适用）。无播放零提交；钩子内 !ms.playing 早退 + timeupdate
+                // 250ms 节流成本有界（M1 空 tick p50 431ns 同面）。
+                // bg02-media 基线 v2 补边沿拍：any_playing true→false 切换拍（registry
+                // 侧全部流末停播）**补交一拍** march——此刻恰是 shim 侧唯一能观察
+                // isEnded 的时机（ended 派发/loop 回卷 seek(0)+play）；纯电平门在停播
+                // 拍自断供给，paused 卡 false、时钟冻结、loop 属性失效（bg02 腿实测
+                // 形态）。此后停播稳态恢复零提交。
+                if media_march_submittable(self.javascript_enabled, any_playing, prev_media_playing) {
+                    let _ = self.js_worker.submit_script_priority(
+                        "if(globalThis._zwMediaTimeMarchesOn)globalThis._zwMediaTimeMarchesOn();",
+                    );
+                }
+                prev_media_playing = any_playing;
             }
 
             // DC-2/M3（帧驱动 rAF 泵——镜像媒体泵「事件循环节拍，否决独立泵线程」）：
@@ -4161,6 +4300,16 @@ return JSON.stringify({{action:action,name:name,val:val}});\
                 && let Err(e) = self.poll_deferred_automation_replies()
             {
                 tracing::warn!("deferred automation reply send failed: {e}");
+            }
+
+            // T13 R1：延迟回收调度——LoadComplete 主锚 + loading 翻转沿补充（初载相）
+            // 重锚 deadline（16ms tick 消费）；到点触发主侧批量回收 + worker 延迟回收。
+            // S2/S3 成本移出首载测窗（t13-rework-frozen.md 窗口证据）。
+            if self.webview.as_mut().is_some_and(|webview| webview.take_loading_flip()) {
+                self.reclaim_sched.arm(std::time::Instant::now());
+            }
+            if let Some(gens) = self.reclaim_sched.due(std::time::Instant::now()) {
+                self.fire_deferred_reclaim(gens);
             }
 
             match self.recv_next_or_timeout(LOAD_TICK_INTERVAL) {
@@ -4649,6 +4798,9 @@ mod fetch_cancel_on_reset_tests;
 #[cfg(test)]
 #[path = "keyboard_input_tests.rs"]
 mod keyboard_input_tests;
+#[cfg(test)]
+#[path = "media_march_tests.rs"]
+mod media_march_tests;
 #[cfg(test)]
 #[path = "navigation_preemption_tests.rs"]
 mod navigation_preemption_tests;

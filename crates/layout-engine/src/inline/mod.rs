@@ -101,6 +101,14 @@ pub struct InlineFormattingContext {
     /// color:lime} 的 XX 折回 span 画成容器黑）。painter 从真实 computed styles
     /// 扫描注入，两臂同语义同值。
     pub color_divergent_walk_nodes: NodeIdSet,
+    /// R5250（CSS2 §9.3.2）：relative inset 视觉位移非零的归因节点 → `(dx, dy)`——
+    /// FLAT_CHILD_WALK 折回门分裂信号 + fragment 位移消费表。同样式 relative inline
+    /// 子折回外层会把其文本并入外层合并 run（归因外层），inset 位移无法按节点施加
+    ///（position-relative-032 案形）——命中即子自身构造独立 run（归因子自身，R5177
+    /// 同形状），fragment 查表平移。layout IFC 与 paint Path B（空 styles）注入
+    /// 同一张表（compute_final 以真实 styles 构建、存 `LayoutBox.inline_relpos_shifts`），
+    /// 两臂分段恒等。
+    pub relpos_shifts: NodeIdMap<(f32, f32)>,
     /// R5235：R1576 递归臂触发元素集——`collect_inline_items` 的
     /// `inline_elem_has_nested_inline_block` 分叉在 paint Path B（空 styles）下 BFS
     /// 逐节点 `styles.get` 失败即 continue、恒 false，inline 元素含原子后代时落
@@ -413,6 +421,7 @@ impl InlineFormattingContext {
             display_none_walk_nodes: NodeIdSet::default(),
             oof_walk_nodes: NodeIdSet::default(),
             color_divergent_walk_nodes: NodeIdSet::default(),
+            relpos_shifts: NodeIdMap::default(),
             nested_atomic_walk_nodes: std::cell::RefCell::new(NodeIdSet::default()),
             text_node_bidi_overrides: NodeIdMap::default(),
             text_align_last: None,
@@ -599,6 +608,13 @@ impl InlineFormattingContext {
     /// R5177：设置 color 差异元素集（walk 折回门 paint Path B 信号，见字段文档）。
     pub fn with_color_divergent_walk_nodes(mut self, nodes: NodeIdSet) -> Self {
         self.color_divergent_walk_nodes = nodes;
+        self
+    }
+
+    /// R5250：设置 relative inset 位移表（walk 折回门分裂信号 + fragment 平移消费表，
+    /// 见字段文档）。
+    pub fn with_relpos_shifts(mut self, shifts: NodeIdMap<(f32, f32)>) -> Self {
+        self.relpos_shifts = shifts;
         self
     }
 
@@ -2277,6 +2293,37 @@ impl InlineFormattingContext {
         }
         self.apply_vertical_alignment();
         true
+    }
+
+    /// R5261：定位复用的**免刷新**校验（[`Self::refresh_reused_inline_block_metrics`]
+    /// 的只读臂）——全 baseline 门会把 va≠baseline 的原子 run（img-swatch 条带表
+    /// `img{vertical-align:bottom}`，css/CSS2/tables border-conflict-element-001d/001e）
+    /// 整体拒之门外，定位同步缺席，原子子盒滞留 taffy 块堆叠位（竖条）。
+    /// 本校验不改任何几何：逐 run 复核 IFC 存储位形与最终盒**宽高一致**（原子 run
+    /// font_size==0、宽高差 ≤0.01、逐子 matched 对账）。一致时几何即终态——IFC 布局期
+    /// `apply_vertical_alignment` 已施加 va 偏移（CSS2 §10.8.1 行内对齐），定位同步
+    /// 直接消费存储行位，无需刷新重算。宽或高任一变化即 bail（刷新臂允许高更新后
+    /// 重对齐，本只读臂无该补偿，不得消费过期行位——css-sizing aspect-ratio
+    /// replaced-element-010 假回归实证）。
+    pub(crate) fn reuse_positions_valid_without_refresh(&self, sizes: &HashMap<NodeId, (f32, f32)>) -> bool {
+        if self.vertical || sizes.is_empty() {
+            return false;
+        }
+        let mut matched = 0usize;
+        for line in &self.lines {
+            for run in &line.runs {
+                // 宽高双轴一致（宽口径与刷新臂逐字节同源，高轴收紧为相等）；非 sizes
+                // 键 run（文本）跳过——其几何不依赖本复用面。
+                let Some(&(width, height)) = sizes.get(&run.node_id) else {
+                    continue;
+                };
+                if run.font_size != 0.0 || (run.width - width).abs() > 0.01 || (run.height - height).abs() > 0.01 {
+                    return false;
+                }
+                matched += 1;
+            }
+        }
+        matched == sizes.len()
     }
 
     /// 根据每个片段的 vertical-align 值，计算其在行盒内的 y 偏移量。

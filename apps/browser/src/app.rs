@@ -547,6 +547,18 @@ impl BrowserApp {
         if self.tabs.poll(self.shell.active_tab_id(), self.gpu_renderer_is_some()) {
             self.needs_redraw = true;
         }
+        // T12 投机预热触发面：每 tick 转发地址栏聚焦态（T2 边沿，默认）。单进程
+        // worker 路在 TabManager 内 no-op。
+        self.tabs.note_warm_renderer_tick(self.address_bar_focused);
+        // T13 S8：宿主 idle 谓词注入——tab 面（快照 loading / compositor 动画·贴片
+        // 拉取活跃 / 任一 pending 队列非空均忙）+ 无崩溃重置 deadline + 无平滑滚动
+        // 动画 + 无注入器在弦。backend 叠加活动 recency 构成连续闲置锚点（回收判据；
+        // 单进程 worker 路在 TabManager 内 no-op）。
+        let idle_face = self.tabs.tab_face_idle(self.shell.active_tab_id())
+            && self.crash_reset_deadlines.is_empty()
+            && self.scroll_anim.is_empty()
+            && !self.click_injector.armed();
+        self.tabs.note_warm_idle_tick(idle_face);
         // 消费异步 DOM 事件派发产生的延迟动作（链接导航等）。
         // 必须在 `tabs.poll` 之后调用 —— pending actions 由 poll 收集。
         for (tab_id, action) in self.tabs.take_pending_actions() {
@@ -596,6 +608,14 @@ impl BrowserApp {
         // T62-D1：多进程渲染端 zero:// 导航装载请求（与上loop同语义）。
         for (tab_id, request) in self.tabs.take_renderer_navigations() {
             self.handle_renderer_tab_navigate(tab_id, request);
+        }
+        // T5/P10：页面 history 遍历请求（单进程 worker 回执 + 多进程 HistoryTraverse，
+        // tab_manager 已合流）——仅活跃 tab 提交（遍历作用于当前会话，后台 tab 丢弃，
+        // 同上两 loop 守卫）。
+        for (tab_id, delta) in self.tabs.take_history_traverses() {
+            if self.shell.active_tab_id() == Some(tab_id) {
+                self.history_traverse(delta);
+            }
         }
         if let Some(id) = self.shell.active_tab_id() {
             self.clamp_tab_scroll(id);
@@ -3352,6 +3372,55 @@ impl BrowserApp {
         self.restore_history_scroll(tab_id);
 
         self.start_tab_load(tab_id, url);
+    }
+
+    /// T5/P10：页面 history 遍历提交（shim 本地栈越界移交 → 宿主 shell 栈）。
+    ///
+    /// delta ∓1 复用 go_back/go_forward 既有路径（shell 栈移动、地址栏、scroll 保存
+    /// 恢复、start_tab_load）；其余步长经 jump_history(index+delta) 落同一流程，越界
+    /// （index+delta 不可达）保持静默 no-op（R3004）。
+    /// https://html.spec.whatwg.org/multipage/nav-history-apis.html#the-history-interface
+    pub fn history_traverse(&mut self, delta: i32) {
+        match delta {
+            -1 => return self.go_back(),
+            1 => return self.go_forward(),
+            0 => return,
+            _ => {}
+        }
+        let Some(tab_id) = self.shell.active_tab_id() else {
+            return;
+        };
+        // 越界判界先于一切副作用（R3004 静默 no-op = 零状态变更）。
+        let (index, len) = {
+            let tab = self.shell.active_tab().unwrap();
+            (tab.history_index(), tab.history_len())
+        };
+        let target = index as i64 + delta as i64;
+        if target < 0 || target >= len as i64 {
+            return; // 越界：宿主判界静默 no-op（R3004）
+        }
+        self.save_history_scroll(tab_id);
+        // 出发 URL 先记录：落点为同一文档（除 fragment 外一致）时走同文档跳转（不重载）。
+        let from_url = self.shell.active_tab().and_then(|tab| tab.url().map(str::to_string));
+        if !self.shell.jump_history(target as usize) {
+            return;
+        }
+        let url = match self.shell.active_tab().and_then(|t| t.url().map(|s| s.to_string())) {
+            Some(u) => u,
+            None => return,
+        };
+        self.address_bar.set_text(url.clone());
+        if self.fragment_jump_after_history_move(tab_id, from_url.as_deref(), &url) {
+            return;
+        }
+        self.restore_history_scroll(tab_id);
+        self.start_tab_load(tab_id, url);
+    }
+
+    /// 测试用：直接入队页面 history 遍历请求（驱动消费半 drain + 活跃 tab 守卫）。
+    #[cfg(test)]
+    pub fn push_history_traverse_for_test(&mut self, tab_id: TabId, delta: i32) {
+        self.tabs.push_history_traverse_for_test(tab_id, delta);
     }
 
     /// 执行前进导航

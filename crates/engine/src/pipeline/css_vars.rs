@@ -521,6 +521,67 @@ mod tests {
         );
     }
 
+    /// P9b 断言补缺（disposition 首轮 minor 缺口）：`!important` 字样出现在值中间
+    /// （非声明尾位置）不是级联标记——按 CSS Syntax 声明解析仅在值末尾识别
+    /// importance（css-variables-1 §2 同重要级 last-wins），中间字样整体保留为
+    /// 普通值：单声明时原样保留不剥离，后续 normal 声明照常覆盖。
+    #[test]
+    fn mid_value_important_literal_kept_as_plain_value() {
+        let props1 = collect_custom_properties(".a { --x: a !important b; }");
+        assert_eq!(
+            props1.iter().find(|(n, _)| n == "--x").map(|(_, v)| v.as_str()),
+            Some("a !important b"),
+            "值中间 `!important` 字样整体保留、不剥离: {props1:?}"
+        );
+        let css = ".a { --x: a !important b; }\n.a { --x: plain; }";
+        let props = collect_custom_properties(css);
+        assert_eq!(
+            props.iter().find(|(n, _)| n == "--x").map(|(_, v)| v.as_str()),
+            Some("plain"),
+            "中间字样不携带 importance，后置 normal 照常 last-wins 覆盖: {props:?}"
+        );
+    }
+
+    /// P9b 断言补缺：`!` 与 `important` 之间空白任意仍识别为声明尾 important
+    ///（CSS Syntax consume a declaration：`!` 后经 whitespace 至 ASCII 大小写
+    /// 不敏感的 ident `important` 即置 important），值剥离尾标记并压过后置 normal。
+    #[test]
+    fn important_flag_tolerates_whitespace_between_bang_and_keyword() {
+        let css = ":root { --x: red !  important; }\n:root { --x: blue; }";
+        let props = collect_custom_properties(css);
+        assert_eq!(
+            props.iter().find(|(n, _)| n == "--x").map(|(_, v)| v.as_str()),
+            Some("red"),
+            "`!  important` 多空白仍识别为 important 压过后置 normal: {props:?}"
+        );
+    }
+
+    /// P9b 返修 TV-3：无空格 `red!important`——尾 9 字节窗口恰为 "important"、`!`
+    /// 紧贴值尾，仍按声明尾标记识别（`!` 与 ident 间的空白并非必需）。
+    #[test]
+    fn important_flag_without_space_still_recognized() {
+        let css = ":root { --x: red!important; }\n:root { --x: blue; }";
+        let props = collect_custom_properties(css);
+        assert_eq!(
+            props.iter().find(|(n, _)| n == "--x").map(|(_, v)| v.as_str()),
+            Some("red"),
+            "无空格 `red!important` 仍识别为 important 压过后置 normal: {props:?}"
+        );
+    }
+
+    /// P9b 返修 TV-3：值恰为 `!important` 的现状钉扎——实现剥尾标记后值为空，
+    /// 空值声明不入收集表（该自定义属性整体缺席）。浏览器侧按 CSS Syntax
+    /// consume a declaration 产出「空值 + important」，css-variables-1 对空值
+    /// custom property 的最终处置与实现在此的等价性待议；现按实现行为钉住防漂移。
+    #[test]
+    fn value_exactly_important_flag_dropped_pins_current_behavior() {
+        let props = collect_custom_properties(":root { --x: !important; }");
+        assert!(
+            props.iter().all(|(n, _)| n != "--x"),
+            "值恰为 `!important`：剥尾标记后值为空，声明不入表（现状钉扎）: {props:?}"
+        );
+    }
+
     #[test]
     fn bing_real_world_var_heavy() {
         let css = concat!(

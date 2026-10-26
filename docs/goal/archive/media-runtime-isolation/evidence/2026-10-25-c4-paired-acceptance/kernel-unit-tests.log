@@ -1,0 +1,21 @@
+
+running 16 tests
+test tests::empty_source_lifecycle_contract ... ok
+test tests::quota_exceeded_on_register_and_on_actual_bytes ... ok
+test tests::role_exits_on_peer_disconnect ... ok
+test tests::handshake_media_ready_sent_first_with_protocol_version ... ok
+test kernel::tests::audio_only_source_heartbeats_without_frames ... ok
+test kernel::tests::next_wake_none_idle_bounded_playing ... ok
+test kernel::tests::play_pushes_metadata_then_playing_state ... ok
+test kernel::tests::loop_wrap_bumps_epoch_without_ended ... ok
+test kernel::tests::pause_freezes_and_pushes_paused ... ok
+test kernel::tests::advance_pushes_frames_then_heartbeat ... ok
+test tests::event_loop_idle_ticks_advance_kernel_clock ... ok
+test kernel::tests::av_pair_frames_follow_audio_cursor ... ok
+test kernel::tests::seek_replies_result_bumps_epoch_frames_follow ... ok
+test kernel::tests::ended_pushes_once_then_silent ... ok
+test kernel::tests::replay_after_ended_ignores_stale_wire_position ... ok
+test kernel::tests::replay_after_ended_bumps_epoch_and_restarts ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+

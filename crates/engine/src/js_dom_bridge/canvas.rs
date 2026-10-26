@@ -52,6 +52,19 @@ impl CanvasRegistry {
             )),
         }
     }
+
+    /// T13 S5：跨文档代际清理（导航落定调用；代际门在 webview prepare_document_state）。
+    ///
+    /// 清 context/gradient/Path2D 表与渐变引用表（`grad_refs` 引用 gradient id，
+    /// 随表同清防悬引用）。id 计数器**单调不复位**——死文档 shim 句柄引用的画布/
+    /// 渐变 id 不得被新文档复用（id 复用会让新文档上下文被旧句柄寻址）。
+    /// `font_loader` 共享 Arc 不动（基础字体重读成本高，非文档域状态）。
+    pub fn clear_for_new_document(&mut self) {
+        self.contexts.clear();
+        self.gradients.clear();
+        self.grad_refs.clear();
+        self.paths.clear();
+    }
 }
 
 impl Default for CanvasRegistry {
@@ -1801,6 +1814,38 @@ fn parse_image_smoothing_quality(s: &str) -> zero_canvas::ImageSmoothingQuality 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// T13 S5：clear_for_new_document 清四表、id 计数器单调不复位、font_loader 保留。
+    #[test]
+    fn t13_clear_for_new_document_drops_tables_keeps_id_counters() {
+        let mut reg = CanvasRegistry::new();
+        reg.contexts
+            .insert(reg.next_ctx_id, zero_canvas::CanvasContext::new(4, 4));
+        reg.next_ctx_id += 1;
+        reg.gradients.insert(
+            reg.next_grad_id,
+            zero_canvas::CanvasStyle::LinearGradient(zero_canvas::LinearGradient::new(0.0, 0.0, 1.0, 1.0)),
+        );
+        reg.next_grad_id += 1;
+        reg.paths.insert(reg.next_path_id, zero_canvas::Path2D::new());
+        reg.next_path_id += 1;
+        let font_loader = std::sync::Arc::clone(&reg.font_loader);
+
+        reg.clear_for_new_document();
+
+        assert!(reg.contexts.is_empty());
+        assert!(reg.gradients.is_empty());
+        assert!(reg.grad_refs.is_empty());
+        assert!(reg.paths.is_empty());
+        // id 计数器不复位——死文档 shim 句柄引用的 id 不得被新文档复用。
+        assert_eq!(reg.next_ctx_id, 2);
+        assert_eq!(reg.next_grad_id, 2);
+        assert_eq!(reg.next_path_id, 2);
+        assert!(
+            std::sync::Arc::ptr_eq(&font_loader, &reg.font_loader),
+            "font_loader 共享 Arc 保留"
+        );
+    }
 
     // R34xx：alpha 最短可回滚序列化（driving: 2d.fillStyle.get.halftransparent）。
     #[test]

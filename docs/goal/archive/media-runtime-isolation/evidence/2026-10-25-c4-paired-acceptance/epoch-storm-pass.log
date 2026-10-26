@@ -1,0 +1,7 @@
+
+running 1 test
+test hosted::c4_epoch_storm_no_stale_frames ... C4PAIR epoch-storm captured=30 digest=45b70a0573a81d75 ct_end=58.719 errored=false
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 2.67s
+

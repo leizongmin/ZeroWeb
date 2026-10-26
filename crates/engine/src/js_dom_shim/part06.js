@@ -1865,7 +1865,44 @@
     rule.style = _makeRuleStyle(rule, flushFn);
     return rule;
   }
+  // R5271：`element.sheet` [SameObject] 缓存——CSSOM getter 每次返回同一对象（旧实现
+  // 每读重建，跨读 identity 断言必炸）。失效模型按 corpus the-style-element/
+  // mutations.window.js 钉定：直接子指纹（nodeType + data/nodeValue 串接）变更
+  //（comment 插入/数据变更/normalize/移除等**有效**子变更 → CSSOM remove + create
+  // style sheet，换新对象）；零子插入（空 DocumentFragment appendChild）指纹不变
+  // → 身份保持。外部合成条目（owner=null）不缓存（externalWire 逐次可变）。
+  var _zwSheetSameObj = typeof WeakMap === 'function' ? new WeakMap() : null;
+
   function _makeStyleSheet(owner, externalWire) {
+    if (owner != null && _zwSheetSameObj) {
+      // R5271b：元素不在文档 → sheet 返 null（spec LinkStyle：HTMLStyleElement/
+      // HTMLLinkElement 的 sheet 仅在文档内存在——LinkStyle.html「not in a Document」
+      // 案钉定 createElement 未挂载阶段返 null；CSS-in-JS 惯用时序先 append 后读不受
+      // 影响）。守卫兜底 true（_zwIsConnected 异常时不引入行为差）。
+      var _conn5271 = true;
+      try {
+        if (typeof _zwIsConnected === 'function') _conn5271 = _zwIsConnected(owner.__zwSelector, owner.__zwHandle);
+      } catch (_conn5271e) { _conn5271 = true; }
+      if (!_conn5271) return null;
+      var _fp5271 = '';
+      try {
+        var _fp5271Kids = owner.childNodes;
+        for (var _fp5271i = 0; _fp5271i < _fp5271Kids.length; _fp5271i++) {
+          var _fp5271k = _fp5271Kids[_fp5271i];
+          if (!_fp5271k) continue;
+          _fp5271 += ':' + _fp5271k.nodeType + ':' + (_fp5271k.data != null ? _fp5271k.data : (_fp5271k.nodeValue != null ? _fp5271k.nodeValue : ''));
+        }
+      } catch (_fp5271e) {}
+      var _fp5271hit = _zwSheetSameObj.get(owner);
+      if (_fp5271hit && _fp5271hit.fp === _fp5271) return _fp5271hit.ss;
+      var _ss5271 = _makeSheetBuild(owner, externalWire);
+      _zwSheetSameObj.set(owner, { fp: _fp5271, ss: _ss5271 });
+      return _ss5271;
+    }
+    return _makeSheetBuild(owner, externalWire);
+  }
+
+  function _makeSheetBuild(owner, externalWire) {
     var sel = owner && owner.__zwSelector;
     // js-dom M4 R113：handle-based owner（createElement('style') 后 append——CSS-in-JS /
     // WPT prefixed-animation 形态）。初始规则经 `__zw_style_rules_handle`（host 从 mutation
@@ -1981,6 +2018,14 @@
         try { this.deleteRule(index); } catch (_e) { /* deleteRule 失败 best-effort */ }
       }
     };
+    // R5271b：brand 进 CSSOM 原型链（CSSStyleSheet extends StyleSheet）——
+    // `style.sheet instanceof StyleSheet` 断言可达（LinkStyle.html）。自有成员
+    //（cssRules/insertRule/…）不受影响（own props 遮蔽原型）。
+    try {
+      if (globalThis.CSSStyleSheet && globalThis.CSSStyleSheet.prototype) {
+        Object.setPrototypeOf(ss, globalThis.CSSStyleSheet.prototype);
+      }
+    } catch (_eBrd) {}
     return ss;
   }
 
@@ -2147,6 +2192,18 @@
   };
   // spec：CSSStyleSheet 不可函数调用（必须 new）。
   try { Object.defineProperty(globalThis.CSSStyleSheet, 'prototype', { value: globalThis.CSSStyleSheet.prototype, writable: false, enumerable: false, configurable: false }); } catch (_eProto) {}
+  // R5271b：StyleSheet 基接口——CSSOM 链 CSSStyleSheet extends StyleSheet；
+  // `style.sheet instanceof StyleSheet`（LinkStyle.html「must return StyleSheet
+  // object」案钉定）。纯 brand 面：无自有成员（spec StyleSheet 的 type/ownerNode
+  // 等由 sheet 对象自身属性承载）。
+  if (!globalThis.StyleSheet) {
+    globalThis.StyleSheet = function StyleSheet() {
+      throw new globalThis.TypeError("Illegal constructor: StyleSheet is not constructable");
+    };
+    globalThis.StyleSheet.prototype = {};
+    try { Object.defineProperty(globalThis.StyleSheet, 'prototype', { value: globalThis.StyleSheet.prototype, writable: false, enumerable: false, configurable: false }); } catch (_eSSp) {}
+    try { Object.setPrototypeOf(globalThis.CSSStyleSheet.prototype, globalThis.StyleSheet.prototype); } catch (_eSSc) {}
+  }
 
   // DocumentOrShadowRoot.adoptedStyleSheets：ShadowRoot.prototype 版（document 版在
   // 下方 document 字面量 R2808 styleSheets 相邻处，同闭包变量）。
@@ -2218,9 +2275,10 @@
   };
   // R3254-M3 切片 3（editing goal DC-4，2026-09-07）：queryCommandSupported/Enabled
   // 真实反射——按本实现**实际接通的命令面**判定（不再无条件 true）。
-  // - supported：copy/cut/paste（ClipboardEvent 路径，R2936）∪ 编辑类（_zwExecCmdInputType
-  //   表——format/insert/delete 族，事件序 M2 切片 1 接通）。其余命令（styleWithCSS/
-  //   useCSS/selectAll/undo/redo/justify*/indent/outdent 等）未接 → false。
+  // - supported：copy/cut/paste（ClipboardEvent 路径，R2936）∪ selectAll（R5264 选区
+  //   应用）∪ 编辑类（_zwExecCmdInputType 表——format/insert/delete 族，事件序 M2
+  //   切片 1 接通）。其余命令（styleWithCSS/useCSS/undo/redo/justify*/indent/outdent
+  //   等）未接 → false。
   // - enabled：spec（"queryCommandEnabled"）按命令状态判定——copy/cut 需选区非空
   //   （Chromium 语义）；编辑类需选区在单一 editing host 内且整个选区在 host 内
   //   （与 execCommand 编辑分支的前提一致——M2 切片 1 同款祖先链扫描）。
@@ -2243,6 +2301,8 @@
     var c = String(cmd == null ? '' : cmd).toLowerCase();
     // copy/cut/paste：ClipboardEvent 路径真实接通 → supported。
     if (c === 'copy' || c === 'cut' || c === 'paste') return { supported: true, enabled: true };
+    // R5264：selectAll 选区应用接通（execCommand 分支同款模态 inert 作用域）。
+    if (c === 'selectall') return { supported: true, enabled: true };
     // 编辑类命令：inputType 表命中 = supported；enabled 与 execCommand 编辑分支同前提。
     if (typeof _zwExecCmdInputType[c] === 'undefined') return { supported: false, enabled: false };
     var enabled = false;
@@ -2950,6 +3010,11 @@
         try { globalThis._zwScheduleAllTrackLoads(); } catch (_eDqsT) {}
       }
       var hit = __zw_query_match(sel);
+      // s81：id 约束 stale 剔除——host 命中元素的现 id（latest-wins）不再满足
+      // 最终复合段约束 → 未命中（`#old`/`[id=old]` 改名后 stale hit 面；gEBI
+      // R125 ①臂同语义）。详见 part05 `_zwSelIdConstraint` 注记。
+      var _s81c = _zwSelIdConstraint(sel);
+      if (hit && _s81c && _zwIdConViolated(hit, _s81c)) hit = null;
       if (hit) {
         // slice44：pendingRemoved sel 剔除——已移除 parsed 后代在 host apply 前仍被
         // 快照命中，视为未命中（spec：查询面限当下 document tree；R310 元素面同族
@@ -2973,7 +3038,10 @@
             if (_s44all) {
               var _s44list = _s44all.split('|').filter(Boolean);
               for (var _s44i = 0; _s44i < _s44list.length; _s44i++) {
-                if (!_zwHitPendingRemoved(_s44list[_s44i])) return _zwQueryWrapIdentity(_s44list[_s44i]);
+                if (!_zwHitPendingRemoved(_s44list[_s44i])
+                    && !(_s81c && _zwIdConViolated(_s44list[_s44i], _s81c))) {
+                  return _zwQueryWrapIdentity(_s44list[_s44i]);
+                }
               }
             }
           }
@@ -3042,6 +3110,23 @@
               if (_matchCompoundOf(_r3902bn, _r3902bC)) return _r3902bn;
             } catch (_e3902bm) {}
           }
+        }
+      }
+      // s81 pull-in 臂：R125 表中现持目标 id 的元素拉回（`#new`/`[id=new]` 改名
+      // 后 host miss 面；gEBI R125 ②臂同语义）。单 compound——无祖先约束需复验；
+      // full compound 复验补 tag/class 共面。in-doc 门防「改名后同 turn 移除」
+      // 复活（gEBI ②臂同源、门加严）。
+      if (!hit && _s81c && _s81c.single && typeof _matchCompoundOf === 'function') {
+        var _s81cands = _zwIdOverrideCandidates(_s81c);
+        for (var _s81i = 0; _s81i < _s81cands.length; _s81i++) {
+          var _s81pr = _s81cands[_s81i];
+          if (!_s81pr) continue;
+          try {
+            if (typeof _zwMutationInDoc === 'function'
+                && !_zwMutationInDoc(_s81pr.__zwSelector, _s81pr.__zwHandle)) continue;
+            if (!_matchCompoundOf(_s81pr, _s81c.c)) continue;
+          } catch (_e81qm) { continue; }
+          return _s81pr;
         }
       }
       return null;
@@ -3318,7 +3403,10 @@
         // 连续 append 时序=树序，跨父时以快照命中先行、pending 兜底的合成次序近似）。
         for (var pi = 0; pi < pending.length; pi++) {
           var pn = pending[pi];
-          if (!pn || _zwPRSet().has(pn) || _r125AncestorRemoved(pn)) continue;
+          // R5279：R125 覆盖门同 pendingEarly 快路径/池路径（:3241/:3256）——快照命中
+          // 剔除后不得经本兜底环复活（`.id=`/setAttribute('id') 改名后旧 id 条目仍在
+          // 索引，WPT hash-name-reference-dynamic 的 `map.id = …` 动态改名族实证）。
+          if (!pn || _zwPRSet().has(pn) || _r125AncestorRemoved(pn) || _r125Overridden(pn)) continue;
           var pSel = pn && pn.__zwSelector ? pn.__zwSelector : null;
           var pH = pn && pn.__zwHandle ? pn.__zwHandle : null;
           if (pH && _zwMutationInDoc(null, pH)) return pn;
@@ -3401,8 +3489,12 @@
     elementFromPoint: function(x, y) {
       if (typeof __zw_elementFromPoint !== 'function') {
         try {
-          var sSel = (typeof _zwSvgHitSel === 'function') ? _zwSvgHitSel(Number(x) || 0, Number(y) || 0) : null;
-          return sSel ? _wrapSelector(sSel) : null;
+          var nx = Number(x) || 0, ny = Number(y) || 0;
+          var sSel = (typeof _zwSvgHitSel === 'function') ? _zwSvgHitSel(nx, ny) : null;
+          if (sSel) return _wrapSelector(sSel);
+          // s78 F4：image-map 命中（usemap img 形状面——SVG 命中后置臂）
+          var imSel = (typeof _zwImgMapHitSel === 'function') ? _zwImgMapHitSel(nx, ny) : null;
+          return imSel ? _wrapSelector(imSel) : null;
         } catch (_eEFPsvg) { return null; }
       }
       var sel = __zw_elementFromPoint(String(x), String(y));
@@ -3529,6 +3621,45 @@
             } catch (_e3902bmq) {}
           }
         }
+      }
+      // s81：id 约束双臂——stale 剔除（最终复合段约束的 lw 现值复验；handle 形
+      // 命中不进 R125 无改名面，保序）+ pull-in 归并（R125 表现持目标 id 元素，
+      // 单 compound；`_zwDocPosCmp` 文档序插入保 tree order）。
+      var _s81q = _zwSelIdConstraint(q);
+      if (_s81q) {
+        var _s81out = [];
+        for (var _s81k = 0; _s81k < out161.length; _s81k++) {
+          var _s81p = out161[_s81k];
+          var _s81ps = _s81p ? _s81p.__zwSelector : null;
+          if (_s81ps && _zwIdConViolated(_s81ps, _s81q)) continue;
+          _s81out.push(_s81p);
+        }
+        if (_s81q.single && typeof _matchCompoundOf === 'function') {
+          var _s81cands = _zwIdOverrideCandidates(_s81q);
+          for (var _s81j = 0; _s81j < _s81cands.length; _s81j++) {
+            var _s81pr = _s81cands[_s81j];
+            if (!_s81pr) continue;
+            try {
+              if (typeof _zwMutationInDoc === 'function'
+                  && !_zwMutationInDoc(_s81pr.__zwSelector, _s81pr.__zwHandle)) continue;
+              if (!_matchCompoundOf(_s81pr, _s81q.c)) continue;
+            } catch (_e81qm2) { continue; }
+            var _s81dup = false;
+            for (var _s81d = 0; _s81d < _s81out.length; _s81d++) {
+              if (_s81out[_s81d] === _s81pr) { _s81dup = true; break; }
+              var _s81dk = null, _s81pk = null;
+              try { _s81dk = _elKeyOf(_s81pr); _s81pk = _s81out[_s81d] ? _elKeyOf(_s81out[_s81d]) : null; } catch (_e81dk) {}
+              if (_s81dk && _s81dk === _s81pk) { _s81dup = true; break; }
+            }
+            if (_s81dup) continue;
+            var _s81pos = _s81out.length;
+            for (var _s81p2 = 0; _s81p2 < _s81out.length; _s81p2++) {
+              if (_zwDocPosCmp(_s81pr, _s81out[_s81p2]) < 0) { _s81pos = _s81p2; break; }
+            }
+            _s81out.splice(_s81pos, 0, _s81pr);
+          }
+        }
+        out161 = _s81out;
       }
       var r159 = _zwMakeCollection(out161, false);
       try { r159.__zwQSA = true; } catch (_e159q) {} // R159：instanceof NodeList 标记
@@ -4196,6 +4327,28 @@
             }
           }
         } catch (_eEdEv) {}
+      } else if (cmd === 'selectall') {
+        // R5264（M2 切片 57，2026-10-24）：execCommand('selectAll') 选区应用——
+        // 此前未接（permissive no-op → toString 恒 ''）。作用域取模态 inert 遮罩：
+        // 栈顶模态 dialog 存在 → 仅其子树（HTML inert——模态 open dialog 外文档
+        // 内容不可选；inert-node-is-unselectable 断言面：SelectAll 后 toString
+        // 只含 dialog 内文本）；无模态 → body。复用 _selection.selectAllChildren
+        //（R2804 面，DocumentType 门 / detached no-op 内建）；不派 beforeinput/
+        // input（选区命令不经编辑宿主事件序，与 undo/redo 同口径）。
+        try {
+          var selSA = (typeof _getSelection === 'function') ? _getSelection() : null;
+          if (selSA && typeof selSA.selectAllChildren === 'function') {
+            var scopeSA = null;
+            try {
+              if (typeof _zwDialogModalTopSel === 'function') {
+                var _saTopSel = _zwDialogModalTopSel();
+                scopeSA = _saTopSel ? document.querySelector(_saTopSel) : null;
+              }
+            } catch (_eSaTop) {}
+            if (!scopeSA) scopeSA = document.body || document.documentElement;
+            if (scopeSA) selSA.selectAllChildren(scopeSA);
+          }
+        } catch (_eSa) {}
       }
       return true;
     },
@@ -4474,6 +4627,20 @@
           globalThis.__zwAdoptDocByHandle[String(copy.__zwHandle)] = globalThis.document;
         }
       } catch (_e132h) {}
+      // R5268（html-semantics M2 切片 61）：快照域产物 deep import 物化为 handle 树——
+      // spec importNode = clone + adopt，产物须落目标文档完整接口面；raw _zwMEl 副本
+      // append 进活树后 `.tBodies` 等读 undefined（tBodies.html XML 导入案 + probe
+      // s61b C 实证）。t8q adoptNode 同款 `_wcRebuildAsHandle`（跨 part 先例 part04 R97
+      // clone 产物物化）；浅克隆不物化（child 剥离语义会丢）。真 wrapper 源不进本分支
+      //（既有行为零变化）。
+      try {
+        if (isDeep
+            && ((typeof _zwParseEl === 'function' && node instanceof _zwParseEl) || node.__zwIsMEl === true)
+            && typeof _wcRebuildAsHandle === 'function') {
+          var _r5268mat = _wcRebuildAsHandle(copy);
+          if (_r5268mat && _r5268mat.nodeType === 1) return _r5268mat;
+        }
+      } catch (_eR5268) {}
       return copy;
     },
     // `document.implementation`（DOMImplementation，R2815）——feature-detection（jQuery support 等查 hasFeature）
@@ -5239,6 +5406,17 @@
     },
     set title(v) {
       _doc_title = v == null ? '' : String(v);
+      // R5269（html-semantics M2 切片 62）：改经元素 textContent setter 落地
+      //（string replace all 同口径——该路径自带 __zw_set_text 宿主写回 + 本地文本子
+      // 注册 + childList 记录）。旧裸 `__zw_set_text('title', v)` 只写宿主快照，
+      // title 元素本地文本子视图 stale（title.text-03 setter 案 firstChild.nodeValue
+      // 读回旧值实证）。querySelector miss（无 title 文档）时回退既有裸通道，行为不变。
+      var t = null;
+      try { t = globalThis.document.querySelector('title'); } catch (_e5269t) { t = null; }
+      if (t) {
+        try { t.textContent = _doc_title; } catch (_e5269s) {}
+        return;
+      }
       // R3035：写回 host <title>（已有则 SetText，无则 find_by_selector 不命中 → no-op）。
       if (typeof __zw_set_text === 'function') {
         try { __zw_set_text('title', _doc_title); } catch (_e) {}
@@ -5528,6 +5706,11 @@
     // 后续读走已注册值（幂等，重复派发 no-op）。
     if (event && event.type === 'load' && typeof globalThis.__zwRegisterNamedIframes === 'function') {
       try { globalThis.__zwStartParserIframes(); } catch (_eS6p) {}
+      // R5275（html-semantics M2 切片 68）：静态 img settle 扫描 + R56h 闸门队列
+      // drain——DOMContentLoaded 已派（runner 生命周期串先派 DCL 再派 load）、
+      // window load listener 未跑，img load/error 在此窗口统一落点（spec「图片
+      // 延迟 window load、DCL 不等图片」——delay-load-event 断言序）。
+      try { if (typeof globalThis.__zwFireStaticImgSettle === 'function') globalThis.__zwFireStaticImgSettle(); } catch (_eIm5275) {}
       try { globalThis.__zwRegisterNamedIframes(); } catch (_e139r) {}
     }
     // M2-S4M（navigation-compat）：window 'load' 派发 = 文档 completely loaded 标记——
@@ -10021,6 +10204,291 @@
       }
     } catch (_eMediaEv) {}
   }
+  // A2 Fix 1（media-runtime-isolation DESIGN §6.2）：play 算法内核（spec internal
+  // play steps——IDL play() 与 autoplay 潜在自动播放分支共用）。自 part03 IDL play
+  // 原文迁移（整体去层），行为面不变：资源选择 invoke → playing 翻转 → 无候选
+  // pending → 桥 feature-detect + latest-wins src 解析（身份分派）→ 桥 play 恰一次
+  // + 未命中退避重试 → 命中后 bridgeOn/dims 升级/pending seek 补推/rate/gain/loop
+  // 同步/ended-loop → queued task 派 play/playing/timeupdate + promise settle。
+  // 元素身份留档一并内移（autoplay 路径的 march/ended 钩子同需反查派发面）。
+  // https://html.spec.whatwg.org/multipage/media.html#internal-play-steps
+  function _zwMediaPlaySteps(sel, handle, key) {
+    var _pKey = key;
+    var _pMs = _mediaState[_pKey] || (_mediaState[_pKey] = {});
+    // M3 扩批 XVI：元素身份留档（march/ended 钩子经 key 反查派发面——
+    // sel/handle 不在 march 作用域，暂存于此）。
+    _pMs._zwSel = sel;
+    _pMs._zwHandle = handle;
+    // media-elements M3 扩批 XIV（spec dom-media-play / pause-on-removal）：
+    // **已移出文档**的 sel media 元素 play()——播放无法推进（无 resource
+    // selection invoke、无 queued 派发），promise 保持 pending 交由
+    // removeChild 钩子的 playPromise 中断面 reject AbortError。
+    // pause-remove-from-document-networkState 断言面：play() → 移除 →
+    // watcher 等 pause → promise_rejects_dom AbortError。
+    // https://html.spec.whatwg.org/multipage/media.html#dom-media-play
+    // media-elements M3 扩批 XIV（spec dom-media-play）：无候选资源时播放
+    // 无法推进——不 queue play/playing 派发 task，promise **保持 pending**，
+    // 直到移除文档（pause on removal → AbortError）或资源就绪。
+    // **仅 sel 身份**（静态/动态 HTML 形态——`a.src=` 的 latest-wins 覆盖表
+    // 可判存在性）；handle-only（detached createElement）无宿主资源通路，
+    // 保持既有 queued task（cues「default attribute」等 detached 断言面）。
+    var _noCandidate = false;
+    if (!handle && typeof _zwMediaResourceSelect === 'function'
+        && (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'src') : __zw_has_attr(sel, 'src')) !== '1'
+        && !_resourceStates[_pKey]) {
+      _zwMediaResourceSelect(sel, handle, _pKey);
+      var _hasSrc = (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'src') : __zw_has_attr(sel, 'src')) === '1';
+      var _hasSourceChild = false;
+      try {
+        var _psList = _makeProxy(sel, handle).querySelectorAll('source');
+        _hasSourceChild = !!(_psList && _psList.length);
+      } catch (_ePsQ) {}
+      _noCandidate = !_hasSrc && !_hasSourceChild;
+    }
+    // media-elements M3 扩批 XI（spec resource selection）——无 src 候选时
+    // play() 亦触发资源选择（invoke：同步段 NO_SOURCE；稳定态无候选回落 EMPTY，
+    // 不派 loadstart——无加载发生）。
+    // https://html.spec.whatwg.org/multipage/media.html#dom-media-play
+    if (handle && typeof _zwMediaResourceSelect === 'function'
+        && __zw_has_attr_handle(handle, 'src') !== '1'
+        && !_resourceStates[_pKey]) {
+      _zwMediaResourceSelect(sel, handle, _pKey);
+    }
+    if (_pMs.playing) return Promise.resolve(undefined);
+    _pMs.playing = true;
+    _pMs.ended = false;
+    // M3 扩批 XIV：无候选资源 → promise pending 挂起（playing 态保持同步
+    // 翻转供脚本观察；无 queued 派发/resolve）。移除文档路径的 pause on
+    // removal 会 reject pending promise（AbortError）——见 removeChild 钩子
+    // 的 playPromise 中断面。
+    if (_noCandidate) {
+      var _ncEntry = null;
+      var _ncPromise = new Promise(function (resolve, reject) { _ncEntry = { resolve: resolve, reject: reject }; });
+      _pMs.playPromise = _ncEntry;
+      return _ncPromise;
+    }
+    // media-playback M2a 切片 5b：宿主桥 feature-detect——注册了
+    // __zwVideoBridge（生产 worker 注入）时走真值播放（Rust VideoPlayer
+    // 时钟/帧推进）；未注册（testharness/reftest 沙箱）保持 headless 近似
+    //（桥缺失零回归——372 基线）。src 取 IDL getter 同源解析（绝对 URL =
+    // 注册表 settle 登记键）。
+    if (typeof globalThis.__zwVideoBridge === 'object' && globalThis.__zwVideoBridge) {
+      try {
+        // M3 扩批 XVI：latest-wins 读——`.src=` IDL setter 的写是 pending mutation
+        //（render apply 前不入快照），纯快照读 `__zw_get_attr` 看不到 → bridgeSrc
+        // 空串 → 播放桥失联（fixture-mounted runner 的 track-cues-* 用例形态）。
+        // `__zw_get_attr_lw` 同批 SetAttr 命中新值（R2995 同源语义）。
+        // M3 扩批 XXII：src 读按身份分派——handle 身份（createElement 产物，
+        // track-active-cues / track-remove-active-cue 形态）走 registry 现值
+        // `__zw_get_attr_handle`（IDL .src= setter 的 handle 路径写 registry——
+        // `__zw_get_attr_lw` 是 sel 文档查询，对 null sel 恒空 → bridgeSrc 空
+        // → 桥失联 + 重试不启动）；sel 身份保持 latest-wins（同批 setter 命中）。
+        var _pSrcRaw = handle
+          ? ((typeof __zw_get_attr_handle === 'function') ? (__zw_get_attr_handle(handle, 'src') || '') : '')
+          : ((typeof __zw_get_attr_lw === 'function')
+              ? (__zw_get_attr_lw(sel, 'src') || '')
+              : ((typeof __zw_get_attr === 'function') ? (__zw_get_attr(sel, 'src') || '') : ''));
+        var _pAbs = _pSrcRaw ? _zwResolveFetchUrl(String(_pSrcRaw).replace(/^[\x00-\x20]+/, '').replace(/[\x00-\x20]+$/, '')) : '';
+        if (_pAbs) _pMs.bridgeSrc = _pAbs;
+        // M3 扩批 XVI：play 桥调用**恰一次**（结果存 _hit——旧形态条件里各调一次
+        // 致桥双调，engine 桥契约测试断言调用序列面）。命中路径：bridgeOn 置位 +
+        // pending seek 补推 + 速率/增益同步；未命中：**退避重试**（fixture-mounted
+        // runner 的源登记走逐 tick 动态补登记——脚本 turn 内同步 play 早于登记
+        // 落位）。spec play() promise pending 于播放真正推进，重试窗口内 playing
+        // 态保持；命中后与同步路径同面（playPromise 由既有 queued task resolve）。
+        var _hit = _pAbs ? globalThis.__zwVideoBridge.play(_pAbs, 0) : false;
+        // bg02-media 基线 v2（media-runtime-isolation）：loop 推送读与 IDL getter /
+        // march 同源——dirty 镜像优先，未写回落 loop 内容属性 presence。原裸读
+        // `_pMs.loop === true` 漏解析属性形态（<audio loop> 静态 HTML——IDL getter
+        // 走 attr 回退报 true，此处推 false）→ registry loop 关 → 音频 entry 流末
+        // 停播、视频 Ended 冻结，loop 属性整链失效。
+        var _pLoopOn = (_pMs.loop !== undefined) ? _pMs.loop === true
+          : (handle ? __zw_has_attr_handle(handle, 'loop')
+            : ((typeof __zw_has_attr_lw === 'function')
+                ? __zw_has_attr_lw(sel, 'loop')
+                : __zw_has_attr(sel, 'loop'))) === '1';
+        if (!_hit && _pAbs && typeof setTimeout === 'function') {
+          var _pRetry = function (_n) {
+            if (_n > 5000 || !_pMs.playing || _pMs.bridgeOn) return;
+            setTimeout(function () {
+              try {
+                if (globalThis.__zwVideoBridge.play(_pAbs, 0)) {
+                  _pMs.bridgeOn = true;
+                  // t8o：桥命中升级 settle 占位维度（IDL 形态 w0h0 → 解码真值；
+                  // 重试命中路径——provider 补登记后首播）。
+                  if (typeof globalThis._zwMediaBridgeDimsUpgrade === 'function') {
+                    globalThis._zwMediaBridgeDimsUpgrade(_pKey, _pAbs);
+                  }
+                  // M3 扩批 XVI：pending seek 补推（seek-before-play 时序——
+                  // 桥未接通期的 currentTime= 赋值在此落位，spec 播放启动
+                  // 位置 = 请求 seek 目标）。
+                  if (typeof _pMs._zwSeekPendingMs === 'number') {
+                    try {
+                      if (typeof globalThis.__zwVideoBridge.seek === 'function') {
+                        globalThis.__zwVideoBridge.seek(_pAbs, _pMs._zwSeekPendingMs | 0);
+                      }
+                    } catch (_eVbSk2) {}
+                    // M3 扩批 XVIII：march 区间基线 = seek 目标（播放时间线从
+                    // 目标起——目标前的 cue 不入捕获区间，spec seeked missed-cue
+                    // 语义；pending seek 路径无 seeked 回调，在此记账）。
+                    // R3936：**目标时刻的 cue active 面同步**（_zwMediaSeekSync）
+                    // 也要跑——只记基线不派 enter，起点恰在目标上的 cue
+                    //（pause-on-exit 的 cue0@4.0-4.5，currentTime=4.0 seek）永
+                    // 不进 active → exit/暂停面全部缺席（start > lastMs 判定
+                    // 在后续每拍恒假）。
+                    if (typeof globalThis._zwMediaSeekSync === 'function') {
+                      try { globalThis._zwMediaSeekSync(_pKey); } catch (_eSsP1) {}
+                    }
+                    _pMs._zwLastMarchMs = _pMs._zwSeekPendingMs;
+                    delete _pMs._zwSeekPendingMs;
+                  }
+                  if (typeof globalThis.__zwVideoBridge.setRate === 'function') {
+                    try { globalThis.__zwVideoBridge.setRate(_pAbs, _pMs.playbackRate || 1); } catch (_eVbR3) {}
+                  }
+                  if (typeof globalThis.__zwVideoBridge.setGain === 'function') {
+                    try {
+                      globalThis.__zwVideoBridge.setGain(
+                        _pAbs, (_pMs.volume != null ? _pMs.volume : 1), _pMs.muted === true);
+                    } catch (_eVbG1) {}
+                  }
+                  // M3 扩批 XXIV：重试路径 loop 同步（同 gain 面——retry 命中
+                  // 时把 play 前设的 loop 推给桥；读源同 IDL getter——上方
+                  // _pLoopOn，bg02-media v2 解析属性回退）。
+                  if (typeof globalThis.__zwVideoBridge.setLoop === 'function') {
+                    try { globalThis.__zwVideoBridge.setLoop(_pAbs, _pLoopOn); } catch (_eVbL1) {}
+                  }
+                } else {
+                  _pRetry(_n + 1);
+                }
+              } catch (_eVbRt) {}
+            }, 0);
+          };
+          _pRetry(1);
+        }
+        if (_hit) {
+          _pMs.bridgeOn = true;
+          // t8o：桥命中升级 settle 占位维度（IDL 形态 w0h0 → 解码真值；
+          // 同步命中路径——源字节 settle 登记在先）。
+          if (typeof globalThis._zwMediaBridgeDimsUpgrade === 'function') {
+            globalThis._zwMediaBridgeDimsUpgrade(_pKey, _pAbs);
+          }
+          // M3 扩批 XVI：pending seek 补推（同步命中路径——seek 发生在 play 前、
+          // 桥登记落位前，与重试路径同语义；spec 播放启动位置 = 请求 seek 目标）。
+          if (typeof _pMs._zwSeekPendingMs === 'number') {
+            try {
+              if (typeof globalThis.__zwVideoBridge.seek === 'function') {
+                globalThis.__zwVideoBridge.seek(_pAbs, _pMs._zwSeekPendingMs | 0);
+              }
+            } catch (_eVbSk3) {}
+            // M3 扩批 XVIII：march 区间基线 = seek 目标（同步命中路径，同上）。
+            // R3936：目标时刻 cue active 面同步（同重试路径注记）。
+            if (typeof globalThis._zwMediaSeekSync === 'function') {
+              try { globalThis._zwMediaSeekSync(_pKey); } catch (_eSsP0) {}
+            }
+            _pMs._zwLastMarchMs = _pMs._zwSeekPendingMs;
+            delete _pMs._zwSeekPendingMs;
+          }
+          // 起播时同步既有速率（play 前设的 playbackRate 经桥生效）。
+          if (typeof globalThis.__zwVideoBridge.setRate === 'function') {
+            try { globalThis.__zwVideoBridge.setRate(_pAbs, _pMs.playbackRate || 1); } catch (_eVbR2) {}
+          }
+          // M2c 后续：起播时同步既有增益（play 前设的 volume/muted 经桥生效——
+          // 该两 setter 的桥推 gated on bridgeOn，首播前设置只落 _mediaState）。
+          if (typeof globalThis.__zwVideoBridge.setGain === 'function') {
+            try {
+              globalThis.__zwVideoBridge.setGain(
+                _pAbs, (_pMs.volume != null ? _pMs.volume : 1), _pMs.muted === true);
+            } catch (_eVbG0) {}
+          }
+          // M3 扩批 XXIV：起播时同步既有 loop（play 前设的 loop 经桥生效——
+          // 同 gain 面；音频 entry 流末回卷 / 视频 march Ended→seek(0)+play 面；
+          // 读源同 IDL getter——上方 _pLoopOn，bg02-media v2 解析属性回退）。
+          if (typeof globalThis.__zwVideoBridge.setLoop === 'function') {
+            try { globalThis.__zwVideoBridge.setLoop(_pAbs, _pLoopOn); } catch (_eVbL0) {}
+          }
+          // M3 扩批 XXV：ended 态 play = seek 回最早位置（spec「ended playback」
+          // 步 6.4——ended 且播放方向向前 → seek to earliest position + 派
+          // seeking/seeked，非 ended；loop-from-ended 的 onseeked 断言面）。
+          // 判定面：loop setter 已按 spec 把 ended 翻回 false（looping 媒体
+          // 不能是 ended）——ms.ended 不可靠；桥侧 restart 前的 Ended 态由
+          // 「march 非 loop 分支置位过的 _zwEndedDispatched」承载（registry
+          // reset 后 isEnded 已 false，不能事后查桥）。
+          // registry 侧 reset 重建解码器（Ended→play 重头），语义层在此补事件对
+          //（march Ended 分叉只在「播放中走到流末」时跑——ended 后停着再 play
+          // 的形态不经过 march）。位置真值经 _zwMediaSeekSync 拉取。
+          if (_pMs._zwEndedDispatched === true) {
+            delete _pMs._zwEndedDispatched;
+            _pMs.ended = false;
+            _pMs.currentTime = 0;
+            _pMs._zwLastMarchMs = 0;
+            _pMs.seeking = true;
+            _zwMediaFire(sel, handle, _pKey, 'seeking');
+            var _epSeeked = function () {
+              var _epMs = _mediaState[_pKey];
+              if (!_epMs) return;
+              _epMs.seeking = false;
+              _zwMediaFire(sel, handle, _pKey, 'timeupdate');
+              _zwMediaFire(sel, handle, _pKey, 'seeked');
+              if (typeof globalThis._zwMediaSeekSync === 'function') {
+                try { globalThis._zwMediaSeekSync(_pKey); } catch (_eEpSs) {}
+              }
+            };
+            if (typeof setTimeout === 'function') setTimeout(_epSeeked, 0);
+            else _epSeeked();
+          }
+        }
+      } catch (_eVbP) {}
+    }
+    // media-elements M3 扩批 VII：play/playing/timeupdate 走 queued task
+    //（spec dom-media-play：「queue a media element task to fire play/
+    // playing」）——**异步**派发，play() 返回后注册的 onplaying/listener
+    // 仍能收到（pause-remove-from-document 的 v.onplaying 在 play() 之后
+    // 挂；同步派发致 handler 错过 → pending 挂起）。paused 状态同步翻转
+    // （spec dom-media-paused）。
+    // play Promise 的 settle 与事件派发**同一个 queued task**（无独立
+    // setTimeout——宿主 __zw_setTimeout 每定时器独立线程投递，两个 0ms
+    // 定时器顺序不保证，竞态下 promise-check 先于事件派发跑会把仍 playing
+    // 的 promise 误 resolve、丢 AbortError 契约——event_play_noautoplay
+    // 断言面）。task 内序：先派事件（listener 可能 pause() → 同步 reject
+    // playPromise），后检查 playPromise 身份再 resolve。
+    // 无 setTimeout 环境（纯同步沙箱）回落同步路径。
+    var entry = null;
+    var promise = new Promise(function (resolve, reject) {
+      entry = { resolve: resolve, reject: reject };
+    });
+    _pMs.playPromise = entry;
+    // M3 扩批 XXIX：HAVE_NOTHING 期 play()（readyState==0 且有候选）——
+    // spec dom-media-play 步 6「readyState is HAVE_NOTHING」分支：promise
+    // **pending**，等 readyState 变化 task 再派 play/playing（play 事件在
+    // canplay 前、playing 在 canplay 后——ready-states/autoplay 的
+    //「autoplay and play()」事件严格序断言面）。事件派发移至
+    // _zwMediaLoadSequence 的 readyState 翻转点（part06）。
+    // 候选判据按身份分派（同上方资源选择）：handle-only 无 src 无 settle
+    // 序列可达——保持既有 queued task resolve 契约（detached 断言面）；
+    // handle-only 有 src 的 settle 由 shim 侧调度承载（与身份无关）。
+    var _hasPendingCandidate = handle
+      ? __zw_has_attr_handle(handle, 'src') === '1'
+      : ((typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'src') : __zw_has_attr(sel, 'src')) === '1');
+    if (_hasPendingCandidate && (_pMs.readyState | 0) === 0) {
+      _pMs._zwPlayPendingEvents = { sel: sel, handle: handle, key: _pKey, entry: entry };
+      return promise;
+    }
+    var _pf = function () {
+      _dispatchWithBubble(_pKey, sel, handle, _makeEvent('play', { bubbles: false, cancelable: false }));
+      _dispatchWithBubble(_pKey, sel, handle, _makeEvent('playing', { bubbles: false, cancelable: false }));
+      _dispatchWithBubble(_pKey, sel, handle, _makeEvent('timeupdate', { bubbles: false, cancelable: false }));
+      if (_pMs.playPromise !== entry) return; // 已被 pause() settle
+      delete _pMs.playPromise;
+      if (_pMs.playing) entry.resolve(undefined);
+      else entry.reject(new (globalThis.DOMException || Error)('play() was interrupted by pause()', 'AbortError'));
+    };
+    if (typeof setTimeout === 'function') setTimeout(_pf, 0);
+    else {
+      delete _pMs.playPromise;
+      entry.resolve(undefined);
+    }
+    return promise;
+  }
   function _zwMediaAutoplay(sel, handle, key) {
     var hasAutoplay = false;
     try {
@@ -10029,12 +10497,14 @@
         : (typeof __zw_has_attr === 'function') && __zw_has_attr(sel, 'autoplay') === '1';
     } catch (_eAuto) {}
     if (!hasAutoplay) return;
-    var ms = _mediaState[key] || (_mediaState[key] = {});
-    if (ms.playing) return;
-    ms.playing = true;
-    _zwMediaFire(sel, handle, key, 'play');
-    _zwMediaFire(sel, handle, key, 'playing');
-    _zwMediaFire(sel, handle, key, 'timeupdate'); // 播放推进首帧（event_timeupdate* 断言面）
+    // A2 Fix 1（media-runtime-isolation DESIGN §6.2，spec ready-states potential
+    // autoplay 分支「eligible for autoplay → run the internal play steps」）：改走
+    // play 算法内核——原手写置态 + 同步三事件删除，bridgeOn/重试/pending-seek/
+    // rate-gain-loop/ended-loop 全继承；事件时序随 play 算法 queued task 面
+    //（event_play*/event_timeupdate* 断言族门禁；playing 态翻转仍在内核同步段）。
+    // autoplay 不向页面暴露 promise（无返回值，与现一致）。
+    // https://html.spec.whatwg.org/multipage/media.html#ready-states
+    if (typeof _zwMediaPlaySteps === 'function') _zwMediaPlaySteps(sel, handle, key);
   }
   function _zwMediaLoadSequence(sel, handle, key, tag) {
     var ms = _mediaState[key] || (_mediaState[key] = {});
@@ -14729,6 +15199,58 @@
     }
     return null;
   };
+  // s78 F4：image-map 命中（elementFromPoint 的 host-bridge 缺席臂消费——runner
+  // headless 无 HitTestCache 且 gBCR 全零，img 框以 (0,0) 起点 + IDL
+  // width/height 近似，FIXME(image-map)：真实几何（containing block 布局）归
+  // layout 集成面）。spec：usemap → hash-name 查 map（树序首个 name/id 匹配）→
+  // area 形状按树序分层首个覆盖者为最顶层 → 无形状覆盖 → img 自身。
+  // https://html.spec.whatwg.org/multipage/image-maps.html#image-map-processing-model
+  var _zwImgMapHitSel = function (x, y) {
+    var list;
+    try {
+      if (typeof document === 'undefined' || !document.querySelectorAll) return null;
+      list = document.querySelectorAll('img');
+    } catch (_eIQ) { return null; }
+    for (var i = 0; i < list.length; i++) {
+      var img = list[i];
+      var um = null;
+      try { um = img.getAttribute('usemap'); } catch (_eUA) {}
+      if (!um) continue;
+      var w = 0, h = 0;
+      try { w = Number(img.width) || 0; h = Number(img.height) || 0; } catch (_eID) {}
+      if (!(x >= 0 && x < w && y >= 0 && y < h)) continue;
+      var ref = (typeof __zwImgMapHashRef5278 === 'function') ? __zwImgMapHashRef5278(um) : null;
+      var map = null;
+      if (ref !== null) {
+        var maps;
+        try { maps = document.querySelectorAll('map'); } catch (_eMQ) { maps = []; }
+        for (var mi = 0; mi < maps.length; mi++) {
+          var nm = null, mid = null;
+          try { nm = maps[mi].getAttribute('name'); mid = maps[mi].getAttribute('id'); } catch (_eMA) {}
+          if (nm === ref || mid === ref) { map = maps[mi]; break; }
+        }
+      }
+      // ref/map 解析失败 → 无形状覆盖 → img 自身（spec：img 不入 image map
+      // 即普通渲染内容，命中回落 image element 臂）。
+      if (map) {
+        var areas;
+        try { areas = map.querySelectorAll('area'); } catch (_eAQ) { areas = []; }
+        for (var ai = 0; ai < areas.length; ai++) {
+          var area = areas[ai];
+          var shapeAttr = null, coordsAttr = null;
+          try { shapeAttr = area.getAttribute('shape'); coordsAttr = area.getAttribute('coords'); } catch (_eAA) {}
+          var shape = (typeof __zwImgMapShape5278 === 'function') ? __zwImgMapShape5278(shapeAttr) : 'rect';
+          var nums = (typeof __zwImgMapFloatList5278 === 'function') ? __zwImgMapFloatList5278(coordsAttr) : [];
+          if ((typeof __zwImgMapShapeAt5278 === 'function') && __zwImgMapShapeAt5278(shape, nums, x, y)) {
+            try { return area.__zwSelector || null; } catch (_eAS) { return null; }
+          }
+        }
+      }
+      // 无形状覆盖 → img 自身（spec：无 area 覆盖命中点 → image element）
+      try { return img.__zwSelector || null; } catch (_eIS) { return null; }
+    }
+    return null;
+  };
   // uievents-compat M3 尾簇（2026-10-04）：命中测试（视口 CSS 像素 → 选择器）——
   // host `__zw_elementFromPoint`（R2924 HitTestCache）优先；runner headless 无渲染
   // 缓存 → gBCR 几何近似（文档序逆序首个含点元素 ≈ 最深/topmost；proxy `__zwSelector`
@@ -15501,10 +16023,11 @@
   // 目标即 pending 捕获目标（spec §9.3 direct manipulation 设备隐式捕获；WPT
   // pointerevent_element_haspointercapture ?touch expected_default_capture 面）。
   globalThis.__zw_pointer_down_sequence = function (sel, x, y, pointerType, button) {
-    // R4300（M2 切片 23，2026-10-22）：light dismiss 前步——pointerdown 落点在任何
-    // open+closedby=any dialog 的包含链外 → 先发 close request（spec dialog light
-    // dismiss：pointerdown 触发、序在 click 语义之前）。产品指针管线与 runner click
-    // 命令共用本全局；non-any 态（默认模态 closerequest / none）不受影响。
+    // R4300（M2 切片 23，2026-10-22）/ R5263（M2 切片 56，2026-10-24）：light
+    // dismiss down 腿——pointerdown 只记 nearest clicked dialog 祖先分类（槽），
+    // 关判定移 up 腿（__zw_dialog_light_dismiss_up，sameTarget 同态比对后才关；
+    // spec 两腿模型）。产品指针管线与 runner click 命令共用本全局；non-any 态
+    // （默认模态 closerequest / none）不受影响。
     // https://html.spec.whatwg.org/multipage/interactive-elements.html#dialog-light-dismiss
     try {
       if (typeof __zw_dialog_light_dismiss_check === 'function') __zw_dialog_light_dismiss_check(sel, x, y);
@@ -15780,6 +16303,15 @@
       _zwProcessPendingCapture('1', true);
     }
     var capturedSel = st.capture['1'] ? st.capture['1'].sel : null;
+    // R5263：light dismiss up 腿——down 槽分类 vs up 重分类 sameTarget 同态比对
+    // 后才关。落点用捕获换防后的有效目标：setPointerCapture 把 up 重定向 dialog
+    // 内元素（'in'）≠ down 于 backdrop（'out'）→ 不关（pointer-capture 断言面）。
+    // 序在 pointerup 派发前，与 down 腿先于 pointerdown 派发对称。槽在 up 函数
+    // 内读取即清；portal/chorded 早退分支不经过本站——每次 up 前必有 down 重写
+    // 槽，不会读到上一交互的残留。
+    try {
+      if (typeof __zw_dialog_light_dismiss_up === 'function') __zw_dialog_light_dismiss_up(capturedSel || upSel, x, y);
+    } catch (_eLdUp) {}
     // 尾簇 6c：变异代际快照——up 派发（pointerup/mouseup）期间页内 listener 的
     // DOM 变异（attach/move-under-cursor）以此检测，驱动 post-up 结算。
     var upTick0 = st.mutTick;
@@ -16498,6 +17030,28 @@
               else _ccFire();
             } catch (_eCc1) {}
           }
+        }
+        // M3 扩批 XXXV（media-runtime-isolation DESIGN §10.9-16 接线）：error 面——
+        // 桥 isErrored 真值（C3 链：宿主崩溃/解码失败 → registry 镜像 error 态 →
+        // 桥 isErrored 真值口）翻转 → playing 翻转 + 元素 error 事件单次派发
+        // （spec：媒体数据获取/解码失败置 error 态、暂停播放、派 error——不冒泡，
+        // _zwMediaFire 同款面；错误态保持到下次 load，play() 不重试，重复 march
+        // 不再派）。宿主面 C3 契约场景 1「kill host → 页面 error 事件可见」的
+        // 页面级断言通路。
+        // https://html.spec.whatwg.org/multipage/media.html#concept-media-error
+        if (ms.playing && ms.bridgeOn && ms.bridgeSrc
+            && typeof globalThis.__zwVideoBridge === 'object'
+            && typeof globalThis.__zwVideoBridge.isErrored === 'function'
+            && !ms._zwErrorDispatched) {
+          try {
+            if (globalThis.__zwVideoBridge.isErrored(ms.bridgeSrc)) {
+              ms._zwErrorDispatched = true;
+              ms.playing = false;
+              _zwMediaFire(ms._zwSel || (key.charAt(0) === '@' ? null : key),
+                ms._zwHandle || (key.charAt(0) === '@' ? key.slice(1) : null),
+                key, 'error');
+            }
+          } catch (_eErBr) {}
         }
         // M3 扩批 XVI：ended 面——桥真值时钟走到流末（registry player Ended 态）→
         // active cue 全部派 exit（spec：ended 时 activeCues 清空、exit 逐 cue 派）+

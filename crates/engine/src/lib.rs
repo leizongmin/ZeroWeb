@@ -45,6 +45,8 @@ pub mod element_from_point;
 pub mod fetch_bridge;
 #[cfg(feature = "script-runtime")]
 pub mod font_load_bridge;
+#[cfg(feature = "script-runtime")]
+pub mod history_bridge;
 pub mod hit_test;
 pub mod indexed_db_bridge;
 pub mod js_dom_bridge;
@@ -81,6 +83,8 @@ pub use element_from_point::*;
 pub use fetch_bridge::*;
 #[cfg(feature = "script-runtime")]
 pub use font_load_bridge::*;
+#[cfg(feature = "script-runtime")]
+pub use history_bridge::*;
 pub use hit_test::*;
 pub use indexed_db_bridge::*;
 pub use js_dom_bridge::*;

@@ -1,0 +1,28 @@
+
+running 5 tests
+test c4_frame_hash_av_pair ... C4PAIR framehash src=file:///fixtures/long-webm-vp9-vorbis-60s.webm presented=1440 reference=1440 digest_presented=3f970f43b2bfb694 digest_reference=3f970f43b2bfb694
+ok
+test c4_frame_hash_pure_video ... C4PAIR framehash src=file:///fixtures/long-webm-vp9-60s.webm presented=1440 reference=1440 digest_presented=3f970f43b2bfb694 digest_reference=3f970f43b2bfb694
+ok
+test hosted::c4_capability_truth_host_vs_decode ... C4PAIR host-capabilities protocol_v=1 list=["video/webm; codecs=vp9", "audio/webm; codecs=vorbis", "audio/webm; codecs=opus", "audio/mpeg", "audio/ogg; codecs=opus", "audio/mp4; codecs=aac"]
+C4PAIR capability-verified claim=video/webm; codecs=vp9 fixture=sample-webm-vp9.webm decode=ok
+C4PAIR capability-verified claim=audio/webm; codecs=vorbis fixture=sample-webm-vp9-vorbis.webm decode=ok
+C4PAIR capability-verified claim=audio/mpeg fixture=sample-mp3.mp3 decode=ok
+C4PAIR capability-verified claim=audio/ogg; codecs=opus fixture=sample-ogg-opus.oga decode=ok
+C4PAIR capability-unverified claim=audio/webm; codecs=opus fixture=无（仓内缺对应 fixture）
+C4PAIR capability-unverified claim=audio/mp4; codecs=aac fixture=无（仓内缺对应 fixture）
+C4PAIR host-underclaim-check fixture=sample-ogg-vorbis.oga decode_ok=true
+C4PAIR host-underclaim-check fixture=sample-wav-pcm.wav decode_ok=true
+C4PAIR quota code=QuotaExceeded message=total_len 268435457 exceeds per-source cap 268435456
+ok
+test hosted::c4_epoch_storm_no_stale_frames ... C4PAIR epoch-storm captured=30 digest=45b70a0573a81d75 ct_end=58.708 errored=false
+ok
+test hosted::c4_resource_audit_30min ... C4AUDIT sample round=0 tick=1875 pid=1581205 rss_kb=13152 host_cpu_ms=1050 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=1 tick=1875 pid=1581205 rss_kb=15544 host_cpu_ms=3280 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=2 tick=1875 pid=1581205 rss_kb=16920 host_cpu_ms=5370 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=3 tick=1875 pid=1581205 rss_kb=18244 host_cpu_ms=7830 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=4 tick=1875 pid=1581205 rss_kb=18244 host_cpu_ms=9930 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=5 tick=1875 pid=1581205 rss_kb=18244 host_cpu_ms=12030 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=6 tick=1875 pid=1581205 rss_kb=18244 host_cpu_ms=14130 shm_segments=0 shm_bytes=0
+C4AUDIT sample round=7 tick=1875 pid=1581205 rss_kb=18244 host_cpu_ms=16230 shm_segments=0 shm_bytes=0
+test-guard: 超时 (600s)，已杀死进程树 (root pid 1580067)

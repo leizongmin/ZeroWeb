@@ -422,6 +422,17 @@ impl HeadlessSession {
                 self.note_navigation_started(&params.url, params.navigation_epoch);
                 Ok(None)
             }
+            // P10/T5：页面 history 遍历移交宿主（renderer shim 本地栈越界，drain 后经
+            // HistoryTraverse 转发；GUI 侧由 BrowserApp.history_traverse 提交，本处为
+            // headless 宿主对齐面）。delta 相对 shell 栈当前条目取目标，越界宿主判界
+            // 静默 no-op（R3004，同协议注释）；命中则复用 CDP navigateToHistoryEntry
+            // 的执行半边（jump_history + navigate_renderer），commit 回声判定
+            //（client_initiated 且 shell 已同 URL）不产生重复历史条目。spec：
+            // https://html.spec.whatwg.org/multipage/history.html#joint-session-history
+            IpcMessageKind::HistoryTraverse { delta } => {
+                self.history_traverse(delta);
+                Ok(None)
+            }
             // S11：page console 输出 → 会话事件队列（transport 逐命令排空盖章为
             // `Runtime.consoleAPICalled`； PW 消费面 = msg.type()/text()）。
             IpcMessageKind::ScriptError(params) => {
@@ -911,6 +922,39 @@ impl HeadlessSession {
                 None => std::thread::sleep(std::time::Duration::from_millis(2)),
             }
         }
+    }
+
+    /// P10/T5 页面 history 遍历的 headless 宿主提交：`delta` 相对 shell 栈当前条目
+    /// 取目标（同 GUI 侧 `BrowserApp::history_traverse` 与 CDP navigateToHistoryEntry
+    /// 的 index+delta 语义），越界或无活跃 tab 静默 no-op（R3004）。
+    fn history_traverse(&mut self, delta: i32) {
+        if delta == 0 {
+            return;
+        }
+        let (target, url) = {
+            let Some(tab) = self.shell.active_tab() else {
+                return;
+            };
+            let target = tab.history_index() as i64 + delta as i64;
+            if target < 0 || target >= tab.history_len() as i64 {
+                return;
+            }
+            let entry = &tab.navigation_history()[target as usize];
+            (target as usize, entry.url().to_string())
+        };
+        if !self.shell.jump_history(target) {
+            return;
+        }
+        // 载入失败不回滚历史面（同 CDP navigateToHistoryEntry：命令层报错给请求者，
+        // IPC 页面发起方无应答通道，记录后保持已跳转的历史语义）。
+        let title = match self.navigate_renderer(&url) {
+            Ok(()) => url.clone(),
+            Err(error) => {
+                tracing::warn!(url = %url, %error, "history traverse renderer load failed");
+                "Error loading page".to_string()
+            }
+        };
+        self.shell.on_page_loaded(&title);
     }
 
     pub(super) fn navigate_renderer(&mut self, url: &str) -> Result<(), String> {

@@ -46,6 +46,35 @@ mod r5203_bg_clip_radius_tests;
 mod r5204_skip_spaces_decoration_tests;
 /// R5205 paint Path B 分带窗口绝对锚定（line-clamp serif 簇省略号行位）。
 mod r5205_clamp_ellipsis_anchor_tests;
+/// R5255 迟延 positioned 后代的 shaped clip edge（R5201 圆角改写覆盖 R3922 补裁窗口）。
+mod r5255_deferred_positioned_rounded_clip_tests;
+/// R5256 整contents 选区的后代 owner 行（R5054 后代 owner FIXME 首片）。
+mod r5256_selection_descendant_owner_tests;
+/// R5258 ::first-line 首格式行字形 color（切片 1，CSS2 §5.12.1）。
+mod r5258_first_line_color_tests;
+/// R5259 appearance widget 纳入 per-node 效果窗口（transform 作用于全部渲染输出）。
+mod r5259_appearance_transform_window_tests;
+/// R5260 clip:text 恒色染色接入 flex/grid 匿名文本项（css-backgrounds-4 §background-clip:text）。
+mod r5260_clip_text_anonymous_item_tests;
+/// R5263 collapse 横带端部随相邻竖格线胜者伸缩（CSS2 §17.6.2 带端归属）。
+mod r5263_collapse_band_end_tests;
+mod r5264_collapse_content_half_shift_tests;
+/// R5265 collapse 带 z 序相位间插（CSS2.1 Appendix E / Blink kCollapsedTableBorders）。
+mod r5265_collapse_band_phase_tests;
+/// R5267 clip:text 恒色层间混合（css-compositing-1 §background-blend-mode）。
+mod r5267_bg_clip_text_layer_blend_tests;
+/// R5268 clip:text 逐层 clip（css-backgrounds-4 §background-clip:text）。
+mod r5268_bg_clip_text_per_layer_tests;
+/// R5269 inline owner 自持选区行高亮（css-pseudo-4 §highlight-cascading）。
+mod r5269_inline_owner_selection_tests;
+/// R5270 inline owner 选区行高亮 fill 同站同几何（css-pseudo-4 §highlight-painting）。
+mod r5270_inline_owner_selection_fill_tests;
+/// R5271 选区高亮 UA 默认回落面（css-pseudo-4 §highlight-styling）。
+mod r5271_selection_ua_default_tests;
+/// R5272 祖先链整 contents 选区 UA 默认高亮（css-pseudo-4 §highlight-painting）。
+mod r5272_selection_ancestor_ua_default_tests;
+/// R5273 图片替换元素作者 ::selection 底 tint（css-pseudo-4 §highlight-painting）。
+mod r5273_selection_img_bg_tests;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;

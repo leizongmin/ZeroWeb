@@ -37,6 +37,12 @@ impl Document {
     /// **任一**语言范围即命中（逗号列表 OR）。范围大小写不敏感；`*` 为 BCP 47 通配符。
     /// 须祖先链求值（故 [`crate::query`] `matches_full` 延后返 true，由本方法复评）。
     ///
+    /// 祖先链（含根元素）全无 lang 时按 spec「language of a node」Otherwise 分支回落
+    /// pragma-set default language（`<meta http-equiv=content-language>`，见
+    /// [`Self::pragma_set_default_language`]；https://html.spec.whatwg.org/multipage/dom.html#language）。
+    /// 空 `lang=""` = explicitly unknown，立即 false 不再回落（spec 同段）。HTTP
+    /// Content-Language 头回落本层不可达（快照无网络头域）——FIXME 暂缺。
+    ///
     /// 供 DOM `:lang()` 选择器（`element_matches_selector`）与 style-system `:lang()` CSS 匹配共享，
     /// 保证选择器与样式一致。
     pub fn matches_lang(&self, node: NodeId, ranges: &[String]) -> bool {
@@ -54,7 +60,56 @@ impl Document {
             }
             current = self.parent_node(n);
         }
-        false
+        self.pragma_set_default_language()
+            .is_some_and(|lang| ranges.iter().any(|r| lang_range_matches(r, &lang)))
+    }
+
+    /// pragma-set default language（HTML meta「Content language state」pragma，
+    /// https://html.spec.whatwg.org/multipage/semantics.html#meta-content-language-state）：
+    /// 文档序最后一个通过 pragma 算法的合格 `<meta http-equiv=content-language>` 的候选；
+    /// 无合格 meta → None。只走主树子链——template contents / shadow root 在侧表，
+    /// 不参与 pragma（spec pragma 处理面向文档树）。
+    // OPTIMIZATION: 每次 `:lang()` 无祖先 lang 即全树扫描（O(n)）。`:lang` 选择器罕见且
+    // pragma 面冷，缓存须在属性 set/元素插拔全 mutation 路径挂失效，暂不引入。
+    fn pragma_set_default_language(&self) -> Option<String> {
+        let mut result: Option<String> = None;
+        let mut stack = vec![self.root];
+        while let Some(id) = stack.pop() {
+            if let Some(candidate) = self.meta_content_language_candidate(id) {
+                result = Some(candidate); // 文档序遍历，最后一个合格 pragma 胜出
+            }
+            let mut children = self.child_nodes(id);
+            children.reverse(); // stack LIFO → 还原文档序
+            stack.extend(children);
+        }
+        result
+    }
+
+    /// 单节点的 Content language state pragma 候选——非 `<meta http-equiv=content-language>`
+    /// 或 pragma 算法任一步失效 → None。算法逐行对应 spec 步骤 1-8：
+    /// 无 content 属性、http-equiv 非 ASCII 大小写不敏感匹配、content 含逗号、
+    /// 跳过 ASCII 空白后无非空 token，均不设默认语言。
+    fn meta_content_language_candidate(&self, id: NodeId) -> Option<String> {
+        let node = self.get(id)?;
+        let NodeKind::Element(el) = &node.kind else {
+            return None;
+        };
+        if !el.local_name().eq_ignore_ascii_case("meta") {
+            return None;
+        }
+        if !self
+            .get_attribute(id, "http-equiv")?
+            .eq_ignore_ascii_case("content-language")
+        {
+            return None;
+        }
+        let content = self.get_attribute(id, "content")?;
+        // spec 步骤 2：content 含 U+002C COMMA → pragma 失效。
+        if content.contains(',') {
+            return None;
+        }
+        // spec 步骤 5-8：跳过 ASCII 空白收集首个非空白段，空则不设。
+        Some(content.split_ascii_whitespace().next()?.to_string())
     }
 
     /// `:dir(ltr|rtl)` 的权威匹配（CSS Selectors L4 §14）。

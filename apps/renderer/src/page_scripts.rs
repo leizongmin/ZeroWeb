@@ -160,6 +160,15 @@ pub fn run_page_scripts_interruptible<F: Fn(&str) -> Result<String, String>>(
             PageScript::InlineModule(_) => base.clone(),
             _ => String::new(),
         };
+        // s94 同款：`__moduleCache` 记忆化键与模块 URL 分离——内联 module 每元素独立键
+        //（落在页面 URL 上会被同文档首枚命中短路，testharness "completed without
+        // reporting registered tests" 双内联定谳）；外链键 = src 绝对化（同 src 两元素
+        // 恰好一次）。https://html.spec.whatwg.org/multipage/webappapis.html#module-map
+        let module_cache_key = match &script {
+            PageScript::InlineModule(_) => format!("{base}#!zw-inline-module-{script_index}"),
+            PageScript::ExternalModule(src) => resolve_document_url(&base, src),
+            _ => base.clone(),
+        };
         // R2944 mirror：外部脚本的绝对 src（fetch 成功+执行后派 script 元素 'load'；fetch 失败在下方分支派 'error'）。
         let external_abs: Option<String> = match &script {
             PageScript::External(src) | PageScript::ExternalModule(src) => Some(resolve_document_url(&base, src)),
@@ -190,6 +199,7 @@ pub fn run_page_scripts_interruptible<F: Fn(&str) -> Result<String, String>>(
             &html,
             is_module,
             &module_url,
+            &module_cache_key,
             &code,
             &fetch_text,
             script_index,
@@ -638,8 +648,8 @@ pub fn dispatch_host_focus(
 /// 派发后续通知——让 `observe()` 之后的真实 render（snapshot 已填真实 rect）触发 observer 回调。
 /// 返回 observer 回调是否改了 DOM（调用方据此单次 rerender，防反馈环）。
 ///
-/// R2713b：同一 post-render tick 附带 `__zw_raf_tick`——帧驱动 rAF（`ZW_RAF_FRAME_DRIVEN=1`）的
-/// 待 fire 回调在此派发（OFF 时 shim 早返零开销）。ts 传 `performance.now()`（R2768 land 的
+/// R2713b：同一 post-render tick 附带 `__zw_raf_tick`——帧驱动 rAF（`ZW_RAF_FRAME_DRIVEN`
+/// 默认 on，=0/false/off 显式关闭）的待 fire 回调在此派发（关闭时 shim 早返零开销）。ts 传 `performance.now()`（R2768 land 的
 /// DOMHighResTimeStamp，单调 ms 自 time origin 起）；performance 缺失（旧 shim）兜底 0。observer
 /// tick 先于 rAF，rAF 回调见到的 DOM 反映 observer 本帧变更；两者 mutation 合并由
 /// `apply_recorded_mutations` 单次 rerender。
@@ -1098,12 +1108,13 @@ pub(crate) fn append_source_url(code: &str, url: &str) -> String {
     named
 }
 
-#[allow(clippy::too_many_arguments)] // 8 参 = 既有 7 参 + source_url 穿参，签名清晰优于打包结构体
+#[allow(clippy::too_many_arguments)] // 9 参 = 既有 8 参 + module_cache_key 穿参，签名清晰优于打包结构体
 fn execute_chunk<F: Fn(&str) -> Result<String, String>>(
     ctx: &mut PageScriptContext<'_>,
     html: &str,
     is_module: bool,
     module_url: &str,
+    module_cache_key: &str,
     code: &str,
     fetch_text: &F,
     script_index: usize,
@@ -1121,7 +1132,8 @@ fn execute_chunk<F: Fn(&str) -> Result<String, String>>(
         let mut registry: HashMap<String, String> = HashMap::new();
         collect_module_deps(fetch_text, module_url, code, &mut registry, page_map.as_ref())?;
         let deps: Vec<(String, String)> = registry.into_iter().collect();
-        ctx.js_worker.execute_module(code, module_url, &deps)?;
+        ctx.js_worker
+            .execute_module(code, module_url, module_cache_key, &deps)?;
     } else {
         // classic 页面脚本：顶层 try-catch 包装捕获抛错（防持久 Isolate 中毒 + 让 R2940 报告生效）+
         // 执行期设/清 document.currentScript（R3258，script_run_classic_page）。

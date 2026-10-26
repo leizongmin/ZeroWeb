@@ -37,6 +37,10 @@ dispatch = "0.2"
 objc2-app-kit = { version = "0.2.2", features = ["NSApplication", "NSImage"] }
 objc2-foundation = "0.2.2"
 
+# T13 S7：malloc_trim 归还 glibc arena 内存；符号仅 glibc 提供，musl 不编译该路径。
+[target.'cfg(all(target_os = "linux", target_env = "gnu"))'.dependencies]
+libc = "0.2"
+
 [features]
 default = ["v8"]
 # 镜像 browser 的 feature 传播——下游 v8-gated 代码（webview.rs sandbox 创建、

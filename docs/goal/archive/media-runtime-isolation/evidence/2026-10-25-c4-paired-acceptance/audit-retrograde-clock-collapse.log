@@ -1,0 +1,9 @@
+
+running 1 test
+test hosted::c4_resource_audit_30min ... C4AUDIT sample round=0 tick=1875 pid=1542457 rss_kb=13256 host_cpu_ms=1370 shm_segments=0 shm_bytes=0
+C4AUDIT idle-probe round=15 cpu_delta_5s_ms=0
+C4AUDIT summary rounds=30 samples=1 single_host=true pid_stable=Some(1542457) rss_peak_kb=13256 rss_steady_kb=13256 host_cpu_total_ms=0 shm_segments=0 shm_bytes=0 idle_cpu_5s_ms=0 orphan=false
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 97.56s
+

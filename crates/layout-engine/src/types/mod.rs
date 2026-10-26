@@ -94,6 +94,31 @@ pub struct NestedSpannerChildFrag {
     pub clip_h: f32,
 }
 
+/// R5280：表格列背景条目（CSS2 §17.5.3 列/列组背景 + §17.5.1 层背景不覆盖 spacing gap）。
+///
+/// 定位区与绘制区分开：image 平铺相位锚定在**该列 cell 区域并集的包围盒**
+/// （§17.5.1 列层区域 = cell 并集；跨 cell 连续、含 spacing，dbaron ref 以整幅
+/// div + 白条构造即此语义），实际填充按 `segments` 逐 cell 矩形（spacing gap
+/// 不在段内，露出表格背景层）。
+#[derive(Debug, Clone)]
+pub struct TableColBgEntry {
+    /// `<col>` 或 `<colgroup>` 元素节点（painter 据此取背景样式）。
+    pub node_id: NodeId,
+    /// 定位区 x（相对表格 content box）——列全跨。
+    pub origin_x: f32,
+    /// 定位区宽——列全跨。
+    pub origin_w: f32,
+    /// 定位区 y（相对表格 content box）——cell 并集包围盒顶（含纵向 perimeter
+    /// spacing）；`h = -1` 哨兵时取 0（paint 期锚 content_y，镜像旧全高行为）。
+    pub origin_y: f32,
+    /// 定位区高——cell 并集包围盒高；`-1` 哨兵 = 全高（paint 期取 content_height，
+    /// 无 spacing 单段形态，镜像旧行为）。
+    pub origin_h: f32,
+    /// cell 区域分段 `(x, y, w, h)` 相对表格 content box。`h = -1` 哨兵 = 全高
+    /// （paint 期取 content_height，无纵向 spacing 的单段形态）；空段不发射。
+    pub segments: Vec<(f32, f32, f32, f32)>,
+}
+
 /// 布局盒 — 一个元素在页面上的几何位置与绘制信息（含 R4330 run-in 分裂边框载荷）。
 #[derive(Debug, Clone)]
 pub struct LayoutBox {
@@ -394,7 +419,9 @@ pub struct LayoutBox {
     /// border-collapse: collapse 时各边的边框颜色覆盖（RGBA u32）。
     /// 侧边索引：0=top, 1=right, 2=bottom, 3=left。
     /// None 表示无覆盖（使用 ComputedStyle 中的颜色）。
-    pub collapsed_border_color_overrides: [Option<u32>; 4],
+    /// Option<Box> 堆侧化（layout_box_size_pin 钉值）：仅 collapse 表的
+    /// 带颜色覆盖盒分配，其余每盒 8 B 指针。
+    pub collapsed_border_color_overrides: Option<Box<[Option<u32>; 4]>>,
     /// border-collapse: collapse 时各边的边框样式覆盖。
     /// 侧边索引：0=top, 1=right, 2=bottom, 3=left。
     /// 当边框冲突解决后获胜方的样式与单元格原始样式不同时设置。
@@ -404,6 +431,16 @@ pub struct LayoutBox {
     /// 外边缘的边框不进行厚度减半（因为没有邻居共享），
     /// 内边缘的边框减半以避免与邻居重叠。
     pub collapsed_border_outer_edge: [bool; 4],
+    /// R5286：winner-center collapse 表的周界胜者格线半宽。
+    /// 侧边索引：0=top, 1=right, 2=bottom, 3=left。layout 端
+    /// apply_table_size_constraints 装配时写入（非 winner-center/非 collapse
+    /// 表保持 None）。paint 端背景 positioning area 按此内缩——collapsed 表
+    /// 周界格线以盒缘为中心（盒 = 外延），chromium 的定位区 = 外延 − 周界
+    /// 胜者半宽（bc-table-001 k=144 像素实证）；按声明 border 全宽内缩会
+    /// 多缩半格线，对角渐变平铺相位错 (3,2) 整块失配。
+    /// Option<Box> 堆侧化（layout_box_size_pin 钉值，仿 inline_relpos_shifts）：
+    /// 仅 winner-center collapse 表盒分配，其余每盒 8 B 指针。
+    pub collapsed_border_outer_half: Option<Box<[f32; 4]>>,
     /// 元素的 writing-mode（用于 paint 阶段旋转文字和后处理轴交换）。
     pub writing_mode: WritingModeValue,
     /// R4443：声明值为 `sideways-lr` 的旁路标记（paint 字形 −90° CCW + 列内自下而上）。
@@ -493,6 +530,18 @@ pub struct LayoutBox {
     /// paint 系统重跑 IFC（空 styles）时经 `glyph_verticals_overrides` 复用，
     /// 无需再判 line-height 语义。
     pub text_node_glyph_verticals: NodeIdMap<(f32, f32)>,
+    /// R5250（CSS2 §9.3.2 relative positioning）：本容器 IFC 内各 run 归因节点的
+    /// relative inset 视觉位移 `(dx, dy)` 映射（compute_final 以真实 styles 构建，
+    /// 容器自身 inset 不入表——taffy 已随盒施加）。纯 inline 非替换盒无 taffy 节点
+    /// 无人施加 inset（R5225 判例对其不成立），stored IFC 映射与 paint Path B
+    /// （空 styles 重跑，无 styles 可判）据表平移 fragment。`ZW_RELPOS_INLINE_SHIFT=0`
+    /// 回退静态位行为。
+    ///
+    /// R3441/ZRG-2026-08-18-01：LayoutBox 每盒放大直接放大树构造/遍历成本
+    ///（per-box 常驻 `NodeIdMap` 曾致 +80 B ≈ 遍历 -25%），故盒侧仅存
+    /// `Option<Box<_>>`（8 B，多数盒无 relative inline 子 = None 零分配），
+    /// 表本体按需堆分配。
+    pub inline_relpos_shifts: Option<Box<NodeIdMap<(f32, f32)>>>,
     /// 文本节点的 letter-spacing 映射（来自 layout engine 的 IFC 运行）。
     ///
     /// paint 系统在运行空 styles IFC 时无法获取 letter-spacing（无 style 信息），
@@ -650,14 +699,19 @@ pub struct LayoutBox {
     pub run_in_border: Option<RunInBorder>,
     /// 表格列背景绘制信息（CSS Tables §17.5.3 列背景）。
     ///
-    /// `<col>`/`<colgroup>` 元素不生成常规流盒，其 `background-color` 须由表格
-    /// 绘制算法特殊处理：在单元格背景**之下**、按列跨满表格高度绘制。
-    /// 每项 = `(node_id, x_offset, width)`：x_offset/width 相对表格 content box，
-    /// node_id 指向 `<col>` 或 `<colgroup>` 元素（painter 据此取 background-color）。
-    /// 仅含 background-color 非透明且宽度 > 0 的列元素；顺序为 colgroup 在前、
-    /// col 在后（colgroup 背景在下层）。由 `collect_table_col_backgrounds` 在
-    /// position_cells 后填充（彼时 col_widths + col→column 映射已知）。
-    pub table_col_backgrounds: Vec<(NodeId, f32, f32)>,
+    /// `<col>`/`<colgroup>` 元素不生成常规流盒，其背景须由表格绘制算法特殊处理：
+    /// 在单元格背景**之下**、按列绘制。仅含背景非透明或带 background-image 且
+    /// 宽度 > 0 的列元素；顺序为 colgroup 在前、col 在后（colgroup 背景在下层）。
+    /// 由 `collect_table_col_backgrounds` 在 position_cells 后填充。
+    pub table_col_backgrounds: Vec<TableColBgEntry>,
+    /// 行组/行背景的 cell 区域分段（CSS2 §17.5.1 表格层叠：separated 模式下
+    /// row-group/row 层背景不覆盖 border-spacing gap，绘制须裁剪到 cell 区域并；
+    /// 定位区仍为层盒全矩形——background-position 锚定整组）。
+    /// 每项 = `(x, y, w, h)` 相对**该盒自身** border-box 原点；为空 = 无裁剪
+    /// （paint 走整盒路径）。由 `collect_table_row_bg_segments` 在 post-process
+    /// 填充，仅 separated 且 spacing > 0 且盒带非透明背景时非空
+    ///（table-backgrounds-bs-rowgroup-001：连续块画法 gap 露表底、图相位漂移）。
+    pub bg_cell_segments: Vec<(f32, f32, f32, f32)>,
     /// R1717：表格单元格文本的 vertical-align 内容偏移（px，正=向下）。
     ///
     /// CSS 2.1 表格单元格的 `vertical-align` 控制单元格**内容**在单元格内的垂直对齐
@@ -667,6 +721,17 @@ pub struct LayoutBox {
     /// 算出 dy 写入此字段，paint_text 据此偏移文本起点。仅 middle/bottom 非 0；top/baseline=0。
     /// kill-switch `ZW_TABLE_CELL_VALIGN_IFC=0` 关闭（default-on）。
     pub valign_offset: f32,
+    /// R5264（CSS2 §17.6.2 格线模型内容原点）：collapse cell 内容原点半框修正
+    /// (dx, dy)，负值（= −½胜出上/左边框宽）。
+    ///
+    /// 格线模型（R5262 格线原点平移 + R5241 半框行高/列宽）下，chromium 的 cell
+    /// 内容盒 = 盒跨（格线到格线）内缩**胜出边框宽的一半**/缘——共享带以格线为
+    /// 中心跨画双邻，内容按整框内缩会留 ½框护城河并错位 +½框（001d 白字母 +10
+    /// 咬带 1.00% 残差全解实证；ref 马赛克槽位算术 + p001/p002 chromium 位图取证）。
+    /// table.rs `apply_collapse_content_half_shift` 在 resolve 之后设置：子树平移与
+    /// content 口径当场生效，此字段供 paint 文本原点（text-only cell 的 IFC 走
+    /// border+padding 推导，无子盒可平移）同源消费，语义同 `valign_offset`。
+    pub collapse_half_shift: (f32, f32),
 }
 
 impl LayoutBox {
@@ -776,9 +841,10 @@ impl Default for LayoutBox {
             column_gap: 0.0,
             is_block_level: false,
             is_relative: false,
-            collapsed_border_color_overrides: [None; 4],
+            collapsed_border_color_overrides: None,
             collapsed_border_style_overrides: [const { None }; 4],
             collapsed_border_outer_edge: [false; 4],
+            collapsed_border_outer_half: None,
             writing_mode: WritingModeValue::HorizontalTb,
             is_anonymous_text_item: false,
             css_order: 0,
@@ -793,6 +859,7 @@ impl Default for LayoutBox {
             text_node_is_ahem: NodeIdMap::default(),
             text_node_ws_overrides: NodeIdMap::default(),
             text_node_glyph_verticals: NodeIdMap::default(),
+            inline_relpos_shifts: None,
             text_node_letter_spacing: NodeIdMap::default(),
             text_node_word_spacing: NodeIdMap::default(),
             text_node_line_heights: NodeIdMap::default(),
@@ -822,7 +889,9 @@ impl Default for LayoutBox {
             is_run_in_merged: false,
             run_in_border: None,
             table_col_backgrounds: Vec::new(),
+            bg_cell_segments: Vec::new(),
             valign_offset: 0.0,
+            collapse_half_shift: (0.0, 0.0),
         }
     }
 }

@@ -191,20 +191,51 @@
       var r = sel._ranges[i];
       var sc = r.startContainer, ec = r.endContainer;
       if (!sc || !ec) continue;
+      // R5272：node 臂（selectNode）容器恒为父节点（html 时为 document，无
+      // __zwSelector）——容器选择器门只约束 contents/切片臂；node 臂选择器取
+      // _mode.node 自身（见下）。
+      var isNodeArm = !!(r._mode && r._mode.kind === 'node' && r._mode.node && r._mode.node.nodeType === 1);
       var sSel = sc.__zwSelector || (sc.parentNode && sc.parentNode.__zwSelector);
       var eSel = ec.__zwSelector || (ec.parentNode && ec.parentNode.__zwSelector);
-      if (!sSel || sSel.charAt(0) === '@' || sSel !== eSel) continue;
+      if (!isNodeArm && (!sSel || sSel.charAt(0) === '@' || sSel !== eSel)) continue;
       var s16, e16;
+      // R5274：contents 臂容器含子节点时非折叠（spec dom-range-selectNodeContents：
+      // 边界 (parent,0)-(parent,childCount)，childCount≥1 即覆盖全部子节点）——即使
+      // textContent 为空（纯替换元素子节点，如 active-selection-041 的 img-only div）
+      // 也须出记录，paint 侧整 contents 判据 s==0&&e≥len 对 len=0 成立 → 图片 wash 生效。
+      var contentsForce = false;
       if (sc === ec && sc.nodeType === 1 && r._mode && r._mode.kind === 'contents') {
         var t = '';
         try { t = String(sc.textContent || ''); } catch (_eTs) {}
         s16 = 0; e16 = t.length;
+        try { contentsForce = !!(sc.childNodes && sc.childNodes.length); } catch (_eK) {}
+      } else if (isNodeArm) {
+        // R5271：selectNode(元素)（spec range-selectNode：选节点本身——绘制口径
+        // ≡ 其内容文本 [0, textContent.length)）。system-color-hightlights-vs-
+        // getSelection-001/002（selectNode(span#id)）与 selection-image-001/002
+        //（selectNode(documentElement)）族此前整跳过（渲染零变化）。选择器取
+        // 节点自身（start/endContainer 是父，__zwSelector 须落被选元素）。
+        var tn = r._mode.node;
+        var tSel = tn.__zwSelector || (tn.parentNode && tn.parentNode.__zwSelector);
+        if (!tSel || tSel.charAt(0) === '@') {
+          // R5272：documentElement/body 无 __zwSelector（parse 映射按 id/class
+          // 落键，根/体元素无寻址规则）——类型选择器回落（html/body 文档唯一
+          // 无歧义，paint 侧 query_selector 全引擎解析；selection-image-001/002
+          // 族）。其余无寻址节点仍跳过（避免错锚到同标签首个元素）。
+          var tag = String(tn.tagName || '').toLowerCase();
+          if (tag !== 'html' && tag !== 'body') continue;
+          tSel = tag;
+        }
+        var t2 = '';
+        try { t2 = String(tn.textContent || ''); } catch (_eTs2) {}
+        s16 = 0; e16 = t2.length;
+        sSel = tSel;
       } else if (sc.nodeType === 3 && ec.nodeType === 3) {
         s16 = r.startOffset | 0; e16 = r.endOffset | 0;
       } else {
         continue;
       }
-      if (e16 > s16) out.push({ selector: sSel, start: s16, end: e16 });
+      if (e16 > s16 || contentsForce) out.push({ selector: sSel, start: s16, end: e16 });
     }
     return out;
   };
@@ -869,6 +900,27 @@
     }
     _zwDialogCloseTheDialog4200(key, sel, handle, returnValue);
   }
+  // R5256（html-semantics M2 切片 51，2026-10-24）：open 属性直写移除面
+  //（removeAttribute('open') / IDL open falsy）的 dialog 关闭步。spec
+  // the-dialog-element attribute change steps（open 移除）→ dialog closing
+  // algorithm——与 close-the-dialog 核心的差异面：**无 cancel 事件**（非
+  // request-close）、**无 beforetoggle**（close-the-dialog 步语义，本算法不含，
+  // corpus 无钉）、**焦点不恢复**（dialog-close-via-attribute.tentative 断言面：
+  // previously focused element 不聚焦，当前焦点原地保留）、**returnValue 不变**
+  //（仅 close()/requestClose() 写）；模态态/top-layer/组栈清理 + close/toggle
+  // 事件排队与核心同队列（toggle 合并语义一致，oldState=open）。**close watcher
+  // 门在调用方 pre-snapshot**（part04 两调用点删态前取样：模态态/组栈双信号）——
+  // 属性直开（markup open / IDL true，未经 show）无 watcher，移除仅隐藏不入本
+  // 函数（dialog-open「IDL false 不派 close」断言面）。
+  // https://html.spec.whatwg.org/multipage/interactive-elements.html#the-dialog-element
+  function _zwDialogAttrClosedR5256(key, sel, handle) {
+    delete _zwDialogModal[key];
+    delete _zwTopLayer[key];
+    var _msI = _zwDialogModalStack.indexOf(key);
+    if (_msI !== -1) _zwDialogModalStack.splice(_msI, 1);
+    _zwDialogQueueCloseEvent4200(key, sel, handle);
+    _zwDialogToggleQueueNotify4200(key, sel, handle, true, null);
+  }
   // ---------- R4600（html-semantics M2 切片 26，2026-10-22）dialog focusing steps 家族 ----------
   // spec：dialog focusing steps（https://html.spec.whatwg.org/multipage/interactive-elements.html
   // #dialog-focusing-steps）——allow focus 门（headless 恒允许；FIXME: rendering 域
@@ -1050,7 +1102,13 @@
   // candidate 过滤已挡，DOM anchor 复核 defer rendering 域）。
   function _zwDialogRunFocusingStepsR4600(target) {
     if (!target) return;
+    // R5257：dialog 内部 focusing steps 不滚动视口（no-scroll 变体——show/showModal
+    // 聚焦与 close-the-dialog 焦点恢复共用本执行器；close 恢复不滚是 Chromium 可观察
+    // 行为，focus-after-close「close 后 scrollTop==0」断言面）。part04 focus 尾滚动步
+    // 读 `__zwFocusNoScroll` 旗跳过。
+    try { globalThis.__zwFocusNoScroll = true; } catch (_eNs1) {}
     try { target.focus(); } catch (_eFc) {}
+    try { globalThis.__zwFocusNoScroll = false; } catch (_eNs2) {}
   }
   // dialog focusing steps 本体。
   function _zwDialogFocusingStepsR4600(sel, handle, modal) {
@@ -1080,7 +1138,10 @@
         // 区），不是常规 focusing 操作；body 本身被模态 inert 不阻断 fixup
         //（Chromium 同款：inert modal dialog showModal 后 activeElement===body）。
         try { globalThis.__zwModalGateBypass = true; } catch (_eBp1) {}
+        // R5257：fixup 同走 no-scroll 变体（UA 级焦点回落不滚视口，同 close 恢复面）。
+        try { globalThis.__zwFocusNoScroll = true; } catch (_eNs0) {}
         try { if (globalThis.document && globalThis.document.body && globalThis.document.body.focus) globalThis.document.body.focus(); } catch (_eFx) {}
+        try { globalThis.__zwFocusNoScroll = false; } catch (_eNs0b) {}
         try { globalThis.__zwModalGateBypass = false; } catch (_eBp2) {}
       }
       return;
@@ -1283,15 +1344,25 @@
   //   （target === P || P.contains(target)），首个包含者停；不包含则逐个隐
   //   （_zwHidePopover 状态机，beforetoggle 可取消）——spec hide all popovers
   //   until 链上全隐（closedby-simple/complex popover light dismiss 断言面）。
-  // ② dialog pass：open+any dialog 按文档序反走（内层先）只看第一个：
-  //   backdrop 属主（backdropHit）→ close + 停（backdrop 点击对属主为「外」、
-  //   对祖先链为「内」——complex modalB 面落地即靠 popover pass 的 contains 停）；
-  //   target 在包含链内 → 停不关（内层 any 挡外层——complex「一次 click 只关
-  //   最内层链」断言面，旧实现全量关闭为 dialogA 误关红因）；盒外 → close + 停。
+  // ② dialog pass（R5263 起两腿）：open+any dialog 按文档序反走（内层先）只看
+  //   第一个，down 腿只记 nearest clicked dialog 祖先分类（'in' 包含链内 /
+  //   'out' 链外——backdrop 属主（backdropHit）与盒外均 'out'；内层 any 挡
+  //   外层——complex「一次 click 只关最内层链」断言面，旧实现全量关闭为
+  //   dialogA 误关红因），关判定移 up 腿 __zw_dialog_light_dismiss_up。
+  // R5263（M2 切片 56，2026-10-24）：dialog pass 两腿化——spec light dismiss 已
+  //   演进为 pointerdown 记祖先 + pointerup sameTarget 比对后才关（身份模型）；
+  //   本实现以两态分类等价（'in'/'out'，全腿组合结果一致：in/in、out/in、
+  //   in/out 均不关，out/out 关 topmost）。pointer capture 使 up 重定向捕获
+  //   目标（part06 capturedSel 换防后取）→ down 'out' + up 'in' 不关——
+  //   dialog-light-dismiss-pointer-capture 双腿断言面。popover pass 维持
+  //   down 腿单发（R5234 绿面不动）。
   // https://html.spec.whatwg.org/multipage/interactive-elements.html#dialog-light-dismiss
   // https://html.spec.whatwg.org/multipage/popover.html#popover-light-dismiss
   globalThis.__zw_dialog_light_dismiss_check = function (targetSel, px, py) {
     if (typeof document === 'undefined' || !document.querySelectorAll) return;
+    // R5263：down 腿终态必写槽（无 dialog / target 解析不到的早退也清）——
+    // 防 up 腿读到上一交互的残留分类。
+    _zwDialogLdDown = null;
     var dialogs;
     try { dialogs = document.querySelectorAll('dialog'); } catch (_eLdQ) { return; }
     if (!dialogs || !dialogs.length) return;
@@ -1331,24 +1402,61 @@
         try { _zwHidePopover(_ldK, _ldPs, _ldPh); } catch (_eLdPh) {}
       }
     } catch (_eLdPass) {}
-    // ② dialog pass（R5234）：反文档序首个 open+any dialog 一锤定音。
+    // ② dialog pass（R5263 两腿 down 腿）：反文档序首个 open+any dialog 定祖先
+    // 分类，只记槽不关——关判定在 up 腿（__zw_dialog_light_dismiss_up）。
+    var _ldPick = _zwDialogLdPick(dialogs, target, targetSel, backdropHit);
+    _zwDialogLdDown = _ldPick ? _ldPick.state : null;
+  };
+  // R5263：nearest clicked dialog 祖先分类（spec ancestor 步的反文档序近似，选择
+  // 器保持 R5234 口径——内层 any 挡外层）。
+  function _zwDialogLdPick(dialogs, target, targetSel, backdropHit) {
     for (var i = dialogs.length - 1; i >= 0; i--) {
       var d = dialogs[i];
       var ds = d.__zwSelector || null;
       var dh = d.__zwHandle || null;
-      var dk = _elKey(ds, dh);
       if (!_zwDialogHasOpen(ds, dh)) continue;
+      var dk = _elKey(ds, dh);
       if (_zwDialogClosedByState(ds, dh, dk) !== 'any') continue;
-      if (backdropHit && ds && targetSel === ds) {
-        _zwDialogRequestClose(dk, ds, dh, undefined);
-        break;
-      }
+      if (backdropHit && ds && targetSel === ds) return { dk: dk, ds: ds, dh: dh, state: 'out' };
       var contains = false;
       try { contains = !!target && (target === d || (d.contains ? !!d.contains(target) : false)); } catch (_eLdC) { contains = false; }
-      if (contains) break; // 内层 any 挡外层
-      _zwDialogRequestClose(dk, ds, dh, undefined);
-      break;
+      if (contains) return { dk: dk, ds: ds, dh: dh, state: 'in' };
+      return { dk: dk, ds: ds, dh: dh, state: 'out' };
     }
+    return null;
+  }
+  // R5263：dialog light dismiss up 腿——sameTarget 同态比对（down 槽分类 vs up
+  // 重分类）后才关 topmost。targetSel 用捕获换防后的有效目标（part06 传
+  // capturedSel || upSel）：down 于 backdrop 链外（'out'）+ setPointerCapture 把
+  // up 重定向 dialog 内元素（'in'）→ 同态不等不关；无 capture 双 'out' 照常关。
+  // 槽在读取即清（spec：pointerup 后清 dialog pointerdown target，无论结果）。
+  // https://html.spec.whatwg.org/multipage/interactive-elements.html#dialog-light-dismiss
+  globalThis.__zw_dialog_light_dismiss_up = function (targetSel, px, py) {
+    if (typeof document === 'undefined' || !document.querySelectorAll) return;
+    var down = _zwDialogLdDown;
+    _zwDialogLdDown = null;
+    if (down == null) return;
+    var dialogs;
+    try { dialogs = document.querySelectorAll('dialog'); } catch (_eLdQ2) { return; }
+    if (!dialogs || !dialogs.length) return;
+    var target = null;
+    if (targetSel) {
+      try { target = document.querySelector(targetSel); } catch (_eLdT2) { target = null; }
+    }
+    if (targetSel && !target) return;
+    var backdropHit = false;
+    if (px != null && py != null && targetSel) {
+      try {
+        var bdTop = _zwDialogModalTopSel();
+        if (bdTop && bdTop === targetSel && target && target.getBoundingClientRect) {
+          var bdR = target.getBoundingClientRect();
+          backdropHit = !bdR || px < bdR.left || px > bdR.right || py < bdR.top || py > bdR.bottom;
+        }
+      } catch (_eLdBd) {}
+    }
+    var pick = _zwDialogLdPick(dialogs, target, targetSel, backdropHit);
+    if (!pick || pick.state !== down || pick.state === 'in') return;
+    _zwDialogRequestClose(pick.dk, pick.ds, pick.dh, undefined);
   };
   // R3290：统一 set/remove 内容属性 helper（sel/handle 双路径 + latest-wins 读一致性依赖 host 侧 latest-wins 变体，
   // 写走常规 __zw_set_attr/__zw_remove_attr 入队）。dialog open 属性专用，与 popover setter 同模式。
@@ -5464,6 +5572,31 @@
   }
   globalThis.setTimeout = function(fn, delay) {
     var handle = _timerId++;
+    // s90（string-compilation classic setTimeout 臂）：字符串 handler 是合法形态
+    //（https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#timer-initialisation-steps
+    // ——WebIDL callback 转换）——原静默丢弃致计时器永不 fire（harness 页首臂 pend
+    // 连累串行后续臂）。注册期 `new Function` 编译（spec 转换同时点；语法错同步抛，
+    // 同 Chrome）。其余非 function 维持旧行为（静默 no-op）。
+    // s91（string-compilation base URL external 面）：字符串 timer 的动态 import() 基 =
+    // **注册时刻**执行脚本的基 URL（spec TimerInitializationSteps 用设置对象 API base
+    // URL——外链脚本注册的 timer fire 在脚本求值窗外，届时 referrer 槽位已被后续脚本
+    // 改写）。注册期捕获槽位（`__zwSwapImportReferrer` 无参 getter）、fire 时 swap 求
+    // 值、finally 换回（同 inline 处理器换基模式，part03 `_zwCallHandlerSwapBase`）。
+    // s92（string-compilation CSP nonce 面）：nonce 同捕获——spec 字符串编译继承触发
+    // 脚本 nonce，fire 窗换入注册期捕获值（无 swapper 捕获 '' 恒等）。
+    if (typeof fn === 'string') {
+      var _zwCapBase = (typeof globalThis.__zwSwapImportReferrer === 'function')
+        ? globalThis.__zwSwapImportReferrer() : null;
+      var _zwCapNonce = (typeof globalThis.__zwSwapImportNonce === 'function')
+        ? globalThis.__zwSwapImportNonce() : '';
+      var _zwCompiled = new Function(fn);
+      fn = function () {
+        if (typeof _zwCallHandlerSwapBase === 'function') {
+          return _zwCallHandlerSwapBase(_zwCompiled, this, arguments[0], _zwCapBase, _zwCapNonce);
+        }
+        return _zwCompiled.apply(this, arguments);
+      };
+    }
     if (typeof fn !== 'function') return handle;
     var id = _timerIdKey(handle);
     var level = _zwTimerNesting;
@@ -5490,6 +5623,22 @@
   };
   globalThis.setInterval = function(fn, delay) {
     var handle = _timerId++;
+    // s90：字符串 handler 同 setTimeout（spec 同步 support；语法错注册期同步抛）。
+    // s91：注册期捕获脚本基同 setTimeout（fire 时 swap 求值 finally 换回）。
+    // s92：nonce 同捕获（字符串编译继承触发脚本 nonce）。
+    if (typeof fn === 'string') {
+      var _zwCapBaseI = (typeof globalThis.__zwSwapImportReferrer === 'function')
+        ? globalThis.__zwSwapImportReferrer() : null;
+      var _zwCapNonceI = (typeof globalThis.__zwSwapImportNonce === 'function')
+        ? globalThis.__zwSwapImportNonce() : '';
+      var _zwCompiledI = new Function(fn);
+      fn = function () {
+        if (typeof _zwCallHandlerSwapBase === 'function') {
+          return _zwCallHandlerSwapBase(_zwCompiledI, this, arguments[0], _zwCapBaseI, _zwCapNonceI);
+        }
+        return _zwCompiledI.apply(this, arguments);
+      };
+    }
     if (typeof fn !== 'function') return handle;
     var id = _intervalIdKey(handle);
     var ms = delay | 0;
@@ -7180,7 +7329,7 @@
   // M2 RFC s1（FR-10）：锁态/激活 per-page 清理——_pl*（含 _plUnadjusted）+ _fs*（fullscreen
   // 同族跨导航泄漏，用户 2026-10-19 确认随修）+ 瞬态激活双旗。导航后新文档无锁、无激活；
   // 清零不派事件（文档已替换，无监听面意义）。
-  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputValuesSet = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _checkedDirtyState = {}; _optSelectedDirty = {}; _optSelectedClean = {}; _inputFiles = {}; _classCache = {}; _customValidity = {}; _userEdited = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _resourceStates = {}; _textareaDefault = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; _zwDialogModalStack = []; _zwDialogInvokerSourceR4400 = {}; if (typeof _zwDetailsToggleQ4009 !== 'undefined') _zwDetailsToggleQ4009 = {}; if (typeof _zwDetailsToggleSourceR4400 !== 'undefined') _zwDetailsToggleSourceR4400 = {}; _plKey = null; _plSel = null; _plHandle = null; _plTarget = null; _plUnadjusted = false; _fsKey = null; _fsSel = null; _fsHandle = null; _zwTransientActive = false; _zwActiveEver = false; if (typeof globalThis.__zw_pointer_reset === 'function') globalThis.__zw_pointer_reset(); };
+  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputValuesSet = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _checkedDirtyState = {}; _optSelectedDirty = {}; _optSelectedClean = {}; _inputFiles = {}; _classCache = {}; _customValidity = {}; _userEdited = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _resourceStates = {}; _textareaDefault = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; _zwDialogModalStack = []; _zwDialogInvokerSourceR4400 = {}; if (typeof _zwDetailsToggleQ4009 !== 'undefined') _zwDetailsToggleQ4009 = {}; if (typeof _zwDetailsToggleSourceR4400 !== 'undefined') _zwDetailsToggleSourceR4400 = {}; _plKey = null; _plSel = null; _plHandle = null; _plTarget = null; _plUnadjusted = false; _fsKey = null; _fsSel = null; _fsHandle = null; _zwTransientActive = false; _zwActiveEver = false; if (typeof globalThis.__zwDetailsInitOpen5254 !== 'undefined') globalThis.__zwDetailsInitOpen5254 = {}; if (typeof globalThis.__zwDetailsInitOpenMark5254 === 'function') globalThis.__zwDetailsInitOpenMark5254(); if (typeof globalThis.__zw_pointer_reset === 'function') globalThis.__zw_pointer_reset(); };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF
@@ -7322,6 +7471,19 @@
               } catch (_eD1) {}
               return _zwUaDisplay(elt);
             }
+            // s89（execution-timing 107-*）：position 计算值初始 'static'
+            //（css-position-3 https://drafts.csswg.org/css-position/#position-property
+            // initial value）——host miss 的 plain 元素（innerHTML/document.write 重放
+            // 产物无 __zwSelector）真值即初始值，同 R5009 float 初始值回落形状。
+            if (kp === 'position') {
+              var hvP = query(kp);
+              if (hvP !== '') return hvP;
+              try {
+                var ivP = elt && elt.style && elt.style.position;
+                if (ivP) return String(ivP);
+              } catch (_eP1) {}
+              return 'static';
+            }
             return query(kp);
           };
         }
@@ -7347,7 +7509,12 @@
         // 期望 'none'；host 真值非空时不变）。
         // css-variables-1：`--` 起始 camelCase 属性访问同 getPropertyValue 免归一（R5114）。
         var _csV = query(p.slice(0, 2) === '--' ? p : _camelToKebab(p));
-        if (_csV === '' && (p === 'cssFloat' || p === 'float')) return 'none';
+        if (_csV === '') {
+          // R5009 float / s89 position：初始值回落（css-position-3 position initial
+          // value 'static'——host miss 的 plain 元素真值即初始值）。
+          if (p === 'cssFloat' || p === 'float') return 'none';
+          if (p === 'position') return 'static';
+        }
         return _csV;
       }
     });
@@ -7696,7 +7863,17 @@
   function _zwFireScroll(key, sel, handle) {
     try {
       if (sel || handle) _dispatchWithBubble(key, sel, handle, _makeEvent('scroll'));
-      else if (typeof globalThis.dispatchEvent === 'function') globalThis.dispatchEvent(_makeEvent('scroll'));
+      else if (typeof globalThis.dispatchEvent === 'function') {
+        globalThis.dispatchEvent(_makeEvent('scroll'));
+        // R5257（html-semantics M2 切片 52，2026-10-24）：视口 scroll 事件同步派发到
+        // document（spec CSSOM View 视口滚动 scroll 事件 target 是 Document；此前只
+        // 派 window——document.addEventListener('scroll') 永收不到，WPT focus-after-close
+        // document 监听腿悬挂根因之一）。非冒泡事件 bubble 腿被 `event.bubbles` 门控
+        //（_dispatchWithBubble），window 监听不双计；'doc' 槽只触发 document 注册面。
+        if (typeof _dispatchWithBubble === 'function' && typeof _elKey === 'function') {
+          _dispatchWithBubble(_elKey('html', null), 'html', null, _makeEvent('scroll'), 'doc');
+        }
+      }
     } catch (_e) {}
   }
   Object.defineProperty(globalThis, 'scrollX', { configurable: true, get: function () { return _winScroll.left; } });

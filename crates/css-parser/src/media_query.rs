@@ -354,8 +354,11 @@ fn parse_single_media_query(input: &str) -> Option<MediaQuery> {
         // 组合范围可能产生两个条件，所以用 extend
         let parsed_conditions = parse_conditions_from_inner(inner);
         // https://drafts.csswg.org/mediaqueries-4/#error-handling
-        // 带值/比较的 media feature 解析失败时，该 query 必须不匹配，不能退化为空条件 all。
-        if parsed_conditions.is_empty() && (inner.contains(':') || contains_range_op(inner)) {
+        // 无法解析为已知条件的**非空** inner → 该 query 必须不匹配，不能退化为空
+        // 条件 all（此前仅拒值/比较形态——未知布尔 feature `(!)`/`(foo)` 退化空
+        // 条件恒匹配，select-an-image-source 对 source media 走偏，
+        // update-the-source-set media='all and (!)' 行实证）。
+        if parsed_conditions.is_empty() && !inner.is_empty() {
             return None;
         }
         conditions.extend(parsed_conditions);
@@ -1312,9 +1315,10 @@ mod tests {
 
     #[test]
     fn test_prefers_color_scheme_not_boolean() {
-        // "(prefers-color-scheme)" 无值，不产生有效条件
-        let queries = parse_media_query("(prefers-color-scheme)").unwrap();
-        assert_eq!(queries[0].conditions.len(), 0);
+        // "(prefers-color-scheme)" 无值：该 feature 无布尔语境（MQ4 §media
+        // feature 表）→ 非法 query，按 error handling 整条不匹配（返回 None）。
+        // 旧实现退化空条件 all → 恒匹配，与浏览器 matchMedia false 相悖。
+        assert!(parse_media_query("(prefers-color-scheme)").is_none());
     }
 
     // ── prefers-reduced-motion 测试 ──

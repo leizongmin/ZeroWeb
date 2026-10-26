@@ -3654,6 +3654,249 @@ fn test_media_bridge_playpath_m2a_5b() {
 }
 
 #[test]
+fn test_media_autoplay_walks_play_steps_a2fix1() {
+    // A2 Fix 1（media-runtime-isolation DESIGN §6.2，spec ready-states potential
+    // autoplay 分支「eligible for autoplay → run the internal play steps」）：
+    // autoplay 改走 play 算法内核（_zwMediaPlaySteps——IDL play 与 autoplay 共用）。
+    // 加载序列末 autoplay 触发：bridge.play 同步可达（stub 记录调用）+ playing 态
+    // 翻转 + play/playing/timeupdate 走 queued task（定时器泵后派发——旧手写同步
+    // 三事件面删除，本测试锁新时序）；pause 经桥（bridgeOn 置位证明）。
+    // https://html.spec.whatwg.org/multipage/media.html#ready-states
+    // https://html.spec.whatwg.org/multipage/media.html#internal-play-steps
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 定时器 stub（play 算法 queued task 泵）+ 记录型桥 stub（play 命中）。
+    sandbox.execute(
+        "globalThis.__zw_pending = {}; globalThis.__zw_timers = [];\
+         globalThis.__zw_setTimeout = function(id, delay) {\
+           globalThis.__zw_timers.push({ id: id, at: Date.now() + (delay | 0) }); };\
+         globalThis.__zw_fire_due_timers = function() {\
+           var now = Date.now(); var rest = [], due = [];\
+           var timers = globalThis.__zw_timers || [];\
+           for (var i = 0; i < timers.length; i++) {\
+             if (timers[i].at <= now) due.push(timers[i]); else rest.push(timers[i]); }\
+           globalThis.__zw_timers = rest;\
+           for (var d = 0; d < due.length; d++) {\
+             var fn = globalThis.__zw_pending[due[d].id];\
+             if (fn) { delete globalThis.__zw_pending[due[d].id]; try { fn(); } catch (_e) {} } } };\
+         globalThis.__calls = [];\
+         globalThis.__zwVideoBridge = {\
+           play: function (src, now) { globalThis.__calls.push('play:' + src); return true; },\
+           pause: function (src) { globalThis.__calls.push('pause:' + src); },\
+           currentTime: function (src) { return 0; },\
+           duration: function (src) { return 5; },\
+           isPlaying: function (src) { return true; }\
+         };",
+    ).unwrap();
+
+    sandbox.execute(
+        "globalThis.__ev = [];\
+         var v = document.createElement('video');\
+         globalThis.__vprobe = v;\
+         ['play', 'playing', 'timeupdate'].forEach(function (t) {\
+           v.addEventListener(t, function () { globalThis.__ev.push(t); });\
+         });\
+         v.autoplay = true;\
+         v.src = '/media/movie_5.webm';",
+    ).unwrap();
+    // microtask checkpoint（execute 末排空）：加载序列跑完 → autoplay → play 内核
+    // 同步段（桥 play 命中 + playing 翻转）；事件 queued 未派。
+    let _ = sandbox.execute(";");
+    let calls = sandbox.execute("globalThis.__calls.join('|')").unwrap().value;
+    assert_eq!(
+        calls, "play:https://wpt.test/media/movie_5.webm",
+        "autoplay 应经 play 内核调桥（绝对 URL，settle 登记同键）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__vprobe.paused)").unwrap().value,
+        "false",
+        "autoplay 后 playing 态已同步翻转（paused=false）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__ev.join(',')").unwrap().value,
+        "",
+        "play/playing/timeupdate 应走 queued task（泵前未派——旧同步三事件面已删）"
+    );
+    // 泵定时器：queued task 派发三事件。
+    sandbox.execute("globalThis.__zw_fire_due_timers();").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__ev.join(',')").unwrap().value,
+        "play,playing,timeupdate",
+        "泵后按 spec 序派 play → playing → timeupdate"
+    );
+    // pause 经桥 = bridgeOn 已在 autoplay 路径置位（pause 桥调 gate on bridgeOn）。
+    sandbox.execute("globalThis.__vprobe.pause();").unwrap();
+    let calls2 = sandbox.execute("globalThis.__calls.join('|')").unwrap().value;
+    assert!(
+        calls2.contains("pause:https://wpt.test/media/movie_5.webm"),
+        "autoplay 置位的 bridgeOn 应使 pause 走桥，got {calls2}"
+    );
+}
+
+#[test]
+fn test_media_play_pushes_parsed_loop_attr_to_bridge() {
+    // bg02-media 基线 v2（media-runtime-isolation）：play 内核 setLoop 推送读与
+    // IDL getter / march 判定同源——dirty 镜像优先、未写回落 loop 内容属性
+    // presence。原裸读 `_pMs.loop === true` 漏解析属性形态（<audio loop> 静态
+    // HTML——getter 走 attr 回退报 true，推送却 false）→ registry loop 关 → 音频
+    // entry 流末停播、视频 Ended 冻结，loop 属性整链失效（bg02 产品腿实测）。
+    // 三面：① 解析属性 → 推 true；② 无属性 → 推 false；
+    // ③ IDL dirty 镜像优先（loop 属性在位但 el.loop=false → 推 false）。
+    // https://html.spec.whatwg.org/multipage/media.html#dom-media-loop
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><audio id=\"a\" src=\"/media/sample-mp3.mp3\" loop>\
+         <audio id=\"b\" src=\"/media/sample-mp3.mp3\">\
+         <audio id=\"c\" src=\"/media/sample-mp3.mp3\" loop></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 记录型桥 stub（play 命中 + setLoop 记录推送值）。
+    sandbox.execute(
+        "globalThis.__calls = [];\
+         globalThis.__zwVideoBridge = {\
+           play: function (src, now) { globalThis.__calls.push('play:' + src); return true; },\
+           pause: function (src) { globalThis.__calls.push('pause:' + src); },\
+           currentTime: function (src) { return 0; },\
+           duration: function (src) { return 2; },\
+           isPlaying: function (src) { return true; },\
+           setLoop: function (src, on) { globalThis.__calls.push('setLoop:' + on); }\
+         };",
+    ).unwrap();
+    let _ = sandbox.execute(";");
+
+    // ① 解析属性形态（<audio loop>，IDL 未写过）。
+    sandbox.execute("document.getElementById('a').play();").unwrap();
+    let calls_a = sandbox.execute("globalThis.__calls.join('|')").unwrap().value;
+    assert!(
+        calls_a.contains("setLoop:true"),
+        "解析 loop 属性应推 true（attr 回退同源 IDL getter），got {calls_a}"
+    );
+
+    // ② 无属性形态。
+    sandbox.execute("globalThis.__calls = []; document.getElementById('b').play();").unwrap();
+    let calls_b = sandbox.execute("globalThis.__calls.join('|')").unwrap().value;
+    assert!(
+        calls_b.contains("setLoop:false"),
+        "无 loop 属性应推 false，got {calls_b}"
+    );
+
+    // ③ IDL dirty 镜像优先（属性在位但 el.loop=false）。
+    sandbox.execute(
+        "globalThis.__calls = [];\
+         var c = document.getElementById('c');\
+         c.loop = false;\
+         c.play();",
+    ).unwrap();
+    let calls_c = sandbox.execute("globalThis.__calls.join('|')").unwrap().value;
+    assert!(
+        calls_c.contains("setLoop:false"),
+        "IDL loop=false 应压过解析属性推 false（dirty 镜像优先），got {calls_c}"
+    );
+}
+
+#[test]
+fn test_media_march_error_face_dispatches_element_error_c3() {
+    // media-runtime-isolation DESIGN §10.9-16 接线：桥 isErrored 真值（C3 链——
+    // 宿主崩溃/解码失败 → registry 镜像 error 态 → 桥 isErrored 真值口）→ march
+    // error face：playing 中轮询翻转 → playing 翻转 + 元素 error 事件单次派发
+    // （spec：媒体数据失败置 error 态并派 error，播放停止；不冒泡）。幂等：
+    // _zwErrorDispatched 单次——错误态保持到下次 load，重复 march 不再派；翻转前
+    // march 不误派。宿主面 C3 契约场景 1「kill host → 页面 error 事件可见」的
+    // 页面级断言通路。
+    // https://html.spec.whatwg.org/multipage/media.html#concept-media-error
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 记录型桥 stub + isErrored 开关（真值口轮询面）。
+    sandbox.execute(
+        "globalThis.__calls = [];\
+         globalThis.__errFlip = false;\
+         globalThis.__zwVideoBridge = {\
+           play: function (src, now) { globalThis.__calls.push('play:' + src); return true; },\
+           pause: function (src) { globalThis.__calls.push('pause:' + src); },\
+           currentTime: function (src) { return 0; },\
+           duration: function (src) { return 5; },\
+           isPlaying: function (src) { return true; },\
+           isErrored: function (src) { return globalThis.__errFlip === true; }\
+         };\
+         globalThis.__ev = [];\
+         var v = document.createElement('video');\
+         globalThis.__vprobe = v;\
+         v.addEventListener('error', function () { globalThis.__ev.push('error'); });\
+         v.src = '/media/movie_5.webm';",
+    ).unwrap();
+    let _ = sandbox.execute(";");
+    // 播放中（桥 play 命中 → bridgeOn/bridgeSrc/playing 置位）。
+    sandbox.execute("globalThis.__vprobe.play();").unwrap();
+    let calls = sandbox.execute("globalThis.__calls.join('|')").unwrap().value;
+    assert!(
+        calls.contains("play:https://wpt.test/media/movie_5.webm"),
+        "IDL play 应经桥起播（bridgeOn 前置），got {calls}"
+    );
+    // 翻转前 march：不误派 error。
+    sandbox.execute("globalThis._zwMediaTimeMarchesOn();").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__ev.join(',')").unwrap().value,
+        "",
+        "isErrored 翻转前 march 不得派 error"
+    );
+    // 翻转后 march：error 单次派发 + playing 翻转（paused=true）。
+    sandbox.execute("globalThis.__errFlip = true;").unwrap();
+    sandbox.execute("globalThis._zwMediaTimeMarchesOn();").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__ev.join(',')").unwrap().value,
+        "error",
+        "isErrored 翻转后 march 应派元素 error 事件"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__vprobe.paused)").unwrap().value,
+        "true",
+        "error 后播放停止（paused=true）"
+    );
+    // 重复 march：幂等（错误态保持，不二次派发）。
+    sandbox.execute("globalThis._zwMediaTimeMarchesOn();").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__ev.join(',')").unwrap().value,
+        "error",
+        "重复 march 不得二次派 error（_zwErrorDispatched 单次）"
+    );
+}
+
+#[test]
 fn test_media_bridge_hit_upgrades_placeholder_dims_t8o() {
     // t8o G2b：IDL setter 形态（`video.src=` 动态赋值）两时序面的桥真值。
     // play-后-settle：settle 先占 w0h0 占位（_zwSettleResourceKey 幂等门阻断真值

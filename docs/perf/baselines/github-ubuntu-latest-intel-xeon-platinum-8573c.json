@@ -387,9 +387,9 @@
     },
     {
       "id": "mb/zero-script-sandbox/execute_loop_1k",
-      "p95": 335759.30212765955,
+      "p95": 334749.23913043475,
       "tier": "budget",
-      "tightened_at": "2026-10-14T13:39:38Z"
+      "tightened_at": "2026-10-23T19:27:16Z"
     },
     {
       "id": "mb/zero-script-sandbox/execute_simple_expression",
@@ -447,9 +447,9 @@
     },
     {
       "id": "mb/zero-security/same_origin_check_1000",
-      "p95": 2771.54977647545,
+      "p95": 2624.1267929385804,
       "tier": "budget",
-      "tightened_at": "2026-10-14T19:24:45Z"
+      "tightened_at": "2026-10-23T19:27:16Z"
     },
     {
       "id": "mb/zero-storage/indexeddb_write_100",

@@ -33,6 +33,7 @@ use zero_dom::NodeId;
 use zero_style_system::{ComputedStyle, WritingModeValue};
 
 use crate::types::LayoutBox;
+use crate::types::TableColBgEntry;
 
 use crate::types::OverflowClip;
 
@@ -62,6 +63,57 @@ static TABLE_COLLAPSE_HALF_EXTENT_ON: std::sync::LazyLock<bool> =
 
 fn collapse_half_extent_enabled() -> bool {
     *TABLE_COLLAPSE_HALF_EXTENT_ON
+}
+
+/// R5282（CSS2 §17.6.2 折叠边框 winner-center 尺寸模型）：collapse 列槽/行槽 =
+/// content+padding 基 + 相邻格线「胜出边框宽」各半（dbaron/chromium 模型）；
+/// 表 border-box = extent + 周界胜者外半。probe 像素取证（chromium headless）：
+/// td bt2/bb4 表 bt4 → 行距 19 = 21 − 4/2（胜者半宽，非自身半带和 R5241 口径）、
+/// 内容顶 = 格线 + 胜者/2 + padding；bc-rowgroup-001 五列 57 槽 + extra 1+1 =
+/// extent 287、box 291×103 与 ref 注释算术吻合。旧 border-center（自身半带和）在
+/// 非对称/异质边框下与 chromium 分叉（bc-* 五案 2.60~8.02%）。
+/// R5282 现状：模型/单测/paint 居中带已落地，但自源 ref 对（ref 页同含 collapse
+/// 表：border-conflict-element-001d/001e、vlr-005、vrl-004、multicol-basic-001..004、
+/// border-collapse-006）在 winner-center 下出现 ±3px 级内容位移致精确匹配破裂，
+/// bc-table-001 +5.08 恶化——默认回退 border-center（15719 保持），挂账修复后翻正：
+/// `ZW_TABLE_COLLAPSE_WINNER_CENTER=1` 启用（进程级快照，R3858 教训）。
+/// R5285 翻正默认 ON：自源位移根因①③已修（R5283 LoadComplete 调度 + fixed 快照）+
+/// 列槽行局部格线胜者（bc-row-001 ✓0.00，chromium 探针双形态定谳）——corpus
+/// 15720P/870F，与 border-center 唯一状态翻转 = bc-row-001 ✗→✓。
+/// 回退 kill-switch：`ZW_TABLE_COLLAPSE_WINNER_CENTER=0`（显式 0 才回 border-center）。
+static TABLE_COLLAPSE_WINNER_CENTER_ON: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_TABLE_COLLAPSE_WINNER_CENTER").as_deref() != Ok("0"));
+
+/// R5282 测试缝：默认回退后锚点单测经此启用 winner-center 几何（doc(hidden)，
+/// 非公开 API 承诺；单测套件已验证两态均绿，跨测并发无回退面）。
+static WINNER_CENTER_TEST_OVERRIDE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[doc(hidden)]
+pub fn set_winner_center_test(on: bool) {
+    WINNER_CENTER_TEST_OVERRIDE.store(on, std::sync::atomic::Ordering::SeqCst);
+}
+
+pub(crate) fn collapse_winner_center_enabled() -> bool {
+    if !collapse_half_extent_enabled() {
+        return false;
+    }
+    if WINNER_CENTER_TEST_OVERRIDE.load(std::sync::atomic::Ordering::SeqCst) {
+        return true;
+    }
+    *TABLE_COLLAPSE_WINNER_CENTER_ON
+}
+
+/// winner-center 尺寸模型的表级门：只迁移了 horizontal 真表容器——vertical 表
+///（writing-mode vertical-lr/rl，含经继承进入竖排排布的表）格线模型未接
+///（R5282 挂账⑤），部分臂生效会成混合态（vlr-005/vrl-004 ✗2.17/3.02→5.29/5.62
+/// 回归实证）。竖排表整体回退 border-center 旧路径，竖排迁移落地时统一放开。
+/// paint 端 border.rs 以 cell 盒 writing_mode（继承自表）镜像同门。
+pub(crate) fn collapse_winner_center_table(box_node: &LayoutBox) -> bool {
+    collapse_winner_center_enabled()
+        && !matches!(
+            box_node.writing_mode,
+            WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
+        )
 }
 
 /// 对 LayoutBox 树执行 table 布局后处理。
@@ -569,12 +621,23 @@ fn layout_table_inner(
     inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
     width_constraint: Option<f32>,
 ) {
-    // 读取 border-spacing
-    let (spacing_x, spacing_y) = table_box
+    // 读取 border-spacing（CSS2 §17.6.1：collapse 模式 border-spacing 整体无效——
+    // 源头清零统一覆盖下游列间/行间 gap 与列背景推进；下游只余周界各自的
+    // separated 门控。collapsing-border-model-010a：collapse 表声明
+    // border-spacing:50px 必须被忽略，旧实现 50px gap 露表底红色）
+    let spacing_ignored = table_box
         .node_id
         .and_then(|id| styles.get(&id))
-        .map(get_border_spacing)
-        .unwrap_or((0.0, 0.0));
+        .is_some_and(|s| matches!(s.border_collapse, zero_style_system::BorderCollapseValue::Collapse));
+    let (spacing_x, spacing_y) = if spacing_ignored {
+        (0.0, 0.0)
+    } else {
+        table_box
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .map(get_border_spacing)
+            .unwrap_or((0.0, 0.0))
+    };
 
     // 1. 收集行和单元格
     let grid = build_grid(table_box, doc, styles);
@@ -626,7 +689,7 @@ fn layout_table_inner(
     ) {
         position_cells_vertical(table_box, &grid, &col_widths, spacing_x, spacing_y, styles, doc);
     } else {
-        position_cells(table_box, &grid, &col_widths, spacing_x, spacing_y, styles);
+        position_cells(table_box, doc, &grid, &col_widths, spacing_x, spacing_y, styles);
     }
 
     // R4298：列压缩（R4298 收缩臂 / R4227 约束臂）后，cell content 仍是压缩前宽度的
@@ -645,7 +708,7 @@ fn layout_table_inner(
         ) {
             position_cells_vertical(table_box, &grid, &col_widths, spacing_x, spacing_y, styles, doc);
         } else {
-            position_cells(table_box, &grid, &col_widths, spacing_x, spacing_y, styles);
+            position_cells(table_box, doc, &grid, &col_widths, spacing_x, spacing_y, styles);
         }
     }
 
@@ -656,11 +719,17 @@ fn layout_table_inner(
 
     // 3.5 收集 <col>/<colgroup> 列背景（CSS Tables §17.5.3）
     //     列背景在单元格之下绘制，须在 paint 前把列元素几何写入 table_col_backgrounds。
-    collect_table_col_backgrounds(table_box, &grid, &col_widths, spacing_x, styles, doc);
+    collect_table_col_backgrounds(table_box, &grid, &col_widths, spacing_x, spacing_y, styles, doc);
+    // §17.5.1：行组/行背景 cell 区域分段（separated spacing gap 不覆盖）
+    collect_table_row_bg_segments(table_box, &grid, spacing_x, spacing_y, styles);
 
     // 4. border-collapse: collapse 时解析边框冲突
     //    必须在 suppress 之前，因为 resolve 从 ComputedStyle 读取边框
     resolve_collapsed_borders(table_box, &grid, styles, doc);
+
+    // 4.5 R5264：格线模型 cell 内容原点半框修正（须在 resolve 之后——border_* 已
+    //     是胜出宽；suppress 之前与既有 pass 序一致）。
+    apply_collapse_content_half_shift(table_box, &grid, styles);
 
     // 5. 抑制行组和行的 border/padding/margin
     //    CSS 2.1 规范：在 separated border model 中，
@@ -760,6 +829,7 @@ fn collect_table_col_backgrounds(
     grid: &TableGrid,
     col_widths: &[f32],
     spacing_x: f32,
+    spacing_y: f32,
     styles: &HashMap<NodeId, ComputedStyle>,
     doc: &zero_dom::Document,
 ) {
@@ -779,9 +849,35 @@ fn collect_table_col_backgrounds(
     } else {
         0.0
     };
+    // R5282：winner-center 格线原点平移（position_cells grid_dx 同源同门）——
+    // collapse 下 cell 盒落位带 dx（首格线 = box + 周界胜者/2），列背景带若仍从
+    // perimeter_x 起算会整体左移 dx（表有周界 border 时非零），与 cell 网格、
+    // 边框带错位。separated 下恒 0，不影响 fixed-table-layout-022/023 既有 ✓。
+    let separated = table_box
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .is_some_and(|s| matches!(s.border_collapse, zero_style_system::BorderCollapseValue::Separate));
+    let collapse_winner = !separated
+        && collapse_half_extent_enabled()
+        && collapse_winner_center_table(table_box)
+        && table_box
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(|s| matches!(s.display, DisplayValue::Table | DisplayValue::InlineTable));
+    let winner_dx = if collapse_winner {
+        collapse_boundary_winners(table_box, grid, styles, doc)
+            .0
+            .first()
+            .copied()
+            .unwrap_or(0.0)
+            / 2.0
+            - table_box.border_left
+    } else {
+        0.0
+    };
     let mut col_geo: Vec<(f32, f32)> = vec![(0.0, 0.0); col_count];
     {
-        let mut x = perimeter_x;
+        let mut x = perimeter_x + winner_dx;
         let mut nc_count = 0usize; // 已放置的非折叠列数
         for (i, geo) in col_geo.iter_mut().enumerate() {
             let collapsed = grid.collapsed_cols.get(i).copied().unwrap_or(false);
@@ -819,7 +915,96 @@ fn collect_table_col_backgrounds(
         Some((left, right - left))
     }
 
-    let mut entries: Vec<(NodeId, f32, f32)> = Vec::new();
+    // §17.5.1 cell 区域分段：有 spacing 时（spacing 参数已经 R5279 collapse 门控为
+    // 0）列背景实际填充裁剪到覆盖该列跨的各 cell border-box（spacing gap 露表
+    // 底层，table-backgrounds-bs-colgroup-001/bs-column-001）；定位区仍为列全跨
+    // （image 平铺相位跨 cell 连续）。无 spacing 单段全高哨兵（h=-1）。
+    let split_cells = spacing_x > 0.0 || spacing_y > 0.0;
+    // 每行 cell 矩形 (x, y, w, h) 相对表格 content box：行盒（行组行经行组盒）
+    // + cell 盒几何，跳过 collapsed 行与无盒 cell。
+    let row_cell_rects: Vec<Vec<(f32, f32, f32, f32)>> = if split_cells {
+        let mut rows_rects = Vec::with_capacity(grid.rows.len());
+        for (row_idx, row) in grid.rows.iter().enumerate() {
+            let mut rects: Vec<(f32, f32, f32, f32)> = Vec::new();
+            let collapsed_row = grid.collapsed_rows.get(row_idx).copied().unwrap_or(false);
+            if !collapsed_row {
+                if let Some(rb) = get_row_box(table_box, row) {
+                    // 行盒 x/y 相对 content：行组行经行组盒（update_row_group_positions
+                    // 已落位），直接行 = row.y（position_cells 落 content 帧）。
+                    let (row_x, row_y) = match row.row_group_index {
+                        Some(rg_idx) => table_box
+                            .children
+                            .get(rg_idx)
+                            .map(|rg| (rg.x + rb.x, rg.y + rb.y))
+                            .unwrap_or((rb.x, rb.y)),
+                        None => (rb.x, rb.y),
+                    };
+                    for cell in &row.cells {
+                        if cell.child_index == usize::MAX {
+                            continue;
+                        }
+                        let Some(cb) = get_cell_box(rb, cell) else { continue };
+                        rects.push((row_x + cb.x, row_y + cb.y, cb.width, cb.height));
+                    }
+                }
+            }
+            rows_rects.push(rects);
+        }
+        rows_rects
+    } else {
+        Vec::new()
+    };
+    // 分段展开：每 cell 矩形与列跨 [l, l+w) 求 x 交；无纵向 spacing 时 y 取全高
+    // 哨兵（paint 期取 content_height，镜像旧行为，content_height 以 paint 时为准）。
+    // 定位区 = cell 并集包围盒（§17.5.1 列层区域；image 相位锚定于此——dbaron ref
+    // bs-colgroup-001 的 tile tick 顶 = 首行 cell 顶 = content 顶 + 纵向 perimeter）；
+    // 无 spacing 时哨兵 (0, -1) 镜像旧全高行为。
+    let push_col_entry = |entries: &mut Vec<TableColBgEntry>, nid: NodeId, l: f32, w: f32| {
+        let mut segments: Vec<(f32, f32, f32, f32)> = Vec::new();
+        let mut origin_y = 0.0f32;
+        let mut origin_h = -1.0f32;
+        if split_cells {
+            let mut y_min = f32::INFINITY;
+            let mut y_max = f32::NEG_INFINITY;
+            for rects in &row_cell_rects {
+                for (rx, ry, rw, rh) in rects {
+                    let x0 = (*rx).max(l);
+                    let x1 = ((*rx) + (*rw)).min(l + w);
+                    if x1 <= x0 {
+                        continue;
+                    }
+                    if *ry < y_min {
+                        y_min = *ry;
+                    }
+                    if *ry + *rh > y_max {
+                        y_max = *ry + *rh;
+                    }
+                    let (y, h) = if spacing_y > 0.0 { (*ry, *rh) } else { (0.0, -1.0) };
+                    segments.push((x0, y, x1 - x0, h));
+                }
+            }
+            if segments.is_empty() {
+                // 无行/cell 不涉该列跨（退化 grid）：回退旧单段全高哨兵（零回归面）。
+                segments.push((l, 0.0, w, -1.0));
+            }
+            if spacing_y > 0.0 && y_min.is_finite() {
+                origin_y = y_min;
+                origin_h = y_max - y_min;
+            }
+        } else {
+            segments.push((l, 0.0, w, -1.0));
+        }
+        entries.push(TableColBgEntry {
+            node_id: nid,
+            origin_x: l,
+            origin_w: w,
+            origin_y,
+            origin_h,
+            segments,
+        });
+    };
+    let mut entries: Vec<TableColBgEntry> = Vec::new();
+
     let mut col_cursor = 0usize;
 
     // Pass 1：colgroup（下层先入）
@@ -859,7 +1044,7 @@ fn collect_table_col_backgrounds(
         if !rg_collapsed && rg_has_bg {
             if let Some((l, w)) = span_rect(&col_geo, grid, col_start, col_end) {
                 if let Some(nid) = child.node_id {
-                    entries.push((nid, l, w));
+                    push_col_entry(&mut entries, nid, l, w);
                 }
             }
         }
@@ -901,7 +1086,7 @@ fn collect_table_col_backgrounds(
                             if !col_collapsed && col_has_bg {
                                 if let Some((l, w)) = span_rect(&col_geo, grid, col_start, col_end) {
                                     if let Some(nid) = col_child.node_id {
-                                        entries.push((nid, l, w));
+                                        push_col_entry(&mut entries, nid, l, w);
                                     }
                                 }
                             }
@@ -926,7 +1111,7 @@ fn collect_table_col_backgrounds(
                 if !col_collapsed && col_has_bg {
                     if let Some((l, w)) = span_rect(&col_geo, grid, col_start, col_end) {
                         if let Some(nid) = child.node_id {
-                            entries.push((nid, l, w));
+                            push_col_entry(&mut entries, nid, l, w);
                         }
                     }
                 }
@@ -937,6 +1122,95 @@ fn collect_table_col_backgrounds(
     }
 
     table_box.table_col_backgrounds = entries;
+}
+
+/// 收集行组/行背景的 cell 区域分段，写入各盒 `bg_cell_segments`。
+///
+/// CSS2 §17.5.1 表格层叠：separated 模式下 row-group/row 层背景**不覆盖
+/// border-spacing gap**（gap 露表底层），绘制须裁剪到该层各 cell border-box
+/// 区域的并集；定位区仍为层盒全矩形（background-position 锚定整组——
+/// table-backgrounds-bs-rowgroup-001：top-left/bottom-right 锚点 tick 位置实证）。
+/// 旧实现整盒连续绘制 → gap 露底色、行组盒高含内部 spacing 使 image 相位漂移。
+/// 仅 separated 且 spacing > 0 时收集（无 gap 时 cell 区域并 = 整盒，paint 走
+/// 原路径零变化）；collapse / 匿名行 retrofit 形态不收集（FIXME 深形态）。
+fn collect_table_row_bg_segments(
+    table_box: &mut LayoutBox,
+    grid: &TableGrid,
+    spacing_x: f32,
+    spacing_y: f32,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
+    use zero_style_system::ColorValue;
+
+    if spacing_x <= 0.0 && spacing_y <= 0.0 {
+        return;
+    }
+    let separated = table_box
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .is_some_and(|s| matches!(s.border_collapse, zero_style_system::BorderCollapseValue::Separate));
+    if !separated {
+        return;
+    }
+    let has_bg = |nid: Option<NodeId>| -> bool {
+        nid.and_then(|id| styles.get(&id))
+            .is_some_and(|s| !matches!(s.background_color, ColorValue::Transparent) || !s.background_image.is_empty())
+    };
+
+    // 阶段一（不可变）：逐非匿名行收集 cell rects——相对行盒，及相对行组盒
+    //（行盒局部坐标 + 行盒在行组内偏移；cell 在行帧内已由 position_cells 落位）。
+    /// cell 区域矩形 `(x, y, w, h)`——层背景分段共用形态（相对各盒自身帧）。
+    type CellSegRect = (f32, f32, f32, f32);
+    let mut rg_segs: HashMap<usize, Vec<CellSegRect>> = HashMap::new();
+    let mut row_segs: Vec<(usize, usize, Vec<CellSegRect>)> = Vec::new();
+    for (row_idx, row) in grid.rows.iter().enumerate() {
+        if row.is_anonymous || row.row_group_index.is_none() {
+            continue;
+        }
+        if grid.collapsed_rows.get(row_idx).copied().unwrap_or(false) {
+            continue;
+        }
+        let Some(rg_idx) = row.row_group_index else { continue };
+        let Some(rb) = get_row_box(table_box, row) else {
+            continue;
+        };
+        let mut row_rects: Vec<(f32, f32, f32, f32)> = Vec::new();
+        for cell in &row.cells {
+            // R5168：匿名占位 entry 无盒（child_index = usize::MAX）
+            if cell.child_index == usize::MAX {
+                continue;
+            }
+            let Some(cb) = get_cell_box(rb, cell) else { continue };
+            row_rects.push((cb.x, cb.y, cb.width, cb.height));
+        }
+        if row_rects.is_empty() {
+            continue;
+        }
+        if has_bg(rb.node_id) {
+            row_segs.push((rg_idx, row.child_index, row_rects.clone()));
+        }
+        let rg_has_bg = has_bg(table_box.children.get(rg_idx).and_then(|rg| rg.node_id));
+        if rg_has_bg {
+            rg_segs
+                .entry(rg_idx)
+                .or_default()
+                .extend(row_rects.iter().map(|&(x, y, w, h)| (rb.x + x, rb.y + y, w, h)));
+        }
+    }
+
+    // 阶段二（可变）：按盒写回
+    for (rg_idx, segs) in rg_segs {
+        if let Some(rg) = table_box.children.get_mut(rg_idx) {
+            rg.bg_cell_segments = segs;
+        }
+    }
+    for (rg_idx, row_child_idx, segs) in row_segs {
+        if let Some(rg) = table_box.children.get_mut(rg_idx) {
+            if let Some(rb) = rg.children.get_mut(row_child_idx) {
+                rb.bg_cell_segments = segs;
+            }
+        }
+    }
 }
 
 /// Auto table layout：根据单元格内容计算每列的宽度。
@@ -968,6 +1242,9 @@ fn compute_column_widths_inner(
         .node_id
         .and_then(|id| styles.get(&id))
         .is_some_and(|s| matches!(s.border_collapse, zero_style_system::BorderCollapseValue::Collapse));
+    // R5285：winner-center 列槽门（行局部格线胜者模型；三臂 + Pass 1/2 配对 +
+    // 无 cell 槽位兜底共用，避免重复 env 直读）。
+    let winner_center_col = is_collapsed_border && collapse_winner_center_table(table_box);
     // R4243（CSS2 §17.5.2 + §17.6.1）：列可用宽 = 表盒 content 宽 − border-spacing。
     // separated 模式下水平 spacing 出现在相邻列之间 + 表四缘（n+1 个间隙）；
     // collapse 模式 spacing 无效。separated-border-model-003b：table width:500px
@@ -1034,7 +1311,17 @@ fn compute_column_widths_inner(
             // auto cell 贡献 = border-box − ½(bl+br)。与 de-stretch 同一 kill-switch
             // （paint 端边框定位未跟进前，半宽列宽单独启用会错位边框带——
             // bc-visibility-001 1.10% 实证；RFC 件④落地后一起放开）。
-            if is_collapsed_border && std::env::var("ZW_CELL_INTRINSIC_DESTRETCH").as_deref() != Ok("0") {
+            // R5283：winner-center 曾沿用逐 cell 自身半带（border-collapse-006 注释
+            // max(75,50)=75）。
+            // R5285：winner-center 改走**行局部格线胜者**模型（chromium headless 探针
+            // 双形态定谳：bc-row-001 槽 [59,57,57,57,57]/表 extent 291；bc-006 槽 75、
+            // div 0/25——格线胜者半宽只进「本行邻接 cell」的槽需求，非邻接行的源不进，
+            // 与行侧 wh 只聚合邻接行源同构；全局 wv max 是偏差源）。cell 贡献 =
+            // border-box − 整 (bl+br)（content+padding 域），半宽在 Pass 1/2 内与
+            // row_local_lines 配对注入（见 R5285 row_local_lines 块）。
+            if winner_center_col {
+                (intrinsic - (cell_box.border_left + cell_box.border_right)).max(0.0)
+            } else if is_collapsed_border && std::env::var("ZW_CELL_INTRINSIC_DESTRETCH").as_deref() != Ok("0") {
                 (intrinsic - (cell_box.border_left + cell_box.border_right) / 2.0).max(0.0)
             } else {
                 intrinsic
@@ -1045,8 +1332,14 @@ fn compute_column_widths_inner(
             // （CSS2 §17.6.2：列宽从左 border 中心到右 border 中心）。
             // 这样 `<col width:50px>` 与 `<td style="width:40px>`（border 10px）产生
             // 相同的列宽 50，使 colspan 类用例 test/ref 一致。
+            // R5285：winner-center 显式宽是 content-box，基即 explicit（半宽经
+            // row_local_lines 配对注入，同 auto 臂）；非 winner-center 维持
+            // + ½(bl+br)（CSS2 §17.6.2 边框中心距，`<col width:50px>` 与
+            // `<td width:40px; border:10px>` 同列宽的 colspan 用例）。
             let explicit = spec_px.unwrap_or(cell_box.width);
-            let base = if is_collapsed_border {
+            let base = if winner_center_col {
+                explicit
+            } else if is_collapsed_border {
                 explicit + (cell_box.border_left + cell_box.border_right) / 2.0
             } else {
                 explicit
@@ -1065,7 +1358,10 @@ fn compute_column_widths_inner(
             // 显式宽 cell floor 反超 base，列宽回到整 border 形态，与外缘半 border
             // 加法双重计入（collapsing-border-model-007/008：td width 110 + border-left
             // 110 → 列 220+外半 55=275，chromium 165+55=220）。
-            let floor_intrinsic = if is_collapsed_border && collapse_half_extent_enabled() {
+            // R5285：winner-center 同 auto 臂全额扣除（content 域），半宽在注入侧配对。
+            let floor_intrinsic = if winner_center_col {
+                (floor_intrinsic - (cell_box.border_left + cell_box.border_right)).max(0.0)
+            } else if is_collapsed_border && collapse_half_extent_enabled() {
                 (floor_intrinsic - (cell_box.border_left + cell_box.border_right) / 2.0).max(0.0)
             } else {
                 floor_intrinsic
@@ -1192,13 +1488,91 @@ fn compute_column_widths_inner(
     // border-*-width-applies-to-005/006：空 cell（auto 宽 0）+ colgroup border-left
     // 1in → 列 0 宽 = 右半 48，表宽 = 外半 48 + 48 = 96（chromium CDP 实证）。
     let col_border_halves = crate::table_borders::col_border_width_halves(table_box, grid, styles, doc);
+    // R5282：winner-center 下 col 边框改经 collapse_boundary_winners 进格线胜者
+    // （半宽随相邻槽注入），不再直接 max 进列槽。
     if let Some(ref halves) = col_border_halves {
-        for (i, (lh, rh)) in halves.iter().enumerate() {
-            if i < col_count {
-                col_max_widths[i] = col_max_widths[i].max(lh + rh);
+        if !winner_center_col {
+            for (i, (lh, rh)) in halves.iter().enumerate() {
+                if i < col_count {
+                    col_max_widths[i] = col_max_widths[i].max(lh + rh);
+                }
             }
         }
     }
+
+    // R5285：winner-center 行局部格线胜者（chromium 列宽模型，headless 探针双形态
+    // 定谳：bc-row-001 形态槽 [59,57,57,57,57]/extent 291；bc-006 形态槽 75/div
+    // 0/25）。`row_local_lines[r][k]` = 行 r 视角下垂直格线 k 的胜者宽：非 cell 源
+    // （表周界、col/colgroup 线——全行共享）打底，行/行组左右缘只进本行（首末行，
+    // 镜像 collapse_boundary_winners 周界臂），cell 自身 L/R 逐行 max。与行侧 wh
+    // 只聚合邻接行源同构——全局 wv 的跨行 max（006 行 1 左 150 吃进行 2 右 100 的
+    // 需求 → 125）是该口径的偏差源；行局部后 006 = max(75+0+0, 0+0+50) = 75 与
+    // bc-row-001 内线胜者（邻行同源）两形态同时成立。
+    let winner_center_base_line = if winner_center_col {
+        let mut base = vec![0.0f32; col_count + 1];
+        base[0] = table_box.border_left;
+        base[col_count] = table_box.border_right;
+        if let Some(lines) = crate::table_borders::col_border_line_widths(table_box, grid, styles, doc) {
+            for (k, w) in lines.into_iter().enumerate().take(col_count + 1) {
+                base[k] = base[k].max(w);
+            }
+        }
+        Some(base)
+    } else {
+        None
+    };
+    let row_local_lines: Vec<Vec<f32>> = match winner_center_base_line.as_ref() {
+        None => Vec::new(),
+        Some(base) => {
+            let rows = grid.rows.len();
+            let rg_side = |row_idx: usize, side: u8| -> f32 {
+                crate::table_borders::get_row_group_border_info(table_box, grid, row_idx, styles, side)
+                    .map(|(w, _s, _c)| w)
+                    .unwrap_or(0.0)
+            };
+            grid.rows
+                .iter()
+                .enumerate()
+                .map(|(row_idx, row)| {
+                    let mut local = base.clone();
+                    if row_idx == 0 {
+                        local[0] = local[0]
+                            .max(collapse_row_side_used_width(table_box, grid, styles, 0, 3))
+                            .max(rg_side(0, 3));
+                        local[col_count] = local[col_count]
+                            .max(collapse_row_side_used_width(table_box, grid, styles, 0, 1))
+                            .max(rg_side(0, 1));
+                    }
+                    if row_idx + 1 == rows {
+                        local[0] = local[0]
+                            .max(collapse_row_side_used_width(table_box, grid, styles, row_idx, 3))
+                            .max(rg_side(row_idx, 3));
+                        local[col_count] = local[col_count]
+                            .max(collapse_row_side_used_width(table_box, grid, styles, row_idx, 1))
+                            .max(rg_side(row_idx, 1));
+                    }
+                    if let Some(row_box) = get_row_box(table_box, row) {
+                        for cell in &row.cells {
+                            if cell.child_index == usize::MAX {
+                                continue;
+                            }
+                            let Some(cb) = get_cell_box(row_box, cell) else {
+                                continue;
+                            };
+                            if cell.col_start < col_count {
+                                local[cell.col_start] = local[cell.col_start].max(cb.border_left);
+                            }
+                            let end = cell.col_end.min(col_count);
+                            if end > cell.col_start {
+                                local[end] = local[end].max(cb.border_right);
+                            }
+                        }
+                    }
+                    local
+                })
+                .collect()
+        }
+    };
 
     // Pass 1：非跨列单元格设置列宽
     let is_fixed_layout = table_style
@@ -1215,7 +1589,10 @@ fn compute_column_widths_inner(
     // R5162：显式 width 单元格的原始 specified px（无 R364b 内容 floor）——fixed 分支
     // 步骤 2 用（fixed 布局内容不 dilate 列宽，floor 的 min-content 属内容域）。
     let mut col_cell_spec = vec![None; col_count];
-    for row in &grid.rows {
+    // R5285：winner-center 配对写入过的槽位（content 与本行 local 半宽已配对）——
+    // 无 cell 槽位（纯 col 宽/空列）在 Pass 2 后做全局线源半宽加法兜底。
+    let mut paired_slots = vec![false; col_count];
+    for (row_idx, row) in grid.rows.iter().enumerate() {
         let Some(row_box) = get_row_box(table_box, row) else {
             continue;
         };
@@ -1228,7 +1605,15 @@ fn compute_column_widths_inner(
             // 参与列尺寸）。
             if cell.child_index == usize::MAX {
                 if cell.col_start < col_count && !grid.collapsed_cols.get(cell.col_start).copied().unwrap_or(false) {
-                    col_max_widths[cell.col_start] = col_max_widths[cell.col_start].max(cell.anon_max_width);
+                    if winner_center_col {
+                        let local = &row_local_lines[row_idx];
+                        let k = cell.col_start;
+                        col_max_widths[k] =
+                            col_max_widths[k].max(local[k] / 2.0 + cell.anon_max_width + local[k + 1] / 2.0);
+                        paired_slots[k] = true;
+                    } else {
+                        col_max_widths[cell.col_start] = col_max_widths[cell.col_start].max(cell.anon_max_width);
+                    }
                 }
                 continue;
             }
@@ -1243,11 +1628,28 @@ fn compute_column_widths_inner(
             // max-content（anon_max_width，与 usize::MAX 占位 entry 同源）；含子盒的
             // 合成 cell（shape B）维持盒测量不变。
             if cell_box.is_anon_table_cell && cell_box.children.is_empty() {
-                col_max_widths[cell.col_start] = col_max_widths[cell.col_start].max(cell.anon_max_width);
+                if winner_center_col {
+                    let local = &row_local_lines[row_idx];
+                    let k = cell.col_start;
+                    col_max_widths[k] =
+                        col_max_widths[k].max(local[k] / 2.0 + cell.anon_max_width + local[k + 1] / 2.0);
+                    paired_slots[k] = true;
+                } else {
+                    col_max_widths[cell.col_start] = col_max_widths[cell.col_start].max(cell.anon_max_width);
+                }
                 continue;
             }
             let (w, _, cell_spec_px) = cell_used_width(cell_box);
-            col_max_widths[cell.col_start] = col_max_widths[cell.col_start].max(w);
+            // R5285：winner-center 槽需求 = local[k]/2 + content + local[k+1]/2
+            //（行局部格线胜者与 content 同行配对后 max，chromium 探针定谳模型）。
+            if winner_center_col {
+                let local = &row_local_lines[row_idx];
+                let k = cell.col_start;
+                col_max_widths[k] = col_max_widths[k].max(local[k] / 2.0 + w + local[k + 1] / 2.0);
+                paired_slots[k] = true;
+            } else {
+                col_max_widths[cell.col_start] = col_max_widths[cell.col_start].max(w);
+            }
             if let Some(px) = cell_spec_px {
                 col_cell_spec[cell.col_start] = Some(px);
             }
@@ -1263,7 +1665,7 @@ fn compute_column_widths_inner(
     }
 
     // Pass 2：跨列单元格把宽度分配给 span 内**未被 Pass 1 约束**的非折叠列
-    for row in &grid.rows {
+    for (row_idx, row) in grid.rows.iter().enumerate() {
         let Some(row_box) = get_row_box(table_box, row) else {
             continue;
         };
@@ -1275,6 +1677,16 @@ fn compute_column_widths_inner(
                 continue;
             };
             let (w, _, _) = cell_used_width(cell_box);
+            // R5285：winner-center 跨列单元横跨内部格线（整宽归 span）+ 两端线半宽
+            //（各入跨的两端槽）——content 域 w 折入后按既有 per_col 逻辑分摊。
+            let w = if winner_center_col && cell.col_start < col_count {
+                let local = &row_local_lines[row_idx];
+                let s = cell.col_start;
+                let e = cell.col_end.min(col_count);
+                w + local[s] / 2.0 + local[e] / 2.0 + local[s + 1..e].iter().sum::<f32>()
+            } else {
+                w
+            };
             // span 内被 Pass 1 约束的列数（这些列已有显式/固有宽度，不被撑开）
             let constrained_in_span = (cell.col_start..cell.col_end.min(col_count))
                 .filter(|&c| grid.collapsed_cols.get(c).copied().unwrap_or(false) || col_max_widths[c] > 0.0)
@@ -1294,6 +1706,22 @@ fn compute_column_widths_inner(
                 if !grid.collapsed_cols.get(i).copied().unwrap_or(false) && *col_w <= 0.0 {
                     *col_w = (*col_w).max(per_col);
                 }
+            }
+        }
+    }
+
+    // R5285：winner-center 配对注入在 Pass 1/2 内完成（替换 R5283 的 col 线源全局
+    // 注入 + 逐 cell 自身半带口径，见 row_local_lines 块注）。此处仅兜底**无 cell
+    // 槽位**（纯 col 显式宽/空列/折叠列）的全局线源半宽——R3810（col 边框半宽计入
+    // 列缘）与 R5283 加法语义在该槽位类的等价承载；有 cell 槽位已含 local ≥ base
+    // 的配对值，不再加（防双重计入）。
+    if winner_center_col {
+        let base = winner_center_base_line
+            .as_ref()
+            .expect("winner-center base line with row_local_lines");
+        for (k, paired) in paired_slots.iter().enumerate() {
+            if !paired && k < col_count {
+                col_max_widths[k] += base[k] / 2.0 + base[k + 1] / 2.0;
             }
         }
     }
@@ -1409,6 +1837,10 @@ fn compute_column_widths_inner(
                 *w = 0.0;
             }
         }
+        // R5282：fixed 分布不补注胜者半宽——specified 分布值本身就是格线距（_extent
+        // 口径），周界胜者外半在盒装配（apply_table_size_constraints）时加在 extent
+        // 之外（chromium 实证：fixed;width:96 + colgroup border-right:20 → 盒 106 =
+        // 96 + 10，格线 0/48/96，格线距仍 48/48；空 cell 探针盒 144 = 96 + 48 同构）。
         return (col_max_widths, false);
     }
 
@@ -1654,9 +2086,349 @@ fn top_caption_extent(table_box: &LayoutBox, styles: &HashMap<NodeId, ComputedSt
         .sum::<f32>()
 }
 
+/// R5262（CSS2 §17.6.2 collapse 边框几何）：格线原点偏移 (dx, dy)。
+///
+/// collapse 边框带以格线为中心，cell border-box 跨度 = 相邻格线间距（行高
+/// R5241、列宽 R4027/R4028 同构）。最外格线的外半带落在表 border 区，因此
+/// cell/行/行组盒的原点须从 table content box 平移到「表盒 + ½外缘胜出边框」：
+/// dx = max(表边框, 外缘 cell 边框最大值)/2 − 表边框（四缘独立取 max，与
+/// apply_table_size_constraints 的覆盖口径一致；covered ≤ 表框已计入）。
+/// chromium 001e 实证：表盒 180×140 边框 20，td border-box 40×40 起排于表盒
+/// +10（content 帧 −10），网格 [表盒+10, 表盒+170] 恰以表 border-box 中面收边。
+/// 返回 (0,0) 当表无边框且外缘 cell 无边框（恒等，无行为变化）。
+fn collapse_grid_origin_shift(table_box: &LayoutBox, grid: &TableGrid) -> (f32, f32) {
+    let last_col = grid.col_count;
+    let last_row_idx = grid.rows.len().saturating_sub(1);
+    let mut win_l = table_box.border_left;
+    let mut win_r = table_box.border_right;
+    let mut win_t = table_box.border_top;
+    let mut win_b = table_box.border_bottom;
+    for (row_idx, row) in grid.rows.iter().enumerate() {
+        let Some(rb) = get_row_box(table_box, row) else {
+            continue;
+        };
+        for cell in &row.cells {
+            // R5168：匿名占位 entry 无盒（child_index = usize::MAX），无几何贡献
+            if cell.child_index == usize::MAX {
+                continue;
+            }
+            let cb = if let Some(rg_idx) = cell.parent_rg_idx {
+                rb.children.get(rg_idx).and_then(|rg| rg.children.get(cell.child_index))
+            } else {
+                rb.children.get(cell.child_index)
+            };
+            let Some(cb) = cb else {
+                continue;
+            };
+            // col_end 为排他端点：触及末列 ⇔ col_end == col_count
+            if cell.col_start == 0 {
+                win_l = win_l.max(cb.border_left);
+            }
+            if cell.col_end >= last_col {
+                win_r = win_r.max(cb.border_right);
+            }
+            if row_idx == 0 {
+                win_t = win_t.max(cb.border_top);
+            }
+            if row_idx == last_row_idx {
+                win_b = win_b.max(cb.border_bottom);
+            }
+        }
+    }
+    (win_l / 2.0 - table_box.border_left, win_t / 2.0 - table_box.border_top)
+}
+
+/// R5285：collapse 行 own 侧边 used 宽（none/hidden→0，镜像 resolve 侧过滤）。
+/// collapse_boundary_winners 与 winner-center 列槽行局部胜者（row_local_lines）
+/// 共用；side 0/1/2/3 = top/right/bottom/left。
+fn collapse_row_side_used_width(
+    table_box: &LayoutBox,
+    grid: &TableGrid,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    row_idx: usize,
+    side: usize,
+) -> f32 {
+    use zero_style_system::property::types::BorderStyleValue;
+    let row = &grid.rows[row_idx];
+    get_row_box(table_box, row)
+        .and_then(|rb| rb.node_id)
+        .and_then(|id| styles.get(&id))
+        .map(|rs| {
+            let (w, s) = match side {
+                0 => (
+                    crate::table_borders::length_to_px(&rs.border_top_width, rs),
+                    &rs.border_top_style,
+                ),
+                1 => (
+                    crate::table_borders::length_to_px(&rs.border_right_width, rs),
+                    &rs.border_right_style,
+                ),
+                2 => (
+                    crate::table_borders::length_to_px(&rs.border_bottom_width, rs),
+                    &rs.border_bottom_style,
+                ),
+                _ => (
+                    crate::table_borders::length_to_px(&rs.border_left_width, rs),
+                    &rs.border_left_style,
+                ),
+            };
+            if matches!(s, BorderStyleValue::None | BorderStyleValue::Hidden) {
+                0.0
+            } else {
+                w
+            }
+        })
+        .unwrap_or(0.0)
+}
+
+/// R5282：collapse 格线「胜出边框宽」（winner-center 尺寸模型的输入）。
+///
+/// `wv[k]`：垂直格线 k（k=0 左周界 … col_count 右周界）——两侧 cell 相邻侧边框、
+/// col/colgroup 边框（col_border_line_widths 线归属：组/列边落首/末列界线）、
+/// 周界处表/行/行组 border，全部取 max。
+/// `wh[r]`：水平格线 r（r=0 顶周界 … rows 底周界）——上下相邻 cell 边框、该线上的
+/// 行 border-top/bottom、行组界线（相邻行 row_group_index 不同）上的行组
+/// border-bottom/top、周界处表/行/行组 border。同格线边框带几何共线（R5262），
+/// 整线单一胜者（宽度口径取 max；style/色优先级由 resolve_collapsed_borders
+/// 全源解析负责，paint 消费其覆盖）。
+fn collapse_boundary_winners(
+    table_box: &LayoutBox,
+    grid: &TableGrid,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    doc: &zero_dom::Document,
+) -> (Vec<f32>, Vec<f32>) {
+    use zero_style_system::property::types::BorderStyleValue;
+    let cols = grid.col_count;
+    let rows = grid.rows.len();
+    let mut wv = vec![0.0f32; cols + 1];
+    let mut wh = vec![0.0f32; rows + 1];
+    if cols == 0 {
+        return (wv, wh);
+    }
+    // 表 border 周界源
+    wv[0] = table_box.border_left;
+    wv[cols] = table_box.border_right;
+    if rows > 0 {
+        wh[0] = table_box.border_top;
+        wh[rows] = table_box.border_bottom;
+    }
+    // col/colgroup 边框源（§17.6.2.1 线归属：组/列边只落首/末列界线，整宽入账）
+    if let Some(lines) = crate::table_borders::col_border_line_widths(table_box, grid, styles, doc) {
+        for (k, w) in lines.into_iter().enumerate().take(cols + 1) {
+            wv[k] = wv[k].max(w);
+        }
+    }
+    // 行/行组边框源（none/hidden 不参与——镜像 resolve 侧过滤；行组边只落在
+    // 行组界线，行边落各行上下；左右周界逐行扫行/行组边）。R5285：行侧读取
+    // 提取为 collapse_row_side_used_width（与列槽行局部胜者共用）。
+    let rg_side_w = |row_idx: usize, side: u8| -> f32 {
+        crate::table_borders::get_row_group_border_info(table_box, grid, row_idx, styles, side)
+            .map(|(w, _s, _c)| w)
+            .unwrap_or(0.0)
+    };
+    for row_idx in 0..rows {
+        // 行边框参与每条行界线；行组边只落组周界线（首/末行或相邻行异组——
+        // 同组内界线不吃组边，§17.6.2.1 组边候选仅在组界）。
+        let g_cur = grid.rows[row_idx].row_group_index;
+        let at_group_top = row_idx == 0 || grid.rows[row_idx - 1].row_group_index != g_cur;
+        wh[row_idx] = wh[row_idx].max(collapse_row_side_used_width(table_box, grid, styles, row_idx, 0));
+        if at_group_top {
+            wh[row_idx] = wh[row_idx].max(rg_side_w(row_idx, 0));
+        }
+        let g_next = grid.rows.get(row_idx + 1).and_then(|r| r.row_group_index);
+        wh[row_idx + 1] = wh[row_idx + 1].max(collapse_row_side_used_width(table_box, grid, styles, row_idx, 2));
+        if g_next != g_cur {
+            wh[row_idx + 1] = wh[row_idx + 1].max(rg_side_w(row_idx, 2));
+        }
+        if row_idx == 0 {
+            wv[0] = wv[0]
+                .max(collapse_row_side_used_width(table_box, grid, styles, 0, 3))
+                .max(rg_side_w(0, 3));
+            wv[cols] = wv[cols]
+                .max(collapse_row_side_used_width(table_box, grid, styles, 0, 1))
+                .max(rg_side_w(0, 1));
+        }
+        if row_idx + 1 == rows {
+            wv[0] = wv[0]
+                .max(collapse_row_side_used_width(table_box, grid, styles, row_idx, 3))
+                .max(rg_side_w(row_idx, 3));
+            wv[cols] = wv[cols]
+                .max(collapse_row_side_used_width(table_box, grid, styles, row_idx, 1))
+                .max(rg_side_w(row_idx, 1));
+        }
+    }
+    // cell 边框源（自身 border，resolve 之前读——布局 sizing 均在 resolve 前跑）
+    for (row_idx, row) in grid.rows.iter().enumerate() {
+        let Some(rb) = get_row_box(table_box, row) else {
+            continue;
+        };
+        for cell in &row.cells {
+            // R5168：匿名占位 entry 无盒（child_index = usize::MAX）
+            if cell.child_index == usize::MAX {
+                continue;
+            }
+            let Some(cb) = get_cell_box(rb, cell) else {
+                continue;
+            };
+            if cell.col_start < cols {
+                wv[cell.col_start] = wv[cell.col_start].max(cb.border_left);
+            }
+            let end = cell.col_end.min(cols);
+            if end > cell.col_start {
+                wv[end] = wv[end].max(cb.border_right);
+            }
+            wh[row_idx] = wh[row_idx].max(cb.border_top);
+            let r_bot = (row_idx + cell.rowspan.max(1)).min(rows);
+            if r_bot > row_idx {
+                wh[r_bot] = wh[r_bot].max(cb.border_bottom);
+            }
+        }
+    }
+    // R5284：表 own 边 style hidden → 该缘周界线零账（CSS2 §17.6.2.1 hidden 最高
+    // 优先压掉他源；此处是 max 聚合无显式消解，表 used border 已为 0
+    //（tree.rs border_px 口径）压不住 row/rowgroup/col 源——rules=groups 表
+    // hidden 提示 + 行组组边的周界冲突：组边 1px 入账使 test 页行槽/位移多
+    // +½px/缘。内格线 hidden cell 源同理未压（used 0 不占账），挂账 R5284①。
+    let table_style = |side: usize| -> Option<&zero_style_system::property::types::BorderStyleValue> {
+        table_box.node_id.and_then(|id| styles.get(&id)).map(|s| match side {
+            0 => &s.border_top_style,
+            1 => &s.border_right_style,
+            2 => &s.border_bottom_style,
+            _ => &s.border_left_style,
+        })
+    };
+    if rows > 0 {
+        if matches!(table_style(0), Some(BorderStyleValue::Hidden)) {
+            wh[0] = 0.0;
+        }
+        if matches!(table_style(2), Some(BorderStyleValue::Hidden)) {
+            wh[rows] = 0.0;
+        }
+    }
+    if matches!(table_style(3), Some(BorderStyleValue::Hidden)) {
+        wv[0] = 0.0;
+    }
+    if matches!(table_style(1), Some(BorderStyleValue::Hidden)) {
+        wv[cols] = 0.0;
+    }
+    (wv, wh)
+}
+
+/// R5282：winner-center 行槽高 = content+padding 基（border-box − 整上下框）+
+/// 上下格线胜者半宽。
+fn winner_center_row_slot_height(cell_box: &LayoutBox, w_top: f32, w_bottom: f32) -> f32 {
+    (cell_box.height - cell_box.border_top - cell_box.border_bottom + w_top / 2.0 + w_bottom / 2.0).max(0.0)
+}
+
+/// R5264（CSS2 §17.6.2 格线模型内容原点）：collapse cell 内容盒按半框内缩。
+///
+/// 格线模型（R5262 格线原点平移、R5241 半框行高/列宽）下，chromium 的 cell 内容
+/// 盒 = 盒跨（格线到格线）内缩**胜出边框宽的一半**/缘——共享带以格线为中心跨画
+/// 双邻，内容按整框内缩会在带侧留 ½框护城河且字形/子块整体错位 +½框（001d 白
+/// 字母 +10 咬带 1.00% 残差、ref 马赛克槽位算术 + p001/p002 chromium 位图取证）。
+/// 须在 resolve_collapsed_borders 之后：border_* 已是胜出宽（含行/行组/表源胜出
+/// 写入）。子树平移 −½上/左框、content_width/height 改半框口径，位移记入
+/// collapse_half_shift 供 paint 文本原点（text-only cell 的 IFC 经 border+padding
+/// 推导，无子盒可平移）同源消费。仅 horizontal 真表容器（与 grid_shift_ok 同门；
+/// vertical 表未接格线模型，见挂账⑤）。
+fn apply_collapse_content_half_shift(
+    table_box: &mut LayoutBox,
+    grid: &TableGrid,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
+    let shift_ok = !matches!(
+        table_box.writing_mode,
+        WritingModeValue::VerticalRl | WritingModeValue::VerticalLr
+    ) && table_box.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+        matches!(s.display, DisplayValue::Table | DisplayValue::InlineTable)
+            && matches!(s.border_collapse, zero_style_system::BorderCollapseValue::Collapse)
+    });
+    if !shift_ok {
+        return;
+    }
+    // R5283：表级 winner-center 门（shift_ok 已含 vertical 排除）——行循环内
+    // row_box 可变借用下不可再读 table_box，先于循环求值。
+    let winner_center_shift = collapse_winner_center_enabled();
+    for row in &grid.rows {
+        let Some(row_box) = get_row_box_mut(table_box, row) else {
+            continue;
+        };
+        for cell in &row.cells {
+            // R5168：匿名占位 entry 无盒（child_index = usize::MAX）
+            if cell.child_index == usize::MAX {
+                continue;
+            }
+            let cell_box = if let Some(rg_idx) = cell.parent_rg_idx {
+                row_box
+                    .children
+                    .get_mut(rg_idx)
+                    .and_then(|rg| rg.children.get_mut(cell.child_index))
+            } else {
+                row_box.children.get_mut(cell.child_index)
+            };
+            let Some(cell_box) = cell_box else {
+                continue;
+            };
+            // R5282：winner-center 内容原点 = 格线 + 胜者/2 + 自身 padding（probe
+            // 取证：内容顶 = 格线 + 胜者半宽 + padding-top）。子代自然位 = 自身
+            // border + padding（resolve 前布局），位移 dx = 胜者/2 − 自身框（cell
+            // 边框已被 resolve 覆写为胜者宽，自身框从 ComputedStyle 重读）。cell 胜
+            // 出缘（own = winner）退化为 −own/2，与 border-center 恒等。
+            let (dx, dy) = if winner_center_shift {
+                use zero_style_system::property::types::BorderStyleValue;
+                let own = cell_box.node_id.and_then(|id| styles.get(&id));
+                // R5283：自身框取 used border——style none/hidden 的 used 宽为 0
+                //（CSS2 §8.5.4；tree.rs border_px 同口径）。ComputedStyle 的
+                // border-width 初值 medium=3px 在无声明时仍在，直接读会把 taffy
+                // 自然布局不存在的 3px 框计入位移——无框 collapse 表（multicol
+                // ref 族）内容整体 −3px 位移实证。
+                let own_bl = own
+                    .map(|s| {
+                        if matches!(s.border_left_style, BorderStyleValue::None | BorderStyleValue::Hidden) {
+                            0.0
+                        } else {
+                            crate::table_borders::length_to_px(&s.border_left_width, s)
+                        }
+                    })
+                    .unwrap_or(0.0);
+                let own_bt = own
+                    .map(|s| {
+                        if matches!(s.border_top_style, BorderStyleValue::None | BorderStyleValue::Hidden) {
+                            0.0
+                        } else {
+                            crate::table_borders::length_to_px(&s.border_top_width, s)
+                        }
+                    })
+                    .unwrap_or(0.0);
+                (cell_box.border_left / 2.0 - own_bl, cell_box.border_top / 2.0 - own_bt)
+            } else {
+                (-cell_box.border_left / 2.0, -cell_box.border_top / 2.0)
+            };
+            for child in &mut cell_box.children {
+                child.x += dx;
+                child.y += dy;
+            }
+            cell_box.content_width = (cell_box.width
+                - cell_box.border_left / 2.0
+                - cell_box.border_right / 2.0
+                - cell_box.padding_left
+                - cell_box.padding_right)
+                .max(0.0);
+            cell_box.content_height = (cell_box.height
+                - cell_box.border_top / 2.0
+                - cell_box.border_bottom / 2.0
+                - cell_box.padding_top
+                - cell_box.padding_bottom)
+                .max(0.0);
+            cell_box.collapse_half_shift = (dx, dy);
+        }
+    }
+}
+
 /// 根据 grid 结构和列宽定位每个单元格。
 fn position_cells(
     table_box: &mut LayoutBox,
+    doc: &zero_dom::Document,
     grid: &TableGrid,
     col_widths: &[f32],
     spacing_x: f32,
@@ -1718,6 +2490,22 @@ fn position_cells(
         .content_width
         .min(col_sum + spacing_total_x + 2.0 * perimeter_x);
 
+    // R5282：winner-center 与格线原点平移同门（真表容器）——槽高/格线原点共用
+    // collapse_boundary_winners 的胜者口径。须在 content_row_heights（R89 分配
+    // 基）之前算好，行槽高镜像同一口径。
+    let collapse_winner = !separated
+        && collapse_half_extent_enabled()
+        && collapse_winner_center_table(table_box)
+        && table_box
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(|s| matches!(s.display, DisplayValue::Table | DisplayValue::InlineTable));
+    let (winner_v, winner_h) = if collapse_winner {
+        collapse_boundary_winners(table_box, grid, styles, doc)
+    } else {
+        (Vec::new(), Vec::new())
+    };
+
     // R89：表格行高分配（CSS 2.1 §17.5.3 — table 的 height 作为最小高度，
     // 额外高度分配到各行，使单元格增长、vertical-align 把内容压到分配后位置）。
     // R5095（css-tables-3 §3.10.5 Distribution algorithm）：存在 **auto-height 行**
@@ -1746,7 +2534,15 @@ fn position_cells(
                         rb.children.get(cell.child_index)
                     };
                     if let Some(cb) = cell_box {
-                        h = h.max(cb.height);
+                        // R5282：winner-center 行槽口径（content+padding 基 + 上下格线
+                        // 胜者半宽），与 position_cells 装配循环同源。
+                        h = h.max(if collapse_winner {
+                            let wt = winner_h.get(row_idx).copied().unwrap_or(0.0);
+                            let wb = winner_h.get(row_idx + 1).copied().unwrap_or(0.0);
+                            winner_center_row_slot_height(cb, wt, wb)
+                        } else {
+                            cb.height
+                        });
                     }
                 }
             }
@@ -1906,6 +2702,32 @@ fn position_cells(
     // cell 盒自身保持整 border-box 高不回写：相邻行 cell 带 ±½ 重叠，paint 端
     // 内绘边框带恰落边框中心（只有行推进与表高消费分摊值）。
     let collapse_half = !separated && collapse_half_extent_enabled();
+    // R5262：格线原点平移（见 collapse_grid_origin_shift）仅适用于**真表容器**
+    // （display:table/inline-table 的实际节点）：其盒几何经 apply_table_size_constraints
+    // 的外缘半带膨胀（R5241 outer_*）/Fix 1 edge 修正，与带中心模型配套。匿名
+    // table 包装/孤立 retrofit 根（node_id None 或非表 display，R5202/R5208/R5209
+    // 形态）的盒位由正常流决定、无法承载外缘半带（line-box-direction-srl-055：
+    // 裸 table-cell + 1em 边框外展后内容 +10 错位 7.96% 实证），保持 legacy 几何。
+    // 只在落位点注入，row_y 游标本身不平移：它同时是表高累计口径
+    //（apply_table_size_constraints 的高度入参 = 游标终值），平移会让表高混入
+    // −½外缘带。
+    let grid_shift_ok = collapse_half
+        && table_box
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(|s| matches!(s.display, DisplayValue::Table | DisplayValue::InlineTable));
+    // R5282：winner-center 格线原点 = 周界胜者/2（含 col/colgroup 边框源——
+    // collapse_grid_origin_shift 只取表 border + 边缘 cell）。
+    let (grid_dx, grid_dy) = if collapse_winner {
+        (
+            winner_v.first().copied().unwrap_or(0.0) / 2.0 - table_box.border_left,
+            winner_h.first().copied().unwrap_or(0.0) / 2.0 - table_box.border_top,
+        )
+    } else if grid_shift_ok {
+        collapse_grid_origin_shift(table_box, grid)
+    } else {
+        (0.0, 0.0)
+    };
     for (row_idx, row) in grid.rows.iter().enumerate() {
         // 检测行组切换，记录新行组的起始 row_y
         let rg_key = row.row_group_index;
@@ -1965,6 +2787,14 @@ fn position_cells(
                     let aware = cell_float_aware_content_height(cell_box, styles);
                     row_height = if has_nested_table {
                         row_height.max(aware + cell_box.border_bottom + cell_box.padding_bottom)
+                    } else if collapse_winner {
+                        // R5282：winner-center 行槽 = content+padding 基 + 上下格线
+                        // 胜者半宽（probe 取证：td bt2/bb4 表 bt4 → 行距 21−4/2）。
+                        let wt = winner_h.get(row_idx).copied().unwrap_or(0.0);
+                        let wb = winner_h.get(row_idx + 1).copied().unwrap_or(0.0);
+                        row_height
+                            .max(winner_center_row_slot_height(cell_box, wt, wb))
+                            .max(aware)
                     } else if collapse_half {
                         // R5241：见循环前注释。R4495 嵌套表例外臂不参与（嵌套表
                         // cell 高度口径独立，collapse+嵌套+边框形态无实证案）。
@@ -2039,7 +2869,10 @@ fn position_cells(
             // 行组 x 不再叠加（否则双重计数）。直接 table 子行（无行组）：相对 table
             // content 偏移 perimeter_x。collapse 模式 perimeter_x=0，无变化。
             let in_row_group = row.row_group_index.is_some();
-            let row_x_offset = if in_row_group { 0.0 } else { perimeter_x };
+            // R5262：非行组行落在 table content 帧，x 随格线原点平移；行组行的
+            // 平移由行组盒承载（update_row_group_positions，行帧 x 恒 0）。y 向
+            // 无需注入——row_y 游标已平移，行组行取行组内相对差（局部量）。
+            let row_x_offset = if in_row_group { 0.0 } else { perimeter_x + grid_dx };
             // R5208（CSS2 §17.2.1.1 孤儿 table-internal retrofit）：匿名行 + 无行组 ⇒
             // get_row_box 返回 table_box 自身（孤立 row 经匿名表根包装的盒子），其 x/y
             // 是父级正常流/float 定位的落点，不是表内网格偏移——只更新宽高、保留流位置
@@ -2050,7 +2883,9 @@ fn position_cells(
                 row_box.y += row_rel_dy;
             } else {
                 row_box.x = row_rel_dx + row_x_offset;
-                row_box.y = local_y + row_rel_dy;
+                // R5262：非行组行的 y 落 table content 帧，随格线原点平移；行组行
+                // 取行组内相对差（局部量），平移由行组盒承载。
+                row_box.y = local_y + row_rel_dy + if in_row_group { 0.0 } else { grid_dy };
             }
             row_box.width = table_content_width - 2.0 * perimeter_x;
             row_box.height = row_height;
@@ -2137,7 +2972,11 @@ fn position_cells(
             } else {
                 cell_x
             };
-            cell_box.x = x_final + cell_rel_dx;
+            // R5262：直连 cell 匿名行（row_box = table 本身）的 cell 落 table
+            // content 帧，x 随格线原点平移；行组/显式行帧的 cell 由行组盒平移承载
+            // （与 cell_x 起点的 perimeter_x 门同帧判定）。
+            let cell_grid_dx = if is_direct_cell_row { grid_dx } else { 0.0 };
+            cell_box.x = x_final + cell_rel_dx + cell_grid_dx;
             // R5167（CSS2.1 §17.2.1 匿名行盒）：匿名行的 cell 无行盒帧承载行 y——
             // 直接 table-cell 匿名行的容器是 table 本身（行几何不落盘），行组内直接
             // cell 匿名行的容器是行组（定位在首行，update_row_group_positions 接管），
@@ -2152,7 +2991,14 @@ fn position_cells(
             let cell_carries_row_y = r5167_enabled
                 && row.is_anonymous
                 && (is_direct_cell_row || row.row_group_index.is_some() || !table_is_display_table);
-            cell_box.y = (if cell_carries_row_y { local_y } else { 0.0 }) + cell_rel_dy;
+            // R5262：直连 cell 匿名行自携的 local_y 落 table content 帧，随格线
+            // 原点平移；行组/孤立 retrofit 帧不注入（行组盒或流落点承载）。
+            let cell_grid_dy = if is_direct_cell_row && cell_carries_row_y {
+                grid_dy
+            } else {
+                0.0
+            };
+            cell_box.y = (if cell_carries_row_y { local_y } else { 0.0 }) + cell_rel_dy + cell_grid_dy;
             cell_box.width = cell_width;
 
             // CSS Tables §visibility-collapse-cell-rendering：
@@ -2201,14 +3047,18 @@ fn position_cells(
             // 注意：正常流子元素是垂直堆叠的，应使用 sum 而非 max。
             // R1390：BFC 包含浮动后的内容高度（见 cell_float_aware_content_height）。
             let cell_content_height: f32 = cell_float_aware_content_height(cell_box, styles);
-            // R5241：collapse 半分摊行高（边框中心间距）可小于 cell 自身 border-box
-            // 高（border-conflict-element-001a：行 20 < cell 40）——cell 盒不得缩到
-            // 自己的边框盒以下（cell 只增不裁，CSS 2.1 §17.5.3；相邻行 cell 带 ±½
-            // 重叠，paint 端内绘边框带恰落边框中心）。只在 collapse_half 臂下加此
-            // guard：其余模式 row_height 由 max(cell_box.height) 累积而来（嵌套表
-            // 例外臂无此保证，separate 表必须保持原口径——margin-collapse-121 族
-            // OFF 反证归因）。
-            let cell_height = if collapse_half {
+            // R5262：真表容器（grid_shift_ok）下 cell 盒高 = 边框中心跨度（= 行高
+            // 口径，R5241），不再强制 ≥ 自身整 border-box 高（撤销 R5241 的
+            // `.max(cell_box.height)` guard）。盒缘已随格线原点平移落在格线上，
+            // 共享格线由双邻半带合成居中带（paint 端），盒高若保留整边框会把底缘
+            // 压进下一行半带（001e：td h=60 → 40，chromium 实证 cell 40×40）。
+            // 内容仍只增不裁（CSS 2.1 §17.5.3）：row_height ≥ max(cell border-box −
+            // ½上下框, float-aware 内容高)，最高 cell 的 content+padding+½底框恰满
+            // 行高；content_height 同步式按盒缘差计算，自动得整内容高。其余形态
+            // （非真表容器 / separate 表 / 嵌套表例外臂无此保证）保持 R5241 guard。
+            let cell_height = if grid_shift_ok {
+                row_height.max(cell_content_height)
+            } else if collapse_half {
                 row_height.max(cell_content_height).max(cell_box.height)
             } else {
                 row_height.max(cell_content_height)
@@ -2362,6 +3212,7 @@ fn position_cells(
     // 后处理：应用 min-height/max-height/min-width/max-width 约束
     apply_table_size_constraints(
         table_box,
+        doc,
         grid,
         row_y + top_caption_mb + bottom_caption_extent,
         col_widths,
@@ -2371,7 +3222,7 @@ fn position_cells(
 
     // 后处理：更新行组（tbody/thead/tfoot）的位置以包含其所有行
     // 对于 position:relative 的行组，还需应用 inset 偏移
-    update_row_group_positions(table_box, grid, styles);
+    update_row_group_positions(table_box, grid, styles, grid_dx, grid_dy);
 
     // 后处理：caption-side 定位（CSS2 §17.4.1）。
     // 当前 caption 由 taffy 作为 table 子元素按 DOM 序布局——top caption 产于行
@@ -2516,6 +3367,7 @@ fn resolve_table_used_length(value: &zero_css_parser::values::LengthValue, style
 /// 在 position_cells 之后调用，根据 CSS 尺寸约束调整表格的实际尺寸。
 fn apply_table_size_constraints(
     table_box: &mut LayoutBox,
+    doc: &zero_dom::Document,
     grid: &TableGrid,
     total_row_height: f32,
     col_widths: &[f32],
@@ -2548,10 +3400,45 @@ fn apply_table_size_constraints(
         .map(|c| c.width)
         .fold(0.0_f32, f32::max);
 
+    // R5277（CSS2 §17.4.1/§17.5.2）：width:auto 表的 frame-only 空 caption（width:auto、
+    // 无子盒、无文本）边框壳计入表 shrink-to-fit 下界。R5172 同轮把该 caption 收缩到
+    // 壳宽；表若仍按 cell 残宽（空 cell min-content 9.6px floor）落宽，壳悬在窄表上，
+    // 下游消费表宽的口径（float beside-fit、bg 裁剪）与 caption 实宽不一致
+    //（border-right-width-applies-to-015：表 9.6 / caption 96）。definite Px 臂维持
+    // R5213；auto caption 的盒宽是 taffy 陈旧分配值不可用（同 R5213 注），此处取壳和。
+    // 仅 auto 表启用——指定宽表 caption 维持 fill、壳不参与（margin-applies-to-015
+    // 实证）；匿名包装盒（style None）维持原收缩口径。
+    let table_width_auto = style
+        .as_ref()
+        .is_some_and(|s| matches!(s.width, zero_css_parser::values::LengthValue::Auto));
+    let caption_frame_floor = if table_width_auto {
+        table_box
+            .children
+            .iter()
+            .filter(|c| {
+                c.children.is_empty()
+                    && c.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+                        s.display == DisplayValue::TableCaption
+                            && matches!(s.width, zero_css_parser::values::LengthValue::Auto)
+                    })
+                    && c.node_id.is_some_and(|id| caption_is_frame_only(doc, id))
+            })
+            .map(|c| c.padding_left + c.padding_right + c.border_left + c.border_right)
+            .fold(0.0_f32, f32::max)
+    } else {
+        0.0
+    };
+
     let (intrinsic_width, is_border_box, padding_border_w, padding_border_h, border_collapse) = match style {
         Some(style) => {
-            // 计算表格内容的固有宽度（所有列宽 + spacing）
-            let spacing_x = style.border_spacing.horizontal;
+            // 计算表格内容的固有宽度（所有列宽 + spacing）。§17.6.1：collapse 模式
+            // border-spacing 整体无效，列间与周界同为 0（collapsing-border-model-010a
+            // 旧缺陷 spacing_total_x 未门控 → collapse 表 100 被撑到 208）。
+            let spacing_x = if matches!(style.border_collapse, zero_style_system::BorderCollapseValue::Separate) {
+                style.border_spacing.horizontal
+            } else {
+                0.0
+            };
             let spacing_total_x = if col_widths.len() > 1 {
                 (col_widths.len() - 1) as f32 * spacing_x
             } else {
@@ -2560,12 +3447,10 @@ fn apply_table_size_constraints(
             // §17.6.1 周界 spacing：左右各 spacing_x，仅 separated 模式。intrinsic_height 已含
             // 上下周界（position_cells 的 row_y 起始 = perimeter_y，循环每行 +spacing_y 自然
             // 产生顶部+底部周界，collapsed 行跳过 spacing 故不破坏周界语义）。
-            let perimeter_x = if matches!(style.border_collapse, zero_style_system::BorderCollapseValue::Separate) {
-                spacing_x
-            } else {
-                0.0
-            };
-            let intrinsic_width = (total_col_width + spacing_total_x + 2.0 * perimeter_x).max(caption_definite_width);
+            let perimeter_x = spacing_x;
+            let intrinsic_width = (total_col_width + spacing_total_x + 2.0 * perimeter_x)
+                .max(caption_definite_width)
+                .max(caption_frame_floor);
             let is_border_box = matches!(style.box_sizing, zero_css_parser::values::BoxSizingValue::BorderBox);
             let padding_border_w =
                 table_box.padding_left + table_box.padding_right + table_box.border_left + table_box.border_right;
@@ -2648,8 +3533,45 @@ fn apply_table_size_constraints(
     // 旧实现两者都计入 → 表尺寸偏大（subpixel-collapsed-borders-001 偏 5px）。
     // 扣除外边缘被覆盖的 cell border：宽扣 (左 cell.bl + 右 cell.br)/2，
     // 高扣 (顶 cell.bt + 底 cell.bb)——分别匹配列宽半 border / 行高整 border 的算法。
+    // R5262：覆盖分支同样**每缘独立取最大值**——同缘各行的边缘 cell 边框带是
+    // 同一条平行带的分段（几何上共线，画时同缘互叠），被表 border 覆盖的量 =
+    // 该缘最大边框而非逐行求和（border-conflict-element-001e：3 行 td border
+    // 1em，旧 edge_w = Σ3×20×2 = 120 → 表 140×80；chromium 表 180×140）。
     let mut edge_w = 0.0_f32;
     let mut edge_h = 0.0_f32;
+    // R5282：winner-center 装配——表 border-box = extent + 周界胜者外半（covered/
+    // outer 扫描与 R5241/R5278 修正臂全部让位；extent 已在槽内含各格线胜者内半）。
+    let collapse_winner_wc = collapse_winner_center_table(table_box)
+        && matches!(border_collapse, zero_style_system::BorderCollapseValue::Collapse)
+        && !grid.rows.is_empty();
+    // R5286：周界胜者半宽随装配写入表盒（paint 背景定位区内缩口径，见
+    // collapsed_border_outer_half 字段注释）；非 winner-center 保持 None。
+    let mut outer_half_sides = [0.0_f32; 4];
+    let (outer_half_wc_w, outer_half_wc_h) = if collapse_winner_wc {
+        let (wv, wh) = collapse_boundary_winners(table_box, grid, styles, doc);
+        let rows = grid.rows.len();
+        let half_first_w = wv.first().copied().unwrap_or(0.0) / 2.0;
+        let half_last_w = wv.last().copied().unwrap_or(0.0) / 2.0;
+        let half_first_h = wh.first().copied().unwrap_or(0.0) / 2.0;
+        let half_last_h = wh.last().copied().unwrap_or(0.0) / 2.0;
+        outer_half_sides = [half_first_h, half_last_w, half_last_h, half_first_w];
+        let half_w = (wv.first().copied().unwrap_or(0.0) + wv.last().copied().unwrap_or(0.0)) / 2.0;
+        let half_h = if rows > 0 {
+            (wh.first().copied().unwrap_or(0.0) + wh.last().copied().unwrap_or(0.0)) / 2.0
+        } else {
+            0.0
+        };
+        (half_w.max(0.0), half_h.max(0.0))
+    } else {
+        (0.0, 0.0)
+    };
+    // R5287 收口：堆侧化字段按非零门置 Some——winner-center 但周界胜者全零
+    //（hidden 周界）时回声明 border 原语义，与旧「全零门」逐值等价。
+    table_box.collapsed_border_outer_half = if outer_half_sides.iter().any(|v| *v != 0.0) {
+        Some(Box::new(outer_half_sides))
+    } else {
+        None
+    };
     // R5241：cell 边框胜出（> table 自身边框）的边缘，胜出边框的外半伸出到
     // 边框中心距（content box）之外，计入表 border-box（CSS2 §17.6.2.1 折叠
     // 语义：表外缘 = 胜出边框外缘）。**每缘独立**取最大值（四缘是四条平行带：
@@ -2660,7 +3582,14 @@ fn apply_table_size_constraints(
     let mut outer_r = 0.0_f32;
     let mut outer_t = 0.0_f32;
     let mut outer_b = 0.0_f32;
-    if matches!(border_collapse, zero_style_system::BorderCollapseValue::Collapse) && !grid.rows.is_empty() {
+    let mut covered_l = 0.0_f32;
+    let mut covered_r = 0.0_f32;
+    let mut covered_t = 0.0_f32;
+    let mut covered_b = 0.0_f32;
+    if matches!(border_collapse, zero_style_system::BorderCollapseValue::Collapse)
+        && !grid.rows.is_empty()
+        && !collapse_winner_wc
+    {
         let last_col = grid.col_count;
         // 左/右边缘 cell（col_start==0 / col_end==col_count）的 border_left/right
         for row in &grid.rows {
@@ -2678,20 +3607,21 @@ fn apply_table_size_constraints(
                 // 保留，其外半作表外缘（R5241）
                 if is_left {
                     if table_box.border_left >= cb.border_left {
-                        edge_w += cb.border_left;
+                        covered_l = covered_l.max(cb.border_left);
                     } else {
                         outer_l = outer_l.max(cb.border_left);
                     }
                 }
                 if is_right {
                     if table_box.border_right >= cb.border_right {
-                        edge_w += cb.border_right;
+                        covered_r = covered_r.max(cb.border_right);
                     } else {
                         outer_r = outer_r.max(cb.border_right);
                     }
                 }
             }
         }
+        edge_w = covered_l + covered_r;
         // 顶/底边缘行（首/末行）的 border_top/bottom
         for (row_idx, row) in grid.rows.iter().enumerate() {
             let is_top = row_idx == 0;
@@ -2706,42 +3636,73 @@ fn apply_table_size_constraints(
                 let Some(cb) = get_cell_box(rb, cell) else { continue };
                 if is_top {
                     if table_box.border_top >= cb.border_top {
-                        edge_h += cb.border_top;
+                        covered_t = covered_t.max(cb.border_top);
                     } else {
                         outer_t = outer_t.max(cb.border_top);
                     }
                 }
                 if is_bottom {
                     if table_box.border_bottom >= cb.border_bottom {
-                        edge_h += cb.border_bottom;
+                        covered_b = covered_b.max(cb.border_bottom);
                     } else {
                         outer_b = outer_b.max(cb.border_bottom);
                     }
                 }
             }
         }
+        edge_h = covered_t + covered_b;
     }
-    let width_correct = (edge_w / 2.0).min(final_width.max(0.0));
+    // R5282：winner-center 不再扣 covered（槽内已含格线胜者内半），外半直接取
+    // 周界胜者/2。
+    let width_correct = if collapse_winner_wc {
+        0.0
+    } else {
+        (edge_w / 2.0).min(final_width.max(0.0))
+    };
     // R5241：行高改边框中心间距（position_cells 半分摊）后，行和内嵌的是 ½
     // edge border——扣除口径镜像宽侧取半。代数上与旧模型等价：Σ(整扣, 整
     // border 行高) ≡ Σ(半扣, 半 border 行高)；kill-switch off 时保留整扣
     //（对应未分摊行高）。
-    let height_correct = if collapse_half_extent_enabled() {
+    let height_correct = if collapse_winner_wc {
+        0.0
+    } else if collapse_half_extent_enabled() {
         (edge_h / 2.0).min(final_height.max(0.0))
     } else {
         edge_h.min(final_height.max(0.0))
     };
-    let (outer_half_w, outer_half_h) = if collapse_half_extent_enabled() {
-        ((outer_l + outer_r) / 2.0, (outer_t + outer_b) / 2.0)
+    // R5278：cell 胜出缘的外半带与表自身 border 带同落 content 缘外侧同一窄条
+    //（折叠边框中心 = content 缘，胜出带外半展进 [盒缘, content 缘] 窄条），故每缘
+    // 只补「外半 − 自身边框」的缺口：表 border 0（R5241 原锚）补整外半；表有自身
+    // border 且 cell 更宽时补 0，不再双计（collapsing-border-model-001：25 表框
+    // + 50 cell 框，旧 270 → 220 = chromium 实证）。
+    let (outer_half_w, outer_half_h) = if collapse_winner_wc {
+        (outer_half_wc_w, outer_half_wc_h)
+    } else if collapse_half_extent_enabled() {
+        (
+            (outer_l / 2.0 - table_box.border_left).max(0.0) + (outer_r / 2.0 - table_box.border_right).max(0.0),
+            (outer_t / 2.0 - table_box.border_top).max(0.0) + (outer_b / 2.0 - table_box.border_bottom).max(0.0),
+        )
     } else {
         (0.0, 0.0)
     };
 
     let old_border_width = table_box.width;
-    table_box.content_width = (final_width - width_correct).max(0.0);
-    table_box.width = table_box.content_width + padding_border_w + outer_half_w;
-    table_box.content_height = (final_height - height_correct).max(0.0);
-    table_box.height = table_box.content_height + padding_border_h + outer_half_h;
+    // R5282：winner-center 的首/末格线 = 盒缘 + 周界胜者/2，落在自身 border 带内
+    //（胜者/2 < border 时甚至越过 content 缘），cell 帧 [0, extent] 相对 content 缘
+    // 偏 −(border − 胜者/2)。外半带由 content 盒吸收（content = extent + 外半 −
+    // padding_border），border-box = extent + 周界外半；width = content + pb 恒等式
+    // 保持。legacy 臂不动（content = extent − covered/2，外半叠在盒外）。
+    if collapse_winner_wc {
+        table_box.content_width = (final_width + outer_half_wc_w - padding_border_w).max(0.0);
+        table_box.width = table_box.content_width + padding_border_w;
+        table_box.content_height = (final_height + outer_half_wc_h - padding_border_h).max(0.0);
+        table_box.height = table_box.content_height + padding_border_h;
+    } else {
+        table_box.content_width = (final_width - width_correct).max(0.0);
+        table_box.width = table_box.content_width + padding_border_w + outer_half_w;
+        table_box.content_height = (final_height - height_correct).max(0.0);
+        table_box.height = table_box.content_height + padding_border_h + outer_half_h;
+    }
 
     // R3817：CSS §10.3.7 / §17.5.2——width:auto 的 abspos display:table（left+right
     // 确定 + margin-left/right auto）收缩到列宽和后，over-constrained 方程的 leftover
@@ -2768,7 +3729,13 @@ fn apply_table_size_constraints(
 ///
 /// 在 position_cells 之后调用，根据行组的视觉位置更新其 LayoutBox。
 /// 这确保行组的背景色、边框等绘制在正确的位置。
-fn update_row_group_positions(table_box: &mut LayoutBox, grid: &TableGrid, styles: &HashMap<NodeId, ComputedStyle>) {
+fn update_row_group_positions(
+    table_box: &mut LayoutBox,
+    grid: &TableGrid,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    grid_dx: f32,
+    grid_dy: f32,
+) {
     // 收集每个行组的视觉行索引
     let mut rg_rows: HashMap<usize, Vec<usize>> = HashMap::new();
     for (visual_idx, row) in grid.rows.iter().enumerate() {
@@ -2781,27 +3748,38 @@ fn update_row_group_positions(table_box: &mut LayoutBox, grid: &TableGrid, style
         return;
     }
 
-    // 读取 border-spacing
-    let (spacing_x, spacing_y) = table_box
-        .node_id
-        .and_then(|id| styles.get(&id))
-        .map(get_border_spacing)
-        .unwrap_or((0.0, 0.0));
-    // §17.6.1 周界 spacing（顶部），仅 separated 模式——与 position_cells 的 row_y 起始一致，
-    // 否则行组位置会与行位置错位。
+    // 读取 border-spacing（§17.6.1 collapse 模式整体无效——行间推进/行组高度累计
+    // 与周界同受门控，与 position_cells 源头清零口径一致；
+    // collapsing-border-model-010a：collapse 表行组盒按 50px spacing 下坠与 cell 错位、
+    // tbody 行带露表底红色）
     let separated = table_box
         .node_id
         .and_then(|id| styles.get(&id))
         .is_some_and(|s| matches!(s.border_collapse, zero_style_system::BorderCollapseValue::Separate));
-    let perimeter_y = if separated { spacing_y } else { 0.0 };
+    let (spacing_x, spacing_y) = if separated {
+        table_box
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .map(get_border_spacing)
+            .unwrap_or((0.0, 0.0))
+    } else {
+        (0.0, 0.0)
+    };
+    // §17.6.1 周界 spacing（顶部），仅 separated 模式——与 position_cells 的 row_y 起始一致，
+    // 否则行组位置会与行位置错位。
+    let perimeter_y = spacing_y;
     // R2050：水平周界 spacing（行组背景覆盖 cell grid，不含左右周界，与行盒一致）。
-    let perimeter_x = if separated { spacing_x } else { 0.0 };
+    let perimeter_x = spacing_x;
+    // R5262：collapse 格线原点平移由 position_cells 传入（同源同门——真表容器
+    // 判定在调用侧；行组盒落在 table content 帧，x/y 随格线移动；first_row_y 由
+    // 本函数游标重导出而非读实际行盒，须镜像同一平移，否则行组盒与行/cell 错位
+    // ½外缘带）。
 
     // 预计算所有行的 y 位置和高度（不可变借用阶段）
     let mut row_positions: Vec<(f32, f32)> = Vec::with_capacity(grid.rows.len());
     // R1653：caption-side:top caption 占据顶部，行组盒 y 须与 position_cells 的 cell 一致下移
     // caption 高度（否则行组盒与 cell 错位 + 与 caption overlap）。
-    let mut row_y = perimeter_y + top_caption_extent(table_box, styles);
+    let mut row_y = perimeter_y + grid_dy + top_caption_extent(table_box, styles);
     for (row_idx, row) in grid.rows.iter().enumerate() {
         // visibility:collapse 的行高度为 0（CSS Tables §4.1），与 position_cells 对齐。
         let row_collapsed = grid.collapsed_rows.get(row_idx).copied().unwrap_or(false);
@@ -2816,6 +3794,9 @@ fn update_row_group_positions(table_box: &mut LayoutBox, grid: &TableGrid, style
                     rb.children.get(cell.child_index)
                 };
                 if let Some(cell_box) = cell_box {
+                    // R5282：winner-center 下 cell 盒高已被 position_cells 落为行槽
+                    // （grid_shift_ok 臂，槽 = 胜者口径），直接取即与装配循环同源；
+                    // 不可再减框重推（盒高已非 border-box，减框会双扣半带）。
                     h = h.max(cell_box.height);
                 }
             }
@@ -2872,11 +3853,22 @@ fn update_row_group_positions(table_box: &mut LayoutBox, grid: &TableGrid, style
             rel_dy = resolve_length_inset(row_group, styles, false);
         }
 
+        // R5287：winner-center collapse 表——行组盒跨 = 行网格区（外延 − 周界
+        // 胜者半宽，与 col 背景网格区同口径；bc-rowgroup-001 aqua ref 287 宽 vs
+        // 旧 content_width 283 = extent − 整周界 border，R5282 装配把 content
+        // 盒扣成 final + 外半 − padding_border 已含整 border）。字段 None
+        // （separated/border-center）回原语义（2×perimeter_x 周界 spacing 扣除）。
+        let rg_width = if let Some(outer_half) = &table_box.collapsed_border_outer_half {
+            (table_box.width - outer_half[3] - outer_half[1]).max(0.0)
+        } else {
+            table_box.content_width - 2.0 * perimeter_x
+        };
+
         updates.push((
             *rg_idx,
-            rel_dx + perimeter_x,
+            rel_dx + perimeter_x + grid_dx,
             first_row_y + rel_dy,
-            table_box.content_width - 2.0 * perimeter_x,
+            rg_width,
             total_h,
         ));
     }

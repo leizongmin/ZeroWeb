@@ -523,3 +523,120 @@ fn late_media_resource_events_dispatched_after_script_finish_t8o() {
         "收尾后完成的媒体事件须迟到派发（settle 状态同步可达）；修前滞留 stash 恒空"
     );
 }
+
+// P11（site-optimizer perf-mem-20261023）地址栏劫持回归钉：真实导航序下，主文档
+// 完成（显式 document 印章 → current_url 同步为设计内路径，bing-t3 C1）后，HTML
+// dns-prefetch hint 经 IPC 发出，其合成 204 完成不得翻转 current_url/UrlChanged。
+// 消费端契约：document_url 只认显式 document 印章；"other" 印章（修后 fetch_proxy
+// 对无显式类型完成——hint、无扩展名子资源——的输出）即使携带 X-Zero-Final-URL 也
+// 必须被忽略。对照臂证明装置能侦测翻转，非恒真假绿。修前生产者把兜底推断
+// document 打进印章，生产侧红测在 zero-net 推断单测与 zero-browser fetch_proxy
+// 印章测；本测锁定消费端与端到端消息形状。
+// https://html.spec.whatwg.org/multipage/browsers.html#document-requested-url
+fn p11_inject_fetch_response(runtime: &mut RendererRuntime, params: FetchResponseParams) {
+    let (inject_tx, inject_rx) = mpsc::channel();
+    inject_tx
+        .send(IpcMessage {
+            id: 0,
+            kind: IpcMessageKind::FetchResponse(params),
+        })
+        .unwrap();
+    drop(inject_tx);
+    runtime.inbound_rx = inject_rx;
+    runtime.drain_inflight_fetch_responses();
+}
+
+#[test]
+fn dns_prefetch_hint_completion_does_not_flip_document_url_p11() {
+    let page_url = "https://zero.test/p11-page";
+    let html = r#"<html><head>
+        <link rel="dns-prefetch" href="https://cdn-a.zero.test/">
+        <link rel="dns-prefetch" href="https://cdn-b.zero.test/">
+    </head><body><p>p11</p></body></html>"#;
+    let mut runtime = runtime_with_sink(9151);
+    runtime
+        .dispatch_message(IpcMessage {
+            id: 0,
+            kind: IpcMessageKind::Navigate(NavigateParams {
+                url: page_url.to_string(),
+                referrer: None,
+                navigation_epoch: 1,
+            }),
+        })
+        .unwrap();
+    // 基线在导航派发点钉定：handle_navigate 同步发 UrlChanged 并置 current_url
+    //（runtime.rs 导航处理，先于任何 fetch 完成）；后续 document 完成仅在印章
+    // final URL 与之不同（重定向）时才覆写。臂 1 的不变断言以此为比较基准。
+    assert_eq!(runtime.current_url.as_deref(), Some(page_url), "导航基线 URL");
+    let baseline = runtime.current_url.clone();
+    // 主文档 IPC fetch 挂起（outbound=sink 吞请求），注入文档响应驱动文档就绪。
+    // final URL 与导航 URL 相同，document 印章完成对 current_url 是无差同步。
+    let doc_request_id = *runtime
+        .inflight_fetches
+        .pending_request_ids()
+        .first()
+        .expect("导航文档 IPC fetch 应在飞");
+    p11_inject_fetch_response(
+        &mut runtime,
+        FetchResponseParams {
+            request_id: doc_request_id,
+            status_code: 200,
+            headers: vec![
+                ("X-Zero-Resource-Type".into(), "document".into()),
+                ("X-Zero-Final-URL".into(), page_url.to_string()),
+            ],
+            body: html.as_bytes().to_vec(),
+        },
+    );
+    // 文档就绪后 begin_preload_hints 发出两条 DNS-PREFETCH IPC 请求。
+    let mut hint_ids = Vec::new();
+    for _ in 0..500 {
+        runtime.tick_pending_load().unwrap();
+        hint_ids = runtime.inflight_fetches.pending_request_ids();
+        if hint_ids.len() >= 2 {
+            break;
+        }
+    }
+    assert!(
+        hint_ids.len() >= 2,
+        "dns-prefetch hint 应经 IPC 在飞，实得 {}",
+        hint_ids.len()
+    );
+
+    // 臂 1：hint 完成为 "other" 印章（修后 fetch_proxy 输出形状）——不得翻转。
+    p11_inject_fetch_response(
+        &mut runtime,
+        FetchResponseParams {
+            request_id: hint_ids[0],
+            status_code: 204,
+            headers: vec![
+                ("X-Zero-Resource-Type".into(), "other".into()),
+                ("X-Zero-Final-URL".into(), "https://cdn-a.zero.test/".into()),
+            ],
+            body: Vec::new(),
+        },
+    );
+    assert_eq!(
+        runtime.current_url, baseline,
+        "无扩展名 hint 的 other 印章完成不得翻转 document URL（P11 修前翻转）"
+    );
+
+    // 臂 2（对照）：document 印章完成必须翻转——装置对翻转敏感，契约单向。
+    p11_inject_fetch_response(
+        &mut runtime,
+        FetchResponseParams {
+            request_id: hint_ids[1],
+            status_code: 204,
+            headers: vec![
+                ("X-Zero-Resource-Type".into(), "document".into()),
+                ("X-Zero-Final-URL".into(), "https://cdn-b.zero.test/".into()),
+            ],
+            body: Vec::new(),
+        },
+    );
+    assert_eq!(
+        runtime.current_url.as_deref(),
+        Some("https://cdn-b.zero.test/"),
+        "对照臂：document 印章完成翻转 current_url，证明臂 1 的不变断言有效"
+    );
+}

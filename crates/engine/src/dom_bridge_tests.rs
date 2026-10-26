@@ -1474,7 +1474,7 @@ fn test_apply_detached_stash_move_semantics_r361() {
     // 旧版：第 ② 条 child 失配 → Err("insert_adjacent_sel_element: no child match for
     // #target") 中止整批。新版：stash 复用 detach 时的 NodeId → 成功（target 移入 #other）。
     let mut doc = zero_dom::parse_html(html);
-    let result = apply_dom_mutations_full(&mut doc, &mutations, None, None, None);
+    let result = apply_dom_mutations_full(&mut doc, &mutations, None, None, None, None);
     assert!(
         result.is_ok(),
         "R361 批内 detach→insert 应复用 stash NodeId（移动语义），旧版硬错: {:?}",
@@ -1483,6 +1483,88 @@ fn test_apply_detached_stash_move_semantics_r361() {
     // target 现挂 #other 下（不在 #parent）。
     let moved = find_by_selector(&doc, "#other #target");
     assert!(moved.is_some(), "R361 target 应已在 #other 子树内（移动语义落地）");
+}
+
+/// s80（html-semantics）：R45 追链的**跨批**扩展——跨批 id 改名 journal。批 1
+/// `SetAttr(id)` 落地后，批 2 携带的旧 `#id` 属性 mutation（selector 取自 proxy 建立
+/// 时点）在 doc 中恒失配（R45 批内重写只覆盖本批剩余队列），此前 lenient skip 静默
+/// 丢写——WPT image-map-processing-model/hash-name-reference-dynamic 的
+/// `map.setAttribute('name',…)` 跨批丢写（点击命中 5F）实证面。修复：批内改名记
+/// journal（旧 sel → 新 sel），失配臂查表追链重试解析；直查命中优先（新元素抢占
+/// 旧 id 时不劫持）。
+#[test]
+fn test_apply_sel_rename_journal_cross_batch_attr_s80() {
+    use crate::js_dom_bridge::{DomMutation, apply_dom_mutations_full, find_by_selector};
+    let html = "<html><body><map id='testmap'><area shape='rect' coords='0,0,1,1'/></map></body></html>";
+    let mut journal = std::collections::HashMap::new();
+
+    // 批 1：改名 id → other（批内 R45 追链 + journal 记账）。
+    let mut doc = zero_dom::parse_html(html);
+    let b1 = vec![DomMutation::SetAttr {
+        selector: "#testmap".to_string(),
+        name: "id".to_string(),
+        value: "other".to_string(),
+    }];
+    apply_dom_mutations_full(&mut doc, &b1, None, None, None, Some(&mut journal)).unwrap();
+    let m = find_by_selector(&doc, "#other").expect("批 1 改名应落地");
+    assert_eq!(doc.get_attribute(m, "id").as_deref(), Some("other"));
+    assert!(journal.contains_key("#testmap"), "改名应记 journal");
+
+    // 批 2：旧键 name 写（selector 取自 proxy 建立时点）——修复前恒失配 skip 丢写。
+    let b2 = vec![DomMutation::SetAttr {
+        selector: "#testmap".to_string(),
+        name: "name".to_string(),
+        value: "testmap".to_string(),
+    }];
+    apply_dom_mutations_full(&mut doc, &b2, None, None, None, Some(&mut journal)).unwrap();
+    let m = find_by_selector(&doc, "#other").expect("journal 追链后元素仍在");
+    assert_eq!(
+        doc.get_attribute(m, "name").as_deref(),
+        Some("testmap"),
+        "s80：跨批旧键属性写应经 journal 追链落地（修复前 lenient skip 丢写）"
+    );
+
+    // 批 3：改名回原 id——直查命中优先（journal 旁路），name 保留。
+    let b3 = vec![DomMutation::SetAttr {
+        selector: "#testmap".to_string(),
+        name: "id".to_string(),
+        value: "testmap".to_string(),
+    }];
+    apply_dom_mutations_full(&mut doc, &b3, None, None, None, Some(&mut journal)).unwrap();
+    let m = find_by_selector(&doc, "#testmap").expect("改名回原 id 应直查命中");
+    assert_eq!(doc.get_attribute(m, "name").as_deref(), Some("testmap"));
+
+    // (c) 新元素抢占旧 id：直查命中优先，journal 不劫持——批 4 先把 map 改名让出旧
+    // id，批 5 插入持有旧 id 的新元素，批 6 旧键 mutation 应直查命中落新元素。
+    let b4 = vec![DomMutation::SetAttr {
+        selector: "#testmap".to_string(),
+        name: "id".to_string(),
+        value: "renamed".to_string(),
+    }];
+    apply_dom_mutations_full(&mut doc, &b4, None, None, None, Some(&mut journal)).unwrap();
+    let b5 = vec![DomMutation::InsertAdjacentHtml {
+        selector: "body".to_string(),
+        position: "beforeend".to_string(),
+        html: "<div id='testmap'></div>".to_string(),
+    }];
+    apply_dom_mutations_full(&mut doc, &b5, None, None, None, Some(&mut journal)).unwrap();
+    let b6 = vec![DomMutation::SetAttr {
+        selector: "#testmap".to_string(),
+        name: "data-x".to_string(),
+        value: "stolen".to_string(),
+    }];
+    apply_dom_mutations_full(&mut doc, &b6, None, None, None, Some(&mut journal)).unwrap();
+    let thief = find_by_selector(&doc, "#testmap").expect("新元素应持有旧 id");
+    assert_eq!(
+        doc.get_attribute(thief, "data-x").as_deref(),
+        Some("stolen"),
+        "s80：直查命中优先——旧 id 被新元素持有时 mutation 落新元素（journal 只补失配）"
+    );
+    let renamed = find_by_selector(&doc, "#renamed").expect("改名元素仍在");
+    assert!(
+        doc.get_attribute(renamed, "data-x").is_none(),
+        "s80：直查命中优先——journal 不得劫持直查命中"
+    );
 }
 
 /// R4620（html-semantics s27）：批内 selector 时序——同一 dispatch 的 JS op 全部引用
@@ -1522,7 +1604,7 @@ fn test_apply_ins_target_pre_remove_index_drift_r4620() {
         },
     ];
     let mut doc = zero_dom::parse_html(html);
-    let result = apply_dom_mutations_full(&mut doc, &mutations, None, None, None);
+    let result = apply_dom_mutations_full(&mut doc, &mutations, None, None, None, None);
     assert!(result.is_ok(), "R4620 批应用应成功: {:?}", result.err());
     // dialog 应回到文档（移动语义净效果），open 属性写入。
     let dlg = find_by_selector(&doc, "#dialog");
@@ -1591,7 +1673,7 @@ fn test_apply_selector_miss_does_not_abort_batch_p19() {
         },
     ];
     let mut doc = zero_dom::parse_html(html);
-    let result = apply_dom_mutations_full(&mut doc, &mutations, None, None, None);
+    let result = apply_dom_mutations_full(&mut doc, &mutations, None, None, None, None);
     assert!(
         result.is_ok(),
         "P19 失配记录应 warn+跳过而非中止整批: {:?}",
@@ -1629,7 +1711,7 @@ fn test_apply_dangling_child_handle_stays_hard_error_p19() {
         ref_selector: "#panel".to_string(),
     }];
     let mut doc = zero_dom::parse_html(html);
-    let result = apply_dom_mutations_full(&mut doc, &mutations, None, None, None);
+    let result = apply_dom_mutations_full(&mut doc, &mutations, None, None, None, None);
     let err = result.expect_err("悬垂 child handle 必须硬错，不得被 P19 lenient 化吞掉");
     assert!(
         err.contains("unknown child handle"),

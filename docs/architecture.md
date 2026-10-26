@@ -21,15 +21,16 @@
 
 ## 工作区分层
 
-整个工作区共 32 个 workspace member：22 个库 crate、7 个应用入口（`apps/`）、2 个测试工具（`tests/`）和 1 个开发工具（`tools/icon-gen`，不随发布产物分发）。下文按「应用与进程入口 / 产品层和 API 层 / 引擎层 / 基础设施层 / 测试基础设施」分组列出。
+整个工作区共 33 个 workspace member：22 个库 crate、8 个应用入口（`apps/`）、2 个测试工具（`tests/`）和 1 个开发工具（`tools/icon-gen`，不随发布产物分发）。下文按「应用与进程入口 / 产品层和 API 层 / 引擎层 / 基础设施层 / 测试基础设施」分组列出。
 
 ### 应用与进程入口
 
 | Path | 作用 |
 |------|------|
-| `apps/browser` | 桌面浏览器应用入口，基于 `browser-shell` + `webview` + `host-runtime`，提供窗口模式与 `--headless` / remote debugging（WebSocket）入口 |
+| `apps/browser` | 桌面浏览器应用入口，基于 `browser-shell` + `host-runtime`，页面渲染与脚本固定经 `zero-renderer` IPC（发布二进制不再链接 `webview` / V8 / QuickJS），提供窗口模式与 `--headless` / remote debugging（WebSocket）入口 |
 | `apps/renderer` | 独立渲染进程入口（`zero-renderer`），负责多进程 IPC 下的页面渲染与脚本执行，通过 stdin/stdout 管道与浏览器主进程通信 |
 | `apps/image-decoder` | 图像解码进程（`zero-image-decoder`，D1）：renderer 对 PNG/JPEG/WebP 固定经此进程解码，以隔离不可信编解码器；SVG 仍由 WebView 的资源加载路径处理 |
+| `apps/media-host` | 媒体宿主进程（`zero-media-host`，media-runtime-isolation 方案 C）：独立进程承载解码与媒体时钟——解码内核 `MediaKernel`（纯函数面，host 权威时钟 + 播放控制 + 推送面）、自走时钟事件循环（按内核唤醒截止等待，Idle 推进时钟，无固定节拍轮询）、状态/帧/元数据/错误自发推送事件面；webview 经 `media_proxy` 客户端接入（`media-process` feature 默认关），崩溃双路检测与退避重启（1s/2s/4s，n≤3）由客户端承担 |
 | `apps/compositor` | 合成器进程（`zero-compositor`，C2）：Browser 固定经此进程合成——scroll transform bake、sync_token + Viz present、GPU mailbox fence + mmap 零拷贝、dma-buf fd 导出、owned window present surface、Linux landlock/seccomp 沙箱、GPU device-lost 模拟 + CPU 回退；Vulkan 真纹理 dma-buf 导出仍为后续 |
 | `apps/webdriver` | WebDriver 服务（`zero-webdriver`）：W3C 协议 36 endpoint（session/导航/超时/元素族/execute sync+async/source/window 族/screenshot；webdriver goal 已收口归档 2026-09-08，screenshot 续作 webdriver-screenshot goal 亦已收口归档 2026-09-09） |
 | `apps/webview-demo` | 最小演示程序，用于串起宿主窗口和渲染基础设施（wgpu/CPU 渲染静态文本） |
@@ -66,7 +67,7 @@
 | `crates/storage` | localStorage、sessionStorage、IndexedDB（KeyRange / Index / Cursor / Transaction）、Cache API、Service Worker 注册表、OPFS（`opfs` 模块：目录树/句柄/写流全语义 + per-origin 持久化底座，storage-opfs goal M1） |
 | `crates/protocol` | IPC 消息、bincode 序列化、`PipeTransport` 帧协议、`SharedMemoryChannel`、`RendererHandle` / `ProcessManager`（多渲染进程管理与崩溃检测） |
 | `crates/product-version` | 产品版本号（从构建日期推导，随 `zero-product-version` 分发） |
-| `crates/runtime-config` | 运行时环境变量配置的唯一入口：集中定义并解析渲染后端、多进程、沙箱、compositor 等开关（`ENVIRONMENT_VARIABLES` 权威清单 + 统一解析函数），业务 crate 不直接读环境变量 |
+| `crates/runtime-config` | 运行时环境变量配置的唯一入口：集中定义并解析渲染后端、沙箱、compositor 等开关（`ENVIRONMENT_VARIABLES` 权威清单 + 统一解析函数），业务 crate 不直接读环境变量 |
 | `crates/psl` | 公共后缀列表（PSL）解析与注册域名（eTLD+1）提取，接入 site-isolation（R3380） |
 | `crates/wasm-sandbox` | 受控 WASM 执行环境（wasmi），host function 导入、fuel / 执行限制、错误传播 |
 | `crates/script-sandbox` | 页面脚本 / 扩展脚本运行时：V8（`v8` crate，原 rusty_v8）/ QuickJS feature gate，含 Isolate / Context 管理、持久化 Context 复用、Dedicated Worker、ES Modules、错误处理与超时 |

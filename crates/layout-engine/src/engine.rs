@@ -2628,9 +2628,10 @@ impl LayoutEngine {
             column_gap: 0.0,
             is_block_level,
             is_relative,
-            collapsed_border_color_overrides: [None; 4],
+            collapsed_border_color_overrides: None,
             collapsed_border_style_overrides: [const { None }; 4],
             collapsed_border_outer_edge: [false; 4],
+            collapsed_border_outer_half: None,
             writing_mode: own_writing_mode.clone(),
             writing_mode_sideways_lr: computed.is_some_and(|s| s.writing_mode_sideways_lr),
             is_anonymous_text_item,
@@ -2658,6 +2659,7 @@ impl LayoutEngine {
             inline_block_child_nodes: Default::default(),
             inline_color_divergent_nodes: Default::default(),
             inline_nested_atomic_nodes: Default::default(),
+            inline_relpos_shifts: Default::default(),
             text_node_bidi_overrides: Default::default(),
             text_node_font_families: Default::default(),
             text_node_font_size_adjust: Default::default(),
@@ -2720,7 +2722,9 @@ impl LayoutEngine {
                 })
             }),
             table_col_backgrounds: Vec::new(),
+            bg_cell_segments: Vec::new(),
             valign_offset: 0.0,
+            collapse_half_shift: (0.0, 0.0),
         }
     }
 }

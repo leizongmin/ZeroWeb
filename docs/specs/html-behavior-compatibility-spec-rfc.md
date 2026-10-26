@@ -3,7 +3,7 @@
 **版本**：v1.1
 **日期**：2026-08-12
 **作者**：AI Assistant
-**状态**：待确认
+**状态**：已实施（随 html-compat goal 落地——M0–M4 实施与最终审计完成，2026-08-17 goal 收口归档，见 [goal/archive/html-compat/master.md](../goal/archive/html-compat/master.md)）
 **依据**：[`research-html-compat-parallel-track-2026-08-12.md`](../research/research-html-compat-parallel-track-2026-08-12.md)
 **ZeroUI 补充调研**：[`research-zeroui-lessons-for-html-compat-2026-08-12.md`](../research/research-zeroui-lessons-for-html-compat-2026-08-12.md)
 

@@ -4891,12 +4891,15 @@ fn wpt_data_script_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::S
         }
         // workers-compat M2：script MIME 判定（classic worker(-imported) script 的
         // fetch 步骤——非 JavaScript MIME 按网络错误失败；Worker_script_mimetype/
-        // importscripts_mime 案面）。派生序（wptserve 语义）：① `<file>.headers`
-        // sidecar Content-Type 覆盖（无扩展名脚本 `1`/`null`/`undefined`、nosniff
-        // 面）；② `workers/support/imported_script.py?mime=` 动态 handler（wptserve
-        // 返空体——成功源以 "\n" 交付，__zw_fetch_script 以空串承载 Err 不可区分，
-        // 空脚本与 "\n" 执行语义恒等）；③ 扩展名 .js/.mjs scripty，其余（含无扩展
-        // 名）非 scripty。
+        // importscripts_mime 案面）。派生序（wptserve 语义）：① wptserve
+        // `?pipe=header(Content-Type,X)` 响应头模板（s87——dynamic-import
+        // fetch-error 用例经 specifier 直带；errorhandling-wrongMimetype.js `text/plain`
+        // 面：文件本体合法 JS，无此建模按 .js 扩展名误判 scripty → import() 须拒未拒）；
+        // ② `<file>.headers` sidecar Content-Type 覆盖（无扩展名脚本 `1`/`null`/
+        // `undefined`、nosniff 面）；③ `workers/support/imported_script.py?mime=` 动态
+        // handler（wptserve 返空体——成功源以 "\n" 交付，__zw_fetch_script 以空串承载
+        // Err 不可区分，空脚本与 "\n" 执行语义恒等）；④ 扩展名 .js/.mjs scripty，
+        // 其余（含无扩展名）非 scripty。其余 pipe 指令（trickle 等）不涉 MIME 照旧忽略。
         // https://html.spec.whatwg.org/multipage/workers.html#dom-workerglobalscope-importscripts
         fn mime_is_scripty(mime: &str) -> bool {
             let essence = mime.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
@@ -4905,6 +4908,18 @@ fn wpt_data_script_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::S
                 "text/javascript" | "application/javascript" | "text/ecmascript" | "application/ecmascript"
             )
         }
+        let mime_from_pipe = src.split('?').nth(1).and_then(|query| {
+            query
+                .split('&')
+                .find_map(|kv| kv.strip_prefix("pipe="))
+                .and_then(|pipe| {
+                    let inner = pipe.strip_prefix("header(")?.strip_suffix(')')?;
+                    let (name, value) = inner.split_once(',')?;
+                    name.trim()
+                        .eq_ignore_ascii_case("content-type")
+                        .then(|| value.trim().to_string())
+                })
+        });
         let mime_from_sidecar = std::fs::read_to_string(root.join(format!("{clean}.headers")))
             .ok()
             .and_then(|headers| {
@@ -4917,7 +4932,9 @@ fn wpt_data_script_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::S
                     }
                 })
             });
-        let scripty = if let Some(mime) = mime_from_sidecar {
+        let scripty = if let Some(mime) = mime_from_pipe {
+            mime_is_scripty(&mime)
+        } else if let Some(mime) = mime_from_sidecar {
             mime_is_scripty(&mime)
         } else if clean == "workers/support/imported_script.py" {
             // wptserve 动态 handler 语义：按 `?mime=` 查询回 Content-Type + 空体——
@@ -8292,7 +8309,23 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
         //（spec reveal steps——新文档显示时 window 上派 pagereveal，早于首个渲染机会/rAF；
         // persisted=false 新载入形。WPT pagereveal/order-in-new-document-navigation
         // 「pagereveal,rAF」——此前无此事件面，log 恒 'rAF'）。
-        "(function () {var mk = globalThis.__zwMakeTrustedEvent;function protoLink(ev, proto) {try { if (proto && proto.prototype) Object.setPrototypeOf(ev, proto.prototype); } catch (_e5000pl) {}return ev;}setTimeout(function () {try {globalThis.__zwReadyState='interactive';} catch (_ers8m1) {}try {var rs1 = protoLink(mk ? mk('readystatechange') : new Event('readystatechange'), globalThis.Event);document.dispatchEvent(rs1);} catch (_ers8m1d) {}var dcl = protoLink(mk ? mk('DOMContentLoaded', { bubbles: true }) : new Event('DOMContentLoaded', { bubbles: true }), globalThis.Event);document.dispatchEvent(dcl);try {globalThis.__zwReadyState='complete';} catch (_ers8m2) {}try {var rs2 = protoLink(mk ? mk('readystatechange') : new Event('readystatechange'), globalThis.Event);document.dispatchEvent(rs2);} catch (_ers8m2d) {}var load = protoLink(mk ? mk('load') : new Event('load'), globalThis.Event);try { load._zwTargetOverride = true; load.target = document; } catch (_e5000lt) {}globalThis.dispatchEvent(load);var ps = protoLink(mk ? mk('pageshow', { bubbles: true, cancelable: true }) : new Event('pageshow', { bubbles: true, cancelable: true }), globalThis.PageTransitionEvent);try { ps.persisted = false; } catch (_e5000pp) {}try { ps._zwTargetOverride = true; ps.target = document; } catch (_e5000pt) {}globalThis.dispatchEvent(ps);try {if(!globalThis.__zwPagerevealFired){globalThis.__zwPagerevealFired=true;var pr = protoLink(mk ? mk('pagereveal') : new Event('pagereveal'), globalThis.Event);globalThis.dispatchEvent(pr);}} catch (_ers5pr) {}}, 0);})();if (typeof globalThis.__zw_mark_harness_loaded === 'function') {globalThis.__zw_mark_harness_loaded();}",
+        // R5275（html-semantics M2 切片 68，2026-10-24）：单 timer 任务拆**三任务链**——
+        // ①interactive+DCL（spec：DCL 不等图片）；②img settle 独立任务（`__zwFireStaticImgSettle`
+        // 派发的 img load 事件其 promise 回调（invisible-image have_images_loaded 的
+        // Promise.all）是微任务，须在任务边界排水——同任务直派则 window load listener
+        // 的同步断言先于微任务看见旗标）；③load 等待任务（先 settle 再查
+        // `__zwImgLoadBlocked`：R56h fetch 在飞（wptserve trickle(dN) shim 侧延迟的
+        // 慢图，delay-load-event-detached）或闸门队列未 drain → 100ms 重试；就绪 →
+        // complete+load+pageshow+pagereveal）。严格序 DCL→load→pageshow 不变（链式
+        // setTimeout 保序）；readyState complete 相位随 load 后移（spec the-end：
+        // complete 即 fully loaded 相位）。
+        "(function () {var mk = globalThis.__zwMakeTrustedEvent;function protoLink(ev, proto) {try { if (proto && proto.prototype) Object.setPrototypeOf(ev, proto.prototype); } catch (_e5000pl) {}return ev;}function fireSettle5275() {try { if (typeof globalThis.__zwFireStaticImgSettle === 'function') globalThis.__zwFireStaticImgSettle(); } catch (_eIm5275) {}}\
+        setTimeout(function () {try {globalThis.__zwReadyState='interactive';} catch (_ers8m1) {}try {var rs1 = protoLink(mk ? mk('readystatechange') : new Event('readystatechange'), globalThis.Event);document.dispatchEvent(rs1);} catch (_ers8m1d) {}var dcl = protoLink(mk ? mk('DOMContentLoaded', { bubbles: true }) : new Event('DOMContentLoaded', { bubbles: true }), globalThis.Event);document.dispatchEvent(dcl);\
+        setTimeout(function () {fireSettle5275();\
+        setTimeout(function () {var loadStep5275 = function () {fireSettle5275();try { if (typeof globalThis.__zwImgLoadBlocked === 'function' && globalThis.__zwImgLoadBlocked()) { setTimeout(loadStep5275, 100); return; } } catch (_eImBlk) {}try {globalThis.__zwReadyState='complete';} catch (_ers8m2) {}try {var rs2 = protoLink(mk ? mk('readystatechange') : new Event('readystatechange'), globalThis.Event);document.dispatchEvent(rs2);} catch (_ers8m2d) {}var load = protoLink(mk ? mk('load') : new Event('load'), globalThis.Event);try { load._zwTargetOverride = true; load.target = document; } catch (_e5000lt) {}globalThis.dispatchEvent(load);var ps = protoLink(mk ? mk('pageshow', { bubbles: true, cancelable: true }) : new Event('pageshow', { bubbles: true, cancelable: true }), globalThis.PageTransitionEvent);try { ps.persisted = false; } catch (_e5000pp) {}try { ps._zwTargetOverride = true; ps.target = document; } catch (_e5000pt) {}globalThis.dispatchEvent(ps);try {if(!globalThis.__zwPagerevealFired){globalThis.__zwPagerevealFired=true;var pr = protoLink(mk ? mk('pagereveal') : new Event('pagereveal'), globalThis.Event);globalThis.dispatchEvent(pr);}} catch (_ers5pr) {}};loadStep5275();}, 0);\
+        }, 0);\
+        }, 0);\
+        })();if (typeof globalThis.__zw_mark_harness_loaded === 'function') {globalThis.__zw_mark_harness_loaded();}",
     );
     // M3 扩批（2026-09-02，fixture-mounted 播放切片）：播放宿主桥 + 媒体源登记。
     // 页面 <video>/<audio> src（经 extract_media_resources 提取、相对 case 目录解析）
@@ -9105,7 +9138,40 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str) -> String 
         match resolved {
             Some((combined, content)) => {
                 output.push_str(&remaining[..start]);
-                output.push_str("<script data-zw-harness data-inline=\"");
+                // s92（string-compilation CSP nonce 面）：投递形态改写保留原标签
+                // nonce 属性（上方 harness 注入块 csp_nonce_attr 同款保真）——CSP
+                // 页 nonce 槽位随脚本执行逐脚本刷新（webview 动态 import 检查输入），
+                // 内联投递丢 nonce 会让页面脚本体 Deferred import 拿不到 nonce 被
+                // CSP 伪拒（propagate-nonce-external-* 实测）。
+                // https://html.spec.whatwg.org/multipage/webappapis.html#concept-scripts-base-url
+                let nonce_attr = match zero_engine::attr_from_open_tag(open, "nonce") {
+                    Some(n) if !n.is_empty() => {
+                        format!(" nonce=\"{}\"", n.replace('&', "&amp;").replace('"', "&quot;"))
+                    }
+                    _ => String::new(),
+                };
+                // s94（nomodule face）：投递改写保留原标签 nomodule（bool 属性，裸形在场即
+                // 生效）与 type 属性——nomodule 丢失使 prepare 门（extract
+                // script_suppressed_by_nomodule）失效、nomodule classic 照跑
+                //（nomodule-set-on-synchronously-loaded-* 实测）；type 丢失把 module 形外链
+                // 按 classic 内联执行（s92 挂账「投递不保留 type=module」承袭，顶层 this/
+                // defer 时序语义全变——module/nomodule-attribute 实测 log 收 window 非
+                // undefined）。
+                // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+                let nomodule_attr = if zero_engine::open_tag_has_attr(open, "nomodule") {
+                    " nomodule"
+                } else {
+                    ""
+                };
+                let type_attr = match zero_engine::attr_from_open_tag(open, "type") {
+                    Some(t) if !t.is_empty() => {
+                        format!(" type=\"{}\"", t.replace('&', "&amp;").replace('"', "&quot;"))
+                    }
+                    _ => String::new(),
+                };
+                output.push_str(&format!(
+                    "<script{nonce_attr}{nomodule_attr}{type_attr} data-zw-harness data-inline=\""
+                ));
                 output.push_str(&combined);
                 output.push_str("\">");
                 output.push_str(&content);
@@ -10250,6 +10316,12 @@ fn dispatch_action(
 /// sequential focus navigation）；起点 = 页面真实焦点（`document.activeElement` 身份
 /// 比对——querySelector 同源 _makeProxy 缓存 identity 相等，handle 兜底双判）；
 /// 无下一可聚焦 → 焦点不变（真浏览器 Tab 落浏览器 UI，headless 近似驻留）。
+/// R5251（html-semantics M2 切片 48，2026-10-24）：候选集补 editing host——
+/// contenteditable true 状态且父不可编辑的元素是 focusable area（WPT
+/// dialog-focusability：`<dialog contenteditable=true open>` 须入 Tab 序）。isContentEditable
+/// 走 shim R3187 枚举态（大小写不敏感 + inherit 继承）；嵌套 editable 非 host 与
+/// contenteditable=false 孤岛不入序。显式 tabindex 元素优先 tabIndex 臂（含 ""）。
+/// https://html.spec.whatwg.org/multipage/interaction.html#focusable-area
 /// https://html.spec.whatwg.org/multipage/interaction.html#sequential-focus-navigation
 /// https://html.spec.whatwg.org/multipage/interaction.html#focusing-steps
 fn dispatch_tab_focus(webview: &mut WebView) -> Option<String> {
@@ -10258,7 +10330,7 @@ fn dispatch_tab_focus(webview: &mut WebView) -> Option<String> {
     // ——appendChild 动态元素天然在面（引擎 cached_html 快照路径的窗口期不适用）。
     let script = "(function(){\
         var act=document.activeElement;\
-        var all=document.querySelectorAll('a[href],area[href],button,input,select,textarea,summary,[tabindex]');\
+        var all=document.querySelectorAll('a[href],area[href],button,input,select,textarea,summary,[tabindex],[contenteditable]');\
         var pos=[],zero=[];\
         for(var i=0;i<all.length;i++){\
             var el=all[i];\
@@ -10267,7 +10339,13 @@ fn dispatch_tab_focus(webview: &mut WebView) -> Option<String> {
             if(ti==='-1')continue;\
             if(el.tagName==='INPUT'&&String(el.type).toLowerCase()==='hidden')continue;\
             var n=parseInt(ti,10);\
-            if(n>0)pos.push([n,el]);else zero.push(el);\
+            if(n>0){pos.push([n,el]);continue;}\
+            if(ti===null&&el.hasAttribute('contenteditable')){\
+                if(!el.isContentEditable)continue;\
+                var par=el.parentElement;\
+                if(par&&par.isContentEditable)continue;\
+                zero.push(el);\
+            }else{zero.push(el);}\
         }\
         pos.sort(function(a,b){return a[0]-b[0];});\
         var seq=[];\

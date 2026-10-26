@@ -65,6 +65,7 @@ mod compositor_protocol;
 mod comprehensive_coverage;
 mod edge_cases;
 mod edge_cases_extra;
+mod media_protocol;
 mod serialize_basic;
 mod serialize_coverage;
 mod serialize_exhaustive;

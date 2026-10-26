@@ -1,48 +1,1224 @@
 # HTML Semantics 兼容 — html/semantics 语义面（主攻大域）
 
 **版本**: v2.0
-**日期**: 2026-10-24（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 47 收口（E 族重分诊 5F→1F + showModal fully-active 门（R5250），全域 424P/56F/2T REG 0 / GAIN 1），下一步按分诊地图 D 族推进；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
-**执行模式**: WPT 驱动（上游 html/semantics corpus 为验收标尺）+ 语义修齐
-**父目标**: `docs/goal/zero-web.md`（真实可用浏览器——HTML 语义面）
+**日期**: 2026-10-26（v1.0 立项 2026-10-08）
+**状态**: Active——M2 切片 94 施工收口（classic 脚本 prepare 双门 + 投递保真扩口 + module 缓存键分离：**script-for-event 13F + nomodule 4F 翻绿 + 缓存键连带**：scripting-1 **211P/282F/25T→263P/270F/23T**（raw 574 行 + 18 NotRun；域账 **264P/270F/23T**）——三刀：①extract prepare 双门（nomodule 内容属性压制 classic、module 不受影响；for/event 双属性在场门——ASCII 剥白后 for≈"window" 且 event≈"onload"|"onload()"，任一属性缺失照跑）；②shim R387 动态插入钩子 nomodule 门（三执行分支条件前缀，不置 run-once——spec 中止在 already-started 前）；③runner 投递保真扩口（inline_local_scripts 保留 nomodule——新 open_tag_has_attr bool 裸形在场判定；保留 type="module"——s92 挂账兑现）；**附带根因返工**：type 保真暴露 R5182 潜伏缺陷——`__moduleCache` 记忆化键误用页面 URL，同文档第二枚 module script 零次求值（任意双 module 页挂起，probe 二分定谳），键参数分离 `compile_module_script(source, url, cache_key, registry)` 修复（内联=页面 URL 挂 ordinal 片段 / 外链=src 绝对化），连带解锁 module 族多页（currentScript-null 连带 Fail→Pass、type/imports/module-script-for-event 等 subtest 首次显形）；零附带（P→非P 0 行）；失败族地图序：③the-script-element 基面（CSP nonce + classic 属性 + prepare 门）✅ → ④module 尾片（.py 执行器前置 + 新显形 subtest 账）），下一步 s95 入场探针定刀位（候选：async nomodule window-load face / 元素 onload 投递保真 / module 族新显形 Fail 重排 / execution-timing 80F）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-24 M2 切片 47 收口）**：E 族 dialog API 语义 5F
-> 逐项核证后重分诊收窄为 1F 收口（R5250 showModal fully-active 门）。**重
-> 分诊**：close-via-attribute 2F → **挂账（Chrome-parity 同红）**——现行
-> spec（2026-09 版）dialog attribute change steps 明文「The `close` event
-> will not be fired」，whatwg/html#5802 至今 open、测试 2024-05 移 tentative
-> 即提案未落地，实现即背离真实浏览器；dialog-active-document 1F → **挂账
->（接口面缺口）**——createHTMLDocument 产物文档 createElement 是 R3018
-> `_zwMEl` 本地节点（无接口 IDL），`showModal` 方法不存在，修复属
-> detached-doc 元素模型工程；movebefore 1F → **改判 A/B 族**——依赖
-> moveBefore + closedby + userActivation 特性栈。**根因**（showModal
-> 「not attached to any pages」第二断言面）：detached dialog 经
-> `doc.body.appendChild` 移入 createHTMLDocument 文档后，M3 扩批 XLIII 的
-> `_zwUnmarkRemoved`（新父即脱离 removed 态）+ host 快照滞后
-> `__zw_contains` 恒 1，连接门双信号均判连接 → showModal 误开；spec 步 3
-> 「node document 非 fully active → 抛」缺失，而 JS 侧唯一信号是收养章
->（handle 形态已有 `__zwAdoptDocByHandle`，sel 形态只盖代理对象、
-> showModal 持三元组不可达）。**落地（R5250 四刀）**：part03
-> `_zwUnmarkAdoptDocSel` helper + `_r191adoptBody` 落 sel 键控收养章
-> `__zwAdoptDocBySel`；part01 showModal 连接门后加 fully-active 门（章
-> 非空且 ≠ active document → 抛 InvalidStateError）；part04 主文档
-> append 族**五处**对称删章（R334 两分支/R334b/R86/R87——首版漏
-> XLV/R86 分支被契约 (c) 回插臂红 + 探针反查补齐）。**验证**：
-> dialog-showModal 单案目标子测试 **Fail → Pass**；interactive-elements
-> 全域 98 files 482 subtest **424P/56F/2T 对 s46 逐位 REG 0 / GAIN 1**；
-> lib **3443P/0F**（+契约 part79）；契约翻转力实证（门条件短路 → 钉 (b)
-> 红）。**已知边界**：iframe 文档元素同被收养章盖 → 门会抛（spec rendered
-> iframe 是 fully active，FIXME 浏览上下文树判定，corpus 无观测面）；
-> handle 形态章主文档重插无对称清除（既有机制面貌）。gates：clippy
-> --workspace -D warnings（test-guard 包裹）/fmt clean、零新增依赖、
-> release runner 含 R5250 符号。账本见
-> [evidence/2026-10-24-m2s47-showmodal-fully-active-gate.md](html-semantics-compat/evidence/2026-10-24-m2s47-showmodal-fully-active-gate.md)。
-> **下一步**：按分诊地图 D 族 focus/inert 10F（focus-previous-outside
-> 3F 既有挂账为首靶，focusability/inert/inert-svg-hittest 等跟 进）；
-> parser form element pointer 4F **已缓行**（2026-10-23 用户决策：与
-> declarative shadow DOM（H）打捆 parser 批次、M2 收口后尾段单独立项）。
-> **切片间隙**：本切片为 shim 面（part01/03/04），下一挂账 D 族亦 shim
-> 面——间隙开放，开工前查 oracle master 碰撞记录。
+> **▶ 当前状态（2026-10-26 M2 切片 94 施工收口，prepare 双门 + 投递保真 + module 缓存键轮）**：
+> **入场核账**：s93 HEAD（43f10a3e7）基线 **211P/282F/25T + 22 NotRun**
+>（scripting-1 口径 540 行）。s94 入场探针自 282F 聚类选 runner 可达 classic
+> 属性面：nomodule face 7F + script-for-event face 13F。**本轮三刀**：
+> ①extract prepare 双门（`script_suppressed_by_nomodule`：nomodule 内容属性在
+> 场压制 classic、module 不受影响——module/nomodule-attribute 以 this.js 顶层
+> this 区分执行形态；`script_blocked_by_for_event`：双属性在场 → ASCII 剥白后
+> for≈"window" 且 event≈"onload"|"onload()"（ASCII case-insens），任一属性缺
+> 失照常执行——语料 Script 15/16 单属性臂定谳）；②shim R387 动态插入钩子
+> nomodule 门（三执行分支条件前缀；不置 run-once——spec 中止在 already-started
+> 置位前，摘属性可重来）；③runner 投递保真扩口（inline_local_scripts 保留
+> nomodule——新 `open_tag_has_attr` bool 属性裸形在场判定，与 attr_from_open_tag
+> 的 nonce 裸形视缺失分工；保留 type="module"——s92 挂账兑现）。
+> **附带根因返工（本轮主发现）**：type 保真暴露 R5182 潜伏缺陷——`__moduleCache`
+> 文档级记忆化键误用页面 URL，同文档第二枚 module script 被首枚记忆化命中短路、
+> 模块体零次求值（currentScript-null file Timeout + probe-a~d 最小探针二分定谳
+> 任意双 module 页挂起；潜伏态，语料此前无双内联 module 页）；修复 = 键参数分离
+> `compile_module_script(source, url, cache_key, registry)`（内联 = 页面 URL 挂
+> ordinal 片段、外链 = src 绝对化；三生产调用方语义不变）+ learning 沉淀
+>（bugs/2026-10/2026-10-26-module-cache-key-page-url-collision.md）。
+> **验证**：定向 nomodule FILTER 4F→P、script-for-event 18 行全绿（13F→P）、
+> 探针 4 页全绿、currentScript-null 全绿（连带基线 Fail→Pass——module 求值
+> currentScript=null 语义成立）；全子树终扫 574 行 **263P/270F/23T + 18 NotRun**，
+> diff vs 基线 **F→P 23 行、P→非P 0 行**（for-event 13 + nomodule 4 +
+> currentScript-null 1 + module-vs-script-2 1 + module/load-error-events 3——
+> 页内 type=module 标签在，缓存键解锁，非 classic load-error 族）；module 族
+> 多页首次以 subtest 粒度完成（type 4 例、imports 5 例、integrity inline 1、
+> module script-for-event 18 例、empty-attributes-clause 1 例等翻绿）。
+> 历史口径重述 **211P/282F/25T（540 行期）→ 263P/270F/23T（574 行期，行数增长
+> = 粒度完成非口径变化）**，域账 **264P/270F/23T**（+1 惯例）。单测七腿：
+> engine **3530**（+3）/runner **226**（+76i）/webview **800**/sandbox v8
+> **365**（+1）/quickjs **260**（+1）；fmt/clippy 四 crate clean；reftest 未跑
+>（无 render/layout 面，沿 s91-s93 口径）。账本见
+> [evidence/2026-10-26-m2s94-prepare-gates-and-delivery-fidelity.md](html-semantics-compat/evidence/2026-10-26-m2s94-prepare-gates-and-delivery-fidelity.md)。
+> **范围**：engine ×2（extract 双门 + shim 钩子）、script-sandbox（签名+单测）、
+> webview（缓存键接线）、runner（投递保真）；css/layout/renderer 零改动；语料
+> 不可改维持（probe 临时页已删）。
+> **挂账**：async nomodule 2F（window.onload promise 门——window load 派发
+> face）；sync 臂 1（元素 onload 属性投递丢失 / 元素 load 事件 face）；
+> nomodule-set-on-external-module-script（外链 module 装载面）；module 族新显形
+> Fail（charset-01/03、integrity 外链、single-evaluation-1/2、instantiation-6/7、
+> specifier-error、evaluation-error-2、fetch-error-2、import-attributes 部分
+> ——.py 执行器前置项不变，subtest 账已立）；execution-timing 80F / 顶层 65F /
+> 完整接口对象基建面（承袭）；基线扫描宜空载（teardown 粒度负载敏感，承袭；
+> s94 终扫 /tmp/s94-final-scan2.txt 定为下轮基线）。
+> **切片间隙**：本轮 engine/sandbox/webview/runner 面；下一挂账同流同面，间隙开放。
+>
+> **▶ 上轮状态（2026-10-26 M2 切片 93 施工收口，classic 脚本属性面批刀轮——其下一步 s94 入场探针定刀位已由 s94 收口，见上）**：
+> **入场核账**：s92 HEAD（2cf2a5c5c）基线 **201P/291F/25T**（the-script-element
+> 子树 517 行）。s92「下一步 module 尾片盘点」入场探针后**转向**：module 尾片
+> 43F 簇（css-module 20 + json-module 11 + text-module 8 + import-attributes 4）
+> 被 wptserve .py 执行语义缺口封顶（serve-custom-response.py 等以静态文本投递，
+> runner 无 .py 执行器），转 runner 可达 classic 属性面。**本轮两刀**：
+> ①shim part03 R3019 占位区 `HTMLScriptElement` 接口对象 + 静态 `supports(type)`
+> ——HTML #dom-script-supports 四值精确匹配（'classic'/'module'/'importmap'/
+> 'speculationrules'→true，JavaScript MIME 类型/空白沾染/大小写变体全 false；
+> spec 明示不做 ASCII case-insensitive、不剥空白；webReader 取回 spec 原文定谳，
+> 语料为旧版无 importmap/speculationrules 断言，按 spec 现行实现两相兼容）；
+> shimming 前 grep 定谳 shim/Rust 侧零 HTMLScriptElement 全局引用，`||` 守卫
+> 无冲突面。②extract `trim_ascii_html_ws`（TAB/LF/FF/CR/SPACE）替换两函数的
+> `str::trim`——type 剥离收窄到 ASCII whitespace，\x0B/\x85/\xA0/ /　
+> 尾随不再误判 JS；调用方仅脚本提取循环两处，+单测 ASCII 照剥/非 ASCII 不提取
+> 双形态。**验证**：定向 script-supports 5/5、script-type-whitespace 5/5 全绿；
+> 全子树复扫（FILTER=scripting-1 加宽口径）540 行 211P/282F/25T+22 NotRun，
+> diff vs 基线 9 行 F→P（两面全数）+23 行非 Diff 逐行归因：1 行 noscript Pass
+> = 口径加宽（本来就绿）、22 行 = 超时页 teardown 粒度——**stash 复归位 s92
+> 代码重建复跑 load-error 族 bitwise 同现（diff 空）+当前二进制全扫/单跑行集
+> 一致**定谳非附带；基线缺行系 s92 扫描会话后台负载早停。历史口径重述
+> **210P/282F/25T（517 行恒等，+9P −9F）**，域账 **211P/282F/25T**（+1 惯例）。
+> 单测：zero-engine **3531/3531**（lib 3527=3526+1；engine 自 s92 零外来变更）；
+> fmt/clippy clean（ulimit+timeout shell 兜底）；reftest 未跑（无 render/layout
+> 面，沿 s91/s92 影响面口径）。账本见
+> [evidence/2026-10-26-m2s93-classic-script-attribute-faces.md](html-semantics-compat/evidence/2026-10-26-m2s93-classic-script-attribute-faces.md)。
+> **范围**：engine ×2（shim 一处 + extract 一函数族）；runner/webview/
+> script-sandbox 零改动；css/layout/renderer 零改动；语料不可改维持。
+> **挂账**：完整接口对象面（HTMLScriptElement 仅静态 supports，constructor/
+> instanceof 同一性缺，`__zwHtmlTagIface` 全表无真实 class 同族挂账）；module
+> 尾片 43F 簇（.py 执行器为前置，含 propagate-nonce-inline-module 1F 与
+> module 路径 CSP 检查点缺位承袭）；execution-timing 80F / 顶层 65F（既有账）；
+> runner 报告粒度受会话负载影响（超时页 teardown，基线扫描宜空载跑——s93 终扫
+> /tmp/s93-final-scan.txt 定为下轮基线，FILTER=scripting-1 口径 540 行）。
+> **下一步**：s94 入场探针定刀位（候选：execution-timing 80F scheduler 语义 /
+> 顶层 65F / 接口对象基建面）。
+> **切片间隙**：本轮 engine 面；下一挂账同流同面，间隙开放。
+
+> **▶ 上轮状态（2026-10-26 M2 切片 92 施工收口，CSP nonce 传播轮——其下一步 s93 module 尾片盘点入场转向 classic 属性面，已由 s93 收口，见上）**：
+> **入场核账**：s91 HEAD（abdd1b178）基线 **197P/295F/25T**。残面：
+> string-compilation-nonce-{classic,module} must-not-inherit 4F（s88
+> 挂账 CSP 面）——setAttribute onclick 两臂 spec 语义：事件处理器不
+> 继承触发脚本 nonce → 体内 import() 的 module fetch 被 `script-src
+> 'nonce-correct'` 拒 → TypeError reject；红因 = 引擎动态 import 宿主
+> 解析路径无 CSP 检查、无 nonce 传播通道（import 成功 →
+> promise_rejects_js 断言失败）。**既有基座**（security-hardening
+> M2-s1~s7）：meta CSP 解析、`check_script(nonce,hash,url)`、violation
+> 事件、eval/attr 门（`unsafe-eval` 放行页不激活）——缺口仅在
+> import fetch 检查点。**本轮三刀**：①script-sandbox
+> `DynamicImportState.nonce` 槽位 + resolver 契约升三参（空串↔None
+> 双射）+ `set_dynamic_import_nonce`/`__zwSwapImportNonce` swapper
+> （trait 默认 no-op，QuickJS 降级；空契约路径既有 type_error reject
+> 零改动命中判据）；②webview 逐脚本 nonce 刷新（spec 动态 import 继承
+> 触发脚本 nonce，hostimportmoduledynamically-retrieval）+ resolver
+> 检查（violation 入 connect 共享队列 + 返空串）；③shim 求值窗——
+> 处理器传 `''`（不继承）、timer 注册期捕获（字符串编译继承）、R387b
+> 窗换 `''`（动态插入无 nonce）。**返工（投递保真）**：首轮全子树
+> 2 行附带——propagate-nonce-external-{classic,module} 翻红，ZWDBG
+> 双探针（resolver 收参 + 刷新序列，跑完即撤）定位：页面外链测试脚本
+> 经 runner `inline_local_scripts` 内联投递丢原标签 nonce 属性 → 刷新
+> 读 None → 槽位空。修复：投递保留 nonce（复用 extract
+> `attr_from_open_tag` 升 pub，`&`/`"` 转义；上方 harness 注入块
+> csp_nonce_attr 同款保真先例）。**验证**：nonce 两页 12/12（4 红臂
+> 翻绿 + 8 inherit 臂在 CSP 检查开启下保持绿）；propagate-nonce 4 页
+> 3 绿 1 红（inline-module 1F = s91 前既有 module 路径面）；终扫
+> **201P/291F/25T**，diff vs 基线恰 4 行全落 nonce 族、族外零移动，
+> **string-compilation 族 46P/0F/0T 完全清盘**（s88 入场 3P/3F/8T）。
+> 单测六腿：runner **226**、engine **3526**、sandbox v8 **364**（+2
+> 新测）、quickjs **259**、webview **800**；fmt/clippy 四 crate
+> `-D warnings` clean（ulimit+timeout shell 兜底同 s91）；reftest 未
+> 跑（无 render/layout 面，无政策快路径返 None，沿 s91 影响面口径）。
+> 域账自此按 **202P/291F/25T** 记（raw 201P + 惯例 +1）。账本见
+> [evidence/2026-10-26-m2s92-csp-nonce-string-compilation.md](html-semantics-compat/evidence/2026-10-26-m2s92-csp-nonce-string-compilation.md)。
+> **范围**：script-sandbox ×2 / engine ×2（shim + extract 一词 pub）/
+> webview / wpt-runner runner 侧五 crate；css/layout/renderer 零改动；
+> 语料不可改维持。
+> **挂账**：propagate-nonce-inline-module 1F + module 路径动态 import
+> CSP 检查点缺位（es_module 重写走 `__zw_compile_module` shim 路径
+> 绕开检查——与 classic 槽位路径正交）；`inline_local_scripts` 不保留
+> `type="module"`（投递语义保真，本刀语料不受影响）；security-csp 域
+> 旁证（他流域控制面，下次跑批建议重基线）；QuickJS 后端降级维持。
+> **下一步**：s93 module 尾片盘点——the-script-element 余账
+> （propagate-nonce-inline-module 等 module 路径面）按 s86 切片序④
+> 入场先探针定刀位。
+> **切片间隙**：本轮 script-sandbox/engine/webview/runner 面；下一
+> 挂账同流同面，间隙开放。
+
+> **▶ 上轮状态（2026-10-26 M2 切片 91 施工收口，动态 import() 重写器词法感知 + module 面收口轮——其下一步 s92 CSP nonce 面已由 s92 收口，见上）**：
+> **入场核账**：s90 HEAD（8c4a575dd）the-script-element 全子树复扫
+> **173P/294F/30T**（497 行）。残面：string-compilation-module
+> eval 1F + 整页 1T、base-url-inline-module / nonce-module /
+> base-url-external-module 整页 3T、base-url-external-classic 整页 1T
+> （语料缺 dynamic-import/scripts/——fetch_dir_html depth-1 不下钻）。
+> **根因**（STEPS 探针串实证）：`rewrite_dynamic_imports` 纯文本扫描
+> 把**字符串字面量内** `import(` 也改写——字面量被 Function/eval/
+> setTimeout 字符串体编译后在全局作用域执行，体内 `__zw_dynamic_import
+> .call({ referrer: _importMeta.url }, ...)` 引用 IIFE 局部绑定
+> `_importMeta` → ReferenceError，import 永不发生；WPT 子测试名（显式
+> 字面量）在 s90 扫描被污染成 `__zw_dynamic_import.call(...)` 同源实证。
+> **本轮三刀**：①es_module 重写器 `RewriteCtx` 栈词法感知——Literal
+> （引号定界/转义对）/TemplateExpr（`${}` 内照常重写、花括号计深）/
+> 行注释/块注释，栈空代码态照旧；5 拷贝点改 `char::len_utf8` 步进
+> （首版按字节切遇 WPT 语料 `ś` panic、runner 批次 rc=101 全灭——返工
+> ①）+多字节单测钉死；已知限制：含引号正则字面量误入 Literal 态、
+> 漏改走 V8 原生宿主回调语义仍对；②语料 fetch_raw 补 scripts/ 5
+> loader（gitignore 本地数据）+ part04 R387b 外链经典脚本求值窗
+> `__zwSwapImportReferrer(自身绝对 URL)` finally 换回（concept-scripts
+> -base-url）；③v8_runtime swapper 无参调用 = 纯 getter + part01
+> 字符串 timer 注册期捕获基（fire 在求值窗外槽位已被改写）+ part03
+> `_zwCallHandlerSwapBase(fn, thisArg, ev, base)` 拆通用形、
+> `_zwCallHandlerDocBase` 变薄壳。**验证**：全子树基线/修后双扫 diff
+> 归因配对核清零误伤：**+24P +1F −5T**——module 5（eval F→P+4 拆臂）、
+> base-url-inline-module 5、base-url-external-classic 5、
+> base-url-external-module 5、nonce-module 4P+2F（must-not-inherit
+> 拆臂显形既有红面非回归）；族外 27 行派生名恢复 + import-meta 1 行
+> 同名异写状态不变（名恢复即刀A 生效直接证据）。族终态 **42P/4F/0T**。
+> 单测 engine **3526/3526**、webview **800/800**、sandbox v8 **362/362**
+> （含新增 4 测）、quickjs 全绿；fmt clean、clippy 双 crate
+> `-D warnings` clean（用户 systemd scope 本环境不可用，ulimit 24G +
+> timeout 900 shell 兜底）。域账自此按 **198P/295F/25T** 记（raw
+> 197P + 惯例 +1）。账本见
+> [evidence/2026-10-26-m2s91-module-context-lexer-aware-rewrite.md](html-semantics-compat/evidence/2026-10-26-m2s91-module-context-lexer-aware-rewrite.md)。
+> **范围**：script-sandbox ×2 / engine shim ×3 文件；css/layout/
+> renderer 零改动；语料不可改维持（探针页跑完即删）。
+> **挂账**：nonce-classic/-module must-not-inherit 4F（CSP nonce 语义
+> 未建模，s88 已挂）；正则字面量限制（漏改走原生回调语义对、换基精度
+> 降）；语料 fetch 深度工具局限在案；QuickJS 后端动态 import 不支持态
+> 维持。
+> **下一步**：s92 二选一定刀位——CSP nonce must-not-inherit 4F（引擎
+> CSP 语义建模，s88 挂账合并）或 module 尾片盘点；开工先探针。
+> **切片间隙**：本轮 script-sandbox/engine 面；下一挂账同流同面，
+> 间隙开放。
+
+> **▶ 上轮状态（2026-10-26 M2 切片 90 施工收口，string-compilation 动态 import() 字符串编译轮——其下一步 s91 module 上下文面已由 s91 收口，见上）**：
+> **入场核账**：s89 HEAD（44e23748f）the-script-element 全子树复扫
+> **158P/294F/33T**（485 行）。string-compilation 族基线 3P/3F/8T：
+> classic 整页 T（字符串 setTimeout handler 被静默丢弃永不 fire，堵死
+> harness 串行队列连累 4 臂 pending）、promise-result 2F（执行中换
+> `<base>` 后 import 基走错）、base-url-inline-classic / nonce-classic
+> 整页 T、module 系 4T + module eval 1F、base-url-external-classic 1T。
+> **本轮三刀**：①part01.js `setTimeout/setInterval` 补字符串 handler
+> `new Function` 注册期编译（HTML spec TimerInitializationSteps 的
+> WebIDL callback 转换；语法错同步抛同 Chrome）——classic 页解堵拆臂；
+> ②engine extract 新增 `script_effective_base_urls`（zero_dom 树序，
+> `<base href>` 更新 current_base、script 记基，与 extract_page_scripts
+> _indexed 同序号空间）接 webview `run_page_scripts_impl`——外链经典
+> 脚本 referrer 用自身 src、内联用捕获表（concept-scripts-base-url：
+> parse 时刻定格，动态 base 不回溯）；③script-sandbox 新增
+> `register_dynamic_import_referrer_swapper`（`__zwSwapImportReferrer`
+> 返旧换新，捕获 DynamicImportState Arc 不借 &mut self）+ shim
+> `_zwCallHandlerDocBase`（inline/反射 handler 求值窗换当前文档基、
+> finally 换回零外溢）接四处编译点——reflected/UA 臂 import() 用求值
+> 时刻文档基（event-handler-processing-model）。**返工两笔记账**：
+> 原文偏移扫 `<script` ≠ DOM 序号（harness 注入 + 字符串字面量过计数，
+> DEBUG 探针实证后改 zero_dom 树序）；body-reflect `var fnB` 循环闭包
+> 读末轮绑定（R2946 单测红，改 `_zwWrapHandlerDocBase` 参数绑定）。
+> **验证**：全子树 stash 基线/修后双扫 diff 恰 31 行全落族内零误伤：
+> **+20P −2F −3T +2F（nonce must-not-inherit 从整页 T 拆臂显形，非回归）**
+> ——族 3P/3F/8T → **18P/2F/5T**（classic 5/5、promise-result 4/4、
+> nonce 继承臂 4/4、base-url-inline-classic 5/5 全绿）。单测 engine
+> **3526/3526**、sandbox v8 **358/358**、quickjs **255/255**、webview
+> **800/800**（首跑 1F 系 target-disk-guard 清理 zero-image-decoder
+> 独立进程二进制，补建全绿非代码回归）；fmt clean、clippy 三 crate
+> clean（test-guard 包裹）；reftest **716/716** rc=0。域账自此按
+> **174P/294F/30T** 记（raw 173P + v8-code-cache +1 惯例；F 双扫同
+> 294，对 s89 账面 295F 为截断方差）。账本见
+> [evidence/2026-10-26-m2s90-string-compilation-base-url.md](html-semantics-compat/evidence/2026-10-26-m2s90-string-compilation-base-url.md)。
+> **范围**：engine shim ×2 / engine extract / script-sandbox ×2 /
+> webview 六文件；css/layout/renderer 零改动；语料不可改维持（探针页
+> gitignore 数据跑完即删）。
+> **挂账**：module 上下文 5 文件 T（`<script type="module">` 页基座，
+> module 面单独探）；base-url-external-classic 1T（dynamic
+> createElement('script') 外链页面加载器）；nonce-classic must-not-
+> inherit 2F（CSP nonce 语义未建模，s88 已挂）；QuickJS 后端
+> classic 动态 import 不支持态维持（swapper trait 默认 no-op 降级）。
+> **下一步**：s91 the-script-element 余账——module 页基座先行探针
+> （区分页面加载失败 vs import 永不落定），再决 external-classic
+> 动态加载器刀位。
+> **切片间隙**：本轮 engine/script-sandbox/webview 面；下一挂账同流
+> 同面，间隙开放。
+
+> **▶ 上轮状态（2026-10-26 M2 切片 89 施工收口，execution-timing stylesheets-blocking 轮——其下一步 the-script-element 基面 classic 面已由 s90 收口，见上）**：
+> **入场核账**：s88 基线（HEAD=4fdaf03e5）execution-timing 目录当拍
+> **48P/94F/8T**——s86 记「12F 单簇」细分为 106-\* ×10 + 107-\* ×2 的
+> 「scheduler: stylesheets blocking \*」目标行；其余 82F 编号套件预存红
+> （s88 基线同态非回归）。四根：①语料根——`fetch_dir_html` 扩展名表缺
+> `*.css`，css/background.css（`#test{position:fixed}`）与 css/import.css
+> （`@import url("background.css")` 无分号）从未入语料；②装填根——
+> `set_active_external_css` 生产恒空（唯一调用点是单测），getComputedStyle
+> 桥读空级联；③@import 根——进程内无递归展开，且无分号语句文本拼进合并
+> 级联后 css-syntax at-rule 消费遇裸 `{` 吞块，把**下一张表首条规则**吞掉
+> （106-import 实证：双表 fetch 序正确探针仍 `static`）；④107 根——隐式
+> write 走 `body.innerHTML=基线` 重放，原 `#test` 注册元素被 plain 产物
+> 替换（无 `__zwSelector`）→ position 不在 UA 默认表返 `''`。
+> **本轮一刀（四文件）**：webview `load_html` 同步发布外链样式表文本
+> `set_active_external_css`（css-less 传空串复位防跨文档泄漏）+
+> `resolve_external_css` @import 递归队列（对齐 R2411：相对导入表 URL、
+> css_seen 防环、FIFO 文档序）；css_urls 新增 `strip_import_statements`
+> （Tokenizer span 切除顶层 @import 语句，接线两处拼接点，css-parser
+> 未动回避跨流改写）；engine shim getComputedStyle `position` 初始值
+> `static` 回落（css-position-3，R5009 float 同形）；runner lib.sh 扩展
+> 名表补 `*.css`。FIXME：@import 臂不走 CSP/Mixed 门（async_load 既有
+> 同态）；级联顺序近似（子表追加在导入表文本后，逐位拼接归基建轮）。
+> **验证**：execution-timing 子树 **48P/94F/8T → 62P/80F/8T**，stash 基线
+> 逐行 diff 恰 **14 行 Fail→Pass**（106×10 + 107×2 + 150×2 同根红利）、
+> Pass→Fail 0 行、T 不变；the-script-element 全子树 **158P/295F/33T**
+> ——非目标 144 行 Pass 逐位不动（零误伤），F 差 1 为 TLA 截断点漂移
+> 报表方差；dynamic-import 金丝雀与 stash 基线 bitwise 同态（对 s87
+> 账面漂移为环境方差不记本刀）。单测 webview **799/799**（含探针三钉
+> + css_urls 4 钉）、engine **3523/3523**；fmt + clippy 三 crate clean；
+> reftest **716/716**（清缓存全量重编）。域账自此按 **159P/295F/33T** 记
+> （raw 158P + v8-code-cache +1 惯例，F −13 与 P +14 之差同截断方差）。
+> 账本见 [evidence/2026-10-26-m2s89-execution-timing-stylesheets.md](html-semantics-compat/evidence/2026-10-26-m2s89-execution-timing-stylesheets.md)。
+> **范围**：生产面 webview ×3 / engine shim / runner lib.sh 五文件；
+> script-sandbox/layout/css-parser 零改动；语料不可改维持（css 两文件
+> 已按 pin 补拉本地，gitignore 数据命令留档）。挂账：编号套件 82F
+> （trickle pipe/多文档时序）、webview 第 2 跑单失败未复现 flake。
+> **卡点（非本流）**：`make test` 预存红维持 s86 记录——quickjs
+> zero-renderer `mutation_arm_…reset_window`（归 perf/renderer 流未解）。
+> **下一步**：s90 the-script-element 基面（s86 切片序③——string-compilation
+> 余 4 臂挂 runner 计时器/Function Proxy/事件派发建模、nonce CSP、
+> base URL、delay-load trickle、credentials M3；明细见 s88 账本 §4）。
+> **切片间隙**：本轮 webview/engine/runner 面；下一挂账同流多面
+> （shim/runner/CSP），间隙开放。
+
+> **▶ 上轮状态（2026-10-26 M2 切片 88 施工收口，classic-script dynamic import 轮——其下一步 stylesheets-blocking 12F 簇已由 s89 收口，见上）**：
+> **入场核账**：s87 遗留 classic 根 `Error: Not supported` 面当拍
+>（HEAD=a2b8e71e8 全子树基线复扫 138P/313F/34T，域账面 −1P 为
+> v8-code-cache 未上报同缺）细分：propagate-nonce-{inline,external}-
+> classic 2F、string-compilation-classic 1F+1T、inline-event-handler 1T、
+> base-url/nonce-classic 3T、css-module/import-css-module-dynamic 1F。
+> **s87 归因勘误**：credentials 12F/1T 整族走 iframe + HTTP cookie
+> handler（fetch set-cookie.py → iframe appendChild →
+> fetch_tests_from_window），**非** classic import 根（本轮修复对其零
+> 移动反证）；delay-load-event 1F 须异步取回 + trickle 时序建模。
+> **本轮一刀（共享路径）**：script-sandbox 注册 V8 原生
+> `set_host_import_module_dynamically_callback`（isolate slot 持
+> referrer+resolver），三态消费与 `__zw_load_module` 同款契约（返空→
+> 逐次新 TypeError / 空码→TypeError 携已解析 URL / `resolved\x1fiife`→
+> 按需最小安装 prelude helpers + TryCatch 编译求值）；未注册 resolver
+> 保 V8 默认 `Error: Not supported` 零外溢；`Sandbox` trait 新增
+> `set_dynamic_import_resolver/referrer` 默认 no-op（QuickJS 降级不变）。
+> webview `__zw_compile_module` 闭包体提升 `compile_module_contract`
+> 共享函数，原生 resolver 同契约；每 classic 脚本前刷 referrer=文档 URL。
+> **验证**：the-script-element/ 全子树基线/修复后双扫 bitwise
+> **138P/313F/34T → 144P/308F/33T**，diff 恰 6 行全红→绿零误伤
+>（nonce-classic ×2 + nonce-external-module + string-compilation-classic
+> :: eval 4×F→P；inline-event-handler T→P；css-module/import-css-module-
+> dynamic F→P 域外红利——无 type CSS module 动态 import 现按契约 reject
+> TypeError）；fetch-error 16P/script-error/credentials 逐位不动。单测
+> v8 **357/357**（+5 classic 原生 import 钉：成功/eval 字符串/取回失败/
+> 图断/无 resolver 保真）、quickjs 255/255、webview 792/792；fmt +
+> clippy `-D warnings` 两 crate clean。域账自此按 **145P/308F/33T** 记。
+> 账本见 [evidence/2026-10-26-m2s88-classic-dynamic-import.md](html-semantics-compat/evidence/2026-10-26-m2s88-classic-dynamic-import.md)。
+> **范围**：生产面 script-sandbox/webview 两 crate；runner 零改动；
+> apps/browser 与 renderer 宿主未动（未注册 resolver 行为不变）；语料
+> 不可改维持。FIXME 挂账：classic 上下文重复失败 `__moduleFailures`
+> 同对象记账未接；目标模块体 import.meta 无注入。**卡点（非本流）**：
+> `make test` 预存红维持 s86 记录——quickjs zero-renderer
+> `mutation_arm_…reset_window`（归 perf/renderer 流未解）。
+> **下一步**：s89 execution-timing stylesheets-blocking-scripts 12F 簇
+>（s86 切片序②）；string-compilation 余 4 臂/nonce CSP/base URL/
+> delay-load/credentials 残面归基面③、CSP、runner 建模、M3 各账
+>（明细见账本 §4）。
+> **切片间隙**：本轮 script-sandbox/webview 面；下一挂账 runner 面
+>（stylesheets-blocking-scripts 时序），间隙开放。
+>
+> **▶ 上轮状态（2026-10-25 M2 切片 87 施工收口，dynamic-import must-reject 族轮——其下一步 classic 面已由 s88 收口，见上）**：
+> **入场核账**：s86 切片序①当拍 dynamic-import 子树 **6P/49F/11T**
+>（FILTER=the-script-element/module/dynamic-import）。must-reject 24F
+>「单根」经当拍细分为三根：①错误类型根 18F——`__zw_load_module` 宿主返空
+> 一律普通 `Error`，spec fetch-a-single-module-script 取回失败须
+> TypeError；②对象身份根 4F——parse/求值失败不缓存，重复 import 每次新
+> 对象（spec module map 失败记账：parse/求值/依赖解析失败复抛同对象，
+> fetch 期失败逐次新对象）；③MIME 根 2F——wptserve
+> `?pipe=header(Content-Type,…)` 响应头模板未建模，wrongMimetype 按扩展名
+> 误判 scripty。**本轮一刀（三面）**：es_module prelude `__zw_load_module`
+> 失败三态（宿主返空→逐次新 TypeError 不入缓存 / `resolved\x1f` 空码标记
+> →TypeError 入 `__moduleFailures` 复抛同对象 / eval 抛错→原错误对象入
+> 缓存复抛）；webview `collect_module_deps_recursive` 返
+> `ModuleGraphFailure` 三分类（TopFetch/DepResolution/DepFetch——裸
+> specifier 无 import map 即解析失败），`__zw_compile_module` 失败两态
+> 回传（fetch 失败返空 / 解析失败返空码标记）——renderer/tab 旧宿主返空
+> 契约降级不劣化；runner `wpt_data_script_fetcher` MIME 派生序新增最高
+> 优先 `?pipe=header` 臂。**验证**：子树 **6P/49F/11T → 28P/27F/11T**；
+> the-script-element 全子树 stash 基线复扫 bitwise——**116P/335F/34T →
+> 138P/313F/34T，diff 恰 22 行全 Fail→Pass、全落 dynamic-import/ 目标
+> 族零误伤**（TLA 3 案页脚抛 rc=1 截断两轮同态、`v8-code-cache.html`
+> 未及上报，runner 行为先于本轮）；域账自此按 **139P/313F/34T** 记。
+> 单测：es_module 新增失败身份语义四态钉（取回 TypeError×新对象/图断
+> TypeError×同对象/parse SyntaxError×同对象/求值 Error×同对象+体恰跑
+> 一次）+ v8 352/352 + quickjs 8/8 + webview 792/792；fmt clean + clippy
+> 三 crate clean（video_registry map_entry 门禁已由渲染流 `9d50e4a91`
+> 同刻自修解除，见卡点）。账本见
+> [evidence/2026-10-25-m2s87-dynamic-import-must-reject.md](html-semantics-compat/evidence/2026-10-25-m2s87-dynamic-import-must-reject.md)。
+> **范围**：生产面 script-sandbox/webview/runner 三文件 + 契约单测；
+> apps/browser 与 renderer 宿主未动（返空契约降级路径行为不变）；语料
+> 不可改维持。**卡点（非本流，碰头记录）**：`make test` 预存红维持 s86
+> 记录——quickjs zero-renderer `mutation_arm_…reset_window` 本轮复跑仍红
+> 0.63s（page_scripts.rs 无新提交，归 perf/renderer 流未解）。
+> **碰头记录（已化解）**：video_registry map_entry 代修与渲染流 `9d50e4a91`
+> 同刻撞车（同款 entry API 改写）——保留上游版，本流重复提交 rebase
+> skip 移除，零净损；渲染流 guarded-clippy 已全绿佐证门禁解除。
+> **下一步**：s88 classic-script dynamic import 重写——classic 脚本
+> `import()` 未重写，裸 V8 无宿主回调 reject `Error: Not supported`
+>（credentials 12F + delay-load-event/propagate-nonce-classic/
+> string-compilation-classic 同根），配 `check-cookie.py`/`set-cookie.py`
+> runner handler 仿真 + 跨源 cookie jar；instantiation 2F 归 module 基面
+> 切片④。
+> **切片间隙**：本轮 script-sandbox/webview/runner 面；下一挂账同面
+>（script-sandbox 重写），间隙开放。
+>
+> **▶ 上轮状态（2026-10-25 M2 切片 85 定证收口，s84 根因证伪轮——其下一步挂账经 s86 核账已被 s79/s80 消费，见上）**：
+> s84「gBCR materialize 滞后」根因三路定证**证伪**（s53 先例零代码轮，
+> 插桩临时已全部回退/删除，工作树回 s84 基线）：①take_probe 链直插
+> （ZW_PROBE_TRACE）——corpus complex 逐轮 `flush 即 apply → version
+> 同拍 bump → 门即开 → changed=true → refresh fired=true`，GATE MISS
+> 0 次（fired=false 仅 html 未变轮，正确 no-op），s84 三处漏批候选
+> （version 门时序 / runner_probe_html 基线 / timer 泵批次归属）无一
+> 成立；②Rust 复现测试（复刻 probe loop 双结构逐拍采样）——round 0
+> rect 即非零（normal dialogA@8,100,784,18 …、slots dialogA@8,100,0,36
+> …），12 轮 + +100ms 稳定，s84「三拍恒零、+100ms 才有效」不存在；
+> ③TD 点击坐标实测——normal 嵌套 20/20 Pass、clickOn 落点非零命中
+> 正确目标。**红图修正**（make + FILTER 当拍实测）：closedby 家族
+> **104P/19F**——closedby 27P/0F、stacked 4P/0F、start-open 2P/0F、
+> **simple 6P/0F（s84 记 2F 过时复绿）**、corner-cases 29P/1F（s53
+> keep）、bounds-clicking 12P/2F（R-s31 渲染流）、complex 24P/16F
+> （16F 全 shadow-slots，normal 20/20 Pass）。**归账**：16F=declarative
+> shadow 联合切片（s51 用户门禁维持）、2F=渲染流、1F=keep——本流
+> 工作面（engine shim/webview/runner）无剩余可施工面。s84 伪值推断
+> （存疑不下死论）与「红图当拍复核」教训见账本。账本见
+> [evidence/2026-10-25-m2s85-closedby-rootcause-falsified.md](html-semantics-compat/evidence/2026-10-25-m2s85-closedby-rootcause-falsified.md)。
+> **范围**：零代码轮（s53 先例），不改生产面；corpus 不可改维持
+> （正常面下我方 rect 同步可见，无需「新鲜度」修复）。
+> **下一步**：testdriver-Actions 支持面（s78 挂账：hash-name-dynamic
+> 5F + 指针/键盘合成输入族——runner 语料 testdriver.js 缺席面，runner
+> 面本流工作面）。
+> **切片间隙**：本轮零代码；下一挂账 runner 面亦本流，间隙开放。
+>
+> **▶ 上轮状态（2026-10-25 M2 切片 84 分诊收口，closedby 同红假设重估轮——s85 证伪其根因，见上）**：
+> A 族 closedby×slot 16F 挂账依据（crbug 417571176 同红，2026-04）重估
+> **过时**：wpt.fyi chrome-158.0.8122.0 summary 实证 closedby 家族全绿
+> （complex 40/40、simple 6/6、closedby 27/27、bounds 14/14、corner
+> 30/30、stacked 4/4、start-open 2/2）——closedby 已 ship，**23F 转可
+> 施工**（complex 16 + simple 2 + bounds 2 + corner 1）。**根因隔离**
+> （三步插桩探针，临时已删）：失败首腿全是 light-dismiss 误触发——
+> 首测点击 popover 的 ld 落点 px=0/py=0（corpus clickOn 2-rAF 后采样
+> rect 恒零）→ s30 backdrop retarget → popover pass 误隐；gBCR 时序
+> 探针证 showModal/showPopover 后 sync/2raf/4raf 三拍 rect 恒零、
+> +100ms 才有效，且序列化 htmlLen +23（closedby+open）与 rect 转有效
+> 同拍——mutation 批 materialize（apply→render→rect 快照）在 rAF 驱动
+> 节拍整链滞后 ~5+ 探测轮。**下一步**：Rust 侧定证 take_probe
+> flush/version-gate/refresh 链哪环漏批（候选：mutation_version 门
+> 时序、runner_probe_html 基线、timer 泵与 rAF 拍批次归属），修复 rect
+> 新鲜度（closedby 23F 与 abspos-dialog-layout 5F 共桥——本轮顺带观测
+> `:modal` UA position:fixed 未上、dialog 盒 in-flow）。账本见
+> [evidence/2026-10-25-m2s84-closedby-parity-recheck.md](html-semantics-compat/evidence/2026-10-25-m2s84-closedby-parity-recheck.md)。
+> **范围**：零代码轮（s53 先例），不改生产面；corpus 不可改（2-rAF
+> 采样是上游语料行为，Chrome 同步 rect 语义使其天然正确——修复须落
+> 我方 rect 新鲜度）。
+> **下一步**：s85 修复片——Rust 契约测试复现 gBCR 滞后 + take_probe
+> 链定证 + materialize 时机修复；验证门 closedby 家族 23F 红转绿 +
+> 域/pin 逐位持平。
+> **切片间隙**：本轮零代码；下一挂账 webview/runner 面（rect 快照链
+> ——本流工作面），间隙开放。
+>
+> **▶ 上轮状态（2026-10-25 M2 切片 83 收口，handle 形元素 matches complex 读面轮）**：
+> s82 遗留 matches complex 面分诊**推翻非平凡判定**：probe 实证 gap 非
+> 同 turn 窗口而是**永久**——post-drain `matches('#anc span')` 仍 false；
+> qS 倒查命中并登记 R100 锚，但 t6 锚臂 host `__zw_matches` 读原始
+> dom_html 快照（apply 后锚不可解析），'0' 无条件 return 短路。s82 已
+> 落双形态父链解析 + compound 匹配器，JS 侧判定材料齐备（无需 Rust
+> 回调）。**修复**：part05 `_zwHandleMatchesComplex` 三态契约（true/
+> false/null——null=有不可判 complex，落回锚臂 host 全语义，pseudo 面
+> 不劣化）+ part04 t6 臂重排（R134 → s83 JS 走 → 锚臂 → regex）。列表
+> 逐 complex 判定；compound 带 pseudo/组合器非后代/子代保守不判（防
+> over-match）；48 跳封顶；不越 shadow 边界。**关键序**：JS 走必须先
+> 于锚臂——锚臂 '0' 短路后置补偿不可达（probe 定位）。契约
+> dom_bridge_tests `handle_element_matches_complex_s83`（18 断言）。
+> **验证**：probe 同 turn + post-drain 全 Pass（临时已删）+ engine lib
+> **3523P/0F** + 域（FILTER=embedded-content）**976P/252F/30T 逐位
+> 持平 REG 0** + interactive pin **439P/44F/0T 逐位持平** + fmt clean
+> + clippy 仅 s78 既有警告。账本见
+> [evidence/2026-10-25-m2s83-handle-matches-complex.md](html-semantics-compat/evidence/2026-10-25-m2s83-handle-matches-complex.md)。
+> **范围**：兄弟组合器（`+`/`~`）保守 false（反链无前兄弟指针，语料
+> 0 需求）；锚臂 host 快照底层未动（JS 走已覆盖可判面，host 修复仅剩
+> pseudo complex 面，无已知消费方）。
+> **下一步**：720-stretch 渲染展开 22F（需布局几何，归 layout 集成
+> 面，启动前查 oracle master 碰撞记录）。
+> **切片间隙**：本轮 js_dom_shim 两件 + 契约 dom_bridge_tests；下一
+> 挂账 layout 集成面需跨流协调，间隙开放。
+>
+> **▶ 上轮状态（2026-10-25 M2 切片 82 收口，handle 形元素 closest 读面轮）**：
+> s81 范围注记的「同 turn insert 身份缺口」分诊升级：createElement 产物
+> 是 handle 形代理（`__zwSelector` 恒 null），closest 的 `!sel` 门使其
+> **永久盲**（非同 turn 窗口——已 append 排水后仍 null；身份永驻 handle
+> 形）。分诊矩阵实证：matches 单 compound true（t6 臂）、complex false
+> （stale 缺口）、closest ×3 全 null；语料需求 0（117F × createElement
+> 39 处 × closest/matches 共现 = 0），立项按 spec 定义 + 真实站点
+> slice（jQuery/Swiper 创建元素 `closest`）。**修复双臂**
+> （part05 `_zwHandleClosest` + part04 closest 入口 handle 分支）：
+> ①R100 锚回（曾 sel 向解析过）→ host `__zw_closest` 全语义；②JS 单
+> compound 祖先走——父链双形态解析（sel→`__zw_parent` 视图文档；handle
+> →`_zwNodeParent` 反链），48 跳封顶（R125 口径），nodeType≠1 停
+> （不越 shadow 边界——spec closest 祖先轴不含 shadow host），complex/
+> 伪类保守 null（`_matchCompoundOf` 不求值 pseudos，防 over-match）。
+> 契约 dom_bridge_tests `handle_element_closest_s82`（15 断言）。
+> **验证**：probe 4 面 Pass（临时已删）+ engine lib **3522P/0F** +
+> 域（FILTER=embedded-content）**976P/252F/30T 逐位持平（REG 0——
+> 语料 0 需求预判实证）** + interactive pin **439P/44F/0T 逐位持平** +
+> fmt clean + clippy 仅 s78 既有 concat! 警告（不在本 diff）。账本见
+> [evidence/2026-10-25-m2s82-handle-closest.md](html-semantics-compat/evidence/2026-10-25-m2s82-handle-closest.md)。
+> **范围**：matches complex stale 面（handle 形锚回 host 快照 miss）
+> 记遗留不建——需 Rust 视图文档 matches 回调或 query_all 回退，非平凡。
+> **下一步**：720-stretch 渲染展开 22F（需布局几何，归 layout 集成面，
+> 启动前查 oracle master 碰撞记录）或 matches complex stale 面分诊。
+> **切片间隙**：本轮 js_dom_shim 两件 + 契约 dom_bridge_tests；下一
+> 挂账同面或 layout 集成面，间隙开放。
+>
+> **▶ 上轮状态（2026-10-25 M2 切片 81 收口，查询面 id 改名可见性轮）**：
+> R125（s79）读侧只接 gEBI；查询面（querySelector/querySelectorAll/
+> matches/closest）同 turn 改名 `#new` miss、`#old` stale hit。probe
+> 分轮定位**根因补刀**：`el.id` IDL 反射读走纯快照（与 getAttribute
+> 的 R2995 lw 链同 turn 分歧）——`_matchCompoundOf` ids 校验读
+> `p.id` 故 token 形态拉真全灭。**修复两刀**：①part03 id 臂 lw 化
+> （共享路径，DOM 反射 spec 同步语义；`_zwRawIds`/handle 形保持）；
+> ②part05 s81 helpers + 六挂点双臂补偿——stale 剔除（lw 现值复验，
+> 全形态）+ 单 compound 拉真（R125 表候选 + in-doc 门 + full
+> compound 复验 + 子树门；qSA 文档序归并）。R3190 属性语义不动
+> （补偿只动选择器 id 约束）。契约 dom_bridge_tests
+> `query_id_rename_same_turn_visibility_s81`（17 断言）。
+> **验证**：细粒度 probe 12 面 Pass（临时已删）+ engine lib
+> **3521P/0F** + 域（FILTER=embedded-content）**976P/252F/30T 逐位
+> 持平（REG 0 / GAIN 0——s80 预判无直接语料依赖，实证）** +
+> interactive pin **439P/44F/0T 逐位持平** + fmt clean。
+> 账本见
+> [evidence/2026-10-25-m2s81-query-id-rename-visibility.md](html-semantics-compat/evidence/2026-10-25-m2s81-query-id-rename-visibility.md)。
+> **范围**：complex 祖先段约束 pull-in 不接（single 门，stale 剔除
+> 仍全形态生效）；同 turn insert 元素无 `__zwSelector`（批末 apply
+> 才有身份）上行 closest/query 盲区——结构性身份缺口与改名无关
+> （无 id 对照面同样 null 实证），后续独立切片。
+> **下一步**：720-stretch 渲染展开 22F（需布局几何，归 layout 集
+> 成面，启动前查 oracle master 碰撞记录）或 s81 遗留同 turn insert
+> 身份缺口分诊。
+> **切片间隙**：本轮 js_dom_shim 四件 + 契约 dom_bridge_tests；
+> 下一挂账同面或 layout 集成面，间隙开放。
+>
+> **▶ 上轮状态（2026-10-25 M2 切片 80 收口，跨批 selector 迁移 journal 轮）**：
+> s79 遗留 runner 缺陷 C（hash-name-reference-dynamic 3P/5F）定位并修复。
+> s79 假说「序列化/apply 只经客户端缓存属性」**证伪**：Rust 侧 attr-trace
+> 实证 mutations 队列不 drain（1→9 单调）、同键 lw 读亦通——丢点在
+> **apply 解析**：全以创建期 sel 入队（proxy 闭包 sel 冻结），批 2 改名
+> 落管线 doc 后，批 3 起旧键属性写 `find_by_selector` 恒 miss 走
+> lenient skip 静默丢写；序列化无 name / 视图查询 miss / gEBI 旧键落空
+> 均为下游表现。**修复（s80 journal）**：`apply_dom_mutations_full` 新参
+> `sel_renames`——SetAttr(id) 落地记（改名前 sel → `#新id`），失配臂
+> `journal_find_sel_rename` 追链（4 跳封顶）重试；直查命中优先（新元素
+> 抢占旧 id 不劫持）。持有方 `RenderPipeline::sel_renames`，导航边界清、
+> 同页 `render_html` 重建不清（selector→selector 映射不受 slotmap 换代
+> 约束——首版在重建点清空致语料无效，复跑定位后修正）。契约
+> dom_bridge_tests `test_apply_sel_rename_journal_cross_batch_attr_s80`。
+> **验证**：engine lib **3515P/0F** + 域（FILTER=embedded-content）
+> **976P/252F/30T（GAIN 5 / REG 0，hash-name-dynamic 3P/5F→8P/0F）** +
+> interactive pin **439P/44F/0T 逐位持平**。范围：journal 只挂
+> SetAttr/RemoveAttr 失配臂（SetText/SetStyle 等无语料实证面暂不扩）。
+> 账本见
+> [evidence/2026-10-25-m2s80-cross-batch-sel-rename-journal.md](html-semantics-compat/evidence/2026-10-25-m2s80-cross-batch-sel-rename-journal.md)。
+> **下一步**：`querySelector('[id=…]')` 同 turn 改名可见性（共享查询
+> 视图面）或 720-stretch 渲染展开 22F（需布局几何，归 layout 集成面，
+> 启动前查 oracle master 碰撞记录）。
+> **切片间隙**：本轮 js_dom_bridge + pipeline + webview 导航清点 +
+> 契约 dom_bridge_tests；下一挂账同面或 layout 集成面，间隙开放。
+>
+> **▶ 上轮状态（2026-10-25 M2 切片 79 收口，IDL id 改名 R125 对称臂轮）**：
+> s78 未解决项 hash-name-reference-dynamic 5F 分诊——**控制面原记
+> 「testdriver-Actions 面」证伪**：runner 自带 test_driver.Actions stub，
+> 8 行点击全链路可达（ZW_TD_DEBUG resolve 迹：首点击 `#area` 全通，首个
+> DOM 变更后 map 解析失败）。5F 真实面 = shim 两缺陷（本轮修复）+ runner
+> 属性传播缺陷（未解决，后续切片）。**修复（R5279 两刀）**：①part04
+> `.id=` set trap 补 R125 sel-based id 覆盖表登记（与 setAttribute('id')
+> 对称——缺登记同 execute getElementById miss 新 id；latest-wins 缺写使
+> 「改名回原 id」被残留旧条目毒化）；②part06 getElementById 第二条
+> pending-by-id 兜底环补 `_r125Overridden` 门（快照命中被覆盖表剔除后
+> 不得经该环复活）。契约 part90 `idl_id_rename_getelementbyid_r5279`
+> （8 断言，撤任一刀对应转红）。**验证**：engine lib **3512P/0F** + 域
+> （FILTER=embedded-content）**971P/257F/30T 持平** + interactive pin
+> **439P/44F/0T 逐位持平**（R5279 只增 id 覆盖登记，语料面零数字变化）。
+> **新诊断（未解决）**：runner 命令 turn 的 resolve 时点**属性写丢失**
+> （`setAttribute('name')` 不在 live 态亦不入序列化——id 写有客户端缓存
+> 可见、name 写不可见，疑序列化/apply 管线只覆盖客户端缓存属性）+
+> **覆盖表缓存代理空子树**（re-parse 代际后 gEBI 命中代理
+> `querySelectorAll('area')` → 0）——hash-name-dynamic 5F 实际归属此组合
+> 面；resolve 迹仪器化方法已验证（ZW_TD_DEBUG + 临时探针，跑完即删）。
+> 账本见
+> [evidence/2026-10-25-m2s79-idl-id-rename-r125.md](html-semantics-compat/evidence/2026-10-25-m2s79-idl-id-rename-r125.md)。
+> **下一步**：runner 属性传播缺陷切片（refresh 管线属性 mutation 应用 +
+> 代际代理失效，面在 tests/wpt-runner + shim 视图生命周期）或 720-stretch
+> 渲染展开 22F（需布局几何，归 layout 集成面）。
+> **切片间隙**：本轮 part04/06 shim + 契约 part90；下一挂账 runner 面
+> 在 tests/wpt-runner，间隙开放。
+>
+> **▶ 上轮状态（2026-10-25 M2 切片 78 收口，F4 image-map 命中轮）**：
+> s67 八族地图 F4 收口（the-area-element 三文件 area-coords 32F +
+> area-shape 17F + area-processing 14F）。失败面修正：控制面原记 84F 系
+> 旧账——实测 68F 中 5F 是 hash-name-reference-dynamic 的 testdriver-Actions
+> 面（runner 语料缺 testdriver.js，指针/键盘合成输入族，本切片外），
+> image-map 实际可收面 63F。**根因**：runner headless 无渲染管线——host
+> `__zw_elementFromPoint`（R2924 HitTestCache）与 `__zw_getBoundingClientRect`
+> 均缺席，elementFromPoint 缺席臂此前只有 SVG 形状回落，usemap img 形状
+> 命中面为空 → 63F 全 null。**修复（R5278 三刀）**：①解析核（part03）——
+> float-list 逐字解析（分隔集 ASCII 空白+逗号+分号、`\v` 非空白、垃圾跳读、
+> 浮点前缀截断含指数 `.4`/`1e1`/`2in`、error→0）+ shape 枚举（ASCII
+> case-insensitive，missing/invalid → rect）+ 点入形状（rect min/max 归一
+> 半开框、circle d²≤r²、poly on-edge 预检**边界含入** + even-odd 半开边
+> 射线——star (101,101)/(199,101)/hitPoly (119,101) 三行 corpus 定谳、
+> default 恒真）+ hash-name reference；②命中面（part06 `_zwImgMapHitSel`）
+> ——elementFromPoint 缺席臂（SVG 后置臂，产品路径零波及），img 框 (0,0)+
+> IDL 尺寸近似（FIXME 真实几何归 layout 集），无形状覆盖/usemap 不可解析 →
+> img 自身；③契约 part90 两测试（65 断言）。**排障留档**：裸跑 runner 缺
+> Makefile 目标的 `ZW_TESTHARNESS_RAF_FRAME_DRIVEN=1`，interactive pin 假红
+> 7 行（滚动/点击时序面）；stash 验证基线同红排除代码回归后改走 make 目标
+> ——runner 数果实测必须走 Makefile 目标。**验证**：域（make + FILTER）run3
+> **907P/320F/31T → 971P/257F/30T**（GAIN 64 = area 63 + usemap-casing
+> 加成 1 / 0 P→F；audio-lazy T→P 为已记抖动族顺风向；裸跑/make/全域截断跑
+> 三方 embedded-content 数字逐位一致）+ interactive pin **439P/44F/0T 逐位
+> 持平**（make 目标重跑后）+ engine lib **3499P/0F** + clippy/fmt clean。
+> 账本见
+> [evidence/2026-10-25-m2s78-image-map-hit.md](html-semantics-compat/evidence/2026-10-25-m2s78-image-map-hit.md)。
+> **下一步**：720-stretch 渲染展开 22F（需布局几何，归 layout 集成面）或
+> testdriver-Actions 支持面（hash-name-dynamic 5F + 指针/键盘合成输入族）。
+> **切片间隙**：本轮 part03/06 shim + 契约 part90；下一挂账 720-stretch 需
+> layout 面协同，间隙开放，开工前查 oracle master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-25 M2 切片 71 收口，F1b SVG 固有尺寸轮）**：
+> s67 八族地图 F1b 收口（naturalWidth-naturalHeight-width-height 的 SVG
+> data URL 族 77P/181F + svg-img-density-vs-zoom 1P/8F）。**根因**：runner
+> 位图解码面不解 SVG——host `__zw_get_image_size` 返回 viewBox 原始宽高
+> （缺省 100×100），非 CSS-images natural dimensions 组合表；resourceState
+> 无固有轴元数据，密度校正无法逐轴表达语料 data-density 语义（attr 轴校正、
+> 默认/AR 轴不校正）；display:none 未渲染 IDL 面（whatwg#11287）恒密度校正。
+> **修复（R5277 五刀）**：①`__zwSvgPayload5277` data:SVG payload 提取
+> （percent/base64/raw）；②`__zwSvgNaturalDims5277` 固有尺寸核（无引号 attr
+> 按 HTML tokenizer 语义、length 非负 number|px、viewBox AR、w+h/w/h/none
+> 组合表）；③sweep SVG 核前置 + 覆写面——携 axes（本核已写）幂等跳过、
+> host 态（无 axes）原位覆写不重派 load、非 SVG 维持 host 幂等；④密度逐轴
+> 折算（attr 轴按选中密度校正、默认/AR 轴恒原始；无 axes 旧态默认 both，
+> raster 语义不变）；⑤未渲染 IDL 臂——display:none + loaded 回原始未校正
+> intrinsic（内联样式直读近似，FIXME 样式表/继承面）+ avail 传播携 axes。
+> **运行期 fast path 撤除留档**：fetch 臂 SVG 前置在 129 img 模板克隆风暴下
+> 超 `_deferBudget=256` 静默丢回调 → inflight 泄漏 → load 链死锁（run5 全域
+> 1001/1258 行截断实证），同步 dispatch 变体仍抖（77P/181F 不稳）——终版
+> 撤除，运行期 SVG 语义归 host 解码器切片。契约 part89 两测试（27 断言，
+> (h) 覆写面 load 不重派钉）。**验证**：域 **747P/479F/32T → 907P/320F/31T**
+> （GAIN 160 = 160 F→P / 0 P→F；唯一 T 变化 video-loading-lazy-autoplay
+> T→F 为 s70 已记环境抖动行翻回）+ naturalWidth 文件 77P/181F → **236P/22F**
+> （3× 稳定）+ interactive **439P/44F/0T 逐位持平** + engine lib
+> **3496P/0F** + clippy/fmt clean。账本见
+> [evidence/2026-10-25-m2s71-svg-intrinsic-dims.md](html-semantics-compat/evidence/2026-10-25-m2s71-svg-intrinsic-dims.md)。
+> **下一步**：F4 image-map 命中测试 84F（elementFromPoint 几何）优先，或
+> 720-stretch 渲染展开 22F（需布局几何，归 layout 集成面）。
+> **切片间隙**：本轮 part03/04 shim + 契约 part89；下一挂账 F4 亦 engine 面，
+> 间隙开放，开工前查 oracle master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-25 M2 切片 70 收口，F2 source-set 族轮）**：
+> s67 八族地图 F2 收口（parse-a-srcset 49 + select-an-image-source 13 +
+> update-the-source-set 84 + relevant-mutations 46 + current-pixel-density
+> 21 + 邻族 7）。**根因**：srcset/sizes/picture-source 选择面仅 R4162/R2419
+> 「首 URL」近似——描述符语法/DPR 择面/media+type 门/relevant mutations
+> 触发/密度校正全缺。**修复（R5277 九刀）**：①part03 共享选择核
+> （parse-srcset/parse-sizes/create-source-set/update-source-set/
+> select-image-source 五核，spec §4.8.4.3.7-12 逐字）；②候选 URL 就地绝对化
+> （`_zwResolveFetchUrl` 文档基含 `<base href>`——available-images 键/请求
+> URL/currentSrc 同源；raw/绝对键并存把同图拆两个 avail 表项，
+> image-loading-lazy-available P→F 实证）；③全状态写入面切选中 URL（sweep
+> srcset-only img / `.src` IDL 链 / revalidate）+ 密度入 resourceState +
+> naturalWidth 密度折算；④relevant mutations 触发面（src/srcset/sizes 恒重
+> 验、crossorigin/referrerpolicy content-state 枚举比对、SOURCE 变迁 → 其后
+> img 兄弟、picture 树插入/移除）+ restart 收窄为选中 URL 变更（同 URL 命中
+> 照常重派 load——spec maybe-omit-events 门）；⑤null selection（src/srcset
+> 移除 → broken，error 仅在仍有关联时派）；⑥detached 更新延一步（重读
+> loading——src-then-lazy-load 时序）+ lazy 视口门只拦 fetch 不拦 avail
+> settle（avail 先于 lazy 决定）+ scrollIntoView 视口旗标近似（F5 几何收口
+> 前债务标记）；⑦broken 无 width/height 属性 → IDL 0（s68 误正改 0——
+> 300/150 是 UA icon 非 IDL 面）；⑧css-parser media_query.rs MQ4
+> error-handling——非空 inner 无法解析 → 整条不匹配，不再退化空条件 all 恒
+> 匹配（`all and (!)` 面 + matchMedia false 对齐，钉定测试撤换）；⑨extract.rs
+> 候选收集接解析核。契约 part88 五测试。**验证**：域 **607P/678F/37T →
+> 747P/479F/32T**（GAIN 133 = 133 F→P / 0 P→F；run3 捕获唯一 P→F 由②收口
+> run4 复验翻回；run3→run4 差恰 2 行）+ interactive **439P/44F/0T 逐位持平**
+> + engine lib **3484P/0F**（+5 契约）+ css-parser lib **3003P/0F** +
+> clippy/fmt clean。账本见
+> [evidence/2026-10-25-m2s70-source-set.md](html-semantics-compat/evidence/2026-10-25-m2s70-source-set.md)。
+> **下一步**：F1b naturalWidth SVG 固有尺寸/密度校正尾片（210F 余量）或 F4
+> image-map 命中测试 84F（elementFromPoint 几何）——按共享路径收益取一。
+> **切片间隙**：本轮 part03/04/05 shim + extract.rs + css-parser media_query
+> + 契约 part88（part85 键位随绝对化更新）；下一挂账 F1b/F4 亦 engine 面，
+> 间隙开放，开工前查 oracle master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 67 收口，embedded-content 开片分诊轮）**：
+> 两件事。**① 域分诊八族地图落档（819F 全归因）**：F1 img 静态加载管线
+> ~260F（settle 只接 `.src` IDL setter 通道 R56h，parser 静态 img 无
+> fetch/load 事件、naturalWidth 恒 0）+ F2 select-an-image-source/currentSrc
+> /srcset/sizes ~300F（currentSrc 恒 ''，全族算法未实现，独立大切片）+
+> F3 img.decode() 56F + F4 image-map 命中测试 84F（elementFromPoint 几何
+> 底座→渲染流记账回流）+ F5 lazy-loading ~49F（视口几何缺失，F1 后重
+> 分诊）+ F6 canvas 53F（getContext options 序 + Tab 序，逐案分诊）+
+> F7 object/embed 窄面 25F + F8 杂项 2F。域刷新基线 **458P/819F/40T**
+>（执行案 231 与 M1 一致；subtest 1060→1317 为 R5235 帧驱动后此前
+> Timeout 悬挂案完成注册）。**② F7 null 反射收口（R5274 一刀）**：part04
+> get-trap IFRAME 分支后补 OBJECT/EMBED 分支——contentDocument/
+> contentWindow 恒 null（spec「does not represent a nested browsing
+> context → null」尾步）+ getSVGDocument 返 null 函数（GetSVGDocument
+> Support）；EMBED 无 contentDocument/contentWindow 成员保持 undefined。
+> 契约 part84 两测试（钉①五臂 + 钉② IFRAME R130 面不回归）。**验证**：
+> 域 **458P/819F/40T → 461P/816F/40T**（GAIN 3 / REG 0）+ interactive
+> 439P/44F/0T 逐位持平 + lib **3469P/0F**（+2 契约）+ 翻转力实证（撤刀
+> → 钉①红，恢复字节一致）。账本见
+> [evidence/2026-10-24-m2s67-embedded-content-triage.md](html-semantics-compat/evidence/2026-10-24-m2s67-embedded-content-triage.md)。
+> **下一步**：F1 img 静态加载管线开片（~260F 最大可收口单族；DCL 扫描
+> settle + loading=lazy 跳过 + setAttribute('src') 通道，R5254 两段式
+> 先例）。
+> **切片间隙**：本轮 part04 get-trap + 契约 part84；下一挂账 F1 亦
+> engine shim/host 桥面，间隙开放，开工前查 oracle master 碰撞记录
+>（2026-10-24 已查：oracle master 记「engine 面占用标记已退场清除」，
+> 无新占用）。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 66 收口，text-level-semantics 开片轮）**：
+> 两件事。**① the-a-element 13F 两族全收（R5273 三刀）**：a.text
+> getter/setter = textContent 精确委托（9F；option 的 strip-and-collapse
+> 不适用）+ a/area toString 品牌检查（4F；WebIDL es-stringifier step 2，
+> **探针实证 trap 臂才是 createElement 产物 toString 实际供给面**——原型
+> defineProperty 不达，双侧同步防直装路径）。**② 共享路径根修（part05
+> overlay 种子）**：a.text 委托暴露预存缺陷——textContent=（sel 形）写后
+> 同 turn childNodes.length===0 而 firstChild 已见新值（探针钉定与 .text
+> 无关）。根因 = 注册文本节点无 pending link，overlay added 并入跳过而
+> removed 剔除生效，childNodes 与 firstChild 两视图分裂（R5269 probe62
+> childLen=0 同根源）。修 = `_zwOverlayPendingChildNodes` 入口
+> `_zwTextElsBySel` 种子（命中即以注册节点为基；appendChild 并入/
+> removeChild 剔除/apply 后不双计均保持）。**验证**：域 **34P/0F**
+>（exit 0 首次）+ links 119P/20F/4T（stash 二分与 HEAD 逐值一致，预存）
+> + document-metadata 59P/59F/18T + tabular 130P/4F + interactive
+> 439P/44F + engine lib **3463P/0F**。账本见
+> [evidence/2026-10-24-m2s66-text-level-a-element.md](html-semantics-compat/evidence/2026-10-24-m2s66-text-level-a-element.md)。
+> **下一步**：embedded-content / scripting-1 / microdata 按挂账序开片
+>（分诊轮先行）。
+> **切片间隙**：本轮 part03/part04/part05 shim + part05 overlay；下一挂
+> 账 embedded-content 分诊未定，间隙开放，开工前查 oracle master 碰撞
+> 记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 65 收口，http-equiv 分诊 + content-language pragma 轮）**：
+> 两件事。**① http-equiv-and-name 2F 分诊（本域 shim 面最后未分诊项，
+> 分诊轮全归档）**：-1 = CanvasText 系统色 × color-scheme applied-color
+> 链 → 渲染流记账回流（与 s64 color-scheme 23F 同桶）；-2 = 本流修复。
+> **② 修复面（R5272，dom crate 两刀）**：①`parse_selector_chain` 复合伪类
+> 名字边界——名字取 `(`/`#`/`.`/`[`/`:` 最早命中、仅 `(` 按含参取 args，
+> 旧 `r.find('(')` 扫过整段余串把 `:root:lang(de-DE)` 的 `root:lang` 当
+> 名字 → SyntaxError；②`matches_lang` pragma-set default language 回落
+>（spec「language of a node」Otherwise 分支）——祖先链全无 lang 时吃
+> `<meta http-equiv=content-language>`（含逗号失效、首 ASCII 空白 token、
+> 文档序最后胜出；空 lang = explicitly unknown 不回落；HTTP 头回落
+> FIXME），R3281 共享权威面 style-system `:lang()` CSS 匹配同步吃到。
+> 回归测试 zz_r5272×2。**验证**：域 **59P/59F/18T**（+1 NotRun 为 CSP
+> tentative 行与本修复无关）+ interactive 439P/44F + style-system lib
+> **2449P/0F**（共享权威零回归）+ zero-dom lib **868P/0F**（+2）。账本见
+> [evidence/2026-10-24-m2s65-http-equiv-content-language.md](html-semantics-compat/evidence/2026-10-24-m2s65-http-equiv-content-language.md)。
+> **下一步**：text-level-semantics 开片（M1 基线 21P/13F），分诊轮先行。
+> 余账全归档：color-scheme 23F + http-equiv-and-name-1 1F + 管道/应用面
+> ~27F 渲染流、CSP tentative + parse-world 底座。
+> **切片间隙**：本轮 dom crate（query.rs/lang_dir.rs）；下一片
+> text-level-semantics 分诊轮不改引擎生产面，间隙开放，开工前查 oracle
+> master 碰撞记录（2026-10-24 已查：渲染流在 ::first-line/::selection/
+> paint 面，无 dom/shim 占用）。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 64 收口，document-metadata 分诊 + link/style 窄面轮）**：
+> 三件事。**① color-scheme 归属核对（定档渲染流）**：10F 死因 =
+> corpus 打包缺口（缺 support/compute-root-color-scheme.js，上游有）
+> ——按「打包缺口本地补」先例恢复（gitignored 本地数据，**步进
+> 52P/54F/18T → 52P/66F/18T** +12F 归因入账）；断言面 23F 塌缩单根
+>（inline CanvasText 系统色 × color-scheme 解析 + colorScheme IDL +
+> root 应用色）= applied-color → 渲染流记账回流。**② link/style 事件
+> 族分诊（35F+18T 四类）**：资源管道 ~13F + applied CSSOM ~13F + CSP
+> tentative 底座 7F+5T + parse-world 底座 1F 挂账；shim 窄面 7F 本轮
+> 全收。**③ 修复面（R5271）**：①link.fetchPriority 枚举反射（合法
+> ascii 小写、missing/invalid → auto，2F）；②link.relList supported
+> tokens（link types 表 20 关键字，supports() 1F）；③style.sheet
+> [SameObject] WeakMap 缓存 + 直接子指纹失效（有效子变更换新对象 /
+> 空 fragment 身份保持）+ connected 门（不在文档返 null）+
+> StyleSheet 基接口 brand（instanceof 可达，LinkStyle 2F）。**验证**：
+> 域 **58P/60F/18T** + tabular 130P/4F（终版二进制）+ interactive
+> 439P/44F + lib **3458P/0F**（CSSOM 契约零回归）。账本见
+> [evidence/2026-10-24-m2s64-metadata-triage-linkstyle.md](html-semantics-compat/evidence/2026-10-24-m2s64-metadata-triage-linkstyle.md)。
+> **下一步**：http-equiv-and-name 2F 分诊（本域 shim 面最后未分诊项）；
+> 域收口后 text-level-semantics 开片（M1 基线 21P/13F）。余账全归档：
+> color-scheme 23F + 管道/应用面 ~27F 渲染流、CSP tentative + parse-world
+> 底座。
+> **切片间隙**：本轮 part04/part06 JS shim；下一挂账 http-equiv 分诊
+> 未定，间隙开放，开工前查 oracle master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 63 收口，document-metadata base 族轮）**：
+> document-metadata 第二实施切片：**43P/63F/18T → 52P/54F/18T**
+>（GAIN 9 / REG 0），the-base-element 13/13 全绿。**修复面
+>（R5270 三刀）**：①`_zwDocBaseURL` scheme 排除——spec 文档基 URL
+> 算法末步 data/javascript scheme **立即返 fallback**（非继续找下一
+> base，base-data 案 1 期望 document.URL 实证）。②pending 增补 base
+> 先扫——R161 归并把 pending 追加快照尾树序不保（head.prepend 新
+> base 先于快照 base 评估，案 3 实证）；corpus 未钉 pending valid
+> base 树序案，先扫近似记已知限制。③BASE href IDL（R5008 块内分
+> 支）——缺失/空串 → 文档地址；解析失败 → **原属性串**
+>（base_href_invalid corpus 钉定 "//test:test"，首版「失败 → 文档
+> 地址」翻红回退修正）；LINK 保持 R5008 口径（harness resolveUrl
+> 消费面）。**验证**：the-base-element 13/13 + tabular 130P/4F +
+> interactive 439P/44F + lib **3456P/0F**（_zwDocBaseURL 共享面
+> a/form action、baseURI、img src 零回归；+2 为 oracle 流新增）。
+> 账本见
+> [evidence/2026-10-24-m2s63-base-url-family.md](html-semantics-compat/evidence/2026-10-24-m2s63-base-url-family.md)。
+> **下一步**：meta color-scheme 10F 归属核对（疑 style-system/渲染
+> 面）；link/style 事件 30F+18T 分诊（runner file 通道能力上限）；
+> style type/media + CSP tentative 待分诊。
+> **切片间隙**：本轮 part03；下一挂账分诊未定，间隙开放，开工前查
+> oracle master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 62 开片，document-metadata title.text 族轮）**：
+> 两件事。**① tabular-data 余 4F 分诊定档（不修）**：processing-model-1
+> 四案全是表格布局 span 几何（colspan/col span=1000 字面列数摊宽、
+> rowspan=0 不参与行高分布；offsetWidth/clientHeight 读），控制面排除
+> 清单明确归 rendering-compat——本流收口定格 **130P/4F**，余案归因
+> 挂账（DOM 语义面 IDL clamp 15 断言已全绿）。**② document-metadata
+> 开片（M1 基线 31P/75F/18T → 43P/63F/18T，GAIN 12 / REG 0）**：
+> Mission 序 tabular-data 后下一域，域内从未切片。**修复面（R5269，
+> title.text 族 12F 全收）**：①title.text getter（part03）——child text
+> content 直接 Text 子原样拼接（comment/元素子不含、无空白归一；
+> title.text-01 断言 .text="TEXT"≠textContent）；sel 形 SetText 后融合
+> 视图不载新文本——walk 空且 lw 非空才直取 latest-wins（appendChild
+> 变更链 walk 非空自然排除，lw 不可直接作信号——title.text-01 首版
+> 回退实证）。②title.text setter（part04）——R3907 option.text 同口径
+> 委托 textContent。③document.title setter（part06）——改经元素
+> textContent setter 落地（自带宿主写 + 本地文本子注册；旧裸
+> __zw_set_text 只写宿主，本地文本子 stale 实证）。**验证**：
+> the-title-element 13/13 + tabular 130P/4F + interactive 439P/44F +
+> lib 3454P/0F（R3035 共享面零回归）。账本见
+> [evidence/2026-10-24-m2s62-title-text-family.md](html-semantics-compat/evidence/2026-10-24-m2s62-title-text-family.md)。
+> **下一步**：base 族 9F（HTMLBaseElement.href IDL + base 感知 URL 解析）；
+> meta color-scheme 10F 归属核对；link/style 事件 30F+18T 分诊
+> （runner file 通道能力上限）；style type/media + CSP tentative 待分诊。
+> **切片间隙**：本轮 part03/04/06；下一挂账 base 族亦 shim/net 面，
+> 间隙开放，开工前查 oracle master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 61 收口，insertRow tbody 目标 + XML 导入链轮）**：
+> tabular-data 域第四实施切片：**127P/7F → 130P/4F**（GAIN 3 / REG 0），
+> interactive-elements 全域 **439P/44F/0T** 复跑逐值不变，zero-engine
+> lib **3454P/0F**。**修复面（R5268）**：①table.insertRow append 位
+> （part03）——删 `hasSection` 分支（旧：rows 空 + thead/tfoot 存在时新
+> 行**直挂 table**），统一「`_zwTblChildIdxLast` 最后 tbody，无则新建
+> tbody 挂 table」——spec append 位 = 最后 tbody 元素子，thead/tfoot
+> 不是插入目标（table-insertRow thead/tfoot 案 2F 同修）；连带多 tbody
+> append 位从「最后有行的 tbody」纠正为「最后 tbody 元素子」。②快照
+> 元素级 getElementsByTagName（part02）——`_zwParseEl` 缺方法（仅 doc 级
+> 有），委托 querySelectorAll 一行补齐（tBodies.html XML documentElement
+> 查询面）。③importNode 快照域产物物化（part06）——`_zwParseEl`/
+> `__zwIsMEl` 源 deep import 经 `_wcRebuildAsHandle` 物化为 handle 树
+> （t8q adoptNode 同判据同重建器；raw _zwMEl 副本 append 进活树后
+> `.tBodies` 读 undefined 实证）；浅克隆与真 wrapper 源不进分支零变化。
+> **验证**：probe 6 案全绿（已删）+ table-insertRow 3/3 + tBodies 1/1 +
+> 两域复跑零回归。账本见
+> [evidence/2026-10-24-m2s61-insertrow-tbody-xml-import.md](html-semantics-compat/evidence/2026-10-24-m2s61-insertrow-tbody-xml-import.md)。
+> **下一步**：tabular-data 余 4F 全在 processing-model-1——rowspan-0×2
+> （clientHeight 渲染门）+ col-span-limits×2（span 处理模型），待分诊；
+> cells/tBodies HTMLCollection 类型一致化（无断言，低优先）。
+> **切片间隙**：本轮 part02/03/06；下一挂账分诊未定，间隙开放，开工前
+> 查 oracle master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 60 收口，table.rows HTMLCollection 轮）**：
+> tabular-data 域第三实施切片：**122P/12F → 127P/7F**（GAIN 5 / REG 0），
+> interactive-elements 全域 **439P/44F/0T** 复跑逐值不变，zero-engine
+> lib **3454P/0F**（+5 为 oracle 流新增测试）。**修复面（R5267）**：
+> ①`_zwMakeHTMLCollection` 加 **rebuild 钩子**——[SameObject] 集合的 live
+> 读重建形态：每次属性读重算成员表（排序/过滤天然最新），不注册写侧
+> live 维护（无 matches 不进 `_zwLiveCollections`；与 matches 形态互斥
+> 守卫，既有调用方零变化）。②rows getter（part03）裸数组 → 集合形态：
+> `_zwRowsCollCache` WeakMap 缓存（R3908 selectedOptions 同口径，键 =
+> 元素 proxy；rebuild 闭包持 sel/handle 原始值防自持环）+ rebuild 每读
+> 重算 `_zwTableRowsAll`/`_zwTblChildAll`（s59 地基复用）。table-rows
+> 断言面全落既有完备工厂：instanceof（`_zwHCPrototype` 链）、named
+> getter（id 全元素 + name 仅 HTML-ns）、ownKeys（[indices…, names…]
+> 集合序）、gOPD、canonical 索引；live 断言（removeChild 后 namedItem
+> →null）由重建天然过。**范围界定**：仅 rows 收进集合；cells/tBodies
+> 保持数组（类型一致化留挂账）；`_rowList`/`_cellList` 消费面经 trap
+> 语义兼容零改动。**验证**：table-rows 5/5 全绿 + 连带面逐文件复核零
+> 回归（remove-row/insertCell/rowIndex/sectionRowIndex/cells/cellIndex/
+> createTBody/table-insertRow 持平）。账本见
+> [evidence/2026-10-24-m2s60-table-rows-htmlcollection.md](html-semantics-compat/evidence/2026-10-24-m2s60-table-rows-htmlcollection.md)。
+> **下一步**：tabular-data 余 7F——table-insertRow 2F（无 tr 时插入位
+> 语义：spec **末 tbody**，现实现首 tbody）+ tBodies 1F（DOMParser XML
+> documentElement.getElementsByTagName 缺）可并片；处理模型 4F 待分诊。
+> **切片间隙**：本轮 part03/05；下一挂账亦 shim 面——间隙开放，开工前
+> 查 oracle master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 59 收口，tr 族索引/集合读侧轮）**：
+> tabular-data 域第二实施切片：**94P/40F → 122P/12F**（GAIN 28 / REG 0），
+> interactive-elements 全域 **439P/44F/0T** 复跑逐值不变，zero-engine
+> lib **3449P/0F**。**根因（R5266）**：tr 族六 getter（rowIndex/
+> cellIndex/sectionRowIndex/rows/tBodies/cells）旧实现经 selector 查询
+> 三缺陷——detached script-created 子树不可解析恒空 / 匹配全部后代非
+> 直接子 / 无 namespace 过滤。**修复面**：①part03 新地基四件——
+> `_zwIsHtmlNsEl`（**严格** xhtml 串判定，探针实证 createElementNS("",
+> x) 产物 namespaceURI 读 **null**、解析树/createElement 读 xhtml 串；
+> 区别于 `_zwTblChildIdx` 宽松口径不动）+ `_zwTblChildAll` 直接子收集 +
+> `_zwTableRowsAll`（spec rows 排序：thead 行 → 直接 tr + tbody 行 →
+> tfoot 行）+ `_zwIdxOfSelf` 身份计位（childNodes 缓存 proxy 恒等）。
+> ②六 getter 重写：rowIndex 门槛 **parent**（table）或 section+**grandparent**
+> table（非最近祖先，table>div>tr 案 -1）；sectionRowIndex 父 table/section；
+> cellIndex 父 HTML tr 直接 td/th 子；handle-only created 全覆盖。③has
+> trap 名册（part05，R5249 tag-gate 模式）——`"cellIndex" in th` 等恒
+> false 补六名。**连带收口**：remove-row 3F + thead/tbody/tfoot rows 3F
+> + table-insertRow 1F（`_rowList`/`_cellList` 转读修好的 rows/cells）。
+> **lib 测试契约修补**（part15 R3243 三测试）：rows/cells 读侧走
+> childNodes 融合视图后，测试换代点只 bump 宿主代际未调 shim 侧挂钩的
+> 缺口显形（跨场景 pending 桶残留，探针实证 len=5 含建行）——按
+> part12/38/41 既有契约补 `__zw_reset_pending_state` + 两处同场景续跑
+> 步先重播种 pristine 快照。**验证**：五目标文件 45 断言全绿；域
+> 122P/12F/0T；interactive-elements 439P/44F/0T（REG 0）；lib 3449P/0F；
+> fmt/clippy 干净。账本见
+> [evidence/2026-10-24-m2s59-tr-index-family.md](html-semantics-compat/evidence/2026-10-24-m2s59-tr-index-family.md)。
+> **下一步**（s60 已收口）：table-rows 5F 已清；余挂账 table-insertRow
+> 2F / tBodies 1F / 处理模型 4F / cells-tBodies 类型一致化。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 58 收口，tabular-data create/delete + setter 族轮）**：
+> tabular-data 域首个实施切片：**67P/67F → 94P/40F**（GAIN 27 / REG 0），
+> interactive-elements 全域 98 files **439P/44F/0T** 复跑逐值不变。
+> **修复面三件（R5265）**：①table create/delete 派生族（part03）——
+> createTBody 插**最后一个 HTML-ns tbody 之后**（createTBody.html 15 案
+> 钉定，嵌套不作锚）、createTHead 有守卫+before tbody/tfoot、createTFoot
+> 有守卫+append、createCaption 有守卫+首子、delete 三族删首匹配直接子；
+> 门统一 `_realTag` 后缀取 `.split(':').pop()`（createElementNS 前缀案
+> 放行）。②caption/tHead/tFoot getter 收紧（`_zwTblChildIdx` 精确索引 +
+> 非 HTML ns 排除）。③IDL setter 族（part05 set trap 新分支 + part04
+> set trap 补 receiver）——null 删首匹配、非 section/caption 形态
+> TypeError、localName 不符/祖先环 HierarchyRequestError、caption 插
+> **首子**（caption_001 firstChild 钉定）、thead/tfoot 有既有先删后原位
+> 插（防 selector 重解析误删同形新子）。**本轮 bug 两个同 commit 修**：
+> caption 插入段困嵌套 if/else 末臂永不可达（探针入口插桩实锤
+> setter 路径从未调 insertBefore；修=卫语句+平铺共享段）；createTBody
+> 位置误诊为包装身份断裂（同型元素 identity 断言失败优先怀疑顺序——
+> 12 探针逐因子排除后插桩抓 `at:0` 实锤）。**验证**：目标案全绿
+>（createTBody 15/15、caption_001 5/5、tHead 3/3、tFoot 2/2）；全域
+> interactive-elements 439P/44F/0T（REG 0）；zero-engine lib 3448P/0F。
+> 账本见
+> [evidence/2026-10-24-m2s58-tabular-create-delete-family.md](html-semantics-compat/evidence/2026-10-24-m2s58-tabular-create-delete-family.md)。
+> **下一步**（s59 已收口前两见）：tr 族 21F 已清；余挂账 table-rows
+> 5F / remove-row 3F + section rows 3F / insertRow / tBodies 1F / 处理
+> 模型 4F。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 57 收口，selectAll inert 作用域 + 钉案轮）**：
+> 45F 全量复核（逐案读测试源钉断言机制）+ D 族唯一非几何门案收口
+>（R5264），全域 438P/45F/0T → **439P/44F/0T**（GAIN 1 / REG 0）。**方案
+> 取舍**：s46 五桶分组沿用并逐案核对——`inert-node-is-unselectable`
+> 断言链 `document.execCommand('SelectAll')` →
+> `getSelection().toString()`，此前 execCommand selectAll 未接（permissive
+> no-op → toString 恒 ''），且模态 inert 遮罩是**纯 DOM 树行走**（区别于
+> D 族其余案的 gBCR/elementFromPoint 几何门）。**修复**（part06）：
+> execCommand 新增 selectall 分支——`_zwDialogModalTopSel()` 命中 → 栈顶
+> 模态 dialog 子树，否则 body；复用 `_selection.selectAllChildren`（R2804
+> 面）；不派 beforeinput/input（选区命令不经编辑宿主事件序，与 undo/redo
+> 同口径）；`_zwQueryCommandState` 补真实反射。**钉案成果**（跨流协调
+> 交付物）：余 44F = 渲染流门 ~21F（abspos 居中 6 / default-color 2 /
+> overlay 2 / top-layer-position 1 / non-modal 1 / multiple-centered 1 /
+> scroll-height 1 / visibility-hidden UA 1 / bounds-clicking 2 /
+> modal-selection 拖选几何 1 / dialog-inert 1 / ancestor-is-inert 1 /
+> inert-svg-hittest 1 / showModal top-layer 绘制序 1 / closed-details-
+> layout-apis 1）+ shadow 底座 20F（closedby-complex 16 + focus-previous-
+> outside 3 + form-submit-shadow 1，declarative shadow 待用户点名）+
+> corner-cases ESC 1F（s53 定性 divergence 不弯就）。**验证**：目标
+> 1F→1P；全域 439P/44F/0T；zero-engine lib 3448P/0F；对照面
+> not-highlighted（reftest 视觉）/ with-modal-dialogs-and-iframes /
+> 两 crash 测试（语料不载）零波及。账本见
+> [evidence/2026-10-24-m2s57-selectall-inert-scope.md](html-semantics-compat/evidence/2026-10-24-m2s57-selectall-inert-scope.md)。
+> **下一步**：本流 shim 面清空——跨流协调（渲染流按名取案，飞书已通知）
+> + declarative shadow 联合切片待用户点名。**切片间隙**：本轮零 .rs 变更
+>（仅 JS shim），下一挂账开工前查 oracle master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 56 收口，light dismiss 两腿轮）**：
+> s49 定性「指针管线深水」的
+> dialog-light-dismiss-pointer-capture.html（touch/mouse 双腿）**2F → 2P
+> 全收口**（R5263），全域 436P/47F/0T → **438P/45F/0T**（GAIN 2 / REG 0
+> / Timeout 0）。**方案取舍**：s49 三洞试错后回退定性指针管线深水；本轮
+> 复核推翻前提——管线 capture 重定向面已全通（part04 setPointerCapture
+> pending override + part06 `_zwProcessPendingCapture` up 派发前换防 +
+> 尾簇 12 换防后取 capturedSel），真缺口唯一：light dismiss 决策仍是
+> R4300 单腿（pointerdown 即关），capture 无从影响。spec 已演进两腿
+>（down 记 nearest clicked dialog 祖先，up sameTarget 比对后关），实现
+> 以**两态分类**等价替换身份模型：down `_zwDialogLdPick` 反文档序首个
+> open+any 定类（'in' 链内 / 'out' 链外）存槽，up
+> `__zw_dialog_light_dismiss_up` 重分类同态比对，相等且 'out' 才关
+>（选择器保持 R5234 口径）；全腿组合等价（in/in、out/in、in/out 不关，
+> out/out 关）——capture 面（down 'out' + capture 把 up 重定向 dialog 内
+> 'in'）由此不关门。槽卫生：down 终态必写槽（早退也清）+ up 读取即清。
+> popover pass 维持 down 腿单发（R5234 绿面零变化）。**验证**：目标
+> 2F→2P（pointerId 全管线默认 1 与 `st.capture['1']` 对齐实证）；全域
+> 438P/45F/0T；part60 R4 契约两腿化 + out→in capture 门腿（r4d）+ R6
+> down+up 对（r4d 首轮 fallback `'button'` 命中 l1 首按钮误关，改
+> `'#inner3'` 唯一 id——契约侧 bug）；zero-engine lib 3448P/0F；
+> fmt/clippy 清。账本见
+> [evidence/2026-10-24-m2s56-dialog-light-dismiss-two-leg.md](html-semantics-compat/evidence/2026-10-24-m2s56-dialog-light-dismiss-two-leg.md)。
+> **下一步**：B 族清空，挂账序——C 族渲染流 20F 跨流协调（归渲染流）；
+> declarative shadow 联合切片待用户点名。**切片间隙**：本切片为 engine
+> shim 面（part01/part06），下一挂账开工前查 oracle master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 55 收口，xhr-response graft 轮）**：
+> s54 分诊轮挂账的 xhr-response 1F **窄域收口**（R5262），F 族
+> name-attribute.html 三案全清（**18P/0F**），全域 435P/48F/0T →
+> **436P/47F/0T**（GAIN 1 / REG 0）。**方案取舍**：s54 定性 parse-world
+> 基面三件套升级（波及 DOMParser/XHR/responseXML 全语料）vs 底座挂账；
+> 本轮复核出第三条窄域路线——场景需求全落 `xhr.response.body` 单节点，
+> 而 `_zwParseEl` 的 R3019 mutTree 桥（`_ensureMutTree`）本就把该节点惰性
+> 物化为 wrapper-world `_zwMEl` 实体子树，仅差物化时机（惰性→主动）、
+> 接口原型接线（裸 `_zwMEl` 不接线，R125 在 `_zwMBuildNode` 只覆盖解析
+> 子）、`doc.body` 指向（仍是快照壳）。**修复**（part03 XHR HTML 文档
+> 分支）：body `_ensureMutTree()` 主动物化 + R125 配方接线
+>（`__zwHtmlTagIface.body` → `HTMLBodyElement.prototype`）+ `doc.body`
+> 换实体节点。读语义零变化（旧 firstChild 等读面本就惰性经同一 mtree）；
+> DOMParser 语料零波及（graft 仅 XHR `responseType='document'` HTML MIME
+> 分支，`_zwParsedDoc` 工厂与 `_zwParseEl` 基面未动）；head/documentElement
+> 保持快照面（场景不触及）。wrapper-world 实体面经 s54 探针全链验证
+>（innerHTML 写解析接 R4100、qSA 返真实 parentNode 链完整节点、open IDL
+> + toggle 队列全通）。**验证**：name-attribute 17P/1F → **18P/0F**；
+> xhr 语料 stash 前后双侧同跑 net-api xhr 切片 **580P/14F/21T 逐位一致**
+>（基线二进制 R5262 锚点 0 / graft 后 1 双验）；escaping.html
+>（html-syntax，XHR document 读面消费方）4 子测试全 Pass；zero-engine
+> lib 3448P/0F；探针页已删。账本见
+> [evidence/2026-10-24-m2s55-xhr-body-graft.md](html-semantics-compat/evidence/2026-10-24-m2s55-xhr-body-graft.md)。
+> **下一步**：F 族清空，续挂账序——B 族 pointer-capture 2F 分诊（s49
+> 定性指针管线深水）或 C 族渲染流 20F 跨流协调；declarative shadow
+> 联合切片待用户点名。**切片间隙**：本切片为 engine shim 面（part03），
+> 下一挂账开工前查 oracle master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 54 收口，name-attribute 3F 分诊轮）**：
+> F 族 name-attribute.html 三案分诊完成——**2F shim 收口 + 1F 底座缺口
+> 挂账**，全域 433P/50F/0T → **435P/48F/0T**（GAIN 2 / REG 0）。
+> **R5260**（mutation event and toggle event order → Pass）：R4009 toggle
+> 事件任务队列旧 in-place 去重使 e0 解析期合并事件留队首；spec「queue a
+> details toggle event task」合并语义为**移除已排 task + 重排队尾**（
+> oldState 取首排程 pre-state）。修复换新 entry 对象 + old 承接
+> prevEntry.old——旧 timer 经 fire 闭包身份守卫（`!== entry`）自动作废，
+> 兼容 part81 `__zw_setTimeout` stub 环境；spec 推演 FIFO [e3,e2,e1,e0]
+> 对齐测试期望。**R5261**（connected-in-template → Pass）：plain wrapper
+> 模板 content 视图（part03 `_zwContentView`，模板 childNodes 内联存储
+> 形态）缺 ParentNode 元素族 getter，`content.firstElementChild` 恒
+> undefined、setup 断言即败；part04 `_tplContent`（sel/handle 形态，
+> R151）有全套故 `template-in-disconnected` 本来就过。补
+> firstChild/lastChild/children/firstElementChild/lastElementChild/
+> childElementCount 六 getter（R151 同款形状）；探针全链：inner
+> instanceof HTMLDivElement、innerHTML 解析互斥 [1,0]、qSA 全通。
+> **xhr-response 1F 挂账**：`xhr.response.body` 是 `_zwParseEl` 快照（
+> protoChain `_zwParseEl > Object > null` 无接口原型），场景链需三件套
+> 探针逐步实证——①instanceof HTMLBodyElement（R130 setPrototypeOf 会剪
+> 掉 `_zwParseEl.prototype` 全部方法面）；②innerHTML 写解析（ctor own
+> data property 赋值仅覆写字符串，R3019 mutTree 桥只读 rewire 无
+> setter）；③open IDL（qSA 经 `_zwWrapQ` 返回 `_zwParseEl`，`e.open`
+> undefined）。定性 parse-world 写面切片，波及 DOMParser/XHR/responseXML
+> 全语料，单独立项排期。**验证**：name-attribute 单案 15P/3F →
+> **17P/1F**；zero-engine lib 3448P/0F（part60 R4100 契约 per-element
+> 形态不断言跨元素序，重排队零回归）；探针页已删；fmt/clippy 不适用（
+> diff 仅 JS shim）。账本见
+> [evidence/2026-10-24-m2s54-details-name-3f-triage.md](html-semantics-compat/evidence/2026-10-24-m2s54-details-name-3f-triage.md)。
+> **下一步**：parse-world 写面三件套切片（接口原型双链保留 / innerHTML
+> setter 进解析 / open IDL）排期，或续挂账序 B 族 pointer-capture 2F、
+> C 族渲染流 20F；declarative shadow 联合切片待用户点名。**切片间隙**：
+> 本切片为 engine shim 面（part03），下一挂账开工前查 oracle master
+> 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 53 收口，零代码轮）**：corner-cases
+> 「focusin calls showModal, modeless」ESC 1F 复审定性——**spec 一致行为，
+> 测试期望分歧**。四重证据同向（ESC 后 dialog 重开 open=true）：live
+> spec close-the-dialog 恢复门（anchor 后代 OR wasModal → focusing steps
+> → focusin → 处理器 showModal；showModal 前置守卫无一命中、无重入门）；
+> Chromium main 源码（Close() 焦点恢复在 is_closing_ 释放后、showModal
+> 无守卫）；直探 Chromium 151 与 **Chrome for Testing 158.0.8118.0
+>（wpt.fyi 同 build）**真 ESC——皆重开；我方 runner 探针序列与直探逐步
+> 同构。**反证与矛盾**：wpt.fyi 同 revision（c645564b0e，2026-10-23
+> run）chrome-158 + firefox-161 summary 双双 30/30 绿（压缩格式已验证
+> c=[passes,total]）——与同 build 直探矛盾只能落 wptrunner 环境层（页面
+> 可见语义内构造不出 closed 读点世界）；s41 依据「Chrome-parity 同红」
+>（crbug 417571176，2026-04）已被双引擎绿取代（该 crbug 的 CL 即 wpt
+> #58337 断言形式修复）。**收口**：1F 保留标 spec-consistent known
+> divergence，不弯就（s41 R5244 试错实测 REG 4 + 违背 spec/直探）；
+> 全域 433P/50F/0T 零变化。账本见
+> [evidence/2026-10-24-m2s53-corner-cases-esc-divergence.md](html-semantics-compat/evidence/2026-10-24-m2s53-corner-cases-esc-divergence.md)。
+> **下一步**：F 族 name-attribute 3F 分诊（mutation events / XHR 解析 /
+> template 附着底座缺失——评 shim 可收口面 vs 底座缺口）；B 族
+> pointer-capture 2F（s49 定性指针管线深水）、C 族渲染流 20F 维持跨流
+> 挂账；declarative shadow 联合切片待用户点名。**切片间隙**：本轮零代码
+> 未触 engine 生产面，间隙维持开放，开工前查 oracle master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 52 收口）**：R5257 focus 滚动进视口
+> + R5258 moveBefore——**interactive-elements 文件级 Timeout 清零**（50F
+> 全为明确 Fail）。**分诊**（本轮刀前）：shim 面红名单三案——
+> focus-after-close 文件级 Timeout（6/7 Pass 悬挂末腿）、
+> movebefore-setup 1F（`new_parent.moveBefore` TypeError）、showModal 1F
+> （rendering on top——top-layer 绘制序渲染流面，转 C 族记账）。**R5257**
+>（focus-after-close Timeout → 7 子测试全 Pass）：探针双根因——proxy
+> focus() 无滚动步（spec focusing steps 尾 UA 滚动面）+ 视口 scroll 事件
+> 只派 window（document 监听永收不到）。三修：①focus 尾 nearest 滚动
+>（gBCR 出界才滚，R3047/R3051 面复用）；②几何 fallback——动态创建元素
+> 无布局几何（runner gBCR 零盒实证），读 proxy inline style（handle-only
+> 可达）position 非 static + top 可解析 → 文档 y 顶对齐（FIXME: 样式表
+> 定位随渲染流底座）；③no-scroll 变体 `__zwFocusNoScroll` 旗——R4600
+> dialog 内部 focusing steps（show/showModal/close 恢复/fixup）包旗不滚
+>（Chromium close 恢复不滚，同测试 scrollTop==0 断言面）；④`_zwFireScroll`
+> 补 document 级派发（非冒泡 bubble 腿门控，window 不双计）。**R5258**
+>（movebefore-setup 1F → 1P）：Element.moveBefore = WebIDL 校验 + 委派
+> insertBefore 机械——免 removal steps 语义（shim 移动面本无 dialog 删除
+> 钩子，组栈/open 态天然原地保持；FIXME: 跨文档同文档门随 parser 批次）；
+> ESC 断言链走既有 R5236/R4300 组栈序。**契约**（part83）：nearest 滚动
+> 位 + 双通道恰一次/showModal-close 零滚动 + 焦点恢复/moveBefore open 态
+> 保持 + ESC 关组栈顶/NotFoundError 零滚动。**验证**：focus-after-close
+> **Timeout → 7 全 Pass**、movebefore-setup **1F → 1P**；全域 98 files
+> 483 subtest **433P/50F/0T 对 s51 逐位 REG 0 / GAIN 3**；zero-engine lib
+> 3448P/0F（+契约 part83）；fmt/clippy clean（test-guard 包裹）；release
+> runner 含 R5257×4/R5258×1 锚点。账本见
+> [evidence/2026-10-24-m2s52-focus-scroll-movebefore.md](html-semantics-compat/evidence/2026-10-24-m2s52-focus-scroll-movebefore.md)。
+> **下一步**：declarative shadow 联合切片仍待用户点名（渲染流协调）；
+> 挂账序续 C 族渲染流 20F（top-layer 绘制序 showModal 1F / modal-selection
+> 1F / inert 族 4F——elementFromPoint/hit-test 缺口）与 B 族指针管线深水、
+> F 族 name-attribute 3F 逐案分诊。**切片间隙**：本切片为 engine shim 面
+>（part01/04 + 契约 part83），下一挂账 C 族为渲染流面需跨流协调，开工前
+> 查 oracle master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 51 收口）**：R5256 dialog 属性移除面
+> + A/H 分诊改记。**分诊**（本轮刀前）：A 族 closedby×slot 16F（
+> dialog-popover-closedby-complex 全部「shadow DOM slots」变体）与 H 前置
+> 4F **同根**——探针实证 `<template shadowrootmode=open>` 在页面视图被
+> 拆包平铺（part03:7639「parser 占位」互证）、shadowRoot null、shim
+> attachShadow 虚拟树不下传 dom（attach_shadow 生产零接线）、shadow 内容
+> rect=0/hit-test null（几何面未通）；clickOn 坐标驱动下 shim 虚拟单边
+> 提升会 REG 现存 4 Pass（点击落 (0,0) 全员误关）。**改记**：A+H 统一
+> 「declarative shadow parser 提升 + shadow 几何渲染流联合切片」，渲染流
+> 半边维持用户决策门禁（web-components 归档流明示等点名协调
+> rendering-compat；与 parser form pointer 缓行决策同域）。**R5256 两刀**
+>（dialog shim 面）：①open 属性移除面关闭步——`_zwDialogAttrClosedR5256`
+>（part01）清模态/组栈 + close/toggle 排队，无 cancel/无 beforetoggle/
+> 焦点不恢复/returnValue 不变（tentative 断言契约；旧注记「不派 close」
+> 已被 2025 attribute change steps 变更推翻）；removeAttribute 尾钩 +
+> IDL falsy 臂双接通，**close watcher 门**（pre-snapshot 模态态/组栈双
+> 信号——属性直开无 watcher 仅隐藏，首版 REG dialog-open 一案当场修正）；
+> ②detached 文档 dialog 三方法——showModal 抛 InvalidStateError、show
+> 静默返、close no-op（dialog-active-document 旧产物 TypeError 面）。
+> **契约**（part82）：模态移除/IDL falsy/wasOpen 门/同任务 toggle 合并/
+> detached 三方法/属性直开零 close 六腿。**验证**：close-via-attribute
+> **2F → 2P**、active-document **1F → 1P**、dialog-open 维持 3P；全域
+> 98 files 483 subtest **431P/51F/1T 对 s50 逐位 REG 0 / GAIN 3**；
+> zero-engine lib 3447P/0F（+契约 part82）；fmt/clippy clean（test-guard
+> 包裹）；release runner 含 R5256 锚点。账本见
+> [evidence/2026-10-24-m2s51-dialog-attr-removal.md](html-semantics-compat/evidence/2026-10-24-m2s51-dialog-attr-removal.md)。
+> **下一步**：declarative shadow 联合切片待用户点名（渲染流协调）；续
+> dialog shim 面红名单（focus-after-close 1T / showModal 1F /
+> dialog-inert 1F 等逐案分诊）。C 族渲染流 20F 与指针管线维持跨子系统
+> 单独排期。**切片间隙**：本切片为 engine shim 面（part01/03/04），
+> 下一挂账预期仍 shim 面或待决策项，间隙开放，开工前查 oracle master
+> 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 50 收口）**：toggleEvent 1T 收口
+> （R5254 parser 初始 open details toggle 补偿两段式）。**分诊**：
+> toggleEvent.html 文件级 Timeout——11 async_test 中 9 Pass、pending: 2
+> 永挂（t9 依赖 inline ontoggle 在 parser 声明 open 时 resolve promise；
+> 末案 DOMParser 产物 ontoggle）。根因：R4009 toggle 队列只挂写路径尾钩
+>（IDL setter / setAttribute / removeAttribute），parser 初始 open 由
+> host 解析直建不经 JS 写路径；innerHTML / createElement-HTML / 包装
+> 世界三解析面已接 R4100 扫描，**唯主文档初始 HTML 与 DOMParser 快照面
+> 缺**。**两段式**（单段直扫两难均实证：注册期直扫 task 派发早于页面
+> 脚本——runner 面 arm 到真线程 timer，t9 resolver 未就位永挂；DCL 直
+> 扫分不清 parser open 与运行时 open——activation-behavior coalesced 案
+> toggle 计数 2≠1 回归）：注册期 mark（`__zwDetailsInitOpenMark5254`，
+> 页面脚本前文档纯 parser 态，open 者身份 key 入集）+ DCL fire
+>（`__zwDetailsInitOpenFire5254`，capture listener，只对「初始 open 且
+> 当前仍 open」走既有 `_zwToggleQueueNotify4009` 入队，标记集一次性消
+> 费）；`__zw_reset_form_state` 尾清集重标记（跨导航）。**刀二
+> DOMParser**：快照架构死穴——扫描快照 ≠ 用户 querySelector 手持快照，
+> 实例属性 handler 不可达（首版直调计数 0 实证）；改 parseFromString
+> 返回前扫 `details[open]`（打 open IDL getter + setTimeout task）+
+> `_zwParseEl.prototype` ontoggle accessor 按身份键（`_zwEvKey`，同源
+> 重解析稳定）登记 `_zwParsedToggleH` 全局表，task 经身份键寻址派发。
+> **契约**（part81）：(a) 主文档初始 open 恰好一次 toggle（closed→open
+> + target.open 真值）+ 同态写不重派（t9 断言面）；(b) 初始 closed 不
+> 派；(c) DOMParser 产物收到 toggle + target.open 真值；(c2) 无 open
+> details 零 task。时序模拟：记录式 `__zw_setTimeout` stub + 手动
+> `__zw_fire` + 手动派 DCL。**验证**：toggleEvent.html **Timeout → 11
+> 子测试全 Pass**；activation-behavior coalesced 案两段式回绿；全域
+> 98 files **483 subtest 428P/54F/1T 对 s49 逐位 REG 0 / GAIN 2**
+>（fail 集逐位一致，子测试总数 482→483 为 Timeout 不再吞 2 案）；
+> zero-engine lib 3446P/0F（+契约 part81）；fmt/clippy clean
+>（test-guard 包裹）；release runner 含 R5254 锚点（grep 实证）。
+> 账本见
+> [evidence/2026-10-24-m2s50-parser-open-toggle.md](html-semantics-compat/evidence/2026-10-24-m2s50-parser-open-toggle.md)。
+> **下一步**：按挂账序候选 A 族 closedby×slot 16F（Chrome-parity 同红
+> 钉住，slot 分配 shim 面）或 H 前置 4F（declarative shadow parser +
+> 渲染流联合切片）；F 族 name-attribute 3F 与 DOMParser 快照架构
+>（live 文档面）维持挂账。**切片间隙**：本切片为 engine shim 面
+>（part01/02/03 + callbacks.rs 注册尾），下一挂账 A/H 均预期跨
+> parser/shim/渲染流，间隙开放，开工前查 oracle master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 49 收口）**：B 族 light dismiss 5F 全挂账
+> 零净变更 + F 族分诊 + R5253 收口 details auto-expand 1F。**B 族定性**：
+> bounds-clicking 2F——探针实证 elementFromPoint 对 dialog 自身盒命中返
+> null（modal+modeless 同断、后代正常），渲染流命中缺口并 C 族记账；
+> pointer-capture 2F——R5252 两腿模型（down/up 双 target 判定 + capture
+> retarget 救回）试错三洞（backdrop retarget 使 down 腿 contains=true 短
+> 路漏记、capture 残留未隐式释放误救回、corner-cases modal 组入口永挂），
+> git 回退定性**指针管线深水**，需先有指针序列契约面再动；corner-cases
+> 1F 既有挂账（modeless ESC 竞态）。**F 族分诊**：closed-details-layout-
+> apis 1F 渲染流面；name-attribute 3F（mutation events / XHR 解析 /
+> template 附着底座未实现）；toggleEvent 1T 文件级 Timeout（9 子测试
+> Pass 后 completion 未触发，未深查待分诊）。**R5253 两刀**（part02
+> `_scrollToAnchorForHash`）：几何量测前插 spec 展开步（target 链逐个
+> setAttribute('open','')，toggle/name 组链自动）+ 仅真展开时挂 rAF 补偿
+> 臂（属性 mutation 批应用后重入：展开步 no-op + 既有滚动按新几何落位，
+> 既有滚动面零变化）。**契约环境差异注记**：bridge 契约 sandbox 无帧驱
+> 动/布局供给面，滚动落位不可建模（帧驱动 + 手动 tick 仍红）——契约钉
+> (a) 展开/(b) 链外不误开/(c) no-crash，落位面由 WPT 单案承载。**验证**：
+> auto-expand 单案 **Fail → Pass**；interactive-elements 全域 98 files
+> 482 subtest **426P/54F/2T 对 s48 逐位 REG 0 / GAIN 1**；zero-engine
+> lib 3445P/0F（+契约 part80）；fmt/clippy clean（test-guard 包裹）；
+> release runner 含 R5253 JS 串锚点。账本见
+> [evidence/2026-10-24-m2s49-fragment-details-expand.md](html-semantics-compat/evidence/2026-10-24-m2s49-fragment-details-expand.md)。
+> **下一步**：按挂账序候选 A 族 closedby×slot 16F（Chrome-parity 同红
+> 钉住）或 H 前置 4F（declarative shadow parser+渲染流联合切片）；
+> toggleEvent 1T 分诊可作小切片插入。C 族渲染流 20F 与指针管线两腿模型
+> 需跨子系统协调，单独排期。**切片间隙**：本切片为 engine shim 面
+>（part02 fragment 导航），下一挂账 A/H 均预期跨 parser/shim/渲染流，
+> 间隙开放，开工前查 oracle master 碰撞记录。
+>
+> **▶ 上轮状态（2026-10-24 M2 切片 48 收口）**：D 族 focus/inert 10F
+> 逐案单跑取证后重分诊——可收口面仅 focusability 1F（R5251）。**重
+> 分诊**：focus-previous-outside 3F + form-submit-dialog-shadow 1F →
+> **挂账（H 族前置）**——首层根因是 `<template shadowrootmode=open>`
+> 声明式 shadow root 从未被提升（`host.shadowRoot` 返 null，
+> `querySelector` 即炸），shim 全 part 无 shadowrootmode 处理
+>（attachShadow 命令式已有），4F 记入 H 族「parser+渲染流联合切片」
+> 范围，R4600 焦点恢复 shadow/slot 边界是其后续面；dialog-inert 1F +
+> modal-dialog-ancestor-is-inert 1F + inert-svg-hittest 1F +
+> inert-node-is-unselectable 1F + modal-dialog-selection 1F → **挂账
+>（渲染流面）**——elementFromPoint 对 open dialog 返 null / 点击穿透
+> inert 祖先 / 选择窗口空串，同底座 = 命中测试几何链缺失，与 C 族
+> top-layer/UA 布局 15F 合并记账。**根因**（focusability）：Tab 可聚焦
+> 判定两处均无 editing host 分支——runner `dispatch_tab_focus` 页面候选
+> 序选择器不含 contenteditable 宿主（本案观测路径，testdriver
+> send_keys TAB）；host `FocusManager::scan_node` 同缺口（MoveFocus 效果
+> 面）。spec：editing host 是 focusable area（HTML §focusable-area）。**落
+> 地（R5251 两刀）**：runner dispatch_tab_focus 候选选择器尾补
+> `[contenteditable]` + host 门（`isContentEditable`（R3187 枚举态）真
+> 且父不可编辑 → 入零序；嵌套 editable 非 host / `contenteditable=false`
+> 孤岛不入序；显式 tabindex 优先原臂，原生可聚焦元素落原 else 臂——首版
+> 误让 button 落 CE 臂 continue 掉，回归当场修正）；dom FocusManager 补
+> `contenteditable_state`/`is_editable`/`is_editing_host` 三 helper +
+> scan_node 零序分支。**验证**：dialog-focusability 单案目标子测试
+> **Fail → Pass**；interactive-elements 全域 98 files 482 subtest
+> **425P/55F/2T 对 s47 逐位 REG 0 / GAIN 1**；zero-dom lib 866P/0F
+>（+3 新单测，fail-first 先行）；zero-engine lib 3444P/0F（+契约
+> part02 R5251）；fmt/clippy clean（test-guard 包裹）；release runner
+> 含 R5251 JS 串锚点。账本见
+> [evidence/2026-10-24-m2s48-editing-host-focusable.md](html-semantics-compat/evidence/2026-10-24-m2s48-editing-host-focusable.md)。
+> **下一步**：按挂账序转 B 族 light dismiss 5F 分诊（invoker/backdrop
+> 面）；H 前置 4F 与渲染流面 5F（并入 C 族记账）维持挂账；parser form
+> element pointer 4F **已缓行**（2026-10-23 用户决策：与 declarative
+> shadow DOM（H）打捆 parser 批次、M2 收口后尾段单独立项）。
+> **切片间隙**：本切片为 runner 页面序脚本面（testharness.rs）+ dom
+> FocusManager 面（crates/dom）——下一挂账 B 族 light dismiss 预期
+> engine shim 面（part01 dialog 事件），间隙开放，开工前查 oracle
+> master 碰撞记录。
 >
 > **▶ 上轮状态（2026-10-23 M2 切片 46 收口）**：余 60F 归因分诊落档（六族
 > 地图——A closedby×slot 交叉 16F（crbug 417571176 Chrome-parity 同红）、
@@ -173,7 +1349,7 @@
 > 批次、M2 收口后尾段单独立项）；declarative shadow DOM 同打捆待触发。
 >
 > **切片间隙宣告义务（2026-10-23 用户决策，配合
-> [oracle 流解封协议](incremental-rendering-oracle/master.md)）**：每个
+> [oracle 流解封协议](archive/incremental-rendering-oracle/master.md)）**：每个
 > shim 面切片 push 后，若下一挂账不触 engine 生产面（余下挂账均为 shim
 > 面），在「当前状态」宣告切片间隙开放；开工下一切片前先查 oracle
 > master 碰撞记录有无占用标记，有则等待或改排其他 shim 挂账。
@@ -617,32 +1793,6 @@
 > command `--` 前缀 CommandEvent defer、ESC 组栈边缘乱序、非模态 close 不
 > 出组栈、R371 模板残留。
 >
-> **▶ 上轮状态（2026-10-22 M2 切片 25）**：corner-cases hang 收口（R4500）
-> ——真根因横切两层：①shim `close()` IDL 包装透传 helper 的 wasOpen
-> boolean（spec void）；②语料 testharness `is_valid_cleanup_result` 对
-> cleanup 返非 undefined **及** `on_error` 对 cleanup 抛错均 `tests.abort()`
-> → 完成回调不达 → file Timeout 吞全文件。`t.add_cleanup(() =>
-> dialog.close())` 返 false 一个值吞 27-29 案；s23「detach 窗口身份链」
-> 归因作废（hang 案实为前一案 cleanup abort，探针五文件 DA/DB 对照 +
-> partial-flush 形态学定位）。修复：part04 三处 close 包装 void 化 +
-> part14 R3290 两处旧断言更正 + part60 `test_dialog_void_return_r4500`
-> （四方法全生命周期 + 八方法 void 族审计无第二 offender）。九域
-> 5016→**5070P**，同 key 回归 **0**、翻转 **0**；Timeout 180→173（7 文件
-> 解除吞没：closedby 1P→27/27、corner-cases 1P→28P/2F、focus-shadow
-> 50F 新上报等），+55F 为新上报真断言非回归（分母 +102 漂移，百分比口径
-> 不可比）。余 1 hang：popover-closedby-simple（cleanup `hidePopover()`
-> 抛 not-showing → abort 同族——病根 popover 有效性语义，popover 域挂
-> 账）。corner-cases 余 2F＝closing steps 内 focus fixup 不派 focusin
-> （focusing steps 家族）。
-> **下一步**：focusing-steps 家族（focus fixup→closing steps 派 focusin、
-> autofocus 委派、activeElement 语义——corner-cases 2F + focus-shadow
-> 50F + focusing-steps/activeElement 原挂账 ~15F 同域合并攻）；余挂账
-> inert 计算态（inert-node-is-unfocusable 13F 精化）、abspos/layout
-> ~10F（rendering 域）、popover 有效性语义（`:popover-open` 选择器 +
-> hidePopover not-showing 抛，popover-simple 余 hang）、impl-doc wrapper
-> requestClose、anchor-with-inline 导航缺口、parser form element pointer
-> 4F、custom command `--` 前缀 CommandEvent defer、ESC 组栈边缘乱序、
-> 非模态 close 不出组栈。
 
 
 > **▶ 拆分动机（2026-10-08 预留编号立项，用户「候选 goal 也立项吧」）**：继
@@ -723,6 +1873,44 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-25 M2 切片 86**：scripting-1 开片分诊轮——s85 下一步
+  「testdriver-Actions 支持面」过时（s79 已证伪 s78 注记、s80 journal
+  已收口 hash-name-dynamic 8P/0F，FILTER 复跑 8/8 复证）；当拍红图
+  **169P/335F/86T**（语料 +195 后），失败族四切片序：①dynamic-import
+  must-reject → ②stylesheets-blocking-scripts 12F 簇 → ③the-script-
+  element 基面 65F → ④module 尾片。一刀（R5286，runner）：moving-between-
+  documents 53 案 helper 运行期 iframe 开第二文档——单文档 runner
+  不可执行面归 navigation M3 门控，`html_semantics_case_skipped` 增
+  helper 标记臂 + 契约单测。域 **169P/335F/86T → 117P/335F/34T**
+  （−52P/−52T 全落 helper 案，F 逐位不变；墙钟 47→24min）。账本
+  [evidence/2026-10-25-m2s86-scripting1-triage.md](html-semantics-compat/evidence/2026-10-25-m2s86-scripting1-triage.md)。
+- **2026-10-24 M2 切片 69**：F3 img.decode() 收口（R5276 三刀）——根因
+  decode IDL 无实现（get trap 无臂 + SVGImageElement 原型无方法）。
+  ①共享解码核 `__zwImgDecodeCore`（IMG trap/detached 动态臂/SVG 原型三方
+  复用，调用时捕获候选 + 恒异步 settle + 双点变异与活跃性复检 + 自驱
+  fetch 链）；②part03 detached 产物动态臂 + SVGImageElement.decode；
+  ③part04 trap 臂瘦身为闭包供给。契约 part86 两测试。域
+  **549P/738F/35T → 607P/678F/37T**（GAIN 58；残留 2F=quick-attach 时序
+  归 F2、2 案 F→T 预存环境抖动）；lib **3477P/0F**（+2 契约）。账本
+  [evidence/2026-10-24-m2s69-img-decode.md](html-semantics-compat/evidence/2026-10-24-m2s69-img-decode.md)。
+- **2026-10-24 M2 切片 68**：F1 img 静态加载管线收口（R5275 六刀）——
+  根因 img settle 只接 `.src` IDL 通道（parser 静态 img 无 fetch/settle）
+  + template 内容漏抓 + broken 终态缺失。part04 sweep/getter 面 + part05
+  R56h restart 语义 + extract.rs template 递归 + testharness.rs 生命周期
+  拆三任务链 + available-images `_defer` 化。域 **461P/816F/40T →
+  549P/738F/35T**（GAIN 88）；naturalWidth 30P/228F→48P/210F + delay-load
+  7 案全绿；interactive **439P/44F/0T 持平**；lib **3474P/0F**（+2 契约
+  part85）。账本
+  [evidence/2026-10-24-m2s68-img-static-loading.md](html-semantics-compat/evidence/2026-10-24-m2s68-img-static-loading.md)。
+- **2026-10-24 M2 切片 67**：embedded-content 开片分诊轮——域刷新
+  458P/819F/40T 八族地图（F1 img 静态加载管线 ~260F / F2
+  select-an-image-source ~300F / F3 decode 56F / F4 image-map 命中 84F
+  渲染流回流 / F5 lazy ~49F / F6 canvas 53F / F7 object|embed 窄面 25F /
+  F8 杂项 2F）+ F7 null 反射收口（R5274 一刀，part04 get-trap
+  OBJECT/EMBED 分支——contentDocument/contentWindow/getSVGDocument 恒
+  null 面）+ 契约 part84 两钉 + 翻转力实证。域 **461P/816F/40T**（GAIN 3
+  / REG 0）；interactive 439P/44F/0T 持平；lib **3469P/0F**（+2）。账本
+  [evidence/2026-10-24-m2s67-embedded-content-triage.md](html-semantics-compat/evidence/2026-10-24-m2s67-embedded-content-triage.md)。
 - **2026-10-23 M2 切片 46**：余 60F 归因分诊六族地图落档（A–G，含
   Chrome-parity 同红族 A/B 与可 shim 收口候选 E）+ 历史 menu 面 IDL 归属
   收口（R5249 双刀，shim part04/part05）——has trap track IDL 列

@@ -25,6 +25,15 @@
 #   - css/css-masking、css/css-shapes 未打包但**在 reftest-skip-list.txt**
 #     （SVG 渲染不在范围），无需补
 #   - css/reference/ref-nothing-below.xht 等个别 ref 文件缺失（影响少量 case）
+#   - css/support/swatch-yellow.png 缺失（active-selection-041 依赖；R5274 已本地补入
+#     CSS2/support 副本——升级新 ref 后需重新补）
+#   - css/support/black96x96.png 缺失（顶层 css/reference/ref-filled-black-96px-square.xht
+#     引用；R5276 核实该顶层 ref 对 **corpus 是死路径**——150 个引用案全走各套件内
+#     css/CSS2/reference/+support/ 完整副本，A/B 零翻转；已补 CSS2/support 副本
+#     md5 ed89c5f9 使顶层 ref 自洽，防未来导入案引用死路径静默白板——升级新 ref 后需重新补）
+#   - 其余 4 项维持缺：black_red.png（引用案无 match/mismatch 声明，无翻转面）、
+#     css-overflow/support/common.js 与 numeric-testcommon.js（testharness JS 非 reftest
+#     像素面）、swatch-blue.png（manual 案）
 #   common/ 已由本脚本自动补齐。
 
 set -euo pipefail

@@ -106,6 +106,17 @@ pub(super) fn forced_break_ls_ps_enabled() -> bool {
     selected(*VALUE, || default_on("ZW_FORCED_BREAK_LS_PS"))
 }
 
+/// R5249：element-first 首槽 spacer——walk 站位上首内容为元素子时，外层自身
+/// ml+pl（R4332 折入含 border advance）以空文本零宽 run（归因外层自身）落首槽，
+/// fold 仍落自名 run、盒 x 主臂检测式不变（position-relative-033-ref：外 span
+/// 首内容 color 分歧内层 span，fold 整体丢失内容 −2px 实证）。CSS2 §10.2/§8.4：
+/// inline 水平 margin/padding 参与推进，不因首内容是元素子而失效。
+/// default-on，`ZW_INLINE_ELEMENT_FIRST_SPACER=0` 回退首槽被元素 run 消耗行为。
+pub(super) fn element_first_spacer() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_INLINE_ELEMENT_FIRST_SPACER"));
+    selected(*VALUE, || default_on("ZW_INLINE_ELEMENT_FIRST_SPACER"))
+}
+
 pub(super) fn bidi_mirroring() -> bool {
     static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_BIDI_MIRRORING"));
     selected(*VALUE, || default_on("ZW_BIDI_MIRRORING"))

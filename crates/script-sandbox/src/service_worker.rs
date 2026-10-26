@@ -5692,7 +5692,7 @@ fn evaluate_module_graph(
         next_request_id,
         timeout_ms,
     )?;
-    let compiled = compile_module_script(source, &main_url, &registry)?;
+    let compiled = compile_module_script(source, &main_url, &main_url, &registry)?;
     // https://w3c.github.io/ServiceWorker/#service-worker-script-request
     // Service Worker scripts do not perform dynamic imports; preserve evaluation and reject at call sites.
     sandbox.execute(&format!(

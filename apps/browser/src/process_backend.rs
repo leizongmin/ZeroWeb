@@ -49,6 +49,9 @@ mod indexed_db_transactions;
 #[cfg(test)]
 #[path = "process_backend/service_worker_owner_tests.rs"]
 mod service_worker_owner_tests;
+#[cfg(test)]
+#[path = "process_backend/warm_spare_tests.rs"]
+mod warm_spare_tests;
 
 fn renderer_binary_filename() -> &'static str {
     #[cfg(windows)]
@@ -197,6 +200,8 @@ pub struct ProcessTabBackend {
     /// FR-6：renderer 异常退出的 tab 事件（app 侧递增崩溃计数并落盘）。
     pending_renderer_crashes: Vec<TabId>,
     pending_tab_navigates: Vec<(TabId, TabNavigateRequestParams)>,
+    /// T5/P10：页面 history 遍历请求（renderer HistoryTraverse——app 消费提交 shell 栈遍历）。
+    pending_history_traverses: Vec<(TabId, i32)>,
     fetch_proxy: TabFetchProxy,
     service_worker_owner: BrowserServiceWorkerOwner,
     /// 异步 DOM 事件派发的回执（按 dispatch id 收集，由 TabManager 消费）。
@@ -221,6 +226,32 @@ pub struct ProcessTabBackend {
     /// 后台资源生命周期 M3：上次已通知可见性的前台 tab（poll 前后台差分基线）。None =
     /// 尚未通知任何 tab 可见（首 poll 对 active_tab 发 hidden=false）。
     visible_tab: Option<TabId>,
+    /// T12 投机预热暖槽（单槽，非池）：未认领的备用 renderer 及其预热时刻。
+    /// spare 未入 `tab_to_renderer` 前结构上不可达 tab 寻址（`renderer_mut` 走该表）。
+    warm_spare: Option<(u64, Instant)>,
+    /// T12：地址栏聚焦边沿影子（上一 tick 转发值；false→true 沿触发预热，单 shot）。
+    warm_edge_prev_focused: bool,
+    /// T12：本进程是否已有 spare 预热史（claim_miss 计数门——启动首 tab 冷启发生在
+    /// 任何预热之前，不计入认领落空）。
+    warm_spawned_any: bool,
+    /// T_idle 暖槽闲置回收时限（构造时读 `ZEROWEB_WARM_RENDERER_IDLE_MS`，缺省 60s；
+    /// 测试可覆写，不做完整配置面）。
+    warm_idle_reap: Duration,
+    /// R1 返修：claim 后延迟补位 pending（认领时刻起算）。pending 期间地址栏聚焦
+    /// 边沿不触发 spawn，由 `warm_spare_poll_tick` 到点补位；补位发射即清除。
+    warm_refill_pending_since: Option<Instant>,
+    /// claim 后延迟补位时限（R1 返修，测试覆写用；缺省见 `WARM_REFILL_DELAY`）。
+    warm_refill_delay: Duration,
+    /// T13 S8：宿主 idle 谓词最近观测值（app 主循环 tick 注入；构造缺省 true =
+    /// 无信号即闲置，T12 纯年龄判定语义不回归）。
+    warm_idle_observed: bool,
+    /// T13 S8：连续闲置起点（谓词与活动 recency 皆真时锚定，否则 None；spawn/补位
+    /// 重锚——回收量测当前槽的连续闲置龄）。
+    warm_idle_since: Option<Instant>,
+    /// T13 S8：最近宿主活动时刻（导航/输入触达即戳；None = 进程尚无活动）。
+    warm_last_activity: Option<Instant>,
+    /// T13 S8 实验臂：闲置回收后到点自动重 arm（缺省关，`ZEROWEB_WARM_IDLE_REARM=1` 开）。
+    warm_idle_rearm: bool,
 }
 
 /// 拦截到的附件下载（应用层落盘 + 下载管理器记账的输入）。
@@ -314,6 +345,7 @@ impl ProcessTabBackend {
             pending_errors: Vec::new(),
             pending_renderer_crashes: Vec::new(),
             pending_tab_navigates: Vec::new(),
+            pending_history_traverses: Vec::new(),
             fetch_proxy: TabFetchProxy::new(),
             service_worker_owner,
             pending_dispatch_results: Vec::new(),
@@ -325,7 +357,23 @@ impl ProcessTabBackend {
             browser_gpu_present: false,
             pending_downloads: Vec::new(),
             visible_tab: None,
+            warm_spare: None,
+            warm_edge_prev_focused: false,
+            warm_spawned_any: false,
+            warm_idle_reap: Self::warm_idle_reap_from_env(),
+            warm_refill_pending_since: None,
+            warm_refill_delay: Self::WARM_REFILL_DELAY,
+            warm_idle_observed: true,
+            warm_idle_since: Some(Instant::now()),
+            warm_last_activity: None,
+            warm_idle_rearm: zero_runtime_config::enabled_when_true("ZEROWEB_WARM_IDLE_REARM"),
         }
+    }
+
+    /// T_idle 暖槽闲置回收时限：`ZEROWEB_WARM_RENDERER_IDLE_MS`（毫秒，测试覆写用），
+    /// 缺省 60s（设计 §3「预热后长时间不开标签」）。
+    fn warm_idle_reap_from_env() -> Duration {
+        Duration::from_millis(zero_runtime_config::positive_usize("ZEROWEB_WARM_RENDERER_IDLE_MS", 60_000) as u64)
     }
 
     /// 更新 Browser GPU 呈现是否可用（影响 compositor dma-buf 导入 vs RGBA 回退）。
@@ -1661,6 +1709,11 @@ impl ProcessTabBackend {
         std::mem::take(&mut self.pending_tab_navigates)
     }
 
+    /// 取出页面 history 遍历请求（T5/P10）。
+    pub fn take_history_traverses(&mut self) -> Vec<(TabId, i32)> {
+        std::mem::take(&mut self.pending_history_traverses)
+    }
+
     /// 确保 Tab 有对应渲染进程。
     pub fn ensure_renderer(&mut self, tab_id: TabId, viewport: (u32, u32)) {
         self.viewport = viewport;
@@ -1671,29 +1724,214 @@ impl ProcessTabBackend {
             self.tab_to_renderer.remove(&tab_id);
             self.remove_indexed_db_renderer_state(rid);
         }
+        // T12 认领分支（设计 §2.2）：tab 未绑定 renderer 时先尝试认领暖槽 spare。
+        // 活性以子进程退出状态为准（`is_alive` = `exit_reason()` 为 None），不得以
+        // `RendererState` 判——spare 未 navigate 前恒 `Starting`（protocol/process.rs:376）。
+        // 认领是同步复用或冷启二选一，无任何等待原语；校验失败清槽冷启。
+        if let Some((rid, _)) = self.warm_spare {
+            let alive = self.manager.get_renderer(rid).map(|r| r.is_alive()).unwrap_or(false);
+            if alive {
+                self.warm_spare = None;
+                self.tab_to_renderer.insert(tab_id, rid);
+                // R1 返修：认领后进入 D 延迟补位 pending——认领本身（Ctrl+T）聚焦新
+                // 标签地址栏产生边沿，即时 re-arm 的 spawn 落入 M2b 测量窗与被测标签
+                // 首帧渲染并发；改为 poll tick 到点补位（`WARM_REFILL_DELAY`）。
+                self.warm_refill_pending_since = Some(Instant::now());
+                // 认领后照常执行 spawn 后尾段（SW 恢复/SetViewport/SetJavascriptEnabled
+                // 全部幂等；warm 面三命令均不置位 document_started，首文档走 T9 工厂态
+                // 跳过臂——设计 §4 臂 A）。
+                self.attach_tab_renderer_tail(tab_id, viewport);
+                tracing::info!(renderer_id = rid, tab_id = tab_id.0, "claim_hit");
+                return;
+            }
+            // 槽位失效（已崩溃/已被回收）：清槽冷启，spare 未绑定任何 tab，用户无感。
+            self.warm_spare = None;
+            tracing::info!(renderer_id = rid, where = "claim", "crash_fallback");
+        }
+        if self.warm_spawned_any {
+            // 预热机制已点火却未能覆盖本次新 renderer（spare 缺失/失效）：认领落空。
+            tracing::info!(tab_id = tab_id.0, "claim_miss");
+        }
         match self.manager.spawn_renderer() {
             Ok(rid) => {
                 self.tab_to_renderer.insert(tab_id, rid);
                 tracing::info!("Spawned renderer {rid} for tab {}", tab_id.0);
-                // 首个 renderer 接入：恢复持久化 SW（求值下放该 renderer）。
-                self.service_worker_owner.flush_deferred_restores(tab_id);
-                if self.compositor_status == crate::compositor_client::CompositorStatus::Disconnected {
-                    self.send_to_renderer(tab_id, IpcMessageKind::SetFramePublishMode(FramePublishMode::Legacy));
-                }
-                self.send_to_renderer(
-                    tab_id,
-                    IpcMessageKind::SetViewport(SetViewportParams {
-                        width: viewport.0,
-                        height: viewport.1,
-                        device_scale_factor: self.device_scale_factor,
-                    }),
-                );
-                self.send_to_renderer(tab_id, IpcMessageKind::SetJavascriptEnabled(self.javascript_enabled));
+                self.attach_tab_renderer_tail(tab_id, viewport);
             }
             Err(e) => {
                 tracing::error!("Failed to spawn renderer for tab {}: {e}", tab_id.0);
                 self.pending_errors.push((tab_id, format!("无法启动渲染进程: {e}")));
             }
+        }
+    }
+
+    /// spawn 后尾段（原 `ensure_renderer` 冷启尾段抽出，T12 冷启/认领共用）：
+    /// SW 持久化恢复 + compositor 断连时 Legacy 帧发布降级 + 视口 + JS 开关。
+    /// 全部幂等命令，冷启与认领行为逐字节一致（设计 §6-6 不可退化项）。
+    fn attach_tab_renderer_tail(&mut self, tab_id: TabId, viewport: (u32, u32)) {
+        // 首个 renderer 接入：恢复持久化 SW（求值下放该 renderer）。
+        self.service_worker_owner.flush_deferred_restores(tab_id);
+        if self.compositor_status == crate::compositor_client::CompositorStatus::Disconnected {
+            self.send_to_renderer(tab_id, IpcMessageKind::SetFramePublishMode(FramePublishMode::Legacy));
+        }
+        self.send_to_renderer(
+            tab_id,
+            IpcMessageKind::SetViewport(SetViewportParams {
+                width: viewport.0,
+                height: viewport.1,
+                device_scale_factor: self.device_scale_factor,
+            }),
+        );
+        self.send_to_renderer(tab_id, IpcMessageKind::SetJavascriptEnabled(self.javascript_enabled));
+    }
+
+    /// T12 预热触发入口（每次主循环 poll tick 由 app 经 TabManager 转发一次）。
+    ///
+    /// 地址栏失焦→聚焦边沿（false→true）触发预热；已有 spare 或 claim 后延迟补位
+    /// pending（`warm_refill_pending_since`）在场时不触发。槽空且无 pending 才即时
+    /// arm——覆盖首个冷启动迭代首边沿与回收/崩溃清槽后的重 arm（R1 返修：claim 后
+    /// 槽空的边沿改由 `warm_spare_poll_tick` 到点补位，即时 re-arm 的 spawn 落入
+    /// M2b 测量窗）。
+    pub fn note_warm_tick(&mut self, address_bar_focused: bool) {
+        if address_bar_focused
+            && !self.warm_edge_prev_focused
+            && self.warm_spare.is_none()
+            && self.warm_refill_pending_since.is_none()
+        {
+            self.warm_spawn_spare("focus_edge");
+        }
+        self.warm_edge_prev_focused = address_bar_focused;
+    }
+
+    /// T13 S8：宿主 idle 谓词注入（app 主循环每 tick 组合面后转发一次）。
+    ///
+    /// 谓词的 tab/输入/崩溃分量在 app 侧组合（见 app.rs 注入点注释）；本侧再叠加
+    /// 活动 recency（`warm_last_activity`）共同构成连续闲置锚点的更新判据。
+    pub fn note_warm_idle(&mut self, idle: bool) {
+        self.warm_idle_observed = idle;
+    }
+
+    /// T13 S8：按当前谓词 + 活动 recency 刷新连续闲置锚点（poll tick 单点调用）。
+    ///
+    /// 双条件皆真才锚定/保持锚点：谓词忙（页面加载、compositor 动画、pending 队列、
+    /// 崩溃重置窗等）或近期有宿主活动（导航/输入触达未满 `warm_idle_reap`）即打断
+    /// 连续性——回收量测的是「真闲且久未触达」的持续时长。
+    fn update_warm_idle_anchor(&mut self) {
+        let recency_ok = self
+            .warm_last_activity
+            .is_none_or(|t| t.elapsed() >= self.warm_idle_reap);
+        if self.warm_idle_observed && recency_ok {
+            self.warm_idle_since.get_or_insert(Instant::now());
+        } else {
+            self.warm_idle_since = None;
+        }
+    }
+
+    /// T13 S8：宿主活动戳（导航/输入触达即调用；回收 recency 判据输入）。
+    fn note_host_activity(&mut self) {
+        self.warm_last_activity = Some(Instant::now());
+    }
+
+    /// claim 后延迟补位时限（R1 返修）。依据 run2 after 侧 25 迭代日志（2026-10-25）
+    /// 选定：claim→b1 shot（M2b 测量窗上界）max 617.2ms、claim→journey COMPLETE
+    /// max 753.3ms，claim→下一次地址栏聚焦 min 2804.1ms；2s 对两侧均留 ≥2.6x 余量，
+    /// 补位 spawn 不与被测新标签渲染、也不与下一次旅程的预热窗并发。
+    const WARM_REFILL_DELAY: Duration = Duration::from_secs(2);
+
+    /// 预热动作（设计 §2.2）：spawn 备用 renderer 并发 warm 面命令。
+    ///
+    /// warm 面只允许三命令（§4 臂 A 约束，任何新命令接入 spare 面属设计违规）：
+    /// `SetFramePublishMode`（仅 compositor 断连时降级，与认领尾段同条件）、
+    /// `SetViewport`（virgin renderer 无渲染早退臂，不派 resize 脚本——runtime.rs:3266-3276）、
+    /// `SetJavascriptEnabled`（仅置 flag——runtime.rs:3913-3916）。三者均不置位
+    /// `document_started`，spare 保持工厂态。命令经 rid 直发：spare 未入
+    /// `tab_to_renderer`，结构上不可达 tab 寻址。
+    fn warm_spawn_spare(&mut self, trigger: &str) {
+        if self.warm_spare.is_some() {
+            // 已有 spare 不重复触发（边沿单 shot 语义的另一侧面）。
+            return;
+        }
+        let Ok(rid) = self.manager.spawn_renderer() else {
+            // 预热 spawn 失败与冷启失败同因（binary 缺失等）；不留槽，认领自然落冷启。
+            tracing::warn!("warm spare spawn failed (trigger={trigger})");
+            return;
+        };
+        self.warm_spare = Some((rid, Instant::now()));
+        // T13 S8：新槽连续闲置时钟从 spawn 重锚——回收量测当前槽的闲置龄
+        //（而非上一槽遗留锚点），也使 idle_rearm 实验臂发射后不立即再触发。
+        self.warm_idle_since = Some(Instant::now());
+        self.warm_spawned_any = true;
+        tracing::info!(renderer_id = rid, trigger, "warm_spawn");
+        let mut warm_face = Vec::with_capacity(3);
+        if self.compositor_status == crate::compositor_client::CompositorStatus::Disconnected {
+            warm_face.push(IpcMessageKind::SetFramePublishMode(FramePublishMode::Legacy));
+        }
+        warm_face.push(IpcMessageKind::SetViewport(SetViewportParams {
+            width: self.viewport.0,
+            height: self.viewport.1,
+            device_scale_factor: self.device_scale_factor,
+        }));
+        warm_face.push(IpcMessageKind::SetJavascriptEnabled(self.javascript_enabled));
+        for kind in warm_face {
+            self.warm_send(rid, kind);
+        }
+    }
+
+    /// 向暖槽 spare 直发 IPC（不经 tab 寻址；测试桩同 `send_to_renderer` 捕获出站面）。
+    fn warm_send(&mut self, rid: u64, kind: IpcMessageKind) {
+        #[cfg(test)]
+        TEST_RENDERER_OUTBOUND.with(|log| log.borrow_mut().push(kind.clone()));
+        let Some(renderer) = self.manager.get_renderer(rid) else {
+            return;
+        };
+        if let Err(e) = renderer.send(IpcMessage { id: 0, kind }) {
+            tracing::warn!("warm spare IPC send failed renderer {rid}: {e}");
+        }
+    }
+
+    /// 暖槽 poll tick 维护（挂靠既有主循环 poll，`handle_crashes` 之后）：
+    /// 崩溃清槽（与 `check_crashes` 协同，handle 已被移除即失效）+ T_idle 到期回收
+    /// （`shutdown_renderer` 强杀，内存归还 OS；设计 §3）+ claim 后延迟补位（R1）。
+    ///
+    /// T13 S8：回收判定从「槽龄 ≥ T_idle」升级为「宿主连续闲置 ≥ T_idle」——每 tick
+    /// 先按注入谓词 + 活动 recency 刷新锚点，锚点持续到场期达到阈值才回收；无信号
+    /// （谓词缺省 true、无活动戳）时与 T12 年龄语义等价。
+    fn warm_spare_poll_tick(&mut self) {
+        self.update_warm_idle_anchor();
+        if let Some((rid, _spawned_at)) = self.warm_spare {
+            let alive = self.manager.get_renderer(rid).map(|r| r.is_alive()).unwrap_or(false);
+            if !alive {
+                self.warm_spare = None;
+                tracing::info!(renderer_id = rid, where = "poll", "crash_fallback");
+            } else if self
+                .warm_idle_since
+                .is_some_and(|since| since.elapsed() >= self.warm_idle_reap)
+            {
+                self.warm_spare = None;
+                let _ = self.manager.shutdown_renderer(rid);
+                tracing::info!(renderer_id = rid, "reap");
+            }
+        }
+        // R1 claim 后延迟补位：pending 到点即补位 spawn；槽已被占用（理论上不可达，
+        // pending 期边沿不 spawn）则 `warm_spawn_spare` 早退，不重复触发。发射即清
+        // pending——spawn 失败时回落「槽空无 pending」，下次边沿即时重 arm。
+        if let Some(claimed_at) = self.warm_refill_pending_since {
+            if claimed_at.elapsed() >= self.warm_refill_delay {
+                self.warm_refill_pending_since = None;
+                self.warm_spawn_spare("claim_refill");
+            }
+        }
+        // T13 S8 实验臂（缺省关）：闲置回收后槽空且无补位 pending、宿主仍连续闲置
+        // 到场，则重 arm 保温——避免下个地址栏聚焦边沿吃冷启。`warm_spawn_spare`
+        // 重锚闲置时钟，自身不抖动。
+        if self.warm_idle_rearm
+            && self.warm_spare.is_none()
+            && self.warm_refill_pending_since.is_none()
+            && self
+                .warm_idle_since
+                .is_some_and(|since| since.elapsed() >= self.warm_idle_reap)
+        {
+            self.warm_spawn_spare("idle_rearm");
         }
     }
 
@@ -1742,6 +1980,7 @@ impl ProcessTabBackend {
 
     /// 导航。
     pub fn navigate(&mut self, tab_id: TabId, url: &str, navigation_epoch: u64) {
+        self.note_host_activity();
         self.fetch_proxy.on_navigate(tab_id, url);
         let Some(renderer_id) = self.tab_to_renderer.get(&tab_id).copied() else {
             return;
@@ -1942,6 +2181,8 @@ impl ProcessTabBackend {
         self.drain_service_worker_host_commands();
         let mut changed = self.observe_compositor_status(snapshots, snapshot_seq);
         self.handle_crashes(snapshots);
+        // T12 暖槽维护：崩溃清槽 + T_idle 回收（spare 不占 tab 寻址面，仅此一处维护）。
+        self.warm_spare_poll_tick();
         let mapping = Self::renderer_poll_order(
             self.tab_to_renderer.iter().map(|(k, v)| (*k, *v)).collect(),
             active_tab,
@@ -2021,6 +2262,11 @@ impl ProcessTabBackend {
                     }
                     IpcMessageKind::FocusOwnerChanged(info) => {
                         self.pending_focus_changes.push((tab_id, info));
+                    }
+                    IpcMessageKind::HistoryTraverse { delta } => {
+                        // T5/P10：页面 history 遍历移交（shim 本地栈越界）——入队由 app 消费
+                        // 提交 shell 栈遍历（越界判界在 app 消费侧，不可达静默 no-op）。
+                        self.pending_history_traverses.push((tab_id, delta));
                     }
                     IpcMessageKind::PointerLockChanged(params) => {
                         self.pending_pointer_lock_changes.push((tab_id, params));
@@ -2110,6 +2356,7 @@ impl ProcessTabBackend {
         request_id: u64,
         operation: AutomationOperation,
     ) -> Result<(), String> {
+        self.note_host_activity();
         let renderer = self
             .renderer_mut(tab_id)
             .ok_or_else(|| format!("no live renderer for tab {}", tab_id.0))?;
@@ -2147,6 +2394,7 @@ impl ProcessTabBackend {
         dispatch_id: u64,
         params: DispatchDomEventParams,
     ) {
+        self.note_host_activity();
         let Some(rid) = self.tab_to_renderer.get(&tab_id).copied() else {
             // 渲染进程不存在：模拟一个“默认允许”回执，让 TabManager 走默认动作路径。
             self.pending_dispatch_results.push((dispatch_id, true));
@@ -2172,6 +2420,7 @@ impl ProcessTabBackend {
     /// 渲染进程不存在或发送失败时静默丢弃：拖放会话不是导航语义，没有“默认动作”
     /// 需要合成回执兜底；renderer 侧未武装时回执 `consumed=false`。
     pub fn dispatch_drag_input_fire_and_forget(&mut self, tab_id: TabId, message_id: u64, params: DragInputParams) {
+        self.note_host_activity();
         let Some(rid) = self.tab_to_renderer.get(&tab_id).copied() else {
             return;
         };
@@ -2192,6 +2441,7 @@ impl ProcessTabBackend {
         message_id: u64,
         params: PointerLockInputParams,
     ) {
+        self.note_host_activity();
         let Some(rid) = self.tab_to_renderer.get(&tab_id).copied() else {
             return;
         };
@@ -2206,6 +2456,7 @@ impl ProcessTabBackend {
 
     /// 把平台 IME 生命周期事件直接转发给 renderer 的页面输入状态机。
     pub fn dispatch_ime_event(&mut self, tab_id: TabId, message_id: u64, params: ImeEventParams) {
+        self.note_host_activity();
         let Some(rid) = self.tab_to_renderer.get(&tab_id).copied() else {
             return;
         };
@@ -2229,6 +2480,7 @@ impl ProcessTabBackend {
     /// 供 renderer S2/S4 命中可滚动祖先容器；当前 renderer 仅记录坐标（S2 链路验证），元素级滚动
     /// 视觉依赖 S3 layout 几何暴露（渲染流域协调点，未实现）。
     pub fn send_user_scroll(&mut self, tab_id: TabId, delta_x: f32, delta_y: f32, cursor_x: f32, cursor_y: f32) {
+        self.note_host_activity();
         self.send_to_renderer(
             tab_id,
             IpcMessageKind::ScrollEvent(ScrollEventParams {

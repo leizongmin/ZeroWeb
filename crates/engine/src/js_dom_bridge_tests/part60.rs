@@ -1649,10 +1649,14 @@ fn test_dialog_close_side_r4200() {
     );
 }
 
-/// R4300（M2 切片 23，2026-10-22）：dialog closedby 面——closedBy IDL 反射（枚举
-/// 小写化 + auto 派生 + setter）、ESC close request 资格门（`__zw_esc_dialog_cancel`
-/// closedby 门 + 模态栈序）、light dismiss（`__zw_dialog_light_dismiss_check`）。
-/// 驱动路径：runner send_keys Escape 臂 + click 命令前步 / 产品指针管线 pointerdown 钩。
+/// R4300（M2 切片 23，2026-10-22）/ R5263（M2 切片 56，2026-10-24）：dialog
+/// closedby 面——closedBy IDL 反射（枚举小写化 + auto 派生 + setter）、ESC close
+/// request 资格门（`__zw_esc_dialog_cancel` closedby 门 + 模态栈序）、light
+/// dismiss 两腿（`__zw_dialog_light_dismiss_check` down 记分类 +
+/// `__zw_dialog_light_dismiss_up` sameTarget 同态比对后关；down 'out' + up 'in'
+/// 即 capture 重定向不关门面）。
+/// 驱动路径：runner send_keys Escape 臂 + click 命令前步 / 产品指针管线
+/// pointerdown/pointerup 钩。
 #[test]
 fn test_dialog_closedby_light_dismiss_r4300() {
     let mut sandbox = t59_sandbox_with_shim();
@@ -1735,20 +1739,22 @@ fn test_dialog_closedby_light_dismiss_r4300() {
         "R3：二次 ESC 关 bottom；cancel/close 序逐层 top→bottom"
     );
 
-    // R4：light dismiss——closedby=any 模态开 + 落点在 dialog 外（body）→ 关；
-    // 落点在 dialog 内 → 保持；默认模态（auto→closerequest）落点外不关。
+    // R4：light dismiss 两腿（R5263）——closedby=any 模态开 + 落点在 dialog 内
+    // （down+up 同 'in'）→ 保持；落点在 dialog 外（down+up 同 'out'）→ 关；
+    // down 'out' + up 'in'（capture 把 up 重定向 dialog 内元素）→ sameTarget
+    // 不等不关；默认模态（auto→closerequest）落点外不关（槽 null）。
     sandbox
         .execute(
-            "var l1 = document.createElement('dialog');             l1.closedBy = 'any';             l1.innerHTML = '<button id=inner>b</button>';             document.body.appendChild(l1);             globalThis.__l1D = l1;             l1.showModal();             __zw_dialog_light_dismiss_check(l1.querySelector('button').__zwSelector || 'button');             globalThis.__r4a = Number(l1.open);             __zw_dialog_light_dismiss_check('body');             globalThis.__r4b = Number(l1.open);             var l2 = document.createElement('dialog');             document.body.appendChild(l2);             globalThis.__l2D = l2;             l2.showModal();             __zw_dialog_light_dismiss_check('body');             globalThis.__r4c = Number(l2.open);",
+            "var l1 = document.createElement('dialog');             l1.closedBy = 'any';             l1.innerHTML = '<button id=inner>b</button>';             document.body.appendChild(l1);             globalThis.__l1D = l1;             l1.showModal();             var l1b = l1.querySelector('button').__zwSelector || 'button';             __zw_dialog_light_dismiss_check(l1b);             __zw_dialog_light_dismiss_up(l1b);             globalThis.__r4a = Number(l1.open);             __zw_dialog_light_dismiss_check('body');             __zw_dialog_light_dismiss_up('body');             globalThis.__r4b = Number(l1.open);             var l2 = document.createElement('dialog');             document.body.appendChild(l2);             globalThis.__l2D = l2;             l2.showModal();             __zw_dialog_light_dismiss_check('body');             __zw_dialog_light_dismiss_up('body');             globalThis.__r4c = Number(l2.open);             var l3 = document.createElement('dialog');             l3.closedBy = 'any';             l3.innerHTML = '<button id=inner3>b3</button>';             document.body.appendChild(l3);             globalThis.__l3D = l3;             l3.showModal();             __zw_dialog_light_dismiss_check('body');             __zw_dialog_light_dismiss_up('#inner3');             globalThis.__r4d = Number(l3.open);",
         )
         .unwrap();
     assert_eq!(
         sandbox
-            .execute("globalThis.__r4a + '|' + globalThis.__r4b + '|' + globalThis.__r4c")
+            .execute("globalThis.__r4a + '|' + globalThis.__r4b + '|' + globalThis.__r4c + '|' + globalThis.__r4d")
             .unwrap()
             .value,
-        "1|0|1",
-        "R4：any 态 dialog 内落点保持、外落点关；默认模态（closerequest）不 light dismiss"
+        "1|0|1|1",
+        "R4：两腿 in/in 保持、out/out 关；默认模态（closerequest）槽 null 不关；out→in（capture 门）不关"
     );
 
     // R5：`__zw_dispatch_key_at_active`——keydown 派发到当前焦点元素（非 send_keys
@@ -1899,10 +1905,11 @@ fn test_invoker_command_toggle_source_r4400() {
         "R5：有 summary 直击不翻转；summary 点击翻转且 source=null"
     );
 
-    // R6：light dismiss 收的 close request → toggle source null（无 invoker 条目）。
+    // R6：light dismiss（R5263 两腿 down+up）收的 close request → toggle source
+    // null（无 invoker 条目）。
     sandbox
         .execute(
-            "var ld = document.createElement('dialog'); ld.closedBy = 'any'; document.body.appendChild(ld); ld.show(); globalThis.__r6 = []; ld.addEventListener('toggle', function (e) { globalThis.__r6.push(String(e.source === null)); }); __zw_dialog_light_dismiss_check('body'); globalThis.__r6s = Number(ld.hasAttribute('open'));",
+            "var ld = document.createElement('dialog'); ld.closedBy = 'any'; document.body.appendChild(ld); ld.show(); globalThis.__r6 = []; ld.addEventListener('toggle', function (e) { globalThis.__r6.push(String(e.source === null)); }); __zw_dialog_light_dismiss_check('body'); __zw_dialog_light_dismiss_up('body'); globalThis.__r6s = Number(ld.hasAttribute('open'));",
         )
         .unwrap();
     assert_eq!(
