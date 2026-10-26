@@ -114,6 +114,18 @@ impl PageScriptRunner {
             PageScript::InlineModule(_) => self.base.clone(),
             _ => String::new(),
         };
+        // s94 附带修复（DF2-1 返修，对齐 webview 路径 webview.rs 同名口径）：`__moduleCache`
+        // 文档级记忆化键不得一律用页面 URL——同文档第二枚 module script 会被首枚的记忆化
+        // 命中短路、模块体零次求值。spec 模块 map 只按请求 URL 缓存 fetch 型模块，内联
+        // module script 每元素是独立模块记录：内联键 = 页面 URL 挂 ordinal 片段（仍为绝对
+        // URL，相对 import 解析基准不变——URL 构造剥旧 fragment）；外链键 = src 绝对化
+        // （同 src 两元素命中同键恰好一次，spec 语义；异 src 各自求值）。
+        // https://html.spec.whatwg.org/multipage/webappapis.html#module-map
+        let module_cache_key = match script {
+            PageScript::InlineModule(_) => format!("{}#!zw-inline-module-{script_index}", self.base),
+            PageScript::ExternalModule(src) => resolve_document_url(&self.base, src),
+            _ => String::new(),
+        };
         // R2944：外部脚本的绝对 src（fetch 成功+执行后派 script 元素 'load'；fetch 失败已在内联分支派 'error'）。
         let external_abs: Option<String> = match script {
             PageScript::External(src) | PageScript::ExternalModule(src) => Some(resolve_document_url(&self.base, src)),
@@ -146,6 +158,7 @@ impl PageScriptRunner {
             &self.html,
             is_module,
             &module_url,
+            &module_cache_key,
             &code,
             true,
             *script_index,
@@ -491,6 +504,7 @@ fn execute_script_chunk(
     html: &str,
     is_module: bool,
     module_url: &str,
+    module_cache_key: &str,
     code: &str,
     page_script: bool,
     script_index: usize,
@@ -509,7 +523,7 @@ fn execute_script_chunk(
         let fetch = |url: &str| wv.fetch_text_at(url).map_err(|e| e.to_string());
         collect_module_deps(&fetch, module_url, code, &mut registry, page_map.as_ref())?;
         let deps: Vec<(String, String)> = registry.into_iter().collect();
-        worker.execute_module(code, module_url, &deps)?;
+        worker.execute_module(code, module_url, module_cache_key, &deps)?;
     } else if let Some(worker) = js_worker {
         if page_script {
             // classic 页面脚本：顶层 try-catch 包装捕获抛错（防持久 Isolate 中毒 + 让 R2940 报告生效；
@@ -681,6 +695,45 @@ mod tests {
         worker.execute_script_direct(&batch).unwrap();
         let order = worker.execute_script_direct("globalThis.__order.join(',')").unwrap();
         assert_eq!(order, "q,a,b", "整批 link 事件保序、去重、含引号 URL 转义");
+        worker.shutdown();
+    }
+
+    /// s94 附带修复（DF2-1 返修）：tabworker `execute_module` 对同 URL 不同记忆化键的
+    /// 两次调用必须各自求值——键一律传页面 URL 时第二枚内联 module 被首枚的记忆化命中
+    /// 短路、模块体零次求值（webview 路径 s94 定谳；worker 路径对齐钉，单元缝直驱
+    /// `execute_module_in_sandbox` 编译路径；tab_scripts 发送方的 ordinal 键构造由
+    /// renderer 侧 `two_inline_module_scripts_both_evaluate` 全链覆盖，两处构造互为镜像）。
+    #[test]
+    fn execute_module_distinct_inline_cache_keys_both_evaluate() {
+        let mut worker = TabJsWorkerHandle::spawn(TabId(9161));
+        let url = "https://example.com/page";
+        worker.set_dom_snapshot("<html><body></body></html>", url);
+        worker
+            .execute_module(
+                "globalThis.__m0 = (globalThis.__m0 ?? 0) + 1;",
+                url,
+                &format!("{url}#!zw-inline-module-0"),
+                &[],
+            )
+            .unwrap();
+        worker
+            .execute_module(
+                "globalThis.__m1 = (globalThis.__m1 ?? 0) + 1;",
+                url,
+                &format!("{url}#!zw-inline-module-1"),
+                &[],
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__m0)").unwrap(),
+            "1",
+            "首枚内联 module 应求值一次"
+        );
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__m1)").unwrap(),
+            "1",
+            "第二枚内联 module 不得被记忆化短路"
+        );
         worker.shutdown();
     }
 }

@@ -70,7 +70,7 @@ pub(crate) fn raf_frame_driven_enabled() -> bool {
 }
 
 type ScriptFn = Arc<dyn Fn(&str) -> Result<String, String> + Send + Sync>;
-type ModuleFn = Arc<dyn Fn(&str, &str, &[(String, String)]) -> Result<String, String> + Send + Sync>;
+type ModuleFn = Arc<dyn Fn(&str, &str, &str, &[(String, String)]) -> Result<String, String> + Send + Sync>;
 
 enum JsWorkerCommand {
     Execute {
@@ -83,6 +83,10 @@ enum JsWorkerCommand {
     ExecuteModule {
         source: String,
         url: String,
+        /// s94 附带修复：`__moduleCache` 记忆化键由发送方按模块记录语义计算
+        /// （内联 = 页面 URL 挂 ordinal 片段；外链 = src 绝对 URL），见
+        /// [`execute_module_in_sandbox`]。
+        cache_key: String,
         deps: Vec<(String, String)>,
         reply: Sender<Result<String, String>>,
         /// t2-pb1 F1：文档代际序号（同 [`JsWorkerCommand::Execute`]）。
@@ -444,22 +448,25 @@ impl RendererJsWorker {
                 .map_err(|e| e.to_string())?
         });
 
-        let module_executor: ModuleFn = Arc::new(move |source: &str, url: &str, deps: &[(String, String)]| {
-            let (reply_tx, reply_rx) = mpsc::channel();
-            document_started_for_module.store(true, Ordering::Relaxed);
-            cmd_for_module
-                .send(JsWorkerCommand::ExecuteModule {
-                    source: source.to_string(),
-                    url: url.to_string(),
-                    deps: deps.to_vec(),
-                    reply: reply_tx,
-                    seq: seq_for_module.fetch_add(1, Ordering::Relaxed),
-                })
-                .map_err(|e| e.to_string())?;
-            reply_rx
-                .recv_timeout(TAB_JS_CHANNEL_TIMEOUT)
-                .map_err(|e| e.to_string())?
-        });
+        let module_executor: ModuleFn = Arc::new(
+            move |source: &str, url: &str, cache_key: &str, deps: &[(String, String)]| {
+                let (reply_tx, reply_rx) = mpsc::channel();
+                document_started_for_module.store(true, Ordering::Relaxed);
+                cmd_for_module
+                    .send(JsWorkerCommand::ExecuteModule {
+                        source: source.to_string(),
+                        url: url.to_string(),
+                        cache_key: cache_key.to_string(),
+                        deps: deps.to_vec(),
+                        reply: reply_tx,
+                        seq: seq_for_module.fetch_add(1, Ordering::Relaxed),
+                    })
+                    .map_err(|e| e.to_string())?;
+                reply_rx
+                    .recv_timeout(TAB_JS_CHANNEL_TIMEOUT)
+                    .map_err(|e| e.to_string())?
+            },
+        );
 
         // t2-pb1 fix#5：优先执行器——与 `executor` 同命令语义（Execute + reply），
         // 仅入队通道不同（worker 命令边界优先消费）。
@@ -517,9 +524,15 @@ impl RendererJsWorker {
         Arc::clone(&self.executor)
     }
 
-    /// 执行 ES module（含依赖注册表）。
-    pub fn execute_module(&self, source: &str, url: &str, deps: &[(String, String)]) -> Result<String, String> {
-        (self.module_executor)(source, url, deps)
+    /// 执行 ES module（含依赖注册表）。`cache_key` 语义见 [`JsExecutor::execute_module`]。
+    pub fn execute_module(
+        &self,
+        source: &str,
+        url: &str,
+        cache_key: &str,
+        deps: &[(String, String)],
+    ) -> Result<String, String> {
+        (self.module_executor)(source, url, cache_key, deps)
     }
 
     /// 在 JS 线程执行脚本（不经 WebView 包装）。
@@ -1752,13 +1765,15 @@ fn js_worker_main(
             JsWorkerCommand::ExecuteModule {
                 source,
                 url,
+                cache_key,
                 deps,
                 reply,
                 ..
             } => {
                 // P6：按本代页面 import map 编译（裸说明符 import 经映射键命中注册模块）。
                 let map_opt = import_map.lock().ok().and_then(|g| g.clone());
-                let result = execute_module_in_sandbox(&mut *sandbox, &source, &url, &deps, map_opt.as_ref());
+                let result =
+                    execute_module_in_sandbox(&mut *sandbox, &source, &url, &cache_key, &deps, map_opt.as_ref());
                 let _ = reply.send(result);
             }
             JsWorkerCommand::SetDomSnapshot {
@@ -2387,6 +2402,7 @@ fn execute_module_in_sandbox(
     sandbox: &mut dyn zero_script_sandbox::Sandbox,
     source: &str,
     url: &str,
+    cache_key: &str,
     deps: &[(String, String)],
     import_map: Option<&ImportMap>,
 ) -> Result<String, String> {
@@ -2401,8 +2417,11 @@ fn execute_module_in_sandbox(
     // R5182：入口（当前 script 元素的模块）不在 prelude 急切求值——由 transformed 体承担，
     // 模块体恰好执行一次；__moduleCache 挂 globalThis 跨元素共享、随 reset_context 按文档复位。
     let prelude = build_module_runtime_prelude(&registry, Some(url)).map_err(|e| e.to_string())?;
-    // worker 主模块每上下文恰好编译一次，url 作记忆化键即 s94 前行为，无同键短路面。
-    let transformed = compile_module_script(source, url, url, &registry).map_err(|e| e.to_string())?;
+    // s94 附带修复（DF2-1 返修）：`cache_key` 由发送方按模块记录语义计算——本函数每枚
+    // module script 元素各执行一次，键不得复用 `url`（页面 URL）：同文档第二枚内联
+    // module 会被首枚的记忆化命中短路、模块体零次求值（webview 路径 s94 定谳）。
+    // https://html.spec.whatwg.org/multipage/webappapis.html#module-map
+    let transformed = compile_module_script(source, url, cache_key, &registry).map_err(|e| e.to_string())?;
     let full = format!("{prelude}\n{transformed}");
     sandbox.execute(&full).map(|r| r.value).map_err(|e| e.to_string())
 }
@@ -2555,8 +2574,14 @@ impl zero_page_runtime::JsExecutor for RendererJsWorker {
     fn execute_script_direct(&self, script: &str) -> Result<String, String> {
         self.execute_script_direct(script)
     }
-    fn execute_module(&self, source: &str, url: &str, deps: &[(String, String)]) -> Result<String, String> {
-        self.execute_module(source, url, deps)
+    fn execute_module(
+        &self,
+        source: &str,
+        url: &str,
+        cache_key: &str,
+        deps: &[(String, String)],
+    ) -> Result<String, String> {
+        self.execute_module(source, url, cache_key, deps)
     }
     fn mutations(&self) -> Arc<std::sync::Mutex<Vec<zero_engine::DomMutation>>> {
         self.mutations()

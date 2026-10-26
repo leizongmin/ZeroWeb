@@ -161,8 +161,15 @@ pub trait JsExecutor {
     fn set_dom_snapshot(&self, html: &str, url: &str);
     /// 同步执行一段脚本，返回结果字符串。
     fn execute_script_direct(&self, script: &str) -> Result<String, String>;
-    /// 执行 ES module（含依赖注册表）。
-    fn execute_module(&self, source: &str, url: &str, deps: &[(String, String)]) -> Result<String, String>;
+    /// 执行 ES module（含依赖注册表）。`cache_key` 为 `__moduleCache` 文档级记忆化键
+    /// （s94 附带修复语义：内联 module script 每元素独立模块记录，键不得复用页面 URL）。
+    fn execute_module(
+        &self,
+        source: &str,
+        url: &str,
+        cache_key: &str,
+        deps: &[(String, String)],
+    ) -> Result<String, String>;
     /// 取回执行期间记录的 DOM 变更。
     fn mutations(&self) -> Arc<std::sync::Mutex<Vec<DomMutation>>>;
 
