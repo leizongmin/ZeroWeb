@@ -349,14 +349,22 @@ fn dispatch_resource_outcomes(
     // ≥2 次入队）。
     // P104：P102 的整批单臂在真实大页撞 sandbox 30s 守卫（cfix 轮 census：github 批臂
     // elapsed=30000ms 正好顶满，executor 臂中被终止，尾部 pair 的 load/error 事件静默
-    // 丢失）。改为按 [`LINK_EVENT_CHUNK`] 保序分片提交——prio FIFO 提交序=派发序，事件
-    // 序与整批一致（提交序即快照树序；至多一次由上方去重保证）；单片撞守卫只丢该片尾部。
+    // 丢失）。改为按 [`LINK_EVENT_CHUNK`] 保序分片提交——提交序=派发序，事件序与整批
+    // 一致（提交序即快照树序；至多一次由上方去重保证）；单片撞守卫只丢该片尾部。
     // 逐条提交仍是禁区（P102 车队），见 [`zero_engine::script_dispatch_link_events_batch`]。
+    // P105：分片自 prio 降为普通队列（[`RendererJsWorker::submit_script`]）——真实大页
+    // 上站点 load handler 是纯计算长臂（round6：exec=30000ms/tail=0ms、臂内慢宿主调用
+    // 最大 92ms（hostcall6.trace）非垄断面、线程 state=R 用户态忙），prio FIFO 使后到
+    // 的 automation eval 全数排在
+    // 60-90s 分片簇之后（mux 35s deadline 逐请求墙死，eval 饥饿）。普通通道内片间
+    // FIFO 保序不变；prio 留给里程碑/字体/交互请求，eval 插队即时应答。link load/
+    // error 派发时点相对 window load 不再有先序保证——HTML link 处理模型的 load/error
+    // 本按资源 settle 派发（迟到面见 `dispatch_late_resource_events`），语义可接受。
     let link_events = dedupe_link_events(&link_events);
     for chunk in build_link_event_chunks(&link_events) {
         let batch = script_dispatch_link_events_batch(&chunk);
-        // t2-pb1 fix#5/#12：优先队列 + fire-and-forget（同 dispatch_page_lifecycle）。
-        if let Err(e) = js_worker.submit_script_priority(&batch) {
+        // P105：普通队列 + fire-and-forget（prio 收口，见上）。
+        if let Err(e) = js_worker.submit_script(&batch) {
             warn!(
                 "dispatch link events chunk ({}/{}): {e}",
                 chunk.len(),
@@ -1103,7 +1111,7 @@ pub(crate) fn append_source_url(code: &str, url: &str) -> String {
     named
 }
 
-#[allow(clippy::too_many_arguments)] // 8 参 = 既有 7 参 + source_url 穿参，签名清晰优于打包结构体
+#[allow(clippy::too_many_arguments)] // 9 参 = 既有 8 参 + module_cache_key 穿参，签名清晰优于打包结构体
 fn execute_chunk<F: Fn(&str) -> Result<String, String>>(
     ctx: &mut PageScriptContext<'_>,
     html: &str,
@@ -2919,7 +2927,7 @@ mod tests {
     }
 
     /// P104 mirror：link 事件分片提交跨片保序——8 对（> [`LINK_EVENT_CHUNK`]）拆 2 片
-    /// 两次优先提交，prio FIFO 下提交序=派发序，8 个 load 仍按元素序全部触发（分片不得
+    /// 两次提交（P105 起走普通队列），提交序=派发序，8 个 load 仍按元素序全部触发（分片不得
     /// 丢序、不得重复，超界 pair 不因跨片遗漏）。
     #[test]
     fn finish_page_load_chunks_link_events_in_order_p104() {
@@ -2947,6 +2955,50 @@ mod tests {
             wait_for_global(&worker, "__order.join(',')", 1000),
             "0,1,2,3,4,5,6,7",
             "分片提交后 8 个 link load 事件仍跨片保序全部触发"
+        );
+        worker.shutdown();
+    }
+
+    /// P105：link 分片降普通队列后，分片之后提交的 prio 命令插队先执行（eval 不再饿死），
+    /// 分片之间仍 FIFO 保序且全部派发。分片若回 prio（或 `submit_script` 误走 prio 通道）
+    /// 本测变红。忙臂占位：scoped 线程先发普通通道 direct 纯计算长命令占住 worker，
+    /// 分片与 prio 提交在忙臂执行期内落队（忙臂 ≥ 数百 ms，提交 µs 级，无计时竞态面）；
+    /// 忙臂结束后分派序 = prio 插队 → 普通通道 FIFO。
+    #[test]
+    fn link_chunks_normal_queue_lets_prio_precede_p105() {
+        let mut worker = RendererJsWorker::spawn(132);
+        let mut html = "<html><body>".to_string();
+        for i in 0..8 {
+            html.push_str(&format!("<link rel='stylesheet' href='https://example.com/{i}.css'>"));
+        }
+        html.push_str("<script>globalThis.__order = [];");
+        for i in 0..8 {
+            html.push_str(&format!(
+                "document.querySelectorAll('link')[{i}].addEventListener('load', \
+                 function(){{ globalThis.__order.push('{i}'); }});"
+            ));
+        }
+        html.push_str("</script></body></html>");
+        let html = html.as_str();
+        worker.set_dom_snapshot(html, "https://example.com/page");
+        run_scripts(html, &worker);
+        let pairs: Vec<(String, &'static str)> = (0..8)
+            .map(|i| (format!("https://example.com/{i}.css"), "load"))
+            .collect();
+        std::thread::scope(|s| {
+            let busy = s.spawn(|| worker.execute_script_direct("for(let i=0;i<3e8;i++){};'busy'").is_ok());
+            // 忙臂已被 worker 取走执行（direct 命令在普通通道头部先派发）。
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            finish_page_load(&worker, Vec::new(), Vec::new(), pairs, Vec::new());
+            worker
+                .submit_script_priority("globalThis.__order.push('E');")
+                .expect("prio eval submit");
+            assert!(busy.join().expect("busy thread"), "忙臂 direct 执行应成功");
+        });
+        assert_eq!(
+            wait_for_global(&worker, "__order.join(',')", 5000),
+            "E,0,1,2,3,4,5,6,7",
+            "prio 提交先于 link 分片执行，分片间保序全部派发"
         );
         worker.shutdown();
     }

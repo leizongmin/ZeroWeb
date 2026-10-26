@@ -122,9 +122,9 @@ impl PageScriptRunner {
         // （同 src 两元素命中同键恰好一次，spec 语义；异 src 各自求值）。
         // https://html.spec.whatwg.org/multipage/webappapis.html#module-map
         let module_cache_key = match script {
-            PageScript::InlineModule(_) => format!("{}#!zw-inline-module-{script_index}", self.base),
+            PageScript::InlineModule(_) => format!("{}#!zw-inline-module-{}", self.base, script_index),
             PageScript::ExternalModule(src) => resolve_document_url(&self.base, src),
-            _ => String::new(),
+            _ => self.base.clone(),
         };
         // R2944：外部脚本的绝对 src（fetch 成功+执行后派 script 元素 'load'；fetch 失败已在内联分支派 'error'）。
         let external_abs: Option<String> = match script {
@@ -497,7 +497,7 @@ pub fn apply_ime_preedit_default(
         .is_ok()
 }
 
-#[allow(clippy::too_many_arguments)] // 8 参 classic 执行 helper（含 R3258 script_index）；与 app_render_geometry/tab_favicon 同惯例
+#[allow(clippy::too_many_arguments)] // 9 参 classic 执行 helper（含 R3258 script_index + s94 module_cache_key）；与 app_render_geometry/tab_favicon 同惯例
 fn execute_script_chunk(
     wv: &mut WebView,
     js_worker: Option<&TabJsWorkerHandle>,

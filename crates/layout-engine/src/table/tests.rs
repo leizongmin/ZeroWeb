@@ -1426,6 +1426,7 @@ fn test_collect_table_col_backgrounds() {
         col_count: 3,
         collapsed_cols: vec![false, true, false],
         collapsed_rows: Vec::new(),
+        empty_row_extra: Vec::new(),
     };
     let col_widths = [65.0f32, 0.0, 160.0];
 
@@ -1482,6 +1483,7 @@ fn test_collect_table_col_backgrounds_perimeter_spacing() {
         col_count: 2,
         collapsed_cols: vec![false, false],
         collapsed_rows: Vec::new(),
+        empty_row_extra: Vec::new(),
     };
     let col_widths = [65.0f32, 160.0];
 
@@ -1978,6 +1980,7 @@ fn test_r1131_grow_vrl_cell_block_extent() {
         col_count: 1,
         collapsed_cols: vec![],
         collapsed_rows: vec![],
+        empty_row_extra: Vec::new(),
     };
     let col_widths = [100.0_f32];
     // R1146：新签名取 final_col_widths（已含 cap 分布）+ cap_fired: bool，不再内部 ×scale。
@@ -2043,6 +2046,7 @@ fn r3628_grow_vrl_cell_block_extent_resolves_residual_font_size() {
         col_count: 1,
         collapsed_cols: vec![],
         collapsed_rows: vec![],
+        empty_row_extra: Vec::new(),
     };
 
     let w = grow_vrl_cell_block_extent(&cb, &cell, &[50.0], true, 0.0, &grid, &styles, &doc);
@@ -2155,6 +2159,7 @@ fn test_col_min_content_does_not_match_ahem_substring() {
         col_count: 1,
         collapsed_cols: vec![false],
         collapsed_rows: vec![false],
+        empty_row_extra: Vec::new(),
     };
 
     let min_content = compute_col_min_content(&table_box, &grid, 1, &styles, &doc);
@@ -2213,6 +2218,7 @@ fn r3628_col_min_content_resolves_residual_font_size() {
         col_count: 1,
         collapsed_cols: vec![false],
         collapsed_rows: vec![false],
+        empty_row_extra: Vec::new(),
     };
 
     let min_content = compute_col_min_content(&table_box, &grid, 1, &styles, &doc);

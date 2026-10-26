@@ -82,6 +82,14 @@ pub(crate) struct TableGrid {
     /// CSS Tables §4.1：visibility:collapse 的行高度为 0，不参与布局，亦不贡献
     /// 与相邻行之间的 border-spacing（与 `collapsed_cols` 对称）。
     pub(crate) collapsed_rows: Vec<bool>,
+    /// R5288（CSS2 §17.6.2 × 行间空行）：不入 grid 的空 table-row（无 cell，
+    /// build_grid 跳过）的指定高度按格线并入折叠胜者带。index = 格线 k（第 k 行
+    /// 顶缘，k=1..rows-1 内部线）；首/末周界线（0/rows）恒 0——表前/表后空行
+    /// 占位 FIXME 挂账。仅 winner-center 路径消费（collapse_boundary_winners 的
+    /// wh 与 resolve_collapsed_borders 内边胜者宽），高度吸收进相邻内容行的折叠带
+    ///（mozilla bug 1819266 border-collapse-empty-row：带跨上 cell 内容底到下 cell
+    /// 内容顶，不外溢空行槽）。
+    pub(crate) empty_row_extra: Vec<f32>,
 }
 /// 获取 LayoutBox 对应的 display 值。
 pub(crate) fn get_display(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> Option<DisplayValue> {

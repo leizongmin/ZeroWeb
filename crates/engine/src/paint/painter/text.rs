@@ -34,6 +34,13 @@ fn direct_text_seed_enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var("ZW_PAINT_DIRECT_TEXT_SEED").as_deref() != Ok("0"))
 }
 
+/// R5289：行内联内容被合成匿名 cell 接管后行级直绘抑制开关。default-on；
+/// `ZW_ROW_ANON_CELL_SUPPRESS=0` 关闭（回退行盒 Path B 重跑叠绘行为）。
+fn row_anon_cell_suppress_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_ROW_ANON_CELL_SUPPRESS").as_deref() != Ok("0"))
+}
+
 /// R5169：stored 片段基线锚定开关——非 Ahem 片段的 v_offset 同 is_ahem_font 臂取
 /// `baseline_y_abs - frag.y`（存储 IFC 真实行基线），`frag.font_size` 近似把基线当
 /// fs（infer-cells monospace 32px 行基线 37 → 字形整体高 5px 实证）。default-on；
@@ -1221,7 +1228,22 @@ impl super::Painter {
             {
                 return;
             }
-            // R4328：已并入后继块的 run-in 自盒抑制 DOM 文本绘制——其内容由后继块
+            // R5289（CSS2 §17.2.1）：display:table-row 的 inline 子已被合成匿名 cell
+            // 接管（R5168 wrap_inline_runs_in_row：cell 借行 node_id + fragment 圈定，
+            // 自带 stored/Path B 自绘）——行盒自身 Path B 重跑把整行 inline 内容扁平
+            // 吸进单 IFC 重绘，跨元素空白文本节点以兜底字体计空格 advance（应随相邻
+            // run 字体）→ 每跨 span 边界 advance 偏小，鬼影错位副叠在合成 cell 正确副
+            // 上（table-anonymous-objects-085/086 行 1 实证：32px monospace 空格 16px
+            // 兜底成 8px）。抑制行级直绘，文本由合成 cell 自绘；无合成 cell 子（run-in
+            // / 纯块子等未接管形态）与 vertical 维持现状零回归面。
+            if row_anon_cell_suppress_enabled()
+                && !box_node.writing_mode.is_vertical_block_flow()
+                && box_node.run_in_prepended.is_none()
+                && matches!(style.display, DisplayValue::TableRow)
+                && box_node.children.iter().any(|c| c.is_anon_table_cell)
+            {
+                return;
+            }
             // IFC 前置渲染；自盒 Path B 仍按 DOM 子文本绘出会在块外重影
             //（run-in-breaking-001「Run-in header」块外重影实证：target PathB 79
             // runs 含前置内容，自盒 78 runs 同文本再绘）。

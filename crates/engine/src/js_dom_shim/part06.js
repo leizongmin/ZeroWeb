@@ -6062,6 +6062,26 @@
   // module 脚本 currentScript 恒 null（spec），故不设。
   globalThis.__zw_set_current_script = function (idx) {
     _zwCurrentScriptIdx = (typeof idx === 'number' && idx >= 0) ? (idx | 0) : -1;
+    // s95（html-semantics M2 切片 95）：classic 脚本投递即 already-started 记账——
+    // 宿主对每个非空源 classic 脚本（内联/外链）调本函数后执行；空源 bail 脚本
+    // extract 期跳过不投递（不记）、nomodule/for-event 门压制的同样不投递（不记）——
+    // 与 spec prepare 的 already-started 置位时机（空源 bail 与双门中止均在置位前）
+    // 对齐。键 = 元素 __zwSelector（静态解析产物）；动态插入脚本的 run-once 记账
+    // 在 R387 的 _zwRanScripts（两表语义同源、形态分治）。消费方 = script
+    // children-changed → prepare 钩子（part04 s95 触发块）：区分「已投递执行
+    // （自摘子再补文本 no-op——execution-timing 059/060 形态）」与「解析期空源
+    // bail（补文本须执行——emptyish-script-elements 全臂）」。
+    // 已知限制：idx 对齐依赖执行期 DOM 与解析期一致（上方 currentScript 同款记录）。
+    if (_zwCurrentScriptIdx >= 0) {
+      try {
+        var _s95Scripts = globalThis.document.getElementsByTagName('script');
+        var _s95El = _s95Scripts[_zwCurrentScriptIdx];
+        if (_s95El && _s95El.__zwSelector) {
+          if (!globalThis._zwScriptStarted) globalThis._zwScriptStarted = {};
+          globalThis._zwScriptStarted[_s95El.__zwSelector] = true;
+        }
+      } catch (_eS95m) {}
+    }
   };
   globalThis.__zw_clear_current_script = function () { _zwCurrentScriptIdx = -1; };
   // `new FontFace(family, source, descriptors)`：family 字符串、source = URL 字串（binary source 非标准 headless 不支持）、
