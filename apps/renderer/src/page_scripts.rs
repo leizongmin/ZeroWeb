@@ -80,6 +80,9 @@ pub struct PageScriptContext<'a> {
     pub webview: Option<&'a mut zero_webview::WebView>,
 }
 
+/// t-p106：脚本间让路点自动化 hook 签名——参数 `(staged, html, url)`，返回成功交付数。
+type AutomationPhaseHook<'a> = &'a mut dyn FnMut(&mut VecDeque<IpcMessage>, &str, &str) -> usize;
+
 /// 脚本阶段让路检查的入站面（P-B1 导航让路）。
 ///
 /// `deferred` 是主循环的 staging 队列（`deferred_inbound`，非 fetch 消息暂存处）；
@@ -90,6 +93,16 @@ pub struct ScriptPhaseYield<'a> {
     pub inbound_rx: &'a Receiver<IpcMessage>,
     /// 主循环 staging 队列（先于 `inbound_rx` 到达次序）。
     pub deferred: &'a mut VecDeque<IpcMessage>,
+    /// t-p106：脚本间让路点的自动化 hook——①staged 队列中阶段中到达的自动化 Evaluate
+    /// 借当前 html 快照直接 dispatch 进 worker（宿主动作语义，允许文档中间态执行，
+    /// 与浏览器 DevTools/CDP 同款；实现见 runtime 子模块 automation 的
+    /// `dispatch_staged_automation_evals`）；②已就绪挂起回复即答——主循环被本阶段
+    /// 阻塞期间（16ms tick 的 poll 不可达）唯一及时送达点。参数为 `(staged, html,
+    /// url)`，返回成功交付数（>0 表示 worker 可能累积了该批求值的 DOM mutation，须
+    /// apply_recorded_mutations 收编进阶段批量边界）。dispatch/交付/发送在 runtime 侧
+    /// 闭包完成——该处字段与本结构/ctx 借用不相交；staged 以 `&mut` 传入抽取 eval
+    /// （其余消息原序保留），故本字段与 `deferred` 字段在循环入口拆解后分别借用。
+    pub automation_hook: Option<AutomationPhaseHook<'a>>,
 }
 
 /// 脚本阶段结果。
@@ -140,11 +153,23 @@ pub fn run_page_scripts_interruptible<F: Fn(&str) -> Result<String, String>>(
         wv.begin_script_batch();
     }
 
+    // 让路面拆解：导航让路与自动化 hook（t-p106 dispatch/交付）分别借用本结构的
+    // inbound/deferred/hook 字段——拆解后 hook 才能以 `&mut staged` 调用（同一结构体
+    // 的两次可变借用不成立）。行为与拆解前一致：让路面缺省时全部跳过。
+    let (inbound_rx, mut deferred, mut automation_hook) = match yield_to_commands.as_mut() {
+        Some(y) => (
+            Some(y.inbound_rx),
+            Some(&mut *y.deferred),
+            y.automation_hook.as_deref_mut(),
+        ),
+        None => (None, None, None),
+    };
+
     for (script, script_index) in scripts {
         // 脚本间让路检查：遇文档替换型命令即中止剩余脚本。批量边界一并关闭
         // 但不渲染（旧文档即将被导航替换，渲染是纯浪费）；已执行脚本的产出
         // 随文档换代作废——与导航打断图片加载阶段的既有语义一致。
-        if let Some(nav) = poll_script_abort(yield_to_commands.as_mut()) {
+        if let Some(nav) = poll_script_abort(inbound_rx, deferred.as_deref_mut()) {
             if let Some(wv) = ctx.webview.as_deref_mut() {
                 wv.abort_script_batch();
             }
@@ -152,6 +177,21 @@ pub fn run_page_scripts_interruptible<F: Fn(&str) -> Result<String, String>>(
                 changed: false,
                 aborted: Some(nav),
             };
+        }
+
+        // t-p106：脚本间让路点自动化 hook——①阶段中到达的 staged eval 借当前 html
+        // 快照 dispatch 进 worker；②挂起自动化回复即答——同步阶段阻塞主循环期间，
+        // 16ms tick 的 poll 补答整段不可达（github.com 实测单阶段阻塞 42s+，headless
+        // 35s deadline 先到，迟到回复按 id 不匹配被丢弃）。交付的求值 mutation 即刻
+        // apply（HTML 收编同逐脚本路径，渲染仍归 end_script_batch 批量边界）。
+        let delivered = match (automation_hook.as_deref_mut(), deferred.as_deref_mut()) {
+            (Some(hook), Some(staged)) => hook(staged, &html, ctx.url),
+            _ => 0,
+        };
+        if delivered > 0
+            && let Some(new_html) = apply_recorded_mutations(ctx, &html)
+        {
+            html = new_html;
         }
 
         let is_module = matches!(&script, PageScript::InlineModule(_) | PageScript::ExternalModule(_));
@@ -243,12 +283,16 @@ pub fn run_page_scripts_interruptible<F: Fn(&str) -> Result<String, String>>(
 /// 单次让路检查：扫 staging 队列与 inbound，取第一个文档替换型命令。
 ///
 /// 其余消息（含命令前到达者）原序暂存回 `deferred`；截获的命令由调用方回灌队首，
-/// 跳到这些消息之前优先派发（导航先行的让路语义）。
-fn poll_script_abort(yield_to_commands: Option<&mut ScriptPhaseYield<'_>>) -> Option<IpcMessage> {
-    let y = yield_to_commands?;
+/// 跳到这些消息之前优先派发（导航先行的让路语义）。入参为让路面拆解后的字段
+/// 借用（见 [`run_page_scripts_interruptible`] 循环入口），任一缺省即不检查。
+fn poll_script_abort(
+    inbound_rx: Option<&Receiver<IpcMessage>>,
+    deferred: Option<&mut VecDeque<IpcMessage>>,
+) -> Option<IpcMessage> {
+    let (inbound_rx, deferred) = (inbound_rx?, deferred?);
     let mut nav = None;
     let mut kept = VecDeque::new();
-    while let Some(msg) = y.deferred.pop_front() {
+    while let Some(msg) = deferred.pop_front() {
         if nav.is_none() && is_navigation_command(&msg) {
             nav = Some(msg);
         } else {
@@ -256,7 +300,7 @@ fn poll_script_abort(yield_to_commands: Option<&mut ScriptPhaseYield<'_>>) -> Op
         }
     }
     if nav.is_none() {
-        while let Ok(msg) = y.inbound_rx.try_recv() {
+        while let Ok(msg) = inbound_rx.try_recv() {
             if is_navigation_command(&msg) {
                 nav = Some(msg);
                 break;
@@ -264,7 +308,7 @@ fn poll_script_abort(yield_to_commands: Option<&mut ScriptPhaseYield<'_>>) -> Op
             kept.push_back(msg);
         }
     }
-    y.deferred.extend(kept);
+    deferred.extend(kept);
     nav
 }
 
@@ -1472,6 +1516,7 @@ mod tests {
         let yield_to_commands = ScriptPhaseYield {
             inbound_rx: &rx,
             deferred: &mut deferred,
+            automation_hook: None,
         };
         let result = run_page_scripts_interruptible(&mut ctx, true, fetch, Some(yield_to_commands));
 

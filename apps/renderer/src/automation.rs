@@ -2,11 +2,14 @@
 
 use zero_protocol::message::{
     AutomationElementRef, AutomationError, AutomationErrorCode, AutomationKey, AutomationOperation, AutomationRequest,
-    AutomationResponse, AutomationResult, AutomationStateQuery, AutomationValue, IpcMessageKind, KeyboardEventParams,
-    KeyboardEventType,
+    AutomationResponse, AutomationResult, AutomationStateQuery, AutomationValue, IpcMessage, IpcMessageKind,
+    KeyboardEventParams, KeyboardEventType,
 };
 
 use super::{PageScriptContext, RendererRuntime};
+use crate::js_worker::RendererJsWorker;
+
+use std::collections::VecDeque;
 
 /// t2-pb1 fix#15：挂起中的自动化 Evaluate 回复——Evaluate 家族（ExecuteScript /
 /// EvaluateRetaining）在 worker 被长臂（bilibili timer 回调 28-30s）占住时，主循环
@@ -34,6 +37,223 @@ pub(crate) enum DeferredEvalKind {
 enum AutomationHandleFlow {
     Done(HandleOutcome),
     Deferred,
+}
+
+// t-p106 诊断：automation deferred-reply 三点仪拍侧信道（ZW_EXEC_TIMING 同型 env 门控，
+// 零默认开销）。worker reply.send / renderer poll 交付 / headless 匹配三点带 epoch 毫秒
+// 落同一文件，时间轴对齐后锁定回复丢失环节。仅诊断用，不参与行为。
+static AUTOMATION_TRACE_FILE: std::sync::LazyLock<std::sync::Mutex<Option<std::fs::File>>> =
+    std::sync::LazyLock::new(|| match std::env::var("ZW_AUTOMATION_TRACE") {
+        Ok(path) if path != "1" => {
+            std::sync::Mutex::new(std::fs::OpenOptions::new().create(true).append(true).open(path).ok())
+        }
+        _ => std::sync::Mutex::new(None),
+    });
+
+/// t-p106 诊断：仪拍是否启用（未配置 `ZW_AUTOMATION_TRACE` 文件路径时恒 false，
+/// 调用点先查本函数再 format，热路径零格式化开销）。
+pub(crate) fn automation_trace_enabled() -> bool {
+    AUTOMATION_TRACE_FILE
+        .lock()
+        .map(|guard| guard.is_some())
+        .unwrap_or(false)
+}
+
+/// t-p106 诊断：追加一行仪拍（调用方自含前缀与时间戳）。文件不可写时静默跳过。
+pub(crate) fn automation_trace_line(line: &str) {
+    if let Ok(mut guard) = AUTOMATION_TRACE_FILE.lock()
+        && let Some(file) = guard.as_mut()
+    {
+        use std::io::Write as _;
+        let _ = writeln!(file, "{line}");
+    }
+}
+
+/// t-p106 诊断：epoch 毫秒时间戳（对齐 ZW_EXEC_TIMING 的 t= 字段口径）。
+pub(crate) fn automation_trace_epoch_ms() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or_default()
+}
+
+/// t-p106：ScriptValue/Retaining 就绪值 → 回复结果——poll 补答与页面脚本阶段中交付
+/// （[`deliver_ready_deferred_replies`]）共用的包络映射；HandleOp 有 awaitPromise 状态机
+/// 续跑，不经本函数。
+fn eval_value_to_result(kind: &DeferredEvalKind, value: &str) -> Result<AutomationResult, AutomationError> {
+    match kind {
+        DeferredEvalKind::ScriptValue => Ok(AutomationResult::Value(automation_value_from_script(value))),
+        DeferredEvalKind::Retaining => match parse_handle_operation_envelope(value) {
+            Ok(HandleOutcome::Result(result)) => Ok(result),
+            Ok(HandleOutcome::Pending) => Err(internal_error("evaluate cannot be awaited".into())),
+            Err(e) => Err(e),
+        },
+        DeferredEvalKind::HandleOp { .. } => Err(internal_error("handle op has no eval-style completion".into())),
+    }
+}
+
+/// t-p106 形态 A/B 丢失修复：页面脚本阶段中交付挂起自动化回复。
+///
+/// 主循环被同步页面脚本阶段阻塞期间，16ms tick 的 poll 补答不可达——github.com 实测
+/// 单阶段阻塞 42s+（RUN/tmp/p106-diag/d2-areply.trace：r-defer req=2 → r-phase-end
+/// dur_ms=42257 → r-poll req=2，headless 35s deadline 先到，迟到回复按消息 id 不匹配
+/// 被丢弃）。脚本间让路点调用本函数取走已就绪条目并即答，返回成功交付数（>0 表示
+/// worker 可能累积了该批求值的 DOM mutation，调用方须 apply_recorded_mutations 收编进
+/// 阶段批量渲染边界，与 t2-pb1 F4 的 poll 补答 apply 同语义）。
+///
+/// HandleOp 待续条目不取：try_recv 会吃掉 pending 信号，awaitPromise 续跑依赖主循环
+/// 全量状态，原样留待 poll 补答。`send` 由调用方闭包提供（只借 outbound/compositor
+/// 字段，与脚本阶段对 cached_html/js_worker/webview 的借用不相交）；epoch/generation
+/// 为调用方快照——阶段内无导航（让路中止语义保证），与 poll 发送时读取同值。
+pub(super) fn deliver_ready_deferred_replies(
+    pending: &mut Vec<PendingAutomationReply>,
+    send: &mut dyn FnMut(IpcMessage) -> Result<(), String>,
+    navigation_epoch: u64,
+    document_generation: u64,
+) -> usize {
+    let mut delivered = 0usize;
+    let mut kept = Vec::new();
+    for reply in pending.drain(..) {
+        if matches!(reply.kind, DeferredEvalKind::HandleOp { .. }) {
+            kept.push(reply);
+            continue;
+        }
+        let result = match reply.rx.try_recv() {
+            Ok(Ok(value)) => eval_value_to_result(&reply.kind, &value),
+            Ok(Err(message)) => Err(automation_error(AutomationErrorCode::JavascriptError, message)),
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                kept.push(reply);
+                continue;
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => Err(automation_error(
+                AutomationErrorCode::JavascriptError,
+                "deferred evaluate cancelled (navigation reset or worker exit)",
+            )),
+        };
+        // t-p106 诊断：阶段中交付点仪拍（与 poll 交付点同侧信道，via=phase 区分）。
+        if automation_trace_enabled() {
+            let outcome = if result.is_ok() { "ok" } else { "err" };
+            automation_trace_line(&format!(
+                "[areply] t={} r-poll req={} outcome={outcome} via=phase",
+                automation_trace_epoch_ms(),
+                reply.request_id
+            ));
+        }
+        if result.is_ok() {
+            delivered += 1;
+        }
+        let message = IpcMessage {
+            id: reply.request_id,
+            kind: IpcMessageKind::AutomationResponse(AutomationResponse {
+                navigation_epoch,
+                document_generation,
+                result,
+            }),
+        };
+        // 单条发送失败（IPC 断连）不中断——与 poll 补答路径同（t2-pb1 F8①）。
+        if let Err(e) = send(message) {
+            tracing::warn!("deferred automation reply send failed: {e}");
+        }
+    }
+    *pending = kept;
+    delivered
+}
+
+/// t-p106 第二机制：让路点 dispatch 阶段中到达的自动化 Evaluate。
+///
+/// 自动化 Evaluate（CDP `Runtime.evaluate` / Playwright 注入求值）不属于页面脚本
+/// 管线，是宿主动作：允许在文档中间态执行（真实浏览器 DevTools/CDP 同语义，
+/// https://chromedevtools.github.io/devtools-protocol/tot/Runtime/#method-evaluate）。
+/// 但同步阶段阻塞主循环期间 `handle_automation_request` 不可达，staged 队列中的
+/// eval 只能等阶段结束才 dispatch——github.com 实测（RUN/tmp/p106-diag/d3-*）阶段
+/// 68.6s 内到达的求值全部滞留，阶段后重放补齐 ~28s，headless 35s deadline 先到。
+///
+/// 本函数在脚本间让路点按 FIFO 抽取 staged 中的 ExecuteScript / EvaluateRetaining，
+/// 以当前 `html` 快照 dispatch 进 worker：
+///
+/// * 快照/代际语义与 [`super::page_scripts::execute_automation_script_deferrable`]
+///   同型——`set_dom_snapshot_priority` + `clear_mutations_fresh` 配对；调用方顺序
+///   保证本函数在导航让路检查之后、交付 apply 之前执行，阶段内无导航（让路中止
+///   语义保证），eval 记录的 mutation 由同让路点 apply 收编，不跨 document_generation
+///   （t3 defect-r1 D1 的收编门语义不变）；
+/// * HandleOp 家族（awaitPromise 状态机依赖主循环全量状态）与同步操作（Find/Click
+///   等需主循环元素状态）不抽取，保持 staged 留给主循环；
+/// * 让路点 worker 恰空闲时求值立即完成：合成已就绪挂起条目走统一交付路径
+///   （[`deliver_ready_deferred_replies`]），交付语义单一；
+/// * 空 script 不在此处替答——保持 staged，由主循环按 InvalidArgument 即答。
+pub(super) fn dispatch_staged_automation_evals(
+    staged: &mut VecDeque<IpcMessage>,
+    html: &str,
+    url: &str,
+    js_worker: &RendererJsWorker,
+    pending: &mut Vec<PendingAutomationReply>,
+) {
+    let mut evals = Vec::new();
+    let mut kept = VecDeque::new();
+    while let Some(message) = staged.pop_front() {
+        let eval = match &message.kind {
+            IpcMessageKind::AutomationRequest(request) => match &request.operation {
+                // 与 handle_automation_request 的 ExecuteScript 臂同款校验与包络。
+                AutomationOperation::ExecuteScript { script, arguments } if !script.is_empty() => {
+                    let arguments =
+                        serde_json::Value::Array(arguments.iter().map(automation_value_to_json).collect::<Vec<_>>());
+                    Some((
+                        message.id,
+                        format!(
+                            "(function(){{var __zw_value=(function(){{{script}\n}}).apply(null,{arguments});\
+                             return JSON.stringify({{defined:typeof __zw_value!=='undefined',value:__zw_value}});}})()"
+                        ),
+                        DeferredEvalKind::ScriptValue,
+                    ))
+                }
+                AutomationOperation::EvaluateRetaining {
+                    script,
+                    group,
+                    return_by_value,
+                } if !script.is_empty() => {
+                    let group = group.clone().unwrap_or_else(|| DEFAULT_OBJECT_GROUP.to_string());
+                    Some((
+                        message.id,
+                        evaluate_retaining_script(script, &group, *return_by_value),
+                        DeferredEvalKind::Retaining,
+                    ))
+                }
+                _ => None,
+            },
+            _ => None,
+        };
+        match eval {
+            Some(eval) => evals.push(eval),
+            None => kept.push_back(message),
+        }
+    }
+    *staged = kept;
+    for (request_id, source, kind) in evals {
+        // t-p106 诊断：阶段中 dispatch 点仪拍（via=phase，与交付点 r-poll 区分）。
+        if automation_trace_enabled() {
+            automation_trace_line(&format!(
+                "[areply] t={} r-dispatch req={request_id} via=phase",
+                automation_trace_epoch_ms()
+            ));
+        }
+        js_worker.set_dom_snapshot_priority(html, url);
+        js_worker.clear_mutations_fresh();
+        match js_worker.execute_script_priority_deferrable(&source, zero_page_runtime::USER_ACTION_SCRIPT_TIMEOUT) {
+            // 让路点 worker 空闲常立即完成：合成已就绪条目，交付路径照常补答
+            //（含脚本错误 Err——交付点按 JavascriptError 应答，与同步路径同语义）。
+            Ok(value) => {
+                let (reply_tx, reply_rx) = std::sync::mpsc::channel();
+                let _ = reply_tx.send(value);
+                drop(reply_tx);
+                pending.push(PendingAutomationReply {
+                    request_id,
+                    rx: reply_rx,
+                    kind,
+                });
+            }
+            Err(rx) => pending.push(PendingAutomationReply { request_id, rx, kind }),
+        }
+    }
 }
 
 impl RendererRuntime {
@@ -112,6 +332,14 @@ impl RendererRuntime {
                 })
             }
             super::page_scripts::AutomationEvalOutcome::Deferred(rx) => {
+                // t-p106 诊断：挂起入口仪拍——回复丢失排查起点（request_id + 挂起表深度）。
+                if automation_trace_enabled() {
+                    automation_trace_line(&format!(
+                        "[areply] t={} r-defer req={request_id} pending={}",
+                        automation_trace_epoch_ms(),
+                        self.pending_automation_replies.len() + 1
+                    ));
+                }
                 self.pending_automation_replies
                     .push(PendingAutomationReply { request_id, rx, kind });
                 Ok(AutomationResult::Empty)
@@ -128,15 +356,17 @@ impl RendererRuntime {
         }
         let pending = std::mem::take(&mut self.pending_automation_replies);
         let mut still_pending = Vec::new();
+        // t-p106 诊断：poll 交付点仪拍——try_recv 结果逐条落盘（Empty 不记，避免 16ms
+        // tick 刷屏）；still_pending 归还时记 pending_left。
+        let trace_poll = automation_trace_enabled();
         for reply in pending {
             let mut result: Result<AutomationResult, AutomationError> = match reply.rx.try_recv() {
+                // t-p106：ScriptValue/Retaining 映射抽为 [`eval_value_to_result`]，与
+                // 页面脚本阶段中交付（[`deliver_ready_deferred_replies`]）共用。
                 Ok(Ok(value)) => match reply.kind {
-                    DeferredEvalKind::ScriptValue => Ok(AutomationResult::Value(automation_value_from_script(&value))),
-                    DeferredEvalKind::Retaining => match parse_handle_operation_envelope(&value) {
-                        Ok(HandleOutcome::Result(result)) => Ok(result),
-                        Ok(HandleOutcome::Pending) => Err(internal_error("evaluate cannot be awaited".into())),
-                        Err(e) => Err(e),
-                    },
+                    DeferredEvalKind::ScriptValue | DeferredEvalKind::Retaining => {
+                        eval_value_to_result(&reply.kind, &value)
+                    }
                     // fix#15b：句柄操作补答后按状态机收尾——pending 信号续跑 awaitPromise
                     // 落定循环（此时 worker 已空闲，循环内每轮执行不再排长臂之后）。
                     DeferredEvalKind::HandleOp { group, return_by_value } => {
@@ -157,6 +387,15 @@ impl RendererRuntime {
                     "deferred evaluate cancelled (navigation reset or worker exit)",
                 )),
             };
+            // t-p106 诊断：交付点结果（ok/err/disc）——回复到达 poll 的时刻即交付时刻。
+            if trace_poll {
+                let outcome = if result.is_ok() { "ok" } else { "err" };
+                automation_trace_line(&format!(
+                    "[areply] t={} r-poll req={} outcome={outcome}",
+                    automation_trace_epoch_ms(),
+                    reply.request_id
+                ));
+            }
             // t2-pb1 F4（首轮缺陷审查 2026-10-02）：挂起求值补答的同步尾。挂起路径
             // 此前不 apply_recorded_mutations——脚本晚至执行产生的 DOM mutation 滞留
             // worker 队列，被下一脚本/交互入口的 clear() 静默丢弃（数据丢失类：宿主
@@ -198,6 +437,14 @@ impl RendererRuntime {
             }
         }
         self.pending_automation_replies = still_pending;
+        // t-p106 诊断：本轮 poll 收尾——仍挂起数（0 = 表空，下次 tick 短路）。
+        if trace_poll {
+            automation_trace_line(&format!(
+                "[areply] t={} r-poll-done pending_left={}",
+                automation_trace_epoch_ms(),
+                self.pending_automation_replies.len()
+            ));
+        }
         Ok(())
     }
 
@@ -1443,6 +1690,197 @@ mod tests {
         assert!(
             applied,
             "补答路径须 apply mutation 并落进 cached_html（F4 接线真实路径）"
+        );
+    }
+
+    /// t-p106 outbound 捕获：共享缓冲替代 io::sink，阶段返回后直接检查回复帧是否已写出。
+    struct CaptureWriter(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+    impl std::io::Write for CaptureWriter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().expect("capture lock").extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// t-p106 形态 A 回归：挂起求值就绪后、同步页面脚本阶段阻塞主循环期间，回复必须在
+    /// 阶段内（脚本间让路点）送达 outbound——此前唯一交付点是主循环 16ms tick 的
+    /// [`RendererRuntime::poll_deferred_automation_replies`]，整段阶段不可达（github.com
+    /// 实测单阶段阻塞 42s+，headless 35s deadline 先到，迟到回复按消息 id 不匹配被丢弃；
+    /// 证据 RUN/tmp/p106-diag/d2-areply.trace：r-defer req=2 → r-phase-end dur_ms=42257
+    /// → r-poll req=2 → h-miss wait=3 got=2）。本测试把 runtime 侧交付闭包置 None
+    /// （移除脚本间让路点交付）即红：阶段返回时 outbound 无回复帧。
+    ///
+    /// 挂起条目直接构造（rx 预置完成值），不經 2s 有界等待挂起路径——该路径已由
+    /// [`deferred_reply_poll_applies_mutations_via_real_path`] 的长臂钉住；本测避免再添
+    /// 长臂 CPU 烧（模块内 6 路并行 V8 的时序 margin 见 tick_per_task_tests d1 注）。
+    #[test]
+    fn deferred_reply_delivered_during_page_script_phase() {
+        let captured: std::sync::Arc<std::sync::Mutex<Vec<u8>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        // 5 条 ~300ms 忙脚本（IIFE 隔离 const 作用域）：阶段总时长 ~1.5s，为让路点交付
+        // 留出多个检查窗；不预跑（runtime() 同款初始 run_page_scripts 会先烧一遍）。
+        let busy_script = "<script>(()=>{const t=Date.now();while(Date.now()-t<300);})();</script>";
+        let html = format!("<html><body>{}</body></html>", busy_script.repeat(5));
+        let url = "https://zero.test/p106-phase-delivery";
+        let (_tx, rx) = mpsc::channel();
+        let mut rt = RendererRuntime::with_io(
+            301,
+            FramePublishMode::Legacy,
+            Box::new(CaptureWriter(std::sync::Arc::clone(&captured))),
+            rx,
+        );
+        rt.compositor_publish = None;
+        rt.stub_network = true;
+        rt.current_url = Some(url.into());
+        rt.cached_html = html.clone();
+        rt.navigation_epoch = 9;
+        rt.document_generation = 1;
+        rt.webview.as_mut().unwrap().prepare_document_state(url);
+        rt.webview.as_mut().unwrap().load_html(html.as_str(), None);
+
+        // 形态 A 状态：挂起条目就绪（reply 通道已有完成值）+ 真实 DOM mutation 滞留
+        // worker 队列（宿主侧尚未 apply——与挂起求值晚至完成后的滞留同型，交付点须收编）。
+        rt.js_worker
+            .execute_script_direct("document.body.setAttribute('data-p106','yes');")
+            .expect("mutation 落队");
+        let (reply_tx, reply_rx) = mpsc::channel();
+        reply_tx
+            .send(Ok("p106-phase-delivery".to_string()))
+            .expect("预置完成值");
+        rt.pending_automation_replies.push(PendingAutomationReply {
+            request_id: 77,
+            rx: reply_rx,
+            kind: DeferredEvalKind::ScriptValue,
+        });
+
+        // 同步页面脚本阶段（真实路径）：修复后首个脚本间让路点即交付。
+        rt.after_page_html_loaded_with_cache(std::collections::HashMap::new())
+            .expect("阶段执行");
+
+        let captured_bytes = captured.lock().expect("capture lock");
+        // outbound 是 4 字节 LE 长度前缀 + bincode 载荷的帧流（PipeTransport::send_frame），
+        // 用协议自身解码器逐帧解出后断言（字符串断言对二进制帧不成立）。
+        let mut delivered_reply = None;
+        {
+            let mut rest = &captured_bytes[..];
+            while rest.len() >= 4 {
+                let len = u32::from_le_bytes([rest[0], rest[1], rest[2], rest[3]]) as usize;
+                if rest.len() < 4 + len {
+                    break;
+                }
+                let (payload, tail) = rest.split_at(4 + len);
+                rest = tail;
+                if let Ok(msg) = zero_protocol::deserialize(&payload[4..])
+                    && let zero_protocol::message::IpcMessageKind::AutomationResponse(response) = msg.kind
+                    && msg.id == 77
+                {
+                    delivered_reply = Some(response.result);
+                }
+            }
+        }
+        let reply = delivered_reply.expect("挂起回复帧须在阶段内写出（形态 A：主循环被阶段阻塞时迟到回复被丢弃）");
+        assert_eq!(
+            reply,
+            Ok(AutomationResult::Value(AutomationValue::String(
+                "p106-phase-delivery".into()
+            ))),
+            "阶段内交付的回复须携带求值结果"
+        );
+        assert!(
+            rt.cached_html.contains("data-p106"),
+            "交付的求值 mutation 须收编进 cached_html（t2-pb1 F4 语义不回退）"
+        );
+    }
+
+    /// t-p106 形态 B 回归（第二机制）：阶段中到达的自动化 eval 须在阶段内 dispatch、
+    /// 回复在阶段内交付——此前 staged eval 只能等阶段结束由主循环 handle_automation_request
+    /// 补跑（d3 实测阶段 68.6s 内到达的求值全部滞留，阶段后重放补齐 ~28s，headless 35s
+    /// deadline 先到；证据 RUN/tmp/p106-diag/d3-*）。eval 由独立线程在阶段进行中（~500ms，
+    /// 落在第 1-2 条忙脚本之间）经 inbound 通道注入，走真实收编路径（poll_script_abort
+    /// staging → 脚本间让路点 dispatch → 同点交付）。本测试把 runtime 侧 automation_hook
+    /// 置 None（移除阶段中 dispatch/交付）即红：消息滞留 staged，阶段返回时 outbound
+    /// 无回复帧。
+    #[test]
+    fn staged_eval_dispatched_and_delivered_during_page_script_phase() {
+        let captured: std::sync::Arc<std::sync::Mutex<Vec<u8>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        // 5 条 ~300ms 忙脚本（IIFE 隔离 const 作用域）：阶段总时长 ~1.5s，注入点落在
+        // 阶段中段，其后仍有多个让路点供 dispatch/交付；不预跑（同形态 A 测的理由）。
+        let busy_script = "<script>(()=>{const t=Date.now();while(Date.now()-t<300);})();</script>";
+        let html = format!("<html><body>{}</body></html>", busy_script.repeat(5));
+        let url = "https://zero.test/p106-phase-dispatch";
+        let (tx, rx) = mpsc::channel();
+        let mut rt = RendererRuntime::with_io(
+            301,
+            FramePublishMode::Legacy,
+            Box::new(CaptureWriter(std::sync::Arc::clone(&captured))),
+            rx,
+        );
+        rt.compositor_publish = None;
+        rt.stub_network = true;
+        rt.current_url = Some(url.into());
+        rt.cached_html = html.clone();
+        rt.navigation_epoch = 9;
+        rt.document_generation = 1;
+        rt.webview.as_mut().unwrap().prepare_document_state(url);
+        rt.webview.as_mut().unwrap().load_html(html.as_str(), None);
+
+        // 阶段进行中注入自动化 eval（宿主动作；ExecuteScript 包络要求显式 return）。
+        let injector_tx = tx.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            let _ = injector_tx.send(IpcMessage {
+                id: 78,
+                kind: IpcMessageKind::AutomationRequest(AutomationRequest {
+                    operation: AutomationOperation::ExecuteScript {
+                        script: "document.body.setAttribute('data-p106-b','dispatched'); return 'p106-phase-dispatch';"
+                            .to_string(),
+                        arguments: vec![],
+                    },
+                }),
+            });
+        });
+
+        // 同步页面脚本阶段（真实路径）：修复后 eval 在其后首个脚本间让路点 dispatch、
+        // 同点交付，剩余页面脚本照常执行。
+        rt.after_page_html_loaded_with_cache(std::collections::HashMap::new())
+            .expect("阶段执行");
+
+        let captured_bytes = captured.lock().expect("capture lock");
+        let mut delivered_reply = None;
+        {
+            let mut rest = &captured_bytes[..];
+            while rest.len() >= 4 {
+                let len = u32::from_le_bytes([rest[0], rest[1], rest[2], rest[3]]) as usize;
+                if rest.len() < 4 + len {
+                    break;
+                }
+                let (payload, tail) = rest.split_at(4 + len);
+                rest = tail;
+                if let Ok(msg) = zero_protocol::deserialize(&payload[4..])
+                    && let zero_protocol::message::IpcMessageKind::AutomationResponse(response) = msg.kind
+                    && msg.id == 78
+                {
+                    delivered_reply = Some(response.result);
+                }
+            }
+        }
+        let reply = delivered_reply
+            .expect("阶段中到达的 eval 回复帧须在阶段内写出（移除阶段中 dispatch/交付即滞留 staged 无人补答）");
+        assert_eq!(
+            reply,
+            Ok(AutomationResult::Value(AutomationValue::String(
+                "p106-phase-dispatch".into()
+            ))),
+            "阶段内交付的回复须携带求值结果"
+        );
+        assert!(
+            rt.cached_html.contains("data-p106-b"),
+            "阶段中 dispatch 的求值 mutation 须由让路点 apply 收编（不跨 document_generation）"
         );
     }
 }

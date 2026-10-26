@@ -25,6 +25,35 @@ use zero_protocol::process::RendererHandle;
 #[cfg(test)]
 use zero_webview::{WebView, WebViewConfig};
 
+// t-p106 诊断：automation deferred-reply headless 匹配点仪拍（ZW_AUTOMATION_TRACE env
+// 门控，零默认开销；renderer 侧同型 static 各自进程内打开同一文件 append）。落
+// h-send / h-recv / h-miss / h-timeout 四事件，与 renderer poll 交付点时间轴对齐。
+static AUTOMATION_TRACE_FILE: std::sync::LazyLock<std::sync::Mutex<Option<std::fs::File>>> =
+    std::sync::LazyLock::new(|| match std::env::var("ZW_AUTOMATION_TRACE") {
+        Ok(path) if path != "1" => {
+            std::sync::Mutex::new(std::fs::OpenOptions::new().create(true).append(true).open(path).ok())
+        }
+        _ => std::sync::Mutex::new(None),
+    });
+
+/// t-p106 诊断：headless 侧追加一行仪拍。文件不可写时静默跳过。
+fn automation_trace_line(line: &str) {
+    if let Ok(mut guard) = AUTOMATION_TRACE_FILE.lock()
+        && let Some(file) = guard.as_mut()
+    {
+        use std::io::Write as _;
+        let _ = writeln!(file, "{line}");
+    }
+}
+
+/// t-p106 诊断：headless 侧仪拍启用与否（未配置路径恒 false，调用点先查再 format）。
+fn automation_trace_enabled() -> bool {
+    AUTOMATION_TRACE_FILE
+        .lock()
+        .map(|guard| guard.is_some())
+        .unwrap_or(false)
+}
+
 // ── 会话 ──
 
 /// 已完成的代理 fetch（worker 线程 → 会话线程）。cookie 应用、Network 事件与
@@ -1030,6 +1059,14 @@ impl HeadlessSession {
     pub(super) fn automation_request(&mut self, operation: AutomationOperation) -> Result<AutomationResult, String> {
         let request_id = self.next_request_id;
         self.next_request_id = self.next_request_id.wrapping_add(1).max(1);
+        // t-p106 诊断：headless 发起点仪拍。
+        if automation_trace_enabled() {
+            let t = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis())
+                .unwrap_or_default();
+            automation_trace_line(&format!("[areply] t={t} h-send req={request_id}"));
+        }
         self.renderer
             .send(IpcMessage {
                 id: request_id,
@@ -1043,6 +1080,14 @@ impl HeadlessSession {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(35);
         let response = loop {
             if std::time::Instant::now() >= deadline {
+                // t-p106 诊断：超时仪拍——磨满 35s 的请求 id。
+                if automation_trace_enabled() {
+                    let t = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_millis())
+                        .unwrap_or_default();
+                    automation_trace_line(&format!("[areply] t={t} h-timeout req={request_id}"));
+                }
                 return Err("automation request timeout".into());
             }
             self.drain_fetch_completions();
@@ -1050,11 +1095,47 @@ impl HeadlessSession {
                 Some(IpcMessage {
                     id,
                     kind: IpcMessageKind::AutomationResponse(response),
-                }) if id == request_id => break response,
+                }) if id == request_id => {
+                    // t-p106 诊断：匹配点仪拍——回复实际到达 headless 的时刻。
+                    if automation_trace_enabled() {
+                        let t = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_millis())
+                            .unwrap_or_default();
+                        automation_trace_line(&format!("[areply] t={t} h-recv req={request_id}"));
+                    }
+                    break response;
+                }
+                Some(IpcMessage {
+                    id,
+                    kind: IpcMessageKind::AutomationResponse(response),
+                }) => {
+                    // t-p106 诊断：id 错配的 AutomationResponse（等待 A 收到 B）——
+                    // H2 假设（响应被 headless 丢弃）的直接证据点。
+                    if automation_trace_enabled() {
+                        let t = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_millis())
+                            .unwrap_or_default();
+                        automation_trace_line(&format!("[areply] t={t} h-miss wait={request_id} got={id}"));
+                    }
+                    self.handle_renderer_message(IpcMessage {
+                        id,
+                        kind: IpcMessageKind::AutomationResponse(response),
+                    })?;
+                }
                 Some(message) => {
                     self.handle_renderer_message(message)?;
                 }
-                None if !self.renderer.is_alive() => return Err("renderer exited during script execution".into()),
+                None if !self.renderer.is_alive() => {
+                    // t-p106 诊断：renderer 死亡面透出 stderr 临终 tail（S78 同款——
+                    // 否则 renderer 崩溃/退出原因在 headless 路径不可见）。
+                    let tail = self.renderer.stderr_tail();
+                    if !tail.is_empty() {
+                        tracing::error!("renderer stderr tail on renderer exit during script execution: {tail}");
+                    }
+                    return Err("renderer exited during script execution".into());
+                }
                 None => std::thread::sleep(std::time::Duration::from_millis(2)),
             }
         };
