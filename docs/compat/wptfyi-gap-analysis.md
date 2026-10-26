@@ -77,7 +77,23 @@ python3 tests/wpt-runner/scripts/wptfyi_gap.py self-test
   驱动的 Set-Cookie 静态语料无法执行），被正确单列——若不区分，这 17 条会
   全部混入 gap_core，使总 gap_core 虚高到 32 条（14+18）。
 
-报告是时点快照（wpt.fyi 每日有新 run），不入库；需要时重新生成。
+## 定时刷新（weekly cron）
+
+`.github/workflows/weekly.yml` 的 `wptfyi-gap` job 每周六自动执行上述全流程
+（构建 runner → 跑三套件 → 拉 wpt.fyi aligned stable → 生成快照），并把
+`gap-<日期>.md` + `.json` 追加提交回 `docs/compat/wptfyi/`；也可在 Actions
+手动 dispatch（勾选 run_wptfyi_gap，跳过构建矩阵）。
+
+- 快照是追加式时点数据：`.md` 供人读，`.json` 供程序消费（`meta.runs` 记
+  浏览器版本与 revision，分套件/分目录聚合 + 逐文件六桶分类）；旧快照保留
+  即趋势史。
+- **统计口径数据源**：文档与网站（website/metrics.json 体系）后续统一以
+  `docs/compat/wptfyi/gap-*.json` 为 wpt.fyi 口径取数点，不另行抓取。
+- `tests/wpt-runner/wptfyi-cache/` 仍是本地缓存（gitignored）；CI 上每次
+  全新拉取。快照目录在仓库内、不受 gitignore 影响。
+
+手动跑全套件时注意：wpt.fyi 每日滚动新 run，同一份 ZeroWeb 结果隔天重跑
+gap 会得到不同浏览器基准，跨日对比请引用快照文件而非重生成。
 
 ## 已知限制
 
@@ -92,7 +108,13 @@ python3 tests/wpt-runner/scripts/wptfyi_gap.py self-test
 
 ## 后续方向（未排期）
 
-- 阶段 2（外向）：向 wpt.fyi 注册 test runner，上传 wptreport 使 ZeroWeb 以
-  `product=zeroweb` 上榜（参照 Servo 先例）——前提是套件覆盖有代表性。
-- 将 gap_core 计数按目录聚合接入 `docs/compat/trends/wpt-suites.csv` 体系。
+- 阶段 2（外向，暂缓）：向 wpt.fyi 注册 test runner，上传 wptreport 使
+  ZeroWeb 以 `product=zeroweb` 上榜（参照 Servo 先例）——前提是套件覆盖
+  有代表性。
+- 网站接入：`scripts/generate-website-metrics.py` 读 `docs/compat/wptfyi/`
+  最新快照，在 website/metrics.json 增补 wpt.fyi 口径的差距面（gap_core
+  按目录聚合）；`docs/compat/trends/wpt-suites.csv` 的 15 列契约如需扩列
+  同步改 trend_csv_check 镜像测试。
+- 套件覆盖扩大：三套件是管线验证样本，逐步把已导入语料的目标套件纳入
+  weekly 快照（改 workflow 的 suite 列表即可）。
 - reftest 语料补 revision 台账，纳入渲染面对比。
