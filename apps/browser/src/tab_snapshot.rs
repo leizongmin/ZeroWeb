@@ -228,7 +228,13 @@ impl TabSnapshot {
         true
     }
 
-    /// 接收 compositor 完成位图；只接受与最新提交完全匹配且不旧于当前显示帧的结果。
+    /// 接收 compositor 完成位图；只接受当前导航代且不旧于当前显示帧的结果。
+    ///
+    /// 提交匹配按「同 surface 同 epoch 且不新于已记录提交」判定而非严格等值：
+    /// compositor Get 是「拉最新 front」语义，响应帧号可旧于浏览器已记录的最新提交
+    /// （持续发布页面 rAF 泵不断推进 recorded submission，严格等值令每次采纳都按
+    /// stale 拒收，loading 永不清除——P17c 首帧白屏根因）。跨 epoch 陈旧帧与
+    /// 旧于已显示帧的防线保留在后一子句。
     pub fn commit_compositor_frame(
         &mut self,
         submission: CompositorSubmission,
@@ -238,12 +244,14 @@ impl TabSnapshot {
         scroll_x: f32,
         scroll_y: f32,
     ) -> bool {
-        if self.compositor_submission != Some(submission)
-            || self.compositor_frame.as_ref().is_some_and(|current| {
-                current.surface_id == submission.surface_id
-                    && (current.navigation_epoch, current.frame_id) > (submission.navigation_epoch, submission.frame_id)
-            })
-        {
+        if !self.compositor_submission.is_some_and(|recorded| {
+            recorded.surface_id == submission.surface_id
+                && recorded.navigation_epoch == submission.navigation_epoch
+                && submission.frame_id <= recorded.frame_id
+        }) || self.compositor_frame.as_ref().is_some_and(|current| {
+            current.surface_id == submission.surface_id
+                && (current.navigation_epoch, current.frame_id) > (submission.navigation_epoch, submission.frame_id)
+        }) {
             return false;
         }
         let Ok(image) = ImageData::from_rgba(rgba, width, height) else {
@@ -283,13 +291,14 @@ impl TabSnapshot {
         dmabuf: CompositorDmabufPending,
         shadow_rgba: Option<Vec<u8>>,
     ) -> bool {
-        if self.compositor_submission != Some(submission)
-            || self.compositor_frame.as_ref().is_some_and(|current| {
-                current.surface_id == submission.surface_id
-                    && (current.navigation_epoch, current.frame_id)
-                        >= (submission.navigation_epoch, submission.frame_id)
-            })
-        {
+        if !self.compositor_submission.is_some_and(|recorded| {
+            recorded.surface_id == submission.surface_id
+                && recorded.navigation_epoch == submission.navigation_epoch
+                && submission.frame_id <= recorded.frame_id
+        }) || self.compositor_frame.as_ref().is_some_and(|current| {
+            current.surface_id == submission.surface_id
+                && (current.navigation_epoch, current.frame_id) >= (submission.navigation_epoch, submission.frame_id)
+        }) {
             return false;
         }
         self.image_cache.clear();
@@ -429,7 +438,11 @@ mod tests {
     }
 
     #[test]
-    fn compositor_frame_accepts_only_latest_submission_and_moves_pixels_to_cache() {
+    fn compositor_frame_accepts_lagging_then_latest_and_rejects_older_than_shown() {
+        // P17c：compositor Get 是「拉最新 front」语义，响应帧号可旧于已记录提交
+        // （持续发布页面 recorded submission 随 IPC 前进，严格等值令每次采纳按
+        // stale 拒收、loading 永不清除——首帧白屏根因）。当前代滞后帧须采纳；
+        // 旧于已显示帧（回退）与跨代帧仍拒收。
         let mut snap = TabSnapshot {
             navigation_epoch: 3,
             ..Default::default()
@@ -440,10 +453,19 @@ mod tests {
             frame_id: 7,
         };
         let latest = CompositorSubmission { frame_id: 8, ..first };
+        let foreign_epoch = CompositorSubmission {
+            navigation_epoch: 2,
+            ..first
+        };
         assert!(snap.record_compositor_submission(first));
         assert!(snap.record_compositor_submission(latest));
-        assert!(!snap.commit_compositor_frame(first, 1, 1, vec![255, 0, 0, 255], 0.0, 0.0));
+        // 滞后响应（Get(7) 数据到达时已记录 8）：当前代采纳——P17c 主钉。
+        assert!(snap.commit_compositor_frame(first, 1, 1, vec![255, 0, 0, 255], 0.0, 0.0));
         assert!(snap.commit_compositor_frame(latest, 1, 1, vec![0, 0, 255, 255], 0.0, 0.0));
+        // 已显示 8 后再提交 7：旧于当前显示帧，拒收（防回退）。
+        assert!(!snap.commit_compositor_frame(first, 1, 1, vec![255, 0, 0, 255], 0.0, 0.0));
+        // 跨导航代：拒收（陈旧帧防线上屏）。
+        assert!(!snap.commit_compositor_frame(foreign_epoch, 1, 1, vec![255, 0, 0, 255], 0.0, 0.0));
 
         let frame = snap.compositor_frame.as_ref().unwrap();
         assert_eq!((frame.surface_id, frame.navigation_epoch, frame.frame_id), (41, 3, 8));
