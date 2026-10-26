@@ -230,13 +230,11 @@ impl WasmModule {
                     name: imp.name().to_string(),
                     params: func_type
                         .params()
-                        .iter()
-                        .map(|&p| wasm_valtype_to_wasm_value_type(p))
+                        .map(wasm_valtype_to_wasm_value_type)
                         .collect::<Option<Vec<_>>>()?,
                     results: func_type
                         .results()
-                        .iter()
-                        .map(|&r| wasm_valtype_to_wasm_value_type(r))
+                        .map(wasm_valtype_to_wasm_value_type)
                         .collect::<Option<Vec<_>>>()?,
                 })
             })
@@ -254,14 +252,12 @@ impl WasmModule {
                         WasmExternKind::Func,
                         func_type
                             .params()
-                            .iter()
-                            .map(|&p| wasm_valtype_to_wasm_value_type(p))
+                            .map(wasm_valtype_to_wasm_value_type)
                             .collect::<Option<Vec<_>>>()
                             .unwrap_or_default(),
                         func_type
                             .results()
-                            .iter()
-                            .map(|&r| wasm_valtype_to_wasm_value_type(r))
+                            .map(wasm_valtype_to_wasm_value_type)
                             .collect::<Option<Vec<_>>>()
                             .unwrap_or_default(),
                     )
