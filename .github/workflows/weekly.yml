@@ -659,8 +659,18 @@ jobs:
           cargo build --release --bin zero-wpt-runner
           make target/test-guard
 
+      # GITHUB_TOKEN 给 goals/lib.sh 的 API 列目录认证——未认证 60 req/h 对
+      # CI 共享出口 IP 基本必 403，goals 脚本对限流优雅降级（跳过目录不报错），
+      # 会静默产出残缺语料（2026-10-26 首跑实证：compression 0 案、cookies 缺
+      # 子目录）。fetch-wpt-html-testharness 先引导共享 resources/testharness.js
+      # ——goals/lib.sh 体系不拉 resources，全新 checkout 缺它会让每案页面
+      # 加载即失败（webstorage 25 案全 0/1 假差距）。
       - name: Fetch suite corpora
-        run: make fetch-wpt-compression fetch-wpt-cookies fetch-wpt-webstorage
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          make fetch-wpt-html-testharness
+          make fetch-wpt-compression fetch-wpt-cookies fetch-wpt-webstorage
 
       # 有失败用例时 runner 退出码非 0 属预期（gap 报告就是要看差距）；
       # 但 JSON 必须落盘，空输出说明 runner 崩了，job 应当红。
@@ -683,6 +693,10 @@ jobs:
           python3 tests/wpt-runner/scripts/wptfyi_gap.py gap \
             --results /tmp/zw-results \
             --out "docs/compat/wptfyi/gap-$(date -u +%F).md"
+          # 快照是持久数据：可疑条目（引导失败伪 case/空 subtests/同名重复）
+          # 说明套件输出不可信——拒绝发布，宁缺毋滥（首跑事故实证）。
+          python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); n=sum(s["skipped_suspicious"] for s in d["suites"].values()); sys.exit(f"{n} 条可疑条目，套件输出异常，拒绝发布快照") if n else None' \
+            "docs/compat/wptfyi/gap-$(date -u +%F).json"
 
       - name: Upload gap snapshot artifact
         if: always()
