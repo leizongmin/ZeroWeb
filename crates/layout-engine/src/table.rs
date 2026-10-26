@@ -600,6 +600,35 @@ fn size_table_with_raw_text_content(
     if !(size.width > 0.0 && size.height > 0.0) {
         return false;
     }
+    // shrink-to-fit（CSS2 §17.5.2：表不可宽于包含块，used width = shrink-to-fit 公式）：
+    // max-content 测量宽超出 taffy 分配宽（= 包含块 content 宽约束；block 表 leaf 被
+    // stretch 到包含块、探针实证）时按 available 折行重测高度，而非固化单行溢出
+    //（inline-table-width-001-ref：10em 容器内裸文本表 491 单行 → 160 宽 4 行）。
+    // available ≤ 1 为 taffy sizing 退化（contain:inline-size，同 R4298 `col_available
+    // >= 1.0` 口径），回落单行旧行为。// FIXME: min-content 下限（最长词宽于
+    // available 时表取词宽、词溢出由 overflow 呈现）未建模，案驱动另切片。
+    let available_w = table_box.content_width;
+    let (content_w, content_h) = if available_w > 1.0 && size.width > available_w + 0.5 {
+        let wrapped = crate::inline_finalization::measure_text_content(
+            doc,
+            styles,
+            dom_id,
+            taffy::geometry::Size {
+                width: None,
+                height: None,
+            },
+            taffy::geometry::Size {
+                width: taffy::style::AvailableSpace::Definite(available_w),
+                height: taffy::style::AvailableSpace::MaxContent,
+            },
+            &HashMap::new(),
+            inline_fonts,
+            None,
+        );
+        (available_w, wrapped.height.floor())
+    } else {
+        (size.width.floor(), size.height.floor())
+    };
     let frame_w = table_box.border_left + table_box.border_right + table_box.padding_left + table_box.padding_right;
     let frame_h = table_box.border_top + table_box.border_bottom + table_box.padding_top + table_box.padding_bottom;
     // 测量值取整到整数相位——表盒自定尺寸路径绕过 taffy round_layout，未取整的
@@ -607,8 +636,6 @@ fn size_table_with_raw_text_content(
     // 边框画 3 行 vs ref 2 行）。行盒高向下取整对齐块容器终末行盒高语义
     //（ref 探针 probe-r5097-r：普通 div 直排文本行高 18.0，测量 IFC 18.624——
     // round 会取 19 反而错相位 1px，run-in-table-between-001 A/B 实证）。
-    let content_w = size.width.floor();
-    let content_h = size.height.floor();
     table_box.content_width = content_w;
     table_box.content_height = content_h;
     table_box.width = content_w + frame_w;

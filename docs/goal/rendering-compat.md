@@ -9,6 +9,14 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5291 实现轮（裸文本表 shrink-to-fit 折行重测——inline-table-width-001b ✗3.02→✓0.00，corpus 15727P/863F→15728P/862F 仅一案移出零翻转；R5097 臂内补 available 约束）**（2026-10-26）
+>
+> - **取证**：暖域候选 inline-table-width-001b（3.02%）双页不对称——test 页（inline-table 显式 10em）全对，**ref 页（块级 display:table auto 宽 + 裸文本）491px 单行溢出**（应 160 宽折行）。`ZW_LAYOUT_DUMP_REF=1` dump：ref 表盒 w=491 h=18（父容器 160）；探针实证 `size_table_with_raw_text_content`（R5097）入口 `table_box.content_width=160`（taffy 对 block 表 leaf stretch = 包含块约束）而 MaxContent 测量 491.48×18 被**直接固化**——R5097 首版自注「多行长文本折行不在本切片」，当时无 driving 案，现补上。
+> - **实现**（+29/−2）：R5097 臂内加 shrink-to-fit（CSS2 §17.5.2）——max-content 测量宽超 taffy 分配宽时按 `Definite(available)` 重测，宽取 available、高取折行后 IFC 高（`.floor()` 沿用 R4333 整数相位口径）；`available ≤ 1` 为 taffy sizing 退化回落旧行为（同 R4298 `col_available >= 1.0` 口径）。无新开关（行为在 R5097 既有 `ZW_TABLE_RAW_TEXT_ANON_CELL` 门内）。`// FIXME:` min-content 下限（最长词宽于 available 时表取词宽）未建模，案面明确无超长词，案驱动另切片。
+> - **交付**：001b **✗3.02→✓0.00**、inline-table-width 族 4/4；全量 corpus **16590/15728P/862F**，失败集 vs R5290 交付态恰移出一案零新增翻转（sorted A/B）；真通过-可信 10235（61.7%）。R5097 同路径锚点 run-in 族 133 案 130✓/3✗（全为基线既有）。新常驻测试 2（超包含块折行 + 短文本保持 max-content 对照）。
+> - **验证**：make reftest **716/716**；make test 88 套件绿 + 唯一失败 = `mutation_arm` 已知并行时序 flake（standalone 1P/1.61s，R5289/R5290 同口径）；product-smoke **6/6** struct-check PASS + welcome oracle **15.50%** 持平；bench-gate 定向 zero-layout-engine **25/25** PASS；fmt 0 diff、clippy 干净。证据：[r5291](rendering-compat/evidence/r5291-raw-text-table-shrink-to-fit-2026-10-26.md)。
+> - **下一步**：R5292 ① 轻量修复主循环（862 failed 账本：before-after-table-parts-001 14.97 深结构挂账（::before/::after 生成内容转表格部件，两页均错，anonymous-objects 深域）、column-visibility-004 2.21、vertical-align-baseline-009 1.15、anonymous-boxes-001a 4.17 等选取）② paint 残余（胜者带覆盖 cell 内容 +2px、交叉带 draw order chromium 反序）③ 内格线 hidden cell 源压制 + 显式 `background-origin: border-box` collapsed 锚点挂账 ④ anonymous-objects 155/156（匿名 table-row 未生成）、row 42（row 内 block span→匿名 cell）维持 ⑤ 031 竖排/::selection 维持 ⑥ 跨流碰头维持。
+>
 > **▶ R5290 实现轮（纯匿名 cell 行行高真实化——glyph 垂直度量下限，anonymous-objects-085 2.24→✓0.00 / 086 2.96→✓0.00，corpus 15727P/863F 失败集仅两案移出零翻转，R5289 strut 分叉假设翻案）**（2026-10-26）
 >
 > - **取证**：单页 `product-smoke` + PIL 逐色扫描锁定红层（z1，3 个 display:table-row span）行 2/3 文本高绘 9px；glyph 探针 off=37 全对排除 paint 偏移；[pathb] doc-tag 打印**翻案 R5289 层序误读**（红层 = 3 行 span、绿层 = 3 真表，td strut 分叉假设作废，详见 r5289 evidence 更正注记）。layout-dump：红层行盒 abs_y 57/94/140、h 37/46/37（应 57/103/149 全 46），堆叠吃前行盒高 → 行 1 塌 9px 连累行 2/3；绿表全对。[rowh] 探针（position_cells 时点）：红层合成 cell `h=0`（R5169 boxless 空合成臂，R2160 跳过裸 inline 无盒），row_height 靠 aware 的 taffy junk 37（fs×1.164）兜底。strut 差分：`resolve` 对通用族名 "monospace" 恒 miss（resolver 表只含具体字体名）；真实 46 = **R4378 glyph 垂直度量**（font_id→fontdue ascent+descent，td 的 IFC 聚合同式，不受 `ZW_PERFONT_LINEHEIGHT` 门控）。
