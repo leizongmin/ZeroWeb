@@ -483,7 +483,7 @@ pub fn extract_module_import_specifiers(source: &str) -> Vec<String> {
 // 识别 import 语句并剥离关键字，返回子句。识别 `import `（关键字后空白）与压缩形态
 // `import{`、`import"`、`import'`、`` import` ``、`import*`——minifier 会剥掉关键字后
 // 无语法歧义的空白。动态 `import(`、元属性 `import.`、`import` 前缀标识符不匹配。
-fn strip_import_keyword(stmt: &str) -> Option<&str> {
+pub(crate) fn strip_import_keyword(stmt: &str) -> Option<&str> {
     let rest = stmt.strip_prefix("import")?;
     match rest.chars().next()? {
         c if c.is_whitespace() => Some(rest.trim_start()),
@@ -507,7 +507,7 @@ fn strip_export_keyword(stmt: &str) -> Option<&str> {
 /// 模块标识符串起点）。支持常规 ` from '…'` 与压缩形态 `from'…'`：`from` 须为独立
 /// token（前一字符非标识符组成、其后到字符串字面量间只允许空白）。
 // https://tc39.es/ecma262/#sec-module-specifiers
-fn split_from_clause(clause: &str) -> Option<(&str, &str)> {
+pub(crate) fn split_from_clause(clause: &str) -> Option<(&str, &str)> {
     let bytes = clause.as_bytes();
     let is_ident_byte = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b'$';
     let mut search = 0;
@@ -532,7 +532,7 @@ fn split_from_clause(clause: &str) -> Option<(&str, &str)> {
 // {…}` 巨型赋值实测，react-core 2026-10-09）会把正文里错误消息字符串的
 // `from \`react-router/dom\`` 文本当 from 子句切出幻影依赖 → 404 → 模块编译整体失败
 // → 站点 chunk 加载三连重试后报错。绑定/名字部分只含标识符与标点，先验形态再扫 from。
-fn import_clause_shape_ok(clause: &str) -> bool {
+pub(crate) fn import_clause_shape_ok(clause: &str) -> bool {
     match clause.chars().next() {
         // 字符串形态（import"m"）、命名空间、命名导入
         Some('{') | Some('*') | Some('\'') | Some('"') | Some('`') => true,
@@ -1265,7 +1265,7 @@ enum ScanCtx {
 }
 
 /// Split top-level module statements without breaking multiline function or arrow bodies.
-fn split_statements(source: &str) -> Vec<String> {
+pub(crate) fn split_statements(source: &str) -> Vec<String> {
     let mut stmts = Vec::new();
     let mut current = String::new();
     let mut braces = 0usize;
@@ -1501,7 +1501,7 @@ fn split_statements(source: &str) -> Vec<String> {
 /// 对动态 `import('./x.js')`（引号后紧跟 `)`）恒判 unclosed → 标识符全被丢弃。改为按字符扫描到
 /// 匹配的闭合引号即止，**忽略其后的 `)`/`;`/剩余代码**——既修动态 import，也保持静态 import
 ///（`'./a.js'` 后无非空白字符时行为不变）向后兼容。反斜杠转义引号不计为闭合。
-fn extract_string_literal(s: &str) -> Result<String, ScriptError> {
+pub(crate) fn extract_string_literal(s: &str) -> Result<String, ScriptError> {
     let s = s.trim();
     let mut chars = s.chars();
     let close = match chars.next() {

@@ -31,6 +31,9 @@ mod worker;
 // js-dom R84：模块声明移至下方 not(v8) 门控区（union 态 dead-code）。
 mod es_module;
 
+// s105（html-semantics-compat）：import attributes 静态校验（复用 es_module 扫描件）。
+mod import_attributes;
+
 // P6 import map：仅依赖 serde_json/url，与引擎 feature 无关，无条件编译。
 mod import_map;
 
@@ -52,6 +55,8 @@ mod quickjs_worker;
 pub use quickjs_worker::*;
 
 pub use es_module::*;
+
+pub use import_attributes::{ImportAttributeError, validate_static_import_attributes};
 
 pub use import_map::{ImportMap, ImportMapResolution};
 

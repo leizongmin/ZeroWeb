@@ -4095,6 +4095,19 @@ impl WebView {
                 }
             };
             let full = if is_module {
+                // s105（html-semantics-compat）：import attributes 静态校验（parse 面，
+                // 先于图收集——属性键 SyntaxError 优先于 specifier 解析错误的 TypeError，
+                // WPT invalid-import-errors-order 判据；type 值 ∉ module type map →
+                // TypeError，WPT invalid-type-attribute-error 判据 js/javascript 亦非法）。
+                // 违例 → window 报对应实例 + 元素照常 fire load + 体不执行（s102 报告面
+                // 既有语义；continue 连 prelude 依赖预热一并跳过，s103 同口径）。
+                // https://tc39.es/proposal-import-attributes/
+                // https://html.spec.whatwg.org/multipage/webappapis.html#module-type-map
+                if let Err(e) = zero_script_sandbox::validate_static_import_attributes(&code) {
+                    let _ = sandbox.execute(&script_report_module_failure(&e.message, script_index, e.error_ctor));
+                    tracing::warn!("import attributes 校验失败，模块体不执行: {}", e.message);
+                    continue;
+                }
                 // 预注册空存根 + 编译（import→空 namespace、export→_exports；动态 import() 经 prelude）。
                 // R3093：fetcher 配置时只用**静态** import 预存根（动态 import() 留给运行时 __zw_compile_module
                 // fetch，避免预存根 empty namespace 短路）；无 fetcher 仍用全量（动态 import 预存根返空 namespace）。
@@ -8298,7 +8311,96 @@ mod redirect_tests {
         );
     }
 
-    /// s104 回归钉：frameset 文档 `document.body` 语义——spec dom.html#dom-document-body：
+    /// s105 回归钉：import attributes 非法 type 值 → window 报 TypeError 实例 +
+    /// 元素照常 fire load + 体不执行（WPT invalid-type-attribute-error 四值判据；
+    /// HTML module type map 不注册 "js"/"javascript"，JS 模块以无属性为默认形态）。
+    /// https://tc39.es/proposal-import-attributes/
+    /// https://html.spec.whatwg.org/multipage/webappapis.html#module-type-map
+    #[test]
+    fn import_attribute_invalid_type_reports_typeerror_and_skips_body_s105() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        wv.prepare_document_state("https://wpt.test/a/page.html");
+        wv.load_html(
+            "<!doctype html><body>\
+             <script>window.addEventListener('error', function (ev) {\
+             globalThis.__errCtor = ev.error ? ev.error.constructor.name : 'none'; });</script>\
+             <script type=\"module\" onload=\"globalThis.__modLoad = 1\">\
+             import './dep.js' with { type: \"js\" }; globalThis.__bodyRan = 1;</script>\
+             <script>globalThis.__after = 1;</script>\
+             </body>",
+            None,
+        );
+        wv.run_page_scripts_strict()
+            .expect("属性校验失败页面须继续（strict 不 abort）");
+        assert_eq!(
+            wv.execute_script("String(globalThis.__errCtor)").unwrap(),
+            "TypeError",
+            "非法 type 值须向 window 报 TypeError 实例（ev.error）"
+        );
+        assert_eq!(
+            wv.execute_script("String(globalThis.__modLoad)").unwrap(),
+            "1",
+            "校验失败属 fetch 成功后的失败面——元素照常 fire load"
+        );
+        assert_eq!(
+            wv.execute_script("String(globalThis.__bodyRan)").unwrap(),
+            "undefined",
+            "校验失败模块体须不执行"
+        );
+        assert_eq!(
+            wv.execute_script("String(globalThis.__after)").unwrap(),
+            "1",
+            "失败模块之后的 classic 脚本须照常执行"
+        );
+    }
+
+    /// s105 回归钉：未知属性键 → SyntaxError 且**先于** specifier 解析错误
+    /// （WPT invalid-import-errors-order：`import BAD with { unknown: "foo" }` 判
+    /// SyntaxError 而非图收集裸 specifier 的 TypeError；体不执行 + 元素照常 load）。
+    /// https://tc39.es/proposal-import-attributes/
+    #[test]
+    fn import_attribute_unknown_key_precedes_specifier_error_s105() {
+        let cfg = WebViewConfig {
+            script_source_fetcher: Some(std::sync::Arc::new(
+                |_parent: &str, _spec: &str| -> Result<String, String> { Err("no fetch".to_string()) },
+            )),
+            ..WebViewConfig::default()
+        };
+        let mut wv = WebView::new(cfg);
+        wv.prepare_document_state("https://wpt.test/a/page.html");
+        wv.load_html(
+            "<!doctype html><body>\
+             <script>window.addEventListener('error', function (ev) {\
+             globalThis.__errCtor = ev.error ? ev.error.constructor.name : 'none'; });</script>\
+             <script type=\"module\" onload=\"globalThis.__modLoad = 1\">\
+             import \"BAD\" with { unknown: \"foo\" }; globalThis.__bodyRan = 1;</script>\
+             <script>globalThis.__after = 1;</script>\
+             </body>",
+            None,
+        );
+        wv.run_page_scripts_strict()
+            .expect("属性校验失败页面须继续（strict 不 abort）");
+        assert_eq!(
+            wv.execute_script("String(globalThis.__errCtor)").unwrap(),
+            "SyntaxError",
+            "属性键校验（parse 面）须先于图收集 specifier 解析（TypeError）"
+        );
+        assert_eq!(
+            wv.execute_script("String(globalThis.__modLoad)").unwrap(),
+            "1",
+            "元素照常 fire load（fetch 成功后的失败面）"
+        );
+        assert_eq!(
+            wv.execute_script("String(globalThis.__bodyRan)").unwrap(),
+            "undefined",
+            "校验失败模块体须不执行"
+        );
+        assert_eq!(
+            wv.execute_script("String(globalThis.__after)").unwrap(),
+            "1",
+            "失败模块之后的 classic 脚本须照常执行"
+        );
+    }
     /// body element = html 元素的**第一个 body 或 frameset 子元素**（frameset 文档的
     /// body element 是 frameset）。引擎解析树（html5ever spec 树构造）frameset 文档无
     /// body 元素——旧 shim 恒返 body selector proxy 报 BODY（WPT execution-timing/116

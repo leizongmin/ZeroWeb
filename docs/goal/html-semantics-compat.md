@@ -2,9 +2,60 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 104 施工收口（frameset 文档 document.body 语义：**execution-timing/116 1F→1P**，scripting-1 **348P/193F/37T→349P/192F/37T**，行级 diff 恰 1 行零旁损——spec dom.html#dom-document-body「body element = html 元素第一个 body 或 frameset 子元素」落地：解析树（html5ever spec 树构造）frameset 文档无 body 元素（Rust DOM 正确），shim `document.body` 旧为静态 body selector proxy 恒报幽灵 BODY；改 getter 按 host 查询分派——body 缺失且 frameset 存在 → frameset proxy，否则原 body proxy（普通文档 identity/行为零变化，proxy 按选择器缓存）；渲染面零依赖（reftest 自有 onload 提取、layout 读 Rust DOM）；webview lib 807（+1 单测）/engine lib 3533；clippy 双 crate clean；候选对比：063（cloneNode deep runner 脚本记账重复执行 pending=1）与 module 尾片（import attributes/.py 执行器基建）均大体量未动，execution-timing 族 50F（scheduler 语义）另立项），下一步 s105 入场探针定刀位（候选：module 尾片体量评估（import attributes 或 .py 执行器前置）/ execution-timing scheduler 族定刀 / 063 Timeout 深探）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 105 施工收口（import attributes 静态校验：**import-attributes 域 3F→3P**（invalid-type-attribute-error / unsupported-attribute / invalid-import-errors-order），scripting-1 **349P/192F/37T→352P/189F/37T**，行级 diff 恰 3 行零旁损——新 script-sandbox `import_attributes` 模块逐静态 import 语句校验 `with` 子句：属性键 ≠ type → SyntaxError（全量先于 type 值校验）、type 值 ∉ module type map {"json","css","text"} → TypeError（"js"/"javascript" 不注册，语料四值判据一致）；webview is_module 臂图收集前接线——违例走 s102 报告面（error_ctor 分派 + 元素 fire load + 体不执行含 prelude），校验先于图收集保证属性键 SyntaxError 胜过裸 specifier TypeError；首版 map 漏 "text" 扰动 text-module 5 页、按语料属性值分布收录后 FILTER=text-module 与基线零 diff；script-sandbox lib 372（+7）/webview lib 809（+2）；clippy 双 crate clean），下一步 s106 入场探针定刀位（候选：execution-timing scheduler 族定刀 / 063 Timeout 深探 / 数据模块全量支持或 .py 执行器前置体量评估）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-27 M2 切片 104 施工收口，frameset 文档 document.body 语义轮）**：
+> **▶ 当前状态（2026-10-27 M2 切片 105 施工收口，import attributes 静态校验轮）**：
+> **入场定谳**：三候选评估——execution-timing 50F 异质（scheduler 排序长尾 + SVG
+> integration-point 解析器面 + 138/139/143 疑似变换自伤）非单根因切片，否；063 =
+> runner 脚本记账深坑，否；**import attributes 静态校验 3 Fail 页**最小高信定刀。
+> 判据（语料原文核对）：invalid-type-attribute-error（4 外链模块 type 值
+> notARealType/""/js/javascript → ev.error.constructor 全 TypeError，
+> onerror=unreachable 即元素须 fire load 不 fire error）；unsupported-attribute
+> （未知 key → SyntaxError）；invalid-import-errors-order（3 内联模块全
+> SyntaxError——属性键错误先于同句/后句 specifier 解析错误与 type 值错误）。
+> type 值合法性 = HTML module type map 不注册 "js"/"javascript"（JS 模块以无属性
+> 为默认形态），语料四值判据一致；合法面 {"json","css","text"}。
+> **本轮一刀**：新 script-sandbox `import_attributes` 模块
+> `validate_static_import_attributes`——逐静态 import 语句（复用 es_module 5 扫描
+> 件提 pub(crate)）定位 specifier 字面量后探测 `with {…}` 子句：任一属性键 ≠ type
+> → SyntaxError（全量先于 type 值校验）；type 值 ∉ map → TypeError；块未闭合/
+> 值非字符串字面量 → SyntaxError。webview is_module 臂图收集前接线：违例走 s102
+> 报告面（error_ctor 分派 + 元素 fire load + continue 体不执行含 prelude，s103
+> 同口径）——校验先于图收集保证属性键 SyntaxError 胜过裸 specifier 的
+> DepResolution TypeError。合法属性零行为变化（仍走图收集，数据模块 MIME 面维持
+> 现状）。放新文件不进 es_module.rs（后者已 3470 行超 2000 行准则）。
+> **验证**：script-sandbox lib **372/372**（+7）；webview lib **809/809**（+2：非法
+> type 值 TypeError 钉 + 未知 key 胜 bare specifier 序钉）；定向 **FILTER=
+> import-attributes 4/4 全 Pass**（3 目标页 F→P + empty-attributes-clause 保持
+> P）；全子树终扫 **352P/189F/37T + 15 NotRun**（s104：349P/192F/37T+15N），行级
+> diff **恰 3 行**（3 目标页 F→P）、**零 P→非P**（comm 校验）、T/N 持平零旁损；
+> fmt clean + clippy 双 crate clean。**扰动实录**：首版 map 漏 "text"（语料
+> text-module 族 32 处 `type: "text"`）一轮全扫 text-module 5 页翻转（含
+> integrity/load-error-events P→非P）——按语料属性值分布统计收录后
+> FILTER=text-module 与基线零 diff 愈合。教训：module type map 合法面以全语料
+> 属性值分布定界，不凭 spec 印象。**测试坑**：回归钉首版 `import BAD with {…}`
+> （default binding 无 from 子句——非法 JS，import_clause_shape_ok 正确拒绝致无
+> 报告），改裸字符串 `import "BAD" with {…}`（corpus 同形）后过。渲染面零依赖
+> （JS 静态校验 + webview 编译臂）——reftest/product-smoke 未跑。账本见
+> [evidence/2026-10-27-m2s105-import-attributes-static-validation.md](html-semantics-compat/evidence/2026-10-27-m2s105-import-attributes-static-validation.md)。
+> **范围**：import_attributes.rs 新模块 + es_module.rs（5 扫描件 pub(crate)) +
+> lib.rs（注册）+ webview.rs（接线 + 2 单测）；解析器/语料/runner 零变更；语料
+> 不可改维持。
+> **挂账**：import attributes 余项——数据模块全量支持（fetcher MIME 门
+> testharness.rs:4904-4964 + extractor 类型捕获 + registry 合成源 + rewriter，
+> 跨 crate 大切片）、`export … from` 属性子句与动态 import() with 选项、dep 级
+> 属性校验；execution-timing 族 **50F**（scheduler 语义，另立项——063 为其中
+> 一页）；.py 执行器 / 非 Error 抛出值 ev.error=null 身份 / 动态 import reject
+> 形 / error-type-3 instantiation 优先级；charset 族（Timeout 形）；
+> svg-script-fragment-clone 3F；FIXME 组（bufTop 漂移/setAttribute('src')/type
+> 门/children-changed 其余入口）；接口对象基建面（承袭）；基线扫描宜空载（承袭）；
+> testharness.rs /tmp/zw-hb*.txt 插桩两行来源待查（承袭）。import-attributes 3 页
+> 本轮销账。
+> **下一步**：s106 入场探针定刀位（候选：execution-timing scheduler 族定刀 /
+> 063 Timeout 深探 / 数据模块全量支持或 .py 执行器前置体量评估）。
+> **切片间隙**：本轮 script-sandbox/webview 面 + 单测；下一挂账同流同面，间隙开放。
+>
+> **▶ 上轮状态（2026-10-27 M2 切片 104 施工收口，frameset 文档 document.body 语义轮——其下一步 s105 入场探针定刀位已由 s105 收口，见上）**：
 > **入场定谳**：承袭「116 frameset 文档语义缺口」（s97 记账）——execution-timing/116
 > 1F：`assert_array_equals` 期望 `['document.body: <FRAMESET>']` 实得 `<BODY>`。判据
 > 机制：head 内动态插入外链 find-body.js，文档解析完后记录 `document.body.localName`
