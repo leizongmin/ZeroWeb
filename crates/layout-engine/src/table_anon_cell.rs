@@ -50,6 +50,8 @@ pub(crate) fn synthesize_anon_table_cells(
     root: &mut LayoutBox,
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
+    metric_provider: Option<&crate::inline::FontMetricProviderHandle>,
+    font_resolver: Option<&std::rc::Rc<HashMap<String, u32>>>,
 ) {
     // 本盒是 table-row：先合成其子。合成 cell 借宿主行 node_id（样式查表会返回行
     // 的 TableRow）——必须按 is_anon_table_cell 旗标排除，否则把 cell 的 inline 子
@@ -65,7 +67,7 @@ pub(crate) fn synthesize_anon_table_cells(
         // —— vertical 维持 pre-R5168 行为。
         // FIXME(R5168 后继)：vertical 表匿名 cell 合成与网格预留专项。
         if !root.writing_mode.is_vertical_block_flow() {
-            wrap_inline_runs_in_row(root, doc, styles);
+            wrap_inline_runs_in_row(root, doc, styles, metric_provider, font_resolver);
         }
     }
     // R5209（CSS2 §17.2.1：table-row-group 的非 table-row 子 → 匿名 cell 包裹）：
@@ -87,7 +89,7 @@ pub(crate) fn synthesize_anon_table_cells(
         wrap_stray_text_runs_in_row_group(root, doc);
     }
     for child in &mut root.children {
-        synthesize_anon_table_cells(child, doc, styles);
+        synthesize_anon_table_cells(child, doc, styles, metric_provider, font_resolver);
     }
 }
 
@@ -116,7 +118,13 @@ fn is_run_member(child: &LayoutBox, doc: &Document, styles: &HashMap<NodeId, Com
 }
 
 /// 对单个行盒执行 run 包裹。run 长度 ≥1 即合成（§17.2.1：单个 inline 子也属匿名 cell）。
-fn wrap_inline_runs_in_row(row: &mut LayoutBox, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) {
+fn wrap_inline_runs_in_row(
+    row: &mut LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    metric_provider: Option<&crate::inline::FontMetricProviderHandle>,
+    font_resolver: Option<&std::rc::Rc<HashMap<String, u32>>>,
+) {
     let Some(row_node_id) = row.node_id else {
         return; // 无 DOM 身份的行（merge_orphan 包装内的行均为 node-ful，防御）
     };
@@ -144,6 +152,16 @@ fn wrap_inline_runs_in_row(row: &mut LayoutBox, doc: &Document, styles: &HashMap
             .filter(|c| !c.is_absolute && !c.is_fixed)
             .map(|c| c.height + c.margin_top + c.margin_bottom)
             .fold(0.0f32, f32::max);
+        // R5290（CSS2 §17.5.3）：drained 子盒几何是 taffy 交换帧 junk（R5168 模块文档
+        // 「h=37/ch=0」），纯匿名 cell 行（无显式 cell 撑行）的行高即此 junk——085 红层
+        // 三行 span 全为合成 cell，行高 37.2（1.164 近似）< 同字体 IFC 真实行盒高 46
+        //（R4378 glyph ascent+descent 真实度量，td 的 IFC 聚合同式），后继行 y 堆叠塌
+        // 9px、行文本整层高绘。以 run 成员的 IFC 行盒贡献为行高下限（同 R5169 臂）。
+        let strut_bottom = fragment_ids
+            .iter()
+            .filter_map(|id| run_member_line_box_height(*id, doc, styles, font_resolver, metric_provider))
+            .fold(0.0f32, f32::max);
+        let content_bottom = content_bottom.max(strut_bottom);
         let cell = LayoutBox {
             node_id: Some(row_node_id),
             fragment_node_ids: Some(fragment_ids),
@@ -170,7 +188,7 @@ fn wrap_inline_runs_in_row(row: &mut LayoutBox, doc: &Document, styles: &HashMap
     }
 
     // R5169：盒级 drain 收不掉 R2160 跳过的无盒 run（shape A）——DOM 级补空合成 cell。
-    wrap_boxless_runs_in_row(row, doc, styles);
+    wrap_boxless_runs_in_row(row, doc, styles, metric_provider, font_resolver);
 }
 
 /// R5209：孤立行组内 boxless 裸文本 run 的空合成 cell。
@@ -265,7 +283,13 @@ fn wrap_stray_text_runs_in_row_group(group: &mut LayoutBox, doc: &Document) {
 ///
 /// 幂等：row 子已存在 fragment 相交的合成 cell（shape B drain 产物或既往 pass）
 /// 即跳过，不重复建盒。
-fn wrap_boxless_runs_in_row(row: &mut LayoutBox, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) {
+fn wrap_boxless_runs_in_row(
+    row: &mut LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    metric_provider: Option<&crate::inline::FontMetricProviderHandle>,
+    font_resolver: Option<&std::rc::Rc<HashMap<String, u32>>>,
+) {
     let Some(row_node_id) = row.node_id else {
         return;
     };
@@ -345,16 +369,27 @@ fn wrap_boxless_runs_in_row(row: &mut LayoutBox, doc: &Document, styles: &HashMa
         }) {
             continue;
         }
+        // R5290（CSS2 §17.5.3）：空合成 cell 高度 0 时行高全靠同网格显式 cell 或
+        // taffy junk 兜底——085 红层三行 span 全为匿名 cell（无显式 cell），行高塌到
+        // junk 37（1.164 近似）< 同字体 IFC 真实行盒高 46（R4378 glyph ascent+descent
+        // 真实度量，td 的 IFC 聚合同式），后继行 y 堆叠塌 9px、行文本整层高绘。
+        // 以 run 成员的 IFC 行盒贡献（glyph_verticals_contribution，与 td IFC 聚合
+        // 同式）为 cell 高下限；度量不可得（字体未注册/文本为空）时回落 line-height
+        // 近似 ≈ 现状。折行多行 run 的高度仍挂账（原值只会更低，不较前更差）。
+        let strut_bottom = run
+            .iter()
+            .filter_map(|id| run_member_line_box_height(*id, doc, styles, font_resolver, metric_provider))
+            .fold(0.0f32, f32::max);
         let cell = LayoutBox {
             node_id: Some(row_node_id),
             fragment_node_ids: Some(run),
             is_block_level: true,
             is_anon_table_cell: true,
             writing_mode: writing_mode.clone(),
-            // 无子盒（run 成员本就无盒）：高度 0，行高由显式 cell 撑起
-            //（position_cells row_height.max）；纯匿名 cell 行行高仍挂账。
-            height: 0.0,
-            content_height: 0.0,
+            // 无子盒（run 成员本就无盒）：行高下限 = run 成员 line-height（R5290），
+            // 余由显式 cell row_height.max 撑起；折行多行 run 仍挂账。
+            height: strut_bottom,
+            content_height: strut_bottom,
             ..Default::default()
         };
         // 插入锚：run 之后的首个非 inline DOM 兄弟的盒位（保 DOM 序）；无锚（行尾
@@ -365,4 +400,84 @@ fn wrap_boxless_runs_in_row(row: &mut LayoutBox, doc: &Document, styles: &HashMa
             None => row.children.push(cell),
         }
     }
+}
+
+/// R5290：run 成员的 IFC 行盒贡献高（与 td 的 IFC 行盒聚合同式，CSS2 §10.8.1）。
+///
+/// line-height:normal 的 run 由 R4378 glyph 垂直度量（ascent+descent）撑行盒，该值
+/// 高于 1.164 近似的 line-height（085 实测 46 vs 37.2）——合成 cell 的行高下限取同式
+/// 才能对齐真表行的堆叠节奏。显式 line-height 走 half-leading 分布（同式二分）。
+/// 字体未注册/成员无文本时回落 line-height 近似（resolve 的 px 值），不低于合成
+/// 前的 0 高基线。
+fn run_member_line_box_height(
+    node_id: NodeId,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    font_resolver: Option<&std::rc::Rc<HashMap<String, u32>>>,
+    metric_provider: Option<&crate::inline::FontMetricProviderHandle>,
+) -> Option<f32> {
+    let node = doc.get(node_id)?;
+    let (style, text) = match &node.kind {
+        zero_dom::NodeKind::Text(t) => {
+            // 文本节点样式优先自身查表（collect_items 429 同序），缺省取父元素。
+            let style = styles
+                .get(&node_id)
+                .or_else(|| doc.parent_node(node_id).and_then(|pid| styles.get(&pid)))?;
+            (style, t.content.clone())
+        }
+        zero_dom::NodeKind::Element(_) => (styles.get(&node_id)?, collect_subtree_text(doc, node_id, 0)),
+        _ => return None,
+    };
+    let (font_size, line_height) = crate::inline::resolve_font_metrics_with_provider(Some(style), metric_provider);
+    // 有序 face 解析：逐族查 resolver 表（FontLoader::line_metrics 的匹配序同款：
+    // 精确名优先，大小写不敏感回退）；resolver 缺席时经 provider 解析。
+    let families = style
+        .font_family
+        .iter()
+        .map(|fam| fam.trim_matches('"').trim_matches('\''));
+    let font_ids: Vec<u32> = match font_resolver {
+        Some(resolver) => families
+            .filter_map(|fam| {
+                resolver.get(fam).copied().or_else(|| {
+                    resolver
+                        .iter()
+                        .find(|(k, _)| k.eq_ignore_ascii_case(fam))
+                        .map(|(_, v)| *v)
+                })
+            })
+            .collect(),
+        None => metric_provider
+            .and_then(|p| p.font_id_of(&style.font_family))
+            .into_iter()
+            .collect(),
+    };
+    let Some((glyph_ascent, glyph_descent)) =
+        crate::inline::fallback_line_metrics_for_layout(&font_ids, &text, font_size)
+    else {
+        return Some(line_height);
+    };
+    let line_height_is_normal = matches!(style.line_height, zero_style_system::LineHeightValue::Normal);
+    let (ascent, descent) =
+        crate::inline::glyph_verticals_contribution(glyph_ascent, glyph_descent, line_height, line_height_is_normal);
+    Some(ascent + descent)
+}
+
+/// R5290：收集元素子树的文本（限深 8，inline run 成员一般浅嵌套；超深部分对行高
+/// 度量无损大碍——face 选择仍由已收集文本代表）。
+fn collect_subtree_text(doc: &Document, node_id: NodeId, depth: usize) -> String {
+    let mut out = String::new();
+    if depth >= 8 {
+        return out;
+    }
+    for child in doc.child_nodes(node_id) {
+        let Some(node) = doc.get(child) else {
+            continue;
+        };
+        match &node.kind {
+            zero_dom::NodeKind::Text(t) => out.push_str(&t.content),
+            zero_dom::NodeKind::Element(_) => out.push_str(&collect_subtree_text(doc, child, depth + 1)),
+            _ => {}
+        }
+    }
+    out
 }

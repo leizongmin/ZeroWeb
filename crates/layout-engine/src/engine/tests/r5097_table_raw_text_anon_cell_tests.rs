@@ -137,3 +137,47 @@ fn test_r5097_definite_height_table_keeps_legacy_path() {
         tbl.height
     );
 }
+
+/// R5291（CSS2 §17.5.2 shrink-to-fit）：裸文本表 max-content 宽超出包含块时按
+/// available 折行重测（表宽 = 包含块 content 宽、高为折行后 IFC 高），而非固化
+/// 单行溢出。driving: css/CSS2/normal-flow/inline-table-width-001-ref（10em 容器
+/// 491 单行 → 160 宽 4 行）。
+#[test]
+fn test_r5291_raw_text_table_shrinks_to_containing_block() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let html = r#"<html><body style="margin:0">
+      <div id="wrap" style="width:160px">
+        <div id="tbl" style="display:table">This is some text that is wider than the container but has no words wider than it.</div>
+      </div>
+    </body></html>"#;
+    let (doc, result) = layout(html);
+    let tbl = find("tbl", &doc, &result.root).expect("table box");
+    assert!(
+        tbl.width <= 160.5,
+        "R5291: 裸文本表超包含块 max-content 应折行收缩到容器宽 160，got {}",
+        tbl.width
+    );
+    assert!(
+        tbl.height > 30.0,
+        "R5291: 折行重测后表高应为多行 IFC 高（单行 ~18），got {}",
+        tbl.height
+    );
+}
+
+/// R5291 对照：短文本（max-content 未超包含块）保持 max-content 收缩，不受新臂影响。
+#[test]
+fn test_r5291_short_text_table_keeps_max_content() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let html = r#"<html><body style="margin:0">
+      <div id="wrap" style="width:160px">
+        <span id="tbl" style="display:table">tiny</span>
+      </div>
+    </body></html>"#;
+    let (doc, result) = layout(html);
+    let tbl = find("tbl", &doc, &result.root).expect("table box");
+    assert!(
+        tbl.width < 100.0,
+        "R5291: max-content 未超包含块的表应保持内容收缩宽（非容器宽 160），got {}",
+        tbl.width
+    );
+}

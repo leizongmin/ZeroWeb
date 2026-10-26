@@ -83,7 +83,9 @@ enum JsWorkerCommand {
     ExecuteModule {
         source: String,
         url: String,
-        /// s94：`__moduleCache` 记忆化键（内联每元素独立键 / 外链 src 绝对 URL），与 url 分离。
+        /// s94 附带修复：`__moduleCache` 记忆化键由发送方按模块记录语义计算
+        /// （内联 = 页面 URL 挂 ordinal 片段；外链 = src 绝对 URL），见
+        /// [`execute_module_in_sandbox`]。
         cache_key: String,
         deps: Vec<(String, String)>,
         reply: Sender<Result<String, String>>,
@@ -522,7 +524,7 @@ impl RendererJsWorker {
         Arc::clone(&self.executor)
     }
 
-    /// 执行 ES module（含依赖注册表）；`cache_key` 语义见 [`JsExecutor::execute_module`]。
+    /// 执行 ES module（含依赖注册表）。`cache_key` 语义见 [`JsExecutor::execute_module`]。
     pub fn execute_module(
         &self,
         source: &str,
@@ -2479,8 +2481,10 @@ fn execute_module_in_sandbox(
     // R5182：入口（当前 script 元素的模块）不在 prelude 急切求值——由 transformed 体承担，
     // 模块体恰好执行一次；__moduleCache 挂 globalThis 跨元素共享、随 reset_context 按文档复位。
     let prelude = build_module_runtime_prelude(&registry, Some(url)).map_err(|e| e.to_string())?;
-    // s94 cache_key 接驳保留：本 merge 8c9ffef79 已将键语义接入 apps 链（内联每元素独立键 /
-    // 外链 src 绝对 URL）；上游 dd05cc9c6 的 `url, url` 最小编译修复被本行完整覆盖。
+    // s94 附带修复（DF2-1 返修）：`cache_key` 由发送方按模块记录语义计算——本函数每枚
+    // module script 元素各执行一次，键不得复用 `url`（页面 URL）：同文档第二枚内联
+    // module 会被首枚的记忆化命中短路、模块体零次求值（webview 路径 s94 定谳）。
+    // https://html.spec.whatwg.org/multipage/webappapis.html#module-map
     let transformed = compile_module_script(source, url, cache_key, &registry).map_err(|e| e.to_string())?;
     let full = format!("{prelude}\n{transformed}");
     sandbox.execute(&full).map(|r| r.value).map_err(|e| e.to_string())

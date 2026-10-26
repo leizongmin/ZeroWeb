@@ -200,10 +200,13 @@ pub fn run_page_scripts_interruptible<F: Fn(&str) -> Result<String, String>>(
             PageScript::InlineModule(_) => base.clone(),
             _ => String::new(),
         };
-        // s94 同款：`__moduleCache` 记忆化键与模块 URL 分离——内联 module 每元素独立键
-        //（落在页面 URL 上会被同文档首枚命中短路，testharness "completed without
-        // reporting registered tests" 双内联定谳）；外链键 = src 绝对化（同 src 两元素
-        // 恰好一次）。https://html.spec.whatwg.org/multipage/webappapis.html#module-map
+        // s94 附带修复（DF2-1 返修，对齐 webview 路径 webview.rs 同名口径）：`__moduleCache`
+        // 文档级记忆化键不得一律用页面 URL——同文档第二枚 module script 会被首枚的记忆化
+        // 命中短路、模块体零次求值。spec 模块 map 只按请求 URL 缓存 fetch 型模块，内联
+        // module script 每元素是独立模块记录：内联键 = 页面 URL 挂 ordinal 片段（仍为绝对
+        // URL，相对 import 解析基准不变——URL 构造剥旧 fragment）；外链键 = src 绝对化
+        // （同 src 两元素命中同键恰好一次，spec 语义；异 src 各自求值）。
+        // https://html.spec.whatwg.org/multipage/webappapis.html#module-map
         let module_cache_key = match &script {
             PageScript::InlineModule(_) => format!("{base}#!zw-inline-module-{script_index}"),
             PageScript::ExternalModule(src) => resolve_document_url(&base, src),
@@ -1466,6 +1469,32 @@ mod tests {
         assert!(
             stack.contains("at eval (https://example.com/strict-bundle.js:"),
             "strict var 形态 stack 顶帧应仍显脚本 URL，实际：{stack}"
+        );
+        worker.shutdown();
+    }
+
+    /// s94 附带修复（DF2-1 返修）：同文档两枚内联 module script 都必须各自求值——
+    /// `__moduleCache` 记忆化键不得一律用页面 URL，否则第二枚被首枚的记忆化命中短路、
+    /// 模块体零次求值（webview 路径 s94 定谳；worker 路径对齐钉）。断言经 ordinal 键
+    /// 构造（page_scripts 发送方）+ worker 编译路径（execute_module_in_sandbox）全链。
+    #[test]
+    fn two_inline_module_scripts_both_evaluate() {
+        let mut worker = RendererJsWorker::spawn(162);
+        let html = "<html><body>\
+            <script type='module'>globalThis.__m0 = (globalThis.__m0 ?? 0) + 1;</script>\
+            <script type='module'>globalThis.__m1 = (globalThis.__m1 ?? 0) + 1;</script>\
+            </body></html>";
+        worker.set_dom_snapshot(html, "https://example.com/page");
+        run_scripts(html, &worker);
+        assert_eq!(
+            wait_for_global(&worker, "__m0", 1000),
+            "1",
+            "首枚内联 module 应求值一次"
+        );
+        assert_eq!(
+            wait_for_global(&worker, "__m1", 1000),
+            "1",
+            "第二枚内联 module 不得被记忆化短路"
         );
         worker.shutdown();
     }

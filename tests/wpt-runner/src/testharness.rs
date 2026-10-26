@@ -7786,7 +7786,28 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     // 全集替换的语义；script fetcher 通道 M4-S22 已对齐——websockets/
                     // *.html 案经 fetch 通道读 constants.sub.js，缺此则 SCHEME_DOMAIN_PORT
                     // 带 '{{ports[ws][0]}}' 字面量 → Invalid URL）。
-                    let bytes = if clean.ends_with(".sub.js") {
+                    let bytes = if clean == "resources/testharness.js" {
+                        // html-semantics M2 s98：write 注入 harness 的完成探测接线——
+                        // document.write 写入的 `<script src="/resources/testharness.js">`
+                        // （execution-timing/102 全家桶形）经本通道取回，此前拿到 RAW 副本：
+                        // 无 `__zw_mark_harness_loaded`/`__zw_harness_state` 完成探测钩子，
+                        // 且新文档无生命周期脚本补调（document.open 后 load 事件不重发）→
+                        // test_environment.all_loaded 恒 false → 末测 done 后不 complete →
+                        // runner 探针等满超时（hook=undefined/state=null 伪 Timeout）。
+                        // 此处服务与静态内联路径同款补丁源（apply_harness_completion_patch）
+                        // 并自带 eval 尾自调——任一装载路径拿到同一接线面。
+                        let patched = apply_harness_completion_patch(String::from_utf8_lossy(&bytes).into_owned());
+                        let mut with_tail = patched;
+                        with_tail.push_str(HARNESS_LOADED_TAIL_CALL);
+                        with_tail.into_bytes()
+                    } else if clean == "resources/testharnessreport.js" {
+                        // s98 同面：上游 testharnessreport.js 是裸 loader（无 runner 装配），
+                        // write 注入副本经其注册的 completion 回调到不了探针全局。服务
+                        // reporter 快照（setup({output:false}) + GLOBAL shim +
+                        // __zw_harness_results/__zw_harness_complete 装配），与静态路径
+                        // prepare_harness_html 移除 report 标签内联 reporter 等价。
+                        HARNESS_REPORTER_SOURCE.as_bytes().to_vec()
+                    } else if clean.ends_with(".sub.js") {
                         apply_wpt_substitutions(&String::from_utf8_lossy(&bytes)).into_bytes()
                     } else {
                         bytes
@@ -8822,14 +8843,11 @@ fn csp_script_positions_prepared(source: &str) -> Vec<(u32, u32)> {
     out
 }
 
-fn prepare_harness_html(
-    source: &str,
-    harness_source: &str,
-    inline_extras: &[(&str, &str)],
-    wpt_root: &Path,
-    case_path: &str,
-) -> String {
-    let reporter = r#"
+/// harness 装配 reporter 快照（结果/完成回调 → runner 探针全局）。
+/// html-semantics M2 s98：提升为模块常量——write 注入 harness 的 fetch 通道服务
+/// （[`wpt_data_fetch_handler`] 静态特判）与静态内联路径（[`prepare_harness_html`]）
+/// 须共用同一装配面，防两路装配漂移。
+const HARNESS_REPORTER_SOURCE: &str = r#"
 if (typeof setup === 'function') setup({output: false});
 // net-api M2-S2：self.GLOBAL 环境标记 shim（上游 testharnessreport.js 在 window 变体
 // 下定义 GLOBAL={isWorker,isWindow,isShadowRealm}——wpt-data 的 pinned 副本不含；
@@ -8852,14 +8870,12 @@ add_completion_callback(function() {
   globalThis.__zw_harness_complete = true;
 });
 "#;
-    // security-hardening M2-s1：注入脚本 nonce 戳记（见 [`harness_nonce_attr`]）。
-    let csp_nonce_attr = harness_nonce_attr(source);
-    let cache_abort_fixture = if case_path.contains("cache-abort") {
-        CACHE_ABORT_FETCH_FIXTURE
-    } else {
-        ""
-    };
-    let harness_source = harness_source.replacen(
+
+/// harness 完成探测补丁（闭包内注 `__zw_mark_harness_loaded`/`__zw_harness_state`）。
+/// html-semantics M2 s98：静态内联（[`prepare_harness_html`]）与 fetch 通道服务
+/// （[`wpt_data_fetch_handler`]）共用同一补丁面。
+fn apply_harness_completion_patch(harness_source: String) -> String {
+    harness_source.replacen(
         "\n})(self);",
         "\nglobal_scope.__zw_mark_harness_loaded = function() {\n\
          test_environment.all_loaded = true;\n\
@@ -8869,7 +8885,30 @@ add_completion_callback(function() {
          return {tests:tests.tests.length,pending:tests.num_pending,loaded:test_environment.all_loaded,phase:tests.phase};\n\
          };\n})(self);",
         1,
-    );
+    )
+}
+
+/// write 注入 harness 的 eval 尾自调（镜像生命周期脚本尾钩子调用——静态路径由
+/// runner 生命周期脚本补调；fetch 服务源须自带，注入副本求值完成即置 all_loaded）。
+const HARNESS_LOADED_TAIL_CALL: &str =
+    "\nif (typeof globalThis.__zw_mark_harness_loaded === 'function') {globalThis.__zw_mark_harness_loaded();}\n";
+
+fn prepare_harness_html(
+    source: &str,
+    harness_source: &str,
+    inline_extras: &[(&str, &str)],
+    wpt_root: &Path,
+    case_path: &str,
+) -> String {
+    let reporter = HARNESS_REPORTER_SOURCE;
+    // security-hardening M2-s1：注入脚本 nonce 戳记（见 [`harness_nonce_attr`]）。
+    let csp_nonce_attr = harness_nonce_attr(source);
+    let cache_abort_fixture = if case_path.contains("cache-abort") {
+        CACHE_ABORT_FETCH_FIXTURE
+    } else {
+        ""
+    };
+    let harness_source = apply_harness_completion_patch(harness_source.to_string());
     // R34xx：__zw_setTimeout stub 记录定时器（id/at），经 take_probe 的
     // __zw_fire_due_timers 按真实经过时间触发（t.step_timeout(500) 的 fontface.repeat
     // 依赖回调最终触发；记录式避免 microtask 立即触发破坏 testharness 时序——
@@ -9178,8 +9217,26 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str) -> String 
                 output.push_str("</script>");
             }
             None => {
-                // 非本地 .js（/resources/、http、或文件缺失）：保留原标签（extract_page_scripts 处理）。
-                output.push_str(&remaining[..rest_start]);
+                // s97（html-semantics M2 切片 97）修复：非本地 .js 单元**整段透传**。
+                // 旧版只透传 open 标签、继续从单元体内扫描——`document.write` 语料的
+                // writer 单元 JS 字符串内含 `<script src=...>` 书写形态（execution-timing
+                // 007-012），被本扫描误认标签改写 + 注入真 `</script>`（内联文件内容后
+                // 封口），writer 单元从注入点截断 → 页面 SyntaxError「missing ) after
+                // argument list」全批假红。spec rawtext 语义：script 内容仅 `</script>`
+                // 结束，体内容对标签扫描不透明；无 close 的病态形态整段透传收尾。
+                // https://html.spec.whatwg.org/multipage/syntax.html#script-data-state
+                match remaining[rest_start..].find("</script>") {
+                    Some(off) => {
+                        let end = rest_start + off + "</script>".len();
+                        output.push_str(&remaining[..end]);
+                        remaining = &remaining[end..];
+                    }
+                    None => {
+                        output.push_str(remaining);
+                        break;
+                    }
+                }
+                continue;
             }
         }
         remaining = &remaining[rest_start..];

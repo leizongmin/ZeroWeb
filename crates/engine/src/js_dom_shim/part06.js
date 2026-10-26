@@ -4918,6 +4918,12 @@
       globalThis.__zwDocWriteOpen = true;
       globalThis.__zwDocWriteBuffer = '';
       globalThis.__zwDocWriteBase = null;
+      // s97：显式 open 重置写入脚本执行面记账（新写流，下次 write 重建基点）。
+      globalThis.__zwDocWriteBaseChildCount = null;
+      globalThis.__zwDocWriteExecWatermark = 0;
+      globalThis.__zwDocWritePendingSlot = -1;
+      globalThis.__zwDocWriteEvalSlot = -1;
+      globalThis.__zwDocWriteDoneSlots = {};
       try {
         var _dwoBody = globalThis.document.body;
         if (_dwoBody) _dwoBody.innerHTML = '';
@@ -4925,6 +4931,150 @@
       return globalThis.document;
     },
     write: function () {
+      // s97（html-semantics M2 切片 97）：写入脚本执行面（__zwDocWriteRunFace）惰性
+      // 安装——显式 open 流（下方早退、close 一次性应用）与隐式流共用同一执行体，
+      // 安装须先于 open 早退。
+      if (typeof globalThis.__zwDocWriteRunFace !== 'function') {
+        // spec #document-write-steps 把写入标记交给解析器，script 元素经 prepare
+        // 执行（内联同步、外链按文档序阻塞链、嵌套写入落在当前插入点）；本引擎
+        // 回放走 innerHTML/insertAdjacentHTML（inert，永不执行脚本），故在此显式
+        // 执行。结构：write() 每次「基线重放 + 缓冲追加」后调用本面。面只收集
+        // **写入缓冲范围内**的脚本（body 末尾 bufTop = childNodes.length − 基线
+        // child 基数 的尾段子树，文档序）——页面管线自有脚本不在缓冲内，永不由此
+        // 执行（018 页面脚本双执行根除）。`__zwDocWriteExecWatermark` = 已处理槽位
+        // 数（重放按同序重建缓冲元素，索引跨重放稳定）；`__zwDocWriteDoneSlots`
+        // 记已执行内联槽位（嵌套 write 的即时 pass 与主链不重执行）。外链 src 槽位
+        // 构成阻塞链：`__zwDocWritePendingSlot` 指 fetch 中槽位（后续 write 的面在
+        // 此阻塞返回——写入内联须待外链求值，102 写入 harness 全家桶语义；也不阻塞
+        // 外层页脚本，007「end script #1 先于 external script #1」）；求值窗
+        // `__zwDocWriteEvalSlot` 由 part04 prepare then 内设置/清除——嵌套 write 的
+        // 面从求值槽位下一起走**即时 pass**（插入点语义：嵌套写入内联在当前外链
+        // 求值窗内同步执行，009「external before/dw/after」序），排在其后的既有
+        // src 槽位留给续流链（不并发 fetch）。写入位置近似为 body 末尾 append
+        //（后解析管线无插入点，R5001 既有口径）。
+        // FIXME(spec-gap): 写流进行中页面脚本对 body 的结构变更（appendChild/
+        // insertBefore 改变基线外 child 数）会使 bufTop 计数漂移（语料 0 需求）；
+        // 嵌套 write 内含外链时与外层链近似文档序（严格序不保证）。
+        // https://html.spec.whatwg.org/multipage/dynamic.html#document-write-steps
+        // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+        globalThis.__zwDocWriteRunFace = function () {
+          var _dwsBody = globalThis.document.body;
+          if (!_dwsBody || !_dwsBody.getElementsByTagName) return;
+          var _dwsBaseKids = globalThis.__zwDocWriteBaseChildCount;
+          if (typeof _dwsBaseKids !== 'number') return;
+          var _dwsKids = null;
+          try { _dwsKids = _dwsBody.childNodes; } catch (_eS97k) { return; }
+          if (!_dwsKids) return;
+          // 收集缓冲尾段子树的 script 元素（文档序；节点预算防病态写入——写流
+          // 内容已过解析器一次，预算是二次放大保险）。
+          var _dwsList = [];
+          var _dwsBudget = 4096;
+          var _dwsWalk = function (node) {
+            if (_dwsBudget-- <= 0 || !node) return;
+            var _dwsC = null;
+            try { _dwsC = node.childNodes; } catch (_eS97w) { return; }
+            if (!_dwsC) return;
+            for (var _dwsI = 0; _dwsI < _dwsC.length; _dwsI++) {
+              var _dwsCh = _dwsC[_dwsI];
+              if (!_dwsCh || _dwsCh.nodeType !== 1) continue;
+              if (String(_dwsCh.tagName || '').toUpperCase() === 'SCRIPT') { _dwsList.push(_dwsCh); continue; }
+              _dwsWalk(_dwsCh);
+            }
+          };
+          var _dwsBufTop = _dwsKids.length - _dwsBaseKids;
+          if (_dwsBufTop < 0) _dwsBufTop = 0;
+          for (var _dwsS = _dwsKids.length - _dwsBufTop; _dwsS < _dwsKids.length; _dwsS++) {
+            var _dwsTop = _dwsKids[_dwsS];
+            if (!_dwsTop || _dwsTop.nodeType !== 1) continue;
+            if (String(_dwsTop.tagName || '').toUpperCase() === 'SCRIPT') { _dwsList.push(_dwsTop); continue; }
+            _dwsWalk(_dwsTop);
+          }
+          // 求值窗（嵌套 write 进入）：从求值槽位下一起走即时 pass——只执行新增
+          // 内联、src 槽位留给续流链、不动水位线/挂链记账（主链续流收口）。
+          var _dwsEvalSlot = (typeof globalThis.__zwDocWriteEvalSlot === 'number')
+            ? globalThis.__zwDocWriteEvalSlot : -1;
+          var _dwsThrowaway = _dwsEvalSlot >= 0;
+          var _dwsWm = _dwsThrowaway ? _dwsEvalSlot + 1 : (globalThis.__zwDocWriteExecWatermark || 0);
+          var _dwsGuard = 0;
+          while (_dwsWm < _dwsList.length && _dwsGuard++ < 1024) {
+            var _dwsEl = _dwsList[_dwsWm];
+            if (!_dwsEl) break;
+            var _dwsBlocked = false;
+            try { _dwsBlocked = typeof globalThis._zwScriptForevBlocked === 'function'
+              && globalThis._zwScriptForevBlocked(_dwsEl); } catch (_eS97fe) {}
+            if (_dwsBlocked) { _dwsWm++; continue; }
+            var _dwsSrc = '';
+            try { _dwsSrc = String(_dwsEl.getAttribute && _dwsEl.getAttribute('src') || ''); } catch (_eS97src) {}
+            if (_dwsSrc) {
+              if (_dwsThrowaway) { _dwsWm++; continue; }
+              // fetch 中槽位：本面阻塞返回（写入内联待外链求值后续流）。水位线先
+              // 停在本槽位（重入锚点 = 挂链槽位），续流回调推进到槽位后。
+              if (globalThis.__zwDocWritePendingSlot === _dwsWm) return;
+              globalThis.__zwDocWriteExecWatermark = _dwsWm;
+              globalThis.__zwDocWritePendingSlot = _dwsWm;
+              var _dwsCopy = _dwsEl;
+              if (!_dwsEl.__zwHandle && typeof globalThis.document.createElement === 'function') {
+                // 回放（innerHTML/insertAdjacentHTML）物化的元素可能是本地 plain
+                // wrapper（_zwMBuildDeepEntry/_zwMEl 产物，无 __zwHandle）——
+                // prepare 首 gate（!child.__zwHandle）直接返回。按
+                // _wcRebuildAsHandle 先例重建 handle 域副本并**全属性透传**
+                //（onload/onerror 载荷随 load/error 事件在副本上派发——012
+                // 「include-N load」序；nomodule/for/event/type 门读副本同值）；
+                // 副本脱离树（load-error-events 族元素事件保真仍挂账，语料
+                // execution-timing 只断言执行顺序）。
+                try {
+                  _dwsCopy = globalThis.document.createElement('script');
+                  var _dwsAttrs = null;
+                  try { _dwsAttrs = _dwsEl.attributes; } catch (_eS97a) {}
+                  if (_dwsAttrs) {
+                    for (var _dwsA = 0; _dwsA < _dwsAttrs.length; _dwsA++) {
+                      var _dwsAt = _dwsAttrs[_dwsA];
+                      if (_dwsAt && _dwsAt.name) {
+                        try { _dwsCopy.setAttribute(_dwsAt.name, _dwsAt.value); } catch (_eS97as) {}
+                      }
+                    }
+                  }
+                } catch (_eS97cp) { _dwsCopy = _dwsEl; }
+              }
+              var _dwsSlot = _dwsWm;
+              try {
+                if (typeof globalThis._zwPrepareSrcScript === 'function') {
+                  globalThis._zwPrepareSrcScript(_dwsCopy, function () {
+                    // 续流：清挂链（条件清——嵌套即时 pass 可能已挂新槽位）、
+                    // 水位线仅仍停在本槽位时推进（嵌套 pass 不动水位线，正常
+                    // 回到此必是本槽位）、续跑面处理其后尾段。
+                    if (globalThis.__zwDocWritePendingSlot === _dwsSlot) {
+                      globalThis.__zwDocWritePendingSlot = -1;
+                    }
+                    if ((globalThis.__zwDocWriteExecWatermark || 0) === _dwsSlot) {
+                      globalThis.__zwDocWriteExecWatermark = _dwsSlot + 1;
+                    }
+                    try { globalThis.__zwDocWriteRunFace(); } catch (_eS97re) {}
+                  });
+                }
+              } catch (_eS97prep) {}
+              return;
+            }
+            var _dwsText = '';
+            try { _dwsText = String(_dwsEl.textContent || ''); } catch (_eS97txt) {}
+            var _dwsDone = globalThis.__zwDocWriteDoneSlots || (globalThis.__zwDocWriteDoneSlots = {});
+            if (_dwsText && !_dwsDone[_dwsWm]) {
+              _dwsDone[_dwsWm] = true;
+              if (!_dwsThrowaway) globalThis.__zwDocWriteEvalSlot = _dwsWm;
+              try { (0, eval).call(globalThis, _dwsText); } catch (_eS97ev) {}
+              if (!_dwsThrowaway) globalThis.__zwDocWriteEvalSlot = -1;
+              try {
+                if (_dwsEl.__zwHandle) {
+                  var _dwsRan = globalThis._zwRanScripts || (globalThis._zwRanScripts = {});
+                  _dwsRan[_dwsEl.__zwHandle] = true;
+                }
+              } catch (_eS97ran) {}
+            }
+            _dwsWm++;
+          }
+          if (!_dwsThrowaway) globalThis.__zwDocWriteExecWatermark = _dwsList.length;
+        };
+      }
       if (typeof globalThis.__zwDocWriteBuffer !== 'string') globalThis.__zwDocWriteBuffer = '';
       for (var _dwW = 0; _dwW < arguments.length; _dwW++) {
         globalThis.__zwDocWriteBuffer += String(arguments[_dwW] == null ? '' : arguments[_dwW]);
@@ -4932,10 +5082,15 @@
       // 显式 open/close 周期（PW setContent）维持原缓冲语义——close() 一次性应用。
       if (globalThis.__zwDocWriteOpen === true) return;
       // 隐式 open 流：基线快照（首 write 时）+ 累计缓冲同步重放（append 语义）。
-      if (typeof globalThis.__zwDocWriteBase !== 'string') {
+      var _dwbFirst = typeof globalThis.__zwDocWriteBase !== 'string';
+      if (_dwbFirst) {
         try {
           var _dwbBody0 = globalThis.document.body;
           globalThis.__zwDocWriteBase = _dwbBody0 ? String(_dwbBody0.innerHTML) : '';
+          globalThis.__zwDocWriteExecWatermark = 0;
+          globalThis.__zwDocWritePendingSlot = -1;
+          globalThis.__zwDocWriteEvalSlot = -1;
+          globalThis.__zwDocWriteDoneSlots = {};
         } catch (_eDwb0) { globalThis.__zwDocWriteBase = ''; }
       }
       try {
@@ -4947,10 +5102,25 @@
           globalThis.__zwDocWriteReplay = true;
           try {
             _dwbBody.innerHTML = globalThis.__zwDocWriteBase;
+            if (_dwbFirst) {
+              // s97：基线 child 数快照取**首轮 innerHTML 往返后**的口径——序列化
+              // /重解析对空白文本节点有损耗（dbg 探针实证：快照 9 → 往返 7），快照
+              // 若取写前原树会使 bufTop = 现长 − 基数 落负、缓冲段收集恒空。往返
+              // 对同一 base 字符串确定，故「往返后基数 + insertAdjacentHTML 追加」
+              // 每轮回放下计数稳定；基线内脚本（writer 自身等）已执行过，不入执行面
+              //（缓冲基点口径见面安装处注释）。
+              globalThis.__zwDocWriteBaseChildCount = _dwbBody.childNodes
+                ? _dwbBody.childNodes.length : 0;
+            }
             _dwbBody.insertAdjacentHTML('beforeend', globalThis.__zwDocWriteBuffer);
           } finally {
             globalThis.__zwDocWriteReplay = _dwbPrevGate;
           }
+          // s97（html-semantics M2 切片 97）：写入脚本执行面——执行体在 write 入口惰性
+          // 安装（显式 open 流共用），结构与阻塞链/嵌套求值窗语义见安装处注释。
+          try {
+            globalThis.__zwDocWriteRunFace();
+          } catch (_eS97run) {}
         }
       } catch (_eDwb) {}
     },
@@ -4969,6 +5139,25 @@
           var _dwcBody = globalThis.document.body;
           if (_dwcBody) _dwcBody.innerHTML = _dwcHtml;
         } catch (_eDwc) {}
+        // s97：显式 open/close 流的缓冲脚本执行面——有宿主 settle 注册的环境
+        // （renderer：close 后宿主重解析新 DOM 并按页管线重跑脚本）维持既有契约，
+        // face 不介入避免双执行；无 settle 的环境（testharness runner 进程内 V8）
+        // 宿主不会重发 load，缓冲脚本此前从不执行（corpus 102 写入 harness 全家桶
+        // 依赖执行），由 face 接管：open 已清 body，全部缓冲脚本视为新增（基点 0），
+        // 外链经阻塞链依序执行（face 注释）。
+        // https://html.spec.whatwg.org/multipage/dynamic.html#document-close-steps
+        if (typeof __zw_document_write_settled !== 'function') {
+          try {
+            globalThis.__zwDocWriteBaseChildCount = 0;
+            globalThis.__zwDocWriteExecWatermark = 0;
+            globalThis.__zwDocWritePendingSlot = -1;
+            globalThis.__zwDocWriteEvalSlot = -1;
+            globalThis.__zwDocWriteDoneSlots = {};
+            if (typeof globalThis.__zwDocWriteRunFace === 'function') {
+              globalThis.__zwDocWriteRunFace();
+            }
+          } catch (_eS97cf) {}
+        }
       }
       // spec：close() 解析结束触发 load 生命周期——宿主回调（renderer 排空 → headless
       // 重发 `Page.loadEventFired` 族；PW setContent 在 console tag 后等待新 load）。
