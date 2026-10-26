@@ -9,6 +9,14 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5289 实现轮（display:table-row 直绘抑制——合成匿名 cell 接管后行级 Path B 鬼影清除，anonymous-objects-085 2.84→2.24 / 086 3.61→2.96；第二层 td strut 分叉记档，corpus 15725P/865F 失败集零翻转）**（2026-10-26）
+>
+> - **取证**：085/086 paint 层四探针（ZW_PATHB_DBG：SUPPRESS 命中/DEDUP 拦截/片段装配 dump/glyph 发射）+ PIL 逐色行扫描。破译双绘结构：行盒（display:table-row）自身 Path B 重跑 + R5168 `wrap_inline_runs_in_row` 合成 cell（借行 node_id + fragment 圈定 + stored 布局）同 id 并存。x 序列以 ref cell 标定（w=16/s=16 = monospace 0.5em@32px 逐词吻合）：**合成 cell stored 副全对**；行盒 Path B 副跨 span 空白文本节点以兜底字体计空格 advance（16px 空格 8px 应 16px），3 边界累计 −24px 鬼影副叠正确副上 → 2.84。layout-dump + glyph y 探针进一步定位残余 = **红层真表 2/3 td 文本 paint 高 9px**（106/152 应 115/161；layout 57/103/149 pitch 46 全无辜）：td28 stored 基线 37 ✓ / td44 无 stored→Path B 近似 strut / td60 stored 基线 28（37.2=fs×1.164 近似 vs 真实度量 46）——stored IFC 构建（compute_final 重跑）对表 2/3 td 的 strut 选择分叉，全局共用路径非轻量，记档转专项。
+> - **实现**（+23/−1）：`paint_text` R5209 行组抑制门后新增同型门——`display:TableRow` + 子盒含 `is_anon_table_cell` + 非 vertical + 无 run_in_prepended → 行级直绘抑制（CSS2 §17.2.1 行非 IFC 容器，文本由合成 cell 自绘）；kill-switch `ZW_ROW_ANON_CELL_SUPPRESS`（default-on）。
+> - **交付**：085 **2.84→2.24**、086 **3.61→2.96**（行 1 全绿红绿完全重合）。corpus **16590/15725P/865F** 失败集与 `=0` 跑逐案恒等（diff 空）零翻转；kill-switch `=0` 两案度数逐字节回基线（2.84/3.61）。
+> - **验证**：make test 89 套件 **23021P/1F**（唯一 F = mutation_arm 已知并行时序 flake，standalone 1P/1.61s）；product-smoke struct-check 全 PASS + welcome oracle **15.50% 一字不差**；bench-gate **25/25 PASS**；fmt 0 diff、clippy -p zero-engine --all-targets 0 warning。证据：[r5289](rendering-compat/evidence/r5289-row-anon-cell-suppress-2026-10-26.md)。
+> - **下一步**：R5290 ① td stored-IFC strut 分叉专项（085 残余 2.24 根因：表 2/3 td 基线 28 vs 37，疑 compute_final 重跑 override 种子缺失，取证从 text_node_line_heights 种子链与 paint_ifc_baseline_offset 两消费端入手）② paint 残余（胜者带覆盖 cell 内容 +2px、交叉带 draw order chromium 反序）③ 内格线 hidden cell 源压制 + 显式 `background-origin: border-box` collapsed 锚点挂账 ④ 轻量修复主循环（865 failed 账本：column-visibility-004 2.21、vertical-align-baseline-009 1.15 等选取）⑤ anonymous-objects 155/156（匿名 table-row 未生成）、row 42（row 内 block span→匿名 cell）维持 ⑥ 031 竖排/::selection 维持 ⑦ 跨流碰头维持。
+
 > **▶ R5288 实现轮（collapse 行间空行高度并入格线胜者带——border-collapse-empty-row ✓0.00，corpus 15725P/865F，kill-switch=0 恒等回 15724/866）**（2026-10-26）
 >
 > - **取证**：empty-row 4.06（anonymous-objects 族深挖超预算转挂账后转入，其取证链随证据文件留档）REFTEST_DUMP 并排：test 四表完全相同（spacer 高度全吞），ref 逐表增高。根因 = `table_grid.rs` build_grid `!row.cells.is_empty()`——空 `<tr></tr>` 整行不入 grid，spacer 指定高 2/5/10px 全丢。ref 以加高 border-bottom（10+空行高）补偿，反推几何模型：**空行高度吸收进相邻格线胜者带**（带 = max(两侧源) + 空行高，跨上 cell 内容底到下 cell 内容顶，不外溢空行槽）——spacer-1 表 ref 总高 21+4×22+21 = 130 与并入模型逐线吻合。
