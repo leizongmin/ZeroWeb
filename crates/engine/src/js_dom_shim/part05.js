@@ -819,6 +819,7 @@
         } else if (typeof _reflectedUrlAttr === 'function'
             && !(_realTag(sel, handle) === 'IFRAME' && p === 'src')
             && !(_realTag(sel, handle) === 'IMG' && p === 'src')
+            && !(_realTag(sel, handle) === 'SCRIPT' && p === 'src')
             && _reflectedUrlAttr(_realTag(sel, handle), p) != null) {
           // R5009 片 e（M4 片 b）：URL 反射面 setter（img.lowsrc/longDesc、object.
           // data/codeBase、video.poster 等——R3069 条件未含、曾落 expando 兜底吞写）。
@@ -827,6 +828,7 @@
           // （r388 iframe history 面依赖）/img 加载链，不走本分支。
           // R5009 片 d：IFRAME 排除收窄到 src（iframe.longDesc 曾一并落排除 → expando
           // 吞写，WPT reflection-embedded 'iframe.longDesc IDL set' 全族）。
+          // s96：SCRIPT.src 除外——专用分支（属性变更步骤 → prepare 触发面，下方）。
           var _r5u2Attr = _reflectedUrlAttr(_realTag(sel, handle), p);
           if (handle) { __zw_set_attr_handle(handle, _r5u2Attr, String(value)); moAttr = _r5u2Attr; }
           else { __zw_set_attr(sel, _r5u2Attr, String(value)); moAttr = _r5u2Attr; }
@@ -875,6 +877,27 @@
           // null/object' 簇 getAttribute() 断言；旧 expando 拦截使属性未写 → getAttribute null）。
           var _ex = _expando[key] || (_expando[key] = {});
           _ex[p] = value;
+        } else if (p === 'src' && _realTag(sel, handle) === 'SCRIPT') {
+          // s96 刀②（html-semantics M2 切片 96）：script.src IDL setter——反射写 src
+          // 内容属性 + **script 属性变更步骤**触发面：src set（value 非 null）且元素
+          // connected → post-connection steps → prepare（动态 src 执行）。仅 handle 形态
+          // 触发——sel 形是 parser-inserted 产物，post-connection 步骤首步即 return
+          // （execution-timing 048 对静态 script[0] 的 .src= 写入面不受扰）。门序与
+          // fetch 执行体单点复用 _zwPrepareSrcScript（R387b 同源——already-started/
+          // nomodule/for-event 门 + run-once 记账，024「.src set twice」依赖
+          // already-started 忽略第二次 set）。USVString 非 nullable：null → "null"
+          //（WebIDL 默认转换，同 script.text setter s95 口径）。
+          // https://html.spec.whatwg.org/multipage/scripting.html#script-attribute-change-steps
+          // https://html.spec.whatwg.org/multipage/scripting.html#dom-script-src
+          var _s96Val = (value === null) ? 'null' : String(value);
+          if (handle) { __zw_set_attr_handle(handle, 'src', _s96Val); moAttr = 'src'; }
+          else { __zw_set_attr(sel, 'src', _s96Val); moAttr = 'src'; }
+          try {
+            if (handle && typeof globalThis._zwPrepareSrcScript === 'function'
+                && _makeProxy(sel, handle).isConnected === true) {
+              globalThis._zwPrepareSrcScript(_makeProxy(sel, handle));
+            }
+          } catch (_eS96ps) {}
         } else if (p === 'src' && _realTag(sel, handle) === 'IMG') {
           // R56h：运行时 img 加载——`new Image().src = url` → __zw_fetch 同步抓取 +
           // createImageBitmap 解码 → naturalWidth（_zwSettleResourceSelector 置 resourceState）
