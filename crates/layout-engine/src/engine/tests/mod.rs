@@ -854,6 +854,9 @@ mod r5280_table_layer_bg_cell_segments_tests;
 ///（child-bottom-margin-in-unresolvable-percentage-height、
 /// margin-applies-to-015 锚点）。
 mod r5293_abs_auto_height_pct_base_tests;
+/// R5294 结构锚：动态构建 DOM 与静态同形标记布局逐盒一致（dir-style-04 排查
+/// 中排除布局面路径分歧——实际根因在 engine innerHTML fragment 解析 trim）。
+mod r5294_dyn_trailing_space_tests;
 
 mod r5250_inline_relpos_shift_map;
 
