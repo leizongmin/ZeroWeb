@@ -298,6 +298,17 @@ pub(crate) fn resolve_collapsed_borders(
     let last_row = row_count - 1;
     let last_col = grid.col_count.saturating_sub(1);
 
+    // R5288：行间空行指定高度并入内边胜者宽（与 collapse_boundary_winners 的 wh
+    // 同源同门——winner-center 真表容器；legacy border-center 行槽不含胜者半带，
+    // 并入会带宽而槽不移，故排他）。消费点：内部 TOP 边（行 row_idx-1/row_idx
+    // 共享线，含被跳过空行的高度）。
+    let empty_row_merge = crate::table::empty_row_merge_enabled()
+        && crate::table::collapse_winner_center_table(table_box)
+        && matches!(
+            table_style.display,
+            zero_css_parser::values::DisplayValue::Table | zero_css_parser::values::DisplayValue::InlineTable
+        );
+
     // R3805：列覆盖映射——每列 → 覆盖它的 (colgroup, col) 元素（§17.6.2.1 Column /
     // ColumnGroup 参与左右缘冲突解析的前提）。游标推进与 collect_table_col_backgrounds
     // 的 Pass 1/2 同构：colgroup 占 span（含内部 col 时为其和），col 依次占自身 span。
@@ -552,11 +563,18 @@ pub(crate) fn resolve_collapsed_borders(
                                 prev_cb.bottom_w.floor() >= cb.top_w.floor()
                             }
                         };
-                        let (win_w, win_style) = if prev_a_wins {
+                        let (mut win_w, win_style) = if prev_a_wins {
                             (prev_cb.bottom_w, &prev_cb.bottom_s)
                         } else {
                             (cb.top_w, &cb.top_s)
                         };
+                        // R5288：被跳过空行（本行与上一行之间的 DOM 空行）的指定高度
+                        // 并入该格线胜者带（grid.empty_row_extra[row_idx]，与
+                        // collapse_boundary_winners 的 wh 同源）——带跨上 cell 内容底
+                        // 到下 cell 内容顶，paint 半带合成恰好覆盖空行槽位。
+                        if empty_row_merge {
+                            win_w += grid.empty_row_extra.get(row_idx).copied().unwrap_or(0.0);
+                        }
                         // 提前取两侧颜色：§17.6.2.1 平局异色时也须把胜出色 propagate 到败者侧
                         //（旧触发条件只看宽/style 差，同宽同 style 异色平局不推 override → 共享边
                         // 被相邻两格各画半宽异色，border-conflict-element-001a 谱系，R1626）。

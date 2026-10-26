@@ -722,6 +722,8 @@ fn execute_module_in_sandbox(
     // R5182：入口（当前 script 元素的模块）不在 prelude 急切求值——由 transformed 体承担，
     // 模块体恰好执行一次；__moduleCache 挂 globalThis 跨元素共享、随 reset_context 按文档复位。
     let prelude = build_module_runtime_prelude(&registry, Some(url)).map_err(|e| e.to_string())?;
+    // s94 cache_key 接驳保留：本 merge 8c9ffef79 已将键语义接入 apps 链（内联每元素独立键 /
+    // 外链 src 绝对 URL）；上游 dd05cc9c6 的 `url, url` 最小编译修复被本行完整覆盖。
     let transformed = compile_module_script(source, url, cache_key, &registry).map_err(|e| e.to_string())?;
     let full = format!("{prelude}\n{transformed}");
     sandbox.execute(&full).map(|r| r.value).map_err(|e| e.to_string())
