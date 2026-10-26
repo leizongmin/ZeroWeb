@@ -429,6 +429,14 @@ pub struct LayoutBox {
     /// 外边缘的边框不进行厚度减半（因为没有邻居共享），
     /// 内边缘的边框减半以避免与邻居重叠。
     pub collapsed_border_outer_edge: [bool; 4],
+    /// R5286：winner-center collapse 表的周界胜者格线半宽。
+    /// 侧边索引：0=top, 1=right, 2=bottom, 3=left。layout 端
+    /// apply_table_size_constraints 装配时写入（非 winner-center/非 collapse
+    /// 表保持全零）。paint 端背景 positioning area 按此内缩——collapsed 表
+    /// 周界格线以盒缘为中心（盒 = 外延），chromium 的定位区 = 外延 − 周界
+    /// 胜者半宽（bc-table-001 k=144 像素实证）；按声明 border 全宽内缩会
+    /// 多缩半格线，对角渐变平铺相位错 (3,2) 整块失配。
+    pub collapsed_border_outer_half: [f32; 4],
     /// 元素的 writing-mode（用于 paint 阶段旋转文字和后处理轴交换）。
     pub writing_mode: WritingModeValue,
     /// R4443：声明值为 `sideways-lr` 的旁路标记（paint 字形 −90° CCW + 列内自下而上）。
@@ -832,6 +840,7 @@ impl Default for LayoutBox {
             collapsed_border_color_overrides: [None; 4],
             collapsed_border_style_overrides: [const { None }; 4],
             collapsed_border_outer_edge: [false; 4],
+            collapsed_border_outer_half: [0.0; 4],
             writing_mode: WritingModeValue::HorizontalTb,
             is_anonymous_text_item: false,
             css_order: 0,

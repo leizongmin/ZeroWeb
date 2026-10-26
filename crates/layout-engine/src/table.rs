@@ -3544,9 +3544,17 @@ fn apply_table_size_constraints(
     let collapse_winner_wc = collapse_winner_center_table(table_box)
         && matches!(border_collapse, zero_style_system::BorderCollapseValue::Collapse)
         && !grid.rows.is_empty();
+    // R5286：周界胜者半宽随装配写入表盒（paint 背景定位区内缩口径，见
+    // collapsed_border_outer_half 字段注释）；非 winner-center 保持全零。
+    let mut outer_half_sides = [0.0_f32; 4];
     let (outer_half_wc_w, outer_half_wc_h) = if collapse_winner_wc {
         let (wv, wh) = collapse_boundary_winners(table_box, grid, styles, doc);
         let rows = grid.rows.len();
+        let half_first_w = wv.first().copied().unwrap_or(0.0) / 2.0;
+        let half_last_w = wv.last().copied().unwrap_or(0.0) / 2.0;
+        let half_first_h = wh.first().copied().unwrap_or(0.0) / 2.0;
+        let half_last_h = wh.last().copied().unwrap_or(0.0) / 2.0;
+        outer_half_sides = [half_first_h, half_last_w, half_last_h, half_first_w];
         let half_w = (wv.first().copied().unwrap_or(0.0) + wv.last().copied().unwrap_or(0.0)) / 2.0;
         let half_h = if rows > 0 {
             (wh.first().copied().unwrap_or(0.0) + wh.last().copied().unwrap_or(0.0)) / 2.0
@@ -3557,6 +3565,7 @@ fn apply_table_size_constraints(
     } else {
         (0.0, 0.0)
     };
+    table_box.collapsed_border_outer_half = outer_half_sides;
     // R5241：cell 边框胜出（> table 自身边框）的边缘，胜出边框的外半伸出到
     // 边框中心距（content box）之外，计入表 border-box（CSS2 §17.6.2.1 折叠
     // 语义：表外缘 = 胜出边框外缘）。**每缘独立**取最大值（四缘是四条平行带：

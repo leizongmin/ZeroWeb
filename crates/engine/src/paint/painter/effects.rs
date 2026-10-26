@@ -570,12 +570,31 @@ impl super::Painter {
         // 计算 background-origin 定位区域（positioning area）
         let (origin_x, origin_y, origin_w, origin_h) = match style.background_origin {
             BackgroundOriginComputedValue::BorderBox => (abs_x, abs_y, box_node.width, box_node.height),
-            BackgroundOriginComputedValue::PaddingBox => (
-                abs_x + box_node.border_left,
-                abs_y + box_node.border_top,
-                box_node.width - box_node.border_left - box_node.border_right,
-                box_node.height - box_node.border_top - box_node.border_bottom,
-            ),
+            BackgroundOriginComputedValue::PaddingBox => {
+                // R5286：winner-center collapse 表——周界格线以盒缘为中心（盒 =
+                // 外延），表背景 positioning area = 外延 − 周界胜者半宽（chromium
+                // bc-table-001 origin k=144 = 外延 − (3,2) 像素实证；按声明
+                // border 全宽内缩多缩半格线 → 对角渐变平铺相位错 (3,2) 整块
+                // 失配）。layout 端 apply_table_size_constraints 写入；字段全零
+                //（非表/border-center/无周界格线）回声明 border 原语义。
+                let outer_half = &box_node.collapsed_border_outer_half;
+                let (inset_l, inset_t, inset_r, inset_b) = if outer_half.iter().any(|v| *v != 0.0) {
+                    (outer_half[3], outer_half[0], outer_half[1], outer_half[2])
+                } else {
+                    (
+                        box_node.border_left,
+                        box_node.border_top,
+                        box_node.border_right,
+                        box_node.border_bottom,
+                    )
+                };
+                (
+                    abs_x + inset_l,
+                    abs_y + inset_t,
+                    box_node.width - inset_l - inset_r,
+                    box_node.height - inset_t - inset_b,
+                )
+            }
             BackgroundOriginComputedValue::ContentBox => (
                 abs_x + box_node.border_left + box_node.padding_left,
                 abs_y + box_node.border_top + box_node.padding_top,
