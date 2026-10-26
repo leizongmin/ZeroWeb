@@ -75,6 +75,7 @@ mod r5271_selection_ua_default_tests;
 mod r5272_selection_ancestor_ua_default_tests;
 /// R5273 图片替换元素作者 ::selection 底 tint（css-pseudo-4 §highlight-painting）。
 mod r5273_selection_img_bg_tests;
+mod r5296_inline_bg_ml_gate_tests;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;

@@ -30,8 +30,8 @@ use zero_style_system::{
     AccentColorComputedValue, AppearanceComputedValue, BackgroundAttachmentComputedValue, BackgroundClipComputedValue,
     BorderCollapseValue, BorderImageSourceComputedValue, CaretColorComputedValue, ClipPathComputedValue, ComputedStyle,
     ContainComputedValue, FilterComputedValue, HyphensComputedValue, ImageRenderingValue, IsolationValue,
-    MixBlendModeComputedValue, OverscrollBehaviorValue, PointerEventsValue, ResizeValue, ScrollbarGutterComputedValue,
-    ScrollbarWidthComputedValue, TouchActionValue, UserSelectValue,
+    LineHeightValue, MixBlendModeComputedValue, OverscrollBehaviorValue, PointerEventsValue, ResizeValue,
+    ScrollbarGutterComputedValue, ScrollbarWidthComputedValue, TouchActionValue, UserSelectValue,
 };
 
 use self::effects::ShadowPhase;
@@ -95,6 +95,20 @@ pub struct Painter {
     /// `inline_ca_paint_override`）。`ZW_INLINE_CA_PAINT=0` 关闭（恢复行盒域绘制）。
     /// 构造期单次读取，热路径零 env 查询。
     pub(crate) inline_ca_paint_enabled: bool,
+    /// R5296：inline box-level 背景/边框与 R639 per-fragment 臂的多行判据升级
+    /// （`content_height > max(fs, 自身 line-height 解析值, run 行高最大值)×1.5`，
+    /// R4332 border 门同式扩展）开关。旧 `1.5×fs` 高度代理把「单行大 line-height
+    /// span」（content_height=lh 随行盒膨胀，content-height-001：lh 200/fs 50）误判
+    /// 多行——box-level bg 被抑制落 R639 fragment 路径旧 `frag.y` 位（= baseline−lh，
+    /// 本例 −28.6 上溢覆盖邻块 `<p>` 文本）。两门（painter/mod.rs skip 门、text.rs
+    /// fragment 门）输入同源（owner content_height + 自身 line-height + run 行高
+    /// 最大值），必须同开同关。
+    /// `ZW_INLINE_BG_ML_GATE=0` 回退 `1.5×fs` 高度代理。构造期单次读取。
+    pub(crate) inline_bg_ml_gate_enabled: bool,
+    /// R5296：NodeId → owner 文本行高最大值索引（与 [`Self::inline_heights`]
+    /// 同趟预扫描填充，键空间一致）。text.rs `render_fragment!` 宏内 box_node 是
+    /// IFC owner 非 inline 本身，inline 自身的 `text_node_line_heights` 须经此索引查。
+    pub(crate) inline_owner_max_lh: HashMap<NodeId, f32>,
     /// R5135：multicol 嵌套绘制深度——外层 cso 循环绘制嵌套 multicol 子树时 +1，
     /// paint_node 返回后 −1。深度 ≥1 的 cso 循环对列内容横向不裁剪（chromium 实测
     /// 2026-10-15 probeI/011：嵌套列内容溢出可见至最外层容器内容右缘——内层列
@@ -906,6 +920,8 @@ impl Painter {
             inline_wrapper_bg_enabled: std::env::var("ZW_INLINE_WRAPPER_BG").as_deref() != Ok("0"),
             inline_bleed_enabled: std::env::var("ZW_INLINE_BLEED").as_deref() == Ok("1"),
             inline_ca_paint_enabled: std::env::var("ZW_INLINE_CA_PAINT").as_deref() != Ok("0"),
+            inline_bg_ml_gate_enabled: std::env::var("ZW_INLINE_BG_ML_GATE").as_deref() != Ok("0"),
+            inline_owner_max_lh: HashMap::new(),
             mc_paint_nesting: 0,
             perspective_ctx: Vec::new(),
             parent_perspective_enabled: std::env::var("ZW_PARENT_PERSPECTIVE").as_deref() != Ok("0"),
@@ -1601,7 +1617,8 @@ impl Painter {
         // R639：预扫描布局树填充 NodeId→height 索引，供 render_fragment 宏查 owner inline
         // 自身 height（box_node 是 IFC owner 非 inline 本身）。
         self.inline_heights.clear();
-        Self::collect_box_heights(layout, &mut self.inline_heights);
+        self.inline_owner_max_lh.clear();
+        Self::collect_box_heights(layout, &mut self.inline_heights, &mut self.inline_owner_max_lh);
         // R4276（filter url() 非常量链）：主遍前收集 isolate 并抑制元素自身绘制；
         // 主遍后旁路重绘子树图元，pipeline 离屏栅格化 + resvg 链应用。
         // 旁路条件：kill-switch 关、或渲染侧 FontLoader 不可用 → 整体旁路（行为回
@@ -2047,12 +2064,19 @@ impl Painter {
     /// R4297：改存**内容域** content_height（多行判据与 box-level 抑制门控 mod.rs 同口径，
     /// 防 padded 单行 span 双路齐发/齐熄；height 含垂直 padding/border 的 border-box 语义后
     /// 不再是行数代理）。
-    fn collect_box_heights(box_node: &LayoutBox, map: &mut HashMap<NodeId, f32>) {
+    fn collect_box_heights(box_node: &LayoutBox, map: &mut HashMap<NodeId, f32>, max_lh: &mut HashMap<NodeId, f32>) {
         if let Some(node_id) = box_node.node_id {
             map.insert(node_id, box_node.content_height);
+            // R5296：owner 文本行高最大值（多行判据第二输入，R4332 border 门同式）。
+            // text_node_line_heights 键为文本节点、值为其 run 行高；空表（orphan/
+            // wrapper 无直接文本 run）不插入——消费端 unwrap_or(0) 回退旧行为。
+            let mut lhs = box_node.text_node_line_heights.values().copied();
+            if let Some(first) = lhs.next() {
+                max_lh.insert(node_id, lhs.fold(first, f32::max));
+            }
         }
         for child in &box_node.children {
-            Self::collect_box_heights(child, map);
+            Self::collect_box_heights(child, map, max_lh);
         }
     }
 
@@ -2387,6 +2411,33 @@ impl Painter {
                         )
                     })
                 });
+                // R5296：多行判据升级——第二输入取 inline 自身 computed line-height
+                // 解析值（继承链含大 line-height 时 span 盒 content_height 随行盒膨胀，
+                // 旧 `1.5×fs` 高度代理误判多行：content-height-001 lh 200/fs 50 单行
+                // span bg 被抑制落 R639 fragment 路径旧 frag.y 位 = baseline−lh，上溢
+                // 覆盖邻块）。真跨行（content_height ≈ Σ行高 > 1.5×行高）仍判多行。
+                // R4332 border 门的 run 行高最大值（box 自身 text_node_line_heights，
+                // 流内 span 此表空）一并取 max 保留。kill-switch 关断 = 回退 1.5×fs。
+                // 与 text.rs R639 fragment 门共用 ZW_INLINE_BG_ML_GATE（两门输入同源，
+                // box-level 抑制 ⇔ fragment 生效的成对不变量必须同开同关）。
+                let ml_gate_lh = if self.inline_bg_ml_gate_enabled {
+                    let own_lh = match &style.line_height {
+                        LineHeightValue::Normal => inline_fs_px * 1.2,
+                        LineHeightValue::Number(n) => inline_fs_px * (*n as f32),
+                        LineHeightValue::Length(l) => {
+                            zero_style_system::computed::resolve_length(l, inline_fs_px as f64, None, None) as f32
+                        }
+                    };
+                    inline_fs_px.max(own_lh).max(
+                        box_node
+                            .text_node_line_heights
+                            .values()
+                            .copied()
+                            .fold(0.0_f32, f32::max),
+                    )
+                } else {
+                    inline_fs_px
+                };
                 let skip_inline_box_bg = !is_replaced_elem
                     && matches!(style.display, DisplayValue::Inline)
                     && style.background_color != ColorValue::Transparent
@@ -2398,7 +2449,7 @@ impl Painter {
                     // 已是正确 border-box）并漏给 fragment 路径（line_top 位错 ~descent）。
                     // content_height 与 fragment 门控（inline_heights，同轮改存 content 域）
                     // 同口径，两路恰一者生效。
-                    && box_node.content_height > inline_fs_px * 1.5
+                    && box_node.content_height > ml_gate_lh * 1.5
                     && doc.is_some_and(|d| {
                         // R5088：bg 抑制门改判**直接文本子**——wrapper inline（无直接文本）
                         // 非 fragment owner，per-fragment 臂不为其发背景，box-level bg 是
@@ -3155,7 +3206,31 @@ impl Painter {
                     // 同步把 inline 盒重写为 border-box（h 含垂直 padding/border），h 不再是
                     // 行数代理；单行 padded span 误抑制会丢 box-level bg）。与 inline_heights
                     // （同轮改存 content 域）联动，两路恰一者生效。
-                    && box_node.content_height > inline_fs_px * 1.5
+                    // R5296：多行判据升级同 paint_node 臂（自身 line-height 入阈，见彼注释）。
+                    && box_node.content_height
+                        > inline_fs_px.max(if self.inline_bg_ml_gate_enabled {
+                            let own_lh = match &style.line_height {
+                                LineHeightValue::Normal => inline_fs_px * 1.2,
+                                LineHeightValue::Number(n) => inline_fs_px * (*n as f32),
+                                LineHeightValue::Length(l) => {
+                                    zero_style_system::computed::resolve_length(
+                                        l,
+                                        inline_fs_px as f64,
+                                        None,
+                                        None,
+                                    ) as f32
+                                }
+                            };
+                            own_lh.max(
+                                box_node
+                                    .text_node_line_heights
+                                    .values()
+                                    .copied()
+                                    .fold(0.0_f32, f32::max),
+                            )
+                        } else {
+                            0.0
+                        }) * 1.5
                     && doc.is_some_and(|d| {
                         // R5088：bg 抑制门改判**直接文本子**——wrapper inline（无直接文本）
                         // 非 fragment owner，per-fragment 臂不为其发背景，box-level bg 是

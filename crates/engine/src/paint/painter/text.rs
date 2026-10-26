@@ -2866,6 +2866,35 @@ impl super::Painter {
                             // 无双绘。orphan 信号（owner_h==0）天然耦合 part1。
                             let phasea_orphan_fire = std::env::var("ZW_PHASEA_MULTI_INLINE").as_deref() != Ok("0")
                                 && owner_h == 0.0;
+                            // R5296：多行判据升级（与 painter/mod.rs box-level bg 抑制门同源
+                            // 同值，成对不变量：box-level 抑制 ⇔ 本臂生效）——第二输入取
+                            // owner 自身 computed line-height 解析值（继承链含大 line-height
+                            // 时 owner 盒 content_height 随行盒膨胀，旧 `1.5×fs` 高度代理误判
+                            // 多行：content-height-001 单行 span 误入本臂，旧 frag.y 位 =
+                            // baseline−lh 上溢覆盖邻块）。kill-switch 共用 ZW_INLINE_BG_ML_GATE。
+                            let ml_gate_lh = if self.inline_bg_ml_gate_enabled {
+                                let own_lh = owner_style_opt.map(|os| match &os.line_height {
+                                    zero_style_system::LineHeightValue::Normal => {
+                                        $frag_fs * 1.2
+                                    }
+                                    zero_style_system::LineHeightValue::Number(n) => {
+                                        $frag_fs * (*n as f32)
+                                    }
+                                    zero_style_system::LineHeightValue::Length(l) => {
+                                        zero_style_system::computed::resolve_length(
+                                            l,
+                                            $frag_fs as f64,
+                                            None,
+                                            None,
+                                        ) as f32
+                                    }
+                                });
+                                let measured_max_lh =
+                                    self.inline_owner_max_lh.get(&owner_id).copied().unwrap_or(0.0);
+                                $frag_fs.max(own_lh.unwrap_or(0.0)).max(measured_max_lh)
+                            } else {
+                                $frag_fs
+                            };
                             let shaping_font_ids = self.fragment_shaping_font_ids(
                                 owner_style_opt,
                                 text_node_shaping_font_ids.get(&$frag_nid).map(Vec::as_slice),
@@ -2874,7 +2903,8 @@ impl super::Painter {
                             if !is_vertical
                                 && !box_node.is_absolute
                                 && !box_node.is_fixed
-                                && (owner_h > $frag_fs * 1.5 || phasea_orphan_fire)
+                                // R5296：门值 ml_gate_lh 见上（owner 自身 line-height 入阈）。
+                                && (owner_h > ml_gate_lh * 1.5 || phasea_orphan_fire)
                                 && let Some(owner_style) = styles.and_then(|s| s.get(&owner_id))
                                 && matches!(owner_style.display, zero_css_parser::values::DisplayValue::Inline)
                             {

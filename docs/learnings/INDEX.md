@@ -5,8 +5,11 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（187）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（190）
 
+- 2026-10-27 [「高度 > 1.5×fs」式多行代理判据会被 line-height 膨胀欺骗](bugs/2026-10/2026-10-27-line-height-inflation-fools-height-proxy-multiline-gates.md) — engine, layout-engine
+- 2026-10-27 [聚合字段改语义前先盘点全部消费方——单字段承载多口径是回归温床](bugs/2026-10/2026-10-27-agg-field-multi-consumer-semantics.md) — layout-engine
+- 2026-10-26 [compound token 读取吞顶层逗号——s81 约束误剔致选择器列表查询恒空](bugs/2026-10/2026-10-26-selector-list-compound-token-comma.md) — engine
 - 2026-10-26 [PR 审查表只能由 reviewSection 生成——呈现层逐字节契约与静默 return false 诊断](bugs/2026-10/2026-10-26-pr-review-section-generated-contract.md) — .agents/skills/zeroweb-site-optimizer
 - 2026-10-26 [模块记忆化键误用页面 URL——同文档第二枚 module script 零次求值](bugs/2026-10/2026-10-26-module-cache-key-page-url-collision.md) — script-sandbox,webview
 - 2026-10-26 [账本变更脚本深拷贝别名：改动落在被丢弃的旧对象上；done 任务与证据文件冻结面](bugs/2026-10/2026-10-26-ledger-script-deepcopy-aliasing-frozen-done.md) — .agents/skills/zeroweb-site-optimizer
