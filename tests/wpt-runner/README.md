@@ -65,3 +65,4 @@ cargo run --release --bin zero-wpt-runner -- perf --scenario home:path/to/page.h
 
 - `make reftest` 入口与测试分层：`docs/rally/run-rules.md`
 - 导入测试账本：`imported-tests.txt` / `imported-testharness.txt` / `imported-resources.txt`
+- wpt.fyi 三浏览器差距分析：`scripts/wptfyi_gap.py`（用法与口径见 `docs/compat/wptfyi-gap-analysis.md`）

@@ -81,6 +81,9 @@ docs/goal/rendering-compat/evidence/product-static/*
 # WPT reftest 数据（上游 web-platform-tests/wpt 子集，~19952 文件，按需 make fetch-wpt-data 拉取）
 tests/wpt-runner/wpt-data
 
+# wpt.fyi 差距分析缓存（三浏览器 summary 快照，tests/wpt-runner/scripts/wptfyi_gap.py 按需拉取）
+tests/wpt-runner/wptfyi-cache
+
 .trae
 
 # 测试崩溃 core dump（SIGTRAP/OOM 等）——绝不入库（曾因 SIGTRAP 产生 135MB core.NNNN）
