@@ -935,7 +935,7 @@ pub(crate) fn resolve_collapsed_borders(
             0 => {
                 cell_box.border_top = width;
                 if let Some(c) = color_override {
-                    cell_box.collapsed_border_color_overrides[0] = Some(c);
+                    cell_box.collapsed_border_color_overrides.get_or_insert_default()[0] = Some(c);
                 }
                 if let Some(s) = style_override {
                     cell_box.collapsed_border_style_overrides[0] = Some(s);
@@ -944,7 +944,7 @@ pub(crate) fn resolve_collapsed_borders(
             1 => {
                 cell_box.border_right = width;
                 if let Some(c) = color_override {
-                    cell_box.collapsed_border_color_overrides[1] = Some(c);
+                    cell_box.collapsed_border_color_overrides.get_or_insert_default()[1] = Some(c);
                 }
                 if let Some(s) = style_override {
                     cell_box.collapsed_border_style_overrides[1] = Some(s);
@@ -964,7 +964,7 @@ pub(crate) fn resolve_collapsed_borders(
                     cell_box.width += width - prev;
                 }
                 if let Some(c) = color_override {
-                    cell_box.collapsed_border_color_overrides[1] = Some(c);
+                    cell_box.collapsed_border_color_overrides.get_or_insert_default()[1] = Some(c);
                 }
                 if let Some(s) = style_override {
                     cell_box.collapsed_border_style_overrides[1] = Some(s);
@@ -984,7 +984,7 @@ pub(crate) fn resolve_collapsed_borders(
                     cell_box.height += width - prev;
                 }
                 if let Some(c) = color_override {
-                    cell_box.collapsed_border_color_overrides[2] = Some(c);
+                    cell_box.collapsed_border_color_overrides.get_or_insert_default()[2] = Some(c);
                 }
                 if let Some(s) = style_override {
                     cell_box.collapsed_border_style_overrides[2] = Some(s);
@@ -993,7 +993,7 @@ pub(crate) fn resolve_collapsed_borders(
             3 => {
                 cell_box.border_left = width;
                 if let Some(c) = color_override {
-                    cell_box.collapsed_border_color_overrides[3] = Some(c);
+                    cell_box.collapsed_border_color_overrides.get_or_insert_default()[3] = Some(c);
                 }
                 if let Some(s) = style_override {
                     cell_box.collapsed_border_style_overrides[3] = Some(s);

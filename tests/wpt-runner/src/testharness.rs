@@ -9150,7 +9150,28 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str) -> String 
                     }
                     _ => String::new(),
                 };
-                output.push_str(&format!("<script{nonce_attr} data-zw-harness data-inline=\""));
+                // s94（nomodule face）：投递改写保留原标签 nomodule（bool 属性，裸形在场即
+                // 生效）与 type 属性——nomodule 丢失使 prepare 门（extract
+                // script_suppressed_by_nomodule）失效、nomodule classic 照跑
+                //（nomodule-set-on-synchronously-loaded-* 实测）；type 丢失把 module 形外链
+                // 按 classic 内联执行（s92 挂账「投递不保留 type=module」承袭，顶层 this/
+                // defer 时序语义全变——module/nomodule-attribute 实测 log 收 window 非
+                // undefined）。
+                // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+                let nomodule_attr = if zero_engine::open_tag_has_attr(open, "nomodule") {
+                    " nomodule"
+                } else {
+                    ""
+                };
+                let type_attr = match zero_engine::attr_from_open_tag(open, "type") {
+                    Some(t) if !t.is_empty() => {
+                        format!(" type=\"{}\"", t.replace('&', "&amp;").replace('"', "&quot;"))
+                    }
+                    _ => String::new(),
+                };
+                output.push_str(&format!(
+                    "<script{nonce_attr}{nomodule_attr}{type_attr} data-zw-harness data-inline=\""
+                ));
                 output.push_str(&combined);
                 output.push_str("\">");
                 output.push_str(&content);

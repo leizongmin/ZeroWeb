@@ -7041,11 +7041,25 @@
               try {
                 var _r387src = '';
                 try { _r387src = String(child.textContent || ''); } catch (_e387tc) {}
-                if (!_r387src && typeof _r377runScript === 'function') {
+                // s94（nomodule face）：HTML prepare 步骤——元素带 nomodule 且类型非 module
+                // 时中止执行（noModule IDL 反射写内容属性，hasAttribute 判定覆盖两种写法；
+                // module 不受影响照跑——语料 module/nomodule-attribute）。type 归一化按
+                // ASCII whitespace 剥离 + ASCII case-insens（与 extract.rs 同口径；此处
+                // toLowerCase 的 Unicode 折叠极端形态由 Rust 提取路径的 spec 精确判定兜底）。
+                // 不置 run-once 标记：spec 中止发生在 already-started 置位前，之后摘除
+                // 属性再触发钩子应重新走门。
+                // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+                var _r387nomod = false;
+                try {
+                  _r387nomod = !!(child.hasAttribute && child.hasAttribute('nomodule'))
+                    && String(child.type || '').replace(/^[\t\n\x0C\r ]+|[\t\n\x0C\r ]+$/g, '')
+                      .toLowerCase() !== 'module';
+                } catch (_e387nm) {}
+                if (!_r387nomod && !_r387src && typeof _r377runScript === 'function') {
                   // 融合读失败回落 R377 registry 收集路径（run-once 标记同源）。
                   _r377runScript(child.__zwHandle);
                 }
-                if (_r387src && !(globalThis._zwRanScripts && globalThis._zwRanScripts[child.__zwHandle])) {
+                if (!_r387nomod && _r387src && !(globalThis._zwRanScripts && globalThis._zwRanScripts[child.__zwHandle])) {
                   if (!globalThis._zwRanScripts) globalThis._zwRanScripts = {};
                   globalThis._zwRanScripts[child.__zwHandle] = true;
                   (0, eval).call(globalThis, _r387src);
@@ -7066,7 +7080,8 @@
                 // tick_dynamic_scripts，no-cors 脚本语义 + 元素事件派发），shim 页面 fetch
                 //（cors 语义）再跑一遍会双执行/双事件（load+load、fetch 失败误派 load）。
                 // 未置旗标的嵌入方（browser 单进程路径）仍走本分支。
-                else if (!(globalThis._zwRanScripts && globalThis._zwRanScripts[child.__zwHandle])
+                else if (!_r387nomod
+                         && !(globalThis._zwRanScripts && globalThis._zwRanScripts[child.__zwHandle])
                          && !globalThis.__zwHostDynamicScripts) {
                   var _r387url = '';
                   try {

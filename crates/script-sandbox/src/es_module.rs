@@ -151,7 +151,7 @@ impl EsModuleSandbox {
         let start = std::time::Instant::now();
         let url = url.unwrap_or("zero://module");
 
-        let transformed = compile_module_script(source, url, &self.registry)?;
+        let transformed = compile_module_script(source, url, url, &self.registry)?;
 
         // 执行转换后的脚本；namespace_json 需要 JSON 序列化模块命名空间对象
         // （plain execute() 对对象返回 "[object Object]"，须用 execute_json()）
@@ -201,7 +201,20 @@ fn memoized_dep_expr(key: &str, code: &str) -> String {
 }
 
 /// 将 ES Module 源码编译为可在 V8 中执行的 IIFE 脚本（内联依赖）。
-pub fn compile_module_script(source: &str, url: &str, registry: &ModuleRegistry) -> Result<String, ScriptError> {
+///
+/// `url` 为模块自身 URL（相对 import 解析基准 + `import.meta.url` 发射值）；
+/// `cache_key` 为 `__moduleCache` 文档级记忆化键——两者分离：同文档多个 module script
+/// 元素共享缓存（module map 语义），但内联 module script 每元素是独立模块记录、键不得
+/// 落在页面 URL 上（否则第二枚被首枚记忆化命中短路，模块体零次求值——s94 附带修复，
+/// currentScript-null 双内联 module 定谳）。外链 module 以 src 绝对 URL 为键（同 src
+/// 两元素恰好一次，spec 语义）。
+/// https://html.spec.whatwg.org/multipage/webappapis.html#module-map
+pub fn compile_module_script(
+    source: &str,
+    url: &str,
+    cache_key: &str,
+    registry: &ModuleRegistry,
+) -> Result<String, ScriptError> {
     let uses_await = source.contains("await");
     let body = build_module_script(source, url, registry, uses_await, &mut HashSet::new())?;
     // R5182：首行初始化文档级模块缓存（幂等）——独立调用路径（EsModuleSandbox、SW 编译）
@@ -214,7 +227,7 @@ pub fn compile_module_script(source: &str, url: &str, registry: &ModuleRegistry)
     } else {
         // 记忆化入口体：本模块若已作为他元素依赖求值过（缓存命中）→ 复用实例，模块体
         // 恰好执行一次（红态实测入口计数 2：prelude 急切 + 转换体各一次）。
-        Ok(format!("{init}{}", memoized_dep_expr(url, &body)))
+        Ok(format!("{init}{}", memoized_dep_expr(cache_key, &body)))
     }
 }
 
@@ -2305,7 +2318,13 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
             "import { missing } from './dependency.js';",
             "export { missing } from './dependency.js';",
         ] {
-            let error = compile_module_script(source, "https://example.test/sw.js", &registry).unwrap_err();
+            let error = compile_module_script(
+                source,
+                "https://example.test/sw.js",
+                "https://example.test/sw.js",
+                &registry,
+            )
+            .unwrap_err();
             assert!(matches!(error, ScriptError::CompileError(_)));
             assert!(error.to_string().contains("does not provide an export named"));
         }
@@ -2321,6 +2340,7 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         let error = compile_module_script(
             "import { k } from './mid.js';",
             "https://example.test/entry.js",
+            "https://example.test/entry.js",
             &registry,
         )
         .unwrap_err();
@@ -2328,6 +2348,7 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         // 命名空间绑定本身仍可导入。
         let ok = compile_module_script(
             "import { ns } from './mid.js';",
+            "https://example.test/entry.js",
             "https://example.test/entry.js",
             &registry,
         );
@@ -2423,6 +2444,7 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         let compiled = compile_module_script(
             "// changing response marker\nimport { value } from './dependency.js';\nglobalThis.value = value;",
             "https://example.test/sw.js",
+            "https://example.test/sw.js",
             &registry,
         )
         .unwrap();
@@ -2434,6 +2456,7 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         let registry = ModuleRegistry::new();
         let compiled = compile_module_script(
             "await Promise.resolve();\nglobalThis.ready = true;",
+            "https://example.test/module.js",
             "https://example.test/module.js",
             &registry,
         )
@@ -2502,7 +2525,7 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         reg.register("a", "import { b } from 'b'; export const a = b;");
         reg.register("b", "import { a } from 'a'; export const b = a;");
         // 修复前：栈溢出 abort（fatal runtime error）；修复后：编译成功返 Ok。
-        let result = compile_module_script("import { a } from 'a';", "http://a/", &reg);
+        let result = compile_module_script("import { a } from 'a';", "http://a/", "http://a/", &reg);
         assert!(result.is_ok(), "循环 import 须编译成功（不栈溢出）: {:?}", result.err());
         let script = result.unwrap();
         // 确认输出含占位空对象（已访问分支）而非无限内联。
@@ -2517,7 +2540,12 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         reg.register("a", "import { shared } from 'shared'; export const a = shared;");
         reg.register("b", "import { shared } from 'shared'; export const b = shared;");
         // 无循环，应正常编译（菱形 shared 经 visited 守卫不被重复递归致冗余，且不栈溢出）。
-        let result = compile_module_script("import { a } from 'a';\nimport { b } from 'b';", "http://root/", &reg);
+        let result = compile_module_script(
+            "import { a } from 'a';\nimport { b } from 'b';",
+            "http://root/",
+            "http://root/",
+            &reg,
+        );
         assert!(result.is_ok(), "菱形 import 须编译成功: {:?}", result.err());
     }
 
@@ -2527,7 +2555,7 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         let mut reg = ModuleRegistry::new();
         // 依赖模块副作用：模块顶层表达式（计数）。若求值 3 次，输出会含 3 个相同语句。
         reg.register("dep", "export default 1; 2;");
-        let script = compile_module_script("import d from 'dep';", "http://x/", &reg).unwrap();
+        let script = compile_module_script("import d from 'dep';", "http://x/", "http://x/", &reg).unwrap();
         // 修复前默认导入分支把 dep IIFE 字面拼 3 次（出现 3 处 `(function(){...2;...})()`）；
         // 修复后求值一次存 `_dep_d` 变量。断言不再三重拼接：依赖模块体 "2;" 应只出现一次
         // 在 IIFE 内（+ 一次在变量赋值的引用，但那是变量名非字面 "2;"）。
@@ -3063,7 +3091,7 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         );
         // 编译产物断言：声明体内动态 import() 须重写为宿主桥接调用，import.meta 须消解
         // （残留即经典脚本 IIFE SyntaxError）。
-        let compiled = compile_module_script(src, "zero://module", &ModuleRegistry::new()).unwrap();
+        let compiled = compile_module_script(src, "zero://module", "zero://module", &ModuleRegistry::new()).unwrap();
         assert!(
             compiled.contains("__zw_dynamic_import"),
             "dynamic import not rewritten: {}",
@@ -3227,7 +3255,13 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         registry.register("https://zero.test/entry.js", body);
         // 复刻宿主执行形（renderer/tab execute_module_in_sandbox）：prelude(入口跳过急切) + 转换体单次 execute。
         let prelude = build_module_runtime_prelude(&registry, Some("https://zero.test/entry.js")).unwrap();
-        let transformed = compile_module_script(body, "https://zero.test/entry.js", &registry).unwrap();
+        let transformed = compile_module_script(
+            body,
+            "https://zero.test/entry.js",
+            "https://zero.test/entry.js",
+            &registry,
+        )
+        .unwrap();
         sandbox.execute(&format!("{prelude}\n{transformed}")).unwrap();
         assert_eq!(
             sandbox.execute("String(globalThis.__r5182)").unwrap().value,
@@ -3244,18 +3278,71 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         let mut reg1 = ModuleRegistry::new();
         reg1.register("https://zero.test/a.js", dep_src);
         let p1 = build_module_runtime_prelude(&reg1, Some("https://zero.test/a.js")).unwrap();
-        let t1 = compile_module_script(dep_src, "https://zero.test/a.js", &reg1).unwrap();
+        let t1 = compile_module_script(dep_src, "https://zero.test/a.js", "https://zero.test/a.js", &reg1).unwrap();
         sandbox.execute(&format!("{p1}\n{t1}")).unwrap();
         // 元素 2：内联入口静态 import 共享模块（同文档第二个 module script 元素）。
         let mut reg2 = ModuleRegistry::new();
         reg2.register("https://zero.test/a.js", dep_src);
         let p2 = build_module_runtime_prelude(&reg2, Some("https://zero.test/e2.js")).unwrap();
-        let t2 = compile_module_script("import 'https://zero.test/a.js';", "https://zero.test/e2.js", &reg2).unwrap();
+        let t2 = compile_module_script(
+            "import 'https://zero.test/a.js';",
+            "https://zero.test/e2.js",
+            "https://zero.test/e2.js",
+            &reg2,
+        )
+        .unwrap();
         sandbox.execute(&format!("{p2}\n{t2}")).unwrap();
         assert_eq!(
             sandbox.execute("String(globalThis.__r5182dep)").unwrap().value,
             "1",
             "共享依赖跨 module script 元素只求值一次（红态：__moduleCache 每调用重置 + 内联重执行 = 4）"
+        );
+    }
+
+    #[test]
+    fn test_s94_inline_module_cache_key_separate_from_url() {
+        // s94 附带修复（module 缓存键）：R5182 记忆化键与模块 URL 分离——同文档两枚
+        // **内联** module script 旧以同一页面 URL 为键，第二枚被首枚的记忆化命中短路
+        //（模块体零次求值 → currentScript-null "completed without reporting"，
+        // probe-csn-d 双纯内联最小复现）。键分离后各自求值；同键（外链同 src 形态）
+        // 仍恰好一次。
+        // https://html.spec.whatwg.org/multipage/webappapis.html#module-map
+        let mut sandbox = r5182_sandbox();
+        let t1 = compile_module_script(
+            "globalThis.__s94k1=(globalThis.__s94k1||0)+1;",
+            "https://zero.test/page.html",
+            "https://zero.test/page.html#!zw-inline-module-0",
+            &ModuleRegistry::new(),
+        )
+        .unwrap();
+        sandbox.execute(&t1).unwrap();
+        let t2 = compile_module_script(
+            "globalThis.__s94k2=(globalThis.__s94k2||0)+1;",
+            "https://zero.test/page.html",
+            "https://zero.test/page.html#!zw-inline-module-1",
+            &ModuleRegistry::new(),
+        )
+        .unwrap();
+        sandbox.execute(&t2).unwrap();
+        assert_eq!(sandbox.execute("String(globalThis.__s94k1)").unwrap().value, "1");
+        assert_eq!(
+            sandbox.execute("String(globalThis.__s94k2)").unwrap().value,
+            "1",
+            "第二枚内联 module 须求值（红态：同键记忆化命中短路，零次求值）"
+        );
+        let ext = compile_module_script(
+            "globalThis.__s94k3=(globalThis.__s94k3||0)+1;",
+            "https://zero.test/a.js",
+            "https://zero.test/a.js",
+            &ModuleRegistry::new(),
+        )
+        .unwrap();
+        sandbox.execute(&ext).unwrap();
+        sandbox.execute(&ext).unwrap();
+        assert_eq!(
+            sandbox.execute("String(globalThis.__s94k3)").unwrap().value,
+            "1",
+            "同 cache_key（外链同 src 形态）恰好一次"
         );
     }
 
@@ -3271,6 +3358,7 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         let t1 = compile_module_script(
             "import { val } from 'https://zero.test/n.js';globalThis.__v1 = val;",
             "https://zero.test/ne1.js",
+            "https://zero.test/ne1.js",
             &reg1,
         )
         .unwrap();
@@ -3280,6 +3368,7 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         let p2 = build_module_runtime_prelude(&reg2, Some("https://zero.test/ne2.js")).unwrap();
         let t2 = compile_module_script(
             "import { val } from 'https://zero.test/n.js';globalThis.__v2 = val;",
+            "https://zero.test/ne2.js",
             "https://zero.test/ne2.js",
             &reg2,
         )
@@ -3309,7 +3398,8 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         let mut registry = ModuleRegistry::new();
         registry.register("https://zero.test/doc.js", body);
         let prelude = build_module_runtime_prelude(&registry, Some("https://zero.test/doc.js")).unwrap();
-        let transformed = compile_module_script(body, "https://zero.test/doc.js", &registry).unwrap();
+        let transformed =
+            compile_module_script(body, "https://zero.test/doc.js", "https://zero.test/doc.js", &registry).unwrap();
         sandbox.execute(&format!("{prelude}\n{transformed}")).unwrap();
         assert_eq!(
             sandbox.execute("String(globalThis.__r5182r)").unwrap().value,
@@ -3343,7 +3433,13 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         let mut registry = ModuleRegistry::new();
         registry.register("https://zero.test/page.js", body);
         let prelude = build_module_runtime_prelude(&registry, Some("https://zero.test/page.js")).unwrap();
-        let transformed = compile_module_script(body, "https://zero.test/page.js", &registry).unwrap();
+        let transformed = compile_module_script(
+            body,
+            "https://zero.test/page.js",
+            "https://zero.test/page.js",
+            &registry,
+        )
+        .unwrap();
         let run_page = |sandbox: &mut Box<dyn crate::Sandbox>| {
             let prelude = prelude.clone();
             let transformed = transformed.clone();

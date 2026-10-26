@@ -2,9 +2,56 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 93 施工收口（classic 脚本属性面批刀：**script-supports 族 + script-type-whitespace 族 9F 清盘**：scripting-1 **201P/291F/25T→210P/282F/25T**（the-script-element 子树 517 行恒等；域账 +1 惯例 **211P/282F/25T**）——两刀：①shim R3019 占位区 `HTMLScriptElement` 接口对象 + 静态 `supports(type)`（HTML #dom-script-supports 四值**精确匹配** classic/module/importmap/speculationrules，spec 明示不 case-insensitive 不剥空白；语料无 importmap/speculationrules 断言按 spec 现行实现两相兼容）；②extract `trim_ascii_html_ws`（TAB/LF/FF/CR/SPACE 五字符类）替换 `str::trim`——type 归一化只剥 ASCII whitespace，`text/javascript\x0B` 等非 ASCII 空白尾随不再误判 JS（WPT script-type-whitespace 红因）；**转向记录**：s92「下一步 module 尾片盘点」入场探针后修正——module 尾片 43F 簇（css/json/text-module + import-attributes）被 wptserve .py 执行语义缺口封顶，转 runner 可达 classic 属性面；非 Diff 23 行逐行归因零附带（1 行 noscript FILTER 口径加宽 + 22 行超时页 teardown 粒度，s92 代码 stash 复跑 bitwise 同现）；失败族地图序：①dynamic-import must-reject + classic 面 ✅ → ②stylesheets-blocking-scripts ✅ → ③the-script-element 基面（CSP nonce + classic 属性）✅ → ④module 尾片（.py 执行器为前置）），下一步 s94 入场探针定刀位（候选：execution-timing 80F scheduler 语义 / 顶层 65F / 接口对象基建面）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 94 施工收口（classic 脚本 prepare 双门 + 投递保真扩口 + module 缓存键分离：**script-for-event 13F + nomodule 4F 翻绿 + 缓存键连带**：scripting-1 **211P/282F/25T→263P/270F/23T**（raw 574 行 + 18 NotRun；域账 **264P/270F/23T**）——三刀：①extract prepare 双门（nomodule 内容属性压制 classic、module 不受影响；for/event 双属性在场门——ASCII 剥白后 for≈"window" 且 event≈"onload"|"onload()"，任一属性缺失照跑）；②shim R387 动态插入钩子 nomodule 门（三执行分支条件前缀，不置 run-once——spec 中止在 already-started 前）；③runner 投递保真扩口（inline_local_scripts 保留 nomodule——新 open_tag_has_attr bool 裸形在场判定；保留 type="module"——s92 挂账兑现）；**附带根因返工**：type 保真暴露 R5182 潜伏缺陷——`__moduleCache` 记忆化键误用页面 URL，同文档第二枚 module script 零次求值（任意双 module 页挂起，probe 二分定谳），键参数分离 `compile_module_script(source, url, cache_key, registry)` 修复（内联=页面 URL 挂 ordinal 片段 / 外链=src 绝对化），连带解锁 module 族多页（currentScript-null 连带 Fail→Pass、type/imports/module-script-for-event 等 subtest 首次显形）；零附带（P→非P 0 行）；失败族地图序：③the-script-element 基面（CSP nonce + classic 属性 + prepare 门）✅ → ④module 尾片（.py 执行器前置 + 新显形 subtest 账）），下一步 s95 入场探针定刀位（候选：async nomodule window-load face / 元素 onload 投递保真 / module 族新显形 Fail 重排 / execution-timing 80F）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-26 M2 切片 93 施工收口，classic 脚本属性面批刀轮）**：
+> **▶ 当前状态（2026-10-26 M2 切片 94 施工收口，prepare 双门 + 投递保真 + module 缓存键轮）**：
+> **入场核账**：s93 HEAD（43f10a3e7）基线 **211P/282F/25T + 22 NotRun**
+>（scripting-1 口径 540 行）。s94 入场探针自 282F 聚类选 runner 可达 classic
+> 属性面：nomodule face 7F + script-for-event face 13F。**本轮三刀**：
+> ①extract prepare 双门（`script_suppressed_by_nomodule`：nomodule 内容属性在
+> 场压制 classic、module 不受影响——module/nomodule-attribute 以 this.js 顶层
+> this 区分执行形态；`script_blocked_by_for_event`：双属性在场 → ASCII 剥白后
+> for≈"window" 且 event≈"onload"|"onload()"（ASCII case-insens），任一属性缺
+> 失照常执行——语料 Script 15/16 单属性臂定谳）；②shim R387 动态插入钩子
+> nomodule 门（三执行分支条件前缀；不置 run-once——spec 中止在 already-started
+> 置位前，摘属性可重来）；③runner 投递保真扩口（inline_local_scripts 保留
+> nomodule——新 `open_tag_has_attr` bool 属性裸形在场判定，与 attr_from_open_tag
+> 的 nonce 裸形视缺失分工；保留 type="module"——s92 挂账兑现）。
+> **附带根因返工（本轮主发现）**：type 保真暴露 R5182 潜伏缺陷——`__moduleCache`
+> 文档级记忆化键误用页面 URL，同文档第二枚 module script 被首枚记忆化命中短路、
+> 模块体零次求值（currentScript-null file Timeout + probe-a~d 最小探针二分定谳
+> 任意双 module 页挂起；潜伏态，语料此前无双内联 module 页）；修复 = 键参数分离
+> `compile_module_script(source, url, cache_key, registry)`（内联 = 页面 URL 挂
+> ordinal 片段、外链 = src 绝对化；三生产调用方语义不变）+ learning 沉淀
+>（bugs/2026-10/2026-10-26-module-cache-key-page-url-collision.md）。
+> **验证**：定向 nomodule FILTER 4F→P、script-for-event 18 行全绿（13F→P）、
+> 探针 4 页全绿、currentScript-null 全绿（连带基线 Fail→Pass——module 求值
+> currentScript=null 语义成立）；全子树终扫 574 行 **263P/270F/23T + 18 NotRun**，
+> diff vs 基线 **F→P 23 行、P→非P 0 行**（for-event 13 + nomodule 4 +
+> currentScript-null 1 + module-vs-script-2 1 + module/load-error-events 3——
+> 页内 type=module 标签在，缓存键解锁，非 classic load-error 族）；module 族
+> 多页首次以 subtest 粒度完成（type 4 例、imports 5 例、integrity inline 1、
+> module script-for-event 18 例、empty-attributes-clause 1 例等翻绿）。
+> 历史口径重述 **211P/282F/25T（540 行期）→ 263P/270F/23T（574 行期，行数增长
+> = 粒度完成非口径变化）**，域账 **264P/270F/23T**（+1 惯例）。单测七腿：
+> engine **3530**（+3）/runner **226**（+76i）/webview **800**/sandbox v8
+> **365**（+1）/quickjs **260**（+1）；fmt/clippy 四 crate clean；reftest 未跑
+>（无 render/layout 面，沿 s91-s93 口径）。账本见
+> [evidence/2026-10-26-m2s94-prepare-gates-and-delivery-fidelity.md](html-semantics-compat/evidence/2026-10-26-m2s94-prepare-gates-and-delivery-fidelity.md)。
+> **范围**：engine ×2（extract 双门 + shim 钩子）、script-sandbox（签名+单测）、
+> webview（缓存键接线）、runner（投递保真）；css/layout/renderer 零改动；语料
+> 不可改维持（probe 临时页已删）。
+> **挂账**：async nomodule 2F（window.onload promise 门——window load 派发
+> face）；sync 臂 1（元素 onload 属性投递丢失 / 元素 load 事件 face）；
+> nomodule-set-on-external-module-script（外链 module 装载面）；module 族新显形
+> Fail（charset-01/03、integrity 外链、single-evaluation-1/2、instantiation-6/7、
+> specifier-error、evaluation-error-2、fetch-error-2、import-attributes 部分
+> ——.py 执行器前置项不变，subtest 账已立）；execution-timing 80F / 顶层 65F /
+> 完整接口对象基建面（承袭）；基线扫描宜空载（teardown 粒度负载敏感，承袭；
+> s94 终扫 /tmp/s94-final-scan2.txt 定为下轮基线）。
+> **切片间隙**：本轮 engine/sandbox/webview/runner 面；下一挂账同流同面，间隙开放。
+>
+> **▶ 上轮状态（2026-10-26 M2 切片 93 施工收口，classic 脚本属性面批刀轮——其下一步 s94 入场探针定刀位已由 s94 收口，见上）**：
 > **入场核账**：s92 HEAD（2cf2a5c5c）基线 **201P/291F/25T**（the-script-element
 > 子树 517 行）。s92「下一步 module 尾片盘点」入场探针后**转向**：module 尾片
 > 43F 簇（css-module 20 + json-module 11 + text-module 8 + import-attributes 4）

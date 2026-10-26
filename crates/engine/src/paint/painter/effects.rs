@@ -575,19 +575,19 @@ impl super::Painter {
                 // 外延），表背景 positioning area = 外延 − 周界胜者半宽（chromium
                 // bc-table-001 origin k=144 = 外延 − (3,2) 像素实证；按声明
                 // border 全宽内缩多缩半格线 → 对角渐变平铺相位错 (3,2) 整块
-                // 失配）。layout 端 apply_table_size_constraints 写入；字段全零
+                // 失配）。layout 端 apply_table_size_constraints 写入；字段 None
                 //（非表/border-center/无周界格线）回声明 border 原语义。
-                let outer_half = &box_node.collapsed_border_outer_half;
-                let (inset_l, inset_t, inset_r, inset_b) = if outer_half.iter().any(|v| *v != 0.0) {
-                    (outer_half[3], outer_half[0], outer_half[1], outer_half[2])
-                } else {
-                    (
-                        box_node.border_left,
-                        box_node.border_top,
-                        box_node.border_right,
-                        box_node.border_bottom,
-                    )
-                };
+                let (inset_l, inset_t, inset_r, inset_b) =
+                    if let Some(outer_half) = &box_node.collapsed_border_outer_half {
+                        (outer_half[3], outer_half[0], outer_half[1], outer_half[2])
+                    } else {
+                        (
+                            box_node.border_left,
+                            box_node.border_top,
+                            box_node.border_right,
+                            box_node.border_bottom,
+                        )
+                    };
                 (
                     abs_x + inset_l,
                     abs_y + inset_t,

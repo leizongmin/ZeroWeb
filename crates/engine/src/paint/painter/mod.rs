@@ -4936,6 +4936,21 @@ impl Painter {
         if h <= 0.0 {
             return;
         }
+        // R5287：winner-center collapse 表——行网格区以周界格线为中心（盒 = 外延），
+        // 全高哨兵（collapse 下 spacing 恒 0，列背景恒走哨兵臂）纵向基 = content
+        // 顶 + (周界胜者半宽 − border_top)、跨 = 外延 − 两侧半宽（bc-colgroup-001
+        // aqua ref 171×97@(81,17) vs 旧 content 盒 171×91@(81,19) 像素实证；水平
+        // 基由 layout 端 col_geo winner_dx 平移，已对）。字段 None（separated/
+        // border-center）回 content 盒原语义；显式段仅 separated（spacing>0）
+        // 产生，不与 winner-center 并存。
+        let (full_y, full_h) = if let Some(outer_half) = &box_node.collapsed_border_outer_half {
+            (
+                content_y + outer_half[0] - box_node.border_top,
+                (box_node.height - outer_half[0] - outer_half[2]).max(0.0),
+            )
+        } else {
+            (content_y, h)
+        };
         for entry in &box_node.table_col_backgrounds {
             let Some(style) = styles.get(&entry.node_id) else {
                 continue;
@@ -4950,14 +4965,14 @@ impl Painter {
             // 全高（镜像旧行为，content_height 以 paint 时为准）；段高夹到 content
             // 底防布局后段溢出。
             let (origin_y, origin_h) = if entry.origin_h < 0.0 {
-                (content_y, h)
+                (full_y, full_h)
             } else {
                 (content_y + entry.origin_y, entry.origin_h.min(h - entry.origin_y))
             };
             for (sx, sy, sw, sh) in &entry.segments {
                 let seg_x = content_x + *sx;
                 let (seg_y, seg_h) = if *sh < 0.0 {
-                    (content_y, h)
+                    (full_y, full_h)
                 } else {
                     (content_y + *sy, (*sh).min(h - *sy))
                 };

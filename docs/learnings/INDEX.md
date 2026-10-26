@@ -5,8 +5,9 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（182）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（183）
 
+- 2026-10-26 [模块记忆化键误用页面 URL——同文档第二枚 module script 零次求值](bugs/2026-10/2026-10-26-module-cache-key-page-url-collision.md) — script-sandbox,webview
 - 2026-10-25 [单案 reftest % 值有运行间波动——归因实验前先同二进制连跑采样，单采样会钉出无辜代码片](bugs/2026-10/2026-10-25-reftest-single-sample-attribution-flake.md) — layout-engine,engine
 - 2026-10-23 [UBA 重排产物必须剥除 bidi 控制码——visual_runs 保留控制码索引位，逐位 push 会带进视觉流](bugs/2026-10/2026-10-23-uba-reorder-output-must-strip-bidi-controls.md) — layout-engine
 - 2026-10-23 [taffy branch 节点对 IFC 文本不可见——原子提升后 abspos auto 宽塌最宽原子子](bugs/2026-10/2026-10-23-taffy-branch-ifc-text-invisible-abspos-auto-width.md) — layout-engine/engine, taffy-local

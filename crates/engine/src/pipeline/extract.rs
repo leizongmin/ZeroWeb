@@ -81,6 +81,31 @@ fn script_is_module(type_attr: Option<&str>) -> bool {
         .unwrap_or(false)
 }
 
+/// `nomodule` 门（s94，nomodule face）：元素带 `nomodule` 内容属性且类型为 classic → prepare
+/// 中止不执行（支持 module 脚本的 UA 压制 nomodule classic 脚本，含内联/外链/动态插入）；
+/// module 脚本不受 nomodule 影响（语料 module/nomodule-attribute：module+nomodule 照跑）。
+/// bool 属性按内容属性在场判定，值无意义。
+/// https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+fn script_suppressed_by_nomodule(nomodule_present: bool, is_module: bool) -> bool {
+    nomodule_present && !is_module
+}
+
+/// `for`/`event` 门（s94，for-event face）：classic 脚本**同时**带 `for` 与 `event` 内容属性
+/// 时，两值各剥首尾 ASCII whitespace 后 `for` 须 ASCII case-insensitive 匹配 `window`、
+/// `event` 须 ASCII case-insensitive 匹配 `onload` 或 `onload()`，否则中止不执行；
+/// 任一属性缺失则本步骤跳过照常执行（语料单属性臂 true）。NBSP 等非 ASCII 空白不剥
+///（语料 `for="window\u{00A0}"` 臂 false）。
+/// https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+fn script_blocked_by_for_event(for_attr: Option<&str>, event_attr: Option<&str>) -> bool {
+    let (Some(for_v), Some(event_v)) = (for_attr, event_attr) else {
+        return false;
+    };
+    let for_v = trim_ascii_html_ws(for_v);
+    let event_v = trim_ascii_html_ws(event_v);
+    !(for_v.eq_ignore_ascii_case("window")
+        && (event_v.eq_ignore_ascii_case("onload") || event_v.eq_ignore_ascii_case("onload()")))
+}
+
 /// 判断节点是否位于 `<template>` 子树内（R328——template 内容 inert，脚本不执行）。
 fn is_inside_template(doc: &zero_dom::Document, mut id: zero_dom::NodeId) -> bool {
     while let Some(parent) = doc.parent_node(id) {
@@ -126,6 +151,22 @@ pub fn extract_page_scripts_indexed(html: &str) -> Vec<(PageScript, usize)> {
             continue;
         }
         let is_module = script_is_module(type_attr.as_deref());
+        // s94（nomodule / for-event 双门）：HTML prepare 步骤——nomodule 压制 classic
+        //（module 不受影响）；for/event 双属性在场的 window/onload 门（classic 限定）。
+        // 两门在提取期跳过 = 不投递执行；序号计数不受影响（this_idx 过滤前已递增，
+        // 与 shim getElementsByTagName('script') 对齐不变）。
+        // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+        if script_suppressed_by_nomodule(doc.get_attribute(script_id, "nomodule").is_some(), is_module) {
+            continue;
+        }
+        if !is_module
+            && script_blocked_by_for_event(
+                doc.get_attribute(script_id, "for").as_deref(),
+                doc.get_attribute(script_id, "event").as_deref(),
+            )
+        {
+            continue;
+        }
         // R5005（html-syntax-compat M4 残差重归因）：SVG `<script href=…>`（SVG2 外部
         // 脚本引用——HTML script 用 src，SVG script 用 href/xlink:href）此前只查 src →
         // WPT unclosed-svg-script 的 self-closing 变体不执行。仅 SVG 命名空间元素
@@ -1203,6 +1244,35 @@ pub fn attr_from_open_tag(open_tag: &str, name: &str) -> Option<String> {
     None
 }
 
+/// 开标签属性**在场**判定（s94，nomodule face 投递保真）：bool 属性裸形/空值形/任意值形
+/// 一律算在场（HTML bool 属性语义——值无关，在场即 true）。与 [`attr_from_open_tag` 的
+/// 分工：nonce 语义「裸形视作缺失」由该函数承担，本函数不做值判定；前后缀撞名
+///（`data-nomodule`/`nomodulefoo`）不算在场。
+/// https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#boolean-attributes
+pub fn open_tag_has_attr(open_tag: &str, name: &str) -> bool {
+    let lower = open_tag.to_ascii_lowercase();
+    let needle = name.to_ascii_lowercase();
+    let mut search_from = 0;
+    while let Some(pos) = lower[search_from..].find(&needle) {
+        let abs = search_from + pos;
+        let end = abs + needle.len();
+        let prev_ok = abs == 0
+            || open_tag[..abs]
+                .chars()
+                .next_back()
+                .is_some_and(|c| c.is_ascii_whitespace());
+        let next_ok = lower[end..]
+            .chars()
+            .next()
+            .is_none_or(|c| c.is_ascii_whitespace() || c == '=' || c == '>');
+        if prev_ok && next_ok {
+            return true;
+        }
+        search_from = end;
+    }
+    false
+}
+
 /// 提取每个 `<style>` 元素的 CSP 检查点输入（security-hardening M2-s3）。
 ///
 /// 原文扫描（`<style` … `</style`），向量按文档序对齐全量 `<style>` 元素序——
@@ -1241,7 +1311,7 @@ mod tests {
     use super::{
         MediaResourceElementKind, PageScript, extract_media_resources, extract_meta_csp_policies,
         extract_page_scripts_indexed, extract_script_csp_info, extract_script_source_positions,
-        extract_style_elements_csp, script_effective_base_urls,
+        extract_style_elements_csp, open_tag_has_attr, script_effective_base_urls,
     };
 
     const BASE_PAGE: &str = "https://wpt.test/a/b/page.html";
@@ -1266,6 +1336,64 @@ mod tests {
         assert!(script_type("text/javascript\u{00A0}").is_empty());
         assert!(script_type("text/javascript\u{1680}").is_empty());
         assert!(script_type("text/javascript\u{3000}").is_empty());
+    }
+
+    #[test]
+    fn nomodule_suppresses_classic_but_not_module() {
+        // s94（nomodule face）：nomodule 内容属性在场压制 classic 提取（内联/外链同门，
+        // bool 属性值无意义）；module 形态不受 nomodule 影响（语料 module/nomodule-attribute：
+        // module+nomodule 照跑，this.js 顶层 this=undefined 才入 log）。
+        let scripts = |html: &str| extract_page_scripts_indexed(&format!(r#"<body>{html}</body>"#));
+        assert!(scripts(r#"<script nomodule>x();</script>"#).is_empty());
+        assert!(scripts(r#"<script nomodule="">x();</script>"#).is_empty());
+        assert!(scripts(r#"<script src="a.js" nomodule></script>"#).is_empty());
+        assert!(matches!(
+            scripts(r#"<script type="module" nomodule>x();</script>"#)[..],
+            [(PageScript::InlineModule(_), _)]
+        ));
+        assert!(matches!(
+            scripts(r#"<script>x();</script>"#)[..],
+            [(PageScript::Inline(_), _)]
+        ));
+    }
+
+    #[test]
+    fn for_event_gate_blocks_unless_window_onload() {
+        // s94（for-event face）：双属性在场 → 剥 ASCII whitespace 后 for≈"window" 且
+        // event≈"onload"|"onload()"（ASCII case-insens）才提取；任一属性缺失照常提取
+        //（语料单属性臂 true）；NBSP 等非 ASCII 空白不剥（语料   沾染臂 false）。
+        let blocked = |html: &str| extract_page_scripts_indexed(&format!(r#"<body>{html}</body>"#)).is_empty();
+        let ran = |html: &str| {
+            matches!(
+                extract_page_scripts_indexed(&format!(r#"<body>{html}</body>"#))[..],
+                [(PageScript::Inline(_), _)]
+            )
+        };
+        // 阻塞臂（语料 expected false 形态）
+        assert!(blocked(r#"<script for="wİndow" event="onload">x();</script>"#));
+        assert!(blocked(r#"<script for="window" event="onload x">x();</script>"#));
+        assert!(blocked(r#"<script for="window" event="onload(x)">x();</script>"#));
+        assert!(blocked(r#"<script for="window" event="onclick">x();</script>"#));
+        assert!(blocked(r#"<script for="" event="">x();</script>"#));
+        assert!(blocked(r#"<script for="&#xA0;window" event="onload">x();</script>"#));
+        assert!(blocked(r#"<script for="object" event="handler">x();</script>"#));
+        // 放行臂（语料 expected true 形态）
+        assert!(ran(r#"<script for=" window " event=" onload ">x();</script>"#));
+        assert!(ran(r#"<script for=" WINDOW " event=" ONLOAD() ">x();</script>"#));
+        assert!(ran(r#"<script event="handler">x();</script>"#));
+        assert!(ran(r#"<script for="object">x();</script>"#));
+    }
+
+    #[test]
+    fn open_tag_attr_presence_covers_bare_and_valued_forms() {
+        // s94（nomodule face，投递保真）：bool 属性裸形/空值形/任意值形一律在场；
+        // 前后缀撞名（data-nomodule / nomodulefoo）不算。
+        assert!(open_tag_has_attr("<script nomodule src=\"a.js\">", "nomodule"));
+        assert!(open_tag_has_attr("<script NOMODULE=\"\" src=\"a.js\">", "nomodule"));
+        assert!(open_tag_has_attr("<script nomodule=\"x\">", "nomodule"));
+        assert!(!open_tag_has_attr("<script src=\"a.js\">", "nomodule"));
+        assert!(!open_tag_has_attr("<script data-nomodule=\"y\">", "nomodule"));
+        assert!(!open_tag_has_attr("<script nomodulefoo=\"y\">", "nomodule"));
     }
 
     #[test]
