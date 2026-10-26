@@ -40,7 +40,7 @@ DOM、CSS、布局、渲染、JavaScript 绑定、网络和安全边界都在这
 | Android 浏览器 | ✅ | Kotlin/Compose 界面 + Rust 内核；多标签、键盘与输入法、下载、通知、中英双语 |
 | 多进程架构 | ✅ | 渲染、图像解码、合成分别在独立进程；页面脚本只在渲染进程内运行 |
 | 嵌入 API `ZeroWebView` | ✅ | 稳定 API 与 demo，接入 Service Worker、WASM 和安全检查 |
-| HTML / CSS 渲染 | 🚧 | 上游 WPT reftest 约 94.75% 通过（15,719 / 16,590，2026-10-26） |
+| HTML / CSS 渲染 | 🚧 | 上游 WPT reftest 约 94.8% 通过（15,731 / 16,590，2026-10-27） |
 | JavaScript 与 DOM | 🚧 | V8 / QuickJS 双引擎，原生 DOM 绑定，Web Components、Worker、ES Modules |
 | 网络、存储与安全 | ✅ | HTTP/1.1 和 HTTP/2、Cookie、IndexedDB、Cache API、OPFS、Service Worker；CSP、HSTS、混合内容阻止、站点隔离 |
 | 编辑与输入 | ✅ | contenteditable、Selection、键盘默认动作、剪贴板、全屏、拖放、指针锁定 |
