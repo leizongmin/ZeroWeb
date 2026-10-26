@@ -70,7 +70,7 @@ pub(crate) fn raf_frame_driven_enabled() -> bool {
 }
 
 type ScriptFn = Arc<dyn Fn(&str) -> Result<String, String> + Send + Sync>;
-type ModuleFn = Arc<dyn Fn(&str, &str, &[(String, String)]) -> Result<String, String> + Send + Sync>;
+type ModuleFn = Arc<dyn Fn(&str, &str, &str, &[(String, String)]) -> Result<String, String> + Send + Sync>;
 
 enum JsWorkerCommand {
     Execute {
@@ -83,6 +83,8 @@ enum JsWorkerCommand {
     ExecuteModule {
         source: String,
         url: String,
+        /// s94：`__moduleCache` 记忆化键（内联每元素独立键 / 外链 src 绝对 URL），与 url 分离。
+        cache_key: String,
         deps: Vec<(String, String)>,
         reply: Sender<Result<String, String>>,
         /// t2-pb1 F1：文档代际序号（同 [`JsWorkerCommand::Execute`]）。
@@ -444,22 +446,25 @@ impl RendererJsWorker {
                 .map_err(|e| e.to_string())?
         });
 
-        let module_executor: ModuleFn = Arc::new(move |source: &str, url: &str, deps: &[(String, String)]| {
-            let (reply_tx, reply_rx) = mpsc::channel();
-            document_started_for_module.store(true, Ordering::Relaxed);
-            cmd_for_module
-                .send(JsWorkerCommand::ExecuteModule {
-                    source: source.to_string(),
-                    url: url.to_string(),
-                    deps: deps.to_vec(),
-                    reply: reply_tx,
-                    seq: seq_for_module.fetch_add(1, Ordering::Relaxed),
-                })
-                .map_err(|e| e.to_string())?;
-            reply_rx
-                .recv_timeout(TAB_JS_CHANNEL_TIMEOUT)
-                .map_err(|e| e.to_string())?
-        });
+        let module_executor: ModuleFn = Arc::new(
+            move |source: &str, url: &str, cache_key: &str, deps: &[(String, String)]| {
+                let (reply_tx, reply_rx) = mpsc::channel();
+                document_started_for_module.store(true, Ordering::Relaxed);
+                cmd_for_module
+                    .send(JsWorkerCommand::ExecuteModule {
+                        source: source.to_string(),
+                        url: url.to_string(),
+                        cache_key: cache_key.to_string(),
+                        deps: deps.to_vec(),
+                        reply: reply_tx,
+                        seq: seq_for_module.fetch_add(1, Ordering::Relaxed),
+                    })
+                    .map_err(|e| e.to_string())?;
+                reply_rx
+                    .recv_timeout(TAB_JS_CHANNEL_TIMEOUT)
+                    .map_err(|e| e.to_string())?
+            },
+        );
 
         // t2-pb1 fix#5：优先执行器——与 `executor` 同命令语义（Execute + reply），
         // 仅入队通道不同（worker 命令边界优先消费）。
@@ -517,9 +522,15 @@ impl RendererJsWorker {
         Arc::clone(&self.executor)
     }
 
-    /// 执行 ES module（含依赖注册表）。
-    pub fn execute_module(&self, source: &str, url: &str, deps: &[(String, String)]) -> Result<String, String> {
-        (self.module_executor)(source, url, deps)
+    /// 执行 ES module（含依赖注册表）；`cache_key` 语义见 [`JsExecutor::execute_module`]。
+    pub fn execute_module(
+        &self,
+        source: &str,
+        url: &str,
+        cache_key: &str,
+        deps: &[(String, String)],
+    ) -> Result<String, String> {
+        (self.module_executor)(source, url, cache_key, deps)
     }
 
     /// 在 JS 线程执行脚本（不经 WebView 包装）。
@@ -569,6 +580,22 @@ impl RendererJsWorker {
         // T9 返修（DF-F1）：fire-and-forget 优先派发同为文档载荷提交——置位首文档踪迹。
         self.document_started.store(true, Ordering::Relaxed);
         self.prio_tx
+            .send(JsWorkerCommand::Execute {
+                script: script.to_string(),
+                reply: reply_tx,
+                seq: self.cmd_seq.fetch_add(1, Ordering::Relaxed),
+            })
+            .map_err(|e| e.to_string())
+    }
+
+    /// P105：普通队列 fire-and-forget 提交器（与 [`Self::submit_script_priority`]
+    /// 同形，走 `cmd_tx`）。批量资源事件派发（link 分片等站点 handler 计算型负载）
+    /// 由此入普通通道——prio 让给 automation eval 等交互请求，避免 30s 看门狗臂
+    /// 垄断期饿死 prio FIFO 后续者；普通通道内 FIFO 原序不变。
+    pub fn submit_script(&self, script: &str) -> Result<(), String> {
+        let (reply_tx, reply_rx) = mpsc::channel();
+        drop(reply_rx);
+        self.cmd_tx
             .send(JsWorkerCommand::Execute {
                 script: script.to_string(),
                 reply: reply_tx,
@@ -1193,6 +1220,16 @@ struct WorkerCensus {
     buckets: HashMap<&'static str, (u64, u128, u128)>,
 }
 
+// P105 诊断：ZW_EXEC_TIMING 侧信道（ZW_MAINLOOP_TRACE 同型）——Execute 臂
+// 分段耗时（exec / 收尾），≥1s 落一行。30s 看门狗臂定位用（详见臂内 FIXME 注释）。
+static EXEC_TIMING_FILE: std::sync::LazyLock<std::sync::Mutex<Option<std::fs::File>>> =
+    std::sync::LazyLock::new(|| match std::env::var("ZW_EXEC_TIMING") {
+        Ok(path) if path != "1" => {
+            std::sync::Mutex::new(std::fs::OpenOptions::new().create(true).append(true).open(path).ok())
+        }
+        _ => std::sync::Mutex::new(None),
+    });
+
 impl WorkerCensus {
     fn new() -> Self {
         let value = zero_runtime_config::optional_string("ZW_JS_WORKER_CENSUS");
@@ -1724,6 +1761,12 @@ fn js_worker_main(
                 }
                 // R-baidu2/P3：未捕获脚本错误统一在此汇出（页面脚本/定时器/事件回调
                 // 的异常都经某次 execute 的 Err 冒出）→ `Runtime.exceptionThrown`。
+                // P105 诊断：臂内分段计时——census 只见臂总耗时 30s，而
+                // ZW_HOST_CALL_TRACE 无慢宿主调用、tracing::warn 进 renderer stderr
+                // tail 缓冲不可见。execute / 收尾分段落盘 ZW_EXEC_TIMING，把 30s
+                // 归因到 execute 内还是臂内收尾段。
+                let exec_ms = exec_started.elapsed().as_millis() as u64;
+                let tail_started = std::time::Instant::now();
                 if let Err(ref message) = result {
                     let source = page_url.lock().map(|mut g| std::mem::take(&mut *g)).unwrap_or_default();
                     if let Ok(mut q) = script_errors_for_worker.lock() {
@@ -1748,17 +1791,40 @@ fn js_worker_main(
                     }
                 }
                 let _ = reply.send(result);
+                // P105 诊断：分段落盘（见上注释）——≥1s 才写行，epoch 毫秒对齐。
+                {
+                    let tail_ms = tail_started.elapsed().as_millis() as u64;
+                    if exec_ms >= 1000 || tail_ms >= 1000 {
+                        let now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_millis())
+                            .unwrap_or_default();
+                        let line = format!(
+                            "[exec-timing] t={now} exec={exec_ms}ms tail={tail_ms}ms len={} head={}\n",
+                            script.len(),
+                            script.chars().take(60).collect::<String>()
+                        );
+                        if let Ok(mut guard) = EXEC_TIMING_FILE.lock()
+                            && let Some(file) = guard.as_mut()
+                        {
+                            use std::io::Write;
+                            let _ = file.write_all(line.as_bytes());
+                        }
+                    }
+                }
             }
             JsWorkerCommand::ExecuteModule {
                 source,
                 url,
+                cache_key,
                 deps,
                 reply,
                 ..
             } => {
                 // P6：按本代页面 import map 编译（裸说明符 import 经映射键命中注册模块）。
                 let map_opt = import_map.lock().ok().and_then(|g| g.clone());
-                let result = execute_module_in_sandbox(&mut *sandbox, &source, &url, &deps, map_opt.as_ref());
+                let result =
+                    execute_module_in_sandbox(&mut *sandbox, &source, &url, &cache_key, &deps, map_opt.as_ref());
                 let _ = reply.send(result);
             }
             JsWorkerCommand::SetDomSnapshot {
@@ -2387,6 +2453,7 @@ fn execute_module_in_sandbox(
     sandbox: &mut dyn zero_script_sandbox::Sandbox,
     source: &str,
     url: &str,
+    cache_key: &str,
     deps: &[(String, String)],
     import_map: Option<&ImportMap>,
 ) -> Result<String, String> {
@@ -2401,7 +2468,9 @@ fn execute_module_in_sandbox(
     // R5182：入口（当前 script 元素的模块）不在 prelude 急切求值——由 transformed 体承担，
     // 模块体恰好执行一次；__moduleCache 挂 globalThis 跨元素共享、随 reset_context 按文档复位。
     let prelude = build_module_runtime_prelude(&registry, Some(url)).map_err(|e| e.to_string())?;
-    let transformed = compile_module_script(source, url, url, &registry).map_err(|e| e.to_string())?;
+    // s94 cache_key 接驳保留：本 merge 8c9ffef79 已将键语义接入 apps 链（内联每元素独立键 /
+    // 外链 src 绝对 URL）；上游 dd05cc9c6 的 `url, url` 最小编译修复被本行完整覆盖。
+    let transformed = compile_module_script(source, url, cache_key, &registry).map_err(|e| e.to_string())?;
     let full = format!("{prelude}\n{transformed}");
     sandbox.execute(&full).map(|r| r.value).map_err(|e| e.to_string())
 }
@@ -2554,8 +2623,14 @@ impl zero_page_runtime::JsExecutor for RendererJsWorker {
     fn execute_script_direct(&self, script: &str) -> Result<String, String> {
         self.execute_script_direct(script)
     }
-    fn execute_module(&self, source: &str, url: &str, deps: &[(String, String)]) -> Result<String, String> {
-        self.execute_module(source, url, deps)
+    fn execute_module(
+        &self,
+        source: &str,
+        url: &str,
+        cache_key: &str,
+        deps: &[(String, String)],
+    ) -> Result<String, String> {
+        self.execute_module(source, url, cache_key, deps)
     }
     fn mutations(&self) -> Arc<std::sync::Mutex<Vec<zero_engine::DomMutation>>> {
         self.mutations()

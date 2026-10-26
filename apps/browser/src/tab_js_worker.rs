@@ -35,7 +35,7 @@ fn channel_timeout_for(exec_timeout_ms: u64) -> Duration {
 }
 
 type ScriptFn = Arc<dyn Fn(&str, u64) -> Result<String, String> + Send + Sync>;
-type ModuleFn = Arc<dyn Fn(&str, &str, &[(String, String)]) -> Result<String, String> + Send + Sync>;
+type ModuleFn = Arc<dyn Fn(&str, &str, &str, &[(String, String)]) -> Result<String, String> + Send + Sync>;
 type ExecutorFn = Arc<dyn Fn(&str) -> Result<String, String> + Send + Sync>;
 
 enum JsWorkerCommand {
@@ -47,6 +47,8 @@ enum JsWorkerCommand {
     ExecuteModule {
         source: String,
         url: String,
+        /// s94：`__moduleCache` 记忆化键（内联每元素独立键 / 外链 src 绝对 URL），与 url 分离。
+        cache_key: String,
         deps: Vec<(String, String)>,
         reply: Sender<Result<String, String>>,
     },
@@ -165,20 +167,23 @@ impl TabJsWorkerHandle {
                 .map_err(|e| e.to_string())?
         });
 
-        let module_executor: ModuleFn = Arc::new(move |source: &str, url: &str, deps: &[(String, String)]| {
-            let (reply_tx, reply_rx) = mpsc::channel();
-            cmd_for_module
-                .send(JsWorkerCommand::ExecuteModule {
-                    source: source.to_string(),
-                    url: url.to_string(),
-                    deps: deps.to_vec(),
-                    reply: reply_tx,
-                })
-                .map_err(|e| e.to_string())?;
-            reply_rx
-                .recv_timeout(channel_timeout_for(TAB_JS_EVENT_TIMEOUT_MS))
-                .map_err(|e| e.to_string())?
-        });
+        let module_executor: ModuleFn = Arc::new(
+            move |source: &str, url: &str, cache_key: &str, deps: &[(String, String)]| {
+                let (reply_tx, reply_rx) = mpsc::channel();
+                cmd_for_module
+                    .send(JsWorkerCommand::ExecuteModule {
+                        source: source.to_string(),
+                        url: url.to_string(),
+                        cache_key: cache_key.to_string(),
+                        deps: deps.to_vec(),
+                        reply: reply_tx,
+                    })
+                    .map_err(|e| e.to_string())?;
+                reply_rx
+                    .recv_timeout(channel_timeout_for(TAB_JS_EVENT_TIMEOUT_MS))
+                    .map_err(|e| e.to_string())?
+            },
+        );
 
         Self {
             cmd_tx,
@@ -205,9 +210,15 @@ impl TabJsWorkerHandle {
         (self.executor)(script, PAGE_SCRIPT_TIMEOUT_MS)
     }
 
-    /// 执行 ES module（含依赖注册表）。
-    pub fn execute_module(&self, source: &str, url: &str, deps: &[(String, String)]) -> Result<String, String> {
-        (self.module_executor)(source, url, deps)
+    /// 执行 ES module（含依赖注册表）；`cache_key` 语义见 [`zero_page_runtime::JsExecutor::execute_module`]。
+    pub fn execute_module(
+        &self,
+        source: &str,
+        url: &str,
+        cache_key: &str,
+        deps: &[(String, String)],
+    ) -> Result<String, String> {
+        (self.module_executor)(source, url, cache_key, deps)
     }
 
     /// 在 JS 线程执行脚本（不经 WebView 包装）。
@@ -511,12 +522,14 @@ fn js_worker_main(
             JsWorkerCommand::ExecuteModule {
                 source,
                 url,
+                cache_key,
                 deps,
                 reply,
             } => {
                 // P6：按本代页面 import map 编译（裸说明符 import 经映射键命中注册模块）。
                 let map_opt = import_map.lock().ok().and_then(|g| g.clone());
-                let result = execute_module_in_sandbox(&mut *sandbox, &source, &url, &deps, map_opt.as_ref());
+                let result =
+                    execute_module_in_sandbox(&mut *sandbox, &source, &url, &cache_key, &deps, map_opt.as_ref());
                 let _ = reply.send(result);
             }
             JsWorkerCommand::SetDomSnapshot { html, url } => {
@@ -694,6 +707,7 @@ fn execute_module_in_sandbox(
     sandbox: &mut dyn zero_script_sandbox::Sandbox,
     source: &str,
     url: &str,
+    cache_key: &str,
     deps: &[(String, String)],
     import_map: Option<&ImportMap>,
 ) -> Result<String, String> {
@@ -708,7 +722,9 @@ fn execute_module_in_sandbox(
     // R5182：入口（当前 script 元素的模块）不在 prelude 急切求值——由 transformed 体承担，
     // 模块体恰好执行一次；__moduleCache 挂 globalThis 跨元素共享、随 reset_context 按文档复位。
     let prelude = build_module_runtime_prelude(&registry, Some(url)).map_err(|e| e.to_string())?;
-    let transformed = compile_module_script(source, url, url, &registry).map_err(|e| e.to_string())?;
+    // s94 cache_key 接驳保留：本 merge 8c9ffef79 已将键语义接入 apps 链（内联每元素独立键 /
+    // 外链 src 绝对 URL）；上游 dd05cc9c6 的 `url, url` 最小编译修复被本行完整覆盖。
+    let transformed = compile_module_script(source, url, cache_key, &registry).map_err(|e| e.to_string())?;
     let full = format!("{prelude}\n{transformed}");
     sandbox.execute(&full).map(|r| r.value).map_err(|e| e.to_string())
 }
@@ -846,8 +862,14 @@ impl zero_page_runtime::JsExecutor for TabJsWorkerHandle {
     fn execute_script_direct(&self, script: &str) -> Result<String, String> {
         self.execute_script_direct(script)
     }
-    fn execute_module(&self, source: &str, url: &str, deps: &[(String, String)]) -> Result<String, String> {
-        self.execute_module(source, url, deps)
+    fn execute_module(
+        &self,
+        source: &str,
+        url: &str,
+        cache_key: &str,
+        deps: &[(String, String)],
+    ) -> Result<String, String> {
+        self.execute_module(source, url, cache_key, deps)
     }
     fn mutations(&self) -> std::sync::Arc<std::sync::Mutex<Vec<zero_engine::DomMutation>>> {
         self.mutations()

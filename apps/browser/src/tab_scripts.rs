@@ -114,6 +114,14 @@ impl PageScriptRunner {
             PageScript::InlineModule(_) => self.base.clone(),
             _ => String::new(),
         };
+        // s94 同款：`__moduleCache` 记忆化键与模块 URL 分离——内联 module 每元素独立键
+        //（落在页面 URL 上会被同文档首枚命中短路）；外链键 = src 绝对化（同 src 恰好一次）。
+        // https://html.spec.whatwg.org/multipage/webappapis.html#module-map
+        let module_cache_key = match script {
+            PageScript::InlineModule(_) => format!("{}#!zw-inline-module-{}", self.base, script_index),
+            PageScript::ExternalModule(src) => resolve_document_url(&self.base, src),
+            _ => self.base.clone(),
+        };
         // R2944：外部脚本的绝对 src（fetch 成功+执行后派 script 元素 'load'；fetch 失败已在内联分支派 'error'）。
         let external_abs: Option<String> = match script {
             PageScript::External(src) | PageScript::ExternalModule(src) => Some(resolve_document_url(&self.base, src)),
@@ -146,6 +154,7 @@ impl PageScriptRunner {
             &self.html,
             is_module,
             &module_url,
+            &module_cache_key,
             &code,
             true,
             *script_index,
@@ -484,13 +493,14 @@ pub fn apply_ime_preedit_default(
         .is_ok()
 }
 
-#[allow(clippy::too_many_arguments)] // 8 参 classic 执行 helper（含 R3258 script_index）；与 app_render_geometry/tab_favicon 同惯例
+#[allow(clippy::too_many_arguments)] // 9 参 classic 执行 helper（含 R3258 script_index + s94 module_cache_key）；与 app_render_geometry/tab_favicon 同惯例
 fn execute_script_chunk(
     wv: &mut WebView,
     js_worker: Option<&TabJsWorkerHandle>,
     html: &str,
     is_module: bool,
     module_url: &str,
+    module_cache_key: &str,
     code: &str,
     page_script: bool,
     script_index: usize,
@@ -509,7 +519,7 @@ fn execute_script_chunk(
         let fetch = |url: &str| wv.fetch_text_at(url).map_err(|e| e.to_string());
         collect_module_deps(&fetch, module_url, code, &mut registry, page_map.as_ref())?;
         let deps: Vec<(String, String)> = registry.into_iter().collect();
-        worker.execute_module(code, module_url, &deps)?;
+        worker.execute_module(code, module_url, module_cache_key, &deps)?;
     } else if let Some(worker) = js_worker {
         if page_script {
             // classic 页面脚本：顶层 try-catch 包装捕获抛错（防持久 Isolate 中毒 + 让 R2940 报告生效；

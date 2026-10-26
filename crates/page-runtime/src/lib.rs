@@ -161,8 +161,17 @@ pub trait JsExecutor {
     fn set_dom_snapshot(&self, html: &str, url: &str);
     /// 同步执行一段脚本，返回结果字符串。
     fn execute_script_direct(&self, script: &str) -> Result<String, String>;
-    /// 执行 ES module（含依赖注册表）。
-    fn execute_module(&self, source: &str, url: &str, deps: &[(String, String)]) -> Result<String, String>;
+    /// 执行 ES module（含依赖注册表）。`url` 为模块自身 URL（相对 import 解析基准）；
+    /// `cache_key` 为 `__moduleCache` 记忆化键——内联 module 每元素独立键（不得落在页面
+    /// URL 上，否则同文档第二枚被首枚短路）、外链为 src 绝对 URL（同 src 恰好一次）。
+    /// https://html.spec.whatwg.org/multipage/webappapis.html#module-map
+    fn execute_module(
+        &self,
+        source: &str,
+        url: &str,
+        cache_key: &str,
+        deps: &[(String, String)],
+    ) -> Result<String, String>;
     /// 取回执行期间记录的 DOM 变更。
     fn mutations(&self) -> Arc<std::sync::Mutex<Vec<DomMutation>>>;
 
