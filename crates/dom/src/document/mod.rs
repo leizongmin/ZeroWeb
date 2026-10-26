@@ -823,6 +823,38 @@ impl Document {
         }
     }
 
+    /// 获取节点**直接子**文本节点的内容拼接（spec child text content——不含后代
+    /// 元素内文本）。与 [`Self::text_content`]（textContent 递归语义）相对：脚本源
+    /// 文本 = script 元素的 child text content（HTML spec prepare-the-script-element
+    /// 「source text」）；SVG script（foreign content 按 markup 解析）可嵌套 script
+    /// 子元素，二者不同——递归版会把嵌套脚本文本吞进外层源（WPT execution-timing
+    /// 138/139/143 判据）。
+    /// https://html.spec.whatwg.org/multipage/infrastructure.html#child-text-content
+    pub fn child_text_content(&self, id: NodeId) -> Option<String> {
+        let node_data = self.nodes.get(id)?;
+        match &node_data.kind {
+            NodeKind::Text(data) => Some(data.content.clone()),
+            NodeKind::Comment(data) => Some(data.content.clone()),
+            NodeKind::ProcessingInstruction(data) => Some(data.data.clone()),
+            NodeKind::Element(_) | NodeKind::Document(_) | NodeKind::DocumentFragment | NodeKind::ShadowRoot(_) => {
+                let mut result = String::new();
+                let mut current = self.first_child(id);
+                while let Some(child) = current {
+                    if let Some(NodeData {
+                        kind: NodeKind::Text(text),
+                        ..
+                    }) = self.nodes.get(child)
+                    {
+                        result.push_str(&text.content);
+                    }
+                    current = self.next_sibling(child);
+                }
+                Some(result)
+            }
+            NodeKind::DocumentType(_) => None,
+        }
+    }
+
     /// 设置节点的 `nodeValue`（spec `dom-node-nodevalue` setter）。
     ///
     /// Text/Comment/ProcessingInstruction 改 content/data；其余（Element/Document/

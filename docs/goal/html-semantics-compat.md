@@ -2,9 +2,50 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 105 施工收口（import attributes 静态校验：**import-attributes 域 3F→3P**（invalid-type-attribute-error / unsupported-attribute / invalid-import-errors-order），scripting-1 **349P/192F/37T→352P/189F/37T**，行级 diff 恰 3 行零旁损——新 script-sandbox `import_attributes` 模块逐静态 import 语句校验 `with` 子句：属性键 ≠ type → SyntaxError（全量先于 type 值校验）、type 值 ∉ module type map {"json","css","text"} → TypeError（"js"/"javascript" 不注册，语料四值判据一致）；webview is_module 臂图收集前接线——违例走 s102 报告面（error_ctor 分派 + 元素 fire load + 体不执行含 prelude），校验先于图收集保证属性键 SyntaxError 胜过裸 specifier TypeError；首版 map 漏 "text" 扰动 text-module 5 页、按语料属性值分布收录后 FILTER=text-module 与基线零 diff；script-sandbox lib 372（+7）/webview lib 809（+2）；clippy 双 crate clean），下一步 s106 入场探针定刀位（候选：execution-timing scheduler 族定刀 / 063 Timeout 深探 / 数据模块全量支持或 .py 执行器前置体量评估）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 106 施工收口（SVG script 族静态面：**execution-timing 域 4F→4P**（137/138/139/140），scripting-1 **352P/189F/37T→356P/185F/37T**，行级 diff 恰 4 行零旁损——探针实证根因：html5ever 对 foreign content 按 spec markup 解析（SVG script 嵌套 `<script>` 为真实子元素），提取器取源误用递归 textContent 把嵌套脚本文本吞进外层源致 SyntaxError；三刀：脚本源改 **child text content**（直接子文本节点拼接，zero-dom 新访问器）、执行序按 **end-tag 序**重排（pre-order 先行者是后行者祖先 → 后行者先行，序号保持 pre-order 与 shim 对齐）、SVG script href 空串不落内联臂（137）；族内 142/143/144/145 属运行时面（write 闭合外层/mutation 重触发 prepare）另立项；zero-dom lib 868/engine lib 3540（+4 钉）/webview lib 809；clippy 三 crate clean），下一步 s107 入场探针定刀位（候选：execution-timing 余 ~42F scheduler 语义定刀 / 数据模块全量支持或 .py 执行器前置体量评估 / SVG script 运行时面 4 页体量评估）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-27 M2 切片 105 施工收口，import attributes 静态校验轮）**：
+> **▶ 当前状态（2026-10-27 M2 切片 106 施工收口，SVG script 族静态面轮）**：
+> **入场定谳**：三候选按 fail 形状重新分组——execution-timing 50F 中藏 **SVG script
+> 族 8 页**（137/138/139/140/142/143/144/145），138/139/143 为 harness 级失败
+> （`page script threw: SyntaxError: Unexpected token '.'`，143 的 `':'` 正是语料
+> 故意埋的 `assert_unreached():`），共同根因优先于 scheduler 异质长尾，定刀。
+> **根因（探针实证）**：①html5ever 对 foreign content 按 spec **markup 解析**——
+> SVG script 内嵌套 `<script>` 为真实子元素（探针 dump 树形）；②提取器取源误用递归
+> `text_content`（textContent 语义含后代元素文本），外层源吞入嵌套脚本文本。spec：
+> 脚本源文本 = **child text content**（直接子文本节点拼接）；HTML script raw text
+> 仅文本子节点，两取法恒等（其余 585 行零影响）。判据：138 期望 [ #1, #2, end#2]
+> **end-tag 序**（子脚本先闭合先执行）；139 期望 [external, #1, end#1]；137 期望
+> 空 href 不执行体。
+> **本轮三刀**：①zero-dom 新 `child_text_content`（直接子 Text 拼接，与递归
+> text_content 并列）；②extract 源文本改 child_text_content + 执行序按「pre-order
+> 先行者是后行者祖先 → 后行者先行」重排（区间序；this_idx 保持全体 script
+> pre-order 序与 shim getElementsByTagName 对齐，执行序与序号解耦）；③SVG 命名空间
+> script href 空串跳过不落内联臂（HTML script src="" 维持旧回落不扩大）。族内余页
+> 运行时面不触：142 write 注入外链 / 143 write 双 `</script>` 提前闭合外层（语料
+> 故意双写）/ 144/145 mutation 改 textContent+type 重触发 prepare。
+> **验证**：zero-dom lib **868/868**；engine lib **3540/3540**（+4 钉：嵌套源+序+
+> 序号 / 外链嵌套序 / 空 href 双面 / 无嵌套序不变）；webview lib **809/809**；
+> 定向 **FILTER=execution-timing 与 s105 基线 diff 恰 4 行（全 F→P）**；全子树终扫
+> **356P/185F/37T + 15 NotRun**（s105：352P/189F/37T+15N），行级 diff **恰 4 行**、
+> **零 P→非P**（comm 校验）、T/N 持平零旁损；fmt clean + clippy 三 crate clean。
+> 诊断路径留档：fail 形状分组 → harness 级三页语料核对 → 探针 dump 双取法源文本
+> 实证（探针已删）。渲染面零依赖——reftest/product-smoke 未跑。账本见
+> [evidence/2026-10-27-m2s106-svg-script-family-static-face.md](html-semantics-compat/evidence/2026-10-27-m2s106-svg-script-family-static-face.md)。
+> **范围**：document/mod.rs ×1（新访问器）+ extract.rs ×1（三刀 + 4 钉）；解析器/
+> 语料/runner 零变更；语料不可改维持。
+> **挂账**：SVG script 族运行时面 4 页（142/143/144/145，script 生命周期与 DOM
+> 变更联动，另立项）；execution-timing 余 ~42F（scheduler 语义长尾 + 063 runner
+> 脚本记账）；数据模块全量支持（fetcher MIME 门 + extractor 类型捕获 + registry
+> 合成源 + rewriter）；.py 执行器前置；import attributes 余项（dep 级校验/
+> export-from/动态 with）；charset 族（Timeout 形）；svg-script-fragment-clone 3F；
+> FIXME 组；接口对象基建面（承袭）；基线扫描宜空载（承袭）；testharness.rs
+> /tmp/zw-hb*.txt 插桩来源待查（承袭）。execution-timing 137/138/139/140 本轮销账。
+> **下一步**：s107 入场探针定刀位（候选：execution-timing 余 ~42F scheduler 语义
+> 定刀 / 数据模块全量支持或 .py 执行器前置体量评估 / SVG script 运行时面 4 页体量
+> 评估）。
+> **切片间隙**：本轮 zero-dom/engine 面 + 单测；下一挂账同流同面，间隙开放。
+>
+> **▶ 上轮状态（2026-10-27 M2 切片 105 施工收口，import attributes 静态校验轮——其下一步 s106 入场探针定刀位已由 s106 收口，见上）**：
 > **入场定谳**：三候选评估——execution-timing 50F 异质（scheduler 排序长尾 + SVG
 > integration-point 解析器面 + 138/139/143 疑似变换自伤）非单根因切片，否；063 =
 > runner 脚本记账深坑，否；**import attributes 静态校验 3 Fail 页**最小高信定刀。

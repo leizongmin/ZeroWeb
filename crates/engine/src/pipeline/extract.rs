@@ -7,6 +7,7 @@
 //! `zero_engine::*` 外部路径；私有 helper 仅供族内，`strip_cdata` 例外（`pub`，
 //! 供 `mod.rs::inject_print_page_dividers` 复用）。
 
+use std::cmp::Ordering;
 use std::collections::HashSet;
 
 /// 提取 HTML 中所有 `<link rel="stylesheet" href="...">` 的 href 原始值。
@@ -132,6 +133,7 @@ pub fn extract_page_scripts(html: &str) -> Vec<PageScript> {
 pub fn extract_page_scripts_indexed(html: &str) -> Vec<(PageScript, usize)> {
     let doc = zero_dom::parse_html(html);
     let mut scripts = Vec::new();
+    let mut script_ids = Vec::new();
     for (this_idx, script_id) in doc.get_elements_by_tag_name("script").into_iter().enumerate() {
         let type_attr = doc.get_attribute(script_id, "type");
         if !script_type_is_javascript(type_attr.as_deref()) {
@@ -189,16 +191,40 @@ pub fn extract_page_scripts_indexed(html: &str) -> Vec<(PageScript, usize)> {
         };
         if let Some(src) = src_attr {
             let src = src.trim();
-            if !src.is_empty() {
+            if src.is_empty() {
+                // s106（SVG script href 空串面）：外链形态成立即不落内联臂——SVG
+                // script 带 href/xlink:href（含空串）为外链引用，空 URL 取回失败不
+                // 执行内联体（WPT execution-timing/137：assert_unreached 须不可达）。
+                // HTML script src="" 维持旧内联回落（无语料判据，不扩大）。
+                // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+                if doc.get(script_id).is_some_and(|n| {
+                    matches!(
+                        n,
+                        zero_dom::NodeData {
+                            kind: zero_dom::NodeKind::Element(e),
+                            ..
+                        } if e.namespace() == "http://www.w3.org/2000/svg"
+                    )
+                }) {
+                    continue;
+                }
+            } else {
                 if is_module {
                     scripts.push((PageScript::ExternalModule(src.to_string()), this_idx));
                 } else {
                     scripts.push((PageScript::External(src.to_string()), this_idx));
                 }
+                script_ids.push(script_id);
                 continue;
             }
         }
-        if let Some(raw) = doc.text_content(script_id) {
+        // s106（脚本源 = child text content）：spec prepare-the-script-element 的
+        // source text = script 元素**直接子**文本节点拼接（child text content），非
+        // textContent 递归语义——SVG script（foreign content 按 markup 解析）可嵌套
+        // script 子元素，递归版把嵌套脚本文本吞进外层源致 SyntaxError（138/139/143）。
+        // HTML script 内容为 raw text 仅文本子节点，二者恒等（零行为变化）。
+        // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+        if let Some(raw) = doc.child_text_content(script_id) {
             // XHTML 脚本常以 `<![CDATA[ ... ]]>` 包裹；html5ever 按 HTML 模式解析会把 CDATA
             // 标记作为文本保留。若不剥离，传给 JS 引擎会触发 `SyntaxError: Unexpected token '<'`
             // 致整个脚本失效（函数未定义 → onload 回调再抛 ReferenceError）。CSS21 测试套件
@@ -211,10 +237,53 @@ pub fn extract_page_scripts_indexed(html: &str) -> Vec<(PageScript, usize)> {
                 } else {
                     scripts.push((PageScript::Inline(code.to_string()), this_idx));
                 }
+                script_ids.push(script_id);
             }
         }
     }
-    scripts
+    // s106（SVG script 嵌套 end-tag 序）：foreign content 按 markup 解析，SVG script
+    // 可嵌套 script 子元素（WPT execution-timing 138/139/140）——parser-inserted 脚本
+    // 于自身 end tag 完成时执行，子脚本 end tag 先闭合先执行。提取为 pre-order（父先
+    // 子后），按「pre-order 先行者是后行者祖先 → 后行者先行」重排为 end-tag 序（区间
+    // 序，传递一致）。HTML script 内容为 raw text 无元素子节点，无嵌套时序不变；
+    // this_idx 仍为全体 script 元素 pre-order 序（与 shim getElementsByTagName('script')
+    // 对齐），执行序与序号解耦。
+    // https://html.spec.whatwg.org/multipage/syntax.html#the-rules-for-parsing-tokens-in-foreign-content
+    let mut entries: Vec<(zero_dom::NodeId, usize, PageScript)> = scripts
+        .into_iter()
+        .zip(script_ids)
+        .map(|((script, idx), id)| (id, idx, script))
+        .collect();
+    entries.sort_by(|a, b| match a.1.cmp(&b.1) {
+        Ordering::Equal => Ordering::Equal,
+        Ordering::Less => {
+            if is_ancestor(&doc, a.0, b.0) {
+                Ordering::Greater
+            } else {
+                Ordering::Less
+            }
+        }
+        Ordering::Greater => {
+            if is_ancestor(&doc, b.0, a.0) {
+                Ordering::Less
+            } else {
+                Ordering::Greater
+            }
+        }
+    });
+    entries.into_iter().map(|(_, idx, script)| (script, idx)).collect()
+}
+
+/// 判 `anc` 是否 `desc` 的祖先（沿父链上行）——脚本 end-tag 排序用。
+fn is_ancestor(doc: &zero_dom::Document, anc: zero_dom::NodeId, desc: zero_dom::NodeId) -> bool {
+    let mut current = doc.parent_node(desc);
+    while let Some(node) = current {
+        if node == anc {
+            return true;
+        }
+        current = doc.parent_node(node);
+    }
+    false
 }
 
 /// 按文档顺序提取 `<script type="importmap">` 的内联 JSON 文本。
@@ -1490,6 +1559,85 @@ mod tests {
             matches!(&scripts[1].0, PageScript::Inline(c) if c.contains("console.log")),
             "HTML script href 不应视为外链（内联仍执行），实得 {:?}",
             scripts[1].0
+        );
+    }
+
+    /// s106 回归钉：SVG script 嵌套（foreign content 按 markup 解析，嵌套 script 为
+    /// 真实子元素）——①外层源 = child text content（不含嵌套脚本文本，旧递归
+    /// textContent 吞入致 SyntaxError）；②执行序 = end-tag 序（子脚本先闭合先执行，
+    /// 旧 pre-order 父先子后）；③序号仍为全体 script pre-order 序。
+    /// https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+    #[test]
+    fn svg_nested_script_child_source_and_end_tag_order_s106() {
+        let html = "<svg><script>\nlog(\"outer-start\");\nvar a = {\n  <script>\n    log(\"inner\")\n  </script>\na:1}\nlog(\"outer-end\");\n</script></svg>";
+        let scripts = extract_page_scripts_indexed(html);
+        assert_eq!(scripts.len(), 2, "嵌套内外两条脚本均提取");
+        assert!(
+            matches!(&scripts[0].0, PageScript::Inline(c) if c.contains("inner") && !c.contains("outer")),
+            "end-tag 序：嵌套子脚本先执行，实得 {:?}",
+            scripts[0].0
+        );
+        assert!(
+            matches!(&scripts[1].0, PageScript::Inline(c) if c.contains("outer-start") && c.contains("a:1}") && !c.contains("inner")),
+            "外层源 = child text content（不吞嵌套脚本文本），实得 {:?}",
+            scripts[1].0
+        );
+        assert!(
+            scripts[0].1 > scripts[1].1,
+            "序号保持全体 script 元素 pre-order 序（父小子大）：{:?}",
+            (scripts[0].1, scripts[1].1)
+        );
+    }
+
+    /// s106 回归钉：外链 SVG script 嵌套内联（140 形态）——end-tag 序子先父后，
+    /// 外链经 href 提取。
+    #[test]
+    fn svg_external_script_nested_inline_end_tag_order_s106() {
+        let html = "<svg><script xlink:href=\"scripts/include-1.js\">\n  <script>\n    log(\"inline script #1\")\n  </script>\n</script></svg>";
+        let scripts = extract_page_scripts_indexed(html);
+        assert_eq!(scripts.len(), 2);
+        assert!(
+            matches!(&scripts[0].0, PageScript::Inline(c) if c.contains("inline script #1")),
+            "嵌套内联先执行，实得 {:?}",
+            scripts[0].0
+        );
+        assert!(
+            matches!(&scripts[1].0, PageScript::External(s) if s == "scripts/include-1.js"),
+            "外链父脚本后执行，实得 {:?}",
+            scripts[1].0
+        );
+    }
+
+    /// s106 回归钉：SVG script href/xlink:href 空串——外链形态成立不落内联臂（137
+    /// 判据 assert_unreached 须不可达）；HTML script src="" 维持旧内联回落。
+    #[test]
+    fn svg_script_empty_href_skips_inline_body_s106() {
+        let svg_html = "<svg><script xlink:href=\"\">log(\"should-not-run\")</script></svg>";
+        assert!(
+            extract_page_scripts_indexed(svg_html).is_empty(),
+            "SVG script 空href 不提取（不执行内联体）"
+        );
+        let html_html = "<script src=\"\">log(\"html-fallback\")</script>";
+        assert_eq!(
+            extract_page_scripts_indexed(html_html).len(),
+            1,
+            "HTML script src=\"\" 维持旧内联回落（不扩大）"
+        );
+    }
+
+    /// s106 回归钉：无嵌套（HTML script raw text）时提取序与序号零变化。
+    #[test]
+    fn classic_scripts_order_unchanged_without_nesting_s106() {
+        let html = "<script>a()</script><script src=\"x.js\"></script><script>c()</script>";
+        let scripts = extract_page_scripts_indexed(html);
+        assert_eq!(scripts.len(), 3);
+        assert!(matches!(&scripts[0].0, PageScript::Inline(c) if c == "a()"));
+        assert!(matches!(&scripts[1].0, PageScript::External(s) if s == "x.js"));
+        assert!(matches!(&scripts[2].0, PageScript::Inline(c) if c == "c()"));
+        assert_eq!(
+            (scripts[0].1, scripts[1].1, scripts[2].1),
+            (0, 1, 2),
+            "无嵌套时序号与执行序均不变"
         );
     }
 
