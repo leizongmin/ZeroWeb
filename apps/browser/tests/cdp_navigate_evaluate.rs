@@ -19,9 +19,9 @@
 //! 7. `kill_switch_env_off_keeps_frame_attached_on_busy_iframe_page`——kill-switch
 //!    `ZW_CDP_NAV_IFRAME_PROBE_ASYNC=0`（子进程 env 注入）回落旧阻塞探测：忙臂
 //!    iframe 页 frameAttached 事件在（旧行为面常驻判别）。
-//! 8. `default_async_probe_gives_up_frame_attached_on_busy_iframe_page`——默认
-//!    异步探测忙臂页放弃 frame 元数据：frameAttached 不发（负向判别，base 上
-//!    此断言翻红——旧路径事件在）。
+//! 8. `default_async_probe_discovers_iframe_before_busy_arm_blocks`——默认
+//!    异步探测忙臂页臂前发现：frameAttached 在臂前自由窗早发且真实（与 Chrome
+//!    frame 挂上即发语义一致）。
 //! 9. `cross_connection_stays_responsive_during_busy_navigation`——跨连接停摆
 //!    症状面：conn A 忙导航占位期间，conn B 新连接 Page.enable 在 1.5s 窗内可达
 //!    （base 上复用循环被冻结 ~臂长，B 不可达翻红——s20 原始症状防回归）。
@@ -464,13 +464,20 @@ fn kill_switch_env_off_keeps_frame_attached_on_busy_iframe_page() {
         .expect("frameAttached present under kill-switch (legacy blocking probe)");
 }
 
-/// kill-switch 常驻钉（默认侧，负向判别）：默认异步探测在忙臂页超界放弃——
-/// frameAttached 不发（迟发求值与导航管线 worker 快照安装竞态，宁缺勿错）。
+/// 默认异步探测忙臂页臂前发现钉：主文档 parse 完成即出现可答执行环境，探测求值
+/// 在忙臂起始前的自由窗内应答，frameAttached 早发且真实（iframe 元素已在 DOM）。
 ///
-/// 无严格计时断言；等待窗 5s 覆盖臂长（2500ms）+ 余量。base 上本钉翻红
-///（旧路径事件在）——翻红方向在 base 侧实证归档。
+/// 时间线实证（2026-10-26 @695f120c，独立 CDP 探针）：navigate 应答/parse 完成
+/// ≈80ms，探测求值应答 ≈80ms，2500ms 忙臂实际 192→2692ms；臂中发送的求值迟发到
+/// 臂尾应答（迟发不丢语义保持，另由 deferred-reply 门禁测试覆盖）。早发事件携带
+/// 真实 frame 元数据，不违反宁缺勿错；与 Chrome 一致（frame 元素挂上即发
+/// frameAttached，不等主文档空闲）。
+///
+/// 探测的有界放弃路径保留为渲染器病态迟缓防线：本页形下 navigate 应答不早于
+/// parse 完成、探测先于脚本相执行，放弃路径无法由页面内容构造，故不再断言
+/// 「不发」。无严格计时断言；等待窗 5s 覆盖臂长（2500ms）+ 余量。
 #[test]
-fn default_async_probe_gives_up_frame_attached_on_busy_iframe_page() {
+fn default_async_probe_discovers_iframe_before_busy_arm_blocks() {
     let site = TestSite::spawn();
     let (port, _browser) = spawn_browser();
     let mut cdp = CdpClient::connect(port);
@@ -482,10 +489,8 @@ fn default_async_probe_gives_up_frame_attached_on_busy_iframe_page() {
         Duration::from_secs(15),
     )
     .expect("navigate");
-    assert!(
-        cdp.wait_event("Page.frameAttached", Duration::from_secs(5)).is_err(),
-        "frameAttached must not be emitted when the bounded probe gives up on a busy arm"
-    );
+    cdp.wait_event("Page.frameAttached", Duration::from_secs(5))
+        .expect("frameAttached emitted by the pre-arm probe on a busy iframe page");
 }
 
 /// 跨连接停摆症状面钉（s20 原始症状防回归）：conn A 忙导航占位期间，conn B
