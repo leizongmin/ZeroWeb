@@ -154,7 +154,13 @@ pub(crate) fn adjust_table_layout_with_fonts(
     // layout_table/build_grid（build_row 无 display 过滤，未包裹的 inline 子会被
     // 误当独立 cell 各占一列，088/091/092）。见 table_anon_cell 模块文档。
     if crate::table_anon_cell::anon_cell_wrap_enabled() {
-        crate::table_anon_cell::synthesize_anon_table_cells(root, doc, styles);
+        crate::table_anon_cell::synthesize_anon_table_cells(
+            root,
+            doc,
+            styles,
+            inline_fonts.metric_provider,
+            inline_fonts.resolver,
+        );
     }
     adjust_table_layout_inner(root, doc, styles, false, inline_fonts);
 }
