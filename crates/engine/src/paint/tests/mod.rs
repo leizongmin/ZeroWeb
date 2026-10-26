@@ -76,6 +76,8 @@ mod r5272_selection_ancestor_ua_default_tests;
 /// R5273 图片替换元素作者 ::selection 底 tint（css-pseudo-4 §highlight-painting）。
 mod r5273_selection_img_bg_tests;
 mod r5296_inline_bg_ml_gate_tests;
+/// R5297 多片段 slice inline 背景行连续域 + 内容区锚（css-break-3 §5.3）。
+mod r5297_inline_ml_band_extents_tests;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;
