@@ -9285,6 +9285,21 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str) -> String 
                 output.push_str(&combined);
                 output.push_str("\">");
                 if status == 200 {
+                    // s101（内联模块依赖解析基）：type="module" 外链内联后，模块体内相对
+                    // import 的 spec 基准从模块自身 URL 漂移为页面 URL（engine 内联模块
+                    // 依赖收集基 = 页面）——模块体在 resources/ 子目录时其相对 import 解析
+                    // 到页目录 → 取回 404 → 空存根 → 假「Module does not provide an
+                    // export」编译错（nomodule-set-on-external-module-script 实测）。重写
+                    // 相对 spec 为 root-absolute，恢复「相对 requesting module 解析」语义。
+                    // https://tc39.es/ecma262/#sec-hostresolveimportedmodule
+                    let content = if matches!(
+                        zero_engine::attr_from_open_tag(open, "type"),
+                        Some(t) if t.trim().eq_ignore_ascii_case("module")
+                    ) {
+                        rewrite_inline_module_import_specs(&content, &combined)
+                    } else {
+                        content
+                    };
                     output.push_str(&content);
                     output.push_str(&script_event_dispatch_tail("load"));
                 } else {
@@ -9322,6 +9337,35 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str) -> String 
 
 /// s100：经典脚本 load-error fixture 端点路径（fetch 通道与内联预处理共用面）。
 const WPT_LOAD_ERROR_EVENTS_PY: &str = "html/semantics/scripting-1/the-script-element/resources/load-error-events.py";
+
+/// s101：内联投递模块体的静态 import spec 重写为 root-absolute（wpt_root 相对路径）。
+/// spec：import 语句相对 **requesting module 自身 URL** 解析（referrer 为模块自身）；
+/// 内联投递后 engine 依赖收集基 = 页面 URL，仅重写 `./`/`../` 相对 spec——已
+/// root-absolute、裸 specifier（无 import map 须按解析失败语义保持）与含 scheme 的
+/// spec 不动。替换按 lexer 感知提取（extract_static_module_import_specifiers）定位后
+/// 引号包裹整体替换（模块体为小体量真实代码，同串注释/字符串误伤面可忽略）。动态
+/// import() 走 __zw_compile_module 运行时取回链，不在本重写面（module 尾片挂账）。
+/// https://tc39.es/ecma262/#sec-hostresolveimportedmodule
+fn rewrite_inline_module_import_specs(content: &str, module_path: &str) -> String {
+    let module_dir = module_path.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
+    let mut out = content.to_string();
+    for spec in zero_script_sandbox::extract_static_module_import_specifiers(content) {
+        if !spec.starts_with("./") && !spec.starts_with("../") {
+            continue;
+        }
+        let (path_spec, query) = spec.split_once('?').unwrap_or((spec.as_str(), ""));
+        let rel = path_spec.strip_prefix("./").unwrap_or(path_spec);
+        let abs = format!("/{}", normalize_relative(&format!("{module_dir}/{rel}")));
+        let abs = match query {
+            "" => abs,
+            q => format!("{abs}?{q}"),
+        };
+        out = out
+            .replace(&format!("\"{spec}\""), &format!("\"{abs}\""))
+            .replace(&format!("'{spec}'"), &format!("'{abs}'"));
+    }
+    out
+}
 
 /// s100：从 open 标签提取 on* 事件处理器内容属性并按投递形态转义（& → &amp;、
 /// " → &quot;——与 nonce/type 保真同款转义）；缺席/空值返回空串（不进重写标签）。
@@ -12187,6 +12231,47 @@ async_test(function(test) {
         assert!(!out.contains("assert_unreached"));
         assert!(out.contains("onerror=\"onError(t1)\""));
         assert!(out.contains("new Event('error')"));
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn inline_module_import_specs_rewrite_to_root_absolute_s101() {
+        // 直接钉 helper：相对 spec 以模块自身目录（resources/）为基上溯归一；
+        // root-absolute/裸 specifier/含 scheme 的 spec 不动；单双引号皆替换。
+        let body = "import D from './dep.js';\
+            \nimport { x } from \"../shared/util.js\";\
+            \nimport \"/root-abs.js\";\
+            \nimport 'bare-spec';\
+            \nimport 'https://elsewhere.test/x.js';";
+        let out = rewrite_inline_module_import_specs(
+            body,
+            "html/semantics/scripting-1/the-script-element/resources/entry.js",
+        );
+        assert!(out.contains("import D from '/html/semantics/scripting-1/the-script-element/resources/dep.js';"));
+        assert!(out.contains("import { x } from \"/html/semantics/scripting-1/the-script-element/shared/util.js\";"));
+        assert!(out.contains("import \"/root-abs.js\";"));
+        assert!(out.contains("import 'bare-spec';"));
+        assert!(out.contains("import 'https://elsewhere.test/x.js';"));
+
+        // 端到端钉：type="module" 外链内联后体内相对 import 被重写；classic 外链体不动。
+        let root = std::env::temp_dir().join("zw-s101-inline-module-specs-test");
+        let case_dir = "html/semantics/scripting-1/the-script-element";
+        std::fs::create_dir_all(root.join(case_dir).join("resources")).unwrap();
+        std::fs::write(
+            root.join(case_dir).join("resources/entry.js"),
+            "import D from './dep.js';\nglobalThis.d = D;",
+        )
+        .unwrap();
+        std::fs::write(root.join(case_dir).join("plain.js"), "import E from './dep.js';").unwrap();
+        let html = "<!doctype html><body>\
+            <script type=\"module\" src=\"./resources/entry.js\"></script>\
+            <script src=\"./plain.js\"></script>\
+            </body>";
+        let out = inline_local_scripts(html, &root, &format!("{case_dir}/page.html"));
+        assert!(out.contains("import D from '/html/semantics/scripting-1/the-script-element/resources/dep.js';"));
+        // classic 体保持原 spec（依赖收集基 = 页面 URL，./ 相对页目录语义不变）。
+        assert!(out.contains("import E from './dep.js';"));
 
         std::fs::remove_dir_all(&root).ok();
     }
