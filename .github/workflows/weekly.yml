@@ -15,6 +15,12 @@ on:
         description: 'Run benchmark-trend job only (skip build matrix)'
         type: boolean
         default: false
+      # wpt.fyi 差距快照：dispatch 时可选只跑 wptfyi-gap（构建 runner + 三套件
+      # + 拉 wpt.fyi + 快照回写，约 20 分钟）
+      run_wptfyi_gap:
+        description: 'Run wptfyi-gap job only (skip build matrix)'
+        type: boolean
+        default: false
 
 permissions:
   actions: read
@@ -64,7 +70,9 @@ jobs:
     # A1：dispatch「仅 trend」模式跳过 6 平台构建矩阵
     if: >
       needs.changes.outputs.should_build == 'true'
-      && !(github.event_name == 'workflow_dispatch' && inputs.run_reftest_trend)
+      && !(github.event_name == 'workflow_dispatch'
+           && (inputs.run_reftest_trend || inputs.run_benchmark_trend
+               || inputs.run_wptfyi_gap))
     name: Build ${{ matrix.target }} (${{ matrix.engine }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 75
@@ -596,6 +604,109 @@ jobs:
             git pull --rebase -X theirs origin main
             git push origin HEAD:main
             echo "Benchmark trend data committed and pushed."
+          fi
+
+  # wpt.fyi 三浏览器差距快照（docs/compat/wptfyi-gap-analysis.md）：
+  # 每周把 ZeroWeb 三套件成绩与 chrome/firefox/safari aligned stable 对比，
+  # 快照（md+json）追加提交回 docs/compat/wptfyi/——文档与网站统计口径的
+  # 数据源。与 reftest-trend 的差异：wpt.fyi run 每日滚动，数据面刷新不依赖
+  # 代码变化，schedule 恒跑（不走 changes 门禁）；快照为追加式数据，
+  # 旧快照保留即趋势史。
+  wptfyi-gap:
+    if: >
+      github.event_name == 'schedule'
+      || (github.event_name == 'workflow_dispatch' && inputs.run_wptfyi_gap)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Determine rusty_v8 version
+        shell: bash
+        run: |
+          echo "RUSTY_V8_VERSION=$(sed -n '/name = \"v8\"/{n;s/^version = \"//;s/\"$//;p;q;}' Cargo.lock)" >> "$GITHUB_ENV"
+
+      - name: Cache rusty_v8
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/zero-web/rusty_v8
+          key: rusty_v8-${{ env.RUSTY_V8_VERSION }}-x86_64-unknown-linux-gnu
+
+      - name: Cache cargo registry
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Download rusty_v8 archive
+        shell: bash
+        run: bash scripts/download-rusty-v8.sh
+
+      - name: Build zero-wpt-runner and test-guard
+        run: |
+          cargo build --release --bin zero-wpt-runner
+          make target/test-guard
+
+      - name: Fetch suite corpora
+        run: make fetch-wpt-compression fetch-wpt-cookies fetch-wpt-webstorage
+
+      # 有失败用例时 runner 退出码非 0 属预期（gap 报告就是要看差距）；
+      # 但 JSON 必须落盘，空输出说明 runner 崩了，job 应当红。
+      - name: Run suites (test-guard wrapped, JSON captured)
+        shell: bash
+        run: |
+          mkdir -p /tmp/zw-results
+          for suite in compression cookies webstorage; do
+            ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 900 -- \
+              ./target/release/zero-wpt-runner "testharness-$suite" --json \
+              > "/tmp/zw-results/testharness-$suite.json" \
+              || echo "::warning::$suite 退出码非 0（存在失败用例属预期）"
+            test -s "/tmp/zw-results/testharness-$suite.json" \
+              || { echo "::error::$suite 无 JSON 输出"; exit 1; }
+          done
+
+      - name: Fetch wpt.fyi aligned stable and build gap snapshot
+        run: |
+          python3 tests/wpt-runner/scripts/wptfyi_gap.py fetch
+          python3 tests/wpt-runner/scripts/wptfyi_gap.py gap \
+            --results /tmp/zw-results \
+            --out "docs/compat/wptfyi/gap-$(date -u +%F).md"
+
+      - name: Upload gap snapshot artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wptfyi-gap
+          path: docs/compat/wptfyi/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Commit gap snapshot back to main
+        if: success()
+        run: |
+          git config user.name "zero-web-bot"
+          git config user.email "zero-web-bot@users.noreply.github.com"
+          git add docs/compat/wptfyi/
+          if git diff --cached --quiet; then
+            echo "No gap snapshot changes to commit."
+          else
+            git commit -m "chore(wpt): 更新 wpt.fyi 三浏览器差距快照（weekly cron）"
+            # 冲突容忍：快照为追加式数据，冲突时取远端（权威版本）
+            git pull --rebase -X theirs origin main
+            git push origin HEAD:main
+            echo "Gap snapshot committed and pushed."
           fi
 
   # 月度工程报告（scripts/generate-monthly-report.sh）：每月 1 日自动生成上月报告
