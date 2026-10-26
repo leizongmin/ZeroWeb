@@ -1062,7 +1062,17 @@ impl super::Painter {
             _ => return,
         };
 
-        if font_size <= 0.0 {
+        // R5292（CSS2 §16 font-size 继承）：`font-size:0` 容器的早期返回只对「自身文本
+        // 全为 0px」成立——该门是 glyph-only 时代（d4d910c14）的遗留，此后 paint_text
+        // 已接管 stored replay / Path B 子孙文本绘制，行内子 span 携带自有非零
+        // font-size（`font-size:0` + span 正是 WPT 抑制空白的惯用法）时整盒跳过会把
+        // 子孙文本留给 16px 兜底路径错绘（table-vertical-align-baseline-009 的 X
+        // 50px→16px 实证）。仅当无任何 stored run 带非零字号时维持跳过（直系 0px
+        // 文本不可见语义不变；store 空盒保守回退旧行为）。
+        // kill-switch `ZW_PAINT_FS0_STORED_BYPASS=0`。
+        static FS0_STORED_BYPASS: std::sync::LazyLock<bool> =
+            std::sync::LazyLock::new(|| std::env::var("ZW_PAINT_FS0_STORED_BYPASS").as_deref() != Ok("0"));
+        if font_size <= 0.0 && (!*FS0_STORED_BYPASS || box_node.text_node_font_sizes.values().all(|&fs| fs <= 0.0)) {
             return;
         }
 
