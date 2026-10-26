@@ -460,13 +460,20 @@ pub trait Sandbox {
 
     /// s88（html-semantics-compat dynamic-import classic 面）：注册 V8 原生动态
     /// `import()` 宿主解析器。契约与 `__zw_compile_module` 一致——`resolver(spec,
-    /// referrer)` 返回 `resolved\u{1f}iife` / `resolved\u{1f}`（依赖图编译失败）/
-    /// 空串（取回失败）。须在 `execute` 之前调用；未注册时动态 import() 维持引擎
-    /// 默认 reject 语义。
+    /// referrer, nonce)` 返回 `resolved\u{1f}iife` / `resolved\u{1f}`（依赖图编译
+    /// 失败）/ 空串（取回失败；s92 起 CSP 阻止亦返空串 → reject TypeError）。
+    /// spec/referrer/nonce 均为宿主解析语义（referrer/nonce 由
+    /// [`Sandbox::set_dynamic_import_referrer`] / [`Sandbox::set_dynamic_import_nonce`]
+    /// 每脚本前设定；nonce 空串 = 无 nonce）。须在 `execute` 之前调用；未注册时
+    /// 动态 import() 维持引擎默认 reject 语义。
     ///
     /// **默认 no-op**：QuickJS 后端降级（classic 上下文动态 import() 维持不支持态）。
     #[allow(clippy::type_complexity)] // 镜像 register_callback 模式
-    fn set_dynamic_import_resolver(&mut self, _resolver: std::sync::Arc<dyn Fn(&str, &str) -> String + Send + Sync>) {}
+    fn set_dynamic_import_resolver(
+        &mut self,
+        _resolver: std::sync::Arc<dyn Fn(&str, &str, &str) -> String + Send + Sync>,
+    ) {
+    }
 
     /// s88：设定当前执行脚本的 referrer（动态 `import()` 的 base URL——classic 路径
     /// 无 ScriptOrigin/resource_name，宿主每脚本执行前供给）。
@@ -474,12 +481,26 @@ pub trait Sandbox {
     /// **默认 no-op**：QuickJS 后端降级（同上）。
     fn set_dynamic_import_referrer(&mut self, _url: &str) {}
 
+    /// s92（string-compilation CSP nonce 面）：设定当前执行脚本的 nonce（动态
+    /// `import()` 的 CSP script-src 检查输入；`None` = 无 nonce）。
+    ///
+    /// **默认 no-op**：QuickJS 后端降级（同上）。
+    fn set_dynamic_import_nonce(&mut self, _nonce: Option<&str>) {}
+
     /// s90（string-compilation base URL——inline 事件处理器臂）：注册全局函数
     /// `__zwSwapImportReferrer(url)`——返回旧 referrer 并换入新值。JS shim 于
     /// inline/反射事件处理器求值窗调用（体内动态 import() 用求值时刻文档基 URL）。
     ///
     /// **默认 no-op**：QuickJS 后端降级（shim 按函数缺席直接执行，零变更）。
     fn register_dynamic_import_referrer_swapper(&mut self) {}
+
+    /// s92（string-compilation CSP nonce 面）：注册全局函数 `__zwSwapImportNonce(v)`
+    /// ——与 [`Sandbox::register_dynamic_import_referrer_swapper`] 同形（有参换入
+    /// 返旧值、无参纯 getter；nonce 空串 ↔ `None` 双射）。shim 事件处理器求值窗
+    /// 换入空串（不继承 nonce）、字符串 timer fire 窗换入注册期捕获值。
+    ///
+    /// **默认 no-op**：QuickJS 后端降级（同上）。
+    fn register_dynamic_import_nonce_swapper(&mut self) {}
 }
 
 #[cfg(all(test, feature = "v8"))]

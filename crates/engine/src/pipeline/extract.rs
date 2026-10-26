@@ -1150,9 +1150,10 @@ pub struct StyleElementCsp {
     pub content_end: usize,
 }
 
-/// 从开标签文本提取属性值（security-hardening M2-s3 专用——`nonce="v"` / `nonce='v'`
-/// / `nonce=v` / 裸 `nonce`；大小写不敏感匹配名）。
-fn attr_from_open_tag(open_tag: &str, name: &str) -> Option<String> {
+/// 从开标签文本提取属性值（security-hardening M2-s3 / s92 string-compilation CSP
+/// nonce 面——`nonce="v"` / `nonce='v'` / `nonce=v` / 裸 `nonce`；大小写不敏感匹配
+/// 名；runner 内联投递保留原标签 nonce 复用）。
+pub fn attr_from_open_tag(open_tag: &str, name: &str) -> Option<String> {
     let lower = open_tag.to_ascii_lowercase();
     let needle = name.to_ascii_lowercase();
     let mut search_from = 0;

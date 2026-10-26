@@ -70,16 +70,23 @@ pub type HostCallback = Arc<dyn Fn(&[String]) -> String + Send + Sync + 'static>
 ///
 /// 契约与 `__zw_compile_module` 宿主回调完全一致（es_module `__zw_load_module`
 /// 三态）：返回 `resolved\u{1f}code`（IIFE，求值为 module namespace）、
-/// `resolved\u{1f}`（依赖图编译失败）、空串（取回失败）。spec/referrer 均为宿主
-/// 解析语义（referrer 由 [`Sandbox::set_dynamic_import_referrer`] 每脚本前设定）。
+/// `resolved\u{1f}`（依赖图编译失败）、空串（取回失败）。spec/referrer/nonce 均为
+/// 宿主解析语义（referrer/nonce 由 [`Sandbox::set_dynamic_import_referrer`] /
+/// [`Sandbox::set_dynamic_import_nonce`] 每脚本前设定；nonce 空串 = 无 nonce，
+/// s92 string-compilation CSP nonce 面——宿主据此对外链 module fetch 做 script-src
+/// 检查，阻止返空串 → reject TypeError）。
 #[allow(clippy::type_complexity)] // 镜像 HostCallback 形态（Arc 闭包跨 V8 回调边界）
-pub type DynamicImportResolver = Arc<dyn Fn(&str, &str) -> String + Send + Sync + 'static>;
+pub type DynamicImportResolver = Arc<dyn Fn(&str, &str, &str) -> String + Send + Sync + 'static>;
 
 /// 动态 import() 宿主状态（isolate slot 持有——同线程多 sandbox 状态隔离）。
 #[derive(Default)]
 struct DynamicImportState {
     /// 当前执行脚本的 referrer（classic 路径 ScriptOrigin 缺席，宿主显式供给）。
     referrer: String,
+    /// s92（string-compilation CSP nonce 面）：当前执行脚本的 nonce 属性值
+    /// （None = 无 nonce——字符串编译产物在事件处理器求值窗被 shim 换入 None，
+    /// spec 事件处理器不继承触发脚本 nonce）。
+    nonce: Option<String>,
     /// 宿主解析器；None = 维持 V8 默认语义（reject 普通 `Error("Not supported")`，
     /// 未接线宿主 renderer/tab 行为不劣化）。
     resolver: Option<DynamicImportResolver>,
@@ -104,7 +111,7 @@ fn dynamic_import_callback<'s, 'i>(
     let promise_resolver = v8::PromiseResolver::new(scope)?;
     let contract = match state.lock() {
         Ok(st) => match st.resolver.as_ref() {
-            Some(resolver) => resolver(&spec, &st.referrer),
+            Some(resolver) => resolver(&spec, &st.referrer, st.nonce.as_deref().unwrap_or("")),
             // 未注册宿主：V8 默认行为即 reject 普通 Error("Not supported")（原生效语义）。
             None => {
                 if let Some(msg) = v8::String::new(scope, "Not supported")
@@ -582,6 +589,41 @@ impl V8Sandbox {
                     return match args.first() {
                         Some(url) => std::mem::replace(&mut st.referrer, url.clone()),
                         None => st.referrer.clone(),
+                    };
+                }
+                String::new()
+            }),
+        );
+    }
+
+    /// s92（string-compilation CSP nonce 面）：设定当前执行脚本的 nonce（动态
+    /// `import()` 的 CSP script-src 检查输入——spec 动态 import 继承触发脚本
+    /// nonce）。`None` = 无 nonce。每脚本执行前更新（webview 脚本循环取
+    /// script_csp_info）。
+    pub fn set_dynamic_import_nonce(&mut self, nonce: Option<&str>) {
+        if let Ok(mut st) = self.dynamic_import.lock() {
+            st.nonce = nonce.map(str::to_string);
+        }
+    }
+
+    /// s92（string-compilation CSP nonce 面）：注册全局函数
+    /// `__zwSwapImportNonce(v)`——与 [`Self::register_dynamic_import_referrer_swapper`]
+    /// 同形：有参换入新 nonce 返旧值、无参纯 getter。shim 侧事件处理器求值窗换入
+    /// 空串（None——spec 事件处理器不继承触发脚本 nonce，体内 import() 的 module
+    /// fetch 无 nonce → 宿主 CSP 检查阻止）、字符串 timer fire 窗换入注册期捕获值
+    /// （spec 字符串编译继承触发脚本 nonce）。nonce 空串 ↔ `None` 双射（extract
+    /// 侧 nonce 空值视作缺失，合法 nonce 恒非空）。未注册（QuickJS 后端）时 shim
+    /// typeof 降级直执行，零变更。
+    pub fn register_dynamic_import_nonce_swapper(&mut self) {
+        let dynamic_import = self.dynamic_import.clone();
+        self.register_callback(
+            "__zwSwapImportNonce",
+            Box::new(move |args| {
+                if let Ok(mut st) = dynamic_import.lock() {
+                    return match args.first() {
+                        Some(v) => std::mem::replace(&mut st.nonce, if v.is_empty() { None } else { Some(v.clone()) })
+                            .unwrap_or_default(),
+                        None => st.nonce.clone().unwrap_or_default(),
                     };
                 }
                 String::new()
@@ -1206,6 +1248,12 @@ impl crate::Sandbox for V8Sandbox {
     }
     fn register_dynamic_import_referrer_swapper(&mut self) {
         V8Sandbox::register_dynamic_import_referrer_swapper(self)
+    }
+    fn set_dynamic_import_nonce(&mut self, nonce: Option<&str>) {
+        V8Sandbox::set_dynamic_import_nonce(self, nonce)
+    }
+    fn register_dynamic_import_nonce_swapper(&mut self) {
+        V8Sandbox::register_dynamic_import_nonce_swapper(self)
     }
     fn reset_context(&mut self) {
         V8Sandbox::reset_context(self)
@@ -2853,7 +2901,7 @@ mod tests {
         let calls: std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>> =
             std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let calls_cb = calls.clone();
-        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(move |spec, referrer| {
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(move |spec, referrer, _nonce| {
             calls_cb.lock().unwrap().push((spec.to_string(), referrer.to_string()));
             "https://zero.test/a.js\u{1f}(function() { return (function() { \
              globalThis.__s88_eval = true; return { from: 'a.js' }; })(); })()"
@@ -2891,13 +2939,76 @@ mod tests {
         );
     }
 
+    /// s92（string-compilation CSP nonce 面）：nonce 槽位随 resolver 第三参透传——
+    /// `set_dynamic_import_nonce(Some)` → resolver 收到该值；`None` 编码空串。
+    #[test]
+    fn test_dynamic_import_nonce_reaches_resolver() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        let nonces: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let nonces_cb = nonces.clone();
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(move |_spec, _referrer, nonce| {
+            nonces_cb.lock().unwrap().push(nonce.to_string());
+            String::new() // 空契约 → reject TypeError（本测只看透传，不关心落定）
+        }));
+        sandbox.set_dynamic_import_referrer("https://zero.test/page.html");
+        sandbox.set_dynamic_import_nonce(Some("correct"));
+        sandbox
+            .execute("import('./a.js').then(function () {}, function () {});")
+            .expect("classic 上下文 import() 不得同步 throw");
+        sandbox.set_dynamic_import_nonce(None);
+        sandbox
+            .execute("import('./b.js').then(function () {}, function () {});")
+            .expect("classic 上下文 import() 不得同步 throw");
+        assert_eq!(
+            nonces.lock().unwrap().as_slice(),
+            ["correct".to_string(), String::new()],
+            "nonce 槽位随 resolver 第三参透传（None 编码空串）"
+        );
+    }
+
+    /// s92：`__zwSwapImportNonce` swapper 契约——有参换入返旧值、无参纯 getter；
+    /// nonce 空串 ↔ `None` 双射。
+    #[test]
+    fn test_dynamic_import_nonce_swapper_contract() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        sandbox.register_dynamic_import_nonce_swapper();
+        sandbox.set_dynamic_import_nonce(Some("correct"));
+        let settled: std::sync::Arc<std::sync::Mutex<Option<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        let settled_cb = settled.clone();
+        sandbox.register_callback(
+            "__zw_report",
+            Box::new(move |args| {
+                *settled_cb.lock().unwrap() = args.first().cloned();
+                String::new()
+            }),
+        );
+        sandbox
+            .execute(
+                "__zw_report([\n\
+                   __zwSwapImportNonce(),\n\
+                   __zwSwapImportNonce(''),\n\
+                   __zwSwapImportNonce(),\n\
+                   __zwSwapImportNonce('rotated'),\n\
+                   __zwSwapImportNonce()\n\
+                 ].join('|'));",
+            )
+            .expect("swapper 序列不得同步 throw");
+        assert_eq!(
+            settled.lock().unwrap().as_deref(),
+            Some("correct|correct|||rotated"),
+            "getter 读当前值、swap 返旧换新、空串 = None"
+        );
+    }
+
     /// string-compilation 家族根因钉：eval 字符串内的 `import()`（classic 上下文
     /// 运行期编译，源码重写不可达）同样经原生回调走三态契约。红态：V8 默认
     /// 回调 reject `Error: Not supported`。
     #[test]
     fn test_native_dynamic_import_reaches_eval_compiled_string() {
         let mut sandbox = V8Sandbox::new().unwrap();
-        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer| {
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer, _nonce| {
             "https://zero.test/a.js\u{1f}(function() { return (function() { \
              globalThis.__s88_eval = true; return { from: 'a.js' }; })(); })()"
                 .to_string()
@@ -2933,7 +3044,7 @@ mod tests {
     #[test]
     fn test_native_dynamic_import_fetch_failure_rejects_type_error() {
         let mut sandbox = V8Sandbox::new().unwrap();
-        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer| String::new()));
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer, _nonce| String::new()));
         let settled: std::sync::Arc<std::sync::Mutex<Option<String>>> =
             std::sync::Arc::new(std::sync::Mutex::new(None));
         let settled_cb = settled.clone();
@@ -2963,7 +3074,7 @@ mod tests {
     #[test]
     fn test_native_dynamic_import_graph_cut_rejects_type_error() {
         let mut sandbox = V8Sandbox::new().unwrap();
-        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer| {
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer, _nonce| {
             "https://zero.test/graphcut.js\u{1f}".to_string()
         }));
         let settled: std::sync::Arc<std::sync::Mutex<Option<String>>> =

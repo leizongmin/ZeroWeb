@@ -2,9 +2,58 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 91 施工收口（动态 import() 重写器词法上下文感知 + module 上下文面收口，string-compilation 族清盘 **42P/4F/0T**：scripting-1 **173P/294F/30T→197P/295F/25T**（raw；域账 +1 惯例 **198P/295F/25T**）——三刀：①es_module `rewrite_dynamic_imports` 重写器 RewriteCtx 栈词法感知——字符串字面量/注释内 `import(` 不再改写（根因：纯文本扫描把字面量内 import( 也改写，字符串编译产物全局作用域 `ReferenceError: _importMeta`；UTF-8 char 步进返工在账）；②语料补 `dynamic-import/scripts/` 5 loader（fetch_dir_html depth-1 缺口，s89 *.css 同类）+ part04 R387b 外链经典脚本求值窗换基（concept-scripts-base-url：脚本基 = 自身 URL）；③字符串 timer 注册期捕获基——swapper 无参 getter 语义 + part01 注册期捕获 + part03 `_zwCallHandlerSwapBase` 拆通用形（fire 在求值窗外）；失败族地图序：①dynamic-import must-reject + classic 面 ✅ → ②stylesheets-blocking-scripts ✅ → ③the-script-element 基面余 CSP nonce 4F → ④module 尾片），下一步 s92 CSP nonce must-not-inherit 4F（s88 挂账 CSP 语义建模）或 module 尾片盘点，开工先探针定刀位；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 92 施工收口（CSP nonce 传播面：动态 import() 槽位 nonce + 内联投递保真，s88 挂账 4F 清盘，**string-compilation 族 46P/0F/0T 完全清盘**：scripting-1 **197P/295F/25T→201P/291F/25T**（raw；域账 +1 惯例 **202P/291F/25T**）——三刀：①script-sandbox `DynamicImportState` nonce 槽位 + resolver 契约升三参 `(spec, referrer, nonce)`（空串↔None 双射）+ `set_dynamic_import_nonce`/`register_dynamic_import_nonce_swapper`（`__zwSwapImportNonce` 同 referrer swapper 形）；②webview 逐脚本 nonce 刷新 + resolver CSP 检查（`check_script` → violation 入队 + 返空串 → 既有 TypeError reject 路径零改动命中判据）；③shim 求值窗——part03 `_zwCallHandlerSwapBase` 加 nonce 参（处理器传 `''` 不继承、timer 传注册期捕获值）、part01 双 timer 注册期捕获、part04 R387b 窗换 `''`；**返工**：首轮全子树 2 行附带（propagate-nonce-external 翻红）——runner `inline_local_scripts` 内联投递丢原标签 nonce 属性（s90 投递保真同族），复用 `attr_from_open_tag`（升 pub）保留 nonce 修复；失败族地图序：①dynamic-import must-reject + classic 面 ✅ → ②stylesheets-blocking-scripts ✅ → ③the-script-element 基面 CSP nonce ✅ → ④module 尾片），下一步 s93 module 尾片盘点（propagate-nonce-inline-module 1F module 路径检查点缺位等）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-26 M2 切片 91 施工收口，动态 import() 重写器词法感知 + module 面收口轮）**：
+> **▶ 当前状态（2026-10-26 M2 切片 92 施工收口，CSP nonce 传播轮）**：
+> **入场核账**：s91 HEAD（abdd1b178）基线 **197P/295F/25T**。残面：
+> string-compilation-nonce-{classic,module} must-not-inherit 4F（s88
+> 挂账 CSP 面）——setAttribute onclick 两臂 spec 语义：事件处理器不
+> 继承触发脚本 nonce → 体内 import() 的 module fetch 被 `script-src
+> 'nonce-correct'` 拒 → TypeError reject；红因 = 引擎动态 import 宿主
+> 解析路径无 CSP 检查、无 nonce 传播通道（import 成功 →
+> promise_rejects_js 断言失败）。**既有基座**（security-hardening
+> M2-s1~s7）：meta CSP 解析、`check_script(nonce,hash,url)`、violation
+> 事件、eval/attr 门（`unsafe-eval` 放行页不激活）——缺口仅在
+> import fetch 检查点。**本轮三刀**：①script-sandbox
+> `DynamicImportState.nonce` 槽位 + resolver 契约升三参（空串↔None
+> 双射）+ `set_dynamic_import_nonce`/`__zwSwapImportNonce` swapper
+> （trait 默认 no-op，QuickJS 降级；空契约路径既有 type_error reject
+> 零改动命中判据）；②webview 逐脚本 nonce 刷新（spec 动态 import 继承
+> 触发脚本 nonce，hostimportmoduledynamically-retrieval）+ resolver
+> 检查（violation 入 connect 共享队列 + 返空串）；③shim 求值窗——
+> 处理器传 `''`（不继承）、timer 注册期捕获（字符串编译继承）、R387b
+> 窗换 `''`（动态插入无 nonce）。**返工（投递保真）**：首轮全子树
+> 2 行附带——propagate-nonce-external-{classic,module} 翻红，ZWDBG
+> 双探针（resolver 收参 + 刷新序列，跑完即撤）定位：页面外链测试脚本
+> 经 runner `inline_local_scripts` 内联投递丢原标签 nonce 属性 → 刷新
+> 读 None → 槽位空。修复：投递保留 nonce（复用 extract
+> `attr_from_open_tag` 升 pub，`&`/`"` 转义；上方 harness 注入块
+> csp_nonce_attr 同款保真先例）。**验证**：nonce 两页 12/12（4 红臂
+> 翻绿 + 8 inherit 臂在 CSP 检查开启下保持绿）；propagate-nonce 4 页
+> 3 绿 1 红（inline-module 1F = s91 前既有 module 路径面）；终扫
+> **201P/291F/25T**，diff vs 基线恰 4 行全落 nonce 族、族外零移动，
+> **string-compilation 族 46P/0F/0T 完全清盘**（s88 入场 3P/3F/8T）。
+> 单测六腿：runner **226**、engine **3526**、sandbox v8 **364**（+2
+> 新测）、quickjs **259**、webview **800**；fmt/clippy 四 crate
+> `-D warnings` clean（ulimit+timeout shell 兜底同 s91）；reftest 未
+> 跑（无 render/layout 面，无政策快路径返 None，沿 s91 影响面口径）。
+> 域账自此按 **202P/291F/25T** 记（raw 201P + 惯例 +1）。账本见
+> [evidence/2026-10-26-m2s92-csp-nonce-string-compilation.md](html-semantics-compat/evidence/2026-10-26-m2s92-csp-nonce-string-compilation.md)。
+> **范围**：script-sandbox ×2 / engine ×2（shim + extract 一词 pub）/
+> webview / wpt-runner runner 侧五 crate；css/layout/renderer 零改动；
+> 语料不可改维持。
+> **挂账**：propagate-nonce-inline-module 1F + module 路径动态 import
+> CSP 检查点缺位（es_module 重写走 `__zw_compile_module` shim 路径
+> 绕开检查——与 classic 槽位路径正交）；`inline_local_scripts` 不保留
+> `type="module"`（投递语义保真，本刀语料不受影响）；security-csp 域
+> 旁证（他流域控制面，下次跑批建议重基线）；QuickJS 后端降级维持。
+> **下一步**：s93 module 尾片盘点——the-script-element 余账
+> （propagate-nonce-inline-module 等 module 路径面）按 s86 切片序④
+> 入场先探针定刀位。
+> **切片间隙**：本轮 script-sandbox/engine/webview/runner 面；下一
+> 挂账同流同面，间隙开放。
+
+> **▶ 上轮状态（2026-10-26 M2 切片 91 施工收口，动态 import() 重写器词法感知 + module 面收口轮——其下一步 s92 CSP nonce 面已由 s92 收口，见上）**：
 > **入场核账**：s90 HEAD（8c4a575dd）the-script-element 全子树复扫
 > **173P/294F/30T**（497 行）。残面：string-compilation-module
 > eval 1F + 整页 1T、base-url-inline-module / nonce-module /

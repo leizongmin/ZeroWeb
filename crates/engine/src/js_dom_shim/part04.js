@@ -7108,10 +7108,17 @@
                       } catch (_zwAbsE) {}
                       var _zwPrev = (typeof globalThis.__zwSwapImportReferrer === 'function')
                         ? globalThis.__zwSwapImportReferrer(_zwAbs) : null;
+                      // s92（string-compilation CSP nonce 面）：求值窗 nonce 换入 ''
+                      //（None——动态插入 script 元素无 nonce 属性，体内 import() 不
+                      // 继承页面脚本的 nonce）。https://html.spec.whatwg.org/multipage/
+                      // webappapis.html#hostimportmoduledynamically-retrieval
+                      var _zwPrevN = (typeof globalThis.__zwSwapImportNonce === 'function')
+                        ? globalThis.__zwSwapImportNonce('') : null;
                       try {
                         if (_code) (0, eval).call(globalThis, _code);
                       } finally {
                         if (_zwPrev !== null) globalThis.__zwSwapImportReferrer(_zwPrev);
+                        if (_zwPrevN !== null) globalThis.__zwSwapImportNonce(_zwPrevN);
                       }
                       try { _r387el.dispatchEvent(new Event('load')); } catch (_e387l) {}
                     }).catch(function () {

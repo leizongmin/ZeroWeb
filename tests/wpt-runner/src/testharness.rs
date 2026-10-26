@@ -9138,7 +9138,19 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str) -> String 
         match resolved {
             Some((combined, content)) => {
                 output.push_str(&remaining[..start]);
-                output.push_str("<script data-zw-harness data-inline=\"");
+                // s92（string-compilation CSP nonce 面）：投递形态改写保留原标签
+                // nonce 属性（上方 harness 注入块 csp_nonce_attr 同款保真）——CSP
+                // 页 nonce 槽位随脚本执行逐脚本刷新（webview 动态 import 检查输入），
+                // 内联投递丢 nonce 会让页面脚本体 Deferred import 拿不到 nonce 被
+                // CSP 伪拒（propagate-nonce-external-* 实测）。
+                // https://html.spec.whatwg.org/multipage/webappapis.html#concept-scripts-base-url
+                let nonce_attr = match zero_engine::attr_from_open_tag(open, "nonce") {
+                    Some(n) if !n.is_empty() => {
+                        format!(" nonce=\"{}\"", n.replace('&', "&amp;").replace('"', "&quot;"))
+                    }
+                    _ => String::new(),
+                };
+                output.push_str(&format!("<script{nonce_attr} data-zw-harness data-inline=\""));
                 output.push_str(&combined);
                 output.push_str("\">");
                 output.push_str(&content);

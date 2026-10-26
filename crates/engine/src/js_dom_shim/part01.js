@@ -5582,13 +5582,17 @@
     // URL——外链脚本注册的 timer fire 在脚本求值窗外，届时 referrer 槽位已被后续脚本
     // 改写）。注册期捕获槽位（`__zwSwapImportReferrer` 无参 getter）、fire 时 swap 求
     // 值、finally 换回（同 inline 处理器换基模式，part03 `_zwCallHandlerSwapBase`）。
+    // s92（string-compilation CSP nonce 面）：nonce 同捕获——spec 字符串编译继承触发
+    // 脚本 nonce，fire 窗换入注册期捕获值（无 swapper 捕获 '' 恒等）。
     if (typeof fn === 'string') {
       var _zwCapBase = (typeof globalThis.__zwSwapImportReferrer === 'function')
         ? globalThis.__zwSwapImportReferrer() : null;
+      var _zwCapNonce = (typeof globalThis.__zwSwapImportNonce === 'function')
+        ? globalThis.__zwSwapImportNonce() : '';
       var _zwCompiled = new Function(fn);
       fn = function () {
         if (typeof _zwCallHandlerSwapBase === 'function') {
-          return _zwCallHandlerSwapBase(_zwCompiled, this, arguments[0], _zwCapBase);
+          return _zwCallHandlerSwapBase(_zwCompiled, this, arguments[0], _zwCapBase, _zwCapNonce);
         }
         return _zwCompiled.apply(this, arguments);
       };
@@ -5621,13 +5625,16 @@
     var handle = _timerId++;
     // s90：字符串 handler 同 setTimeout（spec 同步 support；语法错注册期同步抛）。
     // s91：注册期捕获脚本基同 setTimeout（fire 时 swap 求值 finally 换回）。
+    // s92：nonce 同捕获（字符串编译继承触发脚本 nonce）。
     if (typeof fn === 'string') {
       var _zwCapBaseI = (typeof globalThis.__zwSwapImportReferrer === 'function')
         ? globalThis.__zwSwapImportReferrer() : null;
+      var _zwCapNonceI = (typeof globalThis.__zwSwapImportNonce === 'function')
+        ? globalThis.__zwSwapImportNonce() : '';
       var _zwCompiledI = new Function(fn);
       fn = function () {
         if (typeof _zwCallHandlerSwapBase === 'function') {
-          return _zwCallHandlerSwapBase(_zwCompiledI, this, arguments[0], _zwCapBaseI);
+          return _zwCallHandlerSwapBase(_zwCompiledI, this, arguments[0], _zwCapBaseI, _zwCapNonceI);
         }
         return _zwCompiledI.apply(this, arguments);
       };

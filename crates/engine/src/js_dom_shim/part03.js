@@ -12699,15 +12699,24 @@
   // s91（string-compilation base URL external 面）：抽出通用 swap 形——base 由调用方
   // 给定（inline 处理器传当前文档基；字符串 timer 传**注册期捕获**的脚本基——fire 在
   // 脚本求值窗外，届时槽位已被后续脚本改写）。
-  function _zwCallHandlerSwapBase(fn, thisArg, ev, base) {
+  // s92（string-compilation CSP nonce 面）：nonce 同形换入——inline/反射处理器传 ''
+  // （None，spec 事件处理器不继承触发脚本 nonce，体内 import() 的 module fetch 被
+  // 宿主 CSP 检查阻止）；字符串 timer 传**注册期捕获**的脚本 nonce（字符串编译继承
+  // nonce）。swapper 未注册（QuickJS 后端）typeof 降级零变更。
+  function _zwCallHandlerSwapBase(fn, thisArg, ev, base, nonce) {
     var swap = typeof globalThis.__zwSwapImportReferrer === 'function' && base != null;
     var prev = swap ? globalThis.__zwSwapImportReferrer(base) : null;
+    var swapN = typeof globalThis.__zwSwapImportNonce === 'function';
+    var prevN = swapN ? globalThis.__zwSwapImportNonce(nonce) : null;
     try { return fn.call(thisArg, ev); }
-    finally { if (swap) globalThis.__zwSwapImportReferrer(prev); }
+    finally {
+      if (swap) globalThis.__zwSwapImportReferrer(prev);
+      if (swapN) globalThis.__zwSwapImportNonce(prevN);
+    }
   }
   function _zwCallHandlerDocBase(fn, thisArg, ev) {
     return _zwCallHandlerSwapBase(fn, thisArg, ev,
-      typeof globalThis._zwDocBaseURL === 'function' ? globalThis._zwDocBaseURL() : null);
+      typeof globalThis._zwDocBaseURL === 'function' ? globalThis._zwDocBaseURL() : null, '');
   }
 
   // 编译 fn 的换基包装（参数绑定——var 循环里直闭包捕获会读到末轮绑定）。

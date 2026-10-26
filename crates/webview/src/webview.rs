@@ -3870,16 +3870,42 @@ impl WebView {
             );
             // s88：V8 原生动态 import() 解析器（classic 上下文——eval 字符串/Function
             // 构造器/事件处理器上下文源码重写不可达）。复用同一编译契约（三态标记）。
-            sandbox.set_dynamic_import_resolver(std::sync::Arc::new(move |spec: &str, parent: &str| {
+            // s92（string-compilation CSP nonce 面）：resolve 前按 nonce 槽位做
+            // script-src 检查（spec 动态 import 继承触发脚本 nonce；事件处理器窗
+            // shim 换 None → 检查阻止）——violation 入 connect 共享队列（run 尾
+            // document 站派发），返空串 → reject TypeError（WPT nonce must-not-
+            // inherit 判据族）。
+            // https://html.spec.whatwg.org/multipage/webappapis.html#hostimportmoduledynamically-retrieval
+            let csp_ctx = self.security_context.clone();
+            let import_violations = std::sync::Arc::clone(&self.pending_csp_connect_violations);
+            sandbox.set_dynamic_import_resolver(std::sync::Arc::new(move |spec: &str, parent: &str, nonce: &str| {
                 if spec.is_empty() {
+                    return String::new();
+                }
+                let abs = resolve_document_url(parent, spec);
+                let nonce_opt = if nonce.is_empty() { None } else { Some(nonce) };
+                if let Some(violation) = csp_ctx.check_script(nonce_opt, None, Some(&abs)) {
+                    if let Ok(mut queue) = import_violations.lock() {
+                        queue.push(PendingCspStyleViolation {
+                            effective_directive: violation.effective_directive,
+                            blocked_uri: violation.blocked_uri,
+                            original_policy: violation.original_policy,
+                            target_tag: "",
+                            target_ordinal: usize::MAX,
+                            target_selector: None,
+                            link_error: None,
+                        });
+                    }
                     return String::new();
                 }
                 compile_module_contract(&fetcher_native_import, parent, spec)
             }));
             // s90：__zwSwapImportReferrer——inline/反射事件处理器求值窗换基
             //（shim 侧 _zwCallHandlerDocBase 调用：求值时刻文档基 URL 进 referrer
-            // 槽位，finally 换回，零外溢）。
+            // 槽位，finally 换回，零外溢）。s92：__zwSwapImportNonce 同形——事件
+            // 处理器窗换 None（不继承 nonce）、字符串 timer fire 窗换注册期捕获值。
             sandbox.register_dynamic_import_referrer_swapper();
+            sandbox.register_dynamic_import_nonce_swapper();
         }
 
         // DOM shim 只注入一次（重复执行会重置 _nodeMap 丢失监听器）；含安装后 viewport
@@ -4158,7 +4184,11 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
             }
             // s88：动态 import() referrer（classic 路径无 ScriptOrigin，每脚本前刷新
             // ——模块路径经 prelude `.call({referrer})` 自带，不受此影响）。s90：
-            // referrer 升为脚本基 URL（上方按 PageScript 形态计算）。
+            // referrer 升为脚本基 URL（上方按 PageScript 形态计算）。s92：nonce 同
+            // 刷新（spec 动态 import 继承触发脚本 nonce——eval/Function 同步窗直读
+            // 槽位；事件处理器/timer 窗由 shim 换入）。
+            // https://html.spec.whatwg.org/multipage/webappapis.html#hostimportmoduledynamically-retrieval
+            sandbox.set_dynamic_import_nonce(script_csp_info.get(script_index).and_then(|i| i.nonce.as_deref()));
             sandbox.set_dynamic_import_referrer(&referrer);
             let execution = sandbox.execute(&full).map(|_| ());
             if eval_wrap_active {
