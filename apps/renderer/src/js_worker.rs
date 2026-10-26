@@ -1742,7 +1742,7 @@ fn js_worker_main(
             // T66：唤醒令牌本身无工作——分派环回顶先清优先队列（令牌唯一职责）。
             // census 守卫已在上方建账，走 Drop 入账（零耗时）。
             JsWorkerCommand::WakePrio => {}
-            JsWorkerCommand::Execute { script, reply, .. } => {
+            JsWorkerCommand::Execute { script, reply, seq } => {
                 #[cfg(test)]
                 execution_count.fetch_add(1, Ordering::Relaxed);
                 let full = format!("__zw_begin_script && __zw_begin_script();\n{script}");
@@ -1793,6 +1793,17 @@ fn js_worker_main(
                     }
                 }
                 let _ = reply.send(result);
+                // t-p106 诊断：worker reply.send 点仪拍（ZW_AUTOMATION_TRACE 门控，零默认
+                // 开销）——每臂一条（len+seq+head），与 renderer poll / headless 匹配点
+                // 时间轴对齐，锁定回复在哪一段丢失。
+                if crate::runtime::automation_trace_enabled() {
+                    let head: String = script.chars().take(60).collect();
+                    crate::runtime::automation_trace_line(&format!(
+                        "[areply] t={} w-send seq={seq} len={} head={head:?}",
+                        crate::runtime::automation_trace_epoch_ms(),
+                        script.len(),
+                    ));
+                }
                 // P105 诊断：分段落盘（见上注释）——≥1s 才写行，epoch 毫秒对齐。
                 {
                     let tail_ms = tail_started.elapsed().as_millis() as u64;
