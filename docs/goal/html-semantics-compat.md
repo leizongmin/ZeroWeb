@@ -2,9 +2,45 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 97 施工收口（document.write 写入脚本执行面 + insertBefore 动态脚本触发：**write 族 005-012/018/020/027/032/036/037/048/051/053/118/141/149×3 全翻绿 + 069 Timeout 解挂**：scripting-1 **288P/251F/17T→311P/229F/16T**（raw + 18 NotRun；净 +23 Pass，零 P→非P）——两刀：①part06 `__zwDocWriteRunFace` 写入脚本执行面（缓冲尾段子树收集——基点取首轮 innerHTML 往返后口径（dbg 探针实证序列化丢空白文本节点，写前快照使 bufTop 落负收集恒空）；内联槽位 doneSlots 防重 + 求值窗 `__zwDocWriteEvalSlot`（嵌套 write 即时 pass，009 插入点序）；外链 src 槽位阻塞链（水位线占位 + `__zwDocWritePendingSlot` 挂链 + plain 副本全属性透传重建 + `_zwPrepareSrcScript` 续流）；close 流接管 runner 无 settle 环境）；②part04 insertBefore 统一出口挂 R387 同口径动态脚本门（连接态→nomodule→for/event→run-once→内联 eval / prepare——018 testlib firstInParent 形态）；**主发现**：src 槽位 prepare 前水位线不占位则续流条件推进永不成立 → 重复 prepare fresh 副本无限 fetch（102b/102c 90s 执行超时实证）；插桩定谳 close 流链全序正确，102b/102c 残留 Fail 系探针缺 testlib 作者缺陷；零回归（P→非P 0 行）；失败族地图序：④execution-timing write 族 ✅（残余：102 runner 完成探测接线挂账 / 116 frameset 文档缺口显形）→ ⑤module 尾片（.py 执行器前置）/ nomodule-async 2F / 元素 onload 投递保真），下一步 s98 入场探针定刀位（候选：102 runner 面 `__zw_mark_harness_loaded` write 注入接线 / nomodule-async window-load 2F / load-error-events 元素 onload 保真）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 98 施工收口（write 注入 harness 的 runner 面完成探测接线：**102 Timeout→Pass 销账**：scripting-1 **311P/229F/16T→312P/229F/15T**（raw + 18 NotRun；净 +1 Pass，零 P→非P）——`wpt_data_fetch_handler` 静态回退特判两资源：`/resources/testharness.js` 服务补丁源（`apply_harness_completion_patch` 与静态内联共用 replacen，抽公共函数防漂移）+ eval 尾自调 `__zw_mark_harness_loaded()`（`document.open` 后 load 不重发，注入副本求值完成即置 all_loaded；此刻 tests.length=0 无误完成）；`/resources/testharnessreport.js` 服务 reporter 装配快照（上游 report 裸 loader，注册的回调到不了探针全局）；reporter 提升为 `HARNESS_REPORTER_SOURCE` 常量、静态/fetch 两路共用装配面；全语料核查 write/dynamic 注入仅 102 形（静态标签一律内联替换走不到 fetch 通道），blast radius 有界；runner bin 单测 226/226；失败族地图序：⑤module 尾片（.py 执行器前置）/ nomodule-async 2F / load-error-events 元素 onload 保真 / 116 frameset / 063 承袭），下一步 s99 入场探针定刀位（候选：nomodule-async window-load 2F / load-error-events 元素 onload 保真 / module 尾片 .py 执行器前置）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-26 M2 切片 97 施工收口，document.write 写入脚本执行面轮）**：
+> **▶ 当前状态（2026-10-26 M2 切片 98 施工收口，write 注入 harness runner 面接线轮）**：
+> **入场核账**：s97 挂账定谳——102 页脚本全执行但 write 注入 testharness.js 经
+> fetch 通道取回 RAW 副本（`hook=undefined/state=null` 超时转储）。**完成机制核
+> 实**（pinned testharness.js）：`notify_result → all_done()（要求
+> test_environment.all_loaded）→ complete() → completion 回调 → 探针全局
+> __zw_harness_complete`。**静态/write 两路不对称**：静态标签被 prepare_harness_html
+> 内联替换（补丁 replacen + reporter 装配 + 生命周期脚本尾补调钩子），102 初始
+> 文档只有 write 串里的 src——补丁与 reporter 都到不了注入副本，且 `document.open`
+> 换文档后 load 不重发，`all_loaded` 恒 false，末测 done 后永不 complete。**本轮
+> 接线**（testharness.rs fetch 静态回退特判）：`/resources/testharness.js` 服务
+> 补丁源（`apply_harness_completion_patch` 与静态内联共用 replacen）+ eval 尾自调
+> `__zw_mark_harness_loaded()`（注入副本求值完成即置 all_loaded；此刻
+> tests.length=0，all_done 为 false 无误完成）；`/resources/testharnessreport.js`
+> 服务 reporter 装配快照（上游 report 裸 loader，注册的 completion 回调到不了探针
+> 全局）；reporter 提 `HARNESS_REPORTER_SOURCE` 常量、静态/fetch 共用装配面。
+> **影响面核查**：write/dynamic 注入两路径的页面全语料仅 102 形（静态标签一律内
+> 联替换走不到 fetch 通道），blast radius 有界。**验证**：execution-timing s97
+> 97P/51F/2T → **98P/51F/1T**（逐行 diff 仅 102）；全子树终扫 **312P/229F/15T +
+> 18 NotRun**，净 +1 Pass、行级 diff 仅 102 Timeout→Pass、**零 P→非P**
+> （/tmp/s98-s1-rows.txt）；102 结果行 `Pass :: scheduler: defer script after
+> initial onload event`（写入全家桶依序执行、eventOrder 断言通过后 t.done() 完
+> 成——非空转判绿）；runner bin 单测 **226/226**（guard）；纯 runner .rs 变更，
+> fmt/clippy/reftest 不涉（沿 s91-s97 口径）。账本见
+> [evidence/2026-10-26-m2s98-write-harness-runner-face.md](html-semantics-compat/evidence/2026-10-26-m2s98-write-harness-runner-face.md)。
+> **范围**：testharness.rs ×1（fetch 静态服务特判 + 装配常量/公共函数提升）；
+> engine shim 零变更；语料不可改维持。
+> **挂账**：116 frameset 文档语义缺口；063 Timeout（hook=function pending=1）承
+> 袭；module 尾片（.py 前置）；charset 12F（.py）；svg-script-fragment-clone 3F；
+> nomodule-async 2F（window.onload promise 门）；load-error-events 族（脱离树副本
+> 元素事件保真）；FIXME：写流中页面脚本结构变更 bufTop 漂移、嵌套 write 内含外链
+> 近似文档序、setAttribute('src') 通路、type 门、children-changed 其余变异入口
+> （append()/textContent=/.text 已连接面）；接口对象基建面（承袭）；基线扫描宜空
+> 载（承袭）。102 本轮翻绿销账。
+> **切片间隙**：本轮纯 runner 面（.rs）；下一挂账 nomodule-async/load-error-events
+> 回 engine shim 面，跨面间隙。
+>
+> **▶ 上轮状态（2026-10-26 M2 切片 97 施工收口，document.write 写入脚本执行面轮——其下一步 s98 入场探针定刀位已由 s98 收口，见上）**：
 > **入场核账**：s96 HEAD 基线 **288P/251F/17T + 18 NotRun**（scripting-1 口径
 > 574 行）。s97 聚焦 document.write 族：spec #document-write-steps 把写入标记交
 > 解析器插入点（内联同步、外链按文档序阻塞写流内其后脚本、嵌套写入落在当前求
