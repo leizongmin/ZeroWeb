@@ -670,6 +670,23 @@ pub fn script_dispatch_script_event(abs_src: &str, ty: &str) -> String {
     format!("__zw_dispatch_script_event('{esc_url}', '{esc_ty}')")
 }
 
+/// 构造「module 失败报告面」shim 脚本（html-semantics M2 s102）：模块编译/求值失败
+/// （fetch 成功后的失败类）——spec：向 window 报异常（report the exception——window
+/// error 事件 ev.error 为 SyntaxError 实例）且元素照常 fire load（仅网络级取回失败
+/// 才 fire error）。元素按文档序 script 序号定位（extract_script_csp_info 同口径），
+/// 适配无 src 的内联模块（有 src 外链模块走 [`script_dispatch_script_event`]）。
+/// https://html.spec.whatwg.org/multipage/webappapis.html#run-a-module-script
+pub fn script_report_module_failure(msg: &str, script_ordinal: usize) -> String {
+    let esc_msg = escape_js_string(msg);
+    format!(
+        "(function(){{try{{\
+reportError(new SyntaxError('{esc_msg}'));\
+}}catch(_e){{}}\
+try{{var __zwEl=document.getElementsByTagName('script')[{script_ordinal}];\
+if(__zwEl)__zwEl.dispatchEvent(new Event('load'));}}catch(_e){{}}}})()"
+    )
+}
+
 /// 构造「派发 `securitypolicyviolation` 事件」的 shim 脚本（security-hardening M2-s1，
 /// spec CSP3 §report-the-violation——被 CSP 阻止的脚本在其执行点派发违规事件）。
 ///
