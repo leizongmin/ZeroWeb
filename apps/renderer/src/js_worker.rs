@@ -2401,7 +2401,7 @@ fn execute_module_in_sandbox(
     // R5182：入口（当前 script 元素的模块）不在 prelude 急切求值——由 transformed 体承担，
     // 模块体恰好执行一次；__moduleCache 挂 globalThis 跨元素共享、随 reset_context 按文档复位。
     let prelude = build_module_runtime_prelude(&registry, Some(url)).map_err(|e| e.to_string())?;
-    let transformed = compile_module_script(source, url, &registry).map_err(|e| e.to_string())?;
+    let transformed = compile_module_script(source, url, url, &registry).map_err(|e| e.to_string())?;
     let full = format!("{prelude}\n{transformed}");
     sandbox.execute(&full).map(|r| r.value).map_err(|e| e.to_string())
 }
