@@ -8297,4 +8297,46 @@ mod redirect_tests {
             "失败模块之后的 classic 脚本须照常执行"
         );
     }
+
+    /// s104 回归钉：frameset 文档 `document.body` 语义——spec dom.html#dom-document-body：
+    /// body element = html 元素的**第一个 body 或 frameset 子元素**（frameset 文档的
+    /// body element 是 frameset）。引擎解析树（html5ever spec 树构造）frameset 文档无
+    /// body 元素——旧 shim 恒返 body selector proxy 报 BODY（WPT execution-timing/116
+    /// 判据）；普通文档形态保持不变。
+    /// https://html.spec.whatwg.org/multipage/dom.html#dom-document-body
+    #[test]
+    fn frameset_document_body_is_frameset_s104() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        wv.prepare_document_state("https://wpt.test/a/fs.html");
+        // 探针脚本置于 head 内（frameset 文档合法位；置于 </html> 后会触发解析器
+        // 建隐式 body，document.body 合法地是 body——116 同形取证）。
+        wv.load_html(
+            "<!doctype html><html><head><title>t</title>\
+             <script>globalThis.__bodyTag = document.body ? document.body.localName : 'null';</script>\
+             </head><frameset><frame src=\"about:blank\"></frameset></html>",
+            None,
+        );
+        wv.run_page_scripts_strict().expect("frameset 文档页面脚本须正常执行");
+        assert_eq!(
+            wv.execute_script("String(document.body && document.body.localName)")
+                .unwrap(),
+            "frameset",
+            "frameset 文档的 document.body 须是 frameset 元素（旧报 BODY）"
+        );
+        let mut wv2 = WebView::new(WebViewConfig::default());
+        wv2.prepare_document_state("https://wpt.test/a/plain.html");
+        wv2.load_html("<!doctype html><body><p>x</p></body>", None);
+        wv2.run_page_scripts_strict().expect("普通文档页面脚本须正常执行");
+        assert_eq!(
+            wv2.execute_script("String(document.body && document.body.localName)")
+                .unwrap(),
+            "body",
+            "普通文档的 document.body 须仍是 body（getter 分派零扰动）"
+        );
+        assert_eq!(
+            wv2.execute_script("String(document.body === document.body)").unwrap(),
+            "true",
+            "document.body 跨访问须同对象（proxy 按选择器缓存）"
+        );
+    }
 }

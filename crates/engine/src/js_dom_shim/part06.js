@@ -4897,7 +4897,21 @@
     //（locomotive-scroll / smoothscroll / lazy-load / 视口滚动监听）——此前缺 → 返 undefined 致
     // `document.scrollingElement.scrollTop` 抛 TypeError。
     get scrollingElement() { return globalThis.document.documentElement || null; },
-    body: _wrapSelector('body'),
+    // s104（html-semantics-compat）：spec dom.html#dom-document-body——body element =
+    // html 元素的**第一个 body 或 frameset 子元素**（frameset 文档的 body element 是
+    // frameset 元素）。引擎解析树（html5ever spec 树构造）frameset 文档无 body 元素
+    // ——旧恒返 body selector proxy，`document.body.localName` 报 BODY（WPT
+    // execution-timing/116 断言 `<FRAMESET>` 实证）。getter 按 host 查询分派：body
+    // 存在 → 原 body proxy（普通文档 identity/行为零变化——proxy 按选择器缓存，跨
+    // 访问同对象）；body 缺失且 frameset 存在 → frameset proxy；均无 → 保持 body
+    // proxy（旧兜底，不新增 null 分派行为）。
+    // https://html.spec.whatwg.org/multipage/dom.html#dom-document-body
+    get body() {
+      try {
+        if (!__zw_query_match('body') && __zw_query_match('frameset')) return _wrapSelector('frameset');
+      } catch (_e104db) {}
+      return _wrapSelector('body');
+    },
     head: _wrapSelector('head'),
     // cdp-protocol S16（2026-09-13）：document.open/write/close——Playwright page.setContent
     // 在 utility world 执行 `document.open(); console.debug(tag); document.write(html);

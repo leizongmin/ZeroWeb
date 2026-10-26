@@ -2,9 +2,46 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 103 施工收口（module graph 取回/解析失败面：**定向 2 页 F→P（error-type-1「network error has higher priority than parse error」链闭合 + specifier-error window TypeError 面）+ 连带增益 fetch-error-2 F→P、import-subgraph-404 T→P（s102 F→T 族翻回真 Pass）、load-error-events-inline N→P×2、integrity ×3 T→Fail+Pass（404 臂真 P）**：scripting-1 **342P/180F/41T→348P/193F/37T**（NotRun 27→15；净 +6 Pass）——spec「fetch-a-single-module-script」失败语义落地：图内取回失败 → 元素 fire error + 体不执行（连 prelude 急切求值一并跳过——否则已取回依赖经 prelude 二次报错）+ 无 window 报告；图内裸 specifier 解析失败 → window 报 TypeError（ev.error 实例）+ 元素照常 fire load + 体不执行；旧版任一失败回落空存根、模块体照常执行。**P→非P 5 页逐页归因**（非契约回归，全部为 s102 存根假阳诚实化）：css/json/text-module load-error-events 各 1 子测试（inline,200 臂——import attributes/CSS·JSON·text module 缺口）、nested-imports（delayed-modulescript.py 端点）、json-module/parse-error（parse-error.json 不在语料，双重假阳）；连带 F→T 1 页（parse-error-location.tentative，体未注册——memory 坑 7 同类）；webview lib 806（+2 单测）/engine lib 3533；clippy 双 crate clean；失败族地图序：module 尾片（.py 执行器 + import attributes/CSS·JSON·text module + 非 Error 抛出值身份 + 动态 import 已错模块 reject 形 + error-type-3 instantiation 优先级）/ 116 frameset / 063 承袭），下一步 s104 入场探针定刀位（候选：116 frameset 文档语义缺口 / 063 Timeout / module 尾片余项）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 104 施工收口（frameset 文档 document.body 语义：**execution-timing/116 1F→1P**，scripting-1 **348P/193F/37T→349P/192F/37T**，行级 diff 恰 1 行零旁损——spec dom.html#dom-document-body「body element = html 元素第一个 body 或 frameset 子元素」落地：解析树（html5ever spec 树构造）frameset 文档无 body 元素（Rust DOM 正确），shim `document.body` 旧为静态 body selector proxy 恒报幽灵 BODY；改 getter 按 host 查询分派——body 缺失且 frameset 存在 → frameset proxy，否则原 body proxy（普通文档 identity/行为零变化，proxy 按选择器缓存）；渲染面零依赖（reftest 自有 onload 提取、layout 读 Rust DOM）；webview lib 807（+1 单测）/engine lib 3533；clippy 双 crate clean；候选对比：063（cloneNode deep runner 脚本记账重复执行 pending=1）与 module 尾片（import attributes/.py 执行器基建）均大体量未动，execution-timing 族 50F（scheduler 语义）另立项），下一步 s105 入场探针定刀位（候选：module 尾片体量评估（import attributes 或 .py 执行器前置）/ execution-timing scheduler 族定刀 / 063 Timeout 深探）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-27 M2 切片 103 施工收口，module graph 取回/解析失败面轮）**：
+> **▶ 当前状态（2026-10-27 M2 切片 104 施工收口，frameset 文档 document.body 语义轮）**：
+> **入场定谳**：承袭「116 frameset 文档语义缺口」（s97 记账）——execution-timing/116
+> 1F：`assert_array_equals` 期望 `['document.body: <FRAMESET>']` 实得 `<BODY>`。判据
+> 机制：head 内动态插入外链 find-body.js，文档解析完后记录 `document.body.localName`
+> ——frameset 文档（head 后 `<frameset>` 无 body）spec 语义 body element = html 元素
+> 第一个 body **或 frameset** 子元素。根因：解析树（html5ever spec 树构造）frameset
+> 文档无 body（Rust DOM 正确），shim `document.body: _wrapSelector('body')`（part06
+> :4900）静态 selector proxy 恒报幽灵 BODY。**候选对比**：063（cloneNode deep——
+> clone 插入触发 body 内联脚本重复执行 + pending=1 挂起，runner 脚本记账深坑）与
+> module 尾片（import attributes/.py 执行器基建体量）均大；116 单 getter 分派定刀。
+> **本轮一刀**：part06 `document.body` 改 getter——`__zw_query_match('body')` 未命中
+> 且 `'frameset'` 命中 → frameset proxy；否则原 body proxy（普通文档 identity/行为
+> 零变化——proxy 按选择器缓存跨访问同对象；均无保持 body proxy 旧兜底，不新增
+> null 分派）。webview +1 单测（frameset 文档 localName==='frameset' / 普通文档
+> 'body' / identity true）。
+> **验证**：webview lib **807/807**（+1）；engine lib **3533/3533**；定向
+> **FILTER=116 1F→1P**；全子树终扫 **349P/192F/37T + 15 NotRun**（s103：348P/193F/
+> 37T+15N），行级 diff **恰 1 行**（116 F→P）、**零 P→非P**（comm 校验）零旁损；
+> fmt clean + clippy 双 crate clean。**探针取证**：①裸 execute_script 走轻量
+> bootstrap（`__zw_query_match` 未定义）——shim 语义取证必须走页面脚本路径；②探针
+> 脚本置 `</html>` 后 → 解析器建隐式 body，document.body 合法地是 body——判据文档
+> 形状须与 116 同形（脚本在 head 内）。渲染面零依赖（reftest 自有 onload 提取
+> tag 无关、layout 读 Rust DOM 不经 shim）——reftest/product-smoke 未跑。账本见
+> [evidence/2026-10-27-m2s104-frameset-document-body.md](html-semantics-compat/evidence/2026-10-27-m2s104-frameset-document-body.md)。
+> **范围**：part06.js ×1 + webview.rs ×1（1 单测）；解析器/语料/runner 零变更；语
+> 料不可改维持。
+> **挂账**：execution-timing 族 **50F**（scheduler 语义，另立项——063 为其中一页：
+> cloneNode deep + runner 脚本记账重复执行）；module 尾片余项（import attributes /
+> .py 执行器 / 非 Error 抛出值 ev.error=null 身份 / 动态 import reject 形 /
+> error-type-3 instantiation 优先级）；charset 族（Timeout 形）；
+> svg-script-fragment-clone 3F；FIXME 组（bufTop 漂移/setAttribute('src')/type 门/
+> children-changed 其余入口）；接口对象基建面（承袭）；基线扫描宜空载（承袭）；
+> testharness.rs /tmp/zw-hb*.txt 插桩两行来源待查（承袭）。116 本轮销账。
+> **下一步**：s105 入场探针定刀位（候选：module 尾片体量评估（import attributes
+> 或 .py 执行器前置）/ execution-timing scheduler 族定刀 / 063 Timeout 深探）。
+> **切片间隙**：本轮 engine .js shim 面 + webview 单测；下一挂账同流同面，间隙开放。
+>
+> **▶ 上轮状态（2026-10-27 M2 切片 103 施工收口，module graph 取回/解析失败面轮——其下一步 s104 入场探针定刀位已由 s104 收口，见上）**：
 > **入场定谳**：s102 残余①——dep 级取回失败空存根兜底：图内任一 dep fetch 失败
 > 旧版 `registry.register(spec, "")` 后模块体**照常执行**，网络级失败面丢失。spec
 > 语义（fetch-a-single-module-script / resolve-a-module-specifier）：图内取回失败
