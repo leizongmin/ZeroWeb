@@ -6247,6 +6247,23 @@
                 if (_indeterminate[key] === true) _indeterminate[_r3902bDstKey] = true;
               }
             } catch (_e3902bcl) {}
+            // s95（html-semantics M2 切片 95）：script cloning steps——already-started
+            // 随克隆传播（HTML §the-script-element；execution-timing 062：started 脚本
+            // 浅克隆后补文本不得执行——克隆源已投递执行，克隆继承 started 后
+            // children-changed → prepare 首步即 no-op）。克隆产物为 handle 形态 → 记
+            // R387 run-once 表（与 s95 触发块的 handle 形查询同源，顺带抑制 R387 对
+            // started 克隆的重执行——spec 一致）。deep 克隆的后代 script 子树不经
+            // 克隆步骤（innerHTML 重建，本就无脚本执行语义），不在本面。
+            // https://html.spec.whatwg.org/multipage/scripting.html#the-script-element
+            try {
+              if (_realTag(sel, handle) === 'SCRIPT') {
+                var _s95SrcStarted = (!!handle && !!(globalThis._zwRanScripts && globalThis._zwRanScripts[handle]))
+                  || (!handle && !!(sel && globalThis._zwScriptStarted && globalThis._zwScriptStarted[sel]));
+                if (_s95SrcStarted) {
+                  (globalThis._zwRanScripts = globalThis._zwRanScripts || {})[nh] = true;
+                }
+              }
+            } catch (_eS95cl) {}
             // deep：复制后代（innerHTML）。
             if (deep) {
               var _cnd = false;
@@ -6403,6 +6420,20 @@
               throw _zwDomException(
                 "Failed to execute 'appendChild' on 'Node': Attr nodes cannot be inserted as children.",
                 'HierarchyRequestError');
+            }
+            // s95（html-semantics M2 切片 95）：**SCRIPT 父 children-changed → prepare**
+            // 前置快照——spec「script children changed steps」：script 元素的 child text
+            // content 变化时走 prepare（未连接直接返回；post-connection 步骤对
+            // parser-inserted 元素跳过，但空源 bail 发生在 already-started 置位前且
+            // prepare 前置步骤已清 parser document，故解析期空源脚本后补文本**须**执行、
+            // 非空脚本已启动为 no-op——emptyish-script-elements 全臂语义）。此处记变异
+            // 前 child text content，尾部 s95 触发块与变异后比对：**pre 空 + post 非空
+            // = 执行**（该形态即「未启动 + 现在有源」；pre 非空 = 已启动 no-op——解析
+            // 期有源脚本宿主已投递执行）。仅 SCRIPT 父快照，其余 appends 零成本穿透。
+            // https://html.spec.whatwg.org/multipage/scripting.html#script-children-changed-steps
+            var _s95PreText = null;
+            if (typeof _realTag === 'function' && _realTag(sel, handle) === 'SCRIPT') {
+              _s95PreText = _zwS95ChildText(sel, handle);
             }
             // R368（js-dom M4）：**无身份 plain 元素的 host 身份盖章**——iframe 工厂/detached
             // doc createElement 产物（纯 JS plain 对象，无 `__zwSelector`/`__zwHandle`）append
@@ -7150,6 +7181,54 @@
             // s70：img/source 插入 picture → relevant mutation（主尾路径——handle/
             // plain 子与 CE 例外流均汇此 return；R97 fragment / R334 sel 子路径
             // 各自挂钩）。非 picture 父在 helper tag 门零成本返回。
+            // s95：SCRIPT 父 children-changed → prepare 执行触发（快照在 trap 头——
+            // pre 空 + post 非空为执行候选；already-started 门与 connected 门
+            // （spec children changed 步骤 1 未连接返回）先后放行；nomodule 门与
+            // R387 同口径——中止发生在 already-started 置位前，不设 run-once 记账，
+            // 摘属性后再触发应重走门）。执行面沿 R387 内联臂：classic eval 全局
+            // 作用域 + 异常上报（内联脚本求值基 = 文档基）。
+            // FIXME(spec-gap): children changed 的其余变异入口（insertBefore/append()/
+            // 以及 textContent=/.text setter 的已连接元素面）尚未挂同一触发；
+            // emptyish 语料全臂走 appendChild，先覆盖本入口。
+            if (_s95PreText !== null) {
+              var _s95Post = _zwS95ChildText(sel, handle);
+              if (_s95PreText === '' && _s95Post !== '') {
+                try {
+                  var _s95self = _makeProxy(sel, handle);
+                  if (_s95self.isConnected === true) {
+                    // already-started 门（spec prepare 步骤 1）：投递记账
+                    // （_zwScriptStarted——part06 __zw_set_current_script 置，sel 形）
+                    // 或 R387 run-once（_zwRanScripts——handle 形，含克隆传播）任一
+                    // 命中即 no-op。pre 快照在该门之后只是第二道近似（pre 非空的
+                    // 已启动形态 059 之外另有 textContent= 清空后补写形态）。
+                    var _s95started = (!!sel && !!(globalThis._zwScriptStarted && globalThis._zwScriptStarted[sel]))
+                      || (!!handle && !!(globalThis._zwRanScripts && globalThis._zwRanScripts[handle]));
+                    if (!_s95started) {
+                      var _s95nomod = false;
+                      try {
+                        _s95nomod = !!(_s95self.hasAttribute && _s95self.hasAttribute('nomodule'))
+                          && String(_s95self.type || '').replace(/^[\t\n\x0C\r ]+|[\t\n\x0C\r ]+$/g, '')
+                            .toLowerCase() !== 'module';
+                      } catch (_eS95nm) {}
+                      if (!_s95nomod) {
+                        (0, eval).call(globalThis, _s95Post);
+                        // 执行即置位（spec prepare 末段 already started = true）——
+                        // 自摘子再补文本不重跑（execution-timing 059 形态）。
+                        if (sel) {
+                          (globalThis._zwScriptStarted = globalThis._zwScriptStarted || {})[sel] = true;
+                        } else if (handle) {
+                          (globalThis._zwRanScripts = globalThis._zwRanScripts || {})[handle] = true;
+                        }
+                      }
+                    }
+                  }
+                } catch (_eS95run) {
+                  if (typeof globalThis._zwReportListenerError === 'function') {
+                    try { globalThis._zwReportListenerError(_eS95run, null); } catch (_eS95rp) {}
+                  }
+                }
+              }
+            }
             try { if (typeof globalThis.__zwImgTreeMutated5277 === 'function') globalThis.__zwImgTreeMutated5277(sel, handle, child, true); } catch (_e5277tap) {}
             return child;
           };
@@ -7187,6 +7266,23 @@
             return false;
           }
           return false;
+        }
+        // s95：SCRIPT 父 child text content（**直接** Text 子 data 依树序拼接——
+        // spec child text content 定义；元素/注释/PI 子不计，gets-a-text-descendant
+        // 臂以「span 包文本」区分 child text content 与 textContent）。读页面可见
+        // 融合子视图（childNodes getter——host 快照 ∪ pending ∪ 注册表同源，
+        // text-append 后即时可见，P1 探针实证）。
+        function _zwS95ChildText(selX, handleX) {
+          var out = '';
+          try {
+            var kids = _makeProxy(selX, handleX).childNodes;
+            for (var i = 0; i < kids.length; i++) {
+              var k = kids[i];
+              if (!k || k.nodeType !== 3) continue;
+              out += (k.data != null ? k.data : (k.nodeValue != null ? k.nodeValue : ''));
+            }
+          } catch (_eS95c) {}
+          return out;
         }
         function _r126IsChildOf(parentSel, parentHandle, target) {
           // R126：已移除节点（sel 标记 / pending-removed——同批先前 removeChild 后
@@ -11799,6 +11895,18 @@
         // 与 option.text R3907 / title.text R5269 同口径委托。
         if (p === 'text' && _realTag(sel, handle) === 'A') {
           _makeProxy(sel, handle).textContent = value;
+          return true;
+        }
+        // s95（html-semantics M2 切片 95）：script.text setter = string replace all（与
+        // option.text R3907 / title.text R5269 / a.text R5273 委托 textContent 同口径——
+        // spec 步骤一致，子替换/文本子物化/MO 记账全继承）。归一注意：text 是普通
+        // DOMString（**非** LegacyNullToEmptyString）——null → "null"、undefined →
+        // "undefined"（WebIDL ToString；script-text Setter(null)/(undefined) 断言
+        // .text==="null"/"undefined" 且 firstChild.data 同值），textContent 的
+        // null → '' 语义不适用，先归一再委托。
+        // https://html.spec.whatwg.org/multipage/scripting.html#dom-script-text
+        if (p === 'text' && _realTag(sel, handle) === 'SCRIPT') {
+          _makeProxy(sel, handle).textContent = (value === null) ? 'null' : String(value);
           return true;
         }
         if (p === 'textContent' || p === 'innerText' || p === 'innerHTML') {

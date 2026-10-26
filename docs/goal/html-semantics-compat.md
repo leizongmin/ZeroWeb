@@ -2,9 +2,47 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 94 施工收口（classic 脚本 prepare 双门 + 投递保真扩口 + module 缓存键分离：**script-for-event 13F + nomodule 4F 翻绿 + 缓存键连带**：scripting-1 **211P/282F/25T→263P/270F/23T**（raw 574 行 + 18 NotRun；域账 **264P/270F/23T**）——三刀：①extract prepare 双门（nomodule 内容属性压制 classic、module 不受影响；for/event 双属性在场门——ASCII 剥白后 for≈"window" 且 event≈"onload"|"onload()"，任一属性缺失照跑）；②shim R387 动态插入钩子 nomodule 门（三执行分支条件前缀，不置 run-once——spec 中止在 already-started 前）；③runner 投递保真扩口（inline_local_scripts 保留 nomodule——新 open_tag_has_attr bool 裸形在场判定；保留 type="module"——s92 挂账兑现）；**附带根因返工**：type 保真暴露 R5182 潜伏缺陷——`__moduleCache` 记忆化键误用页面 URL，同文档第二枚 module script 零次求值（任意双 module 页挂起，probe 二分定谳），键参数分离 `compile_module_script(source, url, cache_key, registry)` 修复（内联=页面 URL 挂 ordinal 片段 / 外链=src 绝对化），连带解锁 module 族多页（currentScript-null 连带 Fail→Pass、type/imports/module-script-for-event 等 subtest 首次显形）；零附带（P→非P 0 行）；失败族地图序：③the-script-element 基面（CSP nonce + classic 属性 + prepare 门）✅ → ④module 尾片（.py 执行器前置 + 新显形 subtest 账）），下一步 s95 入场探针定刀位（候选：async nomodule window-load face / 元素 onload 投递保真 / module 族新显形 Fail 重排 / execution-timing 80F）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 95 施工收口（script.text IDL + script children-changed→prepare 记账：**script-text 6F + emptyish 6F 翻绿 + 克隆族连带解挂 4 页**：scripting-1 **263P/270F/23T→281P/256F/19T**（raw + 18 NotRun；域账 **282P/256F/19T**）——两刀：①shim script.text IDL（get trap 直接子 Text walk——child text content，comment/PI/元素子不计；set trap null→"null" WebIDL ToString 归一后委托 textContent setter——R3907 同口径）；②appendChild trap SCRIPT 父 children-changed→prepare（头部 pre 快照 + 尾部触发块：pre 空 + post 非空 → connected → already-started 门 → nomodule 门 → classic eval + 执行后置位）+ **already-started 投递记账**（part06 `__zw_set_current_script` 投递时按 __zwSelector 记 `_zwScriptStarted`——空源 bail/nomodule/for-event 压制不投递不记，与 spec prepare 置位时机对齐；handle 形沿 R387 `_zwRanScripts`）+ cloneNode 传播（R3901/R3902b input/textarea 克隆态传播同型）；**主发现**：首轮纯 pre/post 近似出 execution-timing 059/060/062 三行 P→F——执行中脚本自摘子（removeChild/innerHTML=''）再补文本、started 脚本浅克隆后补文本，pre 快照捕获在变异后误判「未启动」；返工投递记账 + 克隆传播 + 执行后置位回绿，连带解锁克隆/补文本族（061/064/065 file Timeout→全绿解挂、036 Timeout→subtest Fail 显形、066 F→P、127/128 F→P）；零回归（P→非P 0 行）；失败族地图序：③the-script-element 基面（CSP nonce + classic 属性 + prepare 门 + 文本语义面）✅ → ④module 尾片（.py 执行器前置）+ execution-timing 编号套件 78F），下一步 s96 入场探针定刀位（候选：execution-timing 036 deep-clone 显形族 / nomodule-async window-load 2F / 元素 onload 投递保真 / module 族 subtest 账重排）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-26 M2 切片 94 施工收口，prepare 双门 + 投递保真 + module 缓存键轮）**：
+> **▶ 当前状态（2026-10-26 M2 切片 95 施工收口，script.text IDL + children-changed 记账轮）**：
+> **入场核账**：s94 HEAD（47bc3dffd）基线 **263P/270F/23T + 18 NotRun**（scripting-1
+> 口径 574 行）。s95 入场探针自 270F 聚类选 runner 可达 classic 脚本文本语义两簇：
+> script-text.html 6F（.text getter=child text content / setter=string replace all，
+> 全 detached 纯 IDL 面）+ emptyish-script-elements 6F（解析期空源 bail-early 不置
+> already-started → 补 Text 子须执行）。排除 runner 上限：script-charset-01（.py
+> 执行器）、script-text-modifications（slow.py trickle 时序）。**本轮两刀**：
+> ①script.text IDL（get trap 直接子 Text walk——comment/PI/元素子不计；set trap
+> null→"null" 归一后委托 textContent——R3907 同口径）；②appendChild trap SCRIPT
+> 父 children-changed→prepare（头部 pre 快照 + 尾部触发块：pre 空 + post 非空 →
+> connected → already-started 门 → nomodule 门 → classic eval + 置位）；
+> already-started 记账 = part06 __zw_set_current_script 投递时按 __zwSelector 记
+> _zwScriptStarted（空源 bail/门压制不投递不记——与 spec prepare 置位时机对齐；
+> handle 形沿 R387 _zwRanScripts）+ cloneNode 传播（R3901/R3902b 同型）。
+> **回归与记账返工（本轮主发现）**：首轮纯 pre/post 近似出 execution-timing
+> 059/060/062 三行 P→F——执行中脚本自摘子（removeChild/innerHTML=''）再补文本、
+> started 脚本浅克隆后补文本，pre 快照捕获在变异后误判「未启动」；返工即投递
+> 记账 + 克隆传播 + 执行后置位（pre/post 降第二道近似），三页回绿且连带解锁
+> 克隆/补文本族：061/064/065 file Timeout→全绿解挂、036 Timeout→subtest Fail
+> 显形、066 F→P、127/128 F→P。
+> **验证**：定向 script-text 6P/0F、emptyish 7P/0F、059/060/062 回绿、120-126
+> 与基线逐行一致；全子树终扫 **281P/256F/19T + 18 NotRun**，diff vs 基线
+> **F/T→P 14 行 + 解挂 4 页 + 066 F→P、P→非P 0 行**（14 行 = script-text 6 +
+> emptyish 6 + execution-timing 127/128 2），域账 **282P/256F/19T**（+1 惯例）。
+> 单测腿：engine lib **3530/3530**（guard）；纯 .js 变更 fmt/clippy 不涉；
+> reftest 未跑（无 render/layout 面，沿 s91-s94 口径）。账本见
+> [evidence/2026-10-26-m2s95-script-text-and-children-changed.md](html-semantics-compat/evidence/2026-10-26-m2s95-script-text-and-children-changed.md)。
+> **范围**：engine shim ×3（part03 get trap / part04 appendChild 钩子+克隆传播 /
+> part06 投递记账）；无 .rs 触碰；语料不可改维持（探针页已删）。
+> **挂账**：execution-timing 编号套件 78F（036 显形 deep clone 族 / 122-126
+> type-async 面 / 005-012 document.write 族）；module 尾片（.py 前置）；charset
+> 12F（.py）；svg-script-fragment-clone 3F；nomodule-async 2F（window.onload
+> promise 门）；load-error-events 族（元素 onload 投递保真）；FIXME：children
+> changed 其余变异入口（insertBefore/append()/textContent=/.text 已连接面）未挂
+> 触发；接口对象基建面（承袭）；基线扫描宜空载（承袭；s95 终扫
+> /tmp/s95-final-scan.txt 定为下轮基线）。
+> **切片间隙**：本轮纯 engine shim 面；下一挂账同流同面，间隙开放。
+
+> **▶ 上轮状态（2026-10-26 M2 切片 94 施工收口，prepare 双门 + 投递保真 + module 缓存键轮——其下一步 s95 入场探针定刀位已由 s95 收口，见上）**：
 > **入场核账**：s93 HEAD（43f10a3e7）基线 **211P/282F/25T + 22 NotRun**
 >（scripting-1 口径 540 行）。s94 入场探针自 282F 聚类选 runner 可达 classic
 > 属性面：nomodule face 7F + script-for-event face 13F。**本轮三刀**：

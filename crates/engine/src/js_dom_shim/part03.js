@@ -25324,6 +25324,26 @@ return e;
           var selfA5273 = sel ? _wrapSelector(sel) : _wrapHandle(handle);
           return selfA5273 ? selfA5273.textContent : '';
         }
+        // s95（html-semantics M2 切片 95）：HTMLScriptElement.text getter = child text
+        // content（**直接** Text 子 data 依树序拼接；comment/PI/元素子不含——
+        // script-text Getter 断言 .text="  TEXT  " 而 textContent="  TEXT  ELEMENT"）。
+        // 与 title.text R5269 同 walk 口径；无 lw 回落——script 的子文本即执行源，
+        // 树视图权威（lw 是 SetText 写入通道的 sel 视图补丁，script 面无此形态）。
+        // https://html.spec.whatwg.org/multipage/scripting.html#dom-script-text
+        if (prop === 'text' && _realTag(sel, handle) === 'SCRIPT') {
+          var selfS95g = sel ? _wrapSelector(sel) : _wrapHandle(handle);
+          if (!selfS95g) return '';
+          var outS95g = '';
+          try {
+            var kidsS95g = selfS95g.childNodes;
+            for (var iS95g = 0; iS95g < kidsS95g.length; iS95g++) {
+              var kS95g = kidsS95g[iS95g];
+              if (!kS95g || kS95g.nodeType !== 3) continue;
+              outS95g += (kS95g.data != null ? kS95g.data : (kS95g.nodeValue != null ? kS95g.nodeValue : ''));
+            }
+          } catch (_eS95g) {}
+          return outS95g;
+        }
         if (prop === 'label' && _realTag(sel, handle) === 'OPTION') {
           // R3907：.label = 无 ns label 内容属性（**存在即采纳**——空串不回落文本）；
           // 缺省回落 child text content（同 .text 口径；旧 `lab || text` 空串回落 +
