@@ -3545,7 +3545,7 @@ fn apply_table_size_constraints(
         && matches!(border_collapse, zero_style_system::BorderCollapseValue::Collapse)
         && !grid.rows.is_empty();
     // R5286：周界胜者半宽随装配写入表盒（paint 背景定位区内缩口径，见
-    // collapsed_border_outer_half 字段注释）；非 winner-center 保持全零。
+    // collapsed_border_outer_half 字段注释）；非 winner-center 保持 None。
     let mut outer_half_sides = [0.0_f32; 4];
     let (outer_half_wc_w, outer_half_wc_h) = if collapse_winner_wc {
         let (wv, wh) = collapse_boundary_winners(table_box, grid, styles, doc);
@@ -3565,7 +3565,13 @@ fn apply_table_size_constraints(
     } else {
         (0.0, 0.0)
     };
-    table_box.collapsed_border_outer_half = outer_half_sides;
+    // R5287 收口：堆侧化字段按非零门置 Some——winner-center 但周界胜者全零
+    //（hidden 周界）时回声明 border 原语义，与旧「全零门」逐值等价。
+    table_box.collapsed_border_outer_half = if outer_half_sides.iter().any(|v| *v != 0.0) {
+        Some(Box::new(outer_half_sides))
+    } else {
+        None
+    };
     // R5241：cell 边框胜出（> table 自身边框）的边缘，胜出边框的外半伸出到
     // 边框中心距（content box）之外，计入表 border-box（CSS2 §17.6.2.1 折叠
     // 语义：表外缘 = 胜出边框外缘）。**每缘独立**取最大值（四缘是四条平行带：
@@ -3847,11 +3853,22 @@ fn update_row_group_positions(
             rel_dy = resolve_length_inset(row_group, styles, false);
         }
 
+        // R5287：winner-center collapse 表——行组盒跨 = 行网格区（外延 − 周界
+        // 胜者半宽，与 col 背景网格区同口径；bc-rowgroup-001 aqua ref 287 宽 vs
+        // 旧 content_width 283 = extent − 整周界 border，R5282 装配把 content
+        // 盒扣成 final + 外半 − padding_border 已含整 border）。字段 None
+        // （separated/border-center）回原语义（2×perimeter_x 周界 spacing 扣除）。
+        let rg_width = if let Some(outer_half) = &table_box.collapsed_border_outer_half {
+            (table_box.width - outer_half[3] - outer_half[1]).max(0.0)
+        } else {
+            table_box.content_width - 2.0 * perimeter_x
+        };
+
         updates.push((
             *rg_idx,
             rel_dx + perimeter_x + grid_dx,
             first_row_y + rel_dy,
-            table_box.content_width - 2.0 * perimeter_x,
+            rg_width,
             total_h,
         ));
     }

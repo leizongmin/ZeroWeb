@@ -210,7 +210,11 @@ impl super::Painter {
                 zero_style_system::WritingModeValue::VerticalRl | zero_style_system::WritingModeValue::VerticalLr
             );
         let winner_center_outer_centered = |side: usize, box_node: &LayoutBox| -> bool {
-            winner_center || box_node.collapsed_border_color_overrides[side].is_none()
+            winner_center
+                || box_node
+                    .collapsed_border_color_overrides
+                    .as_deref()
+                    .is_none_or(|ovr| ovr[side].is_none())
         };
         // R4248（CSS Borders 4 §corner-shaping）：形角盒的边框环——外圈形角多边形
         //（边框色）+ 内圈形角多边形（背景色）叠出环带。前提：四边同色（含 collapse
@@ -378,7 +382,11 @@ impl super::Painter {
                 return 0.0;
             }
             let ext = if outer[adj] { adj_t / 2.0 } else { adj_t };
-            if box_node.collapsed_border_color_overrides[adj].is_none() {
+            if box_node
+                .collapsed_border_color_overrides
+                .as_deref()
+                .is_none_or(|ovr| ovr[adj].is_none())
+            {
                 outward * ext
             } else if !outer[adj] && adj_w > 0.0 {
                 -outward * ext
@@ -392,15 +400,11 @@ impl super::Painter {
         let bot_r = band_end_off(1, box_node.border_right, right_t, 1.0);
 
         // border-collapse 颜色覆盖：当表格边框胜出时使用表格的颜色
-        let top_color = collapsed_border_color(&box_node.collapsed_border_color_overrides[0], &style.border_top_color);
-        let right_color =
-            collapsed_border_color(&box_node.collapsed_border_color_overrides[1], &style.border_right_color);
-        let bottom_color = collapsed_border_color(
-            &box_node.collapsed_border_color_overrides[2],
-            &style.border_bottom_color,
-        );
-        let left_color =
-            collapsed_border_color(&box_node.collapsed_border_color_overrides[3], &style.border_left_color);
+        let color_override = box_node.collapsed_border_color_overrides.as_deref();
+        let top_color = collapsed_border_color(&color_override.and_then(|ovr| ovr[0]), &style.border_top_color);
+        let right_color = collapsed_border_color(&color_override.and_then(|ovr| ovr[1]), &style.border_right_color);
+        let bottom_color = collapsed_border_color(&color_override.and_then(|ovr| ovr[2]), &style.border_bottom_color);
+        let left_color = collapsed_border_color(&color_override.and_then(|ovr| ovr[3]), &style.border_left_color);
 
         // currentColor 解析为元素自身计算 `color`（CSS-Color §resolving）。border-color 初始值
         // 为 currentColor 关键字，经层叠/继承保留，paint 时替换为元素 color 的使用值。

@@ -58,7 +58,10 @@ fn r1626_vertical_tie_leftmost_color_overrides_right_cell() {
 
     let right_cell = &cells[1];
     // 共享竖边：左格(green) 胜出 → 右格左边(side 3)应被 override 成 green
-    let left_override = right_cell.collapsed_border_color_overrides[3];
+    let left_override = right_cell
+        .collapsed_border_color_overrides
+        .as_deref()
+        .and_then(|ovr| ovr[3]);
     assert_eq!(
         left_override,
         Some(GREEN),
@@ -81,7 +84,10 @@ fn r1626_horizontal_tie_topmost_color_overrides_bottom_cell() {
 
     let bottom_cell = &cells[1];
     // 共享横边：上格(green) 胜出 → 下格顶边(side 0)应被 override 成 green
-    let top_override = bottom_cell.collapsed_border_color_overrides[0];
+    let top_override = bottom_cell
+        .collapsed_border_color_overrides
+        .as_deref()
+        .and_then(|ovr| ovr[0]);
     assert_eq!(
         top_override,
         Some(GREEN),
@@ -102,7 +108,10 @@ fn r1626_width_mismatch_winner_overrides_unchanged() {
     cells.sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal));
     assert!(cells.len() >= 2);
     let right_cell = &cells[1];
-    let left_override = right_cell.collapsed_border_color_overrides[3];
+    let left_override = right_cell
+        .collapsed_border_color_overrides
+        .as_deref()
+        .and_then(|ovr| ovr[3]);
     assert_eq!(
         left_override,
         Some(GREEN),
