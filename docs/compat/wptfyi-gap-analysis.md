@@ -18,18 +18,23 @@ chrome/firefox/safari stable run 放到同一口径下对比，产出可执行�
 - 文件级「全过」：ZeroWeb 侧 = 该文件全部子测试 `Pass`（`Timeout`/`Fail` 均
   不算过，`Unsupported`/`NotRun`/`PreconditionFailed` 属中性也不算过）；
   浏览器侧 = summary 的 `s ∈ {O, P}`（OK=全部子测试过；PASS=单测试/reftest 过）。
-- **完整交集**：只对三家 summary 都收录的路径判定。路径对不上的（浏览器未跑、
-  上游已改名）计入「交集外」，不强行判定。
+  浏览器侧 `S`（SKIPPED，未执行）也按未全过记账——wpt.fyi 对 `.js` 源名本身
+  会收录 `s='S'` 的占位条目，真实结果在生成变体上，不能当通过证据。
+- **完整交集**：只对三家 summary 都对齐到同一文件的路径判定。路径对不上的
+  （浏览器未跑、上游已改名）计入「交集外」，不强行判定。
 - **变体解析**：runner 以 `.js` 源名上报（如 `foo.any.js`），wpt.fyi 收录生成
-  后的 HTML 变体（`foo.any.html`、`foo.any.worker.html` 等）。工具按执行 scope
-  优先（window 的 `.any.html` 优先）解析，仍要求三家一致。
+  后的 HTML 变体（`foo.any.html`、`foo.any.worker.html` 等）。带变体规则的
+  路径变体优先（按执行 scope，window 的 `.any.html` 优先），且要求同一候选
+  变体在三家都存在——杜绝三家各比各的生成文件；无候选全齐时才回退 exact
+  源名比对。
 - **环境受限单列**：runner 对静态语料无法执行的服务端行为打
   `zw-static-corpus:` 失败前缀。失败信息全部命中环境标记（`--env-marker`，
   默认 `zw-static-corpus`）的文件归入 `zw_env_limited`——这是语料边界而非
   引擎差距，不计入 gap。
 - 分类结果：`gap_core`（三家全过、ZW 未全过）＞ `gap_partial`（部分全过）＞
-  `both_fail`（无人全过，降优先级）；另有 `zw_strong`（ZW 过、有浏览器没过，
-  信息面）、`both_pass`、`zw_env_limited`。
+  `both_fail`（交集内没有一方全过——上游测试脆、规范歧义或三家均未执行，
+  降优先级）；另有 `zw_strong`（ZW 过、有浏览器没过，信息面）、`both_pass`、
+  `zw_env_limited`。
 
 ## 用法
 
@@ -69,8 +74,8 @@ python3 tests/wpt-runner/scripts/wptfyi_gap.py self-test
 - **compression 是真差距富矿**：14 案三家全过而 ZW 部分子测试失败
   （如 `compression-multiple-chunks.any.js` 45/60）。
 - cookies 的 17 案 0/N 失败全部是 `zw-static-corpus` 环境标记（HTTP-header
-  驱动的 Set-Cookie 静态语料无法执行），被正确单列——若不区分会把 32 条
-  语料边界误报成 gap_core。
+  驱动的 Set-Cookie 静态语料无法执行），被正确单列——若不区分，这 17 条会
+  全部混入 gap_core，使总 gap_core 虚高到 32 条（14+18）。
 
 报告是时点快照（wpt.fyi 每日有新 run），不入库；需要时重新生成。
 
