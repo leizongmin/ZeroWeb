@@ -103,6 +103,22 @@ pub(crate) fn collapse_winner_center_enabled() -> bool {
     *TABLE_COLLAPSE_WINNER_CENTER_ON
 }
 
+/// R5288（CSS2 §17.6.2 × 行间空行）：无 cell 的空 table-row 不入 grid（build_grid
+/// 跳过），其指定高度并入相邻格线的折叠胜者带——带跨 = 上 cell 内容底到下 cell
+/// 内容顶（胜者 + 空行高），空行槽不占位也不外溢格线（mozilla bug 1819266
+/// border-collapse-empty-row：ref 以 border-bottom 10+空行高 补偿，逐线几何吻合
+/// ——2px 空行表总高 130 = ref 21+4×22+21）。消费端两处同门：
+/// `collapse_boundary_winners` 的 wh（行槽/表周界几何）与 `resolve_collapsed_borders`
+/// 内边胜者宽（paint 带宽）。首/末周界线不并入（表前/后空行占位 FIXME）。
+/// default-on；`ZW_TABLE_EMPTY_ROW_MERGE=0` 回退跳过空行原行为（R3858 教训：
+/// LazyLock 进程级快照，进程内并行测试不可 set_var 翻转）。
+static TABLE_EMPTY_ROW_MERGE_ON: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_TABLE_EMPTY_ROW_MERGE").as_deref() != Ok("0"));
+
+pub(crate) fn empty_row_merge_enabled() -> bool {
+    *TABLE_EMPTY_ROW_MERGE_ON
+}
+
 /// winner-center 尺寸模型的表级门：只迁移了 horizontal 真表容器——vertical 表
 ///（writing-mode vertical-lr/rl，含经继承进入竖排排布的表）格线模型未接
 ///（R5282 挂账⑤），部分臂生效会成混合态（vlr-005/vrl-004 ✗2.17/3.02→5.29/5.62
@@ -2205,6 +2221,9 @@ fn collapse_boundary_winners(
     if cols == 0 {
         return (wv, wh);
     }
+    // R5288：行间空行指定高度并入格线胜者——须在**全部源 max 聚合之后**叠加
+    //（空行高度不是与 cell 边框竞争的候选，而是吸收进胜者带：带 = max(源) + 空行高，
+    // 跨上 cell 内容底到下 cell 内容顶），见函数尾部注入点。
     // 表 border 周界源
     wv[0] = table_box.border_left;
     wv[cols] = table_box.border_right;
@@ -2310,6 +2329,15 @@ fn collapse_boundary_winners(
     }
     if matches!(table_style(1), Some(BorderStyleValue::Hidden)) {
         wv[cols] = 0.0;
+    }
+    // R5288：行间空行指定高度并入格线胜者（`ZW_TABLE_EMPTY_ROW_MERGE`，与
+    // resolve_collapsed_borders 内边胜者宽同源）——空行槽不占位，其高度由相邻
+    // 内容行的折叠带吸收（带 = 聚合胜者 + 空行高），行槽经
+    // winner_center_row_slot_height 自动含 ½extra；周界线恒 0（build_grid 已清）。
+    for (k, e) in grid.empty_row_extra.iter().enumerate() {
+        if k < wh.len() {
+            wh[k] += e;
+        }
     }
     (wv, wh)
 }
@@ -3345,7 +3373,10 @@ fn table_maxsize_no_shrink() -> bool {
     !matches!(std::env::var("ZW_TABLE_MAXSIZE_NO_SHRINK").as_deref(), Ok("0"))
 }
 
-fn resolve_table_used_length(value: &zero_css_parser::values::LengthValue, style: &ComputedStyle) -> Option<f32> {
+pub(crate) fn resolve_table_used_length(
+    value: &zero_css_parser::values::LengthValue,
+    style: &ComputedStyle,
+) -> Option<f32> {
     use zero_css_parser::values::LengthValue;
     match value {
         LengthValue::Auto

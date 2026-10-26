@@ -71,6 +71,22 @@ fn blocked_cols_of(occupied: &[(usize, usize)], vertical: bool) -> Vec<usize> {
     occupied.iter().filter(|(_, r)| *r > 0).map(|(c, _)| *c).collect()
 }
 
+/// R5288：空行指定高度记账值（CSS2 §17.5.3 行高来源——行元素 computed height，
+/// definite 才算，percent/auto 视 None；visibility:collapse 的空行高度 0 不并入）。
+/// kill-switch `ZW_TABLE_EMPTY_ROW_MERGE=0` 回退跳过空行原行为（记账恒空）。
+fn empty_row_specified_height(row_box: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> Option<f32> {
+    if !crate::table::empty_row_merge_enabled() {
+        return None;
+    }
+    use zero_css_parser::values::VisibilityValue;
+    let id = row_box.node_id?;
+    let rs = styles.get(&id)?;
+    if matches!(rs.visibility, VisibilityValue::Collapse) {
+        return None;
+    }
+    crate::table::resolve_table_used_length(&rs.height, rs)
+}
+
 pub(crate) fn build_grid(
     table_box: &LayoutBox,
     doc: &zero_dom::Document,
@@ -81,6 +97,9 @@ pub(crate) fn build_grid(
     // R4480：rowspan 网格占位簿记（vertical 域）——(col, 剩余覆盖行数)。
     let rowspan_vertical = table_box.writing_mode.is_vertical_block_flow();
     let mut rowspan_occupied: Vec<(usize, usize)> = Vec::new();
+    // R5288：跳过的空行（无 cell）指定高度记账——(格线, 高)。格线 = 记账时的
+    // rows.len()（下一内容行的顶缘）；首/末周界线在构造前清零。
+    let mut empty_extras: Vec<(usize, f32)> = Vec::new();
 
     // 检测孤立行组模式：table_box 本身是行组（无外层 table 容器）
     // 此时 table_box.children 中的嵌套行组和直接子单元格需要特殊处理
@@ -327,6 +346,13 @@ pub(crate) fn build_grid(
                         }],
                         is_anonymous: false,
                     });
+                } else {
+                    // R5288：空行（无 cell）不入 grid——指定高度记账到当前格线
+                    //（= 下一内容行的顶缘），折叠路径并入格线胜者带（消费端同门
+                    // winner-center；周界线在构造前清零）。
+                    if let Some(h) = empty_row_specified_height(child, styles) {
+                        empty_extras.push((rows.len(), h));
+                    }
                 }
             }
             Some(d) if is_row_group(d) => {
@@ -368,6 +394,11 @@ pub(crate) fn build_grid(
                                 is_anonymous: false,
                                 ..row
                             });
+                        } else {
+                            // R5288：行组内空行同款记账（格线口径与直连行一致）。
+                            if let Some(h) = empty_row_specified_height(rg_child, styles) {
+                                empty_extras.push((rows.len(), h));
+                            }
                         }
                     } else if rg_display.as_ref().is_some_and(is_row_group) {
                         // 嵌套 row-group：递归提取其行/单元格
@@ -400,6 +431,11 @@ pub(crate) fn build_grid(
                                         row_group_index: Some(*child_idx),
                                         ..row
                                     });
+                                } else {
+                                    // R5288：嵌套行组内空行同款记账。
+                                    if let Some(h) = empty_row_specified_height(nested_child, styles) {
+                                        empty_extras.push((rows.len(), h));
+                                    }
                                 }
                             } else if nested_display.as_ref().is_some_and(is_table_cell) {
                                 // 嵌套 row-group 中的直接 cell：收集到匿名行
@@ -593,11 +629,21 @@ pub(crate) fn build_grid(
     // 检测 visibility:collapse 的行（CSS Tables §4.1，与列折叠对称）
     let collapsed_rows = crate::table_visibility::detect_collapsed_rows(table_box, &rows, styles);
 
+    // R5288：空行高度按格线收敛。首/末周界线（0/rows.len()）不并入——表前/表后
+    // 空行占位 FIXME 挂账（现行为：高度丢弃，与 R5288 前一致）。
+    let mut empty_row_extra = vec![0.0f32; rows.len() + 1];
+    for (line, h) in empty_extras {
+        if line > 0 && line < rows.len() {
+            empty_row_extra[line] += h;
+        }
+    }
+
     TableGrid {
         rows,
         col_count: max_cols,
         collapsed_cols,
         collapsed_rows,
+        empty_row_extra,
     }
 }
 
