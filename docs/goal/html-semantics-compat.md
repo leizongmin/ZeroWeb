@@ -2,9 +2,60 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 102 施工收口（module 失败报告面：**F→P 12 页销账（error-type-2、instantiation-error-3/4/5、choice-of-error-1/2、fetch-error-1、nested-imports、parse-error、error-and-slow-dependency、css-src/json-src）+ 8 页 abort→子测试级 Fail 祛 Mask**：scripting-1 **326P/220F/14T→342P/180F/41T**（NotRun 18→27；净 +16 Pass，零 P→非P）——spec「run a module script」失败语义落地：fetch 成功后的编译/链接/求值失败向 window 报异常（reportError→window error 事件 ev.error=SyntaxError 实例）+ 元素照常 fire load + 页面继续（strict 亦不 abort——prepare 阶段失败面非内联体抛错；旧版 strict 整页 abort 以 declared=0 掩盖页面其余用例）；engine 新 `script_report_module_failure` helper（shim reportError/ErrorEvent 既有面直接复用，shim 零变更）+ webview 两失败臂 narrow + 外链 classic/module 取回失败补元素 error 投递（R2944 src 匹配——旧注释声称 spec error 面但实现仅 warn）；**F→T 27 页归因**（非回归）：原 declared=0 abort 族跑完后测试体因 feature 缺失（import attributes/.py 端点/referrer 语义）未注册 → runner「completed without reporting (tests:0)」映射 Timeout，状态更保真、翻回需尾片；webview lib 804（+2 单测）/engine lib 3533；clippy 双 crate clean；失败族地图序：module 尾片（.py 执行器 + import attributes + dep 级取回失败元素 error 语义 + 非 Error 抛出值身份 + bare specifier TypeError + 动态 import 已错模块 reject 形）/ 116 frameset / 063 承袭），下一步 s103 入场探针定刀位（候选：module 尾片 dep 级取回失败面 / 116 frameset 文档语义缺口 / 063 Timeout）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 103 施工收口（module graph 取回/解析失败面：**定向 2 页 F→P（error-type-1「network error has higher priority than parse error」链闭合 + specifier-error window TypeError 面）+ 连带增益 fetch-error-2 F→P、import-subgraph-404 T→P（s102 F→T 族翻回真 Pass）、load-error-events-inline N→P×2、integrity ×3 T→Fail+Pass（404 臂真 P）**：scripting-1 **342P/180F/41T→348P/193F/37T**（NotRun 27→15；净 +6 Pass）——spec「fetch-a-single-module-script」失败语义落地：图内取回失败 → 元素 fire error + 体不执行（连 prelude 急切求值一并跳过——否则已取回依赖经 prelude 二次报错）+ 无 window 报告；图内裸 specifier 解析失败 → window 报 TypeError（ev.error 实例）+ 元素照常 fire load + 体不执行；旧版任一失败回落空存根、模块体照常执行。**P→非P 5 页逐页归因**（非契约回归，全部为 s102 存根假阳诚实化）：css/json/text-module load-error-events 各 1 子测试（inline,200 臂——import attributes/CSS·JSON·text module 缺口）、nested-imports（delayed-modulescript.py 端点）、json-module/parse-error（parse-error.json 不在语料，双重假阳）；连带 F→T 1 页（parse-error-location.tentative，体未注册——memory 坑 7 同类）；webview lib 806（+2 单测）/engine lib 3533；clippy 双 crate clean；失败族地图序：module 尾片（.py 执行器 + import attributes/CSS·JSON·text module + 非 Error 抛出值身份 + 动态 import 已错模块 reject 形 + error-type-3 instantiation 优先级）/ 116 frameset / 063 承袭），下一步 s104 入场探针定刀位（候选：116 frameset 文档语义缺口 / 063 Timeout / module 尾片余项）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-27 M2 切片 102 施工收口，module 失败报告面轮）**：
+> **▶ 当前状态（2026-10-27 M2 切片 103 施工收口，module graph 取回/解析失败面轮）**：
+> **入场定谳**：s102 残余①——dep 级取回失败空存根兜底：图内任一 dep fetch 失败
+> 旧版 `registry.register(spec, "")` 后模块体**照常执行**，网络级失败面丢失。spec
+> 语义（fetch-a-single-module-script / resolve-a-module-specifier）：图内取回失败
+> → 元素 fire **error** + 体不执行 + 无 window 报告；图内裸 specifier 解析失败 →
+> window 报 **TypeError** + 元素照常 fire **load** + 体不执行。判据页定谳：
+> error-type-1 双模块（第一 syntaxerror.js parse→window SyntaxError+onload，s102
+> 已达；第二 error-type-1.js 图内 404 → onerror、无 window 报告，log.length==3）、
+> specifier-error（裸 specifier → ev.error=TypeError + log.length==1 + 元素不
+> fire error）。关键事实：prelude 急切求值非入口注册模块（R5182）——体不执行必须
+> 连 prelude 一并跳过，否则已取回依赖经 prelude 二次报错且误触 onload unreachable。
+> **本轮三刀**：①engine `script_report_module_failure` 加 `error_ctor` 形参
+> （编译/求值面 "SyntaxError"、解析面 "TypeError"）+ 新
+> `script_dispatch_script_event_by_ordinal`（无 src 内联模块元素级派发）。②webview
+> fetcher 分支：收集 `is_dep=true`（此处 spec 均为被运行模块的依赖——旧 false 使裸
+> specifier 误作相对 URL 取回）、首 Err 捕获 `(failure, spec)` break，按类分派——
+> DepResolution → TypeError 报告面（元素 load）；TopFetch|DepFetch → 元素 error
+> （外链 R2944 `module_cache_key`=src 绝对化匹配；内联 ordinal）后 `continue`（编
+> 译+prelude 一并跳过）；无 fetcher 路径与 `compile_module_contract` 动态 import 契
+> 约路径不变。③+2 单测（dep 404 → onerror+体 undefined+无 window error+继续；裸
+> specifier → TypeError+onload+体 undefined+继续）。
+> **验证**：webview lib **806/806**（+2）；engine lib **3533/3533**；定向
+> **error-type-1 1F→1P**（log=[SyntaxError,1,2] 链闭合）+ **specifier-error
+> 1F→1P**、error-type-2 保 P；全子树终扫 **348P/193F/37T + 15 NotRun**（s102：
+> 342P/180F/41T+27N）；**P→非P 5 页逐页归因非契约回归**（全为 s102 存根假阳诚实
+> 化）：css/json/text-module load-error-events 各 1 子测试（inline,200 臂——
+> import attributes/非 JS module 缺口；同页 `src,200` ×2 两版同 Fail、404 臂全保
+> P）、nested-imports（delayed-modulescript.py 端点）、json-module/parse-error
+>（parse-error.json 不在语料——s102 Pass 系「空存根→export 检查失败→碰巧
+> SyntaxError 面」双重假阳）；连带 F→T 1 页（parse-error-location.tentative，体未
+> 注册）。**增益**：fetch-error-2 F→P、import-subgraph-404 T→P（s102 F→T 族翻回
+> 真 Pass）、load-error-events-inline N→P×2、integrity ×3 T→Fail+Pass（404 臂真
+> P）、content-type-checking N→F+P2、http-accept T→F×2、module.html/valid-content-
+> type N→F×7；fmt clean + clippy 双 crate clean；runner testharness.rs 零变更；
+> reftest/product-smoke 未跑（无 render/layout 面）。账本见
+> [evidence/2026-10-27-m2s103-module-graph-failure-face.md](html-semantics-compat/evidence/2026-10-27-m2s103-module-graph-failure-face.md)。
+> **范围**：webview.rs ×1（fetcher 分支失败分派 + 2 单测）+ script_gen.rs ×1
+>（error_ctor 形参 + ordinal 派发 helper）；shim/语料零变更；语料不可改维持。
+> **挂账**：module 尾片（.py 执行器——nested-imports/integrity 族 load 期望臂、
+> http-accept-header；import attributes + CSS/JSON/text module——load-error-events
+> 200 臂、valid-content-type、content-type-checking Fail 面、parse-error 族；非
+> Error 抛出值 ev.error=null 身份（error-type-3）；动态 import 已错模块 reject 形
+>（instantiation-error-1）；error-type-3 instantiation 优先级）；116 frameset 文
+> 档语义缺口；063 Timeout 承袭；charset 族（Timeout 形）；svg-script-fragment-clone
+> 3F；FIXME 组（bufTop 漂移/setAttribute('src')/type 门/children-changed 其余入口）；
+> 接口对象基建面（承袭）；基线扫描宜空载（承袭）；testharness.rs /tmp/zw-hb*.txt
+> 插桩两行来源待查（承袭）。目标 2 页 + 连带增益本轮销账。
+> **下一步**：s104 入场探针定刀位（候选：116 frameset 文档语义缺口 / 063
+> Timeout / module 尾片余项——import attributes 或 .py 执行器前置体量评估）。
+> **切片间隙**：本轮 webview/engine .rs 面；下一挂账同流同面，间隙开放。
+>
+> **▶ 上轮状态（2026-10-27 M2 切片 102 施工收口，module 失败报告面轮——其下一步 s103 入场探针定刀位已由 s103 收口，见上）**：
 > **入场定谳**：s101 终扫 73 行 `page script threw`，35 页 declared=0——module
 > 编译/求值失败在 strict 下整页 abort，掩盖页面其余用例。spec 语义（run a module
 > script）：fetch **成功**后的编译/链接/求值失败 → 向 window 报异常（window error

@@ -14,8 +14,8 @@ use zero_engine::{
     extract_script_source_positions, extract_style_elements_csp, extract_stylesheet_hrefs, generate_js_dom_shim,
     image_resource_key, page_script_error_check, register_dom_callbacks, resolve_document_url,
     script_clear_current_script, script_dispatch_dom_event, script_dispatch_img_event, script_dispatch_link_event,
-    script_dispatch_script_event, script_dispatch_securitypolicyviolation, script_report_module_failure,
-    script_run_classic_page, script_set_current_script,
+    script_dispatch_script_event, script_dispatch_script_event_by_ordinal, script_dispatch_securitypolicyviolation,
+    script_report_module_failure, script_run_classic_page, script_set_current_script,
 };
 // R3150（闭合 R3121 latent）：script_dispatch_native_event 唯一用法（dispatch_event native_dom 分支）
 // 受 `#[cfg(feature = "v8")]` 门控——quickjs feature 下 unused import。独立 gated import 消 latent warning。
@@ -4116,20 +4116,62 @@ impl WebView {
                         .unwrap_or_else(|| self.current_url.as_deref().unwrap_or("about:blank").to_string());
                     let mut visited_m = std::collections::HashSet::new();
                     let mut fetched_m = std::collections::HashMap::new();
+                    // s103：此路径的 spec 均为**被运行模块的依赖**（模块自身已取回/内联，
+                    // 不经此处），按 is_dep=true 收集——裸 specifier 归 DepResolution、取回
+                    // 失败归 DepFetch（旧版 is_dep=false：裸 specifier 误作相对 URL 取回、
+                    // 任一失败回落空存根、模块体照常执行）。spec 失败语义：
+                    // ① 图内取回失败 → 元素 fire error + 体不执行 + 无 window 报告（网络
+                    //   错误优先于 parse 错误——WPT module/error-type-1「network error has
+                    //   higher priority than parse error」判据：第二模块图内 404 dep 只
+                    //   fire 元素 error，其已取回依赖的 parse 错误不报）；
+                    // ② 图内 specifier 解析失败 → 向 window 报 TypeError + 元素照常 fire
+                    //   load + 体不执行（WPT module/specifier-error log.length==1 判据）。
+                    // 体不执行必须连 prelude 急切求值一并跳过（非入口依赖在 prelude 预热，
+                    // continue 于编译前斩断——否则已取回依赖的 parse 错误经 prelude 抛出，
+                    // 多报一次 window error）。
+                    // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+                    // https://html.spec.whatwg.org/multipage/webappapis.html#resolve-a-module-specifier
+                    let mut graph_failure: Option<(ModuleGraphFailure, String)> = None;
                     for spec in &specs {
-                        if collect_module_deps_recursive(
+                        match collect_module_deps_recursive(
                             &fetcher_m,
                             &dep_base_m,
                             spec,
-                            false,
+                            true,
                             &mut registry,
                             &mut visited_m,
                             &mut fetched_m,
-                        )
-                        .is_err()
-                        {
-                            registry.register(spec, "");
+                        ) {
+                            Ok(()) => {}
+                            Err(failure) => {
+                                graph_failure = Some((failure, spec.clone()));
+                                break;
+                            }
                         }
+                    }
+                    if let Some((failure, fail_spec)) = graph_failure {
+                        match failure {
+                            ModuleGraphFailure::DepResolution => {
+                                let _ = sandbox.execute(&script_report_module_failure(
+                                    &format!("Failed to resolve module specifier \"{fail_spec}\""),
+                                    script_index,
+                                    "TypeError",
+                                ));
+                            }
+                            ModuleGraphFailure::TopFetch | ModuleGraphFailure::DepFetch => {
+                                // 元素 error 派发目标：外链模块按 R2944 src 匹配派发
+                                //（module_cache_key = src 绝对化）；内联模块无 src，按文
+                                // 档序 script 序号派发（script_report_module_failure 同口径）。
+                                if module_dep_base.is_some() {
+                                    let _ = sandbox.execute(&script_dispatch_script_event(&module_cache_key, "error"));
+                                } else {
+                                    let _ = sandbox
+                                        .execute(&script_dispatch_script_event_by_ordinal(script_index, "error"));
+                                }
+                            }
+                        }
+                        tracing::warn!("module graph 失败 ({failure:?})，模块体不执行: {fail_spec}");
+                        continue;
                     }
                 } else {
                     for spec in &specs {
@@ -4154,7 +4196,11 @@ impl WebView {
                         // 内联体抛错（旧版 strict 整页 abort 以 declared tests: 0 掩盖
                         // 页面其余用例——runner「空洞」面）。
                         // https://html.spec.whatwg.org/multipage/webappapis.html#run-a-module-script
-                        let _ = sandbox.execute(&script_report_module_failure(&format!("{e}"), script_index));
+                        let _ = sandbox.execute(&script_report_module_failure(
+                            &format!("{e}"),
+                            script_index,
+                            "SyntaxError",
+                        ));
                         tracing::warn!("模块脚本编译警告: {e}");
                         continue;
                     }
@@ -4282,7 +4328,11 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                     // fire load + 页面继续（strict 亦不 abort——模块失败非内联 classic
                     // 体抛错，上游页面继续运行、其余用例照报）。
                     // https://html.spec.whatwg.org/multipage/webappapis.html#run-a-module-script
-                    let _ = sandbox.execute(&script_report_module_failure(&format!("{e}"), script_index));
+                    let _ = sandbox.execute(&script_report_module_failure(
+                        &format!("{e}"),
+                        script_index,
+                        "SyntaxError",
+                    ));
                 }
                 tracing::warn!("页面脚本执行警告: {e}");
             }
@@ -8138,6 +8188,108 @@ mod redirect_tests {
             wv.execute_script("String(globalThis.__modErr)").unwrap(),
             "1",
             "取回失败须在元素上 fire error（onerror 内容属性可达）"
+        );
+        assert_eq!(
+            wv.execute_script("String(globalThis.__after)").unwrap(),
+            "1",
+            "失败模块之后的 classic 脚本须照常执行"
+        );
+    }
+
+    /// s103 回归钉：module 依赖取回失败 → 元素 error + 模块体不执行 + 无 window 报告
+    /// （spec：网络错误优先于 parse 错误——图内 404 dep 只 fire 元素 error，已取回依赖
+    /// 的既有错误不报、入口体与 prelude 依赖预热一并跳过；旧版空存根兜底使模块体照常
+    /// 执行、失败面丢失）。
+    /// https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+    #[test]
+    fn module_dep_fetch_failure_fires_element_error_and_skips_body_s103() {
+        let cfg = WebViewConfig {
+            script_source_fetcher: Some(std::sync::Arc::new(
+                |_parent: &str, spec: &str| -> Result<String, String> {
+                    if spec.ends_with("missing-dep.js") {
+                        Err(format!("404 at {spec}"))
+                    } else {
+                        Ok("import './missing-dep.js';\nglobalThis.__bodyRan = 1;".to_string())
+                    }
+                },
+            )),
+            ..WebViewConfig::default()
+        };
+        let mut wv = WebView::new(cfg);
+        wv.prepare_document_state("https://wpt.test/a/page.html");
+        wv.load_html(
+            "<!doctype html><body>\
+             <script>window.addEventListener('error', function () {\
+             globalThis.__winErr = (globalThis.__winErr || 0) + 1; });</script>\
+             <script type=\"module\" src=\"./entry.js\" onerror=\"globalThis.__modErr = 1\"></script>\
+             <script>globalThis.__after = 1;</script>\
+             </body>",
+            None,
+        );
+        wv.run_page_scripts_strict()
+            .expect("依赖取回失败页面须继续（strict 不 abort）");
+        assert_eq!(
+            wv.execute_script("String(globalThis.__modErr)").unwrap(),
+            "1",
+            "依赖取回失败须在入口元素上 fire error（onerror 可达）"
+        );
+        assert_eq!(
+            wv.execute_script("String(globalThis.__bodyRan)").unwrap(),
+            "undefined",
+            "图内取回失败模块体须不执行（旧版空存根兜底照跑）"
+        );
+        assert_eq!(
+            wv.execute_script("String(globalThis.__winErr)").unwrap(),
+            "undefined",
+            "网络级失败不向 window 报告（元素 error 已足）"
+        );
+        assert_eq!(
+            wv.execute_script("String(globalThis.__after)").unwrap(),
+            "1",
+            "失败模块之后的 classic 脚本须照常执行"
+        );
+    }
+
+    /// s103 回归钉：module 依赖 specifier 解析失败（裸 specifier）→ 向 window 报
+    /// TypeError + 元素照常 fire load + 体不执行（WPT module/specifier-error
+    /// log.length==1 判据——旧版按相对 URL 取回落空存根、体照跑）。
+    /// https://html.spec.whatwg.org/multipage/webappapis.html#resolve-a-module-specifier
+    #[test]
+    fn module_dep_resolution_failure_reports_typeerror_and_skips_body_s103() {
+        let cfg = WebViewConfig {
+            script_source_fetcher: Some(std::sync::Arc::new(
+                |_parent: &str, _spec: &str| -> Result<String, String> { Ok("export const ok = 1;".to_string()) },
+            )),
+            ..WebViewConfig::default()
+        };
+        let mut wv = WebView::new(cfg);
+        wv.prepare_document_state("https://wpt.test/a/page.html");
+        wv.load_html(
+            "<!doctype html><body>\
+             <script>window.addEventListener('error', function (ev) {\
+             globalThis.__errCtor = ev.error ? ev.error.constructor.name : 'none'; });</script>\
+             <script type=\"module\" onload=\"globalThis.__modLoad = 1\">\
+             import 'bare-without-prefix';globalThis.__bodyRan = 1;</script>\
+             <script>globalThis.__after = 1;</script>\
+             </body>",
+            None,
+        );
+        wv.run_page_scripts_strict()
+            .expect("依赖解析失败页面须继续（strict 不 abort）");
+        assert_eq!(
+            wv.execute_script("String(globalThis.__errCtor)").unwrap(),
+            "TypeError",
+            "裸 specifier 须向 window 报 TypeError 实例（ev.error）"
+        );
+        assert_eq!(
+            wv.execute_script("String(globalThis.__modLoad)").unwrap(),
+            "1",
+            "解析失败属 fetch 成功后的失败面——元素照常 fire load"
+        );
+        assert_eq!(
+            wv.execute_script("String(globalThis.__bodyRan)").unwrap(),
+            "undefined",
+            "图内解析失败模块体须不执行"
         );
         assert_eq!(
             wv.execute_script("String(globalThis.__after)").unwrap(),

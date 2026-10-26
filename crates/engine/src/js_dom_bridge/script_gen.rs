@@ -672,18 +672,34 @@ pub fn script_dispatch_script_event(abs_src: &str, ty: &str) -> String {
 
 /// 构造「module 失败报告面」shim 脚本（html-semantics M2 s102）：模块编译/求值失败
 /// （fetch 成功后的失败类）——spec：向 window 报异常（report the exception——window
-/// error 事件 ev.error 为 SyntaxError 实例）且元素照常 fire load（仅网络级取回失败
-/// 才 fire error）。元素按文档序 script 序号定位（extract_script_csp_info 同口径），
+/// error 事件 ev.error 为错误实例；parse/链接失败 SyntaxError、specifier 解析失败
+/// TypeError，s103 补 `error_ctor` 形参）且元素照常 fire load（仅网络级取回失败才
+/// fire error）。元素按文档序 script 序号定位（extract_script_csp_info 同口径），
 /// 适配无 src 的内联模块（有 src 外链模块走 [`script_dispatch_script_event`]）。
 /// https://html.spec.whatwg.org/multipage/webappapis.html#run-a-module-script
-pub fn script_report_module_failure(msg: &str, script_ordinal: usize) -> String {
+pub fn script_report_module_failure(msg: &str, script_ordinal: usize, error_ctor: &str) -> String {
     let esc_msg = escape_js_string(msg);
+    let esc_ctor = escape_js_string(error_ctor);
     format!(
         "(function(){{try{{\
-reportError(new SyntaxError('{esc_msg}'));\
+reportError(new {esc_ctor}('{esc_msg}'));\
 }}catch(_e){{}}\
 try{{var __zwEl=document.getElementsByTagName('script')[{script_ordinal}];\
 if(__zwEl)__zwEl.dispatchEvent(new Event('load'));}}catch(_e){{}}}})()"
+    )
+}
+
+/// 构造「按文档序 script 序号派发元素级 load/error 事件」的 shim 脚本（html-semantics
+/// M2 s103）：module 图网络级取回失败 → 元素 fire error（体不执行、无 window 报告）。
+/// 序号口径同 [`script_report_module_failure`]，适配无 src 的内联模块；有 src 外链
+/// 模块优先走 [`script_dispatch_script_event`]（src 匹配派发，R2944）。
+/// https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+pub fn script_dispatch_script_event_by_ordinal(script_ordinal: usize, ty: &str) -> String {
+    let esc_ty = escape_js_string(ty);
+    format!(
+        "(function(){{try{{\
+var __zwEl=document.getElementsByTagName('script')[{script_ordinal}];\
+if(__zwEl)__zwEl.dispatchEvent(new Event('{esc_ty}'));}}catch(_e){{}}}})()"
     )
 }
 
