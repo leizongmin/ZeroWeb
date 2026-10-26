@@ -5744,6 +5744,14 @@
     // 轻量预门：无 `#`/`[` 的形态（裸 tag/类/后代组合）必无 id 约束——查询高频
     // 面免逐次复合段拆分（R3902b 预门同口径）。
     if (s.indexOf('#') < 0 && s.indexOf('[') < 0) return null;
+    // 选择器列表（顶层逗号分隔，CSS Selectors 4 <selector-list>）不接补偿——
+    // 约束模型面向**单 complex**（最终复合段约束复验全部命中）；列表各段独立
+    // 命中，`#a,.b` 的 `#a` 约束不能否决 `.b` 段命中。旧版整串当单 compound
+    // 解析（token 吞顶层逗号出 `a,` 伪 id 约束）把 host 全部命中 stale 剔除 →
+    // 列表查询恒空（P26：m1 冻结探针 8/8 超时）。host 查询原生支持列表，
+    // null = 结果原样透出。
+    // https://drafts.csswg.org/selectors/#selector-list
+    try { if (_splitSelectorListOf(s).length > 1) return null; } catch (_e81ls) { return null; }
     var parts = null;
     try { parts = _splitComplex(s); } catch (_e81sp) { return null; }
     if (!parts || !parts.compounds || !parts.compounds.length) return null;
@@ -5996,7 +6004,11 @@
       var ch = text[i];
       // CSS 空白仅 space/U+0009/U+000A/U+000C/U+000D（U+2003 等 Unicode 空白是 ident 字符，
       // WPT "\u2003" id 直接可查）。https://drafts.csswg.org/css-syntax/#whitespace
-      if (ch === '.' || ch === '#' || ch === '[' || ch === ':' || /[ \t\n\f\r]/.test(ch)) break;
+      // 顶层 `,` 是选择器列表分隔符非 ident 字符（P26：旧版吞进 token 使
+      // `#a,.b` 解析出 id 'a,'，s81 `_zwSelIdConstraint` 据此误剔 host 全部命中
+      // → 逗号列表查询恒空；`\,` 转义仍走下方 escape 臂属 ident）。
+      // https://drafts.csswg.org/selectors/#selector-list
+      if (ch === '.' || ch === '#' || ch === '[' || ch === ':' || ch === ',' || /[ \t\n\f\r]/.test(ch)) break;
       if (ch === '\\') {
         var nc = text[i + 1];
         if (nc === undefined) { out += '\uFFFD'; i++; continue; } // EOF 反斜杠 → U+FFFD（spec 4.3.4）
@@ -6071,6 +6083,16 @@
         i = j;
         continue;
       }
+      // 顶层 `,` = 选择器列表分隔符——compound 内非法（CSS Selectors 4
+      // <selector-list> 以逗号分隔 complex selector）。旧版落入裸 token 读取把
+      // `,` 吞进 id/class/tag（`#a,.b` → ids=['a,']），s81 `_zwSelIdConstraint`
+      // 据此把 host 全部命中 stale 剔除 → document/element 查询面逗号列表恒空
+      //（`["#post_list",".post-item"].some(s => document.querySelector(s))` 恒假）。
+      // unsupported → 各消费臂（_zwSelIdConstraint / R3902b / R322 / R309 /
+      // `_parseComplexOf`）走既有 null/skip 分支，host 查询原生支持列表原样透出。
+      // 引号/`[...]`/`:not(…)` 内逗号不经本分支（各分支整段消费）。
+      // https://drafts.csswg.org/selectors/#selector-list
+      if (ch === ',') { c.unsupported = true; break; }
       if (ch === '.') {
         var cls = _readCompoundToken(text, i + 1);
         if (!cls.raw) { c.unsupported = true; break; }
