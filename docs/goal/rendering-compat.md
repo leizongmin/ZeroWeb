@@ -9,6 +9,14 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5294 实现轮（innerHTML/insertAdjacentHTML/outerHTML fragment 解析去 trim——dir-style-04 ✓0.00，corpus 15730P/860F→15731P/859F 仅一案移出零翻转）**（2026-10-27）
+>
+> - **根因**（前轮像素取证 + 本轮桥面审计定位）：`replace_inner_html` / `insert_adjacent_html` / `replace_outer_html_node` 三 setter 共用路径在 fragment 解析前 `html.trim()`——HTML spec fragment parsing algorithm 无 trim 步骤，首尾空白属文本节点内容（dir-style-04 的 `x.innerHTML = "…parent. "` 尾随空格在 DOM 构建前丢失，行中渲染缺格）；shim 本地视图（`__zw_parse_html_child_nodes` 整包解析）不 trim，两端视图此前已失步。in-process 布局重算锚（动态构建 DOM vs 静态同形标记逐盒一致，修前即绿）先排除布局面。
+> - **实现**（engine +15/−9 + shim part04.js +7/−4）：①host 三处去 trim，空串早退语义保持（innerHTML=''/IAH ''=无操作、outerHTML ''=仅移除目标），空白-only 串按 spec 产出空白文本节点；②shim `_zwFragmentAdded(_ihVal.trim())` → 原串——该 trim 是 t7-r2/D1 child-index 对齐补丁，两端同去后对齐保持（host 单侧回 trim 会复活 D1，故不设 kill-switch，revert 单 commit 即回退）。detached-stash 重解析 trim 核实无作用面（outer_html 恒以 `<tag` 开头）不动。
+> - **交付**：目标案 **✗0.67→✓0.00**（真通过-可信）。全量 corpus **16590/15731P/859F** vs R5293 交付态失败集归一化 diff 恰 {-dir-style-04}、零新增翻转（静态 corpus 少脚本面，动态影响面由桥测与 make test 覆盖）。回归测试 +3 engine 桥测（innerHTML 尾随/前导空白 + IAH/outerHTML 端侧空白，**修前 3/3 FAIL 修后全 PASS** 单文件对照法）+ layout-engine 结构锚 +1（动态构建 DOM 布局等价，排查证据固化）。
+> - **门禁**：reftest 716/716、engine lib 3533P（+3）、layout-engine lib 2163P（+1）、fmt 0 diff、clippy（zero-engine + zero-layout-engine --all-targets）0 告警、product-smoke 6/6 + welcome 15.50% 持平、bench-gate 定向 zero-engine GATE PASS（19 指标 NEW=7 该 crate 首次建档）。make test 组合腿绿；image_batch_e2e 首跑 F 为 zero-browser 二进制未构建（显式重建后绿，R5293 教训复现）。**跨流红清账**：rebase 后 PR #234（p107-probe-repin）已合入 main，cdp default_async_probe 负向钉 standalone 复验 9/9 绿（R5293 归因关闭）。
+> - **下一步 R5295**：①860F 账本续扫择轻（before-after-table-parts-001 14.97 深结构挂账、anonymous-boxes-001a 4.17 等候选）②跨流红对端流自查维持（cdp 钉 / p107-probe-repin 合并后复验）③深结构域维持不动（WAAPI、SVG transform、变换子树、TP 光栅化、伪盒实体化、3D/preserve-3d、backdrop 域）。证据：[`rendering-compat/evidence/r5294-innerhtml-fragment-trim-2026-10-27.md`](rendering-compat/evidence/r5294-innerhtml-fragment-trim-2026-10-27.md)。
+>
 > **▶ R5293 实现轮（auto 高 abs 盒内容派生高不回灌为子代百分比基 + table box 仅 bottom 侧 margin 隔离——child-bottom-margin-in-unresolvable-percentage-height ✗1.67→✓0.00，corpus 15729P/861F→15730P/860F 仅一案移出零翻转，新 kill-switch 2）**（2026-10-27）
 >
 > - **根因**（前轮 session 429 中断遗留 WIP，本轮接续收尾）：taffy `perform_absolute_layout_on_absolute_children` 对样式/inset 均未定高的 abs 盒，把 ContentSize 量出的内容派生高**回灌**进重排 `known_dimensions.height`——内容派生高被当成子代百分比高解析基（定 CB 高），CSS2 §10.5「包含块高依赖内容时百分比高 → auto」无从发生，inner 被锁死定高后 margin 塌穿断开，gc 的 80px bottom margin 丢失。

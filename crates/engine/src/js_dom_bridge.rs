@@ -1767,8 +1767,12 @@ pub(crate) fn replace_inner_html(doc: &mut Document, parent: NodeId, html: &str)
     for child in children {
         doc.remove_child(parent, child).map_err(|e| e.to_string())?;
     }
-    let trimmed = html.trim();
-    if trimmed.is_empty() {
+    // R5294：不 trim——spec fragment parsing algorithm 对入参串无 trim 步骤
+    //（https://html.spec.whatwg.org/multipage/dom.html#dom-element-innerhtml），
+    // 首尾空白是文本节点的一部分（dir-style-04："…parent. " 尾随空格被 trim 丢弃，
+    // 行中渲染缺格）。shim 本地视图（`__zw_parse_html_child_nodes` 整包解析）不
+    // trim，此前两端视图本已失步。空串早退保语义（清除子树后无新子）。
+    if html.is_empty() {
         return Ok(());
     }
     // R5000 M2 首簇：纯文本快速路径删除——文本须过 fragment 解析做 character reference
@@ -1791,7 +1795,7 @@ pub(crate) fn replace_inner_html(doc: &mut Document, parent: NodeId, html: &str)
     } else {
         doc.scripting_enabled()
     };
-    let frag_doc = parse_html_fragment_with_scripting(trimmed, &context_ns, &context_local, scripting);
+    let frag_doc = parse_html_fragment_with_scripting(html, &context_ns, &context_local, scripting);
     let frag_children = fragment_top_level_children(&frag_doc);
     for frag_child in frag_children {
         let copied = copy_subtree_from(doc, &frag_doc, frag_child);
@@ -2002,8 +2006,9 @@ fn insert_nodes_at_position(
 /// `beforebegin`/`afterend` 需父节点；元素无父（文档根）返错（匹配 spec 对 detached/root
 /// 元素抛错）。插入顺序保持 fragment 顶层节点顺序。
 fn insert_adjacent_html(doc: &mut Document, node: NodeId, position: &str, html: &str) -> Result<(), String> {
-    let trimmed = html.trim();
-    if trimmed.is_empty() {
+    // R5294：不 trim——同 [`replace_inner_html`]（spec fragment parsing 无 trim 步骤，
+    // 首尾空白属文本节点内容）。空串早退（无节点可插）。
+    if html.is_empty() {
         return Ok(());
     }
     // 解析顶层 fragment 节点（与 replace_inner_html 同源，纯文本同样过解析做 charref
@@ -2028,7 +2033,7 @@ fn insert_adjacent_html(doc: &mut Document, node: NodeId, position: &str, html: 
     // R5001 M3 片 a：scripting 旗标随目标文档（template context 规则同 replace_inner_html）。
     let scripting = !(context_local.eq_ignore_ascii_case("template") && context_ns == "http://www.w3.org/1999/xhtml")
         && doc.scripting_enabled();
-    let frag_doc = parse_html_fragment_with_scripting(trimmed, &context_ns, &context_local, scripting);
+    let frag_doc = parse_html_fragment_with_scripting(html, &context_ns, &context_local, scripting);
     let kids = fragment_top_level_children(&frag_doc);
     let frag_nodes: Vec<NodeId> = kids.into_iter().map(|k| copy_subtree_from(doc, &frag_doc, k)).collect();
     insert_nodes_at_position(doc, &frag_nodes, node, position)
@@ -2070,8 +2075,9 @@ pub(crate) fn replace_outer_html_node(doc: &mut Document, node: NodeId, html: &s
     // R3182：context element = 目标父（fragment 在父 context 下解析——如父是 table，
     // `<tr>` 正确解析为隐式 tbody；旧 body-wrap foster-parent 丢失）。纯文本同样过
     // 解析做 charref 展开（R5000 M2 首簇）。
-    let trimmed = html.trim();
-    if !trimmed.is_empty() {
+    // R5294：不 trim——同 [`replace_inner_html`]（spec fragment parsing 无 trim 步骤）。
+    // 空串仍跳过解析（零节点 → 仅移除目标，spec `el.outerHTML = ''` 语义）。
+    if !html.is_empty() {
         let (context_ns, context_local) = match doc.get(parent).map(|n| &n.kind) {
             Some(NodeKind::Element(e)) => (e.namespace().to_string(), e.local_name().to_string()),
             _ => ("http://www.w3.org/1999/xhtml".to_string(), "body".to_string()),
@@ -2080,7 +2086,7 @@ pub(crate) fn replace_outer_html_node(doc: &mut Document, node: NodeId, html: &s
         let scripting = !(context_local.eq_ignore_ascii_case("template")
             && context_ns == "http://www.w3.org/1999/xhtml")
             && doc.scripting_enabled();
-        let frag_doc = parse_html_fragment_with_scripting(trimmed, &context_ns, &context_local, scripting);
+        let frag_doc = parse_html_fragment_with_scripting(html, &context_ns, &context_local, scripting);
         let kids = fragment_top_level_children(&frag_doc);
         for k in kids {
             let copied = copy_subtree_from(doc, &frag_doc, k);
