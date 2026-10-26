@@ -5,9 +5,13 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（183）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（187）
 
+- 2026-10-26 [PR 审查表只能由 reviewSection 生成——呈现层逐字节契约与静默 return false 诊断](bugs/2026-10/2026-10-26-pr-review-section-generated-contract.md) — .agents/skills/zeroweb-site-optimizer
 - 2026-10-26 [模块记忆化键误用页面 URL——同文档第二枚 module script 零次求值](bugs/2026-10/2026-10-26-module-cache-key-page-url-collision.md) — script-sandbox,webview
+- 2026-10-26 [账本变更脚本深拷贝别名：改动落在被丢弃的旧对象上；done 任务与证据文件冻结面](bugs/2026-10/2026-10-26-ledger-script-deepcopy-aliasing-frozen-done.md) — .agents/skills/zeroweb-site-optimizer
+- 2026-10-26 [compositor 位图守卫严格等值 vs Get「拉最新 front」语义系统性失配——持续发布页 GUI 首帧白屏](bugs/2026-10/2026-10-26-compositor-frame-match-equality-vs-pull-latest.md) — apps/browser,apps/compositor
+- 2026-10-26 [busy main 下集成核验用 contains 语义；轮询比较截断位数单点定义；抖动网络窗口重试封装](bugs/2026-10/2026-10-26-busy-main-integration-contains-semantics.md) — .agents/skills/zeroweb-site-optimizer
 - 2026-10-25 [单案 reftest % 值有运行间波动——归因实验前先同二进制连跑采样，单采样会钉出无辜代码片](bugs/2026-10/2026-10-25-reftest-single-sample-attribution-flake.md) — layout-engine,engine
 - 2026-10-23 [UBA 重排产物必须剥除 bidi 控制码——visual_runs 保留控制码索引位，逐位 push 会带进视觉流](bugs/2026-10/2026-10-23-uba-reorder-output-must-strip-bidi-controls.md) — layout-engine
 - 2026-10-23 [taffy branch 节点对 IFC 文本不可见——原子提升后 abspos auto 宽塌最宽原子子](bugs/2026-10/2026-10-23-taffy-branch-ifc-text-invisible-abspos-auto-width.md) — layout-engine/engine, taffy-local
