@@ -2,6 +2,9 @@
 
 #[path = "automation.rs"]
 mod automation;
+// t-p106 诊断：automation 仪拍辅助经 runtime 再导出，供 js_worker（ sibling 模块，
+// automation 本身私有）走 `crate::runtime::automation_trace_*` 使用。
+pub(crate) use automation::{automation_trace_enabled, automation_trace_epoch_ms, automation_trace_line};
 
 use zero_page_runtime::{FormControlStateStore, FrameInvalidation, FrameTransaction, PageInteractionState};
 use zero_webview::AsyncPageLoad;
@@ -892,12 +895,7 @@ impl RendererRuntime {
     }
 
     fn send_regular_msg(&mut self, msg: IpcMessage) -> Result<(), String> {
-        if let Some(thread) = &self.compositor_publish
-            && thread.enqueue_regular(msg.clone())
-        {
-            return Ok(());
-        }
-        self.outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))
+        send_regular_via(self.compositor_publish.as_ref(), &mut self.outbound, msg)
     }
 
     /// R3254-H1：焦点回执——browser 同步 `event_targets`（键盘事件路由）与文本控件守卫
@@ -944,6 +942,30 @@ impl RendererRuntime {
     /// 命令已回灌 `deferred_inbound` 队首，收尾（动态脚本/发布/生命周期事件）全部跳过——
     /// 文档即将换代，对旧文档收尾是纯浪费。
     fn after_page_html_loaded_with_cache(&mut self, fetch_cache: HashMap<String, String>) -> Result<bool, String> {
+        // t-p106 诊断：脚本阶段进出仪拍——本函数在主循环内同步执行整段页面脚本，
+        // 是 deferred-reply 补答（主循环轮询）被阻塞的头号嫌疑面。
+        let p106_phase_t0 = automation::automation_trace_enabled().then(std::time::Instant::now);
+        if p106_phase_t0.is_some() {
+            automation::automation_trace_line(&format!(
+                "[areply] t={} r-phase-start",
+                automation::automation_trace_epoch_ms()
+            ));
+        }
+        let p106_phase_result = self.after_page_html_loaded_with_cache_inner(fetch_cache);
+        if let Some(t0) = p106_phase_t0 {
+            let dur_ms = t0.elapsed().as_millis();
+            automation::automation_trace_line(&format!(
+                "[areply] t={} r-phase-end dur_ms={dur_ms}",
+                automation::automation_trace_epoch_ms()
+            ));
+        }
+        p106_phase_result
+    }
+
+    fn after_page_html_loaded_with_cache_inner(
+        &mut self,
+        fetch_cache: HashMap<String, String>,
+    ) -> Result<bool, String> {
         self.executed_external_scripts.extend(fetch_cache.keys().cloned());
         let js_enabled = self.javascript_enabled;
         let current_url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
@@ -988,9 +1010,35 @@ impl RendererRuntime {
             };
             // P-B1 导航让路：脚本间扫描 staging 队列 + inbound，导航命令即中止剩余脚本。
             // 字段不相交：ctx 借 cached_html/js_worker/webview，yield 借 inbound_rx/deferred_inbound。
+            // t-p106：yield 另带自动化 hook 闭包——①阶段中到达的 staged eval 借
+            // js_worker + 当前 html 快照直接 dispatch（宿主动作语义，DevTools/CDP 同款，
+            // 详见 automation::dispatch_staged_automation_evals）；②挂起自动化回复交付
+            // ——主循环被本阶段阻塞期间（16ms tick 的 poll 不可达），脚本间让路点是
+            // 唯一及时送达机会。闭包只借 js_worker(共享)/pending_automation_replies/
+            // compositor_publish/outbound/epoch/generation，与 ctx/yield 借用不相交。
+            let (compositor_publish, outbound, navigation_epoch, document_generation) = (
+                self.compositor_publish.as_ref(),
+                &mut self.outbound,
+                &self.navigation_epoch,
+                &self.document_generation,
+            );
+            let js_worker = &self.js_worker;
+            let mut send_regular = |msg| send_regular_via(compositor_publish, outbound, msg);
+            let pending_replies = &mut self.pending_automation_replies;
+            let mut automation_hook =
+                move |staged: &mut std::collections::VecDeque<IpcMessage>, html: &str, url: &str| -> usize {
+                    automation::dispatch_staged_automation_evals(staged, html, url, js_worker, pending_replies);
+                    automation::deliver_ready_deferred_replies(
+                        pending_replies,
+                        &mut send_regular,
+                        *navigation_epoch,
+                        *document_generation,
+                    )
+                };
             let yield_to_commands = page_scripts::ScriptPhaseYield {
                 inbound_rx: &self.inbound_rx,
                 deferred: &mut self.deferred_inbound,
+                automation_hook: Some(&mut automation_hook),
             };
             page_scripts::run_page_scripts_interruptible(
                 &mut ctx,
@@ -4143,7 +4191,24 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         // bg02-media 基线 v2（media-runtime-isolation）：march 提交门 true→false
         // 边沿检测态（上一拍 any_playing——EOF 停播拍补交一拍 march，见下方门注释）。
         let mut prev_media_playing = false;
+        // t-p106 诊断：主循环 tick 间隔仪拍——tick 间 >1s 即主循环被同步段（脚本阶段/
+        // dispatch）阻塞的直接证据，与 deferred-reply 补答延迟对轴。
+        let mut p106_last_tick: Option<std::time::Instant> = None;
         loop {
+            if automation::automation_trace_enabled() {
+                let now = std::time::Instant::now();
+                if let Some(last) = p106_last_tick {
+                    let gap = now.duration_since(last);
+                    if gap >= std::time::Duration::from_secs(1) {
+                        automation::automation_trace_line(&format!(
+                            "[areply] t={} r-tickgap gap_ms={}",
+                            automation::automation_trace_epoch_ms(),
+                            gap.as_millis()
+                        ));
+                    }
+                }
+                p106_last_tick = Some(now);
+            }
             if self.pending_load.is_some()
                 || self.pending_script_prefetch.is_some()
                 || self.pending_dynamic_scripts.is_some()
@@ -4359,6 +4424,23 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             }
         }
     }
+}
+
+/// t-p106：regular 消息经发布线程/直写通道落盘——[`RendererRuntime::send_regular_msg`]
+/// 与页面脚本阶段中交付闭包共用（闭包只借 `compositor_publish`/`outbound` 字段，
+/// 不借整个 `self`：阶段同时借 cached_html/js_worker/webview/inbound_rx/deferred_inbound，
+/// 字段不相交）。
+fn send_regular_via(
+    compositor_publish: Option<&compositor_publish_thread::CompositorPublishThread>,
+    outbound: &mut IpcOutbound,
+    msg: IpcMessage,
+) -> Result<(), String> {
+    if let Some(thread) = compositor_publish
+        && thread.enqueue_regular(msg.clone())
+    {
+        return Ok(());
+    }
+    outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))
 }
 
 /// 经 FrameModel（统一帧契约，T5）打包 IPC PaintSnapshot + 可选 Title。

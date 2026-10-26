@@ -2,9 +2,93 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 99 施工收口（HTMLScriptElement 布尔反射 IDL `in` 可见性：**nomodule-set-on-async-classic-script 2F→2P 销账**：scripting-1 **312P/229F/15T→314P/227F/15T**（raw + 18 NotRun；净 +2 Pass，零 P→非P）——元素 proxy has trap 白名单新增 R5300 分支：`async`/`defer`/`noModule` 三名 tag 门 SCRIPT（'  :' 后缀容差同 R5266；值面 part04 R3038/R3040 _REFLECTED_BOOL presence 读早已覆盖，has 探测缺列恒 false——两行同报 `assert_true(supportsNoModule)` 首断言即 `"noModule" in script`）；R5249 menuitem 假阳性先例 → 无条件列名不可取，按接口成员归属 tag 门控；load 门（window.onload promise resolve）实测正常；engine lib 3530/3530；失败族地图序：⑥load-event 保真族（parser 外链内联投递丢 onload/onerror 属性 → nomodule-sync 1F + load-error-events 7F/3T 同族汇入）/ module 编译错误事件面（nomodule-external-module 1F）/ module 尾片（.py 执行器前置）/ 116 frameset / 063 承袭），下一步 s100 入场探针定刀位（候选：load-event 投递保真族——内联重写保留 onload/onerror + 执行后投递 / module 编译错误 Script error 面）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 101 施工收口（外链模块 import 收集基：**nomodule-set-on-external-module-script 1F→1P 销账**：scripting-1 **325P/221F/14T→326P/220F/14T**（+18 NotRun；净 +1 Pass，零 P→非P，diff 恰 1 页 1 行）——双层根因：①webview ExternalModule 静态 import 收集基 = 页面 URL，spec 语义相对 **requesting module 自身 URL** 解析（resources/ 子目录模块相对 import 解析到页目录 → 404 → 空存根 → 假「does not provide an export」编译错 strict 整页 abort）；②runner inline_local_scripts 连外链 module 也内联（s94 保 type），engine 走 InlineModule 臂——①修复不触发，内联投递时重写模块体 `./`/`../` 相对 spec 为 root-absolute（lexer 感知提取定位，裸 specifier/root-absolute/scheme 不动；方案 A 跳过 module 内联因 parser module 臂 load/error 投递依赖 s100 投递尾被否）；连带修 module 图**钻石依赖拼写别名**共享缺陷（collect 循环防护命中时按当前拼写补注册同一源——imports-self-inner 自导入实证，旧文档明记已知限制）；webview lib 802（+2 单测）/runner bin 229（+1）；clippy 双 crate clean；失败族地图序：module 尾片（.py 执行器前置，动态 import() 相对模块解析基同列）/ module 编译错误 error 事件面 / 116 frameset / 063 承袭），下一步 s102 入场探针定刀位（候选：module 编译错误 Script error 事件面 / 116 frameset 文档语义缺口 / 063 Timeout）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-26 M2 切片 99 施工收口，script 布尔 IDL has 可见性轮）**：
+> **▶ 当前状态（2026-10-27 M2 切片 101 施工收口，外链模块 import 收集基轮）**：
+> **入场定谳（两层根因）**：nomodule-set-on-external-module-script 1F 整页 abort
+> （`Module ./cocoa-module.js does not provide an export named default`，declared
+> tests: 0）。①webview——ExternalModule 静态 import 收集基 = 页面 URL；spec 语义
+> import 相对 **requesting module 自身 URL** 解析（HostResolveImportedModule
+> referrer 为模块自身），模块体在 resources/ 子目录时其相对 import 解析到页目录 →
+> 取回 404 → 空存根 → 假编译错。②runner——inline_local_scripts 连外链 module 也
+> 内联（s94 保 type），engine 走 InlineModule 臂，①修复不触发、原始 src 解析基准
+> 整体丢失。**方案取舍**：A) 跳过 module 内联——parser module 臂 load/error 投递
+> 依赖 s100 投递尾，外置即丢（module/load-error-events 2P 回退）被否；B) data 属性
+> 透传 origin——跨 crate 形状变更；取 **E1) 内联投递时重写模块体相对 spec**（投递
+> 形态适配器职责，同 .sub.js 替换先例）。
+> **本轮三刀**：①webview `module_dep_base`——ExternalModule 臂收集基 =
+> `resolve_document_url(doc_url, src)`（InlineModule 维持页面 URL）。②runner
+> `rewrite_inline_module_import_specs`——仅 `./`/`../` 相对 spec 以模块自身
+> wpt_root 相对目录为基归一 root-absolute（lexer 感知提取定位 + 引号包裹整体替换；
+> 裸 specifier 维持 s87 解析失败语义、root-absolute/scheme 不动、查询串保留；动态
+> import() 走运行时链归 module 尾片）。③module 图**钻石依赖拼写别名**——collect
+> 循环防护（按解析后 URL）命中时按**当前拼写补注册**同一源（`fetched` URL→源缓
+> 存）：registry 按导入方体内原文拼写查表，旧版仅注册首拼写 → 第二拼写 lookup
+> 落空 compile 失败（imports-self-inner 自导入实证；旧文档明记「已知限制」——本
+> 轮连带解除的共享路径缺陷，②重写使拼写分歧显形）。
+> **验证**：webview lib **802/802**（+2：收集基钉 dep 仅模块相对位置可达红→绿 +
+> 拼写别名钉）；runner bin **229/229**（+1：helper 相对/上溯/root-absolute/裸/
+> scheme 四态 + 端到端 module 重写而 classic 体不动）；定向 FILTER=
+> nomodule-set-on-external-module **1F→1P**（两轮——仅①仍同错钉死根因②、
+> ①+②+③ 全绿）、FILTER=module/imports **5 Pass 0 Fail**（中途态 5P→1F 假红
+> 由③归位）；全子树终扫 **326P/220F/14T + 18 NotRun**，diff vs s100 基线**恰
+> 1 页 1 行**（本页 Fail→Pass）、**零 P→非P**；fmt clean + clippy 双 crate
+> `-D warnings` clean（ulimit 兜底沿 s91 口径）；reftest/product-smoke 未跑
+> （无 render/layout 面）。账本见
+> [evidence/2026-10-27-m2s101-external-module-import-base.md](html-semantics-compat/evidence/2026-10-27-m2s101-external-module-import-base.md)。
+> **范围**：webview.rs ×1（收集基 + fetched 缓存补注册 + 2 单测）+ testharness.rs
+> ×1（重写 helper + 调用点 + 1 单测）；shim/语料零变更；语料不可改维持。
+> **挂账**：module 尾片（.py 执行器前置；text-module/css-module/json-module
+> load-error 变体页同族汇入；动态 import() 相对模块解析基同列）；module 编译错误
+> error 事件面（compile 失败须 error 事件而非 strict 整页 abort——本页「must run」
+> 臂已销账、失败臂仍挂）；116 frameset 文档语义缺口；063 Timeout 承袭；charset
+> 12F（.py）；svg-script-fragment-clone 3F；FIXME 组（bufTop 漂移/setAttribute
+> ('src')/type 门/children-changed 其余入口）；接口对象基建面（承袭）；基线扫描宜
+> 空载（承袭）。nomodule-external-module 1F 本轮销账。附带发现：testharness.rs
+> 既有已提交 `/tmp/zw-hb*.txt` 调试插桩两行（非本会话所加，来源待查）。
+> **下一步**：s102 入场探针定刀位（候选：module 编译错误 Script error 事件面 /
+> 116 frameset 文档语义缺口 / 063 Timeout）。
+> **切片间隙**：本轮 runner/webview .rs 面；下一挂账同流同面，间隙开放。
+>
+> **▶ 上轮状态（2026-10-26 M2 切片 100 施工收口，经典脚本 load/error 事件投递保真轮；施工跨 429 断点，断点后终扫复跑与断点前扫描 bitwise 一致——其下一步 s101 入场探针定刀位已由 s101 收口，见上）**：
+> **入场核账**：s99 挂账 load-event 投递保真族——load-error-events-1 11 臂（parser
+> defer/sync/async × 200/404 + dynamic ×4 + no-src 内联臂）+ nomodule-sync
+> 「must run」。两面根因：①投递面——parser 外链被 inline_local_scripts 内联改写丢
+> onload/onerror（s94 保真只留 nonce/nomodule/type），且内联后无取回环节，spec
+> 「成功执行 fire load / 取回失败 fire error」随之丢失；②服务面——load-error-events.py
+> 为 wptserve CGI 端点，语料 pull 面不含 .py，dynamic 200 臂取回落通用缺文件 404 →
+> error 路径误触发。
+> **本轮三刀**：①投递保真——script_event_handler_attr 提取回写 on* 内容属性（`&`/`"`
+> 转义同 nonce 先例）+ 投递尾（200 体后 fire load、非 200 只 fire error 且脚本体
+> 不执行；document.currentScript.dispatchEvent——R2934 编译链触发 on* 与
+> addEventListener 两路，事件不冒泡不扰 window load）；src 查询串先剥离再归一。
+> ②fetch 通道 .py fixture 静态等价（wpt_load_error_events_response，fetch/内联共
+> 用）：test 参数 `^[a-zA-Z0-9_]+$` 门（缺席/非法 400）、`*_load`→200 +
+> `<test>.executed=true`、其余 404 + assert_unreached 体（status 拒 eval）；路径精
+> 确匹配 classic 端点，module 族变体不匹配归 module 尾片。③extract
+> attr_from_open_tag 值面从**原文**切片——旧版从 ASCII 小写镜像切值，
+> `onLoad(t1)`→`onload(t1)` 失效、base64 nonce 同面受损；lower 镜像等字节长偏移通用。
+> **验证**：runner bin **228/228**（+2 单测）；engine lib **3530/3530**；
+> FILTER=load-error-events le1 **11/11 全 Pass**（页完成无 Timeout）；
+> FILTER=nomodule nomodule-sync **1F→1P**；全子树终扫 **325P/221F/14T + 18
+> NotRun**，diff vs s99 恰 3 页 F/T→P（le1 2F+1T→11P 全清 / module
+> load-error-events 2F→2P——parser module 臂 on* 保真连带 / nomodule-sync
+> 1F→1P）、**零 P→非P**（/tmp/n99.txt vs /tmp/n100s.txt）；execution-timing/122
+> 缺行系 teardown 粒度方差（s93 先例，单跑仍报既有 Fail）；fmt clean + clippy 双
+> crate `-D warnings` clean（ulimit 兜底沿 s91 口径）；reftest/product-smoke 未跑
+> （无 render/layout 面）。账本见
+> [evidence/2026-10-26-m2s100-load-event-delivery-fidelity.md](html-semantics-compat/evidence/2026-10-26-m2s100-load-event-delivery-fidelity.md)。
+> **范围**：testharness.rs ×1（fetch arm + fixture + inline 保真/投递尾 + 2 单测）+
+> extract.rs ×1（attr 值切片）；shim/语料零变更；语料不可改维持。
+> **挂账**：module 尾片（.py 执行器前置；text-module/css-module/json-module
+> load-error 变体页同族汇入）；module 编译错误事件面（nomodule-set-on-external-
+> module-script 1F）；116 frameset 文档语义缺口；063 Timeout 承袭；charset 12F
+> （.py）；svg-script-fragment-clone 3F；FIXME 组（bufTop 漂移/setAttribute('src')/
+> type 门/children-changed 其余入口）；接口对象基建面（承袭）；基线扫描宜空载（承
+> 袭）。load-error-events classic 全臂 + nomodule-sync 本轮销账。
+> **切片间隙**：本轮纯 runner/engine .rs 面；下一挂账同流同面，间隙开放。
+>
+> **▶ 上轮状态（2026-10-26 M2 切片 99 施工收口，script 布尔 IDL has 可见性轮——其下一步 s100 入场探针定刀位已由 s100 收口，见上）**：
 > **入场核账**：s98 下一步候选入场探针——nomodule-set-on-async-classic-script
 > 两行**同报** `assert_true: expected true got false`，两测试首断言同为
 > `assert_true(supportsNoModule)`（`"noModule" in script` 探针）；若 load 门

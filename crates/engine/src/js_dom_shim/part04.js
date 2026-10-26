@@ -12076,11 +12076,12 @@
             // spec `LegacyNullToEmptyString`：null → 空串（清子），非写 "null" 文本；undefined 仍 ToString。
             var _ihVal = value === null ? '' : String(value);
             // t7-r2（defect D1）：本地解析视图与 host 同源——host `replace_inner_html`
-            // 先 trim 再 fragment 解析（前导/尾随空白文本节点 host 侧不存在），视图若用
-            // 原文解析会在前导空白 markup 下多计首文本子，plain 父 append 的 child-index
-            // 路径整体 +1 错位（walk 错落下一兄弟或越界 lenient 静默丢）。视图用 trim 后
-            // 串构建，与 host 树逐子对齐。
-            var _ihAdded = _zwFragmentAdded(_ihVal.trim(), handle);
+            // fragment 解析与视图共用**原文串**（R5294 起 host 不 trim——spec fragment
+            // parsing 无 trim 步骤，首尾空白属文本节点；此前 host trim 而视图原文解析
+            // 曾致前导空白 markup 下多计首文本子、plain 父 append 的 child-index 整体
+            // +1 错位（D1），当时以视图 trim 对齐 host。两端一起去 trim 后逐子对齐保持，
+            // dir-style-04 尾随空格不再丢失）。
+            var _ihAdded = _zwFragmentAdded(_ihVal, handle);
             if (handle) __zw_set_inner_html_handle(handle, _ihVal);
             else __zw_set_inner_html(sel, _ihVal);
             // R5241（html-semantics M2 切片 39）：sel 模板 contents 重写失效 content

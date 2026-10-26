@@ -3302,3 +3302,69 @@ fn test_document_cookie_semantics_c2k() {
         "__Http- / __Host-Http- 经 document.cookie 恒拒收"
     );
 }
+
+/// R5294（html-syntax-compat）：fragment 解析不 trim——`innerHTML`/`insertAdjacentHTML`/
+/// `outerHTML` setter 入参串的首尾空白属文本节点内容（spec fragment parsing algorithm
+/// 无 trim 步骤）。旧 `replace_inner_html` 先 `html.trim()` 再解析，`x.innerHTML =
+/// "…parent. "` 尾随空格在 DOM 构建前丢失（WPT css/selectors/dir-style-04 行中缺格翻红）。
+#[test]
+fn test_apply_set_inner_html_trailing_ws_preserved_r5294() {
+    let html = "<html><body><div id='d'></div></body></html>";
+    let out = apply_mutations_to_html(
+        html,
+        &[DomMutation::SetInnerHtml {
+            selector: "#d".into(),
+            html: "This span should inherit dir from the parent. ".into(),
+        }],
+    )
+    .unwrap();
+    assert!(
+        out.contains("<div id=\"d\">This span should inherit dir from the parent. </div>"),
+        "innerHTML 尾随空格应保留（dir-style-04 行中缺格根因），got: {out}"
+    );
+}
+
+/// R5294：前导空白同样保留（host 树与 shim 本地视图逐子对齐的前提——t7-r2/D1
+/// child-index 对齐契约现建立在两端都解析原文串上）。
+#[test]
+fn test_apply_set_inner_html_leading_ws_preserved_r5294() {
+    let html = "<html><body><div id='d'></div></body></html>";
+    let out = apply_mutations_to_html(
+        html,
+        &[DomMutation::SetInnerHtml {
+            selector: "#d".into(),
+            html: "\n<div class=\"a\"></div>".into(),
+        }],
+    )
+    .unwrap();
+    assert!(
+        out.contains("<div id=\"d\">\n<div class=\"a\"></div></div>"),
+        "innerHTML 前导空白文本节点应保留（shim 视图 child-index 对齐前提），got: {out}"
+    );
+}
+
+/// R5294：`insertAdjacentHTML`/`outerHTML` 同一语义（spec fragment parsing 无 trim）。
+/// 片段串首尾均为空白文本节点（端侧空白才是旧 trim 的作用面）。
+#[test]
+fn test_apply_insert_adjacent_html_and_outer_html_ws_preserved_r5294() {
+    let html = "<html><body><div id='d'><span id='s'></span></div></body></html>";
+    let out = apply_mutations_to_html(
+        html,
+        &[
+            DomMutation::InsertAdjacentHtml {
+                selector: "#d".into(),
+                position: "beforeend".into(),
+                html: "x. ".into(),
+            },
+            DomMutation::SetOuterHtml {
+                selector: "#s".into(),
+                html: " <b>y</b> ".into(),
+            },
+        ],
+    )
+    .unwrap();
+    assert!(
+        out.contains("<div id=\"d\"> <b>y</b> x. </div>"),
+        "IAH/outerHTML 片段端侧空白应保留，got: {out}"
+    );
+}

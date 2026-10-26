@@ -3253,6 +3253,9 @@ fn probe_inline_block_baselines(
     if ib_sizes.is_empty() || !matches!(box_node.writing_mode, WritingModeValue::HorizontalTb) {
         return overrides;
     }
+    // R5292 kill-switch：inline-table 基线探针（CSS2 §17.5.1 表基线 = 第一行基线）。
+    static INLINE_TABLE_BASELINE: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| std::env::var("ZW_INLINE_TABLE_BASELINE").as_deref() != Ok("0"));
     for child in box_node.children.iter_mut() {
         let Some(child_id) = child.node_id else {
             continue;
@@ -3260,7 +3263,51 @@ fn probe_inline_block_baselines(
         let Some(style) = styles.get(&child_id) else {
             continue;
         };
-        if !matches!(style.display, DisplayValue::InlineBlock) {
+        if !matches!(style.display, DisplayValue::InlineBlock | DisplayValue::InlineTable) {
+            continue;
+        }
+        // CSS Containment 1 §3：layout/paint containment 元素**无基线**——
+        // vertical-align 语境按底 margin edge 对齐（contain-layout-baseline-001）。
+        if style.contain.has_layout() || style.contain.has_paint() {
+            continue;
+        }
+        if matches!(style.display, DisplayValue::InlineTable) {
+            if !*INLINE_TABLE_BASELINE {
+                continue;
+            }
+            // R5292（CSS2 §17.5.1 表基线）：inline-table 基线 = 第一行的基线。collect_items
+            // 旧回退 = 底边（`_ => h`）——table-vertical-align-baseline-009：两行 X 的
+            // inline-table 基线取底边 100（应 40 = 首行 cell 基线），行盒 150 应 100，
+            // absolute bottom:0 锚随父高偏 50px。探针 = 首行内容 IFC **第一行**基线加
+            // frame 顶偏移。首行无 row / 无行盒 → 不探针，维持底边回退。
+            // FIXME: css-tables-3「表无首行时基线 = 盒顶」未建模（底边回退偏大），案驱动另切片。
+            let Some(row) = find_first_table_row(child, styles) else {
+                continue;
+            };
+            // 探针盒：首行内第一个 cell 盒优先（合成 cell 借宿主行 node_id 形态）；
+            // 真表管线 cell 不盒化（row 盒直接子为文本盒）时以 row 盒自身探针——其
+            // inline 后代 = 行内容，单 cell 行与首 cell 基线等价；多 cell 行取行 IFC
+            // 首行基线近似行基线 max 语义。
+            let probe_box = find_first_table_cell(row, styles).unwrap_or(row);
+            if let Some(baseline) =
+                probe_atomic_box_baseline(probe_box, doc, styles, img_intrinsic_sizes, inline_fonts, true)
+                && baseline.is_finite()
+                && baseline > 0.0
+            {
+                child.inline_block_baseline = Some(baseline);
+                // override 键 = collect 期查表键（inline-table **DOM 元素 id**）。LayoutBox
+                // 子盒的 node_id 可能是表管线匿名包装盒（R5168 anontbl 借/新建 id，实证
+                // 21v1 DOM vs 24v1 包装），错键则 override 永久 miss。
+                if let Some(dom_key) = box_node.node_id.and_then(|pid| {
+                    doc.child_nodes(pid).into_iter().find(|&c| {
+                        styles
+                            .get(&c)
+                            .is_some_and(|s| matches!(s.display, DisplayValue::InlineTable))
+                    })
+                }) {
+                    overrides.insert(dom_key, baseline);
+                }
+            }
             continue;
         }
         // overflow 裁剪盒基线 = 底 margin edge（collect fallback 同语义），不探针。
@@ -3273,63 +3320,128 @@ fn probe_inline_block_baselines(
         ) {
             continue;
         }
-        // CSS Containment 1 §3：layout/paint containment 元素**无基线**——
-        // vertical-align 语境按底 margin edge 对齐（contain-layout-baseline-001）。
-        if style.contain.has_layout() || style.contain.has_paint() {
-            continue;
-        }
         // 无行内内容的 inline-block 无行盒 → 底边基线（None = 旧行为）。
         if !has_inline_content(doc, styles, child_id) {
             continue;
         }
         // 探针 IFC：与子盒自身 6.5 pass 同配置（内容宽 / white-space / 字体上下文），
         // 行断与行盒几何一致，基线方可互换。
-        let nested_ib_sizes: HashMap<NodeId, (f32, f32)> = child
-            .children
-            .iter()
-            .filter(|c| {
-                c.node_id.is_some_and(|id| {
-                    styles
-                        .get(&id)
-                        .is_some_and(|s| matches!(s.display, DisplayValue::InlineBlock))
-                })
-            })
-            .filter_map(|c| {
-                let node_id = c.node_id?;
-                Some((node_id, (c.width, c.height)))
-            })
-            .collect();
-        let content_width = child.content_width;
-        let pad_border_top = child.padding_top + child.border_top;
-        let run_in_prepended = child.run_in_prepended;
-        let mut ctx = InlineFormattingContext::new(content_width)
-            .with_no_wrap(resolve_no_wrap_for_ifc_measure(Some(style)))
-            .with_preserve_whitespace(resolve_preserve_for_ifc_measure(Some(style)))
-            .with_break_at_newline(resolve_break_at_newline_for_ifc_measure(Some(style)))
-            .with_break_word(
-                matches!(
-                    style.overflow_wrap,
-                    zero_style_system::property::types::OverflowWrapValue::BreakWord
-                        | zero_style_system::property::types::OverflowWrapValue::Anywhere
-                ) || matches!(style.word_break, zero_style_system::WordBreakValue::BreakWord),
-            )
-            .with_inline_block_sizes(nested_ib_sizes)
-            .with_img_intrinsic_sizes(img_intrinsic_sizes.clone());
-        ctx = configure_inline_fonts(ctx, inline_fonts, false);
-        if let Some(run_in_id) = run_in_prepended {
-            ctx.set_run_in_prepended(run_in_id);
-        }
-        ctx.layout(doc, child_id, styles);
-        let Some(last) = ctx.lines.last() else {
-            continue;
-        };
-        let baseline = pad_border_top + last.y + last.baseline_y;
-        if baseline.is_finite() && baseline > 0.0 {
+        if let Some(baseline) = probe_atomic_box_baseline(child, doc, styles, img_intrinsic_sizes, inline_fonts, false)
+            && baseline.is_finite()
+            && baseline > 0.0
+        {
             child.inline_block_baseline = Some(baseline);
             overrides.insert(child_id, baseline);
         }
     }
     overrides
+}
+
+/// R5292：原子级子盒内容 IFC 基线探针（R4380 inline-block 探针的盒参数化抽取）。
+/// 与探针盒自身 6.5 pass 同配置（内容宽 / white-space / 字体上下文），行断与行盒
+/// 几何一致，基线方可互换。`first_line` 选择行盒：inline-block 取**最后**行盒基线
+/// （CSS2 §10.8.1）；inline-table 取**第一**行盒基线（CSS2 §17.5.1 表基线 =
+/// 第一行基线）。返回值相对探针盒 border-box 顶。
+fn probe_atomic_box_baseline(
+    box_node: &LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
+    inline_fonts: InlineFontContext<'_>,
+    first_line: bool,
+) -> Option<f32> {
+    let box_id = box_node.node_id?;
+    let style = styles.get(&box_id);
+    let nested_ib_sizes: HashMap<NodeId, (f32, f32)> = box_node
+        .children
+        .iter()
+        .filter(|c| {
+            c.node_id.is_some_and(|id| {
+                styles
+                    .get(&id)
+                    .is_some_and(|s| matches!(s.display, DisplayValue::InlineBlock))
+            })
+        })
+        .filter_map(|c| {
+            let node_id = c.node_id?;
+            Some((node_id, (c.width, c.height)))
+        })
+        .collect();
+    let content_width = box_node.content_width;
+    let pad_border_top = box_node.padding_top + box_node.border_top;
+    let run_in_prepended = box_node.run_in_prepended;
+    let mut ctx = InlineFormattingContext::new(content_width)
+        .with_no_wrap(resolve_no_wrap_for_ifc_measure(style))
+        .with_preserve_whitespace(resolve_preserve_for_ifc_measure(style))
+        .with_break_at_newline(resolve_break_at_newline_for_ifc_measure(style))
+        .with_break_word(
+            matches!(
+                style.map(|s| &s.overflow_wrap),
+                Some(
+                    zero_style_system::property::types::OverflowWrapValue::BreakWord
+                        | zero_style_system::property::types::OverflowWrapValue::Anywhere
+                )
+            ) || matches!(
+                style.map(|s| &s.word_break),
+                Some(zero_style_system::WordBreakValue::BreakWord)
+            ),
+        )
+        .with_inline_block_sizes(nested_ib_sizes)
+        .with_img_intrinsic_sizes(img_intrinsic_sizes.clone());
+    ctx = configure_inline_fonts(ctx, inline_fonts, false);
+    if let Some(run_in_id) = run_in_prepended {
+        ctx.set_run_in_prepended(run_in_id);
+    }
+    ctx.layout(doc, box_id, styles);
+    let line = if first_line {
+        ctx.lines.first()
+    } else {
+        ctx.lines.last()
+    }?;
+    Some(pad_border_top + line.y + line.baseline_y)
+}
+
+/// R5292：inline-table 盒内首行查找（CSS2 §17.5.1 表基线 = 第一行基线）。
+/// DFS 跳过 col/colgroup（非盒级），命中第一个 table-row 即返回；行组递归下钻。
+fn find_first_table_row<'a>(table: &'a LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> Option<&'a LayoutBox> {
+    for sub in &table.children {
+        let display = sub.node_id.and_then(|id| styles.get(&id)).map(|s| &s.display);
+        if matches!(
+            display,
+            Some(DisplayValue::TableColumn) | Some(DisplayValue::TableColumnGroup)
+        ) {
+            continue;
+        }
+        if matches!(display, Some(DisplayValue::TableRow)) {
+            return Some(sub);
+        }
+        if let Some(row) = find_first_table_row(sub, styles) {
+            return Some(row);
+        }
+    }
+    None
+}
+
+/// R5292：行内首 cell 查找（探针盒优先级：cell 盒 > row 盒自身）。
+/// 命中第一个 table-cell 或合成 cell（`is_anon_table_cell`，R5168 借宿主行
+/// node_id）即返回；行组/行递归下钻。
+fn find_first_table_cell<'a>(table: &'a LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> Option<&'a LayoutBox> {
+    for sub in &table.children {
+        let display = sub.node_id.and_then(|id| styles.get(&id)).map(|s| &s.display);
+        if matches!(
+            display,
+            Some(DisplayValue::TableColumn) | Some(DisplayValue::TableColumnGroup)
+        ) {
+            continue;
+        }
+        if matches!(display, Some(DisplayValue::TableCell)) || sub.is_anon_table_cell {
+            return Some(sub);
+        }
+        if let Some(cell) = find_first_table_cell(sub, styles) {
+            return Some(cell);
+        }
+    }
+    None
 }
 
 /// R5215：子树是否含非空白直接/后代文本（R5011 直接文本口径的子树版，trim 非空）。
@@ -3363,6 +3475,127 @@ fn is_atomic_inline_family_box(c: &LayoutBox, styles: &HashMap<NodeId, ComputedS
             .get(&id)
             .is_some_and(|s| matches!(s.display, DisplayValue::InlineFlex | DisplayValue::InlineGrid))
     })
+}
+
+/// R5292：deep-path 域行内子盒自绘度量镜像。容器的 IFC run 度量只存宿主盒
+///（store_font_sizes_from_ifc 写 box_node.text_node_*），而
+/// has_direct_paintable_text=false 域（R4043 三类深路径：inline 子树含块级后代/
+/// 嵌 br/异字体后代）容器 paint_text 整跳，文本由各行内子盒 Path B 自绘——
+/// 子盒 store 为空 → 字号落 16px 默认（table-vertical-align-baseline-009：
+/// X span font:50px 绘成 16px 兜底字形实证）。本镜像把该子盒 owner 名下的
+/// run 度量（字号/Ahem/字距/ws/垂直度量/家族）写进子盒同款 maps（双键同
+/// store 惯例：文本节点 id + owner 元素 id），子盒 Path B 即有真实度量。
+/// 非 deep-path 域子盒被 painted_inline_nodes 去重抑制，镜像无消费方，
+/// 纯冗余存储零行为面。kill-switch `ZW_MIRROR_RUN_FONTS=0`。
+/// FIXME: 仅镜像直接子盒；更深 inline 后代（span>span 自绘域）未覆盖。
+fn mirror_run_fonts_to_inline_child_boxes(
+    inline_ctx: &InlineFormattingContext,
+    box_node: &mut LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
+    static MIRROR: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| std::env::var("ZW_MIRROR_RUN_FONTS").as_deref() != Ok("0"));
+    if !*MIRROR {
+        return;
+    }
+    for child in box_node.children.iter_mut() {
+        let Some(owner) = child.node_id else { continue };
+        // owner 名下文本节点集：元素归因 run（node_id=元素）需补文本节点键
+        //（build_text_parent_override_map 只收文本节点键，纯元素键会被过滤）。
+        let text_children: Vec<NodeId> = doc
+            .child_nodes(owner)
+            .iter()
+            .copied()
+            .filter(|&c| matches!(doc.get(c).map(|n| &n.kind), Some(zero_dom::NodeKind::Text(_))))
+            .collect();
+        for frag in inline_ctx.all_fragments() {
+            let owned = frag.node_id == owner || doc.parent_node(frag.node_id) == Some(owner);
+            if !owned {
+                continue;
+            }
+            // 仅纯 inline 文本 run：原子盒（inline-block/table 等）与块级子在父 IFC 中
+            // 同样以元素归因 run 出现，其 font_size 是盒级量而非文本字号——写进该盒
+            // text store 会毒化其自身 Path B 字体解析（vars-font-shorthand-001 的
+            // 150px Ahem X 整体消失实证）。文本节点键与 display:inline 载体放行。
+            let is_text_run = matches!(
+                doc.get(frag.node_id).map(|n| &n.kind),
+                Some(zero_dom::NodeKind::Text(_))
+            ) || styles
+                .get(&frag.node_id)
+                .is_some_and(|s| matches!(s.display, DisplayValue::Inline));
+            if !is_text_run {
+                continue;
+            }
+            let family = styles.get(&owner).map(|s| s.font_family.clone()).unwrap_or_default();
+            let mut keys = vec![frag.node_id, owner];
+            keys.extend_from_slice(&text_children);
+            for key in keys {
+                child.text_node_font_sizes.insert(key, frag.font_size);
+                child.text_node_is_ahem.insert(key, frag.is_ahem);
+                child.text_node_font_families.insert(key, family.clone());
+                child.text_node_letter_spacing.insert(key, frag.letter_spacing);
+                if frag.glyph_ascent != 0.0 || frag.glyph_descent != 0.0 {
+                    child
+                        .text_node_glyph_verticals
+                        .insert(key, (frag.glyph_ascent, frag.glyph_descent));
+                }
+                if let Some(ws) = frag.ws_override {
+                    child.text_node_ws_overrides.insert(key, ws);
+                }
+            }
+        }
+    }
+}
+
+/// R5292（CSS2 §10.3.8/§10.6.4）：容器高在 remeasure 回写后，absolute 直接子跟随
+/// CB 高变化。taffy 首趟按旧高解析 abs 盒位（table-vertical-align-baseline-009：
+/// div 150→100 后 abs span 仍按 150 解 y=108，应 58），本 pass 修正高后无第二趟
+/// taffy；11.7a walk 又显式跳过「本盒即 CB 的直接子」域（abspos.rs R4408 注——
+/// 首轮无差别重解析 −20 回归），此处只做**增量跟随**：锚缘（CB 底缘）位移恰
+/// = Δheight，长度 bottom 平移 Δ、% bottom 随基缩放，不重算 CB 基（规避 origin
+/// 重合回归面）。top+bottom 双 definite + auto 高 = §10.6.4 stretch 臂：高随 CB
+/// 高伸缩、y 锚 top 不动。kill-switch `ZW_REMEASURE_ABS_FOLLOW=0`。
+/// FIXME: 经 static 中间层的更深 abs 后代（11.7a cb 传递域）未跟随。
+fn shift_abs_children_on_cb_height_change(
+    box_node: &mut LayoutBox,
+    height_diff: f32,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) {
+    static ABS_FOLLOW: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| std::env::var("ZW_REMEASURE_ABS_FOLLOW").as_deref() != Ok("0"));
+    if height_diff.abs() < 0.01 || !*ABS_FOLLOW || !box_node.is_abspos_cb {
+        return;
+    }
+    // 锚定 inset = definite 长度/calc/%（Auto/关键字 inset 不锚定，同 §10.3.8 auto 臂）。
+    let inset_definite = |v: &LengthValue| {
+        !matches!(
+            v,
+            LengthValue::Auto
+                | LengthValue::MinContent
+                | LengthValue::MaxContent
+                | LengthValue::Stretch
+                | LengthValue::FitContent(_)
+        )
+    };
+    for child in box_node.children.iter_mut().filter(|c| c.is_absolute) {
+        let Some(style) = child.node_id.and_then(|nid| styles.get(&nid)) else {
+            continue;
+        };
+        if matches!(style.height, LengthValue::Auto) && inset_definite(&style.top) && inset_definite(&style.bottom) {
+            child.height = (child.height + height_diff).max(0.0);
+            child.content_height =
+                (child.height - child.border_top - child.border_bottom - child.padding_top - child.padding_bottom)
+                    .max(0.0);
+            continue;
+        }
+        if !inset_definite(&style.top) && inset_definite(&style.bottom) {
+            match &style.bottom {
+                LengthValue::Percentage(p) => child.y += (1.0 - *p as f32 / 100.0) * height_diff,
+                _ => child.y += height_diff,
+            }
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3785,7 +4018,27 @@ pub(crate) fn remeasure_inline_only_containers(
             })
             .filter_map(|c| {
                 let node_id = c.node_id?;
-                Some((node_id, (c.width, c.height)))
+                // R5292：auto 宽 inline-table 的盒宽在 remeasure 时点是 taffy 拉伸伪影
+                //（converter Block 映射被容器 stretch 到全宽，R4032/R5243 同源实证——
+                // 784 全宽喂原子盒宽必触发 break_lines fit 断行：table-vertical-align-
+                // baseline-009 的 X+inline-table 被断成两行 150 应单行 100）。同 R5243
+                // float Σ 臂解法：auto 宽按 `inline_table_auto_max_content` 独立测量补源
+                //（shrink-to-fit 上限 cap 容器宽）；definite 宽盒值可信，原样。
+                let w = if styles.get(&node_id).is_some_and(|s| {
+                    matches!(s.display, DisplayValue::InlineTable) && matches!(s.width, LengthValue::Auto)
+                }) {
+                    let mc = crate::intrinsic_sizing::inline_table_auto_max_content(node_id, doc, styles);
+                    if mc > 0.0 && container_width > 0.0 {
+                        mc.min(container_width)
+                    } else if mc > 0.0 {
+                        mc
+                    } else {
+                        c.width
+                    }
+                } else {
+                    c.width
+                };
+                Some((node_id, (w, c.height)))
             })
             .collect();
         // R5164：高度旁路尺寸表。auto 高 inline-block 子在父 remeasure 时点 LayoutBox
@@ -3895,6 +4148,8 @@ pub(crate) fn remeasure_inline_only_containers(
 
         // 存储 IFC 片段中各文本节点的 font_size，供 paint 系统计算基线偏移
         store_font_sizes_from_ifc(&inline_ctx, box_node, doc, styles);
+        // R5292：deep-path 域（容器 paint_text 整跳）行内子盒自绘度量镜像。
+        mirror_run_fonts_to_inline_child_boxes(&inline_ctx, box_node, doc, styles);
         // R5232：归因节点祖先链映射供盒 x 收紧到子孙内容首缘。
         let owner_ancestors = build_inline_owner_ancestor_map(doc, box_node.node_id.unwrap_or(dom_id), styles);
         sync_inline_child_boxes_from_ifc_with_ancestors(box_node, &inline_ctx, styles, &owner_ancestors);
@@ -3967,6 +4222,7 @@ pub(crate) fn remeasure_inline_only_containers(
             let diff = content_height - box_node.content_height;
             box_node.content_height = content_height;
             box_node.height += diff;
+            shift_abs_children_on_cb_height_change(box_node, diff, styles);
         } else if height_auto && content_height < box_node.content_height {
             // 纯 inline-level 容器且非特殊布局容器：允许减小高度。
             // taffy 将 inline 元素映射为 Block，会错误地包含 inline 元素的垂直 margin，
@@ -4011,6 +4267,7 @@ pub(crate) fn remeasure_inline_only_containers(
                     let diff = content_height - box_node.content_height;
                     box_node.content_height = content_height;
                     box_node.height += diff;
+                    shift_abs_children_on_cb_height_change(box_node, diff, styles);
                 }
             }
         }

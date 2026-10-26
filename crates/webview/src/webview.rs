@@ -4022,6 +4022,16 @@ impl WebView {
                 zero_engine::pipeline::PageScript::ExternalModule(src) => resolve_document_url(&doc_url, src),
                 _ => doc_url.clone(),
             };
+            // s101：外链模块静态 import 的收集基 = 模块自身绝对 URL（spec：import 语句
+            // 相对 requesting module 解析，referrer 为模块自身）；内联模块基 = 页面 URL。
+            // 旧版一律页面 URL——模块体在 resources/ 子目录时其相对 import 解析到页目录
+            // → 取回 404 → 空存根 → 假「Module does not provide an export」编译错
+            //（nomodule-set-on-external-module-script 实证；strict 下整页 abort）。
+            // https://tc39.es/ecma262/#sec-hostresolveimportedmodule
+            let module_dep_base = match &script {
+                zero_engine::pipeline::PageScript::ExternalModule(src) => Some(resolve_document_url(&doc_url, src)),
+                _ => None,
+            };
             let (code, is_module) = match script {
                 zero_engine::pipeline::PageScript::Inline(c) => (c, false),
                 // R3083：`<script type="module">` 经 compile_module_script 转 import/export 为经典可执行
@@ -4089,16 +4099,22 @@ impl WebView {
                     zero_script_sandbox::extract_module_import_specifiers(&code)
                 };
                 if let Some(fetcher_m) = self.script_source_fetcher.clone() {
-                    let page_url_m = self.current_url.as_deref().unwrap_or("about:blank").to_string();
+                    // s101：外链模块以模块自身 URL 为收集基（module_dep_base）；
+                    // 内联模块基 = 页面 URL（import 相对文档解析，语义不变）。
+                    let dep_base_m = module_dep_base
+                        .clone()
+                        .unwrap_or_else(|| self.current_url.as_deref().unwrap_or("about:blank").to_string());
                     let mut visited_m = std::collections::HashSet::new();
+                    let mut fetched_m = std::collections::HashMap::new();
                     for spec in &specs {
                         if collect_module_deps_recursive(
                             &fetcher_m,
-                            &page_url_m,
+                            &dep_base_m,
                             spec,
                             false,
                             &mut registry,
                             &mut visited_m,
+                            &mut fetched_m,
                         )
                         .is_err()
                         {
@@ -6871,7 +6887,8 @@ enum ModuleGraphFailure {
 fn compile_module_contract(fetcher: &ScriptSourceFetcher, parent: &str, spec: &str) -> String {
     let mut reg = zero_script_sandbox::ModuleRegistry::new();
     let mut visited = std::collections::HashSet::new();
-    match collect_module_deps_recursive(fetcher, parent, spec, false, &mut reg, &mut visited) {
+    let mut fetched = std::collections::HashMap::new();
+    match collect_module_deps_recursive(fetcher, parent, spec, false, &mut reg, &mut visited, &mut fetched) {
         Ok(()) => match zero_script_sandbox::compile_dependency_iife(spec, &reg) {
             Ok(iife) => format!("{}\u{1f}{iife}", resolve_document_url(parent, spec)),
             Err(_) => {
@@ -6891,8 +6908,13 @@ fn compile_module_contract(fetcher: &ScriptSourceFetcher, parent: &str, spec: &s
 /// registry 按**原始 spec**（importer 引用时写的，匹配 transform_import 按原 spec 查 registry）注册源；
 /// 循环防护按**解析后 URL**（同一 module 经不同 raw spec 引用视为同一，避免死循环）。
 /// fetcher 解析 spec 相对 parent_url。`is_dep` 区分顶层/递归调用——失败分类的归属面。
-/// **已知限制**：钻石依赖（同 module 经不同 raw spec 引用）defer
-///（仅注册首个 raw spec，第二引用 lookup 落空 → compile 失败；罕见，多数 module graph 为树）。
+/// s101：钻石依赖（同 module 经不同 raw spec 引用）按**当前拼写补注册**同一源
+///（`fetched` 按 URL 缓存已取回源）——旧版仅注册首个 raw spec，第二引用循环命中
+/// 被跳过 → lookup 落空 → compile 失败（module/imports.html imports-self-inner
+/// 自导入：顶层重写拼写先注册，内层体 `./` 拼写命中循环防护实证）。spec 模型
+/// module map 按 URL 记账、同一模块唯一；本引擎按导入方体内拼写查表，补注册保
+/// 跨拼写一致，源相同不产生第二实例语义分歧。
+/// https://html.spec.whatwg.org/multipage/webappapis.html#module-map
 fn collect_module_deps_recursive(
     fetcher: &ScriptSourceFetcher,
     parent_url: &str,
@@ -6900,6 +6922,7 @@ fn collect_module_deps_recursive(
     is_dep: bool,
     registry: &mut zero_script_sandbox::ModuleRegistry,
     visited: &mut std::collections::HashSet<String>,
+    fetched: &mut std::collections::HashMap<String, String>,
 ) -> Result<(), ModuleGraphFailure> {
     // s87：裸 specifier（无 `./` `../` `/` 前缀、非绝对 URL）无 import map 即解析失败
     // （依赖面归属 DepResolution——parse 期失败随顶层记账；顶层裸 specifier 由 JS 侧
@@ -6911,7 +6934,12 @@ fn collect_module_deps_recursive(
     }
     let url = resolve_document_url(parent_url, spec);
     if visited.contains(&url) {
-        return Ok(()); // 循环防护（解析后 URL）
+        // 循环防护（解析后 URL）；s101：按当前拼写补注册同一源（钻石依赖/自导入——
+        // 同 URL 异 raw spec 拼写，首注册拼写 ≠ 本导入方体内拼写时 lookup 落空）。
+        if let Some(source) = fetched.get(&url) {
+            registry.register(spec, source);
+        }
+        return Ok(());
     }
     visited.insert(url.clone());
     let source = fetcher(parent_url, spec).map_err(|_| {
@@ -6929,8 +6957,9 @@ fn collect_module_deps_recursive(
         });
     }
     registry.register(spec, &source); // key = raw spec（transform_import 按原 spec 查）
+    fetched.insert(url.clone(), source.clone());
     for imp in zero_script_sandbox::extract_static_module_import_specifiers(&source) {
-        collect_module_deps_recursive(fetcher, &url, &imp, true, registry, visited)?;
+        collect_module_deps_recursive(fetcher, &url, &imp, true, registry, visited, fetched)?;
     }
     Ok(())
 }
@@ -7944,6 +7973,79 @@ mod redirect_tests {
             !matches!(load.stage(), PageLoadStage::FetchingDocument | PageLoadStage::Failed),
             "文档应完成抓取（302 跟随成功）；实际 stage={:?}",
             load.stage()
+        );
+    }
+
+    /// s101 回归钉：外链模块静态 import 的收集基 = 模块自身绝对 URL（非页面 URL）。
+    /// spec：import 语句相对 requesting module 解析（HostResolveImportedModule
+    /// referrer 为模块自身）。语料 nomodule-set-on-external-module-script 实证：
+    /// 模块在 resources/ 子目录时 `./dep.js` 被按页面 URL 解析到页目录 → 取回 404 →
+    /// 空存根 → 假「Module does not provide an export」编译错（strict 整页 abort，
+    /// declared tests: 0）。钉法：dep 仅在模块相对位置可达，模块体执行成功即基正确。
+    /// https://tc39.es/ecma262/#sec-hostresolveimportedmodule
+    #[test]
+    fn external_module_dep_base_is_module_url_s101() {
+        let cfg = WebViewConfig {
+            script_source_fetcher: Some(std::sync::Arc::new(|parent: &str, spec: &str| {
+                if spec.ends_with("entry.js") {
+                    return Ok("import X from './dep.js';\nglobalThis.__s101 = X;".to_string());
+                }
+                let resolved = resolve_document_url(parent, spec);
+                if resolved.contains("/resources/dep.js") {
+                    Ok("export default 41;".to_string())
+                } else {
+                    Err(format!("404 at {resolved}"))
+                }
+            })),
+            ..WebViewConfig::default()
+        };
+        let mut wv = WebView::new(cfg);
+        wv.prepare_document_state("https://wpt.test/a/page.html");
+        wv.load_html(
+            "<!doctype html><body><script type=\"module\" src=\"./resources/entry.js\"></script></body>",
+            None,
+        );
+        wv.run_page_scripts_strict()
+            .expect("模块图收集基正确时编译必须成功（旧版页面基解析 → dep 404 → 编译错 abort）");
+        assert_eq!(
+            wv.execute_script("String(globalThis.__s101)").unwrap(),
+            "41",
+            "模块体须执行且 default 导入到位"
+        );
+    }
+
+    /// s101 回归钉：同 module 异 raw spec 拼写按当前拼写补注册（钻石/自导入）。
+    /// 顶层体以 root-absolute 拼写引用 inner，inner 体以 `./` 拼写自引用——两拼写
+    /// 解析同一 URL，旧版循环防护命中即跳过注册 → inner 体内按 `./` 拼写 lookup
+    /// 落空 → 编译 abort（module/imports.html imports-self-inner 实证）。
+    /// https://html.spec.whatwg.org/multipage/webappapis.html#module-map
+    #[test]
+    fn module_graph_spelling_alias_registers_current_spec_s101() {
+        let cfg = WebViewConfig {
+            script_source_fetcher: Some(std::sync::Arc::new(|_parent: &str, spec: &str| {
+                if spec.ends_with("entry.js") {
+                    return Ok("import I from '/t/inner.js';\nglobalThis.__alias = I;".to_string());
+                }
+                let resolved = resolve_document_url("https://wpt.test/a/page.html", spec);
+                if resolved.ends_with("/t/inner.js") {
+                    return Ok("import S from './inner.js';\nexport default 'aliased';".to_string());
+                }
+                Err(format!("404 at {resolved}"))
+            })),
+            ..WebViewConfig::default()
+        };
+        let mut wv = WebView::new(cfg);
+        wv.prepare_document_state("https://wpt.test/a/page.html");
+        wv.load_html(
+            "<!doctype html><body><script type=\"module\" src=\"./e/entry.js\"></script></body>",
+            None,
+        );
+        wv.run_page_scripts_strict()
+            .expect("同 URL 异拼写须按当前拼写补注册（旧版循环命中跳过 → inner 自导入 lookup 落空）");
+        assert_eq!(
+            wv.execute_script("String(globalThis.__alias)").unwrap(),
+            "aliased",
+            "inner 体须按 ./ 拼写取到自身导出"
         );
     }
 }

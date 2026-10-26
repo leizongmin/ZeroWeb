@@ -447,6 +447,9 @@ pub struct Style<S: CheapCloneStr = DefaultCheapStr> {
     /// Block 但按规范隔离 margin 的盒（table-cell §17.5.1）。摆放仍走同 BFC
     /// 路径（表几何由 ZW 表算法接管），仅隔离 margin 折叠。
     pub item_margins_isolated: bool,
+    /// ZW R5293（CSS2 §8.3.1）：仅 bottom 侧 margin 隔离（table box：caption 的
+    /// margin-bottom 不得借塌穿链溢出表 wrapper，margin-top 仍照常外折成顶隙）。
+    pub item_margins_end_isolated: bool,
     /// Should size styles apply to the content box or the border box of the node
     pub box_sizing: BoxSizing,
     /// Sets the direction of text, table and grid columns, and horizontal overflow.
@@ -597,6 +600,7 @@ impl<S: CheapCloneStr> Style<S> {
         item_is_table: false,
         item_is_replaced: false,
         item_margins_isolated: false,
+        item_margins_end_isolated: false,
         box_sizing: BoxSizing::BorderBox,
         direction: Direction::Ltr,
         overflow: Point { x: Overflow::Visible, y: Overflow::Visible },
@@ -853,6 +857,12 @@ impl<S: CheapCloneStr> BlockItemStyle for Style<S> {
         self.item_margins_isolated
     }
 
+    /// ZW R5293：仅 bottom 侧 margin 隔离（table box）。
+    #[inline(always)]
+    fn margins_end_isolated(&self) -> bool {
+        self.item_margins_end_isolated
+    }
+
     #[cfg(feature = "float_layout")]
     #[inline(always)]
     fn float(&self) -> Float {
@@ -876,6 +886,11 @@ impl<T: BlockItemStyle> BlockItemStyle for &'_ T {
     #[inline(always)]
     fn margins_isolated(&self) -> bool {
         (*self).margins_isolated()
+    }
+
+    #[inline(always)]
+    fn margins_end_isolated(&self) -> bool {
+        (*self).margins_end_isolated()
     }
 
     #[cfg(feature = "float_layout")]
@@ -1225,6 +1240,7 @@ mod tests {
             item_is_table: false,
             item_is_replaced: false,
             item_margins_isolated: false,
+            item_margins_end_isolated: false,
             box_sizing: Default::default(),
             #[cfg(feature = "float_layout")]
             float: Default::default(),

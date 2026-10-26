@@ -849,6 +849,14 @@ mod r5278_collapse_outer_band_size_tests;
 mod r5279_collapse_ignores_border_spacing_tests;
 /// R5280：separated 表层背景 cell 分段（列条目定位区/分段 + 行组层 bg_cell_segments）。
 mod r5280_table_layer_bg_cell_segments_tests;
+/// R5293（CSS2 §10.5 × §10.6.4 × §8.3.1）auto 高 abs 盒内容派生高不回灌为子代
+/// 百分比高解析基 + table box 仅 bottom 侧 margin 隔离
+///（child-bottom-margin-in-unresolvable-percentage-height、
+/// margin-applies-to-015 锚点）。
+mod r5293_abs_auto_height_pct_base_tests;
+/// R5294 结构锚：动态构建 DOM 与静态同形标记布局逐盒一致（dir-style-04 排查
+/// 中排除布局面路径分歧——实际根因在 engine innerHTML fragment 解析 trim）。
+mod r5294_dyn_trailing_space_tests;
 
 mod r5250_inline_relpos_shift_map;
 
