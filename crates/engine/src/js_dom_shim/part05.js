@@ -6191,8 +6191,18 @@
           if (kn && (kn.nodeType === 1 || (kn.nodeType === 3 && String(kn.data != null ? kn.data : (kn.nodeValue || ''))))) return false;
         }
       } else if (ps.name === 'not') {
-        var nc = _parseCompoundOf(String(ps.arg || ''));
-        if (!nc || nc.unsupported || _matchCompoundOf(info.proxy, nc)) return false;
+        // CSS Selectors 4 `:not(<selector-list>)`——实参是选择器列表，语义=任一段
+        // 命中即否决（全不中才匹配）。旧版整段当单 compound：列表实参
+        // （`:not(.a,.b)`）撞顶层逗号 unsupported → 恒否决，两态均非规范。
+        // unsupported 段保守否决（同单段 unsupported 既有口径，不 over-match）。
+        // FIXME: Selectors 4 实参可为 complex selector（`div > p`）——本臂仅支持
+        // compound 实参，含组合器实参落 unsupported 否决（保守 over-reject）。
+        // https://drafts.csswg.org/selectors/#negation
+        var ngroups = _splitSelectorListOf(String(ps.arg || ''));
+        for (var ni = 0; ni < ngroups.length; ni++) {
+          var nc = _parseCompoundOf(String(ngroups[ni]).trim());
+          if (!nc || nc.unsupported || _matchCompoundOf(info.proxy, nc)) return false;
+        }
       } else if (ps.name === 'checked') {
         var ck = false;
         try { ck = info.proxy.checked === true || String(info.proxy.checked) === 'true'; } catch (_e) { ck = false; }
@@ -6283,8 +6293,11 @@
     }
     return out.length ? { compounds: out, combinators: parts.combinators } : null;
   }
-  // 逗号列表拆分（跳过 `[...]` / 引号内逗号 / **CSS 转义**——js-dom M4 R118：`\,` 是字面
-  // 逗号 ident 字符不是组边界，WPT ParentNode-querySelector-escapes `#,\,\:\!`）。
+  // 逗号列表拆分（跳过 `[...]` / `(...)` / 引号内逗号 / **CSS 转义**——js-dom M4 R118：
+  // `\,` 是字面逗号 ident 字符不是组边界，WPT ParentNode-querySelector-escapes
+  // `#,\,\:\!`；`(...)` 深度感知对齐 host `split_top_level_selector_list`——
+  // `:not(.a,.b)` 等函数式伪类实参内逗号不是组边界，否则单 complex 被误判为列表，
+  // s81 约束门误 bail 到 host 丢同 turn 改名补偿）。
   function _splitSelectorListOf(sel) {
     var out = [], cur = '', depth = 0, quote = null;
     for (var i = 0; i < sel.length; i++) {
@@ -6305,8 +6318,8 @@
         i += el - 1;
         continue;
       }
-      if (ch === '[') depth++;
-      if (ch === ']') depth--;
+      if (ch === '[' || ch === '(') depth++;
+      if (ch === ']' || ch === ')') depth--;
       if (ch === ',' && depth === 0) { out.push(cur); cur = ''; continue; }
       cur += ch;
     }

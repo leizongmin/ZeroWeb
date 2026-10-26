@@ -39,7 +39,7 @@ part05 解析函数用 Node 执行，12 个形态逐一对上 live 矩阵定谳�
 
 ## 解决方案
 
-共享路径两处，均按 spec（CSS Selectors 4 <selector-list>，逗号分隔 complex
+共享路径四处，均按 spec（CSS Selectors 4 <selector-list>，逗号分隔 complex
 selector，compound 内无顶层逗号）：
 
 - `_readCompoundToken` 分隔集加 `,`（`\,` 转义仍走 escape 臂属 ident）——
@@ -47,7 +47,18 @@ selector，compound 内无顶层逗号）：
   统一落既有 unsupported 分支；
 - `_zwSelIdConstraint` 入口对选择器列表 early-return null（复用既有
   `_splitSelectorListOf` 判顶层逗号）——补偿模型只对单 complex 成立，列表
-  host 结果原样透出；单选择器改名补偿语义不变。
+  host 结果原样透出；单选择器改名补偿语义不变；
+- `_splitSelectorListOf` 补 `(...)` 深度（返修 DF-1，对齐 host
+  `split_top_level_selector_list`）——`:not(.a,.b)` 实参内逗号不是组边界，
+  否则单 complex 被误判为列表、s81 门误 bail 丢同 turn 改名补偿；
+- `_matchPseudosOf` 的 `:not` 臂列表感知（返修 DF-2，CSS Selectors 4
+  <negation>）——实参按列表逐段求值「任一命中即否决」；unsupported 段保守
+  否决；complex 实参（`div > p`）未实现标 FIXME 落 unsupported 否决。
+
+评审发现的联动教训：DF-1 单独修（门内补括号）会把 `:not(…,…)` 形态从 host
+兜底推进 shim 的 `:not` 臂——而该臂当时只会恒否决（DF-2），等于把「丢补偿」
+换成「错结果」。同一解析面上的联动缺陷必须同批修，先核对修复后各形态
+**实际走的臂**再下手。
 
 ## 避免方式
 
@@ -56,5 +67,5 @@ selector，compound 内无顶层逗号）：
 - 「对 host 结果做剔除」的后处理臂，失效模式不是漏剔而是**误剔全灭**——
   新增此类臂必须带形态门（单 complex/单 compound/白名单），列表等不适形态
   显式 bail 到 host 行为。
-- 逐形态矩阵（有无空格、正逆序、重复段、单/列表）是查询面回归的最低覆盖；
-  修前红（0≠2 断言）修后绿要同提交留证。
+- 逐形态矩阵（有无空格、正逆序、重复段、单/列表、括号实参内逗号）是查询面
+  回归的最低覆盖；修前红（0≠2 断言）修后绿要同提交留证。
