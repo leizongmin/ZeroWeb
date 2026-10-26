@@ -7280,24 +7280,40 @@
         // https://html.spec.whatwg.org/multipage/scripting.html#fetch-a-classic-script
         // FIXME(spec-gap): setAttribute('src', …) 通路未挂同一触发（语料 022/024 走
         // .src IDL setter）；type 门（非 JS MIME 不执行）沿 R387b 现状未补。
-        function _zwPrepareSrcScript(child) {
+        function _zwPrepareSrcScript(child, _zwOnRan) {
+          var _zwAsync = false;
           try {
-            if (!child || !child.__zwHandle) return;
-            if (globalThis._zwRanScripts && globalThis._zwRanScripts[child.__zwHandle]) return;
+            _zwAsync = _zwPrepareSrcScriptGate(child, _zwOnRan);
+          } catch (_eS96run) {
+            if (typeof globalThis._zwReportListenerError === 'function') {
+              try { globalThis._zwReportListenerError(_eS96run, null); } catch (_eS96rp) {}
+            }
+          }
+          // 同步出口（run-once/nomodule/for-event/宿主让位等门挡）＝脚本不会执行、
+          // 不阻塞后续流——立即续流（s97 写入脚本执行面依赖；DOM 臂无回调零影响）。
+          if (!_zwAsync && typeof _zwOnRan === 'function') {
+            try { _zwOnRan(); } catch (_eS97cb0) {}
+          }
+        }
+        // 门体：返 true 仅当 fetch 链已发起（求值完成回调经 _zwOnRan 在 then/catch 尾触发）。
+        function _zwPrepareSrcScriptGate(child, _zwOnRan) {
+          try {
+            if (!child || !child.__zwHandle) return false;
+            if (globalThis._zwRanScripts && globalThis._zwRanScripts[child.__zwHandle]) return false;
             var nomod = false;
             try {
               nomod = !!(child.hasAttribute && child.hasAttribute('nomodule'))
                 && String(child.type || '').replace(/^[\t\n\x0C\r ]+|[\t\n\x0C\r ]+$/g, '')
                   .toLowerCase() !== 'module';
             } catch (_eS96nm) {}
-            if (nomod) return;
+            if (nomod) return false;
             var forev = false;
             try { forev = _zwScriptForevBlocked(child); } catch (_eS96fe) {}
-            if (forev) return;
+            if (forev) return false;
             var url = '';
             try { url = String(child.src || (child.getAttribute && child.getAttribute('src')) || ''); } catch (_eS96u) {}
             if (!url || typeof fetch !== 'function'
-                || globalThis.__zwHostOwnsDynamicScripts === true) return;
+                || globalThis.__zwHostOwnsDynamicScripts === true) return false;
             if (!globalThis._zwRanScripts) globalThis._zwRanScripts = {};
             globalThis._zwRanScripts[child.__zwHandle] = true;
             var el96 = child;
@@ -7320,26 +7336,42 @@
                 ? globalThis.__zwSwapImportReferrer(abs) : null;
               var prevN = (typeof globalThis.__zwSwapImportNonce === 'function')
                 ? globalThis.__zwSwapImportNonce('') : null;
+              // s97：写入脚本执行面求值窗标记——外链槽位由 part06 面经
+              // `__zwDocWritePendingSlot` 挂链，求值窗内嵌套 write 的面从本槽位下一
+              // 槽起走即时 pass（插入点语义：嵌套写入内联在当前外链求值窗内同步
+              // 执行，execution-timing 009「external before/dw/after」序）。非写入
+              // 链发起的 prepare（R387b appendChild / s96 set trap / s97 insertBefore）
+              // 时 pendingSlot 无效，窗标记不设置。
+              var _s97EvSlot = (typeof globalThis.__zwDocWritePendingSlot === 'number'
+                && globalThis.__zwDocWritePendingSlot >= 0) ? globalThis.__zwDocWritePendingSlot : -1;
+              if (_s97EvSlot >= 0) globalThis.__zwDocWriteEvalSlot = _s97EvSlot;
               try {
                 if (_code) (0, eval).call(globalThis, _code);
               } finally {
+                if (_s97EvSlot >= 0) globalThis.__zwDocWriteEvalSlot = -1;
                 if (prev !== null) globalThis.__zwSwapImportReferrer(prev);
                 if (prevN !== null) globalThis.__zwSwapImportNonce(prevN);
               }
               try { el96.dispatchEvent(new Event('load')); } catch (_eS96l) {}
+              if (typeof _zwOnRan === 'function') { try { _zwOnRan(); } catch (_eS97cb1) {} }
             }).catch(function () {
               try { el96.dispatchEvent(new Event('error')); } catch (_eS96e) {}
+              if (typeof _zwOnRan === 'function') { try { _zwOnRan(); } catch (_eS97cb2) {} }
             });
-          } catch (_eS96run) {
+            return true;
+          } catch (_eS96gate) {
             if (typeof globalThis._zwReportListenerError === 'function') {
-              try { globalThis._zwReportListenerError(_eS96run, null); } catch (_eS96rp) {}
+              try { globalThis._zwReportListenerError(_eS96gate, null); } catch (_eS96rp2) {}
             }
+            return false;
           }
         }
         // s96：跨 part 导出——_zwPrepareSrcScript 定义于 appendChild trap 闭包，part05
         // set trap（SCRIPT.src 分支）是另一函数作用域不可见，经 globalThis 供其取用
         //（同 _zwNodeContains part03 导出先例；shim 每次执行先 part04 后 part05，值恒新鲜）。
         globalThis._zwPrepareSrcScript = _zwPrepareSrcScript;
+        // s97：同款导出——part06 document.write 写入脚本执行面复用 for/event 门。
+        globalThis._zwScriptForevBlocked = _zwScriptForevBlocked;
         function _r126IsChildOf(parentSel, parentHandle, target) {
           // R126：已移除节点（sel 标记 / pending-removed——同批先前 removeChild 后
           // shim 的 parentNode 读 host 快照仍指旧父，调用方按旧父再 remove 是 shim
@@ -8620,6 +8652,52 @@
                   }
                 }
               } catch (_eR263ii) {}
+            }
+            // s97（html-semantics M2 切片 97）：动态 SCRIPT **带位插入**执行触发——
+            // R387 appendChild 的 insertBefore 镜像（spec prepare 触发面：classic 脚本
+            // 插入文档即 prepare，与位次无关；testlib.addScript firstInParent 形态
+            // `parent.insertBefore(script, parent.firstChild)`——execution-timing 018
+            // body script #2 依赖）。门序与 R387 同口径：连接态（父在树内）→ nomodule
+            // （s94，ASCII 剥离 + CI 归一）→ for/event（s96）→ run-once；内联
+            // （textContent 融合读）同步 eval，src 形走 `_zwPrepareSrcScript`（宿主管线
+            // 让位旗标 `__zwHostDynamicScripts` 在 helper 门内原样保留）。sel 静态子
+            //（解析产物再挂载，无 handle）不入本臂——解析期已跑过（already-started
+            // 语义），R334b 分支照旧。位置：handle 分支统一出口（fragment flatten/
+            // 直插各 wire 臂汇此），gate 兜住全部 handle 形态。
+            // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+            if (newNode && newNode.nodeType === 1 && newNode.__zwHandle
+                && String(newNode.tagName || '').toUpperCase() === 'SCRIPT'
+                && _ceParentConnected(sel, handle) === true) {
+              try {
+                var _s97ibSrc = '';
+                try { _s97ibSrc = String(newNode.textContent || ''); } catch (_eS97ibTc) {}
+                var _s97ibNomod = false;
+                try {
+                  _s97ibNomod = !!(newNode.hasAttribute && newNode.hasAttribute('nomodule'))
+                    && String(newNode.type || '').replace(/^[\t\n\x0C\r ]+|[\t\n\x0C\r ]+$/g, '')
+                      .toLowerCase() !== 'module';
+                } catch (_eS97ibNm) {}
+                var _s97ibForev = false;
+                try { _s97ibForev = _zwScriptForevBlocked(newNode); } catch (_eS97ibFe) {}
+                if (!_s97ibNomod && !_s97ibForev && !_s97ibSrc && typeof _r377runScript === 'function') {
+                  // 融合读失败回落 R377 registry 收集路径（textContent= 注册形态）。
+                  _r377runScript(newNode.__zwHandle);
+                }
+                if (!_s97ibNomod && !_s97ibForev && _s97ibSrc
+                    && !(globalThis._zwRanScripts && globalThis._zwRanScripts[newNode.__zwHandle])) {
+                  if (!globalThis._zwRanScripts) globalThis._zwRanScripts = {};
+                  globalThis._zwRanScripts[newNode.__zwHandle] = true;
+                  (0, eval).call(globalThis, _s97ibSrc);
+                } else if (!_s97ibNomod
+                           && !(globalThis._zwRanScripts && globalThis._zwRanScripts[newNode.__zwHandle])
+                           && !globalThis.__zwHostDynamicScripts) {
+                  _zwPrepareSrcScript(newNode);
+                }
+              } catch (_eS97ibRun) {
+                if (typeof globalThis._zwReportListenerError === 'function') {
+                  try { globalThis._zwReportListenerError(_eS97ibRun, null); } catch (_eS97ibRp) {}
+                }
+              }
             }
             // s70：img/source 插入 picture → relevant mutation（insertBefore 主尾路径）。
             try { if (typeof globalThis.__zwImgTreeMutated5277 === 'function') globalThis.__zwImgTreeMutated5277(sel, handle, newNode, true); } catch (_e5277tibm) {}

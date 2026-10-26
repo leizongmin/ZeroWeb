@@ -9178,8 +9178,26 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str) -> String 
                 output.push_str("</script>");
             }
             None => {
-                // 非本地 .js（/resources/、http、或文件缺失）：保留原标签（extract_page_scripts 处理）。
-                output.push_str(&remaining[..rest_start]);
+                // s97（html-semantics M2 切片 97）修复：非本地 .js 单元**整段透传**。
+                // 旧版只透传 open 标签、继续从单元体内扫描——`document.write` 语料的
+                // writer 单元 JS 字符串内含 `<script src=...>` 书写形态（execution-timing
+                // 007-012），被本扫描误认标签改写 + 注入真 `</script>`（内联文件内容后
+                // 封口），writer 单元从注入点截断 → 页面 SyntaxError「missing ) after
+                // argument list」全批假红。spec rawtext 语义：script 内容仅 `</script>`
+                // 结束，体内容对标签扫描不透明；无 close 的病态形态整段透传收尾。
+                // https://html.spec.whatwg.org/multipage/syntax.html#script-data-state
+                match remaining[rest_start..].find("</script>") {
+                    Some(off) => {
+                        let end = rest_start + off + "</script>".len();
+                        output.push_str(&remaining[..end]);
+                        remaining = &remaining[end..];
+                    }
+                    None => {
+                        output.push_str(remaining);
+                        break;
+                    }
+                }
+                continue;
             }
         }
         remaining = &remaining[rest_start..];
