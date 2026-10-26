@@ -1,0 +1,689 @@
+{
+ "meta": {
+  "generated_at": "2026-10-26T16:39:39+00:00",
+  "runs": [
+   {
+    "browser": "chrome",
+    "version": "156.0.8078.47",
+    "revision": "5af3c135c9",
+    "created_at": "2026-10-25T06:38:34.137068Z"
+   },
+   {
+    "browser": "firefox",
+    "version": "158.0.1",
+    "revision": "5af3c135c9",
+    "created_at": "2026-10-25T06:05:08.738563Z"
+   },
+   {
+    "browser": "safari",
+    "version": "27.0 (22625.1.29.11.27)",
+    "revision": "5af3c135c9",
+    "created_at": "2026-10-24T07:42:44.214493Z"
+   }
+  ],
+  "corpus_revs": [
+   "04067ce9c7c2165e71ad7d0dde10a4c5cb394a83",
+   "315976933870b34d6ea30e3f6643403edae678ba"
+  ],
+  "reftest_corpus": "外部 repo zeroweb-wpt-data（tag 固定），无上游 revision pin"
+ },
+ "suites": {
+  "testharness-compression": {
+   "files": 1,
+   "intersection": 0,
+   "coverage_missing": 0,
+   "skipped_suspicious": 1,
+   "variant_resolved": 0,
+   "gap_core": 0,
+   "gap_partial": 0,
+   "both_fail": 0,
+   "zw_strong": 0,
+   "both_pass": 0,
+   "zw_env_limited": 0
+  },
+  "testharness-cookies": {
+   "files": 1,
+   "intersection": 0,
+   "coverage_missing": 1,
+   "skipped_suspicious": 0,
+   "variant_resolved": 0,
+   "gap_core": 0,
+   "gap_partial": 0,
+   "both_fail": 0,
+   "zw_strong": 0,
+   "both_pass": 0,
+   "zw_env_limited": 0
+  },
+  "testharness-webstorage": {
+   "files": 25,
+   "intersection": 25,
+   "coverage_missing": 0,
+   "skipped_suspicious": 0,
+   "variant_resolved": 25,
+   "gap_core": 25,
+   "gap_partial": 0,
+   "both_fail": 0,
+   "zw_strong": 0,
+   "both_pass": 0,
+   "zw_env_limited": 0
+  }
+ },
+ "topdirs": {
+  "webstorage": {
+   "intersection": 25,
+   "gap_core": 25,
+   "gap_partial": 0,
+   "both_fail": 0,
+   "zw_strong": 0,
+   "both_pass": 0,
+   "zw_env_limited": 0
+  }
+ },
+ "gap_core": [
+  {
+   "path": "/webstorage/defineProperty.window.js",
+   "zw": {
+    "passes": 0,
+    "fails": 1,
+    "neutral": 0,
+    "total": 1
+   },
+   "browsers": {
+    "chrome": [
+     12,
+     12
+    ],
+    "firefox": [
+     12,
+     12
+    ],
+    "safari": [
+     12,
+     12
+    ]
+   },
+   "suite": "testharness-webstorage"
+  },
+  {
+   "path": "/webstorage/event_constructor.window.js",
+   "zw": {
+    "passes": 0,
+    "fails": 1,
+    "neutral": 0,
+    "total": 1
+   },
+   "browsers": {
+    "chrome": [
+     6,
+     6
+    ],
+    "firefox": [
+     6,
+     6
+    ],
+    "safari": [
+     6,
+     6
+    ]
+   },
+   "suite": "testharness-webstorage"
+  },
+  {
+   "path": "/webstorage/event_initstorageevent.window.js",
+   "zw": {
+    "passes": 0,
+    "fails": 1,
+    "neutral": 0,
+    "total": 1
+   },
+   "browsers": {
+    "chrome": [
+     5,
+     5
+    ],
+    "firefox": [
+     5,
+     5
+    ],
+    "safari": [
+     5,
+     5
+    ]
+   },
+   "suite": "testharness-webstorage"
+  },
+  {
+   "path": "/webstorage/missing_arguments.window.js",
+   "zw": {
+    "passes": 0,
+    "fails": 1,
+    "neutral": 0,
+    "total": 1
+   },
+   "browsers": {
+    "chrome": [
+     10,
+     10
+    ],
+    "firefox": [
+     10,
+     10
+    ],
+    "safari": [
+     10,
+     10
+    ]
+   },
+   "suite": "testharness-webstorage"
+  },
+  {
+   "path": "/webstorage/set.window.js",
+   "zw": {
+    "passes": 0,
+    "fails": 1,
+    "neutral": 0,
+    "total": 1
+   },
+   "browsers": {
+    "chrome": [
+     8,
+     20
+    ],
+    "firefox": [
+     16,
+     20
+    ],
+    "safari": [
+     16,
+     20
+    ]
+   },
+   "suite": "testharness-webstorage"
+  },
+  {
+   "path": "/webstorage/storage_builtins.window.js",
+   "zw": {
+    "passes": 0,
+    "fails": 1,
+    "neutral": 0,
+    "total": 1
+   },
+   "browsers": {
+    "chrome": [
+     0,
+     2
+    ],
+    "firefox": [
+     2,
+     2
+    ],
+    "safari": [
+     2,
+     2
+    ]
+   },
+   "suite": "testharness-webstorage"
+  },
+  {
+   "path": "/webstorage/storage_clear.window.js",
+   "zw": {
+    "passes": 0,
+    "fails": 1,
+    "neutral": 0,
+    "total": 1
+   },
+   "browsers": {
+    "chrome": [
+     2,
+     2
+    ],
+    "firefox": [
+     2,
+     2
+    ],
+    "safari": [
+     2,
+     2
+    ]
+   },
+   "suite": "testharness-webstorage"
+  },
+  {
+   "path": "/webstorage/storage_enumerate.window.js",
+   "zw": {
+    "passes": 0,
+    "fails": 1,
+    "neutral": 0,
+    "total": 1
+   },
+   "browsers": {
+    "chrome": [
+     4,
+     4
+    ],
+    "firefox": [
+     4,
+     4
+    ],
+    "safari": [
+     4,
+     4
+    ]
+   },
+   "suite": "testharness-webstorage"
+  },
+  {
+   "path": "/webstorage/storage_functions_not_overwritten.window.js",
+   "zw": {
+    "passes": 0,
+    "fails": 1,
+    "neutral": 0,
+    "total": 1
+   },
+   "browsers": {
+    "chrome": [
+     2,
+     2
+    ],
+    "firefox": [
+     2,
+     2
+    ],
+    "safari": [
+     2,
+     2
+    ]
+   },
+   "suite": "testharness-webstorage"
+  },
+  {
+   "path": "/webstorage/storage_getitem.window.js",
+   "zw": {
+    "passes": 0,
+    "fails": 1,
+    "neutral": 0,
+    "total": 1
+   },
+   "browsers": {
+    "chrome": [
+     8,
+     8
+    ],
+    "firefox": [
+     8,
+     8
+    ],
+    "safari": [
+     8,
+     8
+    ]
+   },
+   "suite": "testharness-webstorage"
+  },
+  {
+   "path": "/webstorage/storage_indexing.window.js",
+   "zw": {
+    "passes": 0,
+    "fails": 1,
+    "neutral": 0,
+    "total": 1
+   },
+   "browsers": {
+    "chrome": [
+     8,
+     8
+    ],
+    "firefox": [
+     8,
+     8
+    ],
+    "safari": [
+     8,
+     8
+    ]
+   },
+   "suite": "testharness-webstorage"
+  },
+  {
+   "path": "/webstorage/storage_in.window.js",
+   "zw": {
+    "passes": 0,
+    "fails": 1,
+    "neutral": 0,
+    "total": 1
+   },
+   "browsers": {
+    "chrome": [
+     4,
+     4
+    ],
+    "firefox": [
+     4,
+     4
+    ],
+    "safari": [
+     4,
+     4
+    ]
+   },
+   "suite": "testharness-webstorage"
+  },
+  {
+   "path": "/webstorage/storage_key_empty_string.window.js",
+   "zw": {
+    "passes": 0,
+    "fails": 1,
+    "neutral": 0,
+    "total": 1
+   },
+   "browsers": {
+    "chrome": [
+     2,
+     2
+    ],
+    "firefox": [
+     2,
+     2
+    ],
+    "safari": [
+     2,
+     2
+    ]
+   },
+   "suite": "testharness-webstorage"
+  },
+  {
+   "path": "/webstorage/storage_key.window.js",
+   "zw": {
+    "passes": 0,
+    "fails": 1,
+    "neutral": 0,
+    "total": 1
+   },
+   "browsers": {
+    "chrome": [
+     22,
+     22
+    ],
+    "firefox": [
+     22,
+     22
+    ],
+    "safari": [
+     22,
+     22
+    ]
+   },
+   "suite": "testharness-webstorage"
+  },
+  {
+   "path": "/webstorage/storage_length.window.js",
+   "zw": {
+    "passes": 0,
+    "fails": 1,
+    "neutral": 0,
+    "total": 1
+   },
+   "browsers": {
+    "chrome": [
+     4,
+     4
+    ],
+    "firefox": [
+     4,
+     4
+    ],
+    "safari": [
+     4,
+     4
+    ]
+   },
+   "suite": "testharness-webstorage"
+  },
+  {
+   "path": "/webstorage/storage_local_quota_independent_from_session.window.js",
+   "zw": {
+    "passes": 0,
+    "fails": 1,
+    "neutral": 0,
+    "total": 1
+   },
+   "browsers": {
+    "chrome": [
+     1,
+     1
+    ],
+    "firefox": [
+     0,
+     1
+    ],
+    "safari": [
+     0,
+     1
+    ]
+   },
+   "suite": "testharness-webstorage"
+  },
+  {
+   "path": "/webstorage/storage_local_setitem_quotaexceedederr.window.js",
+   "zw": {
+    "passes": 0,
+    "fails": 1,
+    "neutral": 0,
+    "total": 1
+   },
+   "browsers": {
+    "chrome": [
+     1,
+     1
+    ],
+    "firefox": [
+     0,
+     1
+    ],
+    "safari": [
+     0,
+     1
+    ]
+   },
+   "suite": "testharness-webstorage"
+  },
+  {
+   "path": "/webstorage/storage_removeitem.window.js",
+   "zw": {
+    "passes": 0,
+    "fails": 1,
+    "neutral": 0,
+    "total": 1
+   },
+   "browsers": {
+    "chrome": [
+     8,
+     8
+    ],
+    "firefox": [
+     8,
+     8
+    ],
+    "safari": [
+     8,
+     8
+    ]
+   },
+   "suite": "testharness-webstorage"
+  },
+  {
+   "path": "/webstorage/storage_session_quota_independent_from_local.window.js",
+   "zw": {
+    "passes": 0,
+    "fails": 1,
+    "neutral": 0,
+    "total": 1
+   },
+   "browsers": {
+    "chrome": [
+     1,
+     1
+    ],
+    "firefox": [
+     0,
+     1
+    ],
+    "safari": [
+     0,
+     1
+    ]
+   },
+   "suite": "testharness-webstorage"
+  },
+  {
+   "path": "/webstorage/storage_session_setitem_quotaexceedederr.window.js",
+   "zw": {
+    "passes": 0,
+    "fails": 1,
+    "neutral": 0,
+    "total": 1
+   },
+   "browsers": {
+    "chrome": [
+     1,
+     1
+    ],
+    "firefox": [
+     0,
+     1
+    ],
+    "safari": [
+     0,
+     1
+    ]
+   },
+   "suite": "testharness-webstorage"
+  },
+  {
+   "path": "/webstorage/storage_setitem.window.js",
+   "zw": {
+    "passes": 0,
+    "fails": 1,
+    "neutral": 0,
+    "total": 1
+   },
+   "browsers": {
+    "chrome": [
+     1106,
+     1106
+    ],
+    "firefox": [
+     1106,
+     1106
+    ],
+    "safari": [
+     1106,
+     1106
+    ]
+   },
+   "suite": "testharness-webstorage"
+  },
+  {
+   "path": "/webstorage/storage_set_value_enumerate.window.js",
+   "zw": {
+    "passes": 0,
+    "fails": 1,
+    "neutral": 0,
+    "total": 1
+   },
+   "browsers": {
+    "chrome": [
+     2,
+     2
+    ],
+    "firefox": [
+     2,
+     2
+    ],
+    "safari": [
+     2,
+     2
+    ]
+   },
+   "suite": "testharness-webstorage"
+  },
+  {
+   "path": "/webstorage/storage_string_conversion.window.js",
+   "zw": {
+    "passes": 0,
+    "fails": 1,
+    "neutral": 0,
+    "total": 1
+   },
+   "browsers": {
+    "chrome": [
+     2,
+     2
+    ],
+    "firefox": [
+     2,
+     2
+    ],
+    "safari": [
+     2,
+     2
+    ]
+   },
+   "suite": "testharness-webstorage"
+  },
+  {
+   "path": "/webstorage/storage_supported_property_names.window.js",
+   "zw": {
+    "passes": 0,
+    "fails": 1,
+    "neutral": 0,
+    "total": 1
+   },
+   "browsers": {
+    "chrome": [
+     4,
+     4
+    ],
+    "firefox": [
+     4,
+     4
+    ],
+    "safari": [
+     4,
+     4
+    ]
+   },
+   "suite": "testharness-webstorage"
+  },
+  {
+   "path": "/webstorage/symbol-props.window.js",
+   "zw": {
+    "passes": 0,
+    "fails": 1,
+    "neutral": 0,
+    "total": 1
+   },
+   "browsers": {
+    "chrome": [
+     14,
+     14
+    ],
+    "firefox": [
+     14,
+     14
+    ],
+    "safari": [
+     14,
+     14
+    ]
+   },
+   "suite": "testharness-webstorage"
+  }
+ ],
+ "gap_partial": [],
+ "both_fail": [],
+ "zw_strong": [],
+ "both_pass": [],
+ "zw_env_limited": []
+}
