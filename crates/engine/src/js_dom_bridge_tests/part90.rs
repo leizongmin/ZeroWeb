@@ -446,6 +446,206 @@ fn query_id_rename_same_turn_visibility_s81() {
     assert_eq!(get(&mut sandbox, 16), "true", "(f2) 中间 id 落空");
 }
 
+// P26 回归：选择器列表（顶层逗号）查询面恒空——`_parseCompoundOf` 旧版把顶层
+// `,` 当裸 token 字符吞进 id/class/tag（`#a,.b` → ids=['a,']），s81
+// `_zwSelIdConstraint` 提取出不存在的 id 约束后把 host 全部命中 stale 剔除 →
+// document/element 的 querySelector(All) 对含 `#` 的逗号列表恒空（冻结探针
+// `["#post_list",".post-item"].some(s => document.querySelector(s))` 恒假，
+// m1 轮询 8/8 超时；first-bad 95c8f7503——该提交前无 s81 消费面，吞逗号无害）。
+// 修复：compound 解析遇顶层 `,` → unsupported → s81/R3902b/R322/R309/
+// `_parseComplexOf` 走既有 null/skip 分支，host 查询（zero_dom 原生支持列表）
+// 结果原样透出。边界：单选择器 s81 stale 剔除不受影响、带空格列表、部分命中
+// 列表、跨文档代（dom_html 快照换代后重查）。
+// https://drafts.csswg.org/selectors/#selector-list
+// https://dom.spec.whatwg.org/#dom-parentnode-queryselector
+#[test]
+fn query_selector_list_not_stale_filtered_by_compound_id_constraint() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='t1'>x</div>\
+         <div id='wrap'><p class='c1'></p><span id='s1'></span></div></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("https://zero.test/p26".to_string()));
+    let canvas_registry: Arc<Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__r = [];\
+             // (a) 文档面逗号列表（P26 冻结探针形态）
+             globalThis.__r.push(document.querySelectorAll('#t1,.c1').length);\
+             globalThis.__r.push(document.querySelector('#t1,.c1') !== null);\
+             // (b) 逆序 + 重复段
+             globalThis.__r.push(document.querySelectorAll('.c1,#t1').length);\
+             globalThis.__r.push(document.querySelectorAll('#t1,#t1').length);\
+             // (b2) 带空格逆序——旧版 `_splitComplex` 把 `.c1,` 当 `#t1` 祖先段，
+             // 最终 compound `#t1` 的 id 约束误剔 `.c1` 段命中（修前 1）
+             globalThis.__r.push(document.querySelectorAll('.c1, #t1').length);\
+             globalThis.__r.push(document.querySelector('.c1, #t1') !== null);\
+             // (c) 部分命中列表
+             globalThis.__r.push(document.querySelectorAll('#t1,.nonexistent').length);\
+             // (d) 带空格列表与单选择器边界（原有正确行为保持）
+             globalThis.__r.push(document.querySelectorAll('#t1, .c1').length);\
+             globalThis.__r.push(document.querySelectorAll('#t1').length);\
+             globalThis.__r.push(document.querySelectorAll('.c1').length);\
+             // (e) 元素子树面
+             var wrap = document.getElementById('wrap');\
+             globalThis.__r.push(wrap.querySelectorAll('#s1,.c1').length);\
+             globalThis.__r.push(wrap.querySelector('#s1,.c1') !== null);",
+        )
+        .unwrap();
+    let get = |sandbox: &mut V8Sandbox, i: usize| -> String {
+        sandbox
+            .execute(&format!("globalThis.__r[{}]", i))
+            .unwrap()
+            .value
+    };
+    // (a) 修复前 0 / false（s81 误剔全部命中）
+    assert_eq!(get(&mut sandbox, 0), "2", "(a1) qSA 顶层逗号列表全命中");
+    assert_eq!(get(&mut sandbox, 1), "true", "(a2) qS 顶层逗号列表非空");
+    // (b) 修复前 1 / 0
+    assert_eq!(get(&mut sandbox, 2), "2", "(b1) qSA 逆序列表全命中");
+    assert_eq!(get(&mut sandbox, 3), "1", "(b2) qSA 重复段去重");
+    // (b3)(b4) 修复前即绿（透传守卫——`.c1, #t1` 文档序首个恰为 `#t1`，
+    // 干净末段 id 约束成立；误剔只在无 `#` 约束段先命中时暴露，见 (a)）
+    assert_eq!(get(&mut sandbox, 4), "2", "(b3) qSA 带空格逆序列表全命中");
+    assert_eq!(get(&mut sandbox, 5), "true", "(b4) qS 带空格逆序列表非空");
+    // (c) 修复前 0
+    assert_eq!(get(&mut sandbox, 6), "1", "(c1) qSA 部分命中列表");
+    // (d) 原有正确行为（回归守卫——修复不得破坏带空格/单选择器）
+    assert_eq!(get(&mut sandbox, 7), "2", "(d1) qSA 带空格列表");
+    assert_eq!(get(&mut sandbox, 8), "1", "(d2) qSA 单 id");
+    assert_eq!(get(&mut sandbox, 9), "1", "(d3) qSA 单 class");
+    // (e) 修复前 0 / false（part04 子树面同一 s81 消费口）
+    assert_eq!(get(&mut sandbox, 10), "2", "(e1) 子树 qSA 逗号列表");
+    assert_eq!(get(&mut sandbox, 11), "true", "(e2) 子树 qS 逗号列表");
+
+    // (f) 单选择器 s81 改名语义不受修复影响（id 约束补偿对单 compound 仍生效）
+    sandbox
+        .execute(
+            "var e1 = document.getElementById('t1');\
+             e1.setAttribute('id', 't2');\
+             globalThis.__r.push(document.querySelector('#t2') === e1);\
+             globalThis.__r.push(document.querySelector('#t1') === null);",
+        )
+        .unwrap();
+    assert_eq!(get(&mut sandbox, 12), "true", "(f1) 改名后新 id 拉真（s81 保持）");
+    assert_eq!(get(&mut sandbox, 13), "true", "(f2) 改名后旧 id stale 剔除（s81 保持）");
+
+    // (g) 跨文档代：dom_html 快照换代（导航模拟）后查询面列表仍正确
+    *dom_html.lock().unwrap() =
+        "<html><body><section id='p9'><em class='c9'></em></section></body></html>"
+            .to_string();
+    mutations.lock().unwrap().clear();
+    sandbox
+        .execute(
+            "globalThis.__r2 = [];\
+             globalThis.__r2.push(document.querySelectorAll('#p9,.c9').length);\
+             globalThis.__r2.push(document.querySelector('#p9,.c9') !== null);",
+        )
+        .unwrap();
+    let get2 = |sandbox: &mut V8Sandbox, i: usize| -> String {
+        sandbox
+            .execute(&format!("globalThis.__r2[{}]", i))
+            .unwrap()
+            .value
+    };
+    assert_eq!(get2(&mut sandbox, 0), "2", "(g1) 换代后 qSA 逗号列表");
+    assert_eq!(get2(&mut sandbox, 1), "true", "(g2) 换代后 qS 逗号列表");
+}
+
+// P26 返修（DF-1/DF-2）：`(...)` 深度感知 + `:not(<selector-list>)` 规范语义。
+// DF-1 修前：`_splitSelectorListOf` 不跟踪 `()`，`#a3:not(.x,.missing)` 单
+// complex 被误判为列表 → s81 约束门 bail → host 命中上的同 turn 改名补偿
+// 丢失（host 查询视图不反映 queued 改名 → null）。
+// DF-2 修前：`:not` 实参整段当单 compound，列表实参 `.a,.b` 撞顶层逗号
+// unsupported → 恒否决（handle 子树面 `:not(.missing1,.missing2)` 全不中
+// 也返回 0）。
+// 面位说明：`:not` 列表语义钉在 **handle 子树面**（shim 匹配器消费
+// `_matchPseudosOf`）；host 解析元素上的 document 级 `:not(<list>)` 否决
+// 形态由 host `PseudoClass::Not(SimpleSelector)` 单实参宽松解析承担（修前
+// 即如此、非本 PR 面，host 列表实参缺口另入池），此处不钉以免固化误行为。
+// https://drafts.csswg.org/selectors/#negation
+#[test]
+fn query_selector_not_list_arg_and_paren_depth_forms() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id='a1' class='x'></div>\
+         <div id='a2'></div><p id='p1' class='x y'></p></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("https://zero.test/p26-r2".to_string()));
+    let canvas_registry: Arc<Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        Arc::new(Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // (a) DF-1：括号内逗号不触发 s81 门 bail——同 turn 改名补偿对
+    // `#a3:not(.x,.missing)` 仍生效（修前被误判列表 → 门 null → host 视图
+    // 无 queued 改名 → null）
+    sandbox
+        .execute(
+            "var e2 = document.getElementById('a2');\
+             e2.setAttribute('id', 'a3');\
+             globalThis.__r = [];\
+             globalThis.__r.push(document.querySelector('#a3:not(.x,.missing)') === e2);\
+             globalThis.__r.push(document.querySelector('#a3:not(.x)') === e2);\
+             globalThis.__r.push(document.querySelector('#a3') === e2);\
+             globalThis.__r.push(document.querySelector('#a2:not(.x,.missing)') === null);",
+        )
+        .unwrap();
+    // (b) DF-2：handle 子树面 `:not(<selector-list>)` 规范语义
+    //（任一段命中即否决，全不中段必须匹配）
+    sandbox
+        .execute(
+            "var hr = document.createElement('div');\
+             var hh1 = document.createElement('div'); hh1.className = 'x';\
+             var hh2 = document.createElement('div');\
+             hr.appendChild(hh1); hr.appendChild(hh2);\
+             globalThis.__r.push(hr.querySelectorAll('div:not(.missing1,.missing2)').length);\
+             globalThis.__r.push(hr.querySelectorAll('div:not(.x,.missing)').length);\
+             globalThis.__r.push(hr.querySelectorAll('div:not(.x)').length);\
+             // (c) 列表 + 括号形态：括号内逗号不拆段，列表跨段命中正确
+             globalThis.__r.push(document.querySelectorAll('#a1:not(.missing),div:not(.x)').length);",
+        )
+        .unwrap();
+    let get = |sandbox: &mut V8Sandbox, i: usize| -> String {
+        sandbox
+            .execute(&format!("globalThis.__r[{}]", i))
+            .unwrap()
+            .value
+    };
+    assert_eq!(get(&mut sandbox, 0), "true", "(a1) 改名后新 id+括号列表实参命中（DF-1 修前 null）");
+    assert_eq!(get(&mut sandbox, 1), "true", "(a2) 单实参伪类补偿口径不变");
+    assert_eq!(get(&mut sandbox, 2), "true", "(a3) 纯 id 补偿口径不变");
+    assert_eq!(get(&mut sandbox, 3), "true", "(a4) 改名后旧 id stale 剔除");
+    assert_eq!(get(&mut sandbox, 4), "2", "(b1) :not 列表全不中段匹配（DF-2 修前 0）");
+    assert_eq!(get(&mut sandbox, 5), "1", "(b2) :not 列表命中段否决");
+    assert_eq!(get(&mut sandbox, 6), "1", "(b3) :not 单实参口径不变");
+    assert_eq!(get(&mut sandbox, 7), "2", "(c1) 括号内逗号不拆段，列表跨段命中");
+}
+
 // R5282（s82）：handle 形元素（createElement 产物，`__zwSelector` 恒 null）的
 // closest 读面——matches 已有 R134/t6 锚回臂，closest 无 handle 分支（`!sel`
 // 门即 null），同 turn append 即盲、排水后仍盲（身份永驻 handle 形）。双臂
