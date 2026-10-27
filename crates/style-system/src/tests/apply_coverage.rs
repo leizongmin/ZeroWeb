@@ -1458,6 +1458,7 @@ fn test_apply_appearance_variants() {
         "checkbox",
         "listbox",
         "menulist",
+        "menulist-button",
         "meter",
         "progress-bar",
         "push-button",

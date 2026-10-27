@@ -836,6 +836,7 @@ fn appearance_to_css(a: &AppearanceComputedValue) -> String {
         AppearanceComputedValue::Checkbox => "checkbox",
         AppearanceComputedValue::Listbox => "listbox",
         AppearanceComputedValue::Menulist => "menulist",
+        AppearanceComputedValue::MenulistButton => "menulist-button",
         AppearanceComputedValue::Meter => "meter",
         AppearanceComputedValue::ProgressBar => "progress-bar",
         AppearanceComputedValue::PushButton => "push-button",

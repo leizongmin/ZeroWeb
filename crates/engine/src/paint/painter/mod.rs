@@ -521,6 +521,57 @@ fn resolve_clip_rect_side(value: &LengthValue, font_size_px: f32, auto_edge: f32
 ///
 /// 从 paint_node 抽出，供 collect_positioned_auto_descendants 镜像 defer_abspos 条件，
 /// 避免 scan 与 paint 对「该节点是否 defer_abspos」判定发散（致 double-paint 或漏绘）。
+/// R5304（CSS UI 4 §appearance-switching）：绘制侧 used appearance。css-ui-4 的
+/// 开关只有两态——`none`（关原生外观）与「一切其余值」（auto 与全部 legacy widget
+/// 值都是兼容别名，used = 元素自身原生外观；非适配元素亦走原生，chromium 同：
+/// webkit-appearance-radio/checkbox/button-001 断言与 auto ref 像素一致）。表单类
+/// 元素按 tag/type 解析原生值，非表单元素回 Auto（无 widget chrome）。**仅绘制侧
+/// 消费**：computed value（JS getComputedStyle 序列化）不经过本解析。
+/// kill-switch `ZW_APPEARANCE_NATIVE_USED=0` 回退声明值逐字语义（R5304 前）。
+pub(super) fn effective_appearance(
+    style: &ComputedStyle,
+    box_node: &LayoutBox,
+    doc: Option<&Document>,
+) -> AppearanceComputedValue {
+    use AppearanceComputedValue as A;
+    static NATIVE_USED: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| std::env::var("ZW_APPEARANCE_NATIVE_USED").as_deref() != Ok("0"));
+    if !*NATIVE_USED {
+        return style.appearance.clone();
+    }
+    if matches!(style.appearance, A::None) {
+        return A::None;
+    }
+    native_appearance_for_element(box_node, doc)
+}
+
+/// 元素的原生 widget appearance（css-ui-4 §appearance-switching auto 语义）。
+fn native_appearance_for_element(box_node: &LayoutBox, doc: Option<&Document>) -> AppearanceComputedValue {
+    use AppearanceComputedValue as A;
+    let (Some(id), Some(doc)) = (box_node.node_id, doc) else {
+        return A::Auto;
+    };
+    let Some(node) = doc.get(id) else {
+        return A::Auto;
+    };
+    let zero_dom::NodeKind::Element(elem) = &node.kind else {
+        return A::Auto;
+    };
+    let tag = elem.local_name().to_ascii_lowercase();
+    let ty = elem.get_attribute("type").unwrap_or_default().to_ascii_lowercase();
+    // 仅映射 ZW 有真实原生 chrome 的元素（checkbox/radio 填充臂 + button 族 2px 边框/
+    // 文本基线）；其余 input 类型（text/search/range 等）与 textarea ZW 无独立 widget
+    // chrome，回 Auto（paint_appearance 早退 = 素盒，≡ R5304 前 UA 样式渲染）。若映射到
+    // 无臂值会落入 catchall 原灰色指示器，corpus 全域裸 input 扰动（R5304 取证）。
+    match (tag.as_str(), ty.as_str()) {
+        ("input", "checkbox") => A::Checkbox,
+        ("input", "radio") => A::Radio,
+        ("button", _) => A::Button,
+        ("input", "button" | "submit" | "reset") => A::Button,
+        _ => A::Auto,
+    }
+}
+
 fn compute_needs_clip(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, doc: Option<&Document>) -> bool {
     // R4066（CSS Overflow §3.3 overflow propagation）：根元素（html）的 overflow 传播到
     // 视口——自身不作内容裁剪盒；视口裁剪由画布边界自然完成。body 的 overflow 在 html
@@ -2293,7 +2344,7 @@ impl Painter {
             if btn_style.background_color != ColorValue::Transparent || !btn_style.background_image.is_empty() {
                 self.paint_background(box_node, abs_x, abs_y, btn_style, styles);
             }
-            self.paint_borders(box_node, abs_x, abs_y, btn_style);
+            self.paint_borders(box_node, abs_x, abs_y, btn_style, doc);
             return;
         }
 
@@ -2309,7 +2360,7 @@ impl Painter {
             if marker_style.background_color != ColorValue::Transparent || !marker_style.background_image.is_empty() {
                 self.paint_background(box_node, abs_x, abs_y, marker_style, styles);
             }
-            self.paint_borders(box_node, abs_x, abs_y, marker_style);
+            self.paint_borders(box_node, abs_x, abs_y, marker_style, doc);
             return;
         }
 
@@ -2326,7 +2377,7 @@ impl Painter {
             if group_style.background_color != ColorValue::Transparent || !group_style.background_image.is_empty() {
                 self.paint_background(box_node, abs_x, abs_y, group_style, styles);
             }
-            self.paint_borders(box_node, abs_x, abs_y, group_style);
+            self.paint_borders(box_node, abs_x, abs_y, group_style, doc);
             let group_child_x = abs_x + box_node.padding_left + box_node.border_left;
             let group_child_y = abs_y + box_node.padding_top + box_node.border_top;
             for child in &box_node.children {
@@ -2578,6 +2629,7 @@ impl Painter {
                             abs_x,
                             abs_y,
                             style,
+                            doc,
                             legend_x,
                             legend_width,
                             legend_height,
@@ -2588,7 +2640,7 @@ impl Painter {
                         // border-style 边框不再画出（此前 border 从图像条带下方露出，
                         // driving: border-image-outset-003 黑框 + border-image-006 红框）。
                         // R5171：inline 单行内容区锚定面（deco_box/deco_abs_y）。
-                        self.paint_borders(deco_box, abs_x, deco_abs_y, style);
+                        self.paint_borders(deco_box, abs_x, deco_abs_y, style, doc);
                     }
                 }
                 if !is_table_internal {
@@ -2932,7 +2984,7 @@ impl Painter {
             if btn_style.background_color != ColorValue::Transparent || !btn_style.background_image.is_empty() {
                 self.paint_background(box_node, abs_x, abs_y, btn_style, styles);
             }
-            self.paint_borders(box_node, abs_x, abs_y, btn_style);
+            self.paint_borders(box_node, abs_x, abs_y, btn_style, doc);
             return;
         }
 
@@ -2948,7 +3000,7 @@ impl Painter {
             if marker_style.background_color != ColorValue::Transparent || !marker_style.background_image.is_empty() {
                 self.paint_background(box_node, abs_x, abs_y, marker_style, styles);
             }
-            self.paint_borders(box_node, abs_x, abs_y, marker_style);
+            self.paint_borders(box_node, abs_x, abs_y, marker_style, doc);
             return;
         }
 
@@ -2967,7 +3019,7 @@ impl Painter {
             if group_style.background_color != ColorValue::Transparent || !group_style.background_image.is_empty() {
                 self.paint_background(box_node, abs_x, abs_y, group_style, styles);
             }
-            self.paint_borders(box_node, abs_x, abs_y, group_style);
+            self.paint_borders(box_node, abs_x, abs_y, group_style, doc);
             let group_child_x = abs_x + box_node.padding_left + box_node.border_left;
             let group_child_y = abs_y + box_node.padding_top + box_node.border_top;
             for child in &box_node.children {
@@ -3420,6 +3472,7 @@ impl Painter {
                             abs_x,
                             abs_y,
                             style,
+                            doc,
                             legend_x,
                             legend_width,
                             legend_height,
@@ -3430,7 +3483,7 @@ impl Painter {
                         // border-style 边框不再画出（此前 border 从图像条带下方露出，
                         // driving: border-image-outset-003 黑框 + border-image-006 红框）。
                         // R5171：inline 单行内容区锚定面（deco_box/deco_abs_y）。
-                        self.paint_borders(deco_box, abs_x, deco_abs_y, style);
+                        self.paint_borders(deco_box, abs_x, deco_abs_y, style, doc);
                     }
                 }
 
@@ -3614,7 +3667,7 @@ impl Painter {
             self.clip_overflow_children(box_node, styles, abs_x, abs_y, doc, &sweep_a_counts);
             if let Some(band_style) = box_node.node_id.and_then(|id| styles.get(&id)) {
                 // TableCell 非 inline：deco 锚 = 树盒（R5171 inline_ca 恒 None）。
-                self.paint_borders(box_node, abs_x, abs_y, band_style);
+                self.paint_borders(box_node, abs_x, abs_y, band_style, doc);
                 self.paint_inline_content_phase(box_node, abs_x, abs_y, band_style, styles, doc);
             }
             // R792 基线重置：带（格外展）不属 padding-box 裁剪域，sweep B 单独入窗；
@@ -4180,13 +4233,15 @@ impl Painter {
             && !matches!(
                 style.appearance,
                 AppearanceComputedValue::None
-                    | AppearanceComputedValue::Auto
                     | AppearanceComputedValue::Meter
                     | AppearanceComputedValue::ProgressBar
                     | AppearanceComputedValue::Listbox
                     | AppearanceComputedValue::Menulist
             )
         {
+            // R5304：Auto 不再在 dispatch 层跳过——auto 须按元素解析为原生 widget
+            //（appearance-auto-ref：作者 auto 覆盖 UA sheet 后 radio/checkbox/button
+            // 仍原生绘制）；非 widget 元素在 paint_appearance 内解析回 auto 早退。
             self.paint_appearance(box_node, abs_x, abs_y, style, doc);
         }
 

@@ -885,6 +885,8 @@ pub enum AppearanceComputedValue {
     Listbox,
     /// menulist。
     Menulist,
+    /// menulist-button。
+    MenulistButton,
     /// meter。
     Meter,
     /// progress-bar。
