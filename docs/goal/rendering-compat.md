@@ -9,6 +9,16 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5301 实现轮（text-overflow: ellipsis RTL 几何镜像——ellipsis-rtl-001 ✗1.67→✓0.00 翻绿，corpus 15734P/857F→15735P/856F 失败集恰一案移出零翻转；text-overflow 家族 8 案地图 + vertical-rl 短页逐字裂列新矿井定性）**（2026-10-27）
+>
+> - **定性**（R5300 下一步①857F 续扫择轻命中 text-overflow 家族，8 案同宿主缺陷 = paint ellipsis 后处理 LTR 专用）：检测 `g.x >= content_right` 对 RTL 行恒假（RTL 行右对齐起排、溢出走左缘，scroll-rtl-001 span x=−792 布局同证）→ 永不渲省略号，左溢字形被 overflow:hidden 静默裁掉。
+> - **取证**（Ahem 字体解析定谳，fontTools）：`'p'` bounds y[−0.2,0]（descender stub 系 Ahem 设计）、`'X'` y[−0.2,+0.8] 满 em 框、**`'…'`(U+2026) 在 Ahem 内且 bounds 与 'X' 全同**——ref 'X' 与 test '…' 在正确实现下逐像素同形，引擎光栅化无缺陷（baseline=盒顶+0.8em 反推轮廓与实测 ink 全吻合）；「X 垂直错位 1.2em」系 div2 p 带 [230,249) 与 X 带 [250,349) 融连误读。
+> - **实现**（text.rs ellipsis 后处理，direction+writing-mode 门控，无 kill-switch）：检测镜像（RTL 从行尾向左扫、`g.x < content_left` **严格小于**）、裁剪镜像（LTR 尾截 / RTL 头截，保留 cell 起点 ≥ 省略号盒右缘 − 0.5，全不保时全裁对称 LTR cutoff=0 兜底）、定位镜像（'…' 单字形锚 content_left）。试错：首版 `<=` 在「恰好装满」行误触发（rtl-001 div2 `pppp` 恰满 400px 盒，首字形 origin == content_left → 误裁首 p 换 '…'，8000px 残差像素取证定位）——与 LTR 逐字对称 ≠ 几何对称，LTR 恰满行末字形 origin = right − advance 天然不触发，镜像判据须按本侧布局重推边界。
+> - **交付**：rtl-001 **✗1.67%→✓0.00%**；全量 corpus **16591/15735P/856F** 失败集归一化 diff 恰 {−rtl-001} 零翻转（011 顺带 10.42→8.33）。ZW 行内 RTL 无逻辑序重排，镜像纯几何——字符全同行（p 列）可与 chromium 一致，逻辑序敏感案不可翻。回归 +3（RTL 几何断言 / 恰满零省略号 / LTR 镜像对照，stash A/B 旧版 FAIL 证据在案）。
+> - **家族地图**（failset 余 7 案）：011 + with-selection 需逻辑序保留语义 = **bidi item 裂解域（R5299 阻塞①）**；007 需逐字符粒度截断 + '…' 贴排（origin 判据留 straddling cell sliver + flush right，chromium 整 cell 收缩且贴末保留字符）；013 多行盒 cutoff 从首溢出行截点清到盒尾抹掉后续行（spec = 逐溢出行独立截断）；scroll-001/scroll-rtl-001 scroll 容器语义；ruby 独立域。
+> - **门禁**：make reftest 716/716、fmt 0 diff、clippy 0 告警（quickjs 组合 13 crate 腿）、zero-engine lib **3551P/0F**(+3)、product-smoke PASS、bench-gate 定向双 crate **GATE PASS**（25 指标 NEW=7；首轮 1 指标超预算零改动复跑连续两轮全绿——热身噪声）；make test 全量未跑（改动面 = engine paint ellipsis 后处理，消费面由 reftest/corpus/product-smoke 覆盖，记录在案）。
+> - **挂账（新矿井定性 + 淘汰）**：①**vertical-rl 块子 inline extent 环解析**（text-transform-fullwidth-004 ✗0.12 / -005 ✗0.17）：h1 物理高被 taffy swap-frame 环解析为 `N×37−42.8`（容器 Σ列高 − 2×margin-top）而非内容 extent（N=1 fill 路径 h=742 正确、N=2 短页 CJK 逐字成词 + max_depth=32 逐字裂列 w=74 双列、N≥3 侥幸 ≥69 蒙混）——R109/TBD2 两段式度量设计下游（`inline_finalization.rs:1698` container_width=root.content_height → `inline/mod.rs:2071` max_depth），taffy/R109 域 corpus 校准风险高，挂账深结构轮；②淘汰 clip-text-background-table-cell（✗0.28：渐变插值/条带精度 156px≥224，rasterizer 域非轻）；③家族地图 7 案见证据文档（007/013 = ellipsis 后处理域可独立轮，011/with-selection = bidi 阻塞域）。**下一步 R5302**：①ellipsis 后处理 007+013 域（逐字符粒度+贴排+多行逐行截断）②856F 账本续扫择轻 ③跨流碰头维持。证据：[`rendering-compat/evidence/r5301-rtl-ellipsis-2026-10-27.md`](rendering-compat/evidence/r5301-rtl-ellipsis-2026-10-27.md)。
+>
 > **▶ R5300 实现轮（嵌套 abs-pos shrink-to-fit 链 CB 宽传播 + css-text-decor-3 §2.6 decorating box 色/位/厚——text-decoration-subelements-002 ✗1.07→✓0.00 翻绿，corpus 15733P/858F→15734P/857F 失败集恰一案移出零翻转，新 kill-switch 2，bench-gate 干净 PASS）**（2026-10-27）
 >
 > - **定性**（R5299 下一步①858F 续扫择轻命中双缺陷一案）：text-decoration-subelements-002 ✗1.07% 为三层缺陷叠加——①layout-engine 嵌套 abs-pos shrink-to-fit 链过期 CB 宽钳死（内容 13px 塌缩）②paint 装饰色取片段色而非声明盒色（透明 span 装饰线整条隐形）③下划线位置/厚度 0.15em/0.06em 启发式与字体 post 表度量偏差 + 分数坐标 floor/ceil 栅格外扩。

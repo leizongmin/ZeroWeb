@@ -2,60 +2,53 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 110 施工收口（prepare 家族提升 + force async 语义面轮：scripting-1 **380P/170F/37T→395P/155F/37T**，**+15 行绿/14 页零 P→非P**——execution-timing 081/082/091/092/095/097/105/119/122/123/125/126/130 十三页 + delay-load-event-2 连带销账；三刀：①s96 prepare 家族 part04 元素实例闭包→part03 语句层提升（惰性导出根因修复——bin harness 解析期早触发页 typeof 守卫 no-op，corpus 晚触发从未暴露；身份门放宽 sel 形+记账分表+FIFO in-order 队列+__zwScriptFetchPending in-flight 计数）②force async 语义面四标注（part06 parser 投递/part05 async IDL setter/part01 async 属性加/part04 async getter 六级分派——attr helper '1'/'0' 串严格判等，真值判定把缺席 '0' 当在场 r3040 假阳性实证）③SVG src 门（SVG script 取源属性 href/xlink:href，src 无效——语料 146；家族提升揭臂后补）；attributes 臂 type 移除（spec 无 type 变更触发条款，122-126 依赖不重触发）；engine 3544/webview 814/runner bin 236（+3 钉）/clippy 双 crate clean），下一步 s111 候选：147/148 scheduler 面（insert multiple inline scripts——first moves/deletes subsequent）/ 050/085/086/088/111/112 slow-loading 外链时序 pipe=trickle 建模 / 142 write 臂 xlink:href / 143 eventOrder 完整核验；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 111 施工收口（原子插入语义轮：scripting-1 **395P/155F/37T→398P/152F/37T**，**+3 行/3 页零 P→非P**——execution-timing 049/147/148 三页销账；三刀：①part01 s109 addedNodes script 臂自 notify 头部移至 childList 链接记账之后（spec 原子插入：批插入先完成全部 generic insert 再按文档序跑 post-connection steps——147/148 形前置脚本 getElementById 同批后继兄弟命中）②R387/R387b 三执行臂前置 connected 门（`_zwScriptPrepConnected` 统一 helper：proxy isConnected 布尔直用，plain/盖章 plain 子属性 undefined 回落身份反链+parentNode 链——fragment/detached 追加期不提前 prepare、不置 run-once）③addedNodes 臂非 SCRIPT 元素子树下降（inclusive descendants 文档序，129 形 div 内 script）；外链分支补 `__zwHostDynamicScripts` 让位（r387b2 宿主通路单执行者契约）；engine 3548/webview 814/runner bin 236 全绿，下一步 s112 候选：050/085/086/088/111/112 slow-loading 外链时序 pipe=trickle 建模 / 142 write 臂 xlink:href / 143 eventOrder 完整核验；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-27 M2 切片 110 施工收口，prepare 家族提升 + force async 语义面轮）**：
-> **入场定谳**：s110 承 s109 挂账两行——122-126 marker 面（createElement 工厂节点
-> 外链执行死因）与 122 async IDL reflection。**bin pin e1 缺席根因 = psp 惰性导出**：
-> s96 prepare 家族原定义在 part04 元素实例闭包内、globalThis.* 导出在闭包体尾，
-> 导出随首个实例创建才生效；早触发页（bin harness promise_test 于解析期执行）首条
-> script 插入记录先于任何实例创建，typeof 守卫静默 no-op——corpus 页 promise_test
-> 晚触发（load 后）从未暴露。spec 定谳（prepare-the-script-element +
-> dom-script-async）：force async=false 写入在 type 判定**之后**——type 非法早退保
-> 创建缺省 true（122 形 re-insert 断言 current-spec 正确），type 合法 parser 投递写
-> false（引擎沙箱 sc2 缺省 false 面 = r3040 真实浏览器语义）；两断言不矛盾，分属
-> prepare 前后两态。
-> **本轮三刀**：①家族提升——s96 全家族（forev 门/exec/drain/fetch-pending/prepare/
-> gate）迁 part03 语句层，导出恒在；gate 身份门放宽 sel 形（重插入 parser 单元无
-> handle）、run-once 记账按身份形态分表、排队分支（async attr ∥ force async）→
-> 即执行集 or FIFO in-order 队列（头排水 abort 语义）+ __zwScriptFetchPending
-> in-flight 计数（runner load 等待扩读）。②force async 语义面——part06 parser 投递
-> 标 false（随投递非解析插入）、part05 async IDL setter 步骤 1 恒置 false、part01
-> async 属性加标注、part04 async getter 六级分派（表项 true→attr 在场→表项 false→
-> 工厂 handle 真→parser started 真→type 非法真→JS 合法未 started 假）。
-> ③SVG src 门——`_zwScriptMaybeStartDynamic` 源解析按 namespaceURI 跳过 src（SVG
-> script 取源 href/xlink:href，语料 146 期望零执行；家族提升揭臂后补门）。
-> **调试定谳（本轮主发现）**：getter 假阳性二分——r3040 sc2.async 读 true 而新
-> getter 应 false；探针三段（trap 顶部 G:async 可达→预门 rb:SCRIPT/lw:0）定谳
-> `__zw_has_attr_lw` 返 '1'/'0' **串**，真值 if (_faHas) 把缺席 '0' 当在场——严格
-> `=== '1'` 修复（generic presence 读同约定）。part01 addedNodes `_makeProxy` 预实例
-> 化为 e1 缺席误诊所加，经证非根因已回退（hoist 单独承重）。
-> **验证**：engine lib **3544/3544**；webview lib **814/814**（持平）；runner bin
-> **236/0**（+3 钉：children-changed 外链 / textContent= 外链重触发 / 重插入外链
-> FIFO [e1,e2]）。execution-timing 定向扫 **124P/28F/1T**（基线 110P/40F/1T，+14 绿）。
-> 全子树终扫 **395P/155F/37T**（s109：380P/170F/37T+15N，**+15 行/14 页**），行级归一
-> diff（/tmp/s110-final2-scripting-1.log 存档）**零 P→非P**：execution-timing
-> 081/082/091/092/095/097/105/119/122×2/123/125/126/130 + moving-between-documents/
-> ordering **delay-load-event-2**（load 等待面连带）。fmt：testharness.rs clean
->（knife A 注释缩进归位；engine 侧 paint/painter/text.rs:4130 存量 fmt diff 未触碰
-> 仅提及）；clippy engine+wpt-runner `-D warnings` clean，fmt 后 runner bin 复跑
-> 236/0。渲染面零依赖——reftest/product-smoke 未跑。账本见
-> [evidence/2026-10-27-m2s110-force-async-and-prepare-hoist.md](html-semantics-compat/evidence/2026-10-27-m2s110-force-async-and-prepare-hoist.md)。
-> **范围**：engine shim part01/part03/part04/part05/part06 + pipeline/extract.rs
->（script_type_is_javascript pub）+ runner testharness.rs（3 钉）；webview/语料/
-> 依赖零变更；语料不可改维持。
-> **挂账**：s110 主候选 122-126 marker 面（工厂节点外链 corpus 死因探针）+ 122
-> async IDL reflection（re-insert 后 `script.async` 反射 true）；130/147/148
->（insert multiple inline scripts; first moves/deletes subsequent scheduler 面）；
-> 142 write 臂 xlink:href；143 eventOrder 完整核验；063 Timeout；slow-loading
-> trickle ~11 行；non-external-no-import（module async）；**待决（须用户拍板）**：
-> css/text 数据模块语料资源缺失；承袭：parse-error 族、http-accept-header、
-> referrer-policies、dynamic import() with 透传、classic 外链 SRI、collect 账本
-> 打包重构、接口对象基建面、FIXME 组、/tmp/zw-hb*.txt 插桩来源待查。
-> execution-timing 124/144/145 本轮销账。
-> **下一步**：s110 入场探针定刀位（候选：122-126 marker 面工厂节点 corpus 死因
-> 探针 / 130/147/148 scheduler 面体量评估 / 142 write 臂 xlink:href 单点）。
-> **切片间隙**：本轮 engine shim 面 + runner 单测；下一挂账同流同面，间隙开放。
+> **▶ 当前状态（2026-10-27 M2 切片 111 施工收口，原子插入语义轮）**：
+> **入场定谳**：s111 承 147/148——fragment 内 3 工厂 inline script，#1 执行时
+> `getElementById` 同批后继兄弟（147 移动/148 删除），修前报 `Cannot read
+> properties of null (reading 'parentNode')`。四轮探针定谳双根因：①R387 直插臂无
+> connected 门（s96 注释「连接态判定归调用方」，调用方从未补）——`frag.appendChild`
+> 期 detached eval + 置 run-once，容器插入时被记账挡掉（npReg trace 实锤 gEBI 夹在
+> fragment 内部追加与 s2 追加之间）；②s109 addedNodes 臂挂 notify 头部先于
+> `_zwNodeParent` 链接记账——后继兄弟反链未指向真实插入目标，`_zwMutationInDoc`
+> 上行失败 getElementById miss。spec 模型（spec-scripting.html 提取）：post-connection
+> steps 只在插入元素仍连接时运行（HTML spec 自带示例与 148 同构）；「atomically
+> inserting nodes」先完成全部 generic insert 再按文档序逐 script prepare；insert
+> 遍历 inclusive descendants。
+> **本轮三刀**：①part01 臂移位——addedNodes script 臂移至链接记账之后（批内前置
+> 脚本执行时后继反链已登记）+ 非 SCRIPT 元素子树下降（文档序递归，129 形 div 内
+> script）；②part03 `_zwScriptPrepConnected` 统一连接判定（proxy isConnected 布尔
+> 直用；plain/盖章 plain 子——R368 只贴 `__zwHandle` 无 get trap——属性 undefined
+> 回落身份反链 + parentNode 链爬升）；③part04 R387/R387b 三臂前置 connected 门，
+> 未连接不置 run-once（重插入重走门）。
+> **调试定谳（本轮两乌龙）**：①链式合并改分支语义——R387 原为「独立 if + if/else
+> 对」三平铺语句，接成单链后 R377 回落臂命中吞掉外链 else 臂；平铺语句合并
+> else-if 链前必须核对条件互斥性。②臂移位隐能化——旧位臂先于链接记账，maybe-start
+> connected 门对刚插入节点恒 bail，外链 prepare 实际全靠 R387b；移位后 notify 臂
+> 首次触达插入态外链，helper 只认 `__zwHostOwnsDynamicScripts` 不认 R387b 的
+> `__zwHostDynamicScripts` → engine `r387b2` 钉抓到双执行（fetchCalls "2"≠"1"），
+> 外链分支补同款让位（不置记账）后转绿。移位使原本「意外失活」的路径生效时，
+> 排查该路径上所有让位契约。
+> **验证**：engine lib **3548/3548**（r387b2 回归钉）；webview lib **814/814**；
+> runner bin **236/0**（s109/s110 pin 保持）。execution-timing 定向扫页集合 vs
+> s110 基线零 P→非P（117-119/129 首轮回归经子树下降+helper 修复回绿）。全子树
+> 终扫 **398P/152F/37T**（+3 行/3 页），归一 diff（/tmp/s111-scripting-1b.log 存档）
+> 恰为 049/147/148 三页 Fail→Pass。本轮零 .rs 变更（shim 全 JS + 文档），
+> rustfmt/clippy 按实际影响跳过。渲染面零依赖——reftest/product-smoke 未跑。账本见
+> [evidence/2026-10-27-m2s111-atomic-insert-and-connected-gate.md](html-semantics-compat/evidence/2026-10-27-m2s111-atomic-insert-and-connected-gate.md)。
+> **范围**：engine shim part01/part03/part04；webview/语料/依赖零变更；语料不可改
+> 维持（zz111/zz111b 探针页已删）。
+> **挂账**：050/085/086/088/111/112（slow-loading 外链时序 pipe=trickle 建模
+> ~11 行）；142 write 臂 xlink:href；143 eventOrder 完整核验；063 Timeout；
+> non-external-no-import（module async）；**待决（须用户拍板）**：css/text 数据
+> 模块语料资源缺失；承袭：parse-error 族、http-accept-header、referrer-policies、
+> dynamic import() with 透传、classic 外链 SRI、collect 账本打包重构、接口对象
+> 基建面、FIXME 组、/tmp/zw-hb*.txt 插桩来源待查。
+> execution-timing 049/147/148 本轮销账（s110 销账面不变）。
+> **下一步**：s112 入场定刀位（候选：050/085/086/088/111/112 trickle 建模 /
+> 142 write 臂 xlink:href 单点 / 143 eventOrder 核验）。
+> **切片间隙**：本轮 engine shim 面；下一挂账同流同面，间隙开放。
 >
 > **▶ 上轮状态（2026-10-27 M2 切片 108 施工收口，strict 首错聚合 + 短路收窄 + id 保真轮——其下一步 s109 入场探针定刀位已由 s109 收口，见上）**：
 > **入场定谳**：s108 探针承 s107 三候选——候选 A（css/text 数据模块合成器）**证伪**：

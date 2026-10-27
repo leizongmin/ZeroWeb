@@ -20,6 +20,10 @@ coverage 子命令回答另一个问题：「ZeroWeb 在全量 WPT 面上到底�
 - 浏览器基准：`wpt.fyi/api/runs` 的 aligned stable run——三家落在同一上游
   revision（`labels=stable&aligned=true`），summary_v2 从 run 的 `results_url`
   公开下载，无需鉴权。
+- 对照列：ladybird 只有 master/experimental nightly run（无 stable 频道），
+  revision 不与三家对齐，因此**只进 coverage 快照的浏览器对照表与 `browsers`
+  JSON，不进对账分母**；fetch 失败只降级警告，不阻塞三家 baseline。本地补拉
+  对照列用 `fetch --refresh`（缓存完整性判定只看 aligned 三家）。
 - 文件级「全过」：ZeroWeb 侧 = 该文件全部子测试 `Pass`（`Timeout`/`Fail` 均
   不算过，`Unsupported`/`NotRun`/`PreconditionFailed` 属中性也不算过）；
   浏览器侧 = summary 的 `s ∈ {O, P}`（OK=全部子测试过；PASS=单测试/reftest 过）。
@@ -133,11 +137,11 @@ gap 会得到不同浏览器基准，跨日对比请引用快照文件而非重�
 首份基线（[coverage-2026-10-27](wptfyi/coverage-2026-10-27.md)，51 套件本地
 全量跑）：全量 125,334 文件 / 2,264,919 子测试，ZeroWeb 覆盖 7,407 文件
 （5.91%）、通过 164,266 子测试——**全量通过率 7.25%**（浏览器对照：chrome
-97.13% / firefox 95.58% / safari 94.24%）。缺口两看：~89% 分母在零覆盖目录
-（encoding legacy-mb 三族独占 50%，扩语料立项见 `tests/wpt-runner/scripts/goals/`
-31-34 号）；已覆盖面的失败与环境受限单列分组呈现。css-variables 套件因病态
-内存用例（单进程 >8.8GB，test-guard 8G 上限三跑被杀）暂未纳入，css 面基本
-记 0，属已知限制。
+97.13% / firefox 95.58% / safari 94.24% / ladybird 对照列 96.25%）。缺口两看：
+~89% 分母在零覆盖目录（encoding legacy-mb 三族独占 50%，扩语料立项见
+`tests/wpt-runner/scripts/goals/` 31-34 号）；已覆盖面的失败与环境受限单列
+分组呈现。css-variables 套件因病态内存用例（单进程 >8.8GB，test-guard 8G
+上限三跑被杀）暂未纳入，css 面基本记 0，属已知限制。
 
 ## 已知限制
 
