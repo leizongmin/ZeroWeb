@@ -214,6 +214,8 @@ fn main() {
     zero_engine::set_char_measure_fn(runner_text_metrics::measure_char);
     zero_engine::set_hmtx_measure_fn(runner_text_metrics::measure_text_hmtx);
     zero_engine::set_text_shape_fn(runner_text_metrics::shape_text);
+    // R5300：字体 post 表下划线度量回调（装饰线 auto 位置/厚度）。
+    zero_engine::set_underline_metrics_fn(runner_text_metrics::underline_metrics);
     // R4374：回退链垂直度量回调（消费门禁 ZW_FALLBACK_LINE_METRICS=1，默认关）。
     zero_layout_engine::set_fallback_line_metrics_fn(runner_text_metrics::fallback_line_metrics);
 

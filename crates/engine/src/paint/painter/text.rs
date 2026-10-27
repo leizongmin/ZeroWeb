@@ -63,6 +63,14 @@ fn single_frag_box_border_enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var("ZW_INLINE_SINGLE_FRAG_BOX_BORDER").as_deref() == Ok("1"))
 }
 
+/// R5300（css-text-decor-3 §2.6 decorating box）：owner→容器祖先链声明盒装饰绘制
+/// 开关（进程级单读，同上热路径口径）。装饰色/厚取声明盒；kill-switch
+/// `ZW_DECOR_ANCESTOR_BOX=0` 回退 owner 自声明 + 片段色旧行为。
+fn decor_ancestor_box_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_DECOR_ANCESTOR_BOX").as_deref() != Ok("0"))
+}
+
 use super::super::color::{color_value_to_render, resolve_color_current};
 
 /// R4525/R4549/R4553（css-backgrounds-4 §background-clip:text）：clip:text 的「恒色背景」提取。
@@ -2403,6 +2411,7 @@ impl super::Painter {
                                 self.paint_text_decoration_from_style(
                                     frag_base_x,
                                     frag_base_y,
+                                    default_font_id.0,
                                     fragment.font_size,
                                     text_width,
                                     frag_color,
@@ -3631,23 +3640,104 @@ impl super::Painter {
                                 is_ahem_frag,
                                 frag_letter_spacing,
                             );
+                            // R5300（css-text-decor-3 §2.6）：容器/声明盒自身的装饰色取
+                            // **声明盒解析色**（decoration color auto = 声明盒
+                            // currentColor），非片段色——span{underline}>span{
+                            // color:transparent} 形态（text-decoration-subelements-002
+                            // ref）透明文字的装饰线随片段色会整条隐形。片段色 = 字形色
+                            //（含 selection/clip:text 覆写），声明盒色 = `color`（本盒
+                            // style 解析）；直系同色文本二者相等（字节不变）。
                             self.paint_text_decoration_from_style(
                                 frag_base_x,
                                 frag_base_y,
+                                frag_font_id.0,
                                 $frag_fs,
                                 text_width,
-                                frag_color,
+                                if decor_ancestor_box_enabled() { color } else { frag_color },
                                 style,
                                 skip_s,
                                 skip_e,
                             );
-                            // R5204：owner 自身声明的装饰补绘（CSS 2.1 §16.3.1 各元素
-                            // 自设装饰独立成线）。text-decoration-line 非继承，容器无
-                            // 装饰而 span 自声明时（skip-spaces-001~008 ref 页
-                            // span{underline} 结构）此前整条丢失。上方容器调用已覆盖
-                            // 直系文本（owner == 容器盒），此处仅补 flatten/嵌套 owner；
-                            // 更深包装链（span>em>text 中 span 的装饰）仍缺（FIXME）。
-                            if let Some(owner_style) = owner_style_opt
+                            // R5300（css-text-decor-3 §2.6 decorating box）：装饰由**声明盒**
+                            // 绘制——owner 自身及 owner→容器祖先链上每个声明
+                            // text-decoration 的盒各绘一条独立线（CSS 2.1 §16.3.1 各元素
+                            // 自设装饰 + §2.6 decoration 传播到 in-flow 后代）。装饰色取
+                            // 声明盒（decoration color auto = 声明盒 currentColor，非片段
+                            // 色——text-decoration-subelements-002 ref 页
+                            // span{underline}>span{color:transparent} 结构：透明文字的连续
+                            // 黑下划线正是本语义；旧 owner 臂取 frag_color → 透明隐形）。
+                            // 位置/宽度维持片段口径（提升片段阶梯与 container 臂同基座，
+                            // test/ref 双侧同机制自洽）。旧行为：仅 owner 自声明（更浅
+                            // 祖先链缺失，原 FIXME）且色取片段。kill-switch
+                            // `ZW_DECOR_ANCESTOR_BOX=0` 回退。
+                            if decor_ancestor_box_enabled() {
+                                if let Some(styles) = styles {
+                                    let mut chain_node = Some(r4332_owner);
+                                    while let Some(nid) = chain_node {
+                                        if Some(nid) == box_node.node_id {
+                                            break;
+                                        }
+                                        if let Some(dstyle) = styles.get(&nid)
+                                            && dstyle.text_decoration_line.has_any()
+                                        {
+                                            let dstyle_fs = match dstyle.font_size {
+                                                LengthValue::Px(v) => v as f32,
+                                                _ => $frag_fs,
+                                            };
+                                            let decor_color =
+                                                if !matches!(
+                                                    dstyle.text_decoration_color,
+                                                    ColorValue::CurrentColor
+                                                ) {
+                                                    color_value_to_render(&dstyle.text_decoration_color)
+                                                } else if dstyle.color != ColorValue::CurrentColor {
+                                                    // 声明盒显式/继承解析色（正常路径——
+                                                    // style 系统把继承色解析为具体值）。
+                                                    color_value_to_render(&dstyle.color)
+                                                } else {
+                                                    // 声明盒 color 仍为 currentColor（根/显式
+                                                    // currentcolor）：沿祖先链取首个显式色，
+                                                    // 到容器盒止，兜底容器解析色。
+                                                    let mut cn = doc.parent_node(nid);
+                                                    let mut resolved = color;
+                                                    while let Some(p) = cn {
+                                                        if Some(p) == box_node.node_id {
+                                                            break;
+                                                        }
+                                                        if let Some(ps) = styles.get(&p)
+                                                            && ps.color != ColorValue::CurrentColor
+                                                        {
+                                                            resolved = color_value_to_render(&ps.color);
+                                                            break;
+                                                        }
+                                                        cn = doc.parent_node(p);
+                                                    }
+                                                    resolved
+                                                };
+                                            let (o_skip_s, o_skip_e) = self.decoration_skip_trims(
+                                                dstyle,
+                                                &transformed,
+                                                frag_font_id.0,
+                                                dstyle_fs,
+                                                is_ahem_frag,
+                                                frag_letter_spacing,
+                                            );
+                                            self.paint_text_decoration_from_style(
+                                                frag_base_x,
+                                                frag_base_y,
+                                                frag_font_id.0,
+                                                dstyle_fs,
+                                                text_width,
+                                                decor_color,
+                                                dstyle,
+                                                o_skip_s,
+                                                o_skip_e,
+                                            );
+                                        }
+                                        chain_node = doc.parent_node(nid);
+                                    }
+                                }
+                            } else if let Some(owner_style) = owner_style_opt
                                 && owner_style.text_decoration_line.has_any()
                                 && Some(owner_id) != box_node.node_id
                             {
@@ -3662,6 +3752,7 @@ impl super::Painter {
                                 self.paint_text_decoration_from_style(
                                     frag_base_x,
                                     frag_base_y,
+                                    frag_font_id.0,
                                     $frag_fs,
                                     text_width,
                                     frag_color,
@@ -4634,6 +4725,7 @@ impl super::Painter {
         self.paint_text_decoration_from_style(
             glyph_x,
             glyph_y + font_size,
+            default_font_id.0,
             font_size,
             self.measure_char_cached(default_font_id.0, 'A', font_size, false),
             color,

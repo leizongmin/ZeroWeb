@@ -33,7 +33,7 @@ use zero_engine::animation::compositor_export::ExportedAnimationDeclaration;
 use zero_engine::{
     DomEventDetail, MediaType, PrefersColorSchemeValue, query_text_from_html, script_set_ready_state,
     script_set_visibility, script_set_visibility_state, selector_from_element_hit, set_char_measure_fn,
-    set_fallback_line_metrics_fn, set_hmtx_measure_fn, set_text_shape_fn,
+    set_fallback_line_metrics_fn, set_hmtx_measure_fn, set_text_shape_fn, set_underline_metrics_fn,
 };
 use zero_protocol::IpcChannel;
 use zero_protocol::message::{
@@ -680,6 +680,8 @@ impl RendererRuntime {
         set_char_measure_fn(text_metrics::measure_char);
         set_text_shape_fn(text_metrics::shape_text);
         set_hmtx_measure_fn(text_metrics::measure_text_hmtx);
+        // R5300：字体 post 表下划线度量回调（装饰线 auto 位置/厚度）。
+        set_underline_metrics_fn(text_metrics::underline_metrics);
         // R4376：回退链垂直度量回调（消费门禁 ZW_FALLBACK_LINE_METRICS，默认 on）。
         set_fallback_line_metrics_fn(text_metrics::fallback_line_metrics);
         // js-dom canvas 显示链路：绘制侧 registry 单实例——页面 JS 线程（js_worker_main

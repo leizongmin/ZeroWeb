@@ -1325,10 +1325,12 @@ impl super::Painter {
     /// 支持自定义装饰颜色（CSS `text-decoration-color`）和装饰样式
     /// （solid/dotted/dashed/wavy/double）。直接从 ComputedStyle 读取样式信息。
     /// `skip_start/skip_end` 为 R5204 skip-spaces 两端裁剪（调用点按片段文本预计算）。
+    /// `font_id` 供 `auto` 下划线位置/厚度读字体 `post` 表度量（R5300）。
     pub(crate) fn paint_text_decoration_from_style(
         &mut self,
         base_x: f32,
         baseline_y: f32,
+        font_id: u32,
         font_size: f32,
         total_width: f32,
         text_color: Color,
@@ -1353,6 +1355,14 @@ impl super::Painter {
             color_value_to_render(&style.text_decoration_color)
         };
 
+        // R5300（css-text-decor-3 #text-decoration-width/#text-underline-position）：
+        // 下划线 `auto` 位置/厚度取字体 `post` 表度量（chromium 同源；Liberation Serif
+        // 0.06em/0.049em vs 旧启发式 0.15em/0.06em）。旧行为把线画在 descent 底缘
+        //（0.15em = 本引擎 descent 比例），overflow:hidden 的收缩包络祖先
+        //（text-decoration-subelements-002 ref）恰好整条裁掉装饰。表缺失回退旧启发式。
+        // overline/line-through 位置无字体度量对应，维持启发式（厚度随 underline）。
+        let underline_metric = crate::text_metrics::underline_metrics_for_paint(font_id);
+
         // R1402/R3565：text-decoration-thickness 显式长度覆盖默认厚度。
         // 长度按 device px 向下取整（chromium 行为，text-decoration-thickness-length-rounding：
         // 2.3px→2px）。auto/from-font 保留字体度量近似（font_size×0.06，min 1px）。
@@ -1361,7 +1371,10 @@ impl super::Painter {
                 let px = zero_style_system::resolve_length(lv, font_size as f64, Some(1280.0), Some(800.0));
                 (px as f32).floor().max(1.0)
             }
-            zero_style_system::TextDecorationThicknessValue::Auto => (font_size * 0.06).max(1.0),
+            zero_style_system::TextDecorationThicknessValue::Auto => match underline_metric {
+                Some((_, thick_em)) => (thick_em * font_size).max(1.0),
+                None => (font_size * 0.06).max(1.0),
+            },
         };
 
         // R1607：text-decoration-inset 在 inline 轴内缩/延伸装饰线两端。
@@ -1398,12 +1411,14 @@ impl super::Painter {
         };
 
         // 每条启用的装饰线在其 y 偏移绘制（单值时仅一条，与历史行为字节一致；
-        // 多值时各线共享 color/width/inset，仅 y 偏移不同）。
+        // 多值时各线共享 color/width/inset，仅 y 偏移不同）。underline 偏移取
+        // post 表度量（R5300，见上），表缺失回退 0.15em 启发式。
         let decor_style = &style.text_decoration_style;
         if style.text_decoration_line.underline {
+            let underline_gap = underline_metric.map_or(0.15, |(offset_em, _)| offset_em);
             self.paint_decoration_line(
                 line_x,
-                baseline_y + font_size * 0.15 + underline_offset_px,
+                baseline_y + underline_gap * font_size + underline_offset_px,
                 line_w,
                 line_width,
                 color,

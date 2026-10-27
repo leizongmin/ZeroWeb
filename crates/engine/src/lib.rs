@@ -97,8 +97,9 @@ pub use pipeline_budget::{BudgetAdvance, BudgetStep, BudgetedRenderSession};
 pub use preload::*;
 pub use rect_bridge::*;
 pub use text_metrics::{
-    HmtxMeasureFn, TextShapeFn, font_variations_enabled, layout_estimate_char_width, measure_char_for_font,
-    measure_text_hmtx_for_layout, set_char_measure_fn, set_hmtx_measure_fn, set_text_shape_fn, shape_text_for_paint,
+    HmtxMeasureFn, TextShapeFn, UnderlineMetricsFn, font_variations_enabled, layout_estimate_char_width,
+    measure_char_for_font, measure_text_hmtx_for_layout, set_char_measure_fn, set_hmtx_measure_fn, set_text_shape_fn,
+    set_underline_metrics_fn, shape_text_for_paint, underline_metrics_for_paint,
 };
 #[cfg(feature = "script-runtime")]
 pub use timer_bridge::*;

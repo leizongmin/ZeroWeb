@@ -25,6 +25,9 @@ pub type TextShapeFn = fn(
     FontSizeAdjustment,
 ) -> Option<Vec<ShapedGlyph>>;
 static TEXT_SHAPE: OnceLock<TextShapeFn> = OnceLock::new();
+/// 宿主提供的字体 `post` 表下划线度量回调：`(基线下方偏移 em, 线厚 em)`。
+pub type UnderlineMetricsFn = fn(u32) -> Option<(f32, f32)>;
+static UNDERLINE_METRICS: OnceLock<UnderlineMetricsFn> = OnceLock::new();
 
 /// 注册全局字符宽度测量函数（浏览器启动时调用一次）。
 ///
@@ -38,6 +41,14 @@ pub fn set_char_measure_fn(f: fn(u32, char, f32, bool) -> f32) {
 /// 注册全局文本整形函数（宿主启动时调用一次）。
 pub fn set_text_shape_fn(f: TextShapeFn) {
     let _ = TEXT_SHAPE.set(f);
+}
+
+/// 注册全局字体下划线度量函数（宿主启动时调用一次）。
+///
+/// 装饰线 `auto` 厚度/位置从字体 `post` 表取值（css-text-decor-3
+/// #text-decoration-width）；宿主未注册或表缺失时 paint 回退启发式。
+pub fn set_underline_metrics_fn(f: UnderlineMetricsFn) {
+    let _ = UNDERLINE_METRICS.set(f);
 }
 
 /// 注册全局 hmtx 批量测量函数（宿主启动时调用一次）。
@@ -104,6 +115,12 @@ pub fn measure_char_for_font(font_id: u32, ch: char, font_size: f32, is_ahem: bo
 /// 与 layout IFC 一致的字符宽度估计（无真实字体回调时使用）。
 pub fn layout_estimate_char_width(ch: char, font_size: f32, is_ahem: bool) -> f32 {
     estimate_char_width(ch, font_size, is_ahem)
+}
+
+/// Paint 阶段按字体 ID 取 `post` 表下划线度量 `(偏移 em, 线厚 em)`；
+/// 宿主未注册或表缺失时返回 `None`（paint 回退启发式）。
+pub fn underline_metrics_for_paint(font_id: u32) -> Option<(f32, f32)> {
+    UNDERLINE_METRICS.get().copied().and_then(|f| f(font_id))
 }
 
 /// Paint 阶段按实际字体 ID 整形文本；宿主未注册或当前无字体上下文时返回 `None`。

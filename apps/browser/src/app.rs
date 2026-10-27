@@ -10,7 +10,7 @@ use zero_browser_shell::{
     UiLanguage, browser_menu_label, tab_menu_label,
 };
 use zero_engine::PrefersColorSchemeValue;
-use zero_engine::{set_char_measure_fn, set_fallback_line_metrics_fn, set_text_shape_fn};
+use zero_engine::{set_char_measure_fn, set_fallback_line_metrics_fn, set_text_shape_fn, set_underline_metrics_fn};
 use zero_render_foundation::color::Color;
 use zero_render_foundation::config::RenderMode;
 use zero_render_foundation::cpu::rasterize_full_scene;
@@ -359,6 +359,8 @@ impl BrowserApp {
         set_char_measure_fn(text_metrics::measure_char);
         set_text_shape_fn(text_metrics::shape_text);
         zero_engine::set_hmtx_measure_fn(text_metrics::measure_text_hmtx);
+        // R5300：字体 post 表下划线度量回调（装饰线 auto 位置/厚度）。
+        set_underline_metrics_fn(text_metrics::underline_metrics);
         // R4376：回退链垂直度量回调（消费门禁 ZW_FALLBACK_LINE_METRICS，默认 on）。
         set_fallback_line_metrics_fn(text_metrics::fallback_line_metrics);
 

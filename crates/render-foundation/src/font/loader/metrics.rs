@@ -17,6 +17,30 @@ impl FontLoader {
         self.font_metric_aspect(font_id, crate::font::FontSizeAdjustMetric::ExHeight)
     }
 
+    /// 返回字体 `post` 表下划线度量相对 em 的 aspect：`(基线下方偏移, 线厚)`。
+    ///
+    /// https://drafts.csswg.org/css-text-decor-3/#text-decoration-width —
+    /// `text-decoration-width: auto` 与 #text-underline-position 的 UA 默认应取
+    /// 字体度量（chromium 读 post 表）；表缺失/线厚非正时返回 None，由调用方
+    /// 回退启发式。post 值为字体单位、y 向上（基线之下为负）。
+    pub fn underline_metric_aspects(&self, font_id: u32) -> Option<(f32, f32)> {
+        let data = self.font_data.get(&font_id)?;
+        let face = rustybuzz::ttf_parser::Face::parse(data, self.face_index(font_id)).ok()?;
+        let units_per_em = f32::from(face.units_per_em());
+        if units_per_em <= 0.0 {
+            return None;
+        }
+        let post = face.tables().post?;
+        let metrics = post.underline_metrics;
+        if metrics.thickness <= 0 {
+            return None;
+        }
+        Some((
+            -f32::from(metrics.position) / units_per_em,
+            f32::from(metrics.thickness) / units_per_em,
+        ))
+    }
+
     /// 返回指定 CSS `font-size-adjust` metric 相对于 em 的 aspect value。
     pub fn font_metric_aspect(&self, font_id: u32, metric: crate::font::FontSizeAdjustMetric) -> Option<f32> {
         // https://drafts.csswg.org/css-fonts-4/#font-size-adjust-prop

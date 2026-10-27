@@ -872,3 +872,7 @@ mod r5252_anchor_collapse_gap;
 /// R5275（CSS Text 3 §3 + CSS2 §10.3.5）preserve 纯空白 float 收缩锚——measure 空叶
 /// 早退对 pre 纯 tab div 判「无 inline 内容」曾致 float 0 宽整缺（active-selection-063）。
 mod r5275_preserved_ws_float_measure_tests;
+/// R5300（CSS2 §10.3.7 shrink-to-fit 链）嵌套 abs-pos 链 CB 宽传播锚——单趟 walk
+/// 写定宽度即时回写子代栈槽 cb_width，嵌套 branch 内层不再被过期 CB（父代塌缩宽）
+/// 钳死（text-decoration-subelements-002 ref 侧 overflow:hidden 裁空内容根因）。
+mod r5300_abspos_stf_cb_prop_tests;

@@ -97,6 +97,16 @@ pub fn with_measure_ctx<R>(font_loader: &FontLoader, _font_id: u32, f: impl FnOn
     })
 }
 
+/// 字体 `post` 表下划线度量（R5300 装饰线 auto 位置/厚度）：读 thread-local
+/// `MEASURE_CTX`，无字体上下文返回 None（paint 回退启发式）。
+pub fn underline_metrics(font_id: u32) -> Option<(f32, f32)> {
+    MEASURE_CTX.with(|cell| {
+        let loader = cell.get()?;
+        // SAFETY: 指针仅在 `with_measure_ctx` 闭包执行期间有效（runner 单线程渲染）。
+        unsafe { &*loader }.underline_metric_aspects(font_id)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -839,6 +839,9 @@ impl LayoutEngine {
             }
             let Some(id) = b.node_id else { continue };
             let Some(s) = styles.get(&id) else { continue };
+            // R5300：本 pass 写定的 border-box 宽——子代 CB 链即时传播（见
+            // abspos_stf_cb_prop_enabled）。None = 未写定，子代维持旧行为（taffy 首趟值）。
+            let mut resolved_child_cb: Option<f32> = None;
             // R4018（CSS2 §10.6.6 + SVG2 sizing）：abspos svg 的 % attr 固有高——
             // `height="50%"` 是**存在的百分比声明**（非缺失），used 高 = % × abspos CB 高
             //（absolute-replaced-height-027/034：50% × 192 = 96，旧落 default 150）。
@@ -990,10 +993,12 @@ impl LayoutEngine {
                     if width_stretch {
                         if available.is_finite() && available > 0.5 {
                             style.size.width = taffy::style::Dimension::length(available);
+                            resolved_child_cb = Some(available);
                             let _ = taffy_tree.set_style(taffy_id, style);
                             let _ = taffy_tree.mark_dirty(taffy_id);
                             changed = true;
                         }
+                        propagate_resolved_cb_width(&mut stack, b, child_is_cb, resolved_child_cb);
                         continue;
                     }
                     // R4015：塌 0 的 replaced 叶（height-only svg 等）——子树递归测 0（svg
@@ -1030,6 +1035,7 @@ impl LayoutEngine {
                         };
                         if b.width < target_bw - 0.5 {
                             style.size.width = taffy::style::Dimension::length(target_bw);
+                            resolved_child_cb = Some(target_bw);
                         }
                     }
                 }
@@ -1056,6 +1062,7 @@ impl LayoutEngine {
                 let _ = taffy_tree.mark_dirty(taffy_id);
                 changed = true;
             }
+            propagate_resolved_cb_width(&mut stack, b, child_is_cb, resolved_child_cb);
         }
         changed
     }
@@ -2906,4 +2913,34 @@ fn perspective_sc_enabled() -> bool {
 fn abspos_stf_branch_text_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ENABLED.get_or_init(|| std::env::var("ZW_ABSPOS_STF_BRANCH_TEXT").as_deref() != Ok("0"))
+}
+
+/// R5300（CSS2 §10.3.7 shrink-to-fit 链）：嵌套 abs-pos 链（CB 本身也是 auto 宽
+/// abs-pos）中，本 pass 给父代写定的宽度即时回写子代栈槽的 cb_width（子代紧随父代
+/// 弹出，一趟即得正确链式求解）。旧行为：子代 cb 取 taffy 首趟布局的过期值（父代
+/// unresolved 塌缩宽，0 或最宽元素子），`target = min(measured, cb)` 被钳死写不进
+/// （text-decoration-subelements-002 ref：overflow:hidden 盒 13px 裁掉全部内容）。
+/// kill-switch `ZW_ABSPOS_STF_CB_PROP=0` 回退旧行为。
+fn abspos_stf_cb_prop_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_ABSPOS_STF_CB_PROP").as_deref() != Ok("0"))
+}
+
+/// R5300：把本 pass 写定的 border-box 宽回写子代栈槽 cb_width——栈顶 n 项即循环顶
+/// 刚 push 的子代（处理中无其他 push），LIFO 保证子代紧随本盒弹出。仅 `child_is_cb`
+/// 时有意义（非 CB 子代的子代沿旧链继承）。kill-switch OFF 或未写定（None）不回写，
+/// 子代维持旧行为（taffy 首趟布局值）。
+fn propagate_resolved_cb_width(
+    stack: &mut Vec<(&LayoutBox, f32, f32)>,
+    b: &LayoutBox,
+    child_is_cb: bool,
+    resolved: Option<f32>,
+) {
+    if !child_is_cb || !abspos_stf_cb_prop_enabled() {
+        return;
+    }
+    let Some(w) = resolved else { return };
+    for slot in stack.iter_mut().rev().take(b.children.len()) {
+        slot.1 = w;
+    }
 }

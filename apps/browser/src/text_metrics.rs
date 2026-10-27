@@ -73,6 +73,16 @@ pub fn fallback_line_metrics(font_ids: &[u32], text: &str, font_size: f32) -> Op
     })
 }
 
+/// R5300：字体 `post` 表下划线度量（装饰线 auto 位置/厚度）。
+/// 无字体上下文返回 None（paint 回退启发式）。
+pub fn underline_metrics(font_id: u32) -> Option<(f32, f32)> {
+    MEASURE_CTX.with(|cell| {
+        let loader = cell.get()?;
+        // SAFETY: 指针仅在 `with_measure_ctx` 闭包执行期间有效。
+        unsafe { &*loader }.underline_metric_aspects(font_id)
+    })
+}
+
 /// 在当前浏览器字体上下文中按指定 face 整形文本。
 pub fn shape_text(
     font_ids: &[u32],

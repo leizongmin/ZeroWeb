@@ -759,10 +759,10 @@ fn test_paint_text_decoration_zero_negative_width() {
         line_through: false,
     };
 
-    painter.paint_text_decoration_from_style(0.0, 16.0, 16.0, 0.0, color, &style, 0.0, 0.0);
+    painter.paint_text_decoration_from_style(0.0, 16.0, 0, 16.0, 0.0, color, &style, 0.0, 0.0);
     assert!(painter.primitives().fills.is_empty(), "宽度为 0 不应生成装饰填充");
 
-    painter.paint_text_decoration_from_style(0.0, 16.0, 16.0, -10.0, color, &style, 0.0, 0.0);
+    painter.paint_text_decoration_from_style(0.0, 16.0, 0, 16.0, -10.0, color, &style, 0.0, 0.0);
     assert!(painter.primitives().fills.is_empty(), "负宽度不应生成装饰填充");
 }
 
@@ -783,7 +783,7 @@ fn test_paint_text_decoration_inset_shifts_and_extends_line() {
         line_through: false,
     };
     style.text_decoration_style = TextDecorationStyleValue::Solid;
-    painter.paint_text_decoration_from_style(base_x, 16.0, font_size, total_width, color, &style, 0.0, 0.0);
+    painter.paint_text_decoration_from_style(base_x, 16.0, 0, font_size, total_width, color, &style, 0.0, 0.0);
     let fills = &painter.primitives().fills;
     assert_eq!(fills.len(), 1);
     assert_eq!(fills[0].rect.origin.x, base_x);
@@ -795,7 +795,7 @@ fn test_paint_text_decoration_inset_shifts_and_extends_line() {
         start: LengthValue::Em(-0.25),
         end: LengthValue::Em(-0.25),
     };
-    painter2.paint_text_decoration_from_style(base_x, 16.0, font_size, total_width, color, &style, 0.0, 0.0);
+    painter2.paint_text_decoration_from_style(base_x, 16.0, 0, font_size, total_width, color, &style, 0.0, 0.0);
     let fills2 = &painter2.primitives().fills;
     assert_eq!(fills2.len(), 1);
     assert_eq!(fills2[0].rect.origin.x, base_x - 5.0, "start inset -0.25em 应左移 5px");
@@ -807,7 +807,7 @@ fn test_paint_text_decoration_inset_shifts_and_extends_line() {
         start: LengthValue::Px(10.0),
         end: LengthValue::Px(-10.0),
     };
-    painter3.paint_text_decoration_from_style(base_x, 16.0, font_size, total_width, color, &style, 0.0, 0.0);
+    painter3.paint_text_decoration_from_style(base_x, 16.0, 0, font_size, total_width, color, &style, 0.0, 0.0);
     let fills3 = &painter3.primitives().fills;
     assert_eq!(fills3.len(), 1);
     assert_eq!(fills3[0].rect.origin.x, base_x + 10.0);
@@ -830,7 +830,7 @@ fn test_paint_text_decoration_inset_zero_width_skipped() {
         start: LengthValue::Px(30.0),
         end: LengthValue::Px(30.0),
     };
-    painter.paint_text_decoration_from_style(0.0, 16.0, 20.0, 50.0, color, &style, 0.0, 0.0);
+    painter.paint_text_decoration_from_style(0.0, 16.0, 0, 20.0, 50.0, color, &style, 0.0, 0.0);
     assert!(painter.primitives().fills.is_empty(), "inset 致宽度≤0 不应绘制");
 }
 
@@ -1222,7 +1222,7 @@ fn test_decoration_style_solid() {
     };
     style.text_decoration_style = TextDecorationStyleValue::Solid;
 
-    painter.paint_text_decoration_from_style(10.0, 20.0, 16.0, 100.0, Color::rgb(0, 0, 255), &style, 0.0, 0.0);
+    painter.paint_text_decoration_from_style(10.0, 20.0, 0, 16.0, 100.0, Color::rgb(0, 0, 255), &style, 0.0, 0.0);
 
     let fills = &painter.primitives().fills;
     assert_eq!(fills.len(), 1, "solid 应生成 1 个填充");
@@ -1241,7 +1241,7 @@ fn test_decoration_style_double() {
     };
     style.text_decoration_style = TextDecorationStyleValue::Double;
 
-    painter.paint_text_decoration_from_style(10.0, 20.0, 16.0, 100.0, Color::rgb(255, 0, 0), &style, 0.0, 0.0);
+    painter.paint_text_decoration_from_style(10.0, 20.0, 0, 16.0, 100.0, Color::rgb(255, 0, 0), &style, 0.0, 0.0);
 
     let fills = &painter.primitives().fills;
     assert_eq!(fills.len(), 2, "double 应生成 2 个平行填充");
@@ -1264,7 +1264,7 @@ fn test_decoration_style_dotted() {
     };
     style.text_decoration_style = TextDecorationStyleValue::Dotted;
 
-    painter.paint_text_decoration_from_style(0.0, 16.0, 12.0, 80.0, Color::rgb(0, 128, 0), &style, 0.0, 0.0);
+    painter.paint_text_decoration_from_style(0.0, 16.0, 0, 12.0, 80.0, Color::rgb(0, 128, 0), &style, 0.0, 0.0);
 
     assert!(!painter.primitives().strokes.is_empty(), "dotted 应生成 stroke 图元");
     let stroke = &painter.primitives().strokes[0];
@@ -1286,7 +1286,7 @@ fn test_decoration_style_dashed() {
     };
     style.text_decoration_style = TextDecorationStyleValue::Dashed;
 
-    painter.paint_text_decoration_from_style(0.0, 16.0, 12.0, 80.0, Color::rgb(128, 0, 128), &style, 0.0, 0.0);
+    painter.paint_text_decoration_from_style(0.0, 16.0, 0, 12.0, 80.0, Color::rgb(128, 0, 128), &style, 0.0, 0.0);
 
     assert!(!painter.primitives().strokes.is_empty(), "dashed 应生成 stroke 图元");
     let stroke = &painter.primitives().strokes[0];
@@ -1308,7 +1308,7 @@ fn test_decoration_style_wavy() {
     };
     style.text_decoration_style = TextDecorationStyleValue::Wavy;
 
-    painter.paint_text_decoration_from_style(0.0, 16.0, 12.0, 80.0, Color::rgb(0, 0, 0), &style, 0.0, 0.0);
+    painter.paint_text_decoration_from_style(0.0, 16.0, 0, 12.0, 80.0, Color::rgb(0, 0, 0), &style, 0.0, 0.0);
 
     let fills = &painter.primitives().fills;
     assert!(fills.len() >= 4, "wavy 应生成多个填充矩形（正弦波近似）");
@@ -1330,7 +1330,7 @@ fn test_decoration_custom_color() {
     };
     style.text_decoration_color = zero_css_parser::values::ColorValue::Rgba(255, 0, 0, 255);
 
-    painter.paint_text_decoration_from_style(0.0, 16.0, 16.0, 100.0, Color::rgb(0, 0, 255), &style, 0.0, 0.0);
+    painter.paint_text_decoration_from_style(0.0, 16.0, 0, 16.0, 100.0, Color::rgb(0, 0, 255), &style, 0.0, 0.0);
 
     let fills = &painter.primitives().fills;
     assert_eq!(fills.len(), 1);
@@ -1352,7 +1352,7 @@ fn test_decoration_current_color() {
     };
     style.text_decoration_color = zero_css_parser::values::ColorValue::CurrentColor;
 
-    painter.paint_text_decoration_from_style(0.0, 16.0, 16.0, 100.0, Color::rgb(0, 200, 0), &style, 0.0, 0.0);
+    painter.paint_text_decoration_from_style(0.0, 16.0, 0, 16.0, 100.0, Color::rgb(0, 200, 0), &style, 0.0, 0.0);
 
     let fills = &painter.primitives().fills;
     assert_eq!(fills.len(), 1);
@@ -1371,7 +1371,7 @@ fn test_decoration_overline_position() {
         line_through: false,
     };
 
-    painter.paint_text_decoration_from_style(0.0, 50.0, 20.0, 100.0, Color::rgb(0, 0, 0), &style, 0.0, 0.0);
+    painter.paint_text_decoration_from_style(0.0, 50.0, 0, 20.0, 100.0, Color::rgb(0, 0, 0), &style, 0.0, 0.0);
 
     let fills = &painter.primitives().fills;
     assert_eq!(fills.len(), 1);
@@ -1391,7 +1391,7 @@ fn test_decoration_line_through_position() {
         line_through: true,
     };
 
-    painter.paint_text_decoration_from_style(0.0, 50.0, 20.0, 100.0, Color::rgb(0, 0, 0), &style, 0.0, 0.0);
+    painter.paint_text_decoration_from_style(0.0, 50.0, 0, 20.0, 100.0, Color::rgb(0, 0, 0), &style, 0.0, 0.0);
 
     let fills = &painter.primitives().fills;
     assert_eq!(fills.len(), 1);
@@ -1407,11 +1407,11 @@ fn test_decoration_blink_none_no_output() {
 
     let mut style = zero_style_system::ComputedStyle::default();
     style.text_decoration_line = TextDecorationLineValue::NONE;
-    painter.paint_text_decoration_from_style(0.0, 16.0, 16.0, 100.0, Color::rgb(0, 0, 0), &style, 0.0, 0.0);
+    painter.paint_text_decoration_from_style(0.0, 16.0, 0, 16.0, 100.0, Color::rgb(0, 0, 0), &style, 0.0, 0.0);
     assert!(painter.primitives().fills.is_empty(), "blink 不应生成装饰");
 
     style.text_decoration_line = TextDecorationLineValue::NONE;
-    painter.paint_text_decoration_from_style(0.0, 16.0, 16.0, 100.0, Color::rgb(0, 0, 0), &style, 0.0, 0.0);
+    painter.paint_text_decoration_from_style(0.0, 16.0, 0, 16.0, 100.0, Color::rgb(0, 0, 0), &style, 0.0, 0.0);
     assert!(
         painter.primitives().fills.is_empty() && painter.primitives().strokes.is_empty(),
         "none 不应生成装饰"
