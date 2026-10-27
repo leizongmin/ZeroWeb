@@ -167,6 +167,15 @@ impl super::super::Painter {
     }
 
     /// 按 CSS `font-family` 顺序解析可用 face ID，供 shaping fallback 使用。
+    ///
+    /// OPTIMIZATION（2026-10-27）：结果 memoize——同页样式大量重复（同 font-family/
+    /// weight/style），paint 每文本片段经 `fragment_shaping_font_ids` 调用一次；不可解析
+    /// family 走 `available_widths` 全表扫描（face_match.rs，每键 lowercase 分配），
+    /// cnblogs styled 帧 2913 次调用 ≈38ms/帧（T17 emit 分解探针实测）。解析是纯函数
+    ///（family 列表 × weight × style × stretch → face ID 序），同键必得同序；镜像
+    /// `font_id_cache`（单 face 版，2026-08-19）的键与失效模型（painter 每帧新建，
+    /// 帧内字体注册表不变）。返回克隆：调用方会对返回值 retain/insert/truncate。
+    /// RefCell：热循环常处于 `&mut self.primitives` 借用区，缓存须经 &self 访问。
     pub(crate) fn resolve_font_ids(
         &self,
         font_family: &[String],
@@ -174,13 +183,33 @@ impl super::super::Painter {
         font_style: &zero_css_parser::values::types::FontStyleValue,
         font_stretch: f32,
     ) -> Vec<u32> {
-        zero_layout_engine::font_resolution::resolve_font_ids_for_style(
+        use zero_css_parser::values::FontWeightValue;
+        use zero_css_parser::values::types::FontStyleValue;
+        let want_bold = matches!(font_weight, FontWeightValue::Bold | FontWeightValue::Bolder)
+            || matches!(font_weight, FontWeightValue::Absolute(weight) if *weight >= 600);
+        let want_italic = matches!(font_style, FontStyleValue::Italic | FontStyleValue::Oblique(_));
+        let oblique_angle = match font_style {
+            FontStyleValue::Oblique(Some(deg)) => deg.to_bits(),
+            _ => 0,
+        };
+        let cache_key = (
+            font_family.to_vec(),
+            want_bold as u8,
+            want_italic as u8,
+            (font_stretch.to_bits(), oblique_angle),
+        );
+        if let Some(hit) = self.font_ids_cache.borrow().get(&cache_key) {
+            return hit.clone();
+        }
+        let resolved = zero_layout_engine::font_resolution::resolve_font_ids_for_style(
             &self.font_resolver,
             font_family,
             font_weight,
             font_style,
             font_stretch,
-        )
+        );
+        self.font_ids_cache.borrow_mut().insert(cache_key, resolved.clone());
+        resolved
     }
 
     pub(crate) fn resolve_style_font_ids(&self, font_family: &[String], style: &ComputedStyle) -> Vec<u32> {
@@ -1704,5 +1733,52 @@ mod tests {
             Some(&vec![0]),
             "run 字体解析映射必须保留 generic 条目"
         );
+    }
+
+    /// T17 memoize 回归（2026-10-27）：`resolve_font_ids` 结果缓存必须键含完整
+    /// 解析输入（weight/style 变体不得串键），且返回值是克隆——调用方改写返回值
+    /// （fragment_shaping_font_ids 会 retain/insert/truncate）不得污染缓存。
+    #[test]
+    fn memoized_font_ids_keys_are_independent_and_results_cloned() {
+        use crate::paint::painter::Painter;
+        use zero_css_parser::values::FontWeightValue;
+        use zero_css_parser::values::types::FontStyleValue;
+
+        let mut painter = Painter::new();
+        let resolver = HashMap::from([
+            ("DemoSerif".to_string(), 7u32),
+            ("DemoSerif:700".to_string(), 8u32),
+            ("DemoSans".to_string(), 9u32),
+        ]);
+        painter.font_resolver = resolver.clone();
+        painter.font_resolver_lower = resolver;
+
+        let serif = vec!["DemoSerif".to_string()];
+        let normal = painter.resolve_font_ids(&serif, &FontWeightValue::Normal, &FontStyleValue::Normal, 100.0);
+        let bold = painter.resolve_font_ids(&serif, &FontWeightValue::Bold, &FontStyleValue::Normal, 100.0);
+        assert_eq!(normal, vec![7], "normal face");
+        assert_eq!(bold, vec![8], "bold face——同 family 不同 weight 不得串键");
+
+        // 缓存命中路径（同键二次调用）结果一致。
+        let normal_again = painter.resolve_font_ids(&serif, &FontWeightValue::Normal, &FontStyleValue::Normal, 100.0);
+        assert_eq!(normal_again, vec![7]);
+
+        // 返回值克隆独立性：调用方改写返回值（如同生产路径 truncate）不得污染缓存。
+        let mut mutated = painter.resolve_font_ids(&serif, &FontWeightValue::Normal, &FontStyleValue::Normal, 100.0);
+        mutated.clear();
+        mutated.push(9999);
+        let after_mutation = painter.resolve_font_ids(&serif, &FontWeightValue::Normal, &FontStyleValue::Normal, 100.0);
+        assert_eq!(after_mutation, vec![7], "改写返回值不得污染缓存");
+
+        // fragment_shaping_font_ids 生产式改写（insert 到首位 + truncate）后，
+        // 同 owner 二次解析仍稳定。
+        let mut style = ComputedStyle::default();
+        style.font_family = serif;
+        let owner_fams = style.font_family.clone();
+        let first = painter.resolve_font_ids(&owner_fams, &style.font_weight, &style.font_style, style.font_stretch);
+        let shaped_first = painter.fragment_shaping_font_ids(Some(&style), None, FontId(9));
+        let shaped_second = painter.fragment_shaping_font_ids(Some(&style), None, FontId(9));
+        assert_eq!(shaped_first, shaped_second);
+        assert_eq!(first, vec![7]);
     }
 }
