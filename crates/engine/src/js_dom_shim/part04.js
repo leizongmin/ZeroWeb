@@ -7099,11 +7099,16 @@
                 // window/onload|onload() 即中止；149 dom_inserted 不执行臂）。
                 var _r387forev = false;
                 try { _r387forev = _zwScriptForevBlocked(child); } catch (_e387fe) {}
-                if (_r387conn && !_r387nomod && !_r387forev && !_r387src && typeof _r377runScript === 'function') {
+                // s113：type/language 门（_zwScriptTypeClassify，part03 导出）——
+                // blocked（data block：非法 type/language，script-type-and-language-js
+                // 动态判据）三执行臂全不触发、不置 run-once；module 型沿旧通道。
+                var _r387typ = false;
+                try { _r387typ = _zwScriptTypeClassify(child) === 'blocked'; } catch (_e387ty) {}
+                if (_r387conn && !_r387typ && !_r387nomod && !_r387forev && !_r387src && typeof _r377runScript === 'function') {
                   // 融合读失败回落 R377 registry 收集路径（run-once 标记同源）。
                   _r377runScript(child.__zwHandle);
                 }
-                if (_r387conn && !_r387nomod && !_r387forev && _r387src && !(globalThis._zwRanScripts && globalThis._zwRanScripts[child.__zwHandle])) {
+                if (_r387conn && !_r387typ && !_r387nomod && !_r387forev && _r387src && !(globalThis._zwRanScripts && globalThis._zwRanScripts[child.__zwHandle])) {
                   if (!globalThis._zwRanScripts) globalThis._zwRanScripts = {};
                   globalThis._zwRanScripts[child.__zwHandle] = true;
                   (0, eval).call(globalThis, _r387src);
@@ -7127,7 +7132,7 @@
                 // s96：fetch/执行体提升为共享 helper `_zwPrepareSrcScript`（连接态 src-set
                 // 触发面单点复用；already-started/nomodule/for-event 门与宿主管线让位旗标
                 // 在 helper 内原样保留——原 else-if 条件链收拢进 helper 门序）。
-                else if (_r387conn && !_r387nomod
+                else if (_r387conn && !_r387typ && !_r387nomod
                          && !(globalThis._zwRanScripts && globalThis._zwRanScripts[child.__zwHandle])
                          && !globalThis.__zwHostDynamicScripts) {
                   _zwPrepareSrcScript(child);
@@ -7171,13 +7176,19 @@
                             .toLowerCase() !== 'module';
                       } catch (_eS95nm) {}
                       if (!_s95nomod) {
-                        (0, eval).call(globalThis, _s95Post);
-                        // 执行即置位（spec prepare 末段 already started = true）——
-                        // 自摘子再补文本不重跑（execution-timing 059 形态）。
-                        if (sel) {
-                          (globalThis._zwScriptStarted = globalThis._zwScriptStarted || {})[sel] = true;
-                        } else if (handle) {
-                          (globalThis._zwRanScripts = globalThis._zwRanScripts || {})[handle] = true;
+                        // s113：type/language 门（R387 同口径）——blocked（data
+                        // block）不执行、不置 run-once（摘属性后重走门）。
+                        var _s95typ = false;
+                        try { _s95typ = _zwScriptTypeClassify(_s95self) === 'blocked'; } catch (_eS95ty) {}
+                        if (!_s95typ) {
+                          (0, eval).call(globalThis, _s95Post);
+                          // 执行即置位（spec prepare 末段 already started = true）——
+                          // 自摘子再补文本不重跑（execution-timing 059 形态）。
+                          if (sel) {
+                            (globalThis._zwScriptStarted = globalThis._zwScriptStarted || {})[sel] = true;
+                          } else if (handle) {
+                            (globalThis._zwRanScripts = globalThis._zwRanScripts || {})[handle] = true;
+                          }
                         }
                       }
                     }
