@@ -1890,6 +1890,20 @@ pub(crate) fn dom_inline_text_max_width(
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
 ) -> f32 {
+    dom_inline_content_max_width(box_node, doc, styles, &|_| None)
+}
+
+/// t-p114：[`dom_inline_text_max_width`] 的原子宽度变体——`atomic_width` 在 walk 命中
+/// 原子 inline 盒（inline-block 家族 / replaced 族停止点）时把其宽度计入**当前段**
+/// （br 切段前）：max-content = max(各段 文本+段内原子)。调用方不再全局 Σ原子——
+/// 全局相加在最宽段不含原子时多计（br 分行语义，css-sizing-3 §max-content 按行取
+/// 最大）。返回 None 的原子沿用旧分工（调用方 LayoutBox 分支单边入账）。
+pub(crate) fn dom_inline_content_max_width(
+    box_node: &LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    atomic_width: &dyn Fn(NodeId) -> Option<f32>,
+) -> f32 {
     let Some(id) = box_node.node_id else { return 0.0 };
     let Some(style) = styles.get(&id) else { return 0.0 };
     let (font_size, _line_height) = crate::inline::resolve_font_metrics(Some(style));
@@ -1919,6 +1933,7 @@ pub(crate) fn dom_inline_text_max_width(
         &mut segments,
         &mut state,
         per_font_intrinsic_on(),
+        Some(atomic_width),
     );
     segments.into_iter().fold(0.0f32, f32::max)
 }
@@ -1957,6 +1972,7 @@ fn dom_inline_text_min_width(box_node: &LayoutBox, doc: &Document, styles: &Hash
         &mut segments,
         &mut state,
         per_font_intrinsic_on(),
+        None,
     );
     segments.into_iter().fold(0.0f32, f32::max)
 }
@@ -2067,6 +2083,7 @@ fn dom_inline_text_walk(
     segments: &mut Vec<f32>,
     state: &mut DomWalkState,
     per_font: bool,
+    atomic_width: Option<&dyn Fn(NodeId) -> Option<f32>>,
 ) {
     for child in doc.child_nodes(node_id) {
         let Some(node) = doc.get(child) else { continue };
@@ -2151,6 +2168,9 @@ fn dom_inline_text_walk(
                     DV::InlineBlock | DV::InlineFlex | DV::InlineGrid | DV::InlineTable
                 ) {
                     state.flush_space(segments);
+                    if let Some(w) = atomic_width.and_then(|f| f(child)) {
+                        *segments.last_mut().expect("segments 非空") += w;
+                    }
                     state.line_has_content = true;
                     continue;
                 }
@@ -2174,6 +2194,9 @@ fn dom_inline_text_walk(
                         | "meter"
                 ) {
                     state.flush_space(segments);
+                    if let Some(w) = atomic_width.and_then(|f| f(child)) {
+                        *segments.last_mut().expect("segments 非空") += w;
+                    }
                     state.line_has_content = true;
                     continue;
                 }
@@ -2231,7 +2254,17 @@ fn dom_inline_text_walk(
                         state.font_size = child_fs;
                         state.is_ahem = child_ahem;
                         state.font_id = child_fid;
-                        dom_inline_text_walk(child, doc, styles, &child_ws, child_tab, segments, state, per_font);
+                        dom_inline_text_walk(
+                            child,
+                            doc,
+                            styles,
+                            &child_ws,
+                            child_tab,
+                            segments,
+                            state,
+                            per_font,
+                            atomic_width,
+                        );
                         state.font_size = prev_fs;
                         state.is_ahem = prev_ahem;
                         state.font_id = prev_fid;
@@ -2268,7 +2301,17 @@ fn dom_inline_text_walk(
                 state.font_size = child_fs;
                 state.is_ahem = child_ahem;
                 state.font_id = child_fid;
-                dom_inline_text_walk(child, doc, styles, &child_ws, child_tab, segments, state, per_font);
+                dom_inline_text_walk(
+                    child,
+                    doc,
+                    styles,
+                    &child_ws,
+                    child_tab,
+                    segments,
+                    state,
+                    per_font,
+                    atomic_width,
+                );
                 state.font_size = prev_fs;
                 state.is_ahem = prev_ahem;
                 state.font_id = prev_fid;
@@ -3574,6 +3617,77 @@ AAAA</div></body></html>"#,
             "li must be as wide as the wrapped atomic button ({:?} vs {:?}) and single-line",
             li,
             atomic
+        );
+    }
+
+    /// item 自身水平 frame 计入（css-sizing-3 §max-content border-box 计自身
+    /// padding/border）：li padding:0 10px 时 border-box 宽 = 原子盒宽 + 20 且单行。
+    /// 组成漏加 frame 时 item 恒窄 20px，按钮在收窄内容盒内复现折行。
+    #[test]
+    fn p114_flex_item_padded_li_includes_frame() {
+        let html = r#"<html><body style="margin:0">
+          <ul id="ul" style="display:flex;list-style:none;margin:0;padding:0;font:20px/1 Ahem">
+            <li id="li" style="padding:0 10px"><span><button id="atomic" type="button">ab cd ef</button></span></li>
+          </ul>
+        </body></html>"#;
+        let (li, atomic) = compute_li_and_atomic(html);
+        assert!(
+            (li.0 - atomic.0 - 20.0).abs() < 1.0 && li.1 <= li.0 + 1.0,
+            "padded li must be atomic width + 20px frame ({:?} vs atomic {:?}) and single-line",
+            li,
+            atomic
+        );
+    }
+
+    /// 作者声明 definite width 门（css-flexbox-1 §4.1：definite 主轴尺寸即 flex base
+    /// size）——pass 不得覆写 li{width:200px}。
+    #[test]
+    fn p114_flex_item_declared_width_untouched() {
+        let html = r#"<html><body style="margin:0">
+          <ul id="ul" style="display:flex;list-style:none;margin:0;padding:0;font:20px/1 Ahem">
+            <li id="li" style="width:200px"><span><button id="atomic" type="button">ab cd ef</button></span></li>
+          </ul>
+        </body></html>"#;
+        let (li, _atomic) = compute_li_and_atomic(html);
+        assert!(
+            (li.0 - 200.0).abs() < 1.0,
+            "declared li width must stay 200px, got {:?}",
+            li
+        );
+    }
+
+    /// abspos item 门（css-flexbox-1 §4：out-of-flow 子不是 flex item）——li
+    /// position:absolute 时宽由 R3929 shrink-to-fit cap（CB=ul 200px）管界，pass 不得
+    /// 覆写为未封顶 max-content（按钮内容 280px 溢出 CB）。
+    #[test]
+    fn p114_flex_item_abspos_item_untouched() {
+        let html = r#"<html><body style="margin:0">
+          <ul id="ul" style="position:relative;display:flex;list-style:none;margin:0;padding:0;width:200px;font:20px/1 Ahem">
+            <li id="li" style="position:absolute"><span><button id="atomic" type="button">ab cd ef gh ij</button></span></li>
+          </ul>
+        </body></html>"#;
+        let (li, _atomic) = compute_li_and_atomic(html);
+        assert!(
+            li.0 <= 202.0,
+            "abspos li must stay capped by the 200px CB, got {:?}",
+            li
+        );
+    }
+
+    /// br 切段按段组合（css-sizing-3 §max-content 按行取最大）：max(段文本+段内原子)，
+    /// 非全局 Σ原子——最宽段（intro broader=260px）不含原子时不多计按钮宽（176px）。
+    #[test]
+    fn p114_flex_item_br_segments_not_overcounted() {
+        let html = r#"<html><body style="margin:0">
+          <ul id="ul" style="display:flex;list-style:none;margin:0;padding:0;font:20px/1 Ahem">
+            <li id="li">intro broader<br><span><button id="atomic" type="button">ab cd ef</button></span></li>
+          </ul>
+        </body></html>"#;
+        let (li, _atomic) = compute_li_and_atomic(html);
+        assert!(
+            (li.0 - 260.0).abs() < 1.5,
+            "br-split li max-content must be the widest segment (260px), got {:?}",
+            li
         );
     }
 

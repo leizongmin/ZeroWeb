@@ -410,6 +410,17 @@ const REFTESTS: &[InlineReftestDef] = &[
         ref_html: "<html><body style=\"margin:0\"><ul style=\"list-style:none;margin:0;padding:0;width:500px;height:260px;font:40px/40px Ahem\"><li><span><button style=\"border:0;padding:0;background:red;color:#fff\">ab cd ef</button></span></li></ul></body></html>",
         is_match: true,
     },
+    // t-p114（css-sizing-3 §max-content border-box 计自身 padding/border）：带水平
+    // padding 的 flex item——组成漏加 item 自身 frame 时 li 恒窄 20px，按钮在收窄内容
+    // 盒内折行（2 行红块 ≫ Layout 1% 阈值）；修复后 li border-box = 原子宽 + 20，
+    // 与块级 ref 同位同尺寸单行红块。
+    InlineReftestDef {
+        id: "css-flexbox/flex-item-inline-wrapped-atomic-intrinsic-zw-002",
+        category: ReftestCategory::Layout,
+        test_html: "<html><body style=\"margin:0\"><ul style=\"display:flex;list-style:none;margin:0;padding:0;width:500px;height:260px;font:40px/40px Ahem\"><li style=\"padding:0 10px\"><span><button style=\"border:0;padding:0;background:red;color:#fff\">ab cd ef</button></span></li></ul></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><ul style=\"list-style:none;margin:0;padding:0;width:500px;height:260px;font:40px/40px Ahem\"><li style=\"padding:0 10px\"><span><button style=\"border:0;padding:0;background:red;color:#fff\">ab cd ef</button></span></li></ul></body></html>",
+        is_match: true,
+    },
 ];
 
 pub fn reftests() -> &'static [InlineReftestDef] {
