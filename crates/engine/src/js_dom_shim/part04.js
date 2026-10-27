@@ -10504,6 +10504,15 @@
               }
             } catch (_efna) {}
           }
+          // s119（html-semantics M2 切片 119）：canonical 数字索引臂——HTMLFormElement
+          // 支持属性名含「无 id/name 的 listed 控件按 form.elements 集合序号」（031
+          // execution-timing 语料面：`document.forms[0][0].focus()` 的 form[N] 形态；
+          // 命名匹配先行，索引兜底同 spec 名单序）。canonical 判据同 elements 集合
+          // get 臂（parseInt + String 归一等——拒前导零/符号形，`form['01']` miss 回
+          // 落 undefined）。越界/非控件索引不返回（undefined 落 trap 通用路径）。
+          // https://html.spec.whatwg.org/multipage/forms.html#the-form-element
+          var _fni = parseInt(prop, 10);
+          if (!isNaN(_fni) && String(_fni) === prop) return _fna[_fni];
         }
         // net-api M5-S8：image 按钮「selected coordinates」记录（spec image button
         // activation behavior——click 激活时从事件 clientX/clientY 相对按钮盒原点取值，

@@ -2,9 +2,46 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 118 施工收口（innerHTML 产物 script 移动惰性章 + location 族 javascript: URL 求值面轮：execution-timing **028/033/079 三页 3F→P**，全量套件 A/B 6607P/1191F/105T→**6610P/1188F/105T 真翻红 0**（+3P −3F）；两刀：①innerHTML 产物 SCRIPT 对象属性章 `__zwFragNoExec`（fragment parsing already-started 语义），消费点 `_zwScriptMaybeStartDynamic` 顶部单点，移动换代由 R368 盖 handle 章点转移 run-once 表（首刀 Set 对象键被 R368 身份断链、pin 红定谳——章键须落移动后可寻址身份）②location 三入口（replace/assign/href 臂）共用 `_navLocationJavascript`（S4U 同款 defer 间接 eval、不派 navigate 事件）；bin pin ×3（旧 shim stash 往返 3/3 红→绿）+ 定向 028/033/079 F→P 零其他翻转 + engine lib 3570/0 + clippy；挂账 031 focus/blur（焦点基建面）/041 nested write（写流队列重构）/iah+clone fragment 章 FIXME 承袭；下一步 s119 候选：031 焦点事件面 / image-loading-lazy deferred 1F / 承袭挂账序；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 119 施工收口（HTMLFormElement 索引命名属性臂轮：execution-timing/031 **1F→P**，全量套件 A/B 6610P/1188F/105T→**6612P/1186F/105T 真翻红 0**（+2P −2F，含同面专测 forms/the-form-element/form-indexed-element.html 意外翻绿）；根因：031 探针两轮定谳 script #1 中断于 `forms[0][0]` undefined——R3254-K3 FORM named access 只匹配 id/name，canonical 数字索引臂缺失（spec 无 id/name listed 控件按 elements 序号可寻址）；焦点/点击派发面零改动（R114/R148/R57 本就完好）；bin pin ×1（旧 shim stash 往返红→绿 TypeError 行为证据）+ engine lib 3570/0 + clippy；挂账无新增（031 刀位消费完毕）；下一步 s120 候选：audio lazy-loading 族 / image-loading-lazy deferred / execution-timing 余 F（041/056/063 挂大基建）/ 承袭挂账序；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-28 M2 切片 118 施工收口，innerHTML 产物惰性章 + location javascript: 求值面轮）**：
+> **▶ 当前状态（2026-10-28 M2 切片 119 施工收口，HTMLFormElement 索引命名属性臂轮）**：
+> **入场定谳**：s118 候选一定刀 031「focus and blur events」1F——corpus 探针两
+> 轮（插桩断言面带运行时值，备份 /tmp 验后还原）：①eventOrder 全零 + 'end
+> script #1' 缺席 → script #1 中途抛异常，嫌疑非 focus 派发链；②逐句 try 定谳
+> `forms[0][0]` undefined → TypeError。静态对照：焦点面成熟（R114/R148/s29/
+> R4003b），R3254-K3 FORM named access 只匹配 id/name——canonical 数字索引臂
+> 缺失（spec：无 id/name listed 控件按 form.elements 序号可寻址）。
+> **本轮一刀**（净变更 part04 + testharness.rs pin ×1）：FORM named access 块
+> id/name 循环后追加 canonical 数字索引臂（parseInt + String 归一判据同
+> elements 集合 get 臂；命中返 `_formControls(sel)[idx]` 与 elements[N] 同源
+> 恒等；越界 undefined 落通用路径；命名先行索引兜底）。焦点/点击派发面零改动。
+> **验证**：定向 `FILTER=execution-timing/0` **031 F→P** 全行 diff 唯一变化
+> （72P+5F+1T→73P+4F+1T）；**全量 A/B** 6610P/1188F/105T→**6612P/1186F/105T**
+> diff 两行对 = 031 + 同面专测 **form-indexed-element.html** 意外翻绿 → **真翻
+> 红 0**。bin pin 旧 shim stash 往返红（form[0] undefined → addEventListener
+> TypeError 行为失败）→ 绿；engine lib **3570/0**（与全量套件并发曾撞
+> artifact，串行重跑过——双 cargo 并发注意排队）；guard 内 clippy 零告警；
+> fmt、shim 拼接语法过。渲染面零依赖——reftest/product-smoke 未跑；make test
+> 未跑（Rust 增量仅 test 模块）。账本见
+> [evidence/2026-10-28-m2s119-form-indexed-access.md](html-semantics-compat/evidence/2026-10-28-m2s119-form-indexed-access.md)。
+> **范围**：engine shim part04 + runner testharness.rs；语料零改动（探针验后
+> 还原）。
+> **挂账新增**：无。承袭：写流执行身份盖章断链 FIXME、part02 setAttribute 绕
+> notify 臂（gap 2）、execution-timing 构成面 056/063+051/052 单根（增量解析
+> 大基建）、041 nested write（写流队列重构）、FIXME(spec-gap) iah/clone
+> fragment 章、css-module 族 corpus 门（待决须用户拍板）、www2 可达性、
+> modulepreload referrerpolicy 族、module-import-referrer TLA、
+> script-crossorigin-network cookies、redirect-relative-urls、export-from with
+> FIXME、script-charset-02/03、143 write、defer 多写完成序、dynamic import()
+> with 透传、classic 外链 SRI、接口对象基建面、FIXME 组、/tmp/zw-hb*.txt；
+> **待决（须用户拍板）**：css/text 数据模块语料资源缺失。
+> **下一步**：s120 入场定刀位（候选：audio lazy-loading 族（the-audio-element
+> loading=lazy 十余 F 单根待勘）/ image-loading-lazy deferred / execution-timing
+> 余 F（041/056/063 均挂大基建不作常规刀位）/ 承袭挂账序）。
+> **切片间隙**：本轮 form 命名属性面 + runner pin 面；下一候选同流同面，间隙
+> 开放。
+>
+> **▶ 上轮状态（2026-10-28 M2 切片 118 施工收口，innerHTML 产物惰性章 + location javascript: 求值面轮——其下一步 s119 已由 s119 收口，见上）**：
 > **入场定谳**：execution-timing 余 F 复盘三面并审——033「innerHTML scripts moved
 > in DOM」1F（`div.innerHTML` 产物 appendChild 移入 body 后全执行，spec fragment
 > parsing already-started 面缺失）；028/079「location javascript: URL」2F（三入口

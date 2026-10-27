@@ -13647,6 +13647,51 @@ globalThis.promise_test(function() {
     }
 
     #[test]
+    fn form_indexed_named_access_focus_s119() {
+        // s119（html-semantics M2 切片 119）：HTMLFormElement 支持属性名的 canonical
+        // 数字索引臂——无 id/name 的 listed 控件按 form.elements 序号可寻址（031
+        // execution-timing 语料面 document.forms[0][0].focus()）。命名（id/name）
+        // 匹配先行、索引兜底；越界返回 undefined；focus() 同步派发面随之被钉。
+        let root = std::env::temp_dir().join("zw-s119-form-index-test");
+        std::fs::create_dir_all(&root).unwrap();
+        let html = r##"<script src="/resources/testharness.js"></script>
+<form><input type="button" id="b1"><input name="q"><input type="text"></form>
+<script>
+globalThis.__focused = [];
+document.forms[0][0].addEventListener('focus', function () { globalThis.__focused.push('f0'); });
+document.forms[0][0].focus();
+document.forms[0][1].focus();
+</script>
+<script>
+globalThis.promise_test(function() {
+  var f = document.forms[0];
+  assert_true(f[0] && f[0].id === 'b1', 'form[0] 须按 elements 序号取控件');
+  assert_true(f[0] === f.elements[0], 'form[N] 与 elements[N] 同一 proxy');
+  assert_true(f[1] && f[1].name === 'q', 'form[1] 取第二控件');
+  assert_true(f[2] && f[2].type === 'text', 'form[2] 取无名第三控件');
+  assert_true(f[9] === undefined, '越界索引 undefined');
+  assert_true(f.q && f.q.name === 'q', '命名访问不回归');
+  assert_true(JSON.stringify(globalThis.__focused) === JSON.stringify(['f0']),
+    'focus 事件序: ' + globalThis.__focused.join(','));
+}, 'form indexed access + focus');
+</script>"##;
+        let results = run_testharness_html(
+            &root,
+            "form-index-access.html",
+            html,
+            &mini_harness_stateful(),
+            CASE_TIMEOUT,
+        );
+        assert!(
+            results
+                .iter()
+                .any(|r| r.name == "form indexed access + focus" && r.status == HarnessStatus::Pass),
+            "form[N] 索引取控件 + focus 派发须通过: {results:?}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn inline_module_import_specs_rewrite_to_root_absolute_s101() {
         // 直接钉 helper：相对 spec 以模块自身目录（resources/）为基上溯归一；
         // root-absolute/裸 specifier/含 scheme 的 spec 不动；单双引号皆替换。
