@@ -78,6 +78,8 @@ mod r5273_selection_img_bg_tests;
 mod r5296_inline_bg_ml_gate_tests;
 /// R5297 多片段 slice inline 背景行连续域 + 内容区锚（css-break-3 §5.3）。
 mod r5297_inline_ml_band_extents_tests;
+/// R5299 单行整盒裂解段表（css-writing-modes-3 #bidi-box-model 切段判据）。
+mod r5299_inline_slice_segment_tests;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;
