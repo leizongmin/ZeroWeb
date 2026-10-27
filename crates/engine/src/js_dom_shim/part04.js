@@ -7235,143 +7235,7 @@
           } catch (_eS95c) {}
           return out;
         }
-        // s96（html-semantics M2 切片 96）：script prepare 的 for/event 门——双属性在场
-        // 且非「for≈window 且 event≈onload|onload()（ASCII 剥白后 CI）」即中止；任一
-        // 属性缺失照跑（spec 门仅约束双属性在场形态）。与 s94 extract 双门
-        // （extract.rs script_blocked_by_for_event）同口径；toLowerCase 的 Unicode 折叠
-        // 极端形态由 Rust 提取路径兜底（R387 nomodule 门同姿态）。149 dom_inserted 臂
-        // （for=window event=load/onpageshow、for=document onload——不执行）经此门拦截。
-        // https://html.spec.whatwg.org/multipage/scripting.html#script-processing-for
-        function _zwScriptForevBlocked(el) {
-          var hasFor = false, hasEvent = false, forV = '', eventV = '';
-          try {
-            hasFor = !!(el.hasAttribute && el.hasAttribute('for'));
-            if (hasFor) forV = String(el.getAttribute('for') || '');
-          } catch (_eS96gf) {}
-          try {
-            hasEvent = !!(el.hasAttribute && el.hasAttribute('event'));
-            if (hasEvent) eventV = String(el.getAttribute('event') || '');
-          } catch (_eS96ge) {}
-          if (!hasFor || !hasEvent) return false;
-          var strip = function (s) { return s.replace(/^[\t\n\x0C\r ]+|[\t\n\x0C\r ]+$/g, ''); };
-          if (strip(forV).toLowerCase() !== 'window') return true;
-          var ev = strip(eventV).toLowerCase();
-          return !(ev === 'onload' || ev === 'onload()');
-        }
-        // s96 刀②：script 属性变更步骤（src set 且 value 非 null + connected →
-        // post-connection steps → prepare）的动态 src 执行面——R387b append 路径的
-        // fetch/执行体原样提升为共享 helper（append 有 src 与连接态 src-set 单点复用，
-        // 022「DOM added script, late .src」执行面）。门序对齐 prepare：already-started
-        // （run-once 表）→ nomodule → for/event → src 在场 → 页面 fetch 通道。连接态
-        // 判定归调用方（append 路径 R387 现状无 connected 门，set 路径 spec 要求
-        // connected——两路各自门控，不在此重复）。
-        // slice18（site-compat baidu 建议链 /sugrec，R-baidu8 接管收尾）：宿主管线
-        //（`__zwHostOwnsDynamicScripts`，renderer js_worker SetDomSnapshot 置位）置位
-        // 即整体跳过本 shim 页面 fetch 通道，动态 src 脚本单点交宿主
-        // PendingDynamicScripts（no-cors IPC 取回，tick_dynamic_scripts）执行并派元素
-        // load/error。依据：classic script 取回是 no-cors 资源取回（request mode
-        // "no-cors"），页面 fetch() 是 cors 语义——无 ACAO 的跨域 CDN 脚本（AMD 加载
-        // 器常态）在此永远失败 → 误派元素 error（脚本经宿主 no-cors 取回实际可执行，
-        // 活体矩阵 v9 真跨域 base 误 error+load 双派、fixed 单 load 实证）；且宿主
-        // tick 通道并存，同源脚本双通道双执行（base 活体 ran=2、load=2 实证——AMD
-        // define 双注册同族破坏）。单执行者归属宿主后两类问题一并消除。标志未置位
-        // 上下文（嵌入 webview / 引擎测试）保持原行为。
-        // https://html.spec.whatwg.org/multipage/scripting.html#script-attribute-change-steps
-        // https://html.spec.whatwg.org/multipage/scripting.html#fetch-a-classic-script
-        // FIXME(spec-gap): setAttribute('src', …) 通路未挂同一触发（语料 022/024 走
-        // .src IDL setter）；type 门（非 JS MIME 不执行）沿 R387b 现状未补。
-        function _zwPrepareSrcScript(child, _zwOnRan) {
-          var _zwAsync = false;
-          try {
-            _zwAsync = _zwPrepareSrcScriptGate(child, _zwOnRan);
-          } catch (_eS96run) {
-            if (typeof globalThis._zwReportListenerError === 'function') {
-              try { globalThis._zwReportListenerError(_eS96run, null); } catch (_eS96rp) {}
-            }
-          }
-          // 同步出口（run-once/nomodule/for-event/宿主让位等门挡）＝脚本不会执行、
-          // 不阻塞后续流——立即续流（s97 写入脚本执行面依赖；DOM 臂无回调零影响）。
-          if (!_zwAsync && typeof _zwOnRan === 'function') {
-            try { _zwOnRan(); } catch (_eS97cb0) {}
-          }
-        }
-        // 门体：返 true 仅当 fetch 链已发起（求值完成回调经 _zwOnRan 在 then/catch 尾触发）。
-        function _zwPrepareSrcScriptGate(child, _zwOnRan) {
-          try {
-            if (!child || !child.__zwHandle) return false;
-            if (globalThis._zwRanScripts && globalThis._zwRanScripts[child.__zwHandle]) return false;
-            var nomod = false;
-            try {
-              nomod = !!(child.hasAttribute && child.hasAttribute('nomodule'))
-                && String(child.type || '').replace(/^[\t\n\x0C\r ]+|[\t\n\x0C\r ]+$/g, '')
-                  .toLowerCase() !== 'module';
-            } catch (_eS96nm) {}
-            if (nomod) return false;
-            var forev = false;
-            try { forev = _zwScriptForevBlocked(child); } catch (_eS96fe) {}
-            if (forev) return false;
-            var url = '';
-            try { url = String(child.src || (child.getAttribute && child.getAttribute('src')) || ''); } catch (_eS96u) {}
-            if (!url || typeof fetch !== 'function'
-                || globalThis.__zwHostOwnsDynamicScripts === true) return false;
-            if (!globalThis._zwRanScripts) globalThis._zwRanScripts = {};
-            globalThis._zwRanScripts[child.__zwHandle] = true;
-            var el96 = child;
-            // Resource Timing（M3 slice 1）：置发起方旗标（fetch 包裹消费为
-            // initiatorType 'script' + 真实时长窗口）——R387b 原语义。
-            _zwRtPendingInitiator = 'script';
-            fetch(url).then(function (_r) {
-              if (!_r.ok && _r.status) throw new Error('HTTP ' + _r.status);
-              return _r.text();
-            }).then(function (_code) {
-              // s91（string-compilation base URL external 面）：求值窗 swap 进脚本自身
-              // 绝对 URL；s92：nonce 换入 ''。finally 换回——R387b 原语义原样。
-              // https://html.spec.whatwg.org/multipage/webappapis.html#concept-scripts-base-url
-              var abs = url;
-              try {
-                abs = new URL(url, (globalThis.document && globalThis.document.baseURI)
-                  || (globalThis.location && globalThis.location.href) || 'about:blank').href;
-              } catch (_eS96abs) {}
-              var prev = (typeof globalThis.__zwSwapImportReferrer === 'function')
-                ? globalThis.__zwSwapImportReferrer(abs) : null;
-              var prevN = (typeof globalThis.__zwSwapImportNonce === 'function')
-                ? globalThis.__zwSwapImportNonce('') : null;
-              // s97：写入脚本执行面求值窗标记——外链槽位由 part06 面经
-              // `__zwDocWritePendingSlot` 挂链，求值窗内嵌套 write 的面从本槽位下一
-              // 槽起走即时 pass（插入点语义：嵌套写入内联在当前外链求值窗内同步
-              // 执行，execution-timing 009「external before/dw/after」序）。非写入
-              // 链发起的 prepare（R387b appendChild / s96 set trap / s97 insertBefore）
-              // 时 pendingSlot 无效，窗标记不设置。
-              var _s97EvSlot = (typeof globalThis.__zwDocWritePendingSlot === 'number'
-                && globalThis.__zwDocWritePendingSlot >= 0) ? globalThis.__zwDocWritePendingSlot : -1;
-              if (_s97EvSlot >= 0) globalThis.__zwDocWriteEvalSlot = _s97EvSlot;
-              try {
-                if (_code) (0, eval).call(globalThis, _code);
-              } finally {
-                if (_s97EvSlot >= 0) globalThis.__zwDocWriteEvalSlot = -1;
-                if (prev !== null) globalThis.__zwSwapImportReferrer(prev);
-                if (prevN !== null) globalThis.__zwSwapImportNonce(prevN);
-              }
-              try { el96.dispatchEvent(new Event('load')); } catch (_eS96l) {}
-              if (typeof _zwOnRan === 'function') { try { _zwOnRan(); } catch (_eS97cb1) {} }
-            }).catch(function () {
-              try { el96.dispatchEvent(new Event('error')); } catch (_eS96e) {}
-              if (typeof _zwOnRan === 'function') { try { _zwOnRan(); } catch (_eS97cb2) {} }
-            });
-            return true;
-          } catch (_eS96gate) {
-            if (typeof globalThis._zwReportListenerError === 'function') {
-              try { globalThis._zwReportListenerError(_eS96gate, null); } catch (_eS96rp2) {}
-            }
-            return false;
-          }
-        }
-        // s96：跨 part 导出——_zwPrepareSrcScript 定义于 appendChild trap 闭包，part05
-        // set trap（SCRIPT.src 分支）是另一函数作用域不可见，经 globalThis 供其取用
-        //（同 _zwNodeContains part03 导出先例；shim 每次执行先 part04 后 part05，值恒新鲜）。
-        globalThis._zwPrepareSrcScript = _zwPrepareSrcScript;
         // s97：同款导出——part06 document.write 写入脚本执行面复用 for/event 门。
-        globalThis._zwScriptForevBlocked = _zwScriptForevBlocked;
         function _r126IsChildOf(parentSel, parentHandle, target) {
           // R126：已移除节点（sel 标记 / pending-removed——同批先前 removeChild 后
           // shim 的 parentNode 读 host 快照仍指旧父，调用方按旧父再 remove 是 shim
@@ -11748,6 +11612,53 @@
         // async/defer/nomodule/autoplay/controls/loop/muted/playsInline/reversed/isMap/itemScope）——presence-based。
         var _rbAttr = Object.prototype.hasOwnProperty.call(_REFLECTED_BOOL, prop) ? _REFLECTED_BOOL[prop] : null;
         if (_rbAttr) {
+          // s110（html-semantics M2 切片 110）：script.async getter 非 presence-based——
+          // spec getter 步骤：force async true → true；async 内容属性在场 → true；否则
+          // false。无表项时的缺省按身份与 prepare 事实分派（spec prepare 步骤序：type
+          // 判定后、already-started 复位前写 force async=false——type 非法即早退不写，
+          // 保持创建缺省真）：
+          //   表项 false → false（part05 setter / part01 async 属性加 / part06 parser 投递）；
+          //   工厂节点（handle 形）→ true（创建缺省；091 面）；
+          //   parser 单元已 started（重触发面，stale 122-126 模型不写 false）→ true；
+          //   parser 单元当前 type 非法（parse 期 bail 未 prepare）→ true；
+          //   parser 单元 type 合法未 started → false（parse prepare 已写 false——引擎
+          //   沙箱静态页 sc2 缺省读 false 面；语料 122 reinsert 前读真由 started 臂保）。
+          // https://html.spec.whatwg.org/multipage/scripting.html#dom-script-async
+          // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+          if (prop === 'async' && _realTag(sel, handle) === 'SCRIPT') {
+            var _faKey = null;
+            try { _faKey = _elKey(sel, handle); } catch (_eS110gk) {}
+            var _faEntry;
+            try {
+              _faEntry = (_faKey != null && globalThis._zwScriptForceAsync)
+                ? globalThis._zwScriptForceAsync[_faKey] : undefined;
+            } catch (_eS110g) { _faEntry = undefined; }
+            if (_faEntry === true) return true;
+            var _faHas = false;
+            // s110：attr 三族 helper（handle/lw/直读）均返 '1'/'0' 串——与上方
+            // R3038/R3040 generic presence 读 `_rbHit === '1'` 同约定；真值判定会把
+            // 缺席面 '0' 当在场（引擎沙箱 sc2 缺省读 true 假阳性实证）。
+            try {
+              _faHas = handle ? __zw_has_attr_handle(handle, 'async') === '1'
+                : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'async') === '1' : __zw_has_attr(sel, 'async') === '1');
+            } catch (_eS110gh) {}
+            if (_faHas) return true;
+            if (_faEntry === false) return false;
+            if (handle != null) return true;
+            if (sel != null) {
+              if (globalThis._zwScriptStarted && globalThis._zwScriptStarted[sel]) return true;
+              var _faTy = '';
+              try {
+                _faTy = String((handle ? __zw_get_attr_handle(handle, 'type')
+                  : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'type') : __zw_get_attr(sel, 'type'))) || '');
+              } catch (_eS110gt) {}
+              _faTy = _faTy.replace(/^[\t\n\x0C\r ]+|[\t\n\x0C\r ]+$/g, '').toLowerCase();
+              var _faTyJs = _faTy === '' || _faTy.indexOf('javascript') >= 0
+                || _faTy.indexOf('ecmascript') >= 0 || _faTy.indexOf('module') >= 0;
+              if (_faTyJs) return false;
+            }
+            return true;
+          }
           var _rbHit = handle
             ? __zw_has_attr_handle(handle, _rbAttr)
             : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, _rbAttr) : __zw_has_attr(sel, _rbAttr));

@@ -69,8 +69,10 @@ fn trim_ascii_html_ws(s: &str) -> &str {
 
 /// 脚本 type 判 JS（HTML prepare-the-script-element 步骤 3：type 值剥首尾 ASCII whitespace 后
 /// 为空或 JavaScript MIME type essence match → classic/module；余为 data block 不执行）。
+/// pub（s110）：runner 投递面 `inline_local_scripts` 对非 JS type 外链单元按同判据整段
+/// 透传（data-inline 改写剥 src，mutation 重触发面须保 src 语义）。
 /// https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
-fn script_type_is_javascript(type_attr: Option<&str>) -> bool {
+pub fn script_type_is_javascript(type_attr: Option<&str>) -> bool {
     match type_attr.map(trim_ascii_html_ws).filter(|t| !t.is_empty()) {
         None => true,
         Some(t) if t.eq_ignore_ascii_case("text/javascript") => true,

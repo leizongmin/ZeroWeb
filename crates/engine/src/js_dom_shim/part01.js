@@ -6022,18 +6022,38 @@
     if (baseRecord && baseRecord.type === 'childList') _zwParentLinkBump();
     // s109（html-semantics M2 切片 109）：script 元素动态 prepare 触发臂——本函数是
     // shim 全部 attr/childList 记录的单一汇流点（proxy 与工厂层皆经此），spec 的
-    // 「prepare the script element」运行期触发（type/src 属性写、child text 变更、
-    // 元素插入）挂记录源处。门只认 SCRIPT 标签（attributes 再限 type/src/href/
-    // xlink:href 四属性），其余写零成本早退；触发失败不阻断 notify 投递。
+    // 「prepare the script element」运行期触发（src 属性写、child 变更、元素插入）
+    // 挂记录源处。s110 收敛：attributes 臂去掉 type——spec 触发面无 type 变更条款
+    //（122-126 族期望序依赖 removeAttribute('type') 不重触发；children-changed/
+    // 重插入臂照常分派）。门只认 SCRIPT 标签（attributes 再限 src/href/xlink:href
+    // 三属性），其余写零成本早退；触发失败不阻断 notify 投递。
     // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
     if (baseRecord && typeof _zwScriptMaybeStartDynamic === 'function') {
       try {
         if (baseRecord.type === 'attributes') {
           var _an109 = String(baseRecord.attributeName || '').toLowerCase();
-          if ((_an109 === 'type' || _an109 === 'src' || _an109 === 'href' || _an109 === 'xlink:href')
+          if ((_an109 === 'src' || _an109 === 'href' || _an109 === 'xlink:href')
               && typeof _realTag === 'function' && _realTag(sel, handle) === 'SCRIPT'
               && typeof _makeProxy === 'function') {
             _zwScriptMaybeStartDynamic(_makeProxy(sel, handle));
+          }
+          // s110：async 内容属性加至 script → force async=false（spec 独立条款——
+          // 「When an async attribute is added … set force async to false」，非 prepare
+          // 步骤；IDL setter 路径在 part05 另标，此处补 setAttribute 直写面）。以写后
+          // hasAttribute 区分加/删（删不恢复 force async）。
+          // https://html.spec.whatwg.org/multipage/scripting.html#concept-script-force-async
+          if (_an109 === 'async'
+              && typeof _realTag === 'function' && _realTag(sel, handle) === 'SCRIPT'
+              && typeof _makeProxy === 'function') {
+            try {
+              if (_makeProxy(sel, handle).hasAttribute('async')) {
+                var _faKey = _elKey(sel, handle);
+                if (_faKey != null) {
+                  if (!globalThis._zwScriptForceAsync) globalThis._zwScriptForceAsync = {};
+                  globalThis._zwScriptForceAsync[_faKey] = false;
+                }
+              }
+            } catch (_eS110aa) {}
           }
         } else if (baseRecord.type === 'childList') {
           if (typeof _realTag === 'function' && _realTag(sel, handle) === 'SCRIPT'
@@ -6057,7 +6077,9 @@
                 } else {
                   _tag109 = String(_an109n.tagName || '').toUpperCase();
                 }
-                if (_tag109 === 'SCRIPT') _zwScriptMaybeStartDynamic(_an109n);
+                if (_tag109 === 'SCRIPT') {
+                  _zwScriptMaybeStartDynamic(_an109n);
+                }
               } catch (_e109a) {}
             }
           }

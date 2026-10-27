@@ -526,6 +526,18 @@
           // 闭合布尔 set→get 全往返（R3038 读 + R3039/R3040 set）。attr 名经 `_reflectedBoolAttr` 映射（readOnly→readonly /
           // noValidate→novalidate / playsInline→playsinline / isMap→ismap / itemScope→itemscope 等）。
           var _bAttrName = _reflectedBoolAttr(p);
+          // s110（html-semantics M2 切片 110）：script.async IDL setter 步骤 1 恒置
+          // force async=false（value 真时亦置；attr 写入/移除由下方分支按 truthy 完成）。
+          // force async 缺省真的表（part04 getter 排队分支/getter 同源）。
+          // https://html.spec.whatwg.org/multipage/scripting.html#dom-script-async
+          if (p === 'async' && _realTag(sel, handle) === 'SCRIPT') {
+            var _saKey = null;
+            try { _saKey = _elKey(sel, handle); } catch (_eS110sk) {}
+            if (_saKey != null) {
+              if (!globalThis._zwScriptForceAsync) globalThis._zwScriptForceAsync = {};
+              globalThis._zwScriptForceAsync[_saKey] = false;
+            }
+          }
           if (value) {
             if (handle) { __zw_set_attr_handle(handle, _bAttrName, ''); moAttr = _bAttrName; } // WC-M1 切片 4：handle 路径汇流
             else { __zw_set_attr(sel, _bAttrName, ''); moAttr = _bAttrName; }

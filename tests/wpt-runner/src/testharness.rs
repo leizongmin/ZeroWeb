@@ -8448,14 +8448,16 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
         // Promise.all）是微任务，须在任务边界排水——同任务直派则 window load listener
         // 的同步断言先于微任务看见旗标）；③load 等待任务（先 settle 再查
         // `__zwImgLoadBlocked`：R56h fetch 在飞（wptserve trickle(dN) shim 侧延迟的
-        // 慢图，delay-load-event-detached）或闸门队列未 drain → 100ms 重试；就绪 →
+        // 慢图，delay-load-event-detached）或闸门队列未 drain → 100ms 重试；s110 扩展：
+        // 动态外链 script 取回在飞（`__zwScriptFetchPending`，122-126 面——spec
+        // 「delaying the load event」的 script 臂）同条件重试；就绪 →
         // complete+load+pageshow+pagereveal）。严格序 DCL→load→pageshow 不变（链式
         // setTimeout 保序）；readyState complete 相位随 load 后移（spec the-end：
         // complete 即 fully loaded 相位）。
         "(function () {var mk = globalThis.__zwMakeTrustedEvent;function protoLink(ev, proto) {try { if (proto && proto.prototype) Object.setPrototypeOf(ev, proto.prototype); } catch (_e5000pl) {}return ev;}function fireSettle5275() {try { if (typeof globalThis.__zwFireStaticImgSettle === 'function') globalThis.__zwFireStaticImgSettle(); } catch (_eIm5275) {}}\
         setTimeout(function () {try {globalThis.__zwReadyState='interactive';} catch (_ers8m1) {}try {var rs1 = protoLink(mk ? mk('readystatechange') : new Event('readystatechange'), globalThis.Event);document.dispatchEvent(rs1);} catch (_ers8m1d) {}var dcl = protoLink(mk ? mk('DOMContentLoaded', { bubbles: true }) : new Event('DOMContentLoaded', { bubbles: true }), globalThis.Event);document.dispatchEvent(dcl);\
         setTimeout(function () {fireSettle5275();\
-        setTimeout(function () {var loadStep5275 = function () {fireSettle5275();try { if (typeof globalThis.__zwImgLoadBlocked === 'function' && globalThis.__zwImgLoadBlocked()) { setTimeout(loadStep5275, 100); return; } } catch (_eImBlk) {}try {globalThis.__zwReadyState='complete';} catch (_ers8m2) {}try {var rs2 = protoLink(mk ? mk('readystatechange') : new Event('readystatechange'), globalThis.Event);document.dispatchEvent(rs2);} catch (_ers8m2d) {}var load = protoLink(mk ? mk('load') : new Event('load'), globalThis.Event);try { load._zwTargetOverride = true; load.target = document; } catch (_e5000lt) {}globalThis.dispatchEvent(load);var ps = protoLink(mk ? mk('pageshow', { bubbles: true, cancelable: true }) : new Event('pageshow', { bubbles: true, cancelable: true }), globalThis.PageTransitionEvent);try { ps.persisted = false; } catch (_e5000pp) {}try { ps._zwTargetOverride = true; ps.target = document; } catch (_e5000pt) {}globalThis.dispatchEvent(ps);try {if(!globalThis.__zwPagerevealFired){globalThis.__zwPagerevealFired=true;var pr = protoLink(mk ? mk('pagereveal') : new Event('pagereveal'), globalThis.Event);globalThis.dispatchEvent(pr);}} catch (_ers5pr) {}};loadStep5275();}, 0);\
+        setTimeout(function () {var loadStep5275 = function () {fireSettle5275();try { if ((typeof globalThis.__zwImgLoadBlocked === 'function' && globalThis.__zwImgLoadBlocked()) || (typeof globalThis.__zwScriptFetchPending === 'function' && globalThis.__zwScriptFetchPending())) { setTimeout(loadStep5275, 100); return; } } catch (_eImBlk) {}try {globalThis.__zwReadyState='complete';} catch (_ers8m2) {}try {var rs2 = protoLink(mk ? mk('readystatechange') : new Event('readystatechange'), globalThis.Event);document.dispatchEvent(rs2);} catch (_ers8m2d) {}var load = protoLink(mk ? mk('load') : new Event('load'), globalThis.Event);try { load._zwTargetOverride = true; load.target = document; } catch (_e5000lt) {}globalThis.dispatchEvent(load);var ps = protoLink(mk ? mk('pageshow', { bubbles: true, cancelable: true }) : new Event('pageshow', { bubbles: true, cancelable: true }), globalThis.PageTransitionEvent);try { ps.persisted = false; } catch (_e5000pp) {}try { ps._zwTargetOverride = true; ps.target = document; } catch (_e5000pt) {}globalThis.dispatchEvent(ps);try {if(!globalThis.__zwPagerevealFired){globalThis.__zwPagerevealFired=true;var pr = protoLink(mk ? mk('pagereveal') : new Event('pagereveal'), globalThis.Event);globalThis.dispatchEvent(pr);}} catch (_ers5pr) {}};loadStep5275();}, 0);\
         }, 0);\
         }, 0);\
         })();if (typeof globalThis.__zw_mark_harness_loaded === 'function') {globalThis.__zw_mark_harness_loaded();}",
@@ -9274,48 +9276,60 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str) -> String 
         } else {
             extract_script_src(open)
         };
-        let resolved = src.and_then(|s| {
-            // R4300（html-semantics M2 切片 23）：`/` 根路径（非 `//`、非 http(s):）
-            // 解析为 wpt_root 相对——dialog closedby/canceling 语料以
-            // `/common/top-layer.js`、`/close-watcher/resources/helpers.js` 根路径引用
-            // 域外助资产，旧版按绝对路径拒绝 → 标签被移除 → helper ReferenceError 全批
-            // 假 Fail。`//`（协议相对）与显式 http(s) 维持外部面不内联。
-            if s.starts_with("//") || s.starts_with("http://") || s.starts_with("https://") {
-                return None;
-            }
-            // s100：查询串先剥离再归一——.py fixture src 携带 `?test=` 查询（CGI 端点），
-            // 路径归一与语料读面只对路径段，查询由 fixture 仿真面消费。
-            let (path_src, src_query) = s.split_once('?').unwrap_or((s, ""));
-            let combined = if let Some(root_rel) = path_src.strip_prefix('/') {
-                normalize_relative(root_rel)
-            } else {
-                // 规范化 "./" 前缀 + 相对 case_dir 解析（含 ../ 上溯）。
-                let rel = path_src.strip_prefix("./").unwrap_or(path_src);
-                if case_dir.is_empty() {
-                    rel.to_string()
-                } else {
-                    normalize_relative(&format!("{case_dir}/{rel}"))
+        // s110（html-semantics M2 切片 110）：非 JS type 外链单元整段透传——execution-timing
+        // 122-126 族以 type="text/plain" src 外链做 mutation 重触发（removeAttribute(type)/
+        // 重插入），data-inline 改写剥 src 使 s109 触发臂走内联分支同步求值（spec 无 type
+        // 变更触发面）。透传后 src/type 原样入 DOM：extract 投递面按同判据跳过（不执行、
+        // 不投递、不记账），运行期 mutation 触发臂经页面 fetch 通道取 src 求值。
+        // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+        let type_is_js =
+            zero_engine::script_type_is_javascript(zero_engine::attr_from_open_tag(open, "type").as_deref());
+        let resolved = if !type_is_js {
+            None
+        } else {
+            src.and_then(|s| {
+                // R4300（html-semantics M2 切片 23）：`/` 根路径（非 `//`、非 http(s):）
+                // 解析为 wpt_root 相对——dialog closedby/canceling 语料以
+                // `/common/top-layer.js`、`/close-watcher/resources/helpers.js` 根路径引用
+                // 域外助资产，旧版按绝对路径拒绝 → 标签被移除 → helper ReferenceError 全批
+                // 假 Fail。`//`（协议相对）与显式 http(s) 维持外部面不内联。
+                if s.starts_with("//") || s.starts_with("http://") || s.starts_with("https://") {
+                    return None;
                 }
-            };
-            // s100：load-error-events.py fixture——CGI 端点不在语料 pull 面，按查询串
-            // 仿真服务（wpt_load_error_events_response）；非 200 状态脚本体不执行（error
-            // 事件面），与上游 404 脚本不执行语义一致。
-            if combined == WPT_LOAD_ERROR_EVENTS_PY {
-                let (status, body) = wpt_load_error_events_response(src_query);
-                return Some((combined, status, body));
-            }
-            std::fs::read_to_string(wpt_root.join(&combined)).ok().map(|c| {
-                // net-api M5-S1：`.sub.js` 服务端替换（上游 wptserve 语义；与
-                // script fetcher M4-S22、fetch 通道本切片同口径——`.html` 案外部
-                // 脚本走本预处理直读，缺此则 constants.sub.js token 原样入页）。
-                let c = if combined.ends_with(".sub.js") {
-                    apply_wpt_substitutions(&c)
+                // s100：查询串先剥离再归一——.py fixture src 携带 `?test=` 查询（CGI 端点），
+                // 路径归一与语料读面只对路径段，查询由 fixture 仿真面消费。
+                let (path_src, src_query) = s.split_once('?').unwrap_or((s, ""));
+                let combined = if let Some(root_rel) = path_src.strip_prefix('/') {
+                    normalize_relative(root_rel)
                 } else {
-                    c
+                    // 规范化 "./" 前缀 + 相对 case_dir 解析（含 ../ 上溯）。
+                    let rel = path_src.strip_prefix("./").unwrap_or(path_src);
+                    if case_dir.is_empty() {
+                        rel.to_string()
+                    } else {
+                        normalize_relative(&format!("{case_dir}/{rel}"))
+                    }
                 };
-                (combined, 200, c)
+                // s100：load-error-events.py fixture——CGI 端点不在语料 pull 面，按查询串
+                // 仿真服务（wpt_load_error_events_response）；非 200 状态脚本体不执行（error
+                // 事件面），与上游 404 脚本不执行语义一致。
+                if combined == WPT_LOAD_ERROR_EVENTS_PY {
+                    let (status, body) = wpt_load_error_events_response(src_query);
+                    return Some((combined, status, body));
+                }
+                std::fs::read_to_string(wpt_root.join(&combined)).ok().map(|c| {
+                    // net-api M5-S1：`.sub.js` 服务端替换（上游 wptserve 语义；与
+                    // script fetcher M4-S22、fetch 通道本切片同口径——`.html` 案外部
+                    // 脚本走本预处理直读，缺此则 constants.sub.js token 原样入页）。
+                    let c = if combined.ends_with(".sub.js") {
+                        apply_wpt_substitutions(&c)
+                    } else {
+                        c
+                    };
+                    (combined, 200, c)
+                })
             })
-        });
+        };
         let rest_start = open_end + 1;
         match resolved {
             Some((combined, status, content)) => {
@@ -12388,22 +12402,29 @@ async_test(function(test) {
 
     #[test]
     fn inline_delivery_preserves_id_attr_s108() {
-        // s108（id 保真）：投递改写保留原标签 id——execution-timing 122-126 族以
-        // getElementById 取回 type=text/plain 外链单元做 mutation 重触发，id 丢失
-        // 即 `Cannot read properties of null`（mutation 面不可达）。
+        // s108（id 保真）：投递改写保留原标签 id。s110 收敛：JS type 外链走 data-inline
+        // 改写（id 随写保留）；type=text/plain 外链**整段透传**（src/type/id 原样——
+        // 122-126 族 mutation 重触发面依赖元素自带完整属性，改写剥 src 使触发臂走错
+        // 分支）。两条投递形态各自断言。
         let root = std::env::temp_dir().join("zw-s108-inline-id-test");
         let case_dir = "html/semantics/scripting-1/the-script-element";
         std::fs::create_dir_all(root.join(case_dir)).unwrap();
         std::fs::write(root.join(case_dir).join("ok.js"), "globalThis.ran = true;").unwrap();
         let html = "<!doctype html><body>\
+            <script id=\"ok\" src=\"./ok.js\"></script>\
             <script id=\"test\" type=\"text/plain\" src=\"./ok.js\"></script>\
             </body>";
 
         let out = inline_local_scripts(html, &root, &format!("{case_dir}/mutation-family.html"));
 
-        assert!(out.contains("id=\"test\""), "id 须随投递形态保留: {out}");
-        assert!(out.contains("type=\"text/plain\""));
+        // JS 型单元：data-inline 改写 + id 保真 + 执行体入页。
+        assert!(out.contains("id=\"ok\""), "id 须随投递形态保留: {out}");
         assert!(out.contains("globalThis.ran = true;"));
+        // 非 JS 型单元：整段透传（src/type/id 原样保留，无 data-inline 改写）。
+        assert!(
+            out.contains("<script id=\"test\" type=\"text/plain\" src=\"./ok.js\"></script>"),
+            "非 JS type 外链须整段透传: {out}"
+        );
 
         std::fs::remove_dir_all(&root).ok();
     }
@@ -12480,10 +12501,12 @@ async_test(function(test) {
     }
 
     #[test]
-    fn script_prepare_on_type_removal_s109() {
-        // s109（mutation 重触发面）：type=text/plain 内联单元 removeAttribute('type')
-        // → spec prepare-the-script-element 重触发 → 脚本体在**调用点同步**执行
-        //（124 形：期望序 [begin, s1, end] 要求嵌套执行发生在 removeAttribute 内）。
+    fn script_prepare_on_children_changed_s110() {
+        // s110（mutation 重触发面收敛）：type 变更非 spec prepare 触发面（触发 =
+        // 插入 post-connection / children-changed / 移除置 already-started=false）。
+        // type=text/plain 内联单元 removeAttribute('type') + appendChild(text)——
+        // children-changed 步骤触发 prepare → 脚本体在**调用点同步**执行（124 形：
+        // 期望序 [begin, s1, end] 要求嵌套执行发生在 appendChild 内）。
         // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
         let html = r##"<script src="/resources/testharness.js"></script>
 <script>globalThis.__log = [];</script>
@@ -12491,15 +12514,17 @@ async_test(function(test) {
 <script>
 globalThis.test(function() {
   globalThis.__log.push('begin');
-  document.getElementById('t').removeAttribute('type');
+  var el = document.getElementById('t');
+  el.removeAttribute('type');
+  el.appendChild(document.createTextNode(''));
   globalThis.__log.push('end');
   assert_true(JSON.stringify(globalThis.__log) === JSON.stringify(['begin', 's1', 'end']),
     'sync prepare order: ' + globalThis.__log.join(','));
-}, 'sync prepare on type removal');
+}, 'sync prepare on children changed');
 </script>"##;
         let results = run_testharness_html(
             Path::new("/nonexistent-wpt-root-for-tests"),
-            "prepare-type-removal.html",
+            "prepare-children-changed.html",
             html,
             &mini_harness_stateful(),
             CASE_TIMEOUT,
@@ -12507,8 +12532,8 @@ globalThis.test(function() {
         assert!(
             results
                 .iter()
-                .any(|r| r.name == "sync prepare on type removal" && r.status == HarnessStatus::Pass),
-            "type 移除须同步重触发生成: {results:?}"
+                .any(|r| r.name == "sync prepare on children changed" && r.status == HarnessStatus::Pass),
+            "children-changed 须同步重触发生成: {results:?}"
         );
     }
 
@@ -12541,11 +12566,14 @@ globalThis.test(function() {
     }
 
     #[test]
-    fn script_prepare_on_type_removal_external_s109() {
-        // s109：type=text/plain 外链单元 removeAttribute('type') → prepare 取 src →
-        // 异步执行；运行期 createElement('script')+src 插入同面（125 形：期望序
-        // [e1, e2]——removeAttribute 先入队、插入的 marker 后入队，FIFO 保序）。
-        let root = std::env::temp_dir().join("zw-s109-external-prepare-test");
+    fn script_prepare_on_reinsertion_external_s110() {
+        // s110：type=text/plain 外链单元（s110 起投递面整段透传保 src）重插入 →
+        // post-connection 触发（spec 触发面不问 parser-inserted 的语料口径——122-126
+        // 族期望序依赖）→ force async 缺省真 → async-set 分支取源执行；工厂节点
+        // async=false setter → in-order FIFO 分支（122 形：期望序 [e1, e2]——重插入
+        // 先入 set、marker 后入 list，microtask 序保 e1 先执行；两跳 trickle FIFO
+        // 保序由 corpus 123 语料钉，bin 侧 sync 取回无延迟窗）。
+        let root = std::env::temp_dir().join("zw-s110-external-prepare-test");
         std::fs::create_dir_all(&root).unwrap();
         // 页锚 = https://wpt.test/prepare-external.html（case_name 无目录）→
         // ./inc*.js 相对解析到 root 直下。
@@ -12559,7 +12587,9 @@ globalThis.promise_test(function() {
   return new Promise(function(resolve) {
     var s = document.getElementById('t');
     s.removeAttribute('type');
+    s.parentNode.appendChild(s);
     var m = document.createElement('script');
+    m.async = false;
     m.src = './inc2.js';
     s.parentNode.appendChild(m);
     setTimeout(resolve, 50);
@@ -12567,7 +12597,7 @@ globalThis.promise_test(function() {
     assert_true(JSON.stringify(globalThis.__log) === JSON.stringify(['e1', 'e2']),
       'external prepare order: ' + globalThis.__log.join(','));
   });
-}, 'external prepare on type removal + insertion');
+}, 'external prepare on reinsertion + insertion');
 </script>"##;
         let results = run_testharness_html(
             &root,
@@ -12579,8 +12609,8 @@ globalThis.promise_test(function() {
         assert!(
             results
                 .iter()
-                .any(|r| r.name == "external prepare on type removal + insertion" && r.status == HarnessStatus::Pass),
-            "外链 prepare 须按 FIFO 取源执行: {results:?}"
+                .any(|r| r.name == "external prepare on reinsertion + insertion" && r.status == HarnessStatus::Pass),
+            "外链 prepare 须按排队分支取源执行: {results:?}"
         );
         let _ = std::fs::remove_dir_all(&root);
     }

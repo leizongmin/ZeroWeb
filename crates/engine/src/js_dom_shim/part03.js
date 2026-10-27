@@ -3856,9 +3856,18 @@
           && globalThis._zwScriptForevBlocked(el);
       } catch (_eF109) {}
       if (_fe109) return;
-      // 源解析：src 优先，回落 href / xlink:href（SVG 面口径）。
+      // 源解析：HTML 面 src 优先，回落 href / xlink:href；SVG script 面不读 src
+      //（SVG script 取源属性是 href/xlink:href——src 内容属性在 SVG script 上无
+      // 效，语料 146「SVG script adding src attribute」期望零执行；s110 前本臂
+      // 因 `globalThis._zwPrepareSrcScript` 惰性导出在外链段静默 no-op 而从未
+      // 暴露此缺门）。href 回落序不变：SVG href 面沿原通道。
+      // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+      var _ns109 = '';
+      try { _ns109 = String(el.namespaceURI || ''); } catch (_eNs109) {}
       var src = '';
-      try { src = el.getAttribute('src'); } catch (_eS109) {}
+      if (_ns109 !== 'http://www.w3.org/2000/svg') {
+        try { src = el.getAttribute('src'); } catch (_eS109) {}
+      }
       if (src == null || String(src).trim() === '') {
         try { src = el.getAttribute('href'); } catch (_eH109) {}
       }
@@ -3901,6 +3910,242 @@
       }
     } catch (_e109) {}
   };
+
+  // s110（html-semantics M2 切片 110）：s96 外链 prepare 家族迁至本层——原定义在
+  // 元素实例闭包内、导出点在闭包体尾，导出随首个实例创建才生效；早触发页
+  //（bin harness promise_test 于解析期执行，首个 script 插入记录先于任何实例
+  // 创建到达）`globalThis._zwPrepareSrcScript` 尚未导出，_mo_notify s109 臂的
+  // typeof 守卫静默 no-op（bin pin script_prepare_on_reinsertion_external_s110
+  // e1 缺席实证；corpus 晚触发页从未暴露）。本层语句 shim 求值即执行，导出
+  // 恒在；part04 trap 臂经作用域链直呼同名声明，行为不变。
+  // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+  // s96（html-semantics M2 切片 96）：script prepare 的 for/event 门——双属性在场
+  // 且非「for≈window 且 event≈onload|onload()（ASCII 剥白后 CI）」即中止；任一
+  // 属性缺失照跑（spec 门仅约束双属性在场形态）。与 s94 extract 双门
+  // （extract.rs script_blocked_by_for_event）同口径；toLowerCase 的 Unicode 折叠
+  // 极端形态由 Rust 提取路径兜底（R387 nomodule 门同姿态）。149 dom_inserted 臂
+  // （for=window event=load/onpageshow、for=document onload——不执行）经此门拦截。
+  // https://html.spec.whatwg.org/multipage/scripting.html#script-processing-for
+  function _zwScriptForevBlocked(el) {
+    var hasFor = false, hasEvent = false, forV = '', eventV = '';
+    try {
+      hasFor = !!(el.hasAttribute && el.hasAttribute('for'));
+      if (hasFor) forV = String(el.getAttribute('for') || '');
+    } catch (_eS96gf) {}
+    try {
+      hasEvent = !!(el.hasAttribute && el.hasAttribute('event'));
+      if (hasEvent) eventV = String(el.getAttribute('event') || '');
+    } catch (_eS96ge) {}
+    if (!hasFor || !hasEvent) return false;
+    var strip = function (s) { return s.replace(/^[\t\n\x0C\r ]+|[\t\n\x0C\r ]+$/g, ''); };
+    if (strip(forV).toLowerCase() !== 'window') return true;
+    var ev = strip(eventV).toLowerCase();
+    return !(ev === 'onload' || ev === 'onload()');
+  }
+
+  // s96 刀②：script 属性变更步骤（src set 且 value 非 null + connected →
+  // post-connection steps → prepare）的动态 src 执行面——R387b append 路径的
+  // fetch/执行体原样提升为共享 helper（append 有 src 与连接态 src-set 单点复用，
+  // 022「DOM added script, late .src」执行面）。门序对齐 prepare：already-started
+  // （run-once 表）→ nomodule → for/event → src 在场 → 页面 fetch 通道。连接态
+  // 判定归调用方（append 路径 R387 现状无 connected 门，set 路径 spec 要求
+  // connected——两路各自门控，不在此重复）。
+  // slice18（site-compat baidu 建议链 /sugrec，R-baidu8 接管收尾）：宿主管线
+  //（`__zwHostOwnsDynamicScripts`，renderer js_worker SetDomSnapshot 置位）置位
+  // 即整体跳过本 shim 页面 fetch 通道，动态 src 脚本单点交宿主
+  // PendingDynamicScripts（no-cors IPC 取回，tick_dynamic_scripts）执行并派元素
+  // load/error。依据：classic script 取回是 no-cors 资源取回（request mode
+  // "no-cors"），页面 fetch() 是 cors 语义——无 ACAO 的跨域 CDN 脚本（AMD 加载
+  // 器常态）在此永远失败 → 误派元素 error（脚本经宿主 no-cors 取回实际可执行，
+  // 活体矩阵 v9 真跨域 base 误 error+load 双派、fixed 单 load 实证）；且宿主
+  // tick 通道并存，同源脚本双通道双执行（base 活体 ran=2、load=2 实证——AMD
+  // define 双注册同族破坏）。单执行者归属宿主后两类问题一并消除。标志未置位
+  // 上下文（嵌入 webview / 引擎测试）保持原行为。
+  // https://html.spec.whatwg.org/multipage/scripting.html#script-attribute-change-steps
+  // https://html.spec.whatwg.org/multipage/scripting.html#fetch-a-classic-script
+  // FIXME(spec-gap): setAttribute('src', …) 通路未挂同一触发（语料 022/024 走
+  // .src IDL setter）；type 门（非 JS MIME 不执行）沿 R387b 现状未补。
+
+  // s110：外链执行/排水/在飞探针实现体——函数声明随本层求值即就绪（part04 gate/
+  // trap 臂经作用域链直呼，globalThis 导出供 part05 set trap 与 runner 读面）。
+  function _zwExecFetchedImpl(_u, _elx, _code, _cb) {
+    var abs = _u;
+    try {
+      abs = new URL(_u, (globalThis.document && globalThis.document.baseURI)
+        || (globalThis.location && globalThis.location.href) || 'about:blank').href;
+    } catch (_eS96abs) {}
+    var prev = (typeof globalThis.__zwSwapImportReferrer === 'function')
+      ? globalThis.__zwSwapImportReferrer(abs) : null;
+    var prevN = (typeof globalThis.__zwSwapImportNonce === 'function')
+      ? globalThis.__zwSwapImportNonce('') : null;
+    // s97：写入脚本执行面求值窗标记——外链槽位由 part06 面经
+    // `__zwDocWritePendingSlot` 挂链，求值窗内嵌套 write 的面从本槽位下一
+    // 槽起走即时 pass（插入点语义：嵌套写入内联在当前外链求值窗内同步
+    // 执行，execution-timing 009「external before/dw/after」序）。非写入
+    // 链发起的 prepare（R387b appendChild / s96 set trap / s97 insertBefore）
+    // 时 pendingSlot 无效，窗标记不设置。
+    var _s97EvSlot = (typeof globalThis.__zwDocWritePendingSlot === 'number'
+      && globalThis.__zwDocWritePendingSlot >= 0) ? globalThis.__zwDocWritePendingSlot : -1;
+    if (_s97EvSlot >= 0) globalThis.__zwDocWriteEvalSlot = _s97EvSlot;
+    try {
+      if (_code) (0, eval).call(globalThis, _code);
+    } finally {
+      if (_s97EvSlot >= 0) globalThis.__zwDocWriteEvalSlot = -1;
+      if (prev !== null) globalThis.__zwSwapImportReferrer(prev);
+      if (prevN !== null) globalThis.__zwSwapImportNonce(prevN);
+    }
+    try { _elx.dispatchEvent(new Event('load')); } catch (_eS96l) {}
+    if (typeof _cb === 'function') { try { _cb(); } catch (_eS97cb1) {} }
+  }
+  // s110：FIFO 头排水——首元素未就绪即止（spec list 步骤「scripts[0] is not el
+  // → abort」）；首元素就绪即执行并循环吸收后续就绪项（「while scripts 非空且
+  // scripts[0] result 非 uninitialized」）。失败取回同为非 uninitialized 结果
+  //（派 error），不阻塞队头推进。
+  // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+  function _zwDrainQueueImpl() {
+    var _q = globalThis._zwInOrderScriptQueue;
+    if (!_q) return;
+    while (_q.length && _q[0].ready) {
+      var _ent = _q.shift();
+      if (_ent.failed) {
+        try { _ent.el.dispatchEvent(new Event('error')); } catch (_eS110de) {}
+        if (typeof _ent.cb === 'function') { try { _ent.cb(); } catch (_eS110dc) {} }
+      } else {
+        globalThis._zwExecuteFetchedScript(_ent.url, _ent.el, _ent.code, _ent.cb);
+      }
+    }
+  }
+  // s110：动态外链取回在飞探针——runner load 等待（loadStep5275 重试条件扩展读）。
+  function _zwFetchPendingImpl() {
+    return (globalThis._zwScriptFetchInFlight || 0) > 0;
+  }
+  function _zwPrepareSrcScript(child, _zwOnRan) {
+    var _zwAsync = false;
+    try {
+      _zwAsync = _zwPrepareSrcScriptGate(child, _zwOnRan);
+    } catch (_eS96run) {
+      if (typeof globalThis._zwReportListenerError === 'function') {
+        try { globalThis._zwReportListenerError(_eS96run, null); } catch (_eS96rp) {}
+      }
+    }
+    // 同步出口（run-once/nomodule/for-event/宿主让位等门挡）＝脚本不会执行、
+    // 不阻塞后续流——立即续流（s97 写入脚本执行面依赖；DOM 臂无回调零影响）。
+    if (!_zwAsync && typeof _zwOnRan === 'function') {
+      try { _zwOnRan(); } catch (_eS97cb0) {}
+    }
+  }
+  // 门体：返 true 仅当 fetch 链已发起（求值完成回调经 _zwOnRan 在 then/catch 尾触发）。
+  function _zwPrepareSrcScriptGate(child, _zwOnRan) {
+    try {
+      // s110：身份门放宽到 sel 形——重插入的 parser 单元（execution-timing 122-126
+      // 形 getElementById 取回的 type=text/plain 外链）只有 __zwSelector 无
+      // __zwHandle，旧 handle 恒 bail 使重触发面死路。run-once 记账按身份形态
+      // 分表（handle → _zwRanScripts，sel → _zwScriptStarted，与 s95/s109 双表
+      // 语义同源）。
+      if (!child || (child.__zwHandle == null && child.__zwSelector == null)) return false;
+      var _gwHdl = (child.__zwHandle != null) ? child.__zwHandle : null;
+      var _gwSel = (_gwHdl == null) ? child.__zwSelector : null;
+      if (_gwHdl != null && globalThis._zwRanScripts && globalThis._zwRanScripts[_gwHdl]) return false;
+      if (_gwSel != null && globalThis._zwScriptStarted && globalThis._zwScriptStarted[_gwSel]) return false;
+      var nomod = false;
+      try {
+        nomod = !!(child.hasAttribute && child.hasAttribute('nomodule'))
+          && String(child.type || '').replace(/^[\t\n\x0C\r ]+|[\t\n\x0C\r ]+$/g, '')
+            .toLowerCase() !== 'module';
+      } catch (_eS96nm) {}
+      if (nomod) return false;
+      var forev = false;
+      try { forev = _zwScriptForevBlocked(child); } catch (_eS96fe) {}
+      if (forev) return false;
+      var url = '';
+      try { url = String(child.src || (child.getAttribute && child.getAttribute('src')) || ''); } catch (_eS96u) {}
+      if (!url || typeof fetch !== 'function'
+          || globalThis.__zwHostOwnsDynamicScripts === true) return false;
+      // s110：run-once 记账按身份形态分表（上方门读同口径）——handle 形走
+      // _zwRanScripts，sel 形走 _zwScriptStarted（spec already-started 置位时机
+      // = fetch 发起；重触发臂 s109 双表互斥同读）。
+      if (_gwHdl != null) {
+        if (!globalThis._zwRanScripts) globalThis._zwRanScripts = {};
+        globalThis._zwRanScripts[_gwHdl] = true;
+      } else {
+        if (!globalThis._zwScriptStarted) globalThis._zwScriptStarted = {};
+        globalThis._zwScriptStarted[_gwSel] = true;
+      }
+      var el96 = child;
+      // s110（html-semantics M2 切片 110）：排队分支判定——async 内容属性在场或
+      // force async 为真 → 「set of scripts that will execute as soon as possible」
+      //（取回即执行，原有行为）；否则「list of scripts that will execute in order
+      // as soon as possible」（FIFO 头排水，091/105/122-126 面）。force async 缺省
+      // 真（工厂节点/未投递 parser 单元）；置 false 面 = part05 async IDL setter /
+      // part01 async 属性加 / part06 parser 投递。
+      // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+      var _faAsyncQueue = true;
+      try {
+        var _faKey = _elKey(child.__zwSelector, child.__zwHandle);
+        _faAsyncQueue = !!(child.hasAttribute && child.hasAttribute('async'))
+          || !(globalThis._zwScriptForceAsync && _faKey != null
+            && globalThis._zwScriptForceAsync[_faKey] === false);
+      } catch (_eS110q) {}
+      // Resource Timing（M3 slice 1）：置发起方旗标（fetch 包裹消费为
+      // initiatorType 'script' + 真实时长窗口）——R387b 原语义。
+      _zwRtPendingInitiator = 'script';
+      // s110：外链取回 in-flight 计数——runner load 等待面（loadStep5275 重试条件
+      // 扩展读 `__zwScriptFetchPending`）。计数圈住 fetch() 发起到取回/失败回调
+      // 整窗（含 shim 侧 trickle/delay setTimeout 延迟）；门 bail 不计数，宿主
+      // 让位（__zwHostOwnsDynamicScripts）路径不进本段。
+      var _p110 = fetch(url);
+      globalThis._zwScriptFetchInFlight = (globalThis._zwScriptFetchInFlight || 0) + 1;
+      var _zwSettled110 = function () {
+        globalThis._zwScriptFetchInFlight
+          = Math.max(0, (globalThis._zwScriptFetchInFlight || 0) - 1);
+      };
+      var _faEntry = _faAsyncQueue ? null
+        : { ready: false, failed: false, code: '', url: url, el: el96, cb: _zwOnRan };
+      if (_faEntry) {
+        if (!globalThis._zwInOrderScriptQueue) globalThis._zwInOrderScriptQueue = [];
+        globalThis._zwInOrderScriptQueue.push(_faEntry);
+      }
+      _p110.then(function (_r) {
+        if (!_r.ok && _r.status) throw new Error('HTTP ' + _r.status);
+        return _r.text();
+      }).then(function (_code) {
+        _zwSettled110();
+        if (_faEntry) {
+          _faEntry.ready = true;
+          _faEntry.code = _code;
+          globalThis._zwDrainInOrderScriptQueue();
+          return;
+        }
+        globalThis._zwExecuteFetchedScript(url, el96, _code, _zwOnRan);
+      }).catch(function () {
+        _zwSettled110();
+        if (_faEntry) {
+          _faEntry.ready = true;
+          _faEntry.failed = true;
+          globalThis._zwDrainInOrderScriptQueue();
+          return;
+        }
+        try { el96.dispatchEvent(new Event('error')); } catch (_eS96e) {}
+        if (typeof _zwOnRan === 'function') { try { _zwOnRan(); } catch (_eS97cb2) {} }
+      });
+      return true;
+    } catch (_eS96gate) {
+      if (typeof globalThis._zwReportListenerError === 'function') {
+        try { globalThis._zwReportListenerError(_eS96gate, null); } catch (_eS96rp2) {}
+      }
+      return false;
+    }
+  }
+  // s96/s110：导出——part05 set trap（SCRIPT.src 分支）经 globalThis 取用
+  // _zwPrepareSrcScript；_zwExecuteFetchedScript/_zwDrainInOrderScriptQueue 供
+  // 取回回调；__zwScriptFetchPending 供 runner load 等待（loadStep5275）；
+  // _zwScriptForevBlocked 供 part06 写入执行面复用。导出随本层求值恒在
+  //（原 part04 闭包尾导出随首个实例创建才生效——早触发页 no-op 根因）。
+  globalThis._zwPrepareSrcScript = _zwPrepareSrcScript;
+  globalThis._zwExecuteFetchedScript = _zwExecFetchedImpl;
+  globalThis._zwDrainInOrderScriptQueue = _zwDrainQueueImpl;
+  globalThis.__zwScriptFetchPending = _zwFetchPendingImpl;
+  globalThis._zwScriptForevBlocked = _zwScriptForevBlocked;
   // SVGSVGElement.createSVGLength（spec SVGSVGElement 工厂族首项——detached
   // SVGLength 是单位模型族的测试载体；createSVGMatrix/Rect/Point 等 S2b/S3 补）。
   if (globalThis.SVGSVGElement && globalThis.SVGSVGElement.prototype

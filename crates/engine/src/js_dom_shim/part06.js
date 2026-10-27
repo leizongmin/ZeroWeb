@@ -6282,6 +6282,20 @@
         if (_s95El && _s95El.__zwSelector) {
           if (!globalThis._zwScriptStarted) globalThis._zwScriptStarted = {};
           globalThis._zwScriptStarted[_s95El.__zwSelector] = true;
+          // s110（html-semantics M2 切片 110）：parser 投递即 force async=false——
+          // spec「force async 由 HTML/XML parser 于其插入的 script 元素置 false」。
+          // 标注点随投递而非解析插入：type=text/plain 等 data-block 形态 extract 期
+          // 不投递（parse 期 prepare 于 type 门 bail，force async 保 true——122 形
+          // re-insert 后 async IDL reflection 断言依赖）；nomodule/for-event 门压制
+          // 单元同样不投递不标（spec 语义为 false，此处保持 true——已知取舍，仅影响
+          // 其后 mutation 重触发面的排队分支归属）。
+          // https://html.spec.whatwg.org/multipage/scripting.html#concept-script-force-async
+          var _faKey = null;
+          try { _faKey = _elKey(_s95El.__zwSelector, _s95El.__zwHandle); } catch (_eS110fa) {}
+          if (_faKey != null) {
+            if (!globalThis._zwScriptForceAsync) globalThis._zwScriptForceAsync = {};
+            globalThis._zwScriptForceAsync[_faKey] = false;
+          }
         }
       } catch (_eS95m) {}
     }

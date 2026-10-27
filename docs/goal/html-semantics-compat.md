@@ -2,42 +2,48 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 109 施工收口（script mutation 重触发 prepare 轮：scripting-1 **377P/173F/37T→380P/170F/37T**，**+3P 零 P→非P**——execution-timing 124/144/145 三页销账；两刀：`_mo_notify` 三触发臂（attributes@SCRIPT type/src/href/xlink:href + childList@SCRIPT + addedNodes 含 SCRIPT，挂 shim 属性/子节点记录单一汇流点）+ `_zwScriptMaybeStartDynamic` 门序分派路由（connected→run-once（与 R387/s95/s96 同表互斥）→type→nomodule→for/event→外链单点复用 `_zwPrepareSrcScript` / 内联 s95 同款调用点同步 eval——不自带执行器，初版自带 setTimeout 取源致与既有 R387b 双执行，返工定谳）；Rust 侧嵌套执行证伪（sandbox 回调签名无 sandbox 访问 + execute 需 &mut self）→ shim 层 (0,eval) 路径定谳；engine 3544/webview 814/runner bin 236/clippy 双 crate clean），下一步 s110：122-126 marker 面（createElement 工厂节点外链在 corpus strict 管线的执行死因探针——script#t 面本轮已修，async=false 已排除、query 串系钉入口 fetcher 差异非 corpus 根因）+ 122 async IDL reflection / 130/147/148 scheduler 面 / 142 write 臂 xlink:href；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 110 施工收口（prepare 家族提升 + force async 语义面轮：scripting-1 **380P/170F/37T→395P/155F/37T**，**+15 行绿/14 页零 P→非P**——execution-timing 081/082/091/092/095/097/105/119/122/123/125/126/130 十三页 + delay-load-event-2 连带销账；三刀：①s96 prepare 家族 part04 元素实例闭包→part03 语句层提升（惰性导出根因修复——bin harness 解析期早触发页 typeof 守卫 no-op，corpus 晚触发从未暴露；身份门放宽 sel 形+记账分表+FIFO in-order 队列+__zwScriptFetchPending in-flight 计数）②force async 语义面四标注（part06 parser 投递/part05 async IDL setter/part01 async 属性加/part04 async getter 六级分派——attr helper '1'/'0' 串严格判等，真值判定把缺席 '0' 当在场 r3040 假阳性实证）③SVG src 门（SVG script 取源属性 href/xlink:href，src 无效——语料 146；家族提升揭臂后补）；attributes 臂 type 移除（spec 无 type 变更触发条款，122-126 依赖不重触发）；engine 3544/webview 814/runner bin 236（+3 钉）/clippy 双 crate clean），下一步 s111 候选：147/148 scheduler 面（insert multiple inline scripts——first moves/deletes subsequent）/ 050/085/086/088/111/112 slow-loading 外链时序 pipe=trickle 建模 / 142 write 臂 xlink:href / 143 eventOrder 完整核验；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-27 M2 切片 109 施工收口，script mutation 重触发 prepare 轮）**：
-> **入场定谳**：s109 承 s108 主候选 mutation 重触发机制面七行（122 第二层 async
-> IDL+时序、123-126、144/145）。可行性先行证伪：Rust 侧嵌套执行不可行——
-> script-sandbox 回调签名 `Fn(&[String])->String+Send+Sync` 无 sandbox 访问 +
-> `execute` 需 `&mut self`；定谳 shim 层 indirect `(0, eval)`（同上下文、调用点
-> 同步）。既有件盘点：`_mo_notify`（part01:6019）为 shim 全部 attr/childList
-> 记录单一汇流点（proxy 64 处 + 工厂 13 处皆经此）——触发臂挂此单点；
-> `_zwPrepareSrcScript`（s96 外链单点 helper）与 R387/s95 run-once 记账表为复用基座。
-> **本轮两刀**：①`_mo_notify` 三触发臂——attributes@SCRIPT（type/src/href/
-> xlink:href）+ childList@SCRIPT（textContent=/.text/子内容变更）+ addedNodes 含
-> SCRIPT（插入面安全网）；②`_zwScriptMaybeStartDynamic` 门序分派路由——
-> connected（detached 属性写入不 prepare，s96 同口径）→ run-once（与 R387/s95/s96
-> **同表互斥**）→ type → nomodule → for/event → 外链单点复用 `_zwPrepareSrcScript`
-> / 内联 s95 同款同步 eval + 异常上报 + 执行即置记账；prepare 拒绝不置记账（144
-> 臂序依赖）。**调试返工（本轮主发现）**：初版自带 setTimeout 取源执行器与既有
-> appendChild trap R387b 双执行（钉 C log `e1,e2,e2`）——inc 埋 Error().stack 分辨
-> 双路径后定谳，重设计为分派路由：既有执行臂与本面触发臂共享记账表，任一先到即
-> 独占。
-> **验证**：engine lib **3544/3544**；webview lib **814/814**（持平，webview.rs 零
-> 变更）；runner bin **236/0**（+3 钉：type 移除同步内联 prepare / svg script
-> textContent= 重触发 / 外链 type 移除取源+marker FIFO）。全子树终扫
-> **380P/170F/37T+15N**（s108：377P/173F/37T+15N，**+3P**），行级归一 diff
->（/tmp/s109-final-scripting-1.log 存档）**零 P→非P**（无 Pass 行消失、无新增非 P、
-> 消失非 P 恰为销账页）：execution-timing **124/144/145** 三页 Fail→Pass。
-> **122-126 余面边界定位**：四页共同缺项均为 marker（createElement 工厂节点）外链
-> 执行——script#t 面（type 移除取源）本轮已修；钉面单变量定谳 async=false 无罪、
-> query 串系钉入口 fetcher 不剥 query（corpus fetcher 剥，非 corpus 根因）——
-> corpus strict 管线对工厂节点外链的投递/收集面为 s110 探针点。fmt：wpt-runner
-> clean（engine 侧 paint/painter/text.rs:4130 存量 fmt diff 系渲染流文件，未触碰
-> 仅提及）；clippy engine+wpt-runner `-D warnings` clean。渲染面零依赖——
-> reftest/product-smoke 未跑。账本见
-> [evidence/2026-10-27-m2s109-mutation-retrigger.md](html-semantics-compat/evidence/2026-10-27-m2s109-mutation-retrigger.md)。
-> **范围**：engine shim part01/part03 ×2 + runner testharness.rs ×1（3 钉）；
-> webview/语料/依赖零变更；语料不可改维持。
+> **▶ 当前状态（2026-10-27 M2 切片 110 施工收口，prepare 家族提升 + force async 语义面轮）**：
+> **入场定谳**：s110 承 s109 挂账两行——122-126 marker 面（createElement 工厂节点
+> 外链执行死因）与 122 async IDL reflection。**bin pin e1 缺席根因 = psp 惰性导出**：
+> s96 prepare 家族原定义在 part04 元素实例闭包内、globalThis.* 导出在闭包体尾，
+> 导出随首个实例创建才生效；早触发页（bin harness promise_test 于解析期执行）首条
+> script 插入记录先于任何实例创建，typeof 守卫静默 no-op——corpus 页 promise_test
+> 晚触发（load 后）从未暴露。spec 定谳（prepare-the-script-element +
+> dom-script-async）：force async=false 写入在 type 判定**之后**——type 非法早退保
+> 创建缺省 true（122 形 re-insert 断言 current-spec 正确），type 合法 parser 投递写
+> false（引擎沙箱 sc2 缺省 false 面 = r3040 真实浏览器语义）；两断言不矛盾，分属
+> prepare 前后两态。
+> **本轮三刀**：①家族提升——s96 全家族（forev 门/exec/drain/fetch-pending/prepare/
+> gate）迁 part03 语句层，导出恒在；gate 身份门放宽 sel 形（重插入 parser 单元无
+> handle）、run-once 记账按身份形态分表、排队分支（async attr ∥ force async）→
+> 即执行集 or FIFO in-order 队列（头排水 abort 语义）+ __zwScriptFetchPending
+> in-flight 计数（runner load 等待扩读）。②force async 语义面——part06 parser 投递
+> 标 false（随投递非解析插入）、part05 async IDL setter 步骤 1 恒置 false、part01
+> async 属性加标注、part04 async getter 六级分派（表项 true→attr 在场→表项 false→
+> 工厂 handle 真→parser started 真→type 非法真→JS 合法未 started 假）。
+> ③SVG src 门——`_zwScriptMaybeStartDynamic` 源解析按 namespaceURI 跳过 src（SVG
+> script 取源 href/xlink:href，语料 146 期望零执行；家族提升揭臂后补门）。
+> **调试定谳（本轮主发现）**：getter 假阳性二分——r3040 sc2.async 读 true 而新
+> getter 应 false；探针三段（trap 顶部 G:async 可达→预门 rb:SCRIPT/lw:0）定谳
+> `__zw_has_attr_lw` 返 '1'/'0' **串**，真值 if (_faHas) 把缺席 '0' 当在场——严格
+> `=== '1'` 修复（generic presence 读同约定）。part01 addedNodes `_makeProxy` 预实例
+> 化为 e1 缺席误诊所加，经证非根因已回退（hoist 单独承重）。
+> **验证**：engine lib **3544/3544**；webview lib **814/814**（持平）；runner bin
+> **236/0**（+3 钉：children-changed 外链 / textContent= 外链重触发 / 重插入外链
+> FIFO [e1,e2]）。execution-timing 定向扫 **124P/28F/1T**（基线 110P/40F/1T，+14 绿）。
+> 全子树终扫 **395P/155F/37T**（s109：380P/170F/37T+15N，**+15 行/14 页**），行级归一
+> diff（/tmp/s110-final2-scripting-1.log 存档）**零 P→非P**：execution-timing
+> 081/082/091/092/095/097/105/119/122×2/123/125/126/130 + moving-between-documents/
+> ordering **delay-load-event-2**（load 等待面连带）。fmt：testharness.rs clean
+>（knife A 注释缩进归位；engine 侧 paint/painter/text.rs:4130 存量 fmt diff 未触碰
+> 仅提及）；clippy engine+wpt-runner `-D warnings` clean，fmt 后 runner bin 复跑
+> 236/0。渲染面零依赖——reftest/product-smoke 未跑。账本见
+> [evidence/2026-10-27-m2s110-force-async-and-prepare-hoist.md](html-semantics-compat/evidence/2026-10-27-m2s110-force-async-and-prepare-hoist.md)。
+> **范围**：engine shim part01/part03/part04/part05/part06 + pipeline/extract.rs
+>（script_type_is_javascript pub）+ runner testharness.rs（3 钉）；webview/语料/
+> 依赖零变更；语料不可改维持。
 > **挂账**：s110 主候选 122-126 marker 面（工厂节点外链 corpus 死因探针）+ 122
 > async IDL reflection（re-insert 后 `script.async` 反射 true）；130/147/148
 >（insert multiple inline scripts; first moves/deletes subsequent scheduler 面）；
