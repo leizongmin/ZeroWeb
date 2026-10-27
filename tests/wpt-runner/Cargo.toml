@@ -29,6 +29,8 @@ png = "0.17"
 rayon = "1"
 base64 = "0.22"
 percent-encoding = "2"
+# s115：classic 外链脚本响应解码序（BOM > ct charset 参数 > charset 属性 > UTF-8）
+encoding_rs = { workspace = true }
 # net-api M5-S1：内嵌 WS fixture 端点握手 accept 推导（ws_fixture.rs）
 sha1 = { workspace = true }
 tracing-subscriber = { workspace = true }
