@@ -25,17 +25,21 @@ goal 入口文档 `docs/goal/<goal>.md` DC-1。
 | 17 | [webmessaging-compat](../../../../docs/goal/archive/webmessaging-compat.md) | webmessaging | 无（2026-10-08 立项；跨 frame 面挂 navigation-compat M3 门槛） |
 | 18 | [cookies-compat](../../../../docs/goal/archive/cookies-compat.md) | cookies |  **已收口**（2026-10-12，533/533 = 100%，已归档） |
 | 19 | [performance-api-compat](../../../../docs/goal/archive/performance-api-compat.md) | performance-api（resource/navigation/event/longtask） | 缺面甄别在 M1（host 数据管道） |
-| 20 | [net-api-compat](../../../../docs/goal/archive/net-api-compat.md) | fetch; xhr; url; mimesniff; streams; eventsource | **已收口**（2026-10-04）；WebSocket 二期挂账 |
+| 20 | [net-api-compat](../../../../docs/goal/net-api-compat.md) | fetch; xhr; url; mimesniff; streams; eventsource | **二期立项**（2026-10-27，coverage 对账驱动：url/mimesniff/fetch 失败簇收敛 + WebSocket 重估；[一期归档](../../../../docs/goal/archive/net-api-compat.md)） |
 | 21 | [console-compat](../../../../docs/goal/archive/console-compat.md) | console | 无（极小快赢；console 捕获通道 M1 甄别，触面先与 devtools 流协调） |
 | 22 | [touch-events-compat](../../../../docs/goal/archive/touch-events-compat.md) | touch-events | **已收口**（2026-10-14）；注入面挂宿主触摸注入管线重入 |
-| 23 | [selection-compat](../../../../docs/goal/archive/selection-compat.md) | selection | 无（2026-10-08 立项） |
+| 23 | [selection-compat](../../../../docs/goal/selection-compat.md) | selection | **二期立项**（2026-10-27，coverage 对账驱动：语料 20→101 文件扩面；[一期归档](../../../../docs/goal/archive/selection-compat.md)） |
 | 24 | [compression-compat](../../../../docs/goal/archive/compression-compat.md) | compression | 无（实现型小套件，M2 实现轮） |
 | 25 | [html-semantics-compat](../../../../docs/goal/html-semantics-compat.md) | html/semantics 十子域 | **主攻大域**（分域切片收口制） |
-| 26 | [webcrypto-compat](../../../../docs/goal/archive/webcrypto-compat.md) | WebCryptoAPI | 无（2026-10-08 立项；随机源面已有，subtle 实现轮分片自主） |
+| 26 | [webcrypto-compat](../../../../docs/goal/webcrypto-compat.md) | WebCryptoAPI | **二期立项**（2026-10-27，coverage 对账驱动：扩面 derive_bits_keys + tentative 转正甄别，一期 77.89% 零回归底线；[一期归档](../../../../docs/goal/archive/webcrypto-compat.md)） |
 | 27 | [page-state-compat](../../../../docs/goal/archive/page-state-compat.md) | beacon; page-visibility; online | **已收口**（2026-10-18）；偏差记账 beacon 混合内容阻断与 keepalive in-flight 配额池（FIXME） |
 | 28 | [dnd-compat](../../../../docs/goal/archive/dnd-compat.md) | dnd |  **已收口**（2026-10-18，437/446 = 98.0%，已归档） |
 | 29 | [pointerlock-compat](../../../../docs/goal/archive/pointerlock-compat.md) | pointerlock | **已收口**（2026-10-19 M3 完成 22/22，已归档） |
 | 30 | [encoding-compat](../../../../docs/goal/archive/encoding-compat.md) | encoding | **已收口**（2026-10-04） |
+| 31 | [encoding-legacy-mb](../../../../docs/goal/encoding-legacy-mb.md) | encoding/legacy-mb 文档族 | **M0 门控**（2026-10-27 coverage 立项）：runner 文档解码管道可行性未验证，此关未过不推进；全量分母 50% 所在 |
+| 32 | [wasm-compat](../../../../docs/goal/wasm-compat.md) | wasm/core; wasm/webapi | 无（2026-10-27 coverage 立项；jsapi 75.7% 基线零回归底线） |
+| 33 | [editing-compat](../../../../docs/goal/editing-compat.md) | editing/run; editing/other | 无（2026-10-27 coverage 立项；长线先语料后引擎，按簇收敛） |
+| 34 | [dom-expansion](../../../../docs/goal/dom-expansion.md) | dom/ranges; html/dom 扩面 | 无（2026-10-27 coverage 立项；40 号划界承接，parser 通道零回归底线） |
 | 40 | [html-syntax-compat](../../../../docs/goal/archive/html-syntax-compat.md) | html/syntax; html/dom | **已收口**（2026-10-04） |
 | 50 | [uievents-compat](../../../../docs/goal/archive/uievents-compat.md) | uievents; pointerevents |  **已收口**（2026-10-07 M4；M5 巡检 2026-10-20 收口 1805P/166F/95TO，已归档）；IME 挂账 |
 | 60 | [navigation-compat](../../../../docs/goal/archive/navigation-compat.md) | history; navigation-api; html/browsers | **已收口**（2026-10-21 M3 收口，M2 437/476 = 91.8%、全量 473P/584 案行，已归档）；残余超口径记账池挂账 |
@@ -45,11 +49,12 @@ goal 入口文档 `docs/goal/<goal>.md` DC-1。
 | 92 | [web-api-batch2](../../../../docs/goal/archive/web-api-batch2.md) | clipboard-apis; fullscreen | **已收口**（2026-10-04） |
 | 99 | [webgl-compat](../../../../docs/goal/archive/webgl-compat.md) | webgl | **已收口**（2026-10-23 M4，用户签收 §5 三项后归档）；基线 2112P/3F（3F 为上游 IDL 重载判据）、reftest 716/716；WebGL2/WebGPU 挂账定稿见 M4 evidence |
 
-**预留与协调面（2026-10-08 更新）**：上表 10-29 槽位已全部立项。未拆候选：
-cssom-view / geometry-1（渲染 API 面，与 rendering-compat 工作面重叠，立项前先按
-run-rules §9 协调）、websockets（等 net 二期）、webrtc / getUserMedia / webaudio /
-geolocation / sensors / speech 类（host 设备与音频图缺失，远期门控池；30 已被
-encoding 占用，从 31 号起顺延占位）。
+**预留与协调面（2026-10-27 更新）**：31-34 已占位（coverage-2026-10-27 对账立项：
+encoding-legacy-mb / wasm / editing / dom-expansion），新候选从 35 号起顺延。
+未拆候选：cssom-view / geometry-1（渲染 API 面，与 rendering-compat 工作面重叠，
+立项前先按 run-rules §9 协调）、webrtc / getUserMedia / webaudio / geolocation /
+sensors / speech 类（host 设备与音频图缺失，远期门控池；websockets 随 20 号二期
+DC-3 重估）。
 
 ## 与 rally 启动脚本的关系
 
