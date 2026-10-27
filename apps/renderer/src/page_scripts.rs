@@ -194,9 +194,9 @@ pub fn run_page_scripts_interruptible<F: Fn(&str) -> Result<String, String>>(
             html = new_html;
         }
 
-        let is_module = matches!(&script, PageScript::InlineModule(_) | PageScript::ExternalModule(_));
+        let is_module = matches!(&script, PageScript::InlineModule(_) | PageScript::ExternalModule { .. });
         let module_url = match &script {
-            PageScript::ExternalModule(src) => resolve_document_url(&base, src),
+            PageScript::ExternalModule { src, .. } => resolve_document_url(&base, src),
             PageScript::InlineModule(_) => base.clone(),
             _ => String::new(),
         };
@@ -209,18 +209,20 @@ pub fn run_page_scripts_interruptible<F: Fn(&str) -> Result<String, String>>(
         // https://html.spec.whatwg.org/multipage/webappapis.html#module-map
         let module_cache_key = match &script {
             PageScript::InlineModule(_) => format!("{base}#!zw-inline-module-{script_index}"),
-            PageScript::ExternalModule(src) => resolve_document_url(&base, src),
+            PageScript::ExternalModule { src, .. } => resolve_document_url(&base, src),
             _ => base.clone(),
         };
         // R2944 mirror：外部脚本的绝对 src（fetch 成功+执行后派 script 元素 'load'；fetch 失败在下方分支派 'error'）。
         let external_abs: Option<String> = match &script {
-            PageScript::External(src) | PageScript::ExternalModule(src) => Some(resolve_document_url(&base, src)),
+            PageScript::External(src) | PageScript::ExternalModule { src, .. } => {
+                Some(resolve_document_url(&base, src))
+            }
             _ => None,
         };
 
         let code = match script {
             PageScript::Inline(code) | PageScript::InlineModule(code) => code,
-            PageScript::External(_) | PageScript::ExternalModule(_) => {
+            PageScript::External(_) | PageScript::ExternalModule { .. } => {
                 let abs = external_abs.clone().unwrap_or_default();
                 match fetch_text(&abs) {
                     Ok(code) => code,

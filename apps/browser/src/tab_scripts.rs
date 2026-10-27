@@ -108,9 +108,9 @@ impl PageScriptRunner {
 
         let (script, script_index) = &self.scripts[self.index];
         let label = page_script_label(script);
-        let is_module = matches!(script, PageScript::InlineModule(_) | PageScript::ExternalModule(_));
+        let is_module = matches!(script, PageScript::InlineModule(_) | PageScript::ExternalModule { .. });
         let module_url = match script {
-            PageScript::ExternalModule(src) => resolve_document_url(&self.base, src),
+            PageScript::ExternalModule { src, .. } => resolve_document_url(&self.base, src),
             PageScript::InlineModule(_) => self.base.clone(),
             _ => String::new(),
         };
@@ -123,18 +123,20 @@ impl PageScriptRunner {
         // https://html.spec.whatwg.org/multipage/webappapis.html#module-map
         let module_cache_key = match script {
             PageScript::InlineModule(_) => format!("{}#!zw-inline-module-{}", self.base, script_index),
-            PageScript::ExternalModule(src) => resolve_document_url(&self.base, src),
+            PageScript::ExternalModule { src, .. } => resolve_document_url(&self.base, src),
             _ => self.base.clone(),
         };
         // R2944：外部脚本的绝对 src（fetch 成功+执行后派 script 元素 'load'；fetch 失败已在内联分支派 'error'）。
         let external_abs: Option<String> = match script {
-            PageScript::External(src) | PageScript::ExternalModule(src) => Some(resolve_document_url(&self.base, src)),
+            PageScript::External(src) | PageScript::ExternalModule { src, .. } => {
+                Some(resolve_document_url(&self.base, src))
+            }
             _ => None,
         };
 
         let code = match script {
             PageScript::Inline(code) | PageScript::InlineModule(code) => code.clone(),
-            PageScript::External(src) | PageScript::ExternalModule(src) => {
+            PageScript::External(src) | PageScript::ExternalModule { src, .. } => {
                 let abs = resolve_document_url(&self.base, src);
                 match wv.fetch_text_at(&abs) {
                     Ok(code) => code,
@@ -630,7 +632,7 @@ fn page_script_label(script: &PageScript) -> String {
             format!("inline module: {preview}")
         }
         PageScript::External(src) => format!("external: {src}"),
-        PageScript::ExternalModule(src) => format!("external module: {src}"),
+        PageScript::ExternalModule { src, .. } => format!("external module: {src}"),
     }
 }
 

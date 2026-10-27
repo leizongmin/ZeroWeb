@@ -2436,6 +2436,12 @@ impl super::Painter {
                     // Some((期望字符序列, 已消费数))——仅首个含非空白字符的片段携带；
                     // 字形与期望字符不匹配（shaping 变体/分裂）即放弃，防止错染。
                     let mut first_letter_expected: Option<(Vec<char>, usize)> = None;
+                    // R5299：单行整盒 band 域绘制去重（per owner+行+段一次）——band 域
+                    // bg/横条覆盖段内全部片段，宏内「bg→字形」逐片段交错，逐片段重绘
+                    // 会以后者 fill 盖住前者字形（chromium 为全 bg 层后全字形层；
+                    // selection-012 flag-on 实证第二词 bg 盖掉首词字形）。
+                    let mut r5299_band_drawn: std::collections::HashSet<(NodeId, u32, u32)> =
+                        std::collections::HashSet::new();
                     let mut first_letter_applied = false;
                     let first_letter_bg_color: Option<Color> = style
                         .first_letter_pseudo
@@ -2443,7 +2449,7 @@ impl super::Painter {
                         .filter(|s| s.background_color != ColorValue::Transparent)
                         .map(|s| color_value_to_render(&s.background_color));
                     macro_rules! render_fragment {
-                        ($frag_x:expr, $frag_y:expr, $frag_line_top:expr, $frag_edge:expr, $frag_width:expr, $baseline_offset:expr, $frag_fs:expr, $frag_text:expr, $frag_nid:expr, $is_ahem:expr, $frag_source:expr, $frag_ls:expr, $frag_sel:expr) => {{
+                        ($frag_x:expr, $frag_y:expr, $frag_line_top:expr, $frag_edge:expr, $frag_width:expr, $baseline_offset:expr, $frag_fs:expr, $frag_text:expr, $frag_nid:expr, $is_ahem:expr, $frag_source:expr, $frag_ls:expr, $frag_sel:expr, $frag_band_map:expr, $frag_seg_map:expr) => {{
                             // R4233：per-fragment letter-spacing（镜像 R4133 per-fragment
                             // word-spacing）——片段所属 run 声明的 ls 与容器盒不同时
                             //（span{letter-spacing} / 容器内 normal 重置），glyph advance、
@@ -2461,6 +2467,50 @@ impl super::Painter {
                                 doc.parent_node($frag_nid).unwrap_or($frag_nid)
                             } else {
                                 $frag_nid
+                            };
+                            // R5297：owner 行连续 x 域 (min_x, max_end)（调用点建
+                            // (owner, line_top) → 域 表，含祖先累计，见
+                            // owner_line_band_extent_map）；无表项退自身 run 域。
+                            // 表值/回退值均容器相对 x——与 frag_base_x 同基座
+                            // （content_x + tx）换算到绘制域：缺 content_x 时整带
+                            // 左移出内容盒（c42 带左移 body margin 8px 被 pair 对消
+                            // 掩盖，multicol-basic-001..004 边框带实证 2.33%）。
+                            // R5299：单行整盒（旗标开）改用裂解段表——按片段 x 区间
+                            // 包含查找所属段；miss 回落行连续域（R5297 口径不变）。
+                            // 段命中时首/末边归属改用段标记（逻辑首/末片段所在段），
+                            // bidi 重排下视觉 x 序 ≠ 逻辑序。
+                            let r5299_seg = if r4332_is_multi_line {
+                                None
+                            } else {
+                                $frag_seg_map
+                                    .get(&(r4332_owner, $frag_line_top.to_bits()))
+                                    .and_then(|segs| {
+                                        segs.iter().copied().find(|&(s, e, _, _)| {
+                                            $frag_x >= s - 0.5
+                                                && $frag_x + $frag_width <= e + 0.5
+                                        })
+                                    })
+                            };
+                            let r5299_seg_hit = r5299_seg.is_some();
+                            let (r5297_band_min_x, r5297_band_max_end) = {
+                                let (r5297_mn, r5297_mx) = match r5299_seg {
+                                    Some((s, e, _, _)) => (s, e),
+                                    None => $frag_band_map
+                                        .get(&(r4332_owner, $frag_line_top.to_bits()))
+                                        .copied()
+                                        .unwrap_or(($frag_x, $frag_x + $frag_width)),
+                                };
+                                (content_x + r5297_mn + tx, content_x + r5297_mx + tx)
+                            };
+                            // R5299：band 域边归属——段命中用段标记，miss 沿用
+                            // owner 逻辑首/末（owner_fragment_edge_flags 口径）。
+                            let (r5299_band_first, r5299_band_last) = match r5299_seg {
+                                Some((_, _, sf, sl)) => (sf, sl),
+                                None => (r4332_is_first, r4332_is_last),
+                            };
+                            let r5299_seg_x0 = match r5299_seg {
+                                Some((s, _, _, _)) => content_x + s + tx,
+                                None => 0.0,
                             };
                             // CSS 2.1 §9.2.1.1: an inline-block is an atomic inline-level box.
                             // Its parent IFC emits an empty placeholder solely for positioning; the
@@ -2960,8 +3010,9 @@ impl super::Painter {
                                 };
                                 // 首/末片段外沿水平扩展（横条含角 + 竖边贴片段外缘）：
                                 // pad 垂直边随首/末片段（collect 侧 pad 只折入首/末 run，同口径）。
-                                let lead_ext = if r4332_is_first { pad_left + bl_w } else { 0.0 };
-                                let trail_ext = if r4332_is_last { pad_right + br_w } else { 0.0 };
+                                // R5299：段命中时改用段标记（逻辑首/末片段所在段）。
+                                let lead_ext = if r5299_band_first { pad_left + bl_w } else { 0.0 };
+                                let trail_ext = if r5299_band_last { pad_right + br_w } else { 0.0 };
                                 // R4549：clip:text 恒色 owner 的 fragment bg 抑制——bg 改由
                                 // 子树字形承载（R1442 per-fragment bg 站与 box-level 站同规；
                                 // linebreak 案实证首片段 bg 泄漏为实心条）。
@@ -3021,7 +3072,17 @@ impl super::Painter {
                                         owner_style.box_decoration_break,
                                         zero_style_system::property::types::BoxDecorationBreakValue::Slice
                                     )
-                                    && owner_style.background_image.is_empty();
+                                    // R5297：`background: <color>` 简写留一层 None 图像占位
+                                    //（非空 vec）——门义为「无**真实**图像」（合成语义未实现），
+                                    // 全 None 层视同无图（bgi=1 曾把 bg 色多行 span 挡回词宽
+                                    // 旧轨，r5297 单测实证）。
+                                    && owner_style
+                                        .background_image
+                                        .iter()
+                                        .all(|img| matches!(
+                                            img,
+                                            zero_style_system::property::types::BackgroundImageComputedValue::None
+                                        ));
                                 // R5120（css-break-3 §5.3：slice 单片段 ≡ 整盒）：**单行** owner
                                 // 的 border/padding bleed 与多片段 slice 同几何——整盒锚横条
                                 //（单行=内容区，见 r5120_content_box；多片段=行盒；均含角外延）
@@ -3032,17 +3093,34 @@ impl super::Painter {
                                 // 多行 clone / bg-image owner 仍走基线口径（合成语义未实现）。
                                 // kill-switch `ZW_INLINE_SINGLE_FRAG_BOX_BORDER=1`（OnceLock 单读）
                                 // 启用整盒几何；默认关 = 基线锚双轨（R4332 口径，见函数文档）。
-                                let r4332_whole_box = single_frag_box_border_enabled()
-                                    && (!r4332_is_multi_line || r4332_multi_fragment);
+                                // R5297：多片段 slice 不受该开关辖制——整盒几何对多片段
+                                // **默认生效**（R5120 重构误把它并入此默认关开关，横条回落
+                                // 基线锚+词宽：c42-ibx-ht-000 实证 BT 带落字高中部、x 只词
+                                // run 宽，chromium 为内容区锚+行片段连续域）；单片段整盒仍
+                                // dormant（开关默认关）。
+                                let r4332_whole_box = if r4332_is_multi_line {
+                                    r4332_multi_fragment
+                                } else {
+                                    // R5299：backdrop-filter 滤区取盒级 rect
+                                    //（effects.rs apply_backdrop_filter R4296/R4297 行盒+
+                                    // 外延口径），与整盒内容区锚几何不同域——合成语义未
+                                    // 实现，此类 owner 保留基线口径（同 box-decoration-break:
+                                    // clone / bg-image owner 先例），防滤镜区与描绘盒错位
+                                    //（backdrop-filter-inline-positioning）。
+                                    single_frag_box_border_enabled()
+                                        && owner_style.backdrop_filter.is_empty()
+                                };
                                 let legacy_line_top = content_y + $frag_y + $baseline_offset + ty;
-                                // R5120（CSS2.1 §10.8.1 content area）：单行整盒竖直锚 = **内容区**
+                                // R5120（CSS2.1 §10.8.1 content area）：整盒竖直锚 = **内容区**
                                 // [baseline−ascent, baseline+descent]（字体原始度量），非行盒——
                                 // 显式 line-height 只拉伸行盒，inline 的 border/padding/bg 仍贴内容区
                                 //（bidi-003 lh:3em 实证：行盒锚把横条推出 ~0.9em，6 案翻红）。
-                                // 度量缺失（宿主未注册 / `ZW_FALLBACK_LINE_METRICS=0`）回退行盒锚；
-                                // 多片段 slice 维持 R4332 行盒锚不动。size-adjust 生效片段的内容区
-                                // 未随缩放——FIXME 遇案再修。
-                                let r5120_content_box = if r4332_whole_box && !r4332_is_multi_line {
+                                // 度量缺失（宿主未注册 / `ZW_FALLBACK_LINE_METRICS=0`）回退行盒锚。
+                                // R5297：多片段 slice 同贴内容区——行盒锚把横条/bg 贴 [T,T+12]
+                                // 全行盒且行间无缝，chromium 内容区带 [b−a,b+d] 行间留 half-leading
+                                // 缝（c42 两页 oracle 实证 10px 带 + 2px 缝，行盒锚带 12px 连片）。
+                                // size-adjust 生效片段的内容区未随缩放——FIXME 遇案再修。
+                                let r5120_content_box = if r4332_whole_box {
                                     zero_layout_engine::fallback_line_metrics_for_paint(
                                         &shaping_font_ids,
                                         &transformed,
@@ -3052,7 +3130,20 @@ impl super::Painter {
                                 } else {
                                     None
                                 };
-                                if has_bg || has_bleed || owner_sel_fill.is_some() {
+                                // R5299：单行整盒 + 段命中 = band 域矩形（覆盖段内全部
+                                // 片段），仅由首个触达该段的片段绘制一次；多行 slice /
+                                // 逐词 legacy 轨维持逐片段绘制（矩形不跨片段，无覆盖）。
+                                let r5299_band_once =
+                                    r4332_whole_box && !r4332_is_multi_line && r5299_seg_hit;
+                                let r5299_draw_band = !r5299_band_once
+                                    || r5299_band_drawn.insert((
+                                        r4332_owner,
+                                        $frag_line_top.to_bits(),
+                                        r5299_seg_x0.to_bits(),
+                                    ));
+                                if (has_bg || has_bleed || owner_sel_fill.is_some())
+                                    && r5299_draw_band
+                                    {
                                     let line_h = box_node
                                         .text_node_line_heights
                                         .get(&$frag_nid)
@@ -3069,39 +3160,75 @@ impl super::Painter {
                                         r5120_content_box.unwrap_or((line_top, line_h));
                                     let bleed_top = pad_top + bt_w;
                                     let bleed_bot = pad_bot + bb_w;
-                                    // bg（has_bg/owner_sel_fill 时）：has_bleed 外延对齐整盒边
-                                    //（单行=内容区锚 / 多片段=行盒锚，R5120），否则 R639 旧位
-                                    //（frag.y）。矩形外提共享——R5270 选区 fill 与元素 bg 同几何。
+                                    // bg（has_bg/owner_sel_fill 时）：整盒（whole_box）= 内容区
+                                    // 锚（R5120/R5297）+ owner 行连续 x 域 ± pad（首/末片段；
+                                    // bg 盒 = 内容盒+pad 不含 border）；has_bleed 竖直外延对齐
+                                    // 整盒边。非整盒维持 R639 旧位（frag.y）。矩形外提共享——
+                                    // R5270 选区 fill 与元素 bg 同几何。
+                                    // R5299：段命中用段标记（逻辑首/末片段所在段）。
+                                    let bg_lead = if r5299_band_first { pad_left } else { 0.0 };
+                                    let bg_trail = if r5299_band_last { pad_right } else { 0.0 };
+                                    let (bg_x, bg_w) = if r4332_whole_box {
+                                        (
+                                            r5297_band_min_x - bg_lead,
+                                            r5297_band_max_end - r5297_band_min_x + bg_lead + bg_trail,
+                                        )
+                                    } else {
+                                        (frag_base_x, text_width)
+                                    };
                                     let (bg_y, bg_h) = if has_bleed {
                                         if r4332_whole_box {
                                             (box_top - bleed_top, box_h + bleed_top + bleed_bot)
                                         } else {
                                             (legacy_line_top - bleed_top, line_h + bleed_top + bleed_bot)
                                         }
+                                    } else if r4332_whole_box {
+                                        (box_top, box_h)
                                     } else {
                                         (content_y + $frag_y + ty, line_h)
                                     };
                                     if has_bg {
                                         self.primitives.add_fill(
-                                            Rect::new(frag_base_x, bg_y, text_width, bg_h),
+                                            Rect::new(bg_x, bg_y, bg_w, bg_h),
                                             color_value_to_render(&owner_style.background_color),
                                         );
                                     }
                                     // R5270 选区行高亮 fill：与元素 bg 同 rect（同站 = 画于其
                                     // 上），宏体次序先于本片段字形 = 字形之下（R5086 splice 同
                                     // 效：高亮不盖字）。零宽片段（text_width==0）跳过。
+                                    // R5297 注：选区仍逐 run 域（A/B 校准域 R5052/R5054/R5270
+                                    // 自治，不搭车改连续域——FIXME 挂账与 chromium 行片段对齐）。
                                     if let Some(sel_fill) = owner_sel_fill
                                         && text_width > 0.0
                                     {
+                                        // R5299：单行整盒几何下选区 fill 与元素 bg 同 x 域
+                                        //（行连续域/裂解段）——逐词域在词缝露出元素 bg
+                                        //（selection-012：ref 全带绿 vs test 词缝红底）。
+                                        // 多行 slice / 非整盒维持逐 run 域（R5052/R5054/
+                                        // R5270 A/B 校准口径自治，FIXME 挂账与 chromium
+                                        // 行片段对齐）。band 域 once 绘制由块级守卫承担。
+                                        let (sel_x, sel_w) = if r4332_whole_box
+                                            && !r4332_is_multi_line
+                                        {
+                                            (r5297_band_min_x, r5297_band_max_end - r5297_band_min_x)
+                                        } else {
+                                            (frag_base_x, text_width)
+                                        };
                                         self.primitives.add_fill(
-                                            Rect::new(frag_base_x, bg_y, text_width, bg_h),
+                                            Rect::new(sel_x, bg_y, sel_w, bg_h),
                                             sel_fill,
                                         );
                                     }
                                     // 横条：整盒几何（多片段 slice=行盒锚 / 单行=内容区锚）+ 含角；
-                                    // 多行 clone 等未实现合成域 = 基线锚旧几何。
+                                    // 多行 clone 等未实现合成域 = 基线锚旧几何。x 域 = R5297
+                                    // owner 行连续域（跨词 run 间隙/子 inline 空穴，chromium 行
+                                    // 片段连续带），首/末角外延贴域两端。
                                     let (strip_top, strip_x, strip_w) = if r4332_whole_box {
-                                        (box_top - pad_top - bt_w, frag_base_x - lead_ext, text_width + lead_ext + trail_ext)
+                                        (
+                                            box_top - pad_top - bt_w,
+                                            r5297_band_min_x - lead_ext,
+                                            r5297_band_max_end - r5297_band_min_x + lead_ext + trail_ext,
+                                        )
                                     } else {
                                         (legacy_line_top - bt_w, frag_base_x, text_width)
                                     };
@@ -3127,10 +3254,13 @@ impl super::Painter {
                                         self.primitives.add_fill(Rect::new(strip_x, strip_y, strip_w, bb_w), c);
                                     }
                                     // 竖边：整盒几何——左竖边仅首片段、右竖边仅末片段；纵跨 =
-                                    // 整盒高（单行=内容区 / 多片段=行盒）+ 垂直 pad + 顶/底边框
-                                    //（与横条锚同域，覆盖邻接行）。
+                                    // 整盒高（内容区锚，R5120/R5297）+ 垂直 pad + 顶/底边框
+                                    //（与横条锚同域，覆盖邻接行）；x 贴 owner 行连续域外缘。
                                     if r4332_whole_box {
-                                        if bl_w > 0.0 && r4332_is_first {
+                                        // R5299：竖边归属段标记——逻辑首片段所在段画左
+                                        // 竖边、逻辑末片段所在段画右竖边（bidi 重排下
+                                        // 视觉 x 序 ≠ 逻辑序）。
+                                        if bl_w > 0.0 && r5299_band_first {
                                             let c = if matches!(
                                                 owner_style.border_left_color,
                                                 ColorValue::CurrentColor
@@ -3141,7 +3271,7 @@ impl super::Painter {
                                             };
                                             self.primitives.add_fill(
                                                 Rect::new(
-                                                    frag_base_x - pad_left - bl_w,
+                                                    r5297_band_min_x - pad_left - bl_w,
                                                     box_top - pad_top - bt_w,
                                                     bl_w,
                                                     box_h + pad_top + pad_bot + bt_w + bb_w,
@@ -3149,7 +3279,7 @@ impl super::Painter {
                                                 c,
                                             );
                                         }
-                                        if br_w > 0.0 && r4332_is_last {
+                                        if br_w > 0.0 && r5299_band_last {
                                             let c = if matches!(
                                                 owner_style.border_right_color,
                                                 ColorValue::CurrentColor
@@ -3160,7 +3290,7 @@ impl super::Painter {
                                             };
                                             self.primitives.add_fill(
                                                 Rect::new(
-                                                    frag_base_x + text_width + pad_right,
+                                                    r5297_band_max_end + pad_right,
                                                     box_top - pad_top - bt_w,
                                                     br_w,
                                                     box_h + pad_top + pad_bot + bt_w + bb_w,
@@ -3974,12 +4104,44 @@ impl super::Painter {
                         );
                     }
 
+                    // R5297：行域累计的止步盒——块容器 IFC owner（其背景走盒级路径，
+                    // 不消费行域表）止步；**inline box_node 自绘 IFC 时不可止步于自身**
+                    //（span 自盒存储 IFC 的 pass：片段 owner = 自身，止步会把自身行域
+                    // 全部剔除 → 查表全 miss 回落词宽，r5297 单测实证）。inline 盒的
+                    // 祖先累计上溢到块祖先为止（块祖先表项无 fragment 消费，无害）。
+                    let r5297_walk_stop = if matches!(style.display, zero_css_parser::values::DisplayValue::Inline) {
+                        None
+                    } else {
+                        box_node.node_id
+                    };
                     if use_stored {
                         // R4332：owner 片段序首/末旗标（宏参数传入，见宏首注释）。
                         let r4332_edges = owner_fragment_edge_flags(
                             stored_fragments.iter().map(|f| (f.node_id, f.line_top_rel)),
                             doc,
                         );
+                        // R5297：owner 行连续 x 域（横条/bg 跨 run 间隙与子 inline 穴，
+                        // 祖先累计止于 IFC owner 盒）。
+                        let r5297_band_extents = owner_line_band_extent_map(
+                            stored_fragments
+                                .iter()
+                                .map(|f| (f.node_id, f.line_top_rel, f.x, f.width)),
+                            doc,
+                            r5297_walk_stop,
+                        );
+                        // R5299：单行整盒路径的裂解段表（旗标关 = 空表，宏内自然回落
+                        // 行连续域）。
+                        let r5299_seg_extents = if single_frag_box_border_enabled() {
+                            owner_line_segment_extent_map(
+                                stored_fragments
+                                    .iter()
+                                    .map(|f| (f.node_id, f.line_top_rel, f.x, f.width)),
+                                doc,
+                                r5297_walk_stop,
+                            )
+                        } else {
+                            HashMap::new()
+                        };
                         for (frag_ei, frag) in stored_fragments.iter().enumerate() {
                             // R817 linebox 度量统一 Phase 2 → R3856 基线契约统一：GlyphPrimitive.y
                             // 即基线（raster 侧 y_offset = bitmap_top − height 自行放置位图，
@@ -4032,7 +4194,9 @@ impl super::Painter {
                                         },
                                         frag.line_top_rel.to_bits()
                                     ))
-                                    .copied()
+                                    .copied(),
+                                &r5297_band_extents,
+                                &r5299_seg_extents
                             );
                         }
                     } else {
@@ -4044,6 +4208,35 @@ impl super::Painter {
                                 .map(|(gi, f)| (f.node_id, frag_line_tops.get(gi).copied().unwrap_or(0.0))),
                             doc,
                         );
+                        // R5297：owner 行连续 x 域（横条/bg 跨 run 间隙与子 inline 穴，
+                        // 祖先累计止于 IFC owner 盒）。多列路径**不建表**——键
+                        // (owner, line_top) 跨列碰撞会把不同列的行域焊成横跨列缝的
+                        // 一条带（multicol-basic-001..004 实证 2.33%），回退词 run 域
+                        //（列内连续域留待键扩列索引再启）。
+                        let r5297_band_extents = if multicol_info.is_some() {
+                            std::collections::HashMap::new()
+                        } else {
+                            owner_line_band_extent_map(
+                                fragments.iter().enumerate().map(|(gi, f)| {
+                                    (f.node_id, frag_line_tops.get(gi).copied().unwrap_or(0.0), f.x, f.width)
+                                }),
+                                doc,
+                                r5297_walk_stop,
+                            )
+                        };
+                        // R5299：单行整盒路径的裂解段表（多列不建——键 (owner,
+                        // line_top) 跨列碰撞，同行连续域同病；旗标关 = 空表回落）。
+                        let r5299_seg_extents = if single_frag_box_border_enabled() && multicol_info.is_none() {
+                            owner_line_segment_extent_map(
+                                fragments.iter().enumerate().map(|(gi, f)| {
+                                    (f.node_id, frag_line_tops.get(gi).copied().unwrap_or(0.0), f.x, f.width)
+                                }),
+                                doc,
+                                r5297_walk_stop,
+                            )
+                        } else {
+                            HashMap::new()
+                        };
                         for (frag_gi, fragment) in fragments.iter().enumerate() {
                             // IFC 片段（空 styles）：frag.y 基于 16px 默认值，
                             // 使用存储的 font_size（来自 layout IFC）计算基线偏移。
@@ -4084,7 +4277,9 @@ impl super::Painter {
                                         },
                                         frag_line_tops.get(frag_gi).copied().unwrap_or(0.0).to_bits()
                                     ))
-                                    .copied()
+                                    .copied(),
+                                &r5297_band_extents,
+                                &r5299_seg_extents
                             );
                         }
                     }
@@ -4671,6 +4866,149 @@ fn collect_oof_walk_nodes(
 /// 返回 Vec 与片段序列平行。跨行 inline 盒的左竖边仅画在首片段、右竖边仅画在
 /// 末片段；macro_rules! 卫生宏体不可见调用点局部变量，故在调用点预计算后作为
 /// 宏参数传入。
+/// R5297：行片段连续 x 域表（(节点, line_top) → (min_x, max_end)）——run 归属
+/// owner（文本节点取父元素）并沿祖先链向**每个**中间 inline 祖先累计，止于
+/// `stop_at`（IFC owner 盒，其背景走盒级路径）。词级 run 之间的空隙、子 inline
+/// 穴域计入祖先的行片段域（css-break 3 §5.2 slice：行片段 = 盒在该行的连续
+/// 跨度；chromium 横条/背景贴父 fragment 全域，c42 两页实证：父 bg/边框贯穿
+/// 子 inline 区段，逐 run 发射留白）。查询缺失时调用点退自身 run 域。
+fn owner_line_band_extent_map(
+    frags: impl Iterator<Item = (NodeId, f32, f32, f32)>,
+    doc: &Document,
+    stop_at: Option<NodeId>,
+) -> HashMap<(NodeId, u32), (f32, f32)> {
+    let mut extents: HashMap<(NodeId, u32), (f32, f32)> = HashMap::new();
+    for (nid, line_top, x, width) in frags {
+        let lt = line_top.to_bits();
+        let mut cur = if doc.get(nid).is_some_and(|n| matches!(n.kind, NodeKind::Text(_))) {
+            doc.parent_node(nid).unwrap_or(nid)
+        } else {
+            nid
+        };
+        loop {
+            if Some(cur) == stop_at {
+                break;
+            }
+            let e = extents.entry((cur, lt)).or_insert((x, x + width));
+            e.0 = e.0.min(x);
+            e.1 = e.1.max(x + width);
+            match doc.parent_node(cur) {
+                Some(p) => cur = p,
+                None => break,
+            }
+        }
+    }
+    extents
+}
+
+/// R5299（css-writing-modes-3 #bidi-box-model / CSS2.1 box.html #bidi-box-model）：
+/// 单行 owner 的行连续域在**盒裂解缝**处分段。bidi 重排可把 owner 的两个视觉
+/// 片段拉开、其间楔入外来内容（bidi-001：RLO 把 `<p>` 直辖文本搬进 span 裂解缝，
+/// 行连续域横条/bg 跨缝盖住缝内文字）。分段判据：片段间隙内楔入**非子孙**
+/// owner 的片段即视作裂解边界切段；缝内仅有子孙片段（子 inline 穴，祖先带须
+/// 连续覆盖）或空缝（词 run 间隙）保持连续。祖先自身楔入（bidi-001 的 `<p>`
+/// 文本）同样切段——祖先带连续性由其自身表项另行维护（其视角缝内片段多为
+/// 子孙，不切）。
+///
+/// 仅单行整盒路径（`ZW_INLINE_SINGLE_FRAG_BOX_BORDER` 开启）构建消费；多行
+/// slice 路径维持 [owner_line_band_extent_map] 行连续域口径不变。段值附
+/// (has_first, has_last)——该段是否含 owner 逻辑首/末片段（css-writing-modes-3
+/// #bidi-box-model：start 边装饰随逻辑首片段、end 边随逻辑末片段；bidi 重排下
+/// 逻辑首未必是视觉最左，边归属须按逻辑序而非 x 序）。
+pub(crate) fn owner_line_segment_extent_map(
+    frags: impl Iterator<Item = (NodeId, f32, f32, f32)>,
+    doc: &Document,
+    stop_at: Option<NodeId>,
+) -> HashMap<(NodeId, u32), Vec<(f32, f32, bool, bool)>> {
+    const R5299_EPS: f32 = 0.5;
+    // 先收集：per (owner, line) 祖先累计的无序片段区间 + per line 全量片段
+    //（含 owner，供缝内楔入检测）。插入序 = 迭代序 = 逻辑序（首/末标记依据）。
+    let mut per_owner: HashMap<(NodeId, u32), Vec<(f32, f32)>> = HashMap::new();
+    let mut per_line: HashMap<u32, Vec<(f32, f32, NodeId)>> = HashMap::new();
+    for (nid, line_top, x, width) in frags {
+        let lt = line_top.to_bits();
+        let owner = if doc.get(nid).is_some_and(|n| matches!(n.kind, NodeKind::Text(_))) {
+            doc.parent_node(nid).unwrap_or(nid)
+        } else {
+            nid
+        };
+        per_line.entry(lt).or_default().push((x, x + width, owner));
+        let mut cur = owner;
+        loop {
+            if Some(cur) == stop_at {
+                break;
+            }
+            per_owner.entry((cur, lt)).or_default().push((x, x + width));
+            match doc.parent_node(cur) {
+                Some(p) => cur = p,
+                None => break,
+            }
+        }
+    }
+    // 逐 owner 分段：x 序扫描，缝（> EPS）内楔入非子孙片段即切段。
+    per_owner
+        .into_iter()
+        .map(|((owner, lt), mut ivs)| {
+            // 逻辑首/末片段区间（排序前取——迭代序即 owner 片段逻辑序，
+            // 与 owner_fragment_edge_flags 的 idx==0 / idx+1==count 同源）。
+            let r5299_first_iv = ivs[0];
+            let r5299_last_iv = *ivs.last().unwrap_or(&r5299_first_iv);
+            ivs.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+            let line_all = per_line.get(&lt).map(Vec::as_slice).unwrap_or(&[]);
+            let mut segs: Vec<(f32, f32)> = Vec::with_capacity(ivs.len());
+            for &(s, e) in &ivs {
+                match segs.last_mut() {
+                    // 重叠/相接：无条件并入。
+                    Some(last) if s <= last.1 + R5299_EPS => last.1 = last.1.max(e),
+                    Some(last) => {
+                        let foreign = line_all.iter().any(|&(fx0, fx1, fown)| {
+                            fown != owner
+                                && !r5299_is_owner_descendant(doc, fown, owner)
+                                && fx0 < s - R5299_EPS
+                                && fx1 > last.1 + R5299_EPS
+                        });
+                        if foreign {
+                            segs.push((s, e));
+                        } else {
+                            last.1 = last.1.max(e);
+                        }
+                    }
+                    None => segs.push((s, e)),
+                }
+            }
+            // 段标记：逻辑首/末片段区间落入哪段（含判据与消费侧查找同 EPS）。
+            let in_seg = |iv: (f32, f32)| -> Option<usize> {
+                segs.iter()
+                    .position(|&(s, e)| s - R5299_EPS <= iv.0 && iv.1 <= e + R5299_EPS)
+            };
+            let first_seg = in_seg(r5299_first_iv);
+            let last_seg = in_seg(r5299_last_iv);
+            (
+                (owner, lt),
+                segs.into_iter()
+                    .enumerate()
+                    .map(|(si, (s, e))| (s, e, first_seg == Some(si), last_seg == Some(si)))
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect()
+}
+
+/// `node` 是否 `anc` 的子孙或自身（owner 链上溯；bidi 裂解缝「非子孙楔入」判据）。
+pub(crate) fn r5299_is_owner_descendant(doc: &Document, node: NodeId, anc: NodeId) -> bool {
+    if node == anc {
+        return true;
+    }
+    let mut cur = node;
+    while let Some(p) = doc.parent_node(cur) {
+        if p == anc {
+            return true;
+        }
+        cur = p;
+    }
+    false
+}
+
 fn owner_fragment_edge_flags(frags: impl Iterator<Item = (NodeId, f32)>, doc: &Document) -> Vec<(bool, bool, bool)> {
     let owners: Vec<(NodeId, f32)> = frags
         .map(|(nid, line_top)| {

@@ -6020,6 +6020,50 @@
     // t8：childList mutation 先行作废 parent 关系缓存——本 mutation 自身的 subtree
     // 冒泡（下方）必须按**变更后**的树爬链；attr/characterData 不改树不 bump。
     if (baseRecord && baseRecord.type === 'childList') _zwParentLinkBump();
+    // s109（html-semantics M2 切片 109）：script 元素动态 prepare 触发臂——本函数是
+    // shim 全部 attr/childList 记录的单一汇流点（proxy 与工厂层皆经此），spec 的
+    // 「prepare the script element」运行期触发（type/src 属性写、child text 变更、
+    // 元素插入）挂记录源处。门只认 SCRIPT 标签（attributes 再限 type/src/href/
+    // xlink:href 四属性），其余写零成本早退；触发失败不阻断 notify 投递。
+    // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+    if (baseRecord && typeof _zwScriptMaybeStartDynamic === 'function') {
+      try {
+        if (baseRecord.type === 'attributes') {
+          var _an109 = String(baseRecord.attributeName || '').toLowerCase();
+          if ((_an109 === 'type' || _an109 === 'src' || _an109 === 'href' || _an109 === 'xlink:href')
+              && typeof _realTag === 'function' && _realTag(sel, handle) === 'SCRIPT'
+              && typeof _makeProxy === 'function') {
+            _zwScriptMaybeStartDynamic(_makeProxy(sel, handle));
+          }
+        } else if (baseRecord.type === 'childList') {
+          if (typeof _realTag === 'function' && _realTag(sel, handle) === 'SCRIPT'
+              && typeof _makeProxy === 'function') {
+            _zwScriptMaybeStartDynamic(_makeProxy(sel, handle));
+          }
+          // 插入臂：addedNodes 中的 script 元素自身触发（125 形 marker 插入、144 形
+          // 重插入）——proxy 锚（__zwSelector/__zwHandle）走 _realTag，工厂节点回落
+          // tagName 直读。
+          var _adds109 = baseRecord.addedNodes;
+          if (_adds109 && _adds109.length) {
+            for (var _ai109 = 0; _ai109 < _adds109.length; _ai109++) {
+              var _an109n = _adds109[_ai109];
+              try {
+                if (!_an109n) continue;
+                var _tag109 = '';
+                if (_an109n.__zwSelector !== undefined || _an109n.__zwHandle !== undefined) {
+                  if (typeof _realTag === 'function') {
+                    _tag109 = _realTag(_an109n.__zwSelector, _an109n.__zwHandle);
+                  }
+                } else {
+                  _tag109 = String(_an109n.tagName || '').toUpperCase();
+                }
+                if (_tag109 === 'SCRIPT') _zwScriptMaybeStartDynamic(_an109n);
+              } catch (_e109a) {}
+            }
+          }
+        }
+      } catch (_e109) {}
+    }
     var id = _mo_id(handle, sel);
     // R188：document 站 record.target 用 mutation 容器 proxy（_makeProxy(sel, handle)）
     // 统一在此补——childList call site 数量多且均以 sel/handle 标识容器，入口处一次性

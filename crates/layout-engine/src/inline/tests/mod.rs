@@ -19,6 +19,10 @@ mod r5239_bidi_control_metering_probe;
 mod r5240_first_word_float_fit_probe;
 /// R5274 preserve 模式纯空白行盒计 line-height（CSS2 §9.2.1.1 preserved white space）。
 mod r5274_preserved_ws_line_height_tests;
+/// R5297 跨 inline 边界空白折叠（css-text-3 §4.1）：词尾随空白吞并后继前导空白。
+mod r5297_ws_collapse_inline_boundary_tests;
+/// R5298 混合 line-height 行盒 strut/基线行距（CSS2 §10.8.1 leading）。
+mod r5298_mixed_lh_line_pitch_tests;
 mod text_align;
 mod text_indent;
 mod vertical_bidi;

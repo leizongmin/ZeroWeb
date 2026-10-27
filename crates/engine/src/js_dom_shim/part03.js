@@ -3800,6 +3800,107 @@
       } catch (_eKick) {}
     }, 0);
   };
+  // s109（html-semantics M2 切片 109）：script 元素动态 prepare 触发面——spec
+  // 「prepare the script element」除 parser 插入外还由运行期变更触发：type/src
+  // 属性写、child text content 变更、元素插入。触发臂挂 part01 `_mo_notify`
+  //（shim 属性/子节点记录单一汇流点），此处只做**门序 + 分派**，不自带执行器：
+  //   外链（src/href/xlink:href 非空）→ `_zwPrepareSrcScript`（s96 共享 helper：
+  //     run-once/nomodule/for-event/宿主让位门 + 页面 fetch 通道取源 + load/error
+  //     派发单点复用；detached src-set 面 spec 不触发，插入面由 appendChild trap
+  //     R387b 与 addedNodes 臂承接——同表记账互斥，任一先到即独占）；
+  //   内联（体非空）→ s95 同款：全局 indirect eval（求值基 = 文档基）+ 异常上报
+  //     + 执行即置 run-once 记账。
+  // run-once 走 R387/s95/s96 同一张表（`_zwScriptStarted` sel 形 / `_zwRanScripts`
+  // handle 形）——本面触发臂与既有 appendChild trap 三臂（R387 内联/R387b 外链/
+  // s95 children-changed）任一先执行即互斥，双触发面（textContent= 后重插入等）
+  // 不双执行。prepare 拒绝（type 非法/体空/未连接）不置记账——144 形「先
+  // textContent=（type 仍 text/plain 拒绝）后 type=""（重触发）」的臂序依赖此。
+  // FIXME: 内联编译失败的元素 error 事件派发未做（spec 派 error，现仅上报
+  // window.onerror 面）；module 型动态 prepare 未建模（type 门直接拒绝，不置
+  // 记账）；detached 子树整体的「becomes connected」祖先插入面未挂（addedNodes
+  // 臂只看 SCRIPT 节点自身）。
+  // https://html.spec.whatwg.org/multipage/scripting.html#script-attribute-change-steps
+  // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+  var _zwScriptMaybeStartDynamic = function (el) {
+    if (!el) return;
+    try {
+      // 身份键（与既有 run-once 表对接：sel 形/handle 形双读，s95 同口径）。
+      var _sel109 = null, _hdl109 = null;
+      try { _sel109 = el.__zwSelector; } catch (_eA109) {}
+      try { _hdl109 = el.__zwHandle; } catch (_eB109) {}
+      // spec prepare 步骤 1：already started（同表互斥——R387/s95/s96 或本面任一
+      // 执行过即 no-op）。
+      var _started109 = (_sel109 != null && !!(globalThis._zwScriptStarted
+                          && globalThis._zwScriptStarted[_sel109]))
+        || (_hdl109 != null && !!(globalThis._zwRanScripts && globalThis._zwRanScripts[_hdl109]));
+      if (_started109) return;
+      // connected 门（spec children changed 步骤 1 未连接返回；attribute change
+      // 面与 s96 set trap 同门）：detached 元素属性写入不 prepare。
+      try { if (el.isConnected !== true) return; } catch (_eC109) {}
+      // type 门：空串（缺省）或 JavaScript 派生 MIME 关键词（SVG 面同判定）；
+      // module 走模块管线不在此面（FIXME 同上）。
+      var ty = '';
+      try { ty = el.getAttribute('type'); } catch (_eT109) {}
+      ty = String(ty == null ? '' : ty).trim().toLowerCase();
+      if (ty !== '' && ty.indexOf('javascript') < 0 && ty.indexOf('ecmascript') < 0) return;
+      if (ty.indexOf('module') >= 0) return;
+      // nomodule 门（s95/R387 同口径；上行已拒 module 型，nomodule 在场即中止）。
+      var _nm109 = false;
+      try { _nm109 = !!(el.hasAttribute && el.hasAttribute('nomodule')); } catch (_eN109) {}
+      if (_nm109) return;
+      // for/event 门（R387 同口径；外链分派在 helper 内自查，此处前置使内联/外链
+      // 门序一致）。
+      var _fe109 = false;
+      try {
+        _fe109 = typeof globalThis._zwScriptForevBlocked === 'function'
+          && globalThis._zwScriptForevBlocked(el);
+      } catch (_eF109) {}
+      if (_fe109) return;
+      // 源解析：src 优先，回落 href / xlink:href（SVG 面口径）。
+      var src = '';
+      try { src = el.getAttribute('src'); } catch (_eS109) {}
+      if (src == null || String(src).trim() === '') {
+        try { src = el.getAttribute('href'); } catch (_eH109) {}
+      }
+      if (src == null || String(src).trim() === '') {
+        try { src = el.getAttribute('xlink:href'); } catch (_eX109) {}
+      }
+      src = src == null ? '' : String(src);
+      if (src.trim() !== '') {
+        // 外链：s96 共享 helper 单点复用（run-once 记账/fetch/load-error 派发在其内；
+        // 宿主管线让位旗标（__zwHostOwnsDynamicScripts）原样生效）。
+        try {
+          if (typeof globalThis._zwPrepareSrcScript === 'function') {
+            globalThis._zwPrepareSrcScript(el);
+          }
+        } catch (_eP109) {}
+        return;
+      }
+      // 内联：体融合读（s95 text getter → textContent 回落）；空体不置记账（后续
+      // 文本变更仍可触发——145 形空脚本 textContent= 臂依赖）。
+      var text = '';
+      try {
+        text = String(el.text != null ? el.text : '');
+      } catch (_eTx109) {
+        try { text = String(el.textContent || ''); } catch (_eTc109) {}
+      }
+      if (String(text).trim() === '') return;
+      // 调用点同步 eval（124 形期望序要求嵌套执行发生在 removeAttribute 调用内）
+      // + 异常上报（s95 同款 window.onerror 面）+ 执行即置 run-once。
+      try {
+        (0, eval).call(globalThis, String(text));
+      } catch (_eI109) {
+        if (typeof globalThis._zwReportListenerError === 'function') {
+          try { globalThis._zwReportListenerError(_eI109, null); } catch (_eR109) {}
+        }
+      }
+      if (_sel109 != null) {
+        (globalThis._zwScriptStarted = globalThis._zwScriptStarted || {})[_sel109] = true;
+      } else if (_hdl109 != null) {
+        (globalThis._zwRanScripts = globalThis._zwRanScripts || {})[_hdl109] = true;
+      }
+    } catch (_e109) {}
+  };
   // SVGSVGElement.createSVGLength（spec SVGSVGElement 工厂族首项——detached
   // SVGLength 是单位模型族的测试载体；createSVGMatrix/Rect/Point 等 S2b/S3 补）。
   if (globalThis.SVGSVGElement && globalThis.SVGSVGElement.prototype

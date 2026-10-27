@@ -242,6 +242,18 @@ pub struct InlineFormattingContext {
     /// 被错误放大，进而把基线偏低的原子盒压到行盒下方）。
     /// 默认 16px；`layout()` 从容器样式中读取真实值。
     pub container_font_size: f32,
+    /// R5298（CSS2 §10.8.1 strut）：容器自身 used line-height（px）。
+    ///
+    /// strut 是块容器字体的假想零宽盒、**参与每一行盒**——ascent/descent 由容器
+    /// 自身 font/line-height 决定，与本行行内 run 无关。旧实现以「行内 run 的
+    /// line-height max」近似 strut，纯小行高 run 行（c42-ibx-ht-000 的 em-only 行，
+    /// run lh 10 < 容器 12）strut 蒸发：行盒缩至 run 行高、基线随之下移。
+    /// `layout()` 有容器 styles 时捕获；paint Path B（空 styles）与旧调用保持
+    /// 0 = 旧行为（run 侧近似）。
+    pub container_strut_line_height: f32,
+    /// R5298：容器字体 is_ahem 判定（strut ascent ratio 查询用，与
+    /// `container_strut_line_height` 同点捕获）。
+    pub container_strut_is_ahem: bool,
     /// 逐文本节点的字体大小覆盖（key = 文本节点的父元素 NodeId）。
     ///
     /// paint IFC 传入空的 styles HashMap，导致所有文本使用 16px 默认字体度量，
@@ -452,6 +464,8 @@ impl InlineFormattingContext {
             container_node_id: None,
             default_font_metrics: None,
             container_font_size: DEFAULT_FONT_SIZE,
+            container_strut_line_height: 0.0,
+            container_strut_is_ahem: false,
             font_size_overrides: NodeIdMap::default(),
             font_id_overrides: std::rc::Rc::new(HashMap::new()),
             font_ids_overrides: std::rc::Rc::new(HashMap::new()),
@@ -1259,8 +1273,26 @@ impl InlineFormattingContext {
         // 从容器自身样式读取 font-size，供 apply_vertical_alignment 计算 strut ascent。
         // CSS 2.1 §10.8.1：strut 由块容器自身的字体度量决定。paint IFC 传入空 styles
         // 时保持默认 16（仅影响行内文本片段的垂直定位，文本 font_size 通常主导 ascent）。
+        // R5298：strut 捕获先复位——IFC 实例可能跨容器复用（final_ifc_reuse / anon 容器
+        // 无样式项），残留值会把外层容器 strut 泄漏给 line-height:0 的内嵌行
+        //（ruby-align-001 判例：body 16px/3 的 48 泄入 ruby 内部行抬升 20→48）。
+        // Path B 空 styles → 恒 0 = legacy，零扰动。
+        self.container_strut_line_height = 0.0;
         if let Some(style) = styles.get(&container) {
             self.container_font_size = resolve_inline_font_size_px(style);
+            // R5298（CSS2 §10.8.1 strut）：捕获容器自身 used line-height + 字体 Ahem
+            // 判定——strut 参与每一行盒，不再随行内 run 的 line-height max 近似。
+            // 走 run 侧同源解析器 resolve_font_metrics_with_provider（normal 整数化 /
+            // Number / Length 同口径），保证容器 strut ≤ 本行继承容器样式 run 的行高，
+            // 非 c42 域零扰动。**恒覆写**（line-height:0 解析为 0 同样写入——0 = 本容器
+            // 显式压制 strut，须覆盖复用残留而非被守卫跳过）。
+            let (_, r5298_strut_lh) =
+                resolve_font_metrics_with_provider(Some(style), self.font_metric_provider.as_ref());
+            self.container_strut_line_height = r5298_strut_lh;
+            self.container_strut_is_ahem = style
+                .font_family
+                .iter()
+                .any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"));
             self.plaintext_auto_align = matches!(style.unicode_bidi, zero_style_system::UnicodeBidiValue::Plaintext)
                 && matches!(
                     style.text_align,
@@ -2350,6 +2382,11 @@ impl InlineFormattingContext {
     /// - **sub** — 基线向下偏移 font_size × 0.3。
     /// - **super** — 基线向上偏移 font_size × 0.3。
     fn apply_vertical_alignment(&mut self) {
+        // R5298：逐行记录容器 strut descent 侧对行盒高度的**归因抬升**（仅本修复自身
+        // 贡献的增量），循环结束后按累计增量下移后续行顶。legacy 高度变化（under_need /
+        // R822 extend）从不传播到行顶 y——corpus 按此校准（c44-ln-box-003 / ruby-align-001
+        // 判例），平移若混入会整体错位。
+        let mut r5298_lifts: Vec<f32> = Vec::with_capacity(self.lines.len());
         for line in &mut self.lines {
             let line_height = line.height;
 
@@ -2417,6 +2454,47 @@ impl InlineFormattingContext {
                 strut_half_leading + dominant_fs * dominant_ratio
             } else {
                 self.container_font_size * 0.8
+            };
+            // R5298（CSS2 §10.8.1 strut）：容器 strut 参与行盒——strut 是块容器字体的
+            // 假想零宽盒，ascent 由容器自身 font/line-height 决定，与本行 run 无关。
+            // 纯小行高 run 行（c42-ibx-ht-000 的 em `font:1em/1` 独占行，run lh 10 <
+            // 容器 12）旧近似（本行 run 的 line-height/fs max）令 strut 蒸发：行盒缩至
+            // 10、基线 8，行距 11 vs chromium 12。**胜出才接管**：仅当容器 strut ascent
+            // 严格大于 legacy 近似时替换；否则（含相等）完全走旧行为（返回 None）。legacy
+            // 近似会「骑」本行最高 run（含 va-shifted 等不入 ascent 环的 run），corpus 已
+            // 按其校准（c44-ln-box-003 / text-overflow-026 判例），容器
+            // strut 只托底、绝不贬基/混搭抬升。未捕获（paint Path B 空 styles）、已塌
+            // 0 高的行（裸空 inline / 纯可折叠空白行，§10.8.1 行盒移除语义，WPT
+            // empty-inline-001 判例），或**全部 text run line-height 为 0** 的行不接管
+            // ——行内内容显式压制行盒，legacy 兜底（strut_lh=0 → 行高）已按 corpus 校准
+            //（ruby-align-001：ruby 结构自建格式化上下文，anon 容器样式继承自 body 而非
+            // ruby，捕获的 48 不属于该内部行的 strut 语义，接管反而偏离 REF）。
+            let (strut_ascent, r5298_strut_descent) = if line.runs.iter().any(|r| r.font_size > 0.0 && r.height > 0.0)
+                && self.container_strut_line_height > 0.0
+                && line.height > 0.0
+            {
+                let strut_fs = self.container_font_size;
+                let strut_ratio = ascent_ratio_lookup(
+                    &self.ascent_ratio_overrides,
+                    self.container_node_id.unwrap_or_default(),
+                    self.container_strut_is_ahem,
+                );
+                let strut_half_leading = if runtime_flags::strut_neg_leading() {
+                    (self.container_strut_line_height - strut_fs) / 2.0
+                } else {
+                    ((self.container_strut_line_height - strut_fs) / 2.0).max(0.0)
+                };
+                let container_strut_ascent = strut_half_leading + strut_fs * strut_ratio;
+                if container_strut_ascent > strut_ascent {
+                    (
+                        container_strut_ascent,
+                        Some(self.container_strut_line_height - container_strut_ascent),
+                    )
+                } else {
+                    (strut_ascent, None)
+                }
+            } else {
+                (strut_ascent, None)
             };
             let mut max_ascent = strut_ascent;
             // R4374：回退链垂直度量 max descent——行内任一 run 的实际使用字体
@@ -2496,6 +2574,17 @@ impl InlineFormattingContext {
             // ——普通行 under_need=0 恒不生长（strut 语义不变）。
             if under_need > 0.0 {
                 line.height = line.height.max(baseline_y + line.descent);
+            }
+            // R5298（CSS2 §10.8.1 strut）：strut 的 descent 侧同样参与行盒——行盒高度
+            // 下限 = 基线 + strut descent（c42 em-only 行 10 → 12；基线被高 run 下移时
+            // strut 盒随基线悬挂，同 CSS2 §10.8.1 行盒围合语义）。None（未接管/未捕获/
+            // 原子行/空行）不参与，旧行为不变。归因抬升 = 此下限带来的净增量。
+            let mut r5298_lift = 0.0_f32;
+            if let Some(strut_descent) = r5298_strut_descent {
+                let r5298_h_pre = line.height;
+                line.height = line.height.max(baseline_y + strut_descent);
+                line.descent = line.descent.max(line.height - baseline_y);
+                r5298_lift = line.height - r5298_h_pre;
             }
 
             for run in &mut line.runs {
@@ -2596,6 +2685,14 @@ impl InlineFormattingContext {
                 line.ascent += top_extend;
                 line.descent += bot_extend;
             }
+            r5298_lifts.push(r5298_lift);
+        }
+        // R5298：行顶平移——后续各行顶 += 之前各行的 strut descent 净抬升之和。无接管
+        // 行（lifts 全 0）时 y 逐字节不动，非 strut 域零扰动（含 paint Path B 重跑）。
+        let mut r5298_y_shift = 0.0_f32;
+        for (line, lift) in self.lines.iter_mut().zip(&r5298_lifts) {
+            line.y += r5298_y_shift;
+            r5298_y_shift += lift;
         }
     }
 

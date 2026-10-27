@@ -124,7 +124,7 @@ pub(super) fn apply_scripted_dom_mutations(
     for (exec_pos, script) in scripts.iter().enumerate() {
         let code: Option<String> = match script {
             PageScript::Inline(c) | PageScript::InlineModule(c) => Some(c.clone()),
-            PageScript::External(src) | PageScript::ExternalModule(src) => {
+            PageScript::External(src) | PageScript::ExternalModule { src, .. } => {
                 match fetch_external_script(src, base_dir, wpt_root) {
                     Ok(c) => Some(c),
                     Err(e) => {
@@ -145,7 +145,7 @@ pub(super) fn apply_scripted_dom_mutations(
         // 全 SyntaxError 中止 → 格子全空白，2d.gradient.colorInterpolationMethod
         // oracle A/B 10.7%）。块包裹近似 module 隔离（import/export 仍不支持——
         // best-effort，parse 失败按既有 warning 流程）。
-        let is_module = matches!(script, PageScript::InlineModule(_) | PageScript::ExternalModule(_));
+        let is_module = matches!(script, PageScript::InlineModule(_) | PageScript::ExternalModule { .. });
         let full = if is_module {
             format!("__zw_begin_script && __zw_begin_script();\n{{\n{code}\n}}")
         } else {

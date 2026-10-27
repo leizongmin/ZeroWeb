@@ -2,9 +2,169 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 106 施工收口（SVG script 族静态面：**execution-timing 域 4F→4P**（137/138/139/140），scripting-1 **352P/189F/37T→356P/185F/37T**，行级 diff 恰 4 行零旁损——探针实证根因：html5ever 对 foreign content 按 spec markup 解析（SVG script 嵌套 `<script>` 为真实子元素），提取器取源误用递归 textContent 把嵌套脚本文本吞进外层源致 SyntaxError；三刀：脚本源改 **child text content**（直接子文本节点拼接，zero-dom 新访问器）、执行序按 **end-tag 序**重排（pre-order 先行者是后行者祖先 → 后行者先行，序号保持 pre-order 与 shim 对齐）、SVG script href 空串不落内联臂（137）；族内 142/143/144/145 属运行时面（write 闭合外层/mutation 重触发 prepare）另立项；zero-dom lib 868/engine lib 3540（+4 钉）/webview lib 809；clippy 三 crate clean），下一步 s107 入场探针定刀位（候选：execution-timing 余 ~42F scheduler 语义定刀 / 数据模块全量支持或 .py 执行器前置体量评估 / SVG script 运行时面 4 页体量评估）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 109 施工收口（script mutation 重触发 prepare 轮：scripting-1 **377P/173F/37T→380P/170F/37T**，**+3P 零 P→非P**——execution-timing 124/144/145 三页销账；两刀：`_mo_notify` 三触发臂（attributes@SCRIPT type/src/href/xlink:href + childList@SCRIPT + addedNodes 含 SCRIPT，挂 shim 属性/子节点记录单一汇流点）+ `_zwScriptMaybeStartDynamic` 门序分派路由（connected→run-once（与 R387/s95/s96 同表互斥）→type→nomodule→for/event→外链单点复用 `_zwPrepareSrcScript` / 内联 s95 同款调用点同步 eval——不自带执行器，初版自带 setTimeout 取源致与既有 R387b 双执行，返工定谳）；Rust 侧嵌套执行证伪（sandbox 回调签名无 sandbox 访问 + execute 需 &mut self）→ shim 层 (0,eval) 路径定谳；engine 3544/webview 814/runner bin 236/clippy 双 crate clean），下一步 s110：122-126 marker 面（createElement 工厂节点外链在 corpus strict 管线的执行死因探针——script#t 面本轮已修，async=false 已排除、query 串系钉入口 fetcher 差异非 corpus 根因）+ 122 async IDL reflection / 130/147/148 scheduler 面 / 142 write 臂 xlink:href；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-27 M2 切片 106 施工收口，SVG script 族静态面轮）**：
+> **▶ 当前状态（2026-10-27 M2 切片 109 施工收口，script mutation 重触发 prepare 轮）**：
+> **入场定谳**：s109 承 s108 主候选 mutation 重触发机制面七行（122 第二层 async
+> IDL+时序、123-126、144/145）。可行性先行证伪：Rust 侧嵌套执行不可行——
+> script-sandbox 回调签名 `Fn(&[String])->String+Send+Sync` 无 sandbox 访问 +
+> `execute` 需 `&mut self`；定谳 shim 层 indirect `(0, eval)`（同上下文、调用点
+> 同步）。既有件盘点：`_mo_notify`（part01:6019）为 shim 全部 attr/childList
+> 记录单一汇流点（proxy 64 处 + 工厂 13 处皆经此）——触发臂挂此单点；
+> `_zwPrepareSrcScript`（s96 外链单点 helper）与 R387/s95 run-once 记账表为复用基座。
+> **本轮两刀**：①`_mo_notify` 三触发臂——attributes@SCRIPT（type/src/href/
+> xlink:href）+ childList@SCRIPT（textContent=/.text/子内容变更）+ addedNodes 含
+> SCRIPT（插入面安全网）；②`_zwScriptMaybeStartDynamic` 门序分派路由——
+> connected（detached 属性写入不 prepare，s96 同口径）→ run-once（与 R387/s95/s96
+> **同表互斥**）→ type → nomodule → for/event → 外链单点复用 `_zwPrepareSrcScript`
+> / 内联 s95 同款同步 eval + 异常上报 + 执行即置记账；prepare 拒绝不置记账（144
+> 臂序依赖）。**调试返工（本轮主发现）**：初版自带 setTimeout 取源执行器与既有
+> appendChild trap R387b 双执行（钉 C log `e1,e2,e2`）——inc 埋 Error().stack 分辨
+> 双路径后定谳，重设计为分派路由：既有执行臂与本面触发臂共享记账表，任一先到即
+> 独占。
+> **验证**：engine lib **3544/3544**；webview lib **814/814**（持平，webview.rs 零
+> 变更）；runner bin **236/0**（+3 钉：type 移除同步内联 prepare / svg script
+> textContent= 重触发 / 外链 type 移除取源+marker FIFO）。全子树终扫
+> **380P/170F/37T+15N**（s108：377P/173F/37T+15N，**+3P**），行级归一 diff
+>（/tmp/s109-final-scripting-1.log 存档）**零 P→非P**（无 Pass 行消失、无新增非 P、
+> 消失非 P 恰为销账页）：execution-timing **124/144/145** 三页 Fail→Pass。
+> **122-126 余面边界定位**：四页共同缺项均为 marker（createElement 工厂节点）外链
+> 执行——script#t 面（type 移除取源）本轮已修；钉面单变量定谳 async=false 无罪、
+> query 串系钉入口 fetcher 不剥 query（corpus fetcher 剥，非 corpus 根因）——
+> corpus strict 管线对工厂节点外链的投递/收集面为 s110 探针点。fmt：wpt-runner
+> clean（engine 侧 paint/painter/text.rs:4130 存量 fmt diff 系渲染流文件，未触碰
+> 仅提及）；clippy engine+wpt-runner `-D warnings` clean。渲染面零依赖——
+> reftest/product-smoke 未跑。账本见
+> [evidence/2026-10-27-m2s109-mutation-retrigger.md](html-semantics-compat/evidence/2026-10-27-m2s109-mutation-retrigger.md)。
+> **范围**：engine shim part01/part03 ×2 + runner testharness.rs ×1（3 钉）；
+> webview/语料/依赖零变更；语料不可改维持。
+> **挂账**：s110 主候选 122-126 marker 面（工厂节点外链 corpus 死因探针）+ 122
+> async IDL reflection（re-insert 后 `script.async` 反射 true）；130/147/148
+>（insert multiple inline scripts; first moves/deletes subsequent scheduler 面）；
+> 142 write 臂 xlink:href；143 eventOrder 完整核验；063 Timeout；slow-loading
+> trickle ~11 行；non-external-no-import（module async）；**待决（须用户拍板）**：
+> css/text 数据模块语料资源缺失；承袭：parse-error 族、http-accept-header、
+> referrer-policies、dynamic import() with 透传、classic 外链 SRI、collect 账本
+> 打包重构、接口对象基建面、FIXME 组、/tmp/zw-hb*.txt 插桩来源待查。
+> execution-timing 124/144/145 本轮销账。
+> **下一步**：s110 入场探针定刀位（候选：122-126 marker 面工厂节点 corpus 死因
+> 探针 / 130/147/148 scheduler 面体量评估 / 142 write 臂 xlink:href 单点）。
+> **切片间隙**：本轮 engine shim 面 + runner 单测；下一挂账同流同面，间隙开放。
+>
+> **▶ 上轮状态（2026-10-27 M2 切片 108 施工收口，strict 首错聚合 + 短路收窄 + id 保真轮——其下一步 s109 入场探针定刀位已由 s109 收口，见上）**：
+> **入场定谳**：s108 探针承 s107 三候选——候选 A（css/text 数据模块合成器）**证伪**：
+> wpt-data（独立 repo，pinned tag）缺 css-module/resources/basic.css 等五个 CSS 资源
+> 与 text-module/file.txt，fetch 恒 404，切片不可达；补语料属基准变更（guidelines
+> #31 语料红线）记待决清单，s107「~30 行」估计据此修正。execution-timing 余 46F+1T
+> 按根因分组定刀：①122-126 族 getElementById null（runner 装配丢 id）；④143 语料
+> 故意 SyntaxError 被 runner 升级页级 Fail；②mutation 重触发机制面（②七行留 s109）、
+> ③142 write 臂 xlink:href 不本轮。
+> **本轮三刀**：①runner 投递 id 保真（`inline_local_scripts` 投递标签保留原标签 id，
+> 与 nonce/nomodule/type/onload/onerror 同族「内联投递丢属性改语义」保真——122-126 族
+> 以 getElementById("test") 取回 type=text/plain 外链单元做 mutation 重触发）；②runner
+> 短路收窄（脚本抛错臂读 declared：==0 维持短路 Fail 防假绿、>0 放行轮询收集——WPT
+> 语义 uncaught exception 报 window.onerror 不降级 test status；143 抛错时刻 pending=1
+> 属正常中间态，故判据用 declared>0 非 pending==0）；③webview strict abort→首错聚合
+> （两处 return Err 改 get_or_insert_with + continue——真浏览器语义 script 元素相互
+> 独立；循环末聚合返 Err，Err 仅承载信息供 runner 防假绿判定）。**配套重构**：收尾段
+> 单一出口——旧 `!pending` 分支在聚合判定前 `return Ok` 早退，无 DOM 变更的纯断言页
+> （execution-timing 主体形态）首错被静默吞掉（新钉首轮红灯根因）；改 if/else 汇合后
+> 统一 drain + 聚合 + 返回。
+> **验证**：zero-webview lib **814/814**（+1 钉：三 script 页 is_err 且前后脚本照跑）；
+> zero-wpt-runner bin **233/0**（+3 钉：投递 id 保留 / 抛错+declared>0 照收 Pass /
+> 抛错+declared==0 维持短路——stateful MINI_HARNESS 变体带 tests 注册表与
+> test_environment stub）；fmt clean + clippy webview/wpt-runner `-D warnings` clean。
+> 定向 FILTER=execution-timing：非 P 页 **45 → 41**（**4 页销账**：067 语法错
+> has-run——刀2+刀2b，语料故意埋错 + allow_uncaught_exception；104/114/115 defer
+> mutation 族——刀1，三页均 getElementById("defer-script")）；122 null 崩溃消除进第二
+> 层（页级 Fail→2 子测试断言级 Fail：async IDL 属性 + mutation 重触发，挂 s109）；
+> 143 崩溃形→断言级 Fail（log 顺序断言真正执行，缺 inline script #3——write 嵌套
+> 内联，挂 s109）。全子树终扫（FILTER=scripting-1 口径）**377P/173F/37T+15N**
+> （s107：372P/175F/35T+15N，**+5P**），行级归一 diff（/tmp/s108-final-scripting-1.log
+> 存档，基线 /tmp/s107-final-scan.log）**零 P→非P**（无 Pass 行消失）：4 Fail→Pass +
+> 1 新增子测试 Pass（evaluation-order-1 module 抛错臂——刀2 直接战果）；Fail −2 净额
+> 逐项核账；Timeout +2（evaluation-order-1/delay-load-event-1 页级落 deadline——均原
+> Fail 页，declared>0 放行后未完成挂 deadline 的预测形）；microtasks/moving-between-
+> documents 三处形态重排全为原 Fail 页短路→子测试级分解。渲染面零依赖——
+> reftest/product-smoke 未跑。账本见
+> [evidence/2026-10-27-m2s108-strict-continue-and-id-fidelity.md](html-semantics-compat/evidence/2026-10-27-m2s108-strict-continue-and-id-fidelity.md)。
+> **范围**：webview webview.rs ×1（首错聚合 + 单一出口 + 1 钉）+ runner testharness
+> ×1（id 保真 + declared 收窄 + 3 钉）；解析器/语料/依赖零变更；语料不可改维持。
+> **挂账**：s109 主候选 mutation 重触发机制面七行（122 第二层 async IDL+时序、
+> 123/124/125/126、144/145——嵌套执行 + 重扫 diff，共享主循环高风险面，独立切片细
+> 设计）；142 write 臂 xlink:href；143 eventOrder 完整核验；063 Timeout（runner 脚本
+> 记账）；slow-loading 外链时序 ~11 行（pipe=trickle 建模）；**待决（须用户拍板）**：
+> css/text 数据模块语料资源缺失（五 CSS + file.txt 不在 pinned tag）——补语料属基准
+> 变更；承袭：parse-error 族、http-accept-header、referrer-policies、dynamic import()
+> with 透传、classic 外链 SRI、collect 账本打包重构、接口对象基建面、FIXME 组、
+> /tmp/zw-hb*.txt 插桩来源待查。execution-timing 067/104/114/115 本轮销账。
+> **下一步**：s109 入场定刀位（候选：mutation 重触发机制面七行体量评估——共享主循环
+> 高风险面 / 142 write 臂 xlink:href 单点 / 143 eventOrder 核验搭车）。
+> **切片间隙**：本轮 webview 执行面 + runner 收集/投递面 + 单测；下一挂账同流同面，
+> 间隙开放。
+>
+> **▶ 上轮状态（2026-10-27 M2 切片 107 施工收口，JSON module 执行面 + 顶层模块 SRI 轮——其下一步 s108 入场探针定刀位已由 s108 收口，见上）**：
+> **入场定谳**：三候选——module 域 92 行最大、数据模块域合计 47 行（css 21 + json
+> 17 + text 9）、execution-timing 余 46 行 scheduler 长尾异质。JSON module 定最小
+> 可收口切片。MIME 合法集按**语料判据**定谳（不凭现行 spec 印象）：essence
+> application/json | text/json | +json 后缀、`;参数` 剥离——valid-content-type 8 臂
+> 全应成功（现行 spec 已收窄至 application/json + +json 后缀，text/json 是 corpus
+> 时代合法集）；`serve-with-content-type.py` 端点本体不在 runner 语料——fetcher 按
+> handler 语义模拟 `?fn=&ct=`，与 imported_script.py 模拟同模式。风险面定谳两处：
+> ①integrity.html mismatch 行平凡 Pass（fetch 恒败→体不执行）——JSON 放行后必翻
+> Fail，**须真实现 SRI** 才能保零 P→非P；②script-element-json-src 负例 src 是
+> file.txt 非 .json，解除。
+> **本轮四刀**：①fetcher JSON 意图分支（.json 静态文件默认 application/json +
+> 端点 fn+ct 模拟，mime_is_json 门：合法交付原文/非法 Err 网络错误语义；ct 百分号
+> 解码、裸 `+` 保留——`text/html+json` 裸 + 在 query 不表示空格）；②script-sandbox
+> 新 `extract_static_module_imports_with_attributes`（复用 s105
+> suffix_after_specifier_literal/parse_with_clause 提 pub(crate)，仅 import 语句，
+> export-from/动态 import() 不提取）；③webview collect 链增 type_attr 参数（9 形参
+> 函数级 allow + FIXME 挂账），type=json → serde_json 校验（非法→DepFetch/TopFetch
+> 网络错误语义）+ 规范化内嵌合成 `export default <字面量>;`（default 导入经既有
+> export transform 与导出扫描自动成立）；④顶层模块 SRI：`PageScript::ExternalModule
+> { src, integrity }` 结构化（六消费点模式同步）+ webview
+> integrity_metadata_matches（空格分隔多 hash 任一命中、algo 大小写不敏感、
+> sha256/384/512，base64_encode 启用 + sha2 workspace dep）+ mismatch→元素 fire
+> error + 体不执行。附刀：**外链模块成功 load 面**——模块成功后按 src 匹配 fire
+> load（此前仅失败面有事件派发），**内联成功不派**（load-error-events-inline 四臂
+> assert_unreached 判据；首版内联也派致 2 行 P→F，定向轮即定位改外链限定）；
+> runner inline_local_scripts 对带 integrity 属性单元整段透传不内联（内联投递丢
+> src/integrity 双锚——SRI 校验与事件 src 匹配都以 src 为锚）。
+> **验证**：script-sandbox **373/373**（+带属性提取钉）；engine lib **3541/3541**
+> （+integrity 提取钉）；webview lib **813/813**（+5 钉：JSON default 导入执行+
+> 内联成功无 load / JSON 语法失败元素 error / SRI 命中执行+load / SRI 失配
+> error+体不执行 / 承袭 s105）；wpt-runner fetcher 钉（.json 默认 MIME/端点
+> fn+ct/解码/非 JSON 拒/sidecar 覆盖拒）；定向 **FILTER=json-module 26→30 行，
+> 9F+2T→13P 零 P→非P**；load-error-events 滤页对照零回归（module/ 族行不变）；
+> 全域交叉 integrity 四页（module 1P+2F→3P、json-module 2P、css/text mismatch 行
+> 维持 Pass）；全子树终扫（FILTER=scripting-1 口径）**372P/175F/35T+15N**
+> （s106：356P/185F/37T+15N，**+16P**），行级归一 diff（/tmp/s107-final-scan.log
+> 存档）10 Fail + 2 Timeout → Pass 全正向、**零 P→非P**；fmt clean + clippy 六
+> crate clean（renderer/browser/wpt-runner 模式改形波及）。渲染面零依赖——
+> reftest/product-smoke 未跑。账本见
+> [evidence/2026-10-27-m2s107-json-module-sri.md](html-semantics-compat/evidence/2026-10-27-m2s107-json-module-sri.md)。
+> **范围**：script-sandbox es_module/import_attributes ×2 + engine extract ×1 +
+> webview webview.rs/Cargo.toml ×2（sha2 dep）+ runner testharness ×1 + 六消费点
+> 模式改形（browser/renderer/reftest 无行为变化）；解析器/语料零变更；语料不可改
+> 维持。
+> **挂账**：css/text 数据模块执行面（同一 collect 分派骨架已就位，type=css/text
+> 合成器另切片，~30 行）；load-error-events.py 端点 module 路径 3 行；parse-error
+> 族 Timeout（parse 失败元素事件模型与 s102 报告面差异）；http-accept-header
+> （Accept 头建模 + 动态 import with 子句）；script-element-json-src（顶模块 MIME
+> 拒绝→元素 error 事件模型与 s102 冲突待梳理）；referrer-policies；dynamic
+> import() with 子句透传（现被丢弃）；export-from with 属性；classic 外链 SRI；
+> collect_module_deps_recursive 账本打包重构（FIXME allow 承接）；hash 列表
+> options；SVG script 族运行时面 4 页、execution-timing 余 ~42F、charset 族残留、
+> svg-script-fragment-clone 3F、FIXME 组、接口对象基建面、/tmp/zw-hb*.txt 插桩
+> 来源待查（承袭）。json-module 13 行 + module/integrity 2 行本轮销账。
+> **下一步**：s108 入场探针定刀位（候选：css/text 数据模块合成器——本轮分派骨架
+> 就位，css-module/text-module ~30 行 / execution-timing 余 ~42F scheduler 语义
+> 定刀 / SVG script 运行时面 4 页体量评估）。
+> **切片间隙**：本轮 script 管线面（fetch/编译/事件派发）+ 单测；下一挂账同流
+> 同面，间隙开放。
+>
+> **▶ 上轮状态（2026-10-27 M2 切片 106 施工收口，SVG script 族静态面轮——其下一步 s107 入场探针定刀位已由 s107 收口，见上）**：
 > **入场定谳**：三候选按 fail 形状重新分组——execution-timing 50F 中藏 **SVG script
 > 族 8 页**（137/138/139/140/142/143/144/145），138/139/143 为 harness 级失败
 > （`page script threw: SyntaxError: Unexpected token '.'`，143 的 `':'` 正是语料

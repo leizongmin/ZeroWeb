@@ -4932,6 +4932,69 @@ fn wpt_data_script_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::S
                     }
                 })
             });
+        // s107（JSON module）：`.json` 静态文件与 `serve-with-content-type.py?fn=<rel>&ct=<mime>`
+        // 动态 handler 的 JSON 意图面——按 Content-Type 判 JSON MIME type：essence
+        // application/json | text/json 或 `+json` 后缀、`;参数` 剥离（text/json 为
+        // corpus 时代合法集——现行 spec 已收窄至 application/json 与 +json 后缀，
+        // json-module/valid-content-type 8 臂判据为准）。合法 → 交付文件原文；非法 →
+        // Err（网络错误语义）。ct 值百分号解码（charset 页 %3B、valid-content-type t7
+        // %2B；裸 `+` 原样保留——t3/t4/t8 的 `text/html+json` 在 query 中不表示空格）。
+        // 端点本体不在 runner 语料（上游 wptserve .py 脚本），按 handler 语义模拟：
+        // 交付 fn 指向的文件（fn 相对 .py 所在目录解析——corpus
+        // `fn=json-module/module.json` 对 the-script-element/ 目录成立）。
+        // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+        fn mime_is_json(mime: &str) -> bool {
+            let essence = mime.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
+            essence == "application/json" || essence == "text/json" || essence.ends_with("+json")
+        }
+        let json_intent: Option<(String, String)> = if clean.ends_with(".json") {
+            // wptserve 对 .json 文件默认 Content-Type: application/json；
+            // `?pipe=header(...)` / `.headers` sidecar 可覆盖（MIME 判定派生序同 scripty 面）。
+            let mime = mime_from_pipe
+                .clone()
+                .or_else(|| mime_from_sidecar.clone())
+                .unwrap_or_else(|| "application/json".to_string());
+            Some((clean.to_string(), mime))
+        } else if std::path::Path::new(clean)
+            .file_name()
+            .is_some_and(|name| name == std::ffi::OsStr::new("serve-with-content-type.py"))
+        {
+            let query = src.split('?').nth(1).unwrap_or("");
+            let mut fn_param = None;
+            let mut ct_param = None;
+            for pair in query.split('&') {
+                if let Some(value) = pair.strip_prefix("fn=") {
+                    fn_param = Some(
+                        percent_encoding::percent_decode_str(value)
+                            .decode_utf8_lossy()
+                            .into_owned(),
+                    );
+                } else if let Some(value) = pair.strip_prefix("ct=") {
+                    ct_param = Some(
+                        percent_encoding::percent_decode_str(value)
+                            .decode_utf8_lossy()
+                            .into_owned(),
+                    );
+                }
+            }
+            match (fn_param, ct_param) {
+                (Some(file), Some(ct)) => {
+                    let dir = clean.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
+                    Some((format!("{dir}/{file}"), ct))
+                }
+                _ => return Err(format!("serve-with-content-type.py missing fn/ct: {src}")),
+            }
+        } else {
+            None
+        };
+        if let Some((file_rel, mime)) = json_intent {
+            if !mime_is_json(&mime) {
+                return Err(format!("non-JSON MIME for module: {file_rel} ({mime})"));
+            }
+            return std::fs::read(root.join(&file_rel))
+                .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+                .map_err(|e| format!("json module fetch failed: {file_rel} ({e})"));
+        }
         let scripty = if let Some(mime) = mime_from_pipe {
             mime_is_scripty(&mime)
         } else if let Some(mime) = mime_from_sidecar {
@@ -8182,7 +8245,7 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
         .iter()
         .map(|script| match script {
             zero_engine::PageScript::Inline(source) | zero_engine::PageScript::InlineModule(source) => source.len(),
-            zero_engine::PageScript::External(_) | zero_engine::PageScript::ExternalModule(_) => 0,
+            zero_engine::PageScript::External(_) | zero_engine::PageScript::ExternalModule { .. } => 0,
         })
         .collect::<Vec<_>>();
     // js-dom M5/M7 收尾（R384）：kill-switch `ZW_NATIVE_DOM` env 已删——原生绑定是唯一
@@ -8559,11 +8622,24 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
             .ok()
             .and_then(|v| v.trim().parse::<usize>().ok())
             .unwrap_or(0);
-        return vec![HarnessSubtestResult {
-            name: case_name.to_string(),
-            status: HarnessStatus::Fail,
-            message: Some(format!("page script threw (declared tests: {declared}): {error}")),
-        }];
+        // s108（execution-timing 143 形态）：harness 已声明测试（declared>0）时，脚本
+        // 抛错不再丢弃结果收集——WPT testharness 语义：uncaught exception 报到
+        // window.onerror，不降级 test status（SVG script 语料故意在外层尾段埋
+        // `assert_unreached():` 语法错，onload 的 log 顺序断言在轮询 tick 才执行，
+        // 抛错时刻 pending=1 属正常中间态）。放行后已完成测试照收（Pass）、未完成
+        // 挂到 deadline（Timeout）——短路页此前必判 Fail，此臂无 Pass→非P 面；
+        // declared==0（无 testharness 引用）维持短路 Fail——s102 防假绿口径不变：
+        // 脚本抛错不能按「未注册 test()」误判为通过。
+        // https://html.spec.whatwg.org/multipage/webappapis.html#report-the-error
+        if declared == 0 {
+            return vec![HarnessSubtestResult {
+                name: case_name.to_string(),
+                status: HarnessStatus::Fail,
+                message: Some(format!("page script threw (declared tests: {declared}): {error}")),
+            }];
+        }
+        // declared>0：放行进下方轮询（已完成测试照收，未完成挂到 deadline 判
+        // Timeout——抛错时刻的 pending 中间态不掩盖后续 onload/异步断言的完成机会）。
     }
 
     let deadline = Instant::now() + timeout;
@@ -9188,8 +9264,16 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str) -> String 
         };
         let open_end = start + open_end;
         let open = &remaining[start..=open_end];
-        // 提取 src="..."（仅相对路径 .js）。
-        let src = extract_script_src(open);
+        // 提取 src="..."（仅相对路径 .js）。s107（SRI）：带 integrity 属性的单元保持
+        // 外链整段透传——内联投递丢 src/integrity，webview 顶层模块 SRI 校验
+        //（ExternalModule 臂）与元素 load/error 事件 src 匹配派发（R2944）都以 src 为
+        // 锚（json-module/module/css-module/text-module 四页 integrity.html 语料）。
+        // https://html.spec.whatwg.org/multipage/semantics.html#integrity-metadata-attribute
+        let src = if zero_engine::attr_from_open_tag(open, "integrity").is_some() {
+            None
+        } else {
+            extract_script_src(open)
+        };
         let resolved = src.and_then(|s| {
             // R4300（html-semantics M2 切片 23）：`/` 根路径（非 `//`、非 http(s):）
             // 解析为 wpt_root 相对——dialog closedby/canceling 语料以
@@ -9267,6 +9351,18 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str) -> String 
                     }
                     _ => String::new(),
                 };
+                // s108（id 保真）：投递改写保留原标签 id——execution-timing 122-126 族以
+                // `document.getElementById("test")` 取回 type=text/plain 外链单元做
+                // removeAttribute(type)/re-append 的 mutation 重触发（getElementById 落空
+                // 即 `Cannot read properties of null`，mutation 面根本不可达）。id 与
+                // nonce/nomodule/type 同属「内联投递丢属性改语义」保真族。
+                // https://html.spec.whatwg.org/multipage/dom.html#the-id-attribute
+                let id_attr = match zero_engine::attr_from_open_tag(open, "id") {
+                    Some(v) if !v.is_empty() => {
+                        format!(" id=\"{}\"", v.replace('&', "&amp;").replace('"', "&quot;"))
+                    }
+                    _ => String::new(),
+                };
                 // s100（load/error 事件投递保真）：保留原标签 onload/onerror 内容属性
                 // （s94 保真只留 nonce/nomodule/type——事件处理器内容属性丢失使内联投递
                 // 后页面 on* 语义面缺失：nomodule-set-on-synchronously「must run」的
@@ -9280,7 +9376,7 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str) -> String 
                 let onload_attr = script_event_handler_attr(open, "onload");
                 let onerror_attr = script_event_handler_attr(open, "onerror");
                 output.push_str(&format!(
-                    "<script{nonce_attr}{nomodule_attr}{type_attr}{onload_attr}{onerror_attr} data-zw-harness data-inline=\""
+                    "<script{id_attr}{nonce_attr}{nomodule_attr}{type_attr}{onload_attr}{onerror_attr} data-zw-harness data-inline=\""
                 ));
                 output.push_str(&combined);
                 output.push_str("\">");
@@ -11029,6 +11125,61 @@ const TESTDRIVER_STUB: &str = r#"<script>
 mod tests {
     use super::*;
 
+    // s107 回归钉：fetcher JSON module 意图面——`.json` 静态文件默认
+    // application/json 放行（pipe/sidecar 可覆盖）；serve-with-content-type.py 按
+    // `?fn=<相对 .py 目录>&ct=<mime>` 模拟交付；ct 百分号解码；非 JSON MIME → Err。
+    #[test]
+    fn json_module_fetcher_mime_gate_s107() {
+        let dir = std::env::temp_dir().join(format!("zw-json-fetch-{}-s107", std::process::id()));
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::write(dir.join("sub/data.json"), "{\"test\":true}").unwrap();
+        std::fs::write(dir.join("sub/serve-with-content-type.py"), "# handler\n").unwrap();
+        let fetch = wpt_data_script_fetcher(&dir).unwrap();
+        // 静态 .json 默认 MIME 放行（相对 + 根绝对两形态）
+        assert_eq!(
+            fetch("https://wpt.test/sub/page.html", "./data.json").unwrap(),
+            "{\"test\":true}"
+        );
+        assert_eq!(
+            fetch("https://wpt.test/other.html", "/sub/data.json").unwrap(),
+            "{\"test\":true}"
+        );
+        // serve-with-content-type.py：fn 相对 .py 所在目录 + ct 交付
+        assert_eq!(
+            fetch(
+                "https://wpt.test/sub/page.html",
+                "./serve-with-content-type.py?fn=data.json&ct=text/json"
+            )
+            .unwrap(),
+            "{\"test\":true}"
+        );
+        // ct 百分号解码（%3B 分号；合法 essence 判定剥参数）
+        assert_eq!(
+            fetch(
+                "https://wpt.test/sub/page.html",
+                "./serve-with-content-type.py?fn=data.json&ct=text/json%3Bcharset=utf-8"
+            )
+            .unwrap(),
+            "{\"test\":true}"
+        );
+        // 非 JSON MIME → Err（网络错误语义）
+        assert!(
+            fetch(
+                "https://wpt.test/sub/page.html",
+                "./serve-with-content-type.py?fn=data.json&ct=text/plain"
+            )
+            .is_err(),
+            "text/plain 须拒"
+        );
+        // sidecar 覆盖成非 JSON MIME → Err
+        std::fs::write(dir.join("sub/data.json.headers"), "Content-Type: text/plain").unwrap();
+        assert!(
+            fetch("https://wpt.test/sub/page.html", "./data.json").is_err(),
+            "sidecar text/plain 须拒"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     const MINI_HARNESS: &str = r#"
 var __resultCallbacks = [], __completionCallbacks = [], __pending = 0;
 globalThis.add_result_callback = function(cb) { __resultCallbacks.push(cb); };
@@ -12233,6 +12384,205 @@ async_test(function(test) {
         assert!(out.contains("new Event('error')"));
 
         std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn inline_delivery_preserves_id_attr_s108() {
+        // s108（id 保真）：投递改写保留原标签 id——execution-timing 122-126 族以
+        // getElementById 取回 type=text/plain 外链单元做 mutation 重触发，id 丢失
+        // 即 `Cannot read properties of null`（mutation 面不可达）。
+        let root = std::env::temp_dir().join("zw-s108-inline-id-test");
+        let case_dir = "html/semantics/scripting-1/the-script-element";
+        std::fs::create_dir_all(root.join(case_dir)).unwrap();
+        std::fs::write(root.join(case_dir).join("ok.js"), "globalThis.ran = true;").unwrap();
+        let html = "<!doctype html><body>\
+            <script id=\"test\" type=\"text/plain\" src=\"./ok.js\"></script>\
+            </body>";
+
+        let out = inline_local_scripts(html, &root, &format!("{case_dir}/mutation-family.html"));
+
+        assert!(out.contains("id=\"test\""), "id 须随投递形态保留: {out}");
+        assert!(out.contains("type=\"text/plain\""));
+        assert!(out.contains("globalThis.ran = true;"));
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// s108：「脚本抛错 + 已声明测试」短路收窄钉的 stateful harness 变体——MINI_HARNESS
+    /// 包 IIFE（形参名 `global_scope` 与 completion patch 注入代码的引用名一致）+ 尾锚
+    /// `})(self);`（apply_harness_completion_patch 的 replacen 锚），tests 注册表使
+    /// `__zw_harness_state()` 读到 declared/pending。
+    fn mini_harness_stateful() -> String {
+        format!(
+            "(function(global_scope) {{\n{MINI_HARNESS}\
+             var tests = {{tests: [], num_pending: 0, phase: 0, all_done: function() {{ return true; }}, complete: function() {{}}}};\n\
+             var test_environment = {{all_loaded: true}};\n\
+             var __miniTest = globalThis.test;\n\
+             globalThis.test = function(fn, name) {{ tests.tests.push(1); __miniTest(fn, name); }};\n\
+             var __miniPromiseTest = globalThis.promise_test;\n\
+             globalThis.promise_test = function(fn, name) {{ tests.num_pending++; __miniPromiseTest(fn, name); }};\n\
+             }})(self);\n"
+        )
+    }
+
+    #[test]
+    fn script_throw_with_declared_tests_collects_results_s108() {
+        // s108：脚本抛错但 harness 已声明测试 → 不丢弃结果收集（WPT 语义：uncaught
+        // exception 不降级 test status）。抛错 script 之前的 test 已 done → 收 Pass；
+        // 不再短路出「page script threw」Fail。
+        // https://html.spec.whatwg.org/multipage/webappapis.html#report-the-error
+        let html = r##"<script src="/resources/testharness.js"></script>
+<script>test(function() { assert_true(true); }, 'done before throw');</script>
+<script>var x = ();</script>"##;
+        let results = run_testharness_html(
+            Path::new("/nonexistent-wpt-root-for-tests"),
+            "throw-with-declared.html",
+            html,
+            &mini_harness_stateful(),
+            CASE_TIMEOUT,
+        );
+        assert!(
+            results
+                .iter()
+                .any(|r| r.name == "done before throw" && r.status == HarnessStatus::Pass),
+            "已完成测试须照收 Pass: {results:?}"
+        );
+        assert!(
+            !results
+                .iter()
+                .any(|r| r.message.as_deref().is_some_and(|m| m.contains("page script threw"))),
+            "declared>0 不再短路 Fail: {results:?}"
+        );
+    }
+
+    #[test]
+    fn script_throw_without_declared_tests_stays_fail_s108() {
+        // s108：无 testharness 引用的用例脚本抛错维持短路 Fail（s102 防假绿口径不变——
+        // 不能按「未注册 test()」误判为通过）。
+        let html = r##"<script>var y = (;</script>"##;
+        let results = run_testharness_html(
+            Path::new("/nonexistent-wpt-root-for-tests"),
+            "throw-no-harness.html",
+            html,
+            &mini_harness_stateful(),
+            CASE_TIMEOUT,
+        );
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].status, HarnessStatus::Fail);
+        assert!(
+            results[0]
+                .message
+                .as_deref()
+                .is_some_and(|m| m.contains("page script threw")),
+            "declared==0 维持短路: {:?}",
+            results[0].message
+        );
+    }
+
+    #[test]
+    fn script_prepare_on_type_removal_s109() {
+        // s109（mutation 重触发面）：type=text/plain 内联单元 removeAttribute('type')
+        // → spec prepare-the-script-element 重触发 → 脚本体在**调用点同步**执行
+        //（124 形：期望序 [begin, s1, end] 要求嵌套执行发生在 removeAttribute 内）。
+        // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+        let html = r##"<script src="/resources/testharness.js"></script>
+<script>globalThis.__log = [];</script>
+<script type="text/plain" id="t">globalThis.__log.push('s1');</script>
+<script>
+globalThis.test(function() {
+  globalThis.__log.push('begin');
+  document.getElementById('t').removeAttribute('type');
+  globalThis.__log.push('end');
+  assert_true(JSON.stringify(globalThis.__log) === JSON.stringify(['begin', 's1', 'end']),
+    'sync prepare order: ' + globalThis.__log.join(','));
+}, 'sync prepare on type removal');
+</script>"##;
+        let results = run_testharness_html(
+            Path::new("/nonexistent-wpt-root-for-tests"),
+            "prepare-type-removal.html",
+            html,
+            &mini_harness_stateful(),
+            CASE_TIMEOUT,
+        );
+        assert!(
+            results
+                .iter()
+                .any(|r| r.name == "sync prepare on type removal" && r.status == HarnessStatus::Pass),
+            "type 移除须同步重触发生成: {results:?}"
+        );
+    }
+
+    #[test]
+    fn script_prepare_on_text_content_set_s109() {
+        // s109：空 script（type 缺省即合法 classic）textContent= 赋文本 → child text
+        // content change 触发 prepare → 同步执行（145 形；SVG namespace script 同面）。
+        let html = r##"<script src="/resources/testharness.js"></script>
+<svg><script></script></svg>
+<script>
+globalThis.test(function() {
+  var s = document.querySelector('svg > script');
+  s.textContent = 'globalThis.__ran = 1;';
+  assert_true(globalThis.__ran === 1, '空脚本 textContent= 须同步执行');
+}, 'prepare on textContent set');
+</script>"##;
+        let results = run_testharness_html(
+            Path::new("/nonexistent-wpt-root-for-tests"),
+            "prepare-text-set.html",
+            html,
+            &mini_harness_stateful(),
+            CASE_TIMEOUT,
+        );
+        assert!(
+            results
+                .iter()
+                .any(|r| r.name == "prepare on textContent set" && r.status == HarnessStatus::Pass),
+            "textContent= 须重触发空脚本: {results:?}"
+        );
+    }
+
+    #[test]
+    fn script_prepare_on_type_removal_external_s109() {
+        // s109：type=text/plain 外链单元 removeAttribute('type') → prepare 取 src →
+        // 异步执行；运行期 createElement('script')+src 插入同面（125 形：期望序
+        // [e1, e2]——removeAttribute 先入队、插入的 marker 后入队，FIFO 保序）。
+        let root = std::env::temp_dir().join("zw-s109-external-prepare-test");
+        std::fs::create_dir_all(&root).unwrap();
+        // 页锚 = https://wpt.test/prepare-external.html（case_name 无目录）→
+        // ./inc*.js 相对解析到 root 直下。
+        std::fs::write(root.join("inc1.js"), "globalThis.__log.push('e1');").unwrap();
+        std::fs::write(root.join("inc2.js"), "globalThis.__log.push('e2');").unwrap();
+        let html = r##"<script src="/resources/testharness.js"></script>
+<script>globalThis.__log = [];</script>
+<script type="text/plain" id="t" src="./inc1.js"></script>
+<script>
+globalThis.promise_test(function() {
+  return new Promise(function(resolve) {
+    var s = document.getElementById('t');
+    s.removeAttribute('type');
+    var m = document.createElement('script');
+    m.src = './inc2.js';
+    s.parentNode.appendChild(m);
+    setTimeout(resolve, 50);
+  }).then(function() {
+    assert_true(JSON.stringify(globalThis.__log) === JSON.stringify(['e1', 'e2']),
+      'external prepare order: ' + globalThis.__log.join(','));
+  });
+}, 'external prepare on type removal + insertion');
+</script>"##;
+        let results = run_testharness_html(
+            &root,
+            "prepare-external.html",
+            html,
+            &mini_harness_stateful(),
+            CASE_TIMEOUT,
+        );
+        assert!(
+            results
+                .iter()
+                .any(|r| r.name == "external prepare on type removal + insertion" && r.status == HarnessStatus::Pass),
+            "外链 prepare 须按 FIFO 取源执行: {results:?}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

@@ -280,7 +280,15 @@ impl InlineFormattingContext {
                         }
                         continue;
                     }
-                    if has_leading_collapsible_space && !current_line.runs.is_empty() && !last_was_collapsible_ws {
+                    if has_leading_collapsible_space
+                        && !current_line.runs.is_empty()
+                        && !last_was_collapsible_ws
+                        // R5297（css-text-3 §4.1 collapse 跨 inline 边界）：上一内容词以
+                        // 可折叠空白收尾时，本 run 前导空格与之同属一个空白序列——只保留
+                        // 前者的 advance（`z z <em> x` 旧实现双计 2 空格 20px，chromium 1 空格：
+                        // c42-ibx-ht-000 实证 em 首词右移 20px 全行错位）。
+                        && !last_ended_collapsible_ws
+                    {
                         // R5229：run 首可折叠空格 advance 计 word_spacing（同上 §8 口径，
                         // paint 侧 per-char 同源）；c541-word-sp-001 div5 ` xx` 前导空格
                         // 25 应 0（ws -1em）。
@@ -1203,6 +1211,10 @@ impl InlineFormattingContext {
         }
 
         // 应用 vertical-align 对齐
+        // R5298（CSS2 §10.8.1 strut）：容器 strut descent 抬升的行顶平移在
+        // apply_vertical_alignment 内部按归因增量完成——此处不做快照全量平移，
+        // legacy 高度变化（under_need / R822 extend）保持「不下推后续行顶」的
+        // 校准语义（c44-ln-box-003 / ruby-align-001 判例）。
         self.apply_vertical_alignment();
     }
 

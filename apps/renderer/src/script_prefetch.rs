@@ -26,7 +26,7 @@ impl PendingScriptPrefetch {
         let mut seen = HashSet::new();
         for script in extract_page_scripts(html) {
             match script {
-                PageScript::External(src) | PageScript::ExternalModule(src) => {
+                PageScript::External(src) | PageScript::ExternalModule { src, .. } => {
                     let url = resolve_document_url(base_url, &src);
                     if seen.insert(url.clone()) {
                         queue.push_back(url);
