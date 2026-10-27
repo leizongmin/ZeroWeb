@@ -178,6 +178,14 @@ fn r109_anon_nofloat_enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var("ZW_R109_ANON_NOFLOAT").as_deref() != Ok("0"))
 }
 
+/// t-p113 kill-switch 读取：`ZW_IFC_UNROUNDED_CONTENT_WIDTH=0` 回退 IFC 约束宽/高的
+/// 取整层来源（pre-fix：taffy `round_layout` 累计整数取整可把文本固有宽削到内容宽
+/// 以下，Phase A IFC 据此假断行）。
+fn ifc_unrounded_content_width_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_IFC_UNROUNDED_CONTENT_WIDTH").as_deref() != Ok("0"))
+}
+
 /// 缓存的 taffy 布局状态 — 用于增量重算。
 ///
 /// 保存 taffy 树、根节点和映射关系，避免每次全量重建。
@@ -1739,6 +1747,12 @@ impl LayoutEngine {
         parent_is_flex_grid: bool,
     ) -> LayoutBox {
         let layout = taffy.layout(taffy_id).cloned().unwrap_or_default();
+        // t-p113：未取整层副本，供 IFC 约束宽/高使用（kill-switch 关闭时退化为取整层）。
+        let mut unrounded = if ifc_unrounded_content_width_enabled() {
+            *taffy.unrounded_layout(taffy_id)
+        } else {
+            layout
+        };
         let dom_id = taffy_to_dom.get(&taffy_id).copied();
         // R109：匿名块片段（在 fragment_registry 中的 taffy 节点）→ 写片段节点覆盖；
         // 其 node_id=inline（tree.rs 已映射），故 is_block_level 由下面强制为 true。
@@ -2106,6 +2120,18 @@ impl LayoutEngine {
             // 交换外边距
             std::mem::swap(&mut margin_top, &mut margin_left);
             std::mem::swap(&mut margin_bottom, &mut margin_right);
+            // 未取整层同变换（t-p113：与下方 content_width/height 同源）
+            std::mem::swap(&mut unrounded.size.width, &mut unrounded.size.height);
+            std::mem::swap(&mut unrounded.border.top, &mut unrounded.border.left);
+            std::mem::swap(&mut unrounded.border.bottom, &mut unrounded.border.right);
+            std::mem::swap(&mut unrounded.padding.top, &mut unrounded.padding.left);
+            std::mem::swap(&mut unrounded.padding.bottom, &mut unrounded.padding.right);
+        }
+        // 未取整层在 unbounded 上下文（如 float 内 auto 尺寸）可含 NaN/inf（taffy inf
+        // 算术；取整层经 round_layout 保序为 inf）——非有限时整体回退取整层，保 R1964
+        // 竖排 float 的 inf 语义，仅有限分数场景走未取整约束（t-p113）。
+        if !unrounded.size.width.is_finite() || !unrounded.size.height.is_finite() {
+            unrounded = layout;
         }
 
         // declared_margin_top: 计算样式声明的 margin-top（仅水平书写模式 + Px 长度时有效）。
@@ -2188,8 +2214,32 @@ impl LayoutEngine {
         // 计算内容区域
         let content_x = border_left + padding_left;
         let content_y = border_top + padding_top;
-        let content_width = (width - border_left - border_right - padding_left - padding_right).max(0.0);
-        let mut content_height = (height - border_top - border_bottom - padding_top - padding_bottom).max(0.0);
+        // t-p113：IFC 约束宽/高取未取整层——`round_layout` 累计整数取整可把文本固有宽
+        // 削到内容宽以下（127.40625→127），Phase A IFC 以该值断行产生假折行；Chrome 保
+        // LayoutUnit 1/64 精度无此问题（CSS Flexbox §9.1
+        // https://drafts.csswg.org/css-flexbox-1/#algo-main item main size 由内容解析）。
+        // 盒几何（location/size/border/padding，绘制与 gBCR）维持取整层不变；
+        // 整数输入下两层恒等，仅分数宽场景生效。
+        let content_width = if ifc_unrounded_content_width_enabled() {
+            (unrounded.size.width
+                - unrounded.border.left
+                - unrounded.border.right
+                - unrounded.padding.left
+                - unrounded.padding.right)
+                .max(0.0)
+        } else {
+            (width - border_left - border_right - padding_left - padding_right).max(0.0)
+        };
+        let mut content_height = if ifc_unrounded_content_width_enabled() {
+            (unrounded.size.height
+                - unrounded.border.top
+                - unrounded.border.bottom
+                - unrounded.padding.top
+                - unrounded.padding.bottom)
+                .max(0.0)
+        } else {
+            (height - border_top - border_bottom - padding_top - padding_bottom).max(0.0)
+        };
 
         // 递归提取子节点（使用此元素自身的 writing mode）
         let children_taffy = taffy.children(taffy_id).unwrap_or_default();
