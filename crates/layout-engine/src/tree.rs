@@ -2475,7 +2475,7 @@ fn is_content_url_element(computed: &ComputedStyle) -> bool {
 /// margin-trim 首末子判定：元素是否为参与块格式化上下文的 in-flow block-level 子。
 /// 排除 display:none、inline/contents 级（垂直 margin 不参与块轴）、abspos/fixed（脱流）。
 /// display 谓词与 R1285 `br_is_inline_only` 的 block-level 判定一致。
-fn is_block_level_in_flow(display: &DisplayValue, position: &PositionValue) -> bool {
+pub(crate) fn is_block_level_in_flow(display: &DisplayValue, position: &PositionValue) -> bool {
     matches!(
         display,
         DisplayValue::Block
