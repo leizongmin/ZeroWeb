@@ -12480,6 +12480,112 @@ async_test(function(test) {
     }
 
     #[test]
+    fn script_prepare_on_type_removal_s109() {
+        // s109（mutation 重触发面）：type=text/plain 内联单元 removeAttribute('type')
+        // → spec prepare-the-script-element 重触发 → 脚本体在**调用点同步**执行
+        //（124 形：期望序 [begin, s1, end] 要求嵌套执行发生在 removeAttribute 内）。
+        // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+        let html = r##"<script src="/resources/testharness.js"></script>
+<script>globalThis.__log = [];</script>
+<script type="text/plain" id="t">globalThis.__log.push('s1');</script>
+<script>
+globalThis.test(function() {
+  globalThis.__log.push('begin');
+  document.getElementById('t').removeAttribute('type');
+  globalThis.__log.push('end');
+  assert_true(JSON.stringify(globalThis.__log) === JSON.stringify(['begin', 's1', 'end']),
+    'sync prepare order: ' + globalThis.__log.join(','));
+}, 'sync prepare on type removal');
+</script>"##;
+        let results = run_testharness_html(
+            Path::new("/nonexistent-wpt-root-for-tests"),
+            "prepare-type-removal.html",
+            html,
+            &mini_harness_stateful(),
+            CASE_TIMEOUT,
+        );
+        assert!(
+            results
+                .iter()
+                .any(|r| r.name == "sync prepare on type removal" && r.status == HarnessStatus::Pass),
+            "type 移除须同步重触发生成: {results:?}"
+        );
+    }
+
+    #[test]
+    fn script_prepare_on_text_content_set_s109() {
+        // s109：空 script（type 缺省即合法 classic）textContent= 赋文本 → child text
+        // content change 触发 prepare → 同步执行（145 形；SVG namespace script 同面）。
+        let html = r##"<script src="/resources/testharness.js"></script>
+<svg><script></script></svg>
+<script>
+globalThis.test(function() {
+  var s = document.querySelector('svg > script');
+  s.textContent = 'globalThis.__ran = 1;';
+  assert_true(globalThis.__ran === 1, '空脚本 textContent= 须同步执行');
+}, 'prepare on textContent set');
+</script>"##;
+        let results = run_testharness_html(
+            Path::new("/nonexistent-wpt-root-for-tests"),
+            "prepare-text-set.html",
+            html,
+            &mini_harness_stateful(),
+            CASE_TIMEOUT,
+        );
+        assert!(
+            results
+                .iter()
+                .any(|r| r.name == "prepare on textContent set" && r.status == HarnessStatus::Pass),
+            "textContent= 须重触发空脚本: {results:?}"
+        );
+    }
+
+    #[test]
+    fn script_prepare_on_type_removal_external_s109() {
+        // s109：type=text/plain 外链单元 removeAttribute('type') → prepare 取 src →
+        // 异步执行；运行期 createElement('script')+src 插入同面（125 形：期望序
+        // [e1, e2]——removeAttribute 先入队、插入的 marker 后入队，FIFO 保序）。
+        let root = std::env::temp_dir().join("zw-s109-external-prepare-test");
+        std::fs::create_dir_all(&root).unwrap();
+        // 页锚 = https://wpt.test/prepare-external.html（case_name 无目录）→
+        // ./inc*.js 相对解析到 root 直下。
+        std::fs::write(root.join("inc1.js"), "globalThis.__log.push('e1');").unwrap();
+        std::fs::write(root.join("inc2.js"), "globalThis.__log.push('e2');").unwrap();
+        let html = r##"<script src="/resources/testharness.js"></script>
+<script>globalThis.__log = [];</script>
+<script type="text/plain" id="t" src="./inc1.js"></script>
+<script>
+globalThis.promise_test(function() {
+  return new Promise(function(resolve) {
+    var s = document.getElementById('t');
+    s.removeAttribute('type');
+    var m = document.createElement('script');
+    m.src = './inc2.js';
+    s.parentNode.appendChild(m);
+    setTimeout(resolve, 50);
+  }).then(function() {
+    assert_true(JSON.stringify(globalThis.__log) === JSON.stringify(['e1', 'e2']),
+      'external prepare order: ' + globalThis.__log.join(','));
+  });
+}, 'external prepare on type removal + insertion');
+</script>"##;
+        let results = run_testharness_html(
+            &root,
+            "prepare-external.html",
+            html,
+            &mini_harness_stateful(),
+            CASE_TIMEOUT,
+        );
+        assert!(
+            results
+                .iter()
+                .any(|r| r.name == "external prepare on type removal + insertion" && r.status == HarnessStatus::Pass),
+            "外链 prepare 须按 FIFO 取源执行: {results:?}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn inline_module_import_specs_rewrite_to_root_absolute_s101() {
         // 直接钉 helper：相对 spec 以模块自身目录（resources/）为基上溯归一；
         // root-absolute/裸 specifier/含 scheme 的 spec 不动；单双引号皆替换。

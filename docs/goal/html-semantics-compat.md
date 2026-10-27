@@ -2,9 +2,56 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 108 施工收口（strict 首错聚合 + runner 短路收窄 + 投递 id 保真轮：scripting-1 **372P/175F/35T→377P/173F/37T**，**+5P 零 P→非P**——execution-timing 4 页销账（067 语法错 has-run + 104/114/115 defer mutation 族）+ evaluation-order-1 module 抛错臂转 Pass；三刀：runner 投递标签保留原标签 id（122-126 族 getElementById 取回单元的保真前提）、脚本抛错臂 declared>0 放行收集（WPT 语义 uncaught exception 不降级 test status；declared==0 维持短路防假绿）、webview strict abort→首错聚合（script 元素相互独立，一个抛错其余照跑——143 的 onload 赋值不再被整页 abort 吞掉；收尾段单一出口重构，旧 !pending 早退绕过聚合）；候选 A（css/text 数据模块）**证伪**——wpt-data pinned tag 缺五个 CSS 资源与 file.txt，切片不可达，补语料属基准变更记待决；webview 814/runner bin 233/clippy 双 crate clean），下一步 s109：mutation 重触发机制面七行（122 第二层 async IDL+时序、123-126、144/145——嵌套执行+重扫 diff，共享主循环高风险面，独立切片细设计）/ 142 write 臂 xlink:href / 143 eventOrder 完整核验；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 109 施工收口（script mutation 重触发 prepare 轮：scripting-1 **377P/173F/37T→380P/170F/37T**，**+3P 零 P→非P**——execution-timing 124/144/145 三页销账；两刀：`_mo_notify` 三触发臂（attributes@SCRIPT type/src/href/xlink:href + childList@SCRIPT + addedNodes 含 SCRIPT，挂 shim 属性/子节点记录单一汇流点）+ `_zwScriptMaybeStartDynamic` 门序分派路由（connected→run-once（与 R387/s95/s96 同表互斥）→type→nomodule→for/event→外链单点复用 `_zwPrepareSrcScript` / 内联 s95 同款调用点同步 eval——不自带执行器，初版自带 setTimeout 取源致与既有 R387b 双执行，返工定谳）；Rust 侧嵌套执行证伪（sandbox 回调签名无 sandbox 访问 + execute 需 &mut self）→ shim 层 (0,eval) 路径定谳；engine 3544/webview 814/runner bin 236/clippy 双 crate clean），下一步 s110：122-126 marker 面（createElement 工厂节点外链在 corpus strict 管线的执行死因探针——script#t 面本轮已修，async=false 已排除、query 串系钉入口 fetcher 差异非 corpus 根因）+ 122 async IDL reflection / 130/147/148 scheduler 面 / 142 write 臂 xlink:href；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-27 M2 切片 108 施工收口，strict 首错聚合 + 短路收窄 + id 保真轮）**：
+> **▶ 当前状态（2026-10-27 M2 切片 109 施工收口，script mutation 重触发 prepare 轮）**：
+> **入场定谳**：s109 承 s108 主候选 mutation 重触发机制面七行（122 第二层 async
+> IDL+时序、123-126、144/145）。可行性先行证伪：Rust 侧嵌套执行不可行——
+> script-sandbox 回调签名 `Fn(&[String])->String+Send+Sync` 无 sandbox 访问 +
+> `execute` 需 `&mut self`；定谳 shim 层 indirect `(0, eval)`（同上下文、调用点
+> 同步）。既有件盘点：`_mo_notify`（part01:6019）为 shim 全部 attr/childList
+> 记录单一汇流点（proxy 64 处 + 工厂 13 处皆经此）——触发臂挂此单点；
+> `_zwPrepareSrcScript`（s96 外链单点 helper）与 R387/s95 run-once 记账表为复用基座。
+> **本轮两刀**：①`_mo_notify` 三触发臂——attributes@SCRIPT（type/src/href/
+> xlink:href）+ childList@SCRIPT（textContent=/.text/子内容变更）+ addedNodes 含
+> SCRIPT（插入面安全网）；②`_zwScriptMaybeStartDynamic` 门序分派路由——
+> connected（detached 属性写入不 prepare，s96 同口径）→ run-once（与 R387/s95/s96
+> **同表互斥**）→ type → nomodule → for/event → 外链单点复用 `_zwPrepareSrcScript`
+> / 内联 s95 同款同步 eval + 异常上报 + 执行即置记账；prepare 拒绝不置记账（144
+> 臂序依赖）。**调试返工（本轮主发现）**：初版自带 setTimeout 取源执行器与既有
+> appendChild trap R387b 双执行（钉 C log `e1,e2,e2`）——inc 埋 Error().stack 分辨
+> 双路径后定谳，重设计为分派路由：既有执行臂与本面触发臂共享记账表，任一先到即
+> 独占。
+> **验证**：engine lib **3544/3544**；webview lib **814/814**（持平，webview.rs 零
+> 变更）；runner bin **236/0**（+3 钉：type 移除同步内联 prepare / svg script
+> textContent= 重触发 / 外链 type 移除取源+marker FIFO）。全子树终扫
+> **380P/170F/37T+15N**（s108：377P/173F/37T+15N，**+3P**），行级归一 diff
+>（/tmp/s109-final-scripting-1.log 存档）**零 P→非P**（无 Pass 行消失、无新增非 P、
+> 消失非 P 恰为销账页）：execution-timing **124/144/145** 三页 Fail→Pass。
+> **122-126 余面边界定位**：四页共同缺项均为 marker（createElement 工厂节点）外链
+> 执行——script#t 面（type 移除取源）本轮已修；钉面单变量定谳 async=false 无罪、
+> query 串系钉入口 fetcher 不剥 query（corpus fetcher 剥，非 corpus 根因）——
+> corpus strict 管线对工厂节点外链的投递/收集面为 s110 探针点。fmt：wpt-runner
+> clean（engine 侧 paint/painter/text.rs:4130 存量 fmt diff 系渲染流文件，未触碰
+> 仅提及）；clippy engine+wpt-runner `-D warnings` clean。渲染面零依赖——
+> reftest/product-smoke 未跑。账本见
+> [evidence/2026-10-27-m2s109-mutation-retrigger.md](html-semantics-compat/evidence/2026-10-27-m2s109-mutation-retrigger.md)。
+> **范围**：engine shim part01/part03 ×2 + runner testharness.rs ×1（3 钉）；
+> webview/语料/依赖零变更；语料不可改维持。
+> **挂账**：s110 主候选 122-126 marker 面（工厂节点外链 corpus 死因探针）+ 122
+> async IDL reflection（re-insert 后 `script.async` 反射 true）；130/147/148
+>（insert multiple inline scripts; first moves/deletes subsequent scheduler 面）；
+> 142 write 臂 xlink:href；143 eventOrder 完整核验；063 Timeout；slow-loading
+> trickle ~11 行；non-external-no-import（module async）；**待决（须用户拍板）**：
+> css/text 数据模块语料资源缺失；承袭：parse-error 族、http-accept-header、
+> referrer-policies、dynamic import() with 透传、classic 外链 SRI、collect 账本
+> 打包重构、接口对象基建面、FIXME 组、/tmp/zw-hb*.txt 插桩来源待查。
+> execution-timing 124/144/145 本轮销账。
+> **下一步**：s110 入场探针定刀位（候选：122-126 marker 面工厂节点 corpus 死因
+> 探针 / 130/147/148 scheduler 面体量评估 / 142 write 臂 xlink:href 单点）。
+> **切片间隙**：本轮 engine shim 面 + runner 单测；下一挂账同流同面，间隙开放。
+>
+> **▶ 上轮状态（2026-10-27 M2 切片 108 施工收口，strict 首错聚合 + 短路收窄 + id 保真轮——其下一步 s109 入场探针定刀位已由 s109 收口，见上）**：
 > **入场定谳**：s108 探针承 s107 三候选——候选 A（css/text 数据模块合成器）**证伪**：
 > wpt-data（独立 repo，pinned tag）缺 css-module/resources/basic.css 等五个 CSS 资源
 > 与 text-module/file.txt，fetch 恒 404，切片不可达；补语料属基准变更（guidelines
