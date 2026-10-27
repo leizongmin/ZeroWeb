@@ -190,7 +190,14 @@ def build_metrics(performance_csv: Path, wpt_csv: Path, suites_csv: Path) -> dic
         if len(row) < 8:
             continue
         date, platform, metric_id, _p50, p95, _maximum, unit, sha, *_ = row
-        if platform != "github-ubuntu-latest" or metric_id not in performance_by_metric or not p95:
+        # 2026-08 起 platform_class 带上硬件详情（github-ubuntu-latest-amd-epyc-9v74-80-core
+        # 等，GitHub 轮换 runner 机型所致）；类前缀才是稳定部分，前缀匹配保持序列连续。
+        # 硬件换代造成的数值跳变由页面方法论说明覆盖，不属于数据错误。
+        if (
+            not platform.startswith("github-ubuntu-latest")
+            or metric_id not in performance_by_metric
+            or not p95
+        ):
             continue
         performance_by_metric[metric_id][date] = {"date": date, "value": float(p95), "sha": sha}
         units[metric_id] = unit
