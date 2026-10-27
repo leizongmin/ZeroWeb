@@ -153,6 +153,7 @@ use crate::inline_finalization::*;
 pub(crate) mod abspos;
 use abspos::*;
 mod abspos_sizing;
+pub(crate) mod inline_wrapper_box;
 use abspos_sizing::*;
 // R965：taffy 后处理步骤（adjust_inline_block_positions / sort_children_by_css_order /
 // fix_vertical_mode_abs_pos / apply_relative_offsets* / apply_calc_size_adjustments /
@@ -1499,6 +1500,11 @@ impl LayoutEngine {
         // ZW_AR_TRANSFER）。
         crate::aspect_ratio_transfer::clamp_ar_definite_width_max_height(&mut root_box, doc, styles);
 
+        // R5300：R2156 虚拟 inline 包装合成盒终末回填——须在全部盒几何/行位同步
+        // pass 之后（中途插入会破坏按「原子盒为容器直子」约定的同步钩子，
+        // R4234/R4941），见 engine/inline_wrapper_box.rs 模块文档。
+        inline_wrapper_box::synthesize_inline_wrapper_boxes_final(&mut root_box, doc, styles);
+
         LayoutResult {
             root: std::sync::Arc::new(root_box),
             viewport_width: self.viewport_width,
@@ -1638,6 +1644,11 @@ impl LayoutEngine {
         }
 
         let layout_ms = use_start.elapsed().as_secs_f64() * 1000.0;
+
+        // R5300：R2156 虚拟 inline 包装合成盒终末回填——须在全部盒几何/行位同步
+        // pass 之后（中途插入会破坏按「原子盒为容器直子」约定的同步钩子，
+        // R4234/R4941），见 engine/inline_wrapper_box.rs 模块文档。
+        inline_wrapper_box::synthesize_inline_wrapper_boxes_final(&mut root_box, doc, styles);
 
         let result = LayoutResult {
             root: std::sync::Arc::new(root_box),

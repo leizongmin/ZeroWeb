@@ -1718,6 +1718,83 @@ fn render_inline_svg_anchor_container_line_box() {
     );
 }
 
+/// 池化残差①（p109 复核：z2-z8 a=0/svg=32）：R2156 跳过的虚拟 inline 包装无盒
+/// （无 taffy 节点、无 IFC run）→ gBCR 回落 0×0。CSSOM View 的 gBCR = 元素与全部
+/// 子孙 border box 的并集，纯原子包装的合成盒（engine/inline_wrapper_box.rs）须把
+/// 原子子几何并入（此处 32×32）。
+/// https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
+/// https://www.w3.org/TR/cssom-view-1/#dom-element-getboundingclientrect
+#[test]
+fn gcr_inline_atomic_only_anchor_reports_union_with_atomic_child() {
+    let html = r#"<html><body><div><a style="font-size:14px"><svg width="32" height="32" viewBox="0 0 16 16"></svg></a></div></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let a_id = doc.get_elements_by_tag_name("a")[0];
+
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    pipeline.render_html(html, "");
+    let layout = pipeline.layout().expect("layout");
+    let found = find_layout_box_geometry(&layout.root, a_id, 0.0);
+    let (w, gh) = match found {
+        Some((_, _, w, gh, _)) => (w, gh),
+        None => panic!("inline a 合成盒应存在（R5300）"),
+    };
+    assert!(
+        w >= 30.0,
+        "只含 32px 原子子的 inline <a> gBCR 宽应 ≥30（并集语义），实际 {w}"
+    );
+    assert!(
+        gh >= 30.0,
+        "只含 32px 原子子的 inline <a> gBCR 高应 ≥30（并集语义），实际 {gh}"
+    );
+}
+
+/// 边界变体：嵌套虚拟链 a>span>svg——链上每层虚拟包装都须有并集盒（外层 a 与
+/// 内层 span 均为 R2156 跳过形态）。
+#[test]
+fn gcr_inline_atomic_nested_virtual_chain_each_layer_reports_union() {
+    let html = r#"<html><body><div><a style="font-size:14px"><span style="font-size:14px"><svg width="32" height="32" viewBox="0 0 16 16"></svg></span></a></div></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let a_id = doc.get_elements_by_tag_name("a")[0];
+    let span_id = doc.get_elements_by_tag_name("span")[0];
+
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    pipeline.render_html(html, "");
+    let layout = pipeline.layout().expect("layout");
+    for (tag, id) in [("a", a_id), ("span", span_id)] {
+        let found = find_layout_box_geometry(&layout.root, id, 0.0);
+        let (w, gh) = match found {
+            Some((_, _, w, gh, _)) => (w, gh),
+            None => panic!("{tag} 合成盒应存在（R5300 嵌套链）"),
+        };
+        assert!(
+            w >= 30.0 && gh >= 30.0,
+            "嵌套虚拟链 {tag} gBCR 应为原子子并集 ≥30×≥30，实际 {w}×{gh}"
+        );
+    }
+}
+
+/// 边界变体：带 padding/border 的虚拟包装——frame 计入并集盒（CSS2 §8.4 inline
+/// 盒 border box 包住内容：32 内容 + 10×2 padding + 2×2 border = 56）。
+#[test]
+fn gcr_inline_atomic_wrapper_frame_added_to_union() {
+    let html = r#"<html><body><div><a style="padding:10px;border:2px solid black"><svg width="32" height="32" viewBox="0 0 16 16"></svg></a></div></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let a_id = doc.get_elements_by_tag_name("a")[0];
+
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    pipeline.render_html(html, "");
+    let layout = pipeline.layout().expect("layout");
+    let found = find_layout_box_geometry(&layout.root, a_id, 0.0);
+    let (w, gh) = match found {
+        Some((_, _, w, gh, _)) => (w, gh),
+        None => panic!("带 frame 的 inline a 合成盒应存在（R5300）"),
+    };
+    assert!(
+        w >= 50.0 && gh >= 50.0,
+        "带 10px padding + 2px border 的包装 gBCR 应 ≥50（32+frame），实际 {w}×{gh}"
+    );
+}
+
 /// position:fixed 元素在「inline 匿名块拆分上下文」中高度塌 0 回归（github 登出页
 /// header 塌零根因 #2 的引擎级最小形）：相邻两个默认 display:inline 的自定义元素各含
 /// 块级内容时，后者的 fixed 子树整体高 0（活体 github.com header bar/topRow 全链塌零；
