@@ -14,6 +14,13 @@ WPT_DATA="${REPO_ROOT}/tests/wpt-runner/wpt-data"
 WPT_REV="315976933870b34d6ea30e3f6643403edae678ba"
 RAW_ROOT="https://raw.githubusercontent.com/web-platform-tests/wpt/${WPT_REV}"
 API_ROOT="https://api.github.com/repos/web-platform-tests/wpt/contents"
+# GitHub Contents API 认证（可选，goals/lib.sh 同款）：设 GITHUB_TOKEN 时列目录带
+# Bearer 头——匿名 60 req/h 在 weekly coverage 多分片并发下会 403（run 40522731884
+# misc 分片同类翻车实证）；认证 5000 req/h。raw 下载不走该配额。
+GH_API_AUTH=()
+if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+  GH_API_AUTH=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
+fi
 
 fetch_raw() {
   local relative="$1"
@@ -38,6 +45,7 @@ fetch_dir_files() {
   local dir="$1"
   local names
   names=$(curl --fail --location --silent --show-error --retry 3 --connect-timeout 8 --max-time 30 \
+    "${GH_API_AUTH[@]}" \
     "${API_ROOT}/${dir}?ref=${WPT_REV}" | grep -o '"name": "[^"]*"' | sed 's/"name": "//; s/"$//')
   while IFS= read -r name; do
     [[ -z "${name}" ]] && continue
