@@ -4938,6 +4938,10 @@
       globalThis.__zwDocWritePendingSlot = -1;
       globalThis.__zwDocWriteEvalSlot = -1;
       globalThis.__zwDocWriteDoneSlots = {};
+      // s114：defer 改道面记账同步重置（新写流独立——队/布防旗/排水旗不复用）。
+      globalThis.__zwDocWriteDeferQueue = [];
+      globalThis.__zwDocWriteDeferArmed = false;
+      globalThis.__zwDocWriteDeferDrained = false;
       try {
         var _dwoBody = globalThis.document.body;
         if (_dwoBody) _dwoBody.innerHTML = '';
@@ -5019,8 +5023,68 @@
             if (_dwsBlocked) { _dwsWm++; continue; }
             var _dwsSrc = '';
             try { _dwsSrc = String(_dwsEl.getAttribute && _dwsEl.getAttribute('src') || ''); } catch (_eS97src) {}
+            // s114：SVG script 写入形（142 语料）以 xlink:href 携址——write 回放物化
+            // HTML script 带字面 'xlink:href' 属性，src 缺席时回退读；副本侧重写为
+            // src 走既有 fetch 链（下方副本创建处）。
+            if (!_dwsSrc) {
+              try { _dwsSrc = String(_dwsEl.getAttribute && _dwsEl.getAttribute('xlink:href') || ''); } catch (_eS114xh) {}
+            }
             if (_dwsSrc) {
               if (_dwsThrowaway) { _dwsWm++; continue; }
+              // s114（html-semantics M2 切片 114）：写入 defer 外链改道——spec：
+              // parser-inserted defer 外链解析期并行取回、the-end 相位依文档序执行
+              //（先于 DCL）。既有阻塞链（下方）取回即执行，写面无插入点时序，defer
+              // 直走会早于后续页面内联脚本（096 got 形）。改道：立即发起取回（并行
+              // 语义；s110 在飞计数挂 load 等待），代码到齐入 FIFO 队；排水投
+              // `__zwSchedRegister('defer')` 单元（runner 生命周期 interactive 后
+              // 排水、同任务派 DCL——spec the-end 序）。取回晚于排水（慢源）立即补
+              // 执行；流后段 defer 写入（interactive 后，语料无此形）不再被排水——
+              // FIXME(spec-gap): 多 defer 写入按取回完成序近似写入序；interactive
+              // 后注册的排水单元无二次布防。
+              // async 属性在场仍走既有阻塞链（写面 async 语义既有口径）；
+              // `__zwSchedRegister` 缺席（非 runner 环境）不改道，维持阻塞链。
+              // https://html.spec.whatwg.org/multipage/scripting.html#the-end
+              var _dwsIsDefer = false, _dwsIsAsync = false;
+              try { _dwsIsDefer = !!(_dwsEl.hasAttribute && _dwsEl.hasAttribute('defer')); } catch (_eS114df) {}
+              try { _dwsIsAsync = !!(_dwsEl.hasAttribute && _dwsEl.hasAttribute('async')); } catch (_eS114as) {}
+              if (_dwsIsDefer && !_dwsIsAsync && typeof globalThis.__zwSchedRegister === 'function') {
+                var _dwsDeferBlocked = false;
+                try {
+                  _dwsDeferBlocked = !!(_dwsEl.hasAttribute && _dwsEl.hasAttribute('nomodule'))
+                    || (typeof globalThis._zwScriptTypeClassify === 'function'
+                      && globalThis._zwScriptTypeClassify(_dwsEl) === 'blocked');
+                } catch (_eS114db) {}
+                if (!_dwsDeferBlocked) {
+                  if (!globalThis.__zwDocWriteDeferQueue) globalThis.__zwDocWriteDeferQueue = [];
+                  globalThis._zwScriptFetchInFlight = (globalThis._zwScriptFetchInFlight || 0) + 1;
+                  fetch(_dwsSrc).then(function (_r) {
+                    if (!_r.ok && _r.status) throw new Error('HTTP ' + _r.status);
+                    return _r.text();
+                  }).then(function (_code) {
+                    globalThis._zwScriptFetchInFlight = Math.max(0, (globalThis._zwScriptFetchInFlight || 0) - 1);
+                    globalThis.__zwDocWriteDeferQueue.push(_code);
+                    if (globalThis.__zwDocWriteDeferDrained === true) {
+                      try { (0, eval).call(globalThis, _code); } catch (_eS114lf) {}
+                    }
+                  }).catch(function () {
+                    globalThis._zwScriptFetchInFlight = Math.max(0, (globalThis._zwScriptFetchInFlight || 0) - 1);
+                  });
+                  // 排水单元全局只注册一次；单元内排空 FIFO 队（多写入按完成序）。
+                  if (!globalThis.__zwDocWriteDeferArmed) {
+                    globalThis.__zwDocWriteDeferArmed = true;
+                    globalThis.__zwSchedRegister('defer', 0, function () {
+                      globalThis.__zwDocWriteDeferDrained = true;
+                      var _dwsQ = globalThis.__zwDocWriteDeferQueue || [];
+                      for (var _dwsQi = 0; _dwsQi < _dwsQ.length; _dwsQi++) {
+                        try { (0, eval).call(globalThis, _dwsQ[_dwsQi]); } catch (_eS114dq) {}
+                      }
+                      globalThis.__zwDocWriteDeferQueue = [];
+                    });
+                  }
+                }
+                _dwsWm++;
+                continue;
+              }
               // fetch 中槽位：本面阻塞返回（写入内联待外链求值后续流）。水位线先
               // 停在本槽位（重入锚点 = 挂链槽位），续流回调推进到槽位后。
               if (globalThis.__zwDocWritePendingSlot === _dwsWm) return;
@@ -5047,6 +5111,11 @@
                         try { _dwsCopy.setAttribute(_dwsAt.name, _dwsAt.value); } catch (_eS97as) {}
                       }
                     }
+                  }
+                  // s114：xlink:href 回退形补 src（门 url 读 child.src/
+                  // getAttribute('src')；src 在场时透传已带，仅回退形落此重写）。
+                  if (_dwsSrc && !_dwsCopy.hasAttribute('src')) {
+                    try { _dwsCopy.setAttribute('src', _dwsSrc); } catch (_eS114cp) {}
                   }
                 } catch (_eS97cp) { _dwsCopy = _dwsEl; }
               }
