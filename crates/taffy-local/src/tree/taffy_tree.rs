@@ -321,7 +321,11 @@ where
                 #[cfg(feature = "flexbox")]
                 (Display::Flex, true) => compute_flexbox_layout(tree, node_id, inputs),
                 #[cfg(feature = "grid")]
-                (Display::Grid, true) => compute_grid_layout(tree, node_id, inputs),
+                // 无子项的 grid 容器也须走网格算法：内在尺寸来自显式轨道而非按叶子（内容 0）
+                // 处理。浏览器语义（css-grid-1 §12.1 轨道求和；Chromium 空 grid 按轨道计高），
+                // 上游 taffy 按 `(_, false)` 叶子派发，空 grid 的 grid-template-rows 被忽略。
+                // https://drafts.csswg.org/css-grid-1/#intrinsic-sizes
+                (Display::Grid, _) => compute_grid_layout(tree, node_id, inputs),
                 (_, false) => {
                     let node_key = node_id.into();
                     let style = &tree.taffy.nodes[node_key].style;
