@@ -991,6 +991,118 @@ fn r5301_ltr_ellipsis_still_anchors_right() {
     assert_eq!(kept, vec![8.0, 108.0, 208.0], "应保留左缘 3 个整 cell，右溢 cell 全裁");
 }
 
+/// R5302（css-overflow-3 §text-overflow）：ellipsis 逐行适用——多行盒每个溢出行
+/// 独立截断并各渲一个 `…`。修复前单趟后处理从首溢出行截点清到切片末尾，后续行被
+/// 整体抹掉（ellipsis-multiline-001 靠 Layout 类 1% 容差假通过、013 行 2/3 被抹）。
+#[test]
+fn r5302_ellipsis_multiline_each_overflowing_line_ellipsized() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    // 每行 3 cell = 300px 溢出 200px 盒：保留行首 1 个整 cell + 贴排省略号。
+    let html = "<html><body><div>xxx<br>xxx</div></body></html>";
+    let css = "div { font: 100px/1 Ahem; white-space: pre; width: 200px; \
+               overflow: hidden; text-overflow: ellipsis; color: black; }";
+    let result = pipeline.render_html(html, css);
+    let glyphs = &result.primitives().glyphs;
+    let mut ellipsis: Vec<_> = glyphs
+        .iter()
+        .filter(|g| g.glyph_id == '…' as u32)
+        .map(|g| (g.x, g.y))
+        .collect();
+    ellipsis.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+    assert_eq!(ellipsis.len(), 2, "两个溢出行应各渲一个 U+2026");
+    assert!(
+        ellipsis.iter().all(|e| e.0 == 108.0),
+        "省略号应贴在保留前缀（1 cell）末端 x=108，而非右缘"
+    );
+    assert_eq!(
+        (ellipsis[1].1 - ellipsis[0].1) as i32,
+        100,
+        "两行省略号应各在本行 baseline（行距 100px）"
+    );
+    let kept: Vec<f32> = glyphs
+        .iter()
+        .filter(|g| g.glyph_id == 'x' as u32 && g.font_size > 0.0)
+        .map(|g| g.x)
+        .collect();
+    assert_eq!(kept, vec![8.0, 8.0], "每行应保留行首 1 个整 cell，其余全裁");
+}
+
+/// R5302：省略号贴保留内容端（no intervening gap），不贴容器右缘——007 场景：
+/// 2.5em 盒装 1em cell，保留 1 cell 后余 0.5em，省略号须紧贴前缀末端而非右移
+/// 留缝（修复前锚 content_right − ellipsis_w，缝隙露出下层红盒）。
+#[test]
+fn r5302_ellipsis_adjacent_to_kept_prefix_not_flush_right() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = "<html><body><div>ttttt</div></body></html>";
+    let css = "div { font: 100px/1 Ahem; white-space: pre; width: 250px; \
+               overflow: hidden; text-overflow: ellipsis; color: black; }";
+    let result = pipeline.render_html(html, css);
+    let glyphs = &result.primitives().glyphs;
+    let ellipsis: Vec<_> = glyphs.iter().filter(|g| g.glyph_id == '…' as u32).collect();
+    assert_eq!(ellipsis.len(), 1);
+    assert_eq!(ellipsis[0].x, 108.0, "省略号应贴前缀末端 x=108（右缘为 258）");
+    let kept: Vec<f32> = glyphs
+        .iter()
+        .filter(|g| g.glyph_id == 't' as u32 && g.font_size > 0.0)
+        .map(|g| g.x)
+        .collect();
+    assert_eq!(kept, vec![8.0], "2.5em 盒只装得下 1 个整 cell + 省略号");
+}
+
+/// R5302：末 cell 跨缘（straddling）即溢出——修复前检测按字形 origin
+/// （`g.x >= content_right`），跨缘末 cell 的 sliver 被漏成「不溢出」；整 cell
+/// 收缩规则下须判溢出并按 cell 裁剪。
+#[test]
+fn r5302_ellipsis_straddling_last_cell_triggers_elision() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    // 4 cell = 400px，盒 350px：末 cell [308,408) 跨右缘 358。
+    let html = "<html><body><div>tttt</div></body></html>";
+    let css = "div { font: 100px/1 Ahem; white-space: pre; width: 350px; \
+               overflow: hidden; text-overflow: ellipsis; color: black; }";
+    let result = pipeline.render_html(html, css);
+    let glyphs = &result.primitives().glyphs;
+    let ellipsis: Vec<_> = glyphs.iter().filter(|g| g.glyph_id == '…' as u32).collect();
+    assert_eq!(ellipsis.len(), 1, "跨缘末 cell 应触发省略号");
+    assert_eq!(ellipsis[0].x, 208.0, "保留 2 个整 cell 后贴排省略号");
+    let kept: Vec<f32> = glyphs
+        .iter()
+        .filter(|g| g.glyph_id == 't' as u32 && g.font_size > 0.0)
+        .map(|g| g.x)
+        .collect();
+    assert_eq!(kept, vec![8.0, 108.0], "跨缘 cell 应整 cell 裁掉，不留 sliver");
+}
+
+/// R5302（css-ui-3 §text-overflow，text-overflow-008）：省略号本身装不进容器
+/// （0.5em 盒 vs 1em cell + 1em '…'）→ 不渲省略号，首字符按 overflow:hidden
+/// 裁剪保留可见 sliver（"clipped rather than ellipsed"）。修复前 endpoint 检测
+/// 正确判溢出后无条件渲 '…'，半截红 '…' 出现在 008（chromium 无）。
+#[test]
+fn r5302_ellipsis_wider_than_container_not_rendered_clip_only() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    // 盒 50px：'…' 宽 100px 装不下；单 cell [8,108) 跨右缘 58。
+    let html = "<html><body><div><span style=\"color:green\">x</span></div></body></html>";
+    let css = "div { font: 100px/1 Ahem; width: 50px; \
+               overflow: hidden; text-overflow: ellipsis; color: red; }";
+    let result = pipeline.render_html(html, css);
+    let glyphs = &result.primitives().glyphs;
+    let ellipsis: Vec<_> = glyphs.iter().filter(|g| g.glyph_id == '…' as u32).collect();
+    assert!(ellipsis.is_empty(), "省略号装不进容器时不得渲染（008 assert）");
+    let kept: Vec<_> = glyphs
+        .iter()
+        .filter(|g| g.font_size > 0.0)
+        .map(|g| (g.glyph_id, g.x, g.color.g, g.color.r))
+        .collect();
+    assert_eq!(
+        kept,
+        vec![('x' as u32, 8.0, 128, 0)],
+        "首字符保留可见 sliver（绿色），不得被省略号替换"
+    );
+}
+
 // ── line-clamp slice 2 ellipsis 测试（R2467）──
 
 /// line-clamp:2 的 pure-Ahem 块（走 stored 路径：inline_layout 被 R2431 cap 到 2 行）

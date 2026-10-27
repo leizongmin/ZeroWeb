@@ -4455,118 +4455,176 @@ impl super::Painter {
                     let glyphs = &mut self.primitives.glyphs;
                     let fragment_glyphs = &mut glyphs[glyphs_before_fragments..];
 
-                    // R5301（css-overflow-3 §text-overflow）：RTL（水平书写模式）inline-end
-                    // 在左——检测/裁剪/定位按几何镜像。ZW 行内 RTL 无 bidi 重排（逻辑序 =
-                    // 视觉序左→右，行右对齐起排，溢出恒走左缘，scroll-rtl-001 span 负 x
-                    // 布局为证），镜像取字形 origin 几何：溢出 = origin ≤ content_left；
-                    // 保留 = cell 起点在省略号盒 [content_left, content_left+ellipsis_w]
-                    // 右侧；省略号盒锚 content_left。逻辑序敏感场景（css-ui/
-                    // text-overflow-011 的「保留逻辑首字符」语义）需 bidi 裂解，挂账另轮。
-                    let is_rtl_horizontal = matches!(style.direction, zero_style_system::DirectionValue::Rtl)
-                        && matches!(style.writing_mode, zero_style_system::WritingModeValue::HorizontalTb);
+                    // R5302（css-overflow-3 §text-overflow）：ellipsis 逐行适用——按
+                    // baseline y 聚类分行，逐行独立检测溢出、按整 cell 收缩并把省略号
+                    // 贴在保留内容端（007 assert「no intervening gap」）。此前单趟处理
+                    // 从首个溢出行截点清到切片末尾（含后续行）：007 行 2 被抹、013 行
+                    // 2/3 被抹、ellipsis-multiline-001 靠 Layout 类 1% 容差假通过。
+                    // straddling cell 不再留 sliver——整 cell 判定与 chromium 一致
+                    // （007/rtl-001 家族取证）。
+                    // R5301（同节）：RTL（水平书写模式）inline-end 在左——检测/裁剪/
+                    // 定位按几何镜像。ZW 行内 RTL 无 bidi 重排（逻辑序 = 视觉序左→右，
+                    // 行右对齐起排，溢出恒走左缘，scroll-rtl-001 span 负 x 布局为证）。
+                    // 逻辑序敏感场景（text-overflow-011 的「保留逻辑首字符」语义）需
+                    // bidi 裂解，挂账另轮。
+                    let is_horizontal_tb =
+                        matches!(style.writing_mode, zero_style_system::WritingModeValue::HorizontalTb);
+                    let is_rtl_horizontal =
+                        is_horizontal_tb && matches!(style.direction, zero_style_system::DirectionValue::Rtl);
 
-                    let mut last_visible_idx: Option<usize> = None;
-                    let mut has_overflow = false;
-
-                    if is_rtl_horizontal {
-                        let content_left = content_x + tx;
-                        // 严格小于：行右对齐起排后「恰好装满」时首字形 origin ==
-                        // content_left，不得视为溢出（text-overflow-ellipsis-rtl-001
-                        // div2 `pppp` 恰满 400px 盒误渲省略号——首次实现 `<=` 翻车实证）；
-                        // 溢出行起点 = content_right − line_w < content_left 恒严格成立。
-                        for g in fragment_glyphs.iter().rev() {
-                            if g.font_size == 0.0 {
-                                continue;
-                            }
-                            if g.x < content_left {
-                                has_overflow = true;
-                                break;
-                            }
-                        }
-                    } else {
-                        for (i, g) in fragment_glyphs.iter().enumerate() {
-                            if g.font_size == 0.0 {
-                                continue;
-                            }
-                            if g.x >= content_right {
-                                has_overflow = true;
-                                last_visible_idx = if i > 0 { Some(i - 1) } else { None };
-                                break;
-                            }
-                            last_visible_idx = Some(i);
-                        }
-                    }
-
-                    if has_overflow {
-                        // R4116（css-overflow-3 §text-overflow）：省略号 = **单个 U+2026
-                        // 字形**（chromium 同——Ahem '…' 为全盒方块占 1 个 advance；旧实现
-                        // 画 3 个 '.'，合成全盒时代恰似 3 个字符位，R4115 真实轮廓下
-                        // '.'/'…' 均为全盒方块，3 点 = 3 个方块 300px 覆盖 vs chromium
-                        // 单 '…' 100px——text-overflow-ellipsis-001/rtl 揭示）。
+                    // 水平书写模式门控：竖排行进在 x/y 轴互换，逐行几何独立推导
+                    // （FIXME: vertical ellipsis 独立域），竖排不再走 x 轴判定。
+                    if is_horizontal_tb && font_size > 0.0 {
+                        // R4116（css-overflow-3 §text-overflow）：省略号 = **单个
+                        // U+2026 字形**（chromium 同——Ahem '…' 为全盒方块占 1 个
+                        // advance；旧实现画 3 个 '.'，合成全盒时代恰似 3 个字符位，
+                        // R4115 真实轮廓下 '.'/'…' 均为全盒方块，3 点 = 3 个方块
+                        // 300px 覆盖 vs chromium 单 '…' 100px）。
                         let ellipsis_char_width =
                             crate::measure_char_for_font(default_font_id.0, '…', font_size, container_is_ahem);
                         let total_ellipsis_width = ellipsis_char_width;
+                        let content_left = content_x + tx;
 
-                        // 裁剪起点：LTR 从尾部（inline-end = 右）截，RTL 从头部（inline-end
-                        // = 左）截。RTL 找不到保留侧字形（整行都在省略号盒之左）时全裁，
-                        // 与 LTR cutoff_start = 0 兜底对称——只渲省略号。
-                        let ellipsis_start_x = if is_rtl_horizontal {
-                            let content_left = content_x + tx;
-                            let ellipsis_end_x = content_left + total_ellipsis_width;
-                            let cutoff_start = fragment_glyphs
-                                .iter()
-                                .position(|g| g.font_size > 0.0 && g.x >= ellipsis_end_x - 0.5)
-                                .unwrap_or(fragment_glyphs.len());
-                            for g in fragment_glyphs.iter_mut().take(cutoff_start) {
-                                g.glyph_id = 0;
-                                g.font_size = 0.0;
-                            }
-                            content_left
-                        } else {
-                            let ellipsis_end_x = content_right;
-                            let ellipsis_start_x = ellipsis_end_x - total_ellipsis_width;
-
-                            let cutoff_start = if let Some(idx) = last_visible_idx {
-                                let mut cut = idx + 1;
-                                for j in (0..=idx).rev() {
-                                    if fragment_glyphs[j].x < ellipsis_start_x && fragment_glyphs[j].font_size > 0.0 {
-                                        cut = j + 1;
-                                        break;
-                                    }
-                                    cut = j;
+                        // 省略号本身装不进容器（008：0.5em 盒 vs 1em cell）→ 不渲
+                        // 省略号，仅按 overflow:hidden 裁剪（css-ui-3 §ellipsing：
+                        // 首字符 clipped rather than ellipsed——008 assert「若省略号
+                        // 出现即红盒败」+ chromium 行为）。旧行为渲染半截红 '…' 纯属
+                        // origin 判据漏检 straddling cell 的巧合正确。整个 pass 跳过：
+                        // 不裁不渲。
+                        if total_ellipsis_width <= container_width + 0.5 {
+                            // 行分组：baseline 与组首字形差 ≤ 0.5×font_size 归同一行。
+                            // fs=0 槽位（glyph_id=0 哨兵）**参与分组**——IFC/布局侧先把
+                            // 溢出盒外的字形置零（013 取证：x/y 原样保留、fs=0），排除
+                            // 哨兵会让行末端点缩到盒缘、溢出恒漏检（013 三行全漏检、
+                            // '…' 永不触发）。行距 ≥ 1×font_size（line-height 下限），
+                            // vertical-align 位移小于容差时（013 sub = 0.1em）与同行仍
+                            // 聚同类；显式大位移会错分行——FIXME: 需 fragment→行精确
+                            // 映射替代 y 聚类。
+                            let mut lines: Vec<Vec<usize>> = Vec::new();
+                            for (i, g) in fragment_glyphs.iter().enumerate() {
+                                let same_line = matches!(lines.last(), Some(last)
+                                if (fragment_glyphs[last[0]].y - g.y).abs() <= 0.5 * font_size);
+                                if !same_line {
+                                    lines.push(Vec::new());
                                 }
-                                cut
-                            } else {
-                                0
-                            };
+                                lines.last_mut().unwrap().push(i);
+                            }
 
-                            for g in fragment_glyphs.iter_mut().skip(cutoff_start) {
+                            // 逐行先按不可变读算出裁剪集与省略号参数，再统一落裁剪与
+                            // 省略号字形（add_glyph 扩张 primitives，计划先行免借用纠缠）。
+                            // cell 推进量 = x_{i+1} − x_i（真实排版推进，含 letter-spacing
+                            // /shaping）；行末字形无后继，按当前字体实测（Ahem 恒 1em，与
+                            // 排版口径一致）。
+                            let mut wipes: Vec<usize> = Vec::new();
+                            let mut ells: Vec<(f32, f32, Color)> = Vec::new();
+                            for idxs in &lines {
+                                let adv = |k: usize| -> f32 {
+                                    if k + 1 < idxs.len() {
+                                        return fragment_glyphs[idxs[k + 1]].x - fragment_glyphs[idxs[k]].x;
+                                    }
+                                    let g = &fragment_glyphs[idxs[k]];
+                                    match char::from_u32(g.glyph_id) {
+                                        // fragment_glyphs 活跃期持有 self.primitives 可变借
+                                        // 用，缓存入口（&self 方法）不可达；行末每行至多一次，
+                                        // 直接走自由函数（与省略号宽度同口径）。
+                                        Some(ch) => crate::measure_char_for_font(
+                                            g.font_id.0,
+                                            ch,
+                                            g.font_size,
+                                            container_is_ahem,
+                                        ),
+                                        None => g.font_size,
+                                    }
+                                };
+                                let base_y = fragment_glyphs[idxs[0]].y;
+                                if is_rtl_horizontal {
+                                    // 检测镜像（R5301）：行右对齐起排，溢出 = 行首字形
+                                    // 严格越过 content_left——「恰好装满」时行首 origin ==
+                                    // content_left 不算溢出（rtl-001 div2 `pppp` 恰满
+                                    // 400px 盒，`<=` 会误触发）。
+                                    if fragment_glyphs[idxs[0]].x >= content_left {
+                                        continue;
+                                    }
+                                    // 从行尾（右）向前收：保留使「后缀宽 + 省略号」装进
+                                    // 容器的最大后缀，省略号贴后缀左缘（no gap）。后缀宽
+                                    // = content_right − cell 起点（行右对齐、后缀连到行
+                                    // 末端）；整行无一 cell 可保留时只渲省略号锚
+                                    // content_left，与 LTR 全裁兜底对称。fs=0 哨兵不参与
+                                    // 保留（已不可见，保留无意义）——遇哨兵即止。
+                                    let mut keep_from = idxs.len();
+                                    for (k, &gi) in idxs.iter().enumerate().rev() {
+                                        if fragment_glyphs[gi].font_size > 0.0
+                                            && content_right - fragment_glyphs[gi].x + total_ellipsis_width
+                                                <= container_width + 0.5
+                                        {
+                                            keep_from = k;
+                                        } else {
+                                            break;
+                                        }
+                                    }
+                                    // 省略号颜色 = 本盒 color（css-ui-3：'…' 随盒样式，
+                                    // 非被替换内容样式——008 assert「省略号出现即红」、
+                                    // 013 红 sub span 被替换后 '…' 仍绿均此语义）。
+                                    if keep_from < idxs.len() {
+                                        let g = &fragment_glyphs[idxs[keep_from]];
+                                        ells.push((g.x - total_ellipsis_width, base_y, color));
+                                    } else {
+                                        ells.push((content_left, base_y, color));
+                                    }
+                                    wipes.extend(idxs[..keep_from].iter().copied());
+                                } else {
+                                    // LTR：检测 = 行末端点（末字形 origin + 实测推进）严格
+                                    // 越过 content_right——origin 判据会把 straddling 末
+                                    // cell 漏成不溢出，与整 cell 收缩不自洽。
+                                    let line_right = fragment_glyphs[idxs[idxs.len() - 1]].x + adv(idxs.len() - 1);
+                                    if line_right <= content_right + 0.5 {
+                                        continue;
+                                    }
+                                    // 从行首向后收：保留使「前缀末端 + 省略号」仍装进容器
+                                    // 右缘的最大前缀，省略号贴前缀末端（no gap）；前缀空时
+                                    // 省略号锚行首（idxs[keep_cnt].x 即首字形）。
+                                    let mut keep_cnt = 0usize;
+                                    for (k, &gi) in idxs.iter().enumerate() {
+                                        // fs=0 哨兵不参与保留（已不可见）——遇哨兵即止。
+                                        if fragment_glyphs[gi].font_size > 0.0
+                                            && fragment_glyphs[gi].x + adv(k) + total_ellipsis_width
+                                                <= content_right + 0.5
+                                        {
+                                            keep_cnt = k + 1;
+                                        } else {
+                                            break;
+                                        }
+                                    }
+                                    let ell_x = fragment_glyphs[idxs[keep_cnt]].x;
+                                    // 省略号颜色 = 本盒 color（css-ui-3：'…' 随盒样式，同
+                                    // RTL 臂注释；被替换内容红/橙不应染省略号）。
+                                    ells.push((ell_x, base_y, color));
+                                    wipes.extend(idxs[keep_cnt..].iter().copied());
+                                }
+                            }
+                            for &wi in &wipes {
+                                let g = &mut fragment_glyphs[wi];
                                 g.glyph_id = 0;
                                 g.font_size = 0.0;
                             }
-                            ellipsis_start_x
-                        };
-
-                        let first_glyph = fragment_glyphs.iter().find(|g| g.font_size > 0.0);
-                        let base_y = first_glyph.map(|g| g.y).unwrap_or(content_y + font_size + ty);
-
-                        for (i, ch) in ['…'].iter().enumerate() {
-                            self.primitives.add_glyph(GlyphPrimitive {
-                                x: ellipsis_start_x + ellipsis_char_width * i as f32 + letter_spacing * i as f32,
-                                y: base_y,
-                                font_size,
-                                color,
-                                glyph_id: *ch as u32,
-                                font_glyph_index: None,
-                                source: None,
-                                font_id: default_font_id,
-                                font_variation_id: default_font_variation_id,
-                                bitmap_width: None,
-                                bitmap_height: None,
-                                rotation: 0.0,
-                                synthetic_italic: false,
-                            });
-                        }
+                            for (ell_x, ell_y, ell_color) in ells {
+                                self.primitives.add_glyph(GlyphPrimitive {
+                                    x: ell_x,
+                                    y: ell_y,
+                                    font_size,
+                                    color: ell_color,
+                                    glyph_id: '…' as u32,
+                                    font_glyph_index: None,
+                                    source: None,
+                                    font_id: default_font_id,
+                                    font_variation_id: default_font_variation_id,
+                                    bitmap_width: None,
+                                    bitmap_height: None,
+                                    rotation: 0.0,
+                                    synthetic_italic: false,
+                                });
+                            }
+                        } // else: 省略号装得进容器（008 门另一侧）
                     }
                 }
 
