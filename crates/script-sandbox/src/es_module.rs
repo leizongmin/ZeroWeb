@@ -588,11 +588,23 @@ pub fn extract_static_module_import_specifiers(source: &str) -> Vec<String> {
 /// type 属性分派数据模块合成（webview collect_module_deps_recursive）。复用 s105
 /// 属性子句解析（suffix_after_specifier_literal / parse_with_clause）；属性块语法
 /// 错误由校验面（validate_static_import_attributes）先行报告，此处按无属性处理。
-/// 仅 import 语句——export-from 与动态 import() 不在此面（s105 同口径）。
+/// export-from 再导出同为静态依赖（s116：图收集缺它 → 纯 re-export wrapper 的命名
+/// 导入链接期查空——referrer insecure wrapper 实证）；with 属性在该形态语料未出现，
+/// 一律按 None 顺延（FIXME：`export … from 'm' with {…}` 属性面）。
+/// 动态 import() 不在此面（s105 同口径）。
 pub fn extract_static_module_imports_with_attributes(source: &str) -> Vec<(String, Option<String>)> {
     let mut pairs: Vec<(String, Option<String>)> = Vec::new();
     for stmt in split_statements(source) {
         let Some(clause) = strip_import_keyword(stmt.trim()) else {
+            // s116：export-from 再导出依赖臂（形态先验同
+            // [`extract_static_module_import_specifiers`]——防正文消息字符串幻影依赖）。
+            if let Some(export_clause) = strip_export_keyword(stmt.trim())
+                && reexport_clause_shape_ok(export_clause)
+                && let Ok(spec) = extract_reexport_specifier(export_clause)
+                && !pairs.iter().any(|(existing, _)| existing == &spec)
+            {
+                pairs.push((spec, None));
+            }
             continue;
         };
         if !import_clause_shape_ok(clause) {
@@ -1293,6 +1305,17 @@ enum ScanCtx {
 }
 
 /// Split top-level module statements without breaking multiline function or arrow bodies.
+/// s116：语句以完整标识符 `from` 收尾判定——import/export-from 跨行续行守卫
+/// （深度 0 下以 `from` 收尾的合法语句仅 import/export-from 形，行尾不得切分）。
+fn statement_ends_with_from(s: &str) -> bool {
+    let b = s.as_bytes();
+    b.len() >= 4
+        && &b[b.len() - 4..] == b"from"
+        && !b[..b.len() - 4]
+            .last()
+            .is_some_and(|c| c.is_ascii_alphanumeric() || *c == b'_' || *c == b'$')
+}
+
 pub(crate) fn split_statements(source: &str) -> Vec<String> {
     let mut stmts = Vec::new();
     let mut current = String::new();
@@ -1317,10 +1340,15 @@ pub(crate) fn split_statements(source: &str) -> Vec<String> {
                 line_comment = false;
                 if braces == 0 && parens == 0 && brackets == 0 && ctx_stack.is_empty() {
                     let statement = current.trim();
-                    if !statement.is_empty() {
-                        stmts.push(statement.to_string());
+                    // s116：`from` 行尾续行（跨行 import/export-from，注释同界）
+                    if statement_ends_with_from(statement) {
+                        current.push(ch);
+                    } else {
+                        if !statement.is_empty() {
+                            stmts.push(statement.to_string());
+                        }
+                        current.clear();
                     }
-                    current.clear();
                 }
             }
             index += 1;
@@ -1507,10 +1535,19 @@ pub(crate) fn split_statements(source: &str) -> Vec<String> {
         }
         if (ch == ';' || ch == '\n') && top_level {
             let statement = current.trim();
-            if !statement.is_empty() {
-                stmts.push(statement.to_string());
+            // s116：import/export-from 跨行续行——`import { x } from\n    "spec";`
+            //（WPT referrer 族书写形）不能在 `from` 行尾切语句：切成 `{ x } from` /
+            // `"spec";` 两段后提取与 transform（同吃本扫描）双双漏配 import 形。
+            // 深度 0 下以完整标识符 `from` 收尾的合法语句仅 import/export-from 形，
+            // 续行守卫安全。
+            if ch == '\n' && statement_ends_with_from(statement) {
+                current.push(ch);
+            } else {
+                if !statement.is_empty() {
+                    stmts.push(statement.to_string());
+                }
+                current.clear();
             }
-            current.clear();
         } else {
             current.push(ch);
         }
@@ -2383,6 +2420,46 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         assert!(ok.is_ok(), "export * as ns 应满足同名具名导入");
     }
 
+    // s116 探针钉：export-from 纯 re-export 链（referrer insecure wrapper 语料形）——
+    // 图注册语义 = raw spec 键 + 替换后体；页面经相对 raw spec 导入时链接器应沿
+    // from 子句递归命中 checker 的 const 导出。
+    #[test]
+    fn test_export_from_reexport_chain_absolute_dep_s116() {
+        let checker = "http://wpt.test:8000/html/semantics/scripting-1/the-script-element/module/resources/referrer-checker.py?name=insecure_import";
+        let mut registry = ModuleRegistry::new();
+        registry.register(checker, "export const referrer = 'http://wpt.test/';");
+        registry.register(
+            "./resources/import-referrer-checker-insecure.sub.js?name=insecure_import",
+            "export { referrer } from 'http://wpt.test:8000/html/semantics/scripting-1/the-script-element/module/resources/referrer-checker.py?name=insecure_import';",
+        );
+        let result = compile_module_script(
+            "import { referrer as v } from \"./resources/import-referrer-checker-insecure.sub.js?name=insecure_import\";\nexport default v;",
+            "http://wpt.test/html/semantics/scripting-1/the-script-element/module/referrer-strict-policies.sub.html",
+            "http://wpt.test/html/semantics/scripting-1/the-script-element/module/referrer-strict-policies.sub.html",
+            &registry,
+        );
+        assert!(result.is_ok(), "export-from 链应满足具名导入: {result:?}");
+    }
+
+    // s116 回归钉：图收集提取器（with 属性变体）必须吐出 export-from 再导出依赖；
+    // 正文消息字符串的 export-from 形文本不得产生幻影依赖（形态先验）。
+    #[test]
+    fn test_attributes_extractor_includes_export_from_reexport_s116() {
+        let specs = extract_static_module_imports_with_attributes(
+            "export { referrer } from 'http://wpt.test:8000/x/referrer-checker.py?name=iv';\nimport { a } from './b.js';",
+        );
+        assert!(
+            specs
+                .iter()
+                .any(|(s, _)| s == "http://wpt.test:8000/x/referrer-checker.py?name=iv")
+        );
+        assert!(specs.iter().any(|(s, _)| s == "./b.js"));
+        let phantom = extract_static_module_imports_with_attributes(
+            "export const msg = 'see export { x } from \\'not-a-module.js\\' here';",
+        );
+        assert!(phantom.is_empty(), "幻影依赖: {phantom:?}");
+    }
+
     #[test]
     fn imported_classic_script_exposes_top_level_lexical_binding() {
         assert_eq!(
@@ -2531,11 +2608,15 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
             ),
             [("./m.json".to_string(), Some("json".to_string()))]
         );
-        // export-from 与动态 import() 不提取
-        assert!(extract_static_module_imports_with_attributes(
-            "export { x } from './m.json' with { type: \"json\" };\nconst m = import('./m.json', { with: { type: \"json\" } });"
-        )
-        .is_empty());
+        // s116 修订：export-from 再导出是静态依赖（图收集缺它 → 纯 re-export wrapper
+        // 链接期查空——referrer insecure wrapper 实证）；with 属性面暂不解析（None
+        // 顺延，提取器 doc FIXME）。动态 import() 仍不在此面。
+        assert_eq!(
+            extract_static_module_imports_with_attributes(
+                "export { x } from './m.json' with { type: \"json\" };\nconst m = import('./m.json', { with: { type: \"json\" } });"
+            ),
+            [("./m.json".to_string(), None)]
+        );
     }
 
     #[test]
@@ -2841,6 +2922,32 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         assert_eq!(stmts[0], "if(c)return 1", "stmts={stmts:?}");
         assert_eq!(stmts[1], "else return /a;b/.test(c)", "stmts={stmts:?}");
         assert_eq!(stmts[2], "var done=1", "stmts={stmts:?}");
+    }
+
+    // s116：import/export-from 跨行续行——`from` 行尾不切语句（WPT referrer 族
+    // 书写形：`import { x } from\n    "spec";`）。切分后提取与 transform 双双漏配
+    // import 形 → 内联模块零测试注册（Timeout 假形态）。深度 0 下以完整标识符
+    // `from` 收尾的合法语句仅 import/export-from 形。
+    // https://tc39.es/ecma262/#sec-imports
+    #[test]
+    fn test_split_statements_multiline_import_from_continuation() {
+        let src = "import { referrer as r } from\n    \"./a.js?name=x\";\nimport * as ns from\n  \"./b.js\";\nexport { r as rr } from\n  \"./a.js\";\nvar done = 1;";
+        let stmts = split_statements(src);
+        assert_eq!(stmts.len(), 4, "stmts={stmts:?}");
+        assert!(stmts[0].starts_with("import { referrer as r } from"), "stmts={stmts:?}");
+        assert!(stmts[0].contains("./a.js?name=x"), "stmts={stmts:?}");
+        assert!(stmts[1].starts_with("import * as ns from"), "stmts={stmts:?}");
+        assert!(stmts[2].starts_with("export { r as rr } from"), "stmts={stmts:?}");
+        assert_eq!(stmts[3], "var done = 1", "stmts={stmts:?}");
+        // 提取器同面：跨行形可提（此前漏提）。export-from 再导出同为静态依赖
+        //（./a.js 双提去重 → 3 spec）。
+        let specs = extract_static_module_import_specifiers(src);
+        assert_eq!(specs.len(), 3, "specs={specs:?}");
+        assert!(specs.contains(&"./a.js?name=x".to_string()), "specs={specs:?}");
+        assert!(specs.contains(&"./b.js".to_string()), "specs={specs:?}");
+        // `from` 前缀非标识符边界不误判（`platformfrom` 整词）。
+        let glued = "var platformfrom = 1;\nvar x = 2;";
+        assert_eq!(split_statements(glued).len(), 2, "glued={glued:?}");
     }
 
     #[test]

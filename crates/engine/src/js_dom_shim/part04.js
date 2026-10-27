@@ -11350,8 +11350,11 @@
           // R5009 片 d（M4 片 d）：A 入 referrerPolicy 面（HTMLAnchorElement 同枚举
           // ——tag 门曾缺，IDL set 大写变体后 getter 经 R3037 MAP 返原串，WPT
           // reflection-text 'a.referrerPolicy IDL set "NO-REFERRER"' 簇 108F）。
+          // s116：SCRIPT 入 referrerPolicy 面（HTMLScriptElement 同 limited-to-known-
+          // values 反射枚举——invalid/missing → ''，script-referrerpolicy-idl 判据页）。
+          // https://html.spec.whatwg.org/multipage/scripting.html#dom-script-referrerpolicy
           var _p5emHit = prop === 'referrerPolicy'
-            ? (_p5emTag === 'IMG' || _p5emTag === 'IFRAME' || _p5emTag === 'AREA' || _p5emTag === 'LINK' || _p5emTag === 'A')
+            ? (_p5emTag === 'IMG' || _p5emTag === 'IFRAME' || _p5emTag === 'AREA' || _p5emTag === 'LINK' || _p5emTag === 'A' || _p5emTag === 'SCRIPT')
             : prop === 'decoding' ? _p5emTag === 'IMG'
             : (_p5emTag === 'IMG' || _p5emTag === 'IFRAME' || _p5emTag === 'VIDEO' || _p5emTag === 'AUDIO');
           if (_p5emHit) {
