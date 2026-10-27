@@ -206,11 +206,27 @@ fn warm_cache_and_stylesheet_change() {
 /// quirks 位在键内：同一实例先后计算 quirks 与 standards 两文档（同标记同 CSS），
 /// 各自须与独立关缓存实例一致——跨文档不串键。
 /// （CSS1 quirks 下级联合法性判定不同：cascade.rs `is_cascade_value_valid` 传参。）
+///
+/// TV-1 敏感性设计（缺一不可的两点）：
+/// 1. 声明须 quirks 条件合法——内联 `width:9` 裸数字（CSS2.1 quirks 宽容，
+///    https://drafts.csswg.org/css-syntax-3/#consume-number ）：quirks 经
+///    parse_length_quirks 兜底生效，standards 按非法声明丢弃。
+/// 2. 须有**竞争败者**——`.k { width: 8px }`。若只有单一无竞争声明，键漏 quirks
+///    位也不会红：共享的 cascaded 仍含 `width:"9"`，compute 阶段按各文档自身
+///    模式再次解析（standards 解析失败 → Auto），恰与正确输出一致（二次解析
+///    屏蔽）。竞争形态下两模式级联胜者不同（quirks 内联胜出 → Px(9)；
+///    standards 内联被丢 → 8px 胜出 → Px(8)），键漏位时 standards 文档命中
+///    quirks 缓存得到 cascaded `width:"9"` → standards compute 解析失败 →
+///    Auto ≠ 基线 Px(8)，断言红。
+///
+/// 第 1 个 .k 元素无内联，两模式恒等作对照；基线可分性自检（assert_ne）防止
+/// 本测试退化为恒等差分（TV-1 教训）。断言只取 class="k" 元素，跳过 html/body
+/// 包装节点。
 #[test]
 fn quirks_bit_separates_documents() {
-    let html_quirks = "<div class=\"k\">a</div><div class=\"k\" style=\"width:9px\">b</div>";
+    let html_quirks = "<div class=\"k\">a</div><div class=\"k\" style=\"width:9\">b</div>";
     let html_strict = format!("<!DOCTYPE html>{html_quirks}");
-    let css = ".k { color: maroon; line-height: 1.5; }";
+    let css = ".k { color: maroon; line-height: 1.5; width: 8px; }";
 
     let compute = |html: &str, enabled: bool| -> Vec<ComputedStyle> {
         let doc = zero_dom::parse_html(html);
@@ -219,10 +235,24 @@ fn quirks_bit_separates_documents() {
         sys.set_viewport(1280.0, 720.0);
         sys.set_cascade_cache_enabled(enabled);
         let styles = sys.compute_styles(&doc, &sheets);
-        collect_elements(&doc).iter().map(|id| styles[id].clone()).collect()
+        collect_by_class(&doc, "k")
+            .iter()
+            .map(|id| styles[id].clone())
+            .collect()
     };
     let quirks_baseline = compute(html_quirks, false);
     let strict_baseline = compute(&html_strict, false);
+
+    // 基线可分性自检：裸数字 width 声明必须使两模式输出可分（quirks 生效 9px、
+    // standards 丢弃），否则本测试对「键漏 quirks 位」失效（TV-1 回归防护）。
+    assert_eq!(
+        quirks_baseline[0], strict_baseline[0],
+        "无内联元素两模式应恒等——文档模式未按 doctype 区分，本测试敏感度失效"
+    );
+    assert_ne!(
+        quirks_baseline[1], strict_baseline[1],
+        "width:9 声明在两模式输出相等——quirks 条件合法性未生效，本测试敏感度失效"
+    );
 
     // 同一实例：先 quirks 后 standards（缓存跨文档保留）。
     let mut sys = StyleSystem::new();
@@ -231,12 +261,18 @@ fn quirks_bit_separates_documents() {
     let sheets = parse_sheets(css);
     let quirks_mixed: Vec<ComputedStyle> = {
         let styles = sys.compute_styles(&doc_q, &sheets);
-        collect_elements(&doc_q).iter().map(|id| styles[id].clone()).collect()
+        collect_by_class(&doc_q, "k")
+            .iter()
+            .map(|id| styles[id].clone())
+            .collect()
     };
     let doc_s = zero_dom::parse_html(&html_strict);
     let strict_mixed: Vec<ComputedStyle> = {
         let styles = sys.compute_styles(&doc_s, &sheets);
-        collect_elements(&doc_s).iter().map(|id| styles[id].clone()).collect()
+        collect_by_class(&doc_s, "k")
+            .iter()
+            .map(|id| styles[id].clone())
+            .collect()
     };
     for (i, (m, b)) in quirks_mixed.iter().zip(quirks_baseline.iter()).enumerate() {
         assert_eq!(m, b, "quirks 文档（混算实例）第 {i} 元素与基线不一致");
