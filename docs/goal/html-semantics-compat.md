@@ -2,9 +2,64 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 115 施工收口（script charset 响应解码轮：charset 族 **17F 翻绿**，scripting-1 **867P/138F/37T→884P/121F/37T**，全量套件 A/B 6545P/1220F/112T→**6565P/1202F/111T 零 P→非P**——script-charset-01 6P + module/charset-01 6P + charset-02 3P + charset-03 4P；根因：`serve-with-content-type.py` 动态端点不在语料 pull 面（classic 文件读落空透传外链宿主取回 Err；模块面 s107 仿真被 JSON 意图门收窄非 JSON ct → Err）——三刀（runner testharness.rs + Cargo.toml +encoding_rs 工作区既有）：①共享查询解析 helper ②fetcher scripty 意图分支（非 JSON 而 scripty → 交付 fn 文件**恒 UTF-8 lossy**——模块 spec 恒 UTF-8 charset 三忽略、BOM 不嗅探体内 U+FEFF 即语义）③inline classic 仿真分支（**非 module 型**——首版乌龙未辨 module 令 charset 感知内联反向翻红 module 面已修正为透传；解码序 BOM > ct charset 参数 > charset 属性 > UTF-8，encoding_rs）；挂账 script-charset-02（文档编码 windows-1250 基建）/03（运行期 charset 属性需 fetch 桥带提示）/css·text-module charset 5T（待决须用户拍板）；下一步 s116 候选：execution-timing 余 F 定刀 / 承袭挂账序；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 116 施工收口（referrer 族 JS checker 轮：checker 面 **0P+15F+12T→41P+5F+6T**，script-referrerpolicy-idl 1F→P，全量套件 A/B 6565P/1202F/111T→**6606P/1192F/105T 零 P→非P**（+41P −10F −6T）；根因四层：①`referrer-checker.py` 动态端点不在语料（Referer 按 Fetch determine-request's-referrer 八策略仿真）②页 HTML wptserve 变量替换主文档通道零接入（token 字面进 import spec → 图取回必败）③**端口替换值偏离上游真值**（[0] 须非默认端口——80/443 令 URL 序列化剥端口、字符串字面量与 `new URL().origin` 两判据形撕裂；改对齐 get-host-info 8000/8081/8444）④export-from 再导出不在图收集提取面（纯 re-export wrapper 链接期查空 → tests:0）——另 split_statements `from` 续行守卫、policy 链逐臂过滤、SCRIPT.referrerPolicy 反射门；挂账 www2 可达性（CORS+cookies 基建）/modulepreload 族/module-import-referrer（TLA）/数据模块 referrer 3T（待决须用户拍板）；下一步 s117 候选：execution-timing 余 F 定刀 / css-module redirect 相对 URL 1F / 承袭挂账序；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-28 M2 切片 115 施工收口，script charset 响应解码轮）**：
+> **▶ 当前状态（2026-10-28 M2 切片 116 施工收口，referrer 族 JS checker 轮）**：
+> **入场定谳**：referrer 族判据链完整（上游 handler GitHub Contents API 实读 →
+> Fetch determine-request's-referrer → Referrer-Policy 交付链），credentials 12F
+> （cookies 基建 + www2）与 modulepreload 族（echo-referrer.py server-state + link
+> preload 面）入场即排除挂账。**本轮刀面**：①`referrer-checker.py` 端点仿真
+> （八策略 Referer 计算表 + 降级 + 同源三元组；引用源 = fetcher 首参逐层穿
+> parent；host 别名窄收 www1、**www2 保持不可达**——fetch-error 判据页依赖其必败）
+> ②window.origin（part01，configurable accessor 可遮蔽）③split_statements
+> `from` 续行守卫（多行 import 跨行劈裂 → 提取/变换双死）④页 HTML wptserve
+> 变量替换主文档通道首接 ⑤**端口替换值对齐上游 get-host-info 真值**（http
+> [8000,8081] / https[8444,8443]——[0] 非默认端口下字面量与 new URL 序列化两
+> 判据形归一；SW fixture 专用替换 + origin 校验同步防脑裂）⑥policy 链逐臂过滤
+> （invalid pipe 顺延 doc policy）⑦export-from 再导出补进图收集提取（纯 re-export
+> wrapper 链接期查空 → tests:0 根因；三 import+局部 const wrapper 因导出表直查
+> 幸免——形态差异即对照；s107 pin 契约同步修订，with 属性解析 FIXME）⑧
+> SCRIPT.referrerPolicy 反射门（R5009 片 e tag 门）。
+> **验证**：定向 referrer **0P+15F+12T→41P+5F+6T**（6 referrer 页 + descendants
+> 9/9 + strict-policies 全绿；idl 1F→P）；余 5F6T 全挂账面。**全量 A/B**：
+> 6565P/1202F/111T→6606P/1192F/105T，真翻红（基线 Pass × 当轮 F/T 交集）= **0**；
+> +41P 全落 referrer/idl。两红形状漂移定谳为本轮修复良性后果：
+> script-crossorigin-network F→T（基线 `{{ports[http][1]}}` 裸 token 落 JS 代码位 =
+> 语法错误页级 Fail；页替换后首次真跑、credentials 断言等待——页内二分实证与
+> 端口值无关）、css-module/redirect-relative-urls T→F（新断言面暴露 1F）。
+> sandbox lib **376/0**（+6 钉/修 1 契约）、runner bin **243/0**；shim 拼接语法
+>（真实装配序 part01+01b+02..07）、fmt、guarded-clippy 过；`make test` 三跑：
+> 首两跑 image_batch_e2e 1F（**zero-browser bin 被 target-disk-guard 清理**——
+> 根因：全量测试构建把 target/ 堆到 76GB 超 50GB 阈值 → tier-3 全量清空 →
+> make test 自身 build 行不含 zero-browser → 必败；环境副作用非行为失败）；
+> 第三跑（target/ 重置 33G 后守卫放行）**90/91 suite 绿**——唯一失败
+> zero-renderer lib `page_scripts::tests::mutation_arm_does_not_apply_across_
+> document_reset_window` 满载时序 flake（2026-10-25 aa66d1530 引入的滞留窗
+> 观测断言，满载 340.93s vs 单独 19.76s；单独复跑 1.63s 绿 + 守卫包全
+> renderer lib **352/0** 绿——非本切片面，预存挂账）。
+> 渲染面零依赖——reftest/product-smoke 未跑。账本见
+> [evidence/2026-10-28-m2s116-referrer-checker-referer.md](html-semantics-compat/evidence/2026-10-28-m2s116-referrer-checker-referer.md)。
+> **范围**：runner testharness.rs + script-sandbox es_module.rs + engine shim
+> part01/part04；webview 图注册点仅 DBG 探针已撤（净零变更）；语料不可改维持。
+> **挂账新增**：www2 host 可达性（CORS+cookies 基建前置，放行须同批复核
+> dynamic-imports-fetch-error 翻转）；modulepreload referrerpolicy 族 3F+2T
+>（echo-referrer.py server-state + link rel=modulepreload 取回面）；
+> module-import-referrer T（TLA 面未建模 + 动态 import referrer 语义）；
+> text/css/json-module referrer-policies 3T（数据模块 checker 体——**并入待决
+> 须用户拍板**）；script-crossorigin-network T（cookies/credentials 基建）；
+> css-module/redirect-relative-urls 1F（动态 CSS module 重定向相对 URL 解析基）；
+> export-from with 属性解析 FIXME。承袭：script-charset-02/03、143 write
+> `</script>`、defer 多写完成序、063 Timeout、non-external-no-import、
+> parse-error 族、http-accept-header、dynamic import() with 透传、classic 外链
+> SRI、collect 账本打包重构、接口对象基建面、FIXME 组、/tmp/zw-hb*.txt；
+> **待决（须用户拍板）**：css/text 数据模块语料资源缺失。
+> **下一步**：s117 入场定刀位（候选：execution-timing 余 F 定刀 /
+> css-module redirect-relative-urls 1F / image-loading-lazy deferred 1F /
+> 承袭挂账序）。
+> **切片间隙**：本轮 runner fetcher/替换面 + sandbox 图提取面 + shim 反射门；
+> 下一候选同流同面，间隙开放。
+>
+> **▶ 上轮状态（2026-10-28 M2 切片 115 施工收口，script charset 响应解码轮——其下一步 s116 referrer 族已由 s116 收口，见上）**：
 > **入场定谳**：charset 族五组失败三根因——①`serve-with-content-type.py` 动态
 > 端点不在语料 pull 面：classic 面文件读落空→整段透传外链→宿主取回 Err 不执行
 >（script-charset-01 全 6F）；模块面 s107 仿真被 JSON 意图门收窄，非 JSON ct →
