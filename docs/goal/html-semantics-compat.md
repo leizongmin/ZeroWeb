@@ -2,9 +2,57 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 119 施工收口（HTMLFormElement 索引命名属性臂轮：execution-timing/031 **1F→P**，全量套件 A/B 6610P/1188F/105T→**6612P/1186F/105T 真翻红 0**（+2P −2F，含同面专测 forms/the-form-element/form-indexed-element.html 意外翻绿）；根因：031 探针两轮定谳 script #1 中断于 `forms[0][0]` undefined——R3254-K3 FORM named access 只匹配 id/name，canonical 数字索引臂缺失（spec 无 id/name listed 控件按 elements 序号可寻址）；焦点/点击派发面零改动（R114/R148/R57 本就完好）；bin pin ×1（旧 shim stash 往返红→绿 TypeError 行为证据）+ engine lib 3570/0 + clippy；挂账无新增（031 刀位消费完毕）；下一步 s120 候选：audio lazy-loading 族 / image-loading-lazy deferred / execution-timing 余 F（041/056/063 挂大基建）/ 承袭挂账序；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 120 施工收口（fragment 解析 script 克隆 already-started 继承轮：svg-script-fragment-parsed-not-executed-on-clone **3F→P**，全量套件 A/B 6612P/1186F/105T→目标面 3F→P **真翻红 0**（另两处负载 flake 页过滤重跑复绿、modulepreload 挂账族页挂起形态漂移，逐归因见账本）；根因：探针四臂定谳两断链——t8r 物化把 s118 章的 `_zwMEl` 重建为新 wrapper 存 registry 章丢、R387 直插臂/s97 insertBefore 镜像臂同步执行先于 notify 章门；修：`_wcRebuildAsHandle` 章传递（R5197 同款）+ 两同步臂章门 + s95 克隆块源章检查（`_makeProxy` 重读，trap target 不持章——首刀教训）+ deep 重解析按源章 gate 打章 + `_zwDeepCloneEl` 章传播；FIXME(spec-gap) 收窄为仅余 iah 产物；bin pin ×1（旧 shim stash 往返红：`clone runs` 行为证据）+ engine lib 3570/0 + clippy；下一步 s121 候选：the-dialog-element 43F 簇勘根 / execution-timing 余 F / 承袭挂账序（lazy-loading 26F 与增量解析同档挂大基建）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-28 M2 切片 119 施工收口，HTMLFormElement 索引命名属性臂轮）**：
+> **▶ 当前状态（2026-10-28 M2 切片 120 施工收口，fragment 解析 script 克隆 already-started 继承轮）**：
+> **入场定谳**：s118 FIXME(spec-gap)「cloneNode 重解析产物 fragment 章」由语料
+> `scripting-1/the-script-element/svg-script-fragment-parsed-not-executed-on-clone.html`
+> （3F）坐实需求（innerHTML 产物 script 浅克隆/含 script 子树深克隆再插入均执
+> 行）。同轮勘察：lazy-loading 族 26F（viewport 基建，挂大基建）、dialog 43F
+> 多根、meta color-scheme 21F 刀位在 style-system（渲染流让位）——本页唯一单
+> 根常规刀位。探针页四臂定谳两断链：①t8r 物化把 s118 打章 `_zwMEl` 重建为
+> **新建 wrapper** 存 registry，章丢（查询产物 flag undefined）；②R387 直插臂
+> /s97 insertBefore 镜像臂同步执行**先于** notify s111 臂章门（带章脚本插入照
+> 跑 p2=true）。
+> **本轮一刀**（净变更 part03/part04 + testharness.rs pin ×1）：①
+> `_wcRebuildAsHandle` 章随物化传递（R5197 序列化印章同款，children 递归子层
+> 继承）②R387 臂 + insertBefore 镜像臂章门（`child.__zwFragNoExec === true`）
+> ③s95 克隆块源章检查继承 run-once 表 + deep 分支重解析产物按源章 gate 整体
+> 打章 ④`_zwDeepCloneEl` 章传播（plain 克隆臂）。FIXME(spec-gap) 收窄：克隆传
+> 播面已补，余 iah 产物待语料需求。
+> **首刀教训**：s95 块初版读 `n.__zwFragNoExec`——`n` 是 proxy 内部 target 不
+> 持章（章经 proxy set/get 存取），改 `_makeProxy(sel, handle)` 重读后全通；
+> detached 树 deep 克隆走 `_cclone` 递归臂（host innerHTML 空，重解析分支不触
+> 发），s95 一处修正覆盖浅/深两面；`tbl=true` 歧义（执行器跑完也盖章）须
+> append 前采样定谳章继承。
+> **验证**：探针四臂语义全对（源章在场/章门消费/tblBefore=true 章继承）；语料
+> 页 **3F→P**（4/4 含 sanity）；bin pin 旧 shim stash 往返红（`clone runs` 行
+> 为失败）→ 绿；定向 `FILTER=execution-timing/0` 78 行零变化；**全量 A/B**
+> 6612P/1186F/105T→6602P/1184F/107T 原始计数，目标面 3F→P 精确三行对，另三
+> 处漂移逐一归因非翻转（两 flake 页过滤重跑复绿 80P/8P；modulepreload 挂账
+> 族页挂起→跑完行形漂移）→ **真翻红 0**。engine lib **3570/0**；guard 内
+> clippy（runner/engine --all-targets）零告警；fmt、shim 拼接语法过。渲染面
+> 零依赖——reftest/product-smoke 未跑；make test 未跑（Rust 增量仅 test 模块）。
+> 账本见 [evidence/2026-10-28-m2s120-fragment-clone-already-started.md](html-semantics-compat/evidence/2026-10-28-m2s120-fragment-clone-already-started.md)。
+> **范围**：engine shim part03/part04 + runner testharness.rs；语料零改动（探
+> 针页新建验后删除）。
+> **挂账新增**：无（FIXME(spec-gap) 收窄为仅余 iah 产物）。承袭：写流执行身
+> 份盖章断链 FIXME、part02 setAttribute 绕 notify 臂（gap 2）、execution-timing
+> 构成面 056/063+051/052 单根（增量解析大基建）、041 nested write（写流队列重
+> 构）、lazy-loading 族 26F（viewport 基建大项）、dialog 43F 多根、meta
+> color-scheme 21F（跨流 style-system）、css-module 族 corpus 门（待决须用户拍
+> 板）、www2 可达性、modulepreload referrerpolicy 族、module-import-referrer
+> TLA、script-crossorigin-network cookies、redirect-relative-urls、export-from
+> with FIXME、script-charset-02/03、143 write、defer 多写完成序、dynamic
+> import() with 透传、classic 外链 SRI、接口对象基建面、FIXME 组、
+> /tmp/zw-hb*.txt；**待决（须用户拍板）**：css/text 数据模块语料资源缺失。
+> **下一步**：s121 入场定刀位（候选：the-dialog-element 43F 簇勘根 / meta-
+> element 21F 簇跨流让位确认 / execution-timing 余 F / 承袭挂账序；lazy-loading
+> 26F 与增量解析同档挂大基建不作常规刀位）。
+> **切片间隙**：本轮脚本克隆/插入触发链面 + runner pin 面；下一候选同流同面，
+> 间隙开放。
+>
+> **▶ 上轮状态（2026-10-28 M2 切片 119 施工收口，HTMLFormElement 索引命名属性臂轮——其下一步 s120 已由 s120 收口，见上）**：
 > **入场定谳**：s118 候选一定刀 031「focus and blur events」1F——corpus 探针两
 > 轮（插桩断言面带运行时值，备份 /tmp 验后还原）：①eventOrder 全零 + 'end
 > script #1' 缺席 → script #1 中途抛异常，嫌疑非 focus 派发链；②逐句 try 定谳
@@ -35,12 +83,6 @@
 > FIXME、script-charset-02/03、143 write、defer 多写完成序、dynamic import()
 > with 透传、classic 外链 SRI、接口对象基建面、FIXME 组、/tmp/zw-hb*.txt；
 > **待决（须用户拍板）**：css/text 数据模块语料资源缺失。
-> **下一步**：s120 入场定刀位（候选：the-dialog-element 43F 簇勘根 / meta-element
-> 24F 簇勘根 / 承袭挂账序；**lazy-loading 族勘定挂大基建**——s119 轮尾勘察：26F
-> 跨 audio+img 元素，根为 viewport 可见性/滚动派发/延期取数基建，非单根常规刀位，
-> 与增量解析同档挂账）。
-> **切片间隙**：本轮 form 命名属性面 + runner pin 面；下一候选同流同面，间隙
-> 开放。
 >
 > **▶ 上轮状态（2026-10-28 M2 切片 118 施工收口，innerHTML 产物惰性章 + location javascript: 求值面轮——其下一步 s119 已由 s119 收口，见上）**：
 > **入场定谳**：execution-timing 余 F 复盘三面并审——033「innerHTML scripts moved

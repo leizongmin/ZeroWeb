@@ -3878,8 +3878,10 @@
   // setter（033 需求面）；写流回放基线 innerHTML= 同经此打标——回放执行走 part06
   // 水印执行器不经本 helper，换代重注册的 sel 形代理是新建对象（026 面 src 后设
   // 不受影响）。
-  // FIXME(spec-gap): insertAdjacentHTML/cloneNode 重解析产物同属 fragment parsing
-  // already-started 面，暂不打标，待语料需求补章。
+  // FIXME(spec-gap): insertAdjacentHTML 产物与 cloneNode 的 deep 重解析臂（part04
+  // trap deep 分支 `_zwFragmentAdded` 产物，handle/sel 形源）同属 fragment parsing
+  // already-started 面，暂不打标待语料需求补章；cloneNode 克隆件传播面已补（s120：
+  // _zwDeepCloneEl 章随源传播 + part04 s95 块源章检查）。
   // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
   var _zwScriptMaybeStartDynamic = function (el) {
     if (!el) return;
@@ -8517,6 +8519,13 @@
         var snap = { tag: _r156Keep ? _r156Up : _r156Loc.toLowerCase(), preserveCase: _r156Keep };
         var o2 = _zwMEl(snap, null);
         for (var ak = 0; ak < attrs.length; ak++) o2.setAttribute(attrs[ak].name, attrs[ak].value);
+        // s120（html-semantics M2 切片 120）：fragment already-started 章随克隆传播
+        //（HTML §the-script-element cloning steps——already started 与源一致）。源
+        // _zwMEl 带 s118 innerHTML 打标（__zwFragNoExec）→ 克隆件同章，插入臂
+        // _zwScriptMaybeStartDynamic 章门消费（svg-script-fragment-parsed-not-executed-
+        // on-clone 语料面：fragment 解析 script 克隆再插入不得执行；deepKids 递归
+        // 使子树内 script 逐层继承）。
+        try { if (n.__zwFragNoExec) o2.__zwFragNoExec = true; } catch (_eS120fc) {}
         if (n.namespaceURI !== undefined) o2.namespaceURI = n.namespaceURI;
         // R156：ownerDocument 继承源元素（WPT runInvalidSelectorTestMatches 的
         // `root.ownerDocument.defaultView.DOMException`——clone 产物缺此字段直接
@@ -19592,6 +19601,13 @@
       if (node.nodeType !== 1) return node;
       var tag = String(node.tagName || 'DIV').toLowerCase();
       var el = globalThis.document.createElement(tag);
+      // s120（html-semantics M2 切片 120）：fragment already-started 章随 t8r 物化
+      // 传递——innerHTML setter 打标在 _zwMEl 解析代理上（s118），物化 wrapper 是
+      // 新建对象，registry 存的是 wrapper（PROBE 实证查询产物章断链）。R5197
+      // 序列化印章传递同款；wrapper 是 createElement 产物（handle 形），插入臂
+      // R387 章门/_zwScriptMaybeStartDynamic 章门按对象属性消费。children 递归
+      // 使子树内 script（`<svg><script>` 形）逐层继承。
+      try { if (node.__zwFragNoExec) el.__zwFragNoExec = true; } catch (_eS120wc) {}
       try {
         var ats = node.attributes || [];
         for (var i = 0; i < ats.length; i++) {

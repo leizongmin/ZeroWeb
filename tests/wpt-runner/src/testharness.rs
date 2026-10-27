@@ -13692,6 +13692,61 @@ globalThis.promise_test(function() {
     }
 
     #[test]
+    fn script_fragment_clone_not_executed_s120() {
+        // s120（html-semantics M2 切片 120）：fragment 解析产物 script 的克隆步骤
+        // already-started 继承（svg-script-fragment-parsed-not-executed-on-clone 语料
+        // 面）——innerHTML 产物（s118 章 + t8r 物化传递）克隆后插入 body 不得执行；
+        // 浅克隆（script 自身）与深克隆（含 script 子树）双面。R387 直插臂 /
+        // _r377runScript / notify s111 臂全链章门与 run-once 表继承失效时 __log 会
+        // 多出 'clone runs'。合法动态脚本（createElement 直建）照常执行（control）。
+        let root = std::env::temp_dir().join("zw-s120-frag-clone-test");
+        std::fs::create_dir_all(&root).unwrap();
+        let html = r##"<script src="/resources/testharness.js"></script>
+<script>globalThis.__log = [];
+function zwlog(s) { globalThis.__log.push(s); }</script>
+<script>
+globalThis.test(function() {
+  var c = document.createElement('div');
+  c.innerHTML = '<svg><script>zwlog("clone runs")<\/script></svg>';
+  var s = c.querySelector('script');
+  var cl = s.cloneNode(true);
+  document.body.appendChild(cl);
+  assert_true(globalThis.__log.indexOf('clone runs') < 0,
+    '浅克隆 fragment SVG script 不得执行: ' + globalThis.__log.join(','));
+
+  globalThis.__log = [];
+  var c2 = document.createElement('div');
+  c2.innerHTML = '<span><svg><script>zwlog("deep clone runs")<\/script></svg> x</span>';
+  var cl2 = c2.firstElementChild.cloneNode(true);
+  document.body.appendChild(cl2);
+  assert_true(globalThis.__log.indexOf('deep clone runs') < 0,
+    '深克隆子树 fragment script 不得执行: ' + globalThis.__log.join(','));
+
+  globalThis.__log = [];
+  var dyn = document.createElement('script');
+  dyn.textContent = 'zwlog("dynamic runs")';
+  document.body.appendChild(dyn);
+  assert_true(globalThis.__log.indexOf('dynamic runs') >= 0,
+    '合法动态脚本照常执行: ' + globalThis.__log.join(','));
+}, 'fragment-parsed script clone not executed');
+</script>"##;
+        let results = run_testharness_html(
+            &root,
+            "frag-clone-inert.html",
+            html,
+            &mini_harness_stateful(),
+            CASE_TIMEOUT,
+        );
+        assert!(
+            results
+                .iter()
+                .any(|r| r.name == "fragment-parsed script clone not executed" && r.status == HarnessStatus::Pass),
+            "fragment 产物 script 克隆须按 already-started 保持惰性（动态 control 照常）: {results:?}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn inline_module_import_specs_rewrite_to_root_absolute_s101() {
         // 直接钉 helper：相对 spec 以模块自身目录（resources/）为基上溯归一；
         // root-absolute/裸 specifier/含 scheme 的 spec 不动；单双引号皆替换。

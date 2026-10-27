@@ -6252,13 +6252,23 @@
             // 浅克隆后补文本不得执行——克隆源已投递执行，克隆继承 started 后
             // children-changed → prepare 首步即 no-op）。克隆产物为 handle 形态 → 记
             // R387 run-once 表（与 s95 触发块的 handle 形查询同源，顺带抑制 R387 对
-            // started 克隆的重执行——spec 一致）。deep 克隆的后代 script 子树不经
-            // 克隆步骤（innerHTML 重建，本就无脚本执行语义），不在本面。
+            // started 克隆的重执行——spec 一致）。
             // https://html.spec.whatwg.org/multipage/scripting.html#the-script-element
             try {
               if (_realTag(sel, handle) === 'SCRIPT') {
                 var _s95SrcStarted = (!!handle && !!(globalThis._zwRanScripts && globalThis._zwRanScripts[handle]))
                   || (!handle && !!(sel && globalThis._zwScriptStarted && globalThis._zwScriptStarted[sel]));
+                // s120（html-semantics M2 切片 120）：源自身带 fragment already-started
+                // 章（innerHTML 产物，s118 打标/t8r 物化传递）——克隆步骤 already
+                // started 与源一致（svg-script-fragment-parsed-not-executed-on-clone
+                // 语料同面）。章经 proxy set/get 存取（trap target 不持章），重读走
+                // _makeProxy 代理取值。
+                if (!_s95SrcStarted && typeof _makeProxy === 'function') {
+                  try {
+                    var _s120px = _makeProxy(sel, handle);
+                    if (_s120px && _s120px.__zwFragNoExec) _s95SrcStarted = true;
+                  } catch (_eS120px) {}
+                }
                 if (_s95SrcStarted) {
                   (globalThis._zwRanScripts = globalThis._zwRanScripts || {})[nh] = true;
                 }
@@ -6292,6 +6302,43 @@
                   try {
                     if (typeof _zwFragmentAdded === 'function' && ih.indexOf('<') >= 0) {
                       _handleChildren[nh] = _zwFragmentAdded(ih, nh);
+                      // s120（html-semantics M2 切片 120）：deep 重解析产物 fragment
+                      // already-started 章——克隆步骤 already started 与源一致（HTML
+                      // §the-script-element cloning steps；dom-node-clone 概念步复制
+                      // script 克隆旗标）。源子树含带章 script（s118 setter 打标 +
+                      // t8r 物化传递链）时按源 gate 整体打章
+                      //（svg-script-fragment-parsed-not-executed-on-clone 语料深克
+                      // 隆面）；未带章源（合法待执行脚本）的重解析不打，不扩
+                      // already-started 面。消费在插入臂章门（R387 直插/s111 notify）。
+                      try {
+                        var _s120SrcHas = false;
+                        var _s120Scan = function (_ndS) {
+                          if (!_ndS || _ndS.nodeType !== 1) return;
+                          if (_ndS.__zwFragNoExec) { _s120SrcHas = true; return; }
+                          var _kcS = null;
+                          try { _kcS = _ndS.childNodes; } catch (_eS120sk) { return; }
+                          if (_kcS) for (var _miS = 0; _miS < _kcS.length; _miS++) {
+                            if (!_s120SrcHas) _s120Scan(_kcS[_miS]);
+                          }
+                        };
+                        var _srcKids = handle ? (_handleChildren[handle] || []) : [];
+                        for (var _kiS = 0; _kiS < _srcKids.length; _kiS++) {
+                          if (!_s120SrcHas) _s120Scan(_srcKids[_kiS]);
+                        }
+                        if (_s120SrcHas) {
+                          var _s120Mark = function (_ndM) {
+                            if (!_ndM || _ndM.nodeType !== 1) return;
+                            if (String(_ndM.tagName || '').toUpperCase() === 'SCRIPT') {
+                              try { _ndM.__zwFragNoExec = true; } catch (_eS120mp) {}
+                            }
+                            var _kcM = null;
+                            try { _kcM = _ndM.childNodes; } catch (_eS120mk) { return; }
+                            if (_kcM) for (var _miM = 0; _miM < _kcM.length; _miM++) _s120Mark(_kcM[_miM]);
+                          };
+                          var _rpKids = _handleChildren[nh] || [];
+                          for (var _kiM2 = 0; _kiM2 < _rpKids.length; _kiM2++) _s120Mark(_rpKids[_kiM2]);
+                        }
+                      } catch (_eS120dc) {}
                       // R190（js-dom M4）：非 HTML ns 源的 deep clone——re-parse 产物是
                       // HTML 语义（tagName 大写 + XHTML ns + 属性无 NS），对 JS 子树
                       // （_zwMEl）递归补源 ns + tagName 小写 + 带前缀属性的 NS meta
@@ -7080,6 +7127,14 @@
             //（解析期已跑过）。https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
             if (child && child.nodeType === 1 && child.__zwHandle
                 && String(child.tagName || '').toUpperCase() === 'SCRIPT') {
+              // s120（html-semantics M2 切片 120）：fragment 产物 already-started 章
+              // 门（s118 setter 打标/t8r 物化传递）——本臂同步执行先于 part01
+              // _mo_notify s111 臂的章门消费，fragment 解析 script（含克隆件）插入
+              // 不得在本臂先跑（svg-script-fragment-parsed-not-executed-on-clone
+              // 语料面 + 探针实证：带章 handle 形脚本 append 照执行）。
+              // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+              var _r387frag = false;
+              try { _r387frag = child.__zwFragNoExec === true; } catch (_e387fr) {}
               // s111（html-semantics M2 切片 111）：connected 门——spec prepare 由
               // post-connection steps 驱动，且这些步骤只在插入元素「仍连接」时运行。
               // append 进 detached fragment/子树不在此 prepare：fragment flatten 完成
@@ -7115,11 +7170,11 @@
                 // 动态判据）三执行臂全不触发、不置 run-once；module 型沿旧通道。
                 var _r387typ = false;
                 try { _r387typ = _zwScriptTypeClassify(child) === 'blocked'; } catch (_e387ty) {}
-                if (_r387conn && !_r387typ && !_r387nomod && !_r387forev && !_r387src && typeof _r377runScript === 'function') {
+                if (_r387conn && !_r387frag && !_r387typ && !_r387nomod && !_r387forev && !_r387src && typeof _r377runScript === 'function') {
                   // 融合读失败回落 R377 registry 收集路径（run-once 标记同源）。
                   _r377runScript(child.__zwHandle);
                 }
-                if (_r387conn && !_r387typ && !_r387nomod && !_r387forev && _r387src && !(globalThis._zwRanScripts && globalThis._zwRanScripts[child.__zwHandle])) {
+                if (_r387conn && !_r387frag && !_r387typ && !_r387nomod && !_r387forev && _r387src && !(globalThis._zwRanScripts && globalThis._zwRanScripts[child.__zwHandle])) {
                   if (!globalThis._zwRanScripts) globalThis._zwRanScripts = {};
                   globalThis._zwRanScripts[child.__zwHandle] = true;
                   (0, eval).call(globalThis, _r387src);
@@ -7143,7 +7198,7 @@
                 // s96：fetch/执行体提升为共享 helper `_zwPrepareSrcScript`（连接态 src-set
                 // 触发面单点复用；already-started/nomodule/for-event 门与宿主管线让位旗标
                 // 在 helper 内原样保留——原 else-if 条件链收拢进 helper 门序）。
-                else if (_r387conn && !_r387typ && !_r387nomod
+                else if (_r387conn && !_r387frag && !_r387typ && !_r387nomod
                          && !(globalThis._zwRanScripts && globalThis._zwRanScripts[child.__zwHandle])
                          && !globalThis.__zwHostDynamicScripts) {
                   _zwPrepareSrcScript(child);
@@ -8563,6 +8618,10 @@
             if (newNode && newNode.nodeType === 1 && newNode.__zwHandle
                 && String(newNode.tagName || '').toUpperCase() === 'SCRIPT'
                 && _ceParentConnected(sel, handle) === true) {
+              // s120：fragment already-started 章门（与 R387 appendChild 臂同口径，
+              // s118 打标/t8r 物化传递；同步臂先于 notify 消费点须前置拦截）。
+              var _s97ibFrag = false;
+              try { _s97ibFrag = newNode.__zwFragNoExec === true; } catch (_eS97ibFr) {}
               try {
                 var _s97ibSrc = '';
                 try { _s97ibSrc = String(newNode.textContent || ''); } catch (_eS97ibTc) {}
@@ -8574,16 +8633,16 @@
                 } catch (_eS97ibNm) {}
                 var _s97ibForev = false;
                 try { _s97ibForev = _zwScriptForevBlocked(newNode); } catch (_eS97ibFe) {}
-                if (!_s97ibNomod && !_s97ibForev && !_s97ibSrc && typeof _r377runScript === 'function') {
+                if (!_s97ibFrag && !_s97ibNomod && !_s97ibForev && !_s97ibSrc && typeof _r377runScript === 'function') {
                   // 融合读失败回落 R377 registry 收集路径（textContent= 注册形态）。
                   _r377runScript(newNode.__zwHandle);
                 }
-                if (!_s97ibNomod && !_s97ibForev && _s97ibSrc
+                if (!_s97ibFrag && !_s97ibNomod && !_s97ibForev && _s97ibSrc
                     && !(globalThis._zwRanScripts && globalThis._zwRanScripts[newNode.__zwHandle])) {
                   if (!globalThis._zwRanScripts) globalThis._zwRanScripts = {};
                   globalThis._zwRanScripts[newNode.__zwHandle] = true;
                   (0, eval).call(globalThis, _s97ibSrc);
-                } else if (!_s97ibNomod
+                } else if (!_s97ibFrag && !_s97ibNomod
                            && !(globalThis._zwRanScripts && globalThis._zwRanScripts[newNode.__zwHandle])
                            && !globalThis.__zwHostDynamicScripts) {
                   _zwPrepareSrcScript(newNode);
