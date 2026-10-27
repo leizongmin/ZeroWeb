@@ -40,11 +40,13 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-API_RUNS_URL = (
-    "https://wpt.fyi/api/runs"
-    "?products={products}&labels=stable&aligned=true&max-count=1"
-)
+API_RUNS_URL = "https://wpt.fyi/api/runs"
 DEFAULT_PRODUCTS = ["chrome", "firefox", "safari"]
+
+# 对照产品：进 coverage 的 browser_totals 对照表，不进分母——ladybird 只有
+# master/experimental nightly run（无 stable 频道），revision 不与三家对齐，
+# 塞进并集会把不同代上游测试面混进口径。值为该产品在 wpt.fyi 的 run 频道。
+COMPARE_PRODUCTS = {"ladybird": "experimental"}
 DEFAULT_TIMEOUT = 120
 DOWNLOAD_RETRIES = 3
 
@@ -167,8 +169,15 @@ def decode_summary(raw: bytes, source: str = "summary") -> dict:
     return data
 
 
+def runs_url(products: str, labels: str, aligned: bool | None = True) -> str:
+    query = f"products={products}&labels={labels}&max-count=1"
+    if aligned is not None:
+        query += f"&aligned={'true' if aligned else 'false'}"
+    return f"{API_RUNS_URL}?{query}"
+
+
 def fetch_aligned_runs(products: list[str]) -> list[dict]:
-    raw = _http_get(API_RUNS_URL.format(products=",".join(products)))
+    raw = _http_get(runs_url(",".join(products), "stable"))
     try:
         runs = json.loads(raw)
     except (json.JSONDecodeError, UnicodeDecodeError) as error:
@@ -184,6 +193,21 @@ def fetch_aligned_runs(products: list[str]) -> list[dict]:
     if len(revisions) != 1:
         raise ToolError(f"aligned run revision 不一致: {sorted(revisions)}")
     return runs
+
+
+def fetch_compare_run(product: str, label: str) -> dict:
+    """对照产品取最新单产品 run：不要求与三家 aligned（其无 stable 频道）。"""
+    raw = _http_get(runs_url(product, label, aligned=None))
+    try:
+        runs = json.loads(raw)
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise ToolError(f"runs 响应不是合法 JSON: {error}") from error
+    if not isinstance(runs, list) or len(runs) != 1:
+        raise ToolError(f"{product} 对照 run 数量不符：期望 1")
+    run = runs[0]
+    if run.get("browser_name") != product or not run.get("results_url"):
+        raise ToolError(f"{product} 对照 run 形状非法")
+    return run
 
 
 def cmd_fetch(args: argparse.Namespace) -> None:
@@ -209,12 +233,35 @@ def cmd_fetch(args: argparse.Namespace) -> None:
         summary = decode_summary(raw, source=f"{product} summary")
         payload = json.dumps(summary, ensure_ascii=False).encode("utf-8")
         downloaded.append((product, payload))
+    # 对照产品独立拉取：失败只降级为警告（对照列缺席），不阻塞三家 baseline；
+    # 本地补拉对照列用 fetch --refresh（缓存完整性判定只看 aligned 三家）。
+    compare_runs: list[dict] = []
+    for product, label in COMPARE_PRODUCTS.items():
+        try:
+            run = fetch_compare_run(product, label)
+            print(f"下载对照 {product} {run['browser_version']} @ {run['revision']} ...")
+            raw = _http_get(run["results_url"], timeout=args.timeout)
+            summary = decode_summary(raw, source=f"{product} summary")
+        except ToolError as error:
+            print(
+                f"  警告：对照产品 {product} 拉取失败，本次无该对照列: {error}",
+                file=sys.stderr,
+            )
+            continue
+        payload = json.dumps(summary, ensure_ascii=False).encode("utf-8")
+        downloaded.append((product, payload))
+        compare_runs.append(run)
     for product, payload in downloaded:
         _atomic_write(cache / f"summary-{product}.json", payload)
     _atomic_write(
         runs_path, json.dumps(runs, ensure_ascii=False, indent=1).encode("utf-8")
     )
-    for run in runs:
+    if compare_runs:
+        _atomic_write(
+            cache / "compare-runs.json",
+            json.dumps(compare_runs, ensure_ascii=False, indent=1).encode("utf-8"),
+        )
+    for run in runs + compare_runs:
         print(
             f"  {run['browser_name']}: {run['browser_version']}"
             f" @ {run['revision']}（{run['created_at']}）"
@@ -349,6 +396,34 @@ def load_runs(cache: Path) -> list[dict]:
     return runs
 
 
+def load_compare(cache: Path) -> tuple[list[dict], dict[str, dict]]:
+    """对照产品的 runs 元数据与 summaries；缺失/损坏整体降级为空——对照列可
+    缺席，不能像 aligned 三家那样阻塞报告。元数据与 summary 任一有问题都
+    整组放弃，避免只报一半对照。"""
+    try:
+        runs = json.loads(
+            (cache / "compare-runs.json").read_text(encoding="utf-8")
+        )
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return [], {}
+    if not isinstance(runs, list):
+        return [], {}
+    runs = [
+        r
+        for r in runs
+        if isinstance(r, dict) and isinstance(r.get("browser_name"), str)
+    ]
+    summaries: dict[str, dict] = {}
+    for run in runs:
+        try:
+            summaries[run["browser_name"]] = load_summary(
+                cache / f"summary-{run['browser_name']}.json"
+            )
+        except ToolError:
+            return [], {}
+    return runs, summaries
+
+
 def classify(zw_files: dict, summaries: dict[str, dict]) -> dict:
     """按完整交集口径分类：路径必须在全部浏览器 summary 中对齐到同一文件。
 
@@ -453,8 +528,8 @@ def aggregate(buckets: dict, by_key) -> dict[str, dict]:
     return dict(stats)
 
 
-def build_meta(runs: list[dict]) -> dict:
-    return {
+def build_meta(runs: list[dict], compare_runs: list[dict] | None = None) -> dict:
+    meta = {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "runs": [
             {
@@ -468,6 +543,17 @@ def build_meta(runs: list[dict]) -> dict:
         "corpus_revs": sorted({rev for _, rev in collect_wpt_revs()}),
         "reftest_corpus": REFTEST_CORPUS_NOTE,
     }
+    if compare_runs:
+        meta["compare_runs"] = [
+            {
+                "browser": r["browser_name"],
+                "version": r["browser_version"],
+                "revision": r["revision"],
+                "created_at": r["created_at"],
+            }
+            for r in compare_runs
+        ]
+    return meta
 
 
 def cmd_gap(args: argparse.Namespace) -> None:
@@ -764,6 +850,7 @@ def cmd_coverage(args: argparse.Namespace) -> None:
         product: load_summary(cache / f"summary-{product}.json")
         for product in products
     }
+    compare_runs, compare_summaries = load_compare(cache)
 
     results_dir = Path(args.results)
     result_files = sorted(results_dir.glob("*.json"))
@@ -827,9 +914,11 @@ def cmd_coverage(args: argparse.Namespace) -> None:
     out_md.parent.mkdir(parents=True, exist_ok=True)
     out_md.write_text(
         render_coverage_markdown(
-            runs, totals, dict(groups), browser_totals(summaries),
+            runs, totals, dict(groups),
+            browser_totals({**summaries, **compare_summaries}),
             zw_files=len(zw_merged), suspicious=suspicious,
             multi_suite=multi_suite, zw_only=zw_only,
+            compare_runs=compare_runs,
         ),
         encoding="utf-8",
     )
@@ -838,14 +927,14 @@ def cmd_coverage(args: argparse.Namespace) -> None:
         json.dumps(
             {
                 "meta": {
-                    **build_meta(runs),
+                    **build_meta(runs, compare_runs),
                     "denominator": (
                         "三家 summary 并集路径；子测试分母=三家 c[1] 最大值，"
                         "ZeroWeb 跑过的文件取 max(浏览器, ZW 实际子测试数)"
                     ),
                 },
                 "totals": totals,
-                "browsers": browser_totals(summaries),
+                "browsers": browser_totals({**summaries, **compare_summaries}),
                 "groups": dict(groups),
                 "zw_only_files": zw_only,
                 "suspicious_files": suspicious,
@@ -873,6 +962,7 @@ def render_coverage_markdown(
     suspicious: int,
     multi_suite: int,
     zw_only: int,
+    compare_runs: list[dict] | None = None,
 ) -> str:
     def pct(rate: float) -> str:
         return f"{rate * 100:.2f}%"
@@ -934,6 +1024,17 @@ def render_coverage_markdown(
             f"| {product} | {b['full_pass_files']} | {b['den_files']} "
             f"| {b['subtest_passes']} | {b['den_subtests']} "
             f"| {pct(b['pass_rate'])} |"
+        )
+    if compare_runs:
+        revs = "、".join(
+            f"{r['browser_name']} {r['browser_version']} @ {r['revision']}"
+            f"（{r['created_at']}）"
+            for r in compare_runs
+        )
+        lines.append("")
+        lines.append(
+            f"对照列口径：{revs}——非 aligned stable（无 stable 频道，revision "
+            "不与三家对齐），不进分母，仅作参照。"
         )
     lines.append("")
 
@@ -1269,6 +1370,28 @@ def run_self_test() -> None:
                 ]
             )
         )
+        # 对照产品（ladybird）：只进 browsers 对照表，不进分母
+        (cache / "summary-ladybird.json").write_text(
+            json.dumps(
+                {
+                    "/a/one.html": cov_entry,
+                    "/l/lvn.html": {"s": "F", "c": [1, 5]},  # 仅 ladybird 有
+                }
+            )
+        )
+        (cache / "compare-runs.json").write_text(
+            json.dumps(
+                [
+                    {
+                        "browser_name": "ladybird",
+                        "browser_version": "1.0-test",
+                        "revision": "b" * 40,
+                        "created_at": "2026-10-27T00:00:00+00:00",
+                        "results_url": "https://example.invalid/y",
+                    }
+                ]
+            )
+        )
         results = root / "results"
         results.mkdir()
         # suite-a：a/one 全过、b/two 补全 skip 分母、d/four 部分过（带 env 失败）
@@ -1349,6 +1472,11 @@ def run_self_test() -> None:
         assert data["suspicious_files"] == 1
         assert data["multi_suite_files"] == 1
         assert data["browsers"]["firefox"]["den_subtests"] == 8
+        # 对照列：进 browsers 表（passes=3/total=7），但不进分母、进 meta
+        assert data["browsers"]["ladybird"]["subtest_passes"] == 3
+        assert data["browsers"]["ladybird"]["den_subtests"] == 7
+        assert data["totals"]["den_files"] == 6  # /l/lvn.html 未混入清单
+        assert data["meta"]["compare_runs"][0]["browser"] == "ladybird"
         # 组粒度：a/one.html 顶层文件 → 组 "a"；env/marker.html → 组 "env"
         assert data["groups"]["a"]["zw_passes"] == 1
         assert data["groups"]["d"]["zw_env_fails"] == 1
@@ -1356,6 +1484,7 @@ def run_self_test() -> None:
         assert "z" not in data["groups"]  # 清单外不进分组
         md = out.read_text()
         assert "全量 WPT 子测试通过率" in md and "40.00%" in md
+        assert "对照列口径" in md and "ladybird" in md
 
     # coverage 入口同样拒绝空环境标记
     with tempfile.TemporaryDirectory() as tmp:
