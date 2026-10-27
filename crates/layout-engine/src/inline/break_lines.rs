@@ -1211,6 +1211,10 @@ impl InlineFormattingContext {
         }
 
         // 应用 vertical-align 对齐
+        // R5298（CSS2 §10.8.1 strut）：容器 strut descent 抬升的行顶平移在
+        // apply_vertical_alignment 内部按归因增量完成——此处不做快照全量平移，
+        // legacy 高度变化（under_need / R822 extend）保持「不下推后续行顶」的
+        // 校准语义（c44-ln-box-003 / ruby-align-001 判例）。
         self.apply_vertical_alignment();
     }
 

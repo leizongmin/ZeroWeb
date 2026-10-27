@@ -9,6 +9,15 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5298 实现轮（混合 line-height 行盒 strut 参与——c42-ibx-ht-000 ✗1.19→✓0.83 翻绿，corpus 15732P/859F→15733P/858F 失败集恰一案移出零翻转，无新 kill-switch）**（2026-10-27）
+>
+> - **根因**（CSS2 §10.8.1 strut；R5297 挂账矿井①）：块容器 strut（假想零宽盒，字体/行高取容器自身样式）参与每一行盒，引擎原以「本行 run 的 line-height max」近似——纯小行高 run 行 strut 蒸发：c42 div `10px/12px Ahem` 中 em `font:1em/1`（lh 10）独占行行盒缩至 10/基线 8，行距 11 vs chromium 12（LAYOUT_DUMP div ch=58 vs REF 60）。
+> - **实现**（inline/mod.rs + break_lines.rs 注释，四机制）：①`layout()` 捕获容器自身 used line-height（run 侧同源解析器 normal 整数化/Number/Length 同口径，新字段 container_strut_line_height/is_ahem）——**恒覆写含 0 复位**+入口先复位，防 IFC 复用/anon 容器残留值把外层 strut 泄漏给 line-height:0 内嵌行；②apply_vertical_alignment strut 臂**胜出才接管**——容器 strut ascent 严格大于 legacy 近似才替换，否则 None 完全旧行为（legacy 近似骑本行最高 run 含 va-shifted 不入 ascent 环的 run，corpus 已按其校准——只托底不贬基/混搭抬升）；③接管行 descent 侧行盒下限（strut 盒随基线悬挂）+ **归因行顶平移**（净抬升记 r5298_lifts 循环后按增量下移后续行顶；legacy 高度变化 under_need/R822 extend 从不传播行顶——c44-ln-box-003/ruby-align-001 判例，平移混入即整体错位）；④全部 text run lh:0 的行不接管（行内内容显式压制行盒，legacy 兜底已校准）。
+> - **试错三轮 corpus 仲裁**：v1 无条件接管+快照全量平移 6 新红/2 翻绿（legacy-wins 被贬基+legacy 抬升被平移）→ v2 max-guard 4 残红同值（残红源=快照平移非 strut 本体，ruby 1.02% 三变体同值 + 临时行级探针定谳 h=20 内嵌行被容器 48 接管）→ v3 胜出接管+归因平移+捕获恒覆写+lh:0 门 **15733P/858F 零新红**。
+> - **交付**：c42 **✗1.19→✓0.83**（R5297 挂账矿井①闭合）；全量 corpus **16591/15733P/858F** 失败集归一化 diff 恰 {−c42} 零新增翻转。v1 曾翻绿的 first-line-line-height-003 归还基线失败态（✗1.89 既有红）——该页需「容器 < legacy 仍接管」的 strut 全量语义，与 va-shifted 校准面冲突，挂账独立轮。
+> - **门禁**：make reftest 716/716、layout-engine lib 2173P(+2)、fmt 0 diff、clippy 0 告警、product-smoke 6/6。bench-gate 对端 regression-guard bench-chain 并行窗（loadavg 5→9.75）多跑 1→8→5 超预算且同二进制 wide_tree 187µs→220µs、stash 干净 HEAD 同负载自超预算（deep_nesting 306µs>289.9、block +18%）——R5212 判例同构记录基线陈旧环境漂移；同负载 criterion A/B WIP vs HEAD block +3.6%/flex +3.8% 噪声带内、页面级 layout_ms 预算 PASS。四窗口多跑 FAIL 集 1→8→5→2 非定（噪声签名），按 R5210/R5212 环境噪声判例交付零 relax 零基线改动，R5299 步骤①空闲复测补门。
+> - **挂账（新矿井）**：①「容器 strut < legacy 但应接管」域（first-line-line-height-003 1.89 既有红，须 va-shift 感知 strut 归因）；②ruby anon 容器样式继承结构缺口（anon 盒 lh 继承自 body 48 而非 ruby 0——**style-system 域 = 对端流工作面，碰头信号**）；③单片段/orphan 转正 ④858F 续扫。**下一步 R5299**：①bench-gate 空闲复测补门 ②单片段/orphan 转正独立 sweep ③858F 账本续扫择轻。证据：[`rendering-compat/evidence/r5298-mixed-lh-strut-2026-10-27.md`](rendering-compat/evidence/r5298-mixed-lh-strut-2026-10-27.md)。
+>
 > **▶ R5297 实现轮（inline 多片段 slice 背景行连续域 + 内容区锚 + 跨 inline 边界空白折叠——c42-ibx-ht-000 ✗1.73→✗1.19 真改善留红，IFC-022 ✗1.36→✓0.00，multicol-basic-001..004 →✓0.00，真实 corpus 858F 净零翻转）**（2026-10-27）
 >
 > - **根因**（chromium oracle 像素级画像：test/ref 双页对 chromium 差 9553/7729px，oracle 地板 0px）：①多片段 slice inline 的 bg/border 误随单片段 kill-switch（R5120 重构误并入默认关开关）回落**逐词 run 矩形 @ baseline−line_h**——chromium 为行片段连续带 @ 内容区 [B−A,B+D]（10px 带 + 2px half-leading 缝、行片段连续域贯穿子 inline 领土、BT/BB = 内容盒 ± pad ± border）；②`z z <em> x` 跨 inline 边界空白双计（词臂前导空格门只看纯空白 run 状态，词尾随空白不同步）——em 首词右移一字宽全行错位。
