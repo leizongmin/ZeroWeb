@@ -139,6 +139,19 @@ body {
   line-height: 1.45;
 }
 
+/* hero 卡第二块大数字（全量 WPT 通过率）：自带 border-bottom 作分隔，收紧上间距 */
+.summary-primary + .summary-primary {
+  padding-top: 24px;
+}
+
+.summary-primary span a {
+  color: #6ee5de;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  /* 链接与其尾部箭头整体换行，避免箭头孤行 */
+  white-space: nowrap;
+}
+
 .experiment-summary dl {
   position: relative;
   z-index: 1;

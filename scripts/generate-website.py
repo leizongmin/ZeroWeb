@@ -168,7 +168,18 @@ def guide_links(guides, language):
     )
 
 
-def page(template, language, path, copy, title, description, replacements=None, extra="", article_date=None):
+def hero_wptfyi(totals, language, copy):
+    """首页 hero 的全量通过率大数字：数字取 coverage 快照，文案复用 script.js 翻译。"""
+    rate = f"{totals['pass_rate'] * 100:.2f}%"
+    subtests = f"{totals['zw_passes']:,} / {totals['den_subtests']:,}"
+    return (
+        f'<strong>{esc(rate)}<small>{esc(copy["wptfyiHeroLabel"])}</small></strong>'
+        f'<span>{esc(subtests)} {esc(copy["wptfyiHeroNote"])} · '
+        f'<a href="{route("/progress.html", language)}">{esc(copy["wptfyiHeroCta"])} →</a></span>'
+    )
+
+
+def page(template, language, path, copy, title, description, replacements=None, extra="", article_date=None, reveal=()):
     tree = PageParser(template).root
     for node in list(tree.walk()):
         if node.tag == "html":
@@ -195,6 +206,8 @@ def page(template, language, path, copy, title, description, replacements=None, 
                 node.attrs[attr] = "/" + value
         if replacements and node.attrs.get("id") in replacements:
             node.replace(replacements[node.attrs["id"]])
+        if node.attrs.get("id") in reveal:
+            node.attrs.pop("hidden", None)
         if node.tag == "main" and extra:
             node.children.append(Node(text=extra))
         if node.tag == "script" and node.attrs.get("src") in ("/script.js", "/updates.js"):
@@ -226,6 +239,7 @@ def build(output):
         ROOT / "docs/compat/trends/wpt-suites.csv",
         ROOT / "docs/compat/wptfyi",
     )
+    wptfyi_totals = (metrics.get("wptfyi") or {}).get("totals")
     (output / "metrics.json").write_text(json.dumps(metrics, ensure_ascii=False), encoding="utf8")
     updates = sorted(json.loads((SITE / "updates.json").read_text()), key=lambda item: item["date"], reverse=True)
     if len({(item["date"], item["type"]) for item in updates}) != len(updates):
@@ -268,8 +282,12 @@ def build(output):
             f'<article class="update-summary"><time datetime="{item["date"]}">{item["date"]}</time>'
             f'<h3><a href="{route("/updates/" + item["date"] + "-" + item["type"] + "/", language)}">{esc(item["title"][language])}</a></h3>'
             f'<p>{esc(item["summary"][language])}</p></article>' for item in updates[:3])
-        write("/", language, page(index, language, "/", rendered["home"], titles["/"][language == "zh"], descriptions["/"][language == "zh"], {"home-update-list": cards}, extra))
+        index_replacements = {"home-update-list": cards, "hero-wptfyi-stat": hero_wptfyi(wptfyi_totals, language, rendered["home"]) if wptfyi_totals else ""}
+        write("/", language, page(index, language, "/", rendered["home"], titles["/"][language == "zh"], descriptions["/"][language == "zh"], index_replacements, extra))
         progress = {key: value["innerHTML"] or esc(value["textContent"]) for key, value in rendered["elements"].items()}
+        # 结构容器（如 wptfyi-section）在渲染器里只有空 innerHTML 条目；按 id 替换会把
+        # 模板子元素清成空壳，运行时再取其子节点即抛错且被静默吞掉。空内容不替换。
+        progress = {key: markup for key, markup in progress.items() if markup}
         # Keep all benchmark histories readable before JS selects a single metric.
         histories = "".join(
             f'<details><summary>{esc(metric["label"][language])} ({esc(metric["unit"])})</summary>'
@@ -277,7 +295,7 @@ def build(output):
             "".join(f'<tr><td>{point["date"]}</td><td>{point["value"]} {esc(metric["unit"])}</td></tr>' for point in metric["points"]) +
             "</tbody></table></details>" for metric in metrics["performance"]["metrics"])
         note = f'<section class="chart-section"><h2>{"All benchmark histories" if language == "en" else "全部性能历史"}</h2>{histories}</section>'
-        write("/progress.html", language, page((SITE / "progress.html").read_text(), language, "/progress.html", rendered["progress"], titles["/progress.html"][language == "zh"], descriptions["/progress.html"][language == "zh"], progress, note + extra))
+        write("/progress.html", language, page((SITE / "progress.html").read_text(), language, "/progress.html", rendered["progress"], titles["/progress.html"][language == "zh"], descriptions["/progress.html"][language == "zh"], progress, note + extra, reveal=("wptfyi-section",) if wptfyi_totals else ()))
         template = (SITE / "updates.html").read_text()
         write("/updates.html", language, page(template, language, "/updates.html", labels, titles["/updates.html"][language == "zh"], descriptions["/updates.html"][language == "zh"], {"update-list": "".join(update_card(item, language, labels) for item in updates)}, extra))
         # Reuse the archive shell for focused articles, preserving navigation.

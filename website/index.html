@@ -51,6 +51,8 @@
         <div class="experiment-summary" aria-label="Experiment summary">
           <div class="summary-bar"><span><i></i> EXPERIMENT / 01</span><code>STATUS: RUNNING</code></div>
           <div class="summary-primary"><strong>13,600+<small data-i18n="commitUnit">commits</small></strong><span data-i18n="divisionOfLabor">developed autonomously by AI · one human: design, decisions, verification</span></div>
+          <!-- 构建时由 docs/compat/wptfyi 快照烘入（scripts/generate-website.py）；无快照时整块清空 -->
+          <div class="summary-primary" id="hero-wptfyi-stat"><strong>7.41%<small data-i18n="wptfyiHeroLabel">full WPT pass rate</small></strong><span data-i18n="wptfyiHeroNote">upstream subtests passing · measured against the entire WPT corpus</span></div>
           <dl>
             <div><dt data-i18n="subjectLabel">Test subject</dt><dd data-i18n="subjectValue">A cross-platform browser</dd></div>
             <div><dt data-i18n="constraintLabel">Implementation</dt><dd data-i18n="constraintValue">Browser core and product code in Rust</dd></div>
