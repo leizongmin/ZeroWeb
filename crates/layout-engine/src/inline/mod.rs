@@ -1586,7 +1586,17 @@ impl InlineFormattingContext {
             // collect_inline_items 无限递归（栈溢出 DoS）。block-level img 由 R109 split 处理，
             // 非 IFC 原子行内。driving: WPT css-overflow/line-clamp/line-clamp-033。
             let img_inline_atomic = elem_data.local_name() == "img" && is_inline_level(&s.display);
-            if img_inline_atomic || is_atomic_inline(&s.display) {
+            // R3987 镜像（CSS Display 3 §2.4 / CSS2 §9.2.1.1）：replaced 类元素 display:inline
+            // 是 atomic inline，检测集须与 collect_inline_items 的 is_replaced_inline 同集。
+            // 缺失时 `<a><svg></a>` 类容器在此判 false → 不递归 → 走扁平化 walk，svg 落
+            // 零宽 run，行盒高度不含原子盒（无文本行高 0，github 登出页 header/footer
+            // 全 svg-only 行整体塌零；与 R1576 原初 `<p><a><img></a></p>` 塌缩同形）。
+            // inline-level 门同 R2236 img 教训：block-level 子由 R109 split 处理。
+            let replaced_inline_atomic = matches!(
+                elem_data.local_name(),
+                "svg" | "canvas" | "video" | "iframe" | "embed" | "object" | "applet"
+            ) && is_inline_level(&s.display);
+            if img_inline_atomic || is_atomic_inline(&s.display) || replaced_inline_atomic {
                 return true;
             }
             if is_inline_level(&s.display) {

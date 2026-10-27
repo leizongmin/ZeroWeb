@@ -315,12 +315,16 @@ fn deep_split_enabled() -> bool {
 /// 判据（全满足才升格，其余形态保守维持旧路径）：
 /// - display:inline 且 in-flow（非 OOF）且自身非 `position:relative`——wrapper 的
 ///   relative 施加依赖自身盒（r5225 block-in-inline-relpos 锚形）；
-/// - 子树无 OOF 后代（abspos/fixed/float 的 CB/静态位锚在 inline 祖先盒，升格丢盒
-///   即丢锚——R1024 abspos-in-inline 簇同教训）；
 /// - 无 preserved 文本子（nbsp 等生成行盒，R5226 口径）、无 inline-level/contents/
 ///   样式缺失的元素子——文本+块混排 wrapper 的匿名块需继承 split inline 盒模型与
 ///   wrapper 施加（r1748 片段收缩宽锚形），不升格；
 /// - 至少一个 in-flow block-level 子。
+///
+/// OOF 后代不阻断升格：下方元素循环对**直属** OOF 子已 `return false`，能走到这里
+/// 的载体 OOF 只可能深藏于某 in-flow 块子树内——升格按整块搬运（§9.2.1.1
+/// block-in-inline），块内 abspos/fixed 的包含块链与静态位相对其父块不变
+///（p109 fixed-in-inline-carrier：github `<react-partial>`(inline)>div>fixed header
+/// 塌零实证——旧守卫拒升格使载体落 Inline 片段空匿名块，整子树无盒）。
 ///
 /// 纯块载体的 inline 自身不生成可见盒（空 inline 盒），其块子可无歧义提升到块
 /// 容器层（§9.2.1.1 block-in-inline）。
@@ -353,9 +357,6 @@ fn inline_child_is_pure_block_carrier(doc: &Document, styles: &HashMap<NodeId, C
     {
         return false;
     }
-    if inline_subtree_has_oof_descendant(doc, styles, child) {
-        return false;
-    }
     let mut has_block = false;
     for gc in doc.child_nodes(child) {
         match doc.get(gc).map(|n| &n.kind) {
@@ -381,34 +382,6 @@ fn inline_child_is_pure_block_carrier(doc: &Document, styles: &HashMap<NodeId, C
         }
     }
     has_block
-}
-
-/// R5251：inline 子树内是否存在 OOF（abspos/fixed/float）后代。
-///
-/// 升格拆分会丢弃 inline 祖先盒（[`compute_child_split_deep`]），其子树 OOF 的
-/// 包含块/静态位锚点随之丢失，故带 OOF 后代的 inline 不参与升格（保守维持旧路径）。
-/// 全后代下探（不限 inline-level），与
-/// [`crate::inline::InlineFormattingContext::inline_subtree_has_ooflow_descendant`]
-/// 同构但谓词含 float（该helper 仅 abspos/fixed）。
-fn inline_subtree_has_oof_descendant(
-    doc: &Document,
-    styles: &HashMap<NodeId, ComputedStyle>,
-    inline_id: NodeId,
-) -> bool {
-    let mut stack = doc.child_nodes(inline_id);
-    while let Some(cid) = stack.pop() {
-        let Some(node) = doc.get(cid) else {
-            continue;
-        };
-        if let NodeKind::Element(_) = &node.kind
-            && let Some(s) = styles.get(&cid)
-            && is_out_of_flow(s)
-        {
-            return true;
-        }
-        stack.extend(doc.child_nodes(cid));
-    }
-    false
 }
 
 /// R5251：容器版子拆分——纯块载体 inline 子的块子原位升格为容器 Block 段。
@@ -539,6 +512,14 @@ pub(crate) fn compute_block_container_split(
     // 空白文本项留在 Inline 片段按源序穿插——可折叠空白被 tree 侧 whitespace-only
     // 跳过（塌穿不变），nbsp 等 preserved 空白经 R5226 口径生成匿名行（chromium
     // 探针 r5227：nbsp+abspos 容器 nbsp 行存在、abspos rel_y=20）。
+    // p109 半径修订：positioned（absolute/fixed）OOF 的 inset 全 auto 时不再提升，
+    // 整段保守 Inline（R4489 口径；CSS Absolute Positioning §10.3.7——inset 全 auto
+    // 的盒静态位依赖在流位置，与 engine/abspos.rs fix_abspos_static_after_inline_
+    // content 的 auto-inset 门同源）。提升会把段拆成 whitespace-only Inline 子段 +
+    // 独立 Block 段，承载 positioned 子的匿名 IFC 叶被跳过拆掉，后继块顶到容器顶
+    // （github app-wrapper [空白+absolute portal] 段 live 实证盖住 fixed 头部）。
+    // 显式 top/bottom 的 positioned 保持提升（line-height-applies-to-008 div3
+    // top:0 依赖提升语义）；float OOF 保留逐个提升（margin-collapse-through 锚）。
     let r5227_on = r5227_abspos_block_enabled();
     let mut converted: Vec<InlineBlockSegment> = Vec::with_capacity(segments.len());
     for seg in segments {
@@ -554,6 +535,18 @@ pub(crate) fn compute_block_container_split(
                             blanks.push(nid);
                         }
                         Some(NodeKind::Element(_)) if styles.get(&nid).is_some_and(is_out_of_flow) => {
+                            use zero_css_parser::values::LengthValue;
+                            let positioned_auto_inset = styles.get(&nid).is_some_and(|s| {
+                                matches!(s.position, PositionValue::Absolute | PositionValue::Fixed)
+                                    && matches!(s.top, LengthValue::Auto)
+                                    && matches!(s.bottom, LengthValue::Auto)
+                            });
+                            if positioned_auto_inset {
+                                // inset 全 auto 的 positioned OOF：静态位依赖在流位置，
+                                // 保守维持整段 Inline，见上方 p109 半径修订说明。
+                                conservative = true;
+                                break;
+                            }
                             if !blanks.is_empty() {
                                 lifted.push(InlineBlockSegment::Inline {
                                     item_node_ids: std::mem::take(&mut blanks),
@@ -955,10 +948,13 @@ mod tests {
 
     #[test]
     fn test_ooflow_only_segment_becomes_block_segment() {
-        // R4489 + R5227：line-height-applies-to-008 形态——block 容器内 block-level
-        // abspos 子在拆分时直接产出独立 Block 片段（R5227 lift，不生成占流空间
-        // 匿名块；R4489「整段 Inline 包裹」口径由此不再需要事后转换块级 abspos）。
-        // 含源码换行缩进空白（与页面真实形态一致，空白留 Inline 片段塌穿）。
+        // R4489 + R5227（p109 半径修订）：line-height-applies-to-008 形态——block
+        // 容器拆分中 inset 全 auto 的 positioned abspos 子**不再**提升为独立 Block
+        // 片段（github app-wrapper live 实证：[空白+positioned] 段提升后
+        // whitespace-only Inline 子段被 tree 侧跳过、承载 positioned 子的匿名 IFC
+        // 叶消失，后继块顶到容器顶盖住 fixed 头部）。positioned 子随段留 Inline 叶
+        // （可折叠空白塌穿、不占流空间——「不生成占流空间匿名块」语义不变；008 页
+        // div3 显式 top 的提升语义由下方 explicit-top 测试钉住）。
         let html = r#"<html><body>
           <div id="b">
             <div class="box">a</div>
@@ -973,8 +969,147 @@ mod tests {
             .filter(|s| matches!(s, InlineBlockSegment::Block { .. }))
             .count();
         assert_eq!(
+            block_count, 2,
+            "only in-flow blocks lift; auto-inset abs must stay in the Inline segment, got {:?}",
+            segs
+        );
+        let last = segs.last().expect("should have trailing segment");
+        assert!(
+            matches!(last, InlineBlockSegment::Inline { .. }),
+            "trailing [ws+abs] segment should stay Inline (abs hosted in the IFC leaf), got {last:?}"
+        );
+    }
+
+    #[test]
+    fn test_explicit_top_positioned_still_lifts() {
+        // fix4 边界：显式 top 的 positioned OOF 不触发保守（008 div3 top:0 依赖
+        // 提升语义；与 engine/abspos.rs auto-inset 门同源——inset 非全 auto 的盒
+        // 静态位不依赖在流位置）。
+        let html = r#"<html><body>
+          <div id="b">
+            <div class="box">a</div>
+            &nbsp;
+            <div id="abs1" style="position:absolute; top:0">p</div>
+          </div>
+        </body></html>"#;
+        let segs = split_block(html, "b").expect("should split");
+        let block_count = segs
+            .iter()
+            .filter(|s| matches!(s, InlineBlockSegment::Block { .. }))
+            .count();
+        assert_eq!(
+            block_count, 2,
+            "explicit-top positioned abs must still lift to its own Block segment, got {:?}",
+            segs
+        );
+    }
+
+    #[test]
+    fn test_multi_oof_segment_stays_inline() {
+        // inset 全 auto 的 positioned OOF（absolute/fixed）段保守维持整段 Inline
+        // （github app-wrapper 锚形 [空白 + positioned]）——逐个提升会把段拆成
+        // whitespace-only Inline 子段 + 独立 Block 段，承载 positioned 子的匿名
+        // IFC 叶被 tree 侧跳过拆掉，后继块顶到容器顶盖住 fixed 头部（live 实证）。
+        let html = r#"<html><body>
+          <div id="b">
+            <div class="box">a</div>
+            &nbsp;
+            <div id="abs1" style="position:absolute">p</div>
+            <div id="fix1" style="position:fixed">q</div>
+          </div>
+        </body></html>"#;
+        let segs = split_block(html, "b").expect("should split");
+        let block_count = segs
+            .iter()
+            .filter(|s| matches!(s, InlineBlockSegment::Block { .. }))
+            .count();
+        assert_eq!(
+            block_count, 1,
+            "multi-OOF auto-inset inline segment must stay Inline (only .box lifts), got {:?}",
+            segs
+        );
+    }
+
+    #[test]
+    fn test_single_positioned_oof_segment_stays_inline() {
+        // 边界对照：恰好一个 positioned OOF 也保守维持 Inline（github app-wrapper
+        // 真实段即 [空白+1×absolute portal]，单 OOF 提升同样拆掉叶）。
+        let html = r#"<html><body>
+          <div id="b">
+            <div class="box">a</div>
+            &nbsp;
+            <div id="abs1" style="position:absolute">p</div>
+          </div>
+        </body></html>"#;
+        let segs = split_block(html, "b").expect("should split");
+        let block_count = segs
+            .iter()
+            .filter(|s| matches!(s, InlineBlockSegment::Block { .. }))
+            .count();
+        assert_eq!(
+            block_count, 1,
+            "single auto-inset positioned OOF segment should stay Inline (only .box lifts), got {:?}",
+            segs
+        );
+    }
+
+    #[test]
+    fn test_multi_float_oof_segment_still_lifts() {
+        // float OOF 不计入 positioned 保守触发（R5227 逐个提升语义保留）——
+        // block-in-inline-margin-collapses-through-multiple-floats 锚形：float 留在
+        // whitespace-only IFC 会改变 margin 穿透几何，基线行为是逐个提升。
+        let html = r#"<html><body>
+          <div id="b">
+            <div class="box">a</div>
+            &nbsp;
+            <div style="float:left">p</div>
+            <div style="float:right">q</div>
+          </div>
+        </body></html>"#;
+        let segs = split_block(html, "b").expect("should split");
+        let block_count = segs
+            .iter()
+            .filter(|s| matches!(s, InlineBlockSegment::Block { .. }))
+            .count();
+        assert_eq!(
             block_count, 3,
-            "block-level abspos child should lift to its own Block segment, got {:?}",
+            "floats should keep lifting individually (box + float-a + float-b), got {:?}",
+            segs
+        );
+    }
+
+    #[test]
+    fn test_pure_block_carrier_with_deep_oof_descendant_promotes() {
+        // p109（github marketing header 塌零最小形）：纯块载体的 OOF 后代深藏于
+        // in-flow 块子树内——直属 OOF 子已在元素循环 return false，能到子树检查的
+        // OOF 必随整块提升搬运，包含块/静态位锚不丢，不阻断升格。旧守卫拒升格使
+        // 载体落 Inline 片段空匿名块，fixed header 整子树无盒（h=0）。
+        let html = r#"<html><body>
+          <div id="b">
+            <x-p><div id="c1"></div></x-p>
+            <x-p><div id="c2"><header style="position:fixed">bar</header></div></x-p>
+          </div>
+        </body></html>"#;
+        let segs = split_block(html, "b").expect("should split");
+        let blocks: Vec<_> = segs
+            .iter()
+            .filter_map(|s| match s {
+                InlineBlockSegment::Block { node_id } => Some(*node_id),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            blocks.len(),
+            2,
+            "both carriers' block children should lift, got {:?}",
+            segs
+        );
+        // c2（含 fixed 后代）必须在块段里（而非 Inline 片段空匿名块）。
+        let doc = zero_dom::parse_html(html);
+        let c2 = find_node_by_id("c2", &doc, doc.root()).expect("c2");
+        assert!(
+            blocks.contains(&c2),
+            "c2 must lift as Block segment despite fixed descendant, got {:?}",
             segs
         );
     }

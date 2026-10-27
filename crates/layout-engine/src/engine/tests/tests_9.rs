@@ -733,6 +733,129 @@ fn test_r1578_measure_uses_img_intrinsic_for_auto_width_img() {
     }
 }
 
+/// R1576 检测器 replaced-inline 镜像：`inline_elem_has_nested_inline_block` 对含
+// inline-level svg/canvas 后代的 inline 容器须判 true（与 collect_inline_items 的
+// is_replaced_inline 同集，CSS Display 3 §2.4）。block-level svg 判 false（R2236
+// img 同训：block-level 子归 R109 split，不入 IFC 原子域）。
+#[test]
+fn test_r1576_detector_matches_replaced_inline_set() {
+    use zero_css_parser::values::DisplayValue;
+    // <a><svg width=32 height=32></svg></a>：svg 默认 display:inline → 原子后代
+    let mut doc = Document::new();
+    let root = doc.root();
+    let html = doc.create_element("html");
+    doc.append_child(root, html).unwrap();
+    let body = doc.create_element("body");
+    doc.append_child(html, body).unwrap();
+    let a = doc.create_element("a");
+    doc.append_child(body, a).unwrap();
+    let svg = doc.create_element("svg");
+    doc.append_child(a, svg).unwrap();
+    doc.set_attribute(svg, "width", "32");
+    doc.set_attribute(svg, "height", "32");
+
+    let mut styles = HashMap::new();
+    styles.insert(svg, ComputedStyle::default());
+    assert!(
+        crate::inline::InlineFormattingContext::inline_elem_has_nested_inline_block(&doc, &styles, a),
+        "inline <a> 含 inline-level svg 后代应判 nested-atomic（R3987 镜像）"
+    );
+
+    // <span><canvas></canvas></span>：同集 canvas 亦 true
+    let span = doc.create_element("span");
+    doc.append_child(body, span).unwrap();
+    let canvas = doc.create_element("canvas");
+    doc.append_child(span, canvas).unwrap();
+    styles.insert(canvas, ComputedStyle::default());
+    assert!(
+        crate::inline::InlineFormattingContext::inline_elem_has_nested_inline_block(&doc, &styles, span),
+        "inline <span> 含 canvas 后代应判 nested-atomic（同集镜像）"
+    );
+
+    // block-level svg：R2236 同训，false
+    let a2 = doc.create_element("a");
+    doc.append_child(body, a2).unwrap();
+    let svg2 = doc.create_element("svg");
+    doc.append_child(a2, svg2).unwrap();
+    let mut block_style = ComputedStyle::default();
+    block_style.display = DisplayValue::Block;
+    let mut styles_block = HashMap::new();
+    styles_block.insert(svg2, block_style);
+    assert!(
+        !crate::inline::InlineFormattingContext::inline_elem_has_nested_inline_block(&doc, &styles_block, a2),
+        "含 block-level svg 后代的 inline 容器不应判 nested-atomic（R109 split 域）"
+    );
+}
+
+/// inline `<a>` 包 svg 行盒塌缩回归（github 登出页 header/footer 根因）：
+/// `<div><a><svg width=32 height=32></svg></a></div>` 无任何文本，容器 IFC 测高
+//  修复前 svg 落扁平化零宽 run → 行盒高 0；修复后 R1576 递归收集 svg 原子盒
+//  （32×32 attr 固有）→ 行高 ≥32。邻近变体：svg 与文本同行时行高取 max(strut, 32)
+//  而非仅 strut。
+#[test]
+fn test_inline_svg_anchor_container_line_box_height() {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let html = doc.create_element("html");
+    doc.append_child(root, html).unwrap();
+    let body = doc.create_element("body");
+    doc.append_child(html, body).unwrap();
+    let div = doc.create_element("div");
+    doc.append_child(body, div).unwrap();
+    let a = doc.create_element("a");
+    doc.append_child(div, a).unwrap();
+    let svg = doc.create_element("svg");
+    doc.append_child(a, svg).unwrap();
+    doc.set_attribute(svg, "width", "32");
+    doc.set_attribute(svg, "height", "32");
+
+    // svg/a/div 均需样式条目（display 默认 Inline）——真实布局 computed styles 全覆盖；
+    // svg 无条目时 is_replaced_inline 的 style.is_some_and 不触发（收集器无法识别原子盒）。
+    let mut styles = HashMap::new();
+    styles.insert(div, ComputedStyle::default());
+    styles.insert(a, ComputedStyle::default());
+    styles.insert(svg, ComputedStyle::default());
+    let none_size = taffy::geometry::Size::<Option<f32>> {
+        width: None,
+        height: None,
+    };
+    let avail = taffy::geometry::Size {
+        width: taffy::style::AvailableSpace::Definite(800.0),
+        height: taffy::style::AvailableSpace::Definite(600.0),
+    };
+    let h = measure_text_content(
+        &doc,
+        &styles,
+        div,
+        none_size,
+        avail,
+        &HashMap::new(),
+        InlineFontContext::default(),
+        None,
+    )
+    .height;
+    assert!(h >= 30.0, "div>a>svg 纯原子行容器测高应 ≥32（svg 驱动行盒），实际 {h}");
+
+    // 邻近变体：svg + 文本同行 → max(strut, 32) = 32
+    let text = doc.create_text_node("x");
+    doc.append_child(div, text).unwrap();
+    let h_mixed = measure_text_content(
+        &doc,
+        &styles,
+        div,
+        none_size,
+        avail,
+        &HashMap::new(),
+        InlineFontContext::default(),
+        None,
+    )
+    .height;
+    assert!(
+        h_mixed >= 30.0,
+        "svg+文本同行行高应取 max(strut, 32) ≥32，实际 {h_mixed}"
+    );
+}
+
 /// R1311e REFUTED 回归守卫：非-Ahem `line-height:normal` 单行文本块 IFC leaf-measure
 /// 必须返回 `font_size × NORMAL_LINE_HEIGHT_RATIO(1.164)`（= chromium 真值），无 +0.4px 过冲。
 ///
