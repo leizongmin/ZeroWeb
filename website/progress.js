@@ -46,7 +46,9 @@ function chartMarkup(points, options) {
   const path = points.map((point, index) => `${index ? 'L' : 'M'} ${x(index).toFixed(1)} ${y(point.value).toFixed(1)}`).join(' ');
   const area = `${path} L ${x(points.length - 1).toFixed(1)} ${height - bottom} L ${x(0).toFixed(1)} ${height - bottom} Z`;
   const ticks = Array.from({ length: 5 }, (_, index) => max - index * (max - min) / 4);
-  const labels = points.map((point, index) => `<text class="chart-axis-label" x="${x(index)}" y="${height - 18}" text-anchor="middle">${options.dateLabel(point)}</text>`).join('');
+  // 点多时轴标签抽样（首/尾保留），否则 60+ 日期互相重叠不可读
+  const labelStep = Math.max(1, Math.ceil(points.length / 12));
+  const labels = points.map((point, index) => index % labelStep === 0 || index === points.length - 1 ? `<text class="chart-axis-label" x="${x(index)}" y="${height - 18}" text-anchor="middle">${options.dateLabel(point)}</text>` : '').join('');
   const grids = ticks.map((tick) => `<line class="chart-grid" x1="${left}" x2="${width - right}" y1="${y(tick)}" y2="${y(tick)}"/><text class="chart-axis-label" x="${left - 12}" y="${y(tick) + 4}" text-anchor="end">${options.tickLabel(tick)}</text>`).join('');
   const circles = points.map((point, index) => `<circle class="chart-point" cx="${x(index)}" cy="${y(point.value)}" r="5" tabindex="0" role="img" aria-label="${options.ariaLabel(point)}"><title>${options.tooltip(point)}</title></circle>`).join('');
   return `<svg class="trend-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${options.chartLabel}"><defs><linearGradient id="chart-area-gradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--blue)" stop-opacity=".18"/><stop offset="1" stop-color="var(--blue)" stop-opacity="0"/></linearGradient></defs>${grids}<path class="chart-area" d="${area}"/><path class="chart-line" d="${path}"/>${circles}${labels}</svg>`;
