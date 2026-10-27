@@ -35,6 +35,7 @@
 //!   引用它的用例按门控面内容规则处理（见上）。
 
 use crate::testharness::{HarnessStatus, HarnessSubtestResult, corpus_case_timeout, run_testharness_html};
+use crate::wpt_file_loader::read_corpus_to_string;
 use std::path::Path;
 
 /// pointerlock corpus 扫描目录（上游平铺布局，无子目录）。
@@ -66,7 +67,7 @@ pub(crate) fn pointerlock_case_skipped(relative: &str, source: &str) -> bool {
 /// Run the imported upstream pointerlock testharness executable subset
 /// （pointerlock-compat goal M1 / DC-1）。filter 按路径子串过滤。
 pub fn run_pointerlock_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+    let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
             return vec![(
@@ -97,7 +98,7 @@ pub fn run_pointerlock_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(Stri
             if filter.is_some_and(|filter| !relative.contains(filter)) {
                 continue;
             }
-            let Ok(source) = std::fs::read_to_string(&path) else {
+            let Ok(source) = read_corpus_to_string(&path) else {
                 continue;
             };
             if pointerlock_case_skipped(&relative, &source) {

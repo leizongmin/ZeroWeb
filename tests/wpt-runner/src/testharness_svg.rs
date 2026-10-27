@@ -23,6 +23,7 @@
 //!   类层级（M2 面），SMIL 时序面按 goal 契约评估后挂账（M4 定稿）。
 
 use crate::testharness::{HarnessStatus, HarnessSubtestResult, corpus_case_timeout, run_testharness_html_inner};
+use crate::wpt_file_loader::read_corpus_to_string;
 use std::path::Path;
 
 /// [`SVG_TEST_SUBDIRS`] 用例排除规则（goal 契约排除面的 runner 侧镜像）。
@@ -68,7 +69,7 @@ fn collect_scan_dirs(wpt_root: &Path, dir: &Path, out: &mut Vec<String>) {
 /// （svg-compat goal M1 / DC-1）。filter 按路径子串过滤（如 `types/`、
 /// `struct/`——基线按面分类）。
 pub fn run_svg_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+    let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
             return vec![(
@@ -109,10 +110,9 @@ pub fn run_svg_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<
             if filter.is_some_and(|filter| !relative.contains(filter)) {
                 continue;
             }
-            let Ok(source_bytes) = std::fs::read(&path) else {
+            let Ok(source) = read_corpus_to_string(&path) else {
                 continue;
             };
-            let source = String::from_utf8_lossy(&source_bytes).into_owned();
             if svg_case_skipped(&relative, &source) {
                 continue;
             }

@@ -26,6 +26,7 @@ use crate::testharness::{
     HarnessStatus, HarnessSubtestResult, case_variants, corpus_case_timeout, run_any_js_window_case,
     run_testharness_html,
 };
+use crate::wpt_file_loader::read_corpus_to_string;
 use std::path::Path;
 
 /// html-semantics corpus 扫描根目录（fetch 脚本 ②段九域同域——递归扫描覆盖全部
@@ -145,7 +146,7 @@ pub fn run_html_semantics_cases(
     filter: Option<&str>,
     jobs: usize,
 ) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+    let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
             return vec![(
@@ -221,7 +222,7 @@ fn collect_html_semantics_cases(
         if filter.is_some_and(|filter| !relative.contains(filter)) {
             continue;
         }
-        let Ok(source) = std::fs::read_to_string(&path) else {
+        let Ok(source) = read_corpus_to_string(&path) else {
             continue;
         };
         // s116：页 HTML wptserve 变量替换全集（{{host}}/{{domains}}/{{ports}}——

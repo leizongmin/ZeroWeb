@@ -1,8 +1,8 @@
 # 遗留多字节编码文档解码面 — encoding/legacy-mb 文档族
 
-**版本**: v1.1
-**日期**: 2026-10-27（立项，coverage 对账驱动；同日执行前预检修订，见下节）
-**状态**: Active——M0 未启动（管道可行性已预检实证，M0 重定性为通道接入切片）
+**版本**: v1.2
+**日期**: 2026-10-28（M0/DC-1 收口，见「M0 结果」节与 evidence/）
+**状态**: Active——M0 完成（读取统一 + 语义钉 + 全通道 A/B 零回归门）；M1 进行中（runner 通道 + 语料补全，语料网络卡点未解）
 **执行模式**: WPT 驱动（上游 encoding/legacy-mb corpus 为验收标尺）+ runner 管道能力建设
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——文档编码面）
 
@@ -44,6 +44,31 @@
 - **结论**：M0 从「可行性切片」重定性为「通道接入切片」，不可行分支删除；
   剩余风险仅在实跑验证（iso-2022-jp 状态机、label 识别边界），最小验证集
   覆盖（DC-1）。
+
+## M0 结果（2026-10-28，DC-1 收口）
+
+细节与全量数据见 [evidence/2026-10-28-m0-corpus-read-decode-pipeline.md](evidence/2026-10-28-m0-corpus-read-decode-pipeline.md)。要点：
+
+- **机制实证成立**：testharness 各通道语料读取原为 `std::fs::read_to_string`
+  88 调用点，非 UTF-8 文档整案 skip——「读不进来」而非「解码错误」。
+- **DC-1 前提修正（预检未记录的险点）**：JS 语料内嵌 `<meta charset>` 字面量
+  （FileAPI/url/url-charset.window.js 等），文档 prescan 对脚本形态会误触发
+  ——统一入口按扩展名分流：html/htm/xht 走 `decode_document_bytes`，其余走
+  BOM > UTF-8 lossy（资源序）。「prescan 对 UTF-8 语料无感」修正为「对 UTF-8
+  **文档**语料无感；JS 语料必须类型分流」。script 专用解码面
+  （`decode_classic_script_bytes`）不动。
+- **语义钉**：euc-jp（13,459 span）+ iso-2022-jp（7,329 span，转义状态机）
+  常驻单测，参照 encoding_rs（产品同库同表）。
+- **零回归门**：基线 a9c1c86c8 vs 本变更 release 二进制，35 通道 `--json`
+  集合恒等对账完成——31 通道全恒等；media/selection/html-semantics 各 1 处
+  超时表现形态 flake（同二进制重跑定性）；net-api 恒等性外 **1 案预期解锁**
+  （`websockets/constructor/016.html`，windows-1252 文档原 read `Err`
+  不可见，现可运行如实失败）——正是本 goal 要解锁的形态。dom/navigation/
+  uievents/css-variables 通道 envelope 对称超限（预置条件）放宽补跑中，
+  timing/security/service-workers 等 15 通道补对账中，行回填同文件。
+- **卡点**：全量语料续拉网络持续 degraded（jsdelivr 拒连、raw ~1/3 成功率，
+  FORCE=1 + GITHUB_TOKEN + curl shim 六轮重试）——当前 136 html（七族
+  wrapper 已齐，chars 大文件缺），不阻 M1 通道先行。
 
 ## Mission
 
@@ -88,15 +113,17 @@ charset / BOM）解码字节流，使 legacy-mb `*_chars-<label>.html` 族可运
 
 ## 里程碑
 
-- **M0**：通道接入切片（DC-1）——testharness 通道读取统一接解码管道 +
-  最小验证集 + 零回归对账。**此关未过不进入后续里程碑。**（管道现状盘点
-  已由预检节完成，不再占 M0。）
+- **M0** ✅（2026-10-28）：通道接入切片（DC-1）——testharness 通道读取统一
+  接解码管道 + 最小验证集 + 零回归对账（见「M0 结果」节）。
 - **M1**：语料补全（`FORCE=1` 跑 31 号脚本至全量）+ runner 通道 + Makefile。
 - **M2**：基线分类（按编码族/用例形态分簇）+ wpt-suites.csv 回填。
 - **M3**：失败簇收敛或归口（form-encode 面甄别在此）+ coverage 复测收口。
 
-语料预置进度：七族 253 文件已到位（30 号预置）；2026-10-27 已起 `FORCE=1`
-全量续拉（~1,200 文件，幂等补缺），M1 开工时以 `goals_inventory` 输出核对。
+语料预置进度：七族 253 文件已到位（30 号预置）；2026-10-27 起 `FORCE=1`
+全量续拉（~1,200 文件，幂等补缺）——**网络持续 degraded（jsdelivr 拒连、
+raw ~1/3 成功率带超时），六轮重试后仍 136 html**（七族 wrapper 已齐、chars
+大文件缺）。M1 通道以现有语料先行，语料补全随网络恢复在 M1/M2 间补（以
+`goals_inventory` 输出核对）。
 
 ## 依赖约束（run-rules §9）
 

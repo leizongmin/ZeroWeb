@@ -9,6 +9,37 @@ use std::path::{Path, PathBuf};
 use crate::manifest::{FuzzyMeta, extract_reftest_links};
 use crate::reftest::{ReftestCase, ReftestCategory, ReftestConfig};
 
+/// 套件语料统一读取入口（encoding-legacy-mb DC-1）：字节级读 + 按语料形态解码。
+///
+/// `read_to_string` 对非 UTF-8 语料恒 `Err`，testharness 各通道在读取点整案 skip
+/// ——legacy-mb `*_chars-<label>.html` 文档族全灭的机制（不是解码错误，是根本读
+/// 不进来）。UTF-8 无声明语料两条分支均等价 `read_to_string`（零行为变化）。
+/// 按扩展名分派：
+/// - 文档形态（`.html`/`.htm`/`.xht`）→ [`zero_dom::decode_document_bytes`]（R5003
+///   spec「encoding sniffing」file:// 近似：BOM > `<meta charset>` 预扫描 > UTF-8
+///   lossy）。
+/// - 其余（脚本 / `.headers` 等非文档语料）→ BOM 解码，缺省 UTF-8 lossy——JS 语料
+///   常把 `<meta charset=...>` 作字符串字面量内嵌（`FileAPI/url/url-charset.window.js`
+///   的 ISO-8859-1 案），文档 prescan 对脚本形态会误触发按声明编码整文件解码；
+///   spec module script 恒 UTF-8（fetch a single module script），classic 外链的
+///   解码序（BOM > CT charset > charset 属性）在 script fetcher 侧处理。
+///   https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+pub fn read_corpus_to_string(path: impl AsRef<Path>) -> std::io::Result<String> {
+    let bytes = std::fs::read(path.as_ref())?;
+    let is_document = path
+        .as_ref()
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|ext| matches!(ext.to_ascii_lowercase().as_str(), "html" | "htm" | "xht"));
+    if is_document {
+        return Ok(zero_dom::decode_document_bytes(&bytes));
+    }
+    Ok(match encoding_rs::Encoding::for_bom(&bytes) {
+        Some((enc, _)) => enc.decode(&bytes).0.into_owned(),
+        None => String::from_utf8_lossy(&bytes).into_owned(),
+    })
+}
+
 /// 从指定目录加载所有上游 WPT reftest。
 ///
 /// 目录结构应为 wpt-data/css/...，其中每个 .html/.xht 文件
@@ -47,8 +78,9 @@ pub fn load_file_reftests(wpt_data_dir: &Path) -> Vec<FileReftestCase> {
 
             // 读取测试 HTML（R5003：字节级读 + encoding sniffing 解码——read_to_string
             // 对非 UTF-8 文件恒 Err，html/syntax/charset/ 等编码案被整案剔除出通道；
-            // spec「encoding sniffing」file:// 近似，UTF-8/BOM 案行为不变）
-            let test_html = match std::fs::read(&test_path).map(|bytes| zero_dom::decode_document_bytes(&bytes)) {
+            // spec「encoding sniffing」file:// 近似，UTF-8/BOM 案行为不变。DC-1 起走
+            // 统一入口 read_corpus_to_string）
+            let test_html = match read_corpus_to_string(&test_path) {
                 Ok(html) => html,
                 Err(e) => {
                     errors.push(format!("{}: {}", relative_str, e));
@@ -80,7 +112,7 @@ pub fn load_file_reftests(wpt_data_dir: &Path) -> Vec<FileReftestCase> {
                 } else {
                     let ref_path = resolve_ref_path(wpt_data_dir, &test_path, raw_ref);
                     let ref_base = ref_path.parent().map(|p| p.to_path_buf());
-                    match std::fs::read(&ref_path).map(|bytes| zero_dom::decode_document_bytes(&bytes)) {
+                    match read_corpus_to_string(&ref_path) {
                         Ok(html) => (html, ref_base),
                         Err(e) => {
                             errors.push(format!("{} ref {}: {}", relative_str, reference.ref_path, e));
@@ -369,7 +401,7 @@ fn should_skip(relative_path: &str, skip_list: &[String]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{MultiRefVerdict, combine_multi_ref, stable_case_id};
+    use super::{MultiRefVerdict, combine_multi_ref, read_corpus_to_string, stable_case_id};
     use crate::reftest::ReftestResult;
     use std::path::Path;
 
@@ -438,5 +470,87 @@ mod tests {
         let per = vec![result("t", true, true, 0.05), result("t", true, true, 0.001)];
         let MultiRefVerdict { representative, .. } = combine_multi_ref(&per);
         assert_eq!(representative, 1, "报告应取匹配成功中 diff 最小的比较");
+    }
+
+    /// DC-1 最小验证集（encoding-legacy-mb M0）：legacy-mb chars 案经统一读取入口
+    /// 解码后，各 span 文本与参照解码器对 `data-bytes` 的解码一致——euc-jp 覆盖多
+    /// 字节索引表，iso-2022-jp 覆盖转义序列状态机。断言语义镜像上游 decode-common.js
+    /// （`assert_equals(textContent, decoder(data-bytes))`）；参照解码器用 encoding_rs
+    /// （与文档解码管道、30 号 JS API 面同库同表——30 号已证同族解码表 ~100%，此处
+    /// 验证的是 prescan 按声明选中该编码而非 UTF-8 兜底：UTF-8 lossy 下 100% span
+    /// 乱码，必炸）。语料 gitignored（goals/31 脚本按需拉取），缺失时跳过不视为失败；
+    /// 用例机器生成、格式刚性，span 文本以字面扫描提取（验证目标是解码而非解析——
+    /// 解析面由 engine html5ever 管道承担）。
+    #[test]
+    fn legacy_mb_chars_decode_semantics_euc_jp_and_iso_2022_jp() {
+        let cases = [
+            (
+                "encoding/legacy-mb-japanese/euc-jp/eucjp_chars-cseucpkdfmtjapanese.html",
+                encoding_rs::EUC_JP,
+            ),
+            (
+                "encoding/legacy-mb-japanese/iso-2022-jp/iso2022jp_chars.html",
+                encoding_rs::ISO_2022_JP,
+            ),
+        ];
+        // cargo test 的 CWD 可能是包目录（tests/wpt-runner）或 workspace 根，两处探测。
+        let wpt_data = ["wpt-data", "tests/wpt-runner/wpt-data"]
+            .iter()
+            .map(Path::new)
+            .find(|p| p.is_dir())
+            .expect("wpt-data 目录定位失败");
+        let mut checked = 0;
+        for (rel, enc) in cases {
+            let path = wpt_data.join(rel);
+            let Ok(source) = read_corpus_to_string(&path) else {
+                continue; // 语料未拉取，跳过该案
+            };
+            let spans = extract_chars_spans(&source);
+            assert!(spans.len() > 100, "{rel}: span 提取异常（{} 个）", spans.len());
+            for (bytes_hex, text) in &spans {
+                let raw: Vec<u8> = bytes_hex
+                    .split(' ')
+                    .map(|b| u8::from_str_radix(b, 16).expect("data-bytes 为十六进制"))
+                    .collect();
+                let expected = enc.decode(&raw).0;
+                assert_eq!(*text, expected, "{rel}: bytes={bytes_hex} 解码不符");
+            }
+            checked += 1;
+        }
+        assert!(checked > 0, "两案语料均缺失——先跑 goals/31-encoding-legacy-mb.sh 拉取");
+    }
+
+    /// 提取 chars 案的 (data-bytes, span 文本) 序列。机器生成格式：
+    /// `<span data-cp="HEX" data-bytes="A1 F8 ..">C</span>`（iso2022jp 变体跨行同理；
+    /// data-cp 为生成器附注的 JIS 侧码点，断言不消费）。
+    fn extract_chars_spans(source: &str) -> Vec<(&str, &str)> {
+        let mut spans = Vec::new();
+        let mut rest = source;
+        while let Some(bytes_pos) = rest.find("data-bytes=\"") {
+            rest = &rest[bytes_pos + "data-bytes=\"".len()..];
+            let Some(bytes_end) = rest.find('"') else {
+                break;
+            };
+            let bytes_hex = &rest[..bytes_end];
+            let Some(body_start) = rest[bytes_end..].find('>') else {
+                break;
+            };
+            let body = &rest[bytes_end + body_start + 1..];
+            let Some(body_end) = body.find("</span>") else {
+                break;
+            };
+            spans.push((bytes_hex, &body[..body_end]));
+            rest = &body[body_end..];
+        }
+        spans
+    }
+
+    #[test]
+    fn chars_span_extraction_handles_multiline_iso2022jp_shape() {
+        let source = "<!doctype html><html><head><meta charset=\"iso-2022-jp\"></head><body>\n<span data-cp=\"A5\" data-bytes=\"1B 28 4A 5C 1B 28 42\">\u{a5}</span>\n<span data-cp=\"A7\" data-bytes=\"1B 24 42 21 78 1B 28 42\">\u{a7}</span>\n</body></html>";
+        let spans = extract_chars_spans(source);
+        assert_eq!(spans.len(), 2);
+        assert_eq!(spans[0], ("1B 28 4A 5C 1B 28 42", "\u{a5}"));
+        assert_eq!(spans[1], ("1B 24 42 21 78 1B 28 42", "\u{a7}"));
     }
 }

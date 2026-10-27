@@ -28,6 +28,7 @@
 use crate::testharness::{
     HarnessStatus, HarnessSubtestResult, apply_wpt_substitutions, corpus_case_timeout, run_testharness_html_inner,
 };
+use crate::wpt_file_loader::read_corpus_to_string;
 use std::path::Path;
 
 /// cookies corpus 扫描子目录（goal Mission 排除面整目录不扫：`samesite/`、
@@ -137,7 +138,7 @@ pub(crate) fn cookies_case_skipped(relative: &str, source: &str) -> bool {
 /// （cookies-compat goal M1 / DC-1）。filter 按路径子串过滤（如 `prefix/`、
 /// `attributes/`——基线按面分类）。
 pub fn run_cookies_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+    let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
             return vec![(
@@ -154,7 +155,7 @@ pub fn run_cookies_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, 
     // 语义）；缺失按 Fail 记账不静默（引用它的用例会拿到失败子测试，账面可见）。
     let mut helpers: Vec<(&str, String)> = Vec::new();
     for path in [HELPER_COOKIE_TEST, HELPER_COOKIE_HELPER, HELPER_TESTHARNESS_HELPERS] {
-        let source = std::fs::read_to_string(wpt_root.join(path.trim_start_matches('/')))
+        let source = read_corpus_to_string(wpt_root.join(path.trim_start_matches('/')))
             .map(|source| apply_wpt_substitutions(&source));
         helpers.push((
             path,
@@ -191,7 +192,7 @@ pub fn run_cookies_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, 
             if filter.is_some_and(|filter| !relative.contains(filter)) {
                 continue;
             }
-            let Ok(source) = std::fs::read_to_string(&path) else {
+            let Ok(source) = read_corpus_to_string(&path) else {
                 continue;
             };
             if cookies_case_skipped(&relative, &source) {

@@ -36,6 +36,7 @@ use crate::testharness::{
     HarnessStatus, HarnessSubtestResult, PointerStepInjection, corpus_case_timeout,
     run_testharness_html_with_pointer_injection,
 };
+use crate::wpt_file_loader::read_corpus_to_string;
 use std::path::Path;
 
 /// dnd corpus 扫描子目录（可执行面 + 三 interface 目录供 skip 记账；helper
@@ -90,7 +91,7 @@ pub(crate) fn dnd_case_skipped(relative: &str, source: &str) -> bool {
 /// （dnd-compat goal M1 / DC-1）。filter 按路径子串过滤（如 `datastore/`、
 /// `dom/`——基线按套件分类）。
 pub fn run_dnd_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+    let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
             return vec![(
@@ -105,7 +106,7 @@ pub fn run_dnd_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<
     };
     // 元素清单 helper（draggable_attribute.html 依赖）；缺失时用例照跑——
     // `elements` 未定义的 ReferenceError 如实记 Fail，不静默吞。
-    let interfaces_source = std::fs::read_to_string(wpt_root.join(INTERFACES_JS_PATH)).ok();
+    let interfaces_source = read_corpus_to_string(wpt_root.join(INTERFACES_JS_PATH)).ok();
     let mut cases = Vec::new();
     for subdir in DND_TEST_SUBDIRS {
         let Ok(entries) = std::fs::read_dir(wpt_root.join(subdir)) else {
@@ -124,7 +125,7 @@ pub fn run_dnd_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<
             if filter.is_some_and(|filter| !relative.contains(filter)) {
                 continue;
             }
-            let Ok(source) = std::fs::read_to_string(&path) else {
+            let Ok(source) = read_corpus_to_string(&path) else {
                 continue;
             };
             if dnd_case_skipped(&relative, &source) {

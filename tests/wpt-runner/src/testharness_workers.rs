@@ -34,6 +34,7 @@ use crate::testharness::{
     HarnessStatus, HarnessSubtestResult, corpus_case_timeout, normalize_relative, run_any_js_window_case,
     run_testharness_html_inner, wpt_meta_scripts,
 };
+use crate::wpt_file_loader::read_corpus_to_string;
 use std::path::Path;
 
 /// workers/dedicated-workers corpus 扫描子目录（top-level + 一层子目录——语料两
@@ -225,7 +226,7 @@ fn collect_scan_dirs(wpt_root: &Path, dir: &Path, out: &mut Vec<String>) {
 /// （workers-compat goal M1 / DC-1）。filter 按路径子串过滤（如
 /// `constructors/`、`semantics/`——基线按面分类）。
 pub fn run_workers_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+    let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
             return vec![(
@@ -275,11 +276,11 @@ pub fn run_workers_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, 
             }
             // lossy 解码（无效 UTF-8 → U+FFFD）——脚本源码浏览器按 UTF-8 带替换解码，
             // `semantics/encodings/004.worker.js`（原始无效字节用例）read_to_string 会
-            // 失败静默丢案；lossy 后入集执行。
-            let Ok(source_bytes) = std::fs::read(&path) else {
+            // 失败静默丢案；lossy 后入集执行。DC-1 起走统一入口（BOM 语料按 BOM 解，
+            // 缺省 UTF-8 lossy 与原 from_utf8_lossy 等价）。
+            let Ok(source) = read_corpus_to_string(&path) else {
                 continue;
             };
-            let source = String::from_utf8_lossy(&source_bytes).into_owned();
             if workers_case_skipped(&relative, &source) {
                 continue;
             }

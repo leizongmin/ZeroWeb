@@ -22,6 +22,7 @@
 use crate::testharness::{
     HarnessStatus, HarnessSubtestResult, corpus_case_timeout, run_any_js_window_case, run_testharness_html_inner,
 };
+use crate::wpt_file_loader::read_corpus_to_string;
 use std::path::Path;
 
 /// page-state corpus 扫描子目录（三套件：beacon 本体 + headers 叶、page-visibility、
@@ -78,7 +79,7 @@ pub(crate) fn page_state_case_uses_http_page(case_name: &str) -> bool {
 /// （page-state-compat goal M1 / DC-1）。filter 按路径子串过滤（如 `beacon/`、
 /// `page-visibility/`——基线按套件分类）。
 pub fn run_page_state_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+    let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
             return vec![(
@@ -114,7 +115,7 @@ pub fn run_page_state_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(Strin
             if filter.is_some_and(|filter| !relative.contains(filter)) {
                 continue;
             }
-            let Ok(source) = std::fs::read_to_string(&path) else {
+            let Ok(source) = read_corpus_to_string(&path) else {
                 continue;
             };
             if page_state_case_skipped(&relative, &source) {

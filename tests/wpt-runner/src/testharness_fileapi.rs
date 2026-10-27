@@ -14,6 +14,7 @@
 use crate::testharness::{
     HarnessStatus, HarnessSubtestResult, corpus_case_timeout, run_any_js_window_case, run_testharness_html_inner,
 };
+use crate::wpt_file_loader::read_corpus_to_string;
 use std::path::Path;
 
 /// FileAPI corpus 扫描子目录（top-level 一并纳入——fileReader/unicode 两个 .any.js
@@ -80,7 +81,7 @@ pub(crate) fn fileapi_case_skipped(relative: &str, source: &str) -> bool {
 /// （fileapi-compat goal M1 / DC-1）。filter 按路径子串过滤（如 `blob/`、
 /// `reading-data-section/`——基线按面分类）。
 pub fn run_fileapi_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+    let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
             return vec![(
@@ -116,7 +117,7 @@ pub fn run_fileapi_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, 
             if filter.is_some_and(|filter| !relative.contains(filter)) {
                 continue;
             }
-            let Ok(source) = std::fs::read_to_string(&path) else {
+            let Ok(source) = read_corpus_to_string(&path) else {
                 continue;
             };
             if fileapi_case_skipped(&relative, &source) {

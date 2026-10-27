@@ -1,5 +1,6 @@
 //! WPT testharness runner and minimal testdriver adapter for HTML interactions.
 
+use crate::wpt_file_loader::read_corpus_to_string;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
@@ -1191,7 +1192,7 @@ const CONSTRAINTS_EXTRA_FILES: &[&str] = &[
 ];
 
 pub fn run_constraints_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+    let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
             return vec![(
@@ -1229,7 +1230,7 @@ pub fn run_constraints_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(Stri
         if filter.is_some_and(|filter| !relative.contains(filter)) {
             continue;
         }
-        let source = match std::fs::read_to_string(&path) {
+        let source = match read_corpus_to_string(&path) {
             Ok(source) => source,
             Err(error) => {
                 cases.push((
@@ -1252,7 +1253,7 @@ pub fn run_constraints_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(Stri
             continue;
         }
         let path = wpt_root.join(relative);
-        match std::fs::read_to_string(&path) {
+        match read_corpus_to_string(&path) {
             Ok(source) => {
                 let results = run_testharness_html(wpt_root, relative, &source, &harness_source, CASE_TIMEOUT);
                 cases.push(((*relative).to_string(), results));
@@ -1265,7 +1266,7 @@ pub fn run_constraints_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(Stri
 
 pub fn run_html_interaction_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     let harness_path = wpt_root.join("resources/testharness.js");
-    let harness_source = match std::fs::read_to_string(&harness_path) {
+    let harness_source = match read_corpus_to_string(&harness_path) {
         Ok(source) => source,
         Err(error) => {
             return vec![(
@@ -1283,7 +1284,7 @@ pub fn run_html_interaction_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<
         .iter()
         .filter(|path| filter.is_none_or(|filter| path.contains(filter)))
         .map(|path| {
-            let source = std::fs::read_to_string(wpt_root.join(path));
+            let source = read_corpus_to_string(wpt_root.join(path));
             let results = match source {
                 Ok(source) => run_testharness_html(wpt_root, path, &source, &harness_source, CASE_TIMEOUT),
                 Err(error) => vec![HarnessSubtestResult {
@@ -1302,7 +1303,7 @@ pub fn run_html_interaction_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<
 /// 扫描 [`CANVAS_TEST_SUBDIRS`] 下全部主线程 .html 用例；`canvas-tests.js`（用例的
 /// `_addTest` 驱动框架）与 testharness.js 一样内联执行。filter 按路径子串过滤。
 pub fn run_canvas_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+    let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
             return vec![(
@@ -1315,7 +1316,7 @@ pub fn run_canvas_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, V
             )];
         }
     };
-    let canvas_tests_source = match std::fs::read_to_string(wpt_root.join(CANVAS_TESTS_JS_PATH)) {
+    let canvas_tests_source = match read_corpus_to_string(wpt_root.join(CANVAS_TESTS_JS_PATH)) {
         Ok(source) => source,
         Err(error) => {
             return vec![(
@@ -1357,7 +1358,7 @@ pub fn run_canvas_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, V
             if filter.is_some_and(|filter| !relative.contains(filter)) {
                 continue;
             }
-            let source = match std::fs::read_to_string(&path) {
+            let source = match read_corpus_to_string(&path) {
                 Ok(source) => source,
                 Err(error) => {
                     cases.push((
@@ -1428,7 +1429,7 @@ pub fn run_canvas_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, V
 /// [`run_html_interaction_cases`] 同一底层 [`run_testharness_html`]，不经 canvas-tests.js）。
 /// filter 按路径子串过滤。用例由 `fetch-dom-subset.sh` 按需拉取（wpt-data gitignored）。
 pub fn run_dom_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+    let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
             return vec![(
@@ -1457,7 +1458,7 @@ pub fn run_dom_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<
             if filter.is_some_and(|filter| !relative.contains(filter)) {
                 continue;
             }
-            let source = match std::fs::read_to_string(&path) {
+            let source = match read_corpus_to_string(&path) {
                 Ok(source) => source,
                 Err(error) => {
                     cases.push((
@@ -1496,7 +1497,7 @@ pub fn run_dom_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<
 /// .html 用例；仅依赖 `testharness.js`。filter 按路径子串过滤。用例由
 /// `fetch-selection-subset.sh` 按需拉取（wpt-data gitignored）。
 pub fn run_selection_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+    let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
             return vec![(
@@ -1525,7 +1526,7 @@ pub fn run_selection_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String
             if filter.is_some_and(|filter| !relative.contains(filter)) {
                 continue;
             }
-            let source = match std::fs::read_to_string(&path) {
+            let source = match read_corpus_to_string(&path) {
                 Ok(source) => source,
                 Err(error) => {
                     cases.push((
@@ -1563,7 +1564,7 @@ pub fn run_selection_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String
 /// .html 用例；仅依赖 `testharness.js` + runner 内建 testdriver 适配
 ///（click/send_keys/Actions，R142）。用例由 `fetch-keyboard-subset.sh` 按需拉取。
 pub fn run_keyboard_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+    let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
             return vec![(
@@ -1608,7 +1609,7 @@ fn collect_keyboard_dir_cases(
         if filter.is_some_and(|filter| !relative.contains(filter)) {
             continue;
         }
-        let source = match std::fs::read_to_string(&path) {
+        let source = match read_corpus_to_string(&path) {
             Ok(source) => source,
             Err(error) => {
                 cases.push((
@@ -1674,7 +1675,7 @@ fn uievents_case_skipped(relative: &str) -> bool {
 /// 用例在 [`run_testharness_html`] 内判 Unsupported。用例由
 /// `scripts/goals/50-uievents-compat.sh` 按需拉取（gitignored）。
 pub fn run_uievents_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+    let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
             return vec![(
@@ -1724,7 +1725,7 @@ fn collect_uievents_dir_cases(
         if filter.is_some_and(|filter| !relative.contains(filter)) {
             continue;
         }
-        let Ok(source) = std::fs::read_to_string(&path) else {
+        let Ok(source) = read_corpus_to_string(&path) else {
             continue;
         };
         let variants = case_variants(&source);
@@ -2426,7 +2427,7 @@ pub const WEBAUDIO_SUPPORT_SCRIPTS: &[(&str, &str)] = &[
 
 /// Run the pinned upstream Web Audio testharness subset（media-audio M3 切片 2）。
 pub fn run_webaudio_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+    let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
             return vec![(
@@ -2444,7 +2445,7 @@ pub fn run_webaudio_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String,
     let inline_extras: Vec<(&str, String)> = WEBAUDIO_SUPPORT_SCRIPTS
         .iter()
         .filter_map(|(src, path)| {
-            std::fs::read_to_string(wpt_root.join(path))
+            read_corpus_to_string(wpt_root.join(path))
                 .ok()
                 .map(|content| (*src, content))
         })
@@ -2458,7 +2459,7 @@ pub fn run_webaudio_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String,
         .iter()
         .filter(|path| filter.is_none_or(|filter| path.contains(filter)))
         .map(|path| {
-            let source = std::fs::read_to_string(wpt_root.join(path));
+            let source = read_corpus_to_string(wpt_root.join(path));
             let results = match source {
                 Ok(source) => {
                     run_testharness_html_inner(wpt_root, path, &source, &harness_source, &inline_refs, CASE_TIMEOUT)
@@ -2476,7 +2477,7 @@ pub fn run_webaudio_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String,
 
 /// Run the pinned upstream media-elements testharness subset.
 pub fn run_media_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+    let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
             return vec![(
@@ -2494,7 +2495,7 @@ pub fn run_media_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Ve
         .iter()
         .filter(|path| filter.is_none_or(|filter| path.contains(filter)))
         .map(|path| {
-            let source = std::fs::read_to_string(wpt_root.join(path));
+            let source = read_corpus_to_string(wpt_root.join(path));
             let results = match source {
                 Ok(source) => run_testharness_html(wpt_root, path, &source, &harness_source, CASE_TIMEOUT),
                 Err(error) => vec![HarnessSubtestResult {
@@ -2510,7 +2511,7 @@ pub fn run_media_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Ve
 
 /// Run the pinned upstream IndexedDB `.any.js` subset.
 pub fn run_indexeddb_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+    let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
             return vec![(
@@ -2528,7 +2529,7 @@ pub fn run_indexeddb_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String
         .iter()
         .filter(|(path, _)| filter.is_none_or(|filter| path.contains(filter)))
         .map(|(path, support)| {
-            let case_source = match std::fs::read_to_string(wpt_root.join(path)) {
+            let case_source = match read_corpus_to_string(wpt_root.join(path)) {
                 Ok(source) => source,
                 Err(error) => {
                     return (
@@ -2544,7 +2545,7 @@ pub fn run_indexeddb_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String
             let case_dir = Path::new(path).parent().unwrap_or_else(|| Path::new(""));
             let mut support_sources = Vec::with_capacity(support.len());
             for script in *support {
-                match std::fs::read_to_string(wpt_root.join(case_dir).join(script)) {
+                match read_corpus_to_string(wpt_root.join(case_dir).join(script)) {
                     Ok(source) => support_sources.push((*script, source)),
                     Err(error) => {
                         return (
@@ -2571,7 +2572,7 @@ pub fn run_indexeddb_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String
 
 /// Run the pinned upstream CacheStorage window subset.
 pub fn run_cache_storage_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+    let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
             return CACHE_STORAGE_WINDOW_CASES
@@ -2598,7 +2599,7 @@ pub fn run_cache_storage_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(St
             let case_source = if let Some(source) = cache_storage_builtin_case_source(path) {
                 source.to_string()
             } else {
-                match std::fs::read_to_string(wpt_root.join(path)) {
+                match read_corpus_to_string(wpt_root.join(path)) {
                     Ok(source) => source,
                     Err(error) => {
                         return (
@@ -2620,7 +2621,7 @@ pub fn run_cache_storage_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(St
                 } else {
                     wpt_root.join(case_dir).join(script)
                 };
-                match std::fs::read_to_string(support_path) {
+                match read_corpus_to_string(support_path) {
                     Ok(source) => support_sources.push((*script, source)),
                     Err(error) => {
                         return (
@@ -2668,7 +2669,7 @@ fn cache_storage_builtin_case_source(path: &str) -> Option<&'static str> {
 /// Support scripts are discovered from each case's `// META: script=` headers
 /// (wpt_meta_scripts), so no hand-maintained case→support pairing is needed.
 pub fn run_fs_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+    let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
             return FS_CASES
@@ -2692,7 +2693,7 @@ pub fn run_fs_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<H
         .iter()
         .filter(|path| filter.is_none_or(|filter| path.contains(filter)))
         .map(|path| {
-            let case_source = match std::fs::read_to_string(wpt_root.join(path)) {
+            let case_source = match read_corpus_to_string(wpt_root.join(path)) {
                 Ok(source) => source,
                 Err(error) => {
                     return (
@@ -2713,7 +2714,7 @@ pub fn run_fs_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<H
                 } else {
                     wpt_root.join(case_dir).join(&script)
                 };
-                match std::fs::read_to_string(support_path) {
+                match read_corpus_to_string(support_path) {
                     Ok(source) => support_sources.push((script, source)),
                     Err(error) => {
                         return (
@@ -2742,7 +2743,7 @@ pub fn run_fs_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<H
 /// （page-wasm goal M1 / DC-1）。结构同 [`run_fs_cases`]：固定清单 + META script
 /// 自动解析 + [`any_js_window_wrapper`] window 变体执行。
 pub fn run_wasm_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+    let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
             return WASM_CASES
@@ -2766,7 +2767,7 @@ pub fn run_wasm_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec
         .iter()
         .filter(|path| filter.is_none_or(|filter| path.contains(filter)))
         .map(|path| {
-            let case_source = match std::fs::read_to_string(wpt_root.join(path)) {
+            let case_source = match read_corpus_to_string(wpt_root.join(path)) {
                 Ok(source) => source,
                 Err(error) => {
                     return (
@@ -2787,7 +2788,7 @@ pub fn run_wasm_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec
                 } else {
                     wpt_root.join(case_dir).join(&script)
                 };
-                match std::fs::read_to_string(support_path) {
+                match read_corpus_to_string(support_path) {
                     Ok(source) => support_sources.push((script, source)),
                     Err(error) => {
                         return (
@@ -2818,7 +2819,7 @@ pub fn run_wasm_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec
 /// [`WEBSTORAGE_CASES`] 文档）。配额用例（`while(true) setItem`）依赖
 /// [`CASE_TIMEOUT`] 单案超时记账为 Fail，不挂起全量。
 pub fn run_webstorage_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+    let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
             return WEBSTORAGE_CASES
@@ -2842,7 +2843,7 @@ pub fn run_webstorage_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(Strin
         .iter()
         .filter(|path| filter.is_none_or(|filter| path.contains(filter)))
         .map(|path| {
-            let case_source = match std::fs::read_to_string(wpt_root.join(path)) {
+            let case_source = match read_corpus_to_string(wpt_root.join(path)) {
                 Ok(source) => source,
                 Err(error) => {
                     return (
@@ -2882,7 +2883,7 @@ fn compression_case_skipped(relative: &str) -> bool {
 /// `third_party/pako/pako_inflate.min.js` 相对用例目录解析），[`any_js_window_wrapper`]
 /// window 变体执行。filter 按路径子串过滤。
 pub fn run_compression_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+    let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
             return vec![(
@@ -2909,7 +2910,7 @@ pub fn run_compression_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(Stri
         if filter.is_some_and(|filter| !relative.contains(filter)) || compression_case_skipped(&relative) {
             continue;
         }
-        let Ok(case_source) = std::fs::read_to_string(&path) else {
+        let Ok(case_source) = read_corpus_to_string(&path) else {
             continue;
         };
         let case_dir = Path::new(&relative).parent().unwrap_or_else(|| Path::new(""));
@@ -2920,7 +2921,7 @@ pub fn run_compression_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(Stri
                 Some(root_relative) => wpt_root.join(root_relative),
                 None => wpt_root.join(case_dir).join(&script),
             };
-            match std::fs::read_to_string(support_path) {
+            match read_corpus_to_string(support_path) {
                 Ok(source) => support_sources.push((script, source)),
                 Err(error) => {
                     cases.push((
@@ -2973,7 +2974,7 @@ fn webcrypto_case_skipped(relative: &str) -> bool {
 /// `/common/subset-tests.js`、`/common/gc.js` 由 fetch 脚本补拉），[`any_js_window_wrapper`]
 /// window 变体执行。排序收集保证基线顺序可复现。filter 按路径子串过滤。
 pub fn run_webcrypto_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+    let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
             return vec![(
@@ -3015,7 +3016,7 @@ pub fn run_webcrypto_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String
         if filter.is_some_and(|filter| !relative.contains(filter)) || webcrypto_case_skipped(&relative) {
             continue;
         }
-        let Ok(case_source) = std::fs::read_to_string(&path) else {
+        let Ok(case_source) = read_corpus_to_string(&path) else {
             continue;
         };
         let case_dir = Path::new(&relative).parent().unwrap_or_else(|| Path::new(""));
@@ -3026,7 +3027,7 @@ pub fn run_webcrypto_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String
                 Some(root_relative) => wpt_root.join(root_relative),
                 None => wpt_root.join(case_dir).join(&script),
             };
-            match std::fs::read_to_string(support_path) {
+            match read_corpus_to_string(support_path) {
                 Ok(source) => support_sources.push((script, source)),
                 Err(error) => {
                     cases.push((
@@ -3073,7 +3074,7 @@ const WEBGL_TEST_DIR: &str = "webgl";
 /// 静态文件回退路径供给。退出码契约由调用方（`testharness-webgl` 子命令）执行：
 /// 有用例非 Pass 或用例集为空 → 1。
 pub fn run_webgl_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+    let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
             return vec![(
@@ -3114,7 +3115,7 @@ pub fn run_webgl_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Ve
         if filter.is_some_and(|filter| !relative.contains(filter)) {
             continue;
         }
-        let Ok(case_source) = std::fs::read_to_string(&path) else {
+        let Ok(case_source) = read_corpus_to_string(&path) else {
             continue;
         };
         // .html 用例（testharness 页）直接运行；.any.js（idlharness）包窗。
@@ -3131,7 +3132,7 @@ pub fn run_webgl_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Ve
                 Some(root_relative) => wpt_root.join(root_relative),
                 None => wpt_root.join(case_dir).join(&script),
             };
-            match std::fs::read_to_string(support_path) {
+            match read_corpus_to_string(support_path) {
                 Ok(source) => support_sources.push((script, source)),
                 Err(error) => {
                     cases.push((
@@ -3254,7 +3255,7 @@ fn wc_case_skipped(relative: &str) -> bool {
 /// `resources/custom-elements-helpers.js` / `/html/resources/common.js` 由
 /// `inline_local_scripts` 内联）。filter 按路径子串过滤。
 pub fn run_web_components_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+    let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
             return vec![(
@@ -3301,7 +3302,7 @@ fn collect_wc_cases(
         if wc_case_skipped(&relative) || filter.is_some_and(|filter| !relative.contains(filter)) {
             continue;
         }
-        let Ok(source) = std::fs::read_to_string(&path) else {
+        let Ok(source) = read_corpus_to_string(&path) else {
             continue;
         };
         let results = run_testharness_html(wpt_root, &relative, &source, harness_source, CASE_TIMEOUT);
@@ -3357,7 +3358,7 @@ fn run_observers_subdir(
     subdir: &str,
     filter: Option<&str>,
 ) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+    let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
             return vec![(
@@ -3385,7 +3386,7 @@ fn run_observers_subdir(
         if filter.is_some_and(|filter| !relative.contains(filter)) {
             continue;
         }
-        let Ok(source) = std::fs::read_to_string(&path) else {
+        let Ok(source) = read_corpus_to_string(&path) else {
             continue;
         };
         if observers_case_skipped(&relative, &source) {
@@ -3421,7 +3422,7 @@ fn run_corpus_subdirs(
     filter: Option<&str>,
     case_skipped: fn(&str, &str) -> bool,
 ) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+    let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
             return subdirs
@@ -3455,7 +3456,7 @@ fn run_corpus_subdirs(
             if filter.is_some_and(|filter| !relative.contains(filter)) {
                 continue;
             }
-            let Ok(source) = std::fs::read_to_string(&path) else {
+            let Ok(source) = read_corpus_to_string(&path) else {
                 continue;
             };
             if case_skipped(&relative, &source) {
@@ -3702,7 +3703,7 @@ fn timing_absolute_helper_extras(wpt_root: &Path, source: &str) -> Vec<(String, 
         .iter()
         .filter(|(src, _)| source.contains(src))
         .filter_map(|(src, local)| {
-            std::fs::read_to_string(wpt_root.join(local))
+            read_corpus_to_string(wpt_root.join(local))
                 .ok()
                 .map(|content| ((*src).to_string(), content))
         })
@@ -3718,7 +3719,7 @@ fn run_timing_subdirs(
     filter: Option<&str>,
     case_skipped: fn(&str, &str) -> bool,
 ) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+    let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
             return vec![(
@@ -3752,7 +3753,7 @@ fn run_timing_subdirs(
             if filter.is_some_and(|filter| !relative.contains(filter)) {
                 continue;
             }
-            let Ok(source) = std::fs::read_to_string(&path) else {
+            let Ok(source) = read_corpus_to_string(&path) else {
                 continue;
             };
             if case_skipped(&relative, &source) {
@@ -3797,7 +3798,7 @@ pub(crate) fn run_any_js_window_case(
         } else {
             wpt_root.join(case_dir).join(&script)
         };
-        match std::fs::read_to_string(support_path) {
+        match read_corpus_to_string(support_path) {
             Ok(support) => support_sources.push((script, support)),
             Err(error) => {
                 return vec![HarnessSubtestResult {
@@ -3941,7 +3942,7 @@ fn performance_api_absolute_helper_extras(wpt_root: &Path, source: &str) -> Vec<
         .chain(PERFORMANCE_API_ABSOLUTE_HELPERS.iter())
         .filter(|(src, _)| source.contains(src))
         .filter_map(|(src, local)| {
-            std::fs::read_to_string(wpt_root.join(local))
+            read_corpus_to_string(wpt_root.join(local))
                 .ok()
                 .map(|content| ((*src).to_string(), content))
         })
@@ -4016,7 +4017,7 @@ fn run_performance_api_subdirs(
     subdirs: &[&str],
     filter: Option<&str>,
 ) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+    let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
             return vec![(
@@ -4050,7 +4051,7 @@ fn run_performance_api_subdirs(
             if filter.is_some_and(|filter| !relative.contains(filter)) {
                 continue;
             }
-            let Ok(source) = std::fs::read_to_string(&path) else {
+            let Ok(source) = read_corpus_to_string(&path) else {
                 continue;
             };
             if performance_api_case_skipped(&relative, &source) {
@@ -4292,7 +4293,7 @@ fn run_any_js_corpus_subdirs_with_helpers_variants(
     absolute_helpers: &[(&str, &str)],
     expand_variants: bool,
 ) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+    let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
             return vec![(
@@ -4326,7 +4327,7 @@ fn run_any_js_corpus_subdirs_with_helpers_variants(
             if filter.is_some_and(|filter| !relative.contains(filter)) {
                 continue;
             }
-            let Ok(source) = std::fs::read_to_string(&path) else {
+            let Ok(source) = read_corpus_to_string(&path) else {
                 continue;
             };
             if case_skipped(&relative, &source) {
@@ -4346,7 +4347,7 @@ fn run_any_js_corpus_subdirs_with_helpers_variants(
                     .iter()
                     .filter(|(src, _)| source.contains(src))
                     .filter_map(|(src, local)| {
-                        std::fs::read_to_string(wpt_root.join(local))
+                        read_corpus_to_string(wpt_root.join(local))
                             .ok()
                             .map(|content| ((*src).to_string(), content))
                     })
@@ -4654,7 +4655,7 @@ fn run_service_worker_case_set(
         .copied()
         .filter(|path| filter.is_none_or(|filter| path.contains(filter)))
         .collect();
-    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+    let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
             return selected
@@ -4676,7 +4677,7 @@ fn run_service_worker_case_set(
     selected
         .into_iter()
         .map(|path| {
-            let results = match std::fs::read_to_string(wpt_root.join(path)) {
+            let results = match read_corpus_to_string(wpt_root.join(path)) {
                 Ok(source) if is_service_worker_any_js(path) => {
                     let html = service_worker_any_js_wrapper(path, &source);
                     run_testharness_html(wpt_root, path, &html, &harness_source, CASE_TIMEOUT)
@@ -5143,7 +5144,7 @@ fn wpt_data_script_fetcher(
                         .then(|| value.trim().to_string())
                 })
         });
-        let mime_from_sidecar = std::fs::read_to_string(root.join(format!("{clean}.headers")))
+        let mime_from_sidecar = read_corpus_to_string(root.join(format!("{clean}.headers")))
             .ok()
             .and_then(|headers| {
                 headers.lines().find_map(|line| {
@@ -5583,7 +5584,7 @@ fn wpt_data_service_worker_script_fetcher(
                 request_headers.insert("if-none-match".into(), serde_json::Value::String("etag".into()));
             }
             let template_path = clean.trim_end_matches(".py").to_string() + ".js";
-            let template = std::fs::read_to_string(root.join(&template_path))
+            let template = read_corpus_to_string(root.join(&template_path))
                 .map_err(|error| format!("Service Worker fixture fetch failed: {template_path} ({error})"))?;
             let source = template
                 .replace("%HEADERS%", &serde_json::Value::Object(request_headers).to_string())
@@ -5690,7 +5691,7 @@ fn wpt_data_service_worker_script_fetcher(
             };
             let directory = clean.rsplit_once('/').map_or("", |(directory, _)| directory);
             let path = format!("{directory}/{filename}");
-            let source = std::fs::read_to_string(root.join(&path))
+            let source = read_corpus_to_string(root.join(&path))
                 .map_err(|error| format!("Service Worker fixture fetch failed: {path} ({error})"))?;
             return Ok(zero_net::HttpResponse {
                 status_code: 200,
@@ -5933,7 +5934,7 @@ fn wpt_data_service_worker_script_fetcher(
 /// 文件包一个 `fetch_tests_from_worker(new Worker(...))` 主页面（testharness.js 的 worker
 /// 聚合协议），经 run_testharness_html_inner 同款轮询执行。返回与主线程用例同构结果。
 pub fn run_canvas_worker_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
+    let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
             return vec![(
@@ -5962,7 +5963,7 @@ pub fn run_canvas_worker_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(St
             if filter.is_some_and(|filter| !relative.contains(filter)) {
                 continue;
             }
-            let source = match std::fs::read_to_string(&path) {
+            let source = match read_corpus_to_string(&path) {
                 Ok(source) => source,
                 Err(error) => {
                     cases.push((
@@ -9718,7 +9719,7 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str) -> String 
                     let decoded = decode_classic_script_bytes(&bytes, &ct, charset_attr.as_deref());
                     return Some((combined, 200, decoded));
                 }
-                std::fs::read_to_string(wpt_root.join(&combined)).ok().map(|c| {
+                read_corpus_to_string(wpt_root.join(&combined)).ok().map(|c| {
                     // net-api M5-S1：`.sub.js` 服务端替换（上游 wptserve 语义；与
                     // script fetcher M4-S22、fetch 通道本切片同口径——`.html` 案外部
                     // 脚本走本预处理直读，缺此则 constants.sub.js token 原样入页）。
