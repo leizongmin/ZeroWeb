@@ -57,6 +57,9 @@ pub struct BudgetedRenderSession {
     layout_result: Option<LayoutResult>,
     timings: PipelineTimings,
     result: Option<RenderResult>,
+    /// S1 文档级指纹键：会话首个 budget 步计算一次（环境快照 = 会话起点状态），
+    /// 跨多次 advance 保持（预算中断续推的会话 Complete 时仍可回填）；None = 禁用。
+    fingerprint_key: Option<u128>,
 }
 
 impl BudgetedRenderSession {
@@ -73,6 +76,7 @@ impl BudgetedRenderSession {
             layout_result: None,
             timings: PipelineTimings::default(),
             result: None,
+            fingerprint_key: None,
         }
     }
 
@@ -105,6 +109,75 @@ impl RenderPipeline {
         }
 
         let deadline = Instant::now() + std::time::Duration::from_secs_f64(budget_ms / 1000.0);
+
+        // S1 文档级指纹短路（设计卡 §4-S1；键范式与 kill-switch 见
+        // pipeline::frame_fingerprint 模块注记）：同输入热导航的新会话命中上一
+        // styled 帧时，跳过 parse/style/layout/paint 四段整帧复用。OPTIMIZATION：
+        // 同输入重算产出逐位相同帧（同 HTML/CSS/环境 → 同 DOM/级联/几何/图元），
+        // 重算纯属重复计算；值跨 NodeId 代际可复用（ComputedStyle 零 NodeId 内嵌）。
+        // 键在会话首个 budget 步计算一次（环境快照 = 会话起点状态），跨多次 advance
+        // 保持——预算中断续推的会话 Complete 时仍可回填。
+        if session.fingerprint_key.is_none() && session.step != BudgetStep::Done {
+            session.fingerprint_key =
+                crate::pipeline::frame_fingerprint::frame_fingerprint_key(self, &session.html, &session.css);
+        }
+        if session.step == BudgetStep::Pending
+            && let Some(key) = session.fingerprint_key
+        {
+            // 一次性克隆命中帧（即命中开销：图元/样式 O(n) 拷贝 + 布局 O(1) Arc），
+            // 结束借用后方可写回管线状态。
+            let hit = self.frame_fingerprint_cache.lookup(key).map(|c| {
+                (
+                    c.doc.clone(),
+                    c.styles.clone(),
+                    c.stylesheets.clone(),
+                    c.export_set.clone(),
+                    c.result.clone(),
+                )
+            });
+            if let Some((doc, styles, stylesheets, export_set, result)) = hit {
+                let t_hit = Instant::now();
+                // 命中臂逐一复刻全量 Complete 副作用（下方 Done 分支同序同语义）：
+                // cached_doc/cached_styles 写回、CSS 解析缓存失效（DOM 已换代）。
+                self.cached_doc = Some(doc);
+                self.cached_styles = styles;
+                self.cached_css_text = None;
+                // slice37/slice38 换代清理（handle→NodeId 持久表 + form live value
+                // 两表）——热导航会话同为文档换代，防旧代 NodeId ABA 污染。
+                self.clear_persistent_handle_nodes();
+                self.form_control_values.clear();
+                self.form_control_compositions.clear();
+                self.cached_layout = Some(result.layout.clone());
+                // 动画时钟注册（全量在 Style 步内联；keyframes registry 同名
+                // 覆盖幂等，重复注册无累积）。
+                self.animation_clock
+                    .register_from_stylesheets(&stylesheets, &self.media_context());
+                // M2-S1b 导出缓存（flag 关恒 None，与全量同语义）。
+                self.compositor_export_cache = if self.compositor_animations {
+                    export_set
+                        .as_ref()
+                        .map(|set| (set.declarations.clone(), result.animation_scopes.clone()))
+                } else {
+                    None
+                };
+                let hit_ms = t_hit.elapsed().as_secs_f64() * 1000.0;
+                session.timings = PipelineTimings {
+                    parse_ms: 0.0,
+                    style_ms: 0.0,
+                    layout_ms: 0.0,
+                    paint_ms: 0.0,
+                    total_ms: hit_ms,
+                    parse_count: 0,
+                    style_count: 0,
+                    layout_count: 0,
+                    paint_count: 0,
+                };
+                session.export_set = export_set;
+                session.result = Some(result);
+                session.step = BudgetStep::Done;
+                return BudgetAdvance::Complete;
+            }
+        }
 
         while Instant::now() < deadline {
             match session.step {
@@ -289,6 +362,24 @@ impl RenderPipeline {
                         export_decls,
                         animation_scopes,
                     ));
+                    // S1 回填：完整帧输出（doc/styles/stylesheets/export_set/result）
+                    // 入跨代缓存。键=会话起点环境快照，值=该起点输入下的输出——
+                    // 图片批/字体重绘轮各自以当轮起点为键回填，热导航重演同批序时
+                    // 逐轮命中；不同批序只见异键 MISS 回退全量（健全）。
+                    if let Some(key) = session.fingerprint_key
+                        && let Some(result) = &session.result
+                    {
+                        self.frame_fingerprint_cache.insert(
+                            key,
+                            crate::pipeline::frame_fingerprint::CachedFrame {
+                                doc: self.cached_doc.clone().expect("cached_doc set above"),
+                                styles: session.styles.clone(),
+                                stylesheets: session.stylesheets.clone(),
+                                export_set: session.export_set.clone(),
+                                result: result.clone(),
+                            },
+                        );
+                    }
                     return BudgetAdvance::Complete;
                 }
                 BudgetStep::Done => return BudgetAdvance::Complete,

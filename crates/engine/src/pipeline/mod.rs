@@ -27,6 +27,7 @@ use crate::transition::TransitionClock;
 
 mod css_vars;
 mod extract;
+pub(crate) mod frame_fingerprint;
 pub use css_vars::*;
 pub use extract::*;
 
@@ -144,6 +145,11 @@ pub struct PrintPageSetup {
 pub struct RenderPipeline {
     /// R3268 canvas 显示链路：CanvasRegistry（JS getContext 与 painter 共享）。
     pub(crate) canvas_registry: Option<std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>>>,
+    /// S1 指纹 canvas 基线：导航起点 registry context 数（webview 换代时下推）。
+    /// 当前长度偏离基线 = 本文档发生过 getContext → 指纹键禁用（见
+    /// `frame_fingerprint` 模块注记；T13 S5 同址重入不清 registry，遗留死文档
+    /// context 计入基线、不禁用）。
+    pub(crate) canvas_ctx_baseline: usize,
     /// 视口宽度。
     pub(crate) viewport_width: f32,
     /// 视口高度。
@@ -276,6 +282,9 @@ pub struct RenderPipeline {
     /// T61：用户打印页面设置（打印预览设置面板注入；None = 沿用 `@page`/引擎默认，
     /// reftest 等引擎直用路径不注入、零行为变更）。
     pub(crate) print_page_setup: Option<PrintPageSetup>,
+    /// S1 文档级指纹缓存（设计卡 §2.1：文档级输入指纹 → 跨代整帧复用；结构与
+    /// kill-switch 见 [`frame_fingerprint`]）。
+    pub(crate) frame_fingerprint_cache: frame_fingerprint::FrameFingerprintCache,
     /// 缓存的布局结果。
     pub(crate) cached_layout: Option<LayoutResult>,
     /// 缓存的 DOM（用于命中测试）。`Rc<RefCell<Document>>` 共享（P1b L1a，R3106）——
@@ -319,6 +328,10 @@ pub struct PipelineTimings {
 }
 
 /// 渲染结果 — 包含 display list、布局、计时和统计信息。
+///
+/// Clone（S1 帧指纹缓存）：命中路径从 [`FrameFingerprintCache`](crate::pipeline::frame_fingerprint::FrameFingerprintCache)
+/// 复制整帧（layout root 已 Arc 共享 O(1)，图元克隆为 O(n) 数据拷贝）。
+#[derive(Clone)]
 pub struct RenderResult {
     /// 本帧 display list（图元 + 脏区域）。
     pub display_list: DisplayList,
@@ -483,6 +496,12 @@ impl RenderPipeline {
         self.canvas_registry = registry;
     }
 
+    /// S1 指纹 canvas 基线下推：文档换代时由宿主传入导航起点的 registry context
+    /// 数（`WebView::prepare_document_state` 的 T13 S5 清理/保留决策之后取值）。
+    pub fn set_canvas_ctx_baseline(&mut self, baseline: usize) {
+        self.canvas_ctx_baseline = baseline;
+    }
+
     /// 创建新的渲染管线。
     ///
     /// # 参数
@@ -490,11 +509,17 @@ impl RenderPipeline {
     /// - `viewport_width` — 视口宽度（像素）
     /// - `viewport_height` — 视口高度（像素）
     pub fn new(viewport_width: f32, viewport_height: f32) -> Self {
+        // S1：构造即把视口同步进样式系统（Style 步每会话幂等重放同值）——若留
+        // StyleSystem 侧 None 初始态，首会话 Style 步 None→Some 会 bump
+        // `context_version`，令首个 styled 帧的指纹键与后续同输入会话漂移。
+        let mut style_system = StyleSystem::new();
+        style_system.set_viewport(f64::from(viewport_width), f64::from(viewport_height));
         Self {
             canvas_registry: None,
+            canvas_ctx_baseline: 0,
             viewport_width,
             viewport_height,
-            style_system: StyleSystem::new(),
+            style_system,
             layout_engine: LayoutEngine::new(viewport_width, viewport_height),
             dirty_tracker: DirtyTracker::new(),
             animation_clock: AnimationClock::new(),
@@ -533,6 +558,7 @@ impl RenderPipeline {
             document_url: None,
             referrer: None,
             print_page_setup: None,
+            frame_fingerprint_cache: frame_fingerprint::FrameFingerprintCache::new(4),
         }
     }
 

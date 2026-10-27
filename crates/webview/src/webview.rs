@@ -2087,6 +2087,16 @@ impl WebView {
             self.canvas_cleared_url = Some(page_url.to_string());
             tracing::info!(target: "mem_reclaim", "canvas_gen_clear");
         }
+        // S1 指纹 canvas 基线：文档换代起点 registry 长度（上方清理/保留决策已定）。
+        // 同址重入跳过清理时遗留死文档 context 计入基线——S1 键只对本文档代内新增
+        // getContext 禁用（`frame_fingerprint` 模块注记）。锁失败取 usize::MAX =
+        // 恒偏离 → 禁用（保守回退全量）。
+        self.pipeline.set_canvas_ctx_baseline(
+            self.canvas_registry
+                .lock()
+                .map(|reg| reg.contexts.len())
+                .unwrap_or(usize::MAX),
+        );
         self.current_url = Some(page_url.to_string());
         self.set_page_url_wire(page_url);
         self.set_loading(true);

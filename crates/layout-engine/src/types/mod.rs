@@ -954,6 +954,9 @@ pub struct InlineLayoutFragment {
 }
 
 /// 布局结果 — 整个文档的布局树。
+///
+/// Clone（S1 帧指纹缓存）：root 为 `Arc` 共享，clone O(1)。
+#[derive(Clone)]
 pub struct LayoutResult {
     /// 根布局盒。
     ///

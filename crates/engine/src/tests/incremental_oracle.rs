@@ -363,3 +363,54 @@ fn inc04_pixel_contract_warm_frames_bitwise_equal_cold() {
         assert_frames_bitwise_equal(&px_warm, &px_cold, name);
     }
 }
+
+// ── S1 文档级指纹 oracle（设计卡 §4-S1 前提门①：同输入重算==复用逐位一致）──
+
+/// 以全预算推进一个独立会话至 Complete 并取结果（模拟一次导航的 styled 帧路径，
+/// 与生产 `AsyncPageLoad::advance_render` 的会话生命周期同构：新建 → 推进 → 取帧）。
+fn fingerprint_session(pipeline: &mut RenderPipeline, html: &str, css: &str) -> RenderResult {
+    let mut session = crate::BudgetedRenderSession::new(html, css);
+    loop {
+        if matches!(
+            pipeline.advance_budgeted_render(&mut session, 5_000.0),
+            crate::BudgetAdvance::Complete
+        ) {
+            break;
+        }
+    }
+    session.take_result().expect("complete session has result")
+}
+
+/// S1 热导航命中契约：同输入新会话（新 NodeId 代际）命中指纹缓存后，光栅化输出
+/// 必须与首航帧及独立全量冷参考逐位相等；同会话首航（MISS 回填）亦须与冷参考
+/// 逐位相等（指纹计算+缓存写入开销不得改变渲染输出）。
+#[test]
+fn s1_fingerprint_hot_navigation_hit_bitwise_equal_cold() {
+    let mut ctx = RasterCtx::new();
+    let mut warm = RenderPipeline::new(320.0, 400.0);
+    // 冷导航：全新会话全量渲染（键 MISS → 回填缓存）。
+    let cold_nav = fingerprint_session(&mut warm, NAV_A_HTML, NAV_CSS);
+    // 热导航：同输入新会话——键相等必须命中，跳过四段整帧复用。
+    let hot_nav = fingerprint_session(&mut warm, NAV_A_HTML, NAV_CSS);
+    // 独立冷参考（另一管线全量重算同输入）。
+    let reference = cold_frame(NAV_A_HTML, NAV_CSS);
+    let px_cold_nav = ctx.rasterize(&cold_nav);
+    let px_hot_nav = ctx.rasterize(&hot_nav);
+    let px_reference = ctx.rasterize(&reference);
+    assert_frames_bitwise_equal(&px_cold_nav, &px_reference, "S1 miss (first nav) vs cold reference");
+    assert_frames_bitwise_equal(&px_hot_nav, &px_reference, "S1 hit (hot nav) vs cold reference");
+}
+
+/// S1 异输入判异：内容变化后键必须判异（MISS 全量），复用帧不得残留上一内容。
+#[test]
+fn s1_fingerprint_content_change_misses_and_recomputes() {
+    let mut ctx = RasterCtx::new();
+    let mut warm = RenderPipeline::new(320.0, 400.0);
+    let first = fingerprint_session(&mut warm, NAV_A_HTML, NAV_CSS);
+    let second = fingerprint_session(&mut warm, NAV_B_HTML, NAV_CSS);
+    let reference = cold_frame(NAV_B_HTML, NAV_CSS);
+    let px_second = ctx.rasterize(&second);
+    let px_reference = ctx.rasterize(&reference);
+    assert_frames_bitwise_equal(&px_second, &px_reference, "content change recomputes");
+    let _ = first;
+}
