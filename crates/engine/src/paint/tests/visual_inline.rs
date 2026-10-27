@@ -910,6 +910,87 @@ fn test_text_overflow_ellipsis_needs_hidden_overflow() {
     assert_eq!(dot_count, 0);
 }
 
+/// R5301（css-overflow-3 §text-overflow）：RTL 容器 inline-end 在左——溢出行须在左缘
+/// 渲 `…` 并裁掉左侧溢出字形。修复前 RTL 走 LTR 检测（`g.x >= content_right` 永不
+/// 触发）→ 无省略号，左溢字形被 overflow:hidden 静默裁掉
+///（text-overflow-ellipsis-rtl-001 1.67% 揭示）。
+#[test]
+fn r5301_rtl_ellipsis_elides_inline_end_and_anchors_left() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    // Ahem cell = 1em：5 字符 500px 溢出 400px 盒；RTL 右对齐起排后左溢，修复后
+    // 保留 inline-start 侧 3 个整 cell，省略号单字形锚 content_left = 8。
+    let html = "<html><body><div>ppppp</div></body></html>";
+    let css = "div { direction: rtl; font: 100px/1 Ahem; white-space: pre; width: 400px; \
+               overflow: hidden; text-overflow: ellipsis; color: black; }";
+    let result = pipeline.render_html(html, css);
+    let glyphs = &result.primitives().glyphs;
+    let ellipsis: Vec<_> = glyphs.iter().filter(|g| g.glyph_id == '…' as u32).collect();
+    assert_eq!(ellipsis.len(), 1, "RTL 溢出行应渲单个 U+2026");
+    assert_eq!(ellipsis[0].x, 8.0, "省略号应锚在 RTL inline-end（content_left）");
+    let kept: Vec<f32> = glyphs
+        .iter()
+        .filter(|g| g.glyph_id == 'p' as u32 && g.font_size > 0.0)
+        .map(|g| g.x)
+        .collect();
+    assert_eq!(
+        kept,
+        vec![108.0, 208.0, 308.0],
+        "应保留右缘 3 个整 cell，左溢 cell 全裁"
+    );
+    assert!(
+        glyphs.iter().all(|g| g.glyph_id == 0 || g.x >= 8.0),
+        "内容左缘之左不得残留可见字形"
+    );
+}
+
+/// R5301 边界：RTL 行「恰好装满」（4 cell = 400px 盒）不得视为溢出——首次实现用
+/// `origin <= content_left` 判溢出，恰满行首字形 origin == content_left 误触发，
+/// 首 cell 被裁换成 '…'（rtl-001 div2 翻车实证）；溢出判定须严格小于。
+#[test]
+fn r5301_rtl_ellipsis_exact_fit_line_no_ellipsis() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = "<html><body><div>pppp</div></body></html>";
+    let css = "div { direction: rtl; font: 100px/1 Ahem; white-space: pre; width: 400px; \
+               overflow: hidden; text-overflow: ellipsis; color: black; }";
+    let result = pipeline.render_html(html, css);
+    let glyphs = &result.primitives().glyphs;
+    let ellipsis = glyphs.iter().filter(|g| g.glyph_id == '…' as u32).count();
+    assert_eq!(ellipsis, 0, "恰好装满的行不得渲省略号");
+    let kept: Vec<f32> = glyphs
+        .iter()
+        .filter(|g| g.glyph_id == 'p' as u32 && g.font_size > 0.0)
+        .map(|g| g.x)
+        .collect();
+    assert_eq!(kept, vec![8.0, 108.0, 208.0, 308.0], "4 个整 cell 应全部保留");
+}
+
+/// R5301 镜像对照：同几何 LTR 容器省略号仍锚右缘（inline-end = 右），保留
+/// inline-start 侧 3 个整 cell——RTL 分支不得扰动 LTR 既有行为。
+#[test]
+fn r5301_ltr_ellipsis_still_anchors_right() {
+    use crate::pipeline::RenderPipeline;
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = "<html><body><div>ppppp</div></body></html>";
+    let css = "div { font: 100px/1 Ahem; white-space: pre; width: 400px; \
+               overflow: hidden; text-overflow: ellipsis; color: black; }";
+    let result = pipeline.render_html(html, css);
+    let glyphs = &result.primitives().glyphs;
+    let ellipsis: Vec<_> = glyphs.iter().filter(|g| g.glyph_id == '…' as u32).collect();
+    assert_eq!(ellipsis.len(), 1, "LTR 溢出行应渲单个 U+2026");
+    assert_eq!(
+        ellipsis[0].x, 308.0,
+        "省略号应锚在 LTR inline-end（content_right − ellipsis_w）"
+    );
+    let kept: Vec<f32> = glyphs
+        .iter()
+        .filter(|g| g.glyph_id == 'p' as u32 && g.font_size > 0.0)
+        .map(|g| g.x)
+        .collect();
+    assert_eq!(kept, vec![8.0, 108.0, 208.0], "应保留左缘 3 个整 cell，右溢 cell 全裁");
+}
+
 // ── line-clamp slice 2 ellipsis 测试（R2467）──
 
 /// line-clamp:2 的 pure-Ahem 块（走 stored 路径：inline_layout 被 R2431 cap 到 2 行）

@@ -4455,19 +4455,46 @@ impl super::Painter {
                     let glyphs = &mut self.primitives.glyphs;
                     let fragment_glyphs = &mut glyphs[glyphs_before_fragments..];
 
+                    // R5301（css-overflow-3 §text-overflow）：RTL（水平书写模式）inline-end
+                    // 在左——检测/裁剪/定位按几何镜像。ZW 行内 RTL 无 bidi 重排（逻辑序 =
+                    // 视觉序左→右，行右对齐起排，溢出恒走左缘，scroll-rtl-001 span 负 x
+                    // 布局为证），镜像取字形 origin 几何：溢出 = origin ≤ content_left；
+                    // 保留 = cell 起点在省略号盒 [content_left, content_left+ellipsis_w]
+                    // 右侧；省略号盒锚 content_left。逻辑序敏感场景（css-ui/
+                    // text-overflow-011 的「保留逻辑首字符」语义）需 bidi 裂解，挂账另轮。
+                    let is_rtl_horizontal = matches!(style.direction, zero_style_system::DirectionValue::Rtl)
+                        && matches!(style.writing_mode, zero_style_system::WritingModeValue::HorizontalTb);
+
                     let mut last_visible_idx: Option<usize> = None;
                     let mut has_overflow = false;
 
-                    for (i, g) in fragment_glyphs.iter().enumerate() {
-                        if g.font_size == 0.0 {
-                            continue;
+                    if is_rtl_horizontal {
+                        let content_left = content_x + tx;
+                        // 严格小于：行右对齐起排后「恰好装满」时首字形 origin ==
+                        // content_left，不得视为溢出（text-overflow-ellipsis-rtl-001
+                        // div2 `pppp` 恰满 400px 盒误渲省略号——首次实现 `<=` 翻车实证）；
+                        // 溢出行起点 = content_right − line_w < content_left 恒严格成立。
+                        for g in fragment_glyphs.iter().rev() {
+                            if g.font_size == 0.0 {
+                                continue;
+                            }
+                            if g.x < content_left {
+                                has_overflow = true;
+                                break;
+                            }
                         }
-                        if g.x >= content_right {
-                            has_overflow = true;
-                            last_visible_idx = if i > 0 { Some(i - 1) } else { None };
-                            break;
+                    } else {
+                        for (i, g) in fragment_glyphs.iter().enumerate() {
+                            if g.font_size == 0.0 {
+                                continue;
+                            }
+                            if g.x >= content_right {
+                                has_overflow = true;
+                                last_visible_idx = if i > 0 { Some(i - 1) } else { None };
+                                break;
+                            }
+                            last_visible_idx = Some(i);
                         }
-                        last_visible_idx = Some(i);
                     }
 
                     if has_overflow {
@@ -4479,27 +4506,46 @@ impl super::Painter {
                         let ellipsis_char_width =
                             crate::measure_char_for_font(default_font_id.0, '…', font_size, container_is_ahem);
                         let total_ellipsis_width = ellipsis_char_width;
-                        let ellipsis_end_x = content_right;
-                        let ellipsis_start_x = ellipsis_end_x - total_ellipsis_width;
 
-                        let cutoff_start = if let Some(idx) = last_visible_idx {
-                            let mut cut = idx + 1;
-                            for j in (0..=idx).rev() {
-                                if fragment_glyphs[j].x < ellipsis_start_x && fragment_glyphs[j].font_size > 0.0 {
-                                    cut = j + 1;
-                                    break;
-                                }
-                                cut = j;
+                        // 裁剪起点：LTR 从尾部（inline-end = 右）截，RTL 从头部（inline-end
+                        // = 左）截。RTL 找不到保留侧字形（整行都在省略号盒之左）时全裁，
+                        // 与 LTR cutoff_start = 0 兜底对称——只渲省略号。
+                        let ellipsis_start_x = if is_rtl_horizontal {
+                            let content_left = content_x + tx;
+                            let ellipsis_end_x = content_left + total_ellipsis_width;
+                            let cutoff_start = fragment_glyphs
+                                .iter()
+                                .position(|g| g.font_size > 0.0 && g.x >= ellipsis_end_x - 0.5)
+                                .unwrap_or(fragment_glyphs.len());
+                            for g in fragment_glyphs.iter_mut().take(cutoff_start) {
+                                g.glyph_id = 0;
+                                g.font_size = 0.0;
                             }
-                            cut
+                            content_left
                         } else {
-                            0
-                        };
+                            let ellipsis_end_x = content_right;
+                            let ellipsis_start_x = ellipsis_end_x - total_ellipsis_width;
 
-                        for g in fragment_glyphs.iter_mut().skip(cutoff_start) {
-                            g.glyph_id = 0;
-                            g.font_size = 0.0;
-                        }
+                            let cutoff_start = if let Some(idx) = last_visible_idx {
+                                let mut cut = idx + 1;
+                                for j in (0..=idx).rev() {
+                                    if fragment_glyphs[j].x < ellipsis_start_x && fragment_glyphs[j].font_size > 0.0 {
+                                        cut = j + 1;
+                                        break;
+                                    }
+                                    cut = j;
+                                }
+                                cut
+                            } else {
+                                0
+                            };
+
+                            for g in fragment_glyphs.iter_mut().skip(cutoff_start) {
+                                g.glyph_id = 0;
+                                g.font_size = 0.0;
+                            }
+                            ellipsis_start_x
+                        };
 
                         let first_glyph = fragment_glyphs.iter().find(|g| g.font_size > 0.0);
                         let base_y = first_glyph.map(|g| g.y).unwrap_or(content_y + font_size + ty);
