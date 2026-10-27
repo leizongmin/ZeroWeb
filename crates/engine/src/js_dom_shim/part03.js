@@ -3823,38 +3823,70 @@
   // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
   // s111（html-semantics M2 切片 111）：prepare 的连接态判定统一 helper——spec
   // post-connection steps 只在插入元素「仍连接」时运行。proxy 形（get trap R90）
-  // isConnected 返布尔直用；plain/盖章 plain 子（R368 host 身份盖章只贴
+  // isConnected true 直用；plain/盖章 plain 子（R368 host 身份盖章只贴
   // `__zwHandle`，无 get trap）属性读 undefined——回落身份反链（`_zwMutationInDoc`，
   // `_zwNodeParent` 已由 notify 记账段先行写入）与 parentNode 链爬升；均不可得按
   // 未连接处理（prepare 中止发生在 already-started 置位前，重插入可重走门）。
+  // s117（html-semantics M2 切片 117）：getter false 不再直信——执行期 doc.write
+  // 产物是 mut-tree 新生 sel 形元素，isConnected 的宿主树快照查询（__zw_contains）
+  // 不含尚未落快照的插入 → 假阴性（execution-timing 026 实证：body 第 4 子
+  // script isConnected=false 而 parentNode 链达文档）。false 先 parentNode 爬升
+  // 复核（可达宿主连接祖先即连接），爬升不可得再落身份反链——detached 元素
+  //（remove 后 parentNode null、反链失含）仍 false，语义不变。
   // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
   var _zwScriptPrepConnected = function (el) {
     var icSc0;
     try { icSc0 = el.isConnected; } catch (_eSc0) { icSc0 = undefined; }
-    if (icSc0 === true || icSc0 === false) return icSc0;
+    if (icSc0 === true) return true;
+    // 爬升判定（可复用两遍）：真/假终值即定论；null = 链不可得（未定）。
+    var _walkSc = function () {
+      try {
+        var pSc = el.parentNode, hopsSc = 0;
+        while (pSc && hopsSc++ < 64) {
+          if (pSc.nodeType === 9 || pSc === globalThis.document) return true;
+          if (pSc.nodeType === 11) return false;
+          var icScP;
+          try { icScP = pSc.isConnected; } catch (_eSc4) {}
+          if (icScP === true) return true;
+          if (icScP === false) return false;
+          pSc = pSc.parentNode;
+        }
+      } catch (_eSc5) {}
+      return null;
+    };
+    if (icSc0 === false) {
+      var _wScNeg = _walkSc();
+      if (_wScNeg !== null) return _wScNeg;
+    }
     var selSc = null, hSc = null;
     try { selSc = el.__zwSelector || null; } catch (_eSc1) {}
     try { hSc = el.__zwHandle || null; } catch (_eSc2) {}
     if ((selSc != null || hSc != null) && typeof _zwMutationInDoc === 'function') {
       try { return _zwMutationInDoc(selSc, hSc) === true; } catch (_eSc3) {}
     }
-    try {
-      var pSc = el.parentNode, hopsSc = 0;
-      while (pSc && hopsSc++ < 64) {
-        if (pSc.nodeType === 9 || pSc === globalThis.document) return true;
-        if (pSc.nodeType === 11) return false;
-        var icScP;
-        try { icScP = pSc.isConnected; } catch (_eSc4) {}
-        if (icScP === true) return true;
-        if (icScP === false) return false;
-        pSc = pSc.parentNode;
-      }
-    } catch (_eSc5) {}
+    var _wSc = _walkSc();
+    if (_wSc !== null) return _wSc;
     return false;
   };
+  // s118（html-semantics M2 切片 118）：fragment 解析产物 SCRIPT 的 already-started
+  // 章（对象属性 `__zwFragNoExec`）——spec prepare the script element：HTML fragment
+  // parsing algorithm 创建的 script 元素置 already started，移动不得再执行（033
+  // execution-timing 语料面：innerHTML 产物 appendChild 移入 body 后须保持惰性）。
+  // 章用对象属性（_zwMEl 解析代理无稳定 sel/handle，移动换代后 sel 失配——s117 已证
+  // sel 盖章路线不可行）；移动时 part04 R368 盖 handle 章点把章转移到 run-once 表
+  // （`_zwRanScripts[handle]`，already-started 语义本表）。打标点在 part04 innerHTML
+  // setter（033 需求面）；写流回放基线 innerHTML= 同经此打标——回放执行走 part06
+  // 水印执行器不经本 helper，换代重注册的 sel 形代理是新建对象（026 面 src 后设
+  // 不受影响）。
+  // FIXME(spec-gap): insertAdjacentHTML/cloneNode 重解析产物同属 fragment parsing
+  // already-started 面，暂不打标，待语料需求补章。
+  // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
   var _zwScriptMaybeStartDynamic = function (el) {
     if (!el) return;
     try {
+      // s118：fragment 产物 already-started 章门（打标点在 part04 innerHTML setter，
+      // R368 盖 handle 章时转移 run-once 表）。
+      if (el.__zwFragNoExec) return;
       // 身份键（与既有 run-once 表对接：sel 形/handle 形双读，s95 同口径）。
       var _sel109 = null, _hdl109 = null;
       try { _sel109 = el.__zwSelector; } catch (_eA109) {}
@@ -3947,6 +3979,10 @@
       }
     } catch (_e109) {}
   };
+  // s117（html-semantics M2 切片 117）：导出供 part05 s96 SCRIPT.src IDL setter
+  // sel 形臂经 globalThis 守卫调用（_zwPrepareSrcScript 同款顶层导出模式；
+  // part01 _mo_notify 臂经作用域链裸呼不受影响）。
+  globalThis._zwScriptMaybeStartDynamic = _zwScriptMaybeStartDynamic;
 
   // s110（html-semantics M2 切片 110）：s96 外链 prepare 家族迁至本层——原定义在
   // 元素实例闭包内、导出点在闭包体尾，导出随首个实例创建才生效；早触发页

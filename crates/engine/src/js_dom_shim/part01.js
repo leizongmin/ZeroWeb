@@ -6035,7 +6035,24 @@
           if ((_an109 === 'src' || _an109 === 'href' || _an109 === 'xlink:href')
               && typeof _realTag === 'function' && _realTag(sel, handle) === 'SCRIPT'
               && typeof _makeProxy === 'function') {
-            _zwScriptMaybeStartDynamic(_makeProxy(sel, handle));
+            // s117（html-semantics M2 切片 117）：sel 形非空体跳过——架构约束：
+            // 写流面（part06 __zwDocWriteRunFace）执行的内联脚本是回放重建 plain
+            // wrapper（无 __zwSelector，027 execution-timing 探针实证），already-
+            // started 章落不了、换代重注册后新 proxy 的 sel 与执行时身份断链；本
+            // 架构中非空体 sel 形脚本必已随投递（delivery 盖章）/写流（回放执行）
+            // 跑过，src/href 属性后写按 already-started 语义不重触发（027 带内容
+            // 脚本 src 后设不执行外链）。空体脚本（026 doc.write 空 script）从未
+            // 执行，src 后写照常触发 prepare。handle 形 run-once 表完整，不设此门。
+            // FIXME(architecture): 写流执行身份盖章断链，若增量解析落地应回归
+            // already-started 表判。
+            var _anGo117 = true;
+            if (!handle) {
+              try {
+                var _anTxt117 = String(_makeProxy(sel, handle).text != null ? _makeProxy(sel, handle).text : '');
+                if (_anTxt117.trim() !== '') _anGo117 = false;
+              } catch (_e109tx117) {}
+            }
+            if (_anGo117) _zwScriptMaybeStartDynamic(_makeProxy(sel, handle));
           }
           // s110：async 内容属性加至 script → force async=false（spec 独立条款——
           // 「When an async attribute is added … set force async to false」，非 prepare
@@ -7815,6 +7832,16 @@
     get: function () { return _zwLocation; },
     set: function (v) {
       if (typeof _setLocationPart === 'function') _setLocationPart('href', String(v));
+    },
+  });
+  // Window.origin——关联文档 URL origin 序列化（opaque origin → 'null'，与
+  // location.origin 同源语义）。configurable accessor：全局 `var origin` 按 spec
+  // 属性语义可遮蔽（可配置访问器属性 → var 重声明替换）。
+  // https://html.spec.whatwg.org/multipage/window-object.html#dom-window-origin
+  Object.defineProperty(globalThis, 'origin', {
+    enumerable: true, configurable: true,
+    get: function () {
+      return (globalThis.location && globalThis.location.origin) || 'null';
     },
   });
   globalThis.self = globalThis;

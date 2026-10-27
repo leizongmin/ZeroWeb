@@ -892,13 +892,17 @@
         } else if (p === 'src' && _realTag(sel, handle) === 'SCRIPT') {
           // s96 刀②（html-semantics M2 切片 96）：script.src IDL setter——反射写 src
           // 内容属性 + **script 属性变更步骤**触发面：src set（value 非 null）且元素
-          // connected → post-connection steps → prepare（动态 src 执行）。仅 handle 形态
-          // 触发——sel 形是 parser-inserted 产物，post-connection 步骤首步即 return
-          // （execution-timing 048 对静态 script[0] 的 .src= 写入面不受扰）。门序与
-          // fetch 执行体单点复用 _zwPrepareSrcScript（R387b 同源——already-started/
-          // nomodule/for-event 门 + run-once 记账，024「.src set twice」依赖
-          // already-started 忽略第二次 set）。USVString 非 nullable：null → "null"
-          //（WebIDL 默认转换，同 script.text setter s95 口径）。
+          // connected → post-connection steps → prepare（动态 src 执行）。handle 形态
+          // 单点复用 _zwPrepareSrcScript（R387b 同源——already-started/nomodule/
+          // for-event 门 + run-once 记账，024「.src set twice」依赖 already-started
+          // 忽略第二次 set）。s117（html-semantics M2 切片 117）：sel 形态的运行期
+          // 触发走属性写→`__zw_set_attr` 记录→part01 _mo_notify s109 属性臂（s117
+          // 起带 sel 形非空体跳过门，026/027 execution-timing 双面），本 setter 不再
+          // 重复直呼——旧「parser-inserted post-connection 首步即 return」注解对
+          // doc.write 空脚本不成立（parser prepare 因空源 bail 未置 already-started；
+          // 旧行为靠 s109 臂 connected 门假阴性挡下，s117 修 connected 后由属性臂
+          // 体空性门承接）。USVString 非 nullable：null → "null"（WebIDL 默认转换，
+          // 同 script.text setter s95 口径）。
           // https://html.spec.whatwg.org/multipage/scripting.html#script-attribute-change-steps
           // https://html.spec.whatwg.org/multipage/scripting.html#dom-script-src
           var _s96Val = (value === null) ? 'null' : String(value);

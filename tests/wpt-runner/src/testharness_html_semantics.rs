@@ -224,6 +224,11 @@ fn collect_html_semantics_cases(
         let Ok(source) = std::fs::read_to_string(&path) else {
             continue;
         };
+        // s116：页 HTML wptserve 变量替换全集（{{host}}/{{domains}}/{{ports}}——
+        // referrer 族 inline module 跨源导入锚 token；此前主文档通道零替换，token
+        // 字面量进 import spec → 图取回必败）。support/资源面的替换在各自通道
+        //（fetcher body M4-S22、any.window wrapper）；本通道页 HTML 首次接入。
+        let source = crate::testharness::apply_wpt_substitutions(&source);
         if html_semantics_case_skipped(&relative, &source) {
             continue;
         }

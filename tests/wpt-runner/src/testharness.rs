@@ -4147,6 +4147,13 @@ fn webcrypto_case_uses_http_page(case_name: &str) -> bool {
     !file.contains(".https.")
 }
 
+/// s116：referrer corpus 页面 scheme 判定——referrer-strict-policies 前提「文档
+/// over HTTP」（断言文本与导入链均锚 http：https 文档令 `./resources` 包装导入
+/// https 化、checker 子请求成降级，origin 断言翻红）。webcrypto 同口径先例。
+fn referrer_case_uses_http_page(case_name: &str) -> bool {
+    case_name.ends_with("module/referrer-strict-policies.sub.html")
+}
+
 /// navigation-compat M2-S10 单案 origin 端口化：上游 wptserve 恒带显式端口
 /// （http :8800 / https :9443），location_port.html 断言取 `location.href` 权威段
 /// ":" 后子串与 `location.port` 全等——runner 缺省 origin 无端口时权威段整体
@@ -4811,14 +4818,23 @@ fn wpt_js_has_long_timeout(source: &str) -> bool {
 pub(crate) fn apply_wpt_substitutions(source: &str) -> String {
     source
         .replace("{{host}}", "wpt.test")
+        // s116：{{domains[www]}} = 同 {{host}}（wptserve domains 常量集——referrer
+        // strict-policies 的 https 导入臂用；此前 token 字面残留令 URL 解析失效）。
+        .replace("{{domains[www]}}", "wpt.test")
         .replace("{{domains[www1]}}", "www1.wpt.test")
         .replace("{{domains[www2]}}", "www2.wpt.test")
         .replace("{{hosts[alt][]}}", "alt.wpt.test")
         .replace("{{hosts[alt][www]}}", "www1.alt.wpt.test")
         .replace("{{hosts[alt][www2]}}", "www2.alt.wpt.test")
-        .replace("{{ports[http][0]}}", "80")
-        .replace("{{ports[http][1]}}", "8000")
-        .replace("{{ports[https][0]}}", "443")
+        // 端口值对齐上游 /common/get-host-info.js 真值（http [8000,8081]、https
+        // [8444,8443]）——[0] 必须非默认端口：真 WPT 环境下字符串字面量（"…:8000/"）
+        // 与 `new URL().origin` 序列化形（非默认端口保留）两判据形殊途同归；曾映射
+        // 默认端口 80/443 时 URL 序列化剥端口令两形撕裂（s116 referrer 族实测：
+        // 同页内 expected 无 :80 / got 带 :80）。跨源判定/文件解析按 host 段，端口值
+        // 不消费；改动波及全语料 token 页，全量 A/B 兜底。
+        .replace("{{ports[http][0]}}", "8000")
+        .replace("{{ports[http][1]}}", "8081")
+        .replace("{{ports[https][0]}}", "8444")
         .replace("{{ports[https][1]}}", "8443")
         // net-api M5-S1：websockets 常量面（constants.sub.js SCHEME_DOMAIN_PORT）——
         // ws/wss/h2 三 token 全映射到内嵌 WS fixture 端口（wss/h2 变体不执行，token
@@ -4943,14 +4959,144 @@ fn decode_classic_script_bytes(bytes: &[u8], ct: &str, charset_attr: Option<&str
     }
 }
 
-fn wpt_data_script_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::ScriptSourceFetcher> {
+/// s116：referrer policy label 合法集（解析失败/未知 label 按 spec 忽略——继承顺延）。
+/// https://w3c.github.io/webappsec-referrer-policy/#referrer-policy-grammar
+fn is_known_referrer_policy(label: &str) -> bool {
+    matches!(
+        label,
+        "no-referrer"
+            | "no-referrer-when-downgrade"
+            | "same-origin"
+            | "origin"
+            | "strict-origin"
+            | "origin-when-cross-origin"
+            | "strict-origin-when-cross-origin"
+            | "unsafe-url"
+    )
+}
+
+/// s116：绝对 URL 拆解 (scheme, 权威段书写原样含端口, host, 缺省端口归一值)。仅
+/// http/https（runner 页锚与 wpt host 别名面）；其余 scheme → None。
+fn parse_wpt_url_components(url: &str) -> Option<(&str, &str, &str, u16)> {
+    let (scheme, rest) = url.split_once("://")?;
+    if !matches!(scheme, "http" | "https") {
+        return None;
+    }
+    let slash = rest.find('/').unwrap_or(rest.len());
+    let authority = &rest[..slash];
+    let default_port: u16 = if scheme == "https" { 443 } else { 80 };
+    let port = match authority.rsplit_once(':') {
+        Some((host, port_str))
+            if !host.is_empty() && !port_str.is_empty() && port_str.chars().all(|c| c.is_ascii_digit()) =>
+        {
+            match port_str.parse::<u16>() {
+                Ok(p) => p,
+                Err(_) => return None,
+            }
+        }
+        _ => default_port,
+    };
+    let host = authority.split(':').next().unwrap_or(authority);
+    Some((scheme, authority, host, port))
+}
+
+/// s116：同源判定——(scheme, host, 缺省端口归一) 三元组相等（wpt.test 与
+/// wpt.test:80 同源；:443/:80 跨 scheme 即异源）。
+fn wpt_urls_same_origin(a: &str, b: &str) -> bool {
+    match (parse_wpt_url_components(a), parse_wpt_url_components(b)) {
+        (Some((sa, _, ha, pa)), Some((sb, _, hb, pb))) => sa == sb && ha == hb && pa == pb,
+        _ => false,
+    }
+}
+
+/// s116：origin 形 Referer——scheme://权威段（书写原样）+ "/"。真 WPT 端口为
+/// 非默认值（get-host-info http[0]=8000），URL 序列化不剥端口——书写原样即浏览器
+/// 序列化形；替换表已对齐该值（apply_wpt_substitutions s116 注）。
+fn wpt_url_origin_form(url: &str) -> Option<String> {
+    parse_wpt_url_components(url).map(|(scheme, authority, _, _)| format!("{scheme}://{authority}/"))
+}
+
+/// s116：降级判定——引用源 potentially trustworthy（https）而请求非（http）。
+fn wpt_referrer_is_downgrade(source_url: &str, request_url: &str) -> bool {
+    source_url.starts_with("https://") && !request_url.starts_with("https://")
+}
+
+/// s116：Fetch determine-request's-referrer 引用串计算——None = 不发送 Referer。
+/// 引用源 = 引用方模块 URL（含 query——`?name=` 去重即 spec 语义）；请求 URL =
+/// checker 请求绝对 URL。
+/// https://fetch.spec.whatwg.org/#determine-request-s-referrer
+fn compute_module_referer(source_url: &str, request_url: &str, policy: &str) -> Option<String> {
+    let full = || source_url.split('#').next().unwrap_or(source_url).to_string();
+    let origin = || wpt_url_origin_form(source_url).unwrap_or_default();
+    let same_origin = wpt_urls_same_origin(source_url, request_url);
+    let downgrade = wpt_referrer_is_downgrade(source_url, request_url);
+    match policy {
+        "no-referrer" => None,
+        "unsafe-url" => Some(full()),
+        "origin" => Some(origin()),
+        "same-origin" => same_origin.then(full),
+        "origin-when-cross-origin" => {
+            if same_origin {
+                Some(full())
+            } else {
+                Some(origin())
+            }
+        }
+        "strict-origin" => (!downgrade).then(origin),
+        "strict-origin-when-cross-origin" => {
+            if downgrade {
+                None
+            } else if same_origin {
+                Some(full())
+            } else {
+                Some(origin())
+            }
+        }
+        "no-referrer-when-downgrade" => (!downgrade).then(full),
+        _ => None,
+    }
+}
+
+/// s116：文档 `<meta name="referrer" content="X">` 策略提取。窄解析（属性小写双引号
+/// 形——语料 referrer 族七页同形；referrerpolicy 属性/meta http-equiv/CSP 面未建模）。
+/// 首个命中生效；无 content 或空 label → None（继承默认）。
+/// https://w3c.github.io/webappsec-referrer-policy/#parse-referrer-policy-from-header
+fn extract_meta_referrer_policy(source: &str) -> Option<String> {
+    let lower = source.to_ascii_lowercase();
+    let needle = "<meta name=\"referrer\" content=\"";
+    let start = lower.find(needle)? + needle.len();
+    let rest = &source[start..];
+    let end = rest.find('"')?;
+    let label = rest[..end].trim().to_ascii_lowercase();
+    (!label.is_empty()).then_some(label)
+}
+
+/// s116：wpt host 别名前缀剥离——`http(s)://<别名>[:port]/<path>` → `/<path>`。
+/// 别名集窄收 wpt.test + www1.wpt.test（referrer 族跨源面实际所需；**www2 不可达
+/// 保持**——dynamic-imports-fetch-error "cross-origin without CORS" 判据页依赖
+/// www2 导入必败，放行即 P→F；CORS 语义/cookies 基建另立后同批放行）。端口段只
+/// 要求纯数字（替换端口值），路径解析不消费端口。同树按 path 解析——跨源语义
+/// 仅用于 Referer origin 判定（fetcher 无 CORS 层，模块图跨源取回即成功）。非别名
+/// 域绝对 URL → None（调用方保持既有 Err 语义）。
+fn strip_wpt_host_prefix(src: &str) -> Option<String> {
+    let (scheme, rest) = src.split_once("://")?;
+    if !matches!(scheme, "http" | "https") {
+        return None;
+    }
+    let slash = rest.find('/')?;
+    let authority = &rest[..slash];
+    let host = authority.split(':').next().unwrap_or(authority);
+    matches!(host, "wpt.test" | "www1.wpt.test").then(|| rest[slash..].to_string())
+}
+
+fn wpt_data_script_fetcher(
+    wpt_root: &std::path::Path,
+    doc_referrer_policy: Option<String>,
+) -> Option<zero_webview::ScriptSourceFetcher> {
     let root = wpt_root.to_path_buf();
     Some(std::sync::Arc::new(move |page_url: &str, src: &str| {
-        let path_part = match src
-            .strip_prefix("https://wpt.test")
-            .or_else(|| src.strip_prefix("http://wpt.test"))
-        {
-            Some(path) => path.to_string(),
+        let path_part = match strip_wpt_host_prefix(src) {
+            Some(path) => path,
             None if src.starts_with("http://") || src.starts_with("https://") => {
                 return Err(format!("external script origin is not available in WPT runner: {src}"));
             }
@@ -5067,6 +5213,39 @@ fn wpt_data_script_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::S
                     .map_err(|e| format!("script fetch failed: {file_rel} ({e})"));
             }
             return Err(format!("non-scripty MIME for script fixture: {file_rel} ({mime})"));
+        }
+        // s116：referrer-checker.py 动态端点仿真（上游 wptserve handler 不在语料——
+        // `request.headers.referer` → `export const referrer = '<Referer>';`）。仅
+        // module/resources/ 面（JS 模块 checker；text-module/ css-module/ 同名端点按
+        // 数据模块内容形态回体——type:text/css 合成面挂账）。
+        // Referer 按 Fetch determine-request's-referrer：引用源 = 引用方模块 URL（本
+        // 回调首参——顶层模块图首跳即文档 URL，包装子跳即包装 URL，collect_module_deps
+        // 逐层穿 parent）；策略链 = 引用方自身交付的 Referrer-Policy 响应头（wptserve
+        // `?pipe=header(Referrer-Policy,P)` 查询模板——读父 URL query）优先，缺省继承
+        // 文档策略（<meta name=referrer> 逐页随闭包捕获），非法 label 按 spec 忽略
+        // 顺延，全缺 → spec 默认 strict-origin-when-cross-origin。
+        // https://fetch.spec.whatwg.org/#determine-request-s-referrer
+        // https://github.com/whatwg/html/pull/9210（descendant 继承判据页）
+        if clean.contains("the-script-element/module/resources/referrer-checker.py") {
+            let full_url = zero_engine::resolve_document_url(page_url, src);
+            let parent_query = page_url.split('?').nth(1).unwrap_or("");
+            let pipe_policy = parent_query.split('&').find_map(|kv| {
+                kv.strip_prefix("pipe=").and_then(|pipe| {
+                    let inner = pipe.strip_prefix("header(")?.strip_suffix(')')?;
+                    let (name, value) = inner.split_once(',')?;
+                    name.trim()
+                        .eq_ignore_ascii_case("referrer-policy")
+                        .then(|| value.trim().to_ascii_lowercase())
+                })
+            });
+            // 逐臂过滤：非法 pipe label 按 spec 忽略后顺延文档策略（整体 or+filter
+            // 会把合法 doc policy 连带丢弃——descendants invalid-policy 臂实测）。
+            let effective = pipe_policy
+                .filter(|p| is_known_referrer_policy(p))
+                .or_else(|| doc_referrer_policy.clone().filter(|p| is_known_referrer_policy(p)))
+                .unwrap_or_else(|| "strict-origin-when-cross-origin".to_string());
+            let referer = compute_module_referer(page_url, &full_url, &effective).unwrap_or_default();
+            return Ok(format!("export const referrer = '{referer}';"));
         }
         let scripty = if let Some(mime) = mime_from_pipe {
             mime_is_scripty(&mime)
@@ -5196,7 +5375,7 @@ fn service_worker_fixture_path(src: &str) -> Result<(&str, &str), String> {
             .find('/')
             .ok_or_else(|| format!("Service Worker script URL has no path: {src}"))?;
         let authority = &after_scheme[..path_index];
-        if scheme != "https" || !matches!(authority, "wpt.test" | "www1.wpt.test" | "www1.wpt.test:443") {
+        if scheme != "https" || !matches!(authority, "wpt.test" | "www1.wpt.test" | "www1.wpt.test:8444") {
             return Err(format!(
                 "external Service Worker fixture origin is not available: {src}"
             ));
@@ -5729,7 +5908,9 @@ fn wpt_data_service_worker_script_fetcher(
             let source = String::from_utf8(bytes)
                 .map_err(|_| format!("Service Worker fixture is not UTF-8: {clean}"))?
                 .replace("{{domains[www1]}}", "www1.wpt.test")
-                .replace("{{ports[https][0]}}", "443");
+                // 端口值随 apply_wpt_substitutions 主表重映射（s116——SW 注册 URL 走
+                // 共享替换产 :8444，脚本体与 origin 校验须同值防脑裂）。
+                .replace("{{ports[https][0]}}", "8444");
             if clean.ends_with("/script-tests/cache-abort.js") {
                 format!("{CACHE_ABORT_FETCH_FIXTURE}\n{source}").into_bytes()
             } else if is_service_worker_any_js(clean) {
@@ -8434,7 +8615,7 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
         // R34xx：fetch() 本地资源（2d.composite.image.* fetch+createImageBitmap 路径）。
         fetch_handler: wpt_data_fetch_handler(wpt_root),
         // R34xx（G6）：.worker.js 变体 + worker importScripts 的脚本源。
-        script_source_fetcher: wpt_data_script_fetcher(wpt_root),
+        script_source_fetcher: wpt_data_script_fetcher(wpt_root, extract_meta_referrer_policy(source)),
         service_worker_script_fetcher: wpt_data_service_worker_script_fetcher(wpt_root),
         // net-api M5-S1：websockets 用例注入 WS 宿主 factory——内嵌 fixture 端点 +
         // 宿主改写委派 default_net_ws_host 真栈（ws_fixture.rs 模块注释）。仅
@@ -8458,6 +8639,7 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     // 文件名双态语义，historical.any.js 断言非安全上下文面；webcrypto_case_uses_http_page）。
     let page_scheme = if net_api_case_uses_http_page(case_name)
         || webcrypto_case_uses_http_page(case_name)
+        || referrer_case_uses_http_page(case_name)
         || crate::testharness_page_state::page_state_case_uses_http_page(case_name)
     {
         "http"
@@ -11457,7 +11639,7 @@ mod tests {
         std::fs::create_dir_all(dir.join("sub")).unwrap();
         std::fs::write(dir.join("sub/data.json"), "{\"test\":true}").unwrap();
         std::fs::write(dir.join("sub/serve-with-content-type.py"), "# handler\n").unwrap();
-        let fetch = wpt_data_script_fetcher(&dir).unwrap();
+        let fetch = wpt_data_script_fetcher(&dir, None).unwrap();
         // 静态 .json 默认 MIME 放行（相对 + 根绝对两形态）
         assert_eq!(
             fetch("https://wpt.test/sub/page.html", "./data.json").unwrap(),
@@ -11518,7 +11700,7 @@ mod tests {
         )
         .unwrap();
         std::fs::write(dir.join("sub/serve-with-content-type.py"), "# handler\n").unwrap();
-        let fetch = wpt_data_script_fetcher(&dir).unwrap();
+        let fetch = wpt_data_script_fetcher(&dir, None).unwrap();
         let page = "https://wpt.test/sub/page.html";
         let src = |q: &str| format!("./serve-with-content-type.py?fn=w1250.js&ct={q}");
         // scripty ct 放行（charset 参数忽略——解码恒 UTF-8 lossy → 体内为替换符）。
@@ -11571,6 +11753,177 @@ mod tests {
             "module 外链须透传：{out}"
         );
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    // s116 回归钉：determine-request's-referrer 计算表——八策略臂 + 降级 + 同源
+    // 端口归一 + origin 形（权威段书写原样，显式 :80 保留）。
+    // https://fetch.spec.whatwg.org/#determine-request-s-referrer
+    #[test]
+    fn module_referer_policy_table_s116() {
+        let src = "https://wpt.test/html/a/import-referrer-checker.sub.js?name=x&pipe=header(Referrer-Policy,origin)";
+        let same = "https://wpt.test/html/a/resources/referrer-checker.py?name=x";
+        let cross = "http://www1.wpt.test:80/html/a/resources/referrer-checker.py?name=x";
+        let full = src.to_string();
+        let origin = "https://wpt.test/".to_string();
+        assert_eq!(compute_module_referer(src, same, "no-referrer"), None);
+        assert_eq!(
+            compute_module_referer(src, cross, "unsafe-url").as_deref(),
+            Some(full.as_str())
+        );
+        assert_eq!(
+            compute_module_referer(src, same, "origin").as_deref(),
+            Some(origin.as_str())
+        );
+        assert_eq!(
+            compute_module_referer(src, same, "same-origin").as_deref(),
+            Some(full.as_str())
+        );
+        assert_eq!(compute_module_referer(src, cross, "same-origin"), None);
+        assert_eq!(
+            compute_module_referer(src, same, "origin-when-cross-origin").as_deref(),
+            Some(full.as_str())
+        );
+        assert_eq!(
+            compute_module_referer(src, cross, "origin-when-cross-origin").as_deref(),
+            Some(origin.as_str())
+        );
+        // strict-origin：https 源 → http 请求 = 降级 → 无；http 源 → origin 形。
+        assert_eq!(compute_module_referer(src, cross, "strict-origin"), None);
+        let http_src = "http://wpt.test/html/a/wrap.sub.js?name=i";
+        assert_eq!(
+            compute_module_referer(http_src, cross, "strict-origin").as_deref(),
+            Some("http://wpt.test/")
+        );
+        // SWCO：https 源 → http 请求 = 降级 → 无（跨源降级优先于跨源 origin 形）。
+        assert_eq!(
+            compute_module_referer(src, cross, "strict-origin-when-cross-origin"),
+            None
+        );
+        // SWCO：非降级（http 源）跨源 → origin 形。
+        assert_eq!(
+            compute_module_referer(http_src, cross, "strict-origin-when-cross-origin").as_deref(),
+            Some("http://wpt.test/")
+        );
+        assert_eq!(
+            compute_module_referer(src, same, "strict-origin-when-cross-origin").as_deref(),
+            Some(full.as_str())
+        );
+        // SWCO：https 源 → http 请求 = 降级 → 无（降级优先于跨源 origin 形）。
+        assert_eq!(
+            compute_module_referer(src, cross, "strict-origin-when-cross-origin"),
+            None
+        );
+        assert_eq!(compute_module_referer(src, cross, "no-referrer-when-downgrade"), None);
+        assert_eq!(
+            compute_module_referer(src, same, "no-referrer-when-downgrade").as_deref(),
+            Some(full.as_str())
+        );
+        // 同源判定：缺省端口归一（wpt.test ≡ wpt.test:443）；跨 scheme 即异源。
+        assert!(wpt_urls_same_origin("https://wpt.test/a", "https://wpt.test:443/b"));
+        assert!(!wpt_urls_same_origin("https://wpt.test/a", "http://wpt.test:80/b"));
+        // origin 形：权威段书写原样（显式 :80 保留）+ "/"。
+        assert_eq!(
+            wpt_url_origin_form("http://www1.wpt.test:80/x?y").as_deref(),
+            Some("http://www1.wpt.test:80/")
+        );
+    }
+
+    // s116 回归钉：referrer-checker.py 端点仿真 + host 别名面 + meta 策略捕获 +
+    // pipe 策略链 + 默认策略回落 + wrapper body 替换。
+    #[test]
+    fn referrer_checker_endpoint_and_host_alias_s116() {
+        let dir = std::env::temp_dir().join(format!("zw-referrer-s116-{}", std::process::id()));
+        let res = dir.join("html/semantics/scripting-1/the-script-element/module/resources");
+        std::fs::create_dir_all(&res).unwrap();
+        std::fs::write(res.join("fast-module.js"), "export const marker = 'fast';").unwrap();
+        std::fs::write(
+            res.join("import-referrer-checker.sub.js"),
+            "import { referrer as r } from 'http://{{domains[www1]}}:{{ports[http][0]}}/html/semantics/scripting-1/the-script-element/module/resources/referrer-checker.py?name={{GET[name]}}';\nexport const referrer = r;",
+        )
+        .unwrap();
+
+        // ① host 别名面：www1:80 绝对 URL 同树解析（跨源语义不在 fetcher 层）。
+        let fetch = wpt_data_script_fetcher(&dir, None).unwrap();
+        assert_eq!(
+            fetch(
+                "https://wpt.test/sub/page.html",
+                "http://www1.wpt.test:80/html/semantics/scripting-1/the-script-element/module/resources/fast-module.js"
+            )
+            .unwrap(),
+            "export const marker = 'fast';"
+        );
+
+        // ② meta 策略捕获：no-referrer 文档 + 顶层直引（引用源=文档 URL）→ 空。
+        let fetch_nr = wpt_data_script_fetcher(&dir, Some("no-referrer".into())).unwrap();
+        let doc = "https://wpt.test/html/semantics/scripting-1/the-script-element/module/referrer-no-referrer.sub.html";
+        assert_eq!(
+            fetch_nr(doc, "./resources/referrer-checker.py?name=same").unwrap(),
+            "export const referrer = '';"
+        );
+
+        // ③ pipe 策略链：包装自身交付 Referrer-Policy 压文档策略 → 引用源 origin 形。
+        let wrapper_url = "https://wpt.test/html/semantics/scripting-1/the-script-element/module/resources/import-referrer-checker.sub.js?name=zz&pipe=header(Referrer-Policy,origin)";
+        assert_eq!(
+            fetch_nr(wrapper_url, "./referrer-checker.py?name=zz").unwrap(),
+            "export const referrer = 'https://wpt.test/';"
+        );
+
+        // ④ 默认策略（无 meta 无 pipe）strict-origin-when-cross-origin：www1 包装与
+        // 其子 checker 同源 → 引用源全 URL（含 query）。
+        let www1_wrapper = "http://www1.wpt.test:80/html/semantics/scripting-1/the-script-element/module/resources/import-referrer-checker.sub.js?name=rr";
+        assert_eq!(
+            fetch(www1_wrapper, "./referrer-checker.py?name=rr").unwrap(),
+            "export const referrer = 'http://www1.wpt.test:80/html/semantics/scripting-1/the-script-element/module/resources/import-referrer-checker.sub.js?name=rr';"
+        );
+
+        // ⑤ wrapper body 替换：{{domains[www1]}}/{{ports[http][0]}}/{{GET[name]}} 注入
+        //（子 spec 落 www1 + name 去重——module map 不串）。
+        let body = fetch(
+            "https://wpt.test/sub/page.html",
+            "/html/semantics/scripting-1/the-script-element/module/resources/import-referrer-checker.sub.js?name=qq",
+        )
+        .unwrap();
+        assert!(
+            body.contains("http://www1.wpt.test:8000/html/semantics/scripting-1/the-script-element/module/resources/referrer-checker.py?name=qq"),
+            "wrapper body 须替换：{body}"
+        );
+
+        // ⑦ policy 链逐臂过滤：非法 pipe label 按 spec 忽略后顺延文档策略（整体
+        // or+filter 会把合法 doc policy 连带丢弃——descendants invalid-policy 臂）。
+        let invalid_pipe_wrapper = "https://wpt.test/html/semantics/scripting-1/the-script-element/module/resources/import-referrer-checker.sub.js?name=iv&pipe=header(Referrer-Policy,invalid-policy)";
+        assert_eq!(
+            fetch_nr(invalid_pipe_wrapper, "./referrer-checker.py?name=iv").unwrap(),
+            "export const referrer = '';"
+        );
+
+        // ⑥ 降级臂：https 包装 → 绝对 http checker 子 spec（{{host}}:80 语料形——
+        // relative 子请求恒继承父 scheme，降级仅在跨 scheme 绝对 spec 出现）→ 无 Referer。
+        let https_wrapper = "https://wpt.test/html/semantics/scripting-1/the-script-element/module/resources/import-referrer-checker.sub.js?name=dn";
+        assert_eq!(
+            fetch(
+                https_wrapper,
+                "http://wpt.test:80/html/semantics/scripting-1/the-script-element/module/resources/referrer-checker.py?name=dn"
+            )
+            .unwrap(),
+            "export const referrer = '';"
+        );
+        // 非 wpt 域绝对 URL 保持既有 Err 语义。
+        assert!(fetch("https://wpt.test/sub/page.html", "http://evil.test/x.js").is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // s116 回归钉：meta referrer 策略窄解析（小写双引号形；属性序不符/缺 meta → None）。
+    #[test]
+    fn meta_referrer_policy_extract_s116() {
+        assert_eq!(
+            extract_meta_referrer_policy("<html><head><meta name=\"referrer\" content=\"no-referrer\"></head>"),
+            Some("no-referrer".to_string())
+        );
+        assert_eq!(
+            extract_meta_referrer_policy("<meta content=\"Unsafe-URL\" name=\"referrer\">"),
+            None
+        );
+        assert_eq!(extract_meta_referrer_policy("<p>no meta</p>"), None);
     }
 
     const MINI_HARNESS: &str = r#"
@@ -13074,6 +13427,221 @@ globalThis.promise_test(function() {
                 .iter()
                 .any(|r| r.name == "external prepare on reinsertion + insertion" && r.status == HarnessStatus::Pass),
             "外链 prepare 须按排队分支取源执行: {results:?}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn script_src_set_after_docwrite_empty_s117() {
+        // s117（html-semantics M2 切片 117）：doc.write 空 script——解析期空源 bail
+        // 不置 already-started 章，后设 .src 经 s109 属性臂（s117 体空性门放行空体）
+        // + connected 复核（s117 起 getter false 落 parentNode 爬升——mut-tree 新生
+        // 元素宿主快照假阴性）→ 外链执行（026 execution-timing 语义，assert_any 双
+        // 序的取源完成序形态）。
+        let root = std::env::temp_dir().join("zw-s117-docwrite-empty-src-test");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("inc1.js"), "globalThis.__log.push('e1');").unwrap();
+        let html = r##"<script src="/resources/testharness.js"></script>
+<script>globalThis.__log = [];</script>
+<script>
+document.write('<script><\/script>');
+var scripts = document.getElementsByTagName('script');
+scripts[scripts.length - 1].src = './inc1.js';
+</script>
+<script>
+globalThis.promise_test(function() {
+  return new Promise(function(resolve) { setTimeout(resolve, 50); }).then(function() {
+    assert_true(JSON.stringify(globalThis.__log) === JSON.stringify(['e1']),
+      'doc.write 空 script src 后设须执行外链: ' + globalThis.__log.join(','));
+  });
+}, 'src set on doc-written empty script');
+</script>"##;
+        let results = run_testharness_html(
+            &root,
+            "prepare-docwrite-empty.html",
+            html,
+            &mini_harness_stateful(),
+            CASE_TIMEOUT,
+        );
+        assert!(
+            results
+                .iter()
+                .any(|r| r.name == "src set on doc-written empty script" && r.status == HarnessStatus::Pass),
+            "doc.write 空 script src 后设须触发外链执行: {results:?}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn script_src_set_after_docwrite_content_no_refire_s117() {
+        // s117 对偶面：doc.write 带内容 script——写流面已执行内联体（回放重建
+        // plain wrapper 无 sel 章、换代重注册身份断链），后设 .src 按 already-started
+        // 语义不重触发（027 execution-timing 语义：s117 体空性门在 s109 属性臂拦下
+        // 非空体 sel 形）。若门失效，__log 会多出 'e2'。
+        let root = std::env::temp_dir().join("zw-s117-docwrite-content-src-test");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("inc2.js"), "globalThis.__log.push('e2');").unwrap();
+        let html = r##"<script src="/resources/testharness.js"></script>
+<script>globalThis.__log = [];</script>
+<script>
+document.write('<script>globalThis.__log.push("w1");<\/script>');
+var scripts = document.getElementsByTagName('script');
+scripts[scripts.length - 1].src = './inc2.js';
+</script>
+<script>
+globalThis.promise_test(function() {
+  return new Promise(function(resolve) { setTimeout(resolve, 50); }).then(function() {
+    assert_true(JSON.stringify(globalThis.__log) === JSON.stringify(['w1']),
+      '带内容 doc.write script src 后设不重执行: ' + globalThis.__log.join(','));
+  });
+}, 'src set on doc-written content script ignored');
+</script>"##;
+        let results = run_testharness_html(
+            &root,
+            "prepare-docwrite-content.html",
+            html,
+            &mini_harness_stateful(),
+            CASE_TIMEOUT,
+        );
+        assert!(
+            results
+                .iter()
+                .any(|r| r.name == "src set on doc-written content script ignored" && r.status == HarnessStatus::Pass),
+            "带内容 doc.write script src 后设须按 already-started 跳过: {results:?}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn script_innerhtml_moved_not_executed_s118() {
+        // s118（html-semantics M2 切片 118）：innerHTML 产物 SCRIPT already-started 章
+        // （033 execution-timing 语义）——innerHTML 写入的 inline/外链脚本即使
+        // appendChild 移入 body 也不得执行（spec prepare the script element：fragment
+        // parsing algorithm 创建的 script 元素置 already started）。容器须为标记期
+        // 元素（sel 形——033 语料同形；createElement 容器走 handle 形物化路径，
+        // 产物换 wrapper 不在本面）。章失效时 __log 会多出
+        // 'innerHTML script runs' / 'external script #1'。
+        let root = std::env::temp_dir().join("zw-s118-innerhtml-move-test");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("inc3.js"), "globalThis.__log.push('external script #1');").unwrap();
+        let html = r##"<script src="/resources/testharness.js"></script>
+<script>globalThis.__log = [];
+function zwlog(s) { globalThis.__log.push(s); }</script>
+<div id="t"></div>
+<script>
+zwlog('inline script #1');
+var d = document.getElementById('t');
+d.innerHTML = '<script>zwlog("innerHTML script runs")<\/script><script src="./inc3.js"><\/script>';
+document.body.appendChild(d.firstChild);
+document.body.appendChild(d.firstChild);
+zwlog('end script #1');
+</script>
+<script>zwlog('inline script #2');</script>
+<script>
+globalThis.promise_test(function() {
+  return new Promise(function(resolve) { setTimeout(resolve, 50); }).then(function() {
+    assert_true(JSON.stringify(globalThis.__log) === JSON.stringify(['inline script #1', 'end script #1', 'inline script #2']),
+      'innerHTML 产物移动不执行: ' + globalThis.__log.join(','));
+  });
+}, 'innerHTML scripts not executed even after move');
+</script>"##;
+        let results = run_testharness_html(
+            &root,
+            "prepare-innerhtml-move.html",
+            html,
+            &mini_harness_stateful(),
+            CASE_TIMEOUT,
+        );
+        assert!(
+            results
+                .iter()
+                .any(|r| r.name == "innerHTML scripts not executed even after move" && r.status == HarnessStatus::Pass),
+            "innerHTML 产物 SCRIPT 移动后须按 already-started 保持惰性: {results:?}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn script_location_href_javascript_evaluated_s118() {
+        // s118：location 族 javascript: URL 求值面（079 execution-timing 语义）——
+        // window.location = 'javascript:...' 不派 navigate 事件、不走 host 导航，
+        // 改跑 javascript: URL 求值（defer 微任务间接 eval）：严格序要求 eval 落
+        // 赋值同步栈之后、setTimeout 之前。门失效时体不执行（缺 'javascript: URL'）。
+        let root = std::env::temp_dir().join("zw-s118-location-js-href-test");
+        std::fs::create_dir_all(&root).unwrap();
+        let html = r##"<script src="/resources/testharness.js"></script>
+<script>globalThis.__log = [];
+function zwlog(s) { globalThis.__log.push(s); }
+zwlog('inline script #1');
+</script>
+<script>
+globalThis.promise_test(function() {
+  return new Promise(function(resolve) {
+    zwlog('handler');
+    window.location = 'javascript:zwlog("javascript: URL")';
+    setTimeout(function() { zwlog('timeout'); resolve(); }, 100);
+    zwlog('handler ends');
+  }).then(function() {
+    assert_true(JSON.stringify(globalThis.__log) === JSON.stringify(['inline script #1', 'handler', 'handler ends', 'javascript: URL', 'timeout']),
+      'location=javascript: 须求值且落 defer 序: ' + globalThis.__log.join(','));
+  });
+}, 'location=javascript: evaluated after handler stack');
+</script>"##;
+        let results = run_testharness_html(
+            &root,
+            "prepare-location-js-href.html",
+            html,
+            &mini_harness_stateful(),
+            CASE_TIMEOUT,
+        );
+        assert!(
+            results
+                .iter()
+                .any(|r| r.name == "location=javascript: evaluated after handler stack"
+                    && r.status == HarnessStatus::Pass),
+            "location= javascript: URL 须按求值步骤 defer 执行: {results:?}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn script_location_replace_javascript_evaluated_s118() {
+        // s118：location.replace('javascript:...') 求值面（028 execution-timing 语义，
+        // assert_any 双序）——外链脚本 #2 与 defer eval 的先后两种序都合法，体必须
+        // 执行（门失效时 'JS URL' 缺席）。
+        let root = std::env::temp_dir().join("zw-s118-location-js-replace-test");
+        std::fs::create_dir_all(&root).unwrap();
+        let html = r##"<script src="/resources/testharness.js"></script>
+<script>globalThis.__log = [];
+function zwlog(s) { globalThis.__log.push(s); }
+</script>
+<script>
+globalThis.promise_test(function() {
+  return new Promise(function(resolve) {
+    zwlog('1');
+    window.location.replace('javascript:zwlog("JS URL")');
+    zwlog('end1');
+    setTimeout(resolve, 100);
+  }).then(function() {
+    var j = JSON.stringify(globalThis.__log);
+    assert_true(j === JSON.stringify(['1', 'end1', 'JS URL', '2']) || j === JSON.stringify(['1', 'end1', '2', 'JS URL']),
+      'replace javascript: assert_any 双序: ' + globalThis.__log.join(','));
+  });
+}, 'location.replace javascript: evaluated');
+</script>
+<script>zwlog('2');</script>"##;
+        let results = run_testharness_html(
+            &root,
+            "prepare-location-js-replace.html",
+            html,
+            &mini_harness_stateful(),
+            CASE_TIMEOUT,
+        );
+        assert!(
+            results
+                .iter()
+                .any(|r| r.name == "location.replace javascript: evaluated" && r.status == HarnessStatus::Pass),
+            "location.replace javascript: URL 须按求值步骤执行: {results:?}"
         );
         let _ = std::fs::remove_dir_all(&root);
     }
