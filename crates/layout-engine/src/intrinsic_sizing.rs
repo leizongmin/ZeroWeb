@@ -1885,7 +1885,11 @@ fn text_max_width_walk(
 /// - 其余 inline 元素（span/ruby/em 等）递归；br 切段取最宽段（R1747 同语义）。
 ///
 /// 字体度量取容器自身（嵌套异字体后代近似，R4043 已把该域排除出 stored IFC）。
-fn dom_inline_text_max_width(box_node: &LayoutBox, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) -> f32 {
+pub(crate) fn dom_inline_text_max_width(
+    box_node: &LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> f32 {
     let Some(id) = box_node.node_id else { return 0.0 };
     let Some(style) = styles.get(&id) else { return 0.0 };
     let (font_size, _line_height) = crate::inline::resolve_font_metrics(Some(style));
@@ -3528,6 +3532,73 @@ AAAA</div></body></html>"#,
         </body></html>"#;
         let w = compute_intrinsic(html, "c").expect("flex row intrinsic");
         assert!((w - 80.0).abs() < 1.0, "expected ~80px (30+50), got {}", w);
+    }
+
+    // ── t-p114（css-flexbox-1 §4.1 flex base size + css-display-3 §2.4 atomic inline）：
+    // flex item 内的 atomic inline（inline-block 家族；含被 inline 元素包裹的形态）
+    // 是 in-flow 内容（CSS2 §9.2.1.1），其 max-content 必须传播进 item 主轴尺寸。
+    // R4941/R2156 slice19 把该原子提升为 taffy Absolute 子 → content-based 尺寸漏计，
+    // item 塌 0 宽、文本在 0 宽约束下竖排。live 驱动案：github.com/login 页脚
+    // `<li><cookie-consent-link><button>`（0×36/0×108 竖排）；chromium 对照水平单行。
+    // 断言走完整布局的 li 盒宽（缺陷在 taffy flex base sizing，固有测量函数测不出）。
+
+    /// 直属 atomic inline（无 inline 包裹）——对照基线。
+    #[test]
+    fn p114_flex_item_direct_atomic_inline_contributes() {
+        let html = r#"<html><body style="margin:0">
+          <ul id="ul" style="display:flex;list-style:none;margin:0;padding:0;font:20px/1 Ahem">
+            <li id="li"><span id="atomic" style="display:inline-block">ab</span></li>
+          </ul>
+        </body></html>"#;
+        let (li, atomic) = compute_li_and_atomic(html);
+        assert!(
+            (li.0 - atomic.0).abs() < 1.0 && li.1 <= li.0 + 1.0,
+            "li must be as wide as the atomic inline ({:?} vs {:?}) and single-line",
+            li,
+            atomic
+        );
+    }
+
+    /// inline 元素包裹 atomic inline（live 页脚形态的通用化：span>button ≡
+    /// cookie-consent-link>button）——包裹层 + 提升不得吞掉原子贡献。
+    #[test]
+    fn p114_flex_item_inline_wrapped_atomic_contributes() {
+        let html = r#"<html><body style="margin:0">
+          <ul id="ul" style="display:flex;list-style:none;margin:0;padding:0;font:20px/1 Ahem">
+            <li id="li"><span><button id="atomic" type="button">ab</button></span></li>
+          </ul>
+        </body></html>"#;
+        let (li, atomic) = compute_li_and_atomic(html);
+        assert!(
+            atomic.0 > 0.5 && (li.0 - atomic.0).abs() < 1.0 && li.1 <= li.0 + 1.0,
+            "li must be as wide as the wrapped atomic button ({:?} vs {:?}) and single-line",
+            li,
+            atomic
+        );
+    }
+
+    /// 完整布局后取 li 与原子行内级盒的 border-box (宽, 高)。
+    fn compute_li_and_atomic(html: &str) -> ((f32, f32), (f32, f32)) {
+        let doc = zero_dom::parse_html(html);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find(id: &str, doc: &zero_dom::Document, b: &LayoutBox) -> Option<(f32, f32)> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let NodeKind::Element(e) = &n.kind
+                && e.get_attribute("id").as_deref() == Some(id)
+            {
+                return Some((b.width, b.height));
+            }
+            b.children.iter().find_map(|c| find(id, doc, c))
+        }
+        (
+            find("li", &doc, &result.root).expect("li box"),
+            find("atomic", &doc, &result.root).expect("atomic box"),
+        )
     }
 
     #[test]

@@ -396,6 +396,20 @@ const REFTESTS: &[InlineReftestDef] = &[
         ref_html: "<html><body style=\"margin:0\"><ul style=\"display:flex;list-style:none;margin:0;padding:0;font:400 5.79px/80px Ahem;color:#fff\"><li style=\"background:red;width:128px\"><span>Contact GitHub Support</span></li></ul></body></html>",
         is_match: true,
     },
+    // t-p114（CSS Flexbox §4.1 flex base size + CSS2 §9.2.1.1 atomic inline in-flow）：
+    // R4941/R2156 slice19 把 inline 元素包裹的 atomic inline（inline-block 家族 / 按钮等
+    // 表单控件）提升为 taffy Absolute 子——taffy content-based 尺寸排除 abspos → 横向
+    // flex item（li）主轴尺寸漏计原子宽而塌 0。塌缩 li 又成为提升原子 abspos shrink-to-fit
+    // 的可用宽约束：多词文本按钮在 0 宽下折成多行（live 实证 github.com/login 页脚
+    // "Manage cookies" 竖排 51×36；chromium 对照单行）。本例 Ahem 40px 三词按钮放大
+    // 差异 footprint（改前 ≥3 行红块远超 Layout 1% 阈值；修复后与块级 ref 单行一致）。
+    InlineReftestDef {
+        id: "css-flexbox/flex-item-inline-wrapped-atomic-intrinsic-zw-001",
+        category: ReftestCategory::Layout,
+        test_html: "<html><body style=\"margin:0\"><ul style=\"display:flex;list-style:none;margin:0;padding:0;width:500px;height:260px;font:40px/40px Ahem\"><li><span><button style=\"border:0;padding:0;background:red;color:#fff\">ab cd ef</button></span></li></ul></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><ul style=\"list-style:none;margin:0;padding:0;width:500px;height:260px;font:40px/40px Ahem\"><li><span><button style=\"border:0;padding:0;background:red;color:#fff\">ab cd ef</button></span></li></ul></body></html>",
+        is_match: true,
+    },
 ];
 
 pub fn reftests() -> &'static [InlineReftestDef] {
