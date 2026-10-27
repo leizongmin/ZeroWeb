@@ -2,9 +2,50 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 114 施工收口（write 面轮：execution-timing 096/142 翻绿，scripting-1 **865P/140F/37T→867P/138F/37T**，**+2 行零 P→非P**——全量 testharness 套件 A/B 归一 diff 唯一真实变化即 096/142 F→P，另两处异常定性为负载 flake（focus 3 P→T 定向重跑 80P/0T 复原；modulepreload 第三行基线即 2F+1T）；两刀（单文件 shim part06.js write 面）：①defer 外链改道——立即 fetch 挂 s110 在飞计数、代码入 `__zwDocWriteDeferQueue` FIFO、排水投 `__zwSchedRegister('defer')`（runner interactive 后排水同任务派 DCL，spec the-end 序；慢源迟到补执行；nomodule/s113 classify 门保持，非 runner 环境维持阻塞链）②xlink:href 回退——src 读空回退读 `xlink:href`、副本补 `setAttribute('src')` 走既有 fetch 链零改动；143（write 注入 `</script>` 关外层 SVG script，主解析器栈耦合）挂账不动；无 Rust/依赖变更，下一步 s115 候选：143 深层面 / execution-timing 余 F 定刀；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 115 施工收口（script charset 响应解码轮：charset 族 **17F 翻绿**，scripting-1 **867P/138F/37T→884P/121F/37T**，全量套件 A/B 6545P/1220F/112T→**6565P/1202F/111T 零 P→非P**——script-charset-01 6P + module/charset-01 6P + charset-02 3P + charset-03 4P；根因：`serve-with-content-type.py` 动态端点不在语料 pull 面（classic 文件读落空透传外链宿主取回 Err；模块面 s107 仿真被 JSON 意图门收窄非 JSON ct → Err）——三刀（runner testharness.rs + Cargo.toml +encoding_rs 工作区既有）：①共享查询解析 helper ②fetcher scripty 意图分支（非 JSON 而 scripty → 交付 fn 文件**恒 UTF-8 lossy**——模块 spec 恒 UTF-8 charset 三忽略、BOM 不嗅探体内 U+FEFF 即语义）③inline classic 仿真分支（**非 module 型**——首版乌龙未辨 module 令 charset 感知内联反向翻红 module 面已修正为透传；解码序 BOM > ct charset 参数 > charset 属性 > UTF-8，encoding_rs）；挂账 script-charset-02（文档编码 windows-1250 基建）/03（运行期 charset 属性需 fetch 桥带提示）/css·text-module charset 5T（待决须用户拍板）；下一步 s116 候选：execution-timing 余 F 定刀 / 承袭挂账序；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-27 M2 切片 114 施工收口，write 面 defer 改道 + xlink:href 回退轮）**：
+> **▶ 当前状态（2026-10-28 M2 切片 115 施工收口，script charset 响应解码轮）**：
+> **入场定谳**：charset 族五组失败三根因——①`serve-with-content-type.py` 动态
+> 端点不在语料 pull 面：classic 面文件读落空→整段透传外链→宿主取回 Err 不执行
+>（script-charset-01 全 6F）；模块面 s107 仿真被 JSON 意图门收窄，非 JSON ct →
+> Err 网络错误（module/charset-01/02/03 全 11F）。②文档编码 windows-1250 未建模
+>（script-charset-02 3F）。③运行期 charset 属性变脸无元素上下文（03 1F）。
+> ②③挂账；css/text-module charset 5T 属待决（须用户拍板）。
+> **spec 分流**：classic 解码序 BOM > ct charset 参数 > charset 属性 > 文档编码
+>（runner 恒 UTF-8）——parser classic 走 inline_local_scripts（元素上下文在位）；
+> module 恒 UTF-8（charset 参数/属性/BOM 三忽略——charset-01 判据即
+> `assert_not_equals` mojibake；charset-02 UTF-8 BOM 体内 U+FEFF 为 JS 空白照常
+> 执行、UTF-16 乱码语法错）——模块走 wpt_data_script_fetcher。
+> **本轮三刀**：①共享查询解析 helper（fn/ct 百分号解码）②fetcher scripty 意图
+> 分支（非 JSON 而 scripty → 交付 fn 文件恒 UTF-8 lossy，BOM 不嗅探；非 scripty
+> 非 JSON → Err s107 口径）③inline classic 仿真（非 module 型 + 文件名匹配；
+> decode_classic_script_bytes 四级解码序）。**首版乌龙**：inline 未辨 module——
+> module 外链被 charset 感知内联（charset-01 余 4F 反向翻红、charset-02
+> 1F→2F：BOM 嗅探令 UTF-16 模块照常执行）；修正 module 整段透传（ASCII 剥白 +
+> ASCII-ci 本地判定，不扩 engine 公共面）。
+> **验证**：runner bin **240/0**（+2 钉）。charset 族定向：四页 **17F 全翻绿**
+>（script-01 6P / module-01 6P / module-02 3P / module-03 4P）；挂账三组形态
+> 不动。**全量套件 A/B**（vs s114 基线）：6545P/1220F/112T→6565P/1202F/111T，
+> 归一 diff = charset 17F→P + focus flake 复原（1T+77P→80P）+ modulepreload
+> 假行消退（3F+1T→2F+1T 常态，与 s113 基线/定向重跑一致）——**零 P→非P 成立**。
+> fmt + clippy（runner --all-targets -D warnings）过。渲染面零依赖——
+> reftest/product-smoke 未跑。账本见
+> [evidence/2026-10-28-m2s115-script-charset-decode.md](html-semantics-compat/evidence/2026-10-28-m2s115-script-charset-decode.md)。
+> **范围**：runner testharness.rs + Cargo.toml（encoding_rs workspace 既有）；
+> engine/webview/语料零变更；语料不可改维持。
+> **挂账**：script-charset-02（文档编码 windows-1250——corpus loader 编码面
+> 基建）；script-charset-03（运行期 charset 属性——shim fetch 桥带提示，跨界
+> 契约）；css/text-module charset 5T（待决须用户拍板）；classic 运行时取回无
+> charset 上下文恒 UTF-8 近似（语料无此形）。承袭：143 write 注入 `</script>`、
+> defer 多写入完成序近似、063 Timeout、non-external-no-import、parse-error 族、
+> http-accept-header、referrer-policies、dynamic import() with 透传、classic
+> 外链 SRI、collect 账本打包重构、接口对象基建面、FIXME 组、/tmp/zw-hb*.txt
+> 插桩来源待查；**待决（须用户拍板）**：css/text 数据模块语料资源缺失。
+> **下一步**：s116 入场定刀位（候选：execution-timing 余 F 定刀 /
+> dynamic-import credentials 12F / referrer-policy 族 9F / 承袭挂账序）。
+> **切片间隙**：本轮 runner 取回/内联面；下一候选同流同面，间隙开放。
+>
+> **▶ 上轮状态（2026-10-27 M2 切片 114 施工收口，write 面 defer 改道 + xlink:href 回退轮——其下一步 s115 charset 族已由 s115 收口，见上）**：
 > **入场定谳**：三候选各 1F——096 write defer 外链走「取回即执行」阻塞链早执行
 >（got `[#1, external#1, #2]`）；142 write 只读 `src`，SVG xlink:href 写入形外链
 > 不执行（缺 `external script #1`）；143 write 注入多余 `</script>` 须关外层 SVG
