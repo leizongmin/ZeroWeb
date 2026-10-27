@@ -45,8 +45,43 @@ pub(crate) fn adjust_float_positions(
     doc: &zero_dom::Document,
     styles: &HashMap<NodeId, ComputedStyle>,
 ) {
+    // R5307：子树含 float 旗标预扫——递归循环的嵌套 float 收集器按旗标 O(1) 跳过
+    // 无 float 子树，避免每层重复下探使纯块级文档付出 O(n·depth) 重遍历（bench
+    // block_layout_1000/deep_nesting 域）。旗标只做保守裁剪：收集器在无 float 子树
+    // 本就返回空，跳过与收集逐值等价。全树无 float 时只做单趟布尔预扫不建表
+    //（None = 收集器全跳过），无分配零开销路径。
     let content_abs_y = box_node.y + box_node.content_y;
-    adjust_float_positions_with_context(box_node, content_abs_y, 0.0, 0.0, &[], doc, styles);
+    let mut flags: HashMap<NodeId, bool> = HashMap::new();
+    let float_subtrees = if tree_has_float(box_node) {
+        collect_float_subtree_flags(box_node, &mut flags);
+        Some(&flags)
+    } else {
+        None
+    };
+    adjust_float_positions_with_context(box_node, content_abs_y, 0.0, 0.0, &[], doc, styles, float_subtrees);
+}
+
+/// R5307：全树是否含浮动元素（含自身），布尔单趟——无 float 文档零分配快速路径。
+fn tree_has_float(node: &LayoutBox) -> bool {
+    if !matches!(node.float, FloatValue::None) {
+        return true;
+    }
+    node.children.iter().any(tree_has_float)
+}
+
+/// R5307：标记每棵子树是否含浮动元素（含自身）。无 id 匿名盒不入表（查询侧对
+/// 无 id 子保守回退为收集）。
+fn collect_float_subtree_flags(node: &LayoutBox, flags: &mut HashMap<NodeId, bool>) -> bool {
+    let mut has = !matches!(node.float, FloatValue::None);
+    for c in &node.children {
+        if collect_float_subtree_flags(c, flags) {
+            has = true;
+        }
+    }
+    if let Some(id) = node.node_id {
+        flags.insert(id, has);
+    }
+    has
 }
 
 /// R1733：inline-block（atomic inline-level BFC，`is_flow_root && !is_block_level`）float 排斥
@@ -1598,6 +1633,62 @@ fn nested_float_bottoms(child: &LayoutBox, child_border_y: f32, outer_content_y_
     (left, right)
 }
 
+/// R5307：递归收集非 BFC 后代中的浮动元素几何（[`FloatGeom`]，x/y 为外层容器
+/// content-box 相对；y 为 border-box 顶、高含 margin_bottom，与 `float_geometries`
+/// 同约定）。
+///
+/// CSS §9.5.1：同 BFC 上下文内 float 不得与更早 float 重叠。`float_geometries` 仅
+/// 收集直接 float 子，嵌套在非 BFC wrapper 内的 float 对兄弟子树的 float 不可见 →
+/// 兄弟块内的后继 float 与其叠压（position-absolute-dynamic-relayout-004：float2
+/// 落 y=0 与 wrapper 内 float1 全叠，chromium 须落到 float1 底下方）。与
+/// [`nested_float_bottoms`] 同帧约定与 BFC 边界（BFC 后代独立上下文，停止递归），
+/// 供递归透传把嵌套 float 并入后继兄弟的继承带集（earliest-fit 带试探避开）。
+/// 注：[`FloatGeom`] 不含 margin_top，带顶以 border-box 顶近似（mt>0 时带略窄；
+/// x 区间为 margin-box 精确）。
+/// https://www.w3.org/TR/CSS22/visuren.html#float-position
+fn nested_float_geoms(
+    child: &LayoutBox,
+    child_border_x: f32,
+    child_border_y: f32,
+    outer_content_y_offset: f32,
+) -> Vec<FloatGeom> {
+    use zero_css_parser::values::FloatValue;
+    let mut geoms = Vec::new();
+    // 下降基点：child 的 content-box 原点（帧约定同 [`nested_float_bottoms`]，
+    // X 同理：content-rel 模式下 child.x/y 为外层 content-box 相对，加 frame 分量；
+    // border-rel 兼容模式 child x/y 已含 frame，不重复加）。
+    let (child_content_x, child_content_y) = if *FLOAT_CLAMP_CONTENT_REL {
+        (
+            child_border_x + child.border_left + child.padding_left,
+            child_border_y + child.border_top + child.padding_top,
+        )
+    } else {
+        (child_border_x, child_border_y)
+    };
+    for c in &child.children {
+        if c.is_absolute || c.is_fixed {
+            continue;
+        }
+        let (c_border_x, c_border_y) = (child_content_x + c.x, child_content_y + c.y);
+        if !matches!(c.float, FloatValue::None) {
+            geoms.push((
+                c.float.clone(),
+                c_border_x,
+                c_border_y - outer_content_y_offset,
+                c.width,
+                c.height + c.margin_bottom,
+                c.margin_right,
+                c.margin_left,
+            ));
+        } else if !crate::margin_collapse::establishes_bfc(c) {
+            // 非 BFC 后代：其内浮动与外层同 BFC，继续递归收集。
+            geoms.extend(nested_float_geoms(c, c_border_x, c_border_y, outer_content_y_offset));
+        }
+        // BFC 后代：独立浮动上下文，停止递归。
+    }
+    geoms
+}
+
 /// R5210（CSS2 §8.3.1 × §9.5.2）：首流内子链的 clear 阻断折叠值重解析。
 /// 自 `box_node` 起沿「父↔首流内子」可折叠对下行，收集各环 declared mt 的折叠值；
 /// 返回 `Some((folded, break_mt))` = 链上存在 clear 阻断点（阻断点 mt 留本级、
@@ -1657,6 +1748,7 @@ static FORCED_CLEAR_ABSORB: std::sync::LazyLock<bool> =
 static FLOAT_EARLIEST_FIT: std::sync::LazyLock<bool> =
     std::sync::LazyLock::new(|| std::env::var("ZW_FLOAT_EARLIEST_FIT").as_deref() != Ok("0"));
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn adjust_float_positions_with_context(
     box_node: &mut LayoutBox,
     box_content_abs_y: f32,
@@ -1669,6 +1761,9 @@ pub(crate) fn adjust_float_positions_with_context(
     inherited_floats: &[FloatGeom],
     doc: &zero_dom::Document,
     styles: &HashMap<NodeId, ComputedStyle>,
+    // R5307：子树含 float 旗标表（[`adjust_float_positions`] 入口预扫）；`None` =
+    // 全树无 float（布尔单趟判定），收集器全跳过。
+    float_subtrees: Option<&HashMap<NodeId, bool>>,
 ) {
     use zero_css_parser::values::ClearValue;
     use zero_css_parser::values::FloatValue;
@@ -1799,7 +1894,25 @@ pub(crate) fn adjust_float_positions_with_context(
     let mut float_taffy_y: Vec<(usize, f32, f32)> = Vec::new(); // (index, taffy_y, outer_height)
     // R5214：已放置 float 的 margin-box 带记录（is_right, margin 左缘, margin 右缘,
     // 带顶, 带底），earliest-fit 带试探用。kill-switch 关闭时不 push，仅空 Vec。
-    let mut placed_bands: Vec<(bool, f32, f32, f32, f32)> = Vec::new();
+    // R5307：以前序同上下文 inherited float 带初始化（§9.5.1 float 不得与更早 float
+    // 重叠）——嵌套非 BFC 兄弟块内的 float 收到的 inherited 带此前不参与落位试探，
+    // 放不进 inherited float 旁时仍从 y=0 落位叠压。帧换算：inherited geom 为本容器
+    // border-box 帧，带集为 content 帧（减 content_y_offset）；x 区间 margin-box
+    //（x−ml, x+w+mr，同下方 placed push 约定）。带顶以 geom border-box 顶近似
+    //（FloatGeom 无 margin_top，mt>0 时带略窄，见 nested_float_geoms 注）。
+    // https://www.w3.org/TR/CSS22/visuren.html#float-position
+    let mut placed_bands: Vec<(bool, f32, f32, f32, f32)> = inherited_floats
+        .iter()
+        .map(|(d, fx, fy, fw, fh, fmr, fml)| {
+            (
+                matches!(d, FloatValue::Right),
+                *fx - *fml,
+                *fx + *fw + *fmr,
+                *fy - content_y_offset,
+                *fy - content_y_offset + *fh,
+            )
+        })
+        .collect();
 
     for (idx, child) in box_node.children.iter_mut().enumerate() {
         // 跳过绝对定位和 fixed 元素
@@ -2068,23 +2181,54 @@ pub(crate) fn adjust_float_positions_with_context(
         // float 期望 (100,6)：silver 底 6 带 beside blue，非行底 20）。
         // 带记录 = margin-box（x−ml, x+w+mr, top, bottom）；零高度 float 带底==带顶
         // 恒不相交、不约束后续（旧行模型消耗行宽，差异记 corpus 仲裁）。
+        // R5307 墙模型（§9.5.1 规则 1/2/3）：带可来自 inherited 透传（含外层
+        // containing block 外的 float，x 区间可负/超容器），区间墙不再默认钳容器宽——
+        // 左系 float 左墙锚容器左缘（规则 1），右墙仅当左侧确有相交左系带（规则 2
+        // 「another left-floating box to its left」）时取容器右缘，否则无墙、仅受相交
+        // 右系带左缘约束（规则 3，可溢出容器右缘：floats-rule3-outside-left-001 蓝
+        // 425 宽入 400 容器贴 (0,0)，右系带 450..500 不相交右缘 425）；右系 float
+        // 镜像（右墙锚容器右缘=规则 1、有相交右系带时左墙钳容器左缘=规则 2 镜像、
+        // 相交左系带右缘无 0 钳=规则 3 镜像：floats-rule3-outside-right-001 蓝
+        // 425 宽 x=−25 越容器左缘）。旧行为（双墙恒容器宽）下这些案被误判放不下
+        // 而下移。https://www.w3.org/TR/CSS22/visuren.html#float-position
         let earliest_fit = if *FLOAT_EARLIEST_FIT {
             let mut band_y = line_y;
             let mut resolved: Option<(f32, f32)> = None; // (左缘, 右缘)
+            let is_right_float = matches!(child.float, FloatValue::Right);
             for _ in 0..(placed_bands.len() + 2) {
-                let mut left_edge = 0.0f32;
-                let mut right_edge = container_width;
+                // 相交带联合墙：左系带右缘最大值 / 右系带左缘最小值（±∞ 无相交）。
+                let mut left_wall = f32::NEG_INFINITY;
+                let mut right_wall = f32::INFINITY;
+                let mut has_left_neighbor = false;
+                let mut has_right_neighbor = false;
                 for b in &placed_bands {
                     if b.3 < band_y + child_outer_height && band_y < b.4 {
                         if b.0 {
                             // 右系 float：其 margin 左缘（b.1）收紧区间右界。
-                            right_edge = right_edge.min(b.1);
+                            has_right_neighbor = true;
+                            right_wall = right_wall.min(b.1);
                         } else {
                             // 左系 float：其 margin 右缘（b.2）收紧区间左界。
-                            left_edge = left_edge.max(b.2);
+                            has_left_neighbor = true;
+                            left_wall = left_wall.max(b.2);
                         }
                     }
                 }
+                let (left_edge, right_edge) = if is_right_float {
+                    (
+                        left_wall.max(if has_right_neighbor { 0.0 } else { f32::NEG_INFINITY }),
+                        container_width.min(right_wall),
+                    )
+                } else {
+                    (
+                        left_wall.max(0.0),
+                        right_wall.min(if has_left_neighbor {
+                            container_width
+                        } else {
+                            f32::INFINITY
+                        }),
+                    )
+                };
                 if child_outer_width <= (right_edge - left_edge).max(0.0) + 0.5 {
                     resolved = Some((left_edge, right_edge));
                     break;
@@ -2149,6 +2293,9 @@ pub(crate) fn adjust_float_positions_with_context(
             }
         } else {
             // 检查当前行是否有足够空间放置此浮动元素
+            // FIXME: 行模型（earliest-fit kill-switch 回退路径）无 inherited 带集——
+            // R5307 带初始化仅earliest-fit 路径消费，回退下嵌套兄弟块内 float 仍可能与
+            // 同上下文前序 float 叠压（默认配置 earliest-fit 开，不影响 corpus）。
             let available_width = container_width - left_used_width - right_used_width;
             if child_outer_width > available_width && line_max_height > 0.0 {
                 line_y += line_max_height;
@@ -2306,21 +2453,13 @@ pub(crate) fn adjust_float_positions_with_context(
             )
         })
         .collect();
-    // R1619 Slice 2：合并祖先 float（已在本容器 border-box 帧）与自身 float，供 BFC 排斥段
-    //（块内）与递归透传（块外）使用——使嵌套在非 BFC 后代内的 BFC 能避开祖先 float。
+    // R1619 Slice 2：祖先 float（已在本容器 border-box 帧）供 BFC 排斥段（块内）
+    // 与递归透传（块外）使用——使嵌套在非 BFC 后代内的 BFC 能避开祖先 float。
     // env ZW_NESTED_BFC_FLOAT_AVOID=0 关闭（kill-switch，default-on）。
+    // （R5307 起透传改在循环内按文档序过滤合并，见 child_inherited。）
     let nested_avoid_on = std::env::var("ZW_NESTED_BFC_FLOAT_AVOID").as_deref() != Ok("0");
     // R5217 margin-aware 钉位总开关，循环外取一次（热路径逐对 env 查询有可测开销）。
     let margin_solve_on = std::env::var("ZW_BFC_MARGIN_SOLVE").as_deref() != Ok("0");
-    let all_floats: Vec<FloatGeom> = if nested_avoid_on && !inherited_floats.is_empty() {
-        inherited_floats
-            .iter()
-            .chain(float_geometries.iter())
-            .cloned()
-            .collect()
-    } else {
-        float_geometries.clone()
-    };
     // R5221：下绕 BFC 的流游标修正（chromium 交错布局语义，007 探针定谳）。Phase 1
     // 用 BFC 避让**前**的流位放置后继 float 与兄弟预位；auto 宽 BFC 在 Phase 2 下绕
     // 到 float 底后其真实底边下移，后继 float 的流位置 ≥ 该底（007：float2 从
@@ -2341,8 +2480,8 @@ pub(crate) fn adjust_float_positions_with_context(
         let mut nested_left_bottom: f32 = 0.0;
         let mut nested_right_bottom: f32 = 0.0;
 
-        // float_geometries / all_floats 已在 if 块外（函数作用域）定义，使 BFC 排斥段
-        //（块内）与递归透传（块外）都能访问。
+        // float_geometries 已在 if 块外（函数作用域）定义，使 BFC 排斥段（块内）
+        // 与递归透传（块外）都能访问。
 
         // R1369：预计算每个子是否有「后续 in-flow block 同胞」（definite-width BFC 推到 float
         // 下方时，若有后续 block 同胞会留空隙/错位 → 仅无后续同胞时才安全推下）。
@@ -3578,23 +3717,53 @@ pub(crate) fn adjust_float_positions_with_context(
     // 位移后续兄弟。box_node.had_clearance 默认 false（literal/Default 初始化）。
 
     // 递归处理子容器
+    // R5307：前序非 BFC 兄弟子树内嵌套 float 的同上下文透传累加器（§9.5：同 BFC
+    // 上下文内后继 float/兄弟子树须避开更早 float）。递归循环内边递归边收集——子树
+    // 内 float 的最终位由其自身 walk 定谳，须递归返回后读取才权威；收集结果只并入
+    // **后继**兄弟的继承上下文（R5160 文档顺序原则：更早子不被更晚 float 约束）。
+    // 底边并入 left_ctx/right_ctx（gate 开时 R1392 已按 taffy 期位置并入 active 底，
+    // 此处按定谳位置 max 补齐，幂等）；带集并入 child_inherited（此前嵌套 float 带
+    // 从不透传，兄弟块内 float 落位试探看不到 → position-absolute-dynamic-relayout-004）。
+    // https://www.w3.org/TR/CSS22/visuren.html#float-position
+    let mut nested_left_acc = 0.0f32;
+    let mut nested_right_acc = 0.0f32;
+    let mut nested_geoms_acc: Vec<FloatGeom> = Vec::new();
     for (idx, child) in box_node.children.iter_mut().enumerate() {
         let (left_ctx, right_ctx) = child_float_contexts
             .get(idx)
             .copied()
             .unwrap_or((inherited_left_bottom, inherited_right_bottom));
+        let left_ctx = left_ctx.max(nested_left_acc);
+        let right_ctx = right_ctx.max(nested_right_acc);
         let child_content_abs_y = box_content_abs_y + child.y + child.content_y;
         if crate::margin_collapse::establishes_bfc(child) {
             // BFC 子：独立浮动上下文，祖先 float 不透传。
-            adjust_float_positions_with_context(child, child_content_abs_y, 0.0, 0.0, &[], doc, styles);
+            adjust_float_positions_with_context(child, child_content_abs_y, 0.0, 0.0, &[], doc, styles, float_subtrees);
         } else {
-            // 非 BFC 子：其内 float 与外层同 BFC 上下文。R1619 Slice 2 透传 all_floats
-            //（祖先 + 自身）到子 border-box 帧（减 child.x/child.y），使嵌套 BFC 后代能避开外层 float。
-            let child_inherited: Vec<FloatGeom> = if nested_avoid_on && !all_floats.is_empty() {
-                // all_floats 借用 box_node.children；先取出 child 偏移再 map（避免与 child mut 借用冲突）。
+            // 非 BFC 子：其内 float 与外层同 BFC 上下文。R1619 Slice 2 透传祖先带 +
+            // R5307 文档序在前的直接 float 带 + 前序兄弟嵌套 float 带（nested_geoms_acc，
+            // 递归返回后收集，恒文档序在前）到子 border-box 帧（减 child.x/child.y），使
+            // 嵌套 BFC 后代能避开外层 float、兄弟块内 float 能避开前序 float。直接 float
+            // 带按 R5160 文档序过滤（R5307：带集自 R5307 起约束嵌套 walk 的 float 落位，
+            // 后序 float 带漏进前序子会把前序子树内 float 误推到其下方——
+            // position-absolute-dynamic-relayout 结构里 wrapper 内 float1 被后序 float2
+            // 带顶到 50 实证）。
+            let has_prior_floats = !inherited_floats.is_empty()
+                || !nested_geoms_acc.is_empty()
+                || float_child_indices.iter().any(|ci| *ci < idx);
+            let child_inherited: Vec<FloatGeom> = if nested_avoid_on && has_prior_floats {
+                // float_geometries 借用 box_node.children；先取出 child 偏移再 map（避免与 child mut 借用冲突）。
                 let (cx, cy) = (child.x, child.y);
-                all_floats
+                inherited_floats
                     .iter()
+                    .chain(
+                        float_geometries
+                            .iter()
+                            .zip(float_child_indices.iter())
+                            .filter(|(_, ci)| **ci < idx)
+                            .map(|(g, _)| g),
+                    )
+                    .chain(nested_geoms_acc.iter())
                     .map(|(d, fx, fy, w, h, mr, fml)| (d.clone(), fx - cx, fy - cy, *w, *h, *mr, *fml))
                     .collect()
             } else {
@@ -3608,7 +3777,24 @@ pub(crate) fn adjust_float_positions_with_context(
                 &child_inherited,
                 doc,
                 styles,
+                float_subtrees,
             );
+        }
+        // 递归定谳后收集该子非 BFC 子树内的嵌套 float（BFC/float/定位子独立上下文
+        // 或外溢隔离，不入累加器；帧约定同 nested_float_bottoms/nested_float_geoms）。
+        // R5307 性能门：无 float 子树跳过（旗标预扫；收集器在无 float 子树本就返回空，
+        // 跳过与收集逐值等价）。无 id 匿名盒查不到旗标，保守回退为收集。
+        if !child.is_absolute
+            && !child.is_fixed
+            && matches!(child.float, FloatValue::None)
+            && !crate::margin_collapse::establishes_bfc(child)
+            && float_subtrees.is_some_and(|m| child.node_id.is_none_or(|id| m.get(&id).copied().unwrap_or(true)))
+        {
+            let outer_content_y_offset = if clamp_content_rel { 0.0 } else { content_y_offset };
+            let (nl, nr) = nested_float_bottoms(child, child.y, outer_content_y_offset);
+            nested_left_acc = nested_left_acc.max(nl);
+            nested_right_acc = nested_right_acc.max(nr);
+            nested_geoms_acc.extend(nested_float_geoms(child, child.x, child.y, outer_content_y_offset));
         }
     }
 
