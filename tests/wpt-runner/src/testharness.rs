@@ -13432,6 +13432,87 @@ globalThis.promise_test(function() {
     }
 
     #[test]
+    fn script_src_set_after_docwrite_empty_s117() {
+        // s117（html-semantics M2 切片 117）：doc.write 空 script——解析期空源 bail
+        // 不置 already-started 章，后设 .src 经 s109 属性臂（s117 体空性门放行空体）
+        // + connected 复核（s117 起 getter false 落 parentNode 爬升——mut-tree 新生
+        // 元素宿主快照假阴性）→ 外链执行（026 execution-timing 语义，assert_any 双
+        // 序的取源完成序形态）。
+        let root = std::env::temp_dir().join("zw-s117-docwrite-empty-src-test");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("inc1.js"), "globalThis.__log.push('e1');").unwrap();
+        let html = r##"<script src="/resources/testharness.js"></script>
+<script>globalThis.__log = [];</script>
+<script>
+document.write('<script><\/script>');
+var scripts = document.getElementsByTagName('script');
+scripts[scripts.length - 1].src = './inc1.js';
+</script>
+<script>
+globalThis.promise_test(function() {
+  return new Promise(function(resolve) { setTimeout(resolve, 50); }).then(function() {
+    assert_true(JSON.stringify(globalThis.__log) === JSON.stringify(['e1']),
+      'doc.write 空 script src 后设须执行外链: ' + globalThis.__log.join(','));
+  });
+}, 'src set on doc-written empty script');
+</script>"##;
+        let results = run_testharness_html(
+            &root,
+            "prepare-docwrite-empty.html",
+            html,
+            &mini_harness_stateful(),
+            CASE_TIMEOUT,
+        );
+        assert!(
+            results
+                .iter()
+                .any(|r| r.name == "src set on doc-written empty script" && r.status == HarnessStatus::Pass),
+            "doc.write 空 script src 后设须触发外链执行: {results:?}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn script_src_set_after_docwrite_content_no_refire_s117() {
+        // s117 对偶面：doc.write 带内容 script——写流面已执行内联体（回放重建
+        // plain wrapper 无 sel 章、换代重注册身份断链），后设 .src 按 already-started
+        // 语义不重触发（027 execution-timing 语义：s117 体空性门在 s109 属性臂拦下
+        // 非空体 sel 形）。若门失效，__log 会多出 'e2'。
+        let root = std::env::temp_dir().join("zw-s117-docwrite-content-src-test");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("inc2.js"), "globalThis.__log.push('e2');").unwrap();
+        let html = r##"<script src="/resources/testharness.js"></script>
+<script>globalThis.__log = [];</script>
+<script>
+document.write('<script>globalThis.__log.push("w1");<\/script>');
+var scripts = document.getElementsByTagName('script');
+scripts[scripts.length - 1].src = './inc2.js';
+</script>
+<script>
+globalThis.promise_test(function() {
+  return new Promise(function(resolve) { setTimeout(resolve, 50); }).then(function() {
+    assert_true(JSON.stringify(globalThis.__log) === JSON.stringify(['w1']),
+      '带内容 doc.write script src 后设不重执行: ' + globalThis.__log.join(','));
+  });
+}, 'src set on doc-written content script ignored');
+</script>"##;
+        let results = run_testharness_html(
+            &root,
+            "prepare-docwrite-content.html",
+            html,
+            &mini_harness_stateful(),
+            CASE_TIMEOUT,
+        );
+        assert!(
+            results
+                .iter()
+                .any(|r| r.name == "src set on doc-written content script ignored" && r.status == HarnessStatus::Pass),
+            "带内容 doc.write script src 后设须按 already-started 跳过: {results:?}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn inline_module_import_specs_rewrite_to_root_absolute_s101() {
         // 直接钉 helper：相对 spec 以模块自身目录（resources/）为基上溯归一；
         // root-absolute/裸 specifier/含 scheme 的 spec 不动；单双引号皆替换。

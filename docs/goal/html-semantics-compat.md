@@ -2,9 +2,57 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 116 施工收口（referrer 族 JS checker 轮：checker 面 **0P+15F+12T→41P+5F+6T**，script-referrerpolicy-idl 1F→P，全量套件 A/B 6565P/1202F/111T→**6606P/1192F/105T 零 P→非P**（+41P −10F −6T）；根因四层：①`referrer-checker.py` 动态端点不在语料（Referer 按 Fetch determine-request's-referrer 八策略仿真）②页 HTML wptserve 变量替换主文档通道零接入（token 字面进 import spec → 图取回必败）③**端口替换值偏离上游真值**（[0] 须非默认端口——80/443 令 URL 序列化剥端口、字符串字面量与 `new URL().origin` 两判据形撕裂；改对齐 get-host-info 8000/8081/8444）④export-from 再导出不在图收集提取面（纯 re-export wrapper 链接期查空 → tests:0）——另 split_statements `from` 续行守卫、policy 链逐臂过滤、SCRIPT.referrerPolicy 反射门；挂账 www2 可达性（CORS+cookies 基建）/modulepreload 族/module-import-referrer（TLA）/数据模块 referrer 3T（待决须用户拍板）；下一步 s117 候选：execution-timing 余 F 定刀 / css-module redirect 相对 URL 1F / 承袭挂账序；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 117 施工收口（连接态 sel 形 SCRIPT src 后设 prepare 触发面轮：execution-timing/026 **1F→P**，全量套件 A/B 6606P/1192F/105T→**6607P/1191F/105T 真翻红 0**（+1P −1F）；根因三层：①s109 connected 门直信 `isConnected` 宿主快照假阴性——执行期 doc.write 产物只在 shim 侧 mut-tree，s117 起 false 落 parentNode 爬升复核 ②sel 形 IDL set 的实际触发点是 `_mo_notify` 属性臂（s96 直呼臂冗余，注解修正）③写流面执行内联的回放重建 plain wrapper 无 sel 章、换代重注册身份断链——027 对偶面（带内容 src 后设不重执行）由属性臂**体空性门**承接（非空体 sel 形必已随投递/写流执行过）；bin pin ×2（旧 shim stash 往返红→绿）+ engine lib 3570/0 + workspace clippy；挂账 part02 setAttribute 绕 notify 臂（gap 2）/execution-timing 构成面 056+063+051+052 单根（eager-parse 全树可见性，须增量解析）/css-module 族 corpus 待决承袭；下一步 s118 候选：execution-timing 余 F 复盘 / image-loading-lazy deferred 1F / 承袭挂账序；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-28 M2 切片 116 施工收口，referrer 族 JS checker 轮）**：
+> **▶ 当前状态（2026-10-28 M2 切片 117 施工收口，连接态 sel 形 SCRIPT src 后设 prepare 触发面轮）**：
+> **入场定谳**：026「doc write added script, .src set later」1F——corpus 探针 7 轮
+> （断言面带出运行时值，验后手动还原）+ 静态读定谳三缺口：①connected 假阴性
+> （`_zwScriptPrepConnected` 直信 getter false；sel 形 isConnected 走宿主快照查询
+> `__zw_contains`，执行期 doc.write 插入只在 mut-tree，探针 `conn:false`/`pnode:1`
+> 实证）②part05 s96 IDL setter `handle &&` 门注解理由对 doc.write 空脚本不成立
+> （解析期空源 bail 未置 already-started）③part02 mut-tree setAttribute 绕过
+> `_mo_notify` script 臂（gap 2，setAttribute 形不触发，挂账）。
+> **027 对偶定谳**（首刀直扩 s96 sel 形臂 → 027 真翻红回滚重定刀）：`scripts[4]`
+> 即 doc.write 带内容脚本；写流面执行对象是**回放重建 plain wrapper**（body 子元素
+> 探针全 `nosel`——`__zwSelector`/`__zwHandle` 空），already-started 章落不了；
+> 换代重注册后 src-set 读到新 proxy（sel `nth-child(4)`）与执行时身份断链 → sel
+> 盖章路线不可行（补章后 027 仍红实证、回滚）。附带定谳：IDL set 实际触发点 =
+> 属性写→`__zw_set_attr` 记录→`_mo_notify` 属性臂（s96 直呼冗余；baseline 027
+> 不翻红正是旧 connected 假阴性同挡属性臂）。
+> **本轮三刀**（净变更 part01/part03/part05 + testharness.rs pin）：①part03
+> connected——true 捷径保留，false 落 parentNode 爬升复核（可达宿主连接祖先即
+> 连接），爬升不可得再落身份反链（undefined 路径原序不变；detached 仍 false）
+> ②part01 s109 属性臂——sel 形**非空体跳过门**（非空体必已随投递/写流执行过，
+> src/href 后写按 already-started 语义；handle 形与 childList 臂不动——145 形
+> textContent= 依赖非空体照常执行；FIXME(architecture) 增量解析落地回归表判）
+> ③part05 s96 注解修正（触发代码回原形）。
+> **验证**：定向 `FILTER=execution-timing/0` 026 F→P、027/048/051/052 维持 P、
+> 归一 diff 唯一变化 = 026；**全量 A/B** 6606P/1192F/105T→6607P/1191F/105T，
+> 全行归一 diff 仅 026 一行 → **真翻红 0**（名字级交集会伪报同页混合状态子测试
+> 大批翻红——全行 diff 权威，工具坑记录）。bin pin ×2（empty 红转绿 stash 往返 +
+> content 对偶）＋既有 319 过；engine lib **3570/0**；workspace guarded-clippy、
+> fmt、shim 拼接语法（真实装配序）过。渲染面零依赖——reftest/product-smoke 未
+> 跑；make test 未跑（Rust 增量仅 test 模块，shim 面由 engine lib + 全量 corpus
+> 覆盖）。账本见
+> [evidence/2026-10-28-m2s117-script-src-prepare-sel-form.md](html-semantics-compat/evidence/2026-10-28-m2s117-script-src-prepare-sel-form.md)。
+> **范围**：engine shim part01/part03/part05 + runner testharness.rs；语料不可改
+> 维持（026/027 探针验后还原）。
+> **挂账新增**：写流执行身份盖章断链 FIXME（体空性门近似，增量解析后回归表判）；
+> part02 mut-tree setAttribute 绕 notify 臂（gap 2 明确化）；**execution-timing
+> 构成面 056/063 F+T 与 051/052 P 单根**（eager-parse 全树可见性 vs report 元素
+> 移除构成差，两页组无法同修、须增量解析——大基建项挂账）；css-module 族全脸
+> corpus 门（待决须用户拍板，承袭 s116 确认）。承袭：www2 可达性、modulepreload
+> referrerpolicy 族、module-import-referrer TLA、script-crossorigin-network
+> cookies、redirect-relative-urls、export-from with FIXME、script-charset-02/03、
+> 143 write、defer 多写完成序、063、dynamic import() with 透传、classic 外链 SRI、
+> 接口对象基建面、FIXME 组、/tmp/zw-hb*.txt；**待决（须用户拍板）**：css/text
+> 数据模块语料资源缺失。
+> **下一步**：s118 入场定刀位（候选：execution-timing 余 F 复盘定刀 /
+> image-loading-lazy deferred 1F / 承袭挂账序；构成面挂增量解析大基建，不作
+> 常规刀位）。
+> **切片间隙**：本轮 shim 触发链面 + runner pin 面；下一候选同流同面，间隙开放。
+>
+> **▶ 上轮状态（2026-10-28 M2 切片 116 施工收口，referrer 族 JS checker 轮——其下一步 s117 已由 s117 收口，见上）**：
 > **入场定谳**：referrer 族判据链完整（上游 handler GitHub Contents API 实读 →
 > Fetch determine-request's-referrer → Referrer-Policy 交付链），credentials 12F
 > （cookies 基建 + www2）与 modulepreload 族（echo-referrer.py server-state + link

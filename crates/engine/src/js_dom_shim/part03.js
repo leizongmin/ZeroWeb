@@ -3823,33 +3823,49 @@
   // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
   // s111（html-semantics M2 切片 111）：prepare 的连接态判定统一 helper——spec
   // post-connection steps 只在插入元素「仍连接」时运行。proxy 形（get trap R90）
-  // isConnected 返布尔直用；plain/盖章 plain 子（R368 host 身份盖章只贴
+  // isConnected true 直用；plain/盖章 plain 子（R368 host 身份盖章只贴
   // `__zwHandle`，无 get trap）属性读 undefined——回落身份反链（`_zwMutationInDoc`，
   // `_zwNodeParent` 已由 notify 记账段先行写入）与 parentNode 链爬升；均不可得按
   // 未连接处理（prepare 中止发生在 already-started 置位前，重插入可重走门）。
+  // s117（html-semantics M2 切片 117）：getter false 不再直信——执行期 doc.write
+  // 产物是 mut-tree 新生 sel 形元素，isConnected 的宿主树快照查询（__zw_contains）
+  // 不含尚未落快照的插入 → 假阴性（execution-timing 026 实证：body 第 4 子
+  // script isConnected=false 而 parentNode 链达文档）。false 先 parentNode 爬升
+  // 复核（可达宿主连接祖先即连接），爬升不可得再落身份反链——detached 元素
+  //（remove 后 parentNode null、反链失含）仍 false，语义不变。
   // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
   var _zwScriptPrepConnected = function (el) {
     var icSc0;
     try { icSc0 = el.isConnected; } catch (_eSc0) { icSc0 = undefined; }
-    if (icSc0 === true || icSc0 === false) return icSc0;
+    if (icSc0 === true) return true;
+    // 爬升判定（可复用两遍）：真/假终值即定论；null = 链不可得（未定）。
+    var _walkSc = function () {
+      try {
+        var pSc = el.parentNode, hopsSc = 0;
+        while (pSc && hopsSc++ < 64) {
+          if (pSc.nodeType === 9 || pSc === globalThis.document) return true;
+          if (pSc.nodeType === 11) return false;
+          var icScP;
+          try { icScP = pSc.isConnected; } catch (_eSc4) {}
+          if (icScP === true) return true;
+          if (icScP === false) return false;
+          pSc = pSc.parentNode;
+        }
+      } catch (_eSc5) {}
+      return null;
+    };
+    if (icSc0 === false) {
+      var _wScNeg = _walkSc();
+      if (_wScNeg !== null) return _wScNeg;
+    }
     var selSc = null, hSc = null;
     try { selSc = el.__zwSelector || null; } catch (_eSc1) {}
     try { hSc = el.__zwHandle || null; } catch (_eSc2) {}
     if ((selSc != null || hSc != null) && typeof _zwMutationInDoc === 'function') {
       try { return _zwMutationInDoc(selSc, hSc) === true; } catch (_eSc3) {}
     }
-    try {
-      var pSc = el.parentNode, hopsSc = 0;
-      while (pSc && hopsSc++ < 64) {
-        if (pSc.nodeType === 9 || pSc === globalThis.document) return true;
-        if (pSc.nodeType === 11) return false;
-        var icScP;
-        try { icScP = pSc.isConnected; } catch (_eSc4) {}
-        if (icScP === true) return true;
-        if (icScP === false) return false;
-        pSc = pSc.parentNode;
-      }
-    } catch (_eSc5) {}
+    var _wSc = _walkSc();
+    if (_wSc !== null) return _wSc;
     return false;
   };
   var _zwScriptMaybeStartDynamic = function (el) {
@@ -3947,6 +3963,10 @@
       }
     } catch (_e109) {}
   };
+  // s117（html-semantics M2 切片 117）：导出供 part05 s96 SCRIPT.src IDL setter
+  // sel 形臂经 globalThis 守卫调用（_zwPrepareSrcScript 同款顶层导出模式；
+  // part01 _mo_notify 臂经作用域链裸呼不受影响）。
+  globalThis._zwScriptMaybeStartDynamic = _zwScriptMaybeStartDynamic;
 
   // s110（html-semantics M2 切片 110）：s96 外链 prepare 家族迁至本层——原定义在
   // 元素实例闭包内、导出点在闭包体尾，导出随首个实例创建才生效；早触发页
