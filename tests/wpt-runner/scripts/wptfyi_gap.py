@@ -19,6 +19,8 @@ summary_v2 汇总，与 zero-wpt-runner `--json` 输出按测试路径交集对�
   revisions   打印语料 fetch 脚本的 WPT_REV pin 台账（无网络）
   fetch       下载/刷新三浏览器 aligned stable summary 到缓存目录
   gap         差距分析（读缓存 + ZeroWeb 结果目录，写 markdown/json 报告）
+  coverage    全量对账：ZW 实跑结果对照三家并集全量清单，未覆盖记 0——
+              产出全量 WPT 子测试通过率与分目录缺口地图（指导扩覆盖排期）
   self-test   离线自测（合成数据，不联网）
 
 网络走 urllib，遵循 HTTPS_PROXY/HTTP_PROXY 环境变量（本机代理脚本
@@ -652,6 +654,327 @@ def render_markdown(
 
 
 # ---------------------------------------------------------------------------
+# 阶段 2：全量对账（coverage）
+# ---------------------------------------------------------------------------
+
+# 分组累计器字段：den_* 是全量分母，zw_* 是 ZeroWeb 分子/缺口分解。
+COVERAGE_GROUP_KEYS = (
+    "den_files", "covered_files", "full_pass_files",
+    "den_subtests", "zw_passes", "zw_env_fails",
+)
+
+
+def build_universe(summaries: dict[str, dict]) -> dict[str, int]:
+    """全量分母清单：三家 summary 的并集路径 → 子测试基准（三家 c[1] 最大值）。
+
+    浏览器 skip 的文件 c=[0,0] 不代表上游没有子测试；ZeroWeb 跑到的文件
+    会在对账时用 max(浏览器, ZW 实际) 修正分母，未跑到的维持浏览器基准。
+    """
+    universe: dict[str, int] = {}
+    for summary in summaries.values():
+        for path, entry in summary.items():
+            total = entry["c"][1]
+            if path not in universe or total > universe[path]:
+                universe[path] = total
+    return universe
+
+
+def merge_zw_results(
+    result_files: list[Path], env_markers: list[str]
+) -> tuple[dict[str, dict], int, int]:
+    """多套件 --json 结果按路径合并成单一分子视图。
+
+    同一上游文件被多个套件跑到时取 (total, passes) 最大的一条——代表最
+    完整的一次执行，避免分子双记；伪 case（suspicious）不参与记账，单独
+    计数报告。返回 (合并结果, 可疑条数, 跨套件重复条数)。
+    """
+    merged: dict[str, dict] = {}
+    suspicious = 0
+    multi_suite = 0
+    for path in result_files:
+        for name, zw in load_zw_results(path, env_markers).items():
+            if zw["suspicious"]:
+                suspicious += 1
+                continue
+            if name in merged:
+                multi_suite += 1
+                if (zw["total"], zw["passes"]) > (
+                    merged[name]["total"], merged[name]["passes"]
+                ):
+                    merged[name] = zw
+            else:
+                merged[name] = zw
+    return merged, suspicious, multi_suite
+
+
+def resolve_to_universe(name: str, universe: dict[str, int]) -> str | None:
+    """ZeroWeb 上报名 → 全量清单路径：变体按执行 scope 优先，exact 兜底。
+
+    清单里完全没有（上游改名/删除，或三家均未收录该路径）返回 None——
+    该结果不进分子也不进分母，单独计数。
+    """
+    for candidate in variant_candidates(name):
+        if candidate in universe:
+            return candidate
+    return name if name in universe else None
+
+
+def group_key(path: str) -> str:
+    """目录部分，最多两级：/dom/events/x.html → dom/events，
+    /a/one.html → a，顶层文件 → (root)。"""
+    parts = path.lstrip("/").split("/")[:-1]
+    if not parts:
+        return "(root)"
+    return "/".join(parts[:2])
+
+
+def aggregate_groups_to_topdir(groups: dict[str, dict]) -> dict[str, dict]:
+    tops: dict[str, dict] = defaultdict(lambda: {k: 0 for k in COVERAGE_GROUP_KEYS})
+    for key, stats in groups.items():
+        target = tops[key.split("/")[0]]
+        for k in COVERAGE_GROUP_KEYS:
+            target[k] += stats[k]
+    return dict(tops)
+
+
+def browser_totals(summaries: dict[str, dict]) -> dict[str, dict]:
+    """各浏览器自己的全量口径（各自文件集，跨家分母不同，仅作对照）。"""
+    rates: dict[str, dict] = {}
+    for product, summary in summaries.items():
+        passes = sum(entry["c"][0] for entry in summary.values())
+        total = sum(entry["c"][1] for entry in summary.values())
+        full = sum(1 for entry in summary.values() if entry["s"] in WPTFYI_FULL_PASS)
+        rates[product] = {
+            "full_pass_files": full,
+            "den_files": len(summary),
+            "subtest_passes": passes,
+            "den_subtests": total,
+            "pass_rate": round(passes / total, 4) if total else 0.0,
+        }
+    return rates
+
+
+def cmd_coverage(args: argparse.Namespace) -> None:
+    if any(not marker.strip() for marker in args.env_marker):
+        raise ToolError("--env-marker 不能为空字符串（空子串命中一切失败信息）")
+    cache = Path(args.cache)
+    runs = load_runs(cache)
+    products = [run["browser_name"] for run in runs]
+    summaries = {
+        product: load_summary(cache / f"summary-{product}.json")
+        for product in products
+    }
+
+    results_dir = Path(args.results)
+    result_files = sorted(results_dir.glob("*.json"))
+    if not result_files:
+        raise ToolError(f"{results_dir} 下没有 *.json 结果文件")
+    out_md = Path(args.out)
+    if out_md.suffix == ".json":
+        raise ToolError(
+            "--out 需为 .md 路径（同名 .json 会作为数据输出，避免自覆写）"
+        )
+
+    universe = build_universe(summaries)
+    zw_merged, suspicious, multi_suite = merge_zw_results(
+        result_files, args.env_marker
+    )
+
+    groups: dict[str, dict] = defaultdict(
+        lambda: {key: 0 for key in COVERAGE_GROUP_KEYS}
+    )
+    covered: set[str] = set()
+    zw_only = 0
+    for name, zw in zw_merged.items():
+        target = resolve_to_universe(name, universe)
+        if target is None:
+            zw_only += 1
+            continue
+        covered.add(target)
+        group = groups[group_key(target)]
+        # ZW 语料 pin 与浏览器 run 存在 revision 漂移：上游加子测试时以
+        # ZW 实际执行数修正分母（浏览器侧 [0,0] 的 skip 文件同理）。
+        group["den_files"] += 1
+        group["covered_files"] += 1
+        group["full_pass_files"] += 1 if zw["full_pass"] else 0
+        group["den_subtests"] += max(universe[target], zw["total"])
+        group["zw_passes"] += zw["passes"]
+        group["zw_env_fails"] += zw["env_fails"]
+    # 未覆盖路径：记 0 分子，分母照计——这就是缺口地图的主体。
+    for path, browser_total in universe.items():
+        if path in covered:
+            continue
+        group = groups[group_key(path)]
+        group["den_files"] += 1
+        group["den_subtests"] += browser_total
+
+    den_files = len(universe)
+    den_subtests = sum(g["den_subtests"] for g in groups.values())
+    zw_passes = sum(g["zw_passes"] for g in groups.values())
+    totals = {
+        "den_files": den_files,
+        "covered_files": len(covered),
+        "uncovered_files": den_files - len(covered),
+        "zw_full_pass_files": sum(g["full_pass_files"] for g in groups.values()),
+        "den_subtests": den_subtests,
+        "zw_passes": zw_passes,
+        "pass_rate": round(zw_passes / den_subtests, 4) if den_subtests else 0.0,
+        "coverage_file_rate": (
+            round(len(covered) / den_files, 4) if den_files else 0.0
+        ),
+    }
+
+    out_md.parent.mkdir(parents=True, exist_ok=True)
+    out_md.write_text(
+        render_coverage_markdown(
+            runs, totals, dict(groups), browser_totals(summaries),
+            zw_files=len(zw_merged), suspicious=suspicious,
+            multi_suite=multi_suite, zw_only=zw_only,
+        ),
+        encoding="utf-8",
+    )
+    out_json = out_md.with_suffix(".json")
+    out_json.write_text(
+        json.dumps(
+            {
+                "meta": {
+                    **build_meta(runs),
+                    "denominator": (
+                        "三家 summary 并集路径；子测试分母=三家 c[1] 最大值，"
+                        "ZeroWeb 跑过的文件取 max(浏览器, ZW 实际子测试数)"
+                    ),
+                },
+                "totals": totals,
+                "browsers": browser_totals(summaries),
+                "groups": dict(groups),
+                "zw_only_files": zw_only,
+                "suspicious_files": suspicious,
+                "multi_suite_files": multi_suite,
+            },
+            ensure_ascii=False,
+            indent=1,
+        ),
+        encoding="utf-8",
+    )
+    print(f"报告: {out_md}\n数据: {out_json}")
+    print(
+        f"全量 {den_files} 文件 / {den_subtests} 子测试；ZW 覆盖 "
+        f"{len(covered)} 文件，通过 {zw_passes} 子测试"
+        f"（{totals['pass_rate'] * 100:.2f}%）"
+    )
+
+
+def render_coverage_markdown(
+    runs: list[dict],
+    totals: dict,
+    groups: dict[str, dict],
+    browsers: dict[str, dict],
+    zw_files: int,
+    suspicious: int,
+    multi_suite: int,
+    zw_only: int,
+) -> str:
+    def pct(rate: float) -> str:
+        return f"{rate * 100:.2f}%"
+
+    lines: list[str] = []
+    lines.append("# ZeroWeb 全量 WPT 对账")
+    lines.append("")
+    lines.append(f"生成时间：{datetime.now(timezone.utc).isoformat(timespec='seconds')}")
+    lines.append("")
+    lines.append("## 口径")
+    lines.append("")
+    lines.append("- 分母：wpt.fyi aligned stable run 三家 summary 的并集路径"
+                 "（上游全量测试面），子测试分母取三家 `c[1]` 最大值；ZeroWeb"
+                 " 跑到的文件用 max(浏览器, ZW 实际) 修正。")
+    for run in runs:
+        lines.append(
+            f"  - {run['browser_name']} {run['browser_version']} @ {run['revision']}"
+            f"（{run['created_at']}）"
+        )
+    lines.append("- 分子：ZeroWeb 实跑 `--json` 结果的 Pass 子测试数；未覆盖路径"
+                 "记 0（不强行跑）。同一文件被多个套件跑到取最完整一次，不双记。")
+    lines.append("- 缺口分解：未覆盖子测试（扩语料导入）与已覆盖的失败子测试"
+                 "（修引擎）分开看；失败中命中环境受限标记（zw-static-corpus）"
+                 "的部分是语料边界，单列不计引擎缺口。")
+    lines.append("- reftest 渲染面不在本口径（浏览器侧 reftest 文件无子测试数"
+                 " `c=[0,0]`）；本表只覆盖 testharness 子测试面。")
+    lines.append(
+        f"- ZeroWeb 侧 {zw_files} 条结果：可疑条目 {suspicious} 条（空 subtests/"
+        "伪 case/同名重复）不参与记账；跨套件重复 "
+        f"{multi_suite} 条取最完整一次；{zw_only} 条在浏览器清单无对应路径"
+        "（上游改名/删除），不进分子分母。"
+    )
+    lines.append("")
+    lines.append("## 总量")
+    lines.append("")
+    lines.append("| 指标 | 数值 |")
+    lines.append("|---|---:|")
+    lines.append(f"| 全量文件分母 | {totals['den_files']} |")
+    lines.append(
+        f"| ZeroWeb 覆盖文件 | {totals['covered_files']}"
+        f"（{pct(totals['coverage_file_rate'])}） |"
+    )
+    lines.append(
+        f"| ZeroWeb 全过文件 | {totals['zw_full_pass_files']}"
+        f"（占分母 {pct(totals['zw_full_pass_files'] / totals['den_files'])
+                      if totals['den_files'] else 'n/a'}） |"
+    )
+    lines.append(f"| 全量子测试分母 | {totals['den_subtests']} |")
+    lines.append(f"| ZeroWeb 通过子测试 | {totals['zw_passes']} |")
+    lines.append(f"| **全量 WPT 子测试通过率** | **{pct(totals['pass_rate'])}** |")
+    lines.append("")
+    lines.append("浏览器对照（各自全量文件集，跨家分母不同，仅作参照）：")
+    lines.append("")
+    lines.append("| 浏览器 | 全过文件 | 文件分母 | 子测试通过 | 子测试分母 | 子测试通过率 |")
+    lines.append("|---|---:|---:|---:|---:|---:|")
+    for product in sorted(browsers):
+        b = browsers[product]
+        lines.append(
+            f"| {product} | {b['full_pass_files']} | {b['den_files']} "
+            f"| {b['subtest_passes']} | {b['den_subtests']} "
+            f"| {pct(b['pass_rate'])} |"
+        )
+    lines.append("")
+
+    tops = aggregate_groups_to_topdir(groups)
+    lines.append("## 分目录（topdir，按子测试分母降序）")
+    lines.append("")
+    lines.append(
+        "| 目录 | 分母文件 | 覆盖文件 | 全过 | 分母子测试 | 通过"
+        " | 未覆盖子测试 | 通过率 |"
+    )
+    lines.append("|---|---:|---:|---:|---:|---:|---:|---:|")
+    for td in sorted(tops, key=lambda t: -tops[t]["den_subtests"]):
+        s = tops[td]
+        uncovered = s["den_subtests"] - s["zw_passes"]
+        rate = s["zw_passes"] / s["den_subtests"] if s["den_subtests"] else 0.0
+        lines.append(
+            f"| {td} | {s['den_files']} | {s['covered_files']} "
+            f"| {s['full_pass_files']} | {s['den_subtests']} | {s['zw_passes']} "
+            f"| {uncovered} | {pct(rate)} |"
+        )
+    lines.append("")
+
+    lines.append("## 缺口 top 30（二级目录，按未覆盖子测试数降序）")
+    lines.append("")
+    lines.append("| 目录 | 分母子测试 | 通过 | 未覆盖 | 环境受限失败 | 覆盖文件 |")
+    lines.append("|---|---:|---:|---:|---:|---:|")
+    ranked = sorted(
+        groups.items(),
+        key=lambda kv: -(kv[1]["den_subtests"] - kv[1]["zw_passes"]),
+    )
+    for key, s in ranked[:30]:
+        lines.append(
+            f"| {key} | {s['den_subtests']} | {s['zw_passes']} "
+            f"| {s['den_subtests'] - s['zw_passes']} | {s['zw_env_fails']} "
+            f"| {s['covered_files']}/{s['den_files']} |"
+        )
+    lines.append("")
+    return "\n".join(lines) + "\n"
+
+
+# ---------------------------------------------------------------------------
 # self-test
 # ---------------------------------------------------------------------------
 
@@ -899,6 +1222,157 @@ def run_self_test() -> None:
         except ToolError as error:
             assert "--env-marker" in error.message, error.message
 
+    # coverage：合成缓存 + 结果，端到端对账数字断言
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        cache = root / "cache"
+        cache.mkdir()
+        cov_entry = {"s": "O", "c": [2, 2]}
+        summaries = {
+            "chrome": {
+                "/a/one.html": cov_entry,
+                "/b/two.html": {"s": "S", "c": [0, 0]},  # 全 skip
+                "/c/three.html": {"s": "F", "c": [1, 3]},  # 仅 chrome 有
+                "/k/ten.any.js": {"s": "S", "c": [0, 0]},  # S 占位源名
+                "/d/four.html": {"s": "F", "c": [1, 2]},
+                "/env/marker.html": cov_entry,
+            },
+            "firefox": {
+                "/a/one.html": cov_entry,
+                "/b/two.html": {"s": "S", "c": [0, 0]},
+                "/k/ten.any.js": {"s": "S", "c": [0, 0]},
+                # firefox 对同一文件收录了更多子测试 → 分母取三家最大
+                "/d/four.html": {"s": "F", "c": [1, 4]},
+                "/env/marker.html": cov_entry,
+            },
+            "safari": {
+                "/a/one.html": cov_entry,
+                "/b/two.html": {"s": "S", "c": [0, 0]},
+                "/k/ten.any.js": {"s": "S", "c": [0, 0]},
+                "/d/four.html": {"s": "F", "c": [1, 2]},
+                "/env/marker.html": cov_entry,
+            },
+        }
+        for product, summary in summaries.items():
+            (cache / f"summary-{product}.json").write_text(json.dumps(summary))
+        (cache / "runs.json").write_text(
+            json.dumps(
+                [
+                    {
+                        "browser_name": product,
+                        "browser_version": "1",
+                        "revision": "a" * 40,
+                        "created_at": "2026-10-26T00:00:00+00:00",
+                        "results_url": "https://example.invalid/x",
+                    }
+                    for product in summaries
+                ]
+            )
+        )
+        results = root / "results"
+        results.mkdir()
+        # suite-a：a/one 全过、b/two 补全 skip 分母、d/four 部分过（带 env 失败）
+        (results / "suite-a.json").write_text(
+            json.dumps(
+                [
+                    ["a/one.html", [{"name": "t", "status": "Pass", "message": None}]],
+                    # 浏览器全 skip c=[0,0] → 分母修正为 ZW 实际 2
+                    [
+                        "b/two.html",
+                        [
+                            {"name": "t1", "status": "Pass", "message": None},
+                            {"name": "t2", "status": "Pass", "message": None},
+                        ],
+                    ],
+                    # firefox total=4 → 分母取 max(4, 3)=4；1P+1F+1env 失败
+                    [
+                        "d/four.html",
+                        [
+                            {"name": "t1", "status": "Pass", "message": None},
+                            {"name": "t2", "status": "Fail", "message": "assert"},
+                            {
+                                "name": "t3",
+                                "status": "Fail",
+                                "message": "zw-static-corpus: no server",
+                            },
+                        ],
+                    ],
+                ]
+            )
+        )
+        # suite-b：跨套件重复跑 a/one（更差成绩，不覆盖）；变体 exact 兜底；
+        # 清单外路径；可疑伪 case
+        (results / "suite-b.json").write_text(
+            json.dumps(
+                [
+                    # 同文件跨套件 → 取 (total, passes) 最大，这条更差被丢弃
+                    ["a/one.html", [{"name": "t", "status": "Pass", "message": None}]],
+                    # .any.js 源名，三家只有 S 占位且无变体 → exact 命中
+                    [
+                        "k/ten.any.js",
+                        [
+                            {"name": "t1", "status": "Pass", "message": None},
+                            {"name": "t2", "status": "Pass", "message": None},
+                        ],
+                    ],
+                    # 清单外 → zw_only
+                    ["z/nine.html", [{"name": "t", "status": "Pass", "message": None}]],
+                    # 伪 case → suspicious
+                    [
+                        "c/",
+                        [{"name": "load", "status": "Fail", "message": "boom"}],
+                    ],
+                ]
+            )
+        )
+        out = root / "cov.md"
+        cmd_coverage(
+            argparse.Namespace(
+                cache=str(cache),
+                results=str(results),
+                out=str(out),
+                env_marker=list(DEFAULT_ENV_MARKERS),
+            )
+        )
+        data = json.loads(out.with_suffix(".json").read_text())
+        # 清单 = chrome∪firefox∪safari：a,b,c,d,env,k 共 6 路径
+        assert data["totals"]["den_files"] == 6, data["totals"]
+        assert data["totals"]["covered_files"] == 4  # c/three、env/marker 未跑
+        assert data["totals"]["uncovered_files"] == 2
+        # 分母：a=2, b=max(0,2)=2, d=max(4,3)=4, env=2, k=max(0,2)=2, c=3 → 15
+        assert data["totals"]["den_subtests"] == 15, data["totals"]
+        # 分子：a=1, b=2, d=1, k=2 → 6
+        assert data["totals"]["zw_passes"] == 6, data["totals"]
+        assert data["totals"]["pass_rate"] == 0.4
+        assert data["totals"]["zw_full_pass_files"] == 3  # a,b,k
+        assert data["zw_only_files"] == 1
+        assert data["suspicious_files"] == 1
+        assert data["multi_suite_files"] == 1
+        assert data["browsers"]["firefox"]["den_subtests"] == 8
+        # 组粒度：a/one.html 顶层文件 → 组 "a"；env/marker.html → 组 "env"
+        assert data["groups"]["a"]["zw_passes"] == 1
+        assert data["groups"]["d"]["zw_env_fails"] == 1
+        assert data["groups"]["c"]["covered_files"] == 0  # 未覆盖组
+        assert "z" not in data["groups"]  # 清单外不进分组
+        md = out.read_text()
+        assert "全量 WPT 子测试通过率" in md and "40.00%" in md
+
+    # coverage 入口同样拒绝空环境标记
+    with tempfile.TemporaryDirectory() as tmp:
+        empty = Path(tmp)
+        try:
+            cmd_coverage(
+                argparse.Namespace(
+                    cache=str(empty),
+                    results=str(empty),
+                    out=str(empty / "o.md"),
+                    env_marker=[""],
+                )
+            )
+            raise AssertionError("coverage 空 --env-marker 未被拒绝")
+        except ToolError as error:
+            assert "--env-marker" in error.message, error.message
+
     # WPT_REV 解析（合成脚本目录）
     with tempfile.TemporaryDirectory() as tmp:
         scripts = Path(tmp)
@@ -950,6 +1424,21 @@ def main() -> None:
     )
     p_gap.set_defaults(func=cmd_gap)
 
+    p_cov = sub.add_parser(
+        "coverage", help="全量对账：ZW 实跑结果对照三家并集全量清单（未跑记 0）"
+    )
+    p_cov.add_argument("--cache", default=str(DEFAULT_CACHE))
+    p_cov.add_argument("--results", required=True, help="zero-wpt-runner --json 结果目录")
+    p_cov.add_argument("--out", default="wptfyi-coverage-report.md", help="输出 markdown 路径")
+    p_cov.add_argument(
+        "--env-marker",
+        action="append",
+        default=None,
+        help="环境受限标记子串（可重复）；提供时替换默认集 "
+        f"（默认 {','.join(DEFAULT_ENV_MARKERS)}）",
+    )
+    p_cov.set_defaults(func=cmd_coverage)
+
     sub.add_parser("self-test", help="离线自测")
 
     args = parser.parse_args()
@@ -961,6 +1450,10 @@ def main() -> None:
         if args.env_marker is None:
             args.env_marker = list(DEFAULT_ENV_MARKERS)
         cmd_gap(args)
+    elif args.command == "coverage":
+        if args.env_marker is None:
+            args.env_marker = list(DEFAULT_ENV_MARKERS)
+        cmd_coverage(args)
     else:
         run_self_test()
 

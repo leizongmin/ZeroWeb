@@ -1,7 +1,8 @@
 # wpt.fyi 差距分析
 
 只读接入 [wpt.fyi](https://wpt.fyi) 公开数据，把 ZeroWeb 的 WPT 成绩与
-chrome/firefox/safari stable run 放到同一口径下对比，产出可执行的修复优先级清单。
+chrome/firefox/safari stable run 放到同一口径下对比，产出可执行的修复优先级清单，
+以及 ZeroWeb 在全量 WPT 面上的真实通过率与缺口地图。
 工具：`tests/wpt-runner/scripts/wptfyi_gap.py`（纯标准库 Python）。
 
 ## 回答的问题
@@ -9,6 +10,10 @@ chrome/firefox/safari stable run 放到同一口径下对比，产出可执行�
 「在大家都跑的同一批 WPT 测试上，哪些是三家浏览器全过、我们没有过的？」
 这类 gap_core 案例是兼容性投入产出比最高的修复目标；反过来，
 「三家都没过」的案例（上游测试脆或规范歧义）应当降优先级，避免白费功夫。
+
+coverage 子命令回答另一个问题：「ZeroWeb 在全量 WPT 面上到底通过了多少、
+真实缺口在哪」——分母取三家并集全量清单，未跑的测试直接记 0，得到全量
+口径通过率与分目录缺口地图，指导语料覆盖扩大的排期。
 
 ## 口径
 
@@ -56,6 +61,10 @@ python3 tests/wpt-runner/scripts/wptfyi_gap.py fetch
 python3 tests/wpt-runner/scripts/wptfyi_gap.py gap \
   --results /tmp/zw-results --out /tmp/zw-wptfyi/gap-report.md
 
+# 3'. 全量对账（同样的缓存 + 结果目录；未覆盖路径记 0）
+python3 tests/wpt-runner/scripts/wptfyi_gap.py coverage \
+  --results /tmp/zw-results --out /tmp/zw-wptfyi/coverage-report.md
+
 # 离线自测（合成数据，不联网）
 python3 tests/wpt-runner/scripts/wptfyi_gap.py self-test
 ```
@@ -95,14 +104,51 @@ python3 tests/wpt-runner/scripts/wptfyi_gap.py self-test
 手动跑全套件时注意：wpt.fyi 每日滚动新 run，同一份 ZeroWeb 结果隔天重跑
 gap 会得到不同浏览器基准，跨日对比请引用快照文件而非重生成。
 
+## 全量对账（coverage）
+
+`coverage` 子命令把 ZeroWeb 实跑结果放到三家 aligned stable run 的**并集
+全量清单**上对账——这是网站「全量 WPT 通过率」的统计口径：
+
+- **分母**：三家 summary 并集路径（上游全量测试面，约 12.5 万文件 /
+  226 万子测试），子测试基准取三家 `c[1]` 最大值；ZeroWeb 跑到的文件用
+  `max(浏览器, ZW 实际)` 修正（浏览器全 skip 的文件 `c=[0,0]` 不代表上游
+  没有子测试）。
+- **分子**：ZeroWeb 实跑 `--json` 的 Pass 子测试数；**未覆盖路径记 0**
+  （不强行跑）。同一文件被多个套件跑到取 `(total, passes)` 最大的一次，
+  不双记。
+- **缺口分解**：未覆盖子测试（扩语料导入）与已覆盖的失败子测试（修引擎）
+  分开；失败中命中环境受限标记的部分单列（`zw_env_fails`），不计引擎缺口。
+- **reftest 渲染面不在本口径**：浏览器侧 reftest 文件无子测试数
+  （`c=[0,0]`），渲染面用 reftest 专用口径另行统计。
+
+输出 `coverage-<日期>.md/.json`：总量（文件/子测试分母、覆盖数、通过数、
+全量通过率）、浏览器对照（各家全量口径）、按 topdir 与二级目录的分组累计
+（`groups`，含分母/覆盖/全过/通过/环境受限失败），JSON 供网站 metrics
+接线消费。
+
+周报快照：weekly cron 在三套件 gap 快照之外，每周把**全部已导入套件**
+跑一遍产出全量对账快照（`.github/workflows/weekly.yml` 的
+`wptfyi-coverage` matrix job），随覆盖扩大数字单调上涨。
+
+首份基线（[coverage-2026-10-27](wptfyi/coverage-2026-10-27.md)，51 套件本地
+全量跑）：全量 125,334 文件 / 2,264,919 子测试，ZeroWeb 覆盖 7,407 文件
+（5.91%）、通过 164,266 子测试——**全量通过率 7.25%**（浏览器对照：chrome
+97.13% / firefox 95.58% / safari 94.24%）。缺口两看：~89% 分母在零覆盖目录
+（encoding legacy-mb 三族独占 50%，扩语料立项见 `tests/wpt-runner/scripts/goals/`
+31-34 号）；已覆盖面的失败与环境受限单列分组呈现。css-variables 套件因病态
+内存用例（单进程 >8.8GB，test-guard 8G 上限三跑被杀）暂未纳入，css 面基本
+记 0，属已知限制。
+
 ## 已知限制
 
 - **revision 漂移**：ZW 语料 pin 在 `3159769…` / `04067ce9…`，浏览器 run 是
   当前 master（每日滚动）。同路径下测试内容可能已变；对比是路径级对齐而非
-  内容级对齐。
+  内容级对齐。coverage 口径下漂移还表现为 ZW 侧子测试数多于浏览器基准——
+  已按 `max(浏览器, ZW 实际)` 修正分母。
 - **reftest 大语料无 pin**：`zeroweb-wpt-data`（tag 固定）导入自不同时点的
   上游 master，无单一 revision 可对齐；本工具当前只覆盖 testharness 输出。
-- **子集覆盖**：只反映已导入语料的目录；全量 WPT 面的差距要等套件覆盖扩大。
+- **子集覆盖**：coverage 的分母是全量清单，但分子只来自已导入语料的目录；
+  未覆盖面在缺口表中以「未覆盖子测试」呈现——这正是缺口地图的用途。
 - summary_v2 的 reftest 文件 `c=[0,0]`，文件级判定不受影响，但拿不到
   reftest 的子测试级细节。
 
@@ -112,9 +158,11 @@ gap 会得到不同浏览器基准，跨日对比请引用快照文件而非重�
   ZeroWeb 以 `product=zeroweb` 上榜（参照 Servo 先例）——前提是套件覆盖
   有代表性。
 - 网站接入：`scripts/generate-website-metrics.py` 读 `docs/compat/wptfyi/`
-  最新快照，在 website/metrics.json 增补 wpt.fyi 口径的差距面（gap_core
-  按目录聚合）；`docs/compat/trends/wpt-suites.csv` 的 15 列契约如需扩列
-  同步改 trend_csv_check 镜像测试。
-- 套件覆盖扩大：三套件是管线验证样本，逐步把已导入语料的目标套件纳入
-  weekly 快照（改 workflow 的 suite 列表即可）。
-- reftest 语料补 revision 台账，纳入渲染面对比。
+  最新快照，在 website/metrics.json 增补 wpt.fyi 口径的两个数字——gap_core
+  差距面（gap 快照）与全量对账通过率（coverage 快照）；缺口地图指导后续
+  排期。`docs/compat/trends/wpt-suites.csv` 的 15 列契约如需扩列同步改
+  trend_csv_check 镜像测试。
+- 套件覆盖扩大：缺口表里「未覆盖子测试」最多的目录就是下一个导入目标；
+  导入后改 workflow 的 shard 套件列表即可纳入 weekly 全量对账。
+- reftest 语料补 revision 台账，纳入渲染面对比（coverage 口径之外的单列
+  渲染面统计）。

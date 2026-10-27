@@ -119,6 +119,51 @@ def data_rows(path: Path) -> list[list[str]]:
         return [row for row in csv.reader(line for line in source if not line.startswith("#")) if row]
 
 
+# coverage 快照 groups 的累计字段 → 网站缺口表字段（coverage-*.json 由
+# tests/wpt-runner/scripts/wptfyi_gap.py coverage 产出，口径见
+# docs/compat/wptfyi-gap-analysis.md「全量对账」节）
+COVERAGE_GROUP_FIELDS = (
+    "den_files", "covered_files", "full_pass_files",
+    "den_subtests", "zw_passes", "zw_env_fails",
+)
+COVERAGE_GAP_TOP = 30
+
+
+def build_coverage(wptfyi_dir: Path) -> dict[str, object] | None:
+    """读 docs/compat/wptfyi/ 最新 coverage-*.json 快照（全量 WPT 对账口径）。
+
+    metrics.json 只带总量、浏览器对照、topdir 聚合与缺口 top 30；二级目录
+    的完整缺口表留在快照里，页面给原始数据链接。无快照时返回 None
+    （首次部署 coverage job 未跑过属正常，页面隐藏对应区块）。
+    """
+    snaps = sorted(wptfyi_dir.glob("coverage-*.json"))
+    if not snaps:
+        return None
+    data = json.loads(snaps[-1].read_text(encoding="utf-8"))
+    totals = data.get("totals")
+    if not isinstance(totals, dict) or not totals:
+        return None
+
+    topdirs: dict[str, dict[str, int]] = {}
+    for key, stats in data.get("groups", {}).items():
+        target = topdirs.setdefault(
+            key.split("/")[0], {field: 0 for field in COVERAGE_GROUP_FIELDS}
+        )
+        for field in COVERAGE_GROUP_FIELDS:
+            target[field] += int(stats.get(field, 0))
+    gap_top = sorted(
+        topdirs.items(),
+        key=lambda kv: -(kv[1]["den_subtests"] - kv[1]["zw_passes"]),
+    )[:COVERAGE_GAP_TOP]
+    return {
+        "date": snaps[-1].stem.removeprefix("coverage-"),
+        "totals": totals,
+        "browsers": data.get("browsers", {}),
+        "topdirs": dict(sorted(topdirs.items())),
+        "gap_top": [dict(dir_name=key, **stats) for key, stats in gap_top],
+    }
+
+
 def build_metrics(performance_csv: Path, wpt_csv: Path, suites_csv: Path) -> dict[str, object]:
     wpt_by_month: dict[str, dict[str, object]] = {}
     for row in data_rows(wpt_csv):
@@ -176,14 +221,27 @@ def build_metrics(performance_csv: Path, wpt_csv: Path, suites_csv: Path) -> dic
     }
 
 
+def build_metrics_with_coverage(
+    performance_csv: Path, wpt_csv: Path, suites_csv: Path, wptfyi_dir: Path
+) -> dict[str, object]:
+    payload = build_metrics(performance_csv, wpt_csv, suites_csv)
+    coverage = build_coverage(wptfyi_dir)
+    if coverage is not None:
+        payload["wptfyi"] = coverage
+        if coverage["date"] > (payload["latest_data_date"] or ""):
+            payload["latest_data_date"] = coverage["date"]
+    return payload
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--performance", type=Path, default=Path("docs/perf/trends/benchmark-trend.csv"))
     parser.add_argument("--wpt", type=Path, default=Path("docs/goal/rendering-compat/evidence/wpt-trends/trend.csv"))
     parser.add_argument("--suites", type=Path, default=Path("docs/compat/trends/wpt-suites.csv"))
+    parser.add_argument("--wptfyi-dir", type=Path, default=Path("docs/compat/wptfyi"))
     parser.add_argument("--output", type=Path, default=Path("website/metrics.json"))
     args = parser.parse_args()
-    payload = build_metrics(args.performance, args.wpt, args.suites)
+    payload = build_metrics_with_coverage(args.performance, args.wpt, args.suites, args.wptfyi_dir)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
