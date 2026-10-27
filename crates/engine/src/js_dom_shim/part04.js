@@ -7069,6 +7069,15 @@
             //（解析期已跑过）。https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
             if (child && child.nodeType === 1 && child.__zwHandle
                 && String(child.tagName || '').toUpperCase() === 'SCRIPT') {
+              // s111（html-semantics M2 切片 111）：connected 门——spec prepare 由
+              // post-connection steps 驱动，且这些步骤只在插入元素「仍连接」时运行。
+              // append 进 detached fragment/子树不在此 prepare：fragment flatten 完成
+              // 后由 part01 `_mo_notify` addedNodes 臂承接（彼时反链已按真实插入目标
+              // 记账，批内前置脚本读同批后继兄弟的 getElementById 才可命中——147/148
+              // 形；无此门则 fragment 追加期提前 eval，三处执行分支全部越过）。
+              // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+              var _r387conn = false;
+              try { _r387conn = _zwScriptPrepConnected(child) === true; } catch (_e387cn) {}
               try {
                 var _r387src = '';
                 try { _r387src = String(child.textContent || ''); } catch (_e387tc) {}
@@ -7090,11 +7099,11 @@
                 // window/onload|onload() 即中止；149 dom_inserted 不执行臂）。
                 var _r387forev = false;
                 try { _r387forev = _zwScriptForevBlocked(child); } catch (_e387fe) {}
-                if (!_r387nomod && !_r387forev && !_r387src && typeof _r377runScript === 'function') {
+                if (_r387conn && !_r387nomod && !_r387forev && !_r387src && typeof _r377runScript === 'function') {
                   // 融合读失败回落 R377 registry 收集路径（run-once 标记同源）。
                   _r377runScript(child.__zwHandle);
                 }
-                if (!_r387nomod && !_r387forev && _r387src && !(globalThis._zwRanScripts && globalThis._zwRanScripts[child.__zwHandle])) {
+                if (_r387conn && !_r387nomod && !_r387forev && _r387src && !(globalThis._zwRanScripts && globalThis._zwRanScripts[child.__zwHandle])) {
                   if (!globalThis._zwRanScripts) globalThis._zwRanScripts = {};
                   globalThis._zwRanScripts[child.__zwHandle] = true;
                   (0, eval).call(globalThis, _r387src);
@@ -7118,7 +7127,7 @@
                 // s96：fetch/执行体提升为共享 helper `_zwPrepareSrcScript`（连接态 src-set
                 // 触发面单点复用；already-started/nomodule/for-event 门与宿主管线让位旗标
                 // 在 helper 内原样保留——原 else-if 条件链收拢进 helper 门序）。
-                else if (!_r387nomod
+                else if (_r387conn && !_r387nomod
                          && !(globalThis._zwRanScripts && globalThis._zwRanScripts[child.__zwHandle])
                          && !globalThis.__zwHostDynamicScripts) {
                   _zwPrepareSrcScript(child);

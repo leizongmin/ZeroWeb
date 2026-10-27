@@ -6060,29 +6060,9 @@
               && typeof _makeProxy === 'function') {
             _zwScriptMaybeStartDynamic(_makeProxy(sel, handle));
           }
-          // 插入臂：addedNodes 中的 script 元素自身触发（125 形 marker 插入、144 形
-          // 重插入）——proxy 锚（__zwSelector/__zwHandle）走 _realTag，工厂节点回落
-          // tagName 直读。
-          var _adds109 = baseRecord.addedNodes;
-          if (_adds109 && _adds109.length) {
-            for (var _ai109 = 0; _ai109 < _adds109.length; _ai109++) {
-              var _an109n = _adds109[_ai109];
-              try {
-                if (!_an109n) continue;
-                var _tag109 = '';
-                if (_an109n.__zwSelector !== undefined || _an109n.__zwHandle !== undefined) {
-                  if (typeof _realTag === 'function') {
-                    _tag109 = _realTag(_an109n.__zwSelector, _an109n.__zwHandle);
-                  }
-                } else {
-                  _tag109 = String(_an109n.tagName || '').toUpperCase();
-                }
-                if (_tag109 === 'SCRIPT') {
-                  _zwScriptMaybeStartDynamic(_an109n);
-                }
-              } catch (_e109a) {}
-            }
-          }
+          // 插入臂（addedNodes 中的 script 元素自身触发）自 s109 起挂此处，s111 移至
+          // 本函数 childList 记账段（链接登记之后）——spec 原子插入语义要求批插入先
+          // 完成全部 generic insert 再按序跑 script post-connection steps。
         }
       } catch (_e109) {}
     }
@@ -6146,6 +6126,65 @@
         for (var _npJ = 0; _npJ < _npR.length; _npJ++) {
           var _npD = _npR[_npJ];
           if (_npD && _npD.__zwHandle) delete _zwNodeParent[_npD.__zwHandle];
+        }
+      }
+      // s111（html-semantics M2 切片 111）：script 插入触发臂——s109 引入时挂 notify
+      // 头部（先于记账），spec 的「原子插入」语义要求移到链接记账之后：批插入先完成
+      // 全部 generic insert（含 child→parent 反链登记），再按文档序逐 script 跑
+      // post-connection steps（prepare）。147/148 形「fragment 内多 inline script，
+      // #1 执行时读同批后继兄弟」：#1 prepare 时后继脚本反链已指向真实插入目标，
+      // `_zwMutationInDoc` 上行成立、getElementById 命中；fragment flatten 的
+      // addedNodes 即平铺子列表，逐个记账后同臂触发，文档序天然成立。R387 直插臂
+      // 带 connected 门（part04），fragment/detached 追加期不提前 prepare。
+      // https://html.spec.whatwg.org/multipage/scripting.html#insert-an-element-into-a-document
+      if (typeof _zwScriptMaybeStartDynamic === 'function') {
+        var _adds109 = baseRecord.addedNodes;
+        if (_adds109 && _adds109.length) {
+          for (var _ai109 = 0; _ai109 < _adds109.length; _ai109++) {
+            var _an109n = _adds109[_ai109];
+            try {
+              if (!_an109n) continue;
+              var _tag109 = '';
+              if (_an109n.__zwSelector !== undefined || _an109n.__zwHandle !== undefined) {
+                if (typeof _realTag === 'function') {
+                  _tag109 = _realTag(_an109n.__zwSelector, _an109n.__zwHandle);
+                }
+              } else {
+                _tag109 = String(_an109n.tagName || '').toUpperCase();
+              }
+              if (_tag109 === 'SCRIPT') {
+                _zwScriptMaybeStartDynamic(_an109n);
+              } else if (_an109n.nodeType === 1) {
+                // s111：detached 子树整体插入的「becomes connected」后代面——spec
+                // insert 步骤遍历**inclusive descendants**（文档序逐 script prepare），
+                // addedNodes 顶层的非 SCRIPT 元素（129 形 div 内 script）须按文档序
+                // 下降；SCRIPT 元素子是文本，不下降。
+                // https://html.spec.whatwg.org/multipage/scripting.html#insert-an-element-into-a-document
+                var _walk111 = function (_ndW) {
+                  var _kidsW = null;
+                  try { _kidsW = _ndW.childNodes; } catch (_e111k) {}
+                  if (!_kidsW || !_kidsW.length) return;
+                  for (var _kiW = 0; _kiW < _kidsW.length; _kiW++) {
+                    var _kdW = _kidsW[_kiW];
+                    if (!_kdW || _kdW.nodeType !== 1) continue;
+                    var _kdTagW = '';
+                    if (_kdW.__zwSelector !== undefined || _kdW.__zwHandle !== undefined) {
+                      if (typeof _realTag === 'function') {
+                        _kdTagW = _realTag(_kdW.__zwSelector, _kdW.__zwHandle);
+                      }
+                    }
+                    if (!_kdTagW) _kdTagW = String(_kdW.tagName || '').toUpperCase();
+                    if (_kdTagW === 'SCRIPT') {
+                      _zwScriptMaybeStartDynamic(_kdW);
+                    } else {
+                      _walk111(_kdW);
+                    }
+                  }
+                };
+                _walk111(_an109n);
+              }
+            } catch (_e109a) {}
+          }
         }
       }
       // slice36（RP-3 动态名面）：Window named access 动态名注册/注销——须在反链记账

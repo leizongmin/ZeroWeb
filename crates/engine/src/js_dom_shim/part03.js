@@ -3821,6 +3821,37 @@
   // 臂只看 SCRIPT 节点自身）。
   // https://html.spec.whatwg.org/multipage/scripting.html#script-attribute-change-steps
   // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+  // s111（html-semantics M2 切片 111）：prepare 的连接态判定统一 helper——spec
+  // post-connection steps 只在插入元素「仍连接」时运行。proxy 形（get trap R90）
+  // isConnected 返布尔直用；plain/盖章 plain 子（R368 host 身份盖章只贴
+  // `__zwHandle`，无 get trap）属性读 undefined——回落身份反链（`_zwMutationInDoc`，
+  // `_zwNodeParent` 已由 notify 记账段先行写入）与 parentNode 链爬升；均不可得按
+  // 未连接处理（prepare 中止发生在 already-started 置位前，重插入可重走门）。
+  // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+  var _zwScriptPrepConnected = function (el) {
+    var icSc0;
+    try { icSc0 = el.isConnected; } catch (_eSc0) { icSc0 = undefined; }
+    if (icSc0 === true || icSc0 === false) return icSc0;
+    var selSc = null, hSc = null;
+    try { selSc = el.__zwSelector || null; } catch (_eSc1) {}
+    try { hSc = el.__zwHandle || null; } catch (_eSc2) {}
+    if ((selSc != null || hSc != null) && typeof _zwMutationInDoc === 'function') {
+      try { return _zwMutationInDoc(selSc, hSc) === true; } catch (_eSc3) {}
+    }
+    try {
+      var pSc = el.parentNode, hopsSc = 0;
+      while (pSc && hopsSc++ < 64) {
+        if (pSc.nodeType === 9 || pSc === globalThis.document) return true;
+        if (pSc.nodeType === 11) return false;
+        var icScP;
+        try { icScP = pSc.isConnected; } catch (_eSc4) {}
+        if (icScP === true) return true;
+        if (icScP === false) return false;
+        pSc = pSc.parentNode;
+      }
+    } catch (_eSc5) {}
+    return false;
+  };
   var _zwScriptMaybeStartDynamic = function (el) {
     if (!el) return;
     try {
@@ -3835,8 +3866,9 @@
         || (_hdl109 != null && !!(globalThis._zwRanScripts && globalThis._zwRanScripts[_hdl109]));
       if (_started109) return;
       // connected 门（spec children changed 步骤 1 未连接返回；attribute change
-      // 面与 s96 set trap 同门）：detached 元素属性写入不 prepare。
-      try { if (el.isConnected !== true) return; } catch (_eC109) {}
+      // 面与 s96 set trap 同门）：detached 元素属性写入不 prepare。s111：判定走
+      // 统一 helper（plain/盖章 plain 子属性读 undefined，按身份反链回落）。
+      try { if (_zwScriptPrepConnected(el) !== true) return; } catch (_eC109) {}
       // type 门：空串（缺省）或 JavaScript 派生 MIME 关键词（SVG 面同判定）；
       // module 走模块管线不在此面（FIXME 同上）。
       var ty = '';
@@ -3877,9 +3909,12 @@
       src = src == null ? '' : String(src);
       if (src.trim() !== '') {
         // 外链：s96 共享 helper 单点复用（run-once 记账/fetch/load-error 派发在其内；
-        // 宿主管线让位旗标（__zwHostOwnsDynamicScripts）原样生效）。
+        // 宿主管线让位旗标（__zwHostOwnsDynamicScripts）原样生效）。s111：补
+        // `__zwHostDynamicScripts` 让位——本臂自链接记账后移起可触达插入态外链，
+        // renderer bootstrap 宿主通路（r387b2 契约：旗标置位即 shim 页面 fetch 关闭）
+        // 与 trap 臂 R387b 同语义让位；让位属 prepare 拒绝，不置 run-once 记账。
         try {
-          if (typeof globalThis._zwPrepareSrcScript === 'function') {
+          if (!globalThis.__zwHostDynamicScripts && typeof globalThis._zwPrepareSrcScript === 'function') {
             globalThis._zwPrepareSrcScript(el);
           }
         } catch (_eP109) {}
