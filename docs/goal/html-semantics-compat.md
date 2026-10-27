@@ -2,9 +2,49 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 112 施工收口（解析期外链时序调度轮：scripting-1 **398P/152F/37T→638P/367F/37T**，**十一页 Fail→Pass 零 P→非P**——execution-timing 050/085/086/088/099/103/110/111/112 九页 + script-defer + delay-load-event-1；script-type-and-language-js 解锁 +229 子测可见，页保持 Fail 暴露 227 真实 type/language 缺口；两刀：①runner 分类器 `script_sched_unit` + 页面侧调度器 `__zwSchedRegister`——async/defer/trickle(pipe) 三类解析期外链不再原位内联直执（async=trickle 后 setTimeout、defer=the-end 相位统一 drain、DCL 条件化 + load 门 pending、归类冻结于预处理）②投递体内字面 `</script` 转义 `<\/script`（099 srcdoc 串、script-type-and-language-js 注释闭合截断两案实证）；中间态回归 load-error-events-1 四子测 Timeout 经注册时 `_zwEl` 捕获修正；runner bin 238 全绿，下一步 s113 候选：script-type-and-language-js type/language 分类缺口 / 142 write 臂 xlink:href / 143 eventOrder / 096 write(defer)；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 113 施工收口（type/language essence 16 集合轮：scripting-1 **638P/367F/37T→865P/140F/37T**，**+227 行零 P→非P**——script-type-and-language-js 227F+229P→456P 全绿，family 463P/0F 含 with-params/whitespace/empty；全量 testharness 套件 A/B 7900 子测唯一变化即该页；两刀：①engine extract.rs `script_type_is_javascript` 收窄 16 集合（旧 `ends_with('javascript')` 子串放行 bare/1.8/\0 非法 type；字面空串/剥后空串分轨；module 口径不动）②shim 新增 `_zwScriptTypeClassify`（type string 推导含 language 属性 `"text/"+原值` 不剥白 + essence 双轨：type string 精确等值 / type 属性剥白第二替代）+ blocked 门接入四动态臂（maybe-start 换 lax 门、R387 三臂、s95、外链 gate——后三者旧无 type 门）；中间态一乌龙：首版对 language 推导串也剥白致空白形误跑，对照 spec 双轨修正；engine 3564/webview 814/runner 238 全绿，下一步 s114 候选：142 write 臂 xlink:href / 143 eventOrder / 096 write(defer)；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-27 M2 切片 112 施工收口，解析期外链时序调度轮）**：
+> **▶ 当前状态（2026-10-27 M2 切片 113 施工收口，type/language essence 16 集合轮）**：
+> **入场定谳**：s113 承 s112 解锁页 script-type-and-language-js（456 子测
+> 229P/227F）。227 失败全为「shouldn't run」判据：type 臂 53 + language 臂 173 +
+> 解析插入面 1（type="javascript" 被旧 `ends_with("javascript")` 误跑）。四动态
+> 执行臂门况盘点：maybe-start 旧 `indexOf('javascript')` 子串 lax 门；R387 三臂/
+> s95 children-changed/`_zwPrepareSrcScriptGate` **全无 type 门**。
+> **spec 模型**（live spec 提取）：type string 推导——type 字面空串/无 type 且
+> language 字面空串/双缺 → "text/javascript"；type 在场取原值；否则
+> "text/"+language **原值不剥白**。分类：type string essence match（HTML
+> §scripting languages 16 项 legacy 全表 ASCII-ci **等值、无参数语法**——
+> with-params 语料 text/javascript;charset 不跑）→ classic；type 属性在场加
+> **第二替代**：属性值剥边缘 ASCII ws 后 match（language 推导无此替代——
+> " javascript" 不中，空白形不跑）；module；余 data block。
+> **本轮两刀**：①extract.rs `script_type_is_javascript` 收窄 16 集合等值表
+> （字面空串/剥后空串分轨；module 剥白口径不动，s93 钉保持）；②shim
+> `_zwScriptTypeClassify`（推导+essence 双轨）+ blocked 门接入四臂（blocked 不执行
+> 不置 run-once，摘属性重走门；module 沿用各臂既有让位）。
+> **中间态一乌龙**：首版对 language 推导串也做边缘剥白——"text/javascript " 剥后
+> 中集合误跑（family 余 60F 全空白形）；对照 spec 双轨文本修正后 family 463P/0F。
+> essence 语义与 mimesniff MIME 解析不同：是字符串比对，参数串整体不中。
+> **验证**：engine lib **3564/0**（含 s113 essence 钉）；webview **814/0**；runner
+> bin **238/0**。**全量套件 A/B**（stash 前/后二进制同协议）：7900 子测行数恒等，
+> 归一 per-page diff **唯一变化**即目标页 227F+229P→456P，**全树零 P→非P**
+>（/tmp/s113-full-base.log、/tmp/s113-full-suite.log 存档）。fmt + clippy
+>（engine/wpt-runner -D warnings）过。渲染面零依赖——reftest/product-smoke 未跑。
+> 账本见
+> [evidence/2026-10-27-m2s113-type-language-essence.md](html-semantics-compat/evidence/2026-10-27-m2s113-type-language-essence.md)。
+> **范围**：engine extract.rs + shim part03/part04；webview/语料/依赖零变更；
+> 语料不可改维持。
+> **挂账**：解析面 language 属性未建模（无语料需求，遇语料再补）；shim module
+> 判定剥白口径与 spec 精确等值差（无语料判据不动）；js-svg/-xhtml 变体不在
+> runner 枚举面（SVG language 豁免未验证）；096/142/143（write 面族）、063
+> Timeout、non-external-no-import（module async）；承袭：parse-error 族、
+> http-accept-header、referrer-policies、dynamic import() with 透传、classic 外链
+> SRI、collect 账本打包重构、接口对象基建面、FIXME 组、/tmp/zw-hb*.txt 插桩来源
+> 待查；**待决（须用户拍板）**：css/text 数据模块语料资源缺失。
+> **下一步**：s114 入场定刀位（候选：142 write 臂 xlink:href 单点 / 143
+> eventOrder 核验 / 096 write(defer)）。
+> **切片间隙**：本轮 engine shim+提取面；下一候选同流同面，间隙开放。
+>
+> **▶ 上轮状态（2026-10-27 M2 切片 112 施工收口，解析期外链时序调度轮——其下一步 s113 type/language 缺口已由 s113 收口，见上）**：
 > **入场定谳**：s112 承挂账「trickle 建模 ~11 行」——探针实证 trickle 族实为十页
 > 而非六页，且分三根因：①调度缺失族八页（050/085/086/088/103/110/111/112）——
 > runner `inline_local_scripts` 解析期外链一律原位内联直执，async/defer/trickle
