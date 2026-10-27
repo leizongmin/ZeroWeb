@@ -4228,6 +4228,24 @@
       // 扩展读 `__zwScriptFetchPending`）。计数圈住 fetch() 发起到取回/失败回调
       // 整窗（含 shim 侧 trickle/delay setTimeout 延迟）；门 bail 不计数，宿主
       // 让位（__zwHostOwnsDynamicScripts）路径不进本段。
+      // s122（html-semantics M2 切片 122）：charset 属性感知解码——spec fetch a
+      // classic script 编码判定链的 charset 属性级（fetch 发起时刻读取，后续变更
+      // 不回溯——script-charset-03 判据：windows-1250 置位后 append、fetch 在飞
+      // 中改 utf-8，期望仍按 windows-1250 解码）。sel 形读走 lw（pending SetAttr
+      // 面，R3202/M2-S9 stale-snapshot 族同款 typeof 回退）；标签经
+      // `_zwEncodingFromLabel(label, false)` 归一（脚本编码无 HTML meta 特例），
+      // 未知 label 顺延 UTF-8 文本面（原行为）。有效标签 → arrayBuffer 真
+      // 字节 + TextDecoder 解码（.text() 恒 UTF-8 语义不走）。
+      // https://html.spec.whatwg.org/multipage/scripting.html#fetch-a-classic-script
+      var _zwCsEnc = '';
+      try {
+        var _csRaw122 = (_gwHdl != null)
+          ? __zw_get_attr_handle(_gwHdl, 'charset')
+          : (typeof __zw_get_attr_lw === 'function'
+            ? __zw_get_attr_lw(_gwSel, 'charset')
+            : __zw_get_attr(_gwSel, 'charset'));
+        if (_csRaw122) _zwCsEnc = _zwEncodingFromLabel(_csRaw122, false) || '';
+      } catch (_eCs122) {}
       var _p110 = fetch(url);
       globalThis._zwScriptFetchInFlight = (globalThis._zwScriptFetchInFlight || 0) + 1;
       var _zwSettled110 = function () {
@@ -4242,6 +4260,11 @@
       }
       _p110.then(function (_r) {
         if (!_r.ok && _r.status) throw new Error('HTTP ' + _r.status);
+        if (_zwCsEnc && typeof TextDecoder === 'function' && _r.arrayBuffer) {
+          return _r.arrayBuffer().then(function (_ab122) {
+            return new TextDecoder(_zwCsEnc).decode(_ab122);
+          });
+        }
         return _r.text();
       }).then(function (_code) {
         _zwSettled110();

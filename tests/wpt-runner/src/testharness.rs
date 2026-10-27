@@ -4934,11 +4934,41 @@ fn parse_serve_with_content_type_query(query: &str) -> Option<(String, String)> 
     Some((fn_param?, ct_param?))
 }
 
+/// s122：文档编码嗅探——meta charset prescan（spec HTML encoding sniffing 的
+/// meta 面简化：BOM/transport 头不参与，本地 file 通道页面无 transport charset；
+/// `<meta charset=>` 与 `<meta http-equiv=content-type content="...charset=>"`
+/// 两形同配——charset= 均在单标签文本内）。label 经 encoding_rs for_label 归一
+/// （无法识别 → None，调用方顺延下一级）。1024 字符窗近似 spec prescan 窗。
+/// https://html.spec.whatwg.org/multipage/parsing.html#encoding-sniffing-algorithm
+fn sniff_document_encoding(html: &str) -> Option<String> {
+    let window = &html[..html.len().min(1024)];
+    let re_match = window.match_indices("<meta").find_map(|(pos, _)| {
+        let tag_end = window[pos..].find('>')? + pos;
+        let tag = &window[pos..=tag_end];
+        let idx = tag.to_ascii_lowercase().find("charset")?;
+        let after = &tag[idx + "charset".len()..];
+        let after = after.strip_prefix('=')?;
+        let value = after
+            .trim_start()
+            .trim_start_matches(['"', '\''])
+            .split(['"', '\'', '>', ' ', '\t', '\n', '\r'])
+            .next()?;
+        (!value.is_empty()).then(|| value.to_string())
+    })?;
+    encoding_rs::Encoding::for_label(re_match.as_bytes()).map(|enc| enc.name().to_string())
+}
+
 /// s115：classic 外链脚本响应解码序（spec fetch a classic script）——BOM 嗅探 >
-/// ct charset 参数 > charset 属性 > UTF-8 lossy（runner 文档编码恒 UTF-8）。
+/// ct charset 参数 > charset 属性 > 文档编码（s122 嗅探回退，原恒 UTF-8——
+/// script-charset-02 判据面）> UTF-8 lossy。
 /// label 无法识别（encoding_rs for_label 落空）→ 顺延下一级。
 /// https://html.spec.whatwg.org/multipage/scripting.html#fetch-a-classic-script
-fn decode_classic_script_bytes(bytes: &[u8], ct: &str, charset_attr: Option<&str>) -> String {
+fn decode_classic_script_bytes(
+    bytes: &[u8],
+    ct: &str,
+    charset_attr: Option<&str>,
+    doc_encoding: Option<&str>,
+) -> String {
     if let Some((enc, _)) = encoding_rs::Encoding::for_bom(bytes) {
         return enc.decode(bytes).0.into_owned();
     }
@@ -4951,6 +4981,7 @@ fn decode_classic_script_bytes(bytes: &[u8], ct: &str, charset_attr: Option<&str
         }
     });
     let label = ct_label.or_else(|| charset_attr.map(str::to_string));
+    let label = label.or_else(|| doc_encoding.map(str::to_string));
     match label
         .as_deref()
         .and_then(|l| encoding_rs::Encoding::for_label(l.as_bytes()))
@@ -8174,7 +8205,12 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                                 // 字面量 → 注入脚本语法错误，自导航从未发生）。替换先于
                                 // 脚本内联（注入代码须进提取出的 script 源）。
                                 let substituted = wpt_apply_get_query_substitutions(html.to_string(), query);
-                                let inlined = inline_local_scripts(&substituted, &root, clean);
+                                let inlined = inline_local_scripts(
+                                    &substituted,
+                                    &root,
+                                    clean,
+                                    sniff_document_encoding(&substituted).as_deref(),
+                                );
                                 let inlined_bytes = inlined.clone().into_bytes();
                                 (inlined_bytes, inlined)
                             }
@@ -9484,7 +9520,9 @@ fn prepare_harness_html(
     // 故此处从 wpt-data 读文件内容内联。case_path 形如 "dom/nodes/attributes.html"，本地 .js 解析为
     // 同目录文件（相对 src 如 "attributes.js" / "./attributes.js" / "../constants.js"）。
     // 仅内联相对路径（非 /resources/、非 http(s):）；文件缺失则移除该 script 标签（不注入空）。
-    html = inline_local_scripts(&html, wpt_root, case_path);
+    // s122：文档编码对原始 source 嗅探（harness 注入前）——见 inline_local_scripts
+    // doc_encoding 参注。
+    html = inline_local_scripts(&html, wpt_root, case_path, sniff_document_encoding(source).as_deref());
     // R3254-E2 切片（editing goal，2026-09-07）：**dispatcher 不再注入 DOM**——此前
     // 尾部 append 的 `<script>`（DOMContentLoaded/load 派发 + harness_loaded 标记）被解析器
     // 归入 body，成为页面可见 DOM 子（WPT body-should-not-deleted 的
@@ -9619,7 +9657,12 @@ fn inject_harness_script_before_page_scripts(source: &str, harness: &str) -> Str
 /// inline `<script>`；文件缺失则移除该标签（best-effort，不注入空）。
 ///
 /// `case_path` 形如 "dom/nodes/attributes.html"；相对 src 解析为相对该 case 所在目录。
-fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str) -> String {
+/// `doc_encoding`：s122 文档编码（meta charset prescan）——classic 外链解码链的
+/// 文档编码回退（script-charset-02 判据面：文档 windows-1250 时无 BOM/无 ct
+/// charset 参数/无 charset 属性的外链按文档编码解码）。**入参方须对注入 harness
+/// 前的原始 case html 嗅探**——harness 前导插在 `<head>` 后，会把首 1024 字符
+/// 窗内的 meta 挤出 prescan 窗。
+fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str, doc_encoding: Option<&str>) -> String {
     // case 所在目录（相对 wpt_root），如 "dom/nodes"。
     let case_dir = case_path.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
     let mut output = String::with_capacity(html.len());
@@ -9690,8 +9733,7 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str) -> String 
                 // 端点不在语料 pull 面（文件读落空 → 整段透传外链 → 宿主取回 Err 不执行，
                 // script-charset-01 全 6F 根因），按 handler 语义模拟：交付 fn 指向文件，
                 // 解码序 spec classic script 响应解码——BOM > ct charset 参数 > charset
-                // 属性 > UTF-8 lossy（runner 文档编码恒 UTF-8，script-charset-02 文档
-                // 编码面仍挂账）。**module 型不在本面**（charset 参数/属性/BOM 三忽略、
+                // 属性 > 文档编码（s122 meta 嗅探回退）> UTF-8 lossy。**module 型不在本面**（charset 参数/属性/BOM 三忽略、
                 // 恒 UTF-8——spec fetch a single module script；module/charset-01/02/03
                 // 判据面）：module 外链保持外链投递，恒 UTF-8 交付在
                 // wpt_data_script_fetcher（charset 感知内联会反向翻绿为红——首版乌龙）。
@@ -9716,7 +9758,7 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str) -> String 
                         return None;
                     };
                     let charset_attr = zero_engine::attr_from_open_tag(open, "charset");
-                    let decoded = decode_classic_script_bytes(&bytes, &ct, charset_attr.as_deref());
+                    let decoded = decode_classic_script_bytes(&bytes, &ct, charset_attr.as_deref(), doc_encoding);
                     return Some((combined, 200, decoded));
                 }
                 read_corpus_to_string(wpt_root.join(&combined)).ok().map(|c| {
@@ -11738,7 +11780,7 @@ mod tests {
             <script src=\"serve-with-content-type.py?fn=bom-utf8.js&ct=text/javascript%3Bcharset=windows-1250\" charset=\"utf-8\"></script>\
             <script type=\"module\" src=\"serve-with-content-type.py?fn=w1250.js&ct=text/javascript\" charset=\"windows-1250\"></script>\
             </body>";
-        let out = inline_local_scripts(html, &root, &format!("{case_dir}/script-charset-01.html"));
+        let out = inline_local_scripts(html, &root, &format!("{case_dir}/script-charset-01.html"), None);
         // ct charset 参数压 charset 属性（ct=utf-8 + attr=windows-1250 → mojibake）。
         let mojibake = String::from_utf8_lossy(w1250).into_owned();
         assert!(out.contains(&mojibake), "ct=utf-8 须解码为替换符串：{out}");
@@ -13117,7 +13159,7 @@ async_test(function(test) {
             <script src=\"resources/load-error-events.py?test=t1_error\" onerror=\"onError(t1)\"></script>\
             </body>";
 
-        let out = inline_local_scripts(html, &root, &format!("{case_dir}/load-error-events-1.html"));
+        let out = inline_local_scripts(html, &root, &format!("{case_dir}/load-error-events-1.html"), None);
 
         // 200 本地 .js：体保留 + onload 保真 + load 投递尾。
         assert!(out.contains("globalThis.ran = true;"));
@@ -13148,7 +13190,7 @@ async_test(function(test) {
             <script id=\"test\" type=\"text/plain\" src=\"./ok.js\"></script>\
             </body>";
 
-        let out = inline_local_scripts(html, &root, &format!("{case_dir}/mutation-family.html"));
+        let out = inline_local_scripts(html, &root, &format!("{case_dir}/mutation-family.html"), None);
 
         // JS 型单元：data-inline 改写 + id 保真 + 执行体入页。
         assert!(out.contains("id=\"ok\""), "id 须随投递形态保留: {out}");
@@ -13181,7 +13223,7 @@ async_test(function(test) {
             <script defer src=\"scripts/a.js?pipe=trickle(d1)\" onload=\"onL()\"></script>\
             </body>";
 
-        let out = inline_local_scripts(html, &root, &format!("{case_dir}/sched.html"));
+        let out = inline_local_scripts(html, &root, &format!("{case_dir}/sched.html"), None);
 
         // defer → kind=defer delay=0；async+trickle → kind=async；无 defer/async +
         // trickle → kind=block。trickle 毫秒 = dN×1000。注册体 = 元素捕获 IIFE 返回的
@@ -13229,7 +13271,7 @@ async_test(function(test) {
         .unwrap();
         let html = "<!doctype html><body><script src=\"scripts/esc.js\"></script></body>";
 
-        let out = inline_local_scripts(html, &root, &format!("{case_dir}/esc.html"));
+        let out = inline_local_scripts(html, &root, &format!("{case_dir}/esc.html"), None);
 
         assert!(
             out.contains("iframe.srcdoc = \"<script>x<\\/script>\";"),
@@ -13796,6 +13838,61 @@ globalThis.test(function() {
     }
 
     #[test]
+    fn script_charset_s122() {
+        // s122（html-semantics M2 切片 122）：classic script 编码两面钉——
+        // ① `document.characterSet` 主文档编码嗅探（meta 元素遍历回退：head 内
+        // `<div>` 触发隐式 body 化把后续 meta 推入 body，head innerHTML 树位源
+        // 失效——script-charset-02 假设臂形）；② 无 BOM/无 ct charset 参数/无
+        // charset 属性外链按**文档编码**解码（runner 侧 sniff 对 harness 注入前
+        // 原始 case html——windows-1250 文件 bytes 9C E6 A5 8F BF → "śćążź"）。
+        // charset 属性变更脸（append 后改 utf-8 按 append 时值解码）为异步
+        // async_test 形，由套件 corpus script-charset-03 本身覆盖，不入本 pin。
+        let root = std::env::temp_dir().join("zw-s122-script-charset-test");
+        let case_dir = "html/semantics/scripting-1/the-script-element";
+        std::fs::create_dir_all(root.join(case_dir)).unwrap();
+        // "śćążź" 的 windows-1250 字节（spec script-charset-02 语料同文：
+        // 9C E6 B9 BF 9F，corpus external-script-windows1250.js 实测）。
+        let ext_bytes: [u8; 5] = [0x9C, 0xE6, 0xB9, 0xBF, 0x9F];
+        std::fs::write(
+            root.join(case_dir).join("ext-pin-w1250.js"),
+            b"globalThis.getSomeString = function () { return \""
+                .iter()
+                .copied()
+                .chain(ext_bytes)
+                .chain(b"\"; };".iter().copied())
+                .collect::<Vec<u8>>(),
+        )
+        .unwrap();
+        let html = r##"<script src="/resources/testharness.js"></script>
+<div id="log"></div>
+<meta charset="windows-1250">
+<script type="text/javascript"
+  src="serve-with-content-type.py?fn=ext-pin-w1250.js&ct=text/javascript"></script>
+<script>
+globalThis.test(function() {
+  assert_equals(document.characterSet, 'windows-1250',
+    'characterSet meta 嗅探（div 后 meta 推入 body 面）: ' + document.characterSet);
+  assert_equals(globalThis.getSomeString(), 'śćążź',
+    '外链按文档编码解码: ' + JSON.stringify(globalThis.getSomeString()));
+}, 'script charset s122 faces');
+</script>"##;
+        let results = run_testharness_html(
+            &root,
+            &format!("{case_dir}/script-charset-pin.html"),
+            html,
+            &mini_harness_stateful(),
+            CASE_TIMEOUT,
+        );
+        assert!(
+            results
+                .iter()
+                .any(|r| r.name == "script charset s122 faces" && r.status == HarnessStatus::Pass),
+            "classic script 编码三面（characterSet 嗅探 / 文档编码回退解码）须通过: {results:?}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn inline_module_import_specs_rewrite_to_root_absolute_s101() {
         // 直接钉 helper：相对 spec 以模块自身目录（resources/）为基上溯归一；
         // root-absolute/裸 specifier/含 scheme 的 spec 不动；单双引号皆替换。
@@ -13828,7 +13925,7 @@ globalThis.test(function() {
             <script type=\"module\" src=\"./resources/entry.js\"></script>\
             <script src=\"./plain.js\"></script>\
             </body>";
-        let out = inline_local_scripts(html, &root, &format!("{case_dir}/page.html"));
+        let out = inline_local_scripts(html, &root, &format!("{case_dir}/page.html"), None);
         assert!(out.contains("import D from '/html/semantics/scripting-1/the-script-element/resources/dep.js';"));
         // classic 体保持原 spec（依赖收集基 = 页面 URL，./ 相对页目录语义不变）。
         assert!(out.contains("import E from './dep.js';"));

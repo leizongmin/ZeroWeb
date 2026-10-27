@@ -5539,8 +5539,49 @@
     // R5000 片 c（html-syntax-compat P5）：解析期 `<meta charset>` 预扫描标签经
     // encoding_rs 归一（`__zw_get_character_set`）——旧常量 'UTF-8' 遮蔽真实嗅探值
     //（WPT quotes-in-meta / meta-inhead-insertion-mode 断言面）。
+    // s122（html-semantics M2 切片 122）：host 预扫描不接线面（runner/testharness
+    // 通道）shim 侧回退——meta 元素遍历惰性一次（querySelectorAll('meta') 按元素
+    // 属性读 charset；http-equiv=content-type content 两形同配解析）。**不以
+    // head.innerHTML 为源**——head 内 `<div>` 触发隐式 body 化把后续 meta 推入
+    // body（script-charset-02 实测 headLen=201337/metaAt=-1），树位与 spec 字节流
+    // prescan 脱钩；按元素读也无脚本原文 `<meta` 字面量误匹配面。
+    // `_zwEncodingFromLabel(label, true)` 归一（WHATWG label 表 + htmlMeta 特例
+    // utf-16 系 → UTF-8 / x-user-defined → windows-1252），R141 iframe 子文档
+    // 三别名同款。`__zwMainDocEnc` 缓存 '' 哨兵（无 meta 页免重复嗅探）；仍落空
+    // 保 'UTF-8'（本面既有缺省，runner 本地通道页面恒 UTF-8 交付——缺省变更会
+    // 翻动全量基线，勿改）。本字面量 characterSet/charset/inputEncoding 唯一定
+    // 义——对象字面量重复键后者覆盖，勿在他处新增同名键。
+    // script-charset-02 假设臂 `document.characterSet === 'windows-1250'` 判据面。
+    // https://html.spec.whatwg.org/multipage/parsing.html#encoding-sniffing-algorithm
+    // https://encoding.spec.whatwg.org/#names-and-labels
     get characterSet() {
-      try { return (typeof __zw_get_character_set === 'function' && __zw_get_character_set()) || 'UTF-8'; } catch (_e5000cs) { return 'UTF-8'; }
+      try {
+        if (typeof __zw_get_character_set === 'function') {
+          var _csHost = __zw_get_character_set();
+          if (_csHost) return String(_csHost);
+        }
+      } catch (_e5000cs) {}
+      if (globalThis.__zwMainDocEnc == null) {
+        var _encM = '';
+        try {
+          var _metasM = this.querySelectorAll('meta');
+          for (var _miM = 0; _miM < _metasM.length; _miM++) {
+            var _meM = _metasM[_miM];
+            if (!_meM || typeof _meM.getAttribute !== 'function') continue;
+            var _lbM = _meM.getAttribute('charset');
+            if (_lbM == null && String(_meM.getAttribute('http-equiv') || '').toLowerCase() === 'content-type') {
+              var _mcM = /charset\s*=\s*["']?\s*([^"'\s;]+)/i.exec(String(_meM.getAttribute('content') || ''));
+              if (_mcM) _lbM = _mcM[1];
+            }
+            if (_lbM) {
+              _encM = _zwEncodingFromLabel(_lbM, true) || '';
+              if (_encM) break;
+            }
+          }
+        } catch (_eDocEnc) {}
+        globalThis.__zwMainDocEnc = _encM;
+      }
+      return globalThis.__zwMainDocEnc || 'UTF-8';
     },
     get charset() { return this.characterSet; },
     // R81：inputEncoding（spec DOM Document.inputEncoding = characterSet 别名，readonly）。
