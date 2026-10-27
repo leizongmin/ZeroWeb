@@ -2,9 +2,44 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 113 施工收口（type/language essence 16 集合轮：scripting-1 **638P/367F/37T→865P/140F/37T**，**+227 行零 P→非P**——script-type-and-language-js 227F+229P→456P 全绿，family 463P/0F 含 with-params/whitespace/empty；全量 testharness 套件 A/B 7900 子测唯一变化即该页；两刀：①engine extract.rs `script_type_is_javascript` 收窄 16 集合（旧 `ends_with('javascript')` 子串放行 bare/1.8/\0 非法 type；字面空串/剥后空串分轨；module 口径不动）②shim 新增 `_zwScriptTypeClassify`（type string 推导含 language 属性 `"text/"+原值` 不剥白 + essence 双轨：type string 精确等值 / type 属性剥白第二替代）+ blocked 门接入四动态臂（maybe-start 换 lax 门、R387 三臂、s95、外链 gate——后三者旧无 type 门）；中间态一乌龙：首版对 language 推导串也剥白致空白形误跑，对照 spec 双轨修正；engine 3564/webview 814/runner 238 全绿，下一步 s114 候选：142 write 臂 xlink:href / 143 eventOrder / 096 write(defer)；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 114 施工收口（write 面轮：execution-timing 096/142 翻绿，scripting-1 **865P/140F/37T→867P/138F/37T**，**+2 行零 P→非P**——全量 testharness 套件 A/B 归一 diff 唯一真实变化即 096/142 F→P，另两处异常定性为负载 flake（focus 3 P→T 定向重跑 80P/0T 复原；modulepreload 第三行基线即 2F+1T）；两刀（单文件 shim part06.js write 面）：①defer 外链改道——立即 fetch 挂 s110 在飞计数、代码入 `__zwDocWriteDeferQueue` FIFO、排水投 `__zwSchedRegister('defer')`（runner interactive 后排水同任务派 DCL，spec the-end 序；慢源迟到补执行；nomodule/s113 classify 门保持，非 runner 环境维持阻塞链）②xlink:href 回退——src 读空回退读 `xlink:href`、副本补 `setAttribute('src')` 走既有 fetch 链零改动；143（write 注入 `</script>` 关外层 SVG script，主解析器栈耦合）挂账不动；无 Rust/依赖变更，下一步 s115 候选：143 深层面 / execution-timing 余 F 定刀；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-27 M2 切片 113 施工收口，type/language essence 16 集合轮）**：
+> **▶ 当前状态（2026-10-27 M2 切片 114 施工收口，write 面 defer 改道 + xlink:href 回退轮）**：
+> **入场定谳**：三候选各 1F——096 write defer 外链走「取回即执行」阻塞链早执行
+>（got `[#1, external#1, #2]`）；142 write 只读 `src`，SVG xlink:href 写入形外链
+> 不执行（缺 `external script #1`）；143 write 注入多余 `</script>` 须关外层 SVG
+> script 提前执行——write 片段解析与主解析器 open-element 栈耦合，挂账不动。
+> write+defer 语料全树仅 096（102 命中 grep 但 defer 只在标题文字）；
+> xlink:href 写入形仅 142，爆炸半径封闭。
+> **本轮两刀**（shim part06.js `__zwDocWriteRunFace`）：①defer 改道臂——立即
+> fetch（挂 s110 在飞计数挂 load 等待）、代码入 FIFO 队、排水投
+> `__zwSchedRegister('defer',0,fn)`（s112 布防实时查 `__zwSchedHasDeferred()`，
+> 运行期注册可见；排水同任务派 DCL = spec the-end 序；慢源迟到 `DeferDrained`
+> 补执行；nomodule/s113 classify 门保持；throwaway 槽位仍留主链；非 runner
+> 环境维持阻塞链）②src 读空回退 `xlink:href` + 副本补 `setAttribute('src')`
+> ——既有 fetch 链零改动。③open() 三记账随 s97 同步重置。
+> **验证**：定向 096/142 Pass。execution-timing 全子树 A/B（150 页）：唯一变化
+> 096/142 F→P、行数恒等、零 P→非P。**全量套件 A/B**：6546P/1221F/111T→
+> 6545P/1220F/112T 行数对账 7878→7877 无蒸发页；另两处异常定性负载 flake
+> （focus 3 P→T 定向重跑 80P/0T 复原；modulepreload 基线即 2F+1T 满量漂 3F
+> 重跑复原）——**全树零 P→非P 成立**。Rust/依赖零变更，无新增 fmt/clippy 面。
+> 渲染面零依赖——reftest/product-smoke 未跑。账本见
+> [evidence/2026-10-27-m2s114-write-defer-and-xlink-href.md](html-semantics-compat/evidence/2026-10-27-m2s114-write-defer-and-xlink-href.md)。
+> **范围**：shim part06.js 单文件（+51 行）；engine Rust/webview/语料/依赖零变更；
+> 语料不可改维持。
+> **挂账**：143 深层面（write 注入 `</script>` 关外层 SVG script + SVG script
+> 文本拼接求值）；defer 改道近似——多 defer 写入按取回完成序近似文档序、
+> interactive 后注册无二次布防（语料均无此形）；part06.js 18436 行既有超限
+>（拆分需独立切片）。承袭：063 Timeout、non-external-no-import（module async）、
+> parse-error 族、http-accept-header、referrer-policies、dynamic import() with
+> 透传、classic 外链 SRI、collect 账本打包重构、接口对象基建面、FIXME 组、
+> /tmp/zw-hb*.txt 插桩来源待查；**待决（须用户拍板）**：css/text 数据模块语料
+> 资源缺失。
+> **下一步**：s115 入场定刀位（候选：143 深层面评估 / execution-timing 余 F
+> 定刀 / 承袭挂账序）。
+> **切片间隙**：本轮 engine shim 面；下一候选同流同面，间隙开放。
+>
+> **▶ 上轮状态（2026-10-27 M2 切片 113 施工收口，type/language essence 16 集合轮——其下一步 s114 write 面族已由 s114 收口，见上）**：
 > **入场定谳**：s113 承 s112 解锁页 script-type-and-language-js（456 子测
 > 229P/227F）。227 失败全为「shouldn't run」判据：type 臂 53 + language 臂 173 +
 > 解析插入面 1（type="javascript" 被旧 `ends_with("javascript")` 误跑）。四动态
