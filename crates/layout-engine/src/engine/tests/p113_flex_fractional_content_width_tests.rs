@@ -53,9 +53,34 @@ fn test_p113_flex_li_fractional_width_no_spurious_wrap() {
         li.height
     );
     assert!(
-        (li.width - 127.0).abs() < 0.5,
+        (li.width - 127.0).abs() < 0.01,
         "li border-box width stays on the rounded layer (127), got {}",
         li.width
+    );
+}
+
+#[test]
+fn test_p113_vertical_unbounded_fallback_matches_rounded_layer() {
+    // DEF-1：!is_finite() 回退判定须在竖排轴交换之前——回退副本随后随交换块一同
+    // 轴交换，竖排下与 kill-switch off 的取整层表达式逐项一致（R1964 场景
+    // p.content_width 应为 18，回退错轴时经后处理落 0）。
+    let html = r#"<html><body style="margin:0">
+<div style="float:left; writing-mode:vertical-rl; background:red;">
+  <p>hello world test text vertical</p>
+</div>
+<div style="width:200px;height:200px"></div>
+</body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    let p = find_tag(&result.root, &doc, "p").expect("p box");
+    assert!(
+        (p.content_width - 18.0).abs() < 0.01,
+        "vertical fallback should match kill-switch-off rounded-layer semantics (content_width=18), got {}",
+        p.content_width
     );
 }
 

@@ -2099,6 +2099,14 @@ impl LayoutEngine {
         let mut margin_bottom = layout.margin.bottom;
         let mut margin_left = layout.margin.left;
 
+        // 未取整层在 unbounded 上下文（如 float 内 auto 尺寸）可含 NaN/inf（taffy inf
+        // 算术；取整层经 round_layout 保序为 inf）——非有限时整体回退取整层，保 R1964
+        // 竖排 float 的 inf 语义，仅有限分数场景走未取整约束（t-p113）。判定与回退
+        // 须在竖排轴交换之前：有限性与轴无关，回退副本随后随下方交换块一同变换，
+        // 竖排语义与 kill-switch off 的取整层表达式逐项一致（DEF-1，t-p113 返修）。
+        if !unrounded.size.width.is_finite() || !unrounded.size.height.is_finite() {
+            unrounded = layout;
+        }
         // 当父元素具有垂直书写模式时，taffy 的布局结果是轴交换后的，
         // 需要交换回正确的视觉坐标。
         // 与 tree.rs 中的 apply_vertical_writing_mode 轴交换配合使用：
@@ -2126,12 +2134,6 @@ impl LayoutEngine {
             std::mem::swap(&mut unrounded.border.bottom, &mut unrounded.border.right);
             std::mem::swap(&mut unrounded.padding.top, &mut unrounded.padding.left);
             std::mem::swap(&mut unrounded.padding.bottom, &mut unrounded.padding.right);
-        }
-        // 未取整层在 unbounded 上下文（如 float 内 auto 尺寸）可含 NaN/inf（taffy inf
-        // 算术；取整层经 round_layout 保序为 inf）——非有限时整体回退取整层，保 R1964
-        // 竖排 float 的 inf 语义，仅有限分数场景走未取整约束（t-p113）。
-        if !unrounded.size.width.is_finite() || !unrounded.size.height.is_finite() {
-            unrounded = layout;
         }
 
         // declared_margin_top: 计算样式声明的 margin-top（仅水平书写模式 + Px 长度时有效）。
