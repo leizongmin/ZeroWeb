@@ -1698,6 +1698,47 @@ body { margin: 0; }
     );
 }
 
+/// inline `<a>` 包 svg 行盒塌缩回归（github 登出页 header/footer 根因，R1576
+/// replaced-inline 镜像修复的端到端锚）：`<div><a><svg width height viewBox></svg></a></div>`
+/// 无任何文本，svg 原子盒必须参与行高（CSS Display 3 §2.4 / CSS2 §10.8.1）；
+/// 修复前 svg 落扁平化零宽 run → 容器行盒高 0（活体 github header 全 svg-only 行塌零）。
+#[test]
+fn render_inline_svg_anchor_container_line_box() {
+    let html = r#"<html><body><div class="bar"><a><svg width="32" height="32" viewBox="0 0 24 24"><path d="M1 1L23 23"/></svg></a></div></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let div_id = doc.get_elements_by_tag_name("div")[0];
+
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    pipeline.render_html(html, "");
+    let layout = pipeline.layout().expect("layout");
+    let (_, _, _, div_h, _) = find_layout_box_geometry(&layout.root, div_id, 0.0).expect("div box");
+    assert!(
+        div_h >= 30.0,
+        "div>a>svg 纯原子行容器高应 ≥30（svg 驱动行盒，留 2px 容差），实际 {div_h}"
+    );
+}
+
+/// position:fixed 元素在「inline 匿名块拆分上下文」中高度塌 0 回归（github 登出页
+/// header 塌零根因 #2 的引擎级最小形）：相邻两个默认 display:inline 的自定义元素各含
+/// 块级内容时，后者的 fixed 子树整体高 0（活体 github.com header bar/topRow 全链塌零；
+/// Chrome 中 fixed 元素包含块为 viewport，height:auto 按内容收缩到 41，不应为 0）。
+#[test]
+fn render_fixed_header_inside_inline_custom_element_siblings() {
+    let html = r#"<html><body><div><x-p><div></div></x-p><x-p><div><header style="position:fixed;top:0;left:0;right:0"><div style="height:41px">bar</div></header></div></x-p></div></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let header_id = doc.get_elements_by_tag_name("header")[0];
+
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    pipeline.render_html(html, "");
+    let layout = pipeline.layout().expect("layout");
+    let found = find_layout_box_geometry(&layout.root, header_id, 0.0);
+    let (_, _, _, header_h, _) = found.expect("fixed header box 应存在");
+    assert!(
+        header_h >= 40.0,
+        "fixed header 在 inline 匿名块上下文中高度应 ≥40（41px 内容高留容差），实际 {header_h}"
+    );
+}
+
 /// 沿布局树找 node_id 盒，返回 (x, gBCR-y绝对, width, gBCR-height, reported绝对)。
 ///
 /// reported 与盒 y 同为「相对父内容区」约定（slice13），此处一并换算为绝对值
