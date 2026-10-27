@@ -1233,6 +1233,11 @@ fn test_appearance_values() {
     assert_eq!(parse_appearance("button"), Some(AppearanceValue::Button));
     assert_eq!(parse_appearance("checkbox"), Some(AppearanceValue::Checkbox));
     assert_eq!(parse_appearance("menulist"), Some(AppearanceValue::Menulist));
+    // R5304：menulist-button（css-ui-4 compat-special，webkit-appearance-menulist-button-001）。
+    assert_eq!(
+        parse_appearance("menulist-button"),
+        Some(AppearanceValue::MenulistButton)
+    );
     assert!(parse_appearance("invalid").is_none());
 }
 

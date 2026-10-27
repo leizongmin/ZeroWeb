@@ -4893,6 +4893,56 @@ fn wpt_data_image_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::Im
 
 /// R34xx（G6）：外链脚本源获取器（.worker.js worker 变体 + worker 内 importScripts 的
 /// testharness.js/canvas-tests.js）——`(page_url, src)` → wpt-data 文件。
+/// s115：`serve-with-content-type.py?fn=<rel>&ct=<mime>` 查询解析（fn/ct 百分号
+/// 解码）——`wpt_data_script_fetcher`（模块/运行时面）与 `inline_local_scripts`
+/// （parser classic 内联面）共用。缺 fn 或 ct → None。
+fn parse_serve_with_content_type_query(query: &str) -> Option<(String, String)> {
+    let mut fn_param = None;
+    let mut ct_param = None;
+    for pair in query.split('&') {
+        if let Some(value) = pair.strip_prefix("fn=") {
+            fn_param = Some(
+                percent_encoding::percent_decode_str(value)
+                    .decode_utf8_lossy()
+                    .into_owned(),
+            );
+        } else if let Some(value) = pair.strip_prefix("ct=") {
+            ct_param = Some(
+                percent_encoding::percent_decode_str(value)
+                    .decode_utf8_lossy()
+                    .into_owned(),
+            );
+        }
+    }
+    Some((fn_param?, ct_param?))
+}
+
+/// s115：classic 外链脚本响应解码序（spec fetch a classic script）——BOM 嗅探 >
+/// ct charset 参数 > charset 属性 > UTF-8 lossy（runner 文档编码恒 UTF-8）。
+/// label 无法识别（encoding_rs for_label 落空）→ 顺延下一级。
+/// https://html.spec.whatwg.org/multipage/scripting.html#fetch-a-classic-script
+fn decode_classic_script_bytes(bytes: &[u8], ct: &str, charset_attr: Option<&str>) -> String {
+    if let Some((enc, _)) = encoding_rs::Encoding::for_bom(bytes) {
+        return enc.decode(bytes).0.into_owned();
+    }
+    let ct_label = ct.split(';').skip(1).find_map(|param| {
+        let param = param.trim();
+        if param.get(..8).is_some_and(|head| head.eq_ignore_ascii_case("charset=")) {
+            Some(param[8..].trim().to_string())
+        } else {
+            None
+        }
+    });
+    let label = ct_label.or_else(|| charset_attr.map(str::to_string));
+    match label
+        .as_deref()
+        .and_then(|l| encoding_rs::Encoding::for_label(l.as_bytes()))
+    {
+        Some(enc) => enc.decode(bytes).0.into_owned(),
+        None => String::from_utf8_lossy(bytes).into_owned(),
+    }
+}
+
 fn wpt_data_script_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::ScriptSourceFetcher> {
     let root = wpt_root.to_path_buf();
     Some(std::sync::Arc::new(move |page_url: &str, src: &str| {
@@ -4986,41 +5036,37 @@ fn wpt_data_script_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::S
             .file_name()
             .is_some_and(|name| name == std::ffi::OsStr::new("serve-with-content-type.py"))
         {
+            // s115：查询解析抽共享 helper（inline_local_scripts classic 内联面同用）。
             let query = src.split('?').nth(1).unwrap_or("");
-            let mut fn_param = None;
-            let mut ct_param = None;
-            for pair in query.split('&') {
-                if let Some(value) = pair.strip_prefix("fn=") {
-                    fn_param = Some(
-                        percent_encoding::percent_decode_str(value)
-                            .decode_utf8_lossy()
-                            .into_owned(),
-                    );
-                } else if let Some(value) = pair.strip_prefix("ct=") {
-                    ct_param = Some(
-                        percent_encoding::percent_decode_str(value)
-                            .decode_utf8_lossy()
-                            .into_owned(),
-                    );
-                }
-            }
-            match (fn_param, ct_param) {
-                (Some(file), Some(ct)) => {
+            match parse_serve_with_content_type_query(query) {
+                Some((file, ct)) => {
                     let dir = clean.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
                     Some((format!("{dir}/{file}"), ct))
                 }
-                _ => return Err(format!("serve-with-content-type.py missing fn/ct: {src}")),
+                None => return Err(format!("serve-with-content-type.py missing fn/ct: {src}")),
             }
         } else {
             None
         };
         if let Some((file_rel, mime)) = json_intent {
-            if !mime_is_json(&mime) {
-                return Err(format!("non-JSON MIME for module: {file_rel} ({mime})"));
+            if mime_is_json(&mime) {
+                return std::fs::read(root.join(&file_rel))
+                    .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+                    .map_err(|e| format!("json module fetch failed: {file_rel} ({e})"));
             }
-            return std::fs::read(root.join(&file_rel))
-                .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-                .map_err(|e| format!("json module fetch failed: {file_rel} ({e})"));
+            // s115：scripty ct——serve-with-content-type.py 交付 scripty fixture 文件。
+            // 解码恒 UTF-8 lossy（fetcher 无脚本类型/charset 属性上下文）：模块面 spec
+            // 本就恒 UTF-8——charset 参数/属性双忽略、BOM 忽略不嗅探（体内 U+FEFF 为
+            // JS 空白：UTF-8 BOM 模块照常执行、UTF-16 内容乱码语法错——module/
+            // charset-01/02/03 三页判据面）；classic 运行时取回无 charset 属性上下文，
+            // 同 UTF-8 近似（parser classic 面的 charset 感知在 inline_local_scripts
+            // 投递时完成）。非 scripty 非 JSON → Err（网络错误语义，s107 原口径）。
+            if mime_is_scripty(&mime) {
+                return std::fs::read(root.join(&file_rel))
+                    .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+                    .map_err(|e| format!("script fetch failed: {file_rel} ({e})"));
+            }
+            return Err(format!("non-scripty MIME for script fixture: {file_rel} ({mime})"));
         }
         let scripty = if let Some(mime) = mime_from_pipe {
             mime_is_scripty(&mime)
@@ -9457,6 +9503,39 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str) -> String 
                     let (status, body) = wpt_load_error_events_response(src_query);
                     return Some((combined, status, body));
                 }
+                // s115：serve-with-content-type.py classic 外链 fixture 仿真——wptserve
+                // 端点不在语料 pull 面（文件读落空 → 整段透传外链 → 宿主取回 Err 不执行，
+                // script-charset-01 全 6F 根因），按 handler 语义模拟：交付 fn 指向文件，
+                // 解码序 spec classic script 响应解码——BOM > ct charset 参数 > charset
+                // 属性 > UTF-8 lossy（runner 文档编码恒 UTF-8，script-charset-02 文档
+                // 编码面仍挂账）。**module 型不在本面**（charset 参数/属性/BOM 三忽略、
+                // 恒 UTF-8——spec fetch a single module script；module/charset-01/02/03
+                // 判据面）：module 外链保持外链投递，恒 UTF-8 交付在
+                // wpt_data_script_fetcher（charset 感知内联会反向翻绿为红——首版乌龙）。
+                // https://html.spec.whatwg.org/multipage/scripting.html#fetch-a-classic-script
+                // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+                let is_module_type = zero_engine::attr_from_open_tag(open, "type")
+                    .as_deref()
+                    .map(|t| {
+                        t.trim_matches(|c| matches!(c, '\t' | '\n' | '\x0C' | '\r' | ' '))
+                            .eq_ignore_ascii_case("module")
+                    })
+                    .unwrap_or(false);
+                if !is_module_type
+                    && std::path::Path::new(&combined)
+                        .file_name()
+                        .is_some_and(|name| name == std::ffi::OsStr::new("serve-with-content-type.py"))
+                {
+                    let (file, ct) = parse_serve_with_content_type_query(src_query)?;
+                    let dir = combined.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
+                    let file_rel = format!("{dir}/{file}");
+                    let Ok(bytes) = std::fs::read(wpt_root.join(&file_rel)) else {
+                        return None;
+                    };
+                    let charset_attr = zero_engine::attr_from_open_tag(open, "charset");
+                    let decoded = decode_classic_script_bytes(&bytes, &ct, charset_attr.as_deref());
+                    return Some((combined, 200, decoded));
+                }
                 std::fs::read_to_string(wpt_root.join(&combined)).ok().map(|c| {
                     // net-api M5-S1：`.sub.js` 服务端替换（上游 wptserve 语义；与
                     // script fetcher M4-S22、fetch 通道本切片同口径——`.html` 案外部
@@ -11422,6 +11501,76 @@ mod tests {
             "sidecar text/plain 须拒"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // s115：serve-with-content-type.py scripty 意图面——scripty ct 交付 fixture 文件
+    //（解码恒 UTF-8 lossy，charset 参数忽略——模块恒 UTF-8 判据面）；非 scripty
+    // 非 JSON（text/plain）→ Err（网络错误语义，s107 口径保持）。
+    #[test]
+    fn serve_with_content_type_scripty_intent_s115() {
+        let dir = std::env::temp_dir().join(format!("zw-swct-scripty-{}-s115", std::process::id()));
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        // windows-1250 原始字节（"śćążź" = 9C E6 B9 BF 9F，同语料 fixture）——
+        // UTF-8 lossy 解码为替换符。
+        std::fs::write(
+            dir.join("sub/w1250.js"),
+            b"(function(){window.getSomeString=function(){return \"\x9C\xE6\xB9\xBF\x9F\";};})();",
+        )
+        .unwrap();
+        std::fs::write(dir.join("sub/serve-with-content-type.py"), "# handler\n").unwrap();
+        let fetch = wpt_data_script_fetcher(&dir).unwrap();
+        let page = "https://wpt.test/sub/page.html";
+        let src = |q: &str| format!("./serve-with-content-type.py?fn=w1250.js&ct={q}");
+        // scripty ct 放行（charset 参数忽略——解码恒 UTF-8 lossy → 体内为替换符）。
+        let out = fetch(page, &src("text/javascript")).unwrap();
+        assert!(out.contains("getSomeString"), "{out}");
+        assert!(
+            !out.contains('\u{015b}'),
+            "windows-1250 字节须按 UTF-8 lossy 出替换符：{out}"
+        );
+        let out = fetch(page, &src("text/javascript%3Bcharset=windows-1250")).unwrap();
+        assert!(out.contains("getSomeString"), "{out}");
+        // 非 scripty 非 JSON → Err。
+        assert!(fetch(page, &src("text/plain")).is_err(), "text/plain 须拒");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // s115：classic 内联面解码序——BOM > ct charset 参数 > charset 属性 > UTF-8。
+    // script-charset-01 判据形态：ct 压 charset 属性；无 ct charset 时属性接管。
+    #[test]
+    fn inline_serve_with_content_type_charset_decode_s115() {
+        let root = std::env::temp_dir().join(format!("zw-swct-inline-{}-s115", std::process::id()));
+        let case_dir = "html/semantics/scripting-1/the-script-element";
+        std::fs::create_dir_all(root.join(case_dir)).unwrap();
+        // "śćążź" 的 windows-1250 字节（9C E6 B9 BF 9F，同语料 fixture）+ UTF-8 BOM 形。
+        let w1250: &[u8] = b"\x9C\xE6\xB9\xBF\x9F";
+        std::fs::write(root.join(case_dir).join("w1250.js"), w1250).unwrap();
+        let mut bom = b"\xEF\xBB\xBF".to_vec();
+        bom.extend_from_slice("globalThis.bomRan = true;".as_bytes());
+        std::fs::write(root.join(case_dir).join("bom-utf8.js"), &bom).unwrap();
+        let html = "<!doctype html><body>\
+            <script src=\"serve-with-content-type.py?fn=w1250.js&ct=text/javascript%3Bcharset=utf-8\" charset=\"windows-1250\"></script>\
+            <script src=\"serve-with-content-type.py?fn=w1250.js&ct=text/javascript%3Bcharset=windows-1250\" charset=\"utf-8\"></script>\
+            <script src=\"serve-with-content-type.py?fn=w1250.js&ct=text/javascript\" charset=\"windows-1250\"></script>\
+            <script src=\"serve-with-content-type.py?fn=bom-utf8.js&ct=text/javascript%3Bcharset=windows-1250\" charset=\"utf-8\"></script>\
+            <script type=\"module\" src=\"serve-with-content-type.py?fn=w1250.js&ct=text/javascript\" charset=\"windows-1250\"></script>\
+            </body>";
+        let out = inline_local_scripts(html, &root, &format!("{case_dir}/script-charset-01.html"));
+        // ct charset 参数压 charset 属性（ct=utf-8 + attr=windows-1250 → mojibake）。
+        let mojibake = String::from_utf8_lossy(w1250).into_owned();
+        assert!(out.contains(&mojibake), "ct=utf-8 须解码为替换符串：{out}");
+        // ct=windows-1250 + attr=utf-8 → ct 胜出，正确解码。
+        assert!(out.contains("śćążź"), "ct=windows-1250 须正确解码：{out}");
+        // 无 ct charset → charset 属性接管。
+        assert_eq!(out.matches("śćążź").count(), 2, "属性接管臂同串：{out}");
+        // BOM 嗅探压 ct charset（UTF-8 BOM + ct=windows-1250 → UTF-8 解码）。
+        assert!(out.contains("globalThis.bomRan = true;"), "BOM 嗅探须胜出：{out}");
+        // module 型不在 charset 感知内联面——整段透传（恒 UTF-8 交付在 fetcher）。
+        assert!(
+            out.contains("<script type=\"module\" src=\"serve-with-content-type.py"),
+            "module 外链须透传：{out}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     const MINI_HARNESS: &str = r#"

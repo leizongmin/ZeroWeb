@@ -1948,7 +1948,11 @@ impl super::Painter {
         style: &ComputedStyle,
         doc: Option<&Document>,
     ) {
-        match style.appearance {
+        // R5304（CSS UI 4 §appearance-switching）：绘制侧先解析 used 值——auto 解析为
+        // 元素原生 widget（appearance-auto-ref 类页面：作者 auto 覆盖 UA sheet 的
+        // radio/checkbox/button 后仍原生绘制）；其余值原样。
+        let appearance = super::effective_appearance(style, box_node, doc);
+        match appearance {
             // R4249（CSS UI 4 §appearance-switching + chromium 兼容行为）：meter/
             // progress-bar/listbox/menulist 是兼容别名——对适配元素 = 原生外观（auto），
             // 对其他元素亦按原生处理（webkit-appearance-meter-001 断言与 auto ref 像素
@@ -1981,7 +1985,7 @@ impl super::Painter {
         let cw = box_node.content_width;
         let ch = box_node.content_height;
 
-        match style.appearance {
+        match appearance {
             AppearanceComputedValue::Checkbox | AppearanceComputedValue::Radio => {
                 let size = ch.min(cw).clamp(8.0, 16.0);
                 let ox = cx + (cw - size) / 2.0;
@@ -1995,7 +1999,7 @@ impl super::Painter {
                     b: 118,
                     a: 255,
                 };
-                let is_radio = matches!(style.appearance, AppearanceComputedValue::Radio);
+                let is_radio = matches!(appearance, AppearanceComputedValue::Radio);
                 let oy = if is_radio { oy } else { oy.floor() };
                 if is_radio {
                     self.paint_native_radio(ox, oy, size, checked, accent, border_color);
@@ -2061,36 +2065,13 @@ impl super::Painter {
             AppearanceComputedValue::Button
             | AppearanceComputedValue::PushButton
             | AppearanceComputedValue::SquareButton => {}
-            AppearanceComputedValue::Textfield | AppearanceComputedValue::Textarea => {
-                // 文本输入框：白色背景 + 边框
-                let bg = Color {
-                    r: 255,
-                    g: 255,
-                    b: 255,
-                    a: 255,
-                };
-                let border = Color {
-                    r: 120,
-                    g: 120,
-                    b: 120,
-                    a: 255,
-                };
-                self.primitives.add_fill(Rect::new(cx, cy, cw, ch), bg);
-                self.primitives.add_fill(Rect::new(cx, cy, cw, 1.0), border);
-                self.primitives.add_fill(Rect::new(cx, cy + ch - 1.0, cw, 1.0), border);
-                self.primitives.add_fill(Rect::new(cx, cy, 1.0, ch), border);
-                self.primitives.add_fill(Rect::new(cx + cw - 1.0, cy, 1.0, ch), border);
-            }
-            _ => {
-                // 其他 appearance 类型：灰色背景指示器
-                let indicator = Color {
-                    r: 230,
-                    g: 230,
-                    b: 230,
-                    a: 200,
-                };
-                self.primitives.add_fill(Rect::new(cx, cy, cw, ch), indicator);
-            }
+            // R5304：Textfield/Textarea/其余 legacy 值（Searchfield/SliderHorizontal/
+            // MenulistButton 等）ZW 无独立 widget chrome——按普通盒渲染（css-ui-4 兼容
+            // 别名：非适配元素 = 元素自身原生外观，ZW 原生外观即 UA 样式素盒）。原
+            // Textfield/Textarea 臂的白底+#787878 边框覆盖 UA 样式成双边框、catchall 灰色
+            // 指示器 rgba(230,230,230,200) 在裸 input（computed auto，R5304 起进入本函数）
+            // 上成片扰动 corpus，均删。
+            _ => {}
         }
     }
 

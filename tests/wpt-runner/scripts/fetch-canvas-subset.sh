@@ -14,6 +14,14 @@ WPT_DATA="${REPO_ROOT}/tests/wpt-runner/wpt-data"
 WPT_REV="315976933870b34d6ea30e3f6643403edae678ba"
 RAW_ROOT="https://raw.githubusercontent.com/web-platform-tests/wpt/${WPT_REV}"
 API_ROOT="https://api.github.com/repos/web-platform-tests/wpt/contents"
+# GitHub Contents API 认证（可选，goals/lib.sh 同款）：设 GITHUB_TOKEN 时列目录带
+# Bearer 头——匿名 60 req/h 在 weekly coverage 多分片并发下会 403（run 40522731884
+# misc 分片实证：fetch-canvas-subset 403 整步失败）；认证 5000 req/h。raw 下载
+# （RAW_ROOT/jsdelivr）不走该配额。
+GH_API_AUTH=()
+if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+  GH_API_AUTH=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
+fi
 
 # 第一批：核心 API 面主线程 .html 用例（与 test_cases_canvas.rs 既有 40 smoke 面一致）。
 # R34xx（G6）：OffscreenCanvas worker 变体目录面（html/canvas/offscreen/*）
@@ -109,6 +117,7 @@ fetch_dir_html() {
   local dir="$1"
   local names
   names=$(curl --fail --location --silent --show-error --retry 3 --connect-timeout 8 --max-time 30 \
+    "${GH_API_AUTH[@]}" \
     "${API_ROOT}/${dir}" | grep -o '"name": "[^"]*"')
   while IFS= read -r line; do
     local name="${line#\"name\": \"}"

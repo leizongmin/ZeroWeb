@@ -358,9 +358,59 @@ fn test_appearance_none_no_indicator() {
 }
 
 #[test]
+fn test_appearance_auto_bare_input_no_native_paint() {
+    // R5304 回归守卫：裸 input（computed auto，无 type）两态解析后 ZW 无对应 widget
+    // chrome → 按普通盒渲染，不得生成任何原生图元。原 catchall 灰色指示器
+    // rgba(230,230,230,200) 曾在此类元素上成片扰动 corpus（grouped-fallback/trailing-space
+    // 等 21 案），已删；此断言防其回归。
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("input");
+    let layout = make_box(Some(elem), 0.0, 0.0, 120.0, 30.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.appearance = AppearanceComputedValue::Auto;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.skip_indicators = false;
+    painter.paint(&layout, &styles, Some(&doc));
+
+    let prims = painter.primitives();
+    assert!(prims.fills.is_empty(), "裸 input auto 不应生成原生控件图元（≡ 普通盒）");
+}
+
+#[test]
+fn test_appearance_auto_checkbox_resolves_native() {
+    // R5304 两态模型判例：作者 auto 覆盖 UA sheet 后仍按元素解析原生外观
+    //（≡ appearance-auto-ref 断言组：auto 与全部 legacy 值互为兼容别名）。
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("input");
+    doc.set_attribute(elem, "type", "checkbox");
+    let layout = make_box(Some(elem), 0.0, 0.0, 20.0, 20.0);
+
+    let mut styles = HashMap::new();
+    let mut style = ComputedStyle::default();
+    style.appearance = AppearanceComputedValue::Auto;
+    styles.insert(elem, style);
+
+    let mut painter = Painter::new();
+    painter.skip_indicators = false;
+    painter.paint(&layout, &styles, Some(&doc));
+
+    let prims = painter.primitives();
+    assert!(
+        prims.fills.len() >= 2,
+        "input[type=checkbox] auto 应解析为 checkbox 原生外观（边框+白底）"
+    );
+}
+
+#[test]
 fn test_appearance_checkbox_generates_indicator() {
     let mut doc = zero_dom::Document::new();
     let elem = doc.create_element("input");
+    // R5304 两态模型：绘制侧按元素解析原生 appearance，checkbox chrome 须 type=checkbox。
+    doc.set_attribute(elem, "type", "checkbox");
     let layout = make_box(Some(elem), 0.0, 0.0, 20.0, 20.0);
 
     let mut styles = HashMap::new();
@@ -406,7 +456,7 @@ fn test_appearance_button_does_not_cover_standard_paint() {
 }
 
 #[test]
-fn test_appearance_textfield_generates_border() {
+fn test_appearance_textfield_no_native_paint() {
     let mut doc = zero_dom::Document::new();
     let elem = doc.create_element("input");
     let layout = make_box(Some(elem), 0.0, 0.0, 120.0, 30.0);
@@ -421,21 +471,17 @@ fn test_appearance_textfield_generates_border() {
     painter.paint(&layout, &styles, None);
 
     let prims = painter.primitives();
-    // textfield 应生成白色背景 + 4 条边框
-    assert!(prims.fills.len() >= 5, "textfield 应生成背景和 4 条边框");
-
-    // 检查白色背景
-    let has_white_bg = prims
-        .fills
-        .iter()
-        .any(|f| f.color.r == 255 && f.color.g == 255 && f.color.b == 255);
-    assert!(has_white_bg, "textfield 应有白色背景");
+    // R5304 两态模型：textfield 无专属 ZW 原生 chrome——按普通盒渲染（UA 样式素盒），
+    // 不再叠加白底+#787878 边框（原臂覆盖 UA 样式成双边框，corpus 扰动已删）。
+    assert!(prims.fills.is_empty(), "textfield 不应生成原生控件图元（≡ 普通盒）");
 }
 
 #[test]
 fn test_appearance_radio_generates_indicator() {
     let mut doc = zero_dom::Document::new();
     let elem = doc.create_element("input");
+    // R5304 两态模型：radio chrome 须 type=radio（绘制侧按元素解析）。
+    doc.set_attribute(elem, "type", "radio");
     let layout = make_box(Some(elem), 0.0, 0.0, 20.0, 20.0);
 
     let mut styles = HashMap::new();
@@ -463,6 +509,7 @@ fn test_appearance_radio_generates_indicator() {
 fn test_appearance_13px_radio_floors_fractional_y() {
     let mut doc = zero_dom::Document::new();
     let elem = doc.create_element("input");
+    doc.set_attribute(elem, "type", "radio");
     let layout = make_box(Some(elem), 0.0, 0.8, 13.0, 13.0);
 
     let mut styles = HashMap::new();
@@ -488,6 +535,7 @@ fn test_appearance_13px_radio_floors_fractional_y() {
 fn test_appearance_with_accent_color_override() {
     let mut doc = zero_dom::Document::new();
     let elem = doc.create_element("input");
+    doc.set_attribute(elem, "type", "checkbox");
     let layout = make_box(Some(elem), 0.0, 0.0, 20.0, 20.0);
 
     let mut styles = HashMap::new();

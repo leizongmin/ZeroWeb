@@ -345,6 +345,8 @@ pub enum AppearanceValue {
     Listbox,
     /// menulist。
     Menulist,
+    /// menulist-button（css-ui-4 compat-special：drop-down select 上非 auto 别名，其余为兼容别名）。
+    MenulistButton,
     /// meter。
     Meter,
     /// progress-bar。
@@ -374,6 +376,7 @@ pub fn parse_appearance(value: &str) -> Option<AppearanceValue> {
         "checkbox" => Some(AppearanceValue::Checkbox),
         "listbox" => Some(AppearanceValue::Listbox),
         "menulist" => Some(AppearanceValue::Menulist),
+        "menulist-button" => Some(AppearanceValue::MenulistButton),
         "meter" => Some(AppearanceValue::Meter),
         "progress-bar" => Some(AppearanceValue::ProgressBar),
         "push-button" => Some(AppearanceValue::PushButton),

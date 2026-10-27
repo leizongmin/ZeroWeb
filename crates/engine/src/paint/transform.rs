@@ -3,7 +3,7 @@
 use super::clip::PrimitiveCounts;
 use zero_css_parser::values::{LengthValue, TransformFunction, TransformValue};
 use zero_render_foundation::geometry::Rect;
-use zero_render_foundation::primitive::{RenderPrimitives, TransformPrimitive};
+use zero_render_foundation::primitive::{GradientKind, RenderPrimitives, TransformPrimitive};
 use zero_style_system::ComputedStyle;
 
 /// 从 ComputedStyle 的 transform 计算偏移量。
@@ -765,6 +765,86 @@ pub fn translate_primitives_since(primitives: &mut RenderPrimitives, from: &Prim
     // 与 CSS transform 组合罕见），不覆盖。
 }
 
+/// R5305（css-transforms-1 §transform-rendering）：均匀轴对齐 scale 的图元级直映。
+///
+/// TP 场景重采样的结构局限：`apply_transform_post` 对 union rect（R3915 原 rect ∪
+/// 变换后四角 bbox）先清白、再对保存的**全场景**像素反向采样——scale-up 时扩展带内
+/// 输出像素的源点落回原 rect，把 rect 内 **backdrop**（祖先/兄弟已绘内容）复制到元素
+/// 框外（background-rounded-image-clip-002：透明边框元素 `scale(1.05)`，wrapper 红底
+/// 被外扩成 5px 红环；chromium 变换只作用于元素自身渲染，backdrop 原位不动）。
+///
+/// 本路径把自快照 `from` 起新增的图元直接以 TP 全矩阵仿射映射（b=c=0 且 a==d>0 时
+/// axis-aligned rect 映射后仍 axis-aligned）：fill/gradient 几何精确、backdrop 零扰动，
+/// 语义即「变换作用于元素及其整个子树的渲染」。径向半径随 a 缩放（均匀 scale 保圆），
+/// 锥形仅圆心映射（均匀 scale 不改角度），线性端点全映射。含其他图元类（字形/圆角
+/// 矩形/图片/阴影/描边/filter/blend）或非均匀/旋转/倾斜矩阵时返 false 回落 TP 路径。
+/// path_fills/path_strokes 无快照计数（canvas/SVG 桥域，同 translate_primitives_since
+/// 不覆盖），返 false 回落。
+///
+/// 返回 true = 已直映（调用方跳过 TP 发射）；false = 未动任何图元。
+pub fn map_uniform_scale_primitives_since(
+    primitives: &mut RenderPrimitives,
+    tp: &TransformPrimitive,
+    from: &PrimitiveCounts,
+    filters_before: usize,
+    blend_modes_before: usize,
+) -> bool {
+    if tp.b != 0.0 || tp.c != 0.0 || tp.a <= 0.0 || tp.a != tp.d {
+        return false;
+    }
+    if primitives.rounded_rects.len() != from.rounded_rects
+        || primitives.shadows.len() != from.shadows
+        || primitives.images.len() != from.images
+        || primitives.glyphs.len() != from.glyphs
+        || primitives.strokes.len() != from.strokes
+        || primitives.filters.len() != filters_before
+        || primitives.blend_modes.len() != blend_modes_before
+    {
+        return false;
+    }
+    let (a, d, tx, ty) = (tp.a, tp.d, tp.tx, tp.ty);
+    let map_rect = |r: Rect| {
+        Rect::new(
+            a * r.origin.x + tx,
+            d * r.origin.y + ty,
+            a * r.size.width,
+            d * r.size.height,
+        )
+    };
+    for f in primitives.fills.iter_mut().skip(from.fills) {
+        f.rect = map_rect(f.rect);
+    }
+    for g in primitives.gradients.iter_mut().skip(from.gradients) {
+        g.rect = map_rect(g.rect);
+        g.clip = g.clip.map(map_rect);
+        g.kind = match g.kind {
+            GradientKind::Linear { x0, y0, x1, y1 } => GradientKind::Linear {
+                x0: a * x0 + tx,
+                y0: d * y0 + ty,
+                x1: a * x1 + tx,
+                y1: d * y1 + ty,
+            },
+            GradientKind::Radial {
+                cx,
+                cy,
+                inner_radius,
+                outer_radius,
+            } => GradientKind::Radial {
+                cx: a * cx + tx,
+                cy: d * cy + ty,
+                inner_radius: a * inner_radius,
+                outer_radius: a * outer_radius,
+            },
+            GradientKind::Conic { cx, cy, start_angle } => GradientKind::Conic {
+                cx: a * cx + tx,
+                cy: d * cy + ty,
+                start_angle,
+            },
+        };
+    }
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -774,7 +854,9 @@ mod tests {
     use zero_layout_engine::LayoutBox;
     use zero_render_foundation::color::Color;
     use zero_render_foundation::geometry::Rect;
-    use zero_render_foundation::primitive::{FillPrimitive, FontId, GlyphPrimitive, RenderPrimitives};
+    use zero_render_foundation::primitive::{
+        FillPrimitive, FontId, GlyphPrimitive, GradientPrimitive, RenderPrimitives,
+    };
     use zero_style_system::ComputedStyle;
 
     // ── apply_transform_offset ──────────────────────────────────────────
@@ -852,6 +934,168 @@ mod tests {
         assert_eq!(p.fills[1].rect.origin.x, 105.0, "快照后 fill 平移");
         assert_eq!(p.glyphs[1].x, 106.0, "快照后 glyph 平移 x+5");
         assert_eq!(p.glyphs[1].y, 109.0, "快照后 glyph 平移 y+7");
+    }
+
+    // ── R5305：map_uniform_scale_primitives_since ────────────────────────
+
+    /// scale(1.05) about origin (0,0)：fill/gradient rect 精确映射（R5305 驱动案
+    /// background-rounded-image-clip-002 的缩放足迹语义）。
+    #[test]
+    fn test_uniform_scale_direct_maps_fills_and_gradients() {
+        let mut p = RenderPrimitives::new();
+        p.fills.push(FillPrimitive {
+            rect: Rect::new(8.0, 8.0, 200.0, 200.0),
+            color: Color::BLACK,
+        });
+        let from = PrimitiveCounts::snapshot(&p);
+        p.fills.push(FillPrimitive {
+            rect: Rect::new(58.0, 58.0, 100.0, 100.0),
+            color: Color::BLACK,
+        });
+        p.gradients.push(GradientPrimitive {
+            rect: Rect::new(58.0, 58.0, 100.0, 100.0),
+            kind: GradientKind::Linear {
+                x0: 58.0,
+                y0: 58.0,
+                x1: 158.0,
+                y1: 58.0,
+            },
+            stops: Vec::new(),
+            repeating: false,
+            interpolation: Default::default(),
+            clip: None,
+        });
+        // scale 1.05，无平移（含 origin 的全矩阵语义由 compute 侧保证，此处直验矩阵）。
+        let tp = TransformPrimitive {
+            rect: Rect::new(2.5, 2.5, 210.0, 210.0),
+            origin_x: 0.0,
+            origin_y: 0.0,
+            a: 1.05,
+            b: 0.0,
+            c: 0.0,
+            d: 1.05,
+            tx: 0.0,
+            ty: 0.0,
+        };
+        assert!(map_uniform_scale_primitives_since(&mut p, &tp, &from, 0, 0));
+        assert!((p.fills[1].rect.origin.x - 60.9).abs() < 1e-4, "fill rect 随矩阵缩放");
+        assert!((p.fills[1].rect.size.width - 105.0).abs() < 1e-4, "fill rect 尺寸缩放");
+        assert_eq!(p.fills[0].rect.origin.x, 8.0, "快照前 fill 不动");
+        match &p.gradients[0].kind {
+            GradientKind::Linear { x0, y0, x1, y1 } => {
+                assert!(
+                    (*x0 - 60.9).abs() < 1e-4
+                        && (*y0 - 60.9).abs() < 1e-4
+                        && (*x1 - 165.9).abs() < 1e-4
+                        && (*y1 - 60.9).abs() < 1e-4,
+                    "线性端点映射"
+                );
+            }
+            other => panic!("kind 应保持 Linear: {other:?}"),
+        }
+    }
+
+    /// 纯平移矩阵（a=d=1，b=c=0）同为均匀直映域——TranslateMixed 走 matrix 路径时
+    /// 由此获得 R3901 图元级平移同语义（transform3d-preserve3d-005 翻绿路径）。
+    #[test]
+    fn test_uniform_scale_direct_covers_pure_translation_matrix() {
+        let mut p = RenderPrimitives::new();
+        let from = PrimitiveCounts::snapshot(&p);
+        p.fills.push(FillPrimitive {
+            rect: Rect::new(0.0, 0.0, 100.0, 100.0),
+            color: Color::BLACK,
+        });
+        let tp = TransformPrimitive {
+            rect: Rect::new(0.0, 0.0, 300.0, 100.0),
+            origin_x: 0.0,
+            origin_y: 0.0,
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            tx: 200.0,
+            ty: 0.0,
+        };
+        assert!(map_uniform_scale_primitives_since(&mut p, &tp, &from, 0, 0));
+        assert_eq!(p.fills[0].rect.origin.x, 200.0, "平移分量以图元级生效");
+    }
+
+    /// 非均匀 scale（a≠d）与旋转（b≠0）返 false 零改动——回落 TP 路径。
+    #[test]
+    fn test_uniform_scale_direct_rejects_non_uniform_and_rotation() {
+        let mut p = RenderPrimitives::new();
+        let from = PrimitiveCounts::snapshot(&p);
+        p.fills.push(FillPrimitive {
+            rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+            color: Color::BLACK,
+        });
+        let mk_tp = |a: f32, b: f32, c: f32, d: f32| TransformPrimitive {
+            rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+            origin_x: 0.0,
+            origin_y: 0.0,
+            a,
+            b,
+            c,
+            d,
+            tx: 0.0,
+            ty: 0.0,
+        };
+        let before = p.fills[0].rect;
+        assert!(
+            !map_uniform_scale_primitives_since(&mut p, &mk_tp(2.0, 0.0, 0.0, 1.0), &from, 0, 0),
+            "a≠d 非均匀"
+        );
+        assert!(
+            !map_uniform_scale_primitives_since(&mut p, &mk_tp(0.0, 1.0, -1.0, 0.0), &from, 0, 0),
+            "90° 旋转"
+        );
+        assert!(
+            !map_uniform_scale_primitives_since(&mut p, &mk_tp(-1.0, 0.0, 0.0, -1.0), &from, 0, 0),
+            "负 scale 回落"
+        );
+        assert_eq!(p.fills[0].rect, before, "拒绝路径零改动");
+    }
+
+    /// 子树含字形（文本内容）返 false 回落——TP 域 corpus 已校准，不改路。
+    #[test]
+    fn test_uniform_scale_direct_rejects_glyph_subtree() {
+        let mut p = RenderPrimitives::new();
+        let from = PrimitiveCounts::snapshot(&p);
+        p.fills.push(FillPrimitive {
+            rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+            color: Color::BLACK,
+        });
+        p.glyphs.push(GlyphPrimitive {
+            x: 1.0,
+            y: 2.0,
+            font_size: 16.0,
+            color: Color::BLACK,
+            glyph_id: 'a' as u32,
+            font_glyph_index: None,
+            source: None,
+            font_id: FontId(0),
+            font_variation_id: None,
+            bitmap_width: None,
+            bitmap_height: None,
+            rotation: 0.0,
+            synthetic_italic: false,
+        });
+        let tp = TransformPrimitive {
+            rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+            origin_x: 0.0,
+            origin_y: 0.0,
+            a: 2.0,
+            b: 0.0,
+            c: 0.0,
+            d: 2.0,
+            tx: 0.0,
+            ty: 0.0,
+        };
+        assert!(
+            !map_uniform_scale_primitives_since(&mut p, &tp, &from, 0, 0),
+            "含 glyph 回落"
+        );
+        assert_eq!(p.fills[0].rect.origin.x, 0.0, "回落路径零改动");
     }
 
     #[test]

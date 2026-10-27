@@ -4,6 +4,7 @@
 //! border_fill_rect、paint_3d_border、paint_outline。
 
 use zero_css_parser::values::{ColorValue, CornerShapeKind, LengthValue};
+use zero_dom::Document;
 use zero_layout_engine::LayoutBox;
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
@@ -54,6 +55,7 @@ impl super::Painter {
         abs_x: f32,
         abs_y: f32,
         style: &ComputedStyle,
+        doc: Option<&Document>,
         legend_x: f32,
         legend_width: f32,
         legend_height: f32,
@@ -62,7 +64,7 @@ impl super::Painter {
         let mut lower_box = box_node.clone();
         lower_box.height = (lower_box.height - legend_height / 2.0).max(0.0);
         lower_box.border_top = 0.0;
-        self.paint_borders(&lower_box, abs_x, top_y, style);
+        self.paint_borders(&lower_box, abs_x, top_y, style, doc);
 
         if box_node.border_top <= 0.0
             || matches!(
@@ -102,7 +104,14 @@ impl super::Painter {
     /// - Dashed：方头虚线描边
     /// - Double：双线填充矩形（中间留空隙）
     /// - Groove/Ridge/Inset/Outset：3D 效果双色填充
-    pub(super) fn paint_borders(&mut self, box_node: &LayoutBox, abs_x: f32, abs_y: f32, style: &ComputedStyle) {
+    pub(super) fn paint_borders(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+        doc: Option<&Document>,
+    ) {
         // R4534（css-borders-4 §7.5.1）：border-shape 活跃时抑制常规 4 边绘制与形角
         // 环带（border-radius 视为 0、corner-shape 隐式忽略），改发射形状描边
         //（stroke mode，路径居中描边）或内外形状环带填充（fill mode，even-odd）。
@@ -137,8 +146,12 @@ impl super::Painter {
         }
         let w = box_node.width;
         let h = box_node.height;
+        // R5304：Button 族原生边框消费绘制侧 used 值——auto 与 legacy 别名在
+        // button 上均解析为 Button（css-ui-4 两态模型），appearance-auto-ref 类
+        // 页面与声明 button 同渲染。
+        let eff_appearance = super::effective_appearance(style, box_node, doc);
         if matches!(
-            style.appearance,
+            eff_appearance,
             AppearanceComputedValue::Button
                 | AppearanceComputedValue::PushButton
                 | AppearanceComputedValue::SquareButton

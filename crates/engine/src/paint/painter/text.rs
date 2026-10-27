@@ -1051,16 +1051,15 @@ impl super::Painter {
         {
             return;
         }
+        // R5304：原生按钮文本 +2 基线随绘制侧 used 值——auto 在 button 上解析为
+        // Button（appearance-auto-ref 类页面与声明 button 同基线）；元素判定由
+        // 解析器承担（仅 button 产出 Button）。
         let abs_y = if matches!(
-            style.appearance,
+            super::effective_appearance(style, box_node, doc),
             zero_style_system::AppearanceComputedValue::Button
                 | zero_style_system::AppearanceComputedValue::PushButton
                 | zero_style_system::AppearanceComputedValue::SquareButton
-        ) && box_node.node_id.is_some_and(|node_id| {
-            doc.and_then(|doc| doc.get(node_id)).is_some_and(
-                |node| matches!(&node.kind, NodeKind::Element(element) if element.local_name().eq_ignore_ascii_case("button")),
-            )
-        }) {
+        ) {
             abs_y + 2.0
         } else {
             abs_y
