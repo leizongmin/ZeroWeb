@@ -211,6 +211,17 @@ fn font_unicode_range_gate_enabled() -> bool {
     std::env::var("ZW_FONT_UNICODE_RANGE").as_deref() != Ok("0")
 }
 
+/// T20/G1：取 `css_pending` 队首表的 fetch 结果——已决（Ok 值或 Err 失败）返回
+/// `Some(result)`；未决（`Empty`）或通道关闭无值（`Disconnected`，宿主异常中止）与
+/// 队列空均返回 `None`（前缀门控下统一视为「前缀到头」）。借用仅限本调用表达式，
+/// 便于调用方随后 `remove(0)` 消费队首。
+fn front_pending_decided(pending: &mut [(String, Receiver<Result<String, String>>)]) -> Option<Result<String, String>> {
+    match pending.first_mut() {
+        Some((_, rx)) => rx.try_recv().ok(),
+        None => None,
+    }
+}
+
 /// 使用即取门禁的每页输入快照（`begin_font_fetch` 边界构造一次，不进逐 face 循环——
 /// 环境变量与文档解析均只读一次）。
 struct FontUseGate {
@@ -693,49 +704,55 @@ impl AsyncPageLoad {
         if self.stage != PageLoadStage::FetchingStylesheets {
             return;
         }
-        // R2411：到达样式表的 @import URL 先收集到局部（retain 闭包内 css_pending 正被借用，
-        // 不能在此 fetch）。每个 @import 相对**该样式表 url** 解析（非文档 url）。
+        // R2411：到达样式表的 @import URL 先收集到局部（队首推进中 css_pending 正被
+        // 逐个移除，不能在此 fetch）。每个 @import 相对**该样式表 url** 解析（非文档 url）。
         let mut import_urls: Vec<String> = Vec::new();
-        self.css_pending.retain(|(url, rx)| {
-            if let Ok(result) = rx.try_recv() {
-                match result {
-                    Ok(css) => {
-                        // https://drafts.csswg.org/css-values-4/#relative-urls
-                        let css = crate::css_urls::absolutize_css_urls(&css, url);
-                        self.link_element_events.push((url.clone(), "load"));
-                        for imp in extract_import_urls(&css) {
-                            if imp.starts_with("data:") {
-                                continue;
-                            }
-                            let abs = match url::Url::parse(url).ok().and_then(|b| b.join(&imp).ok()) {
-                                Some(u) => u.to_string(),
-                                None => imp,
-                            };
-                            import_urls.push(abs);
+        // T20/G1：文档序前缀门控追加——级联序规范要求多张外部样式表按文档序级联
+        // （https://drafts.csswg.org/css-cascade-5/#cascade-order）。旧实现在 retain 闭包内
+        // 谁先完成谁先 push_str，拼接序 = fetch 完成序（受表大小/连接/缓存时序摆布，
+        // 同页两次加载级联束可不同）。此处从队首起 Kleene 式推进 ready 前缀：已决者
+        // 按队列序处理入束，遇首个未决者停止本轮——束内容恒为入队序列的前缀，而入队
+        // 序 = `<link>` 文档序 + 父表入束后按发现序追加的 @import 子表，故拼接序确定为
+        // 文档序 DFS，与完成时序解耦。失败表按既有失败路径记账后视为已决，前缀照常
+        // 推进。stage 推进条件不变（仍等全 drain，无延迟回归面）。
+        while let Some(result) = front_pending_decided(&mut self.css_pending) {
+            let (url, _) = self.css_pending.remove(0);
+            match result {
+                Ok(css) => {
+                    // https://drafts.csswg.org/css-values-4/#relative-urls
+                    let css = crate::css_urls::absolutize_css_urls(&css, &url);
+                    self.link_element_events.push((url.clone(), "load"));
+                    for imp in extract_import_urls(&css) {
+                        if imp.starts_with("data:") {
+                            continue;
                         }
-                        // s89：@import 语句剥离后再入合并级联——子表内容经上方
-                        // import_urls 单独抓取追加，语句文本残留会在无分号形态把
-                        // 后续拼接表的首条规则吞进 at-rule 块（与
-                        // resolve_external_css 同刀）。
-                        let css = crate::css_urls::strip_import_statements(&css);
-                        self.css.push_str(&css);
-                        self.css.push('\n');
+                        let abs = match url::Url::parse(&url).ok().and_then(|b| b.join(&imp).ok()) {
+                            Some(u) => u.to_string(),
+                            None => imp,
+                        };
+                        import_urls.push(abs);
                     }
-                    Err(e) => {
-                        tracing::warn!("stylesheet {url} fetch failed: {e}");
-                        self.failed_resources.push(FailedResource {
-                            kind: "stylesheet",
-                            url: url.clone(),
-                        });
-                        self.link_element_events.push((url.clone(), "error"));
-                    }
+                    // s89：@import 语句剥离后再入合并级联——子表内容经上方
+                    // import_urls 单独抓取追加，语句文本残留会在无分号形态把
+                    // 后续拼接表的首条规则吞进 at-rule 块（与
+                    // resolve_external_css 同刀）。子表序确定化见上方前缀门控注释：
+                    // 子表仅在父表入束后入队，前缀门控令其在先入队的兄弟表之后、
+                    // 按发现序追加（https://drafts.csswg.org/css-cascade-5/#imports）。
+                    let css = crate::css_urls::strip_import_statements(&css);
+                    self.css.push_str(&css);
+                    self.css.push('\n');
                 }
-                *changed = true;
-                false
-            } else {
-                true
+                Err(e) => {
+                    tracing::warn!("stylesheet {url} fetch failed: {e}");
+                    self.failed_resources.push(FailedResource {
+                        kind: "stylesheet",
+                        url: url.clone(),
+                    });
+                    self.link_element_events.push((url.clone(), "error"));
+                }
             }
-        });
+            *changed = true;
+        }
         // R2411：递归 fetch @import 引入的样式表（css_seen 防环——每个 url 仅 fetch 一次；
         // 循环 @import A→B→A 因 css_seen 命中而止）。stage 保持 FetchingStylesheets 直到全部
         //（含递归）drain 完，再进入 StyledPaint。
@@ -1473,7 +1490,7 @@ fn substitute_css_vars_text(css: &str) -> String {
 mod tests {
     use super::*;
     use std::collections::HashSet;
-    use std::sync::mpsc::{Receiver, channel};
+    use std::sync::mpsc::{Receiver, Sender, channel};
 
     use crate::{WebView, WebViewConfig};
     use zero_page_runtime::{AsyncFetchHost, ResourceFetchMeta};
@@ -1552,6 +1569,61 @@ mod tests {
             self.calls.push(url.to_string());
             let (tx, rx) = channel();
             let _ = tx.send(self.bytes_body.clone());
+            rx
+        }
+    }
+
+    /// 完成时序可控的文本抓取宿主：fetch 仅登记 URL 并返回未发送的 channel，测试按
+    /// 任意顺序 `release` 触发完成——模拟真实网络乱序回包（表大小/缓存时序摆布完成序）。
+    struct DeferredTextFetchHost {
+        calls: Vec<String>,
+        /// 未决 fetch 的 `(绝对 URL, sender)`，release 按 URL 后缀取用。
+        senders: Vec<(String, Sender<Result<String, String>>)>,
+    }
+
+    impl DeferredTextFetchHost {
+        fn new() -> Self {
+            Self {
+                calls: Vec::new(),
+                senders: Vec::new(),
+            }
+        }
+
+        /// 让 url 以 `url_suffix` 结尾的未决 fetch 完成（同一 URL 仅 fetch 一次）。
+        fn release(&mut self, url_suffix: &str, result: Result<String, String>) {
+            let idx = self
+                .senders
+                .iter()
+                .position(|(u, _)| u.ends_with(url_suffix))
+                .unwrap_or_else(|| panic!("no pending text fetch ending with {url_suffix}: {:?}", self.senders));
+            let (_, tx) = self.senders.remove(idx);
+            let _ = tx.send(result);
+        }
+
+        /// tick 推进到 `FetchingStylesheets`（外链样式表 fetch 已全部发出）。
+        fn tick_to_fetching_stylesheets(load: &mut AsyncPageLoad, wv: &mut WebView, host: &mut Self) {
+            for _ in 0..10 {
+                if load.stage() == PageLoadStage::FetchingStylesheets {
+                    return;
+                }
+                let _ = load.tick(wv, host, 500.0);
+            }
+            panic!("did not reach FetchingStylesheets");
+        }
+    }
+
+    impl AsyncFetchHost for DeferredTextFetchHost {
+        fn fetch_text_meta(&mut self, url: &str, _: ResourceFetchMeta) -> Receiver<Result<String, String>> {
+            self.calls.push(url.to_string());
+            let (tx, rx) = channel();
+            self.senders.push((url.to_string(), tx));
+            rx
+        }
+
+        fn fetch_bytes_meta(&mut self, url: &str, _: ResourceFetchMeta) -> Receiver<Result<Vec<u8>, String>> {
+            self.calls.push(url.to_string());
+            let (tx, rx) = channel();
+            let _ = tx.send(Err("no bytes expected in this test".to_string()));
             rx
         }
     }
@@ -2377,6 +2449,127 @@ mod tests {
         let b_count = host.calls.iter().filter(|u| u.ends_with("b.css")).count();
         assert_eq!(a_count, 1, "a.css 仅一次");
         assert_eq!(b_count, 1, "b.css 仅一次（css_seen 防环）");
+    }
+
+    // ── T20/G1：级联拼接序确定性（文档序前缀门控）─────────────────────────
+
+    /// 外链样式表按**文档序**拼接，与 fetch 完成序无关。级联序规范：多张外部样式表
+    /// 按文档序参与级联（https://drafts.csswg.org/css-cascade-5/#cascade-order）。
+    /// 旧实现 `poll_stylesheets` 的 retain 闭包内谁先完成谁先 `push_str`——拼接序 =
+    /// fetch 完成序，同页两次加载可产生不同级联束（T19 实测 cnblogs 冷/热导航束字节
+    /// 序不同）。本测按逆序完成（缓存小表先回、大表后回的高发时序）复现非确定性。
+    #[test]
+    fn stylesheet_concat_follows_document_order_under_out_of_order_completion() {
+        let html = r#"<html><head>
+            <link rel="stylesheet" href="a.css">
+            <link rel="stylesheet" href="b.css">
+            <link rel="stylesheet" href="c.css">
+            </head><body></body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+        let mut host = DeferredTextFetchHost::new();
+        DeferredTextFetchHost::tick_to_fetching_stylesheets(&mut load, &mut wv, &mut host);
+        // 逆序完成：c 最先回、a 最后回。
+        host.release("c.css", Ok("/*C*/".to_string()));
+        let _ = load.tick(&mut wv, &mut host, 500.0);
+        host.release("b.css", Ok("/*B*/".to_string()));
+        let _ = load.tick(&mut wv, &mut host, 500.0);
+        host.release("a.css", Ok("/*A*/".to_string()));
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+        }
+        assert_eq!(load.stage(), PageLoadStage::Complete);
+        assert_eq!(load.css, "/*A*/\n/*B*/\n/*C*/\n", "拼接序须为文档序，不受完成序摆布");
+    }
+
+    /// 完成序恰为文档序时（低负载常态）拼接结果不变——修复对零变化面的保护。
+    #[test]
+    fn stylesheet_concat_unchanged_when_completion_matches_document_order() {
+        let html = r#"<html><head>
+            <link rel="stylesheet" href="a.css">
+            <link rel="stylesheet" href="b.css">
+            </head><body></body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+        let mut host = DeferredTextFetchHost::new();
+        DeferredTextFetchHost::tick_to_fetching_stylesheets(&mut load, &mut wv, &mut host);
+        host.release("a.css", Ok("/*A*/".to_string()));
+        let _ = load.tick(&mut wv, &mut host, 500.0);
+        host.release("b.css", Ok("/*B*/".to_string()));
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+        }
+        assert_eq!(load.stage(), PageLoadStage::Complete);
+        assert_eq!(load.css, "/*A*/\n/*B*/\n");
+    }
+
+    /// 失败表按既有失败路径记账（failed_resources + link "error" 事件）后视为已决，
+    /// 前缀照常推进——不阻塞后续表、不改变文档序。元素事件序亦随拼接序确定化：
+    /// 按文档序派发（旧实现 = 完成序）。
+    #[test]
+    fn stylesheet_fetch_failure_is_decided_and_prefix_advances() {
+        let html = r#"<html><head>
+            <link rel="stylesheet" href="a.css">
+            <link rel="stylesheet" href="bad.css">
+            </head><body></body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+        let mut host = DeferredTextFetchHost::new();
+        DeferredTextFetchHost::tick_to_fetching_stylesheets(&mut load, &mut wv, &mut host);
+        // 失败先于队首成功表完成：旧实现立即记账 bad（完成序），成功表照常拼接；
+        // 本测同时锁定拼接束与事件序的文档序确定性。
+        host.release("bad.css", Err("boom".to_string()));
+        let _ = load.tick(&mut wv, &mut host, 500.0);
+        host.release("a.css", Ok("/*A*/".to_string()));
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+        }
+        assert_eq!(load.stage(), PageLoadStage::Complete);
+        assert_eq!(load.css, "/*A*/\n", "失败表不入束，成功表按文档序拼接");
+        let failed = load.take_failed_resources();
+        assert_eq!(failed.len(), 1, "失败表记入 failed_resources");
+        assert_eq!(failed[0].kind, "stylesheet");
+        assert_eq!(failed[0].url, "https://example.com/bad.css");
+        assert_eq!(
+            load.take_link_element_events(),
+            vec![
+                ("https://example.com/a.css".to_string(), "load"),
+                ("https://example.com/bad.css".to_string(), "error"),
+            ],
+            "元素事件按文档序派发"
+        );
+    }
+
+    /// @import 子表沿用 s89 近似：父表（剥 @import 语句）先入束，子表按发现序追加
+    /// （https://drafts.csswg.org/css-cascade-5/#imports）。前缀门控使该序确定化：
+    /// 子表仅在父表入束后入队，且队首未决时队尾不越序——无论 b/a1 相对完成时序
+    /// 如何，束序恒为 a→b→a1（文档序 DFS）。旧实现 = 完成序（b 先回即拼出 b a a1）。
+    #[test]
+    fn import_child_sheet_order_is_deterministic_under_out_of_order_completion() {
+        let html = r#"<html><head>
+            <link rel="stylesheet" href="a.css">
+            <link rel="stylesheet" href="b.css">
+            </head><body></body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+        let mut host = DeferredTextFetchHost::new();
+        DeferredTextFetchHost::tick_to_fetching_stylesheets(&mut load, &mut wv, &mut host);
+        // b 先完成（旧实现立即拼接 → b 在 a 前）；a 完成后 a1 才被 fetch。
+        host.release("b.css", Ok("/*B*/".to_string()));
+        let _ = load.tick(&mut wv, &mut host, 500.0);
+        host.release("a.css", Ok("@import url(a1.css);/*A*/".to_string()));
+        let _ = load.tick(&mut wv, &mut host, 500.0);
+        assert!(
+            host.calls.iter().any(|u| u.ends_with("a1.css")),
+            "a 处理后 @import 子表 a1 已发起 fetch: {:?}",
+            host.calls
+        );
+        host.release("a1.css", Ok("/*A1*/".to_string()));
+        while load.is_active() {
+            let _ = load.tick(&mut wv, &mut host, 500.0);
+        }
+        assert_eq!(load.stage(), PageLoadStage::Complete);
+        assert_eq!(load.css, "/*A*/\n/*B*/\n/*A1*/\n", "@import 子表按发现序追加在父表之后");
     }
 
     // ── R3351：extract_document_title 注释/属性鲁棒性回归 ──────────────────
