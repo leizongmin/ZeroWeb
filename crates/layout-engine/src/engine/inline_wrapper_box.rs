@@ -3,9 +3,9 @@
 //! 背景：R2156 inline-box-model coherence（default-on）把「含嵌套原子 inline 后代」
 //! 的 inline 包装整体跳过 taffy 树，其原子后代经 slice19 提升为容器 taffy 直子。
 //! 包装因此完全无盒（无 taffy 节点、无 LayoutBox、无 IFC run）——gBCR/命中面对
-//! 该形态返回 0×0（p109 复核 z2-z8：`<a><svg></a>` 的 a=0 而 svg=32，github
-//! header logo 即此形态）。CSSOM View 的 gBCR = 元素与全部子孙 border box 并集，
-//! 包装几何必须有出口。
+//! 该形态返回 0×0（p109 复核 z2-z8：`<a><svg></a>` 无样式等价标记 a=0 而 svg=32；
+//! 活体 github logo 经站点 CSS 为 `inline-flex`，不走本路径）。CSSOM View 的
+//! gBCR = 元素与全部子孙 border box 并集，包装几何必须有出口。
 //!
 //! 本模块在布局管线终末（全部盒几何/行位同步 pass 之后、LayoutResult 构造前）
 //! 按 DOM 祖先链把提升的原子盒重新嵌回虚拟 inline 祖先链（div→a→svg），几何 =

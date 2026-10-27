@@ -38,8 +38,10 @@ header 的 logo `<a><svg></a>`）整体跳过 taffy 树，原子后代提升为�
 同步 pass 都按基线形态（原子盒为容器直子）工作，与 60c4c9613 逐字节一致；唯一
 delta 是最终树多出包装盒（无 bg/border 时零绘制面）。extract 期的两处几何守卫
 （IFC sync 跳过、5.6 shrink 排除）随之不再需要——终末时点树里没有包装盒可被
-改写——一并还原，避免留下永不触发的死守卫。reftest 4/4 恢复 0.00%，活体
-github.com logo anchor 0×0→32×32。
+改写——一并还原，避免留下永不触发的死守卫。reftest 4/4 恢复 0.00%；gBCR 修复
+实测于等价无样式 fixture（z2）0×0→32×32。勘误：活体 github.com logo 经站点 CSS
+计算为 `inline-flex`，不经本路径（kill-switch 两侧均 32×32，头部渲染逐像素一致）——
+首版「活体 logo 0×0→32×32」是 fixture 形态推断，不是活体实测。
 
 ## 要点
 
