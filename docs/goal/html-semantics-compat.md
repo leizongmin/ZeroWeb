@@ -35,9 +35,10 @@
 > FIXME、script-charset-02/03、143 write、defer 多写完成序、dynamic import()
 > with 透传、classic 外链 SRI、接口对象基建面、FIXME 组、/tmp/zw-hb*.txt；
 > **待决（须用户拍板）**：css/text 数据模块语料资源缺失。
-> **下一步**：s120 入场定刀位（候选：audio lazy-loading 族（the-audio-element
-> loading=lazy 十余 F 单根待勘）/ image-loading-lazy deferred / execution-timing
-> 余 F（041/056/063 均挂大基建不作常规刀位）/ 承袭挂账序）。
+> **下一步**：s120 入场定刀位（候选：the-dialog-element 43F 簇勘根 / meta-element
+> 24F 簇勘根 / 承袭挂账序；**lazy-loading 族勘定挂大基建**——s119 轮尾勘察：26F
+> 跨 audio+img 元素，根为 viewport 可见性/滚动派发/延期取数基建，非单根常规刀位，
+> 与增量解析同档挂账）。
 > **切片间隙**：本轮 form 命名属性面 + runner pin 面；下一候选同流同面，间隙
 > 开放。
 >
