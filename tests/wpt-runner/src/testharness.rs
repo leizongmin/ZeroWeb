@@ -8306,6 +8306,25 @@ impl Drop for HarnessCaseTimer {
     }
 }
 
+/// runner adopted 线程局部作用域 guard（engine `enter/exit_runner_adopted_scope`）：
+/// 构造即 enter，Drop 即 exit——case 函数多 return 点（unsupported 提前 return、
+/// 错误/Timeout 路径）全覆盖。串行也启用：修的是上一案 adopted 文本经进程槽残留
+/// 到下一案的既有跨案污染，单代码路径与并行度无关（Commit 4，perf/wpt-runner）。
+struct RunnerAdoptedScope;
+
+impl RunnerAdoptedScope {
+    fn enter() -> Self {
+        zero_engine::js_dom_bridge::enter_runner_adopted_scope();
+        Self
+    }
+}
+
+impl Drop for RunnerAdoptedScope {
+    fn drop(&mut self) {
+        zero_engine::js_dom_bridge::exit_runner_adopted_scope();
+    }
+}
+
 pub(crate) fn run_testharness_html_with_pointer_injection(
     wpt_root: &Path,
     case_name: &str,
@@ -8315,6 +8334,7 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     timeout: Duration,
     pointer_injection: PointerStepInjection,
 ) -> Vec<HarnessSubtestResult> {
+    let _adopted_scope = RunnerAdoptedScope::enter();
     let mut case_timer = HarnessCaseTimer::new(case_name);
     let unsupported = unsupported_testdriver_dependencies(source);
     if !unsupported.is_empty() {

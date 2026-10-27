@@ -123,20 +123,64 @@ pub fn set_active_adopted_css_render_override(css: Option<&str>) {
 ///（js worker `SetDomSnapshot` 无条件覆盖，tab worker 同点镜像）。
 static ACTIVE_ADOPTED_CSS: LazyLock<RwLock<Arc<str>>> = LazyLock::new(|| RwLock::new(Arc::from("")));
 
+thread_local! {
+    /// testharness runner（zero-wpt-runner）case 级 adopted 隔离槽：`Some(text)` =
+    /// 本线程处于 runner case 作用域内，`__zw_set_adopted_css` 写入直达本槽、
+    /// [`active_adopted_css`] 读序先于进程级 [`ACTIVE_ADOPTED_CSS`]。runner 进程内
+    /// WebView 的页面脚本、探针 execute 与 timer/async 回调解析全在 case 线程同步
+    /// 执行（同 [`ACTIVE_EXTERNAL_CSS`] 单线程模型），串行或 rayon 并行下各 case
+    /// 互不可见、跨案零残留（并行硬前置：进程槽会被并行案互覆写）。`None` =
+    /// 生产/非 runner 形态，读写均走进程槽（行为不变）。
+    static RUNNER_LOCAL_ADOPTED: RefCell<Option<Arc<str>>> = const { RefCell::new(None) };
+}
+
+/// testharness runner case 首进入线程局部 adopted 作用域（初始空表 = 新建 WebView
+/// 的零残留起点，不再吃到上一案的进程槽残留）；case 尾**所有** return 路径必须
+/// 配对 [`exit_runner_adopted_scope`]（调用方以 Drop guard 保证）。串行也启用——
+/// 修的是既有跨案污染，与并行度无关。与
+/// [`set_active_adopted_css_render_override`] 同为线程局部模式，写入入口不同：
+/// override 由 reftest harness 直装文本，本作用域内仍由页面脚本经
+/// `__zw_set_adopted_css` 动态写。
+pub fn enter_runner_adopted_scope() {
+    RUNNER_LOCAL_ADOPTED.with(|cell| *cell.borrow_mut() = Some(Arc::from("")));
+}
+
+/// 退出线程局部 adopted 作用域并清槽，读写回落进程级 [`ACTIVE_ADOPTED_CSS`]。
+pub fn exit_runner_adopted_scope() {
+    RUNNER_LOCAL_ADOPTED.with(|cell| *cell.borrow_mut() = None);
+}
+
 /// js worker `__zw_set_adopted_css` 回调：装本代 adopted 规则文本。无条件覆盖
-///（shim 每次数组/规则变更全量重推，非增量）。进程级槽——js worker 线程写、
-/// 渲染线程读（含清空，[`ACTIVE_ADOPTED_CSS`] 文档注）。
+///（shim 每次数组/规则变更全量重推，非增量）。runner case 作用域内写线程局部
+/// [`RUNNER_LOCAL_ADOPTED`]；否则写进程级槽——js worker 线程写、渲染线程读
+///（含清空，[`ACTIVE_ADOPTED_CSS`] 文档注）。
 pub fn set_active_adopted_css(css: &str) {
+    let in_runner_scope = RUNNER_LOCAL_ADOPTED.with(|cell| {
+        let mut slot = cell.borrow_mut();
+        if slot.is_some() {
+            *slot = Some(Arc::from(css));
+            true
+        } else {
+            false
+        }
+    });
+    if in_runner_scope {
+        return;
+    }
     if let Ok(mut slot) = ACTIVE_ADOPTED_CSS.write() {
         *slot = Arc::from(css);
     }
 }
 
 /// gCS 合成源 / collect 级联消费点读取当前代 adopted 规则文本：case 级线程局部覆盖
-/// 优先（reftest harness，见 [`ADOPTED_CSS_RENDER_OVERRIDE`]），否则进程级槽。
+/// 优先（reftest harness，见 [`ADOPTED_CSS_RENDER_OVERRIDE`]），次 runner case
+/// 作用域槽（testharness runner，见 [`RUNNER_LOCAL_ADOPTED`]），否则进程级槽。
 /// 空串 = 无 adopted 表。
 pub(crate) fn active_adopted_css() -> Arc<str> {
     if let Some(v) = ADOPTED_CSS_RENDER_OVERRIDE.with(|cell| cell.borrow().clone()) {
+        return v;
+    }
+    if let Some(v) = RUNNER_LOCAL_ADOPTED.with(|cell| cell.borrow().clone()) {
         return v;
     }
     ACTIVE_ADOPTED_CSS
