@@ -312,6 +312,10 @@ pub struct StyleSystem {
     /// incremental-rendering-oracle goal）。实例字段而非进程级 static：测试
     /// 并行下互不污染，oracle 可精确断言。
     incremental_has_fallbacks: u64,
+    /// T13：声明组合级联缓存（帧内/跨帧复用 expand+cascade 纯函数段）。
+    /// 键 = cascade 输入全源声明序列（hints+matching+inline+UA 注入）+ quirks；
+    /// 命中判定做完整序列比对，哈希仅桶定位（零碰撞错样式）。见 [`CascadeCache`]。
+    cascade_cache: CascadeCache,
 }
 
 impl StyleSystem {
@@ -333,7 +337,20 @@ impl StyleSystem {
             media_type: MediaType::Screen,
             container_chain: Vec::new(),
             incremental_has_fallbacks: 0,
+            cascade_cache: CascadeCache {
+                enabled: CASCADE_CACHE_DEFAULT_ENABLED.as_ref().copied().unwrap_or(true),
+                map: HashMap::new(),
+            },
         }
+    }
+
+    /// 覆盖声明组合级联缓存的启用开关（`ZW_CASCADE_CACHE` env 的程序化旁路）。
+    ///
+    /// 供测试双路径对比（开/关缓存输出必须逐字段一致）与实验定位使用；
+    /// 生产默认取 `ZW_CASCADE_CACHE`（缺省开）。
+    #[doc(hidden)]
+    pub fn set_cascade_cache_enabled(&mut self, enabled: bool) {
+        self.cascade_cache.enabled = enabled;
     }
 
     /// 增量入口因 `:has()` 退化为全量的累计次数（DC-2 审计，只增不减）。
@@ -1454,55 +1471,26 @@ impl StyleSystem {
             };
         }
 
-        // 1.5. 展开简写属性（保留层索引）
-        #[allow(clippy::type_complexity)]
-        let mut expanded_with_layer: Vec<(String, String, bool, (u32, u32, u32), Option<usize>, bool)> = Vec::new();
+        // 1.5. 表现提示与内联声明的键前收集（展开移至下方级联缓存未命中分支——
+        // expand_shorthands 是输入声明的纯函数，与 cascade 同为组合级可复用段）。
         // 1.5a. CSS2 Appendix D 表现提示（img 的 width/height 属性 → 作者样式）。
         // Author origin + specificity (0,0,0) + 最早位置（cascade 按 origin/layer/specificity/
         // position 排序，(0,0,0) 低于任意真实选择器 ≥(0,0,1) 与 inline (1,0,0)，高于 UA 默认）。
-        if pseudo.is_none() {
-            let hints = collect_presentational_hints(doc, element);
-            if !hints.is_empty() {
-                #[allow(clippy::type_complexity)]
-                let input: Vec<(String, String, bool, (u32, u32, u32))> = hints
-                    .iter()
-                    .map(|(p, v)| (p.clone(), v.clone(), false, (0, 0, 0)))
-                    .collect();
-                for (prop, val, imp, spec) in shorthand::expand_shorthands(&input) {
-                    expanded_with_layer.push((prop, val, imp, spec, None, false));
-                }
-            }
-        }
-        for (property, value, important, specificity, layer_index) in &matching {
-            let input = (property.clone(), value.clone(), *important, *specificity);
-            let expanded = shorthand::expand_shorthands(&[input]);
-            for (prop, val, imp, spec) in expanded {
-                expanded_with_layer.push((prop, val, imp, spec, *layer_index, false));
-            }
-        }
-
-        // 1.6. 解析内联样式（style 属性）
+        let hints = if pseudo.is_none() {
+            collect_presentational_hints(doc, element)
+        } else {
+            Vec::new()
+        };
+        // 1.6. 解析内联样式（style 属性）。
         // 内联样式的优先级高于任何选择器，使用 (1, 0, 0) 特异性。
-        // 伪元素无 style 属性，跳过。
-        if pseudo.is_none()
-            && let Some(style_attr) = doc.get_attribute(element, "style")
-        {
-            let inline_decls = parse_inline_style(&style_attr);
-            if !inline_decls.is_empty() {
-                #[allow(clippy::type_complexity)]
-                let input: Vec<(String, String, bool, (u32, u32, u32))> = inline_decls
-                    .iter()
-                    .map(|(p, v, imp)| (p.clone(), v.clone(), *imp, (1, 0, 0)))
-                    .collect();
-                let expanded = shorthand::expand_shorthands(&input);
-                for (prop, val, imp, spec) in expanded {
-                    // 内联样式没有 layer，使用 None
-                    // 内联样式没有 layer，使用 None；R4245：标记 style 属性级联上下文
-                    //（排序在 unlayered 之上；revert-layer 回退「上一上下文」= author origin）
-                    expanded_with_layer.push((prop, val, imp, spec, None, true));
-                }
-            }
-        }
+        // 伪元素无 style 属性，恒空。
+        let inline_decls: Vec<(String, String, bool)> = if pseudo.is_none() {
+            doc.get_attribute(element, "style")
+                .map(|style_attr| parse_inline_style(&style_attr))
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
 
         // 1.7. 注入 UA 默认声明（最低优先级，可被作者样式覆盖）
         // 伪元素无标签、无 UA 默认值（::before/::after 默认 display:inline 由 ComputedStyle::default 提供）；
@@ -2084,52 +2072,125 @@ impl StyleSystem {
             }
         }
 
-        let mut ua_declarations: Vec<CascadedDeclaration> = Vec::new();
-        // UA 展开列表提升到函数作用域：ua_declarations 借用其元素（借用链见 cascaded 构造）。
-        let expanded_ua: Vec<(String, String, bool, (u32, u32, u32))>;
-        if !ua_decl_inputs.is_empty() {
-            let shorthand_inputs: Vec<(String, String, bool, (u32, u32, u32))> = ua_decl_inputs
-                .iter()
-                .map(|(property, value, important, specificity, _layer_index)| {
-                    (property.clone(), value.clone(), *important, *specificity)
-                })
-                .collect();
-            expanded_ua = shorthand::expand_shorthands(&shorthand_inputs);
-            // 借用展开列表（CascadedDeclaration 借用声明，省 2 次 String 克隆/声明）。
-            for (position, (property, value, important, specificity)) in expanded_ua.iter().enumerate() {
-                ua_declarations.push(CascadedDeclaration {
-                    property: property.as_str(),
-                    value: value.as_str(),
-                    order: CascadeOrder::new(Origin::UserAgent, None, *specificity, position, *important),
+        // T13：声明组合级联缓存——四源（hints+matching+inline+UA 注入）即 expand+cascade
+        // 的完整输入，二者是输入声明的纯函数，命中跳过。真实站点匹配组合数远小于元素数
+        //（cnblogs 首页 796 元素主样式仅 11 种组合、伪元素 1 种），逐元素重复求值收敛为
+        // 组合数次。键含 quirks（级联合法性判定的传参，见 cascade.rs is_cascade_value_valid）；
+        // media/container 上下文只影响上方 matching 收集（键前已执行）；custom properties
+        // 与继承只影响下方阶段（不在缓存范围）。命中判定做键的逐字段完整比对（见
+        // CascadeCache——预过滤哈希仅桶定位，碰撞退化为桶内线性查找而非错误命中）。
+        let cache_key_ref = CascadeKeyRef {
+            hints: &hints,
+            matching: &matching,
+            inline: &inline_decls,
+            ua: &ua_decl_inputs,
+            quirks: quirks_mode == QuirksMode::Quirks,
+        };
+        let outcome: std::sync::Arc<CascadeOutcome> = match self.cascade_cache.lookup_ref(&cache_key_ref) {
+            Some(hit) => hit,
+            None => {
+                // 1.5. 展开简写属性（保留层索引）：非 UA 段 = 表现提示 + 匹配声明 + 内联样式。
+                #[allow(clippy::type_complexity)]
+                let mut expanded_with_layer: Vec<(
+                    String,
+                    String,
+                    bool,
+                    (u32, u32, u32),
+                    Option<usize>,
+                    bool,
+                )> = Vec::new();
+                if !hints.is_empty() {
+                    #[allow(clippy::type_complexity)]
+                    let input: Vec<(String, String, bool, (u32, u32, u32))> = hints
+                        .iter()
+                        .map(|(p, v)| (p.clone(), v.clone(), false, (0, 0, 0)))
+                        .collect();
+                    for (prop, val, imp, spec) in shorthand::expand_shorthands(&input) {
+                        expanded_with_layer.push((prop, val, imp, spec, None, false));
+                    }
+                }
+                for (property, value, important, specificity, layer_index) in &matching {
+                    let input = (property.clone(), value.clone(), *important, *specificity);
+                    let expanded = shorthand::expand_shorthands(&[input]);
+                    for (prop, val, imp, spec) in expanded {
+                        expanded_with_layer.push((prop, val, imp, spec, *layer_index, false));
+                    }
+                }
+                if !inline_decls.is_empty() {
+                    #[allow(clippy::type_complexity)]
+                    let input: Vec<(String, String, bool, (u32, u32, u32))> = inline_decls
+                        .iter()
+                        .map(|(p, v, imp)| (p.clone(), v.clone(), *imp, (1, 0, 0)))
+                        .collect();
+                    let expanded = shorthand::expand_shorthands(&input);
+                    for (prop, val, imp, spec) in expanded {
+                        // 内联样式没有 layer，使用 None；R4245：标记 style 属性级联上下文
+                        //（排序在 unlayered 之上；revert-layer 回退「上一上下文」= author origin）
+                        expanded_with_layer.push((prop, val, imp, spec, None, true));
+                    }
+                }
+                // UA 展开列表（原 1.7 尾段：借用在 declarations 构造，此处随 outcome 缓存）。
+                let ua_expanded: Vec<(String, String, bool, (u32, u32, u32))> = if !ua_decl_inputs.is_empty() {
+                    let shorthand_inputs: Vec<(String, String, bool, (u32, u32, u32))> = ua_decl_inputs
+                        .iter()
+                        .map(|(property, value, important, specificity, _layer_index)| {
+                            (property.clone(), value.clone(), *important, *specificity)
+                        })
+                        .collect();
+                    shorthand::expand_shorthands(&shorthand_inputs)
+                } else {
+                    Vec::new()
+                };
+                // 2. 构建 CascadedDeclaration 列表（借用展开段，不克隆）。UA 段与 author 段的
+                // position 各自从 0 起（既有语义：origin 优先级先于 position，position 仅在
+                // 同 origin 内比较，两段内部各自唯一）。
+                let mut declarations: Vec<CascadedDeclaration> =
+                    Vec::with_capacity(ua_expanded.len() + expanded_with_layer.len());
+                for (position, (property, value, important, specificity)) in ua_expanded.iter().enumerate() {
+                    declarations.push(CascadedDeclaration {
+                        property: property.as_str(),
+                        value: value.as_str(),
+                        order: CascadeOrder::new(Origin::UserAgent, None, *specificity, position, *important),
+                    });
+                }
+                for (position, (property, value, important, specificity, layer_index, style_attribute)) in
+                    expanded_with_layer.iter().enumerate()
+                {
+                    declarations.push(CascadedDeclaration {
+                        property: property.as_str(),
+                        value: value.as_str(),
+                        order: CascadeOrder {
+                            origin: Origin::Author,
+                            layer_index: *layer_index,
+                            specificity: *specificity,
+                            position,
+                            important: *important,
+                            style_attribute: *style_attribute,
+                        },
+                    });
+                }
+                // 3. 运行级联算法（apply-on-dummy 合法性探测：非法值声明按未声明处理，
+                //    较低优先级合法声明可胜出；driving：keywords-000 `background:"red"`）
+                // R4449：级联同时产出各属性胜者 CascadeOrder 旁表——供 compute 延迟臂做
+                // logical/physical 别名消解（键名经 resolve_var/expand_pending_shorthands 变换
+                // 后保持稳定，旁表按键名对齐）。
+                let (cascaded, cascade_orders) =
+                    cascade::cascade_with_orders(declarations, quirks_mode == QuirksMode::Quirks);
+                let produced = std::sync::Arc::new(CascadeOutcome {
+                    expanded: expanded_with_layer,
+                    cascaded,
+                    orders: cascade_orders,
                 });
+                self.cascade_cache
+                    .insert_ref(&cache_key_ref, std::sync::Arc::clone(&produced));
+                produced
             }
-        }
-
-        // 2. 构建 CascadedDeclaration 列表（借用 expanded_with_layer，不克隆）
-        let mut declarations = ua_declarations;
-        for (position, (property, value, important, specificity, layer_index, style_attribute)) in
-            expanded_with_layer.iter().enumerate()
-        {
-            declarations.push(CascadedDeclaration {
-                property: property.as_str(),
-                value: value.as_str(),
-                order: CascadeOrder {
-                    origin: Origin::Author,
-                    layer_index: *layer_index,
-                    specificity: *specificity,
-                    position,
-                    important: *important,
-                    style_attribute: *style_attribute,
-                },
-            });
-        }
-
-        // 3. 运行级联算法（apply-on-dummy 合法性探测：非法值声明按未声明处理，
-        //    较低优先级合法声明可胜出；driving：keywords-000 `background:"red"`）
-        // R4449：级联同时产出各属性胜者 CascadeOrder 旁表——供 compute 延迟臂做
-        // logical/physical 别名消解（键名经 resolve_var/expand_pending_shorthands 变换
-        // 后保持稳定，旁表按键名对齐）。
-        let (cascaded, cascade_orders) = cascade::cascade_with_orders(declarations, quirks_mode == QuirksMode::Quirks);
+        };
+        // 后续阶段按共享引用消费（Arc 只读安全；继承/计算值仍每元素执行——依赖父链，
+        // 不在缓存范围）。
+        let expanded_with_layer = &outcome.expanded;
+        let cascaded = &outcome.cascaded;
+        let cascade_orders = &outcome.orders;
 
         // 4. 收集自定义属性（继承父元素 + 当前元素自身声明覆盖）
         // CSS 自定义属性是继承属性：`:root { --x }` 定义的变量需对后代可见。
@@ -2155,14 +2216,14 @@ impl StyleSystem {
             parent_custom.clone()
         } else {
             CustomProperties::new(gather_custom_properties(
-                &cascaded,
+                cascaded,
                 parent_custom,
                 &self.registered_properties,
             ))
         };
 
         // 4.5. 在级联值中解析 var() 引用
-        let resolved_cascaded = resolve_var_in_cascaded(&cascaded, &self.custom_properties);
+        let resolved_cascaded = resolve_var_in_cascaded(cascaded, &self.custom_properties);
 
         // 4.6. R2873：var() pending-substitution 第二阶段——把含 var() 的简写（4.5 步已代入）
         // 重新展开为长属性。须在 var() 解析之后、计算继承样式之前。
@@ -2173,7 +2234,7 @@ impl StyleSystem {
         let style = inheritance::compute_inherited_style_with_quirks(
             parent_style,
             &resolved_cascaded,
-            &cascade_orders,
+            cascade_orders,
             quirks_mode,
             prefers_dark,
         );
@@ -3163,6 +3224,176 @@ impl StyleKey {
             parent,
             unkeyed_parent_chain,
         }
+    }
+}
+
+/// T13：`ZW_CASCADE_CACHE` 缺省值快照（=0 关闭，缺省开）。进程/pass 内稳定的
+/// 开关在边界读一次（OPTIMIZATION：compute_element_style_internal 每元素一次
+/// 查询是热路径，不得逐元素 getenv——同 FONT_REL_TABLE 既有模式）。
+static CASCADE_CACHE_DEFAULT_ENABLED: std::sync::LazyLock<Option<bool>> =
+    std::sync::LazyLock::new(|| match std::env::var("ZW_CASCADE_CACHE").as_deref() {
+        Ok("0") => Some(false),
+        _ => None,
+    });
+
+/// 声明组合级联缓存的键：cascade 输入**全部四个源**的原始声明序列 + quirks。
+///
+/// 正确性边界：[`cascade::cascade_with_orders`]（cascade.rs）与
+/// [`shorthand::expand_shorthands`] 是输入声明序列的纯函数——键必须唯一决定
+/// 该输入。四源按 `compute_element_style_internal` 生产顺序排列（同段内顺序
+/// 即源码/生产序；段序恒定），逐字段完整比对命中（哈希仅桶定位，见
+/// [`CascadeCache`]）。quirks 影响级联合法性判定（cascade.rs
+/// `is_cascade_value_valid` 传参），进键保证跨文档安全；media/container 上下文
+/// 只影响 matching 收集（键前已执行），custom properties/继承只影响 cascade
+/// 之后的阶段（不在缓存范围）。
+#[derive(Debug)]
+struct CascadeKeySources {
+    /// CSS2 Appendix D 表现提示（`collect_presentational_hints` 输出）。
+    hints: Vec<(String, String)>,
+    /// 选择器匹配收集（`matcher::collect_matching_declarations_with_media` /
+    /// `collect_pseudo_declarations_with_media` 输出）。
+    matching: Vec<(String, String, bool, (u32, u32, u32), Option<usize>)>,
+    /// 内联 style 属性（`parse_inline_style` 输出）。
+    inline: Vec<(String, String, bool)>,
+    /// UA 默认注入（`ua_decl_inputs`，含 hidden/UA display/dialog/svg/td-th/body/h1-6 等）。
+    ua: Vec<(String, String, bool, (u32, u32, u32), Option<usize>)>,
+    quirks: bool,
+}
+
+/// [`CascadeKeySources`] 的借用版键：查询路径零克隆（热路径每元素一次查询，
+/// owned 键构造需克隆全部匹配声明——命中省下的 expand+cascade 会被克隆吃掉一部分）。
+#[derive(Debug)]
+struct CascadeKeyRef<'a> {
+    hints: &'a [(String, String)],
+    matching: &'a [(String, String, bool, (u32, u32, u32), Option<usize>)],
+    inline: &'a [(String, String, bool)],
+    ua: &'a [(String, String, bool, (u32, u32, u32), Option<usize>)],
+    quirks: bool,
+}
+
+/// FNV-1a 预过滤哈希：覆盖四源全部字段。桶定位用，正确性由完整比对
+///（[`cascade_key_eq`]）保证。owned/借用两形态共用同一函数，保证同键同哈希。
+fn cascade_key_hash(
+    hints: &[(String, String)],
+    matching: &[(String, String, bool, (u32, u32, u32), Option<usize>)],
+    inline: &[(String, String, bool)],
+    ua: &[(String, String, bool, (u32, u32, u32), Option<usize>)],
+    quirks: bool,
+) -> u64 {
+    let mut h = 0xcbf29ce484222325u64;
+    fn mix(h: &mut u64, bytes: &[u8]) {
+        for b in bytes {
+            *h = (*h ^ (*b as u64)).wrapping_mul(0x100000001b3);
+        }
+    }
+    fn mix_str(h: &mut u64, s: &str) {
+        mix(h, s.as_bytes());
+        *h = (*h ^ 0x1f).wrapping_mul(0x100000001b3);
+    }
+    for (p, v) in hints {
+        mix_str(&mut h, p);
+        mix_str(&mut h, v);
+    }
+    for (p, v, imp, spec, layer) in matching {
+        mix_str(&mut h, p);
+        mix_str(&mut h, v);
+        mix(&mut h, &[*imp as u8]);
+        mix(&mut h, &spec.0.to_ne_bytes());
+        mix(&mut h, &spec.1.to_ne_bytes());
+        mix(&mut h, &spec.2.to_ne_bytes());
+        mix(&mut h, &layer.map(|l| l as u64 + 1).unwrap_or(0).to_ne_bytes());
+    }
+    for (p, v, imp) in inline {
+        mix_str(&mut h, p);
+        mix_str(&mut h, v);
+        mix(&mut h, &[*imp as u8]);
+    }
+    for (p, v, imp, spec, layer) in ua {
+        mix_str(&mut h, p);
+        mix_str(&mut h, v);
+        mix(&mut h, &[*imp as u8]);
+        mix(&mut h, &spec.0.to_ne_bytes());
+        mix(&mut h, &spec.1.to_ne_bytes());
+        mix(&mut h, &spec.2.to_ne_bytes());
+        mix(&mut h, &layer.map(|l| l as u64 + 1).unwrap_or(0).to_ne_bytes());
+    }
+    mix(&mut h, &[quirks as u8]);
+    h
+}
+
+/// 借用键与存储键的逐字段完整比对（属性/值/important/specificity/layer/quirks）。
+fn cascade_key_eq(a: &CascadeKeyRef<'_>, b: &CascadeKeySources) -> bool {
+    a.hints == b.hints.as_slice()
+        && a.matching == b.matching.as_slice()
+        && a.inline == b.inline.as_slice()
+        && a.ua == b.ua.as_slice()
+        && a.quirks == b.quirks
+}
+
+/// 级联缓存的值：expand+cascade 两段的完整输出（命中时跳过二者）。UA 段展开
+/// 结果不缓存——仅未命中分支局部用于 declarations 构造，命中后无消费方。
+#[derive(Debug)]
+struct CascadeOutcome {
+    /// 非 UA 段展开结果（hints+matching+inline，六元组含 style 属性标志），即
+    /// `expanded_with_layer`；后半段 author width/height 判定（select/input
+    /// intrinsic sizing 门）仍从它读取。
+    expanded: Vec<(String, String, bool, (u32, u32, u32), Option<usize>, bool)>,
+    /// `cascade_with_orders` 输出（步骤 4 起按 `&` 消费，Arc 共享不可变安全）。
+    cascaded: HashMap<String, String>,
+    orders: HashMap<String, CascadeOrder>,
+}
+
+/// 声明组合级联缓存：把「同 cascade 输入」的 expand_shorthands + cascade_with_orders
+/// 求值收敛为组合数级别（真实站点匹配组合数远小于元素数——cnblogs 首页 796 元素
+/// 实测主样式仅 11 种组合、伪元素 1 种）。
+///
+/// 结构与 S11 [`StyleKey`] 缓存同族：StyleSystem 实例字段（单线程所有权），
+/// 键完整刻画纯函数输入。**命中判定做键的逐字段完整比对**——FNV 预过滤哈希
+/// 仅桶定位，哈希碰撞退化为桶内线性查找而非错误命中（级联语义不可让步）。
+/// 跨帧/跨文档保留正确（键含 quirks；样式表变化只改变 matching 收集结果，
+/// 本身就是键的一部分）；容量超限时整体清空防无界增长。
+struct CascadeCache {
+    enabled: bool,
+    map: HashMap<u64, Vec<(CascadeKeySources, std::sync::Arc<CascadeOutcome>)>>,
+}
+
+/// 组合数上限：超过即清空（防长会话多页累积无界）。真实页面组合数为十级，
+/// 上限仅为病态构造页的兜底。
+const CASCADE_CACHE_CAPACITY: usize = 8192;
+
+impl CascadeCache {
+    /// 查询：桶内完整比对键，命中返回 outcome 的 Arc 克隆（立即解除 `&self`
+    /// 借用——调用方后续步骤需要 `&mut self` 写 custom properties）。
+    fn lookup_ref(&self, key: &CascadeKeyRef<'_>) -> Option<std::sync::Arc<CascadeOutcome>> {
+        if !self.enabled {
+            return None;
+        }
+        let h = cascade_key_hash(key.hints, key.matching, key.inline, key.ua, key.quirks);
+        self.map
+            .get(&h)?
+            .iter()
+            .find(|(k, _)| cascade_key_eq(key, k))
+            .map(|(_, o)| std::sync::Arc::clone(o))
+    }
+
+    /// 插入（未命中时调用）：借用键转 owned 存储，命中路径不承担克隆成本。
+    /// 容量超限先清空。
+    fn insert_ref(&mut self, key: &CascadeKeyRef<'_>, outcome: std::sync::Arc<CascadeOutcome>) {
+        if !self.enabled {
+            return;
+        }
+        if self.map.len() >= CASCADE_CACHE_CAPACITY {
+            self.map.clear();
+        }
+        let owned = CascadeKeySources {
+            hints: key.hints.to_vec(),
+            matching: key.matching.to_vec(),
+            inline: key.inline.to_vec(),
+            ua: key.ua.to_vec(),
+            quirks: key.quirks,
+        };
+        let h = cascade_key_hash(&owned.hints, &owned.matching, &owned.inline, &owned.ua, owned.quirks);
+        self.map.entry(h).or_default().push((owned, outcome));
     }
 }
 
