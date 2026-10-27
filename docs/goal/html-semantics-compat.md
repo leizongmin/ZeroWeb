@@ -2,9 +2,61 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 107 施工收口（JSON module 基础执行面 + 顶层模块 SRI + 外链模块成功 load 面：scripting-1 **356P/185F/37T→372P/175F/35T**，**+16P 零 P→非P**——json-module 13 行（module.html/valid-content-type ×5/integrity 双臂/charset ×6/load-error 页面级）+ module/integrity 2 行；四刀：fetcher JSON MIME 门（语料时代合法集 application/json|text/json|+json 后缀，serve-with-content-type.py 端点按 handler 语义模拟 fn+ct）、script-sandbox 带属性提取（复用 s105 parse_with_clause）、webview collect type 分派（serde_json 校验 + `export default` 合成）、顶层模块 SRI（ExternalModule 结构化携 integrity + sha256/384/512 + mismatch 网络错误语义，webview 增 sha2 workspace dep）+ 外链模块成功 load 派发（**内联不派**——load-error-events-inline 判据，首版全派 2 行 P→F 定向轮即定位改外链限定）+ runner 带 integrity 单元跳过内联（src/integrity 双锚保真）；script-sandbox 373/engine 3541/webview 813/clippy 六 crate clean），下一步 s108 入场探针定刀位（候选：css/text 数据模块合成器——本轮分派骨架就位，css-module/text-module ~30 行 / execution-timing 余 ~42F scheduler 语义定刀 / SVG script 运行时面 4 页体量评估）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 108 施工收口（strict 首错聚合 + runner 短路收窄 + 投递 id 保真轮：scripting-1 **372P/175F/35T→377P/173F/37T**，**+5P 零 P→非P**——execution-timing 4 页销账（067 语法错 has-run + 104/114/115 defer mutation 族）+ evaluation-order-1 module 抛错臂转 Pass；三刀：runner 投递标签保留原标签 id（122-126 族 getElementById 取回单元的保真前提）、脚本抛错臂 declared>0 放行收集（WPT 语义 uncaught exception 不降级 test status；declared==0 维持短路防假绿）、webview strict abort→首错聚合（script 元素相互独立，一个抛错其余照跑——143 的 onload 赋值不再被整页 abort 吞掉；收尾段单一出口重构，旧 !pending 早退绕过聚合）；候选 A（css/text 数据模块）**证伪**——wpt-data pinned tag 缺五个 CSS 资源与 file.txt，切片不可达，补语料属基准变更记待决；webview 814/runner bin 233/clippy 双 crate clean），下一步 s109：mutation 重触发机制面七行（122 第二层 async IDL+时序、123-126、144/145——嵌套执行+重扫 diff，共享主循环高风险面，独立切片细设计）/ 142 write 臂 xlink:href / 143 eventOrder 完整核验；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-27 M2 切片 107 施工收口，JSON module 执行面 + 顶层模块 SRI 轮）**：
+> **▶ 当前状态（2026-10-27 M2 切片 108 施工收口，strict 首错聚合 + 短路收窄 + id 保真轮）**：
+> **入场定谳**：s108 探针承 s107 三候选——候选 A（css/text 数据模块合成器）**证伪**：
+> wpt-data（独立 repo，pinned tag）缺 css-module/resources/basic.css 等五个 CSS 资源
+> 与 text-module/file.txt，fetch 恒 404，切片不可达；补语料属基准变更（guidelines
+> #31 语料红线）记待决清单，s107「~30 行」估计据此修正。execution-timing 余 46F+1T
+> 按根因分组定刀：①122-126 族 getElementById null（runner 装配丢 id）；④143 语料
+> 故意 SyntaxError 被 runner 升级页级 Fail；②mutation 重触发机制面（②七行留 s109）、
+> ③142 write 臂 xlink:href 不本轮。
+> **本轮三刀**：①runner 投递 id 保真（`inline_local_scripts` 投递标签保留原标签 id，
+> 与 nonce/nomodule/type/onload/onerror 同族「内联投递丢属性改语义」保真——122-126 族
+> 以 getElementById("test") 取回 type=text/plain 外链单元做 mutation 重触发）；②runner
+> 短路收窄（脚本抛错臂读 declared：==0 维持短路 Fail 防假绿、>0 放行轮询收集——WPT
+> 语义 uncaught exception 报 window.onerror 不降级 test status；143 抛错时刻 pending=1
+> 属正常中间态，故判据用 declared>0 非 pending==0）；③webview strict abort→首错聚合
+> （两处 return Err 改 get_or_insert_with + continue——真浏览器语义 script 元素相互
+> 独立；循环末聚合返 Err，Err 仅承载信息供 runner 防假绿判定）。**配套重构**：收尾段
+> 单一出口——旧 `!pending` 分支在聚合判定前 `return Ok` 早退，无 DOM 变更的纯断言页
+> （execution-timing 主体形态）首错被静默吞掉（新钉首轮红灯根因）；改 if/else 汇合后
+> 统一 drain + 聚合 + 返回。
+> **验证**：zero-webview lib **814/814**（+1 钉：三 script 页 is_err 且前后脚本照跑）；
+> zero-wpt-runner bin **233/0**（+3 钉：投递 id 保留 / 抛错+declared>0 照收 Pass /
+> 抛错+declared==0 维持短路——stateful MINI_HARNESS 变体带 tests 注册表与
+> test_environment stub）；fmt clean + clippy webview/wpt-runner `-D warnings` clean。
+> 定向 FILTER=execution-timing：非 P 页 **45 → 41**（**4 页销账**：067 语法错
+> has-run——刀2+刀2b，语料故意埋错 + allow_uncaught_exception；104/114/115 defer
+> mutation 族——刀1，三页均 getElementById("defer-script")）；122 null 崩溃消除进第二
+> 层（页级 Fail→2 子测试断言级 Fail：async IDL 属性 + mutation 重触发，挂 s109）；
+> 143 崩溃形→断言级 Fail（log 顺序断言真正执行，缺 inline script #3——write 嵌套
+> 内联，挂 s109）。全子树终扫（FILTER=scripting-1 口径）**377P/173F/37T+15N**
+> （s107：372P/175F/35T+15N，**+5P**），行级归一 diff（/tmp/s108-final-scripting-1.log
+> 存档，基线 /tmp/s107-final-scan.log）**零 P→非P**（无 Pass 行消失）：4 Fail→Pass +
+> 1 新增子测试 Pass（evaluation-order-1 module 抛错臂——刀2 直接战果）；Fail −2 净额
+> 逐项核账；Timeout +2（evaluation-order-1/delay-load-event-1 页级落 deadline——均原
+> Fail 页，declared>0 放行后未完成挂 deadline 的预测形）；microtasks/moving-between-
+> documents 三处形态重排全为原 Fail 页短路→子测试级分解。渲染面零依赖——
+> reftest/product-smoke 未跑。账本见
+> [evidence/2026-10-27-m2s108-strict-continue-and-id-fidelity.md](html-semantics-compat/evidence/2026-10-27-m2s108-strict-continue-and-id-fidelity.md)。
+> **范围**：webview webview.rs ×1（首错聚合 + 单一出口 + 1 钉）+ runner testharness
+> ×1（id 保真 + declared 收窄 + 3 钉）；解析器/语料/依赖零变更；语料不可改维持。
+> **挂账**：s109 主候选 mutation 重触发机制面七行（122 第二层 async IDL+时序、
+> 123/124/125/126、144/145——嵌套执行 + 重扫 diff，共享主循环高风险面，独立切片细
+> 设计）；142 write 臂 xlink:href；143 eventOrder 完整核验；063 Timeout（runner 脚本
+> 记账）；slow-loading 外链时序 ~11 行（pipe=trickle 建模）；**待决（须用户拍板）**：
+> css/text 数据模块语料资源缺失（五 CSS + file.txt 不在 pinned tag）——补语料属基准
+> 变更；承袭：parse-error 族、http-accept-header、referrer-policies、dynamic import()
+> with 透传、classic 外链 SRI、collect 账本打包重构、接口对象基建面、FIXME 组、
+> /tmp/zw-hb*.txt 插桩来源待查。execution-timing 067/104/114/115 本轮销账。
+> **下一步**：s109 入场定刀位（候选：mutation 重触发机制面七行体量评估——共享主循环
+> 高风险面 / 142 write 臂 xlink:href 单点 / 143 eventOrder 核验搭车）。
+> **切片间隙**：本轮 webview 执行面 + runner 收集/投递面 + 单测；下一挂账同流同面，
+> 间隙开放。
+>
+> **▶ 上轮状态（2026-10-27 M2 切片 107 施工收口，JSON module 执行面 + 顶层模块 SRI 轮——其下一步 s108 入场探针定刀位已由 s108 收口，见上）**：
 > **入场定谳**：三候选——module 域 92 行最大、数据模块域合计 47 行（css 21 + json
 > 17 + text 9）、execution-timing 余 46 行 scheduler 长尾异质。JSON module 定最小
 > 可收口切片。MIME 合法集按**语料判据**定谳（不凭现行 spec 印象）：essence

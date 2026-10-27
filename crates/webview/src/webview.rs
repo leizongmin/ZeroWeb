@@ -3912,6 +3912,13 @@ impl WebView {
         // DOM shim 只注入一次（重复执行会重置 _nodeMap 丢失监听器）；含安装后 viewport
         // 真值同步（见 `ensure_js_shim`）——两处安装点收敛到同一 helper。
         self.ensure_js_shim()?;
+        // s108：strict 首错聚合——内联 classic 体抛错记录后继续执行后续脚本（真浏览器
+        // 语义：script 元素相互独立，一个抛错其余照跑；旧行为整页 abort 使其后的
+        // onload 赋值等独立脚本不执行——execution-timing 143 的 onload 断言因此挂
+        // pending）。循环末聚合返回 Err：runner 层 declared==0 维持短路防假绿不变，
+        // declared>0 放行收集（uncaught exception 不降级 test status）。
+        // https://html.spec.whatwg.org/multipage/webappapis.html#report-the-error
+        let mut first_strict_error: Option<String> = None;
         for (script, script_index) in scripts {
             self.drain_async_navigation_callbacks_until_idle(std::time::Duration::from_millis(50));
             // security-hardening M3：外链 script Mixed Content 检查点（阻塞型——HTTPS
@@ -4360,12 +4367,16 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                 sandbox.execute(script_clear_current_script()).map(|_| ()).err()
             };
             if let Some(e) = script_error {
-                return Err(WebViewError::Script(format!("page script: {e}")));
+                // s108：首错记录 + 继续后续脚本（见 first_strict_error 声明注记）。
+                first_strict_error.get_or_insert_with(|| format!("page script: {e}"));
+                continue;
             }
             let combined_err: Result<(), _> = execution.err().or(clear_err).map_or_else(|| Ok(()), Err);
             if let Err(e) = combined_err {
                 if strict && !is_module {
-                    return Err(WebViewError::Script(format!("page script: {e}")));
+                    // s108：首错记录 + 继续后续脚本（同上——旧行为整页 abort）。
+                    first_strict_error.get_or_insert_with(|| format!("page script: {e}"));
+                    continue;
                 }
                 if is_module {
                     // s102：模块执行期异常（求值抛错/变换后代码 parse 失败——WPT
@@ -4454,23 +4465,28 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
             let guard = self.shared_mutations.lock().unwrap_or_else(|e| e.into_inner());
             guard.len() > self.applied_mutations
         };
-        if !pending {
+        if pending {
+            // M3-S9：DOM 变更直接应用到活 DOM（pipeline.cached_doc），不再回写 HTML 重 parse
+            //（旧路径 apply_mutations_to_html → load_html 全量重建，大页面 parse 占 ~30%）。
+            // repaint 后返回新 HTML 快照同步 cached_html（DOM 查询消费的快照须与活 DOM 一致）。
+            // R100：共享队列游标尾部（见 apply_pending_shared_mutations 文档）。
+            self.apply_pending_shared_mutations()?;
+        } else {
             // P1b L1b（R3108）：polyfill 无变更，但 native 绑定可能已直改 live doc → 检测并重渲染
             //（helper 内部比对 live-doc vs cached_html；一致则 no-op）。返回最新 cached_html 快照。
             // event-loop-spec M2：gate 扩 quickjs（同 execute_script 注记）。
             #[cfg(any(feature = "v8", feature = "quickjs"))]
             self.sync_render_after_native_dom();
-            // performance-api-compat M2-S1：页面脚本执行完 = 初始脚本任务边界。
-            self.drain_long_task_entries();
-            return Ok(self.cached_html.clone());
         }
-        // M3-S9：DOM 变更直接应用到活 DOM（pipeline.cached_doc），不再回写 HTML 重 parse
-        //（旧路径 apply_mutations_to_html → load_html 全量重建，大页面 parse 占 ~30%）。
-        // repaint 后返回新 HTML 快照同步 cached_html（DOM 查询消费的快照须与活 DOM 一致）。
-        // R100：共享队列游标尾部（见 apply_pending_shared_mutations 文档）。
-        self.apply_pending_shared_mutations()?;
-        // performance-api-compat M2-S1：同上（mutation 应用路径的任务边界）。
+        // performance-api-compat M2-S1：页面脚本执行完 = 初始脚本任务边界（mutation 应用路径同）。
         self.drain_long_task_entries();
+        // s108：strict 首错聚合返回——收尾段（CSP img/violation 派发、mutation 应用）
+        // 已全部执行，抛错不影响其运行；Err 仅承载错误信息供 runner 防假绿短路判定。
+        // 聚合判定须在**两条**收尾分支汇合后的单一出口：旧 !pending 早退 return Ok
+        // 绕过聚合——无 DOM 变更的纯断言页（execution-timing 主体形态）首错被静默吞掉。
+        if let Some(e) = first_strict_error {
+            return Err(WebViewError::Script(e));
+        }
         Ok(self.cached_html.clone())
     }
 
@@ -8567,6 +8583,37 @@ mod redirect_tests {
             wv.execute_script("String(globalThis.__after)").unwrap(),
             "1",
             "失败模块之后的 classic 脚本须照常执行"
+        );
+    }
+
+    /// s108 回归钉：strict 下内联 classic 体抛错不中止后续脚本（真浏览器语义：
+    /// script 元素相互独立，一个抛错其余照跑——execution-timing 143 的 onload 赋值
+    /// script 在抛错的外层 SVG script 之后，整页 abort 使其 onload 断言挂 pending）。
+    /// run_page_scripts_strict 仍聚合返回首错（runner declared==0 防假绿短路依据不变）。
+    /// https://html.spec.whatwg.org/multipage/webappapis.html#report-the-error
+    #[test]
+    fn strict_classic_throw_continues_remaining_scripts_s108() {
+        let mut wv = WebView::new(WebViewConfig::default());
+        wv.prepare_document_state("https://wpt.test/a/page.html");
+        wv.load_html(
+            "<!doctype html><body>\
+             <script>globalThis.__before = 1;</script>\
+             <script>var x = ();</script>\
+             <script>globalThis.__after = 1;</script>\
+             </body>",
+            None,
+        );
+        let result = wv.run_page_scripts_strict();
+        assert!(result.is_err(), "strict 须聚合返回首错: {result:?}");
+        assert_eq!(
+            wv.execute_script("String(globalThis.__before)").unwrap(),
+            "1",
+            "抛错之前的脚本照常"
+        );
+        assert_eq!(
+            wv.execute_script("String(globalThis.__after)").unwrap(),
+            "1",
+            "抛错之后的 classic 脚本须照常执行（不整页 abort）"
         );
     }
 
