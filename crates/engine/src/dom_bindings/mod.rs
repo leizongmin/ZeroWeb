@@ -65,7 +65,7 @@ pub fn install_dom_bindings_from_html(scope: &mut v8::PinScope, ctx: v8::Local<v
 /// 默认关路径（`native_dom=false`）不调本函数——shim 无 Rust↔V8 Handle 生命周期耦合，零回归。
 pub fn reset_native_state() {
     gc::reset();
-    NATIVE_STATE_GEN.fetch_add(1, std::sync::atomic::Ordering::Release);
+    NATIVE_STATE_GEN.with(|epoch| epoch.set(epoch.get() + 1));
 }
 
 /// 线程局部绑定状态代际（R384，js-dom M5）——每次 [`reset_native_state`] 递增。
@@ -77,8 +77,16 @@ pub fn reset_native_state() {
 /// WebView 侧持自身见过的代际：install 前代际不符 → 先 reset 再装（旧 Isolate 的缓存
 /// 清掉、当前 Isolate 重建）；代际相符 → 缓存复用（同 WebView 跨 execute 的对象 identity
 /// 语义保留，R3107/R3117 断言面）。
+///
+/// 代际计数本身也须线程局部（原 `AtomicU64` 进程共享版在并行 runner 下破防）：
+/// 它守护的缓存是 thread_local，Drop 又只在 WebView 拥有线程执行（`WebView` !Send、
+/// js_worker 单线程）——计数跨线程共享时，别的线程 Drop 的 bump 会让本线程在跑案
+/// 的下一次 install 误判「缓存属于已销毁 Isolate」走 reset+全量重装，打碎在跑案
+/// JS 已捕获对象的模板/身份映射（实测 label clicking 案 `cloneNode is not a
+/// function` 6 子测确定性 Fail）。全部调用方（webview install/Drop、js_worker
+/// 换代）都在对应线程内读写，thread_local 语义即正确语义。
 pub fn state_generation() -> u64 {
-    NATIVE_STATE_GEN.load(std::sync::atomic::Ordering::Acquire)
+    NATIVE_STATE_GEN.with(std::cell::Cell::get)
 }
 
 /// R384 快路径：仅刷新线程局部 DOM 源（`Rc` 交换，ns 级）——不重建模板/不重注册全局。
@@ -100,7 +108,10 @@ pub fn refresh_dom_source_from_html(html: &str) {
     gc::set_dom_source(Rc::new(RefCell::new(zero_dom::parse_html(html))));
 }
 
-static NATIVE_STATE_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+thread_local! {
+    /// 见 [`state_generation`] 文档注：守护 thread_local 模板缓存的同线程代际计数。
+    static NATIVE_STATE_GEN: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
 
 /// 安装原生 DOM 绑定到指定 V8 上下文。
 ///

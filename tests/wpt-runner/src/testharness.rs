@@ -18,13 +18,40 @@ const CASE_TIMEOUT: Duration = Duration::from_secs(10);
 /// 30s 覆盖 ~35 周期，非 Pass 判定语义不变。
 const CORPUS_CASE_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// 进程级 runner 开关快照（docs/learnings/performance/2026-09/2026-09-14：稳定
+/// 策略开关禁止进热路径——探针循环每轮、每案多次 `env::var` 曾实测 +67% 退化）。
+/// 全部来自 env，进程生命周期内不变；仅 Makefile 命令行设置，无 mid-process
+/// 改值用法（reftest/tests.rs 的 set_var 只动 ZW_PRINT_* 变量）。
+struct RunnerFlags {
+    corpus_case_timeout_secs: Option<u64>,
+    time_log: bool,
+    raf_frame_driven: bool,
+    timer_per_task: bool,
+    disable_pump: bool,
+    td_debug: bool,
+}
+
+static RUNNER_FLAGS: std::sync::OnceLock<RunnerFlags> = std::sync::OnceLock::new();
+
+fn runner_flags() -> &'static RunnerFlags {
+    RUNNER_FLAGS.get_or_init(|| RunnerFlags {
+        corpus_case_timeout_secs: std::env::var("ZW_CORPUS_CASE_TIMEOUT_SECS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok()),
+        time_log: std::env::var("ZW_TESTHARNESS_TIME_LOG").ok().as_deref() == Some("1"),
+        raf_frame_driven: std::env::var("ZW_TESTHARNESS_RAF_FRAME_DRIVEN").as_deref() == Ok("1"),
+        timer_per_task: std::env::var("ZW_TESTHARNESS_TIMER_PER_TASK").as_deref() != Ok("0"),
+        disable_pump: std::env::var("ZW_DISABLE_PUMP").is_ok(),
+        td_debug: std::env::var("ZW_TD_DEBUG").as_deref() == Ok("1"),
+    })
+}
+
 /// 单案 wall-clock 预算——`ZW_CORPUS_CASE_TIMEOUT_SECS` 按跑覆盖（html-syntax-compat
 /// M2 记账：html5lib 全量语料 × document.write 面在 30s 案预算内跑不完，切片跑法用；
 /// 缺省维持 30s，零行为变化）。
 pub(crate) fn corpus_case_timeout() -> Duration {
-    std::env::var("ZW_CORPUS_CASE_TIMEOUT_SECS")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
+    runner_flags()
+        .corpus_case_timeout_secs
         .map(Duration::from_secs)
         .unwrap_or(CORPUS_CASE_TIMEOUT)
 }
@@ -8219,6 +8246,85 @@ pub(crate) fn run_testharness_html_inner(
 
 /// [`run_testharness_html_inner`] 的注入模式参数化形态（dnd 通道传
 /// [`PointerStepInjection::DragStateMachine`]，其余通道经包装走默认）。
+/// 诊断（env `ZW_TESTHARNESS_TIME_LOG=1` 启用）：每案分段计时（镜像 main.rs
+/// `CaseTimer` 的 RAII 模式）——WebView 构建/字体预载/文档加载/首次脚本（含
+/// js-dom shim 的 V8 编译）/setup/媒体登记各段耗时与探针循环轮数，定位每案
+/// 固定成本。输出走 stderr：`--json` 时 stdout 必须是纯 JSON（main.rs 结束时
+/// 单次 println）。env 关闭时仅一次 env 读 + 一次 `Instant::now`。
+struct HarnessCaseTimer {
+    id: String,
+    enabled: bool,
+    start: std::time::Instant,
+    phase: std::time::Instant,
+    segments: Vec<(&'static str, u128)>,
+    rounds: usize,
+}
+
+impl HarnessCaseTimer {
+    fn new(id: &str) -> Self {
+        let now = std::time::Instant::now();
+        let enabled = runner_flags().time_log;
+        Self {
+            id: id.to_string(),
+            enabled,
+            start: now,
+            phase: now,
+            segments: Vec::new(),
+            rounds: 0,
+        }
+    }
+
+    /// 结束当前分段并开启下一段；env 关闭时零成本。
+    fn done(&mut self, segment: &'static str) {
+        if self.enabled {
+            self.segments.push((segment, self.phase.elapsed().as_millis()));
+            self.phase = std::time::Instant::now();
+        }
+    }
+}
+
+impl Drop for HarnessCaseTimer {
+    fn drop(&mut self) {
+        if !self.enabled {
+            return;
+        }
+        // 尾段（探针循环；提前 return 时为残余路径）不显式标记者并入 run。
+        let run_ms = self.phase.elapsed().as_millis();
+        let segs = self
+            .segments
+            .iter()
+            .map(|(name, ms)| format!("{name}={ms}ms"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        eprintln!(
+            "[th-time] {} | {} run={run_ms}ms rounds={} total={:.3}s",
+            self.id,
+            segs,
+            self.rounds,
+            self.start.elapsed().as_secs_f64()
+        );
+    }
+}
+
+/// runner adopted 线程局部作用域 guard（engine `enter/exit_runner_adopted_scope`）：
+/// 构造即 enter，Drop 即 exit——case 函数多 return 点（unsupported 提前 return、
+/// 错误/Timeout 路径）全覆盖。串行也启用：修的是上一案 adopted 文本经进程槽残留
+/// 到下一案的既有跨案污染，单代码路径与并行度无关（Commit 4，perf/wpt-runner）。
+struct RunnerAdoptedScope;
+
+impl RunnerAdoptedScope {
+    fn enter() -> Self {
+        zero_engine::js_dom_bridge::enter_runner_adopted_scope();
+        Self
+    }
+}
+
+impl Drop for RunnerAdoptedScope {
+    fn drop(&mut self) {
+        zero_engine::js_dom_bridge::exit_runner_adopted_scope();
+    }
+}
+
 pub(crate) fn run_testharness_html_with_pointer_injection(
     wpt_root: &Path,
     case_name: &str,
@@ -8228,6 +8334,8 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     timeout: Duration,
     pointer_injection: PointerStepInjection,
 ) -> Vec<HarnessSubtestResult> {
+    let _adopted_scope = RunnerAdoptedScope::enter();
+    let mut case_timer = HarnessCaseTimer::new(case_name);
     let unsupported = unsupported_testdriver_dependencies(source);
     if !unsupported.is_empty() {
         return vec![HarnessSubtestResult {
@@ -8291,6 +8399,7 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
             .then(crate::ws_fixture::fixture_ws_host_factory),
         ..WebViewConfig::default()
     });
+    case_timer.done("new");
     // net-api M5-S1：websockets 用例页面走 http origin——上游 `?default` 变体语义
     // 即 http 页面 + ws 连接（constants.sub.js 判 `location.protocol === 'https:'`
     // 翻 wss 分支；runner 无 TLS fixture，wss 变体不在度量面）。通道级 scheme 翻转
@@ -8318,7 +8427,6 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     };
     webview.prepare_document_state(&format!("{page_scheme}://{page_authority}/{case_name}"));
     let page_url = format!("{page_scheme}://{page_authority}/{case_name}");
-    let _zw_hb = std::fs::write("/tmp/zw-hb.txt", format!("prepared {}\n", case_name));
     // M3 扩批：播放泵时钟原点（tab_worker pump_epoch 同款——registry play/tick 共用
     // 单调毫秒；桥 play 传 0 即本原点）。
     let playback_clock_origin = std::time::Instant::now();
@@ -8326,8 +8434,10 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     // 页面（2d.text.drawing.style.fontKerning 等）默认字体度量/kerning 面依赖。需
     // resolve_font_id 大小写不敏感修复配套（否则 CanvasTest 显式族 miss 回退 sans-serif）。
     webview.load_canvas_system_sans_font();
+    case_timer.done("font");
     let external_css = webview.fetch_page_images(&html, &page_url);
     webview.load_html(&html, Some(&external_css));
+    case_timer.done("load");
     // M3 扩批 XVI：播放宿主桥**先于页面脚本**安装（canplaythrough handler 在初始脚本
     // 执行内同步调 video.play()——桥后装则 play 走 headless 分支、bridgeOn 永不置位，
     // 播放钟推进面失联）。execute_script 空转预热 = ensure_sandbox + ensure_js_shim
@@ -8340,6 +8450,8 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     // 时把 http 页锚误判 secure，historical.any.js 断言面失效。with_dom 先注册
     // DOM 回调（含 page URL）再装 shim，location 初值即真页锚。
     let _ = webview.execute_script_with_dom("0;globalThis.__zwPageShowRunnerOwned = true;");
+    // 首次 execute 含 ensure_sandbox + js-dom shim 全量 V8 编译，单列观察。
+    case_timer.done("first_exec");
     // wasm/jsapi 通道形态还原（2026-10-19 复跑实证）：with_dom 注入的 dom polyfill 以
     // 桥接对象替换原生 V8 WebAssembly（生产 execute 路径既有契约），桥 stub
     // Module/exports 使 wasm/jsapi 通道自基线 715/719 塌缩至 141/460。经桥的
@@ -8376,7 +8488,7 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     // testharness 套件零行为变化；仅 testharness-keyboard 入口开启——snap 三案的
     // waitForDelayWithoutScrollEvent 200ms 静默窗依赖真实墙钟在帧间流逝，同步级联内
     // 永不满足 → 整簇 Timeout）。
-    let raf_frame_driven = std::env::var("ZW_TESTHARNESS_RAF_FRAME_DRIVEN").as_deref() == Ok("1");
+    let raf_frame_driven = runner_flags().raf_frame_driven;
     if raf_frame_driven {
         let _ = webview.execute_script("globalThis.__ZW_RAF_FRAME_DRIVEN = true;");
     }
@@ -8388,11 +8500,10 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     // A/B 零回归证据：evidence/2026-09-11-m3-s1-timer-per-task.md（dom 全量 54k subtest
     // / MO / IO / RO 双臂零 delta）+ evidence/2026-09-12-m4-runner-viewport-bridging.md
     // 后 IO/RO 复跑零 delta；runner 侧开关，生产路径零触碰。
-    let timer_per_task = std::env::var("ZW_TESTHARNESS_TIMER_PER_TASK").as_deref() != Ok("0");
+    let timer_per_task = runner_flags().timer_per_task;
     if timer_per_task {
         let _ = webview.execute_script("globalThis.__ZW_TIMER_PER_TASK = true;");
     }
-    let _zw_hb2 = std::fs::write("/tmp/zw-hb.txt", format!("pre-scripts {}\n", case_name));
     // M2-S4X（navigation-compat，t8m renderer/tab_scripts 路径镜像——spec dom-document-readystate）：
     // 脚本阶段起点置 "loading"——页面脚本语义位置 = parser-inserted classic script（此前
     // testharness 路径 `__zwReadyState` 未注入、getter 缺省 "complete"，WPT
@@ -8424,7 +8535,6 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
         "(function(){try{var _c=document.querySelectorAll('[autofocus]');for(var i=0;i<_c.length;i++){var _e=_c[i];if(_e.disabled)continue;if(_e.tagName==='INPUT'&&String(_e.type).toLowerCase()==='hidden')continue;if(typeof _e.focus==='function'){_e.focus();break;}}}catch(_eAfp){}})();",
     );
     let script_result = webview.run_page_scripts_strict();
-    let _zw_hb3 = std::fs::write("/tmp/zw-hb2.txt", format!("post-scripts {}\n", case_name));
     // R3254-E2 切片（editing goal，2026-09-07）：DOMContentLoaded/load 派发 + harness_loaded
     // 标记改 runner 侧执行（此前是 prepare 尾部 append 的 `<script>`——被解析器归入 body，
     // 成为页面可见 DOM，污染 documentElement.outerHTML 精确断言）。时序不变：全部页面脚本
@@ -8546,6 +8656,7 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
         committed
     }
 
+    case_timer.done("setup");
     if script_result.is_ok() {
         // 静态标记登记（初始 extract——DOM 快照此时尚未含脚本赋值）+ 首轮动态登记。
         // settle 提交（readyState/duration 真值链）随登记产出提交。
@@ -8614,6 +8725,7 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
         //（L 轮 runner 域归因的修复面）。
         webview.drain_pending_timers_until_idle(500);
     }
+    case_timer.done("media");
     if let Err(error) = script_result {
         // 无 testharness 引用的 crash/no-harness 用例只有在脚本执行完成且未崩溃时才可
         // 由下方 terminal 分支判 PASS；脚本抛错不能按“未注册 test()”误判为通过。
@@ -8668,6 +8780,7 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     let mut media_byte_cache: std::collections::HashMap<String, std::rc::Rc<Vec<u8>>> =
         std::collections::HashMap::new();
     loop {
+        case_timer.rounds += 1;
         // M3 扩批 XVI：逐 tick 动态登记——脚本赋值的 `.src=`（含 script turn 内同步 play 的
         // canplaythrough handler 形态）在注册表补登记后，同 tick/下一 tick 桥 play 即真值
         // 可达。已登记的 src 幂等跳过（contains_source）；文件字节缓存避免重复 IO。
@@ -8748,7 +8861,7 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
         {
             let now_ms = playback_clock_origin.elapsed().as_millis() as u64;
             pump_clock.store(now_ms, std::sync::atomic::Ordering::Relaxed);
-            if std::env::var("ZW_DISABLE_PUMP").is_err()
+            if !runner_flags().disable_pump
                 && let Ok(mut reg) = webview.video_players().lock()
                 && reg.is_any_playing()
             {
@@ -8757,10 +8870,6 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
                 let _ = reg.audio_advance_all(now_ms);
             }
         }
-        let _zw_hb4 = std::fs::write(
-            "/tmp/zw-hb3.txt",
-            format!("loop {}ms\n", playback_clock_origin.elapsed().as_millis()),
-        );
         let probe = match take_probe(&mut webview, &mut td_refresh_ver) {
             Ok(probe) => probe,
             Err(error) => {
@@ -8780,7 +8889,7 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
             && let Ok(dirty) =
                 webview.execute_script("globalThis.__zw_ptr_hover_dirty ? globalThis.__zw_ptr_hover_dirty() : '0'")
         {
-            let debug = std::env::var("ZW_TD_DEBUG").as_deref() == Ok("1");
+            let debug = runner_flags().td_debug;
             if debug {
                 eprintln!("[zw-settle] poll dirty={} pos=({last_x},{last_y})", dirty.trim());
             }
@@ -9834,7 +9943,7 @@ return (best?((best.__zwSelector||(best.id?'#'+best.id:''))||''):msel)+'|'+px+'|
         Ok(out) => out,
         Err(_) => return (origin_sel.to_string(), off_x, off_y),
     };
-    if std::env::var("ZW_TD_DEBUG").as_deref() == Ok("1") {
+    if runner_flags().td_debug {
         eprintln!(
             "[ptr-resolve] origin={origin_sel} off=({off_x},{off_y}) abs={absolute} out={}",
             out.trim()
@@ -9871,7 +9980,7 @@ fn mut_hover_settle_if_dirty(webview: &mut WebView, last_pointer: &Option<(f32, 
         return;
     }
     let (hit_sel, hx, hy) = resolve_pointer_target(webview, "", *last_x, *last_y, true, td_refresh_ver);
-    if std::env::var("ZW_TD_DEBUG").as_deref() == Ok("1") {
+    if runner_flags().td_debug {
         eprintln!("[zw-settle-cmd] hit={hit_sel} at ({hx},{hy})");
     }
     let script = zero_engine::script_mut_hover_settle(&hit_sel, hx, hy);
@@ -10540,7 +10649,7 @@ fn apply_testdriver_command(
             let dy = parse(parts[3]);
             let absolute = text.starts_with('@');
             let (hit, px, py) = resolve_pointer_target(webview, &selector, ox, oy, absolute, td_refresh_ver);
-            if std::env::var("ZW_TD_DEBUG").as_deref() == Ok("1") {
+            if runner_flags().td_debug {
                 eprintln!("[wheel-scroll] hit={hit} at ({px},{py}) delta=({dx},{dy})");
             }
             let script = zero_engine::script_wheel_scroll(&hit, px, py, dx, dy);
@@ -10678,7 +10787,7 @@ fn dispatch_tab_focus(webview: &mut WebView) -> Option<String> {
         .execute_script(script)
         .map(|v| v.trim().to_string())
         .unwrap_or_default();
-    if std::env::var("ZW_TD_DEBUG").as_deref() == Ok("1") {
+    if runner_flags().td_debug {
         eprintln!("[tab-focus] {result}");
     }
     None

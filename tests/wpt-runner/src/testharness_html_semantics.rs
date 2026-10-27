@@ -124,10 +124,27 @@ pub(crate) fn html_semantics_case_skipped(relative: &str, source: &str) -> bool 
         || source.contains("navigator.serviceWorker")
 }
 
+/// html-semantics 单案执行规格（collect/execute 拆分的数据载体）：case_name 与
+/// 串行版 push 键逐字一致（含 variant 后缀），source 为用例原文，is_html 区分
+/// [`run_testharness_html`] / [`run_any_js_window_case`] 两执行通道。
+pub(crate) struct HtmlSemanticsCaseSpec {
+    case_name: String,
+    source: String,
+    is_html: bool,
+}
+
 /// Run the pinned upstream html/semantics window subset
 /// （html-semantics-compat goal M1 / DC-1——分域语义基线）。九域顶层递归扫描，
 /// filter 按路径子串过滤（如 `forms/`、`tabular-data/`——基线分域收集）。
-pub fn run_html_semantics_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+/// collect/execute 拆分后经 [`crate::parallel_map`] 执行（reftest 先例）：
+/// jobs<=1 走同闭包串行（无第二代码路径）；WebView 在闭包内创建+同线程销毁
+///（!Send 不出闭包）；`par_iter` 保序 collect + 尾部 sort 维持与串行版一致的
+/// 输出顺序。
+pub fn run_html_semantics_cases(
+    wpt_root: &Path,
+    filter: Option<&str>,
+    jobs: usize,
+) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     let harness_source = match std::fs::read_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
@@ -141,23 +158,44 @@ pub fn run_html_semantics_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(S
             )];
         }
     };
-    let mut cases = Vec::new();
-    for subdir in HTML_SEMANTICS_TEST_SUBDIRS {
-        collect_html_semantics_cases(wpt_root, subdir, &harness_source, filter, &mut cases);
-    }
+    let specs = enumerate_html_semantics_cases(wpt_root, filter);
+    let mut cases = crate::parallel_map(&specs, jobs, |spec| {
+        let results = if spec.is_html {
+            run_testharness_html(
+                wpt_root,
+                &spec.case_name,
+                &spec.source,
+                harness_source.as_str(),
+                corpus_case_timeout(),
+            )
+        } else {
+            run_any_js_window_case(wpt_root, &spec.case_name, &spec.source, harness_source.as_str())
+        };
+        (spec.case_name.clone(), results)
+    });
     cases.sort_by(|a, b| a.0.cmp(&b.0));
     cases
 }
 
-/// 递归收集一个语义子域下的 window 可执行用例（[`html_semantics_case_skipped`] 排除）
-/// 并执行（web-components `collect_wc_cases` 先例；语料为 depth-N 叶子布局，
+/// 递归枚举九域全部可执行用例为规格列表（同递归、同 skip 谓词、同 variant 展开、
+/// 同 filter——原 collect_html_semantics_cases 的枚举半拆出，执行移入
+/// [`run_html_semantics_cases`] 的 parallel_map 闭包）。
+fn enumerate_html_semantics_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<HtmlSemanticsCaseSpec> {
+    let mut specs = Vec::new();
+    for subdir in HTML_SEMANTICS_TEST_SUBDIRS {
+        collect_html_semantics_cases(wpt_root, subdir, filter, &mut specs);
+    }
+    specs
+}
+
+/// 递归收集一个语义子域下的 window 可执行用例规格（[`html_semantics_case_skipped`]
+/// 排除；web-components `collect_wc_cases` 先例；语料为 depth-N 叶子布局，
 /// the-script-element 用例在 depth-3）。
 fn collect_html_semantics_cases(
     wpt_root: &Path,
     subdir: &str,
-    harness_source: &str,
     filter: Option<&str>,
-    cases: &mut Vec<(String, Vec<HarnessSubtestResult>)>,
+    specs: &mut Vec<HtmlSemanticsCaseSpec>,
 ) {
     let dir = wpt_root.join(subdir);
     let Ok(entries) = std::fs::read_dir(&dir) else {
@@ -167,7 +205,7 @@ fn collect_html_semantics_cases(
         let path = entry.path();
         if path.is_dir() {
             let nested = format!("{subdir}/{}", entry.file_name().to_string_lossy());
-            collect_html_semantics_cases(wpt_root, &nested, harness_source, filter, cases);
+            collect_html_semantics_cases(wpt_root, &nested, filter, specs);
             continue;
         }
         let file_name = entry.file_name().to_string_lossy().to_string();
@@ -196,22 +234,19 @@ fn collect_html_semantics_cases(
         // 两 variant 裸跑时 nonApplicableTypes 落 [''] 伪清单断言面）。
         let variants = case_variants(&source);
         if variants.is_empty() {
-            let results = if is_html {
-                run_testharness_html(wpt_root, &relative, &source, harness_source, corpus_case_timeout())
-            } else {
-                run_any_js_window_case(wpt_root, &relative, &source, harness_source)
-            };
-            cases.push((relative, results));
+            specs.push(HtmlSemanticsCaseSpec {
+                case_name: relative,
+                source,
+                is_html,
+            });
             continue;
         }
         for variant in variants {
-            let case_name = format!("{relative}{variant}");
-            let results = if is_html {
-                run_testharness_html(wpt_root, &case_name, &source, harness_source, corpus_case_timeout())
-            } else {
-                run_any_js_window_case(wpt_root, &case_name, &source, harness_source)
-            };
-            cases.push((case_name, results));
+            specs.push(HtmlSemanticsCaseSpec {
+                case_name: format!("{relative}{variant}"),
+                source: source.clone(),
+                is_html,
+            });
         }
     }
 }

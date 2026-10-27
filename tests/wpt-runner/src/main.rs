@@ -1305,7 +1305,9 @@ fn cmd_testharness_html_semantics(options: &CliOptions, filter: Option<&str>) {
         .as_deref()
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| std::path::PathBuf::from("tests/wpt-runner/wpt-data"));
-    let cases = testharness_html_semantics::run_html_semantics_cases(&wpt_root, filter);
+    let jobs = effective_jobs(options);
+    eprintln!("Using {jobs} test job(s).");
+    let cases = testharness_html_semantics::run_html_semantics_cases(&wpt_root, filter, jobs);
     let failed = cases.iter().any(|(_, results)| {
         results
             .iter()
