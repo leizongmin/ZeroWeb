@@ -383,6 +383,19 @@ const REFTESTS: &[InlineReftestDef] = &[
         ref_html: "<html><body style=\"margin:0\"><div style=\"display:flex;flex-wrap:wrap;align-content:flex-start;width:100px;height:100px\"><div style=\"width:40px;height:20px;background:red\"></div><div style=\"width:40px;height:20px;background:blue\"></div><div style=\"width:40px;height:20px;background:green\"></div><div style=\"width:40px;height:20px;background:yellow\"></div></div></body></html>",
         is_match: true,
     },
+    // t-p113（CSS Flexbox §9.1 item main size 由内容解析）：Ahem 22 字形 × 5.79px =
+    // 127.38px——taffy round_layout 累计整数取整把 li 定尺削到 round(127.38)=127 <
+    // 127.38，IFC 以取整宽断行假折行（单 li 无 shrink、cum_x=0 → 断行确定；红底 +
+    // line-height 80 令第二行成 127×80px ≈ 2.1% 色带 ≫ Layout 1% 阈值）。ref 侧显式
+    // width:128px（127.38 装得下单行）。修复后 IFC 约束取未取整层 127.38 单行，仅剩
+    // 右缘 1×80px ≈ 0.017% 列差 < 阈值。
+    InlineReftestDef {
+        id: "css-flexbox/flex-li-fractional-content-width-zw-001",
+        category: ReftestCategory::Layout,
+        test_html: "<html><body style=\"margin:0\"><ul style=\"display:flex;list-style:none;margin:0;padding:0;font:400 5.79px/80px Ahem;color:#fff\"><li style=\"background:red\"><span>Contact GitHub Support</span></li></ul></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><ul style=\"display:flex;list-style:none;margin:0;padding:0;font:400 5.79px/80px Ahem;color:#fff\"><li style=\"background:red;width:128px\"><span>Contact GitHub Support</span></li></ul></body></html>",
+        is_match: true,
+    },
 ];
 
 pub fn reftests() -> &'static [InlineReftestDef] {
