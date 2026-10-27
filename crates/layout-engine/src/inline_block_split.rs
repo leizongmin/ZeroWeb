@@ -325,6 +325,10 @@ fn deep_split_enabled() -> bool {
 /// block-in-inline），块内 abspos/fixed 的包含块链与静态位相对其父块不变
 ///（p109 fixed-in-inline-carrier：github `<react-partial>`(inline)>div>fixed header
 /// 塌零实证——旧守卫拒升格使载体落 Inline 片段空匿名块，整子树无盒）。
+/// 前提是载体自身不建 CB：深藏 OOF 的包含块若锚在载体 inline 盒上，升格丢盒即丢
+/// 锚——transform/filter/backdrop-filter/perspective/will-change 建_CB 属性与
+/// relative/sticky 定位已在下方排除表拦下（DF-1：与 abspos.rs
+/// `creates_cb_for_abspos_descendants` / 非 Static 臂同表）。
 ///
 /// 纯块载体的 inline 自身不生成可见盒（空 inline 盒），其块子可无歧义提升到块
 /// 容器层（§9.2.1.1 block-in-inline）。
@@ -334,7 +338,12 @@ fn inline_child_is_pure_block_carrier(doc: &Document, styles: &HashMap<NodeId, C
     };
     if !matches!(style.display, DisplayValue::Inline)
         || is_out_of_flow(style)
-        || matches!(style.position, PositionValue::Relative)
+        // relative/sticky 施加依赖自身盒——升格丢盒即丢施加与 CB 锚
+        //（r5225 block-in-inline-relpos 锚形；DF-1 sticky 同臂）。
+        || matches!(
+            style.position,
+            PositionValue::Relative | PositionValue::Sticky
+        )
     {
         return false;
     }
@@ -353,6 +362,9 @@ fn inline_child_is_pure_block_carrier(doc: &Document, styles: &HashMap<NodeId, C
             zero_style_system::property::types::IsolationValue::Auto
         )
         || !matches!(style.transform, zero_css_parser::values::TransformValue::None)
+        // perspective 非 0 建 CB（DF-1：abspos.rs `creates_cb_for_abspos_descendants`
+        // 同源判定），载体升格丢盒会丢深藏 abspos/fixed 的包含块锚。
+        || !matches!(style.perspective, zero_css_parser::values::LengthValue::Px(0.0))
         || !style.will_change.is_empty()
     {
         return false;
@@ -1112,5 +1124,30 @@ mod tests {
             "c2 must lift as Block segment despite fixed descendant, got {:?}",
             segs
         );
+    }
+
+    #[test]
+    fn test_carrier_cb_anchor_properties_stay_conservative() {
+        // DF-1（非作者复核收口新放开窄组合）：载体自身建 CB（perspective 非 0，
+        // abspos.rs creates_cb_for_abspos_descendants 同源）或 sticky 定位时，
+        // 深藏 abspos/fixed 的包含块锚依赖载体自身盒——升格丢盒即丢锚，
+        // 必须保守维持旧路径（不升格）。
+        for attr in ["style=\"perspective:100px\"", "style=\"position:sticky;top:0\""] {
+            let html = format!(
+                r#"<html><body>
+                  <div id="b">
+                    <x-p {a}><div id="c2"><header style="position:fixed">bar</header></div></x-p>
+                  </div>
+                </body></html>"#,
+                a = attr
+            );
+            // 保守路径两种形态都合法：整段 Inline（Some）或无有效拆分（None，
+            // 纯 inline 口径）——共同点是没有任何 Block 段（即未升格）。
+            let segs = split_block(&html, "b");
+            let has_block = segs
+                .as_ref()
+                .is_some_and(|s| s.iter().any(|s| matches!(s, InlineBlockSegment::Block { .. })));
+            assert!(!has_block, "carrier with {attr} must NOT promote, got {segs:?}");
+        }
     }
 }

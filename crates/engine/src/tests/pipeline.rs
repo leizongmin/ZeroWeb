@@ -1714,7 +1714,7 @@ fn render_inline_svg_anchor_container_line_box() {
     let (_, _, _, div_h, _) = find_layout_box_geometry(&layout.root, div_id, 0.0).expect("div box");
     assert!(
         div_h >= 30.0,
-        "div>a>svg 纯原子行容器高应 ≥32（svg 驱动行盒），实际 {div_h}"
+        "div>a>svg 纯原子行容器高应 ≥30（svg 驱动行盒，留 2px 容差），实际 {div_h}"
     );
 }
 
@@ -1735,7 +1735,7 @@ fn render_fixed_header_inside_inline_custom_element_siblings() {
     let (_, _, _, header_h, _) = found.expect("fixed header box 应存在");
     assert!(
         header_h >= 40.0,
-        "fixed header 在 inline 匿名块上下文中高度应 ≥41（内容高），实际 {header_h}"
+        "fixed header 在 inline 匿名块上下文中高度应 ≥40（41px 内容高留容差），实际 {header_h}"
     );
 }
 
