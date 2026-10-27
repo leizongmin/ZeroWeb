@@ -1739,12 +1739,8 @@ fn gcr_inline_atomic_only_anchor_reports_union_with_atomic_child() {
         None => panic!("inline a 合成盒应存在（R5300）"),
     };
     assert!(
-        w >= 30.0,
-        "只含 32px 原子子的 inline <a> gBCR 宽应 ≥30（并集语义），实际 {w}"
-    );
-    assert!(
-        gh >= 30.0,
-        "只含 32px 原子子的 inline <a> gBCR 高应 ≥30（并集语义），实际 {gh}"
+        (w - 32.0).abs() <= 0.5 && (gh - 32.0).abs() <= 0.5,
+        "只含 32px 原子子的 inline <a> gBCR 应为精确并集 32×32（无 frame 附加），实际 {w}×{gh}"
     );
 }
 
@@ -1767,8 +1763,8 @@ fn gcr_inline_atomic_nested_virtual_chain_each_layer_reports_union() {
             None => panic!("{tag} 合成盒应存在（R5300 嵌套链）"),
         };
         assert!(
-            w >= 30.0 && gh >= 30.0,
-            "嵌套虚拟链 {tag} gBCR 应为原子子并集 ≥30×≥30，实际 {w}×{gh}"
+            (w - 32.0).abs() <= 0.5 && (gh - 32.0).abs() <= 0.5,
+            "嵌套虚拟链 {tag} gBCR 应为精确并集 32×32（无 frame），实际 {w}×{gh}"
         );
     }
 }
@@ -1790,8 +1786,87 @@ fn gcr_inline_atomic_wrapper_frame_added_to_union() {
         None => panic!("带 frame 的 inline a 合成盒应存在（R5300）"),
     };
     assert!(
-        w >= 50.0 && gh >= 50.0,
-        "带 10px padding + 2px border 的包装 gBCR 应 ≥50（32+frame），实际 {w}×{gh}"
+        (w - 56.0).abs() <= 0.5 && (gh - 56.0).abs() <= 0.5,
+        "带 10px padding + 2px border 的包装 gBCR 应为精确 56×56（32+20+4），实际 {w}×{gh}"
+    );
+}
+
+/// DEF-1 装配序钉死：嵌套链各层 frame 互异时须按 DOM 嵌套产出 a-box(span-box(svg))——
+/// span 盒 = svg ± span_frame（42），a 盒 = span 盒 ± a_frame（62），a 盒左缘比 span
+/// 盒再向左一个 a_frame 左量（10px，两盒同处 div 内容区坐标系）。装配序颠倒（外层
+/// 先包成最内层）时 a=52/span=62 且左缘关系反向，本测试即红。
+/// https://www.w3.org/TR/CSS22/visuren.html#inline-boxes
+#[test]
+fn gcr_inline_atomic_nested_chain_wraps_innermost_first() {
+    let html = r#"<html><body><div><a style="padding:10px"><span style="padding:5px"><svg width="32" height="32" viewBox="0 0 16 16"></svg></span></a></div></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let a_id = doc.get_elements_by_tag_name("a")[0];
+    let span_id = doc.get_elements_by_tag_name("span")[0];
+
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    pipeline.render_html(html, "");
+    let layout = pipeline.layout().expect("layout");
+    let a = find_layout_box_geometry(&layout.root, a_id, 0.0).expect("a 合成盒应存在（R5300）");
+    let span = find_layout_box_geometry(&layout.root, span_id, 0.0).expect("span 合成盒应存在（R5300）");
+    assert!(
+        (span.2 - 42.0).abs() <= 0.5 && (span.3 - 42.0).abs() <= 0.5,
+        "span 盒应 = svg ± span_frame（42×42），实际 {}×{}",
+        span.2,
+        span.3
+    );
+    assert!(
+        (a.2 - 62.0).abs() <= 0.5 && (a.3 - 62.0).abs() <= 0.5,
+        "a 盒应 = span 盒 ± a_frame（62×62），实际 {}×{}",
+        a.2,
+        a.3
+    );
+    assert!(
+        (a.0 - (-15.0)).abs() <= 0.5,
+        "a 盒左缘应 = svg 行位起点（本 fixture 为 0）- 两层 frame 左量 15（DOM 外层在最终树最外），实际 a.x={}",
+        a.0
+    );
+    // 子坐标换基约定：包装子盒存储于父内容区坐标系——span 盒应位于 a 盒内容区原点。
+    assert!(
+        span.0.abs() <= 0.5,
+        "span 盒应位于 a 盒内容区原点（换基约定），实际 span.x={}",
+        span.0
+    );
+}
+
+/// subtree_has_no_text 门（含文本包装不合成，p109 问题池挂账）：含非空白文本的
+/// 包装其几何须并入容器 IFC 片段域，不得被合成并集盒（否则与行内文本几何双算）。
+#[test]
+fn gcr_inline_atomic_wrapper_with_text_not_synthesized() {
+    let html = r#"<html><body><div><a style="font-size:14px"><svg width="32" height="32" viewBox="0 0 16 16"></svg>logo</a></div></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let a_id = doc.get_elements_by_tag_name("a")[0];
+
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    pipeline.render_html(html, "");
+    let layout = pipeline.layout().expect("layout");
+    assert!(
+        find_layout_box_geometry(&layout.root, a_id, 0.0).is_none(),
+        "含文本包装不应被合成并集盒（挂账：几何并入 IFC 片段域）"
+    );
+}
+
+/// subtree_has_no_text 门另一向：纯空白文本不阻断合成（白空间口径）。
+#[test]
+fn gcr_inline_atomic_wrapper_whitespace_only_text_synthesized() {
+    let html = r#"<html><body><div><a style="font-size:14px"><svg width="32" height="32" viewBox="0 0 16 16"></svg> </a></div></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let a_id = doc.get_elements_by_tag_name("a")[0];
+
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    pipeline.render_html(html, "");
+    let layout = pipeline.layout().expect("layout");
+    let (w, gh) = match find_layout_box_geometry(&layout.root, a_id, 0.0) {
+        Some((_, _, w, gh, _)) => (w, gh),
+        None => panic!("纯空白文本不应阻断合成（subtree_has_no_text 白空间口径）"),
+    };
+    assert!(
+        (w - 32.0).abs() <= 0.5 && (gh - 32.0).abs() <= 0.5,
+        "空白文本包装合成盒应为并集 32×32，实际 {w}×{gh}"
     );
 }
 

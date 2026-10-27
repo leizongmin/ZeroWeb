@@ -15,6 +15,11 @@
 //! 仅处理**子树无非空白文本**的包装——含文本的包装其几何还须并入容器 IFC
 //! 片段域，本切片不展开（p109 问题池挂账）。
 //!
+//! 已知保真缺口（挂账）：R2156 形态下 IFC 对包装只发零宽 spacer，原子的行位
+//! 不含包装 inline 轴 frame——合成盒按 min(子盒x)-frame 左量向左延伸，包装
+//! gBCR.x 较浏览器偏左该量（总宽一致；原子绘制/命中绝对位置不受影响，
+//! wrap_one 换基与 painter/hit 子偏移互逆）。
+//!
 //! kill-switch：`ZW_INLINE_WRAPPER_BOX=0` 回退无盒旧行为。
 //! https://www.w3.org/TR/cssom-view-1/#dom-element-getboundingclientrect
 //! https://www.w3.org/TR/CSS22/visuren.html#inline-boxes
@@ -204,15 +209,14 @@ fn wrap_one(id: NodeId, style: Option<&ComputedStyle>, mut children: Vec<LayoutB
     }
 }
 
-/// 链由外到内逐层包裹（[a, span] → a-box(span-box(child))）。
+/// 链按 DOM 由外到内存储（chain[0]=最外层）；自链尾（最内层）向链首逐层包裹：
+/// [a, span] → a-box(span-box(child))，与 DOM 嵌套一致。
 fn build_nested(chain: &[NodeId], styles: &HashMap<NodeId, ComputedStyle>, children: Vec<LayoutBox>) -> LayoutBox {
-    let (id, rest) = (chain[0], &chain[1..]);
-    let boxed = wrap_one(id, styles.get(&id), children);
-    if rest.is_empty() {
-        boxed
-    } else {
-        build_nested(rest, styles, vec![boxed])
+    let mut boxed = children;
+    for id in chain.iter().rev() {
+        boxed = vec![wrap_one(*id, styles.get(id), boxed)];
     }
+    boxed.pop().expect("链非空，循环至少包裹一层")
 }
 
 /// 终末回填入口：自底向上把每层容器的提升原子盒嵌回虚拟 inline 祖先链。
