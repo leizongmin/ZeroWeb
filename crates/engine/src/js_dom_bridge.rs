@@ -4220,7 +4220,13 @@ pub(crate) fn set_url_part(prev_href: &str, part: &str, value: &str) -> String {
         "host" => set_url_host_and_port(&mut url, value),
         "port" => set_url_port_stripping(&mut url, value),
         "pathname" => {
-            url.set_path(value);
+            // URL spec pathname setter 步 3：「If url is null or url has an opaque path,
+            // then return」——opaque path（cannot_be_a_base，如 `non-special:opaque`）no-op，
+            // href 不变。WPT non-special-opaque-path-url-getter-setter：pathname set
+            // 'string' 后 setget 仍 'opaque'。
+            if !url.cannot_be_a_base() {
+                url.set_path(value);
+            }
             true
         }
         "search" => {

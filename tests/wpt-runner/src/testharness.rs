@@ -13748,6 +13748,54 @@ globalThis.test(function() {
     }
 
     #[test]
+    fn anchor_url_decomposition_s121() {
+        // s121（html-semantics M2 切片 121）：a/area URL 分解组件三面钉——
+        // ① sel 形（querySelector）组件 setter 读最新 href（R3070 分支迁
+        // __zw_get_attr_lw，M2-S9/R3202 stale-snapshot 族收口）：IDL href 前置后
+        // hash setter 不得读 stale 快照静默 no-op；② 解析失败（url null）protocol
+        // getter 返 ':'（§4.6.3 protocol getter 步 2）；③ opaque path（cannot-be-a-base）
+        // pathname setter no-op（URL spec pathname setter 步 3）。
+        let root = std::env::temp_dir().join("zw-s121-anchor-url-test");
+        std::fs::create_dir_all(&root).unwrap();
+        let html = r##"<script src="/resources/testharness.js"></script>
+<a>anchor</a>
+<script>
+globalThis.test(function() {
+  var a = document.querySelector('a');
+  a.href = 'http://google.com/index.html#somehash';
+  a.hash = 'someother';
+  assert_equals(a.hash, '#someother',
+    'sel 形组件 setter 读最新 href: ' + a.hash);
+
+  var b = document.createElement('a');
+  b.href = 'http://test:test/';
+  assert_equals(b.protocol, ':',
+    '解析失败 protocol getter 返 ":": ' + JSON.stringify(b.protocol));
+
+  var c = document.createElement('a');
+  c.href = 'non-special:opaque';
+  c.pathname = 'string';
+  assert_equals(c.pathname, 'opaque',
+    'opaque path pathname setter no-op: ' + c.pathname);
+}, 'anchor URL decomposition faces');
+</script>"##;
+        let results = run_testharness_html(
+            &root,
+            "anchor-url-decomp.html",
+            html,
+            &mini_harness_stateful(),
+            CASE_TIMEOUT,
+        );
+        assert!(
+            results
+                .iter()
+                .any(|r| r.name == "anchor URL decomposition faces" && r.status == HarnessStatus::Pass),
+            "a/area URL 分解三面（sel setter / 失败 protocol / opaque pathname）须通过: {results:?}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn inline_module_import_specs_rewrite_to_root_absolute_s101() {
         // 直接钉 helper：相对 spec 以模块自身目录（resources/）为基上溯归一；
         // root-absolute/裸 specifier/含 scheme 的 spec 不动；单双引号皆替换。

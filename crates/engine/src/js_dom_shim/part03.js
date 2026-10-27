@@ -25273,10 +25273,21 @@ return e;
               ? globalThis._zwDocBaseURL()
               : (globalThis.location ? globalThis.location.href : '');
             var aJson = __zw_parse_url(aRaw, aBase);
-            if (!aJson) return prop === 'href' ? aRaw : '';
+            // 解析失败 = spec set the url 后 url 仍 null（§4.6.3 api-for-a-and-area-elements）：
+            // href 返原串；protocol 返 ':'（protocol getter 步 2「If this's url is null, return ':'」）；
+            // 其余组件 url null → ''。WPT non-parsable-url-getter-setter：`http://test:test/`
+            // protocol get === ':'。
+            if (!aJson) {
+              if (prop === 'href') return aRaw;
+              return prop === 'protocol' ? ':' : '';
+            }
             var aVal = JSON.parse(aJson)[prop];
             return aVal == null ? '' : aVal;
-          } catch (_e) { return prop === 'href' ? aRaw : ''; }
+          } catch (_e) {
+            // host 回调异常与解析失败同面（url null 口径）。
+            if (prop === 'href') return aRaw;
+            return prop === 'protocol' ? ':' : '';
+          }
         }
         // HTMLFormElement 反射 IDL 属性（action/method/enctype/target，R2839）——form 序列化 / AJAX 提交库
         // （jQuery/Axios form 插件）读 form.action/form.method 构提交请求高频。反射同名内容属性；

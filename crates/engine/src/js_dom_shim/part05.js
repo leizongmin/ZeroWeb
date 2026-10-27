@@ -699,7 +699,11 @@
           // lenient：无当前 href / host 回调缺 / set 失败（空 base 等）→ 静默不写（防破脚本，同 getter 空值回落）。
           // 注：`a.href=` setter 仍走 R3069 reflected 分支写 raw 值（getter 经 base 解析返绝对 URL——getAttribute 返 raw），
           // 故 href 不入此组件分支（条件不含 'href'）。
-          var _uhCur = handle ? __zw_get_attr_handle(handle, 'href') : __zw_get_attr(sel, 'href');
+          // sel 形读走 lw（latest-wins）：IDL setter 前置的 href 面已入 pending SetAttr，apply 前纯快照
+          // `__zw_get_attr` 读 stale 旧值 → 组件 set 静默 no-op（WPT links-created-by-a-and-area 14F）。
+          // 同 R3202/M2-S9 stale-snapshot 族（part03.js:25275 同款 typeof 回退）。
+          var _uhCur = handle ? __zw_get_attr_handle(handle, 'href')
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'href') : __zw_get_attr(sel, 'href'));
           if (_uhCur && typeof __zw_set_url_part === 'function') {
             try {
               var _uhJson = __zw_set_url_part(_uhCur, p, String(value));
