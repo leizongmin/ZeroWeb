@@ -4573,7 +4573,36 @@ impl Painter {
                                     if let Some((ox, oy, s)) = parent_perspective {
                                         super::transform::compose_perspective_scale(&mut tp, ox, oy, s, &rect);
                                     }
-                                    self.primitives.add_transform(tp);
+                                    // R5305：均匀轴对齐 scale + 子树图元仅 {fill, gradient} →
+                                    // 图元级直映，跳过 TP 场景重采样（scale-up 时 TP 把 rect 内
+                                    // backdrop 像素复制到元素框外——透明边框元素叠加彩色祖先
+                                    // 即现红环；语义见 map_uniform_scale_primitives_since 文档）。
+                                    // parent_perspective 折叠矩阵的缩放随深度变化（非纯均匀
+                                    // 语义）与导出动画通道（须 TP 载体）均回落；祖先带变换
+                                    // 同 R5085 豁免（避免二次重采样相位分化）。
+                                    static UNIFORM_RECT_DIRECT: std::sync::LazyLock<bool> =
+                                        std::sync::LazyLock::new(|| {
+                                            std::env::var("ZW_TRANSFORM_UNIFORM_RECT_DIRECT").as_deref() != Ok("0")
+                                        });
+                                    let rect_direct = *UNIFORM_RECT_DIRECT
+                                        && parent_perspective.is_none()
+                                        && compositor_transform.is_none()
+                                        && !inside_transformed_ancestor
+                                        // R5174/R5175 perspective 折叠域保持既有 TP 路径
+                                        //（corpus 校准面；折叠矩阵形同均匀 scale 但语义为
+                                        // 透视投影，不入直映）。
+                                        && !matches!(&style.transform, TransformValue::List(fs) if
+                                            fs.iter().any(|f| matches!(f, TransformFunction::Perspective(_))))
+                                        && super::transform::map_uniform_scale_primitives_since(
+                                            &mut self.primitives,
+                                            &tp,
+                                            &counts_before,
+                                            filters_before,
+                                            blend_modes_before,
+                                        );
+                                    if !rect_direct {
+                                        self.primitives.add_transform(tp);
+                                    }
                                 }
                                 None => {
                                     if let Some((ox, oy, s)) = parent_perspective {
