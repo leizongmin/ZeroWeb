@@ -21,6 +21,12 @@ on:
         description: 'Run wptfyi-gap job only (skip build matrix)'
         type: boolean
         default: false
+      # wpt.fyi 全量对账：dispatch 时可选只跑 wptfyi-coverage（matrix 分片跑
+      # 全部已导入套件 + 拉 wpt.fyi 全量清单 + coverage 快照回写）
+      run_wptfyi_coverage:
+        description: 'Run wptfyi-coverage jobs only (skip build matrix)'
+        type: boolean
+        default: false
 
 permissions:
   actions: read
@@ -72,7 +78,7 @@ jobs:
       needs.changes.outputs.should_build == 'true'
       && !(github.event_name == 'workflow_dispatch'
            && (inputs.run_reftest_trend || inputs.run_benchmark_trend
-               || inputs.run_wptfyi_gap))
+               || inputs.run_wptfyi_gap || inputs.run_wptfyi_coverage))
     name: Build ${{ matrix.target }} (${{ matrix.engine }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 75
@@ -721,6 +727,228 @@ jobs:
             git pull --rebase -X theirs origin main
             git push origin HEAD:main
             echo "Gap snapshot committed and pushed."
+          fi
+
+  # wpt.fyi 全量对账（docs/compat/wptfyi-gap-analysis.md「全量对账」节）：
+  # matrix 分片跑全部已导入 testharness 套件；未跑的测试在三家并集全量清单上
+  # 记 0。aggregate 合并产物 + 拉 wpt.fyi 清单，产出 coverage-<日期>.md/.json
+  # 快照提交回 docs/compat/wptfyi/——网站「全量 WPT 通过率」与缺口地图数据源。
+  # 语料坑同 wptfyi-gap（GITHUB_TOKEN 认证 + resources 引导）；clipboard/
+  # fullscreen 等套件需要 X display，装 xvfb 提供。
+  wptfyi-coverage:
+    if: >
+      github.event_name == 'schedule'
+      || (github.event_name == 'workflow_dispatch' && inputs.run_wptfyi_coverage)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard:
+          - name: syntax-dom
+            suites: "html-syntax dom"
+            fetch: "fetch-wpt-html-syntax fetch-wpt-dom"
+            fetch_scripts: ""
+          - name: crypto
+            suites: "webcrypto"
+            fetch: "fetch-wpt-webcrypto"
+            fetch_scripts: ""
+          - name: html-sem
+            suites: "html-semantics web-components"
+            fetch: "fetch-wpt-html-semantics fetch-wpt-web-components"
+            fetch_scripts: ""
+          - name: ui-edit
+            suites: "selection uievents touch-events keyboard pointerlock dnd"
+            fetch: >-
+              fetch-wpt-selection fetch-wpt-uievents fetch-wpt-touch-events
+              fetch-wpt-keyboard fetch-wpt-pointerlock fetch-wpt-dnd
+            fetch_scripts: ""
+          - name: forms-clip
+            suites: "constraints clipboard-apis fullscreen html"
+            fetch: "fetch-wpt-clipboard-apis fetch-wpt-fullscreen"
+            fetch_scripts: "fetch-constraints-subset.sh"
+          - name: storage
+            suites: "webstorage cookies indexeddb cache-storage fs fileapi"
+            fetch: >-
+              fetch-wpt-webstorage fetch-wpt-cookies fetch-wpt-indexeddb
+              fetch-wpt-cache-storage fetch-wpt-fs fetch-wpt-fileapi
+            fetch_scripts: ""
+          - name: net
+            suites: "net-api encoding wasm workers webmessaging page-state navigation"
+            fetch: >-
+              fetch-wpt-net-api fetch-wpt-encoding fetch-wpt-wasm
+              fetch-wpt-workers fetch-wpt-webmessaging fetch-wpt-page-state
+              fetch-wpt-navigation
+            fetch_scripts: ""
+          - name: timing
+            suites: >-
+              resource-timing navigation-timing event-timing longtask-timing
+              hr-time performance-timeline user-timing web-animations
+            fetch: "fetch-wpt-performance-api fetch-wpt-timing-animation"
+            fetch_scripts: ""
+          - name: misc
+            suites: >-
+              console compression canvas canvas-worker css-variables media
+              webaudio
+            fetch: >-
+              fetch-wpt-console fetch-wpt-compression fetch-wpt-css-variables
+              fetch-wpt-media fetch-wpt-webaudio
+            fetch_scripts: "fetch-canvas-subset.sh"
+          - name: sec-render
+            suites: "csp mixed-content secure-contexts svg webgl"
+            fetch: "fetch-wpt-security-csp fetch-wpt-svg fetch-wpt-webgl"
+            fetch_scripts: ""
+          - name: service-workers
+            suites: >-
+              service-workers service-workers-fetch service-workers-cache-storage
+            fetch: ""
+            fetch_scripts: ""
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install xvfb (clipboard/fullscreen 等套件需要 X display)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb
+          Xvfb :99 -screen 0 1280x1024x24 &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+
+      - name: Determine rusty_v8 version
+        shell: bash
+        run: |
+          echo "RUSTY_V8_VERSION=$(sed -n '/name = \"v8\"/{n;s/^version = \"//;s/\"$//;p;q;}' Cargo.lock)" >> "$GITHUB_ENV"
+
+      - name: Cache rusty_v8
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/zero-web/rusty_v8
+          key: rusty_v8-${{ env.RUSTY_V8_VERSION }}-x86_64-unknown-linux-gnu
+
+      - name: Cache cargo registry
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Download rusty_v8 archive
+        shell: bash
+        run: bash scripts/download-rusty-v8.sh
+
+      - name: Build zero-wpt-runner and test-guard
+        run: |
+          cargo build --release --bin zero-wpt-runner
+          make target/test-guard
+
+      # 与 wptfyi-gap 相同的语料坑：GITHUB_TOKEN 认证列目录（未认证 60 req/h
+      # 静默降级产出残缺语料）；fetch-wpt-html-testharness 引导共享 resources。
+      - name: Fetch suite corpora
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          make fetch-wpt-html-testharness
+          for t in ${{ matrix.shard.fetch }}; do make "$t"; done
+          for s in ${{ matrix.shard.fetch_scripts }}; do
+            bash "tests/wpt-runner/scripts/$s"
+          done
+
+      # SW core 的语料 = tier-a + 全部 wave fetch（Makefile 55+ 目标，循环拉）。
+      - name: Fetch service workers corpora (tier-a + all waves)
+        if: matrix.shard.name == 'service-workers'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          make fetch-wpt-service-workers-tier-a
+          for w in $(grep -E '^fetch-wpt-service-workers' Makefile | cut -d: -f1); do
+            make "$w"
+          done
+
+      # 有失败用例时 runner 退出码非 0 属预期（对账就是要看差距）；JSON 空
+      # 输出说明 runner 崩了或语料残缺，shard 应当红。
+      - name: Run suites (test-guard wrapped, JSON captured)
+        shell: bash
+        run: |
+          mkdir -p /tmp/zw-results
+          for s in ${{ matrix.shard.suites }}; do
+            ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit 3600 -- \
+              ./target/release/zero-wpt-runner "testharness-$s" --json \
+              > "/tmp/zw-results/testharness-$s.json" \
+              || echo "::warning::testharness-$s 退出码非 0（存在失败用例属预期）"
+            test -s "/tmp/zw-results/testharness-$s.json" \
+              || { echo "::error::testharness-$s 无 JSON 输出"; exit 1; }
+          done
+
+      - name: Upload results shard
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zw-results-${{ matrix.shard.name }}
+          path: /tmp/zw-results
+          if-no-files-found: error
+          retention-days: 3
+
+  # 合并各分片结果 → 拉 wpt.fyi 三家 aligned stable 清单 → 生成全量对账快照
+  # → 提交回 main。纯 Python 标准库，无需构建环境。
+  wptfyi-coverage-aggregate:
+    needs: wptfyi-coverage
+    if: >
+      github.event_name == 'schedule'
+      || (github.event_name == 'workflow_dispatch' && inputs.run_wptfyi_coverage)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Merge result shards
+        uses: actions/download-artifact@v7
+        with:
+          pattern: zw-results-*
+          path: /tmp/zw-results
+          merge-multiple: true
+
+      - name: Fetch wpt.fyi aligned stable and build coverage snapshot
+        run: |
+          python3 tests/wpt-runner/scripts/wptfyi_gap.py fetch
+          python3 tests/wpt-runner/scripts/wptfyi_gap.py coverage \
+            --results /tmp/zw-results \
+            --out "docs/compat/wptfyi/coverage-$(date -u +%F).md"
+
+      - name: Upload coverage snapshot artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wptfyi-coverage
+          path: docs/compat/wptfyi/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Commit coverage snapshot back to main
+        if: success()
+        run: |
+          git config user.name "zero-web-bot"
+          git config user.email "zero-web-bot@users.noreply.github.com"
+          git add docs/compat/wptfyi/
+          if git diff --cached --quiet; then
+            echo "No coverage snapshot changes to commit."
+          else
+            git commit -m "chore(wpt): 更新 wpt.fyi 全量对账快照（weekly cron）"
+            # 冲突容忍：快照为追加式数据，冲突时取远端（权威版本）
+            git pull --rebase -X theirs origin main
+            git push origin HEAD:main
+            echo "Coverage snapshot committed and pushed."
           fi
 
   # 月度工程报告（scripts/generate-monthly-report.sh）：每月 1 日自动生成上月报告

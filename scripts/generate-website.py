@@ -220,10 +220,11 @@ def build(output):
     spec = importlib.util.spec_from_file_location("metrics", ROOT / "scripts/generate-website-metrics.py")
     metrics_module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(metrics_module)
-    metrics = metrics_module.build_metrics(
+    metrics = metrics_module.build_metrics_with_coverage(
         ROOT / "docs/perf/trends/benchmark-trend.csv",
         ROOT / "docs/goal/rendering-compat/evidence/wpt-trends/trend.csv",
         ROOT / "docs/compat/trends/wpt-suites.csv",
+        ROOT / "docs/compat/wptfyi",
     )
     (output / "metrics.json").write_text(json.dumps(metrics, ensure_ascii=False), encoding="utf8")
     updates = sorted(json.loads((SITE / "updates.json").read_text()), key=lambda item: item["date"], reverse=True)
