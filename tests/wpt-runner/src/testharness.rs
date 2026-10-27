@@ -8219,6 +8219,66 @@ pub(crate) fn run_testharness_html_inner(
 
 /// [`run_testharness_html_inner`] 的注入模式参数化形态（dnd 通道传
 /// [`PointerStepInjection::DragStateMachine`]，其余通道经包装走默认）。
+/// 诊断（env `ZW_TESTHARNESS_TIME_LOG=1` 启用）：每案分段计时（镜像 main.rs
+/// `CaseTimer` 的 RAII 模式）——WebView 构建/字体预载/文档加载/首次脚本（含
+/// js-dom shim 的 V8 编译）/setup/媒体登记各段耗时与探针循环轮数，定位每案
+/// 固定成本。输出走 stderr：`--json` 时 stdout 必须是纯 JSON（main.rs 结束时
+/// 单次 println）。env 关闭时仅一次 env 读 + 一次 `Instant::now`。
+struct HarnessCaseTimer {
+    id: String,
+    enabled: bool,
+    start: std::time::Instant,
+    phase: std::time::Instant,
+    segments: Vec<(&'static str, u128)>,
+    rounds: usize,
+}
+
+impl HarnessCaseTimer {
+    fn new(id: &str) -> Self {
+        let now = std::time::Instant::now();
+        let enabled = std::env::var("ZW_TESTHARNESS_TIME_LOG").ok().as_deref() == Some("1");
+        Self {
+            id: id.to_string(),
+            enabled,
+            start: now,
+            phase: now,
+            segments: Vec::new(),
+            rounds: 0,
+        }
+    }
+
+    /// 结束当前分段并开启下一段；env 关闭时零成本。
+    fn done(&mut self, segment: &'static str) {
+        if self.enabled {
+            self.segments.push((segment, self.phase.elapsed().as_millis()));
+            self.phase = std::time::Instant::now();
+        }
+    }
+}
+
+impl Drop for HarnessCaseTimer {
+    fn drop(&mut self) {
+        if !self.enabled {
+            return;
+        }
+        // 尾段（探针循环；提前 return 时为残余路径）不显式标记者并入 run。
+        let run_ms = self.phase.elapsed().as_millis();
+        let segs = self
+            .segments
+            .iter()
+            .map(|(name, ms)| format!("{name}={ms}ms"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        eprintln!(
+            "[th-time] {} | {} run={run_ms}ms rounds={} total={:.3}s",
+            self.id,
+            segs,
+            self.rounds,
+            self.start.elapsed().as_secs_f64()
+        );
+    }
+}
+
 pub(crate) fn run_testharness_html_with_pointer_injection(
     wpt_root: &Path,
     case_name: &str,
@@ -8228,6 +8288,7 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     timeout: Duration,
     pointer_injection: PointerStepInjection,
 ) -> Vec<HarnessSubtestResult> {
+    let mut case_timer = HarnessCaseTimer::new(case_name);
     let unsupported = unsupported_testdriver_dependencies(source);
     if !unsupported.is_empty() {
         return vec![HarnessSubtestResult {
@@ -8291,6 +8352,7 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
             .then(crate::ws_fixture::fixture_ws_host_factory),
         ..WebViewConfig::default()
     });
+    case_timer.done("new");
     // net-api M5-S1：websockets 用例页面走 http origin——上游 `?default` 变体语义
     // 即 http 页面 + ws 连接（constants.sub.js 判 `location.protocol === 'https:'`
     // 翻 wss 分支；runner 无 TLS fixture，wss 变体不在度量面）。通道级 scheme 翻转
@@ -8326,8 +8388,10 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     // 页面（2d.text.drawing.style.fontKerning 等）默认字体度量/kerning 面依赖。需
     // resolve_font_id 大小写不敏感修复配套（否则 CanvasTest 显式族 miss 回退 sans-serif）。
     webview.load_canvas_system_sans_font();
+    case_timer.done("font");
     let external_css = webview.fetch_page_images(&html, &page_url);
     webview.load_html(&html, Some(&external_css));
+    case_timer.done("load");
     // M3 扩批 XVI：播放宿主桥**先于页面脚本**安装（canplaythrough handler 在初始脚本
     // 执行内同步调 video.play()——桥后装则 play 走 headless 分支、bridgeOn 永不置位，
     // 播放钟推进面失联）。execute_script 空转预热 = ensure_sandbox + ensure_js_shim
@@ -8340,6 +8404,8 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     // 时把 http 页锚误判 secure，historical.any.js 断言面失效。with_dom 先注册
     // DOM 回调（含 page URL）再装 shim，location 初值即真页锚。
     let _ = webview.execute_script_with_dom("0;globalThis.__zwPageShowRunnerOwned = true;");
+    // 首次 execute 含 ensure_sandbox + js-dom shim 全量 V8 编译，单列观察。
+    case_timer.done("first_exec");
     // wasm/jsapi 通道形态还原（2026-10-19 复跑实证）：with_dom 注入的 dom polyfill 以
     // 桥接对象替换原生 V8 WebAssembly（生产 execute 路径既有契约），桥 stub
     // Module/exports 使 wasm/jsapi 通道自基线 715/719 塌缩至 141/460。经桥的
@@ -8546,6 +8612,7 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
         committed
     }
 
+    case_timer.done("setup");
     if script_result.is_ok() {
         // 静态标记登记（初始 extract——DOM 快照此时尚未含脚本赋值）+ 首轮动态登记。
         // settle 提交（readyState/duration 真值链）随登记产出提交。
@@ -8614,6 +8681,7 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
         //（L 轮 runner 域归因的修复面）。
         webview.drain_pending_timers_until_idle(500);
     }
+    case_timer.done("media");
     if let Err(error) = script_result {
         // 无 testharness 引用的 crash/no-harness 用例只有在脚本执行完成且未崩溃时才可
         // 由下方 terminal 分支判 PASS；脚本抛错不能按“未注册 test()”误判为通过。
@@ -8668,6 +8736,7 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     let mut media_byte_cache: std::collections::HashMap<String, std::rc::Rc<Vec<u8>>> =
         std::collections::HashMap::new();
     loop {
+        case_timer.rounds += 1;
         // M3 扩批 XVI：逐 tick 动态登记——脚本赋值的 `.src=`（含 script turn 内同步 play 的
         // canplaythrough handler 形态）在注册表补登记后，同 tick/下一 tick 桥 play 即真值
         // 可达。已登记的 src 幂等跳过（contains_source）；文件字节缓存避免重复 IO。
