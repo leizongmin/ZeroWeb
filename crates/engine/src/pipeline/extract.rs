@@ -67,19 +67,53 @@ fn trim_ascii_html_ws(s: &str) -> &str {
     s.trim_matches(|c: char| matches!(c, '\t' | '\n' | '\x0C' | '\r' | ' '))
 }
 
-/// 脚本 type 判 JS（HTML prepare-the-script-element 步骤 3：type 值剥首尾 ASCII whitespace 后
-/// 为空或 JavaScript MIME type essence match → classic/module；余为 data block 不执行）。
+/// HTML §scripting languages：JavaScript MIME type essence 集合全表（16 项——含
+/// legacy text/javascript1.0-1.5 / text/jscript / text/livescript / x- 变体）。
+/// essence match = 值剥首尾 ASCII whitespace 后 ASCII case-insensitive **等值**于
+/// 集合成员，无参数语法：`text/javascript;charset=UTF-8` 不是 essence match →
+/// data block 不执行（语料 script-type-and-language-with-params 判据；MIME 参数
+/// 剥离属 mimesniff 解析，spec 此处是字符串比对）。
+/// https://html.spec.whatwg.org/multipage/scripting.html#javascript-mime-type
+const JS_MIME_ESSENCE_TYPES: [&str; 16] = [
+    "application/ecmascript",
+    "application/javascript",
+    "application/x-ecmascript",
+    "application/x-javascript",
+    "text/ecmascript",
+    "text/javascript",
+    "text/javascript1.0",
+    "text/javascript1.1",
+    "text/javascript1.2",
+    "text/javascript1.3",
+    "text/javascript1.4",
+    "text/javascript1.5",
+    "text/jscript",
+    "text/livescript",
+    "text/x-ecmascript",
+    "text/x-javascript",
+];
+
+/// 脚本 type 判 JS（HTML prepare-the-script-element：type 字面空串或缺省 → type
+/// string = "text/javascript" → classic；否则 type string essence match → classic，
+/// module 形态 → module（既有剥白口径不动）；余为 data block 不执行。s113：旧
+/// `ends_with("javascript")` 子串放行 bare `javascript` / `text/javascript1.8` /
+/// `\0` 沾染非法 type（语料 script-type-and-language-js 解析插入面 1 缺口），
+/// 16 集合收窄后与动态面 `_zwScriptTypeClassify` 同表）。
 /// pub（s110）：runner 投递面 `inline_local_scripts` 对非 JS type 外链单元按同判据整段
 /// 透传（data-inline 改写剥 src，mutation 重触发面须保 src 语义）。
 /// https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
 pub fn script_type_is_javascript(type_attr: Option<&str>) -> bool {
-    match type_attr.map(trim_ascii_html_ws).filter(|t| !t.is_empty()) {
+    match type_attr {
         None => true,
-        Some(t) if t.eq_ignore_ascii_case("text/javascript") => true,
-        Some(t) if t.eq_ignore_ascii_case("application/javascript") => true,
-        Some(t) if t.eq_ignore_ascii_case("module") => true,
-        Some(t) if t.ends_with("javascript") => true,
-        _ => false,
+        // 字面空串（剥白区分轨：type=" " 推导串为原值，剥后空串不在集合 → data block，
+        // 语料 testTypeShouldNotRun(" ")）。
+        Some("") => true,
+        Some(t) => {
+            JS_MIME_ESSENCE_TYPES
+                .iter()
+                .any(|m| trim_ascii_html_ws(t).eq_ignore_ascii_case(m))
+                || script_is_module(Some(t))
+        }
     }
 }
 
@@ -1449,6 +1483,43 @@ mod tests {
         ));
         assert!(matches!(
             scripts(r#"<script>x();</script>"#)[..],
+            [(PageScript::Inline(_), _)]
+        ));
+    }
+
+    #[test]
+    fn script_type_js_mime_essence_set_s113() {
+        // s113（type essence 16 集合）：legacy 集合成员提取（含 text/javascript1.x、
+        // x- 变体、UPPER）；bare `javascript`/legacy 1.8+/\0 沾染/剥后空串/参数串
+        // 一律 data block 不提取（语料 script-type-and-language-js 解析面 +
+        // with-params：`text/javascript;charset=UTF-8` 不跑——essence 无参数语法）。
+        // 字面空串照提取（type string = "text/javascript"）；type=" " 不提取。
+        let scripts = |html: &str| extract_page_scripts_indexed(&format!(r#"<body>{html}</body>"#));
+        for ty in [
+            "text/javascript1.5",
+            "TEXT/ECMASCRIPT",
+            "application/x-javascript",
+            " application/javascript ",
+        ] {
+            assert!(
+                !scripts(&format!(r#"<script type="{ty}">x();</script>"#)).is_empty(),
+                "essence 集合成员须提取: {ty}"
+            );
+        }
+        for ty in [
+            "javascript",
+            "text/javascript1.8",
+            "text/javascript\u{0000}",
+            " ",
+            "text/javascript;charset=UTF-8",
+        ] {
+            assert!(
+                scripts(&format!(r#"<script type="{ty}">x();</script>"#)).is_empty(),
+                "非 essence 值须为 data block 不提取: {ty}"
+            );
+        }
+        assert!(matches!(
+            scripts(r#"<script type="">x();</script>"#)[..],
             [(PageScript::Inline(_), _)]
         ));
     }

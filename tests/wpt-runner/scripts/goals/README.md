@@ -40,6 +40,7 @@ goal 入口文档 `docs/goal/<goal>.md` DC-1。
 | 32 | [wasm-compat](../../../../docs/goal/wasm-compat.md) | wasm/core; wasm/webapi | 无（2026-10-27 coverage 立项；jsapi 75.7% 基线零回归底线） |
 | 33 | [editing-compat](../../../../docs/goal/editing-compat.md) | editing/run; editing/other | 无（2026-10-27 coverage 立项；长线先语料后引擎，按簇收敛） |
 | 34 | [dom-expansion](../../../../docs/goal/dom-expansion.md) | dom/ranges; html/dom 扩面 | 无（2026-10-27 coverage 立项；40 号划界承接，parser 通道零回归底线） |
+| 35 | [css-testharness-compat](../../../../docs/goal/css-testharness-compat.md) | css/css-values; css/selectors（M0 试点）；css/* 89 目录面 | **内存治理门控**（2026-10-27 coverage 立项）：M1 分片执行 + coverage 分片管道落地前扩面套件进不了 CI；css-variables 病态内存案解禁在 M2；渲染面归 rendering-compat |
 | 40 | [html-syntax-compat](../../../../docs/goal/archive/html-syntax-compat.md) | html/syntax; html/dom | **已收口**（2026-10-04） |
 | 50 | [uievents-compat](../../../../docs/goal/archive/uievents-compat.md) | uievents; pointerevents |  **已收口**（2026-10-07 M4；M5 巡检 2026-10-20 收口 1805P/166F/95TO，已归档）；IME 挂账 |
 | 60 | [navigation-compat](../../../../docs/goal/archive/navigation-compat.md) | history; navigation-api; html/browsers | **已收口**（2026-10-21 M3 收口，M2 437/476 = 91.8%、全量 473P/584 案行，已归档）；残余超口径记账池挂账 |
@@ -49,12 +50,12 @@ goal 入口文档 `docs/goal/<goal>.md` DC-1。
 | 92 | [web-api-batch2](../../../../docs/goal/archive/web-api-batch2.md) | clipboard-apis; fullscreen | **已收口**（2026-10-04） |
 | 99 | [webgl-compat](../../../../docs/goal/archive/webgl-compat.md) | webgl | **已收口**（2026-10-23 M4，用户签收 §5 三项后归档）；基线 2112P/3F（3F 为上游 IDL 重载判据）、reftest 716/716；WebGL2/WebGPU 挂账定稿见 M4 evidence |
 
-**预留与协调面（2026-10-27 更新）**：31-34 已占位（coverage-2026-10-27 对账立项：
-encoding-legacy-mb / wasm / editing / dom-expansion），新候选从 35 号起顺延。
-未拆候选：cssom-view / geometry-1（渲染 API 面，与 rendering-compat 工作面重叠，
-立项前先按 run-rules §9 协调）、webrtc / getUserMedia / webaudio / geolocation /
-sensors / speech 类（host 设备与音频图缺失，远期门控池；websockets 随 20 号二期
-DC-3 重估）。
+**预留与协调面（2026-10-27 更新）**：31-35 已占位（coverage-2026-10-27 对账立项：
+encoding-legacy-mb / wasm / editing / dom-expansion / css-testharness），新候选从
+36 号起顺延。原候选 cssom-view / geometry-1 已纳入 35 号 M3+ 扩面（与 rendering-compat
+工作面重叠，落地前先按 run-rules §9 协调）。未拆候选：webrtc / getUserMedia /
+webaudio / geolocation / sensors / speech 类（host 设备与音频图缺失，远期门控池；
+websockets 随 20 号二期 DC-3 重估）。
 
 ## 与 rally 启动脚本的关系
 

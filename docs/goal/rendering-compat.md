@@ -9,6 +9,24 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5303 实现轮（line-height:0 容器仅原子行 strut 围合——line-height-127 ✗1.53→✓0.00 翻绿，corpus 15737P/855F→15738P/854F；R5298 strut 域续挖，±2 flake A/B 定谳）**（2026-10-27）
+>
+> - **定性**（R5302 下一步②855F 择轻；纠正轮前误判：reftest 管线 `<img>` 渲染正常——PNG 全图统计证明 ref 侧绿块完整，此前「ref 全白」系 bbox 判据 `g>128` 漏 `(0,128,0)`）：`.test{line-height:0}` 独嵌 1px img 行盒仅 ~1px、红 td 露出 46px。ZW_DEBUG_IFC 探针：`h=1 strut_ascent=128 baseline_y=128`——R5298 接管被 `strut_lh > 0` 挡住、legacy 0.8fs 只抬基线不生长行盒。CSS2 §10.8.1：strut 盒 0 高悬于字体中线，A = 0.3fs = 48、D = −48，与 img 并集 → 行盒 48。
+> - **实现**（inline/mod.rs，无新 kill-switch）：①`container_strut_lh_zero` 捕获标记——分开「未捕获」（Path B 空 styles，legacy）与「显式 line-height:0」两义，布局/绘制同口径；②新接管臂——lh:0 容器仅原子行 strut A = −fs/2 + ratio·fs **替换** legacy（错值非保守下界），文本行/塌 0 高行不受影响；③负 D 并集下限——`strut_descent < 0` 取 `max(D, glyph_descent)`，负 strut D 不把底边拖到基线上（正 D 恒旧下限，c42 零扰动）；④布尔判前置热路径（每行新增 1 次布尔判断）。
+> - **交付**：127 **✗1.53→✓0.00**；全量 corpus 两次失败集逐案一致 **16592/15738P/854F**；±2（size-adjust.tentative ✗6.47 / incremental-scroll ✗1.63）A/B 定谳既有 flake——前者 HEAD 单案重跑同样 6.47%，后者单案 3× ✓0.00 且改动不可达（无 lh:0、无负 D 域），归因全量跑并行负载取帧时序。
+> - **门禁**：layout-engine lib **2185P/0F**(+2：127 主判例 + normal-lh 对照锚)、fmt 0 diff、clippy 14-crate quickjs 腿 0 告警、product-smoke PASS（welcome 15.50% 持平 + struct ×6）、bench-gate 定向 zero-layout-engine **GATE PASS**（25 指标 NEW=0；首轮被并行流 loadavg 忙判定 ABORT，守卫按设计未强制，空闲窗重跑过）；make test 全量未跑（layout-engine inline 域 + 同 crate 测试，消费面 corpus 两次全量 + product-smoke，R5301/R5302 判例）。
+> - **挂账**：±2 flake 记账（后续轮遇此二案先单案复跑再定性）；R5299 阻塞三项、R5298 遗留、013 ellipsis host 传播维持。**下一步 R5304**：①854F 账本续扫择轻 ②ellipsis host 传播评估（结构轮，视账本轻案供给决定是否启动）。证据：[`rendering-compat/evidence/r5303-lh0-atomic-strut-127-2026-10-27.md`](rendering-compat/evidence/r5303-lh0-atomic-strut-127-2026-10-27.md)。
+>
+> **▶ R5302 实现轮（text-overflow: ellipsis 逐行适用 + 整 cell 收缩 + 贴排——text-overflow-007 ✗1.30→✓0.00 翻绿，corpus 15736P/856F→15737P/855F 失败集恰一案移出零翻转；008 ell-fit 门防回归、013 ellipsis host 结构定谳）**（2026-10-27）
+>
+> - **定性**（R5301 下一步①ellipsis 007+013 域；跨 session WIP 承接，本轮三修正后定稿）：ellipsis 后处理原为单趟——从首溢出行截点清到切片末尾（后续行被抹）、origin 判据漏 straddling 末 cell、'…' 锚 content_right−宽（007「no intervening gap」assert 败：chromium 整 cell 收缩且 '…' 紧贴末保留字符）。
+> - **实现**（text.rs 重写，无新 kill-switch）：①逐行适用——baseline y 聚类（容差 0.5×fs）、逐行独立检测/收缩/贴 '…'；②整 cell 收缩——检测改行末端点（末字形 origin+实测推进）越缘，保留使「前缀+'…'」装进容器的最大整 cell 前缀，'…' 贴前缀末端（LTR）/后缀左缘（RTL 镜像同 R5301）；③**ell-fit 门**——'…' 宽 > 容器宽整个 pass 跳过（008 assert「首字符 clipped rather than ellipsed」，chromium '…' 装不下不渲）；④'…' 颜色 = **本盒 color**（css-ui-3 随盒样式，008/013 assert；前会话 WIP 取末保留字形色被字形探针定谳回归——011 8.33→10.42 橙染）；⑤fs=0 哨兵槽**参与聚类与行宽检测、不参与保留**（IFC/布局侧先把盒外字形置零、x/y 保留——排除则行末端点缩到盒缘、溢出恒漏检，013 取证）。
+> - **交付**：007 **✗1.30→✓0.00**；008 ✓ 维持绿（endpoint 判据曾致半截红 '…' 回归，ell-fit 门闭合）；011 回 8.33 地板（bidi 阻塞域不变）；全量 corpus **16592/15737P/855F** 失败集归一化 diff 恰 {−007} 零翻转（二跑 diff 空判定稳定）。
+> - **013 结构定谳**（✗10.42 不变，挂账深结构轮）：gate 探针实证字形由 span（IFC owner）绘制，text-overflow/overflow 非继承 → span 侧 pass 不跑（overflow_x=Visible/text_overflow=Clip）、宿主 div has_content=false 亦不跑——需 **ellipsis host 传播**（R3768 line-clamp host 布局侧标记先例）。ruby 1.84→2.05 为 ref 侧（嵌套 span）逐行 '…' 更近 chromium 所致（dump PNG A/B：test 侧逐字节同、ref 侧 1436px 变化），红页零翻转隔离域。
+> - **门禁**：make reftest 716/716、fmt 0 diff、clippy 0 告警（zero-engine --all-targets + quickjs 组合 14 crate -D warnings 腿）、engine lib **3557P/0F**(+4)、product-smoke PASS（welcome 15.50% 持平 + struct ×2）、bench-gate 定向 zero-engine **GATE PASS**（19 指标 NEW=7）；make test 全量未跑（paint ellipsis 后处理 + 同 crate 测试，消费面 reftest/corpus/product-smoke 覆盖，R5301 判例）。回归 +4（multiline 双行各渲 / 007 no-gap 贴排 / straddling 整裁 / 008 ell-fit 门）。
+> - **挂账**：ellipsis host 传播（013 域结构轮，取证可复用）；R5299 翻转阻塞三项维持；R5298 遗留维持；ruby test 侧跟进。**下一步 R5303**：①ellipsis host 传播评估（013 域，R3768 先例）②855F 账本续扫择轻 ③跨流碰头维持。证据：[`rendering-compat/evidence/r5302-ellipsis-per-line-007-2026-10-27.md`](rendering-compat/evidence/r5302-ellipsis-per-line-007-2026-10-27.md)。
+>
+>
 > **▶ R5301 实现轮（text-overflow: ellipsis RTL 几何镜像——ellipsis-rtl-001 ✗1.67→✓0.00 翻绿，corpus 15734P/857F→15735P/856F 失败集恰一案移出零翻转；text-overflow 家族 8 案地图 + vertical-rl 短页逐字裂列新矿井定性）**（2026-10-27）
 >
 > - **定性**（R5300 下一步①857F 续扫择轻命中 text-overflow 家族，8 案同宿主缺陷 = paint ellipsis 后处理 LTR 专用）：检测 `g.x >= content_right` 对 RTL 行恒假（RTL 行右对齐起排、溢出走左缘，scroll-rtl-001 span x=−792 布局同证）→ 永不渲省略号，左溢字形被 overflow:hidden 静默裁掉。

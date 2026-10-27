@@ -3869,12 +3869,14 @@
       // 面与 s96 set trap 同门）：detached 元素属性写入不 prepare。s111：判定走
       // 统一 helper（plain/盖章 plain 子属性读 undefined，按身份反链回落）。
       try { if (_zwScriptPrepConnected(el) !== true) return; } catch (_eC109) {}
-      // type 门：空串（缺省）或 JavaScript 派生 MIME 关键词（SVG 面同判定）；
-      // module 走模块管线不在此面（FIXME 同上）。
+      // type/language 门（s113：spec type string 推导 + essence 16 集合，见
+      // _zwScriptTypeClassify——旧 indexOf('javascript') 子串放行 bare/javascript1.8/
+      // \0 非法 type、language 未建模，script-type-and-language-js 动态 226 缺口）。
+      // blocked 不执行不置 run-once；module 走模块管线不在此面（FIXME 同上）。
+      try { if (_zwScriptTypeClassify(el) === 'blocked') return; } catch (_eTy113m) {}
       var ty = '';
       try { ty = el.getAttribute('type'); } catch (_eT109) {}
       ty = String(ty == null ? '' : ty).trim().toLowerCase();
-      if (ty !== '' && ty.indexOf('javascript') < 0 && ty.indexOf('ecmascript') < 0) return;
       if (ty.indexOf('module') >= 0) return;
       // nomodule 门（s95/R387 同口径；上行已拒 module 型，nomodule 在场即中止）。
       var _nm109 = false;
@@ -3976,6 +3978,63 @@
     if (strip(forV).toLowerCase() !== 'window') return true;
     var ev = strip(eventV).toLowerCase();
     return !(ev === 'onload' || ev === 'onload()');
+  }
+
+  // s113（html-semantics M2 切片 113）：动态面 type/language 门——spec prepare
+  // 「type string 推导 + JavaScript MIME type essence match」。推导：type 字面空串 /
+  // 无 type 且（无 language 或 language 字面空串）/ 双缺 → "text/javascript"；
+  // type 在场取原值；否则 "text/" + language **原值**（不剥空白——" javascript" 推导
+  // 串含空格不中集合，语料 language 前后置空白不跑）。分类：type string 剥边缘
+  // ASCII ws 后 ASCII-ci **等值**于 16 集合成员（HTML §scripting languages legacy
+  // 全表，含 text/javascript1.0-1.5）→ classic；module（既有剥白口径，与 Rust 提取
+  // 面同姿态）→ module（各调用臂沿用既有 module 让位）；余 → blocked（data block
+  // 不执行、不置 run-once，摘属性后可重走门）。essence 无参数语法：
+  // 'text/javascript;charset=UTF-8' 不中（with-params 语料判据）。
+  // 修 226 动态缺口（script-type-and-language-js）：旧 indexOf('javascript') 子串
+  // 放行 bare/javascript1.8/\0 非法 type，language 属性未建模。Rust 提取面
+  // extract.rs script_type_is_javascript 同表（type 臂）。
+  // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+  function _zwScriptTypeClassify(el) {
+    var ty = null, lg = null;
+    try { ty = el.getAttribute('type'); } catch (_eTy113a) {}
+    try { lg = el.getAttribute('language'); } catch (_eLg113a) {}
+    ty = ty == null ? null : String(ty);
+    lg = lg == null ? null : String(lg);
+    var typeStr;
+    if (ty === '' || (ty === null && (lg === null || lg === ''))) {
+      typeStr = 'text/javascript';
+    } else if (ty !== null) {
+      typeStr = ty;
+    } else {
+      typeStr = 'text/' + lg;
+    }
+    if (/^[\t\n\x0C\r ]*module[\t\n\x0C\r ]*$/i.test(typeStr)) return 'module';
+    var inSet = function (s) {
+      switch (String(s).toLowerCase()) {
+        case 'application/ecmascript': case 'application/javascript':
+        case 'application/x-ecmascript': case 'application/x-javascript':
+        case 'text/ecmascript': case 'text/javascript':
+        case 'text/javascript1.0': case 'text/javascript1.1':
+        case 'text/javascript1.2': case 'text/javascript1.3':
+        case 'text/javascript1.4': case 'text/javascript1.5':
+        case 'text/jscript': case 'text/livescript':
+        case 'text/x-ecmascript': case 'text/x-javascript':
+          return true;
+      }
+      return false;
+    };
+    // classic 替代①：type string essence match（ASCII-ci **等值**，无参语法、不剥白
+    // ——language 推导串 "text/javascript " 含空格不中，语料 language 前后置空白不跑）。
+    if (inSet(typeStr)) return 'classic';
+    // classic 替代②（仅 type 属性在场）：属性值剥边缘 ASCII ws 后 essence match
+    //（type="application/javascript " 跑；language 推导无此替代）。
+    if (ty !== null
+        && inSet(String(ty)
+          .replace(/^[\t\n\x0C\r ]+/, '')
+          .replace(/[\t\n\x0C\r ]+$/, ''))) {
+      return 'classic';
+    }
+    return 'blocked';
   }
 
   // s96 刀②：script 属性变更步骤（src set 且 value 非 null + connected →
@@ -4092,6 +4151,9 @@
       var forev = false;
       try { forev = _zwScriptForevBlocked(child); } catch (_eS96fe) {}
       if (forev) return false;
+      // s113：type/language 门——blocked（data block：非法 type/language）不发起
+      // 取回、不置 run-once（摘属性重走门）；module 型沿用既有通道照旧。
+      try { if (_zwScriptTypeClassify(child) === 'blocked') return false; } catch (_eTy113g) {}
       var url = '';
       try { url = String(child.src || (child.getAttribute && child.getAttribute('src')) || ''); } catch (_eS96u) {}
       if (!url || typeof fetch !== 'function'
@@ -4181,6 +4243,9 @@
   globalThis._zwDrainInOrderScriptQueue = _zwDrainQueueImpl;
   globalThis.__zwScriptFetchPending = _zwFetchPendingImpl;
   globalThis._zwScriptForevBlocked = _zwScriptForevBlocked;
+  // s113：type/language 分类器供 part04 R387/s95 臂与后续写入执行面复用（导出
+  // 随本层求值恒在——_zwPrepareSrcScript 同款理由）。
+  globalThis._zwScriptTypeClassify = _zwScriptTypeClassify;
   // SVGSVGElement.createSVGLength（spec SVGSVGElement 工厂族首项——detached
   // SVGLength 是单位模型族的测试载体；createSVGMatrix/Rect/Point 等 S2b/S3 补）。
   if (globalThis.SVGSVGElement && globalThis.SVGSVGElement.prototype

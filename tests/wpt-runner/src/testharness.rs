@@ -8534,6 +8534,31 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     let _ = webview.execute_script(
         "(function(){try{var _c=document.querySelectorAll('[autofocus]');for(var i=0;i<_c.length;i++){var _e=_c[i];if(_e.disabled)continue;if(_e.tagName==='INPUT'&&String(_e.type).toLowerCase()==='hidden')continue;if(typeof _e.focus==='function'){_e.focus();break;}}}catch(_eAfp){}})();",
     );
+    // s112（html-semantics M2，parser 外链时序调度）：页面侧脚本调度器。预处理把
+    // defer/async/trickle 外链单元改投 `__zwSchedRegister(kind, delayMs, fn)`（见
+    // script_sched_unit），本 bootstrap 承接注册与相位执行：
+    // - async/block：注册即 setTimeout(delay)——trickle 模拟取回延迟，取回完成即执行
+    //   （async 任意序）；block 为解析阻塞延迟近似（不暂停后续投递）。
+    // - defer：登记文档序队列 + max-trickle 到期时刻（首注册时间锚定——注册全部发生在
+    //   同步解析任务内）；由生命周期链 interactive 之后 `__zwSchedArmDrain(onDone)`：
+    //   等到期 → 文档序执行 → onDone（链侧在其内派 DOMContentLoaded——spec the-end：
+    //   deferred 执行完成后 DCL 同任务派发）。
+    // pending 计数供 load 等待（loadStep5275 扩展条件）：async/block 尾随计时器与
+    // deferred drain 完成前 load 不派发。
+    // https://html.spec.whatwg.org/multipage/scripting.html#the-end
+    let _ = webview.execute_script(
+        "(function(){var _s={deferred:[],defMax:0,defFirst:0,pending:0,drained:false};\
+         globalThis.__zwSchedRegister=function(kind,delayMs,fn){_s.pending++;\
+         if(kind==='defer'){if(_s.deferred.length===0){_s.defFirst=Date.now();}\
+         if(delayMs>_s.defMax){_s.defMax=delayMs;} _s.deferred.push(fn);return;}\
+         setTimeout(function(){try{fn();}finally{_s.pending--;}},delayMs|0);};\
+         globalThis.__zwSchedHasDeferred=function(){return _s.deferred.length>0;};\
+         globalThis.__zwSchedPending=function(){return _s.pending>0;};\
+         globalThis.__zwSchedArmDrain=function(onDone){\
+         var wait=_s.drained?0:Math.max(0,_s.defFirst+_s.defMax-Date.now());\
+         setTimeout(function(){for(var i=0;i<_s.deferred.length;i++){try{_s.deferred[i]();}finally{_s.pending--;}}\
+         _s.drained=true;onDone();},wait);};})();",
+    );
     let script_result = webview.run_page_scripts_strict();
     // R3254-E2 切片（editing goal，2026-09-07）：DOMContentLoaded/load 派发 + harness_loaded
     // 标记改 runner 侧执行（此前是 prepare 尾部 append 的 `<script>`——被解析器归入 body，
@@ -8560,14 +8585,20 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
         // `__zwImgLoadBlocked`：R56h fetch 在飞（wptserve trickle(dN) shim 侧延迟的
         // 慢图，delay-load-event-detached）或闸门队列未 drain → 100ms 重试；s110 扩展：
         // 动态外链 script 取回在飞（`__zwScriptFetchPending`，122-126 面——spec
-        // 「delaying the load event」的 script 臂）同条件重试；就绪 →
+        // 「delaying the load event」的 script 臂）同条件重试；s112 扩展：调度器
+        // pending（async/block 计时器未 fire、deferred 未 drain——`__zwSchedPending`）
+        // 同条件重试；就绪 →
         // complete+load+pageshow+pagereveal）。严格序 DCL→load→pageshow 不变（链式
         // setTimeout 保序）；readyState complete 相位随 load 后移（spec the-end：
-        // complete 即 fully loaded 相位）。
+        // complete 即 fully loaded 相位）。s112：DCL 派发条件化——无 deferred 单元时
+        // 维持本任务内即派（既有页形态逐位不变）；有 deferred 单元时 DCL 移交
+        // `__zwSchedArmDrain` 回调（interactive 后 drain：max trickle 到期 → 文档序
+        // 执行 → 同任务派 DCL，spec the-end 序）。
+        // https://html.spec.whatwg.org/multipage/scripting.html#the-end
         "(function () {var mk = globalThis.__zwMakeTrustedEvent;function protoLink(ev, proto) {try { if (proto && proto.prototype) Object.setPrototypeOf(ev, proto.prototype); } catch (_e5000pl) {}return ev;}function fireSettle5275() {try { if (typeof globalThis.__zwFireStaticImgSettle === 'function') globalThis.__zwFireStaticImgSettle(); } catch (_eIm5275) {}}\
-        setTimeout(function () {try {globalThis.__zwReadyState='interactive';} catch (_ers8m1) {}try {var rs1 = protoLink(mk ? mk('readystatechange') : new Event('readystatechange'), globalThis.Event);document.dispatchEvent(rs1);} catch (_ers8m1d) {}var dcl = protoLink(mk ? mk('DOMContentLoaded', { bubbles: true }) : new Event('DOMContentLoaded', { bubbles: true }), globalThis.Event);document.dispatchEvent(dcl);\
+        setTimeout(function () {try {globalThis.__zwReadyState='interactive';} catch (_ers8m1) {}try {var rs1 = protoLink(mk ? mk('readystatechange') : new Event('readystatechange'), globalThis.Event);document.dispatchEvent(rs1);} catch (_ers8m1d) {}var _zwDclFire112 = function () {try {if (!globalThis.__zwDclFired112) {globalThis.__zwDclFired112 = true;var dcl = protoLink(mk ? mk('DOMContentLoaded', { bubbles: true }) : new Event('DOMContentLoaded', { bubbles: true }), globalThis.Event);document.dispatchEvent(dcl);}} catch (_edcl112) {}};var _zwHasDef112 = (typeof globalThis.__zwSchedHasDeferred === 'function') && globalThis.__zwSchedHasDeferred();if (_zwHasDef112 && typeof globalThis.__zwSchedArmDrain === 'function') {globalThis.__zwSchedArmDrain(_zwDclFire112);} else {_zwDclFire112();}\
         setTimeout(function () {fireSettle5275();\
-        setTimeout(function () {var loadStep5275 = function () {fireSettle5275();try { if ((typeof globalThis.__zwImgLoadBlocked === 'function' && globalThis.__zwImgLoadBlocked()) || (typeof globalThis.__zwScriptFetchPending === 'function' && globalThis.__zwScriptFetchPending())) { setTimeout(loadStep5275, 100); return; } } catch (_eImBlk) {}try {globalThis.__zwReadyState='complete';} catch (_ers8m2) {}try {var rs2 = protoLink(mk ? mk('readystatechange') : new Event('readystatechange'), globalThis.Event);document.dispatchEvent(rs2);} catch (_ers8m2d) {}var load = protoLink(mk ? mk('load') : new Event('load'), globalThis.Event);try { load._zwTargetOverride = true; load.target = document; } catch (_e5000lt) {}globalThis.dispatchEvent(load);var ps = protoLink(mk ? mk('pageshow', { bubbles: true, cancelable: true }) : new Event('pageshow', { bubbles: true, cancelable: true }), globalThis.PageTransitionEvent);try { ps.persisted = false; } catch (_e5000pp) {}try { ps._zwTargetOverride = true; ps.target = document; } catch (_e5000pt) {}globalThis.dispatchEvent(ps);try {if(!globalThis.__zwPagerevealFired){globalThis.__zwPagerevealFired=true;var pr = protoLink(mk ? mk('pagereveal') : new Event('pagereveal'), globalThis.Event);globalThis.dispatchEvent(pr);}} catch (_ers5pr) {}};loadStep5275();}, 0);\
+        setTimeout(function () {var loadStep5275 = function () {fireSettle5275();try { if ((typeof globalThis.__zwImgLoadBlocked === 'function' && globalThis.__zwImgLoadBlocked()) || (typeof globalThis.__zwScriptFetchPending === 'function' && globalThis.__zwScriptFetchPending()) || (typeof globalThis.__zwSchedPending === 'function' && globalThis.__zwSchedPending())) { setTimeout(loadStep5275, 100); return; } } catch (_eImBlk) {}try {globalThis.__zwReadyState='complete';} catch (_ers8m2) {}try {var rs2 = protoLink(mk ? mk('readystatechange') : new Event('readystatechange'), globalThis.Event);document.dispatchEvent(rs2);} catch (_ers8m2d) {}var load = protoLink(mk ? mk('load') : new Event('load'), globalThis.Event);try { load._zwTargetOverride = true; load.target = document; } catch (_e5000lt) {}globalThis.dispatchEvent(load);var ps = protoLink(mk ? mk('pageshow', { bubbles: true, cancelable: true }) : new Event('pageshow', { bubbles: true, cancelable: true }), globalThis.PageTransitionEvent);try { ps.persisted = false; } catch (_e5000pp) {}try { ps._zwTargetOverride = true; ps.target = document; } catch (_e5000pt) {}globalThis.dispatchEvent(ps);try {if(!globalThis.__zwPagerevealFired){globalThis.__zwPagerevealFired=true;var pr = protoLink(mk ? mk('pagereveal') : new Event('pagereveal'), globalThis.Event);globalThis.dispatchEvent(pr);}} catch (_ers5pr) {}};loadStep5275();}, 0);\
         }, 0);\
         }, 0);\
         })();if (typeof globalThis.__zw_mark_harness_loaded === 'function') {globalThis.__zw_mark_harness_loaded();}",
@@ -9503,7 +9534,8 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str) -> String 
                 ));
                 output.push_str(&combined);
                 output.push_str("\">");
-                if status == 200 {
+                let mut unit_body = String::new();
+                let tail_event = if status == 200 {
                     // s101（内联模块依赖解析基）：type="module" 外链内联后，模块体内相对
                     // import 的 spec 基准从模块自身 URL 漂移为页面 URL（engine 内联模块
                     // 依赖收集基 = 页面）——模块体在 resources/ 子目录时其相对 import 解析
@@ -9519,10 +9551,40 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str) -> String 
                     } else {
                         content
                     };
-                    output.push_str(&content);
-                    output.push_str(&script_event_dispatch_tail("load"));
+                    unit_body.push_str(&content);
+                    "load"
                 } else {
-                    output.push_str(&script_event_dispatch_tail("error"));
+                    "error"
+                };
+                // s112：体内字面 `</script` 会在 HTML 投递面提前封口元素截断执行体
+                //（099 include-11.js 的 srcdoc 串实证——单元整体 SyntaxError 零日志；
+                // script-type-and-language-js.js 注释内 `</script>` 实证 229 子测被截断
+                // 不注册）。`<\/script` 转义在字符串/正则/注释各语法位与原文本等值
+                //（`\`+`/` = `/`），与 .js window 包装路径既有转义（any_js_window_wrapper）
+                // 同口径。
+                // https://html.spec.whatwg.org/multipage/syntax.html#script-data-state
+                let mut unit_body = unit_body.replace("</script", "<\\/script");
+                // s112：defer/async/trickle 单元改注册进页面侧调度器（分类见
+                // script_sched_unit）——执行体闭包化，相位由生命周期链驱动。load/error
+                // 投递尾不能读 document.currentScript：setTimeout/drain 相位执行时
+                // classic currentScript 已清（getter 返 null，part06 R3258），
+                // load-error-events-1 实测 defer/async 四子测事件丢失页面 Timeout。注册
+                // 语句同步原位执行时 currentScript 仍指投递元素，立即捕获为 _zwEl 传入
+                // 闭包（spec：脚本执行期 currentScript = 脚本元素；此处仅覆盖投递尾，
+                // 体内 currentScript 读取仍为 null，挂账）。
+                // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+                match script_sched_unit(open, src.unwrap_or("")) {
+                    Some((kind, delay_ms)) => {
+                        let tail = script_event_dispatch_tail_el(tail_event, "_zwEl");
+                        output.push_str(&format!(
+                            "__zwSchedRegister(\"{kind}\", {delay_ms}, \
+                             (function (_zwEl) {{ return function () {{\n{unit_body}{tail}\n}}; }})(document.currentScript));"
+                        ));
+                    }
+                    None => {
+                        unit_body.push_str(&script_event_dispatch_tail(tail_event));
+                        output.push_str(&unit_body);
+                    }
                 }
                 output.push_str("</script>");
             }
@@ -9556,6 +9618,61 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str) -> String 
 
 /// s100：经典脚本 load-error fixture 端点路径（fetch 通道与内联预处理共用面）。
 const WPT_LOAD_ERROR_EVENTS_PY: &str = "html/semantics/scripting-1/the-script-element/resources/load-error-events.py";
+
+/// s112：wptserve `pipe=trickle(dN)` / `trickle(N)` → 毫秒延迟（d 前缀可选；30s 封顶，
+/// 与 shim fetch 通道 part01 同语法同上限）。
+/// https://wptserve.readthedocs.io/en/latest/pipes.html#trickle
+fn trickle_delay_ms(src: &str) -> u64 {
+    let Some(idx) = src.find("pipe=trickle(") else {
+        return 0;
+    };
+    let rest = &src[idx + "pipe=trickle(".len()..];
+    let digits: String = rest
+        .chars()
+        .skip_while(|c| !c.is_ascii_digit())
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    digits.parse::<u64>().unwrap_or(0).saturating_mul(1000).min(30_000)
+}
+
+/// s112（parser 外链时序调度）：本地 classic 外链单元的分类——defer/async 属性或
+/// trickle 查询的单元不再原位内联直执，改为投递 `__zwSchedRegister(kind, delayMs, fn)`
+/// 注册闭包，由 runner 生命周期链按 spec 相位执行：
+/// - `async`（async 属性在场，含 defer+async——spec prepare 时 async 优先入「as soon
+///   as possible」集）：trickle 即取回延迟，取回完成后任意时刻执行（setTimeout(delay)）；
+/// - `defer`（defer 无 async）：the-end 相位执行——interactive readystatechange 之后、
+///   DOMContentLoaded 之前，文档序（全单元 max trickle 后统一 drain）；
+/// - `block`（无 defer/async 但 trickle）：解析阻塞延迟近似——trickle 秒后执行，不暂停
+///   后续投递（判据页只断言 log 序，可观察面等价；050 形）。
+///
+/// 分类冻结于预处理时刻（spec：async/defer 归类在 prepare 即取回发起时定格，运行期
+/// removeAttribute 不重分类——103/111/112 判据）；id 属性保留（111/112 以
+/// getElementById 取回元素做属性变更，不崩即可）。nonce/nomodule 单元维持原路径
+/// （CSP 槽位与 prepare 门各有专用面）；module 单元维持模块取回链；integrity 单元
+/// 已在前置分支透传。返回 (kind, delay_ms)。
+/// https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+fn script_sched_unit(open: &str, raw_src: &str) -> Option<(&'static str, u64)> {
+    if zero_engine::open_tag_has_attr(open, "nomodule")
+        || zero_engine::attr_from_open_tag(open, "nonce").is_some()
+        || matches!(
+            zero_engine::attr_from_open_tag(open, "type"),
+            Some(t) if t.trim().eq_ignore_ascii_case("module")
+        )
+    {
+        return None;
+    }
+    let delay_ms = trickle_delay_ms(raw_src);
+    let kind = if zero_engine::open_tag_has_attr(open, "async") {
+        "async"
+    } else if zero_engine::open_tag_has_attr(open, "defer") {
+        "defer"
+    } else if delay_ms > 0 {
+        "block"
+    } else {
+        return None;
+    };
+    Some((kind, delay_ms))
+}
 
 /// s101：内联投递模块体的静态 import spec 重写为 root-absolute（wpt_root 相对路径）。
 /// spec：import 语句相对 **requesting module 自身 URL** 解析（referrer 为模块自身）；
@@ -9599,14 +9716,18 @@ fn script_event_handler_attr(open_tag: &str, name: &str) -> String {
 /// spec 的「成功执行 fire load / 取回失败 fire error」随之丢失；尾片在脚本体求值时
 /// 经 `document.currentScript` 派发同名事件（on* 内容属性 handler 由 shim dispatch 链
 /// R2934 编译触发，addEventListener 侦听者同样可达；事件不冒泡，window load 生命
-/// 周期不受扰）。
+/// 周期不受扰）。`el_expr` 为元素表达式（调度单元传闭包捕获变量，见 inline 投递处）。
 /// https://html.spec.whatwg.org/multipage/scripting.html#execute-the-script-block
-fn script_event_dispatch_tail(event: &str) -> String {
+fn script_event_dispatch_tail_el(event: &str, el_expr: &str) -> String {
     format!(
-        "\n;(function () {{ var _cs = document.currentScript; \
+        "\n;(function () {{ var _cs = {el_expr}; \
          if (_cs && typeof _cs.dispatchEvent === 'function') {{ \
          try {{ _cs.dispatchEvent(new Event('{event}')); }} catch (_zwLev) {{}} }} }})();\n"
     )
+}
+
+fn script_event_dispatch_tail(event: &str) -> String {
+    script_event_dispatch_tail_el(event, "document.currentScript")
 }
 
 /// 从 `<script src="...">` 标签提取 src 值（单/双引号）。
@@ -12533,6 +12654,90 @@ async_test(function(test) {
         assert!(
             out.contains("<script id=\"test\" type=\"text/plain\" src=\"./ok.js\"></script>"),
             "非 JS type 外链须整段透传: {out}"
+        );
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn inline_sched_classification_wraps_defer_async_trickle_s112() {
+        // s112（parser 外链时序调度）：defer/async/trickle 单元改注册 __zwSchedRegister
+        //（分类冻结于预处理——spec prepare 定格 async/defer 归类，103/111/112 运行期
+        // removeAttribute 不重分类）；普通阻塞单元维持原位直执；nomodule 不入调度器
+        //（prepare 门专用面）；trickle 毫秒 = dN×1000；load 投递尾随闭包体内联。
+        let root = std::env::temp_dir().join("zw-s112-sched-classify-test");
+        let case_dir = "html/semantics/scripting-1/the-script-element/execution-timing";
+        std::fs::create_dir_all(root.join(case_dir).join("scripts")).unwrap();
+        std::fs::write(root.join(case_dir).join("scripts/a.js"), "log('a');").unwrap();
+        let html = "<!doctype html><body>\
+            <script id=\"d\" defer src=\"scripts/a.js\"></script>\
+            <script async src=\"scripts/a.js?pipe=trickle(d3)\"></script>\
+            <script src=\"scripts/a.js?pipe=trickle(d4)\"></script>\
+            <script src=\"scripts/a.js\"></script>\
+            <script nomodule src=\"scripts/a.js\"></script>\
+            <script defer src=\"scripts/a.js?pipe=trickle(d1)\" onload=\"onL()\"></script>\
+            </body>";
+
+        let out = inline_local_scripts(html, &root, &format!("{case_dir}/sched.html"));
+
+        // defer → kind=defer delay=0；async+trickle → kind=async；无 defer/async +
+        // trickle → kind=block。trickle 毫秒 = dN×1000。注册体 = 元素捕获 IIFE 返回的
+        // 执行闭包（投递尾相位执行时 currentScript 已清，见投递处注释）。
+        assert!(
+            out.contains("__zwSchedRegister(\"defer\", 0, (function (_zwEl) {"),
+            "defer 单元须注册 kind=defer delay=0: {out}"
+        );
+        assert!(
+            out.contains("__zwSchedRegister(\"async\", 3000, (function (_zwEl) {"),
+            "async+trickle 单元须注册 kind=async: {out}"
+        );
+        assert!(
+            out.contains("__zwSchedRegister(\"block\", 4000, (function (_zwEl) {"),
+            "trickle 阻塞单元须注册 kind=block: {out}"
+        );
+        assert!(
+            out.contains("__zwSchedRegister(\"defer\", 1000, (function (_zwEl) {"),
+            "defer+trickle 单元须注册 kind=defer delay=1000: {out}"
+        );
+        // 4 单元注册 + 普通阻塞/nomodule 两单元原位直执（注册调用恰 4 处）。
+        assert_eq!(out.matches("__zwSchedRegister").count(), 4, "{out}");
+        // 投递形态保真：id 随写保留（111/112 getElementById 面）+ onload 属性保留 +
+        // load 投递尾在闭包体内（注册体内联，元素表达式 = 捕获形参 _zwEl）。
+        assert!(out.contains("id=\"d\""), "{out}");
+        assert!(out.contains("onload=\"onL()\""), "{out}");
+        assert!(out.contains("})(document.currentScript));"), "{out}");
+        assert_eq!(out.matches("var _cs = _zwEl;").count(), 4, "{out}");
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn inline_body_closing_tag_escaped_s112() {
+        // s112：体内字面 `</script` 投递面转义（`<\/script`）——字符串值等值（`\`+`/`）
+        // 且不提前封口截断执行体（099 include-11 srcdoc 串 SyntaxError 零日志实证）。
+        // 原始闭合序列仅剩每单元一个真封口。
+        let root = std::env::temp_dir().join("zw-s112-esc-test");
+        let case_dir = "html/semantics/scripting-1/the-script-element/execution-timing";
+        std::fs::create_dir_all(root.join(case_dir).join("scripts")).unwrap();
+        std::fs::write(
+            root.join(case_dir).join("scripts/esc.js"),
+            "iframe.srcdoc = \"<script>x</script>\";",
+        )
+        .unwrap();
+        let html = "<!doctype html><body><script src=\"scripts/esc.js\"></script></body>";
+
+        let out = inline_local_scripts(html, &root, &format!("{case_dir}/esc.html"));
+
+        assert!(
+            out.contains("iframe.srcdoc = \"<script>x<\\/script>\";"),
+            "体内闭合序列须转义且字符串值不变: {out}"
+        );
+        // 体内零未转义 `</script` 后，剩余闭合 = 投递元素自身封口 + 原标签闭合透传
+        // （Some 臂只消耗 open 标签，孤立闭合标签解析面无害——s97 注释同型既有行为）。
+        assert_eq!(
+            out.matches("</script").count(),
+            2,
+            "体内闭合须全部转义，仅剩两处无害真封口: {out}"
         );
 
         std::fs::remove_dir_all(&root).ok();

@@ -23,6 +23,8 @@ mod r5274_preserved_ws_line_height_tests;
 mod r5297_ws_collapse_inline_boundary_tests;
 /// R5298 混合 line-height 行盒 strut/基线行距（CSS2 §10.8.1 leading）。
 mod r5298_mixed_lh_line_pitch_tests;
+/// R5303 line-height:0 容器仅原子行 strut 围合（CSS2 §10.8.1 strut）。
+mod r5303_lh0_atomic_strut_tests;
 mod text_align;
 mod text_indent;
 mod vertical_bidi;

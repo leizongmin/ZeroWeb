@@ -254,6 +254,14 @@ pub struct InlineFormattingContext {
     /// R5298：容器字体 is_ahem 判定（strut ascent ratio 查询用，与
     /// `container_strut_line_height` 同点捕获）。
     pub container_strut_is_ahem: bool,
+    /// R5303（CSS2 §10.8.1 strut）：容器 line-height 显式为 0 的捕获标记。
+    ///
+    /// `container_strut_line_height == 0` 有两义——「未捕获」（paint Path B 空
+    /// styles，须走 legacy）与「容器显式 line-height:0」（strut 盒 0 高悬于字体
+    /// 中线、A = −fs/2 + 0.8fs = 0.3fs 仍围合行盒，line-height-127）。本标记仅在
+    /// `layout()` 有容器 styles 且解析行高恰为 0 时置位，把两义分开：Path B 恒
+    /// false = 旧行为，布局/绘制两侧口径一致。
+    pub container_strut_lh_zero: bool,
     /// 逐文本节点的字体大小覆盖（key = 文本节点的父元素 NodeId）。
     ///
     /// paint IFC 传入空的 styles HashMap，导致所有文本使用 16px 默认字体度量，
@@ -466,6 +474,7 @@ impl InlineFormattingContext {
             container_font_size: DEFAULT_FONT_SIZE,
             container_strut_line_height: 0.0,
             container_strut_is_ahem: false,
+            container_strut_lh_zero: false,
             font_size_overrides: NodeIdMap::default(),
             font_id_overrides: std::rc::Rc::new(HashMap::new()),
             font_ids_overrides: std::rc::Rc::new(HashMap::new()),
@@ -1278,6 +1287,7 @@ impl InlineFormattingContext {
         //（ruby-align-001 判例：body 16px/3 的 48 泄入 ruby 内部行抬升 20→48）。
         // Path B 空 styles → 恒 0 = legacy，零扰动。
         self.container_strut_line_height = 0.0;
+        self.container_strut_lh_zero = false;
         if let Some(style) = styles.get(&container) {
             self.container_font_size = resolve_inline_font_size_px(style);
             // R5298（CSS2 §10.8.1 strut）：捕获容器自身 used line-height + 字体 Ahem
@@ -1289,6 +1299,8 @@ impl InlineFormattingContext {
             let (_, r5298_strut_lh) =
                 resolve_font_metrics_with_provider(Some(style), self.font_metric_provider.as_ref());
             self.container_strut_line_height = r5298_strut_lh;
+            // R5303：显式 line-height:0 单独置位（区别于 Path B 未捕获的 0）。
+            self.container_strut_lh_zero = r5298_strut_lh == 0.0;
             self.container_strut_is_ahem = style
                 .font_family
                 .iter()
@@ -2493,9 +2505,52 @@ impl InlineFormattingContext {
                 } else {
                     (strut_ascent, None)
                 }
+            } else if self.container_strut_lh_zero
+                && runtime_flags::strut_neg_leading()
+                && !line.runs.iter().any(|r| r.font_size > 0.0)
+                && line.height > 0.0
+            {
+                // R5303（CSS2 §10.8.1 strut）：line-height:0 容器的**仅原子行内盒行**
+                // ——strut 盒 0 高、悬于字体中线：A = −fs/2 + ratio·fs（Ahem 0.3fs，
+                // line-height-127：10em/1 表内 .test{line-height:0} 独嵌 1px img，
+                // 行盒 48 而非 1）。旧 legacy 兜底（container_fs*0.8）按正 leading
+                // 校准、此处系统性偏大（128 vs 48），且行盒高度从不生长（h 恒 =
+                // run 高和）——红 td 整片露出。文本行不受此臂影响（R5087 负
+                // half-leading 已按 bleed 判例校准、行高不生长属既有口径）；塌 0 高
+                // 行（§10.8.1 行盒移除）仍跳过。**替换**而非托底——legacy 0.8fs 在
+                // 本域不是「保守下界」而是错值。Path B 空 styles 未捕获
+                //（container_strut_lh_zero=false）恒不触发，布局/绘制同口径。
+                let strut_fs = self.container_font_size;
+                let strut_ratio = ascent_ratio_lookup(
+                    &self.ascent_ratio_overrides,
+                    self.container_node_id.unwrap_or_default(),
+                    self.container_strut_is_ahem,
+                );
+                let strut_half_leading = (self.container_strut_line_height - strut_fs) / 2.0;
+                let container_strut_ascent = strut_half_leading + strut_fs * strut_ratio;
+                (
+                    container_strut_ascent,
+                    Some(self.container_strut_line_height - container_strut_ascent),
+                )
             } else {
                 (strut_ascent, None)
             };
+            // R4362 临时诊断同款：ZW_DEBUG_IFC=1 逐行 dump strut/行盒度量（line-height:0
+            // 原子行取证，line-height-127）。
+            if std::env::var("ZW_DEBUG_IFC").as_deref() == Ok("1") {
+                eprintln!(
+                    "[ifc-va] h={} runs={} fs={:?} strut_lh={} strut_ascent={} r5298_d={:?}",
+                    line_height,
+                    line.runs.len(),
+                    line.runs
+                        .iter()
+                        .map(|r| (r.font_size, r.height, r.baseline))
+                        .collect::<Vec<_>>(),
+                    self.container_strut_line_height,
+                    strut_ascent,
+                    r5298_strut_descent,
+                );
+            }
             let mut max_ascent = strut_ascent;
             // R4374：回退链垂直度量 max descent——行内任一 run 的实际使用字体
             // descent 大于行盒 descent 时行盒向下扩（chromium CSS2 §10.8.1 各 inline
@@ -2582,9 +2637,24 @@ impl InlineFormattingContext {
             let mut r5298_lift = 0.0_f32;
             if let Some(strut_descent) = r5298_strut_descent {
                 let r5298_h_pre = line.height;
-                line.height = line.height.max(baseline_y + strut_descent);
+                // R5303：strut descent 为负（line-height:0 → D = −A，或紧 line-height）
+                // 时行盒围合语义 = 各盒区间并集——底边取 max(D_strut, 其余盒 descent)，
+                // 负 D_strut 不把底边拖到基线之上（line-height-127：max(−48, img 0) =
+                // 0 → 高 = 48 + 0）。正 D 维持旧下限（c42 域已校准，零扰动）。
+                let floor_descent = if strut_descent < 0.0 {
+                    strut_descent.max(max_glyph_descent)
+                } else {
+                    strut_descent
+                };
+                line.height = line.height.max(baseline_y + floor_descent);
                 line.descent = line.descent.max(line.height - baseline_y);
                 r5298_lift = line.height - r5298_h_pre;
+            }
+            if std::env::var("ZW_DEBUG_IFC").as_deref() == Ok("1") {
+                eprintln!(
+                    "[ifc-va] => baseline_y={} h={} descent={} lift={}",
+                    baseline_y, line.height, line.descent, r5298_lift
+                );
             }
 
             for run in &mut line.runs {

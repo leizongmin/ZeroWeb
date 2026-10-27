@@ -740,7 +740,10 @@ jobs:
       github.event_name == 'schedule'
       || (github.event_name == 'workflow_dispatch' && inputs.run_wptfyi_coverage)
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # 150 = sec 分片实跑预算（run 40505731836 实证 csp+mixed+secure ≈76min
+    # 计时器外）+ build/fetch ~15min + 余量；time_limit 为 per-suite 限时，
+    # job timeout 才是分片硬顶。
+    timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
@@ -748,6 +751,8 @@ jobs:
           # time_limit（秒）按 2026-10-27 本地实测 ×2 系数定：html-semantics 4732s、
           # csp 3494s、uievents 1513s、dom 900s；css-variables 病态内存（单进程
           # >8.8GB 三跑被杀）不进 CI，修复前 misc 不含之（coverage 记 0 属实）。
+          # 原 sec-render 五套件一 job 撞 90min timeout（svg 被杀 webgl 未跑，
+          # aggregate 连带 skip）→ 拆 sec/render 两分片（run 40505731836）。
           - name: syntax-dom
             suites: "html-syntax dom"
             fetch: "fetch-wpt-html-syntax fetch-wpt-dom"
@@ -806,11 +811,16 @@ jobs:
               fetch-wpt-media fetch-wpt-webaudio
             fetch_scripts: "fetch-canvas-subset.sh"
             time_limit: 5400
-          - name: sec-render
-            suites: "csp mixed-content secure-contexts svg webgl"
-            fetch: "fetch-wpt-security-csp fetch-wpt-svg fetch-wpt-webgl"
+          - name: sec
+            suites: "csp mixed-content secure-contexts"
+            fetch: "fetch-wpt-security-csp"
             fetch_scripts: ""
             time_limit: 7200
+          - name: render
+            suites: "svg webgl"
+            fetch: "fetch-wpt-svg fetch-wpt-webgl"
+            fetch_scripts: ""
+            time_limit: 5400
           - name: service-workers
             suites: >-
               service-workers service-workers-fetch service-workers-cache-storage
