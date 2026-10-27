@@ -8158,6 +8158,10 @@
   // 保留其它组件），push history entry（navigation）+ hash 变化派 hashchange。headless 无真文档重载（与 pushState
   // 同 in-memory 近似）；解析失败 / 未变 → no-op。protocol/host 等其它 setter defer（少用 + 涉 origin 变更导航）。
   function _setLocationPart(part, value) {
+    // s118：href 臂 javascript: URL 求值拦截（window.location = 赋值形 /
+    // location.href = 同经此；其余 part 无 javascript: 形态不设门，见
+    // _navLocationJavascript 注）。
+    if (part === 'href' && _navLocationJavascript(value)) return;
     var oldHref = globalThis.location.href;
     var newHref = null;
     if (typeof URL === 'function' && typeof __zw_set_url_part === 'function') {
@@ -8236,7 +8240,28 @@
   // hashchange。replace(url)：replace 当前 entry（back 不回旧 url）+ hash 变化派 hashchange。两者均经 _resolveHistUrl
   // 解析为绝对（相对当前 location），headless 无真文档重载（与 pushState / location setter 同 in-memory 近似）。
   // 解析失败 / 未变 → no-op（spec assign/replace 同 url 为 no-op 导航）。
+  // s118（html-semantics M2 切片 118）：location 族 javascript: URL 求值面——href
+  // setter（含 window.location = 赋值形）、assign、replace 三入口共用（_setLocationPart
+  // href 臂 / _locationAssign / _locationReplace）。spec navigate 到 javascript: scheme
+  // 不走取回、**不派 navigate 事件**，改跑「javascript: URL 求值」步骤：当前全局作用域
+  // 执行 URL 内脚本体；结果为 DOMString → 导航体（面未建模——S4U 同款近似，runner 单
+  // 文档通道，语料体均 undefined 返回），非字符串 → 导航中止。执行面与锚激活面
+  // M2-S4U 同款：间接 eval 落全局 + _defer 微任务（079 execution-timing 严格序
+  // 「onload ends → javascript: URL → timeout」要求 eval 落赋值同步栈之后、setTimeout
+  // 之前；028 assert_any 双序兼容微任务落位）。前导 ASCII 空白 strip + scheme 前缀
+  // 大小写不敏感（spec scheme 匹配语义，S4U 同款）。返回 true = 已拦截（入口直接 return）。
+  // https://html.spec.whatwg.org/multipage/browsers.html#navigate
+  // https://html.spec.whatwg.org/multipage/scripting.html#the-javascript:-url-scheme
+  function _navLocationJavascript(url) {
+    var _ljTrim = String(url).replace(/^[\t\n\f\r ]+/, '');
+    if (_ljTrim.length < 11 || _ljTrim.slice(0, 11).toLowerCase() !== 'javascript:') return false;
+    var _ljBody = _ljTrim.slice(11);
+    _defer(function () { try { (0, eval)(_ljBody); } catch (_eLjEv) {} });
+    return true;
+  }
   function _locationAssign(url) {
+    // s118：javascript: URL 求值拦截（不派 navigate 事件，见 _navLocationJavascript 注）。
+    if (_navLocationJavascript(url)) return;
     var oldHref = globalThis.location.href;
     // M2-S1：解析失败 → SYNTAX_ERR DOMException（spec location-assign「parse 失败 throw
     // SyntaxError」；WPT location_assign 'URL that fails to parse'——location.assign('http://:')）。
@@ -8317,6 +8342,8 @@
     try { return _navAnchorNavigate(String(url), sourceElement || null, downloadRequest === undefined ? null : downloadRequest); } catch (_eEx) { return 'host'; }
   };
   function _locationReplace(url) {
+    // s118：javascript: URL 求值拦截（不派 navigate 事件，见 _navLocationJavascript 注）。
+    if (_navLocationJavascript(url)) return;
     var oldHref = globalThis.location.href;
     // M2-S1：解析失败 → SYNTAX_ERR DOMException（同 _locationAssign；WPT location_replace
     // 'URL that fails to parse'——location.replace('//')）。

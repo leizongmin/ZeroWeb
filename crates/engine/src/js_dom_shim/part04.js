@@ -6465,6 +6465,17 @@
                 // 原样保留，JS toLowerCase 会展开为多码点致印章与 host 存档分叉。
                 (globalThis._zwHandleCreateTag = globalThis._zwHandleCreateTag || {})[child.__zwHandle] = _r368Tag;
               } catch (_e368st) {}
+              // s118（html-semantics M2 切片 118）：innerHTML 产物（fragment 解析
+              // already-started 章在身，`__zwFragNoExec`，setter 侧打点）经 R368 盖
+              // handle 章时同步落 run-once 表——移动换代后插入臂/属性臂拿到的是
+              // handle 代理（与打标 _zwMEl 身份断链），章须转移到 handle 键才能在
+              // _zwScriptMaybeStartDynamic 的 already-started 门拦截（033 语料面：
+              // innerHTML 产物移动不执行）。
+              try {
+                if (child.__zwFragNoExec && child.__zwHandle) {
+                  (globalThis._zwRanScripts = globalThis._zwRanScripts || {})[child.__zwHandle] = true;
+                }
+              } catch (_e118fe) {}
               // R4004（html-semantics M2 切片 16）：盖章 plain 子的属性快照回填 host。
               // `__zw_create_element` 产裸 tag 节点，plain attributes（模板解析/克隆
               // 产物）不随行——host 侧属性读（get/has_attr_handle、属性选择器）全空：
@@ -12016,6 +12027,28 @@
             // +1 错位（D1），当时以视图 trim 对齐 host。两端一起去 trim 后逐子对齐保持，
             // dir-style-04 尾随空格不再丢失）。
             var _ihAdded = _zwFragmentAdded(_ihVal, handle);
+            // s118（html-semantics M2 切片 118）：innerHTML 产物 SCRIPT 盖
+            // already-started 章（对象属性 `__zwFragNoExec`）——spec prepare the
+            // script element「element created by the HTML fragment parsing algorithm
+            // → set already started」：innerHTML 产物（含随后 appendChild 移入他处）
+            // 不得执行（033 execution-timing 语料面）。消费点在
+            // _zwScriptMaybeStartDynamic 顶部单点；移动换代时 part04 R368 盖 handle
+            // 章点把章转移到 run-once 表（handle 代理与打标 _zwMEl 身份断链）。写流
+            // 回放基线 innerHTML= 同经此打标——回放执行走 part06 水印执行器不经
+            // helper，换代重注册的 sel 形代理是新建对象（026 面 src 后设不受影响）。
+            // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+            if (_ihAdded.length) {
+              var _fs118 = function (_ndM) {
+                if (!_ndM || _ndM.nodeType !== 1) return;
+                if (String(_ndM.tagName || '').toUpperCase() === 'SCRIPT') {
+                  try { _ndM.__zwFragNoExec = true; } catch (_e118fp) {}
+                }
+                var _kcM = null;
+                try { _kcM = _ndM.childNodes; } catch (_e118mk) { return; }
+                if (_kcM) for (var _miM = 0; _miM < _kcM.length; _miM++) _fs118(_kcM[_miM]);
+              };
+              for (var _kiM = 0; _kiM < _ihAdded.length; _kiM++) _fs118(_ihAdded[_kiM]);
+            }
             if (handle) __zw_set_inner_html_handle(handle, _ihVal);
             else __zw_set_inner_html(sel, _ihVal);
             // R5241（html-semantics M2 切片 39）：sel 模板 contents 重写失效 content

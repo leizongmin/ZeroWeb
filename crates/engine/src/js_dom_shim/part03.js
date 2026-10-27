@@ -3868,9 +3868,25 @@
     if (_wSc !== null) return _wSc;
     return false;
   };
+  // s118（html-semantics M2 切片 118）：fragment 解析产物 SCRIPT 的 already-started
+  // 章（对象属性 `__zwFragNoExec`）——spec prepare the script element：HTML fragment
+  // parsing algorithm 创建的 script 元素置 already started，移动不得再执行（033
+  // execution-timing 语料面：innerHTML 产物 appendChild 移入 body 后须保持惰性）。
+  // 章用对象属性（_zwMEl 解析代理无稳定 sel/handle，移动换代后 sel 失配——s117 已证
+  // sel 盖章路线不可行）；移动时 part04 R368 盖 handle 章点把章转移到 run-once 表
+  // （`_zwRanScripts[handle]`，already-started 语义本表）。打标点在 part04 innerHTML
+  // setter（033 需求面）；写流回放基线 innerHTML= 同经此打标——回放执行走 part06
+  // 水印执行器不经本 helper，换代重注册的 sel 形代理是新建对象（026 面 src 后设
+  // 不受影响）。
+  // FIXME(spec-gap): insertAdjacentHTML/cloneNode 重解析产物同属 fragment parsing
+  // already-started 面，暂不打标，待语料需求补章。
+  // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
   var _zwScriptMaybeStartDynamic = function (el) {
     if (!el) return;
     try {
+      // s118：fragment 产物 already-started 章门（打标点在 part04 innerHTML setter，
+      // R368 盖 handle 章时转移 run-once 表）。
+      if (el.__zwFragNoExec) return;
       // 身份键（与既有 run-once 表对接：sel 形/handle 形双读，s95 同口径）。
       var _sel109 = null, _hdl109 = null;
       try { _sel109 = el.__zwSelector; } catch (_eA109) {}

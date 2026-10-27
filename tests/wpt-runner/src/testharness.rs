@@ -13513,6 +13513,140 @@ globalThis.promise_test(function() {
     }
 
     #[test]
+    fn script_innerhtml_moved_not_executed_s118() {
+        // s118（html-semantics M2 切片 118）：innerHTML 产物 SCRIPT already-started 章
+        // （033 execution-timing 语义）——innerHTML 写入的 inline/外链脚本即使
+        // appendChild 移入 body 也不得执行（spec prepare the script element：fragment
+        // parsing algorithm 创建的 script 元素置 already started）。容器须为标记期
+        // 元素（sel 形——033 语料同形；createElement 容器走 handle 形物化路径，
+        // 产物换 wrapper 不在本面）。章失效时 __log 会多出
+        // 'innerHTML script runs' / 'external script #1'。
+        let root = std::env::temp_dir().join("zw-s118-innerhtml-move-test");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("inc3.js"), "globalThis.__log.push('external script #1');").unwrap();
+        let html = r##"<script src="/resources/testharness.js"></script>
+<script>globalThis.__log = [];
+function zwlog(s) { globalThis.__log.push(s); }</script>
+<div id="t"></div>
+<script>
+zwlog('inline script #1');
+var d = document.getElementById('t');
+d.innerHTML = '<script>zwlog("innerHTML script runs")<\/script><script src="./inc3.js"><\/script>';
+document.body.appendChild(d.firstChild);
+document.body.appendChild(d.firstChild);
+zwlog('end script #1');
+</script>
+<script>zwlog('inline script #2');</script>
+<script>
+globalThis.promise_test(function() {
+  return new Promise(function(resolve) { setTimeout(resolve, 50); }).then(function() {
+    assert_true(JSON.stringify(globalThis.__log) === JSON.stringify(['inline script #1', 'end script #1', 'inline script #2']),
+      'innerHTML 产物移动不执行: ' + globalThis.__log.join(','));
+  });
+}, 'innerHTML scripts not executed even after move');
+</script>"##;
+        let results = run_testharness_html(
+            &root,
+            "prepare-innerhtml-move.html",
+            html,
+            &mini_harness_stateful(),
+            CASE_TIMEOUT,
+        );
+        assert!(
+            results
+                .iter()
+                .any(|r| r.name == "innerHTML scripts not executed even after move" && r.status == HarnessStatus::Pass),
+            "innerHTML 产物 SCRIPT 移动后须按 already-started 保持惰性: {results:?}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn script_location_href_javascript_evaluated_s118() {
+        // s118：location 族 javascript: URL 求值面（079 execution-timing 语义）——
+        // window.location = 'javascript:...' 不派 navigate 事件、不走 host 导航，
+        // 改跑 javascript: URL 求值（defer 微任务间接 eval）：严格序要求 eval 落
+        // 赋值同步栈之后、setTimeout 之前。门失效时体不执行（缺 'javascript: URL'）。
+        let root = std::env::temp_dir().join("zw-s118-location-js-href-test");
+        std::fs::create_dir_all(&root).unwrap();
+        let html = r##"<script src="/resources/testharness.js"></script>
+<script>globalThis.__log = [];
+function zwlog(s) { globalThis.__log.push(s); }
+zwlog('inline script #1');
+</script>
+<script>
+globalThis.promise_test(function() {
+  return new Promise(function(resolve) {
+    zwlog('handler');
+    window.location = 'javascript:zwlog("javascript: URL")';
+    setTimeout(function() { zwlog('timeout'); resolve(); }, 100);
+    zwlog('handler ends');
+  }).then(function() {
+    assert_true(JSON.stringify(globalThis.__log) === JSON.stringify(['inline script #1', 'handler', 'handler ends', 'javascript: URL', 'timeout']),
+      'location=javascript: 须求值且落 defer 序: ' + globalThis.__log.join(','));
+  });
+}, 'location=javascript: evaluated after handler stack');
+</script>"##;
+        let results = run_testharness_html(
+            &root,
+            "prepare-location-js-href.html",
+            html,
+            &mini_harness_stateful(),
+            CASE_TIMEOUT,
+        );
+        assert!(
+            results
+                .iter()
+                .any(|r| r.name == "location=javascript: evaluated after handler stack"
+                    && r.status == HarnessStatus::Pass),
+            "location= javascript: URL 须按求值步骤 defer 执行: {results:?}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn script_location_replace_javascript_evaluated_s118() {
+        // s118：location.replace('javascript:...') 求值面（028 execution-timing 语义，
+        // assert_any 双序）——外链脚本 #2 与 defer eval 的先后两种序都合法，体必须
+        // 执行（门失效时 'JS URL' 缺席）。
+        let root = std::env::temp_dir().join("zw-s118-location-js-replace-test");
+        std::fs::create_dir_all(&root).unwrap();
+        let html = r##"<script src="/resources/testharness.js"></script>
+<script>globalThis.__log = [];
+function zwlog(s) { globalThis.__log.push(s); }
+</script>
+<script>
+globalThis.promise_test(function() {
+  return new Promise(function(resolve) {
+    zwlog('1');
+    window.location.replace('javascript:zwlog("JS URL")');
+    zwlog('end1');
+    setTimeout(resolve, 100);
+  }).then(function() {
+    var j = JSON.stringify(globalThis.__log);
+    assert_true(j === JSON.stringify(['1', 'end1', 'JS URL', '2']) || j === JSON.stringify(['1', 'end1', '2', 'JS URL']),
+      'replace javascript: assert_any 双序: ' + globalThis.__log.join(','));
+  });
+}, 'location.replace javascript: evaluated');
+</script>
+<script>zwlog('2');</script>"##;
+        let results = run_testharness_html(
+            &root,
+            "prepare-location-js-replace.html",
+            html,
+            &mini_harness_stateful(),
+            CASE_TIMEOUT,
+        );
+        assert!(
+            results
+                .iter()
+                .any(|r| r.name == "location.replace javascript: evaluated" && r.status == HarnessStatus::Pass),
+            "location.replace javascript: URL 须按求值步骤执行: {results:?}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn inline_module_import_specs_rewrite_to_root_absolute_s101() {
         // 直接钉 helper：相对 spec 以模块自身目录（resources/）为基上溯归一；
         // root-absolute/裸 specifier/含 scheme 的 spec 不动；单双引号皆替换。

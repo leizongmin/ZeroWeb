@@ -2,9 +2,50 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 117 施工收口（连接态 sel 形 SCRIPT src 后设 prepare 触发面轮：execution-timing/026 **1F→P**，全量套件 A/B 6606P/1192F/105T→**6607P/1191F/105T 真翻红 0**（+1P −1F）；根因三层：①s109 connected 门直信 `isConnected` 宿主快照假阴性——执行期 doc.write 产物只在 shim 侧 mut-tree，s117 起 false 落 parentNode 爬升复核 ②sel 形 IDL set 的实际触发点是 `_mo_notify` 属性臂（s96 直呼臂冗余，注解修正）③写流面执行内联的回放重建 plain wrapper 无 sel 章、换代重注册身份断链——027 对偶面（带内容 src 后设不重执行）由属性臂**体空性门**承接（非空体 sel 形必已随投递/写流执行过）；bin pin ×2（旧 shim stash 往返红→绿）+ engine lib 3570/0 + workspace clippy；挂账 part02 setAttribute 绕 notify 臂（gap 2）/execution-timing 构成面 056+063+051+052 单根（eager-parse 全树可见性，须增量解析）/css-module 族 corpus 待决承袭；下一步 s118 候选：execution-timing 余 F 复盘 / image-loading-lazy deferred 1F / 承袭挂账序；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 118 施工收口（innerHTML 产物 script 移动惰性章 + location 族 javascript: URL 求值面轮：execution-timing **028/033/079 三页 3F→P**，全量套件 A/B 6607P/1191F/105T→**6610P/1188F/105T 真翻红 0**（+3P −3F）；两刀：①innerHTML 产物 SCRIPT 对象属性章 `__zwFragNoExec`（fragment parsing already-started 语义），消费点 `_zwScriptMaybeStartDynamic` 顶部单点，移动换代由 R368 盖 handle 章点转移 run-once 表（首刀 Set 对象键被 R368 身份断链、pin 红定谳——章键须落移动后可寻址身份）②location 三入口（replace/assign/href 臂）共用 `_navLocationJavascript`（S4U 同款 defer 间接 eval、不派 navigate 事件）；bin pin ×3（旧 shim stash 往返 3/3 红→绿）+ 定向 028/033/079 F→P 零其他翻转 + engine lib 3570/0 + clippy；挂账 031 focus/blur（焦点基建面）/041 nested write（写流队列重构）/iah+clone fragment 章 FIXME 承袭；下一步 s119 候选：031 焦点事件面 / image-loading-lazy deferred 1F / 承袭挂账序；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-28 M2 切片 117 施工收口，连接态 sel 形 SCRIPT src 后设 prepare 触发面轮）**：
+> **▶ 当前状态（2026-10-28 M2 切片 118 施工收口，innerHTML 产物惰性章 + location javascript: 求值面轮）**：
+> **入场定谳**：execution-timing 余 F 复盘三面并审——033「innerHTML scripts moved
+> in DOM」1F（`div.innerHTML` 产物 appendChild 移入 body 后全执行，spec fragment
+> parsing already-started 面缺失）；028/079「location javascript: URL」2F（三入口
+> 缺 S4U 同款拦截，体从未求值）；排除 041（写流队列重构挂账）/031（焦点事件面
+> 单列）。
+> **本轮两刀**（净变更 part02/part03/part04 + testharness.rs pin ×3）：①part03
+> helper 顶部 fragment 章门（`el.__zwFragNoExec` 对象属性键）+ part04 innerHTML
+> setter `_ihAdded` 深走打章 + **R368 盖 handle 章点章转移 run-once 表**
+> （`_zwRanScripts[handle]`）②part02 `_navLocationJavascript` 共用 helper +
+> `_locationReplace`/`_locationAssign`/`_setLocationPart` href 臂三入口门。
+> **首刀教训**：marker Set 对象键在 R368 身份盖章点断链（`_zwMEl` append 时无
+> 身份 → 盖 `__zwHandle` → notify 链换 handle 代理），pin 首跑红定谳；章键必须
+> 落在移动换代后的可寻址身份（handle）上——与 s117「章键落执行时身份」结论同构。
+> **验证**：定向 `FILTER=execution-timing/0` **028/033/079 F→P**、全行归一 diff
+> 唯一变化此三页（69P+8F+1T→72P+5F+1T）；**全量 A/B** 6607P/1191F/105T→
+> 6610P/1188F/105T，diff 仅三页翻绿 → **真翻红 0**（forms jsurl 相邻页无翻转，
+> location 门与 form submit 路径无交集）。bin pin ×3 旧 shim stash 往返 **3/3 红**
+> （行为失败：体缺席/产物执行）→ 新 shim 3/3 绿；engine lib **3570/0**；
+> guarded-clippy（runner --all-targets + engine）零告警；fmt、shim 拼接语法过。
+> 渲染面零依赖——reftest/product-smoke 未跑；make test 未跑（Rust 增量仅 test
+> 模块，shim 面由 engine lib + 全量 corpus 覆盖）。账本见
+> [evidence/2026-10-28-m2s118-script-move-inert-and-location-jsurl.md](html-semantics-compat/evidence/2026-10-28-m2s118-script-move-inert-and-location-jsurl.md)。
+> **范围**：engine shim part02/part03/part04 + runner testharness.rs；语料零改动
+> （本轮无探针插桩——pin 面即判据）。
+> **挂账新增**：031 focus/blur（焦点基建面单列）；FIXME(spec-gap) iah/clone
+> fragment 章（同 spec 面、033 需求只覆盖 innerHTML setter，待语料需求补）；
+> html/browsers javascript-url 族页域外无 A/B 覆盖（S4U 先例背书，browsers 域
+> 跑时复核）。承袭：写流执行身份盖章断链 FIXME、part02 setAttribute 绕 notify
+> 臂（gap 2）、execution-timing 构成面 056/063+051/052 单根（增量解析大基建）、
+> 041 nested write（写流队列重构）、css-module 族 corpus 门（待决须用户拍板）、
+> www2 可达性、modulepreload referrerpolicy 族、module-import-referrer TLA、
+> script-crossorigin-network cookies、redirect-relative-urls、export-from with
+> FIXME、script-charset-02/03、143 write、defer 多写完成序、dynamic import()
+> with 透传、classic 外链 SRI、接口对象基建面、FIXME 组、/tmp/zw-hb*.txt；
+> **待决（须用户拍板）**：css/text 数据模块语料资源缺失。
+> **下一步**：s119 入场定刀位（候选：031 焦点事件面 / image-loading-lazy
+> deferred 1F / 承袭挂账序；构成面与写流队列挂大基建，不作常规刀位）。
+> **切片间隙**：本轮 shim 触发链/导航入口面 + runner pin 面；下一候选同流同面，
+> 间隙开放。
+>
+> **▶ 上轮状态（2026-10-28 M2 切片 117 施工收口，连接态 sel 形 SCRIPT src 后设 prepare 触发面轮——其下一步 s118 已由 s118 收口，见上）**：
 > **入场定谳**：026「doc write added script, .src set later」1F——corpus 探针 7 轮
 > （断言面带出运行时值，验后手动还原）+ 静态读定谳三缺口：①connected 假阴性
 > （`_zwScriptPrepConnected` 直信 getter false；sel 形 isConnected 走宿主快照查询
