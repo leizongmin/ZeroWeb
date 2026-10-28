@@ -5279,6 +5279,62 @@ fn wpt_data_script_fetcher(
             let referer = compute_module_referer(page_url, &full_url, &effective).unwrap_or_default();
             return Ok(format!("export const referrer = '{referer}';"));
         }
+        // s124：echo-referrer.py 动态端点仿真（上游 wptserve handler 不在语料——
+        // `window.referrers["<uid>"] = "<Referer>";` 回体，modulepreload referrerpolicy
+        // 三页判据面：link rel=modulepreload 取回 + 动态 import 共用此端点记账）。
+        // 策略链 = `__zw_lp` 查询参数（引擎 shim link modulepreload 取回面的元素级
+        // referrerpolicy 通道——fetcher 契约 (page_url, src) 无策略形参，shim 以内部
+        // 标记参数携带，计算前剥离；无参数回落 referrer-checker 同链 pipe → 文档策略 →
+        // spec 默认）。uid 取查询参数原样（语料页数值形）；Referer 内嵌 JS 字符串面
+        // 做最小转义。无 uid → 回体不记账（上游 first(b"uid", b"") 同义）。
+        // https://html.spec.whatwg.org/multipage/links.html#link-type-modulepreload
+        // https://w3c.github.io/webappsec-referrer-policy/#referrer-policy-attribute
+        if clean.contains("preload/resources/echo-referrer.py") {
+            let full_url = zero_engine::resolve_document_url(page_url, src);
+            let lp_policy = src
+                .split('?')
+                .nth(1)
+                .and_then(|query| query.split('&').find_map(|kv| kv.strip_prefix("__zw_lp=")));
+            let parent_query = page_url.split('?').nth(1).unwrap_or("");
+            let pipe_policy = parent_query.split('&').find_map(|kv| {
+                kv.strip_prefix("pipe=").and_then(|pipe| {
+                    let inner = pipe.strip_prefix("header(")?.strip_suffix(')')?;
+                    let (name, value) = inner.split_once(',')?;
+                    name.trim()
+                        .eq_ignore_ascii_case("referrer-policy")
+                        .then(|| value.trim().to_ascii_lowercase())
+                })
+            });
+            let effective = lp_policy
+                .filter(|p| is_known_referrer_policy(p))
+                .map(|p| p.to_string())
+                .or_else(|| pipe_policy.filter(|p| is_known_referrer_policy(p)))
+                .or_else(|| doc_referrer_policy.clone().filter(|p| is_known_referrer_policy(p)))
+                .unwrap_or_else(|| "strict-origin-when-cross-origin".to_string());
+            let referer = compute_module_referer(page_url, &full_url, &effective).unwrap_or_default();
+            let uid = src
+                .split('?')
+                .nth(1)
+                .unwrap_or("")
+                .split('&')
+                .find_map(|kv| kv.strip_prefix("uid="))
+                .unwrap_or("")
+                .replace("%3D", "=")
+                .replace("%3d", "=");
+            let referer = referer.replace('\\', "\\\\").replace('"', "\\\"");
+            return Ok(format!("window.referrers[\"{uid}\"] = \"{referer}\";"));
+        }
+        // s124：script.py 端点仿真（上游 wptserve handler 不在语料——modulepreload
+        // cross-origin referrerpolicy 页的取回目标
+        // `https://{{domains[www1]}}:{{ports[https][0]}}/common/security-features/
+        // subresource/script.py`，判据仅 onload 到场（"should load"），无 Referer
+        // 断言）。回体非空 JS（引擎 modulepreload 面以空体承载取回失败）；MIME 面
+        // 上游默认 text/javascript。strip_wpt_host_prefix 已剥 www1.wpt.test:8444
+        // 别名前缀，此处按路径命中。
+        // https://html.spec.whatwg.org/multipage/links.html#link-type-modulepreload
+        if clean == "common/security-features/subresource/script.py" {
+            return Ok("globalThis.__zwScriptPyLoaded = (globalThis.__zwScriptPyLoaded || 0) + 1;".to_string());
+        }
         let scripty = if let Some(mime) = mime_from_pipe {
             mime_is_scripty(&mime)
         } else if let Some(mime) = mime_from_sidecar {
@@ -11952,6 +12008,47 @@ mod tests {
         );
         // 非 wpt 域绝对 URL 保持既有 Err 语义。
         assert!(fetch("https://wpt.test/sub/page.html", "http://evil.test/x.js").is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // s124 回归钉：echo-referrer.py 端点仿真（__zw_lp 元素级策略通道 + 非法 label
+    // 剥离后顺延文档策略 + uid 记账键）与 script.py 端点仿真（cross-origin 页
+    // "should load" 判据，www1:8444 别名剥离后按路径命中）。
+    #[test]
+    fn modulepreload_endpoint_sims_s124() {
+        let dir = std::env::temp_dir().join(format!("zw-modulepreload-s124-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let page = "https://wpt.test/html/semantics/scripting-1/the-script-element/module/modulepreload-inline-referrerpolicy.html";
+
+        // ① __zw_lp 通道：元素级 no-referrer 压文档策略 → 空 Referer 记账。
+        let fetch_origin = wpt_data_script_fetcher(&dir, Some("origin".into())).unwrap();
+        assert_eq!(
+            fetch_origin(page, "/preload/resources/echo-referrer.py?uid=X1&__zw_lp=no-referrer").unwrap(),
+            "window.referrers[\"X1\"] = \"\";"
+        );
+
+        // ② 非法 __zw_lp label 剥离后顺延文档策略（origin → 同源 origin 形）。
+        assert_eq!(
+            fetch_origin(page, "/preload/resources/echo-referrer.py?uid=X2&__zw_lp=bogus-policy").unwrap(),
+            "window.referrers[\"X2\"] = \"https://wpt.test/\";"
+        );
+
+        // ③ 无 __zw_lp：文档策略链直落（页面 meta referrer=origin 臂同形）。
+        assert_eq!(
+            fetch_origin(page, "/preload/resources/echo-referrer.py?uid=X3").unwrap(),
+            "window.referrers[\"X3\"] = \"https://wpt.test/\";"
+        );
+
+        // ④ script.py 端点：https://www1.wpt.test:8444 别名剥离 → 路径命中非空 JS 回体。
+        let fetch = wpt_data_script_fetcher(&dir, None).unwrap();
+        assert_eq!(
+            fetch(
+                page,
+                "https://www1.wpt.test:8444/common/security-features/subresource/script.py"
+            )
+            .unwrap(),
+            "globalThis.__zwScriptPyLoaded = (globalThis.__zwScriptPyLoaded || 0) + 1;"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

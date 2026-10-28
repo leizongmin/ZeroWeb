@@ -4304,6 +4304,82 @@
   globalThis._zwDrainInOrderScriptQueue = _zwDrainQueueImpl;
   globalThis.__zwScriptFetchPending = _zwFetchPendingImpl;
   globalThis._zwScriptForevBlocked = _zwScriptForevBlocked;
+  // s124（html-semantics M2 切片 124）：**link rel=modulepreload 取回面**——插入后
+  // 按 spec link processing 抓取模块（宿主 `__zw_fetch_script` 通道；未注册嵌入方
+  // typeof-check no-op，行为不变）。取回成功：体在全局求值 + 以解析后绝对 URL 键
+  // 播种 `__moduleCache`（=== undefined 守卫——先到者胜，import()/原生回调面同表
+  // 复用，模块体恰好一次求值）→ 异步派 'load'；取回失败派 'error'。元素级
+  // referrerpolicy 经 `__zw_lp` 内部查询参数携入取回计算（fetcher 契约无策略形参；
+  // 非法 label 不携带——spec invalid 值按未置位顺延文档策略）。
+  // 取回+播种**同步内联**（非 setTimeout 延后）：触发点在 childList 汇流臂
+  //（innerHTML 重建/append 同批），ZW 文档脚本与 testharness 起跑间不泵 timer
+  // 队列（mp5 探针实证：延后臂在断言执行前从未轮转，body 的 import() 先行
+  // 重取回覆写 referrers——页面契约要求 preload 播种先于后继脚本 import）。
+  // 'load'/'error' 事件仍异步派发（spec fetch 事件语义；onload 赋值在 append
+  // 前后均可见）。
+  // https://html.spec.whatwg.org/multipage/links.html#link-type-modulepreload
+  globalThis._zwModulePreloadMaybeStart = function (child) {
+    try {
+      if (!child || child.nodeType !== 1) return;
+      // 连接门同 script prepare 臂（_zwScriptPrepConnected——解析代理 isConnected
+      // 假阴性经父链/记账面爬升复核，innerHTML 整树重建产物即此形态）。
+      var _mpConnected = false;
+      try { _mpConnected = _zwScriptPrepConnected(child) === true; } catch (_eMpc) {}
+      if (!_mpConnected) return;
+      var _mpRel = '';
+      try { _mpRel = String(child.getAttribute('rel') || ''); } catch (_eMpr) {}
+      var _mpParts = _mpRel.split(/\s+/);
+      var _mpIs = false;
+      for (var _mpi = 0; _mpi < _mpParts.length; _mpi++) {
+        if (_mpParts[_mpi] === 'modulepreload') { _mpIs = true; break; }
+      }
+      if (!_mpIs) return;
+      var _mpHref = '';
+      try { _mpHref = String(child.getAttribute('href') || ''); } catch (_eMph) {}
+      if (!_mpHref || typeof __zw_fetch_script !== 'function') return;
+      // 元素级 referrerpolicy（IDL 反射已归一小写——R5009 片 e；属性直读同样
+      // lower 归一），非法 label 不携带参数（fetcher 侧回落 pipe/文档/默认链）。
+      var _mpPolicy = '';
+      try { _mpPolicy = String(child.getAttribute('referrerpolicy') || '').toLowerCase(); } catch (_eMpp) {}
+      var _mpPolicyOk = { 'no-referrer': 1, 'no-referrer-when-downgrade': 1, 'same-origin': 1,
+        'origin': 1, 'strict-origin': 1, 'origin-when-cross-origin': 1,
+        'strict-origin-when-cross-origin': 1, 'unsafe-url': 1 };
+      var _mpFetchSrc = _mpHref;
+      if (_mpPolicyOk.hasOwnProperty(_mpPolicy)) {
+        _mpFetchSrc += (_mpHref.indexOf('?') >= 0 ? '&' : '?') + '__zw_lp=' + _mpPolicy;
+      }
+      var _mpBase = (typeof globalThis._zwDocBaseURL === 'function')
+        ? globalThis._zwDocBaseURL()
+        : (globalThis.location ? globalThis.location.href : '');
+      var _mpAbs = _mpHref;
+      try {
+        if (typeof __zw_parse_url === 'function') {
+          var _mpJson = __zw_parse_url(_mpHref, _mpBase);
+          if (_mpJson) _mpAbs = JSON.parse(_mpJson).href || _mpHref;
+        }
+      } catch (_eMpu) {}
+      var _mpEl = child;
+      var _mpBody = '';
+      try { _mpBody = String(__zw_fetch_script(_mpBase, _mpFetchSrc) || ''); } catch (_mpFe) {}
+      try {
+        if (_mpBody) {
+          if (!globalThis.__moduleCache) globalThis.__moduleCache = {};
+          if (globalThis.__moduleCache[_mpAbs] === undefined) {
+            globalThis.__moduleCache[_mpAbs] = (0, eval).call(globalThis, _mpBody);
+          }
+        }
+      } catch (_mpEv) {
+        _mpBody = '';
+      }
+      setTimeout(function () {
+        try { _mpEl.dispatchEvent(new Event(_mpBody ? 'load' : 'error')); } catch (_mpDe) {}
+      }, 0);
+    } catch (_eMps) {
+      if (typeof globalThis._zwReportListenerError === 'function') {
+        try { globalThis._zwReportListenerError(_eMps, null); } catch (_eMsp) {}
+      }
+    }
+  };
   // s113：type/language 分类器供 part04 R387/s95 臂与后续写入执行面复用（导出
   // 随本层求值恒在——_zwPrepareSrcScript 同款理由）。
   globalThis._zwScriptTypeClassify = _zwScriptTypeClassify;

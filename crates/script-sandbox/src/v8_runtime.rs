@@ -151,6 +151,25 @@ fn dynamic_import_callback<'s, 'i>(
     // classic 上下文 helper 缺席面：嵌套动态 import() 走 prelude helper（幂等——
     // 模块脚本先于此执行时已装，presence 检查免重复求值）。
     let context = scope.get_current_context();
+    // s124（modulepreload 面）：成功条目 module map 记忆化——classic 上下文 import()
+    // 原生回调此前每次调用都重取回+重求值（module map 语义缺口）。命中
+    // `__moduleCache[resolved]`（宿主解析键，与 `__zw_load_module` helper 面同表——
+    // link rel=modulepreload shim 取回面的播种条目同键复用）→ 直接以缓存值 resolve，
+    // 模块体恰好一次求值（HTML fetch-a-single-module-script 命中即复用）。失败三态
+    // 不入缓存（取回失败逐次新 TypeError——s87 原口径，spec 同）。best-effort：缓存
+    // 读取失败按未命中续行。
+    // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+    let cached_entry = v8::String::new(scope, "__moduleCache")
+        .and_then(|key| context.global(scope).get(scope, key.into()))
+        .filter(|v| v.is_object())
+        .and_then(|cache| {
+            v8::String::new(scope, resolved).and_then(|k| cache.to_object(scope).and_then(|o| o.get(scope, k.into())))
+        })
+        .filter(|v| !v.is_undefined());
+    if let Some(entry) = cached_entry {
+        promise_resolver.resolve(scope, entry);
+        return Some(promise_resolver.get_promise(scope));
+    }
     let has_helpers = v8::String::new(scope, "__zw_dynamic_import")
         .and_then(|key| context.global(scope).get(scope, key.into()))
         .map(|v| !v.is_undefined())
@@ -168,6 +187,24 @@ fn dynamic_import_callback<'s, 'i>(
         .and_then(|script| script.run(tc));
     match result {
         Some(value) => {
+            // s124：成功条目写入 module map（与读取同表同键；表缺席则建——classic
+            // 上下文 prelude 按需装时已含 init，此处兜底自建覆盖无 prelude 面）。
+            // best-effort：写入失败不影响 resolve（下次调用重取回重求值，原行为）。
+            if let Some(cache_key) = v8::String::new(tc, "__moduleCache") {
+                let global = tc.get_current_context().global(tc);
+                let cache_obj = global
+                    .get(tc, cache_key.into())
+                    .filter(|v| v.is_object())
+                    .and_then(|v| v.to_object(tc))
+                    .unwrap_or_else(|| {
+                        let obj = v8::Object::new(tc);
+                        let _ = global.set(tc, cache_key.into(), obj.into());
+                        obj
+                    });
+                if let Some(entry_key) = v8::String::new(tc, resolved) {
+                    let _ = cache_obj.set(tc, entry_key.into(), value);
+                }
+            }
             promise_resolver.resolve(tc, value);
         }
         None => {
@@ -2973,6 +3010,128 @@ mod tests {
             calls.lock().unwrap().as_slice(),
             [("./a.js".to_string(), "https://zero.test/page.html".to_string())],
             "resolver 收到 (spec, referrer)"
+        );
+    }
+
+    /// s124（modulepreload 面）：classic 上下文原生 import() 的 module map 记忆化——
+    /// 成功条目写 `__moduleCache[resolved]`，二次 import() 命中以缓存值落定且模块体
+    /// 恰好一次求值（fetch-a-single-module-script 命中复用）；预播种条目（link
+    /// rel=modulepreload shim 取回面的同表直写）同样命中不重求值。失败三态不入缓存
+    /// （取回失败逐次新 TypeError——s87 口径保持）。
+    #[test]
+    fn test_native_dynamic_import_module_map_memoization_s124() {
+        // module map 记忆化是跨 execute 的全局表面——须 persistent context
+        //（非持久模式每 execute 新 context，全局不保留，钉不到命中面）。
+        let mut sandbox = V8Sandbox::with_config(crate::SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        })
+        .unwrap();
+        let calls: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let calls_cb = calls.clone();
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(move |spec, _referrer, _nonce| {
+            calls_cb.lock().unwrap().push(spec.to_string());
+            if spec.ends_with("fail.js") {
+                return String::new(); // 取回失败三态
+            }
+            let name = spec.trim_start_matches("./").trim_end_matches(".js");
+            format!(
+                "https://zero.test/{name}.js\u{1f}(function() {{ return (function() {{ \
+                 globalThis.__evals = (globalThis.__evals || 0) + 1; return {{ from: '{name}' }}; }})(); }})()"
+            )
+        }));
+        sandbox.set_dynamic_import_referrer("https://zero.test/page.html");
+        let settled: std::sync::Arc<std::sync::Mutex<Option<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        let settled_cb = settled.clone();
+        sandbox.register_callback(
+            "__zw_report",
+            Box::new(move |args| {
+                *settled_cb.lock().unwrap() = args.first().cloned();
+                String::new()
+            }),
+        );
+        sandbox.execute("globalThis.__evals = 0;").unwrap();
+        // ① 首次 import()：取回 + 求值 + 写表。
+        sandbox
+            .execute(
+                "import('./a.js').then(\n\
+                   function (m) { __zw_report('r1:' + m.from + ':' + globalThis.__evals); },\n\
+                   function (e) { __zw_report('r1-rejected:' + (e && e.message)); });\n",
+            )
+            .unwrap();
+        assert_eq!(
+            settled.lock().unwrap().as_deref(),
+            Some("r1:a:1"),
+            "首次 import() 取回求值，体执行一次"
+        );
+        // ② 预播种条目命中（modulepreload shim 面同表直写）——体不重求值。
+        sandbox
+            .execute(
+                "globalThis.__moduleCache = globalThis.__moduleCache || {};\n\
+                 globalThis.__moduleCache['https://zero.test/preloaded.js'] = { from: 'preloaded' };",
+            )
+            .unwrap();
+        sandbox
+            .execute(
+                "import('./preloaded.js').then(\n\
+                   function (m) { __zw_report('r2:' + m.from + ':' + (globalThis.__evals || 0)); },\n\
+                   function (e) { __zw_report('r2-rejected:' + (e && e.message)); });\n",
+            )
+            .unwrap();
+        assert_eq!(
+            settled.lock().unwrap().as_deref(),
+            Some("r2:preloaded:1"),
+            "播种条目命中即复用，模块体不重求值"
+        );
+        // ③ 二次 import() 同 spec：命中缓存，体恰好一次求值。
+        sandbox
+            .execute(
+                "import('./a.js').then(\n\
+                   function (m) { __zw_report('r3:' + m.from + ':' + globalThis.__evals); },\n\
+                   function (e) { __zw_report('r3-rejected:' + (e && e.message)); });\n",
+            )
+            .unwrap();
+        assert_eq!(
+            settled.lock().unwrap().as_deref(),
+            Some("r3:a:1"),
+            "二次 import() 命中缓存，__evals 仍为 1（恰好一次求值）"
+        );
+        // ④ 失败三态不入缓存：同 spec 两次取回失败各自 reject 新 TypeError，表无条目。
+        sandbox
+            .execute(
+                "import('./fail.js').then(function () { __zw_report('r4-fulfilled'); },\n\
+                   function (e) { __zw_report('r4:' + (e && e.constructor.name)); });\n\
+                 import('./fail.js').then(function () { __zw_report('r5-fulfilled'); },\n\
+                   function (e) { __zw_report('r5:' + (e && e.constructor.name)); });\n",
+            )
+            .unwrap();
+        assert_eq!(
+            settled.lock().unwrap().as_deref(),
+            Some("r5:TypeError"),
+            "取回失败逐次 reject TypeError（不落缓存）"
+        );
+        assert_eq!(
+            calls.lock().unwrap().as_slice(),
+            [
+                "./a.js".to_string(),
+                "./preloaded.js".to_string(),
+                "./a.js".to_string(),
+                "./fail.js".to_string(),
+                "./fail.js".to_string(),
+            ],
+            "resolver 逐调用取键（取回去重在宿主面），失败臂不缓存短路"
+        );
+        assert_eq!(
+            sandbox
+                .execute(
+                    "globalThis.__evals + ':' + (globalThis.__moduleCache['https://zero.test/fail.js'] === undefined)"
+                )
+                .unwrap()
+                .value,
+            "1:true",
+            "模块体恰好一次求值 + 失败条目不入缓存"
         );
     }
 

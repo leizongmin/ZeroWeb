@@ -6171,6 +6171,12 @@
               }
               if (_tag109 === 'SCRIPT') {
                 _zwScriptMaybeStartDynamic(_an109n);
+              } else if (_tag109 === 'LINK' && typeof globalThis._zwModulePreloadMaybeStart === 'function') {
+                // s124（html-semantics M2 切片 124）：link rel=modulepreload 插入触发——
+                // spec link processing 的 modulepreload 取回在插入后进行（与 script
+                // prepare 同挂 childList 汇流点，记账后逐节点触发）。
+                // https://html.spec.whatwg.org/multipage/links.html#link-type-modulepreload
+                try { globalThis._zwModulePreloadMaybeStart(_an109n); } catch (_e109mp) {}
               } else if (_an109n.nodeType === 1) {
                 // s111：detached 子树整体插入的「becomes connected」后代面——spec
                 // insert 步骤遍历**inclusive descendants**（文档序逐 script prepare），
@@ -6193,6 +6199,11 @@
                     if (!_kdTagW) _kdTagW = String(_kdW.tagName || '').toUpperCase();
                     if (_kdTagW === 'SCRIPT') {
                       _zwScriptMaybeStartDynamic(_kdW);
+                    } else if (_kdTagW === 'LINK' && typeof globalThis._zwModulePreloadMaybeStart === 'function') {
+                      // s124：detached 子树整体插入的 modulepreload 后代面（SCRIPT
+                      // 下降臂同型——inclusive descendants 文档序）。
+                      try { globalThis._zwModulePreloadMaybeStart(_kdW); } catch (_e111mp) {}
+                      _walk111(_kdW);
                     } else {
                       _walk111(_kdW);
                     }

@@ -2,7 +2,7 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 123 施工收口（FormData 条目构造收口轮：newline-normalization **12F→0F**，全量 A/B **恰 14 Fail→Pass（12 newline + 2 wrapping-transformation 搭车）真翻红 0**；勘根证伪挂账原假设——非换行归一过度，真根因双条：动态建表同 turn 构造时 document 级**逗号列表**查询对 live 树恒空（单选择器才有 R161 pending 回落臂，列表没有；静态标记页正常 staticDocInSel=2，缺口仅 live 树 face，R57 :invalid 臂既有先例）+ file 状态无枚举臂；探针五轮递进：get null 实锤枚举零→attrName 排除 stale→单选择器 2 疑通（误导一轮）→`'input,input'`=0 实锤逗号列表→static=2 定界 live face；双刀：枚举双源并集（form 子树 live face + document 级 face 按键去重，静态页序不变）+ file 臂复用 `_zwFdEntry` 每选中文件一条（无选中零条目 spec 同）+ 兜底去 file 守卫防双计；pin ×1（part02.js stash 往返两面红 get null 行为证据）+ engine lib 3570/0 + clippy 零告警 + fmt + shim 拼接 node --check；新挂账 ×2：FileList 缺索引访问（files[0] undefined，corpus 不需未修）+ live 树 document 级逗号列表 qSA 根缺口（本切片以双源并集绕开）；下一步 s124 候选：module 网络面挂账项勘根 / 承袭挂账序复核）；承前：M2 切片 122（classic script 编码链三面 4F→0F）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 124 施工收口（module 网络面收口轮：link rel=modulepreload 取回面——**modulepreload 家族基线 6 行（4F+2T）→ 15/15 全 Pass，真翻红 0**；勘根四项定谳：modulepreload 族三面缺口（端点仿真 echo-referrer.py 缺 / shim 取回面缺 / 元素级 referrerpolicy 无通道）+ cross-origin 页实缺 script.py 端点（非 https 传输）；module-import-referrer TLA 根因精确化（入口 TLA 可用、依赖模块 TLA 不可用——build_dep_iife 同步 IIFE，深转换架构面）；dynamic import() with 透传 = css-module 复合保留；classic 外链 SRI 无语料需求；施工五件：shim `_zwModulePreloadMaybeStart`（**同步内联取回**——mp5 探针实证 setTimeout 延后臂不轮转、import() 先行覆写 referrers）+ `_mo_notify` LINK 触发臂（顶层 + 下降）+ classic 动态 import() **module map 记忆化**（恰好一次求值 + 失败不入缓存）+ runner 端点仿真 ×2 + pin ×2；A/B +15P/−4F/−2T 全落家族、总量口径 +9 已记账；engine lib 3570/0 + sandbox lib 377/0 + runner 256/0 + clippy 零告警 + fmt + shim 拼接 node --check；下一步 s125 候选：承袭挂账序复核 / meta color-scheme 跨流面评估）；承前：M2 切片 123（FormData 条目构造收口轮：newline-normalization **12F→0F**，全量 A/B 恰 14 Fail→Pass 真翻红 0；勘根证伪换行归一假设——真根因 document 级逗号列表 live 树查询恒空 + file 状态无枚举臂；双刀：枚举双源并集 + file 臂；新挂账 ×2：FileList 缺索引访问 + live 树 document 级逗号列表 qSA 根缺口）；承前：M2 切片 122（classic script 编码链三面 4F→0F）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
 > **▶ 当前状态（2026-10-28 M2 切片 123 施工收口，FormData 条目构造收口轮）**：
 > **入场定刀位**：取 s122 挂账首选 newline-normalization 12F 单根候选
@@ -60,12 +60,61 @@
 > **待决（须用户拍板）**：css/text 数据模块语料资源缺失、parser form
 > element pointer 4F 缓行（2026-10-23，并入 declarative shadow DOM
 > parser 批次）。
-> **下一步**：s124 入场定刀位（候选：module 网络面挂账项勘根
-> （modulepreload referrerpolicy 族 / module-import-referrer TLA /
-> dynamic import() with 透传 / classic 外链 SRI——逐一辨 shim/runner/host
-> 契约面）/ 承袭挂账序复核）。
 > **切片间隙**：本轮 FormData 条目构造 shim 单根面（枚举双源 + file 臂）；
 > 下一候选 module 网络面挂账项勘根轮。
+
+> **▶ 当前状态（2026-10-28 M2 切片 124 施工收口，module 网络面收口轮：link rel=modulepreload 取回面——modulepreload 家族基线 6 行（4F+2T）→ 15/15 全 Pass，真翻红 0）**：
+> **入场定刀位**：s123 下一步首选 module 网络面挂账项勘根（四项逐一辨
+> shim/runner/host 契约面）。**勘根定谳**：①modulepreload referrerpolicy
+> 族三面缺口（echo-referrer.py 端点仿真缺 / shim 无 link modulepreload
+> 取回面 / 元素级 referrerpolicy 无通道）+ cross-origin 页堵点**非
+> https 传输**（www1:8444 别名已剥）实缺 script.py 端点；②
+> module-import-referrer TLA 根因精确化——入口 TLA 可用、**依赖模块
+> TLA 不可用**（build_dep_iife 同步 IIFE SyntaxError，深转换架构面）；
+> ③dynamic import() with 透传——语料页全为 css-module 复合面，保留；
+> ④classic 外链 SRI——无语料需求，保留 FIXME。
+> **本轮施工**（shim part01/part03 + script-sandbox v8_runtime.rs +
+> runner testharness.rs）：①shim `_zwModulePreloadMaybeStart` 取回面
+> （script prepare 同连接门 + rel 白名单 + `__zw_lp` 内部查询参数携
+> 元素级 referrerpolicy + `__zw_fetch_script` 取回 + 绝对 URL 键播种
+> `__moduleCache` + 异步 load/error）；②**同步内联取回**（时序勘根：
+> setTimeout 延后臂在断言前从未轮转——ZW 文档脚本与 testharness 起跑
+> 间不泵 timer 队列，body 的 import()×4 先行重取回覆写 referrers——
+> mp5 忠实复刻探针实证）；③`_mo_notify` childList 汇流点 LINK 触发臂
+> （顶层 + _walk111 下降，SCRIPT 臂同型；innerHTML 重建产物 body-context
+> 平铺解析代理，连接门父链爬升复核）；④classic 动态 import() **module
+> map 记忆化**（原生回调此前每调用重取回重求值——成功条目读
+> `__moduleCache[resolved]` 命中即 resolve 恰好一次求值 + 成功写表 +
+> 失败三态不入缓存 s87 口径保持，best-effort 双向）；⑤runner 端点仿真
+> ×2（echo-referrer.py 策略链 `__zw_lp`→pipe→文档→默认逐臂过滤 +
+> script.py 非空 JS 回体）；⑥pin ×2（runner 端点四面 +
+> sandbox 记忆化四臂——persistent context 必要性首版钉假阳性已修正）。
+> **验证**：定向 `FILTER=modulepreload` **15/15**；**全量 A/B 逐行
+> status join：+15P/−4F/−2T 全落 modulepreload 家族，真翻红 = 0**
+> （6653P/1145F/105T → 6668P/1141F/103T，行数 +9 = 基线挂起页未完成
+> 注册的 9 子测试现完成打印，总量口径变化已记账）。script-sandbox lib
+> **377/0**；engine lib **3570/0**；wpt-runner 全量 **256/0**；guard 内
+> clippy（sandbox+runner+engine -D warnings）零告警；fmt 净；shim 拼接
+> node --check 过。语料零改动（探针页 ×7 + dep ×2 验后删，调试追踪桩
+> 全移除）。渲染面零依赖。账本见
+> [evidence/2026-10-28-m2s124-modulepreload-face.md](html-semantics-compat/evidence/2026-10-28-m2s124-modulepreload-face.md)。
+> **范围**：engine shim part01/part03 + script-sandbox v8_runtime.rs +
+> runner testharness.rs。
+> **挂账更新**：modulepreload referrerpolicy 族 + inline 重建路径**收口
+> 移出候选**；module-import-referrer TLA 根因精确化保留（依赖图 async
+> 语义 = module transform 管线重构级）；dynamic import() with 透传保留
+> （css-module 复合）；classic 外链 SRI 保留 FIXME。承袭其余不变
+> （form-submission-0 219F、写流盖章断链、part02 setAttribute 绕 notify、
+> execution-timing 构成面、041 nested write、lazy-loading 26F、meta
+> color-scheme 21F、css-module corpus 门（待决）、www2 可达性、
+> script-crossorigin-network cookies、redirect-relative-urls、
+> export-from with FIXME、143 write、defer 多写完成序、接口对象基建面、
+> FIXME 组、/tmp/zw-hb*.txt、FileList 缺索引访问、live 树逗号列表 qSA
+> 根缺口）；**待决（须用户拍板）**：css/text 数据模块语料资源缺失、
+> parser form element pointer 4F 缓行（2026-10-23）。
+> **下一步**：s125 入场定刀位（候选：承袭挂账序复核——form-submission-0
+> 186F POST 传输契约勘根 / execution-timing 构成面单根；或 meta
+> color-scheme 21F 跨流面评估（style-system 协同））。
 
 > **▶ 上轮状态（2026-10-28 M2 切片 120 施工收口，fragment 解析 script 克隆 already-started 继承轮——其下一步 s121 已由 s121 收口，见上）**：
 > **入场定谳**：s118 FIXME(spec-gap)「cloneNode 重解析产物 fragment 章」由语料
@@ -2978,6 +3027,22 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-28 M2 切片 124**：module 网络面收口轮（link rel=modulepreload
+  取回面）——勘根四项定谳：modulepreload referrerpolicy 族三面缺口
+  （echo-referrer.py 端点 / shim 取回面 / 元素级 referrerpolicy 通道）+
+  cross-origin 页实缺 script.py 端点（非 https 传输——www1:8444 别名已
+  剥）；module-import-referrer TLA 根因精确化（依赖模块 TLA 不可用，
+  build_dep_iife 同步 IIFE——深转换架构面保留）；dynamic import() 透传
+  = css-module 复合保留；classic 外链 SRI 无语料需求。施工五件：shim
+  `_zwModulePreloadMaybeStart`（同步内联取回——mp5 探针实证 setTimeout
+  延后臂不轮转、import() 先行覆写 referrers）+ `_mo_notify` LINK 触发
+  臂（顶层 + 下降）+ classic 动态 import() module map 记忆化（恰好一次
+  求值 + 失败不入缓存）+ runner 端点仿真 ×2 + pin ×2。域家族 **6 行
+  （4F+2T）→ 15/15 全 Pass**；全量 A/B +15P/−4F/−2T 全落家族真翻红 0
+  （6653P/1145F/105T → 6668P/1141F/103T，行数 +9 = 挂起页未完成注册
+  子测试现完成打印，口径已记账）；sandbox lib 377/0 + engine lib
+  3570/0 + runner 256/0。账本
+  [evidence/2026-10-28-m2s124-modulepreload-face.md](html-semantics-compat/evidence/2026-10-28-m2s124-modulepreload-face.md)。
 - **2026-10-25 M2 切片 86**：scripting-1 开片分诊轮——s85 下一步
   「testdriver-Actions 支持面」过时（s79 已证伪 s78 注记、s80 journal
   已收口 hash-name-dynamic 8P/0F，FILTER 复跑 8/8 复证）；当拍红图
