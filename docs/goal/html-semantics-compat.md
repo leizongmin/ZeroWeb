@@ -4,65 +4,6 @@
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
 **状态**: Active——M2 切片 126 施工收口（img relevant mutations 三根因轮：relevant-mutations 家族 **114P/7F → 121/121 全 Pass，真翻红 0**（全量 6690P/1118F/103T → 6737P/1071F/103T 配平，47 翻绿 = 40 语料资源 green-2x2.png 补齐 + 7 本修复）；勘根定谳：`__zwAttrState5277` 把 referrerpolicy missing/invalid/empty 归并 `'no-referrer-when-downgrade'`（现行 spec 缺省态是空串，n-r-w-d 独立）×5 + removeChild 后调致 SOURCE 移除臂 `after` 旗标死码 ×1 + lazy img width/height 属性臂缺失（whatwg/html#8492）×1；施工：part03 状态表空串态 + 树触发 helper 增 former-next-sibling 位置锚（part04 R188 `_r188Next` 同源传递）+ IMG 属性分支 lazy width/height 臂；engine lib 3570/0 + runner 256/0 + clippy 零告警 + fmt + shim 拼接 node --check；下一步 s127 候选：挂账序复核 / 全量基线翻拣下一单根面）；承前：M2 切片 125（input 克隆状态传播轮：clone.html 19F→19/19 + radio.html 4F→0，全量真翻红 0；part04 deep clone HTML-ns 物化 + form 状态 walk + part05 checked setter radio 组排他）；承前：M2 切片 124（module 网络面收口轮：modulepreload 家族基线 6 行（4F+2T）→ 15/15 全 Pass 真翻红 0；shim `_zwModulePreloadMaybeStart` 同步内联取回 + `_mo_notify` LINK 触发臂 + classic 动态 import() module map 记忆化（恰好一次求值 + 失败不入缓存）+ runner 端点仿真 ×2 + pin ×2；module-import-referrer TLA 根因精确化：入口 TLA 可用、依赖模块 TLA 不可用——build_dep_iife 同步 IIFE，深转换架构面；dynamic import() with 透传 = css-module 复合保留）；承前：M2 切片 123（FormData 条目构造收口轮：newline-normalization **12F→0F**，全量 A/B 恰 14 Fail→Pass 真翻红 0；勘根证伪换行归一假设——真根因 document 级逗号列表 live 树查询恒空 + file 状态无枚举臂；双刀：枚举双源并集 + file 臂；新挂账 ×2：FileList 缺索引访问 + live 树 document 级逗号列表 qSA 根缺口）；承前：M2 切片 122（classic script 编码链三面 4F→0F）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-28 M2 切片 123 施工收口，FormData 条目构造收口轮）**：
-> **入场定刀位**：取 s122 挂账首选 newline-normalization 12F 单根候选
-> （原假设「FormData 构造换行归一过度」）——**勘根证伪原假设**：条目枚举
-> 整体为零，换行归一面反而正确（idlVal 原文保真）。
-> **根因定谳（探针五轮递进，全 gitignored corpus 验后删）**：语料 12 测
-> = value/name/filename × \n \r \r\n \n\r 原文保真断言。①get null/spread
-> 空实锤**条目枚举整体为零**（非归一）；②attrName="a" 正常排除 stale；
-> ③doc qSA('input')=2 疑查询通（**误导一轮**——单选择器有 R161 pending
-> 回落臂）；④`'input,input'` **逗号列表**=0 实锤——live 树 face 列表查
-> 询恒空（R57 :invalid 臂既有先例「分开查询 concat」）；⑤static 标记页
-> 同查询=2 定界 host 快照支持列表、**缺口仅 live 树 face**。第二根因：
-> file 状态在构造器枚举臂无专属处理（落通用臂零条目，spec file 臂要求
-> 每选中文件一条）。
-> **本轮施工**（净变更 part02.js + testharness.rs pin ×1，无其他 Rust）：
-> ①**枚举双源并集**——document 级查询（静态页原路径 + form= 属性站外
-> 关联 best-effort）在前 + `form.querySelectorAll` 子树 live 查询随后，
-> `_fdSeen` 按元素键去重（`_elKeyOf` 优先 handle/selector 回落）——静态
-> 页序与原行为逐项一致，动态页子树序即树序。②**file 状态条目臂**——
-> `type === 'file'` 每选中文件一条 `_zwFdEntry(String(name), _fdFile)`
-> （File 本体保真，File.name 不做换行归一）；无选中零条目（spec 同）；
-> 兜底 else-if 去 `type !== 'file'` 守卫（联动防双计）。③pin
-> `formdata_entry_list_s123` 两面：hidden value='b\nc' 动态建表 live 枚
-> 举 + 原文换行零归一；DataTransfer→files setter→`fd.get('f').name` 原
-> 文 filename。
-> **验证**：定向 `FILTER=newline-normalization` **12/12**（12F→0F）；
-> **全量 A/B 逐行 status join：恰 14 对 Fail→Pass（12 newline +
-> 2 wrapping-transformation 搭车——FormData(form) 同路径），真翻红 =
-> 0**（6639P/1159F/105T → 6653P/1145F/105T，总数 7903 恒定；首跑探针
-> 未删时取数 +7 Fail 噪声总量不配平，被 pre-commit 门禁事实核查项
-> BLOCK 抓出，删净补跑定谳）。bin pin 新代码**绿**；part02.js
-> stash 往返**两面红**（`live form 枚举 + 原文换行零归一: null` /
-> `file 条目 File.name 原文: null`——行为失败非编译失败）。engine lib
-> **3570/0**；guard 内 clippy（runner --all-targets）零告警；fmt 净；
-> shim 拼接 node --check 过。渲染面零依赖。账本见
-> [evidence/2026-10-28-m2s123-formdata-entry-list.md](html-semantics-compat/evidence/2026-10-28-m2s123-formdata-entry-list.md)。
-> **范围**：engine shim part02.js + runner testharness.rs（commit
-> 7232a83d8）；语料零改动（探针页 ×5 验后删除）。
-> **挂账更新**：newline-normalization 12F **收口移出候选**；新挂账 ×2：
-> **FileList 缺索引访问**（files[0] undefined，仅 item()/length/iterator
-> ——spec 缺口真实但 corpus 不需要，精准修改未顺带扩面）；**live 树
-> document 级逗号列表 qSA 根缺口**（单选择器 R161 回落臂列表没有——本
-> 切片以双源并集绕开，根缺口在 host 查询 face，同症 face 按 R57 先例分
-> 开查询 concat 或补列表回落臂）。
-> 承袭：form-submission-0 219F 精确化挂账（186F POST 传输契约 + 33F
-> iframe 文档管道，均大基建）、写流执行身份盖章断链 FIXME、part02
-> setAttribute 绕 notify 臂（gap 2）、execution-timing 构成面 056/063+
-> 051/052 单根（增量解析大基建）、041 nested write（写流队列重构）、
-> lazy-loading 族 26F（viewport 基建大项）、meta color-scheme 21F（跨流
-> style-system）、css-module 族 corpus 门（待决须用户拍板）、www2 可达
-> 性、modulepreload referrerpolicy 族、module-import-referrer TLA、
-> script-crossorigin-network cookies、redirect-relative-urls、
-> export-from with FIXME、143 write、defer 多写完成序、dynamic import()
-> with 透传、classic 外链 SRI、接口对象基建面、FIXME 组、/tmp/zw-hb*.txt；
-> **待决（须用户拍板）**：css/text 数据模块语料资源缺失、parser form
-> element pointer 4F 缓行（2026-10-23，并入 declarative shadow DOM
-> parser 批次）。
-> **切片间隙**：本轮 FormData 条目构造 shim 单根面（枚举双源 + file 臂）；
-> 下一候选 module 网络面挂账项勘根轮。
-
 > **▶ 当前状态（2026-10-28 M2 切片 126 施工收口，img relevant mutations 三根因轮）**：
 > **入场定刀位**：全量基线翻拣 the-img-element 域 relevant-mutations.html
 > 整页 46F。前置动作（非代码）：corpus 依赖 `wpt-data/images/
@@ -212,6 +153,65 @@
 > **下一步**：s125 入场定刀位（候选：承袭挂账序复核——form-submission-0
 > 186F POST 传输契约勘根 / execution-timing 构成面单根；或 meta
 > color-scheme 21F 跨流面评估（style-system 协同））。
+
+> **▶ 上轮状态（2026-10-28 M2 切片 123 施工收口，FormData 条目构造收口轮：newline-normalization 12F→0F，全量 A/B 恰 14 Fail→Pass 真翻红 0——其下一步 module 网络面已由 s124 收口，见上）**：
+> **入场定刀位**：取 s122 挂账首选 newline-normalization 12F 单根候选
+> （原假设「FormData 构造换行归一过度」）——**勘根证伪原假设**：条目枚举
+> 整体为零，换行归一面反而正确（idlVal 原文保真）。
+> **根因定谳（探针五轮递进，全 gitignored corpus 验后删）**：语料 12 测
+> = value/name/filename × \n \r \r\n \n\r 原文保真断言。①get null/spread
+> 空实锤**条目枚举整体为零**（非归一）；②attrName="a" 正常排除 stale；
+> ③doc qSA('input')=2 疑查询通（**误导一轮**——单选择器有 R161 pending
+> 回落臂）；④`'input,input'` **逗号列表**=0 实锤——live 树 face 列表查
+> 询恒空（R57 :invalid 臂既有先例「分开查询 concat」）；⑤static 标记页
+> 同查询=2 定界 host 快照支持列表、**缺口仅 live 树 face**。第二根因：
+> file 状态在构造器枚举臂无专属处理（落通用臂零条目，spec file 臂要求
+> 每选中文件一条）。
+> **本轮施工**（净变更 part02.js + testharness.rs pin ×1，无其他 Rust）：
+> ①**枚举双源并集**——document 级查询（静态页原路径 + form= 属性站外
+> 关联 best-effort）在前 + `form.querySelectorAll` 子树 live 查询随后，
+> `_fdSeen` 按元素键去重（`_elKeyOf` 优先 handle/selector 回落）——静态
+> 页序与原行为逐项一致，动态页子树序即树序。②**file 状态条目臂**——
+> `type === 'file'` 每选中文件一条 `_zwFdEntry(String(name), _fdFile)`
+> （File 本体保真，File.name 不做换行归一）；无选中零条目（spec 同）；
+> 兜底 else-if 去 `type !== 'file'` 守卫（联动防双计）。③pin
+> `formdata_entry_list_s123` 两面：hidden value='b\nc' 动态建表 live 枚
+> 举 + 原文换行零归一；DataTransfer→files setter→`fd.get('f').name` 原
+> 文 filename。
+> **验证**：定向 `FILTER=newline-normalization` **12/12**（12F→0F）；
+> **全量 A/B 逐行 status join：恰 14 对 Fail→Pass（12 newline +
+> 2 wrapping-transformation 搭车——FormData(form) 同路径），真翻红 =
+> 0**（6639P/1159F/105T → 6653P/1145F/105T，总数 7903 恒定；首跑探针
+> 未删时取数 +7 Fail 噪声总量不配平，被 pre-commit 门禁事实核查项
+> BLOCK 抓出，删净补跑定谳）。bin pin 新代码**绿**；part02.js
+> stash 往返**两面红**（`live form 枚举 + 原文换行零归一: null` /
+> `file 条目 File.name 原文: null`——行为失败非编译失败）。engine lib
+> **3570/0**；guard 内 clippy（runner --all-targets）零告警；fmt 净；
+> shim 拼接 node --check 过。渲染面零依赖。账本见
+> [evidence/2026-10-28-m2s123-formdata-entry-list.md](html-semantics-compat/evidence/2026-10-28-m2s123-formdata-entry-list.md)。
+> **范围**：engine shim part02.js + runner testharness.rs（commit
+> 7232a83d8）；语料零改动（探针页 ×5 验后删除）。
+> **挂账更新**：newline-normalization 12F **收口移出候选**；新挂账 ×2：
+> **FileList 缺索引访问**（files[0] undefined，仅 item()/length/iterator
+> ——spec 缺口真实但 corpus 不需要，精准修改未顺带扩面）；**live 树
+> document 级逗号列表 qSA 根缺口**（单选择器 R161 回落臂列表没有——本
+> 切片以双源并集绕开，根缺口在 host 查询 face，同症 face 按 R57 先例分
+> 开查询 concat 或补列表回落臂）。
+> 承袭：form-submission-0 219F 精确化挂账（186F POST 传输契约 + 33F
+> iframe 文档管道，均大基建）、写流执行身份盖章断链 FIXME、part02
+> setAttribute 绕 notify 臂（gap 2）、execution-timing 构成面 056/063+
+> 051/052 单根（增量解析大基建）、041 nested write（写流队列重构）、
+> lazy-loading 族 26F（viewport 基建大项）、meta color-scheme 21F（跨流
+> style-system）、css-module 族 corpus 门（待决须用户拍板）、www2 可达
+> 性、modulepreload referrerpolicy 族、module-import-referrer TLA、
+> script-crossorigin-network cookies、redirect-relative-urls、
+> export-from with FIXME、143 write、defer 多写完成序、dynamic import()
+> with 透传、classic 外链 SRI、接口对象基建面、FIXME 组、/tmp/zw-hb*.txt；
+> **待决（须用户拍板）**：css/text 数据模块语料资源缺失、parser form
+> element pointer 4F 缓行（2026-10-23，并入 declarative shadow DOM
+> parser 批次）。
+> **切片间隙**：本轮 FormData 条目构造 shim 单根面（枚举双源 + file 臂）；
+> 下一候选 module 网络面挂账项勘根轮（已由 s124 收口，见上）。
 
 > **▶ 上轮状态（2026-10-28 M2 切片 120 施工收口，fragment 解析 script 克隆 already-started 继承轮——其下一步 s121 已由 s121 收口，见上）**：
 > **入场定谳**：s118 FIXME(spec-gap)「cloneNode 重解析产物 fragment 章」由语料
