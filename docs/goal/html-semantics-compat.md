@@ -2,9 +2,71 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 131 施工收口（radio 组排他现象 3（form owner 变更）四通道接线轮：radio-disconnected-group-owner 残余 2F 收口全文件 **8/8**（Removed elements 后半 + Appending … disconnect form 全案——appendChild trap / insertBefore trap / R334 sel 臂 / innerHTML registry 物化后四通道接线 + part05 sweep 收编 `_zwRadioUncheckGroupOthers` 共享出口）；全量 join 恰 **2 Fail→Pass 真翻红 0**；engine lib 3570/0 + runner 256/0 + clippy 零告警 + shim 拼接 node --check；探针页验后删）；承前：M2 切片 130 施工收口（radio 组根域枚举轮：radio.html 组属主 3F 收口（orphan tree / different form owners / different name——组枚举根域 detached 化：parent 链顶 nodeType 9 → document qSA 绿面不变，链顶非 document → 链顶子树 qSA + part03 valueMissing radio 臂 form owner 键比对）+ radio-disconnected-group-owner 5F 搭车翻绿；全量 join 恰 **8 Fail→Pass 真翻红 0**；engine lib 3570/0 + runner 256/0 + clippy 零告警 + fmt + shim 拼接 node --check；探针页验后删）；承前：M2 切片 129 施工收口（input/change 事件属性 + UA trusted 面轮：input-change-event-properties **11F→0F**（composed 全族 part01×16/part03/part06 + 宿主 change-on-blur 断链接线 + runner SELECT 键接线）+ 同域 rider：UA 语义事件 trusted（reset/submit/script error/激活 input/change——R312 `__zwMakeTrustedEvent` 双印通道；合成 click() 保持 untrusted 负案不回翻）+ checkbox indeterminate pre-click/canceled 清除 4F→0 + radio.html t1 1F→0；全量 **6758P/1051F/103T → 6780P/1032F/103T** join 恰 **19 Fail→Pass 真翻红 0**；勘根转折：typing 面报错 `undefined reading 'bubbles'` 系 s128 首断言（input composed）修复揭开的 **change 前存断链**——宿主 `_zwFocusSel → __zw_host_focus/__zw_host_blur` 管道未接 s128 基线/change 两臂（send_keys 首键自聚焦即宿主通道），探针四轮定谳非回归后接线（`__zw_host_focus` 记基线 + `__zw_host_blur` 派生 change，与 part04 页面 JS 臂幂等互斥）；engine lib 3570/0 + runner 256/0 + clippy 零告警 + fmt + shim 拼接 node --check；探针页验后删）；承前：M2 切片 128 施工收口（textarea 域残余同域收割轮：change-on-blur 共享面（`_userEdited` 脏旗 + 净值基线比较——script value= 不算用户编辑，restore-then-set 负案不误触）+ textLength/type 单点 getter + maxLength/minLength WebIDL NaN→0 折叠——定向 9F→0F（textarea 5F + input 域 change ×2 与 maxlength/minlength 搭车 4F），全量 join 恰 9 Fail→Pass 真翻红 0；渲染流面让位：wrapping hard-wrap ×2 + placeholder-lineheight；engine lib 3570/0 + runner 256/0 + clippy 零告警 + fmt + shim 拼接 node --check；下一步 s129 候选：挂账序复核 / 全量基线翻拣下一单根面——已由 s129 收口，见上）；承前：M2 切片 127（TEXTAREA value/defaultValue getter 面轮：value-defaultValue-textContent **10F→0F** + wrapping 换行归一搭车 1F→0F，全量 join 恰 11 Fail→Pass 真翻红 0；勘根定谳：value getter 非脏路径 handle 形落 stable-key 惰性初始化读 value 属性缓存 '' 钉死 + API 值缺 \r\n|\r→\n 归一 + child text content 误用 textContent 融合视图 + value setter 缺 [LegacyNullToEmptyString] null 折叠 + defaultValue getter R3049 冻结捕获 stale；施工：part03 live 读双形态 + 读侧统一归一 + part04 setter null 折叠缓存写保留 + `_textareaDefault` 全链删（part01/03/04/05）+ Rust 测试断言不变仅注释更新；engine lib 3570/0 + runner 256/0 + clippy 零告警 + fmt + shim 拼接 node --check）；承前：M2 切片 126（img relevant mutations 三根因轮：relevant-mutations 家族 **114P/7F → 121/121 全 Pass，真翻红 0**（全量 6690P/1118F/103T → 6737P/1071F/103T 配平，47 翻绿 = 40 语料资源 green-2x2.png 补齐 + 7 本修复）；勘根定谳：`__zwAttrState5277` 把 referrerpolicy missing/invalid/empty 归并 `'no-referrer-when-downgrade'`（现行 spec 缺省态是空串，n-r-w-d 独立）×5 + removeChild 后调致 SOURCE 移除臂 `after` 旗标死码 ×1 + lazy img width/height 属性臂缺失（whatwg/html#8492）×1；施工：part03 状态表空串态 + 树触发 helper 增 former-next-sibling 位置锚（part04 R188 `_r188Next` 同源传递）+ IMG 属性分支 lazy width/height 臂；engine lib 3570/0 + runner 256/0 + clippy 零告警 + fmt + shim 拼接 node --check）；承前：M2 切片 125（input 克隆状态传播轮：clone.html 19F→19/19 + radio.html 4F→0，全量真翻红 0；part04 deep clone HTML-ns 物化 + form 状态 walk + part05 checked setter radio 组排他）；承前：M2 切片 124（module 网络面收口轮：modulepreload 家族基线 6 行（4F+2T）→ 15/15 全 Pass 真翻红 0；shim `_zwModulePreloadMaybeStart` 同步内联取回 + `_mo_notify` LINK 触发臂 + classic 动态 import() module map 记忆化（恰好一次求值 + 失败不入缓存）+ runner 端点仿真 ×2 + pin ×2；module-import-referrer TLA 根因精确化：入口 TLA 可用、依赖模块 TLA 不可用——build_dep_iife 同步 IIFE，深转换架构面；dynamic import() with 透传 = css-module 复合保留）；承前：M2 切片 123（FormData 条目构造收口轮：newline-normalization **12F→0F**，全量 A/B 恰 14 Fail→Pass 真翻红 0；勘根证伪换行归一假设——真根因 document 级逗号列表 live 树查询恒空 + file 状态无枚举臂；双刀：枚举双源并集 + file 臂；新挂账 ×2：FileList 缺索引访问 + live 树 document 级逗号列表 qSA 根缺口）；承前：M2 切片 122（classic script 编码链三面 4F→0F）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 132 施工收口（radio 组排他现象 4（type 变更信号）接线轮：radio-morphed **1F 收口**全文件 1/1（spec §4.10.5.4 type change steps 步骤 6「Signal a type change」+ §4.10.5.1.16 现象 4——part01 `_zwApplyInputTypeChange` 尾部单点接线，IDL setter 与 setAttribute 双通道既有汇点零拓扑成本；BUTTON 经 setAttribute 设 type=radio 由 sweep checked 门自兜；现象② name 设/改/删无独立 corpus 面——radio.html:88 案由现象①覆盖）；全量 join 恰 **1 Fail→Pass 真翻红 0**；engine lib 3570/0 + runner 256/0 + clippy 零告警 + shim 拼接 node --check；无探针页语料零改动）；承前：M2 切片 131 施工收口（radio 组排他现象 3（form owner 变更）四通道接线轮：radio-disconnected-group-owner 残余 2F 收口全文件 **8/8**（Removed elements 后半 + Appending … disconnect form 全案——appendChild trap / insertBefore trap / R334 sel 臂 / innerHTML registry 物化后四通道接线 + part05 sweep 收编 `_zwRadioUncheckGroupOthers` 共享出口）；全量 join 恰 **2 Fail→Pass 真翻红 0**；engine lib 3570/0 + runner 256/0 + clippy 零告警 + shim 拼接 node --check；探针页验后删）；承前：M2 切片 130 施工收口（radio 组根域枚举轮：radio.html 组属主 3F 收口（orphan tree / different form owners / different name——组枚举根域 detached 化：parent 链顶 nodeType 9 → document qSA 绿面不变，链顶非 document → 链顶子树 qSA + part03 valueMissing radio 臂 form owner 键比对）+ radio-disconnected-group-owner 5F 搭车翻绿；全量 join 恰 **8 Fail→Pass 真翻红 0**；engine lib 3570/0 + runner 256/0 + clippy 零告警 + fmt + shim 拼接 node --check；探针页验后删）；承前：M2 切片 129 施工收口（input/change 事件属性 + UA trusted 面轮：input-change-event-properties **11F→0F**（composed 全族 part01×16/part03/part06 + 宿主 change-on-blur 断链接线 + runner SELECT 键接线）+ 同域 rider：UA 语义事件 trusted（reset/submit/script error/激活 input/change——R312 `__zwMakeTrustedEvent` 双印通道；合成 click() 保持 untrusted 负案不回翻）+ checkbox indeterminate pre-click/canceled 清除 4F→0 + radio.html t1 1F→0；全量 **6758P/1051F/103T → 6780P/1032F/103T** join 恰 **19 Fail→Pass 真翻红 0**；勘根转折：typing 面报错 `undefined reading 'bubbles'` 系 s128 首断言（input composed）修复揭开的 **change 前存断链**——宿主 `_zwFocusSel → __zw_host_focus/__zw_host_blur` 管道未接 s128 基线/change 两臂（send_keys 首键自聚焦即宿主通道），探针四轮定谳非回归后接线（`__zw_host_focus` 记基线 + `__zw_host_blur` 派生 change，与 part04 页面 JS 臂幂等互斥）；engine lib 3570/0 + runner 256/0 + clippy 零告警 + fmt + shim 拼接 node --check；探针页验后删）；承前：M2 切片 128 施工收口（textarea 域残余同域收割轮：change-on-blur 共享面（`_userEdited` 脏旗 + 净值基线比较——script value= 不算用户编辑，restore-then-set 负案不误触）+ textLength/type 单点 getter + maxLength/minLength WebIDL NaN→0 折叠——定向 9F→0F（textarea 5F + input 域 change ×2 与 maxlength/minlength 搭车 4F），全量 join 恰 9 Fail→Pass 真翻红 0；渲染流面让位：wrapping hard-wrap ×2 + placeholder-lineheight；engine lib 3570/0 + runner 256/0 + clippy 零告警 + fmt + shim 拼接 node --check；下一步 s129 候选：挂账序复核 / 全量基线翻拣下一单根面——已由 s129 收口，见上）；承前：M2 切片 127（TEXTAREA value/defaultValue getter 面轮：value-defaultValue-textContent **10F→0F** + wrapping 换行归一搭车 1F→0F，全量 join 恰 11 Fail→Pass 真翻红 0；勘根定谳：value getter 非脏路径 handle 形落 stable-key 惰性初始化读 value 属性缓存 '' 钉死 + API 值缺 \r\n|\r→\n 归一 + child text content 误用 textContent 融合视图 + value setter 缺 [LegacyNullToEmptyString] null 折叠 + defaultValue getter R3049 冻结捕获 stale；施工：part03 live 读双形态 + 读侧统一归一 + part04 setter null 折叠缓存写保留 + `_textareaDefault` 全链删（part01/03/04/05）+ Rust 测试断言不变仅注释更新；engine lib 3570/0 + runner 256/0 + clippy 零告警 + fmt + shim 拼接 node --check）；承前：M2 切片 126（img relevant mutations 三根因轮：relevant-mutations 家族 **114P/7F → 121/121 全 Pass，真翻红 0**（全量 6690P/1118F/103T → 6737P/1071F/103T 配平，47 翻绿 = 40 语料资源 green-2x2.png 补齐 + 7 本修复）；勘根定谳：`__zwAttrState5277` 把 referrerpolicy missing/invalid/empty 归并 `'no-referrer-when-downgrade'`（现行 spec 缺省态是空串，n-r-w-d 独立）×5 + removeChild 后调致 SOURCE 移除臂 `after` 旗标死码 ×1 + lazy img width/height 属性臂缺失（whatwg/html#8492）×1；施工：part03 状态表空串态 + 树触发 helper 增 former-next-sibling 位置锚（part04 R188 `_r188Next` 同源传递）+ IMG 属性分支 lazy width/height 臂；engine lib 3570/0 + runner 256/0 + clippy 零告警 + fmt + shim 拼接 node --check）；承前：M2 切片 125（input 克隆状态传播轮：clone.html 19F→19/19 + radio.html 4F→0，全量真翻红 0；part04 deep clone HTML-ns 物化 + form 状态 walk + part05 checked setter radio 组排他）；承前：M2 切片 124（module 网络面收口轮：modulepreload 家族基线 6 行（4F+2T）→ 15/15 全 Pass 真翻红 0；shim `_zwModulePreloadMaybeStart` 同步内联取回 + `_mo_notify` LINK 触发臂 + classic 动态 import() module map 记忆化（恰好一次求值 + 失败不入缓存）+ runner 端点仿真 ×2 + pin ×2；module-import-referrer TLA 根因精确化：入口 TLA 可用、依赖模块 TLA 不可用——build_dep_iife 同步 IIFE，深转换架构面；dynamic import() with 透传 = css-module 复合保留）；承前：M2 切片 123（FormData 条目构造收口轮：newline-normalization **12F→0F**，全量 A/B 恰 14 Fail→Pass 真翻红 0；勘根证伪换行归一假设——真根因 document 级逗号列表 live 树查询恒空 + file 状态无枚举臂；双刀：枚举双源并集 + file 臂；新挂账 ×2：FileList 缺索引访问 + live 树 document 级逗号列表 qSA 根缺口）；承前：M2 切片 122（classic script 编码链三面 4F→0F）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-28 M2 切片 131 施工收口，radio 组排他现象 3（form owner 变更）四通道接线轮——radio-disconnected-group-owner 残余 2F 收口全文件 8/8）**：
+> **▶ 当前状态（2026-10-28 M2 切片 132 施工收口，radio 组排他现象 4（type 变更信号）接线轮——radio-morphed 1F 收口）**：
+> **入场定刀位**：s131 收口后按控制面下一步入场。候选①「form=
+> 属性变更 radio 组重排」勘根先翻 corpus 断言面——**无 radio 组重
+> 排面**（全语义树 setAttribute('form') 共 5 文件：form_attribute
+> Pass；form-elements-filter Fail=form.elements 成员重排异根；
+> form-nameditem Fail=命名 getter 机制面异根；radio.html /
+> radio-keyboard-navigation-order 非 sweep 面）。radio 域残余单根面
+> 显性：**radio-morphed.html 1F**——「Setting type attribute must
+> unset checkedness of other elements」= spec 现象表现象 4（s131
+> FIXME 已入码缺口），刀位收窄为现象④单根接线。
+> **勘根定谳**：①spec 定谳（先拉原文）——§4.10.5.4 input type
+> change steps 步骤 6「Signal a type change for the element. (The
+> Radio Button state uses this, in particular.)」= 现象④触发信号；
+> type 变更算法无 checkedness 重置步骤——morphed text（带 checked
+> 属性）非脏回落属性读即 true，occurrence 后置真门自然成立。②现象
+> ②（name 设/改/删）无独立 corpus 面：radio.html:88 案由现象①
+>（checkedness 置 true，s125 已接）在新组员资格下 sweep 覆盖，不
+> 单独立项。③**接线点单点覆盖双通道**——input.type IDL setter
+>（part05 type 分支）与 setAttribute（part04 R3901 臂）均汇入
+> `_zwApplyInputTypeChange`（R3901 既有共享出口），尾部单点接线即
+> 双通道覆盖，无需 s131 式四通道拓扑（type 变更不走插入管道）；
+> s131 已证拼接单闭包声明提升跨 part 可调用。④BUTTON 经
+> setAttribute 设 type=radio 边界——sweep checked 门自兜（BUTTON 无
+> checked 属性读 undefined 即返），不新增 tag 门（最小范围）。
+> **施工**（part01/05.js，无 Rust 变更）：①`_zwApplyInputTypeChange`
+> 尾部 `oldTy !== newTy && newTy === 'radio'` 门 + try/catch 调
+> `_zwRadioUncheckGroupOthers(_makeProxy(sel, handle))`（同态再设
+> 不触发——spec「changes state」语义）；②part05 s125 FIXME 更新
+>（type 变更移出未接线清单）。
+> **验证**：定向 radio-morphed **1/1 Pass**（1F→0）+
+> the-input-element **1512P/132F/3T**（s131 1511P，+1 全为
+> radio-morphed）+ constraints **917P/3F 与 s129/s130/s131 同额**；
+> 全量 A/B × /tmp/s131-full.log 键级 join **恰 1 Fail→Pass**
+>（radio-morphed 单案），**真翻红 0、new non-Pass 0、gone 0**；唯一
+> 键 6784P/1022F/103T → 6785P/1021F/103T。engine lib **3570/0**；
+> runner bin **256/0**（76i）；clippy（zero-engine -D warnings）零
+> 告警；零 Rust 变更 fmt 不适用；shim 拼接（13 part）node --check
+> 过。无探针页；语料零改动。全量 runner 以 corpus 已知 Fail 非零
+> 退出（make 错误 1，s131 同形非异常）。渲染面零依赖。账本见
+> [evidence/2026-10-28-m2s132-radio-type-change-signal.md](html-semantics-compat/evidence/2026-10-28-m2s132-radio-type-change-signal.md)。
+> **范围**：engine shim part01/05.js。
+> **挂账更新**：radio-morphed 1F **收口移出候选**；the-input-element
+> radio 族残余 Fail 全为 focus-navigation/keyboard 家族（交互面异根
+> 另账）；**现象接线缺口收窄**（FIXME 已同步）：余 checked 属性增设
+> /defaultChecked/becomes connected（现象⑤）未接，现象②由现象①
+> 覆盖不单独立项；承袭不变（button-events「type=button shouldn't
+> trigger」+ 文件级 Timeout、empty.html/empty-with-base.html
+> Timeout、form-submission-0 186F、execution-timing 构成面、
+> lazy-loading 26F、meta color-scheme 21F、写流盖章断链、part02
+> setAttribute 绕 notify、041 nested write、deep clone 非 HTML ns、
+> css-module corpus 门（待决）、www2 可达性、module-import-referrer
+> TLA、dynamic import() with 透传、classic 外链 SRI、143 write、
+> defer 多写完成序、接口对象基建面、FIXME 组、/tmp/zw-hb*.txt、
+> FileList 缺索引访问、live 树逗号列表 qSA 根缺口、渲染流面让位累
+> 积、s131 插入步缺口细化）；**待决（须用户拍板）**：css/text 数据
+> 模块语料资源缺失、green-2x2.png 语料资源分发、parser form element
+> pointer 4F 缓行（2026-10-23）。
+> **下一步**：s133 入场定刀位（候选：全量基线翻拣下一单根面——域
+> 翻拣刀法同款，radio 域已无单根 sweep 面让位；或 s131/s132 接线
+> 缺口中翻拣有 corpus 面者——checked 属性增设/defaultChecked 面先
+> 勘根再定）。
+
+> **▶ 上轮状态（2026-10-28 M2 切片 131 施工收口，radio 组排他现象 3（form owner 变更）四通道接线轮——其下一步 s132 已由 s132 收口，见上）**：
 > **入场定刀位**：s130 收口后按控制面下一步入场：插入步 radio
 > checkedness 同步族 2F（radio-disconnected-group-owner 残余——
 > 「Removed elements」后半 radio2 带 checked 属性 appendChild 进
@@ -66,7 +128,7 @@
 > **下一步**：s132 入场定刀位（候选：接线缺口中有 corpus 面者优先
 >——form= 属性变更 radio 组重排（input.form IDL setter / form 内容
 > 属性变更面，勘根先翻 corpus 有无断言面）；或全量基线翻拣下一单根
-> 面——域翻拣刀法同款）。
+> 面——域翻拣刀法同款）——已由 s132 收口，见上。
 
 > **▶ 上轮状态（2026-10-28 M2 切片 130 施工收口，radio 组根域枚举轮——其下一步 s131 已由 s131 收口，见上）**：
 > **入场定刀位**：s129 收口勘误（join +3 归因修正）后按挂账入场
