@@ -4,10 +4,10 @@
 # 维护约定：
 #   1) 某测试集每完成一次全量跑（或 goal 收口），追加一行：同 suite_id、date 为实测日、新数字；
 #      生成器只取每个 suite_id 的最新一行，历史行保留作审计。
-"#   2) 新 goal 立项但尚未全量跑时，追加一行 status=planned（total/passed/rate 留空），页面显示""规划中""。"
+#   2) 新 goal 立项但尚未全量跑时，追加一行 status=planned（total/passed/rate 留空），页面显示"规划中"。
 #   3) 口径诚实性：unit 必须如实（tests=reftest/用例文件数、subtests=testharness 子测试数、files=导入文件数）；
 #      Fail/Timeout/部分通过（PF）一律计入分母；分母构成特殊时写入 note。
-"#   4) 任何字段内禁止半角逗号（本文件不做引号转义）；多目录用分号"";""分隔。"
+#   4) 任何字段内禁止半角逗号（本文件不做引号转义）；多目录用分号";"分隔。
 #   5) rate 列留空由生成器按 passed/total 重算；若手工填写则必须与 passed/total 一致（偏差>0.05 生成器报错）。
 #   6) 只允许行级追加或精确行替换，禁止用 csv/表格模块整体读入回写（会改写注释行、补引号转义）；列数与类型由 tests/wpt-runner 的 trend_csv_check 单测在 CI 校验（契约镜像 scripts/generate-website-metrics.py）。
 # date,suite_id,name_en,name_zh,wpt_dirs,harness,unit,total,passed,rate,status,goal,evidence,note_en,note_zh
