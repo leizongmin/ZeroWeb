@@ -878,6 +878,13 @@ fn perform_final_layout_on_in_flow_children(
             if let Some(float_direction) = item.float.float_direction() {
                 has_active_floats = true;
 
+                // R5308（CSS2 §8.3.1）：float 盒建立 BFC，其 margin 不与任何盒折叠
+                //（「not even between a float and its in-flow children」）——须传
+                // Line::FALSE 禁止 float 根与首/末流内子折叠。旧 Line::TRUE 使首子
+                // margin-top 上提进 first_child_top_margin_set，而本分支只消费
+                // item_layout.size 与 float 自身 margin，上提值无人接收整体丢失
+                //（floats-rule3/7-outside-*-ref：根 float 500×500 内块子 mt:300
+                // 渲染 y=0，chromium y=300；auto 高根高 10，chromium 310）。
                 let item_layout = tree.perform_child_layout(
                     item.node_id,
                     Size::NONE,
@@ -885,7 +892,7 @@ fn perform_final_layout_on_in_flow_children(
                     // available_space,
                     Size::MAX_CONTENT,
                     SizingMode::InherentSize,
-                    Line::TRUE,
+                    Line::FALSE,
                 );
                 let margin_box = item_layout.size + item_non_auto_margin.sum_axes();
 
