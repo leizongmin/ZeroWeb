@@ -3747,6 +3747,131 @@ AAAA</div></body></html>"#,
         );
     }
 
+    /// 兄弟缺陷形态（t-p115，diag-r3-1；css-flexbox-1 §4.1 流内文本计入 flex base
+    /// size）：item 只含「流内文本 + 纯 inline 包裹层包脱流原子」、无任何流内原子
+    /// ——提升原子判据不命中（无流内直属原子），taffy 原生内容测量对该形态塌 0。
+    /// li 保留 "hi" 文本宽（Ahem 20px 两字 40px）；脱流按钮不计入（CSS2 §9.3.1）。
+    #[test]
+    fn p115_flex_item_inline_wrapped_abspos_atom_keeps_text_width() {
+        let html = r#"<html><body style="margin:0">
+          <ul id="ul" style="display:flex;list-style:none;margin:0;padding:0;font:20px/1 Ahem">
+            <li id="li">hi<span><button id="atomic" type="button" style="position:absolute">ab cd ef</button></span></li>
+          </ul>
+        </body></html>"#;
+        let (li, _atomic) = compute_li_and_atomic(html);
+        assert!(
+            (li.0 - 40.0).abs() < 1.0 && li.1 <= li.0 + 1.0,
+            "li must keep its in-flow text width (hi = 40px) single-line, got {:?}",
+            li
+        );
+    }
+
+    /// 完整布局后按 id 取盒 (border-box 宽, 高)。
+    fn compute_box(html: &str, id: &str) -> (f32, f32) {
+        let doc = zero_dom::parse_html(html);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        fn find(id: &str, doc: &zero_dom::Document, b: &LayoutBox) -> Option<(f32, f32)> {
+            if let Some(nid) = b.node_id
+                && let Some(n) = doc.get(nid)
+                && let zero_dom::NodeKind::Element(e) = &n.kind
+                && e.get_attribute("id").as_deref() == Some(id)
+            {
+                return Some((b.width, b.height));
+            }
+            b.children.iter().find_map(|c| find(id, doc, c))
+        }
+        find(id, &doc, &result.root).expect("box for id")
+    }
+
+    /// t-p115 同根因臂：流内文本 + 含 Element 子的 inline 包裹层（span>b，无原子）
+    /// ——item 成 taffy 分支后 "hi" 无度量载体，修复前 li=20（只取包裹层子树宽）。
+    #[test]
+    fn p115_flex_item_text_plus_nested_inline_keeps_text_width() {
+        let w = compute_box(
+            r#"<html><body style="margin:0">
+              <ul id="ul" style="display:flex;list-style:none;margin:0;padding:0;font:20px/1 Ahem"><li id="li">hi<span><b>x</b></span></li></ul>
+            </body></html>"#,
+            "li",
+        );
+        assert!(
+            (w.0 - 60.0).abs() < 1.0 && w.1 <= w.0 + 1.0,
+            "li must include hi(40) + wrapped text x(20) single-line, got {:?}",
+            w
+        );
+    }
+
+    /// t-p115 同根因臂：嵌套 inline 包裹（span>span 文本）——修复前外层文本漏计
+    /// li=60（xy+z），修复后 40+40+20=100 单行。
+    #[test]
+    fn p115_flex_item_text_plus_nested_span_keeps_text_width() {
+        let w = compute_box(
+            r#"<html><body style="margin:0">
+              <ul id="ul" style="display:flex;list-style:none;margin:0;padding:0;font:20px/1 Ahem"><li id="li">hi<span>xy<span>z</span></span></li></ul>
+            </body></html>"#,
+            "li",
+        );
+        assert!(
+            (w.0 - 100.0).abs() < 1.0 && w.1 <= w.0 + 1.0,
+            "li must include hi(40) + xy(40) + z(20) single-line, got {:?}",
+            w
+        );
+    }
+
+    /// t-p115 同根因臂：流内文本 + 直属 atomic inline（inline-block）——修复前
+    /// li=100 且两槽叠行（h=40），修复后 max-content 40+100=140 单行。
+    #[test]
+    fn p115_flex_item_text_plus_direct_inlineblock_single_line() {
+        let w = compute_box(
+            r#"<html><body style="margin:0">
+              <ul id="ul" style="display:flex;list-style:none;margin:0;padding:0;font:20px/1 Ahem"><li id="li">hi<span style="display:inline-block">ab cd</span></li></ul>
+            </body></html>"#,
+            "li",
+        );
+        assert!(
+            (w.0 - 140.0).abs() < 1.5 && w.1 <= w.0 + 1.0,
+            "li must include hi(40) + inline-block(100) single-line, got {:?}",
+            w
+        );
+    }
+
+    /// 纯 leaf 形态零干涉对照（R1024/R2160 原生路径已正确）：childless span 不触发
+    /// 分支判定，taffy 原生 IFC 测量保持 li=80 单行。
+    #[test]
+    fn p115_flex_item_childless_span_leaf_untouched() {
+        let w = compute_box(
+            r#"<html><body style="margin:0">
+              <ul id="ul" style="display:flex;list-style:none;margin:0;padding:0;font:20px/1 Ahem"><li id="li">hi<span>xy</span></li></ul>
+            </body></html>"#,
+            "li",
+        );
+        assert!(
+            (w.0 - 80.0).abs() < 1.0 && w.1 <= w.0 + 1.0,
+            "childless-span leaf li must stay 80px single-line, got {:?}",
+            w
+        );
+    }
+
+    /// 无流内内容形态合规：li 只含「包裹层包脱流原子」时塌 0 是正确解（无 flex base
+    /// size 内容），pass 不得写出非零宽。
+    #[test]
+    fn p115_flex_item_ooflow_only_stays_zero() {
+        let w = compute_box(
+            r#"<html><body style="margin:0">
+              <ul id="ul" style="display:flex;list-style:none;margin:0;padding:0;font:20px/1 Ahem"><li id="li"><span><button type="button" style="position:absolute">ab</button></span></li></ul>
+            </body></html>"#,
+            "li",
+        );
+        assert!(
+            w.0 <= 1.0,
+            "ooflow-only li has no in-flow content and must stay 0, got {:?}",
+            w
+        );
+    }
+
     /// 完整布局后取 li 与原子行内级盒的 border-box (宽, 高)。
     fn compute_li_and_atomic(html: &str) -> ((f32, f32), (f32, f32)) {
         let doc = zero_dom::parse_html(html);

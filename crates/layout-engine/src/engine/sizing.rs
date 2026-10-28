@@ -463,7 +463,10 @@ impl LayoutEngine {
     ///   base size，converter 已写入 taffy size.width，不得覆写）；
     /// - item 非 abspos（css-flexbox-1 §4：out-of-flow 子不是 flex item，R3929
     ///   shrink-to-fit cap 管界，不得覆写为未封顶 max-content）；
-    /// - 直接子含提升原子且子全为行内级（含块级子的 item 走 taffy 块流径正常求和）。
+    /// - 直接子含提升原子且子全为行内级（含块级子的 item 走 taffy 块流径正常求和）；
+    /// - 或（t-p115 兄弟形态族）item 为 taffy 分支且持流内文本：R1024 leaf 路径把含
+    ///   Element 子的 inline 包裹层留在 taffy 树，item 成 new_with_children 后文本无
+    ///   度量载体（见下文触发判据注）。
     ///
     /// max-content = max(各段 文本+段内原子)（[`dom_inline_content_max_width`]，br 切段；
     /// 提升原子按 taffy 同源 measure 闭包 MaxContent 重测 + frame + margins——first-pass
@@ -548,7 +551,23 @@ impl LayoutEngine {
                     crate::inline_finalization::is_hoisted_atomic_child(doc, Some(container), cid, styles)
                 })
             });
-            if !has_hoisted {
+            // 兄弟形态族（t-p115）：item 无提升原子，但为 taffy 分支且持流内文本——
+            // R1024 leaf 路径把「含 Element 子的 inline 包裹层」（如 span>button、
+            // span>b）留在 taffy 树（R2160 childless skip 不命中），item 成
+            // new_with_children 后 measure 回调不触发，流内文本在分支表示中无度量
+            // 载体，taffy content-based 只能取包裹层子树宽 → 文本漏计（诊断实证
+            // `<li>hi<span><button style="position:absolute">` li=0、
+            // `<li>hi<span><b>x</b></span>` li=20/应 60）。同族同解：max-content 按
+            // DOM 走（脱流子不计入 CSS2 §9.3.1，块级后代 walker 停止；css-flexbox-1
+            // §4.1 流内文本计入 flex base size）。
+            let has_unrepresented_text = doc.child_nodes(id).iter().any(|&c| {
+                doc.get(c)
+                    .is_some_and(|n| matches!(&n.kind, zero_dom::NodeKind::Text(_)))
+            }) && dom_to_taffy
+                .get(&id)
+                .copied()
+                .is_some_and(|tid| taffy_tree.children(tid).is_ok_and(|kids| !kids.is_empty()));
+            if !has_hoisted && !has_unrepresented_text {
                 continue;
             }
             // 缺陷族形态门：li 的 LayoutBox 子全为行内级（提升原子已扁平为直接子）。
