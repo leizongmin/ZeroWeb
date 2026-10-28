@@ -11346,16 +11346,28 @@
                       }
                     } else if (_ct === 'SELECT') {
                       // R3909：select 复位算法（HTML §4.10.7 the-reset-algorithm-for-a-
-                      // select-element）——各 option selectedness 按 selected 属性、
-                      // dirtiness 全 false（清 dirty/clean 键回落属性默认层），再跑
-                      // selectedness setting（无属性选中时 display size 1 回落首个非
-                      // disabled）。旧 `.selected = defaultSelected` 走 IDL setter 会
-                      // 反向置脏（R3908b 语义），reset 后 selectedIndex 读不走属性面。
+                      // select-element）——各 option selectedness 按 selected 属性默认
+                      // 层、dirtiness 全 false，再跑 selectedness setting（无属性选中时
+                      // display size 1 回落首个非 disabled）。旧 `.selected =
+                      // defaultSelected` 走 IDL setter 会反向置脏（R3908b 语义）。
+                      // s135：默认层显式落 clean——读链 dirty→clean→宿主
+                      // `__zw_option_selected`→attr 中，宿主层承载 SelectOption 编程
+                      // 选中（`select.value=` 推 mutation，apply 侧改写快照 selected
+                      // 属性），清键后穿透读到的是 stale 编程态而非默认层（reset-form
+                      // select ×3 断言面；setting 走查同链读 true 也因此不触发回
+                      // 落）。默认值读 `_optSelAttrDefault` 捕获（value setter 首次
+                      // 程序化选中前物化原始 attr——apply 改写后 live attr 非默认层），
+                      // 无捕获回落 live attr（无程序化变更即原始默认层）。
                       var _rl9 = _zwListOfOptions(c.__zwSelector, c.__zwHandle);
                       for (var j = 0; j < _rl9.length; j++) {
                         var _rk9 = _zwOptKey(_rl9[j].__zwSelector, _rl9[j].__zwHandle);
                         delete _optSelectedDirty[_rk9];
                         delete _optSelectedClean[_rk9];
+                        var _rd135 = (typeof _optSelAttrDefault === 'object' && _optSelAttrDefault
+                          && Object.prototype.hasOwnProperty.call(_optSelAttrDefault, _rk9))
+                          ? _optSelAttrDefault[_rk9]
+                          : _zwOptHasAttr(_rl9[j].__zwSelector, _rl9[j].__zwHandle, 'selected');
+                        _optSelectedClean[_rk9] = _rd135 === true;
                       }
                       _zwSelectednessSetting(c.__zwSelector, c.__zwHandle);
                     }
@@ -13411,6 +13423,10 @@
             // selected 属性承载，js_dom_bridge.rs apply 侧）；其改的是子 option 的
             // selected 属性，非 select 元素自身属性 mutation，不发 select 的 MO attr 通知。
             var _r3909vv = String(value);
+            // s135：程序化选中落宿主前捕获 selected 属性默认层（SelectOption apply
+            // 改写快照 attr 后 live attr 非默认层——form reset 复位读源，见 R3048
+            // select 分支注）。
+            _zwOptCaptureSelDefaults(sel, handle);
             var _r3909vl = _zwListOfOptions(sel, handle);
             var _r3909vm = null;
             for (var _r3909vi = 0; _r3909vi < _r3909vl.length; _r3909vi++) {

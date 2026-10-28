@@ -23407,6 +23407,27 @@ return e;
     }
   }
 
+  // s135：selected 属性默认层捕获（form reset 复位读源）——程序化选中落宿主前
+  // 物化各 option 的 selected attr 存在性。apply 侧 SelectOption 改写快照 attr
+  //（渲染投影），此后 live attr 非默认层；捕获按 key 只填缺（后插入 option 由
+  // 其后首次程序化变更补捕获）。唯一调用点 select.value setter——SelectOption
+  // mutation 的唯一推送源（selectedIndex=/option.selected= 只写 JS 层不改快照
+  // attr，无捕获必要）。
+  function _zwOptCaptureSelDefaults(sel, handle) {
+    try {
+      var list = _zwListOfOptions(sel, handle);
+      for (var i = 0; i < list.length; i++) {
+        var o = list[i];
+        if (!o) continue;
+        var k = _zwOptKey(o.__zwSelector, o.__zwHandle);
+        if (typeof _optSelAttrDefault === 'object' && _optSelAttrDefault
+            && !Object.prototype.hasOwnProperty.call(_optSelAttrDefault, k)) {
+          _optSelAttrDefault[k] = _zwOptHasAttr(o.__zwSelector, o.__zwHandle, 'selected');
+        }
+      }
+    } catch (_eCap) {}
+  }
+
   // set the selected index（HTML §4.10.7「To set the selected index of a select
   // element」）——全员 selectedness=false，index 命中者 selectedness=true +
   // dirtiness=true（命中者恒落 dirty 层）。**不**跑 selectedness setting（spec 明示

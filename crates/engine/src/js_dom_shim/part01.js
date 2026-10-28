@@ -151,6 +151,11 @@
   // dirtiness 保持 false——读序 dirty → clean → selected 属性；dirtiness false 时
   // selected 内容属性增删步仍生效（覆盖 clean 键）。经 `__zw_reset_form_state` 清空。
   var _optSelectedClean = {};
+  // option selected 属性**默认层捕获**（s135，form reset 复位读源）：`select.value=`
+  // 首次程序化选中前物化各 option 的 selected attr 存在性——apply 侧 SelectOption
+  // 会改写快照 attr（渲染投影），此后 live attr 非默认层；捕获按 key 只填缺。
+  // 经 `__zw_reset_form_state` 清空。
+  var _optSelAttrDefault = {};
   // HTMLInputElement.files 引用面（R3902b，HTML §4.10.5.4
   // https://html.spec.whatwg.org/multipage/input.html#dom-input-files）：`.files=` setter
   // 存 FileList 引用（identity 保真——WPT files.html「FileList should not be copied / can
@@ -7500,7 +7505,7 @@
   // M2 RFC s1（FR-10）：锁态/激活 per-page 清理——_pl*（含 _plUnadjusted）+ _fs*（fullscreen
   // 同族跨导航泄漏，用户 2026-10-19 确认随修）+ 瞬态激活双旗。导航后新文档无锁、无激活；
   // 清零不派事件（文档已替换，无监听面意义）。
-  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputValuesSet = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _checkedDirtyState = {}; _optSelectedDirty = {}; _optSelectedClean = {}; _inputFiles = {}; _classCache = {}; _customValidity = {}; _userEdited = {}; _s128ChgBase = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _resourceStates = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; _zwDialogModalStack = []; _zwDialogInvokerSourceR4400 = {}; if (typeof _zwDetailsToggleQ4009 !== 'undefined') _zwDetailsToggleQ4009 = {}; if (typeof _zwDetailsToggleSourceR4400 !== 'undefined') _zwDetailsToggleSourceR4400 = {}; _plKey = null; _plSel = null; _plHandle = null; _plTarget = null; _plUnadjusted = false; _fsKey = null; _fsSel = null; _fsHandle = null; _zwTransientActive = false; _zwActiveEver = false; if (typeof globalThis.__zwDetailsInitOpen5254 !== 'undefined') globalThis.__zwDetailsInitOpen5254 = {}; if (typeof globalThis.__zwDetailsInitOpenMark5254 === 'function') globalThis.__zwDetailsInitOpenMark5254(); if (typeof globalThis.__zw_pointer_reset === 'function') globalThis.__zw_pointer_reset(); };
+  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputValuesSet = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _checkedDirtyState = {}; _optSelectedDirty = {}; _optSelectedClean = {}; _optSelAttrDefault = {}; _inputFiles = {}; _classCache = {}; _customValidity = {}; _userEdited = {}; _s128ChgBase = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _resourceStates = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; _zwDialogModalStack = []; _zwDialogInvokerSourceR4400 = {}; if (typeof _zwDetailsToggleQ4009 !== 'undefined') _zwDetailsToggleQ4009 = {}; if (typeof _zwDetailsToggleSourceR4400 !== 'undefined') _zwDetailsToggleSourceR4400 = {}; _plKey = null; _plSel = null; _plHandle = null; _plTarget = null; _plUnadjusted = false; _fsKey = null; _fsSel = null; _fsHandle = null; _zwTransientActive = false; _zwActiveEver = false; if (typeof globalThis.__zwDetailsInitOpen5254 !== 'undefined') globalThis.__zwDetailsInitOpen5254 = {}; if (typeof globalThis.__zwDetailsInitOpenMark5254 === 'function') globalThis.__zwDetailsInitOpenMark5254(); if (typeof globalThis.__zw_pointer_reset === 'function') globalThis.__zw_pointer_reset(); };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF
