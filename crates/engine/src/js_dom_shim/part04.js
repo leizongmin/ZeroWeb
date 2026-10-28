@@ -11243,6 +11243,24 @@
             }
             var _u = null;
             try { _u = new URL(_actionRaw == null ? '' : String(_actionRaw), _base); } catch (_eA2) { return; }
+            // ⑤ enctype：submitter formenctype > form enctype 属性 > 缺省（大小写
+            // 不敏感；非法值按 spec invalid value default 回 urlencoded）——s139
+            // POST body 按 enctype 分型序列化（⑤a）；GET query 恒 urlencoded（spec
+            // form submission algorithm GET 分支固定 urlencoded 序列化，与 enctype
+            // 无关）。
+            var _fEnc = '';
+            try { if (submitter) _fEnc = String(submitter.getAttribute('formenctype') || ''); } catch (_eT3) {}
+            if (_fEnc === '') {
+              try { _fEnc = String(fHandle ? __zw_get_attr_handle(fHandle, 'enctype') : (__zw_get_attr(fSel, 'enctype') || '')); } catch (_eT4) {}
+            }
+            _fEnc = _fEnc.toLowerCase();
+            if (_fEnc !== 'text/plain' && _fEnc !== 'multipart/form-data') _fEnc = 'application/x-www-form-urlencoded';
+            // 换行归一（spec convert to a list of name-value pairs：lone CR/LF →
+            // CRLF，https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#convert-to-a-list-of-name-value-pairs）——
+            // 三序列化共用；CRLF 保持、lone CR/LF 展开。
+            function _normNL(s) {
+              return String(s).replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n/g, '\r\n');
+            }
             // ⑤ urlencoded 序列化（spec serialize urlencoded：换行归一 \r\n → 百分号编码 →
             // 空格 '+'。encodeURIComponent 的 unescaped 集含 `! ' ( ) ~`，而 spec
             // application/x-www-form-urlencoded percent-encode set 仅豁免 `*-.0-9A-Z_a-z`
@@ -11250,15 +11268,55 @@
             // （`*` 两侧均字面量）。
             function _encPair(n, v) {
               function enc(s) {
-                return encodeURIComponent(String(s).replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n/g, '\r\n'))
+                return encodeURIComponent(_normNL(s))
                   .replace(/%20/g, '+')
                   .replace(/!/g, '%21').replace(/'/g, '%27').replace(/\(/g, '%28').replace(/\)/g, '%29').replace(/~/g, '%7E');
               }
               return enc(n) + '=' + enc(v);
             }
-            var _body = '';
+            // ⑤a s139：POST body 按 enctype 分型；_urlBody（urlencoded）另存——GET
+            // query 恒用它。text/plain（spec text/plain encoding algorithm，
+            // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#text/plain-encoding-algorithm）：
+            // `name=value\r\n` 逐对零转义——NUL/非 ASCII 字面交付，无百分号编码。
+            // multipart/form-data（spec multipart/form-data encoding algorithm +
+            // RFC 7578 §4/§5，https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#multipart/form-data-encoding-algorithm）：
+            // part 头 name 经 escape a string——编码后仅替换 LF→%0A、CR→%0D、
+            // `"`→%22（其余字节字面进 UTF-8 头，NUL 不转义）；非 File value 不转义
+            //（仅换行归一）；boundary 生成不得出现在任何 name/value 中。
+            var _urlBody = '';
             for (var _si = 0; _si < _pairs.length; _si++) {
-              _body += (_si ? '&' : '') + _encPair(_pairs[_si][0], _pairs[_si][1]);
+              _urlBody += (_si ? '&' : '') + _encPair(_pairs[_si][0], _pairs[_si][1]);
+            }
+            var _body = _urlBody;
+            var _mpBoundary = '';
+            if (_fEnc === 'text/plain') {
+              _body = '';
+              for (var _si = 0; _si < _pairs.length; _si++) {
+                _body += _normNL(_pairs[_si][0]) + '=' + _normNL(_pairs[_si][1]) + '\r\n';
+              }
+            } else if (_fEnc === 'multipart/form-data') {
+              // boundary：固定前缀 + 随机 24 字符（47 字符总量 < spec 70 上限），
+              // 与任一 name/value 撞串则重掷（8 次兜底——撞概率天文级）。
+              var _mpChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+              for (var _mt = 0; _mt < 8; _mt++) {
+                _mpBoundary = '----zerowebformboundary';
+                for (var _mc = 0; _mc < 24; _mc++) {
+                  _mpBoundary += _mpChars.charAt(Math.floor(Math.random() * _mpChars.length));
+                }
+                var _clash = false;
+                for (var _mp = 0; _mp < _pairs.length; _mp++) {
+                  if (String(_pairs[_mp][0]).indexOf(_mpBoundary) >= 0 || String(_pairs[_mp][1]).indexOf(_mpBoundary) >= 0) { _clash = true; break; }
+                }
+                if (!_clash) break;
+              }
+              _body = '';
+              for (var _si = 0; _si < _pairs.length; _si++) {
+                var _mpName = _normNL(_pairs[_si][0]).replace(/\n/g, '%0A').replace(/\r/g, '%0D').replace(/"/g, '%22');
+                _body += '--' + _mpBoundary + '\r\n'
+                  + 'Content-Disposition: form-data; name="' + _mpName + '"\r\n\r\n'
+                  + _normNL(_pairs[_si][1]) + '\r\n';
+              }
+              _body += '--' + _mpBoundary + '--\r\n';
             }
             // ⑤ mutate action URL（review M1）：spec §4.10.22 GET 分支 "Set parsed
             // action's query component to query"——query **整体替换**（真实浏览器
@@ -11266,7 +11324,7 @@
             // 行为）；entry list 空 → query 清空。M2-S4J：POST 不改 query（body 走
             // 请求体——headless 无传输面，仅 navigate formData 承载）。
             if (!_isPost) {
-              try { _u.search = _body; } catch (_eQ) {}
+              try { _u.search = _urlBody; } catch (_eQ) {}
             }
             var _abs = _u.href;
             // M2-S4J：GET 突变后无 '?' → 追加（spec parse-driven query set 保留空 query 的
@@ -11297,16 +11355,10 @@
                 if (_isPost) {
                   _fFlags.method = 'POST';
                   _fFlags.body = _body;
-                  // enctype：submitter formenctype > form enctype 属性 > 缺省（大小写
-                  // 不敏感；非法值按 spec invalid value default 回 urlencoded）。
-                  var _fEnc = '';
-                  try { if (submitter) _fEnc = String(submitter.getAttribute('formenctype') || ''); } catch (_eT3) {}
-                  if (_fEnc === '') {
-                    try { _fEnc = String(fHandle ? __zw_get_attr_handle(fHandle, 'enctype') : (__zw_get_attr(fSel, 'enctype') || '')); } catch (_eT4) {}
-                  }
-                  _fEnc = _fEnc.toLowerCase();
-                  if (_fEnc !== 'text/plain' && _fEnc !== 'multipart/form-data') _fEnc = 'application/x-www-form-urlencoded';
-                  _fFlags.headersWire = 'content-type\x1e' + _fEnc;
+                  // enctype 已在 ⑤ 前置读取（_fEnc）；multipart 值带 boundary 参数
+                  //（spec：Content-Type 头随体 boundary）。
+                  _fFlags.headersWire = 'content-type\x1e'
+                    + (_fEnc === 'multipart/form-data' ? _fEnc + '; boundary=' + _mpBoundary : _fEnc);
                 }
                 try { globalThis.__zw_reload_iframe(_fFrame, _abs, _fFlags); } catch (_eT5) {}
                 return;
