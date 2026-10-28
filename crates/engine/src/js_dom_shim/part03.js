@@ -19916,13 +19916,19 @@
     if (!entry) return null;
     if (entry.k === 'T') return _zwMText(String(entry.v == null ? '' : entry.v), parent);
     if (entry.k === 'C') return _zwMComment(String(entry.v == null ? '' : entry.v), parent);
-    var node = _zwMEl({ tag: String(entry.tag || 'div') }, parent);
-    if (Array.isArray(entry.attrs)) {
-      for (var ai = 0; ai < entry.attrs.length; ai++) {
-        var a = entry.attrs[ai];
-        if (a && a.n) node.setAttribute(String(a.n), String(a.v == null ? '' : a.v));
-      }
+    // 属性经工厂 attrs 映射直灌（镜像 `_zwMBuildDeepTreeNode` 深臂同款消费形态，
+    // id/cls 同浅快照喂 IDL 反射字段）——解析产物不走 setAttribute 语义：attribute
+    // 写尾（R4100 details open/name 互斥、slot name slotchange 队列）会在构造期逐
+    // attr 触发，片段成员可见性随构建进度漂移 → ccf 面后者关前者（0,1 反转）、
+    // template content 视图组不可见（1,1 无裁决）。树序「第一 open 胜出」统一由
+    // 各物化面构建后的 `__zwDetailsScan4100(…, true)` 承担。null 原型映射同深臂
+    // （`__proto__` 合法属性名经普通对象赋值走原型 setter 会丢）。
+    var _da = Object.create(null);
+    var ats = Array.isArray(entry.attrs) ? entry.attrs : [];
+    for (var ai = 0; ai < ats.length; ai++) {
+      if (ats[ai] && ats[ai].n) _da[String(ats[ai].n)] = String(ats[ai].v == null ? '' : ats[ai].v);
     }
+    var node = _zwMEl({ tag: String(entry.tag || 'div'), attrs: _da, id: _da.id || '', cls: _da['class'] || '' }, parent);
     if (Array.isArray(entry.children)) {
       for (var ci = 0; ci < entry.children.length; ci++) {
         var ck = _zwMBuildDeepEntry(entry.children[ci], node);

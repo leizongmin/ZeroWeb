@@ -6826,6 +6826,12 @@
             }
           } catch (_eCcf) {}
         }
+        // R4100（encoding-legacy-mb M3 甄别）：解析产物同面裁决——深条目物化改工厂
+        // 直灌后构造期写尾不再触发，树序「第一 open 胜出」由本扫描补齐（原 setAttribute
+        // 灌法在 frag.childNodes 渐进填充下 others-prong 后者关前者，0,1 反转）。
+        try {
+          if (typeof globalThis.__zwDetailsScan4100 === 'function') globalThis.__zwDetailsScan4100(frag.childNodes, true);
+        } catch (_eCcfD4100) {}
         return frag;
       },
       _indexOf: function (parent, node) {

@@ -1472,6 +1472,58 @@ fn test_details_name_exclusivity_r4100() {
     );
 }
 
+// encoding-legacy-mb M3 甄别：template contents 深条目物化面（`_zwMBuildDeepEntry`，
+// WC-M2 setAttribute 灌法）的 R4100 互斥——host `__zw_template_contents_deep` 产物
+// 经 setAttribute 逐 attr 灌入，写尾 others-prong 在构造期触发的理论暴露（深臂
+// `_zwMBuildDeepTreeNode` 同机制已改工厂 attrs 直灌修复）。页面 markup 模板（sel 形
+// 视图）首读 `.content` 走该路径；期望与 markup 构造面（T1）同口径：树序第一
+// open 胜出、后者让位。
+#[test]
+fn test_details_name_exclusivity_template_deep_entry() {
+    let mut sandbox = t59_sandbox_with_shim();
+    let mutations: std::sync::Arc<std::sync::Mutex<Vec<DomMutation>>> = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+    let dom_html: std::sync::Arc<std::sync::Mutex<String>> = std::sync::Arc::new(std::sync::Mutex::new(
+        "<html><body><div id='q4100'><template id='tq4100'>\
+         <details name=\"a\" id=\"tp0\" open></details>\
+         <details name=\"a\" id=\"tp1\" open></details>\
+         </template></div></body></html>"
+            .to_string(),
+    ));
+    let page_url: std::sync::Arc<std::sync::Mutex<String>> = std::sync::Arc::new(std::sync::Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    crate::js_dom_bridge::register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "var tq = document.getElementById('tq4100');\
+             var ds = tq.content.querySelectorAll('details');\
+             globalThis.__s = ds.length + ':' + Number(ds[0].open) + ',' + Number(ds[1].open);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__s").unwrap().value,
+        "2:1,0",
+        "template contents 物化互斥——同 T1 markup 构造面口径：树序第一 open 胜出"
+    );
+
+    // T2：createContextualFragment 面——同款深条目物化（`_zwMBuildDeepEntry`）。修复前
+    // setAttribute 灌法在 frag.childNodes 渐进填充下 others-prong 后者关前者（0,1 反转）。
+    sandbox
+        .execute(
+            "var rg = document.createRange();\
+             rg.selectNodeContents(document.body);\
+             var cf = rg.createContextualFragment('<details name=\"b\" open></details><details name=\"b\" open></details>');\
+             globalThis.__c = cf.childNodes.length + ':' + Number(cf.childNodes[0].open) + ',' + Number(cf.childNodes[1].open);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__c").unwrap().value,
+        "2:1,0",
+        "createContextualFragment 物化互斥——树序第一 open 胜出（修复前 0,1 反转）"
+    );
+}
+
 // R4200（html-semantics M2 切片 22）：dialog close-side 语义簇契约——requestClose
 //（cancel 同步可取消 + close 异步排队 + 重入保护 + disconnected no-op）、close-the-dialog
 //（beforetoggle 同步 + close/toggle 事件排队）、show/showModal 请求态语义、`:modal`

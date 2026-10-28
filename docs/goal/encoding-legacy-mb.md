@@ -1,8 +1,8 @@
 # 遗留多字节编码文档解码面 — encoding/legacy-mb 文档族
 
-**版本**: v1.3
-**日期**: 2026-10-28（M1 六通道对账收口 + 深臂属性限定名回归修复；M2 部分语料基线已落，见「M1 进展」「M2 进展」节与 evidence/）
-**状态**: Active——DC-1/DC-2 完成；DC-3 部分（136 html 基线已落，全量待语料）；M1 余语料补全（网络 degraded 卡点维持）；DC-4 待全量
+**版本**: v1.4
+**日期**: 2026-10-28（M3 挂账甄别收口：`_zwMBuildDeepEntry` details 裁决态——template/ccf 双面修复；M1/M2 见「进展」节与 evidence/）
+**状态**: Active——DC-1/DC-2 完成；DC-3 部分（136 html 基线已落，全量待语料）；M3 进行中（details 裁决态 ✅，余 form-encode 甄别 + DC-4）；语料补全（网络 degraded 卡点维持）
 **执行模式**: WPT 驱动（上游 encoding/legacy-mb corpus 为验收标尺）+ runner 管道能力建设
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——文档编码面）
 
@@ -134,6 +134,21 @@
 - **wpt-suites.csv**：planned 行转数据行（subtests 口径 360431/360431，
   evidence 列指向上文件，note 注明部分语料口径与全量分母关系）。
 
+## M3 进展（2026-10-28，details 裁决态甄别收口）
+
+细节见 [evidence/2026-10-28-m3-deep-entry-details-adjudication.md](evidence/2026-10-28-m3-deep-entry-details-adjudication.md)。要点：
+
+- **甄别结论**：host 解析产物不裁决 details name= 互斥（深 JSON 双 open
+  实证），裁决责任在 plain 物化面。M1 挂账的 `_zwMBuildDeepEntry`（template
+  contents）实况比理论更有趣：**两面背离**——template content 视图构建后无
+  扫描 → 1,1 无裁决；createContextualFragment 渐进填充下写尾 others-prong
+  后者关前者 → 0,1 反转（定性）。body innerHTML 面（深臂 + 扫描）1,0,1 一直
+  正确。
+- **修复**：builder 改工厂 attrs 直灌（镜像深臂，构造期写尾不再触发）+
+  template 视图 / ccf 两面构建后补 `__zwDetailsScan4100(…, true)` parse-face
+  裁决。engine lib 3571P/0F（新增两面 1,0 断言测试 + 原 R4100 全绿）；
+  通道复验对账零回归。
+
 ## Mission
 
 让 runner 文档加载管道按文档编码声明（`<meta charset>` / HTTP Content-Type
@@ -184,8 +199,9 @@ charset / BOM）解码字节流，使 legacy-mb `*_chars-<label>.html` 族可运
   移交 M2。
 - **M2** 进行中：部分语料基线分类 + wpt-suites.csv 回填 + `.headers`
   复核 ✅（2026-10-28，见「M2 进展」节）；全量基线待语料补全（DC-3 收口）。
-- **M3**：失败簇收敛或归口（form-encode 面甄别在此）+ coverage 复测收口
-  （DC-4）。
+- **M3** 进行中：`_zwMBuildDeepEntry` details 裁决态甄别 ✅（2026-10-28，
+  两面背离修复，见「M3 进展」节）；余 form-encode 面甄别 + 失败簇归口 +
+  coverage 复测收口（DC-4，待全量语料）。
 
 语料预置进度：七族 253 文件已到位（30 号预置）；2026-10-27 起 `FORCE=1`
 全量续拉（~1,200 文件，幂等补缺）——**网络持续 degraded（jsdelivr 拒连、

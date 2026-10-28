@@ -1476,6 +1476,14 @@
                   _r145Built = _tcArr.map(function (e) {
                     return (typeof _zwMBuildDeepEntry === 'function') ? _zwMBuildDeepEntry(e, _tcParent) : null;
                   }).filter(Boolean);
+                  // R4100（encoding-legacy-mb M3 甄别）：contents 深条目物化后的 parse-face
+                  // details name= 互斥 + parser-open toggle 排程——host 解析产物不裁决互斥
+                  //（深 JSON 双 open 实证），其余 markup 面的裁决在 __zwCeAttachForAdded /
+                  // 本地 innerHTML 扫描，唯本视图缺失 → 双 open 直读 1,1（spec
+                  // name-attribute parser 口径：树序第一 open 胜出）。
+                  try {
+                    if (typeof globalThis.__zwDetailsScan4100 === 'function') globalThis.__zwDetailsScan4100(_r145Built, true);
+                  } catch (_eTcD4100) {}
                 }
               } catch (_eTcJ) {}
             }
