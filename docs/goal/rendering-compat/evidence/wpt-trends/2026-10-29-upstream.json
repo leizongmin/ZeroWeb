@@ -6,6 +6,6 @@
   "passed": 15775,
   "rate_pct": 95.1,
   "extra": "failed=817;skipped=0",
-  "git_sha": "6ef011057",
+  "git_sha": "d3ba2b80e",
   "note": "R5320 ::first-line background-color 首格式行带——R5258 切片 2 bg-color 位（存储门扩位 + paint 带铺设），c25-pseudo-elmnt-000 ✓0.32% 连带 first-line-and-marker ✓0.50%，FIXED=2 (c25-pseudo-elmnt-000, first-line-and-marker)"
 }
