@@ -6,6 +6,6 @@
   "passed": 15776,
   "rate_pct": 95.1,
   "extra": "failed=816;skipped=0",
-  "git_sha": "a220f4e98",
+  "git_sha": "0ffdec0d6",
   "note": "R5321 作者 ::selection transparent 背景声明存储探针（css-pseudo-4 §highlight-cascading）——后值歧义形 collect 探针 + background 面字面 transparent 值判据，selection-background-color-transparent ✓3.18%，FIXED=1 (selection-background-color-transparent)"
 }
