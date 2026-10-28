@@ -477,9 +477,10 @@ impl LayoutEngine {
     /// 自身水平 frame（组成是 content-box 口径，css-sizing-3 §max-content border-box 计
     /// 自身 padding/border）。命中项覆写第一趟污染的 auto 定尺：flex 父写 taffy
     /// size.width（R4360 同口径 box_sizing 换算；flex-grow:0 无默认拉伸，定尺即 base
-    /// size）；grid 父写 min_size.width 地板、size 保持 auto（css-grid-1 §10.3 item
-    /// 默认 stretch 填轨，定尺会击败 taffy 拉伸步——写法见函数体内注）+ mark_dirty，
-    /// 与 R1018 关键字 pass 同一 re-run 组。
+    /// size）；grid 父在纯 max-content 轨道列表且作者未声明 min-width 时写
+    /// min_size.width 地板、size 保持 auto（css-grid-1 §7.2.2 max-content 轨道恒 ≥
+    /// max-content 贡献，地板与求解零冲突；§10.3 item 默认 stretch 填轨，门收窄与
+    /// 写法理由见函数体内注）+ mark_dirty，与 R1018 关键字 pass 同一 re-run 组。
     /// kill-switch `ZW_HOISTED_ATOMIC_ITEM_INTRINSIC=0`。
     pub(super) fn apply_hoisted_atomic_item_main_size(
         taffy_tree: &mut TaffyTree<NodeId>,
@@ -522,18 +523,27 @@ impl LayoutEngine {
                             false,
                         ),
                         DisplayValue::Grid | DisplayValue::InlineGrid => {
-                            // 内在轨道门：仅轨道含内在关键字（auto/max-content/min-content）
-                            // 或未声明时覆写才有意义——definite/fr 轨道内 item 默认 stretch
-                            // 填满轨道，覆写 max-content 会回缩成内容宽（回归）。repeat()/
-                            // minmax() 内的内在关键字不识别，该形态保持既有行为。
-                            // FIXME: 轨道列表解析切片后再放行。
-                            let intrinsic_gate = match s.grid_template_columns.as_deref() {
-                                None | Some("none") => true,
-                                Some(t) => t
-                                    .split_whitespace()
-                                    .any(|k| matches!(k, "auto" | "max-content" | "min-content")),
-                            };
-                            (intrinsic_gate, intrinsic_gate)
+                            // 内在轨道门（r2 DEF-1 收窄：仅纯 max-content 列表放行）——
+                            // max-content 轨道 growth limit = item max-content contribution
+                            //（css-grid-1 §7.2.2），轨道恒 ≥ 贡献，地板与求解零冲突。
+                            // auto/min-content 轨道受自由空间分配/最小基准约束、definite/fr
+                            // 定轨，均可解到贡献以下，地板会强迫溢出（r1 实证：100px auto
+                            // 列 definite item 100→420 叠压相邻列、auto 1fr 容器内容溢出、
+                            // 受约束 auto 200→520）——该族保持既有行为（stretch 填满已解
+                            // 轨宽，受限形态修前即正确，r1 缺陷轮 9 形态 A/B 实证）。
+                            // 未声明/none 为隐式 auto 轨道同类保守跳过。token 比较 ASCII
+                            // 大小写不敏感（CSS 保留字大小写无关；r1 小写精确匹配漏
+                            // MAX-CONTENT）。repeat()/minmax() 不识别跳过。
+                            // FIXME: 轨道列表解析切片后按 track 粒度放行贡献覆写。
+                            let mut max_content_gate = false;
+                            if let Some(t) = s.grid_template_columns.as_deref() {
+                                let mut tokens = t.split_whitespace();
+                                if let Some(first) = tokens.next() {
+                                    max_content_gate = first.eq_ignore_ascii_case("max-content")
+                                        && tokens.all(|k| k.eq_ignore_ascii_case("max-content"));
+                                }
+                            }
+                            (max_content_gate, max_content_gate)
                         }
                         _ => (false, false),
                     });
@@ -667,18 +677,33 @@ impl LayoutEngine {
                     (intrinsic - frame).max(0.0)
                 };
                 if parent_is_grid {
-                    // grid item 默认 justify/align normal→stretch 填满轨道区
-                    //（css-grid-1 §10.3）——写 min_size 地板而非定尺：size 保持 auto，
-                    // taffy 拉伸步把 item 撑到轨宽；贡献被 floor 到 text+atomic 真值
-                    //（写定 size 会击败 stretch，item 回缩内容宽——双 item 同列实证）。
-                    // flex item 无默认拉伸（flex-grow:0），维持下方定尺写入。
-                    style.min_size.width = taffy::style::Dimension::length(content_width);
+                    // 作者声明 min-width 门（r2 DEF-2）：converter 已把声明写入 taffy
+                    // min_size.width，覆写会静默失效 min-width:0 防溢出 reset（r1 对
+                    // width 有声明门、对 min-width 无，不对称）。非 Auto 即声明——保持
+                    // 原生路径，该子类的贡献注入随切片延后。
+                    let min_width_declared = styles
+                        .get(&id)
+                        .is_some_and(|s| !matches!(s.min_width, LengthValue::Auto));
+                    if !min_width_declared {
+                        // grid item 默认 justify/align normal→stretch 填满轨道区
+                        //（css-grid-1 §10.3）——写 min_size 地板而非定尺：size 保持
+                        // auto，taffy 拉伸步把 item 撑到轨宽；地板值 = max-content
+                        // 贡献真值，而纯 max-content 轨道恒 ≥ 贡献（css-grid-1
+                        // §7.2.2），地板与求解零冲突。写定 size 会击败 stretch，
+                        // item 回缩内容宽（双 item 同列实证）。flex item 无默认拉伸
+                        //（flex-grow:0），维持定尺写入。
+                        style.min_size.width = taffy::style::Dimension::length(content_width);
+                        style.size.width = taffy::style::Dimension::auto();
+                        let _ = taffy_tree.set_style(taffy_id, style);
+                        let _ = taffy_tree.mark_dirty(taffy_id);
+                        changed = true;
+                    }
                 } else {
                     style.size.width = taffy::style::Dimension::length(content_width);
+                    let _ = taffy_tree.set_style(taffy_id, style);
+                    let _ = taffy_tree.mark_dirty(taffy_id);
+                    changed = true;
                 }
-                let _ = taffy_tree.set_style(taffy_id, style);
-                let _ = taffy_tree.mark_dirty(taffy_id);
-                changed = true;
             }
         }
         changed

@@ -395,8 +395,8 @@ const REFTESTS: &[InlineReftestDef] = &[
     },
     // t-p117 拉伸保持（css-grid-1 §10.3 justify normal→stretch）：auto 轨道双 item
     // 同列——覆写若把窄 item（hi 80 + 原子 120 = 200）写成定尺，红底停在 200px 与
-    // ref 500px 差 60%；min_size 地板写法下 item 保持 auto 被拉伸步撑满轨宽 500px，
-    // 与块级 ref 等宽锚定。
+    // ref 500px 差 60%；item 保持 auto 即被拉伸步撑满轨宽 500px（r2 起 auto 轨道
+    // 保守不覆写，本测同时钉住「不覆写时拉伸仍成立」），与块级 ref 等宽锚定。
     InlineReftestDef {
         id: "css-grid/grid-item-hoisted-atomic-track-stretch-zw-002",
         category: ReftestCategory::Layout,
