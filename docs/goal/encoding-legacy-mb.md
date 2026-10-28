@@ -97,9 +97,8 @@
   `window-named-properties` 2F、html-semantics 839F（relevant-mutations 46F/
   67P 等，语料 mtime 未变）在去掉本改动后的 HEAD 二进制逐字节同现。M0 全绿
   基线随 s124–s126 合入陈旧；余四通道零回归改由并行 relay 会话六通道
-  `--json` 集合恒等对账承担（before = 本改动前同基二进制
-  `/tmp/zero-wpt-runner-head-nodc2`），legacy-mb 整跑 JSON 兼作 M2 基线
-  数据源。
+  `--json` 集合恒等对账承担（before = worktree 冷建 c1482756a base 二进制，
+  精确同基去本改动），legacy-mb 整跑 JSON 兼作 M2 基线数据源。
 - **门禁**：fmt/clippy workspace 零 warning；make test 腿补全全绿（腿 1 跳过
   R5295/R5300 已记账 image_batch/network 并发窗 flake 两案，隔离复跑 2/2 绿；
   quickjs renderer lib 腿 `mutation_arm_…_reset_window` 红为 HEAD 复现既有问题

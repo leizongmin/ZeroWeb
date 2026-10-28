@@ -139,9 +139,11 @@ DOM 桥共享路径。六通道 lane（make test-guard 守卫入口，dom TIME_L
 
 **基面位移说明**：本轮 mid-flight 并行流 s124–s126 engine 提交合入
 （rebase），M0 全绿基线（html-semantics 5306/5306 等）随基陈旧——上述失败
-为新基属性，与本改动无关（stash A/B 证据：本改动前同基二进制已存
-`/tmp/zero-wpt-runner-head-nodc2`，供对账链作 before 侧）。零回归结论改由
-六通道 `--json` 集合恒等对账承担（本改动二进制 vs head-nodc2，同基两侧）。
+为新基属性，与本改动无关（stash A/B 证据：本改动前二进制逐字节复现）。零
+回归结论由六通道 `--json` 集合恒等对账承担（HEAD 臂 vs c1482756a base 臂，
+后者由并行 relay 会话在独立 worktree 冷建
+`/tmp/zero-wpt-runner-base-s127`，精确同基去本改动；产物
+`/tmp/ab-legacy-mb/m1/`）。
 
 rebase 后定向复验（新基 × 本改动）：R4100 单测复绿（1 passed）；fmt/clippy
 复跑绿；euc-jp 全族 `make testharness-encoding-legacy-mb FILTER=euc-jp/`
