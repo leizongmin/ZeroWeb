@@ -5316,7 +5316,14 @@
     };
     this.blob = function () {
       return _zwConsumeBodyBytes(self).then(function (b) {
-        return new Blob([b], { type: _zwBodyMimeType(self.headers) || '' });
+        // net-api 二期 M2：https://fetch.spec.whatwg.org/#dom-body-blob —— Blob type =
+        // extract a MIME type 的 serialize 结果**直设**，不走 Blob 构造器 type 判据
+        // （FileAPI 范围判据+小写化只作用于构造器 type 选项；mimesniff parsing.any.js
+        // Request/Response 腿钉 parse-serialize 保参数大小写，extract 失败→null→''）。
+        var blob = new Blob([b]);
+        var mime = _zwBodyMimeType(self.headers);
+        if (mime !== null) blob.type = mime;
+        return blob;
       });
     };
     this.arrayBuffer = function () {
@@ -5481,7 +5488,14 @@
     };
     this.blob = function () {
       return _zwConsumeBodyBytes(self).then(function (b) {
-        return new Blob([b], { type: _zwBodyMimeType(self.headers) || '' });
+        // net-api 二期 M2：https://fetch.spec.whatwg.org/#dom-body-blob —— Blob type =
+        // extract a MIME type 的 serialize 结果**直设**，不走 Blob 构造器 type 判据
+        // （FileAPI 范围判据+小写化只作用于构造器 type 选项；mimesniff parsing.any.js
+        // Request/Response 腿钉 parse-serialize 保参数大小写，extract 失败→null→''）。
+        var blob = new Blob([b]);
+        var mime = _zwBodyMimeType(self.headers);
+        if (mime !== null) blob.type = mime;
+        return blob;
       });
     };
     this.arrayBuffer = function () {

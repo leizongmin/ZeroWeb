@@ -558,7 +558,12 @@
           var ctParsed = ctRaw ? _zwParseMimeType(ctRaw) : null;
           finalMime = ctParsed ? _zwSerializeMimeType(ctParsed) : 'text/xml';
         }
-        self.response = new Blob([bytes], { type: finalMime });
+        // net-api 二期 M2：https://xhr.spec.whatwg.org/#the-response-attribute —— blob 的
+        // type = final MIME **直设**，不走 Blob 构造器 type 判据（override 逐字使用面含
+        // 参数大小写，xhr overridemimetype-blob 族；构造器判据会小写化+范围清洗）。
+        var blobResp = new Blob([bytes]);
+        blobResp.type = finalMime;
+        self.response = blobResp;
       } else if (rt === 'document') {
         // xhr.spec set a document response：final MIME 非 HTML/XML MIME → return（
         // response object 保持 null——responsexml-invalid-type 面）。

@@ -6,30 +6,31 @@
 > 测试，本 goal 承接失败簇收敛 + WebSocket 挂账重估。
 > **一期零回归底线继续有效**（一期 corpus 分母逐 subtest 对照）。
 
-**版本**: v2.1
-**日期**: 2026-10-29（M1 归因收口）
-**状态**: Active——M1 完成（DC-1/DC-3 落档），M2+ 未启动
+**版本**: v2.2
+**日期**: 2026-10-29（M2-S1 收口）
+**状态**: Active——M1 完成；M2-S1 完成（+269），M2-S2（url IDNA）进行中
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 失败簇归因收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
 
 ## 当前状态（2026-10-29）
 
-- **M1 完成**：通道全量基线七域 9354/12078 = 77.4%（url 1146F、mimesniff
-  865F、fetch/api 572F+1T 为三大失败族）；失败簇逐簇归因落
+- **M1 完成**：通道全量基线七域 9354/12078 = 77.4%；失败簇逐簇归因落
   [M1 归因档](net-api-compat/evidence/2026-10-29-m1-failure-attribution.md)，
-  WebSocket 重估结论**维持挂账**（残面全为 runner 结构面）落
+  WebSocket 重估**维持挂账**落
   [DC-3 档](net-api-compat/evidence/2026-10-29-m1-ws-reassessment.md)。
-- **一期零回归对账**：url/streams/eventsource/fetch-other 零回归；mimesniff
-  −856 与 fetch/api 13 legs 为一期已记账翻转/trade-off；**真回归 3 legs**
-  （xhr json UTF-16、xhr CORS 同源重定向、ws constructor/016）挂收敛轮清偿。
-- **卡点**：url 759F 根因在 `url`/`idna` crate 共享路径（FailFast vs spec
-  IgnoreInvalidPunycode），收敛点为 `js_dom_bridge.rs` 解析回退，涉及共享
-  crate 边界，改动按依赖约束核对。
-- **下一步（M2+，按可收敛腿量排序）**：① mimesniff Request/Response 腿
-  blob().type parse-serialize（263+xhr 7 连带）；② url IDNA（~783）；
-  ③ fetch/api 构造/消费语义簇（~138）+ 真回归 3 legs；④ runner 基建切片
-  （cors-filtering/request-cache 族，记账推动）；⑤ USP BOM（28）/
-  setters-stripping（54）小片。
+- **M2-S1 完成**（[证据档](net-api-compat/evidence/2026-10-29-m2-s1-blob-type-direct-set.md)）：
+  Request/Response.blob() 与 XHR blob type 直设（extract-a-MIME-type /
+  final MIME 不再过构造器判据）——**+270**（mimesniff 263 全翻红→残余 602
+  即上游语料冲突记账面；xhr overridemimetype-blob 7）；−1 为 response-consume
+  「URLSearchParams to blob」派生 CT 大小写面——语料内部互斥（vs
+  mime-type.any.js 头面大写钉），按 spec 单路径走，记账。
+- **一期零回归对账**：url/streams/eventsource/fetch-other 零回归；**真回归
+  3 legs**（xhr json UTF-16、xhr CORS 同源重定向、ws constructor/016）挂
+  收敛轮清偿。
+- **下一步（M2-S2）**：url IDNA IgnoreInvalidPunycode 回退（~783 legs，
+  idna 1.1.0 无开关 → bridge 层占位标签回退，设计见 M1 归因档）；其后
+  fetch/api 语义簇（~138）+ 真回归 3 legs、runner 基建切片、USP BOM/
+  setters-stripping 小片。
 
 ## coverage 对账（coverage-2026-10-27 基线，47 套件干跑口径，终稿待 `docs/compat/wptfyi/coverage-2026-10-27.md` 复核）
 
