@@ -424,7 +424,10 @@ fn serve_data(sock: &mut TcpStream, reader: &mut BufReader<TcpStream>, hs: &Hand
                 write_frame(sock, 0x1, reply.as_bytes())?;
                 server_close(sock, reader)
             }
-            "/echo-query" => {
+            "/echo-query" | "/echo-query_v13" => {
+                // net-api 二期 M2-S3b：websockets constructor/016 用上游 echo-query_v13
+                // handler（行为同 echo-query——原样回 query 段；_v13 为 wptserve
+                // handler 变体名，非语义分叉）。
                 write_frame(sock, 0x1, hs.query.as_bytes())?;
                 server_close(sock, reader)
             }
@@ -575,6 +578,7 @@ const KNOWN_PATHS: &[&str] = &[
     "/empty-message",
     "/echo-cookie",
     "/echo-query",
+    "/echo-query_v13",
     "/origin",
     "/referrer",
     "/protocol_array",
