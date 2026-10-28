@@ -25,6 +25,8 @@ mod r5297_ws_collapse_inline_boundary_tests;
 mod r5298_mixed_lh_line_pitch_tests;
 /// R5303 line-height:0 容器仅原子行 strut 围合（CSS2 §10.8.1 strut）。
 mod r5303_lh0_atomic_strut_tests;
+/// R5317 va:text-* 原子 margin box 围合 + 基线锚定 + img border-box 口径（CSS2 §10.8.1/§10.3.2）。
+mod r5317_va_atom_line_box_tests;
 mod text_align;
 mod text_indent;
 mod vertical_bidi;

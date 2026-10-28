@@ -2679,6 +2679,20 @@ pub(crate) fn measure_text_content(
             }
             let w = crate::inline::resolve_inline_block_dimension(&style.width, style, true);
             let h = crate::inline::resolve_inline_block_dimension(&style.height, style, false);
+            // R5317（CSS2 §10.3.2）：本表语义 = 原子 used border-box（consumer
+            // stored_inline_size 整体覆盖 w/h）。img（UA display:inline-block，走 collect
+            // 原子臂）此处解析出的是 content 尺寸，补 padding+border 对齐 taffy 盒口径
+            //（豁免/kill-switch 见 img_atom_border_box_extra；collect 臂对无表 build 的
+            // 同口径补齐见 collect_items 原子分支）。非 img inline-block 元素的
+            // content/border 口径分裂另案挂账。
+            let (img_bw, img_bh) = if doc
+                .get(child_id)
+                .is_some_and(|n| matches!(&n.kind, NodeKind::Element(e) if e.local_name() == "img"))
+            {
+                crate::inline::img_atom_border_box_extra(style)
+            } else {
+                (0.0, 0.0)
+            };
             // Percentage 宽度用 container_width 解析
             let resolved_w = if w > 0.0 {
                 w
@@ -2695,7 +2709,16 @@ pub(crate) fn measure_text_content(
                 0.0
             };
             if resolved_w > 0.0 || resolved_h > 0.0 {
-                Some((child_id, (resolved_w, resolved_h)))
+                // R5317：img 补齐仅在有 CSS 尺寸侧有意义——auto 侧（attr/固有尺寸域）
+                // 加 extra 会以「纯 padding+border」伪尺寸入表，consumer stored_inline_size
+                // 整体覆盖语义会吞掉 attr/固有 content。任一侧 auto → 整条不入表
+                //（consumer 走 attr/固有回退 + collect 臂 img_atom_border_box_extra 补齐）。
+                if img_bw > 0.0 || img_bh > 0.0 {
+                    if resolved_w <= 0.0 || resolved_h <= 0.0 {
+                        return None;
+                    }
+                }
+                Some((child_id, (resolved_w + img_bw, resolved_h + img_bh)))
             } else {
                 None
             }

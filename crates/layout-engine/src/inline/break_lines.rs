@@ -899,6 +899,13 @@ impl InlineFormattingContext {
                     let box_height = box_info.height;
                     // 行内级盒打破了可折叠空白的连续性
                     last_was_collapsible_ws = false;
+                    // R5317（css-text-3 §4.1 collapse + §4.2 atomic inline）：原子盒中断
+                    // 可折叠空白序列——前 run 尾随空格与后 run 前导空格分属两个序列，
+                    // 各自保留 advance（chromium `xxxx <img> xxxx` 双空格均计）。旧实现
+                    // 不复位 R5297 旁带，后 run 前导空格被同序列去重吞掉（c44-ln-box-001
+                    // img 后文本 x−10、img2 x283 应 293）。inline 元素（em/span 非原子）
+                    // 边界同序列语义不变（R5297 判例零扰动）。
+                    last_ended_collapsible_ws = false;
                     // R5161：原子盒断开词中拼接邻接——盒前词与盒后词不直接相邻。
                     last_word_last_char = None;
                     // R5165：后邻 GL 旁带供下一 run 首词的折行抑制（§5.5 原子-GL 禁断）。

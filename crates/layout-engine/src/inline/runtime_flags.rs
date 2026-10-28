@@ -263,6 +263,17 @@ pub(super) fn va_text_baseline_pin() -> bool {
     selected(*VALUE, || default_on("ZW_VA_TEXT_BASELINE_PIN"))
 }
 
+/// R5317（CSS2 §10.3.2 replaced 元素行内参与 + §10.8.1 行盒围合）：img 原子级行内盒
+/// 尺寸 = **border box**——行内 advance/行盒围合按 margin box（= ml + border box + mr）
+/// 参与（chromium 同）。旧实现推 content box（CSS width/height），padding+border 不参与
+/// advance/围合：c44-ln-box-001 img1 后文本 x−40（advance 丢 padding+border 40px）、
+/// 行盒度量多 build 分裂（layout 树 border box 60 vs 存面/测量 CSS content 30 →
+/// 行高 170 vs 110）。default-on；`ZW_IMG_ATOM_BORDER_BOX=0` 回退 content box 口径。
+pub(super) fn img_atom_border_box() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_IMG_ATOM_BORDER_BOX"));
+    selected(*VALUE, || default_on("ZW_IMG_ATOM_BORDER_BOX"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::select_value;

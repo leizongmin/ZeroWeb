@@ -2400,6 +2400,8 @@ impl InlineFormattingContext {
         // R822 extend）从不传播到行顶 y——corpus 按此校准（c44-ln-box-003 / ruby-align-001
         // 判例），平移若混入会整体错位。
         let mut r5298_lifts: Vec<f32> = Vec::with_capacity(self.lines.len());
+        // R5317：va:text-* 行盒扩展净抬升（顶+底扩展和）——供行顶平移重堆（r5298 同款）。
+        let mut va_lifts: Vec<f32> = Vec::with_capacity(self.lines.len());
         for line in &mut self.lines {
             let line_height = line.height;
 
@@ -2758,6 +2760,9 @@ impl InlineFormattingContext {
                 (0.0, 0.0)
             };
             let va_baseline_pre = baseline_y;
+            // R5317：原子 text-* 围合/定位臂旗标（与文本 run 同一 kill-switch 域——
+            // CSS2 §10.8.1 va:text-* 参照口径，`ZW_VA_TEXT_BASELINE_PIN=0` 整域回退）。
+            let va_pin_atoms = runtime_flags::va_text_baseline_pin();
             let mut top_extend = 0.0f32;
             let mut bot_extend = 0.0f32;
             for run in &line.runs {
@@ -2765,6 +2770,14 @@ impl InlineFormattingContext {
                 // 的 text-* 行盒贡献保持 R822 half_leading 臂（c44-ln-box-000：4em img 於
                 // 10px 容器，锚定需求 = 40−D−B ≈ 25 会把已校准行高 25 拉到 45，chromium
                 // 判例不开——原子 text-* 的行盒围合域另案）。
+                // R5317（CSS2 §10.8.1 va:text-* 原子盒围合）：原子盒 margin box 以
+                // **父 content area** 基线锚定参与围合——text-bottom 盒 mb 底 =
+                // baseline + D_parent、text-top 盒 mb 顶 = baseline − A_parent（CSS2
+                // §10.8.1 各 va 定义；chromium c44-ln-box-000/001 探针判例：img 行盒 =
+                // union(strut 盒, 各原子 mb 区间)，行高 = 并集域非 ±half_leading 对）。up
+                // = mb 顶越出行顶量；向下需求由下方 R5317 bot 合围精确计（mb 底 − 预置
+                // 行高），旧 half_leading 下限弃用（原子域非逐字节校准面，R5316 首轮
+                // c44-000 +1 红即旧臂非并集口径实证）。旗标关回退旧 half_leading 臂。
                 let (up, down) = match run.vertical_align {
                     VerticalAlignValue::TextBottom if run.font_size > 0.0 => (
                         half_leading_hl.max(if va_a_parent + va_d_parent > 0.0 {
@@ -2774,11 +2787,25 @@ impl InlineFormattingContext {
                         }),
                         0.0,
                     ),
-                    VerticalAlignValue::TextBottom => (half_leading_hl, 0.0),
+                    VerticalAlignValue::TextBottom => {
+                        if va_pin_atoms {
+                            let mb_h = run.margin_top + run.height + run.margin_bottom;
+                            let mb_top = va_baseline_pre + va_d_parent - mb_h;
+                            ((-mb_top).max(0.0), 0.0)
+                        } else {
+                            (half_leading_hl, 0.0)
+                        }
+                    }
                     VerticalAlignValue::TextTop if run.font_size > 0.0 => {
                         ((va_a_parent - va_baseline_pre).max(0.0), half_leading_hl)
                     }
-                    VerticalAlignValue::TextTop => (0.0, half_leading_hl),
+                    VerticalAlignValue::TextTop => {
+                        if va_pin_atoms {
+                            ((va_a_parent - va_baseline_pre).max(0.0), 0.0)
+                        } else {
+                            (0.0, half_leading_hl)
+                        }
+                    }
                     VerticalAlignValue::Super => (0.3 * run.font_size, 0.0),
                     VerticalAlignValue::Sub => (0.0, 0.3 * run.font_size),
                     _ => (0.0, 0.0),
@@ -2793,9 +2820,14 @@ impl InlineFormattingContext {
             // R5316 bot 合围：text-top 盒底（baseline_new − A_parent + h）与 text-bottom
             // 盒底钉位（baseline_new + D_parent）须在最终线高内——需求 bot 总量 =
             // va_bot_need − line_height − top_extend，与既有 loop bot 取 max。
+            // R5317：原子 text-* 盒 mb 底同场合围——text-bottom mb 底钉 baseline +
+            // D_parent、text-top mb 底 = baseline − A_parent + mb_h。原子需求按**扩展前**
+            // 坐标计（mb 相对预置行顶），合围式 = mb 底 − 预置行高（top_extend 相消，
+            // 与文本 run 新坐标式同界）；预置行高取 line.height（break_lines 已含原子
+            // margin box，非 strut line_height）。
             if va_a_parent + va_d_parent > 0.0 {
                 let va_baseline_new = va_baseline_pre + top_extend;
-                let va_bot_need = line
+                let mut va_bot_need = line
                     .runs
                     .iter()
                     .filter(|r| {
@@ -2813,6 +2845,29 @@ impl InlineFormattingContext {
                 let va_bot_total = va_bot_need - line_height - top_extend;
                 if va_bot_total > bot_extend {
                     bot_extend = va_bot_total;
+                }
+                if va_pin_atoms {
+                    va_bot_need = line
+                        .runs
+                        .iter()
+                        .filter(|r| {
+                            r.font_size == 0.0
+                                && matches!(
+                                    r.vertical_align,
+                                    VerticalAlignValue::TextTop | VerticalAlignValue::TextBottom
+                                )
+                        })
+                        .map(|r| match r.vertical_align {
+                            VerticalAlignValue::TextTop => {
+                                va_baseline_pre - va_a_parent + r.margin_top + r.height + r.margin_bottom
+                            }
+                            _ => va_baseline_pre + va_d_parent,
+                        })
+                        .fold(0.0f32, f32::max);
+                    let va_atom_bot_total = va_bot_need - line.height;
+                    if va_atom_bot_total > bot_extend {
+                        bot_extend = va_atom_bot_total;
+                    }
                 }
             }
             if top_extend > 0.0 || bot_extend > 0.0 {
@@ -2849,15 +2904,46 @@ impl InlineFormattingContext {
                         _ => {}
                     }
                 }
+                // R5317（CSS2 §10.8.1 va:text-* 原子盒定位）：原子盒 border box 按扩展后
+                // 行基线（父 content area 参照）重定位——text-bottom mb 底钉 baseline +
+                // D_parent、text-top mb 顶钉 baseline − A_parent（与围合同一锚，跨 build
+                // 尺寸口径差异下定位不变量）。旧定位臂（2661 循环，扩展前 line_height
+                // 行盒边参照）在行盒被锚定需求扩展后失准：text-top 原子贴行顶（chromium
+                // c44-001 img2 应距行顶 80px）。坐标 = 行顶起算（run.y 语义），
+                // border y = mb 顶 + margin_top。
+                if va_pin_atoms {
+                    for run in &mut line.runs {
+                        if run.font_size != 0.0 {
+                            continue;
+                        }
+                        let mb_h = run.margin_top + run.height + run.margin_bottom;
+                        match run.vertical_align {
+                            VerticalAlignValue::TextBottom => {
+                                run.y = line.baseline_y + va_d_parent - mb_h + run.margin_top;
+                            }
+                            VerticalAlignValue::TextTop => {
+                                run.y = line.baseline_y - va_a_parent + run.margin_top;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
             }
             r5298_lifts.push(r5298_lift);
+            va_lifts.push(if va_pin_atoms { top_extend + bot_extend } else { 0.0 });
         }
         // R5298：行顶平移——后续各行顶 += 之前各行的 strut descent 净抬升之和。无接管
         // 行（lifts 全 0）时 y 逐字节不动，非 strut 域零扰动（含 paint Path B 重跑）。
+        // R5317：va:text-* 行盒扩展（含原子围合/R5316 文本臂）同须平移**后续行**——扩展
+        // 只改本行 height，后续行 line.y 由断行期预置行高堆叠（break_lines），扩展后
+        // 不重堆则后续行叠进扩展域（c44-001：img 行 90→170 后 L2 滞留 y=80，glyph 画进
+        // img 行内、div 底 110px 空白）。旗标关 lifts 全 0，逐字节旧行为。
         let mut r5298_y_shift = 0.0_f32;
-        for (line, lift) in self.lines.iter_mut().zip(&r5298_lifts) {
-            line.y += r5298_y_shift;
+        let mut va_y_shift = 0.0_f32;
+        for ((line, lift), va_lift) in self.lines.iter_mut().zip(&r5298_lifts).zip(&va_lifts) {
+            line.y += r5298_y_shift + va_y_shift;
             r5298_y_shift += lift;
+            va_y_shift += va_lift;
         }
     }
 

@@ -1051,6 +1051,23 @@ impl InlineFormattingContext {
                                 }
                             }
                             if w > 0.0 && h > 0.0 {
+                                // R5317（CSS2 §10.3.2）：img 原子参排尺寸 = border box。
+                                // 本臂 CSS w/h 为 content 尺寸，补 padding+border（口径与
+                                // border-box 声明豁免、kill-switch 见 img_atom_border_box_extra）；
+                                // stored_inline_size 已是 taffy border-box（postprocess 表）不重补。
+                                // 旧 content-box 口径：存面 build（水平 Path B 空 inline_block_sizes
+                                // 表）原子 30×30 与 layout 树 60×60 分裂 → 行盒围合 110 vs 170、glyph
+                                // 行 y93 应 123（c44-ln-box-001 实证）。非 img inline-block 元素的
+                                // content/border 口径分裂另案挂账。
+                                let (atom_bw, atom_bh) = if elem_data.local_name() == "img" && stored_inline_size.is_none() {
+                                    style
+                                        .map(crate::inline::img_atom_border_box_extra)
+                                        .unwrap_or((0.0, 0.0))
+                                } else {
+                                    (0.0, 0.0)
+                                };
+                                w += atom_bw;
+                                h += atom_bh;
                                 let vertical_align =
                                     style.map(|s| s.vertical_align.clone()).unwrap_or(VerticalAlignValue::Baseline);
                                 // 计算基线：
@@ -1210,13 +1227,26 @@ impl InlineFormattingContext {
                                 let vertical_align = img_style
                                     .map(|s| s.vertical_align.clone())
                                     .unwrap_or(VerticalAlignValue::Baseline);
+                                // R5317（CSS2 §10.3.2 + §10.8.1）：img 原子级行内盒参与行内
+                                // 格式化的尺寸 = **border box**——advance/行盒围合按 margin box
+                                // （= ml + border box + mr）计（chromium 同）。w/h 此处为 CSS
+                                // content 尺寸，补 padding+border（口径与 border-box 声明豁免、
+                                // kill-switch 见 img_atom_border_box_extra）。旧 content-box
+                                // 口径的缺陷：img 后文本 advance 少 padding+border
+                                //（c44-ln-box-001 x−40）、行盒围合多 build 分裂
+                                //（layout 树 60 vs 存面/测量 30 → 行高 170 vs 110）。
+                                let (border_w, border_h) = img_style
+                                    .map(crate::inline::img_atom_border_box_extra)
+                                    .unwrap_or((0.0, 0.0));
+                                let atom_w = w + border_w;
+                                let atom_h = h + border_h;
                                 // img 替换元素的基线在底部边缘
                                 items.push(InlineItem::InlineBlock(InlineBlockBox {
-                                    width: w,
-                                    height: h,
+                                    width: atom_w,
+                                    height: atom_h,
                                     node_id: child_id,
                                     vertical_align,
-                                    baseline: h,
+                                    baseline: atom_h,
                                     margin_top: img_style
                                         .map(|s| Self::resolve_inline_margin(&s.margin_top, s))
                                         .unwrap_or(0.0),

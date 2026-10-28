@@ -597,6 +597,42 @@ pub fn resolve_inline_block_dimension(value: &LengthValue, style: &ComputedStyle
     }
 }
 
+/// R5317（CSS2 §10.3.2 replaced 行内参与 + §10.8.1 行盒围合）：img 原子级行内盒
+/// content 尺寸 → **border box** 参与尺寸的附加量 `(宽, 高)`——行内 advance/行盒
+/// 围合按 margin box（= ml + border box + mr）计（chromium 同）。content-box 声明
+/// 加 padding+border；border-box 声明（CSS 宽高已含）不加；border-style none/hidden
+/// 侧边框计 0。kill-switch `ZW_IMG_ATOM_BORDER_BOX=0` → `(0.0, 0.0)`（content-box
+/// 旧行为）。collect 的 img 臂与 inline_finalization 的 Path B 尺寸表（ib_sizes，
+/// CSS content 口径）同源消费——两处缺一则存面/测量 build 与 layout 树原子尺寸
+/// 分裂（c44-ln-box-001：行高 110 vs 170、glyph 行 y93 应 123 实证）。
+pub fn img_atom_border_box_extra(style: &ComputedStyle) -> (f32, f32) {
+    use zero_css_parser::values::BoxSizingValue;
+    use zero_style_system::property::types::BorderStyleValue;
+    if !crate::inline::runtime_flags::img_atom_border_box() {
+        return (0.0, 0.0);
+    }
+    let pad = |p: &LengthValue| resolve_inline_block_dimension(p, style, false);
+    let bw = |w: &LengthValue, st: &BorderStyleValue| -> f32 {
+        if matches!(st, BorderStyleValue::None | BorderStyleValue::Hidden) {
+            0.0
+        } else {
+            pad(w)
+        }
+    };
+    if matches!(style.box_sizing, BoxSizingValue::BorderBox) {
+        return (0.0, 0.0);
+    }
+    let extra_w = pad(&style.padding_left)
+        + pad(&style.padding_right)
+        + bw(&style.border_left_width, &style.border_left_style)
+        + bw(&style.border_right_width, &style.border_right_style);
+    let extra_h = pad(&style.padding_top)
+        + pad(&style.padding_bottom)
+        + bw(&style.border_top_width, &style.border_top_style)
+        + bw(&style.border_bottom_width, &style.border_bottom_style);
+    (extra_w, extra_h)
+}
+
 /// BiDi 重排结果及每个视觉字符对应的逻辑 UTF-8 byte range。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BidiReorderedText {
