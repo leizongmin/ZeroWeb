@@ -9,6 +9,14 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5311 实现轮（taffy 测量 IFC 同源 text-indent——CSS2 §10.3.1：c547-indent-001 ✗1.17%→✓0.43% 翻绿，corpus 15752P/840F→15753P/839F 逐案 diff 恰 {−驱动案} 零新增红；测量/布局双 IFC 缩进分歧定位链在案）**（2026-10-28）
+>
+> - **定性**（R5310 下一步①840F 择轻命中）：div `text-indent:50%; width:25%` 3 行 vs chromium 4 行，前 3 行逐像素一致，末词 "block." 整行缺失。诊断链：引擎估算度量正确/runner 真实度量复现 → 三变体 bisect（无缩进 16 词全在、294px+缩进全在——触发域=真实度量+缩进+末词须换新行）→ 逐词墨带走查（15/16 词，line3 端 x189，"block." 应换 line4）→ **断行层插桩全部趟次产出 4 行含 "block."（断行正确）** → 测量面插桩：taffy 测量回调 `measure_text_content` 的测量 IFC **nlines=3/total_h=54 且 indent=0**（同 div 布局趟 indent=98）→ 根因：测量 IFC 构造**漏设 `.with_text_indent()`**（全仓唯一赋值点在布局 IFC，paint Path B 亦有）→ 块高按无缩进 3 行计，布局带缩进 4 行，第 4 行溢出盒外被 paint 裁除。
+> - **实现**（inline_finalization.rs 一处补设，无新 kill-switch）：测量 IFC 构造链补 `.with_text_indent(resolve_text_indent(...))` 与布局/paint 双路径同源；百分比以测量宽为基准，intrinsic 测量（Min/MaxContent）width 无穷按「循环百分比=0」惯例取 0（真实长度缩进照用）。
+> - **交付**：全量 corpus 两次 **16592/15753P/839F** 失败集逐案一致，vs 稳定账本归一化 diff 恰 {−c547-indent-001} 零新增红；驱动案 ✓0.43% 真通过-可信，同族 c547-indent-000 维持 ✓0.00。回归 +1（Ahem 确定性：196px+98px 缩进 4 行 vs 197px 无缩进 3 行，断言缩进版测量高多一行盒；**stash mutant 红** ind=48=plain=48 等高）。临时 probe/插桩/探针全清除。
+> - **门禁**：make test 全量 793P/1F（`image_batch_e2e` 负载脆弱再再现，隔离 **3/3 绿**——R5310 记账同款对端域）；clippy 腿 15 crate -D warnings 0 告警；product-smoke struct ×6 PASS + form-perf PASS，welcome **15.68%** 零位移；**bench-gate GATE PASS（25 指标 NEW=0 全在预算内 suspect=false，medium/layout 148.52ms）**——当前树含 R5307-R5311 全部改动正式过门，四轮空闲窗并账挂账一并清账（门为树态判定，零 relax 零基准改动）。**跨流发现**：本地 720 套件 `float-shrink-inline-children-zw-001` ✗3.68% 既有红（stash A/B 同值，case 引入于对端 d68f3aa16）——移交知悉。
+> - **挂账**：outline-028 第二层（IFC float+inline 行布局）维持；image_batch_e2e + fetch-wpt-data footgun 双移交对端维持；text-wrap:balance 9F 供给评估；welcome 15.68% 对端流；flake 账无新增。**下一步 R5312**：①839F 账本续扫择轻 ②outline-028 第二层评估 ③balance 供给评估。证据：[`rendering-compat/evidence/r5311-measure-text-indent-2026-10-28.md`](rendering-compat/evidence/r5311-measure-text-indent-2026-10-28.md)。
+>
 > **▶ R5310 实现轮（非 replaced 原子 inline 塌 0 域 max-content DOM 递归真测量 + definite max/min-width 钳制——css-sizing-3 §5.1/§5.2：corpus 15752P/840F 与稳定账本逐案一致零翻转（净 0 语义轮）；outline-028 ref 页测量缺口修复、TEST 页第二层 IFC 行布局独立挂账；bench 同窗 A/B 捕获 +10.4% 回归并以塌 0 门消除）**（2026-10-28）
 >
 > - **定性**（R5309 期 outline-028 ✗0.70% 取证链）：intrinsic 测量在 taffy 首趟前（R4355 同序），内容定尺寸 inline-block `child.width` 彼时为 0——`width:max-content` 容器（`block_intrinsic_width_ex` 实际解析路径，R1018 分发）对原子 inline 子只算到 margin（ref 页 `margin-left:5px` 的 `XX` 子测 5 应 25）。两层缺陷：①固有测量缺口（本轮修）②TEST 页 IFC float+inline 行布局（容器 20 应 25，float margin 丢在行布局层，与①正交，挂账）。
