@@ -449,10 +449,12 @@ pub(super) fn adjust_inline_block_positions(
                 return None;
             }
             Some(crate::inline::FloatExclusion {
-                y: rel_y + c.margin_top,
-                height: c.height + c.margin_bottom,
+                // R5312：margin-box 口径（同 compute_final own_floats / remeasure——taffy
+                // native float 下 c.x/c.y 为 border-box 位，`+margin` 双计致带右移/下移）。
+                y: rel_y - c.margin_top,
+                height: c.margin_top + c.height + c.margin_bottom,
                 width: c.width + c.margin_left + c.margin_right,
-                x: c.x + c.margin_left,
+                x: c.x - c.margin_left,
                 is_left: matches!(c.float, FloatValue::Left),
             })
         })
