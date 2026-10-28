@@ -4963,7 +4963,11 @@ fn wpt_data_image_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::Im
         // （net-api corpus http、其余通道 https）——strip 双 scheme。
         let path_part = url
             .strip_prefix("https://wpt.test")
-            .or_else(|| url.strip_prefix("http://wpt.test"))?;
+            .or_else(|| url.strip_prefix("http://wpt.test"))
+            // net-api 二期 M2-S3b：net-api 页锚端口化（wpt.test:8000）——图片源
+            // 解析出 :8000 绝对 URL，双 scheme 前缀同步放行。
+            .or_else(|| url.strip_prefix("https://wpt.test:8000"))
+            .or_else(|| url.strip_prefix("http://wpt.test:8000"))?;
         let path_part = path_part.strip_prefix('/').unwrap_or(path_part);
         // 去查询串/片段。
         let clean = path_part.split(['?', '#']).next()?;
@@ -8560,7 +8564,11 @@ fn wpt_fetch_response_type(req: &zero_engine::fetch_bridge::FetchRequest, status
     // wpt.test 权威双 scheme 成员（本 runner 页面域恒 wpt.test）。
     let page_origin = "https://wpt.test";
     let response_origin = wpt_url_origin(&req.url);
-    let same_origin = response_origin == page_origin || response_origin == "http://wpt.test";
+    // net-api 二期 M2-S3b：net-api 页锚端口化（wpt.test:8000）——同源成员同步
+    // 扩 :8000 形（HTTP_ORIGIN 端点响应 origin 全等面）。
+    let same_origin = response_origin == page_origin
+        || response_origin == "http://wpt.test"
+        || response_origin == "http://wpt.test:8000";
     let mode = req.mode.as_deref().unwrap_or("");
     let redirect = req.redirect.as_deref().unwrap_or("");
     if redirect == "manual" && matches!(status, 301 | 302 | 303 | 307 | 308) {
@@ -8888,6 +8896,14 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     // :9443 形态；谓词注释见 navigation_case_uses_ported_origin）。
     let page_authority = if navigation_case_uses_ported_origin(case_name) {
         "wpt.test:9443"
+    } else if net_api_case_uses_http_page(case_name) {
+        // net-api 二期 M2-S3b：net-api 页锚端口化 wpt.test:8000——上游 wptserve
+        // 形态下 get_host_info().HTTP_ORIGIN = http://wpt.test:8000（{{ports[http][0]}}
+        // 替换值）与页锚 origin 全等，同源判定不再撕裂（access-control-and-redirects
+        // 「same-origin redirect」面：:8000 端点此前被按跨源预检、无 ACAO 即翻红）。
+        // 非默认端口替换形与 `new URL().origin` 序列化形一致（:8000 保留），s116
+        // :80 默认端口两形撕裂面不复现。ref/page-state http 家族维持无端口锚不动。
+        "wpt.test:8000"
     } else {
         "wpt.test"
     };
