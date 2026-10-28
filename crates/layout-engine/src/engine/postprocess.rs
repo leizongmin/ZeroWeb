@@ -195,10 +195,11 @@ pub(super) fn adjust_inline_block_positions(
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
     positioned_inline_blocks: &NodeIdSet,
+    inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
 ) {
     // 先递归处理子元素
     for child in &mut root.children {
-        adjust_inline_block_positions(child, doc, styles, positioned_inline_blocks);
+        adjust_inline_block_positions(child, doc, styles, positioned_inline_blocks, inline_fonts);
     }
 
     let Some(container_node_id) = root.node_id else {
@@ -459,7 +460,7 @@ pub(super) fn adjust_inline_block_positions(
             })
         })
         .collect();
-    let mut inline_ctx = crate::inline::InlineFormattingContext::new(container_width)
+    let inline_ctx = crate::inline::InlineFormattingContext::new(container_width)
         .with_vertical(is_vertical)
         .with_vertical_rtl(is_vertical_rtl)
         // R1122：vertical_rtl 列 x 从 block 轴右端递减——block_extent 须为物理块轴跨度
@@ -476,6 +477,13 @@ pub(super) fn adjust_inline_block_positions(
         .with_baseline_overrides(baseline_overrides)
         .with_no_wrap(no_wrap)
         .with_float_exclusions(float_exclusions);
+    // t-p116（CSS2 §10.8 行盒度量同源）：本 IFC 决定原子行内盒的行位（同行续排 vs
+    // 折行），文本 advance 必须与 intrinsic 测量/stored IFC 同源（configure_inline_fonts
+    // 注入 advance source + resolver + overrides）——此前裸构造走 estimate_char_width
+    // 启发式，容器宽由真实字体 intrinsic 测得时（如 monospace 每字符 0.5em < 字母启发
+    // 0.55em）exact-fit 边界误折行（探针 minG：div=max-content 70，启发 22+50>70 折行，
+    // 真实 20+50≤70 应单行）。vertical 维持 R1099 gate 口径（不启用 advance）。
+    let mut inline_ctx = crate::inline_finalization::configure_inline_fonts(inline_ctx, inline_fonts, false);
     inline_ctx.layout(doc, container_node_id, styles);
 
     // 存储 IFC 片段中各文本节点的 font_size，供 paint 系统计算基线偏移

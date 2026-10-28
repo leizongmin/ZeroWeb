@@ -1178,7 +1178,10 @@ impl LayoutEngine {
         crate::multicol::resync_multicol_ancestor_heights(&mut root_box, styles);
 
         // 10. 后处理：对包含 inline-block 子元素的容器，重新定位 inline-block 元素
-        adjust_inline_block_positions(&mut root_box, doc, styles, &positioned_inline_blocks);
+        // t-p116：注入字体上下文——该 pass 自建 IFC 的行断/行位须与 intrinsic 测量同源
+        //（真实 advance），否则 exact-fit 容器内原子盒被启发式 advance 误折行。
+        let inline_fonts = self.inline_font_context(&font_overrides);
+        adjust_inline_block_positions(&mut root_box, doc, styles, &positioned_inline_blocks, inline_fonts);
 
         // R57 DEBUG: canvas y@step
 
