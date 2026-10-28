@@ -866,6 +866,8 @@ mod r5250_inline_relpos_shift_map;
 /// t-p113（CSS Flexbox §9.1 item main size 由内容解析）taffy round_layout 累计整数
 /// 取整把文本固有宽削到内容宽以下 → Phase A IFC 假断行；IFC 约束宽改取未取整层。
 mod p113_flex_fractional_content_width_tests;
+mod p116_advance_probe_tests;
+mod p116_text_atomic_inline_line_tests;
 /// R5251（CSS2 §9.2.1.1 block-in-inline）容器层升格拆分锚——含块 span 提升块子
 /// 垂直堆叠 + margin collapse，inline 文本片段并入容器匿名块序。
 mod r5251_block_in_inline_deep_split;
