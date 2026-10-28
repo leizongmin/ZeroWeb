@@ -2810,12 +2810,16 @@
         _zwObserveIframeWindowClient(_r115Entry, frameKey, _r115Url);
         _r115Entry.url = _r115Url;
         var _r115ClientId = _r115Entry._zwSwClientId || ('iframe:' + String(frameKey));
+        // form-submission-0 主干（s138）：flags.method/body/headersWire 透传——form
+        // target=named iframe 的 POST 提交经本通道取回回显体（`__zw_fetch` 位置 1 =
+        // method、3 = headersWire、4 = body，fetch_bridge decode 同序）；缺省 GET 空
+        // body 语义不变（既有 src 导航零变化）。
         var _r115Wire = String(__zw_fetch(
           _r115PendingId,
-          'GET',
+          (flags && flags.method) || 'GET',
           _r115Url,
-          '',
-          '',
+          (flags && flags.headersWire) || '',
+          (flags && flags.body) || '',
           '',
           '',
           flags && flags.reload ? '1' : '',

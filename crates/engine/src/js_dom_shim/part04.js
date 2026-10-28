@@ -11244,10 +11244,15 @@
             var _u = null;
             try { _u = new URL(_actionRaw == null ? '' : String(_actionRaw), _base); } catch (_eA2) { return; }
             // ⑤ urlencoded 序列化（spec serialize urlencoded：换行归一 \r\n → 百分号编码 →
-            // 空格 '+'；encodeURIComponent 除 `*`-集合差异与 spec 编码集一致）。
+            // 空格 '+'。encodeURIComponent 的 unescaped 集含 `! ' ( ) ~`，而 spec
+            // application/x-www-form-urlencoded percent-encode set 仅豁免 `*-.0-9A-Z_a-z`
+            // （https://url.spec.whatwg.org/#urlencoded-serializing）——补编四处差异
+            // （`*` 两侧均字面量）。
             function _encPair(n, v) {
               function enc(s) {
-                return encodeURIComponent(String(s).replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n/g, '\r\n')).replace(/%20/g, '+');
+                return encodeURIComponent(String(s).replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n/g, '\r\n'))
+                  .replace(/%20/g, '+')
+                  .replace(/!/g, '%21').replace(/'/g, '%27').replace(/\(/g, '%28').replace(/\)/g, '%29').replace(/~/g, '%7E');
               }
               return enc(n) + '=' + enc(v);
             }
@@ -11267,6 +11272,46 @@
             // M2-S4J：GET 突变后无 '?' → 追加（spec parse-driven query set 保留空 query 的
             // '?'——WPT navigate-form-get「destination.url = location.href + '?'」）。
             if (!_isPost && String(_abs).indexOf('?') < 0) _abs += '?';
+            // ⑤b s138 form-submission-0 主干：target 解析（submitter formtarget > form
+            // target 属性）——命中 named iframe → 导航该 iframe（spec choose-a-navigable，
+            // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-submission-algorithm
+            // ；the-rules-for-choosing-a-navigable 的 name 匹配面）：GET 带 query / POST 带
+            // body + enctype Content-Type，经 __zw_reload_iframe 复用 iframe 装载管线
+            //（_zwLoadIframeEntry flags.method/body/headersWire 透传），load 事件由管线
+            // 微任务派发（R288）。未命中名（含 _self/_parent/_top/_blank/空）落既有顶层行为。
+            var _fTarget = '';
+            try { if (submitter) _fTarget = String(submitter.getAttribute('formtarget') || ''); } catch (_eT0) {}
+            if (_fTarget === '') {
+              try { _fTarget = String(fHandle ? __zw_get_attr_handle(fHandle, 'target') : (__zw_get_attr(fSel, 'target') || '')); } catch (_eT1) {}
+            }
+            if (_fTarget !== '' && _fTarget !== '_self' && _fTarget !== '_parent' && _fTarget !== '_top' && _fTarget !== '_blank') {
+              var _fFrame = null;
+              try {
+                var _fFrames = globalThis.document.querySelectorAll('iframe');
+                for (var _fFi = 0; _fFi < _fFrames.length; _fFi++) {
+                  if (_fFrames[_fFi].getAttribute('name') === _fTarget) { _fFrame = _fFrames[_fFi]; break; }
+                }
+              } catch (_eT2) {}
+              if (_fFrame) {
+                var _fFlags = {};
+                if (_isPost) {
+                  _fFlags.method = 'POST';
+                  _fFlags.body = _body;
+                  // enctype：submitter formenctype > form enctype 属性 > 缺省（大小写
+                  // 不敏感；非法值按 spec invalid value default 回 urlencoded）。
+                  var _fEnc = '';
+                  try { if (submitter) _fEnc = String(submitter.getAttribute('formenctype') || ''); } catch (_eT3) {}
+                  if (_fEnc === '') {
+                    try { _fEnc = String(fHandle ? __zw_get_attr_handle(fHandle, 'enctype') : (__zw_get_attr(fSel, 'enctype') || '')); } catch (_eT4) {}
+                  }
+                  _fEnc = _fEnc.toLowerCase();
+                  if (_fEnc !== 'text/plain' && _fEnc !== 'multipart/form-data') _fEnc = 'application/x-www-form-urlencoded';
+                  _fFlags.headersWire = 'content-type\x1e' + _fEnc;
+                }
+                try { globalThis.__zw_reload_iframe(_fFrame, _abs, _fFlags); } catch (_eT5) {}
+                return;
+              }
+            }
             // ⑥ M2-S4J：navigate 事件先行（form submission 面——formData（POST）/sourceElement
             // （submitter || form）/navigationType（同源 form target：瞬态激活 → push、否则
             // 同 URL（去 query）→ replace，异 URL → push——WPT navigate-form 三兄弟）。

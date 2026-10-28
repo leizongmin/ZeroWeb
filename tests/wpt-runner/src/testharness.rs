@@ -6203,6 +6203,37 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     body_bytes: Some(b"wpt.test root\n".to_vec()),
                 });
             }
+            if clean == "FileAPI/file/resources/echo-content-escaped.py" {
+                // form-submission-0 三族（urlencoded2/text-plain/multipart-formdata
+                // .window.js 经 enctypes-helper.js ACTION_URL）的提交回显端点——上游
+                // wptserve echo-content-escaped.py 行为等价：请求体逐字节转义为 `\xNN`
+                // 文本（可打印 ASCII 原样；`\` 自身转义 `\x5C`，防被 helper 的
+                // `\xNN` 还原正则误吞），text/plain 交付——helper `unescape()` 可逆，
+                // 断言面即提交编码算法本体。
+                let raw: Vec<u8> = req
+                    .body_bytes
+                    .clone()
+                    .or_else(|| req.body.as_ref().map(|b| b.as_bytes().to_vec()))
+                    .unwrap_or_default();
+                let mut escaped = String::with_capacity(raw.len() * 4);
+                for &byte in &raw {
+                    match byte {
+                        b'\\' => escaped.push_str("\\x5C"),
+                        0x20..=0x7E => escaped.push(byte as char),
+                        _ => escaped.push_str(&format!("\\x{byte:02X}")),
+                    }
+                }
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), "text/plain".into()));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: escaped.clone(),
+                    body_bytes: Some(escaped.into_bytes()),
+                });
+            }
             if clean == "beacon/resources/inspect-header.py"
                 || clean == "beacon/resources/content-type-and-body.py"
                 || clean == "beacon/resources/url-echo.py"
@@ -13206,6 +13237,43 @@ async_test(function(test) {
         let resp_bak = handler(&make_req("https://wpt.test/dom/nodes/encoding.py.bak"));
         assert!(resp_bak.is_ok());
         assert_eq!(resp_bak.unwrap().status, 404);
+    }
+
+    #[test]
+    fn echo_content_escaped_py_handler_round_trips_helper_unescape() {
+        // form-submission-0 三族回显端点：POST body 逐字节转义（printable ASCII 原样、
+        // `\` → `\x5C`、其余 `\xNN`），经 enctypes-helper.js `unescape()` 可逆还原。
+        let handler = wpt_data_fetch_handler(Path::new("/nonexistent-wpt-root")).unwrap();
+        let make_req = |method: &str, body: Option<&str>| zero_engine::fetch_bridge::FetchRequest {
+            url: "https://wpt.test/FileAPI/file/resources/echo-content-escaped.py".to_string(),
+            method: method.to_string(),
+            headers: Vec::new(),
+            body: body.map(str::to_string),
+            body_bytes: None,
+            credentials: None,
+            mode: None,
+            redirect: None,
+        };
+        // 基本 urlencoded 对。
+        let basic = handler(&make_req("POST", Some("basic=test"))).unwrap();
+        assert_eq!(basic.status, 200);
+        assert_eq!(basic.body, "basic=test");
+        assert_eq!(basic.headers[0], ("content-type".to_string(), "text/plain".to_string()));
+        // 0x00 / 换行 / backslash 字节转义形态（hex 大写、backslash 用 \x5C 防
+        // `\xNN` 还原正则误吞）。
+        let escaped = handler(&make_req("POST", Some("a\x00b\r\nc\\d"))).unwrap();
+        assert_eq!(escaped.body, "a\\x00b\\x0D\\x0Ac\\x5Cd");
+        // 反向校验：转义文本经 helper unescape 逻辑还原原 body（JS 侧等价实现）。
+        let unescaped: String = escaped
+            .body
+            .replace("\\x0D\\x0A", "\r\n")
+            .replace("\\x00", "\u{0}")
+            .replace("\\x5C", "\\");
+        assert_eq!(unescaped, "a\x00b\r\nc\\d");
+        // GET / 无 body → 空回显（200 非错误）。
+        let empty = handler(&make_req("GET", None)).unwrap();
+        assert_eq!(empty.status, 200);
+        assert_eq!(empty.body, "");
     }
 
     #[test]
