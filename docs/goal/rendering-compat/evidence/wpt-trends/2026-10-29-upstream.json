@@ -3,9 +3,9 @@
   "mode": "upstream",
   "wpt_data_ref": "v1.10",
   "total": 16592,
-  "passed": 15767,
+  "passed": 15768,
   "rate_pct": 95.0,
-  "extra": "failed=825;skipped=0",
-  "git_sha": "dc0f99d47",
-  "note": ""
+  "extra": "failed=824;skipped=0",
+  "git_sha": "973ae5978",
+  "note": "R5317 va:text-* atom margin-box union + img border-box"
 }
