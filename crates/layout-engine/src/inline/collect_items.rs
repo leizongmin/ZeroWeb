@@ -665,8 +665,17 @@ impl InlineFormattingContext {
                             // OOF（块流静态位域：R3930 rtl 镜像 / R4017 前驱兄弟高 / R5139 列流
                             // 映射）不发——它们的静态位不是行内流位，本锚会打掉既有后处理。
                             // kill-switch `ZW_OOF_INLINE_ANCHOR=0` 回退静默跳过（旧行为）。
+                            // R5315：inline-block 同为行内级（css-position-3
+                            // §static-position：inline-level OOF 静态位 = 行内光标位）——
+                            // UA replaced 组（img/canvas/input…，lib.rs ua_display）ZW 判
+                            // InlineBlock，旧门仅 Inline 把 abspos ruler img 排除在锚外，
+                            // 落 taffy 块游标位盖住前驱 atomic inline-block
+                            //（vertical-align-baseline-004a/005a：标尺 img 压住蓝色盒左半）。
                             let is_inline_level_oof = style.is_some_and(|s| {
-                                matches!(s.display, DisplayValue::Inline)
+                                matches!(
+                                    s.display,
+                                    DisplayValue::Inline | DisplayValue::InlineBlock
+                                )
                             });
                             if is_inline_level_oof && runtime_flags::oof_inline_anchor() {
                                 items.push(InlineItem::OofAnchor(child_id));

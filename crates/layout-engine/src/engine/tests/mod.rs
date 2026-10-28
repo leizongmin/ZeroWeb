@@ -879,3 +879,7 @@ mod r5275_preserved_ws_float_measure_tests;
 /// 写定宽度即时回写子代栈槽 cb_width，嵌套 branch 内层不再被过期 CB（父代塌缩宽）
 /// 钳死（text-decoration-subelements-002 ref 侧 overflow:hidden 裁空内容根因）。
 mod r5300_abspos_stf_cb_prop_tests;
+/// R5315（css-position-3 §static-position）inline-block OOF 行内流静态位锚——
+/// R5166 锚发射门扩 InlineBlock（UA replaced 组），abspos img 不再落块游标位盖住
+/// 前驱 atomic inline-block（vertical-align-baseline-004a/005a）。
+mod r5315_inline_block_oof_static_pos_tests;

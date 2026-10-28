@@ -9,6 +9,14 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5315 修复轮（inline-block OOF 行内流静态位锚 + 锚消费流基修正——css-position-3 §static-position × CSS2 §10.3.7：vertical-align-baseline-004a/005a ✗5.70% ×2 → ✓0.80%，abspos-inline-008 同轮入账当场收口 ✓0.00%；corpus 829F→827F FIXED=2 零新增红）**（2026-10-28）
+>
+> - **定性**（829F 账本 vertical-align 族 7F 择轻）：004a 蓝盒（空 inline-block）test 可见 bbox 45 宽 vs ref 100 宽、垂直 extent 全同（空 ib 基线 bottom-margin-edge 规则已正确）；ruler-only 带列走查定谳 **abspos ruler img test 渲行首 x8-63、ref 在 ib 后 x108-163**，左半压住蓝盒。机理：R5166 锚发射门仅 `display:inline`，UA replaced 组（img）ZW 判 `InlineBlock`（lib.rs:89）→ 无锚落 taffy 块游标位。族内另 5 案（117a/118a/122/baseline-003/negative-leading-001）全无 abspos——不同子域（half-leading 盒/行盒高，R5258 切片 2 结构域）非本轮域。
+> - **实现**（两处）：①发射门扩 `DisplayValue::InlineBlock`（collect_items；ZW 无 abspos display 块化，门可达；kill-switch 沿用 `ZW_OOF_INLINE_ANCHOR`）②锚消费 **流基修正**（abspos.rs walk child_frame）：锚 x/y 是断行期未施加 relative 偏移的行内流坐标，累计路径盒 x/y 已含 relative inset（inline 由 taffy、inline-block/replaced 由 R5054 臂各单次施加）——中间 relative inline wrapper 按位移后 x 累计使 `ax − dx` 反号二次施加；修正 = 累计扣回 `resolve_relative_inset`（仅 Px，非 Px 维持旧行为）。②的活体反证 = 同轮入账案 abspos-inline-008（首轮 corpus 绿→红 ✗4.17%，绿盒 +100px，R5225 注释已留名旧症）落地后 ✓0.00%。
+> - **交付**：corpus 同树 A/B（基线 R5314 交付态 829F）→ **827F**，FIXED=2（004a/005a ✓0.80%）**零新增红**；驱动族 7F→5F（余 5 案无 abspos 维持）。回归 +3（atomic 前驱锚 50px / UA 默认 img 路径 x=ib 宽 / relative wrapper 三段合成位=流位 0；**mutant**：`ZW_OOF_INLINE_ANCHOR=0` 双钉红于 x=0 断言，双向可判别）。
+> - **门禁**：fmt 0；clippy zero-layout-engine --all-targets 0；**layout-engine lib 2201P/0F**；本地 720 套件唯一红 = R5311 既有记账零位移；product-smoke struct ×6 PASS + welcome **15.68%** 零位移 + form-perf PASS；bench-gate 定向 zero-layout-engine **GATE PASS 25 指标 NEW=0**（锚发射为 OOF 冷路径）。
+> - **挂账**：vertical-align 余 5 案（negative-leading-001 ✗19.98% 最大）归 R5258 切片 2 IFC 切片结构域；`resolve_relative_inset` 仅 Px 口径分裂维持；R5314 挂账全维持。**下一步 R5316**：①827F 账本续扫择轻（避开 OOF 锚域与 XHTML 自闭合域）②negative-leading-001 独立定性 ③outline-028 lime 域 / balance 供给评估。证据：[`rendering-compat/evidence/r5315-inline-block-oof-static-pos-2026-10-28.md`](rendering-compat/evidence/r5315-inline-block-oof-static-pos-2026-10-28.md)。
+>
 > **▶ R5314 修复轮（XHTML 自闭合非 void 起始标签桥接——XML 1.0 §3.1 EmptyElemTag vs WHATWG HTML self-closing flag ignored：`.xht` 树形对齐 chromium，kill-switch `ZW_XHTML_SELF_CLOSE`；corpus 834F→829F FIXED=5 零新增红）**（2026-10-28）
 >
 > - **定性**（R5314 择轻命中：834F 账本 3 级路径聚类 → CSS2/values 3F）：numbers-units-010/012/013 三案 test 侧首盒逐像素同 ref，差异簇全在 ref 页第 2/3 盒位（恰整盒域）——ref 页 `<div/><div/>` XHTML 自闭合语法：chromium 对 .xht（application/xhtml+xml）走 **XML 解析**（`/` 即空元素闭合）渲 2-3 兄弟盒；ZW html5ever 按 **HTML 语义**解析（self-closing flag 仅 acknowledge 后 ignored）→ 第二 div **嵌进**第一 div → margin 折叠压成一个可见盒。`content_is_xml` 标志已在（R3932 同门）但解析树形仍 HTML 语义——标志在、语义缺。上限探测：账本 ref 侧非 void 自闭合恰 3 案。

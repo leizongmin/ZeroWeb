@@ -1276,7 +1276,8 @@ pub(super) fn fix_abspos_inline_static_position(
 /// `frame` = Some((容器 id, dx, dy))：dx/dy = 当前盒内容原点 − 容器内容原点
 ///（容器内容坐标 → 当前盒内容坐标换算取负）。下行累计口径：子内容原点 = 父内容
 /// 原点 + child.x + child.border + child.padding（child.x 为父内容盒相对，不含
-/// margin）。None = 不在任何锚容器子树内。
+/// margin）——**流基**：路径上 relative inline wrapper 的已施加 inset 扣除
+///（R5315，见 walk 内注释），与锚的断行期未偏移坐标同基。None = 不在任何锚容器子树内。
 fn fix_abspos_inline_static_position_walk(
     box_node: &mut LayoutBox,
     styles: &HashMap<NodeId, ComputedStyle>,
@@ -1332,11 +1333,30 @@ fn fix_abspos_inline_static_position_walk(
         let child_frame = if child.node_id.is_some_and(|id| anchor_containers.contains(&id)) {
             Some((child.node_id.unwrap(), 0.0, 0.0))
         } else {
+            // R5315：锚 x/y 是断行期**未施加 relative 偏移**的行内流坐标，而本累计遍历
+            // 的盒 x/y 已含 relative inset（display:inline 由 taffy 单次施加、inline-block/
+            // replaced 由 R5054 臂单次施加）。中间 relative inline wrapper（abspos-inline-008
+            // 的 span left:-100px）若按位移后 x 累计，`ax − dx` 把 −100 反号成 +100 二次
+            // 施加 → 静态位右偏 |inset|。累计改取**流基**：减去该盒已施加的 inset
+            //（`resolve_relative_inset` 仅 Px——非 Px inset 两臂施加口径本就分裂，维持旧行为）。
+            let rel_offset = child
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .filter(|s| {
+                    matches!(s.position, zero_css_parser::values::PositionValue::Relative)
+                        && matches!(
+                            s.display,
+                            zero_css_parser::values::DisplayValue::Inline
+                                | zero_css_parser::values::DisplayValue::InlineBlock
+                        )
+                })
+                .map(|_| super::postprocess::resolve_relative_inset(child, styles))
+                .unwrap_or((0.0, 0.0));
             frame.map(|(c, dx, dy)| {
                 (
                     c,
-                    dx + child.x + child.border_left + child.padding_left,
-                    dy + child.y + child.border_top + child.padding_top,
+                    dx + child.x - rel_offset.0 + child.border_left + child.padding_left,
+                    dy + child.y - rel_offset.1 + child.border_top + child.padding_top,
                 )
             })
         };
