@@ -3,9 +3,9 @@
   "mode": "upstream",
   "wpt_data_ref": "v1.10",
   "total": 16592,
-  "passed": 15773,
+  "passed": 15775,
   "rate_pct": 95.1,
-  "extra": "failed=819;skipped=0",
-  "git_sha": "2ad4ddf47",
-  "note": "R5319 svg float margin-auto R4091 臂侧放行——float-replaced-width-007/008 整盒消失收口，FIXED=2 (float-replaced-width-007/008)"
+  "extra": "failed=817;skipped=0",
+  "git_sha": "6ef011057",
+  "note": "R5320 ::first-line background-color 首格式行带——R5258 切片 2 bg-color 位（存储门扩位 + paint 带铺设），c25-pseudo-elmnt-000 ✓0.32% 连带 first-line-and-marker ✓0.50%，FIXED=2 (c25-pseudo-elmnt-000, first-line-and-marker)"
 }

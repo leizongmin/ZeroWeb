@@ -3916,7 +3916,8 @@ impl super::Painter {
                     // 行组 line_top == 组内最小者为首行；组内 inline 后代解析 color ==
                     // 盒 color（≈继承、无显式覆盖）才随伪样式（span{color} 显式声明
                     // 胜出 ::first-line 继承，css-pseudo-4 §first-line）。先于选区门
-                    // insert（选区行覆写胜出）。bg/font 类属性不应用（FIXME 切片 2）；
+                    // insert（选区行覆写胜出）。bg-color 已应用（R5320）；其余 bg 类
+                    //（background-image 等）与 font 类不应用（FIXME 切片 2）；
                     // 与 ::first-letter 同存时首字符 interplay 未处理（FIXME）；竖排
                     // 不应用（FIXME）。
                     if !is_vertical
@@ -3925,6 +3926,47 @@ impl super::Painter {
                     {
                         let first_ltb = line_ranges.iter().map(|((_, ltb), ..)| *ltb).min().unwrap_or(0);
                         let fl_color = super::super::color::resolve_color_current(&fl.color, &style.color);
+                        // R5320（CSS2 §5.12.1 切片 2 bg-color 位）：首格式行铺伪样式
+                        // background-color——横向 = 行内全部片段范围并集（≡ R5054
+                        // 逐行片段横向范围口径，driving: c25-pseudo-elmnt-000 绿带），
+                        // 高 = 盒 line_height（≡ 选区行高）。透明回落零铺；其余 bg
+                        // 类（background-image 等）与 font 类仍不应用（FIXME 切片 2）。
+                        let fl_bg = super::super::color::resolve_color_current(&fl.background_color, &style.color);
+                        if fl_bg.a > 0 {
+                            let mut band: Option<(f32, f32)> = None;
+                            for ((_, ltb), _, _, min_x, max_xw) in &line_ranges {
+                                if *ltb != first_ltb {
+                                    continue;
+                                }
+                                band = match band {
+                                    Some((x0, x1)) => Some((x0.min(*min_x), x1.max(*max_xw))),
+                                    None => Some((*min_x, *max_xw)),
+                                };
+                            }
+                            if let Some((x0, x1)) = band {
+                                let line_h = match &style.line_height {
+                                    zero_style_system::LineHeightValue::Normal => font_size * 1.2,
+                                    zero_style_system::LineHeightValue::Number(n) => font_size * (*n as f32),
+                                    zero_style_system::LineHeightValue::Length(length) => {
+                                        zero_style_system::computed::resolve_length(
+                                            length,
+                                            font_size as f64,
+                                            None,
+                                            None,
+                                        ) as f32
+                                    }
+                                };
+                                sel_line_fills.push((
+                                    Rect::new(
+                                        content_x + x0,
+                                        content_y + f32::from_bits(first_ltb),
+                                        (x1 - x0).max(0.0),
+                                        line_h,
+                                    ),
+                                    fl_bg,
+                                ));
+                            }
+                        }
                         for ((owner, ltb), _, _, _, _) in &line_ranges {
                             if *ltb != first_ltb {
                                 continue;

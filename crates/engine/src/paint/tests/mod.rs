@@ -80,6 +80,8 @@ mod r5296_inline_bg_ml_gate_tests;
 mod r5297_inline_ml_band_extents_tests;
 /// R5299 单行整盒裂解段表（css-writing-modes-3 #bidi-box-model 切段判据）。
 mod r5299_inline_slice_segment_tests;
+/// R5320 ::first-line 首格式行 background-color 带（切片 2 bg-color 位，CSS2 §5.12.1）。
+mod r5320_first_line_bg_tests;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;

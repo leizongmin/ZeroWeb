@@ -1297,8 +1297,9 @@ impl StyleSystem {
     /// R3867：`::first-letter`（CSS2 §5.12.2）伪元素计算——独立 helper 保持
     /// R5258（CSS2 §5.12.1）：`::first-line` 伪样式计算——镜像
     /// [`Self::compute_first_letter_pseudo`]：collect 空 → None（零存储零 paint
-    /// 影响）；非空走完整级联，color 与元素不同才存储（帧体量纪律 R3867 同款
-    /// 独立 helper，不占 [`Self::compute_styles_recursive`] 的 debug 栈帧体量）。
+    /// 影响）；非空走完整级联，color 或 background-color 与元素不同才存储
+    ///（R5320 补 background-color 位，帧体量纪律 R3867 同款独立 helper，
+    /// 不占 [`Self::compute_styles_recursive`] 的 debug 栈帧体量）。
     #[allow(clippy::too_many_arguments)]
     fn compute_first_line_pseudo(
         &mut self,
@@ -1342,7 +1343,11 @@ impl StyleSystem {
             quirks_mode,
             Some("first-line"),
         );
-        (first_line.color != elem_style.color).then(|| Box::new(first_line))
+        // R5320（CSS2 §5.12.1 切片 2 bg 位）：background-color 与元素不同也
+        // 存储——bg-only 页（`p:first-line { background: green }`）此前 None
+        // → paint 侧无伪样式可取（c25-pseudo-elmnt-000 driving）。
+        (first_line.color != elem_style.color || first_line.background_color != elem_style.background_color)
+            .then(|| Box::new(first_line))
     }
 
     /// `::first-letter` 伪样式计算抽为独立 helper，不占
