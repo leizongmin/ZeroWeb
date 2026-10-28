@@ -2529,15 +2529,21 @@ fn deep_entry_json(doc: &Document, id: NodeId) -> Option<String> {
         NodeKind::Comment(c) => Some(format!("{{\"k\":\"C\",\"v\":{}}}", json_str(&c.content))),
         NodeKind::Element(e) => {
             let tag = json_str(e.local_name());
+            // 深条目属性名发**限定名**（prefix:local）——SVG 等 foreign context 片段
+            // 解析把 xlink:href 拆成 prefix+local，只发 local 会丢前缀（plain 工厂
+            // 侧按「名含冒号」派生 NS 元数据的既有口径拿到 href → 克隆属性
+            // namespaceURI 断言 null，WPT dom Node-cloneNode-svg 回归实证）。HTML
+            // context 属性 prefix 为 None，与原 local-only 输出逐字节一致。
+            // （2026-10-28 encoding-legacy-mb M1 对账发现并修复。）
             let attrs: Vec<String> = e
                 .attributes
                 .iter()
                 .map(|a| {
-                    format!(
-                        "{{\"n\":{},\"v\":{}}}",
-                        json_str(a.name.local.as_ref()),
-                        json_str(&a.value)
-                    )
+                    let qname = match a.name.prefix.as_deref() {
+                        Some(p) if !p.is_empty() => format!("{}:{}", p, a.name.local.as_ref()),
+                        _ => a.name.local.to_string(),
+                    };
+                    format!("{{\"n\":{},\"v\":{}}}", json_str(&qname), json_str(&a.value))
                 })
                 .collect();
             let kids_src = match doc.template_contents_children(id) {
