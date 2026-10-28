@@ -3997,6 +3997,138 @@ AAAA</div></body></html>"#,
         );
     }
 
+    /// t-p117（css-grid-1 §7.2.2：max-content 轨道取 item 的 max-content
+    /// contribution）：grid item 内流内文本 + 直属 inline-block 原子——修复前 taffy
+    /// 轨道推导漏计文本，li 塌到原子宽（多词文本竖排）；修复后 li = hi(40) + 20。
+    #[test]
+    fn p117_grid_item_text_plus_inlineblock_max_content_track() {
+        let w = compute_box(
+            r#"<html><body style="margin:0">
+              <ul id="ul" style="display:grid;grid-template-columns:max-content;list-style:none;margin:0;padding:0;font:20px/1 Ahem"><li id="li">hi<span style="display:inline-block;width:20px;height:20px;background:#0f0"></span></li></ul>
+            </body></html>"#,
+            "li",
+        );
+        assert!(
+            (w.0 - 60.0).abs() < 1.0 && (w.1 - 20.0).abs() < 1.0,
+            "grid item must keep text width (hi 40 + atom 20) at single-line height 20px, got {:?}",
+            w
+        );
+    }
+
+    /// t-p117 auto 轨道臂：r2 起 auto 轨道保守不覆写（DEF-1：受限 auto 可解到贡献
+    /// 以下，地板会强迫溢出），本例绿值来自容器 fit-content 的 DOM 级内在尺寸路径
+    /// （intrinsic walker 对提升原子同源重测、流内文本计入）而非 item 地板——保留为
+    /// 该路径的回归钉（无宽容器下 auto 轨道被 align-content stretch 撑满视口、item
+    /// 随轨属规范预期，css-grid-1 §12.8）。
+    #[test]
+    fn p117_grid_item_text_plus_inlineblock_auto_track() {
+        let w = compute_box(
+            r#"<html><body style="margin:0">
+              <ul id="ul" style="display:grid;grid-template-columns:auto;width:fit-content;list-style:none;margin:0;padding:0;font:20px/1 Ahem"><li id="li">hi<span style="display:inline-block;width:20px;height:20px;background:#0f0"></span></li></ul>
+            </body></html>"#,
+            "li",
+        );
+        assert!(
+            (w.0 - 60.0).abs() < 1.0 && (w.1 - 20.0).abs() < 1.0,
+            "auto track grid item must size to text+atom max-content, got {:?}",
+            w
+        );
+    }
+
+    /// t-p117 拉伸保持守卫（css-grid-1 §10.3：grid item 默认 justify normal→stretch，
+    /// 块轴同 align）：同列双 item（窄提升原子 item + 宽纯文本 item）——窄 item 须被
+    /// taffy 拉伸步撑到轨宽（与 plain 等宽且远超自身内容宽）；把 item 写成定尺的覆写
+    /// 会击败 stretch（窄 item 固定在 max-content 60，浏览器基线为填轨）。
+    #[test]
+    fn p117_grid_stretch_preserved_with_hoisted_atomic_sibling() {
+        let html = r#"<html><body style="margin:0">
+          <ul id="ul" style="display:grid;grid-template-columns:auto;width:400px;list-style:none;margin:0;padding:0;font:20px/1 Ahem"><li id="g1">hi<span style="display:inline-block;width:20px;height:20px;background:#0f0"></span></li><li id="plain">plain text only</li></ul>
+        </body></html>"#;
+        let g1 = compute_box(html, "g1");
+        let plain = compute_box(html, "plain");
+        assert!(
+            (g1.0 - plain.0).abs() < 1.0 && g1.0 > 100.0 && (g1.1 - 20.0).abs() < 1.0,
+            "hoisted-atomic item must stay auto-sized so taffy stretch fills the track \
+             (equal to plain sibling, well beyond its 60px content, single-line), \
+             got g1 {:?} plain {:?}",
+            g1,
+            plain
+        );
+    }
+
+    /// t-p117 definite 轨道守卫：fixed 轨道内 item 默认 stretch 填满轨道（100px），
+    /// 覆写被纯 max-content 轨道门挡下，不得回缩成内容宽 60。
+    #[test]
+    fn p117_grid_item_definite_track_stretch_untouched() {
+        let w = compute_box(
+            r#"<html><body style="margin:0">
+              <ul id="ul" style="display:grid;grid-template-columns:100px;list-style:none;margin:0;padding:0;font:20px/1 Ahem"><li id="li">hi<span style="display:inline-block;width:20px;height:20px;background:#0f0"></span></li></ul>
+            </body></html>"#,
+            "li",
+        );
+        assert!(
+            (w.0 - 100.0).abs() < 1.0,
+            "definite-track grid item must keep taffy stretch (100px), not shrink to content 60, got {:?}",
+            w
+        );
+    }
+
+    /// t-p117 r2 DEF-1 守卫（纯 max-content 收窄门的另一半）：混合轨道列表
+    /// `100px auto` 中 definite 列 item 不得被 max-content 地板抬起——轨道可解到
+    /// 贡献以下时地板会强迫溢出（r1 缺陷轮 A/B 实证：definite 列 item 100→420
+    /// 叠压相邻列、受限 auto 列 200→520）。门收窄后该列表整体跳过覆写，恢复既有
+    /// 行为：definite 列 item stretch 填满 100px、受限 auto 列 stretch 填满剩余
+    /// 200px（本测修前绿、r1 红、r2 复绿的保持性守卫）。
+    #[test]
+    fn p117_grid_mixed_definite_auto_list_not_floored() {
+        let html = r#"<html><body style="margin:0">
+          <ul id="ul" style="display:grid;grid-template-columns:100px auto;width:300px;list-style:none;margin:0;padding:0;font:20px/1 Ahem"><li id="d1">wide text content here<span style="display:inline-block;width:20px;height:20px;background:#0f0"></span></li><li id="a1">auto item text<span style="display:inline-block;width:20px;height:20px;background:#0f0"></span></li></ul>
+        </body></html>"#;
+        let d1 = compute_box(html, "d1");
+        let a1 = compute_box(html, "a1");
+        assert!(
+            (d1.0 - 100.0).abs() < 1.0,
+            "item in definite 100px track must stretch to the track, not floor to its \
+             max-content contribution (d1 content ~460px would overlap the next column), \
+             got {:?}",
+            d1
+        );
+        assert!(
+            (a1.0 - 200.0).abs() < 1.0,
+            "item in constrained auto track must stretch to the resolved track (200px), \
+             got {:?}",
+            a1
+        );
+    }
+
+    /// t-p117 r2 DEF-2 守卫（作者声明优先）：声明 min-width:0 的 item 不被地板
+    /// 覆写——converter 已把声明写入 taffy min_size.width，覆写会静默失效防溢出
+    /// reset（r1 对 width 有声明门、对 min-width 无，不对称）。声明门命中保持原生
+    /// 路径（20 = 关断态塌缩宽，该子类的贡献注入随轨道解析切片延后，FIXME）；对照
+    /// 无声明 item 仍被地板修复（60）。两项分置两个单 item 网格：同轨会污染判定——
+    /// 兄弟地板抬轨到 60 后，reset（门命中、无地板）按默认 stretch 合法拉伸到轨宽
+    /// （min-width:0 不阻断 stretch），60 无法区分「门命中」与「门失效」。
+    #[test]
+    fn p117_grid_author_min_width_not_clobbered() {
+        let html = r#"<html><body style="margin:0">
+          <ul style="display:grid;grid-template-columns:max-content;list-style:none;margin:0;padding:0;font:20px/1 Ahem"><li id="reset" style="min-width:0">hi<span style="display:inline-block;width:20px;height:20px;background:#0f0"></span></li></ul>
+          <ul style="display:grid;grid-template-columns:max-content;list-style:none;margin:0;padding:0;font:20px/1 Ahem"><li id="sib">hi<span style="display:inline-block;width:20px;height:20px;background:#0f0"></span></li></ul>
+        </body></html>"#;
+        let reset = compute_box(html, "reset");
+        let sib = compute_box(html, "sib");
+        assert!(
+            (reset.0 - 20.0).abs() < 1.0,
+            "author min-width:0 must be respected (no floor override); item keeps native \
+             taffy resolution, got {:?}",
+            reset
+        );
+        assert!(
+            (sib.0 - 60.0).abs() < 1.0,
+            "sibling without declared min-width still gets the contribution floor, got {:?}",
+            sib
+        );
+    }
+
     /// 完整布局后取 li 与原子行内级盒的 border-box (宽, 高)。
     fn compute_li_and_atomic(html: &str) -> ((f32, f32), (f32, f32)) {
         let doc = zero_dom::parse_html(html);
