@@ -2,76 +2,70 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 122 施工收口（classic script 编码链三面轮：script-charset-02 **3F→0F** + 03 **1F→0F**，全量 A/B **真翻红 0**；根因四层递进定谳：JS 字面量重复键 R5000 面覆盖初版 getter / harness 前导注入把 meta 挤出 1024 prescan 窗 / host `__zw_get_character_set` 恒 truthy 兜底短路嗅探臂 / head 内 div 隐式 body 化把 meta 推入 body 致 innerHTML 树位源结构性失效——探针页逐轮剥离，见账本；三刀：runner 解码链接入文档编码回退（嗅探对注入前原始 html，`inline_local_scripts` 参数化）+ shim R5000 面 host truthy 直读→meta 元素遍历嗅探回退（querySelectorAll 按属性读）→'UTF-8' 缺省保底 + bridge host 无 label 返空串让位 + part03 gate 动态外链 charset 属性感知解码；pin ×1（engine-only stash 往返红行为证据）+ engine lib 3570/0 + runner 测试模块 254/0 + clippy；同轮 form-submission-0 219F 勘根精确化（186F POST 传输契约 + 33F runner iframe 文档管道，均大基建挂账）、links 域散 F 复盘 0F 出局、newline-normalization 12F 单根候选浮现；下一步 s123 候选：newline-normalization 12F 单根刀位 / module 网络面挂账项勘根）；承前：M2 切片 121（a/area URL 分解组件三面 20F→0F）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 123 施工收口（FormData 条目构造收口轮：newline-normalization **12F→0F**，全量 A/B **恰 14 Fail→Pass（12 newline + 2 wrapping-transformation 搭车）真翻红 0**；勘根证伪挂账原假设——非换行归一过度，真根因双条：动态建表同 turn 构造时 document 级**逗号列表**查询对 live 树恒空（单选择器才有 R161 pending 回落臂，列表没有；静态标记页正常 staticDocInSel=2，缺口仅 live 树 face，R57 :invalid 臂既有先例）+ file 状态无枚举臂；探针五轮递进：get null 实锤枚举零→attrName 排除 stale→单选择器 2 疑通（误导一轮）→`'input,input'`=0 实锤逗号列表→static=2 定界 live face；双刀：枚举双源并集（form 子树 live face + document 级 face 按键去重，静态页序不变）+ file 臂复用 `_zwFdEntry` 每选中文件一条（无选中零条目 spec 同）+ 兜底去 file 守卫防双计；pin ×1（part02.js stash 往返两面红 get null 行为证据）+ engine lib 3570/0 + clippy 零告警 + fmt + shim 拼接 node --check；新挂账 ×2：FileList 缺索引访问（files[0] undefined，corpus 不需未修）+ live 树 document 级逗号列表 qSA 根缺口（本切片以双源并集绕开）；下一步 s124 候选：module 网络面挂账项勘根 / 承袭挂账序复核）；承前：M2 切片 122（classic script 编码链三面 4F→0F）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-28 M2 切片 122 施工收口，classic script 编码链三面轮）**：
-> **入场定刀位**：三候选勘根——①form-submission-0 219F 定谳（挂账精确化，
-> 不施工）：186F（urlencoded2/text-plain/multipart 各 62）= POST body 传输
-> 缺失（host 导航契约无 method/body 通道 + echo-content-escaped.py 等端点
-> 不在语料 pull 面——双大基建）；33F（algorithm 8 + action 10 + newline 12 +
-> checks 3）= form target≠_self 命名 iframe 导航（runner 无 iframe 文档
-> 管道）；附属发现 newline-normalization 12F 独立单根（FormData 构造换行
-> 归一过度，纯 shim 面）转刀位候选。②links 域剩余散 F 复盘 **0F**（仅 4
-> 既有 Timeout 导航面）——出局。③**新刀位：script-charset-02/03**（runner
-> + shim 双面，s115 挂账收口）。
-> **根因链（探针四轮递进，全 gitignored corpus 验后删）**：①JS 对象字面量
-> 重复键——主文档 `globalThis.document = {` 单个巨型字面量内 R5000 片 c 已有
-> characterSet getter，后键胜，初版 2986 邻位新增同名 getter 被整个吃掉；
-> 纠正：并入 R5000 既有 getter，字面量内同名唯一化固化为施工红线。②harness
-> 前导注入挤出 prescan 窗——~200KB harness 内联在 case 原 testharness.js 引
-> 用位（02 语料该引用在 byte 593 meta 之前），嗅探吃注入后 html 则窗内全是
-> 前导 → doc_encoding=None；纠正：`inline_local_scripts` 参数化 doc_encoding，
-> 调用方对**注入前原始 source** 嗅探。③host `__zw_get_character_set` 无
-> label 恒返 truthy 'UTF-8' 兜底短路嗅探臂（其读的 dom_html 快照=注入后
-> html，同根同症）；纠正：无 label 返空串 falsy 让位，truthy 直读零变化
-> （R5000 判据面）。④head innerHTML 树位源结构性失效——02 语料 head 内
-> `<div id="log">` 触发 spec tree construction 隐式 body 化，后续 meta 解析
-> 进 body（探针实测 headLen=201337/metaAt=-1）；真浏览器靠解析前字节流预扫
-> 描不受树位影响；纠正：shim 嗅探源改 `querySelectorAll('meta')` 元素遍历
-> 按属性读（charset + http-equiv=content-type content 两形，兼消脚本原文
-> `<meta` 字面量误匹配面）。方法论落坑 ×2 记账：探针页无 testharness.js 引
-> 用被 skip 规则排除（零输出伪空跑）；windows-1250 "śćążź" 真值字节
-> 9C E6 B9 BF 9F 以 corpus 文件实测为准（猜表假红）。
-> **本轮施工**（净变更 part03/part06 + callbacks.rs + testharness.rs）：
-> ①runner：`sniff_document_encoding`（meta prescan 1024 窗 + for_label 归
-> 一）+ `decode_classic_script_bytes` 4 参（BOM > ct charset 参数 > charset
-> 属性 > **文档编码** > UTF-8 lossy）+ `inline_local_scripts` 参数化。
-> ②shim：R5000 面 characterSet host truthy 直读 → meta 元素遍历嗅探回退
-> （`__zwMainDocEnc` '' 哨兵缓存）→ 'UTF-8' 缺省保底（runner 本地通道恒
-> UTF-8 交付，缺省变更会翻基线）；charset/inputEncoding 别名自动同源。
-> ③bridge：host 无 label 返空串。④part03 gate：动态外链 charset 属性感知
-> 解码（sel 形 lw / handle 形双路，append 时值定码——03 面）。
-> **验证**：定向 `FILTER=script-charset` **10/10**（01 六保持 + 02 三翻绿 +
-> 03 翻绿）；**全量 A/B 逐行 status join：恰 4 对 Fail→Pass（02 三 + 03 一），
-> 真翻红 = 0**（6635P/1163F/105T → 6639P/1159F/105T）。bin pin
-> `script_charset_s122`（characterSet 嗅探 div 推 body 形 + 文档编码回退解
-> 码 windows-1250 字节）：新代码绿；engine 三文件 stash 往返**红**
-> （`characterSet meta 嗅探: UTF-8` 行为失败非编译失败）；face ② 旧码红由
-> A/B 基线承载（runner 修复与 pin 同文件不可分面 stash，诚实记法）；charset
-> 属性变更脸由 corpus 03 本身覆盖不入 pin。engine lib **3570/0**；runner 测
-> 试模块 **254/0**；guard 内 clippy 零告警；fmt、shim 拼接 node --check 过。
-> 渲染面零依赖。账本见
-> [evidence/2026-10-28-m2s122-script-charset.md](html-semantics-compat/evidence/2026-10-28-m2s122-script-charset.md)。
-> **范围**：engine shim part03/part06 + js_dom_bridge/callbacks.rs + runner
-> testharness.rs（commit 423d62f07）；语料零改动（探针页 ×3 验后删除）。
-> **挂账更新**：script-charset-02/03 **收口移出承袭清单**；form-submission-0
-> 219F 挂账精确化（186F POST 传输契约 + echo 端点仿真 / 33F iframe 文档
-> 管道——均大基建类）；newline-normalization 12F 单根候选（s123 首选）。
-> 承袭：写流执行身份盖章断链 FIXME、part02 setAttribute 绕 notify 臂
-> （gap 2）、execution-timing 构成面 056/063+051/052 单根（增量解析大基建）、
-> 041 nested write（写流队列重构）、lazy-loading 族 26F（viewport 基建大项）、
-> meta color-scheme 21F（跨流 style-system）、css-module 族 corpus 门（待决
-> 须用户拍板）、www2 可达性、modulepreload referrerpolicy 族、
-> module-import-referrer TLA、script-crossorigin-network cookies、
-> redirect-relative-urls、export-from with FIXME、143 write、defer 多写完成
-> 序、dynamic import() with 透传、classic 外链 SRI、接口对象基建面、FIXME
-> 组、/tmp/zw-hb*.txt；**待决（须用户拍板）**：css/text 数据模块语料资源
-> 缺失、parser form element pointer 4F 缓行（2026-10-23，并入 declarative
-> shadow DOM parser 批次）。
-> **下一步**：s123 入场定刀位（候选：newline-normalization 12F 单根刀位 /
-> module 网络面挂账项勘根 / 承袭挂账序复核）。
-> **切片间隙**：本轮 classic script 编码链面（runner 解码链 + shim 文档编码
-> 三别名 + gate charset 感知）；下一候选 FormData 换行归一 shim 单根面。
+> **▶ 当前状态（2026-10-28 M2 切片 123 施工收口，FormData 条目构造收口轮）**：
+> **入场定刀位**：取 s122 挂账首选 newline-normalization 12F 单根候选
+> （原假设「FormData 构造换行归一过度」）——**勘根证伪原假设**：条目枚举
+> 整体为零，换行归一面反而正确（idlVal 原文保真）。
+> **根因定谳（探针五轮递进，全 gitignored corpus 验后删）**：语料 12 测
+> = value/name/filename × \n \r \r\n \n\r 原文保真断言。①get null/spread
+> 空实锤**条目枚举整体为零**（非归一）；②attrName="a" 正常排除 stale；
+> ③doc qSA('input')=2 疑查询通（**误导一轮**——单选择器有 R161 pending
+> 回落臂）；④`'input,input'` **逗号列表**=0 实锤——live 树 face 列表查
+> 询恒空（R57 :invalid 臂既有先例「分开查询 concat」）；⑤static 标记页
+> 同查询=2 定界 host 快照支持列表、**缺口仅 live 树 face**。第二根因：
+> file 状态在构造器枚举臂无专属处理（落通用臂零条目，spec file 臂要求
+> 每选中文件一条）。
+> **本轮施工**（净变更 part02.js + testharness.rs pin ×1，无其他 Rust）：
+> ①**枚举双源并集**——document 级查询（静态页原路径 + form= 属性站外
+> 关联 best-effort）在前 + `form.querySelectorAll` 子树 live 查询随后，
+> `_fdSeen` 按元素键去重（`_elKeyOf` 优先 handle/selector 回落）——静态
+> 页序与原行为逐项一致，动态页子树序即树序。②**file 状态条目臂**——
+> `type === 'file'` 每选中文件一条 `_zwFdEntry(String(name), _fdFile)`
+> （File 本体保真，File.name 不做换行归一）；无选中零条目（spec 同）；
+> 兜底 else-if 去 `type !== 'file'` 守卫（联动防双计）。③pin
+> `formdata_entry_list_s123` 两面：hidden value='b\nc' 动态建表 live 枚
+> 举 + 原文换行零归一；DataTransfer→files setter→`fd.get('f').name` 原
+> 文 filename。
+> **验证**：定向 `FILTER=newline-normalization` **12/12**（12F→0F）；
+> **全量 A/B 逐行 status join：恰 14 对 Fail→Pass（12 newline +
+> 2 wrapping-transformation 搭车——FormData(form) 同路径），真翻红 =
+> 0**（6639P/1159F/105T → 6653P/1145F/105T，总数 7903 恒定；首跑探针
+> 未删时取数 +7 Fail 噪声总量不配平，被 pre-commit 门禁事实核查项
+> BLOCK 抓出，删净补跑定谳）。bin pin 新代码**绿**；part02.js
+> stash 往返**两面红**（`live form 枚举 + 原文换行零归一: null` /
+> `file 条目 File.name 原文: null`——行为失败非编译失败）。engine lib
+> **3570/0**；guard 内 clippy（runner --all-targets）零告警；fmt 净；
+> shim 拼接 node --check 过。渲染面零依赖。账本见
+> [evidence/2026-10-28-m2s123-formdata-entry-list.md](html-semantics-compat/evidence/2026-10-28-m2s123-formdata-entry-list.md)。
+> **范围**：engine shim part02.js + runner testharness.rs（commit
+> 7232a83d8）；语料零改动（探针页 ×5 验后删除）。
+> **挂账更新**：newline-normalization 12F **收口移出候选**；新挂账 ×2：
+> **FileList 缺索引访问**（files[0] undefined，仅 item()/length/iterator
+> ——spec 缺口真实但 corpus 不需要，精准修改未顺带扩面）；**live 树
+> document 级逗号列表 qSA 根缺口**（单选择器 R161 回落臂列表没有——本
+> 切片以双源并集绕开，根缺口在 host 查询 face，同症 face 按 R57 先例分
+> 开查询 concat 或补列表回落臂）。
+> 承袭：form-submission-0 219F 精确化挂账（186F POST 传输契约 + 33F
+> iframe 文档管道，均大基建）、写流执行身份盖章断链 FIXME、part02
+> setAttribute 绕 notify 臂（gap 2）、execution-timing 构成面 056/063+
+> 051/052 单根（增量解析大基建）、041 nested write（写流队列重构）、
+> lazy-loading 族 26F（viewport 基建大项）、meta color-scheme 21F（跨流
+> style-system）、css-module 族 corpus 门（待决须用户拍板）、www2 可达
+> 性、modulepreload referrerpolicy 族、module-import-referrer TLA、
+> script-crossorigin-network cookies、redirect-relative-urls、
+> export-from with FIXME、143 write、defer 多写完成序、dynamic import()
+> with 透传、classic 外链 SRI、接口对象基建面、FIXME 组、/tmp/zw-hb*.txt；
+> **待决（须用户拍板）**：css/text 数据模块语料资源缺失、parser form
+> element pointer 4F 缓行（2026-10-23，并入 declarative shadow DOM
+> parser 批次）。
+> **下一步**：s124 入场定刀位（候选：module 网络面挂账项勘根
+> （modulepreload referrerpolicy 族 / module-import-referrer TLA /
+> dynamic import() with 透传 / classic 外链 SRI——逐一辨 shim/runner/host
+> 契约面）/ 承袭挂账序复核）。
+> **切片间隙**：本轮 FormData 条目构造 shim 单根面（枚举双源 + file 臂）；
+> 下一候选 module 网络面挂账项勘根轮。
 
 > **▶ 上轮状态（2026-10-28 M2 切片 120 施工收口，fragment 解析 script 克隆 already-started 继承轮——其下一步 s121 已由 s121 收口，见上）**：
 > **入场定谳**：s118 FIXME(spec-gap)「cloneNode 重解析产物 fragment 章」由语料
