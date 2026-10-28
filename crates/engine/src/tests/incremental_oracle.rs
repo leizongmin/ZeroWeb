@@ -363,3 +363,350 @@ fn inc04_pixel_contract_warm_frames_bitwise_equal_cold() {
         assert_frames_bitwise_equal(&px_warm, &px_cold, name);
     }
 }
+
+// ── S1 文档级指纹 oracle（设计卡 §4-S1 前提门①：同输入重算==复用逐位一致）──
+
+/// 以全预算推进一个独立会话至 Complete 并取结果（模拟一次导航的 styled 帧路径，
+/// 与生产 `AsyncPageLoad::advance_render` 的会话生命周期同构：新建 → 推进 → 取帧）。
+fn fingerprint_session(pipeline: &mut RenderPipeline, html: &str, css: &str) -> RenderResult {
+    let mut session = crate::BudgetedRenderSession::new(html, css);
+    loop {
+        if matches!(
+            pipeline.advance_budgeted_render(&mut session, 5_000.0),
+            crate::BudgetAdvance::Complete
+        ) {
+            break;
+        }
+    }
+    session.take_result().expect("complete session has result")
+}
+
+/// S1 热导航命中契约：同输入新会话（新 NodeId 代际）命中指纹缓存后，光栅化输出
+/// 必须与首航帧及独立全量冷参考逐位相等；同会话首航（MISS 回填）亦须与冷参考
+/// 逐位相等（指纹计算+缓存写入开销不得改变渲染输出）。
+#[test]
+fn s1_fingerprint_hot_navigation_hit_bitwise_equal_cold() {
+    let mut ctx = RasterCtx::new();
+    let mut warm = RenderPipeline::new(320.0, 400.0);
+    // 冷导航：全新会话全量渲染（键 MISS → 回填缓存）。
+    let cold_nav = fingerprint_session(&mut warm, NAV_A_HTML, NAV_CSS);
+    // 热导航：同输入新会话——键相等必须命中，跳过四段整帧复用。
+    let hot_nav = fingerprint_session(&mut warm, NAV_A_HTML, NAV_CSS);
+    // 独立冷参考（另一管线全量重算同输入）。
+    let reference = cold_frame(NAV_A_HTML, NAV_CSS);
+    let px_cold_nav = ctx.rasterize(&cold_nav);
+    let px_hot_nav = ctx.rasterize(&hot_nav);
+    let px_reference = ctx.rasterize(&reference);
+    assert_frames_bitwise_equal(&px_cold_nav, &px_reference, "S1 miss (first nav) vs cold reference");
+    assert_frames_bitwise_equal(&px_hot_nav, &px_reference, "S1 hit (hot nav) vs cold reference");
+}
+
+/// S1 异输入判异：内容变化后键必须判异（MISS 全量），复用帧不得残留上一内容。
+#[test]
+fn s1_fingerprint_content_change_misses_and_recomputes() {
+    let mut ctx = RasterCtx::new();
+    let mut warm = RenderPipeline::new(320.0, 400.0);
+    let first = fingerprint_session(&mut warm, NAV_A_HTML, NAV_CSS);
+    let second = fingerprint_session(&mut warm, NAV_B_HTML, NAV_CSS);
+    let reference = cold_frame(NAV_B_HTML, NAV_CSS);
+    let px_second = ctx.rasterize(&second);
+    let px_reference = ctx.rasterize(&reference);
+    assert_frames_bitwise_equal(&px_second, &px_reference, "content change recomputes");
+    let _ = first;
+}
+
+// ── S1 命中臂返修回归钉（DF-1/DF-3，红→绿证据见运行目录 evidence/t21-df-red/green）──
+
+/// DF-1 突变批次：`body` 追加一个探针 div（appendChild 类非幂等操作——每重放
+/// 一次多一个节点，效应可计数）。
+fn df1_append_probe_mutations() -> Vec<crate::js_dom_bridge::DomMutation> {
+    vec![
+        crate::js_dom_bridge::DomMutation::CreateElement {
+            handle: "__zw_df1_probe".to_string(),
+            tag: "div".to_string(),
+        },
+        crate::js_dom_bridge::DomMutation::AppendChild {
+            parent_selector: "body".to_string(),
+            child_handle: "__zw_df1_probe".to_string(),
+        },
+    ]
+}
+
+/// body 直接子节点数（探针计数面；NAV_A_HTML 为单行 HTML，body 子节点全为元素）。
+fn df1_body_child_count(pipeline: &RenderPipeline) -> usize {
+    let doc = pipeline
+        .cached_doc
+        .as_ref()
+        .expect("cached_doc present after render")
+        .borrow();
+    let body = doc.query_selector(doc.root(), "body").expect("body present");
+    doc.get(body).expect("body node").children.len()
+}
+
+/// DF-1（blocker 根修钉）：脚本突变不得泄漏进指纹缓存。
+///
+/// 缺陷时序（返修前红）：冷航 Complete 回填把管线活文档 Rc 共享入缓存 → 脚本
+/// 突变路径（`render_with_dom_mutations_persistent`）原位写入缓存条目持有的同一
+/// 实例 → 热航同键命中还原含突变树 → 脚本重放 → appendChild 效应翻倍（body 5
+/// 子 vs 期望 4）。修后语义 = 改前热导航语义：命中还原**纯净树**，脚本效应单次。
+#[test]
+fn s1_fingerprint_hit_restores_pristine_tree_script_effects_not_doubled() {
+    let mut warm = RenderPipeline::new(320.0, 400.0);
+    // 冷导航：MISS 全量渲染并回填（fill 点在脚本执行前 = 纯净树）。
+    let cold = fingerprint_session(&mut warm, NAV_A_HTML, NAV_CSS);
+    let _ = cold;
+    // 页面脚本执行：非幂等突变一次。
+    warm.render_with_dom_mutations_persistent(&df1_append_probe_mutations(), NAV_CSS, None)
+        .expect("script mutation applies");
+    assert_eq!(df1_body_child_count(&warm), 4, "冷航 + 单次突变：body 3 元素 + 1 探针");
+    // 热导航：同输入新会话（新 NodeId 代际）——必须命中（四段零耗）。
+    let mut session = crate::BudgetedRenderSession::new(NAV_A_HTML, NAV_CSS);
+    loop {
+        if matches!(
+            warm.advance_budgeted_render(&mut session, 5_000.0),
+            crate::BudgetAdvance::Complete
+        ) {
+            break;
+        }
+    }
+    assert_eq!(
+        session.timings().parse_ms,
+        0.0,
+        "热导航必须命中指纹缓存（parse 段零耗时；MISS 则本钉前提不成立）"
+    );
+    let _ = session.take_result();
+    // 命中还原 + 脚本重放一次：效应必须单次（不翻倍）。
+    warm.render_with_dom_mutations_persistent(&df1_append_probe_mutations(), NAV_CSS, None)
+        .expect("script mutation re-applies after hit");
+    assert_eq!(
+        df1_body_child_count(&warm),
+        4,
+        "命中还原纯净树 + 脚本单次效应：探针不得翻倍（翻倍 = 突变泄漏进缓存）"
+    );
+}
+
+/// DF-3：命中帧 `RenderResult.timings` 必须覆写为命中计时——与外层 session 计时
+/// 同值（RenderResult.timings 语义 = 产生该帧的实际耗时；不得携带冷航全量幻影
+/// 毫秒，消费方 apps/renderer resize 诊断读该值）。
+#[test]
+fn s1_fingerprint_hit_result_timings_matches_hit_not_cold() {
+    let mut warm = RenderPipeline::new(320.0, 400.0);
+    let cold = fingerprint_session(&mut warm, NAV_A_HTML, NAV_CSS);
+    assert!(cold.timings.parse_ms > 0.0, "冷航前置：全量路径 parse 有耗时");
+    let mut session = crate::BudgetedRenderSession::new(NAV_A_HTML, NAV_CSS);
+    loop {
+        if matches!(
+            warm.advance_budgeted_render(&mut session, 5_000.0),
+            crate::BudgetAdvance::Complete
+        ) {
+            break;
+        }
+    }
+    assert_eq!(session.timings().parse_ms, 0.0, "热航命中前提");
+    let result = session.take_result().expect("complete session has result");
+    assert_eq!(
+        result.timings.total_ms,
+        session.timings().total_ms,
+        "命中帧 result.timings 必须与 session.timings（命中计时）同值"
+    );
+    assert_eq!(result.timings.parse_ms, 0.0, "命中帧不得携带冷航 parse 毫秒");
+}
+
+// ── S1 中断续推回填键返修回归钉（DF2-1，红→绿证据见运行目录 evidence/t21-s2-red/green）──
+
+/// DF2-1 场景文档：单个无尺寸属性 img（固有尺寸驱动布局，图片表落库前后
+/// 布局/绘制面均可区分）。
+const DF2_IMG_HTML: &str = "<html><body><img src=\"https://a.example/pic.png\"></body></html>";
+
+/// TV2-R1 场景文档：img + 后随块级 div——div 的 Y 位置由 img 布局盒高度决定
+/// （固有注入缺失时 img 盒塌缩、div 上移；注入 200×40 后 div 下移），使混合帧
+/// （E0 布局 + E1 绘制）与两个纯参考帧像素可区分。
+const TV2R1_FLOW_HTML: &str = "<html><body><img src=\"https://a.example/pic.png\"><div style=\"height:20px;background-color:#0000ff\"></div></body></html>";
+
+/// DF2-1 → TV2-R1 演进钉：会话中段环境变更（图片分批落表）的回填语义。
+///
+/// DF2-1（S2 返修）曾要求回填键以 Complete 当刻环境重算（本测试旧名
+/// `..._backfills_under_completion_env` 断言 E1 命中）；TV2-R1（S3 返修）
+/// 收紧为保守跳过：重算键 ≠ 起点键一律不回填。本构造中全部步在落表后
+/// 推进、帧实为纯净 E1，跳过属保守成本（该时序损失一次缓存机会）而非
+/// 缺陷——因 [Layout,Paint) 中断带的混合帧无法与纯净帧从外部区分（键等
+/// 是唯一安全门），见
+/// `s1_fingerprint_layout_paint_boundary_env_change_skips_backfill` 的像素
+/// 偏离证据。修后语义：两个环境的热导航都 MISS 全量且与关缓存参考逐位
+/// 一致（红→绿证据：运行目录 evidence/t21-s3-red-interleave2 与后续绿跑）。
+#[test]
+fn s1_fingerprint_mid_session_env_change_skips_backfill_misses_both_envs() {
+    let mut ctx = RasterCtx::new();
+    let mut warm = RenderPipeline::new(320.0, 400.0);
+    let img_key = crate::paint::image_resource_key("https://a.example/pic.png", warm.document_url());
+    let mut img_sizes = std::collections::HashMap::new();
+    img_sizes.insert(img_key, (200.0f32, 40.0f32));
+    let mut img_colors = std::collections::HashMap::new();
+    img_colors.insert(img_key, [255u8, 0, 0, 255]);
+
+    // 零预算首 advance：起点键 K0 定格（E0 = 图片未到），确定性零步推进
+    //（deadline = now，步循环不进入，模拟 16ms 生产预算下的中断续推形态）。
+    let mut session = crate::BudgetedRenderSession::new(DF2_IMG_HTML, NAV_CSS);
+    assert!(
+        matches!(
+            warm.advance_budgeted_render(&mut session, 0.0),
+            crate::BudgetAdvance::InProgress
+        ),
+        "零预算首 advance 必须定格键后中断（场景前提）"
+    );
+
+    // 图片分批到达（E0→E1，会话中段落表），续推至 Complete：帧由 E1 布局/
+    // 绘制产出，回填发生在此处（被测点）。
+    warm.set_image_sizes(img_sizes.clone());
+    warm.set_image_solid_colors(img_colors.clone());
+    loop {
+        if matches!(
+            warm.advance_budgeted_render(&mut session, 5_000.0),
+            crate::BudgetAdvance::Complete
+        ) {
+            break;
+        }
+    }
+    let _ = session.take_result();
+
+    // 旧环境热导航（表复位 = 重导航后图片未重新到达）：环境变更后的条目
+    // 不得被旧环境会话命中——必须 MISS 全量，且输出与关缓存全量逐位一致。
+    warm.set_image_sizes(std::collections::HashMap::new());
+    warm.set_image_solid_colors(std::collections::HashMap::new());
+    let hot_e0 = fingerprint_session(&mut warm, DF2_IMG_HTML, NAV_CSS);
+    assert!(
+        hot_e0.timings.parse_ms > 0.0,
+        "旧环境查找必须 MISS 全量（parse_ms=0 即旧键装载了新环境帧）"
+    );
+    let ref_e0 = cold_frame(DF2_IMG_HTML, NAV_CSS);
+    assert_frames_bitwise_equal(
+        &ctx.rasterize(&hot_e0),
+        &ctx.rasterize(&ref_e0),
+        "DF2-1 旧环境热导航 vs 关缓存全量",
+    );
+
+    // 新环境热导航（E1 恢复）：TV2-R1 保守跳过——起点键 ≠ 重算键不回填，
+    // 即便本构造的完成帧实为纯净 E1（保守成本，见函数级注释）；必须 MISS
+    // 全量，输出与关缓存全量逐位一致。
+    warm.set_image_sizes(img_sizes.clone());
+    warm.set_image_solid_colors(img_colors.clone());
+    let hot_e1 = fingerprint_session(&mut warm, DF2_IMG_HTML, NAV_CSS);
+    assert!(
+        hot_e1.timings.parse_ms > 0.0,
+        "新环境热导航必须 MISS 全量（parse_ms=0 = 环境变更会话仍被回填，TV2-R1 保守门失效）"
+    );
+    let mut ref_e1_pipeline = RenderPipeline::new(320.0, 400.0);
+    ref_e1_pipeline.set_image_sizes(img_sizes);
+    ref_e1_pipeline.set_image_solid_colors(img_colors);
+    let ref_e1 = ref_e1_pipeline.render_html(DF2_IMG_HTML, NAV_CSS);
+    assert_frames_bitwise_equal(
+        &ctx.rasterize(&hot_e1),
+        &ctx.rasterize(&ref_e1),
+        "DF2-1 新环境热导航 vs 关缓存全量",
+    );
+}
+
+/// TV2-R1（medium 根修钉）：中断落在 [Layout 完成, Paint 开始) 步边界 + 同 tick
+/// 图片批落表 → 续推产出的帧是混合帧（布局几何 = 旧环境、绘制 = 新环境），不得
+/// 入缓存。
+///
+/// 缺陷时序（返修前红）：会话起点键 K0 定格（E0 = 图片未到）→ 微预算逐 advance
+/// 推进至 Paint 步前中断（布局已按 E0 定形）→ 同 tick 图片批落表（E0→E1）→ 续
+/// 推 Paint 完成：绘制消费 E1 表、布局几何仍是 E0 产物，混合帧以 Complete 当刻
+/// 键 K1 回填——键值不同刻。E1 热导航命中装载混合帧，输出 ≠ 关缓存全量，同键
+/// 覆盖还冲掉干净条目。修后语义（回填保守跳过）：Complete 重算键 ≠ 会话起点键
+/// = 环境在会话中段变更过 → 不插入；E0/E1 热导航均 MISS 全量且逐位等关缓存参
+/// 考。生产可达性：webview async_load tick 序 advance → poll_images 落表 → 同
+/// tick 二次 advance 续推同一 session。
+#[test]
+fn s1_fingerprint_layout_paint_boundary_env_change_skips_backfill() {
+    let mut ctx = RasterCtx::new();
+    let mut warm = RenderPipeline::new(320.0, 400.0);
+    let img_key = crate::paint::image_resource_key("https://a.example/pic.png", warm.document_url());
+    let mut img_sizes = std::collections::HashMap::new();
+    img_sizes.insert(img_key, (200.0f32, 40.0f32));
+    let mut img_colors = std::collections::HashMap::new();
+    img_colors.insert(img_key, [255u8, 0, 0, 255]);
+
+    // 零预算首 advance：起点键 K0 定格（E0 = 图片未到），零步推进（场景前提）。
+    let mut session = crate::BudgetedRenderSession::new(TV2R1_FLOW_HTML, NAV_CSS);
+    assert!(
+        matches!(
+            warm.advance_budgeted_render(&mut session, 0.0),
+            crate::BudgetAdvance::InProgress
+        ),
+        "零预算首 advance 必须定格键后中断（场景前提）"
+    );
+
+    // 微预算逐步推进到 [Layout 完成, Paint 开始) 步边界：微预算（1μs）下每步
+    // 实际耗时超过预算 → 每次 advance 恰推进一个步；停在 Paint 步 = 布局已按
+    // E0 定形、绘制未开始（混合帧的布局半边）。
+    let mut steps = 0;
+    while session.step() != crate::BudgetStep::Paint {
+        assert!(steps < 16, "微预算推进必须停在 Paint 步边界（场景前提）");
+        steps += 1;
+        let _ = warm.advance_budgeted_render(&mut session, 0.001);
+    }
+
+    // 同 tick 图片批落表（E0→E1）+ 续推 Paint 完成（生产 tick 序）：混合帧在
+    // Paint 臂末到达回填点（被测点）。
+    warm.set_image_sizes(img_sizes.clone());
+    warm.set_image_solid_colors(img_colors.clone());
+    loop {
+        if matches!(
+            warm.advance_budgeted_render(&mut session, 5_000.0),
+            crate::BudgetAdvance::Complete
+        ) {
+            break;
+        }
+    }
+    let _ = session.take_result();
+
+    // E1 热导航（表保持 = 图片已到的新环境）：缺陷形态 = 命中混合帧回填条目
+    //（parse_ms=0）且输出与关缓存参考逐位不等（后随 div 的 Y 位置由 img 布局
+    // 盒高度决定——E0 布局下 img 固有注入缺失、div 上移，E1 参考帧 div 在
+    // img 200×40 之下）；修后形态 = MISS 全量且逐位等。
+    warm.set_image_sizes(img_sizes.clone());
+    warm.set_image_solid_colors(img_colors.clone());
+    let hot_e1 = fingerprint_session(&mut warm, TV2R1_FLOW_HTML, NAV_CSS);
+    let mut ref_e1_pipeline = RenderPipeline::new(320.0, 400.0);
+    ref_e1_pipeline.set_image_sizes(img_sizes.clone());
+    ref_e1_pipeline.set_image_solid_colors(img_colors.clone());
+    let ref_e1 = ref_e1_pipeline.render_html(TV2R1_FLOW_HTML, NAV_CSS);
+    let px_hot_e1 = ctx.rasterize(&hot_e1);
+    let px_ref_e1 = ctx.rasterize(&ref_e1);
+    let e1_differs = px_hot_e1.data != px_ref_e1.data;
+    assert!(
+        hot_e1.timings.parse_ms > 0.0,
+        "E1 热导航必须 MISS 全量（实测 parse_ms={}，命中回填条目={}，输出与关缓存参考逐位不等={} —— TV2-R1 混合帧缺陷特征）",
+        hot_e1.timings.parse_ms,
+        hot_e1.timings.parse_ms == 0.0,
+        e1_differs
+    );
+    assert_frames_bitwise_equal(&px_hot_e1, &px_ref_e1, "TV2-R1 E1 热导航 vs 关缓存全量");
+
+    // E0 热导航（表复位 = 重导航后图片未重新到达）：同样 MISS 全量逐位等——
+    // 不得命中任何残留/污染条目。
+    warm.set_image_sizes(std::collections::HashMap::new());
+    warm.set_image_solid_colors(std::collections::HashMap::new());
+    let hot_e0 = fingerprint_session(&mut warm, TV2R1_FLOW_HTML, NAV_CSS);
+    assert!(
+        hot_e0.timings.parse_ms > 0.0,
+        "E0 热导航必须 MISS 全量（parse_ms=0 = 命中污染条目）"
+    );
+    let ref_e0 = cold_frame(TV2R1_FLOW_HTML, NAV_CSS);
+    assert_frames_bitwise_equal(
+        &ctx.rasterize(&hot_e0),
+        &ctx.rasterize(&ref_e0),
+        "TV2-R1 E0 热导航 vs 关缓存全量",
+    );
+
+    // 守卫：保守跳过不误伤正常回填路径——环境稳定会话（起点键 == 当刻键）正常
+    // 回填，同环境后续会话可命中（四段零耗）。
+    let _ = fingerprint_session(&mut warm, NAV_A_HTML, NAV_CSS);
+    let stable_hit = fingerprint_session(&mut warm, NAV_A_HTML, NAV_CSS);
+    assert_eq!(
+        stable_hit.timings.parse_ms, 0.0,
+        "环境稳定会话必须正常回填并可被同环境命中（保守跳过不得禁用正常路径）"
+    );
+}

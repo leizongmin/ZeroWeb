@@ -304,6 +304,11 @@ pub struct StyleSystem {
     /// 渲染媒体类型（对应 `@media screen/print/all`）。默认 Screen；
     /// 设为 Print 时 `@media print` 规则生效、`@media screen` 规则失效（CSS §7）。
     media_type: MediaType,
+    /// S1 文档级指纹的样式上下文版本：viewport/font metrics/prefers-color-scheme/
+    /// media type 任一 setter 变更即递增（设计卡 §2.1 doc_ctx_version）。供上层
+    /// 指纹键刻画「HTML/CSS 之外影响级联输出的样式上下文」；`@property`/
+    /// `@font-feature-values` 注册表每轮 `compute_styles` 从样式表重建，不入版本。
+    context_version: u64,
     /// R4124：容器查询容器链（自根向下的祖先容器栈，compute_styles_recursive
     /// push/pop）。每项 = 最近 container-type ≠ normal 祖先的 name + content-box
     /// 尺寸（静态可推时），@container 条件按链顶求值。
@@ -335,6 +340,7 @@ impl StyleSystem {
             viewport_height: None,
             prefers_color_scheme: PrefersColorSchemeValue::Light,
             media_type: MediaType::Screen,
+            context_version: 0,
             container_chain: Vec::new(),
             incremental_has_fallbacks: 0,
             cascade_cache: CascadeCache {
@@ -359,18 +365,32 @@ impl StyleSystem {
     }
 
     /// 设置视口尺寸。
+    ///
+    /// S1：值相等时不 bump [`context_version`](Self::context_version)——版本刻画
+    /// 上下文「值」的变化而非调用次数（预算路径 Style 步每会话幂等重放本调用）。
     pub fn set_viewport(&mut self, width: f64, height: f64) {
+        if self.viewport_width == Some(width) && self.viewport_height == Some(height) {
+            return;
+        }
         self.viewport_width = Some(width);
         self.viewport_height = Some(height);
+        self.context_version = self.context_version.wrapping_add(1);
     }
 
     /// 设置 first available font 的字体相对单位度量。
     pub fn set_font_metric_map(&mut self, map: &HashMap<String, computed::FontRelativeMetrics>) {
         if std::env::var("ZW_FIRST_AVAILABLE_FONT_METRICS").as_deref() == Ok("0") {
-            self.font_relative_metrics.clear();
+            if !self.font_relative_metrics.is_empty() {
+                self.font_relative_metrics.clear();
+                self.context_version = self.context_version.wrapping_add(1);
+            }
+            return;
+        }
+        if self.font_relative_metrics == *map {
             return;
         }
         self.font_relative_metrics.clone_from(map);
+        self.context_version = self.context_version.wrapping_add(1);
     }
 
     fn font_relative_metrics_for(&self, families: &[String]) -> Option<computed::FontRelativeMetrics> {
@@ -387,17 +407,35 @@ impl StyleSystem {
 
     /// 设置用户颜色方案偏好。
     pub fn set_prefers_color_scheme(&mut self, scheme: PrefersColorSchemeValue) {
+        if self.prefers_color_scheme == scheme {
+            return;
+        }
         self.prefers_color_scheme = scheme;
+        self.context_version = self.context_version.wrapping_add(1);
     }
 
     /// 设置渲染媒体类型（`MediaType::Print` 用于 `@media print` 渲染，如打印预览）。
     pub fn set_media_type(&mut self, media_type: MediaType) {
+        if self.media_type == media_type {
+            return;
+        }
         self.media_type = media_type;
+        self.context_version = self.context_version.wrapping_add(1);
     }
 
     /// 读取渲染媒体类型（R1999：供 layout 层判断是否触发 Print 分页 post-process）。
     pub fn media_type(&self) -> MediaType {
         self.media_type
+    }
+
+    /// 读取样式上下文版本（S1 文档级指纹键用，见字段注记）。
+    pub fn context_version(&self) -> u64 {
+        self.context_version
+    }
+
+    /// 读取用户颜色方案偏好（S1 文档级指纹键用）。
+    pub fn prefers_color_scheme(&self) -> PrefersColorSchemeValue {
+        self.prefers_color_scheme
     }
 
     /// 为整个文档计算样式。

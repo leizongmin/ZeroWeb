@@ -57,6 +57,11 @@ pub struct BudgetedRenderSession {
     layout_result: Option<LayoutResult>,
     timings: PipelineTimings,
     result: Option<RenderResult>,
+    /// S1 文档级指纹键：会话首个 budget 步计算一次（环境快照 = 会话起点状态），
+    /// 跨多次 advance 保持，仅作命中查找键——回填键在 Complete 以当刻环境重算
+    ///（DF2-1 查找/插入键分离：中断续推会话步间环境变更后，起点键不得装载
+    /// 新环境帧）；None = 禁用。
+    fingerprint_key: Option<u128>,
 }
 
 impl BudgetedRenderSession {
@@ -73,6 +78,7 @@ impl BudgetedRenderSession {
             layout_result: None,
             timings: PipelineTimings::default(),
             result: None,
+            fingerprint_key: None,
         }
     }
 
@@ -105,6 +111,90 @@ impl RenderPipeline {
         }
 
         let deadline = Instant::now() + std::time::Duration::from_secs_f64(budget_ms / 1000.0);
+
+        // S1 文档级指纹短路（设计卡 §4-S1；键范式与 kill-switch 见
+        // pipeline::frame_fingerprint 模块注记）：同输入热导航的新会话命中上一
+        // styled 帧时，跳过 parse/style/layout/paint 四段整帧复用。OPTIMIZATION：
+        // 同输入重算产出逐位相同帧（同 HTML/CSS/环境 → 同 DOM/级联/几何/图元），
+        // 重算纯属重复计算；值跨 NodeId 代际可复用（ComputedStyle 零 NodeId 内嵌）。
+        // 键在会话首个 budget 步计算一次（环境快照 = 会话起点状态），跨多次 advance
+        // 保持，仅作命中查找键；回填键在 Complete 以当刻环境重算（见 Paint 臂，
+        // DF2-1 查找/插入键分离）。
+        if session.fingerprint_key.is_none() && session.step != BudgetStep::Done {
+            session.fingerprint_key =
+                crate::pipeline::frame_fingerprint::frame_fingerprint_key(self, &session.html, &session.css);
+        }
+        if session.step == BudgetStep::Pending
+            && let Some(key) = session.fingerprint_key
+        {
+            // 一次性克隆命中帧（即命中开销：图元/样式 O(n) 拷贝 + 布局 O(1) Arc），
+            // 结束借用后方可写回管线状态。
+            let hit = self.frame_fingerprint_cache.lookup(key).map(|c| {
+                (
+                    // DF-1 根修：命中再拷一次纯净树——缓存条目保有的快照不得与
+                    // 管线活文档共享（后续脚本原位突变 cached_doc 会经 Rc 写穿
+                    // 缓存条目，第二次命中即还原污染树）。
+                    Rc::new(RefCell::new(c.doc.pristine_snapshot())),
+                    c.styles.clone(),
+                    c.stylesheets.clone(),
+                    c.export_set.clone(),
+                    c.result.clone(),
+                )
+            });
+            if let Some((doc, styles, stylesheets, export_set, mut result)) = hit {
+                let t_hit = Instant::now();
+                // 命中臂逐一复刻全量 Complete 副作用（下方 Done 分支同序同语义）：
+                // cached_doc/cached_styles 写回、CSS 解析缓存失效（DOM 已换代）。
+                self.cached_doc = Some(doc);
+                // DF-2 尾巴：还原文档重放 Parse 步导航态（pristine_snapshot 复位面
+                // 不带 url/referrer）——与全量 Parse 步同值，还原文档不携带旧导航。
+                {
+                    let mut restored = self.cached_doc.as_ref().expect("just set").borrow_mut();
+                    restored.set_url(self.document_url.clone());
+                    restored.set_referrer(self.referrer.clone());
+                }
+                self.cached_styles = styles;
+                self.cached_css_text = None;
+                // slice37/slice38 换代清理（handle→NodeId 持久表 + form live value
+                // 两表）——热导航会话同为文档换代，防旧代 NodeId ABA 污染。
+                self.clear_persistent_handle_nodes();
+                self.form_control_values.clear();
+                self.form_control_compositions.clear();
+                self.cached_layout = Some(result.layout.clone());
+                // 动画时钟注册（全量在 Style 步内联；keyframes registry 同名
+                // 覆盖幂等，重复注册无累积）。
+                self.animation_clock
+                    .register_from_stylesheets(&stylesheets, &self.media_context());
+                // M2-S1b 导出缓存（flag 关恒 None，与全量同语义）。
+                self.compositor_export_cache = if self.compositor_animations {
+                    export_set
+                        .as_ref()
+                        .map(|set| (set.declarations.clone(), result.animation_scopes.clone()))
+                } else {
+                    None
+                };
+                let hit_ms = t_hit.elapsed().as_secs_f64() * 1000.0;
+                session.timings = PipelineTimings {
+                    parse_ms: 0.0,
+                    style_ms: 0.0,
+                    layout_ms: 0.0,
+                    paint_ms: 0.0,
+                    total_ms: hit_ms,
+                    parse_count: 0,
+                    style_count: 0,
+                    layout_count: 0,
+                    paint_count: 0,
+                };
+                session.export_set = export_set;
+                // DF-3：命中帧 result.timings 同步覆写为命中计时（与 session.timings
+                // 同值）——RenderResult.timings 语义 = 产生该帧的实际耗时，不得携带
+                // 冷航全量幻影毫秒（消费方 apps/renderer resize 诊断读该值）。
+                result.timings = session.timings.clone();
+                session.result = Some(result);
+                session.step = BudgetStep::Done;
+                return BudgetAdvance::Complete;
+            }
+        }
 
         while Instant::now() < deadline {
             match session.step {
@@ -289,6 +379,42 @@ impl RenderPipeline {
                         export_decls,
                         animation_scopes,
                     ));
+                    // S1 回填：完整帧输出（doc/styles/stylesheets/export_set/result）
+                    // 入跨代缓存。键=Complete 当刻环境快照（DF2-1 根修：查找/插入键
+                    // 分离——起点键只作命中查找）。TV2-R1 根修（保守跳过）：回填仅
+                    // 当重算键 == 起点键（会话全程环境未变）。[Layout,Paint) 中断带
+                    // + 同 tick 图片落表时帧为混合态（布局半边按旧环境定形、绘制半
+                    // 边按新环境产出），与任一纯参考帧像素不等——DF2-1 的「以当刻键
+                    // 回填」对全量步后突变成立，对步间突变会让新环境热导航命中混合
+                    // 帧（键值不同刻，冻结判据「命中输出=同输入全量」被违背）；环境
+                    // 变更会话不回填，MISS 回退全量健全。起点键 None（kill-switch
+                    // 关 / canvas 活跃定格）同跳过。重算 None 沿既有 None 语义跳过。
+                    if let Some(result) = &session.result
+                        && let Some(key) =
+                            crate::pipeline::frame_fingerprint::frame_fingerprint_key(self, &session.html, &session.css)
+                        && session.fingerprint_key == Some(key)
+                    {
+                        // DF-1 根修：回填**纯净树快照**（`pristine_snapshot` 深拷）
+                        // 而非活文档 Rc——本点在页面脚本执行前，快照 = 键输入的纯
+                        // 函数输出；Rc 共享则后续脚本突变（render_with_dom_mutations_
+                        // persistent 原位改 cached_doc）写穿缓存条目，热航命中还原
+                        // 含突变树 + 脚本重执行 = 非幂等效应翻倍。
+                        self.frame_fingerprint_cache.insert(
+                            key,
+                            crate::pipeline::frame_fingerprint::CachedFrame {
+                                doc: self
+                                    .cached_doc
+                                    .as_ref()
+                                    .expect("cached_doc set above")
+                                    .borrow()
+                                    .pristine_snapshot(),
+                                styles: session.styles.clone(),
+                                stylesheets: session.stylesheets.clone(),
+                                export_set: session.export_set.clone(),
+                                result: result.clone(),
+                            },
+                        );
+                    }
                     return BudgetAdvance::Complete;
                 }
                 BudgetStep::Done => return BudgetAdvance::Complete,

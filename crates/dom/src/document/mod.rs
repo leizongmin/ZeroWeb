@@ -11,6 +11,7 @@ mod form_state;
 mod lang_dir;
 mod modal;
 mod shadow;
+mod snapshot;
 mod stats;
 mod target;
 mod validation;
