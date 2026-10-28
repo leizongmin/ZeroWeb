@@ -1117,6 +1117,19 @@
             globalThis.__zw_reload_iframe(proxy, String(value), {});
           }
           moAttr = _refAttr;
+        } else if (typeof prop === 'string' && prop !== ''
+                   && _realTag(sel, handle) === 'FORM'
+                   && prop !== 'item' && prop !== 'namedItem'
+                   && prop !== 'reset' && prop !== 'requestSubmit' && prop !== 'submit'
+                   && _zwFormNamedLookup(sel, handle, prop) !== null) {
+          // s137（html-semantics M2）：FORM named property 非 writable（legacy
+          // named getter）——set 拒绝（严格上下文 TypeError / sloppy 静默，
+          // trap 返 false 由引擎按赋值点严格性定）。WPT form-nameditem l1 案
+          // `form["l1"] = 5`（sloppy 静默 + strict TypeError 断言面）。位于
+          // else-if 链末端：id/name/action 等反射 IDL 先行（fix#19c 偏离——
+          // 内建成员不被 named 遮蔽，写语义同侧）。
+          // https://heycam.github.io/webidl/#LegacyPlatformObjectGetOwnProperty
+          return false;
         } else {
           // R3069：非 reflected 原始值 → expando（闭合 R3042 限制①）。real browser：自定义原始属性存 JS 对象非内容属性，
           // IDL 读回真值。旧 generic fallthrough 写内容属性但 get trap 无分支读 → 读返 undefined（correctness bug：
@@ -1308,6 +1321,18 @@
             ? globalThis.Node.prototype[prop] : undefined;
           if (_r184v !== undefined) return true;
         }
+        // s137（html-semantics M2）：FORM named property `in` 可见性——named 是 own
+        // 属性（enumerable:false 仍命中 has）；排除名单与 get trap FORM gate 同款
+        //（`"namedItem" in form` 须 false——WPT namedItem 案）。invariant 末位：
+        // target own non-configurable 由 `prop in _t` 兜底（不可报 false）。
+        // https://heycam.github.io/webidl/#LegacyPlatformObjectGetOwnProperty
+        if (typeof prop === 'string' && prop !== ''
+            && _realTag(sel, handle) === 'FORM'
+            && prop !== 'item' && prop !== 'namedItem'
+            && prop !== 'reset' && prop !== 'requestSubmit' && prop !== 'submit'
+            && _zwFormNamedLookup(sel, handle, prop) !== null) {
+          return true;
+        }
         return prop in _t;
       },
       ownKeys: function() {
@@ -1315,11 +1340,85 @@
         return _exO ? Object.keys(_exO) : [];
       },
       getOwnPropertyDescriptor: function(_t, prop) {
+        // s137（html-semantics M2）：target own non-configurable 如实上报（proxy
+        // invariant——gOPD trap 对 target non-configurable own 报 undefined →
+        // TypeError「invisible property」；defineProperty(form, k,
+        // {configurable:false}) 经 default trap 落 target 后读描述符即触发。
+        // WPT form-nameditem non-configurable expando 案描述符面）。
+        try {
+          var _fndD = Object.getOwnPropertyDescriptor(_t, prop);
+          if (_fndD && _fndD.configurable === false) return _fndD;
+        } catch (_efndD) {}
         var _exD = _expando[key];
         if (_exD && Object.prototype.hasOwnProperty.call(_exD, prop)) {
           return { value: _exD[prop], writable: true, enumerable: true, configurable: true };
         }
+        // s137：FORM named property 描述符——legacy named getter 语义：value =
+        // 元素/RadioNodeList 集合、writable:false（仅 getter）、enumerable:false
+        //（[LegacyUnenumerableNamedProperties]——ownKeys 不含、for-in 不可见）、
+        // configurable:true（defineProperty 可覆写→需 false 臂配合，见下）。
+        // 排除名单与 get trap FORM gate 同款（fix#19c 偏离：内建方法名不被 named
+        // 遮蔽，gOPD 亦返 undefined——真实浏览器 gOPD(form,'reset') 是原型方法
+        // 非 own，own 描述符 undefined 同形）。WPT form-nameditem 三案描述符断言
+        //（value/writable/configurable/enumerable 逐字段）。
+        // https://heycam.github.io/webidl/#LegacyPlatformObjectGetOwnProperty
+        if (typeof prop === 'string' && prop !== ''
+            && _realTag(sel, handle) === 'FORM'
+            && prop !== 'item' && prop !== 'namedItem'
+            && prop !== 'reset' && prop !== 'requestSubmit' && prop !== 'submit') {
+          var _fnhD = _zwFormNamedLookup(sel, handle, prop);
+          if (_fnhD !== null) {
+            return { value: _fnhD, writable: false, enumerable: false, configurable: true };
+          }
+        }
         return undefined;
+      },
+      // s137（html-semantics M2）：FORM named property 写面补全（defineProperty/
+      // deleteProperty——此前 handler 无此二键，default 行为 = target ordinary）。
+      // spec：named property 是 non-writable data（defineProperty 改值 validate
+      // 失败 → TypeError；delete strict TypeError / sloppy false）。expando 存
+      // _expando store（default delete 打不中——真删须此 trap）；non-configurable
+      // expando 落 target（default defineProperty 语义保留），delete 按 invariant
+      // 报 false（WPT new-name2 案 sloppy delete false / strict TypeError 面）。
+      // https://heycam.github.io/webidl/#LegacyPlatformObjectGetOwnProperty
+      defineProperty: function(_t, prop, desc) {
+        if (typeof prop === 'string' && prop !== ''
+            && _realTag(sel, handle) === 'FORM'
+            && prop !== 'item' && prop !== 'namedItem'
+            && prop !== 'reset' && prop !== 'requestSubmit' && prop !== 'submit'
+            && _zwFormNamedLookup(sel, handle, prop) !== null) {
+          // named 命中：non-writable validate 必败 → false（严格上下文 TypeError，
+          // WPT l1 案 Object.defineProperty(form,'l1',{value:5}) 断言面）。
+          return false;
+        }
+        try { Object.defineProperty(_t, prop, desc); return true; } catch (_efdp) { return false; }
+      },
+      deleteProperty: function(_t, prop) {
+        // ① target own non-configurable → false（proxy invariant：不可报已删；
+        // WPT new-name2 案 sloppy delete → false / strict → TypeError 面）。
+        try {
+          var _fdelD = Object.getOwnPropertyDescriptor(_t, prop);
+          if (_fdelD && _fdelD.configurable === false) return false;
+        } catch (_efdel0) {}
+        // ② expando store own → 真删（WPT new-name 案：delete 后读落 named 元素
+        // ——default delete 只打 target，store 键残留致读恒 expando 旧值）。
+        var _fdelE = _expando[key];
+        if (_fdelE && Object.prototype.hasOwnProperty.call(_fdelE, prop)) {
+          delete _fdelE[prop];
+          return true;
+        }
+        // ③ FORM named 命中 → false（WPT l1 案 strict delete TypeError 面）。
+        if (typeof prop === 'string' && prop !== ''
+            && _realTag(sel, handle) === 'FORM'
+            && prop !== 'item' && prop !== 'namedItem'
+            && prop !== 'reset' && prop !== 'requestSubmit' && prop !== 'submit'
+            && _zwFormNamedLookup(sel, handle, prop) !== null) {
+          return false;
+        }
+        // ④ fallback：target ordinary delete（FV preset 等 configurable own 面，
+        // 与无 trap 时 Reflect.deleteProperty 同形）。
+        delete _t[prop];
+        return true;
       },
       // js-dom M4 R10：`instanceof` 原型链（spec `Node` / `Element` / `HTMLElement` 子类）——polyfill Proxy
       // 默认走 target({})原型（Object.prototype），`el instanceof Element/Node` 恒 false（createElement/cloneNode
@@ -10990,6 +11089,12 @@
   // c:集合}）——与 _zwChildrenCollCache 同机制（t8e），换代清空同点。分离 WeakMap：同元素
   // 的 .children 与 .elements 是不同集合对象（Chrome `f.elements !== f.children`），共表会互踩。
   var _zwFormCollCache = new WeakMap();
+  // s137（html-semantics M2）：FORM named 集合实例缓存（键=元素 proxy，值={name →
+  // {src:快照, coll:RadioNodeList}}）——同一 form 同一 name 的重复读取须同一集合
+  // 对象（WPT form-nameditem multiple 案 assert_equals(gOPD(form,name).value,
+  // form[name]) 断言面；real browser 每 form 缓存 named 集合同一引用）。成员变更
+  // 重建（_zwFormNamedLookup 逐项身份比对，live 语义近似同快照挂账）。换代清空同点。
+  var _zwFormNamedCollCache = new WeakMap();
   // R358（js-dom M1）：**快照换代失效钩子**——`SetDomSnapshot`（tab_js_worker/renderer
   // js_worker）替换 host 快照后调用。JS 侧 pending 记账（bucket/live 集合/child 缓存）
   // 是**旧快照 + 旧 mutation 批**的衍生物：新快照替换 host 真相后，bucket 残留条目对
@@ -11012,6 +11117,8 @@
     _zwChildrenCollCache = new WeakMap();
     // t8f：form.elements 集合缓存随换代重置（同 children——旧集合对旧文档失聪语义一致）。
     _zwFormCollCache = new WeakMap();
+    // s137：FORM named 集合实例缓存随换代重置（同 _zwFormCollCache 语义）。
+    _zwFormNamedCollCache = new WeakMap();
     _zwPendingAdded.length = 0;
     _zwPendingRemoved.length = 0;
     _zwPendingAddedSet = null;
@@ -12895,6 +13002,63 @@
     }
     return controls;
   }
+
+  // s137（html-semantics M2）：FORM named property 查找 helper——listed 控件
+  // id/name 匹配（id 或 name 首序同 _formControls walk 序）：恰 1 → 元素；
+  // >1 → RadioNodeList 形态集合（_zwMakeCollection(false)：item 越界 null/
+  // indexed configurable:false/length/迭代 + __zwNL 印记供 instanceof NodeList）；
+  // 0 → null。get/gOPD/set/delete 四 trap 共用单点（spec named getter 语义）。
+  // IIFE 顶层声明——part04 get trap 内不可放（每次属性访问重建，且 part05 的
+  // gOPD/has trap 看不见嵌套作用域；同 _zwSubmitBusy 注释判例）。
+  // **快照集合**：多匹配产物为构建时快照（语料无 live 断言面；spec RadioNodeList
+  // live 语义在册挂账）。**past names 近似**由 get 臂调用点记账，本 helper 无状态。
+  // https://heycam.github.io/webidl/#LegacyPlatformObjectGetOwnProperty
+  function _zwFormNamedLookup(lsel, lhandle, name) {
+    var list = _formControls(lsel, lhandle);
+    var hits = [];
+    for (var i = 0; i < list.length; i++) {
+      var c = list[i];
+      if (!c) continue;
+      try {
+        if (c.id === name
+            || (c.getAttribute && c.getAttribute('name') === name)) {
+          hits.push(c);
+        }
+      } catch (_eFNL) {}
+    }
+    if (hits.length === 1) return hits[0];
+    if (hits.length > 1) {
+      // s137：集合实例稳定化——同一 form 同一 name 的重复读取须同一 RadioNodeList
+      // 对象（WPT multiple 案 assert_equals(gOPD(form,name).value, form[name]) 断言
+      // 面；real browser 每 form 每 name 缓存同集合引用）。成员逐项身份比对不变时
+      // 复用缓存实例；成员变更重建（live 语义近似，快照集合挂账同侧）。缓存换代随
+      // _zwFormNamedCollCache 清空（__zw_reset_pending_state）。
+      try {
+        var _fnlKey = _makeProxy(lsel, lhandle);
+        var _fnlPer = _zwFormNamedCollCache.get(_fnlKey);
+        var _fnlEntry = _fnlPer && _fnlPer[name];
+        var _fnlSame = !!( _fnlEntry && _fnlEntry.src.length === hits.length);
+        if (_fnlSame) {
+          for (var _fnlj = 0; _fnlj < hits.length; _fnlj++) {
+            if (_fnlEntry.src[_fnlj] !== hits[_fnlj]) { _fnlSame = false; break; }
+          }
+        }
+        if (_fnlSame) return _fnlEntry.coll;
+        var _fnlSrc = hits.slice();
+        var _fnlColl = _zwMakeCollection(hits, false);
+        if (!_fnlPer) _fnlPer = {};
+        _fnlPer[name] = { src: _fnlSrc, coll: _fnlColl };
+        _zwFormNamedCollCache.set(_fnlKey, _fnlPer);
+        return _fnlColl;
+      } catch (_eFNLc) {
+        return _zwMakeCollection(hits, false);
+      }
+    }
+    return null;
+  }
+  // s137：FORM past names map store（form identity key → {name → 元素/集合}）。
+  // lazy 记账近似（get 命中即写，miss 回查）；清理语义 corpus 无面不扩。
+  var _zwFormPastNames = {};
 
   // `el.getElementsByTagName('*')`（R2980）——host `__zw_query_all_sub` 不支持通用选择器 `*`
   //（见 _formControls 注），故 `*` 经客户端 childNodes 递归下降收全部元素后代（tree order）。

@@ -10800,16 +10800,55 @@
             && prop !== '' && prop !== 'item' && prop !== 'namedItem'
             && prop !== 'reset' && prop !== 'requestSubmit' && prop !== 'submit'
             && Object.prototype.hasOwnProperty.call(globalThis, 'HTMLFormElement')) {
-          var _fna = _formControls(sel, handle);
-          for (var _fnai = 0; _fnai < _fna.length; _fnai++) {
-            var _fnac = _fna[_fnai];
-            if (!_fnac) continue;
+          // s137（html-semantics M2）：FORM named properties 语义补全（form-nameditem
+          // 10F 面拆解）。spec 序（legacy platform object ordinary get）：
+          // non-configurable target own（invariant）→ own expando → named → past。
+          // https://heycam.github.io/webidl/#LegacyPlatformObjectGetOwnProperty
+          // ① invariant 臂——proxy target 上 non-configurable data property
+          //（defineProperty(form, k, {configurable:false}) 经 default trap 落 target）
+          // get trap 必须返回同值，否则 V8 TypeError invariant violation（WPT
+          // non-configurable expando 案失败消息即此）。
+          try {
+            var _fnd0 = Object.getOwnPropertyDescriptor(_t, prop);
+            // _t[prop] 直读（data 返值；non-configurable accessor 求值——invariant
+            // 要求 SameValue，返 descriptor.value 对 accessor 违例）。
+            if (_fnd0 && _fnd0.configurable === false) return _t[prop];
+          } catch (_efnd0) {}
+          // ② own expando 臂——`form.x = 5` 先于后加同名控件（named 不得遮蔽已存在
+          // own property；WPT expando added later 案）。
+          var _fex0 = _expando[key];
+          if (_fex0 && Object.prototype.hasOwnProperty.call(_fex0, prop)) {
+            return _fex0[prop];
+          }
+          // ③ named 臂——id/name 匹配 listed 控件：恰 1 → 元素；>1 → live 形态
+          // RadioNodeList（快照集合承载，item 越界 null/indexed/length/迭代 +
+          // `instanceof NodeList` 经 __zwNL 印记，_zwMakeCollection(false) 全提供）。
+          var _fnh = _zwFormNamedLookup(sel, handle, prop);
+          if (_fnh !== null) {
             try {
-              if (_fnac.id === prop
-                  || (_fnac.getAttribute && _fnac.getAttribute('name') === prop)) {
-                return _fnac;
+              var _fnpk = _elKey(sel, handle);
+              var _fnp = _zwFormPastNames[_fnpk] || (_zwFormPastNames[_fnpk] = {});
+              _fnp[prop] = _fnh;
+            } catch (_efnp) {}
+            return _fnh;
+          }
+          // ④ past names map 臂——曾命中过的名字在其元素**改名后**仍按 past 条目
+          // 返回，但元素**脱离 listed 集合后失效**（spec dom-form-nameditem past
+          // names map 步骤：条目值元素须仍是 listed 控件；WPT past names 案
+          // remove 后读 undefined、rename 后读原元素双面）。lazy 记账：named 命中
+          // 即写条目，miss 时回查 + listed 复核。改名/重组的条目清理不显式做
+          //（复核天然过滤；内存面：单 form 条目数 = 曾命中名数，可控）。
+          // https://html.spec.whatwg.org/multipage/forms.html#dom-form-nameditem
+          var _fnpk2 = _elKey(sel, handle);
+          var _fnp2 = _zwFormPastNames[_fnpk2];
+          if (_fnp2 && Object.prototype.hasOwnProperty.call(_fnp2, prop)) {
+            var _fpv = _fnp2[prop];
+            try {
+              var _fpl = _formControls(sel, handle);
+              for (var _fpi = 0; _fpi < _fpl.length; _fpi++) {
+                if (_fpl[_fpi] === _fpv) return _fpv;
               }
-            } catch (_efna) {}
+            } catch (_efpl) {}
           }
           // s119（html-semantics M2 切片 119）：canonical 数字索引臂——HTMLFormElement
           // 支持属性名含「无 id/name 的 listed 控件按 form.elements 集合序号」（031
@@ -10818,6 +10857,7 @@
           // get 臂（parseInt + String 归一等——拒前导零/符号形，`form['01']` miss 回
           // 落 undefined）。越界/非控件索引不返回（undefined 落 trap 通用路径）。
           // https://html.spec.whatwg.org/multipage/forms.html#the-form-element
+          var _fna = _formControls(sel, handle);
           var _fni = parseInt(prop, 10);
           if (!isNaN(_fni) && String(_fni) === prop) return _fna[_fni];
         }
