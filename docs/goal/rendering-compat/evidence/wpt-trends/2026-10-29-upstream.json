@@ -3,9 +3,9 @@
   "mode": "upstream",
   "wpt_data_ref": "v1.10",
   "total": 16592,
-  "passed": 15775,
+  "passed": 15776,
   "rate_pct": 95.1,
-  "extra": "failed=817;skipped=0",
-  "git_sha": "325138267",
-  "note": "R5320 ::first-line background-color 首格式行带——R5258 切片 2 bg-color 位（存储门扩位 + paint 带铺设），c25-pseudo-elmnt-000 ✓0.32% 连带 first-line-and-marker ✓0.50%，FIXED=2 (c25-pseudo-elmnt-000, first-line-and-marker)"
+  "extra": "failed=816;skipped=0",
+  "git_sha": "a220f4e98",
+  "note": "R5321 作者 ::selection transparent 背景声明存储探针（css-pseudo-4 §highlight-cascading）——后值歧义形 collect 探针 + background 面字面 transparent 值判据，selection-background-color-transparent ✓3.18%，FIXED=1 (selection-background-color-transparent)"
 }
