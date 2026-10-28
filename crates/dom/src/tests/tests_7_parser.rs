@@ -1145,3 +1145,121 @@ fn mathml_definitionurl_adjustment_r5004() {
         "小写形式不应命中（调整后大小写敏感）"
     );
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// R5314：XHTML 自闭合非 void 起始标签桥接（crates/dom/src/parser/xhtml_self_close.rs）
+// ═══════════════════════════════════════════════════════════════════════
+
+/// XHTML DOCTYPE 判据的 sibling-shape 断言样本。
+const XHTML_DOCTYPE: &str =
+    "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Strict//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd\">";
+
+/// R5314 主钉：XHTML 文档 `<div/><div/>` 的 `/` 应按 XML 空元素闭合（chromium
+/// .xht = application/xhtml+xml 语义）——两个 div 为 body 的**兄弟**子。修复前
+/// html5ever 把 `/` 仅 acknowledge 后忽略，第二 div 嵌进第一 div（body 仅 1 子），
+/// 本测试红。驱动案：numbers-units-010/012/013（ref 兄弟盒被 margin 折叠压成单盒）。
+#[test]
+fn xhtml_self_closing_expands_to_siblings_r5314() {
+    let doc = parse_html(&format!("{XHTML_DOCTYPE}<html><body><div/><div/></body></html>"));
+    assert!(doc.content_is_xml(), "XHTML DOCTYPE 应置位 content_is_xml");
+    let body = doc.query_selector(doc.root(), "body").expect("body");
+    let divs: Vec<_> = doc
+        .child_nodes(body)
+        .into_iter()
+        .filter(
+            |&c| matches!(doc.get(c).map(|n| &n.kind), Some(NodeKind::Element(e)) if e.name.local.as_ref() == "div"),
+        )
+        .collect();
+    assert_eq!(divs.len(), 2, "两个自闭合 div 应为 body 的兄弟子（XML 空元素语义）");
+    for d in &divs {
+        assert!(doc.child_nodes(*d).is_empty(), "自闭合 div 不应有子");
+    }
+}
+
+/// 纯 HTML（HTML5 DOCTYPE）保持 HTML 旧序——`/` ignored、元素开启、后继嵌进其内
+///（WHATWG HTML tree construction 对 HTML 元素忽略 self-closing flag）。桥接只对
+/// content_is_xml 文档生效。
+#[test]
+fn html_doctype_self_closing_still_nests_r5314() {
+    let doc = parse_html("<!DOCTYPE html><html><body><div/><div/></body></html>");
+    assert!(!doc.content_is_xml());
+    let body = doc.query_selector(doc.root(), "body").expect("body");
+    let divs: Vec<_> = doc
+        .child_nodes(body)
+        .into_iter()
+        .filter(
+            |&c| matches!(doc.get(c).map(|n| &n.kind), Some(NodeKind::Element(e)) if e.name.local.as_ref() == "div"),
+        )
+        .collect();
+    assert_eq!(divs.len(), 1, "HTML 文档自闭合 div 仍按 HTML 语义开启");
+    assert_eq!(
+        doc.child_nodes(divs[0]).len(),
+        1,
+        "第二个 div 应嵌进第一个（HTML 旧序不变形）"
+    );
+}
+
+/// 引号内 `>`/`/` 不误判：属性值完整保留、自闭合仍展开；void 元素（br）自闭合
+/// 原样交 html5ever（本就合法），不双写闭合标签。
+#[test]
+fn xhtml_self_closing_quoted_attrs_and_voids_r5314() {
+    let doc = parse_html(&format!(
+        "{XHTML_DOCTYPE}<html><body><br/><div title=\"x/y\"/><div data-a=\">\"/></body></html>"
+    ));
+    let body = doc.query_selector(doc.root(), "body").expect("body");
+    let elems: Vec<String> = doc
+        .child_nodes(body)
+        .into_iter()
+        .filter_map(|c| match doc.get(c).map(|n| &n.kind) {
+            Some(NodeKind::Element(e)) => Some(e.name.local.to_string()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(elems, ["br", "div", "div"], "br + 两个自闭合 div 均为兄弟");
+    // 两个 div 各持一个属性且值完整（`/`、`>` 未被标签扫描吃掉）。
+    let t = doc
+        .query_selector(doc.root(), "div[title=\"x/y\"]")
+        .expect("title 属性含 / 完整");
+    let d = doc
+        .query_selector(doc.root(), "div[data-a=\">\"]")
+        .expect("属性值含 > 完整");
+    assert!(t != d, "两个 div 应是不同节点（各自自闭合展开）");
+    assert!(doc.get_attribute(t, "title").is_some_and(|v| v == "x/y"));
+    assert!(doc.get_attribute(d, "data-a").is_some_and(|v| v == ">"));
+}
+
+/// SYSTEM-only XHTML doctype（public_id 缺席）不判 XML——与
+/// `detect_and_set_content_is_xml` 的 public_id 判据同源，标志与预变换不散页。
+#[test]
+fn xhtml_system_id_only_stays_html_shape_r5314() {
+    let doc = parse_html(
+        "<!DOCTYPE html SYSTEM \"http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd\"><html><body><div/><div/></body></html>",
+    );
+    assert!(!doc.content_is_xml(), "SYSTEM-only 无 public_id，不置位 XML 标志");
+    let body = doc.query_selector(doc.root(), "body").expect("body");
+    let divs: Vec<_> = doc
+        .child_nodes(body)
+        .into_iter()
+        .filter(
+            |&c| matches!(doc.get(c).map(|n| &n.kind), Some(NodeKind::Element(e)) if e.name.local.as_ref() == "div"),
+        )
+        .collect();
+    assert_eq!(divs.len(), 1, "未判 XML → HTML 旧序（嵌套）");
+}
+
+/// 注释内的形似标签不参与变换（XML 注释是字面字符数据）——真标签照常展开。
+#[test]
+fn xhtml_self_closing_comment_untouched_r5314() {
+    let doc = parse_html(&format!(
+        "{XHTML_DOCTYPE}<html><body><!-- <div/> --><div/></body></html>"
+    ));
+    let body = doc.query_selector(doc.root(), "body").expect("body");
+    let divs: Vec<_> = doc
+        .child_nodes(body)
+        .into_iter()
+        .filter(
+            |&c| matches!(doc.get(c).map(|n| &n.kind), Some(NodeKind::Element(e)) if e.name.local.as_ref() == "div"),
+        )
+        .collect();
+    assert_eq!(divs.len(), 1, "仅真 div 展开；注释内容不是标签");
+}

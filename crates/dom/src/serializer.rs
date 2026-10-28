@@ -272,8 +272,9 @@ fn escape_text(s: &str) -> String {
     result
 }
 
-/// HTML void 元素（自闭合元素）列表（大小写不敏感）。
-fn is_void_element(tag: &str) -> bool {
+/// HTML void 元素（自闭合元素）列表（大小写不敏感）。R5314 起 parser 侧 XHTML
+/// 自闭合桥接共用本判定（void 元素自闭合本就是 HTML 合法形态，不参与预变换）。
+pub(crate) fn is_void_element(tag: &str) -> bool {
     matches!(
         tag.to_ascii_lowercase().as_str(),
         "area"

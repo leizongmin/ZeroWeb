@@ -1,5 +1,7 @@
 //! html5ever 集成 — HTML 解析器和 TreeSink 实现。
 
+mod xhtml_self_close;
+
 use crate::document::Document;
 use crate::node::{
     CommentData, DocumentData, DocumentTypeData, NodeData, NodeId, NodeKind, ProcessingInstructionData, QuirksMode,
@@ -11,6 +13,7 @@ use markup5ever::{Attribute, QualName};
 use std::borrow::Cow;
 use std::default::Default;
 use tendril::StrTendril;
+use xhtml_self_close::expand_xhtml_self_closing;
 
 /// 使用 html5ever 解析 HTML 字符串并返回 Document。
 ///
@@ -574,6 +577,17 @@ impl TreeSink for DomBuilder {
 fn parse_html_with_builder(html: &str, scripting_enabled: bool) -> Document {
     use html5ever::driver::ParseOpts;
     use tendril::TendrilSink;
+
+    // R5314（XHTML 自闭合桥接）：非 void 自闭合起始标签预变换（机制与判据详见
+    // [`xhtml_self_close`] 模块文档）。
+    let owned;
+    let html = match expand_xhtml_self_closing(html) {
+        Cow::Borrowed(s) => s,
+        Cow::Owned(s) => {
+            owned = s;
+            owned.as_str()
+        }
+    };
 
     let encoding_label = sniff_meta_charset(html);
     let builder = DomBuilder::new();
