@@ -11035,8 +11035,8 @@
         // 最小子集边界（FIXME 挂账，非本切片）：method=POST（宿主导航契约
         // __zw_request_navigate 仅收 URL，无 method/body 面）；target ≠ _self；fieldset
         // disabled 传播；input type=file entry（无文件选择实现）；enctype=text/plain/
-        // multipart；formmethod=dialog；submitter formaction=''（spec → 文档地址，
-        // 现回落 form action）；宿主激活 + JS submit() 双通道去重（review m3b）；
+        // multipart；formmethod=dialog；submitter formaction=''（s141 已修——空串
+        // 为在场值 resolve 文档地址）；宿主激活 + JS submit() 双通道去重（review m3b）；
         // handle 身份（纯 createElement）form 原同局限——s133 `_formControls(sel,
         // handle)` 双身份化后 entry list 正常枚举。
         function _zwFormSubmitNavigate(fSel, fHandle, submitter) {
@@ -11248,7 +11248,13 @@
               : String(globalThis.location.href || 'about:blank');
             var _actionRaw = null;
             try { if (submitter) _actionRaw = submitter.getAttribute('formaction'); } catch (_eA1) {}
-            if (_actionRaw == null || _actionRaw === '') {
+            // s141：回落判定只按「属性缺席」——formaction 空串是**在场值**（spec
+            // #concept-fs-action：submitter 有 formaction 属性 → 以其为 action；
+            // 空串 resolve 即 base URL = 文档地址，下方 new URL('', base) 天然落
+            // 文档地址）。旧版把空串并入回落分支 → 回落 form 的 action 属性
+            //（form-submit-action「no formaction, expect to navigate to document
+            // URL」案 expected 文档地址 got a.html）。
+            if (_actionRaw == null) {
               _actionRaw = fHandle ? __zw_get_attr_handle(fHandle, 'action') : __zw_get_attr(fSel, 'action');
             }
             var _u = null;

@@ -88,8 +88,16 @@ pub(crate) fn svg_default_used_size(
     // margin auto 门（CSS2 §10.3.2：inline replaced 的 auto margin used = 0）——definite
     // 双尺寸 + auto margin 会触发 ZW IFC 对 atomic inline 的中心化 x 偏移（-003 首版 44px
     // 实测）；auto margin 形态交旧路径（rect 泄漏宽恰好 = content bbox，-003 基线绿）。
-    let no_auto_margin =
-        !matches!(style.margin_left, LengthValue::Auto) && !matches!(style.margin_right, LengthValue::Auto);
+    // R5319 例外：float 侧放行——float 不走 IFC 中心化（converter 已按 §10.3.2
+    // float-replaced-width 把 float 的 auto margin 解析为 used 0），而旧路径在 float
+    // 语境塌 0：无定宽 svg 落 taffy R5308 MAX_CONTENT 臂测宽 0 → 整盒消失
+    //（float-replaced-width-007/008：float svg + margin auto + height attr 只剩 border）。
+    // kill-switch `ZW_SVG_FLOAT_MARGIN_AUTO=0` 回退（本函数已按调用点逐案读
+    // `ZW_SVG_DEFAULT_SIZE`，同口径不缓存）。
+    let is_floated = !matches!(style.float, zero_css_parser::values::FloatValue::None)
+        && std::env::var("ZW_SVG_FLOAT_MARGIN_AUTO").as_deref() != Ok("0");
+    let no_auto_margin = is_floated
+        || (!matches!(style.margin_left, LengthValue::Auto) && !matches!(style.margin_right, LengthValue::Auto));
     if !is_abspos && no_auto_margin && attr_w.is_none() && matches!(style.width, LengthValue::Auto) {
         let explicit_h = match &style.height {
             LengthValue::Px(v) if v.is_finite() && *v >= 0.0 => Some(*v as f32),
@@ -465,5 +473,31 @@ mod tests {
         assert_eq!(svg_ratio_value(&elem4, &style4), None);
         let (elem5, style5) = setup(r#"<html><body><svg width="50%" height="200"></svg></body></html>"#, "");
         assert_eq!(svg_ratio_value(&elem5, &style5), None);
+    }
+
+    /// R5319（CSS2 §10.3.2 float-replaced-width）：float svg + margin-left/right:auto +
+    /// height attr → R4091 臂对 float 侧放行，used = (min(bbox_w, 300), 显式高)。
+    /// 旧 margin-auto 门把 float 形态交旧路径：无定宽 svg 在 float 语境塌 0
+    ///（taffy R5308 MAX_CONTENT 臂测宽 0 → float-replaced-width-007/008 整盒消失）。
+    /// float 不经 IFC 中心化（converter 已按 §10.3.2 把 float auto margin 解析 used 0），
+    /// R4091 的中心化 dodge 对 float 无必要。kill-switch `ZW_SVG_FLOAT_MARGIN_AUTO=0`
+    /// （进程级，mutant 腿）：门收回后 dw=None（abs 早退）→ 本测试 FAIL——双向可判别。
+    #[test]
+    fn r5319_float_margin_auto_svg_keeps_definite_width() {
+        let (elem, style) = setup(
+            r#"<html><body><svg height="50"><rect /></svg></body></html>"#,
+            "svg { float: left; margin-left: auto; margin-right: auto }",
+        );
+        assert!(
+            matches!(style.float, zero_css_parser::values::FloatValue::Left),
+            "前置：float 声明进 ComputedStyle"
+        );
+        assert!(
+            matches!(style.margin_left, LengthValue::Auto),
+            "前置：margin auto 形态（旧门会截走的输入）"
+        );
+        let (dw, dh) = svg_default_used_size(&elem, &style, Some((200.0, 100.0))).expect("used");
+        assert_eq!(dw, Some(200.0), "bbox 宽 200 = min(200, 300)，不被 margin auto 门截走");
+        assert_eq!(dh, 50.0, "显式高 attr 50（CSS Px > attr abs 同臂）");
     }
 }
