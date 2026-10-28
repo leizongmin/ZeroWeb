@@ -234,8 +234,10 @@ charset / BOM）解码字节流，使 legacy-mb `*_chars-<label>.html` 族可运
   进展」节与 2026-10-29 evidence）。
 - **M3** 进行中：`_zwMBuildDeepEntry` details 裁决态甄别 ✅（2026-10-28，
   两面背离修复）+ form-encode/href 可跑性甄别 ✅（2026-10-28，68 文件
-  归口非 goal 面，见「M3 进展」节）；**余 DC-4 coverage 复测**（47 套件
-  `--json` 重跑 + `wptfyi_gap.py coverage` 全量对账，唯一剩余项）。
+  归口非 goal 面，见「M3 进展」节）；**DC-4 批量驱动已启动**（2026-10-29
+  夜，51 通道 `--json` 顺序跑，结果目录
+  `/lzcapp/document/work/zw-coverage-dc4/results/`，status.tsv 逐通道 rc；
+  数小时量级——下轮收齐跑 `wptfyi_gap.py coverage` 出新日期全量报告）。
 
 语料进度（2026-10-29 更正）：七族 253 文件**已全量在位**（30 号预置即齐，
 上游 pin 315976933 对账 missing=0）——此前多轮「网络 degraded 语料卡点」
