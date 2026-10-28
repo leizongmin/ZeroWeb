@@ -11097,7 +11097,17 @@
                   } else if (_ty === 'button' || _ty === 'reset') {
                     // 非提交按钮不贡献。
                   } else if (_ty === 'file') {
-                    continue; // FIXME: file entry（无文件选择实现）
+                    // s140：file input entry（spec construct-entry-list file 状态步，
+                    // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-entry-list
+                    // ——对每个 selected file 贡献 entry（name, File）；无选中 → 零
+                    // 条目。条目经 _zwFdEntry 建（File 身份 + filename 第三元，与
+                    // FormData append 同型；files 面走 R3902b setter 存的 FileList
+                    // 引用，item() 枚举）。
+                    var _cFl = _c.files;
+                    for (var _cfi = 0; _cFl && _cfi < _cFl.length; _cfi++) {
+                      var _cfF = _cFl.item(_cfi);
+                      if (_cfF) _pairs.push(_zwFdEntry(_nm, _cfF));
+                    }
                   } else {
                     _pairs.push([_nm, _c.value != null ? _c.value : '']);
                   }
@@ -11274,29 +11284,37 @@
               }
               return enc(n) + '=' + enc(v);
             }
-            // ⑤a s139：POST body 按 enctype 分型；_urlBody（urlencoded）另存——GET
-            // query 恒用它。text/plain（spec text/plain encoding algorithm，
+            // ⑤a s139/s140：POST body 按 enctype 分型；_urlBody（urlencoded）另存——GET
+            // query 恒用它。条目值换算（spec convert to a list of name-value pairs：
+            // File 值取 filename——urlencoded/text/plain/GET query 把 File 条目序列化
+            // 为文件名字符串；multipart 保留 File 本体走字节 part）。File 条目形
+            // [n, File, filename?]（_zwFdEntry 产物，File instanceof Blob 真）。
+            // text/plain（spec text/plain encoding algorithm，
             // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#text/plain-encoding-algorithm）：
             // `name=value\r\n` 逐对零转义——NUL/非 ASCII 字面交付，无百分号编码。
             // multipart/form-data（spec multipart/form-data encoding algorithm +
             // RFC 7578 §4/§5，https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#multipart/form-data-encoding-algorithm）：
-            // part 头 name 经 escape a string——编码后仅替换 LF→%0A、CR→%0D、
-            // `"`→%22（其余字节字面进 UTF-8 头，NUL 不转义）；非 File value 不转义
-            //（仅换行归一）；boundary 生成不得出现在任何 name/value 中。
+            // part 头 name/filename 经 escape a string——编码后仅替换 LF→%0A、
+            // CR→%0D、`"`→%22（其余字节字面进 UTF-8 头，NUL 不转义）；非 File
+            // value 不转义（仅换行归一）；boundary 生成不得出现在任何 name/value 中。
+            function _entryStr(e) {
+              return (e[1] instanceof Blob) ? String(e[1].name != null ? e[1].name : 'blob') : e[1];
+            }
             var _urlBody = '';
             for (var _si = 0; _si < _pairs.length; _si++) {
-              _urlBody += (_si ? '&' : '') + _encPair(_pairs[_si][0], _pairs[_si][1]);
+              _urlBody += (_si ? '&' : '') + _encPair(_pairs[_si][0], _entryStr(_pairs[_si]));
             }
             var _body = _urlBody;
             var _mpBoundary = '';
             if (_fEnc === 'text/plain') {
               _body = '';
               for (var _si = 0; _si < _pairs.length; _si++) {
-                _body += _normNL(_pairs[_si][0]) + '=' + _normNL(_pairs[_si][1]) + '\r\n';
+                _body += _normNL(_pairs[_si][0]) + '=' + _normNL(_entryStr(_pairs[_si])) + '\r\n';
               }
             } else if (_fEnc === 'multipart/form-data') {
               // boundary：固定前缀 + 随机 24 字符（47 字符总量 < spec 70 上限），
-              // 与任一 name/value 撞串则重掷（8 次兜底——撞概率天文级）。
+              // 与任一 name/value（File 条目取 filename）撞串则重掷（8 次兜底——
+              // 撞概率天文级）。
               var _mpChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
               for (var _mt = 0; _mt < 8; _mt++) {
                 _mpBoundary = '----zerowebformboundary';
@@ -11305,18 +11323,45 @@
                 }
                 var _clash = false;
                 for (var _mp = 0; _mp < _pairs.length; _mp++) {
-                  if (String(_pairs[_mp][0]).indexOf(_mpBoundary) >= 0 || String(_pairs[_mp][1]).indexOf(_mpBoundary) >= 0) { _clash = true; break; }
+                  if (String(_pairs[_mp][0]).indexOf(_mpBoundary) >= 0 || _entryStr(_pairs[_mp]).indexOf(_mpBoundary) >= 0) { _clash = true; break; }
                 }
                 if (!_clash) break;
               }
-              _body = '';
+              // s140：File 条目 part——CD 带 `; filename="…"`（escape a string 同
+              // name）+ Content-Type 头（file.type 缺省 application/octet-stream，
+              // RFC 7578 §4.2）+ 字节体（_zw_blobBytes）。整体按字节数组构建后经
+              // `__zw_bytes:` csv-decimal wire（R3020，_zwEncodeBytesPrefix）传
+              // host——fetch_bridge 解码为 body_bytes，echo 端点按原始字节转义
+              //（二进制文件内容保真；字符串分支字节序与 s139 字符串路径一致）。
+              var _mpEsc = function (s) {
+                return _normNL(s).replace(/\n/g, '%0A').replace(/\r/g, '%0D').replace(/"/g, '%22');
+              };
+              var _mpBytes = [];
+              var _mpPushStr = function (s) {
+                var _ba = _zw_utf8_encode(s);
+                for (var _bi = 0; _bi < _ba.length; _bi++) _mpBytes.push(_ba[_bi]);
+              };
               for (var _si = 0; _si < _pairs.length; _si++) {
-                var _mpName = _normNL(_pairs[_si][0]).replace(/\n/g, '%0A').replace(/\r/g, '%0D').replace(/"/g, '%22');
-                _body += '--' + _mpBoundary + '\r\n'
-                  + 'Content-Disposition: form-data; name="' + _mpName + '"\r\n\r\n'
-                  + _normNL(_pairs[_si][1]) + '\r\n';
+                var _e = _pairs[_si];
+                _mpPushStr('--' + _mpBoundary + '\r\nContent-Disposition: form-data; name="' + _mpEsc(_e[0]) + '"');
+                if (_e[1] instanceof Blob) {
+                  var _mpFn = _e[2] != null ? _e[2] : (_e[1].name != null ? String(_e[1].name) : 'blob');
+                  // spec 4.10.22.8 normalize-newlines 步只作用 entry name 与非 File
+                  // value（File.name 不归一），filename 仅逐字节转义（LF→%0A、
+                  // CR→%0D、`"`→%22，"must not perform any other escapes"）——
+                  // 语料 `\n in filename` 期望 `b%0Ac`（lone LF 保持）实证。
+                  var _mpFnEsc = _mpFn.replace(/\n/g, '%0A').replace(/\r/g, '%0D').replace(/"/g, '%22');
+                  _mpPushStr('; filename="' + _mpFnEsc + '"\r\n');
+                  _mpPushStr('Content-Type: ' + (_e[1].type || 'application/octet-stream') + '\r\n\r\n');
+                  var _mpFb = _zw_blobBytes(_e[1]);
+                  for (var _bj = 0; _bj < _mpFb.length; _bj++) _mpBytes.push(_mpFb[_bj]);
+                  _mpPushStr('\r\n');
+                } else {
+                  _mpPushStr('\r\n\r\n' + _normNL(_e[1]) + '\r\n');
+                }
               }
-              _body += '--' + _mpBoundary + '--\r\n';
+              _mpPushStr('--' + _mpBoundary + '--\r\n');
+              _body = _zwEncodeBytesPrefix(new Uint8Array(_mpBytes));
             }
             // ⑤ mutate action URL（review M1）：spec §4.10.22 GET 分支 "Set parsed
             // action's query component to query"——query **整体替换**（真实浏览器
