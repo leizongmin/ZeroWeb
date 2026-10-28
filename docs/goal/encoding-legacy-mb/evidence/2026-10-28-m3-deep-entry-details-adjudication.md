@@ -79,7 +79,9 @@ engine lib 探针测试（`js_dom_bridge_tests/part60.rs`
 
 ## 挂账余项
 
-- form-encode 面可跑性甄别（M3 另一项，本轮未动）。
+- form-encode 面可跑性甄别：已于同日收口，见
+  [2026-10-28-m3-encode-form-href-runnability.md](2026-10-28-m3-encode-form-href-runnability.md)
+  （form 不可跑 / href 面缺，两面归口非本 goal）。
 - DC-3 全量基线 / DC-4 coverage 复测：语料补全卡点维持（本轮 FORCE=1 复试
   仍 136 html，网络 degraded）。
 - **跨流红转记（非本流域）**：`forms/input-change-event-properties.html`
