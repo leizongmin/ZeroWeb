@@ -3971,6 +3971,80 @@ AAAA</div></body></html>"#,
         );
     }
 
+    /// t-p117（css-grid-1 §7.2.2：max-content 轨道取 item 的 max-content
+    /// contribution）：grid item 内流内文本 + 直属 inline-block 原子——修复前 taffy
+    /// 轨道推导漏计文本，li 塌到原子宽（多词文本竖排）；修复后 li = hi(40) + 20。
+    #[test]
+    fn p117_grid_item_text_plus_inlineblock_max_content_track() {
+        let w = compute_box(
+            r#"<html><body style="margin:0">
+              <ul id="ul" style="display:grid;grid-template-columns:max-content;list-style:none;margin:0;padding:0;font:20px/1 Ahem"><li id="li">hi<span style="display:inline-block;width:20px;height:20px;background:#0f0"></span></li></ul>
+            </body></html>"#,
+            "li",
+        );
+        assert!(
+            (w.0 - 60.0).abs() < 1.0 && (w.1 - 20.0).abs() < 1.0,
+            "grid item must keep text width (hi 40 + atom 20) at single-line height 20px, got {:?}",
+            w
+        );
+    }
+
+    /// t-p117 auto 轨道臂：auto 轨道 growth limit 同为 max-content contribution。
+    /// 容器 fit-content 收缩到内容使拉伸 no-op，暴露轨道对贡献的求解（无宽容器下
+    /// auto 轨道被 align-content stretch 撑满视口，item 随轨 800 属规范预期）。
+    #[test]
+    fn p117_grid_item_text_plus_inlineblock_auto_track() {
+        let w = compute_box(
+            r#"<html><body style="margin:0">
+              <ul id="ul" style="display:grid;grid-template-columns:auto;width:fit-content;list-style:none;margin:0;padding:0;font:20px/1 Ahem"><li id="li">hi<span style="display:inline-block;width:20px;height:20px;background:#0f0"></span></li></ul>
+            </body></html>"#,
+            "li",
+        );
+        assert!(
+            (w.0 - 60.0).abs() < 1.0 && (w.1 - 20.0).abs() < 1.0,
+            "auto track grid item must size to text+atom max-content, got {:?}",
+            w
+        );
+    }
+
+    /// t-p117 拉伸保持守卫（css-grid-1 §10.3：grid item 默认 justify normal→stretch，
+    /// 块轴同 align）：同列双 item（窄提升原子 item + 宽纯文本 item）——窄 item 须被
+    /// taffy 拉伸步撑到轨宽（与 plain 等宽且远超自身内容宽）；把 item 写成定尺的覆写
+    /// 会击败 stretch（窄 item 固定在 max-content 60，浏览器基线为填轨）。
+    #[test]
+    fn p117_grid_stretch_preserved_with_hoisted_atomic_sibling() {
+        let html = r#"<html><body style="margin:0">
+          <ul id="ul" style="display:grid;grid-template-columns:auto;width:400px;list-style:none;margin:0;padding:0;font:20px/1 Ahem"><li id="g1">hi<span style="display:inline-block;width:20px;height:20px;background:#0f0"></span></li><li id="plain">plain text only</li></ul>
+        </body></html>"#;
+        let g1 = compute_box(html, "g1");
+        let plain = compute_box(html, "plain");
+        assert!(
+            (g1.0 - plain.0).abs() < 1.0 && g1.0 > 100.0 && (g1.1 - 20.0).abs() < 1.0,
+            "hoisted-atomic item must stay auto-sized so taffy stretch fills the track \
+             (equal to plain sibling, well beyond its 60px content, single-line), \
+             got g1 {:?} plain {:?}",
+            g1,
+            plain
+        );
+    }
+
+    /// t-p117 definite 轨道守卫：fixed 轨道内 item 默认 stretch 填满轨道（100px），
+    /// 覆写被内在轨道门挡下，不得回缩成内容宽 60。
+    #[test]
+    fn p117_grid_item_definite_track_stretch_untouched() {
+        let w = compute_box(
+            r#"<html><body style="margin:0">
+              <ul id="ul" style="display:grid;grid-template-columns:100px;list-style:none;margin:0;padding:0;font:20px/1 Ahem"><li id="li">hi<span style="display:inline-block;width:20px;height:20px;background:#0f0"></span></li></ul>
+            </body></html>"#,
+            "li",
+        );
+        assert!(
+            (w.0 - 100.0).abs() < 1.0,
+            "definite-track grid item must keep taffy stretch (100px), not shrink to content 60, got {:?}",
+            w
+        );
+    }
+
     /// 完整布局后取 li 与原子行内级盒的 border-box (宽, 高)。
     fn compute_li_and_atomic(html: &str) -> ((f32, f32), (f32, f32)) {
         let doc = zero_dom::parse_html(html);

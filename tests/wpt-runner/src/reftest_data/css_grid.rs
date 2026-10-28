@@ -382,6 +382,28 @@ const REFTESTS: &[InlineReftestDef] = &[
         ref_html: "<html><body style=\"margin:0\"><div style=\"display:grid;grid-template-columns:100px;grid-template-rows:30px;align-content:center;width:100px;height:80px\"><div style=\"background:red\"></div></div></body></html>",
         is_match: true,
     },
+    // t-p117：grid item 流内文本 + 直属 inline-block 原子，max-content 轨道——修复前
+    // taffy 轨道推导漏计文本，li 塌到原子宽 120px（文本 0 宽约束竖排），与 ref 200px
+    // 差 40% 远超 Layout 1% 阈值；修复后 li = "hi" 80 + 原子 120 = 200px 单行，
+    // 与块级 ref 等价锚定（css-grid-1 §7.2.2 max-content contribution）。
+    InlineReftestDef {
+        id: "css-grid/grid-item-hoisted-atomic-max-content-zw-001",
+        category: ReftestCategory::Layout,
+        test_html: "<html><body style=\"margin:0\"><ul style=\"display:grid;grid-template-columns:max-content;list-style:none;margin:0;padding:0;width:500px;height:260px;font:40px/40px Ahem\"><li style=\"height:260px;background:red\">hi<span style=\"display:inline-block;width:120px;height:40px;background:#0f0;border:0;padding:0\"></span></li></ul></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><ul style=\"list-style:none;margin:0;padding:0;width:500px;height:260px;font:40px/40px Ahem\"><li style=\"width:200px;height:260px;background:red\">hi<span style=\"display:inline-block;width:120px;height:40px;background:#0f0;border:0;padding:0\"></span></li></ul></body></html>",
+        is_match: true,
+    },
+    // t-p117 拉伸保持（css-grid-1 §10.3 justify normal→stretch）：auto 轨道双 item
+    // 同列——覆写若把窄 item（hi 80 + 原子 120 = 200）写成定尺，红底停在 200px 与
+    // ref 500px 差 60%；min_size 地板写法下 item 保持 auto 被拉伸步撑满轨宽 500px，
+    // 与块级 ref 等宽锚定。
+    InlineReftestDef {
+        id: "css-grid/grid-item-hoisted-atomic-track-stretch-zw-002",
+        category: ReftestCategory::Layout,
+        test_html: "<html><body style=\"margin:0\"><ul style=\"display:grid;grid-template-columns:auto;width:500px;list-style:none;margin:0;padding:0;font:40px/40px Ahem\"><li style=\"background:red\">hi<span style=\"display:inline-block;width:120px;height:40px;background:#0f0;border:0;padding:0\"></span></li><li style=\"background:blue\">plain</li></ul></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><ul style=\"list-style:none;margin:0;padding:0;width:500px;font:40px/40px Ahem\"><li style=\"background:red\">hi<span style=\"display:inline-block;width:120px;height:40px;background:#0f0;border:0;padding:0\"></span></li><li style=\"background:blue\">plain</li></ul></body></html>",
+        is_match: true,
+    },
 ];
 
 pub fn reftests() -> &'static [InlineReftestDef] {
