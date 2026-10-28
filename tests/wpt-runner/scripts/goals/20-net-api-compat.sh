@@ -33,6 +33,11 @@ source "${SCRIPT_DIR}/lib.sh"
 
 GOAL="net-api-compat"
 GOAL_PULL_ANY_JS=1
+# M2-S3c（2026-10-29）：拉非 .py 静态资源 .txt——fetch/api/resources top.txt /
+# cors-top.txt（.headers sidecar 已在）/ empty.txt（abort/general 载体）。
+# 此前 resources/ 只落 helper .js + .headers sidecar（过滤器无 .txt），top.txt
+# 缺失致 9 文件 73F 引用面「Failed to fetch」/404。
+GOAL_PULL_TXT=1
 DIRS=(
   # ── fetch：M2 主簇（Headers/Request/Response/Body/fetch 方法语义/abort/credentials）+ 自包含面 ──
   "fetch/api/headers"
@@ -84,6 +89,16 @@ DIRS=(
 # 标定源 200×200 svg + 1x1 png；wpt-data 不跟踪，经本脚本随语料续拉）。
 fetch_raw "images/100px-green-rect.svg" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
 fetch_raw "media/1x1-green.png" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+
+# M2-S3c（2026-10-29）：fetch/api/resources 静态 .txt 三件——top.txt（9 文件
+# 73F 引用面：mode-same-origin/integrity/cors-filtering/cookies 族 +
+# response-consume）与 cors-top.txt（cors-expose-star 载体，.headers sidecar
+# 已在）+ empty.txt（abort/general 载体）。显式列文件免目录列举（resources/
+# 含 .html 即被 goals_fetch_all 短路，.txt 靠 DIRS 递归拉不到；GitHub API
+# 限流面下 jsdelivr 直拉最稳）。
+fetch_raw "fetch/api/resources/top.txt" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "fetch/api/resources/cors-top.txt" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+fetch_raw "fetch/api/resources/empty.txt" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
 
 goals_fetch_all
 goals_inventory

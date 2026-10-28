@@ -7462,7 +7462,14 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     body_bytes: Some(body.into_bytes()),
                 });
             }
-            if clean.ends_with("/status.py") && clean.starts_with("xhr/") {
+            if clean.ends_with("/status.py")
+                && (clean.starts_with("xhr/") || clean == "fetch/api/resources/status.py")
+            {
+                // net-api M2-S3c：fetch/api/resources/status.py 同语义接入——上游
+                // fetch/api/resources/status.py 与 xhr/resources/status.py 逐字同源
+                //（code/text/content/type + X-Request-Method）。此前仅 xhr/ 前缀
+                // 命中，fetch/api 面落静态读库 404（response-null-body「expected
+                // 204 but got 404」、text-utf8 fetched-data 族）。
                 // net-api M3-S2 fixture：xhr/resources/status.py（上游逐字等价——
                 // https://github.com/web-platform-tests/wpt/blob/3159769/xhr/resources/
                 // status.py）。?code=（默认 200）&text=（默认 OMG）&content=&type=

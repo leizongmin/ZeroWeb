@@ -3312,6 +3312,12 @@
     // R3021：二进制 response body 经 `__zw_bytes:` csv-decimal wire → Uint8Array（response.blob()/arrayBuffer() 保真）；
     // 文本 body 原样字符串。
     var bodyArg = body.indexOf('__zw_bytes:') === 0 ? _zwDecodeBytesPrefix(body) : body;
+    // net-api M2-S3c：null body status（fetch spec #null-body-status——204/205/304）
+    // wire 响应体置 null——`response.body` 须为 null 而非空流（response-null-body
+    // 族断言 `body === null`；.text() 空串语义不变）。101 仅信息性响应面，fetch
+    // 通道不可达，不入表。
+    // https://fetch.spec.whatwg.org/#null-body-status
+    if (status === 204 || status === 205 || status === 304) bodyArg = null;
     // net-api M5-S11：wire 头保真判定（须在构造前——Response ctor 对 string body 的
     // spec 默认 content-type 注入不适用于网络响应：wire 头无 content-type → 可见头表
     // 不得凭空出现，getallresponseheaders-after-reuse headers-basic.asis「仅 foo-test」
@@ -4798,6 +4804,12 @@
           // net-api M4-S23：preflight 请求带 `Accept: */*`（浏览器行为；上游 preflight.py
           // 校验该头——缺失 → 400 Invalid access in preflight）。
           preHeaders = _zwAddHeader(preHeaders, 'accept', '*/*');
+          // net-api M2-S3c：preflight 带 User-Agent（浏览器所有 HTTP 请求均带 UA；
+          // preflight.py checkUserAgentHeaderInPreflight 比对 preflight/实际请求 UA
+          // 一致性——此前两侧皆缺省 `''==='` 假绿，主请求 M2-S3c 补 UA 后不一致
+          // → 400，preflight 侧补齐对齐）。
+          preHeaders = _zwAddHeader(preHeaders, 'user-agent',
+            (typeof navigator !== 'undefined' && navigator.userAgent) || 'ZeroBrowser');
           // net-api M4-S25：ACRH 恒携带（空值头入 preNames 触发 preflight 但不列入
           // ACRH 值——cors-preflight-referrer「ACRH value expected ''」面）。
           var _acrhNames = [];
@@ -5188,6 +5200,19 @@
         }
         var _issueFetch = function () {
         try {
+          // net-api M2-S3c：浏览器默认请求头（UA 网络层追加、Accept `*/*`）——
+          // inspect-headers 回读面（request-headers「Request has header
+          // user-agent」、accept-header「accept `*/*`」）。仅缺省补齐不覆盖显式
+          // init；user-agent 在 _zwPreNamesOf 恒跳过、`*/*` 在 accept 值条件
+          // 安全名单内——预检名单零变化。accept-language 不补（按引擎 2024 名单
+          // 逻辑恒入预检名单，补齐会扰动 cors 族既有面）。
+          if (!_zwHasHeader(headersWire, 'user-agent')) {
+            headersWire = _zwAddHeader(headersWire, 'user-agent',
+              (typeof navigator !== 'undefined' && navigator.userAgent) || 'ZeroBrowser');
+          }
+          if (!_zwHasHeader(headersWire, 'accept')) {
+            headersWire = _zwAddHeader(headersWire, 'accept', '*/*');
+          }
           var _sync = __zw_fetch(
             id,
             method,

@@ -6,9 +6,9 @@
 > 测试，本 goal 承接失败簇收敛 + WebSocket 挂账重估。
 > **一期零回归底线继续有效**（一期 corpus 分母逐 subtest 对照）。
 
-**版本**: v2.5
-**日期**: 2026-10-29（M2-S3b 收口）
-**状态**: Active——M1/M2-S1/M2-S2/M2-S3/M2-S3b 完成（M1 基线 9354 → 10585，累计 +1231），下一步 runner 基建切片与 USP/setters 小片，其后 M 收口 coverage 复测
+**版本**: v2.6
+**日期**: 2026-10-29（M2-S3c + M2-S4a 收口）
+**状态**: Active——M1/M2-S1/S2/S3/S3b/S3c/S4a 完成（M1 基线 9354 → 10843，累计 +1489），DC-4 三族目标两达一超额，剩 M 收口 coverage 复测与 request-cache 口径待决
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 失败簇归因收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
 
@@ -37,10 +37,36 @@
   语义两项（cors 跳 Origin 恒归一、Location credentials network error）：
   全通道 A/B **0 回归 +11**（10574→10585，8 MISSING 逐条核对为 subtest
   改名 Pass→Pass）。
-- **一期零回归对账**：各轮 A/B 均零回归；真回归 3 legs 已于 M2-S3b 全部清偿。
-- **下一步**：runner 基建切片（url crate panic 根因、cors-redirect-preflight
-  per-hop preflight）、USP BOM/setters-stripping 小片，其后 M 收口 coverage
-  复测。
+- **M2-S3c 完成**（[证据档](net-api-compat/evidence/2026-10-29-m2-s3c-fetch-defaults-txt-unlock.md)）：
+  fetch fixture `.txt` 三件解锁（top.txt/cors-top.txt/empty.txt，46F 面）+
+  `fetch/api/resources/status.py` 路由同语义接入（10F）+ 浏览器默认请求头
+  UA/`Accept: */*` 缺省补齐（2F，预检名单零变化）+ null body status
+  204/205/304（9F）+ preflight UA 一致性对齐：fetch/api 404F → **334F**。
+- **M2-S4a 完成**（[证据档](net-api-compat/evidence/2026-10-29-m2-s4a-url-setters.md)；
+  前轮遗留未提交工作本轮补验收口）：url 组件 setter 语义面（no-throw
+  分型、cannot-have 守卫、host/hostname state override 机、opaque path
+  SPACE 归一、hash getter 空串面 + ws 构造器 fragment presence 连带回归
+  修复）：url 357F → **169F**（setters +110 / setters-stripping +54 /
+  a-element、url-constructor 各 +11）；url crate panic stderr 噪声 0 次
+  （基线每轮 2 次）。
+- **联合终态 A/B（S3c + S4a 一轮全通道）**：`netapi-m2s3c-r4.json` vs
+  `netapi-m2s3b-r3.json` 逐 subtest——**+258 增益 / 0 真回归 / MISSING 0**
+  （10585 → 10843）。唯一 Pass→Fail 为 integrity「CORS invalid integrity」
+  **语义显影**记账（基线靠 Failed to fetch 假绿，top.txt 解锁后显影为
+  SRI 真缺口，机械证据落 S3c 档记账 1）。
+- **DC-4 判读（复测数据待 M 收口终稿）**：mimesniff 865→**602** ✓ 精确
+  命中；url 1146→**169** ✓ 超额（目标 ~360）；fetch/api 572→**334**
+  （目标 ~300：剔除 request-cache 族 98F「HTTP 栈本体」standing
+  exclusion 后 236F 已达线，含族则差 34F——口径决策见待决项）。
+- **一期零回归对账**：各轮 A/B 均零回归；真回归 3 legs（M2-S3b）+ 过程
+  轮 2 legs（S3c/S4a）全部清偿；1 语义显影记账（非行为回归）。
+- **待决项（用户）**：request-cache 族（98F）是否维持「HTTP 栈本体」
+  排除口径（DC-4 fetch/api ~300 目标按剔除口径已达标；立项设计则需
+  HTTP 缓存层方案，挂用户拍板）。
+- **下一步**：M 收口 coverage 复测（DC-4 终稿 + 一期零回归声明）；可
+  推进小片：header-values-normalize wire `\x1e` 转义（36F）、
+  abort/general 引擎入口同步 cancel（4F）、SRI 切片（integrity 显影
+  后重排）。
 
 ## coverage 对账（coverage-2026-10-27 基线，47 套件干跑口径，终稿待 `docs/compat/wptfyi/coverage-2026-10-27.md` 复核）
 
