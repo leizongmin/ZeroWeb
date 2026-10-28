@@ -6,9 +6,9 @@
 > 测试，本 goal 承接失败簇收敛 + WebSocket 挂账重估。
 > **一期零回归底线继续有效**（一期 corpus 分母逐 subtest 对照）。
 
-**版本**: v2.6
-**日期**: 2026-10-29（M2-S3c + M2-S4a 收口）
-**状态**: Active——M1/M2-S1/S2/S3/S3b/S3c/S4a 完成（M1 基线 9354 → 10843，累计 +1489），DC-4 三族目标两达一超额，剩 M 收口 coverage 复测与 request-cache 口径待决
+**版本**: v2.7
+**日期**: 2026-10-29（M 收口）
+**状态**: Done——DC-1/2/3/4 全部满足（[收口档](net-api-compat/evidence/2026-10-29-m-closure-dc4-retest-zero-regression.md)）；一期基线 9354 → 10843（+1489），全轮零真回归；request-cache 98F 口径待决项挂用户，不阻塞判定
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 失败簇归因收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
 
@@ -60,13 +60,18 @@
   exclusion 后 236F 已达线，含族则差 34F——口径决策见待决项）。
 - **一期零回归对账**：各轮 A/B 均零回归；真回归 3 legs（M2-S3b）+ 过程
   轮 2 legs（S3c/S4a）全部清偿；1 语义显影记账（非行为回归）。
+- **M 收口完成**（[收口档](net-api-compat/evidence/2026-10-29-m-closure-dc4-retest-zero-regression.md)）：
+  DC-4 终稿（url 1146→169F 超额 / mimesniff 865→602F 精确命中 /
+  fetch/api 572+1T→334+1T，剔除 request-cache standing exclusion 达线）+
+  **一期零回归声明**（全轮 A/B 零真回归，显影 1 记账）。二期 Done
+  Criteria 全部满足。
 - **待决项（用户）**：request-cache 族（98F）是否维持「HTTP 栈本体」
   排除口径（DC-4 fetch/api ~300 目标按剔除口径已达标；立项设计则需
   HTTP 缓存层方案，挂用户拍板）。
-- **下一步**：M 收口 coverage 复测（DC-4 终稿 + 一期零回归声明）；可
-  推进小片：header-values-normalize wire `\x1e` 转义（36F）、
-  abort/general 引擎入口同步 cancel（4F）、SRI 切片（integrity 显影
-  后重排）。
+- **后续可推进小片**（不阻塞收口，重开时按此入列）：header-values-normalize
+  wire `\x1e` 转义（36F）、abort/general 引擎入口同步 cancel（4F）、SRI
+  切片（integrity 显影后重排）、request-cache HTTP 缓存层（待决项立项
+  后）。
 
 ## coverage 对账（coverage-2026-10-27 基线，47 套件干跑口径，终稿待 `docs/compat/wptfyi/coverage-2026-10-27.md` 复核）
 
@@ -87,15 +92,15 @@
 3. **WebSocket 二期重估**：一期挂账面按当前 runner 通道现状出可行性与切片
    建议，可行则本轮内立项推进。
 
-## Done Criteria
+## Done Criteria（v2.7 全部满足，对账见[收口档](net-api-compat/evidence/2026-10-29-m-closure-dc4-retest-zero-regression.md)）
 
-- **DC-1（归因表）**：三族失败逐簇归因落 `docs/goal/net-api-compat/evidence/`
+- **DC-1（归因表）✓**：三族失败逐簇归因落 `docs/goal/net-api-compat/evidence/`
   （簇 → 根因 → 归口 → 可收敛性）。
-- **DC-2（收敛轮）**：真引擎簇逐域修齐，每轮与一期基线逐 subtest 对照零回归，
+- **DC-2（收敛轮）✓**：真引擎簇逐域修齐，每轮与一期基线逐 subtest 对照零回归，
   evidence 落档。
-- **DC-3（WebSocket 结论）**：挂账重估结论落 evidence（可行切片或维持挂账
+- **DC-3（WebSocket 结论）✓**：挂账重估结论落 evidence（可行切片或维持挂账
   及重入条件）。
-- **DC-4（coverage 复测）**：三族已覆盖失败子测试显著下降（M1 归因定量：
+- **DC-4（coverage 复测）✓**：三族已覆盖失败子测试显著下降（M1 归因定量：
   mimesniff 865→602、url 1146→~360、fetch/api 572→~300，详见 M1 归因档
   「M2+ 收敛排序建议」）；对一期已收口域零回归。
 
