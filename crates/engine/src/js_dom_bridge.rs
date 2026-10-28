@@ -41,6 +41,11 @@ pub use crypto::*;
 mod compress;
 pub use compress::*;
 
+// URL 序列化组件 + IDNA IgnoreInvalidPunycode 回退（net-api 二期 M2-S2 拆出）。
+// parse_url_to_json/serialize_url 消费。
+mod url_idna;
+pub(crate) use url_idna::serialize_url;
+
 // TextDecoder legacy 编码 host 实现（encoding-compat M2，labels 全表 + 多字节解码经 encoding_rs）。
 // 复用 crypto byte wire + json_str 文本 wire。
 mod text_encoding;
@@ -4171,6 +4176,8 @@ pub fn style_from_mutations_lw(mutations: &[DomMutation], handle: &str) -> Strin
 /// 委托 `url` crate（spec-correct：base 解析 / percent-encoding / IDNA / 默认端口归一）。成功返
 /// JSON 串（protocol/username/password/hostname/port/host/origin/pathname/search/hash/href）；
 /// 失败（含 base 无效）返空串（shim 抛 TypeError，spec 一致）。提取为纯函数便于单测复用。
+/// 主解析失败后走 [`url_idna::pc_lenient_parse`] IgnoreInvalidPunycode 回退（见
+/// `url_idna.rs` 模块文档；仅绝对特殊 scheme 输入参与，期望失败面维持 TypeError）。
 #[cfg(feature = "script-runtime")]
 pub(crate) fn parse_url_to_json(input: &str, base: Option<&str>) -> String {
     let result = match base.filter(|b| !b.is_empty()) {
@@ -4182,50 +4189,17 @@ pub(crate) fn parse_url_to_json(input: &str, base: Option<&str>) -> String {
     };
     match result {
         Ok(u) => serialize_url(&u),
-        Err(_) => String::new(),
+        Err(_) => url_idna::pc_lenient_parse(input)
+            .and_then(|(u, rescues)| {
+                url_idna::pc_patch_components(url_idna::serialize_url_components(&u)?, &rescues)
+            })
+            .map(|c| url_idna::components_to_json(&c))
+            .unwrap_or_default(),
     }
 }
 
-/// `Url` → JSON 组件串（protocol/username/password/hostname/port/host/origin/pathname/search/hash/href）。
-/// `parse_url_to_json` 与 [`set_url_part`] 共用——后者 mutate `Url` 后同样序列化。
-#[cfg(feature = "script-runtime")]
-fn serialize_url(url: &url::Url) -> String {
-    // net-api 收尾：url crate 的 username()/password() getter 在 setter 后内部字节偏移
-    // 不一致时可 panic（url 2.5.8 lib.rs:2881 "byte range starts at 6 but ends at 4"
-    // ——url-setters.any hostile username/password 面）。捕获 → 空串（shim 抛 TypeError
-    // 单案收场，不连累整跑）。
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let scheme = url.scheme();
-        let hostname = url.host_str().unwrap_or("");
-        let port = url.port().map(|p| p.to_string()).unwrap_or_default();
-        let host = if port.is_empty() {
-            hostname.to_string()
-        } else {
-            format!("{hostname}:{port}")
-        };
-        format!(
-            r#"{{"protocol":{},"username":{},"password":{},"hostname":{},"port":{},"host":{},"origin":{},"pathname":{},"search":{},"hash":{},"href":{}}}"#,
-            json_str(&format!("{scheme}:")),
-            json_str(url.username()),
-            json_str(url.password().unwrap_or("")),
-            json_str(hostname),
-            json_str(&port),
-            json_str(&host),
-            json_str(&url.origin().ascii_serialization()),
-            json_str(url.path()),
-            // URL spec §search getter：「query 为 null 或空串返空串，否则 "?" + query」——
-            // 裸尾 `?` 被 url crate 解析为 Some("")，须与 null 同归空串（WorkerLocation_
-            // search_empty 面）。
-            json_str(&match url.query() {
-                Some("") | None => String::new(),
-                Some(q) => format!("?{q}"),
-            }),
-            json_str(&url.fragment().map(|f| format!("#{f}")).unwrap_or_default()),
-            json_str(url.as_str()),
-        )
-    }))
-    .unwrap_or_default()
-}
+// `Url` → JSON 组件串：serialize_url 自 url_idna 导入（文件头 use 块）——
+// `parse_url_to_json` 与 `set_url_part` 共用，组件提取/组装与 IDNA 回退见 url_idna。
 
 /// URL 组件 setter（供 JS shim URL 属性 setter 经 `__zw_set_url_part` 回调消费）。
 ///

@@ -6,9 +6,9 @@
 > 测试，本 goal 承接失败簇收敛 + WebSocket 挂账重估。
 > **一期零回归底线继续有效**（一期 corpus 分母逐 subtest 对照）。
 
-**版本**: v2.2
-**日期**: 2026-10-29（M2-S1 收口）
-**状态**: Active——M1 完成；M2-S1 完成（+269），M2-S2（url IDNA）进行中
+**版本**: v2.3
+**日期**: 2026-10-29（M2-S2 收口）
+**状态**: Active——M1/M2-S1/M2-S2 完成（累计 +1059），下一步 M2-S3（fetch/api 语义簇 + 真回归 3 legs）
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 失败簇归因收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
 
@@ -19,17 +19,17 @@
   WebSocket 重估**维持挂账**落
   [DC-3 档](net-api-compat/evidence/2026-10-29-m1-ws-reassessment.md)。
 - **M2-S1 完成**（[证据档](net-api-compat/evidence/2026-10-29-m2-s1-blob-type-direct-set.md)）：
-  Request/Response.blob() 与 XHR blob type 直设（extract-a-MIME-type /
-  final MIME 不再过构造器判据）——**+270**（mimesniff 263 全翻红→残余 602
-  即上游语料冲突记账面；xhr overridemimetype-blob 7）；−1 为 response-consume
-  「URLSearchParams to blob」派生 CT 大小写面——语料内部互斥（vs
-  mime-type.any.js 头面大写钉），按 spec 单路径走，记账。
-- **一期零回归对账**：url/streams/eventsource/fetch-other 零回归；**真回归
-  3 legs**（xhr json UTF-16、xhr CORS 同源重定向、ws constructor/016）挂
-  收敛轮清偿。
-- **下一步（M2-S2）**：url IDNA IgnoreInvalidPunycode 回退（~783 legs，
-  idna 1.1.0 无开关 → bridge 层占位标签回退，设计见 M1 归因档）；其后
-  fetch/api 语义簇（~138）+ 真回归 3 legs、runner 基建切片、USP BOM/
+  blob() 直设 **+270 零回归**（mimesniff 263→残余 602 即上游语料冲突记账面；
+  xhr overridemimetype-blob 7）；−1 派生 CT 大小写面语料内部互斥，记账。
+- **M2-S2 完成**（[证据档](net-api-compat/evidence/2026-10-29-m2-s2-idna-punycode-fallback.md)）：
+  url IDNA IgnoreInvalidPunycode 回退（`js_dom_bridge/url_idna.rs` 占位标签
+  回退 + 组件回写）**+789 零回归**——IdnaTestV2 2671/2671 = 100%，url 通过率
+  81.1% → 94.1%；url 残余 357F（setters-stripping 54 + USP BOM 28 + 单案面）
+  与 M1 预测一致。
+- **一期零回归对账**：各轮 A/B 均零回归；**真回归 3 legs**（xhr json UTF-16、
+  xhr CORS 同源重定向、ws constructor/016）挂 M2-S3 清偿。
+- **下一步（M2-S3）**：fetch/api Request 构造/Response 消费语义簇（~138）+
+  跨流转入真回归 3 legs；其后 runner 基建切片（记账推动）、USP BOM/
   setters-stripping 小片。
 
 ## coverage 对账（coverage-2026-10-27 基线，47 套件干跑口径，终稿待 `docs/compat/wptfyi/coverage-2026-10-27.md` 复核）
