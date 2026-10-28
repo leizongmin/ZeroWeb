@@ -12828,9 +12828,9 @@
   // 引用。不能放 part04 顶部——那在 get trap 内，每属性访问会重置）。
   var _zwSubmitBusy = false;
 
-  function _formControls(sel) {
+  function _formControls(sel, handle) {
     var controls = [];
-    if (!sel) return controls;
+    if (!sel && !handle) return controls;
     // t8f（siteopt bilibili r1）：host 视图（`with_query_view_doc`）**不应用 handle 链
     // mutation**（callbacks.rs 应用范围注释）——同 turn createElement+appendChild 的
     // 控件对 `__zw_form_controls` 失明，hydration 场景 namedItem miss → 站点恢复路径
@@ -12878,8 +12878,13 @@
         walk(k);
       }
     }
-    try { walk(_wrapSelector(sel)); } catch (_e) {}
-    if (typeof __zw_form_controls === 'function') {
+    // s133（html-semantics M2 切片 133）：handle 身份枚举——纯 createElement form
+    //（脚本构造不入文档，reset-form-2 断言面）walk 走 handle 代理 childNodes
+    //（_handleChildren registry + host 链融合视图），host 视图仅 sel 身份参与
+    //（文档域查询，detached handle form 不在其中）。walk 守卫（嵌套 form 整枝/
+    // form= 属性跳过）对两身份同义——读经代理 getAttribute。
+    try { walk(sel ? _wrapSelector(sel) : _makeProxy(null, handle)); } catch (_e) {}
+    if (sel && typeof __zw_form_controls === 'function') {
       try {
         var listed = __zw_form_controls(sel);
         if (listed) {

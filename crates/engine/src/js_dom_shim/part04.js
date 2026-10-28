@@ -10692,7 +10692,7 @@
         }
         // `form.elements`（HTMLFormControlsCollection，R2829）——表单控件集合（jQuery serialize /
         // FormData / 校验库迭代高频）。仅 HTMLFormElement（_realTag==='FORM' gate）；非 form → undefined。
-        // `_formControls(sel)` child 链 walk + host 视图合并（tree order，见 part05）。
+        // `_formControls(sel, handle)` child 链 walk + host 视图合并（tree order，见 part05）。
         // t8f（siteopt bilibili r1）：**活集合**——spec form.elements 是 live HTMLFormControlsCollection
         //（https://html.spec.whatwg.org/multipage/forms.html#dom-form-elements），此前返快照数组，
         // held ref 看不见 hydration 同 turn 插入的控件（namedItem miss → 站点恢复路径
@@ -10713,14 +10713,14 @@
                   return function () {
                     var i = 0;
                     return { next: function () {
-                      var l = _formControls(sel);
+                      var l = _formControls(sel, handle);
                       return i < l.length ? { value: l[i++], done: false } : { value: undefined, done: true };
                     } };
                   };
                 }
                 return undefined;
               }
-              var list = _formControls(sel);
+              var list = _formControls(sel, handle);
               if (p === 'length') return list.length;
               if (p === 'item') return function (i) { return list[i] || null; };
               // namedItem（HTMLFormControlsCollection：id 或 name 首匹配，miss → null，
@@ -10730,7 +10730,7 @@
                 return function (name) {
                   var n = String(name);
                   if (n === '') return null;
-                  var cur = _formControls(sel);
+                  var cur = _formControls(sel, handle);
                   for (var i = 0; i < cur.length; i++) {
                     var c = cur[i];
                     if (c && c.id === n) return c;
@@ -10747,7 +10747,7 @@
               if (typeof p !== 'string') return false;
               var idx = parseInt(p, 10);
               if (!isNaN(idx) && String(idx) === String(p)) {
-                var list = _formControls(sel);
+                var list = _formControls(sel, handle);
                 return idx >= 0 && idx < list.length;
               }
               return false;
@@ -10758,7 +10758,7 @@
         }
         // `form.length`（HTMLFormElement）= 控件数；非 form 透传（不拦截）。
         if (prop === 'length' && _realTag(sel, handle) === 'FORM') {
-          return _formControls(sel).length;
+          return _formControls(sel, handle).length;
         }
         // R3254-K3（keyboard goal，2026-09-07）：FORM **named access**（spec
         // https://html.spec.whatwg.org/multipage/forms.html#dom-form-nameditem——HTMLFormElement
@@ -10785,7 +10785,7 @@
             && prop !== '' && prop !== 'item' && prop !== 'namedItem'
             && prop !== 'reset' && prop !== 'requestSubmit' && prop !== 'submit'
             && Object.prototype.hasOwnProperty.call(globalThis, 'HTMLFormElement')) {
-          var _fna = _formControls(sel);
+          var _fna = _formControls(sel, handle);
           for (var _fnai = 0; _fnai < _fna.length; _fnai++) {
             var _fnac = _fna[_fnai];
             if (!_fnac) continue;
@@ -10924,7 +10924,7 @@
               if (_doValidate) {
                 var _firstInv = null;
                 try {
-                  var _fcs2 = _formControls(fSel);
+                  var _fcs2 = _formControls(fSel, fHandle);
                   for (var _ci2 = 0; _fcs2 && _ci2 < _fcs2.length; _ci2++) {
                     var _c2 = _fcs2[_ci2];
                     try {
@@ -10973,8 +10973,8 @@
         // disabled 传播；input type=file entry（无文件选择实现）；enctype=text/plain/
         // multipart；formmethod=dialog；submitter formaction=''（spec → 文档地址，
         // 现回落 form action）；宿主激活 + JS submit() 双通道去重（review m3b）；
-        // handle 身份（纯 createElement）form 的 _formControls 空列表 → 空 entry
-        // list 导航（共享 helper 既有局限，二轮 review note）。
+        // handle 身份（纯 createElement）form 原同局限——s133 `_formControls(sel,
+        // handle)` 双身份化后 entry list 正常枚举。
         function _zwFormSubmitNavigate(fSel, fHandle, submitter) {
           try {
             // R3910：spec submit 步 2 / construct-entry-list 步 1——constructing entry
@@ -11007,7 +11007,7 @@
             try { _flForm = _makeProxy(fSel, fHandle); } catch (_eFl1) { _flForm = null; }
             try { if (_flForm) _flForm.__zwFormDataConstructing = true; } catch (_eFl2) {}
             // ③ entry list（tree order，_formControls；spec §4.10.22.2 子集）。
-            var _ctrls = _formControls(fSel);
+            var _ctrls = _formControls(fSel, fHandle);
             var _pairs = [];
             for (var _ei = 0; _ctrls && _ei < _ctrls.length; _ei++) {
               var _c = _ctrls[_ei];
@@ -11292,19 +11292,43 @@
               // __zwTrusted 通道；reset-event.html isTrusted 断言面）。
               var _rev = new Event('reset', { bubbles: true, cancelable: true, __zwTrusted: true });
               if (_dispatchWithBubble(key, sel, handle, _rev) === false) return; // preventDefault → 不重置
-              if (sel) {
-                var _fcs = _formControls(sel);
+              // s133：`sel || handle` 守卫——纯 createElement（handle 身份）form 同样
+              // 复位（reset-form-2 断言面；旧仅 sel 守卫使脚本构造 form.reset() 整体
+              // no-op）。复位赋值后清脏键：spec reset 置 dirty value / dirty
+              // checkedness 旗 false（值驻默认层，后续 default 变更即联动——
+              // reset-form-2「input should reset dirty value/checkedness to false」
+              // 断言面）；checkbox/radio 赋值必要（R2998 default 捕获在 _boolDefault
+              // 不在 attr——reset-form rd1 前置 .checked=false 已移除 attr，复位读
+              // 捕获恢复），radio 组排他经 setter s125 臂照常触发；清键后 value/
+              // checked getter 回落默认读（TEXTAREA child text 活文本 / INPUT 内容
+              // 属性），OUTPUT 无脏键模型（R2846 _outputDefault 赋值即位）。
+              if (sel || handle) {
+                var _fcs = _formControls(sel, handle);
                 for (var i = 0; i < _fcs.length; i++) {
                   var c = _fcs[i];
                   try {
                     var _ct = c.tagName;
                     // TEXTAREA/OUTPUT 有 defaultValue（OUTPUT R2846 _outputDefault / TEXTAREA s127 live child text content）。
-                    if (_ct === 'TEXTAREA' || _ct === 'OUTPUT') { c.value = c.defaultValue; }
+                    if (_ct === 'TEXTAREA' || _ct === 'OUTPUT') {
+                      c.value = c.defaultValue;
+                      if (_ct === 'TEXTAREA') {
+                        var _tk133 = _elKey(c.__zwSelector, c.__zwHandle);
+                        delete _inputValues[_tk133];
+                        delete _inputValuesSet[_tk133];
+                      }
+                    }
                     else if (_ct === 'INPUT') {
                       var _it = c.type;
-                      if (_it === 'checkbox' || _it === 'radio') c.checked = c.defaultChecked;
-                      else if (_it !== 'submit' && _it !== 'reset' && _it !== 'button' && _it !== 'image' && _it !== 'file')
+                      if (_it === 'checkbox' || _it === 'radio') {
+                        c.checked = c.defaultChecked;
+                        delete _checkedDirtyState[_elKey(c.__zwSelector, c.__zwHandle)];
+                      }
+                      else if (_it !== 'submit' && _it !== 'reset' && _it !== 'button' && _it !== 'image' && _it !== 'file') {
                         c.value = c.defaultValue;
+                        var _vk133 = _elKey(c.__zwSelector, c.__zwHandle);
+                        delete _inputValues[_vk133];
+                        delete _inputValuesSet[_vk133];
+                      }
                     } else if (_ct === 'SELECT') {
                       // R3909：select 复位算法（HTML §4.10.7 the-reset-algorithm-for-a-
                       // select-element）——各 option selectedness 按 selected 属性、
