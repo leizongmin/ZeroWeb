@@ -58,7 +58,9 @@ pub struct BudgetedRenderSession {
     timings: PipelineTimings,
     result: Option<RenderResult>,
     /// S1 文档级指纹键：会话首个 budget 步计算一次（环境快照 = 会话起点状态），
-    /// 跨多次 advance 保持（预算中断续推的会话 Complete 时仍可回填）；None = 禁用。
+    /// 跨多次 advance 保持，仅作命中查找键——回填键在 Complete 以当刻环境重算
+    ///（DF2-1 查找/插入键分离：中断续推会话步间环境变更后，起点键不得装载
+    /// 新环境帧）；None = 禁用。
     fingerprint_key: Option<u128>,
 }
 
@@ -116,7 +118,8 @@ impl RenderPipeline {
         // 同输入重算产出逐位相同帧（同 HTML/CSS/环境 → 同 DOM/级联/几何/图元），
         // 重算纯属重复计算；值跨 NodeId 代际可复用（ComputedStyle 零 NodeId 内嵌）。
         // 键在会话首个 budget 步计算一次（环境快照 = 会话起点状态），跨多次 advance
-        // 保持——预算中断续推的会话 Complete 时仍可回填。
+        // 保持，仅作命中查找键；回填键在 Complete 以当刻环境重算（见 Paint 臂，
+        // DF2-1 查找/插入键分离）。
         if session.fingerprint_key.is_none() && session.step != BudgetStep::Done {
             session.fingerprint_key =
                 crate::pipeline::frame_fingerprint::frame_fingerprint_key(self, &session.html, &session.css);
@@ -377,11 +380,16 @@ impl RenderPipeline {
                         animation_scopes,
                     ));
                     // S1 回填：完整帧输出（doc/styles/stylesheets/export_set/result）
-                    // 入跨代缓存。键=会话起点环境快照，值=该起点输入下的输出——
-                    // 图片批/字体重绘轮各自以当轮起点为键回填，热导航重演同批序时
+                    // 入跨代缓存。键=Complete 当刻环境快照（DF2-1 根修：查找/插入键
+                    // 分离——起点键只作命中查找；中断续推会话的图片批/字体晚到在步
+                    // 间落表，帧内容由当刻环境产出，须以当刻键回填，否则旧键装载新
+                    // 环境帧覆盖干净条目，旧环境热导航命中输出漂移）。重算 None
+                    //（kill-switch 关 / canvas 活跃）沿既有 None 语义跳过回填。
+                    // 图片批/字体重绘轮各以完成时环境为键回填，热导航重演同批序时
                     // 逐轮命中；不同批序只见异键 MISS 回退全量（健全）。
-                    if let Some(key) = session.fingerprint_key
-                        && let Some(result) = &session.result
+                    if let Some(result) = &session.result
+                        && let Some(key) =
+                            crate::pipeline::frame_fingerprint::frame_fingerprint_key(self, &session.html, &session.css)
                     {
                         // DF-1 根修：回填**纯净树快照**（`pristine_snapshot` 深拷）
                         // 而非活文档 Rc——本点在页面脚本执行前，快照 = 键输入的纯

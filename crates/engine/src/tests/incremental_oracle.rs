@@ -511,3 +511,89 @@ fn s1_fingerprint_hit_result_timings_matches_hit_not_cold() {
     );
     assert_eq!(result.timings.parse_ms, 0.0, "命中帧不得携带冷航 parse 毫秒");
 }
+
+// ── S1 中断续推回填键返修回归钉（DF2-1，红→绿证据见运行目录 evidence/t21-s2-red/green）──
+
+/// DF2-1 场景文档：单个无尺寸属性 img（固有尺寸驱动布局，图片表落库前后
+/// 布局/绘制面均可区分）。
+const DF2_IMG_HTML: &str = "<html><body><img src=\"https://a.example/pic.png\"></body></html>";
+
+/// DF2-1（high 根修钉）：中断续推会话的回填键必须以 Complete 当刻环境重算。
+///
+/// 缺陷时序（返修前红）：会话首个 advance 定格起点键 K0（E0 = 图片未到）→
+/// 图片分批在步间落表（E0→E1；生产 poll_images 只闸 stage 不闸
+/// render_session）→ 续推 Complete 产出的帧由 E1 布局/绘制，却以 K0 回填
+/// 覆盖键空间 → 旧环境热导航（重导航后图片未重新到达）K0 命中装载 E1 帧，
+/// 输出 ≠ 关缓存全量。修后语义：查找/插入键分离——回填键以当刻环境重算，
+/// E1 帧落 K1 下：E0 查找自然 MISS 全量（输出一致），E1 查找自然命中
+///（输出一致）。
+#[test]
+fn s1_fingerprint_mid_session_env_change_backfills_under_completion_env() {
+    let mut ctx = RasterCtx::new();
+    let mut warm = RenderPipeline::new(320.0, 400.0);
+    let img_key = crate::paint::image_resource_key("https://a.example/pic.png", warm.document_url());
+    let mut img_sizes = std::collections::HashMap::new();
+    img_sizes.insert(img_key, (200.0f32, 40.0f32));
+    let mut img_colors = std::collections::HashMap::new();
+    img_colors.insert(img_key, [255u8, 0, 0, 255]);
+
+    // 零预算首 advance：起点键 K0 定格（E0 = 图片未到），确定性零步推进
+    //（deadline = now，步循环不进入，模拟 16ms 生产预算下的中断续推形态）。
+    let mut session = crate::BudgetedRenderSession::new(DF2_IMG_HTML, NAV_CSS);
+    assert!(
+        matches!(
+            warm.advance_budgeted_render(&mut session, 0.0),
+            crate::BudgetAdvance::InProgress
+        ),
+        "零预算首 advance 必须定格键后中断（场景前提）"
+    );
+
+    // 图片分批到达（E0→E1，会话中段落表），续推至 Complete：帧由 E1 布局/
+    // 绘制产出，回填发生在此处（被测点）。
+    warm.set_image_sizes(img_sizes.clone());
+    warm.set_image_solid_colors(img_colors.clone());
+    loop {
+        if matches!(
+            warm.advance_budgeted_render(&mut session, 5_000.0),
+            crate::BudgetAdvance::Complete
+        ) {
+            break;
+        }
+    }
+    let _ = session.take_result();
+
+    // 旧环境热导航（表复位 = 重导航后图片未重新到达）：环境变更后的条目
+    // 不得被旧环境会话命中——必须 MISS 全量，且输出与关缓存全量逐位一致。
+    warm.set_image_sizes(std::collections::HashMap::new());
+    warm.set_image_solid_colors(std::collections::HashMap::new());
+    let hot_e0 = fingerprint_session(&mut warm, DF2_IMG_HTML, NAV_CSS);
+    assert!(
+        hot_e0.timings.parse_ms > 0.0,
+        "旧环境查找必须 MISS 全量（parse_ms=0 即旧键装载了新环境帧）"
+    );
+    let ref_e0 = cold_frame(DF2_IMG_HTML, NAV_CSS);
+    assert_frames_bitwise_equal(
+        &ctx.rasterize(&hot_e0),
+        &ctx.rasterize(&ref_e0),
+        "DF2-1 旧环境热导航 vs 关缓存全量",
+    );
+
+    // 新环境热导航（E1 恢复）：条目必须落在当刻键下可命中，且命中复用输出
+    // 与关缓存全量逐位一致（S1 前提门①在本时序下成立）。
+    warm.set_image_sizes(img_sizes.clone());
+    warm.set_image_solid_colors(img_colors.clone());
+    let hot_e1 = fingerprint_session(&mut warm, DF2_IMG_HTML, NAV_CSS);
+    assert_eq!(
+        hot_e1.timings.parse_ms, 0.0,
+        "新环境热导航必须命中回填条目（MISS = 回填键未落在当刻环境）"
+    );
+    let mut ref_e1_pipeline = RenderPipeline::new(320.0, 400.0);
+    ref_e1_pipeline.set_image_sizes(img_sizes);
+    ref_e1_pipeline.set_image_solid_colors(img_colors);
+    let ref_e1 = ref_e1_pipeline.render_html(DF2_IMG_HTML, NAV_CSS);
+    assert_frames_bitwise_equal(
+        &ctx.rasterize(&hot_e1),
+        &ctx.rasterize(&ref_e1),
+        "DF2-1 新环境热导航 vs 关缓存全量",
+    );
+}
