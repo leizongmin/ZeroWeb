@@ -87,7 +87,13 @@ git）：51 个 testharness 通道按 Makefile 各 target 的 env/guard envelope
 `/lzcapp/document/work/zw-coverage-dc4/results/<channel>.json`，
 `status.tsv` 记 rc+字节数，`driver.log` 记起止。testharness-css-variables
 按分片器同规则改为逐案 `--json` 合并（其 Makefile wrapper 不透传 JSON）。
-首通道（testharness-html，7 case 小语料）已验证驱动机制正常。下轮：
+首通道（testharness-html，7 case 小语料）已验证驱动机制正常。对账管道已
+用前 3 通道结果干跑验证（临时副本，代理取 wpt.fyi aligned stable）：全量
+口径 1,254,420 文件 / 2,266,562 子测试正常到账，工具返回的 legacy-mb 三族
+分母行 447,723 / 410,448 / 268,916 与上表逐字一致；rc=1（有失败）通道的
+JSON 同样完整可解析（runner 仅 rc=124 超时截断时 0 字节）——故收数门禁为
+status.tsv 全行 rc=0 且 results/*.json 全部可解析（重试链负责补齐）。
+下轮：
 核对 status.tsv 全 rc=0 → `wptfyi_gap.py coverage --results <该目录> --out
 <新日期报告>` → 核对 legacy-mb 行（分母 1,128,104 / 分子 360,431）与
 wpt-suites.csv/hero 数字联动，DC-4 收口。
