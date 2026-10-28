@@ -81,4 +81,4 @@
 2026-10-29,upstream,v1.10,16592,15767,95.0,failed=825;skipped=0,dc0f99d47,
 2026-10-29,upstream,v1.10,16592,15768,95.0,failed=824;skipped=0,37a474e0f,R5317 va:text-* atom margin-box union + img border-box
 2026-10-29,upstream,v1.10,16592,15771,95.1,failed=821;skipped=0,eef6f366f,R5318 replaced-leaf cell intrinsic——td>img[display:block] 塌0 收口，FIXED=3 (c42-ibx-pad/c43-rpl-ibx/floats-030)
-2026-10-29,upstream,v1.10,16592,15773,95.1,failed=819;skipped=0,bc78e1ac7,R5319 svg float margin-auto R4091 臂侧放行——float-replaced-width-007/008 整盒消失收口，FIXED=2 (float-replaced-width-007/008)
+2026-10-29,upstream,v1.10,16592,15773,95.1,failed=819;skipped=0,2ad4ddf47,R5319 svg float margin-auto R4091 臂侧放行——float-replaced-width-007/008 整盒消失收口，FIXED=2 (float-replaced-width-007/008)

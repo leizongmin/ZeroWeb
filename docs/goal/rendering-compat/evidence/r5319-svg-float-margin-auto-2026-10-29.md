@@ -2,7 +2,7 @@
 
 - **日期**: 2026-10-29
 - **驱动案**: `css/CSS2/floats-clear/float-replaced-width-007.xht` / `-008.xht` ✗ → **✓0.00%**
-- **corpus**: 821F → **819F**（16592 案，FIXED=2，REGRESSED=0；trend 行 15773P/819F/95.1% @ `bc78e1ac7`）
+- **corpus**: 821F → **819F**（16592 案，FIXED=2，REGRESSED=0；trend 行 15773P/819F/95.1% @ `2ad4ddf47`）
 - **域**: CSS2 §10.3.2（float-replaced-width：float 替换元素 auto margin used = 0）× R4091 svg default-size margin-auto 门
 
 ## 定性（探针链，临时诊断 ZW_R5319_DIAG 已撤）
