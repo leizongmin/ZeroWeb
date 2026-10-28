@@ -3323,7 +3323,21 @@
     }
     // R2968：经 new Response 构造（fetch 结果 instanceof Response）。字段 shape 与旧 plain object 一致
     //（headers 经 new Response 封装为 Headers 实例，R2977；body getter 同 R2967）。
-    var response = new Response(bodyArg, { status: status, statusText: statusText, headers: headers });
+    // net-api 二期 M2-S3：headers init 走 [k, v] 序列形（_parseHeadersWire 的
+    // `{name: value | [values]}` duck 形不再直传——headers-record 收口后 record 路径
+    // 按规格 String(value) 转换，数组值会 ',' join 成单值丢逐值 normalize/combine；
+    // 序列形逐对 append，多值头合并语义回到 spec sort-and-combine 通路）。
+    var _wirePairs = [];
+    for (var _hwK in headers) {
+      if (!Object.prototype.hasOwnProperty.call(headers, _hwK)) continue;
+      var _hwV = headers[_hwK];
+      if (Array.isArray(_hwV)) {
+        for (var _hwI = 0; _hwI < _hwV.length; _hwI++) _wirePairs.push([_hwK, _hwV[_hwI]]);
+      } else {
+        _wirePairs.push([_hwK, _hwV]);
+      }
+    }
+    var response = new Response(bodyArg, { status: status, statusText: statusText, headers: _wirePairs });
     if (!_wireHasCT) {
       try { response.headers.delete('content-type'); } catch (_eCtWire) {}
     }
@@ -4517,7 +4531,92 @@
   if (!globalThis.fetch) {
     // `_zwPreDone`（t5）：preflight 已通过的重入标记——跳过 preflight 臂直接发主请求
     //（重入由 preflight .then 回调发起，见 _zwRunPreflight 消费点）。
+    // net-api M2-S3（request-upload 面）：体源解析单点（wrapper 与 impl 共用，防两处
+    // 条件漂移）——init.body > Request 字节缓存 > 文本缓存 > input.body（getter 流）。
+    function _zwFetchRawBodyOf(input, init) {
+      var isRequestLike = input && typeof input === 'object' && input.url !== undefined;
+      return init.body != null ? init.body
+        : (isRequestLike && input._bodyBytes != null ? input._bodyBytes
+        : (isRequestLike && typeof input._bodyText === 'string' ? input._bodyText
+        : (isRequestLike && input.body != null ? input.body : null)));
+    }
+    // net-api M2-S3（request-upload.h2 面）：泵尽 ReadableStream 请求体为单一
+    // Uint8Array（runner 无增量上传管线——小体缓冲等价；421/连接复用面不在本切片）。
+    // spec：流块须为 BufferSource（fetch spec body init 流传输条款）——非字节块
+    // TypeError（「ReadableStream containing String/null/number」面）。
+    function _zwReadAllStreamChunks(stream) {
+      return new Promise(function(resolve, reject) {
+        var reader;
+        try { reader = stream.getReader(); } catch (e) { reject(e); return; }
+        var chunks = [];
+        (function _next() {
+          reader.read().then(function(r) {
+            if (r.done) {
+              var total = 0;
+              for (var i = 0; i < chunks.length; i++) total += chunks[i].length;
+              var out = new Uint8Array(total);
+              var off = 0;
+              for (var j = 0; j < chunks.length; j++) { out.set(chunks[j], off); off += chunks[j].length; }
+              resolve(out);
+              return;
+            }
+            var v = r.value;
+            var ok = (typeof ArrayBuffer !== 'undefined') && (v instanceof ArrayBuffer ||
+              (ArrayBuffer.isView && ArrayBuffer.isView(v)));
+            if (!ok) { reject(new TypeError('ReadableStream request body chunk is not a BufferSource')); return; }
+            chunks.push(v instanceof ArrayBuffer ? new Uint8Array(v)
+              : new Uint8Array(v.buffer, v.byteOffset, v.byteLength));
+            _next();
+          }, reject);
+        })();
+      });
+    }
     var _zwFetchMain = function(input, init, _zwPreDone) {
+      init = init || {};
+      // net-api M2-S3（abort/general 面）：Request 构造校验先于 signal 中止判定
+      //（fetch 内部先按构造步骤建 request，构造 TypeError 优先于 AbortError）。
+      // 校验同步抛 → 转 rejected promise（fetch 恒返 promise，不向调用方同步抛）。
+      // preflight 重入（_zwPreDone）首轮已校验且流体已泵尽，重跑会误判 disturbed——跳过。
+      if (!_zwPreDone) {
+        try { _zwRequestValidate(input, init); } catch (_eReqCtor) { return Promise.reject(_eReqCtor); }
+      }
+      // net-api M2-S3（request-upload 面）：ReadableStream 请求体按 runner 端点能力
+      // 分流——`.h2.py` 端点（上游 h2 面）泵尽为字节发送；其余 http(s) 端点（上游 h1）
+      // TypeError（request-upload.any「Streaming upload shouldn't work on Http/1.1.」
+      // 面，替代旧行为 String(stream) 化垃圾体）；data:/blob: 短路体不传输，不泵不拒
+      //（h2 feature-detect data: 面零回退）。已 aborted signal 优先于 h1 拒绝
+      //（abort/general「AbortError 优先级」面）。
+      var _rawBody = _zwFetchRawBodyOf(input, init);
+      if (typeof ReadableStream === 'function' && _rawBody != null && _rawBody instanceof ReadableStream && !_zwPreDone) {
+        var _upUrl = _zwResolveFetchUrl(_zwFetchInputUrl(input));
+        var _isHttp = /^https?:/.test(_upUrl);
+        if (_isHttp) {
+          var _isH2Endpoint = /\.h2\.py(\?|$)/.test(_upUrl);
+          if (!_isH2Endpoint) {
+            var _sig = null;
+            if (typeof AbortSignal === 'function') {
+              if (init.signal instanceof AbortSignal) _sig = init.signal;
+              else if (input && typeof input === 'object' && input.signal instanceof AbortSignal) _sig = input.signal;
+            }
+            if (!(_sig && _sig._aborted)) {
+              return Promise.reject(new TypeError('Streaming upload is not supported on HTTP/1.1'));
+            }
+          } else {
+            var _isReqLike = input && typeof input === 'object' && input.url !== undefined;
+            // spec：fetch(request) 传输体时 request body 转为 disturbed。
+            if (_isReqLike && init.body == null) input._bodyUsed = true;
+            return _zwReadAllStreamChunks(_rawBody).then(function(_pumped) {
+              return _zwFetchMainImpl(input, init, _zwPreDone, _pumped);
+            }, function(_ePump) {
+              throw _ePump instanceof TypeError ? _ePump
+                : new TypeError('ReadableStream request body chunk is not a BufferSource');
+            });
+          }
+        }
+      }
+      return _zwFetchMainImpl(input, init, _zwPreDone, null);
+    };
+    var _zwFetchMainImpl = function(input, init, _zwPreDone, _zwPumpedBody) {
       init = init || {};
       var isObj = input && typeof input === 'object';
       var isRequestLike = isObj && input.url !== undefined;
@@ -4543,7 +4642,10 @@
       // R3014/R3015/R3020：body 类型分发——FormData（multipart）/ URLSearchParams（urlencoded）/ Blob（字节）/
       // string（原样）。各专用类型在用户未设 Content-Type 时设默认值（缺省 Content-Type 不覆写用户显式值）。
       // 文本（URLSearchParams/string）经 UTF-8 wire 保真；二进制（FormData multipart / Blob）经 byte-wire 全保真。
-      var rawBody = init.body != null ? init.body : (isRequestLike && input.body != null ? input.body : null);
+      // net-api 二期 M2-S3：Request 体改存 hidden 字段（body getter 返 ReadableStream）——
+      // fetch(request) 转发优先取字节/文本缓存，避免 String(ReadableStream) 化；用户流体
+      //（_zwBodyStream）回退 input.body 由既有路径处理。
+      var rawBody = _zwPumpedBody != null ? _zwPumpedBody : _zwFetchRawBodyOf(input, init);
       if (rawBody instanceof FormData) {
         var mp = rawBody._zwMultipart();
         body = _zwEncodeBytesPrefix(mp.body); // R3020：multipart 字节 byte-wire（含二进制文件内容保真）
@@ -4633,6 +4735,11 @@
             : (isRequestLike && input.referrerPolicy != null ? input.referrerPolicy : '') || '');
           var _refInit = init.referrer != null ? init.referrer
             : (isRequestLike && input.referrer != null ? input.referrer : null);
+          // net-api 二期 M2-S3：Request 构造器 referrer 归一（spec #dom-request）——
+          // 'about:client'（含默认）→ 文档 URL（determine referrer 现有路径）；
+          // 'no-referrer' → 不外发 Referer（走 _refPolicy 门）。
+          if (_refInit === 'about:client') _refInit = null;
+          else if (_refInit === 'no-referrer') _refPolicy = 'no-referrer';
           if (_refPolicy !== 'no-referrer') {
             var _refUrl = _zwCurrentHref();
             if (_refInit && typeof _refInit === 'string' && _refInit !== '') {
@@ -5247,9 +5354,29 @@
     if (!(this instanceof Response)) return new Response(body, init);
     init = init || {};
     var status = init.status != null ? (init.status | 0) : 200;
+    // net-api 二期 M2-S3：https://fetch.spec.whatwg.org/#dom-response 构造校验——
+    // ① status ∈ [200,599] 否则 RangeError（response-error status 面）；
+    // ② statusText 经 status-text byte-serialize：码点 <0x20（\n/\r）或 >0xFF（Ā）→
+    //    TypeError；0x7F 同段排除（HTTP reason-phrase 可见字节面）；
+    // ③ null body status（204/205/304）带非空 body → TypeError（initialize 步）。
+    //    body === '' 放行——内部 wire 路径（_makeResponseFromWire）空体与 null 体不分，
+    //    304/204 空响应构造不得炸（语料钉非空体 "body" 面）。
+    if (init.status != null && (status < 200 || status > 599)) {
+      throw new RangeError('Response status must be in range 200-599, got ' + status);
+    }
+    var statusText = init.statusText != null ? String(init.statusText) : '';
+    for (var _stI = 0; _stI < statusText.length; _stI++) {
+      var _stCp = statusText.charCodeAt(_stI);
+      if (_stCp < 0x20 || _stCp === 0x7F || _stCp > 0xFF) {
+        throw new TypeError('Response statusText contains invalid code point');
+      }
+    }
+    if (body != null && body !== '' && (status === 204 || status === 205 || status === 304)) {
+      throw new TypeError('Response with null body status cannot have body');
+    }
     this.status = status;
     this.ok = status >= 200 && status < 300;
-    this.statusText = init.statusText != null ? String(init.statusText) : '';
+    this.statusText = statusText;
     this.headers = new Headers(init.headers); // Headers 实例（spec，R2977）；fill guard none（Set-Cookie 存）
     // R3222/R3223：response guard（Fetch §6.2 step 13，fill 后设）——get/has/iterate 不暴露 Set-Cookie/Set-Cookie2，
     // append/set/delete 写侧阻断（§5.2），仅 getSetCookie 返数组（spec 特例）。
@@ -5415,6 +5542,30 @@
       headers: { Location: String(url) }
     });
   };
+  // net-api 二期 M2-S3：https://fetch.spec.whatwg.org/#dom-response-json —— data 经
+  // serialize a JavaScript value to JSON bytes（Symbol/循环引用/getter 异常原样传播，
+  // response-static-json 面）；Content-Type = init 头已有则保留，缺省 append
+  // application/json（extract body-with-type 语义）。null body status 校验由构造器承接。
+  globalThis.Response.json = function(data, init) {
+    var jsonText = JSON.stringify(data);
+    // infra「serialize a JavaScript value to a JSON string」：JSON.stringify 返
+    // undefined（Symbol/函数等不可序列化形态）→ TypeError（static-json not-encodable 面）。
+    if (jsonText === undefined) {
+      throw new TypeError('Response.json data is not JSON-serializable');
+    }
+    // spec #dom-response-json：init.headers 不含 Content-Type 时才补 application/json
+    //（用户 CT 面 foo/bar 原样保留）。判定先于构造——构造器对 string 体已派生
+    // text/plain;charset=UTF-8，事后 has() 判定会被其误导。
+    var hasCt = false;
+    if (init && init.headers != null) {
+      hasCt = (typeof Headers === 'function' && init.headers instanceof Headers)
+        ? init.headers.has('content-type')
+        : new Headers(init.headers).has('content-type');
+    }
+    var resp = new Response(jsonText, init);
+    if (!hasCt) resp.headers.set('content-type', 'application/json');
+    return resp;
+  };
   if (typeof Symbol === 'function' && Symbol.toStringTag) {
     Object.defineProperty(globalThis.Response.prototype, Symbol.toStringTag, {
       value: 'Response',
@@ -5422,48 +5573,250 @@
     });
   }
   // R2968 Request：`new Request(url|request, init)`。fetch(input) 既接受 string 也接受 Request-like
-  //（读 .url/.method/.headers/.body），故 Request 字段对齐 fetch 消费路径（body 为 string|null，非 stream；
-  // R2977 headers 为 Headers 实例，同 Response）。clone() 复制自身。R2982 补 body 消费表面
-  //（text/json/blob/arrayBuffer/formData，对称 Response R2978）。
-  globalThis.Request = function Request(input, init) {
-    if (!(this instanceof Request)) return new Request(input, init);
+  //（读 .url/.method/.headers/.body），故 Request 字段对齐 fetch 消费路径。clone() 复制自身。
+  // R2982 补 body 消费表面（text/json/blob/arrayBuffer/formData，对称 Response R2978）。
+  // net-api 二期 M2-S3：fetch spec 方法辅助（#dom-request）——normalize 表只含标准
+  // 方法（PATCH 2023 起移出表外，大小写保留——request-init-001 patch/patCh 面）；
+  // token 判定（RFC 7230 tchar）；forbidden = CONNECT/TRACE/TRACK（normalize 后判定）。
+  var _ZW_METHOD_NORMALIZE = ['GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'TRACE', 'CONNECT'];
+  function _zwNormalizeMethod(m) {
+    var up = m.toUpperCase();
+    for (var i = 0; i < _ZW_METHOD_NORMALIZE.length; i++) if (up === _ZW_METHOD_NORMALIZE[i]) return up;
+    return m;
+  }
+  function _zwIsMethodToken(m) {
+    return /^[A-Za-z0-9!#$%&'*+\-.^`_|~]+$/.test(m);
+  }
+  // Web IDL 枚举校验（request-error「Bad <prop> init parameter value」面）。
+  function _zwRequestEnum(val, allowed, name) {
+    var s = String(val);
+    if (allowed.indexOf(s) < 0) throw new TypeError('Invalid ' + name + ': "' + s + '"');
+    return s;
+  }
+  // R2968 Request：`new Request(url|request, init)`。fetch(input) 既接受 string 也接受 Request-like
+  //（读 .url/.method/.headers/.body），故 Request 字段对齐 fetch 消费路径。clone() 复制自身。
+  // R2982 补 body 消费表面（text/json/blob/arrayBuffer/formData，对称 Response R2978）。
+  // net-api 二期 M2-S3：构造校验链对齐 spec（#dom-request）——无 new 抛 TypeError、
+  // init.window 非 null、URL 解析失败/含 credentials、mode navigate、referrer 解析、
+  // 方法 token/forbidden/normalize 表、no-cors 非简单方法、only-if-cached 模式组合、
+  // 枚举校验、GET/HEAD 带体、流体 duplex/disturbed 语义、构造失败不标 input bodyUsed；
+  // 属性改只读访问器（request-structure 面，hidden 字段 _zw* 承载）；body getter 返
+  // ReadableStream（null 体 → null；用户流体保 identity——request-init-stream 面）；
+  // referrer/referrerPolicy/destination/integrity/duplex 属性补齐（request-init-001/003 面）。
+  // 校验+求值抽为 `_zwRequestValidate`（fetch consumer 同源复用——abort/general
+  // 「TypeError from request constructor takes priority」面：构造失败须先于 signal
+  // 中止判定，fetch 转 rejected promise）。
+  function _zwRequestValidate(input, init) {
     init = init || {};
     var isObj = input && typeof input === 'object';
     var isRequestLike = isObj && input.url !== undefined;
-    var requestUrl = _zwResolveFetchUrl(_zwFetchInputUrl(input));
-    this.url = requestUrl;
-    this.method = String(init.method || (isRequestLike ? input.method : '') || 'GET').toUpperCase();
-    var mode = String(init.mode || (isRequestLike ? input.mode : '') || 'cors');
+    // spec step 5：init.window 非 null → TypeError（window: null/undefined 允许）。
+    if (init.window != null) throw new TypeError('RequestInit.window must be null');
+    // URL：Request-like 继承；字符串经 base 解析——失败 → TypeError，含 credentials → TypeError。
+    var requestUrl;
+    if (isRequestLike) {
+      requestUrl = _zwResolveFetchUrl(_zwFetchInputUrl(input));
+    } else if (typeof URL !== 'function') {
+      requestUrl = _zwResolveFetchUrl(String(input == null ? '' : input));
+    } else {
+      var absUrl = _zwResolveFetchUrl(String(input == null ? '' : input));
+      var parsedUrl = null;
+      try { parsedUrl = new URL(absUrl); } catch (_eUrl) {}
+      if (!parsedUrl) throw new TypeError('Invalid URL: ' + absUrl);
+      if (parsedUrl.username !== '' || parsedUrl.password !== '') {
+        throw new TypeError('Request URL cannot include credentials');
+      }
+      requestUrl = parsedUrl.href;
+    }
+    // 枚举校验（Web IDL dictionary——非法值 TypeError；mode navigate 另行抛）。
+    var mode = _zwRequestEnum(init.mode != null ? init.mode : (isRequestLike && input.mode != null ? input.mode : 'cors'),
+      ['cors', 'same-origin', 'no-cors', 'navigate'], 'mode');
+    var credentials = _zwRequestEnum(init.credentials != null ? init.credentials : (isRequestLike && input.credentials != null ? input.credentials : 'same-origin'),
+      ['omit', 'same-origin', 'include'], 'credentials');
+    var cache = _zwRequestEnum(init.cache != null ? init.cache : (isRequestLike && input.cache != null ? input.cache : 'default'),
+      ['default', 'no-store', 'reload', 'no-cache', 'force-cache', 'only-if-cached'], 'cache');
+    var redirect = _zwRequestEnum(init.redirect != null ? init.redirect : (isRequestLike && input.redirect != null ? input.redirect : 'follow'),
+      ['follow', 'error', 'manual'], 'redirect');
+    var referrerPolicy = _zwRequestEnum(init.referrerPolicy != null ? init.referrerPolicy : (isRequestLike && input.referrerPolicy != null ? input.referrerPolicy : ''),
+      ['', 'no-referrer', 'no-referrer-when-downgrade', 'same-origin', 'origin', 'strict-origin',
+       'origin-when-cross-origin', 'strict-origin-when-cross-origin', 'unsafe-url'], 'referrerPolicy');
+    // referrer（spec #dom-request step 12）：no-referrer 原样；client/about:client →
+    // about:client；空串原样（request-init-001 面）；URL 解析失败 → TypeError；跨源
+    // URL → about:client（http://test.url 面）；同源 → 绝对 URL。
+    var referrer;
+    var refSrc = init.referrer != null ? init.referrer : (isRequestLike && input.referrer != null ? input.referrer : null);
+    if (refSrc == null) {
+      referrer = 'about:client';
+    } else if (refSrc === 'no-referrer' || refSrc === 'client' || refSrc === 'about:client') {
+      referrer = refSrc === 'no-referrer' ? 'no-referrer' : 'about:client';
+    } else if (refSrc === '') {
+      referrer = '';
+    } else {
+      var refBase = (typeof globalThis._zwDocBaseURL === 'function') ? globalThis._zwDocBaseURL() : _zwCurrentHref();
+      var parsedRef = null;
+      try { parsedRef = new URL(String(refSrc), refBase); } catch (_eRef) {}
+      if (!parsedRef) throw new TypeError('Invalid referrer: ' + refSrc);
+      // 同源判定忽略端口（runner 锚 http://wpt.test 无端口 vs 语料 substituted :8000
+      // ——s116「跨源判定按 host 段，端口值不消费」全 runner 惯例；真浏览器为 origin 全等）。
+      var parsedBase = null;
+      try { parsedBase = new URL(refBase); } catch (_eBase) {}
+      referrer = (parsedBase && parsedRef.protocol === parsedBase.protocol &&
+                  parsedRef.hostname === parsedBase.hostname) ? parsedRef.href : 'about:client';
+    }
+    // 方法：token 校验 → normalize（表内大写化、表外保形）→ forbidden 抛。
+    var method = _zwNormalizeMethod(String(init.method != null ? init.method : (isRequestLike && input.method != null ? input.method : '') || 'GET'));
+    if (!_zwIsMethodToken(method)) throw new TypeError('Invalid method: "' + method + '"');
+    // forbidden 判定大小写不敏感、在 normalize 表之外（spec：byte-case-insensitive
+    // match——forbidden-method 面 track/Track 全抛；normalize 表无 TRACK 不大写化）。
+    var methodUpper = method.toUpperCase();
+    if (methodUpper === 'CONNECT' || methodUpper === 'TRACE' || methodUpper === 'TRACK') {
+      throw new TypeError('Forbidden method: ' + method);
+    }
+    if (mode === 'navigate') throw new TypeError('RequestInit.mode cannot be navigate');
+    // no-cors + 非 CORS-safelisted 方法 → TypeError（simple = GET/HEAD/POST）。
+    if (mode === 'no-cors' && method !== 'GET' && method !== 'HEAD' && method !== 'POST') {
+      throw new TypeError('Method ' + method + ' is not allowed by no-cors mode');
+    }
+    if (cache === 'only-if-cached' && mode !== 'same-origin') {
+      throw new TypeError('Cache mode only-if-cached requires mode same-origin');
+    }
+    // body：init.body 存在且非 null 用之；否则继承 input（含流体——getter 返原流对象）。
+    var bodyGiven = init.body != null;
+    var rawBody = bodyGiven ? init.body : (isRequestLike && input.body != null ? input.body : null);
+    var isStreamBody = typeof ReadableStream === 'function' && rawBody != null && rawBody instanceof ReadableStream;
+    // 继承形态甄别：input 为本引擎 Request 且未给 init.body——用户流体（_zwBodyStream）
+    // vs 派生体（input.body 懒建流，_bodyBytes/_bodyText 承载）。
+    var inheritedStream = isRequestLike && !bodyGiven && input._zwBodyStream != null;
+    var inheritedDerived = !inheritedStream && isRequestLike && !bodyGiven && isStreamBody;
+    // net-api M2-S3（request-init-stream 面）：init 给定的流 locked（getReader）或
+    // disturbed（read/cancel 后）→ TypeError；继承自 input 的流由下方 input disturbed
+    // 校验覆盖（同一语义）。
+    if (isStreamBody && bodyGiven && (rawBody._disturbed || rawBody._locked)) {
+      throw new TypeError('Request body stream is already used');
+    }
+    // duplex：'full'（及任何非 half 值）→ TypeError；init 流体未给 duplex → TypeError
+    //（request-init-stream 面；继承 input 流体不查）。
+    if (init.duplex != null && String(init.duplex) !== 'half') {
+      throw new TypeError('Unsupported RequestInit.duplex: ' + String(init.duplex));
+    }
+    if (isStreamBody && bodyGiven && init.duplex == null) {
+      throw new TypeError('RequestInit.duplex is required when the body is a ReadableStream');
+    }
+    // input 为 Request 且其体已扰动/锁定（init 未给体时）→ TypeError（spec——disturbed 面）。
+    // 校验置于 GET/HEAD 判定前；全部校验通过后才标 input used（构造失败不标 bodyUsed 面）。
+    if (isRequestLike && !bodyGiven) {
+      var inBs = input._zwBodyStream || input._bs;
+      if (input._bodyUsed || (inBs && (inBs._disturbed || inBs._locked))) {
+        throw new TypeError('Request body is already used');
+      }
+    }
+    // GET/HEAD + 非空 body → TypeError（request-init-002 面）。
+    if (rawBody != null && (method === 'GET' || method === 'HEAD')) {
+      throw new TypeError('Request with GET/HEAD method cannot have body');
+    }
+    return {
+      isRequestLike: isRequestLike,
+      requestUrl: requestUrl,
+      mode: mode,
+      credentials: credentials,
+      cache: cache,
+      redirect: redirect,
+      referrerPolicy: referrerPolicy,
+      referrer: referrer,
+      method: method,
+      bodyGiven: bodyGiven,
+      rawBody: rawBody,
+      isStreamBody: isStreamBody,
+      inheritedStream: inheritedStream,
+      inheritedDerived: inheritedDerived
+    };
+  }
+  globalThis.Request = function Request(input, init) {
+    if (!(this instanceof Request)) throw new TypeError("Request constructor requires 'new'");
+    var v = _zwRequestValidate(input, init);
+    var isRequestLike = v.isRequestLike;
+    var requestUrl = v.requestUrl;
+    var mode = v.mode;
+    var credentials = v.credentials;
+    var cache = v.cache;
+    var redirect = v.redirect;
+    var referrer = v.referrer;
+    var referrerPolicy = v.referrerPolicy;
+    var method = v.method;
+    var bodyGiven = v.bodyGiven;
+    var rawBody = v.rawBody;
+    var isStreamBody = v.isStreamBody;
+    var inheritedStream = v.inheritedStream;
+    var inheritedDerived = v.inheritedDerived;
+    init = init || {};
+    this._zwUrl = requestUrl;
+    this._zwMethod = method;
+    this._zwMode = mode;
+    this._zwCredentials = credentials;
+    this._zwCache = cache;
+    this._zwRedirect = redirect;
+    this._zwReferrer = referrer;
+    this._zwReferrerPolicy = referrerPolicy;
+    this._zwDestination = '';
+    this._zwIntegrity = String(init.integrity != null ? init.integrity : (isRequestLike && input.integrity != null ? input.integrity : '') || '');
+    this._zwDuplex = 'half'; // 校验后仅 half 可达（full/非法值已抛）
     // R3223：request guard（Fetch §6.3 step 31-32）——guard 先于 fill 设，append 过滤禁止请求头
     //（Host/Content-Length/Cookie/Sec-*/Proxy-* 等不在 request.headers 暴露；闭合 R3222 已知限①）。
     // M2-S2：mode no-cors → request-no-cors guard（safelist 写侧判定 + Range privileged 清除）。
-    this.headers = new Headers();
-    this.headers._guard = mode === 'no-cors' ? 'request-no-cors' : 'request';
-    _fillHeaders(this.headers, init.headers != null ? init.headers : (isRequestLike ? input.headers : null));
-    this.body = init.body != null ? String(init.body) : (isRequestLike && input.body != null ? String(input.body) : null);
-    this._bodyText = this.body; // net-api M2-S3：consume 字节路径与 Response 对齐（_bodyText 源）
+    // headers 走 _zwHeaders hidden 字段 + 原型 getter（own 赋值会破坏只读面）。
+    this._zwHeaders = new Headers();
+    this._zwHeaders._guard = mode === 'no-cors' ? 'request-no-cors' : 'request';
+    _fillHeaders(this._zwHeaders, init.headers != null ? init.headers : (isRequestLike ? input.headers : null));
     this._bodyUsed = false;
-    this._bodyNull = this.body == null;
-    // net-api M2-S3：BufferSource body → _bodyBytes（spec extract——request 消费面
-    // text/json/bytes/blob/arrayBuffer 按 _bodyBytes 保真，非 String(ArrayBuffer)）。
-    var reqRawBody = init.body != null ? init.body : (isRequestLike && input.body != null ? input.body : null);
-    this._bodyBytes = _zwResponseBodyBytes(reqRawBody);
-    // net-api M5-S8：FormData/Blob body 走共享序列化（multipart 编码 + CT 派生）——
-    // 此前 FormData 被 String() 化为 '[object FormData]' 且无 Content-Type，
-    // request.formData() 恒 TypeError（fetch consume-empty request.formData() 面；
-    // fetch 包装库 / SW 拦截构造 multipart Request 高频）。
-    if (this._bodyBytes == null && (typeof Blob === 'function' && reqRawBody instanceof Blob
-        || typeof FormData === 'function' && reqRawBody instanceof FormData)) {
-      this._bodyBytes = _zwBodyBytesAndContentType(reqRawBody, this.headers);
-      if (this._bodyBytes != null) {
-        this._bodyText = new TextDecoder().decode(this._bodyBytes);
-        this.body = this._bodyText;
+    this._bodyNull = rawBody == null;
+    // net-api 二期 M2-S3：用户 ReadableStream 体 → 保 identity 存流（request.body === body 面）+
+    // read/cancel 反向标记 bodyUsed（对称 Response _zwWireStreamToBody）。
+    // 继承自 input（spec #dom-request）：用户流 tee 分叉（input 留支 0、this 取支 1，
+    // 两侧 body getter 返各自新流——request-disturbed 面）；派生字节/文本体直接复制
+    //（不共享懒建流）。input 扰动标记统一在构造器尾（含 init 给体形态——
+    // request-disturbed「even if body is not used」面）。
+    if (inheritedStream) {
+      var teed = _zwTeeStreamEager(input._zwBodyStream);
+      input._zwBodyStream = teed[0];
+      _zwWireStreamToBody(input, teed[0]);
+      this._zwBodyStream = teed[1];
+      this._bodyBytes = null;
+      this._bodyText = '';
+      _zwWireStreamToBody(this, teed[1]);
+    } else if (inheritedDerived) {
+      this._bodyBytes = input._bodyBytes;
+      this._bodyText = input._bodyText;
+    } else if (isStreamBody) {
+      this._zwBodyStream = rawBody;
+      this._bodyBytes = null;
+      this._bodyText = '';
+      _zwWireStreamToBody(this, rawBody);
+    } else {
+      // net-api M2-S3：BufferSource body → _bodyBytes（spec extract——request 消费面
+      // text/json/bytes/blob/arrayBuffer 按 _bodyBytes 保真，非 String(ArrayBuffer)）。
+      this._bodyBytes = _zwResponseBodyBytes(rawBody);
+      this._bodyText = null;
+      if (this._bodyBytes == null && (typeof Blob === 'function' && rawBody instanceof Blob
+          || typeof FormData === 'function' && rawBody instanceof FormData)) {
+        // net-api M5-S8：FormData/Blob body 走共享序列化（multipart 编码 + CT 派生）——
+        // 此前 FormData 被 String() 化为 '[object FormData]' 且无 Content-Type，
+        // request.formData() 恒 TypeError（fetch consume-empty request.formData() 面）。
+        this._bodyBytes = _zwBodyBytesAndContentType(rawBody, this.headers);
+        if (this._bodyBytes != null) this._bodyText = new TextDecoder().decode(this._bodyBytes);
+      } else if (rawBody != null) {
+        this._bodyText = String(rawBody); // string / URLSearchParams / toString 对象
+      }
+      // body 派生默认 Content-Type（spec extract body-with-type，header list 无 CT 时
+      // append）：URLSearchParams → urlencoded；其余非空体 → text/plain;charset=UTF-8
+      //（BufferSource/Blob/FormData 不适用——request-init-contenttype 面）。
+      if (this._bodyBytes == null && rawBody != null && !this.headers.has('content-type')) {
+        if (typeof URLSearchParams === 'function' && rawBody instanceof URLSearchParams) {
+          this.headers.set('content-type', 'application/x-www-form-urlencoded;charset=UTF-8');
+        } else {
+          this.headers.set('content-type', 'text/plain;charset=UTF-8');
+        }
       }
     }
-    this.cache = init.cache || (isRequestLike ? input.cache : '') || 'default';
-    this.mode = init.mode || (isRequestLike ? input.mode : '') || 'cors';
-    this.redirect = init.redirect || (isRequestLike ? input.redirect : '') || 'follow';
-    this.credentials = init.credentials || (isRequestLike ? input.credentials : '') || 'same-origin';
     // R3045：Request.signal（spec 恒为 AbortSignal，非 null）。init.signal 优先；否则继承 input（Request）的 signal；
     // 否则新建非 aborted AbortSignal。fetch(new Request(url,{signal})) 经此透传 signal 给 R3044 abort 路径。
     // 注：复用同一 signal 对象（非 spec clone 独立）——同 request 多次 fetch 共享 signal，pragmatic（documented）。
@@ -5478,8 +5831,22 @@
     // service worker fetch handler / 请求拦截器 / 测试 mock 读请求体高频。body 为 string|null：null（GET 无体）
     // → text() 返 ''、arrayBuffer() 长度 0；json() 解析空串抛 SyntaxError（spec，非合法 JSON）。
     var self = this;
+    // net-api 二期 M2-S3：body/bodyUsed 只读访问器（spec Body mixin——request-structure 面）。
+    // body：null 体 → null；用户流体 → 原对象；否则懒建派生流（_zwCreateBodyStream）。
+    Object.defineProperty(this, 'body', {
+      get: function () {
+        if (self._bodyNull) return null;
+        if (self._zwBodyStream) return self._zwBodyStream;
+        if (!self._bs) self._bs = _zwCreateBodyStream(self);
+        return self._bs;
+      },
+      configurable: true
+    });
     Object.defineProperty(this, 'bodyUsed', {
-      get: function () { return !!self._bodyUsed; },
+      get: function () {
+        var s = self._zwBodyStream || self._bs;
+        return !!self._bodyUsed || !!(s && s._disturbed);
+      },
       configurable: true
     });
     // net-api M2-S3：consume 方法统一走 _zwConsumeBodyBytes（对称 Response——unusable
@@ -5523,19 +5890,106 @@
         return _zwParseFormUrlencoded(text);
       });
     };
+    // spec #dom-request 尾步：全部校验通过后标 input used——init 是否给体无关
+    //（request-disturbed「became disturbed even if body is not used」面）；构造中途
+    // 抛错不标（「construction failure should not set bodyUsed」面）。
+    if (isRequestLike && !this._bodyNull) input._bodyUsed = true;
   };
-  globalThis.Request.prototype.clone = function () {
-    return new Request(this.url, {
-      method: this.method,
-      headers: this.headers,
-      body: this.body,
-      cache: this.cache,
-      mode: this.mode,
-      redirect: this.redirect,
-      credentials: this.credentials,
-      signal: this.signal
+  // net-api 二期 M2-S3：只读原型访问器（spec #request-structure——sloppy 赋值静默
+  // 无效、in 判定为真；own-property 赋值会破坏该面，故走 prototype getter + hidden 字段）。
+  (function () {
+    var attrs = {
+      method: '_zwMethod', url: '_zwUrl', headers: '_zwHeaders', destination: '_zwDestination',
+      referrer: '_zwReferrer', referrerPolicy: '_zwReferrerPolicy', mode: '_zwMode',
+      credentials: '_zwCredentials', cache: '_zwCache', redirect: '_zwRedirect',
+      integrity: '_zwIntegrity', duplex: '_zwDuplex'
+    };
+    for (var p in attrs) {
+      (function (prop, field) {
+        Object.defineProperty(globalThis.Request.prototype, prop, {
+          get: function () { return this[field]; },
+          configurable: true
+        });
+      })(p, attrs[p]);
+    }
+    // spec：window 环境恒 false（navigation 未实现）。
+    Object.defineProperty(globalThis.Request.prototype, 'isReloadNavigation', {
+      get: function () { return false; }, configurable: true
     });
+    Object.defineProperty(globalThis.Request.prototype, 'isHistoryNavigation', {
+      get: function () { return false; }, configurable: true
+    });
+  })();
+  // spec #dom-request-clone：扰动/锁定 → TypeError；体分流（用户流 tee 分叉，字节
+  // 体按字节克隆；headers._guard 随克隆传递——guard 不入 init 参数）。
+  globalThis.Request.prototype.clone = function () {
+    var cloneBs = this._zwBodyStream || this._bs;
+    if (this._bodyUsed || (cloneBs && (cloneBs._disturbed || cloneBs._locked))) {
+      throw new TypeError('Cannot clone a disturbed request');
+    }
+    var cloneInit = {
+      method: this._zwMethod, headers: this.headers, cache: this._zwCache,
+      mode: this._zwMode, redirect: this._zwRedirect, credentials: this._zwCredentials,
+      referrer: this._zwReferrer, referrerPolicy: this._zwReferrerPolicy,
+      integrity: this._zwIntegrity, signal: this.signal
+    };
+    if (this._zwBodyStream) {
+      var teed = _zwTeeStreamEager(this._zwBodyStream);
+      this._zwBodyStream = teed[0];
+      _zwWireStreamToBody(this, teed[0]);
+      cloneInit.body = teed[1];
+      cloneInit.duplex = 'half';
+    } else if (!this._bodyNull) {
+      cloneInit.body = this._bodyBytes != null ? this._bodyBytes : this._bodyText;
+    }
+    var cloned = new Request(this._zwUrl, cloneInit);
+    cloned.headers._guard = this.headers._guard;
+    return cloned;
   };
+  // net-api 二期 M2-S3：Body.textStream()（spec #dom-body-textstream）——unusable
+  // → TypeError；null 体 → 新建空闭合流（bodyUsed 不变、每次新对象）；否则立即标
+  // used 并返回逐块 UTF-8 解码字符串流（textstream.any.js 面）。
+  function _zwBodyTextStream(self) {
+    var bs = self._zwBodyStream || self._bs;
+    if (self._bodyUsed || (bs && (bs._disturbed || bs._locked))) {
+      throw new TypeError('Body is unusable');
+    }
+    if (self._bodyNull && !self._zwBodyStream) {
+      return new ReadableStream({ start: function (c) { c.close(); } });
+    }
+    self._bodyUsed = true;
+    // 源字节直读（不经 _zwConsumeBodyBytes——其 unusable 门与本函数已标 used 冲突）。
+    // 流体走 reader 泵逐块解码（chunked 输入面）；字节/文本体单块（引擎一次性缓存）。
+    var streamSrc = self._zwBodyStream;
+    var staticBytes = streamSrc ? null
+      : (self._bodyBytes != null ? self._bodyBytes
+      : new Uint8Array(_zw_utf8_encode(self._bodyText == null ? '' : String(self._bodyText))));
+    return new ReadableStream({
+      start: function (c) {
+        if (!streamSrc) {
+          var text = new TextDecoder().decode(staticBytes);
+          if (text.length > 0) c.enqueue(text);
+          c.close();
+          return;
+        }
+        var reader = streamSrc.getReader();
+        (function pump() {
+          reader._zwReadRaw().then(function (r) {
+            if (r.done) { c.close(); return; }
+            if (!(r.value instanceof Uint8Array)) {
+              c.error(new TypeError('ReadableStream chunk is not a Uint8Array'));
+              return;
+            }
+            var chunkText = new TextDecoder().decode(r.value, { stream: true });
+            if (chunkText.length > 0) c.enqueue(chunkText);
+            pump();
+          }, function (e) { c.error(e); });
+        })();
+      }
+    });
+  }
+  globalThis.Request.prototype.textStream = function () { return _zwBodyTextStream(this); };
+  globalThis.Response.prototype.textStream = function () { return _zwBodyTextStream(this); };
   if (typeof Symbol === 'function' && Symbol.toStringTag) {
     Object.defineProperty(globalThis.Request.prototype, Symbol.toStringTag, {
       value: 'Request',

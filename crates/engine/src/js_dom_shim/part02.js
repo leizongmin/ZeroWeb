@@ -3943,29 +3943,29 @@
   // R3223：Headers fill——逐值 append（尊重目标 guard）。供 Headers ctor（guard none）与 Request ctor
   //（guard request）复用。Headers 实例源直接迭代内部 _h（Fetch §5.1「for each header in init's header list」
   // 指内部列表，含 response guard 隐藏的 Set-Cookie；目标 guard 决定是否过滤）。
+  // net-api 二期 M2-S3：record 路径改 Web IDL es-to-record 精确算法（headers-record Proxy
+  // trap 计数面）——Symbol.iterator 判定恰一次 get（hasOwnProperty 探测会多触发 gOPD）、
+  // ownKeys → 逐键 gOPD（undefined/不可枚举跳过）→ 键 ByteString 校验 → get → 值校验；
+  // symbol 键 String() 转换抛 TypeError；重复 ownKeys 由 Proxy 不变量抛 TypeError。
   function _fillHeaders(h, init) {
     if (init == null) return;
-    // M2-S2：**自身** Symbol.iterator 优先（Web IDL sequence 判定先于 record——
-    // headers-basic「existing headers with custom iterator」在 Headers 实例上覆写
-    // own iterator；普通 Headers 走下方 _h 分支保内部列表语义含 guard 隐藏 set-cookie）。
-    if (typeof Symbol !== 'undefined' && init[Symbol.iterator] &&
-        Object.prototype.hasOwnProperty.call(init, Symbol.iterator) &&
-        typeof init[Symbol.iterator] === 'function') {
-      var it0 = init[Symbol.iterator]();
+    // sequence/record overload 判定：恰一次 [[Get]](Symbol.iterator)（trap 计数面 log[0]）。
+    // net-api 二期 M2-S3：Headers 实例同走本路径（原型 entries 迭代 = _zwPairs
+    // sort-and-combine，与 spec sequence 填充语义一致，多值 set-cookie 各值独立成对）。
+    // M2-S2 的 instanceof/_h 特判移除——getPrototypeOf（instanceof）与 hasOwnProperty
+    //（gOPD）探针在 headers-record 计数代理面各多计一 trap，且首 trap 必须恰为
+    // [[Get]](Symbol.iterator)（Web IDL overload resolution 先于 es-to-record）。
+    var itFn = (typeof Symbol !== 'undefined') ? init[Symbol.iterator] : undefined;
+    if (typeof itFn === 'function') {
+      // M2-S2：自定义 iterable（sequence 形态）。Headers 自身也带 Symbol.iterator
+      //（entries，非 own）——迭代产出 [k, v] 二元组走 append 同路。
+      var it = itFn.call(init);
       for (;;) {
-        var step0 = it0.next();
-        if (step0 && step0.done) break;
-        var p0 = step0.value;
-        if (!p0 || p0.length !== 2) throw new TypeError('Headers init sequence item must have exactly 2 elements');
-        h.append(p0[0], p0[1]);
-      }
-      return;
-    }
-    if (init._h) {
-      for (var k in init._h) {
-        if (!Object.prototype.hasOwnProperty.call(init._h, k)) continue;
-        var vals = init._h[k];
-        for (var vi = 0; vi < vals.length; vi++) h.append(k, vals[vi]);
+        var step = it.next();
+        if (step && step.done) break;
+        var p = step.value;
+        if (!p || p.length !== 2) throw new TypeError('Headers init sequence item must have exactly 2 elements');
+        h.append(p[0], p[1]);
       }
       return;
     }
@@ -3979,32 +3979,20 @@
         }
         h.append(pair[0], pair[1]);
       }
-    } else if (typeof Symbol !== 'undefined' && init[Symbol.iterator] && typeof init[Symbol.iterator] === 'function') {
-      // M2-S2：自定义 iterable（sequence 形态）。Headers 自身也带 Symbol.iterator
-      //（entries，非 own）——迭代产出 [k, v] 二元组走 append 同路。
-      var it = init[Symbol.iterator]();
-      for (;;) {
-        var step = it.next();
-        if (step && step.done) break;
-        var p = step.value;
-        if (!p || p.length !== 2) throw new TypeError('Headers init sequence item must have exactly 2 elements');
-        h.append(p[0], p[1]);
-      }
       return;
-    } else if (typeof init.forEach === 'function') {
-      // Headers-like（forEach 回调 (value, name, headers)）。
-      init.forEach(function (v, k) { h.append(k, v); });
-    } else if (typeof init === 'object') {
-      for (var k in init) {
-        if (!Object.prototype.hasOwnProperty.call(init, k)) continue;
-        // R3222：多值头（_parseHeadersWire 累加的 Set-Cookie 数组）逐值 append。
-        var vs = init[k];
-        if (Array.isArray(vs)) {
-          for (var vi = 0; vi < vs.length; vi++) h.append(k, vs[vi]);
-        } else {
-          h.append(k, vs);
-        }
-      }
+    }
+    if (typeof init !== 'object') return;
+    // record 路径（https://webidl.spec.whatwg.org/#es-to-record）。
+    var keys = Reflect.ownKeys(init);
+    for (var ki = 0; ki < keys.length; ki++) {
+      var key = keys[ki];
+      var desc = Object.getOwnPropertyDescriptor(init, key);
+      if (desc === undefined || !desc.enumerable) continue;
+      var name = String(key); // symbol 键 → TypeError（记录键须 string；转换先于 [[Get]]）
+      // 键 → ByteString 校验先于 [[Get]]（headers-record 无效名面——get 不触发）。
+      if (!_zwIsValidHeaderName(name)) throw new TypeError('Invalid header name: ' + name);
+      var vs = init[key];
+      h.append(name, vs); // 值 → ByteString 校验+Normalize 在 append 内（无效值 get 后抛）
     }
   }
   globalThis.Headers = globalThis.Headers || function Headers(init) {

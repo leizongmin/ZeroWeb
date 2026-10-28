@@ -4370,10 +4370,17 @@ fn run_any_js_corpus_subdirs_with_helpers_variants(
                     .map(|(src, body)| (src.as_str(), body.as_str()))
                     .collect::<Vec<_>>();
                 if variants.is_empty() {
+                    // net-api 二期 M2-S3：.html 案面 wptserve substitution（{{host}}/
+                    // {{ports}}/{{domains}}/{{hosts}} → 本地锚定值）——.any.js 窗口包装
+                    //（any_js_window_wrapper）与 cookies 通道既有同款语义，.html 分支此前
+                    // 缺位，fetch/api request-init-001/003 referrer 案面 token 字面残留
+                    // → URL 解析失败/期望串不匹配。替换只动行内 token 不动行数（CSP
+                    // 位置表按原始 source 预计算，行号稳定）。
+                    let substituted = apply_wpt_substitutions(&source);
                     let results = run_testharness_html_inner(
                         wpt_root,
                         &relative,
-                        &source,
+                        &substituted,
                         &harness_source,
                         &extra_refs,
                         corpus_case_timeout(),
@@ -6541,6 +6548,30 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     headers,
                     body: ct.clone(),
                     body_bytes: Some(ct.into_bytes()),
+                });
+            }
+            if clean.starts_with("fetch/api/resources/")
+                && (clean.ends_with("/echo-content.py") || clean.ends_with("/echo-content.h2.py"))
+            {
+                // net-api 二期 M2-S3 fixture：fetch/api/basic/echo-content.py 与
+                // echo-content.h2.py（上游行为等价——原样回显请求体，request-upload
+                // 面断言 resp.text() == 上传体）。`.h2.py` 端点上游走 h2 流式上传；
+                // runner 侧流→字节泵尽后经常规 wire 到达，此处不区分。
+                let body = req
+                    .body_bytes
+                    .clone()
+                    .or_else(|| req.body.clone().map(|s| s.into_bytes()))
+                    .unwrap_or_default();
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), "text/plain".into()));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                let lossy = String::from_utf8_lossy(&body).into_owned();
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: lossy,
+                    body_bytes: Some(body),
                 });
             }
             if clean.starts_with("xhr/") && clean.ends_with("/access-control-origin-header.py") {

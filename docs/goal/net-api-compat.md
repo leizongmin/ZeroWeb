@@ -6,9 +6,9 @@
 > 测试，本 goal 承接失败簇收敛 + WebSocket 挂账重估。
 > **一期零回归底线继续有效**（一期 corpus 分母逐 subtest 对照）。
 
-**版本**: v2.3
-**日期**: 2026-10-29（M2-S2 收口）
-**状态**: Active——M1/M2-S1/M2-S2 完成（累计 +1059），下一步 M2-S3（fetch/api 语义簇 + 真回归 3 legs）
+**版本**: v2.4
+**日期**: 2026-10-29（M2-S3 收口）
+**状态**: Active——M1/M2-S1/M2-S2/M2-S3 完成（累计 +1219），下一步 M2-S3b（真回归 3 legs 清偿）
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 失败簇归因收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
 
@@ -26,11 +26,17 @@
   回退 + 组件回写）**+789 零回归**——IdnaTestV2 2671/2671 = 100%，url 通过率
   81.1% → 94.1%；url 残余 357F（setters-stripping 54 + USP BOM 28 + 单案面）
   与 M1 预测一致。
+- **M2-S3 完成**（[证据档](net-api-compat/evidence/2026-10-29-m2-s3-request-response-constructor.md)）：
+  Request 构造校验链/Headers record 逐 trap/Response 消费面/wire 头合并/
+  流式上传分型 + echo-content fixtures **+160 零回归**——13 文件语义族
+  91/220 → 219/220；r1 过程轮 28 回归全部清偿（abort/general 16 legs 构造
+  优先 + wire 头 11 legs + 上传 1 leg）。记账 4 项落证据档。
 - **一期零回归对账**：各轮 A/B 均零回归；**真回归 3 legs**（xhr json UTF-16、
-  xhr CORS 同源重定向、ws constructor/016）挂 M2-S3 清偿。
-- **下一步（M2-S3）**：fetch/api Request 构造/Response 消费语义簇（~138）+
-  跨流转入真回归 3 legs；其后 runner 基建切片（记账推动）、USP BOM/
-  setters-stripping 小片。
+  xhr CORS 同源重定向、ws constructor/016）挂 M2-S3b 清偿（xhr json 修复点
+  已定位 `part03.js` json 分支 UTF-8 decode）。
+- **下一步（M2-S3b）**：真回归 3 legs 清偿；其后 runner 基建切片（记账
+  推动：url crate panic、端口锚结构面）、USP BOM/setters-stripping 小片、
+  M 收口 coverage 复测。
 
 ## coverage 对账（coverage-2026-10-27 基线，47 套件干跑口径，终稿待 `docs/compat/wptfyi/coverage-2026-10-27.md` 复核）
 
