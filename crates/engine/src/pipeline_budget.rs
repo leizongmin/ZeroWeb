@@ -381,15 +381,18 @@ impl RenderPipeline {
                     ));
                     // S1 回填：完整帧输出（doc/styles/stylesheets/export_set/result）
                     // 入跨代缓存。键=Complete 当刻环境快照（DF2-1 根修：查找/插入键
-                    // 分离——起点键只作命中查找；中断续推会话的图片批/字体晚到在步
-                    // 间落表，帧内容由当刻环境产出，须以当刻键回填，否则旧键装载新
-                    // 环境帧覆盖干净条目，旧环境热导航命中输出漂移）。重算 None
-                    //（kill-switch 关 / canvas 活跃）沿既有 None 语义跳过回填。
-                    // 图片批/字体重绘轮各以完成时环境为键回填，热导航重演同批序时
-                    // 逐轮命中；不同批序只见异键 MISS 回退全量（健全）。
+                    // 分离——起点键只作命中查找）。TV2-R1 根修（保守跳过）：回填仅
+                    // 当重算键 == 起点键（会话全程环境未变）。[Layout,Paint) 中断带
+                    // + 同 tick 图片落表时帧为混合态（布局半边按旧环境定形、绘制半
+                    // 边按新环境产出），与任一纯参考帧像素不等——DF2-1 的「以当刻键
+                    // 回填」对全量步后突变成立，对步间突变会让新环境热导航命中混合
+                    // 帧（键值不同刻，冻结判据「命中输出=同输入全量」被违背）；环境
+                    // 变更会话不回填，MISS 回退全量健全。起点键 None（kill-switch
+                    // 关 / canvas 活跃定格）同跳过。重算 None 沿既有 None 语义跳过。
                     if let Some(result) = &session.result
                         && let Some(key) =
                             crate::pipeline::frame_fingerprint::frame_fingerprint_key(self, &session.html, &session.css)
+                        && session.fingerprint_key == Some(key)
                     {
                         // DF-1 根修：回填**纯净树快照**（`pristine_snapshot` 深拷）
                         // 而非活文档 Rc——本点在页面脚本执行前，快照 = 键输入的纯

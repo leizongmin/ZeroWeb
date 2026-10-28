@@ -518,17 +518,24 @@ fn s1_fingerprint_hit_result_timings_matches_hit_not_cold() {
 /// 布局/绘制面均可区分）。
 const DF2_IMG_HTML: &str = "<html><body><img src=\"https://a.example/pic.png\"></body></html>";
 
-/// DF2-1（high 根修钉）：中断续推会话的回填键必须以 Complete 当刻环境重算。
+/// TV2-R1 场景文档：img + 后随块级 div——div 的 Y 位置由 img 布局盒高度决定
+/// （固有注入缺失时 img 盒塌缩、div 上移；注入 200×40 后 div 下移），使混合帧
+/// （E0 布局 + E1 绘制）与两个纯参考帧像素可区分。
+const TV2R1_FLOW_HTML: &str = "<html><body><img src=\"https://a.example/pic.png\"><div style=\"height:20px;background-color:#0000ff\"></div></body></html>";
+
+/// DF2-1 → TV2-R1 演进钉：会话中段环境变更（图片分批落表）的回填语义。
 ///
-/// 缺陷时序（返修前红）：会话首个 advance 定格起点键 K0（E0 = 图片未到）→
-/// 图片分批在步间落表（E0→E1；生产 poll_images 只闸 stage 不闸
-/// render_session）→ 续推 Complete 产出的帧由 E1 布局/绘制，却以 K0 回填
-/// 覆盖键空间 → 旧环境热导航（重导航后图片未重新到达）K0 命中装载 E1 帧，
-/// 输出 ≠ 关缓存全量。修后语义：查找/插入键分离——回填键以当刻环境重算，
-/// E1 帧落 K1 下：E0 查找自然 MISS 全量（输出一致），E1 查找自然命中
-///（输出一致）。
+/// DF2-1（S2 返修）曾要求回填键以 Complete 当刻环境重算（本测试旧名
+/// `..._backfills_under_completion_env` 断言 E1 命中）；TV2-R1（S3 返修）
+/// 收紧为保守跳过：重算键 ≠ 起点键一律不回填。本构造中全部步在落表后
+/// 推进、帧实为纯净 E1，跳过属保守成本（该时序损失一次缓存机会）而非
+/// 缺陷——因 [Layout,Paint) 中断带的混合帧无法与纯净帧从外部区分（键等
+/// 是唯一安全门），见
+/// `s1_fingerprint_layout_paint_boundary_env_change_skips_backfill` 的像素
+/// 偏离证据。修后语义：两个环境的热导航都 MISS 全量且与关缓存参考逐位
+/// 一致（红→绿证据：运行目录 evidence/t21-s3-red-interleave2 与后续绿跑）。
 #[test]
-fn s1_fingerprint_mid_session_env_change_backfills_under_completion_env() {
+fn s1_fingerprint_mid_session_env_change_skips_backfill_misses_both_envs() {
     let mut ctx = RasterCtx::new();
     let mut warm = RenderPipeline::new(320.0, 400.0);
     let img_key = crate::paint::image_resource_key("https://a.example/pic.png", warm.document_url());
@@ -578,14 +585,15 @@ fn s1_fingerprint_mid_session_env_change_backfills_under_completion_env() {
         "DF2-1 旧环境热导航 vs 关缓存全量",
     );
 
-    // 新环境热导航（E1 恢复）：条目必须落在当刻键下可命中，且命中复用输出
-    // 与关缓存全量逐位一致（S1 前提门①在本时序下成立）。
+    // 新环境热导航（E1 恢复）：TV2-R1 保守跳过——起点键 ≠ 重算键不回填，
+    // 即便本构造的完成帧实为纯净 E1（保守成本，见函数级注释）；必须 MISS
+    // 全量，输出与关缓存全量逐位一致。
     warm.set_image_sizes(img_sizes.clone());
     warm.set_image_solid_colors(img_colors.clone());
     let hot_e1 = fingerprint_session(&mut warm, DF2_IMG_HTML, NAV_CSS);
-    assert_eq!(
-        hot_e1.timings.parse_ms, 0.0,
-        "新环境热导航必须命中回填条目（MISS = 回填键未落在当刻环境）"
+    assert!(
+        hot_e1.timings.parse_ms > 0.0,
+        "新环境热导航必须 MISS 全量（parse_ms=0 = 环境变更会话仍被回填，TV2-R1 保守门失效）"
     );
     let mut ref_e1_pipeline = RenderPipeline::new(320.0, 400.0);
     ref_e1_pipeline.set_image_sizes(img_sizes);
@@ -595,5 +603,110 @@ fn s1_fingerprint_mid_session_env_change_backfills_under_completion_env() {
         &ctx.rasterize(&hot_e1),
         &ctx.rasterize(&ref_e1),
         "DF2-1 新环境热导航 vs 关缓存全量",
+    );
+}
+
+/// TV2-R1（medium 根修钉）：中断落在 [Layout 完成, Paint 开始) 步边界 + 同 tick
+/// 图片批落表 → 续推产出的帧是混合帧（布局几何 = 旧环境、绘制 = 新环境），不得
+/// 入缓存。
+///
+/// 缺陷时序（返修前红）：会话起点键 K0 定格（E0 = 图片未到）→ 微预算逐 advance
+/// 推进至 Paint 步前中断（布局已按 E0 定形）→ 同 tick 图片批落表（E0→E1）→ 续
+/// 推 Paint 完成：绘制消费 E1 表、布局几何仍是 E0 产物，混合帧以 Complete 当刻
+/// 键 K1 回填——键值不同刻。E1 热导航命中装载混合帧，输出 ≠ 关缓存全量，同键
+/// 覆盖还冲掉干净条目。修后语义（回填保守跳过）：Complete 重算键 ≠ 会话起点键
+/// = 环境在会话中段变更过 → 不插入；E0/E1 热导航均 MISS 全量且逐位等关缓存参
+/// 考。生产可达性：webview async_load tick 序 advance → poll_images 落表 → 同
+/// tick 二次 advance 续推同一 session。
+#[test]
+fn s1_fingerprint_layout_paint_boundary_env_change_skips_backfill() {
+    let mut ctx = RasterCtx::new();
+    let mut warm = RenderPipeline::new(320.0, 400.0);
+    let img_key = crate::paint::image_resource_key("https://a.example/pic.png", warm.document_url());
+    let mut img_sizes = std::collections::HashMap::new();
+    img_sizes.insert(img_key, (200.0f32, 40.0f32));
+    let mut img_colors = std::collections::HashMap::new();
+    img_colors.insert(img_key, [255u8, 0, 0, 255]);
+
+    // 零预算首 advance：起点键 K0 定格（E0 = 图片未到），零步推进（场景前提）。
+    let mut session = crate::BudgetedRenderSession::new(TV2R1_FLOW_HTML, NAV_CSS);
+    assert!(
+        matches!(
+            warm.advance_budgeted_render(&mut session, 0.0),
+            crate::BudgetAdvance::InProgress
+        ),
+        "零预算首 advance 必须定格键后中断（场景前提）"
+    );
+
+    // 微预算逐步推进到 [Layout 完成, Paint 开始) 步边界：微预算（1μs）下每步
+    // 实际耗时超过预算 → 每次 advance 恰推进一个步；停在 Paint 步 = 布局已按
+    // E0 定形、绘制未开始（混合帧的布局半边）。
+    let mut steps = 0;
+    while session.step() != crate::BudgetStep::Paint {
+        assert!(steps < 16, "微预算推进必须停在 Paint 步边界（场景前提）");
+        steps += 1;
+        let _ = warm.advance_budgeted_render(&mut session, 0.001);
+    }
+
+    // 同 tick 图片批落表（E0→E1）+ 续推 Paint 完成（生产 tick 序）：混合帧在
+    // Paint 臂末到达回填点（被测点）。
+    warm.set_image_sizes(img_sizes.clone());
+    warm.set_image_solid_colors(img_colors.clone());
+    loop {
+        if matches!(
+            warm.advance_budgeted_render(&mut session, 5_000.0),
+            crate::BudgetAdvance::Complete
+        ) {
+            break;
+        }
+    }
+    let _ = session.take_result();
+
+    // E1 热导航（表保持 = 图片已到的新环境）：缺陷形态 = 命中混合帧回填条目
+    //（parse_ms=0）且输出与关缓存参考逐位不等（后随 div 的 Y 位置由 img 布局
+    // 盒高度决定——E0 布局下 img 固有注入缺失、div 上移，E1 参考帧 div 在
+    // img 200×40 之下）；修后形态 = MISS 全量且逐位等。
+    warm.set_image_sizes(img_sizes.clone());
+    warm.set_image_solid_colors(img_colors.clone());
+    let hot_e1 = fingerprint_session(&mut warm, TV2R1_FLOW_HTML, NAV_CSS);
+    let mut ref_e1_pipeline = RenderPipeline::new(320.0, 400.0);
+    ref_e1_pipeline.set_image_sizes(img_sizes.clone());
+    ref_e1_pipeline.set_image_solid_colors(img_colors.clone());
+    let ref_e1 = ref_e1_pipeline.render_html(TV2R1_FLOW_HTML, NAV_CSS);
+    let px_hot_e1 = ctx.rasterize(&hot_e1);
+    let px_ref_e1 = ctx.rasterize(&ref_e1);
+    let e1_differs = px_hot_e1.data != px_ref_e1.data;
+    assert!(
+        hot_e1.timings.parse_ms > 0.0,
+        "E1 热导航必须 MISS 全量（实测 parse_ms={}，命中回填条目={}，输出与关缓存参考逐位不等={} —— TV2-R1 混合帧缺陷特征）",
+        hot_e1.timings.parse_ms,
+        hot_e1.timings.parse_ms == 0.0,
+        e1_differs
+    );
+    assert_frames_bitwise_equal(&px_hot_e1, &px_ref_e1, "TV2-R1 E1 热导航 vs 关缓存全量");
+
+    // E0 热导航（表复位 = 重导航后图片未重新到达）：同样 MISS 全量逐位等——
+    // 不得命中任何残留/污染条目。
+    warm.set_image_sizes(std::collections::HashMap::new());
+    warm.set_image_solid_colors(std::collections::HashMap::new());
+    let hot_e0 = fingerprint_session(&mut warm, TV2R1_FLOW_HTML, NAV_CSS);
+    assert!(
+        hot_e0.timings.parse_ms > 0.0,
+        "E0 热导航必须 MISS 全量（parse_ms=0 = 命中污染条目）"
+    );
+    let ref_e0 = cold_frame(TV2R1_FLOW_HTML, NAV_CSS);
+    assert_frames_bitwise_equal(
+        &ctx.rasterize(&hot_e0),
+        &ctx.rasterize(&ref_e0),
+        "TV2-R1 E0 热导航 vs 关缓存全量",
+    );
+
+    // 守卫：保守跳过不误伤正常回填路径——环境稳定会话（起点键 == 当刻键）正常
+    // 回填，同环境后续会话可命中（四段零耗）。
+    let _ = fingerprint_session(&mut warm, NAV_A_HTML, NAV_CSS);
+    let stable_hit = fingerprint_session(&mut warm, NAV_A_HTML, NAV_CSS);
+    assert_eq!(
+        stable_hit.timings.parse_ms, 0.0,
+        "环境稳定会话必须正常回填并可被同环境命中（保守跳过不得禁用正常路径）"
     );
 }
