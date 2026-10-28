@@ -433,6 +433,38 @@ const REFTESTS: &[InlineReftestDef] = &[
         ref_html: "<html><body style=\"margin:0\"><ul style=\"list-style:none;margin:0;padding:0;width:500px;height:260px;font:40px/40px Ahem\"><li style=\"width:250px;height:260px;background:red\"><span><button style=\"border:0;padding:0;background:#0f0\">ab</button></span></li></ul></body></html>",
         is_match: true,
     },
+    // t-p115（css-flexbox-1 §4.1 流内文本计入 flex base size；CSS2 §9.3.1 脱流子不计入）：
+    // 兄弟形态族——item 持流内文本 + 纯 inline 包裹层包脱流原子（无任何流内原子）。
+    // R1024 leaf 路径把含 Element 子的 span 留在 taffy 树 → item 成分支后文本无度量
+    // 载体，包裹层子树又只含 abspos 子（content-based 排除）→ li 塌 0（红带不可见、
+    // 文本溢出）；修复后 li = "hi" 文本宽 80px，与块级 ref 等价锚定。绿按钮为盒外
+    // abspos 可见锚点。
+    InlineReftestDef {
+        id: "css-flexbox/flex-item-branch-text-ooflow-wrapper-zw-004",
+        category: ReftestCategory::Layout,
+        test_html: "<html><body style=\"margin:0\"><ul style=\"display:flex;list-style:none;margin:0;padding:0;width:500px;height:260px;font:40px/40px Ahem\"><li style=\"height:260px;background:red\">hi<span><button type=\"button\" style=\"position:absolute;border:0;padding:0;background:#0f0\">ab cd ef</button></span></li></ul></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><ul style=\"list-style:none;margin:0;padding:0;width:500px;height:260px;font:40px/40px Ahem\"><li style=\"width:80px;height:260px;background:red\">hi<span><button type=\"button\" style=\"position:absolute;border:0;padding:0;background:#0f0\">ab cd ef</button></span></li></ul></body></html>",
+        is_match: true,
+    },
+    // t-p115 兄弟形态（同根因）：流内文本 + 含 Element 子的 inline 包裹层（span>b，
+    // 无原子）——R2160 childless skip 不命中，item 成分支后 "hi" 漏计，li 取包裹层
+    // 子树宽 40px（应 120px，差 66% 远超 Layout 1% 阈值）；修复后 li = 80+40 单行。
+    InlineReftestDef {
+        id: "css-flexbox/flex-item-branch-text-inline-wrapper-zw-005",
+        category: ReftestCategory::Layout,
+        test_html: "<html><body style=\"margin:0\"><ul style=\"display:flex;list-style:none;margin:0;padding:0;width:500px;height:260px;font:40px/40px Ahem\"><li style=\"height:260px;background:red\">hi<span><b>x</b></span></li></ul></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><ul style=\"list-style:none;margin:0;padding:0;width:500px;height:260px;font:40px/40px Ahem\"><li style=\"width:120px;height:260px;background:red\">hi<span><b>x</b></span></li></ul></body></html>",
+        is_match: true,
+    },
+    InlineReftestDef {
+        id: "css-flexbox/flex-item-inline-abspos-text-excluded-zw-006",
+        category: ReftestCategory::Layout,
+        // t-p115 返修（r1 DEF-1）：纯行内 abspos（引擎不 blockify）的文本不计入
+        // item 主轴 max-content（CSS2 §9.3.1）——li 只保留流内 "hi"=80px。
+        test_html: "<html><body style=\"margin:0\"><ul style=\"display:flex;list-style:none;margin:0;padding:0;width:500px;height:260px;font:40px/40px Ahem\"><li style=\"height:260px;background:red\">hi<span><b style=\"position:absolute\">xyz</b></span></li></ul></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><ul style=\"list-style:none;margin:0;padding:0;width:500px;height:260px;font:40px/40px Ahem\"><li style=\"width:80px;height:260px;background:red\">hi<span><b style=\"position:absolute\">xyz</b></span></li></ul></body></html>",
+        is_match: true,
+    },
 ];
 
 pub fn reftests() -> &'static [InlineReftestDef] {
