@@ -1487,10 +1487,15 @@ pub(crate) fn compute_final_inline_layouts(
             Some((
                 id,
                 crate::inline::FloatExclusion {
-                    y: rel_y + c.margin_top,
-                    height: c.height + c.margin_bottom,
+                    // R5312（CSS 2.1 §9.5 float margin box）：排除带 = float 的 margin box。
+                    // taffy native float 下 c.x/c.y 已是 border-box 位（margin 含在坐标内），
+                    // 旧式 `+margin` 再加一次 = 双计（outline-028 ml:5 案：带 [10,25] 应
+                    // [0,15]，span 被挤到行 2 + 右移 10px）。左/上缘回退 margin 得 margin-box
+                    // 原点；margin 字段被后继 pass 清零时 c.x−0 = 原值，两约定同成立。
+                    y: rel_y - c.margin_top,
+                    height: c.margin_top + c.height + c.margin_bottom,
                     width: c.width + c.margin_left + c.margin_right,
-                    x: c.x + c.margin_left,
+                    x: c.x - c.margin_left,
                     is_left: matches!(c.float, zero_css_parser::values::FloatValue::Left),
                 },
             ))
@@ -3018,10 +3023,12 @@ pub(crate) fn remeasure_text_with_float_exclusions(
                     return None;
                 }
                 Some(FloatExclusion {
-                    y: rel_y + c.margin_top,
-                    height: height + c.margin_bottom,
+                    // R5312：margin-box 口径（同 compute_final own_floats——taffy native
+                    // float 下 c.x/c.y 为 border-box 位，`+margin` 双计致 span 挤行/右移）。
+                    y: rel_y - c.margin_top,
+                    height: c.margin_top + height + c.margin_bottom,
                     width: c.width + c.margin_left + c.margin_right,
-                    x: c.x + c.margin_left,
+                    x: c.x - c.margin_left,
                     is_left: matches!(c.float, FloatValue::Left),
                 })
             })
